@@ -185,6 +185,12 @@ struct cue_softc {
 	uint16_t		cue_rxfilt;
 	struct cue_cdata	cue_cdata;
 
+	kmutex_t		cue_lock;
+	kmutex_t		cue_txlock;
+	kmutex_t		cue_rxlock;
+
+	struct if_percpuq	*cue_ipq;
+
 	char			cue_dying;
 	char			cue_attached;
 	u_int			cue_rx_errs;

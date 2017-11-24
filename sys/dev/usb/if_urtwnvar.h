@@ -128,6 +128,7 @@ struct urtwn_softc {
 	callout_t			sc_scan_to;
 	callout_t			sc_calib_to;
 
+	kcondvar_t			sc_task_cv;
 	kmutex_t			sc_task_mtx;
 	kmutex_t			sc_fwcmd_mtx;
 	kmutex_t			sc_tx_mtx;

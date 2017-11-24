@@ -91,7 +91,6 @@ typedef struct ehci_soft_itd {
 
 struct ehci_xfer {
 	struct usbd_xfer ex_xfer;
-	struct usb_task ex_aborttask;
 	TAILQ_ENTRY(ehci_xfer) ex_next; /* list of active xfers */
 	enum {
 		EX_NONE,
@@ -165,6 +164,7 @@ typedef struct ehci_softc {
 	device_t sc_dev;
 	kmutex_t sc_lock;
 	kmutex_t sc_intr_lock;
+	bool sc_dbanswered;
 	kcondvar_t sc_doorbell;
 	void *sc_doorbell_si;
 	void *sc_pcd_si;
@@ -211,8 +211,6 @@ typedef struct ehci_softc {
 	uint8_t sc_istthreshold;	/* ISOC Scheduling Threshold (uframes) */
 	struct usbd_xfer *sc_intrxfer;
 	char sc_isreset[EHCI_MAX_PORTS];
-	char sc_softwake;
-	kcondvar_t sc_softwake_cv;
 
 	uint32_t sc_eintrs;
 	ehci_soft_qh_t *sc_async_head;

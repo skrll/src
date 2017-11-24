@@ -179,6 +179,10 @@ struct kue_softc {
 	uint8_t			*kue_mcfilters;
 	struct kue_cdata	kue_cdata;
 
+	kmutex_t		kue_lock;
+	kmutex_t		kue_txlock;
+	kmutex_t		kue_rxlock;
+
 	bool			kue_dying;
 	bool			kue_attached;
 	u_int			kue_rx_errs;

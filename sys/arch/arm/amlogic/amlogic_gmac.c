@@ -31,6 +31,10 @@
 
 #include "locators.h"
 
+#ifdef _KERNEL_OPT
+#include "opt_net_mpsafe.h"
+#endif
+
 #include <sys/cdefs.h>
 
 __KERNEL_RCSID(1, "$NetBSD: amlogic_gmac.c,v 1.2 2015/03/04 18:40:06 jmcneill Exp $");
@@ -92,7 +96,11 @@ amlogic_gmac_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Interrupt handler
 	 */
-	sc->sc_ih = intr_establish(loc->loc_intr, IPL_NET, IST_EDGE,
+	int mpsafe = 0;
+#ifdef NET_MPSAFE
+	mpsafe |= IST_MPSAFE;
+#endif
+	sc->sc_ih = intr_establish(loc->loc_intr, IPL_NET, IST_EDGE | mpsafe,
 	    amlogic_gmac_intr, sc);
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt %d\n",

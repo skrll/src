@@ -229,7 +229,7 @@ uark_activate(device_t self, enum devact act)
 		sc->sc_dying = 1;
 		break;
 	}
-	return (rv);
+	return rv;
 }
 
 void
@@ -272,7 +272,7 @@ uark_param(void *vsc, int portno, struct termios *t)
 		uark_cmd(sc, 3, 0x03);
 		break;
 	default:
-		return (EINVAL);
+		return EINVAL;
 	}
 
 	if (ISSET(t->c_cflag, CSTOPB))
@@ -317,7 +317,7 @@ uark_param(void *vsc, int portno, struct termios *t)
 	}
 #endif
 
-	return (0);
+	return 0;
 }
 
 void
@@ -363,7 +363,7 @@ uark_cmd(struct uark_softc *sc, uint16_t index, uint16_t value)
 	err = usbd_do_request(sc->sc_udev, &req, NULL);
 
 	if (err)
-		return (EIO);
+		return EIO;
 
-	return (0);
+	return 0;
 }

@@ -42,6 +42,10 @@ struct urndis_cdata {
 struct urndis_softc {
 	device_t			sc_dev;
 
+	kmutex_t			sc_lock;
+	kmutex_t			sc_txlock;
+	kmutex_t			sc_rxlock;
+
 	char				sc_attached;
 	int				sc_dying;
 	struct ethercom			sc_ec;
@@ -63,6 +67,8 @@ struct urndis_softc {
 	struct usbd_pipe *		sc_bulkout_pipe;
 
 	struct urndis_cdata		sc_data;
+
+	struct if_percpuq *		urndis_ipq;
 };
 
 #define RNDIS_STATUS_BUFFER_OVERFLOW 	0x80000005L

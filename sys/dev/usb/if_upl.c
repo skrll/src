@@ -220,7 +220,6 @@ upl_attach(device_t parent, device_t self, void *aux)
 	struct upl_softc *sc = device_private(self);
 	struct usb_attach_arg *uaa = aux;
 	char			*devinfop;
-	int			s;
 	struct usbd_device *	dev = uaa->uaa_device;
 	struct usbd_interface *	iface;
 	usbd_status		err;
@@ -285,8 +284,6 @@ upl_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	s = splnet();
-
 	/* Initialize interface info.*/
 	ifp = &sc->sc_if;
 	ifp->if_softc = sc;
@@ -316,7 +313,6 @@ upl_attach(device_t parent, device_t self, void *aux)
 	    RND_TYPE_NET, RND_FLAG_DEFAULT);
 
 	sc->sc_attached = 1;
-	splx(s);
 
 	usbd_add_drv_event(USB_EVENT_DRIVER_ATTACH, sc->sc_udev, sc->sc_dev);
 

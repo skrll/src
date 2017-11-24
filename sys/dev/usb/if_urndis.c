@@ -75,13 +75,18 @@ static void urndis_watchdog(struct ifnet *);
 #endif
 
 static void urndis_start(struct ifnet *);
+static void urndis_start_locked(struct ifnet *);
 static void urndis_rxeof(struct usbd_xfer *, void *, usbd_status);
 static void urndis_txeof(struct usbd_xfer *, void *, usbd_status);
 static int urndis_rx_list_init(struct urndis_softc *);
+static void urndis_rx_list_free(struct urndis_softc *);
 static int urndis_tx_list_init(struct urndis_softc *);
+static void urndis_tx_list_free(struct urndis_softc *);
 
 static int urndis_init(struct ifnet *);
+static int urndis_init_locked(struct ifnet *);
 static void urndis_stop(struct ifnet *);
+static void urndis_stop_locked(struct ifnet *);
 
 static usbd_status urndis_ctrl_msg(struct urndis_softc *, uint8_t, uint8_t,
     uint16_t, uint16_t, void *, size_t);
@@ -831,7 +836,10 @@ urndis_decap(struct urndis_softc *sc, struct urndis_chain *c, uint32_t len)
 		if (urndis_newbuf(sc, c) == ENOBUFS) {
 			ifp->if_ierrors++;
 		} else {
-			if_percpuq_enqueue(ifp->if_percpuq, m);
+
+			bpf_mtap(ifp, m);
+
+			if_percpuq_enqueue(sc->urndis_ipq, m);
 		}
 		splx(s);
 
@@ -893,6 +901,21 @@ urndis_rx_list_init(struct urndis_softc *sc)
 	return 0;
 }
 
+static void
+urndis_rx_list_free(struct urndis_softc *sc)
+{
+	for (int i = 0; i < RNDIS_RX_LIST_CNT; i++) {
+		if (sc->sc_data.sc_rx_chain[i].sc_mbuf != NULL) {
+			m_freem(sc->sc_data.sc_rx_chain[i].sc_mbuf);
+			sc->sc_data.sc_rx_chain[i].sc_mbuf = NULL;
+		}
+		if (sc->sc_data.sc_rx_chain[i].sc_xfer != NULL) {
+			usbd_destroy_xfer(sc->sc_data.sc_rx_chain[i].sc_xfer);
+			sc->sc_data.sc_rx_chain[i].sc_xfer = NULL;
+		}
+	}
+}
+
 static int
 urndis_tx_list_init(struct urndis_softc *sc)
 {
@@ -917,6 +940,21 @@ urndis_tx_list_init(struct urndis_softc *sc)
 	return 0;
 }
 
+static void
+urndis_tx_list_free(struct urndis_softc *sc)
+{
+	for (int i = 0; i < RNDIS_TX_LIST_CNT; i++) {
+		if (sc->sc_data.sc_tx_chain[i].sc_mbuf != NULL) {
+			m_freem(sc->sc_data.sc_tx_chain[i].sc_mbuf);
+			sc->sc_data.sc_tx_chain[i].sc_mbuf = NULL;
+		}
+		if (sc->sc_data.sc_tx_chain[i].sc_xfer != NULL) {
+			usbd_destroy_xfer(sc->sc_data.sc_tx_chain[i].sc_xfer);
+			sc->sc_data.sc_tx_chain[i].sc_xfer = NULL;
+		}
+	}
+}
+
 static int
 urndis_ioctl(struct ifnet *ifp, unsigned long command, void *data)
 {
@@ -931,24 +969,7 @@ urndis_ioctl(struct ifnet *ifp, unsigned long command, void *data)
 
 	s = splnet();
 
-	switch(command) {
-	case SIOCSIFFLAGS:
-		if ((error = ifioctl_common(ifp, command, data)) != 0)
-			break;
-		if (ifp->if_flags & IFF_UP) {
-			if (!(ifp->if_flags & IFF_RUNNING))
-				urndis_init(ifp);
-		} else {
-			if (ifp->if_flags & IFF_RUNNING)
-				urndis_stop(ifp);
-		}
-		error = 0;
-		break;
-
-	default:
-		error = ether_ioctl(ifp, command, data);
-		break;
-	}
+	error = ether_ioctl(ifp, command, data);
 
 	if (error == ENETRESET)
 		error = 0;
@@ -978,8 +999,20 @@ urndis_watchdog(struct ifnet *ifp)
 static int
 urndis_init(struct ifnet *ifp)
 {
+	struct urndis_softc *sc = ifp->if_softc;
+
+	mutex_enter(&sc->sc_lock);
+	int ret = urndis_init_locked(ifp);
+	mutex_exit(&sc->sc_lock);
+
+	return ret;
+}
+
+static int
+urndis_init_locked(struct ifnet *ifp)
+{
 	struct urndis_softc	*sc;
-	int			 i, s;
+	int			 i;
 	int 			 err;
 	usbd_status		 usberr;
 
@@ -992,15 +1025,12 @@ urndis_init(struct ifnet *ifp)
 	if (err != RNDIS_STATUS_SUCCESS)
 		return EIO;
 
-	s = splnet();
-
 	usberr = usbd_open_pipe(sc->sc_iface_data, sc->sc_bulkin_no,
 	    USBD_EXCLUSIVE_USE, &sc->sc_bulkin_pipe);
 	if (usberr) {
 		printf("%s: open rx pipe failed: %s\n", DEVNAME(sc),
 		    usbd_errstr(err));
-		splx(s);
-		return EIO;
+		goto fail;
 	}
 
 	usberr = usbd_open_pipe(sc->sc_iface_data, sc->sc_bulkout_no,
@@ -1008,24 +1038,21 @@ urndis_init(struct ifnet *ifp)
 	if (usberr) {
 		printf("%s: open tx pipe failed: %s\n", DEVNAME(sc),
 		    usbd_errstr(err));
-		splx(s);
-		return EIO;
+		goto fail2;
 	}
 
 	err = urndis_tx_list_init(sc);
 	if (err) {
 		printf("%s: tx list init failed\n",
 		    DEVNAME(sc));
-		splx(s);
-		return err;
+		goto fail3;
 	}
 
 	err = urndis_rx_list_init(sc);
 	if (err) {
 		printf("%s: rx list init failed\n",
 		    DEVNAME(sc));
-		splx(s);
-		return err;
+		goto fail4;
 	}
 
 	for (i = 0; i < RNDIS_RX_LIST_CNT; i++) {
@@ -1041,16 +1068,33 @@ urndis_init(struct ifnet *ifp)
 	ifp->if_flags |= IFF_RUNNING;
 	ifp->if_flags &= ~IFF_OACTIVE;
 
-	splx(s);
 	return 0;
+
+fail4:
+	urndis_tx_list_free(sc);
+fail3:
+	usbd_close_pipe(sc->sc_bulkout_pipe);
+fail2:
+	usbd_close_pipe(sc->sc_bulkin_pipe);
+fail:
+	return EIO;
 }
 
 static void
 urndis_stop(struct ifnet *ifp)
 {
+	struct urndis_softc *sc = ifp->if_softc;
+
+	mutex_enter(&sc->sc_lock);
+	urndis_stop_locked(ifp);
+	mutex_exit(&sc->sc_lock);
+}
+
+static void
+urndis_stop_locked(struct ifnet *ifp)
+{
 	struct urndis_softc	*sc;
 	usbd_status	 err;
-	int		 i;
 
 	sc = ifp->if_softc;
 
@@ -1071,27 +1115,9 @@ urndis_stop(struct ifnet *ifp)
 			    DEVNAME(sc), usbd_errstr(err));
 	}
 
-	for (i = 0; i < RNDIS_RX_LIST_CNT; i++) {
-		if (sc->sc_data.sc_rx_chain[i].sc_mbuf != NULL) {
-			m_freem(sc->sc_data.sc_rx_chain[i].sc_mbuf);
-			sc->sc_data.sc_rx_chain[i].sc_mbuf = NULL;
-		}
-		if (sc->sc_data.sc_rx_chain[i].sc_xfer != NULL) {
-			usbd_destroy_xfer(sc->sc_data.sc_rx_chain[i].sc_xfer);
-			sc->sc_data.sc_rx_chain[i].sc_xfer = NULL;
-		}
-	}
+	urndis_tx_list_free(sc);
 
-	for (i = 0; i < RNDIS_TX_LIST_CNT; i++) {
-		if (sc->sc_data.sc_tx_chain[i].sc_mbuf != NULL) {
-			m_freem(sc->sc_data.sc_tx_chain[i].sc_mbuf);
-			sc->sc_data.sc_tx_chain[i].sc_mbuf = NULL;
-		}
-		if (sc->sc_data.sc_tx_chain[i].sc_xfer != NULL) {
-			usbd_destroy_xfer(sc->sc_data.sc_tx_chain[i].sc_xfer);
-			sc->sc_data.sc_tx_chain[i].sc_xfer = NULL;
-		}
-	}
+	urndis_rx_list_free(sc);
 
 	/* Close pipes. */
 	if (sc->sc_bulkin_pipe != NULL) {
@@ -1113,6 +1139,17 @@ urndis_stop(struct ifnet *ifp)
 
 static void
 urndis_start(struct ifnet *ifp)
+{
+	struct urndis_softc *sc = ifp->if_softc;
+	KASSERT(ifp->if_extflags & IFEF_START_MPSAFE);
+
+	mutex_enter(&sc->sc_txlock);
+	urndis_start_locked(ifp);
+	mutex_exit(&sc->sc_txlock);
+}
+
+static void
+urndis_start_locked(struct ifnet *ifp)
 {
 	struct urndis_softc	*sc;
 	struct mbuf		*m_head = NULL;
@@ -1282,7 +1319,6 @@ urndis_attach(device_t parent, device_t self, void *aux)
 	usbd_desc_iter_t		 iter;
 	int				 if_ctl, if_data;
 	int				 i, j, altcnt;
-	int				 s;
 	u_char				 eaddr[ETHER_ADDR_LEN];
 	void				*buf;
 	size_t				 bufsz;
@@ -1394,11 +1430,15 @@ urndis_attach(device_t parent, device_t self, void *aux)
 		aprint_error("%s: could not find data bulk out\n",DEVNAME(sc));
 	return;
 
-	found:
+found:
+	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
+	mutex_init(&sc->sc_txlock, MUTEX_DEFAULT, IPL_SOFTUSB);
+	mutex_init(&sc->sc_rxlock, MUTEX_DEFAULT, IPL_SOFTUSB);
 
 	ifp = GET_IFP(sc);
 	ifp->if_softc = sc;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
+	ifp->if_extflags = IFEF_START_MPSAFE;
 	ifp->if_start = urndis_start;
 	ifp->if_ioctl = urndis_ioctl;
 	ifp->if_init = urndis_init;
@@ -1412,15 +1452,12 @@ urndis_attach(device_t parent, device_t self, void *aux)
 
 	urndis_init(ifp);
 
-	s = splnet();
-
 	if (urndis_ctrl_query(sc, OID_802_3_PERMANENT_ADDRESS, NULL, 0,
 	    &buf, &bufsz) != RNDIS_STATUS_SUCCESS) {
 		aprint_error("%s: unable to get hardware address\n",
 		    DEVNAME(sc));
 		urndis_stop(ifp);
-		splx(s);
-		return;
+		goto fail;
 	}
 
 	if (bufsz == ETHER_ADDR_LEN) {
@@ -1432,8 +1469,7 @@ urndis_attach(device_t parent, device_t self, void *aux)
 		aprint_error("%s: invalid address\n", DEVNAME(sc));
 		kmem_free(buf, bufsz);
 		urndis_stop(ifp);
-		splx(s);
-		return;
+		goto fail;
 	}
 
 	/* Initialize packet filter */
@@ -1444,15 +1480,21 @@ urndis_attach(device_t parent, device_t self, void *aux)
 	    sizeof(filter)) != RNDIS_STATUS_SUCCESS) {
 		aprint_error("%s: unable to set data filters\n", DEVNAME(sc));
 		urndis_stop(ifp);
-		splx(s);
-		return;
+		goto fail;
 	}
 
-	if_attach(ifp);
+	if_initialize(ifp);
+	sc->urndis_ipq = if_percpuq_create(&sc->sc_ec.ec_if);
 	ether_ifattach(ifp, eaddr);
-	sc->sc_attached = 1;
+	if_register(ifp);
 
-	splx(s);
+	sc->sc_attached = 1;
+	return;
+
+fail:
+	mutex_destroy(&sc->sc_lock);
+	mutex_destroy(&sc->sc_txlock);
+	mutex_destroy(&sc->sc_rxlock);
 }
 
 static int
@@ -1480,6 +1522,11 @@ urndis_detach(device_t self, int flags)
 	}
 
 	urndis_stop(ifp);
+
+	mutex_destroy(&sc->sc_rxlock);
+	mutex_destroy(&sc->sc_txlock);
+	mutex_destroy(&sc->sc_lock);
+
 	sc->sc_attached = 0;
 
 	splx(s);

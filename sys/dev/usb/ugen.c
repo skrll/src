@@ -366,11 +366,14 @@ ugenopen(dev_t dev, int flag, int mode, struct lwp *l)
 	int i, j;
 
 	sc = device_lookup_private(&ugen_cd, unit);
-	if (sc == NULL || sc->sc_dying)
+	if (sc == NULL)
 		return ENXIO;
 
 	DPRINTFN(5, ("ugenopen: flag=%d, mode=%d, unit=%d endpt=%d\n",
 		     flag, mode, unit, endpt));
+
+	if (sc == NULL || sc->sc_dying)
+		return ENXIO;
 
 	/* The control endpoint allows multiple opens. */
 	if (endpt == USB_CONTROL_ENDPOINT) {
@@ -510,7 +513,7 @@ ugenclose(dev_t dev, int flag, int mode, struct lwp *l)
 	int i;
 
 	sc = device_lookup_private(& ugen_cd, UGENUNIT(dev));
-	if (sc == NULL || sc->sc_dying)
+	if (sc == NULL)
 		return ENXIO;
 
 	DPRINTFN(5, ("ugenclose: flag=%d, mode=%d, unit=%d, endpt=%d\n",
@@ -585,6 +588,9 @@ ugen_do_read(struct ugen_softc *sc, int endpt, struct uio *uio, int flag)
 	int error = 0;
 
 	DPRINTFN(5, ("%s: ugenread: %d\n", device_xname(sc->sc_dev), endpt));
+
+	if (sc->sc_dying)
+		return EIO;
 
 	if (endpt == USB_CONTROL_ENDPOINT)
 		return ENODEV;
@@ -795,7 +801,7 @@ ugenread(dev_t dev, struct uio *uio, int flag)
 	int error;
 
 	sc = device_lookup_private(& ugen_cd, UGENUNIT(dev));
-	if (sc == NULL || sc->sc_dying)
+	if (sc == NULL)
 		return ENXIO;
 
 	mutex_enter(&sc->sc_lock);
@@ -806,7 +812,7 @@ ugenread(dev_t dev, struct uio *uio, int flag)
 
 	mutex_enter(&sc->sc_lock);
 	if (--sc->sc_refcnt < 0)
-		usb_detach_broadcast(sc->sc_dev, &sc->sc_detach_cv);
+		cv_broadcast(&sc->sc_detach_cv);
 	mutex_exit(&sc->sc_lock);
 
 	return error;
@@ -825,6 +831,9 @@ ugen_do_write(struct ugen_softc *sc, int endpt, struct uio *uio,
 	usbd_status err;
 
 	DPRINTFN(5, ("%s: ugenwrite: %d\n", device_xname(sc->sc_dev), endpt));
+
+	if (sc->sc_dying)
+		return EIO;
 
 	if (endpt == USB_CONTROL_ENDPOINT)
 		return ENODEV;
@@ -986,7 +995,7 @@ ugenwrite(dev_t dev, struct uio *uio, int flag)
 	int error;
 
 	sc = device_lookup_private(& ugen_cd, UGENUNIT(dev));
-	if (sc == NULL || sc->sc_dying)
+	if (sc == NULL)
 		return ENXIO;
 
 	mutex_enter(&sc->sc_lock);
@@ -997,7 +1006,7 @@ ugenwrite(dev_t dev, struct uio *uio, int flag)
 
 	mutex_enter(&sc->sc_lock);
 	if (--sc->sc_refcnt < 0)
-		usb_detach_broadcast(sc->sc_dev, &sc->sc_detach_cv);
+		cv_broadcast(&sc->sc_detach_cv);
 	mutex_exit(&sc->sc_lock);
 
 	return error;
@@ -1044,7 +1053,10 @@ ugen_detach(device_t self, int flags)
 		for (i = 0; i < USB_MAX_ENDPOINTS; i++)
 			cv_signal(&sc->sc_endpoints[i][IN].cv);
 		/* Wait for processes to go away. */
-		usb_detach_wait(sc->sc_dev, &sc->sc_detach_cv, &sc->sc_lock);
+		if (cv_timedwait(&sc->sc_detach_cv, &sc->sc_lock, hz * 60)) {
+			printf("%s: %s didn't detach\n", __func__, 
+			    device_xname(sc->sc_dev));
+		}
 	}
 	mutex_exit(&sc->sc_lock);
 
@@ -1821,13 +1833,13 @@ ugenioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
 	int error;
 
 	sc = device_lookup_private(& ugen_cd, UGENUNIT(dev));
-	if (sc == NULL || sc->sc_dying)
+	if (sc == NULL)
 		return ENXIO;
 
 	sc->sc_refcnt++;
 	error = ugen_do_ioctl(sc, endpt, cmd, addr, flag, l);
 	if (--sc->sc_refcnt < 0)
-		usb_detach_broadcast(sc->sc_dev, &sc->sc_detach_cv);
+		cv_broadcast(&sc->sc_detach_cv);
 	return error;
 }
 
@@ -1945,10 +1957,6 @@ static int
 filt_ugenread_intr(struct knote *kn, long hint)
 {
 	struct ugen_endpoint *sce = kn->kn_hook;
-	struct ugen_softc *sc = sce->sc;
-
-	if (sc->sc_dying)
-		return 0;
 
 	kn->kn_data = sce->q.c_cc;
 	return kn->kn_data > 0;
@@ -1958,10 +1966,6 @@ static int
 filt_ugenread_isoc(struct knote *kn, long hint)
 {
 	struct ugen_endpoint *sce = kn->kn_hook;
-	struct ugen_softc *sc = sce->sc;
-
-	if (sc->sc_dying)
-		return 0;
 
 	if (sce->cur == sce->fill)
 		return 0;
@@ -1979,10 +1983,6 @@ static int
 filt_ugenread_bulk(struct knote *kn, long hint)
 {
 	struct ugen_endpoint *sce = kn->kn_hook;
-	struct ugen_softc *sc = sce->sc;
-
-	if (sc->sc_dying)
-		return 0;
 
 	if (!(sce->state & UGEN_BULK_RA))
 		/*
@@ -2004,10 +2004,6 @@ static int
 filt_ugenwrite_bulk(struct knote *kn, long hint)
 {
 	struct ugen_endpoint *sce = kn->kn_hook;
-	struct ugen_softc *sc = sce->sc;
-
-	if (sc->sc_dying)
-		return 0;
 
 	if (!(sce->state & UGEN_BULK_WB))
 		/*
@@ -2045,7 +2041,10 @@ ugenkqfilter(dev_t dev, struct knote *kn)
 	struct klist *klist;
 
 	sc = device_lookup_private(&ugen_cd, UGENUNIT(dev));
-	if (sc == NULL || sc->sc_dying)
+	if (sc == NULL)
+		return ENXIO;
+
+	if (sc->sc_dying)
 		return ENXIO;
 
 	if (UGENENDPOINT(dev) == USB_CONTROL_ENDPOINT)

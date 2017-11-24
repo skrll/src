@@ -134,7 +134,7 @@ auvitek_video_attach(struct auvitek_softc *sc)
 
 	auvitek_video_rescan(sc, NULL, NULL);
 
-	return (sc->sc_videodev != NULL);
+	return sc->sc_videodev != NULL;
 }
 
 int

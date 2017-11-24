@@ -277,6 +277,8 @@ struct axen_softc {
 	uint16_t		axen_product;
 	uint16_t		axen_flags;
 
+	struct if_percpuq	*axen_ipq;
+
 	int			axen_ed[AXEN_ENDPT_MAX];
 	struct usbd_pipe	*axen_ep[AXEN_ENDPT_MAX];
 	int			axen_if_flags;
@@ -289,6 +291,9 @@ struct axen_softc {
 
 	struct usb_task		axen_tick_task;
 
+	kmutex_t		axen_lock;
+	kmutex_t		axen_txlock;
+	kmutex_t		axen_rxlock;
 	krwlock_t		axen_mii_lock;
 
 	int			axen_link;

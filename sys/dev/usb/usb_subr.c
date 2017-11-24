@@ -608,6 +608,11 @@ usbd_set_config_index(struct usbd_device *dev, int index, int msg)
 		return err;
 	}
 	len = UGETW(cd.wTotalLength);
+	if (len == 0) {
+		DPRINTF("zero length descriptor", 0, 0, 0, 0);
+		return USBD_INVAL;
+	}
+
 	cdp = kmem_alloc(len, KM_SLEEP);
 
 	/* Get the full descriptor.  Try a few times for slow devices. */

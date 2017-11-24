@@ -435,7 +435,12 @@ struct axe_softc {
 
 	struct usb_task		axe_tick_task;
 
+	kmutex_t		axe_lock;
+	kmutex_t		axe_txlock;
+	kmutex_t		axe_rxlock;
 	kmutex_t		axe_mii_lock;
+
+	struct if_percpuq	*axe_ipq;
 
 	int			axe_link;
 

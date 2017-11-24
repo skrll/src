@@ -856,7 +856,7 @@ usbd_get_interface(struct usbd_interface *iface, uint8_t *aiface)
 
 /*** Internal routines ***/
 
-/* Dequeue all pipe operations, called at splusb(). */
+/* Dequeue all pipe operations, called with bus lock held. */
 Static usbd_status
 usbd_ar_pipe(struct usbd_pipe *pipe)
 {
@@ -999,7 +999,8 @@ usb_insert_transfer(struct usbd_xfer *xfer)
 	    xfer, pipe, pipe->up_running, xfer->ux_timeout);
 
 	KASSERT(mutex_owned(pipe->up_dev->ud_bus->ub_lock));
-	KASSERT(xfer->ux_state == XFER_BUSY);
+	KASSERTMSG(xfer->ux_state == XFER_BUSY, "xfer %p state is %x", xfer,
+	    xfer->ux_state);
 
 #ifdef DIAGNOSTIC
 	xfer->ux_state = XFER_ONQU;

@@ -35,7 +35,6 @@
 
 struct xhci_xfer {
 	struct usbd_xfer xx_xfer;
-	struct usb_task xx_abort_task;
 	struct xhci_trb xx_trb[XHCI_XFER_NTRB];
 };
 

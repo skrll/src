@@ -2087,10 +2087,9 @@ motg_device_intr_tx(struct motg_softc *sc, int epnumber)
 complete:
 	DPRINTFN(MD_BULK, "xfer %p complete, status %d", xfer,
 	    (xfer != NULL) ? xfer->ux_status : 0, 0, 0);
-#ifdef DIAGNOSTIC
-	if (xfer && xfer->ux_status == USBD_IN_PROGRESS && ep->phase != DATA_OUT)
-		panic("motg_device_intr_tx: bad phase %d", ep->phase);
-#endif
+	KASSERTMSG(xfer && xfer->ux_status == USBD_IN_PROGRESS && 
+	    ep->phase == DATA_OUT, "xfer %p status %d phase %d",
+	    xfer, xfer->ux_status, ep->phase);
 	ep->phase = IDLE;
 	ep->xfer = NULL;
 	if (xfer && xfer->ux_status == USBD_IN_PROGRESS) {

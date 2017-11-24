@@ -112,7 +112,7 @@ usbd_get_bos_desc(struct usbd_device *dev, int confidx,
 	err = usbd_get_desc(dev, UDESC_BOS, confidx,
 			    USB_BOS_DESCRIPTOR_SIZE, d);
 	if (err)
-		return (err);
+		return err;
 	if (d->bDescriptorType != UDESC_BOS) {
 		DPRINTFN(1, "confidx=%d, bad desc len=%d type=%d",
 		    confidx, d->bLength, d->bDescriptorType, 0);
@@ -212,7 +212,7 @@ usbd_get_port_status_ext(struct usbd_device *dev, int port,
 	USETW2(req.wValue, 0, UR_PST_EXT_PORT_STATUS);
 	USETW(req.wIndex, port);
 	USETW(req.wLength, sizeof(*pse));
-	return (usbd_do_request(dev, &req, pse));
+	return usbd_do_request(dev, &req, pse);
 }
 
 usbd_status
@@ -542,27 +542,6 @@ usbd_intr_transfer(struct usbd_xfer *xfer, struct usbd_pipe *pipe,
 	USBHIST_LOG(usbdebug, "<- done xfer %p err %d", xfer, err, 0, 0);
 
 	return err;
-}
-
-void
-usb_detach_wait(device_t dv, kcondvar_t *cv, kmutex_t *lock)
-{
-	USBHIST_FUNC(); USBHIST_CALLED(usbdebug);
-
-	DPRINTFN(1, "waiting for dv %p", dv, 0, 0, 0);
-	if (cv_timedwait(cv, lock, hz * 60))	// dv, PZERO, "usbdet", hz * 60
-		printf("usb_detach_wait: %s didn't detach\n",
-			device_xname(dv));
-	DPRINTFN(1, "done", 0, 0, 0, 0);
-}
-
-void
-usb_detach_broadcast(device_t dv, kcondvar_t *cv)
-{
-	USBHIST_FUNC(); USBHIST_CALLED(usbdebug);
-
-	DPRINTFN(1, "for dv %p", dv, 0, 0, 0);
-	cv_broadcast(cv);
 }
 
 void

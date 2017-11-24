@@ -625,7 +625,7 @@ uhso_switch_mode(struct usbd_device *udev)
 	usbd_destroy_xfer(xfer);
 	usbd_close_pipe(pipe);
 
-	return (status == USBD_NORMAL_COMPLETION ? 0 : EIO);
+	return status == USBD_NORMAL_COMPLETION ? 0 : EIO;
 }
 
 Static int

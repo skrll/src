@@ -39,7 +39,6 @@ struct dwc2_qtd;
 
 struct dwc2_xfer {
 	struct usbd_xfer xfer;			/* Needs to be first */
-	struct usb_task abort_task;
 
 	struct dwc2_hcd_urb *urb;
 

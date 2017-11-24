@@ -294,7 +294,7 @@ uthum_read_data(struct uthum_softc *sc, uint8_t target_cmd, uint8_t *buf,
 
 	/* wait if required */
 	if (need_delay > 1)
-		tsleep(&sc->sc_sme, 0, "uthum", (need_delay*hz+999)/1000 + 1);
+		kpause("uthum", false, (need_delay*hz+999)/1000 + 1, NULL);
 
 	/* get answer */
 	if (uhidev_get_report(&sc->sc_hdev, UHID_FEATURE_REPORT,

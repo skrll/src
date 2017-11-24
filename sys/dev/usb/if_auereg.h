@@ -233,7 +233,6 @@ struct aue_softc {
 	krndsource_t	rnd_source;
 	struct lwp		*aue_thread;
 	int			aue_closing;
-	kcondvar_t		aue_domc;
 	kcondvar_t		aue_closemc;
 	kmutex_t		aue_mcmtx;
 #define GET_IFP(sc) (&(sc)->aue_ec.ec_if)
@@ -264,6 +263,11 @@ struct aue_softc {
 	struct usb_task		aue_stop_task;
 
 	kmutex_t		aue_mii_lock;
+	kmutex_t		aue_lock;
+	kmutex_t		aue_txlock;
+	kmutex_t		aue_rxlock;
+
+	struct if_percpuq	*aue_ipq;
 };
 
 #define AUE_TIMEOUT		1000

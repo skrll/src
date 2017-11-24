@@ -88,13 +88,6 @@ usbd_status	usbd_intr_transfer(struct usbd_xfer *, struct usbd_pipe *,
 void usb_detach_waitold(device_t);
 void usb_detach_wakeupold(device_t);
 
-/*
- * MPSAFE versions - mutex must be at IPL_USB.
- */
-void usb_detach_wait(device_t dv, kcondvar_t *, kmutex_t *);
-void usb_detach_broadcast(device_t, kcondvar_t *);
-
-
 typedef struct {
 	uByte		bLength;
 	uByte		bDescriptorType;

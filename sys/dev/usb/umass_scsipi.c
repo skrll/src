@@ -41,15 +41,17 @@ __KERNEL_RCSID(0, "$NetBSD: umass_scsipi.c,v 1.54 2016/11/21 08:27:30 skrll Exp 
 #include "scsibus.h"
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/kernel.h>
-#include <sys/conf.h>
 #include <sys/buf.h>
 #include <sys/bufq.h>
+#include <sys/conf.h>
 #include <sys/device.h>
+#include <sys/disk.h>		/* XXX */
 #include <sys/ioctl.h>
+#include <sys/kernel.h>
+#include <sys/kmem.h>
 #include <sys/lwp.h>
 #include <sys/malloc.h>
+#include <sys/systm.h>
 
 /* SCSI & ATAPI */
 #include <sys/scsiio.h>
@@ -64,7 +66,6 @@ __KERNEL_RCSID(0, "$NetBSD: umass_scsipi.c,v 1.54 2016/11/21 08:27:30 skrll Exp 
 #include <dev/scsipi/scsi_disk.h>
 #include <dev/scsipi/scsi_changer.h>
 
-#include <sys/disk.h>		/* XXX */
 #include <dev/scsipi/sdvar.h>	/* XXX */
 
 /* USB */
@@ -180,7 +181,7 @@ umass_scsipi_setup(struct umass_softc *sc)
 {
 	struct umass_scsipi_softc *scbus;
 
-	scbus = malloc(sizeof(*scbus), M_DEVBUF, M_WAITOK | M_ZERO);
+	scbus = kmem_zalloc(sizeof(*scbus), KM_SLEEP);
 	sc->bus = &scbus->base;
 
 	/* Only use big commands for USB SCSI devices. */

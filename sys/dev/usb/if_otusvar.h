@@ -199,6 +199,8 @@ struct otus_softc {
 	unsigned int			sc_write_idx;
 	uint32_t			sc_led_state;
 
+	kcondvar_t			sc_task_cv;
+	kcondvar_t			sc_cmd_cv;
 	kmutex_t			sc_cmd_mtx;
 	kmutex_t			sc_task_mtx;
 	kmutex_t			sc_write_mtx;

@@ -833,7 +833,7 @@ scale_motion(const struct uatp_softc *sc, int delta, int *remainder,
 
 	product = (delta * ((int) (*multiplier)));
 	*remainder = (product % ((int) (*divisor)));
-	return (product / ((int) (*divisor)));
+	return product / ((int) (*divisor));
 }
 
 static int
@@ -2613,7 +2613,7 @@ motion_below_threshold(struct uatp_softc *sc, unsigned int threshold,
 	x_squared = (x * x);
 	y_squared = (y * y);
 
-	return ((x_squared + y_squared) < threshold);
+	return (x_squared + y_squared) < threshold;
 }
 
 static int

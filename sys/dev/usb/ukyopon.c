@@ -117,9 +117,9 @@ ukyopon_match(device_t parent, cfdata_t match, void *aux)
 	    uiaa->uiaa_product == USB_PRODUCT_KYOCERA_AHK3001V &&
 	    (uiaa->uiaa_ifaceno == UKYOPON_MODEM_IFACE_INDEX ||
 	     uiaa->uiaa_ifaceno == UKYOPON_DATA_IFACE_INDEX))
-		return (UMATCH_VENDOR_PRODUCT);
+		return UMATCH_VENDOR_PRODUCT;
 
-	return (UMATCH_NONE);
+	return UMATCH_NONE;
 }
 
 void
@@ -178,7 +178,7 @@ ukyopon_ioctl(void *addr, int portno, u_long cmd, void *data, int flag,
 		break;
 	}
 
-	return (error);
+	return error;
 }
 
 int

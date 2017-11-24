@@ -93,6 +93,10 @@ struct ucom_attach_args {
 	int ucaa_portno;
 	int ucaa_bulkin;
 	int ucaa_bulkout;
+	struct usbd_xfer *ucaa_ixfer;
+	struct usbd_pipe *ucaa_ipipe;
+	struct usbd_xfer *ucaa_oxfer;
+	struct usbd_pipe *ucaa_opipe;
 	u_int ucaa_ibufsize;
 	u_int ucaa_ibufsizepad;
 	u_int ucaa_obufsize;
@@ -105,5 +109,7 @@ struct ucom_attach_args {
 };
 
 int ucomprint(void *, const char *);
-int ucomsubmatch(device_t t, cfdata_t, const int *, void *);
+int ucomsubmatch(device_t, cfdata_t, const int *, void *);
 void ucom_status_change(struct ucom_softc *);
+void ucomreadcb(struct usbd_xfer *, void *, usbd_status);
+

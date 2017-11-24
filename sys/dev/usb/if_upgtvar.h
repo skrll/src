@@ -412,6 +412,7 @@ struct upgt_softc {
 	struct upgt_data	 cmd_data;
 	int			 tx_queued;
 	kmutex_t		 sc_mtx;
+	kcondvar_t		 sc_cv;
 
 	uint8_t			 sc_device_type;
 	struct ieee80211com	 sc_ic;

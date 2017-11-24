@@ -1198,6 +1198,9 @@ struct zyd_softc {
 
 	struct ieee80211_amrr		amrr;
 
+	kmutex_t			sc_lock;
+	kcondvar_t			sc_cmdcv;
+
 	SIMPLEQ_HEAD(rqh, rq) sc_rqh;
 
 	uint16_t			fwbase;

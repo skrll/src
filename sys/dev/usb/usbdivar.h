@@ -289,6 +289,7 @@ struct usbd_xfer {
 #define UXFER_ABORTWAIT	0x02	/* abort completion is being awaited. */
 	kcondvar_t		ux_hccv;	/* private use by the HC driver */
 
+	struct usb_task		ux_aborttask;
 	struct callout		ux_callout;
 };
 

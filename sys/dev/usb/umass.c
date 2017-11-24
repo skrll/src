@@ -108,8 +108,8 @@
  * umass_*_reset.
  *
  * The reason for doing this is a) CAM performs a lot better this way and b) it
- * avoids using tsleep from interrupt context (for example after a failed
- * transfer).
+ * avoids sleeping in interrupt context which is prohibited (for example after a
+ * failed transfer).
  */
 
 /*
@@ -135,13 +135,13 @@ __KERNEL_RCSID(0, "$NetBSD: umass.c,v 1.158 2017/04/25 05:36:03 skrll Exp $");
 #include "wd.h"
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/kernel.h>
-#include <sys/conf.h>
 #include <sys/buf.h>
+#include <sys/conf.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kernel.h>
+#include <sys/kmem.h>
 #include <sys/sysctl.h>
+#include <sys/systm.h>
 
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
@@ -271,12 +271,10 @@ const struct umass_wire_methods umass_cbi_methods = {
 
 #ifdef UMASS_DEBUG
 /* General debugging functions */
-Static void umass_bbb_dump_cbw(struct umass_softc *sc,
-				umass_bbb_cbw_t *cbw);
-Static void umass_bbb_dump_csw(struct umass_softc *sc,
-				umass_bbb_csw_t *csw);
+Static void umass_bbb_dump_cbw(struct umass_softc *sc, umass_bbb_cbw_t *cbw);
+Static void umass_bbb_dump_csw(struct umass_softc *sc, umass_bbb_csw_t *csw);
 Static void umass_dump_buffer(struct umass_softc *sc, uint8_t *buffer,
-				int buflen, int printlen);
+    int buflen, int printlen);
 #endif
 
 
@@ -679,7 +677,7 @@ umass_attach(device_t parent, device_t self, void *aux)
 	}
 
 	/*
-	 * Record buffer pinters for data transfer (it's huge), command and
+	 * Record buffer pointers for data transfer (it's huge), command and
 	 * status data here
 	 */
 	switch (sc->sc_wire) {
@@ -813,7 +811,10 @@ umass_detach(device_t self, int flags)
 		aprint_normal_dev(self, "waiting for refcnt\n");
 #endif
 		/* Wait for processes to go away. */
-		usb_detach_wait(sc->sc_dev, &sc->sc_detach_cv, &sc->sc_lock);
+		if (cv_timedwait(&sc->sc_detach_cv, &sc->sc_lock, hz * 60)) {
+			printf("%s: %s didn't detach\n", __func__,
+			    device_xname(sc->sc_dev));
+		}
 	}
 	mutex_exit(&sc->sc_lock);
 
@@ -821,7 +822,7 @@ umass_detach(device_t self, int flags)
 	if (scbus != NULL) {
 		if (scbus->sc_child != NULL)
 			rv = config_detach(scbus->sc_child, flags);
-		free(scbus, M_DEVBUF);
+		kmem_free(scbus, sizeof(*scbus));
 		sc->bus = NULL;
 	}
 

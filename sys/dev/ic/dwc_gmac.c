@@ -1212,7 +1212,11 @@ dwc_gmac_rx_intr(struct dwc_gmac_softc *sc)
 		m_set_rcvif(m, ifp);
 		m->m_flags |= M_HASFCS;
 
+		mutex_exit(&sc->sc_rxq.r_mtx);
+
 		if_percpuq_enqueue(sc->sc_ipq, m);
+
+		mutex_enter(&sc->sc_rxq.r_mtx);
 
 skip:
 		bus_dmamap_sync(sc->sc_dmat, data->rd_map, 0,

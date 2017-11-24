@@ -70,7 +70,7 @@ struct cdce_cdata {
 struct cdce_softc {
 	device_t cdce_dev;
 	struct ethercom		 cdce_ec;
-	krndsource_t	 rnd_source;
+	krndsource_t		 rnd_source;
 #define GET_IFP(sc) (&(sc)->cdce_ec.ec_if)
 	struct usbd_device *	 cdce_udev;
 	struct usbd_interface *	 cdce_ctl_iface;
@@ -85,4 +85,10 @@ struct cdce_softc {
 	int			 cdce_rxeof_errors;
 	uint16_t		 cdce_flags;
 	char			 cdce_attached;
+
+	struct if_percpuq	*cdce_ipq;
+
+	kmutex_t		 cdce_lock;
+	kmutex_t		 cdce_txlock;
+	kmutex_t		 cdce_rxlock;
 };

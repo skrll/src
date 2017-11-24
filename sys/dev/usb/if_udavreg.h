@@ -189,6 +189,9 @@ struct udav_softc {
 	struct ethercom		sc_ec; /* ethernet common */
 	struct mii_data		sc_mii;
 	kmutex_t		sc_mii_lock;
+	kmutex_t		sc_lock;
+	kmutex_t		sc_txlock;
+	kmutex_t		sc_rxlock;
 	int			sc_link;
 #define	sc_media udav_mii.mii_media
 	krndsource_t	rnd_source;
@@ -202,4 +205,6 @@ struct udav_softc {
 	struct usb_task		sc_stop_task;
 
 	uint16_t		sc_flags;
+
+	struct if_percpuq *	sc_ipq;
 };

@@ -32,6 +32,10 @@
 #include "axp806pm.h"
 #include "axp809pm.h"
 
+#ifdef _KERNEL_OPT
+#include "opt_net_mpsafe.h"
+#endif
+
 #include <sys/cdefs.h>
 
 __KERNEL_RCSID(1, "$NetBSD: awin_gige.c,v 1.22 2015/03/15 13:15:26 jmcneill Exp $");
@@ -153,7 +157,11 @@ awin_gige_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Interrupt handler
 	 */
-	sc->sc_ih = intr_establish(loc->loc_intr, IPL_NET, IST_LEVEL,
+	int mpsafe = 0;
+#ifdef NET_MPSAFE
+	mpsafe |= IST_MPSAFE;
+#endif
+	sc->sc_ih = intr_establish(loc->loc_intr, IPL_NET, IST_LEVEL | mpsafe,
 	    awin_gige_intr, sc);
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt %d\n",

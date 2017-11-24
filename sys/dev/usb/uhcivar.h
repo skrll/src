@@ -61,7 +61,6 @@ typedef union {
 
 struct uhci_xfer {
 	struct usbd_xfer ux_xfer;
-	struct usb_task ux_aborttask;
 	enum {
 		UX_NONE, UX_CTRL, UX_BULK, UX_INTR, UX_ISOC
 	} ux_type;
@@ -152,7 +151,6 @@ typedef struct uhci_softc {
 
 	kmutex_t sc_lock;
 	kmutex_t sc_intr_lock;
-	kcondvar_t sc_softwake_cv;
 
 	uhci_physaddr_t *sc_pframes;
 	usb_dma_t sc_dma;
@@ -174,8 +172,6 @@ typedef struct uhci_softc {
 
 	uint8_t sc_saved_sof;
 	uint16_t sc_saved_frnum;
-
-	char sc_softwake;
 
 	char sc_isreset;
 	char sc_suspend;

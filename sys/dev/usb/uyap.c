@@ -69,9 +69,9 @@ uyap_match(device_t parent, cfdata_t match, void *aux)
 	/* Match the boot device. */
 	if (uaa->uaa_vendor == USB_VENDOR_SILICONPORTALS &&
 	    uaa->uaa_product == USB_PRODUCT_SILICONPORTALS_YAPPH_NF)
-		return (UMATCH_VENDOR_PRODUCT);
+		return UMATCH_VENDOR_PRODUCT;
 
-	return (UMATCH_NONE);
+	return UMATCH_NONE;
 }
 
 void
@@ -113,7 +113,7 @@ uyap_detach(device_t self, int flags)
 	struct uyap_softc *sc = device_private(self);
 #endif
 
-	return (0);
+	return 0;
 }
 
 int

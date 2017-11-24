@@ -44,14 +44,14 @@ __KERNEL_RCSID(0, "$NetBSD: umass_isdata.c,v 1.33 2016/11/25 12:56:29 skrll Exp 
 #endif
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/kernel.h>
-#include <sys/conf.h>
 #include <sys/buf.h>
+#include <sys/conf.h>
 #include <sys/device.h>
-#include <sys/proc.h>
 #include <sys/disklabel.h>
-#include <sys/malloc.h>
+#include <sys/kernel.h>
+#include <sys/kmem.h>
+#include <sys/proc.h>
+#include <sys/systm.h>
 
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
@@ -188,7 +188,7 @@ umass_isdata_attach(struct umass_softc *sc)
 	struct uisdata_softc *scbus;
 	struct isd200_config *cf;
 
-	scbus = malloc(sizeof(*scbus), M_DEVBUF, M_WAITOK | M_ZERO);
+	scbus = kmem_zalloc(sizeof(*scbus), KM_SLEEP);
 	sc->bus = &scbus->base;
 	cf = &scbus->sc_isd_config;
 
@@ -201,7 +201,7 @@ umass_isdata_attach(struct umass_softc *sc)
 	err = usbd_do_request(sc->sc_udev, &req, cf);
 	if (err) {
 		sc->bus = NULL;
-		free(scbus, M_DEVBUF);
+		kmem_free(scbus, sizeof(*scbus));
 		return EIO;
 	}
 	DPRINTF(("umass_wd_attach info:\n  EventNotification=0x%02x "

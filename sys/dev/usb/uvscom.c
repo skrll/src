@@ -759,7 +759,7 @@ uvscom_open(void *addr, int portno)
 		/* unit is not ready */
 
 		for (i = UVSCOM_UNIT_WAIT; i > 0; --i) {
-			tsleep(&err, TTIPRI, "uvsop", hz);	/* XXX */
+			kpause("uvsopen", false, hz, NULL);
 			if (ISSET(sc->sc_usr, UVSCOM_USTAT_MASK))
 				break;
 		}
