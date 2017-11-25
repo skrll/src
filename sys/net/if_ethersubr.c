@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ethersubr.c,v 1.243 2017/07/23 10:55:00 para Exp $	*/
+/*	$NetBSD: if_ethersubr.c,v 1.247 2017/11/22 04:27:57 msaitoh Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.243 2017/07/23 10:55:00 para Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.247 2017/11/22 04:27:57 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -204,13 +204,6 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 	struct at_ifaddr *aa;
 #endif /* NETATALK */
 
-	/*
-	 * some paths such as carp_output() call ethr_output() with "ifp"
-	 * argument as other than ether ifnet.
-	 */
-	KASSERT(ifp->if_output != ether_output
-	    || ifp->if_extflags & IFEF_OUTPUT_MPSAFE);
-
 #ifdef MBUFTRACE
 	m_claimm(m, ifp->if_mowner);
 #endif
@@ -233,13 +226,13 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 		ifp = ifp->if_carpdev;
 		/* ac = (struct arpcom *)ifp; */
 
-		if ((ifp0->if_flags & (IFF_UP|IFF_RUNNING)) !=
-		    (IFF_UP|IFF_RUNNING))
+		if ((ifp0->if_flags & (IFF_UP | IFF_RUNNING)) !=
+		    (IFF_UP | IFF_RUNNING))
 			senderr(ENETDOWN);
 	}
 #endif /* NCARP > 0 */
 
-	if ((ifp->if_flags & (IFF_UP|IFF_RUNNING)) != (IFF_UP|IFF_RUNNING))
+	if ((ifp->if_flags & (IFF_UP | IFF_RUNNING)) != (IFF_UP | IFF_RUNNING))
 		senderr(ENETDOWN);
 
 	switch (dst->sa_family) {
@@ -647,7 +640,7 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 			return;
 	}
 #endif /* NCARP > 0 */
-	if ((m->m_flags & (M_BCAST|M_MCAST|M_PROMISC)) == 0 &&
+	if ((m->m_flags & (M_BCAST | M_MCAST | M_PROMISC)) == 0 &&
 	    (ifp->if_flags & IFF_PROMISC) != 0 &&
 	    memcmp(CLLADDR(ifp->if_sadl), eh->ether_dhost,
 		   ETHER_ADDR_LEN) != 0) {
@@ -679,7 +672,7 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 	 * see if the device performed the decapsulation and
 	 * provided us with the tag.
 	 */
-	if (ec->ec_nvlans && m_tag_find(m, PACKET_TAG_VLAN, NULL) != NULL) {
+	if (ec->ec_nvlans && vlan_has_tag(m)) {
 #if NVLAN > 0
 		/*
 		 * vlan_input() will either recursively call ether_input()
@@ -951,7 +944,6 @@ ether_ifattach(struct ifnet *ifp, const uint8_t *lla)
 {
 	struct ethercom *ec = (struct ethercom *)ifp;
 
-	ifp->if_extflags |= IFEF_OUTPUT_MPSAFE;
 	ifp->if_type = IFT_ETHER;
 	ifp->if_hdrlen = ETHER_HDR_LEN;
 	ifp->if_dlt = DLT_EN10MB;
@@ -1010,13 +1002,13 @@ ether_ifdetach(struct ifnet *ifp)
 		vlan_ifdetach(ifp);
 #endif
 
-	mutex_enter(ec->ec_lock);
+	ETHER_LOCK(ec);
 	while ((enm = LIST_FIRST(&ec->ec_multiaddrs)) != NULL) {
 		LIST_REMOVE(enm, enm_list);
 		kmem_intr_free(enm, sizeof(*enm));
 		ec->ec_multicnt--;
 	}
-	mutex_exit(ec->ec_lock);
+	ETHER_UNLOCK(ec);
 
 	mutex_destroy(ec->ec_lock);
 
@@ -1236,7 +1228,7 @@ ether_addmulti(const struct sockaddr *sa, struct ethercom *ec)
 	if (enm == NULL)
 		return ENOBUFS;
 
-	mutex_enter(ec->ec_lock);
+	ETHER_LOCK(ec);
 	error = ether_multiaddr(sa, addrlo, addrhi);
 	if (error != 0)
 		goto out;
@@ -1275,7 +1267,7 @@ ether_addmulti(const struct sockaddr *sa, struct ethercom *ec)
 	error = ENETRESET;
 	enm = NULL;
 out:
-	mutex_exit(ec->ec_lock);
+	ETHER_UNLOCK(ec);
 	if (enm != NULL)
 		kmem_intr_free(enm, sizeof(*enm));
 	return error;
@@ -1292,7 +1284,7 @@ ether_delmulti(const struct sockaddr *sa, struct ethercom *ec)
 	u_char addrhi[ETHER_ADDR_LEN];
 	int error;
 
-	mutex_enter(ec->ec_lock);
+	ETHER_LOCK(ec);
 	error = ether_multiaddr(sa, addrlo, addrhi);
 	if (error != 0)
 		goto error;
@@ -1317,7 +1309,7 @@ ether_delmulti(const struct sockaddr *sa, struct ethercom *ec)
 	 */
 	LIST_REMOVE(enm, enm_list);
 	ec->ec_multicnt--;
-	mutex_exit(ec->ec_lock);
+	ETHER_UNLOCK(ec);
 
 	kmem_intr_free(enm, sizeof(*enm));
 	/*
@@ -1326,7 +1318,7 @@ ether_delmulti(const struct sockaddr *sa, struct ethercom *ec)
 	 */
 	return ENETRESET;
 error:
-	mutex_exit(ec->ec_lock);
+	ETHER_UNLOCK(ec);
 	return error;
 }
 
@@ -1356,8 +1348,8 @@ ether_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	    {
 		struct ifaddr *ifa = (struct ifaddr *)data;
 		if (ifa->ifa_addr->sa_family != AF_LINK
-		    && (ifp->if_flags & (IFF_UP|IFF_RUNNING)) !=
-		       (IFF_UP|IFF_RUNNING)) {
+		    && (ifp->if_flags & (IFF_UP | IFF_RUNNING)) !=
+		       (IFF_UP | IFF_RUNNING)) {
 			ifp->if_flags |= IFF_UP;
 			if ((error = (*ifp->if_init)(ifp)) != 0)
 				return error;
@@ -1392,7 +1384,7 @@ ether_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	case SIOCSIFFLAGS:
 		if ((error = ifioctl_common(ifp, cmd, data)) != 0)
 			return error;
-		switch (ifp->if_flags & (IFF_UP|IFF_RUNNING)) {
+		switch (ifp->if_flags & (IFF_UP | IFF_RUNNING)) {
 		case IFF_RUNNING:
 			/*
 			 * If interface is marked down and it is running,
@@ -1406,18 +1398,21 @@ ether_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			 * start it.
 			 */
 			return (*ifp->if_init)(ifp);
-		case IFF_UP|IFF_RUNNING:
+		case IFF_UP | IFF_RUNNING:
 			error = 0;
-			if (ec->ec_ifflags_cb == NULL ||
-			    (error = (*ec->ec_ifflags_cb)(ec)) == ENETRESET) {
-				/*
-				 * Reset the interface to pick up
-				 * changes in any other flags that
-				 * affect the hardware state.
-				 */
-				return (*ifp->if_init)(ifp);
-			} else 
-				return error;
+			if (ec->ec_ifflags_cb != NULL) {
+				error = (*ec->ec_ifflags_cb)(ec);
+				if (error == ENETRESET) {
+					/*
+					 * Reset the interface to pick up
+					 * changes in any other flags that
+					 * affect the hardware state.
+					 */
+					return (*ifp->if_init)(ifp);
+				}
+			} else
+				error = (*ifp->if_init)(ifp);
+			return error;
 		case 0:
 			break;
 		}
@@ -1561,10 +1556,10 @@ retry:
 	multicnt = ec->ec_multicnt;
 	addrs = kmem_alloc(sizeof(*addrs) * multicnt, KM_SLEEP);
 
-	mutex_enter(ec->ec_lock);
+	ETHER_LOCK(ec);
 	if (multicnt < ec->ec_multicnt) {
 		/* The number of multicast addresses have increased */
-		mutex_exit(ec->ec_lock);
+		ETHER_UNLOCK(ec);
 		kmem_free(addrs, sizeof(*addrs) * multicnt);
 		goto retry;
 	}
@@ -1577,7 +1572,7 @@ retry:
 		memcpy(addr->enm_addrhi, enm->enm_addrhi, ETHER_ADDR_LEN);
 		i++;
 	}
-	mutex_exit(ec->ec_lock);
+	ETHER_UNLOCK(ec);
 
 	error = 0;
 	written = 0;

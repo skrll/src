@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.79 2017/09/16 09:28:38 maxv Exp $	*/
+/*	$NetBSD: cpu.h,v 1.81 2017/11/23 16:30:50 kamil Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -381,7 +381,7 @@ extern char cpu_brand_string[];
 extern int use_pae;
 
 #ifdef __i386__
-extern int i386_fpu_present;
+#define	i386_fpu_present	1
 int npx586bug1(int, int);
 extern int i386_fpu_fdivbug;
 extern int i386_use_fxsave;

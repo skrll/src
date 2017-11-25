@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.129 2017/09/15 17:32:12 maxv Exp $	*/
+/*	$NetBSD: locore.S,v 1.141 2017/11/21 09:58:09 maxv Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -328,7 +328,12 @@
 	.globl	_C_LABEL(bootinfo)
 	.globl	_C_LABEL(biosbasemem)
 	.globl	_C_LABEL(biosextmem)
+	.globl	_C_LABEL(lwp0uarea)
 	.globl	do_sysret
+	.globl	do_mov_es
+	.globl	do_mov_ds
+	.globl	do_mov_fs
+	.globl	do_mov_gs
 	.globl	do_iret
 
 	.type	_C_LABEL(tablesize), @object
@@ -369,6 +374,9 @@ LABEL(biosextmem)	.long	0	/* extended memory reported by BIOS */
 LABEL(biosextmem)	.long	REALEXTMEM
 #endif
 END(biosextmem)
+	.type	_C_LABEL(lwp0uarea), @object
+LABEL(lwp0uarea)	.quad	0
+END(lwp0uarea)
 
 #ifndef XEN
 	.globl	gdt64_lo
@@ -412,9 +420,6 @@ END(farjmp64)
 	.size	tmpstk, tmpstk - .
 	.space	512
 tmpstk:
-
-	.globl _C_LABEL(cpu_private)
-	.comm _C_LABEL(cpu_private),PAGE_SIZE,PAGE_SIZE
 
 /*
  * Some hackage to deal with 64bit symbols in 32 bit mode.
@@ -872,9 +877,8 @@ longmode_hi:
 	/* Set up bootstrap stack. */
 	leaq	(PROC0_STK_OFF)(%rsi),%rax
 	addq	%r8,%rax
-	movq	%rax,(_C_LABEL(lwp0)+L_PCB)(%rip) /* XXX L_PCB != uarea */
+	movq	%rax,_C_LABEL(lwp0uarea)(%rip)
 	leaq	(USPACE-FRAMESIZE)(%rax),%rsp
-	movq	%rsi,PCB_CR3(%rax)		/* pcb->pcb_cr3 */
 	xorq	%rbp,%rbp			/* mark end of frames */
 
 	xorw	%ax,%ax
@@ -954,7 +958,7 @@ longmode_hi:
 	 * use it as the UAREA, and set up the stack here.
 	 */
 	movq	%rax,%rsi
-	movq	%rsi,(_C_LABEL(lwp0)+L_PCB)	/* XXX L_PCB != uarea */
+	movq	%rsi,_C_LABEL(lwp0uarea)(%rip)
 	leaq	(USPACE-FRAMESIZE)(%rsi),%rsp
 	xorq	%rbp,%rbp
 
@@ -969,6 +973,9 @@ longmode_hi:
 	subq	$KERNBASE,%rdi	/* init_x86_64 wants a physical address */
 #endif	/* XEN */
 
+	pushq	%rdi
+	call	_C_LABEL(init_bootspace)
+	popq	%rdi
 	call	_C_LABEL(init_x86_64)
 	call 	_C_LABEL(main)
 END(start)
@@ -1153,7 +1160,10 @@ skip_CR0:
 	jnz	lwp_32bit
 
 lwp_64bit:
-	/* Zero out %fs/%gs registers. */
+	/* Set default 64bit values in %ds, %es, %fs and %gs. */
+	movq	$GSEL(GUDATA_SEL, SEL_UPL),%rax
+	movw	%ax,%ds
+	movw	%ax,%es
 	xorq	%rax,%rax
 	movw	%ax,%fs
 	CLI(cx)
@@ -1187,12 +1197,15 @@ lwp_32bit:
 	movq	PCB_GS(%r14),%rax
 	movq	%rax,(GUGS_SEL*8)(%rcx)
 
-	/* Reload %fs and %gs */
+	/* Set default 32bit values in %ds, %es and %fs. %gs is special. */
 	movq	L_MD_REGS(%r12),%rbx
-	movw	TF_FS(%rbx),%fs
+	movq	$GSEL(GUDATA32_SEL, SEL_UPL),%rax
+	movw	%ax,%ds
+	movw	%ax,%es
+	movw	%ax,%fs
 	CLI(ax)
 	SWAPGS
-	movw	TF_GS(%rbx),%gs
+	movw	%ax,%gs
 	SWAPGS
 	STI(ax)
 #else
@@ -1272,12 +1285,13 @@ IDTVEC(syscall)
 	pushq	$2		/* error code */
 	pushq	$T_ASTFLT
 	subq	$TF_REGSIZE,%rsp
+	cld
 #endif
 	INTR_SAVE_GPRS
-	movw	%es,TF_ES(%rsp)
-	movw	%fs,TF_FS(%rsp)
-	movw	%gs,TF_GS(%rsp)
-	movw	$(LSEL(LUDATA_SEL, SEL_UPL)),TF_DS(%rsp)
+	movw	$GSEL(GUDATA_SEL, SEL_UPL),TF_DS(%rsp)
+	movw	$GSEL(GUDATA_SEL, SEL_UPL),TF_ES(%rsp)
+	movw	$0,TF_FS(%rsp)
+	movw	$0,TF_GS(%rsp)
 	STI(si)
 
 do_syscall:
@@ -1306,18 +1320,18 @@ do_syscall:
 #endif
 
 	/*
-	 * If the syscall might have modified some registers, or we are a 32bit
-	 * process we must return to user with an 'iret' instruction.
-	 * If the iret faults in kernel (assumed due to illegal register values)
-	 * then a SIGSEGV will be signalled.
+	 * Decide if we need to take a slow path. That's the case when we
+	 * want to reload %cs and %ss on a 64bit LWP (MDL_IRET set), or when
+	 * we're returning to a 32bit LWP (MDL_COMPAT32 set).
+	 *
+	 * In either case, we jump into intrfastexit and return to userland
+	 * with the iret instruction.
 	 */
 	testl	$(MDL_IRET|MDL_COMPAT32),L_MD_FLAGS(%r14)
-	INTR_RESTORE_GPRS
-	movw	TF_ES(%rsp),%es
-	movw	TF_DS(%rsp),%ds
-	SWAPGS
-	jnz	.Lkexit
+	jnz	intrfastexit
 
+	INTR_RESTORE_GPRS
+	SWAPGS
 #ifndef XEN
 	movq	TF_RIP(%rsp),%rcx	/* %rip for sysret */
 	movq	TF_RFLAGS(%rsp),%r11	/* %flags for sysret */
@@ -1462,11 +1476,32 @@ ENTRY(intrfastexit)
 	INTR_RESTORE_GPRS
 	testq	$SEL_UPL,TF_CS(%rsp)	/* interrupted %cs */
 	jz	.Lkexit
+	cmpw	$LSEL(LUCODE_SEL, SEL_UPL),TF_CS(%rsp)
+	je	.Luexit64
+	cmpw	$GSEL(GUCODE_SEL, SEL_UPL),TF_CS(%rsp)
+	je	.Luexit64
+#ifdef XEN
+	cmpw	$FLAT_RING3_CS64,TF_CS(%rsp)
+	je	.Luexit64
+#endif
 
-	/* Disable interrupts until the 'iret', user registers loaded. */
+.Luexit32:
 	NOT_XEN(cli;)
+do_mov_es:
 	movw	TF_ES(%rsp),%es
+do_mov_ds:
 	movw	TF_DS(%rsp),%ds
+do_mov_fs:
+	movw	TF_FS(%rsp),%fs
+	SWAPGS
+#ifndef XEN
+do_mov_gs:
+	movw	TF_GS(%rsp),%gs
+#endif
+	jmp	.Lkexit
+
+.Luexit64:
+	NOT_XEN(cli;)
 	SWAPGS
 
 .Lkexit:
@@ -1474,4 +1509,3 @@ ENTRY(intrfastexit)
 do_iret:
 	iretq
 END(intrfastexit)
-

@@ -1,4 +1,4 @@
-/*	$NetBSD: auconv.c,v 1.31 2017/07/30 00:47:48 nat Exp $	*/
+/*	$NetBSD: auconv.c,v 1.34 2017/11/07 01:15:42 nat Exp $	*/
 
 /*
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: auconv.c,v 1.31 2017/07/30 00:47:48 nat Exp $");
+__KERNEL_RCSID(0, "$NetBSD: auconv.c,v 1.34 2017/11/07 01:15:42 nat Exp $");
 
 #include <sys/types.h>
 #include <sys/audioio.h>
@@ -141,7 +141,6 @@ struct conv_table {
  */
 static const struct conv_table s8_table[] = {
 	TABLE_LIST(32, 32, 8)
-	TABLE_LIST(24, 32, 8)
 	TABLE_LIST(24, 24, 8)
 	TABLE_LIST(16, 16, 8)
 	TABLE_LIST(8, 8, 8)
@@ -151,7 +150,6 @@ static const struct conv_table s8_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u8_table[] = {
 	TABLE_LIST(32, 32, 8)
-	TABLE_LIST(24, 32, 8)
 	TABLE_LIST(24, 24, 8)
 	TABLE_LIST(16, 16, 8)
 	TABLE_LIST(8, 8, 8)
@@ -161,7 +159,6 @@ static const struct conv_table u8_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table s16le_table[] = {
 	TABLE_LIST(32, 32, 16)
-	TABLE_LIST(24, 32, 16)
 	TABLE_LIST(24, 24, 16)
 	TABLE_LIST(16, 16, 16)
 	TABLE_LIST(8, 8, 16)
@@ -171,7 +168,6 @@ static const struct conv_table s16le_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table s16be_table[] = {
 	TABLE_LIST(32, 32, 16)
-	TABLE_LIST(24, 32, 16)
 	TABLE_LIST(24, 24, 16)
 	TABLE_LIST(16, 16, 16)
 	TABLE_LIST(8, 8, 16)
@@ -181,7 +177,6 @@ static const struct conv_table s16be_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u16le_table[] = {
 	TABLE_LIST(32, 32, 16)
-	TABLE_LIST(24, 32, 16)
 	TABLE_LIST(24, 24, 16)
 	TABLE_LIST(16, 16, 16)
 	TABLE_LIST(8, 8, 16)
@@ -191,7 +186,6 @@ static const struct conv_table u16le_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u16be_table[] = {
 	TABLE_LIST(32, 32, 16)
-	TABLE_LIST(24, 32, 16)
 	TABLE_LIST(24, 24, 16)
 	TABLE_LIST(16, 16, 16)
 	TABLE_LIST(8, 8, 16)
@@ -202,7 +196,6 @@ static const struct conv_table u16be_table[] = {
 #ifdef notdef
 static const struct conv_table s24le_table[] = {
 	TABLE_LIST(32, 32, 24)
-	TABLE_LIST(24, 32, 24)
 	TABLE_LIST(24, 24, 24)
 	TABLE_LIST(16, 16, 24)
 	TABLE_LIST(8, 8, 24)
@@ -212,7 +205,6 @@ static const struct conv_table s24le_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table s24be_table[] = {
 	TABLE_LIST(32, 32, 24)
-	TABLE_LIST(24, 32, 24)
 	TABLE_LIST(24, 24, 24)
 	TABLE_LIST(16, 16, 24)
 	TABLE_LIST(8, 8, 24)
@@ -222,7 +214,6 @@ static const struct conv_table s24be_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u24le_table[] = {
 	TABLE_LIST(32, 32, 24)
-	TABLE_LIST(24, 32, 24)
 	TABLE_LIST(24, 24, 24)
 	TABLE_LIST(16, 16, 24)
 	TABLE_LIST(8, 8, 24)
@@ -232,7 +223,6 @@ static const struct conv_table u24le_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u24be_table[] = {
 	TABLE_LIST(32, 32, 24)
-	TABLE_LIST(24, 32, 24)
 	TABLE_LIST(24, 24, 24)
 	TABLE_LIST(16, 16, 24)
 	TABLE_LIST(8, 8, 24)
@@ -243,7 +233,6 @@ static const struct conv_table u24be_table[] = {
 #endif
 static const struct conv_table s32le_table[] = {
 	TABLE_LIST(32, 32, 32)
-	TABLE_LIST(24, 32, 32)
 	TABLE_LIST(24, 24, 32)
 	TABLE_LIST(16, 16, 32)
 	TABLE_LIST(8, 8, 32)
@@ -253,7 +242,6 @@ static const struct conv_table s32le_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table s32be_table[] = {
 	TABLE_LIST(32, 32, 32)
-	TABLE_LIST(24, 32, 32)
 	TABLE_LIST(24, 24, 32)
 	TABLE_LIST(16, 16, 32)
 	TABLE_LIST(8, 8, 32)
@@ -263,7 +251,6 @@ static const struct conv_table s32be_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u32le_table[] = {
 	TABLE_LIST(32, 32, 32)
-	TABLE_LIST(24, 32, 32)
 	TABLE_LIST(24, 24, 32)
 	TABLE_LIST(16, 16, 32)
 	TABLE_LIST(8, 8, 32)
@@ -273,7 +260,6 @@ static const struct conv_table u32le_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u32be_table[] = {
 	TABLE_LIST(32, 32, 32)
-	TABLE_LIST(24, 32, 32)
 	TABLE_LIST(24, 24, 32)
 	TABLE_LIST(16, 16, 32)
 	TABLE_LIST(8, 8, 32)
@@ -312,7 +298,6 @@ static const struct conv_table u32be_table[] = {
 
 static const struct conv_table mulaw_table[] = {
 	MULAW_LIST(32, 32, 32)
-	MULAW_LIST(24, 32, 24)
 	MULAW_LIST(24, 24, 24)
 	MULAW_LIST(16, 16, 16)
 	{AUDIO_ENCODING_SLINEAR_LE, 8, 8,
@@ -322,7 +307,6 @@ static const struct conv_table mulaw_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table alaw_table[] = {
 	ALAW_LIST(32, 32, 32)
-	ALAW_LIST(24, 32, 24)
 	ALAW_LIST(24, 24, 24)
 	ALAW_LIST(16, 16, 16)
 	{AUDIO_ENCODING_SLINEAR_LE, 8, 8,
@@ -512,7 +496,7 @@ DEFINE_FILTER(swap_bytes_change_sign16)
 	valid = n_validbits / NBBY;					\
 	target = t_prec / NBBY;						\
 	this = (stream_filter_t *)self;					\
-	max_used = ((max_used / hw) * hw) & ~1;				\
+	max_used = ((max_used / hw) * hw);				\
 									\
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src,	\
 			max_used)))					\
@@ -542,6 +526,30 @@ DEFINE_FILTER(swap_bytes_change_sign16)
 					d[--j] = 0;			\
 			}						\
 		} FILTER_LOOP_EPILOGUE(this->src, dst);			\
+	} else if ((enc_src == AUDIO_ENCODING_SLINEAR_BE		\
+	     && enc_dst == AUDIO_ENCODING_SLINEAR_BE)			\
+	    || (enc_src == AUDIO_ENCODING_ULINEAR_BE			\
+		&& enc_dst == AUDIO_ENCODING_ULINEAR_BE)) {		\
+		/*							\
+		 * slinearNbe -> slinearNbe				\
+		 * ulinearNbe -> ulinearNbe				\
+		 */							\
+		FILTER_LOOP_PROLOGUE(this->src, hw, dst, target, m) {	\
+			i = valid;					\
+			j = target;					\
+			if (j < i) {					\
+				j = 0;					\
+				while (j < target)			\
+					d[j++] = s[i++];		\
+			} else {					\
+				j = 0;					\
+				i = 0;					\
+				while (i < valid)			\
+					d[j++] = s[i++];		\
+				while (j < target)			\
+					d[j++] = 0;			\
+			}						\
+		} FILTER_LOOP_EPILOGUE(this->src, dst);			\
 	} else if ((enc_src == AUDIO_ENCODING_SLINEAR_LE		\
 		    && enc_dst == AUDIO_ENCODING_SLINEAR_BE)		\
 		   || (enc_src == AUDIO_ENCODING_ULINEAR_LE		\
@@ -555,15 +563,15 @@ DEFINE_FILTER(swap_bytes_change_sign16)
 			j = target;					\
 			if (j < i) {					\
 				while (j > 0) {				\
-					d[--j] = s[target - i];		\
-					i--;				\
+					d[target - j] = s[--i];		\
+					j--;				\
 				}					\
 			} else {					\
 				while (j > i)				\
 					d[--j] = 0;			\
-				while (j > 0) {				\
-					d[--j] = s[target - i];		\
-					i--;				\
+				j = 0;					\
+				while (i > 0) {				\
+					d[j++] = s[--i];		\
 				}					\
 			}						\
 		} FILTER_LOOP_EPILOGUE(this->src, dst);			\
@@ -576,18 +584,14 @@ DEFINE_FILTER(swap_bytes_change_sign16)
 		 * slinearNbe -> ulinearNle				\
 		 */							\
 		FILTER_LOOP_PROLOGUE(this->src, hw, dst, target, m) {	\
-			i = valid;					\
+			i = 0;						\
 			j = target;					\
-			if (j < i) {					\
-				while (j > 0) {				\
-					d[--j] = s[valid - i];		\
-					i--;				\
-				}					\
+			if (target < valid) {				\
+				while (j > 0)				\
+					d[--j] = s[i++];		\
 			} else {					\
-				while (j > 0) {				\
-					d[--j] = s[valid - i];		\
-					i--;				\
-				}					\
+				while (i < valid)			\
+					d[--j] = s[i++];		\
 				while (j > 0)				\
 					d[--j] = 0;			\
 			}						\
@@ -602,21 +606,42 @@ DEFINE_FILTER(swap_bytes_change_sign16)
 		 * ulinearNbe -> ulinearNle				\
 		 */							\
 		FILTER_LOOP_PROLOGUE(this->src, hw, dst, target, m) {	\
-			i = valid;					\
+			i = 0;						\
 			j = target;					\
-			if (j < i) {					\
-				while (j > 0) {				\
-					d[--j] = s[valid - i];		\
-					i--;				\
-				}					\
+			if (target < valid) {				\
+				while (j > 0)				\
+					d[--j] = s[i++];		\
 			} else {					\
-				while (j > 0) {				\
-					d[--j] = s[valid - i];		\
-					i--;				\
-				}					\
+				while (i < valid)			\
+					d[--j] = s[i++];		\
 				while (j > 0)				\
 					d[--j] = 0;			\
 			}						\
+		} FILTER_LOOP_EPILOGUE(this->src, dst);			\
+	} else if ((enc_src == AUDIO_ENCODING_SLINEAR_LE		\
+		    && enc_dst == AUDIO_ENCODING_ULINEAR_BE)		\
+		   || (enc_src == AUDIO_ENCODING_ULINEAR_LE		\
+		       && enc_dst == AUDIO_ENCODING_SLINEAR_BE)) {	\
+		/*							\
+		 * slinearNle -> ulinearNbe				\
+		 * ulinearNle -> slinearNbe				\
+		 */							\
+		FILTER_LOOP_PROLOGUE(this->src, hw, dst, target, m) {	\
+			i = valid;					\
+			j = target;					\
+			if (j < i) {					\
+				j = 0;					\
+				while (j < target) {			\
+					d[j++] = s[i--];		\
+				}					\
+			} else {					\
+				j = 0;					\
+				while (i > 0)				\
+					d[j++] = s[--i];		\
+				while (j < target)			\
+					d[j++] = 0;			\
+			}						\
+			d[0] ^= 0x80;					\
 		} FILTER_LOOP_EPILOGUE(this->src, dst);			\
 	} else if ((enc_src == AUDIO_ENCODING_SLINEAR_BE		\
 		    && enc_dst == AUDIO_ENCODING_ULINEAR_BE)		\
@@ -627,21 +652,16 @@ DEFINE_FILTER(swap_bytes_change_sign16)
 		 * ulinearNbe -> slinearNbe				\
 		 */							\
 		FILTER_LOOP_PROLOGUE(this->src, hw, dst, target, m) {	\
-			i = valid;					\
-			j = target;					\
-			if (j < i) {					\
-				while (j > 0) {				\
-					d[target - j] = s[target - j];	\
-					j--;				\
-				}					\
+			i = 0;						\
+			j = 0;						\
+			if (target < valid) {				\
+				while (j < target)			\
+					d[j++] = s[i++];		\
 			} else {					\
-				while (i > 0) {				\
-					d[target - j] = s[target - j];	\
-					j--;				\
-					i--;				\
-				}					\
-				while (j > 0)				\
-					d[target - j] = 0;		\
+				while (i < valid)			\
+					d[j++] = s[i++];		\
+				while (j < target)			\
+					d[j++] = 0;			\
 			}						\
 			d[0] ^= 0x80;					\
 		} FILTER_LOOP_EPILOGUE(this->src, dst);			\
@@ -672,10 +692,6 @@ LINEARN_LINEAR(32, 32, 32);
 LINEARN_LINEAR(32, 32, 24);
 LINEARN_LINEAR(32, 32, 16);
 LINEARN_LINEAR(32, 32, 8);
-LINEARN_LINEAR(24, 32, 32);
-LINEARN_LINEAR(24, 32, 24);
-LINEARN_LINEAR(24, 32, 16);
-LINEARN_LINEAR(24, 32, 8);
 LINEARN_LINEAR(24, 24, 32);
 LINEARN_LINEAR(24, 24, 24);
 LINEARN_LINEAR(24, 24, 16);

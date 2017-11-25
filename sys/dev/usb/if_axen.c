@@ -764,7 +764,7 @@ axen_attach(device_t parent, device_t self, void *aux)
 	ifp->if_softc = sc;
 	strlcpy(ifp->if_xname, devname, IFNAMSIZ);
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 	ifp->if_ioctl = axen_ioctl;
 	ifp->if_start = axen_start;
 	ifp->if_init = axen_init;
@@ -1310,7 +1310,7 @@ static void
 axen_start(struct ifnet *ifp)
 {
 	struct axen_softc * const sc = ifp->if_softc;
-	KASSERT(ifp->if_extflags & IFEF_START_MPSAFE);
+	KASSERT(ifp->if_extflags & IFEF_MPSAFE);
 
 	mutex_enter(&sc->axen_txlock);
 	axen_start_locked(ifp);

@@ -839,7 +839,7 @@ static void
 kue_start(struct ifnet *ifp)
 {
 	struct kue_softc *sc = ifp->if_softc;
-	KASSERT(ifp->if_extflags & IFEF_START_MPSAFE);
+	KASSERT(ifp->if_extflags & IFEF_MPSAFE);
 
 	mutex_enter(&sc->kue_txlock);
 	kue_start_locked(ifp);

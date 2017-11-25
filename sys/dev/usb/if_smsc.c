@@ -672,7 +672,7 @@ void
 smsc_start(struct ifnet *ifp)
 {
 	struct smsc_softc * const sc = ifp->if_softc;
-	KASSERT(ifp->if_extflags & IFEF_START_MPSAFE);
+	KASSERT(ifp->if_extflags & IFEF_MPSAFE);
 
 	mutex_enter(&sc->sc_txlock);
 	if (!sc->sc_stopping)
@@ -1139,7 +1139,7 @@ smsc_attach(device_t parent, device_t self, void *aux)
 	ifp->if_softc = sc;
 	strlcpy(ifp->if_xname, device_xname(sc->sc_dev), IFNAMSIZ);
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 	ifp->if_init = smsc_init;
 	ifp->if_ioctl = smsc_ioctl;
 	ifp->if_start = smsc_start;

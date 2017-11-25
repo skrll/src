@@ -1,4 +1,4 @@
-#	$NetBSD: files.i2c,v 1.75 2017/08/31 19:55:43 jmcneill Exp $
+#	$NetBSD: files.i2c,v 1.78 2017/10/07 18:22:06 jmcneill Exp $
 
 obsolete defflag	opt_i2cbus.h		I2C_SCAN
 define	i2cbus { }
@@ -222,8 +222,10 @@ attach  mpl115a at iic
 file    dev/i2c/mpl115a.c		mpl115a
 
 # AXP20x Power Management Unit
-device	axp20x: sysmon_envsys
+device	axp20x { }: sysmon_envsys
+device	axp20xreg: axp20x
 attach	axp20x at iic
+attach	axp20xreg at axp20x
 file	dev/i2c/axp20x.c			axp20x		needs-flag
 
 # AXP22x Power Management Unit
@@ -267,3 +269,18 @@ file	dev/i2c/as3722.c			as3722pmic	needs-flag
 device	tcakp: wskbddev, linux_keymap
 attach	tcakp at iic
 file	dev/i2c/tcakp.c				tcakp
+
+# MAXIM MAX77620 Power Management IC
+device	max77620pmic
+attach	max77620pmic at iic
+file	dev/i2c/max77620.c			max77620pmic
+
+# Texas Instruments TCA9539 I/O Expander
+device	tcagpio
+attach	tcagpio at iic
+file	dev/i2c/tcagpio.c			tcagpio
+
+# Silergy SY8106A regulator
+device	sy8106a
+attach	sy8106a at iic
+file	dev/i2c/sy8106a.c			sy8106a

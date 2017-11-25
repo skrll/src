@@ -284,7 +284,7 @@ cdce_attach(device_t parent, device_t self, void *aux)
 	ifp = GET_IFP(sc);
 	ifp->if_softc = sc;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 	ifp->if_init = cdce_init;
 	ifp->if_ioctl = cdce_ioctl;
 	ifp->if_start = cdce_start;
@@ -346,7 +346,7 @@ Static void
 cdce_start(struct ifnet *ifp)
 {
 	struct cdce_softc	*sc = ifp->if_softc;
-	KASSERT(ifp->if_extflags & IFEF_START_MPSAFE);
+	KASSERT(ifp->if_extflags & IFEF_MPSAFE);
 
 	mutex_enter(&sc->cdce_txlock);
 	cdce_start_locked(ifp);

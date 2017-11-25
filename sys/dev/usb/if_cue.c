@@ -547,7 +547,7 @@ cue_attach(device_t parent, device_t self, void *aux)
 	ifp->if_softc = sc;
 	ifp->if_mtu = ETHERMTU;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 	ifp->if_init = cue_init;
 	ifp->if_ioctl = cue_ioctl;
 	ifp->if_start = cue_start;
@@ -973,7 +973,7 @@ Static void
 cue_start(struct ifnet *ifp)
 {
 	struct cue_softc *sc = ifp->if_softc;
-	KASSERT(ifp->if_extflags & IFEF_START_MPSAFE);
+	KASSERT(ifp->if_extflags & IFEF_MPSAFE);
 
 	mutex_enter(&sc->cue_txlock);
 	cue_start_locked(ifp);

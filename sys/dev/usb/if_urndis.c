@@ -1141,7 +1141,7 @@ static void
 urndis_start(struct ifnet *ifp)
 {
 	struct urndis_softc *sc = ifp->if_softc;
-	KASSERT(ifp->if_extflags & IFEF_START_MPSAFE);
+	KASSERT(ifp->if_extflags & IFEF_MPSAFE);
 
 	mutex_enter(&sc->sc_txlock);
 	urndis_start_locked(ifp);
@@ -1438,7 +1438,7 @@ found:
 	ifp = GET_IFP(sc);
 	ifp->if_softc = sc;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 	ifp->if_start = urndis_start;
 	ifp->if_ioctl = urndis_ioctl;
 	ifp->if_init = urndis_init;

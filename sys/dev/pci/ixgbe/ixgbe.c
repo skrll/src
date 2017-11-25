@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.100 2017/08/31 02:48:55 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.114 2017/11/24 08:36:22 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -257,7 +257,6 @@ static void	ixgbe_handle_msf(void *);
 static void	ixgbe_handle_mod(void *);
 static void	ixgbe_handle_phy(void *);
 
-const struct sysctlnode *ixgbe_sysctl_instance(struct adapter *);
 static ixgbe_vendor_info_t *ixgbe_lookup(const struct pci_attach_args *);
 
 /************************************************************************
@@ -823,14 +822,8 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	case ixgbe_mac_82599EB:
 		str = "82599EB";
 		break;
-	case ixgbe_mac_82599_vf:
-		str = "82599 VF";
-		break;
 	case ixgbe_mac_X540:
 		str = "X540";
-		break;
-	case ixgbe_mac_X540_vf:
-		str = "X540 VF";
 		break;
 	case ixgbe_mac_X550:
 		str = "X550";
@@ -840,15 +833,6 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		break;
 	case ixgbe_mac_X550EM_a:
 		str = "X550EM A";
-		break;
-	case ixgbe_mac_X550_vf:
-		str = "X550 VF";
-		break;
-	case ixgbe_mac_X550EM_x_vf:
-		str = "X550EM X VF";
-		break;
-	case ixgbe_mac_X550EM_a_vf:
-		str = "X550EM A VF";
 		break;
 	default:
 		str = "Unknown";
@@ -868,6 +852,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	} else
 		adapter->num_segs = IXGBE_82598_SCATTER;
 
+	hw->mac.ops.set_lan_id(hw);
 	ixgbe_init_device_features(adapter);
 
 	if (ixgbe_configure_interrupts(adapter)) {
@@ -987,8 +972,13 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		high = (nvmreg >> 12) & 0x0f;
 		low = (nvmreg >> 4) & 0xff;
 		id = nvmreg & 0x0f;
-		aprint_normal(" NVM Image Version %u.%u ID 0x%x,", high, low,
-		    id);
+		aprint_normal(" NVM Image Version %u.", high);
+		if (hw->mac.type == ixgbe_mac_X540)
+			str = "%x";
+		else
+			str = "%02x";
+		aprint_normal(str, low);
+		aprint_normal(" ID 0x%x,", id);
 		break;
 	case ixgbe_mac_X550EM_x:
 	case ixgbe_mac_X550:
@@ -997,7 +987,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 			break;
 		high = (nvmreg >> 12) & 0x0f;
 		low = nvmreg & 0xff;
-		aprint_normal(" NVM Image Version %u.%u,", high, low);
+		aprint_normal(" NVM Image Version %u.%02x,", high, low);
 		break;
 	default:
 		break;
@@ -1013,8 +1003,13 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		high = (nvmreg >> 12) & 0x0f;
 		low = (nvmreg >> 4) & 0xff;
 		id = nvmreg & 0x000f;
-		aprint_normal(" PHY FW Revision %u.%u ID 0x%x,", high, low,
-		    id);
+		aprint_normal(" PHY FW Revision %u.", high);
+		if (hw->mac.type == ixgbe_mac_X540)
+			str = "%x";
+		else
+			str = "%02x";
+		aprint_normal(str, low);
+		aprint_normal(" ID 0x%x,", id);
 		break;
 	default:
 		break;
@@ -1032,7 +1027,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 			aprint_normal(" NVM Map version %u.%02x,", high, low);
 		}
 		hw->eeprom.ops.read(hw, IXGBE_OEM_NVM_IMAGE_VER, &nvmreg);
-		if (nvmreg == 0xffff) {
+		if (nvmreg != 0xffff) {
 			high = (nvmreg >> 12) & 0x0f;
 			low = nvmreg & 0x00ff;
 			aprint_verbose(" OEM NVM Image version %u.%02x,", high,
@@ -1079,7 +1074,11 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		break;
 	}
 
-	if (hw->phy.id != 0) {
+	/*
+	 *  Print PHY ID only for copper PHY. On device which has SFP(+) cage
+	 * and a module is inserted, phy.id is not MII PHY id but SFF 8024 ID.
+	 */
+	if (hw->phy.media_type == ixgbe_media_type_copper) {
 		uint16_t id1, id2;
 		int oui, model, rev;
 		const char *descr;
@@ -1208,6 +1207,7 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 {
 	struct ethercom *ec = &adapter->osdep.ec;
 	struct ifnet   *ifp;
+	int rv;
 
 	INIT_DEBUGOUT("ixgbe_setup_interface: begin");
 
@@ -1219,7 +1219,7 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 	ifp->if_softc = adapter;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 #ifdef IXGBE_MPSAFE
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 #endif
 	ifp->if_ioctl = ixgbe_ioctl;
 #if __FreeBSD_version >= 1100045
@@ -1242,7 +1242,11 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 	IFQ_SET_MAXLEN(&ifp->if_snd, adapter->num_tx_desc - 2);
 	IFQ_SET_READY(&ifp->if_snd);
 
-	if_initialize(ifp);
+	rv = if_initialize(ifp);
+	if (rv != 0) {
+		aprint_error_dev(dev, "if_initialize failed(%d)\n", rv);
+		return rv;
+	}
 	adapter->ipq = if_percpuq_create(&adapter->osdep.ec.ec_if);
 	ether_ifattach(ifp, adapter->hw.mac.addr);
 	/*
@@ -1318,92 +1322,76 @@ ixgbe_add_media_types(struct adapter *adapter)
 
 	/* Media types with matching NetBSD media defines */
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_T) {
-		ADD(IFM_10G_T, 0);
 		ADD(IFM_10G_T | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_1000BASE_T) {
-		ADD(IFM_1000_T, 0);
 		ADD(IFM_1000_T | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_100BASE_TX) {
-		ADD(IFM_100_TX, 0);
 		ADD(IFM_100_TX | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_10BASE_T) {
-		ADD(IFM_10_T, 0);
 		ADD(IFM_10_T | IFM_FDX, 0);
 	}
 
 	if (layer & IXGBE_PHYSICAL_LAYER_SFP_PLUS_CU ||
 	    layer & IXGBE_PHYSICAL_LAYER_SFP_ACTIVE_DA) {
-		ADD(IFM_10G_TWINAX, 0);
 		ADD(IFM_10G_TWINAX | IFM_FDX, 0);
 	}
 
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_LR) {
-		ADD(IFM_10G_LR, 0);
 		ADD(IFM_10G_LR | IFM_FDX, 0);
 		if (hw->phy.multispeed_fiber) {
-			ADD(IFM_1000_LX, 0);
 			ADD(IFM_1000_LX | IFM_FDX, 0);
 		}
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_SR) {
-		ADD(IFM_10G_SR, 0);
 		ADD(IFM_10G_SR | IFM_FDX, 0);
 		if (hw->phy.multispeed_fiber) {
-			ADD(IFM_1000_SX, 0);
 			ADD(IFM_1000_SX | IFM_FDX, 0);
 		}
 	} else if (layer & IXGBE_PHYSICAL_LAYER_1000BASE_SX) {
-		ADD(IFM_1000_SX, 0);
 		ADD(IFM_1000_SX | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_CX4) {
-		ADD(IFM_10G_CX4, 0);
 		ADD(IFM_10G_CX4 | IFM_FDX, 0);
 	}
 
 #ifdef IFM_ETH_XTYPE
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KR) {
-		ADD(IFM_10G_KR, 0);
 		ADD(IFM_10G_KR | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KX4) {
-		ADD(AIFM_10G_KX4, 0);
 		ADD(AIFM_10G_KX4 | IFM_FDX, 0);
 	}
 #else
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KR) {
 		device_printf(dev, "Media supported: 10GbaseKR\n");
 		device_printf(dev, "10GbaseKR mapped to 10GbaseSR\n");
-		ADD(IFM_10G_SR, 0);
 		ADD(IFM_10G_SR | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KX4) {
 		device_printf(dev, "Media supported: 10GbaseKX4\n");
 		device_printf(dev, "10GbaseKX4 mapped to 10GbaseCX4\n");
-		ADD(IFM_10G_CX4, 0);
 		ADD(IFM_10G_CX4 | IFM_FDX, 0);
 	}
 #endif
 	if (layer & IXGBE_PHYSICAL_LAYER_1000BASE_KX) {
-		ADD(IFM_1000_KX, 0);
 		ADD(IFM_1000_KX | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_2500BASE_KX) {
-		ADD(IFM_2500_KX, 0);
 		ADD(IFM_2500_KX | IFM_FDX, 0);
+	}
+	if (layer & IXGBE_PHYSICAL_LAYER_2500BASE_T) {
+		ADD(IFM_2500_T | IFM_FDX, 0);
+	}
+	if (layer & IXGBE_PHYSICAL_LAYER_5GBASE_T) {
+		ADD(IFM_5000_T | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_1000BASE_BX)
 		device_printf(dev, "Media supported: 1000baseBX\n");
 	/* XXX no ifmedia_set? */
 	
-	if (hw->device_id == IXGBE_DEV_ID_82598AT) {
-		ADD(IFM_1000_T | IFM_FDX, 0);
-		ADD(IFM_1000_T, 0);
-	}
-
 	ADD(IFM_AUTO, 0);
 
 #undef ADD
@@ -2505,12 +2493,20 @@ ixgbe_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 	layer = adapter->phy_layer;
 
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_T ||
+	    layer & IXGBE_PHYSICAL_LAYER_5GBASE_T ||
+	    layer & IXGBE_PHYSICAL_LAYER_2500BASE_T ||
 	    layer & IXGBE_PHYSICAL_LAYER_1000BASE_T ||
 	    layer & IXGBE_PHYSICAL_LAYER_100BASE_TX ||
 	    layer & IXGBE_PHYSICAL_LAYER_10BASE_T)
 		switch (adapter->link_speed) {
 		case IXGBE_LINK_SPEED_10GB_FULL:
 			ifmr->ifm_active |= IFM_10G_T | IFM_FDX;
+			break;
+		case IXGBE_LINK_SPEED_5GB_FULL:
+			ifmr->ifm_active |= IFM_5000_T | IFM_FDX;
+			break;
+		case IXGBE_LINK_SPEED_2_5GB_FULL:
+			ifmr->ifm_active |= IFM_2500_T | IFM_FDX;
 			break;
 		case IXGBE_LINK_SPEED_1GB_FULL:
 			ifmr->ifm_active |= IFM_1000_T | IFM_FDX;
@@ -2608,6 +2604,8 @@ ixgbe_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 		ifmr->ifm_active |= IFM_UNKNOWN;
 #endif
 
+	ifp->if_baudrate = ifmedia_baudrate(ifmr->ifm_active);
+
 	/* Display current flow control setting used on link */
 	if (hw->fc.current_mode == ixgbe_fc_rx_pause ||
 	    hw->fc.current_mode == ixgbe_fc_full)
@@ -2675,6 +2673,10 @@ ixgbe_media_change(struct ifnet *ifp)
 #endif
 		speed |= IXGBE_LINK_SPEED_10GB_FULL;
 		break;
+	case IFM_5000_T:
+		speed |= IXGBE_LINK_SPEED_5GB_FULL;
+		break;
+	case IFM_2500_T:
 	case IFM_2500_KX:
 		speed |= IXGBE_LINK_SPEED_2_5GB_FULL;
 		break;
@@ -2696,9 +2698,8 @@ ixgbe_media_change(struct ifnet *ifp)
 
 	hw->mac.autotry_restart = TRUE;
 	hw->mac.ops.setup_link(hw, speed, TRUE);
-	if (IFM_SUBTYPE(ifm->ifm_media) == IFM_AUTO) {
-		adapter->advertise = 0;
-	} else {
+	adapter->advertise = 0;
+	if (IFM_SUBTYPE(ifm->ifm_media) != IFM_AUTO) {
 		if ((speed & IXGBE_LINK_SPEED_10GB_FULL) != 0)
 			adapter->advertise |= 1 << 2;
 		if ((speed & IXGBE_LINK_SPEED_1GB_FULL) != 0)
@@ -2706,7 +2707,11 @@ ixgbe_media_change(struct ifnet *ifp)
 		if ((speed & IXGBE_LINK_SPEED_100_FULL) != 0)
 			adapter->advertise |= 1 << 0;
 		if ((speed & IXGBE_LINK_SPEED_10_FULL) != 0)
+			adapter->advertise |= 1 << 3;
+		if ((speed & IXGBE_LINK_SPEED_2_5GB_FULL) != 0)
 			adapter->advertise |= 1 << 4;
+		if ((speed & IXGBE_LINK_SPEED_5GB_FULL) != 0)
+			adapter->advertise |= 1 << 5;
 	}
 
 	return (0);
@@ -2730,11 +2735,13 @@ ixgbe_set_promisc(struct adapter *adapter)
 	struct ether_multistep step;
 	struct ethercom *ec = &adapter->osdep.ec;
 
+	KASSERT(mutex_owned(&adapter->core_mtx));
 	rctl = IXGBE_READ_REG(&adapter->hw, IXGBE_FCTRL);
 	rctl &= (~IXGBE_FCTRL_UPE);
 	if (ifp->if_flags & IFF_ALLMULTI)
 		mcnt = MAX_NUM_MULTICAST_ADDRESSES;
 	else {
+		ETHER_LOCK(ec);
 		ETHER_FIRST_MULTI(step, ec, enm);
 		while (enm != NULL) {
 			if (mcnt == MAX_NUM_MULTICAST_ADDRESSES)
@@ -2742,6 +2749,7 @@ ixgbe_set_promisc(struct adapter *adapter)
 			mcnt++;
 			ETHER_NEXT_MULTI(step, enm);
 		}
+		ETHER_UNLOCK(ec);
 	}
 	if (mcnt < MAX_NUM_MULTICAST_ADDRESSES)
 		rctl &= (~IXGBE_FCTRL_MPE);
@@ -3910,12 +3918,14 @@ ixgbe_set_multi(struct adapter *adapter)
 	struct ether_multi	*enm;
 	struct ether_multistep	step;
 
+	KASSERT(mutex_owned(&adapter->core_mtx));
 	IOCTL_DEBUGOUT("ixgbe_set_multi: begin");
 
 	mta = adapter->mta;
 	bzero(mta, sizeof(*mta) * MAX_NUM_MULTICAST_ADDRESSES);
 
 	ifp->if_flags &= ~IFF_ALLMULTI;
+	ETHER_LOCK(ec);
 	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if ((mcnt == MAX_NUM_MULTICAST_ADDRESSES) ||
@@ -3930,6 +3940,7 @@ ixgbe_set_multi(struct adapter *adapter)
 		mcnt++;
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 
 	fctrl = IXGBE_READ_REG(&adapter->hw, IXGBE_FCTRL);
 	fctrl &= ~(IXGBE_FCTRL_UPE | IXGBE_FCTRL_MPE);
@@ -4743,11 +4754,13 @@ ixgbe_sysctl_advertise(SYSCTLFN_ARGS)
  * ixgbe_set_advertise - Control advertised link speed
  *
  *   Flags:
- *     0x0 - Default (all capable link speed)
- *     0x1 - advertise 100 Mb
- *     0x2 - advertise 1G
- *     0x4 - advertise 10G
- *     0x8 - advertise 10 Mb (yes, Mb)
+ *     0x00 - Default (all capable link speed)
+ *     0x01 - advertise 100 Mb
+ *     0x02 - advertise 1G
+ *     0x04 - advertise 10G
+ *     0x08 - advertise 10 Mb
+ *     0x10 - advertise 2.5G
+ *     0x20 - advertise 5G
  ************************************************************************/
 static int
 ixgbe_set_advertise(struct adapter *adapter, int advertise)
@@ -4778,7 +4791,7 @@ ixgbe_set_advertise(struct adapter *adapter, int advertise)
 		return (EINVAL);
 	}
 
-	if (advertise < 0x0 || advertise > 0xF) {
+	if (advertise < 0x0 || advertise > 0x2f) {
 		device_printf(dev,
 		    "Invalid advertised speed; valid modes are 0x0 through 0x7\n");
 		return (EINVAL);
@@ -4822,6 +4835,20 @@ ixgbe_set_advertise(struct adapter *adapter, int advertise)
 		}
 		speed |= IXGBE_LINK_SPEED_10_FULL;
 	}
+	if (advertise & 0x10) {
+		if (!(link_caps & IXGBE_LINK_SPEED_2_5GB_FULL)) {
+			device_printf(dev, "Interface does not support 2.5Gb advertised speed\n");
+			return (EINVAL);
+		}
+		speed |= IXGBE_LINK_SPEED_2_5GB_FULL;
+	}
+	if (advertise & 0x20) {
+		if (!(link_caps & IXGBE_LINK_SPEED_5GB_FULL)) {
+			device_printf(dev, "Interface does not support 5Gb advertised speed\n");
+			return (EINVAL);
+		}
+		speed |= IXGBE_LINK_SPEED_5GB_FULL;
+	}
 	if (advertise == 0)
 		speed = link_caps; /* All capable link speed */
 
@@ -4837,10 +4864,12 @@ ixgbe_set_advertise(struct adapter *adapter, int advertise)
  *
  *   Formatted for sysctl usage.
  *   Flags:
- *     0x1 - advertise 100 Mb
- *     0x2 - advertise 1G
- *     0x4 - advertise 10G
- *     0x8 - advertise 10 Mb (yes, Mb)
+ *     0x01 - advertise 100 Mb
+ *     0x02 - advertise 1G
+ *     0x04 - advertise 10G
+ *     0x08 - advertise 10 Mb (yes, Mb)
+ *     0x10 - advertise 2.5G
+ *     0x20 - advertise 5G
  ************************************************************************/
 static int
 ixgbe_get_advertise(struct adapter *adapter)
@@ -4864,10 +4893,12 @@ ixgbe_get_advertise(struct adapter *adapter)
 		return (0);
 
 	speed =
-	    ((link_caps & IXGBE_LINK_SPEED_10GB_FULL) ? 4 : 0) |
-	    ((link_caps & IXGBE_LINK_SPEED_1GB_FULL)  ? 2 : 0) |
-	    ((link_caps & IXGBE_LINK_SPEED_100_FULL)  ? 1 : 0) |
-	    ((link_caps & IXGBE_LINK_SPEED_10_FULL)   ? 8 : 0);
+	    ((link_caps & IXGBE_LINK_SPEED_10GB_FULL)  ? 0x04 : 0) |
+	    ((link_caps & IXGBE_LINK_SPEED_1GB_FULL)   ? 0x02 : 0) |
+	    ((link_caps & IXGBE_LINK_SPEED_100_FULL)   ? 0x01 : 0) |
+	    ((link_caps & IXGBE_LINK_SPEED_10_FULL)    ? 0x08 : 0) |
+	    ((link_caps & IXGBE_LINK_SPEED_2_5GB_FULL) ? 0x10 : 0) |
+	    ((link_caps & IXGBE_LINK_SPEED_5GB_FULL)   ? 0x20 : 0);
 
 	return speed;
 } /* ixgbe_get_advertise */
@@ -5950,7 +5981,6 @@ ixgbe_configure_interrupts(struct adapter *adapter)
 
 	if (ixgbe_num_queues != 0)
 		queues = ixgbe_num_queues;
-	/* Set max queues to 8 when autoconfiguring */
 	else
 		queues = min(queues,
 		    min(mac->max_tx_queues, mac->max_rx_queues));

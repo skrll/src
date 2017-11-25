@@ -290,7 +290,7 @@ udav_attach(device_t parent, device_t self, void *aux)
 	ifp->if_mtu = ETHERMTU;
 	strlcpy(ifp->if_xname, device_xname(self), IFNAMSIZ);
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 	ifp->if_start = udav_start;
 	ifp->if_ioctl = udav_ioctl;
 	ifp->if_watchdog = udav_watchdog;
@@ -1033,7 +1033,7 @@ Static void
 udav_start(struct ifnet *ifp)
 {
 	struct udav_softc * const sc = ifp->if_softc;
-	KASSERT(ifp->if_extflags & IFEF_START_MPSAFE);
+	KASSERT(ifp->if_extflags & IFEF_MPSAFE);
 
 	mutex_enter(&sc->sc_txlock);
 	udav_start_locked(ifp);
