@@ -1,4 +1,4 @@
-/* $NetBSD: usbroothub.h,v 1.2 2016/04/23 10:15:32 skrll Exp $ */
+/* $NetBSD: usbroothub.h,v 1.3 2017/11/28 07:36:08 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
