@@ -164,8 +164,14 @@ typedef struct ehci_softc {
 	device_t sc_dev;
 	kmutex_t sc_lock;
 	kmutex_t sc_intr_lock;
-	bool sc_dbanswered;
-	kcondvar_t sc_doorbell;
+
+	enum {
+		EHCI_DB_IDLE,
+		EHCI_DB_REQUESTED,
+		EHCI_DB_ANSWERED
+	} sc_db;
+	kcondvar_t sc_dbcv;
+
 	void *sc_doorbell_si;
 	void *sc_pcd_si;
 	struct usbd_bus sc_bus;

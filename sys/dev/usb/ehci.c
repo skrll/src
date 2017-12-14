@@ -412,7 +412,9 @@ ehci_init(ehci_softc_t *sc)
 
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_SOFTUSB);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_USB);
-	cv_init(&sc->sc_doorbell, "ehcidb");
+	cv_init(&sc->sc_dbcv, "ehcidb");
+
+	sc->sc_db = EHCI_DB_IDLE;
 
 	sc->sc_xferpool = pool_cache_init(sizeof(struct ehci_xfer), 0, 0, 0,
 	    "ehcixfer", NULL, IPL_USB, NULL, NULL, NULL);
@@ -759,8 +761,11 @@ ehci_doorbell(void *addr)
 	EHCIHIST_FUNC(); EHCIHIST_CALLED();
 
 	mutex_enter(&sc->sc_lock);
-	sc->sc_dbanswered = true;
-	cv_broadcast(&sc->sc_doorbell);
+
+	KASSERT(sc->sc_db == EHCI_DB_REQUESTED);
+	sc->sc_db = EHCI_DB_ANSWERED;
+
+	cv_broadcast(&sc->sc_dbcv);
 	mutex_exit(&sc->sc_lock);
 }
 
@@ -1337,7 +1342,7 @@ ehci_detach(struct ehci_softc *sc, int flags)
 	if (sc->sc_softitds)
 		kmem_free(sc->sc_softitds,
 		    sc->sc_flsize * sizeof(ehci_soft_itd_t *));
-	cv_destroy(&sc->sc_doorbell);
+	cv_destroy(&sc->sc_dbcv);
 
 #if 0
 	/* XXX destroyed in ehci_pci.c as it controls ehci_intr access */
@@ -2170,18 +2175,32 @@ ehci_sync_hc(ehci_softc_t *sc)
 		return;
 	}
 
+	while (sc->sc_db != EHCI_DB_IDLE) {
+		error = cv_timedwait(&sc->sc_dbcv, &sc->sc_lock, hz);
+
+#ifdef DIAGNOSTIC
+		if (error == EWOULDBLOCK) {
+			printf("%s: doorbell busy timed out\n", __func__);
+		} else if (error) {
+			printf("%s: doorbell busy cv_timedwait: error %d\n",
+			    __func__, error);
+		}
+#endif
+	}
+
 	/* ask for doorbell */
 	EOWRITE4(sc, EHCI_USBCMD, EOREAD4(sc, EHCI_USBCMD) | EHCI_CMD_IAAD);
 	DPRINTF("cmd = 0x%08jx sts = 0x%08jx",
 	    EOREAD4(sc, EHCI_USBCMD), EOREAD4(sc, EHCI_USBSTS), 0, 0);
 
-	sc->sc_dbanswered = false;
-	/* bell wait */
-	while (!sc->sc_dbanswered) {
-		error = cv_timedwait(&sc->sc_doorbell, &sc->sc_lock, hz);
+	sc->sc_db = EHCI_DB_REQUESTED;
 
-		DPRINTF("cmd = 0x%08jx sts = 0x%08jx ... done",
-		    EOREAD4(sc, EHCI_USBCMD), EOREAD4(sc, EHCI_USBSTS), 0, 0);
+	/* bell wait */
+	while (sc->sc_db != EHCI_DB_ANSWERED) {
+		error = cv_timedwait(&sc->sc_dbcv, &sc->sc_lock, hz);
+
+	DPRINTF("cmd = 0x%08jx sts = 0x%08jx ... done",
+	    EOREAD4(sc, EHCI_USBCMD), EOREAD4(sc, EHCI_USBSTS), 0, 0);
 #ifdef DIAGNOSTIC
 		if (error == EWOULDBLOCK) {
 			printf("%s: timed out\n", __func__);
@@ -2190,6 +2209,8 @@ ehci_sync_hc(ehci_softc_t *sc)
 		}
 #endif
 	}
+	sc->sc_db = EHCI_DB_IDLE;
+	cv_broadcast(&sc->sc_dbcv);
 }
 
 Static void
@@ -3234,6 +3255,10 @@ ehci_abort_xfer(struct usbd_xfer *xfer, usbd_status status)
 	 * Step 3: Wait until we know hardware has finished any possible
 	 * use of the xfer.
 	 */
+	/*
+	 * XXX This doesn't work for interrupt/isoc transfers
+	 * and calls need synchronising
+	 */
 	ehci_sync_hc(sc);
 
 	/*
@@ -3414,7 +3439,7 @@ ehci_timeout(void *addr)
 	ehci_softc_t *sc = EHCI_XFER2SC(xfer);
 	bool timeout = false;
 
-	DPRINTF("xfer %#jx", (uintptr_t)xfer, 0, 0, 0);
+	DPRINTF("exfer %#jx", (uintptr_t)xfer, 0, 0, 0);
 #ifdef EHCI_DEBUG
 	if (ehcidebug >= 2) {
 		struct usbd_pipe *pipe = xfer->ux_pipe;
