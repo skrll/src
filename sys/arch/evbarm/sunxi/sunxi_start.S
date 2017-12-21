@@ -135,8 +135,9 @@ _C_LABEL(sunxi_start):
 	 * so setup the lr to be in .text.  Cache the address for xputc
 	 * before we go.
 	 */
-#if defined(VERBOSE_INIT_ARM)
-	adr	r11, xputc		@ for XPUTC2
+#if defined(VERBOSE_INIT_ARM) && defined(CONSADDR)
+	movw	r11, #:lower16:xputc
+	movt	r11, #:upper16:xputc
 #endif
 	movw	lr, #:lower16:1f
 	movt	lr, #:upper16:1f

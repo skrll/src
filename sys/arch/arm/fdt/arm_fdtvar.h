@@ -34,6 +34,21 @@
  */
 
 struct fdt_attach_args;
+struct fdtbus_simplebus;
+
+struct fdtbus_cookie {
+	struct fdtbus_simplebus *fc_bus;
+	size_t			fc_shift;
+};
+
+struct fdtbus_staticrange {
+	int	(*fsr_bs_map)(void *, bus_addr_t, bus_size_t, int,
+		    bus_space_handle_t *);
+
+	size_t			fsr_nranges;
+	struct fdtbus_range	*fsr_range;
+};
+
 
 struct arm_platform {
 	const struct pmap_devmap * (*devmap)(void);
@@ -64,6 +79,8 @@ _ARM_PLATFORM_REGISTER(_name)
 TAILQ_HEAD(arm_platlist, arm_platform_info);
 
 const struct arm_platform *	arm_fdt_platform(void);
+
+void	arm_fdt_init_attach_args(struct fdt_attach_args *);
 
 void    arm_fdt_cpu_hatch_register(void *, void (*)(void *, struct cpu_info *));
 void    arm_fdt_cpu_hatch(struct cpu_info *);

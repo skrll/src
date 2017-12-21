@@ -30,6 +30,7 @@
 __KERNEL_RCSID(0, "$NetBSD: clk.c,v 1.2 2017/04/16 12:28:21 jmcneill Exp $");
 
 #include <sys/param.h>
+#include <sys/kmem.h>
 
 #include <dev/clk/clk.h>
 #include <dev/clk/clk_backend.h>

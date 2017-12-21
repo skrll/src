@@ -565,6 +565,7 @@ bcm283x_bootparams(bus_space_tag_t iot, bus_space_handle_t ioh)
 
 	cpu_dcache_inv_range((vaddr_t)&vb, sizeof(vb));
 
+	// Needed?
 	if (!vcprop_buffer_success_p(&vb.vb_hdr)) {
 		bootconfig.dramblocks = 1;
 		bootconfig.dram[0].address = 0x0;
@@ -651,16 +652,24 @@ bcm2836_bootparams(void)
 static void
 bcm2836_bootstrap(void)
 {
-	arm_cpu_max = 4;
+#if defined(MULTIPROCESSOR)
+	arm_cpu_max = BCM2836_NCPUS;
+#endif
 	extern int cortex_mmuinfo;
 
 	cortex_mmuinfo = armreg_ttbr_read();
 #ifdef VERBOSE_INIT_ARM
+	printf("%s: %d cpus present\n", __func__, arm_cpu_max);
 	printf("%s: cortex_mmuinfo %x\n", __func__, cortex_mmuinfo);
 #endif
 
 	extern void cortex_mpstart(void);
 
+	/*
+	 * Even without options MULTPROCESSOR we need to spin-up
+	 * secondary processors so they go into wfi loop (cortex_mpstart)
+	 * otherwise the system would freeze
+	 */
 	for (size_t i = 1; i < arm_cpu_max; i++) {
 		bus_space_tag_t iot = &bcm2836_bs_tag;
 		bus_space_handle_t ioh = BCM2836_ARM_LOCAL_VBASE;
@@ -1055,8 +1064,6 @@ static void
 bcm2835_platform_bootstrap(void)
 {
 
-	fdtbus_set_decoderegprop(false);
-
 	bcm2835_uartinit();
 
 	bcm2835_bootparams();
@@ -1067,8 +1074,6 @@ bcm2835_platform_bootstrap(void)
 static void
 bcm2836_platform_bootstrap(void)
 {
-
-	fdtbus_set_decoderegprop(false);
 
 	bcm2836_uartinit();
 
@@ -1083,8 +1088,8 @@ static void
 bcm2835_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 
-	faa->faa_bst = &bcm2835_bs_tag;
-	faa->faa_a4x_bst = &bcm2835_a4x_bs_tag;
+	faa->faa_shift_bst[0] = &bcm2835_bs_tag;
+	faa->faa_shift_bst[2] = &bcm2835_a4x_bs_tag;
 	faa->faa_dmat = &bcm2835_bus_dma_tag;
 
 	bcm2835_bus_dma_tag._ranges = bcm2835_dma_ranges;
@@ -1098,8 +1103,8 @@ static void
 bcm2836_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 
-	faa->faa_bst = &bcm2836_bs_tag;
-	faa->faa_a4x_bst = &bcm2836_a4x_bs_tag;
+	faa->faa_shift_bst[0] = &bcm2836_bs_tag;
+	faa->faa_shift_bst[2] = &bcm2836_a4x_bs_tag;
 	faa->faa_dmat = &bcm2835_bus_dma_tag;
 
 	bcm2835_bus_dma_tag._ranges = bcm2836_dma_ranges;

@@ -43,8 +43,13 @@ __KERNEL_RCSID(0, "$NetBSD: arm_fdt.c,v 1.7 2017/12/10 21:38:26 skrll Exp $");
 
 #include <arm/fdt/arm_fdtvar.h>
 
+#include <arm/locore.h>
+
 static int	arm_fdt_match(device_t, cfdata_t, void *);
 static void	arm_fdt_attach(device_t, device_t, void *);
+
+extern struct bus_space armv7_generic_bs_tag;
+extern struct bus_space armv7_generic_a4x_bs_tag;
 
 CFATTACH_DECL_NEW(arm_fdt, 0,
     arm_fdt_match, arm_fdt_attach, NULL, NULL);
@@ -73,18 +78,35 @@ arm_fdt_match(device_t parent, cfdata_t cf, void *aux)
 void
 arm_fdt_attach(device_t parent, device_t self, void *aux)
 {
-	const struct arm_platform *plat = arm_fdt_platform();
 	struct fdt_attach_args faa;
 
 	aprint_naive("\n");
 	aprint_normal("\n");
 
-	plat->init_attach_args(&faa);
+	arm_fdt_init_attach_args(&faa);
+
 	faa.faa_name = "";
 	faa.faa_phandle = OF_peer(0);
+	faa.faa_quiet = 0;
 
 	config_found(self, &faa, NULL);
 }
+
+void
+arm_fdt_init_attach_args(struct fdt_attach_args *faa)
+{
+	KASSERT(CPU_IS_ARMV7_P() || CPU_IS_ARMV6_P());
+
+	extern struct bus_space armv7_generic_bs_tag;
+	extern struct bus_space armv7_generic_a4x_bs_tag;
+	extern struct arm32_bus_dma_tag armv7_generic_dma_tag;
+
+	memset(faa->faa_shift_bst, 0, sizeof(faa->faa_shift_bst));
+	faa->faa_shift_bst[0] = &armv7_generic_bs_tag;
+	faa->faa_shift_bst[2] = &armv7_generic_a4x_bs_tag;
+	faa->faa_dmat = &armv7_generic_dma_tag;
+}
+
 
 const struct arm_platform *
 arm_fdt_platform(void)
@@ -180,6 +202,7 @@ arm_fdt_memory_dump(paddr_t pa)
 		    bus_space_read_4(bst, bsh, i + 12));
 	}
 }
+
 
 #ifdef __HAVE_GENERIC_CPU_INITCLOCKS
 void

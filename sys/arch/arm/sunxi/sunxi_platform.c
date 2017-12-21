@@ -116,7 +116,7 @@ static void
 sunxi_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	faa->faa_bst = &armv7_generic_bs_tag;
-	faa->faa_a4x_bst = &armv7_generic_a4x_bs_tag;
+	faa->faa_shift_bst[2] = &armv7_generic_a4x_bs_tag;
 	faa->faa_dmat = &armv7_generic_dma_tag;
 }
 

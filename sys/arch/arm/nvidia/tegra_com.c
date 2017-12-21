@@ -98,13 +98,10 @@ tegra_com_attach(device_t parent, device_t self, void *aux)
 
 	if (of_getprop_uint32(faa->faa_phandle, "reg-shift", &reg_shift)) {
 		/* missing or bad reg-shift property, assume 2 */
-		bst = faa->faa_a4x_bst;
+		bst = faa->faa_shift_bst[2];
 	} else {
-		if (reg_shift == 2) {
-			bst = faa->faa_a4x_bst;
-		} else if (reg_shift == 0) {
-			bst = faa->faa_bst;
-		} else {
+		bst = faa->faa_shift_bst[reg_shift];
+		if (!bst) {
 			aprint_error(": unsupported reg-shift value %d\n",
 			    reg_shift);
 			return;
@@ -163,7 +160,7 @@ static void
 tegra_com_console_consinit(struct fdt_attach_args *faa, u_int uart_freq)
 {
 	const int phandle = faa->faa_phandle;
-	bus_space_tag_t bst = faa->faa_a4x_bst;
+	bus_space_tag_t bst = faa->faa_shift_bst[2];
 	bus_addr_t addr;
 	tcflag_t flags;
 	int speed;

@@ -360,8 +360,8 @@ cortex_init:
 	bne	1f
 
 	/* Set CNTVOFF to 0 */
-	mov	r1, #0
-	mcrr	p15, 4, r1, r1, c14
+	mov	r0, #0
+	mcrr	p15, 4, r0, r0, c14
 
 	/* Ensure that IRQ, and FIQ will be disabled after eret */
 	eor	r0, r0, #(PSR_SVC32_MODE^PSR_HYP32_MODE)
