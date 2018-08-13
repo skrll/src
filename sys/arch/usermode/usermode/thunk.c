@@ -1,4 +1,4 @@
-/* $NetBSD: thunk.c,v 1.87 2015/12/21 20:44:54 christos Exp $ */
+/* $NetBSD: thunk.c,v 1.91 2018/08/01 09:44:31 reinoud Exp $ */
 
 /*-
  * Copyright (c) 2011 Jared D. McNeill <jmcneill@invisible.ca>
@@ -28,10 +28,15 @@
 
 #include <sys/cdefs.h>
 #ifdef __NetBSD__
-__RCSID("$NetBSD: thunk.c,v 1.87 2015/12/21 20:44:54 christos Exp $");
+__RCSID("$NetBSD: thunk.c,v 1.91 2018/08/01 09:44:31 reinoud Exp $");
 #endif
 
-#include <sys/types.h>
+#define _KMEMUSER
+#define _X86_64_MACHTYPES_H_
+#define _I386_MACHTYPES_H_
+
+#include "../include/types.h"
+
 #include <sys/mman.h>
 #include <stdarg.h>
 #include <sys/reboot.h>
@@ -42,7 +47,6 @@ __RCSID("$NetBSD: thunk.c,v 1.87 2015/12/21 20:44:54 christos Exp $");
 #include <sys/shm.h>
 #include <sys/ioctl.h>
 
-#define _KMEMUSER
 #include <machine/vmparam.h>
 
 #include <net/if.h>
@@ -70,6 +74,7 @@ __RCSID("$NetBSD: thunk.c,v 1.87 2015/12/21 20:44:54 christos Exp $");
 #include <time.h>
 #include <ucontext.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 #include "../include/thunk.h"
 
@@ -86,6 +91,9 @@ __RCSID("$NetBSD: thunk.c,v 1.87 2015/12/21 20:44:54 christos Exp $");
 #endif
 
 //#define RFB_DEBUG
+
+static ssize_t safe_recv(int s, void *buf, int len);
+static ssize_t safe_send(int s, const void *msg, int len);
 
 extern int boothowto;
 
@@ -337,6 +345,12 @@ int
 thunk_usleep(useconds_t microseconds)
 {
 	return usleep(microseconds);
+}
+
+void
+thunk_kill(pid_t pid, int sig)
+{
+	kill(pid, sig);
 }
 
 void
@@ -642,6 +656,18 @@ thunk_atexit(void (*function)(void))
 	return atexit(function);
 }
 
+pid_t
+thunk_fork(void)
+{
+	return fork();
+}
+
+int
+thunk_ioctl(int fd, unsigned long request, void *opaque)
+{
+	return ioctl(fd, request, opaque);
+}
+
 int
 thunk_aio_read(struct aiocb *aiocbp)
 {
@@ -858,6 +884,21 @@ thunk_pollout_tap(int fd, int timeout)
 	return poll(fds, __arraycount(fds), timeout);
 }
 
+
+/* simply make sure its present... yeah its silly */
+int
+thunk_assert_presence(vaddr_t from, size_t size)
+{
+	vaddr_t va;
+	int t = 0;
+
+	for (va = from; va < from + (vaddr_t) size; va += PAGE_SIZE) {
+		t += *(int *) va;
+	}
+	return t;
+}
+
+
 int
 thunk_audio_open(const char *path)
 {
@@ -977,6 +1018,78 @@ thunk_rfb_open(thunk_rfb_t *rfb, uint16_t port)
 	}
 
 	return 0;
+}
+
+int
+thunk_gdb_open(void)
+{
+	struct sockaddr_in sin;
+	int sockfd;
+	int portnr = 5001;	/* XXX configurable or random */
+
+	/* create socket */
+	sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (sockfd < 0) {
+		warn("kgdb stub: couldn't create socket");
+		return 0;
+	}
+
+	/* bind to requested port */
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family      = AF_INET;
+	sin.sin_addr.s_addr = htonl(INADDR_ANY);
+	sin.sin_port        = htons(portnr);
+
+	if (bind(sockfd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+		warn("kgdb stub: couldn't bind port %d", portnr);
+		close(sockfd);
+		return 0;
+	}
+
+	/* listen for connections */
+	if (listen(sockfd, 1) < 0) {
+		warn("kgdb stub: couldn't listen on socket");
+		close(sockfd);
+		return 0;
+	}
+	printf("kgdb stub: accepting connections on port %d\n", portnr);
+
+	return sockfd;
+}
+
+int
+thunk_gdb_accept(int sockfd)
+{
+	struct sockaddr_in client_addr;
+	socklen_t client_addrlen;
+	int fd, flags;
+
+	fd = accept(sockfd, (struct sockaddr *) &client_addr, &client_addrlen);
+	if (fd < 0) {
+		warn("kgdb_stub: connect error");
+		return 0;
+	}
+
+  	/* make FIFO unblocking */
+	flags = fcntl(fd, F_GETFL, 0);
+	if (flags == -1)
+		flags = 0;
+	if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+		warn("kgdb_stub: can't make socket non blocking");
+	}
+	return fd;
+}
+
+int
+thunk_kgdb_getc(int fd, char *ch)
+{
+	return safe_recv(fd, ch, 1);
+}
+
+int
+thunk_kgdb_putc(int fd, char ch)
+{
+	return safe_send(fd, &ch, 1);
 }
 
 static ssize_t

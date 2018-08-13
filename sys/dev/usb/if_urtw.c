@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urtw.c,v 1.13 2016/12/04 10:12:35 skrll Exp $	*/
+/*	$NetBSD: if_urtw.c,v 1.17 2018/08/02 06:09:04 riastradh Exp $	*/
 /*	$OpenBSD: if_urtw.c,v 1.39 2011/07/03 15:47:17 matthew Exp $	*/
 
 /*-
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urtw.c,v 1.13 2016/12/04 10:12:35 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urtw.c,v 1.17 2018/08/02 06:09:04 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -774,11 +774,14 @@ urtw_detach(device_t self, int flags)
 
 	sc->sc_dying = true;
 
+	callout_halt(&sc->scan_to, NULL);
+	callout_halt(&sc->sc_led_ch, NULL);
 	callout_destroy(&sc->scan_to);
 	callout_destroy(&sc->sc_led_ch);
 
-	usb_rem_task(sc->sc_udev, &sc->sc_task);
-	usb_rem_task(sc->sc_udev, &sc->sc_ledtask);
+	usb_rem_task_wait(sc->sc_udev, &sc->sc_task, USB_TASKQ_DRIVER, NULL);
+	usb_rem_task_wait(sc->sc_udev, &sc->sc_ledtask, USB_TASKQ_DRIVER,
+	    NULL);
 
 	if (ifp->if_softc != NULL) {
 		bpf_detach(ifp);
@@ -901,7 +904,7 @@ urtw_alloc_rx_data_list(struct urtw_softc *sc)
 		data->sc = sc;
 
 		error = usbd_create_xfer(sc->sc_rxpipe, MCLBYTES,
-		    USBD_SHORT_XFER_OK, 0, &data->xfer);
+		    0, 0, &data->xfer);
 		if (error) {
 
 			printf("%s: could not allocate rx xfer\n",
@@ -1042,6 +1045,11 @@ urtw_newstate(struct ieee80211com *ic, enum ieee80211_state nstate, int arg)
 {
 	struct urtw_softc *sc = ic->ic_ifp->if_softc;
 
+	/*
+	 * XXXSMP: This does not wait for the task, if it is in flight,
+	 * to complete.  If this code works at all, it must rely on the
+	 * kernel lock to serialize with the USB task thread.
+	 */
 	usb_rem_task(sc->sc_udev, &sc->sc_task);
 	callout_stop(&sc->scan_to);
 
@@ -2440,7 +2448,7 @@ urtw_start(struct ifnet *ifp)
 			IF_DEQUEUE(&ic->ic_mgtq, m0);
 			ni = M_GETCTX(m0, struct ieee80211_node *);
 			M_CLEARCTX(m0);
-			bpf_mtap3(ic->ic_rawbpf, m0);
+			bpf_mtap3(ic->ic_rawbpf, m0, BPF_D_OUT);
 			if (urtw_tx_start(sc, ni, m0, URTW_PRIORITY_NORMAL)
 			    != 0)
 				break;
@@ -2466,13 +2474,13 @@ urtw_start(struct ifnet *ifp)
 				m_freem(m0);
 				continue;
 			}
-			bpf_mtap(ifp, m0);
+			bpf_mtap(ifp, m0, BPF_D_OUT);
 			m0 = ieee80211_encap(ic, m0, ni);
 			if (m0 == NULL) {
 				ieee80211_free_node(ni);
 				continue;
 			}
-			bpf_mtap3(ic->ic_rawbpf, m0);
+			bpf_mtap3(ic->ic_rawbpf, m0, BPF_D_OUT);
 			if (urtw_tx_start(sc, ni, m0, URTW_PRIORITY_NORMAL)
 			    != 0) {
 				ieee80211_free_node(ni);
@@ -2613,7 +2621,7 @@ urtw_tx_start(struct urtw_softc *sc, struct ieee80211_node *ni, struct mbuf *m0,
 		tap->wt_chan_freq = htole16(ic->ic_bss->ni_chan->ic_freq);
 		tap->wt_chan_flags = htole16(ic->ic_bss->ni_chan->ic_flags);
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0, BPF_D_OUT);
 	}
 
 	if (sc->sc_hwrev & URTW_HWREV_8187)
@@ -3136,7 +3144,7 @@ urtw_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 		tap->wr_chan_flags = htole16(ic->ic_ibss_chan->ic_flags);
 		tap->wr_dbm_antsignal = (int8_t)rssi;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m, BPF_D_IN);
 	}
 	wh = mtod(m, struct ieee80211_frame *);
 	if ((wh->i_fc[0] & IEEE80211_FC0_TYPE_MASK) == IEEE80211_FC0_TYPE_DATA)

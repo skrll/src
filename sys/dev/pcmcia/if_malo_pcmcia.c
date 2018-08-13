@@ -1,4 +1,4 @@
-/*	$NetBSD: if_malo_pcmcia.c,v 1.15 2017/10/23 09:24:34 msaitoh Exp $	*/
+/*	$NetBSD: if_malo_pcmcia.c,v 1.18 2018/06/26 06:48:01 msaitoh Exp $	*/
 /*      $OpenBSD: if_malo.c,v 1.65 2009/03/29 21:53:53 sthen Exp $ */
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_malo_pcmcia.c,v 1.15 2017/10/23 09:24:34 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_malo_pcmcia.c,v 1.18 2018/06/26 06:48:01 msaitoh Exp $");
 
 #ifdef _MODULE
 #include <sys/module.h>
@@ -522,8 +522,7 @@ cmalo_start(struct ifnet *ifp)
 
 	IFQ_DEQUEUE(&ifp->if_snd, m);
 
-	if (ifp->if_bpf)
-		bpf_ops->bpf_mtap(ifp->if_bpf, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 
 	if (cmalo_tx(sc, m) != 0)
 		ifp->if_oerrors++;
@@ -1053,8 +1052,12 @@ cmalo_rx(struct malo_softc *sc)
 	}
 
 	/* push the frame up to the network stack if not in monitor mode */
-	if (ic->ic_opmode != IEEE80211_M_MONITOR)
+	if (ic->ic_opmode != IEEE80211_M_MONITOR) {
 		if_percpuq_enqueue(ifp->if_percpuq, m);
+	} else {
+		/* XXX: we don't do anything with it? */
+		m_freem(m);
+	}
 }
 
 static int

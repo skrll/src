@@ -1,4 +1,4 @@
-/*	$NetBSD: vi.c,v 1.18 2017/06/30 04:41:19 kamil Exp $	*/
+/*	$NetBSD: vi.c,v 1.20 2018/05/08 16:37:59 kamil Exp $	*/
 
 /*
  *	vi command editing
@@ -9,7 +9,7 @@
 #include <sys/cdefs.h>
 
 #ifndef lint
-__RCSID("$NetBSD: vi.c,v 1.18 2017/06/30 04:41:19 kamil Exp $");
+__RCSID("$NetBSD: vi.c,v 1.20 2018/05/08 16:37:59 kamil Exp $");
 #endif
 
 #include "config.h"
@@ -741,7 +741,7 @@ vi_cmd(argcnt, cmd)
 
 				/* lookup letter in alias list... */
 				alias[1] = cmd[1];
-				ap = tsearch(&aliases, alias, hash(alias));
+				ap = mytsearch(&aliases, alias, hash(alias));
 				if (!cmd[1] || !ap || !(ap->flag & ISSET))
 					return -1;
 				/* check if this is a recursive call... */
@@ -1781,7 +1781,7 @@ outofwin()
 static void
 rewindow()
 {
-	register int	tcur, tcol;
+	int		tcur, tcol;
 	int		holdcur1, holdcol1;
 	int		holdcur2, holdcol2;
 

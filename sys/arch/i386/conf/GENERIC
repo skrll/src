@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.1174 2017/12/10 17:19:48 bouyer Exp $
+# $NetBSD: GENERIC,v 1.1185 2018/08/01 16:59:09 maxv Exp $
 #
 # GENERIC machine description file
 #
@@ -22,13 +22,16 @@ include 	"arch/i386/conf/std.i386"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.1174 $"
+#ident		"GENERIC-$Revision: 1.1185 $"
 
 maxusers	64		# estimated number of users
 
 # CPU-related options.
 options 	USER_LDT	# user-settable LDT; used by WINE
 #options 	PAE		# PAE mode (36 bits physical addressing)
+makeoptions	SPECTRE_V2_GCC_MITIGATION=1	# GCC Spectre variant 2
+						# migitation
+options 	SPECTRE_V2_GCC_MITIGATION
 
 # CPU features
 acpicpu*	at cpu?		# ACPI CPU (including frequency scaling)
@@ -41,7 +44,6 @@ viac7temp*	at cpu?		# VIA C7 temperature sensor
 vmt0		at cpu0		# VMware Tools
 
 options 	MTRR		# memory-type range register syscall support
-options 	PMC		# performance-monitoring counters support
 
 options 	MULTIBOOT	# Multiboot support (see multiboot(8))
 
@@ -192,10 +194,6 @@ options 	NETATALK	# AppleTalk networking protocols
 #options 	PPP_BSDCOMP	# BSD-Compress compression support for PPP
 #options 	PPP_DEFLATE	# Deflate compression support for PPP
 options 	PPP_FILTER	# Active filter support for PPP (requires bpf)
-options 	IPFILTER_LOG	# ipmon(8) log support
-options 	IPFILTER_LOOKUP	# ippool(8) support
-options 	IPFILTER_COMPAT # Compat for IP-Filter
-#options 	IPFILTER_DEFAULT_BLOCK	# block all packets by default
 #options 	TCP_DEBUG	# Record last TCP_NDEBUG packets with SO_DEBUG
 
 #options 	ALTQ		# Manipulate network interfaces' output queues
@@ -296,7 +294,6 @@ config		netbsd	root on ? type ?
 #options 	APM_V10_ONLY		# Use only the APM 1.0 calls
 #options 	APM_NO_POWEROFF		# Don't power off on halt(8)
 #options 	APM_POWER_PRINT		# Print stats on the console
-#options 	APM_DISABLE_INTERRUPTS=0 # Don't disable interrupts
 
 
 # Basic Bus Support
@@ -555,7 +552,6 @@ sysbeep0	at pcppi?
 #savagedrm*	at drm?		# S3 Savage DRM driver
 #sisdrm* 	at drm?		# SiS DRM driver
 #tdfxdrm*	at drm?		# 3dfx (voodoo) DRM driver
-#viadrm* 	at drm?		# VIA DRM driver
 
 # DRMKMS drivers
 i915drmkms*	at pci? dev ? function ?
@@ -1268,6 +1264,7 @@ cdce*	at uhub? port ?		# CDC, Ethernet Networking Control Model
 cue*	at uhub? port ?		# CATC USB-EL1201A based adapters
 kue*	at uhub? port ?		# Kawasaki LSI KL5KUSB101B based adapters
 udav*	at uhub? port ?		# Davicom DM9601 based adapters
+#umb*	at uhub? port ?		# Mobile Broadband Interface Model (EXPERIMENTAL)
 url*	at uhub? port ?		# Realtek RTL8150L based adapters
 urndis*	at uhub? port ?		# Microsoft RNDIS specification
 
@@ -1652,7 +1649,6 @@ options 	VND_COMPRESSION		# compressed vnd(4)
 # network pseudo-devices
 pseudo-device	bpfilter		# Berkeley packet filter
 #pseudo-device	carp			# Common Address Redundancy Protocol
-pseudo-device	ipfilter		# IP filter (firewall) and NAT
 pseudo-device	loop			# network loopback
 #pseudo-device	mpls			# MPLS pseudo-interface
 pseudo-device	ppp			# Point-to-Point Protocol
@@ -1671,10 +1667,7 @@ pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
 #options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 pseudo-device	agr			# IEEE 802.3ad link aggregation
-#pseudo-device	pf			# PF packet filter
-#pseudo-device	pflog			# PF log if
-#pseudo-device	pfsync			# PF sync if
-#pseudo-device	npf			# NPF packet filter
+pseudo-device	npf			# NPF packet filter
 #pseudo-device	etherip 		# Tunnel Ethernet over IP
 # srt is EXPERIMENTAL
 #pseudo-device	srt			# source-address-based routing

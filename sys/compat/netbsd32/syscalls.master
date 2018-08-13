@@ -1,4 +1,4 @@
-	$NetBSD: syscalls.master,v 1.115 2016/10/19 09:44:01 skrll Exp $
+	$NetBSD: syscalls.master,v 1.123 2018/07/31 21:00:02 rjs Exp $
 
 ;	from: NetBSD: syscalls.master,v 1.81 1998/07/05 08:49:50 jonathan Exp
 ;	@(#)syscalls.master	8.2 (Berkeley) 1/13/94
@@ -174,8 +174,8 @@
 66	NOARGS		{ int|sys||vfork(void); }
 67	OBSOL		vread
 68	OBSOL		vwrite
-69	STD		{ int|netbsd32||sbrk(netbsd32_intptr_t incr); }
-70	STD		{ int|netbsd32||sstk(int incr); }
+69	OBSOL		sbrk
+70	OBSOL		sstk
 71	COMPAT_43	{ int|netbsd32||ommap(netbsd32_voidp addr, \
 			    netbsd32_size_t len, int prot, int flags, int fd, \
 			    netbsd32_long pos); }
@@ -384,7 +384,8 @@
 191	STD		{ netbsd32_long|netbsd32||pathconf(netbsd32_charp path, \
 			    int name); }
 192	STD		{ netbsd32_long|netbsd32||fpathconf(int fd, int name); }
-193	UNIMPL
+193	STD		{ int|netbsd32||getsockopt2(int s, int level, int name, \
+			    netbsd32_voidp val, netbsd32_intp avalsize); }
 194	STD		{ int|netbsd32||getrlimit(int which, \
 			    netbsd32_rlimitp_t rlp); }
 195	STD		{ int|netbsd32||setrlimit(int which, \
@@ -680,8 +681,8 @@
 			    netbsd32_sigactionp_t nsa, \
 			    netbsd32_sigactionp_t osa, \
 			    netbsd32_voidp tramp, int vers); }
-341	UNIMPL		{ int|netbsd32||pmc_get_info(int ctr, int op, void *args); }
-342	UNIMPL		{ int|netbsd32||pmc_control(int ctr, int op, void *args); }
+341	OBSOL		netbsd32_pmc_get_info
+342	OBSOL		netbsd32_pmc_control
 343	STD		{ int|netbsd32||rasctl(netbsd32_voidp addr, \
 			    netbsd32_size_t len, int op); }
 344	NOARGS		{ int|sys||kqueue(void); }
@@ -1030,16 +1031,18 @@
 473	STD		{ int|netbsd32||__quotactl(const netbsd32_charp path, \
 			    netbsd32_voidp args); }
 474	NOERR		{ int|netbsd32||posix_spawn(netbsd32_pid_tp pid, \
-				const netbsd32_charp path, \
-				const netbsd32_posix_spawn_file_actionsp \
-				    file_actions, \
-				const netbsd32_posix_spawnattrp attrp, \
-				netbsd32_charpp argv, netbsd32_charpp envp); }
+			    const netbsd32_charp path, \
+			    const netbsd32_posix_spawn_file_actionsp \
+				file_actions, \
+			    const netbsd32_posix_spawnattrp attrp, \
+			    netbsd32_charpp argv, netbsd32_charpp envp); }
 
-475	UNIMPL		{ int|netbsd32||recvmmsg(int s, struct mmsghdr *mmsg, \
+475	STD		{ int|netbsd32||recvmmsg(int s, \
+			    netbsd32_mmsghdrp_t mmsg, \
 			    unsigned int vlen, unsigned int flags, \
 			    netbsd32_timespecp_t timeout); }
-476	UNIMPL		{ int|netbsd32||sendmmsg(int s, struct mmsghdr *mmsg, \
+476	STD		{ int|netbsd32||sendmmsg(int s, \
+			    netbsd32_mmsghdrp_t mmsg, \
 			    unsigned int vlen, unsigned int flags); }
 477	STD 		{ int|netbsd32||clock_nanosleep(\
 			    netbsd32_clockid_t clock_id, \
@@ -1047,7 +1050,7 @@
 			    netbsd32_timespecp_t rmtp); }
 478	STD 		{ int|netbsd32|60|_lwp_park(\
 			    netbsd32_clockid_t clock_id, \
-			    int flags, const netbsd32_timespecp_t ts, \
+			    int flags, netbsd32_timespecp_t ts, \
 			    lwpid_t unpark, netbsd32_voidp hint, \
 			    netbsd32_voidp unparkhint); }
 479	NOERR		{ int|netbsd32||posix_fallocate(int fd, int PAD, \
@@ -1059,4 +1062,3 @@
 			    netbsd32_wrusagep_t wru, netbsd32_siginfop_t info); }
 482	STD		{ int|netbsd32||clock_getcpuclockid2(idtype_t idtype, \
 			    id_t id, netbsd32_clockidp_t clock_id); }
-

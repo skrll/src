@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_loan.c,v 1.85 2017/10/28 00:37:13 pgoyette Exp $	*/
+/*	$NetBSD: uvm_loan.c,v 1.87 2018/05/25 20:11:03 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_loan.c,v 1.85 2017/10/28 00:37:13 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_loan.c,v 1.87 2018/05/25 20:11:03 jdolecek Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -424,6 +424,7 @@ uvm_loananon(struct uvm_faultinfo *ufi, void ***output, int flags,
 		pmap_page_protect(pg, VM_PROT_READ);
 	}
 	pg->loan_count++;
+	KASSERT(pg->loan_count > 0);	/* detect wrap-around */
 	uvm_pageactivate(pg);
 	mutex_exit(&uvm_pageqlock);
 	**output = pg;
@@ -474,6 +475,7 @@ uvm_loanpage(struct vm_page **pgpp, int npages)
 			pmap_page_protect(pg, VM_PROT_READ);
 		}
 		pg->loan_count++;
+		KASSERT(pg->loan_count > 0);	/* detect wrap-around */
 		uvm_pageactivate(pg);
 		mutex_exit(&uvm_pageqlock);
 	}
@@ -787,6 +789,7 @@ uvm_loanuobj(struct uvm_faultinfo *ufi, void ***output, int flags, vaddr_t va)
 		pmap_page_protect(pg, VM_PROT_READ);
 	}
 	pg->loan_count++;
+	KASSERT(pg->loan_count > 0);	/* detect wrap-around */
 	pg->uanon = anon;
 	anon->an_page = pg;
 	anon->an_lock = /* TODO: share amap lock */
@@ -878,6 +881,7 @@ again:
 	if ((flags & UVM_LOAN_TOANON) == 0) {	/* loaning to kernel-page */
 		mutex_enter(&uvm_pageqlock);
 		pg->loan_count++;
+		KASSERT(pg->loan_count > 0);	/* detect wrap-around */
 		mutex_exit(&uvm_pageqlock);
 		mutex_exit(uvm_loanzero_object.vmobjlock);
 		**output = pg;
@@ -918,6 +922,7 @@ again:
 	pg->uanon = anon;
 	mutex_enter(&uvm_pageqlock);
 	pg->loan_count++;
+	KASSERT(pg->loan_count > 0);	/* detect wrap-around */
 	uvm_pageactivate(pg);
 	mutex_exit(&uvm_pageqlock);
 	mutex_exit(&anon->an_lock);

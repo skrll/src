@@ -1,18 +1,7 @@
-#	$NetBSD: files.tegra,v 1.45 2017/09/26 16:12:45 jmcneill Exp $
+#	$NetBSD: files.tegra,v 1.49 2018/07/08 11:37:50 jmcneill Exp $
 #
 # Configuration info for NVIDIA Tegra ARM Peripherals
 #
-
-include "arch/arm/pic/files.pic"
-include "arch/arm/cortex/files.cortex"
-
-file	arch/arm/arm32/arm32_boot.c
-file	arch/arm/arm32/arm32_kvminit.c
-file	arch/arm/arm32/arm32_reboot.c
-file	arch/arm/arm32/irq_dispatch.S
-file	arch/arm/arm32/armv7_generic_space.c
-file	arch/arm/arm32/armv7_generic_dma.c
-file	arch/arm/arm/bus_space_a4x.S
 
 file	arch/arm/nvidia/tegra_platform.c
 file	arch/arm/nvidia/tegra_soc.c
@@ -23,9 +12,6 @@ file	arch/arm/nvidia/soc_tegra124.c		soc_tegra124
 device	tegra124cpu
 attach	tegra124cpu at cpu with tegra124_cpu
 file	arch/arm/nvidia/tegra124_cpu.c		tegra124_cpu
-
-# Tegra T210 (X1) support
-file	arch/arm/nvidia/soc_tegra210.c		soc_tegra210
 
 # Interrupt controller
 device	tegralic
@@ -157,7 +143,6 @@ attach	tegradrm at fdt with tegra_drm
 file	arch/arm/nvidia/tegra_drm.c		tegra_drm
 file	arch/arm/nvidia/tegra_drm_mode.c	tegra_drm
 file	arch/arm/nvidia/tegra_drm_fb.c		tegra_drm
-file	arch/arm/nvidia/tegra_drm_gem.c		tegra_drm
 
 # Framebuffer console
 device	tegrafb: tegrafbbus, drmfb, wsemuldisplaydev

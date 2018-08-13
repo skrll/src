@@ -1,4 +1,4 @@
-/*	$NetBSD: if_qt.c,v 1.21 2016/12/15 09:28:06 ozaki-r Exp $	*/
+/*	$NetBSD: if_qt.c,v 1.23 2018/06/26 06:48:02 msaitoh Exp $	*/
 /*
  * Copyright (c) 1992 Steven M. Schultz
  * All rights reserved.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_qt.c,v 1.21 2016/12/15 09:28:06 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_qt.c,v 1.23 2018/06/26 06:48:02 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -100,6 +100,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_qt.c,v 1.21 2016/12/15 09:28:06 ozaki-r Exp $");
 #include <net/if_ether.h>
 #include <net/netisr.h>
 #include <net/route.h>
+#include <net/bpf.h>
 
 #ifdef INET
 #include <sys/domain.h>
@@ -108,10 +109,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_qt.c,v 1.21 2016/12/15 09:28:06 ozaki-r Exp $");
 #include <netinet/in_var.h>
 #include <netinet/ip.h>
 #endif
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
-
 
 #include <sys/bus.h>
 
@@ -458,7 +455,7 @@ qtstart(struct ifnet *ifp)
 		if ((rp->tmd3 & TMD3_OWN) == 0)
 			panic("qtstart");
 
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 
 		len = if_ubaput(&sc->sc_ifuba, &sc->sc_ifw[sc->xnext], m);
 		if (len < MINPACKETSIZE)

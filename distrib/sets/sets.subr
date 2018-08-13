@@ -1,4 +1,4 @@
-#	$NetBSD: sets.subr,v 1.181 2017/11/22 23:14:01 kre Exp $
+#	$NetBSD: sets.subr,v 1.184 2018/04/12 11:49:04 nakayama Exp $
 #
 
 #
@@ -20,6 +20,7 @@
 #	HAVE_GCC
 #	HAVE_GDB
 #	HAVE_SSP
+#	HAVE_OPENSSL
 #	TOOLCHAIN_MISSING
 #	OBJECT_FMT
 # as well as:
@@ -179,7 +180,7 @@ SUBST="${SUBST};s#@MACHINE@#${MACHINE}#g"
 # In each file, a record consists of a path and a System Package name,
 # separated by whitespace. E.g.,
 #
-# 	# $NetBSD: sets.subr,v 1.181 2017/11/22 23:14:01 kre Exp $
+# 	# $NetBSD: sets.subr,v 1.184 2018/04/12 11:49:04 nakayama Exp $
 # 	.			base-sys-root	[keyword[,...]]
 # 	./altroot		base-sys-root
 # 	./bin			base-sys-root
@@ -212,6 +213,7 @@ SUBST="${SUBST};s#@MACHINE@#${MACHINE}#g"
 #	binutils=<n>		<n> = value of ${HAVE_BINUTILS}
 #	gcc=<n>			<n> = value of ${HAVE_GCC}
 #	gdb=<n>			<n> = value of ${HAVE_GDB}
+#	openssl=<n>		<n> = value of ${HAVE_OPENSSL}
 #	xorg_server_ver=<n>	<n> = value of ${HAVE_XORG_SERVER_VER}
 #
 #    2. The USE_<name>:
@@ -302,6 +304,9 @@ list_set_files()
 				if ("gdb" in wanted)
 					wanted["gdb=" "'"${HAVE_GDB}"'"] = 1
 			}
+			if ("openssl" in wanted) {
+				wanted["openssl=" "'"${HAVE_OPENSSL}"'"] = 1
+			}
 			if ("xorg_server_ver" in wanted) {
 				wanted["xorg_server_ver=" "'"${HAVE_XORG_SERVER_VER}"'"] = 1
 			}
@@ -364,6 +369,13 @@ list_set_files()
 				if (kw == "obsolete")
 					haveobs = 1
 			}
+			if (iscompatdir) {
+				for (d in cpaths) {
+					if (cpaths[d] == $1 "/")
+						next
+				}
+				cpaths[ncpaths++] = $1 "/"
+			}
 			if (obsolete && ! haveobs)
 				next
 			if (!show)
@@ -387,11 +399,6 @@ list_set_files()
 				emitcompat[$1] = 1;
 				next
 			}
-			for (d in cpaths) {
-				if (cpaths[d] == $1 "/")
-					next
-			}
-			cpaths[ncpaths++] = $1 "/"
 			for (d in compatarchdirs) {
 				tmp = $0
 				xfile = $1 "/" compatarchdirs[d]
@@ -605,11 +612,10 @@ print_set_lists()
 #
 arch_to_cpu()
 {
-	MAKEFLAGS= MAKEVERBOSE= MACHINE_ARCH=${1} ${MAKE} -B -f- all <<EOMAKE
-.include <bsd.own.mk>
-all:
-	@echo \${MACHINE_CPU}
-EOMAKE
+	MACHINE_ARCH=${1} MAKEFLAGS= \
+	${MAKE} -m ${NETBSDSRCDIR}/share/mk \
+		-f ${NETBSDSRCDIR}/share/mk/bsd.own.mk \
+		-V '${MACHINE_CPU}'
 }
 
 # arch_to_endian mach
@@ -619,11 +625,10 @@ EOMAKE
 #
 arch_to_endian()
 {
-	MAKEFLAGS= MAKEVERBOSE= MACHINE_ARCH=${1} ${MAKE} -B -f- all <<EOMAKE
-.include <bsd.endian.mk>
-all:
-	@echo \${TARGET_ENDIANNESS}
-EOMAKE
+	MACHINE_ARCH=${1} MAKEFLAGS= \
+	${MAKE} -m ${NETBSDSRCDIR}/share/mk \
+		-f ${NETBSDSRCDIR}/share/mk/bsd.endian.mk \
+		-V '${TARGET_ENDIANNESS}'
 }
 
 #####

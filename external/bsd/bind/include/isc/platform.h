@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2010, 2013-2016  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2010, 2013-2017  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -321,6 +321,12 @@
 #define ISC_PLATFORM_HAVECMPXCHG 1
 
 /*
+ * If <stdatomic.h> is available on this architecture,
+ * ISC_PLATFORM_HAVESTDATOMIC will be defined.
+ */
+/* #undef ISC_PLATFORM_HAVESTDATOMIC */
+
+/*
  * Define if gcc ASM extension is available
  */
 #define ISC_PLATFORM_USEGCCASM 1
@@ -343,7 +349,7 @@
 /*
  * Define if the hash functions must be provided by OpenSSL.
  */
-#undef ISC_PLATFORM_OPENSSLHASH
+#define ISC_PLATFORM_OPENSSLHASH
 
 /*
  * Define if AES support is wanted

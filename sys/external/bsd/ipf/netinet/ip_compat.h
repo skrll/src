@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_compat.h,v 1.11 2016/08/05 09:05:02 christos Exp $	*/
+/*	$NetBSD: ip_compat.h,v 1.13 2018/05/03 07:01:08 maxv Exp $	*/
 
 /*
  * Copyright (C) 2012 by Darren Reed.
@@ -251,7 +251,7 @@ struct file;
 #  define	MSGDSIZE(m)	mbufchainlen(m)
 #  define	M_LEN(m)	(m)->m_len
 #  define	M_ADJ(m,x)	m_adj(m, x)
-#  define	M_COPY(x)	m_copy((x), 0, M_COPYALL)
+#  define	M_COPY(x)	m_copym((x), 0, M_COPYALL, M_DONTWAIT)
 #  define	GETKTIME(x)	microtime((struct timeval *)x)
 #  define	IPF_PANIC(x,y)	if (x) { printf y; panic("ipf_panic"); }
 #  define	COPYIN(a,b,c)	copyin((void *)(a), (void *)(b), (c))
@@ -762,7 +762,6 @@ typedef	struct	udphdr	udphdr_t;
 typedef	struct	icmp	icmphdr_t;
 typedef	struct	ip	ip_t;
 typedef	struct	ether_header	ether_header_t;
-typedef	struct	tcpiphdr	tcpiphdr_t;
 
 #ifndef	FR_GROUPLEN
 # define	FR_GROUPLEN	16

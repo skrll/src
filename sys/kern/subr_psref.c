@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_psref.c,v 1.8 2017/12/11 02:33:17 knakahara Exp $	*/
+/*	$NetBSD: subr_psref.c,v 1.11 2018/02/01 03:17:00 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 2016 The NetBSD Foundation, Inc.
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_psref.c,v 1.8 2017/12/11 02:33:17 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_psref.c,v 1.11 2018/02/01 03:17:00 ozaki-r Exp $");
 
 #include <sys/types.h>
 #include <sys/condvar.h>
@@ -94,6 +94,7 @@ struct psref_class {
 	kcondvar_t		prc_cv;
 	struct percpu		*prc_percpu; /* struct psref_cpu */
 	ipl_cookie_t		prc_iplcookie;
+	unsigned int		prc_xc_flags;
 };
 
 /*
@@ -124,6 +125,7 @@ psref_class_create(const char *name, int ipl)
 	mutex_init(&class->prc_lock, MUTEX_DEFAULT, ipl);
 	cv_init(&class->prc_cv, name);
 	class->prc_iplcookie = makeiplcookie(ipl);
+	class->prc_xc_flags = XC_HIGHPRI_IPL(ipl);
 
 	return class;
 }
@@ -187,22 +189,40 @@ psref_target_init(struct psref_target *target,
 }
 
 #ifdef DEBUG
+static bool
+psref_exist(struct psref_cpu *pcpu, struct psref *psref)
+{
+	struct psref *_psref;
+
+	SLIST_FOREACH(_psref, &pcpu->pcpu_head, psref_entry) {
+		if (_psref == psref)
+			return true;
+	}
+	return false;
+}
+
 static void
 psref_check_duplication(struct psref_cpu *pcpu, struct psref *psref,
     const struct psref_target *target)
 {
 	bool found = false;
-	struct psref *_psref;
 
-	SLIST_FOREACH(_psref, &pcpu->pcpu_head, psref_entry) {
-		if (_psref == psref &&
-		    _psref->psref_target == target) {
-			found = true;
-			break;
-		}
-	}
+	found = psref_exist(pcpu, psref);
 	if (found) {
-		panic("trying to acquire a target twice with the same psref: "
+		panic("The psref is already in the list (acquiring twice?): "
+		    "psref=%p target=%p", psref, target);
+	}
+}
+
+static void
+psref_check_existence(struct psref_cpu *pcpu, struct psref *psref,
+    const struct psref_target *target)
+{
+	bool found = false;
+
+	found = psref_exist(pcpu, psref);
+	if (!found) {
+		panic("The psref isn't in the list (releasing unused psref?): "
 		    "psref=%p target=%p", psref, target);
 	}
 }
@@ -304,6 +324,10 @@ psref_release(struct psref *psref, const struct psref_target *target,
 	 */
 	s = splraiseipl(class->prc_iplcookie);
 	pcpu = percpu_getref(class->prc_percpu);
+#ifdef DEBUG
+	/* Sanity-check if the target is surely acquired before.  */
+	psref_check_existence(pcpu, psref, target);
+#endif
 	SLIST_REMOVE(&pcpu->pcpu_head, psref, psref, psref_entry);
 	percpu_putref(class->prc_percpu);
 	splx(s);
@@ -407,8 +431,15 @@ psreffed_p(struct psref_target *target, struct psref_class *class)
 		.ret = false,
 	};
 
-	/* Ask all CPUs to say whether they hold a psref to the target.  */
-	xc_wait(xc_broadcast(0, &psreffed_p_xc, &P, NULL));
+	if (__predict_true(mp_online)) {
+		/*
+		 * Ask all CPUs to say whether they hold a psref to the
+		 * target.
+		 */
+		xc_wait(xc_broadcast(class->prc_xc_flags, &psreffed_p_xc, &P,
+		                     NULL));
+	} else
+		psreffed_p_xc(&P, NULL);
 
 	return P.ret;
 }

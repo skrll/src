@@ -1,4 +1,4 @@
-/*	$NetBSD: if_atu.c,v 1.55 2016/11/25 12:56:29 skrll Exp $ */
+/*	$NetBSD: if_atu.c,v 1.63 2018/08/02 06:09:04 riastradh Exp $ */
 /*	$OpenBSD: if_atu.c,v 1.48 2004/12/30 01:53:21 dlg Exp $ */
 /*
  * Copyright (c) 2003, 2004
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_atu.c,v 1.55 2016/11/25 12:56:29 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_atu.c,v 1.63 2018/08/02 06:09:04 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -79,8 +79,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_atu.c,v 1.55 2016/11/25 12:56:29 skrll Exp $");
 #include <dev/microcode/atmel/atmel_rfmd_fw.h>
 
 #include <net/bpf.h>
-#include <net/bpfdesc.h>
-
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <net/if_media.h>
@@ -108,7 +106,7 @@ int atudebug = 1;
 /*
  * Various supported device vendors/products/radio type.
  */
-struct atu_type atu_devs[] = {
+static const struct atu_type atu_devs[] = {
 	{ USB_VENDOR_3COM,	USB_PRODUCT_3COM_3CRSHEW696,
 	  RadioRFMD,		ATU_NO_QUIRK },
 	{ USB_VENDOR_ABOCOM,	USB_PRODUCT_ABOCOM_BWU613,
@@ -211,7 +209,7 @@ struct atu_type atu_devs[] = {
 	  RadioIntersil,	ATU_NO_QUIRK },
 };
 
-struct atu_radfirm {
+static const struct atu_radfirm {
 	enum	atu_radio_type atur_type;
 	unsigned char	*atur_internal;
 	size_t		atur_internal_sz;
@@ -317,7 +315,7 @@ atu_usb_request(struct atu_softc *sc, uint8_t type,
 	s = splnet();
 
 	struct usbd_pipe *pipe0 = usbd_get_pipe0(sc->atu_udev);
-	int error = usbd_create_xfer(pipe0, length, USBD_SHORT_XFER_OK, 0,
+	int error = usbd_create_xfer(pipe0, length, 0, 0,
 	    &xfer);
 	if (error) {
 		splx(s);
@@ -1101,7 +1099,7 @@ atu_match(device_t parent, cfdata_t match, void *aux)
 	int			i;
 
 	for (i = 0; i < __arraycount(atu_devs); i++) {
-		struct atu_type *t = &atu_devs[i];
+		const struct atu_type *t = &atu_devs[i];
 
 		if (uaa->uaa_vendor == t->atu_vid &&
 		    uaa->uaa_product == t->atu_pid) {
@@ -1280,7 +1278,7 @@ atu_attach(device_t parent, device_t self, void *aux)
 	 * basically does the same as atu_match
 	 */
 	for (i = 0; i < __arraycount(atu_devs); i++) {
-		struct atu_type *t = &atu_devs[i];
+		const struct atu_type *t = &atu_devs[i];
 
 		if (uaa->uaa_vendor == t->atu_vid &&
 		    uaa->uaa_product == t->atu_pid) {
@@ -1434,11 +1432,7 @@ atu_complete_attach(struct atu_softc *sc)
 #endif
 
 	i = 0;
-	ic->ic_sup_rates[IEEE80211_MODE_11B].rs_rates[i++] = 2;
-	ic->ic_sup_rates[IEEE80211_MODE_11B].rs_rates[i++] = 4;
-	ic->ic_sup_rates[IEEE80211_MODE_11B].rs_rates[i++] = 11;
-	ic->ic_sup_rates[IEEE80211_MODE_11B].rs_rates[i++] = 22;
-	ic->ic_sup_rates[IEEE80211_MODE_11B].rs_nrates = i;
+	ic->ic_sup_rates[IEEE80211_MODE_11B] = ieee80211_std_rateset_11b;
 
 	for (i = 1; i <= 14; i++) {
 		ic->ic_channels[i].ic_flags = IEEE80211_CHAN_B |
@@ -1560,7 +1554,7 @@ atu_rx_list_init(struct atu_softc *sc)
 		c->atu_idx = i;
 		if (c->atu_xfer == NULL) {
 			int err = usbd_create_xfer(sc->atu_ep[ATU_ENDPT_RX],
-			    ATU_RX_BUFSZ, USBD_SHORT_XFER_OK, 0, &c->atu_xfer);
+			    ATU_RX_BUFSZ, 0, 0, &c->atu_xfer);
 			if (err)
 				return err;
 			c->atu_buf = usbd_get_buffer(c->atu_xfer);
@@ -1920,7 +1914,7 @@ atu_start(struct ifnet *ifp)
 				splx(s);
 				break;
 			}
-			bpf_mtap(ifp, m);
+			bpf_mtap(ifp, m, BPF_D_OUT);
 			ni = ieee80211_find_txnode(ic,
 			    mtod(m, struct ether_header *)->ether_dhost);
 			if (ni == NULL) {
@@ -1949,7 +1943,7 @@ atu_start(struct ifnet *ifp)
 			/* sc->sc_stats.ast_tx_mgmt++; */
 		}
 
-		bpf_mtap3(ic->ic_rawbpf, m);
+		bpf_mtap3(ic->ic_rawbpf, m, BPF_D_OUT);
 
 		if (atu_tx_start(sc, ni, c, m)) {
 bad:
@@ -2241,7 +2235,7 @@ atu_stop(struct ifnet *ifp, int disable)
 	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
 	ifp->if_timer = 0;
 
-	usb_rem_task(sc->atu_udev, &sc->sc_task);
+	usb_rem_task_wait(sc->atu_udev, &sc->sc_task, USB_TASKQ_DRIVER, NULL);
 	ieee80211_new_state(ic, IEEE80211_S_INIT, -1);
 
 	/* Stop transfers. */

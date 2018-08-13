@@ -1,9 +1,9 @@
-/*	$NetBSD: var.c,v 1.21 2017/07/01 23:12:08 joerg Exp $	*/
+/*	$NetBSD: var.c,v 1.24 2018/05/08 16:37:59 kamil Exp $	*/
 
 #include <sys/cdefs.h>
 
 #ifndef lint
-__RCSID("$NetBSD: var.c,v 1.21 2017/07/01 23:12:08 joerg Exp $");
+__RCSID("$NetBSD: var.c,v 1.24 2018/05/08 16:37:59 kamil Exp $");
 #endif
 
 #include <sys/stat.h>
@@ -42,7 +42,7 @@ static struct tbl *arraysearch  ARGS((struct tbl *, int));
 void
 newblock()
 {
-	register struct block *l;
+	struct block *l;
 	static char *const empty[] = {null};
 
 	l = (struct block *) alloc(sizeof(struct block), ATEMP);
@@ -68,9 +68,9 @@ newblock()
 void
 popblock()
 {
-	register struct block *l = e->loc;
-	register struct tbl *vp, **vpp = l->vars.tbls, *vq;
-	register int i;
+	struct block *l = e->loc;
+	struct tbl *vp, **vpp = l->vars.tbls, *vq;
+	int i;
 
 	e->loc = l->next;	/* pop block */
 	for (i = l->vars.size; --i >= 0; ) {
@@ -172,11 +172,11 @@ array_index_calc(n, arrayp, valp)
  */
 struct tbl *
 global(n)
-	register const char *n;
+	const char *n;
 {
-	register struct block *l = e->loc;
-	register struct tbl *vp;
-	register int c;
+	struct block *l = e->loc;
+	struct tbl *vp;
+	int c;
 	unsigned h;
 	bool	 array;
 	int	 val;
@@ -231,7 +231,7 @@ global(n)
 		return vp;
 	}
 	for (l = e->loc; ; l = l->next) {
-		vp = tsearch(&l->vars, n, h);
+		vp = mytsearch(&l->vars, n, h);
 		if (vp != NULL) {
 			if (array)
 				return arraysearch(vp, val);
@@ -256,8 +256,8 @@ global(n)
 struct tbl *
 local(const char *n, bool copy)
 {
-	register struct block *l = e->loc;
-	register struct tbl *vp;
+	struct block *l = e->loc;
+	struct tbl *vp;
 	unsigned h;
 	bool	 array;
 	int	 val;
@@ -277,7 +277,7 @@ local(const char *n, bool copy)
 		struct block *ll = l;
 		struct tbl *vq = (struct tbl *) 0;
 
-		while ((ll = ll->next) && !(vq = tsearch(&ll->vars, n, h)))
+		while ((ll = ll->next) && !(vq = mytsearch(&ll->vars, n, h)))
 			;
 		if (vq) {
 			vp->flag |= vq->flag & (EXPORT|INTEGER|RDONLY
@@ -299,7 +299,7 @@ local(const char *n, bool copy)
 /* get variable string value */
 char *
 str_val(vp)
-	register struct tbl *vp;
+	struct tbl *vp;
 {
 	char *s;
 
@@ -316,8 +316,8 @@ str_val(vp)
 		const char *digits = (vp->flag & UCASEV_AL) ?
 				  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 				: "0123456789abcdefghijklmnopqrstuvwxyz";
-		register unsigned long n;
-		register int base;
+		unsigned long n;
+		int base;
 
 		s = strbuf + sizeof(strbuf);
 		if (vp->flag & INT_U)
@@ -352,7 +352,7 @@ str_val(vp)
 /* get variable integer value, with error checking */
 long
 intval(vp)
-	register struct tbl *vp;
+	struct tbl *vp;
 {
 	long num;
 	int base;
@@ -367,7 +367,7 @@ intval(vp)
 /* set variable to string value */
 int
 setstr(vq, s, error_ok)
-	register struct tbl *vq;
+	struct tbl *vq;
 	const char *s;
 	int error_ok;
 {
@@ -414,11 +414,11 @@ setstr(vq, s, error_ok)
 /* set variable to integer */
 void
 setint(vq, n)
-	register struct tbl *vq;
+	struct tbl *vq;
 	long n;
 {
 	if (!(vq->flag&INTEGER)) {
-		register struct tbl *vp = &vtemp;
+		struct tbl *vp = &vtemp;
 		vp->flag = (ISSET|INTEGER);
 		vp->type = 0;
 		vp->areap = ATEMP;
@@ -437,8 +437,8 @@ getint(vp, nump)
 	struct tbl *vp;
 	long *nump;
 {
-	register char *s;
-	register int c;
+	char *s;
+	int c;
 	int base, neg;
 	int have_base = 0;
 	long num;
@@ -500,7 +500,7 @@ getint(vp, nump)
  */
 struct tbl *
 setint_v(vq, vp)
-	register struct tbl *vq, *vp;
+	struct tbl *vq, *vp;
 {
 	int base;
 	long num;
@@ -586,10 +586,10 @@ formatstr(vp, s)
  */
 static void
 export(vp, val)
-	register struct tbl *vp;
+	struct tbl *vp;
 	const char *val;
 {
-	register char *xp;
+	char *xp;
 	char *op = (vp->flag&ALLOC) ? vp->val.s : NULL;
 	int namelen = strlen(vp->name);
 	int vallen = strlen(val) + 1;
@@ -612,11 +612,11 @@ export(vp, val)
  */
 struct tbl *
 typeset(var, set, clr, field, base)
-	register const char *var;
+	const char *var;
 	Tflag clr, set;
 	int field, base;
 {
-	register struct tbl *vp;
+	struct tbl *vp;
 	struct tbl *vpbase, *t;
 	char *tvar;
 	const char *val;
@@ -766,7 +766,7 @@ typeset(var, set, clr, field, base)
  */
 void
 unset(vp, array_ref)
-	register struct tbl *vp;
+	struct tbl *vp;
 	int array_ref;
 {
 	if (vp->flag & ALLOC)
@@ -872,21 +872,21 @@ makenv()
 {
 	struct block *l = e->loc;
 	XPtrV env;
-	register struct tbl *vp, **vpp;
-	register int i;
+	struct tbl *vp, **vpp;
+	int i;
 
 	XPinit(env, 64);
 	for (l = e->loc; l != NULL; l = l->next)
 		for (vpp = l->vars.tbls, i = l->vars.size; --i >= 0; )
 			if ((vp = *vpp++) != NULL
 			    && (vp->flag&(ISSET|EXPORT)) == (ISSET|EXPORT)) {
-				register struct block *l2;
-				register struct tbl *vp2;
+				struct block *l2;
+				struct tbl *vp2;
 				unsigned h = hash(vp->name);
 
 				/* unexport any redefined instances */
 				for (l2 = l->next; l2 != NULL; l2 = l2->next) {
-					vp2 = tsearch(&l2->vars, vp->name, h);
+					vp2 = mytsearch(&l2->vars, vp->name, h);
 					if (vp2 != NULL)
 						vp2->flag &= ~EXPORT;
 				}
@@ -922,24 +922,24 @@ change_random()
 /* Test if name is a special parameter */
 static int
 special(name)
-	register const char * name;
+	const char * name;
 {
-	register struct tbl *tp;
+	struct tbl *tp;
 
-	tp = tsearch(&specials, name, hash(name));
+	tp = mytsearch(&specials, name, hash(name));
 	return tp && (tp->flag & ISSET) ? tp->type : V_NONE;
 }
 
 /* Make a variable non-special */
 static void
 unspecial(name)
-	register const char * name;
+	const char * name;
 {
-	register struct tbl *tp;
+	struct tbl *tp;
 
-	tp = tsearch(&specials, name, hash(name));
+	tp = mytsearch(&specials, name, hash(name));
 	if (tp)
-		tdelete(tp);
+		mytdelete(tp);
 }
 
 #ifdef KSH
@@ -949,7 +949,7 @@ static	int	user_lineno;		/* what user set $LINENO to */
 
 static void
 getspec(vp)
-	register struct tbl *vp;
+	struct tbl *vp;
 {
 	switch (special(vp->name)) {
 #ifdef KSH
@@ -991,7 +991,7 @@ getspec(vp)
 
 static void
 setspec(vp)
-	register struct tbl *vp;
+	struct tbl *vp;
 {
 	char *s;
 
@@ -1092,7 +1092,7 @@ setspec(vp)
 
 static void
 unsetspec(vp)
-	register struct tbl *vp;
+	struct tbl *vp;
 {
 	switch (special(vp->name)) {
 	  case V_PATH:

@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.71 2017/11/11 12:51:05 maxv Exp $	*/
+/*	$NetBSD: pmap.h,v 1.81 2018/07/21 06:09:13 maxv Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -149,9 +149,54 @@ struct bootspace {
 	/* Virtual address of the page directory. */
 	vaddr_t pdir;
 
-	/* End of the area dedicated to kernel modules (amd64 only). */
+	/* Area dedicated to kernel modules (amd64 only). */
+	vaddr_t smodule;
 	vaddr_t emodule;
 };
+
+#define SLSPACE_NONE	0
+#define SLAREA_USER	1
+#define SLAREA_PTE	2
+#define SLAREA_MAIN	3
+#define SLAREA_PCPU	4
+#define SLAREA_DMAP	5
+#define SLAREA_KERN	6
+#define SLSPACE_NAREAS	7
+
+struct slotspace {
+	struct {
+		size_t sslot; /* start slot */
+		size_t nslot; /* # of slots */
+		size_t mslot; /* max # of slots */
+		bool active;  /* area is active */
+		bool dropmax; /* !resizable */
+	} area[SLSPACE_NAREAS];
+};
+
+#ifndef MAXGDTSIZ
+#define MAXGDTSIZ 65536 /* XXX */
+#endif
+
+struct pcpu_entry {
+	uint8_t gdt[MAXGDTSIZ];
+	uint8_t tss[PAGE_SIZE];
+	uint8_t ist0[PAGE_SIZE];
+	uint8_t ist1[PAGE_SIZE];
+	uint8_t ist2[PAGE_SIZE];
+	uint8_t ist3[PAGE_SIZE];
+	uint8_t rsp0[2 * PAGE_SIZE];
+} __packed;
+
+struct pcpu_area {
+#ifdef SVS
+	uint8_t utls[PAGE_SIZE];
+#endif
+	uint8_t idt[PAGE_SIZE];
+	uint8_t ldt[PAGE_SIZE];
+	struct pcpu_entry ent[MAXCPUS];
+} __packed;
+
+extern struct pcpu_area *pcpuarea;
 
 /*
  * pmap data structures: see pmap.c for details of locking.
@@ -292,10 +337,6 @@ void		pmap_ldt_cleanup(struct lwp *);
 void		pmap_ldt_sync(struct pmap *);
 void		pmap_kremove_local(vaddr_t, vsize_t);
 
-void		pmap_emap_enter(vaddr_t, paddr_t, vm_prot_t);
-void		pmap_emap_remove(vaddr_t, vsize_t);
-void		pmap_emap_sync(bool);
-
 #define	__HAVE_PMAP_PV_TRACK	1
 void		pmap_pv_init(void);
 void		pmap_pv_track(paddr_t, psize_t);
@@ -341,8 +382,6 @@ void		pmap_tlb_shootdown(pmap_t, vaddr_t, pt_entry_t, tlbwhy_t);
 void		pmap_tlb_shootnow(void);
 void		pmap_tlb_intr(void);
 
-#define	__HAVE_PMAP_EMAP
-
 #define PMAP_GROWKERNEL		/* turn on pmap_growkernel interface */
 #define PMAP_FORK		/* turn on pmap_fork interface */
 
@@ -371,17 +410,6 @@ __inline static void __unused
 pmap_update_pg(vaddr_t va)
 {
 	invlpg(va);
-}
-
-/*
- * pmap_update_2pg: flush two pages from the TLB
- */
-
-__inline static void __unused
-pmap_update_2pg(vaddr_t va, vaddr_t vb)
-{
-	invlpg(va);
-	invlpg(vb);
 }
 
 /*
@@ -526,15 +554,26 @@ void	pmap_free_ptps(struct vm_page *);
  */
 #define	POOL_VTOPHYS(va)	vtophys((vaddr_t) (va))
 
+#ifdef __HAVE_PCPU_AREA
+extern struct pcpu_area *pcpuarea;
+#define PDIR_SLOT_PCPU		384
+#define PMAP_PCPU_BASE		(VA_SIGN_NEG((PDIR_SLOT_PCPU * NBPD_L4)))
+#endif
+
 #ifdef __HAVE_DIRECT_MAP
+
+extern vaddr_t pmap_direct_base;
+extern vaddr_t pmap_direct_end;
 
 #define L4_SLOT_DIRECT		456
 #define PDIR_SLOT_DIRECT	L4_SLOT_DIRECT
 
 #define NL4_SLOT_DIRECT		32
 
-#define PMAP_DIRECT_BASE	(VA_SIGN_NEG((L4_SLOT_DIRECT * NBPD_L4)))
-#define PMAP_DIRECT_END		(PMAP_DIRECT_BASE + NL4_SLOT_DIRECT * NBPD_L4)
+#define PMAP_DIRECT_DEFAULT_BASE (VA_SIGN_NEG((L4_SLOT_DIRECT * NBPD_L4)))
+
+#define PMAP_DIRECT_BASE	pmap_direct_base
+#define PMAP_DIRECT_END		pmap_direct_end
 
 #define PMAP_DIRECT_MAP(pa)	((vaddr_t)PMAP_DIRECT_BASE + (pa))
 #define PMAP_DIRECT_UNMAP(va)	((paddr_t)(va) - PMAP_DIRECT_BASE)

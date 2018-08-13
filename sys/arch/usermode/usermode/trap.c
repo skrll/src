@@ -1,4 +1,4 @@
-/* $NetBSD: trap.c,v 1.66 2012/08/04 14:53:32 reinoud Exp $ */
+/* $NetBSD: trap.c,v 1.70 2018/08/01 09:44:31 reinoud Exp $ */
 
 /*-
  * Copyright (c) 2011 Reinoud Zandijk <reinoud@netbsd.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.66 2012/08/04 14:53:32 reinoud Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.70 2018/08/01 09:44:31 reinoud Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -46,6 +46,12 @@ __KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.66 2012/08/04 14:53:32 reinoud Exp $");
 #include <machine/intr.h>
 #include <machine/thunk.h>
 
+#include "opt_kgdb.h"
+
+#ifdef KGDB
+#include <sys/kgdb.h>
+#endif
+
 /* define maximum signal number */
 #ifndef NSIG
 #define NSIG 64
@@ -61,7 +67,10 @@ static sigfunc_t alarm;
 static sigfunc_t sigio;
 static sigfunc_t pass_on;
 
+void kgdb_kernel_trap(int signo, vaddr_t pc, vaddr_t va, ucontext_t *ctx);
+
 /* raw signal handlers */
+static char    sig_stack[SIGSTKSZ];
 static stack_t sigstk;
 ucontext_t jump_ucp;
 
@@ -108,8 +117,7 @@ setup_signal_handlers(void)
 	 * effects. Especially ld.so and friends have such tiny stacks that
 	 * its not feasable.
 	 */
-	if ((sigstk.ss_sp = thunk_malloc(SIGSTKSZ)) == NULL)
-		panic("can't allocate signal stack space\n");
+	sigstk.ss_sp    = sig_stack;
 	sigstk.ss_size  = SIGSTKSZ;
 	sigstk.ss_flags = 0;
 	if (thunk_sigaltstack(&sigstk, 0) < 0)
@@ -123,7 +131,7 @@ setup_signal_handlers(void)
 	/* INT */	/* ttycons ^C */
 	/* QUIT */
 	signal_intr_establish(SIGILL, illegal_instruction);
-	/* TRAP */
+	signal_intr_establish(SIGTRAP, pass_on); 	/* special */
 	/* ABRT */
 	/* SIGEMT */
 	signal_intr_establish(SIGFPE, pass_on);
@@ -293,8 +301,8 @@ print_illegal_instruction_siginfo(int sig, siginfo_t *info, void *ctx,
 #endif
 }
 #else /* DEBUG */
-#define print_mem_access_siginfo(s, i, c, p, v, sp)
-#define print_illegal_instruction_siginfo(s, i, c, p, v, sp)
+#define print_mem_access_siginfo(s, i, c, p, v, sp) {}
+#define print_illegal_instruction_siginfo(s, i, c, p, v, sp) {}
 #endif /* DEBUG */
 
 
@@ -317,17 +325,29 @@ handle_signal(int sig, siginfo_t *info, void *ctx)
 	f = sig_funcs[sig];
 	KASSERT(f);
 
-	l = curlwp; KASSERT(l);
-	pcb = lwp_getpcb(l); KASSERT(pcb);
-
-	/* get address of possible faulted memory access and page aligne it */
+	/* get address of possible faulted memory access and page align it */
 	va = (vaddr_t) info->si_addr;
 	va = trunc_page(va);
 
 	/* get PC address of possibly faulted instruction */
 	pc = md_get_pc(ctx);
 
-	/* nest it on the stack */
+	/*
+	 * short-cut for SIGTRAP as we have NO indication anything is valid
+	 */
+#ifdef KGDB
+	if (sig == SIGTRAP) {
+		from_userland = 0;
+		if (pc < kmem_user_end)
+			from_userland = 1;
+		if (!from_userland) {
+			kgdb_kernel_trap(sig, pc, va, ucp);
+			return;
+		}
+	}
+#endif
+
+	/* get stack pointer for nesting */
 	sp = md_get_sp(ctx);
 
 	if (sig == SIGBUS || sig == SIGSEGV)
@@ -335,7 +355,13 @@ handle_signal(int sig, siginfo_t *info, void *ctx)
 	if (sig == SIGILL)
 		print_illegal_instruction_siginfo(sig, info, ctx, pc, va, sp);
 
-	/* if we're running on a stack of our own, use the system stack */
+	/* get thread */
+	l = curlwp; KASSERT(l);
+	pcb = lwp_getpcb(l); KASSERT(pcb);
+
+	/* currently running on the dedicated signal stack */
+
+	/* if we're running on a userland stack, switch to the system stack */
 	from_userland = 0;
 	if ((sp < (vaddr_t) pcb->sys_stack) ||
 	    (sp > (vaddr_t) pcb->sys_stack_top)) {
@@ -349,7 +375,7 @@ handle_signal(int sig, siginfo_t *info, void *ctx)
 		sp = fp - sizeof(register_t);	/* slack */
 
 		/* sanity check before copying */
-		if (fp - 2*PAGE_SIZE < (vaddr_t) pcb->sys_stack)
+		if (fp - 4*PAGE_SIZE < (vaddr_t) pcb->sys_stack)
 			panic("%s: out of system stack", __func__);
 	}
 
@@ -361,7 +387,11 @@ handle_signal(int sig, siginfo_t *info, void *ctx)
 	jump_ucp.uc_stack.ss_size = sp - (vaddr_t) pcb->sys_stack;
 	jump_ucp.uc_link = (void *) fp;	/* link to old frame on stack */
 
-	thunk_sigemptyset(&jump_ucp.uc_sigmask);
+	/* prevent multiple nested SIGIOs */
+	if (sig == SIGIO)
+		thunk_sigfillset(&jump_ucp.uc_sigmask);
+	else
+		thunk_sigemptyset(&jump_ucp.uc_sigmask);
 	jump_ucp.uc_flags = _UC_STACK | _UC_CPU | _UC_SIGMASK;
 
 	thunk_makecontext(&jump_ucp,
@@ -431,6 +461,11 @@ pagefault(siginfo_t *info, vaddr_t from_userland, vaddr_t pc, vaddr_t va)
 	}
 
 	/* ask UVM */
+#if 0
+thunk_printf("%s: l %p, pcb %p, ", __func__, l, pcb);
+thunk_printf("pc %p, va %p ", (void *) pc, (void *) va);
+thunk_printf("derived atype %d\n", atype);
+#endif
 	thunk_printf_debug("pmap fault couldn't handle it! : "
 		"derived atype %d\n", atype);
 
@@ -452,10 +487,6 @@ pagefault(siginfo_t *info, vaddr_t from_userland, vaddr_t pc, vaddr_t va)
 		goto out;
 	}
 
-	/* something got wrong */
-	thunk_printf("%s: uvm fault %d, pc %p, va %p, from_kernel %d\n",
-		__func__, error, (void *) pc, (void *) va, from_kernel);
-
 	/* check if its from copyin/copyout */
 	if (onfault) {
 		panic("%s: can't call onfault yet\n", __func__);
@@ -468,11 +499,18 @@ pagefault(siginfo_t *info, vaddr_t from_userland, vaddr_t pc, vaddr_t va)
 		goto out;
 	}
 
-	if (from_kernel)
+	if (from_kernel) {
+		thunk_printf("%s: uvm fault %d, pc %p, va %p, from_kernel %d\n",
+			__func__, error, (void *) pc, (void *) va, from_kernel);
 		panic("Unhandled page fault in kernel mode");
+	}
 
 	/* send signal */
-	thunk_printf("giving signal to userland\n");
+	/* something got wrong */
+	thunk_printf_debug("%s: uvm fault %d, pc %p, va %p, from_kernel %d\n",
+		__func__, error, (void *) pc, (void *) va, from_kernel);
+
+	thunk_printf_debug("giving signal to userland\n");
 
 	KASSERT(from_userland);
 	KSI_INIT_TRAP(&ksi);

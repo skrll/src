@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmevar.h,v 1.13 2017/04/05 20:15:49 jdolecek Exp $	*/
+/*	$NetBSD: nvmevar.h,v 1.17 2018/04/19 21:50:08 christos Exp $	*/
 /*	$OpenBSD: nvmevar.h,v 1.8 2016/04/14 11:18:32 dlg Exp $ */
 
 /*
@@ -87,8 +87,9 @@ struct nvme_queue {
 	uint16_t		q_cq_phase;
 
 	kmutex_t		q_ccb_mtx;
+	kcondvar_t		q_ccb_wait;	/* wait for ccb avail/finish */
+	bool			q_ccb_waiting;	/* whether there are waiters */
 	uint16_t		q_nccbs;	/* total number of ccbs */
-	uint16_t		q_nccbs_avail;	/* available ccbs */
 	struct nvme_ccb		*q_ccbs;
 	SIMPLEQ_HEAD(, nvme_ccb) q_ccb_list;
 	struct nvme_dmamem	*q_ccb_prpls;
@@ -135,6 +136,9 @@ struct nvme_softc {
 	uint32_t		sc_flags;
 #define	NVME_F_ATTACHED	__BIT(0)
 #define	NVME_F_OPEN	__BIT(1)
+
+	uint32_t		sc_quirks;
+#define	NVME_QUIRK_DELAY_B4_CHK_RDY	__BIT(0)
 };
 
 #define	lemtoh16(p)	le16toh(*((uint16_t *)(p)))
@@ -159,7 +163,7 @@ void	nvme_softintr_intx(void *);
 int	nvme_intr_msi(void *);
 void	nvme_softintr_msi(void *);
 
-static inline struct nvme_queue *
+static __inline struct nvme_queue *
 nvme_get_q(struct nvme_softc *sc)
 {
 	return sc->sc_q[cpu_index(curcpu()) % sc->sc_nq];
@@ -168,7 +172,7 @@ nvme_get_q(struct nvme_softc *sc)
 /*
  * namespace
  */
-static inline struct nvme_namespace *
+static __inline struct nvme_namespace *
 nvme_ns_get(struct nvme_softc *sc, uint16_t nsid)
 {
 	if (nsid == 0 || nsid - 1 >= sc->sc_nn)
@@ -180,6 +184,5 @@ int	nvme_ns_identify(struct nvme_softc *, uint16_t);
 void	nvme_ns_free(struct nvme_softc *, uint16_t);
 int	nvme_ns_dobio(struct nvme_softc *, uint16_t, void *,
     struct buf *, void *, size_t, int, daddr_t, int, nvme_nnc_done);
-int	nvme_ns_sync(struct nvme_softc *, uint16_t, void *, int, nvme_nnc_done);
-bool	nvme_has_volatile_write_cache(struct nvme_softc *);
-int	nvme_admin_getcache(struct nvme_softc *, void *, nvme_nnc_done);
+int	nvme_ns_sync(struct nvme_softc *, uint16_t, int);
+int	nvme_admin_getcache(struct nvme_softc *, int *);

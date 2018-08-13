@@ -1,4 +1,4 @@
-/*	$NetBSD: svr4_32_exec.c,v 1.27 2012/02/19 21:06:45 rmind Exp $	 */
+/*	$NetBSD: svr4_32_exec.c,v 1.29 2018/05/06 13:40:51 kamil Exp $	 */
 
 /*-
  * Copyright (c) 1994, 2000 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: svr4_32_exec.c,v 1.27 2012/02/19 21:06:45 rmind Exp $");
+__KERNEL_RCSID(0, "$NetBSD: svr4_32_exec.c,v 1.29 2018/05/06 13:40:51 kamil Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_syscall_debug.h"
@@ -80,7 +80,6 @@ struct emul emul_svr4_32 = {
 #endif
 	.e_sendsig =		svr4_32_sendsig,
 	.e_trapsignal =		trapsignal,
-	.e_tracesig =		NULL,
 	.e_sigcode =		svr4_32_sigcode,
 	.e_esigcode =		svr4_32_esigcode,
 	.e_sigobject =		&emul_svr4_32_object,
@@ -96,7 +95,6 @@ struct emul emul_svr4_32 = {
 	.e_syscall_intern =	syscall,
 #endif
 	.e_sysctlovly =		NULL,
-	.e_fault =		NULL,
 	.e_vm_default_addr =	svr4_32_vm_default_addr,
 	.e_usertrap =		NULL,
 	.e_ucsize =		0,

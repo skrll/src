@@ -1,4 +1,4 @@
-/*	$NetBSD: gumstix_machdep.c,v 1.58 2017/03/01 16:44:54 skrll Exp $ */
+/*	$NetBSD: gumstix_machdep.c,v 1.60 2018/07/31 06:46:26 skrll Exp $ */
 /*
  * Copyright (C) 2005, 2006, 2007  WIDE Project and SOUM Corporation.
  * All rights reserved.
@@ -137,6 +137,7 @@
  * boards using RedBoot firmware.
  */
 
+#include "opt_arm_debug.h"
 #include "opt_com.h"
 #include "opt_cputypes.h"
 #include "opt_evbarm_boardtype.h"
@@ -1051,7 +1052,7 @@ gumstix_device_register(device_t dev, void *aux)
 {
 	prop_dictionary_t dict = device_properties(dev);
 
-	if (device_is_a(dev, "a9tmr") ||
+	if (device_is_a(dev, "arma9tmr") ||
 	    device_is_a(dev, "a9wdt")) {
 		/*
 		 * We need to tell the A9 Global/Watchdog Timer

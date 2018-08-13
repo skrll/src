@@ -1,4 +1,4 @@
-/*	$NetBSD: socket.h,v 1.123 2017/07/01 16:59:12 christos Exp $	*/
+/*	$NetBSD: socket.h,v 1.126 2018/07/31 13:20:34 rjs Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -222,7 +222,8 @@ struct	accept_filter_arg {
 #define	AF_MPLS		33		/* MultiProtocol Label Switching */
 #define	AF_ROUTE	34		/* Internal Routing Protocol */
 #define	AF_CAN		35
-#define	AF_MAX		36
+#define	AF_ETHER	36
+#define	AF_MAX		37
 
 /*
  * Structure used by kernel to store most
@@ -332,6 +333,7 @@ struct sockaddr_storage {
 #define	PF_MPLS		AF_MPLS
 #define	PF_ROUTE	AF_ROUTE
 #define	PF_CAN		AF_CAN
+#define	PF_ETHER	AF_ETHER
 
 #define	PF_MAX		AF_MAX
 
@@ -618,7 +620,7 @@ struct cmsghdr {
 #define	SHUT_RDWR	2		/* Disallow further sends/receives. */
 
 #ifdef	_KERNEL
-static inline socklen_t
+static __inline socklen_t
 sockaddr_getlen(const struct sockaddr *sa)
 {
 	return sa->sa_len;
@@ -653,6 +655,7 @@ int	connect(int, const struct sockaddr *, socklen_t);
 int	getpeername(int, struct sockaddr * __restrict, socklen_t * __restrict);
 int	getsockname(int, struct sockaddr * __restrict, socklen_t * __restrict);
 int	getsockopt(int, int, int, void *__restrict, socklen_t * __restrict);
+int	getsockopt2(int, int, int, void *__restrict, socklen_t * __restrict);
 int	listen(int, int);
 int	paccept(int, struct sockaddr * __restrict, socklen_t * __restrict,
 	const sigset_t * __restrict, int);

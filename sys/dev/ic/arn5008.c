@@ -1,4 +1,4 @@
-/*	$NetBSD: arn5008.c,v 1.13 2017/05/23 02:19:14 ozaki-r Exp $	*/
+/*	$NetBSD: arn5008.c,v 1.15 2018/06/26 06:48:00 msaitoh Exp $	*/
 /*	$OpenBSD: ar5008.c,v 1.21 2012/08/25 12:14:31 kettenis Exp $	*/
 
 /*-
@@ -24,7 +24,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arn5008.c,v 1.13 2017/05/23 02:19:14 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arn5008.c,v 1.15 2018/06/26 06:48:00 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/sockio.h>
@@ -784,7 +784,7 @@ ar5008_rx_radiotap(struct athn_softc *sc, struct mbuf *m,
 		case 0xc: tap->wr_rate = 108; break;
 		}
 	}
-	bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m);
+	bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m, BPF_D_IN);
 }
 
 static __inline int
@@ -920,7 +920,7 @@ ar5008_rx_process(struct athn_softc *sc)
 	if (!(wh->i_fc[0] & IEEE80211_FC0_TYPE_CTL)) {
 		u_int hdrlen = ieee80211_anyhdrsize(wh);
 		if (hdrlen & 3) {
-			ovbcopy(wh, (uint8_t *)wh + 2, hdrlen);
+			memmove((uint8_t *)wh + 2, wh, hdrlen);
 			m_adj(m, 2);
 		}
 	}
@@ -1423,7 +1423,7 @@ ar5008_tx(struct athn_softc *sc, struct mbuf *m, struct ieee80211_node *ni,
 		    (ic->ic_flags & IEEE80211_F_SHPREAMBLE))
 			tap->wt_flags |= IEEE80211_RADIOTAP_F_SHORTPRE;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m, BPF_D_OUT);
 	}
 
 	/* DMA map mbuf. */

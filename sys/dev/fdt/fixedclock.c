@@ -1,4 +1,4 @@
-/* $NetBSD: fixedclock.c,v 1.2 2017/04/21 19:18:05 jmcneill Exp $ */
+/* $NetBSD: fixedclock.c,v 1.4 2018/06/16 00:13:06 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fixedclock.c,v 1.2 2017/04/21 19:18:05 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fixedclock.c,v 1.4 2018/06/16 00:13:06 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -89,9 +89,15 @@ fixedclock_attach(device_t parent, device_t self, void *aux)
 	struct fixedclock_softc * const sc = device_private(self);
 	const struct fdt_attach_args *faa = aux;
 	const int phandle = faa->faa_phandle;
+	const char *clkname;
+
+	clkname = fdtbus_get_string(phandle, "clock-output-names");
+	if (!clkname)
+		clkname = faa->faa_name;
 
 	sc->sc_dev = self;
 	sc->sc_phandle = phandle;
+	sc->sc_clkdom.name = device_xname(self);
 	sc->sc_clkdom.funcs = &fixedclock_clk_funcs;
 	sc->sc_clkdom.priv = sc;
 	if (of_getprop_uint32(phandle, "clock-frequency",
@@ -100,10 +106,11 @@ fixedclock_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	sc->sc_clk.base.domain = &sc->sc_clkdom;
-	sc->sc_clk.base.name = kmem_asprintf("%s", faa->faa_name);
+	sc->sc_clk.base.name = kmem_asprintf("%s", clkname);
+	clk_attach(&sc->sc_clk.base);
 
 	aprint_naive("\n");
-	aprint_normal(": %u Hz fixed clock\n", sc->sc_clk.rate);
+	aprint_normal(": %u Hz fixed clock (%s)\n", sc->sc_clk.rate, clkname);
 
 	fdtbus_register_clock_controller(self, phandle, &fixedclock_fdt_funcs);
 }

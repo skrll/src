@@ -1,8 +1,6 @@
-#	$NetBSD: Makefile,v 1.11 2017/08/29 09:02:10 mrg Exp $
+#	$NetBSD: Makefile,v 1.15 2018/05/09 08:13:23 mrg Exp $
 
-NOMAN=		1
-
-.include <bsd.own.mk>
+.include <bsd.hostinit.mk>
 
 HOSTPROG=	fc-cache
 
@@ -23,7 +21,7 @@ SRCS.fontconfig=	fcatomic.c fcblanks.c fccache.c fccfg.c \
 		ftglue.c
 
 .PATH:	${FREETYPE}/src/base
-SRCS.freetype=	ftapi.c ftbase.c ftbbox.c ftbdf.c ftdebug.c ftfntfmt.c \
+SRCS.freetype=	ftapi.c ftbase.c ftbbox.c ftbdf.c ftdebug.c \
 		ftglyph.c ftinit.c ftmm.c ftpfr.c ftstroke.c ftsynth.c \
 		ftsystem.c fttype1.c ftwinfnt.c ftbitmap.c
 
@@ -113,7 +111,8 @@ HOST_CPPFLAGS=	-DFONTCONFIG_PATH='"${DESTDIR}/etc/X11/fonts"' \
 		-DFLEXIBLE_ARRAY_MEMBER="/**/"
 HOST_CPPFLAGS+=	-DFT_CONFIG_OPTION_DISABLE_BZIP2
 HOST_CPPFLAGS+=	-I${FONTCONFIG} -I${FREETYPE} \
-		-I${FREETYPE}/include -I${EXPAT}/lib \
+		-I${FREETYPE}/include -I${FREETYPE}/include/freetype \
+		-I${EXPAT}/lib \
 		-I${FONTCONFIG}/../include \
 		-I${DESTDIR}${X11INCDIR} -I.
 

@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.336 2017/09/22 04:09:06 macallan Exp $
+# $NetBSD: GENERIC,v 1.348 2018/08/01 20:04:12 maxv Exp $
 #
 # GENERIC machine description file
 # 
@@ -22,7 +22,7 @@ include		"arch/macppc/conf/std.macppc"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.336 $"
+#ident 		"GENERIC-$Revision: 1.348 $"
 
 maxusers	32
 
@@ -46,10 +46,10 @@ options 	USERCONF	# userconf(4) support
 #options 	PIPE_SOCKETPAIR	# smaller, but slower pipe(2)
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
-# Enable experimental buffer queue strategy for better responsiveness under
-# high disk I/O load. Use it with caution - it's not proven to be stable yet.
+# Alternate buffer queue strategies for better responsiveness under high
+# disk I/O load.
 #options 	BUFQ_READPRIO
-#options 	BUFQ_PRIOCSCAN
+options 	BUFQ_PRIOCSCAN
 
 # Diagnostic/debugging support options
 #options 	DIAGNOSTIC	# cheap kernel consistency checks
@@ -59,7 +59,7 @@ options 	DDB		# in-kernel debugger
 #options 	DDB_ONPANIC=0	# don't go into ddb on panic.
 options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #options 	TRAP_PANICWAIT
-options		DDB_COMMANDONENTER="bt"
+#options 	DDB_COMMANDONENTER="bt"
 
 #makeoptions 	DEBUG="-g"	# compile full symbol table
 
@@ -119,7 +119,7 @@ options 	NFS_BOOT_DHCP	# Support DHCP NFS root
 #options 	GATEWAY		# packet forwarding
 options 	INET		# IP + ICMP + TCP + UDP
 options 	INET6		# IPV6
-#options 	IPSEC		# IP security
+options 	IPSEC		# IP security
 #options 	IPSEC_DEBUG	# debug for IP security
 #options 	MROUTING	# IP multicast routing
 #options 	PIM		# Protocol Independent Multicast
@@ -127,10 +127,6 @@ options 	NETATALK	# AppleTalk networking protocols
 options 	PPP_BSDCOMP	# BSD-Compress compression support for PPP
 options 	PPP_DEFLATE	# Deflate compression support for PPP
 options 	PPP_FILTER	# Active filter support for PPP (requires bpf)
-options 	IPFILTER_LOG	# ipmon(8) log support
-options 	IPFILTER_LOOKUP	# ippool(8) support
-options 	IPFILTER_COMPAT # Compat for IP-Filter
-#options 	IPFILTER_DEFAULT_BLOCK	# block all packets by default
 #options 	TCP_DEBUG	# Record last TCP_NDEBUG packets with SO_DEBUG
 
 #options 	ALTQ		# Manipulate network interfaces' output queues
@@ -268,10 +264,6 @@ trm*	at pci? dev ? function ?	# Tekram DC-395U/UW/F, DC-315/U SCSI
 
 # Display devices
 # ofb*	at pci? dev ? function ?	# Generic Open Firmware Framebuffer
-# OFB_ENABLE_CACHE speeds up the console on many machines, but should
-# not be enabled on some older machines, such as the rev. A-D iMacs or any
-# O'Hare based machine that uses external cache like the PowerBook 3400c
-#options 	OFB_ENABLE_CACHE	# Speed up console in ofb
 #options 	OFB_FAKE_VGA_FB		# Allow X to mmap VGA regs
 # 
 # ofb is considered obsolete and machine-independent genfb should be used
@@ -287,6 +279,7 @@ voodoofb*	at pci? function ?	# 3Dfx Voodoo3
 
 # ATI Radeon. Still has problems on some hardware
 radeonfb*	at pci? function ?
+options 	RADEONFB_ALWAYS_ACCEL_PUTCHAR
 
 # generic PCI framebuffer, should work with everything supported by OF
 genfb*		at pci? function ?
@@ -294,8 +287,6 @@ genfb*		at pci? function ?
 # make sure the console display is always wsdisplay0
 wsdisplay0	at wsemuldisplaydev? console 1
 wsdisplay*	at wsemuldisplaydev?
-
-#macofcons0 at pci? dev ? function ?	# OpenFirmware console (for debugging)
 
 # Other  PCI devices
 pciide* at pci? dev ? function ? flags 0x0000	# GENERIC pciide driver
@@ -392,11 +383,7 @@ zsc*	at obio?
 zstty*	at zsc? channel ?
 mediabay* at obio?
 wdc*	at mediabay? flags 0
-# awacs is disabled because on most systems (7300 - 9600 PowerMacs,
-# many kinds of G4s), very heavy load can cause the machine to lock
-# up. ONLY enable this if your machine is never under heavy load, or
-# you'd rather have audio than worry about occasional lockups.
-#awacs*	at obio?			# Apple audio device
+awacs*	at obio?			# Apple audio device
 ki2c*	at obio?			# Keywest I2C
 ki2c*	at uni_n?			# Keywest I2C
 iic*	at ki2c?
@@ -555,6 +542,41 @@ ucom*   at u3g?
 ugensa* at uhub? port ?
 ucom*   at ugensa?
 
+# Bluetooth Controller and Device support
+
+# Bluetooth PCMCIA Controllers
+bt3c* at pcmcia? function ?		# 3Com 3CRWB6096-A
+btbc* at pcmcia? function ?		# AnyCom BlueCard LSE041/039/139
+
+# Bluetooth USB Controllers
+ubt* at uhub? port ?
+aubtfwl* at uhub? port ?
+
+# Bluetooth Device Hub
+bthub* at bcsp?
+bthub* at bt3c?
+bthub* at btbc?
+bthub* at btuart?
+bthub* at ubt?
+
+# Bluetooth HID support
+bthidev* at bthub?
+
+# Bluetooth Mouse
+btms* at bthidev? reportid ?
+wsmouse* at btms? mux 0
+
+# Bluetooth Keyboard
+btkbd* at bthidev? reportid ?
+wskbd* at btkbd? console ? mux 1
+
+# Bluetooth Apple Magic Mouse
+btmagic* at bthub?
+wsmouse* at btmagic? mux 0
+
+# Bluetooth Audio support
+btsco* at bthub?
+
 # PCI IEEE1394 controllers
 fwohci*	at pci? dev ? function ?	# IEEE1394 Open Host Controller
 
@@ -620,7 +642,7 @@ pseudo-device	fss			# file system snapshot device
 pseudo-device	md			# memory disk device
 pseudo-device	loop			# network loopback
 pseudo-device	bpfilter		# packet filter
-pseudo-device	ipfilter		# IP filter (firewall) and NAT
+pseudo-device	npf			# NPF packet filter
 pseudo-device	ppp			# Point-to-Point Protocol
 pseudo-device	pppoe			# PPP over Ethernet (RFC 2516)
 pseudo-device	sl			# Serial Line IP
@@ -628,6 +650,7 @@ pseudo-device	tun			# network tunneling over tty
 pseudo-device	tap			# virtual Ethernet
 #pseudo-device	gre			# generic L3 over IP tunnel
 pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
+pseudo-device	ipsecif			# tunnel interface for routing based ipsec
 #pseudo-device	faith			# IPv[46] tcp relay translation i/f
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
@@ -642,24 +665,26 @@ pseudo-device	swwdog			# software watchdog driver - swwdog(4)
 pseudo-device	clockctl		# user control of clock subsystem
 pseudo-device	ksyms			# /dev/ksyms
 pseudo-device	nsmb			# SMB requester
-#pseudo-device	pf			# PF packet filter
-#pseudo-device	pflog			# PF log if
 pseudo-device	putter			# for puffs and pud
+pseudo-device	bcsp			# BlueCore Serial Protocol
+pseudo-device	btuart			# Bluetooth HCI UART (H4)
 
 # userland interface to drivers, including autoconf and properties retrieval
 pseudo-device   drvctl
 
+options 	FILEASSOC		# fileassoc(9) - needed by Veriexec
+
 # Veriexec
 #
 # a pseudo device needed for veriexec
-#pseudo-device	veriexec
+pseudo-device	veriexec
 #
 # Uncomment the fingerprint methods below that are desired. Note that
 # removing fingerprint methods will have almost no impact on the kernel
 # code size.
 #
-#options VERIFIED_EXEC_FP_SHA256
-#options VERIFIED_EXEC_FP_SHA384
-#options VERIFIED_EXEC_FP_SHA512
+options VERIFIED_EXEC_FP_SHA256
+options VERIFIED_EXEC_FP_SHA384
+options VERIFIED_EXEC_FP_SHA512
 
 #options PAX_MPROTECT=0			# PaX mprotect(2) restrictions

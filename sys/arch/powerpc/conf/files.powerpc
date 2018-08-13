@@ -1,4 +1,4 @@
-#	$NetBSD: files.powerpc,v 1.89 2014/03/04 08:25:11 matt Exp $
+#	$NetBSD: files.powerpc,v 1.91 2018/07/15 05:16:43 maxv Exp $
 
 defflag	opt_altivec.h	ALTIVEC K_ALTIVEC PPC_HAVE_SPE
 defflag	opt_openpic.h	OPENPIC_DISTRIBUTE
@@ -13,7 +13,6 @@ file	arch/powerpc/powerpc/core_machdep.c		coredump
 file	arch/powerpc/powerpc/fixup.c
 file	arch/powerpc/powerpc/fubyte.c
 file	arch/powerpc/powerpc/fuswintr.c
-file	arch/powerpc/powerpc/ipkdb_glue.c		ipkdb
 file	arch/powerpc/powerpc/kgdb_machdep.c		kgdb
 file	arch/powerpc/powerpc/kobj_machdep.c		modular
 file	arch/powerpc/powerpc/lock_stubs.S
@@ -51,6 +50,7 @@ file	arch/powerpc/ibm4xx/copyoutstr.c		ppc_ibm4xx
 defparam opt_oea.h EXTMAP_RANGES=20
 file	arch/powerpc/oea/altivec.c			(ppc_oea |ppc_oea64 | ppc_oea64_bridge) & altivec
 file	arch/powerpc/oea/cpu_subr.c			ppc_oea | ppc_oea64 | ppc_oea64_bridge | ppc_oea601
+file	arch/powerpc/oea/cpu_speedctl.c			ppc_oea64 | ppc_oea64_bridge
 file	arch/powerpc/oea/oea_machdep.c			ppc_oea | ppc_oea64 | ppc_oea64_bridge | ppc_oea601
 file	arch/powerpc/oea/pmap.c				ppc_oea | ppc_oea601
 file	arch/powerpc/oea/pmap64.c			ppc_oea64

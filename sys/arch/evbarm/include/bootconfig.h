@@ -1,4 +1,4 @@
-/*	$NetBSD: bootconfig.h,v 1.8 2017/07/05 09:37:14 jmcneill Exp $	*/
+/*	$NetBSD: bootconfig.h,v 1.10 2018/06/18 13:05:20 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 1994 Mark Brinicombe.
@@ -36,14 +36,18 @@
  * SUCH DAMAGE.
  */
 
+#ifndef _EVBARM_BOOTCONFIG_H
+#define _EVBARM_BOOTCONFIG_H
+
 #ifdef _KERNEL_OPT
 #include "opt_machdep.h"
+#include "opt_bootconfig.h"
 #endif
 
 #include <arm/bootconfig.h>
 
 typedef struct _PhysMem {
-	u_int address;
+	u_long address;
 	u_int pages;
 	u_int flags;
 #define BOOT_DRAM_CAN_DMA 1	/* Can DMA direct to this memory.  */
@@ -61,5 +65,7 @@ typedef struct _BootConfig {
 
 extern BootConfig bootconfig;
 #define MAX_BOOT_STRING 255
+
+#endif
 
 /* End of bootconfig.h */

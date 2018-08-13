@@ -1,5 +1,5 @@
-/*	$NetBSD: kexdhc.c,v 1.10 2017/10/07 19:39:19 christos Exp $	*/
-/* $OpenBSD: kexdhc.c,v 1.20 2017/05/30 14:23:52 markus Exp $ */
+/*	$NetBSD: kexdhc.c,v 1.12 2018/04/06 18:59:00 christos Exp $	*/
+/* $OpenBSD: kexdhc.c,v 1.22 2018/02/07 02:06:51 jsing Exp $ */
 /*
  * Copyright (c) 2001 Markus Friedl.  All rights reserved.
  *
@@ -25,7 +25,7 @@
  */
 
 #include "includes.h"
-__RCSID("$NetBSD: kexdhc.c,v 1.10 2017/10/07 19:39:19 christos Exp $");
+__RCSID("$NetBSD: kexdhc.c,v 1.12 2018/04/06 18:59:00 christos Exp $");
 #include <sys/types.h>
 
 #include <openssl/dh.h>
@@ -79,11 +79,16 @@ kexdh_client(struct ssh *ssh)
 		goto out;
 	}
 	debug("sending SSH2_MSG_KEXDH_INIT");
-	if ((r = dh_gen_key(kex->dh, kex->we_need * 8)) != 0 ||
-	    (r = sshpkt_start(ssh, SSH2_MSG_KEXDH_INIT)) != 0 ||
-	    (r = sshpkt_put_bignum2(ssh, kex->dh->pub_key)) != 0 ||
+	{
+	const BIGNUM *pub_key;
+	if ((r = dh_gen_key(kex->dh, kex->we_need * 8)) != 0)
+		goto out;
+	DH_get0_key(kex->dh, &pub_key, NULL);
+	if ((r = sshpkt_start(ssh, SSH2_MSG_KEXDH_INIT)) != 0 ||
+	    (r = sshpkt_put_bignum2(ssh, pub_key)) != 0 ||
 	    (r = sshpkt_send(ssh)) != 0)
 		goto out;
+	}
 #ifdef DEBUG_KEXDH
 	DHparams_print_fp(stderr, kex->dh);
 	fprintf(stderr, "pub= ");
@@ -167,6 +172,9 @@ input_kex_dh(int type, u_int32_t seq, struct ssh *ssh)
 
 	/* calc and verify H */
 	hashlen = sizeof(hash);
+	{
+	const BIGNUM *pub_key;
+	DH_get0_key(kex->dh, &pub_key, NULL);
 	if ((r = kex_dh_hash(
 	    kex->hash_alg,
 	    kex->client_version_string,
@@ -174,14 +182,16 @@ input_kex_dh(int type, u_int32_t seq, struct ssh *ssh)
 	    sshbuf_ptr(kex->my), sshbuf_len(kex->my),
 	    sshbuf_ptr(kex->peer), sshbuf_len(kex->peer),
 	    server_host_key_blob, sbloblen,
-	    kex->dh->pub_key,
+	    pub_key,
 	    dh_server_pub,
 	    shared_secret,
-	    hash, &hashlen)) != 0)
+	    hash, &hashlen)) != 0) {
 		goto out;
+	}
+	}
 
 	if ((r = sshkey_verify(server_host_key, signature, slen, hash, hashlen,
-	    ssh->compat)) != 0)
+	    kex->hostkey_alg, ssh->compat)) != 0)
 		goto out;
 
 	/* save session id */
@@ -201,14 +211,12 @@ input_kex_dh(int type, u_int32_t seq, struct ssh *ssh)
 	explicit_bzero(hash, sizeof(hash));
 	DH_free(kex->dh);
 	kex->dh = NULL;
-	if (dh_server_pub)
-		BN_clear_free(dh_server_pub);
+	BN_clear_free(dh_server_pub);
 	if (kbuf) {
 		explicit_bzero(kbuf, klen);
 		free(kbuf);
 	}
-	if (shared_secret)
-		BN_clear_free(shared_secret);
+	BN_clear_free(shared_secret);
 	sshkey_free(server_host_key);
 	free(server_host_key_blob);
 	free(signature);

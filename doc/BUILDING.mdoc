@@ -1,4 +1,4 @@
-.\"	$NetBSD: BUILDING.mdoc,v 1.122 2017/10/21 22:03:01 sevan Exp $
+.\"	$NetBSD: BUILDING.mdoc,v 1.125 2018/07/29 20:53:29 sevan Exp $
 .\"
 .\" Copyright (c) 2001-2011 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -33,7 +33,7 @@
 .\" Toolchain prefix for commands
 .ds toolprefix nb
 .
-.Dd October 21, 2017
+.Dd July 29, 2018
 .Dt BUILDING 8
 .Os NetBSD
 .
@@ -506,7 +506,7 @@ set and installed in
 .YorN
 Indicates whether debug information (see
 .Sy MKDEBUG )
-should also be generated for all libraries build.
+should also be generated for all libraries built.
 .DFLTn
 .
 .It Sy MKDOC
@@ -545,9 +545,9 @@ object directory names as programs built to be run on the target.
 .
 .It Sy MKINFO
 .YorN
-Indicates whether GNU Info files, used for the documentation for
-most of the compilation tools, will be created and installed during a
-build.
+Indicates whether GNU Info files will be created and installed during a build.
+GNU Info files are used for providing documentation by most of the compilation
+tools.
 .DFLTy
 .
 .It Sy MKKDEBUG
@@ -612,7 +612,12 @@ installed during a build.
 If set to
 .Dq no ,
 the entire built system will be statically linked.
-.DFLTy
+.DFLT
+Platform dependent.
+As of this writing, all platforms except
+.Sy m68000
+default to
+.Dq yes .
 .
 .It Sy MKPICINSTALL
 .YorN
@@ -1625,7 +1630,7 @@ or
 options (or both) may be used to specify glob patterns
 that will be used to narrow the list of results;
 for example,
-.Dq Li build.sh -m 'evm*' -a '*arm*' list-arch
+.Dq Li build.sh -m 'evb*' -a '*arm*' list-arch
 will list all known
 .Sy MACHINE Ns No / Ns Sy MACHINE_ARCH
 values in which either

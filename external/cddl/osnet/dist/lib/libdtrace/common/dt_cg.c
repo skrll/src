@@ -1354,38 +1354,160 @@ dt_cg_inline(dt_node_t *dnp, dt_irlist_t *dlp, dt_regset_t *drp)
 	}
 }
 
-static void
-dt_cg_func_typeref(dtrace_hdl_t *dtp, dt_node_t *dnp)
+typedef struct dt_xlmemb {
+	dt_ident_t *dtxl_idp;		/* translated ident */
+	dt_irlist_t *dtxl_dlp;		/* instruction list */
+	dt_regset_t *dtxl_drp;		/* register set */
+	int dtxl_sreg;			/* location of the translation input */
+	int dtxl_dreg;			/* location of our allocated buffer */
+} dt_xlmemb_t;
+
+/*ARGSUSED*/
+static int
+dt_cg_xlate_member(const char *name, ctf_id_t type, ulong_t off, void *arg)
 {
-	dtrace_typeinfo_t dtt;
-	dt_node_t *addr = dnp->dn_args;
-	dt_node_t *nelm = addr->dn_list;
-	dt_node_t *strp = nelm->dn_list;
-	dt_node_t *typs = strp->dn_list;
-	char buf[DT_TYPE_NAMELEN];
-	char *p;
+	dt_xlmemb_t *dx = arg;
+	dt_ident_t *idp = dx->dtxl_idp;
+	dt_irlist_t *dlp = dx->dtxl_dlp;
+	dt_regset_t *drp = dx->dtxl_drp;
 
-	ctf_type_name(addr->dn_ctfp, addr->dn_type, buf, sizeof (buf));
+	dt_node_t *mnp;
+	dt_xlator_t *dxp;
 
-	/*
-	 * XXX Hack alert! XXX
-	 * The prototype has two dummy args that we munge to represent
-	 * the type string and the type size.
-	 *
-	 * Yes, I hear your grumble, but it works for now. We'll come
-	 * up with a more elegant implementation later. :-)
-	 */
-	free(strp->dn_string);
+	int reg, treg;
+	uint32_t instr;
+	size_t size;
 
-	if ((p = strchr(buf, '*')) != NULL)
-		*p = '\0';
+	/* Generate code for the translation. */
+	dxp = idp->di_data;
+	mnp = dt_xlator_member(dxp, name);
 
-	strp->dn_string = strdup(buf);
+	/* If there's no translator for the given member, skip it. */
+	if (mnp == NULL)
+		return (0);
 
-	if (dtrace_lookup_by_type(dtp,  DTRACE_OBJ_EVERY, buf, &dtt) < 0)
-		return;
+	dxp->dx_ident->di_flags |= DT_IDFLG_CGREG;
+	dxp->dx_ident->di_id = dx->dtxl_sreg;
 
-	typs->dn_value = ctf_type_size(dtt.dtt_ctfp, dtt.dtt_type);
+	dt_cg_node(mnp->dn_membexpr, dlp, drp);
+
+	dxp->dx_ident->di_flags &= ~DT_IDFLG_CGREG;
+	dxp->dx_ident->di_id = 0;
+
+	treg = mnp->dn_membexpr->dn_reg;
+
+	/* Compute the offset into our buffer and store the result there. */
+	reg = dt_regset_alloc(drp);
+
+	dt_cg_setx(dlp, reg, off / NBBY);
+	instr = DIF_INSTR_FMT(DIF_OP_ADD, dx->dtxl_dreg, reg, reg);
+	dt_irlist_append(dlp, dt_cg_node_alloc(DT_LBL_NONE, instr));
+
+	size = ctf_type_size(mnp->dn_membexpr->dn_ctfp,
+	    mnp->dn_membexpr->dn_type);
+	if (dt_node_is_scalar(mnp->dn_membexpr)) {
+		/*
+		 * Copying scalars is simple.
+		 */
+		switch (size) {
+		case 1:
+			instr = DIF_INSTR_STORE(DIF_OP_STB, treg, reg);
+			break;
+		case 2:
+			instr = DIF_INSTR_STORE(DIF_OP_STH, treg, reg);
+			break;
+		case 4:
+			instr = DIF_INSTR_STORE(DIF_OP_STW, treg, reg);
+			break;
+		case 8:
+			instr = DIF_INSTR_STORE(DIF_OP_STX, treg, reg);
+			break;
+		default:
+			xyerror(D_UNKNOWN, "internal error -- unexpected "
+			    "size: %lu\n", (ulong_t)size);
+		}
+
+		dt_irlist_append(dlp, dt_cg_node_alloc(DT_LBL_NONE, instr));
+
+	} else if (dt_node_is_string(mnp->dn_membexpr)) {
+		int szreg;
+
+		/*
+		 * Use the copys instruction for strings.
+		 */
+		szreg = dt_regset_alloc(drp);
+		dt_cg_setx(dlp, szreg, size);
+		instr = DIF_INSTR_COPYS(treg, szreg, reg);
+		dt_irlist_append(dlp, dt_cg_node_alloc(DT_LBL_NONE, instr));
+		dt_regset_free(drp, szreg);
+	} else {
+		int szreg;
+
+		/*
+		 * If it's anything else then we'll just bcopy it.
+		 */
+		szreg = dt_regset_alloc(drp);
+		dt_cg_setx(dlp, szreg, size);
+		dt_irlist_append(dlp,
+		    dt_cg_node_alloc(DT_LBL_NONE, DIF_INSTR_FLUSHTS));
+		instr = DIF_INSTR_PUSHTS(DIF_OP_PUSHTV, DIF_TYPE_CTF,
+		    DIF_REG_R0, treg);
+		dt_irlist_append(dlp, dt_cg_node_alloc(DT_LBL_NONE, instr));
+		instr = DIF_INSTR_PUSHTS(DIF_OP_PUSHTV, DIF_TYPE_CTF,
+		    DIF_REG_R0, reg);
+		dt_irlist_append(dlp, dt_cg_node_alloc(DT_LBL_NONE, instr));
+		instr = DIF_INSTR_PUSHTS(DIF_OP_PUSHTV, DIF_TYPE_CTF,
+		    DIF_REG_R0, szreg);
+		dt_irlist_append(dlp, dt_cg_node_alloc(DT_LBL_NONE, instr));
+		instr = DIF_INSTR_CALL(DIF_SUBR_BCOPY, szreg);
+		dt_irlist_append(dlp, dt_cg_node_alloc(DT_LBL_NONE, instr));
+		dt_regset_free(drp, szreg);
+	}
+
+	dt_regset_free(drp, reg);
+	dt_regset_free(drp, treg);
+
+	return (0);
+}
+
+/*
+ * If we're expanding a translated type, we create an appropriately sized
+ * buffer with alloca() and then translate each member into it.
+ */
+static int
+dt_cg_xlate_expand(dt_node_t *dnp, dt_ident_t *idp, dt_irlist_t *dlp,
+    dt_regset_t *drp)
+{
+	dt_xlmemb_t dlm;
+	uint32_t instr;
+	int dreg;
+	size_t size;
+
+	dreg = dt_regset_alloc(drp);
+	size = ctf_type_size(dnp->dn_ident->di_ctfp, dnp->dn_ident->di_type);
+
+	/* Call alloca() to create the buffer. */
+	dt_cg_setx(dlp, dreg, size);
+
+	dt_irlist_append(dlp, dt_cg_node_alloc(DT_LBL_NONE, DIF_INSTR_FLUSHTS));
+
+	instr = DIF_INSTR_PUSHTS(DIF_OP_PUSHTV, DIF_TYPE_CTF, DIF_REG_R0, dreg);
+	dt_irlist_append(dlp, dt_cg_node_alloc(DT_LBL_NONE, instr));
+
+	instr = DIF_INSTR_CALL(DIF_SUBR_ALLOCA, dreg);
+	dt_irlist_append(dlp, dt_cg_node_alloc(DT_LBL_NONE, instr));
+
+	/* Generate the translation for each member. */
+	dlm.dtxl_idp = idp;
+	dlm.dtxl_dlp = dlp;
+	dlm.dtxl_drp = drp;
+	dlm.dtxl_sreg = dnp->dn_reg;
+	dlm.dtxl_dreg = dreg;
+	(void) ctf_member_iter(dnp->dn_ident->di_ctfp,
+	    dnp->dn_ident->di_type, dt_cg_xlate_member,
+	    &dlm);
+
+	return (dreg);
 }
 
 typedef struct dt_xlmemb {
@@ -2003,22 +2125,11 @@ dt_cg_node(dt_node_t *dnp, dt_irlist_t *dlp, dt_regset_t *drp)
 
 		switch (dnp->dn_kind) {
 		case DT_NODE_FUNC: {
-			dtrace_hdl_t *dtp = yypcb->pcb_hdl;
-
 			if ((idp = dnp->dn_ident)->di_kind != DT_IDENT_FUNC) {
 				dnerror(dnp, D_CG_EXPR, "%s %s( ) may not be "
 				    "called from a D expression (D program "
 				    "context required)\n",
 				    dt_idkind_name(idp->di_kind), idp->di_name);
-			}
-
-			switch (idp->di_id) {
-			case DIF_SUBR_TYPEREF:
-				dt_cg_func_typeref(dtp, dnp);
-				break;
-
-			default:
-				break;
 			}
 
 			dt_cg_arglist(dnp->dn_ident, dnp->dn_args, dlp, drp);

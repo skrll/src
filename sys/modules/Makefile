@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.196 2017/12/09 08:03:07 pgoyette Exp $
+#	$NetBSD: Makefile,v 1.207 2018/07/24 09:47:35 maxv Exp $
 
 .include <bsd.own.mk>
 
@@ -9,6 +9,7 @@ SUBDIR+=	accf_httpready
 SUBDIR+=	adosfs
 SUBDIR+=	aio
 SUBDIR+=	audio
+SUBDIR+=	autofs
 SUBDIR+=	blowfish
 SUBDIR+=	bpf
 SUBDIR+=	bpf_filter
@@ -46,8 +47,12 @@ SUBDIR+=	gpio
 SUBDIR+=	gpioiic
 SUBDIR+=	gpioow
 SUBDIR+=	gpiosim
+SUBDIR+=	gpioirq
+SUBDIR+=	gpiopps
 SUBDIR+=	hfs
 SUBDIR+=	hythygtemp
+SUBDIR+=	si70xxtemp
+SUBDIR+=	am2315temp
 SUBDIR+=	i2cexec
 SUBDIR+=	i2c_bitbang
 SUBDIR+=	if_agr
@@ -178,7 +183,9 @@ SUBDIR+=	exec_elf64
 
 .if ${MACHINE_ARCH} == "i386" || \
     ${MACHINE_ARCH} == "x86_64"
+SUBDIR+=	amdsmn
 SUBDIR+=	amdtemp
+SUBDIR+=	amdzentemp
 SUBDIR+=	coretemp
 SUBDIR+=	est
 SUBDIR+=	hdafg
@@ -186,11 +193,11 @@ SUBDIR+=	hdaudio
 SUBDIR+=	hdaudio_pci
 SUBDIR+=	hdaudioverbose
 SUBDIR+=	hpet
+SUBDIR+=	ichsmb
 SUBDIR+=	odcm
 SUBDIR+=	powernow
 SUBDIR+=	tco
-SUBDIR+=	tprof_pmi
-SUBDIR+=	tprof_amdpmi
+SUBDIR+=	tprof_x86
 SUBDIR+=	vmt
 .endif
 
@@ -276,7 +283,6 @@ SUBDIR+=	savagedrm
 SUBDIR+=	sisdrm
 SUBDIR+=	tdfxdrm
 SUBDIR+=	viac7temp
-SUBDIR+=	viadrm
 SUBDIR+=	viadrmums
 .endif
 
@@ -371,6 +377,12 @@ SUBDIR+=	auvitek
 SUBDIR+=	coram
 SUBDIR+=	cxdtv
 SUBDIR+=	emdtv
+
+# Intel Integrated Memory Controller and associated SMBus
+# (Experimental)
+SUBDIR+=	imc
+SUBDIR+=	imcsmb
+
 .endif
 
 .if (${MKISCSI} != "no")
@@ -409,6 +421,7 @@ SUBDIR+=	twa
 SUBDIR+=	twe
 SUBDIR+=	viomb
 SUBDIR+=	virtio
+SUBDIR+=	virtio_pci
 SUBDIR+=	vioscsi
 .endif
 

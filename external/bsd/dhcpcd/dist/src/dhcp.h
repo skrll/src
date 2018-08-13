@@ -1,6 +1,6 @@
 /*
  * dhcpcd - DHCP client daemon
- * Copyright (c) 2006-2017 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2018 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -254,7 +254,7 @@ int dhcp_get_routes(struct rt_head *, struct interface *);
 ssize_t dhcp_env(char **, const char *, const struct bootp *, size_t,
     const struct interface *);
 
-void dhcp_handleifa(int, struct ipv4_addr *);
+void dhcp_handleifa(int, struct ipv4_addr *, pid_t pid);
 void dhcp_drop(struct interface *, const char *);
 void dhcp_start(struct interface *);
 void dhcp_abort(struct interface *);
@@ -267,7 +267,6 @@ void dhcp_close(struct interface *);
 void dhcp_free(struct interface *);
 int dhcp_dump(struct interface *);
 #else
-#define dhcp_drop(a, b) {}
 #define dhcp_start(a) {}
 #define dhcp_abort(a) {}
 #define dhcp_renew(a) {}

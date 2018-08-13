@@ -1,4 +1,4 @@
-/*	$NetBSD: pdq_ifsubr.c,v 1.58 2016/12/15 09:28:05 ozaki-r Exp $	*/
+/*	$NetBSD: pdq_ifsubr.c,v 1.60 2018/06/26 06:48:00 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1995, 1996 Matt Thomas <matt@3am-software.com>
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pdq_ifsubr.c,v 1.58 2016/12/15 09:28:05 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pdq_ifsubr.c,v 1.60 2018/06/26 06:48:00 msaitoh Exp $");
 
 #ifdef __NetBSD__
 #include "opt_inet.h"
@@ -58,12 +58,10 @@ __KERNEL_RCSID(0, "$NetBSD: pdq_ifsubr.c,v 1.58 2016/12/15 09:28:05 ozaki-r Exp 
 #include <net/if.h>
 #include <net/if_types.h>
 #include <net/if_dl.h>
+#include <net/bpf.h>
 #if !defined(__NetBSD__)
 #include <net/route.h>
 #endif
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #ifdef INET
 #include <netinet/in.h>
@@ -271,7 +269,7 @@ pdq_os_transmit_done(
 {
     pdq_softc_t *sc = pdq->pdq_os_ctx;
     if (sc->sc_bpf != NULL)
-	PDQ_BPF_MTAP(sc, m);
+	    PDQ_BPF_MTAP(sc, m, BPF_D_OUT);
     PDQ_OS_DATABUF_FREE(pdq, m);
     sc->sc_if.if_opackets++;
 }

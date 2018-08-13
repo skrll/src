@@ -1,4 +1,4 @@
-/*	$NetBSD: efiboot.h,v 1.5 2017/05/01 13:03:01 nonaka Exp $	*/
+/*	$NetBSD: efiboot.h,v 1.8 2018/04/11 10:32:09 nonaka Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -46,6 +46,11 @@ void print_banner(void);
 /* efiboot.c */
 extern EFI_HANDLE IH;
 extern EFI_DEVICE_PATH *efi_bootdp;
+extern enum efi_boot_device_type {
+	BOOT_DEVICE_TYPE_HD,
+	BOOT_DEVICE_TYPE_CD,
+	BOOT_DEVICE_TYPE_NET
+} efi_bootdp_type;
 extern EFI_LOADED_IMAGE *efi_li;
 extern uintptr_t efi_main_sp;
 extern physaddr_t efi_loadaddr, efi_kernel_start;
@@ -53,20 +58,41 @@ extern u_long efi_kernel_size;
 extern bool efi_cleanuped;
 void efi_cleanup(void);
 
+/* efichar.c */
+size_t ucs2len(const CHAR16 *);
+int ucs2_to_utf8(const CHAR16 *, char **);
+int utf8_to_ucs2(const char *, CHAR16 **, size_t *);
+
 /* eficons.c */
 int cninit(void);
 void consinit(int, int, int);
+void efi_cons_show(void);
 void command_text(char *);
 void command_gop(char *);
 
+/* efidev.c */
+int efi_device_path_depth(EFI_DEVICE_PATH *dp, int);
+int efi_device_path_ncmp(EFI_DEVICE_PATH *, EFI_DEVICE_PATH *, int);
+
 /* efidisk.c */
 void efi_disk_probe(void);
+void efi_disk_show(void);
 
 /* efimemory.c */
 void efi_memory_probe(void);
 void efi_memory_show_map(bool);
 EFI_MEMORY_DESCRIPTOR *efi_memory_get_map(UINTN *, UINTN *, UINTN *, UINT32 *,
     bool);
+
+/* efinet.c */
+void efi_net_probe(void);
+void efi_net_show(void);
+int efi_net_get_booted_interface_unit(void);
+
+/* efipxe.c */
+void efi_pxe_probe(void);
+void efi_pxe_show(void);
+bool efi_pxe_match_booted_interface(const EFI_MAC_ADDRESS *, UINT32);
 
 /* panic.c */
 __dead VOID Panic(IN CHAR16 *, ...);

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_tun.c,v 1.142 2017/12/06 07:40:16 ozaki-r Exp $	*/
+/*	$NetBSD: if_tun.c,v 1.146 2018/08/06 03:58:59 ozaki-r Exp $	*/
 
 /*
  * Copyright (c) 1988, Julian Onions <jpo@cs.nott.ac.uk>
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_tun.c,v 1.142 2017/12/06 07:40:16 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_tun.c,v 1.146 2018/08/06 03:58:59 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -288,7 +288,7 @@ tun_clone_destroy(struct ifnet *ifp)
 		tp->tun_flags &= ~TUN_RWAIT;
 		cv_broadcast(&tp->tun_cv);
 	}
-	selnotify(&tp->tun_rsel, 0, 0);
+	selnotify(&tp->tun_rsel, 0, NOTE_SUBMIT);
 
 	mutex_exit(&tp->tun_lock);
 
@@ -381,7 +381,7 @@ tunclose(dev_t dev, int flag, int mode,
 	tp->tun_flags &= ~TUN_OPEN;
 
 	tp->tun_pgid = 0;
-	selnotify(&tp->tun_rsel, 0, 0);
+	selnotify(&tp->tun_rsel, 0, NOTE_SUBMIT);
 
 	TUNDEBUG ("%s: closed\n", ifp->if_xname);
 	mutex_exit(&tp->tun_lock);
@@ -553,7 +553,12 @@ tun_output(struct ifnet *ifp, struct mbuf *m0, const struct sockaddr *dst,
 	 */
 	IFQ_CLASSIFY(&ifp->if_snd, m0, dst->sa_family);
 
-	bpf_mtap_af(ifp, dst->sa_family, m0);
+	bpf_mtap_af(ifp, dst->sa_family, m0, BPF_D_OUT);
+
+	if ((error = pfil_run_hooks(ifp->if_pfil, &m0, ifp, PFIL_OUT)) != 0)
+		goto out;
+	if (m0 == NULL)
+		goto out;
 
 	switch(dst->sa_family) {
 #ifdef INET6
@@ -620,14 +625,14 @@ tun_output(struct ifnet *ifp, struct mbuf *m0, const struct sockaddr *dst,
 	if (tp->tun_flags & TUN_ASYNC && tp->tun_pgid)
 		softint_schedule(tp->tun_isih);
 
-	selnotify(&tp->tun_rsel, 0, 0);
+	selnotify(&tp->tun_rsel, 0, NOTE_SUBMIT);
 
 	mutex_exit(&tp->tun_lock);
 out:
-	if (error && m0) {
+	if (error && m0)
 		m_freem(m0);
-	}
-	return 0;
+
+	return error;
 }
 
 static void
@@ -939,7 +944,12 @@ tunwrite(dev_t dev, struct uio *uio, int ioflag)
 	top->m_pkthdr.len = tlen;
 	m_set_rcvif(top, ifp);
 
-	bpf_mtap_af(ifp, dst.sa_family, top);
+	bpf_mtap_af(ifp, dst.sa_family, top, BPF_D_IN);
+
+	if ((error = pfil_run_hooks(ifp->if_pfil, &top, ifp, PFIL_IN)) != 0)
+		goto out0;
+	if (top == NULL)
+		goto out0;
 
 	mutex_enter(&tp->tun_lock);
 	if ((tp->tun_flags & TUN_INITED) == 0) {
@@ -986,7 +996,7 @@ tunstart(struct ifnet *ifp)
 		if (tp->tun_flags & TUN_ASYNC && tp->tun_pgid)
 			softint_schedule(tp->tun_osih);
 
-		selnotify(&tp->tun_rsel, 0, 0);
+		selnotify(&tp->tun_rsel, 0, NOTE_SUBMIT);
 	}
 	mutex_exit(&tp->tun_lock);
 }
@@ -1047,20 +1057,24 @@ filt_tunread(struct knote *kn, long hint)
 	struct tun_softc *tp = kn->kn_hook;
 	struct ifnet *ifp = &tp->tun_if;
 	struct mbuf *m;
+	int ready;
 
-	mutex_enter(&tp->tun_lock);
+	if (hint & NOTE_SUBMIT)
+		KASSERT(mutex_owned(&tp->tun_lock));
+	else
+		mutex_enter(&tp->tun_lock);
+
 	IF_POLL(&ifp->if_snd, m);
-	if (m == NULL) {
-		mutex_exit(&tp->tun_lock);
-		return 0;
-	}
-
+	ready = (m != NULL);
 	for (kn->kn_data = 0; m != NULL; m = m->m_next)
 		kn->kn_data += m->m_len;
 
-	mutex_exit(&tp->tun_lock);
+	if (hint & NOTE_SUBMIT)
+		KASSERT(mutex_owned(&tp->tun_lock));
+	else
+		mutex_exit(&tp->tun_lock);
 
-	return 1;
+	return ready;
 }
 
 static const struct filterops tunread_filtops = {

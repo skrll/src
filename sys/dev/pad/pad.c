@@ -1,4 +1,4 @@
-/* $NetBSD: pad.c,v 1.43 2017/11/30 20:25:55 christos Exp $ */
+/* $NetBSD: pad.c,v 1.52 2018/01/26 23:36:01 pgoyette Exp $ */
 
 /*-
  * Copyright (c) 2007 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.43 2017/11/30 20:25:55 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.52 2018/01/26 23:36:01 pgoyette Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -67,6 +67,7 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.43 2017/11/30 20:25:55 christos Exp $");
 #define PADENC		AUDIO_ENCODING_SLINEAR_LE
 
 extern struct cfdriver pad_cd;
+kmutex_t padconfig;
 
 typedef struct pad_block {
 	uint8_t		*pb_ptr;
@@ -200,6 +201,7 @@ padattach(int n)
 		config_cfdriver_detach(&pad_cd);
 		return;
 	}
+	mutex_init(&padconfig, MUTEX_DEFAULT, IPL_NONE);
 
 	return;
 }
@@ -286,34 +288,13 @@ static int
 pad_detach(device_t self, int flags)
 {
 	pad_softc_t *sc;
-	int cmaj, mn, rc;
+	int cmaj, mn;
 
 	sc = device_private(self);
-	config_deactivate(sc->sc_audiodev);
-	
-	/* Start draining existing accessors of the device. */
-	if ((rc = config_detach_children(self, flags)) != 0)
-		return rc;
-
-	mutex_enter(&sc->sc_lock);
-	sc->sc_dying = true;
-	cv_broadcast(&sc->sc_condvar);
-	mutex_exit(&sc->sc_lock);
-
-	KASSERT(sc->sc_open > 0);
-	sc->sc_open = 0;
-
 	cmaj = cdevsw_lookup_major(&pad_cdevsw);
 	mn = device_unit(sc->sc_dev);
-	vdevgone(cmaj, mn, mn, VCHR);
-
-	pmf_device_deregister(sc->sc_dev);
-
-	mutex_destroy(&sc->sc_lock);
-	mutex_destroy(&sc->sc_intr_lock);
-	cv_destroy(&sc->sc_condvar);
-
-	auconv_delete_encodings(sc->sc_encodings);
+	if (!sc->sc_dying)
+		vdevgone(cmaj, mn, mn, VCHR);
 
 	return 0;
 }
@@ -327,16 +308,19 @@ pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 	cfdata_t cf;
 	int error, fd, i;
 
+	error = 0;
+
+	mutex_enter(&padconfig);
 	if (PADUNIT(dev) == PADCLONER) {
 		for (i = 0; i < MAXDEVS; i++) {
 			if (device_lookup(&pad_cd, i) == NULL)
 				break;
 		}
 		if (i == MAXDEVS)
-			return ENXIO;
+			goto bad;
 	} else {
 		if (PADUNIT(dev) >= MAXDEVS)
-			return ENXIO;
+			goto bad;
 		i = PADUNIT(dev);
 	}
 
@@ -346,17 +330,23 @@ pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 	cf->cf_unit = i;
 	cf->cf_fstate = FSTATE_STAR;
 
-	if (device_lookup(&pad_cd, minor(dev)) == NULL)
+	bool existing = false;
+	paddev = device_lookup(&pad_cd, minor(dev));
+	if (paddev == NULL)
 		paddev = config_attach_pseudo(cf);
 	else
-		paddev = device_lookup(&pad_cd, minor(dev));
+		existing = true;
+	if (paddev == NULL)
+		goto bad;
 
 	sc = device_private(paddev);
 	if (sc == NULL)
-		return ENXIO;
+		goto bad;
 
-	if (sc->sc_open == 1)
+	if (sc->sc_open == 1) {
+		mutex_exit(&padconfig);
 		return EBUSY;
+	}
 
 	sc->sc_dev = paddev;
 	sc->sc_dying = false;
@@ -364,7 +354,9 @@ pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 	if (PADUNIT(dev) == PADCLONER) {
 		error = fd_allocfile(&fp, &fd);
 		if (error) {
-			config_detach(sc->sc_dev, 0);
+			if (existing == false)
+				config_detach(sc->sc_dev, 0);
+			mutex_exit(&padconfig);
 			return error;
 		}
 	}
@@ -372,7 +364,9 @@ pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 	if (auconv_create_encodings(pad_formats, PAD_NFORMATS,
 	    &sc->sc_encodings) != 0) {
 		aprint_error_dev(sc->sc_dev, "couldn't create encodings\n");
-		config_detach(sc->sc_dev, 0);
+		if (existing == false)
+			config_detach(sc->sc_dev, 0);
+		mutex_exit(&padconfig);
 		return EINVAL;
 	}
 
@@ -393,17 +387,52 @@ pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 		KASSERT(error == EMOVEFD);
 	}	
 	sc->sc_open = 1;
+	mutex_exit(&padconfig);
 
 	return error;
+bad:
+	mutex_exit(&padconfig);
+	return ENXIO;
 }
 
 static int
 pad_close(struct pad_softc *sc)
 {
+	int rc;
+
 	if (sc == NULL)
 		return ENXIO;
 
-	return config_detach(sc->sc_dev, DETACH_FORCE);
+	mutex_enter(&padconfig);
+	config_deactivate(sc->sc_audiodev);
+	
+	/* Start draining existing accessors of the device. */
+	if ((rc = config_detach_children(sc->sc_dev,
+	    DETACH_SHUTDOWN|DETACH_FORCE)) != 0) {
+		mutex_exit(&padconfig);
+		return rc;
+	}
+
+	mutex_enter(&sc->sc_lock);
+	sc->sc_dying = true;
+	cv_broadcast(&sc->sc_condvar);
+	mutex_exit(&sc->sc_lock);
+
+	KASSERT(sc->sc_open > 0);
+	sc->sc_open = 0;
+
+	pmf_device_deregister(sc->sc_dev);
+
+	mutex_destroy(&sc->sc_lock);
+	mutex_destroy(&sc->sc_intr_lock);
+	cv_destroy(&sc->sc_condvar);
+
+	auconv_delete_encodings(sc->sc_encodings);
+
+	rc = config_detach(sc->sc_dev, 0);
+	mutex_exit(&padconfig);
+
+	return rc;
 }
 
 static int
@@ -899,98 +928,73 @@ pad_swvol_dtor(stream_filter_t *this)
 		kmem_free(this, sizeof(auvolconv_filter_t));
 }
 
-#ifdef _MODULE
-
 MODULE(MODULE_CLASS_DRIVER, pad, "audio");
 
-static const struct cfiattrdata audiobuscf_iattrdata = {
-	"audiobus", 0, { { NULL, NULL, 0 }, }
-};
-static const struct cfiattrdata * const pad_attrs[] = {
-	&audiobuscf_iattrdata, NULL
-};
+#ifdef _MODULE
 
-CFDRIVER_DECL(pad, DV_DULL, pad_attrs);
-extern struct cfattach pad_ca;
-static int padloc[] = { -1, -1 };
+#include "ioconf.c"
 
-static struct cfdata pad_cfdata[] = {
-	{
-		.cf_name = "pad",
-		.cf_atname = "pad",
-		.cf_unit = 0,
-		.cf_fstate = FSTATE_STAR,
-		.cf_loc = padloc,
-		.cf_flags = 0,
-		.cf_pspec = NULL,
-	},
-	{ NULL, NULL, 0, 0, NULL, 0, NULL }
+devmajor_t cmajor = NODEVMAJOR, bmajor = NODEVMAJOR;
+
+/*
+ * We need our own version of cfattach since config(1)'s ioconf does not
+ * generate what we need
+ */
+
+static struct cfattach *pad_cfattachinit[] = { &pad_ca, NULL };
+
+static struct cfattachinit pad_cfattach[] = {
+	{ "pad", pad_cfattachinit },
+	{ NULL, NULL }
 };
+#endif
 
 static int
 pad_modcmd(modcmd_t cmd, void *arg)
 {
-	devmajor_t cmajor = NODEVMAJOR, bmajor = NODEVMAJOR;
-	int error;
+	int error = 0;
 
 	switch (cmd) {
 	case MODULE_CMD_INIT:
-		error = config_cfdriver_attach(&pad_cd);
-		if (error) {
-			return error;
-		}
-
-		error = config_cfattach_attach(pad_cd.cd_name, &pad_ca);
-		if (error) {
-			config_cfdriver_detach(&pad_cd);
-			aprint_error("%s: unable to register cfattach\n",
-				pad_cd.cd_name);
-
-			return error;
-		}
-
-		error = config_cfdata_attach(pad_cfdata, 1);
-		if (error) {
-			config_cfattach_detach(pad_cd.cd_name, &pad_ca);
-			config_cfdriver_detach(&pad_cd);
-			aprint_error("%s: unable to register cfdata\n",
-				pad_cd.cd_name);
-
-			return error;
-		}
+#ifdef _MODULE
+		pad_cfattach[1] = cfattach_ioconf_pad[0];
+		error = config_init_component(cfdriver_ioconf_pad,
+		    pad_cfattach, cfdata_ioconf_pad);
+		if (error)
+			break;
 
 		error = devsw_attach(pad_cd.cd_name, NULL, &bmajor,
-		    &pad_cdevsw, &cmajor);
+			    &pad_cdevsw, &cmajor);
 		if (error) {
-			error = config_cfdata_detach(pad_cfdata);
-			if (error) {
-				return error;
-			}
-			config_cfattach_detach(pad_cd.cd_name, &pad_ca);
-			config_cfdriver_detach(&pad_cd);
-			aprint_error("%s: unable to register devsw\n",
-				pad_cd.cd_name);
-
-			return error;
+			config_fini_component(cfdriver_ioconf_pad,
+			    pad_cfattach, cfdata_ioconf_pad);
+			break;
 		}
-
-		(void)config_attach_pseudo(pad_cfdata);
-
-		return 0;
-	case MODULE_CMD_FINI:
-		error = config_cfdata_detach(pad_cfdata);
-		if (error) {
-			return error;
-		}
-
-		config_cfattach_detach(pad_cd.cd_name, &pad_ca);
-		config_cfdriver_detach(&pad_cd);
-		devsw_detach(NULL, &pad_cdevsw);
-
-		return 0;
-	default:
-		return ENOTTY;
-	}
-}
+		mutex_init(&padconfig, MUTEX_DEFAULT, IPL_NONE);
 
 #endif
+		break;
+
+	case MODULE_CMD_FINI:
+#ifdef _MODULE
+		error = devsw_detach(NULL, &pad_cdevsw);
+		if (error)
+			break;
+
+		error = config_fini_component(cfdriver_ioconf_pad,
+		    pad_cfattach, cfdata_ioconf_pad);
+		if (error) {
+			devsw_attach(pad_cd.cd_name, NULL, &bmajor,
+			    &pad_cdevsw, &cmajor);
+			break;
+		}
+		mutex_destroy(&padconfig);
+#endif
+		break;
+
+	default:
+		error = ENOTTY;
+	}
+
+	return error;
+}

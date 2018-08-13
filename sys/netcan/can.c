@@ -1,4 +1,4 @@
-/*	$NetBSD: can.c,v 1.2 2017/05/27 21:02:56 bouyer Exp $	*/
+/*	$NetBSD: can.c,v 1.4 2018/06/26 06:48:03 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2017 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: can.c,v 1.2 2017/05/27 21:02:56 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: can.c,v 1.4 2018/06/26 06:48:03 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -397,6 +397,7 @@ canintr(void)
 			if (sbappendaddr(&canp->canp_socket->so_rcv,
 					 (struct sockaddr *) &from, mc,
 					 (struct mbuf *) 0) == 0) {
+				soroverflow(canp->canp_socket);
 				m_freem(mc);
 			} else
 				sorwakeup(canp->canp_socket);
@@ -425,10 +426,11 @@ can_bpf_mtap(struct ifnet *ifp, struct mbuf *m, bool do_softint)
 	cf = mtod(m, struct can_frame *);
 	oid = cf->can_id;
 	cf->can_id = htonl(oid);
+	/* Assume the direction is input when do_softint is set. */
 	if (do_softint)
 		bpf_mtap_softint(ifp, m);
 	else
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 	cf->can_id = oid;
 }
 

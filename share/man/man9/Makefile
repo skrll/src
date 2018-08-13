@@ -1,9 +1,9 @@
-#       $NetBSD: Makefile,v 1.417 2017/11/07 18:36:27 christos Exp $
+#       $NetBSD: Makefile,v 1.429 2018/07/15 05:16:41 maxv Exp $
 
 #	Makefile for section 9 (kernel function and variable) manual pages.
 
 MAN=	accept_filter.9 accf_data.9 accf_http.9 \
-	altq.9 arp.9 audio.9 autoconf.9 \
+	altq.9 arp.9 audio.9 audio_system.9 autoconf.9 \
 	bcdtobin.9 bcmp.9 bcopy.9 bintime_add.9 bluetooth.9 boothowto.9 bpf.9 \
 	buffercache.9 bufferio.9 bufq.9 bus_dma.9 bus_space.9 byteorder.9 \
 	bzero.9 \
@@ -28,7 +28,7 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	ieee80211_radiotap.9 iic.9 imax.9 \
 	in_getifa.9 \
 	in4_cksum.9 inittodr.9 interrupt_distribute.9 intro.9 ioasic.9 \
-	ioctl.9 ipkdb.9 ipi.9 isa.9 isapnp.9 itimerfix.9 kauth.9 kcopy.9 \
+	ioctl.9 ipi.9 isa.9 isapnp.9 itimerfix.9 kauth.9 kcopy.9 \
 	kcpuset.9 kernhist.9 klua_lock.9 klua_mod_register.9 kmem.9 kpause.9 \
 	kfilter_register.9 knote.9 \
 	kprintf.9 kthread.9 linedisc.9 lock.9 locking.9 log.9 ltsleep.9 \
@@ -41,7 +41,7 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	namei.9 nullop.9 opencrypto.9 optstr.9 \
 	panic.9 pathbuf.9 pci.9 pci_configure_bus.9 pci_intr.9 \
 	pci_msi.9 pckbport.9 pcmcia.9 pcq.9 pcu.9 \
-	percpu.9 pfil.9 physio.9 pmap.9 pmatch.9 pmc.9 pmf.9 pool.9 \
+	percpu.9 pfil.9 physio.9 pmap.9 pmatch.9 pmf.9 pool.9 \
 	pool_cache.9 powerhook_establish.9 ppsratecheck.9 preempt.9 \
 	proc_find.9 pserialize.9 pslist.9 psref.9 putter.9 \
 	radio.9 ras.9 rasops.9 ratecheck.9 resettodr.9 rnd.9 rndsink.9 \
@@ -51,7 +51,8 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	secmodel_bsd44.9 secmodel_extensions.9 \
 	secmodel_overlay.9 secmodel_securelevel.9 secmodel_suser.9 \
 	SET.9 setbit.9 setjmp.9 shutdownhook_establish.9 \
-	signal.9 skpc.9 sockopt.9 softintr.9 spl.9 splraiseipl.9 \
+	signal.9 skpc.9 sockopt.9 softintr.9 spl.9 specificdata.9 \
+	splraiseipl.9 \
 	store.9 suspendsched.9 \
 	sysctl.9 sysmon_envsys.9 sysmon_pswitch.9 sysmon_taskq.9 tc.9 \
 	tcp_congctl.9 timecounter.9 time_second.9 todr.9 ts2timo.9 tvtohz.9 \
@@ -394,9 +395,6 @@ MLINKS+=ioasic.9 ioasic_intr_establish.9 \
 	ioasic.9 ioasic_intr_evcnt.9 \
 	ioasic.9 ioasic_attach_devs.9 \
 	ioasic.9 ioasic_submatch.9
-MLINKS+=ipkdb.9 ipkdb_init.9 ipkdb.9 ipkdb_connect.9 ipkdb.9 ipkdbinit.9 \
-	ipkdb.9 ipkdbcmds.9 ipkdb.9 ipkdb_trap.9 ipkdb.9 ipkdb_poll.9 \
-	ipkdb.9 ipkdbif_init.9 ipkdb.9 ipkdbfbyte.9 ipkdb.9 ipkdbsbyte.9
 MLINKS+=isa.9 isa_intr_alloc.9 \
 	isa.9 isa_intr_establish.9 \
 	isa.9 isa_intr_disestablish.9 \
@@ -456,8 +454,8 @@ MLINKS+=kpreempt.9 kpreempt_disable.9 \
 	kpreempt.9 kpreempt_disabled.9 \
 	kpreempt.9 kpreempt_enable.9
 MLINKS+=proc_find.9 pgrp_find.9
-MLINKS+=kprintf.9 printf.9 kprintf.9 printf_nolog.9 kprintf.9 sprintf.9 \
-	kprintf.9 snprintf.9 kprintf.9 vprintf.9 kprintf.9 vsprintf.9 \
+MLINKS+=kprintf.9 printf.9 kprintf.9 printf_nolog.9 \
+	kprintf.9 snprintf.9 kprintf.9 vprintf.9 \
 	kprintf.9 vsnprintf.9 kprintf.9 uprintf.9 kprintf.9 ttyprintf.9 \
 	kprintf.9 tprintf.9 kprintf.9 tprintf_open.9 kprintf.9 tprintf_close.9 \
 	kprintf.9 aprint_normal.9 kprintf.9 aprint_naive.9 \
@@ -489,7 +487,7 @@ MLINKS+=malloc.9 malloc_type_detach.9
 MLINKS+=malloc.9 MALLOC_DEFINE.9
 MLINKS+=malloc.9 MALLOC_DECLARE.9
 MLINKS+=mb.9 mb_memory.9 mb.9 mb_read.9 mb.9 mb_write.9
-MLINKS+=mbuf.9 m_get.9 mbuf.9 m_getclr.9 mbuf.9 m_gethdr.9 mbuf.9 m_devget.9 \
+MLINKS+=mbuf.9 m_get.9 mbuf.9 m_gethdr.9 mbuf.9 m_devget.9 \
 	mbuf.9 m_copym.9 mbuf.9 m_copypacket.9 mbuf.9 m_copydata.9 \
 	mbuf.9 m_copyback.9 mbuf.9 m_cat.9 mbuf.9 m_dup.9 mbuf.9 m_prepend.9 \
 	mbuf.9 m_copyback_cow.9 \
@@ -521,14 +519,23 @@ MLINKS+=microuptime.9 binuptime.9 \
 MLINKS+=module.9 module_autoload.9 \
 	module.9 module_builtin_require_force.9 \
 	module.9 module_find_section.9 \
+	module.9 module_getspecific.9 \
 	module.9 module_hold.9 \
 	module.9 module_init.9 \
 	module.9 module_init_class.9 \
+	module.9 module_kernel.9 \
 	module.9 module_load.9 \
 	module.9 module_load_vfs_init.9 \
+	module.9 module_name.9 \
 	module.9 module_rele.9 \
+	module.9 module_setspecific.9 \
+	module.9 module_source.9 \
+	module.9 module_specific_key_create.9 \
+	module.9 module_specific_key_delete.9 \
 	module.9 module_start_unload_thread.9 \
-	module.9 module_unload.9
+	module.9 module_unload.9 \
+	module.9 module_register_callbacks.9 \
+	module.9 module_unregister_callbacks.9
 MLINKS+=mstohz.9 hztoms.9
 MLINKS+=mutex.9 mutex_init.9 mutex.9 mutex_destroy.9 mutex.9 mutex_enter.9 \
 	mutex.9 mutex_exit.9 mutex.9 mutex_tryenter.9 mutex.9 mutex_owned.9 \
@@ -663,10 +670,14 @@ MLINKS+=percpu.9 percpu_alloc.9 \
 MLINKS+=pfil.9 pfil_hook_get.9 \
 	pfil.9 pfil_add_hook.9 \
 	pfil.9 pfil_remove_hook.9 \
+	pfil.9 pfil_add_ihook.9 \
+	pfil.9 pfil_remove_ihook.9 \
 	pfil.9 pfil_head_register.9 \
 	pfil.9 pfil_head_unregister.9 \
 	pfil.9 pfil_head_get.9 \
-	pfil.9 pfil_run_hooks.9
+	pfil.9 pfil_run_hooks.9 \
+	pfil.9 pfil_run_addrhooks.9 \
+	pfil.9 pfil_run_ifhooks.9
 MLINKS+=pmap.9 pmap_init.9 \
 	pmap.9 pmap_virtual_space.9 \
 	pmap.9 pmap_steal_memory.9 \
@@ -701,22 +712,6 @@ MLINKS+=pmap.9 pmap_init.9 \
 	pmap.9 PMAP_MAP_POOLPAGE.9 \
 	pmap.9 PMAP_UNMAP_POOLPAGE.9 \
 	pmap.9 PMAP_PREFER.9
-MLINKS+=pmc.9 pmc_get_num_counters.9 \
-	pmc.9 pmc_get_counter_type.9 \
-	pmc.9 pmc_save_context.9 \
-	pmc.9 pmc_restore_context.9 \
-	pmc.9 pmc_enable_counter.9 \
-	pmc.9 pmc_disable_counter.9 \
-	pmc.9 pmc_counter_isrunning.9 \
-	pmc.9 pmc_counter_isconfigured.9 \
-	pmc.9 pmc_configure_counter.9 \
-	pmc.9 pmc_get_counter_value.9 \
-	pmc.9 pmc_accumulate.9 \
-	pmc.9 pmc_alloc_kernel_counter.9 \
-	pmc.9 pmc_free_kernel_counter.9 \
-	pmc.9 pmc_start_profiling.9 \
-	pmc.9 pmc_stop_profiling.9 \
-	pmc.9 PMC_ENABLED.9
 MLINKS+=pcq.9 pcq_create.9 \
 	pcq.9 pcq_destroy.9 \
 	pcq.9 pcq_get.9 \
@@ -864,6 +859,16 @@ MLINKS+=softintr.9 softintr_establish.9 softintr.9 softintr_disestablish.9 \
 	softintr.9 softintr_schedule.9 softintr.9 softint.9 \
 	softintr.9 softint_establish.9 softintr.9 softint_disestablish.9 \
 	softintr.9 softint_schedule.9
+MLINKS+=specificdata.9 specificdata_domain_create.9 \
+	specificdata.9 specificdata_domain_delete.9 \
+	specificdata.9 specificdata_key_create.9 \
+	specificdata.9 specificdata_key_delete.9 \
+	specificdata.9 specificdata_init.9 \
+	specificdata.9 specificdata_fini.9 \
+	specificdata.9 specificdata_getspecific.9 \
+	specificdata.9 specificdata_getspecific_unlocked.9 \
+	specificdata.9 specificdata_setspecific.9 \
+	specificdata.9 specificdata_setspecific_nowait.9
 MLINKS+=spl.9 spl0.9 spl.9 splbio.9 spl.9 splclock.9 spl.9 splhigh.9 \
 	spl.9 splimp.9 \
 	spl.9 spllowersoftclock.9 spl.9 splnet.9 \
@@ -917,8 +922,7 @@ MLINKS+=tc.9 tc_intr_establish.9 \
 MLINKS+=todr.9 todr_gettime.9 todr.9 todr_settime.9 \
 	todr.9 clock_ymdhms_to_secs.9 todr.9 clock_secs_to_ymdhms.9
 
-MLINKS+=ubc.9 ubc_alloc.9 ubc.9 ubc_release.9 ubc.9 ubc_uiomove.9
-MLINKS+=ubc.9 ubc_zerorange.9 ubc.9 ubc_purge.9
+MLINKS+=ubc.9 ubc_uiomove.9 ubc.9 ubc_zerorange.9 ubc.9 ubc_purge.9
 MLINKS+=uvm.9 uvm_init.9 uvm.9 uvm_init_limits.9 uvm.9 uvm_setpagesize.9 \
 	uvm.9 uvm_swap_init.9 uvm.9 uvm_fault.9 \
 	uvm.9 uvm_vnp_setsize.9 \

@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_ccu.c,v 1.7 2017/09/30 12:48:58 jmcneill Exp $ */
+/* $NetBSD: sunxi_ccu.c,v 1.10 2018/04/28 15:21:24 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #include "opt_fdt_arm.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_ccu.c,v 1.7 2017/09/30 12:48:58 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_ccu.c,v 1.10 2018/04/28 15:21:24 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -184,6 +184,28 @@ sunxi_ccu_clock_set_rate(void *priv, struct clk *clkp, u_int rate)
 	return ENXIO;
 }
 
+static u_int
+sunxi_ccu_clock_round_rate(void *priv, struct clk *clkp, u_int rate)
+{
+	struct sunxi_ccu_softc * const sc = priv;
+	struct sunxi_ccu_clk *clk = (struct sunxi_ccu_clk *)clkp;
+	struct clk *clkp_parent;
+
+	if (clkp->flags & CLK_SET_RATE_PARENT) {
+		clkp_parent = clk_get_parent(clkp);
+		if (clkp_parent == NULL) {
+			aprint_error("%s: no parent for %s\n", __func__, clk->base.name);
+			return 0;
+		}
+		return clk_round_rate(clkp_parent, rate);
+	}
+
+	if (clk->round_rate)
+		return clk->round_rate(sc, clk, rate);
+
+	return 0;
+}
+
 static int
 sunxi_ccu_clock_enable(void *priv, struct clk *clkp)
 {
@@ -259,6 +281,7 @@ static const struct clk_funcs sunxi_ccu_clock_funcs = {
 	.put = sunxi_ccu_clock_put,
 	.get_rate = sunxi_ccu_clock_get_rate,
 	.set_rate = sunxi_ccu_clock_set_rate,
+	.round_rate = sunxi_ccu_clock_round_rate,
 	.enable = sunxi_ccu_clock_enable,
 	.disable = sunxi_ccu_clock_disable,
 	.set_parent = sunxi_ccu_clock_set_parent,
@@ -294,10 +317,13 @@ sunxi_ccu_attach(struct sunxi_ccu_softc *sc)
 		return ENXIO;
 	}
 
+	sc->sc_clkdom.name = device_xname(sc->sc_dev);
 	sc->sc_clkdom.funcs = &sunxi_ccu_clock_funcs;
 	sc->sc_clkdom.priv = sc;
-	for (i = 0; i < sc->sc_nclks; i++)
+	for (i = 0; i < sc->sc_nclks; i++) {
 		sc->sc_clks[i].base.domain = &sc->sc_clkdom;
+		clk_attach(&sc->sc_clks[i].base);
+	}
 
 	fdtbus_register_clock_controller(sc->sc_dev, sc->sc_phandle,
 	    &sunxi_ccu_fdtclock_funcs);
@@ -331,6 +357,7 @@ sunxi_ccu_print(struct sunxi_ccu_softc *sc)
 		case SUNXI_CCU_DIV:		type = "div"; break;
 		case SUNXI_CCU_PHASE:		type = "phase"; break;
 		case SUNXI_CCU_FIXED_FACTOR:	type = "fixed-factor"; break;
+		case SUNXI_CCU_FRACTIONAL:	type = "fractional"; break;
 		default:			type = "???"; break;
 		}
 

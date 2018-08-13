@@ -1,4 +1,4 @@
-/*	$NetBSD: nd6_rtr.c,v 1.135 2017/03/14 04:21:38 ozaki-r Exp $	*/
+/*	$NetBSD: nd6_rtr.c,v 1.143 2018/05/19 08:22:58 maxv Exp $	*/
 /*	$KAME: nd6_rtr.c,v 1.95 2001/02/07 08:09:47 itojun Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nd6_rtr.c,v 1.135 2017/03/14 04:21:38 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nd6_rtr.c,v 1.143 2018/05/19 08:22:58 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -63,8 +63,6 @@ __KERNEL_RCSID(0, "$NetBSD: nd6_rtr.c,v 1.135 2017/03/14 04:21:38 ozaki-r Exp $"
 #include <netinet/icmp6.h>
 #include <netinet6/icmp6_private.h>
 #include <netinet6/scope6_var.h>
-
-#include <net/net_osdep.h>
 
 static int rtpref(struct nd_defrouter *);
 static struct nd_defrouter *defrtrlist_update(struct nd_defrouter *);
@@ -179,6 +177,7 @@ nd6_rs_input(struct mbuf *m, int off, int icmp6len)
 	IP6_EXTHDR_GET(nd_rs, struct nd_router_solicit *, m, off, icmp6len);
 	if (nd_rs == NULL) {
 		ICMP6_STATINC(ICMP6_STAT_TOOSHORT);
+		m_put_rcvif_psref(ifp, &psref);
 		return;
 	}
 
@@ -231,12 +230,6 @@ nd6_ra_input(struct mbuf *m, int off, int icmp6len)
 	struct ip6_hdr *ip6 = mtod(m, struct ip6_hdr *);
 	struct nd_router_advert *nd_ra;
 	struct in6_addr saddr6 = ip6->ip6_src;
-#if 0
-	struct in6_addr daddr6 = ip6->ip6_dst;
-	int flags; /* = nd_ra->nd_ra_flags_reserved; */
-	int is_managed = ((flags & ND_RA_FLAG_MANAGED) != 0);
-	int is_other = ((flags & ND_RA_FLAG_OTHER) != 0);
-#endif
 	int mcast = 0;
 	union nd_opts ndopts;
 	struct nd_defrouter *dr;
@@ -249,9 +242,9 @@ nd6_ra_input(struct mbuf *m, int off, int icmp6len)
 
 	ndi = ND_IFINFO(ifp);
 	/*
-	 * We only accept RAs when
-	 * the system-wide variable allows the acceptance, and the
-	 * per-interface variable allows RAs on the receiving interface.
+	 * We only accept RAs when the system-wide variable allows the
+	 * acceptance, and the per-interface variable allows RAs on the
+	 * receiving interface.
 	 */
 	if (!nd6_accepts_rtadv(ndi))
 		goto freeit;
@@ -319,6 +312,7 @@ nd6_ra_input(struct mbuf *m, int off, int icmp6len)
 			   IN6_PRINT(ip6buf, &ip6->ip6_src),
 			   if_name(ifp), ndi->chlim, nd_ra->nd_ra_curhoplimit);
 	}
+	IFNET_LOCK(ifp);
 	ND6_WLOCK();
 	dr = defrtrlist_update(&drtr);
     }
@@ -378,6 +372,7 @@ nd6_ra_input(struct mbuf *m, int off, int icmp6len)
 		}
 	}
 	ND6_UNLOCK();
+	IFNET_UNLOCK(ifp);
 
 	/*
 	 * MTU
@@ -467,6 +462,9 @@ defrouter_addreq(struct nd_defrouter *newdr)
 		struct sockaddr_in6 sin6;
 		struct sockaddr sa;
 	} def, mask, gate;
+#ifndef NET_MPSAFE
+	int s;
+#endif
 	int error;
 
 	memset(&def, 0, sizeof(def));
@@ -482,7 +480,7 @@ defrouter_addreq(struct nd_defrouter *newdr)
 #endif
 
 #ifndef NET_MPSAFE
-	KASSERT(mutex_owned(softnet_lock));
+	s = splsoftnet();
 #endif
 	error = rtrequest_newmsg(RTM_ADD, &def.sa, &gate.sa, &mask.sa,
 	    RTF_GATEWAY);
@@ -490,6 +488,9 @@ defrouter_addreq(struct nd_defrouter *newdr)
 		nd6_numroutes++;
 		newdr->installed = 1;
 	}
+#ifndef NET_MPSAFE
+	splx(s);
+#endif
 	return;
 }
 
@@ -951,7 +952,7 @@ restart:
 }
 
 static int
-nd6_prelist_add(struct nd_prefixctl *prc, struct nd_defrouter *dr, 
+nd6_prelist_add(struct nd_prefixctl *prc, struct nd_defrouter *dr,
 	struct nd_prefix **newp)
 {
 	struct nd_prefix *newpr = NULL;
@@ -961,8 +962,8 @@ nd6_prelist_add(struct nd_prefixctl *prc, struct nd_defrouter *dr,
 
 	ND6_ASSERT_WLOCK();
 
-	if (ip6_maxifprefixes >= 0) { 
-		if (ext->nprefixes >= ip6_maxifprefixes / 2) 
+	if (ip6_maxifprefixes >= 0) {
+		if (ext->nprefixes >= ip6_maxifprefixes / 2)
 			purge_detached(prc->ndprc_ifp);
 		if (ext->nprefixes >= ip6_maxifprefixes)
 			return ENOMEM;
@@ -1097,7 +1098,7 @@ nd6_prelist_remove(struct nd_prefix *pr)
 static int
 prelist_update(struct nd_prefixctl *newprc,
 	struct nd_defrouter *dr, /* may be NULL */
-	struct mbuf *m, 
+	struct mbuf *m,
 	int mcast)
 {
 	struct in6_ifaddr *ia6_match = NULL;
@@ -1110,19 +1111,10 @@ prelist_update(struct nd_prefixctl *newprc,
 	int ss;
 	char ip6buf[INET6_ADDRSTRLEN];
 
+	KASSERT(m != NULL);
 	ND6_ASSERT_WLOCK();
 
-	auth = 0;
-	if (m) {
-		/*
-		 * Authenticity for NA consists authentication for
-		 * both IP header and IP datagrams, doesn't it ?
-		 */
-#if defined(M_AUTHIPHDR) && defined(M_AUTHIPDGM)
-		auth = (m->m_flags & M_AUTHIPHDR
-		     && m->m_flags & M_AUTHIPDGM) ? 1 : 0;
-#endif
-	}
+	auth = (m->m_flags & M_AUTHIPHDR) ? 1 : 0;
 
 	if ((pr = nd6_prefix_lookup(newprc)) != NULL) {
 		/*
@@ -2026,7 +2018,7 @@ in6_ifadd(struct nd_prefixctl *prc, int mcast, struct psref *psref)
 int
 in6_tmpifadd(
 	const struct in6_ifaddr *ia0, /* corresponding public address */
-	int forcegen, 
+	int forcegen,
 	int dad_delay)
 {
 	struct ifnet *ifp = ia0->ia_ifa.ifa_ifp;
@@ -2216,16 +2208,21 @@ in6_init_address_ltimes(struct nd_prefix *newpr,
 void
 nd6_rt_flush(struct in6_addr *gateway, struct ifnet *ifp)
 {
-
 #ifndef NET_MPSAFE
-	KASSERT(mutex_owned(softnet_lock));
+	int s = splsoftnet();
 #endif
 
 	/* We'll care only link-local addresses */
 	if (!IN6_IS_ADDR_LINKLOCAL(gateway))
-		return;
+		goto out;
 
 	rt_delete_matched_entries(AF_INET6, rt6_deleteroute_matcher, gateway);
+
+out:
+#ifndef NET_MPSAFE
+	splx(s);
+#endif
+	return; /* XXX gcc */
 }
 
 static int

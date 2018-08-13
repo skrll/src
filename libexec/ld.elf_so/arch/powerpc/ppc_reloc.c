@@ -1,4 +1,4 @@
-/*	$NetBSD: ppc_reloc.c,v 1.55 2017/08/10 19:03:26 joerg Exp $	*/
+/*	$NetBSD: ppc_reloc.c,v 1.57 2018/04/03 21:10:27 joerg Exp $	*/
 
 /*-
  * Copyright (C) 1998	Tsubai Masanari
@@ -30,7 +30,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: ppc_reloc.c,v 1.55 2017/08/10 19:03:26 joerg Exp $");
+__RCSID("$NetBSD: ppc_reloc.c,v 1.57 2018/04/03 21:10:27 joerg Exp $");
 #endif /* not lint */
 
 #include <stdarg.h>
@@ -285,6 +285,14 @@ _rtld_relocate_nonplt_objects(Obj_Entry *obj)
 			    obj->path, (void *)*where, defobj->path));
 			break;
 
+		case R_TYPE(IRELATIVE):
+			/* IFUNC relocations are handled in _rtld_call_ifunc */
+			if (obj->ifunc_remaining_nonplt == 0) {
+				obj->ifunc_remaining_nonplt =
+				    obj->relalim - rela;
+			}
+			break;
+
 		default:
 			rdbg(("sym = %lu, type = %lu, offset = %p, "
 			    "addend = %p, contents = %p, symbol = %s",
@@ -314,10 +322,9 @@ _rtld_relocate_plt_lazy(Obj_Entry *obj)
 #else
 	Elf_Addr * const pltresolve = obj->pltgot + 8;
 	const Elf_Rela *rela;
-	int reloff;
 
-	rela = obj->pltrelalim;
-	for (reloff = rela - obj->pltrela; rela-- > obj->pltrela; --reloff) {
+	for (rela = obj->pltrelalim; rela-- > obj->pltrela;) {
+		size_t reloff = rela - obj->pltrela;
 		Elf_Word *where = (Elf_Word *)(obj->relocbase + rela->r_offset);
 
 		assert(ELF_R_TYPE(rela->r_info) == R_TYPE(JUMP_SLOT) ||
@@ -362,27 +369,6 @@ _rtld_relocate_plt_lazy(Obj_Entry *obj)
 #endif /* !_LP64 */
 
 	return 0;
-}
-
-void
-_rtld_call_ifunc(Obj_Entry *obj, sigset_t *mask, u_int cur_objgen)
-{
-	const Elf_Rela *rela;
-	Elf_Addr *where, target;
-
-	while (obj->ifunc_remaining > 0 && _rtld_objgen == cur_objgen) {
-		rela = obj->pltrelalim - obj->ifunc_remaining;
-		--obj->ifunc_remaining;
-		if (ELF_R_TYPE(rela->r_info) == R_TYPE(IRELATIVE)) {
-			where = (Elf_Addr *)(obj->relocbase + rela->r_offset);
-			target = (Elf_Addr)(obj->relocbase + rela->r_addend);
-			_rtld_exclusive_exit(mask);
-			target = _rtld_resolve_ifunc2(obj, target);
-			_rtld_exclusive_enter(mask);
-			if (*where != target)
-				*where = target;
-		}
-	}
 }
 
 static int

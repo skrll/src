@@ -1,4 +1,4 @@
-/*	$NetBSD: raw_ip.c,v 1.167 2017/12/11 05:47:18 ryo Exp $	*/
+/*	$NetBSD: raw_ip.c,v 1.177 2018/05/11 14:07:58 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: raw_ip.c,v 1.167 2017/12/11 05:47:18 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: raw_ip.c,v 1.177 2018/05/11 14:07:58 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -100,9 +100,7 @@ __KERNEL_RCSID(0, "$NetBSD: raw_ip.c,v 1.167 2017/12/11 05:47:18 ryo Exp $");
 
 #ifdef IPSEC
 #include <netipsec/ipsec.h>
-#include <netipsec/ipsec_var.h>
-#include <netipsec/ipsec_private.h>
-#endif	/* IPSEC */
+#endif
 
 struct inpcbtable rawcbtable;
 
@@ -139,20 +137,23 @@ rip_init(void)
 
 static void
 rip_sbappendaddr(struct inpcb *last, struct ip *ip, const struct sockaddr *sa,
-    int hlen, struct mbuf *opts, struct mbuf *n)
+    int hlen, struct mbuf *n)
 {
+	struct mbuf *opts = NULL;
+
 	if (last->inp_flags & INP_NOHEADER)
 		m_adj(n, hlen);
-	if (last->inp_flags & INP_CONTROLOPTS 
-	    || SOOPT_TIMESTAMP(last->inp_socket->so_options))
+	if (last->inp_flags & INP_CONTROLOPTS ||
+	    SOOPT_TIMESTAMP(last->inp_socket->so_options))
 		ip_savecontrol(last, &opts, ip, n);
 	if (sbappendaddr(&last->inp_socket->so_rcv, sa, n, opts) == 0) {
-		/* should notify about lost packet */
+		soroverflow(last->inp_socket);
 		m_freem(n);
 		if (opts)
 			m_freem(opts);
-	} else
+	} else {
 		sorwakeup(last->inp_socket);
+	}
 }
 
 /*
@@ -168,7 +169,7 @@ rip_input(struct mbuf *m, ...)
 	struct inpcb_hdr *inph;
 	struct inpcb *inp;
 	struct inpcb *last = NULL;
-	struct mbuf *n, *opts = NULL;
+	struct mbuf *n;
 	struct sockaddr_in ripsrc;
 	va_list ap;
 
@@ -200,36 +201,32 @@ rip_input(struct mbuf *m, ...)
 		if (!in_nullhost(inp->inp_faddr) &&
 		    !in_hosteq(inp->inp_faddr, ip->ip_src))
 			continue;
-		if (last == NULL)
+
+		if (last == NULL) {
 			;
+		}
 #if defined(IPSEC)
-		/* check AH/ESP integrity. */
-		else if (ipsec_used &&
-		    ipsec4_in_reject(m, last)) {
-			IPSEC_STATINC(IPSEC_STAT_IN_POLVIO);
-			/* do not inject data to pcb */
+		else if (ipsec_used && ipsec_in_reject(m, last)) {
+			/* do not inject data into pcb */
 		}
-#endif /*IPSEC*/
+#endif
 		else if ((n = m_copypacket(m, M_DONTWAIT)) != NULL) {
-			rip_sbappendaddr(last, ip, sintosa(&ripsrc), hlen, opts,
-			    n);
-			opts = NULL;
+			rip_sbappendaddr(last, ip, sintosa(&ripsrc), hlen, n);
 		}
+
 		last = inp;
 	}
+
 #if defined(IPSEC)
-	/* check AH/ESP integrity. */
-	if (ipsec_used && last != NULL
-	    && ipsec4_in_reject(m, last)) {
+	if (ipsec_used && last != NULL && ipsec_in_reject(m, last)) {
 		m_freem(m);
-		IPSEC_STATINC(IPSEC_STAT_IN_POLVIO);
 		IP_STATDEC(IP_STAT_DELIVERED);
-		/* do not inject data to pcb */
+		/* do not inject data into pcb */
 	} else
-#endif /*IPSEC*/
-	if (last != NULL)
-		rip_sbappendaddr(last, ip, sintosa(&ripsrc), hlen, opts, m);
-	else if (inetsw[ip_protox[ip->ip_p]].pr_input == rip_input) {
+#endif
+	if (last != NULL) {
+		rip_sbappendaddr(last, ip, sintosa(&ripsrc), hlen, m);
+	} else if (inetsw[ip_protox[ip->ip_p]].pr_input == rip_input) {
 		uint64_t *ips;
 
 		icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PROTOCOL,
@@ -238,8 +235,10 @@ rip_input(struct mbuf *m, ...)
 		ips[IP_STAT_NOPROTO]++;
 		ips[IP_STAT_DELIVERED]--;
 		IP_STAT_PUTREF();
-	} else
+	} else {
 		m_freem(m);
+	}
+
 	return;
 }
 
@@ -356,6 +355,10 @@ rip_output(struct mbuf *m, struct inpcb *inp, struct mbuf *control,
 			error = EMSGSIZE;
 			goto release;
 		}
+		if (m->m_pkthdr.len < sizeof(struct ip)) {
+			error = EINVAL;
+			goto release;
+		}
 		ip = mtod(m, struct ip *);
 
 		/*
@@ -368,7 +371,7 @@ rip_output(struct mbuf *m, struct inpcb *inp, struct mbuf *control,
 
 			m = m_copyup(m, hlen, (max_linkhdr + 3) & ~3);
 			if (m == NULL) {
-				error = ENOMEM;	/* XXX */
+				error = ENOMEM;
 				goto release;
 			}
 			ip = mtod(m, struct ip *);
@@ -381,11 +384,14 @@ rip_output(struct mbuf *m, struct inpcb *inp, struct mbuf *control,
 		}
 		HTONS(ip->ip_len);
 		HTONS(ip->ip_off);
+
 		if (ip->ip_id != 0 || m->m_pkthdr.len < IP_MINFRAGSIZE)
 			flags |= IP_NOIPNEWID;
 		opts = NULL;
-		/* XXX prevent ip_output from overwriting header fields */
+
+		/* Prevent ip_output from overwriting header fields. */
 		flags |= IP_RAWOUTPUT;
+
 		IP_STATINC(IP_STAT_RAWOUT);
 	}
 

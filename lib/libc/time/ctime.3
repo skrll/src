@@ -1,8 +1,8 @@
-.\" $NetBSD: ctime.3,v 1.55 2017/10/24 17:38:17 christos Exp $
+.\" $NetBSD: ctime.3,v 1.59 2018/05/04 15:51:00 christos Exp $
 .\"
 .\" XXX: License missing?
 .\"
-.Dd October 24, 2017
+.Dd May 5, 2018
 .Dt CTIME 3
 .Os
 .Sh NAME
@@ -131,7 +131,7 @@ or a
 .Dv NULL
 pointer denoting
 Coordinated Universal Time
-.Pq Tn UTC .
+.Pq UTC .
 .It Fn difftime "time1" "time2"
 The
 .Fn difftime
@@ -163,7 +163,7 @@ If
 .Fa zone
 is
 .Dv NULL ,
-UTC is used; otherwise,
+UT is used; otherwise,
 .Fa zone
 should have been allocated by
 .Fn tzalloc
@@ -176,7 +176,7 @@ fields.
 The
 .Fn gmtime
 function converts to Coordinated Universal Time
-.Pq Tn UTC
+.Pq UTC
 and returns a pointer to the
 .Va tm
 structure described in
@@ -233,7 +233,7 @@ argument, returned by a previous call to
 or a
 .Dv NULL
 pointer denoting Coordinated Universal Time
-.Pq Tn UTC .
+.Pq UTC .
 .It Fn mktime "tm"
 The
 .Fn mktime
@@ -258,15 +258,15 @@ to their normal ranges.
 .Fa tm_isdst
 causes
 .Fn mktime
-to presume initially that summer time (for example, Daylight Saving Time
-in the U.S.A.) respectively,
+to presume initially that daylight saving time
+respectively,
 is or is not in effect for the specified time.
 .It
 A negative value for
 .Fa tm_isdst
 causes the
 .Fn mktime
-function to attempt to divine whether summer time is in effect
+function to attempt to divine whether daylight saving time is in effect
 for the specified time; in this case it does not use a consistent
 rule and may give a different answer when later
 presented with the same argument.
@@ -313,7 +313,7 @@ argument, returned by a previous call to
 .Fn tzalloc ,
 or a null pointer denoting
 Coordinated Universal Time
-.Pq Tn UTC .
+.Pq UTC .
 .El
 .Pp
 Declarations of all the functions and externals, and the
@@ -334,14 +334,14 @@ includes the following fields:
        int tm_wday;     /* day of week (Sunday = 0) */
        int tm_yday;     /* day of year (0 - 365) */
        int tm_isdst;    /* is summer time in effect? */
+	int tm_isdst;	/* is daylight saving time in effect? */
        char *tm_zone;   /* abbreviation of timezone name (optional) */
        long tm_gmtoff;  /* offset from UT in seconds (optional) */
 .Ed
-.Pp
 .Bl -bullet
 .It
 .Va tm_isdst
-is non-zero if summer time is in effect.
+is non-zero if daylight saving time is in effect.
 .It
 .Va tm_gmtoff
 is the offset (in seconds) of the time represented from UT,
@@ -432,7 +432,7 @@ argument is
 .Dv NULL ,
 and this is not an error, but a way of referring to
 Coordinated Universal Time
-.Pq Tn UTC .
+.Pq UTC .
 .It
 .Fn tzgetzone
 function returns string containing the name of the timezone given in
@@ -444,6 +444,8 @@ function returns string containing the name of the timezone given in
 local time zone file
 .It Pa /usr/share/zoneinfo
 time zone information directory
+.\" .It Pa usr/share/zoneinfo/localtime
+.\" local time zone file
 .It Pa /usr/share/zoneinfo/posixrules
 used with POSIX-style TZ's
 .It Pa /usr/share/zoneinfo/GMT
@@ -503,13 +505,13 @@ variable (once set) and the
 .Fa tm_zone
 field of a returned
 .Va "struct tm"
-th point to an array of characters that
+point to an array of characters that
 can be freed or overwritten by later calls to the functions
 .Fn localtime ,
 .Fn tzfree ,
-and    
-.Fn tzset , 
-if these functions affect the time zone information that specifies the 
+and
+.Fn tzset ,
+if these functions affect the time zone information that specifies the
 abbreviation in question.
 The remaining functions and data are thread-safe.
 The functions that do take an explicit

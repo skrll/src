@@ -1,4 +1,4 @@
-/*	$NetBSD: if_iwm.c,v 1.76 2017/10/23 09:28:38 msaitoh Exp $	*/
+/*	$NetBSD: if_iwm.c,v 1.83 2018/06/26 06:48:01 msaitoh Exp $	*/
 /*	OpenBSD: if_iwm.c,v 1.148 2016/11/19 21:07:08 stsp Exp	*/
 #define IEEE80211_NO_HT
 /*
@@ -106,7 +106,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_iwm.c,v 1.76 2017/10/23 09:28:38 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_iwm.c,v 1.83 2018/06/26 06:48:01 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -4003,7 +4003,7 @@ iwm_rx_rx_mpdu(struct iwm_softc *sc, struct iwm_rx_packet *pkt,
 			}
 		}
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m, BPF_D_IN);
 	}
 	ieee80211_input(ic, m, ni, rssi, device_timestamp);
 	ieee80211_free_node(ni);
@@ -4640,7 +4640,7 @@ iwm_tx(struct iwm_softc *sc, struct mbuf *m, struct ieee80211_node *ni, int ac)
 		if (wh->i_fc[1] & IEEE80211_FC1_WEP)
 			tap->wt_flags |= IEEE80211_RADIOTAP_F_WEP;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m, BPF_D_OUT);
 	}
 
 	/* Encrypt the frame if need be. */
@@ -5248,6 +5248,7 @@ iwm_fill_probe_req(struct iwm_softc *sc, struct iwm_scan_probe_req *preq)
 
 	memset(preq, 0, sizeof(*preq));
 
+	KASSERT(ic->ic_des_esslen < sizeof(ic->ic_des_essid));
 	if (remain < sizeof(*wh) + 2 + ic->ic_des_esslen)
 		return ENOBUFS;
 
@@ -6847,7 +6848,7 @@ iwm_start(struct ifnet *ifp)
 		ac = (eh->ether_type != htons(ETHERTYPE_PAE)) ?
 		    M_WME_GETAC(m) : WME_AC_BE;
 
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 
 		if ((m = ieee80211_encap(ic, m, ni)) == NULL) {
 			ieee80211_free_node(ni);
@@ -6856,7 +6857,7 @@ iwm_start(struct ifnet *ifp)
 		}
 
  sendit:
-		bpf_mtap3(ic->ic_rawbpf, m);
+		bpf_mtap3(ic->ic_rawbpf, m, BPF_D_OUT);
 
 		if (iwm_tx(sc, m, ni, ac) != 0) {
 			ieee80211_free_node(ni);
@@ -7701,6 +7702,7 @@ static const pci_product_id_t iwm_devices[] = {
 	PCI_PRODUCT_INTEL_WIFI_LINK_7265_2,
 	PCI_PRODUCT_INTEL_WIFI_LINK_3165_1,
 	PCI_PRODUCT_INTEL_WIFI_LINK_3165_2,
+	PCI_PRODUCT_INTEL_WIFI_LINK_3168,
 	PCI_PRODUCT_INTEL_WIFI_LINK_8260_1,
 	PCI_PRODUCT_INTEL_WIFI_LINK_8260_2,
 	PCI_PRODUCT_INTEL_WIFI_LINK_4165_1,
@@ -7727,6 +7729,7 @@ static int
 iwm_preinit(struct iwm_softc *sc)
 {
 	struct ieee80211com *ic = &sc->sc_ic;
+	struct ifnet *ifp = IC2IFP(&sc->sc_ic);
 	int err;
 
 	if (ISSET(sc->sc_flags, IWM_FLAG_ATTACHED))
@@ -7758,6 +7761,12 @@ iwm_preinit(struct iwm_softc *sc)
 	if (sc->sc_nvm.sku_cap_band_52GHz_enable)
 		ic->ic_sup_rates[IEEE80211_MODE_11A] = ieee80211_std_rateset_11a;
 
+	ether_ifdetach(ifp);
+	/*
+	 * XXX
+	 * ether_ifdetach() overwrites ifp->if_ioctl, so restore it here.
+	 */
+	ifp->if_ioctl = iwm_ioctl;
 	ieee80211_ifattach(ic);
 
 	ic->ic_node_alloc = iwm_node_alloc;
@@ -8131,7 +8140,13 @@ iwm_attach(device_t parent, device_t self, void *aux)
 #if 0
 	ieee80211_ifattach(ic);
 #else
-	ether_ifattach(ifp, ic->ic_myaddr);	/* XXX */
+	/*
+	 * XXX
+	 * To avoid setting ifp->if_hwdl in if_set_sadl(), we fake
+	 *  ic->ic_myaddr as local address.
+	 */
+	ic->ic_myaddr[0] = 0x02;
+	ether_ifattach(ifp,  ic->ic_myaddr);	/* XXX */
 #endif
 	/* Use common softint-based if_input */
 	ifp->if_percpuq = if_percpuq_create(ifp);

@@ -1,4 +1,4 @@
-/*	$NetBSD: pf.c,v 1.77 2017/10/31 15:00:03 christos Exp $	*/
+/*	$NetBSD: pf.c,v 1.82 2018/07/11 05:25:46 maxv Exp $	*/
 /*	$OpenBSD: pf.c,v 1.552.2.1 2007/11/27 16:37:57 henning Exp $ */
 
 /*
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pf.c,v 1.77 2017/10/31 15:00:03 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pf.c,v 1.82 2018/07/11 05:25:46 maxv Exp $");
 
 #include "pflog.h"
 
@@ -1590,7 +1590,7 @@ pf_modulate_sack(struct mbuf *m, int off, struct pf_pdesc *pd,
 	struct sackblk sack;
 
 #ifdef __NetBSD__
-#define	TCPOLEN_SACK (2 * sizeof(uint32_t))
+#define	TCPOLEN_SACK		8		/* 2*sizeof(tcp_seq) */
 #endif
 
 #define TCPOLEN_SACKLEN	(TCPOLEN_SACK + 2)
@@ -1856,7 +1856,11 @@ pf_send_icmp(struct mbuf *m, u_int8_t type, u_int8_t code, sa_family_t af,
 	struct pf_mtag	*pf_mtag;
 #endif /* __NetBSD__ */
 
+#ifdef __NetBSD__
+	m0 = m_copym(m, 0, M_COPYALL, M_DONTWAIT);
+#else
 	m0 = m_copy(m, 0, M_COPYALL);
+#endif
 
 #ifdef __NetBSD__
 	if ((pf_mtag = pf_get_mtag(m0)) == NULL)
@@ -2847,6 +2851,8 @@ pf_socket_lookup(int direction, struct pf_pdesc *pd)
 		break;
 #endif /* INET6 */
 	}
+	if (so == NULL || so->so_cred == NULL)
+		return -1;
 	pd->lookup.uid = kauth_cred_geteuid(so->so_cred);
 	pd->lookup.gid = kauth_cred_getegid(so->so_cred);
 #else
@@ -5347,7 +5353,7 @@ pf_route(struct mbuf **m, struct pf_rule *r, int dir, struct ifnet *oifp,
 	/* Catch routing changes wrt. hardware checksumming for TCP or UDP. */
 #ifdef __NetBSD__
 	if (m0->m_pkthdr.csum_flags & (M_CSUM_TCPv4|M_CSUM_UDPv4)) {
-		in_delayed_cksum(m0);
+		in_undefer_cksum_tcpudp(m0);
 		m0->m_pkthdr.csum_flags &= ~(M_CSUM_TCPv4|M_CSUM_UDPv4);
 	}
 #else

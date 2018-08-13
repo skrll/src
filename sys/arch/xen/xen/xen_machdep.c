@@ -1,4 +1,4 @@
-/*	$NetBSD: xen_machdep.c,v 1.15 2016/06/08 01:59:06 jnemeth Exp $	*/
+/*	$NetBSD: xen_machdep.c,v 1.19 2018/07/26 15:38:26 maxv Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -53,7 +53,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xen_machdep.c,v 1.15 2016/06/08 01:59:06 jnemeth Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xen_machdep.c,v 1.19 2018/07/26 15:38:26 maxv Exp $");
 
 #include "opt_xen.h"
 
@@ -65,6 +65,7 @@ __KERNEL_RCSID(0, "$NetBSD: xen_machdep.c,v 1.15 2016/06/08 01:59:06 jnemeth Exp
 #include <sys/timetc.h>
 #include <sys/sysctl.h>
 #include <sys/pmf.h>
+#include <sys/xcall.h>
 
 #include <xen/hypervisor.h>
 #include <xen/shutdown_xenbus.h>
@@ -279,6 +280,9 @@ sysctl_xen_suspend(SYSCTLFN_ARGS)
 
 }
 
+static void xen_suspendclocks_xc(void *, void*);
+static void xen_resumeclocks_xc(void *, void*);
+
 /*
  * Last operations before suspending domain
  */
@@ -289,7 +293,7 @@ xen_prepare_suspend(void)
 	kpreempt_disable();
 
 	pmap_xen_suspend();
-	xen_suspendclocks(curcpu());
+	xc_wait(xc_broadcast(0, &xen_suspendclocks_xc, NULL, NULL));
 
 	/*
 	 * save/restore code does not translate these MFNs to their
@@ -310,6 +314,15 @@ xen_prepare_suspend(void)
 		HYPERVISOR_crash();
 	}
 
+}
+
+static void
+xen_suspendclocks_xc(void *a, void *b)
+{
+
+	kpreempt_disable();
+	xen_suspendclocks(curcpu());
+	kpreempt_enable();
 }
 
 /*
@@ -342,17 +355,26 @@ xen_prepare_resume(void)
 
 	xen_suspend_allow = false;
 
-	xen_resumeclocks(curcpu());
+	xc_wait(xc_broadcast(0, xen_resumeclocks_xc, NULL, NULL));
 
 	kpreempt_enable();
 
 }
 
 static void
+xen_resumeclocks_xc(void *a, void *b)
+{
+
+	kpreempt_disable();
+	xen_resumeclocks(curcpu());
+	kpreempt_enable();
+}
+
+static void
 xen_suspend_domain(void)
 {
 	paddr_t mfn;
-	int s = splvm();
+	int s = splvm(); /* XXXSMP */
 
 	/*
 	 * console becomes unavailable when suspended, so
@@ -396,6 +418,21 @@ xen_suspend_domain(void)
 	/* xencons is back online, we can print to console */
 	aprint_verbose("domain resumed\n");
 
+}
+
+#define PRINTK_BUFSIZE 1024
+void
+printk(const char *fmt, ...)
+{
+	va_list ap;
+	int ret;
+	static char buf[PRINTK_BUFSIZE];
+
+	va_start(ap, fmt);
+	ret = vsnprintf(buf, PRINTK_BUFSIZE - 1, fmt, ap);
+	va_end(ap);
+	buf[ret] = 0;
+	(void)HYPERVISOR_console_io(CONSOLEIO_write, ret, buf);
 }
 
 bool xen_feature_tables[XENFEAT_NR_SUBMAPS * 32];

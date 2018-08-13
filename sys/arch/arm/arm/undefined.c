@@ -1,4 +1,4 @@
-/*	$NetBSD: undefined.c,v 1.60 2017/07/02 16:16:44 skrll Exp $	*/
+/*	$NetBSD: undefined.c,v 1.62 2018/05/28 21:05:00 chs Exp $	*/
 
 /*
  * Copyright (c) 2001 Ben Harris.
@@ -55,7 +55,7 @@
 #include <sys/kgdb.h>
 #endif
 
-__KERNEL_RCSID(0, "$NetBSD: undefined.c,v 1.60 2017/07/02 16:16:44 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: undefined.c,v 1.62 2018/05/28 21:05:00 chs Exp $");
 
 #include <sys/kmem.h>
 #include <sys/queue.h>
@@ -83,10 +83,6 @@ __KERNEL_RCSID(0, "$NetBSD: undefined.c,v 1.60 2017/07/02 16:16:44 skrll Exp $")
 #ifdef DDB
 #include <ddb/db_output.h>
 #include <machine/db_machdep.h>
-#endif
-
-#ifdef acorn26
-#include <machine/machdep.h>
 #endif
 
 static int gdb_trapper(u_int, u_int, struct trapframe *, int);
@@ -225,34 +221,26 @@ static struct undefined_handler gdb_uh_thumb;
 dtrace_doubletrap_func_t	dtrace_doubletrap_func = NULL;
 dtrace_trap_func_t		dtrace_trap_func = NULL;
 
-int (* dtrace_invop_jump_addr)(uintptr_t, struct trapframe *, uintptr_t);
-void (* dtrace_emulation_jump_addr)(int, struct trapframe *);
+int (* dtrace_invop_jump_addr)(struct trapframe *);
 
 static int
 dtrace_trapper(u_int addr, struct trapframe *frame)
 {
-	int op;
-	struct trapframe back;
 	u_int insn = read_insn(addr, false);
 
-	if (dtrace_invop_jump_addr == NULL || dtrace_emulation_jump_addr == NULL)
+	if (dtrace_invop_jump_addr == NULL)
 		return 1;
 
 	if (!DTRACE_IS_BREAKPOINT(insn))
 		return 1;
 
-	/* cond value is encoded in the first byte */
+	/* cond value is encoded in the low nibble */
 	if (!arm_cond_ok_p(__SHIFTIN(insn, INSN_COND_MASK), frame->tf_spsr)) {
 		frame->tf_pc += INSN_SIZE;
 		return 0;
 	}
 
-	back = *frame;
-	op = dtrace_invop_jump_addr(addr, frame, frame->tf_r0);
-	*frame = back;
-
-	dtrace_emulation_jump_addr(op, frame);
-
+	dtrace_invop_jump_addr(frame);
 	return 0;
 }
 #endif
@@ -305,14 +293,8 @@ undefinedinstruction(trapframe_t *tf)
 #endif
 
 	/* Enable interrupts if they were enabled before the exception. */
-#ifdef acorn26
-	if ((tf->tf_r15 & R15_IRQ_DISABLE) == 0)
-		int_on();
-#else
 	restore_interrupts(tf->tf_spsr & IF32_bits);
-#endif
 
-#ifndef acorn26
 #ifdef THUMB_CODE
 	if (tf->tf_spsr & PSR_T_bit)
 		tf->tf_pc -= THUMB_INSN_SIZE;
@@ -321,22 +303,13 @@ undefinedinstruction(trapframe_t *tf)
 	{
 		tf->tf_pc -= INSN_SIZE;
 	}
-#endif
 
-#ifdef __PROG26
-	fault_pc = tf->tf_r15 & R15_PC;
-#else
 	fault_pc = tf->tf_pc;
-#endif
 
 	/* Get the current lwp/proc structure or lwp0/proc0 if there is none. */
 	l = curlwp;
 
-#ifdef __PROG26
-	if ((tf->tf_r15 & R15_MODE) == R15_MODE_USR) {
-#else
 	if ((tf->tf_spsr & PSR_MODE) == PSR_USR32_MODE) {
-#endif
 		user = 1;
 		LWP_CACHE_CREDS(l, l->l_proc);
 	} else

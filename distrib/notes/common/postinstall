@@ -1,4 +1,4 @@
-.\"	$NetBSD: postinstall,v 1.81 2015/05/19 19:30:27 snj Exp $
+.\"	$NetBSD: postinstall,v 1.83 2018/08/07 08:26:42 martin Exp $
 .\"
 .\" Copyright (c) 1999-2004 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -160,7 +160,6 @@ For example:
 .Pp
 .
 .ds IFname le0
-.if \n[acorn26]   .ds IFname ei0
 .if \n[acorn32]   .ds IFname ei0
 .if \n[amd64]     .ds IFname wm0
 .if \n[arc]       .ds IFname sn0
@@ -180,7 +179,6 @@ For example:
 .if \n[shark]     .ds IFname cs0
 .if \n[sparc64]   .ds IFname hme0
 .if \n[x68k]      .ds IFname ne0
-.if \n[xen]       .ds IFname xennet0
 .
 .Dl ifconfig_\*[IFname]="inet 192.0.2.123 netmask 255.255.255.0"
 .Pp

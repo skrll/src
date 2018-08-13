@@ -1,4 +1,4 @@
-/*	$NetBSD: cs89x0.c,v 1.39 2017/03/07 01:28:37 ozaki-r Exp $	*/
+/*	$NetBSD: cs89x0.c,v 1.41 2018/06/26 06:48:00 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2004 Christopher Gilbert
@@ -212,7 +212,7 @@
 */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cs89x0.c,v 1.39 2017/03/07 01:28:37 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cs89x0.c,v 1.41 2018/06/26 06:48:00 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -231,13 +231,12 @@ __KERNEL_RCSID(0, "$NetBSD: cs89x0.c,v 1.39 2017/03/07 01:28:37 ozaki-r Exp $");
 #include <net/if.h>
 #include <net/if_ether.h>
 #include <net/if_media.h>
+#include <net/bpf.h>
+
 #ifdef INET
 #include <netinet/in.h>
 #include <netinet/if_inarp.h>
 #endif
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/bus.h>
 #include <sys/intr.h>
@@ -1905,7 +1904,7 @@ cs_start_output(struct ifnet *ifp)
 	         * If BPF is listening on this interface, let it see the packet
 	         * before we commit it to the wire.
 	         */
-		bpf_mtap(ifp, pMbufChain);
+		bpf_mtap(ifp, pMbufChain, BPF_D_OUT);
 
 		/* Find the total length of the data to transmit */
 		Length = 0;

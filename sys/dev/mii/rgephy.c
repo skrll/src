@@ -1,4 +1,4 @@
-/*	$NetBSD: rgephy.c,v 1.40 2015/08/21 12:22:22 jmcneill Exp $	*/
+/*	$NetBSD: rgephy.c,v 1.44 2018/06/27 07:51:36 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2003
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rgephy.c,v 1.40 2015/08/21 12:22:22 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rgephy.c,v 1.44 2018/06/27 07:51:36 msaitoh Exp $");
 
 
 /*
@@ -51,6 +51,7 @@ __KERNEL_RCSID(0, "$NetBSD: rgephy.c,v 1.40 2015/08/21 12:22:22 jmcneill Exp $")
 #include <net/if_media.h>
 
 #include <dev/mii/mii.h>
+#include <dev/mii/mdio.h>
 #include <dev/mii/miivar.h>
 #include <dev/mii/miidevs.h>
 
@@ -63,6 +64,7 @@ static void	rgephy_attach(device_t, device_t, void *);
 
 struct rgephy_softc {
 	struct mii_softc mii_sc;
+	bool mii_no_rx_delay;
 };
 
 CFATTACH_DECL_NEW(rgephy, sizeof(struct rgephy_softc),
@@ -109,6 +111,7 @@ static void
 rgephy_attach(device_t parent, device_t self, void *aux)
 {
 	struct rgephy_softc *rsc = device_private(self);
+	prop_dictionary_t prop = device_properties(self);
 	struct mii_softc *sc = &rsc->mii_sc;
 	struct mii_attach_args *ma = aux;
 	struct mii_data *mii = ma->mii_data;
@@ -135,6 +138,8 @@ rgephy_attach(device_t parent, device_t self, void *aux)
 	sc->mii_anegticks = MII_ANEGTICKS_GIGE;
 
 	sc->mii_funcs = &rgephy_funcs;
+
+	prop_dictionary_get_bool(prop, "no-rx-delay", &rsc->mii_no_rx_delay);
 
 #define	ADD(m, c)	ifmedia_add(&mii->mii_media, (m), (c), NULL)
 #define	PRINT(n)	aprint_normal("%s%s", sep, (n)); sep = ", "
@@ -303,14 +308,14 @@ rgephy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		 * need to restart the autonegotiation process.  Read
 		 * the BMSR twice in case it's latched.
 		 */
-		if (sc->mii_mpd_rev >= 6) {
+		if (sc->mii_mpd_rev >= RGEPHY_8211F) {
 			/* RTL8211F */
 			reg = PHY_READ(sc, RGEPHY_MII_PHYSR);
 			if (reg & RGEPHY_PHYSR_LINK) {
 				sc->mii_ticks = 0;
 				break;
 			}
-		} else if (sc->mii_mpd_rev >= 2) {
+		} else if (sc->mii_mpd_rev >= RGEPHY_8211B) {
 			/* RTL8211B(L) */
 			reg = PHY_READ(sc, RGEPHY_MII_SSR);
 			if (reg & RGEPHY_SSR_LINK) {
@@ -364,11 +369,11 @@ rgephy_status(struct mii_softc *sc)
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
 
-	if (sc->mii_mpd_rev >= 6) {
+	if (sc->mii_mpd_rev >= RGEPHY_8211F) {
 		physr = PHY_READ(sc, RGEPHY_MII_PHYSR);
 		if (physr & RGEPHY_PHYSR_LINK)
 			mii->mii_media_status |= IFM_ACTIVE;
-	} else if (sc->mii_mpd_rev >= 2) {
+	} else if (sc->mii_mpd_rev >= RGEPHY_8211B) {
 		ssr = PHY_READ(sc, RGEPHY_MII_SSR);
 		if (ssr & RGEPHY_SSR_LINK)
 			mii->mii_media_status |= IFM_ACTIVE;
@@ -398,7 +403,7 @@ rgephy_status(struct mii_softc *sc)
 		}
 	}
 
-	if (sc->mii_mpd_rev >= 6) {
+	if (sc->mii_mpd_rev >= RGEPHY_8211F) {
 		physr = PHY_READ(sc, RGEPHY_MII_PHYSR);
 		switch (__SHIFTOUT(physr, RGEPHY_PHYSR_SPEED)) {
 		case RGEPHY_PHYSR_SPEED_1000:
@@ -419,7 +424,7 @@ rgephy_status(struct mii_softc *sc)
 			    IFM_FDX;
 		else
 			mii->mii_media_active |= IFM_HDX;
-	} else if (sc->mii_mpd_rev >= 2) {
+	} else if (sc->mii_mpd_rev >= RGEPHY_8211B) {
 		ssr = PHY_READ(sc, RGEPHY_MII_SSR);
 		switch (ssr & RGEPHY_SSR_SPD_MASK) {
 		case RGEPHY_SSR_S1000:
@@ -489,7 +494,7 @@ rgephy_loop(struct mii_softc *sc)
 	int i;
 
 	if (sc->mii_mpd_model != MII_MODEL_REALTEK_RTL8251 &&
-	    sc->mii_mpd_rev < 2) {
+	    sc->mii_mpd_rev < RGEPHY_8211B) {
 		PHY_WRITE(sc, MII_BMCR, BMCR_PDOWN);
 		DELAY(1000);
 	}
@@ -524,7 +529,7 @@ rgephy_load_dspcode(struct mii_softc *sc)
 	int val;
 
 	if (sc->mii_mpd_model == MII_MODEL_REALTEK_RTL8251 ||
-	    sc->mii_mpd_rev >= 2)
+	    sc->mii_mpd_rev >= RGEPHY_8211B)
 		return;
 
 #if 1
@@ -619,22 +624,32 @@ rgephy_load_dspcode(struct mii_softc *sc)
 static void
 rgephy_reset(struct mii_softc *sc)
 {
+	struct rgephy_softc *rsc = (struct rgephy_softc *)sc;
 	uint16_t ssr, phycr1;
 
 	mii_phy_reset(sc);
 	DELAY(1000);
 
 	if (sc->mii_mpd_model != MII_MODEL_REALTEK_RTL8251 &&
-	    sc->mii_mpd_rev < 2) {
+	    sc->mii_mpd_rev < RGEPHY_8211B) {
 		rgephy_load_dspcode(sc);
-	} else if (sc->mii_mpd_rev == 3) {
+	} else if (sc->mii_mpd_rev == RGEPHY_8211C) {
 		/* RTL8211C(L) */
 		ssr = PHY_READ(sc, RGEPHY_MII_SSR);
 		if ((ssr & RGEPHY_SSR_ALDPS) != 0) {
 			ssr &= ~RGEPHY_SSR_ALDPS;
 			PHY_WRITE(sc, RGEPHY_MII_SSR, ssr);
 		}
-	} else if (sc->mii_mpd_rev == 6) {
+	} else if (sc->mii_mpd_rev == RGEPHY_8211E) {
+		/* RTL8211E */
+		if (rsc->mii_no_rx_delay) {
+			/* Disable RX internal delay (undocumented) */
+			PHY_WRITE(sc, 0x1f, 0x0007);
+			PHY_WRITE(sc, 0x1e, 0x00a4);
+			PHY_WRITE(sc, 0x1c, 0xb591);
+			PHY_WRITE(sc, 0x1f, 0x0000);
+		}
+	} else if (sc->mii_mpd_rev == RGEPHY_8211F) {
 		/* RTL8211F */
 		phycr1 = PHY_READ(sc, RGEPHY_MII_PHYCR1);
 		phycr1 &= ~RGEPHY_PHYCR1_MDI_MMCE;
@@ -657,13 +672,13 @@ rgephy_reset(struct mii_softc *sc)
 	/* NWay enable and Restart NWay */
 	PHY_WRITE(sc, MII_BMCR, BMCR_RESET | BMCR_AUTOEN | BMCR_STARTNEG);
 
-	if (sc->mii_mpd_rev == 6) {
+	if (sc->mii_mpd_rev == RGEPHY_8211F) {
 		/* RTL8211F */
 		delay(10000);
 		/* disable EEE */
-		PHY_WRITE(sc, RGEPHY_MII_MACR, 0x0007);
-		PHY_WRITE(sc, RGEPHY_MII_MAADR, 0x003c);
-		PHY_WRITE(sc, RGEPHY_MII_MACR, 0x4007);
-		PHY_WRITE(sc, RGEPHY_MII_MAADR, 0x0000);
+		PHY_WRITE(sc, MII_MMDACR, MMDACR_FN_ADDRESS | MDIO_MMD_AN);
+		PHY_WRITE(sc, MII_MMDAADR, MDIO_AN_EEEADVERT);
+		PHY_WRITE(sc, MII_MMDACR, MMDACR_FN_DATANPI | MDIO_MMD_AN);
+		PHY_WRITE(sc, MII_MMDAADR, 0x0000);
 	}
 }

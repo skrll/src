@@ -1,4 +1,4 @@
-/*	$NetBSD: in6_pcb.c,v 1.161 2017/04/25 05:44:11 ozaki-r Exp $	*/
+/*	$NetBSD: in6_pcb.c,v 1.165 2018/02/27 14:44:10 maxv Exp $	*/
 /*	$KAME: in6_pcb.c,v 1.84 2001/02/08 18:02:08 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6_pcb.c,v 1.161 2017/04/25 05:44:11 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6_pcb.c,v 1.165 2018/02/27 14:44:10 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -205,7 +205,7 @@ in6_pcbbind_addr(struct in6pcb *in6p, struct sockaddr_in6 *sin6, struct lwp *l)
 
 	/*
 	 * We should check the family, but old programs
-	 * incorrectly fail to intialize it.
+	 * incorrectly fail to initialize it.
 	 */
 	if (sin6->sin6_family != AF_INET6)
 		return (EAFNOSUPPORT);
@@ -512,6 +512,7 @@ in6_pcbconnect(void *v, struct sockaddr_in6 *sin6, struct lwp *l)
 		if (ia4 == NULL) {
 			if (error == 0)
 				error = EADDRNOTAVAIL;
+			curlwp_bindx(bound);
 			return (error);
 		}
 		memset(&mapped, 0, sizeof(mapped));
@@ -521,6 +522,7 @@ in6_pcbconnect(void *v, struct sockaddr_in6 *sin6, struct lwp *l)
 		ia4_release(ia4, &_psref);
 		in6a = &mapped;
 #else
+		curlwp_bindx(bound);
 		return EADDRNOTAVAIL;
 #endif
 	} else {
@@ -626,7 +628,7 @@ in6_pcbdetach(struct in6pcb *in6p)
 
 #if defined(IPSEC)
 	if (ipsec_enabled)
-		ipsec6_delete_pcbpolicy(in6p);
+		ipsec_delete_pcbpolicy(in6p);
 #endif
 	so->so_pcb = NULL;
 
@@ -875,11 +877,18 @@ in6_pcbpurgeif0(struct inpcbtable *table, struct ifnet *ifp)
 			    i6mm_chain, nimm) {
 				if (imm->i6mm_maddr->in6m_ifp == ifp) {
 					LIST_REMOVE(imm, i6mm_chain);
+					IFNET_LOCK(ifp);
 					in6_leavegroup(imm);
+					IFNET_UNLOCK(ifp);
 				}
 			}
 		}
+
+		/* IFNET_LOCK must be taken after solock */
+		IFNET_LOCK(ifp);
 		in_purgeifmcast(in6p->in6p_v4moptions, ifp);
+		IFNET_UNLOCK(ifp);
+
 		if (need_unlock)
 			in6p_unlock(in6p);
 	}

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ray.c,v 1.88 2017/12/09 00:53:55 christos Exp $	*/
+/*	$NetBSD: if_ray.c,v 1.90 2018/06/26 06:48:01 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2000 Christian E. Hopps
@@ -57,7 +57,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ray.c,v 1.88 2017/12/09 00:53:55 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ray.c,v 1.90 2018/06/26 06:48:01 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -80,6 +80,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_ray.c,v 1.88 2017/12/09 00:53:55 christos Exp $")
 #include <net80211/ieee80211.h>
 #include <net80211/ieee80211_ioctl.h>
 #include <net/if_media.h>
+#include <net/bpf.h>
 
 #ifdef INET
 #include <netinet/in.h>
@@ -88,9 +89,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_ray.c,v 1.88 2017/12/09 00:53:55 christos Exp $")
 #include <netinet/ip.h>
 #include <netinet/if_inarp.h>
 #endif
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/cpu.h>
 #include <sys/bus.h>
@@ -1224,7 +1222,7 @@ ray_intr_start(struct ray_softc *sc)
 				m0->m_len -=  sizeof(struct ieee80211_frame);
 				m0->m_pkthdr.len -=  sizeof(struct ieee80211_frame);
 			}
-			bpf_mtap(ifp, m0);
+			bpf_mtap(ifp, m0, BPF_D_OUT);
 			if (ifp->if_flags & IFF_LINK0) {
 				m0->m_data -= sizeof(struct ieee80211_frame);
 				m0->m_len +=  sizeof(struct ieee80211_frame);
@@ -1516,7 +1514,7 @@ done:
 		eh = (struct ether_header *)(frame + 1);
 	}
 	m_adj(m, (char *)eh - (char *)frame);
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_IN);
 	/* XXX doesn't appear to be included m->m_flags |= M_HASFCS; */
 	ifp->if_ipackets++;
 	if_percpuq_enqueue(ifp->if_percpuq, m);

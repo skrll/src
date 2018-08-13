@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.49 2017/04/02 21:44:00 kamil Exp $
+# $NetBSD: Makefile,v 1.52 2018/05/25 15:42:30 martin Exp $
 
 MKMAN=	no
 
@@ -16,6 +16,7 @@ TESTS_C+=		t_clock_nanosleep
 TESTS_C+=		t_clone
 TESTS_C+=		t_connect
 TESTS_C+=		t_dup
+TESTS_C+=		t_fork
 TESTS_C+=		t_fsync
 TESTS_C+=		t_getcontext
 TESTS_C+=		t_getgroups
@@ -69,11 +70,13 @@ TESTS_C+=		t_sigtimedwait
 TESTS_C+=		t_socketpair
 TESTS_C+=		t_swapcontext
 TESTS_C+=		t_stat
+TESTS_C+=		t_syscall
 TESTS_C+=		t_timer_create
 TESTS_C+=		t_truncate
 TESTS_C+=		t_ucontext
 TESTS_C+=		t_umask
 TESTS_C+=		t_unlink
+TESTS_C+=		t_vfork
 TESTS_C+=		t_wait
 TESTS_C+=		t_wait_noproc
 TESTS_C+=		t_wait_noproc_wnohang
@@ -96,6 +99,7 @@ CPPFLAGS.t_ptrace_wait4.c	+= -D_KERNTYPES
 CPPFLAGS.t_ptrace_wait6.c	+= -D_KERNTYPES
 CPPFLAGS.t_ptrace_waitid.c	+= -D_KERNTYPES
 CPPFLAGS.t_ptrace_waitpid.c	+= -D_KERNTYPES
+CPPFLAGS.t_ucontext.c		+= -D_KERNTYPES
 
 FILES=		truncate_test.root_owned
 FILESBUILD=	yes

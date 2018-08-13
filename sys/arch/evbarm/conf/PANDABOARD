@@ -1,5 +1,5 @@
 #
-#	$NetBSD: PANDABOARD,v 1.24 2017/09/14 07:58:40 mrg Exp $
+#	$NetBSD: PANDABOARD,v 1.27 2018/07/14 15:09:41 maxv Exp $
 #
 #	PANDABOARD -- TI OMAP 4430 Eval Board Kernel
 #
@@ -111,11 +111,9 @@ options 	KTRACE		# system call tracing, a la ktrace(1)
 
 # Development and Debugging options
 
-#options 	PERFCTRS	# performance counters
 options 	DIAGNOSTIC	# internal consistency checks
 #options 	DEBUG
 #options 	PMAP_DEBUG	# Enable pmap_debug_level code
-#options 	IPKDB		# remote kernel debugging
 #options 	VERBOSE_INIT_ARM # verbose bootstraping messages
 options 	DDB		# in-kernel debugger
 options 	DDB_ONPANIC=1
@@ -153,7 +151,7 @@ cpu0		at mainbus?
 armperiph0	at mainbus?
 arml2cc0	at armperiph?				# L2 Cache Controller
 armgic0		at armperiph?				# Interrupt Controller
-a9tmr0		at armperiph?				# Global Timer
+arma9tmr0	at armperiph?				# Global Timer
 a9wdt0		at armperiph?				# Watchdog
 
 # Specify the memory size in megabytes.

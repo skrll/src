@@ -1,4 +1,4 @@
-/*	$NetBSD: c_ksh.c,v 1.26 2017/06/30 04:41:19 kamil Exp $	*/
+/*	$NetBSD: c_ksh.c,v 1.29 2018/06/03 12:18:29 kamil Exp $	*/
 
 /*
  * built-in Korn commands: c_*
@@ -6,7 +6,7 @@
 #include <sys/cdefs.h>
 
 #ifndef lint
-__RCSID("$NetBSD: c_ksh.c,v 1.26 2017/06/30 04:41:19 kamil Exp $");
+__RCSID("$NetBSD: c_ksh.c,v 1.29 2018/06/03 12:18:29 kamil Exp $");
 #endif
 
 #include <sys/stat.h>
@@ -317,7 +317,7 @@ c_print(wp)
 	Xinit(xs, xp, 128, ATEMP);
 
 	while (*wp != NULL) {
-		register int c;
+		int c;
 		s = *wp;
 		while ((c = *s++) != '\0') {
 			Xcheck(xs, xp);
@@ -470,9 +470,9 @@ c_whence(wp)
 	while ((vflag || ret == 0) && (id = *wp++) != NULL) {
 		tp = NULL;
 		if ((iam_whence || vflag) && !pflag)
-			tp = tsearch(&keywords, id, hash(id));
+			tp = mytsearch(&keywords, id, hash(id));
 		if (!tp && !pflag) {
-			tp = tsearch(&aliases, id, hash(id));
+			tp = mytsearch(&aliases, id, hash(id));
 			if (tp && !(tp->flag & ISSET))
 				tp = NULL;
 		}
@@ -946,7 +946,7 @@ c_alias(wp)
 			alias = str_nsave(alias, val++ - alias, ATEMP);
 		h = hash(alias);
 		if (val == NULL && !tflag && !xflag) {
-			ap = tsearch(t, alias, h);
+			ap = mytsearch(t, alias, h);
 			if (ap != NULL && (ap->flag&ISSET)) {
 				if (pflag)
 					shf_puts("alias ", shl_stdout);
@@ -995,8 +995,8 @@ int
 c_unalias(wp)
 	char **wp;
 {
-	register struct table *t = &aliases;
-	register struct tbl *ap;
+	struct table *t = &aliases;
+	struct tbl *ap;
 	int rv = 0, all = 0;
 	int optc;
 
@@ -1017,7 +1017,7 @@ c_unalias(wp)
 	wp += builtin_opt.optind;
 
 	for (; *wp != NULL; wp++) {
-		ap = tsearch(t, *wp, hash(*wp));
+		ap = mytsearch(t, *wp, hash(*wp));
 		if (ap == NULL) {
 			rv = 1;	/* POSIX */
 			continue;
@@ -1032,7 +1032,7 @@ c_unalias(wp)
 	if (all) {
 		struct tstate ts;
 
-		for (twalk(&ts, t); (ap = tnext(&ts)); ) {
+		for (ksh_twalk(&ts, t); (ap = tnext(&ts)); ) {
 			if (ap->flag&ALLOC) {
 				ap->flag &= ~(ALLOC|ISSET);
 				afree((void*)ap->val.s, APERM);
@@ -1389,7 +1389,7 @@ c_bind(wp)
 	char **wp;
 {
 	int rv = 0, macro = 0, list = 0;
-	register char *cp;
+	char *cp;
 	int optc;
 
 	while ((optc = ksh_getopt(wp, &builtin_opt, "lm")) != EOF)

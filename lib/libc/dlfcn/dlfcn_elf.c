@@ -1,4 +1,4 @@
-/*	$NetBSD: dlfcn_elf.c,v 1.14 2017/07/11 15:21:35 joerg Exp $	*/
+/*	$NetBSD: dlfcn_elf.c,v 1.16 2018/07/13 19:49:47 joerg Exp $	*/
 
 /*
  * Copyright (c) 2000 Takuya SHIOZAKI
@@ -27,7 +27,7 @@
 
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: dlfcn_elf.c,v 1.14 2017/07/11 15:21:35 joerg Exp $");
+__RCSID("$NetBSD: dlfcn_elf.c,v 1.16 2018/07/13 19:49:47 joerg Exp $");
 #endif /* LIBC_SCCS and not lint */
 
 #include "namespace.h"
@@ -38,6 +38,7 @@ __RCSID("$NetBSD: dlfcn_elf.c,v 1.14 2017/07/11 15:21:35 joerg Exp $");
 #include <string.h>
 #include <stdbool.h>
 
+#undef dl_iterate_phdr
 #undef dlopen
 #undef dlclose
 #undef dlsym
@@ -174,6 +175,17 @@ dl_iterate_phdr_setup(void)
 			dlpi_name = (void *)aux->a_v;
 			break;
 		}
+	}
+
+	if (!dlpi_phdr)
+		return;
+
+	const Elf_Phdr *phdr = (const Elf_Phdr *)dlpi_phdr;
+	const Elf_Phdr *phlimit = phdr + dlpi_phnum;
+
+	for (; phdr < phlimit; ++phdr) {
+		if (phdr->p_type == PT_PHDR)
+			dlpi_addr = (uintptr_t)phdr - phdr->p_vaddr;
 	}
 }
 

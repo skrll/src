@@ -1,4 +1,4 @@
-$NetBSD: acronyms,v 1.264 2017/12/02 01:36:38 ginsbach Exp $
+$NetBSD: acronyms,v 1.274 2018/05/25 00:31:07 riastradh Exp $
 10Q	thank you
 10X	thanks
 1337	elite ("leet")
@@ -34,6 +34,7 @@ AKA	also known as
 AM	ante meridiem
 AMA	ask me anything
 AMOL	a mountain of love
+APM	alternative payment model
 ASAIC	as soon as I can
 ASAP	as soon as possible
 ASL	age/sex/location
@@ -69,6 +70,7 @@ BIAF	back in a few
 BIALW	back in a little while
 BIAS	back in a second
 BIAW	back in a while
+BIDI	boy, I did it
 BNYA	burned now you are
 BOC	but of course
 BOFH	bastard operator from hell
@@ -176,6 +178,7 @@ GA	go ahead
 GAC	get a clue
 GAL	get a life
 GBTW	get back to work
+GDPR	General Data Protection Regulation
 GF	girlfriend
 GFU	good for you
 GFY	good for you
@@ -204,7 +207,7 @@ GTSY	{glad,good} to see you
 GWS	get well soon
 H8	hate
 HAND	have a nice day
-HE	how embarrasing
+HE	how embarrassing
 HF	have fun
 HHIS	hanging head in shame
 HHOS	ha ha, only serious
@@ -324,6 +327,7 @@ LOL	laughing out loud
 LP	long playing [record]
 LTNS	long time no see
 LWYL	laugh with you later
+M&O	management & operations
 M8	mate
 MAD	mutually assured destruction
 MBA	master of business administration
@@ -364,6 +368,7 @@ NRFPT	not ready for prime time
 NRN	no reply necessary
 NRN	not right now
 NSFW	not suitable for work
+NTBF	not to be fixed
 NTN	no thanks needed
 NUNP	no users, no problems
 NVM	never mind
@@ -450,6 +455,7 @@ RLC	rod length check
 RMS	Richard Matthew Stallman
 ROFL	rolling on floor laughing
 ROFLMAO	rolling on floor laughing my ass off
+ROM	rough order of magnitude
 ROI	return on investment
 ROTFL	rolling on the floor laughing
 RP	responsible person
@@ -487,6 +493,7 @@ SUX2BU	sucks to be you
 SWAG	silly, wild-assed guess
 SWAHBI	silly, wild-assed hare-brained idea
 SWMBO	she who must be obeyed
+SWOT	strength, weaknesses, opportunities, threats
 SYS	see you soon
 TA	teaching assistant
 TANSTAAFL	there ain't no such thing as a free lunch
@@ -505,7 +512,7 @@ THNX	thanks
 THX	thanks
 TIA	thanks in advance
 TIAVP	this is a volunteer project
-TIC	tonque in cheek
+TIC	tongue in cheek
 TIL	today I learned
 TINC	there is no cabal
 TINLA	this is not legal advice
@@ -550,6 +557,7 @@ UTSL	use the source, Luke
 VCR	video cassette recorder
 VEG	very evil grin
 VIP	very important person
+VLA	variable length array
 W/	with
 W/E	whatever
 W/O	without

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.253 2017/10/10 19:28:33 christos Exp $
+#	$NetBSD: Makefile,v 1.259 2018/07/12 06:52:49 maxv Exp $
 #	from: @(#)Makefile	5.25.1.1 (Berkeley) 5/7/91
 
 .include <bsd.own.mk>
@@ -24,7 +24,7 @@ SUBDIR+=	libarch \
 		libbluetooth libbsdmalloc libbz2 \
 		libcompat libcrypt \
 		libintl libipsec libkvm libm \
-		libossaudio libpci libpmc libposix libprop libpthread \
+		libossaudio libpci libposix libprop libpthread \
 		libpuffs libresolv librmt librpcsvc librt \
 		libtelnet libterminfo \
 		libusbhid libutil libwrap liby libz
@@ -133,7 +133,7 @@ SUBDIR+=	librumpuser	# depends on libpthread
 SUBDIR+=	libnpf		# depends on libprop
 .endif
 
-SUBDIR+=	../crypto/external/bsd/openssl/lib # depends on libcrypt
+SUBDIR+=	../crypto/external/bsd/${EXTERNAL_OPENSSL_SUBDIR}/lib # depends on libcrypt
 SUBDIR+=	../external/bsd/file/lib	# depends on libz
 
 .if (${MKISCSI} != "no")
@@ -141,7 +141,7 @@ SUBDIR+=	../external/bsd/iscsi/lib	# depends on libpthread
 .endif
 
 .if (${MKZFS} != "no")
-SUBDIR+=        ../external/cddl/osnet/lib/libzfs
+SUBDIR+=        ../external/cddl/osnet/lib/libzfs_core
 SUBDIR+=        ../external/cddl/osnet/lib/libzpool
 .endif
 
@@ -165,7 +165,7 @@ SUBDIR+=	../external/gpl3/${EXTERNAL_GCC_SUBDIR}/lib/libsupc++
 #==================== 2nd library dependency barrier ====================
 SUBDIR+=	.WAIT
 
-.for sanitizer in asan ubsan
+.for sanitizer in asan lsan ubsan
 .if exists(../external/gpl3/${EXTERNAL_GCC_SUBDIR}/lib/lib${sanitizer})
 SUBDIR+= ../external/gpl3/${EXTERNAL_GCC_SUBDIR}/lib/lib${sanitizer}
 .endif
@@ -210,9 +210,16 @@ SUBDIR+=	../external/bsd/fetch/lib	# depends on libssl
 SUBDIR+=	../external/bsd/openldap/lib	# depends on libcrypto, ...
 .endif
 
+.if (${MKZFS} != "no")
+SUBDIR+=        ../external/cddl/osnet/lib/libzfs
+.endif
+
+SUBDIR+= 	../libexec/httpd/libbozohttpd 	# depends on libssl & libcrypto
+
 #==================== 3rd library dependency barrier ====================
 SUBDIR+=	.WAIT
 
+SUBDIR+=	../crypto/external/bsd/netpgp/bindings/lua  # depends on netpgp/lib
 SUBDIR+=	../external/bsd/bind/lib	# depends on heimdal, libcrypto
 .if ${MKUNBOUND} != "no"
 SUBDIR+=	../external/bsd/unbound/lib	# depends on libcrypto

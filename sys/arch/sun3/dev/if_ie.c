@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ie.c,v 1.62 2017/02/22 09:45:16 nonaka Exp $ */
+/*	$NetBSD: if_ie.c,v 1.65 2018/06/26 06:47:59 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 1993, 1994, 1995 Charles M. Hannum.
@@ -98,7 +98,7 @@
 */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ie.c,v 1.62 2017/02/22 09:45:16 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ie.c,v 1.65 2018/06/26 06:47:59 msaitoh Exp $");
 
 #include "opt_inet.h"
 #include "opt_ns.h"
@@ -118,9 +118,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_ie.c,v 1.62 2017/02/22 09:45:16 nonaka Exp $");
 #include <net/if_types.h>
 #include <net/if_dl.h>
 #include <net/if_ether.h>
-
 #include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #ifdef INET
 #include <netinet/in.h>
@@ -727,13 +725,6 @@ iexmit(struct ie_softc *sc)
 		    sc->xctail);
 #endif
 
-	/*
-	 * If BPF is listening on this interface, let it see the packet before
-	 * we push it on the wire.
-	 */
-	bpf_tap(ifp, sc->xmit_cbuffs[sc->xctail],
-	    SWAP(sc->xmit_buffs[sc->xctail]->ie_xmit_flags));
-
 	sc->xmit_buffs[sc->xctail]->ie_xmit_flags |= IE_XMIT_LAST;
 	sc->xmit_buffs[sc->xctail]->ie_xmit_next = SWAP(0xffff);
 	sc->xmit_buffs[sc->xctail]->ie_xmit_buf =
@@ -988,7 +979,7 @@ iestart(struct ifnet *ifp)
 			panic("%s: no header mbuf", __func__);
 
 		/* Tap off here if there is a BPF listener. */
-		bpf_mtap(ifp, m0);
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 
 #ifdef IEDEBUG
 		if (sc->sc_debug & IED_ENQ)

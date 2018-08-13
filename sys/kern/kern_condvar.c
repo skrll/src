@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_condvar.c,v 1.39 2017/11/12 20:04:51 riastradh Exp $	*/
+/*	$NetBSD: kern_condvar.c,v 1.41 2018/01/30 07:52:22 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_condvar.c,v 1.39 2017/11/12 20:04:51 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_condvar.c,v 1.41 2018/01/30 07:52:22 ozaki-r Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -71,17 +71,17 @@ static inline void	cv_wakeup_one(kcondvar_t *);
 static inline void	cv_wakeup_all(kcondvar_t *);
 
 static syncobj_t cv_syncobj = {
-	SOBJ_SLEEPQ_SORTED,
-	cv_unsleep,
-	sleepq_changepri,
-	sleepq_lendpri,
-	syncobj_noowner,
+	.sobj_flag	= SOBJ_SLEEPQ_SORTED,
+	.sobj_unsleep	= cv_unsleep,
+	.sobj_changepri	= sleepq_changepri,
+	.sobj_lendpri	= sleepq_lendpri,
+	.sobj_owner	= syncobj_noowner,
 };
 
 lockops_t cv_lockops = {
-	"Condition variable",
-	LOCKOPS_CV,
-	NULL
+	.lo_name = "Condition variable",
+	.lo_type = LOCKOPS_CV,
+	.lo_dump = NULL,
 };
 
 static const char deadcv[] = "deadcv";

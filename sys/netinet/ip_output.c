@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_output.c,v 1.286 2017/12/11 05:47:18 ryo Exp $	*/
+/*	$NetBSD: ip_output.c,v 1.307 2018/07/11 05:25:45 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -29,7 +29,7 @@
  * SUCH DAMAGE.
  */
 
-/*-
+/*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_output.c,v 1.286 2017/12/11 05:47:18 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_output.c,v 1.307 2018/07/11 05:25:45 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -156,7 +156,7 @@ static int ip_ifaddrvalid(const struct in_ifaddr *);
 
 extern pfil_head_t *inet_pfil_hook;			/* XXX */
 
-int	ip_do_loopback_cksum = 0;
+int ip_do_loopback_cksum = 0;
 
 static int
 ip_mark_mpls(struct ifnet * const ifp, struct mbuf * const m,
@@ -232,8 +232,7 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 	struct ip *ip;
 	struct ifnet *ifp, *mifp = NULL;
 	struct mbuf *m = m0;
-	int hlen = sizeof (struct ip);
-	int len, error = 0;
+	int len, hlen, error = 0;
 	struct route iproute;
 	const struct sockaddr_in *dst;
 	struct in_ifaddr *ia = NULL;
@@ -262,11 +261,12 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 	KASSERT((m->m_pkthdr.csum_flags & (M_CSUM_TCPv6|M_CSUM_UDPv6)) == 0);
 	KASSERT((m->m_pkthdr.csum_flags & (M_CSUM_TCPv4|M_CSUM_UDPv4)) !=
 	    (M_CSUM_TCPv4|M_CSUM_UDPv4));
+	KASSERT(m->m_len >= sizeof(struct ip));
 
+	hlen = sizeof(struct ip);
 	if (opt) {
 		m = ip_insertoptions(m, opt, &len);
-		if (len >= sizeof(struct ip))
-			hlen = len;
+		hlen = len;
 	}
 	ip = mtod(m, struct ip *);
 
@@ -303,6 +303,10 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 	    !in_hosteq(dst->sin_addr, ip->ip_dst)))
 		rtcache_free(ro);
 
+	/* XXX must be before rtcache operations */
+	bound = curlwp_bind();
+	bind_need_restore = true;
+
 	if ((rt = rtcache_validate(ro)) == NULL &&
 	    (rt = rtcache_update(ro, 1)) == NULL) {
 		dst = &udst.sin;
@@ -311,8 +315,6 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 			goto bad;
 	}
 
-	bound = curlwp_bind();
-	bind_need_restore = true;
 	/*
 	 * If routing to interface only, short circuit routing lookup.
 	 */
@@ -536,8 +538,8 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 	}
 
 	/*
-	 * packets with Class-D address as source are not valid per
-	 * RFC 1112
+	 * Packets with Class-D address as source are not valid per
+	 * RFC1112.
 	 */
 	if (IN_MULTICAST(ip->ip_src.s_addr)) {
 		IP_STATINC(IP_STAT_ODROPPED);
@@ -546,7 +548,7 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 	}
 
 	/*
-	 * Look for broadcast address and and verify user is allowed to
+	 * Look for broadcast address and verify user is allowed to
 	 * send such a packet.
 	 */
 	if (isbroadcast) {
@@ -574,7 +576,6 @@ sendit:
 		} else if ((m->m_pkthdr.csum_flags & M_CSUM_TSOv4) == 0) {
 			ip->ip_id = ip_newid(ia);
 		} else {
-
 			/*
 			 * TSO capable interfaces (typically?) increment
 			 * ip_id for each segment.
@@ -671,6 +672,7 @@ sendit:
 		m->m_pkthdr.csum_flags |= M_CSUM_IPv4;
 	}
 	sw_csum = m->m_pkthdr.csum_flags & ~ifp->if_csum_flags_tx;
+
 	/*
 	 * If small enough for mtu of path, or if using TCP segmentation
 	 * offload, can just send directly.
@@ -705,7 +707,7 @@ sendit:
 			if (sw_csum & (M_CSUM_TCPv4|M_CSUM_UDPv4)) {
 				if (IN_NEED_CHECKSUM(ifp,
 				    sw_csum & (M_CSUM_TCPv4|M_CSUM_UDPv4))) {
-					in_delayed_cksum(m);
+					in_undefer_cksum_tcpudp(m);
 				}
 				m->m_pkthdr.csum_flags &=
 				    ~(M_CSUM_TCPv4|M_CSUM_UDPv4);
@@ -724,15 +726,14 @@ sendit:
 	}
 
 	/*
-	 * We can't use HW checksumming if we're about to
-	 * fragment the packet.
+	 * We can't use HW checksumming if we're about to fragment the packet.
 	 *
 	 * XXX Some hardware can do this.
 	 */
 	if (m->m_pkthdr.csum_flags & (M_CSUM_TCPv4|M_CSUM_UDPv4)) {
 		if (IN_NEED_CHECKSUM(ifp,
 		    m->m_pkthdr.csum_flags & (M_CSUM_TCPv4|M_CSUM_UDPv4))) {
-			in_delayed_cksum(m);
+			in_undefer_cksum_tcpudp(m);
 		}
 		m->m_pkthdr.csum_flags &= ~(M_CSUM_TCPv4|M_CSUM_UDPv4);
 	}
@@ -759,7 +760,7 @@ sendit:
 
 	for (; m; m = m0) {
 		m0 = m->m_nextpkt;
-		m->m_nextpkt = 0;
+		m->m_nextpkt = NULL;
 		if (error) {
 			m_freem(m);
 			continue;
@@ -789,6 +790,7 @@ sendit:
 	if (error == 0) {
 		IP_STATINC(IP_STAT_FRAGMENTED);
 	}
+
 done:
 	ia4_release(ia, &psref_ia);
 	rtcache_unref(rt, ro);
@@ -801,6 +803,7 @@ done:
 	if (bind_need_restore)
 		curlwp_bindx(bound);
 	return error;
+
 bad:
 	m_freem(m);
 	goto done;
@@ -817,16 +820,22 @@ ip_fragment(struct mbuf *m, struct ifnet *ifp, u_long mtu)
 	int sw_csum = m->m_pkthdr.csum_flags;
 	int fragments = 0;
 	int error = 0;
+	int ipoff, ipflg;
 
 	ip = mtod(m, struct ip *);
 	hlen = ip->ip_hl << 2;
+
+	/* Preserve the offset and flags. */
+	ipoff = ntohs(ip->ip_off) & IP_OFFMASK;
+	ipflg = ntohs(ip->ip_off) & (IP_RF|IP_DF|IP_MF);
+
 	if (ifp != NULL)
 		sw_csum &= ~ifp->if_csum_flags_tx;
 
 	len = (mtu - hlen) &~ 7;
 	if (len < 8) {
 		m_freem(m);
-		return (EMSGSIZE);
+		return EMSGSIZE;
 	}
 
 	firstlen = len;
@@ -837,45 +846,51 @@ ip_fragment(struct mbuf *m, struct ifnet *ifp, u_long mtu)
 	 * make new header and copy data of each part and link onto chain.
 	 */
 	m0 = m;
-	mhlen = sizeof (struct ip);
+	mhlen = sizeof(struct ip);
 	for (off = hlen + len; off < ntohs(ip->ip_len); off += len) {
 		MGETHDR(m, M_DONTWAIT, MT_HEADER);
-		if (m == 0) {
+		if (m == NULL) {
 			error = ENOBUFS;
 			IP_STATINC(IP_STAT_ODROPPED);
 			goto sendorfree;
 		}
 		MCLAIM(m, m0->m_owner);
+
 		*mnext = m;
 		mnext = &m->m_nextpkt;
+
 		m->m_data += max_linkhdr;
 		mhip = mtod(m, struct ip *);
 		*mhip = *ip;
-		/* we must inherit MCAST and BCAST flags */
-		m->m_flags |= m0->m_flags & (M_MCAST|M_BCAST);
-		if (hlen > sizeof (struct ip)) {
-			mhlen = ip_optcopy(ip, mhip) + sizeof (struct ip);
+
+		/* we must inherit the flags */
+		m->m_flags |= m0->m_flags & M_COPYFLAGS;
+
+		if (hlen > sizeof(struct ip)) {
+			mhlen = ip_optcopy(ip, mhip) + sizeof(struct ip);
 			mhip->ip_hl = mhlen >> 2;
 		}
 		m->m_len = mhlen;
-		mhip->ip_off = ((off - hlen) >> 3) +
-		    (ntohs(ip->ip_off) & ~IP_MF);
-		if (ip->ip_off & htons(IP_MF))
-			mhip->ip_off |= IP_MF;
+
+		mhip->ip_off = ((off - hlen) >> 3) + ipoff;
+		mhip->ip_off |= ipflg;
 		if (off + len >= ntohs(ip->ip_len))
 			len = ntohs(ip->ip_len) - off;
 		else
 			mhip->ip_off |= IP_MF;
 		HTONS(mhip->ip_off);
+
 		mhip->ip_len = htons((u_int16_t)(len + mhlen));
 		m->m_next = m_copym(m0, off, len, M_DONTWAIT);
-		if (m->m_next == 0) {
-			error = ENOBUFS;	/* ??? */
+		if (m->m_next == NULL) {
+			error = ENOBUFS;
 			IP_STATINC(IP_STAT_ODROPPED);
 			goto sendorfree;
 		}
+
 		m->m_pkthdr.len = mhlen + len;
 		m_reset_rcvif(m);
+
 		mhip->ip_sum = 0;
 		KASSERT((m->m_pkthdr.csum_flags & M_CSUM_IPv4) == 0);
 		if (sw_csum & M_CSUM_IPv4) {
@@ -894,6 +909,7 @@ ip_fragment(struct mbuf *m, struct ifnet *ifp, u_long mtu)
 		IP_STATINC(IP_STAT_OFRAGMENTS);
 		fragments++;
 	}
+
 	/*
 	 * Update first fragment by trimming what's been copied out
 	 * and updating header, then send each fragment (in order).
@@ -916,6 +932,7 @@ ip_fragment(struct mbuf *m, struct ifnet *ifp, u_long mtu)
 		KASSERT(M_CSUM_DATA_IPv4_IPHL(m->m_pkthdr.csum_data) >=
 		    sizeof(struct ip));
 	}
+
 sendorfree:
 	/*
 	 * If there is no room for all the fragments, don't queue
@@ -938,41 +955,14 @@ sendorfree:
 			m_freem(m);
 		}
 	}
-	return (error);
-}
 
-/*
- * Process a delayed payload checksum calculation.
- */
-void
-in_delayed_cksum(struct mbuf *m)
-{
-	struct ip *ip;
-	u_int16_t csum, offset;
-
-	ip = mtod(m, struct ip *);
-	offset = ip->ip_hl << 2;
-	csum = in4_cksum(m, 0, offset, ntohs(ip->ip_len) - offset);
-	if (csum == 0 && (m->m_pkthdr.csum_flags & M_CSUM_UDPv4) != 0)
-		csum = 0xffff;
-
-	offset += M_CSUM_DATA_IPv4_OFFSET(m->m_pkthdr.csum_data);
-
-	if ((offset + sizeof(u_int16_t)) > m->m_len) {
-		/* This happen when ip options were inserted
-		printf("in_delayed_cksum: pullup len %d off %d proto %d\n",
-		    m->m_len, offset, ip->ip_p);
-		 */
-		m_copyback(m, offset, sizeof(csum), (void *) &csum);
-	} else
-		*(u_int16_t *)(mtod(m, char *) + offset) = csum;
+	return error;
 }
 
 /*
  * Determine the maximum length of the options to be inserted;
  * we would far rather allocate too much space rather than too little.
  */
-
 u_int
 ip_optlen(struct inpcb *inp)
 {
@@ -998,23 +988,24 @@ ip_insertoptions(struct mbuf *m, struct mbuf *opt, int *phlen)
 	unsigned optlen;
 
 	optlen = opt->m_len - sizeof(p->ipopt_dst);
+	KASSERT(optlen % 4 == 0);
 	if (optlen + ntohs(ip->ip_len) > IP_MAXPACKET)
-		return (m);		/* XXX should fail */
+		return m;		/* XXX should fail */
 	if (!in_nullhost(p->ipopt_dst))
 		ip->ip_dst = p->ipopt_dst;
 	if (M_READONLY(m) || M_LEADINGSPACE(m) < optlen) {
 		MGETHDR(n, M_DONTWAIT, MT_HEADER);
-		if (n == 0)
-			return (m);
+		if (n == NULL)
+			return m;
 		MCLAIM(n, m->m_owner);
 		M_MOVE_PKTHDR(n, m);
 		m->m_len -= sizeof(struct ip);
 		m->m_data += sizeof(struct ip);
 		n->m_next = m;
+		n->m_len = optlen + sizeof(struct ip);
+		n->m_data += max_linkhdr;
+		memcpy(mtod(n, void *), ip, sizeof(struct ip));
 		m = n;
-		m->m_len = optlen + sizeof(struct ip);
-		m->m_data += max_linkhdr;
-		bcopy((void *)ip, mtod(m, void *), sizeof(struct ip));
 	} else {
 		m->m_data -= optlen;
 		m->m_len += optlen;
@@ -1022,25 +1013,25 @@ ip_insertoptions(struct mbuf *m, struct mbuf *opt, int *phlen)
 	}
 	m->m_pkthdr.len += optlen;
 	ip = mtod(m, struct ip *);
-	bcopy((void *)p->ipopt_list, (void *)(ip + 1), (unsigned)optlen);
+	memcpy(ip + 1, p->ipopt_list, optlen);
 	*phlen = sizeof(struct ip) + optlen;
 	ip->ip_len = htons(ntohs(ip->ip_len) + optlen);
-	return (m);
+	return m;
 }
 
 /*
- * Copy options from ip to jp,
- * omitting those not copied during fragmentation.
+ * Copy options from ipsrc to ipdst, omitting those not copied during
+ * fragmentation.
  */
 int
-ip_optcopy(struct ip *ip, struct ip *jp)
+ip_optcopy(struct ip *ipsrc, struct ip *ipdst)
 {
 	u_char *cp, *dp;
 	int opt, optlen, cnt;
 
-	cp = (u_char *)(ip + 1);
-	dp = (u_char *)(jp + 1);
-	cnt = (ip->ip_hl << 2) - sizeof (struct ip);
+	cp = (u_char *)(ipsrc + 1);
+	dp = (u_char *)(ipdst + 1);
+	cnt = (ipsrc->ip_hl << 2) - sizeof(struct ip);
 	for (; cnt > 0; cnt -= optlen, cp += optlen) {
 		opt = cp[0];
 		if (opt == IPOPT_EOL)
@@ -1064,9 +1055,12 @@ ip_optcopy(struct ip *ip, struct ip *jp)
 			dp += optlen;
 		}
 	}
-	for (optlen = dp - (u_char *)(jp+1); optlen & 0x3; optlen++)
+
+	for (optlen = dp - (u_char *)(ipdst+1); optlen & 0x3; optlen++) {
 		*dp++ = IPOPT_EOL;
-	return (optlen);
+	}
+
+	return optlen;
 }
 
 /*
@@ -1079,6 +1073,7 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 	struct ip *ip = &inp->inp_ip;
 	int inpflags = inp->inp_flags;
 	int optval = 0, error = 0;
+	struct in_pktinfo pktinfo;
 
 	KASSERT(solocked(so));
 
@@ -1101,7 +1096,6 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 		case IP_TOS:
 		case IP_TTL:
 		case IP_MINTTL:
-		case IP_PKTINFO:
 		case IP_RECVOPTS:
 		case IP_RECVRETOPTS:
 		case IP_RECVDSTADDR:
@@ -1133,10 +1127,6 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 	else \
 		inpflags &= ~bit;
 
-			case IP_PKTINFO:
-				OPTSET(INP_PKTINFO);
-				break;
-
 			case IP_RECVOPTS:
 				OPTSET(INP_RECVOPTS);
 				break;
@@ -1161,6 +1151,45 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 				OPTSET(INP_RECVTTL);
 				break;
 			}
+			break;
+		case IP_PKTINFO:
+			error = sockopt_getint(sopt, &optval);
+			if (!error) {
+				/* Linux compatibility */
+				OPTSET(INP_RECVPKTINFO);
+				break;
+			}
+			error = sockopt_get(sopt, &pktinfo, sizeof(pktinfo));
+			if (error)
+				break;
+
+			if (pktinfo.ipi_ifindex == 0) {
+				inp->inp_prefsrcip = pktinfo.ipi_addr;
+				break;
+			}
+
+			/* Solaris compatibility */
+			struct ifnet *ifp;
+			struct in_ifaddr *ia;
+			int s;
+
+			/* pick up primary address */
+			s = pserialize_read_enter();
+			ifp = if_byindex(pktinfo.ipi_ifindex);
+			if (ifp == NULL) {
+				pserialize_read_exit(s);
+				error = EADDRNOTAVAIL;
+				break;
+			}
+			ia = in_get_ia_from_ifp(ifp);
+			if (ia == NULL) {
+				pserialize_read_exit(s);
+				error = EADDRNOTAVAIL;
+				break;
+			}
+			inp->inp_prefsrcip = IA_SIN(ia)->sin_addr;
+			pserialize_read_exit(s);
+			break;
 		break;
 #undef OPTSET
 
@@ -1205,7 +1234,7 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 #if defined(IPSEC)
 		case IP_IPSEC_POLICY:
 			if (ipsec_enabled) {
-				error = ipsec4_set_policy(inp, sopt->sopt_name,
+				error = ipsec_set_policy(inp,
 				    sopt->sopt_data, sopt->sopt_size,
 				    curlwp->l_cred);
 				break;
@@ -1237,7 +1266,6 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 			}
 			break;
 		}
-		case IP_PKTINFO:
 		case IP_TOS:
 		case IP_TTL:
 		case IP_MINTTL:
@@ -1267,10 +1295,6 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 
 #define	OPTBIT(bit)	(inpflags & bit ? 1 : 0)
 
-			case IP_PKTINFO:
-				optval = OPTBIT(INP_PKTINFO);
-				break;
-
 			case IP_RECVOPTS:
 				optval = OPTBIT(INP_RECVOPTS);
 				break;
@@ -1298,13 +1322,40 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 			error = sockopt_setint(sopt, optval);
 			break;
 
+		case IP_PKTINFO:
+			switch (sopt->sopt_size) {
+			case sizeof(int):
+				/* Linux compatibility */
+				optval = OPTBIT(INP_RECVPKTINFO);
+				error = sockopt_setint(sopt, optval);
+				break;
+			case sizeof(struct in_pktinfo):
+				/* Solaris compatibility */
+				pktinfo.ipi_ifindex = 0;
+				pktinfo.ipi_addr = inp->inp_prefsrcip;
+				error = sockopt_set(sopt, &pktinfo,
+				    sizeof(pktinfo));
+				break;
+			default:
+				/*
+				 * While size is stuck at 0, and, later, if
+				 * the caller doesn't use an exactly sized
+				 * recipient for the data, default to Linux
+				 * compatibility
+				 */
+				optval = OPTBIT(INP_RECVPKTINFO);
+				error = sockopt_setint(sopt, optval);
+				break;
+			}
+			break;
+
 #if 0	/* defined(IPSEC) */
 		case IP_IPSEC_POLICY:
 		{
 			struct mbuf *m = NULL;
 
 			/* XXX this will return EINVAL as sopt is empty */
-			error = ipsec4_get_policy(inp, sopt->sopt_data,
+			error = ipsec_get_policy(inp, sopt->sopt_data,
 			    sopt->sopt_size, &m);
 			if (error == 0)
 				error = sockopt_setmbuf(sopt, m);
@@ -1414,11 +1465,14 @@ ip_setpktopts(struct mbuf *control, struct ip_pktopts *pktopts, int *flags,
     struct inpcb *inp, kauth_cred_t cred)
 {
 	struct cmsghdr *cm;
-	struct in_pktinfo *pktinfo;
+	struct in_pktinfo pktinfo;
 	int error;
 
 	pktopts->ippo_imo = inp->inp_moptions;
-	sockaddr_in_init(&pktopts->ippo_laddr, &inp->inp_laddr, 0);
+
+	struct in_addr *ia = in_nullhost(inp->inp_prefsrcip) ? &inp->inp_laddr :
+	    &inp->inp_prefsrcip;
+	sockaddr_in_init(&pktopts->ippo_laddr, ia, 0);
 
 	if (control == NULL)
 		return 0;
@@ -1444,13 +1498,23 @@ ip_setpktopts(struct mbuf *control, struct ip_pktopts *pktopts, int *flags,
 
 		switch (cm->cmsg_type) {
 		case IP_PKTINFO:
-			if (cm->cmsg_len != CMSG_LEN(sizeof(struct in_pktinfo)))
+			if (cm->cmsg_len != CMSG_LEN(sizeof(pktinfo)))
 				return EINVAL;
-
-			pktinfo = (struct in_pktinfo *)CMSG_DATA(cm);
-			error = ip_pktinfo_prepare(pktinfo, pktopts, flags,
+			memcpy(&pktinfo, CMSG_DATA(cm), sizeof(pktinfo));
+			error = ip_pktinfo_prepare(&pktinfo, pktopts, flags,
 			    cred);
-			if (error != 0)
+			if (error)
+				return error;
+			break;
+		case IP_SENDSRCADDR: /* FreeBSD compatibility */
+			if (cm->cmsg_len != CMSG_LEN(sizeof(struct in_addr)))
+				return EINVAL;
+			pktinfo.ipi_ifindex = 0;
+			pktinfo.ipi_addr =
+			    ((struct in_pktinfo *)CMSG_DATA(cm))->ipi_addr;
+			error = ip_pktinfo_prepare(&pktinfo, pktopts, flags,
+			    cred);
+			if (error)
 				return error;
 			break;
 		default:
@@ -1486,14 +1550,14 @@ ip_pcbopts(struct inpcb *inp, const struct sockopt *sopt)
 	}
 	cp = sopt->sopt_data;
 
-#ifndef	__vax__
-	if (cnt % sizeof(int32_t))
-		return (EINVAL);
-#endif
+	if (cnt % 4) {
+		/* Must be 4-byte aligned, because there's no padding. */
+		return EINVAL;
+	}
 
 	m = m_get(M_DONTWAIT, MT_SOOPTS);
 	if (m == NULL)
-		return (ENOBUFS);
+		return ENOBUFS;
 
 	dp = mtod(m, u_char *);
 	memset(dp, 0, sizeof(struct in_addr));
@@ -1573,6 +1637,7 @@ ip_pcbopts(struct inpcb *inp, const struct sockopt *sopt)
 
 	inp->inp_options = m;
 	return 0;
+
 bad:
 	(void)m_free(m);
 	return EINVAL;
@@ -1728,13 +1793,13 @@ ip_add_membership(struct ip_moptions *imo, const struct sockopt *sopt)
 	bound = curlwp_bind();
 	if (sopt->sopt_size == sizeof(struct ip_mreq))
 		error = ip_get_membership(sopt, &ifp, &psref, &ia, true);
-	else
+	else {
 #ifdef INET6
 		error = ip6_get_membership(sopt, &ifp, &psref, &ia, sizeof(ia));
 #else
 		error = EINVAL;
-		goto out;
 #endif
+	}
 
 	if (error)
 		goto out;
@@ -1771,7 +1836,10 @@ ip_add_membership(struct ip_moptions *imo, const struct sockopt *sopt)
 	 * Everything looks good; add a new record to the multicast
 	 * address list for the given interface.
 	 */
-	if ((imo->imo_membership[i] = in_addmulti(&ia, ifp)) == NULL) {
+	IFNET_LOCK(ifp);
+	imo->imo_membership[i] = in_addmulti(&ia, ifp);
+	IFNET_UNLOCK(ifp);
+	if (imo->imo_membership[i] == NULL) {
 		error = ENOBUFS;
 		goto out;
 	}
@@ -1801,13 +1869,13 @@ ip_drop_membership(struct ip_moptions *imo, const struct sockopt *sopt)
 	bound = curlwp_bind();
 	if (sopt->sopt_size == sizeof(struct ip_mreq))
 		error = ip_get_membership(sopt, &ifp, &psref, &ia, false);
-	else
+	else {
 #ifdef INET6
 		error = ip6_get_membership(sopt, &ifp, &psref, &ia, sizeof(ia));
 #else
 		error = EINVAL;
-		goto out;
 #endif
+	}
 
 	if (error)
 		goto out;
@@ -1830,7 +1898,10 @@ ip_drop_membership(struct ip_moptions *imo, const struct sockopt *sopt)
 	 * Give up the multicast address record to which the
 	 * membership points.
 	 */
+	struct ifnet *inm_ifp = imo->imo_membership[i]->inm_ifp;
+	IFNET_LOCK(inm_ifp);
 	in_delmulti(imo->imo_membership[i]);
+	IFNET_UNLOCK(inm_ifp);
 
 	/*
 	 * Remove the gap in the membership array.
@@ -2023,8 +2094,15 @@ ip_freemoptions(struct ip_moptions *imo)
 	/* The owner of imo (inp) should be protected by solock */
 
 	if (imo != NULL) {
-		for (i = 0; i < imo->imo_num_memberships; ++i)
-			in_delmulti(imo->imo_membership[i]);
+		for (i = 0; i < imo->imo_num_memberships; ++i) {
+			struct in_multi *inm = imo->imo_membership[i];
+			struct ifnet *ifp = inm->inm_ifp;
+			IFNET_LOCK(ifp);
+			in_delmulti(inm);
+			/* ifp should not leave thanks to solock */
+			IFNET_UNLOCK(ifp);
+		}
+
 		kmem_intr_free(imo, sizeof(*imo));
 	}
 }
@@ -2054,7 +2132,7 @@ ip_mloopback(struct ifnet *ifp, struct mbuf *m, const struct sockaddr_in *dst)
 	ip = mtod(copym, struct ip *);
 
 	if (copym->m_pkthdr.csum_flags & (M_CSUM_TCPv4|M_CSUM_UDPv4)) {
-		in_delayed_cksum(copym);
+		in_undefer_cksum_tcpudp(copym);
 		copym->m_pkthdr.csum_flags &=
 		    ~(M_CSUM_TCPv4|M_CSUM_UDPv4);
 	}

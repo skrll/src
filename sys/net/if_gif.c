@@ -1,4 +1,4 @@
-/*	$NetBSD: if_gif.c,v 1.136 2017/12/09 08:03:06 pgoyette Exp $	*/
+/*	$NetBSD: if_gif.c,v 1.143 2018/06/26 06:48:02 msaitoh Exp $	*/
 /*	$KAME: if_gif.c,v 1.76 2001/08/20 02:01:02 kjc Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_gif.c,v 1.136 2017/12/09 08:03:06 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_gif.c,v 1.143 2018/06/26 06:48:02 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -87,8 +87,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_gif.c,v 1.136 2017/12/09 08:03:06 pgoyette Exp $"
 
 #include <netinet/ip_encap.h>
 #include <net/if_gif.h>
-
-#include <net/net_osdep.h>
 
 #include "ioconf.h"
 
@@ -308,9 +306,9 @@ gifattach0(struct gif_softc *sc)
 	if (rv != 0)
 		return rv;
 
-	if_register(&sc->gif_if);
 	if_alloc_sadl(&sc->gif_if);
 	bpf_attach(&sc->gif_if, DLT_NULL, sizeof(u_int));
+	if_register(&sc->gif_if);
 	return 0;
 }
 
@@ -319,7 +317,7 @@ gif_ro_init_pc(void *p, void *arg __unused, struct cpu_info *ci __unused)
 {
 	struct gif_ro *gro = p;
 
-	mutex_init(&gro->gr_lock, MUTEX_DEFAULT, IPL_NONE);
+	gro->gr_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 }
 
 static void
@@ -329,7 +327,7 @@ gif_ro_fini_pc(void *p, void *arg __unused, struct cpu_info *ci __unused)
 
 	rtcache_free(&gro->gr_ro);
 
-	mutex_destroy(&gro->gr_lock);
+	mutex_obj_free(gro->gr_lock);
 }
 
 void
@@ -382,11 +380,8 @@ gif_encapcheck(struct mbuf *m, int off, int proto, void *arg)
 		return 0;
 
 	var = gif_getref_variant(sc, &psref);
-	if (var->gv_psrc == NULL || var->gv_pdst == NULL)
-		goto out;
-
 	/* no physical address */
-	if (!var->gv_psrc || !var->gv_pdst)
+	if (var->gv_psrc == NULL || var->gv_pdst == NULL)
 		goto out;
 
 	switch (proto) {
@@ -461,7 +456,7 @@ gif_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	IFQ_CLASSIFY(&ifp->if_snd, m, dst->sa_family);
 
 	if ((error = gif_check_nesting(ifp, m)) != 0) {
-		m_free(m);
+		m_freem(m);
 		goto end;
 	}
 
@@ -533,7 +528,7 @@ gif_start(struct ifnet *ifp)
 			}
 		}
 		family = *mtod(m, int *);
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 		m_adj(m, sizeof(int));
 
 		len = m->m_pkthdr.len;
@@ -591,7 +586,7 @@ gif_transmit_direct(struct gif_variant *var, struct mbuf *m)
 		}
 	}
 	family = *mtod(m, int *);
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 	m_adj(m, sizeof(int));
 
 	len = m->m_pkthdr.len;
@@ -622,7 +617,7 @@ gif_input(struct mbuf *m, int af, struct ifnet *ifp)
 	m_set_rcvif(m, ifp);
 	pktlen = m->m_pkthdr.len;
 
-	bpf_mtap_af(ifp, af, m);
+	bpf_mtap_af(ifp, af, m, BPF_D_IN);
 
 	/*
 	 * Put the packet to the network layer input queue according to the
@@ -1129,6 +1124,9 @@ gif_delete_tunnel(struct ifnet *ifp)
 		mutex_exit(&sc->gif_lock);
 		encap_lock_exit();
 		kmem_free(nvar, sizeof(*nvar));
+#ifndef GIF_MPSAFE
+		splx(s);
+#endif
 		return;
 	}
 

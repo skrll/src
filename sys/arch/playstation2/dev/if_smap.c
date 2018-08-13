@@ -1,4 +1,4 @@
-/*	$NetBSD: if_smap.c,v 1.23 2016/12/15 09:28:04 ozaki-r Exp $	*/
+/*	$NetBSD: if_smap.c,v 1.27 2018/06/26 06:47:59 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_smap.c,v 1.23 2016/12/15 09:28:04 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_smap.c,v 1.27 2018/06/26 06:47:59 msaitoh Exp $");
 
 #include "debug_playstation2.h"
 
@@ -48,9 +48,9 @@ __KERNEL_RCSID(0, "$NetBSD: if_smap.c,v 1.23 2016/12/15 09:28:04 ozaki-r Exp $")
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <net/if_types.h>
-
 #include <net/if_ether.h>
 #include <net/if_media.h>
+#include <net/bpf.h>
 
 #include <dev/mii/miivar.h>
 
@@ -59,9 +59,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_smap.c,v 1.23 2016/12/15 09:28:04 ozaki-r Exp $")
 #include <netinet/in_var.h>
 #include <netinet/ip.h>
 #include <netinet/if_inarp.h>
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <playstation2/dev/spdvar.h>
 #include <playstation2/dev/spdreg.h>
@@ -500,8 +497,7 @@ smap_start(struct ifnet *ifp)
 
 		IFQ_DEQUEUE(&ifp->if_snd, m0);
 		KDASSERT(m0 != NULL);
-		if (ifp->if_bpf)
-			bpf_mtap(ifp, m0);
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 
 		p = (u_int8_t *)sc->tx_buf;
 		q = p + sz;
@@ -670,7 +666,7 @@ smap_desc_init(struct smap_softc *sc)
 	sc->tx_done_index = 0;
 	sc->rx_done_index = 0;
 
-	/* intialize entry */
+	/* initialize entry */
 	d = sc->tx_desc;
 	for (i = 0; i < SMAP_DESC_MAX; i++, d++) {
 		d->stat = 0;

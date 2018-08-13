@@ -32,6 +32,8 @@
 #include <sys/param.h>
 #include <sys/kmem.h>
 #include <sys/kernel.h>
+#include <sys/atomic.h>
+#include <sys/cpu.h>
 
 #include <machine/pio.h>
 #include <powerpc/openpic.h>
@@ -48,6 +50,10 @@
 #else
 #define DPRINTF if (0) printf
 #endif
+
+#define HTAPIC_REQUEST_EOI	0x20
+#define HTAPIC_TRIGGER_LEVEL	0x02
+#define HTAPIC_MASK		0x01
 
 struct u3_ht_irqmap {
 	int im_index;
@@ -88,6 +94,7 @@ static void u3_ht_disable_ht_irq(struct u3_ht_ops *, int);
 static void u3_ht_ack_ht_irq(struct u3_ht_ops *, int);
 
 static void u3_ht_set_priority(struct u3_ht_ops *, int, int);
+void __u3_ht_set_priority(int, int);
 static int u3_ht_read_irq(struct u3_ht_ops *, int);
 static void u3_ht_eoi(struct u3_ht_ops *, int);
 
@@ -107,6 +114,17 @@ const char *pic_compat[] = {
 	"openpic",
 	NULL
 };
+
+static struct u3_ht_ops *u3ht0 = NULL;
+int have_u3_ht(void);
+
+#ifdef MULTIPROCESSOR
+
+extern struct ipi_ops ipiops;
+static void u3_ht_send_ipi(cpuid_t, uint32_t);
+static void u3_ht_establish_ipi(int, int, void *);
+
+#endif
 
 int init_u3_ht(void)
 {
@@ -166,7 +184,7 @@ setup_u3_ht(uint32_t addr, uint32_t len, int bigendian)
 	struct u3_ht_ops *u3_ht;
 	struct pic_ops *pic;
 	int irq;
-	u_int x;
+	uint32_t x;
 
 	u3_ht = kmem_alloc(sizeof(struct u3_ht_ops), KM_SLEEP);
 	bzero(u3_ht, sizeof(struct u3_ht_ops));
@@ -199,7 +217,8 @@ setup_u3_ht(uint32_t addr, uint32_t len, int bigendian)
 	    "Supports %d CPUs and %d interrupt sources.\n",
 	    x & 0xff, ((x & 0x1f00) >> 8) + 1, ((x & 0x07ff0000) >> 16) + 1);
 
-	pic->pic_numintrs = ((x & 0x07ff0000) >> 16) + 1;
+	/* up to 128 interrupt sources, plus IPI */
+	pic->pic_numintrs = IPI_VECTOR + 1;
 	pic->pic_cookie = (void *) addr;
 	pic->pic_enable_irq = u3_ht_enable_irq;
 	pic->pic_reenable_irq = u3_ht_enable_irq;
@@ -216,7 +235,6 @@ setup_u3_ht(uint32_t addr, uint32_t len, int bigendian)
 	for (irq = 0; irq < 4; irq++) {
 		x = irq;
 		x |= OPENPIC_IMASK;
-		x |= OPENPIC_POLARITY_NEGATIVE;
 		x |= OPENPIC_SENSE_LEVEL;
 		x |= 8 << OPENPIC_PRIORITY_SHIFT;
 		u3_ht_write(u3_ht, OPENPIC_SRC_VECTOR(irq), x);
@@ -225,7 +243,6 @@ setup_u3_ht(uint32_t addr, uint32_t len, int bigendian)
 	for (irq = 4; irq < pic->pic_numintrs; irq++) {
 		x = irq;
 		x |= OPENPIC_IMASK;
-		x |= OPENPIC_POLARITY_NEGATIVE;
 		x |= OPENPIC_SENSE_EDGE;
 		x |= 8 << OPENPIC_PRIORITY_SHIFT;
 		u3_ht_write(u3_ht, OPENPIC_SRC_VECTOR(irq), x);
@@ -244,6 +261,18 @@ setup_u3_ht(uint32_t addr, uint32_t len, int bigendian)
 		u3_ht_read_irq(u3_ht, 0);
 		u3_ht_eoi(u3_ht, 0);
 	}
+
+#ifdef MULTIPROCESSOR
+	ipiops.ppc_send_ipi = u3_ht_send_ipi;
+	ipiops.ppc_establish_ipi = u3_ht_establish_ipi;
+	ipiops.ppc_ipi_vector = IPI_VECTOR;
+
+	x = u3_ht_read(u3_ht, OPENPIC_IPI_VECTOR(1));
+	x &= ~(OPENPIC_IMASK | OPENPIC_PRIORITY_MASK | OPENPIC_VECTOR_MASK);
+	x |= (15 << OPENPIC_PRIORITY_SHIFT) | ipiops.ppc_ipi_vector;
+	u3_ht_write(u3_ht, OPENPIC_IPI_VECTOR(1), x);
+	u3ht0 = u3_ht;
+#endif /* MULTIPROCESSOR */
 
 	return u3_ht;
 }
@@ -308,7 +337,7 @@ setup_u3_ht_workarounds(struct u3_ht_ops *u3_ht)
 			out8rb(base + 0x02, 0x10 + (i << 1));
 			tmp = in32rb(base + 0x04);
 			irq = (tmp >> 16) & 0xff;
-			tmp |= 0x01;
+			tmp |= HTAPIC_MASK;
 			out32rb(base + 0x04, tmp);
 
 			irqmap[irq].im_index = i;
@@ -336,6 +365,9 @@ u3_ht_enable_irq(struct pic_ops *pic, int irq, int type)
 	struct u3_ht_ops *u3_ht = (struct u3_ht_ops *)pic;
 	u_int x;
 
+#ifdef MULTIPROCESSOR
+	if (irq == IPI_VECTOR) return;
+#endif	
 	x = u3_ht_read(u3_ht, OPENPIC_SRC_VECTOR(irq));
  	x &= ~OPENPIC_IMASK;
  	u3_ht_write(u3_ht, OPENPIC_SRC_VECTOR(irq), x);
@@ -350,6 +382,9 @@ u3_ht_disable_irq(struct pic_ops *pic, int irq)
 	struct u3_ht_ops *u3_ht = (struct u3_ht_ops *)pic;
 	u_int x;
 
+#ifdef MULTIPROCESSOR
+	if (irq == IPI_VECTOR) return;
+#endif	
  	x = u3_ht_read(u3_ht, OPENPIC_SRC_VECTOR(irq));
  	x |= OPENPIC_IMASK;
  	u3_ht_write(u3_ht, OPENPIC_SRC_VECTOR(irq), x);
@@ -388,14 +423,8 @@ u3_ht_establish_irq(struct pic_ops *pic, int irq, int type, int pri)
 	x |= OPENPIC_IMASK;
 
 	if (u3_ht_is_ht_irq(u3_ht, irq)) {
-		x |= OPENPIC_POLARITY_POSITIVE |
-		    OPENPIC_SENSE_EDGE;
+		x |= OPENPIC_SENSE_EDGE;
 	} else {
-		if (irq == 0 || type == IST_EDGE_RISING || type == IST_LEVEL_HIGH)
-			x |= OPENPIC_POLARITY_POSITIVE;
-		else
-			x |= OPENPIC_POLARITY_NEGATIVE;
-
 		if (type == IST_EDGE_FALLING || type == IST_EDGE_RISING)
 			x |= OPENPIC_SENSE_EDGE;
 		else
@@ -408,7 +437,7 @@ u3_ht_establish_irq(struct pic_ops *pic, int irq, int type, int pri)
 	if (u3_ht_is_ht_irq(u3_ht, irq))
 		u3_ht_establish_ht_irq(u3_ht, irq, type);
 
-	aprint_error("%s: setting IRQ %d %d to priority %d %x\n", __func__, irq,
+	DPRINTF("%s: setting IRQ %d %d to priority %d %x\n", __func__, irq,
 	    type, realpri, x);
 }
 
@@ -446,15 +475,15 @@ u3_ht_establish_ht_irq(struct u3_ht_ops *u3_ht, int irq, int type)
 
 	x = in32rb(irqmap->im_base + 0x04);
 	/* mask interrupt */
-	out32rb(irqmap->im_base + 0x04, x | 1);
+	out32rb(irqmap->im_base + 0x04, x | HTAPIC_MASK);
 
 	/* mask out EOI and LEVEL bits */
-	x &= ~0x22;
+	x &= ~(HTAPIC_TRIGGER_LEVEL | HTAPIC_REQUEST_EOI);
 
 	if (type == IST_LEVEL_HIGH || type == IST_LEVEL_LOW) {
 		irqmap->im_level = 1;
 		DPRINTF("level\n");
-		x |= 0x22;
+		x |= HTAPIC_TRIGGER_LEVEL | HTAPIC_REQUEST_EOI;
 	} else {
 		irqmap->im_level = 0;
 	}
@@ -470,7 +499,7 @@ u3_ht_enable_ht_irq(struct u3_ht_ops *u3_ht, int irq)
 
 	out8rb(irqmap->im_base + 0x02, 0x10 + (irqmap->im_index << 1));
 	x = in32rb(irqmap->im_base + 0x04);
-	x &= ~0x01;
+	x &= ~HTAPIC_MASK;
 	out32rb(irqmap->im_base + 0x04, x);
 
 	u3_ht_ack_ht_irq(u3_ht, irq);
@@ -484,7 +513,7 @@ u3_ht_disable_ht_irq(struct u3_ht_ops *u3_ht, int irq)
 
 	out8rb(irqmap->im_base + 0x02, 0x10 + (irqmap->im_index << 1));
 	x = in32rb(irqmap->im_base + 0x04);
-	x |= 0x01;
+	x |= HTAPIC_MASK;
 	out32rb(irqmap->im_base + 0x04, x);
 }
 
@@ -513,6 +542,14 @@ u3_ht_set_priority(struct u3_ht_ops *u3_ht, int cpu, int pri)
 	x &= ~OPENPIC_CPU_PRIORITY_MASK;
 	x |= pri;
 	u3_ht_write(u3_ht, OPENPIC_CPU_PRIORITY(cpu), x);
+}
+
+void
+__u3_ht_set_priority(int cpu, int pri)
+{
+	if (u3ht0 == NULL) return;
+
+	u3_ht_set_priority(u3ht0, cpu, pri);
 }
 
 static int
@@ -558,4 +595,48 @@ u3_ht_write_le(struct u3_ht_ops *u3_ht, u_int reg, uint32_t val)
 	volatile uint8_t *addr = u3_ht->ht_base + reg;
 
 	out32rb(addr, val);
+}
+
+#ifdef MULTIPROCESSOR
+
+static void
+u3_ht_send_ipi(cpuid_t target, uint32_t mesg)
+{
+	struct cpu_info * const ci = curcpu();
+	uint32_t cpumask = 0;
+
+	switch (target) {
+		case IPI_DST_ALL:
+		case IPI_DST_NOTME:
+			for (u_int i = 0; i < ncpu; i++) {
+				struct cpu_info * const dst_ci = cpu_lookup(i);
+				if (target == IPI_DST_ALL || dst_ci != ci) {
+					cpumask |= 1 << cpu_index(dst_ci);
+					atomic_or_32(&dst_ci->ci_pending_ipis,
+					    mesg);
+				}
+			}
+			break;
+		default: {
+			struct cpu_info * const dst_ci = cpu_lookup(target);
+			cpumask = 1 << cpu_index(dst_ci);
+			atomic_or_32(&dst_ci->ci_pending_ipis, mesg);
+			break;
+		}
+	}
+	u3_ht_write(u3ht0, OPENPIC_IPI(cpu_index(ci), 1), cpumask);
+}
+
+static void
+u3_ht_establish_ipi(int type, int level, void *ih_args)
+{
+	intr_establish(ipiops.ppc_ipi_vector, type, level, ipi_intr, ih_args);
+}
+
+#endif /*MULTIPROCESSOR*/
+
+int
+have_u3_ht(void)
+{
+	return (u3ht0 != NULL);
 }

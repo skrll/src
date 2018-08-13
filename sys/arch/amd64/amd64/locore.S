@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.143 2017/11/26 15:00:16 maxv Exp $	*/
+/*	$NetBSD: locore.S,v 1.173 2018/07/26 09:29:08 maxv Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -159,6 +159,7 @@
 #include "opt_compat_netbsd.h"
 #include "opt_compat_netbsd32.h"
 #include "opt_xen.h"
+#include "opt_svs.h"
 
 #include "assym.h"
 #include "lapic.h"
@@ -329,7 +330,6 @@
 	.globl	_C_LABEL(biosbasemem)
 	.globl	_C_LABEL(biosextmem)
 	.globl	_C_LABEL(lwp0uarea)
-	.globl	do_sysret
 	.globl	do_mov_es
 	.globl	do_mov_ds
 	.globl	do_mov_fs
@@ -975,6 +975,7 @@ longmode_hi:
 
 	pushq	%rdi
 	call	_C_LABEL(init_bootspace)
+	call	_C_LABEL(init_slotspace)
 	popq	%rdi
 	call	_C_LABEL(init_x86_64)
 	call 	_C_LABEL(main)
@@ -1104,13 +1105,57 @@ ENTRY(cpu_switchto)
 	testb	%dl,%dl		/* returning = true ? */
 	jnz	.Lswitch_return
 
-	/* Switch ring0 stack */
+#ifdef SVS
+	movb	_C_LABEL(svs_enabled),%dl
+	testb	%dl,%dl
+	jz	.Lskip_svs
+	callq	_C_LABEL(svs_lwp_switch)
+.Lskip_svs:
+#endif
+
 #ifndef XEN
+	movq	%r13,%rdi
+	movq	%r12,%rsi
+	callq	_C_LABEL(speculation_barrier)
+#endif
+
+	/* Switch ring0 stack */
+#ifdef SVS
+	movb	_C_LABEL(svs_enabled),%al
+	testb	%al,%al
+	jz	.Lno_svs_switch
+
+	movq	CPUVAR(RSP0),%rax
+	movq	CPUVAR(TSS),%rdi
+	movq	%rax,TSS_RSP0(%rdi)
+	jmp	.Lring0_switched
+
+.Lno_svs_switch:
+#endif
+
+#if !defined(XEN)
 	movq	PCB_RSP0(%r14),%rax
-	movq	%rax,CPUVAR(RSP0)
+	movq	CPUVAR(TSS),%rdi
+	movq	%rax,TSS_RSP0(%rdi)
 #else
 	movq	%r14,%rdi
-	callq	_C_LABEL(x86_64_switch_context);
+	callq	_C_LABEL(x86_64_switch_context)
+#endif
+.Lring0_switched:
+
+	/* Switch the dbregs. */
+	movq	%r13,%rdi
+	movq	%r12,%rsi
+	callq	_C_LABEL(x86_dbregs_switch)
+
+#ifndef XEN
+	movb	_C_LABEL(x86_fpu_eager),%dl
+	testb	%dl,%dl
+	jz	.Lno_eagerfpu
+	movq	%r13,%rdi
+	movq	%r12,%rsi
+	callq	_C_LABEL(fpu_eagerswitch)
+.Lno_eagerfpu:
 #endif
 
 	/* Don't bother with the rest if switching to a system process. */
@@ -1236,65 +1281,12 @@ ENTRY(savectx)
 	ret
 END(savectx)
 
-IDTVEC(syscall32)
-	sysret		/* go away please */
-IDTVEC_END(syscall32)
-
 /*
- * syscall()
- *
- * syscall insn entry.
+ * Syscall handler.
  */
-IDTVEC(syscall)
-#ifndef XEN
-	/*
-	 * The user %rip is in %rcx and the user %rflags in %r11. The kernel %cs
-	 * and %ss are loaded, but nothing else is.
-	 *
-	 * The 'swapgs' instruction gives us access to cpu-specific memory where
-	 * we can save a user register and then read the LWP's kernel stack
-	 * pointer.
-	 *
-	 * This code doesn't seem to set %ds, this may not matter since it is
-	 * ignored in 64bit mode, OTOH the syscall instruction sets %ss and that
-	 * is ignored as well.
-	 */
-	swapgs
-	movq	%r15,CPUVAR(SCRATCH)
-	movq	CPUVAR(CURLWP),%r15
-	movq	L_PCB(%r15),%r15
-	movq	PCB_RSP0(%r15),%r15	/* LWP's kernel stack pointer */
-
-	/* Make stack look like an 'int nn' frame */
-#define SP(x)	(x)-(TF_SS+8)(%r15)
-	movq	$(LSEL(LUDATA_SEL, SEL_UPL)),SP(TF_SS)	/* user %ss */
-	movq	%rsp,SP(TF_RSP)				/* user %rsp */
-	movq	%r11,SP(TF_RFLAGS)			/* user %rflags */
-	movq	$(LSEL(LUCODE_SEL, SEL_UPL)),SP(TF_CS)	/* user %cs */
-	movq	%rcx,SP(TF_RIP)				/* user %rip */
-
-	leaq	SP(0),%rsp		/* %rsp now valid after frame */
-	movq	CPUVAR(SCRATCH),%r15
-#undef SP
-
-	movq	$2,TF_ERR(%rsp)		/* syscall instruction size */
-	movq	$T_ASTFLT,TF_TRAPNO(%rsp)
-#else
-	/* Xen already switched to kernel stack */
-	addq	$0x10,%rsp	/* gap to match cs:rip */
-	pushq	$2		/* error code */
-	pushq	$T_ASTFLT
-	subq	$TF_REGSIZE,%rsp
-	cld
-#endif
-	INTR_SAVE_GPRS
-	movw	$GSEL(GUDATA_SEL, SEL_UPL),TF_DS(%rsp)
-	movw	$GSEL(GUDATA_SEL, SEL_UPL),TF_ES(%rsp)
-	movw	$0,TF_FS(%rsp)
-	movw	$0,TF_GS(%rsp)
+ENTRY(handle_syscall)
 	STI(si)
 
-.Ldo_syscall:
 	movq	CPUVAR(CURLWP),%r14
 	incq	CPUVAR(NSYSCALL)	/* count it atomically */
 	movq	%rsp,L_MD_REGS(%r14)	/* save pointer to frame */
@@ -1330,19 +1322,7 @@ IDTVEC(syscall)
 	testl	$(MDL_IRET|MDL_COMPAT32),L_MD_FLAGS(%r14)
 	jnz	intrfastexit
 
-	INTR_RESTORE_GPRS
-	SWAPGS
-#ifndef XEN
-	movq	TF_RIP(%rsp),%rcx	/* %rip for sysret */
-	movq	TF_RFLAGS(%rsp),%r11	/* %flags for sysret */
-	movq	TF_RSP(%rsp),%rsp
-do_sysret:
-	sysretq
-#else
-	addq	$TF_RIP,%rsp
-	pushq	$256	/* VGCF_IN_SYSCALL */
-	jmp	HYPERVISOR_iret
-#endif
+	jmp	syscall_sysret
 
 #ifdef DIAGNOSTIC
 	/* Report SPL error */
@@ -1374,7 +1354,7 @@ do_sysret:
 	movq	%rsp,%rdi
 	call	_C_LABEL(trap)
 	jmp	.Lsyscall_checkast	/* re-check ASTs */
-IDTVEC_END(syscall)
+END(handle_syscall)
 
 /*
  * void lwp_trampoline(void);
@@ -1382,7 +1362,7 @@ IDTVEC_END(syscall)
  * This is a trampoline function pushed run by newly created LWPs
  * in order to do additional setup in their context.
  */
-NENTRY(lwp_trampoline)
+ENTRY(lwp_trampoline)
 	movq	%rbp,%rsi
 	movq	%rbp,%r14	/* for .Lsyscall_checkast */
 	movq	%rax,%rdi
@@ -1394,10 +1374,97 @@ NENTRY(lwp_trampoline)
 END(lwp_trampoline)
 
 /*
+ * Entry points of the 'syscall' instruction, 64bit and 32bit mode.
+ */
+
+#define SP(x)	(x)-(TF_SS+8)(%rax)
+
+.macro	SYSCALL_ENTRY	name,is_svs
+IDTVEC(\name)
+#ifndef XEN
+	/*
+	 * The user %rip is in %rcx and the user %rflags in %r11. The kernel %cs
+	 * and %ss are loaded, but nothing else is.
+	 *
+	 * The 'swapgs' instruction gives us access to cpu-specific memory where
+	 * we can save a user register and then read the LWP's kernel stack
+	 * pointer.
+	 *
+	 * This code doesn't seem to set %ds, this may not matter since it is
+	 * ignored in 64bit mode, OTOH the syscall instruction sets %ss and that
+	 * is ignored as well.
+	 */
+	swapgs
+
+	/* Get the LWP's kernel stack pointer in %rax */
+	.if	\is_svs
+		movabs	%rax,SVS_UTLS+UTLS_SCRATCH
+		movabs	SVS_UTLS+UTLS_RSP0,%rax
+	.else
+		movq	%rax,CPUVAR(SCRATCH)
+		movq	CPUVAR(CURLWP),%rax
+		movq	L_PCB(%rax),%rax
+		movq	PCB_RSP0(%rax),%rax
+	.endif
+
+	/* Make stack look like an 'int nn' frame */
+	movq	$(LSEL(LUDATA_SEL, SEL_UPL)),SP(TF_SS)	/* user %ss */
+	movq	%rsp,SP(TF_RSP)				/* user %rsp */
+	movq	%r11,SP(TF_RFLAGS)			/* user %rflags */
+	movq	$(LSEL(LUCODE_SEL, SEL_UPL)),SP(TF_CS)	/* user %cs */
+	movq	%rcx,SP(TF_RIP)				/* user %rip */
+	leaq	SP(0),%rsp		/* %rsp now valid after frame */
+
+	/* Restore %rax */
+	.if	\is_svs
+		movabs	SVS_UTLS+UTLS_SCRATCH,%rax
+	.else
+		movq	CPUVAR(SCRATCH),%rax
+	.endif
+
+	movq	$2,TF_ERR(%rsp)		/* syscall instruction size */
+	movq	$T_ASTFLT,TF_TRAPNO(%rsp)
+#else
+	/* Xen already switched to kernel stack */
+	addq	$0x10,%rsp	/* gap to match cs:rip */
+	pushq	$2		/* error code */
+	pushq	$T_ASTFLT
+	subq	$TF_REGSIZE,%rsp
+	cld
+#endif
+	INTR_SAVE_GPRS
+	IBRS_ENTER
+	movw	$GSEL(GUDATA_SEL, SEL_UPL),TF_DS(%rsp)
+	movw	$GSEL(GUDATA_SEL, SEL_UPL),TF_ES(%rsp)
+	movw	$0,TF_FS(%rsp)
+	movw	$0,TF_GS(%rsp)
+	.if	\is_svs
+		SVS_ENTER
+	.endif
+	jmp	handle_syscall
+IDTVEC_END(\name)
+.endm
+
+SYSCALL_ENTRY	syscall,is_svs=0
+
+	TEXT_USER_BEGIN
+
+#ifdef SVS
+SYSCALL_ENTRY	syscall_svs,is_svs=1
+#endif
+
+IDTVEC(syscall32)
+	sysret		/* go away please */
+IDTVEC_END(syscall32)
+
+	TEXT_USER_END
+
+/*
  * osyscall()
  *
  * Trap gate entry for int $80 syscall, also used by sigreturn.
  */
+	TEXT_USER_BEGIN
 IDTVEC(osyscall)
 #ifdef XEN
 	movq (%rsp),%rcx
@@ -1407,9 +1474,32 @@ IDTVEC(osyscall)
 	pushq	$2		/* size of instruction for restart */
 	pushq	$T_ASTFLT	/* trap # for doing ASTs */
 	INTRENTRY
-	STI(si)
-	jmp	.Ldo_syscall
+	jmp	handle_syscall
 IDTVEC_END(osyscall)
+	TEXT_USER_END
+
+/*
+ * Return to userland via 'sysret'.
+ */
+	TEXT_USER_BEGIN
+	_ALIGN_TEXT
+LABEL(syscall_sysret)
+	SVS_LEAVE
+	IBRS_LEAVE
+	INTR_RESTORE_GPRS
+	SWAPGS
+#ifndef XEN
+	movq	TF_RIP(%rsp),%rcx	/* %rip for sysret */
+	movq	TF_RFLAGS(%rsp),%r11	/* %flags for sysret */
+	movq	TF_RSP(%rsp),%rsp
+	sysretq
+#else
+	addq	$TF_RIP,%rsp
+	pushq	$256	/* VGCF_IN_SYSCALL */
+	jmp	HYPERVISOR_iret
+#endif
+END(syscall_sysret)
+	TEXT_USER_END
 
 /*
  * bool sse2_idlezero_page(void *pg)
@@ -1472,40 +1562,163 @@ ENTRY(pagezero)
 	ret
 END(pagezero)
 
-ENTRY(intrfastexit)
+	TEXT_USER_BEGIN
+
+/*
+ * In intrfastexit, we advance %rsp at the beginning. We then access the
+ * segment registers in the trapframe with TF_BACKW (backwards). See the
+ * documentation in amd64_trap.S for an explanation.
+ */
+
+#define TF_BACKW(val, reg)	(val - (TF_REGSIZE+16))(reg)
+
+	_ALIGN_TEXT
+LABEL(intrfastexit)
+	NOT_XEN(cli;)
+	SVS_LEAVE
+	IBRS_LEAVE
 	INTR_RESTORE_GPRS
-	testw	$SEL_UPL,TF_CS(%rsp)	/* interrupted %cs */
+	addq	$(TF_REGSIZE+16),%rsp	/* iret frame */
+
+	testb	$SEL_UPL,TF_BACKW(TF_CS, %rsp)
 	jz	.Lkexit
-	cmpw	$LSEL(LUCODE_SEL, SEL_UPL),TF_CS(%rsp)
+	cmpw	$LSEL(LUCODE_SEL, SEL_UPL),TF_BACKW(TF_CS, %rsp)
 	je	.Luexit64
-	cmpw	$GSEL(GUCODE_SEL, SEL_UPL),TF_CS(%rsp)
+	cmpw	$GSEL(GUCODE_SEL, SEL_UPL),TF_BACKW(TF_CS, %rsp)
 	je	.Luexit64
 #ifdef XEN
-	cmpw	$FLAT_RING3_CS64,TF_CS(%rsp)
+	cmpw	$FLAT_RING3_CS64,TF_BACKW(TF_CS, %rsp)
 	je	.Luexit64
 #endif
 
 .Luexit32:
-	NOT_XEN(cli;)
-do_mov_es:
-	movw	TF_ES(%rsp),%es
-do_mov_ds:
-	movw	TF_DS(%rsp),%ds
-do_mov_fs:
-	movw	TF_FS(%rsp),%fs
 	SWAPGS
+do_mov_es:
+	movw	TF_BACKW(TF_ES, %rsp),%es
+do_mov_ds:
+	movw	TF_BACKW(TF_DS, %rsp),%ds
+do_mov_fs:
+	movw	TF_BACKW(TF_FS, %rsp),%fs
 #ifndef XEN
 do_mov_gs:
-	movw	TF_GS(%rsp),%gs
+	movw	TF_BACKW(TF_GS, %rsp),%gs
 #endif
 	jmp	.Lkexit
 
 .Luexit64:
-	NOT_XEN(cli;)
 	SWAPGS
 
 .Lkexit:
-	addq	$TF_REGSIZE+16,%rsp	/* + T_xxx and error code */
 do_iret:
 	iretq
 END(intrfastexit)
+
+	TEXT_USER_END
+
+#ifdef SVS
+	.globl	svs_enter, svs_enter_end
+	.globl	svs_enter_altstack, svs_enter_altstack_end
+	.globl	svs_leave, svs_leave_end
+	.globl	svs_leave_altstack, svs_leave_altstack_end
+	.globl	nosvs_enter, nosvs_enter_end
+	.globl	nosvs_enter_altstack, nosvs_enter_altstack_end
+	.globl	nosvs_leave, nosvs_leave_end
+	.globl	nosvs_leave_altstack, nosvs_leave_altstack_end
+
+LABEL(svs_enter)
+	movabs	SVS_UTLS+UTLS_KPDIRPA,%rax
+	movq	%rax,%cr3
+	movq	CPUVAR(KRSP0),%rsp
+LABEL(svs_enter_end)
+
+LABEL(svs_enter_altstack)
+	testb	$SEL_UPL,TF_CS(%rsp)
+	jz	1234f
+	movabs	SVS_UTLS+UTLS_KPDIRPA,%rax
+	movq	%rax,%cr3
+1234:
+LABEL(svs_enter_altstack_end)
+
+LABEL(svs_enter_nmi)
+	movq	%cr3,%rax
+	movq	%rax,(FRAMESIZE+1*8)(%rsp)	/* nmistore->scratch */
+	movq	(FRAMESIZE+0*8)(%rsp),%rax	/* nmistore->cr3 */
+	movq	%rax,%cr3
+LABEL(svs_enter_nmi_end)
+
+LABEL(svs_leave)
+	testb	$SEL_UPL,TF_CS(%rsp)
+	jz	1234f
+	movq	CPUVAR(URSP0),%rsp
+	movq	CPUVAR(UPDIRPA),%rax
+	movq	%rax,%cr3
+1234:
+LABEL(svs_leave_end)
+
+LABEL(svs_leave_altstack)
+	testb	$SEL_UPL,TF_CS(%rsp)
+	jz	1234f
+	movq	CPUVAR(UPDIRPA),%rax
+	movq	%rax,%cr3
+1234:
+LABEL(svs_leave_altstack_end)
+
+LABEL(svs_leave_nmi)
+	movq	(FRAMESIZE+1*8)(%rsp),%rax	/* nmistore->scratch */
+	movq	%rax,%cr3
+LABEL(svs_leave_nmi_end)
+
+LABEL(nosvs_enter)
+	NOSVS_ENTER
+LABEL(nosvs_enter_end)
+
+LABEL(nosvs_enter_altstack)
+	NOSVS_ENTER_ALTSTACK
+LABEL(nosvs_enter_altstack_end)
+
+LABEL(nosvs_enter_nmi)
+	NOSVS_ENTER_NMI
+LABEL(nosvs_enter_nmi_end)
+
+LABEL(nosvs_leave)
+	NOSVS_LEAVE
+LABEL(nosvs_leave_end)
+
+LABEL(nosvs_leave_altstack)
+	NOSVS_LEAVE_ALTSTACK
+LABEL(nosvs_leave_altstack_end)
+
+LABEL(nosvs_leave_nmi)
+	NOSVS_LEAVE_NMI
+LABEL(nosvs_leave_nmi_end)
+#endif
+
+	.globl	ibrs_enter, ibrs_enter_end
+	.globl	ibrs_leave, ibrs_leave_end
+
+	/* IBRS <- 1 */
+LABEL(ibrs_enter)
+	movl	$MSR_IA32_SPEC_CTRL,%ecx
+	movl	$IA32_SPEC_CTRL_IBRS,%eax
+	movl	$(IA32_SPEC_CTRL_IBRS >> 32),%edx
+	wrmsr
+LABEL(ibrs_enter_end)
+
+	/* IBRS <- 0 */
+LABEL(ibrs_leave)
+	testb	$SEL_UPL,TF_CS(%rsp)
+	jz	1234f
+	movl	$MSR_IA32_SPEC_CTRL,%ecx
+	xorl	%eax,%eax
+	xorl	%edx,%edx
+	wrmsr
+1234:
+LABEL(ibrs_leave_end)
+
+LABEL(noibrs_enter)
+	NOIBRS_ENTER
+LABEL(noibrs_enter_end)
+
+LABEL(noibrs_leave)
+	NOIBRS_LEAVE
+LABEL(noibrs_leave_end)

@@ -1,4 +1,4 @@
-/*	$NetBSD: sctp_output.c,v 1.12 2017/12/10 11:52:14 rjs Exp $ */
+/*	$NetBSD: sctp_output.c,v 1.15 2018/05/03 07:01:08 maxv Exp $ */
 /*	$KAME: sctp_output.c,v 1.48 2005/06/16 18:29:24 jinmei Exp $	*/
 
 /*
@@ -30,7 +30,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctp_output.c,v 1.12 2017/12/10 11:52:14 rjs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctp_output.c,v 1.15 2018/05/03 07:01:08 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ipsec.h"
@@ -81,8 +81,6 @@ __KERNEL_RCSID(0, "$NetBSD: sctp_output.c,v 1.12 2017/12/10 11:52:14 rjs Exp $")
 #include <netinet/icmp6.h>
 
 #endif /* INET6 */
-
-#include <net/net_osdep.h>
 
 #if defined(HAVE_NRL_INPCB) || defined(__FreeBSD__)
 #ifndef in6pcb
@@ -4613,7 +4611,7 @@ sctp_copy_mbufchain(struct mbuf *clonechain,
 		appendchain = m_copypacket(clonechain, M_DONTWAIT);
 		sctp_pegs[SCTP_CACHED_SRC]++;
 	} else
-		appendchain = m_copy(clonechain, 0, M_COPYALL);
+		appendchain = m_copym(clonechain, 0, M_COPYALL, M_DONTWAIT);
 #elif defined(__APPLE__)
 	appendchain = sctp_m_copym(clonechain, 0, M_COPYALL, M_DONTWAIT);
 #else
@@ -6402,7 +6400,7 @@ sctp_send_asconf_ack(struct sctp_tcb *stcb, uint32_t retrans)
 		m_ack = m_copypacket(stcb->asoc.last_asconf_ack_sent, M_DONTWAIT);
 		sctp_pegs[SCTP_CACHED_SRC]++;
 	} else
-		m_ack = m_copy(stcb->asoc.last_asconf_ack_sent, 0, M_COPYALL);
+		m_ack = m_copym(stcb->asoc.last_asconf_ack_sent, 0, M_COPYALL, M_DONTWAIT);
 #else
 		m_ack = m_copy(stcb->asoc.last_asconf_ack_sent, 0, M_COPYALL);
 #endif
@@ -7669,7 +7667,7 @@ sctp_send_sack(struct sctp_tcb *stcb)
 	/*
 	 * Queue up a SACK in the control queue. We must first check to
 	 * see if a SACK is somehow on the control queue. If so, we will
-	 * take and and remove the old one.
+	 * take and remove the old one.
 	 */
 	struct sctp_association *asoc;
 	struct sctp_tmit_chunk *chk, *a_chk;

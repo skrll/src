@@ -1,4 +1,4 @@
-/* $NetBSD: systrace_args.c,v 1.24 2017/05/10 06:19:47 riastradh Exp $ */
+/* $NetBSD: systrace_args.c,v 1.31 2018/07/31 13:02:15 rjs Exp $ */
 
 /*
  * System call argument to DTrace register array converstion.
@@ -520,20 +520,6 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 	/* sys_vfork */
 	case 66: {
 		*n_args = 0;
-		break;
-	}
-	/* sys_sbrk */
-	case 69: {
-		const struct sys_sbrk_args *p = params;
-		iarg[0] = SCARG(p, incr); /* intptr_t */
-		*n_args = 1;
-		break;
-	}
-	/* sys_sstk */
-	case 70: {
-		const struct sys_sstk_args *p = params;
-		iarg[0] = SCARG(p, incr); /* int */
-		*n_args = 1;
 		break;
 	}
 	/* sys_mmap */
@@ -1379,6 +1365,17 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		iarg[0] = SCARG(p, fd); /* int */
 		iarg[1] = SCARG(p, name); /* int */
 		*n_args = 2;
+		break;
+	}
+	/* sys_getsockopt2 */
+	case 193: {
+		const struct sys_getsockopt2_args *p = params;
+		iarg[0] = SCARG(p, s); /* int */
+		iarg[1] = SCARG(p, level); /* int */
+		iarg[2] = SCARG(p, name); /* int */
+		uarg[3] = (intptr_t) SCARG(p, val); /* void * */
+		uarg[4] = (intptr_t) SCARG(p, avalsize); /* socklen_t * */
+		*n_args = 5;
 		break;
 	}
 	/* sys_getrlimit */
@@ -2428,24 +2425,6 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		uarg[3] = (intptr_t) SCARG(p, tramp); /* const void * */
 		iarg[4] = SCARG(p, vers); /* int */
 		*n_args = 5;
-		break;
-	}
-	/* sys_pmc_get_info */
-	case 341: {
-		const struct sys_pmc_get_info_args *p = params;
-		iarg[0] = SCARG(p, ctr); /* int */
-		iarg[1] = SCARG(p, op); /* int */
-		uarg[2] = (intptr_t) SCARG(p, args); /* void * */
-		*n_args = 3;
-		break;
-	}
-	/* sys_pmc_control */
-	case 342: {
-		const struct sys_pmc_control_args *p = params;
-		iarg[0] = SCARG(p, ctr); /* int */
-		iarg[1] = SCARG(p, op); /* int */
-		uarg[2] = (intptr_t) SCARG(p, args); /* void * */
-		*n_args = 3;
 		break;
 	}
 	/* sys_rasctl */
@@ -3637,7 +3616,7 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		const struct sys____lwp_park60_args *p = params;
 		iarg[0] = SCARG(p, clock_id); /* clockid_t */
 		iarg[1] = SCARG(p, flags); /* int */
-		uarg[2] = (intptr_t) SCARG(p, ts); /* const struct timespec * */
+		uarg[2] = (intptr_t) SCARG(p, ts); /* struct timespec * */
 		iarg[3] = SCARG(p, unpark); /* lwpid_t */
 		uarg[4] = (intptr_t) SCARG(p, hint); /* const void * */
 		uarg[5] = (intptr_t) SCARG(p, unparkhint); /* const void * */
@@ -4486,26 +4465,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* sys_vfork */
 	case 66:
-		break;
-	/* sys_sbrk */
-	case 69:
-		switch(ndx) {
-		case 0:
-			p = "intptr_t";
-			break;
-		default:
-			break;
-		};
-		break;
-	/* sys_sstk */
-	case 70:
-		switch(ndx) {
-		case 0:
-			p = "int";
-			break;
-		default:
-			break;
-		};
 		break;
 	/* sys_mmap */
 	case 71:
@@ -5907,6 +5866,28 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		case 1:
 			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys_getsockopt2 */
+	case 193:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "int";
+			break;
+		case 2:
+			p = "int";
+			break;
+		case 3:
+			p = "void *";
+			break;
+		case 4:
+			p = "socklen_t *";
 			break;
 		default:
 			break;
@@ -7649,38 +7630,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		case 4:
 			p = "int";
-			break;
-		default:
-			break;
-		};
-		break;
-	/* sys_pmc_get_info */
-	case 341:
-		switch(ndx) {
-		case 0:
-			p = "int";
-			break;
-		case 1:
-			p = "int";
-			break;
-		case 2:
-			p = "void *";
-			break;
-		default:
-			break;
-		};
-		break;
-	/* sys_pmc_control */
-	case 342:
-		switch(ndx) {
-		case 0:
-			p = "int";
-			break;
-		case 1:
-			p = "int";
-			break;
-		case 2:
-			p = "void *";
 			break;
 		default:
 			break;
@@ -9832,7 +9781,7 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			p = "int";
 			break;
 		case 2:
-			p = "const struct timespec *";
+			p = "struct timespec *";
 			break;
 		case 3:
 			p = "lwpid_t";
@@ -10231,16 +10180,6 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* sys_vfork */
 	case 66:
-	/* sys_sbrk */
-	case 69:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
-	/* sys_sstk */
-	case 70:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
 	/* sys_mmap */
 	case 71:
 		if (ndx == 0 || ndx == 1)
@@ -10734,6 +10673,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	case 192:
 		if (ndx == 0 || ndx == 1)
 			p = "long";
+		break;
+	/* sys_getsockopt2 */
+	case 193:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
 		break;
 	/* sys_getrlimit */
 	case 194:
@@ -11343,16 +11287,6 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* sys___sigaction_sigtramp */
 	case 340:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
-	/* sys_pmc_get_info */
-	case 341:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
-	/* sys_pmc_control */
-	case 342:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;

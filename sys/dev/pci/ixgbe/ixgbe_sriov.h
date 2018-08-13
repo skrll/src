@@ -30,7 +30,7 @@
   POSSIBILITY OF SUCH DAMAGE.
 
 ******************************************************************************/
-/*$FreeBSD: head/sys/dev/ixgbe/ixgbe_sriov.h 320688 2017-07-05 17:27:03Z erj $*/
+/*$FreeBSD: head/sys/dev/ixgbe/ixgbe_sriov.h 327031 2017-12-20 18:15:06Z erj $*/
 
 
 #ifndef _IXGBE_SRIOV_H_
@@ -57,7 +57,7 @@
 
 #define IXGBE_VF_GET_QUEUES_RESP_LEN	5
 
-#define IXGBE_API_VER_1_0	0		
+#define IXGBE_API_VER_1_0	0
 #define IXGBE_API_VER_2_0	1	/* Solaris API.  Not supported. */
 #define IXGBE_API_VER_1_1	2
 #define IXGBE_API_VER_UNKNOWN	UINT16_MAX
@@ -75,6 +75,7 @@ void ixgbe_ping_all_vfs(struct adapter *);
 int  ixgbe_pci_iov_detach(device_t);
 void ixgbe_define_iov_schemas(device_t, int *);
 void ixgbe_align_all_queue_indices(struct adapter *);
+int  ixgbe_vf_que_index(int, int, int);
 u32  ixgbe_get_mtqc(int);
 u32  ixgbe_get_mrqc(int);
 
@@ -91,12 +92,12 @@ u32  ixgbe_get_mrqc(int);
 #define ixgbe_pci_iov_detach(_a) 0
 #define ixgbe_define_iov_schemas(_a,_b)	do { } while (/*CONSTCOND*/false)
 #define ixgbe_align_all_queue_indices(_a) do { } while (/*CONSTCOND*/false)
+#define ixgbe_vf_que_index(_a, _b, _c) (_c)
 #define ixgbe_get_mtqc(_a) IXGBE_MTQC_64Q_1PB
 #define ixgbe_get_mrqc(_a) 0
 
 #endif /* PCI_IOV */
 
 void ixgbe_handle_mbx(void *);
-int  ixgbe_vf_que_index(int, int, int);
 
 #endif

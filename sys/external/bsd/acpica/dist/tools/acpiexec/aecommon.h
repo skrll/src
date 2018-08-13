@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2017, Intel Corp.
+ * Copyright (C) 2000 - 2018, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -81,6 +81,7 @@ typedef struct ae_debug_regions
 } AE_DEBUG_REGIONS;
 
 
+extern BOOLEAN              AcpiGbl_UseLocalFaultHandler;
 extern BOOLEAN              AcpiGbl_IgnoreErrors;
 extern BOOLEAN              AcpiGbl_AbortLoopOnTimeout;
 extern UINT8                AcpiGbl_RegionFillValue;

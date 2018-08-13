@@ -1,4 +1,4 @@
-/*	$NetBSD: rpi_start.S,v 1.15 2017/12/10 21:38:27 skrll Exp $	*/
+/*	$NetBSD: rpi_start.S,v 1.20 2018/08/03 15:46:41 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003  Genetec Corporation.  All rights reserved.
@@ -90,16 +90,17 @@
 #include "opt_arm_debug.h"
 #include "opt_cputypes.h"
 #include "opt_cpuoptions.h"
+#include "opt_fdt.h"
 
 #include <machine/asm.h>
 #include <arm/armreg.h>
 #include "assym.h"
 
-RCSID("$NetBSD: rpi_start.S,v 1.15 2017/12/10 21:38:27 skrll Exp $")
+RCSID("$NetBSD: rpi_start.S,v 1.20 2018/08/03 15:46:41 skrll Exp $")
 
 
 #if defined(VERBOSE_INIT_ARM)
-#define	XPUTC(n)	mov r0, n; bl bcm283x_platform_early_putchar
+#define	XPUTC(n)	push {r1-r12, lr}; mov r0, n; bl bcm2835_platform_early_putchar; pop {r1-r12, lr}
 #else
 #define	XPUTC(n)
 #endif
@@ -136,8 +137,27 @@ RCSID("$NetBSD: rpi_start.S,v 1.15 2017/12/10 21:38:27 skrll Exp $")
 
 	.global	_C_LABEL(rpi_start)
 _C_LABEL(rpi_start):
+
+#if defined(VERBOSE_INIT_ARM)
+	/* stack for calling bcm2835_platform_early_putchar() */
+	ldr	sp, Lbootstk
+	sub	sp, sp, #KERNEL_BASE_VOFFSET
+#endif /* VERBOSE_INIT_ARM */
+
 	ldr	r8, Luboot_args
+	sub	r8, r8, #KERNEL_BASE_VOFFSET
 	stmia	r8!, {r0-r3}
+
+#ifdef FDT
+	ldr	r8, Lfdt_addr_r
+	sub	r8, r8, #KERNEL_BASE_VOFFSET
+	str	r2, [r8]
+#endif
+
+	ldr	r8, =kern_vtopdiff
+	sub	r8, r8, #KERNEL_BASE_VOFFSET
+	mov	r2, #KERNEL_BASE_VOFFSET
+	str	r2, [r8]
 
 	mrs	r0, cpsr
 	bic	r0, r0, #PSR_MODE
@@ -296,6 +316,8 @@ Lstart:
 
 Luboot_args:
 	.word	uboot_args
+Lfdt_addr_r:
+	.word	fdt_addr_r
 
 /*
  * Coprocessor register initialization values
@@ -338,6 +360,17 @@ Lcontrol_wax:
 Lctl_ID_dis:
 	.word	~(CPU_CONTROL_IC_ENABLE|CPU_CONTROL_DC_ENABLE)
 
+#if defined(VERBOSE_INIT_ARM)
+Lbootstk:
+	.word	bootstk
+
+	.pushsection .bss
+	.align	3
+	.space	256
+bootstk:
+	.popsection
+#endif
+
 /* We'll modify va and pa at run time so we can use relocatable addresses. */
 #define MMU_INIT(va,pa,n_sec,attr) \
 	.word	va					    ; \
@@ -353,10 +386,10 @@ Lctl_ID_dis:
 
 mmu_init_table:
 	/*
-	 * Map 256MB of VA==PA at 0x00000000 so we can keep the kernel going
+	 * Map 512MB of VA==PA at 0x00000000 so we can keep the kernel going
 	 * and get access to the FDT the firmware loads
 	 */
-	MMU_INIT(0x0, 0x0, 0x10000000, L1_S_PROTO | L1_S_APv6_KRW)
+	MMU_INIT(0x0, 0x0, (512 * 1024 * 1204), L1_S_PROTO | L1_S_APv6_KRW)
 
 	MMU_INIT(KERNEL_BASE, 0x0,
 	    (_end - KERNEL_BASE + 2 * L1_S_SIZE - 1),

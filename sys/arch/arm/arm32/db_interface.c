@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.56 2017/06/30 08:10:50 skrll Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.58 2018/05/28 21:05:00 chs Exp $	*/
 
 /*
  * Copyright (c) 1996 Scott K. Stevens
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.56 2017/06/30 08:10:50 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.58 2018/05/28 21:05:00 chs Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -203,11 +203,7 @@ db_validate_address(vaddr_t addr)
 	struct pmap *pmap;
 
 	if (!p || !p->p_vmspace || !p->p_vmspace->vm_map.pmap ||
-#ifndef ARM32_NEW_VM_LAYOUT
-	    addr >= VM_MAXUSER_ADDRESS
-#else
 	    addr >= VM_MIN_KERNEL_ADDRESS
-#endif
 	   )
 		pmap = pmap_kernel();
 	else
@@ -251,87 +247,8 @@ db_read_bytes(vaddr_t addr, size_t size, char *data)
 static void
 db_write_text(vaddr_t addr, size_t size, const char *data)
 {
-	struct pmap *pmap = pmap_kernel();
-	pd_entry_t *pde, oldpde, tmppde;
-	pt_entry_t *pte, oldpte, tmppte;
-	vaddr_t pgva;
-	size_t limit, savesize;
-	char *dst;
 
-	/* XXX: gcc */
-	oldpte = 0;
-
-	if ((savesize = size) == 0)
-		return;
-
-	dst = (char *) addr;
-
-	do {
-		/* Get the PDE of the current VA. */
-		if (pmap_get_pde_pte(pmap, (vaddr_t) dst, &pde, &pte) == false)
-			goto no_mapping;
-		switch ((oldpde = *pde) & L1_TYPE_MASK) {
-		case L1_TYPE_S:
-			pgva = (vaddr_t)dst & L1_S_FRAME;
-			limit = L1_S_SIZE - ((vaddr_t)dst & L1_S_OFFSET);
-
-			tmppde = l1pte_set_writable(oldpde);
-			*pde = tmppde;
-			PTE_SYNC(pde);
-			break;
-
-		case L1_TYPE_C:
-			pgva = (vaddr_t)dst & L2_S_FRAME;
-			limit = L2_S_SIZE - ((vaddr_t)dst & L2_S_OFFSET);
-
-			if (pte == NULL)
-				goto no_mapping;
-			oldpte = *pte;
-			tmppte = l2pte_set_writable(oldpte);
-			*pte = tmppte;
-			PTE_SYNC(pte);
-			break;
-
-		default:
-		no_mapping:
-			printf(" address 0x%08lx not a valid page\n",
-			    (vaddr_t) dst);
-			return;
-		}
-		cpu_tlb_flushD_SE(pgva);
-		cpu_cpwait();
-
-		if (limit > size)
-			limit = size;
-		size -= limit;
-
-		/*
-		 * Page is now writable.  Do as much access as we
-		 * can in this page.
-		 */
-		for (; limit > 0; limit--)
-			*dst++ = *data++;
-
-		/*
-		 * Restore old mapping permissions.
-		 */
-		switch (oldpde & L1_TYPE_MASK) {
-		case L1_TYPE_S:
-			*pde = oldpde;
-			PTE_SYNC(pde);
-			break;
-
-		case L1_TYPE_C:
-			*pte = oldpte;
-			PTE_SYNC(pte);
-			break;
-		}
-		cpu_tlb_flushD_SE(pgva);
-		cpu_cpwait();
-	} while (size != 0);
-
-	/* Sync the I-cache. */
-	cpu_icache_sync_range(addr, savesize);
+	ktext_write((void *)addr, data, size);
 }
 
 /*

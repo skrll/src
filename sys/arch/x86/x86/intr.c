@@ -1,6 +1,6 @@
-/*	$NetBSD: intr.c,v 1.112 2017/11/11 21:05:58 riastradh Exp $	*/
+/*	$NetBSD: intr.c,v 1.127 2018/07/03 11:45:54 kamil Exp $	*/
 
-/*-
+/*
  * Copyright (c) 2007, 2008, 2009 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -133,7 +133,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.112 2017/11/11 21:05:58 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.127 2018/07/03 11:45:54 kamil Exp $");
 
 #include "opt_intrdebug.h"
 #include "opt_multiprocessor.h"
@@ -168,7 +168,7 @@ __KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.112 2017/11/11 21:05:58 riastradh Exp $")
 #include "acpica.h"
 
 #if NIOAPIC > 0 || NACPICA > 0
-#include <machine/i82093var.h> 
+#include <machine/i82093var.h>
 #include <machine/mpbiosvar.h>
 #include <machine/mpacpi.h>
 #endif
@@ -238,24 +238,24 @@ static void intr_source_free(struct cpu_info *, int, struct pic *, int);
 
 static void intr_establish_xcall(void *, void *);
 static void intr_disestablish_xcall(void *, void *);
+#endif
 
 static const char *legacy_intr_string(int, char *, size_t, struct pic *);
+
 #if defined(XEN) /* XXX: nuke conditional after integration */
 static const char *xen_intr_string(int, char *, size_t, struct pic *);
 #endif /* XXX: XEN */
-#endif
 
+#if defined(INTRSTACKSIZE)
 static inline bool redzone_const_or_false(bool);
 static inline int redzone_const_or_zero(int);
+#endif
 
 static void intr_redistribute_xc_t(void *, void *);
 static void intr_redistribute_xc_s1(void *, void *);
 static void intr_redistribute_xc_s2(void *, void *);
 static bool intr_redistribute(struct cpu_info *);
 
-#if !defined(XEN)
-static const char *create_intrid(int, struct pic *, int, char *, size_t);
-#endif /* XEN */
 static struct intrsource *intr_get_io_intrsource(const char *);
 static void intr_free_io_intrsource_direct(struct intrsource *);
 #if !defined(XEN)
@@ -281,7 +281,7 @@ intr_default_setup(void)
 	/* icu vectors */
 	for (i = 0; i < NUM_LEGACY_IRQS; i++) {
 		idt_vec_reserve(ICU_OFFSET + i);
-		idt_vec_set(ICU_OFFSET + i, i8259_stubs[i].ist_entry);
+		idt_vec_set(ICU_OFFSET + i, legacy_stubs[i].ist_entry);
 	}
 
 	/*
@@ -334,18 +334,18 @@ intr_calculatemasks(struct cpu_info *ci)
 			continue;
 		}
 		for (q = ci->ci_isources[irq]->is_handlers; q; q = q->ih_next)
-			levels |= 1 << q->ih_level;
+			levels |= 1U << q->ih_level;
 		intrlevel[irq] = levels;
 		if (levels)
-			unusedirqs &= ~(1 << irq);
+			unusedirqs &= ~(1U << irq);
 	}
 
 	/* Then figure out which IRQs use each level. */
 	for (level = 0; level < NIPL; level++) {
 		int irqs = 0;
 		for (irq = 0; irq < MAX_INTR_SOURCES; irq++)
-			if (intrlevel[irq] & (1 << level))
-				irqs |= 1 << irq;
+			if (intrlevel[irq] & (1U << level))
+				irqs |= 1U << irq;
 		ci->ci_imask[level] = irqs | unusedirqs;
 	}
 
@@ -375,7 +375,7 @@ intr_calculatemasks(struct cpu_info *ci)
 
 /*
  * List to keep track of PCI buses that are probed but not known
- * to the firmware. Used to 
+ * to the firmware. Used to
  *
  * XXX should maintain one list, not an array and a linked list.
  */
@@ -490,13 +490,12 @@ intr_scan_bus(int bus, int pin, intr_handle_t *handle)
 }
 #endif
 
-#if !defined(XEN)
 /*
  * Create an interrupt id such as "ioapic0 pin 9". This interrupt id is used
  * by MI code and intrctl(8).
  */
-static const char *
-create_intrid(int legacy_irq, struct pic *pic, int pin, char *buf, size_t len)
+const char *
+intr_create_intrid(int legacy_irq, struct pic *pic, int pin, char *buf, size_t len)
 {
 	int ih = 0;
 
@@ -551,8 +550,6 @@ create_intrid(int legacy_irq, struct pic *pic, int pin, char *buf, size_t len)
 
 	return NULL; /* No pic found! */
 }
-
-#endif /* XEN */
 
 /*
  * Find intrsource from io_interrupt_sources list.
@@ -794,7 +791,7 @@ intr_allocate_slot(struct pic *pic, int pin, int level,
 	}
 	KASSERT(ci != NULL);
 
-	/* 
+	/*
 	 * Now allocate an IDT vector.
 	 * For the 8259 these are reserved up front.
 	 */
@@ -870,6 +867,7 @@ intr_findpic(int num)
 	return NULL;
 }
 #endif
+
 #if !defined(XEN)
 /*
  * Append device name to intrsource. If device A and device B share IRQ number,
@@ -958,7 +956,7 @@ intr_establish_xname(int legacy_irq, struct pic *pic, int pin, int type,
 	    "non-legacy IRQ on i8259");
 
 	ih = kmem_alloc(sizeof(*ih), KM_SLEEP);
-	intrstr = create_intrid(legacy_irq, pic, pin, intrstr_buf,
+	intrstr = intr_create_intrid(legacy_irq, pic, pin, intrstr_buf,
 	    sizeof(intrstr_buf));
 	KASSERT(intrstr != NULL);
 
@@ -1037,7 +1035,7 @@ intr_establish_xname(int legacy_irq, struct pic *pic, int pin, int type,
 		/* NOTREACHED */
 	}
 
-        /*
+	/*
 	 * If the establishing interrupt uses shared IRQ, the interrupt uses
 	 * "ci->ci_isources[slot]" instead of allocated by the establishing
 	 * device's pci_intr_alloc() or this function.
@@ -1152,7 +1150,7 @@ intr_disestablish_xcall(void *arg1, void *arg2)
 	source = ci->ci_isources[ih->ih_slot];
 	idtvec = source->is_idtvec;
 
-	(*pic->pic_hwmask)(pic, ih->ih_pin);	
+	(*pic->pic_hwmask)(pic, ih->ih_pin);
 	atomic_and_32(&ci->ci_ipending, ~(1 << ih->ih_slot));
 
 	/*
@@ -1223,6 +1221,9 @@ intr_establish_xname(int legacy_irq, struct pic *pic, int pin,
     int type, int level, int (*handler)(void *), void *arg,
     bool known_mpsafe, const char *xname)
 {
+	const char *intrstr;
+	char intrstr_buf[INTRIDBUF];
+
 	if (pic->pic_type == PIC_XEN) {
 		struct intrhand *rih;
 
@@ -1233,7 +1234,10 @@ intr_establish_xname(int legacy_irq, struct pic *pic, int pin,
 		 */
 		KASSERT(known_mpsafe == (level != IPL_VM));
 
-		event_set_handler(pin, handler, arg, level, xname);
+		intrstr = intr_create_intrid(legacy_irq, pic, pin, intrstr_buf,
+		    sizeof(intrstr_buf));
+
+		event_set_handler(pin, handler, arg, level, intrstr, xname);
 
 		rih = kmem_zalloc(sizeof(*rih), cold ? KM_NOSLEEP : KM_SLEEP);
 		if (rih == NULL) {
@@ -1251,40 +1255,41 @@ intr_establish_xname(int legacy_irq, struct pic *pic, int pin,
 		 * et. al. and unify with x86/intr.c
 		 */
 		rih->ih_pin = pin; /* port */
-		rih->ih_fun = handler;
-		rih->ih_arg = arg;
+		rih->ih_fun = rih->ih_realfun = handler;
+		rih->ih_arg = rih->ih_realarg = arg;
 		rih->pic_type = pic->pic_type;
 		return rih;
 	} 	/* Else we assume pintr */
 
 #if NPCI > 0 || NISA > 0
 	struct pintrhand *pih;
+	intr_handle_t irq;
 	int evtchn;
-	char evname[16];
 
 	KASSERTMSG(legacy_irq == -1 || (0 <= legacy_irq && legacy_irq < 16),
 	    "bad legacy IRQ value: %d", legacy_irq);
 	KASSERTMSG(!(legacy_irq == -1 && pic == &i8259_pic),
 	    "non-legacy IRQon i8259 ");
 
-	if (legacy_irq == -1) {
+	if (pic->pic_type != PIC_I8259) {
 #if NIOAPIC > 0
 		/* will do interrupts via I/O APIC */
-		legacy_irq = APIC_INT_VIA_APIC;
-		legacy_irq |= pic->pic_apicid << APIC_INT_APIC_SHIFT;
-		legacy_irq |= pin << APIC_INT_PIN_SHIFT;
-		snprintf(evname, sizeof(evname), "%s pin %d",
-		    pic->pic_name, pin);
+		irq = APIC_INT_VIA_APIC;
+		irq |= pic->pic_apicid << APIC_INT_APIC_SHIFT;
+		irq |= pin << APIC_INT_PIN_SHIFT;
 #else /* NIOAPIC */
 		return NULL;
 #endif /* NIOAPIC */
 	} else {
-		snprintf(evname, sizeof(evname), "irq%d", legacy_irq);
+		irq = legacy_irq;
 	}
 
-	evtchn = xen_pirq_alloc((intr_handle_t *)&legacy_irq, type);
-	pih = pirq_establish(legacy_irq & 0xff, evtchn, handler, arg, level,
-	    evname);
+	intrstr = intr_create_intrid(irq, pic, pin, intrstr_buf,
+	    sizeof(intrstr_buf));
+
+	evtchn = xen_pirq_alloc(&irq, type);
+	pih = pirq_establish(irq & 0xff, evtchn, handler, arg, level,
+	    intrstr, xname);
 	pih->pic_type = pic->pic_type;
 	return pih;
 #endif /* NPCI > 0 || NISA > 0 */
@@ -1341,7 +1346,6 @@ intr_disestablish(struct intrhand *ih)
 #endif /* XEN */
 }
 
-#if !defined(XEN)
 #if defined(XEN) /* nuke conditional post integration */
 static const char *
 xen_intr_string(int port, char *buf, size_t len, struct pic *pic)
@@ -1355,7 +1359,7 @@ xen_intr_string(int port, char *buf, size_t len, struct pic *pic)
 
 	return buf;
 }
-#endif /* XXX: XEN */
+#endif /* XEN */
 
 static const char *
 legacy_intr_string(int ih, char *buf, size_t len, struct pic *pic)
@@ -1376,7 +1380,6 @@ legacy_intr_string(int ih, char *buf, size_t len, struct pic *pic)
 
 	return buf;
 }
-#endif
 
 const char *
 intr_string(intr_handle_t ih, char *buf, size_t len)
@@ -1429,6 +1432,7 @@ struct intrhand fake_preempt_intrhand;
 static const char *x86_ipi_names[X86_NIPI] = X86_IPI_NAMES;
 #endif
 
+#if defined(INTRSTACKSIZE)
 static inline bool
 redzone_const_or_false(bool x)
 {
@@ -1444,6 +1448,7 @@ redzone_const_or_zero(int x)
 {
 	return redzone_const_or_false(true) ? x : 0;
 }
+#endif
 
 /*
  * Initialize all handlers that aren't dynamically allocated, and exist
@@ -1457,9 +1462,6 @@ cpu_intr_init(struct cpu_info *ci)
 #if NLAPIC > 0 && defined(MULTIPROCESSOR)
 	int i;
 	static int first = 1;
-#endif
-#ifdef INTRSTACKSIZE
-	vaddr_t istack;
 #endif
 
 #if NLAPIC > 0
@@ -1492,8 +1494,8 @@ cpu_intr_init(struct cpu_info *ci)
 
 #if defined(__HAVE_PREEMPTION)
 	isp = kmem_zalloc(sizeof(*isp), KM_SLEEP);
-	isp->is_recurse = Xpreemptrecurse;
-	isp->is_resume = Xpreemptresume;
+	isp->is_recurse = Xrecurse_preempt;
+	isp->is_resume = Xresume_preempt;
 	fake_preempt_intrhand.ih_level = IPL_PREEMPT;
 	isp->is_handlers = &fake_preempt_intrhand;
 	isp->is_pic = &softintr_pic;
@@ -1504,35 +1506,36 @@ cpu_intr_init(struct cpu_info *ci)
 
 #else /* XEN */
 	int i; /* XXX: duplicate */
-	vaddr_t istack; /* XXX: duplicate */
-		ci->ci_iunmask[0] = 0xfffffffe;
+	ci->ci_iunmask[0] = 0xfffffffe;
 	for (i = 1; i < NIPL; i++)
 		ci->ci_iunmask[i] = ci->ci_iunmask[i - 1] & ~(1 << i);
 #endif /* XEN */
 
 #if defined(INTRSTACKSIZE)
+	vaddr_t istack;
+
 	/*
 	 * If the red zone is activated, protect both the top and
 	 * the bottom of the stack with an unmapped page.
 	 */
 	istack = uvm_km_alloc(kernel_map,
 	    INTRSTACKSIZE + redzone_const_or_zero(2 * PAGE_SIZE), 0,
-	    UVM_KMF_WIRED);
+	    UVM_KMF_WIRED|UVM_KMF_ZERO);
 	if (redzone_const_or_false(true)) {
 		pmap_kremove(istack, PAGE_SIZE);
 		pmap_kremove(istack + INTRSTACKSIZE + PAGE_SIZE, PAGE_SIZE);
 		pmap_update(pmap_kernel());
 	}
-	/* 33 used to be 1.  Arbitrarily reserve 32 more register_t's
+
+	/*
+	 * 33 used to be 1.  Arbitrarily reserve 32 more register_t's
 	 * of space for ddb(4) to examine some subroutine arguments
 	 * and to hunt for the next stack frame.
 	 */
 	ci->ci_intrstack = (char *)istack + redzone_const_or_zero(PAGE_SIZE) +
 	    INTRSTACKSIZE - 33 * sizeof(register_t);
-#if defined(__x86_64__)
-	ci->ci_tss.tss_ist[0] = (uintptr_t)ci->ci_intrstack & ~0xf;
-#endif /* defined(__x86_64__) */
-#endif /* defined(INTRSTACKSIZE) */
+#endif
+
 	ci->ci_idepth = -1;
 }
 
@@ -1827,7 +1830,7 @@ intr_redistribute(struct cpu_info *oci)
 	where = xc_unicast(0, intr_redistribute_xc_t, isp,
 	    (void *)(intptr_t)nslot, nci);
 	xc_wait(where);
-	
+
 	/*
 	 * We're ready to go on the target CPU.  Run a cross call to
 	 * reroute the interrupt away from the source CPU.
@@ -2011,6 +2014,9 @@ intr_get_affinity(struct intrsource *isp, kcpuset_t *cpuset)
 		return;
 	}
 
+	KASSERTMSG(isp->is_handlers != NULL,
+	    "Don't get affinity for the device which is not established.");
+
 	ci = isp->is_handlers->ih_cpu;
 	if (ci == NULL) {
 		kcpuset_zero(cpuset);
@@ -2063,6 +2069,9 @@ intr_set_affinity(struct intrsource *isp, const kcpuset_t *cpuset)
 	}
 
 	ih = isp->is_handlers;
+	KASSERTMSG(ih != NULL,
+	    "Don't set affinity for the device which is not established.");
+
 	oldci = ih->ih_cpu;
 	if (newci == oldci) /* nothing to do */
 		return 0;
@@ -2121,13 +2130,20 @@ intr_set_affinity(struct intrsource *isp, const kcpuset_t *cpuset)
 
 	return err;
 }
-#endif /* XEN */
+
 static bool
 intr_is_affinity_intrsource(struct intrsource *isp, const kcpuset_t *cpuset)
 {
 	struct cpu_info *ci;
 
 	KASSERT(mutex_owned(&cpu_lock));
+
+	/*
+	 * The device is already pci_intr_alloc'ed, however it is not
+	 * established yet.
+	 */
+	if (isp->is_handlers == NULL)
+		return false;
 
 	ci = isp->is_handlers->ih_cpu;
 	KASSERT(ci != NULL);
@@ -2149,7 +2165,6 @@ intr_get_handler(const char *intrid)
 	return isp->is_handlers;
 }
 
-#if !defined(XEN)
 /*
  * MI interface for subr_interrupt.c
  */
@@ -2195,8 +2210,6 @@ interrupt_get_count(const char *intrid, u_int cpu_idx)
 	return count;
 }
 
-#endif /* XEN */
-
 /*
  * MI interface for subr_interrupt.c
  */
@@ -2221,7 +2234,7 @@ interrupt_get_assigned(const char *intrid, kcpuset_t *cpuset)
 	mutex_exit(&cpu_lock);
 }
 
-#if !defined(XEN)
+#endif /* XEN */
 
 /*
  * MI interface for subr_interrupt.c
@@ -2242,6 +2255,8 @@ interrupt_get_available(kcpuset_t *cpuset)
 	}
 	mutex_exit(&cpu_lock);
 }
+
+#if !defined(XEN)
 
 /*
  * MI interface for subr_interrupt.c
@@ -2334,7 +2349,6 @@ interrupt_distribute_handler(const char *intrid, const kcpuset_t *newset,
 	mutex_exit(&intr_distribute_lock);
 	return error;
 }
-#endif
 
 /*
  * MI interface for subr_interrupt.c
@@ -2389,6 +2403,7 @@ interrupt_construct_intrids(const kcpuset_t *cpuset)
 
 	return ii_handler;
 }
+#endif /* !XEN */
 
 /*
  * MI interface for subr_interrupt.c

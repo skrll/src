@@ -1,6 +1,6 @@
 /*
  * dhcpcd - DHCP client daemon
- * Copyright (c) 2006-2017 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2018 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -75,7 +75,6 @@ void ipv4ll_freedrop(struct interface *, int);
 #define	ipv4ll_defaultroute(route, ifp)	(0)
 #define	ipv4ll_handlert(a, b, c)	(0)
 #define	ipv4ll_free(a)			{}
-#define	ipv4ll_drop(a)			{}
 #endif
 
 #endif

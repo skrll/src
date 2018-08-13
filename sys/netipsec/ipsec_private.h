@@ -1,6 +1,6 @@
-/*	$NetBSD: ipsec_private.h,v 1.5 2017/07/27 06:59:28 ozaki-r Exp $	*/
+/*	$NetBSD: ipsec_private.h,v 1.9 2018/04/28 15:45:16 maxv Exp $	*/
 
-/*-
+/*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -35,21 +35,17 @@
 #ifdef _KERNEL
 #include <net/net_stats.h>
 
-extern	percpu_t *ipsecstat_percpu;
-extern	percpu_t *ahstat_percpu;
-extern	percpu_t *espstat_percpu;
-extern	percpu_t *ipcompstat_percpu;
-extern	percpu_t *ipipstat_percpu;
-extern	percpu_t *pfkeystat_percpu;
+extern percpu_t *ipsecstat_percpu;
+extern percpu_t *ahstat_percpu;
+extern percpu_t *espstat_percpu;
+extern percpu_t *ipcompstat_percpu;
+extern percpu_t *ipipstat_percpu;
+extern percpu_t *pfkeystat_percpu;
 
 #define	IPSEC_STAT_GETREF()	_NET_STAT_GETREF(ipsecstat_percpu)
 #define	IPSEC_STAT_PUTREF()	_NET_STAT_PUTREF(ipsecstat_percpu)
 #define	IPSEC_STATINC(x)	_NET_STATINC(ipsecstat_percpu, x)
 #define	IPSEC_STATADD(x, v)	_NET_STATADD(ipsecstat_percpu, x, v)
-
-#define	IPSEC6_STAT_GETREF()	IPSEC_STAT_GETREF()
-#define	IPSEC6_STAT_PUTREF()	IPSEC_STAT_PUTREF()
-#define	IPSEC6_STATINC(x)	IPSEC_STATINC(x)
 
 #define	AH_STATINC(x)		_NET_STATINC(ahstat_percpu, x)
 #define	AH_STATADD(x, v)	_NET_STATADD(ahstat_percpu, x, v)
@@ -68,14 +64,6 @@ extern	percpu_t *pfkeystat_percpu;
 #define	PFKEY_STATINC(x)	_NET_STATINC(pfkeystat_percpu, x)
 #define	PFKEY_STATADD(x, v)	_NET_STATADD(pfkeystat_percpu, x, v)
 
-/*
- * Remainings of ipsec_osdep.h
- */
-#define IPSEC_SPLASSERT_SOFTNET(msg)	do {} while (0)
-
-/* XXX wrong, but close enough for restricted ipsec usage. */
-#define M_EXT_WRITABLE(m) (!M_READONLY(m))
-
 /* superuser opened socket? */
 #define IPSEC_PRIVILEGED_SO(so) ((so)->so_uidinfo->ui_uid == 0)
 
@@ -91,14 +79,16 @@ extern	percpu_t *pfkeystat_percpu;
 #include <sys/socketvar.h> /* for softnet_lock */
 
 #define IPSEC_DECLARE_LOCK_VARIABLE	int __s
-#define IPSEC_ACQUIRE_GLOBAL_LOCKS()	do {					\
-					__s = splsoftnet();		\
-					mutex_enter(softnet_lock);	\
-				} while (0)
-#define IPSEC_RELEASE_GLOBAL_LOCKS()	do {					\
-					mutex_exit(softnet_lock);	\
-					splx(__s);			\
-				} while (0)
+#define IPSEC_ACQUIRE_GLOBAL_LOCKS()	\
+	do {					\
+		__s = splsoftnet();		\
+		mutex_enter(softnet_lock);	\
+	} while (0)
+#define IPSEC_RELEASE_GLOBAL_LOCKS()	\
+	do {					\
+		mutex_exit(softnet_lock);	\
+		splx(__s);			\
+	} while (0)
 #endif
 
 #endif /* _KERNEL */

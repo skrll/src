@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.217 2017/12/08 03:36:42 sjg Exp $	*/
+/*	$NetBSD: var.c,v 1.220 2018/05/27 01:14:51 christos Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,14 +69,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: var.c,v 1.217 2017/12/08 03:36:42 sjg Exp $";
+static char rcsid[] = "$NetBSD: var.c,v 1.220 2018/05/27 01:14:51 christos Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)var.c	8.3 (Berkeley) 3/19/94";
 #else
-__RCSID("$NetBSD: var.c,v 1.217 2017/12/08 03:36:42 sjg Exp $");
+__RCSID("$NetBSD: var.c,v 1.220 2018/05/27 01:14:51 christos Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -325,7 +325,7 @@ static Boolean VarLoopExpand(GNode *, Var_Parse_State *,
 static char *VarGetPattern(GNode *, Var_Parse_State *,
 			   int, const char **, int, int *, int *,
 			   VarPattern *);
-static char *VarQuote(char *);
+static char *VarQuote(char *, Boolean);
 static char *VarHash(char *);
 static char *VarModify(GNode *, Var_Parse_State *,
     const char *,
@@ -971,7 +971,8 @@ Var_Set(const char *name, const char *val, GNode *ctxt, int flags)
 	VarAdd(name, val, ctxt);
     } else {
 	Buf_Empty(&v->val);
-	Buf_AddBytes(&v->val, strlen(val), val);
+	if (val)
+	    Buf_AddBytes(&v->val, strlen(val), val);
 
 	if (DEBUG(VAR)) {
 	    fprintf(debug_file, "%s:%s = %s\n", ctxt->name, name, val);
@@ -998,7 +999,7 @@ Var_Set(const char *name, const char *val, GNode *ctxt, int flags)
 	 * Makefile settings.
 	 */
 	if (varNoExportEnv != TRUE)
-	    setenv(name, val, 1);
+	    setenv(name, val ? val : "", 1);
 
 	Var_Append(MAKEOVERRIDES, name, VAR_GLOBAL);
     }
@@ -2315,6 +2316,7 @@ VarGetPattern(GNode *ctxt, Var_Parse_State *vpstate MAKE_ATTR_UNUSED,
  *-----------------------------------------------------------------------
  * VarQuote --
  *	Quote shell meta-characters and space characters in the string
+ *	if quoteDollar is set, also quote and double any '$' characters.
  *
  * Results:
  *	The quoted string
@@ -2325,7 +2327,7 @@ VarGetPattern(GNode *ctxt, Var_Parse_State *vpstate MAKE_ATTR_UNUSED,
  *-----------------------------------------------------------------------
  */
 static char *
-VarQuote(char *str)
+VarQuote(char *str, Boolean quoteDollar)
 {
 
     Buffer  	  buf;
@@ -2346,6 +2348,8 @@ VarQuote(char *str)
 	if (isspace((unsigned char)*str) || ismeta((unsigned char)*str))
 	    Buf_AddByte(&buf, '\\');
 	Buf_AddByte(&buf, *str);
+	if (quoteDollar && *str == '$')
+	    Buf_AddBytes(&buf, 2, "\\$");
     }
 
     str = Buf_Destroy(&buf, FALSE);
@@ -3485,9 +3489,10 @@ ApplyModifiers(char *nstr, const char *tstr,
 		break;
 	    }
 #endif
+	case 'q':
 	case 'Q':
 	    if (tstr[1] == endc || tstr[1] == ':') {
-		newStr = VarQuote(nstr);
+		newStr = VarQuote(nstr, modifier == 'q');
 		cp = tstr + 1;
 		termc = *cp;
 		break;

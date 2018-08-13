@@ -1,4 +1,4 @@
-/*	$NetBSD: efidisk.h,v 1.1 2017/01/24 11:09:14 nonaka Exp $	*/
+/*	$NetBSD: efidisk.h,v 1.3 2018/04/02 09:44:18 nonaka Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -32,9 +32,12 @@ struct efidiskinfo {
 	TAILQ_ENTRY(efidiskinfo) list;
 
 	int		dev;
+	int		type;
 	EFI_BLOCK_IO	*bio;
 	UINT32		media_id;
+	bool		bootdev;
 };
 TAILQ_HEAD(efidiskinfo_lh, efidiskinfo);
 
 const struct efidiskinfo *efidisk_getinfo(int);
+int efidisk_get_efi_system_partition(int, int *);

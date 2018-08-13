@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_extern.h,v 1.207 2017/12/02 08:15:43 mrg Exp $	*/
+/*	$NetBSD: uvm_extern.h,v 1.213 2018/05/28 21:04:35 chs Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -218,7 +218,7 @@ b\32UNMAP\0\
 #define	UVM_PGA_ZERO		0x0002	/* returned page must be zero'd */
 
 /*
- * flags for ubc_alloc()
+ * flags for ubc_uiomove()
  */
 #define UBC_READ	0x001	/* reading from object */
 #define UBC_WRITE	0x002	/* writing to object */
@@ -552,12 +552,12 @@ extern bool vm_page_zero_enable;
 struct vmspace {
 	struct	vm_map vm_map;	/* VM address map */
 	int	vm_refcnt;	/* number of references *
-				 * note: protected by vm_map.ref_lock */
+				 * note: protected by vm_map.misc_lock */
 	void *	vm_shm;		/* SYS5 shared memory private data XXX */
 /* we copy from vm_startcopy to the end of the structure on fork */
 #define vm_startcopy vm_rssize
 	segsz_t vm_rssize;	/* current resident set size in pages */
-	segsz_t vm_swrss;	/* resident set size before last swap */
+	segsz_t vm_rssmax;	/* max resident size in pages */
 	segsz_t vm_tsize;	/* text size (pages) XXX */
 	segsz_t vm_dsize;	/* data size (pages) XXX */
 	segsz_t vm_ssize;	/* stack size (pages) */
@@ -603,9 +603,10 @@ extern struct vm_map *phys_map;
 /* vm_machdep.c */
 int		vmapbuf(struct buf *, vsize_t);
 void		vunmapbuf(struct buf *, vsize_t);
+void		ktext_write(void *, const void *, size_t);
 
 /* uvm_aobj.c */
-struct uvm_object	*uao_create(vsize_t, int);
+struct uvm_object	*uao_create(voff_t, int);
 void			uao_set_pgfl(struct uvm_object *, int);
 void			uao_detach(struct uvm_object *);
 void			uao_reference(struct uvm_object *);
@@ -613,38 +614,10 @@ void			uao_reference(struct uvm_object *);
 /* uvm_bio.c */
 void			ubc_init(void);
 void			ubchist_init(void);
-void *			ubc_alloc(struct uvm_object *, voff_t, vsize_t *, int,
-			    int);
-void			ubc_release(void *, int);
 int			ubc_uiomove(struct uvm_object *, struct uio *, vsize_t,
 			    int, int);
 void			ubc_zerorange(struct uvm_object *, off_t, size_t, int);
 void			ubc_purge(struct uvm_object *);
-
-/* uvm_emap.c */
-void			uvm_emap_sysinit(void);
-#ifdef __HAVE_PMAP_EMAP
-void			uvm_emap_switch(lwp_t *);
-#else
-#define			uvm_emap_switch(l)
-#endif
-
-u_int			uvm_emap_gen_return(void);
-void			uvm_emap_update(u_int);
-
-vaddr_t			uvm_emap_alloc(vsize_t, bool);
-void			uvm_emap_free(vaddr_t, size_t);
-
-void			uvm_emap_enter(vaddr_t, struct vm_page **, u_int);
-void			uvm_emap_remove(vaddr_t, vsize_t);
-
-#ifdef __HAVE_PMAP_EMAP
-void			uvm_emap_consume(u_int);
-u_int			uvm_emap_produce(void);
-#else
-#define			uvm_emap_consume(x)
-#define			uvm_emap_produce()	UVM_EMAP_INACTIVE
-#endif
 
 /* uvm_fault.c */
 #define uvm_fault(m, a, p) uvm_fault_internal(m, a, p, 0)

@@ -1,4 +1,4 @@
-/*	$NetBSD: rgephyreg.h,v 1.9 2015/08/21 16:29:48 jmcneill Exp $	*/
+/*	$NetBSD: rgephyreg.h,v 1.11 2018/06/27 07:51:36 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2003
@@ -37,6 +37,11 @@
 #ifndef _DEV_MII_RGEPHYREG_H_
 #define	_DEV_MII_RGEPHYREG_H_
 
+#define	RGEPHY_8211B		2
+#define	RGEPHY_8211C		3
+#define	RGEPHY_8211E		5
+#define	RGEPHY_8211F		6
+
 /*
  * RealTek 8169S/8110S gigE PHY registers
  */
@@ -59,10 +64,6 @@
 #define RGEPHY_MII_PHYCR1	0x18	/* PHY Specific control register 1 */
 #define RGEPHY_PHYCR1_MDI_MMCE	__BIT(9)
 #define RGEPHY_PHYCR1_ALDPS_EN	__BIT(2)
-#define RGEPHY_MII_MACR		0x0d	/* MMD Access control register */
-#define RGEPHY_MACR_FUNCTION	__BITS(15,14)
-#define RGEPHY_MACR_DEVAD	__BITS(4,0)
-#define RGEPHY_MII_MAADR	0x0e	/* MMD Access address data register */
 
 #define RGEPHY_MII_PHYSR	0x1a	/* PHY Specific status register */
 #define RGEPHY_PHYSR_ALDPS	__BIT(14)

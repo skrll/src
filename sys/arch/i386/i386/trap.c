@@ -1,5 +1,5 @@
 
-/*	$NetBSD: trap.c,v 1.291 2017/09/17 09:41:35 maxv Exp $	*/
+/*	$NetBSD: trap.c,v 1.296 2018/07/26 09:29:08 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000, 2005, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -69,7 +69,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.291 2017/09/17 09:41:35 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.296 2018/07/26 09:29:08 maxv Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -106,6 +106,7 @@ __KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.291 2017/09/17 09:41:35 maxv Exp $");
 #include <machine/mca_machdep.h>
 #endif
 
+#include <x86/dbregs.h>
 #include <x86/nmi.h>
 
 #include "isa.h"
@@ -128,6 +129,9 @@ dtrace_doubletrap_func_t	dtrace_doubletrap_func = NULL;
 void trap(struct trapframe *);
 void trap_tss(struct i386tss *, int, int);
 void trap_return_fault_return(struct trapframe *) __dead;
+#ifndef XEN
+int ss_shadow(struct trapframe *tf);
+#endif
 
 const char * const trap_type[] = {
 	"privileged instruction fault",		/*  0 T_PRIVINFLT */
@@ -236,6 +240,27 @@ trap_print(const struct trapframe *frame, const lwp_t *l)
 	    l, l->l_proc->p_pid, l->l_lid, KSTACK_LOWEST_ADDR(l));
 }
 
+#ifndef XEN
+int
+ss_shadow(struct trapframe *tf)
+{
+	struct gate_descriptor *gd;
+	uintptr_t eip, func;
+	size_t i;
+
+	eip = tf->tf_eip;
+
+	for (i = 0; i < 256; i++) {
+		gd = &idt[i];
+		func = (gd->gd_hioffset << 16) | gd->gd_looffset;
+		if (eip == func)
+			return 1;
+	}
+
+	return 0;
+}
+#endif
+
 /*
  * trap(frame): exception, fault, and trap interface to BSD kernel.
  *
@@ -307,8 +332,7 @@ trap(struct trapframe *frame)
 
 	default:
 	we_re_toast:
-		if (type != T_TRCTRAP)
-			trap_print(frame, l);
+		trap_print(frame, l);
 
 		if (kdb_trap(type, 0, frame))
 			return;
@@ -562,6 +586,15 @@ kernelfault:
 			if (cr2 > VM_MIN_ADDRESS && cr2 <= VM_MAXUSER_ADDRESS)
 				panic("prevented execution of %p (SMEP)",
 				    (void *)cr2);
+		}
+
+		if ((frame->tf_err & PGEX_P) &&
+		    cr2 < VM_MAXUSER_ADDRESS) {
+			/* SMAP might have brought us here */
+			if (onfault_handler(pcb, frame) == NULL) {
+				panic("prevented access to %p (SMAP)",
+				    (void *)cr2);
+			}
 		}
 
 		goto faultcommon;

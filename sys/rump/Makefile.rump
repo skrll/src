@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.rump,v 1.122 2017/10/08 18:46:10 joerg Exp $
+#	$NetBSD: Makefile.rump,v 1.124 2018/03/03 22:46:30 christos Exp $
 #
 
 .if !defined(_RUMP_MK)
@@ -19,6 +19,11 @@ CPPFLAGS:=	-I${RUMPTOP}/include ${CPPFLAGS}
 CPPFLAGS+=	-D_RUMPKERNEL -I${RUMPTOP}/librump/rumpkern
 .endif
 
+# We are compiling the kernel code with no-delete-null-pointer-checks,
+# and compiling without it, causes issues at least on sh3 by adding
+# aborts after kern_assert on NULL pointer checks.
+CFLAGS+=    ${${ACTIVE_CC} == "gcc":? -fno-delete-null-pointer-checks :}
+
 # Define baseline cpu for mips ports, required for
 # rumpcomp_sync_icache() hypercall.
 .if !empty(MACHINE_ARCH:Mmips*)
@@ -32,7 +37,7 @@ CPPFLAGS+=	-DMIPS1=1
 # which NetBSD compat to build
 RUMP_NBCOMPAT?=default
 .if ${RUMP_NBCOMPAT} == "all" || ${RUMP_NBCOMPAT} == "default"
-RUMP_NBCOMPAT=	50 60 70
+RUMP_NBCOMPAT=	50 60 70 80
 .endif
 .if ${RUMP_NBCOMPAT} == "none"
 RUMP_NBCOMPAT=

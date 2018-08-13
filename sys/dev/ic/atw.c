@@ -1,4 +1,4 @@
-/*	$NetBSD: atw.c,v 1.162 2017/10/23 09:25:31 msaitoh Exp $  */
+/*	$NetBSD: atw.c,v 1.164 2018/06/26 06:48:00 msaitoh Exp $  */
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2002, 2003, 2004 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atw.c,v 1.162 2017/10/23 09:25:31 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atw.c,v 1.164 2018/06/26 06:48:00 msaitoh Exp $");
 
 
 #include <sys/param.h>
@@ -514,7 +514,7 @@ atw_attach(struct atw_softc *sc)
 	};
 	struct ieee80211com *ic = &sc->sc_ic;
 	struct ifnet *ifp = &sc->sc_if;
-	int country_code, error, i, nrate, srom_major;
+	int country_code, error, i, srom_major;
 	u_int32_t reg;
 	static const char *type_strings[] = {"Intersil (not supported)",
 	    "RFMD", "Marvel (not supported)"};
@@ -781,12 +781,7 @@ atw_attach(struct atw_softc *sc)
 	ic->ic_caps = IEEE80211_C_PMGT | IEEE80211_C_IBSS |
 	    IEEE80211_C_HOSTAP | IEEE80211_C_MONITOR;
 
-	nrate = 0;
-	ic->ic_sup_rates[IEEE80211_MODE_11B].rs_rates[nrate++] = 2;
-	ic->ic_sup_rates[IEEE80211_MODE_11B].rs_rates[nrate++] = 4;
-	ic->ic_sup_rates[IEEE80211_MODE_11B].rs_rates[nrate++] = 11;
-	ic->ic_sup_rates[IEEE80211_MODE_11B].rs_rates[nrate++] = 22;
-	ic->ic_sup_rates[IEEE80211_MODE_11B].rs_nrates = nrate;
+	ic->ic_sup_rates[IEEE80211_MODE_11B] = ieee80211_std_rateset_11b;
 
 	/*
 	 * Call MI attach routines.
@@ -3233,7 +3228,7 @@ atw_rxintr(struct atw_softc *sc)
 				tap->ar_flags |= IEEE80211_RADIOTAP_F_BADFCS;
 
 			bpf_mtap2(sc->sc_radiobpf, tap, sizeof(sc->sc_rxtapu),
-			    m);
+			    m, BPF_D_IN);
  		}
 
 		sc->sc_recv_ev.ev_count++;
@@ -3565,7 +3560,7 @@ atw_start(struct ifnet *ifp)
 			IFQ_DEQUEUE(&ifp->if_snd, m0);
 			if (m0 == NULL)
 				break;
-			bpf_mtap(ifp, m0);
+			bpf_mtap(ifp, m0, BPF_D_OUT);
 			ni = ieee80211_find_txnode(ic,
 			    mtod(m0, struct ether_header *)->ether_dhost);
 			if (ni == NULL) {
@@ -3616,7 +3611,7 @@ atw_start(struct ifnet *ifp)
 		/*
 		 * Pass the packet to any BPF listeners.
 		 */
-		bpf_mtap3(ic->ic_rawbpf, m0);
+		bpf_mtap3(ic->ic_rawbpf, m0, BPF_D_OUT);
 
 		if (sc->sc_radiobpf != NULL) {
 			struct atw_tx_radiotap_header *tap = &sc->sc_txtap;
@@ -3624,7 +3619,7 @@ atw_start(struct ifnet *ifp)
 			tap->at_rate = rate;
 
 			bpf_mtap2(sc->sc_radiobpf, tap, sizeof(sc->sc_txtapu),
-			    m0);
+			    m0, BPF_D_OUT);
 		}
 
 		M_PREPEND(m0, offsetof(struct atw_frame, atw_ihdr), M_DONTWAIT);

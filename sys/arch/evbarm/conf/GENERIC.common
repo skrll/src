@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC.common,v 1.24 2017/11/28 07:24:32 skrll Exp $
+#	$NetBSD: GENERIC.common,v 1.30 2018/07/14 15:09:41 maxv Exp $
 #
 #	GENERIC evbarm kernel config (template)
 #
@@ -66,7 +66,8 @@ options 	NFS_BOOT_RWSIZE=1024
 # Compatibility options
 
 include 	"conf/compat_netbsd60.config"
-options 	COMPAT_NETBSD32	# allow running arm (e.g. non-earm) binaries
+options 	COMPAT_NETBSD32	# allow running arm (e.g. non-earm) binaries on arm
+				# or arm binaries on arm64
 
 # Shared memory options
 
@@ -105,13 +106,11 @@ options 	BUFQ_PRIOCSCAN
 
 # Development and Debugging options
 
-#options 	PERFCTRS	# performance counters
 options 	DIAGNOSTIC	# internal consistency checks
 #options 	DEBUG
 options 	KDTRACE_HOOKS	# kernel DTrace hooks
 #options 	LOCKDEBUG
 #options 	PMAP_DEBUG	# Enable pmap_debug_level code
-#options 	IPKDB		# remote kernel debugging
 #options 	VERBOSE_INIT_ARM # verbose bootstraping messages
 options 	DDB		# in-kernel debugger
 options 	DDB_ONPANIC=1
@@ -141,6 +140,7 @@ pseudo-device	pppoe			# PPP over Ethernet (RFC 2516)
 pseudo-device	tun			# network tunneling over tty
 pseudo-device	tap			# virtual Ethernet
 pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC 1933)
+pseudo-device	ipsecif			# interface for routing-based ipsec
 pseudo-device	gre			# generic L3 over IP tunnel
 pseudo-device	npf			# NPF packet filter
 

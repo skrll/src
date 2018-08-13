@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.27 2017/08/15 09:08:39 maxv Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.33 2018/04/03 07:20:52 christos Exp $	*/
 
 /*
  * Mach Operating System
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.27 2017/08/15 09:08:39 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.33 2018/04/03 07:20:52 christos Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -67,8 +67,12 @@ extern const char *const trap_type[];
 extern int trap_types;
 
 int	db_active = 0;
-db_regs_t ddb_regs;	/* register state */
+#ifdef MULTIPROCESSOR
+/* ddb_regs defined as a macro */
 db_regs_t *ddb_regp = NULL;
+#else
+db_regs_t ddb_regs;
+#endif
 
 void db_mach_cpu (db_expr_t, bool, db_expr_t, const char *);
 
@@ -95,7 +99,7 @@ static bool ddb_mp_online;
 int ddb_cpu = NOCPU;
 
 typedef void (vector)(void);
-extern vector Xintrddbipi, Xx2apic_intrddbipi;
+extern vector Xintr_ddbipi, Xintr_x2apic_ddbipi;
 
 void
 db_machine_init(void)
@@ -103,10 +107,10 @@ db_machine_init(void)
 
 #ifdef MULTIPROCESSOR
 #ifndef XEN
-	vector *handler = &Xintrddbipi;
+	vector *handler = &Xintr_ddbipi;
 #if NLAPIC > 0
 	if (lapic_is_x2apic())
-		handler = &Xx2apic_intrddbipi;
+		handler = &Xintr_x2apic_ddbipi;
 #endif
 	ddb_vec = idt_vec_alloc(0xf0, 0xff);
 	setgate(&idt[ddb_vec], handler, 1, SDT_SYS386IGT, SEL_KPL,
@@ -189,7 +193,9 @@ int
 kdb_trap(int type, int code, db_regs_t *regs)
 {
 	int s;
+#ifdef MULTIPROCESSOR
 	db_regs_t dbreg;
+#endif
 
 	switch (type) {
 	case T_NMI:	/* NMI */
@@ -237,10 +243,14 @@ kdb_trap(int type, int code, db_regs_t *regs)
 #ifdef MULTIPROCESSOR
 	db_resume_others();
 	}
-#endif
+	/* Restore dbreg because ddb_regp can be changed by db_mach_cpu */
 	ddb_regp = &dbreg;
+#endif
 
 	*regs = ddb_regs;
+#ifdef MULTIPROCESSOR
+	ddb_regp = NULL;
+#endif
 
 	return (1);
 }

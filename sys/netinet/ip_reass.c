@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_reass.c,v 1.11 2017/01/11 13:08:29 ozaki-r Exp $	*/
+/*	$NetBSD: ip_reass.c,v 1.18 2018/07/10 15:46:58 maxv Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1988, 1993
@@ -46,7 +46,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_reass.c,v 1.11 2017/01/11 13:08:29 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_reass.c,v 1.18 2018/07/10 15:46:58 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -93,7 +93,8 @@ typedef struct ipfr_queue {
 	struct in_addr		ipq_src;
 	struct in_addr		ipq_dst;
 	uint16_t		ipq_nfrags;	/* frags in this queue entry */
-	uint8_t 		ipq_tos;	/* TOS of this fragment */
+	uint8_t			ipq_tos;	/* TOS of this fragment */
+	int			ipq_ipsec;	/* IPsec flags */
 } ipfr_queue_t;
 
 /*
@@ -211,12 +212,13 @@ ip_nmbclusters_changed(void)
  *	datagram.  If a chain for reassembly of this datagram already exists,
  *	then it is given as 'fp'; otherwise have to make a chain.
  */
-struct mbuf *
+static struct mbuf *
 ip_reass(ipfr_qent_t *ipqe, ipfr_queue_t *fp, const u_int hash)
 {
 	struct ip *ip = ipqe->ipqe_ip, *qip;
 	const int hlen = ip->ip_hl << 2;
 	struct mbuf *m = ipqe->ipqe_m, *t;
+	int ipsecflags = m->m_flags & (M_DECRYPTED|M_AUTHIPHDR);
 	ipfr_qent_t *nq, *p, *q;
 	int i, next;
 
@@ -269,6 +271,7 @@ ip_reass(ipfr_qent_t *ipqe, ipfr_queue_t *fp, const u_int hash)
 		fp->ipq_p = ip->ip_p;
 		fp->ipq_id = ip->ip_id;
 		fp->ipq_tos = ip->ip_tos;
+		fp->ipq_ipsec = ipsecflags;
 		fp->ipq_src = ip->ip_src;
 		fp->ipq_dst = ip->ip_dst;
 		LIST_INSERT_HEAD(&ip_frags[hash], fp, ipq_q);
@@ -389,6 +392,7 @@ insert:
 		t = q->ipqe_m;
 		nq = TAILQ_NEXT(q, ipqe_q);
 		pool_cache_put(ipfren_cache, q);
+		m_remove_pkthdr(t);
 		m_cat(m, t);
 	}
 
@@ -406,7 +410,8 @@ insert:
 	m->m_data -= (ip->ip_hl << 2);
 
 	/* Fix up mbuf.  XXX This should be done elsewhere. */
-	if (m->m_flags & M_PKTHDR) {
+	{
+		KASSERT(m->m_flags & M_PKTHDR);
 		int plen = 0;
 		for (t = m; t; t = t->m_next) {
 			plen += t->m_len;
@@ -607,11 +612,13 @@ ip_reass_slowtimo(void)
  * => On complete, m0 represents a constructed final packet.
  */
 int
-ip_reass_packet(struct mbuf **m0, struct ip *ip)
+ip_reass_packet(struct mbuf **m0)
 {
+	struct mbuf *m = *m0;
+	struct ip *ip = mtod(m, struct ip *);
 	const int hlen = ip->ip_hl << 2;
 	const int len = ntohs(ip->ip_len);
-	struct mbuf *m = *m0;
+	int ipsecflags = m->m_flags & (M_DECRYPTED|M_AUTHIPHDR);
 	ipfr_queue_t *fp;
 	ipfr_qent_t *ipqe;
 	u_int hash, off, flen;
@@ -626,6 +633,11 @@ ip_reass_packet(struct mbuf **m0, struct ip *ip)
 	off = (ntohs(ip->ip_off) & IP_OFFMASK) << 3;
 	if ((off > 0 ? off + hlen : len) < IP_MINFRAGSIZE - 1) {
 		IP_STATINC(IP_STAT_BADFRAGS);
+		return EINVAL;
+	}
+
+	if (off + len > IP_MAXPACKET) {
+		IP_STATINC(IP_STAT_TOOLONG);
 		return EINVAL;
 	}
 
@@ -662,11 +674,20 @@ ip_reass_packet(struct mbuf **m0, struct ip *ip)
 		break;
 	}
 
-	/* Make sure that TOS matches previous fragments. */
-	if (fp && fp->ipq_tos != ip->ip_tos) {
-		IP_STATINC(IP_STAT_BADFRAGS);
-		mutex_exit(&ipfr_lock);
-		return EINVAL;
+	if (fp) {
+		/* All fragments must have the same IPsec flags. */
+		if (fp->ipq_ipsec != ipsecflags) {
+			IP_STATINC(IP_STAT_BADFRAGS);
+			mutex_exit(&ipfr_lock);
+			return EINVAL;
+		}
+
+		/* Make sure that TOS matches previous fragments. */
+		if (fp->ipq_tos != ip->ip_tos) {
+			IP_STATINC(IP_STAT_BADFRAGS);
+			mutex_exit(&ipfr_lock);
+			return EINVAL;
+		}
 	}
 
 	/*

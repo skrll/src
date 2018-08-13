@@ -1,4 +1,4 @@
-/*	$NetBSD: compat_mod.c,v 1.24 2016/11/05 23:30:22 pgoyette Exp $	*/
+/*	$NetBSD: compat_mod.c,v 1.29 2018/05/04 08:55:25 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: compat_mod.c,v 1.24 2016/11/05 23:30:22 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: compat_mod.c,v 1.29 2018/05/04 08:55:25 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -60,6 +60,10 @@ __KERNEL_RCSID(0, "$NetBSD: compat_mod.c,v 1.24 2016/11/05 23:30:22 pgoyette Exp
 #include <compat/common/compat_util.h>
 #include <compat/common/compat_mod.h>
 #include <compat/common/if_43.h>
+#include <compat/sys/uvm.h>
+#include <compat/sys/cpuio.h>
+#include <compat/sys/ccdvar.h>
+#include <compat/sys/sockio.h>
 
 #if defined(COMPAT_09) || defined(COMPAT_43) || defined(COMPAT_50)
 static struct sysctllog *compat_clog = NULL;
@@ -69,15 +73,13 @@ MODULE(MODULE_CLASS_EXEC, compat, NULL);
 
 int	ttcompat(struct tty *, u_long, void *, int, struct lwp *);
 
-#ifdef _MODULE
 #ifdef COMPAT_16
 #if !defined(__amd64__) || defined(COMPAT_NETBSD32)
 #define COMPAT_SIGCONTEXT
 extern char sigcode[], esigcode[];
 struct uvm_object *emul_netbsd_object;
-#endif
-#endif
-#endif /* _MODULE */
+#endif /* !defined(__amd64__) || defined(COMPAT_NETBSD32) */
+#endif /* COMPAT_16 */
 
 extern krwlock_t exec_lock;
 extern krwlock_t ttcompat_lock;
@@ -238,6 +240,9 @@ compat_modcmd(modcmd_t cmd, void *arg)
 		ttcompatvec = ttcompat;
 		if_43_init();
 #endif
+#ifdef COMPAT_13
+		uvm_13_init();
+#endif
 #ifdef COMPAT_16
 #if defined(COMPAT_SIGCONTEXT)
 		KASSERT(emul_netbsd.e_sigobject == NULL);
@@ -251,9 +256,23 @@ compat_modcmd(modcmd_t cmd, void *arg)
 #endif
 #endif
 		compat_sysctl_init();
+#ifdef COMPAT_40
+		uipc_syscalls_40_init();
+#endif
+#ifdef COMPAT_50
+		uipc_syscalls_50_init();
+		uvm_50_init();
+#endif
+#ifdef COMPAT_60
+		kern_cpu_60_init();
+		ccd_60_init();
+#endif
 		return 0;
 
 	case MODULE_CMD_FINI:
+#ifdef COMPAT_13
+		uvm_13_fini();
+#endif
 #ifdef COMPAT_16
 		/*
 		 * Ensure sendsig_sigcontext() is not being used.
@@ -308,6 +327,17 @@ compat_modcmd(modcmd_t cmd, void *arg)
 #endif
 #endif	/* COMPAT_16 */
 		compat_sysctl_fini();
+#ifdef COMPAT_40
+		uipc_syscalls_40_fini();
+#endif
+#ifdef COMPAT_50
+		uipc_syscalls_50_fini();
+		uvm_50_fini();
+#endif
+#ifdef COMPAT_60
+		kern_cpu_60_fini();
+		ccd_60_fini();
+#endif
 		return 0;
 
 	default:

@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.prog.mk,v 1.310 2017/12/11 13:08:47 christos Exp $
+#	$NetBSD: bsd.prog.mk,v 1.317 2018/07/25 23:34:25 kamil Exp $
 #	@(#)bsd.prog.mk	8.2 (Berkeley) 4/2/94
 
 .ifndef HOSTPROG
@@ -6,6 +6,19 @@
 .include <bsd.init.mk>
 .include <bsd.shlib.mk>
 .include <bsd.gcc.mk>
+
+##### Sanitizer specific flags.
+
+CFLAGS+=	${SANITIZERFLAGS} ${LIBCSANITIZERFLAGS}
+CXXFLAGS+=	${SANITIZERFLAGS} ${LIBCSANITIZERFLAGS}
+LDFLAGS+=	${SANITIZERFLAGS}
+
+# Rename the local function definitions to not conflict with libc/rt/pthread/m.
+.if ${MKSANITIZER:Uno} == "yes" && defined(SANITIZER_RENAME_SYMBOL)
+.	for _symbol in ${SANITIZER_RENAME_SYMBOL}
+CPPFLAGS+=	-D${_symbol}=__mksanitizer_${_symbol}
+.	endfor
+.endif
 
 #
 # Definitions and targets shared among all programs built by a single
@@ -159,7 +172,6 @@ LIBCRTI=	${DESTDIR}/usr/lib/${MLIBDIR:D${MLIBDIR}/}crti.o
 	pam \
 	pcap \
 	pci \
-	pmc \
 	posix \
 	pthread \
 	puffs \
@@ -210,6 +222,22 @@ LIB${_lib:tu}=	${DESTDIR}/usr/lib/lib${_lib:S/xx/++/:S/atf_c/atf-c/}.a
 .endif
 .endfor
 
+.if (${MKKERBEROS} != "no")
+LIBKRB5_LDADD+= -lkrb5
+LIBKRB5_DPADD+= ${LIBKRB5}
+# Kerberos5 applications, if linked statically, need more libraries
+LIBKRB5_STATIC_LDADD+= \
+	-lhx509 -lcrypto -lasn1 -lcom_err -lroken \
+	-lwind -lheimbase -lsqlite3 -lcrypt -lutil
+LIBKRB5_STATIC_DPADD+= \
+	${LIBHX509} ${LIBCRYPTO} ${LIBASN1} ${LIBCOM_ERR} ${LIBROKEN} \
+	${LIBWIND} ${LIBHEIMBASE} ${LIBSQLITE3} ${LIBCRYPT}  ${LIBUTIL}
+. if (${MKPIC} == "no")
+LIBKRB5_LDADD+= ${LIBKRB5_STATIC_LDADD}
+LIBKRB5_DPADD+= ${LIBKRB5_STATIC_DPADD}
+. endif
+.endif
+
 # PAM applications, if linked statically, need more libraries
 .if (${MKPIC} == "no")
 PAM_STATIC_LDADD+= -lssh
@@ -244,6 +272,7 @@ PAM_STATIC_DPADD=
 	Xaw \
 	Xdmcp \
 	Xext \
+	Xfont2 \
 	Xfont \
 	Xft \
 	Xi \
@@ -445,7 +474,10 @@ PAXCTL_FLAGS.${_P}?= ${PAXCTL_FLAGS}
 _DPADD.${_P}=		${DPADD}    ${DPADD.${_P}}
 _LDADD.${_P}=		${LDADD}    ${LDADD.${_P}}
 _LDFLAGS.${_P}=		${LDFLAGS}  ${LDFLAGS.${_P}}
+.if ${MKSANITIZER} != "yes"
+# Sanitizers don't support static build.
 _LDSTATIC.${_P}=	${LDSTATIC} ${LDSTATIC.${_P}}
+.endif
 
 ##### Build and install rules
 .if !empty(_APPEND_SRCS:M[Yy][Ee][Ss])

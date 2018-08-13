@@ -1,4 +1,4 @@
-/*	$NetBSD: vector.S,v 1.73 2017/08/18 14:52:19 maxv Exp $	*/
+/*	$NetBSD: vector.S,v 1.78 2018/07/14 14:29:40 maxv Exp $	*/
 
 /*
  * Copyright 2002 (c) Wasabi Systems, Inc.
@@ -65,11 +65,10 @@
  */
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: vector.S,v 1.73 2017/08/18 14:52:19 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vector.S,v 1.78 2018/07/14 14:29:40 maxv Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
-#include "opt_ipkdb.h"
 #include "opt_xen.h"
 #include "opt_dtrace.h"
 
@@ -149,9 +148,7 @@ dtrace_invop_calltrap_addr:
  * General purpose IPI handler.
  */
 IDTVEC(recurse_lapic_ipi)
-	pushfl
-	pushl	%cs
-	pushl	%esi
+	INTR_RECURSE_HWFRAME
 	pushl	$0
 	pushl	$T_ASTFLT
 	INTRENTRY
@@ -224,7 +221,7 @@ IDTVEC_END(intr_x2apic_tlb)
  * No need to use INTRENTRY, since we were brought here through a task-gate
  * which triggered a hardware context switch and saved the GPRs in the TSS.
  */
-IDTVEC(intrddbipi)
+IDTVEC(intr_ddbipi)
 1:
 	str	%ax
 	GET_TSS
@@ -242,9 +239,9 @@ IDTVEC(intrddbipi)
 	movl	$0,LAPIC_TPRI(%ebx)
 	iret
 	jmp	1b
-IDTVEC_END(intrddbipi)
+IDTVEC_END(intr_ddbipi)
 
-IDTVEC(x2apic_intrddbipi)
+IDTVEC(intr_x2apic_ddbipi)
 1:
 	str	%ax
 	GET_TSS
@@ -268,7 +265,7 @@ IDTVEC(x2apic_intrddbipi)
 	wrmsr
 	iret
 	jmp	1b
-IDTVEC_END(x2apic_intrddbipi)
+IDTVEC_END(intr_x2apic_ddbipi)
 #endif /* DDB */
 #endif /* MULTIPROCESSOR */
 
@@ -276,9 +273,7 @@ IDTVEC_END(x2apic_intrddbipi)
 	 * Interrupt from the local APIC timer.
 	 */
 IDTVEC(recurse_lapic_ltimer)
-	pushfl
-	pushl	%cs
-	pushl	%esi
+	INTR_RECURSE_HWFRAME
 	pushl	$0
 	pushl	$T_ASTFLT
 	INTRENTRY
@@ -335,9 +330,7 @@ IDTVEC_END(resume_lapic_ltimer)
 
 #define	INTRSTUB(name, num, early_ack, late_ack, mask, unmask, level_mask) \
 IDTVEC(recurse_ ## name ## num)						;\
-	pushfl								;\
-	pushl	%cs							;\
-	pushl	%esi							;\
+	INTR_RECURSE_HWFRAME						;\
 	subl	$4,%esp							;\
 	pushl	$T_ASTFLT		/* trap # for doing ASTs */	;\
 	INTRENTRY							;\
@@ -582,8 +575,8 @@ INTRSTUB(x2apic_level,31,voidop,x2apic_asm_ack,voidop,ioapic_unmask,ioapic_mask)
 
 #endif
 
-	.type	_C_LABEL(i8259_stubs), @object
-LABEL(i8259_stubs)
+	.type	_C_LABEL(legacy_stubs), @object
+LABEL(legacy_stubs)
 	.long _C_LABEL(Xintr_legacy0), _C_LABEL(Xrecurse_legacy0)
 	.long _C_LABEL(Xresume_legacy0)
 	.long _C_LABEL(Xintr_legacy1), _C_LABEL(Xrecurse_legacy1)
@@ -616,7 +609,7 @@ LABEL(i8259_stubs)
 	.long _C_LABEL(Xresume_legacy14)
 	.long _C_LABEL(Xintr_legacy15), _C_LABEL(Xrecurse_legacy15)
 	.long _C_LABEL(Xresume_legacy15)
-END(i8259_stubs)
+END(legacy_stubs)
 
 #if NIOAPIC > 0
 	.type	_C_LABEL(ioapic_edge_stubs), @object
@@ -898,9 +891,7 @@ END(x2apic_level_stubs)
 
 #define	XENINTRSTUB(name, num, early_ack, late_ack, mask, unmask, level_mask) \
 IDTVEC(recurse_ ## name ## num)						;\
-	pushfl								;\
-	pushl	%cs							;\
-	pushl	%esi							;\
+	INTR_RECURSE_HWFRAME						;\
 	subl	$4,%esp							;\
 	pushl	$T_ASTFLT		/* trap # for doing ASTs */	;\
 	INTRENTRY							;\
@@ -1010,9 +1001,6 @@ END(xenev_stubs)
 #endif /* XEN */
 
 #include "i386_trap.S"
-#ifdef IPKDB
-#include "i386_trap_ipkdb.S"
-#endif
 
 #ifdef XEN
 
@@ -1029,7 +1017,7 @@ END(xenev_stubs)
  * existing activation in its critical region -- if so, we pop the current
  * activation and restart the handler using the previous one.
  */
-NENTRY(hypervisor_callback)
+ENTRY(hypervisor_callback)
 	pushl	$0			/* dummy error code */
 	pushl	$T_ASTFLT
 	INTRENTRY
@@ -1096,7 +1084,7 @@ END(hypervisor_callback)
 /*
  * Hypervisor uses this for application faults while it executes.
  */
-NENTRY(failsafe_callback)
+ENTRY(failsafe_callback)
 	pop	%ds
 	pop	%es
 	pop	%fs

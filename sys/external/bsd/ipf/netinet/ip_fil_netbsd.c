@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_fil_netbsd.c,v 1.26 2017/07/23 06:19:00 christos Exp $	*/
+/*	$NetBSD: ip_fil_netbsd.c,v 1.31 2018/08/10 07:16:13 maxv Exp $	*/
 
 /*
  * Copyright (C) 2012 by Darren Reed.
@@ -8,7 +8,7 @@
 #if !defined(lint)
 #if defined(__NetBSD__)
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_fil_netbsd.c,v 1.26 2017/07/23 06:19:00 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_fil_netbsd.c,v 1.31 2018/08/10 07:16:13 maxv Exp $");
 #else
 static const char sccsid[] = "@(#)ip_fil.c	2.41 6/5/96 (C) 1993-2000 Darren Reed";
 static const char rcsid[] = "@(#)Id: ip_fil_netbsd.c,v 1.1.1.2 2012/07/22 13:45:17 darrenr Exp";
@@ -57,6 +57,9 @@ static const char rcsid[] = "@(#)Id: ip_fil_netbsd.c,v 1.1.1.2 2012/07/22 13:45:
 #include <sys/module.h>
 #include <sys/mutex.h>
 #endif
+#if defined(__NetBSD__)
+#include <netinet/in_offload.h>
+#endif
 
 #include <net/if.h>
 #include <net/route.h>
@@ -71,7 +74,6 @@ static const char rcsid[] = "@(#)Id: ip_fil_netbsd.c,v 1.1.1.2 2012/07/22 13:45:
 # include <netinet/tcp_var.h>
 #endif
 #include <netinet/udp.h>
-#include <netinet/tcpip.h>
 #include <netinet/ip_icmp.h>
 #include "netinet/ip_compat.h"
 #ifdef USE_INET6
@@ -81,6 +83,7 @@ static const char rcsid[] = "@(#)Id: ip_fil_netbsd.c,v 1.1.1.2 2012/07/22 13:45:
 # endif
 # if __NetBSD_Version__ >= 499001100
 #  include <netinet6/scope6_var.h>
+#  include <netinet6/in6_offload.h>
 # endif
 #endif
 #include "netinet/ip_fil.h"
@@ -220,7 +223,7 @@ ipf_check_wrapper(void *arg, struct mbuf **mp, struct ifnet *ifp, int dir)
 	 */
 	if (dir == PFIL_OUT) {
 		if ((*mp)->m_pkthdr.csum_flags & (M_CSUM_TCPv4|M_CSUM_UDPv4)) {
-			in_delayed_cksum(*mp);
+			in_undefer_cksum_tcpudp(*mp);
 			(*mp)->m_pkthdr.csum_flags &=
 			    ~(M_CSUM_TCPv4|M_CSUM_UDPv4);
 		}
@@ -255,7 +258,7 @@ ipf_check_wrapper6(void *arg, struct mbuf **mp, struct ifnet *ifp, int dir)
 	if (dir == PFIL_OUT) {
 		if ((*mp)->m_pkthdr.csum_flags & (M_CSUM_TCPv6|M_CSUM_UDPv6)) {
 #   if (__NetBSD_Version__ > 399000600)
-			in6_delayed_cksum(*mp);
+			in6_undefer_cksum_tcpudp(*mp);
 #   endif
 			(*mp)->m_pkthdr.csum_flags &= ~(M_CSUM_TCPv6|
 							M_CSUM_UDPv6);
@@ -1312,7 +1315,7 @@ ipf_fastroute(mb_t *m0, mb_t **mpp, fr_info_t *fin, frdest_t *fdp)
 		else
 			mhip->ip_off |= IP_MF;
 		mhip->ip_len = htons((u_short)(len + mhlen));
-		m->m_next = m_copy(m0, off, len);
+		m->m_next = m_copym(m0, off, len, M_DONTWAIT);
 		if (m->m_next == 0) {
 			error = ENOBUFS;	/* ??? */
 			goto sendorfree;

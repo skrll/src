@@ -1,4 +1,4 @@
-/*	$NetBSD: pthread.h,v 1.38 2016/10/30 23:26:33 kamil Exp $	*/
+/*	$NetBSD: pthread.h,v 1.41 2018/02/20 05:10:51 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -41,7 +41,10 @@
 #include <pthread_types.h>
 
 __BEGIN_DECLS
+#ifndef __PTHREAD_ATFORK_DECLARED
+#define __PTHREAD_ATFORK_DECLARED
 int	pthread_atfork(void (*)(void), void (*)(void), void (*)(void));
+#endif
 int	pthread_create(pthread_t * __restrict,
 	    const pthread_attr_t * __restrict, void *(*)(void *),
 	    void * __restrict);
@@ -94,8 +97,10 @@ int	pthread_mutex_destroy(pthread_mutex_t *);
 int	pthread_mutex_lock(pthread_mutex_t *);
 int	pthread_mutex_trylock(pthread_mutex_t *);
 int	pthread_mutex_unlock(pthread_mutex_t *);
+#ifndef __LIBC12_SOURCE__
 int	pthread_mutex_timedlock(pthread_mutex_t * __restrict,
 	    const struct timespec * __restrict);
+#endif
 int	pthread_mutex_getprioceiling(const pthread_mutex_t * __restrict,
 	    int * __restrict);
 int	pthread_mutex_setprioceiling(pthread_mutex_t * __restrict, int,
@@ -130,11 +135,9 @@ int	pthread_cond_timedwait(pthread_cond_t * __restrict,
 int	pthread_cond_signal(pthread_cond_t *);
 int	pthread_cond_broadcast(pthread_cond_t *);
 int	pthread_condattr_init(pthread_condattr_t *);
-#if defined(_NETBSD_SOURCE)
 int     pthread_condattr_setclock(pthread_condattr_t *, clockid_t);
 int	pthread_condattr_getclock(const pthread_condattr_t * __restrict,
 	    clockid_t * __restrict);
-#endif
 int	pthread_condattr_destroy(pthread_condattr_t *);
 #ifdef _PTHREAD_PSHARED
 int	pthread_condattr_getpshared(const pthread_condattr_t * __restrict,

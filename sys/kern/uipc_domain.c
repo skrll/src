@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_domain.c,v 1.100 2017/09/09 14:41:19 joerg Exp $	*/
+/*	$NetBSD: uipc_domain.c,v 1.103 2018/05/05 19:58:08 christos Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1993
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_domain.c,v 1.100 2017/09/09 14:41:19 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_domain.c,v 1.103 2018/05/05 19:58:08 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/socket.h>
@@ -84,6 +84,17 @@ static void sysctl_net_setup(void);
 static struct domain domain_dummy;
 __link_set_add_rodata(domains,domain_dummy);
 
+static void
+domain_init_timers(void)
+{
+
+	callout_init(&pffasttimo_ch, CALLOUT_MPSAFE);
+	callout_init(&pfslowtimo_ch, CALLOUT_MPSAFE);
+
+	callout_reset(&pffasttimo_ch, 1, pffasttimo, NULL);
+	callout_reset(&pfslowtimo_ch, 1, pfslowtimo, NULL);
+}
+
 void
 domaininit(bool attach)
 {
@@ -108,13 +119,20 @@ domaininit(bool attach)
 		}
 		if (rt_domain)
 			domain_attach(rt_domain);
+
+		domain_init_timers();
 	}
+}
 
-	callout_init(&pffasttimo_ch, CALLOUT_MPSAFE);
-	callout_init(&pfslowtimo_ch, CALLOUT_MPSAFE);
+/*
+ * Must be called only if domaininit has been called with false and
+ * after all domains have been attached.
+ */
+void
+domaininit_post(void)
+{
 
-	callout_reset(&pffasttimo_ch, 1, pffasttimo, NULL);
-	callout_reset(&pfslowtimo_ch, 1, pfslowtimo, NULL);
+	domain_init_timers();
 }
 
 void
@@ -271,7 +289,9 @@ sockaddr_getsize_by_family(sa_family_t af)
 		return sizeof(struct sockaddr_at);
 	default:
 #ifdef DIAGNOSTIC
-		printf("%s: Unhandled address family=%hhu\n", __func__, af);
+		printf("%s: (%s:%u:%u) Unhandled address family=%hhu\n",
+		    __func__, curlwp->l_proc->p_comm,
+		    curlwp->l_proc->p_pid, curlwp->l_lid, af);
 #endif
 		return 0;
 	}
@@ -662,6 +682,7 @@ sysctl_net_setup(void)
 		       SYSCTL_DESCR("SOCK_DGRAM protocol control block list"),
 		       sysctl_unpcblist, 0, NULL, 0,
 		       CTL_NET, PF_LOCAL, SOCK_DGRAM, CTL_CREATE, CTL_EOL);
+	unp_sysctl_create(&domain_sysctllog);
 }
 
 void

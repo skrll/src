@@ -1,4 +1,4 @@
-/*	$NetBSD: headers.c,v 1.62 2017/06/23 15:29:21 joerg Exp $	 */
+/*	$NetBSD: headers.c,v 1.64 2018/07/24 13:48:48 joerg Exp $	 */
 
 /*
  * Copyright 1996 John D. Polstra.
@@ -40,7 +40,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: headers.c,v 1.62 2017/06/23 15:29:21 joerg Exp $");
+__RCSID("$NetBSD: headers.c,v 1.64 2018/07/24 13:48:48 joerg Exp $");
 #endif /* not lint */
 
 #include <err.h>
@@ -316,7 +316,7 @@ _rtld_digest_dynamic(const char *execname, Obj_Entry *obj)
 #endif
 		case DT_FLAGS_1:
 			obj->z_now =
-			    ((dynp->d_un.d_val & DF_1_BIND_NOW) != 0);
+			    ((dynp->d_un.d_val & DF_1_NOW) != 0);
 			obj->z_nodelete =
 			    ((dynp->d_un.d_val & DF_1_NODELETE) != 0);
 			obj->z_initfirst =
@@ -449,7 +449,8 @@ _rtld_digest_phdr(const Elf_Phdr *phdr, int phnum, caddr_t entry)
 			obj->tlssize = ph->p_memsz;
 			obj->tlsalign = ph->p_align;
 			obj->tlsinitsize = ph->p_filesz;
-			obj->tlsinit = (void *)(uintptr_t)ph->p_vaddr;
+			obj->tlsinit = (void *)(obj->relocbase +
+			    (uintptr_t)ph->p_vaddr);
 			dbg(("headers: %s %p phsize %" PRImemsz,
 			    "PT_TLS", (void *)(uintptr_t)vaddr,
 			     ph->p_memsz));

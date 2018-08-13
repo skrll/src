@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ifunc.c,v 1.5 2017/11/06 21:16:03 joerg Exp $	*/
+/*	$NetBSD: t_ifunc.c,v 1.8 2018/03/09 20:15:03 joerg Exp $	*/
 
 /*
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -35,6 +35,12 @@
 
 #include "h_macros.h"
 
+#if defined( __arm__) || defined(__i386__) || defined(__x86_64__) || defined(__powerpc__) || defined(__sparc__)
+#define	LINKER_SUPPORT 1
+#else
+#define	LINKER_SUPPORT 0
+#endif
+
 ATF_TC(rtld_ifunc);
 
 ATF_TC_HEAD(rtld_ifunc, tc)
@@ -47,18 +53,17 @@ ATF_TC_BODY(rtld_ifunc, tc)
 	const char *envstr[] = {
 	    "0", "1"
 	};
-	int expected_result[] = {
-	    0xdeadbeef, 0xbeefdead
+	long long expected_result[] = {
+	    0xdeadbeefll, 0xbeefdeadll
 	};
 	void *handle;
-	int (*sym)(void);
-	int result;
+	long long (*sym)(void);
+	long long result;
 	const char *error;
 	size_t i;
 
-#if !defined( __arm__) && !defined(__i386__) && !defined(__x86_64__) && !defined(__powerpc__) && !defined(__sparc__)
-	atf_tc_expect_fail("Missing linker support for hidden ifunc relocations");
-#endif
+	if (!LINKER_SUPPORT)
+		atf_tc_skip("Missing linker support for ifunc relocations");
 
 	for (i = 0; i < __arraycount(envstr); ++i) {
 		setenv("USE_IFUNC2", envstr[i], 1);
@@ -81,7 +86,7 @@ ATF_TC_BODY(rtld_ifunc, tc)
 		ATF_CHECK(error == NULL);
 
 		char *command;
-		easprintf(&command, "%s/h_ifunc %d",
+		easprintf(&command, "%s/h_ifunc %lld",
 		    atf_tc_get_config_var(tc, "srcdir"), expected_result[i]);
 		if (system(command) != EXIT_SUCCESS)
 			atf_tc_fail("Test failed; see output for details");
@@ -101,15 +106,18 @@ ATF_TC_BODY(rtld_hidden_ifunc, tc)
 	const char *envstr[] = {
 	    "0", "1"
 	};
-	int expected_result[] = {
-	    0xdeadbeef, 0xbeefdead
+	long long expected_result[] = {
+	    0xdeadbeefll, 0xbeefdeadll
 	};
 	void *handle;
-	int (*sym)(void);
-	int (*(*sym2)(void))(void);
-	int result;
+	long long (*sym)(void);
+	long long (*(*sym2)(void))(void);
+	long long result;
 	const char *error;
 	size_t i;
+
+	if (!LINKER_SUPPORT)
+		atf_tc_skip("Missing linker support for ifunc relocations");
 
 	for (i = 0; i < __arraycount(envstr); ++i) {
 		setenv("USE_IFUNC2", envstr[i], 1);
@@ -141,7 +149,7 @@ ATF_TC_BODY(rtld_hidden_ifunc, tc)
 		ATF_CHECK(error == NULL);
 
 		char *command;
-		easprintf(&command, "%s/h_ifunc %d",
+		easprintf(&command, "%s/h_ifunc %lld",
 		    atf_tc_get_config_var(tc, "srcdir"), expected_result[i]);
 		if (system(command) != EXIT_SUCCESS)
 			atf_tc_fail("Test failed; see output for details");
@@ -156,23 +164,27 @@ ATF_TC_HEAD(rtld_main_ifunc, tc)
 	    "ifunc functions are resolved in the executable");
 }
 
-static unsigned int
+#if LINKER_SUPPORT
+static long long
 ifunc_helper(void)
 {
-	return 0xdeadbeef;
+	return 0xdeadbeefll;
 }
 
 static __attribute__((used))
-unsigned int (*resolve_ifunc(void))(void)
+long long (*resolve_ifunc(void))(void)
 {
 	return ifunc_helper;
 }
 __hidden_ifunc(ifunc, resolve_ifunc);
-unsigned int ifunc(void);
+#endif
+long long ifunc(void);
 
 ATF_TC_BODY(rtld_main_ifunc, tc)
 {
-	ATF_CHECK(ifunc() == 0xdeadbeef);
+	if (!LINKER_SUPPORT)
+		atf_tc_skip("Missing linker support for ifunc relocations");
+	ATF_CHECK(ifunc() == 0xdeadbeefll);
 }
 
 ATF_TP_ADD_TCS(tp)

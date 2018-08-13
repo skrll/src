@@ -1,4 +1,4 @@
-/*	$NetBSD: udp_usrreq.c,v 1.236 2017/12/11 05:47:18 ryo Exp $	*/
+/*	$NetBSD: udp_usrreq.c,v 1.255 2018/07/15 05:16:45 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -66,13 +66,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: udp_usrreq.c,v 1.236 2017/12/11 05:47:18 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udp_usrreq.c,v 1.255 2018/07/15 05:16:45 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
 #include "opt_ipsec.h"
 #include "opt_inet_csum.h"
-#include "opt_ipkdb.h"
 #include "opt_mbuftrace.h"
 #include "opt_net_mpsafe.h"
 #endif
@@ -103,7 +102,6 @@ __KERNEL_RCSID(0, "$NetBSD: udp_usrreq.c,v 1.236 2017/12/11 05:47:18 ryo Exp $")
 
 #ifdef INET6
 #include <netinet/ip6.h>
-#include <netinet/icmp6.h>
 #include <netinet6/ip6_var.h>
 #include <netinet6/ip6_private.h>
 #include <netinet6/in6_pcb.h>
@@ -112,56 +110,45 @@ __KERNEL_RCSID(0, "$NetBSD: udp_usrreq.c,v 1.236 2017/12/11 05:47:18 ryo Exp $")
 #endif
 
 #ifndef INET6
-/* always need ip6.h for IP6_EXTHDR_GET */
 #include <netinet/ip6.h>
 #endif
 
 #ifdef IPSEC
 #include <netipsec/ipsec.h>
-#include <netipsec/ipsec_var.h>
-#include <netipsec/ipsec_private.h>
 #include <netipsec/esp.h>
-#ifdef INET6
-#include <netipsec/ipsec6.h>
-#endif
-#endif	/* IPSEC */
-
-#ifdef IPKDB
-#include <ipkdb/ipkdb.h>
 #endif
 
-int	udpcksum = 1;
-int	udp_do_loopback_cksum = 0;
+int udpcksum = 1;
+int udp_do_loopback_cksum = 0;
 
-struct	inpcbtable udbtable;
+struct inpcbtable udbtable;
 
 percpu_t *udpstat_percpu;
 
 #ifdef INET
 #ifdef IPSEC
-static int udp4_espinudp (struct mbuf **, int, struct sockaddr *,
-	struct socket *);
+static int udp4_espinudp(struct mbuf **, int, struct socket *);
 #endif
-static void udp4_sendup (struct mbuf *, int, struct sockaddr *,
-	struct socket *);
-static int udp4_realinput (struct sockaddr_in *, struct sockaddr_in *,
-	struct mbuf **, int);
+static void udp4_sendup(struct mbuf *, int, struct sockaddr *,
+    struct socket *);
+static int udp4_realinput(struct sockaddr_in *, struct sockaddr_in *,
+    struct mbuf **, int);
 static int udp4_input_checksum(struct mbuf *, const struct udphdr *, int, int);
 #endif
 #ifdef INET
-static	void udp_notify (struct inpcb *, int);
+static void udp_notify (struct inpcb *, int);
 #endif
 
 #ifndef UDBHASHSIZE
 #define	UDBHASHSIZE	128
 #endif
-int	udbhashsize = UDBHASHSIZE;
+int udbhashsize = UDBHASHSIZE;
 
 /*
  * For send - really max datagram size; for receive - 40 1K datagrams.
  */
-static int	udp_sendspace = 9216;
-static int	udp_recvspace = 40 * (1024 + sizeof(struct sockaddr_in));
+static int udp_sendspace = 9216;
+static int udp_recvspace = 40 * (1024 + sizeof(struct sockaddr_in));
 
 #ifdef MBUFTRACE
 struct mowner udp_mowner = MOWNER_INIT("udp", "");
@@ -229,7 +216,6 @@ udp_init(void)
 /*
  * Checksum extended UDP header and data.
  */
-
 int
 udp_input_checksum(int af, struct mbuf *m, const struct udphdr *uh,
     int iphlen, int len)
@@ -257,7 +243,6 @@ udp_input_checksum(int af, struct mbuf *m, const struct udphdr *uh,
 /*
  * Checksum extended UDP header and data.
  */
-
 static int
 udp4_input_checksum(struct mbuf *m, const struct udphdr *uh,
     int iphlen, int len)
@@ -346,11 +331,12 @@ udp_input(struct mbuf *m, ...)
 	 * Get IP and UDP header together in first mbuf.
 	 */
 	ip = mtod(m, struct ip *);
-	IP6_EXTHDR_GET(uh, struct udphdr *, m, iphlen, sizeof(struct udphdr));
+	M_REGION_GET(uh, struct udphdr *, m, iphlen, sizeof(struct udphdr));
 	if (uh == NULL) {
 		UDP_STATINC(UDP_STAT_HDROPS);
 		return;
 	}
+
 	/*
 	 * Enforce alignment requirements that are violated in
 	 * some cases, see kern/50766 for details.
@@ -376,8 +362,12 @@ udp_input(struct mbuf *m, ...)
 	 */
 	ip_len = ntohs(ip->ip_len);
 	len = ntohs((u_int16_t)uh->uh_ulen);
+	if (len < sizeof(struct udphdr)) {
+		UDP_STATINC(UDP_STAT_BADLEN);
+		goto bad;
+	}
 	if (ip_len != iphlen + len) {
-		if (ip_len < iphlen + len || len < sizeof(struct udphdr)) {
+		if (ip_len < iphlen + len) {
 			UDP_STATINC(UDP_STAT_BADLEN);
 			goto bad;
 		}
@@ -405,7 +395,15 @@ udp_input(struct mbuf *m, ...)
 		 */
 		return;
 	}
+
 	ip = mtod(m, struct ip *);
+	M_REGION_GET(uh, struct udphdr *, m, iphlen, sizeof(struct udphdr));
+	if (uh == NULL) {
+		UDP_STATINC(UDP_STAT_HDROPS);
+		return;
+	}
+	/* XXX Re-enforce alignment? */
+
 #ifdef INET6
 	if (IN_MULTICAST(ip->ip_dst.s_addr) || n == 0) {
 		struct sockaddr_in6 src6, dst6;
@@ -431,17 +429,6 @@ udp_input(struct mbuf *m, ...)
 			goto bad;
 		}
 		UDP_STATINC(UDP_STAT_NOPORT);
-#ifdef IPKDB
-		if (checkipkdb(&ip->ip_src, uh->uh_sport, uh->uh_dport,
-				m, iphlen + sizeof(struct udphdr),
-				m->m_pkthdr.len - iphlen - sizeof(struct udphdr))) {
-			/*
-			 * It was a debugger connect packet,
-			 * just drop it now
-			 */
-			goto bad;
-		}
-#endif
 		icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_PORT, 0, 0);
 		m = NULL;
 	}
@@ -459,7 +446,7 @@ badcsum:
 #ifdef INET
 static void
 udp4_sendup(struct mbuf *m, int off /* offset of data portion */,
-	struct sockaddr *src, struct socket *so)
+    struct sockaddr *src, struct socket *so)
 {
 	struct mbuf *opts = NULL;
 	struct mbuf *n;
@@ -471,31 +458,28 @@ udp4_sendup(struct mbuf *m, int off /* offset of data portion */,
 	KASSERT(inp != NULL);
 
 #if defined(IPSEC)
-	/* check AH/ESP integrity. */
-	if (ipsec_used && ipsec4_in_reject(m, inp)) {
-		IPSEC_STATINC(IPSEC_STAT_IN_POLVIO);
+	if (ipsec_used && ipsec_in_reject(m, inp)) {
 		if ((n = m_copypacket(m, M_DONTWAIT)) != NULL)
 			icmp_error(n, ICMP_UNREACH, ICMP_UNREACH_ADMIN_PROHIBIT,
 			    0, 0);
 		return;
 	}
-#endif /*IPSEC*/
+#endif
 
 	if ((n = m_copypacket(m, M_DONTWAIT)) != NULL) {
-		if (inp->inp_flags & INP_CONTROLOPTS
-		    || SOOPT_TIMESTAMP(so->so_options)) {
+		if (inp->inp_flags & INP_CONTROLOPTS ||
+		    SOOPT_TIMESTAMP(so->so_options)) {
 			struct ip *ip = mtod(n, struct ip *);
 			ip_savecontrol(inp, &opts, ip, n);
 		}
 
 		m_adj(n, off);
-		if (sbappendaddr(&so->so_rcv, src, n,
-				opts) == 0) {
+		if (sbappendaddr(&so->so_rcv, src, n, opts) == 0) {
 			m_freem(n);
 			if (opts)
 				m_freem(opts);
-			so->so_rcv.sb_overflowed++;
 			UDP_STATINC(UDP_STAT_FULLSOCK);
+			soroverflow(so);
 		} else
 			sorwakeup(so);
 	}
@@ -505,7 +489,7 @@ udp4_sendup(struct mbuf *m, int off /* offset of data portion */,
 #ifdef INET
 static int
 udp4_realinput(struct sockaddr_in *src, struct sockaddr_in *dst,
-	struct mbuf **mp, int off /* offset of udphdr */)
+    struct mbuf **mp, int off /* offset of udphdr */)
 {
 	u_int16_t *sport, *dport;
 	int rcvcnt;
@@ -568,7 +552,7 @@ udp4_realinput(struct sockaddr_in *src, struct sockaddr_in *dst,
 			}
 
 			udp4_sendup(m, off, (struct sockaddr *)src,
-				inp->inp_socket);
+			    inp->inp_socket);
 			rcvcnt++;
 
 			/*
@@ -598,24 +582,20 @@ udp4_realinput(struct sockaddr_in *src, struct sockaddr_in *dst,
 
 #ifdef IPSEC
 		/* Handle ESP over UDP */
-		if (inp->inp_flags & INP_ESPINUDP_ALL) {
-			struct sockaddr *sa = (struct sockaddr *)src;
-
-			switch(udp4_espinudp(mp, off, sa, inp->inp_socket)) {
-			case -1: 	/* Error, m was freeed */
+		if (inp->inp_flags & INP_ESPINUDP) {
+			switch (udp4_espinudp(mp, off, inp->inp_socket)) {
+			case -1: /* Error, m was freed */
 				rcvcnt = -1;
 				goto bad;
-				break;
 
-			case 1:		/* ESP over UDP */
+			case 1: /* ESP over UDP */
 				rcvcnt++;
 				goto bad;
-				break;
 
-			case 0: 	/* plain UDP */
-			default: 	/* Unexpected */
-				/* 
-				 * Normal UDP processing will take place 
+			case 0: /* plain UDP */
+			default: /* Unexpected */
+				/*
+				 * Normal UDP processing will take place,
 				 * m may have changed.
 				 */
 				m = *mp;
@@ -660,27 +640,32 @@ udp_ctlinput(int cmd, const struct sockaddr *sa, void *v)
 	void (*notify)(struct inpcb *, int) = udp_notify;
 	int errno;
 
-	if (sa->sa_family != AF_INET
-	 || sa->sa_len != sizeof(struct sockaddr_in))
+	if (sa->sa_family != AF_INET ||
+	    sa->sa_len != sizeof(struct sockaddr_in))
 		return NULL;
 	if ((unsigned)cmd >= PRC_NCMDS)
 		return NULL;
+
 	errno = inetctlerrmap[cmd];
-	if (PRC_IS_REDIRECT(cmd))
-		notify = in_rtchange, ip = 0;
-	else if (cmd == PRC_HOSTDEAD)
-		ip = 0;
-	else if (errno == 0)
+	if (PRC_IS_REDIRECT(cmd)) {
+		notify = in_rtchange;
+		ip = NULL;
+	} else if (cmd == PRC_HOSTDEAD) {
+		ip = NULL;
+	} else if (errno == 0) {
 		return NULL;
+	}
+
 	if (ip) {
 		uh = (struct udphdr *)((char *)ip + (ip->ip_hl << 2));
 		in_pcbnotify(&udbtable, satocsin(sa)->sin_addr, uh->uh_dport,
 		    ip->ip_src, uh->uh_sport, errno, notify);
-
 		/* XXX mapped address case */
-	} else
+	} else {
 		in_pcbnotifyall(&udbtable, satocsin(sa)->sin_addr, errno,
 		    notify);
+	}
+
 	return NULL;
 }
 
@@ -731,24 +716,19 @@ udp_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 
 			switch(optval) {
 			case 0:
-				inp->inp_flags &= ~INP_ESPINUDP_ALL;
+				inp->inp_flags &= ~INP_ESPINUDP;
 				break;
 
 			case UDP_ENCAP_ESPINUDP:
-				inp->inp_flags &= ~INP_ESPINUDP_ALL;
 				inp->inp_flags |= INP_ESPINUDP;
 				break;
 
-			case UDP_ENCAP_ESPINUDP_NON_IKE:
-				inp->inp_flags &= ~INP_ESPINUDP_ALL;
-				inp->inp_flags |= INP_ESPINUDP_NON_IKE;
-				break;
 			default:
 				error = EINVAL;
 				break;
 			}
 			break;
-		
+
 		default:
 			error = ENOPROTOOPT;
 			break;
@@ -783,7 +763,7 @@ udp_output(struct mbuf *m, struct inpcb *inp, struct mbuf *control,
 	 * for UDP and IP headers.
 	 */
 	M_PREPEND(m, sizeof(struct udpiphdr), M_DONTWAIT);
-	if (m == 0) {
+	if (m == NULL) {
 		error = ENOBUFS;
 		goto release;
 	}
@@ -842,7 +822,8 @@ udp_output(struct mbuf *m, struct inpcb *inp, struct mbuf *control,
 		m->m_pkthdr.csum_data = offsetof(struct udphdr, uh_sum);
 	} else
 		ui->ui_sum = 0;
-	((struct ip *)ui)->ip_len = htons(sizeof (struct udpiphdr) + len);
+
+	((struct ip *)ui)->ip_len = htons(sizeof(struct udpiphdr) + len);
 	((struct ip *)ui)->ip_ttl = inp->inp_ip.ip_ttl;	/* XXX */
 	((struct ip *)ui)->ip_tos = inp->inp_ip.ip_tos;	/* XXX */
 	UDP_STATINC(UDP_STAT_OPACKETS);
@@ -1236,19 +1217,23 @@ udp_statinc(u_int stat)
 
 #if defined(INET) && defined(IPSEC)
 /*
+ * Handle ESP-in-UDP packets (RFC3948).
+ *
+ * We need to distinguish between ESP packets and IKE packets. We do so by
+ * looking at the Non-ESP marker. If IKE, we process the UDP packet as usual.
+ * Otherwise, ESP, we invoke IPsec.
+ *
  * Returns:
- * 1 if the packet was processed
- * 0 if normal UDP processing should take place
- * -1 if an error occurent and m was freed
+ *     1 if the packet was processed
+ *     0 if normal UDP processing should take place
+ *    -1 if an error occurred and m was freed
  */
 static int
-udp4_espinudp(struct mbuf **mp, int off, struct sockaddr *src,
-    struct socket *so)
+udp4_espinudp(struct mbuf **mp, int off, struct socket *so)
 {
+	const size_t skip = sizeof(struct udphdr);
 	size_t len;
-	void *data;
-	struct inpcb *inp;
-	size_t skip = 0;
+	uint8_t *data;
 	size_t minlen;
 	size_t iphdrlen;
 	struct ip *ip;
@@ -1256,69 +1241,48 @@ udp4_espinudp(struct mbuf **mp, int off, struct sockaddr *src,
 	struct udphdr *udphdr;
 	u_int16_t sport, dport;
 	struct mbuf *m = *mp;
+	uint32_t *marker;
 
-	/*
-	 * Collapse the mbuf chain if the first mbuf is too short
-	 * The longest case is: UDP + non ESP marker + ESP
-	 */
-	minlen = off + sizeof(u_int64_t) + sizeof(struct esp);
+	minlen = off + sizeof(struct esp);
 	if (minlen > m->m_pkthdr.len)
 		minlen = m->m_pkthdr.len;
 
 	if (m->m_len < minlen) {
 		if ((*mp = m_pullup(m, minlen)) == NULL) {
-			printf("udp4_espinudp: m_pullup failed\n");
 			return -1;
 		}
 		m = *mp;
 	}
 
 	len = m->m_len - off;
-	data = mtod(m, char *) + off;
-	inp = sotoinpcb(so);
+	data = mtod(m, uint8_t *) + off;
 
-	/* Ignore keepalive packets */
-	if ((len == 1) && (*(unsigned char *)data == 0xff)) {
-		m_free(m);
-		*mp = NULL; /* avoid any further processiong by caller ... */
+	/* Ignore keepalive packets. */
+	if ((len == 1) && (*data == 0xff)) {
+		m_freem(m);
+		*mp = NULL; /* avoid any further processing by caller */
 		return 1;
 	}
 
-	/*
-	 * Check that the payload is long enough to hold
-	 * an ESP header and compute the length of encapsulation
-	 * header to remove
-	 */
-	if (inp->inp_flags & INP_ESPINUDP) {
-		u_int32_t *st = (u_int32_t *)data;
-
-		if ((len <= sizeof(struct esp)) || (*st == 0))
-			return 0; /* Normal UDP processing */
-
-		skip = sizeof(struct udphdr);
-	}
-
-	if (inp->inp_flags & INP_ESPINUDP_NON_IKE) {
-		u_int32_t *st = (u_int32_t *)data;
-
-		if ((len <= sizeof(u_int64_t) + sizeof(struct esp))
-		    || ((st[0] | st[1]) != 0))
-			return 0; /* Normal UDP processing */
-
-		skip = sizeof(struct udphdr) + sizeof(u_int64_t);
-	}
+	/* Handle Non-ESP marker (32bit). If zero, then IKE. */
+	marker = (uint32_t *)data;
+	if (len <= sizeof(uint32_t))
+		return 0;
+	if (marker[0] == 0)
+		return 0;
 
 	/*
-	 * Get the UDP ports. They are handled in network 
-	 * order everywhere in IPSEC_NAT_T code.
+	 * Get the UDP ports. They are handled in network order
+	 * everywhere in the IPSEC_NAT_T code.
 	 */
 	udphdr = (struct udphdr *)((char *)data - skip);
 	sport = udphdr->uh_sport;
 	dport = udphdr->uh_dport;
 
 	/*
-	 * Remove the UDP header (and possibly the non ESP marker)
-	 * IP header lendth is iphdrlen
+	 * Remove the UDP header, plus a possible marker. IP header
+	 * length is iphdrlen.
+	 *
 	 * Before:
 	 *   <--- off --->
 	 *   +----+------+-----+
@@ -1341,16 +1305,14 @@ udp4_espinudp(struct mbuf **mp, int off, struct sockaddr *src,
 
 	/*
 	 * We have modified the packet - it is now ESP, so we should not
-	 * return to UDP processing ... 
+	 * return to UDP processing.
 	 *
-	 * Add a PACKET_TAG_IPSEC_NAT_T_PORT tag to remember
-	 * the source UDP port. This is required if we want
-	 * to select the right SPD for multiple hosts behind 
-	 * same NAT 
+	 * Add a PACKET_TAG_IPSEC_NAT_T_PORTS tag to remember the source
+	 * UDP port. This is required if we want to select the right SPD
+	 * for multiple hosts behind same NAT.
 	 */
 	if ((tag = m_tag_get(PACKET_TAG_IPSEC_NAT_T_PORTS,
 	    sizeof(sport) + sizeof(dport), M_DONTWAIT)) == NULL) {
-		printf("udp4_espinudp: m_tag_get failed\n");
 		m_freem(m);
 		return -1;
 	}
@@ -1360,7 +1322,8 @@ udp4_espinudp(struct mbuf **mp, int off, struct sockaddr *src,
 
 	if (ipsec_used)
 		ipsec4_common_input(m, iphdrlen, IPPROTO_ESP);
-	/* XXX: else */
+	else
+		m_freem(m);
 
 	/* We handled it, it shouldn't be handled by UDP */
 	*mp = NULL; /* avoid free by caller ... */

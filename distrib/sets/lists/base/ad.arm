@@ -1,20 +1,20 @@
-# $NetBSD: ad.arm,v 1.77 2015/07/03 15:11:04 matt Exp $
+# $NetBSD: ad.arm,v 1.79 2018/07/12 06:52:48 maxv Exp $
 ./libexec/ld.elf_so-oabi			base-sysutil-bin	compat,pic
 ./sbin/ldconfig					base-sysutil-root	pic,endian=1234
 ./usr/bin/fdformat				base-util-bin
 ./usr/lib/libarm.so				base-sys-shlib		pic,compatfile
 ./usr/lib/libarm.so.0				base-sys-shlib		pic,compatfile
 ./usr/lib/libarm.so.0.0				base-sys-shlib		pic,compatfile
-./usr/lib/libpmc.so				base-sys-shlib		pic,compatfile
-./usr/lib/libpmc.so.1				base-sys-shlib		pic,compatfile
-./usr/lib/libpmc.so.1.0				base-sys-shlib		pic,compatfile
+./usr/lib/libpmc.so				base-obsolete		obsolete
+./usr/lib/libpmc.so.1				base-obsolete		obsolete
+./usr/lib/libpmc.so.1.0				base-obsolete		obsolete
 ./usr/lib/oabi/libc_vfp.so.0			base-compat-shlib	compat,pic
 ./usr/lib/oabi/libc_vfp.so.0.0			base-compat-shlib	compat,pic
 ./usr/libexec/ld.elf_so-oabi			base-sysutil-bin	compat,pic
 ./usr/libexec/ld.so				base-sys-shlib		pic,endian=1234
 ./usr/mdec/BBBB					base-obsolete		obsolete
-./usr/mdec/boot26				base-sysutil-bin	endian=1234,!eabi
-./usr/mdec/boot26,ffa				base-sysutil-bin	endian=1234,!eabi
+./usr/mdec/boot26				base-obsolete		obsolete
+./usr/mdec/boot26,ffa				base-obsolete		obsolete
 ./usr/mdec/boot32				base-sysutil-bin	endian=1234,!eabi
 ./usr/mdec/boot32,ffa				base-sysutil-bin	endian=1234,!eabi
 ./usr/mdec/bootimx23				base-sysutil-bin	endian=1234

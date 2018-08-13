@@ -1,4 +1,4 @@
-/*	$NetBSD: ieee80211_var.h,v 1.31 2016/09/27 20:20:06 christos Exp $	*/
+/*	$NetBSD: ieee80211_var.h,v 1.33 2018/05/08 07:02:07 maxv Exp $	*/
 /*-
  * Copyright (c) 2001 Atsushi Onoe
  * Copyright (c) 2002-2005 Sam Leffler, Errno Consulting
@@ -359,6 +359,7 @@ ieee80211_anyhdrspace(struct ieee80211com *ic, const void *data)
 	return size;
 }
 
+/* Flags set in ic_debug, used to print debug messages */
 #define	IEEE80211_MSG_DEBUG	0x40000000	/* IFF_DEBUG equivalent */
 #define	IEEE80211_MSG_DUMPPKTS	0x20000000	/* IFF_LINK2 equivalant */
 #define	IEEE80211_MSG_CRYPTO	0x10000000	/* crypto work */
@@ -384,7 +385,6 @@ ieee80211_anyhdrspace(struct ieee80211com *ic, const void *data)
 #define	IEEE80211_MSG_DOTH	0x00000100	/* 802.11h support */
 #define	IEEE80211_MSG_INACT	0x00000080	/* inactivity handling */
 #define	IEEE80211_MSG_ROAM	0x00000040	/* sta-mode roaming */
-
 #define	IEEE80211_MSG_ANY	0xffffffff	/* anything */
 
 #ifdef IEEE80211_DEBUG
@@ -401,15 +401,9 @@ ieee80211_anyhdrspace(struct ieee80211com *ic, const void *data)
 	if (ieee80211_msg(_ic, _m))					\
 		ieee80211_note_mac(_ic, _mac, _fmt, __VA_ARGS__);	\
 } while (0)
-#define	IEEE80211_NOTE_FRAME(_ic, _m, _wh, _fmt, ...) do {		\
-	if (ieee80211_msg(_ic, _m))					\
-		ieee80211_note_frame(_ic, _wh, _fmt, __VA_ARGS__);	\
-} while (0)
 void	ieee80211_note(struct ieee80211com *ic, const char *fmt, ...);
 void	ieee80211_note_mac(struct ieee80211com *ic,
 		const u_int8_t mac[IEEE80211_ADDR_LEN], const char *fmt, ...);
-void	ieee80211_note_frame(struct ieee80211com *ic,
-		const struct ieee80211_frame *wh, const char *fmt, ...);
 #define	ieee80211_msg_debug(_ic) \
 	((_ic)->ic_debug & IEEE80211_MSG_DEBUG)
 #define	ieee80211_msg_dumppkts(_ic) \
@@ -429,7 +423,6 @@ void	ieee80211_note_frame(struct ieee80211com *ic,
 #else
 #define	IEEE80211_DPRINTF(_ic, _m, _fmt, ...)
 #define	IEEE80211_NOTE(_ic, _m, _ni, _fmt, ...)
-#define	IEEE80211_NOTE_FRAME(_ic, _m, _wh, _fmt, ...)
 #define	IEEE80211_NOTE_MAC(_ic, _m, _mac, _fmt, ...)
 #define	ieee80211_msg_dumppkts(_ic)	0
 #define	ieee80211_msg(_ic, _m)		0

@@ -1,4 +1,4 @@
-/*	$NetBSD: in6_gif.c,v 1.89 2017/11/27 05:05:51 knakahara Exp $	*/
+/*	$NetBSD: in6_gif.c,v 1.93 2018/05/01 07:21:39 maxv Exp $	*/
 /*	$KAME: in6_gif.c,v 1.62 2001/07/29 04:27:25 itojun Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6_gif.c,v 1.89 2017/11/27 05:05:51 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6_gif.c,v 1.93 2018/05/01 07:21:39 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -68,8 +68,6 @@ __KERNEL_RCSID(0, "$NetBSD: in6_gif.c,v 1.89 2017/11/27 05:05:51 knakahara Exp $
 #include <netinet/ip_ecn.h>
 
 #include <net/if_gif.h>
-
-#include <net/net_osdep.h>
 
 static int gif_validate6(const struct ip6_hdr *, struct gif_variant *,
 	struct ifnet *);
@@ -182,11 +180,11 @@ in6_gif_output(struct gif_variant *var, int family, struct mbuf *m)
 
 	sc = ifp->if_softc;
 	gro = percpu_getref(sc->gif_ro_percpu);
-	mutex_enter(&gro->gr_lock);
+	mutex_enter(gro->gr_lock);
 	ro = &gro->gr_ro;
 	rt = rtcache_lookup(ro, var->gv_pdst);
 	if (rt == NULL) {
-		mutex_exit(&gro->gr_lock);
+		mutex_exit(gro->gr_lock);
 		percpu_putref(sc->gif_ro_percpu);
 		m_freem(m);
 		return ENETUNREACH;
@@ -196,7 +194,7 @@ in6_gif_output(struct gif_variant *var, int family, struct mbuf *m)
 	if (rt->rt_ifp == ifp) {
 		rtcache_unref(rt, ro);
 		rtcache_free(ro);
-		mutex_exit(&gro->gr_lock);
+		mutex_exit(gro->gr_lock);
 		percpu_putref(sc->gif_ro_percpu);
 		m_freem(m);
 		return ENETUNREACH;	/* XXX */
@@ -213,7 +211,7 @@ in6_gif_output(struct gif_variant *var, int family, struct mbuf *m)
 #else
 	error = ip6_output(m, 0, ro, 0, NULL, NULL, NULL);
 #endif
-	mutex_exit(&gro->gr_lock);
+	mutex_exit(gro->gr_lock);
 	percpu_putref(sc->gif_ro_percpu);
 	return (error);
 }
@@ -322,16 +320,14 @@ gif_validate6(const struct ip6_hdr *ip6, struct gif_variant *var,
 	struct ifnet *ifp)
 {
 	const struct sockaddr_in6 *src, *dst;
+	int ret;
 
 	src = satosin6(var->gv_psrc);
 	dst = satosin6(var->gv_pdst);
 
-	/* check for address match */
-	if (!IN6_ARE_ADDR_EQUAL(&src->sin6_addr, &ip6->ip6_dst) ||
-	    !IN6_ARE_ADDR_EQUAL(&dst->sin6_addr, &ip6->ip6_src))
+	ret = in6_tunnel_validate(ip6, &src->sin6_addr, &dst->sin6_addr);
+	if (ret == 0)
 		return 0;
-
-	/* martian filters on outer source - done in ip6_input */
 
 	/* ingress filters on outer source */
 	if ((var->gv_softc->gif_if.if_flags & IFF_LINK2) == 0 && ifp) {
@@ -359,7 +355,7 @@ gif_validate6(const struct ip6_hdr *ip6, struct gif_variant *var,
 		rt_unref(rt);
 	}
 
-	return 128 * 2;
+	return ret;
 }
 
 #ifdef GIF_ENCAPCHECK
@@ -461,9 +457,11 @@ in6_gif_ctlinput(int cmd, const struct sockaddr *sa, void *d, void *eparg)
 	if (!ip6)
 		return NULL;
 
-	if ((sc->gif_if.if_flags & IFF_RUNNING) == 0)
-		return NULL;
 	var = gif_getref_variant(sc, &psref);
+	if (var->gv_psrc == NULL || var->gv_pdst == NULL) {
+		gif_putref_variant(var, &psref);
+		return NULL;
+	}
 	if (var->gv_psrc->sa_family != AF_INET6) {
 		gif_putref_variant(var, &psref);
 		return NULL;

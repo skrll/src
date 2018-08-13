@@ -1,4 +1,4 @@
-/*	$NetBSD: freebsd_exec.c,v 1.39 2017/08/08 08:04:06 maxv Exp $	*/
+/*	$NetBSD: freebsd_exec.c,v 1.41 2018/05/06 13:40:50 kamil Exp $	*/
 
 /*
  * Copyright (c) 1993, 1994 Christopher G. Demetriou
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: freebsd_exec.c,v 1.39 2017/08/08 08:04:06 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: freebsd_exec.c,v 1.41 2018/05/06 13:40:50 kamil Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_syscall_debug.h"
@@ -79,7 +79,6 @@ struct emul emul_freebsd = {
 #endif
 	.e_sendsig =		freebsd_sendsig,
 	.e_trapsignal =		trapsignal,
-	.e_tracesig =		NULL,
 	.e_sigcode =		freebsd_sigcode,
 	.e_esigcode =		freebsd_esigcode,
 	.e_sigobject =		&emul_freebsd_object,
@@ -95,7 +94,6 @@ struct emul emul_freebsd = {
 	.e_syscall_intern =	syscall,
 #endif
 	.e_sysctlovly =		NULL,
-	.e_fault =		NULL,
 	.e_vm_default_addr =	uvm_default_mapaddr,
 	.e_usertrap =		NULL,
 	.e_ucsize =		0,

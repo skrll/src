@@ -1,4 +1,4 @@
-/*	$NetBSD: mapper.c,v 1.25 2007/12/15 16:32:07 perry Exp $	*/
+/*	$NetBSD: mapper.c,v 1.27 2018/02/04 09:01:13 mrg Exp $	*/
 
 /* Mapper for connections between MRouteD multicast routers.
  * Written by Pavel Curtis <Pavel@PARC.Xerox.Com>
@@ -89,7 +89,6 @@ vifi_t  numvifs;		/* to keep loader happy */
 Node *			find_node(u_int32_t addr, Node **ptr);
 Interface *		find_interface(u_int32_t addr, Node *node);
 Neighbor *		find_neighbor(u_int32_t addr, Node *node);
-int			main(int argc, char *argv[]);
 void			ask(u_int32_t dst);
 void			ask2(u_int32_t dst);
 int			retry_requests(Node *node);
@@ -496,7 +495,7 @@ void accept_neighbors2(u_int32_t src, u_int32_t dst, u_char *p, int datalen,
 		    for (nb_n = old_neighbors; nb_n; nb_n = nb_n->next)
 			if (nb_i->addr == nb_n->addr) {
 			    if (nb_i->metric != nb_n->metric
-				|| nb_i->threshold != nb_i->threshold)
+				|| nb_i->threshold != nb_n->threshold)
 				logit(LOG_WARNING, 0,
 				    "inconsistent %s for neighbor %s of %s",
 				    "metric/threshold",

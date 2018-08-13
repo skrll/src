@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ppp.c,v 1.159 2017/09/17 20:39:04 christos Exp $	*/
+/*	$NetBSD: if_ppp.c,v 1.161 2018/06/26 06:48:02 msaitoh Exp $	*/
 /*	Id: if_ppp.c,v 1.6 1997/03/04 03:33:00 paulus Exp 	*/
 
 /*
@@ -102,7 +102,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ppp.c,v 1.159 2017/09/17 20:39:04 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ppp.c,v 1.161 2018/06/26 06:48:02 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "ppp.h"
@@ -139,9 +139,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_ppp.c,v 1.159 2017/09/17 20:39:04 christos Exp $"
 #include <net/if_types.h>
 #include <net/netisr.h>
 #include <net/route.h>
-#ifdef PPP_FILTER
-#include <net/bpf.h>
-#endif
 
 #include <netinet/in.h>
 #include <netinet/in_systm.h>
@@ -151,7 +148,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_ppp.c,v 1.159 2017/09/17 20:39:04 christos Exp $"
 #endif
 
 #include <net/bpf.h>
-
 #include <net/slip.h>
 
 #ifdef VJC
@@ -1012,7 +1008,7 @@ pppoutput(struct ifnet *ifp, struct mbuf *m0, const struct sockaddr *dst,
 	/*
 	 * See if bpf wants to look at the packet.
 	 */
-	bpf_mtap(&sc->sc_if, m0);
+	bpf_mtap(&sc->sc_if, m0, BPF_D_OUT);
 
 	/*
 	 * Put the packet on the appropriate queue.
@@ -1663,7 +1659,7 @@ ppp_inproc(struct ppp_softc *sc, struct mbuf *m)
 	}
 
 	/* See if bpf wants to look at the packet. */
-	bpf_mtap(&sc->sc_if, m);
+	bpf_mtap(&sc->sc_if, m, BPF_D_IN);
 
 	switch (proto) {
 #ifdef INET

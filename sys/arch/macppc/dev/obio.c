@@ -1,4 +1,4 @@
-/*	$NetBSD: obio.c,v 1.41 2014/11/11 23:08:37 macallan Exp $	*/
+/*	$NetBSD: obio.c,v 1.46 2018/06/08 23:39:31 macallan Exp $	*/
 
 /*-
  * Copyright (C) 1998	Internet Research Institute, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: obio.c,v 1.41 2014/11/11 23:08:37 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: obio.c,v 1.46 2018/06/08 23:39:31 macallan Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -154,10 +154,10 @@ obio_attach(device_t parent, device_t self, void *aux)
 	case PCI_PRODUCT_APPLE_PANGEA_MACIO:
 	case PCI_PRODUCT_APPLE_INTREPID:
 		node = pcidev_to_ofdev(pa->pa_pc, pa->pa_tag);
-		if (node == -1)
+		if (node == -1) 
 			node = OF_finddevice("mac-io");
-			if (node == -1)
-				node = OF_finddevice("/pci/mac-io");
+		if (node == -1)
+			node = OF_finddevice("/pci/mac-io");
 		break;
 	case PCI_PRODUCT_APPLE_K2:
 	case PCI_PRODUCT_APPLE_SHASTA:
@@ -337,6 +337,15 @@ uint8_t obio_read_1(int offset)
 	return bus_space_read_1(obio0->sc_tag, obio0->sc_bh, offset);
 }
 
+int
+obio_space_map(bus_addr_t addr, bus_size_t size, bus_space_handle_t *bh)
+{
+	if (obio0 == NULL)
+		return 0xff;
+	return bus_space_subregion(obio0->sc_tag, obio0->sc_bh,
+	    addr & 0xfffff, size, bh);
+}
+	
 #ifdef OBIO_SPEED_CONTROL
 
 static void
@@ -416,7 +425,8 @@ obio_setup_gpios(struct obio_softc *sc, int node)
 	if (hiclock != 0)
 		sc->sc_spd_hi = (hiclock + 500000) / 1000000;
 	printf("hiclock: %d\n", sc->sc_spd_hi);
-	
+	if (use_dfs) sc->sc_spd_lo = sc->sc_spd_hi / 2;
+
 	sysctl_node = NULL;
 
 	if (sysctl_createv(NULL, 0, NULL, 

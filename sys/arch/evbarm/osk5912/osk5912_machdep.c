@@ -1,4 +1,4 @@
-/*	$NetBSD: osk5912_machdep.c,v 1.16 2016/12/22 14:47:56 cherry Exp $ */
+/*	$NetBSD: osk5912_machdep.c,v 1.18 2018/07/31 06:46:27 skrll Exp $ */
 
 /*
  * Machine dependent functions for kernel setup for TI OSK5912 board.
@@ -99,8 +99,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: osk5912_machdep.c,v 1.16 2016/12/22 14:47:56 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: osk5912_machdep.c,v 1.18 2018/07/31 06:46:27 skrll Exp $");
 
+#include "opt_arm_debug.h"
 #include "opt_machdep.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -796,7 +797,7 @@ setup_real_page_tables(void)
 
 	printf(mem_fmt, "SDRAM", physical_start, physical_end-1,
 	    KERN_PHYSTOV(physical_start), KERN_PHYSTOV(physical_end-1),
-	    physmem);
+	    (int)physmem);
 	printf(mem_fmt, "text section",
 	       KERN_VTOPHYS(KERNEL_BASE), KERN_VTOPHYS(etext-1),
 	       (vaddr_t)KERNEL_BASE, (vaddr_t)etext-1,

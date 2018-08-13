@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.133 2017/09/14 07:58:42 mrg Exp $
+# $NetBSD: GENERIC,v 1.135 2018/08/01 20:04:12 maxv Exp $
 #
 # GENERIC machine description file
 # 
@@ -31,8 +31,8 @@ maxusers	32
 options 	RTC_OFFSET=0	# hardware clock is this many mins. west of GMT
 #options 	NTP		# NTP phase/frequency locked loop
 
-# Enable experimental buffer queue strategy for better responsiveness under 
-# high disk I/O load. Use it with caution - it's not proven to be stable yet.
+# Alternate buffer queue strategies for better responsiveness under high
+# disk I/O load.
 #options 	BUFQ_READPRIO
 #options 	BUFQ_PRIOCSCAN
 
@@ -289,8 +289,7 @@ pseudo-device   accf_http		# "httpready" accept filter
 pseudo-device	pty			# pseudo-terminals
 pseudo-device	clockctl		# user control of clock subsystem
 pseudo-device	ksyms			# /dev/ksyms
-#pseudo-device	pf			# PF packet filter
-#pseudo-device	pflog			# PF log if
+#pseudo-device	npf			# NPF packet filter
 
 # wscons pseudo-devices
 pseudo-device	wsmux			# mouse & keyboard multiplexor

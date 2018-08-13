@@ -1,6 +1,6 @@
-/*	$NetBSD: cpu.h,v 1.83 2017/12/02 21:04:59 christos Exp $	*/
+/*	$NetBSD: cpu.h,v 1.96 2018/07/16 07:07:30 pgoyette Exp $	*/
 
-/*-
+/*
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
  *
@@ -47,6 +47,7 @@
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #if defined(_KERNEL_OPT)
 #include "opt_xen.h"
+#include "opt_svs.h"
 #ifdef i386
 #include "opt_user_ldt.h"
 #endif
@@ -83,6 +84,15 @@ struct pmap;
 #define	NIOPORTS	1024		/* # of ports we allow to be mapped */
 #define	IOMAPSIZE	(NIOPORTS / 8)	/* I/O bitmap size in bytes */
 
+struct cpu_tss {
+#ifdef i386
+	struct i386tss dblflt_tss;
+	struct i386tss ddbipi_tss;
+#endif
+	struct i386tss tss;
+	uint8_t iomap[IOMAPSIZE];
+} __packed;
+
 /*
  * a bunch of this belongs in cpuvar.h; move it later..
  */
@@ -101,7 +111,7 @@ struct cpu_info {
 	struct lwp *ci_fpcurlwp;	/* current owner of the FPU */
 	cpuid_t ci_cpuid;		/* our CPU ID */
 	uint32_t ci_acpiid;		/* our ACPI/MADT ID */
-	uint32_t ci_initapicid;		/* our intitial APIC ID */
+	uint32_t ci_initapicid;		/* our initial APIC ID */
 
 	/*
 	 * Private members.
@@ -117,23 +127,10 @@ struct cpu_info {
 	uint64_t ci_scratch;
 	uintptr_t ci_pmap_data[128 / sizeof(uintptr_t)];
 
-#ifdef XEN
-	u_long ci_evtmask[NR_EVENT_CHANNELS]; /* events allowed on this CPU */
-#endif
 	struct intrsource *ci_isources[MAX_INTR_SOURCES];
 
 	volatile int	ci_mtx_count;	/* Negative count of spin mutexes */
 	volatile int	ci_mtx_oldspl;	/* Old SPL at this ci_idepth */
-
-#ifndef __HAVE_DIRECT_MAP
-#define VPAGE_SRC 0
-#define VPAGE_DST 1
-#define VPAGE_ZER 2
-#define VPAGE_PTP 3
-#define VPAGE_MAX 4
-	vaddr_t		vpage[VPAGE_MAX];
-	pt_entry_t	*vpage_pte[VPAGE_MAX];
-#endif
 
 	/* The following must be aligned for cmpxchg8b. */
 	struct {
@@ -157,7 +154,7 @@ struct cpu_info {
 	uint32_t	ci_max_ext_cpuid; /* cpuid.80000000:%eax */
 	volatile uint32_t	ci_lapic_counter;
 
-	uint32_t	ci_feat_val[7]; /* X86 CPUID feature bits */
+	uint32_t	ci_feat_val[8]; /* X86 CPUID feature bits */
 			/* [0] basic features cpuid.1:%edx
 			 * [1] basic features cpuid.1:%ecx (CPUID2_xxx bits)
 			 * [2] extended features cpuid:80000001:%edx
@@ -165,6 +162,7 @@ struct cpu_info {
 			 * [4] VIA padlock features
 			 * [5] structured extended features cpuid.7:%ebx
 			 * [6] structured extended features cpuid.7:%ecx
+			 * [7] structured extended features cpuid.7:%edx
 			 */
 	
 	const struct cpu_functions *ci_func;  /* start/stop functions */
@@ -173,48 +171,16 @@ struct cpu_info {
 	u_int ci_cflush_lsize;	/* CLFLUSH insn line size */
 	struct x86_cache_info ci_cinfo[CAI_COUNT];
 
-	union descriptor *ci_gdt;
-
-#ifdef i386
-	struct i386tss	ci_doubleflt_tss;
-	struct i386tss	ci_ddbipi_tss;
-#endif
-
-#ifdef PAE
-	uint32_t	ci_pae_l3_pdirpa; /* PA of L3 PD */
-	pd_entry_t *	ci_pae_l3_pdir; /* VA pointer to L3 PD */
-#endif
-
-#if defined(XEN) && (defined(PAE) || defined(__x86_64__))
-	/* Currently active user PGD (can't use rcr3() with Xen) */
-	pd_entry_t *	ci_kpm_pdir;	/* per-cpu PMD (va) */
-	paddr_t		ci_kpm_pdirpa;  /* per-cpu PMD (pa) */
-	kmutex_t	ci_kpm_mtx;
-#if defined(__x86_64__)
-	/* per-cpu version of normal_pdes */
-	pd_entry_t *	ci_normal_pdes[3]; /* Ok to hardcode. only for x86_64 && XEN */
-	paddr_t		ci_xen_current_user_pgd;
-#endif /* __x86_64__ */
-#endif /* XEN et.al */
-
-#ifdef XEN
-	size_t		ci_xpq_idx;
-#endif
-
-#ifndef XEN
-	struct evcnt ci_ipi_events[X86_NIPI];
-#else   /* XEN */
-	struct evcnt ci_ipi_events[XEN_NIPIS];
-	evtchn_port_t ci_ipi_evtchn;
-#endif  /* XEN */
-
 	device_t	ci_frequency;	/* Frequency scaling technology */
 	device_t	ci_padlock;	/* VIA PadLock private storage */
 	device_t	ci_temperature;	/* Intel coretemp(4) or equivalent */
 	device_t	ci_vm;		/* Virtual machine guest driver */
 
-	struct i386tss	ci_tss;		/* Per-cpu TSS; shared among LWPs */
-	char		ci_iomap[IOMAPSIZE]; /* I/O Bitmap */
+	/*
+	 * Segmentation-related data.
+	 */
+	union descriptor *ci_gdt;
+	struct cpu_tss	*ci_tss;	/* Per-cpu TSSes; shared among LWPs */
 	int ci_tss_sel;			/* TSS selector of this cpu */
 
 	/*
@@ -242,6 +208,82 @@ struct cpu_info {
 	/* The following must be in a single cache line. */
 	int		ci_want_resched __aligned(64);
 	int		ci_padout __aligned(64);
+
+#ifndef __HAVE_DIRECT_MAP
+#define VPAGE_SRC 0
+#define VPAGE_DST 1
+#define VPAGE_ZER 2
+#define VPAGE_PTP 3
+#define VPAGE_MAX 4
+	vaddr_t		vpage[VPAGE_MAX];
+	pt_entry_t	*vpage_pte[VPAGE_MAX];
+#endif
+
+#ifdef PAE
+	uint32_t	ci_pae_l3_pdirpa; /* PA of L3 PD */
+	pd_entry_t *	ci_pae_l3_pdir; /* VA pointer to L3 PD */
+#endif
+
+#ifdef SVS
+	pd_entry_t *	ci_svs_updir;
+	paddr_t		ci_svs_updirpa;
+	paddr_t		ci_svs_kpdirpa;
+	kmutex_t	ci_svs_mtx;
+	pd_entry_t *	ci_svs_rsp0_pte;
+	vaddr_t		ci_svs_rsp0;
+	vaddr_t		ci_svs_ursp0;
+	vaddr_t		ci_svs_krsp0;
+	vaddr_t		ci_svs_utls;
+#endif
+
+#if defined(XEN)
+#if defined(PAE) || defined(__x86_64__)
+	/* Currently active user PGD (can't use rcr3() with Xen) */
+	pd_entry_t *	ci_kpm_pdir;	/* per-cpu PMD (va) */
+	paddr_t		ci_kpm_pdirpa;  /* per-cpu PMD (pa) */
+	kmutex_t	ci_kpm_mtx;
+#endif /* defined(PAE) || defined(__x86_64__) */
+
+#if defined(__x86_64__)
+	/* per-cpu version of normal_pdes */
+	pd_entry_t *	ci_normal_pdes[3]; /* Ok to hardcode. only for x86_64 && XEN */
+	paddr_t		ci_xen_current_user_pgd;
+#endif	/* defined(__x86_64__) */
+
+	u_long ci_evtmask[NR_EVENT_CHANNELS]; /* events allowed on this CPU */
+	struct evcnt ci_ipi_events[XEN_NIPIS];
+	evtchn_port_t ci_ipi_evtchn;
+	size_t		ci_xpq_idx;
+	/* Xen raw system time at which we last ran hardclock.  */
+	uint64_t	ci_xen_hardclock_systime_ns;
+
+	/*
+	 * Last TSC-adjusted local Xen system time we observed.  Used
+	 * to detect whether the Xen clock has gone backwards.
+	 */
+	uint64_t	ci_xen_last_systime_ns;
+
+	/*
+	 * Distance in nanoseconds from the local view of system time
+	 * to the global view of system time, if the local time is
+	 * behind the global time.
+	 */
+	uint64_t	ci_xen_systime_ns_skew;
+
+	/* Xen periodic timer interrupt handle.  */
+	struct intrhand	*ci_xen_timer_intrhand;
+
+	/* Event counters for various pathologies that might happen.  */
+	struct evcnt	ci_xen_cpu_tsc_backwards_evcnt;
+	struct evcnt	ci_xen_tsc_delta_negative_evcnt;
+	struct evcnt	ci_xen_raw_systime_wraparound_evcnt;
+	struct evcnt	ci_xen_raw_systime_backwards_evcnt;
+	struct evcnt	ci_xen_systime_backwards_hardclock_evcnt;
+	struct evcnt	ci_xen_missed_hardclock_evcnt;
+#else   /* defined(XEN) */
+	struct evcnt ci_ipi_events[X86_NIPI];
+#endif	/* defined(XEN) */
+
 };
 
 /*
@@ -264,7 +306,7 @@ struct cpu_info {
 /*
  * Processor flag notes: The "primary" CPU has certain MI-defined
  * roles (mostly relating to hardclock handling); we distinguish
- * betwen the processor which booted us, and the processor currently
+ * between the processor which booted us, and the processor currently
  * holding the "primary" role just to give us the flexibility later to
  * change primaries should we be sufficiently twisted.
  */
@@ -326,6 +368,10 @@ void cpu_init_msrs(struct cpu_info *, bool);
 void cpu_load_pmap(struct pmap *, struct pmap *);
 void cpu_broadcast_halt(void);
 void cpu_kick(struct cpu_info *);
+
+void cpu_pcpuarea_init(struct cpu_info *);
+void cpu_svs_init(struct cpu_info *);
+void cpu_speculation_init(struct cpu_info *);
 
 #define	curcpu()		x86_curcpu()
 #define	curlwp			x86_curlwp()
@@ -394,6 +440,7 @@ extern int x86_fpu_save;
 #define	FPU_SAVE_XSAVEOPT	3
 extern unsigned int x86_fpu_save_size;
 extern uint64_t x86_xsave_features;
+extern bool x86_fpu_eager;
 
 extern void (*x86_cpu_idle)(void);
 #define	cpu_idle() (*x86_cpu_idle)()
@@ -504,7 +551,7 @@ void x86_bus_space_mallocok(void);
 					 * 3: maximum frequency
 					 */
 #define	CPU_TMLR_FREQUENCY	12	/* int: current frequency */
-#define	CPU_TMLR_VOLTAGE	13	/* int: curret voltage */
+#define	CPU_TMLR_VOLTAGE	13	/* int: current voltage */
 #define	CPU_TMLR_PERCENTAGE	14	/* int: current clock percentage */
 #define	CPU_FPU_SAVE		15	/* int: FPU Instructions layout
 					 * to use this, CPU_OSFXSR must be true

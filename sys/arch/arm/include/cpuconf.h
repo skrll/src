@@ -1,4 +1,4 @@
-/*	$NetBSD: cpuconf.h,v 1.25 2015/07/08 15:18:04 skrll Exp $	*/
+/*	$NetBSD: cpuconf.h,v 1.27 2018/08/10 16:17:30 maxv Exp $	*/
 
 /*
  * Copyright (c) 2002 Wasabi Systems, Inc.
@@ -62,9 +62,7 @@
  * Step 1: Count the number of CPU types configured into the kernel.
  */
 #if defined(_KERNEL_OPT)
-#define	CPU_NTYPES	(defined(CPU_ARM2) + defined(CPU_ARM250) +	\
-			 defined(CPU_ARM3) +				\
-			 defined(CPU_ARM6) + defined(CPU_ARM7) +	\
+#define	CPU_NTYPES	(defined(CPU_ARM6) + defined(CPU_ARM7) +	\
 			 defined(CPU_ARM7TDMI) +			\
 			 defined(CPU_ARM8) + defined(CPU_ARM9) +	\
 			 defined(CPU_ARM9E) +				\
@@ -90,8 +88,7 @@
 /*
  * Step 2: Determine which ARM architecture versions are configured.
  */
-#if !defined(_KERNEL_OPT) ||						\
-    (defined(CPU_ARM2) || defined(CPU_ARM250) || defined(CPU_ARM3))
+#if !defined(_KERNEL_OPT)
 #define	ARM_ARCH_2	1
 #else
 #define	ARM_ARCH_2	0
@@ -175,8 +172,7 @@
  *
  *	ARM_MMU_V7		ARM v7 MMU.
  */
-#if !defined(_KERNEL_OPT) ||						\
-    (defined(CPU_ARM2) || defined(CPU_ARM250) || defined(CPU_ARM3))
+#if !defined(_KERNEL_OPT)
 #define	ARM_MMU_MEMC		1
 #else
 #define	ARM_MMU_MEMC		0
@@ -229,22 +225,29 @@
 #define	ARM_MMU_V7		0
 #endif
 
+#if !defined(_KERNEL_OPT) ||						\
+	 defined(CPU_ARMV8)
+#define	ARM_MMU_V8		1
+#else
+#define	ARM_MMU_V8		0
+#endif
+
 /*
  * Can we use the ASID support in armv6+ MMUs?
  */
 #if !defined(_LOCORE)
-#define	ARM_MMU_EXTENDED	((ARM_MMU_MEMC + ARM_MMU_GENERIC	\
-				  + ARM_MMU_SA1 + ARM_MMU_XSCALE	\
-				  + ARM_MMU_V6C) == 0			\
-				 && (ARM_MMU_V6N + ARM_MMU_V7) > 0)
+#define	ARM_MMU_EXTENDED						\
+    ((ARM_MMU_MEMC + ARM_MMU_GENERIC + ARM_MMU_SA1 + ARM_MMU_XSCALE +	\
+     ARM_MMU_V6C) == 0 &&						\
+    (ARM_MMU_V6N + ARM_MMU_V7 + ARM_MMU_V8) > 0)
 #if ARM_MMU_EXTENDED == 0
 #undef ARM_MMU_EXTENDED
 #endif
 #endif
 
-#define	ARM_NMMUS		(ARM_MMU_MEMC + ARM_MMU_GENERIC +	\
-				 ARM_MMU_SA1 + ARM_MMU_XSCALE +		\
-				 ARM_MMU_V6N + ARM_MMU_V6C + ARM_MMU_V7)
+#define	ARM_NMMUS							\
+    (ARM_MMU_MEMC + ARM_MMU_GENERIC + ARM_MMU_SA1 + ARM_MMU_XSCALE +	\
+     ARM_MMU_V6N + ARM_MMU_V6C + ARM_MMU_V7 + ARM_MMU_V8)
 #if ARM_NMMUS == 0
 #error ARM_NMMUS is 0
 #endif

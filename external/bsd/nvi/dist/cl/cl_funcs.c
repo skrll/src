@@ -1,4 +1,4 @@
-/*	$NetBSD: cl_funcs.c,v 1.7 2017/11/13 01:51:47 rin Exp $ */
+/*	$NetBSD: cl_funcs.c,v 1.9 2018/08/07 08:05:47 rin Exp $ */
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -16,7 +16,7 @@
 static const char sccsid[] = "Id: cl_funcs.c,v 10.72 2002/03/02 23:18:33 skimo Exp  (Berkeley) Date: 2002/03/02 23:18:33 ";
 #endif /* not lint */
 #else
-__RCSID("$NetBSD: cl_funcs.c,v 1.7 2017/11/13 01:51:47 rin Exp $");
+__RCSID("$NetBSD: cl_funcs.c,v 1.9 2018/08/07 08:05:47 rin Exp $");
 #endif
 
 #include <sys/types.h>
@@ -144,22 +144,20 @@ cl_attr(SCR *sp, scr_attr_t attribute, int on)
 	 * do this automatically -- so, this attribute isn't as controlled by
 	 * the higher level screen as closely as one might like.
 	 */
-	if (on) {
-		if (clp->ti_te != TI_SENT) {
-			clp->ti_te = TI_SENT;
-			if (clp->smcup == NULL)
-				(void)cl_getcap(sp, "smcup", &clp->smcup);
-			if (clp->smcup != NULL)
-				(void)tputs(clp->smcup, 1, cl_putchar);
-		}
-	} else
-		if (clp->ti_te != TE_SENT) {
+		if (on) {
+			if (clp->ti_te != TI_SENT) {
+				clp->ti_te = TI_SENT;
+				if (clp->smcup == NULL)
+					(void)cl_getcap(sp, "smcup", &clp->smcup);
+				if (clp->smcup != NULL)
+					(void)tputs(clp->smcup, 1, cl_putchar);
+			}
+		} else if (clp->ti_te != TE_SENT) {
 			clp->ti_te = TE_SENT;
 			if (clp->rmcup == NULL)
 				(void)cl_getcap(sp, "rmcup", &clp->rmcup);
 			if (clp->rmcup != NULL)
 				(void)tputs(clp->rmcup, 1, cl_putchar);
-			(void)fflush(stdout);
 		}
 		(void)fflush(stdout);
 		break;
@@ -466,6 +464,41 @@ cl_ex_adjust(SCR *sp, exadj_t action)
 	}
 	return (0);
 }
+
+#ifdef IMCTRL
+/*
+ * cl_imctrl --
+ *	Control the state of input method by using escape sequences compatible
+ *	to Tera Term and RLogin.
+ *
+ * PUBLIC: void cl_imctrl __P((SCR *, imctrl_t));
+ */
+void
+cl_imctrl(SCR *sp, imctrl_t action)
+{
+#define	TT_IM_OFF	"\033[<t"	/* TTIMEST */
+#define	TT_IM_RESTORE	"\033[<r"	/* TTIMERS */
+#define	TT_IM_SAVE	"\033[<s"	/* TTIMESV */
+
+	if (!O_ISSET(sp, O_IMCTRL) && action != IMCTRL_INIT)
+		return;
+
+	switch (action) {
+	case IMCTRL_INIT:
+		(void)printf(TT_IM_OFF TT_IM_SAVE);
+		break;
+	case IMCTRL_OFF:
+		(void)printf(TT_IM_SAVE TT_IM_OFF);
+		break;
+	case IMCTRL_ON:
+		(void)printf(TT_IM_RESTORE);
+		break;
+	default:
+		abort();
+	}
+	(void)fflush(stdout);
+}
+#endif
 
 /*
  * cl_insertln --

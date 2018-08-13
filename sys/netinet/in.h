@@ -1,4 +1,4 @@
-/*	$NetBSD: in.h,v 1.101 2017/08/10 04:31:58 ryo Exp $	*/
+/*	$NetBSD: in.h,v 1.106 2018/07/11 05:25:45 maxv Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1990, 1993
@@ -289,8 +289,10 @@ struct ip_opts {
 #define	IP_IPSEC_POLICY		22   /* struct; get/set security policy */
 #define	IP_RECVTTL		23   /* bool; receive IP TTL w/dgram */
 #define	IP_MINTTL		24   /* minimum TTL for packet or drop */
-#define	IP_PKTINFO		25   /* int; send interface and src addr */
-#define	IP_RECVPKTINFO		26   /* int; send interface and dst addr */
+#define	IP_PKTINFO		25   /* struct; set default src if/addr */
+#define	IP_RECVPKTINFO		26   /* int; receive dst if/addr w/dgram */
+
+#define IP_SENDSRCADDR IP_RECVDSTADDR /* FreeBSD compatibility */
 
 /*
  * Information sent in the control message of a datagram socket for
@@ -300,6 +302,8 @@ struct in_pktinfo {
 	struct in_addr	ipi_addr;	/* src/dst address */
 	unsigned int ipi_ifindex;	/* interface index */
 };
+
+#define ipi_spec_dst ipi_addr	/* Solaris/Linux compatibility */
 
 /*
  * Defaults and limits for options
@@ -446,9 +450,7 @@ struct ip_mreq {
 #define	IPCTL_FORWARDING	1	/* act as router */
 #define	IPCTL_SENDREDIRECTS	2	/* may send redirects when forwarding */
 #define	IPCTL_DEFTTL		3	/* default TTL */
-#ifdef notyet
-#define	IPCTL_DEFMTU		4	/* default MTU */
-#endif
+/* IPCTL_DEFMTU=4, never implemented */
 #define	IPCTL_FORWSRCRT		5	/* forward source-routed packets */
 #define	IPCTL_DIRECTEDBCAST	6	/* default broadcast behavior */
 #define	IPCTL_ALLOWSRCRT	7	/* allow/drop all source-routed pkts */
@@ -567,7 +569,6 @@ int	in_canforward(struct in_addr);
 int	cpu_in_cksum(struct mbuf *, int, int, uint32_t);
 int	in_cksum(struct mbuf *, int);
 int	in4_cksum(struct mbuf *, u_int8_t, int, int);
-void	in_delayed_cksum(struct mbuf *);
 int	in_localaddr(struct in_addr);
 void	in_socktrim(struct sockaddr_in *);
 
@@ -583,6 +584,9 @@ struct ip_moptions;
 struct in_ifaddr *in_selectsrc(struct sockaddr_in *,
 	struct route *, int, struct ip_moptions *, int *, struct psref *);
 
+struct ip;
+int in_tunnel_validate(const struct ip *, struct in_addr, struct in_addr);
+
 #define	in_hosteq(s,t)	((s).s_addr == (t).s_addr)
 #define	in_nullhost(x)	((x).s_addr == INADDR_ANY)
 
@@ -596,7 +600,7 @@ int sockaddr_in_cmp(const struct sockaddr *, const struct sockaddr *);
 const void *sockaddr_in_const_addr(const struct sockaddr *, socklen_t *);
 void *sockaddr_in_addr(struct sockaddr *, socklen_t *);
 
-static inline void
+static __inline void
 sockaddr_in_init1(struct sockaddr_in *sin, const struct in_addr *addr,
     in_port_t port)
 {
@@ -605,7 +609,7 @@ sockaddr_in_init1(struct sockaddr_in *sin, const struct in_addr *addr,
 	memset(sin->sin_zero, 0, sizeof(sin->sin_zero));
 }
 
-static inline void
+static __inline void
 sockaddr_in_init(struct sockaddr_in *sin, const struct in_addr *addr,
     in_port_t port)
 {
@@ -614,7 +618,7 @@ sockaddr_in_init(struct sockaddr_in *sin, const struct in_addr *addr,
 	sockaddr_in_init1(sin, addr, port);
 }
 
-static inline struct sockaddr *
+static __inline struct sockaddr *
 sockaddr_in_alloc(const struct in_addr *addr, in_port_t port, int flags)
 {
 	struct sockaddr *sa;

@@ -1,4 +1,4 @@
-/*	$NetBSD: biosdisk.h,v 1.8 2010/12/24 20:36:51 jakllsch Exp $	*/
+/*	$NetBSD: biosdisk.h,v 1.10 2018/04/02 09:44:18 nonaka Exp $	*/
 
 /*
  * Copyright (c) 1996
@@ -25,8 +25,28 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+struct biosdisk_partition {
+	daddr_t offset;
+	daddr_t size;
+	int     fstype;
+#ifdef EFIBOOT
+	const struct gpt_part {
+		const struct uuid *guid;
+		const char *name;
+	} *guid;
+	uint64_t attr;
+#endif
+};
+
 int biosdisk_strategy(void *, int, daddr_t, size_t, void *, size_t *);
 int biosdisk_open(struct open_file *, ...);
 int biosdisk_close(struct open_file *);
 int biosdisk_ioctl(struct open_file *, u_long, void *);
 int biosdisk_findpartition(int, daddr_t);
+int biosdisk_readpartition(int, struct biosdisk_partition **, int *);
+
+#if !defined(NO_GPT)
+struct uuid;
+bool guid_is_nil(const struct uuid *);
+bool guid_is_equal(const struct uuid *, const struct uuid *);
+#endif

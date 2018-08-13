@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_carp.c,v 1.94 2017/12/06 09:54:47 ozaki-r Exp $	*/
+/*	$NetBSD: ip_carp.c,v 1.99 2018/06/26 06:48:03 msaitoh Exp $	*/
 /*	$OpenBSD: ip_carp.c,v 1.113 2005/11/04 08:11:54 mcbride Exp $	*/
 
 /*
@@ -33,7 +33,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_carp.c,v 1.94 2017/12/06 09:54:47 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_carp.c,v 1.99 2018/06/26 06:48:03 msaitoh Exp $");
 
 /*
  * TODO:
@@ -201,7 +201,7 @@ static void	carp_setroute(struct carp_softc *, int);
 static void	carp_proto_input_c(struct mbuf *, struct carp_header *,
 		    sa_family_t);
 static void	carpdetach(struct carp_softc *);
-static int	carp_prepare_ad(struct mbuf *, struct carp_softc *,
+static void	carp_prepare_ad(struct mbuf *, struct carp_softc *,
 		    struct carp_header *);
 static void	carp_send_ad_all(void);
 static void	carp_send_ad(void *);
@@ -615,7 +615,7 @@ _carp6_proto_input(struct mbuf *m, int off, int proto)
 
 	/* verify that we have a complete carp packet */
 	len = m->m_len;
-	IP6_EXTHDR_GET(ch, struct carp_header *, m, off, sizeof(*ch));
+	M_REGION_GET(ch, struct carp_header *, m, off, sizeof(*ch));
 	if (ch == NULL) {
 		CARP_STATINC(CARP_STAT_BADLEN);
 		CARP_LOG(sc, ("packet size %u too small", len));
@@ -969,7 +969,7 @@ carp_ifdetach(struct ifnet *ifp)
 	}
 }
 
-static int
+static void
 carp_prepare_ad(struct mbuf *m, struct carp_softc *sc,
     struct carp_header *ch)
 {
@@ -983,8 +983,6 @@ carp_prepare_ad(struct mbuf *m, struct carp_softc *sc,
 	ch->carp_counter[1] = htonl(sc->sc_counter&0xffffffff);
 
 	carp_hmac_generate(sc, ch->carp_counter, ch->carp_md);
-
-	return (0);
 }
 
 static void
@@ -1110,8 +1108,7 @@ carp_send_ad(void *v)
 
 		ch_ptr = (struct carp_header *)(&ip[1]);
 		memcpy(ch_ptr, &ch, sizeof(ch));
-		if (carp_prepare_ad(m, sc, ch_ptr))
-			goto retry_later;
+		carp_prepare_ad(m, sc, ch_ptr);
 
 		m->m_data += sizeof(*ip);
 		ch_ptr->carp_cksum = carp_cksum(m, len - sizeof(*ip));
@@ -1200,8 +1197,7 @@ carp_send_ad(void *v)
 
 		ch_ptr = (struct carp_header *)(&ip6[1]);
 		memcpy(ch_ptr, &ch, sizeof(ch));
-		if (carp_prepare_ad(m, sc, ch_ptr))
-			goto retry_later;
+		carp_prepare_ad(m, sc, ch_ptr);
 
 		ch_ptr->carp_cksum = carp6_cksum(m, sizeof(*ip6),
 		    len - sizeof(*ip6));
@@ -1508,7 +1504,7 @@ carp_input(struct mbuf *m, u_int8_t *shost, u_int8_t *dhost, u_int16_t etype)
 
 	m_set_rcvif(m, ifp);
 
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_IN);
 	ifp->if_ipackets++;
 	ether_input(ifp, m);
 	return (0);
@@ -2316,7 +2312,11 @@ carp_ether_addmulti(struct carp_softc *sc, struct ifreq *ifr)
 	 * statement shouldn't fail.
 	 */
 	(void)ether_multiaddr(sa, addrlo, addrhi);
-	ETHER_LOOKUP_MULTI(addrlo, addrhi, &sc->sc_ac, mc->mc_enm);
+
+	ETHER_LOCK(&sc->sc_ac);
+	mc->mc_enm = ether_lookup_multi(addrlo, addrhi, &sc->sc_ac);
+	ETHER_UNLOCK(&sc->sc_ac);
+
 	memcpy(&mc->mc_addr, sa, sa->sa_len);
 	LIST_INSERT_HEAD(&sc->carp_mc_listhead, mc, mc_entries);
 
@@ -2355,7 +2355,10 @@ carp_ether_delmulti(struct carp_softc *sc, struct ifreq *ifr)
 	 */
 	if ((error = ether_multiaddr(sa, addrlo, addrhi)) != 0)
 		return (error);
-	ETHER_LOOKUP_MULTI(addrlo, addrhi, &sc->sc_ac, enm);
+
+	ETHER_LOCK(&sc->sc_ac);
+	enm = ether_lookup_multi(addrlo, addrhi, &sc->sc_ac);
+	ETHER_UNLOCK(&sc->sc_ac);
 	if (enm == NULL)
 		return (EINVAL);
 

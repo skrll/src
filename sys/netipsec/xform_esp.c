@@ -1,5 +1,5 @@
-/*	$NetBSD: xform_esp.c,v 1.72 2017/10/03 08:56:52 ozaki-r Exp $	*/
-/*	$FreeBSD: src/sys/netipsec/xform_esp.c,v 1.2.2.1 2003/01/24 05:11:36 sam Exp $	*/
+/*	$NetBSD: xform_esp.c,v 1.96 2018/05/31 06:14:18 maxv Exp $	*/
+/*	$FreeBSD: xform_esp.c,v 1.2.2.1 2003/01/24 05:11:36 sam Exp $	*/
 /*	$OpenBSD: ip_esp.c,v 1.69 2001/06/26 06:18:59 angelos Exp $ */
 
 /*
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xform_esp.c,v 1.72 2017/10/03 08:56:52 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xform_esp.c,v 1.96 2018/05/31 06:14:18 maxv Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -83,21 +83,12 @@ __KERNEL_RCSID(0, "$NetBSD: xform_esp.c,v 1.72 2017/10/03 08:56:52 ozaki-r Exp $
 #include <netipsec/key_debug.h>
 
 #include <opencrypto/cryptodev.h>
-#include <opencrypto/xform.h>
 
 percpu_t *espstat_percpu;
 
-int	esp_enable = 1;
+int esp_enable = 1;
 
-#ifdef __FreeBSD__
-SYSCTL_DECL(_net_inet_esp);
-SYSCTL_INT(_net_inet_esp, OID_AUTO,
-	esp_enable,	CTLFLAG_RW,	&esp_enable,	0, "");
-SYSCTL_STRUCT(_net_inet_esp, IPSECCTL_STATS,
-	stats,		CTLFLAG_RD,	&espstat,	espstat, "");
-#endif /* __FreeBSD__ */
-
-static	int esp_max_ivlen;		/* max iv length over all algorithms */
+static int esp_max_ivlen;		/* max iv length over all algorithms */
 
 static int esp_input_cb(struct cryptop *op);
 static int esp_output_cb(struct cryptop *crp);
@@ -150,25 +141,34 @@ esp_hdrsiz(const struct secasvar *sav)
 	if (sav != NULL) {
 		/*XXX not right for null algorithm--does it matter??*/
 		KASSERT(sav->tdb_encalgxform != NULL);
+
+		/*
+		 *   base header size
+		 * + iv length for CBC mode
+		 * + max pad length
+		 * + sizeof(esp trailer)
+		 * + icv length (if any).
+		 */
 		if (sav->flags & SADB_X_EXT_OLD)
 			size = sizeof(struct esp);
 		else
 			size = sizeof(struct newesp);
-		size += sav->tdb_encalgxform->ivsize + 9;
+		size += sav->tdb_encalgxform->ivsize + 9 +
+		    sizeof(struct esptail);
+
 		/*XXX need alg check???*/
 		if (sav->tdb_authalgxform != NULL && sav->replay)
-			size += ah_hdrsiz(sav);
+			size += ah_authsiz(sav);
 	} else {
 		/*
 		 *   base header size
 		 * + max iv length for CBC mode
 		 * + max pad length
-		 * + sizeof(pad length field)
-		 * + sizeof(next header field)
+		 * + sizeof(esp trailer)
 		 * + max icv supported.
 		 */
 		size = sizeof(struct newesp) + esp_max_ivlen + 9 +
-		    ah_hdrsiz(NULL);
+		    sizeof(struct esptail) + ah_authsiz(NULL);
 	}
 	return size;
 }
@@ -243,7 +243,7 @@ esp_init(struct secasvar *sav, const struct xformsw *xsp)
 			DPRINTF(("%s: invalid key length %u, must be either of "
 				"20, 28 or 36\n", __func__, keylen));
 			return EINVAL;
-                }
+		}
 
 		memset(&cria, 0, sizeof(cria));
 		cria.cri_alg = sav->tdb_authalgxform->type;
@@ -306,25 +306,27 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	const struct auth_hash *esph;
 	const struct enc_xform *espx;
 	struct tdb_crypto *tc;
-	int plen, alen, hlen, error;
+	int plen, alen, hlen, error, stat = ESP_STAT_CRYPTO;
 	struct newesp *esp;
-
 	struct cryptodesc *crde;
 	struct cryptop *crp;
 
-	IPSEC_SPLASSERT_SOFTNET(__func__);
-
 	KASSERT(sav != NULL);
 	KASSERT(sav->tdb_encalgxform != NULL);
-	KASSERTMSG((skip&3) == 0 && (m->m_pkthdr.len&3) == 0,
+	KASSERTMSG((skip & 3) == 0 && (m->m_pkthdr.len & 3) == 0,
 	    "misaligned packet, skip %u pkt len %u",
 	    skip, m->m_pkthdr.len);
 
 	/* XXX don't pullup, just copy header */
-	IP6_EXTHDR_GET(esp, struct newesp *, m, skip, sizeof(struct newesp));
+	M_REGION_GET(esp, struct newesp *, m, skip, sizeof(struct newesp));
+	if (esp == NULL) {
+		/* m already freed */
+		return ENOBUFS;
+	}
 
 	esph = sav->tdb_authalgxform;
 	espx = sav->tdb_encalgxform;
+	KASSERT(espx != NULL);
 
 	/* Determine the ESP header length */
 	if (sav->flags & SADB_X_EXT_OLD)
@@ -335,23 +337,23 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	alen = esph ? esph->authsize : 0;
 
 	/*
-	 * Verify payload length is multiple of encryption algorithm
-	 * block size.
+	 * Verify payload length is multiple of encryption algorithm block
+	 * size.
 	 *
-	 * NB: This works for the null algorithm because the blocksize
-	 *     is 4 and all packets must be 4-byte aligned regardless
-	 *     of the algorithm.
+	 * The payload must also be 4-byte-aligned. This is implicitly
+	 * verified here too, since the blocksize is always 4-byte-aligned.
 	 */
 	plen = m->m_pkthdr.len - (skip + hlen + alen);
+	KASSERT((espx->blocksize & 3) == 0);
 	if ((plen & (espx->blocksize - 1)) || (plen <= 0)) {
 		char buf[IPSEC_ADDRSTRLEN];
 		DPRINTF(("%s: payload of %d octets not a multiple of %d octets,"
 		    "  SA %s/%08lx\n", __func__, plen, espx->blocksize,
 		    ipsec_address(&sav->sah->saidx.dst, buf, sizeof(buf)),
 		    (u_long) ntohl(sav->spi)));
-		ESP_STATINC(ESP_STAT_BADILEN);
-		m_freem(m);
-		return EINVAL;
+		stat = ESP_STAT_BADILEN;
+		error = EINVAL;
+		goto out;
 	}
 
 	/*
@@ -360,17 +362,17 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	if (esph && sav->replay && !ipsec_chkreplay(ntohl(esp->esp_seq), sav)) {
 		char logbuf[IPSEC_LOGSASTRLEN];
 		DPRINTF(("%s: packet replay check for %s\n", __func__,
-		    ipsec_logsastr(sav, logbuf, sizeof(logbuf))));	/*XXX*/
-		ESP_STATINC(ESP_STAT_REPLAY);
-		m_freem(m);
-		return ENOBUFS;		/*XXX*/
+		    ipsec_logsastr(sav, logbuf, sizeof(logbuf))));
+		stat = ESP_STAT_REPLAY;
+		error = EACCES;
+		goto out;
 	}
 
 	/* Update the counters */
-	ESP_STATADD(ESP_STAT_IBYTES, m->m_pkthdr.len - skip - hlen - alen);
+	ESP_STATADD(ESP_STAT_IBYTES, plen);
 
 	/* Get crypto descriptors */
-	crp = crypto_getreq(esph && espx ? 2 : 1);
+	crp = crypto_getreq(esph ? 2 : 1);
 	if (crp == NULL) {
 		DPRINTF(("%s: failed to acquire crypto descriptors\n",
 		    __func__));
@@ -404,15 +406,15 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 
 		/* Authentication descriptor */
 		crda->crd_skip = skip;
-		if (espx && espx->type == CRYPTO_AES_GCM_16)
+		if (espx->type == CRYPTO_AES_GCM_16)
 			crda->crd_len = hlen - sav->ivlen;
 		else
 			crda->crd_len = m->m_pkthdr.len - (skip + alen);
 		crda->crd_inject = m->m_pkthdr.len - alen;
 
 		crda->crd_alg = esph->type;
-		if (espx && (espx->type == CRYPTO_AES_GCM_16 ||
-			     espx->type == CRYPTO_AES_GMAC)) {
+		if (espx->type == CRYPTO_AES_GCM_16 ||
+		    espx->type == CRYPTO_AES_GMAC) {
 			crda->crd_key = _KEYBUF(sav->key_enc);
 			crda->crd_klen = _KEYBITS(sav->key_enc);
 		} else {
@@ -437,10 +439,9 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	 */
 	if (__predict_false(sav->state == SADB_SASTATE_DEAD)) {
 		pserialize_read_exit(s);
-		pool_cache_put(esp_tdb_crypto_pool_cache, tc);
-		crypto_freereq(crp);
-		ESP_STATINC(ESP_STAT_NOTDB);
-		return ENOENT;
+		stat = ESP_STAT_NOTDB;
+		error = ENOENT;
+		goto out2;
 	}
 	KEY_SA_REF(sav);
 	pserialize_read_exit(s);
@@ -463,20 +464,17 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	tc->tc_sav = sav;
 
 	/* Decryption descriptor */
-	if (espx) {
-		KASSERTMSG(crde != NULL, "null esp crypto descriptor");
-		crde->crd_skip = skip + hlen;
-		if (espx->type == CRYPTO_AES_GMAC)
-			crde->crd_len = 0;
-		else
-			crde->crd_len = m->m_pkthdr.len - (skip + hlen + alen);
-		crde->crd_inject = skip + hlen - sav->ivlen;
-
-		crde->crd_alg = espx->type;
-		crde->crd_key = _KEYBUF(sav->key_enc);
-		crde->crd_klen = _KEYBITS(sav->key_enc);
-		/* XXX Rounds ? */
-	}
+	KASSERTMSG(crde != NULL, "null esp crypto descriptor");
+	crde->crd_skip = skip + hlen;
+	if (espx->type == CRYPTO_AES_GMAC)
+		crde->crd_len = 0;
+	else
+		crde->crd_len = m->m_pkthdr.len - (skip + hlen + alen);
+	crde->crd_inject = skip + hlen - sav->ivlen;
+	crde->crd_alg = espx->type;
+	crde->crd_key = _KEYBUF(sav->key_enc);
+	crde->crd_klen = _KEYBITS(sav->key_enc);
+	/* XXX Rounds ? */
 
 	return crypto_dispatch(crp);
 
@@ -485,21 +483,21 @@ out2:
 out1:
 	crypto_freereq(crp);
 out:
-	ESP_STATINC(ESP_STAT_CRYPTO);
+	ESP_STATINC(stat);
 	m_freem(m);
 	return error;
 }
 
 #ifdef INET6
-#define	IPSEC_COMMON_INPUT_CB(m, sav, skip, protoff) do {		     \
-	if (saidx->dst.sa.sa_family == AF_INET6) {			     \
-		error = ipsec6_common_input_cb(m, sav, skip, protoff);	     \
-	} else {							     \
-		error = ipsec4_common_input_cb(m, sav, skip, protoff);	     \
-	}								     \
+#define	IPSEC_COMMON_INPUT_CB(m, sav, skip, protoff) do {		\
+	if (saidx->dst.sa.sa_family == AF_INET6) {			\
+		error = ipsec6_common_input_cb(m, sav, skip, protoff);	\
+	} else {							\
+		error = ipsec4_common_input_cb(m, sav, skip, protoff);	\
+	}								\
 } while (0)
 #else
-#define	IPSEC_COMMON_INPUT_CB(m, sav, skip, protoff)			     \
+#define	IPSEC_COMMON_INPUT_CB(m, sav, skip, protoff)			\
 	(error = ipsec4_common_input_cb(m, sav, skip, protoff))
 #endif
 
@@ -518,8 +516,6 @@ esp_input_cb(struct cryptop *crp)
 	struct secasvar *sav;
 	struct secasindex *saidx;
 	void *ptr;
-	uint16_t dport;
-	uint16_t sport;
 	IPSEC_DECLARE_LOCK_VARIABLE;
 
 	KASSERT(crp->crp_desc != NULL);
@@ -530,27 +526,9 @@ esp_input_cb(struct cryptop *crp)
 	protoff = tc->tc_protoff;
 	m = crp->crp_buf;
 
-	/* find the source port for NAT-T */
-	nat_t_ports_get(m, &dport, &sport);
-
 	IPSEC_ACQUIRE_GLOBAL_LOCKS();
 
 	sav = tc->tc_sav;
-	if (__predict_false(!SADB_SASTATE_USABLE_P(sav))) {
-		KEY_SA_UNREF(&sav);
-		sav = KEY_LOOKUP_SA(&tc->tc_dst, tc->tc_proto, tc->tc_spi,
-		    sport, dport);
-		if (sav == NULL) {
-			ESP_STATINC(ESP_STAT_NOTDB);
-			DPRINTF(("%s: SA expired while in crypto "
-			    "(SA %s/%08lx proto %u)\n", __func__,
-			    ipsec_address(&tc->tc_dst, buf, sizeof(buf)),
-			    (u_long) ntohl(tc->tc_spi), tc->tc_proto));
-			error = ENOBUFS;		/*XXX*/
-			goto bad;
-		}
-	}
-
 	saidx = &sav->sah->saidx;
 	KASSERTMSG(saidx->dst.sa.sa_family == AF_INET ||
 	    saidx->dst.sa.sa_family == AF_INET6,
@@ -610,7 +588,8 @@ esp_input_cb(struct cryptop *crp)
 	/* Release the crypto descriptors */
 	pool_cache_put(esp_tdb_crypto_pool_cache, tc);
 	tc = NULL;
-	crypto_freereq(crp), crp = NULL;
+	crypto_freereq(crp);
+	crp = NULL;
 
 	/*
 	 * Packet is now decrypted.
@@ -630,7 +609,7 @@ esp_input_cb(struct cryptop *crp)
 			DPRINTF(("%s: packet replay check for %s\n", __func__,
 			    ipsec_logsastr(sav, logbuf, sizeof(logbuf))));
 			ESP_STATINC(ESP_STAT_REPLAY);
-			error = ENOBUFS;
+			error = EACCES;
 			goto bad;
 		}
 	}
@@ -709,54 +688,49 @@ bad:
  * ESP output routine, called by ipsec[46]_process_packet().
  */
 static int
-esp_output(
-    struct mbuf *m,
-    const struct ipsecrequest *isr,
-    struct secasvar *sav,
-    struct mbuf **mp,
-    int skip,
-    int protoff
-)
+esp_output(struct mbuf *m, const struct ipsecrequest *isr, struct secasvar *sav,
+    int skip, int protoff)
 {
 	char buf[IPSEC_ADDRSTRLEN];
 	const struct enc_xform *espx;
 	const struct auth_hash *esph;
-	int hlen, rlen, padding, blks, alen, i, roff;
+	int hlen, rlen, tlen, padlen, blks, alen, i, roff;
 	struct mbuf *mo = NULL;
 	struct tdb_crypto *tc;
 	struct secasindex *saidx;
-	unsigned char *pad;
+	unsigned char *tail;
 	uint8_t prot;
 	int error, maxpacketsize;
-
-	struct cryptodesc *crde = NULL, *crda = NULL;
+	struct esptail *esptail;
+	struct cryptodesc *crde, *crda;
 	struct cryptop *crp;
 
-	IPSEC_SPLASSERT_SOFTNET(__func__);
-
 	esph = sav->tdb_authalgxform;
-	KASSERT(sav->tdb_encalgxform != NULL);
 	espx = sav->tdb_encalgxform;
+	KASSERT(espx != NULL);
 
+	/* Determine the ESP header length */
 	if (sav->flags & SADB_X_EXT_OLD)
 		hlen = sizeof(struct esp) + sav->ivlen;
 	else
 		hlen = sizeof(struct newesp) + sav->ivlen;
+	/* Authenticator hash size */
+	alen = esph ? esph->authsize : 0;
 
-	rlen = m->m_pkthdr.len - skip;	/* Raw payload length. */
 	/*
 	 * NB: The null encoding transform has a blocksize of 4
 	 *     so that headers are properly aligned.
 	 */
 	blks = espx->blocksize;		/* IV blocksize */
 
-	/* XXX clamp padding length a la KAME??? */
-	padding = ((blks - ((rlen + 2) % blks)) % blks) + 2;
+	/* Raw payload length. */
+	rlen = m->m_pkthdr.len - skip;
 
-	if (esph)
-		alen = esph->authsize;
-	else
-		alen = 0;
+	/* Encryption padding. */
+	padlen = ((blks - ((rlen + sizeof(struct esptail)) % blks)) % blks);
+
+	/* Length of what we append (tail). */
+	tlen = padlen + sizeof(struct esptail) + alen;
 
 	ESP_STATINC(ESP_STAT_OUTPUT);
 
@@ -767,12 +741,12 @@ esp_output(
 	case AF_INET:
 		maxpacketsize = IP_MAXPACKET;
 		break;
-#endif /* INET */
+#endif
 #ifdef INET6
 	case AF_INET6:
 		maxpacketsize = IPV6_MAXPACKET;
 		break;
-#endif /* INET6 */
+#endif
 	default:
 		DPRINTF(("%s: unknown/unsupported protocol family %d, "
 		    "SA %s/%08lx\n", __func__, saidx->dst.sa.sa_family,
@@ -782,12 +756,12 @@ esp_output(
 		error = EPFNOSUPPORT;
 		goto bad;
 	}
-	if (skip + hlen + rlen + padding + alen > maxpacketsize) {
+	if (skip + hlen + rlen + tlen > maxpacketsize) {
 		DPRINTF(("%s: packet in SA %s/%08lx got too big (len %u, "
 		    "max len %u)\n", __func__,
 		    ipsec_address(&saidx->dst, buf, sizeof(buf)),
 		    (u_long) ntohl(sav->spi),
-		    skip + hlen + rlen + padding + alen, maxpacketsize));
+		    skip + hlen + rlen + tlen, maxpacketsize));
 		ESP_STATINC(ESP_STAT_TOOBIG);
 		error = EMSGSIZE;
 		goto bad;
@@ -813,7 +787,7 @@ esp_output(
 		    "%s/%08lx\n", __func__, hlen,
 		    ipsec_address(&saidx->dst, buf, sizeof(buf)),
 		    (u_long) ntohl(sav->spi)));
-		ESP_STATINC(ESP_STAT_HDROPS);	/* XXX diffs from openbsd */
+		ESP_STATINC(ESP_STAT_HDROPS);
 		error = ENOBUFS;
 		goto bad;
 	}
@@ -835,46 +809,46 @@ esp_output(
 	}
 
 	/*
-	 * Add padding -- better to do it ourselves than use the crypto engine,
-	 * although if/when we support compression, we'd have to do that.
+	 * Grow the mbuf, we will append data at the tail.
 	 */
-	pad = m_pad(m, padding + alen);
-	if (pad == NULL) {
+	tail = m_pad(m, tlen);
+	if (tail == NULL) {
 		DPRINTF(("%s: m_pad failed for SA %s/%08lx\n", __func__,
 		    ipsec_address(&saidx->dst, buf, sizeof(buf)),
 		    (u_long) ntohl(sav->spi)));
-		m = NULL;		/* NB: free'd by m_pad */
+		m = NULL;
 		error = ENOBUFS;
 		goto bad;
 	}
 
 	/*
 	 * Add padding: random, zero, or self-describing.
-	 * XXX catch unexpected setting
 	 */
 	switch (sav->flags & SADB_X_EXT_PMASK) {
+	case SADB_X_EXT_PSEQ:
+		for (i = 0; i < padlen; i++)
+			tail[i] = i + 1;
+		break;
 	case SADB_X_EXT_PRAND:
-		(void) cprng_fast(pad, padding - 2);
+		(void)cprng_fast(tail, padlen);
 		break;
 	case SADB_X_EXT_PZERO:
-		memset(pad, 0, padding - 2);
-		break;
-	case SADB_X_EXT_PSEQ:
-		for (i = 0; i < padding - 2; i++)
-			pad[i] = i+1;
+	default:
+		memset(tail, 0, padlen);
 		break;
 	}
 
-	/* Fix padding length and Next Protocol in padding itself. */
-	pad[padding - 2] = padding - 2;
-	m_copydata(m, protoff, sizeof(uint8_t), pad + padding - 1);
+	/* Build the ESP Trailer. */
+	esptail = (struct esptail *)&tail[padlen];
+	esptail->esp_padlen = padlen;
+	m_copydata(m, protoff, sizeof(uint8_t), &esptail->esp_nxt);
 
 	/* Fix Next Protocol in IPv4/IPv6 header. */
 	prot = IPPROTO_ESP;
 	m_copyback(m, protoff, sizeof(uint8_t), &prot);
 
 	/* Get crypto descriptors. */
-	crp = crypto_getreq(esph && espx ? 2 : 1);
+	crp = crypto_getreq(esph ? 2 : 1);
 	if (crp == NULL) {
 		DPRINTF(("%s: failed to acquire crypto descriptors\n",
 		    __func__));
@@ -883,26 +857,22 @@ esp_output(
 		goto bad;
 	}
 
-	if (espx) {
-		crde = crp->crp_desc;
-		crda = crde->crd_next;
+	/* Get the descriptors. */
+	crde = crp->crp_desc;
+	crda = crde->crd_next;
 
-		/* Encryption descriptor. */
-		crde->crd_skip = skip + hlen;
-		if (espx->type == CRYPTO_AES_GMAC)
-			crde->crd_len = 0;
-		else
-			crde->crd_len = m->m_pkthdr.len - (skip + hlen + alen);
-		crde->crd_flags = CRD_F_ENCRYPT;
-		crde->crd_inject = skip + hlen - sav->ivlen;
-
-		/* Encryption operation. */
-		crde->crd_alg = espx->type;
-		crde->crd_key = _KEYBUF(sav->key_enc);
-		crde->crd_klen = _KEYBITS(sav->key_enc);
-		/* XXX Rounds ? */
-	} else
-		crda = crp->crp_desc;
+	/* Encryption descriptor. */
+	crde->crd_skip = skip + hlen;
+	if (espx->type == CRYPTO_AES_GMAC)
+		crde->crd_len = 0;
+	else
+		crde->crd_len = m->m_pkthdr.len - (skip + hlen + alen);
+	crde->crd_flags = CRD_F_ENCRYPT;
+	crde->crd_inject = skip + hlen - sav->ivlen;
+	crde->crd_alg = espx->type;
+	crde->crd_key = _KEYBUF(sav->key_enc);
+	crde->crd_klen = _KEYBITS(sav->key_enc);
+	/* XXX Rounds ? */
 
 	/* IPsec-specific opaque crypto info. */
 	tc = pool_cache_get(esp_tdb_crypto_pool_cache, PR_NOWAIT);
@@ -952,7 +922,7 @@ esp_output(
 	if (esph) {
 		/* Authentication descriptor. */
 		crda->crd_skip = skip;
-		if (espx && espx->type == CRYPTO_AES_GCM_16)
+		if (espx->type == CRYPTO_AES_GCM_16)
 			crda->crd_len = hlen - sav->ivlen;
 		else
 			crda->crd_len = m->m_pkthdr.len - (skip + alen);
@@ -960,8 +930,8 @@ esp_output(
 
 		/* Authentication operation. */
 		crda->crd_alg = esph->type;
-		if (espx && (espx->type == CRYPTO_AES_GCM_16 ||
-			     espx->type == CRYPTO_AES_GMAC)) {
+		if (espx->type == CRYPTO_AES_GCM_16 ||
+		    espx->type == CRYPTO_AES_GMAC) {
 			crda->crd_key = _KEYBUF(sav->key_enc);
 			crda->crd_klen = _KEYBITS(sav->key_enc);
 		} else {
@@ -971,10 +941,11 @@ esp_output(
 	}
 
 	return crypto_dispatch(crp);
+
 bad:
 	if (m)
 		m_freem(m);
-	return (error);
+	return error;
 }
 
 /*
@@ -998,28 +969,6 @@ esp_output_cb(struct cryptop *crp)
 
 	isr = tc->tc_isr;
 	sav = tc->tc_sav;
-	if (__predict_false(isr->sp->state == IPSEC_SPSTATE_DEAD)) {
-		ESP_STATINC(ESP_STAT_NOTDB);
-		IPSECLOG(LOG_DEBUG,
-		    "SP is being destroyed while in crypto (id=%u)\n",
-		    isr->sp->id);
-		error = ENOENT;
-		goto bad;
-	}
-	if (__predict_false(!SADB_SASTATE_USABLE_P(sav))) {
-		KEY_SA_UNREF(&sav);
-		sav = KEY_LOOKUP_SA(&tc->tc_dst, tc->tc_proto, tc->tc_spi, 0, 0);
-		if (sav == NULL) {
-			char buf[IPSEC_ADDRSTRLEN];
-			ESP_STATINC(ESP_STAT_NOTDB);
-			DPRINTF(("%s: SA expired while in crypto (SA %s/%08lx "
-			    "proto %u)\n", __func__,
-			    ipsec_address(&tc->tc_dst, buf, sizeof(buf)),
-			    (u_long) ntohl(tc->tc_spi), tc->tc_proto));
-			error = ENOBUFS;		/*XXX*/
-			goto bad;
-		}
-	}
 
 	/* Check for crypto errors. */
 	if (crp->crp_etype) {
@@ -1070,6 +1019,7 @@ esp_output_cb(struct cryptop *crp)
 	KEY_SP_UNREF(&isr->sp);
 	IPSEC_RELEASE_GLOBAL_LOCKS();
 	return err;
+
 bad:
 	if (sav)
 		KEY_SA_UNREF(&sav);

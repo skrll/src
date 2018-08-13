@@ -1,4 +1,4 @@
-/*      $NetBSD: sgec.c,v 1.46 2017/05/22 17:23:49 ragge Exp $ */
+/*      $NetBSD: sgec.c,v 1.48 2018/06/26 06:48:00 msaitoh Exp $ */
 /*
  * Copyright (c) 1999 Ludd, University of Lule}, Sweden. All rights reserved.
  *
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sgec.c,v 1.46 2017/05/22 17:23:49 ragge Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sgec.c,v 1.48 2018/06/26 06:48:00 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -53,12 +53,10 @@ __KERNEL_RCSID(0, "$NetBSD: sgec.c,v 1.46 2017/05/22 17:23:49 ragge Exp $");
 #include <net/if.h>
 #include <net/if_ether.h>
 #include <net/if_dl.h>
+#include <net/bpf.h>
 
 #include <netinet/in.h>
 #include <netinet/if_inarp.h>
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/bus.h>
 
@@ -416,7 +414,7 @@ zestart(struct ifnet *ifp)
 			ZE_WCSR(ZE_CSR1, -1);
 		sc->sc_nexttx = nexttx;
 
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 	}
 	if (sc->sc_inq == (TXDESCS - 1))
 		ifp->if_flags |= IFF_OACTIVE;

@@ -1,4 +1,4 @@
-/* $NetBSD: wsevent.c,v 1.37 2017/10/25 08:12:39 maya Exp $ */
+/* $NetBSD: wsevent.c,v 1.39 2018/06/14 10:30:55 uwe Exp $ */
 
 /*-
  * Copyright (c) 2006, 2008 The NetBSD Foundation, Inc.
@@ -104,7 +104,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wsevent.c,v 1.37 2017/10/25 08:12:39 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wsevent.c,v 1.39 2018/06/14 10:30:55 uwe Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"

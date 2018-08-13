@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.102 2016/10/19 00:08:42 nonaka Exp $	*/
+/*	$NetBSD: cpu.h,v 1.107 2018/07/15 05:16:44 maxv Exp $	*/
 
 /*
  * Copyright (C) 1999 Wolfgang Solfrank.
@@ -32,6 +32,7 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 #ifndef	_POWERPC_CPU_H_
 #define	_POWERPC_CPU_H_
 
@@ -54,6 +55,8 @@ struct cache_info {
 #include <sys/intr.h>
 #include <sys/device_if.h>
 #include <sys/evcnt.h>
+#include <sys/param.h>
+#include <sys/kernel.h>
 #endif
 
 #include <sys/cpu_data.h>
@@ -92,7 +95,7 @@ struct cpu_info {
 #endif
 #define	CI_SAVETEMP	(0*CPUSAVE_LEN)
 #define	CI_SAVEDDB	(1*CPUSAVE_LEN)
-#define	CI_SAVEIPKDB	(2*CPUSAVE_LEN)
+#define	CI_SAVEIPKDB	(2*CPUSAVE_LEN)	/* obsolete */
 #define	CI_SAVEMMU	(3*CPUSAVE_LEN)
 #define	CI_SAVEMAX	(4*CPUSAVE_LEN)
 #define	CPUSAVE_LEN	8
@@ -159,7 +162,14 @@ struct cpu_hatch_data {
 	struct cpu_info *hatch_ci;
 	uint32_t hatch_tbu;
 	uint32_t hatch_tbl;
+#if defined(PPC_OEA64_BRIDGE) || defined (_ARCH_PPC64)
+	uint64_t hatch_hid0;
+	uint64_t hatch_hid1;
+	uint64_t hatch_hid4;
+	uint64_t hatch_hid5;
+#else
 	uint32_t hatch_hid0;
+#endif
 	uint32_t hatch_pir;
 #if defined(PPC_OEA) || defined(PPC_OEA64_BRIDGE)
 	uintptr_t hatch_asr;
@@ -191,7 +201,7 @@ extern struct cpuset_info cpuset_info;
 #define CPU_IS_PRIMARY(ci)	((ci)->ci_cpuid == 0)
 #define CPU_INFO_ITERATOR	int
 #define CPU_INFO_FOREACH(cii, ci)				\
-	cii = 0, ci = &cpu_info[0]; cii < ncpu; cii++, ci++
+	cii = 0, ci = &cpu_info[0]; cii < (ncpu ? ncpu : 1); cii++, ci++
 
 #else
 #define cpu_number()		0

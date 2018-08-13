@@ -1,7 +1,33 @@
 // RUN: %clang_cc1 -ffreestanding %s -triple=x86_64-apple-darwin -target-feature +f16c -emit-llvm -o - -Wall -Werror | FileCheck %s
 
 
-#include <x86intrin.h>
+#include <immintrin.h>
+
+float test_cvtsh_ss(unsigned short a) {
+  // CHECK-LABEL: test_cvtsh_ss
+  // CHECK: insertelement <8 x i16> undef, i16 %{{.*}}, i32 0
+  // CHECK: insertelement <8 x i16> %{{.*}}, i16 0, i32 1
+  // CHECK: insertelement <8 x i16> %{{.*}}, i16 0, i32 2
+  // CHECK: insertelement <8 x i16> %{{.*}}, i16 0, i32 3
+  // CHECK: insertelement <8 x i16> %{{.*}}, i16 0, i32 4
+  // CHECK: insertelement <8 x i16> %{{.*}}, i16 0, i32 5
+  // CHECK: insertelement <8 x i16> %{{.*}}, i16 0, i32 6
+  // CHECK: insertelement <8 x i16> %{{.*}}, i16 0, i32 7
+  // CHECK: call <4 x float> @llvm.x86.vcvtph2ps.128(<8 x i16> %{{.*}})
+  // CHECK: extractelement <4 x float> %{{.*}}, i32 0
+  return _cvtsh_ss(a);
+}
+
+unsigned short test_cvtss_sh(float a) {
+  // CHECK-LABEL: test_cvtss_sh
+  // CHECK: insertelement <4 x float> undef, float %{{.*}}, i32 0
+  // CHECK: insertelement <4 x float> %{{.*}}, float 0.000000e+00, i32 1
+  // CHECK: insertelement <4 x float> %{{.*}}, float 0.000000e+00, i32 2
+  // CHECK: insertelement <4 x float> %{{.*}}, float 0.000000e+00, i32 3
+  // CHECK: call <8 x i16> @llvm.x86.vcvtps2ph.128(<4 x float> %{{.*}}, i32 0)
+  // CHECK: extractelement <8 x i16> %{{.*}}, i32 0
+  return _cvtss_sh(a, 0);
+}
 
 float test_cvtsh_ss(unsigned short a) {
   // CHECK-LABEL: test_cvtsh_ss

@@ -1,4 +1,4 @@
-#	$NetBSD: INSTALL,v 1.114 2017/09/14 07:58:44 mrg Exp $
+#	$NetBSD: INSTALL,v 1.116 2018/08/01 20:04:14 maxv Exp $
 
 #
 #	INSTALL -- installation kernel.
@@ -8,7 +8,7 @@ include "arch/x68k/conf/std.x68k"
 
 #options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"INSTALL-$Revision: 1.114 $"
+#ident 		"INSTALL-$Revision: 1.116 $"
 
 makeoptions	COPTS="-Os"		# Optimise for space. Implies -O2
 
@@ -171,14 +171,9 @@ options 	INET6		# IPV6
 #options 	GATEWAY		# packet forwarding ("router switch")
 #options 	MROUTING	# packet forwarding of multicast packets
 #options 	PIM		# Protocol Independent Multicast
-#options 	DIRECTED_BROADCAST	# allow broadcasts through routers
 #options 	NETATALK	# AppleTalk (over Ethernet) protocol
 #options 	NTP		# Network Time Protocol in-kernel support
 #options 	PPS_SYNC	# Add serial line synchronization for NTP
-#options 	IPFILTER_LOG	# Add ipmon(8) logging for ipfilter device
-#options 	IPFILTER_LOOKUP	# ippool(8) support
-#options 	IPFILTER_COMPAT # Compat for IP-Filter
-#options 	IPFILTER_DEFAULT_BLOCK	# block all packets by default
 #options 	PPP_BSDCOMP	# Add BSD compression to ppp device
 #options 	PPP_DEFLATE	# Add deflate (libz) compression to ppp device
 #options 	PPP_FILTER	# Add active filters for ppp (via bpf)

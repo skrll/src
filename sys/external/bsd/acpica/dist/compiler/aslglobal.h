@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2017, Intel Corp.
+ * Copyright (C) 2000 - 2018, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -112,7 +112,8 @@ const char                          *Gbl_OpFlagNames[ACPI_NUM_OP_FLAGS] =
     "OP_COMPILER_EMITTED",
     "OP_IS_DUPLICATE",
     "OP_IS_RESOURCE_DATA",
-    "OP_IS_NULL_RETURN"
+    "OP_IS_NULL_RETURN",
+    "OP_NOT_FOUND_DURING_LOAD"
 };
 
 #else

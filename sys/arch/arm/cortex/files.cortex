@@ -1,4 +1,4 @@
-# $NetBSD: files.cortex,v 1.6 2017/05/28 00:32:46 jmcneill Exp $
+# $NetBSD: files.cortex,v 1.8 2018/08/08 19:02:28 jmcneill Exp $
 
 defflag opt_cpu_in_cksum.h			NEON_IN_CKSUM
 
@@ -16,6 +16,10 @@ device	armgic: pic, pic_splfuncs
 attach	armgic at mpcorebus
 file	arch/arm/cortex/gic.c			armgic
 
+# ARM Generic Interrupt Controller v3+
+device	gicvthree: pic, pic_splfuncs
+file	arch/arm/cortex/gicv3.c			gicvthree
+
 # ARM PL310 L2 Cache Controller(initially on Cortex-A9)
 device	arml2cc
 attach	arml2cc at mpcorebus
@@ -27,9 +31,9 @@ attach	armgtmr at mpcorebus
 file	arch/arm/cortex/gtmr.c			armgtmr
 
 # A9 MPCore Global Timer
-device	a9tmr
-attach	a9tmr at mpcorebus
-file	arch/arm/cortex/a9tmr.c			a9tmr
+device	arma9tmr
+attach	arma9tmr at mpcorebus
+file	arch/arm/cortex/a9tmr.c			arma9tmr
 
 # A9 MPcore Watchdog Timer
 device	a9wdt: sysmon_wdog

@@ -1,4 +1,4 @@
-/*	$NetBSD: exec_script.c,v 1.74 2014/09/05 09:20:59 matt Exp $	*/
+/*	$NetBSD: exec_script.c,v 1.77 2018/06/30 11:10:54 kre Exp $	*/
 
 /*
  * Copyright (c) 1993, 1994, 1996 Christopher G. Demetriou
@@ -31,7 +31,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: exec_script.c,v 1.74 2014/09/05 09:20:59 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: exec_script.c,v 1.77 2018/06/30 11:10:54 kre Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_script.h"
+#endif
 
 #if defined(SETUIDSCRIPTS) && !defined(FDSCRIPTS)
 #define FDSCRIPTS		/* Need this for safe set-id scripts. */
@@ -280,10 +284,8 @@ check_shell:
 	epp->ep_hdrvalid = 0;
 
 	/* try loading the interpreter */
-	shell_pathbuf = pathbuf_create(shellname);
-	if (shell_pathbuf == NULL) {
-		error = ENOMEM;
-	} else {
+	if ((error = exec_makepathbuf(l, shellname, UIO_SYSSPACE,
+	    &shell_pathbuf, NULL)) == 0) {
 		error = check_exec(l, epp, shell_pathbuf);
 		pathbuf_destroy(shell_pathbuf);
 	}

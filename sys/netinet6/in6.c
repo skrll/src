@@ -1,4 +1,4 @@
-/*	$NetBSD: in6.c,v 1.254 2017/11/23 07:09:20 ozaki-r Exp $	*/
+/*	$NetBSD: in6.c,v 1.269 2018/07/04 00:35:33 kamil Exp $	*/
 /*	$KAME: in6.c,v 1.198 2001/07/18 09:12:38 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.254 2017/11/23 07:09:20 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.269 2018/07/04 00:35:33 kamil Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -104,8 +104,6 @@ __KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.254 2017/11/23 07:09:20 ozaki-r Exp $");
 #include <netinet6/ip6_mroute.h>
 #include <netinet6/in6_ifattach.h>
 #include <netinet6/scope6_var.h>
-
-#include <net/net_osdep.h>
 
 #ifdef COMPAT_50
 #include <compat/netinet6/in6_var.h>
@@ -634,7 +632,7 @@ in6_control1(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 			 * signed.
 			 */
 			maxexpire = ((time_t)~0) &
-			    ~((time_t)1 << ((sizeof(maxexpire) * NBBY) - 1));
+			    (time_t)~(1ULL << ((sizeof(maxexpire) * NBBY) - 1));
 			if (ia->ia6_lifetime.ia6t_vltime <
 			    maxexpire - ia->ia6_updatetime) {
 				retlt->ia6t_expire = ia->ia6_updatetime +
@@ -655,7 +653,7 @@ in6_control1(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 			 * signed.
 			 */
 			maxexpire = ((time_t)~0) &
-			    ~((time_t)1 << ((sizeof(maxexpire) * NBBY) - 1));
+			    (time_t)~(1ULL << ((sizeof(maxexpire) * NBBY) - 1));
 			if (ia->ia6_lifetime.ia6t_pltime <
 			    maxexpire - ia->ia6_updatetime) {
 				retlt->ia6t_preferred = ia->ia6_updatetime +
@@ -767,9 +765,10 @@ in6_control(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 	}
 
 	s = splsoftnet();
-	SOFTNET_LOCK_UNLESS_NET_MPSAFE();
+#ifndef NET_MPSAFE
+	KASSERT(KERNEL_LOCKED_P());
+#endif
 	error = in6_control1(so , cmd, data, ifp);
-	SOFTNET_UNLOCK_UNLESS_NET_MPSAFE();
 	splx(s);
 	return error;
 }
@@ -1239,8 +1238,10 @@ in6_update_ifa1(struct ifnet *ifp, struct in6_aliasreq *ifra,
 	if (ifp->if_link_state == LINK_STATE_DOWN) {
 		ia->ia6_flags |= IN6_IFF_DETACHED;
 		ia->ia6_flags &= ~IN6_IFF_TENTATIVE;
-	} else if ((hostIsNew || was_tentative) && if_do_dad(ifp))
+	} else if ((hostIsNew || was_tentative) && if_do_dad(ifp) &&
+	           ip6_dad_count > 0) {
 		ia->ia6_flags |= IN6_IFF_TENTATIVE;
+	}
 
 	/*
 	 * backward compatibility - if IN6_IFF_DEPRECATED is set from the
@@ -1384,7 +1385,8 @@ in6_purgeaddr(struct ifaddr *ifa)
 	struct in6_ifaddr *ia = (struct in6_ifaddr *) ifa;
 	struct in6_multi_mship *imm;
 
-	KASSERT(!ifa_held(ifa));
+	/* KASSERT(!ifa_held(ifa)); XXX need ifa_not_held (psref_not_held) */
+	KASSERT(IFNET_LOCKED(ifp));
 
 	ifa->ifa_flags |= IFA_DESTROYING;
 
@@ -1400,12 +1402,16 @@ in6_purgeaddr(struct ifaddr *ifa)
 	/*
 	 * leave from multicast groups we have joined for the interface
 	 */
+    again:
 	mutex_enter(&in6_ifaddr_lock);
 	while ((imm = LIST_FIRST(&ia->ia6_memberships)) != NULL) {
+		struct in6_multi *in6m __diagused = imm->i6mm_maddr;
+		KASSERT(in6m == NULL || in6m->in6m_ifp == ifp);
 		LIST_REMOVE(imm, i6mm_chain);
 		mutex_exit(&in6_ifaddr_lock);
+
 		in6_leavegroup(imm);
-		mutex_enter(&in6_ifaddr_lock);
+		goto again;
 	}
 	mutex_exit(&in6_ifaddr_lock);
 
@@ -1420,6 +1426,7 @@ in6_unlink_ifa(struct in6_ifaddr *ia, struct ifnet *ifp)
 	mutex_enter(&in6_ifaddr_lock);
 	IN6_ADDRLIST_WRITER_REMOVE(ia);
 	ifa_remove(ifp, &ia->ia_ifa);
+	/* Assume ifa_remove called pserialize_perform and psref_destroy */
 	mutex_exit(&in6_ifaddr_lock);
 
 	/*
@@ -1456,7 +1463,9 @@ void
 in6_purgeif(struct ifnet *ifp)
 {
 
+	IFNET_LOCK(ifp);
 	in6_ifdetach(ifp);
+	IFNET_UNLOCK(ifp);
 }
 
 void
@@ -2319,6 +2328,24 @@ in6_setmaxmtu(void)
 		in6_maxmtu = maxmtu;
 }
 
+int
+in6_tunnel_validate(const struct ip6_hdr *ip6, const struct in6_addr *src,
+    const struct in6_addr *dst)
+{
+
+	/* check for address match */
+	if (!IN6_ARE_ADDR_EQUAL(src, &ip6->ip6_dst) ||
+	    !IN6_ARE_ADDR_EQUAL(dst, &ip6->ip6_src))
+		return 0;
+
+	/* martian filters on outer source - done in ip6_input */
+
+	/* NOTE: the pakcet may be dropped by uRPF. */
+
+	/* return valid bytes length */
+	return sizeof(*src) + sizeof(*dst);
+}
+
 /*
  * Provide the length of interface identifiers to be used for the link attached
  * to the given interface.  The length should be defined in "IPv6 over
@@ -2361,10 +2388,6 @@ in6_if2idlen(struct ifnet *ifp)
 	}
 }
 
-struct in6_llentry {
-	struct llentry		base;
-};
-
 #define	IN6_LLTBL_DEFAULT_HSIZE	32
 #define	IN6_LLTBL_HASH(k, h) \
 	(((((((k >> 8) ^ k) >> 8) ^ k) >> 8) ^ k) & ((h) - 1))
@@ -2378,27 +2401,29 @@ static void
 in6_lltable_destroy_lle(struct llentry *lle)
 {
 
+	KASSERT(lle->la_numheld == 0);
+
 	LLE_WUNLOCK(lle);
 	LLE_LOCK_DESTROY(lle);
-	kmem_intr_free(lle, sizeof(struct in6_llentry));
+	llentry_pool_put(lle);
 }
 
 static struct llentry *
 in6_lltable_new(const struct in6_addr *addr6, u_int flags)
 {
-	struct in6_llentry *lle;
+	struct llentry *lle;
 
-	lle = kmem_intr_zalloc(sizeof(struct in6_llentry), KM_NOSLEEP);
+	lle = llentry_pool_get(PR_NOWAIT);
 	if (lle == NULL)		/* NB: caller generates msg */
 		return NULL;
 
-	lle->base.r_l3addr.addr6 = *addr6;
-	lle->base.lle_refcnt = 1;
-	lle->base.lle_free = in6_lltable_destroy_lle;
-	LLE_LOCK_INIT(&lle->base);
-	callout_init(&lle->base.lle_timer, CALLOUT_MPSAFE);
+	lle->r_l3addr.addr6 = *addr6;
+	lle->lle_refcnt = 1;
+	lle->lle_free = in6_lltable_destroy_lle;
+	LLE_LOCK_INIT(lle);
+	callout_init(&lle->lle_timer, CALLOUT_MPSAFE);
 
-	return &lle->base;
+	return lle;
 }
 
 static int
@@ -2419,45 +2444,9 @@ in6_lltable_match_prefix(const struct sockaddr *prefix,
 static void
 in6_lltable_free_entry(struct lltable *llt, struct llentry *lle)
 {
-	struct ifnet *ifp = llt->llt_ifp;
-	bool locked = false;
 
 	LLE_WLOCK_ASSERT(lle);
-
-	/* Unlink entry from table */
-	if ((lle->la_flags & LLE_LINKED) != 0) {
-		IF_AFDATA_WLOCK_ASSERT(ifp);
-		lltable_unlink_entry(llt, lle);
-		KASSERT((lle->la_flags & LLE_LINKED) == 0);
-		locked = true;
-	}
-	/*
-	 * We need to release the lock here to lle_timer proceeds;
-	 * lle_timer should stop immediately if LLE_LINKED isn't set.
-	 * Note that we cannot pass lle->lle_lock to callout_halt
-	 * because it's a rwlock.
-	 */
-	LLE_ADDREF(lle);
-	LLE_WUNLOCK(lle);
-	if (locked)
-		IF_AFDATA_WUNLOCK(ifp);
-
-#ifdef NET_MPSAFE
-	callout_halt(&lle->lle_timer, NULL);
-#else
-	if (mutex_owned(softnet_lock))
-		callout_halt(&lle->lle_timer, softnet_lock);
-	else
-		callout_halt(&lle->lle_timer, NULL);
-#endif
-	LLE_WLOCK(lle);
-	LLE_REMREF(lle);
-
-	lltable_drop_entry_queue(lle);
-	LLE_FREE_LOCKED(lle);
-
-	if (locked)
-		IF_AFDATA_WLOCK(ifp);
+	(void) llentry_free(lle);
 }
 
 static int
@@ -2548,7 +2537,7 @@ in6_lltable_delete(struct lltable *llt, u_int flags,
 	lle = in6_lltable_find_dst(llt, &sin6->sin6_addr);
 
 	if (lle == NULL) {
-#ifdef DEBUG
+#ifdef LLTABLE_DEBUG
 		char buf[64];
 		sockaddr_format(l3addr, buf, sizeof(buf));
 		log(LOG_INFO, "%s: cache for %s is not found\n",
@@ -2558,8 +2547,7 @@ in6_lltable_delete(struct lltable *llt, u_int flags,
 	}
 
 	LLE_WLOCK(lle);
-	lle->la_flags |= LLE_DELETED;
-#ifdef DEBUG
+#ifdef LLTABLE_DEBUG
 	{
 		char buf[64];
 		sockaddr_format(l3addr, buf, sizeof(buf));
@@ -2567,10 +2555,7 @@ in6_lltable_delete(struct lltable *llt, u_int flags,
 		    __func__, buf, lle);
 	}
 #endif
-	if ((lle->la_flags & (LLE_STATIC | LLE_IFADDR)) == LLE_STATIC)
-		llentry_free(lle);
-	else
-		LLE_WUNLOCK(lle);
+	llentry_free(lle);
 
 	return 0;
 }

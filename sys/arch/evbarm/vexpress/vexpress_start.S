@@ -1,4 +1,4 @@
-/*	$NetBSD: vexpress_start.S,v 1.5 2017/06/04 19:15:46 jmcneill Exp $	*/
+/*	$NetBSD: vexpress_start.S,v 1.7 2018/06/11 19:42:22 jakllsch Exp $	*/
 
 /*-
  * Copyright (c) 2015 The NetBSD Foundation, Inc.
@@ -33,6 +33,7 @@
 #include "opt_cputypes.h"
 #include "opt_multiprocessor.h"
 #include "opt_arm_debug.h"
+#include "opt_fdt.h"
 
 #include <arm/asm.h>
 #include <arm/armreg.h>
@@ -40,7 +41,7 @@
 
 #include <arm/vexpress/vexpress_platform.h>
 
-RCSID("$NetBSD: vexpress_start.S,v 1.5 2017/06/04 19:15:46 jmcneill Exp $")
+RCSID("$NetBSD: vexpress_start.S,v 1.7 2018/06/11 19:42:22 jakllsch Exp $")
 
 #ifdef VERBOSE_INIT_ARM
 #define	XPUTC(n)	mov r0, n; bl xputc
@@ -75,6 +76,16 @@ _C_LABEL(vexpress_start):
 	movt	r4, #:upper16:uboot_args
 	sub	r4, r4, #KERNEL_BASE_VOFFSET
 	stmia	r4, {r0-r3}
+
+#ifdef FDT
+	/*
+	 * ARM boot protocol has FDT address in r2
+	 */
+	movw	r4, #:lower16:fdt_addr_r
+	movt	r4, #:upper16:fdt_addr_r
+	sub	r4, r4, #KERNEL_BASE_VOFFSET
+	str	r2, [r4]
+#endif
 
 	/* Add DTB PA (1MB) from r2 to MMU init table */
 	movw	r3, #:lower16:(L1_S_SIZE - 1)		/* align DTB PA to 1M */
@@ -128,6 +139,9 @@ _C_LABEL(vexpress_start):
 xputc:
 	movw	r2, #0x0000
 	movt	r2, #0x1c09
+#ifdef __ARMEB__
+	lsl	r0, r0, #24
+#endif
 	str	r0, [r2]
 	bx	lr
 

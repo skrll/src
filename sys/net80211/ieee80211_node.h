@@ -1,4 +1,4 @@
-/*	$NetBSD: ieee80211_node.h,v 1.27 2016/04/08 14:30:47 roy Exp $	*/
+/*	$NetBSD: ieee80211_node.h,v 1.30 2018/04/19 21:50:10 christos Exp $	*/
 /*-
  * Copyright (c) 2001 Atsushi Onoe
  * Copyright (c) 2002-2005 Sam Leffler, Errno Consulting
@@ -296,22 +296,22 @@ u_int8_t ieee80211_getrssi(struct ieee80211com *ic);
  * All multi-byte values must be in host byte order.
  */
 struct ieee80211_scanparams {
-	u_int16_t	capinfo;	/* 802.11 capabilities */
-	u_int16_t	fhdwell;	/* FHSS dwell interval */
-	u_int8_t	chan;		/* */
-	u_int8_t	bchan;
-	u_int8_t	fhindex;
-	u_int8_t	erp;
-	u_int16_t	bintval;
-	u_int8_t	timoff;
-	u_int8_t	*tim;
-	u_int8_t	*tstamp;
-	u_int8_t	*country;
-	u_int8_t	*ssid;
-	u_int8_t	*rates;
-	u_int8_t	*xrates;
-	u_int8_t	*wpa;
-	u_int8_t	*wme;
+	u_int16_t	sp_capinfo;	/* 802.11 capabilities */
+	u_int16_t	sp_fhdwell;	/* FHSS dwell interval */
+	u_int8_t	sp_chan;		/* */
+	u_int8_t	sp_bchan;
+	u_int8_t	sp_fhindex;
+	u_int8_t	sp_erp;
+	u_int16_t	sp_bintval;
+	u_int16_t	sp_timoff;
+	u_int8_t	*sp_tim;
+	u_int8_t	*sp_tstamp;
+	u_int8_t	*sp_country;
+	u_int8_t	*sp_ssid;
+	u_int8_t	*sp_rates;
+	u_int8_t	*sp_xrates;
+	u_int8_t	*sp_wpa;
+	u_int8_t	*sp_wme;
 };
 
 /*
@@ -325,19 +325,19 @@ struct ieee80211_scanparams {
  * ieee80211_node_refcnt	reference count for printing (only)
  */
 
-static inline void
+static __inline void
 ieee80211_node_initref(struct ieee80211_node *ni)
 {
 	ni->ni_refcnt = 1;
 }
 
-static inline void
+static __inline void
 ieee80211_node_incref(struct ieee80211_node *ni)
 {
 	atomic_inc_uint(&ni->ni_refcnt);
 }
 
-static inline void
+static __inline void
 ieee80211_node_decref(struct ieee80211_node *ni)
 {
 	atomic_dec_uint(&ni->ni_refcnt);
@@ -345,7 +345,7 @@ ieee80211_node_decref(struct ieee80211_node *ni)
 
 int ieee80211_node_dectestref(struct ieee80211_node *ni);
 
-static inline unsigned int
+static __inline unsigned int
 ieee80211_node_refcnt(const struct ieee80211_node *ni)
 {
 	return ni->ni_refcnt;

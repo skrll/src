@@ -1,7 +1,7 @@
-/*	$NetBSD: if_smsc.c,v 1.30 2016/12/15 09:28:06 ozaki-r Exp $	*/
+/*	$NetBSD: if_smsc.c,v 1.36 2018/08/02 06:09:04 riastradh Exp $	*/
 
 /*	$OpenBSD: if_smsc.c,v 1.4 2012/09/27 12:38:11 jsg Exp $	*/
-/* $FreeBSD: src/sys/dev/usb/net/if_smsc.c,v 1.1 2012/08/15 04:03:55 gonzo Exp $ */
+/*	$FreeBSD: src/sys/dev/usb/net/if_smsc.c,v 1.1 2012/08/15 04:03:55 gonzo Exp $ */
 /*-
  * Copyright (c) 2012
  *	Ben Gray <bgray@freebsd.org>.
@@ -720,7 +720,7 @@ smsc_start_locked(struct ifnet *ifp)
 
 	sc->sc_cdata.tx_next = (sc->sc_cdata.tx_next + 1) % SMSC_TX_LIST_CNT;
 
-	bpf_mtap(ifp, m_head);
+	bpf_mtap(ifp, m_head, BPF_D_OUT);
 
 	if (sc->sc_cdata.tx_free == 0)
 		ifp->if_flags |= IFF_OACTIVE;
@@ -1242,7 +1242,8 @@ smsc_detach(device_t self, int flags)
 	 * Remove any pending tasks.  They cannot be executing because they run
 	 * in the same thread as detach.
 	 */
-	usb_rem_task(sc->sc_udev, &sc->sc_tick_task);
+	usb_rem_task_wait(sc->sc_udev, &sc->sc_tick_task, USB_TASKQ_DRIVER,
+	    NULL);
 
 	mutex_enter(&sc->sc_lock);
 	sc->sc_refcnt--;
@@ -1657,7 +1658,7 @@ smsc_rx_list_init(struct smsc_softc *sc)
 		c->sc_mbuf = NULL;
 		if (c->sc_xfer == NULL) {
 			int error = usbd_create_xfer(sc->sc_ep[SMSC_ENDPT_RX],
-			    sc->sc_bufsz, USBD_SHORT_XFER_OK, 0, &c->sc_xfer);
+			    sc->sc_bufsz, 0, 0, &c->sc_xfer);
 			if (error)
 				return error;
 			c->sc_buf = usbd_get_buffer(c->sc_xfer);

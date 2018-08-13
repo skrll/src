@@ -1,4 +1,4 @@
-/*	$NetBSD: wi.c,v 1.244 2017/10/23 09:31:17 msaitoh Exp $	*/
+/*	$NetBSD: wi.c,v 1.247 2018/06/26 06:48:00 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2004 The NetBSD Foundation, Inc.
@@ -99,7 +99,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wi.c,v 1.244 2017/10/23 09:31:17 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wi.c,v 1.247 2018/06/26 06:48:00 msaitoh Exp $");
 
 #define WI_HERMES_AUTOINC_WAR	/* Work around data write autoinc bug. */
 #define WI_HERMES_STATS_WAR	/* Work around stats counter bug. */
@@ -126,15 +126,13 @@ __KERNEL_RCSID(0, "$NetBSD: wi.c,v 1.244 2017/10/23 09:31:17 msaitoh Exp $");
 #include <net/if_media.h>
 #include <net/if_ether.h>
 #include <net/route.h>
+#include <net/bpf.h>
 
 #include <net80211/ieee80211_netbsd.h>
 #include <net80211/ieee80211_var.h>
 #include <net80211/ieee80211_ioctl.h>
 #include <net80211/ieee80211_radiotap.h>
 #include <net80211/ieee80211_rssadapt.h>
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/bus.h>
 #include <sys/intr.h>
@@ -245,8 +243,7 @@ static int wi_sysctl_verify_debug(SYSCTLFN_PROTO);
 #define WI_INTRS	(WI_EV_RX | WI_EV_ALLOC | WI_EV_INFO | \
 			 WI_EV_TX | WI_EV_TX_EXC | WI_EV_CMD)
 
-struct wi_card_ident
-wi_card_ident[] = {
+static const struct wi_card_ident wi_card_ident[] = {
 	/* CARD_ID			CARD_NAME		FIRM_TYPE */
 	{ WI_NIC_LUCENT_ID,		WI_NIC_LUCENT_STR,	WI_LUCENT },
 	{ WI_NIC_SONY_ID,		WI_NIC_SONY_STR,	WI_LUCENT },
@@ -1180,7 +1177,7 @@ wi_start(struct ifnet *ifp)
 			ifp->if_opackets++;
 			m_copydata(m0, 0, ETHER_HDR_LEN,
 			    (void *)&frmhdr.wi_ehdr);
-			bpf_mtap(ifp, m0);
+			bpf_mtap(ifp, m0, BPF_D_OUT);
 
 			eh = mtod(m0, struct ether_header *);
 			ni = ieee80211_find_txnode(ic, eh->ether_dhost);
@@ -1201,7 +1198,7 @@ wi_start(struct ifnet *ifp)
 			wh = mtod(m0, struct ieee80211_frame *);
 		} else
 			break;
-		bpf_mtap3(ic->ic_rawbpf, m0);
+		bpf_mtap3(ic->ic_rawbpf, m0, BPF_D_OUT);
 		frmhdr.wi_tx_ctl =
 		    htole16(WI_ENC_TX_802_11|WI_TXCNTL_TX_EX|WI_TXCNTL_TX_OK);
 #ifndef	IEEE80211_NO_HOSTAP
@@ -1231,7 +1228,8 @@ wi_start(struct ifnet *ifp)
 			    htole16(ic->ic_bss->ni_chan->ic_flags);
 			/* TBD tap->wt_flags */
 
-			bpf_mtap2(sc->sc_drvbpf, tap, tap->wt_ihdr.it_len, m0);
+			bpf_mtap2(sc->sc_drvbpf, tap, tap->wt_ihdr.it_len, m0,
+			    BPF_D_OUT);
 		}
 
 		rd = SLIST_FIRST(&sc->sc_rssdfree);
@@ -1759,7 +1757,8 @@ wi_rx_intr(struct wi_softc *sc)
 			tap->wr_flags |= IEEE80211_RADIOTAP_F_CFP;
 
 		/* XXX IEEE80211_RADIOTAP_F_WEP */
-		bpf_mtap2(sc->sc_drvbpf, tap, tap->wr_ihdr.it_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, tap->wr_ihdr.it_len, m,
+		    BPF_D_IN);
 	}
 
 	/* synchronize driver's BSSID with firmware's BSSID */
@@ -2146,7 +2145,7 @@ allmulti:
 STATIC void
 wi_read_nicid(struct wi_softc *sc)
 {
-	struct wi_card_ident *id;
+	const struct wi_card_ident *id;
 	char *p;
 	int len;
 	u_int16_t ver[4];

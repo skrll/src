@@ -1,9 +1,11 @@
-# $NetBSD: md.sparc,v 1.90 2017/01/05 13:45:51 wiz Exp $
+# $NetBSD: md.sparc,v 1.94 2018/07/12 10:46:40 maxv Exp $
 ./usr/include/gcc-4.5/tgmath.h			comp-obsolete		obsolete
-./usr/include/gcc-4.8/tgmath.h			comp-c-include		gcccmds,gcc=48
-./usr/include/gcc-4.8/visintrin.h		comp-c-include		gcccmds,gcc=48
-./usr/include/gcc-5/tgmath.h			comp-c-include		gcccmds,gcc=53
-./usr/include/gcc-5/visintrin.h			comp-c-include		gcccmds,gcc=53
+./usr/include/gcc-4.8/tgmath.h			comp-c-include		obsolete
+./usr/include/gcc-4.8/visintrin.h		comp-c-include		obsolete
+./usr/include/gcc-5/tgmath.h			comp-c-include		gcccmds,gcc=5
+./usr/include/gcc-5/visintrin.h			comp-c-include		gcccmds,gcc=5
+./usr/include/gcc-6/tgmath.h			comp-c-include		gcccmds,gcc=6
+./usr/include/gcc-6/visintrin.h			comp-c-include		gcccmds,gcc=6
 ./usr/include/ieeefp.h				comp-c-include
 ./usr/include/sparc				comp-c-include
 ./usr/include/sparc/_G_config.h			comp-obsolete		obsolete
@@ -22,6 +24,7 @@
 ./usr/include/sparc/disklabel.h			comp-c-include
 ./usr/include/sparc/eeprom.h			comp-c-include
 ./usr/include/sparc/elf_machdep.h		comp-c-include
+./usr/include/sparc/elf_support.h		comp-c-include
 ./usr/include/sparc/endian.h			comp-c-include
 ./usr/include/sparc/endian_machdep.h		comp-c-include
 ./usr/include/sparc/fbio.h			comp-obsolete		obsolete
@@ -50,7 +53,7 @@
 ./usr/include/sparc/param.h			comp-c-include
 ./usr/include/sparc/pcb.h			comp-c-include
 ./usr/include/sparc/pmap.h			comp-c-include
-./usr/include/sparc/pmc.h			comp-c-include
+./usr/include/sparc/pmc.h			comp-obsolete		obsolete
 ./usr/include/sparc/proc.h			comp-c-include
 ./usr/include/sparc/profile.h			comp-c-include
 ./usr/include/sparc/psl.h			comp-c-include
@@ -90,6 +93,7 @@
 ./usr/include/sparc64/disklabel.h		comp-c-include
 ./usr/include/sparc64/eeprom.h			comp-c-include
 ./usr/include/sparc64/elf_machdep.h		comp-c-include
+./usr/include/sparc64/elf_support.h		comp-c-include
 ./usr/include/sparc64/endian.h			comp-c-include
 ./usr/include/sparc64/endian_machdep.h		comp-c-include
 ./usr/include/sparc64/fbio.h			comp-obsolete		obsolete
@@ -122,7 +126,7 @@
 ./usr/include/sparc64/param.h			comp-c-include
 ./usr/include/sparc64/pcb.h			comp-c-include
 ./usr/include/sparc64/pmap.h			comp-c-include
-./usr/include/sparc64/pmc.h			comp-c-include
+./usr/include/sparc64/pmc.h			comp-obsolete		obsolete
 ./usr/include/sparc64/proc.h			comp-c-include
 ./usr/include/sparc64/profile.h			comp-c-include
 ./usr/include/sparc64/psl.h			comp-c-include

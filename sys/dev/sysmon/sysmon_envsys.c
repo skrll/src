@@ -1,4 +1,4 @@
-/*	$NetBSD: sysmon_envsys.c,v 1.141 2017/09/11 06:02:09 pgoyette Exp $	*/
+/*	$NetBSD: sysmon_envsys.c,v 1.143 2018/05/26 21:15:46 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008 Juan Romero Pardines.
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sysmon_envsys.c,v 1.141 2017/09/11 06:02:09 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sysmon_envsys.c,v 1.143 2018/05/26 21:15:46 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -578,7 +578,7 @@ sysmon_envsys_sensor_attach(struct sysmon_envsys *sme, envsys_data_t *edata)
 	 * Find the correct units for this sensor.
 	 */
 	sdt_units = sme_find_table_entry(SME_DESC_UNITS, edata->units);
-	if (sdt_units->type == -1)
+	if (sdt_units == NULL || sdt_units->type == -1)
 		return EINVAL;
 
 	/*
@@ -1706,6 +1706,8 @@ sme_update_sensor_dictionary(prop_object_t dict, envsys_data_t *edata,
 	 * update sensor's type.
 	 */
 	sdt = sme_find_table_entry(SME_DESC_UNITS, edata->units);
+	if (sdt == NULL)
+		return EINVAL;
 
 	DPRINTFOBJ(("%s: sensor #%d units=%d (%s)\n", __func__, edata->sensor,
 	    sdt->type, sdt->desc));
@@ -1784,6 +1786,8 @@ sme_update_sensor_dictionary(prop_object_t dict, envsys_data_t *edata,
 	if (edata->units == ENVSYS_DRIVE) {
 		sdt = sme_find_table_entry(SME_DESC_DRIVE_STATES,
 					   edata->value_cur);
+		if (sdt == NULL)
+			return EINVAL;
 		error = sme_sensor_upstring(dict, "drive-state", sdt->desc);
 		if (error)
 			return error;
@@ -1796,6 +1800,8 @@ sme_update_sensor_dictionary(prop_object_t dict, envsys_data_t *edata,
 	if (edata->units == ENVSYS_BATTERY_CAPACITY) {
 		sdt = sme_find_table_entry(SME_DESC_BATTERY_CAPACITY,
 		    edata->value_cur);
+		if (sdt == NULL)
+			return EINVAL;
 		error = sme_sensor_upstring(dict, "battery-capacity",
 					    sdt->desc);
 		if (error)

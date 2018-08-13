@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.44 2014/02/24 07:23:39 skrll Exp $
+#	$NetBSD: Makefile,v 1.46 2018/08/07 08:26:42 martin Exp $
 #
 
 .include <bsd.own.mk>
@@ -10,7 +10,6 @@ TARGETS+=	release
 SUBDIR=	${RELEASEMACHINE}
 .endif
 .else
-SUBDIR+= acorn26
 SUBDIR+= acorn32
 SUBDIR+= alpha
 SUBDIR+= amd64
@@ -48,7 +47,6 @@ SUBDIR+= sun2
 SUBDIR+= sun3
 SUBDIR+= vax
 SUBDIR+= x68k
-SUBDIR+= xen
 .endif
 
 .include <bsd.subdir.mk>

@@ -1,4 +1,4 @@
-/*	$NetBSD: eval.c,v 1.22 2017/06/30 04:41:19 kamil Exp $	*/
+/*	$NetBSD: eval.c,v 1.25 2018/06/12 14:13:55 kamil Exp $	*/
 
 /*
  * Expansion - quoting, separation, substitution, globbing
@@ -6,7 +6,7 @@
 #include <sys/cdefs.h>
 
 #ifndef lint
-__RCSID("$NetBSD: eval.c,v 1.22 2017/06/30 04:41:19 kamil Exp $");
+__RCSID("$NetBSD: eval.c,v 1.25 2018/06/12 14:13:55 kamil Exp $");
 #endif
 
 #include <sys/stat.h>
@@ -50,7 +50,7 @@ typedef struct Expand {
 static	int	varsub ARGS((Expand *xp, char *sp, char *word, int *stypep, int *slenp));
 static	int	comsub ARGS((Expand *xp, char *cp));
 static	char   *trimsub ARGS((char *str, char *pat, int how));
-static	void	glob ARGS((char *cp, XPtrV *wp, int markdirs));
+static	void	ksh_glob ARGS((char *cp, XPtrV *wp, int markdirs));
 static	void	globit ARGS((XString *xs, char **xpp, char *sp, XPtrV *wp,
 			     int check));
 static char	*maybe_expand_tilde ARGS((char *p, XString *dsp, char **dpp,
@@ -86,7 +86,7 @@ substitute(cp, f)
  */
 char **
 eval(ap, f)
-	register char **ap;
+	char **ap;
 	int f;
 {
 	XPtrV w;
@@ -124,7 +124,7 @@ evalstr(cp, f)
  */
 char *
 evalonestr(cp, f)
-	register char *cp;
+	char *cp;
 	int f;
 {
 	XPtrV w;
@@ -160,20 +160,21 @@ typedef struct SubType {
 void
 expand(cp, wp, f)
 	char *cp;		/* input word */
-	register XPtrV *wp;	/* output words */
+	XPtrV *wp;		/* output words */
 	int f;			/* DO* flags */
 {
-	register int UNINITIALIZED(c);
-	register int type;	/* expansion type */
-	register int quote = 0;	/* quoted */
+	int UNINITIALIZED(c);
+	int type;		/* expansion type */
+	int quote = 0;		/* quoted */
 	XString ds;		/* destination string */
-	register char *dp, *sp;	/* dest., source */
+	char *dp, *sp;		/* dest., source */
 	int fdo, word;		/* second pass flags; have word */
 	int doblank;		/* field splitting of parameter/command subst */
 	Expand x;		/* expansion variables */
 	SubType st_head, *st;
 	int UNINITIALIZED(newlines); /* For trailing newlines in COMSUB */
-	int saw_eq, tilde_ok;
+	int saw_eq;
+	unsigned int tilde_ok;
 	int make_magic;
 	size_t len;
 
@@ -578,7 +579,7 @@ expand(cp, wp, f)
 				else
 #endif /* BRACE_EXPAND */
 				if (fdo & DOGLOB)
-					glob(p, wp, f & DOMARKDIRS);
+					ksh_glob(p, wp, f & DOMARKDIRS);
 				else if ((f & DOPAT) || !(fdo & DOMAGIC_))
 					XPput(*wp, p);
 				else
@@ -844,11 +845,11 @@ varsub(xp, sp, word, stypep, slenp)
  */
 static int
 comsub(xp, cp)
-	register Expand *xp;
+	Expand *xp;
 	char *cp;
 {
 	Source *s, *sold;
-	register struct op *t;
+	struct op *t;
 	struct shf *shf;
 
 	s = pushs(SSTRING, ATEMP);
@@ -863,7 +864,7 @@ comsub(xp, cp)
 
 	if (t != NULL && t->type == TCOM && /* $(<file) */
 	    *t->args == NULL && *t->vars == NULL && t->ioact != NULL) {
-		register struct ioword *io = *t->ioact;
+		struct ioword *io = *t->ioact;
 		char *name;
 
 		if ((io->flag&IOTYPE) != IOREAD)
@@ -899,12 +900,12 @@ comsub(xp, cp)
 
 static char *
 trimsub(str, pat, how)
-	register char *str;
+	char *str;
 	char *pat;
 	int how;
 {
-	register char *end = strchr(str, 0);
-	register char *p, c;
+	char *end = strchr(str, 0);
+	char *p, c;
 
 	switch (how&0xff) {	/* UCHAR_MAX maybe? */
 	  case '#':		/* shortest at beginning */
@@ -945,15 +946,15 @@ trimsub(str, pat, how)
 }
 
 /*
- * glob
+ * ksh_glob
  * Name derived from V6's /etc/glob, the program that expanded filenames.
  */
 
 /* XXX cp not const 'cause slashes are temporarily replaced with nulls... */
 static void
-glob(cp, wp, markdirs)
+ksh_glob(cp, wp, markdirs)
 	char *cp;
-	register XPtrV *wp;
+	XPtrV *wp;
 	int markdirs;
 {
 	int oldsize = XPsize(*wp);
@@ -995,10 +996,10 @@ globit(xs, xpp, sp, wp, check)
 	XString *xs;		/* dest string */
 	char **xpp;		/* ptr to dest end */
 	char *sp;		/* source path */
-	register XPtrV *wp;	/* output list */
+	XPtrV *wp;		/* output list */
 	int check;		/* GF_* flags */
 {
-	register char *np;	/* next source component */
+	char *np;		/* next source component */
 	char *xp = *xpp;
 	char *se;
 	char odirsep;
@@ -1277,7 +1278,7 @@ static char *
 homedir(name)
 	char *name;
 {
-	register struct tbl *ap;
+	struct tbl *ap;
 
 	ap = tenter(&homedirs, name, hash(name));
 	if (!(ap->flag & ISSET)) {
@@ -1340,7 +1341,7 @@ alt_expand(wp, start, exp_start, end, fdo)
 		 * expansion. }
 		 */
 		if (fdo & DOGLOB)
-			glob(start, wp, fdo & DOMARKDIRS);
+			ksh_glob(start, wp, fdo & DOMARKDIRS);
 		else
 			XPput(*wp, debunk(start, start, end - start));
 		return;

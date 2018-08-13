@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.141 2017/11/11 11:00:46 maxv Exp $	*/
+/*	$NetBSD: cpu.c,v 1.160 2018/07/26 08:22:19 maxv Exp $	*/
 
 /*
  * Copyright (c) 2000-2012 NetBSD Foundation, Inc.
@@ -62,12 +62,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.141 2017/11/11 11:00:46 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.160 2018/07/26 08:22:19 maxv Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */
 #include "opt_mtrr.h"
 #include "opt_multiprocessor.h"
+#include "opt_svs.h"
 
 #include "lapic.h"
 #include "ioapic.h"
@@ -76,7 +77,6 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.141 2017/11/11 11:00:46 maxv Exp $");
 #include <sys/proc.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/kmem.h>
 #include <sys/cpu.h>
 #include <sys/cpufreq.h>
 #include <sys/idle.h>
@@ -221,6 +221,36 @@ cpu_match(device_t parent, cfdata_t match, void *aux)
 	return 1;
 }
 
+#ifdef __HAVE_PCPU_AREA
+void
+cpu_pcpuarea_init(struct cpu_info *ci)
+{
+	struct vm_page *pg;
+	size_t i, npages;
+	vaddr_t base, va;
+	paddr_t pa;
+
+	CTASSERT(sizeof(struct pcpu_entry) % PAGE_SIZE == 0);
+
+	npages = sizeof(struct pcpu_entry) / PAGE_SIZE;
+	base = (vaddr_t)&pcpuarea->ent[cpu_index(ci)];
+
+	for (i = 0; i < npages; i++) {
+		pg = uvm_pagealloc(NULL, 0, NULL, UVM_PGA_ZERO);
+		if (pg == NULL) {
+			panic("failed to allocate pcpu PA");
+		}
+
+		va = base + i * PAGE_SIZE;
+		pa = VM_PAGE_TO_PHYS(pg);
+
+		pmap_kenter_pa(va, pa, VM_PROT_READ|VM_PROT_WRITE, 0);
+	}
+
+	pmap_update(pmap_kernel());
+}
+#endif
+
 static void
 cpu_vm_init(struct cpu_info *ci)
 {
@@ -312,8 +342,9 @@ cpu_attach(device_t parent, device_t self, void *aux)
 			return;
 		}
 		aprint_naive(": Application Processor\n");
-		ptr = (uintptr_t)kmem_zalloc(sizeof(*ci) + CACHE_LINE_SIZE - 1,
-		    KM_SLEEP);
+		ptr = (uintptr_t)uvm_km_alloc(kernel_map,
+		    sizeof(*ci) + CACHE_LINE_SIZE - 1, 0,
+		    UVM_KMF_WIRED|UVM_KMF_ZERO);
 		ci = (struct cpu_info *)roundup2(ptr, CACHE_LINE_SIZE);
 		ci->ci_curldt = -1;
 	} else {
@@ -358,10 +389,17 @@ cpu_attach(device_t parent, device_t self, void *aux)
 			    "mi_cpu_attach failed with %d\n", error);
 			return;
 		}
+#ifdef __HAVE_PCPU_AREA
+		cpu_pcpuarea_init(ci);
+#endif
 		cpu_init_tss(ci);
 	} else {
 		KASSERT(ci->ci_data.cpu_idlelwp != NULL);
 	}
+
+#ifdef SVS
+	cpu_svs_init(ci);
+#endif
 
 	pmap_reference(pmap_kernel());
 	ci->ci_pmap = pmap_kernel();
@@ -551,6 +589,9 @@ cpu_init(struct cpu_info *ci)
 	 * hardware supports it.
 	 */
 	if (cpu_feature[0] & CPUID_PGE)
+#ifdef SVS
+		if (!svs_enabled)
+#endif
 		cr4 |= CR4_PGE;	/* enable global TLB caching */
 
 	/*
@@ -574,15 +615,26 @@ cpu_init(struct cpu_info *ci)
 	if (cpu_feature[5] & CPUID_SEF_SMEP)
 		cr4 |= CR4_SMEP;
 
-#ifdef amd64
 	/* If SMAP is supported, enable it */
 	if (cpu_feature[5] & CPUID_SEF_SMAP)
 		cr4 |= CR4_SMAP;
-#endif
 
 	if (cr4) {
 		cr4 |= rcr4();
 		lcr4(cr4);
+	}
+
+	/*
+	 * Changing CR4 register may change cpuid values. For example, setting
+	 * CR4_OSXSAVE sets CPUID2_OSXSAVE. The CPUID2_OSXSAVE is in
+	 * ci_feat_val[1], so update it.
+	 * XXX Other than ci_feat_val[1] might be changed.
+	 */
+	if (cpuid_level >= 1) {
+		u_int descs[4];
+
+		x86_cpuid(1, descs);
+		ci->ci_feat_val[1] = descs[2];
 	}
 
 	if (x86_fpu_save >= FPU_SAVE_FXSAVE) {
@@ -622,7 +674,7 @@ cpu_init(struct cpu_info *ci)
 #endif /* MTRR */
 
 	if (ci != &cpu_info_primary) {
-		/* Synchronize TSC again, and check for drift. */
+		/* Synchronize TSC */
 		wbinvd();
 		atomic_or_32(&ci->ci_flags, CPUF_RUNNING);
 		tsc_sync_ap(ci);
@@ -734,8 +786,9 @@ cpu_start_secondary(struct cpu_info *ci)
 	} else {
 		/*
 		 * Synchronize time stamp counters. Invalidate cache and do
-		 * twice to try and minimize possible cache effects. Disable
-		 * interrupts to try and rule out any external interference.
+		 * twice (in tsc_sync_bp) to minimize possible cache effects.
+		 * Disable interrupts to try and rule out any external
+		 * interference.
 		 */
 		psl = x86_read_psl();
 		x86_disable_intr();
@@ -795,6 +848,7 @@ cpu_hatch(void *v)
 
 	cpu_init_msrs(ci, true);
 	cpu_probe(ci);
+	cpu_speculation_init(ci);
 
 	ci->ci_data.cpu_cc_freq = cpu_info_primary.ci_data.cpu_cc_freq;
 	/* cpu_get_tsc_freq(ci); */
@@ -802,19 +856,25 @@ cpu_hatch(void *v)
 	KDASSERT((ci->ci_flags & CPUF_PRESENT) == 0);
 
 	/*
-	 * Synchronize time stamp counters.  Invalidate cache and do twice
-	 * to try and minimize possible cache effects.  Note that interrupts
-	 * are off at this point.
+	 * Synchronize the TSC for the first time. Note that interrupts are
+	 * off at this point.
 	 */
 	wbinvd();
 	atomic_or_32(&ci->ci_flags, CPUF_PRESENT);
 	tsc_sync_ap(ci);
 
 	/*
-	 * Wait to be brought online.  Use 'monitor/mwait' if available,
-	 * in order to make the TSC drift as much as possible. so that
-	 * we can detect it later.  If not available, try 'pause'.
-	 * We'd like to use 'hlt', but we have interrupts off.
+	 * Wait to be brought online.
+	 *
+	 * Use MONITOR/MWAIT if available. These instructions put the CPU in
+	 * a low consumption mode (C-state), and if the TSC is not invariant,
+	 * this causes the TSC to drift. We want this to happen, so that we
+	 * can later detect (in tsc_tc_init) any abnormal drift with invariant
+	 * TSCs. That's just for safety; by definition such drifts should
+	 * never occur with invariant TSCs.
+	 *
+	 * If not available, try PAUSE. We'd like to use HLT, but we have
+	 * interrupts off.
 	 */
 	while ((ci->ci_flags & CPUF_GO) == 0) {
 		if ((cpu_feature[1] & CPUID2_MONITOR) != 0) {
@@ -870,6 +930,11 @@ cpu_hatch(void *v)
 	lldt(GSYSSEL(GLDT_SEL, SEL_KPL));
 	ltr(ci->ci_tss_sel);
 
+	/*
+	 * cpu_init will re-synchronize the TSC, and will detect any abnormal
+	 * drift that would have been caused by the use of MONITOR/MWAIT
+	 * above.
+	 */
 	cpu_init(ci);
 	cpu_get_tsc_freq(ci);
 
@@ -1041,7 +1106,7 @@ mp_cpu_start_cleanup(struct cpu_info *ci)
 
 #ifdef __x86_64__
 typedef void (vector)(void);
-extern vector Xsyscall, Xsyscall32;
+extern vector Xsyscall, Xsyscall32, Xsyscall_svs;
 #endif
 
 void
@@ -1054,6 +1119,11 @@ cpu_init_msrs(struct cpu_info *ci, bool full)
 	wrmsr(MSR_LSTAR, (uint64_t)Xsyscall);
 	wrmsr(MSR_CSTAR, (uint64_t)Xsyscall32);
 	wrmsr(MSR_SFMASK, PSL_NT|PSL_T|PSL_I|PSL_C|PSL_D|PSL_AC);
+
+#ifdef SVS
+	if (svs_enabled)
+		wrmsr(MSR_LSTAR, (uint64_t)Xsyscall_svs);
+#endif
 
 	if (full) {
 		wrmsr(MSR_FSBASE, 0);
@@ -1215,6 +1285,12 @@ x86_cpu_idle_halt(void)
 void
 cpu_load_pmap(struct pmap *pmap, struct pmap *oldpmap)
 {
+#ifdef SVS
+	if (svs_enabled) {
+		svs_pdir_switch(pmap);
+	}
+#endif
+
 #ifdef PAE
 	struct cpu_info *ci = curcpu();
 	bool interrupts_enabled;
@@ -1237,9 +1313,9 @@ cpu_load_pmap(struct pmap *pmap, struct pmap *oldpmap)
 	if (interrupts_enabled)
 		x86_enable_intr();
 	tlbflush();
-#else /* PAE */
+#else
 	lcr3(pmap_pdirpa(pmap, 0));
-#endif /* PAE */
+#endif
 }
 
 /*

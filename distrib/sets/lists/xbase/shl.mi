@@ -1,4 +1,4 @@
-# $NetBSD: shl.mi,v 1.78 2017/10/06 20:26:51 christos Exp $
+# $NetBSD: shl.mi,v 1.82 2018/06/06 03:09:12 snj Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -14,9 +14,9 @@
 ./usr/X11R7/lib/X11/locale/lib/common/xlibi18n.so	-unknown-	xorg
 ./usr/X11R7/lib/X11/locale/lib/common/xlibi18n.so.2	-unknown-	xorg
 ./usr/X11R7/lib/X11/locale/lib/common/xlibi18n.so.2.0	-unknown-	xorg
-./usr/X11R7/lib/X11/locale/lib/common/xlocale.so	-unknown-	xorg,obsolete
-./usr/X11R7/lib/X11/locale/lib/common/xlocale.so.2	-unknown-	xorg,obsolete
-./usr/X11R7/lib/X11/locale/lib/common/xlocale.so.2.0	-unknown-	xorg,obsolete
+./usr/X11R7/lib/X11/locale/lib/common/xlocale.so	-unknown-	obsolete
+./usr/X11R7/lib/X11/locale/lib/common/xlocale.so.2	-unknown-	obsolete
+./usr/X11R7/lib/X11/locale/lib/common/xlocale.so.2.0	-unknown-	obsolete
 ./usr/X11R7/lib/X11/locale/lib/common/xomGeneric.so	-unknown-	xorg
 ./usr/X11R7/lib/X11/locale/lib/common/xomGeneric.so.2	-unknown-	xorg
 ./usr/X11R7/lib/X11/locale/lib/common/xomGeneric.so.2.0	-unknown-	xorg
@@ -89,12 +89,12 @@
 ./usr/X11R7/lib/libXfixes.so			-unknown-		xorg,compatx11file
 ./usr/X11R7/lib/libXfixes.so.4			-unknown-		xorg,compatx11file
 ./usr/X11R7/lib/libXfixes.so.4.0		-unknown-		xorg,compatx11file
+./usr/X11R7/lib/libXfont2.so			-unknown-		xorg,compatx11file
+./usr/X11R7/lib/libXfont2.so.2			-unknown-		xorg,compatx11file
+./usr/X11R7/lib/libXfont2.so.2.0		-unknown-		xorg,compatx11file
 ./usr/X11R7/lib/libXfont.so			-unknown-		xorg,compatx11file
 ./usr/X11R7/lib/libXfont.so.3			-unknown-		xorg,compatx11file
 ./usr/X11R7/lib/libXfont.so.3.0			-unknown-		xorg,compatx11file
-./usr/X11R7/lib/libXfontcache.so		-unknown-		xorg,compatx11file
-./usr/X11R7/lib/libXfontcache.so.2		-unknown-		xorg,compatx11file
-./usr/X11R7/lib/libXfontcache.so.2.0		-unknown-		xorg,compatx11file
 ./usr/X11R7/lib/libXft.so			-unknown-		xorg,compatx11file
 ./usr/X11R7/lib/libXft.so.3			-unknown-		xorg,compatx11file
 ./usr/X11R7/lib/libXft.so.3.0			-unknown-		xorg,compatx11file
@@ -181,7 +181,7 @@
 ./usr/X11R7/lib/libfontenc.so.2.0		-unknown-		xorg,compatx11file
 ./usr/X11R7/lib/libfreetype.so			-unknown-		xorg,compatx11file
 ./usr/X11R7/lib/libfreetype.so.18		-unknown-		xorg,compatx11file
-./usr/X11R7/lib/libfreetype.so.18.0.13		-unknown-		xorg,compatx11file
+./usr/X11R7/lib/libfreetype.so.18.16.1		-unknown-		xorg,compatx11file
 ./usr/X11R7/lib/libgbm.so			-unknown-		xorg,compatx11file
 ./usr/X11R7/lib/libgbm.so.1			-unknown-		xorg,compatx11file
 ./usr/X11R7/lib/libgbm.so.1.0			-unknown-		xorg,compatx11file

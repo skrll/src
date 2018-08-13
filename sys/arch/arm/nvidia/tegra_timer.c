@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_timer.c,v 1.7 2017/06/02 00:16:27 jmcneill Exp $ */
+/* $NetBSD: tegra_timer.c,v 1.9 2018/07/16 23:11:47 christos Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra_timer.c,v 1.7 2017/06/02 00:16:27 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra_timer.c,v 1.9 2018/07/16 23:11:47 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -103,7 +103,8 @@ tegra_timer_attach(device_t parent, device_t self, void *aux)
 	sc->sc_bst = faa->faa_bst;
 	error = bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh);
 	if (error) {
-		aprint_error(": couldn't map %#llx: %d", (uint64_t)addr, error);
+		aprint_error(": couldn't map %#" PRIx64 ": %d",
+		    (uint64_t)addr, error);
 		return;
 	}
 
@@ -164,7 +165,8 @@ void
 tegra_timer_delay(u_int us)
 {
 	static bool timerus_configured = false;
-	bus_space_tag_t bst = &armv7_generic_bs_tag;
+	extern struct bus_space arm_generic_bs_tag;
+	bus_space_tag_t bst = &arm_generic_bs_tag;
 	bus_space_handle_t bsh;
 
 	bus_space_subregion(bst, tegra_ppsb_bsh, TEGRA_TIMER_OFFSET,

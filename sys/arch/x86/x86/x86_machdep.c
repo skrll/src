@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_machdep.c,v 1.102 2017/11/23 16:30:50 kamil Exp $	*/
+/*	$NetBSD: x86_machdep.c,v 1.119 2018/07/13 09:37:32 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007 YAMAMOTO Takashi,
@@ -31,12 +31,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.102 2017/11/23 16:30:50 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.119 2018/07/13 09:37:32 maxv Exp $");
 
 #include "opt_modular.h"
 #include "opt_physmem.h"
 #include "opt_splash.h"
 #include "opt_kaslr.h"
+#include "opt_svs.h"
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -67,7 +68,6 @@ __KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.102 2017/11/23 16:30:50 kamil Exp 
 
 #include <machine/bootinfo.h>
 #include <machine/vmparam.h>
-#include <machine/pmc.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -1092,7 +1092,6 @@ x86_startup(void)
 {
 #if !defined(XEN)
 	nmi_init();
-	pmc_init();
 #endif
 }
 
@@ -1253,6 +1252,31 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 		       SYSCTL_DESCR("RDTSC instruction enabled in usermode"),
 		       sysctl_machdep_tsc_enable, 0, &tsc_user_enabled, 0,
 		       CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+#endif
+#ifdef SVS
+	int sysctl_machdep_svs_enabled(SYSCTLFN_ARGS);
+	const struct sysctlnode *svs_rnode = NULL;
+	sysctl_createv(clog, 0, NULL, &svs_rnode,
+		       CTLFLAG_PERMANENT,
+		       CTLTYPE_NODE, "svs", NULL,
+		       NULL, 0, NULL, 0,
+		       CTL_MACHDEP, CTL_CREATE);
+	sysctl_createv(clog, 0, &svs_rnode, &svs_rnode,
+		       CTLFLAG_READWRITE,
+		       CTLTYPE_BOOL, "enabled",
+		       SYSCTL_DESCR("Whether the kernel uses SVS"),
+		       sysctl_machdep_svs_enabled, 0, &svs_enabled, 0,
+		       CTL_CREATE, CTL_EOL);
+#endif
+
+#ifndef XEN
+	void sysctl_speculation_init(struct sysctllog **);
+	sysctl_speculation_init(clog);
+#endif
+
+#ifndef XEN
+	void sysctl_eagerfpu_init(struct sysctllog **);
+	sysctl_eagerfpu_init(clog);
 #endif
 
 	/* None of these can ever change once the system has booted */

@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_var.h,v 1.181 2017/11/15 09:55:22 ozaki-r Exp $	*/
+/*	$NetBSD: tcp_var.h,v 1.186 2018/04/29 12:12:42 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -142,7 +142,7 @@
 #endif
 
 /*
- * Kernel variables for tcp.
+ * TCP kernel structures and variables.
  */
 
 #include <sys/callout.h>
@@ -161,6 +161,29 @@
  */
 #define	TCP_SIG_SPI	0x1000
 #endif /* TCP_SIGNATURE */
+
+/*
+ * Tcp+ip header, after ip options removed.
+ */
+struct tcpiphdr {
+	struct ipovly ti_i;		/* overlaid ip structure */
+	struct tcphdr ti_t;		/* tcp header */
+} __packed;
+#define	ti_x1		ti_i.ih_x1
+#define	ti_pr		ti_i.ih_pr
+#define	ti_len		ti_i.ih_len
+#define	ti_src		ti_i.ih_src
+#define	ti_dst		ti_i.ih_dst
+#define	ti_sport	ti_t.th_sport
+#define	ti_dport	ti_t.th_dport
+#define	ti_seq		ti_t.th_seq
+#define	ti_ack		ti_t.th_ack
+#define	ti_x2		ti_t.th_x2
+#define	ti_off		ti_t.th_off
+#define	ti_flags	ti_t.th_flags
+#define	ti_win		ti_t.th_win
+#define	ti_sum		ti_t.th_sum
+#define	ti_urp		ti_t.th_urp
 
 /*
  * SACK option block.
@@ -880,7 +903,7 @@ struct tcpcb *
 	 tcp_drop(struct tcpcb *, int);
 #ifdef TCP_SIGNATURE
 int	 tcp_signature_apply(void *, void *, u_int);
-struct secasvar *tcp_signature_getsav(struct mbuf *, struct tcphdr *);
+struct secasvar *tcp_signature_getsav(struct mbuf *);
 int	 tcp_signature(struct mbuf *, struct tcphdr *, int, struct secasvar *,
 	    char *);
 #endif
@@ -928,8 +951,6 @@ void	 tcp_setpersist(struct tcpcb *);
 int	 tcp_signature_compute(struct mbuf *, struct tcphdr *, int, int,
 	    int, u_char *, u_int);
 #endif
-void	 tcp_slowtimo(void *);
-extern callout_t tcp_slowtimo_ch;
 void	 tcp_fasttimo(void);
 struct mbuf *
 	 tcp_template(struct tcpcb *);
@@ -962,15 +983,14 @@ int	 syn_cache_add(struct sockaddr *, struct sockaddr *,
 void	 syn_cache_unreach(const struct sockaddr *, const struct sockaddr *,
 	   struct tcphdr *);
 struct socket *syn_cache_get(struct sockaddr *, struct sockaddr *,
-		struct tcphdr *, unsigned int, unsigned int,
-		struct socket *so, struct mbuf *);
+		struct tcphdr *, struct socket *so, struct mbuf *);
 void	 syn_cache_init(void);
 void	 syn_cache_insert(struct syn_cache *, struct tcpcb *);
 struct syn_cache *syn_cache_lookup(const struct sockaddr *, const struct sockaddr *,
 		struct syn_cache_head **);
 void	 syn_cache_reset(struct sockaddr *, struct sockaddr *,
 		struct tcphdr *);
-int	 syn_cache_respond(struct syn_cache *, struct mbuf *);
+int	 syn_cache_respond(struct syn_cache *);
 void	 syn_cache_cleanup(struct tcpcb *);
 
 int	 tcp_input_checksum(int, struct mbuf *, const struct tcphdr *, int, int,

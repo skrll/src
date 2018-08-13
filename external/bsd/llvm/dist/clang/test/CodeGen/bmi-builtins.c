@@ -1,7 +1,17 @@
 // RUN: %clang_cc1 -ffreestanding %s -triple=x86_64-apple-darwin -target-feature +bmi -emit-llvm -o - -Wall -Werror | FileCheck %s
 
 
-#include <x86intrin.h>
+#include <immintrin.h>
+
+// NOTE: This should match the tests in llvm/test/CodeGen/X86/bmi-intrinsics-fast-isel.ll
+
+// The double underscore intrinsics are for compatibility with
+// AMD's BMI interface. The single underscore intrinsics
+// are for compatibility with Intel's BMI interface.
+// Apart from the underscores, the interfaces are identical
+// except in one case: although the 'bextr' register-form
+// instruction is identical in hardware, the AMD and Intel
+// intrinsics are different!
 
 // NOTE: This should match the tests in llvm/test/CodeGen/X86/bmi-intrinsics-fast-isel.ll
 

@@ -1,4 +1,4 @@
-# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2338 $>
+# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2418 $>
 #
 #
 # [Note: This file does not mention every change made to the NetBSD source tree.
@@ -80,7 +80,6 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 	kernhist(9): Reworked the export-via-sysctl code to use uintptr_t
 		arguments, PR kern/52639.  Requires contemporaneous update
 		of vmstat(1). [pgoyette 20171028]
-	x86: Add support for XSAVEOPT [maxv 20171104]
 	acpi(4): Updated ACPICA to 20171110. [christos 20171111]
 	sunxinand(4): Add driver for Allwinner NAND Flash Controller.
 		[jmcneill 20171113]
@@ -91,3 +90,106 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 	gdb(1): Updated to 8.0.1.  [christos 20171128]
 	dhcpcd(8): Import dhcpcd-7.0.0-rc4. [roy 20171206]
 	ihidev(4), ims(4): Added drivers for i2c HID mice. [bouyer 20171210]
+	lua: Applied 6th bugfix to Lua 5.3.4 from lua.org/bugs.html.
+		[mbalmer 20171213]
+	sstk: Remove the "stack section size change" syscall [kamil 20171219]
+	sbrk: Remove the "data section size change" syscall [kamil 20171219]
+	ovadvise: Remove the old vadvise syscall header [kamil 20171219]
+	dhcpcd(8): Import dhcpcd-7.0.0 [roy 20180101]
+	mdnsd(8), dns-sd(1), libdns_sd: import mDNSResponder 878.1
+		[christos 20180114]
+	cpuctl(8): Add cpuctl identify support for sparc and sparc64.
+		[mrg 20180116]
+	macppc: Enable Veriexec support in the GENERIC kernel [sevan 20180117]
+	raid(4): Add support for 32-bit on 64-bit kernel.  [mrg 20180117]
+	zoneinfo: Import tzdata2018c (skipping 2018a & 2018b). [kre 20180124]
+	libc: Update to tzcode2018c. [christos 20180125]
+	i386: Add support for SMAP. [maxv 20180128]
+	dhcpcd(8): Import dhcpcd-7.0.1 [roy 20180129]
+	gcc: Import GCC 6.4.  [mrg 20180201]
+	openldap: Import 2.4.45. [christos 20180205]
+	unbound: Import 1.6.8. [christos 20180205]
+	nsd: import 4.1.19 [christos 20180209]
+	ddb(4):	Introduce dumpstack sysctl for printing a stack trace on panic,
+		enable by default. [sevan 20180217]
+	sdtemp(4): Add Microchp EMC1501, another device ID of Maxim MAX6604
+		support. [msaitoh 20180222]
+	ichsmb(4): Add support for Intel C620 devices. [msaitoh 20180222]
+	macppc: Enable support for "per-priority cyclical scan" buffer queue
+		strategy. [sevan 20180223]
+	macppc: Enable awacs(4) by default in kernel configs. [sevan 20180224]
+	mdnsd(8), dns-sd(1), libdns_sd: import mDNSResponder 878.30.4
+		[christos 20180225]
+	macppc: Remove macofcons(4). [sevan 20180226]
+	amd64: Add SVS (Meltdown mitigation). [maxv 20180226]
+	imcsmb(4): For amd64 and i386 on Intel {Ivy,Sandy}bridge and
+		{Broad,Has}well CPUs, enable access to Integrated Memory
+		Controller-based SMBus [pgoyette 20170228]
+	ichsmb(4): Add Apollo Lake and Gemini Lake devices. [msaitoh 20180302]
+	lm(4): Add NCT6796D support. [msaitoh 20180308]
+	macppc: Enable Bluetooth support by default in GENERIC kernel.
+		[sevan 20180316]
+	tzdata: updated to 2017d [kre 20180324]
+	dhcpcd: Import 7.0.2. [roy 20180327]
+	aarch64: Add initial support for aarch64. [ryo 20180401]
+	amd64: Add SpectreV2 mitigations, based on IBRS and the DIS_IND
+		bit. [maxv 20180404]
+	dhcpcd: Import 7.0.3. [roy 20180406]
+	OpenSSH: Imported 7.7. [christos 20180406]
+	OpenSSL: Imported 1.1.0h. [christos 20180406]
+	ntp: Import ntp 4.2.8p11. [christos 20180406]
+	acpi(4): Updated ACPICA to 20180313. [christos 20180407]
+	dhcp: Import version 4.4.1 (move to MPL). [christos 20180407]
+	bind: Import version 9.10.7. [christos 20180407]
+	x86: Enable retpoline by default (SpectreV2 mitigation). [mrg 20180408]
+	ichsmb(4): Add Intel 300 series chipset support. [msaitoh 20180409]
+	wm(4): Enable I219 support. [msaitoh 20180413]
+	puc(4): Add Intel 300 series chipset support. [msaitoh 20180413]
+	file(1): Upgraded to 5.33. [christos 20180415]
+	netpgp(3lua): Add Lua binding for libnetpgp(3). [sevan 20180429]
+	arm: Add support for Allwinner H6 SoC. [jmcneill 20180501]
+	dhcpcd: Import 7.0.4. [roy 20180502]
+	libbozohttpd(3): Add the embeddable version of bozohttpd [sevan 20180503]
+	bozohttpd(3lua): Add Lua binding for libbozohttpd(3lua) [sevan 20180503]
+	tzdata: updated to 2017e [kre 20180504]
+	libc: Update to tzcode2018e. [christos 20180504]
+	acpi(4): Updated ACPICA to 20180427. [christos 20180504]
+	gpio(4): Overhauled interrupt support.  Added GPIO interrupt
+		capability for Broadcom BCM283x SoCs (e.g.
+		Raspberry Pi). [thorpej 20180519]
+	x86: Add SpectreV4 mitigations. [maxv 20180522]
+	macppc: Enable ipsec(4) and ipsecif(4) support in GENERIC kernel by
+		default. [sevan 20180602]
+	dhcpcd: Import 7.0.5b. [roy 20180604]
+	virtio(4): Add MMIO transport and fdt(4) attachment. [jakllsch 20180606]
+	arm: Add support for QEMU ARM Virtual Machine ("virt"). [jmcneill 20180614]
+	arm: Add support for Rockchip RK3328 SoC. [jmcneill 20180615]
+	dhcpcd: Import 7.0.6. [roy 20180621]
+	bpf(4): Add the BPF direction filter (BIOC[GS]DIRECTION).
+		[msaitoh 20180626]
+	gcc: add lsan the Leak Sanitizer [christos 20180626]
+	aarch64: Add support for SMP. [ryo 20180709]
+	viadrm(4): Removed, superseded by viadrmums. [maya 20180710]
+	ssh-agent(1): /usr/pkg/lib* whitelisted by default for PKCS11 related
+		libraries, in place of /usr/local/lib*. [sevan 20180710]
+	x86: Support for -static -pie binaries. [joerg 20180712]
+	kernel: Remove pmc(9) and X86PMC. [maxv 20180714]
+	tprof(4): Revamped. tpfmt(1) merged into tprof(8). [maxv 20180714]
+	ipkdb(4): Removed. [maxv 20180714]
+	arm: Add support for ARMv8 performance event monitoring with tprof(4).
+		[jmcneill 20180715]
+	arm: Add support for ARMv7 performance event monitoring with tprof(4).
+		[jmcneill 20180715]
+	dhcpcd: Import 7.0.7. [roy 20180724]
+	i386: Remove the XEN3_DOM0 and XEN3_DOMU configurations, and drop
+		support for non-PAE-32bit-PV, to leave only PAE-32bit-PV.
+		[maxv 20180726]
+	tea5767radio(4): Add Philips/NXP TEA5767 I2C-controlled stereo FM radio
+		driver. [rkujawa 20180727]
+	UBSan: Imported a clean-room reimplementation of the sanitizer runtime
+		called micro-UBSan. [kamil 20180803]
+	uUBSan: Added support for micro-UBSan (user-UBSan) in MKLIBCSANITIZER.
+		[kamil 20180803]
+	kUBSan: Added support for micro-UBSan (kernel-UBSan) as KUBSAN.
+		[kamil 20180803]
+	arm: Add driver for ARM GICv3 interrupt controllers. [jmcneill 20180808]

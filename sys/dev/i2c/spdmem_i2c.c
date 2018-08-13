@@ -1,4 +1,4 @@
-/* $NetBSD: spdmem_i2c.c,v 1.13 2016/09/09 05:36:59 msaitoh Exp $ */
+/* $NetBSD: spdmem_i2c.c,v 1.15 2018/06/16 21:22:13 thorpej Exp $ */
 
 /*
  * Copyright (c) 2007 Nicolas Joly
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: spdmem_i2c.c,v 1.13 2016/09/09 05:36:59 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spdmem_i2c.c,v 1.15 2018/06/16 21:22:13 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -102,6 +102,7 @@ static int
 spdmem_reset_page(struct spdmem_i2c_softc *sc)
 {
 	uint8_t reg, byte0, byte2;
+	static uint8_t dummy = 0;
 	int rv;
 
 	reg = 0;
@@ -142,7 +143,7 @@ spdmem_reset_page(struct spdmem_i2c_softc *sc)
 		 * I don't know whether our icc_exec()'s API is good or not.
 		 */
 		rv = iic_exec(sc->sc_tag, I2C_OP_READ_WITH_STOP, sc->sc_page0,
-		    &reg, 1, NULL, 0, I2C_F_POLL);
+		    &reg, 1, &dummy, 1, I2C_F_POLL);
 		if (rv != 0) {
 			/*
 			 * The possibilities are:
@@ -152,7 +153,7 @@ spdmem_reset_page(struct spdmem_i2c_softc *sc)
 			 * Is there no way to distinguish them now?
 			 */
 			rv = iic_exec(sc->sc_tag, I2C_OP_WRITE_WITH_STOP,
-			    sc->sc_page0, &reg, 1, NULL, 0, I2C_F_POLL);
+			    sc->sc_page0, &reg, 1, &dummy, 1, I2C_F_POLL);
 			if (rv == 0) {
 				aprint_debug("Page 1 was selected. Page 0 is "
 				    "selected now.\n");
@@ -177,6 +178,15 @@ spdmem_i2c_match(device_t parent, cfdata_t match, void *aux)
 	struct i2c_attach_args *ia = aux;
 	struct spdmem_i2c_softc sc;
 
+	/*
+	 * XXXJRT
+	 * Should do this with "compatible" strings.  There are also
+	 * other problems with this "match" routine.  Specifically, if
+	 * we are doing direct-config, we know the device is already
+	 * there aren't do need to probe.  I'll leave the logic for
+	 * now and let someone who knows better clean it later.
+	 */
+
 	if (ia->ia_name) {
 		/* add other names as we find more firmware variations */
 		if (strcmp(ia->ia_name, "dimm-spd") &&
@@ -200,7 +210,11 @@ spdmem_i2c_match(device_t parent, cfdata_t match, void *aux)
 	if (spdmem_reset_page(&sc) != 0)
 		return 0;
 
-	return spdmem_common_probe(&sc.sc_base);
+	if (spdmem_common_probe(&sc.sc_base)) {
+		return ia->ia_name ? I2C_MATCH_DIRECT_SPECIFIC
+				   : I2C_MATCH_ADDRESS_AND_PROBE;
+	}
+	return 0;
 }
 
 static void
@@ -245,11 +259,11 @@ spdmem_i2c_read(struct spdmem_softc *softc, uint16_t addr, uint8_t *val)
 
 	if (addr & 0x100) {
 		rv = iic_exec(sc->sc_tag, I2C_OP_WRITE_WITH_STOP, sc->sc_page1,
-		    &dummy, 1, NULL, 0, I2C_F_POLL);
+		    &dummy, 1, &dummy, 1, I2C_F_POLL);
 		rv |= iic_exec(sc->sc_tag, I2C_OP_READ_WITH_STOP, sc->sc_addr,
 		    &reg, 1, val, 1, I2C_F_POLL);
 		rv |= iic_exec(sc->sc_tag, I2C_OP_WRITE_WITH_STOP,
-		    sc->sc_page0, &dummy, 1, NULL, 0, I2C_F_POLL);
+		    sc->sc_page0, &dummy, 1, &dummy, 1, I2C_F_POLL);
 	} else {
 		rv = iic_exec(sc->sc_tag, I2C_OP_READ_WITH_STOP, sc->sc_addr,
 		    &reg, 1, val, 1, I2C_F_POLL);

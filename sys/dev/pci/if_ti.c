@@ -1,4 +1,4 @@
-/* $NetBSD: if_ti.c,v 1.102 2017/09/26 07:42:06 knakahara Exp $ */
+/* $NetBSD: if_ti.c,v 1.105 2018/07/18 23:10:28 sevan Exp $ */
 
 /*
  * Copyright (c) 1997, 1998, 1999
@@ -81,7 +81,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ti.c,v 1.102 2017/09/26 07:42:06 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ti.c,v 1.105 2018/07/18 23:10:28 sevan Exp $");
 
 #include "opt_inet.h"
 
@@ -688,7 +688,7 @@ ti_jfree(struct mbuf *m, void *tbuf, size_t size, void *arg)
 
 
 /*
- * Intialize a standard receive ring descriptor.
+ * Initialize a standard receive ring descriptor.
  */
 static int
 ti_newbuf_std(struct ti_softc *sc, int i, struct mbuf *m, bus_dmamap_t dmamap)
@@ -1727,7 +1727,7 @@ ti_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * A Tigon chip was detected. Inform the world.
 	 */
-	aprint_normal_dev(self, "Ethernet address: %s\n",ether_sprintf(eaddr));
+	aprint_normal_dev(self, "Ethernet address %s\n",ether_sprintf(eaddr));
 
 	sc->sc_dmat = pa->pa_dmat;
 
@@ -2154,7 +2154,7 @@ ti_intr(void *xsc)
 		return (0);
 #endif
 
-	/* Ack interrupt and stop others from occuring. */
+	/* Ack interrupt and stop others from occurring. */
 	CSR_WRITE_4(sc, TI_MB_HOSTINTR, 1);
 
 	if (ifp->if_flags & IFF_RUNNING) {
@@ -2431,7 +2431,7 @@ ti_start(struct ifnet *ifp)
 		 * If there's a BPF listener, bounce a copy of this frame
 		 * to him.
 		 */
-		bpf_mtap(ifp, m_head);
+		bpf_mtap(ifp, m_head, BPF_D_OUT);
 	}
 
 	/* Transmit */

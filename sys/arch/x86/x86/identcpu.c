@@ -1,4 +1,4 @@
-/*	$NetBSD: identcpu.c,v 1.67 2017/11/11 11:00:46 maxv Exp $	*/
+/*	$NetBSD: identcpu.c,v 1.79 2018/07/04 07:55:57 maya Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.67 2017/11/11 11:00:46 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.79 2018/07/04 07:55:57 maya Exp $");
 
 #include "opt_xen.h"
 
@@ -66,7 +66,7 @@ int cpu_vendor;
 char cpu_brand_string[49];
 
 int x86_fpu_save __read_mostly;
-unsigned int x86_fpu_save_size __read_mostly = 512;
+unsigned int x86_fpu_save_size __read_mostly = sizeof(struct save87);
 uint64_t x86_xsave_features __read_mostly = 0;
 
 /*
@@ -190,6 +190,24 @@ cpu_probe_intel_cache(struct cpu_info *ci)
 }
 
 static void
+cpu_probe_intel_errata(struct cpu_info *ci)
+{
+	u_int family, model, stepping;
+
+	family = CPUID_TO_FAMILY(ci->ci_signature);
+	model = CPUID_TO_MODEL(ci->ci_signature);
+	stepping = CPUID_TO_STEPPING(ci->ci_signature);
+
+	if (family == 0x6 && model == 0x5C && stepping == 0x9) { /* Apollo Lake */
+		wrmsr(MSR_MISC_ENABLE,
+		    rdmsr(MSR_MISC_ENABLE) & ~IA32_MISC_MWAIT_EN);
+
+		cpu_feature[1] &= ~CPUID2_MONITOR;
+		ci->ci_feat_val[1] &= ~CPUID2_MONITOR;
+	}
+}
+
+static void
 cpu_probe_intel(struct cpu_info *ci)
 {
 
@@ -197,6 +215,7 @@ cpu_probe_intel(struct cpu_info *ci)
 		return;
 
 	cpu_probe_intel_cache(ci);
+	cpu_probe_intel_errata(ci);
 }
 
 static void
@@ -679,23 +698,17 @@ cpu_probe_vortex86(struct cpu_info *ci)
 	outl(PCI_MODE1_ADDRESS_REG, PCI_MODE1_ENABLE | 0x90);
 	reg = inl(PCI_MODE1_DATA_REG);
 
-	switch(reg) {
-	case 0x31504d44:
-		strcpy(cpu_brand_string, "Vortex86SX");
-		break;
-	case 0x32504d44:
-		strcpy(cpu_brand_string, "Vortex86DX");
-		break;
-	case 0x33504d44:
-		strcpy(cpu_brand_string, "Vortex86MX");
-		break;
-	case 0x37504d44:
-		strcpy(cpu_brand_string, "Vortex86EX");
-		break;
-	default:
-		strcpy(cpu_brand_string, "Unknown Vortex86");
-		break;
+	if ((reg & 0xf8ffffff) != 0x30504d44) {
+		reg = 0;
+	} else {
+		reg = (reg >> 24) & 7;
 	}
+
+	static const char *cpu_vortex86_flavor[] = {
+	    "??", "SX", "DX", "MX", "DX2", "MX+", "DX3", "EX",
+	};
+	snprintf(cpu_brand_string, sizeof(cpu_brand_string), "Vortex86%s",
+	    cpu_vortex86_flavor[reg]);
 
 #undef PCI_MODE1_ENABLE
 #undef PCI_MODE1_ADDRESS_REG
@@ -719,14 +732,62 @@ cpu_probe_old_fpu(struct cpu_info *ci)
 #endif
 }
 
+#ifndef XEN
+static void
+cpu_probe_fpu_leak(struct cpu_info *ci)
+{
+	/*
+	 * INTEL-SA-00145. Affected CPUs are from Family 6.
+	 */
+	if (cpu_vendor != CPUVENDOR_INTEL) {
+		return;
+	}
+	if (CPUID_TO_FAMILY(ci->ci_signature) != 6) {
+		return;
+	}
+
+	switch (CPUID_TO_MODEL(ci->ci_signature)) {
+	/* Atom CPUs are not vulnerable. */
+	case 0x1c: /* Pineview */
+	case 0x26: /* Lincroft */
+	case 0x27: /* Penwell */
+	case 0x35: /* Cloverview */
+	case 0x36: /* Cedarview */
+	case 0x37: /* Baytrail / Valleyview (Silvermont) */
+	case 0x4d: /* Avaton / Rangely (Silvermont) */
+	case 0x4c: /* Cherrytrail / Brasswell */
+	case 0x4a: /* Merrifield */
+	case 0x5a: /* Moorefield */
+	case 0x5c: /* Goldmont */
+	case 0x5f: /* Denverton */
+	case 0x7a: /* Gemini Lake */
+		break;
+
+	/* Knights CPUs are not vulnerable. */
+	case 0x57: /* Knights Landing */
+	case 0x85: /* Knights Mill */
+		break;
+
+	/* The rest is vulnerable. */
+	default:
+		x86_fpu_eager = true;
+		break;
+	}
+}
+#endif
+
 static void
 cpu_probe_fpu(struct cpu_info *ci)
 {
 	u_int descs[4];
 
+#ifndef XEN
+	cpu_probe_fpu_leak(ci);
+#endif
+
 	x86_fpu_save = FPU_SAVE_FSAVE;
 
-#ifdef i386 /* amd64 always has fxsave, sse and sse2 */
+#ifdef i386
 	/* If we have FXSAVE/FXRESTOR, use them. */
 	if ((ci->ci_feat_val[0] & CPUID_FXSR) == 0) {
 		i386_use_fxsave = 0;
@@ -747,34 +808,44 @@ cpu_probe_fpu(struct cpu_info *ci)
 #else
 	/*
 	 * For amd64 i386_use_fxsave, i386_has_sse and i386_has_sse2 are
-	 * #defined to 1.
+	 * #defined to 1, because fxsave/sse/sse2 are always present.
 	 */
-#endif	/* i386 */
+#endif
 
 	x86_fpu_save = FPU_SAVE_FXSAVE;
+	x86_fpu_save_size = sizeof(struct fxsave);
 
 	/* See if xsave (for AVX) is supported */
 	if ((ci->ci_feat_val[1] & CPUID2_XSAVE) == 0)
 		return;
 
+#ifdef XEN
+	/*
+	 * Xen kernel can disable XSAVE via "no-xsave" option, in that case
+	 * XSAVE instructions like xrstor become privileged and trigger
+	 * supervisor trap. OSXSAVE flag seems to be reliably set according
+	 * to whether XSAVE is actually available.
+	 */
+#ifdef XEN_USE_XSAVE
+	if ((ci->ci_feat_val[1] & CPUID2_OSXSAVE) == 0)
+#endif
+		return;
+#endif
+
 	x86_fpu_save = FPU_SAVE_XSAVE;
 
-	/* xsaveopt ought to be faster than xsave */
+#if 0 /* XXX PR 52966 */
 	x86_cpuid2(0xd, 1, descs);
 	if (descs[0] & CPUID_PES1_XSAVEOPT)
 		x86_fpu_save = FPU_SAVE_XSAVEOPT;
+#endif
 
 	/* Get features and maximum size of the save area */
 	x86_cpuid(0xd, descs);
-	if (descs[2] > 512)
+	if (descs[2] > sizeof(struct fxsave))
 		x86_fpu_save_size = descs[2];
 
-#ifdef XEN
-	/* Don't use xsave, force fxsave with x86_xsave_features = 0. */
-	x86_fpu_save = FPU_SAVE_FXSAVE;
-#else
 	x86_xsave_features = (uint64_t)descs[3] << 32 | descs[0];
-#endif
 }
 
 void
@@ -840,7 +911,7 @@ cpu_probe(struct cpu_info *ci)
 		/* CLFLUSH line size is next 8 bits */
 		if (ci->ci_feat_val[0] & CPUID_CFLUSH)
 			ci->ci_cflush_lsize
-			    = __SHIFTOUT(miscbytes, CPUID_CLFUSH_SIZE) << 3;
+			    = __SHIFTOUT(miscbytes, CPUID_CLFLUSH_SIZE) << 3;
 		ci->ci_initapicid = __SHIFTOUT(miscbytes, CPUID_LOCAL_APIC_ID);
 	}
 
@@ -881,6 +952,7 @@ cpu_probe(struct cpu_info *ci)
 		x86_cpuid(7, descs);
 		ci->ci_feat_val[5] = descs[1]; /* %ebx */
 		ci->ci_feat_val[6] = descs[2]; /* %ecx */
+		ci->ci_feat_val[7] = descs[3]; /* %edx */
 	}
 
 	cpu_probe_intel(ci);

@@ -1,4 +1,4 @@
-/*	$NetBSD: net_stub.c,v 1.27 2017/08/02 01:28:02 ozaki-r Exp $	*/
+/*	$NetBSD: net_stub.c,v 1.36 2018/05/14 17:34:26 maxv Exp $	*/
 
 /*
  * Copyright (c) 2008 Antti Kantee.  All Rights Reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: net_stub.c,v 1.27 2017/08/02 01:28:02 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: net_stub.c,v 1.36 2018/05/14 17:34:26 maxv Exp $");
 
 #include <sys/mutex.h>
 #include <sys/param.h>
@@ -34,6 +34,8 @@ __KERNEL_RCSID(0, "$NetBSD: net_stub.c,v 1.27 2017/08/02 01:28:02 ozaki-r Exp $"
 #include <sys/socketvar.h>
 #include <sys/pslist.h>
 #include <sys/psref.h>
+#include <sys/sysctl.h>
+#include <sys/un.h>
 
 #include <net/if.h>
 #include <net/route.h>
@@ -83,28 +85,29 @@ int ipsec_used;
 percpu_t *ipsecstat_percpu;
 u_int ipsec_spdgen;
 
+/* sysctl */
+void
+unp_sysctl_create(struct sysctllog **clog)
+{
+}
+
 __weak_alias(ah4_ctlinput,rumpnet_stub);
 __weak_alias(ah6_ctlinput,rumpnet_stub);
 __weak_alias(esp4_ctlinput,rumpnet_stub);
 __weak_alias(esp6_ctlinput,rumpnet_stub);
 __weak_alias(ipsec4_output,rumpnet_stub);
 __weak_alias(ipsec4_common_input,rumpnet_stub);
-__weak_alias(ipsec4_delete_pcbpolicy,rumpnet_stub);
-__weak_alias(ipsec4_forward,rumpnet_stub);
-__weak_alias(ipsec4_hdrsiz,rumpnet_stub);
-__weak_alias(ipsec4_input,rumpnet_stub);
-__weak_alias(ipsec4_in_reject,rumpnet_stub);
-__weak_alias(ipsec4_set_policy,rumpnet_stub);
 __weak_alias(ipsec6_common_input,rumpnet_stub);
-__weak_alias(ipsec6_input,rumpnet_stub);
 __weak_alias(ipsec6_check_policy,rumpnet_stub);
-__weak_alias(ipsec6_delete_pcbpolicy,rumpnet_stub);
-__weak_alias(ipsec6_get_policy,rumpnet_stub);
-__weak_alias(ipsec6_in_reject,rumpnet_stub);
-__weak_alias(ipsec6_hdrsiz,rumpnet_stub);
 __weak_alias(ipsec6_process_packet,rumpnet_stub);
-__weak_alias(ipsec6_set_policy,rumpnet_stub);
-__weak_alias(ipsec_init_policy,rumpnet_stub);
+__weak_alias(ipsec_mtu,rumpnet_stub);
+__weak_alias(ipsec_ip_input,rumpnet_stub);
+__weak_alias(ipsec_set_policy,rumpnet_stub);
+__weak_alias(ipsec_get_policy,rumpnet_stub);
+__weak_alias(ipsec_delete_pcbpolicy,rumpnet_stub);
+__weak_alias(ipsec_hdrsiz,rumpnet_stub);
+__weak_alias(ipsec_in_reject,rumpnet_stub);
+__weak_alias(ipsec_init_pcbpolicy,rumpnet_stub);
 __weak_alias(ipsec_pcbconn,rumpnet_stub);
 __weak_alias(ipsec_pcbdisconn,rumpnet_stub);
 __weak_alias(key_sa_routechange,rumpnet_stub);
@@ -113,10 +116,3 @@ __weak_alias(key_sp_unref,rumpnet_stub);
 struct ifnet_head ifnet_list;
 struct pslist_head ifnet_pslist;
 kmutex_t ifnet_mtx;
-
-int
-compat_ifconf(u_long cmd, void *data)
-{
-
-	return EOPNOTSUPP;
-}

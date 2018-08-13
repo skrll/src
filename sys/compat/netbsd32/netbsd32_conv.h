@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_conv.h,v 1.33 2017/10/31 12:43:56 martin Exp $	*/
+/*	$NetBSD: netbsd32_conv.h,v 1.35 2018/05/10 02:36:07 christos Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Matthew R. Green
@@ -286,6 +286,22 @@ netbsd32_from_msghdr(struct netbsd32_msghdr *mhp32, const struct msghdr *mhp)
 	NETBSD32PTR32(mhp32->msg_control, mhp->msg_control);
 	mhp32->msg_controllen = mhp->msg_controllen;
 	mhp32->msg_flags = mhp->msg_flags;
+}
+
+static __inline void
+netbsd32_to_mmsghdr(const struct netbsd32_mmsghdr *mmsg32,
+    struct mmsghdr *mmsg)
+{
+    netbsd32_to_msghdr(&mmsg32->msg_hdr, &mmsg->msg_hdr);
+    mmsg->msg_len = mmsg32->msg_len;
+}
+
+static __inline void
+netbsd32_from_mmsghdr(struct netbsd32_mmsghdr *mmsg32,
+    const struct mmsghdr *mmsg)
+{
+    netbsd32_from_msghdr(&mmsg32->msg_hdr, &mmsg->msg_hdr);
+    mmsg32->msg_len = mmsg->msg_len;
 }
 
 static __inline void
@@ -754,7 +770,7 @@ netbsd32_to_dirent12(char *buf, int nbytes)
 	return ((char *)(void *)odp) - buf;
 }
 
-static inline int
+static __inline int
 netbsd32_copyin_plistref(netbsd32_pointer_t n32p, struct plistref *p)
 {
 	struct netbsd32_plistref n32plist;
@@ -769,7 +785,7 @@ netbsd32_copyin_plistref(netbsd32_pointer_t n32p, struct plistref *p)
 	return 0;
 }
 
-static inline int
+static __inline int
 netbsd32_copyout_plistref(netbsd32_pointer_t n32p, struct plistref *p)
 {
 	struct netbsd32_plistref n32plist;

@@ -1,4 +1,4 @@
-/*      $NetBSD: if_xennet_xenbus.c,v 1.73 2017/11/11 21:03:01 riastradh Exp $      */
+/*      $NetBSD: if_xennet_xenbus.c,v 1.78 2018/08/10 06:23:12 maxv Exp $      */
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -84,7 +84,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_xennet_xenbus.c,v 1.73 2017/11/11 21:03:01 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_xennet_xenbus.c,v 1.78 2018/08/10 06:23:12 maxv Exp $");
 
 #include "opt_xen.h"
 #include "opt_nfs_boot.h"
@@ -102,7 +102,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_xennet_xenbus.c,v 1.73 2017/11/11 21:03:01 riastr
 #include <net/if_dl.h>
 #include <net/if_ether.h>
 #include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #if defined(NFS_BOOT_BOOTSTATIC)
 #include <sys/fstypes.h>
@@ -132,6 +131,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_xennet_xenbus.c,v 1.73 2017/11/11 21:03:01 riastr
 
 #undef XENNET_DEBUG_DUMP
 #undef XENNET_DEBUG
+
 #ifdef XENNET_DEBUG
 #define XEDB_FOLLOW     0x01
 #define XEDB_INIT       0x02
@@ -323,7 +323,7 @@ xennet_xenbus_attach(device_t parent, device_t self, void *aux)
 	}
 	mutex_init(&sc->sc_rx_lock, MUTEX_DEFAULT, IPL_NET);
 	SLIST_INIT(&sc->sc_rxreq_head);
-	s = splvm();
+	s = splvm(); /* XXXSMP */
 	for (i = 0; i < NET_RX_RING_SIZE; i++) {
 		struct xennet_rxreq *rxreq = &sc->sc_rxreqs[i];
 		rxreq->rxreq_id = i;
@@ -427,12 +427,13 @@ xennet_xenbus_detach(device_t self, int flags)
 	/* wait for pending TX to complete, and collect pending RX packets */
 	xennet_handler(sc);
 	while (sc->sc_tx_ring.sring->rsp_prod != sc->sc_tx_ring.rsp_cons) {
+		/* XXXSMP */
 		tsleep(xennet_xenbus_detach, PRIBIO, "xnet_detach", hz/2);
 		xennet_handler(sc);
 	}
 	xennet_free_rx_buffer(sc);
 
-	s1 = splvm();
+	s1 = splvm(); /* XXXSMP */
 	for (i = 0; i < NET_RX_RING_SIZE; i++) {
 		struct xennet_rxreq *rxreq = &sc->sc_rxreqs[i];
 		uvm_km_free(kernel_map, rxreq->rxreq_va, PAGE_SIZE,
@@ -447,12 +448,14 @@ xennet_xenbus_detach(device_t self, int flags)
 	rnd_detach_source(&sc->sc_rnd_source);
 
 	while (xengnt_status(sc->sc_tx_ring_gntref)) {
+		/* XXXSMP */
 		tsleep(xennet_xenbus_detach, PRIBIO, "xnet_txref", hz/2);
 	}
 	xengnt_revoke_access(sc->sc_tx_ring_gntref);
 	uvm_km_free(kernel_map, (vaddr_t)sc->sc_tx_ring.sring, PAGE_SIZE,
 	    UVM_KMF_WIRED);
 	while (xengnt_status(sc->sc_rx_ring_gntref)) {
+		/* XXXSMP */
 		tsleep(xennet_xenbus_detach, PRIBIO, "xnet_rxref", hz/2);
 	}
 	xengnt_revoke_access(sc->sc_rx_ring_gntref);
@@ -625,6 +628,7 @@ xennet_xenbus_suspend(device_t dev, const pmf_qual_t *qual)
 	/* process any outstanding TX responses, then collect RX packets */
 	xennet_handler(sc);
 	while (sc->sc_tx_ring.sring->rsp_prod != sc->sc_tx_ring.rsp_cons) {
+		/* XXXSMP */
 		tsleep(xennet_xenbus_suspend, PRIBIO, "xnet_suspend", hz/2);
 		xennet_handler(sc);
 	}
@@ -753,7 +757,7 @@ out_loop:
 		 * outstanding in the page update queue -- make sure we flush
 		 * those first!
 		 */
-		s = splvm();
+		s = splvm(); /* XXXSMP */
 		xpq_flush_queue();
 		splx(s);
 		/* now decrease reservation */
@@ -956,7 +960,7 @@ again:
 end:
 	if (ifp->if_flags & IFF_OACTIVE) {
 		ifp->if_flags &= ~IFF_OACTIVE;
-		xennet_softstart(sc);
+		softint_schedule(sc->sc_softintr);
 	}
 }
 
@@ -1168,7 +1172,7 @@ xennet_softstart(void *arg)
 	struct mbuf *m, *new_m;
 	netif_tx_request_t *txreq;
 	RING_IDX req_prod;
-	paddr_t pa, pa2;
+	paddr_t pa;
 	struct xennet_txreq *req;
 	int notify;
 	int do_notify = 0;
@@ -1287,9 +1291,13 @@ xennet_softstart(void *arg)
 		    "mbuf %p, buf %p/%p/%p, size %d\n",
 		    req->txreq_id, m, mtod(m, void *), (void *)pa,
 		    (void *)xpmap_ptom_masked(pa), m->m_pkthdr.len));
+#ifdef XENNET_DEBUG
+		paddr_t pa2;
 		pmap_extract_ma(pmap_kernel(), mtod(m, vaddr_t), &pa2);
 		DPRINTFN(XEDB_MBUF, ("xennet_start pa %p ma %p/%p\n",
 		    (void *)pa, (void *)xpmap_ptom_masked(pa), (void *)pa2));
+#endif
+
 #ifdef XENNET_DEBUG_DUMP
 		xennet_hex_dump(mtod(m, u_char *), m->m_pkthdr.len, "s",
 			       	req->txreq_id);
@@ -1323,7 +1331,7 @@ xennet_softstart(void *arg)
 		/*
 		 * Pass packet to bpf if there is a listener.
 		 */
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 	}
 
 	if (do_notify) {

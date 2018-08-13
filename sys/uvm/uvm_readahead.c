@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_readahead.c,v 1.8 2011/06/12 03:36:04 rmind Exp $	*/
+/*	$NetBSD: uvm_readahead.c,v 1.10 2018/05/19 15:18:02 jdolecek Exp $	*/
 
 /*-
  * Copyright (c)2003, 2005, 2009 YAMAMOTO Takashi,
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_readahead.c,v 1.8 2011/06/12 03:36:04 rmind Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_readahead.c,v 1.10 2018/05/19 15:18:02 jdolecek Exp $");
 
 #include <sys/param.h>
 #include <sys/pool.h>
@@ -73,7 +73,7 @@ struct uvm_ractx {
 #endif
 
 #define	RA_WINSIZE_INIT	MAXPHYS			/* initial window size */
-#define	RA_WINSIZE_MAX	(MAXPHYS * 8)		/* max window size */
+#define	RA_WINSIZE_MAX	(MAXPHYS * 16)		/* max window size */
 #define	RA_WINSIZE_SEQENTIAL	RA_WINSIZE_MAX	/* fixed window size used for
 						   SEQUENTIAL hint */
 #define	RA_MINSIZE	(MAXPHYS * 2)		/* min size to start i/o */
@@ -125,6 +125,23 @@ ra_startio(struct uvm_object *uobj, off_t off, size_t sz)
 
 	DPRINTF(("%s: uobj=%p, off=%" PRIu64 ", endoff=%" PRIu64 "\n",
 	    __func__, uobj, off, endoff));
+
+	/*
+	 * Don't issue read-ahead if the last page of the range is already cached.
+	 * The assumption is that since the access is sequential, the intermediate
+	 * pages would have similar LRU stats, and hence likely to be still in cache
+	 * too. This speeds up I/O using cache, since it avoids lookups and temporary
+	 * allocations done by full pgo_get.
+	 */
+	mutex_enter(uobj->vmobjlock);
+	struct vm_page *pg = uvm_pagelookup(uobj, trunc_page(endoff - 1));
+	mutex_exit(uobj->vmobjlock);
+	if (pg != NULL) {
+		DPRINTF(("%s:  off=%" PRIu64 ", sz=%zu already cached\n",
+		    __func__, off, sz));
+		return endoff;
+	}
+
 	off = trunc_page(off);
 	while (off < endoff) {
 		const size_t chunksize = RA_IOCHUNK;
@@ -147,7 +164,7 @@ ra_startio(struct uvm_object *uobj, off_t off, size_t sz)
 
 		mutex_enter(uobj->vmobjlock);
 		error = (*uobj->pgops->pgo_get)(uobj, off, NULL,
-		    &npages, 0, VM_PROT_READ, UVM_ADV_RANDOM, 0);
+		    &npages, 0, VM_PROT_READ, UVM_ADV_RANDOM, PGO_NOTIMESTAMP);
 		DPRINTF(("%s:  off=%" PRIu64 ", bytelen=%zu -> %d\n",
 		    __func__, off, bytelen, error));
 		if (error != 0 && error != EBUSY) {

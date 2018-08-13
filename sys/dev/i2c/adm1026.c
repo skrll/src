@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: adm1026.c,v 1.2 2016/01/11 18:23:52 jdc Exp $");
+__KERNEL_RCSID(0, "$NetBSD: adm1026.c,v 1.5 2018/06/26 06:03:57 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -122,9 +122,9 @@ static int adm1026_write_reg(struct adm1026_softc *sc,
 CFATTACH_DECL_NEW(adm1026hm, sizeof(struct adm1026_softc),
 	adm1026_match, adm1026_attach, adm1026_detach, NULL);
 
-static const char * adm1026_compats[] = {
-	"i2c-adm1026",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ "i2c-adm1026",		0 },
+	{ NULL,				0 }
 };
 
 static int
@@ -132,22 +132,18 @@ adm1026_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct i2c_attach_args *ia = aux;
 	struct adm1026_softc sc;	/* For chip ident */
+	int match_result;
+
 	sc.sc_tag = ia->ia_tag;
 	sc.sc_address = ia->ia_addr;
 	sc.sc_iic_flags = 0;
 
-	/* Direct config - match compats */
-	if (ia->ia_name) {
-		if (ia->ia_ncompat > 0) {
-			if (iic_compat_match(ia, adm1026_compats))
-				return 1;
-		}
-	/* Indirect config - check address and chip ID/rev. */
-	} else {
-		if ((ia->ia_addr & ADM1026_ADDRMASK) == ADM1026_ADDR &&
-		    adm1026_ident(&sc))
-			return 1;
-	}
+	if (iic_use_direct_match(ia, cf, compat_data, &match_result))
+		return match_result;
+
+	if ((ia->ia_addr & ADM1026_ADDRMASK) == ADM1026_ADDR &&
+	    adm1026_ident(&sc))
+		return I2C_MATCH_ADDRESS_AND_PROBE;
 
 	return 0;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ieee1394subr.c,v 1.59 2017/02/14 03:05:06 ozaki-r Exp $	*/
+/*	$NetBSD: if_ieee1394subr.c,v 1.63 2018/06/26 06:48:02 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ieee1394subr.c,v 1.59 2017/02/14 03:05:06 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ieee1394subr.c,v 1.63 2018/06/26 06:48:02 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -143,7 +143,7 @@ ieee1394_output(struct ifnet *ifp, struct mbuf *m0, const struct sockaddr *dst,
 			return error == EWOULDBLOCK ? 0 : error;
 		/* if broadcasting on a simplex interface, loopback a copy */
 		if ((m0->m_flags & M_BCAST) && (ifp->if_flags & IFF_SIMPLEX))
-			mcopy = m_copy(m0, 0, M_COPYALL);
+			mcopy = m_copypacket(m0, M_DONTWAIT);
 		etype = htons(ETHERTYPE_IP);
 		break;
 	case AF_ARP:
@@ -197,7 +197,7 @@ ieee1394_output(struct ifnet *ifp, struct mbuf *m0, const struct sockaddr *dst,
 			    ifp->if_broadcastaddr)->iha_uid, 8);
 		memcpy(h.ibh_shost, myaddr->iha_uid, 8);
 		h.ibh_type = etype;
-		bpf_mtap2(ifp->if_bpf, &h, sizeof(h), m0);
+		bpf_mtap2(ifp->if_bpf, &h, sizeof(h), m0, BPF_D_OUT);
 	}
 	if ((ifp->if_flags & IFF_SIMPLEX) &&
 	    unicast &&
@@ -298,7 +298,7 @@ ieee1394_fragment(struct ifnet *ifp, struct mbuf *m0, int maxsize,
 		ifh->ifh_etype_off = htons(off);
 		ifh->ifh_dgl = htons(ic->ic_dgl);
 		ifh->ifh_reserved = 0;
-		m->m_next = m_copy(m0, sizeof(*ifh) + off, fraglen);
+		m->m_next = m_copym(m0, sizeof(*ifh) + off, fraglen, M_DONTWAIT);
 		if (m->m_next == NULL) {
 			m_freem(m);
 			goto bad;
@@ -372,7 +372,7 @@ ieee1394_input(struct ifnet *ifp, struct mbuf *m, uint16_t src)
 			memcpy(h.ibh_dhost, myaddr->iha_uid, 8);
 		}
 		h.ibh_type = htons(etype);
-		bpf_mtap2(ifp->if_bpf, &h, sizeof(h), m);
+		bpf_mtap2(ifp->if_bpf, &h, sizeof(h), m, BPF_D_IN);
 	}
 
 	switch (etype) {
@@ -442,8 +442,7 @@ ieee1394_reass(struct ifnet *ifp, struct mbuf *m0, uint16_t src)
 	len = m0->m_pkthdr.len;
 	id = dgl | (src << 16);
 	if (ftype & IEEE1394_FT_SUBSEQ) {
-		m_tag_delete_chain(m0, NULL);
-		m0->m_flags &= ~M_PKTHDR;
+		m_remove_pkthdr(m0);
 		etype = 0;
 		off = ntohs(ifh->ifh_etype_off);
 	} else {

@@ -1,4 +1,4 @@
-/*	$NetBSD: at91bus.c,v 1.19 2016/12/22 14:47:54 cherry Exp $	*/
+/*	$NetBSD: at91bus.c,v 1.21 2018/07/31 06:46:25 skrll Exp $	*/
 
 /*
  * Copyright (c) 2007 Embedtronics Oy
@@ -27,8 +27,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at91bus.c,v 1.19 2016/12/22 14:47:54 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at91bus.c,v 1.21 2018/07/31 06:46:25 skrll Exp $");
 
+#include "opt_arm_debug.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_pmap_debug.h"
@@ -37,11 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: at91bus.c,v 1.19 2016/12/22 14:47:54 cherry Exp $");
 /* Define various stack sizes in pages */
 #define IRQ_STACK_SIZE	8
 #define ABT_STACK_SIZE	8
-#ifdef IPKDB
-#define UND_STACK_SIZE	16
-#else
 #define UND_STACK_SIZE	8
-#endif
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -539,13 +536,6 @@ at91bus_setup(BootConfig *mem)
 	boothowto = BOOTHOWTO;
 #endif
 	boothowto = AB_VERBOSE | AB_DEBUG; // @@@@
-
-#ifdef IPKDB
-	/* Initialise ipkdb */
-	ipkdb_init();
-	if (boothowto & RB_KDB)
-		ipkdb_connect(0);
-#endif
 
 #ifdef DDB
 	db_machine_init();

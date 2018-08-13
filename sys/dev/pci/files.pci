@@ -1,4 +1,4 @@
-#	$NetBSD: files.pci,v 1.392 2017/12/03 14:26:38 jdolecek Exp $
+#	$NetBSD: files.pci,v 1.399 2018/08/08 21:00:28 maya Exp $
 #
 # Config file and device description for machine-independent PCI code.
 # Included by ports that need it.  Requires that the SCSI files be
@@ -409,10 +409,8 @@ attach	jme at pci
 file	dev/pci/if_jme.c		jme
 
 # NE2000-compatible PCI Ethernet cards
-defparam opt_ipkdb.h	IPKDB_NE_PCISLOT
-defflag	opt_ipkdb.h	IPKDB_NE_PCI		: IPKDB_NE
 attach	ne at pci with ne_pci: rtl80x9
-file	dev/pci/if_ne_pci.c		ne_pci | ipkdb_ne_pci
+file	dev/pci/if_ne_pci.c		ne_pci
 
 # Texas Instruments ThunderLAN Chip.
 device	tl: ether, ifnet, arp, i2cexec, at24cxx_eeprom, i2c_bitbang,
@@ -1063,15 +1061,14 @@ attach	alipm at pci
 file	dev/pci/alipm.c				alipm
 
 #
-# NetOctave NSP2000
-#
-include "dev/pci/n8/files.n8"
-
-#
 # Broadcom AirForce / Apple Airport Extreme
 #
 attach	bwi at pci with bwi_pci
 file	dev/pci/if_bwi_pci.c		bwi_pci
+
+# Broadcom FullMAC USB wireless adapter
+attach	bwfm at pci with bwfm_pci: firmload
+file	dev/pci/if_bwfm_pci.c		bwfm_pci
 
 # Marvell Serial-ATA Host Controller
 attach	mvsata at pci with mvsata_pci
@@ -1145,9 +1142,6 @@ device  sisfb: wsemuldisplaydev, rasops8, rasops15, rasops16, rasops32, vcons
 attach  sisfb at pci
 file    dev/pci/sisfb.c		sisfb	needs-flag
 
-# VirtIO: XXX: move to dev/vmm/virtio
-include "dev/pci/files.virtio"
-
 attach	virtio at pci with virtio_pci
 file	dev/pci/virtio_pci.c	virtio_pci
 
@@ -1189,3 +1183,10 @@ include "external/bsd/drm2/pci/files.drmkms_pci"
 device	ismt: i2cbus
 attach	ismt at pci
 file	dev/pci/ismt.c		ismt
+
+# Amazon Elastic Network Adapter (ENA) family
+device	ena: ether, ifnet, arp
+attach	ena at pci
+file	dev/pci/if_ena.c			ena
+file	external/bsd/ena-com/ena_com.c		ena
+file	external/bsd/ena-com/ena_eth_com.c	ena

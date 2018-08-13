@@ -1,4 +1,4 @@
-/*	$NetBSD: nitrogen6_machdep.c,v 1.7 2017/09/08 05:29:12 hkenken Exp $	*/
+/*	$NetBSD: nitrogen6_machdep.c,v 1.9 2018/08/05 13:05:45 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nitrogen6_machdep.c,v 1.7 2017/09/08 05:29:12 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nitrogen6_machdep.c,v 1.9 2018/08/05 13:05:45 skrll Exp $");
 
 #include "opt_evbarm_boardtype.h"
 #include "opt_arm_debug.h"
@@ -74,15 +74,10 @@ BootConfig bootconfig;
 static char bootargs[MAX_BOOT_STRING];
 char *boot_args = NULL;
 
-u_int uboot_args[4] = { 0 };
+/* filled in before cleaning bss. keep in .data */
+u_int uboot_args[4] __attribute__((__section__(".data")));
 
-/*
- * Macros to translate between physical and virtual for a subset of the
- * kernel address space.  *Not* for general use.
- */
 #define KERN_VTOPDIFF	((vaddr_t)KERNEL_BASE_phys - (vaddr_t)KERNEL_BASE_virt)
-#define KERN_VTOPHYS(va) ((paddr_t)((vaddr_t)va + (vaddr_t)KERN_VTOPDIFF))
-#define KERN_PHYSTOV(pa) ((vaddr_t)((paddr_t)pa - (vaddr_t)KERN_VTOPDIFF))
 
 #ifndef CONADDR
 #define CONADDR	(IMX6_AIPS2_BASE + AIPS2_UART1_BASE)
@@ -158,6 +153,8 @@ u_int
 initarm(void *arg)
 {
 	psize_t memsize;
+
+	kern_vtopdiff = KERN_VTOPDIFF;
 
 	pmap_devmap_register(devmap);
 	imx6_bootstrap(KERNEL_IO_IOREG_VBASE);

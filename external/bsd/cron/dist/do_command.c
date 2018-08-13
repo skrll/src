@@ -1,4 +1,4 @@
-/*	$NetBSD: do_command.c,v 1.11 2017/09/28 02:32:51 christos Exp $	*/
+/*	$NetBSD: do_command.c,v 1.13 2018/06/14 22:04:28 christos Exp $	*/
 
 /* Copyright 1988,1990,1993,1994 by Paul Vixie
  * All rights reserved
@@ -25,7 +25,7 @@
 #if 0
 static char rcsid[] = "Id: do_command.c,v 1.9 2004/01/23 18:56:42 vixie Exp";
 #else
-__RCSID("$NetBSD: do_command.c,v 1.11 2017/09/28 02:32:51 christos Exp $");
+__RCSID("$NetBSD: do_command.c,v 1.13 2018/06/14 22:04:28 christos Exp $");
 #endif
 #endif
 
@@ -50,7 +50,9 @@ do_command(entry *e, user *u) {
 	 * vfork() is unsuitable, since we have much to do, and the parent
 	 * needs to be able to run off and fork other processes.
 	 */
-	switch (fork()) {
+
+	pid_t	jobpid;
+	switch (jobpid = fork()) {
 	case -1:
 		log_it("CRON", getpid(), "error", "can't fork");
 		break;
@@ -144,7 +146,7 @@ write_data(char *volatile input_data, int *stdin_pipe, int *stdout_pipe)
 
 static int
 read_data(entry *e, const char *mailto, const char *usernm, char **envp,
-    int *stdout_pipe)
+    int *stdout_pipe, pid_t jobpid)
 {
 	FILE	*in = fdopen(stdout_pipe[READ_PIPE], "r");
 	FILE	*mail = NULL;
@@ -241,14 +243,43 @@ read_data(entry *e, const char *mailto, const char *usernm, char **envp,
 	 */
 
 	if (mailto) {
-		Debug(DPROC, ("[%ld] closing pipe to mail\n", (long)getpid()));
-		/* Note: the pclose will probably see
-		 * the termination of the grandchild
-		 * in addition to the mail process, since
-		 * it (the grandchild) is likely to exit
-		 * after closing its stdout.
-		 */
-		status = cron_pclose(mail);
+		if (e->flags & MAIL_WHEN_ERR) {
+			int jstatus = -1;
+			if (jobpid <= 0)
+				log_it("CRON", getpid(), "error",
+				    "no job pid");
+			else {
+				while (waitpid(jobpid, &jstatus, WNOHANG) == -1)
+					if (errno != EINTR) {
+						log_it("CRON", getpid(),
+						    "error", "no job pid");
+						break;
+					}
+			}
+			/* If everything went well, and -n was set, _and_ we
+			 * have mail, we won't be mailing... so shoot the
+			 * messenger!
+			 */
+			if (WIFEXITED(jstatus) && WEXITSTATUS(jstatus) == 0) {
+				Debug(DPROC, ("[%ld] aborting pipe to mail\n",
+				    (long)getpid()));
+				status = cron_pabort(mail);
+				mailto = NULL;
+			}
+		}
+
+		if (mailto) {
+			Debug(DPROC, ("[%ld] closing pipe to mail\n",
+			    (long)getpid()));
+			/* Note: the pclose will probably see
+			 * the termination of the grandchild
+			 * in addition to the mail process, since
+			 * it (the grandchild) is likely to exit
+			 * after closing its stdout.
+			 */
+			status = cron_pclose(mail);
+			mail = NULL;
+		}
 		(void) signal(SIGCHLD, oldchld);
 	}
 
@@ -272,102 +303,17 @@ out:
 
 extern char **environ;
 static int
-child_process(entry *e) {
-	int stdin_pipe[2], stdout_pipe[2];
-	char * volatile input_data;
-	char *homedir, *usernm, * volatile mailto;
-	struct sigaction sact;
-	char **envp = e->envp;
-	int retval = OK_EXIT;
+exec_user_command(entry *e, char **envp, char *usernm, int *stdin_pipe,
+    int *stdout_pipe, pid_t *jobpid)
+{
+	char *homedir;
+	char * volatile *ep;
 
-	Debug(DPROC, ("[%ld] child_process('%s')\n", (long)getpid(), e->cmd));
-
-	setproctitle("running job");
-
-	/* discover some useful and important environment settings
-	 */
-	usernm = e->pwd->pw_name;
-	mailto = env_get("MAILTO", envp);
-
-	memset(&sact, 0, sizeof(sact));
-	sigemptyset(&sact.sa_mask);
-	sact.sa_flags = 0;
-#ifdef SA_RESTART
-	sact.sa_flags |= SA_RESTART;
-#endif
-	sact.sa_handler = sigchld_handler;
-	(void) sigaction(SIGCHLD, &sact, NULL);
-
-	/* create some pipes to talk to our future child
-	 */
-	if (pipe(stdin_pipe) == -1) 	/* child's stdin */
-		log_it("CRON", getpid(), "error", "create child stdin pipe");
-	if (pipe(stdout_pipe) == -1)	/* child's stdout */
-		log_it("CRON", getpid(), "error", "create child stdout pipe");
-	
-	/* since we are a forked process, we can diddle the command string
-	 * we were passed -- nobody else is going to use it again, right?
-	 *
-	 * if a % is present in the command, previous characters are the
-	 * command, and subsequent characters are the additional input to
-	 * the command.  An escaped % will have the escape character stripped
-	 * from it.  Subsequent %'s will be transformed into newlines,
-	 * but that happens later.
-	 */
-	/*local*/{
-		int escaped = FALSE;
-		int ch;
-		char *p;
-
-		/* translation:
-		 *	\% -> %
-		 *	%  -> end of command, following is command input.
-		 *	\x -> \x	for all x != %
-		 */
-		input_data = p = e->cmd;
-		while ((ch = *input_data++) != '\0') {
- 			if (escaped) {
-				if (ch != '%')
-					*p++ = '\\';
-			} else {
-				if (ch == '%') {
-					break;
-				}
-			}
-
-			if (!(escaped = (ch == '\\'))) {
-				*p++ = (char)ch;
-			}
-		}
-		if (ch == '\0') {
-			/* move pointer back, so that code below
-			 * won't think we encountered % sequence */
-			input_data--;
-		}
-		if (escaped)
-			*p++ = '\\';
-
-		*p = '\0';
-	}
-
-#ifdef USE_PAM
-	if (!cron_pam_start(usernm))
-		return ERROR_EXIT;
-
-	if (!(envp = cron_pam_getenvlist(envp))) {
-		retval = ERROR_EXIT;
-		goto child_process_end;
-	}
-#endif
-
-	/* fork again, this time so we can exec the user's command.
-	 */
-	switch (vfork()) {
+	switch (*jobpid = vfork()) {
 	case -1:
-		retval = ERROR_EXIT;
-		goto child_process_end;
-		/*NOTREACHED*/
+		return -1;
 	case 0:
+		ep = envp;
 		Debug(DPROC, ("[%ld] grandchild process vfork()'ed\n",
 			      (long)getpid()));
 
@@ -456,7 +402,7 @@ child_process(entry *e) {
 			 */
 			if (env_get("PATH", envp) == NULL && environ != NULL) {
 				if ((p = getenv("PATH")) != NULL)
-					envp = env_set(envp, p);
+					ep = env_set(envp, p);
 			}
 		}
 #else
@@ -489,7 +435,7 @@ child_process(entry *e) {
 		}
 		/* we aren't root after this... */
 #endif /* LOGIN_CAP */
-		homedir = env_get("HOME", envp);
+		homedir = env_get("HOME", __UNVOLATILE(ep));
 		if (chdir(homedir) != 0) {
 			syslog(LOG_ERR, "chdir(%s) $HOME failed for %s: %m",
 			    homedir, e->pwd->pw_name);
@@ -511,7 +457,7 @@ child_process(entry *e) {
 		 * Exec the command.
 		 */
 		{
-			char	*shell = env_get("SHELL", envp);
+			char	*shell = env_get("SHELL", __UNVOLATILE(ep));
 
 # if DEBUGGING
 			if (DebugFlags & DTEST) {
@@ -526,11 +472,111 @@ child_process(entry *e) {
 			warn("execl: couldn't exec `%s'", shell);
 			_exit(ERROR_EXIT);
 		}
-		break;
+		return 0;
 	default:
 		/* parent process */
-		break;
+		return 0;
 	}
+}
+
+static int
+child_process(entry *e) {
+	int stdin_pipe[2], stdout_pipe[2];
+	char * volatile input_data;
+	char *usernm, * volatile mailto;
+	struct sigaction sact;
+	char **envp = e->envp;
+	int retval = OK_EXIT;
+	pid_t jobpid = 0;
+
+	Debug(DPROC, ("[%ld] child_process('%s')\n", (long)getpid(), e->cmd));
+
+	setproctitle("running job");
+
+	/* discover some useful and important environment settings
+	 */
+	usernm = e->pwd->pw_name;
+	mailto = env_get("MAILTO", envp);
+
+	memset(&sact, 0, sizeof(sact));
+	sigemptyset(&sact.sa_mask);
+	sact.sa_flags = 0;
+#ifdef SA_RESTART
+	sact.sa_flags |= SA_RESTART;
+#endif
+	sact.sa_handler = sigchld_handler;
+	(void) sigaction(SIGCHLD, &sact, NULL);
+
+	/* create some pipes to talk to our future child
+	 */
+	if (pipe(stdin_pipe) == -1) 	/* child's stdin */
+		log_it("CRON", getpid(), "error", "create child stdin pipe");
+	if (pipe(stdout_pipe) == -1)	/* child's stdout */
+		log_it("CRON", getpid(), "error", "create child stdout pipe");
+	
+	/* since we are a forked process, we can diddle the command string
+	 * we were passed -- nobody else is going to use it again, right?
+	 *
+	 * if a % is present in the command, previous characters are the
+	 * command, and subsequent characters are the additional input to
+	 * the command.  An escaped % will have the escape character stripped
+	 * from it.  Subsequent %'s will be transformed into newlines,
+	 * but that happens later.
+	 */
+	/*local*/{
+		int escaped = FALSE;
+		int ch;
+		char *p;
+
+		/* translation:
+		 *	\% -> %
+		 *	%  -> end of command, following is command input.
+		 *	\x -> \x	for all x != %
+		 */
+		input_data = p = e->cmd;
+		while ((ch = *input_data++) != '\0') {
+ 			if (escaped) {
+				if (ch != '%')
+					*p++ = '\\';
+			} else {
+				if (ch == '%') {
+					break;
+				}
+			}
+
+			if (!(escaped = (ch == '\\'))) {
+				*p++ = (char)ch;
+			}
+		}
+		if (ch == '\0') {
+			/* move pointer back, so that code below
+			 * won't think we encountered % sequence */
+			input_data--;
+		}
+		if (escaped)
+			*p++ = '\\';
+
+		*p = '\0';
+	}
+
+#ifdef USE_PAM
+	if (!cron_pam_start(usernm))
+		return ERROR_EXIT;
+
+	if (!(envp = cron_pam_getenvlist(envp))) {
+		retval = ERROR_EXIT;
+		goto child_process_end;
+	}
+#endif
+
+	/* fork again, this time so we can exec the user's command.
+	 */
+	if (exec_user_command(e, envp, usernm, stdin_pipe, stdout_pipe,
+	    &jobpid) == -1) {
+		retval = ERROR_EXIT;
+		goto child_process_end;
+	}
+
 
 	/* middle process, child of original cron, parent of process running
 	 * the user's command.
@@ -583,7 +629,7 @@ child_process(entry *e) {
 	Debug(DPROC, ("[%ld] child reading output from grandchild\n",
 		      (long)getpid()));
 
-	retval = read_data(e, mailto, usernm, envp, stdout_pipe);
+	retval = read_data(e, mailto, usernm, envp, stdout_pipe, jobpid);
 	if (retval)
 		goto child_process_end;
 

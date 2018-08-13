@@ -1,6 +1,6 @@
 /*
  * dhcpcd - IPv6 ND handling
- * Copyright (c) 2006-2017 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2018 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -286,7 +286,7 @@ ipv6nd_sendrsprobe(void *arg)
 
 	memset(&dst, 0, sizeof(dst));
 	dst.sin6_family = AF_INET6;
-#ifdef SIN6_LEN
+#ifdef HAVE_SA_LEN
 	dst.sin6_len = sizeof(dst);
 #endif
 	dst.sin6_scope_id = ifp->index;
@@ -377,25 +377,26 @@ static void
 ipv6nd_reachable(struct ra *rap, int flags)
 {
 
+	if (rap->lifetime == 0)
+		return;
+
 	if (flags & IPV6ND_REACHABLE) {
-		if (rap->lifetime && rap->expired) {
-			loginfox("%s: %s is reachable again",
-			    rap->iface->name, rap->sfrom);
-			rap->expired = 0;
-			rt_build(rap->iface->ctx, AF_INET6);
-			/* XXX Not really an RA */
-			script_runreason(rap->iface, "ROUTERADVERT");
-		}
+		if (rap->expired == 0)
+			return;
+		loginfox("%s: %s is reachable again",
+		    rap->iface->name, rap->sfrom);
+		rap->expired = 0;
 	} else {
-		if (rap->lifetime && !rap->expired) {
-			logwarnx("%s: %s is unreachable, expiring it",
-			    rap->iface->name, rap->sfrom);
-			rap->expired = 1;
-			rt_build(rap->iface->ctx, AF_INET6);
-			/* XXX Not really an RA */
-			script_runreason(rap->iface, "ROUTERADVERT");
-		}
+		if (rap->expired != 0)
+			return;
+		logwarnx("%s: %s is unreachable, expiring it",
+		    rap->iface->name, rap->sfrom);
+		rap->expired = 1;
 	}
+
+	rt_build(rap->iface->ctx, AF_INET6);
+	/* XXX Not really an RA */
+	script_runreason(rap->iface, "ROUTERADVERT");
 }
 
 void
@@ -748,7 +749,8 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx, struct interface *ifp,
 	struct in6_addr pi_prefix;
 	struct ipv6_addr *ap;
 	struct dhcp_opt *dho;
-	uint8_t new_rap, new_data;
+	bool new_rap, new_data;
+	uint32_t old_lifetime;
 	__printflike(1, 2) void (*logfunc)(const char *, ...);
 #ifdef IPV6_MANAGETEMPADDR
 	uint8_t new_ap;
@@ -763,25 +765,25 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx, struct interface *ifp,
 	}
 
 	if (len < sizeof(struct nd_router_advert)) {
-		logerr("IPv6 RA packet too short from %s", ctx->sfrom);
+		logerrx("IPv6 RA packet too short from %s", ctx->sfrom);
 		return;
 	}
 
 	/* RFC 4861 7.1.2 */
 	if (hoplimit != 255) {
-		logerr("invalid hoplimit(%d) in RA from %s",
+		logerrx("invalid hoplimit(%d) in RA from %s",
 		    hoplimit, ctx->sfrom);
 		return;
 	}
 
 	if (!IN6_IS_ADDR_LINKLOCAL(&ctx->from.sin6_addr)) {
-		logerr("RA from non local address %s", ctx->sfrom);
+		logerrx("RA from non local address %s", ctx->sfrom);
 		return;
 	}
 
 	if (!(ifp->options->options & DHCPCD_IPV6RS)) {
 #ifdef DEBUG_RS
-		logerr("%s: unexpected RA from %s",
+		logerrx("%s: unexpected RA from %s",
 		    ifp->name, ctx->sfrom);
 #endif
 		return;
@@ -819,9 +821,9 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx, struct interface *ifp,
 			free(rap->data);
 			rap->data_len = 0;
 		}
-		new_data = 1;
+		new_data = true;
 	} else
-		new_data = 0;
+		new_data = false;
 	if (rap == NULL) {
 		rap = calloc(1, sizeof(*rap));
 		if (rap == NULL) {
@@ -832,9 +834,9 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx, struct interface *ifp,
 		rap->from = ctx->from.sin6_addr;
 		strlcpy(rap->sfrom, ctx->sfrom, sizeof(rap->sfrom));
 		TAILQ_INIT(&rap->addrs);
-		new_rap = 1;
+		new_rap = true;
 	} else
-		new_rap = 0;
+		new_rap = false;
 	if (rap->data_len == 0) {
 		rap->data = malloc(len);
 		if (rap->data == NULL) {
@@ -857,7 +859,11 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx, struct interface *ifp,
 
 	clock_gettime(CLOCK_MONOTONIC, &rap->acquired);
 	rap->flags = nd_ra->nd_ra_flags_reserved;
+	old_lifetime = rap->lifetime;
 	rap->lifetime = ntohs(nd_ra->nd_ra_router_lifetime);
+	if (!new_rap && rap->lifetime == 0 && old_lifetime != 0)
+		logwarnx("%s: %s: no longer a default router",
+		    ifp->name, rap->sfrom);
 	if (nd_ra->nd_ra_reachable) {
 		rap->reachable = ntohl(nd_ra->nd_ra_reachable);
 		if (rap->reachable > MAX_REACHABLE_TIME)
@@ -869,7 +875,9 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx, struct interface *ifp,
 		rap->expired = 0;
 	rap->hasdns = 0;
 
-	ipv6_settempstale(ifp);
+#ifdef IPV6_AF_TEMPORARY
+	ipv6_markaddrsstale(ifp, IPV6_AF_TEMPORARY);
+#endif
 	TAILQ_FOREACH(ap, &rap->addrs, next) {
 		ap->flags |= IPV6_AF_STALE;
 	}
@@ -1291,7 +1299,7 @@ ipv6nd_env(char **env, const char *prefix, const struct interface *ifp)
 }
 
 void
-ipv6nd_handleifa(int cmd, struct ipv6_addr *addr)
+ipv6nd_handleifa(int cmd, struct ipv6_addr *addr, pid_t pid)
 {
 	struct ra *rap;
 
@@ -1303,7 +1311,7 @@ ipv6nd_handleifa(int cmd, struct ipv6_addr *addr)
 	TAILQ_FOREACH(rap, addr->iface->ctx->ra_routers, next) {
 		if (rap->iface != addr->iface)
 			continue;
-		ipv6_handleifa_addrs(cmd, &rap->addrs, addr);
+		ipv6_handleifa_addrs(cmd, &rap->addrs, addr, pid);
 	}
 }
 
@@ -1313,7 +1321,7 @@ ipv6nd_expirera(void *arg)
 	struct interface *ifp;
 	struct ra *rap, *ran;
 	struct timespec now, lt, expire, next;
-	uint8_t expired, valid, validone;
+	uint8_t expired, anyvalid, valid, validone;
 	struct ipv6_addr *ia;
 
 	ifp = arg;
@@ -1321,11 +1329,11 @@ ipv6nd_expirera(void *arg)
 	expired = 0;
 	timespecclear(&next);
 
-	validone = 0;
+	anyvalid = 0;
 	TAILQ_FOREACH_SAFE(rap, ifp->ctx->ra_routers, next, ran) {
 		if (rap->iface != ifp)
 			continue;
-		valid = 0;
+		valid = validone = 0;
 		if (rap->lifetime) {
 			lt.tv_sec = (time_t)rap->lifetime;
 			lt.tv_nsec = 0;
@@ -1351,9 +1359,12 @@ ipv6nd_expirera(void *arg)
 		 * the kernel can expire, so we need to handle it ourself.
 		 * Also, some OS don't support address lifetimes (Solaris). */
 		TAILQ_FOREACH(ia, &rap->addrs, next) {
-			if (ia->prefix_vltime == ND6_INFINITE_LIFETIME ||
-			    ia->prefix_vltime == 0)
+			if (ia->prefix_vltime == 0)
 				continue;
+			if (ia->prefix_vltime == ND6_INFINITE_LIFETIME) {
+				validone = 1;
+				continue;
+			}
 			lt.tv_sec = (time_t)ia->prefix_vltime;
 			lt.tv_nsec = 0;
 			timespecadd(&ia->acquired, &lt, &expire);
@@ -1375,6 +1386,7 @@ ipv6nd_expirera(void *arg)
 				if (!timespecisset(&next) ||
 				    timespeccmp(&next, &lt, >))
 					next = lt;
+				validone = 1;
 			}
 		}
 
@@ -1385,10 +1397,10 @@ ipv6nd_expirera(void *arg)
 
 		/* No valid lifetimes are left on the RA, so we might
 		 * as well punt it. */
-		if (!valid && TAILQ_FIRST(&rap->addrs) == NULL)
+		if (!valid && !validone)
 			ipv6nd_free_ra(rap);
 		else
-			validone = 1;
+			anyvalid = 1;
 	}
 
 	if (timespecisset(&next))
@@ -1400,7 +1412,7 @@ ipv6nd_expirera(void *arg)
 	}
 
 	/* No valid routers? Kill any DHCPv6. */
-	if (!validone)
+	if (!anyvalid)
 		dhcp6_dropnondelegates(ifp);
 }
 
@@ -1501,15 +1513,8 @@ ipv6nd_handlena(struct dhcpcd_ctx *ctx, struct interface *ifp,
 		return;
 	}
 
-	if (is_solicited && is_router && rap->lifetime) {
-		if (rap->expired) {
-			rap->expired = 0;
-			loginfox("%s: %s reachable (%s)",
-			    ifp->name, taddr, ctx->sfrom);
-			rt_build(ifp->ctx, AF_INET6);
-			script_runreason(rap->iface, "ROUTERADVERT"); /* XXX */
-		}
-	}
+	if (is_solicited && is_router && rap->lifetime)
+		ipv6nd_reachable(rap, IPV6ND_REACHABLE);
 }
 
 static void
@@ -1529,9 +1534,6 @@ ipv6nd_handledata(void *arg)
 	len = recvmsg_realloc(ctx->nd_fd, &ctx->rcvhdr, 0);
 	if (len == -1) {
 		logerr(__func__);
-		eloop_event_delete(ctx->eloop, ctx->nd_fd);
-		close(ctx->nd_fd);
-		ctx->nd_fd = -1;
 		return;
 	}
 	ctx->sfrom = inet_ntop(AF_INET6, &ctx->from.sin6_addr,

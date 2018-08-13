@@ -1,4 +1,4 @@
-/*	$NetBSD: ehci_pci.c,v 1.65 2017/06/12 10:59:47 sborrill Exp $	*/
+/*	$NetBSD: ehci_pci.c,v 1.67 2018/05/10 03:41:00 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ehci_pci.c,v 1.65 2017/06/12 10:59:47 sborrill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ehci_pci.c,v 1.67 2018/05/10 03:41:00 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -191,7 +191,7 @@ ehci_pci_attach(device_t parent, device_t self, void *aux)
 	}
 	aprint_normal_dev(self, "interrupting at %s\n", intrstr);
 
-	switch(pci_conf_read(pc, tag, PCI_USBREV) & PCI_USBREV_MASK) {
+	switch (pci_conf_read(pc, tag, PCI_USBREV) & PCI_USBREV_MASK) {
 	case PCI_USBREV_PRE_1_0:
 	case PCI_USBREV_1_0:
 	case PCI_USBREV_1_1:
@@ -206,12 +206,8 @@ ehci_pci_attach(device_t parent, device_t self, void *aux)
 		break;
 	}
 
-	/* Figure out vendor for root hub descriptor. */
-	sc->sc.sc_id_vendor = PCI_VENDOR(pa->pa_id);
-	pci_findvendor(sc->sc.sc_vendor,
-	    sizeof(sc->sc.sc_vendor), sc->sc.sc_id_vendor);
 	/* Enable workaround for dropped interrupts as required */
-	switch (sc->sc.sc_id_vendor) {
+	switch (PCI_VENDOR(pa->pa_id)) {
 	case PCI_VENDOR_ATI:
 	case PCI_VENDOR_VIATECH:
 		sc->sc.sc_flags |= EHCIF_DROPPED_INTR_WORKAROUND;

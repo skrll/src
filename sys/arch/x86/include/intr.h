@@ -1,4 +1,4 @@
-/*	$NetBSD: intr.h,v 1.52 2017/11/04 14:56:48 cherry Exp $	*/
+/*	$NetBSD: intr.h,v 1.56 2018/06/24 13:35:33 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -194,10 +194,10 @@ splraiseipl(ipl_cookie_t icookie)
  */
 
 void Xsoftintr(void);
-void Xpreemptrecurse(void);
-void Xpreemptresume(void);
+void Xrecurse_preempt(void);
+void Xresume_preempt(void);
 
-extern struct intrstub i8259_stubs[];
+extern struct intrstub legacy_stubs[];
 extern struct intrstub ioapic_edge_stubs[];
 extern struct intrstub ioapic_level_stubs[];
 extern struct intrstub x2apic_edge_stubs[];
@@ -222,6 +222,7 @@ int intr_find_mpmapping(int, int, intr_handle_t *);
 struct pic *intr_findpic(int);
 void intr_printconfig(void);
 
+const char *intr_create_intrid(int, struct pic *, int, char *, size_t);
 struct intrsource *intr_allocate_io_intrsource(const char *);
 void intr_free_io_intrsource(const char *);
 

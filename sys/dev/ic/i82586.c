@@ -1,4 +1,4 @@
-/*	$NetBSD: i82586.c,v 1.76 2017/02/20 07:43:29 ozaki-r Exp $	*/
+/*	$NetBSD: i82586.c,v 1.78 2018/06/26 06:48:00 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -137,7 +137,7 @@ Mode of operation:
 */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i82586.c,v 1.76 2017/02/20 07:43:29 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i82586.c,v 1.78 2018/06/26 06:48:00 msaitoh Exp $");
 
 
 #include <sys/param.h>
@@ -154,9 +154,7 @@ __KERNEL_RCSID(0, "$NetBSD: i82586.c,v 1.76 2017/02/20 07:43:29 ozaki-r Exp $");
 #include <net/if_types.h>
 #include <net/if_media.h>
 #include <net/if_ether.h>
-
 #include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/bus.h>
 
@@ -1158,7 +1156,7 @@ i82586_start(struct ifnet *ifp)
 			panic("i82586_start: no header mbuf");
 
 		/* Tap off here if there is a BPF listener. */
-		bpf_mtap(ifp, m0);
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 
 #if I82586_DEBUG
 		if (sc->sc_debug & IED_ENQ)

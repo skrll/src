@@ -1,5 +1,6 @@
-# $NetBSD: Makefile.usermode,v 1.40 2017/12/10 14:29:47 christos Exp $
+# $NetBSD: Makefile.usermode,v 1.42 2018/06/01 07:22:33 reinoud Exp $
 
+MKCTF?=				no
 USETOOLS?=			no
 NEED_OWN_INSTALL_TARGET?=	no
 .include <bsd.own.mk>
@@ -71,12 +72,11 @@ LINKFLAGS_NORMAL=	-X
 KERNLDSCRIPT?=	${USERMODE}/conf/kern.ldscript
 
 SYSTEM_LD=	@do_system_ld() { \
-		target=$$1; shift; \
 		${_MKSHMSG} "   link  ${.CURDIR:T}/${.TARGET}"; \
 		${_MKSHECHO}\
-		${CC} -static ${COPTS} -Wl,-Map,$${target}.map -o $${target} ${LINKFORMAT} -Ttext ${TEXTADDR} '$${SYSTEM_OBJ}' '$${EXTRA_OBJ}' vers.o ${USERMODE_LIBS} $$@; \
+		${CC} -static ${COPTS} -Wl,-Map,$${target}.map -o ${.TARGET} ${LINKFORMAT} -Ttext ${TEXTADDR} '$${SYSTEM_OBJ}' '$${EXTRA_OBJ}' vers.o ${USERMODE_LIBS} $$@; \
 		${SYSTEM_LD_FIX} \
-		${CC} -static ${COPTS} -Wl,-Map,$${target}.map -o $${target} ${LINKFORMAT} -Ttext ${TEXTADDR} ${SYSTEM_OBJ} ${EXTRA_OBJ} vers.o ${USERMODE_LIBS} $$@; \
+		${CC} -static ${COPTS} -Wl,-Map,$${target}.map -o ${.TARGET} ${LINKFORMAT} -Ttext ${TEXTADDR} ${SYSTEM_OBJ} ${EXTRA_OBJ} vers.o ${USERMODE_LIBS} $$@; \
 		}; \
 		do_system_ld
 NVFLAGS=	-n

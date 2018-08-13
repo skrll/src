@@ -1,4 +1,4 @@
-/*	$NetBSD: mcontext.h,v 1.5 2016/08/05 17:01:13 scole Exp $	*/
+/*	$NetBSD: mcontext.h,v 1.8 2018/04/26 18:06:25 scole Exp $	*/
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -111,9 +111,11 @@ typedef struct __mcontext {
 	__fpregset_t		__fpregs;
 } mcontext_t;
 
-#define _UC_MACHINE_SP(uc)	((uc)->uc_mcontext.mc_special.sp)
-/* XXX or assembly "mov Rn = ip" or ...? */
+#define _UC_MACHINE_SP(uc)	((uc)->uc_mcontext.mc_special.sp)  /* gregs[12] */
+#define _UC_MACHINE_FP(uc)	((uc)->uc_mcontext.__gregs[79])
 #define	_UC_MACHINE_PC(uc)	((uc)->uc_mcontext.mc_special.iip)
+#define	_UC_MACHINE_INTRV(uc)	((uc)->uc_mcontext.__gregs[8])
+#define _UC_MACHINE_SET_PC(uc)  _UC_MACHINE_PC(uc) = (pc)  /* XXX */
 
 static __inline void *
 __lwp_getprivate_fast(void)

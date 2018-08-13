@@ -1,4 +1,4 @@
-/*	$NetBSD: pcivar.h,v 1.109 2016/11/25 12:10:59 knakahara Exp $	*/
+/*	$NetBSD: pcivar.h,v 1.112 2018/05/19 17:18:57 jakllsch Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997 Christopher G. Demetriou.  All rights reserved.
@@ -131,7 +131,7 @@ struct pcibus_attach_args {
  * This is used by <machine/pci_machdep.h> to access the pba_pc member.  It
  * can't use it directly since pcibus_attach_args has yet to be defined.
  */
-static inline pci_chipset_tag_t
+static __inline pci_chipset_tag_t
 pcibus_attach_args_pc(struct pcibus_attach_args *pba)
 {
 	return pba->pba_pc;
@@ -173,7 +173,7 @@ struct pci_attach_args {
  * This is used by <machine/pci_machdep.h> to access the pa_pc member.  It
  * can't use it directly since pci_attach_args has yet to be defined.
  */
-static inline pci_chipset_tag_t
+static __inline pci_chipset_tag_t
 pci_attach_args_pc(const struct pci_attach_args *pa)
 {
 	return pa->pa_pc;
@@ -208,8 +208,8 @@ struct pci_quirkdata {
 	pci_product_id_t	product;	/* Product ID */
 	int			quirks;		/* quirks; see below */
 };
-#define	PCI_QUIRK_MULTIFUNCTION		1
-#define	PCI_QUIRK_MONOFUNCTION		2
+#define	PCI_QUIRK_MULTIFUNCTION		__BIT(0)
+#define	PCI_QUIRK_MONOFUNCTION		__BIT(1)
 #define	PCI_QUIRK_SKIP_FUNC(n)		(4 << n)
 #define	PCI_QUIRK_SKIP_FUNC0		PCI_QUIRK_SKIP_FUNC(0)
 #define	PCI_QUIRK_SKIP_FUNC1		PCI_QUIRK_SKIP_FUNC(1)
@@ -219,6 +219,8 @@ struct pci_quirkdata {
 #define	PCI_QUIRK_SKIP_FUNC5		PCI_QUIRK_SKIP_FUNC(5)
 #define	PCI_QUIRK_SKIP_FUNC6		PCI_QUIRK_SKIP_FUNC(6)
 #define	PCI_QUIRK_SKIP_FUNC7		PCI_QUIRK_SKIP_FUNC(7)
+#define	PCI_QUIRK_HASEXTCNF		__BIT(10)
+#define	PCI_QUIRK_NOEXTCNF		__BIT(11)
 
 struct pci_conf_state {
 	pcireg_t reg[16];
@@ -255,6 +257,8 @@ struct pci_softc {
 };
 
 extern struct cfdriver pci_cd;
+
+extern bool pci_mapreg_map_enable_decode;
 
 int pcibusprint(void *, const char *);
 

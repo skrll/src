@@ -1,4 +1,4 @@
-/*	$NetBSD: wqinput.c,v 1.3 2017/06/02 19:10:19 para Exp $	*/
+/*	$NetBSD: wqinput.c,v 1.5 2018/08/10 07:20:59 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2017 Internet Initiative Japan Inc.
@@ -25,6 +25,10 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
+#ifdef _KERNEL_OPT
+#include "opt_net_mpsafe.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/kmem.h>
@@ -58,7 +62,7 @@ struct wqinput_worklist {
 	struct wqinput_work *wwl_head;
 	struct wqinput_work *wwl_tail;
 	unsigned int	wwl_len;
-	unsigned long	wwl_dropped;
+	uint64_t	wwl_dropped;
 	struct work	wwl_work;
 	bool		wwl_wq_is_active;
 };
@@ -77,7 +81,7 @@ static void
 wqinput_drops(void *p, void *arg, struct cpu_info *ci __unused)
 {
 	struct wqinput_worklist *const wwl = p;
-	int *sum = arg;
+	uint64_t *sum = arg;
 
 	*sum += wwl->wwl_dropped;
 }
@@ -87,7 +91,7 @@ wqinput_sysctl_drops_handler(SYSCTLFN_ARGS)
 {
 	struct sysctlnode node;
 	struct wqinput *wqi;
-	int sum = 0;
+	uint64_t sum = 0;
 	int error;
 
 	node = *rnode;
@@ -131,7 +135,7 @@ wqinput_sysctl_setup(const char *name, struct wqinput *wqi)
 		goto bad;
 
 	error = sysctl_createv(NULL, 0, &rnode, &cnode,
-	    CTLFLAG_PERMANENT, CTLTYPE_INT, "drops",
+	    CTLFLAG_PERMANENT, CTLTYPE_QUAD, "drops",
 	    SYSCTL_DESCR("Total packets dropped due to full input queue"),
 	    wqinput_sysctl_drops_handler, 0, (void *)wqi, 0, CTL_CREATE, CTL_EOL);
 	if (error != 0)
@@ -210,7 +214,9 @@ wqinput_work(struct work *wk, void *arg)
 
 	while ((work = wqinput_work_get(wwl)) != NULL) {
 		mutex_enter(softnet_lock);
+		KERNEL_LOCK_UNLESS_NET_MPSAFE();
 		wqi->wqi_input(work->ww_mbuf, work->ww_off, work->ww_proto);
+		KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 		mutex_exit(softnet_lock);
 
 		pool_put(&wqi->wqi_work_pool, work);

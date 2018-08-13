@@ -1,6 +1,6 @@
 /*
  * dhcpcd - DHCP client daemon
- * Copyright (c) 2006-2017 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2018 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -231,14 +231,17 @@ uint8_t ipv6_prefixlen(const struct in6_addr *);
 int ipv6_userprefix( const struct in6_addr *, short prefix_len,
     uint64_t user_number, struct in6_addr *result, short result_len);
 void ipv6_checkaddrflags(void *);
+void ipv6_markaddrsstale(struct interface *, unsigned int);
+void ipv6_deletestaleaddrs(struct interface *);
 int ipv6_addaddr(struct ipv6_addr *, const struct timespec *);
 ssize_t ipv6_addaddrs(struct ipv6_addrhead *addrs);
 void ipv6_deleteaddr(struct ipv6_addr *);
 void ipv6_freedrop_addrs(struct ipv6_addrhead *, int,
     const struct interface *);
 void ipv6_handleifa(struct dhcpcd_ctx *ctx, int, struct if_head *,
-    const char *, const struct in6_addr *, uint8_t, int);
-int ipv6_handleifa_addrs(int, struct ipv6_addrhead *, const struct ipv6_addr *);
+    const char *, const struct in6_addr *, uint8_t, int, pid_t);
+int ipv6_handleifa_addrs(int, struct ipv6_addrhead *, const struct ipv6_addr *,
+    pid_t);
 struct ipv6_addr *ipv6_iffindaddr(struct interface *,
     const struct in6_addr *, int);
 int ipv6_hasaddr(const struct interface *);
@@ -259,7 +262,6 @@ void ipv6_freedrop(struct interface *, int);
 
 #ifdef IPV6_MANAGETEMPADDR
 void ipv6_gentempifid(struct interface *);
-void ipv6_settempstale(struct interface *);
 struct ipv6_addr *ipv6_createtempaddr(struct ipv6_addr *,
     const struct timespec *);
 struct ipv6_addr *ipv6_settemptime(struct ipv6_addr *, int);
@@ -283,7 +285,6 @@ bool inet6_getroutes(struct dhcpcd_ctx *, struct rt_head *);
 #define ipv6_hasaddr(a) (0)
 #define ipv6_free_ll_callbacks(a) {}
 #define ipv6_free(a) {}
-#define ipv6_drop(a) {}
 #define ipv6_ctxfree(a) {}
 #define ipv6_gentempifid(a) {}
 #endif

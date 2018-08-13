@@ -1,4 +1,4 @@
-/*	$NetBSD: defs.h,v 1.9 2015/05/11 13:07:57 martin Exp $	*/
+/*	$NetBSD: defs.h,v 1.11 2018/06/03 13:16:30 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -44,12 +44,6 @@
 #include <sys/disk.h>
 
 const char *getfslabelname(uint8_t);
-
-static inline void *
-deconst(const void *p)
-{
-	return (char *)0 + ((const char *)p - (const char *)0);
-}
 
 #include "msg_defs.h"
 #include "menu_defs.h"
@@ -300,6 +294,7 @@ typedef struct pm_devs_t {
     partinfo bsdlabel[MAXPARTITIONS]; /* What we want it to look like */
     int gpt;
     int no_mbr; /* set for raid (etc) */
+    int no_part;	/* can not be partitioned, e.g. dk0 */
     int rootpart; /* partition we install into */
     const char *disktype; /* ST506, SCSI, ... */
     const char *doessf;

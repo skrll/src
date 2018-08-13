@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_exec.c,v 1.453 2017/11/13 22:01:45 christos Exp $	*/
+/*	$NetBSD: kern_exec.c,v 1.459 2018/05/28 11:32:20 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.453 2017/11/13 22:01:45 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.459 2018/05/28 11:32:20 kamil Exp $");
 
 #include "opt_exec.h"
 #include "opt_execfmt.h"
@@ -216,7 +216,6 @@ struct emul emul_netbsd = {
 #endif
 	.e_sendsig =		sendsig,
 	.e_trapsignal =		trapsignal,
-	.e_tracesig =		NULL,
 	.e_sigcode =		NULL,
 	.e_esigcode =		NULL,
 	.e_sigobject =		NULL,
@@ -232,7 +231,6 @@ struct emul emul_netbsd = {
 	.e_syscall =		syscall,
 #endif
 	.e_sysctlovly =		NULL,
-	.e_fault =		NULL,
 	.e_vm_default_addr =	uvm_default_mapaddr,
 	.e_usertrap =		NULL,
 	.e_ucsize =		sizeof(ucontext_t),
@@ -431,10 +429,10 @@ check_exec(struct lwp *l, struct exec_package *epp, struct pathbuf *pb)
 
 		if (!newerror) {
 			/* Seems ok: check that entry point is not too high */
-			if (epp->ep_entry > epp->ep_vm_maxaddr) {
+			if (epp->ep_entry >= epp->ep_vm_maxaddr) {
 #ifdef DIAGNOSTIC
 				printf("%s: rejecting %p due to "
-				    "too high entry address (> %p)\n",
+				    "too high entry address (>= %p)\n",
 					 __func__, (void *)epp->ep_entry,
 					 (void *)epp->ep_vm_maxaddr);
 #endif
@@ -608,9 +606,9 @@ exec_autoload(void)
 #endif
 }
 
-static int
-makepathbuf(struct lwp *l, const char *upath, struct pathbuf **pbp,
-    size_t *offs)
+int
+exec_makepathbuf(struct lwp *l, const char *upath, enum uio_seg seg,
+    struct pathbuf **pbp, size_t *offs)
 {
 	char *path, *bp;
 	size_t len, tlen;
@@ -618,7 +616,11 @@ makepathbuf(struct lwp *l, const char *upath, struct pathbuf **pbp,
 	struct cwdinfo *cwdi;
 
 	path = PNBUF_GET();
-	error = copyinstr(upath, path, MAXPATHLEN, &len);
+	if (seg == UIO_SYSSPACE) {
+		error = copystr(upath, path, MAXPATHLEN, &len);
+	} else {
+		error = copyinstr(upath, path, MAXPATHLEN, &len);
+	}
 	if (error) {
 		PNBUF_PUT(path);
 		DPRINTF(("%s: copyin path @%p %d\n", __func__, upath, error));
@@ -626,7 +628,8 @@ makepathbuf(struct lwp *l, const char *upath, struct pathbuf **pbp,
 	}
 
 	if (path[0] == '/') {
-		*offs = 0;
+		if (offs)
+			*offs = 0;
 		goto out;
 	}
 
@@ -652,7 +655,8 @@ makepathbuf(struct lwp *l, const char *upath, struct pathbuf **pbp,
 
 	memmove(path, bp, tlen);
 	path[tlen] = '\0';
-	*offs = tlen - len;
+	if (offs)
+		*offs = tlen - len;
 out:
 	*pbp = pathbuf_assimilate(path);
 	return 0;
@@ -731,7 +735,8 @@ execve_loadvm(struct lwp *l, const char *path, char * const *args,
 	 * functions call check_exec() recursively - for example,
 	 * see exec_script_makecmds().
 	 */
-	if ((error = makepathbuf(l, path, &data->ed_pathbuf, &offs)) != 0)
+	if ((error = exec_makepathbuf(l, path, UIO_USERSPACE,
+	    &data->ed_pathbuf, &offs)) != 0)
 		goto clrflg;
 	data->ed_pathstring = pathbuf_stringcopy_get(data->ed_pathbuf);
 	data->ed_resolvedpathbuf = PNBUF_GET();
@@ -760,7 +765,7 @@ execve_loadvm(struct lwp *l, const char *path, char * const *args,
 
 	/* see if we can run it. */
 	if ((error = check_exec(l, epp, data->ed_pathbuf)) != 0) {
-		if (error != ENOENT && error != EACCES) {
+		if (error != ENOENT && error != EACCES && error != ENOEXEC) {
 			DPRINTF(("%s: check exec failed for %s, error %d\n",
 			    __func__, epp->ep_kname, error));
 		}
@@ -1264,13 +1269,15 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 	mutex_enter(proc_lock);
 
 	if ((p->p_slflag & (PSL_TRACED|PSL_SYSCALL)) == PSL_TRACED) {
-		ksiginfo_t ksi;
-
-		KSI_INIT_EMPTY(&ksi);
-		ksi.ksi_signo = SIGTRAP;
-		ksi.ksi_code = TRAP_EXEC;
-		ksi.ksi_lid = l->l_lid;
-		kpsignal(p, &ksi, NULL);
+		mutex_enter(p->p_lock);
+		p->p_xsig = SIGTRAP;
+		p->p_sigctx.ps_faked = true; // XXX
+		p->p_sigctx.ps_info._signo = p->p_xsig;
+		p->p_sigctx.ps_info._code = TRAP_EXEC;
+		sigswitch(0, SIGTRAP, false);
+		// XXX ktrpoint(KTR_PSIG)
+		mutex_exit(p->p_lock);
+		mutex_enter(proc_lock);
 	}
 
 	if (p->p_sflag & PS_STOPEXEC) {

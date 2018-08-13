@@ -1,4 +1,4 @@
-/*	$NetBSD: beagle_machdep.c,v 1.68 2016/10/20 09:53:08 skrll Exp $ */
+/*	$NetBSD: beagle_machdep.c,v 1.72 2018/07/31 06:46:26 skrll Exp $ */
 
 /*
  * Machine dependent functions for kernel setup for TI OSK5912 board.
@@ -125,12 +125,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: beagle_machdep.c,v 1.68 2016/10/20 09:53:08 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: beagle_machdep.c,v 1.72 2018/07/31 06:46:26 skrll Exp $");
 
+#include "opt_arm_debug.h"
 #include "opt_machdep.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
-#include "opt_ipkdb.h"
 #include "opt_md.h"
 #include "opt_com.h"
 #include "opt_omap.h"
@@ -223,7 +223,8 @@ char *boot_file = NULL;
 
 static uint8_t beagle_edid[128];	/* EDID storage */
 
-u_int uboot_args[4] = { 0 };	/* filled in by beagle_start.S (not in bss) */
+/* filled in before cleaning bss. keep in .data */
+u_int uboot_args[4] __attribute__((__section__(".data")));
 
 /* Same things, but for the free (unused by the kernel) memory. */
 
@@ -981,7 +982,7 @@ beagle_device_register(device_t self, void *aux)
 	 * We need to tell the A9 Global/Watchdog Timer
 	 * what frequency it runs at.
 	 */
-	if (device_is_a(self, "a9tmr") || device_is_a(self, "a9wdt")) {
+	if (device_is_a(self, "arma9tmr") || device_is_a(self, "a9wdt")) {
 		/*
 		 * This clock always runs at (arm_clk div 2) and only goes
 		 * to timers that are part of the A9 MP core subsystem.

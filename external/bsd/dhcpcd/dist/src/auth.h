@@ -1,6 +1,6 @@
 /*
  * dhcpcd - DHCP client daemon
- * Copyright (c) 2006-2017 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2018 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -71,6 +71,8 @@ struct auth {
 	uint64_t last_replay;
 	uint8_t last_replay_set;
 	struct token_head tokens;
+	uint32_t token_snd_secretid;
+	uint32_t token_rcv_secretid;
 #endif
 };
 

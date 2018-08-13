@@ -1,4 +1,4 @@
-/*	$NetBSD: oea_machdep.c,v 1.73 2016/05/30 13:04:24 chs Exp $	*/
+/*	$NetBSD: oea_machdep.c,v 1.75 2018/07/15 05:16:44 maxv Exp $	*/
 
 /*
  * Copyright (C) 2002 Matt Thomas
@@ -33,13 +33,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: oea_machdep.c,v 1.73 2016/05/30 13:04:24 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: oea_machdep.c,v 1.75 2018/07/15 05:16:44 maxv Exp $");
 
 #include "opt_ppcarch.h"
 #include "opt_compat_netbsd.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
-#include "opt_ipkdb.h"
 #include "opt_multiprocessor.h"
 #include "opt_altivec.h"
 
@@ -67,10 +66,6 @@ __KERNEL_RCSID(0, "$NetBSD: oea_machdep.c,v 1.73 2016/05/30 13:04:24 chs Exp $")
 
 #ifdef KGDB
 #include <sys/kgdb.h>
-#endif
- 
-#ifdef IPKDB
-#include <ipkdb/ipkdb.h>
 #endif
 
 #include <machine/powerpc.h>
@@ -109,6 +104,19 @@ extern int dsitrap_fix_dbat5[];
 extern int dsitrap_fix_dbat6[];
 extern int dsitrap_fix_dbat7[];
 
+/*
+ * Load pointer with 0 behind GCC's back, otherwise it will
+ * emit a "trap" instead.
+ */
+static __inline__ uintptr_t
+zero_value(void)
+{
+	uintptr_t dont_tell_gcc;
+
+	__asm volatile ("li %0, 0" : "=r"(dont_tell_gcc) :);
+	return dont_tell_gcc;
+}
+
 void
 oea_init(void (*handler)(void))
 {
@@ -127,9 +135,6 @@ oea_init(void (*handler)(void))
 #if defined(DDB) || defined(KGDB)
 	extern int ddblow[], ddbsize[];
 #endif
-#ifdef IPKDB
-	extern int ipkdblow[], ipkdbsize[];
-#endif
 #ifdef ALTIVEC
 	register_t msr;
 #endif
@@ -144,7 +149,7 @@ oea_init(void (*handler)(void))
 #ifdef PPC_HIGH_VEC
 	exc_base = EXC_HIGHVEC;
 #else
-	exc_base = 0;
+	exc_base = zero_value();
 #endif
 	KASSERT(mfspr(SPR_SPRG0) == (uintptr_t)ci);
 
@@ -252,7 +257,7 @@ oea_init(void (*handler)(void))
 			memcpy((void *)exc, trapcode, size);
 			memcpy((void *)(exc_base + EXC_VEC),  trapcode, size);
 			break;
-#if defined(DDB) || defined(IPKDB) || defined(KGDB)
+#if defined(DDB) || defined(KGDB)
 		case EXC_RUNMODETRC:
 #ifdef PPC_OEA601
 			if (cpuvers != MPC601) {
@@ -267,18 +272,10 @@ oea_init(void (*handler)(void))
 		case EXC_PGM:
 		case EXC_TRC:
 		case EXC_BPT:
-#if defined(DDB) || defined(KGDB)
 			size = (size_t)ddbsize;
 			memcpy((void *)exc, ddblow, size);
-#if defined(IPKDB)
-#error "cannot enable IPKDB with DDB or KGDB"
-#endif
-#else
-			size = (size_t)ipkdbsize;
-			memcpy((void *)exc, ipkdblow, size);
-#endif
 			break;
-#endif /* DDB || IPKDB || KGDB */
+#endif /* DDB || KGDB */
 		}
 #if 0
 		exc += roundup(size, 32);
@@ -289,8 +286,10 @@ oea_init(void (*handler)(void))
 	 * Install a branch absolute to trap0 to force a panic.
 	 */
 	if ((uintptr_t)trap0 < 0x2000000) {
-		*(volatile uint32_t *) 0 = 0x7c6802a6;
-		*(volatile uint32_t *) 4 = 0x48000002 | (uintptr_t) trap0;
+		uint32_t *p = (uint32_t *)zero_value();
+
+		p[0] = 0x7c6802a6;
+		p[1] = 0x48000002 | (uintptr_t) trap0;
 	}
 
 	/*

@@ -1,4 +1,4 @@
-/* $NetBSD: vexpress_platform.c,v 1.5 2017/11/18 00:25:43 jmcneill Exp $ */
+/* $NetBSD: vexpress_platform.c,v 1.9 2018/08/05 14:02:35 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "opt_fdt_arm.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.5 2017/11/18 00:25:43 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.9 2018/08/05 14:02:35 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -51,7 +51,7 @@ __KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.5 2017/11/18 00:25:43 jmcnei
 
 #include <arm/cortex/gic_reg.h>
 
-#include <evbarm/dev/plcomvar.h>
+#include <evbarm/dev/plcomreg.h>
 
 #include <arm/vexpress/vexpress_platform.h>
 
@@ -63,7 +63,7 @@ __KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.5 2017/11/18 00:25:43 jmcnei
 
 extern struct bus_space armv7_generic_bs_tag;
 extern struct bus_space armv7_generic_a4x_bs_tag;
-extern struct arm32_bus_dma_tag armv7_generic_dma_tag;
+extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 
 #define	SYSREG_BASE		0x1c010000
 #define	SYSREG_SIZE		0x1000
@@ -143,7 +143,7 @@ vexpress_platform_devmap(void)
 			     VEXPRESS_GIC_PBASE,
 			     VEXPRESS_GIC_SIZE),
 		DEVMAP_ENTRY_END
-	};	
+	};
 
 	return devmap;
 }
@@ -172,12 +172,27 @@ vexpress_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	faa->faa_bst = &armv7_generic_bs_tag;
 	faa->faa_a4x_bst = &armv7_generic_a4x_bs_tag;
-	faa->faa_dmat = &armv7_generic_dma_tag;
+	faa->faa_dmat = &arm_generic_dma_tag;
 }
 
 static void
 vexpress_platform_early_putchar(char c)
 {
+#ifdef CONSADDR
+#define CONSADDR_VA ((CONSADDR - VEXPRESS_CORE_PBASE) + VEXPRESS_CORE_VBASE)
+	volatile uint32_t *uartaddr = cpu_earlydevice_va_p() ?
+	    (volatile uint32_t *)CONSADDR_VA :
+	    (volatile uint32_t *)CONSADDR;
+
+	while ((le32toh(uartaddr[PL01XCOM_FR / 4]) & PL01X_FR_TXFF) != 0)
+		continue;
+
+	uartaddr[PL01XCOM_DR / 4] = htole32(c);
+	arm_dsb();
+
+	while ((le32toh(uartaddr[PL01XCOM_FR / 4]) & PL01X_FR_TXFE) == 0)
+		continue;
+#endif
 }
 
 static void
@@ -204,14 +219,14 @@ vexpress_platform_uart_freq(void)
 }
 
 static const struct arm_platform vexpress_platform = {
-	.devmap = vexpress_platform_devmap,
-	.bootstrap = vexpress_platform_bootstrap,
-	.init_attach_args = vexpress_platform_init_attach_args,
-	.early_putchar = vexpress_platform_early_putchar,
-	.device_register = vexpress_platform_device_register,
-	.reset = vexpress_platform_reset,
-	.delay = gtmr_delay,
-	.uart_freq = vexpress_platform_uart_freq,
+	.ap_devmap = vexpress_platform_devmap,
+	.ap_bootstrap = vexpress_platform_bootstrap,
+	.ap_init_attach_args = vexpress_platform_init_attach_args,
+	.ap_early_putchar = vexpress_platform_early_putchar,
+	.ap_device_register = vexpress_platform_device_register,
+	.ap_reset = vexpress_platform_reset,
+	.ap_delay = gtmr_delay,
+	.ap_uart_freq = vexpress_platform_uart_freq,
 };
 
 ARM_PLATFORM(vexpress, "arm,vexpress", &vexpress_platform);

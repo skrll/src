@@ -1,4 +1,4 @@
-/*	$NetBSD: xhcivar.h,v 1.8 2017/09/25 00:03:11 jmcneill Exp $	*/
+/*	$NetBSD: xhcivar.h,v 1.10 2018/08/09 06:26:47 mrg Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -84,10 +84,6 @@ struct xhci_softc {
 
 	kmutex_t sc_lock;
 	kmutex_t sc_intr_lock;
-	kcondvar_t sc_softwake_cv;
-
-	char sc_vendor[32];		/* vendor string for root hub */
-	int sc_id_vendor;		/* vendor ID for root hub */
 
 	pool_cache_t sc_xferpool;
 

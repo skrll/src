@@ -1,4 +1,4 @@
-/*	$NetBSD: init_main.c,v 1.492 2017/10/27 12:25:15 joerg Exp $	*/
+/*	$NetBSD: init_main.c,v 1.498 2018/07/03 03:37:03 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.492 2017/10/27 12:25:15 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.498 2018/07/03 03:37:03 ozaki-r Exp $");
 
 #include "opt_ddb.h"
 #include "opt_inet.h"
@@ -116,6 +116,7 @@ __KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.492 2017/10/27 12:25:15 joerg Exp $"
 #include "opt_rnd_printf.h"
 #include "opt_splash.h"
 #include "opt_kernhist.h"
+#include "opt_gprof.h"
 
 #if defined(SPLASHSCREEN) && defined(makeoptions_SPLASHSCREEN_IMAGE)
 extern void *_binary_splash_image_start;
@@ -233,7 +234,7 @@ struct	proc *initproc;
 
 struct	vnode *rootvp, *swapdev_vp;
 int	boothowto;
-int	cold = 1;			/* still working on startup */
+int	cold __read_mostly = 1;		/* still working on startup */
 struct timespec boottime;	        /* time at system startup - will only follow settime deltas */
 
 int	start_init_exec;		/* semaphore for start_init() */
@@ -265,6 +266,19 @@ main(void)
 #endif
 	CPU_INFO_ITERATOR cii;
 	struct cpu_info *ci;
+
+#ifdef DIAGNOSTIC
+	/*
+	 * Verify that CPU_INFO_FOREACH() knows about the boot CPU
+	 * and only the boot CPU at this point.
+	 */
+	int cpucount = 0;
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		KASSERT(ci == curcpu());
+		cpucount++;
+	}
+	KASSERT(cpucount == 1);
+#endif
 
 	l = &lwp0;
 #ifndef LWP0_CPU_INFO
@@ -558,6 +572,7 @@ main(void)
 	lltableinit();
 #endif
 	domaininit(true);
+	ifinit_post();
 	if_attachdomain();
 	splx(s);
 
@@ -594,7 +609,7 @@ main(void)
 	 * wait for us to inform it that the root file system has been
 	 * mounted.
 	 */
-	if (fork1(l, 0, SIGCHLD, NULL, 0, start_init, NULL, NULL, &initproc))
+	if (fork1(l, 0, SIGCHLD, NULL, 0, start_init, NULL, NULL))
 		panic("fork init");
 
 	/*
@@ -915,6 +930,8 @@ start_init(void *arg)
 	char *ucp, **uap, *arg0, *arg1, *argv[3];
 	char ipath[129];
 	int ipx, len;
+
+	initproc = p;
 
 	/*
 	 * Now in process 1.

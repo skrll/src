@@ -1,9 +1,9 @@
-/* $NetBSD: ti_platform.c,v 1.1 2017/10/26 01:16:32 jakllsch Exp $ */
+/* $NetBSD: ti_platform.c,v 1.4 2018/08/05 14:02:35 skrll Exp $ */
 
 #include "opt_fdt_arm.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ti_platform.c,v 1.1 2017/10/26 01:16:32 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ti_platform.c,v 1.4 2018/08/05 14:02:35 skrll Exp $");
 
 #include <sys/param.h>
 
@@ -14,21 +14,9 @@ __KERNEL_RCSID(0, "$NetBSD: ti_platform.c,v 1.1 2017/10/26 01:16:32 jakllsch Exp
 
 #include <dev/ic/comreg.h>
 
-#define DEVMAP_ALIGN(a) ((a) & ~L1_S_OFFSET)
-#define DEVMAP_SIZE(s)	roundup2((s), L1_S_SIZE)
-#define DEVMAP_ENTRY(va, pa, sz)			\
-	{						\
-		.pd_va = DEVMAP_ALIGN(va),		\
-		.pd_pa = DEVMAP_ALIGN(pa),		\
-		.pd_size = DEVMAP_SIZE(sz),		\
-		.pd_prot = VM_PROT_READ|VM_PROT_WRITE,	\
-		.pd_cache = PTE_NOCACHE			\
-	}
-#define	DEVMAP_ENTRY_END	{ 0 }
-
 extern struct bus_space armv7_generic_bs_tag;
 extern struct bus_space armv7_generic_a4x_bs_tag;
-extern struct arm32_bus_dma_tag armv7_generic_dma_tag;
+extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 
 static const struct pmap_devmap *
 am33xx_platform_devmap(void)
@@ -48,7 +36,7 @@ am33xx_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	faa->faa_bst = &armv7_generic_bs_tag;
 	faa->faa_a4x_bst = &armv7_generic_a4x_bs_tag;
-	faa->faa_dmat = &armv7_generic_dma_tag;
+	faa->faa_dmat = &arm_generic_dma_tag;
 }
 
 static void
@@ -136,12 +124,12 @@ am33xx_platform_delay(u_int n)
 }
 
 static const struct arm_platform am33xx_platform = {
-	.devmap = am33xx_platform_devmap,
-	.init_attach_args = am33xx_platform_init_attach_args,
-	.early_putchar = am33xx_platform_early_putchar,
-	.bootstrap = am33xx_platform_bootstrap,
-	.uart_freq = am33xx_platform_uart_freq,
-	.delay = am33xx_platform_delay,
+	.ap_devmap = am33xx_platform_devmap,
+	.ap_init_attach_args = am33xx_platform_init_attach_args,
+	.ap_early_putchar = am33xx_platform_early_putchar,
+	.ap_bootstrap = am33xx_platform_bootstrap,
+	.ap_uart_freq = am33xx_platform_uart_freq,
+	.ap_delay = am33xx_platform_delay,
 };
 
 void dummysetstatclockrate(int);

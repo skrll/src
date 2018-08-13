@@ -1,4 +1,4 @@
-/*	$NetBSD: sunos32_exec.c,v 1.33 2012/02/19 21:06:44 rmind Exp $	 */
+/*	$NetBSD: sunos32_exec.c,v 1.35 2018/05/06 13:40:51 kamil Exp $	 */
 
 /*
  * Copyright (c) 2001 Matthew R. Green
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunos32_exec.c,v 1.33 2012/02/19 21:06:44 rmind Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunos32_exec.c,v 1.35 2018/05/06 13:40:51 kamil Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_syscall_debug.h"
@@ -78,7 +78,6 @@ struct emul emul_sunos = {
 #endif
 	.e_sendsig =		sunos32_sendsig,
 	.e_trapsignal =		trapsignal,
-	.e_tracesig =		NULL,
 	.e_sigcode =		sunos_sigcode,
 	.e_esigcode =		sunos_esigcode,
 	.e_sigobject =		&emul_sunos32_object,
@@ -94,7 +93,6 @@ struct emul emul_sunos = {
 	.e_syscall_intern =	syscall,
 #endif
 	.e_sysctlovly =		NULL,
-	.e_fault =		NULL,
 	.e_vm_default_addr =	uvm_default_mapaddr,
 	.e_usertrap =		NULL,
 	.e_ucsize =		0,

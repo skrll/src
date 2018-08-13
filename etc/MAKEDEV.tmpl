@@ -1,5 +1,5 @@
 #!/bin/sh -
-#	$NetBSD: MAKEDEV.tmpl,v 1.188 2017/12/05 19:17:11 jmcneill Exp $
+#	$NetBSD: MAKEDEV.tmpl,v 1.192 2018/07/28 14:13:13 sevan Exp $
 #
 # Copyright (c) 2003,2007,2008 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -242,6 +242,7 @@
 #	dtv*	Digital TV interface
 #	fb*	PMAX generic framebuffer pseudo-device
 #	fd	file descriptors
+#	gpiopps* 1PPS signals on GPIO pins
 #	grf*	graphics frame buffer device
 #	hdaudio* High Definition audio control device
 #	hdmicec* HDMI CEC devices
@@ -829,6 +830,7 @@ all)
 	makedev atabus0 atabus1 atabus2 atabus3 atabus4 atabus5 atabus6 atabus7
 	makedev tap tap0 tap1 tap2 tap3
 	makedev gpio gpio0 gpio1 gpio2 gpio3 gpio4 gpio5 gpio6 gpio7
+	makedev gpiopps0
 	makedev pad pad0 pad1 pad2 pad3
 	makedev bthub
 	makedev putter
@@ -842,6 +844,8 @@ all)
 	makedev hdmicec0
 	makedev dtrace
 	makedev veriexec
+	makedev autofs
+	makedev fw0 fw1 fw2 fw3
 	makedev local # do this last
 	;;
 
@@ -863,6 +867,11 @@ audio)
 gpio)
 	makedev gpio0 gpio1 gpio2 gpio3 gpio4 gpio5 gpio6 gpio7
 	lndev gpio0 gpio
+	;;
+
+gpiopps)
+	makedev gpiopps0
+	lndev gpiopps0 gpiopps
 	;;
 
 lua)
@@ -932,7 +941,7 @@ std)
 	mkdev		full	c %mem_chr% 11	666
 	mkdev		zero	c %mem_chr% 12	666
 	mkdev		klog	c %log_chr% 0	600
-	mkdev		ksyms	c %ksyms_chr% 0 444
+	mkdev		ksyms	c %ksyms_chr% 0 440 $g_kmem
 	mkdev		random	c %rnd_chr% 0	444
 	mkdev		urandom	c %rnd_chr% 1	644
 	if ! $fdesc_mounted; then
@@ -1532,6 +1541,11 @@ hdmicec[0-9]*)
 gpio[0-9]*)
 	unit=${i#gpio}
 	mkdev gpio$unit c %gpio_chr% $unit 664 $g_gpio
+	;;
+
+gpiopps[0-9]*)
+	unit=${i#gpiopps}
+	mkdev gpiopps$unit c %gpiopps_chr% $unit 664 $g_gpio
 	;;
 
 lua[0-9]*)
@@ -2225,6 +2239,10 @@ nvme[0-9]*ns[0-9]*)
 nvme[0-9]*)
 	unit=${i#nvme}
 	mkdev nvme$unit c %nvme_chr% $(($unit * 65536))
+	;;
+
+autofs)
+	mkdev autofs c %autofs_chr% 0 600
 	;;
 
 midevend)

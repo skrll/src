@@ -2002,7 +2002,7 @@ do_kill_orphans(struct devbase *d, struct attr *at, struct devbase *parent,
 
 			} else if (!changed)
 				goto out;
-		}
+		} 
 	}
 
 	for (al = d->d_attrs; al != NULL; al = al->al_next) {

@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci.c,v 1.81 2017/12/10 17:50:01 hannken Exp $	*/
+/*	$NetBSD: xhci.c,v 1.96 2018/08/09 06:26:47 mrg Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.81 2017/12/10 17:50:01 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.96 2018/08/09 06:26:47 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -577,8 +577,10 @@ xhci_childdet(device_t self, device_t child)
 {
 	struct xhci_softc * const sc = device_private(self);
 
-	KASSERT(sc->sc_child == child);
-	if (child == sc->sc_child)
+	KASSERT((sc->sc_child == child) || (sc->sc_child2 == child));
+	if (child == sc->sc_child2)
+		sc->sc_child2 = NULL;
+	else if (child == sc->sc_child)
 		sc->sc_child = NULL;
 }
 
@@ -591,12 +593,14 @@ xhci_detach(struct xhci_softc *sc, int flags)
 		rv = config_detach(sc->sc_child2, flags);
 		if (rv != 0)
 			return rv;
+		KASSERT(sc->sc_child2 == NULL);
 	}
 
 	if (sc->sc_child != NULL) {
 		rv = config_detach(sc->sc_child, flags);
 		if (rv != 0)
 			return rv;
+		KASSERT(sc->sc_child == NULL);
 	}
 
 	/* XXX unconfigure/free slots */
@@ -623,7 +627,7 @@ xhci_detach(struct xhci_softc *sc, int flags)
 
 	kmem_free(sc->sc_slots, sizeof(*sc->sc_slots) * sc->sc_maxslots);
 
-	kmem_free(sc->sc_ctlrportbus, 
+	kmem_free(sc->sc_ctlrportbus,
 	    howmany(sc->sc_maxports * sizeof(uint8_t), NBBY));
 	kmem_free(sc->sc_ctlrportmap, sc->sc_maxports * sizeof(int));
 
@@ -875,6 +879,18 @@ xhci_ecp(struct xhci_softc *sc, uint32_t hcc)
 	"b\0AC64\0"						\
 	"\0"
 
+#define XHCI_HCC2_BITS	\
+	"\177\020"	/* New bitmask */			\
+	"b\7ETC_TSC\0"						\
+	"b\6ETC\0"						\
+	"b\5CIC\0"						\
+	"b\4LEC\0"						\
+	"b\3CTC\0"						\
+	"b\2FSC\0"						\
+	"b\1CMC\0"						\
+	"b\0U3C\0"						\
+	"\0"
+
 void
 xhci_start(struct xhci_softc *sc)
 {
@@ -896,7 +912,7 @@ int
 xhci_init(struct xhci_softc *sc)
 {
 	bus_size_t bsz;
-	uint32_t cap, hcs1, hcs2, hcs3, hcc, dboff, rtsoff;
+	uint32_t cap, hcs1, hcs2, hcs3, hcc, dboff, rtsoff, hcc2;
 	uint32_t pagesize, config;
 	int i = 0;
 	uint16_t hciversion;
@@ -907,7 +923,6 @@ xhci_init(struct xhci_softc *sc)
 	/* Set up the bus struct for the usb 3 and usb 2 buses */
 	sc->sc_bus.ub_methods = &xhci_bus_methods;
 	sc->sc_bus.ub_pipesize = sizeof(struct xhci_pipe);
-	sc->sc_bus.ub_revision = USBREV_3_0;
 	sc->sc_bus.ub_usedma = true;
 	sc->sc_bus.ub_hcpriv = sc;
 
@@ -958,6 +973,11 @@ xhci_init(struct xhci_softc *sc)
 		snprintb(sbuf, sizeof(sbuf), XHCI_HCCV1_x_BITS, hcc);
 	aprint_debug_dev(sc->sc_dev, "hcc=%s\n", sbuf);
 	aprint_debug_dev(sc->sc_dev, "xECP %x\n", XHCI_HCC_XECP(hcc) * 4);
+	if (hciversion >= XHCI_HCIVERSION_1_1) {
+		hcc2 = xhci_cap_read_4(sc, XHCI_HCCPARAMS2);
+		snprintb(sbuf, sizeof(sbuf), XHCI_HCC2_BITS, hcc2);
+		aprint_debug_dev(sc->sc_dev, "hcc2=%s\n", sbuf);
+	}
 
 	/* default all ports to bus 0, i.e. usb 3 */
 	sc->sc_ctlrportbus = kmem_zalloc(
@@ -1232,7 +1252,16 @@ xhci_intr(void *v)
 
 	ret = xhci_intr1(sc);
 	if (ret) {
-		usb_schedsoftintr(&sc->sc_bus);
+		KASSERT(sc->sc_child || sc->sc_child2);
+
+		/*
+		 * One of child busses could be already detached. It doesn't
+		 * matter on which of the two the softintr is scheduled.
+		 */
+		if (sc->sc_child)
+			usb_schedsoftintr(&sc->sc_bus);
+		else
+			usb_schedsoftintr(&sc->sc_bus2);
 	}
 done:
 	mutex_spin_exit(&sc->sc_intr_lock);
@@ -1249,24 +1278,36 @@ xhci_intr1(struct xhci_softc * const sc)
 
 	usbsts = xhci_op_read_4(sc, XHCI_USBSTS);
 	DPRINTFN(16, "USBSTS %08jx", usbsts, 0, 0, 0);
-#if 0
-	if ((usbsts & (XHCI_STS_EINT|XHCI_STS_PCD)) == 0) {
+	if ((usbsts & (XHCI_STS_HSE | XHCI_STS_EINT | XHCI_STS_PCD |
+	    XHCI_STS_HCE)) == 0) {
+		DPRINTFN(16, "ignored intr not for %s",
+		    device_xname(sc->sc_dev), 0, 0, 0);
 		return 0;
 	}
-#endif
-	xhci_op_write_4(sc, XHCI_USBSTS,
-	    usbsts & (2|XHCI_STS_EINT|XHCI_STS_PCD)); /* XXX */
+
+	/*
+	 * Clear EINT and other transient flags, to not misenterpret
+	 * next shared interrupt. Also, to avoid race, EINT must be cleared
+	 * before XHCI_IMAN_INTR_PEND is cleared.
+	 */
+	xhci_op_write_4(sc, XHCI_USBSTS, usbsts & XHCI_STS_RSVDP0);
+
+#ifdef XHCI_DEBUG
 	usbsts = xhci_op_read_4(sc, XHCI_USBSTS);
 	DPRINTFN(16, "USBSTS %08jx", usbsts, 0, 0, 0);
+#endif
 
 	iman = xhci_rt_read_4(sc, XHCI_IMAN(0));
 	DPRINTFN(16, "IMAN0 %08jx", iman, 0, 0, 0);
 	iman |= XHCI_IMAN_INTR_PEND;
 	xhci_rt_write_4(sc, XHCI_IMAN(0), iman);
+
+#ifdef XHCI_DEBUG
 	iman = xhci_rt_read_4(sc, XHCI_IMAN(0));
 	DPRINTFN(16, "IMAN0 %08jx", iman, 0, 0, 0);
 	usbsts = xhci_op_read_4(sc, XHCI_USBSTS);
 	DPRINTFN(16, "USBSTS %08jx", usbsts, 0, 0, 0);
+#endif
 
 	return 1;
 }
@@ -1655,62 +1696,64 @@ xhci_close_pipe(struct usbd_pipe *pipe)
 static void
 xhci_abort_xfer(struct usbd_xfer *xfer, usbd_status status)
 {
+	XHCIHIST_FUNC(); XHCIHIST_CALLED();
 	struct xhci_softc * const sc = XHCI_XFER2SC(xfer);
 	struct xhci_slot * const xs = xfer->ux_pipe->up_dev->ud_hcpriv;
 	const u_int dci = xhci_ep_get_dci(xfer->ux_pipe->up_endpoint->ue_edesc);
 
-	XHCIHIST_FUNC(); XHCIHIST_CALLED();
+	KASSERTMSG((status == USBD_CANCELLED || status == USBD_TIMEOUT),
+	    "invalid status for abort: %d", (int)status);
+
 	DPRINTFN(4, "xfer %#jx pipe %#jx status %jd",
 	    (uintptr_t)xfer, (uintptr_t)xfer->ux_pipe, status, 0);
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 	ASSERT_SLEEPABLE();
 
+	if (status == USBD_CANCELLED) {
+		/*
+		 * We are synchronously aborting.  Try to stop the
+		 * callout and task, but if we can't, wait for them to
+		 * complete.
+		 */
+		callout_halt(&xfer->ux_callout, &sc->sc_lock);
+		usb_rem_task_wait(xfer->ux_pipe->up_dev, &xfer->ux_aborttask,
+		    USB_TASKQ_HC, &sc->sc_lock);
+	} else {
+		/* Otherwise, we are timing out.  */
+		KASSERT(status == USBD_TIMEOUT);
+	}
+
+	/*
+	 * The xfer cannot have been cancelled already.  It is the
+	 * responsibility of the caller of usbd_abort_pipe not to try
+	 * to abort a pipe multiple times, whether concurrently or
+	 * sequentially.
+	 */
+	KASSERT(xfer->ux_status != USBD_CANCELLED);
+
+	/* Only the timeout, which runs only once, can time it out.  */
+	KASSERT(xfer->ux_status != USBD_TIMEOUT);
+
+	/* If anyone else beat us, we're done.  */
+	if (xfer->ux_status != USBD_IN_PROGRESS)
+		return;
+
+	/* We beat everyone else.  Claim the status.  */
+	xfer->ux_status = status;
+
+	/*
+	 * If we're dying, skip the hardware action and just notify the
+	 * software that we're done.
+	 */
 	if (sc->sc_dying) {
-		/* If we're dying, just do the software part. */
 		DPRINTFN(4, "xfer %#jx dying %ju", (uintptr_t)xfer,
 		    xfer->ux_status, 0, 0);
-		xfer->ux_status = status;
-		callout_halt(&xfer->ux_callout, &sc->sc_lock);
-		usb_transfer_complete(xfer);
-		return;
+		goto dying;
 	}
 
 	/*
-	 * If an abort is already in progress then just wait for it to
-	 * complete and return.
-	 */
-	if (xfer->ux_hcflags & UXFER_ABORTING) {
-		DPRINTFN(4, "already aborting", 0, 0, 0, 0);
-#ifdef DIAGNOSTIC
-		if (status == USBD_TIMEOUT)
-			DPRINTFN(4, "TIMEOUT while aborting", 0, 0, 0, 0);
-#endif
-		/* Override the status which might be USBD_TIMEOUT. */
-		xfer->ux_status = status;
-		DPRINTFN(4, "xfer %#jx waiting for abort to finish",
-		    (uintptr_t)xfer, 0, 0, 0);
-		xfer->ux_hcflags |= UXFER_ABORTWAIT;
-		while (xfer->ux_hcflags & UXFER_ABORTING)
-			cv_wait(&xfer->ux_hccv, &sc->sc_lock);
-		return;
-	}
-	xfer->ux_hcflags |= UXFER_ABORTING;
-
-	/*
-	 * Step 1: When cancelling a transfer make sure the timeout handler
-	 * didn't run or ran to the end and saw the USBD_CANCELLED status.
-	 * Otherwise we must have got here via a timeout.
-	 */
-	if (status == USBD_CANCELLED) {
-		xfer->ux_status = status;
-		callout_halt(&xfer->ux_callout, &sc->sc_lock);
-	} else {
-		KASSERT(xfer->ux_status == USBD_TIMEOUT);
-	}
-
-	/*
-	 * Step 2: Stop execution of TD on the ring.
+	 * HC Step 1: Stop execution of TD on the ring.
 	 */
 	switch (xhci_get_epstate(sc, xs, dci)) {
 	case XHCI_EPSTATE_HALTED:
@@ -1729,19 +1772,15 @@ xhci_abort_xfer(struct usbd_xfer *xfer, usbd_status status)
 #endif
 
 	/*
-	 * Step 3: Remove any vestiges of the xfer from the ring.
+	 * HC Step 2: Remove any vestiges of the xfer from the ring.
 	 */
 	xhci_set_dequeue_locked(xfer->ux_pipe);
 
 	/*
-	 * Step 4: Notify completion to waiting xfers.
+	 * Final Step: Notify completion to waiting xfers.
 	 */
-	int wake = xfer->ux_hcflags & UXFER_ABORTWAIT;
-	xfer->ux_hcflags &= ~(UXFER_ABORTING | UXFER_ABORTWAIT);
+dying:
 	usb_transfer_complete(xfer);
-	if (wake) {
-		cv_broadcast(&xfer->ux_hccv);
-	}
 	DPRINTFN(14, "end", 0, 0, 0, 0);
 
 	KASSERT(mutex_owned(&sc->sc_lock));
@@ -1972,7 +2011,8 @@ xhci_event_transfer(struct xhci_softc * const sc,
 		 * don't complete the transfer being aborted
 		 * as abort_xfer does instead.
 		 */
-		if (xfer->ux_hcflags & UXFER_ABORTING) {
+		if (xfer->ux_status == USBD_CANCELLED ||
+		    xfer->ux_status == USBD_TIMEOUT) {
 			DPRINTFN(14, "ignore aborting xfer %#jx",
 			    (uintptr_t)xfer, 0, 0, 0);
 			return;
@@ -1983,7 +2023,6 @@ xhci_event_transfer(struct xhci_softc * const sc,
 	case XHCI_TRB_ERROR_BABBLE:
 		DPRINTFN(1, "ERR %ju slot %ju dci %ju", trbcode, slot, dci, 0);
 		xr->is_halted = true;
-		err = USBD_STALLED;
 		/*
 		 * Stalled endpoints can be recoverd by issuing
 		 * command TRB TYPE_RESET_EP on xHCI instead of
@@ -1997,8 +2036,19 @@ xhci_event_transfer(struct xhci_softc * const sc,
 		 * asynchronously (and then umass issues clear
 		 * UF_ENDPOINT_HALT).
 		 */
-		xfer->ux_status = err;
-		callout_halt(&xfer->ux_callout, &sc->sc_lock);
+
+		/* Override the status.  */
+		xfer->ux_status = USBD_STALLED;
+
+		/*
+		 * Cancel the timeout and the task, which have not yet
+		 * run.  If they have already fired, at worst they are
+		 * waiting for the lock.  They will see that the xfer
+		 * is no longer in progress and give up.
+		 */
+		callout_stop(&xfer->ux_callout);
+		usb_rem_task(xfer->ux_pipe->up_dev, &xfer->ux_aborttask);
+
 		xhci_clear_endpoint_stall_async(xfer);
 		return;
 	default:
@@ -2006,15 +2056,32 @@ xhci_event_transfer(struct xhci_softc * const sc,
 		err = USBD_IOERROR;
 		break;
 	}
+
+	/*
+	 * If software has completed it, either by cancellation
+	 * or timeout, drop it on the floor.
+	 */
+	if (xfer->ux_status != USBD_IN_PROGRESS) {
+		KASSERTMSG((xfer->ux_status == USBD_CANCELLED ||
+		            xfer->ux_status == USBD_TIMEOUT),
+			   "xfer %p status %x", xfer, xfer->ux_status);
+		return;;
+	}
+
+	/* Otherwise, set the status.  */
 	xfer->ux_status = err;
 
-	if ((trb_3 & XHCI_TRB_3_ED_BIT) != 0) {
-		if ((trb_0 & 0x3) == 0x0) {
-			callout_stop(&xfer->ux_callout);
-			usb_transfer_complete(xfer);
-		}
-	} else {
-		callout_stop(&xfer->ux_callout);
+	/*
+	 * Cancel the timeout and the task, which have not yet
+	 * run.  If they have already fired, at worst they are
+	 * waiting for the lock.  They will see that the xfer
+	 * is no longer in progress and give up.
+	 */
+	callout_stop(&xfer->ux_callout);
+	usb_rem_task(xfer->ux_pipe->up_dev, &xfer->ux_aborttask);
+
+	if ((trb_3 & XHCI_TRB_3_ED_BIT) == 0 ||
+	    (trb_0 & 0x3) == 0x0) {
 		usb_transfer_complete(xfer);
 	}
 }
@@ -2158,12 +2225,12 @@ xhci_poll(struct usbd_bus *bus)
 
 	XHCIHIST_FUNC(); XHCIHIST_CALLED();
 
-	mutex_spin_enter(&sc->sc_intr_lock);
+	mutex_enter(&sc->sc_intr_lock);
 	int ret = xhci_intr1(sc);
 	if (ret) {
 		xhci_softintr(bus);
 	}
-	mutex_spin_exit(&sc->sc_intr_lock);
+	mutex_exit(&sc->sc_intr_lock);
 
 	return;
 }
@@ -2179,6 +2246,8 @@ xhci_allocx(struct usbd_bus *bus, unsigned int nframes)
 	xfer = pool_cache_get(sc->sc_xferpool, PR_WAITOK);
 	if (xfer != NULL) {
 		memset(xfer, 0, sizeof(struct xhci_xfer));
+		usb_init_task(&xfer->ux_aborttask, xhci_timeout_task, xfer,
+		    USB_TASKQ_MPSAFE);
 #ifdef DIAGNOSTIC
 		xfer->ux_state = XFER_BUSY;
 #endif
@@ -2349,6 +2418,7 @@ xhci_new_device(device_t parent, struct usbd_bus *bus, int depth,
 		/* Allow device time to set new address */
 		usbd_delay_ms(dev, USB_SET_ADDRESS_SETTLE);
 
+		usb_syncmem(&xs->xs_dc_dma, 0, sc->sc_pgsz, BUS_DMASYNC_POSTREAD);
 		cp = xhci_slot_get_dcv(sc, xs, XHCI_DCI_SLOT);
 		HEXDUMP("slot context", cp, sc->sc_ctxsz);
 		uint8_t addr = XHCI_SCTX_3_DEV_ADDR_GET(le32toh(cp[3]));
@@ -3141,10 +3211,10 @@ static void
 xhci_setup_tthub(struct usbd_pipe *pipe, uint32_t *cp)
 {
 	struct usbd_device *dev = pipe->up_dev;
-	struct usbd_device *myhub = dev->ud_myhub;
 	struct usbd_port *myhsport = dev->ud_myhsport;
 	usb_device_descriptor_t * const dd = &dev->ud_ddesc;
 	uint32_t speed = dev->ud_speed;
+	uint8_t rhaddr = dev->ud_bus->ub_rhaddr;
 	uint8_t tthubslot, ttportnum;
 	bool ishub;
 	bool usemtt;
@@ -3166,8 +3236,8 @@ xhci_setup_tthub(struct usbd_pipe *pipe, uint32_t *cp)
 	 *   parent hub is not HS hub ||
 	 *   attached to root hub.
 	 */
-	if (myhsport && myhub && myhub->ud_depth &&
-	    myhub->ud_speed == USB_SPEED_HIGH &&
+	if (myhsport &&
+	    myhsport->up_parent->ud_addr != rhaddr &&
 	    (speed == USB_SPEED_LOW || speed == USB_SPEED_FULL)) {
 		ttportnum = myhsport->up_portno;
 		tthubslot = myhsport->up_parent->ud_addr;
@@ -3192,29 +3262,30 @@ xhci_setup_tthub(struct usbd_pipe *pipe, uint32_t *cp)
 		DPRINTFN(4, "nports=%jd ttt=%jd", hd->bNbrPorts, ttt, 0, 0);
 	}
 
-#define IS_TTHUB(dd) \
-    ((dd)->bDeviceProtocol == UDPROTO_HSHUBSTT || \
-     (dd)->bDeviceProtocol == UDPROTO_HSHUBMTT)
+#define IS_MTTHUB(dd) \
+     ((dd)->bDeviceProtocol == UDPROTO_HSHUBMTT)
 
 	/*
 	 * MTT flag is set if
-	 * 1. this is HS hub && MTT is enabled
-	 *  or
-	 * 2. this is not hub && this is LS or FS device &&
-	 *    MTT of parent HS hub (and its parent, too) is enabled
+	 * 1. this is HS hub && MTTs are supported and enabled;  or
+	 * 2. this is LS or FS device && there is a parent HS hub where MTTs
+	 *    are supported and enabled.
+	 *
+	 * XXX enabled is not tested yet
 	 */
-	if (ishub && speed == USB_SPEED_HIGH && IS_TTHUB(dd))
+	if (ishub && speed == USB_SPEED_HIGH && IS_MTTHUB(dd))
 		usemtt = true;
-	else if (!ishub && (speed == USB_SPEED_LOW || speed == USB_SPEED_FULL) &&
-	     myhub && myhub->ud_depth && myhub->ud_speed == USB_SPEED_HIGH &&
-	     myhsport && IS_TTHUB(&myhsport->up_parent->ud_ddesc))
+	else if ((speed == USB_SPEED_LOW || speed == USB_SPEED_FULL) &&
+	    myhsport &&
+	    myhsport->up_parent->ud_addr != rhaddr &&
+	    IS_MTTHUB(&myhsport->up_parent->ud_ddesc))
 		usemtt = true;
 	else
 		usemtt = false;
 	DPRINTFN(4, "class %ju proto %ju ishub %jd usemtt %jd",
 	    dd->bDeviceClass, dd->bDeviceProtocol, ishub, usemtt);
 
-#undef IS_TTHUB
+#undef IS_MTTHUB
 
 	cp[0] |=
 	    XHCI_SCTX_0_HUB_SET(ishub ? 1 : 0) |
@@ -3381,22 +3452,10 @@ xhci_roothub_ctrl(struct usbd_bus *bus, usb_device_request_t *req,
 		if (len == 0)
 			break;
 		switch (value) {
-		case C(0, UDESC_DEVICE): {
-			usb_device_descriptor_t devd;
-			totlen = min(buflen, sizeof(devd));
-			memcpy(&devd, buf, totlen);
-			USETW(devd.idVendor, sc->sc_id_vendor);
-			memcpy(buf, &devd, totlen);
-			break;
-		}
 #define sd ((usb_string_descriptor_t *)buf)
-		case C(1, UDESC_STRING):
-			/* Vendor */
-			totlen = usb_makestrdesc(sd, len, sc->sc_vendor);
-			break;
 		case C(2, UDESC_STRING):
 			/* Product */
-			totlen = usb_makestrdesc(sd, len, "xHCI Root Hub");
+			totlen = usb_makestrdesc(sd, len, "xHCI root hub");
 			break;
 #undef sd
 		default:
@@ -3662,15 +3721,12 @@ xhci_root_intr_start(struct usbd_xfer *xfer)
 static void
 xhci_root_intr_abort(struct usbd_xfer *xfer)
 {
-	struct xhci_softc * const sc = XHCI_XFER2SC(xfer);
-	const size_t bn = XHCI_XFER2BUS(xfer) == &sc->sc_bus ? 0 : 1;
+	struct xhci_softc * const sc __diagused = XHCI_XFER2SC(xfer);
 
 	XHCIHIST_FUNC(); XHCIHIST_CALLED();
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 	KASSERT(xfer->ux_pipe->up_intrxfer == xfer);
-
-	sc->sc_intrxfer[bn] = NULL;
 
 	xfer->ux_status = USBD_CANCELLED;
 	usb_transfer_complete(xfer);
@@ -3779,6 +3835,7 @@ xhci_device_ctrl_start(struct usbd_xfer *xfer)
 	    XHCI_TRB_3_TYPE_SET(XHCI_TRB_TYPE_STATUS_STAGE) |
 	    XHCI_TRB_3_IOC_BIT;
 	xhci_trb_put(&xx->xx_trb[i++], parameter, status, control);
+	xfer->ux_status = USBD_IN_PROGRESS;
 
 	if (xfer->ux_timeout && !xhci_polling_p(sc)) {
 		callout_reset(&xfer->ux_callout, mstohz(xfer->ux_timeout),
@@ -3897,6 +3954,7 @@ xhci_device_bulk_start(struct usbd_xfer *xfer)
 	    (usbd_xfer_isread(xfer) ? XHCI_TRB_3_ISP_BIT : 0) |
 	    XHCI_TRB_3_IOC_BIT;
 	xhci_trb_put(&xx->xx_trb[i++], parameter, status, control);
+	xfer->ux_status = USBD_IN_PROGRESS;
 
 	if (xfer->ux_timeout && !xhci_polling_p(sc)) {
 		callout_reset(&xfer->ux_callout, mstohz(xfer->ux_timeout),
@@ -3981,6 +4039,7 @@ xhci_device_intr_start(struct usbd_xfer *xfer)
 	struct xhci_ring * const tr = &xs->xs_ep[dci].xe_tr;
 	struct xhci_xfer * const xx = XHCI_XFER2XXFER(xfer);
 	const uint32_t len = xfer->ux_length;
+	const bool polling = xhci_polling_p(sc);
 	usb_dma_t * const dma = &xfer->ux_dmabuf;
 	uint64_t parameter;
 	uint32_t status;
@@ -4006,18 +4065,20 @@ xhci_device_intr_start(struct usbd_xfer *xfer)
 	    (usbd_xfer_isread(xfer) ? XHCI_TRB_3_ISP_BIT : 0) |
 	    XHCI_TRB_3_IOC_BIT;
 	xhci_trb_put(&xx->xx_trb[i++], parameter, status, control);
+	xfer->ux_status = USBD_IN_PROGRESS;
 
-	if (xfer->ux_timeout && !xhci_polling_p(sc)) {
+	if (!polling)
+		mutex_enter(&tr->xr_lock);
+	xhci_ring_put(sc, tr, xfer, xx->xx_trb, i);
+	if (!polling)
+		mutex_exit(&tr->xr_lock);
+
+	xhci_db_write_4(sc, XHCI_DOORBELL(xs->xs_idx), dci);
+
+	if (xfer->ux_timeout && !polling) {
 		callout_reset(&xfer->ux_callout, mstohz(xfer->ux_timeout),
 		    xhci_timeout, xfer);
 	}
-	xfer->ux_status = USBD_IN_PROGRESS;
-
-	mutex_enter(&tr->xr_lock);
-	xhci_ring_put(sc, tr, xfer, xx->xx_trb, i);
-	mutex_exit(&tr->xr_lock);
-
-	xhci_db_write_4(sc, XHCI_DOORBELL(xs->xs_idx), dci);
 
 	return USBD_IN_PROGRESS;
 }
@@ -4076,27 +4137,12 @@ xhci_timeout(void *addr)
 	struct xhci_xfer * const xx = addr;
 	struct usbd_xfer * const xfer = &xx->xx_xfer;
 	struct xhci_softc * const sc = XHCI_XFER2SC(xfer);
-	bool timeout = false;
+	struct usbd_device *dev = xfer->ux_pipe->up_dev;
 
 	mutex_enter(&sc->sc_lock);
-	if (sc->sc_dying) {
-		mutex_exit(&sc->sc_lock);
-		return;
-	}
-	if (xfer->ux_status != USBD_CANCELLED) {
-		xfer->ux_status = USBD_TIMEOUT;
-		timeout = true;
-	}
-	mutex_exit(&sc->sc_lock);
-
-	if (timeout) {
-		struct usbd_device *dev = xfer->ux_pipe->up_dev;
-
-		/* Execute the abort in a process context. */
-		usb_init_task(&xfer->ux_aborttask, xhci_timeout_task, xfer,
-		    USB_TASKQ_MPSAFE);
+	if (!sc->sc_dying && xfer->ux_status == USBD_IN_PROGRESS)
 		usb_add_task(dev, &xfer->ux_aborttask, USB_TASKQ_HC);
-	}
+	mutex_exit(&sc->sc_lock);
 }
 
 static void

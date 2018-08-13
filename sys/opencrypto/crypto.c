@@ -1,4 +1,4 @@
-/*	$NetBSD: crypto.c,v 1.102 2017/11/09 22:20:25 christos Exp $ */
+/*	$NetBSD: crypto.c,v 1.106 2018/06/06 01:49:09 maya Exp $ */
 /*	$FreeBSD: src/sys/opencrypto/crypto.c,v 1.4.2.5 2003/02/26 00:14:05 sam Exp $	*/
 /*	$OpenBSD: crypto.c,v 1.41 2002/07/17 23:52:38 art Exp $	*/
 
@@ -53,7 +53,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: crypto.c,v 1.102 2017/11/09 22:20:25 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: crypto.c,v 1.106 2018/06/06 01:49:09 maya Exp $");
 
 #include <sys/param.h>
 #include <sys/reboot.h>
@@ -360,7 +360,7 @@ sysctl_opencrypto_kq_maxlen(SYSCTLFN_ARGS)
 }
 
 /*
- * Crypto op and desciptor data structures are allocated
+ * Crypto op and descriptor data structures are allocated
  * from separate private zones(FreeBSD)/pools(netBSD/OpenBSD) .
  */
 static pool_cache_t cryptop_cache;
@@ -1794,7 +1794,7 @@ crypto_done(struct cryptop *crp)
 		{
 			int wasempty;
 			struct crypto_crp_ret_qs *qs;
-			struct crypto_crp_ret_q *crp_ret_q;;
+			struct crypto_crp_ret_q *crp_ret_q;
 
 			qs = crypto_get_crp_ret_qs(crp->reqcpu);
 			crp_ret_q = &qs->crp_ret_q;
@@ -1840,7 +1840,7 @@ crypto_kdone(struct cryptkop *krp)
 	} else {
 		int wasempty;
 		struct crypto_crp_ret_qs *qs;
-		struct crypto_crp_ret_kq *crp_ret_kq;;
+		struct crypto_crp_ret_kq *crp_ret_kq;
 
 		qs = crypto_get_crp_ret_qs(krp->reqcpu);
 		crp_ret_kq = &qs->crp_ret_kq;
@@ -2048,8 +2048,8 @@ static void
 cryptoret_softint(void *arg __unused)
 {
 	struct crypto_crp_ret_qs *qs;
-	struct crypto_crp_ret_q *crp_ret_q;;
-	struct crypto_crp_ret_kq *crp_ret_kq;;
+	struct crypto_crp_ret_q *crp_ret_q;
+	struct crypto_crp_ret_kq *crp_ret_kq;
 
 	qs = crypto_get_crp_ret_qs(curcpu());
 	crp_ret_q = &qs->crp_ret_q;

@@ -1,4 +1,4 @@
-/*	$NetBSD: in_pcb.c,v 1.179 2017/08/10 04:31:58 ryo Exp $	*/
+/*	$NetBSD: in_pcb.c,v 1.182 2018/02/27 14:44:10 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -93,7 +93,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in_pcb.c,v 1.179 2017/08/10 04:31:58 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in_pcb.c,v 1.182 2018/02/27 14:44:10 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -204,6 +204,7 @@ in_pcballoc(struct socket *so, void *v)
 	inp->inp_errormtu = -1;
 	inp->inp_portalgo = PORTALGO_DEFAULT;
 	inp->inp_bindportonsend = false;
+	inp->inp_prefsrcip.s_addr = INADDR_ANY;
 #if defined(IPSEC)
 	if (ipsec_enabled) {
 		int error = ipsec_init_pcbpolicy(so, &inp->inp_sp);
@@ -627,7 +628,7 @@ in_pcbdetach(void *v)
 
 #if defined(IPSEC)
 	if (ipsec_enabled)
-		ipsec4_delete_pcbpolicy(inp);
+		ipsec_delete_pcbpolicy(inp);
 #endif
 	so->so_pcb = NULL;
 
@@ -777,7 +778,10 @@ in_pcbpurgeif0(struct inpcbtable *table, struct ifnet *ifp)
 			need_unlock = true;
 		}
 
+		/* IFNET_LOCK must be taken after solock */
+		IFNET_LOCK(ifp);
 		in_purgeifmcast(inp->inp_moptions, ifp);
+		IFNET_UNLOCK(ifp);
 
 		if (need_unlock)
 			inp_unlock(inp);

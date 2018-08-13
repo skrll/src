@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1187 2017/12/10 17:12:54 bouyer Exp $
+#	$NetBSD: files,v 1.1202 2018/07/15 07:07:15 martin Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -28,6 +28,7 @@ defflag	opt_modular.h		MODULAR_DEFAULT_AUTOLOAD
 defflag				KEYLOCK
 defparam opt_syslimits.h	CHILD_MAX OPEN_MAX
 defflag opt_diagnostic.h	_DIAGNOSTIC
+defflag				GPROF
 
 defparam opt_copy_symtab.h	makeoptions_COPY_SYMTAB
 
@@ -132,7 +133,8 @@ defflag opt_todr.h		TODR_DEBUG
 # compatibility options
 #
 defflag opt_compat_netbsd.h	COMPAT_NETBSD
-defflag	opt_compat_netbsd.h	COMPAT_70: COMPAT_NETBSD
+defflag	opt_compat_netbsd.h	COMPAT_80: COMPAT_NETBSD
+defflag	opt_compat_netbsd.h	COMPAT_70: COMPAT_80, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_60: COMPAT_70, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_50: COMPAT_60, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_40: COMPAT_50, COMPAT_NETBSD
@@ -149,7 +151,7 @@ defflag	opt_compat_netbsd.h	COMPAT_09: COMPAT_10, COMPAT_NETBSD
 defflag				COMPAT_OSSAUDIO
 defflag				COMPAT_FREEBSD: COMPAT_30
 defflag				COMPAT_IBCS2
-defflag				COMPAT_LINUX: COMPAT_16
+defflag				COMPAT_LINUX: COMPAT_NETBSD
 defflag				COMPAT_OSF1
 defflag				COMPAT_SUNOS: COMPAT_30
 defflag	opt_compat_svr4.h	COMPAT_SVR4 COMPAT_SVR4_32 SVR4_COMPAT_SOLARIS2
@@ -312,10 +314,6 @@ defparam opt_memory_disk_image.h	makeoptions_MEMORY_DISK_IMAGE
 
 defflag opt_tftproot.h		TFTPROOT TFTPROOT_DEBUG
 
-# Support for hardware performance monitoring counters
-#
-defflag	opt_perfctrs.h		PERFCTRS
-
 defflag	opt_wlan.h		WLAN
 
 # Machine-independent device majors assignements
@@ -385,6 +383,9 @@ include "dev/hid/files.hid"
 # I2C device support
 include "dev/i2c/files.i2c"
 
+# PWM device support
+include "dev/pwm/files.pwm"
+
 # SPI device support
 include "dev/spi/files.spi"
 
@@ -416,11 +417,10 @@ include "dev/splash/files.splash"
 include "dev/videomode/files.videomode"
 
 # net device attributes - we have generic code for arc(net), ether(net),
-# fddi, token ring, atm and eco(net).
+# fddi, token ring, and atm.
 #
 define	arcnet
 define	atm
-define	eco
 define	ether
 define	fddi
 define	hippi
@@ -442,11 +442,6 @@ define	arp
 # ALTQ network traffic shaping subsystem
 #
 include "altq/files.altq"
-
-#
-# IPKDB kernel debugger
-#
-include "ipkdb/files.ipkdb"
 
 # Logical disk
 #
@@ -516,6 +511,7 @@ file	dev/ic/ld_cac.c			ld_cac
 
 # HP/Compaq Command Interface for SCSI-3 Support
 #
+defflag	opt_ciss.h			CISS_NO_INTERRUPT_HACK
 device ciss: scsi
 file	dev/ic/ciss.c			ciss
 
@@ -741,9 +737,8 @@ file	dev/ic/dwc_gmac.c		awge
 
 # 8390-family Ethernet controllers
 #
-defflag	opt_ipkdb.h		IPKDB_DP8390
 define	dp8390nic
-file	dev/ic/dp8390.c			dp8390nic | ipkdb_dp8390
+file	dev/ic/dp8390.c			dp8390nic
 
 # National Semiconductor DP83905 AT/LANTIC Ethernet media support
 #
@@ -883,9 +878,8 @@ file	dev/ic/tms320av110.c		tms320av110
 # Novell NE2000-compatible Ethernet cards, based on the
 # National Semiconductor DS8390.
 #
-defflag	opt_ipkdb.h		IPKDB_NE			: IPKDB_DP8390
 device	ne: ether, ifnet, arp, dp8390nic, mii
-file	dev/ic/ne2000.c			ne | ipkdb_ne
+file	dev/ic/ne2000.c			ne
 
 # 8250/16[45]50-based "com" ports
 #
@@ -893,7 +887,7 @@ defflag	opt_com.h		COM_DEBUG
 # XXX In a perfect world, this would be done with attributes
 defflag	opt_com.h		COM_16650 COM_16750
 				COM_HAYESP COM_PXA2X0 COM_AU1X00
-				COM_REGMAP COM_FUNCMAP COM_AWIN
+				COM_REGMAP COM_FUNCMAP
 defparam opt_com.h		COM_TOLERANCE
 device	com { } : tty
 file	dev/ic/com.c			com			needs-flag
@@ -994,6 +988,10 @@ file	dev/ic/rtl81x9.c		rtk | re
 #
 device	re: ether, ifnet, arp, mii
 file	dev/ic/rtl8169.c		re
+
+# Virtual I/O Device (VIRTIO) bus controller and devices
+#
+include "dev/virtio/files.virtio"
 
 # Common code for ESDI/IDE/etc. controllers
 #
@@ -1245,7 +1243,6 @@ include "dev/wsfb/files.wsfb"
 define	isabus	{ }			# ISA attachment
 define	eisabus	{ }			# EISA attachment
 define	pcibus	{[bus = -1]}		# PCI attachment
-define	tcbus	{ }			# TURBOchannel attachment
 define	mcabus	{ }			# MicroChannel attachment
 define	usbus	{ }			# USB attachment
 define	fwbus	{ }			# IEEE 1394 attachment
@@ -1286,7 +1283,6 @@ device	xhci: usbus, usbroothub, usb_dma
 file	dev/usb/xhci.c			xhci			needs-flag
 
 # Mentor graphics OTG IP
-defflag	opt_motg.h	MOTG_ALLWINNER
 device	motg: usbus, usbroothub
 file	dev/usb/motg.c			motg			needs-flag
 
@@ -1463,6 +1459,7 @@ defpseudo carp:		ifnet, ether, arp
 defpseudodev etherip:	ifnet, ether, arp
 defpseudodev l2tp:	ifnet, ether, arp
 defpseudo canloop:	ifnet
+defpseudo ipsecif:	ifnet		# avoid to confuse ipsec itself option
 
 defpseudo sequencer
 defpseudo clockctl
@@ -1538,6 +1535,7 @@ include "fs/sysvbfs/files.sysvbfs"
 include "fs/tmpfs/files.tmpfs"
 include "fs/union/files.union"
 include "fs/v7fs/files.v7fs"
+include "fs/autofs/files.autofs"
 include "miscfs/fdesc/files.fdesc"
 include "miscfs/kernfs/files.kernfs"
 include "miscfs/nullfs/files.nullfs"
@@ -1631,3 +1629,9 @@ include "dev/ic/files.athn"
 # MI clk api
 #
 include "dev/clk/files.clk"
+
+#
+# Flattened Device Tree (FDT) support
+#
+include "dev/ofw/files.ofw"
+include "dev/fdt/files.fdt"

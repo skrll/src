@@ -1,4 +1,4 @@
-/*	$NetBSD: eval.c,v 1.153 2017/11/19 03:23:01 kre Exp $	*/
+/*	$NetBSD: eval.c,v 1.156 2018/07/25 14:42:50 kre Exp $	*/
 
 /*-
  * Copyright (c) 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)eval.c	8.9 (Berkeley) 6/8/95";
 #else
-__RCSID("$NetBSD: eval.c,v 1.153 2017/11/19 03:23:01 kre Exp $");
+__RCSID("$NetBSD: eval.c,v 1.156 2018/07/25 14:42:50 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -703,7 +703,7 @@ evalbackcmd(union node *n, struct backcmd *result)
 		result->fd, result->buf, result->nleft, result->jp));
 }
 
-static const char *
+const char *
 syspath(void)
 {
 	static char *sys_path = NULL;
@@ -931,7 +931,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 			cmd_flags |= DO_NOFUNC;
 			argsused = parse_command_args(argc, argv, &use_syspath);
 			if (argsused == 0) {
-				/* use 'type' builting to display info */
+				/* use 'type' builtin to display info */
 				cmdentry.u.bltin = typecmd;
 				break;
 			}
@@ -1069,6 +1069,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 		INTOFF;
 		savelocalvars = localvars;
 		localvars = NULL;
+		reffunc(cmdentry.u.func);
 		INTON;
 		if (setjmp(jmploc.loc)) {
 			if (exception == EXSHELLPROC) {
@@ -1078,6 +1079,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 				freeparam(&shellparam);
 				shellparam = saveparam;
 			}
+			unreffunc(cmdentry.u.func);
 			poplocalvars();
 			localvars = savelocalvars;
 			funclinebase = savefuncline;
@@ -1096,8 +1098,8 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 
 			VTRACE(DBG_EVAL,
 			  ("function: node: %d '%s' # %d%s; funclinebase=%d\n",
-			    cmdentry.u.func->type,
-			    NODETYPENAME(cmdentry.u.func->type),
+			    getfuncnode(cmdentry.u.func)->type,
+			    NODETYPENAME(getfuncnode(cmdentry.u.func)->type),
 			    cmdentry.lineno, cmdentry.lno_frel?" (=1)":"",
 			    funclinebase));
 		}
@@ -1105,9 +1107,10 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 		/* stop shell blowing its stack */
 		if (++funcnest > 1000)
 			error("too many nested function calls");
-		evaltree(cmdentry.u.func, flags & EV_TESTED);
+		evaltree(getfuncnode(cmdentry.u.func), flags & EV_TESTED);
 		funcnest--;
 		INTOFF;
+		unreffunc(cmdentry.u.func);
 		poplocalvars();
 		localvars = savelocalvars;
 		funclinebase = savefuncline;

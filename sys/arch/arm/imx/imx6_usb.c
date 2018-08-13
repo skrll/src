@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_usb.c,v 1.2 2017/08/17 09:11:04 hkenken Exp $	*/
+/*	$NetBSD: imx6_usb.c,v 1.4 2018/05/23 10:42:05 hkenken Exp $	*/
 
 /*
  * Copyright (c) 2012  Genetec Corporation.  All rights reserved.
@@ -26,7 +26,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_usb.c,v 1.2 2017/08/17 09:11:04 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx6_usb.c,v 1.4 2018/05/23 10:42:05 hkenken Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -72,7 +72,7 @@ imxusbc_attach_common(device_t parent, device_t self, bus_space_tag_t iot)
 
 	/* USBOH3 clock enable */
 	v = imx6_ccm_read(CCM_CCGR6);
-	imx6_ccm_write(CCM_CCGR6, v | CCM_CCGR6_USBOH3_CLK_ENABLE(3));
+	imx6_ccm_write(CCM_CCGR6, v | __SHIFTIN(3, CCM_CCGR6_USBOH3_CLK_ENABLE));
 
 	/* attach OTG/EHCI host controllers */
 	config_search_ia(imxusbc_search, self, "imxusbc", NULL);
@@ -89,7 +89,7 @@ imxusbc_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	sc = device_private(parent);
 	aa.aa_iot = sc->sc_iot;
 	aa.aa_ioh = sc->sc_ioh;
-	aa.aa_dmat = &armv7_generic_dma_tag;
+	aa.aa_dmat = &arm_generic_dma_tag;
 	aa.aa_unit = cf->cf_loc[IMXUSBCCF_UNIT];
 	aa.aa_irq = cf->cf_loc[IMXUSBCCF_IRQ];
 

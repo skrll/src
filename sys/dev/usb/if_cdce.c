@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cdce.c,v 1.44 2017/01/12 18:26:08 maya Exp $ */
+/*	$NetBSD: if_cdce.c,v 1.46 2018/06/26 06:48:02 msaitoh Exp $ */
 
 /*
  * Copyright (c) 1997, 1998, 1999, 2000-2003 Bill Paul <wpaul@windriver.com>
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_cdce.c,v 1.44 2017/01/12 18:26:08 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cdce.c,v 1.46 2018/06/26 06:48:02 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -372,7 +372,7 @@ cdce_start_locked(struct ifnet *ifp)
 
 	IFQ_DEQUEUE(&ifp->if_snd, m_head);
 
-	bpf_mtap(ifp, m_head);
+	bpf_mtap(ifp, m_head, BPF_D_OUT);
 
 	ifp->if_flags |= IFF_OACTIVE;
 
@@ -609,7 +609,7 @@ cdce_rx_list_init(struct cdce_softc *sc)
 			return ENOBUFS;
 		if (c->cdce_xfer == NULL) {
 			int err = usbd_create_xfer(sc->cdce_bulkin_pipe,
-			    CDCE_BUFSZ, USBD_SHORT_XFER_OK, 0, &c->cdce_xfer);
+			    CDCE_BUFSZ, 0, 0, &c->cdce_xfer);
 			if (err)
 				return err;
 			c->cdce_buf = usbd_get_buffer(c->cdce_xfer);

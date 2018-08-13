@@ -1,4 +1,4 @@
-/*	$NetBSD: if_tap.c,v 1.104 2017/11/30 20:25:55 christos Exp $	*/
+/*	$NetBSD: if_tap.c,v 1.106 2018/06/26 06:48:02 msaitoh Exp $	*/
 
 /*
  *  Copyright (c) 2003, 2004, 2008, 2009 The NetBSD Foundation.
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.104 2017/11/30 20:25:55 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.106 2018/06/26 06:48:02 msaitoh Exp $");
 
 #if defined(_KERNEL_OPT)
 
@@ -358,7 +358,10 @@ tap_attach(device_t parent, device_t self, void *aux)
 	strcpy(ifp->if_xname, device_xname(self));
 	ifp->if_softc	= sc;
 	ifp->if_flags	= IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-	ifp->if_extflags = IFEF_MPSAFE | IFEF_NO_LINK_STATE_CHANGE;
+	ifp->if_extflags = IFEF_NO_LINK_STATE_CHANGE;
+#ifdef NET_MPSAFE
+	ifp->if_extflags |= IFEF_MPSAFE;
+#endif
 	ifp->if_ioctl	= tap_ioctl;
 	ifp->if_start	= tap_start;
 	ifp->if_stop	= tap_stop;
@@ -510,7 +513,7 @@ tap_start(struct ifnet *ifp)
 				goto done;
 
 			ifp->if_opackets++;
-			bpf_mtap(ifp, m0);
+			bpf_mtap(ifp, m0, BPF_D_OUT);
 
 			m_freem(m0);
 		}
@@ -882,7 +885,7 @@ tap_dev_close(struct tap_softc *sc)
 				break;
 
 			ifp->if_opackets++;
-			bpf_mtap(ifp, m);
+			bpf_mtap(ifp, m, BPF_D_OUT);
 			m_freem(m);
 		}
 	}
@@ -970,7 +973,7 @@ tap_dev_read(int unit, struct uio *uio, int flags)
 	}
 
 	ifp->if_opackets++;
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 
 	/*
 	 * One read is one packet.

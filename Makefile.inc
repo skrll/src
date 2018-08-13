@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.4 2002/04/10 14:53:43 lukem Exp $
+#	$NetBSD: Makefile.inc,v 1.6 2018/05/02 07:34:44 pgoyette Exp $
 
 .ifndef ABSTOP
 ABSTOP!= cd ${.PARSEDIR}; pwd

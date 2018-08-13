@@ -1,7 +1,16 @@
-/*	$NetBSD: spr.h,v 1.3 2015/07/07 15:41:46 macallan Exp $	*/
+/*	$NetBSD: spr.h,v 1.6 2018/06/01 18:18:11 macallan Exp $	*/
 
 #ifndef _POWERPC_OEA_SPR_H_
 #define	_POWERPC_OEA_SPR_H_
+
+#if !defined(_LOCORE) && defined(_KERNEL)
+#if defined(PPC_OEA64_BRIDGE) || defined (_ARCH_PPC64)
+
+#include <powerpc/psl.h>
+#include <powerpc/spr.h>
+
+#endif
+#endif
 
 /*
  * Special Purpose Register declarations.
@@ -28,6 +37,15 @@
 #define	SPR_RTCL_W		0x015	/* ..6. 601 RTC Lower - Write */
 #define	SPR_SDR1		0x019	/* ..68 Page table base address register */
 #define	SPR_VRSAVE		0x100	/* ..6. AltiVec VRSAVE */
+#define SPR_SCOMC		0x114	/* .... SCOM Control Register (970) */
+#define SPR_SCOMD		0x115	/* .... SCOM Data Register (970) */
+#define  SCOM_PCR		  0x0aa00100	/* Power Control Register */
+#define  SCOM_PCR_BIT		  0x80000000	/* Data bit */
+#define  SCOM_PSR		  0x40800100	/* Power Status Register */
+#define  PSR_RECEIVED		  (1ULL << 61)
+#define  PSR_COMPLETED		  (1ULL << 60)
+#define  SCOMC_READ		  0x00008000
+#define  SCOMC_WRITE		  0x00000000
 #define	SPR_ASR			0x118	/* ..6. Address Space Register (PPC64) */
 #define	SPR_EAR			0x11a	/* ..68 External Access Register */
 #define	  MPC601		  0x0001
@@ -76,6 +94,7 @@
 #define   MPCe300c1		  0x8083
 #define   MPCe300c2		  0x8084
 #define   MPCe300c3		  0x8085
+#define SPR_HIOR		0x137	/* .... HW Interrupt Offset (970) */
 
 #define	SPR_IBAT0U		0x210	/* ..68 Instruction BAT Reg 0 Upper */
 #define	SPR_IBAT0L		0x211	/* ..6. Instruction BAT Reg 0 Lower */
@@ -288,5 +307,51 @@
 #define	PMCN_ICOMP		 2 /* Instructions completed */
 #define	PMCN_TBLTRANS		 3 /* TBL bit transitions */
 #define	PCMN_IDISPATCH		 4 /* Instructions dispatched */
+
+#if !defined(_LOCORE) && defined(_KERNEL)
+
+#if defined(PPC_OEA64_BRIDGE) || defined (_ARCH_PPC64)
+
+static inline uint64_t
+scom_read(register_t address)
+{
+	register_t msr;
+	uint64_t ret;
+
+	msr = mfmsr();
+	mtmsr(msr & ~PSL_EE);
+	__asm volatile("isync;");
+
+	mtspr(SPR_SCOMC, address | SCOMC_READ);
+	__asm volatile("isync;");
+
+	ret = mfspr(SPR_SCOMD);
+	mtmsr(msr);
+	__asm volatile("isync;");
+
+	return ret;
+}
+
+static inline void
+scom_write(register_t address, uint64_t data)
+{
+	register_t msr;
+
+	msr = mfmsr();
+	mtmsr(msr & ~PSL_EE);
+	__asm volatile("isync;");
+
+	mtspr(SPR_SCOMD, data);
+	__asm volatile("isync;");
+	mtspr(SPR_SCOMC, address | SCOMC_WRITE);
+	__asm volatile("isync;");
+	
+	mtmsr(msr);
+	__asm volatile("isync;");
+}
+
+#endif /* defined(PPC_OEA64_BRIDGE) || defined (_ARCH_PPC64) */
+
+#endif /* !defined(_LOCORE) && defined(_KERNEL) */
 
 #endif /* !_POWERPC_SPR_H_ */

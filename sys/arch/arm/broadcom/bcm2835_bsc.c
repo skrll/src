@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_bsc.c,v 1.8 2017/12/10 21:38:26 skrll Exp $	*/
+/*	$NetBSD: bcm2835_bsc.c,v 1.13 2018/07/01 21:23:16 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2012 Jonathan A. Kollasch
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_bsc.c,v 1.8 2017/12/10 21:38:26 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_bsc.c,v 1.13 2018/07/01 21:23:16 jmcneill Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_kernhist.h"
@@ -102,7 +102,6 @@ bsciic_attach(device_t parent, device_t self, void *aux)
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
 	prop_dictionary_t prop = device_properties(self);
-	struct i2cbus_attach_args iba;
 	bool disable = false;
 
 	static ONCE_DECL(control);
@@ -170,11 +169,7 @@ bsciic_attach(device_t parent, device_t self, void *aux)
 	sc->sc_i2c.ic_release_bus = bsciic_release_bus;
 	sc->sc_i2c.ic_exec = bsciic_exec;
 
-	memset(&iba, 0, sizeof(iba));
-
-	iba.iba_tag = &sc->sc_i2c;
-	iba.iba_type = 0;
-	config_found_ia(self, "i2cbus", &iba, iicbus_print);
+	fdtbus_attach_i2cbus(self, phandle, &sc->sc_i2c, iicbus_print);
 }
 
 void
@@ -231,7 +226,14 @@ bsciic_exec(void *v, i2c_op_t op, i2c_addr_t addr, const void *cmdbuf,
 	size_t len;
 	size_t pos;
 	int error = 0;
+	int whichbuf = 0;
 	const bool isread = I2C_OP_READ_P(op);
+
+	/*
+	 * XXX We don't do 10-bit addressing correctly yet.
+	 */
+	if (addr > 0x7f)
+		return (ENOTSUP);
 
 	flags |= I2C_F_POLL;
 
@@ -301,10 +303,13 @@ flood_again:
 	KERNHIST_LOG(bsciichist, "flood bot %#jx %ju",
 	    (uintptr_t)buf, len, 0, 0);
 
-	if (buf == cmdbuf && !isread) {
+	if (whichbuf == 0 && !isread) {
+		KASSERT(buf == cmdbuf);
+		whichbuf++;
 		buf = databuf;
 		len = datalen;
-		goto flood_again;
+		if (len)
+			goto flood_again;
 	}
 
 	do {
@@ -331,7 +336,9 @@ only_read:
 	dlen = datalen;
 
 	dlen = __SHIFTIN(dlen, BSC_DLEN_DLEN);
+#if 0
 	KASSERT(dlen >= 1);
+#endif
 	bus_space_write_4(sc->sc_iot, sc->sc_ioh, BSC_DLEN, dlen);
 	bus_space_write_4(sc->sc_iot, sc->sc_ioh, BSC_A, a);
 	bus_space_write_4(sc->sc_iot, sc->sc_ioh, BSC_C, c | BSC_C_ST);

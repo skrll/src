@@ -42,8 +42,46 @@
 #ifndef _KERNEL
 #include <stdio.h> /* defines FILE *, used in ANSI C function prototypes */
 #endif
+
+#ifdef __NetBSD__		/* Avoid conflicts with libc xdr.  */
+/* xdr.c */
+#define	xdr_bool		_solaris_xdr_bool
+#define	xdr_bytes		_solaris_xdr_bytes
+#define	xdr_char		_solaris_xdr_char
+#define	xdr_enum		_solaris_xdr_enum
+#define	xdr_free		_solaris_xdr_free
+#define	xdr_int			_solaris_xdr_int
+#define	xdr_int32_t		_solaris_xdr_int32_t
+#define	xdr_int64_t		_solaris_xdr_int64_t
+#define	xdr_longlong_t		_solaris_xdr_longlong_t
+#define	xdr_netobj		_solaris_xdr_netobj
+#define	xdr_opaque		_solaris_xdr_opaque
+#define	xdr_short		_solaris_xdr_short
+#define	xdr_string		_solaris_xdr_string
+#define	xdr_u_char		_solaris_xdr_u_char
+#define	xdr_u_int		_solaris_xdr_u_int
+#define	xdr_u_longlong_t	_solaris_xdr_u_longlong_t
+#define	xdr_u_short		_solaris_xdr_u_short
+#define	xdr_uint32_t		_solaris_xdr_uint32_t
+#define	xdr_uint64_t		_solaris_xdr_uint64_t
+#define	xdr_union		_solaris_xdr_union
+#define	xdr_vector		_solaris_xdr_vector
+#define	xdr_void		_solaris_xdr_void
+#define	xdr_wrapstring		_solaris_xdr_wrapstring
+
+/* xdr_array.c */
+#define	xdr_array		_solaris_xdr_array
+
+/* xdr_mem.c */
+#define	xdrmem_create		_solaris_xdrmem_create
+
+typedef void *mblk_t;
+
+#else	/* !__NetBSD__ */
+
 #ifdef _KERNEL
 #include <sys/stream.h>
+#endif
 #endif
 
 #ifdef __NetBSD__		/* Avoid conflicts with libc xdr.  */

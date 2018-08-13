@@ -1,4 +1,4 @@
-/* $NetBSD: pmf.h,v 1.22 2017/10/05 01:26:53 jmcneill Exp $ */
+/* $NetBSD: pmf.h,v 1.24 2018/04/19 21:19:07 christos Exp $ */
 
 /*-
  * Copyright (c) 2007 Jared D. McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #ifndef _SYS_PMF_H
 #define _SYS_PMF_H
 
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(_KMEMUSER)
 
 #include <sys/types.h>
 #include <sys/device_if.h>
@@ -62,6 +62,9 @@ struct pmf_qual {
 };
 
 typedef struct pmf_qual pmf_qual_t;
+#endif
+
+#if defined(_KERNEL)
 extern const pmf_qual_t * const PMF_Q_NONE;
 extern const pmf_qual_t * const PMF_Q_SELF;
 extern const pmf_qual_t * const PMF_Q_DRVCTL;
@@ -117,19 +120,19 @@ void		pmf_qual_recursive_copy(pmf_qual_t *, const pmf_qual_t *);
 void		pmf_self_suspensor_init(device_t, device_suspensor_t *,
 		    pmf_qual_t *);
 
-static inline const device_suspensor_t *
+static __inline const device_suspensor_t *
 pmf_qual_suspension(const pmf_qual_t *pq)
 {
 	return pq->pq_suspensor;
 }
 
-static inline devact_level_t
+static __inline devact_level_t
 pmf_qual_depth(const pmf_qual_t *pq)
 {
 	return pq->pq_actlvl;
 }
 
-static inline bool
+static __inline bool
 pmf_qual_descend_ok(const pmf_qual_t *pq)
 {
 	return pq->pq_actlvl == DEVACT_LEVEL_FULL;

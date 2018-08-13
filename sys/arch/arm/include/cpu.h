@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.93 2017/04/04 09:26:32 sevan Exp $	*/
+/*	$NetBSD: cpu.h,v 1.96 2018/04/01 04:35:04 ryo Exp $	*/
 
 /*
  * Copyright (c) 1994-1996 Mark Brinicombe.
@@ -48,6 +48,8 @@
 #ifndef _ARM_CPU_H_
 #define _ARM_CPU_H_
 
+#ifdef __arm__
+
 /*
  * User-visible definitions
  */
@@ -88,17 +90,13 @@ extern int cpu_fpu_present;
  * CLKF_USERMODE: Return TRUE/FALSE (1/0) depending on whether the
  * frame came from USR mode or not.
  */
-#ifdef __PROG32
 #define CLKF_USERMODE(cf) (((cf)->cf_tf.tf_spsr & PSR_MODE) == PSR_USR32_MODE)
-#else
-#define CLKF_USERMODE(cf) (((cf)->cf_if.if_r15 & R15_MODE) == R15_MODE_USR)
-#endif
 
 /*
  * CLKF_INTR: True if we took the interrupt from inside another
  * interrupt handler.
  */
-#if defined(__PROG32) && !defined(__ARM_EABI__)
+#if !defined(__ARM_EABI__)
 /* Hack to treat FPE time as interrupt time so we can measure it */
 #define CLKF_INTR(cf)						\
 	((curcpu()->ci_intr_depth > 1) ||			\
@@ -110,20 +108,12 @@ extern int cpu_fpu_present;
 /*
  * CLKF_PC: Extract the program counter from a clockframe
  */
-#ifdef __PROG32
 #define CLKF_PC(frame)		(frame->cf_tf.tf_pc)
-#else
-#define CLKF_PC(frame)		(frame->cf_if.if_r15 & R15_PC)
-#endif
 
 /*
  * LWP_PC: Find out the program counter for the given lwp.
  */
-#ifdef __PROG32
 #define LWP_PC(l)		(lwp_trapframe(l)->tf_pc)
-#else
-#define LWP_PC(l)		(lwp_trapframe(l)->tf_r15 & R15_PC)
-#endif
 
 /*
  * Per-CPU information.  For now we assume one CPU.
@@ -235,7 +225,7 @@ extern struct cpu_info *cpu_info[];
 #define cpu_number()		(curcpu()->ci_index)
 #define CPU_IS_PRIMARY(ci)	((ci)->ci_index == 0)
 #define CPU_INFO_FOREACH(cii, ci)			\
-	cii = 0, ci = cpu_info[0]; cii < ncpu && (ci = cpu_info[cii]) != NULL; cii++
+	cii = 0, ci = cpu_info[0]; cii < (ncpu ? ncpu : 1) && (ci = cpu_info[cii]) != NULL; cii++
 #else
 #define cpu_number()            0
 
@@ -275,11 +265,7 @@ cpu_dosoftints(void)
 #endif
 }
 
-#ifdef __PROG32
 void	cpu_proc_fork(struct proc *, struct proc *);
-#else
-#define	cpu_proc_fork(p1, p2)
-#endif
 
 /*
  * Scheduling glue
@@ -315,15 +301,19 @@ void	cpu_set_curpri(int);
  */
 vaddr_t cpu_uarea_alloc_idlelwp(struct cpu_info *);
 
-#ifndef acorn26
 /*
  * cpu device glue (belongs in cpuvar.h)
  */
 void	cpu_attach(device_t, cpuid_t);
-#endif
 
 #endif /* !_LOCORE */
 
 #endif /* _KERNEL */
+
+#elif defined(__aarch64__)
+
+#include <aarch64/cpu.h>
+
+#endif /* __arm__/__aarch64__ */
 
 #endif /* !_ARM_CPU_H_ */

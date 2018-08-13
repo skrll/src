@@ -1,9 +1,17 @@
-#	$NetBSD: bsd.lib.mk,v 1.372 2017/05/29 03:52:43 christos Exp $
+#	$NetBSD: bsd.lib.mk,v 1.377 2018/07/25 23:34:25 kamil Exp $
 #	@(#)bsd.lib.mk	8.3 (Berkeley) 4/22/94
 
 .include <bsd.init.mk>
 .include <bsd.shlib.mk>
 .include <bsd.gcc.mk>
+
+# Rename the local function definitions to not conflict with libc/rt/pthread/m.
+.if ${MKSANITIZER:Uno} == "yes" && defined(SANITIZER_RENAME_SYMBOL)
+.	for _symbol in ${SANITIZER_RENAME_SYMBOL}
+CPPFLAGS+=	-D${_symbol}=__mksanitizer_${_symbol}
+.	endfor
+.endif
+
 # Pull in <bsd.sys.mk> here so we can override its .c.o rule
 .include <bsd.sys.mk>
 
@@ -149,7 +157,7 @@ SHLIB_FULLVERSION=${SHLIB_MAJOR}
 PICFLAGS ?= -fPIC
 
 .if ${MKPICLIB} != "no"
-CSHLIBFLAGS+= ${PICFLAGS}
+CSHLIBFLAGS+= ${PICFLAGS} ${SANITIZERFLAGS} ${LIBCSANITIZERFLAGS}
 .endif
 
 .if defined(CSHLIBFLAGS) && !empty(CSHLIBFLAGS)
@@ -171,6 +179,7 @@ CFLAGS+=	-g
 # Platform-independent linker flags for ELF shared libraries
 SHLIB_SOVERSION=	${SHLIB_MAJOR}
 SHLIB_SHFLAGS=		-Wl,-soname,${_LIB}.so.${SHLIB_SOVERSION}
+SHLIB_SHFLAGS+=		${SANITIZERFLAGS}
 .if !defined(SHLIB_WARNTEXTREL) || ${SHLIB_WARNTEXTREL} != "no"
 SHLIB_SHFLAGS+=		-Wl,--warn-shared-textrel
 .endif
@@ -541,7 +550,7 @@ _INSTRANLIB=${empty(PRESERVE):?-a "${RANLIB} -t":}
 .if !target(__archivebuild)
 __archivebuild: .USE
 	${_MKTARGET_BUILD}
-	rm -f ${.TARGET}
+	@rm -f ${.TARGET}
 	${AR} ${_ARFL} ${.TARGET} `NM=${NM} ${LORDER} ${.ALLSRC:M*o} | ${TSORT}`
 .endif
 
@@ -555,6 +564,21 @@ __archiveinstall: .USE
 __archivesymlinkpic: .USE
 	${_MKTARGET_INSTALL}
 	${INSTALL_SYMLINK} ${.ALLSRC} ${.TARGET}
+
+.if !target(__buildstdlib)
+__buildstdlib: .USE
+	@echo building standard ${.TARGET:T:S/.o//:S/lib//} library
+	@rm -f ${.TARGET}
+	@${LINK.c:S/-nostdinc//} -nostdlib ${LDFLAGS} -r -o ${.TARGET} `NM=${NM} ${LORDER} ${.ALLSRC:M*o} | ${TSORT}`
+.endif
+
+.if !target(__buildproflib)
+__buildproflib: .USE
+	@echo building profiled ${.TARGET:T:S/.o//:S/lib//} library
+	${_MKTARGET_BUILD}
+	@rm -f ${.TARGET}
+	@${LINK.c:S/-nostdinc//} -nostdlib ${LDFLAGS} -r -o ${.TARGET} `NM=${NM} ${LORDER} ${.ALLSRC:M*po} | ${TSORT}`
+.endif
 
 DPSRCS+=	${_YLSRCS}
 CLEANFILES+=	${_YLSRCS}

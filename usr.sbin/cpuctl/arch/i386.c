@@ -1,4 +1,4 @@
-/*	$NetBSD: i386.c,v 1.78 2017/10/19 03:09:55 msaitoh Exp $	*/
+/*	$NetBSD: i386.c,v 1.85 2018/06/20 04:04:50 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -57,7 +57,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: i386.c,v 1.78 2017/10/19 03:09:55 msaitoh Exp $");
+__RCSID("$NetBSD: i386.c,v 1.85 2018/06/20 04:04:50 msaitoh Exp $");
 #endif /* not lint */
 
 #include <sys/types.h>
@@ -92,7 +92,7 @@ __RCSID("$NetBSD: i386.c,v 1.78 2017/10/19 03:09:55 msaitoh Exp $");
 
 struct cpu_info {
 	const char	*ci_dev;
-	int32_t		ci_cpu_type;     /* for cpu's without cpuid */
+	int32_t		ci_cpu_type;	 /* for cpu's without cpuid */
 	int32_t		ci_cpuid_level;	 /* highest cpuid supported */
 	uint32_t	ci_cpuid_extlevel; /* highest cpuid extended func lv */
 	uint32_t	ci_signature;	 /* X86 cpuid type */
@@ -161,9 +161,9 @@ static const struct x86_cache_info intel_cpuid_cache_info[] = INTEL_CACHE_INFO;
 static const char * const i386_intel_brand[] = {
 	"",		    /* Unsupported */
 	"Celeron",	    /* Intel (R) Celeron (TM) processor */
-	"Pentium III",      /* Intel (R) Pentium (R) III processor */
+	"Pentium III",	    /* Intel (R) Pentium (R) III processor */
 	"Pentium III Xeon", /* Intel (R) Pentium (R) III Xeon (TM) processor */
-	"Pentium III",      /* Intel (R) Pentium (R) III processor */
+	"Pentium III",	    /* Intel (R) Pentium (R) III processor */
 	"",		    /* 0x05: Reserved */
 	"Mobile Pentium III",/* Mobile Intel (R) Pentium (R) III processor-M */
 	"Mobile Celeron",   /* Mobile Intel (R) Celeron (R) processor */    
@@ -177,11 +177,11 @@ static const char * const i386_intel_brand[] = {
 	"Mobile Celeron",   /* Mobile Intel (R) Celeron (R) processor */
 	"",		    /* 0x10: Reserved */
 	"Mobile Genuine",   /* Moblie Genuine Intel (R) processor */
-	"Celeron M",        /* Intel (R) Celeron (R) M processor */
+	"Celeron M",	    /* Intel (R) Celeron (R) M processor */
 	"Mobile Celeron",   /* Mobile Intel (R) Celeron (R) processor */
-	"Celeron",          /* Intel (R) Celeron (R) processor */
+	"Celeron",	    /* Intel (R) Celeron (R) processor */
 	"Mobile Genuine",   /* Moblie Genuine Intel (R) processor */
-	"Pentium M",        /* Intel (R) Pentium (R) M processor */
+	"Pentium M",	    /* Intel (R) Pentium (R) M processor */
 	"Mobile Celeron",   /* Mobile Intel (R) Celeron (R) processor */
 };
 
@@ -215,8 +215,8 @@ static void	powernow_probe(struct cpu_info *);
 static void	intel_family_new_probe(struct cpu_info *);
 static void	via_cpu_probe(struct cpu_info *);
 /* (Cache) Info functions */
-static void 	intel_cpu_cacheinfo(struct cpu_info *);
-static void 	amd_cpu_cacheinfo(struct cpu_info *);
+static void	intel_cpu_cacheinfo(struct cpu_info *);
+static void	amd_cpu_cacheinfo(struct cpu_info *);
 static void	via_cpu_cacheinfo(struct cpu_info *);
 static void	tmx86_get_longrun_status(u_int *, u_int *, u_int *);
 static void	transmeta_cpu_info(struct cpu_info *);
@@ -251,7 +251,7 @@ const struct cpu_nocpuid_nameclass i386_nocpuid_cpus[] = {
 	  NULL, NULL, NULL },			/* CPU_486DLC */
 	{ CPUVENDOR_CYRIX, "Cyrix", "6x86",	CPUCLASS_486,
 	  NULL, NULL, NULL },		/* CPU_6x86 */
-	{ CPUVENDOR_NEXGEN,"NexGen","586",      CPUCLASS_386,
+	{ CPUVENDOR_NEXGEN,"NexGen","586",	CPUCLASS_386,
 	  NULL, NULL, NULL },			/* CPU_NX586 */
 };
 
@@ -381,9 +381,9 @@ const struct cpu_cpuid_nameclass i386_cpuid_cpus[] = {
 				[0x5f] = "Atom (Goldmont, Denverton)",
 				[0x66] = "Future Core (Cannon Lake)",
 				[0x7a] = "Atom (Goldmont Plus)",
-				[0x85] = "Future Xeon Phi (Knights Mill)",
-				[0x8e] = "7th gen Core (Kaby Lake)",
-				[0x9e] = "7th gen Core (Kaby Lake)",
+				[0x85] = "Xeon Phi 7215, 7285, 7295 (Knights Mill)",
+				[0x8e] = "7th or 8th gen Core (Kaby Lake, Coffee Lake)",
+				[0x9e] = "7th or 8th gen Core (Kaby Lake, Coffee Lake)",
 			},
 			"Pentium Pro, II or III",	/* Default */
 			NULL,
@@ -1025,8 +1025,10 @@ intel_cpu_cacheinfo(struct cpu_info *ci)
 				    desc);
 				if (cai != NULL)
 					ci->ci_cinfo[cai->cai_index] = *cai;
-				else if ((verbose != 0) && (desc != 0xff))
-					printf("Unknown cacheinfo desc %02x\n",
+				else if ((verbose != 0) && (desc != 0xff)
+				    && (desc != 0xfe))
+					aprint_error_dev(ci->ci_dev, "error:"
+					    " Unknown cacheinfo desc %02x\n",
 					    desc);
 			}
 		}
@@ -1069,7 +1071,8 @@ intel_cpu_cacheinfo(struct cpu_info *ci)
 			break;
 		}
 		if (caitype == -1) {
-			printf("unknown cache level&type (%d & %d)\n",
+			aprint_error_dev(ci->ci_dev,
+			    "error: unknown cache level&type (%d & %d)\n",
 			    level, type);
 			continue;
 		}
@@ -1083,6 +1086,140 @@ intel_cpu_cacheinfo(struct cpu_info *ci)
 		ci->ci_cinfo[caitype].cai_totalsize = totalsize;
 		ci->ci_cinfo[caitype].cai_associativity = ways;
 		ci->ci_cinfo[caitype].cai_linesize = linesize;
+	}
+
+	if (ci->ci_cpuid_level < 0x18)
+		return;
+	/* Parse the TLB info from `cpuid leaf 18H', if we have it. */
+	x86_cpuid(0x18, descs);
+	iterations = descs[0];
+	for (i = 0; i <= iterations; i++) {
+		uint32_t pgsize;
+		bool full;
+
+		x86_cpuid2(0x18, i, descs);
+		type = __SHIFTOUT(descs[3], CPUID_DATP_TCTYPE);
+		if (type == CPUID_DATP_TCTYPE_N)
+			continue;
+		level = __SHIFTOUT(descs[3], CPUID_DATP_TCLEVEL);
+		pgsize = __SHIFTOUT(descs[1], CPUID_DATP_PGSIZE);
+		switch (level) {
+		case 1:
+			if (type == CPUID_DATP_TCTYPE_I) {
+				switch (pgsize) {
+				case CPUID_DATP_PGSIZE_4KB:
+					caitype = CAI_ITLB;
+					break;
+				case CPUID_DATP_PGSIZE_2MB
+				    | CPUID_DATP_PGSIZE_4MB:
+					caitype = CAI_ITLB2;
+					break;
+				case CPUID_DATP_PGSIZE_1GB:
+					caitype = CAI_L1_1GBITLB;
+					break;
+				default:
+					aprint_error_dev(ci->ci_dev,
+					    "error: unknown ITLB size (%d)\n",
+					    pgsize);
+					caitype = CAI_ITLB;
+					break;
+				}
+			} else if (type == CPUID_DATP_TCTYPE_D) {
+				switch (pgsize) {
+				case CPUID_DATP_PGSIZE_4KB:
+					caitype = CAI_DTLB;
+					break;
+				case CPUID_DATP_PGSIZE_2MB
+				    | CPUID_DATP_PGSIZE_4MB:
+					caitype = CAI_DTLB2;
+					break;
+				case CPUID_DATP_PGSIZE_1GB:
+					caitype = CAI_L1_1GBDTLB;
+					break;
+				default:
+					aprint_error_dev(ci->ci_dev,
+					    "error: unknown DTLB size (%d)\n",
+					    pgsize);
+					caitype = CAI_DTLB;
+					break;
+				}
+			} else
+				caitype = -1;
+			break;
+		case 2:
+			if (type == CPUID_DATP_TCTYPE_I)
+				caitype = CAI_L2_ITLB;
+			else if (type == CPUID_DATP_TCTYPE_D)
+				caitype = CAI_L2_DTLB;
+			else if (type == CPUID_DATP_TCTYPE_U) {
+				switch (pgsize) {
+				case CPUID_DATP_PGSIZE_4KB:
+					caitype = CAI_L2_STLB;
+					break;
+				case CPUID_DATP_PGSIZE_4KB
+				    | CPUID_DATP_PGSIZE_2MB:
+					caitype = CAI_L2_STLB2;
+					break;
+				case CPUID_DATP_PGSIZE_2MB
+				    | CPUID_DATP_PGSIZE_4MB:
+					caitype = CAI_L2_STLB3;
+					break;
+				default:
+					aprint_error_dev(ci->ci_dev,
+					    "error: unknown L2 STLB size (%d)\n",
+					    pgsize);
+					caitype = CAI_DTLB;
+					break;
+				}
+			} else
+				caitype = -1;
+			break;
+		case 3:
+			/* XXX need work for L3 TLB */
+			caitype = CAI_L3CACHE;
+			break;
+		default:
+			caitype = -1;
+			break;
+		}
+		if (caitype == -1) {
+			aprint_error_dev(ci->ci_dev,
+			    "error: unknown TLB level&type (%d & %d)\n",
+			    level, type);
+			continue;
+		}
+		switch (pgsize) {
+		case CPUID_DATP_PGSIZE_4KB:
+			linesize = 4 * 1024;
+			break;
+		case CPUID_DATP_PGSIZE_2MB:
+			linesize = 2 * 1024 * 1024;
+			break;
+		case CPUID_DATP_PGSIZE_4MB:
+			linesize = 4 * 1024 * 1024;
+			break;
+		case CPUID_DATP_PGSIZE_1GB:
+			linesize = 1024 * 1024 * 1024;
+			break;
+		case CPUID_DATP_PGSIZE_2MB | CPUID_DATP_PGSIZE_4MB:
+			aprint_error_dev(ci->ci_dev,
+			    "WARINING: Currently 2M/4M info can't print correctly\n");
+			linesize = 4 * 1024 * 1024;
+			break;
+		default:
+			aprint_error_dev(ci->ci_dev,
+			    "error: Unknown size combination\n");
+			linesize = 4 * 1024;
+			break;
+		}
+		ways = __SHIFTOUT(descs[1], CPUID_DATP_WAYS);
+		sets = descs[2];
+		full = descs[3] & CPUID_DATP_FULLASSOC;
+		ci->ci_cinfo[caitype].cai_totalsize
+		    = ways * sets; /* entries */
+		ci->ci_cinfo[caitype].cai_associativity
+		    = full ? 0xff : ways;
+		ci->ci_cinfo[caitype].cai_linesize = linesize; /* pg size */
 	}
 }
 
@@ -1547,7 +1684,7 @@ cpu_probe_base_features(struct cpu_info *ci, const char *cpuname)
 
 	/* Additional flags (eg xsaveopt support) */
 	x86_cpuid2(0xd, 1, descs);
-	ci->ci_feat_val[8] = descs[0];   /* Actually 64 bits */
+	ci->ci_feat_val[8] = descs[0];	 /* Actually 64 bits */
 }
 
 static void
@@ -1791,7 +1928,7 @@ identifycpu(int fd, const char *cpuname)
 			cpufam = &cpup->cpu_family[family - CPU_MINFAMILY];
 			name = cpufam->cpu_models[ci->ci_model];
 			if (name == NULL || *name == '\0')
-			    name = cpufam->cpu_model_default;
+				name = cpufam->cpu_model_default;
 			class = cpufam->cpu_class;
 			ci->ci_info = cpufam->cpu_info;
 
@@ -1807,7 +1944,7 @@ identifycpu(int fd, const char *cpuname)
 				    __arraycount(i386_intel_brand) &&
 				    i386_intel_brand[ci->ci_brand_id])
 					name =
-					     i386_intel_brand[ci->ci_brand_id];
+					    i386_intel_brand[ci->ci_brand_id];
 			}
 
 			if (cpu_vendor == CPUVENDOR_AMD) {
@@ -1900,13 +2037,19 @@ identifycpu(int fd, const char *cpuname)
 	if (cpu_vendor == CPUVENDOR_INTEL)
 		print_bits(cpuname, "features6", CPUID_SEF_FLAGS1,
 		    ci->ci_feat_val[6]);
+
+	if ((cpu_vendor == CPUVENDOR_INTEL) && (ci->ci_cpuid_level >= 7)) {
+		x86_cpuid(7, descs);
+		print_bits(cpuname, "SEF edx", CPUID_SEF_FLAGS2, descs[3]);
+	}
+
 	print_bits(cpuname, "xsave features", XCR0_FLAGS1, ci->ci_feat_val[7]);
 	print_bits(cpuname, "xsave instructions", CPUID_PES1_FLAGS,
 	    ci->ci_feat_val[8]);
 
 	if (ci->ci_max_xsave != 0) {
 		aprint_normal("%s: xsave area size: current %d, maximum %d",
-			cpuname, ci->ci_cur_xsave, ci->ci_max_xsave);
+		    cpuname, ci->ci_cur_xsave, ci->ci_max_xsave);
 		aprint_normal(", xgetbv %sabled\n",
 		    ci->ci_feat_val[1] & CPUID2_OSXSAVE ? "en" : "dis");
 		if (ci->ci_feat_val[1] & CPUID2_OSXSAVE)
@@ -1960,13 +2103,13 @@ identifycpu(int fd, const char *cpuname)
 			powernow_probe(ci);
 
 		if ((data[0] >= 0x8000000a)
-		   && (ci->ci_feat_val[3] & CPUID_SVM) != 0) {
+		    && (ci->ci_feat_val[3] & CPUID_SVM) != 0) {
 			x86_cpuid(0x8000000a, data);
 			aprint_verbose("%s: SVM Rev. %d\n", cpuname,
 			    data[0] & 0xf);
 			aprint_verbose("%s: SVM NASID %d\n", cpuname, data[1]);
-			print_bits(cpuname, "SVM features", CPUID_AMD_SVM_FLAGS,
-				   data[3]);
+			print_bits(cpuname, "SVM features",
+			    CPUID_AMD_SVM_FLAGS, data[3]);
 		}
 	} else if (cpu_vendor == CPUVENDOR_INTEL) {
 		uint32_t data[4];
@@ -2033,7 +2176,20 @@ identifycpu(int fd, const char *cpuname)
 		printf("%s: UCode version: 0x%"PRIx64"\n", cpuname, ucvers.amd.version);
 	else if (cpu_vendor == CPUVENDOR_INTEL)
 		printf("%s: microcode version 0x%x, platform ID %d\n", cpuname,
-		       ucvers.intel1.ucodeversion, ucvers.intel1.platformid);
+		    ucvers.intel1.ucodeversion, ucvers.intel1.platformid);
+}
+
+static const struct x86_cache_info *
+cache_info_lookup(const struct x86_cache_info *cai, uint8_t desc)
+{
+	int i;
+
+	for (i = 0; cai[i].cai_desc != 0; i++) {
+		if (cai[i].cai_desc == desc)
+			return (&cai[i]);
+	}
+
+	return (NULL);
 }
 
 static const struct x86_cache_info *
@@ -2070,14 +2226,14 @@ print_cache_config(struct cpu_info *ci, int cache_tag, const char *name,
 		aprint_verbose("%s ", cai->cai_string);
 	} else {
 		(void)humanize_number(human_num, sizeof(human_num),
-			cai->cai_totalsize, "B", HN_AUTOSCALE, HN_NOSPACE);
+		    cai->cai_totalsize, "B", HN_AUTOSCALE, HN_NOSPACE);
 		aprint_verbose("%s %dB/line ", human_num, cai->cai_linesize);
 	}
 	switch (cai->cai_associativity) {
-	case    0:
+	case	0:
 		aprint_verbose("disabled");
 		break;
-	case    1:
+	case	1:
 		aprint_verbose("direct-mapped");
 		break;
 	case 0xff:
@@ -2111,7 +2267,7 @@ print_tlb_config(struct cpu_info *ci, int cache_tag, const char *name,
 		aprint_verbose("%s", cai->cai_string);
 	} else {
 		(void)humanize_number(human_num, sizeof(human_num),
-			cai->cai_linesize, "B", HN_AUTOSCALE, HN_NOSPACE);
+		    cai->cai_linesize, "B", HN_AUTOSCALE, HN_NOSPACE);
 		aprint_verbose("%d %s entries ", cai->cai_totalsize,
 		    human_num);
 		switch (cai->cai_associativity) {
@@ -2156,7 +2312,7 @@ x86_print_cache_and_tlb_info(struct cpu_info *ci)
 	}
 	if (ci->ci_cinfo[CAI_PREFETCH].cai_linesize != 0) {
 		aprint_verbose_dev(ci->ci_dev, "%dB prefetching",
-			ci->ci_cinfo[CAI_PREFETCH].cai_linesize);
+		    ci->ci_cinfo[CAI_PREFETCH].cai_linesize);
 		if (sep != NULL)
 			aprint_verbose("\n");
 	}
@@ -2187,6 +2343,7 @@ x86_print_cache_and_tlb_info(struct cpu_info *ci)
 	if (ci->ci_cinfo[CAI_L2_STLB].cai_totalsize != 0) {
 		sep = print_tlb_config(ci, CAI_L2_STLB, "L2 STLB", NULL);
 		sep = print_tlb_config(ci, CAI_L2_STLB2, NULL, sep);
+		sep = print_tlb_config(ci, CAI_L2_STLB3, NULL, sep);
 		if (sep != NULL)
 			aprint_verbose("\n");
 	}
@@ -2227,6 +2384,13 @@ powernow_probe(struct cpu_info *ci)
 	snprintb(buf, sizeof(buf), CPUID_APM_FLAGS, regs[3]);
 	aprint_normal_dev(ci->ci_dev, "AMD Power Management features: %s\n",
 	    buf);
+}
+
+bool
+identifycpu_bind(void)
+{
+
+	return true;
 }
 
 int

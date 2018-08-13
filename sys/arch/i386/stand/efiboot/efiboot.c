@@ -1,4 +1,4 @@
-/*	$NetBSD: efiboot.c,v 1.4 2017/02/11 10:23:39 nonaka Exp $	*/
+/*	$NetBSD: efiboot.c,v 1.8 2018/06/08 11:52:30 nonaka Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -33,6 +33,7 @@
 
 EFI_HANDLE IH;
 EFI_DEVICE_PATH *efi_bootdp;
+enum efi_boot_device_type efi_bootdp_type = BOOT_DEVICE_TYPE_HD;
 EFI_LOADED_IMAGE *efi_li;
 uintptr_t efi_main_sp;
 physaddr_t efi_loadaddr, efi_kernel_start;
@@ -66,27 +67,34 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	status = uefi_call_wrapper(BS->HandleProtocol, 3, IH,
 	    &LoadedImageProtocol, (void **)&efi_li);
 	if (EFI_ERROR(status))
-		Panic(L"HandleProtocol(LoadedImageProtocol): %r", status);
+		panic("HandleProtocol(LoadedImageProtocol): %" PRIxMAX,
+		    (uintmax_t)status);
 	status = uefi_call_wrapper(BS->HandleProtocol, 3, efi_li->DeviceHandle,
 	    &DevicePathProtocol, (void **)&dp0);
 	if (EFI_ERROR(status))
-		Panic(L"HandleProtocol(DevicePathProtocol): %r", status);
+		panic("HandleProtocol(DevicePathProtocol): %" PRIxMAX,
+		    (uintmax_t)status);
+	efi_bootdp = dp0;
 	for (dp = dp0; !IsDevicePathEnd(dp); dp = NextDevicePathNode(dp)) {
-		if (DevicePathType(dp) == MEDIA_DEVICE_PATH)
-			continue;
-		if (DevicePathSubType(dp) == MEDIA_HARDDRIVE_DP) {
-			boot_biosdev = 0x80;
-			efi_bootdp = dp;
+		if (DevicePathType(dp) == MEDIA_DEVICE_PATH &&
+		    DevicePathSubType(dp) == MEDIA_CDROM_DP) {
+			efi_bootdp_type = BOOT_DEVICE_TYPE_CD;
 			break;
 		}
-		break;
+		if (DevicePathType(dp) == MESSAGING_DEVICE_PATH &&
+		    DevicePathSubType(dp) == MSG_MAC_ADDR_DP) {
+			efi_bootdp_type = BOOT_DEVICE_TYPE_NET;
+			break;
+		}
 	}
 
 	efi_disk_probe();
+	efi_pxe_probe();
+	efi_net_probe();
 
 	status = uefi_call_wrapper(BS->SetWatchdogTimer, 4, 0, 0, 0, NULL);
 	if (EFI_ERROR(status))
-		Panic(L"SetWatchdogTimer: %r", status);
+		panic("SetWatchdogTimer: %" PRIxMAX, (uintmax_t)status);
 
 	boot();
 
@@ -122,7 +130,7 @@ efi_cleanup(void)
 		    &DescriptorVersion, true);
 		status = uefi_call_wrapper(BS->ExitBootServices, 2, IH, MapKey);
 		if (EFI_ERROR(status))
-			Panic(L"ExitBootServices failed");
+			panic("ExitBootServices failed");
 	}
 	efi_cleanuped = true;
 

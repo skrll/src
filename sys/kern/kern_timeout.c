@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_timeout.c,v 1.52 2017/06/01 02:45:13 chs Exp $	*/
+/*	$NetBSD: kern_timeout.c,v 1.55 2018/07/08 14:42:52 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2006, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_timeout.c,v 1.52 2017/06/01 02:45:13 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_timeout.c,v 1.55 2018/07/08 14:42:52 kamil Exp $");
 
 /*
  * Timeouts are kept in a hierarchical timing wheel.  The c_time is the
@@ -304,6 +304,9 @@ callout_destroy(callout_t *cs)
 {
 	callout_impl_t *c = (callout_impl_t *)cs;
 
+	KASSERTMSG(c->c_magic == CALLOUT_MAGIC,
+	    "callout %p: c_magic (%#x) != CALLOUT_MAGIC (%#x)",
+	    c, c->c_magic, CALLOUT_MAGIC);
 	/*
 	 * It's not necessary to lock in order to see the correct value
 	 * of c->c_flags.  If the callout could potentially have been
@@ -313,9 +316,6 @@ callout_destroy(callout_t *cs)
 	    "callout %p: c_func (%p) c_flags (%#x) destroyed from %p",
 	    c, c->c_func, c->c_flags, __builtin_return_address(0));
 	KASSERT(c->c_cpu->cc_lwp == curlwp || c->c_cpu->cc_active != c);
-	KASSERTMSG(c->c_magic == CALLOUT_MAGIC,
-	    "callout %p: c_magic (%#x) != CALLOUT_MAGIC (%#x)",
-	    c, c->c_magic, CALLOUT_MAGIC);
 	c->c_magic = 0;
 }
 
@@ -473,6 +473,7 @@ callout_halt(callout_t *cs, void *interlock)
 
 	KASSERT(c->c_magic == CALLOUT_MAGIC);
 	KASSERT(!cpu_intr_p());
+	KASSERT(interlock == NULL || mutex_owned(interlock));
 
 	lock = callout_lock(c);
 	relock = NULL;
@@ -716,12 +717,12 @@ callout_softclock(void *v)
 
 		/* If due run it, otherwise insert it into the right bucket. */
 		ticks = cc->cc_ticks;
-		delta = c->c_time - ticks;
-		if (delta > 0) {
+		if (c->c_time > ticks) {
+			delta = c->c_time - ticks;
 			CIRCQ_INSERT(&c->c_list, BUCKET(cc, delta, c->c_time));
 			continue;
 		}
-		if (delta < 0)
+		if (c->c_time < ticks)
 			cc->cc_ev_late.ev_count++;
 
 		c->c_flags = (c->c_flags & ~CALLOUT_PENDING) |

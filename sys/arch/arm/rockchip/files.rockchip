@@ -1,67 +1,50 @@
-#	$NetBSD: files.rockchip,v 1.11 2015/03/29 22:56:23 jmcneill Exp $
+#	$NetBSD: files.rockchip,v 1.14 2018/07/01 18:16:58 jmcneill Exp $
 #
-# Configuration info for Rockchip ARM Peripherals
+# Configuration info for Rockchip family SoCs
+#
 #
 
-include "arch/arm/pic/files.pic"
-include "arch/arm/cortex/files.cortex"
+file	arch/arm/rockchip/rk_platform.c		soc_rockchip
 
-file	arch/arm/arm32/arm32_boot.c
-file	arch/arm/arm32/arm32_kvminit.c
-file	arch/arm/arm32/arm32_reboot.c
-file	arch/arm/arm32/irq_dispatch.S
-file	arch/arm/arm32/armv7_generic_space.c
-file	arch/arm/arm/bus_space_a4x.S
+# Clock and reset unit (CRU)
+device	rkcru: rk_cru
+file	arch/arm/rockchip/rk_cru.c		rk_cru
+file	arch/arm/rockchip/rk_cru_arm.c		rk_cru
+file	arch/arm/rockchip/rk_cru_composite.c	rk_cru
+file	arch/arm/rockchip/rk_cru_gate.c		rk_cru
+file	arch/arm/rockchip/rk_cru_mux.c		rk_cru
+file	arch/arm/rockchip/rk_cru_pll.c		rk_cru
 
-file	arch/arm/rockchip/rockchip_board.c
-file	arch/arm/rockchip/rockchip_cpufreq.c
-file	arch/arm/rockchip/rockchip_dma.c
+# RK3328 clock and reset unit
+attach	rkcru at fdt with rk3328_cru
+file	arch/arm/rockchip/rk3328_cru.c		rk3328_cru & soc_rk3328
 
-# On-board I/O
-device obio {[addr = -1], [size = -1], [width = -1], [intr = -1], [mult = 1], [port = -1], [crit = 0]}: bus_space_generic
-attach obio at mainbus
-file arch/arm/rockchip/obio.c		obio
+# IOMUX control
+device	rkiomux { }
+attach	rkiomux at fdt with rk_iomux
+file	arch/arm/rockchip/rk_iomux.c		rk_iomux
 
-# serial
-attach com at obio with obiouart
-file	arch/arm/rockchip/obio_com.c	obiouart
+# GPIO
+device	rkgpio: gpiobus
+attach	rkgpio at rkiomux with rk_gpio
+file	arch/arm/rockchip/rk_gpio.c		rk_gpio
 
-# I2C controller
+# I2C
 device	rkiic: i2cbus, i2cexec
-attach	rkiic at obio
-file	arch/arm/rockchip/rockchip_i2c.c	rkiic
+attach	rkiic at fdt with rk_i2c
+file	arch/arm/rockchip/rk_i2c.c		rk_i2c
 
-# RK3066 Timer (Synopsys DesignWare)
-attach	dwctmr at obio with rkdwctmr
-file	arch/arm/rockchip/rockchip_dwctmr.c	rkdwctmr
+# USB PHY
+device	rkusb { }
+attach	rkusb at fdt with rk_usb
+device	rkusbphy
+attach	rkusbphy at rkusb with rk_usbphy
+file	arch/arm/rockchip/rk_usb.c		rk_usb | rk_usbphy
 
-# RK3188 Timer
-device	rktimer
-attach	rktimer at obio
-file	arch/arm/rockchip/rockchip_timer.c	rktimer
+# GMAC
+attach	awge at fdt with rk_gmac
+file	arch/arm/rockchip/rk_gmac.c		rk_gmac
 
-# SD/MMC (Synopsys DesignWare)
-attach	dwcmmc at obio with rkdwcmmc
-file	arch/arm/rockchip/rockchip_dwcmmc.c	rkdwcmmc
-
-# USB OTG (Synopsys DesignWare OTG)
-attach  dwctwo at obio with rkdwctwo
-file    arch/arm/rockchip/rockchip_dwctwo.c	rkdwctwo	needs-flag
-
-# VMAC Ethernet Controller
-device	rkemac: arp, ether, ifnet, mii
-attach	rkemac at obio
-file	arch/arm/rockchip/rockchip_emac.c	rkemac
-
-# Console parameters
-defparam opt_rockchip.h			CONADDR
-defparam opt_rockchip.h			CONSPEED
-defparam opt_rockchip.h			CONMODE
-
-# Memory parameters
-defparam opt_rockchip.h			MEMSIZE
-
-# Debugging parameters
-defflag opt_rockchip.h			ROCKCHIP_CLOCK_DEBUG
-defflag opt_rkiic.h			RKIIC_DEBUG
-defflag opt_rkemac.h			RKEMAC_DEBUG
+# SOC parameters
+defflag	opt_soc.h			SOC_ROCKCHIP
+defflag	opt_soc.h			SOC_RK3328: SOC_ROCKCHIP

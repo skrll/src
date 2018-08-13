@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.131 2017/11/25 23:29:43 jmcneill Exp $
+#	$NetBSD: Makefile,v 1.133 2018/07/31 16:44:29 khorben Exp $
 #	@(#)Makefile	8.5 (Berkeley) 3/31/94
 
 # Not ported: XNSrouted enpload scsiformat startslip
@@ -14,7 +14,7 @@ SUBDIR=	amrctl apmlabel atactl badsect bioctl brconfig \
 	newbtconf nologin nvmectl \
 	ping pppoectl raidctl reboot rcorder rndctl route routed \
 	savecore scan_ffs scsictl shutdown slattach svhlabel swapctl sysctl \
-	ttyflags umount veriexecctl wdogctl wsconsctl
+	ttyflags umbctl umount veriexecctl wdogctl wsconsctl
 
 # support for various file systems
 SUBDIR+= newfs_ext2fs fsck_ext2fs
@@ -25,6 +25,7 @@ SUBDIR+= newfs_sysvbfs
 SUBDIR+= newfs_udf
 SUBDIR+= newfs_v7fs fsck_v7fs
 SUBDIR+= mount_ados
+SUBDIR+= mount_autofs
 SUBDIR+= mount_cd9660
 SUBDIR+= mount_chfs
 SUBDIR+= mount_efs

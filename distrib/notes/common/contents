@@ -1,4 +1,4 @@
-.\"	$NetBSD: contents,v 1.171 2015/01/11 04:03:47 snj Exp $
+.\"	$NetBSD: contents,v 1.178 2018/08/07 08:26:42 martin Exp $
 .\"
 .\" Copyright (c) 1999-2005 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -57,6 +57,7 @@ kernel containing code for everything supported in this release.
 .if \n[amd64] \{\
 .			It Pa netbsd-INSTALL.gz
 The installation kernel.
+.			It Pa netbsd-GENERIC_KASLR.gz
 .			It Pa netbsd-INSTALL_XEN3_DOMU.gz
 .			It Pa netbsd-XEN3_DOM0.gz
 .			It Pa netbsd-XEN3_DOMU.gz
@@ -92,10 +93,8 @@ The monolithic kernel which doesn't use kernel modules.
 .			It Pa netbsd-INSTALL.gz
 The installation kernel.
 .			It Pa netbsd-INSTALL_XEN3PAE_DOMU.gz
-.			It Pa netbsd-INSTALL_XEN3_DOMU.gz
+.			It Pa netbsd-XEN3PAE_DOM0.gz
 .			It Pa netbsd-XEN3PAE_DOMU.gz
-.			It Pa netbsd-XEN3_DOM0.gz
-.			It Pa netbsd-XEN3_DOMU.gz
 .\}
 .if \n[mac68k] \{\
 .			It Pa netbsd-GENERIC.gz
@@ -119,12 +118,6 @@ A gzipped
 kernel containing code only for Open Firmware 1.0.5, 1.1.22, 2.0.x,
 and 2.4 systems (i.e. those that have floppy drives).
 It has a RAM-disk installer.
-.\}
-.
-.if \n[acorn26] \{\
-.			It Pa netbsd-FOURMEG.gz
-A somewhat smaller kernel, intended to be usable on systems with
-four megabytes of RAM.
 .\}
 .
 .if \n[acorn32] \{\
@@ -322,7 +315,7 @@ Method), below.
 .\}
 .
 .if !\n[alpha]:\n[bebox]:\n[cats]:\n[evbppc]:\n[mvme68k]:\n[macppc]:\
-\n[sgimips]:\n[sandpoint]:\n[sparc]:\n[xen] \{\
+\n[sgimips]:\n[sandpoint]:\n[sparc] \{\
 .		It Pa misc/
 .
 Miscellaneous \*M installation utilities; see
@@ -539,6 +532,13 @@ set).
 This set also includes the manual pages for
 all of the utilities it contains, as well as the
 system call and library manual pages.
+.
+.It Sy debug
+This distribution set contains debug information for
+all base system utilities.
+It is useful when reporting issues with binaries or during
+developement.
+This set is huge, if the target disk is small, do not install it.
 .
 .It Sy etc
 This distribution set contains the system
@@ -819,9 +819,6 @@ and the same kernel in the format needed by the bootloader as
 These kernels are specific to the IBM 405GP based Walnut evaluation board.
 .\}
 .el \{\
-.ie \n[xen] \{\
-.\}
-.el \{\
 .It Sy kern-GENERIC
 This set contains a
 .Nx*M
@@ -837,7 +834,6 @@ This set also contains an a.out kernel named
 .Pa /netbsd.aout
 that your system may need to boot.
 .\}
-.\} \" !\n[xen]
 .\} \" !\n[evbppc]
 .\} \" !\n[sparc64]
 .\} \" !\n[sparc]
@@ -899,6 +895,13 @@ This does not include the X servers.
 .
 .It Sy xcomp
 The extra libraries and include files needed to compile X source code.
+.
+.It Sy xdebug
+This distribution set contains debug information for
+all X11 binaries.
+It is useful when reporting issues with these binaries or during
+developement.
+This set is huge, if the target disk is small, do not install it.
 .
 .It Sy xfont
 Fonts needed by the X server and by X clients.
@@ -981,19 +984,6 @@ command from the root directory (
 .
 .\" ---------------------------- MD DISCUSSION
 .
-.
-.if \n[acorn26] \{\
-.Pp
-There is a copy of the
-.Nx Ns /acorn26
-bootloader,
-.Ic boot26 ,
-in the
-.Pa installation/misc
-subdirectory.
-This is a RISC OS relocatable module, and should have its file
-type set to ffa (Module) once it's been copied to a RISC OS system.
-.\}
 .
 .
 .if \n[atari] \{\

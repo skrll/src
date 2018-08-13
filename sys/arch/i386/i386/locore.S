@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.154 2017/10/02 17:48:01 bouyer Exp $	*/
+/*	$NetBSD: locore.S,v 1.161 2018/08/01 13:35:01 maxv Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -128,7 +128,7 @@
  */
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.154 2017/10/02 17:48:01 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.161 2018/08/01 13:35:01 maxv Exp $");
 
 #include "opt_copy_symtab.h"
 #include "opt_ddb.h"
@@ -253,9 +253,7 @@ __KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.154 2017/10/02 17:48:01 bouyer Exp $");
 	.ascii	",VIRT_ENTRY=0xc0100000" /* KERNTEXTOFF */
 	.ascii	",HYPERCALL_PAGE=0x00000101"
 		/* (???+HYPERCALL_PAGE_OFFSET)/PAGE_SIZE) */
-#ifdef PAE
 	.ascii	",PAE=yes[extended-cr3]"
-#endif
 	.ascii	",LOADER=generic"
 #if (NKSYMS || defined(DDB) || defined(MODULAR)) && !defined(makeoptions_COPY_SYMTAB)
 	.ascii	",BSD_SYMTAB=yes"
@@ -906,9 +904,7 @@ begin:
 	addl	$(USPACE+PAGE_SIZE),%esi
 	subl	$KERNBASE,%esi		/* init386 wants a physical address */
 
-#ifdef PAE
 	pushl	$0	/* init386() expects a 64 bits paddr_t with PAE */
-#endif
 	pushl	%esi
 	call	_C_LABEL(init_bootspace)
 	call	_C_LABEL(init386)
@@ -934,7 +930,7 @@ END(hypercall_page)
  * this only happens at run time when the GDT is resized.
  */
 /* LINTSTUB: Func: void lgdt_finish(void) */
-NENTRY(lgdt_finish)
+ENTRY(lgdt_finish)
 	movl	$GSEL(GDATA_SEL, SEL_KPL),%eax
 	movw	%ax,%ds
 	movw	%ax,%es
@@ -961,7 +957,7 @@ END(lgdt_finish)
  * stub to call.
  * NOTE: This function does not have a normal calling sequence!
  */
-NENTRY(lwp_trampoline)
+ENTRY(lwp_trampoline)
 	movl	%ebp,%edi	/* for .Lsyscall_checkast */
 	xorl	%ebp,%ebp
 	pushl	%edi
@@ -981,7 +977,7 @@ END(lwp_trampoline)
  * Signal trampoline; copied to top of user stack.  Used only for
  * compatibility with old releases of NetBSD.
  */
-NENTRY(sigcode)
+ENTRY(sigcode)
 	/*
 	 * Handler has returned here as if we called it.  The sigcontext
 	 * is on the stack after the 3 args "we" pushed.
@@ -1112,7 +1108,27 @@ skip_save:
 	addl	$4,%esp
 #else
 	movl	PCB_ESP0(%ebx),%eax
-	movl	%eax,CPUVAR(ESP0)
+	movl	CPUVAR(TSS),%ecx
+	movl	%eax,TSS_ESP0(%ecx)
+#endif
+
+	/* Switch the dbregs. */
+	pushl	%edi
+	pushl	%esi
+	call	_C_LABEL(x86_dbregs_switch)
+	addl	$8,%esp
+
+#ifndef XEN
+	pushl	%edx
+	movb	_C_LABEL(x86_fpu_eager),%dl
+	testb	%dl,%dl
+	jz	.Lno_eagerfpu
+	pushl	%edi
+	pushl	%esi
+	call	_C_LABEL(fpu_eagerswitch)
+	addl	$8,%esp
+.Lno_eagerfpu:
+	popl	%edx
 #endif
 
 	/* Don't bother with the rest if switching to a system process. */
@@ -1136,7 +1152,8 @@ skip_save:
 	movl	PCB_IOMAP(%ebx),%eax
 	orl	%eax,%eax
 	jnz	.Lcopy_iobitmap
-	movl	$(IOMAP_INVALOFF << 16),CPUVAR(IOBASE)
+	movl	CPUVAR(TSS),%eax
+	movl	$(IOMAP_INVALOFF << 16),TSS_IOBASE(%eax)
 .Liobitmap_done:
 
 	/* Is this process using RAS (restartable atomic sequences)? */
@@ -1200,13 +1217,14 @@ switch_return:
 	pushl	%esi
 	pushl	%edi
 	movl	%eax,%esi		/* pcb_iomap */
-	movl	CPUVAR(SELF),%edi
-	leal	CPU_INFO_IOMAP(%edi),%edi
+	movl	CPUVAR(TSS),%edi
+	leal	TSS_IOMAP(%edi),%edi
 	rep
 	movsl
 	popl	%edi
 	popl	%esi
-	movl	$((CPU_INFO_IOMAP - CPU_INFO_TSS) << 16),CPUVAR(IOBASE)
+	movl	CPUVAR(TSS),%eax
+	movl	$(IOMAP_VALIDOFF << 16),TSS_IOBASE(%eax)
 	jmp	.Liobitmap_done
 END(cpu_switchto)
 
@@ -1320,7 +1338,7 @@ IDTVEC_END(syscall)
  * Used when checking for the FDIV bug on first generations pentiums.
  * Anything 120MHz or above is fine.
  */
-NENTRY(npx586bug1)
+ENTRY(npx586bug1)
 	fildl	4(%esp)		/* x */
 	fildl	8(%esp)		/* y */
 	fld	%st(1)

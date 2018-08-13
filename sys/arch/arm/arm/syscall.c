@@ -1,4 +1,4 @@
-/*	$NetBSD: syscall.c,v 1.62 2017/07/02 16:16:44 skrll Exp $	*/
+/*	$NetBSD: syscall.c,v 1.65 2018/05/25 15:37:57 martin Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2003 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
 
 #include <sys/param.h>
 
-__KERNEL_RCSID(0, "$NetBSD: syscall.c,v 1.62 2017/07/02 16:16:44 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: syscall.c,v 1.65 2018/05/25 15:37:57 martin Exp $");
 
 #include <sys/cpu.h>
 #include <sys/device.h>
@@ -90,10 +90,6 @@ __KERNEL_RCSID(0, "$NetBSD: syscall.c,v 1.62 2017/07/02 16:16:44 skrll Exp $");
 #include <arm/swi.h>
 #include <arm/locore.h>
 
-#ifdef acorn26
-#include <machine/machdep.h>
-#endif
-
 void
 swi_handler(trapframe_t *tf)
 {
@@ -105,17 +101,8 @@ swi_handler(trapframe_t *tf)
 	 * Since all syscalls *should* come from user mode it will always
 	 * be safe to enable them, but check anyway.
 	 */
-#ifdef acorn26
-	if ((tf->tf_r15 & R15_IRQ_DISABLE) == 0)
-		int_on();
-#else
 	KASSERT(VALID_R15_PSR(tf->tf_pc, tf->tf_spsr));
 	restore_interrupts(tf->tf_spsr & IF32_bits);
-#endif
-
-#ifdef acorn26
-	tf->tf_pc += INSN_SIZE;
-#endif
 
 #ifndef THUMB_CODE
 	/*
@@ -148,11 +135,7 @@ swi_handler(trapframe_t *tf)
 	else
 #endif
 	{
-#ifdef __PROG32
 		insn = read_insn(tf->tf_pc - INSN_SIZE, true);
-#else
-		insn = read_insn((tf->tf_r15 & R15_PC) - INSN_SIZE, true);
-#endif
 	}
 
 	KASSERTMSG(tf == lwp_trapframe(l), "tf %p vs %p", tf, lwp_trapframe(l));
@@ -202,9 +185,10 @@ syscall(struct trapframe *tf, lwp_t *l, uint32_t insn)
 	struct proc * const p = l->l_proc;
 	const struct sysent *callp;
 	int error;
-	u_int nargs;
+	u_int nargs, off = 0;
 	register_t *args;
-	uint64_t copyargs64[sizeof(register_t)*(2+SYS_MAXSYSARGS+1)/sizeof(uint64_t)];
+	uint64_t copyargs64[sizeof(register_t) *
+			    (2+SYS_MAXSYSARGS+1)/sizeof(uint64_t)];
 	register_t *copyargs = (register_t *)copyargs64;
 	register_t rval[2];
 	ksiginfo_t ksi;
@@ -214,8 +198,9 @@ syscall(struct trapframe *tf, lwp_t *l, uint32_t insn)
 	/* test new official and old unofficial NetBSD ranges */
 	if (__predict_false(os_mask != SWI_OS_NETBSD)
 	    && __predict_false(os_mask != 0)) {
-		if (os_mask == SWI_OS_ARM
-		    && (code == SWI_IMB || code == SWI_IMBrange)) {
+
+		const uint32_t swi = __SHIFTOUT(insn, __BITS(23,0));
+		if (swi == SWI_IMB || swi == SWI_IMBrange) {
 			userret(l);
 			return;
 		}
@@ -237,17 +222,29 @@ syscall(struct trapframe *tf, lwp_t *l, uint32_t insn)
 	}
 
 	code &= (SYS_NSYSENT - 1);
+
+	if (__predict_false(code == SYS_syscall)) {
+		off = 1;
+		code = tf->tf_r0;
+		code &= (SYS_NSYSENT - 1);
+		if (__predict_false(code == SYS_syscall)) {
+			error = EINVAL;
+			goto bad;
+		}
+	}
+
 	callp = p->p_emul->e_sysent + code;
 	nargs = callp->sy_narg;
-	if (nargs > 4) {
+
+	if ((nargs+off) > 4) {
 		args = copyargs;
-		memcpy(args, &tf->tf_r0, 4 * sizeof(register_t));
-		error = copyin((void *)tf->tf_usr_sp, args + 4,
-		    (nargs - 4) * sizeof(register_t));
+		memcpy(args, &tf->tf_r0+off, (4-off) * sizeof(register_t));
+		error = copyin((void *)tf->tf_usr_sp, args + 4 - off,
+		    (nargs - 4 + off) * sizeof(register_t));
 		if (error)
 			goto bad;
 	} else {
-		args = &tf->tf_r0;
+		args = &tf->tf_r0 + off;
 	}
 
 	error = sy_invoke(callp, l, args, rval, code);
@@ -257,11 +254,7 @@ syscall(struct trapframe *tf, lwp_t *l, uint32_t insn)
 		tf->tf_r0 = rval[0];
 		tf->tf_r1 = rval[1];
 
-#ifdef __PROG32
 		tf->tf_spsr &= ~PSR_C_bit;	/* carry bit */
-#else
-		tf->tf_r15 &= ~R15_FLAG_C;	/* carry bit */
-#endif
 		break;
 
 	case ERESTART:
@@ -283,11 +276,7 @@ syscall(struct trapframe *tf, lwp_t *l, uint32_t insn)
 	default:
 	bad:
 		tf->tf_r0 = error;
-#ifdef __PROG32
 		tf->tf_spsr |= PSR_C_bit;	/* carry bit */
-#else
-		tf->tf_r15 |= R15_FLAG_C;	/* carry bit */
-#endif
 		break;
 	}
 
@@ -301,11 +290,7 @@ child_return(void *arg)
 	struct trapframe * const tf = lwp_trapframe(l);
 
 	tf->tf_r0 = 0;
-#ifdef __PROG32
 	tf->tf_spsr &= ~PSR_C_bit;	/* carry bit */
-#else
-	tf->tf_r15 &= ~R15_FLAG_C;	/* carry bit */
-#endif
 
 	userret(l);
 	ktrsysret(SYS_fork, 0, 0);

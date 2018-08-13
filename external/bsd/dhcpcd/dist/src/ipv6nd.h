@@ -1,6 +1,6 @@
 /*
  * dhcpcd - IPv6 ND handling
- * Copyright (c) 2006-2017 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2018 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -97,7 +97,7 @@ ssize_t ipv6nd_free(struct interface *);
 void ipv6nd_expirera(void *arg);
 int ipv6nd_hasra(const struct interface *);
 int ipv6nd_hasradhcp(const struct interface *);
-void ipv6nd_handleifa(int, struct ipv6_addr *);
+void ipv6nd_handleifa(int, struct ipv6_addr *, pid_t);
 int ipv6nd_dadcompleted(const struct interface *);
 void ipv6nd_expire(struct interface *, uint32_t);
 void ipv6nd_drop(struct interface *);
@@ -107,7 +107,6 @@ void ipv6nd_neighbour(struct dhcpcd_ctx *, struct in6_addr *, int);
 #define ipv6nd_free(a) {}
 #define ipv6nd_hasra(a) (0)
 #define ipv6nd_dadcompleted(a) (0)
-#define ipv6nd_drop(a) {}
 #define ipv6nd_expire(a, b) {}
 #endif
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_loop.c,v 1.100 2017/12/06 07:40:16 ozaki-r Exp $	*/
+/*	$NetBSD: if_loop.c,v 1.105 2018/08/10 06:46:09 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_loop.c,v 1.100 2017/12/06 07:40:16 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_loop.c,v 1.105 2018/08/10 06:46:09 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -183,7 +183,10 @@ loop_clone_create(struct if_clone *ifc, int unit)
 
 	ifp->if_mtu = LOMTU;
 	ifp->if_flags = IFF_LOOPBACK | IFF_MULTICAST;
-	ifp->if_extflags = IFEF_MPSAFE;
+	ifp->if_extflags = IFEF_NO_LINK_STATE_CHANGE;
+#ifdef NET_MPSAFE
+	ifp->if_extflags |= IFEF_MPSAFE;
+#endif
 	ifp->if_ioctl = loioctl;
 	ifp->if_output = looutput;
 #ifdef ALTQ
@@ -256,7 +259,7 @@ looutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	if ((m->m_flags & M_PKTHDR) == 0)
 		panic("looutput: no header mbuf");
 	if (ifp->if_flags & IFF_LOOPBACK)
-		bpf_mtap_af(ifp, dst->sa_family, m);
+		bpf_mtap_af(ifp, dst->sa_family, m, BPF_D_OUT);
 	m_set_rcvif(m, ifp);
 
 	if (rt && rt->rt_flags & (RTF_REJECT|RTF_BLACKHOLE)) {
@@ -317,7 +320,7 @@ looutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 		csum_flags = m->m_pkthdr.csum_flags;
 		KASSERT((csum_flags & ~(M_CSUM_IPv4|M_CSUM_UDPv4)) == 0);
 		if (csum_flags != 0 && IN_LOOPBACK_NEED_CHECKSUM(csum_flags)) {
-			ip_undefer_csum(m, 0, csum_flags);
+			in_undefer_cksum(m, 0, csum_flags);
 		}
 		m->m_pkthdr.csum_flags = 0;
 		pktq = ip_pktq;
@@ -329,7 +332,7 @@ looutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 		KASSERT((csum_flags & ~M_CSUM_UDPv6) == 0);
 		if (csum_flags != 0 &&
 		    IN6_LOOPBACK_NEED_CHECKSUM(csum_flags)) {
-			ip6_undefer_csum(m, 0, csum_flags);
+			in6_undefer_cksum(m, 0, csum_flags);
 		}
 		m->m_pkthdr.csum_flags = 0;
 		m->m_flags |= M_LOOP;

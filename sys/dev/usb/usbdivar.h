@@ -1,4 +1,4 @@
-/*	$NetBSD: usbdivar.h,v 1.114 2017/01/19 16:05:00 skrll Exp $	*/
+/*	$NetBSD: usbdivar.h,v 1.117 2018/08/09 06:26:47 mrg Exp $	*/
 
 /*
  * Copyright (c) 1998, 2012 The NetBSD Foundation, Inc.
@@ -153,7 +153,8 @@ struct usbd_bus {
 #define USBREV_1_1	3
 #define USBREV_2_0	4
 #define USBREV_3_0	5
-#define USBREV_STR { "unknown", "pre 1.0", "1.0", "1.1", "2.0", "3.0" }
+#define USBREV_3_1	6
+#define USBREV_STR { "unknown", "pre 1.0", "1.0", "1.1", "2.0", "3.0", "3.1" }
 
 	const struct usbd_bus_methods
 			       *ub_methods;
@@ -284,10 +285,6 @@ struct usbd_xfer {
 				ux_next;
 
 	void		       *ux_hcpriv;	/* private use by the HC driver */
-	uint8_t			ux_hcflags;	/* private use by the HC driver */
-#define UXFER_ABORTING	0x01	/* xfer is aborting. */
-#define UXFER_ABORTWAIT	0x02	/* abort completion is being awaited. */
-	kcondvar_t		ux_hccv;	/* private use by the HC driver */
 
 	struct usb_task		ux_aborttask;
 	struct callout		ux_callout;
@@ -346,7 +343,7 @@ void		usb_needs_explore(struct usbd_device *);
 void		usb_needs_reattach(struct usbd_device *);
 void		usb_schedsoftintr(struct usbd_bus *);
 
-static inline int
+static __inline int
 usbd_xfer_isread(struct usbd_xfer *xfer)
 {
 	if (xfer->ux_rqflags & URQ_REQUEST)
@@ -356,7 +353,7 @@ usbd_xfer_isread(struct usbd_xfer *xfer)
 	   UE_DIR_IN;
 }
 
-static inline size_t
+static __inline size_t
 usb_addr2dindex(int addr)
 {
 

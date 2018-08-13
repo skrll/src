@@ -1,6 +1,6 @@
 /*
  * dhcpcd - DHCP client daemon
- * Copyright (c) 2006-2017 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2018 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -67,6 +67,7 @@
 #define D6_OPTION_UNICAST		12
 #define D6_OPTION_STATUS_CODE		13
 #define D6_OPTION_RAPID_COMMIT		14
+#define D6_OPTION_USER_CLASS		15
 #define D6_OPTION_VENDOR_CLASS		16
 #define D6_OPTION_VENDOR_OPTS		17
 #define D6_OPTION_INTERFACE_ID		18
@@ -229,7 +230,7 @@ void dhcp6_renew(struct interface *);
 ssize_t dhcp6_env(char **, const char *, const struct interface *,
     const struct dhcp6_message *, size_t);
 void dhcp6_free(struct interface *);
-void dhcp6_handleifa(int, struct ipv6_addr *);
+void dhcp6_handleifa(int, struct ipv6_addr *, pid_t);
 int dhcp6_dadcompleted(const struct interface *);
 void dhcp6_drop(struct interface *, const char *);
 void dhcp6_dropnondelegates(struct interface *ifp);
@@ -244,7 +245,6 @@ int dhcp6_dump(struct interface *);
 #define dhcp6_renew(a) {}
 #define dhcp6_env(a, b, c, d, e) (0)
 #define dhcp6_free(a) {}
-#define dhcp6_handleifa(a, b) {}
 #define dhcp6_dadcompleted(a) (0)
 #define dhcp6_drop(a, b) {}
 #define dhcp6_dropnondelegates(a) {}

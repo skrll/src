@@ -1,4 +1,4 @@
-/*	$NetBSD: deq.c,v 1.12 2017/09/27 22:31:53 macallan Exp $	*/
+/*	$NetBSD: deq.c,v 1.16 2018/06/26 06:03:57 thorpej Exp $	*/
 
 /*-
  * Copyright (C) 2005 Michael Lorenz
@@ -32,7 +32,7 @@
  */
  
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: deq.c,v 1.12 2017/09/27 22:31:53 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: deq.c,v 1.16 2018/06/26 06:03:57 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -52,28 +52,26 @@ static int deq_match(device_t, struct cfdata *, void *);
 CFATTACH_DECL_NEW(deq, sizeof(struct deq_softc),
     deq_match, deq_attach, NULL, NULL);
 
-static const char * deq_compats[] = {
-	"deq",
-	"tas3004",
-	"pcm3052",
-	"cs8416",
-	"codec",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ "deq",		0 },
+	{ "tas3004",		0 },
+	{ "pcm3052",		0 },
+	{ "cs8416",		0 },
+	{ "codec",		0 },
+	{ NULL,			0 }
 };
 
 int
 deq_match(device_t parent, struct cfdata *cf, void *aux)
 {
 	struct i2c_attach_args *ia = aux;
-	
-	if (ia->ia_name) {
-		if (ia->ia_ncompat > 0) {
-			if (iic_compat_match(ia, deq_compats))
-				return 1;
-		}
-		if (strcmp(ia->ia_name, "deq") == 0)
-			return 1;
-	}
+	int match_result;
+
+	if (iic_use_direct_match(ia, cf, compat_data, &match_result))
+		return match_result;
+
+	/* This driver is direct-config only. */
+
 	return 0;
 }
 
@@ -87,7 +85,7 @@ deq_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	sc->sc_node = ia->ia_cookie;
 	sc->sc_parent = parent;
-	sc->sc_address = (ia->ia_addr & 0x7f);
+	sc->sc_address = ia->ia_addr;
 	sc->sc_i2c = ia->ia_tag;
 	if (OF_getprop(sc->sc_node, "compatible", name, 256) <= 0) {
 		/* deq has no 'compatible' on my iBook G4 */

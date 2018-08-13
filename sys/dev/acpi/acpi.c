@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi.c,v 1.265 2017/11/23 15:48:24 jmcneill Exp $	*/
+/*	$NetBSD: acpi.c,v 1.271 2018/05/25 15:48:00 ryoon Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2007 The NetBSD Foundation, Inc.
@@ -100,8 +100,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi.c,v 1.265 2017/11/23 15:48:24 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi.c,v 1.271 2018/05/25 15:48:00 ryoon Exp $");
 
+#include "pci.h"
 #include "opt_acpi.h"
 #include "opt_pcifixup.h"
 
@@ -487,10 +488,12 @@ acpi_attach(device_t parent, device_t self, void *aux)
 	 */
 	acpi_build_tree(sc);
 
+#if NPCI > 0
 	/*
 	 * Probe MCFG table
 	 */
 	acpimcfg_probe(sc);
+#endif
 
 	acpi_md_callback(sc);
 
@@ -900,14 +903,10 @@ acpi_rescan_nodes(struct acpi_softc *sc)
 		 * functioning properly. However, if a device is enabled,
 		 * it is decoding resources and we should claim these,
 		 * if possible. This requires changes to bus_space(9).
-		 * Note: there is a possible race condition, because _STA
-		 * may have changed since di->CurrentStatus was set.
 		 */
-		if (di->Type == ACPI_TYPE_DEVICE) {
-
-			if ((di->Valid & ACPI_VALID_STA) != 0 &&
-			    (di->CurrentStatus & ACPI_STA_OK) != ACPI_STA_OK)
-				continue;
+		if (di->Type == ACPI_TYPE_DEVICE &&
+		    !acpi_device_present(ad->ad_handle)) {
+			continue;
 		}
 
 		if (di->Type == ACPI_TYPE_POWER)
@@ -1196,7 +1195,7 @@ acpi_register_fixed_button(struct acpi_softc *sc, int event)
 		goto fail;
 	}
 
-	aprint_debug_dev(sc->sc_dev, "fixed %s button present\n",
+	aprint_normal_dev(sc->sc_dev, "fixed %s button present\n",
 	    (type != ACPI_EVENT_SLEEP_BUTTON) ? "power" : "sleep");
 
 	return;
@@ -1761,6 +1760,22 @@ acpi_is_scope(struct acpi_devnode *ad)
 	return false;
 }
 
+bool
+acpi_device_present(ACPI_HANDLE handle)
+{
+	ACPI_STATUS rv;
+	ACPI_INTEGER sta;
+
+	rv = acpi_eval_integer(handle, "_STA", &sta);
+
+	if (ACPI_FAILURE(rv)) {
+		/* No _STA method -> must be there */
+		return rv == AE_NOT_FOUND;
+	}
+
+	return (sta & ACPI_STA_OK) == ACPI_STA_OK;
+}
+
 /*
  * ACPIVERBOSE.
  */
@@ -1805,10 +1820,10 @@ acpi_activate_device(ACPI_HANDLE handle, ACPI_DEVICE_INFO **di)
 	return;
 }
 #else
-	static const int valid = ACPI_VALID_STA | ACPI_VALID_HID;
+	static const int valid = ACPI_VALID_HID;
 	ACPI_DEVICE_INFO *newdi;
 	ACPI_STATUS rv;
-	uint32_t old;
+
 
 	/*
 	 * If the device is valid and present,
@@ -1817,10 +1832,7 @@ acpi_activate_device(ACPI_HANDLE handle, ACPI_DEVICE_INFO **di)
 	if (((*di)->Valid & valid) != valid)
 		return;
 
-	old = (*di)->CurrentStatus;
-
-	if ((old & (ACPI_STA_DEVICE_PRESENT | ACPI_STA_DEVICE_ENABLED)) !=
-	    ACPI_STA_DEVICE_PRESENT)
+	if (!acpi_device_present(handle))
 		return;
 
 	rv = acpi_allocate_resources(handle);
@@ -1837,8 +1849,7 @@ acpi_activate_device(ACPI_HANDLE handle, ACPI_DEVICE_INFO **di)
 	*di = newdi;
 
 	aprint_verbose_dev(acpi_softc->sc_dev,
-	    "%s activated, STA 0x%08X -> STA 0x%08X\n",
-	    (*di)->HardwareId.String, old, (*di)->CurrentStatus);
+	    "%s activated\n", (*di)->HardwareId.String);
 
 	return;
 

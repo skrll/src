@@ -1,4 +1,4 @@
-/*	$NetBSD: vnode.h,v 1.278 2017/06/04 08:02:26 hannken Exp $	*/
+/*	$NetBSD: vnode.h,v 1.280 2018/04/19 21:19:07 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -102,7 +102,7 @@ enum vtagtype	{
 	VT_AFS, VT_ISOFS, VT_UNION, VT_ADOSFS, VT_EXT2FS, VT_CODA,
 	VT_FILECORE, VT_NTFS, VT_VFS, VT_OVERLAY, VT_SMBFS, VT_PTYFS,
 	VT_TMPFS, VT_UDF, VT_SYSVBFS, VT_PUFFS, VT_HFS, VT_EFS, VT_ZFS,
-	VT_RUMP, VT_NILFS, VT_V7FS, VT_CHFS
+	VT_RUMP, VT_NILFS, VT_V7FS, VT_CHFS, VT_AUTOFS
 };
 
 #define	VNODE_TAGS \
@@ -111,7 +111,7 @@ enum vtagtype	{
     "VT_AFS", "VT_ISOFS", "VT_UNION", "VT_ADOSFS", "VT_EXT2FS", "VT_CODA", \
     "VT_FILECORE", "VT_NTFS", "VT_VFS", "VT_OVERLAY", "VT_SMBFS", "VT_PTYFS", \
     "VT_TMPFS", "VT_UDF", "VT_SYSVBFS", "VT_PUFFS", "VT_HFS", "VT_EFS", \
-    "VT_ZFS", "VT_RUMP", "VT_NILFS", "VT_V7FS", "VT_CHFS"
+    "VT_ZFS", "VT_RUMP", "VT_NILFS", "VT_V7FS", "VT_CHFS", "VT_AUTOFS"
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 struct vnode;
@@ -550,7 +550,7 @@ void	vn_ra_allocctx(struct vnode *);
 int	vn_fifo_bypass(void *);
 
 #ifdef DIAGNOSTIC
-static inline bool
+static __inline bool
 vn_locked(struct vnode *_vp)
 {
 
@@ -558,7 +558,7 @@ vn_locked(struct vnode *_vp)
 	    VOP_ISLOCKED(_vp) == LK_EXCLUSIVE;
 }
 
-static inline bool
+static __inline bool
 vn_anylocked(struct vnode *_vp)
 {
 

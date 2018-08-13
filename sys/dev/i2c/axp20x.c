@@ -1,4 +1,4 @@
-/* $NetBSD: axp20x.c,v 1.10 2017/10/22 11:00:28 jmcneill Exp $ */
+/* $NetBSD: axp20x.c,v 1.13 2018/06/26 06:03:57 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2014-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #include "opt_fdt.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: axp20x.c,v 1.10 2017/10/22 11:00:28 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: axp20x.c,v 1.13 2018/06/26 06:03:57 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -46,6 +46,8 @@ __KERNEL_RCSID(0, "$NetBSD: axp20x.c,v 1.10 2017/10/22 11:00:28 jmcneill Exp $")
 #ifdef FDT
 #include <dev/fdt/fdtvar.h>
 #endif
+
+#define	AXP209_I2C_ADDR		0x34
 
 #define AXP_INPUT_STATUS	0x00
 #define AXP_INPUT_STATUS_AC_PRESENT	__BIT(7)
@@ -212,20 +214,23 @@ static void	axp20x_fdt_attach(struct axp20x_softc *);
 CFATTACH_DECL_NEW(axp20x, sizeof(struct axp20x_softc),
     axp20x_match, axp20x_attach, NULL, NULL);
 
-static const char * compatible[] = {
-	"x-powers,axp209",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ "x-powers,axp209",		0 },
+	{ NULL,				0 }
 };
 
 static int
 axp20x_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct i2c_attach_args * const ia = aux;
+	int match_result;
 
-	if (ia->ia_name != NULL)
-		return iic_compat_match(ia, compatible);
+	if (iic_use_direct_match(ia, match, compat_data, &match_result))
+		return match_result;
 
-	return 1;
+	/* This device is direct-config only. */
+
+	return 0;
 }
 
 static void

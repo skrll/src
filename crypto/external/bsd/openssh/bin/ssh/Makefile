@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.12 2017/10/07 19:39:19 christos Exp $
+#	$NetBSD: Makefile,v 1.14 2018/04/06 18:58:59 christos Exp $
 
 .include <bsd.own.mk>
 
@@ -8,7 +8,7 @@ PROG=	ssh
 SRCS=	ssh.c readconf.c clientloop.c sshtty.c \
 	sshconnect.c sshconnect2.c mux.c auth.c
 
-COPTS.auth.c=	-DHOST_ONLY
+COPTS.auth.c=		-DHOST_ONLY
 COPTS.mux.c=		-Wno-pointer-sign
 COPTS.sshconnect2.c=	-Wno-pointer-sign
 
@@ -19,17 +19,8 @@ MLINKS=	ssh.1 slogin.1
 .if (${USE_KERBEROS} != "no")
 # this is not entirely true, libgssapi might be independent of krb5
 SRCS +=	gss-genr.c
-LDADD+=	-lgssapi -lheimntlm
-DPADD+=	${LIBGSSAPI} ${LIBHEIMNTLM}
-
-LDADD+=	-lkrb5 -lhx509 -lheimbase -lwind
-DPADD+=	${LIBKRB5} ${LIBHX509} ${LIBHEIMBASE} ${LIBWIND}
-
-LDADD+=	-lkafs -lasn1 -lcrypt
-DPADD+=	${LIBKAFS} ${LIBASN1} ${LIBCRYPT}
-
-LDADD+=	-lcom_err -lroken -lsqlite3 -lutil
-DPADD+=	${LIBCOM_ERR} ${LIBROKEN} ${LIBSQLITE3} ${LIBUTIL}
+LDADD+=	-lgssapi -lheimntlm ${LIBKRB5_LDADD}
+DPADD+=	${LIBGSSAPI} ${LIBHEIMNTLM} ${LIBKRB5_DPADD}
 .endif
 
 .include <bsd.prog.mk>

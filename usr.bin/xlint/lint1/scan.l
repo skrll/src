@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: scan.l,v 1.79 2017/03/06 21:01:39 christos Exp $ */
+/* $NetBSD: scan.l,v 1.82 2018/07/08 17:48:42 christos Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: scan.l,v 1.79 2017/03/06 21:01:39 christos Exp $");
+__RCSID("$NetBSD: scan.l,v 1.82 2018/07/08 17:48:42 christos Exp $");
 #endif
 
 #include <stdlib.h>
@@ -208,6 +208,7 @@ static	struct	kwtab {
 	{ "_Bool",	T_TYPE,		0,	BOOL,	0,	  0,1,0,0,1 },
 	{ "_Complex",	T_TYPE,		0,	COMPLEX,0,	  0,1,0,0,1 },
 	{ "_Generic",	T_GENERIC,	0,	0,	0,	  0,1,0,0,1 },
+	{ "_Noreturn",	T_NORETURN,	0,	0,	0,	  0,1,0,0,1 },
 	{ "alias",	T_AT_ALIAS,	0,	0,	0,	  0,0,1,1,5 },
 	{ "aligned",	T_AT_ALIGNED,	0,	0,	0,	  0,0,1,1,5 },
 	{ "alignof",	T_ALIGNOF,	0,	0,	0,	  0,0,0,0,4 },
@@ -250,6 +251,7 @@ static	struct	kwtab {
 	{ "no_instrument_function", T_AT_NO_INSTRUMENT_FUNCTION,
 					0,	0,	0,	  0,0,1,1,5 },
 	{ "nonnull",	T_AT_NONNULL,	0,	0,	0,	  0,0,1,1,5 },
+	{ "noinline",	T_AT_NOINLINE,	0,	0,	0,	  0,0,1,1,5 },
 	{ "noreturn",	T_AT_NORETURN,	0,	0,	0,	  0,0,1,1,5 },
 	{ "packed",	T_AT_PACKED,	0,	0,	0,	  0,0,1,1,5 },
 	{ "packed",	T_PACKED,	0,	0,	0,	  0,0,0,0,2 },
@@ -274,6 +276,7 @@ static	struct	kwtab {
 	{ "struct",	T_SOU,		0,	STRUCT,	0,	  0,0,0,0,1 },
 	{ "switch",	T_SWITCH,	0,	0,	0,	  0,0,0,0,1 },
 	{ "symbolrename", T_SYMBOLRENAME, 0,	0,	0,	  0,0,0,0,2 },
+	{ "syslog",	T_AT_FORMAT_SYSLOG,0,	0,	0,	  0,0,1,1,5 },
 	{ "transparent_union",T_AT_TUNION,0,	0,	0,	  0,0,1,1,5 },
 	{ "typedef",	T_SCLASS,	TYPEDEF, 0,	0,	  0,0,0,0,1 },
 	{ "typeof",	T_TYPEOF,	0,	0,	0,	  0,0,1,0,7 },

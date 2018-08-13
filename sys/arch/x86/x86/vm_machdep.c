@@ -1,4 +1,4 @@
-/*	$NetBSD: vm_machdep.c,v 1.29 2017/06/17 07:45:13 maxv Exp $	*/
+/*	$NetBSD: vm_machdep.c,v 1.36 2018/07/26 09:29:08 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986 The Regents of the University of California.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.29 2017/06/17 07:45:13 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.36 2018/07/26 09:29:08 maxv Exp $");
 
 #include "opt_mtrr.h"
 
@@ -155,16 +155,21 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 		KASSERT(l1 == &lwp0);
 	}
 
-	/* Copy the PCB from parent. */
-	memcpy(pcb2, pcb1, sizeof(struct pcb));
-	/* Copy any additional fpu state */
+	/* Copy the PCB from parent, except the FPU state. */
+	memcpy(pcb2, pcb1, offsetof(struct pcb, pcb_savefpu));
+
+	/* FPU state not installed. */
+	pcb2->pcb_fpcpu = NULL;
+
+	/* Copy FPU state. */
 	fpu_save_area_fork(pcb2, pcb1);
 
 	/* Never inherit CPU Debug Registers */
 	pcb2->pcb_dbregs = NULL;
+	pcb2->pcb_flags &= ~PCB_DBREGS;
 
 #if defined(XEN)
-	pcb2->pcb_iopl = SEL_KPL;
+	pcb2->pcb_iopl = IOPL_KPL;
 #endif
 
 	/*
@@ -178,9 +183,16 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 	 * returns normally.
 	 */
 	uv = uvm_lwp_getuarea(l2);
+	KASSERT(uv % PAGE_SIZE == 0);
 
 #ifdef __x86_64__
-	pcb2->pcb_rsp0 = (uv + USPACE - 16) & ~0xf;
+#ifdef SVS
+	pcb2->pcb_rsp0 = (uv + USPACE - PAGE_SIZE +
+	    sizeof(struct trapframe));
+	KASSERT((pcb2->pcb_rsp0 & 0xF) == 0);
+#else
+	pcb2->pcb_rsp0 = (uv + USPACE - 16);
+#endif
 	tf = (struct trapframe *)pcb2->pcb_rsp0 - 1;
 #else
 	pcb2->pcb_esp0 = (uv + USPACE - 16);
@@ -251,6 +263,9 @@ cpu_lwp_free(struct lwp *l, int proc)
 	/* If we were using the FPU, forget about it. */
 	fpusave_lwp(l, false);
 
+	/* Abandon the dbregs state. */
+	x86_dbregs_abandon(l);
+
 #ifdef MTRR
 	if (proc && l->l_proc->p_md.md_flags & MDP_USEDMTRR)
 		mtrr_clean(l->l_proc);
@@ -276,7 +291,7 @@ cpu_lwp_free2(struct lwp *l)
 	KASSERT(l->l_md.md_gc_pmap == NULL);
 
 	pcb = lwp_getpcb(l);
-
+	KASSERT((pcb->pcb_flags & PCB_DBREGS) == 0);
 	if (pcb->pcb_dbregs) {
 		pool_put(&x86_dbregspl, pcb->pcb_dbregs);
 		pcb->pcb_dbregs = NULL;
@@ -360,58 +375,3 @@ vunmapbuf(struct buf *bp, vsize_t len)
 	bp->b_data = bp->b_saveaddr;
 	bp->b_saveaddr = 0;
 }
-
-#ifdef __HAVE_CPU_UAREA_ROUTINES
-void *
-cpu_uarea_alloc(bool system)
-{
-	struct pglist pglist;
-	int error;
-
-	/*
-	 * Allocate a new physically contiguous uarea which can be
-	 * direct-mapped.
-	 */
-	error = uvm_pglistalloc(USPACE, 0, ptoa(physmem), 0, 0, &pglist, 1, 1);
-	if (error) {
-		return NULL;
-	}
-
-	/*
-	 * Get the physical address from the first page.
-	 */
-	const struct vm_page * const pg = TAILQ_FIRST(&pglist);
-	KASSERT(pg != NULL);
-	const paddr_t pa = VM_PAGE_TO_PHYS(pg);
-
-	/*
-	 * We need to return a direct-mapped VA for the pa.
-	 */
-
-	return (void *)PMAP_MAP_POOLPAGE(pa);
-}
-
-/*
- * Return true if we freed it, false if we didn't.
- */
-bool
-cpu_uarea_free(void *vva)
-{
-	vaddr_t va = (vaddr_t) vva;
-
-	if (va < PMAP_DIRECT_BASE || va >= PMAP_DIRECT_END) {
-		return false;
-	}
-
-	/*
-	 * Since the pages are physically contiguous, the vm_page structures
-	 * will be as well.
-	 */
-	struct vm_page *pg = PHYS_TO_VM_PAGE(PMAP_UNMAP_POOLPAGE(va));
-	KASSERT(pg != NULL);
-	for (size_t i = 0; i < UPAGES; i++, pg++) {
-		uvm_pagefree(pg);
-	}
-	return true;
-}
-#endif /* __HAVE_CPU_UAREA_ROUTINES */

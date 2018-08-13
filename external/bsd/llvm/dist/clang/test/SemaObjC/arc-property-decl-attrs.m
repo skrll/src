@@ -225,3 +225,65 @@ __attribute__((objc_root_class))
 @implementation TypeVsSetter
 @synthesize prop; // expected-note {{property synthesized here}}
 @end
+
+@protocol AutoStrongProp
+
+@property (nonatomic, readonly) NSObject *prop;
+
+@end
+
+@protocol AutoStrongProp_Internal <AutoStrongProp>
+
+// This property gets the 'strong' attribute automatically.
+@property (nonatomic, readwrite) NSObject *prop;
+
+@end
+
+@interface SynthesizeWithImplicitStrongNoError : NSObject <AutoStrongProp>
+@end
+
+@interface SynthesizeWithImplicitStrongNoError () <AutoStrongProp_Internal>
+
+@end
+
+@implementation SynthesizeWithImplicitStrongNoError
+
+// no error, 'strong' is implicit in the 'readwrite' property.
+@synthesize prop = _prop;
+
+@end
+
+// rdar://39024725
+// Allow strong readwrite property and a readonly one.
+@protocol StrongCollision
+
+@property(strong) NSObject *p;
+@property(copy) NSObject *p2;
+
+// expected-error@+1 {{property with attribute 'retain (or strong)' was selected for synthesis}}
+@property(strong, readwrite) NSObject *collision;
+
+@end
+
+@protocol ReadonlyCollision
+
+@property(readonly) NSObject *p;
+@property(readonly) NSObject *p2;
+
+// expected-note@+1 {{it could also be property without attribute 'retain (or strong)' declared here}}
+@property(readonly, weak) NSObject *collision;
+
+@end
+
+@interface StrongReadonlyCollision : NSObject <StrongCollision, ReadonlyCollision>
+@end
+
+@implementation StrongReadonlyCollision
+
+// no error
+@synthesize p = _p;
+@synthesize p2 = _p2;
+
+@synthesize collision = _collision; // expected-note {{property synthesized here}}
+
+@end

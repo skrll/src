@@ -1,4 +1,4 @@
-/*	$NetBSD: if_types.h,v 1.27 2017/02/16 08:12:44 knakahara Exp $	*/
+/*	$NetBSD: if_types.h,v 1.29 2018/07/31 16:44:30 khorben Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993, 1994
@@ -265,5 +265,7 @@
 #define IFT_PFSYNC	0xf6		/* Packet filter state syncing */
 #define IFT_L2TP	0xf7		/* L2TPv3 I/F */
 #define IFT_CARP	0xf8		/* Common Address Redundancy Protocol */
+#define IFT_IPSEC	0xf9		/* IPsec I/F */
+#define IFT_MBIM	0xfa		/* Mobile Broadband Interface Model */
 
 #endif /* !_NET_IF_TYPES_H_ */

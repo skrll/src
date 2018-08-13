@@ -1,5 +1,5 @@
-/*	$NetBSD: xform_ipcomp.c,v 1.53 2017/10/03 08:56:52 ozaki-r Exp $	*/
-/*	$FreeBSD: src/sys/netipsec/xform_ipcomp.c,v 1.1.4.1 2003/01/24 05:11:36 sam Exp $	*/
+/*	$NetBSD: xform_ipcomp.c,v 1.66 2018/05/13 18:34:59 maxv Exp $	*/
+/*	$FreeBSD: xform_ipcomp.c,v 1.1.4.1 2003/01/24 05:11:36 sam Exp $	*/
 /* $OpenBSD: ip_ipcomp.c,v 1.1 2001/07/05 12:08:52 jjbg Exp $ */
 
 /*
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xform_ipcomp.c,v 1.53 2017/10/03 08:56:52 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xform_ipcomp.c,v 1.66 2018/05/13 18:34:59 maxv Exp $");
 
 /* IP payload compression protocol (IPComp), see RFC 2393 */
 #if defined(_KERNEL_OPT)
@@ -70,19 +70,10 @@ __KERNEL_RCSID(0, "$NetBSD: xform_ipcomp.c,v 1.53 2017/10/03 08:56:52 ozaki-r Ex
 
 #include <opencrypto/cryptodev.h>
 #include <opencrypto/deflate.h>
-#include <opencrypto/xform.h>
 
 percpu_t *ipcompstat_percpu;
 
-int	ipcomp_enable = 1;
-
-#ifdef __FreeBSD__
-SYSCTL_DECL(_net_inet_ipcomp);
-SYSCTL_INT(_net_inet_ipcomp, OID_AUTO,
-	ipcomp_enable,	CTLFLAG_RW,	&ipcomp_enable,	0, "");
-SYSCTL_STRUCT(_net_inet_ipcomp, IPSECCTL_STATS,
-	stats,		CTLFLAG_RD,	&ipcompstat,	ipcompstat, "");
-#endif /* __FreeBSD__ */
+int ipcomp_enable = 1;
 
 static int ipcomp_input_cb(struct cryptop *crp);
 static int ipcomp_output_cb(struct cryptop *crp);
@@ -152,36 +143,29 @@ ipcomp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	struct tdb_crypto *tc;
 	struct cryptodesc *crdc;
 	struct cryptop *crp;
-	int error, hlen = IPCOMP_HLENGTH;
+	int error, hlen = IPCOMP_HLENGTH, stat = IPCOMP_STAT_CRYPTO;
 
-	IPSEC_SPLASSERT_SOFTNET(__func__);
+	KASSERT(skip + hlen <= m->m_pkthdr.len);
 
 	/* Get crypto descriptors */
 	crp = crypto_getreq(1);
 	if (crp == NULL) {
-		m_freem(m);
 		DPRINTF(("%s: no crypto descriptors\n", __func__));
-		IPCOMP_STATINC(IPCOMP_STAT_CRYPTO);
-		return ENOBUFS;
+		error = ENOBUFS;
+		goto error_m;
 	}
 	/* Get IPsec-specific opaque pointer */
 	tc = pool_cache_get(ipcomp_tdb_crypto_pool_cache, PR_NOWAIT);
 	if (tc == NULL) {
-		m_freem(m);
-		crypto_freereq(crp);
 		DPRINTF(("%s: cannot allocate tdb_crypto\n", __func__));
-		IPCOMP_STATINC(IPCOMP_STAT_CRYPTO);
-		return ENOBUFS;
+		error = ENOBUFS;
+		goto error_crp;
 	}
 
 	error = m_makewritable(&m, 0, m->m_pkthdr.len, M_NOWAIT);
 	if (error) {
 		DPRINTF(("%s: m_makewritable failed\n", __func__));
-		m_freem(m);
-		pool_cache_put(ipcomp_tdb_crypto_pool_cache, tc);
-		crypto_freereq(crp);
-		IPCOMP_STATINC(IPCOMP_STAT_CRYPTO);
-		return error;
+		goto error_tc;
 	}
 
     {
@@ -192,10 +176,9 @@ ipcomp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	 */
 	if (__predict_false(sav->state == SADB_SASTATE_DEAD)) {
 		pserialize_read_exit(s);
-		pool_cache_put(ipcomp_tdb_crypto_pool_cache, tc);
-		crypto_freereq(crp);
-		IPCOMP_STATINC(IPCOMP_STAT_NOTDB);
-		return ENOENT;
+		stat = IPCOMP_STAT_NOTDB;
+		error = ENOENT;
+		goto error_tc;
 	}
 	KEY_SA_REF(sav);
 	pserialize_read_exit(s);
@@ -228,6 +211,15 @@ ipcomp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	tc->tc_sav = sav;
 
 	return crypto_dispatch(crp);
+
+error_tc:
+	pool_cache_put(ipcomp_tdb_crypto_pool_cache, tc);
+error_crp:
+	crypto_freereq(crp);
+error_m:
+	m_freem(m);
+	IPCOMP_STATINC(stat);
+	return error;
 }
 
 #ifdef INET6
@@ -257,9 +249,7 @@ ipcomp_input_cb(struct cryptop *crp)
 	struct secasindex *saidx __diagused;
 	int hlen = IPCOMP_HLENGTH, error, clen;
 	uint8_t nproto;
-	void *addr;
-	uint16_t dport;
-	uint16_t sport;
+	struct ipcomp *ipc;
 	IPSEC_DECLARE_LOCK_VARIABLE;
 
 	KASSERT(crp->crp_opaque != NULL);
@@ -268,24 +258,9 @@ ipcomp_input_cb(struct cryptop *crp)
 	protoff = tc->tc_protoff;
 	m = crp->crp_buf;
 
-	/* find the source port for NAT-T */
-	nat_t_ports_get(m, &dport, &sport);
-
 	IPSEC_ACQUIRE_GLOBAL_LOCKS();
 
 	sav = tc->tc_sav;
-	if (__predict_false(!SADB_SASTATE_USABLE_P(sav))) {
-		KEY_SA_UNREF(&sav);
-		sav = KEY_LOOKUP_SA(&tc->tc_dst, tc->tc_proto, tc->tc_spi,
-		    sport, dport);
-		if (sav == NULL) {
-			IPCOMP_STATINC(IPCOMP_STAT_NOTDB);
-			DPRINTF(("%s: SA expired while in crypto\n", __func__));
-			error = ENOBUFS;		/*XXX*/
-			goto bad;
-		}
-	}
-
 	saidx = &sav->sah->saidx;
 	KASSERTMSG(saidx->dst.sa.sa_family == AF_INET ||
 	    saidx->dst.sa.sa_family == AF_INET6,
@@ -314,27 +289,32 @@ ipcomp_input_cb(struct cryptop *crp)
 	/* Update the counters */
 	IPCOMP_STATADD(IPCOMP_STAT_IBYTES, m->m_pkthdr.len - skip - hlen);
 
-
-	clen = crp->crp_olen;		/* Length of data after processing */
+	/* Length of data after processing */
+	clen = crp->crp_olen;
 
 	/* Release the crypto descriptors */
 	pool_cache_put(ipcomp_tdb_crypto_pool_cache, tc);
 	tc = NULL;
-	crypto_freereq(crp), crp = NULL;
+	crypto_freereq(crp);
+	crp = NULL;
 
 	/* In case it's not done already, adjust the size of the mbuf chain */
 	m->m_pkthdr.len = clen + hlen + skip;
 
+	/*
+	 * Get the next protocol field.
+	 *
+	 * XXX: Really, we should use m_copydata instead of m_pullup.
+	 */
 	if (m->m_len < skip + hlen && (m = m_pullup(m, skip + hlen)) == 0) {
-		IPCOMP_STATINC(IPCOMP_STAT_HDROPS);	/*XXX*/
+		IPCOMP_STATINC(IPCOMP_STAT_HDROPS);
 		DPRINTF(("%s: m_pullup failed\n", __func__));
-		error = EINVAL;				/*XXX*/
+		error = EINVAL;
 		goto bad;
 	}
+	ipc = (struct ipcomp *)(mtod(m, uint8_t *) + skip);
+	nproto = ipc->comp_nxt;
 
-	/* Keep the next protocol field */
-	addr = (uint8_t*) mtod(m, struct ip *) + skip;
-	nproto = ((struct ipcomp *) addr)->comp_nxt;
 	switch (nproto) {
 	case IPPROTO_IPCOMP:
 	case IPPROTO_AH:
@@ -360,13 +340,14 @@ ipcomp_input_cb(struct cryptop *crp)
 	}
 
 	/* Restore the Next Protocol field */
-	m_copyback(m, protoff, sizeof(uint8_t), (uint8_t *) &nproto);
+	m_copyback(m, protoff, sizeof(nproto), &nproto);
 
 	IPSEC_COMMON_INPUT_CB(m, sav, skip, protoff);
 
 	KEY_SA_UNREF(&sav);
 	IPSEC_RELEASE_GLOBAL_LOCKS();
 	return error;
+
 bad:
 	if (sav)
 		KEY_SA_UNREF(&sav);
@@ -384,14 +365,8 @@ bad:
  * IPComp output routine, called by ipsec[46]_process_packet()
  */
 static int
-ipcomp_output(
-    struct mbuf *m,
-    const struct ipsecrequest *isr,
-    struct secasvar *sav,
-    struct mbuf **mp,
-    int skip,
-    int protoff
-)
+ipcomp_output(struct mbuf *m, const struct ipsecrequest *isr,
+    struct secasvar *sav, int skip, int protoff)
 {
 	char buf[IPSEC_ADDRSTRLEN];
 	const struct comp_algo *ipcompx;
@@ -400,14 +375,14 @@ ipcomp_output(
 	struct cryptop *crp;
 	struct tdb_crypto *tc;
 
-	IPSEC_SPLASSERT_SOFTNET(__func__);
 	KASSERT(sav != NULL);
 	KASSERT(sav->tdb_compalgxform != NULL);
 	ipcompx = sav->tdb_compalgxform;
 
-	ralen = m->m_pkthdr.len - skip;	/* Raw payload length before comp. */
-    
-    /* Don't process the packet if it is too short */
+	/* Raw payload length before comp. */
+	ralen = m->m_pkthdr.len - skip;
+
+	/* Don't process the packet if it is too short */
 	if (ralen < ipcompx->minlen) {
 		IPCOMP_STATINC(IPCOMP_STAT_MINLEN);
 		return ipsec_process_done(m, isr, sav);
@@ -421,14 +396,14 @@ ipcomp_output(
 	switch (sav->sah->saidx.dst.sa.sa_family) {
 #ifdef INET
 	case AF_INET:
-		maxpacketsize =  IP_MAXPACKET;
+		maxpacketsize = IP_MAXPACKET;
 		break;
-#endif /* INET */
+#endif
 #ifdef INET6
 	case AF_INET6:
-		maxpacketsize =  IPV6_MAXPACKET;
+		maxpacketsize = IPV6_MAXPACKET;
 		break;
-#endif /* INET6 */
+#endif
 	default:
 		IPCOMP_STATINC(IPCOMP_STAT_NOPF);
 		DPRINTF(("%s: unknown/unsupported protocol family %d"
@@ -533,10 +508,11 @@ ipcomp_output(
 	crp->crp_sid = sav->tdb_cryptoid;
 
 	return crypto_dispatch(crp);
+
 bad:
 	if (m)
 		m_freem(m);
-	return (error);
+	return error;
 }
 
 /*
@@ -566,24 +542,6 @@ ipcomp_output_cb(struct cryptop *crp)
 
 	isr = tc->tc_isr;
 	sav = tc->tc_sav;
-	if (__predict_false(isr->sp->state == IPSEC_SPSTATE_DEAD)) {
-		IPCOMP_STATINC(IPCOMP_STAT_NOTDB);
-		IPSECLOG(LOG_DEBUG,
-		    "SP is being destroyed while in crypto (id=%u)\n",
-		    isr->sp->id);
-		error = ENOENT;
-		goto bad;
-	}
-	if (__predict_false(!SADB_SASTATE_USABLE_P(sav))) {
-		KEY_SA_UNREF(&sav);
-		sav = KEY_LOOKUP_SA(&tc->tc_dst, tc->tc_proto, tc->tc_spi, 0, 0);
-		if (sav == NULL) {
-			IPCOMP_STATINC(IPCOMP_STAT_NOTDB);
-			DPRINTF(("%s: SA expired while in crypto\n", __func__));
-			error = ENOBUFS;		/*XXX*/
-			goto bad;
-		}
-	}
 
 	/* Check for crypto errors */
 	if (crp->crp_etype) {
@@ -623,25 +581,25 @@ ipcomp_output_cb(struct cryptop *crp)
 #ifdef INET
 		case AF_INET:
 			ipcomp->comp_nxt = mtod(m, struct ip *)->ip_p;
-			 break;
-#endif /* INET */
+			break;
+#endif
 #ifdef INET6
 		case AF_INET6:
 			ipcomp->comp_nxt = mtod(m, struct ip6_hdr *)->ip6_nxt;
-		break;
+			break;
 #endif
 		}
 		ipcomp->comp_flags = 0;
 
 		if ((sav->flags & SADB_X_EXT_RAWCPI) == 0)
-			 cpi = sav->alg_enc;
+			cpi = sav->alg_enc;
 		else
 			cpi = ntohl(sav->spi) & 0xffff;
 		ipcomp->comp_cpi = htons(cpi);
 
 		/* Fix Next Protocol in IPv4/IPv6 header */
 		prot = IPPROTO_IPCOMP;
-		m_copyback(m, tc->tc_protoff, sizeof(uint8_t), (u_char *)&prot);
+		m_copyback(m, tc->tc_protoff, sizeof(prot), &prot);
 
 		/* Adjust the length in the IP header */
 		switch (sav->sah->saidx.dst.sa.sa_family) {
@@ -649,13 +607,13 @@ ipcomp_output_cb(struct cryptop *crp)
 		case AF_INET:
 			mtod(m, struct ip *)->ip_len = htons(m->m_pkthdr.len);
 			break;
-#endif /* INET */
+#endif
 #ifdef INET6
 		case AF_INET6:
 			mtod(m, struct ip6_hdr *)->ip6_plen =
-				htons(m->m_pkthdr.len) - sizeof(struct ip6_hdr);
+			    htons(m->m_pkthdr.len - sizeof(struct ip6_hdr));
 			break;
-#endif /* INET6 */
+#endif
 		default:
 			IPCOMP_STATINC(IPCOMP_STAT_NOPF);
 			DPRINTF(("ipcomp_output: unknown/unsupported protocol "
@@ -669,10 +627,10 @@ ipcomp_output_cb(struct cryptop *crp)
 	} else {
 		/* compression was useless, we have lost time */
 		IPCOMP_STATINC(IPCOMP_STAT_USELESS);
-		DPRINTF(("ipcomp_output_cb: compression was useless : initial size was %d"
-				   	"and compressed size is %d\n", rlen, crp->crp_olen));
+		DPRINTF(("ipcomp_output_cb: compression was useless: initial"
+		    "size was %d and compressed size is %d\n", rlen,
+		    crp->crp_olen));
 	}
-
 
 	/* Release the crypto descriptor */
 	pool_cache_put(ipcomp_tdb_crypto_pool_cache, tc);
@@ -684,6 +642,7 @@ ipcomp_output_cb(struct cryptop *crp)
 	KEY_SP_UNREF(&isr->sp);
 	IPSEC_RELEASE_GLOBAL_LOCKS();
 	return error;
+
 bad:
 	if (sav)
 		KEY_SA_UNREF(&sav);

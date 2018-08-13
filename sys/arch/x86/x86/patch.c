@@ -1,4 +1,4 @@
-/*	$NetBSD: patch.c,v 1.24 2017/10/27 23:22:01 riastradh Exp $	*/
+/*	$NetBSD: patch.c,v 1.35 2018/07/14 14:34:32 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: patch.c,v 1.24 2017/10/27 23:22:01 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: patch.c,v 1.35 2018/07/14 14:34:32 maxv Exp $");
 
 #include "opt_lockdebug.h"
 #ifdef i386
@@ -47,9 +47,16 @@ __KERNEL_RCSID(0, "$NetBSD: patch.c,v 1.24 2017/10/27 23:22:01 riastradh Exp $")
 #include <machine/cpu.h>
 #include <machine/cpufunc.h>
 #include <machine/specialreg.h>
+#include <machine/frameasm.h>
 
 #include <x86/cpuvar.h>
 #include <x86/cputypes.h>
+
+struct hotpatch {
+	uint8_t name;
+	uint8_t size;
+	void *addr;
+} __packed;
 
 void	spllower(int);
 void	spllower_end(void);
@@ -76,10 +83,6 @@ void	_atomic_cas_64_end(void);
 void	_atomic_cas_cx8(void);
 void	_atomic_cas_cx8_end(void);
 
-extern void	*x86_lockpatch[];
-extern void	*x86_clacpatch[];
-extern void	*x86_stacpatch[];
-extern void	*x86_retpatch[];
 extern void	*atomic_lockpatch[];
 
 #define	X86_NOP		0x90
@@ -116,28 +119,64 @@ patchfunc(void *from_s, void *from_e, void *to_s, void *to_e,
 	memcpy(to_s, from_s, (uintptr_t)to_e - (uintptr_t)to_s);
 	if (pcrel != NULL)
 		adjust_jumpoff(pcrel, from_s, to_s);
-
-#ifdef GPROF
-#ifdef i386
-#define	MCOUNT_CALL_OFFSET	3
-#endif
-#ifdef __x86_64__
-#define	MCOUNT_CALL_OFFSET	5
-#endif
-	/* Patch mcount call offset */
-	adjust_jumpoff((uint8_t *)from_s + MCOUNT_CALL_OFFSET, from_s, to_s);
-#endif
 }
 
 static inline void __unused
-patchbytes(void *addr, const int byte1, const int byte2, const int byte3)
+patchbytes(void *addr, const uint8_t *bytes, size_t size)
 {
+	uint8_t *ptr = (uint8_t *)addr;
+	size_t i;
 
-	((uint8_t *)addr)[0] = (uint8_t)byte1;
-	if (byte2 != -1)
-		((uint8_t *)addr)[1] = (uint8_t)byte2;
-	if (byte3 != -1)
-		((uint8_t *)addr)[2] = (uint8_t)byte3;
+	for (i = 0; i < size; i++) {
+		ptr[i] = bytes[i];
+	}
+}
+
+void
+x86_hotpatch(uint32_t name, const uint8_t *bytes, size_t size)
+{
+	extern char __rodata_hotpatch_start;
+	extern char __rodata_hotpatch_end;
+	struct hotpatch *hps, *hpe, *hp;
+
+	hps = (struct hotpatch *)&__rodata_hotpatch_start;
+	hpe = (struct hotpatch *)&__rodata_hotpatch_end;
+
+	for (hp = hps; hp < hpe; hp++) {
+		if (hp->name != name) {
+			continue;
+		}
+		if (hp->size != size) {
+			panic("x86_hotpatch: incorrect size");
+		}
+		patchbytes(hp->addr, bytes, size);
+	}
+}
+
+void
+x86_patch_window_open(u_long *psl, u_long *cr0)
+{
+	/* Disable interrupts. */
+	*psl = x86_read_psl();
+	x86_disable_intr();
+
+	/* Disable write protection in supervisor mode. */
+	*cr0 = rcr0();
+	lcr0(*cr0 & ~CR0_WP);
+}
+
+void
+x86_patch_window_close(u_long psl, u_long cr0)
+{
+	/* Write back and invalidate cache, flush pipelines. */
+	wbinvd();
+	x86_flush();
+
+	/* Re-enable write protection. */
+	lcr0(cr0);
+
+	/* Restore the PSL, potentially re-enabling interrupts. */
+	x86_write_psl(psl);
 }
 
 void
@@ -146,7 +185,6 @@ x86_patch(bool early)
 	static bool first, second;
 	u_long psl;
 	u_long cr0;
-	int i;
 
 	if (early) {
 		if (first)
@@ -158,24 +196,24 @@ x86_patch(bool early)
 		second = true;
 	}
 
-	/* Disable interrupts. */
-	psl = x86_read_psl();
-	x86_disable_intr();
+	x86_patch_window_open(&psl, &cr0);
 
-	/* Disable write protection in supervisor mode. */
-	cr0 = rcr0();
-	lcr0(cr0 & ~CR0_WP);
-
-#if !defined(GPROF)
 	if (!early && ncpu == 1) {
 #ifndef LOCKDEBUG
-		/* Uniprocessor: kill LOCK prefixes. */
-		for (i = 0; x86_lockpatch[i] != 0; i++)
-			patchbytes(x86_lockpatch[i], X86_NOP, -1, -1);
-		for (i = 0; atomic_lockpatch[i] != 0; i++)
-			patchbytes(atomic_lockpatch[i], X86_NOP, -1, -1);
-#endif	/* !LOCKDEBUG */
+		/*
+		 * Uniprocessor: kill LOCK prefixes.
+		 */
+		const uint8_t bytes[] = {
+			X86_NOP
+		};
+
+		/* lock -> nop */
+		x86_hotpatch(HP_NAME_NOLOCK, bytes, sizeof(bytes));
+		for (int i = 0; atomic_lockpatch[i] != 0; i++)
+			patchbytes(atomic_lockpatch[i], bytes, sizeof(bytes));
+#endif
 	}
+
 	if (!early && (cpu_feature[0] & CPUID_SSE2) != 0) {
 		/*
 		 * Faster memory barriers.  We do not need to patch
@@ -194,7 +232,6 @@ x86_patch(bool early)
 		    NULL
 		);
 	}
-#endif	/* GPROF */
 
 #ifdef i386
 	/*
@@ -237,13 +274,14 @@ x86_patch(bool early)
 	    (CPUID_TO_FAMILY(cpu_info_primary.ci_signature) == 0xe ||
 	    (CPUID_TO_FAMILY(cpu_info_primary.ci_signature) == 0xf &&
 	    CPUID_TO_EXTMODEL(cpu_info_primary.ci_signature) < 0x4))) {
-		for (i = 0; x86_retpatch[i] != 0; i++) {
-			/* ret,nop,nop,ret -> lfence,ret */
-			patchbytes(x86_retpatch[i], 0x0f, 0xae, 0xe8);
-		}
+		const uint8_t bytes[] = {
+			0x0F, 0xAE, 0xE8 /* lfence */
+		};
+
+		/* ret,nop,nop -> lfence */
+		x86_hotpatch(HP_NAME_RETFENCE, bytes, sizeof(bytes));
 	}
 
-#ifdef amd64
 	/*
 	 * If SMAP is present then patch the prepared holes with clac/stac
 	 * instructions.
@@ -253,24 +291,19 @@ x86_patch(bool early)
 	 */
 	if (!early && cpu_feature[5] & CPUID_SEF_SMAP) {
 		KASSERT(rcr4() & CR4_SMAP);
-		for (i = 0; x86_clacpatch[i] != NULL; i++) {
-			/* ret,int3,int3 -> clac */
-			patchbytes(x86_clacpatch[i],
-			    0x0f, 0x01, 0xca);
-		}
-		for (i = 0; x86_stacpatch[i] != NULL; i++) {
-			/* ret,int3,int3 -> stac */
-			patchbytes(x86_stacpatch[i],
-			    0x0f, 0x01, 0xcb);
-		}
+		const uint8_t clac_bytes[] = {
+			0x0F, 0x01, 0xCA /* clac */
+		};
+		const uint8_t stac_bytes[] = {
+			0x0F, 0x01, 0xCB /* stac */
+		};
+
+		/* nop,nop,nop -> clac */
+		x86_hotpatch(HP_NAME_CLAC, clac_bytes, sizeof(clac_bytes));
+
+		/* nop,nop,nop -> stac */
+		x86_hotpatch(HP_NAME_STAC, stac_bytes, sizeof(stac_bytes));
 	}
-#endif
 
-	/* Write back and invalidate cache, flush pipelines. */
-	wbinvd();
-	x86_flush();
-	x86_write_psl(psl);
-
-	/* Re-enable write protection. */
-	lcr0(cr0);
+	x86_patch_window_close(psl, cr0);
 }

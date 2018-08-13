@@ -1,4 +1,4 @@
-/*	$NetBSD: smc90cx6.c,v 1.71 2017/10/23 09:22:24 msaitoh Exp $ */
+/*	$NetBSD: smc90cx6.c,v 1.73 2018/06/26 06:48:00 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 1994, 1995, 1998 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: smc90cx6.c,v 1.71 2017/10/23 09:22:24 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: smc90cx6.c,v 1.73 2018/06/26 06:48:00 msaitoh Exp $");
 
 /* #define BAHSOFTCOPY */
 #define BAHRETRANSMIT /**/
@@ -60,6 +60,7 @@ __KERNEL_RCSID(0, "$NetBSD: smc90cx6.c,v 1.71 2017/10/23 09:22:24 msaitoh Exp $"
 #include <net/if_ether.h>
 #include <net/if_types.h>
 #include <net/if_arc.h>
+#include <net/bpf.h>
 
 #ifdef INET
 #include <netinet/in.h>
@@ -68,9 +69,6 @@ __KERNEL_RCSID(0, "$NetBSD: smc90cx6.c,v 1.71 2017/10/23 09:22:24 msaitoh Exp $"
 #include <netinet/ip.h>
 #include <netinet/if_inarp.h>
 #endif
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/bus.h>
 #include <sys/cpu.h>
@@ -388,7 +386,7 @@ bah_start(struct ifnet *ifp)
 	 * (can't give the copy in A2060 card RAM to bpf, because
 	 * that RAM is just accessed as on every other byte)
 	 */
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 
 #ifdef BAH_DEBUG
 	if (m->m_len < ARC_HDRLEN)

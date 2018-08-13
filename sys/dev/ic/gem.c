@@ -1,4 +1,4 @@
-/*	$NetBSD: gem.c,v 1.108 2017/02/20 07:43:29 ozaki-r Exp $ */
+/*	$NetBSD: gem.c,v 1.110 2018/06/26 06:48:00 msaitoh Exp $ */
 
 /*
  *
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.108 2017/02/20 07:43:29 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.110 2018/06/26 06:48:00 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -410,7 +410,8 @@ gem_attach(struct gem_softc *sc, const uint8_t *enaddr)
 #endif
 		/* Look for internal PHY if no external PHY was found */
 		if (LIST_EMPTY(&mii->mii_phys) && 
-		    sc->sc_mif_config & GEM_MIF_CONFIG_MDI0) {
+		    ((sc->sc_mif_config & GEM_MIF_CONFIG_MDI0) ||
+		     (sc->sc_variant == GEM_APPLE_K2_GMAC))) {
 			sc->sc_mif_config &= ~GEM_MIF_CONFIG_PHY_SEL;
 			bus_space_write_4(t, h, GEM_MIF_CONFIG,
 			    sc->sc_mif_config);
@@ -1598,7 +1599,7 @@ gem_start(struct ifnet *ifp)
 		/*
 		 * Pass the packet to any BPF listeners.
 		 */
-		bpf_mtap(ifp, m0);
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 	}
 
 	if (txs == NULL || sc->sc_txfree == 0) {

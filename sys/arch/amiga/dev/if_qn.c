@@ -1,4 +1,4 @@
-/*	$NetBSD: if_qn.c,v 1.44 2017/02/22 09:45:15 nonaka Exp $ */
+/*	$NetBSD: if_qn.c,v 1.46 2018/06/26 06:47:57 msaitoh Exp $ */
 
 /*
  * Copyright (c) 1995 Mika Kortelainen
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_qn.c,v 1.44 2017/02/22 09:45:15 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_qn.c,v 1.46 2018/06/26 06:47:57 msaitoh Exp $");
 
 #include "qn.h"
 #if NQN > 0
@@ -98,6 +98,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_qn.c,v 1.44 2017/02/22 09:45:15 nonaka Exp $");
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <net/if_ether.h>
+#include <net/bpf.h>
 
 #ifdef INET
 #include <netinet/in.h>
@@ -142,9 +143,6 @@ struct	qn_softc {
 	u_short	volatile *nic_len;
 	u_char	transmit_pending;
 } qn_softc[NQN];
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 
 int	qnmatch(device_t, cfdata_t, void *);
@@ -402,7 +400,7 @@ qnstart(struct ifnet *ifp)
 	 * (can't give the copy in QuickNet card RAM to bpf, because
 	 * that RAM is not visible to the host but is read from FIFO)
 	 */
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 	len = qn_put(sc->nic_fifo, m);
 	m_freem(m);
 

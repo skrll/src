@@ -1,6 +1,6 @@
-/*	$NetBSD: in6_offload.c,v 1.7 2017/02/14 03:05:06 ozaki-r Exp $	*/
+/*	$NetBSD: in6_offload.c,v 1.10 2018/08/10 06:55:04 maxv Exp $	*/
 
-/*-
+/*
  * Copyright (c)2006 YAMAMOTO Takashi,
  * All rights reserved.
  *
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6_offload.c,v 1.7 2017/02/14 03:05:06 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6_offload.c,v 1.10 2018/08/10 06:55:04 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/mbuf.h>
@@ -43,47 +43,13 @@ __KERNEL_RCSID(0, "$NetBSD: in6_offload.c,v 1.7 2017/02/14 03:05:06 ozaki-r Exp 
 #include <netinet6/nd6.h>
 #include <netinet6/in6_offload.h>
 
-struct ip6_tso_output_args {
-	struct ifnet *ifp;
-	struct ifnet *origifp;
-	const struct sockaddr_in6 *dst;
-	struct rtentry *rt;
-};
-
-static int ip6_tso_output_callback(void *, struct mbuf *);
-
-static int
-ip6_tso_output_callback(void *vp, struct mbuf *m)
-{
-	struct ip6_tso_output_args *args = vp;
-
-	return ip6_if_output(args->ifp, args->origifp, m, args->dst, args->rt);
-}
-
-int
-ip6_tso_output(struct ifnet *ifp, struct ifnet *origifp, struct mbuf *m,
-    const struct sockaddr_in6 *dst, struct rtentry *rt)
-{
-	struct ip6_tso_output_args args;
-
-	args.ifp = ifp;
-	args.origifp = origifp;
-	args.dst = dst;
-	args.rt = rt;
-
-	return tcp6_segment(m, ip6_tso_output_callback, &args);
-}
-
 /*
- * tcp6_segment: handle M_CSUM_TSOv6 by software.
- *
- * => always consume m.
- * => call output_func with output_arg for each segments.
+ * Handle M_CSUM_TSOv6 in software. Split the TCP payload in chunks of
+ * size MSS, and send them.
  */
-
-int
-tcp6_segment(struct mbuf *m, int (*output_func)(void *, struct mbuf *),
-    void *output_arg)
+static int
+tcp6_segment(struct ifnet *ifp, struct ifnet *origifp, struct mbuf *m,
+    const struct sockaddr_in6 *dst, struct rtentry *rt)
 {
 	int mss;
 	int iphlen;
@@ -173,7 +139,7 @@ tcp6_segment(struct mbuf *m, int (*output_func)(void *, struct mbuf *),
 		th->th_sum = 0;
 		th->th_sum = in6_cksum(n, IPPROTO_TCP, iphlen, thlen + mss);
 
-		error = (*output_func)(output_arg, n);
+		error = ip6_if_output(ifp, origifp, n, dst, rt);
 		if (error) {
 			goto quit;
 		}
@@ -193,8 +159,19 @@ quit:
 	return error;
 }
 
+int
+ip6_tso_output(struct ifnet *ifp, struct ifnet *origifp, struct mbuf *m,
+    const struct sockaddr_in6 *dst, struct rtentry *rt)
+{
+	return tcp6_segment(ifp, origifp, m, dst, rt);
+}
+
+/*
+ * Compute now in software the IP and TCP/UDP checksums. Cancel the
+ * hardware offloading.
+ */
 void
-ip6_undefer_csum(struct mbuf *m, size_t hdrlen, int csum_flags)
+in6_undefer_cksum(struct mbuf *m, size_t hdrlen, int csum_flags)
 {
 	const size_t ip6_plen_offset =
 	    hdrlen + offsetof(struct ip6_hdr, ip6_plen);
@@ -214,7 +191,7 @@ ip6_undefer_csum(struct mbuf *m, size_t hdrlen, int csum_flags)
 	}
 	plen = ntohs(plen);
 
-	l4hdroff = M_CSUM_DATA_IPv6_HL(m->m_pkthdr.csum_data);
+	l4hdroff = M_CSUM_DATA_IPv6_IPHL(m->m_pkthdr.csum_data);
 	l4offset = hdrlen + l4hdroff;
 	csum = in6_cksum(m, 0, l4offset, plen - l4hdroff);
 
@@ -230,4 +207,32 @@ ip6_undefer_csum(struct mbuf *m, size_t hdrlen, int csum_flags)
 	}
 
 	m->m_pkthdr.csum_flags ^= csum_flags;
+}
+
+/*
+ * Compute now in software the TCP/UDP checksum. Cancel the hardware
+ * offloading.
+ */
+void
+in6_undefer_cksum_tcpudp(struct mbuf *m)
+{
+	uint16_t csum, offset;
+
+	KASSERT((m->m_pkthdr.csum_flags & (M_CSUM_UDPv6|M_CSUM_TCPv6)) != 0);
+	KASSERT((~m->m_pkthdr.csum_flags & (M_CSUM_UDPv6|M_CSUM_TCPv6)) != 0);
+	KASSERT((m->m_pkthdr.csum_flags
+	    & (M_CSUM_UDPv4|M_CSUM_TCPv4|M_CSUM_TSOv4)) == 0);
+
+	offset = M_CSUM_DATA_IPv6_IPHL(m->m_pkthdr.csum_data);
+	csum = in6_cksum(m, 0, offset, m->m_pkthdr.len - offset);
+	if (csum == 0 && (m->m_pkthdr.csum_flags & M_CSUM_UDPv6) != 0) {
+		csum = 0xffff;
+	}
+
+	offset += M_CSUM_DATA_IPv6_OFFSET(m->m_pkthdr.csum_data);
+	if ((offset + sizeof(csum)) > m->m_len) {
+		m_copyback(m, offset, sizeof(csum), &csum);
+	} else {
+		*(uint16_t *)(mtod(m, char *) + offset) = csum;
+	}
 }

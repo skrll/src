@@ -1,4 +1,4 @@
-/*	$NetBSD: if_l2tp.c,v 1.16 2017/12/06 08:23:17 knakahara Exp $	*/
+/*	$NetBSD: if_l2tp.c,v 1.29 2018/06/26 06:48:02 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2017 Internet Initiative Japan Inc.
@@ -31,10 +31,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_l2tp.c,v 1.16 2017/12/06 08:23:17 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_l2tp.c,v 1.29 2018/06/26 06:48:02 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
+#include "opt_net_mpsafe.h"
 #endif
 
 #include <sys/param.h>
@@ -90,9 +91,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_l2tp.c,v 1.16 2017/12/06 08:23:17 knakahara Exp $
 #ifdef IP_TCPMSS
 #include <netinet/ip_tcpmss.h>
 #endif
-
-#include <net/bpf.h>
-#include <net/net_osdep.h>
 
 /*
  * l2tp global variable definitions
@@ -265,7 +263,10 @@ l2tpattach0(struct l2tp_softc *sc)
 	sc->l2tp_ec.ec_if.if_addrlen = 0;
 	sc->l2tp_ec.ec_if.if_mtu    = L2TP_MTU;
 	sc->l2tp_ec.ec_if.if_flags  = IFF_POINTOPOINT|IFF_MULTICAST|IFF_SIMPLEX;
-	sc->l2tp_ec.ec_if.if_extflags  = IFEF_MPSAFE | IFEF_NO_LINK_STATE_CHANGE;
+	sc->l2tp_ec.ec_if.if_extflags = IFEF_NO_LINK_STATE_CHANGE;
+#ifdef NET_MPSAFE
+	sc->l2tp_ec.ec_if.if_extflags |= IFEF_MPSAFE;
+#endif
 	sc->l2tp_ec.ec_if.if_ioctl  = l2tp_ioctl;
 	sc->l2tp_ec.ec_if.if_output = l2tp_output;
 	sc->l2tp_ec.ec_if.if_type   = IFT_L2TP;
@@ -294,7 +295,7 @@ l2tp_ro_init_pc(void *p, void *arg __unused, struct cpu_info *ci __unused)
 {
 	struct l2tp_ro *lro = p;
 
-	mutex_init(&lro->lr_lock, MUTEX_DEFAULT, IPL_NONE);
+	lro->lr_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 }
 
 void
@@ -304,7 +305,7 @@ l2tp_ro_fini_pc(void *p, void *arg __unused, struct cpu_info *ci __unused)
 
 	rtcache_free(&lro->lr_ro);
 
-	mutex_destroy(&lro->lr_lock);
+	mutex_obj_free(lro->lr_lock);
 }
 
 static int
@@ -427,7 +428,7 @@ l2tpintr(struct l2tp_variant *var)
 		if (m == NULL)
 			break;
 		m->m_flags &= ~(M_BCAST|M_MCAST);
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 		switch (var->lv_psrc->sa_family) {
 #ifdef INET
 		case AF_INET:
@@ -461,16 +462,30 @@ l2tpintr(struct l2tp_variant *var)
 void
 l2tp_input(struct mbuf *m, struct ifnet *ifp)
 {
+	vaddr_t addr;
 
 	KASSERT(ifp != NULL);
 
-	if (0 == (mtod(m, u_long) & 0x03)) {
+	/*
+	 * Currently, l2tp(4) supports only ethernet as inner protocol.
+	 */
+	if (m->m_pkthdr.len < sizeof(struct ether_header)) {
+		m_freem(m);
+		return;
+	}
+
+	/*
+	 * If the head of the payload is not aligned, align it.
+	 */
+	addr = mtod(m, vaddr_t);
+	if ((addr & 0x03) != 0x2) {
 		/* copy and align head of payload */
 		struct mbuf *m_head;
 		int copy_length;
+		u_int pad = roundup(sizeof(struct ether_header), 4)
+			- sizeof(struct ether_header);
 
 #define L2TP_COPY_LENGTH		60
-#define L2TP_LINK_HDR_ROOM	(MHLEN - L2TP_COPY_LENGTH - 4/*round4(2)*/)
 
 		if (m->m_pkthdr.len < L2TP_COPY_LENGTH) {
 			copy_length = m->m_pkthdr.len;
@@ -489,24 +504,30 @@ l2tp_input(struct mbuf *m, struct ifnet *ifp)
 			m_freem(m);
 			return;
 		}
-		M_COPY_PKTHDR(m_head, m);
+		M_MOVE_PKTHDR(m_head, m);
 
-		m_head->m_data += 2 /* align */ + L2TP_LINK_HDR_ROOM;
-		memcpy(m_head->m_data, m->m_data, copy_length);
+		/*
+		 * m_head should be:
+		 *                             L2TP_COPY_LENGTH
+		 *                          <-  + roundup(pad, 4) - pad ->
+		 *   +-------+--------+-----+--------------+-------------+
+		 *   | m_hdr | pkthdr | ... | ether header |   payload   |
+		 *   +-------+--------+-----+--------------+-------------+
+		 *                          ^              ^
+		 *                          m_data         4 byte aligned
+		 */
+		MH_ALIGN(m_head, L2TP_COPY_LENGTH + roundup(pad, 4));
+		m_head->m_data += pad;
+
+		memcpy(mtod(m_head, void *), mtod(m, void *), copy_length);
 		m_head->m_len = copy_length;
 		m->m_data += copy_length;
 		m->m_len -= copy_length;
 
 		/* construct chain */
 		if (m->m_len == 0) {
-			m_head->m_next = m_free(m); /* not m_freem */
+			m_head->m_next = m_free(m);
 		} else {
-			/*
-			 * copyed mtag in previous call M_COPY_PKTHDR
-			 * but don't delete mtag in case cutt of M_PKTHDR flag
-			 */
-			m_tag_delete_chain(m, NULL);
-			m->m_flags &= ~M_PKTHDR;
 			m_head->m_next = m;
 		}
 
@@ -565,7 +586,7 @@ l2tp_transmit(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	m->m_flags &= ~(M_BCAST|M_MCAST);
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 	switch (var->lv_psrc->sa_family) {
 #ifdef INET
 	case AF_INET:
@@ -1362,80 +1383,90 @@ static struct mbuf *l2tp_tcpmss6_clamp(struct ifnet *, struct mbuf *);
 #endif
 
 struct mbuf *
-l2tp_tcpmss_clamp(struct ifnet *ifp, struct mbuf	*m)
+l2tp_tcpmss_clamp(struct ifnet *ifp, struct mbuf *m)
 {
+	struct ether_header *eh;
+	struct ether_vlan_header evh;
 
-	if (l2tp_need_tcpmss_clamp(ifp)) {
-		struct ether_header *eh;
-		struct ether_vlan_header evh;
+	if (!l2tp_need_tcpmss_clamp(ifp)) {
+		return m;
+	}
 
-		/* save ether header */
-		m_copydata(m, 0, sizeof(evh), (void *)&evh);
-		eh = (struct ether_header *)&evh;
+	if (m->m_pkthdr.len < sizeof(evh)) {
+		m_freem(m);
+		return NULL;
+	}
 
-		switch (ntohs(eh->ether_type)) {
-		case ETHERTYPE_VLAN: /* Ether + VLAN */
-			if (m->m_pkthdr.len <= sizeof(struct ether_vlan_header))
-				break;
-			m_adj(m, sizeof(struct ether_vlan_header));
-			switch (ntohs(evh.evl_proto)) {
-#ifdef INET
-			case ETHERTYPE_IP: /* Ether + VLAN + IPv4 */
-				m = l2tp_tcpmss4_clamp(ifp, m);
-				if (m == NULL)
-					return NULL;
-				break;
-#endif /* INET */
-#ifdef INET6
-			case ETHERTYPE_IPV6: /* Ether + VLAN + IPv6 */
-				m = l2tp_tcpmss6_clamp(ifp, m);
-				if (m == NULL)
-					return NULL;
-				break;
-#endif /* INET6 */
-			default:
-				break;
-			}
-			/* restore ether header */
-			M_PREPEND(m, sizeof(struct ether_vlan_header),
-			    M_DONTWAIT);
-			if (m == NULL)
-				return NULL;
-			*mtod(m, struct ether_vlan_header *) = evh;
+	/* save ether header */
+	m_copydata(m, 0, sizeof(evh), (void *)&evh);
+	eh = (struct ether_header *)&evh;
+
+	switch (ntohs(eh->ether_type)) {
+	case ETHERTYPE_VLAN: /* Ether + VLAN */
+		if (m->m_pkthdr.len <= sizeof(struct ether_vlan_header))
 			break;
+		m_adj(m, sizeof(struct ether_vlan_header));
+		switch (ntohs(evh.evl_proto)) {
 #ifdef INET
-		case ETHERTYPE_IP: /* Ether + IPv4 */
-			if (m->m_pkthdr.len <= sizeof(struct ether_header))
-				break;
-			m_adj(m, sizeof(struct ether_header));
+		case ETHERTYPE_IP: /* Ether + VLAN + IPv4 */
 			m = l2tp_tcpmss4_clamp(ifp, m);
 			if (m == NULL)
 				return NULL;
-			/* restore ether header */
-			M_PREPEND(m, sizeof(struct ether_header), M_DONTWAIT);
-			if (m == NULL)
-				return NULL;
-			*mtod(m, struct ether_header *) = *eh;
 			break;
 #endif /* INET */
 #ifdef INET6
-		case ETHERTYPE_IPV6: /* Ether + IPv6 */
-			if (m->m_pkthdr.len <= sizeof(struct ether_header))
-				break;
-			m_adj(m, sizeof(struct ether_header));
+		case ETHERTYPE_IPV6: /* Ether + VLAN + IPv6 */
 			m = l2tp_tcpmss6_clamp(ifp, m);
 			if (m == NULL)
 				return NULL;
-			/* restore ether header */
-			M_PREPEND(m, sizeof(struct ether_header), M_DONTWAIT);
-			if (m == NULL)
-				return NULL;
-			*mtod(m, struct ether_header *) = *eh;
 			break;
 #endif /* INET6 */
 		default:
 			break;
 		}
+
+		/* restore ether header */
+		M_PREPEND(m, sizeof(struct ether_vlan_header),
+		    M_DONTWAIT);
+		if (m == NULL)
+			return NULL;
+		*mtod(m, struct ether_vlan_header *) = evh;
+		break;
+
+#ifdef INET
+	case ETHERTYPE_IP: /* Ether + IPv4 */
+		if (m->m_pkthdr.len <= sizeof(struct ether_header))
+			break;
+		m_adj(m, sizeof(struct ether_header));
+		m = l2tp_tcpmss4_clamp(ifp, m);
+		if (m == NULL)
+			return NULL;
+		/* restore ether header */
+		M_PREPEND(m, sizeof(struct ether_header), M_DONTWAIT);
+		if (m == NULL)
+			return NULL;
+		*mtod(m, struct ether_header *) = *eh;
+		break;
+#endif /* INET */
+
+#ifdef INET6
+	case ETHERTYPE_IPV6: /* Ether + IPv6 */
+		if (m->m_pkthdr.len <= sizeof(struct ether_header))
+			break;
+		m_adj(m, sizeof(struct ether_header));
+		m = l2tp_tcpmss6_clamp(ifp, m);
+		if (m == NULL)
+			return NULL;
+		/* restore ether header */
+		M_PREPEND(m, sizeof(struct ether_header), M_DONTWAIT);
+		if (m == NULL)
+			return NULL;
+		*mtod(m, struct ether_header *) = *eh;
+		break;
+#endif /* INET6 */
+
+	default:
+		break;
 	}
 
 	return m;
@@ -1449,12 +1480,12 @@ l2tp_need_tcpmss_clamp(struct ifnet *ifp)
 #ifdef INET
 	if (ifp->if_tcpmss != 0)
 		ret = 1;
-#endif /* INET */
+#endif
 
 #ifdef INET6
 	if (ifp->if_tcpmss6 != 0)
 		ret = 1;
-#endif /* INET6 */
+#endif
 
 	return ret;
 }

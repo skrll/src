@@ -1,4 +1,4 @@
-/*	$NetBSD: partman.c,v 1.15 2017/01/12 17:38:08 christos Exp $ */
+/*	$NetBSD: partman.c,v 1.22 2018/05/18 12:23:22 joerg Exp $ */
 
 /*
  * Copyright 2012 Eugene Lozovoy
@@ -227,7 +227,7 @@ pm_edit(int menu_entries_count, void (*menu_fmt)(menudesc *, int, void *),
 			}
 		if (!ok) {
 			/* We do not have free device slots */
-			process_menu(MENU_ok, deconst(MSG_limitcount));
+			process_menu(MENU_ok, __UNCONST(MSG_limitcount));
 			return -1;
 		}
 	}
@@ -357,7 +357,7 @@ pm_manage_getfreenode(void *node, const char *d, structinfo_t *s)
 			return i;
 		}
 	}
-	process_menu(MENU_ok, deconst(MSG_nofreedev));
+	process_menu(MENU_ok, __UNCONST(MSG_nofreedev));
 	return -1;
 }
 
@@ -467,7 +467,7 @@ pm_raid_set_value(menudesc *m, void *arg)
 				dev_ptr->raid_level = retvalue;
 			return 0;
 		case PMR_MENU_NUMROW:
-			process_menu(MENU_ok, deconst(MSG_raid_nomultidim));
+			process_menu(MENU_ok, __UNCONST(MSG_raid_nomultidim));
 			return 0;
 #if 0 /* notyet */
 			msg_to_show = MSG_raid_numrow_ask;
@@ -889,7 +889,7 @@ pm_vnd_check(void *arg)
 	return dev_ptr->enabled;
 }
 
-/* XXX: vnconfig always return 0? */
+/* XXX: vndconfig always return 0? */
 static int
 pm_vnd_commit(void)
 {
@@ -941,12 +941,12 @@ pm_vnd_commit(void)
 		/* If this is a new image with manual geometry */
 		if (!vnds[i].is_exist && vnds[i].manual_geom)
 			error += run_program(RUN_DISPLAY | RUN_PROGRESS,
-						"vnconfig %s vnd%d %s %d %d %d %d", r_o, vnds[i].node,
+						"vndconfig %s vnd%d %s %d %d %d %d", r_o, vnds[i].node,
 						resultpath, vnds[i].secsize, vnds[i].nsectors,
 						vnds[i].ntracks, vnds[i].ncylinders);
 		/* If this is a existing image or image without manual geometry */
 		else
-			error += run_program(RUN_DISPLAY | RUN_PROGRESS, "vnconfig %s vnd%d %s",
+			error += run_program(RUN_DISPLAY | RUN_PROGRESS, "vndconfig %s vnd%d %s",
 						r_o, vnds[i].node, resultpath);
 
 		if (! error) {
@@ -1099,10 +1099,11 @@ pm_cgd_check(void *arg)
 		return 0;
 	if (dev_ptr->pm == NULL)
 		dev_ptr->enabled = 0;
-	else
+	else {
 		pm_manage_getfreenode(&(dev_ptr->node), "cgd", &cgds_t_info);
 		if (dev_ptr->node < 0)
 			dev_ptr->enabled = 0;
+	}
 	return dev_ptr->enabled;
 }
 
@@ -1172,7 +1173,7 @@ pm_cgd_commit(void)
 
 /* Add lvm logical volumes to pm list */
 /* XXX: rewrite */
-static int
+static void
 pm_lvm_find(void)
 {
 	int i, ii, already_found;
@@ -1212,7 +1213,6 @@ pm_lvm_find(void)
 			memset(pm_new, 0, sizeof *pm_new);
 		}
 	}
-	return 0;
 }
 
 static int
@@ -1748,7 +1748,7 @@ pm_wedges_fill(pm_devs_t *pm_cur)
 		if (pm_cur->bsdlabel[i].pi_fstype != FS_UNUSED) {
 			current = pm_wedge_getfree();
 			if (current < 0) {
-				process_menu(MENU_ok, deconst(MSG_limitcount));
+				process_menu(MENU_ok, __UNCONST(MSG_limitcount));
 				return;
 			}
 			wedges[current].pm = pm_cur;
@@ -2116,7 +2116,7 @@ pm_mountall(void)
 	
 	localfs_dev[0] = '\0';
 	if (mnts == NULL)
-		mnts = calloc(sizeof(*mnts), MAX_MNTS);
+		mnts = calloc(MAX_MNTS, sizeof(*mnts));
 
 	SLIST_FOREACH(pm_i, &pm_head, l) {
 		ok = 0;
@@ -2221,7 +2221,7 @@ pm_unconfigure(pm_devs_t *pm_cur)
 			((cgds_t*)pm_cur->refdev)->blocked = 0;
  		}
  	} else if (! strncmp(pm_cur->diskdev, "vnd", 3)) {
-		error = run_program(RUN_DISPLAY | RUN_PROGRESS, "vnconfig -u %s", pm_cur->diskdev);
+		error = run_program(RUN_DISPLAY | RUN_PROGRESS, "vndconfig -u %s", pm_cur->diskdev);
  		if (! error && pm_cur->refdev != NULL) {
 			((vnds_t*)pm_cur->refdev)->pm->blocked--;
 			((vnds_t*)pm_cur->refdev)->blocked = 0;
@@ -2608,7 +2608,8 @@ pm_upddevlist(menudesc *m, void *arg)
 			pm_i->found = 0;
 	/* Detect all present devices */
 	(void)find_disks("partman");
-	pm_lvm_find();
+	if (have_lvm)
+		pm_lvm_find();
 	pm_clean();
 
 	if (m == NULL || arg == NULL)
@@ -2710,7 +2711,7 @@ check_available_binaries()
 	did_test = 1;
 
 	have_raid = binary_available("raidctl");
-	have_vnd = binary_available("vnconfig");
+	have_vnd = binary_available("vndconfig");
 	have_cgd = binary_available("cgdconfig");
 	have_lvm = binary_available("lvm");
 	have_gpt = binary_available("gpt");
@@ -2731,23 +2732,23 @@ partman(void)
 
 		if (!have_raid)
 			remove_raid_options();
-		else if (!(raids = calloc(sizeof(*raids), MAX_RAID)))
+		else if (!(raids = calloc(MAX_RAID, sizeof(*raids))))
 			have_raid = 0;
 			
 #define remove_vnd_options() (void)0
 		if (!have_vnd)
 			remove_vnd_options();
-		else if (!(vnds = calloc(sizeof(*vnds), MAX_VND)))
+		else if (!(vnds = calloc(MAX_VND, sizeof(*vnds))))
 			have_vnd = 0;
 
 		if (!have_cgd)
 			remove_cgd_options();
-		else if (!(cgds = calloc(sizeof(*vnds), MAX_CGD)))
+		else if (!(cgds = calloc(MAX_CGD, sizeof(*cgds))))
 			have_cgd = 0;
 
 		if (!have_lvm)
 			remove_lvm_options();
-		else if (!(lvms = calloc(sizeof(*lvms), MAX_LVM_VG)))
+		else if (!(lvms = calloc(MAX_LVM_VG, sizeof(*lvms))))
 			have_lvm = 0;
 
 		if (!have_gpt)

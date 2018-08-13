@@ -1,4 +1,4 @@
-/*	$NetBSD: if_et.c,v 1.15 2017/07/29 01:47:48 riastradh Exp $	*/
+/*	$NetBSD: if_et.c,v 1.17 2018/06/26 06:48:01 msaitoh Exp $	*/
 /*	$OpenBSD: if_et.c,v 1.11 2008/06/08 06:18:07 jsg Exp $	*/
 /*
  * Copyright (c) 2007 The DragonFly Project.  All rights reserved.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_et.c,v 1.15 2017/07/29 01:47:48 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_et.c,v 1.17 2018/06/26 06:48:01 msaitoh Exp $");
 
 #include "opt_inet.h"
 #include "vlan.h"
@@ -1102,7 +1102,7 @@ et_start(struct ifnet *ifp)
 
 		trans = 1;
 
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 	}
 
 	if (trans) {
@@ -1224,8 +1224,7 @@ et_setmulti(struct et_softc *sc)
 			addr[i] &=  enm->enm_addrlo[i];
 		}
 
-		h = ether_crc32_be(LLADDR((struct sockaddr_dl *)addr),
-		    ETHER_ADDR_LEN);
+		h = ether_crc32_be(addr, ETHER_ADDR_LEN);
 		h = (h & 0x3f800000) >> 23;
 
 		hp = &hash[0];

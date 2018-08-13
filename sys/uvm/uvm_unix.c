@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_unix.c,v 1.48 2017/05/06 21:34:52 joerg Exp $	*/
+/*	$NetBSD: uvm_unix.c,v 1.50 2018/01/06 16:41:24 kamil Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -45,7 +45,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_unix.c,v 1.48 2017/05/06 21:34:52 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_unix.c,v 1.50 2018/01/06 16:41:24 kamil Exp $");
 
 #include "opt_pax.h"
 

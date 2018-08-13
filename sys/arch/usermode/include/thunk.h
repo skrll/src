@@ -1,4 +1,4 @@
-/* $NetBSD: thunk.h,v 1.62 2015/02/06 10:25:13 prlw1 Exp $ */
+/* $NetBSD: thunk.h,v 1.66 2018/08/01 09:46:46 reinoud Exp $ */
 
 /*-
  * Copyright (c) 2011 Jared D. McNeill <jmcneill@invisible.ca>
@@ -92,6 +92,7 @@ timer_t	thunk_timer_attach(void);
 int	thunk_timer_start(timer_t, int);
 int	thunk_timer_getoverrun(timer_t);
 
+void	thunk_kill(pid_t pid, int sig);
 void	thunk_exit(int);
 void	thunk_abort(void);
 
@@ -126,6 +127,11 @@ int	thunk_mkstemp(char *);
 int	thunk_unlink(const char *);
 pid_t	thunk_getpid(void);
 
+int	thunk_gdb_open(void);
+int	thunk_gdb_accept(int sockfd);
+int	thunk_kgdb_getc(int fd, char *ch);
+int	thunk_kgdb_putc(int fd, char ch);
+
 int	thunk_sigaction(int, const struct sigaction *, struct sigaction *);
 int	thunk_sigaltstack(const stack_t *, stack_t *);
 void	thunk_signal(int, void (*)(int));
@@ -136,6 +142,8 @@ int	thunk_sigfillset(sigset_t *sa_mask);
 void	thunk_sigaddset(sigset_t *sa_mask, int sig);
 int	thunk_sigprocmask(int how, const sigset_t * set, sigset_t *oset);
 int	thunk_atexit(void (*function)(void));
+pid_t	thunk_fork(void);
+int	thunk_ioctl(int fd, unsigned long request, void *opaque);
 
 int	thunk_aio_read(struct aiocb *);
 int	thunk_aio_write(struct aiocb *);
@@ -165,6 +173,8 @@ int	thunk_setown(int);
 int	thunk_open_tap(const char *);
 int	thunk_pollin_tap(int, int);
 int	thunk_pollout_tap(int, int);
+
+int	thunk_assert_presence(vaddr_t from, size_t size);
 
 typedef struct {
 	unsigned int		sample_rate;

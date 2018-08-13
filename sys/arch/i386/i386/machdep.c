@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.799 2017/11/11 12:51:06 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.808 2018/07/26 09:29:08 maxv Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2004, 2006, 2008, 2009, 2017
@@ -67,14 +67,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.799 2017/11/11 12:51:06 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.808 2018/07/26 09:29:08 maxv Exp $");
 
 #include "opt_beep.h"
 #include "opt_compat_freebsd.h"
 #include "opt_compat_netbsd.h"
 #include "opt_cpureset_delay.h"
 #include "opt_ddb.h"
-#include "opt_ipkdb.h"
 #include "opt_kgdb.h"
 #include "opt_mtrr.h"
 #include "opt_modular.h"
@@ -108,10 +107,6 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.799 2017/11/11 12:51:06 maxv Exp $");
 #include <sys/ras.h>
 #include <sys/ksyms.h>
 #include <sys/device.h>
-
-#ifdef IPKDB
-#include <ipkdb/ipkdb.h>
-#endif
 
 #ifdef KGDB
 #include <sys/kgdb.h>
@@ -217,8 +212,6 @@ int i386_fpu_fdivbug;
 int i386_use_fxsave;
 int i386_has_sse;
 int i386_has_sse2;
-
-struct pool x86_dbregspl;
 
 vaddr_t idt_vaddr;
 paddr_t idt_paddr;
@@ -453,8 +446,8 @@ cpu_startup(void)
 	gdt_init();
 	i386_proc0_pcb_ldt_init();
 
-#ifndef XEN
 	cpu_init_tss(&cpu_info_primary);
+#ifndef XEN
 	ltr(cpu_info_primary.ci_tss_sel);
 #endif
 
@@ -472,7 +465,7 @@ i386_proc0_pcb_ldt_init(void)
 
 	pcb->pcb_cr0 = rcr0() & ~CR0_TS;
 	pcb->pcb_esp0 = uvm_lwp_getuarea(l) + USPACE - 16;
-	pcb->pcb_iopl = SEL_KPL;
+	pcb->pcb_iopl = IOPL_KPL;
 	l->l_md.md_regs = (struct trapframe *)pcb->pcb_esp0 - 1;
 	memcpy(&pcb->pcb_fsd, &gdtstore[GUDATA_SEL], sizeof(pcb->pcb_fsd));
 	memcpy(&pcb->pcb_gsd, &gdtstore[GUDATA_SEL], sizeof(pcb->pcb_gsd));
@@ -569,7 +562,7 @@ tss_init(struct i386tss *tss, void *stack, void *func)
 
 extern vector IDTVEC(tss_trap08);
 #if defined(DDB) && defined(MULTIPROCESSOR)
-extern vector Xintrddbipi, Xx2apic_intrddbipi;
+extern vector Xintr_ddbipi, Xintr_x2apic_ddbipi;
 extern int ddb_vec;
 #endif
 
@@ -581,9 +574,9 @@ cpu_set_tss_gates(struct cpu_info *ci)
 
 	doubleflt_stack = (void *)uvm_km_alloc(kernel_map, USPACE, 0,
 	    UVM_KMF_WIRED);
-	tss_init(&ci->ci_doubleflt_tss, doubleflt_stack, IDTVEC(tss_trap08));
+	tss_init(&ci->ci_tss->dblflt_tss, doubleflt_stack, IDTVEC(tss_trap08));
 
-	setsegment(&sd, &ci->ci_doubleflt_tss, sizeof(struct i386tss) - 1,
+	setsegment(&sd, &ci->ci_tss->dblflt_tss, sizeof(struct i386tss) - 1,
 	    SDT_SYS386TSS, SEL_KPL, 0, 0);
 	ci->ci_gdt[GTRAPTSS_SEL].sd = sd;
 
@@ -602,10 +595,10 @@ cpu_set_tss_gates(struct cpu_info *ci)
 
 	ddbipi_stack = (void *)uvm_km_alloc(kernel_map, USPACE, 0,
 	    UVM_KMF_WIRED);
-	tss_init(&ci->ci_ddbipi_tss, ddbipi_stack,
-	    x2apic_mode ? Xx2apic_intrddbipi : Xintrddbipi);
+	tss_init(&ci->ci_tss->ddbipi_tss, ddbipi_stack,
+	    x2apic_mode ? Xintr_x2apic_ddbipi : Xintr_ddbipi);
 
-	setsegment(&sd, &ci->ci_ddbipi_tss, sizeof(struct i386tss) - 1,
+	setsegment(&sd, &ci->ci_tss->ddbipi_tss, sizeof(struct i386tss) - 1,
 	    SDT_SYS386TSS, SEL_KPL, 0, 0);
 	ci->ci_gdt[GIPITSS_SEL].sd = sd;
 
@@ -613,6 +606,7 @@ cpu_set_tss_gates(struct cpu_info *ci)
 	    GSEL(GIPITSS_SEL, SEL_KPL));
 #endif
 }
+#endif /* XEN */
 
 /*
  * Set up TSS and I/O bitmap.
@@ -620,15 +614,23 @@ cpu_set_tss_gates(struct cpu_info *ci)
 void
 cpu_init_tss(struct cpu_info *ci)
 {
-	struct i386tss *tss = &ci->ci_tss;
+	struct cpu_tss *cputss;
 
-	tss->tss_iobase = IOMAP_INVALOFF << 16;
-	tss->tss_ss0 = GSEL(GDATA_SEL, SEL_KPL);
-	tss->tss_ldt = GSEL(GLDT_SEL, SEL_KPL);
-	tss->tss_cr3 = rcr3();
-	ci->ci_tss_sel = tss_alloc(tss);
+	cputss = (struct cpu_tss *)uvm_km_alloc(kernel_map,
+	    sizeof(struct cpu_tss), 0, UVM_KMF_WIRED|UVM_KMF_ZERO);
+
+	cputss->tss.tss_iobase = IOMAP_INVALOFF << 16;
+#ifndef XEN
+	cputss->tss.tss_ss0 = GSEL(GDATA_SEL, SEL_KPL);
+	cputss->tss.tss_ldt = GSEL(GLDT_SEL, SEL_KPL);
+	cputss->tss.tss_cr3 = rcr3();
+#endif
+
+	ci->ci_tss = cputss;
+#ifndef XEN
+	ci->ci_tss_sel = tss_alloc(&cputss->tss);
+#endif
 }
-#endif /* XEN */
 
 void *
 getframe(struct lwp *l, int sig, int *onstack)
@@ -870,10 +872,8 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 
 	memcpy(&pcb->pcb_fsd, &gdtstore[GUDATA_SEL], sizeof(pcb->pcb_fsd));
 	memcpy(&pcb->pcb_gsd, &gdtstore[GUDATA_SEL], sizeof(pcb->pcb_gsd));
-	if (pcb->pcb_dbregs != NULL) {
-		pool_put(&x86_dbregspl, pcb->pcb_dbregs);
-		pcb->pcb_dbregs = NULL;
-	}
+
+	x86_dbregs_clear(l);
 
 	tf = l->l_md.md_regs;
 	tf->tf_gs = GSEL(GUGS_SEL, SEL_UPL);
@@ -1164,6 +1164,9 @@ init386(paddr_t first_avail)
 
 	cpu_probe(&cpu_info_primary);
 	cpu_init_msrs(&cpu_info_primary, true);
+#ifndef XEN
+	cpu_speculation_init(&cpu_info_primary);
+#endif
 
 #ifdef PAE
 	use_pae = 1;
@@ -1418,11 +1421,6 @@ init386(paddr_t first_avail)
 	if (boothowto & RB_KDB)
 		Debugger();
 #endif
-#ifdef IPKDB
-	ipkdb_init();
-	if (boothowto & RB_KDB)
-		ipkdb_connect(0);
-#endif
 #ifdef KGDB
 	kgdb_port_init();
 	if (boothowto & RB_KDB) {
@@ -1441,11 +1439,7 @@ init386(paddr_t first_avail)
 	}
 
 	pcb->pcb_dbregs = NULL;
-
-	x86_dbregs_setup_initdbstate();
-
-	pool_init(&x86_dbregspl, sizeof(struct dbreg), 16, 0, 0, "dbregs",
-	    NULL, IPL_NONE);
+	x86_dbregs_init();
 }
 
 #include <dev/ic/mc146818reg.h>		/* for NVRAM POST */

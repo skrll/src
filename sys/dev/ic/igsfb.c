@@ -1,4 +1,4 @@
-/*	$NetBSD: igsfb.c,v 1.56 2017/01/25 17:31:55 jakllsch Exp $ */
+/*	$NetBSD: igsfb.c,v 1.58 2018/03/14 18:58:32 maya Exp $ */
 
 /*
  * Copyright (c) 2002, 2003 Valeriy E. Ushakov
@@ -31,7 +31,7 @@
  * Integraphics Systems IGA 168x and CyberPro series.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: igsfb.c,v 1.56 2017/01/25 17:31:55 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: igsfb.c,v 1.58 2018/03/14 18:58:32 maya Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -812,9 +812,10 @@ igsfb_update_cmap(struct igsfb_devconfig *dc, u_int index, u_int count)
 	if (index >= IGS_CMAP_SIZE)
 		return;
 
-	last = index + count;
-	if (last > IGS_CMAP_SIZE)
+	if (count > IGS_CMAP_SIZE - index)
 		last = IGS_CMAP_SIZE;
+	else
+		last = index + count;
 
 	t = dc->dc_iot;
 	h = dc->dc_ioh;
@@ -1000,7 +1001,7 @@ igsfb_set_cursor(struct igsfb_devconfig *dc, const struct wsdisplay_cursor *p)
 		/* clear trailing bits in the "partial" mask bytes */
 		trailing_bits = p->size.x & 0x07;
 		if (trailing_bits != 0) {
-			const u_int cutmask = ~((~0) << trailing_bits);
+			const u_int cutmask = ~((~0U) << trailing_bits);
 			u_char *mp;
 			u_int i;
 

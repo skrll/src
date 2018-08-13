@@ -1,4 +1,4 @@
-/*	$NetBSD: wd.c,v 1.436 2017/11/07 04:09:08 mlelstv Exp $ */
+/*	$NetBSD: wd.c,v 1.440 2018/08/06 20:07:05 jdolecek Exp $ */
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.  All rights reserved.
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wd.c,v 1.436 2017/11/07 04:09:08 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wd.c,v 1.440 2018/08/06 20:07:05 jdolecek Exp $");
 
 #include "opt_ata.h"
 #include "opt_wd.h"
@@ -535,12 +535,12 @@ wddetach(device_t self, int flags)
 
 #ifdef WD_SOFTBADSECT
 	/* Clean out the bad sector list */
-	while (!SLIST_EMPTY(&sc->sc_bslist)) {
-		void *head = SLIST_FIRST(&sc->sc_bslist);
-		SLIST_REMOVE_HEAD(&sc->sc_bslist, dbs_next);
+	while (!SLIST_EMPTY(&wd->sc_bslist)) {
+		void *head = SLIST_FIRST(&wd->sc_bslist);
+		SLIST_REMOVE_HEAD(&wd->sc_bslist, dbs_next);
 		free(head, M_TEMP);
 	}
-	sc->sc_bscount = 0;
+	wd->sc_bscount = 0;
 #endif
 
 	pmf_device_deregister(self);
@@ -585,12 +585,23 @@ wdstrategy(struct buf *bp)
 	 * up failing again.
 	 */
 	if (__predict_false(!SLIST_EMPTY(&wd->sc_bslist))) {
+		struct disklabel *lp = dksc->sc_dkdev.dk_label;
 		struct disk_badsectors *dbs;
-		daddr_t maxblk = blkno + (bp->b_bcount / wd->sc_blksize) - 1;
+		daddr_t blkno, maxblk;
+
+		/* convert the block number to absolute */
+		if (lp->d_secsize >= DEV_BSIZE)
+			blkno = bp->b_blkno / (lp->d_secsize / DEV_BSIZE);
+		else
+			blkno = bp->b_blkno * (DEV_BSIZE / lp->d_secsize);
+		if (WDPART(bp->b_dev) != RAW_PART)
+			blkno += lp->d_partitions[WDPART(bp->b_dev)].p_offset;
+		maxblk = blkno + (bp->b_bcount / wd->sc_blksize) - 1;
 
 		mutex_enter(&wd->sc_lock);
 		SLIST_FOREACH(dbs, &wd->sc_bslist, dbs_next)
-			if ((dbs->dbs_min <= blkno && blkno <= dbs->dbs_max) ||
+			if ((dbs->dbs_min <= bp->b_rawblkno &&
+			     bp->b_rawblkno <= dbs->dbs_max) ||
 			    (dbs->dbs_min <= maxblk && maxblk <= dbs->dbs_max)){
 				mutex_exit(&wd->sc_lock);
 				goto err;
@@ -754,6 +765,8 @@ wdstart(device_t self)
 	if (!device_is_active(dksc->sc_dev))
 		return;
 
+	mutex_enter(&wd->sc_lock);
+
 	/*
 	 * Do not queue any transfers until flush is finished, so that
 	 * once flush is pending, it will get handled as soon as xfer
@@ -762,8 +775,11 @@ wdstart(device_t self)
 	if (ISSET(wd->sc_flags, WDF_FLUSH_PEND)) {
 		ATADEBUG_PRINT(("wdstart %s flush pend\n",
 		    dksc->sc_xname), DEBUG_XFERS);
+		mutex_exit(&wd->sc_lock);
 		return;
 	}
+
+	mutex_exit(&wd->sc_lock);
 
 	dk_start(dksc, NULL);
 }
@@ -2146,3 +2162,26 @@ wd_sysctl_detach(struct wd_softc *wd)
 	sysctl_teardown(&wd->nodelog);
 }
 
+#ifdef ATADEBUG
+int wddebug(void);
+
+int
+wddebug(void)
+{
+	struct wd_softc *wd;
+	  struct dk_softc *dksc;
+	  int unit;
+
+	  for (unit = 0; unit <= 3; unit++) {
+		    wd = device_lookup_private(&wd_cd, unit);
+		    if (wd == NULL)
+				continue;
+		    dksc = &wd->sc_dksc;
+		printf("%s fl %x bufq %p:\n",
+		    dksc->sc_xname, wd->sc_flags, bufq_peek(dksc->sc_bufq));
+
+		atachannel_debug(wd->drvp->chnl_softc);
+	}
+	return 0;
+}
+#endif /* ATADEBUG */

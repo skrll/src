@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ipw.c,v 1.66 2017/10/23 09:31:18 msaitoh Exp $	*/
+/*	$NetBSD: if_ipw.c,v 1.69 2018/06/26 06:48:01 msaitoh Exp $	*/
 /*	FreeBSD: src/sys/dev/ipw/if_ipw.c,v 1.15 2005/11/13 17:17:40 damien Exp 	*/
 
 /*-
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ipw.c,v 1.66 2017/10/23 09:31:18 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ipw.c,v 1.69 2018/06/26 06:48:01 msaitoh Exp $");
 
 /*-
  * Intel(R) PRO/Wireless 2100 MiniPCI driver
@@ -132,12 +132,6 @@ static void	ipw_read_mem_1(struct ipw_softc *, bus_size_t, uint8_t *,
     bus_size_t);
 static void	ipw_write_mem_1(struct ipw_softc *, bus_size_t, uint8_t *,
     bus_size_t);
-
-/*
- * Supported rates for 802.11b mode (in 500Kbps unit).
- */
-static const struct ieee80211_rateset ipw_rateset_11b =
-	{ 4, { 2, 4, 11, 22 } };
 
 static inline uint8_t
 MEM_READ_1(struct ipw_softc *sc, uint32_t addr)
@@ -282,7 +276,7 @@ ipw_attach(device_t parent, device_t self, void *aux)
 	ic->ic_myaddr[5] = val & 0xff;
 
 	/* set supported .11b rates */
-	ic->ic_sup_rates[IEEE80211_MODE_11B] = ipw_rateset_11b;
+	ic->ic_sup_rates[IEEE80211_MODE_11B] = ieee80211_std_rateset_11b;
 
 	/* set supported .11b channels (read from EEPROM) */
 	if ((val = ipw_read_prom_word(sc, IPW_EEPROM_CHANNEL_LIST)) == 0)
@@ -1001,12 +995,13 @@ ipw_fix_channel(struct ieee80211com *ic, struct mbuf *m)
 	efrm = mtod(m, uint8_t *) + m->m_len;
 
 	frm += 12;	/* skip tstamp, bintval and capinfo fields */
-	while (frm < efrm) {
-		if (*frm == IEEE80211_ELEMID_DSPARMS)
+	while (frm + 2 < efrm) {
+		if (*frm == IEEE80211_ELEMID_DSPARMS) {
 #if IEEE80211_CHAN_MAX < 255
-		if (frm[2] <= IEEE80211_CHAN_MAX)
+			if (frm[2] <= IEEE80211_CHAN_MAX)
 #endif
-			ic->ic_curchan = &ic->ic_channels[frm[2]];
+				ic->ic_curchan = &ic->ic_channels[frm[2]];
+		}
 
 		frm += frm[1] + 2;
 	}
@@ -1094,7 +1089,7 @@ ipw_data_intr(struct ipw_softc *sc, struct ipw_status *status,
 
 		tap->wr_antsignal = status->rssi;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m, BPF_D_IN);
 	}
 
 	if (ic->ic_state == IEEE80211_S_SCAN)
@@ -1383,7 +1378,7 @@ ipw_tx_start(struct ifnet *ifp, struct mbuf *m0, struct ieee80211_node *ni)
 	if (sc->sc_drvbpf != NULL) {
 		struct ipw_tx_radiotap_header *tap = &sc->sc_txtap;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0, BPF_D_OUT);
 	}
 
 	shdr = TAILQ_FIRST(&sc->sc_free_shdr);
@@ -1551,7 +1546,7 @@ ipw_start(struct ifnet *ifp)
 			continue;
 		}
 
-		bpf_mtap(ifp, m0);
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 
 		m0 = ieee80211_encap(ic, m0, ni);
 		if (m0 == NULL) {
@@ -1559,7 +1554,7 @@ ipw_start(struct ifnet *ifp)
 			continue;
 		}
 
-		bpf_mtap3(ic->ic_rawbpf, m0);
+		bpf_mtap3(ic->ic_rawbpf, m0, BPF_D_OUT);
 
 		if (ipw_tx_start(ifp, m0, ni) != 0) {
 			ieee80211_free_node(ni);

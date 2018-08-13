@@ -1,4 +1,4 @@
-/*	$NetBSD: gtmr.c,v 1.23 2017/11/30 14:50:34 skrll Exp $	*/
+/*	$NetBSD: gtmr.c,v 1.32 2018/06/30 17:30:37 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gtmr.c,v 1.23 2017/11/30 14:50:34 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gtmr.c,v 1.32 2018/06/30 17:30:37 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -45,10 +45,50 @@ __KERNEL_RCSID(0, "$NetBSD: gtmr.c,v 1.23 2017/11/30 14:50:34 skrll Exp $");
 #include <prop/proplib.h>
 
 #include <arm/locore.h>
+#include <arm/cpufunc.h>
 
 #include <arm/cortex/gtmr_var.h>
-
 #include <arm/cortex/mpcore_var.h>
+
+#define stable_write(reg) \
+static struct evcnt reg ## _write_ev; \
+static void \
+reg ## _stable_write(struct gtmr_softc *sc, uint64_t val) \
+{ \
+	int retry; \
+	reg ## _write(val); \
+	retry = 0; \
+	while (reg ## _read() != (val) && retry++ < 200) \
+		reg ## _write(val); \
+	if (retry > reg ## _write_ev.ev_count) { \
+		reg ## _write_ev.ev_count = retry; \
+	} \
+}
+
+stable_write(gtmr_cntv_tval);
+
+#define stable_read(reg) \
+static struct evcnt reg ## _read_ev; \
+static uint64_t \
+reg ## _stable_read(struct gtmr_softc *sc) \
+{ \
+	uint64_t oval, val; \
+	int retry = 0; \
+	val = reg ## _read(); \
+	while (++retry < 200) { \
+		oval = val; \
+		val = reg ## _read(); \
+		if (val == oval) \
+			break; \
+	} \
+	if (retry > reg ## _read_ev.ev_count) { \
+		reg ## _read_ev.ev_count = retry; \
+	} \
+	return val; \
+}
+
+stable_read(gtmr_cntv_cval);
+stable_read(gtmr_cntvct);
 
 static int gtmr_match(device_t, cfdata_t, void *);
 static void gtmr_attach(device_t, device_t, void *);
@@ -83,7 +123,8 @@ gtmr_match(device_t parent, cfdata_t cf, void *aux)
 	if (gtmr_sc.sc_dev != NULL)
 		return 0;
 
-	if ((armreg_pfr1_read() & ARM_PFR1_GTIMER_MASK) == 0)
+	/* Genertic Timer is always implemented in ARMv8-A */
+	if (!cpu_gtmr_exists_p())
 		return 0;
 
 	if (strcmp(mpcaa->mpcaa_name, cf->cf_name) != 0)
@@ -104,20 +145,20 @@ gtmr_attach(device_t parent, device_t self, void *aux)
 	 * This runs at a fixed frequency of 1 to 50MHz.
 	 */
 	if (!prop_dictionary_get_uint32(dict, "frequency", &sc->sc_freq))
-		sc->sc_freq = armreg_cnt_frq_read();
+		sc->sc_freq = gtmr_cntfrq_read();
 
 	KASSERT(sc->sc_freq != 0);
 
 	humanize_number(freqbuf, sizeof(freqbuf), sc->sc_freq, "Hz", 1000);
 
 	aprint_naive("\n");
-	aprint_normal(": ARMv7 Generic 64-bit Timer (%s)\n", freqbuf);
+	aprint_normal(": ARM Generic Timer (%s)\n", freqbuf);
 
 	/*
 	 * Enable the virtual counter to be accessed from usermode.
 	 */
-	armreg_cntk_ctl_write(armreg_cntk_ctl_read() |
-	    ARM_CNTKCTL_PL0VCTEN | ARM_CNTKCTL_PL0PCTEN);
+	gtmr_cntk_ctl_write(gtmr_cntk_ctl_read() |
+	    CNTKCTL_PL0VCTEN | CNTKCTL_PL0PCTEN);
 
 	self->dv_private = sc;
 	sc->sc_dev = self;
@@ -129,6 +170,13 @@ gtmr_attach(device_t parent, device_t self, void *aux)
 	evcnt_attach_dynamic(&sc->sc_ev_missing_ticks, EVCNT_TYPE_MISC, NULL,
 	    device_xname(self), "missing interrupts");
 
+	evcnt_attach_dynamic(&gtmr_cntv_tval_write_ev, EVCNT_TYPE_MISC, NULL,
+	    device_xname(self), "CNTV_TVAL write retry max");
+	evcnt_attach_dynamic(&gtmr_cntv_cval_read_ev, EVCNT_TYPE_MISC, NULL,
+	    device_xname(self), "CNTV_CVAL read retry max");
+	evcnt_attach_dynamic(&gtmr_cntvct_read_ev, EVCNT_TYPE_MISC, NULL,
+	    device_xname(self), "CNTVCT read retry max");
+
 	if (mpcaa->mpcaa_irq != -1) {
 		sc->sc_global_ih = intr_establish(mpcaa->mpcaa_irq, IPL_CLOCK,
 		    IST_LEVEL | IST_MPSAFE, gtmr_intr, NULL);
@@ -138,7 +186,7 @@ gtmr_attach(device_t parent, device_t self, void *aux)
 		    mpcaa->mpcaa_irq);
 	}
 
-	const uint32_t cnt_frq = armreg_cnt_frq_read();
+	const uint32_t cnt_frq = gtmr_cntfrq_read();
 	if (cnt_frq == 0) {
 		aprint_verbose_dev(self, "cp15 CNT_FRQ not set\n");
 	} else if (cnt_frq != sc->sc_freq) {
@@ -149,12 +197,12 @@ gtmr_attach(device_t parent, device_t self, void *aux)
 
 	gtmr_timecounter.tc_name = device_xname(sc->sc_dev);
 	gtmr_timecounter.tc_frequency = sc->sc_freq;
+	gtmr_timecounter.tc_priv = sc;
 
 	tc_init(&gtmr_timecounter);
 
 	/* Disable the timer until we are ready */
-	armreg_cntv_ctl_write(0);
-	armreg_cntp_ctl_write(0);
+	gtmr_cntv_ctl_write(0);
 }
 
 void
@@ -169,59 +217,16 @@ gtmr_init_cpu_clock(struct cpu_info *ci)
 	/*
 	 * enable timer and stop masking the timer.
 	 */
-	armreg_cntv_ctl_write(ARM_CNTCTL_ENABLE);
-	armreg_cntp_ctl_write(ARM_CNTCTL_ENABLE);
-#if 0
-	printf("%s: cntctl=%#x\n", __func__, armreg_cntv_ctl_read());
-#endif
+	gtmr_cntv_ctl_write(CNTCTL_ENABLE);
 
 	/*
 	 * Get now and update the compare timer.
 	 */
 	arm_isb();
-	ci->ci_lastintr = armreg_cntv_ct_read();
-	armreg_cntv_tval_write(sc->sc_autoinc);
-#if 0
-	printf("%s: %s: delta cval = %"PRIu64"\n",
-	    __func__, ci->ci_data.cpu_name,
-	    armreg_cntv_cval_read() - ci->ci_lastintr);
-#endif
+	ci->ci_lastintr = gtmr_cntvct_stable_read(sc);
+	gtmr_cntv_tval_stable_write(sc, sc->sc_autoinc);
 	splx(s);
-	KASSERT(armreg_cntv_ct_read() != 0);
-#if 0
-	printf("%s: %s: ctl %#x cmp %#"PRIx64" now %#"PRIx64"\n",
-	    __func__, ci->ci_data.cpu_name, armreg_cntv_ctl_read(),
-	    armreg_cntv_cval_read(), armreg_cntv_ct_read());
-
-	s = splsched();
-
-	arm_isb();
-	uint64_t now64;
-	uint64_t start64 = armreg_cntv_ct_read();
-	do {
-		arm_isb();
-		now64 = armreg_cntv_ct_read();
-	} while (start64 == now64);
-	start64 = now64;
-	uint64_t end64 = start64 + 64;
-	uint32_t start32 = armreg_pmccntr_read();
-	do {
-		arm_isb();
-		now64 = armreg_cntv_ct_read();
-	} while (end64 != now64);
-	uint32_t end32 = armreg_pmccntr_read();
-
-	uint32_t diff32 = end64 - start64;
-	printf("%s: %s: %u cycles per tick\n",
-	    __func__, ci->ci_data.cpu_name, (end32 - start32) / diff32);
-
-	printf("%s: %s: status %#x cmp %#"PRIx64" now %#"PRIx64"\n",
-	    __func__, ci->ci_data.cpu_name, armreg_cntv_ctl_read(),
-	    armreg_cntv_cval_read(), armreg_cntv_ct_read());
-	splx(s);
-#elif 0
-	delay(1000000 / hz + 1000);
-#endif
+	KASSERT(gtmr_cntvct_read() != 0);
 }
 
 void
@@ -244,46 +249,24 @@ gtmr_delay(unsigned int n)
 
 	KASSERT(sc != NULL);
 
-	uint32_t freq = sc->sc_freq ? sc->sc_freq : armreg_cnt_frq_read();
+	uint32_t freq = sc->sc_freq ? sc->sc_freq : gtmr_cntfrq_read();
 	KASSERT(freq != 0);
 
 	const unsigned int incr_per_us = howmany(freq, 1000000);
-	unsigned int delta = 0, usecs = 0;
+	int64_t ticks = (int64_t)n * incr_per_us;
 
 	arm_isb();
-	uint64_t last = armreg_cntp_ct_read();
+	uint64_t last = gtmr_cntvct_stable_read(sc);
 
-	while (n > usecs) {
+	while (ticks > 0) {
 		arm_isb();
-		uint64_t curr = armreg_cntp_ct_read();
-		if (curr < last)
-			delta += curr + (UINT64_MAX - last);
+		uint64_t curr = gtmr_cntvct_stable_read(sc);
+		if (curr >= last)
+			ticks -= (curr - last);
 		else
-			delta += curr - last;
-
+			ticks -= (UINT64_MAX - curr + last);
 		last = curr;
-		if (delta >= incr_per_us) {
-			usecs += delta / incr_per_us;
-			delta %= incr_per_us;
-		}
 	}
-}
-
-void
-gtmr_bootdelay(unsigned int ticks)
-{
-	const uint32_t ctl = armreg_cntv_ctl_read();
-	armreg_cntv_ctl_write(ctl | ARM_CNTCTL_ENABLE | ARM_CNTCTL_IMASK);
-
-	/* Write Timer/Value to set new compare time */
-	armreg_cntv_tval_write(ticks);
-
-	/* Spin until compare time is hit */
-	while ((armreg_cntv_ctl_read() & ARM_CNTCTL_ISTATUS) == 0) {
-		/* spin */
-	}
-
-	armreg_cntv_ctl_write(ctl);
 }
 
 /*
@@ -300,25 +283,21 @@ gtmr_intr(void *arg)
 
 	arm_isb();
 
-	const uint32_t ctl = armreg_cntv_ctl_read();
-	if ((ctl & ARM_CNTCTL_ISTATUS) == 0)
+	const uint32_t ctl = gtmr_cntv_ctl_read();
+	if ((ctl & CNTCTL_ISTATUS) == 0)
 		return 0;
 
-	const uint64_t now = armreg_cntv_ct_read();
+	const uint64_t now = gtmr_cntvct_stable_read(sc);
 	uint64_t delta = now - ci->ci_lastintr;
 
 #ifdef DIAGNOSTIC
-	const uint64_t then = armreg_cntv_cval_read();
+	const uint64_t then = gtmr_cntv_cval_stable_read(sc);
 	struct gtmr_percpu * const pc = percpu_getref(sc->sc_percpu);
 	KASSERTMSG(then <= now, "%"PRId64, now - then);
 	KASSERTMSG(then + pc->pc_delta >= ci->ci_lastintr + sc->sc_autoinc,
 	    "%"PRId64, then + pc->pc_delta - ci->ci_lastintr - sc->sc_autoinc);
 #endif
 
-#if 0
-	printf("%s(%p): %s: now %#"PRIx64" delta %"PRIu64"\n",
-	     __func__, cf, ci->ci_data.cpu_name, now, delta);
-#endif
 	KASSERTMSG(delta > sc->sc_autoinc / 100,
 	    "%s: interrupting too quickly (delta=%"PRIu64") autoinc=%lu",
 	    ci->ci_data.cpu_name, delta, sc->sc_autoinc);
@@ -333,7 +312,7 @@ gtmr_intr(void *arg)
 	} else {
 		delta = 0;
 	}
-	armreg_cntv_tval_write(sc->sc_autoinc - delta);
+	gtmr_cntv_tval_stable_write(sc, sc->sc_autoinc - delta);
 
 	ci->ci_lastintr = now;
 
@@ -358,6 +337,7 @@ setstatclockrate(int newhz)
 static u_int
 gtmr_get_timecount(struct timecounter *tc)
 {
+	struct gtmr_softc * const sc = tc->tc_priv;
 	arm_isb();	// we want the time NOW, not some instructions later.
-	return (u_int) armreg_cntp_ct_read();
+	return (u_int) gtmr_cntvct_stable_read(sc);
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: hdafg.c,v 1.13 2017/08/04 00:25:23 mrg Exp $ */
+/* $NetBSD: hdafg.c,v 1.15 2018/02/14 18:28:43 maya Exp $ */
 
 /*
  * Copyright (c) 2009 Precedence Technologies Ltd <support@precedence.co.uk>
@@ -60,7 +60,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hdafg.c,v 1.13 2017/08/04 00:25:23 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hdafg.c,v 1.15 2018/02/14 18:28:43 maya Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -1265,10 +1265,6 @@ hdafg_control_parse(struct hdafg_softc *sc)
 
 	cnt = 0;
 	for (i = sc->sc_startnode; cnt < maxctls && i < sc->sc_endnode; i++) {
-		if (cnt >= maxctls) {
-			hda_error(sc, "ctl overflow\n");
-			break;
-		}
 		w = hdafg_widget_lookup(sc, i);
 		if (w == NULL || w->w_enable == false)
 			continue;
@@ -4058,7 +4054,7 @@ hdafg_getdev(void *opaque, struct audio_device *audiodev)
 	    sc->sc_vendor);
 	hdaudio_findproduct(audiodev->version, sizeof(audiodev->version),
 	    sc->sc_vendor, sc->sc_product);
-	snprintf(audiodev->config, sizeof(audiodev->config) - 1,
+	snprintf(audiodev->config, sizeof(audiodev->config),
 	    "%02Xh", sc->sc_nid);
 
 	return 0;

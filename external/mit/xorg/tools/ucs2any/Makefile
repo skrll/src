@@ -1,8 +1,6 @@
-#	$NetBSD: Makefile,v 1.2 2008/09/13 21:37:07 hubertf Exp $
+#	$NetBSD: Makefile,v 1.4 2018/05/01 19:59:44 christos Exp $
 
-NOMAN=		1
-
-.include <bsd.own.mk>
+.include <bsd.hostinit.mk>
 
 HOSTPROG=	ucs2any
 .PATH:		${X11SRCDIR.font-util}

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urndis.c,v 1.16 2017/06/01 02:45:12 chs Exp $ */
+/*	$NetBSD: if_urndis.c,v 1.18 2018/06/26 06:48:02 msaitoh Exp $ */
 /*	$OpenBSD: if_urndis.c,v 1.31 2011/07/03 15:47:17 matthew Exp $ */
 
 /*
@@ -21,7 +21,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urndis.c,v 1.16 2017/06/01 02:45:12 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urndis.c,v 1.18 2018/06/26 06:48:02 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -836,9 +836,6 @@ urndis_decap(struct urndis_softc *sc, struct urndis_chain *c, uint32_t len)
 		if (urndis_newbuf(sc, c) == ENOBUFS) {
 			ifp->if_ierrors++;
 		} else {
-
-			bpf_mtap(ifp, m);
-
 			if_percpuq_enqueue(sc->urndis_ipq, m);
 		}
 		splx(s);
@@ -891,7 +888,7 @@ urndis_rx_list_init(struct urndis_softc *sc)
 
 		if (c->sc_xfer == NULL) {
 			int err = usbd_create_xfer(sc->sc_bulkin_pipe,
-			    RNDIS_BUFSZ, USBD_SHORT_XFER_OK, 0, &c->sc_xfer);
+			    RNDIS_BUFSZ, 0, 0, &c->sc_xfer);
 			if (err)
 				return err;
 			c->sc_buf = usbd_get_buffer(c->sc_xfer);
@@ -1173,7 +1170,7 @@ urndis_start_locked(struct ifnet *ifp)
 	 * If there's a BPF listener, bounce a copy of this frame
 	 * to him.
 	 */
-	bpf_mtap(ifp, m_head);
+	bpf_mtap(ifp, m_head, BPF_D_OUT);
 
 	ifp->if_flags |= IFF_OACTIVE;
 

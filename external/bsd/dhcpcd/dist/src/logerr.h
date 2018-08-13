@@ -1,6 +1,6 @@
 /*
  * logerr: errx with logging
- * Copyright (c) 2006-2017 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2018 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -34,7 +34,7 @@
 #if __GNUC__ > 2 || defined(__INTEL_COMPILER)
 #define	__printflike(a, b) __attribute__((format(printf, a, b)))
 #else
-#define	__printflike
+#define	__printflike(a, b)
 #endif
 #endif /* !__printflike */
 

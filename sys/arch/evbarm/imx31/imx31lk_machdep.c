@@ -1,4 +1,4 @@
-/* $NetBSD: imx31lk_machdep.c,v 1.19 2016/12/22 14:47:55 cherry Exp $ */
+/* $NetBSD: imx31lk_machdep.c,v 1.22 2018/07/31 06:46:26 skrll Exp $ */
 
 /*
  * Startup routines for the ZOOM iMX31 LITEKIT.
@@ -110,11 +110,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx31lk_machdep.c,v 1.19 2016/12/22 14:47:55 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx31lk_machdep.c,v 1.22 2018/07/31 06:46:26 skrll Exp $");
 
+#include "opt_arm_debug.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
-#include "opt_ipkdb.h"
 #include "opt_pmap_debug.h"
 #include "opt_md.h"
 #include "opt_com.h"
@@ -417,7 +417,7 @@ initarm(void *arg)
 
 #ifdef VERBOSE_INIT_ARM
 	/* Tell the user about the memory */
-	printf("physmemory: %d pages at 0x%08lx -> 0x%08lx\n", physmem,
+	printf("physmemory: %"PRIuPSIZE" pages at 0x%08lx -> 0x%08lx\n", physmem,
 	    physical_start, physical_end - 1);
 #endif
 
@@ -703,13 +703,6 @@ printf("%s: textsize %#lx, totalsize %#lx\n",
 
 #ifdef __HAVE_MEMORY_DISK__
 	md_root_setconf(memory_disk, sizeof memory_disk);
-#endif
-
-#ifdef IPKDB
-	/* Initialise ipkdb */
-	ipkdb_init();
-	if (boothowto & RB_KDB)
-		ipkdb_connect(0);
 #endif
 
 #ifdef KGDB

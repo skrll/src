@@ -1,4 +1,4 @@
-/*	$NetBSD: route.c,v 1.201 2017/09/25 04:15:33 ozaki-r Exp $	*/
+/*	$NetBSD: route.c,v 1.211 2018/07/12 02:26:04 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.201 2017/09/25 04:15:33 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.211 2018/07/12 02:26:04 ozaki-r Exp $");
 
 #include <sys/param.h>
 #ifdef RTFLUSH_DEBUG
@@ -130,6 +130,8 @@ __KERNEL_RCSID(0, "$NetBSD: route.c,v 1.201 2017/09/25 04:15:33 ozaki-r Exp $");
 #include <netinet/in.h>
 #include <netinet/in_var.h>
 
+#define	PRESERVED_RTF	(RTF_UP | RTF_GATEWAY | RTF_HOST | RTF_DONE | RTF_MASK)
+
 #ifdef RTFLUSH_DEBUG
 #define	rtcache_debug() __predict_false(_rtcache_debug)
 #else /* RTFLUSH_DEBUG */
@@ -143,7 +145,7 @@ __KERNEL_RCSID(0, "$NetBSD: route.c,v 1.201 2017/09/25 04:15:33 ozaki-r Exp $");
 #define RT_REFCNT_TRACE(rt)	do {} while (0)
 #endif
 
-#ifdef DEBUG
+#ifdef RT_DEBUG
 #define dlog(level, fmt, args...)	log(level, fmt, ##args)
 #else
 #define dlog(level, fmt, args...)	do {} while (0)
@@ -224,13 +226,13 @@ static krwlock_t		rt_lock __cacheline_aligned;
 #define RT_RLOCK()		rw_enter(&rt_lock, RW_READER)
 #define RT_WLOCK()		rw_enter(&rt_lock, RW_WRITER)
 #define RT_UNLOCK()		rw_exit(&rt_lock)
-#define RT_LOCKED()		rw_lock_held(&rt_lock)
+#define RT_WLOCKED()		rw_write_held(&rt_lock)
 #define	RT_ASSERT_WLOCK()	KASSERT(rw_write_held(&rt_lock))
 #else
 #define RT_RLOCK()		do {} while (0)
 #define RT_WLOCK()		do {} while (0)
 #define RT_UNLOCK()		do {} while (0)
-#define RT_LOCKED()		false
+#define RT_WLOCKED()		true
 #define	RT_ASSERT_WLOCK()	do {} while (0)
 #endif
 
@@ -255,7 +257,8 @@ static struct {
 	struct workqueue	*wq;
 	struct work		wk;
 	kmutex_t		lock;
-	struct rtentry		*queue[10];
+	SLIST_HEAD(, rtentry)	queue;
+	bool			enqueued;
 } rt_free_global __cacheline_aligned;
 
 /* psref for rtentry */
@@ -278,6 +281,11 @@ static void rt_ref(struct rtentry *);
 
 static struct rtentry *
     rtalloc1_locked(const struct sockaddr *, int, bool, bool);
+
+static struct ifaddr *rt_getifa(struct rt_addrinfo *, struct psref *);
+static struct ifnet *rt_getifp(struct rt_addrinfo *, struct psref *);
+static struct ifaddr *ifa_ifwithroute_psref(int, const struct sockaddr *,
+    const struct sockaddr *, struct psref *);
 
 static void rtcache_ref(struct rtentry *, struct route *);
 
@@ -458,6 +466,9 @@ rt_init(void)
 #endif
 
 	mutex_init(&rt_free_global.lock, MUTEX_DEFAULT, IPL_SOFTNET);
+	SLIST_INIT(&rt_free_global.queue);
+	rt_free_global.enqueued = false;
+
 	rt_psref_class = psref_class_create("rtentry", IPL_SOFTNET);
 
 	error = workqueue_create(&rt_free_global.wq, "rt_free",
@@ -498,27 +509,27 @@ dump_rt(const struct rtentry *rt)
 {
 	char buf[512];
 
-	aprint_normal("rt: ");
-	aprint_normal("p=%p ", rt);
+	log(LOG_DEBUG, "rt: ");
+	log(LOG_DEBUG, "p=%p ", rt);
 	if (rt->_rt_key == NULL) {
-		aprint_normal("dst=(NULL) ");
+		log(LOG_DEBUG, "dst=(NULL) ");
 	} else {
 		sockaddr_format(rt->_rt_key, buf, sizeof(buf));
-		aprint_normal("dst=%s ", buf);
+		log(LOG_DEBUG, "dst=%s ", buf);
 	}
 	if (rt->rt_gateway == NULL) {
-		aprint_normal("gw=(NULL) ");
+		log(LOG_DEBUG, "gw=(NULL) ");
 	} else {
 		sockaddr_format(rt->_rt_key, buf, sizeof(buf));
-		aprint_normal("gw=%s ", buf);
+		log(LOG_DEBUG, "gw=%s ", buf);
 	}
-	aprint_normal("flags=%x ", rt->rt_flags);
+	log(LOG_DEBUG, "flags=%x ", rt->rt_flags);
 	if (rt->rt_ifp == NULL) {
-		aprint_normal("if=(NULL) ");
+		log(LOG_DEBUG, "if=(NULL) ");
 	} else {
-		aprint_normal("if=%s ", rt->rt_ifp->if_xname);
+		log(LOG_DEBUG, "if=%s ", rt->rt_ifp->if_xname);
 	}
-	aprint_normal("\n");
+	log(LOG_DEBUG, "\n");
 }
 #endif /* RT_DEBUG */
 
@@ -686,23 +697,21 @@ _rt_free(struct rtentry *rt)
 static void
 rt_free_work(struct work *wk, void *arg)
 {
-	int i;
-	struct rtentry *rt;
 
-restart:
-	mutex_enter(&rt_free_global.lock);
-	for (i = 0; i < sizeof(rt_free_global.queue); i++) {
-		if (rt_free_global.queue[i] == NULL)
-			continue;
-		rt = rt_free_global.queue[i];
-		rt_free_global.queue[i] = NULL;
+	for (;;) {
+		struct rtentry *rt;
+
+		mutex_enter(&rt_free_global.lock);
+		rt_free_global.enqueued = false;
+		if ((rt = SLIST_FIRST(&rt_free_global.queue)) == NULL) {
+			mutex_exit(&rt_free_global.lock);
+			return;
+		}
+		SLIST_REMOVE_HEAD(&rt_free_global.queue, rt_free);
 		mutex_exit(&rt_free_global.lock);
-
 		atomic_dec_uint(&rt->rt_refcnt);
 		_rt_free(rt);
-		goto restart;
 	}
-	mutex_exit(&rt_free_global.lock);
 }
 
 void
@@ -710,23 +719,20 @@ rt_free(struct rtentry *rt)
 {
 
 	KASSERT(rt->rt_refcnt > 0);
-	if (!rt_wait_ok()) {
-		int i;
-		mutex_enter(&rt_free_global.lock);
-		for (i = 0; i < sizeof(rt_free_global.queue); i++) {
-			if (rt_free_global.queue[i] == NULL) {
-				rt_free_global.queue[i] = rt;
-				break;
-			}
-		}
-		KASSERT(i < sizeof(rt_free_global.queue));
-		rt_ref(rt);
-		mutex_exit(&rt_free_global.lock);
-		workqueue_enqueue(rt_free_global.wq, &rt_free_global.wk, NULL);
-	} else {
+	if (rt_wait_ok()) {
 		atomic_dec_uint(&rt->rt_refcnt);
 		_rt_free(rt);
+		return;
 	}
+
+	mutex_enter(&rt_free_global.lock);
+	rt_ref(rt);
+	SLIST_INSERT_HEAD(&rt_free_global.queue, rt, rt_free);
+	if (!rt_free_global.enqueued) {
+		workqueue_enqueue(rt_free_global.wq, &rt_free_global.wk, NULL);
+		rt_free_global.enqueued = true;
+	}
+	mutex_exit(&rt_free_global.lock);
 }
 
 #ifdef NET_MPSAFE
@@ -754,7 +760,7 @@ rt_update_prepare(struct rtentry *rt)
 	/* If the entry is being destroyed, don't proceed the update. */
 	if (!ISSET(rt->rt_flags, RTF_UP)) {
 		RT_UNLOCK();
-		return -1;
+		return ESRCH;
 	}
 	rt->rt_flags |= RTF_UPDATING;
 	RT_UNLOCK();
@@ -885,11 +891,13 @@ rtredirect(const struct sockaddr *dst, const struct sockaddr *gateway,
 			error = rt_update_prepare(rt);
 			if (error == 0) {
 #endif
+				RT_WLOCK();
 				error = rt_setgate(rt, gateway);
 				if (error == 0) {
 					rt->rt_flags |= RTF_MODIFIED;
 					flags |= RTF_MODIFIED;
 				}
+				RT_UNLOCK();
 #ifdef NET_MPSAFE
 				rt_update_finish(rt);
 			} else {
@@ -953,9 +961,9 @@ rtdeletemsg(struct rtentry *rt)
 	return error;
 }
 
-struct ifaddr *
+static struct ifaddr *
 ifa_ifwithroute_psref(int flags, const struct sockaddr *dst,
-	const struct sockaddr *gateway, struct psref *psref)
+    const struct sockaddr *gateway, struct psref *psref)
 {
 	struct ifaddr *ifa = NULL;
 
@@ -985,11 +993,7 @@ ifa_ifwithroute_psref(int flags, const struct sockaddr *dst,
 		int s;
 		struct rtentry *rt;
 
-		/* XXX we cannot call rtalloc1 if holding the rt lock */
-		if (RT_LOCKED())
-			rt = rtalloc1_locked(gateway, 0, true, true);
-		else
-			rt = rtalloc1(gateway, 0);
+		rt = rtalloc1_locked(gateway, 0, true, true);
 		if (rt == NULL)
 			return NULL;
 		if (rt->rt_flags & RTF_GATEWAY) {
@@ -1075,7 +1079,7 @@ rtrequest_newmsg(const int req, const struct sockaddr *dst,
 	return 0;
 }
 
-struct ifnet *
+static struct ifnet *
 rt_getifp(struct rt_addrinfo *info, struct psref *psref)
 {
 	const struct sockaddr *ifpaddr = info->rti_info[RTAX_IFP];
@@ -1100,7 +1104,7 @@ rt_getifp(struct rt_addrinfo *info, struct psref *psref)
 	return info->rti_ifp;
 }
 
-struct ifaddr *
+static struct ifaddr *
 rt_getifa(struct rt_addrinfo *info, struct psref *psref)
 {
 	struct ifaddr *ifa = NULL;
@@ -1332,6 +1336,7 @@ rt_setgate(struct rtentry *rt, const struct sockaddr *gate)
 {
 	struct sockaddr *new, *old;
 
+	KASSERT(RT_WLOCKED());
 	KASSERT(rt->_rt_key != NULL);
 	RT_DPRINTF("rt->_rt_key = %p\n", (void *)rt->_rt_key);
 
@@ -1350,11 +1355,7 @@ rt_setgate(struct rtentry *rt, const struct sockaddr *gate)
 	if (rt->rt_flags & RTF_GATEWAY) {
 		struct rtentry *gwrt;
 
-		/* XXX we cannot call rtalloc1 if holding the rt lock */
-		if (RT_LOCKED())
-			gwrt = rtalloc1_locked(gate, 1, false, true);
-		else
-			gwrt = rtalloc1(gate, 1);
+		gwrt = rtalloc1_locked(gate, 1, false, true);
 		/*
 		 * If we switched gateways, grab the MTU from the new
 		 * gateway route if the current MTU, if the current MTU is
@@ -1376,6 +1377,154 @@ rt_setgate(struct rtentry *rt, const struct sockaddr *gate)
 	KASSERT(rt->_rt_key != NULL);
 	RT_DPRINTF("rt->_rt_key = %p\n", (void *)rt->_rt_key);
 	return 0;
+}
+
+static struct ifaddr *
+rt_update_get_ifa(const struct rt_addrinfo info, const struct rtentry *rt,
+    struct ifnet **ifp, struct psref *psref_ifp, struct psref *psref)
+{
+	struct ifaddr *ifa = NULL;
+
+	*ifp = NULL;
+	if (info.rti_info[RTAX_IFP] != NULL) {
+		ifa = ifa_ifwithnet_psref(info.rti_info[RTAX_IFP], psref);
+		if (ifa == NULL)
+			goto next;
+		*ifp = ifa->ifa_ifp;
+		if_acquire(*ifp, psref_ifp);
+		if (info.rti_info[RTAX_IFA] == NULL &&
+		    info.rti_info[RTAX_GATEWAY] == NULL)
+			goto next;
+		ifa_release(ifa, psref);
+		if (info.rti_info[RTAX_IFA] == NULL) {
+			/* route change <dst> <gw> -ifp <if> */
+			ifa = ifaof_ifpforaddr_psref(info.rti_info[RTAX_GATEWAY],
+			    *ifp, psref);
+		} else {
+			/* route change <dst> -ifp <if> -ifa <addr> */
+			ifa = ifa_ifwithaddr_psref(info.rti_info[RTAX_IFA], psref);
+			if (ifa != NULL)
+				goto out;
+			ifa = ifaof_ifpforaddr_psref(info.rti_info[RTAX_IFA],
+			    *ifp, psref);
+		}
+		goto out;
+	}
+next:
+	if (info.rti_info[RTAX_IFA] != NULL) {
+		/* route change <dst> <gw> -ifa <addr> */
+		ifa = ifa_ifwithaddr_psref(info.rti_info[RTAX_IFA], psref);
+		if (ifa != NULL)
+			goto out;
+	}
+	if (info.rti_info[RTAX_GATEWAY] != NULL) {
+		/* route change <dst> <gw> */
+		ifa = ifa_ifwithroute_psref(rt->rt_flags, rt_getkey(rt),
+		    info.rti_info[RTAX_GATEWAY], psref);
+	}
+out:
+	if (ifa != NULL && *ifp == NULL) {
+		*ifp = ifa->ifa_ifp;
+		if_acquire(*ifp, psref_ifp);
+	}
+	if (ifa == NULL && *ifp != NULL) {
+		if_put(*ifp, psref_ifp);
+		*ifp = NULL;
+	}
+	return ifa;
+}
+
+int
+rt_update(struct rtentry *rt, struct rt_addrinfo *info, void *rtm)
+{
+	int error = 0;
+	struct ifnet *ifp = NULL, *new_ifp = NULL;
+	struct ifaddr *ifa = NULL, *new_ifa;
+	struct psref psref_ifa, psref_new_ifa, psref_ifp, psref_new_ifp;
+	bool newgw, ifp_changed = false;
+
+	RT_WLOCK();
+	/*
+	 * New gateway could require new ifaddr, ifp;
+	 * flags may also be different; ifp may be specified
+	 * by ll sockaddr when protocol address is ambiguous
+	 */
+	newgw = info->rti_info[RTAX_GATEWAY] != NULL &&
+	    sockaddr_cmp(info->rti_info[RTAX_GATEWAY], rt->rt_gateway) != 0;
+
+	if (newgw || info->rti_info[RTAX_IFP] != NULL ||
+	    info->rti_info[RTAX_IFA] != NULL) {
+		ifp = rt_getifp(info, &psref_ifp);
+		/* info refers ifp so we need to keep a reference */
+		ifa = rt_getifa(info, &psref_ifa);
+		if (ifa == NULL) {
+			error = ENETUNREACH;
+			goto out;
+		}
+	}
+	if (newgw) {
+		error = rt_setgate(rt, info->rti_info[RTAX_GATEWAY]);
+		if (error != 0)
+			goto out;
+	}
+	if (info->rti_info[RTAX_TAG]) {
+		const struct sockaddr *tag;
+		tag = rt_settag(rt, info->rti_info[RTAX_TAG]);
+		if (tag == NULL) {
+			error = ENOBUFS;
+			goto out;
+		}
+	}
+	/*
+	 * New gateway could require new ifaddr, ifp;
+	 * flags may also be different; ifp may be specified
+	 * by ll sockaddr when protocol address is ambiguous
+	 */
+	new_ifa = rt_update_get_ifa(*info, rt, &new_ifp, &psref_new_ifp,
+	    &psref_new_ifa);
+	if (new_ifa != NULL) {
+		ifa_release(ifa, &psref_ifa);
+		ifa = new_ifa;
+	}
+	if (ifa) {
+		struct ifaddr *oifa = rt->rt_ifa;
+		if (oifa != ifa && !ifa_is_destroying(ifa) &&
+		    new_ifp != NULL && !if_is_deactivated(new_ifp)) {
+			if (oifa && oifa->ifa_rtrequest)
+				oifa->ifa_rtrequest(RTM_DELETE, rt, info);
+			rt_replace_ifa(rt, ifa);
+			rt->rt_ifp = new_ifp;
+			ifp_changed = true;
+		}
+		if (new_ifa == NULL)
+			ifa_release(ifa, &psref_ifa);
+	}
+	ifa_release(new_ifa, &psref_new_ifa);
+	if (new_ifp && rt->rt_ifp != new_ifp && !if_is_deactivated(new_ifp)) {
+		rt->rt_ifp = new_ifp;
+		ifp_changed = true;
+	}
+	rt_setmetrics(rtm, rt);
+	if (rt->rt_flags != info->rti_flags) {
+		rt->rt_flags = (info->rti_flags & ~PRESERVED_RTF) |
+		    (rt->rt_flags & PRESERVED_RTF);
+	}
+	if (rt->rt_ifa && rt->rt_ifa->ifa_rtrequest)
+		rt->rt_ifa->ifa_rtrequest(RTM_ADD, rt, info);
+#if defined(INET) || defined(INET6)
+	if (ifp_changed && rt_mask(rt) != NULL)
+		lltable_prefix_free(rt_getkey(rt)->sa_family, rt_getkey(rt),
+		    rt_mask(rt), 0);
+#else
+	(void)ifp_changed; /* XXX gcc */
+#endif
+out:
+	if_put(new_ifp, &psref_new_ifp);
+	if_put(ifp, &psref_ifp);
+
+	RT_UNLOCK();
+
+	return error;
 }
 
 static void
@@ -1810,7 +1959,12 @@ rt_timer_work(struct work *wk, void *arg)
 		    (r->rtt_time + rtq->rtq_timeout) < time_uptime) {
 			LIST_REMOVE(r, rtt_link);
 			TAILQ_REMOVE(&rtq->rtq_head, r, rtt_next);
-			rt_ref(r->rtt_rt); /* XXX */
+			/*
+			 * Take a reference to avoid the rtentry is freed
+			 * accidentally after RT_UNLOCK.  The callback
+			 * (rtt_func) must rt_unref it by itself.
+			 */
+			rt_ref(r->rtt_rt);
 			RT_REFCNT_TRACE(r->rtt_rt);
 			RT_UNLOCK();
 			(*r->rtt_func)(r->rtt_rt, r);
@@ -2125,7 +2279,7 @@ rt_delete_matched_entries(sa_family_t family, int (*f)(struct rtentry *, void *)
 			RT_UNLOCK();
 			return;
 		}
-		rt->rt_refcnt++;
+		rt_ref(rt);
 		splx(s);
 		RT_UNLOCK();
 
@@ -2148,13 +2302,21 @@ rt_delete_matched_entries(sa_family_t family, int (*f)(struct rtentry *, void *)
 	}
 }
 
+static int
+rt_walktree_locked(sa_family_t family, int (*f)(struct rtentry *, void *),
+    void *v)
+{
+
+	return rtbl_walktree(family, f, v);
+}
+
 int
 rt_walktree(sa_family_t family, int (*f)(struct rtentry *, void *), void *v)
 {
 	int error;
 
 	RT_RLOCK();
-	error = rtbl_walktree(family, f, v);
+	error = rt_walktree_locked(family, f, v);
 	RT_UNLOCK();
 
 	return error;
@@ -2247,6 +2409,8 @@ void
 db_show_routes(db_expr_t addr, bool have_addr,
     db_expr_t count, const char *modif)
 {
-	rt_walktree(AF_INET, db_show_rtentry, NULL);
+
+	/* Taking RT_LOCK will fail if LOCKDEBUG is enabled. */
+	rt_walktree_locked(AF_INET, db_show_rtentry, NULL);
 }
 #endif

@@ -1,4 +1,4 @@
-/*	$NetBSD: prekern.c,v 1.7 2017/11/26 11:01:09 maxv Exp $	*/
+/*	$NetBSD: prekern.c,v 1.9 2018/08/02 17:18:00 maxv Exp $	*/
 
 /*
  * Copyright (c) 2017 The NetBSD Foundation, Inc. All rights reserved.
@@ -58,7 +58,7 @@ static struct x86_64_tss prekern_tss;
 
 #define IDTVEC(name) __CONCAT(X, name)
 typedef void (vector)(void);
-extern vector *IDTVEC(exceptions)[];
+extern vector *x86_exceptions[];
 
 void fatal(char *msg)
 {
@@ -211,7 +211,7 @@ init_idt(void)
 
 	idt = (struct gate_descriptor *)&idtstore;
 	for (i = 0; i < NCPUIDT; i++) {
-		setgate(&idt[i], IDTVEC(exceptions)[i], 0, SDT_SYS386IGT,
+		setgate(&idt[i], x86_exceptions[i], 0, SDT_SYS386IGT,
 		    SEL_KPL, GSEL(GCODE_SEL, SEL_KPL));
 	}
 
@@ -221,7 +221,10 @@ init_idt(void)
 
 /* -------------------------------------------------------------------------- */
 
+#define PREKERN_API_VERSION	1
+
 struct prekern_args {
+	int version;
 	int boothowto;
 	void *bootinfo;
 	void *bootspace;
@@ -253,6 +256,7 @@ init_prekern_args(void)
 	extern paddr_t pa_avail;
 
 	memset(&pkargs, 0, sizeof(pkargs));
+	pkargs.version = PREKERN_API_VERSION;
 	pkargs.boothowto = boothowto;
 	pkargs.bootinfo = (void *)&bootinfo;
 	pkargs.bootspace = &bootspace;
@@ -285,9 +289,9 @@ exec_kernel(vaddr_t ent)
 	ret = (*jumpfunc)(&pkargs);
 
 	if (ret == -1) {
-		fatal("kernel returned -1");
+		fatal("kernel returned: wrong API version");
 	} else {
-		fatal("kernel returned unknown value");
+		fatal("kernel returned: unknown value");
 	}
 }
 

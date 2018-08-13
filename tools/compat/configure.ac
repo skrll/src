@@ -1,4 +1,4 @@
-#	$NetBSD: configure.ac,v 1.89 2017/12/09 04:22:53 sevan Exp $
+#	$NetBSD: configure.ac,v 1.91 2018/06/13 04:17:43 maya Exp $
 #
 # Autoconf definition file for libnbcompat.
 #

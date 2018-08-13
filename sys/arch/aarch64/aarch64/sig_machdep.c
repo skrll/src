@@ -1,4 +1,4 @@
-/* $NetBSD: sig_machdep.c,v 1.1 2014/08/10 05:47:37 matt Exp $ */
+/* $NetBSD: sig_machdep.c,v 1.3 2018/07/17 00:36:30 christos Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: sig_machdep.c,v 1.1 2014/08/10 05:47:37 matt Exp $");
+__KERNEL_RCSID(1, "$NetBSD: sig_machdep.c,v 1.3 2018/07/17 00:36:30 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -40,7 +40,7 @@ __KERNEL_RCSID(1, "$NetBSD: sig_machdep.c,v 1.1 2014/08/10 05:47:37 matt Exp $")
 #include <sys/signalvar.h>
 #include <sys/siginfo.h>
 
-#include <aarch64/locore.h>
+#include <aarch64/frame.h>
 
 void
 sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
@@ -104,7 +104,7 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	tf->tf_reg[28] = ucp;	/* put in a callee saved register */
 
 	tf->tf_sp = sp;
-	tf->tf_lr = sd->sd_tramp;
+	tf->tf_lr = (uint64_t)sd->sd_tramp;
 	tf->tf_pc = handler;
 
 	/*

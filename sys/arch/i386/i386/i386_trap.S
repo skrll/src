@@ -1,4 +1,4 @@
-/*	$NetBSD: i386_trap.S,v 1.12 2017/08/30 15:34:57 maxv Exp $	*/
+/*	$NetBSD: i386_trap.S,v 1.15 2018/07/14 14:29:40 maxv Exp $	*/
 
 /*
  * Copyright 2002 (c) Wasabi Systems, Inc.
@@ -66,7 +66,7 @@
 
 #if 0
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: i386_trap.S,v 1.12 2017/08/30 15:34:57 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i386_trap.S,v 1.15 2018/07/14 14:29:40 maxv Exp $");
 #endif
 
 /*
@@ -83,19 +83,54 @@ __KERNEL_RCSID(0, "$NetBSD: i386_trap.S,v 1.12 2017/08/30 15:34:57 maxv Exp $");
 #define TRAP(a)		pushl $(a) ; jmp _C_LABEL(alltraps)
 #define ZTRAP(a)	pushl $0 ; TRAP(a)
 
-#ifdef IPKDB
-#define BPTTRAP(a)	pushl $0; pushl $(a); jmp _C_LABEL(bpttraps)
-#else
-#define BPTTRAP(a)	ZTRAP(a)
-#endif
-
 	.text
 IDTVEC(trap00)
 	ZTRAP(T_DIVIDE)
 IDTVEC_END(trap00)
 
+/*
+ * Handle the SS shadow, CVE-2018-8897.
+ *
+ * We scan the IDT to determine if we hit an entry point. If so, we leave
+ * without restoring the segregs, because we could fault while doing that.
+ */
 IDTVEC(trap01)
-	BPTTRAP(T_TRCTRAP)
+#ifndef XEN
+	pushl	$0
+	pushl	$T_TRCTRAP
+	INTRENTRY
+
+	testb	$SEL_UPL,TF_CS(%esp)
+	jnz	.Lnormal_dbentry
+
+	pushl	%esp
+	call	ss_shadow
+	addl	$4,%esp
+
+	cmpl	$1,%eax
+	jne	.Lnormal_dbentry
+
+	/* SS shadow, ignore the exception. */
+	xorl	%eax,%eax
+	movl	%eax,%dr6
+
+	/* INTRFASTEXIT, but without segregs. */
+	movl	TF_EDI(%esp),%edi
+	movl	TF_ESI(%esp),%esi
+	movl	TF_EBP(%esp),%ebp
+	movl	TF_EBX(%esp),%ebx
+	movl	TF_EDX(%esp),%edx
+	movl	TF_ECX(%esp),%ecx
+	movl	TF_EAX(%esp),%eax
+	addl	$(TF_PUSHSIZE+8),%esp
+	iret
+
+.Lnormal_dbentry:
+	STI(%eax)
+	jmp _C_LABEL(calltrap)
+#else
+	ZTRAP(T_TRCTRAP)
+#endif
 IDTVEC_END(trap01)
 
 /*
@@ -121,7 +156,7 @@ IDTVEC(trap02)
 IDTVEC_END(trap02)
 
 IDTVEC(trap03)
-	BPTTRAP(T_BPTFLT)
+	ZTRAP(T_BPTFLT)
 IDTVEC_END(trap03)
 
 IDTVEC(trap04)
@@ -368,7 +403,7 @@ LABEL(trap_return_fault_return)
 END(trap_return_fault_return)
 
 /* LINTSTUB: Ignore */
-NENTRY(alltraps)
+ENTRY(alltraps)
 	INTRENTRY
 	STI(%eax)
 calltrap:

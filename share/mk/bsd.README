@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.README,v 1.365 2017/11/25 23:22:41 jmcneill Exp $
+#	$NetBSD: bsd.README,v 1.381 2018/07/25 23:30:22 kamil Exp $
 #	@(#)bsd.README	8.2 (Berkeley) 4/2/94
 
 This is the README file for the make "include" files for the NetBSD
@@ -194,6 +194,14 @@ MKEXTSRC        If not "no", 'make build' also descends into either src/extsrc
 		users, and automatically enables creation of those sets.
 		Default: no
 
+MKFIRMWARE      If not "no", install the /libdata/firmware directory,
+		which is necessary for several drivers: athn(4), bwfm(4),
+		ipw(4), iwi(4), iwm(4), iwn(4), otus(4), rtwn(4), urtwn(4),
+		wpi(4), ral(4), rum(4), run(4), zyd(4), bcm43xx(4), and
+		the Tegra 124 SoC.
+		Default: yes on amd64, cobalt, evbarm evbmips, evbppc, hpcarm,
+		hppa, i386, mac68k, macppc, sandpoint, and sparc64, no elsewhere.
+
 MKGCC		If "no", don't build gcc(1) or any of the GCC-related
 		libraries (libgcc, libobjc, libstdc++).
 		Default: yes
@@ -267,6 +275,28 @@ MKKYUA		If "no", don't build Kyua nor its dependent library Lutok.
 MKLDAP		If "no", disables building of LDAP infrastructure
 		(libraries and support programs).
 		Default: yes
+
+MKLIBCSANITIZER	If "yes", use the selected sanitizer inside libc to compile
+		userland programs and libraries as defined in
+		USE_LIBCSANITIZER, which defaults to "undefined".
+
+		The undefined behavior detector is currently the only supported
+		sanitizer in this mode. Its runtime differs from the UBSan
+		available in MKSANITIZER, and it is reimplemented from scratch
+		as micro-UBSan in the user mode (uUBSan). Its code is shared
+		with the kernel mode variation (kUBSan). The runtime is
+		stripped down from C++ features, in particular -fsanitize=vptr
+		is not supported and explicitly disabled. The only runtime
+		configuration is restricted to the LIBC_UBSAN environment
+		variable, that is designed to be safe for hardening.
+
+		The USE_LIBCSANITIZER value is passed to the -fsanitize=
+		argument to the compiler in CFLAGS and CXXFLAGS, but not in
+		LDFLAGS, as the runtime part is located inside libc.
+
+		Additional sanitizer arguments can be passed through
+		LIBCSANITIZERFLAGS.
+		Default: no
 
 MKLIBCXX	If not "no", build and install libc++.
 		Default: no
@@ -379,6 +409,26 @@ MKREPRO         If "yes", create reproducible builds. This enables
 		result in the same build results.
 		Default: no
 
+MKSANITIZER	if "yes", use the selected sanitizer to compile userland
+		programs as defined in USE_SANITIZER, which defaults to
+		"address". A selection of available sanitizers:
+			address:	A memory error detector (default)
+			thread:		A data race detector
+			memory:		An uninitialized memory read detector
+			undefined:	An undefined behavior detector
+			leak:		A memory leak detector
+			dataflow:	A general data flow analysis
+			cfi:		A control flow detector
+			safe-stack:	Protect against stack-based corruption
+			scudo:		The Scudo Hardened allocator
+		It's possible to specify multiple sanitizers within the
+		USE_SANITIZER option (comma separated). The USE_SANITIZER value
+		is passed to the -fsanitize= argument to the compiler.
+		Additional arguments can be passed through SANITIZERFLAGS.
+		The list of supported features and their valid combinations
+		depends on the compiler version and target CPU architecture.
+		Default: no
+
 MKSHARE		If "no", act as "MKCATPAGES=no MKDOC=no MKHTML=no MKINFO=no
 		MKMAN=no MKNLS=no".
 		I.e, don't build catman pages, documentation, Info
@@ -403,7 +453,8 @@ MKSTATICLIB	If "no", don't build or install the normal static (*.a)
 		Default: yes
 
 MKSTATICPIE	Compile in support for static pie binaries. These binaries
-		use a special rcrt0.o/mcrt0.o that do the necessary relocations
+		use a special support in crt0.o for resolving relative
+		relocations and require linker support.
 		Default: yes on platforms that support it.
 
 MKSTRIPSYM	If "yes", strip all local symbols from shared libraries;
@@ -414,6 +465,10 @@ MKSTRIPSYM	If "yes", strip all local symbols from shared libraries;
 		userland libraries and getting a backtrace from a rump kernel
 		loading shared libraries.
 		Default: yes
+
+MKTEGRAFIRMWARE	If "no", install the /libdata/firmware/nvidia directory,
+		which is necessary for the NVIDIA Tegra XHCI driver.
+		Default: yes on evbarm, no elsewhere.
 
 MKTOOLSDEBUG	If "yes" build the tools with debugging symbols.
 		Default: no
@@ -684,8 +739,7 @@ X11SRCDIR.<package>
 		The path to the xorg src tree for the specificed package>.
 		[${X11SRCDIR}/external/mit/xorg/<package>/dist]
 
-X11ROOTDIR	Root directory of the X11 installation.  [/usr/X11R6 or
-		[/usr/X11R7]
+X11ROOTDIR	Root directory of the X11 installation.  [/usr/X11R7]
 
 X11BINDIR	X11 bin directory.  [${X11ROOTDIR}/bin]
 
@@ -786,6 +840,9 @@ EXTERNAL_TOOLCHAIN
 		assigned the value "no", since the external version of the
 		compiler may not be able to build the library components of
 		the in-tree compiler.
+
+		This variable should be used in conjunction with an appropiate
+		HAVE_GCC or HAVE_LLVM setting to control the compiler flags.
 
 		NOTE: This variable is not yet used in as many places as
 		it should be.  Expect the exact semantics of this variable
@@ -1611,7 +1668,6 @@ DPADD		Additional dependencies for the program.  Usually used for
 		LIBPANEL?=	${DESTDIR}/usr/lib/libpanel.a
 		LIBPCAP?=	${DESTDIR}/usr/lib/libpcap.a
 		LIBPCI?=	${DESTDIR}/usr/lib/libpci.a
-		LIBPMC?=	${DESTDIR}/usr/lib/libpmc.a
 		LIBPOSIX?=	${DESTDIR}/usr/lib/libposix.a
 		LIBPTHREAD?=	${DESTDIR}/usr/lib/libpthread.a
 		LIBPUFFS?=	${DESTDIR}/usr/lib/libpuffs.a
@@ -1674,6 +1730,7 @@ DPADD		Additional dependencies for the program.  Usually used for
 		LIBXDMCP?=	${DESTDIR}/usr/X11R7/lib/libXdmcp.a
 		LIBXEXT?=	${DESTDIR}/usr/X11R7/lib/libXext.a
 		LIBXFONT?=	${DESTDIR}/usr/X11R7/lib/libXfont.a
+		LIBXFONT2?=	${DESTDIR}/usr/X11R7/lib/libXfont2.a
 		LIBXFT?=	${DESTDIR}/usr/X11R7/lib/libXft.a
 		LIBXI?=		${DESTDIR}/usr/X11R7/lib/libXi.a
 		LIBXINERAMA?=	${DESTDIR}/usr/X11R7/lib/libXinerama.a
@@ -1691,7 +1748,6 @@ DPADD		Additional dependencies for the program.  Usually used for
 		LIBXXF86VM?=	${DESTDIR}/usr/X11R7/lib/libXxf86vm.a
 		LIBDPS?=	${DESTDIR}/usr/X11R7/lib/libdps.a
 		LIBFNTSTUBS?=	${DESTDIR}/usr/X11R7/lib/libfntstubs.a
-		LIBFONTCACHE?=	${DESTDIR}/usr/X11R7/lib/libfontcache.a
 		LIBFONTCONFIG?=	${DESTDIR}/usr/X11R7/lib/libfontconfig.a
 		LIBFONTENC?=	${DESTDIR}/usr/X11R7/lib/libfontenc.a
 		LIBFREETYPE?=	${DESTDIR}/usr/X11R7/lib/libfreetype.a

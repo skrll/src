@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.37 2017/07/21 20:58:44 nakayama Exp $
+#	$NetBSD: Makefile,v 1.40 2018/05/20 03:09:02 christos Exp $
 
 PROG=		crash
 MAN=		crash.8
@@ -18,7 +18,7 @@ DPADD+=	${LIBUTIL} ${LIBKVM} ${LIBEDIT} ${LIBTERMINFO}
     || ${MACHINE} == "i386" \
     || ${MACHINE} == "sparc" \
     || ${MACHINE} == "sparc64" \
-    || (${MACHINE_CPU} == "arm" && ${MACHINE} != "acorn26") \
+    || ${MACHINE_CPU} == "arm" \
     || ${MACHINE_ARCH} == "m68k"
 SRCS+=	db_trace.c
 .if ${MACHINE_ARCH} != "m68k"
@@ -40,6 +40,7 @@ CPPFLAGS+=	-UDB_MACHINE_COMMANDS
 # ddb files from kernel
 .PATH:	$S/ddb
 SRCS+=	db_command.c db_lwp.c db_proc.c db_xxx.c db_cpu.c
+SRCS+=  db_autoconf.c
 SRCS+=	db_access.c db_elf.c db_examine.c
 SRCS+=	db_expr.c db_lex.c db_output.c db_print.c
 SRCS+=	db_sym.c db_variables.c db_write_cmd.c
@@ -83,10 +84,18 @@ SRCS+=	generic.c
 
 COPTS.db_output.c += -Wno-format-nonliteral
 
+.if ${MKREPRO} == "yes"
+.       if ${MKREPRO_TIMESTAMP:U0} != 0
+NVFLAGS+=-r ${MKREPRO_TIMESTAMP}
+.       else
+NVFLAGS+=-R
+.       endif
+.endif
+
 # vers.c
 SRCS+=	vers.c
 vers.c:	${S}/conf/newvers.sh ${_NETBSD_VERSION_DEPENDS}
-	${HOST_SH} ${S}/conf/newvers.sh -r -n
+	${HOST_SH} ${S}/conf/newvers.sh ${NVFLAGS} -n -m ${MACHINE} -i CRASH
 CLEANFILES+=	vers.c version
 
 .else				# } {

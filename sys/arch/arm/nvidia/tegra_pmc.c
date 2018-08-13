@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_pmc.c,v 1.11 2017/07/20 01:46:15 jmcneill Exp $ */
+/* $NetBSD: tegra_pmc.c,v 1.13 2018/07/16 23:11:47 christos Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra_pmc.c,v 1.11 2017/07/20 01:46:15 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra_pmc.c,v 1.13 2018/07/16 23:11:47 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -87,7 +87,8 @@ tegra_pmc_attach(device_t parent, device_t self, void *aux)
 	sc->sc_bst = faa->faa_bst;
 	error = bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh);
 	if (error) {
-		aprint_error(": couldn't map %#llx: %d", (uint64_t)addr, error);
+		aprint_error(": couldn't map %#" PRIx64 ": %d",
+		    (uint64_t)addr, error);
 		return;
 	}
 
@@ -105,7 +106,10 @@ tegra_pmc_get_bs(bus_space_tag_t *pbst, bus_space_handle_t *pbsh)
 		*pbst = pmc_softc->sc_bst;
 		*pbsh = pmc_softc->sc_bsh;
 	} else {
-		*pbst = &armv7_generic_bs_tag;
+		extern struct bus_space arm_generic_bs_tag;
+
+		*pbst = &arm_generic_bs_tag;
+
 		bus_space_subregion(*pbst, tegra_apb_bsh,
 		    TEGRA_PMC_OFFSET, TEGRA_PMC_SIZE, pbsh);
 	}

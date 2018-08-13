@@ -1,4 +1,4 @@
-/*	$NetBSD: proc.h,v 1.343 2017/11/07 19:44:05 christos Exp $	*/
+/*	$NetBSD: proc.h,v 1.348 2018/05/09 19:55:35 kre Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -156,7 +156,6 @@ struct emul {
 	void		(*e_sendsig)(const struct ksiginfo *,
 					  const sigset_t *);
 	void		(*e_trapsignal)(struct lwp *, struct ksiginfo *);
-	int		(*e_tracesig)(struct proc *, int);
 	char		*e_sigcode;	/* Start of sigcode */
 	char		*e_esigcode;	/* End of sigcode */
 					/* Set registers before execution */
@@ -178,7 +177,6 @@ struct emul {
 #endif
 					/* Emulation specific sysctl data */
 	struct sysctlnode *e_sysctlovly;
-	int		(*e_fault)(struct proc *, vaddr_t, int);
 
 	vaddr_t		(*e_vm_default_addr)(struct proc *, vaddr_t, vsize_t,
 			     int);
@@ -295,6 +293,8 @@ struct proc {
 	u_quad_t 	p_uticks;	/* t: Statclock hits in user mode */
 	u_quad_t 	p_sticks;	/* t: Statclock hits in system mode */
 	u_quad_t 	p_iticks;	/* t: Statclock hits processing intr */
+	uint64_t	p_xutime;	/* p: utime exposed to userspace */
+	uint64_t	p_xstime;	/* p: stime exposed to userspace */
 
 	int		p_traceflag;	/* k: Kernel trace points */
 	void		*p_tracep;	/* k: Trace private data */
@@ -523,7 +523,7 @@ void	proc_free_pid(pid_t);
 void	proc_free_mem(struct proc *);
 void	exit_lwps(struct lwp *l);
 int	fork1(struct lwp *, int, int, void *, size_t,
-	    void (*)(void *), void *, register_t *, struct proc **);
+	    void (*)(void *), void *, register_t *);
 int	pgid_in_session(struct proc *, pid_t);
 void	cpu_lwp_fork(struct lwp *, struct lwp *, void *, size_t,
 	    void (*)(void *), void *);
@@ -557,7 +557,7 @@ int	proc_compare(const struct proc *, const struct lwp *,
 int	proclist_foreach_call(struct proclist *,
     int (*)(struct proc *, void *arg), void *);
 
-static inline struct proc *
+static __inline struct proc *
 _proclist_skipmarker(struct proc *p0)
 {
 	struct proc *p = p0;

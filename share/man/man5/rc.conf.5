@@ -1,4 +1,4 @@
-.\"	$NetBSD: rc.conf.5,v 1.166 2016/12/17 07:44:59 maya Exp $
+.\"	$NetBSD: rc.conf.5,v 1.172 2018/07/27 15:31:02 roy Exp $
 .\"
 .\" Copyright (c) 1996 Matthew R. Green
 .\" All rights reserved.
@@ -55,7 +55,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd December 17, 2016
+.Dd July 27, 2018
 .Dt RC.CONF 5
 .Os
 .Sh NAME
@@ -240,8 +240,7 @@ If empty or not set, then the contents of
 (if it exists) are used.
 .It Sy domainname
 A string.
-.Tn NIS
-(YP) domain of host.
+NIS (YP) domain of host.
 If empty or not set, then the contents of
 .Pa /etc/defaultdomain
 (if it exists) are used.
@@ -249,6 +248,30 @@ If empty or not set, then the contents of
 A space separated list of interface names.
 These interfaces will be configured down when going from multiuser to single-user
 mode or on system shutdown.
+.It Sy dns_domain
+A string.
+Sets domain in
+.Pa /etc/resolv.conf .
+.It Sy dns_search
+A string.
+Sets search in
+.Pa /etc/resolv.conf .
+.It Sy dns_nameservers
+A string of space seperated domain name servers.
+Sets nameserver for each value in
+.Pa /etc/resolv.conf .
+.It Sy dns_sortlist
+A string.
+Sets sortlist in
+.Pa /etc/resolv.conf .
+.It Sy dns_options
+A string.
+Sets options in
+.Pa /etc/resolv.conf .
+.It Sy dns_metric
+An unsigned integer.
+Sets the priority of the above DNS to other sources, lowest wins.
+Defaults to 0.
 .Pp
 This is important for some stateful interfaces, for example PPP over ISDN
 connections that cost money by connection time or PPPoE interfaces which
@@ -639,46 +662,12 @@ with the
 .Dq Li -l
 flag and suppresses warnings about interfaces in this list that
 do not have an ifconfig file or variable.
-.It Sy dhclient
+.It Sy blacklistd
 Boolean value.
-Set true to configure some or all network interfaces using
-the ISC DHCP client.
-If you set
-.Sy dhclient
-true, then
-.Pa /var
-must be in
-.Sy critical_filesystems_local ,
-or
-.Pa /var
-must be on the root file system,
-or you must modify the
-.Sy dhclient_flags
-variable to direct the DHCP client to store the leases file
-in some other directory on the root file system.
-You must not provide ifconfig information or ifaliases
-information for any interface that is to be configured using the DHCP client.
-Interface aliases can be set up in the DHCP client configuration
-file if needed - see
-.Xr dhclient.conf 5
-for details.
-.Pp
-Passes
-.Sy dhclient_flags
-to the DHCP client.
-See
-.Xr dhclient 8
-for complete documentation.
-If you wish to configure all broadcast
-network interfaces using the DHCP client, you can leave this blank.
-To configure only specific interfaces, name the interfaces to be configured
-on the command line.
-.Pp
-If you must run the DHCP client before mounting critical file systems,
-then you should specify an alternate location for the DHCP client's lease
-file in the
-.Sy dhclient_flags
-variable - for example, "-lf /tmp/dhclient.leases".
+Runs
+.Xr blacklistd 8
+to dynamically block hosts on a DoS according to configuration set in
+.Xr blacklistd.conf 5
 .It Sy dhcpcd
 Boolean value.
 Set true to configure some or all network interfaces using dhcpcd.
@@ -788,12 +777,6 @@ you can configure your node as a router,
 a non-autoconfigured host, or an autoconfigured host.
 Invalid values will be ignored, and the node will be configured as
 a non-autoconfigured host.
-You may want to check
-.Sy rtsol
-and
-.Sy rtsold
-as well, if you set the variable to
-.Dq Li autohost .
 .It Sy ip6uniquelocal
 Boolean value.
 If
@@ -875,6 +858,17 @@ Runs
 to load in IPsec manual keys and policies from
 .Pa /etc/ipsec.conf
 at network boot time, before any interfaces are configured.
+.It Sy npf
+Boolean value.
+Loads
+.Xr npf.conf 5
+at network boot time, and starts
+.Xr npf 7 .
+.It Sy npfd
+Boolean value.
+Runs
+.Xr npfd 8 ,
+the NPF packet filter logging and state synchronization daemon.
 .It Sy net_interfaces
 A string.
 The list of network interfaces to be configured at boot time.
@@ -968,21 +962,6 @@ Boolean value.
 Runs
 .Xr racoon 8 ,
 the IKE (ISAKMP/Oakley) key management daemon.
-.It Sy rtsol
-Boolean value.
-Run
-.Xr rtsol 8 ,
-router solicitation command for IPv6 hosts.
-On nomadic hosts like notebook computers, you may want to enable
-.Sy rtsold
-as well.
-Passes
-.Sy rtsol_flags .
-This is only for autoconfigured IPv6 hosts, so set
-.Sy ip6mode
-to
-.Dq Li autohost
-if you use it.
 .It Sy wpa_supplicant
 Boolean value.
 Run
@@ -1022,8 +1001,7 @@ The
 daemon is required for any
 .Xr rpc 3
 services.
-These include NFS,
-.Tn NIS ,
+These include NFS, NIS,
 .Xr rpc.bootparamd 8 ,
 .Xr rpc.rstatd 8 ,
 .Xr rpc.rusersd 8 ,
@@ -1196,24 +1174,6 @@ Passes
 .\" if
 .\" .Sy gated
 .\" is true.
-.It Sy rtsold
-Boolean value.
-Runs
-.Xr rtsold 8 ,
-the IPv6 router solicitation daemon.
-.Xr rtsold 8
-periodically transmits router solicitation packets
-to find IPv6 routers on the network.
-This configuration is mainly for nomadic hosts like notebook computers.
-Stationary hosts should work fine with just
-.Sy rtsol .
-Passes
-.Sy rtsold_flags .
-This is only for autoconfigured IPv6 hosts, so set
-.Sy ip6mode
-to
-.Dq Li autohost
-if you use it.
 .El
 .Ss Daemons used to boot other hosts over a network
 .Bl -tag -width net_interfaces
@@ -1226,9 +1186,7 @@ the boot parameter server, with
 as options.
 Used to boot
 .Nx
-and
-.Tn "SunOS 4.x"
-systems.
+and SunOS 4.x systems.
 .It Sy dhcpd
 Boolean value.
 Runs
@@ -1247,13 +1205,7 @@ Passes
 Boolean value.
 Runs
 .Xr mopd 8 ,
-the
-.Tn DEC
-.Tn MOP
-protocol daemon; used for booting
-.Tn VAX
-and other
-.Tn DEC
+the DEC MOP protocol daemon; used for booting VAX and other DEC
 machines.
 Passes
 .Sy mopd_flags .
@@ -1277,11 +1229,7 @@ Passes
 Boolean value.
 Runs
 .Xr rbootd 8 ,
-the
-.Tn HP
-boot protocol daemon; used for booting
-.Tn HP
-workstations.
+the HP boot protocol daemon; used for booting HP workstations.
 Passes
 .Sy rbootd_flags .
 .It Sy rtadvd
@@ -1319,29 +1267,22 @@ X11 font server, which supplies local X font files to X terminals.
 Boolean value.
 Runs
 .Xr ypbind 8 ,
-which lets
-.Tn NIS
-(YP) clients use information from a
-.Tn NIS
-server.
+which lets NIS (YP) clients use information from a NIS server.
 Passes
 .Sy ypbind_flags .
 .It Sy yppasswdd
 Boolean value.
 Runs
 .Xr yppasswdd 8 ,
-which allows remote
-.Tn NIS
-users to update password on master server.
+which allows remote NIS users to update password on master server.
 Passes
 .Sy yppasswdd_flags .
 .It Sy ypserv
 Boolean value.
 Runs
 .Xr ypserv 8 ,
-the
-.Tn NIS
-(YP) server for distributing information from certain files in
+the NIS (YP) server for distributing information from certain files
+in
 .Pa /etc .
 Passes
 .Sy ypserv_flags .
@@ -1502,6 +1443,47 @@ to support the
 and
 .Xr ruptime 1
 commands.
+.It Sy autofs
+Boolean value.
+If set to
+.Dq Li YES ,
+start the
+.Xr automount 8
+utility and the
+.Xr automountd 8
+and
+.Xr autounmountd 8
+daemons at boot time.
+.It Sy automount_flags
+A string.
+If
+.Sy autofs
+is set to
+.Dq Li YES ,
+these are the flags to pass to the
+.Xr automount 8
+program.
+By default no flags are passed.
+.It Sy automountd_flags
+A string.
+If
+.Sy autofs
+is set to
+.Dq Li YES ,
+these are the flags to pass to the
+.Xr automountd 8
+daemon.
+By default no flags are passed.
+.It Sy autounmountd_flags
+A string.
+If
+.Sy autofs
+is set to
+.Dq Li YES ,
+these are the flags to pass to the
+.Xr autounmountd 8
+daemon.
+By default no flags are passed.
 .El
 .Ss Hardware daemons
 .Bl -tag -width net_interfaces

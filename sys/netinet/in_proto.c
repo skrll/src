@@ -1,4 +1,4 @@
-/*	$NetBSD: in_proto.c,v 1.125 2017/09/27 10:05:04 ozaki-r Exp $	*/
+/*	$NetBSD: in_proto.c,v 1.128 2018/05/03 07:13:48 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in_proto.c,v 1.125 2017/09/27 10:05:04 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in_proto.c,v 1.128 2018/05/03 07:13:48 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_mrouting.h"
@@ -109,7 +109,6 @@ __KERNEL_RCSID(0, "$NetBSD: in_proto.c,v 1.125 2017/09/27 10:05:04 ozaki-r Exp $
 #include <netinet/tcp_seq.h>
 #include <netinet/tcp_timer.h>
 #include <netinet/tcp_var.h>
-#include <netinet/tcpip.h>
 #include <netinet/tcp_debug.h>
 #include <netinet/udp.h>
 #include <netinet/udp_var.h>
@@ -432,7 +431,7 @@ const struct protosw inetsw[] = {
 {	.pr_type = SOCK_RAW,
 	.pr_domain = &inetdomain,
 	.pr_protocol = IPPROTO_CARP,
-	.pr_flags = PR_ATOMIC|PR_ADDR,
+	.pr_flags = PR_ATOMIC|PR_ADDR|PR_LASTHDR,
 	.pr_input = carp_proto_input,
 	.pr_ctloutput = rip_ctloutput,
 	.pr_usrreqs = &rip_usrreqs,
@@ -453,7 +452,7 @@ const struct protosw inetsw[] = {
 {	.pr_type = SOCK_RAW,
 	.pr_domain = &inetdomain,
 	.pr_protocol = IPPROTO_PFSYNC,
-	.pr_flags	 = PR_ATOMIC|PR_ADDR,
+	.pr_flags	 = PR_ATOMIC|PR_ADDR|PR_LASTHDR,
 	.pr_input	 = pfsync_input,
 	.pr_ctloutput = rip_ctloutput,
 	.pr_usrreqs	 = &rip_usrreqs,
@@ -525,8 +524,6 @@ struct domain inetdomain = {
 };
 
 u_char	ip_protox[IPPROTO_MAX];
-
-int icmperrppslim = 100;			/* 100pps */
 
 static void
 sockaddr_in_addrlen(const struct sockaddr *sa, socklen_t *slenp)

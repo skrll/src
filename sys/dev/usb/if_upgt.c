@@ -1,4 +1,4 @@
-/*	$NetBSD: if_upgt.c,v 1.17 2016/11/25 12:56:29 skrll Exp $	*/
+/*	$NetBSD: if_upgt.c,v 1.22 2018/08/02 06:09:04 riastradh Exp $	*/
 /*	$OpenBSD: if_upgt.c,v 1.49 2010/04/20 22:05:43 tedu Exp $ */
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_upgt.c,v 1.17 2016/11/25 12:56:29 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_upgt.c,v 1.22 2018/08/02 06:09:04 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -504,8 +504,12 @@ upgt_detach(device_t self, int flags)
 		upgt_stop(sc);
 
 	/* remove tasks and timeouts */
-	usb_rem_task(sc->sc_udev, &sc->sc_task_newstate);
-	usb_rem_task(sc->sc_udev, &sc->sc_task_tx);
+	callout_halt(&sc->scan_to, NULL);
+	callout_halt(&sc->led_to, NULL);
+	usb_rem_task_wait(sc->sc_udev, &sc->sc_task_newstate, USB_TASKQ_DRIVER,
+	    NULL);
+	usb_rem_task_wait(sc->sc_udev, &sc->sc_task_tx, USB_TASKQ_DRIVER,
+	    NULL);
 	callout_destroy(&sc->scan_to);
 	callout_destroy(&sc->led_to);
 
@@ -1350,6 +1354,11 @@ upgt_newstate(struct ieee80211com *ic, enum ieee80211_state nstate, int arg)
 {
 	struct upgt_softc *sc = ic->ic_ifp->if_softc;
 
+	/*
+	 * XXXSMP: This does not wait for the task, if it is in flight,
+	 * to complete.  If this code works at all, it must rely on the
+	 * kernel lock to serialize with the USB task thread.
+	 */
 	usb_rem_task(sc->sc_udev, &sc->sc_task_newstate);
 	callout_stop(&sc->scan_to);
 
@@ -1471,7 +1480,7 @@ upgt_start(struct ifnet *ifp)
 			ni = M_GETCTX(m, struct ieee80211_node *);
 			M_CLEARCTX(m);
 
-			bpf_mtap3(ic->ic_rawbpf, m);
+			bpf_mtap3(ic->ic_rawbpf, m, BPF_D_OUT);
 
 			if ((data_tx->addr = upgt_mem_alloc(sc)) == 0) {
 				aprint_error_dev(sc->sc_dev,
@@ -1504,7 +1513,7 @@ upgt_start(struct ifnet *ifp)
 				continue;
 			}
 
-			bpf_mtap(ifp, m);
+			bpf_mtap(ifp, m, BPF_D_OUT);
 
 			m = ieee80211_encap(ic, m, ni);
 			if (m == NULL) {
@@ -1512,7 +1521,7 @@ upgt_start(struct ifnet *ifp)
 				continue;
 			}
 
-			bpf_mtap3(ic->ic_rawbpf, m);
+			bpf_mtap3(ic->ic_rawbpf, m, BPF_D_OUT);
 
 			if ((data_tx->addr = upgt_mem_alloc(sc)) == 0) {
 				aprint_error_dev(sc->sc_dev,
@@ -1643,7 +1652,8 @@ upgt_tx_task(void *arg)
 			tap->wt_chan_freq = htole16(ic->ic_curchan->ic_freq);
 			tap->wt_chan_flags = htole16(ic->ic_curchan->ic_flags);
 
-			bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m);
+			bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m,
+			    BPF_D_OUT);
 		}
 
 		/* copy frame below our TX descriptor header */
@@ -1858,7 +1868,7 @@ upgt_rx(struct upgt_softc *sc, uint8_t *data, int pkglen)
 		tap->wr_chan_flags = htole16(ic->ic_curchan->ic_flags);
 		tap->wr_antsignal = rxdesc->rssi;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m, BPF_D_IN);
 	}
 
 	/* trim FCS */
@@ -2266,8 +2276,8 @@ upgt_alloc_tx(struct upgt_softc *sc)
 
 		data_tx->sc = sc;
 
-		int err = usbd_create_xfer(sc->sc_tx_pipeh, MCLBYTES, 0, 0,
-		    &data_tx->xfer);
+		int err = usbd_create_xfer(sc->sc_tx_pipeh, MCLBYTES,
+		    USBD_FORCE_SHORT_XFER, 0, &data_tx->xfer);
 		if (err) {
 			aprint_error_dev(sc->sc_dev,
 			    "could not allocate TX xfer\n");
@@ -2288,7 +2298,7 @@ upgt_alloc_rx(struct upgt_softc *sc)
 	data_rx->sc = sc;
 
 	int err = usbd_create_xfer(sc->sc_rx_pipeh, MCLBYTES,
-	    USBD_SHORT_XFER_OK, 0, &data_rx->xfer);
+	    0, 0, &data_rx->xfer);
 	if (err) {
 		aprint_error_dev(sc->sc_dev, "could not allocate RX xfer\n");
 		return err;
@@ -2414,7 +2424,7 @@ upgt_crc32_le(const void *buf, size_t size)
 
 /*
  * The firmware awaits a checksum for each frame we send to it.
- * The algorithm used therefor is uncommon but somehow similar to CRC32.
+ * The algorithm used is uncommon but somehow similar to CRC32.
  */
 static uint32_t
 upgt_chksum_le(const uint32_t *buf, size_t size)

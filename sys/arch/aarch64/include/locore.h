@@ -1,4 +1,4 @@
-/* $NetBSD: locore.h,v 1.2 2017/03/16 16:13:19 chs Exp $ */
+/* $NetBSD: locore.h,v 1.5 2018/07/09 09:09:47 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -34,118 +34,71 @@
 
 #ifdef __aarch64__
 
+#ifdef _KERNEL_OPT
+#include "opt_multiprocessor.h"
+#endif
+
+#ifdef _LOCORE
+
+#define ENABLE_INTERRUPT	\
+	msr daifclr, #((DAIF_I|DAIF_F) >> DAIF_SETCLR_SHIFT)
+#define DISABLE_INTERRUPT	\
+	msr daifset, #((DAIF_I|DAIF_F) >> DAIF_SETCLR_SHIFT)
+
+#else /* _LOCORE */
+
 #include <sys/types.h>
 
-#include <sys/cpu.h>
-#include <sys/lwp.h>
-#include <sys/bus.h>
-
 #include <aarch64/armreg.h>
-#include <aarch64/frame.h>
+#include <aarch64/machdep.h>	/* arm32 compat */
 
-struct mainbus_attach_args {
-	const char *mba_name;
-	bus_space_tag_t mba_memt;
-	bus_dma_tag_t mba_dmat;
-	bus_addr_t mba_addr;
-	bus_size_t mba_size;
-	int mba_intr;
-	int mba_intrbase;
-	int mba_package;
-};
+/* for compatibility arch/arm */
+#define I32_bit			DAIF_I
+#define F32_bit			DAIF_F
+#define cpsie(psw)		daif_enable((psw))
+#define cpsid(psw)		daif_disable((psw))
 
-void	userret(struct lwp *, struct trapframe *);
-void	lwp_trampoline(void);
-void	cpu_dosoftints(void);
-void	dosoftints(void);
-void	cpu_switchto_softint(struct lwp *, int);
-void	cpu_send_ipi(struct cpu_info *, int);
 
-extern paddr_t physical_start;
-extern paddr_t physical_end;
+#define ENABLE_INTERRUPT()	daif_enable(DAIF_I|DAIF_F)
+#define DISABLE_INTERRUPT()	daif_disable(DAIF_I|DAIF_F)
 
-extern const pcu_ops_t pcu_fpu_ops;
+#define DAIF_MASK		(DAIF_D|DAIF_A|DAIF_I|DAIF_F)
 
-static inline bool
-fpu_used_p(lwp_t *l)
-{
-	return pcu_valid_p(&pcu_fpu_ops, l);
-}
-
-static inline void
-fpu_discard(lwp_t *l, bool usesw)
-{
-	pcu_discard(&pcu_fpu_ops, l, usesw);
-}
-
-static inline void
-fpu_save(lwp_t *l)
-{
-	pcu_save(&pcu_fpu_ops, l);
-}
-
-static inline void cpsie(register_t psw) __attribute__((__unused__));
-static inline register_t cpsid(register_t psw) __attribute__((__unused__));
-
-static inline void
-cpsie(register_t psw)
+static inline void __unused
+daif_enable(register_t psw)
 {
 	if (!__builtin_constant_p(psw)) {
-		reg_daif_write(psw);
+		reg_daif_write(reg_daif_read() & ~psw);
 	} else {
-		reg_daifset_write(psw);
+		reg_daifclr_write((psw & DAIF_MASK) >> DAIF_SETCLR_SHIFT);
 	}
 }
 
-static inline void
-enable_interrupts(register_t psw)
-{
-	reg_daif_write(psw);
-}
-
-static inline register_t
-cpsid(register_t psw)
+static inline register_t __unused
+daif_disable(register_t psw)
 {
 	register_t oldpsw = reg_daif_read();
 	if (!__builtin_constant_p(psw)) {
-		reg_daif_write(oldpsw & ~psw);
+		reg_daif_write(oldpsw | psw);
 	} else {
-		reg_daifclr_write(psw);
+		reg_daifset_write((psw & DAIF_MASK) >> DAIF_SETCLR_SHIFT);
 	}
 	return oldpsw;
 }
 
-static const paddr_t VTOPHYS_FAILED = (paddr_t) -1L;
-
-static inline paddr_t
-vtophys(vaddr_t va)
+static inline void
+arm_dsb(void)
 {
-	const uint64_t daif = reg_daif_read();
-	/*
-	 * Use the address translation instruction to do the lookup.
-	 */
-	reg_daifset_write(DAIF_I|DAIF_F);
-	__asm __volatile("at\ts1e1r, %0" :: "r"(va));
-	paddr_t pa = reg_par_el1_read();
-	pa = (pa & PAR_F) ? VTOPHYS_FAILED : (pa & PAR_PA);
-	reg_daif_write(daif);
-	return pa;
+	__asm __volatile("dsb sy" ::: "memory");
 }
 
-static inline paddr_t
-vtophysw(vaddr_t va)
+static inline void
+arm_isb(void)
 {
-	const uint64_t daif = reg_daif_read();
-	/*
-	 * Use the address translation instruction to do the lookup.
-	 */
-	reg_daifset_write(DAIF_I|DAIF_F);
-	__asm __volatile("at\ts1e1w, %0" :: "r"(va));
-	paddr_t pa = reg_par_el1_read();
-	pa = (pa & PAR_F) ? VTOPHYS_FAILED : (pa & PAR_PA);
-	reg_daif_write(daif);
-	return pa;
+	__asm __volatile("isb" ::: "memory");
 }
+
+#endif /* _LOCORE */
 
 #elif defined(__arm__)
 

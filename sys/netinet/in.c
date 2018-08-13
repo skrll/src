@@ -1,4 +1,4 @@
-/*	$NetBSD: in.c,v 1.210 2017/11/17 07:37:12 ozaki-r Exp $	*/
+/*	$NetBSD: in.c,v 1.231 2018/05/13 22:42:51 khorben Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.210 2017/11/17 07:37:12 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.231 2018/05/13 22:42:51 khorben Exp $");
 
 #include "arp.h"
 
@@ -479,9 +479,14 @@ in_control0(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 		} else if (in_hosteq(ia->ia_addr.sin_addr,
 		           ifra->ifra_addr.sin_addr))
 			hostIsNew = 0;
+		if (ifra->ifra_addr.sin_family != AF_INET) {
+			error = EAFNOSUPPORT;
+			goto out;
+		}
 		/* FALLTHROUGH */
 	case SIOCSIFDSTADDR:
-		if (ifra->ifra_addr.sin_family != AF_INET) {
+		if (cmd == SIOCSIFDSTADDR &&
+		    ifreq_getaddr(cmd, ifr)->sa_family != AF_INET) {
 			error = EAFNOSUPPORT;
 			goto out;
 		}
@@ -751,9 +756,10 @@ in_control(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 {
 	int error;
 
-	SOFTNET_LOCK_UNLESS_NET_MPSAFE();
+#ifndef NET_MPSAFE
+	KASSERT(KERNEL_LOCKED_P());
+#endif
 	error = in_control0(so, cmd, data, ifp);
-	SOFTNET_UNLOCK_UNLESS_NET_MPSAFE();
 
 	return error;
 }
@@ -845,7 +851,7 @@ in_purgeaddr(struct ifaddr *ifa)
 	struct in_ifaddr *ia = (void *) ifa;
 	struct ifnet *ifp = ifa->ifa_ifp;
 
-	KASSERT(!ifa_held(ifa));
+	/* KASSERT(!ifa_held(ifa)); XXX need ifa_not_held (psref_not_held) */
 
 	ifa->ifa_flags |= IFA_DESTROYING;
 	in_scrubaddr(ia);
@@ -855,9 +861,7 @@ in_purgeaddr(struct ifaddr *ifa)
 	TAILQ_REMOVE(&in_ifaddrhead, ia, ia_list);
 	IN_ADDRLIST_WRITER_REMOVE(ia);
 	ifa_remove(ifp, &ia->ia_ifa);
-#ifdef NET_MPSAFE
-	pserialize_perform(in_ifaddrhash_psz);
-#endif
+	/* Assume ifa_remove called pserialize_perform and psref_destroy */
 	mutex_exit(&in_ifaddr_lock);
 	IN_ADDRHASH_ENTRY_DESTROY(ia);
 	IN_ADDRLIST_ENTRY_DESTROY(ia);
@@ -912,11 +916,14 @@ in_addrhash_remove(struct in_ifaddr *ia)
 void
 in_purgeif(struct ifnet *ifp)		/* MUST be called at splsoftnet() */
 {
+
+	IFNET_LOCK(ifp);
 	if_purgeaddrs(ifp, AF_INET, in_purgeaddr);
 	igmp_purgeif(ifp);		/* manipulates pools */
 #ifdef MROUTING
 	ip_mrouter_detach(ifp);
 #endif
+	IFNET_UNLOCK(ifp);
 }
 
 /*
@@ -1138,7 +1145,7 @@ in_ifinit(struct ifnet *ifp, struct in_ifaddr *ia,
 
 	/*
 	 * Configure address flags.
-	 * We need to do this early because they maybe adjusted
+	 * We need to do this early because they may be adjusted
 	 * by if_addr_init depending on the address.
 	 */
 	if (ia->ia4_flags & IN_IFF_DUPLICATED) {
@@ -1148,7 +1155,11 @@ in_ifinit(struct ifnet *ifp, struct in_ifaddr *ia,
 	if (ifp->if_link_state == LINK_STATE_DOWN) {
 		ia->ia4_flags |= IN_IFF_DETACHED;
 		ia->ia4_flags &= ~IN_IFF_TENTATIVE;
-	} else if (hostIsNew && if_do_dad(ifp))
+	} else if (hostIsNew && if_do_dad(ifp)
+#if NARP > 0
+	    && ip_dad_count > 0
+#endif
+	)
 		ia->ia4_flags |= IN_IFF_TRYTENTATIVE;
 
 	/*
@@ -1538,7 +1549,9 @@ in_if_down(struct ifnet *ifp)
 {
 
 	in_if_link_down(ifp);
+#if NARP > 0
 	lltable_purge_entries(LLTABLE(ifp));
+#endif
 }
 
 void
@@ -1874,11 +1887,45 @@ out:
 	return ia;
 }
 
-#if NARP > 0
+int
+in_tunnel_validate(const struct ip *ip, struct in_addr src, struct in_addr dst)
+{
+	struct in_ifaddr *ia4;
+	int s;
 
-struct in_llentry {
-	struct llentry		base;
-};
+	/* check for address match */
+	if (src.s_addr != ip->ip_dst.s_addr ||
+	    dst.s_addr != ip->ip_src.s_addr)
+		return 0;
+
+	/* martian filters on outer source - NOT done in ip_input! */
+	if (IN_MULTICAST(ip->ip_src.s_addr))
+		return 0;
+	switch ((ntohl(ip->ip_src.s_addr) & 0xff000000) >> 24) {
+	case 0:
+	case 127:
+	case 255:
+		return 0;
+	}
+	/* reject packets with broadcast on source */
+	s = pserialize_read_enter();
+	IN_ADDRLIST_READER_FOREACH(ia4) {
+		if ((ia4->ia_ifa.ifa_ifp->if_flags & IFF_BROADCAST) == 0)
+			continue;
+		if (ip->ip_src.s_addr == ia4->ia_broadaddr.sin_addr.s_addr) {
+			pserialize_read_exit(s);
+			return 0;
+		}
+	}
+	pserialize_read_exit(s);
+
+	/* NOTE: packet may dropped by uRPF */
+
+	/* return valid bytes length */
+	return sizeof(src) + sizeof(dst);
+}
+
+#if NARP > 0
 
 #define	IN_LLTBL_DEFAULT_HSIZE	32
 #define	IN_LLTBL_HASH(k, h) \
@@ -1893,17 +1940,19 @@ static void
 in_lltable_destroy_lle(struct llentry *lle)
 {
 
+	KASSERT(lle->la_numheld == 0);
+
 	LLE_WUNLOCK(lle);
 	LLE_LOCK_DESTROY(lle);
-	kmem_intr_free(lle, sizeof(*lle));
+	llentry_pool_put(lle);
 }
 
 static struct llentry *
 in_lltable_new(struct in_addr addr4, u_int flags)
 {
-	struct in_llentry *lle;
+	struct llentry *lle;
 
-	lle = kmem_intr_zalloc(sizeof(*lle), KM_NOSLEEP);
+	lle = llentry_pool_get(PR_NOWAIT);
 	if (lle == NULL)		/* NB: caller generates msg */
 		return NULL;
 
@@ -1911,14 +1960,14 @@ in_lltable_new(struct in_addr addr4, u_int flags)
 	 * For IPv4 this will trigger "arpresolve" to generate
 	 * an ARP request.
 	 */
-	lle->base.la_expire = time_uptime; /* mark expired */
-	lle->base.r_l3addr.addr4 = addr4;
-	lle->base.lle_refcnt = 1;
-	lle->base.lle_free = in_lltable_destroy_lle;
-	LLE_LOCK_INIT(&lle->base);
-	callout_init(&lle->base.la_timer, CALLOUT_MPSAFE);
+	lle->la_expire = time_uptime; /* mark expired */
+	lle->r_l3addr.addr4 = addr4;
+	lle->lle_refcnt = 1;
+	lle->lle_free = in_lltable_destroy_lle;
+	LLE_LOCK_INIT(lle);
+	callout_init(&lle->la_timer, CALLOUT_MPSAFE);
 
-	return (&lle->base);
+	return lle;
 }
 
 #define IN_ARE_MASKED_ADDR_EQUAL(d, a, m)	(			\
@@ -1948,24 +1997,11 @@ in_lltable_match_prefix(const struct sockaddr *prefix,
 static void
 in_lltable_free_entry(struct lltable *llt, struct llentry *lle)
 {
-	struct ifnet *ifp __diagused;
 	size_t pkts_dropped;
 
 	LLE_WLOCK_ASSERT(lle);
 	KASSERT(llt != NULL);
 
-	/* Unlink entry from table if not already */
-	if ((lle->la_flags & LLE_LINKED) != 0) {
-		ifp = llt->llt_ifp;
-		IF_AFDATA_WLOCK_ASSERT(ifp);
-		lltable_unlink_entry(llt, lle);
-	}
-
-	/* cancel timer */
-	if (callout_halt(&lle->lle_timer, &lle->lle_lock))
-		LLE_REMREF(lle);
-
-	/* Drop hold queue */
 	pkts_dropped = llentry_free(lle);
 	arp_stat_add(ARP_STAT_DFRDROPPED, (uint64_t)pkts_dropped);
 }
@@ -1988,11 +2024,7 @@ in_lltable_rtcheck(struct ifnet *ifp, u_int flags, const struct sockaddr *l3addr
 	if (rt->rt_flags & RTF_GATEWAY) {
 		if (!(rt->rt_flags & RTF_HOST) || !rt->rt_ifp ||
 		    rt->rt_ifp->if_type != IFT_ETHER ||
-#ifdef __FreeBSD__
-		    (rt->rt_ifp->if_flags & (IFF_NOARP | IFF_STATICARP)) != 0 ||
-#else
 		    (rt->rt_ifp->if_flags & IFF_NOARP) != 0 ||
-#endif
 		    memcmp(rt->rt_gateway->sa_data, l3addr->sa_data,
 		    sizeof(in_addr_t)) != 0) {
 			goto error;
@@ -2098,7 +2130,7 @@ in_lltable_delete(struct lltable *llt, u_int flags,
 
 	lle = in_lltable_find_dst(llt, sin->sin_addr);
 	if (lle == NULL) {
-#ifdef DEBUG
+#ifdef LLTABLE_DEBUG
 		char buf[64];
 		sockaddr_format(l3addr, buf, sizeof(buf));
 		log(LOG_INFO, "%s: cache for %s is not found\n",
@@ -2108,8 +2140,7 @@ in_lltable_delete(struct lltable *llt, u_int flags,
 	}
 
 	LLE_WLOCK(lle);
-	lle->la_flags |= LLE_DELETED;
-#ifdef DEBUG
+#ifdef LLTABLE_DEBUG
 	{
 		char buf[64];
 		sockaddr_format(l3addr, buf, sizeof(buf));
@@ -2117,10 +2148,7 @@ in_lltable_delete(struct lltable *llt, u_int flags,
 		    __func__, buf, lle);
 	}
 #endif
-	if ((lle->la_flags & (LLE_STATIC | LLE_IFADDR)) == LLE_STATIC)
-		llentry_free(lle);
-	else
-		LLE_WUNLOCK(lle);
+	llentry_free(lle);
 
 	return (0);
 }

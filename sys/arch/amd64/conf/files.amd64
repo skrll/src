@@ -1,4 +1,4 @@
-#	$NetBSD: files.amd64,v 1.96 2017/12/07 23:11:50 christos Exp $
+#	$NetBSD: files.amd64,v 1.105 2018/07/13 09:37:32 maxv Exp $
 #
 # new style config file for amd64 architecture
 #
@@ -19,12 +19,14 @@ defparam opt_realmem.h	REALBASEMEM REALEXTMEM
 # The PHYSMEM_MAX_{SIZE,ADDR} optionms
 defparam opt_physmem.h	PHYSMEM_MAX_ADDR PHYSMEM_MAX_SIZE
 
+# Enable GCC spectre V2 mitigation options
+defflag opt_spectre.h	SPECTRE_V2_GCC_MITIGATION
+
 #
 # XXX these are just here at the moment so that we can share files
 # with the i386 (they include the opt_*.h for these)
 #
 
-defflag			PMC
 defflag			USER_LDT
 defflag			KASLR
 defflag eisa.h EISA
@@ -36,6 +38,7 @@ file	arch/amd64/amd64/copy.S			machdep
 file	arch/amd64/amd64/spl.S			machdep
 
 file	arch/amd64/amd64/amd64func.S		machdep
+file	arch/amd64/amd64/amd64_trap.S		machdep
 file	arch/amd64/amd64/autoconf.c		machdep
 file	arch/amd64/amd64/busfunc.S		machdep
 file	arch/amd64/amd64/cpu_in_cksum.S		(inet | inet6) & cpu_in_cksum
@@ -47,12 +50,12 @@ file	arch/amd64/amd64/kobj_machdep.c		modular
 file	kern/subr_disk_mbr.c			disk
 file	arch/amd64/amd64/gdt.c			machdep
 file	arch/amd64/amd64/machdep.c		machdep
-file	arch/amd64/amd64/prekern.c		machdep
+file	arch/amd64/amd64/prekern.c		kaslr
 file	arch/amd64/amd64/process_machdep.c	machdep
 file	arch/amd64/amd64/trap.c			machdep
 file	arch/x86/x86/fpu.c			machdep
 file	arch/x86/x86/dbregs.c			machdep
-file	arch/x86/x86/convert_xmm_s87.c		machdep
+file	arch/x86/x86/spectre.c			machdep
 file	arch/amd64/amd64/lock_stubs.S		machdep
 file	dev/cons.c				machdep
 

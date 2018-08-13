@@ -1,4 +1,4 @@
-/*	$NetBSD: in6_l2tp.c,v 1.8 2017/12/11 02:17:35 knakahara Exp $	*/
+/*	$NetBSD: in6_l2tp.c,v 1.16 2018/06/21 10:37:50 knakahara Exp $	*/
 
 /*
  * Copyright (c) 2017 Internet Initiative Japan Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6_l2tp.c,v 1.8 2017/12/11 02:17:35 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6_l2tp.c,v 1.16 2018/06/21 10:37:50 knakahara Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_l2tp.h"
@@ -113,6 +113,14 @@ in6_l2tp_output(struct l2tp_variant *var, struct mbuf *m)
 		goto looped;
 	}
 
+	/* bidirectional configured tunnel mode */
+	if (IN6_IS_ADDR_UNSPECIFIED(&sin6_dst->sin6_addr)) {
+		m_freem(m);
+		if ((ifp->if_flags & IFF_DEBUG) != 0)
+			log(LOG_DEBUG, "%s: ENETUNREACH\n", __func__);
+		return ENETUNREACH;
+	}
+
 #ifdef NOTYET
 /* TODO: support ALTQ for innner frame */
 #ifdef ALTQ
@@ -122,18 +130,10 @@ in6_l2tp_output(struct l2tp_variant *var, struct mbuf *m)
 
 	memset(&ip6hdr, 0, sizeof(ip6hdr));
 	ip6hdr.ip6_src = sin6_src->sin6_addr;
-	/* bidirectional configured tunnel mode */
-	if (!IN6_IS_ADDR_UNSPECIFIED(&sin6_dst->sin6_addr))
-		ip6hdr.ip6_dst = sin6_dst->sin6_addr;
-	else {
-		m_freem(m);
-		if ((ifp->if_flags & IFF_DEBUG) != 0)
-			log(LOG_DEBUG, "%s: ENETUNREACH\n", __func__);
-		return ENETUNREACH;
-	}
+	ip6hdr.ip6_dst = sin6_dst->sin6_addr;
 	/* unlike IPv4, IP version must be filled by caller of ip6_output() */
-	ip6hdr.ip6_vfc  = 0x60;
-	ip6hdr.ip6_nxt  = IPPROTO_L2TP;
+	ip6hdr.ip6_vfc = 0x60;
+	ip6hdr.ip6_nxt = IPPROTO_L2TP;
 	ip6hdr.ip6_hlim = ip6_l2tp_hlim;
 	/* outer IP payload length */
 	ip6hdr.ip6_plen = 0;
@@ -152,10 +152,10 @@ in6_l2tp_output(struct l2tp_variant *var, struct mbuf *m)
 #endif
 
 	/*
-	 * payload length
-	 *  NOTE: Payload length may be changed in ip_tcpmss().
-	 *        Typical case is missing of TCP mss option in original
-	 *        TCP header.
+	 * Payload length.
+	 *
+	 * NOTE: payload length may be changed in ip_tcpmss(). Typical case
+	 * is missing of TCP mss option in original TCP header.
 	 */
 	ip6hdr.ip6_plen += m->m_pkthdr.len;
 	HTONS(ip6hdr.ip6_plen);
@@ -171,12 +171,10 @@ in6_l2tp_output(struct l2tp_variant *var, struct mbuf *m)
 			return ENOBUFS;
 		if (var->lv_peer_cookie_len == 4) {
 			cookie_32 = htonl((uint32_t)var->lv_peer_cookie);
-			memcpy(mtod(m, void *), &cookie_32,
-			    sizeof(uint32_t));
+			memcpy(mtod(m, void *), &cookie_32, sizeof(uint32_t));
 		} else {
 			cookie_64 = htobe64(var->lv_peer_cookie);
-			memcpy(mtod(m, void *), &cookie_64,
-			    sizeof(uint64_t));
+			memcpy(mtod(m, void *), &cookie_64, sizeof(uint64_t));
 		}
 	}
 
@@ -191,11 +189,12 @@ in6_l2tp_output(struct l2tp_variant *var, struct mbuf *m)
 
 	/* prepend new IP header */
 	M_PREPEND(m, sizeof(struct ip6_hdr), M_DONTWAIT);
+	if (m == NULL)
+		return ENOBUFS;
 	if (IP_HDR_ALIGNED_P(mtod(m, void *)) == 0) {
-		if (m)
-			m = m_copyup(m, sizeof(struct ip), 0);
+		m = m_copyup(m, sizeof(struct ip), 0);
 	} else {
-		if (m && m->m_len < sizeof(struct ip6_hdr))
+		if (m->m_len < sizeof(struct ip6_hdr))
 			m = m_pullup(m, sizeof(struct ip6_hdr));
 	}
 	if (m == NULL)
@@ -203,9 +202,9 @@ in6_l2tp_output(struct l2tp_variant *var, struct mbuf *m)
 	memcpy(mtod(m, struct ip6_hdr *), &ip6hdr, sizeof(struct ip6_hdr));
 
 	lro = percpu_getref(sc->l2tp_ro_percpu);
-	mutex_enter(&lro->lr_lock);
+	mutex_enter(lro->lr_lock);
 	if ((rt = rtcache_lookup(&lro->lr_ro, var->lv_pdst)) == NULL) {
-		mutex_exit(&lro->lr_lock);
+		mutex_exit(lro->lr_lock);
 		percpu_putref(sc->l2tp_ro_percpu);
 		m_freem(m);
 		return ENETUNREACH;
@@ -215,7 +214,7 @@ in6_l2tp_output(struct l2tp_variant *var, struct mbuf *m)
 	if (rt->rt_ifp == ifp) {
 		rtcache_unref(rt, &lro->lr_ro);
 		rtcache_free(&lro->lr_ro);
-		mutex_exit(&lro->lr_lock);
+		mutex_exit(lro->lr_lock);
 		percpu_putref(sc->l2tp_ro_percpu);
 		m_freem(m);
 		return ENETUNREACH;	/* XXX */
@@ -229,7 +228,7 @@ in6_l2tp_output(struct l2tp_variant *var, struct mbuf *m)
 	m->m_pkthdr.csum_flags  = 0;
 
 	error = ip6_output(m, 0, &lro->lr_ro, 0, NULL, NULL, NULL);
-	mutex_exit(&lro->lr_lock);
+	mutex_exit(lro->lr_lock);
 	percpu_putref(sc->l2tp_ro_percpu);
 	return(error);
 
@@ -254,14 +253,12 @@ in6_l2tp_input(struct mbuf **mp, int *offp, int proto, void *eparg __unused)
 	uint64_t cookie_64;
 	struct psref psref;
 
-	if (m->m_len < off + sizeof(uint32_t)) {
-		m = m_pullup(m, off + sizeof(uint32_t));
-		if (!m) {
-			/* if payload length < 4 octets */
-			return IPPROTO_DONE;
-		}
-		*mp = m;
-        }
+	KASSERT((m->m_flags & M_PKTHDR) != 0);
+
+	if (m->m_pkthdr.len < off + sizeof(uint32_t)) {
+		m_freem(m);
+		return IPPROTO_DONE;
+	}
 
 	/* get L2TP session ID */
 	m_copydata(m, off, sizeof(uint32_t), (void *)&sess_id);
@@ -270,11 +267,15 @@ in6_l2tp_input(struct mbuf **mp, int *offp, int proto, void *eparg __unused)
 	log(LOG_DEBUG, "%s: sess_id = %" PRIu32 "\n", __func__, sess_id);
 #endif
 	if (sess_id == 0) {
+		int rv;
 		/*
 		 * L2TPv3 control packet received.
 		 * userland daemon(l2tpd?) should process.
 		 */
-		return rip6_input(mp, offp, proto);
+		SOFTNET_LOCK_IF_NET_MPSAFE();
+		rv = rip6_input(mp, offp, proto);
+		SOFTNET_UNLOCK_IF_NET_MPSAFE();
+		return rv;
 	}
 
 	var = l2tp_lookup_session_ref(sess_id, &psref);
@@ -282,27 +283,28 @@ in6_l2tp_input(struct mbuf **mp, int *offp, int proto, void *eparg __unused)
 		m_freem(m);
 		IP_STATINC(IP_STAT_NOL2TP);
 		return IPPROTO_DONE;
-	} else {
-		sc = var->lv_softc;
-		l2tpp = &(sc->l2tp_ec.ec_if);
+	}
 
-		if (l2tpp == NULL || (l2tpp->if_flags & IFF_UP) == 0) {
+	sc = var->lv_softc;
+	l2tpp = &(sc->l2tp_ec.ec_if);
+
+	if (l2tpp == NULL || (l2tpp->if_flags & IFF_UP) == 0) {
 #ifdef L2TP_DEBUG
-			if (l2tpp == NULL)
-				log(LOG_DEBUG, "%s: l2tpp is NULL\n", __func__);
-			else
-				log(LOG_DEBUG, "%s: l2tpp is down\n", __func__);
+		if (l2tpp == NULL)
+			log(LOG_DEBUG, "%s: l2tpp is NULL\n", __func__);
+		else
+			log(LOG_DEBUG, "%s: l2tpp is down\n", __func__);
 #endif
-			m_freem(m);
-			IP_STATINC(IP_STAT_NOL2TP);
-			goto out;
-		}
-		/* other CPU do l2tp_delete_tunnel */
-		if (var->lv_psrc == NULL || var->lv_pdst == NULL) {
-			m_freem(m);
-			ip_statinc(IP_STAT_NOL2TP);
-			goto out;
-		}
+		m_freem(m);
+		IP_STATINC(IP_STAT_NOL2TP);
+		goto out;
+	}
+
+	/* other CPU did l2tp_delete_tunnel */
+	if (var->lv_psrc == NULL || var->lv_pdst == NULL) {
+		m_freem(m);
+		ip_statinc(IP_STAT_NOL2TP);
+		goto out;
 	}
 
 	if (var->lv_state != L2TP_STATE_UP) {
@@ -312,6 +314,10 @@ in6_l2tp_input(struct mbuf **mp, int *offp, int proto, void *eparg __unused)
 	m_adj(m, off + sizeof(uint32_t));
 
 	if (var->lv_use_cookie == L2TP_COOKIE_ON) {
+		if (m->m_pkthdr.len < var->lv_my_cookie_len) {
+			m_freem(m);
+			goto out;
+		}
 		if (var->lv_my_cookie_len == 4) {
 			m_copydata(m, 0, sizeof(uint32_t), (void *)&cookie_32);
 			NTOHL(cookie_32);
@@ -360,8 +366,10 @@ in6_l2tp_match(struct mbuf *m, int off, int proto, void *arg)
 
 	KASSERT(proto == IPPROTO_L2TP);
 
-	/* if payload length < 4 octets */
-	if (m->m_len < off + sizeof(uint32_t))
+	/*
+	 * If the packet contains no session ID it cannot match
+	 */
+	if (m_length(m) < off + sizeof(uint32_t))
 		return 0;
 
 	/* get L2TP session ID */

@@ -1,4 +1,4 @@
-/*	$NetBSD: route.h,v 1.114 2017/09/21 07:15:34 ozaki-r Exp $	*/
+/*	$NetBSD: route.h,v 1.119 2018/04/19 21:20:43 christos Exp $	*/
 
 /*
  * Copyright (c) 1980, 1986, 1993
@@ -124,11 +124,12 @@ struct rtentry {
 	struct	sockaddr *rt_tag;	/* route tagging info */
 #ifdef _KERNEL
 	kcondvar_t rt_cv;
-	struct psref_target	rt_psref;
+	struct psref_target rt_psref;
+	SLIST_ENTRY(rtentry) rt_free;	/* queue of deferred frees */
 #endif
 };
 
-static inline const struct sockaddr *
+static __inline const struct sockaddr *
 rt_getkey(const struct rtentry *rt)
 {
 	return rt->_rt_key;
@@ -171,6 +172,16 @@ struct ortentry {
 #define RTF_LOCAL	0x40000		/* route represents a local address */
 #define RTF_BROADCAST	0x80000		/* route represents a bcast address */
 #define RTF_UPDATING	0x100000	/* route is updating */
+
+/*
+ * 0x400 is exposed to userland just for backward compatibility. For that
+ * purpose, it should be shown as LLINFO.
+ */
+#define RTFBITS "\020\1UP\2GATEWAY\3HOST\4REJECT\5DYNAMIC\6MODIFIED\7DONE" \
+    "\010MASK_PRESENT\011CONNECTED\012XRESOLVE\013LLINFO\014STATIC" \
+    "\015BLACKHOLE\016CLONED\017PROTO2\020PROTO1\021SRC\022ANNOUNCE" \
+    "\023LOCAL\024BROADCAST\025UPDATING"
+
 
 /*
  * Routing statistics.
@@ -263,6 +274,9 @@ struct rt_msghdr {
 #define RTV_RTT		0x40	/* init or lock _rtt */
 #define RTV_RTTVAR	0x80	/* init or lock _rttvar */
 
+#define RTVBITS "\020\1MTU\2HOPCOUNT\3EXPIRE\4RECVPIPE\5SENDPIPE" \
+    "\6SSTHRESH\7RTT\010RTTVAR"
+
 /*
  * Bitmask values for rtm_addr.
  */
@@ -275,6 +289,9 @@ struct rt_msghdr {
 #define RTA_AUTHOR	0x40	/* sockaddr for author of redirect */
 #define RTA_BRD		0x80	/* for NEWADDR, broadcast or p-p dest addr */
 #define RTA_TAG		0x100	/* route tag */
+
+#define RTABITS "\020\1DST\2GATEWAY\3NETMASK\4GENMASK\5IFP\6IFA\7AUTHOR" \
+    "\010BRD\011TAG"
 
 /*
  * Index offsets for sockaddr array for alternate internal encoding.
@@ -396,6 +413,7 @@ void	rt_timer_queue_destroy(struct rttimer_queue *);
 void	rt_free(struct rtentry *);
 void	rt_unref(struct rtentry *);
 
+int	rt_update(struct rtentry *, struct rt_addrinfo *, void *);
 int	rt_update_prepare(struct rtentry *);
 void	rt_update_finish(struct rtentry *);
 
@@ -417,10 +435,6 @@ int	rt_ifa_addlocal(struct ifaddr *);
 int	rt_ifa_remlocal(struct ifaddr *, struct ifaddr *);
 struct ifaddr *
 	rt_get_ifa(struct rtentry *);
-struct ifaddr *
-	rt_getifa(struct rt_addrinfo *, struct psref *);
-struct ifnet *
-	rt_getifp(struct rt_addrinfo *, struct psref *);
 void	rt_replace_ifa(struct rtentry *, struct ifaddr *);
 int	rt_setgate(struct rtentry *, const struct sockaddr *);
 
@@ -434,7 +448,7 @@ void	rt_delete_matched_entries(sa_family_t,
 	    int (*)(struct rtentry *, void *), void *);
 int	rt_walktree(sa_family_t, int (*)(struct rtentry *, void *), void *);
 
-static inline void
+static __inline void
 rt_assert_referenced(const struct rtentry *rt)
 {
 
@@ -454,14 +468,14 @@ int	rtcache_setdst(struct route *, const struct sockaddr *);
 struct rtentry *
 	rtcache_update(struct route *, int);
 
-static inline void
+static __inline void
 rtcache_invariants(const struct route *ro)
 {
 
 	KASSERT(ro->ro_sa != NULL || ro->_ro_rt == NULL);
 }
 
-static inline struct rtentry *
+static __inline struct rtentry *
 rtcache_lookup1(struct route *ro, const struct sockaddr *dst, int clone)
 {
 	int hit;
@@ -469,13 +483,13 @@ rtcache_lookup1(struct route *ro, const struct sockaddr *dst, int clone)
 	return rtcache_lookup2(ro, dst, clone, &hit);
 }
 
-static inline struct rtentry *
+static __inline struct rtentry *
 rtcache_lookup(struct route *ro, const struct sockaddr *dst)
 {
 	return rtcache_lookup1(ro, dst, 1);
 }
 
-static inline const struct sockaddr *
+static __inline const struct sockaddr *
 rtcache_getdst(const struct route *ro)
 {
 
@@ -502,6 +516,8 @@ void	route_enqueue(struct mbuf *, int);
 struct llentry;
 void	rt_clonedmsg(const struct sockaddr *, const struct ifnet *,
 	    const struct rtentry *);
+
+void	rt_setmetrics(void *, struct rtentry *);
 
 /* rtbl */
 int	rt_addaddr(rtbl_t *, struct rtentry *, const struct sockaddr *);

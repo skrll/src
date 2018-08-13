@@ -1,4 +1,4 @@
-/*	$NetBSD: db_machdep.h,v 1.25 2017/11/06 03:47:45 christos Exp $	*/
+/*	$NetBSD: db_machdep.h,v 1.27 2018/04/01 04:35:04 ryo Exp $	*/
 
 /*
  * Copyright (c) 1996 Scott K Stevens
@@ -31,6 +31,8 @@
 #ifndef	_ARM_DB_MACHDEP_H_
 #define	_ARM_DB_MACHDEP_H_
 
+#if defined(__arm__)
+
 /*
  * Machine-dependent defines for new kernel debugger.
  */
@@ -57,13 +59,8 @@ extern db_regs_t *ddb_regp;
 #define ddb_regs	(*ddb_regp)
 #endif
 
-#ifdef __PROG26
-#define	PC_REGS(regs)	((regs)->tf_r15 & R15_PC)
-#define PC_ADVANCE(regs) ((regs)->tf_r15 += BKPT_SIZE)
-#else
 #define	PC_REGS(regs)	((regs)->tf_pc)
 #define PC_ADVANCE(r)   ((r)->tf_r15 += BKPT_SIZE)
-#endif
 
 #define	BKPT_ADDR(addr)	(addr)			/* breakpoint address */
 #if defined(DDB)
@@ -137,4 +134,11 @@ typedef register_t	kgdb_reg_t;
  */
 extern volatile struct cpu_info *db_onproc;
 extern volatile struct cpu_info *db_newcpu;
+
+#elif defined(__aarch64__)
+
+#include <aarch64/db_machdep.h>
+
+#endif
+
 #endif	/* _ARM_DB_MACHDEP_H_ */

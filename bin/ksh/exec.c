@@ -1,4 +1,4 @@
-/*	$NetBSD: exec.c,v 1.24 2017/07/01 23:12:08 joerg Exp $	*/
+/*	$NetBSD: exec.c,v 1.28 2018/06/03 12:18:29 kamil Exp $	*/
 
 /*
  * execute command tree
@@ -6,7 +6,7 @@
 #include <sys/cdefs.h>
 
 #ifndef lint
-__RCSID("$NetBSD: exec.c,v 1.24 2017/07/01 23:12:08 joerg Exp $");
+__RCSID("$NetBSD: exec.c,v 1.28 2018/06/03 12:18:29 kamil Exp $");
 #endif
 
 #include <sys/stat.h>
@@ -445,14 +445,14 @@ static int
 comexec(t, tp, ap, flags)
 	struct op *t;
 	struct tbl *volatile tp;
-	register char **ap;
+	char **ap;
 	int volatile flags;
 {
 	int i;
 	int leave = LLEAVE;
 	volatile int rv = 0;
-	register char *cp;
-	register char **lastp;
+	char *cp;
+	char **lastp;
 	static struct op texec; /* Must be static (XXX but why?) */
 	int type_flags;
 	int keepasn_ok;
@@ -749,8 +749,8 @@ comexec(t, tp, ap, flags)
 
 static void
 scriptexec(tp, ap)
-	register struct op *tp;
-	register char **ap;
+	struct op *tp;
+	char **ap;
 {
 	char *shellv;
 
@@ -771,11 +771,11 @@ scriptexec(tp, ap)
 
 int
 shcomexec(wp)
-	register char **wp;
+	char **wp;
 {
-	register struct tbl *tp;
+	struct tbl *tp;
 
-	tp = tsearch(&builtins, *wp, hash(*wp));
+	tp = mytsearch(&builtins, *wp, hash(*wp));
 	if (tp == NULL)
 		internal_errorf(1, "shcomexec: %s", *wp);
 	return call_builtin(tp, wp);
@@ -795,7 +795,7 @@ findfunc(name, h, create)
 	struct tbl *tp = (struct tbl *) 0;
 
 	for (l = e->loc; l; l = l->next) {
-		tp = tsearch(&l->funs, name, h);
+		tp = mytsearch(&l->funs, name, h);
 		if (tp)
 			break;
 		if (!l->next && create) {
@@ -843,7 +843,7 @@ define(name, t)
 	}
 
 	if (t == NULL) {		/* undefine */
-		tdelete(tp);
+		mytdelete(tp);
 		return was_set ? 0 : 1;
 	}
 
@@ -863,7 +863,7 @@ builtin(name, func)
 	const char *name;
 	int (*func) ARGS((char **));
 {
-	register struct tbl *tp;
+	struct tbl *tp;
 	Tflag flag;
 
 	/* see if any flags should be set for this builtin */
@@ -906,7 +906,7 @@ findcom(name, flags)
 		flags &= ~FC_FUNC;
 		goto Search;
 	}
-	tbi = (flags & FC_BI) ? tsearch(&builtins, name, h) : NULL;
+	tbi = (flags & FC_BI) ? mytsearch(&builtins, name, h) : NULL;
 	/* POSIX says special builtins first, then functions, then
 	 * POSIX regular builtins, then search path...
 	 */
@@ -936,7 +936,7 @@ findcom(name, flags)
 	if (!tp && (flags & FC_UNREGBI) && tbi)
 		tp = tbi;
 	if (!tp && (flags & FC_PATH) && !(flags & FC_DEFPATH)) {
-		tp = tsearch(&taliases, name, h);
+		tp = mytsearch(&taliases, name, h);
 		if (tp && (tp->flag & ISSET) && eaccess(tp->val.s, X_OK) != 0) {
 			if (tp->flag & ALLOC) {
 				tp->flag &= ~ALLOC;
@@ -999,7 +999,7 @@ flushcom(all)
 	struct tbl *tp;
 	struct tstate ts;
 
-	for (twalk(&ts, &taliases); (tp = tnext(&ts)) != NULL; )
+	for (ksh_twalk(&ts, &taliases); (tp = tnext(&ts)) != NULL; )
 		if ((tp->flag&ISSET) && (all || !ISDIRSEP(tp->val.s[0]))) {
 			if (tp->flag&ALLOC) {
 				tp->flag &= ~(ALLOC|ISSET);
@@ -1112,10 +1112,10 @@ call_builtin(tp, wp)
  */
 static int
 iosetup(iop, tp)
-	register struct ioword *iop;
+	struct ioword *iop;
 	struct tbl *tp;
 {
-	register int u = -1;
+	int u = -1;
 	char *cp = iop->name;
 	int iotype = iop->flag & IOTYPE;
 	int do_open = 1, do_close = 0, UNINITIALIZED(flags);

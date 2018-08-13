@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.361 2017/11/01 21:13:26 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.366 2018/07/31 07:00:48 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -217,7 +217,7 @@
 
 #include <arm/locore.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.361 2017/11/01 21:13:26 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.366 2018/07/31 07:00:48 skrll Exp $");
 
 //#define PMAP_DEBUG
 #ifdef PMAP_DEBUG
@@ -257,6 +257,13 @@ int pmapdebug = 0;
 #else	/* PMAP_DEBUG */
 #define NPDEBUG(_lev_,_stat_) /* Nothing */
 #endif	/* PMAP_DEBUG */
+
+
+#ifdef VERBOSE_INIT_ARM
+#define VPRINTF(...)	printf(__VA_ARGS__)
+#else
+#define VPRINTF(...)	do { } while (/* CONSTCOND */ 0)
+#endif
 
 /*
  * pmap_kernel() points here
@@ -3704,12 +3711,24 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 		}
 	}
 	pmap_release_pmap_lock(kpm);
+	pt_entry_t npte = L2_S_PROTO | pa | L2_S_PROT(PTE_KERNEL, prot);
 
-	pt_entry_t npte = L2_S_PROTO | pa | L2_S_PROT(PTE_KERNEL, prot)
-	    | ((flags & PMAP_NOCACHE)
-		? 0
-		: ((flags & PMAP_PTE)
-		    ? pte_l2_s_cache_mode_pt : pte_l2_s_cache_mode));
+	if (flags & PMAP_PTE) {
+		KASSERT((flags & PMAP_CACHE_MASK) == 0);
+		if (!(flags & PMAP_NOCACHE))
+			npte |= pte_l2_s_cache_mode_pt;
+	} else {
+		switch (flags & PMAP_CACHE_MASK) {
+		case PMAP_NOCACHE:
+			break;
+		case PMAP_WRITE_COMBINE:
+			npte |= pte_l2_s_wc_mode;
+			break;
+		default:
+			npte |= pte_l2_s_cache_mode;
+			break;
+		}
+	}
 #ifdef ARM_MMU_EXTENDED
 	if (prot & VM_PROT_EXECUTE)
 		npte &= ~L2_XS_XN;
@@ -3869,11 +3888,19 @@ pmap_kremove(vaddr_t va, vsize_t len)
 bool
 pmap_extract(pmap_t pm, vaddr_t va, paddr_t *pap)
 {
+
+	return pmap_extract_coherency(pm, va, pap, NULL);
+}
+
+bool
+pmap_extract_coherency(pmap_t pm, vaddr_t va, paddr_t *pap, bool *coherentp)
+{
 	struct l2_dtable *l2;
 	pd_entry_t *pdep, pde;
 	pt_entry_t *ptep, pte;
 	paddr_t pa;
 	u_int l1slot;
+	bool coherent;
 
 	pmap_acquire_pmap_lock(pm);
 
@@ -3893,6 +3920,7 @@ pmap_extract(pmap_t pm, vaddr_t va, paddr_t *pap)
 		} else
 #endif
 			pa = (pde & L1_S_FRAME) | (va & L1_S_OFFSET);
+		coherent = (pde & L1_S_CACHE_MASK) == 0;
 	} else {
 		/*
 		 * Note that we can't rely on the validity of the L1
@@ -3916,16 +3944,21 @@ pmap_extract(pmap_t pm, vaddr_t va, paddr_t *pap)
 		switch (pte & L2_TYPE_MASK) {
 		case L2_TYPE_L:
 			pa = (pte & L2_L_FRAME) | (va & L2_L_OFFSET);
+			coherent = (pte & L2_L_CACHE_MASK) == 0;
 			break;
 
 		default:
 			pa = (pte & ~PAGE_MASK) | (va & PAGE_MASK);
+			coherent = (pte & L2_S_CACHE_MASK) == 0;
 			break;
 		}
 	}
 
 	if (pap != NULL)
 		*pap = pa;
+
+	if (coherentp != NULL)
+		*coherentp = (pm == pmap_kernel() && coherent);
 
 	return true;
 }
@@ -4304,7 +4337,7 @@ pmap_fault_fixup(pmap_t pm, vaddr_t va, vm_prot_t ftype, int user)
 	    (uintptr_t)pm, va, ftype, user);
 #ifdef ARM_MMU_EXTENDED
 	UVMHIST_LOG(maphist, " ti=%#jx pai=%#jx asid=%#jx",
-	    (uintptr_t)cpu_tlb_info(curcpu()), 
+	    (uintptr_t)cpu_tlb_info(curcpu()),
 	    (uintptr_t)PMAP_PAI(pm, cpu_tlb_info(curcpu())),
 	    (uintptr_t)PMAP_PAI(pm, cpu_tlb_info(curcpu()))->pai_asid, 0);
 #endif
@@ -6096,9 +6129,7 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	KASSERT(pte_l2_s_cache_mode == pte_l2_s_cache_mode_pt);
 #endif
 
-#ifdef VERBOSE_INIT_ARM
-	printf("kpm ");
-#endif
+	VPRINTF("kpm ");
 	/*
 	 * Initialise the kernel pmap object
 	 */
@@ -6106,14 +6137,10 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 #ifdef ARM_MMU_EXTENDED
 	pm->pm_l1 = l1pt;
 	pm->pm_l1_pa = kernel_l1pt.pv_pa;
-#ifdef VERBOSE_INIT_ARM
-	printf("tlb0 ");
-#endif
+	VPRINTF("tlb0 ");
 	pmap_tlb_info_init(&pmap_tlb0_info);
 #ifdef MULTIPROCESSOR
-#ifdef VERBOSE_INIT_ARM
-	printf("kcpusets ");
-#endif
+	VPRINTF("kcpusets ");
 	pm->pm_onproc = kcpuset_running;
 	pm->pm_active = kcpuset_running;
 #endif
@@ -6121,9 +6148,7 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	pm->pm_l1 = l1;
 #endif
 
-#ifdef VERBOSE_INIT_ARM
-	printf("locks ");
-#endif
+	VPRINTF("locks ");
 #if defined(PMAP_CACHE_VIPT) && !defined(ARM_MMU_EXTENDED)
 	if (arm_cache_prefer_mask != 0) {
 		mutex_init(&pmap_lock, MUTEX_DEFAULT, IPL_VM);
@@ -6137,9 +6162,7 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	uvm_obj_init(&pm->pm_obj, NULL, false, 1);
 	uvm_obj_setlock(&pm->pm_obj, &pm->pm_obj_lock);
 
-#ifdef VERBOSE_INIT_ARM
-	printf("l1pt ");
-#endif
+	VPRINTF("l1pt ");
 	/*
 	 * Scan the L1 translation table created by initarm() and create
 	 * the required metadata for all valid mappings found in it.
@@ -6214,9 +6237,7 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 		}
 	}
 
-#ifdef VERBOSE_INIT_ARM
-	printf("cache(l1pt) ");
-#endif
+	VPRINTF("cache(l1pt) ");
 	/*
 	 * Ensure the primary (kernel) L1 has the correct cache mode for
 	 * a page table. Bitch if it is not correctly set.
@@ -6243,9 +6264,7 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	virtual_avail = vstart;
 	virtual_end = vend;
 
-#ifdef VERBOSE_INIT_ARM
-	printf("specials ");
-#endif
+	VPRINTF("specials ");
 #ifdef PMAP_CACHE_VIPT
 	/*
 	 * If we have a VIPT cache, we need one page/pte per possible alias
@@ -6318,9 +6337,7 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 		pm->pm_pl1vec = NULL;
 #endif
 
-#ifdef VERBOSE_INIT_ARM
-	printf("pools ");
-#endif
+	VPRINTF("pools ");
 	/*
 	 * Initialize the pmap cache
 	 */
@@ -6573,15 +6590,6 @@ pmap_postinit(void)
  * Note that the following routines are used by board-specific initialisation
  * code to configure the initial kernel page tables.
  *
- * If ARM32_NEW_VM_LAYOUT is *not* defined, they operate on the assumption that
- * L2 page-table pages are 4KB in size and use 4 L1 slots. This mimics the
- * behaviour of the old pmap, and provides an easy migration path for
- * initial bring-up of the new pmap on existing ports. Fortunately,
- * pmap_bootstrap() compensates for this hackery. This is only a stop-gap and
- * will be deprecated.
- *
- * If ARM32_NEW_VM_LAYOUT *is* defined, these functions deal with 1KB L2 page
- * tables.
  */
 
 /*
@@ -6732,10 +6740,8 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 	if (l1pt == 0)
 		panic("pmap_map_chunk: no L1 table provided");
 
-#ifdef VERBOSE_INIT_ARM
-	printf("pmap_map_chunk: pa=0x%lx va=0x%lx size=0x%lx resid=0x%lx "
+	VPRINTF("pmap_map_chunk: pa=0x%lx va=0x%lx size=0x%lx resid=0x%lx "
 	    "prot=0x%x cache=%d\n", pa, va, size, resid, prot, cache);
-#endif
 
 	switch (cache) {
 	case PTE_NOCACHE:
@@ -6772,9 +6778,7 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 			    | (va & 0x80000000 ? 0 : L1_S_V6_nG)
 #endif
 			    | L1_S_PROT(PTE_KERNEL, prot) | f1;
-#ifdef VERBOSE_INIT_ARM
-			printf("sS");
-#endif
+			VPRINTF("sS");
 			l1pte_set(&pdep[l1slot], npde);
 			PDE_SYNC_RANGE(&pdep[l1slot], L1_SS_SIZE / L1_S_SIZE);
 			va += L1_SS_SIZE;
@@ -6792,9 +6796,7 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 #endif
 			    | L1_S_PROT(PTE_KERNEL, prot) | f1
 			    | L1_S_DOM(PMAP_DOMAIN_KERNEL);
-#ifdef VERBOSE_INIT_ARM
-			printf("S");
-#endif
+			VPRINTF("S");
 			l1pte_set(&pdep[l1slot], npde);
 			PDE_SYNC(&pdep[l1slot]);
 			va += L1_S_SIZE;
@@ -6826,9 +6828,7 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 			    | (va & 0x80000000 ? 0 : L2_XS_nG)
 #endif
 			    | L2_L_PROT(PTE_KERNEL, prot) | f2l;
-#ifdef VERBOSE_INIT_ARM
-			printf("L");
-#endif
+			VPRINTF("L");
 			l2pte_set(ptep, npte, 0);
 			PTE_SYNC_RANGE(ptep, L2_L_SIZE / L2_S_SIZE);
 			va += L2_L_SIZE;
@@ -6837,9 +6837,7 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 			continue;
 		}
 
-#ifdef VERBOSE_INIT_ARM
-		printf("P");
-#endif
+		VPRINTF("P");
 		/* Use a small page mapping. */
 		pt_entry_t npte = L2_S_PROTO | pa
 #ifdef ARM_MMU_EXTENDED
@@ -6856,9 +6854,7 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 		pa += PAGE_SIZE;
 		resid -= PAGE_SIZE;
 	}
-#ifdef VERBOSE_INIT_ARM
-	printf("\n");
-#endif
+	VPRINTF("\n");
 	return (size);
 }
 
@@ -6891,13 +6887,11 @@ pmap_devmap_bootstrap(vaddr_t l1pt, const struct pmap_devmap *table)
 	pmap_devmap_table = table;
 
 	for (i = 0; pmap_devmap_table[i].pd_size != 0; i++) {
-#ifdef VERBOSE_INIT_ARM
-		printf("devmap: %08lx -> %08lx @ %08lx\n",
+		VPRINTF("devmap: %08lx -> %08lx @ %08lx\n",
 		    pmap_devmap_table[i].pd_pa,
 		    pmap_devmap_table[i].pd_pa +
 			pmap_devmap_table[i].pd_size - 1,
 		    pmap_devmap_table[i].pd_va);
-#endif
 		pmap_map_chunk(l1pt, pmap_devmap_table[i].pd_va,
 		    pmap_devmap_table[i].pd_pa,
 		    pmap_devmap_table[i].pd_size,

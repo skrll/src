@@ -1,4 +1,4 @@
-/*	$NetBSD: cpuset.c,v 1.18 2012/03/09 15:41:16 christos Exp $	*/
+/*	$NetBSD: cpuset.c,v 1.20 2018/07/26 00:13:19 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -32,8 +32,12 @@
 #ifndef _STANDALONE
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: cpuset.c,v 1.18 2012/03/09 15:41:16 christos Exp $");
+__RCSID("$NetBSD: cpuset.c,v 1.20 2018/07/26 00:13:19 kamil Exp $");
 #endif /* LIBC_SCCS and not lint */
+
+#ifdef _LIBC
+#include "namespace.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/sched.h>
@@ -93,7 +97,7 @@ _cpuset_isset(cpuid_t i, const cpuset_t *c)
 		errno = EINVAL;
 		return -1;
 	}
-	return ((1 << (unsigned int)(i & CPUSET_MASK)) & c->bits[j]) != 0;
+	return ((1U << (unsigned int)(i & CPUSET_MASK)) & c->bits[j]) != 0;
 }
 
 int
@@ -105,7 +109,7 @@ _cpuset_set(cpuid_t i, cpuset_t *c)
 		errno = EINVAL;
 		return -1;
 	}
-	c->bits[j] |= 1 << (unsigned int)(i & CPUSET_MASK);
+	c->bits[j] |= 1U << (unsigned int)(i & CPUSET_MASK);
 	return 0;
 }
 
@@ -118,7 +122,7 @@ _cpuset_clr(cpuid_t i, cpuset_t *c)
 		errno = EINVAL;
 		return -1;
 	}
-	c->bits[j] &= ~(1 << (unsigned int)(i & CPUSET_MASK));
+	c->bits[j] &= ~(1U << (unsigned int)(i & CPUSET_MASK));
 	return 0;
 }
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: nd6.c,v 1.239 2017/11/17 07:37:12 ozaki-r Exp $	*/
+/*	$NetBSD: nd6.c,v 1.249 2018/05/29 04:38:29 ozaki-r Exp $	*/
 /*	$KAME: nd6.c,v 1.279 2002/06/08 11:16:51 itojun Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nd6.c,v 1.239 2017/11/17 07:37:12 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nd6.c,v 1.249 2018/05/29 04:38:29 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -75,8 +75,6 @@ __KERNEL_RCSID(0, "$NetBSD: nd6.c,v 1.239 2017/11/17 07:37:12 ozaki-r Exp $");
 #include <netinet6/in6_ifattach.h>
 #include <netinet/icmp6.h>
 #include <netinet6/icmp6_private.h>
-
-#include <net/net_osdep.h>
 
 #define ND6_SLOWTIMER_INTERVAL (60 * 60) /* 1 hour */
 #define ND6_RECALC_REACHTM_INTERVAL (60 * 120) /* 2 hours */
@@ -124,8 +122,8 @@ static callout_t nd6_timer_ch;
 static struct workqueue	*nd6_timer_wq;
 static struct work	nd6_timer_wk;
 
-static int fill_drlist(void *, size_t *, size_t);
-static int fill_prlist(void *, size_t *, size_t);
+static int fill_drlist(void *, size_t *);
+static int fill_prlist(void *, size_t *);
 
 static struct ifnet *nd6_defifp;
 static int nd6_defifindex;
@@ -347,6 +345,7 @@ nd6_options(union nd_opts *ndopts)
 		case ND_OPT_TARGET_LINKADDR:
 		case ND_OPT_MTU:
 		case ND_OPT_REDIRECTED_HEADER:
+		case ND_OPT_NONCE:
 			if (ndopts->nd_opt_array[nd_opt->nd_opt_type]) {
 				nd6log(LOG_INFO,
 				    "duplicated ND6 option found (type=%d)\n",
@@ -402,6 +401,19 @@ nd6_llinfo_settimer(struct llentry *ln, time_t xtick)
 
 	KASSERT(xtick >= 0);
 
+	/*
+	 * We have to take care of a reference leak which occurs if
+	 * callout_reset overwrites a pending callout schedule.  Unfortunately
+	 * we don't have a mean to know the overwrite, so we need to know it
+	 * using callout_stop.  We need to call callout_pending first to exclude
+	 * the case that the callout has never been scheduled.
+	 */
+	if (callout_pending(&ln->la_timer)) {
+		bool expired = callout_stop(&ln->la_timer);
+		if (!expired)
+			LLE_REMREF(ln);
+	}
+
 	ln->ln_expire = time_uptime + xtick / hz;
 	LLE_ADDREF(ln);
 	if (xtick > INT_MAX) {
@@ -451,6 +463,7 @@ nd6_llinfo_timer(void *arg)
 	const struct in6_addr *daddr6 = NULL;
 
 	SOFTNET_KERNEL_LOCK_UNLESS_NET_MPSAFE();
+
 	LLE_WLOCK(ln);
 	if ((ln->la_flags & LLE_LINKED) == 0)
 		goto out;
@@ -459,28 +472,8 @@ nd6_llinfo_timer(void *arg)
 		goto out;
 	}
 
-	if (callout_pending(&ln->la_timer)) {
-		/*
-		 * Here we are a bit odd here in the treatment of
-		 * active/pending. If the pending bit is set, it got
-		 * rescheduled before I ran. The active
-		 * bit we ignore, since if it was stopped
-		 * in ll_tablefree() and was currently running
-		 * it would have return 0 so the code would
-		 * not have deleted it since the callout could
-		 * not be stopped so we want to go through
-		 * with the delete here now. If the callout
-		 * was restarted, the pending bit will be back on and
-		 * we just want to bail since the callout_reset would
-		 * return 1 and our reference would have been removed
-		 * by nd6_llinfo_settimer above since canceled
-		 * would have been 1.
-		 */
-		goto out;
-	}
 
 	ifp = ln->lle_tbl->llt_ifp;
-
 	KASSERT(ifp != NULL);
 
 	ndi = ND_IFINFO(ifp);
@@ -560,7 +553,7 @@ nd6_llinfo_timer(void *arg)
 		psrc = nd6_llinfo_get_holdsrc(ln, &src);
 		LLE_FREE_LOCKED(ln);
 		ln = NULL;
-		nd6_ns_output(ifp, daddr6, taddr6, psrc, 0);
+		nd6_ns_output(ifp, daddr6, taddr6, psrc, NULL);
 	}
 
 out:
@@ -614,6 +607,7 @@ nd6_timer_work(struct work *wk, void *arg)
 		/* check address lifetime */
 		if (IFA6_IS_INVALID(ia6)) {
 			int regen = 0;
+			struct ifnet *ifp;
 
 			/*
 			 * If the expiring address is temporary, try
@@ -627,13 +621,30 @@ nd6_timer_work(struct work *wk, void *arg)
 			 */
 			if (ip6_use_tempaddr &&
 			    (ia6->ia6_flags & IN6_IFF_TEMPORARY) != 0) {
+				IFNET_LOCK(ia6->ia_ifa.ifa_ifp);
 				if (regen_tmpaddr(ia6) == 0)
 					regen = 1;
+				IFNET_UNLOCK(ia6->ia_ifa.ifa_ifp);
 			}
 
-			ia6_release(ia6, &psref);
- 			in6_purgeaddr(&ia6->ia_ifa);
+			ifp = ia6->ia_ifa.ifa_ifp;
+			IFNET_LOCK(ifp);
+			/*
+			 * Need to take the lock first to prevent if_detach
+			 * from running in6_purgeaddr concurrently.
+			 */
+			if (!if_is_deactivated(ifp)) {
+				ia6_release(ia6, &psref);
+				in6_purgeaddr(&ia6->ia_ifa);
+			} else {
+				/*
+				 * ifp is being destroyed, ia6 will be destroyed
+				 * by if_detach.
+				 */
+				ia6_release(ia6, &psref);
+			}
 			ia6 = NULL;
+			IFNET_UNLOCK(ifp);
 
 			if (regen)
 				goto addrloop; /* XXX: see below */
@@ -1595,18 +1606,14 @@ nd6_rtrequest(int req, struct rtentry *rt, const struct rt_addrinfo *info)
 		if ((rt->rt_flags & RTF_ANNOUNCE) != 0 &&
 		    (ifp->if_flags & IFF_MULTICAST) != 0) {
 			struct in6_addr llsol;
-			struct in6_multi *in6m;
 
 			llsol = satocsin6(rt_getkey(rt))->sin6_addr;
 			llsol.s6_addr32[0] = htonl(0xff020000);
 			llsol.s6_addr32[1] = 0;
 			llsol.s6_addr32[2] = htonl(1);
 			llsol.s6_addr8[12] = 0xff;
-			if (in6_setscope(&llsol, ifp, NULL) == 0) {
-				in6m = in6_lookup_multi(&llsol, ifp);
-				if (in6m)
-					in6_delmulti(in6m);
-			}
+			if (in6_setscope(&llsol, ifp, NULL) == 0)
+				in6_lookup_and_delete_multi(&llsol, ifp);
 		}
 		break;
 	}
@@ -1883,20 +1890,53 @@ nd6_ioctl(u_long cmd, void *data, struct ifnet *ifp)
 			_s = pserialize_read_enter();
 			for (ia = IN6_ADDRLIST_READER_FIRST(); ia;
 			     ia = ia_next) {
+				struct ifnet *ifa_ifp;
+				int bound;
+				struct psref psref;
+
 				/* ia might be removed.  keep the next ptr. */
 				ia_next = IN6_ADDRLIST_READER_NEXT(ia);
 
 				if ((ia->ia6_flags & IN6_IFF_AUTOCONF) == 0)
 					continue;
 
-				if (ia->ia6_ndpr == pfx) {
-					pserialize_read_exit(_s);
-					ND6_UNLOCK();
-					/* XXX NOMPSAFE? */
-					/* in6_purgeaddr may destroy pfx. */
+				if (ia->ia6_ndpr != pfx)
+					continue;
+
+				bound = curlwp_bind();
+				ia6_acquire(ia, &psref);
+				pserialize_read_exit(_s);
+				ND6_UNLOCK();
+
+				ifa_ifp = ia->ia_ifa.ifa_ifp;
+				if (ifa_ifp == ifp) {
+					/* Already have IFNET_LOCK(ifp) */
+					KASSERT(!if_is_deactivated(ifp));
+					ia6_release(ia, &psref);
 					in6_purgeaddr(&ia->ia_ifa);
+					curlwp_bindx(bound);
 					goto restart;
 				}
+				IFNET_LOCK(ifa_ifp);
+				/*
+				 * Need to take the lock first to prevent
+				 * if_detach from running in6_purgeaddr
+				 * concurrently.
+				 */
+				if (!if_is_deactivated(ifa_ifp)) {
+					ia6_release(ia, &psref);
+					in6_purgeaddr(&ia->ia_ifa);
+				} else {
+					/*
+					 * ifp is being destroyed, ia will be
+					 * destroyed by if_detach.
+					 */
+					ia6_release(ia, &psref);
+					/* XXX may cause busy loop */
+				}
+				IFNET_UNLOCK(ifa_ifp);
+				curlwp_bindx(bound);
+				goto restart;
 			}
 			pserialize_read_exit(_s);
 
@@ -2375,7 +2415,7 @@ nd6_resolve(struct ifnet *ifp, const struct rtentry *rt, struct mbuf *m,
 		psrc = nd6_llinfo_get_holdsrc(ln, &src);
 		LLE_WUNLOCK(ln);
 		ln = NULL;
-		nd6_ns_output(ifp, NULL, &dst->sin6_addr, psrc, 0);
+		nd6_ns_output(ifp, NULL, &dst->sin6_addr, psrc, NULL);
 	} else {
 		/* We did the lookup so we need to do the unlock here. */
 		LLE_WUNLOCK(ln);
@@ -2436,52 +2476,55 @@ nd6_sysctl(
     size_t newlen
 )
 {
-	void *p;
-	size_t ol;
-	int error;
-	size_t bufsize = 0;
-
-	error = 0;
+	int (*fill_func)(void *, size_t *);
 
 	if (newp)
 		return EPERM;
-	if (oldp && !oldlenp)
-		return EINVAL;
-	ol = oldlenp ? *oldlenp : 0;
 
-	if (oldp && *oldlenp > 0) {
-		p = kmem_alloc(*oldlenp, KM_SLEEP);
-		bufsize = *oldlenp;
-	} else
-		p = NULL;
 	switch (name) {
 	case ICMPV6CTL_ND6_DRLIST:
-		error = fill_drlist(p, oldlenp, ol);
-		if (!error && p != NULL && oldp != NULL)
-			error = copyout(p, oldp, *oldlenp);
+		fill_func = fill_drlist;
 		break;
 
 	case ICMPV6CTL_ND6_PRLIST:
-		error = fill_prlist(p, oldlenp, ol);
-		if (!error && p != NULL && oldp != NULL)
-			error = copyout(p, oldp, *oldlenp);
+		fill_func = fill_prlist;
 		break;
 
 	case ICMPV6CTL_ND6_MAXQLEN:
-		break;
+		return 0;
 
 	default:
-		error = ENOPROTOOPT;
-		break;
+		return ENOPROTOOPT;
 	}
-	if (p)
-		kmem_free(p, bufsize);
+
+	if (oldlenp == NULL)
+		return EINVAL;
+
+	size_t ol;
+	int error = (*fill_func)(NULL, &ol);	/* calc len needed */
+	if (error)
+		return error;
+
+	if (oldp == NULL) {
+		*oldlenp = ol;
+		return 0;
+	}
+
+	ol = *oldlenp = min(ol, *oldlenp);
+	if (ol == 0)
+		return 0;
+
+	void *p = kmem_alloc(ol, KM_SLEEP);
+	error = (*fill_func)(p, oldlenp);
+	if (!error)
+		error = copyout(p, oldp, *oldlenp);
+	kmem_free(p, ol);
 
 	return error;
 }
 
 static int
-fill_drlist(void *oldp, size_t *oldlenp, size_t ol)
+fill_drlist(void *oldp, size_t *oldlenp)
 {
 	int error = 0;
 	struct in6_defrouter *d = NULL, *de = NULL;
@@ -2520,18 +2563,13 @@ fill_drlist(void *oldp, size_t *oldlenp, size_t ol)
 	}
 	ND6_UNLOCK();
 
-	if (oldp) {
-		if (l > ol)
-			error = ENOMEM;
-	}
-	if (oldlenp)
-		*oldlenp = l;	/* (void *)d - (void *)oldp */
+	*oldlenp = l;	/* (void *)d - (void *)oldp */
 
 	return error;
 }
 
 static int
-fill_prlist(void *oldp, size_t *oldlenp, size_t ol)
+fill_prlist(void *oldp, size_t *oldlenp)
 {
 	int error = 0;
 	struct nd_prefix *pr;
@@ -2627,12 +2665,7 @@ fill_prlist(void *oldp, size_t *oldlenp, size_t ol)
 	}
 	ND6_UNLOCK();
 
-	if (oldp) {
-		*oldlenp = l;	/* (void *)d - (void *)oldp */
-		if (l > ol)
-			error = ENOMEM;
-	} else
-		*oldlenp = l;
+	*oldlenp = l;
 
 	return error;
 }

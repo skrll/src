@@ -1,4 +1,4 @@
-/* $NetBSD: sun4i_emac.c,v 1.2 2017/11/30 18:29:25 jmcneill Exp $ */
+/* $NetBSD: sun4i_emac.c,v 1.5 2018/07/18 23:10:27 sevan Exp $ */
 
 /*-
  * Copyright (c) 2013-2017 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: sun4i_emac.c,v 1.2 2017/11/30 18:29:25 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: sun4i_emac.c,v 1.5 2018/07/18 23:10:27 sevan Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -333,7 +333,7 @@ sun4i_emac_attach(device_t parent, device_t self, void *aux)
 		enaddr[4] = a0 >>  8;
 		enaddr[5] = a0 >>  0;
 	}
-	aprint_normal_dev(self, "Ethernet address: %s\n", ether_sprintf(enaddr));
+	aprint_normal_dev(self, "Ethernet address %s\n", ether_sprintf(enaddr));
 
 	snprintf(ifp->if_xname, IFNAMSIZ, EMAC_IFNAME, device_unit(self));
 	ifp->if_softc = sc;
@@ -509,6 +509,9 @@ sun4i_emac_mgethdr(struct sun4i_emac_softc *sc, size_t rxlen)
 {
 	struct mbuf *m = m_gethdr(M_DONTWAIT, MT_DATA);
 
+	if (m == NULL) {
+		return NULL;
+	}
 	if (rxlen + 2 > MHLEN) {
 		MCLGET(m, M_DONTWAIT);
 		if ((m->m_flags & M_EXT) == 0) {
@@ -611,7 +614,7 @@ sun4i_emac_tx_enqueue(struct sun4i_emac_softc *sc, struct mbuf *m, u_int slot)
 	sun4i_emac_write(sc, pl_reg, len);
 	sun4i_emac_clear_set(sc, ctl_reg, 0, EMAC_TX_CTL_START);
 
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 
 	m_freem(m);
 }

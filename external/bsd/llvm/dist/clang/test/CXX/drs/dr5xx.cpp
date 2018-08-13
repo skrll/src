@@ -1,7 +1,7 @@
 // RUN: %clang_cc1 -std=c++98 %s -verify -fexceptions -fcxx-exceptions -pedantic-errors
 // RUN: %clang_cc1 -std=c++11 %s -verify -fexceptions -fcxx-exceptions -pedantic-errors
 // RUN: %clang_cc1 -std=c++14 %s -verify -fexceptions -fcxx-exceptions -pedantic-errors
-// RUN: %clang_cc1 -std=c++1z %s -verify -fexceptions -fcxx-exceptions -pedantic-errors
+// RUN: %clang_cc1 -std=c++17 %s -verify -fexceptions -fcxx-exceptions -pedantic-errors
 
 // FIXME: This is included to avoid a diagnostic with no source location
 // pointing at the implicit operator new. We can't match such a diagnostic
@@ -74,7 +74,7 @@ namespace dr512 { // dr512: yes
   };
   union U { A a; };
 #if __cplusplus < 201103L
-  // expected-error@-2 {{has a non-trivial constructor}}
+  // expected-error@-2 {{has a non-trivial default constructor}}
   // expected-note@-6 {{no default constructor}}
   // expected-note@-6 {{suppressed by user-declared constructor}}
 #endif
@@ -966,7 +966,7 @@ namespace dr595 { // dr595: dup 1330
   template<class T> struct X {
     void f() throw(T) {}
 #if __cplusplus > 201402L
-    // expected-error@-2 {{ISO C++1z does not allow}} expected-note@-2 {{use 'noexcept}}
+    // expected-error@-2 {{ISO C++17 does not allow}} expected-note@-2 {{use 'noexcept}}
 #endif
   };
   struct S {

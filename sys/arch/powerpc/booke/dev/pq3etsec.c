@@ -1,4 +1,4 @@
-/*	$NetBSD: pq3etsec.c,v 1.32 2017/10/23 09:23:48 msaitoh Exp $	*/
+/*	$NetBSD: pq3etsec.c,v 1.36 2018/08/10 06:46:08 maxv Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -41,7 +41,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.32 2017/10/23 09:23:48 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.36 2018/08/10 06:46:08 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -2063,7 +2063,7 @@ pq3etsec_tx_offload(
 	if (csum_flags & M_CSUM_IPv4)
 		fcb.txfcb_l4os = M_CSUM_DATA_IPv4_IPHL(m->m_pkthdr.csum_data);
 	else
-		fcb.txfcb_l4os = M_CSUM_DATA_IPv6_HL(m->m_pkthdr.csum_data);
+		fcb.txfcb_l4os = M_CSUM_DATA_IPv6_IPHL(m->m_pkthdr.csum_data);
 	fcb.txfcb_l3os = ETHER_HDR_LEN;
 	fcb.txfcb_phcs = 0;
 	fcb.txfcb_vlctl = vtag;
@@ -2087,7 +2087,7 @@ pq3etsec_tx_offload(
 		if (mn == NULL) {
 			if (csum_flags & M_CSUM_IP4) {
 #ifdef INET
-				ip_undefer_csum(m, ETHER_HDR_LEN,
+				in_undefer_cksum(m, ETHER_HDR_LEN,
 				    csum_flags & M_CSUM_IP4);
 #else
 				panic("%s: impossible M_CSUM flags %#x",
@@ -2095,7 +2095,7 @@ pq3etsec_tx_offload(
 #endif
 			} else if (csum_flags & M_CSUM_IP6) {
 #ifdef INET6
-				ip6_undefer_csum(m, ETHER_HDR_LEN,
+				in6_undefer_cksum(m, ETHER_HDR_LEN,
 				    csum_flags & M_CSUM_IP6);
 #else
 				panic("%s: impossible M_CSUM flags %#x",
@@ -2222,7 +2222,7 @@ pq3etsec_txq_consume(
 #endif
 			if (m->m_flags & M_HASFCB)
 				m_adj(m, sizeof(struct txfcb));
-			bpf_mtap(ifp, m);
+			bpf_mtap(ifp, m, BPF_D_OUT);
 			ifp->if_opackets++;
 			ifp->if_obytes += m->m_pkthdr.len;
 			if (m->m_flags & M_MCAST)

@@ -1,6 +1,6 @@
 /*
  * dhcpcd - ARP handler
- * Copyright (c) 2006-2017 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2018 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -128,13 +128,16 @@ arp_packet(struct interface *ifp, uint8_t *data, size_t len)
 	/* Protocol must be IP. */
 	if (ar.ar_pro != htons(ETHERTYPE_IP))
 		continue;
-	/* Only these types are recognised */
-	if (ar.ar_op != htons(ARPOP_REPLY) &&
-	    ar.ar_op != htons(ARPOP_REQUEST))
+	/* lladdr length matches */
+	if (ar.ar_hln != ifp->hwlen)
 		continue;
 	/* Protocol length must match in_addr_t */
 	if (ar.ar_pln != sizeof(arm.sip.s_addr))
 		return;
+	/* Only these types are recognised */
+	if (ar.ar_op != htons(ARPOP_REPLY) &&
+	    ar.ar_op != htons(ARPOP_REQUEST))
+		continue;
 #endif
 
 	/* Get pointers to the hardware addresses */
@@ -561,28 +564,28 @@ arp_drop(struct interface *ifp)
 void
 arp_handleifa(int cmd, struct ipv4_addr *addr)
 {
-#ifdef IN_IFF_DUPLICATED
 	struct iarp_state *state;
 	struct arp_state *astate, *asn;
 
-	/* If the address is deleted, the ARP state should be freed by the
-	 * state owner, such as DHCP or IPv4LL. */
-	if (cmd != RTM_NEWADDR || (state = ARP_STATE(addr->iface)) == NULL)
+	state = ARP_STATE(addr->iface);
+	if (state == NULL)
 		return;
 
 	TAILQ_FOREACH_SAFE(astate, &state->arp_states, next, asn) {
-		if (astate->addr.s_addr == addr->addr.s_addr) {
-			if (addr->addr_flags & IN_IFF_DUPLICATED) {
-				if (astate->conflicted_cb)
-					astate->conflicted_cb(astate, NULL);
-			} else if (!(addr->addr_flags & IN_IFF_NOTUSEABLE)) {
-				if (astate->probed_cb)
-					astate->probed_cb(astate);
-			}
+		if (astate->addr.s_addr != addr->addr.s_addr)
+			continue;
+		if (cmd == RTM_DELADDR)
+			arp_free(astate);
+#ifdef IN_IFF_DUPLICATED
+		if (cmd != RTM_NEWADDR)
+			continue;
+		if (addr->addr_flags & IN_IFF_DUPLICATED) {
+			if (astate->conflicted_cb)
+				astate->conflicted_cb(astate, NULL);
+		} else if (!(addr->addr_flags & IN_IFF_NOTUSEABLE)) {
+			if (astate->probed_cb)
+				astate->probed_cb(astate);
 		}
-	}
-#else
-	UNUSED(cmd);
-	UNUSED(addr);
 #endif
+	}
 }

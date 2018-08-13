@@ -1,4 +1,4 @@
-/*	$NetBSD: tropic.c,v 1.48 2016/12/15 09:28:05 ozaki-r Exp $	*/
+/*	$NetBSD: tropic.c,v 1.50 2018/06/26 06:48:00 msaitoh Exp $	*/
 
 /*
  * Ported to NetBSD by Onno van der Linden
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tropic.c,v 1.48 2016/12/15 09:28:05 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tropic.c,v 1.50 2018/06/26 06:48:00 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -58,6 +58,7 @@ __KERNEL_RCSID(0, "$NetBSD: tropic.c,v 1.48 2016/12/15 09:28:05 ozaki-r Exp $");
 #include <net/netisr.h>
 #include <net/route.h>
 #include <net/if_token.h>
+#include <net/bpf.h>
 
 #ifdef INET
 #include <netinet/in.h>
@@ -66,10 +67,6 @@ __KERNEL_RCSID(0, "$NetBSD: tropic.c,v 1.48 2016/12/15 09:28:05 ozaki-r Exp $");
 #include <netinet/ip.h>
 #include <netinet/in_var.h>
 #endif
-
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/cpu.h>
 #include <sys/bus.h>
@@ -715,7 +712,7 @@ next:
 
 	if (m0 == 0)
 		return;
-	bpf_mtap(ifp, m0);
+	bpf_mtap(ifp, m0, BPF_D_OUT);
 	first_txbuf = txbuf = TXCA_INW(sc, TXCA_FREE_QUEUE_HEAD) - XMIT_NEXTBUF;
 	framedata = txbuf + XMIT_FP_DATA;
 	size = 0;
@@ -1322,7 +1319,7 @@ tr_oldxint(struct tr_softc *sc)
 		/* if data in queue, copy mbuf chain to DHB */
 		IFQ_DEQUEUE(&ifp->if_snd, m0);
 		if (m0 != 0) {
-			bpf_mtap(ifp, m0);
+			bpf_mtap(ifp, m0, BPF_D_OUT);
 			/* Pull packet off interface send queue, fill DHB. */
 			trh = mtod(m0, struct token_header *);
 			hlen = sizeof(struct token_header);

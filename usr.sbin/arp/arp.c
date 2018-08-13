@@ -1,4 +1,4 @@
-/*	$NetBSD: arp.c,v 1.58 2017/06/28 08:17:50 ozaki-r Exp $ */
+/*	$NetBSD: arp.c,v 1.63 2018/07/31 09:45:52 nonaka Exp $ */
 
 /*
  * Copyright (c) 1984, 1993
@@ -42,7 +42,7 @@ __COPYRIGHT("@(#) Copyright (c) 1984, 1993\
 #if 0
 static char sccsid[] = "@(#)arp.c	8.3 (Berkeley) 4/28/95";
 #else
-__RCSID("$NetBSD: arp.c,v 1.58 2017/06/28 08:17:50 ozaki-r Exp $");
+__RCSID("$NetBSD: arp.c,v 1.63 2018/07/31 09:45:52 nonaka Exp $");
 #endif
 #endif /* not lint */
 
@@ -84,14 +84,14 @@ static void dump(uint32_t);
 static void delete(const char *, const char *);
 static void sdl_print(const struct sockaddr_dl *);
 static int getifname(u_int16_t, char *, size_t);
-static int atosdl(const char *s, struct sockaddr_dl *sdl);
+static int atosdl(const char *, struct sockaddr_dl *);
 static int file(const char *);
 static void get(const char *);
 static int getinetaddr(const char *, struct in_addr *);
 static int getsocket(void);
-static struct rt_msghdr *
-	rtmsg(const int, const int,  struct rt_msghdr *,
-	    const struct sockaddr_inarp *, const struct sockaddr_dl *);
+static int getetheraddr(struct in_addr, struct sockaddr_dl *);
+static struct rt_msghdr * rtmsg(const int, const int,  struct rt_msghdr *,
+	const struct sockaddr_inarp *, const struct sockaddr_dl *);
 static int set(int, char **);
 static void usage(void) __dead;
 
@@ -278,7 +278,7 @@ set(int argc, char **argv)
 
 	if (getinetaddr(host, &sin_m.sin_addr) == -1)
 		return (1);
-	if (atosdl(eaddr, &sdl_m))
+	if (strcmp(eaddr, "auto") != 0 && atosdl(eaddr, &sdl_m))
 		warnx("invalid link-level address '%s'", eaddr);
 	doing_proxy = flags = export_only = expire_time = 0;
 	for (; argc-- > 0; argv++) {
@@ -308,6 +308,10 @@ set(int argc, char **argv)
 				warnx("cannot get link address for %s", argv[0]);
 		}
 
+	}
+	if (doing_proxy && strcmp(eaddr, "auto") == 0) {
+		if (getetheraddr(sin_m.sin_addr, &sdl_m) == -1)
+			return 1;
 	}
 tryagain:
 	rtm = rtmsg(s, RTM_GET, NULL, &sin_m, &sdl_m);
@@ -493,11 +497,13 @@ void
 delete(const char *host, const char *info)
 {
 	int mib[6];
+	char addr[sizeof("000.000.000.000\0")];
 	size_t needed;
 	char *lim, *buf, *next;
 	struct rt_msghdr *rtm;
 	struct sockaddr_inarp *sina;
 	struct sockaddr_inarp sin_m = blank_sin; /* struct copy */
+	bool found = false;
 
 	if (host != NULL) {
 		int ret = getinetaddr(host, &sin_m.sin_addr);
@@ -535,12 +541,17 @@ retry:
 		if (host != NULL &&
 		    sina->sin_addr.s_addr != sin_m.sin_addr.s_addr)
 			continue;
+		found = true;
 		ret = delete_one(rtm);
 		if (vflag && ret == 0) {
-			(void)printf("%s (%s) deleted\n", host,
+			snprintf(addr, sizeof(addr), "%s",
 			    inet_ntoa(sina->sin_addr));
+			(void)printf("%s (%s) deleted\n",
+			    host != NULL ? host : addr, addr);
 		}
 	}
+	if (host != NULL && !found)
+		warnx("delete: can't locate %s", host);
 	free(buf);
 }
 
@@ -597,7 +608,7 @@ usage(void)
 	progname = getprogname();
 	(void)fprintf(stderr, "Usage: %s [-n] hostname\n", progname);
 	(void)fprintf(stderr, "       %s [-nv] -a\n", progname);
-	(void)fprintf(stderr, "       %s [-v] -d [-a|hostname [pub [proxy]]]\n",
+	(void)fprintf(stderr, "       %s [-v] -d [-a|hostname [proxy]]\n",
 	    progname);
 	(void)fprintf(stderr, "       %s -s hostname ether_addr [temp] [pub [proxy]]\n",
 	    progname);
@@ -706,7 +717,7 @@ getifname(u_int16_t ifindex, char *ifname, size_t l)
 {
 	int i;
 	struct ifaddrs *addr;
-	const struct sockaddr_dl *sdl = NULL;
+	const struct sockaddr_dl *sdl;
 	static struct ifaddrs* ifaddrs = NULL;
 
 	if (ifaddrs == NULL) {
@@ -727,5 +738,53 @@ getifname(u_int16_t ifindex, char *ifname, size_t l)
 		}
 	}
 
+	return -1;
+}
+
+static int
+getetheraddr(struct in_addr ipaddr, struct sockaddr_dl *sdl)
+{
+	struct ifaddrs *ifaddrs, *addr;
+	in_addr_t ina, mask;
+	char ifname[IFNAMSIZ];
+
+	if (getifaddrs(&ifaddrs) != 0) {
+		warn("getifaddrs");
+		return -1;
+	}
+
+	for (addr = ifaddrs; addr; addr = addr->ifa_next) {
+		if (addr->ifa_addr == NULL ||
+		    addr->ifa_addr->sa_family != AF_INET)
+			continue;
+		if ((addr->ifa_flags & (IFF_UP|IFF_BROADCAST|IFF_POINTOPOINT|
+		    IFF_LOOPBACK|IFF_NOARP)) != (IFF_UP|IFF_BROADCAST))
+			continue;
+
+		mask = ((struct sockaddr_in *)(void *)addr->ifa_netmask)->sin_addr.s_addr;
+		ina = ((struct sockaddr_in *)(void *)addr->ifa_addr)->sin_addr.s_addr;
+		if ((ipaddr.s_addr & mask) != (ina & mask))
+			continue;
+		strlcpy(ifname, addr->ifa_name, sizeof(ifname));
+		break;
+	}
+	if (addr == NULL) {
+		warnx("No interface matched %s", inet_ntoa(ipaddr));
+		freeifaddrs(ifaddrs);
+		return -1;
+	}
+
+	for (addr = ifaddrs; addr; addr = addr->ifa_next) {
+		if (addr->ifa_addr == NULL ||
+		    addr->ifa_addr->sa_family != AF_LINK)
+			continue;
+		if (strcmp(ifname, addr->ifa_name) != 0)
+			continue;
+		memcpy(sdl, addr->ifa_addr, sizeof(*sdl));
+		freeifaddrs(ifaddrs);
+		return 0;
+	}
+	warnx("No link address for interface %s", ifname);
+	freeifaddrs(ifaddrs);
 	return -1;
 }

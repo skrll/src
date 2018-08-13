@@ -1,10 +1,10 @@
-#	$NetBSD: files.i2c,v 1.79 2017/12/10 17:05:54 bouyer Exp $
+#	$NetBSD: files.i2c,v 1.94 2018/07/27 12:02:26 rkujawa Exp $
 
 obsolete defflag	opt_i2cbus.h		I2C_SCAN
 define	i2cbus { }
 define	i2cexec
 
-device	iic { [addr = -1], [size = -1] } : i2c_bitbang
+device	iic { [addr = -1] } : i2c_bitbang
 attach	iic at i2cbus
 file	dev/i2c/i2c.c				iic
 file	dev/i2c/i2c_exec.c			iic | i2cbus | i2cexec
@@ -130,7 +130,6 @@ attach	xrtc at iic
 file	dev/i2c/x1226.c				xrtc
 
 # Analog Devices dBCool family of thermal monitors / fan controllers
-define dbcool {}
 device dbcool: sysmon_envsys
 attach dbcool at iic
 file dev/i2c/dbcool.c			dbcool
@@ -233,10 +232,12 @@ device	axp22x: sysmon_envsys
 attach	axp22x at iic
 file	dev/i2c/axp22x.c			axp22x
 
-# AXP806 Power Management Unit
-device	axp806pm
-attach	axp806pm at iic
-file	dev/i2c/axp806.c			axp806pm	needs-flag
+# X-Powers AXP Power Management IC
+device	axppmic { }: sysmon_envsys, sysmon_taskq
+device	axpreg: axppmic
+attach	axppmic at iic
+attach	axpreg at axppmic
+file	dev/i2c/axppmic.c			axppmic
 
 # AXP809 Power Management Unit
 device	axp809pm
@@ -280,10 +281,40 @@ device	tcagpio
 attach	tcagpio at iic
 file	dev/i2c/tcagpio.c			tcagpio
 
+# Silicon Lab SI7013/SI7020/SI7021 Temperature and Humidity sensor
+device si70xxtemp
+attach si70xxtemp at iic
+file dev/i2c/si70xx.c				si70xxtemp
+
+# Aosong AM2315 Temperature and Humidity sensor
+device am2315temp
+attach am2315temp at iic
+file dev/i2c/am2315.c				am2315temp
+
 # Silergy SY8106A regulator
 device	sy8106a
 attach	sy8106a at iic
 file	dev/i2c/sy8106a.c			sy8106a
+
+# Maxim DS1631 High-Precision Digital Thermometer and Thermostat
+device	dstemp: sysmon_envsys
+attach	dstemp at iic
+file	dev/i2c/dstemp.c			dstemp
+
+# EM3027 Real Time Clock and Temperature Sensor
+device	em3027rtc: sysmon_envsys
+attach	em3027rtc at iic
+file	dev/i2c/em3027.c			em3027rtc
+
+# Apple Fan Control Unit found in some G5
+device	fcu: sysmon_envsys
+attach	fcu at iic
+file	dev/i2c/fcu.c				fcu	needs-flag
+
+# Analog Devices AD7417 thermometer and ADC
+device	adadc: sysmon_envsys
+attach	adadc at iic
+file	dev/i2c/adadc.c				adadc
 
 # HID over i2c
 # HID "bus"
@@ -303,3 +334,14 @@ file	dev/i2c/ims.c				ims
 device	imt: hid, hidmt, wsmousedev
 attach	imt at ihidbus
 file	dev/i2c/imt.c				imt
+
+# Taos TSL256x ambient light sensor
+device	tsllux: sysmon_envsys
+attach	tsllux at iic
+file	dev/i2c/tsl256x.c			tsllux
+
+# Philips/NXP TEA5767 
+device tea5767radio : radiodev
+attach tea5767radio at iic
+file dev/i2c/tea5767.c				tea5767radio
+

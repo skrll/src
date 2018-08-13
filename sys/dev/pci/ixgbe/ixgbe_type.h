@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe_type.h,v 1.30 2017/12/06 04:08:50 msaitoh Exp $ */
+/* $NetBSD: ixgbe_type.h,v 1.36 2018/07/06 02:36:35 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -33,7 +33,7 @@
   POSSIBILITY OF SUCH DAMAGE.
 
 ******************************************************************************/
-/*$FreeBSD: head/sys/dev/ixgbe/ixgbe_type.h 320688 2017-07-05 17:27:03Z erj $*/
+/*$FreeBSD: head/sys/dev/ixgbe/ixgbe_type.h 331224 2018-03-19 20:55:05Z erj $*/
 
 #ifndef _IXGBE_TYPE_H_
 #define _IXGBE_TYPE_H_
@@ -131,6 +131,7 @@
 #define IXGBE_SUBDEV_ID_82599EN_SFP_OCP1	0x0001
 #define IXGBE_DEV_ID_82599_XAUI_LOM		PCI_PRODUCT_INTEL_82599_XAUI_LOM
 #define IXGBE_DEV_ID_82599_T3_LOM		0x151C
+#define IXGBE_DEV_ID_82599_LS			0x154F
 #define IXGBE_DEV_ID_82599_VF			0x10ED
 #define IXGBE_DEV_ID_82599_VF_HV		0x152E
 #define IXGBE_DEV_ID_82599_BYPASS		0x155D
@@ -282,7 +283,6 @@
 #define IXGBE_I2C_BB_EN_X550		0x00000100
 #define IXGBE_I2C_BB_EN_X550EM_x	IXGBE_I2C_BB_EN_X550
 #define IXGBE_I2C_BB_EN_X550EM_a	IXGBE_I2C_BB_EN_X550
-
 #define IXGBE_I2C_BB_EN_BY_MAC(_hw)	IXGBE_BY_MAC((_hw), I2C_BB_EN)
 
 #define IXGBE_I2C_CLK_OE_N_EN		0
@@ -293,6 +293,47 @@
 #define IXGBE_I2C_CLK_OE_N_EN_BY_MAC(_hw) IXGBE_BY_MAC((_hw), I2C_CLK_OE_N_EN)
 #define IXGBE_I2C_CLOCK_STRETCHING_TIMEOUT	500
 
+
+
+#define NVM_OROM_OFFSET		0x17
+#define NVM_OROM_BLK_LOW	0x83
+#define NVM_OROM_BLK_HI		0x84
+#define NVM_OROM_PATCH_MASK	0xFF
+#define NVM_OROM_SHIFT		8
+
+#define NVM_VER_MASK		0x00FF /* version mask */
+#define NVM_VER_SHIFT		8     /* version bit shift */
+#define NVM_OEM_PROD_VER_PTR	0x1B  /* OEM Product version block pointer */
+#define NVM_OEM_PROD_VER_CAP_OFF 0x1  /* OEM Product version format offset */
+#define NVM_OEM_PROD_VER_OFF_L	0x2   /* OEM Product version offset low */
+#define NVM_OEM_PROD_VER_OFF_H	0x3   /* OEM Product version offset high */
+#define NVM_OEM_PROD_VER_CAP_MASK 0xF /* OEM Product version cap mask */
+#define NVM_OEM_PROD_VER_MOD_LEN 0x3  /* OEM Product version module length */
+#define NVM_ETK_OFF_LOW		0x2D  /* version low order word */
+#define NVM_ETK_OFF_HI		0x2E  /* version high order word */
+#define NVM_ETK_SHIFT		16    /* high version word shift */
+#define NVM_VER_INVALID		0xFFFF
+#define NVM_ETK_VALID		0x8000
+#define NVM_INVALID_PTR		0xFFFF
+#define NVM_VER_SIZE		32    /* version sting size */
+
+struct ixgbe_nvm_version {
+	u32 etk_id;
+	u8  nvm_major;
+	u16 nvm_minor;
+	u8  nvm_id;
+
+	bool oem_valid;
+	u8   oem_major;
+	u8   oem_minor;
+	u16  oem_release;
+
+	bool or_valid;
+	u8  or_major;
+	u16 or_build;
+	u8  or_patch;
+
+};
 
 /* Interrupt Registers */
 #define IXGBE_EICR		0x00800
@@ -312,6 +353,11 @@
  */
 #define IXGBE_MAX_INT_RATE	488281
 #define IXGBE_MIN_INT_RATE	956
+/* On 82599 and newer, minimum RSC_DELAY is 4us. ITR interval must be larger
+ * than RSC_DELAY if RSC is used. ITR_INTERVAL is in 2(.048) us units on 10G
+ * and 1G. The minimun EITR is 6us.
+ */
+#define IXGBE_MIN_RSC_EITR_10G1G 0x00000018
 #define IXGBE_MAX_EITR		0x00000FF8
 #define IXGBE_MIN_EITR		8
 #define IXGBE_EITR(_i)		(((_i) <= 23) ? (0x00820 + ((_i) * 4)) : \
@@ -562,7 +608,6 @@
 #define IXGBE_VXLANCTRL_VXLAN_UDPPORT_MASK	0x0000ffff /* VXLAN port */
 #define IXGBE_VXLANCTRL_GENEVE_UDPPORT_MASK	0xffff0000 /* GENEVE port */
 #define IXGBE_VXLANCTRL_ALL_UDPPORT_MASK	0xffffffff /* GENEVE/VXLAN */
-
 #define IXGBE_VXLANCTRL_GENEVE_UDPPORT_SHIFT	16
 
 #define IXGBE_FHFT(_n)	(0x09000 + ((_n) * 0x100)) /* Flex host filter table */
@@ -572,7 +617,6 @@
 
 /* Four Flexible Filters are supported */
 #define IXGBE_FLEXIBLE_FILTER_COUNT_MAX		4
-
 /* Six Flexible Filters are supported */
 #define IXGBE_FLEXIBLE_FILTER_COUNT_MAX_6	6
 /* Eight Flexible Filters are supported */
@@ -720,8 +764,6 @@ struct ixgbe_dmac_config {
 #define IXGBE_EEE_RX_LPI_STATUS		0x40000000 /* RX Link in LPI status */
 #define IXGBE_EEE_TX_LPI_STATUS		0x80000000 /* TX Link in LPI status */
 
-
-
 /* Security Control Registers */
 #define IXGBE_SECTXCTRL		0x08800
 #define IXGBE_SECTXSTAT		0x08804
@@ -858,7 +900,6 @@ struct ixgbe_dmac_config {
 #define IXGBE_RTFRTIMER	0x08B14
 #define IXGBE_RTTBCNRTT	0x05150
 #define IXGBE_RTTBCNRD	0x0498C
-
 
 /* FCoE DMA Context Registers */
 /* FCoE Direct DMA Context */
@@ -1591,7 +1632,7 @@ struct ixgbe_dmac_config {
 #define IXGBE_MDIO_GLOBAL_ALARM_1		0xCC00 /* Global alarm 1 */
 #define IXGBE_MDIO_GLOBAL_ALM_1_DEV_FAULT	0x0010 /* device fault */
 #define IXGBE_MDIO_GLOBAL_ALM_1_HI_TMP_FAIL	0x4000 /* high temp failure */
-#define IXGBE_MDIO_GLOBAL_FAULT_MSG	0xC850 /* Global Fault Message */
+#define IXGBE_MDIO_GLOBAL_FAULT_MSG		0xC850 /* Global Fault Message */
 #define IXGBE_MDIO_GLOBAL_FAULT_MSG_HI_TMP	0x8007 /* high temp failure */
 #define IXGBE_MDIO_GLOBAL_INT_MASK		0xD400 /* Global int mask */
 #define IXGBE_MDIO_GLOBAL_AN_VEN_ALM_INT_EN	0x1000 /* autoneg vendor alarm int enable */
@@ -2426,6 +2467,16 @@ enum {
 #define IXGBE_FW_LESM_PARAMETERS_PTR		0x2
 #define IXGBE_FW_LESM_STATE_1			0x1
 #define IXGBE_FW_LESM_STATE_ENABLED		0x8000 /* LESM Enable bit */
+#define IXGBE_FW_LESM_2_STATES_ENABLED_MASK	0x1F
+#define IXGBE_FW_LESM_2_STATES_ENABLED		0x12
+#define IXGBE_FW_LESM_STATE0_10G_ENABLED	0x6FFF
+#define IXGBE_FW_LESM_STATE1_10G_ENABLED	0x4FFF
+#define IXGBE_FW_LESM_STATE0_10G_DISABLED	0x0FFF
+#define IXGBE_FW_LESM_STATE1_10G_DISABLED	0x2FFF
+#define IXGBE_FW_LESM_PORT0_STATE0_OFFSET	0x2
+#define IXGBE_FW_LESM_PORT0_STATE1_OFFSET	0x3
+#define IXGBE_FW_LESM_PORT1_STATE0_OFFSET	0x6
+#define IXGBE_FW_LESM_PORT1_STATE1_OFFSET	0x7
 #define IXGBE_FW_PASSTHROUGH_PATCH_CONFIG_PTR	0x4
 #define IXGBE_FW_PATCH_VERSION_4		0x7
 #define IXGBE_FCOE_IBA_CAPS_BLK_PTR		0x33 /* iSCSI/FCOE block */
@@ -3708,6 +3759,7 @@ enum ixgbe_media_type {
 	ixgbe_media_type_fiber,
 	ixgbe_media_type_fiber_fixed,
 	ixgbe_media_type_fiber_qsfp,
+	ixgbe_media_type_fiber_lco,
 	ixgbe_media_type_copper,
 	ixgbe_media_type_backplane,
 	ixgbe_media_type_cx4,
@@ -4114,6 +4166,7 @@ struct ixgbe_phy_info {
 	enum ixgbe_media_type		media_type;
 	u32 phy_semaphore_mask;
 	bool				reset_disable;
+	bool				force_10_100_autonego;
 	ixgbe_autoneg_advertised	autoneg_advertised;
 	ixgbe_link_speed speeds_supported;
 	ixgbe_link_speed eee_speeds_supported;
@@ -4319,7 +4372,6 @@ struct ixgbe_bypass_eeprom {
 
 #define BYPASS_LOG_EVENT_SHIFT	28
 #define BYPASS_LOG_CLEAR_SHIFT	24 /* bit offset */
-
 
 #define IXGBE_FUSES0_GROUP(_i)		(0x11158 + ((_i) * 4))
 #define IXGBE_FUSES0_300MHZ		(1 << 5)

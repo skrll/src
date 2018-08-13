@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wmvar.h,v 1.37 2017/07/27 03:21:42 msaitoh Exp $	*/
+/*	$NetBSD: if_wmvar.h,v 1.39 2018/08/08 03:15:18 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -105,7 +105,7 @@
 	"\15" "PCIX"	"\16" "CSA"	"\17" "PCIE"	"\20" "SGMII"	\
 	"\21" "NEWQUEUE" "\22" "ASF_FIRM" "\23" "ARC_SUBSYS" "\24" "AMT" \
 	"\25" "MANAGE"	"\26" "WOL"	"\27" "EEE"	"\30" "ATTACHED" \
-	"\31" "_B24"	"\32" "PCS_DIS_AUTONEGO" "\33" "PLLWA"
+	"\31" "MDIC_WA"	"\32" "PCS_DIS_AUTONEGO" "\33" "PLLWA" "\40" "CLSEMWA"
 
 /*
  * Variations of Intel gigabit Ethernet controller:
@@ -117,7 +117,7 @@
  *  |  |  |  |  +---------- 82571 - 82572 - 82573 - 82574 - 82583
  *  |  |  |  |  |  +--------- 82575 - 82576 - 82580 - I350 - I354 - I210 - I211
  *  |  |  |  |  |  |  +-- 80003
- *  |  |  |  |  |  |  |  +-- ICH8 - ICH9 - ICH10 - PCH - PCH2 - PCH_LPT
+ *  |  |  |  |  |  |  |  +-- ICH8 - 9 - 10 - PCH - 2 - LPT - SPT - CNP
  *  |  |  |  |  |  |  |  |
  * -+--+--+--+--+--+--+--+----------------------------------------------->
  */
@@ -157,6 +157,7 @@ typedef enum {
 	WM_T_PCH2,			/* PCH2 LAN */
 	WM_T_PCH_LPT,			/* PCH "Lynx Point" LAN (I217, I218) */
 	WM_T_PCH_SPT,			/* PCH "Sunrise Point" LAN (I219) */
+	WM_T_PCH_CNP,			/* (I219) */
 } wm_chip_type;
 
 typedef enum {

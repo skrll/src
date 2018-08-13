@@ -1,4 +1,4 @@
-/*	$NetBSD: lcg.c,v 1.2 2014/12/18 22:46:53 jklos Exp $ */
+/*	$NetBSD: lcg.c,v 1.4 2018/06/06 01:49:08 maya Exp $ */
 /*
  * LCG accelerated framebuffer driver
  * Copyright (c) 2003, 2004 Blaz Antonic
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lcg.c,v 1.2 2014/12/18 22:46:53 jklos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lcg.c,v 1.4 2018/06/06 01:49:08 maya Exp $");
 
 #define LCG_NO_ACCEL
 
@@ -80,7 +80,7 @@ __KERNEL_RCSID(0, "$NetBSD: lcg.c,v 1.2 2014/12/18 22:46:53 jklos Exp $");
 
 /* font rendering defines */
 #define LCG_FONT_ADDR		(LCG_FB_ADDR + lcg_fb_size)
-#define LCG_FONT_STORAGE_SIZE	0x40000	/* 16 KB, enough to accomodate 16x32 font bitmaps */
+#define LCG_FONT_STORAGE_SIZE	0x40000	/* 16 KB, enough to accommodate 16x32 font bitmaps */
 
 /* register space defines */
 #define LCG_REG_ADDR	0x20100000	/* LCG registers */
@@ -271,7 +271,7 @@ void fifo_put(long data)
 int fifo_fill(int iterations)
 {
 	long status;
-	int counter = 0;;
+	int counter = 0;
 
 	while (fifo_counter % 4)
 		fifo_put(0);

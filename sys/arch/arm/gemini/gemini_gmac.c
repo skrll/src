@@ -1,4 +1,4 @@
-/* $NetBSD: gemini_gmac.c,v 1.13 2017/06/01 02:45:05 chs Exp $ */
+/* $NetBSD: gemini_gmac.c,v 1.16 2018/06/26 06:47:57 msaitoh Exp $ */
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -49,7 +49,7 @@
 
 #include <sys/gpio.h>
 
-__KERNEL_RCSID(0, "$NetBSD: gemini_gmac.c,v 1.13 2017/06/01 02:45:05 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gemini_gmac.c,v 1.16 2018/06/26 06:47:57 msaitoh Exp $");
 
 #define	SWFREEQ_DESCS	256	/* one page worth */
 #define	HWFREEQ_DESCS	256	/* one page worth */
@@ -548,7 +548,7 @@ gmac_hwqueue_txconsume(gmac_hwqueue_t *hwq, const gmac_desc_t *d)
 	aprint_debug("gmac_hwqueue_txconsume(%p): %zu@%p: %s m=%p\n",
 	    hwq, d - hwq->hwq_base, d, ifp->if_xname, m);
 
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 	m_freem(m);
 }
 
@@ -695,7 +695,7 @@ gmac_rxproduce(gmac_hwqueue_t *hwq, size_t free_min)
 
 		KASSERT(map->dm_mapsize == 0);
 
-		m = m_gethdr(MT_DATA, M_DONTWAIT);
+		m = m_gethdr(M_DONTWAIT, MT_DATA);
 		if (m == NULL) {
 			gmac_mapcache_put(hqm->hqm_mc, map);
 			break;
@@ -853,7 +853,6 @@ gmac_hwqueue_rxconsume(gmac_hwqueue_t *hwq, const gmac_desc_t *d)
 	case DESC0_RXSTS_GOOD:
 	case DESC0_RXSTS_LONG:
 		m->m_data += 2;
-		KASSERT(m_length(m) == m->m_pkthdr.len);
 		if_percpuq_enqueue(ifp->if_percpuq, m);
 		break;
 	default:

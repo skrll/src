@@ -1,4 +1,4 @@
-/*	$NetBSD: lm75.c,v 1.30 2017/10/01 05:12:18 macallan Exp $	*/
+/*	$NetBSD: lm75.c,v 1.33 2018/06/26 06:03:57 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lm75.c,v 1.30 2017/10/01 05:12:18 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lm75.c,v 1.33 2018/06/26 06:03:57 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -101,14 +101,14 @@ static void	lmtemp_setlim_lm77(struct sysmon_envsys *, envsys_data_t *,
 static void	lmtemp_setup_sysctl(struct lmtemp_softc *);
 static int	sysctl_lm75_temp(SYSCTLFN_ARGS);
 
-static const char * lmtemp_compats[] = {
-	"i2c-lm75",
-	"ds1775",
+static const struct device_compatible_entry compat_data[] = {
+	{ "i2c-lm75",			0 },
+	{ "ds1775",			0 },
 	/*
 	 * see XXX in _attach() below: add code once non-lm75 matches are
 	 * added here!
 	 */
-	NULL
+	{ NULL,				0 }
 };
 
 enum {
@@ -146,35 +146,23 @@ static int
 lmtemp_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct i2c_attach_args *ia = aux;
-	int i;
+	int i, match_result;
 
-	if (ia->ia_name == NULL) {
-		/*
-		 * Indirect config - not much we can do!
-		 */
-		for (i = 0; lmtemptbl[i].lmtemp_type != -1 ; i++)
-			if (lmtemptbl[i].lmtemp_type == cf->cf_flags)
-				break;
-		if (lmtemptbl[i].lmtemp_type == -1)
-			return 0;
+	if (iic_use_direct_match(ia, cf, compat_data, &match_result))
+		return match_result;
 
-		if ((ia->ia_addr & lmtemptbl[i].lmtemp_addrmask) ==
-		    lmtemptbl[i].lmtemp_addr)
-			return 1;
-	} else {
-		/*
-		 * Direct config - match via the list of compatible
-		 * hardware or simply match the device name.
-		 */
-		if (ia->ia_ncompat > 0) {
-			if (iic_compat_match(ia, lmtemp_compats))
-				return 1;
-		} else {
-			if (strcmp(ia->ia_name, "lmtemp") == 0)
-				return 1;
-		}
-	}
+	/*
+	 * Indirect config - not much we can do!
+	 */
+	for (i = 0; lmtemptbl[i].lmtemp_type != -1 ; i++)
+		if (lmtemptbl[i].lmtemp_type == cf->cf_flags)
+			break;
+	if (lmtemptbl[i].lmtemp_type == -1)
+		return 0;
 
+	if ((ia->ia_addr & lmtemptbl[i].lmtemp_addrmask) ==
+	    lmtemptbl[i].lmtemp_addr)
+		return I2C_MATCH_ADDRESS_ONLY;
 
 	return 0;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: ohcivar.h,v 1.58 2016/05/22 08:02:23 skrll Exp $	*/
+/*	$NetBSD: ohcivar.h,v 1.60 2018/08/09 06:26:47 mrg Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -131,9 +131,6 @@ typedef struct ohci_softc {
 	pool_cache_t sc_xferpool;	/* free xfer pool */
 
 	struct usbd_xfer *sc_intrxfer;
-
-	char sc_vendor[32];
-	int sc_id_vendor;
 
 	uint32_t sc_control;		/* Preserved during suspend/standby */
 	uint32_t sc_intre;

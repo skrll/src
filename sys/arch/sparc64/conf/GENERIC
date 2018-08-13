@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.202 2017/09/14 07:58:43 mrg Exp $
+# $NetBSD: GENERIC,v 1.205 2018/08/01 20:04:14 maxv Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/sparc64/conf/std.sparc64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.202 $"
+#ident		"GENERIC-$Revision: 1.205 $"
 
 maxusers	64
 
@@ -63,8 +63,8 @@ options 	USERCONF	# userconf(4) support
 #options 	PIPE_SOCKETPAIR	# smaller, but slower pipe(2)
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
-# Enable experimental buffer queue strategy for better responsiveness under
-# high disk I/O load. Use it with caution - it's not proven to be stable yet.
+# Alternate buffer queue strategies for better responsiveness under high
+# disk I/O load.
 #options 	BUFQ_READPRIO
 #options 	BUFQ_PRIOCSCAN
 
@@ -178,14 +178,9 @@ options 	INET6		# IPV6
 #options 	GATEWAY		# packet forwarding ("router switch")
 options 	MROUTING	# packet forwarding of multicast packets
 options 	PIM		# Protocol Independent Multicast
-#options 	DIRECTED_BROADCAST	# allow broadcasts through routers
 options 	NETATALK	# AppleTalk (over Ethernet) protocol
 options 	NTP		# Network Time Protocol in-kernel support
 #options 	PPS_SYNC	# Add serial line synchronization for NTP
-options 	IPFILTER_LOG	# Add ipmon(8) logging for ipfilter device
-options 	IPFILTER_LOOKUP	# ippool(8) support
-options 	IPFILTER_COMPAT	# Compat for IP-Filter
-#options 	IPFILTER_DEFAULT_BLOCK	# block all packets by default
 options 	PPP_BSDCOMP	# Add BSD compression to ppp device
 options 	PPP_DEFLATE	# Add deflate (libz) compression to ppp device
 options 	PPP_FILTER	# Add active filters for ppp (via bpf)
@@ -732,9 +727,7 @@ pseudo-device	bridge
 #options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 
-## IP Filter, used in firewall and NAT applications.  See ipnat(8) for
-## one example of the use of the IP Filter.
-pseudo-device	ipfilter
+pseudo-device	npf			# NPF packet filter
 
 ## for IPv6
 pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
@@ -979,8 +972,6 @@ pseudo-device	wsmux			# mouse & keyboard multiplexor
 pseudo-device	wsfont
 pseudo-device	clockctl		# user control of clock subsystem
 pseudo-device	ksyms			# /dev/ksyms
-#pseudo-device	pf			# PF packet filter
-#pseudo-device	pflog			# PF log if
 pseudo-device	fss			# file system snapshot device
 #pseudo-device	bcsp			# BlueCore Serial Protocol
 #pseudo-device	btuart			# Bluetooth HCI UART (H4)

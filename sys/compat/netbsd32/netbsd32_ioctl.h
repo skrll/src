@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_ioctl.h,v 1.57 2017/11/26 17:46:13 jmcneill Exp $	*/
+/*	$NetBSD: netbsd32_ioctl.h,v 1.59 2018/03/06 07:59:59 mlelstv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Matthew R. Green
@@ -178,6 +178,21 @@ struct netbsd32_wsdisplay_cursor {
 /* Cursor control: get/set cursor attributes/shape */
 #define	WSDISPLAYIO_GCURSOR32	_IOWR('W', 73, struct netbsd32_wsdisplay_cursor)
 #define	WSDISPLAYIO_SCURSOR32	_IOW('W', 74, struct netbsd32_wsdisplay_cursor)
+
+struct netbsd32_wsdisplay_font {
+	netbsd32_charp name;
+	int firstchar, numchars;
+	int encoding;
+	u_int fontwidth, fontheight, stride;
+	int bitorder, byteorder;
+	netbsd32_charp data;
+};
+#define	WSDISPLAYIO_LDFONT32	_IOW('W', 77, struct netbsd32_wsdisplay_font)
+
+struct netbsd32_wsdisplay_usefontdata {
+	netbsd32_charp name;
+};
+#define	WSDISPLAYIO_SFONT32	_IOW('W', 80, struct netbsd32_wsdisplay_usefontdata)
 
 /* can wait! */
 #if 0
@@ -618,3 +633,15 @@ struct netbsd32_devrescanargs {
 #define DRVCTLCOMMAND32		_IOWR('D', 125, struct netbsd32_plistref)
 #define	DRVLISTDEV32		_IOWR('D', 127, struct netbsd32_devlistargs)
 #define DRVGETEVENT32		_IOR('D', 128, struct netbsd32_plistref)
+
+/* From sys/disk.h, sys/dkio.h */
+
+struct netbsd32_dkwedge_list {
+	void			*dkwl_buf;	/* storage for dkwedge_info array */
+	netbsd32_size_t		dkwl_bufsize;	/* size	of that	buffer */
+	u_int			dkwl_nwedges;	/* total number	of wedges */
+	u_int			dkwl_ncopied;	/* number actually copied */
+};
+
+#define DIOCLWEDGES32		_IOWR('d', 124, struct netbsd32_dkwedge_list)
+

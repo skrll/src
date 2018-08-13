@@ -30,9 +30,10 @@
   POSSIBILITY OF SUCH DAMAGE.
 
 ******************************************************************************/
-/*$FreeBSD: head/sys/dev/ixgbe/if_sriov.c 320688 2017-07-05 17:27:03Z erj $*/
+/*$FreeBSD: head/sys/dev/ixgbe/if_sriov.c 327031 2017-12-20 18:15:06Z erj $*/
 
 #include "ixgbe.h"
+#include "ixgbe_sriov.h"
 
 #ifdef PCI_IOV
 
@@ -233,7 +234,7 @@ ixgbe_vf_set_default_vlan(struct adapter *adapter, struct ixgbe_vf *vf,
 
 	if (tag == 0) {
 		/* Accept non-vlan tagged traffic. */
-		//vmolr |= IXGBE_VMOLR_AUPE;
+		vmolr |= IXGBE_VMOLR_AUPE;
 
 		/* Allow VM to tag outgoing traffic; no default tag. */
 		vmvir = 0;
@@ -292,7 +293,6 @@ ixgbe_vf_frame_size_compatible(struct adapter *adapter, struct ixgbe_vf *vf)
 			return (TRUE);
 
 		return (FALSE);
-
 	}
 } /* ixgbe_vf_frame_size_compatible */
 
@@ -366,7 +366,7 @@ ixgbe_vf_reset_msg(struct adapter *adapter, struct ixgbe_vf *vf, uint32_t *msg)
 
 	vf->flags |= IXGBE_VF_CTS;
 
-	resp[0] = IXGBE_VF_RESET | ack | IXGBE_VT_MSGTYPE_CTS;
+	resp[0] = IXGBE_VF_RESET | ack;
 	bcopy(vf->ether_addr, &resp[1], ETHER_ADDR_LEN);
 	resp[3] = hw->mac.mc_filter_type;
 	hw->mbx.ops.write(hw, resp, IXGBE_VF_PERMADDR_MSG_LEN, vf->pool);
@@ -451,7 +451,7 @@ ixgbe_vf_set_vlan(struct adapter *adapter, struct ixgbe_vf *vf, uint32_t *msg)
 	}
 
 	/* It is illegal to enable vlan tag 0. */
-	if (tag == 0 && enable != 0){
+	if (tag == 0 && enable != 0) {
 		ixgbe_send_vf_nack(adapter, vf, msg[0]);
 		return;
 	}
@@ -578,8 +578,8 @@ ixgbe_process_vf_msg(struct adapter *adapter, struct ixgbe_vf *vf)
 	if (error != 0)
 		return;
 
-	CTR3(KTR_MALLOC, "%s: received msg %x from %d",
-	    adapter->ifp->if_xname, msg[0], vf->pool);
+	CTR3(KTR_MALLOC, "%s: received msg %x from %d", adapter->ifp->if_xname,
+	    msg[0], vf->pool);
 	if (msg[0] == IXGBE_VF_RESET) {
 		ixgbe_vf_reset_msg(adapter, vf, msg);
 		return;
@@ -622,12 +622,11 @@ ixgbe_process_vf_msg(struct adapter *adapter, struct ixgbe_vf *vf)
 void
 ixgbe_handle_mbx(void *context, int pending)
 {
-	struct adapter *adapter;
+	struct adapter *adapter = context;
 	struct ixgbe_hw *hw;
 	struct ixgbe_vf *vf;
 	int i;
 
-	adapter = context;
 	hw = &adapter->hw;
 
 	IXGBE_CORE_LOCK(adapter);
@@ -694,19 +693,22 @@ ixgbe_init_iov(device_t dev, u16 num_vfs, const nvlist_t *config)
 	}
 
 	adapter->num_vfs = num_vfs;
-	adapter->init_locked(adapter);
+
+	/* set the SRIOV flag now as it's needed
+	 * by ixgbe_init_locked() */
 	adapter->feat_en |= IXGBE_FEATURE_SRIOV;
+	adapter->init_locked(adapter);
 
 	IXGBE_CORE_UNLOCK(adapter);
 
-	return retval;
+	return (retval);
 
 err_init_iov:
 	adapter->num_vfs = 0;
 	adapter->pool = 0;
 	adapter->iov_mode = IXGBE_NO_VM;
 
-	return retval;
+	return (retval);
 } /* ixgbe_init_iov */
 
 void

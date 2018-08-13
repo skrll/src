@@ -28,9 +28,10 @@ options 	USERCONF	# userconf(4) support
 #options 	PIPE_SOCKETPAIR	# smaller, but slower pipe(2)
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
-# Enable experimental buffer queue strategy for better responsiveness under
-# high disk I/O load. Use it with caution - it's not proven to be stable yet.
-#options 	NEW_BUFQ_STRATEGY
+# Alternate buffer queue strategies for better responsiveness under high
+# disk I/O load.
+#options 	BUFQ_READPRIO
+options 	BUFQ_PRIOCSCAN
 
 # Diagnostic/debugging support options
 options 	DIAGNOSTIC	# cheap kernel consistency checks
@@ -81,25 +82,10 @@ options 	WSDISPLAY_COMPAT_USL		# wsconscfg VT handling
 #options 	WSDISPLAY_COMPAT_RAWKBD		# can get raw scancodes
 options 	FONT_GALLANT12x22
 
-# Optional Mac keyboard tweaks
-
-# Tweak the keyboard driver to treat the caps lock key on an ADB
-# keyboard as a control key; requires special remapping because of
-# ADB's strange emulation of a mechanically-locked key.
-#options 	CAPS_IS_CONTROL
-
-# On Mac laptops, several function keys double as "hot keys"
-# (brightness, volume, eject) when the Fn modifier is held down.  Mac
-# OS X likes to reprogram the keyboard controller to send hot key
-# events when Fn is not held down and send function key events when it
-# is.  This option transforms the non-keyboard "button" events back
-# into function key events.
-#options 	FORCE_FUNCTION_KEYS
-
 # Kernel root file system and dump configuration.
 config		netbsd	root on ? type ?
 #config		netbsd	root on gem0 type nfs
-#options         NFS_BOOT_DHCP,NFS_BOOT_BOOTPARAM
+#options 	NFS_BOOT_DHCP,NFS_BOOT_BOOTPARAM
 
 #
 # Device configuration
@@ -108,6 +94,7 @@ config		netbsd	root on ? type ?
 mainbus* at root
 
 cpu*	at mainbus?
+options 	MULTIPROCESSOR
 ibmcpc* at mainbus?
 uninorth*	at mainbus?
 memory* at mainbus?
@@ -119,8 +106,7 @@ ki2c*	at uni_n?			# Keywest I2C
 smu* 		at mainbus?
 #options 	SMU_DEBUG
 smuiic* 	at smu?
-#iic* 		at smuiic?
-smusat* 	at smuiic?
+iic* 		at smuiic?
 
 pci*	at ibmcpc? bus ?
 pci*	at uninorth? bus ?
@@ -138,6 +124,8 @@ iic*		at ki2c?
 
 admtemp* 	at iic?
 lmtemp* 	at iic?
+dstemp* 	at iic?
+smusat* 	at iic?
 deq* 		at iic?
 
 # Audio support
@@ -166,7 +154,7 @@ wsmouse* at ums?
 
 genfb*	at pci? dev ? function ?
 wdc* 	at pci? dev ? function ?		# Kauai ATA
-#svwsata* at pci? dev ? function ?		# ServerWorks SATA controllers
+svwsata* at pci? dev ? function ?		# ServerWorks SATA controllers
 obio*	at pci? dev ? function ?
 zsc*	at obio?
 zstty*	at zsc? channel ?
@@ -193,8 +181,7 @@ pseudo-device	clockctl		# user control of clock subsystem
 pseudo-device	ksyms			# /dev/ksyms
 pseudo-device	nsmb			# SMB requester
 pseudo-device   bpfilter        8       # Berkeley packet filter
-#pseudo-device	pf			# PF packet filter
-#pseudo-device	pflog			# PF log if
+#pseudo-device	npf			# NPF packet filter
 
 options		OFWOEA_WSCONS_NO_ROM_FONT
 options		EXSTORAGE_MAX=24

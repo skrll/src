@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_socket.c,v 1.257 2017/10/25 08:12:39 maya Exp $	*/
+/*	$NetBSD: uipc_socket.c,v 1.264 2018/06/06 09:46:46 roy Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.257 2017/10/25 08:12:39 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.264 2018/06/06 09:46:46 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -1240,12 +1240,16 @@ soreceive(struct socket *so, struct mbuf **paddr, struct uio *uio,
 		if (m == NULL && so->so_rcv.sb_cc)
 			panic("receive 1");
 #endif
-		if (so->so_error) {
+		if (so->so_error || so->so_rerror) {
 			if (m != NULL)
 				goto dontblock;
-			error = so->so_error;
-			if ((flags & MSG_PEEK) == 0)
+			if (so->so_error) {
+				error = so->so_error;
 				so->so_error = 0;
+			} else {
+				error = so->so_rerror;
+				so->so_rerror = 0;
+			}
 			goto release;
 		}
 		if (so->so_state & SS_CANTRCVMORE) {
@@ -1317,7 +1321,7 @@ soreceive(struct socket *so, struct mbuf **paddr, struct uio *uio,
 		orig_resid = 0;
 		if (flags & MSG_PEEK) {
 			if (paddr)
-				*paddr = m_copy(m, 0, m->m_len);
+				*paddr = m_copym(m, 0, m->m_len, M_DONTWAIT);
 			m = m->m_next;
 		} else {
 			sbfree(&so->so_rcv, m);
@@ -1342,7 +1346,7 @@ soreceive(struct socket *so, struct mbuf **paddr, struct uio *uio,
 			orig_resid = 0;
 			if (flags & MSG_PEEK) {
 				if (paddr)
-					*paddr = m_copy(m, 0, m->m_len);
+					*paddr = m_copym(m, 0, m->m_len, M_DONTWAIT);
 				m = m->m_next;
 			} else {
 				sbfree(&so->so_rcv, m);
@@ -1371,7 +1375,7 @@ soreceive(struct socket *so, struct mbuf **paddr, struct uio *uio,
 		do {
 			if (flags & MSG_PEEK) {
 				if (controlp != NULL) {
-					*controlp = m_copy(m, 0, m->m_len);
+					*controlp = m_copym(m, 0, m->m_len, M_DONTWAIT);
 					controlp = &(*controlp)->m_next;
 				}
 				m = m->m_next;
@@ -1565,7 +1569,8 @@ soreceive(struct socket *so, struct mbuf **paddr, struct uio *uio,
 		 */
 		while (flags & MSG_WAITALL && m == NULL && uio->uio_resid > 0 &&
 		    !sosendallatonce(so) && !nextrecord) {
-			if (so->so_error || so->so_state & SS_CANTRCVMORE)
+			if (so->so_error || so->so_rerror ||
+			    so->so_state & SS_CANTRCVMORE)
 				break;
 			/*
 			 * If we are peeking and the socket receive buffer is
@@ -2109,8 +2114,12 @@ sockopt_set(struct sockopt *sopt, const void *buf, size_t len)
 			return error;
 	}
 
-	KASSERT(sopt->sopt_size == len);
+	if (sopt->sopt_size < len)
+		return EINVAL;
+	
 	memcpy(sopt->sopt_data, buf, len);
+	sopt->sopt_retsize = len;
+
 	return 0;
 }
 
@@ -2169,9 +2178,12 @@ sockopt_setmbuf(struct sockopt *sopt, struct mbuf *m)
 			return error;
 	}
 
-	KASSERT(sopt->sopt_size == len);
+	if (sopt->sopt_size < len)
+		return EINVAL;
+	
 	m_copydata(m, 0, len, sopt->sopt_data);
 	m_freem(m);
+	sopt->sopt_retsize = len;
 
 	return 0;
 }
@@ -2244,7 +2256,7 @@ filt_soread(struct knote *kn, long hint)
 		kn->kn_flags |= EV_EOF;
 		kn->kn_fflags = so->so_error;
 		rv = 1;
-	} else if (so->so_error)	/* temporary udp error */
+	} else if (so->so_error || so->so_rerror)
 		rv = 1;
 	else if (kn->kn_sfflags & NOTE_LOWAT)
 		rv = (kn->kn_data >= kn->kn_sdata);
@@ -2283,7 +2295,7 @@ filt_sowrite(struct knote *kn, long hint)
 		kn->kn_flags |= EV_EOF;
 		kn->kn_fflags = so->so_error;
 		rv = 1;
-	} else if (so->so_error)	/* temporary udp error */
+	} else if (so->so_error)
 		rv = 1;
 	else if (((so->so_state & SS_ISCONNECTED) == 0) &&
 	    (so->so_proto->pr_flags & PR_CONNREQUIRED))
@@ -2425,7 +2437,7 @@ sopoll(struct socket *so, int events)
 }
 
 struct mbuf **
-sbsavetimestamp(int opt, struct mbuf *m, struct mbuf **mp)
+sbsavetimestamp(int opt, struct mbuf **mp)
 {
 	struct timeval tv;
 	microtime(&tv);

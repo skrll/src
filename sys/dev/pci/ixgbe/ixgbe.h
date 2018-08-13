@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.h,v 1.29 2017/12/06 04:08:50 msaitoh Exp $ */
+/* $NetBSD: ixgbe.h,v 1.51 2018/07/31 09:19:34 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -33,7 +33,7 @@
   POSSIBILITY OF SUCH DAMAGE.
 
 ******************************************************************************/
-/*$FreeBSD: head/sys/dev/ixgbe/ixgbe.h 320688 2017-07-05 17:27:03Z erj $*/
+/*$FreeBSD: head/sys/dev/ixgbe/ixgbe.h 327031 2017-12-20 18:15:06Z erj $*/
 
 /*
  * Copyright (c) 2011 The NetBSD Foundation, Inc.
@@ -80,6 +80,7 @@
 #include <sys/kernel.h>
 #include <sys/module.h>
 #include <sys/sockio.h>
+#include <sys/percpu.h>
 
 #include <net/if.h>
 #include <net/if_arp.h>
@@ -88,7 +89,6 @@
 #include <net/if_dl.h>
 #include <net/if_media.h>
 
-#include <net/bpf.h>
 #include <net/if_types.h>
 #include <net/if_vlanvar.h>
 
@@ -113,7 +113,6 @@
 #include "ixgbe_netbsd.h"
 #include "ixgbe_api.h"
 #include "ixgbe_common.h"
-#include "ixgbe_phy.h"
 #include "ixgbe_vf.h"
 #include "ixgbe_features.h"
 
@@ -173,8 +172,6 @@
 
 /* Flow control constants */
 #define IXGBE_FC_PAUSE        0xFFFF
-#define IXGBE_FC_HI           0x20000
-#define IXGBE_FC_LO           0x10000
 
 /*
  * Used for optimizing small rx mbufs.  Effort is made to keep the copy
@@ -255,7 +252,6 @@
                                 IXGBE_EITR_ITR_INT_MASK)
 
 
-
 /************************************************************************
  * vendor_info_array
  *
@@ -323,18 +319,29 @@ struct ixgbe_mc_addr {
 struct ix_queue {
 	struct adapter   *adapter;
 	u32              msix;           /* This queue's MSI-X vector */
-	u32              eims;           /* This queue's EIMS bit */
 	u32              eitr_setting;
 	u32              me;
 	struct resource  *res;
-	void             *tag;
 	int              busy;
 	struct tx_ring   *txr;
 	struct rx_ring   *rxr;
+	struct work      wq_cookie;
 	void             *que_si;
-	struct evcnt     irqs;
+	/* Per queue event conters */
+	struct evcnt     irqs;		/* Hardware interrupt */
+	struct evcnt     handleq;	/* software_interrupt */
+	struct evcnt     req;		/* deferred */
 	char             namebuf[32];
 	char             evnamebuf[32];
+
+	kmutex_t         dc_mtx;	/* lock for disabled_count and this queue's EIMS/EIMC bit */
+	int              disabled_count;/*
+					 * means
+					 *     0   : this queue is enabled
+					 *     > 0 : this queue is disabled
+					 *           the value is ixgbe_disable_queue() called count
+					 */
+	bool             txrx_use_workqueue;
 };
 
 /*
@@ -353,23 +360,35 @@ struct tx_ring {
 	u16			next_avail_desc;
 	u16			next_to_clean;
 	u16			num_desc;
-	u32			txd_cmd;
 	ixgbe_dma_tag_t		*txtag;
-	char			mtx_name[16];
+#if 0
+	char			mtx_name[16]; /* NetBSD has no mutex name */
+#endif
 	pcq_t			*txr_interq;
+	struct work		wq_cookie;
 	void			*txr_si;
+	bool			txr_no_space; /* Like IFF_OACTIVE */
 
 	/* Flow Director */
 	u16			atr_sample;
 	u16			atr_count;
 
-	u32			bytes;  /* used for AIM */
-	u32			packets;
+	u64			bytes;  /* used for AIM */
+	u64			packets;
 	/* Soft Stats */
 	struct evcnt	   	tso_tx;
 	struct evcnt		no_desc_avail;
 	struct evcnt		total_packets;
 	struct evcnt		pcq_drops;
+	/* Per queue conters.  The adapter total is in struct adapter */
+	u64              q_efbig_tx_dma_setup;
+	u64              q_mbuf_defrag_failed;
+	u64              q_efbig2_tx_dma_setup;
+	u64              q_einval_tx_dma_setup;
+	u64              q_other_tx_dma_setup;
+	u64              q_eagain_tx_dma_setup;
+	u64              q_enomem_tx_dma_setup;
+	u64              q_tso_err;
 };
 
 
@@ -393,12 +412,17 @@ struct rx_ring {
         u16 			next_to_check;
 	u16			num_desc;
 	u16			mbuf_sz;
-	char			mtx_name[16];
+#if 0
+	char			mtx_name[16]; /* NetBSD has no mutex name */
+#endif
 	struct ixgbe_rx_buf	*rx_buffers;
 	ixgbe_dma_tag_t		*ptag;
+	u16	                last_rx_mbuf_sz;
+	u32                	last_num_rx_desc;
+	ixgbe_extmem_head_t	jcl_head;
 
-	u32			bytes; /* Used for AIM calc */
-	u32			packets;
+	u64			bytes; /* Used for AIM calc */
+	u64			packets;
 
 	/* Soft stats */
 	struct evcnt		rx_copies;
@@ -439,17 +463,10 @@ struct adapter {
 	struct resource		*pci_mem;
 	struct resource		*msix_mem;
 
-	/*
-	 * Interrupt resources: this set is
-	 * either used for legacy, or for Link
-	 * when doing MSI-X
-	 */
-	void			*tag;
-	struct resource 	*res;
+	/* NetBSD: Interrupt resources are in osdep */
 
 	struct ifmedia		media;
 	callout_t		timer;
-	int			link_rid;
 	int			if_flags;
 
 	kmutex_t		core_mtx;
@@ -496,6 +513,18 @@ struct adapter {
 
 	void			*phy_si;   /* PHY intr tasklet */
 
+	bool			txrx_use_workqueue;
+	struct workqueue	*que_wq;    /* workqueue for ixgbe_handle_que_work() */
+					    /*
+					     * que_wq's "enqueued flag" is not required,
+					     * because twice workqueue_enqueue() for
+					     * ixgbe_handle_que_work() is avoided by masking
+					     * the queue's interrupt by EIMC.
+					     * See also ixgbe_msix_que().
+					     */
+	struct workqueue	*txr_wq;    /* workqueue for ixgbe_deferred_mq_start_work() */
+	percpu_t		*txr_wq_enqueued;
+
 	/*
 	 * Queues:
 	 *   This is the irq holder, it has
@@ -538,8 +567,8 @@ struct adapter {
 	void 			(*stop_locked)(void *);
 
 	/* Misc stats maintained by the driver */
-	struct evcnt   		mbuf_defrag_failed;
 	struct evcnt	   	efbig_tx_dma_setup;
+	struct evcnt   		mbuf_defrag_failed;
 	struct evcnt	   	efbig2_tx_dma_setup;
 	struct evcnt	   	einval_tx_dma_setup;
 	struct evcnt	   	other_tx_dma_setup;
@@ -548,8 +577,10 @@ struct adapter {
 	struct evcnt	   	tso_err;
 	struct evcnt	   	watchdog_events;
 	struct evcnt		link_irq;
-	struct evcnt		handleq;
-	struct evcnt		req;
+	struct evcnt		link_sicount;
+	struct evcnt		mod_sicount;
+	struct evcnt		msf_sicount;
+	struct evcnt		phy_sicount;
 
 	union {
 		struct ixgbe_hw_stats pf;
@@ -574,9 +605,7 @@ struct adapter {
 
 	struct sysctllog	*sysctllog;
 	const struct sysctlnode *sysctltop;
-	ixgbe_extmem_head_t jcl_head;
 };
-
 
 /* Precision Time Sync (IEEE 1588) defines */
 #define ETHERTYPE_IEEE1588      0x88F7
@@ -653,17 +682,17 @@ static __inline int
 drbr_needs_enqueue(struct ifnet *ifp, struct buf_ring *br)
 {
 #ifdef ALTQ
-        if (ALTQ_IS_ENABLED(&ifp->if_snd))
-                return (1);
+	if (ALTQ_IS_ENABLED(&ifp->if_snd))
+		return (1);
 #endif
-        return (!buf_ring_empty(br));
+	return (!buf_ring_empty(br));
 }
 #endif
 
 /*
  * Find the number of unrefreshed RX descriptors
  */
-static inline u16
+static __inline u16
 ixgbe_rx_unrefreshed(struct rx_ring *rxr)
 {
 	if (rxr->next_to_check > rxr->next_to_refresh)
@@ -673,7 +702,7 @@ ixgbe_rx_unrefreshed(struct rx_ring *rxr)
 		    rxr->next_to_refresh - 1);
 }
 
-static inline int
+static __inline int
 ixgbe_legacy_ring_empty(struct ifnet *ifp, pcq_t *dummy)
 {
 	UNREFERENCED_1PARAMETER(dummy);
@@ -681,7 +710,7 @@ ixgbe_legacy_ring_empty(struct ifnet *ifp, pcq_t *dummy)
 	return IFQ_IS_EMPTY(&ifp->if_snd);
 }
 
-static inline int
+static __inline int
 ixgbe_mq_ring_empty(struct ifnet *dummy, pcq_t *interq)
 {
 	UNREFERENCED_1PARAMETER(dummy);
@@ -693,7 +722,7 @@ ixgbe_mq_ring_empty(struct ifnet *dummy, pcq_t *interq)
  * This checks for a zero mac addr, something that will be likely
  * unless the Admin on the Host has created one.
  */
-static inline bool
+static __inline bool
 ixv_check_ether_addr(u8 *addr)
 {
 	bool status = TRUE;
@@ -711,19 +740,24 @@ int  ixgbe_legacy_start_locked(struct ifnet *, struct tx_ring *);
 int  ixgbe_mq_start(struct ifnet *, struct mbuf *);
 int  ixgbe_mq_start_locked(struct ifnet *, struct tx_ring *);
 void ixgbe_deferred_mq_start(void *);
+void ixgbe_deferred_mq_start_work(struct work *, void *);
+void ixgbe_drain_all(struct adapter *);
 
 int  ixgbe_allocate_queues(struct adapter *);
 int  ixgbe_setup_transmit_structures(struct adapter *);
 void ixgbe_free_transmit_structures(struct adapter *);
 int  ixgbe_setup_receive_structures(struct adapter *);
 void ixgbe_free_receive_structures(struct adapter *);
-void ixgbe_txeof(struct tx_ring *);
+bool ixgbe_txeof(struct tx_ring *);
 bool ixgbe_rxeof(struct ix_queue *);
 
 const struct sysctlnode *ixgbe_sysctl_instance(struct adapter *);
 
+/* For NetBSD */
+void ixgbe_jcl_reinit(struct adapter *, bus_dma_tag_t, struct rx_ring *,
+    int, size_t);
+
 #include "ixgbe_bypass.h"
-#include "ixgbe_sriov.h"
 #include "ixgbe_fdir.h"
 #include "ixgbe_rss.h"
 #include "ixgbe_netmap.h"

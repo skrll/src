@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.60 2014/03/26 17:45:16 christos Exp $	*/
+/*	$NetBSD: cpu.c,v 1.67 2018/05/17 19:08:51 macallan Exp $	*/
 
 /*-
  * Copyright (c) 2001 Tsubai Masanari.
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.60 2014/03/26 17:45:16 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.67 2018/05/17 19:08:51 macallan Exp $");
 
 #include "opt_ppcparam.h"
 #include "opt_multiprocessor.h"
@@ -68,6 +68,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.60 2014/03/26 17:45:16 christos Exp $");
 #include <machine/trap.h>
 
 #include "pic_openpic.h"
+#include "pic_u3_ht.h"
 
 #ifndef OPENPIC
 #if NPIC_OPENPIC > 0
@@ -204,12 +205,20 @@ ohare_init(void)
 
 #ifdef MULTIPROCESSOR
 
+#if NPIC_U3_HT > 0
+extern int have_u3_ht(void);
+extern void __u3_ht_set_priority(int, int);
+#else
+#define have_u3_ht() 0
+#define __u3_ht_set_priority(a, b)
+#endif
+
 int
 md_setup_trampoline(volatile struct cpu_hatch_data *h, struct cpu_info *ci)
 {
 #ifdef OPENPIC
-	if (openpic_base) {
-		uint32_t kl_base = 0x80000000;	/* XXX */
+	if ((openpic_base != NULL) || have_u3_ht()) {
+		uint32_t kl_base = (uint32_t)oea_mapiodev(0x80000000, 0x1000);
 		uint32_t gpio = kl_base + 0x5c;	/* XXX */
 		u_int node, off;
 		char cpupath[32];
@@ -253,7 +262,7 @@ void
 md_presync_timebase(volatile struct cpu_hatch_data *h)
 {
 #ifdef OPENPIC
-	if (openpic_base) {
+	if ((openpic_base != NULL) || have_u3_ht()) {
 		uint64_t tb;
 
 		/* Sync timebase. */
@@ -283,7 +292,7 @@ md_start_timebase(volatile struct cpu_hatch_data *h)
 {
 	int i;
 #ifdef OPENPIC
-	if (!openpic_base) {
+	if (!((openpic_base != NULL) || have_u3_ht())) {
 #endif
 		/*
 		 * wait for secondary spin up (1.5ms @ 604/200MHz)
@@ -306,7 +315,7 @@ void
 md_sync_timebase(volatile struct cpu_hatch_data *h)
 {
 #ifdef OPENPIC
-	if (openpic_base) {
+	if ((openpic_base != NULL) || have_u3_ht()) {
 		/* Sync timebase. */
 		u_int tbu = h->hatch_tbu;
 		u_int tbl = h->hatch_tbl;
@@ -324,9 +333,11 @@ void
 md_setup_interrupts(void)
 {
 #ifdef OPENPIC
-	if (openpic_base)
+	if (openpic_base) {
 		openpic_set_priority(cpu_number(), 0);
-	else
+	} else if (have_u3_ht()) {
+		__u3_ht_set_priority(cpu_number(), 0);		
+	} else
 #endif /* OPENPIC */
 		out32(HH_INTR_SECONDARY, ~0);	/* Reset interrupt. */
 }

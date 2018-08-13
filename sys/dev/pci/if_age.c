@@ -1,4 +1,4 @@
-/*	$NetBSD: if_age.c,v 1.51 2017/09/26 07:42:06 knakahara Exp $ */
+/*	$NetBSD: if_age.c,v 1.53 2018/06/26 06:48:01 msaitoh Exp $ */
 /*	$OpenBSD: if_age.c,v 1.1 2009/01/16 05:00:34 kevlo Exp $	*/
 
 /*-
@@ -31,7 +31,7 @@
 /* Driver for Attansic Technology Corp. L1 Gigabit Ethernet. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_age.c,v 1.51 2017/09/26 07:42:06 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_age.c,v 1.53 2018/06/26 06:48:01 msaitoh Exp $");
 
 #include "vlan.h"
 
@@ -1057,7 +1057,7 @@ age_start(struct ifnet *ifp)
 		 * If there's a BPF listener, bounce a copy of this frame
 		 * to him.
 		 */
-		bpf_mtap(ifp, m_head);
+		bpf_mtap(ifp, m_head, BPF_D_OUT);
 	}
 
 	if (enq) {
@@ -1430,7 +1430,7 @@ age_rxeof(struct age_softc *sc, struct rx_rdesc *rxrd)
 			sc->age_cdata.age_rxhead = mp;
 			sc->age_cdata.age_rxtail = mp;
 		} else {
-			mp->m_flags &= ~M_PKTHDR;
+			m_remove_pkthdr(mp);
 			sc->age_cdata.age_rxprev_tail =
 			    sc->age_cdata.age_rxtail;
 			sc->age_cdata.age_rxtail->m_next = mp;
@@ -1459,7 +1459,7 @@ age_rxeof(struct age_softc *sc, struct rx_rdesc *rxrd)
 			}
 
 			m = sc->age_cdata.age_rxhead;
-			m->m_flags |= M_PKTHDR;
+			KASSERT(m->m_flags & M_PKTHDR);
 			m_set_rcvif(m, ifp);
 			m->m_pkthdr.len = sc->age_cdata.age_rxlen;
 			/* Set the first mbuf length. */

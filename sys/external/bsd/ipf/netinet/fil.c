@@ -1,4 +1,4 @@
-/*	$NetBSD: fil.c,v 1.21 2017/09/05 11:12:32 christos Exp $	*/
+/*	$NetBSD: fil.c,v 1.24 2018/07/11 05:25:46 maxv Exp $	*/
 
 /*
  * Copyright (C) 2012 by Darren Reed.
@@ -133,12 +133,15 @@ extern struct callout ipf_slowtimer_ch;
 # include <sys/timeout.h>
 extern struct timeout ipf_slowtimer_ch;
 #endif
+#if defined(__NetBSD__)
+#include <netinet/in_offload.h>
+#endif
 /* END OF INCLUDES */
 
 #if !defined(lint)
 #if defined(__NetBSD__)
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fil.c,v 1.21 2017/09/05 11:12:32 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fil.c,v 1.24 2018/07/11 05:25:46 maxv Exp $");
 #else
 static const char sccsid[] = "@(#)fil.c	1.36 6/5/96 (C) 1993-2000 Darren Reed";
 static const char rcsid[] = "@(#)Id: fil.c,v 1.1.1.2 2012/07/22 13:45:07 darrenr Exp $";
@@ -304,7 +307,7 @@ static ipfunc_resolve_t ipf_availfuncs[] = {
 	{ "",	       NULL,	      NULL,	      NULL }
 };
 
-static ipftuneable_t ipf_main_tuneables[] = {
+static const ipftuneable_t ipf_main_tuneables[] = {
 	{ { (void *)offsetof(struct ipf_main_softc_s, ipf_flags) },
 		"ipf_flags",		0,	0xffffffff,
 		stsizeof(ipf_main_softc_t, ipf_flags),
@@ -2853,7 +2856,7 @@ ipf_check(void *ctx, ip_t *ip, int hlen, void *ifp, int out,
 	 * disable delayed checksums.
 	 */
 	if (m->m_pkthdr.csum_flags & CSUM_DELAY_DATA) {
-		in_delayed_cksum(m);
+		in_undefer_cksum_tcpudp(m);
 		m->m_pkthdr.csum_flags &= ~CSUM_DELAY_DATA;
 	}
 #  endif /* CSUM_DELAY_DATA */
@@ -4893,13 +4896,14 @@ frrequest(ipf_main_softc_t *softc, int unit, ioctlcmd_t req, void *data,
 			error = ipf_outobj(softc, data, fp, IPFOBJ_FRENTRY);
 
 			if (error == 0) {
-				if ((f->fr_dsize != 0) && (uptr != NULL))
+				if ((f->fr_dsize != 0) && (uptr != NULL)) {
 					error = COPYOUT(f->fr_data, uptr,
 							f->fr_dsize);
 					if (error != 0) {
 						IPFERROR(28);
 						error = EFAULT;
 					}
+				}
 				if (error == 0) {
 					f->fr_hits = 0;
 					f->fr_bytes = 0;
@@ -6922,7 +6926,7 @@ ipf_tune_array_unlink(ipf_main_softc_t *softc, ipftuneable_t *array)
 /* ipftp_void that points to the stored value.                              */
 /* ------------------------------------------------------------------------ */
 ipftuneable_t *
-ipf_tune_array_copy(void *base, size_t size, ipftuneable_t *template)
+ipf_tune_array_copy(void *base, size_t size, const ipftuneable_t *template)
 {
 	ipftuneable_t *copy;
 	int i;

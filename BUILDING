@@ -257,7 +257,7 @@ CONFIGURATION
 
      MKDEBUGLIB  Can be set to "yes" or "no".  Indicates whether debug
                  information (see MKDEBUG) should also be generated for all
-                 libraries build.
+                 libraries built.
 
                  Default: "no"
 
@@ -289,8 +289,9 @@ CONFIGURATION
                  Default: "no"
 
      MKINFO      Can be set to "yes" or "no".  Indicates whether GNU Info
-                 files, used for the documentation for most of the compilation
-                 tools, will be created and installed during a build.
+                 files will be created and installed during a build.  GNU Info
+                 files are used for providing documentation by most of the
+                 compilation tools.
 
                  Default: "yes"
 
@@ -340,7 +341,8 @@ CONFIGURATION
                  build.  If set to "no", the entire built system will be
                  statically linked.
 
-                 Default: "yes"
+                 Default: Platform dependent.  As of this writing, all
+                 platforms except m68000 default to "yes".
 
      MKPICINSTALL
                  Can be set to "yes" or "no".  Indicates whether the ar(1)
@@ -876,7 +878,7 @@ BUILDING
                    MACHINE/MACHINE_ARCH pairs, and then exits.  The -m or -a
                    options (or both) may be used to specify glob patterns that
                    will be used to narrow the list of results; for example,
-                   "build.sh -m 'evm*' -a '*arm*' list-arch" will list all
+                   "build.sh -m 'evb*' -a '*arm*' list-arch" will list all
                    known MACHINE/MACHINE_ARCH values in which either MACHINE
                    or ALIAS matches the pattern `evb*', and MACHINE_ARCH
                    matches the pattern `*arm*'.
@@ -1111,4 +1113,4 @@ CAVEATS
      in object directories.  Instead, one may have to manually remove the
      files.  Consult the UPDATING file for notices concerning this.
 
-NetBSD                         October 21, 2017                         NetBSD
+NetBSD                           July 29, 2018                          NetBSD

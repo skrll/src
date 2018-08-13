@@ -1,5 +1,5 @@
-/*	$Id: at91emac.c,v 1.19 2017/02/20 08:25:57 ozaki-r Exp $	*/
-/*	$NetBSD: at91emac.c,v 1.19 2017/02/20 08:25:57 ozaki-r Exp $	*/
+/*	$Id: at91emac.c,v 1.22 2018/07/15 05:16:41 maxv Exp $	*/
+/*	$NetBSD: at91emac.c,v 1.22 2018/07/15 05:16:41 maxv Exp $	*/
 
 /*
  * Copyright (c) 2007 Embedtronics Oy
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at91emac.c,v 1.19 2017/02/20 08:25:57 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at91emac.c,v 1.22 2018/07/15 05:16:41 maxv Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -56,6 +56,7 @@ __KERNEL_RCSID(0, "$NetBSD: at91emac.c,v 1.19 2017/02/20 08:25:57 ozaki-r Exp $"
 #include <net/if_types.h>
 #include <net/if_media.h>
 #include <net/if_ether.h>
+#include <net/bpf.h>
 
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
@@ -66,13 +67,6 @@ __KERNEL_RCSID(0, "$NetBSD: at91emac.c,v 1.19 2017/02/20 08:25:57 ozaki-r Exp $"
 #include <netinet/in_var.h>
 #include <netinet/ip.h>
 #include <netinet/if_inarp.h>
-#endif
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
-
-#ifdef IPKDB_AT91	// @@@
-#include <ipkdb/ipkdb.h>
 #endif
 
 #include <arm/at91/at91var.h>
@@ -675,7 +669,7 @@ start:
 		IFQ_DEQUEUE(&ifp->if_snd, m);
 	}
 
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 
 	nsegs = sc->txq[bi].m_dmamap->dm_nsegs;
 	segs = sc->txq[bi].m_dmamap->dm_segs;

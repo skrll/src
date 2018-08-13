@@ -1,4 +1,4 @@
-/* $NetBSD: max77620.c,v 1.2 2017/09/28 13:08:00 jmcneill Exp $ */
+/* $NetBSD: max77620.c,v 1.6 2018/06/26 06:03:57 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: max77620.c,v 1.2 2017/09/28 13:08:00 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: max77620.c,v 1.6 2018/06/26 06:03:57 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -66,9 +66,9 @@ struct max77620_pin {
 	bool			pin_actlo;
 };
 
-static const char * max77620_compats[] = {
-	"maxim,max77620",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ "maxim,max77620",		0 },
+	{ NULL,				0 }
 };
 
 static uint8_t
@@ -258,11 +258,12 @@ static int
 max77620_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct i2c_attach_args *ia = aux;
+	int match_result;
 
-	if (ia->ia_name == NULL)
-		return 0;
+	if (iic_use_direct_match(ia, match, compat_data, &match_result))
+		return match_result;
 
-	return iic_compat_match(ia, max77620_compats);
+	return 0;
 }
 
 static void

@@ -1,4 +1,4 @@
-/*	$NetBSD: tss.h,v 1.6 2017/07/12 17:52:18 maxv Exp $	*/
+/*	$NetBSD: tss.h,v 1.8 2018/07/07 21:35:16 kamil Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -63,7 +63,12 @@ struct x86_64_tss {
  * I/O bitmap offset beyond TSS's segment limit means no bitmaps.
  * (i.e. any I/O attempt generates an exception.)
  */
-#define	IOMAP_INVALOFF	0xffff
+#define	IOMAP_INVALOFF	0xffffu
+
+/*
+ * If we have an I/O bitmap, there is only one valid offset.
+ */
+#define	IOMAP_VALIDOFF	sizeof(struct x86_64_tss)
 
 #else	/*	__x86_64__	*/
 

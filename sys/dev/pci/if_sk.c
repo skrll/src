@@ -1,4 +1,4 @@
-/*	$NetBSD: if_sk.c,v 1.85 2016/12/15 09:28:05 ozaki-r Exp $	*/
+/*	$NetBSD: if_sk.c,v 1.89 2018/07/04 19:26:09 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -115,7 +115,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_sk.c,v 1.85 2016/12/15 09:28:05 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_sk.c,v 1.89 2018/07/04 19:26:09 jdolecek Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -551,8 +551,6 @@ sk_marv_miibus_statchg(struct ifnet *ifp)
 		     SK_YU_READ_2(((struct sk_if_softc *)ifp->if_softc),
 		     YUKON_GPCR)));
 }
-
-#define SK_HASH_BITS		6
 
 u_int32_t
 sk_xmac_hash(void *addr)
@@ -1464,8 +1462,10 @@ sk_attach(device_t parent, device_t self, void *aux)
 
 	ether_ifattach(ifp, sc_if->sk_enaddr);
 
-        rnd_attach_source(&sc->rnd_source, device_xname(sc->sk_dev),
-            RND_TYPE_NET, RND_FLAG_DEFAULT);
+	if (sc->rnd_attached++ == 0) {
+	        rnd_attach_source(&sc->rnd_source, device_xname(sc->sk_dev),
+		    RND_TYPE_NET, RND_FLAG_DEFAULT);
+	}
 
 	if (pmf_device_register(self, NULL, sk_resume))
 		pmf_class_network_register(self, ifp);
@@ -1631,7 +1631,8 @@ skc_attach(device_t parent, device_t self, void *aux)
 	}
 
 	intrstr = pci_intr_string(pc, ih, intrbuf, sizeof(intrbuf));
-	sc->sk_intrhand = pci_intr_establish(pc, ih, IPL_NET, sk_intr, sc);
+	sc->sk_intrhand = pci_intr_establish_xname(pc, ih, IPL_NET, sk_intr, sc,
+	    device_xname(sc->sk_dev));
 	if (sc->sk_intrhand == NULL) {
 		aprint_error(": couldn't establish interrupt");
 		if (intrstr != NULL)
@@ -1984,7 +1985,7 @@ sk_start(struct ifnet *ifp)
 		 * If there's a BPF listener, bounce a copy of this frame
 		 * to him.
 		 */
-		bpf_mtap(ifp, m_head);
+		bpf_mtap(ifp, m_head, BPF_D_OUT);
 	}
 	if (pkts == 0)
 		return;
@@ -2402,6 +2403,7 @@ sk_intr(void *xsc)
 	if (ifp1 != NULL)
 		if_schedule_deferred_start(ifp1);
 
+	KASSERT(sc->rnd_attached > 0);
 	rnd_add_uint32(&sc->rnd_source, status);
 
 	if (sc->sk_int_mod_pending)

@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_emac.c,v 1.11 2017/12/01 17:47:51 jmcneill Exp $ */
+/* $NetBSD: sunxi_emac.c,v 1.17 2018/07/19 19:52:00 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2016-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -33,7 +33,7 @@
 #include "opt_net_mpsafe.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.11 2017/12/01 17:47:51 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.17 2018/07/19 19:52:00 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -55,6 +55,7 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.11 2017/12/01 17:47:51 jmcneill Exp
 #include <dev/mii/miivar.h>
 
 #include <dev/fdt/fdtvar.h>
+#include <dev/fdt/syscon.h>
 
 #include <arm/sunxi/sunxi_emac.h>
 
@@ -126,15 +127,17 @@ static int sunxi_emac_rx_tx_pri = RX_TX_PRI_DEFAULT;
 static int sunxi_emac_pause_time = PAUSE_TIME_DEFAULT;
 
 enum sunxi_emac_type {
-	EMAC_A83T = 1,
+	EMAC_A64 = 1,
+	EMAC_A83T,
 	EMAC_H3,
-	EMAC_A64,
+	EMAC_H6,
 };
 
 static const struct of_compat_data compat_data[] = {
 	{ "allwinner,sun8i-a83t-emac",	EMAC_A83T },
 	{ "allwinner,sun8i-h3-emac",	EMAC_H3 },
 	{ "allwinner,sun50i-a64-emac",	EMAC_A64 },
+	{ "allwinner,sun50i-h6-emac",	EMAC_H6 },
 	{ NULL }
 };
 
@@ -165,12 +168,6 @@ struct sunxi_emac_rxring {
 	u_int			cur;
 };
 
-enum {
-	_RES_EMAC,
-	_RES_SYSCON,
-	_RES_NITEMS
-};
-
 struct sunxi_emac_softc {
 	device_t		dev;
 	int			phandle;
@@ -178,13 +175,15 @@ struct sunxi_emac_softc {
 	bus_space_tag_t		bst;
 	bus_dma_tag_t		dmat;
 
-	bus_space_handle_t	bsh[_RES_NITEMS];
+	bus_space_handle_t	bsh;
 	struct clk		*clk_ahb;
 	struct clk		*clk_ephy;
 	struct fdtbus_reset	*rst_ahb;
 	struct fdtbus_reset	*rst_ephy;
 	struct fdtbus_regulator	*reg_phy;
 	struct fdtbus_gpio_pin	*pin_reset;
+
+	struct syscon		*syscon;
 
 	int			phy_id;
 
@@ -200,14 +199,9 @@ struct sunxi_emac_softc {
 };
 
 #define	RD4(sc, reg)			\
-	bus_space_read_4((sc)->bst, (sc)->bsh[_RES_EMAC], (reg))
+	bus_space_read_4((sc)->bst, (sc)->bsh, (reg))
 #define	WR4(sc, reg, val)		\
-	bus_space_write_4((sc)->bst, (sc)->bsh[_RES_EMAC], (reg), (val))
-
-#define	SYSCONRD4(sc, reg)		\
-	bus_space_read_4((sc)->bst, (sc)->bsh[_RES_SYSCON], (reg))
-#define	SYSCONWR4(sc, reg, val)		\
-	bus_space_write_4((sc)->bst, (sc)->bsh[_RES_SYSCON], (reg), (val))
+	bus_space_write_4((sc)->bst, (sc)->bsh, (reg), (val))
 
 static int
 sunxi_emac_mii_readreg(device_t dev, int phy, int reg)
@@ -469,7 +463,7 @@ sunxi_emac_start_locked(struct sunxi_emac_softc *sc)
 			break;
 		}
 		IFQ_DEQUEUE(&ifp->if_snd, m);
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 
 		sc->tx.cur = TX_SKIP(sc->tx.cur, nsegs);
 	}
@@ -923,7 +917,8 @@ sunxi_emac_setup_phy(struct sunxi_emac_softc *sc)
 
 	aprint_debug_dev(sc->dev, "PHY type: %s\n", phy_type);
 
-	reg = SYSCONRD4(sc, 0);
+	syscon_lock(sc->syscon);
+	reg = syscon_read_4(sc->syscon, EMAC_CLK_REG);
 
 	reg &= ~(EMAC_CLK_PIT | EMAC_CLK_SRC | EMAC_CLK_RMII_EN);
 	if (strcmp(phy_type, "rgmii") == 0)
@@ -933,16 +928,24 @@ sunxi_emac_setup_phy(struct sunxi_emac_softc *sc)
 	else
 		reg |= EMAC_CLK_PIT_MII | EMAC_CLK_SRC_MII;
 
-	if (of_getprop_uint32(sc->phandle, "tx-delay", &tx_delay) == 0) {
+	if (of_getprop_uint32(sc->phandle, "allwinner,tx-delay-ps",
+	    &tx_delay) == 0) {
+		reg &= ~EMAC_CLK_ETXDC;
+		reg |= ((tx_delay / 100) << EMAC_CLK_ETXDC_SHIFT);
+	} else if (of_getprop_uint32(sc->phandle, "tx-delay", &tx_delay) == 0) {
 		reg &= ~EMAC_CLK_ETXDC;
 		reg |= (tx_delay << EMAC_CLK_ETXDC_SHIFT);
 	}
-	if (of_getprop_uint32(sc->phandle, "rx-delay", &rx_delay) == 0) {
+	if (of_getprop_uint32(sc->phandle, "allwinner,rx-delay-ps",
+	    &rx_delay) == 0) {
+		reg &= ~EMAC_CLK_ERXDC;
+		reg |= ((rx_delay / 100) << EMAC_CLK_ERXDC_SHIFT);
+	} else if (of_getprop_uint32(sc->phandle, "rx-delay", &rx_delay) == 0) {
 		reg &= ~EMAC_CLK_ERXDC;
 		reg |= (rx_delay << EMAC_CLK_ERXDC_SHIFT);
 	}
 
-	if (sc->type == EMAC_H3) {
+	if (sc->type == EMAC_H3 || sc->type == EMAC_H6) {
 		if (sunxi_emac_has_internal_phy(sc)) {
 			reg |= EMAC_CLK_EPHY_SELECT;
 			reg &= ~EMAC_CLK_EPHY_SHUTDOWN;
@@ -962,7 +965,8 @@ sunxi_emac_setup_phy(struct sunxi_emac_softc *sc)
 
 	aprint_debug_dev(sc->dev, "EMAC clock: 0x%08x\n", reg);
 
-	SYSCONWR4(sc, 0, reg);
+	syscon_write_4(sc->syscon, EMAC_CLK_REG, reg);
+	syscon_unlock(sc->syscon);
 
 	return 0;
 }
@@ -1288,26 +1292,12 @@ sunxi_emac_get_resources(struct sunxi_emac_softc *sc)
 	/* Map EMAC registers */
 	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0)
 		return ENXIO;
-	if (bus_space_map(sc->bst, addr, size, 0, &sc->bsh[_RES_EMAC]) != 0)
+	if (bus_space_map(sc->bst, addr, size, 0, &sc->bsh) != 0)
 		return ENXIO;
 
-	/* Map SYSCON registers */
-	if (of_hasprop(phandle, "syscon")) {
-		const int syscon_phandle = fdtbus_get_phandle(phandle,
-		    "syscon");
-		if (syscon_phandle == -1)
-			return ENXIO;
-		if (fdtbus_get_reg(syscon_phandle, 0, &addr, &size) != 0)
-			return ENXIO;
-		if (size < EMAC_CLK_REG + 4)
-			return ENXIO;
-		addr += EMAC_CLK_REG;
-		size -= EMAC_CLK_REG;
-	} else {
-		if (fdtbus_get_reg(phandle, 1, &addr, &size) != 0)
-			return ENXIO;
-	}
-	if (bus_space_map(sc->bst, addr, size, 0, &sc->bsh[_RES_SYSCON]) != 0)
+	/* Get SYSCON registers */
+	sc->syscon = fdtbus_syscon_acquire(phandle, "syscon");
+	if (sc->syscon == NULL)
 		return ENXIO;
 
 	/* The "ahb"/"stmmaceth" clock and reset is required */
@@ -1327,7 +1317,7 @@ sunxi_emac_get_resources(struct sunxi_emac_softc *sc)
 	}
 	sc->rst_ephy = fdtbus_reset_get(phandle, "ephy");
 	if (sc->rst_ephy == NULL) {
-		int phy_phandle = fdtbus_get_phandle(phandle, "phy-phandle");
+		int phy_phandle = fdtbus_get_phandle(phandle, "phy-handle");
 		if (phy_phandle != -1)
 			sc->rst_ephy = fdtbus_reset_get_index(phy_phandle, 0);
 	}
@@ -1408,6 +1398,7 @@ sunxi_emac_attach(device_t parent, device_t self, void *aux)
 
 	/* Read MAC address before resetting the chip */
 	sunxi_emac_get_eaddr(sc, eaddr);
+	aprint_normal_dev(self, "Ethernet address %s\n", ether_sprintf(eaddr));
 
 	/* Soft reset EMAC core */
 	if (sunxi_emac_reset(sc) != 0)

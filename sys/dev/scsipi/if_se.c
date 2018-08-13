@@ -1,4 +1,4 @@
-/*	$NetBSD: if_se.c,v 1.95 2017/10/23 09:31:18 msaitoh Exp $	*/
+/*	$NetBSD: if_se.c,v 1.97 2018/06/26 06:48:02 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1997 Ian W. Dall <ian.dall@dsto.defence.gov.au>
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_se.c,v 1.95 2017/10/23 09:31:18 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_se.c,v 1.97 2018/06/26 06:48:02 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -95,6 +95,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_se.c,v 1.95 2017/10/23 09:31:18 msaitoh Exp $");
 #include <net/if_dl.h>
 #include <net/if_ether.h>
 #include <net/if_media.h>
+#include <net/bpf.h>
 
 #ifdef INET
 #include <netinet/in.h>
@@ -106,9 +107,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_se.c,v 1.95 2017/10/23 09:31:18 msaitoh Exp $");
 #include <netatalk/at.h>
 #endif
 
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #define SETIMEOUT	1000
 #define	SEOUTSTANDING	4
@@ -438,7 +436,7 @@ se_ifstart(struct ifnet *ifp)
 	/* If BPF is listening on this interface, let it see the
 	 * packet before we commit it to the wire.
 	 */
-	bpf_mtap(ifp, m0);
+	bpf_mtap(ifp, m0, BPF_D_OUT);
 
 	/* We need to use m->m_pkthdr.len, so require the header */
 	if ((m0->m_flags & M_PKTHDR) == 0)

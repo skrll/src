@@ -1,5 +1,6 @@
-/* $NetBSD: ieee80211_netbsd.c,v 1.29 2017/01/14 16:34:44 maya Exp $ */
-/*-
+/* $NetBSD: ieee80211_netbsd.c,v 1.31 2018/04/27 06:56:21 maxv Exp $ */
+
+/*
  * Copyright (c) 2003-2005 Sam Leffler, Errno Consulting
  * All rights reserved.
  *
@@ -30,7 +31,7 @@
 #ifdef __FreeBSD__
 __FBSDID("$FreeBSD: src/sys/net80211/ieee80211_freebsd.c,v 1.8 2005/08/08 18:46:35 sam Exp $");
 #else
-__KERNEL_RCSID(0, "$NetBSD: ieee80211_netbsd.c,v 1.29 2017/01/14 16:34:44 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ieee80211_netbsd.c,v 1.31 2018/04/27 06:56:21 maxv Exp $");
 #endif
 
 /*
@@ -38,8 +39,8 @@ __KERNEL_RCSID(0, "$NetBSD: ieee80211_netbsd.c,v 1.29 2017/01/14 16:34:44 maya E
  */
 #include <sys/param.h>
 #include <sys/kernel.h>
-#include <sys/systm.h> 
-#include <sys/mbuf.h>   
+#include <sys/systm.h>
+#include <sys/mbuf.h>
 #include <sys/proc.h>
 #include <sys/sysctl.h>
 #include <sys/once.h>
@@ -89,7 +90,7 @@ ieee80211_init0(void)
 		max_linkhdr = ALIGN(sizeof(struct ieee80211_qosframe_addr4));
 	}
 
-        __link_set_foreach(ieee80211_setup, ieee80211_funcs) {
+	__link_set_foreach(ieee80211_setup, ieee80211_funcs) {
 		f = (void*)*ieee80211_setup;
 		(*f)();
 	}
@@ -112,22 +113,25 @@ ieee80211_sysctl_inact(SYSCTLFN_ARGS)
 	struct sysctlnode node;
 
 	node = *rnode;
-	/* sysctl_lookup copies the product from t.  Then, it
+
+	/*
+	 * sysctl_lookup copies the product from t.  Then, it
 	 * copies the new value onto t.
 	 */
 	t = *(int*)rnode->sysctl_data * IEEE80211_INACT_WAIT;
 	node.sysctl_data = &t;
 	error = sysctl_lookup(SYSCTLFN_CALL(&node));
 	if (error || newp == NULL)
-		return (error);
+		return error;
 
-	/* The new value was in seconds.  Convert to inactivity-wait
+	/*
+	 * The new value was in seconds.  Convert to inactivity-wait
 	 * intervals.  There are IEEE80211_INACT_WAIT seconds per
 	 * interval.
 	 */
 	*(int*)rnode->sysctl_data = t / IEEE80211_INACT_WAIT;
 
-	return (0);
+	return 0;
 }
 
 static int
@@ -263,11 +267,11 @@ ieee80211_sysctl_detach(struct ieee80211com *ic)
  *
  *	If there is any single 802.11 interface, ieee80211_node_walkfirst
  *	must not return NULL.
- */	
+ */
 static struct ieee80211_node *
 ieee80211_node_walkfirst(struct ieee80211_node_walk *nw, u_short if_index)
 {
-	(void)memset(nw, 0, sizeof(*nw));
+	memset(nw, 0, sizeof(*nw));
 
 	nw->nw_ifindex = if_index;
 
@@ -332,11 +336,13 @@ ieee80211_sysctl_fill_node(struct ieee80211_node *ni,
     struct ieee80211_node_sysctl *ns, int ifindex,
     const struct ieee80211_channel *chan0, uint32_t flags)
 {
+	memset(ns, 0, sizeof(*ns));
+
 	ns->ns_ifindex = ifindex;
 	ns->ns_capinfo = ni->ni_capinfo;
 	ns->ns_flags = flags;
-	(void)memcpy(ns->ns_macaddr, ni->ni_macaddr, sizeof(ns->ns_macaddr));
-	(void)memcpy(ns->ns_bssid, ni->ni_bssid, sizeof(ns->ns_bssid));
+	memcpy(ns->ns_macaddr, ni->ni_macaddr, sizeof(ns->ns_macaddr));
+	memcpy(ns->ns_bssid, ni->ni_bssid, sizeof(ns->ns_bssid));
 	if (ni->ni_chan != IEEE80211_CHAN_ANYC) {
 		ns->ns_freq = ni->ni_chan->ic_freq;
 		ns->ns_chanflags = ni->ni_chan->ic_flags;
@@ -347,7 +353,7 @@ ieee80211_sysctl_fill_node(struct ieee80211_node *ni,
 	}
 	ns->ns_rssi = ni->ni_rssi;
 	ns->ns_esslen = ni->ni_esslen;
-	(void)memcpy(ns->ns_essid, ni->ni_essid, sizeof(ns->ns_essid));
+	memcpy(ns->ns_essid, ni->ni_essid, sizeof(ns->ns_essid));
 	ns->ns_erp = ni->ni_erp;
 	ns->ns_associd = ni->ni_associd;
 	ns->ns_inact = ni->ni_inact * IEEE80211_INACT_WAIT;
@@ -355,7 +361,7 @@ ieee80211_sysctl_fill_node(struct ieee80211_node *ni,
 	ns->ns_rates = ni->ni_rates;
 	ns->ns_txrate = ni->ni_txrate;
 	ns->ns_intval = ni->ni_intval;
-	(void)memcpy(ns->ns_tstamp, &ni->ni_tstamp, sizeof(ns->ns_tstamp));
+	memcpy(ns->ns_tstamp, &ni->ni_tstamp, sizeof(ns->ns_tstamp));
 	ns->ns_txseq = ni->ni_txseqs[0];
 	ns->ns_rxseq = ni->ni_rxseqs[0];
 	ns->ns_fhdwell = ni->ni_fhdwell;
@@ -485,7 +491,7 @@ ieee80211_sysctl_setup(void)
 	    "debug", SYSCTL_DESCR("control debugging printfs"),
 	    NULL, 0, &ieee80211_debug, 0, CTL_CREATE, CTL_EOL)) != 0)
 		goto err;
-#endif /* IEEE80211_DEBUG */
+#endif
 
 	ieee80211_rssadapt_sysctl_setup(&ieee80211_sysctllog);
 
@@ -524,7 +530,6 @@ ieee80211_drain_ifq(struct ifqueue *ifq)
 	}
 }
 
-
 void
 if_printf(struct ifnet *ifp, const char *fmt, ...)
 {
@@ -537,7 +542,6 @@ if_printf(struct ifnet *ifp, const char *fmt, ...)
 	va_end(ap);
 	return;
 }
-
 
 /*
  * Allocate and setup a management frame of the specified
@@ -561,6 +565,7 @@ ieee80211_getmgtframe(u_int8_t **frm, u_int pktlen)
 	/* XXX 4-address frame? */
 	len = roundup(sizeof(struct ieee80211_frame) + pktlen, 4);
 	IASSERT(len <= MCLBYTES, ("802.11 mgt frame too large: %u", len));
+
 	if (len <= MHLEN) {
 		m = m_gethdr(M_NOWAIT, MT_HEADER);
 		/*
@@ -571,13 +576,16 @@ ieee80211_getmgtframe(u_int8_t **frm, u_int pktlen)
 		 */
 		if (m != NULL)
 			MH_ALIGN(m, len);
-	} else
+	} else {
 		m = m_getcl(M_NOWAIT, MT_HEADER, M_PKTHDR);
+	}
+
 	if (m != NULL) {
 		m->m_data += sizeof(struct ieee80211_frame);
 		*frm = m->m_data;
 		IASSERT((uintptr_t)*frm % 4 == 0, ("bad beacon boundary"));
 	}
+
 	return m;
 }
 
@@ -588,7 +596,8 @@ get_random_bytes(void *p, size_t n)
 }
 
 void
-ieee80211_notify_node_join(struct ieee80211com *ic, struct ieee80211_node *ni, int newassoc)
+ieee80211_notify_node_join(struct ieee80211com *ic, struct ieee80211_node *ni,
+    int newassoc)
 {
 	struct ifnet *ifp = ic->ic_ifp;
 	struct ieee80211_join_event iev;
@@ -601,8 +610,8 @@ ieee80211_notify_node_join(struct ieee80211com *ic, struct ieee80211_node *ni, i
 	if (ni == ic->ic_bss) {
 		IEEE80211_ADDR_COPY(iev.iev_addr, ni->ni_bssid);
 		rt_ieee80211msg(ifp, newassoc ?
-			RTM_IEEE80211_ASSOC : RTM_IEEE80211_REASSOC,
-			&iev, sizeof(iev));
+		    RTM_IEEE80211_ASSOC : RTM_IEEE80211_REASSOC,
+		    &iev, sizeof(iev));
 		if_link_state_change(ifp, LINK_STATE_UP);
 	} else {
 		IEEE80211_ADDR_COPY(iev.iev_addr, ni->ni_macaddr);
@@ -681,8 +690,8 @@ ieee80211_notify_michael_failure(struct ieee80211com *ic,
 	struct ifnet *ifp = ic->ic_ifp;
 
 	IEEE80211_DPRINTF(ic, IEEE80211_MSG_CRYPTO,
-		"[%s] michael MIC verification failed <keyix %u>\n",
-	       ether_sprintf(wh->i_addr2), keyix);
+	    "[%s] michael MIC verification failed <keyix %u>\n",
+	    ether_sprintf(wh->i_addr2), keyix);
 	ic->ic_stats.is_rx_tkipmic++;
 
 	if (ifp != NULL) {		/* NB: for cipher test modules */
@@ -710,4 +719,75 @@ ieee80211_load_module(const char *modname)
 #else
 	printf("%s: load the %s module by hand for now.\n", __func__, modname);
 #endif
+}
+
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Set the m_data pointer of a newly-allocated mbuf
+ * to place an object of the specified size at the
+ * end of the mbuf, longword aligned.
+ */
+void
+m_align(struct mbuf *m, int len)
+{
+	int adjust;
+
+	KASSERT(len != M_COPYALL);
+
+	if (m->m_flags & M_EXT)
+		adjust = m->m_ext.ext_size - len;
+	else if (m->m_flags & M_PKTHDR)
+		adjust = MHLEN - len;
+	else
+		adjust = MLEN - len;
+	m->m_data += adjust &~ (sizeof(long)-1);
+}
+
+/*
+ * Append the specified data to the indicated mbuf chain,
+ * Extend the mbuf chain if the new data does not fit in
+ * existing space.
+ *
+ * Return 1 if able to complete the job; otherwise 0.
+ */
+int
+m_append(struct mbuf *m0, int len, const void *cpv)
+{
+	struct mbuf *m, *n;
+	int remainder, space;
+	const char *cp = cpv;
+
+	KASSERT(len != M_COPYALL);
+	for (m = m0; m->m_next != NULL; m = m->m_next)
+		continue;
+	remainder = len;
+	space = M_TRAILINGSPACE(m);
+	if (space > 0) {
+		/*
+		 * Copy into available space.
+		 */
+		if (space > remainder)
+			space = remainder;
+		memmove(mtod(m, char *) + m->m_len, cp, space);
+		m->m_len += space;
+		cp = cp + space, remainder -= space;
+	}
+	while (remainder > 0) {
+		/*
+		 * Allocate a new mbuf; could check space
+		 * and allocate a cluster instead.
+		 */
+		n = m_get(M_DONTWAIT, m->m_type);
+		if (n == NULL)
+			break;
+		n->m_len = min(MLEN, remainder);
+		memmove(mtod(n, void *), cp, n->m_len);
+		cp += n->m_len, remainder -= n->m_len;
+		m->m_next = n;
+		m = n;
+	}
+	if (m0->m_flags & M_PKTHDR)
+		m0->m_pkthdr.len += len - remainder;
+	return (remainder == 0);
 }

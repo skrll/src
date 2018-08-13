@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_synch.c,v 1.312 2017/08/06 09:14:14 christos Exp $	*/
+/*	$NetBSD: kern_synch.c,v 1.317 2018/07/24 15:09:37 bouyer Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2004, 2006, 2007, 2008, 2009
@@ -69,10 +69,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_synch.c,v 1.312 2017/08/06 09:14:14 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_synch.c,v 1.317 2018/07/24 15:09:37 bouyer Exp $");
 
 #include "opt_kstack.h"
-#include "opt_perfctrs.h"
 #include "opt_dtrace.h"
 
 #define	__MUTEX_PRIVATE
@@ -81,9 +80,6 @@ __KERNEL_RCSID(0, "$NetBSD: kern_synch.c,v 1.312 2017/08/06 09:14:14 christos Ex
 #include <sys/systm.h>
 #include <sys/proc.h>
 #include <sys/kernel.h>
-#if defined(PERFCTRS)
-#include <sys/pmc.h>
-#endif
 #include <sys/cpu.h>
 #include <sys/pserialize.h>
 #include <sys/resourcevar.h>
@@ -111,19 +107,19 @@ static void	sched_lendpri(struct lwp *, pri_t);
 static void	resched_cpu(struct lwp *);
 
 syncobj_t sleep_syncobj = {
-	SOBJ_SLEEPQ_SORTED,
-	sleepq_unsleep,
-	sleepq_changepri,
-	sleepq_lendpri,
-	syncobj_noowner,
+	.sobj_flag	= SOBJ_SLEEPQ_SORTED,
+	.sobj_unsleep	= sleepq_unsleep,
+	.sobj_changepri	= sleepq_changepri,
+	.sobj_lendpri	= sleepq_lendpri,
+	.sobj_owner	= syncobj_noowner,
 };
 
 syncobj_t sched_syncobj = {
-	SOBJ_SLEEPQ_SORTED,
-	sched_unsleep,
-	sched_changepri,
-	sched_lendpri,
-	syncobj_noowner,
+	.sobj_flag	= SOBJ_SLEEPQ_SORTED,
+	.sobj_unsleep	= sched_unsleep,
+	.sobj_changepri	= sched_changepri,
+	.sobj_lendpri	= sched_lendpri,
+	.sobj_owner	= syncobj_noowner,
 };
 
 /* "Lightning bolt": once a second sleep address. */
@@ -559,15 +555,6 @@ mi_switch(lwp_t *l)
 	if (!returning) {
 		SYSCALL_TIME_SLEEP(l);
 
-		/*
-		 * XXXSMP If we are using h/w performance counters,
-		 * save context.
-		 */
-#if PERFCTRS
-		if (PMC_ENABLED(l->l_proc)) {
-			pmc_save_context(l->l_proc);
-		}
-#endif
 		updatertime(l, &bt);
 	}
 
@@ -589,7 +576,8 @@ mi_switch(lwp_t *l)
 			 * be reset here, if interrupt/preemption happens
 			 * early in idle LWP.
 			 */
-			if (l->l_target_cpu != NULL) {
+			if (l->l_target_cpu != NULL &&
+			    (l->l_pflag & LP_BOUND) == 0) {
 				KASSERT((l->l_pflag & LP_INTR) == 0);
 				spc->spc_migrating = l;
 			}
@@ -729,7 +717,6 @@ mi_switch(lwp_t *l)
 		 * Restore VM context and IPL.
 		 */
 		pmap_activate(l);
-		uvm_emap_switch(l);
 		pcu_switchpoint(l);
 
 		if (prevlwp != NULL) {
@@ -758,6 +745,7 @@ mi_switch(lwp_t *l)
 		retval = 1;
 	} else {
 		/* Nothing to do - just unlock and return. */
+		pserialize_switchpoint();
 		mutex_spin_exit(spc->spc_mutex);
 		lwp_unlock(l);
 		retval = 0;
@@ -766,15 +754,6 @@ mi_switch(lwp_t *l)
 	KASSERT(l == curlwp);
 	KASSERT(l->l_stat == LSONPROC);
 
-	/*
-	 * XXXSMP If we are using h/w performance counters, restore context.
-	 * XXXSMP preemption problem.
-	 */
-#if PERFCTRS
-	if (PMC_ENABLED(l->l_proc)) {
-		pmc_restore_context(l->l_proc);
-	}
-#endif
 	SYSCALL_TIME_WAKEUP(l);
 	LOCKDEBUG_BARRIER(NULL, 1);
 

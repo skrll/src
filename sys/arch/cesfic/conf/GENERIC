@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.68 2017/09/14 07:58:39 mrg Exp $
+# $NetBSD: GENERIC,v 1.70 2018/08/01 20:04:10 maxv Exp $
 #
 # GENERIC machine description file
 # 
@@ -36,8 +36,8 @@ options 	USERCONF	# userconf(4) support
 #options	PIPE_SOCKETPAIR	# smaller, but slower pipe(2)
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
-# Enable experimental buffer queue strategy for better responsiveness under 
-# high disk I/O load. Use it with caution - it's not proven to be stable yet.
+# Alternate buffer queue strategies for better responsiveness under high
+# disk I/O load.
 #options 	BUFQ_READPRIO
 #options 	BUFQ_PRIOCSCAN
 
@@ -133,11 +133,9 @@ pseudo-device	pty			# pseudo ptys
 #pseudo-device	ccd			# concatenated disk devices
 #pseudo-device	cgd			# cryptographic disk devices
 pseudo-device	loop			# loopback network interface
-#pseudo-device	ipfilter 		# IP Filter package
+#pseudo-device	npf			# NPF packet filter
 pseudo-device	clockctl		# user control of clock subsystem
 pseudo-device	ksyms			# /dev/ksyms
-#pseudo-device	pf			# PF packet filter
-#pseudo-device	pflog			# PF log if
 
 # Veriexec
 #

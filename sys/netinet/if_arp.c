@@ -1,6 +1,6 @@
-/*	$NetBSD: if_arp.c,v 1.255 2017/11/17 07:37:12 ozaki-r Exp $	*/
+/*	$NetBSD: if_arp.c,v 1.275 2018/05/11 13:56:43 maxv Exp $	*/
 
-/*-
+/*
  * Copyright (c) 1998, 2000, 2008 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_arp.c,v 1.255 2017/11/17 07:37:12 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_arp.c,v 1.275 2018/05/11 13:56:43 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -109,7 +109,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_arp.c,v 1.255 2017/11/17 07:37:12 ozaki-r Exp $")
 #include <net/if_types.h>
 #include <net/if_ether.h>
 #include <net/if_llatbl.h>
-#include <net/net_osdep.h>
 #include <net/route.h>
 #include <net/net_stats.h>
 
@@ -140,40 +139,41 @@ __KERNEL_RCSID(0, "$NetBSD: if_arp.c,v 1.255 2017/11/17 07:37:12 ozaki-r Exp $")
 #define ETHERTYPE_IPTRAILERS ETHERTYPE_TRAIL
 
 /* timer values */
-static int	arpt_keep = (20*60);	/* once resolved, good for 20 more minutes */
-static int	arpt_down = 20;		/* once declared down, don't send for 20 secs */
-static int	arp_maxhold = 1;	/* number of packets to hold per ARP entry */
+static int arpt_keep = (20*60);	/* once resolved, good for 20 more minutes */
+static int arpt_down = 20;		/* once declared down, don't send for 20 secs */
+static int arp_maxhold = 1;	/* number of packets to hold per ARP entry */
 #define	rt_expire rt_rmx.rmx_expire
 #define	rt_pksent rt_rmx.rmx_pksent
 
-int		ip_dad_count = PROBE_NUM;
+int ip_dad_count = PROBE_NUM;
 #ifdef ARP_DEBUG
-int		arp_debug = 1;
+int arp_debug = 1;
 #else
-int		arp_debug = 0;
+int arp_debug = 0;
 #endif
 
-static	void arp_init(void);
+static void arp_init(void);
 
-static	void arprequest(struct ifnet *,
+static void arprequest(struct ifnet *,
     const struct in_addr *, const struct in_addr *,
-    const u_int8_t *);
-static	void arpannounce1(struct ifaddr *);
-static	struct sockaddr *arp_setgate(struct rtentry *, struct sockaddr *,
-	    const struct sockaddr *);
-static	void arptimer(void *);
-static	void arp_settimer(struct llentry *, int);
-static	struct llentry *arplookup(struct ifnet *, struct mbuf *,
-	    const struct in_addr *, const struct sockaddr *, int);
-static	struct llentry *arpcreate(struct ifnet *, struct mbuf *,
-	    const struct in_addr *, const struct sockaddr *, int);
-static	void in_arpinput(struct mbuf *);
-static	void in_revarpinput(struct mbuf *);
-static	void revarprequest(struct ifnet *);
+    const uint8_t *);
+static void arpannounce1(struct ifaddr *);
+static struct sockaddr *arp_setgate(struct rtentry *, struct sockaddr *,
+    const struct sockaddr *);
+static void arptimer(void *);
+static void arp_settimer(struct llentry *, int);
+static struct llentry *arplookup(struct ifnet *,
+    const struct in_addr *, const struct sockaddr *, int);
+static struct llentry *arpcreate(struct ifnet *,
+    const struct in_addr *, const struct sockaddr *, int);
+static void in_arpinput(struct mbuf *);
+static void in_revarpinput(struct mbuf *);
+static void revarprequest(struct ifnet *);
 
-static	void arp_drainstub(void);
+static void arp_drainstub(void);
 
-static void arp_dad_timer(struct ifaddr *);
+struct dadq;
+static void arp_dad_timer(struct dadq *);
 static void arp_dad_start(struct ifaddr *);
 static void arp_dad_stop(struct ifaddr *);
 static void arp_dad_duplicated(struct ifaddr *, const char *);
@@ -183,15 +183,15 @@ static void arp_init_llentry(struct ifnet *, struct llentry *);
 static void arp_free_llentry_tokenring(struct llentry *);
 #endif
 
-struct	ifqueue arpintrq = {
+struct ifqueue arpintrq = {
 	.ifq_head = NULL,
 	.ifq_tail = NULL,
 	.ifq_len = 0,
 	.ifq_maxlen = 50,
 	.ifq_drops = 0,
 };
-static int	arp_maxtries = 5;
-static int	useloopback = 1;	/* use loopback interface for local traffic */
+static int arp_maxtries = 5;
+static int useloopback = 1;	/* use loopback interface for local traffic */
 
 static percpu_t *arpstat_percpu;
 
@@ -202,10 +202,10 @@ static percpu_t *arpstat_percpu;
 #define	ARP_STATADD(x, v)	_NET_STATADD(arpstat_percpu, x, v)
 
 /* revarp state */
-static struct	in_addr myip, srv_ip;
-static int	myip_initialized = 0;
-static int	revarp_in_progress = 0;
-static struct	ifnet *myip_ifp = NULL;
+static struct in_addr myip, srv_ip;
+static int myip_initialized = 0;
+static int revarp_in_progress = 0;
+static struct ifnet *myip_ifp = NULL;
 
 static int arp_drainwanted;
 
@@ -221,10 +221,10 @@ static int log_unknown_network = 1;
 #define	LLA_ADDRSTRLEN	(16 * 3)
 
 static char *
-lla_snprintf(char *, u_int8_t *, int);
+lla_snprintf(char *, const u_int8_t *, int);
 
 static char *
-lla_snprintf(char *dst, u_int8_t *adrp, int len)
+lla_snprintf(char *dst, const u_int8_t *adrp, int len)
 {
 	int i;
 	char *p;
@@ -255,19 +255,20 @@ arp_fasttimo(void)
 	}
 }
 
-const struct protosw arpsw[] = {
-	{ .pr_type = 0,
-	  .pr_domain = &arpdomain,
-	  .pr_protocol = 0,
-	  .pr_flags = 0,
-	  .pr_input = 0,
-	  .pr_ctlinput = 0,
-	  .pr_ctloutput = 0,
-	  .pr_usrreqs = 0,
-	  .pr_init = arp_init,
-	  .pr_fasttimo = arp_fasttimo,
-	  .pr_slowtimo = 0,
-	  .pr_drain = arp_drainstub,
+static const struct protosw arpsw[] = {
+	{
+		.pr_type = 0,
+		.pr_domain = &arpdomain,
+		.pr_protocol = 0,
+		.pr_flags = 0,
+		.pr_input = 0,
+		.pr_ctlinput = 0,
+		.pr_ctloutput = 0,
+		.pr_usrreqs = 0,
+		.pr_init = arp_init,
+		.pr_fasttimo = arp_fasttimo,
+		.pr_slowtimo = 0,
+		.pr_drain = arp_drainstub,
 	}
 };
 
@@ -313,35 +314,20 @@ arptimer(void *arg)
 	struct llentry *lle = arg;
 	struct ifnet *ifp;
 
-	if (lle == NULL)
-		return;
-
-	if (lle->la_flags & LLE_STATIC)
-		return;
+	KASSERT((lle->la_flags & LLE_STATIC) == 0);
 
 	LLE_WLOCK(lle);
-	if (callout_pending(&lle->la_timer)) {
-		/*
-		 * Here we are a bit odd here in the treatment of
-		 * active/pending. If the pending bit is set, it got
-		 * rescheduled before I ran. The active
-		 * bit we ignore, since if it was stopped
-		 * in ll_tablefree() and was currently running
-		 * it would have return 0 so the code would
-		 * not have deleted it since the callout could
-		 * not be stopped so we want to go through
-		 * with the delete here now. If the callout
-		 * was restarted, the pending bit will be back on and
-		 * we just want to bail since the callout_reset would
-		 * return 1 and our reference would have been removed
-		 * by arpresolve() below.
-		 */
-		LLE_WUNLOCK(lle);
+
+	/*
+	 * This shortcut is required to avoid trying to touch ifp that may be
+	 * being destroyed.
+	 */
+	if ((lle->la_flags & LLE_LINKED) == 0) {
+		LLE_FREE_LOCKED(lle);
 		return;
 	}
-	ifp = lle->lle_tbl->llt_ifp;
 
-	callout_stop(&lle->la_timer);
+	ifp = lle->lle_tbl->llt_ifp;
 
 	/* XXX: LOR avoidance. We still have ref on lle. */
 	LLE_WUNLOCK(lle);
@@ -369,6 +355,21 @@ arp_settimer(struct llentry *la, int sec)
 {
 
 	LLE_WLOCK_ASSERT(la);
+	KASSERT((la->la_flags & LLE_STATIC) == 0);
+
+	/*
+	 * We have to take care of a reference leak which occurs if
+	 * callout_reset overwrites a pending callout schedule.  Unfortunately
+	 * we don't have a mean to know the overwrite, so we need to know it
+	 * using callout_stop.  We need to call callout_pending first to exclude
+	 * the case that the callout has never been scheduled.
+	 */
+	if (callout_pending(&la->la_timer)) {
+		bool expired = callout_stop(&la->la_timer);
+		if (!expired)
+			/* A pending callout schedule is canceled. */
+			LLE_REMREF(la);
+	}
 	LLE_ADDREF(la);
 	callout_reset(&la->la_timer, hz * sec, arptimer, la);
 }
@@ -563,10 +564,12 @@ arp_rtrequest(int req, struct rtentry *rt, const struct rt_addrinfo *info)
 		satosdl(gate)->sdl_type = ifp->if_type;
 		satosdl(gate)->sdl_index = ifp->if_index;
 
-		/* If the route is for a broadcast address mark it as such.
+		/*
+		 * If the route is for a broadcast address mark it as such.
 		 * This way we can avoid an expensive call to in_broadcast()
 		 * in ip_output() most of the time (because the route passed
-		 * to ip_output() is almost always a host route). */
+		 * to ip_output() is almost always a host route).
+		 */
 		if (rt->rt_flags & RTF_HOST &&
 		    !(rt->rt_flags & RTF_BROADCAST) &&
 		    in_broadcast(satocsin(rt_getkey(rt))->sin_addr, rt->rt_ifp))
@@ -627,7 +630,7 @@ arp_rtrequest(int req, struct rtentry *rt, const struct rt_addrinfo *info)
 static void
 arprequest(struct ifnet *ifp,
     const struct in_addr *sip, const struct in_addr *tip,
-    const u_int8_t *enaddr)
+    const uint8_t *enaddr)
 {
 	struct mbuf *m;
 	struct arphdr *ah;
@@ -702,15 +705,15 @@ arpannounce1(struct ifaddr *ifa)
 }
 
 /*
- * Resolve an IP address into an ethernet address.  If success,
- * desten is filled in.  If there is no entry in arptab,
- * set one up and broadcast a request for the IP address.
- * Hold onto this mbuf and resend it once the address
- * is finally resolved.  A return value of 0 indicates
- * that desten has been filled in and the packet should be sent
- * normally; a return value of EWOULDBLOCK indicates that the packet has been
- * held pending resolution.
- * Any other value indicates an error.
+ * Resolve an IP address into an ethernet address.  If success, desten is
+ * filled in. If there is no entry in arptab, set one up and broadcast a
+ * request for the IP address. Hold onto this mbuf and resend it once the
+ * address is finally resolved.
+ *
+ * A return value of 0 indicates that desten has been filled in and the packet
+ * should be sent normally; a return value of EWOULDBLOCK indicates that the
+ * packet has been held pending resolution. Any other value indicates an
+ * error.
  */
 int
 arpresolve(struct ifnet *ifp, const struct rtentry *rt, struct mbuf *m,
@@ -721,6 +724,7 @@ arpresolve(struct ifnet *ifp, const struct rtentry *rt, struct mbuf *m,
 	bool renew;
 	int error;
 	struct ifnet *origifp = ifp;
+
 #if NCARP > 0
 	if (rt != NULL && rt->rt_ifp->if_type == IFT_CARP)
 		ifp = rt->rt_ifp;
@@ -728,7 +732,7 @@ arpresolve(struct ifnet *ifp, const struct rtentry *rt, struct mbuf *m,
 
 	KASSERT(m != NULL);
 
-	la = arplookup(ifp, m, NULL, dst, 0);
+	la = arplookup(ifp, NULL, dst, 0);
 	if (la == NULL)
 		goto notfound;
 
@@ -741,18 +745,13 @@ arpresolve(struct ifnet *ifp, const struct rtentry *rt, struct mbuf *m,
 	}
 
 notfound:
-#ifdef IFF_STATICARP /* FreeBSD */
-#define _IFF_NOARP (IFF_NOARP | IFF_STATICARP)
-#else
-#define _IFF_NOARP IFF_NOARP
-#endif
-	if (ifp->if_flags & _IFF_NOARP) {
+	if (ifp->if_flags & IFF_NOARP) {
 		if (la != NULL)
 			LLE_RUNLOCK(la);
 		error = ENOTSUP;
 		goto bad;
 	}
-#undef _IFF_NOARP
+
 	if (la == NULL) {
 		struct rtentry *_rt;
 
@@ -810,8 +809,7 @@ notfound:
 		LLE_WUNLOCK(la);
 
 		if (renew) {
-			const u_int8_t *enaddr =
-			    CLLADDR(ifp->if_sadl);
+			const uint8_t *enaddr = CLLADDR(ifp->if_sadl);
 			arprequest(origifp,
 			    &satocsin(rt->rt_ifa->ifa_addr)->sin_addr,
 			    &satocsin(dst)->sin_addr, enaddr);
@@ -871,8 +869,7 @@ notfound:
 		    EHOSTUNREACH : EHOSTDOWN;
 
 	if (renew) {
-		const u_int8_t *enaddr =
-		    CLLADDR(ifp->if_sadl);
+		const uint8_t *enaddr = CLLADDR(ifp->if_sadl);
 		la->la_expire = time_uptime;
 		arp_settimer(la, arpt_down);
 		la->la_asked++;
@@ -935,47 +932,66 @@ arpintr(void)
 		MCLAIM(m, &arpdomain.dom_mowner);
 		ARP_STATINC(ARP_STAT_RCVTOTAL);
 
-		/*
-		 * First, make sure we have at least struct arphdr.
-		 */
-		if (m->m_len < sizeof(struct arphdr) ||
-		    (ar = mtod(m, struct arphdr *)) == NULL)
+		arplen = sizeof(struct arphdr);
+		if (m->m_len < arplen && (m = m_pullup(m, arplen)) == NULL)
 			goto badlen;
+		ar = mtod(m, struct arphdr *);
 
 		rcvif = m_get_rcvif(m, &s);
 		if (__predict_false(rcvif == NULL)) {
 			ARP_STATINC(ARP_STAT_RCVNOINT);
 			goto free;
 		}
+
+		/*
+		 * We don't want non-IEEE1394 ARP packets on IEEE1394
+		 * interfaces, and vice versa. Our life depends on that.
+		 */
 		switch (rcvif->if_type) {
 		case IFT_IEEE1394:
+			if (ntohs(ar->ar_hrd) != ARPHRD_IEEE1394) {
+				m_put_rcvif(rcvif, &s);
+				ARP_STATINC(ARP_STAT_RCVBADPROTO);
+				goto free;
+			}
+
 			arplen = sizeof(struct arphdr) +
 			    ar->ar_hln + 2 * ar->ar_pln;
 			break;
 		default:
+			if (ntohs(ar->ar_hrd) == ARPHRD_IEEE1394) {
+				m_put_rcvif(rcvif, &s);
+				ARP_STATINC(ARP_STAT_RCVBADPROTO);
+				goto free;
+			}
+
 			arplen = sizeof(struct arphdr) +
 			    2 * ar->ar_hln + 2 * ar->ar_pln;
 			break;
 		}
+
 		m_put_rcvif(rcvif, &s);
 
-		if (/* XXX ntohs(ar->ar_hrd) == ARPHRD_ETHER && */
-		    m->m_len >= arplen)
-			switch (ntohs(ar->ar_pro)) {
-			case ETHERTYPE_IP:
-			case ETHERTYPE_IPTRAILERS:
-				in_arpinput(m);
-				continue;
-			default:
-				ARP_STATINC(ARP_STAT_RCVBADPROTO);
-			}
-		else {
-badlen:
-			ARP_STATINC(ARP_STAT_RCVBADLEN);
+		if (m->m_len < arplen && (m = m_pullup(m, arplen)) == NULL)
+			goto badlen;
+		ar = mtod(m, struct arphdr *);
+
+		switch (ntohs(ar->ar_pro)) {
+		case ETHERTYPE_IP:
+		case ETHERTYPE_IPTRAILERS:
+			in_arpinput(m);
+			continue;
+		default:
+			ARP_STATINC(ARP_STAT_RCVBADPROTO);
+			goto free;
 		}
+
+badlen:
+		ARP_STATINC(ARP_STAT_RCVBADLEN);
 free:
 		m_freem(m);
 	}
+
 out:
 	SOFTNET_KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 	return; /* XXX gcc */
@@ -1005,7 +1021,7 @@ in_arpinput(struct mbuf *m)
 	struct in_ifaddr *bridge_ia = NULL;
 #endif
 #if NCARP > 0
-	u_int32_t count = 0, index = 0;
+	uint32_t count = 0, index = 0;
 #endif
 	struct sockaddr sa;
 	struct in_addr isaddr, itaddr, myaddr;
@@ -1028,31 +1044,17 @@ in_arpinput(struct mbuf *m)
 
 	ifp = if_get_bylla(ar_sha(ah), ah->ar_hln, &psref);
 	if (ifp) {
+		/* it's from me, ignore it. */
 		if_put(ifp, &psref);
 		ARP_STATINC(ARP_STAT_RCVLOCALSHA);
-		goto out;	/* it's from me, ignore it. */
+		goto out;
 	}
 
 	rcvif = ifp = m_get_rcvif_psref(m, &psref);
 	if (__predict_false(rcvif == NULL))
-		goto drop;
-
-	/*
-	 * Fix up ah->ar_hrd if necessary, before using ar_tha() or ar_tpa().
-	 * XXX check ar_hrd more strictly?
-	 */
-	switch (ifp->if_type) {
-	case IFT_IEEE1394:
-		if (ntohs(ah->ar_hrd) == ARPHRD_IEEE1394)
-			;
-		else {
-			/* XXX this is to make sure we compute ar_tha right */
-			ah->ar_hrd = htons(ARPHRD_IEEE1394);
-		}
-		break;
-	default:
-		break;
-	}
+		goto out;
+	if (rcvif->if_flags & IFF_NOARP)
+		goto out;
 
 	memcpy(&isaddr, ar_spa(ah), sizeof(isaddr));
 	memcpy(&itaddr, ar_tpa(ah), sizeof(itaddr));
@@ -1099,7 +1101,7 @@ in_arpinput(struct mbuf *m)
 		if (rcvif->if_bridge != NULL &&
 		    rcvif->if_bridge == ia->ia_ifp->if_bridge)
 			bridge_ia = ia;
-#endif /* NBRIDGE > 0 */
+#endif
 	}
 
 #if NBRIDGE > 0
@@ -1190,9 +1192,9 @@ in_arpinput(struct mbuf *m)
 		goto reply;
 
 	if (in_hosteq(itaddr, myaddr))
-		la = arpcreate(ifp, m, &isaddr, NULL, 1);
+		la = arpcreate(ifp, &isaddr, NULL, 1);
 	else
-		la = arplookup(ifp, m, &isaddr, NULL, 1);
+		la = arplookup(ifp, &isaddr, NULL, 1);
 	if (la == NULL)
 		goto reply;
 
@@ -1231,20 +1233,7 @@ in_arpinput(struct mbuf *m)
 		}
 	}
 
-	/* XXX llentry should have addrlen? */
-#if 0
-	/*
-	 * sanity check for the address length.
-	 * XXX this does not work for protocols with variable address
-	 * length. -is
-	 */
-	if (sdl->sdl_alen && sdl->sdl_alen != ah->ar_hln) {
-		ARP_STATINC(ARP_STAT_RCVLENCHG);
-		log(LOG_WARNING,
-		    "arp from %s: new addr len %d, was %d\n",
-		    IN_PRINT(ipbuf, &isaddr), ah->ar_hln, sdl->sdl_alen);
-	}
-#endif
+	KASSERT(ifp->if_sadl->sdl_alen == ifp->if_addrlen);
 
 #if NTOKEN > 0
 	/*
@@ -1272,7 +1261,7 @@ in_arpinput(struct mbuf *m)
 			}
 		}
 	}
-#endif /* NTOKEN > 0 */
+#endif
 
 	KASSERT(sizeof(la->ll_addr) >= ifp->if_addrlen);
 	memcpy(&la->ll_addr, ar_sha(ah), ifp->if_addrlen);
@@ -1334,6 +1323,7 @@ reply:
 		/* Proxy ARP */
 		struct llentry *lle = NULL;
 		struct sockaddr_in sin;
+
 #if NCARP > 0
 		if (ifp->if_type == IFT_CARP) {
 			struct ifnet *_rcvif = m_get_rcvif(m, &s);
@@ -1362,20 +1352,27 @@ reply:
 		} else {
 			if (lle != NULL)
 				LLE_RUNLOCK(lle);
-			goto drop;
+			goto out;
 		}
 	}
 	ia4_release(ia, &psref_ia);
 
+	/*
+	 * XXX XXX: Here we're recycling the mbuf. But the mbuf could have
+	 * other mbufs in its chain, and just overwriting m->m_pkthdr.len
+	 * would be wrong in this case (the length becomes smaller than the
+	 * real chain size).
+	 *
+	 * This can theoretically cause bugs in the lower layers (drivers,
+	 * and L2encap), in some corner cases.
+	 */
 	memcpy(ar_tpa(ah), ar_spa(ah), ah->ar_pln);
 	memcpy(ar_spa(ah), &itaddr, ah->ar_pln);
 	ah->ar_op = htons(ARPOP_REPLY);
 	ah->ar_pro = htons(ETHERTYPE_IP); /* let's be sure! */
 	switch (ifp->if_type) {
 	case IFT_IEEE1394:
-		/*
-		 * ieee1394 arp reply is broadcast
-		 */
+		/* ieee1394 arp reply is broadcast */
 		m->m_flags &= ~M_MCAST;
 		m->m_flags |= M_BCAST;
 		m->m_len = sizeof(*ah) + (2 * ah->ar_pln) + ah->ar_hln;
@@ -1400,7 +1397,6 @@ reply:
 out:
 	if (la != NULL)
 		LLE_WUNLOCK(la);
-drop:
 	if (ia != NULL)
 		ia4_release(ia, &psref_ia);
 	if (rcvif != NULL)
@@ -1412,13 +1408,12 @@ drop:
  * Lookup or a new address in arptab.
  */
 static struct llentry *
-arplookup(struct ifnet *ifp, struct mbuf *m, const struct in_addr *addr,
+arplookup(struct ifnet *ifp, const struct in_addr *addr,
     const struct sockaddr *sa, int wlock)
 {
 	struct sockaddr_in sin;
 	struct llentry *la;
 	int flags = wlock ? LLE_EXCLUSIVE : 0;
-
 
 	if (sa == NULL) {
 		KASSERT(addr != NULL);
@@ -1434,7 +1429,7 @@ arplookup(struct ifnet *ifp, struct mbuf *m, const struct in_addr *addr,
 }
 
 static struct llentry *
-arpcreate(struct ifnet *ifp, struct mbuf *m, const struct in_addr *addr,
+arpcreate(struct ifnet *ifp, const struct in_addr *addr,
     const struct sockaddr *sa, int wlock)
 {
 	struct sockaddr_in sin;
@@ -1447,7 +1442,7 @@ arpcreate(struct ifnet *ifp, struct mbuf *m, const struct in_addr *addr,
 		sa = sintocsa(&sin);
 	}
 
-	la = arplookup(ifp, m, addr, sa, wlock);
+	la = arplookup(ifp, addr, sa, wlock);
 
 	if (la == NULL) {
 		struct rtentry *rt;
@@ -1534,18 +1529,28 @@ arp_dad_starttimer(struct dadq *dp, int ticks)
 {
 
 	callout_reset(&dp->dad_timer_ch, ticks,
-	    (void (*)(void *))arp_dad_timer, (void *)dp->dad_ifa);
+	    (void (*)(void *))arp_dad_timer, dp);
 }
 
 static void
 arp_dad_stoptimer(struct dadq *dp)
 {
 
-#ifdef NET_MPSAFE
-	callout_halt(&dp->dad_timer_ch, NULL);
-#else
-	callout_halt(&dp->dad_timer_ch, softnet_lock);
-#endif
+	KASSERT(mutex_owned(&arp_dad_lock));
+
+	TAILQ_REMOVE(&dadq, dp, dad_list);
+	/* Tell the timer that dp is being destroyed. */
+	dp->dad_ifa = NULL;
+	callout_halt(&dp->dad_timer_ch, &arp_dad_lock);
+}
+
+static void
+arp_dad_destroytimer(struct dadq *dp)
+{
+
+	callout_destroy(&dp->dad_timer_ch);
+	KASSERT(dp->dad_ifa == NULL);
+	kmem_intr_free(dp, sizeof(*dp));
 }
 
 static void
@@ -1664,37 +1669,32 @@ arp_dad_stop(struct ifaddr *ifa)
 		return;
 	}
 
-	/* Prevent the timer from running anymore. */
-	TAILQ_REMOVE(&dadq, dp, dad_list);
-	mutex_exit(&arp_dad_lock);
-
 	arp_dad_stoptimer(dp);
 
-	kmem_intr_free(dp, sizeof(*dp));
+	mutex_exit(&arp_dad_lock);
+
+	arp_dad_destroytimer(dp);
 	ifafree(ifa);
 }
 
 static void
-arp_dad_timer(struct ifaddr *ifa)
+arp_dad_timer(struct dadq *dp)
 {
-	struct in_ifaddr *ia = (struct in_ifaddr *)ifa;
-	struct dadq *dp;
+	struct ifaddr *ifa;
+	struct in_ifaddr *ia;
 	char ipbuf[INET_ADDRSTRLEN];
 	bool need_free = false;
 
-	SOFTNET_KERNEL_LOCK_UNLESS_NET_MPSAFE();
+	KERNEL_LOCK_UNLESS_NET_MPSAFE();
 	mutex_enter(&arp_dad_lock);
 
-	/* Sanity check */
-	if (ia == NULL) {
-		log(LOG_ERR, "%s: called with null parameter\n", __func__);
+	ifa = dp->dad_ifa;
+	if (ifa == NULL) {
+		/* dp is being destroyed by someone.  Do nothing. */
 		goto done;
 	}
-	dp = arp_dad_find(ifa);
-	if (dp == NULL) {
-		/* DAD seems to be stopping, so do nothing. */
-		goto done;
-	}
+
+	ia = (struct in_ifaddr *)ifa;
 	if (ia->ia4_flags & IN_IFF_DUPLICATED) {
 		log(LOG_ERR, "%s: called with duplicate address %s(%s)\n",
 		    __func__, IN_PRINT(ipbuf, &ia->ia_addr.sin_addr),
@@ -1714,7 +1714,7 @@ arp_dad_timer(struct ifaddr *ifa)
 		ARPLOG(LOG_INFO, "%s: could not run DAD, driver problem?\n",
 		    if_name(ifa->ifa_ifp));
 
-		TAILQ_REMOVE(&dadq, dp, dad_list);
+		arp_dad_stoptimer(dp);
 		need_free = true;
 		goto done;
 	}
@@ -1763,17 +1763,18 @@ announce:
 		    if_name(ifa->ifa_ifp), ARPLOGADDR(&ia->ia_addr.sin_addr));
 	}
 
-	TAILQ_REMOVE(&dadq, dp, dad_list);
+	arp_dad_stoptimer(dp);
 	need_free = true;
 done:
 	mutex_exit(&arp_dad_lock);
 
 	if (need_free) {
-		kmem_intr_free(dp, sizeof(*dp));
+		arp_dad_destroytimer(dp);
+		KASSERT(ifa != NULL);
 		ifafree(ifa);
 	}
 
-	SOFTNET_KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
+	KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 }
 
 static void
@@ -1831,16 +1832,22 @@ void
 revarpinput(struct mbuf *m)
 {
 	struct arphdr *ar;
+	int arplen;
 
-	if (m->m_len < sizeof(struct arphdr))
-		goto out;
+	arplen = sizeof(struct arphdr);
+	if (m->m_len < arplen && (m = m_pullup(m, arplen)) == NULL)
+		return;
 	ar = mtod(m, struct arphdr *);
-#if 0 /* XXX I don't think we need this... and it will prevent other LL */
-	if (ntohs(ar->ar_hrd) != ARPHRD_ETHER)
+
+	if (ntohs(ar->ar_hrd) == ARPHRD_IEEE1394) {
 		goto out;
-#endif
-	if (m->m_len < sizeof(struct arphdr) + 2 * (ar->ar_hln + ar->ar_pln))
-		goto out;
+	}
+
+	arplen = sizeof(struct arphdr) + 2 * (ar->ar_hln + ar->ar_pln);
+	if (m->m_len < arplen && (m = m_pullup(m, arplen)) == NULL)
+		return;
+	ar = mtod(m, struct arphdr *);
+
 	switch (ntohs(ar->ar_pro)) {
 	case ETHERTYPE_IP:
 	case ETHERTYPE_IPTRAILERS:
@@ -1850,6 +1857,7 @@ revarpinput(struct mbuf *m)
 	default:
 		break;
 	}
+
 out:
 	m_freem(m);
 }
@@ -1880,6 +1888,9 @@ in_revarpinput(struct mbuf *m)
 	rcvif = m_get_rcvif(m, &s);
 	if (__predict_false(rcvif == NULL))
 		goto out;
+	if (rcvif->if_flags & IFF_NOARP)
+		goto out;
+
 	switch (rcvif->if_type) {
 	case IFT_IEEE1394:
 		/* ARP without target hardware address is not supported */
@@ -2081,11 +2092,11 @@ sysctl_net_inet_arp_setup(struct sysctllog **clog)
 			CTL_NET,PF_INET, node->sysctl_num, CTL_CREATE, CTL_EOL);
 
 	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "debug",
-		       SYSCTL_DESCR("Enable ARP DAD debug output"),
-		       NULL, 0, &arp_debug, 0,
-		       CTL_NET, PF_INET, node->sysctl_num, CTL_CREATE, CTL_EOL);
+			CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
+			CTLTYPE_INT, "debug",
+			SYSCTL_DESCR("Enable ARP DAD debug output"),
+			NULL, 0, &arp_debug, 0,
+			CTL_NET, PF_INET, node->sysctl_num, CTL_CREATE, CTL_EOL);
 }
 
 #endif /* INET */

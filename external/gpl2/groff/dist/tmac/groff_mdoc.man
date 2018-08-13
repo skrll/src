@@ -44,7 +44,7 @@
 .\" for an already extremely slow package.
 .\"
 .
-.Dd June 9, 2013
+.Dd July 27, 2018
 .Os
 .Dt GROFF_MDOC 7
 .
@@ -769,7 +769,7 @@ By default, the following architecture keywords are defined:
 .
 \# we use `No' to avoid hyphenation
 .Bd -ragged -offset indent
-.No alpha , acorn26 , acorn32 , algor , amd64 , amiga , arc , arm26 ,
+.No alpha , acorn32 , algor , amd64 , amiga , arc , arm26 ,
 .No arm32 , atari , bebox , cats , cesfic , cobalt , dreamcast , evbarm ,
 .No evbmips , evbppc , evbsh3 , hp300 , hpcmips , hppa , i386 , luna68k ,
 .No m68k , mac68k , macppc , mips , mmeye , mvme68k , mvmeppc , netwinder ,
@@ -1948,6 +1948,8 @@ are:
 .St -isoC-99
 .It Li -isoC-2011
 .St -isoC-2011
+.It Li -isoC-2018
+.St -isoC-2018
 .El
 .Pp
 .

@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.17 2017/11/12 03:02:15 christos Exp $
+# $NetBSD: Makefile,v 1.21 2018/06/28 07:56:22 maya Exp $
 
 .if (${MACHINE_ARCH} == "i386" || ${MACHINE_ARCH} == "x86_64")
 PROG=	iasl
@@ -11,13 +11,12 @@ TOPDIR=	${NETBSDSRCDIR}/sys/external/bsd/acpica/dist/compiler
 .include <bsd.own.mk>
 
 CPPFLAGS+=	-I${TOPDIR}/../include -I${TOPDIR} -I.
-CPPFLAGS+=	-D__NetBSD__ -DACPI_ASL_COMPILER -DACPI_USE_ALTERNATE_TIMEOUT
-CPPFLAGS+=	-D_USE_BERKELEY_YACC
+CPPFLAGS+=	-DACPI_ASL_COMPILER -DACPI_USE_ALTERNATE_TIMEOUT
 .if ${MKREPRO:Uno} == "yes"
 CPPFLAGS+=	-DACPI_REPRO
 .endif
-LDADD+=		-ll -ly -lrt -lpthread
-DPADD+=		${LIBL} ${LIBY} ${LIBRT} ${LIBPTHREAD}
+LDADD+=		-ll -ly
+DPADD+=		${LIBL} ${LIBY}
 
 DPSRCS= aslcompilerparse.y aslcompilerlex.c aslcompilerparse.c \
 	dtparserparse.c dtparserlex.c prparserparse.c prparserlex.c
@@ -122,7 +121,13 @@ SRCS+= \
 	dmtable.c \
 	dmtables.c \
 	dmtbdump.c \
+	dmtbdump1.c \
+	dmtbdump2.c \
+	dmtbdump3.c \
 	dmtbinfo.c \
+	dmtbinfo1.c \
+	dmtbinfo2.c \
+	dmtbinfo3.c \
 	getopt.c
 
 .PATH: ${TOPDIR}/../debugger
@@ -259,7 +264,7 @@ SRCS+=	osunixxf.c
 
 YHEADER=	# Generate headers
 YFLAGS+=-v	# Require debugging
-FLAGS+=-i	# Case insensitivive parser
+LFLAGS+=-i	# Case insensitivive parser
 
 
 # Prevent rules from firing.
@@ -319,6 +324,8 @@ CLEANFILES+=	aslcompilerparse.y  aslcompilerparse.c	\
 		prparserparse.h				\
 		prparserlex.l prparserlex.c		\
 		prparser.y.h prparserparse.output	\
+							\
+		y.output y.tab.h
 
 .include <bsd.prog.mk>
 

@@ -1,8 +1,11 @@
-# $NetBSD: Makefile.boot,v 1.70 2017/04/08 19:53:21 christos Exp $
+# $NetBSD: Makefile.boot,v 1.72 2018/07/25 23:45:32 kamil Exp $
 
 S=	${.CURDIR}/../../../../..
 
 NOMAN=
+NOLIBCSANITIZER=
+NOSANITIZER=
+NOPIE=
 PROG?= boot
 NEWVERSWHAT?= "BIOS Boot"
 
@@ -11,11 +14,7 @@ AFLAGS.biosboot.S= ${${ACTIVE_CC} == "clang":?-no-integrated-as:}
 SOURCES?= biosboot.S boot2.c conf.c devopen.c exec.c
 SRCS= ${SOURCES}
 
-PIE_CFLAGS=
-PIE_AFLAGS=
-PIE_LDFLAGS=
-
-.include <bsd.own.mk>
+.include <bsd.init.mk>
 
 STRIPFLAG=	# nothing
 

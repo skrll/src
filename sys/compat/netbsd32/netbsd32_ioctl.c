@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_ioctl.c,v 1.90 2017/11/26 17:46:13 jmcneill Exp $	*/
+/*	$NetBSD: netbsd32_ioctl.c,v 1.92 2018/03/06 07:59:59 mlelstv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Matthew R. Green
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_ioctl.c,v 1.90 2017/11/26 17:46:13 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_ioctl.c,v 1.92 2018/03/06 07:59:59 mlelstv Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ntp.h"
@@ -400,6 +400,31 @@ netbsd32_to_wsdisplay_cmap(struct netbsd32_wsdisplay_cmap *c32,
 }
 
 static inline void
+netbsd32_to_wsdisplay_font(struct netbsd32_wsdisplay_font *f32,
+					       struct wsdisplay_font *f,
+					       u_long cmd)
+{
+	f->name = NETBSD32PTR64(f32->name);
+	f->firstchar = f32->firstchar;
+	f->numchars = f32->numchars;
+	f->encoding = f32->encoding;
+	f->fontwidth = f32->fontwidth;
+	f->fontheight = f32->fontheight;
+	f->stride = f32->stride;
+	f->bitorder = f32->bitorder;
+	f->byteorder = f32->byteorder;
+	f->data = NETBSD32PTR64(f32->data);
+}
+
+static inline void
+netbsd32_to_wsdisplay_usefontdata(struct netbsd32_wsdisplay_usefontdata *f32,
+					       struct wsdisplay_usefontdata *f,
+					       u_long cmd)
+{
+	f->name = NETBSD32PTR64(f32->name);
+}
+
+static inline void
 netbsd32_to_clockctl_settimeofday(
     const struct netbsd32_clockctl_settimeofday *s32p,
     struct clockctl_settimeofday *p,
@@ -508,6 +533,18 @@ netbsd32_to_devrescanargs(
 	memcpy(p->ifattr, s32p->ifattr, sizeof(p->ifattr));
 	p->numlocators = s32p->numlocators;
 	p->locators = NETBSD32PTR64(s32p->locators);
+}
+
+static inline void
+netbsd32_to_dkwedge_list(
+    const struct netbsd32_dkwedge_list *s32p,
+    struct dkwedge_list *p,
+    u_long cmd)
+{
+	p->dkwl_buf = s32p->dkwl_buf;
+	p->dkwl_bufsize = s32p->dkwl_bufsize;
+	p->dkwl_nwedges = s32p->dkwl_nwedges;
+	p->dkwl_ncopied = s32p->dkwl_ncopied;
 }
 
 /*
@@ -767,6 +804,20 @@ netbsd32_from_wsdisplay_cmap(struct wsdisplay_cmap *c,
 }
 
 static inline void
+netbsd32_from_wsdisplay_font(struct wsdisplay_font *f,
+					struct netbsd32_wsdisplay_font *f32,
+					u_long cmd)
+{
+}
+
+static inline void
+netbsd32_from_wsdisplay_usefontdata(struct wsdisplay_usefontdata *f,
+					struct netbsd32_wsdisplay_usefontdata *f32,
+					u_long cmd)
+{
+}
+
+static inline void
 netbsd32_from_ieee80211req(struct ieee80211req *ireq,
 			   struct netbsd32_ieee80211req *ireq32, u_long cmd)
 {
@@ -936,6 +987,18 @@ netbsd32_from_devrescanargs(
 	memcpy(s32p->ifattr, p->ifattr, sizeof(s32p->ifattr));
 	s32p->numlocators = p->numlocators;
 	NETBSD32PTR32(s32p->locators, p->locators);
+}
+
+static inline void
+netbsd32_from_dkwedge_list(
+    const struct dkwedge_list *p,
+    struct netbsd32_dkwedge_list *s32p,
+    u_long cmd)
+{
+	s32p->dkwl_buf = p->dkwl_buf;
+	s32p->dkwl_bufsize = p->dkwl_bufsize;
+	s32p->dkwl_nwedges = p->dkwl_nwedges;
+	s32p->dkwl_ncopied = p->dkwl_ncopied;
 }
 
 #ifdef NTP
@@ -1317,6 +1380,11 @@ netbsd32_ioctl(struct lwp *l, const struct netbsd32_ioctl_args *uap, register_t 
 	case WSDISPLAYIO_PUTCMAP32:
 		IOCTL_STRUCT_CONV_TO(WSDISPLAYIO_PUTCMAP, wsdisplay_cmap);
 
+	case WSDISPLAYIO_LDFONT32:
+		IOCTL_STRUCT_CONV_TO(WSDISPLAYIO_LDFONT, wsdisplay_font);
+	case WSDISPLAYIO_SFONT32:
+		IOCTL_STRUCT_CONV_TO(WSDISPLAYIO_SFONT, wsdisplay_usefontdata);
+
 	case SIOCS8021132:
 		IOCTL_STRUCT_CONV_TO(SIOCS80211, ieee80211req);
 	case SIOCG8021132:
@@ -1388,6 +1456,9 @@ netbsd32_ioctl(struct lwp *l, const struct netbsd32_ioctl_args *uap, register_t 
 		IOCTL_STRUCT_CONV_TO(DRVCTLCOMMAND, plistref);
 	case DRVGETEVENT32:
 		IOCTL_STRUCT_CONV_TO(DRVGETEVENT, plistref);
+
+	case DIOCLWEDGES32:
+		IOCTL_STRUCT_CONV_TO(DIOCLWEDGES, dkwedge_list);
 
 	default:
 #ifdef NETBSD32_MD_IOCTL

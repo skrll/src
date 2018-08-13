@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.191 2017/06/07 10:38:33 skrll Exp $
+#	$NetBSD: Makefile,v 1.194 2018/05/09 13:21:27 joerg Exp $
 
 .include <bsd.own.mk>
 .include <bsd.endian.mk>
@@ -53,9 +53,7 @@ TOOLCHAIN_BITS+= pcc
 . endif
 .endif
 
-.if ${TOOLCHAIN_MISSING} == "no"
-# XXX Eventually, we want to be able to build dbsym and mdsetimage
-# XXX if EXTERNAL_TOOLCHAIN is set.
+.if ${TOOLCHAIN_MISSING} == "no" || defined(EXTERNAL_TOOLCHAIN)
 TOOLCHAIN_BITS+= dbsym mdsetimage
 .endif
 
@@ -126,8 +124,11 @@ SUBDIR+= stat .WAIT config
 SUBDIR+= \
 	llvm .WAIT \
 	llvm-lib/libLLVMDemangle llvm-lib/libLLVMSupport llvm-lib/libLLVMTableGen .WAIT \
-	llvm-tblgen llvm-clang-tblgen .WAIT \
-	llvm-include .WAIT \
+	llvm-tblgen llvm-clang-tblgen
+.endif
+.if ${MKLLVM} != "no" && !defined(EXTERNAL_TOOLCHAIN)
+SUBDIR+= \
+	.WAIT llvm-include .WAIT \
 	llvm-lib .WAIT \
 	llvm-clang
 . if ${MKLLD} != "no"
@@ -221,7 +222,7 @@ SUBDIR+=	makekeys
 
 SUBDIR+= cvslatest
 
-.endif # TOOLCHAIN_BUILDRUMP
+.endif # TOOLS_BUILDRUMP != no
 
 check_MKTOOLS: .PHONY .NOTMAIN
 .if ${MKTOOLS:Uyes} == "no"

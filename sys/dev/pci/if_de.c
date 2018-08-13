@@ -1,4 +1,4 @@
-/*	$NetBSD: if_de.c,v 1.150 2016/12/15 09:33:25 ozaki-r Exp $	*/
+/*	$NetBSD: if_de.c,v 1.154 2018/06/26 06:48:01 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1994-1997 Matt Thomas (matt@3am-software.com)
@@ -37,7 +37,7 @@
  *   board which support 21040, 21041, or 21140 (mostly).
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_de.c,v 1.150 2016/12/15 09:33:25 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_de.c,v 1.154 2018/06/26 06:48:01 msaitoh Exp $");
 
 #define	TULIP_HDR_DATA
 
@@ -74,14 +74,12 @@ __KERNEL_RCSID(0, "$NetBSD: if_de.c,v 1.150 2016/12/15 09:33:25 ozaki-r Exp $");
 #include <net/if_dl.h>
 #include <net/route.h>
 #include <net/netisr.h>
+#include <net/bpf.h>
 
 #if defined(__bsdi__) && _BSDI_VERSION >= 199701
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
 #endif
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #ifdef INET
 #include <netinet/in.h>
@@ -1148,7 +1146,7 @@ tulip_21041_media_poll(
     }
 
     /*
-     * If we've been been asked to start a poll or link change interrupt
+     * If we've been asked to start a poll or link change interrupt
      * restart the probe (and reset the tulip to a known state).
      */
     if (event == TULIP_MEDIAPOLL_START) {
@@ -3641,10 +3639,6 @@ tulip_rx_intr(
 #endif /* TULIP_BUS_DMA */
 
 	    eh = *mtod(ms, struct ether_header *);
-	    if (sc->tulip_bpf != NULL) {
-		if (me == ms)
-		    bpf_tap(ifp, mtod(ms, void *), total_len);
-	    }
 	    sc->tulip_flags |= TULIP_RXACT;
 	    if ((sc->tulip_flags & (TULIP_PROMISC|TULIP_HASHONLY))
 		    && (eh.ether_dhost[0] & 1) == 0
@@ -4547,7 +4541,7 @@ tulip_txput(
 #endif /* TULIP_BUS_DMA */
 
     if (sc->tulip_bpf != NULL)
-	bpf_mtap(&sc->tulip_if, m);
+	bpf_mtap(&sc->tulip_if, m, BPF_D_OUT);
     /*
      * The descriptors have been filled in.  Now get ready
      * to transmit.

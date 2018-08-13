@@ -1,4 +1,4 @@
-# $NetBSD: INSTALL,v 1.64 2017/09/14 07:58:39 mrg Exp $
+# $NetBSD: INSTALL,v 1.68 2018/08/01 20:04:10 maxv Exp $
 #
 # INSTALL -- installation and rescue kernel.
 #
@@ -10,7 +10,7 @@ include 	"arch/cobalt/conf/std.cobalt"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"INSTALL-$Revision: 1.64 $"
+#ident 		"INSTALL-$Revision: 1.68 $"
 
 makeoptions     COPTS="-Os -mmemcpy"
 makeoptions	CPUFLAGS="-march=vr5000 -mabi=32"
@@ -31,8 +31,8 @@ maxusers	32
 options 	PIPE_SOCKETPAIR	# smaller, but slower pipe(2)
 #options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
-# Enable experimental buffer queue strategy for better responsiveness under
-# high disk I/O load. Use it with caution - it's not proven to be stable yet.
+# Alternate buffer queue strategies for better responsiveness under high
+# disk I/O load.
 #options 	BUFQ_READPRIO
 #options 	BUFQ_PRIOCSCAN
 
@@ -89,9 +89,6 @@ options 	INET		# Internet protocols
 #options 	PPP_BSDCOMP	# BSD-Compress compression support for PPP
 #options 	PPP_DEFLATE	# Deflate compression support for PPP
 #options 	PPP_FILTER	# Active filter support for PPP (requires bpf)
-#options 	IPFILTER_LOG	# ipmon(8) log support
-#options 	IPFILTER_LOOKUP	# ippool(8) support
-#options 	IPFILTER_DEFAULT_BLOCK	# block all packets by default
 #options 	TCP_DEBUG	# Record last TCP_NDEBUG packets with SO_DEBUG
 
 #options 	ALTQ		# Manipulate network interfaces' output queues
@@ -135,7 +132,7 @@ zsc0		at mainbus? addr 0x1c800000 irq 4
 zstty0		at zsc0 channel 0
 #zstty1		at zsc0 channel 1
 
-panel0 		at mainbus? addr 0x1f000000
+lcdpanel0	at mainbus? addr 0x1f000000
 
 gt0 		at mainbus? addr 0x14000000
 
@@ -295,7 +292,7 @@ lxtphy*		at mii? phy ?			# Level One LXT-970 PHYs
 
 # Network pseudo-devices
 pseudo-device	bpfilter			# Berkeley packet filter
-#pseudo-device	ipfilter			# IP filter (firewall) and NAT
+#pseudo-device	npf			# NPF packet filter
 pseudo-device	loop				# network loopback
 #pseudo-device	ppp				# Point-to-Point Protocol
 #pseudo-device	pppoe				# PPP over Ethernet (RFC 2516)
@@ -322,5 +319,3 @@ pseudo-device	nullcons			# no-op console
 # A pseudo device needed for Coda		# also needs CODA (above)
 #pseudo-device	vcoda				# coda minicache <-> venus comm.
 #pseudo-device	ksyms				# /dev/ksyms
-#pseudo-device	pf			# PF packet filter
-#pseudo-device	pflog			# PF log if

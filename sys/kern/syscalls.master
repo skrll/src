@@ -1,4 +1,4 @@
-	$NetBSD: syscalls.master,v 1.287 2017/12/08 01:19:29 christos Exp $
+	$NetBSD: syscalls.master,v 1.293 2018/07/31 13:00:13 rjs Exp $
 
 ;	@(#)syscalls.master	8.2 (Berkeley) 1/13/94
 
@@ -175,8 +175,8 @@
 66	STD 		{ int|sys||vfork(void); }
 67	OBSOL		vread
 68	OBSOL		vwrite
-69	STD 		{ int|sys||sbrk(intptr_t incr); }
-70	STD 		{ int|sys||sstk(int incr); }
+69	OBSOL 		sbrk
+70	OBSOL 		sstk
 71	COMPAT_43 MODULAR compat	\
 		{ int|sys||mmap(void *addr, size_t len, int prot, \
 			    int flags, int fd, long pos); } ommap
@@ -411,7 +411,8 @@
 			    struct stat12 *ub); } lstat12
 191	STD 	RUMP	{ long|sys||pathconf(const char *path, int name); }
 192	STD 	RUMP	{ long|sys||fpathconf(int fd, int name); }
-193	UNIMPL
+193	STD	RUMP	{ int|sys||getsockopt2(int s, int level, int name, \
+			    void *val, socklen_t *avalsize); }
 194	STD 	RUMP	{ int|sys||getrlimit(int which, \
 			    struct rlimit *rlp); }
 195	STD 	RUMP	{ int|sys||setrlimit(int which, \
@@ -674,8 +675,8 @@
 			    const struct sigaction *nsa, \
 			    struct sigaction *osa, \
 			    const void *tramp, int vers); }
-341	STD		{ int|sys||pmc_get_info(int ctr, int op, void *args); }
-342	STD		{ int|sys||pmc_control(int ctr, int op, void *args); }
+341	OBSOL		sys_pmc_get_info
+342	OBSOL		sys_pmc_control
 343	STD 		{ int|sys||rasctl(void *addr, size_t len, int op); }
 344	STD	RUMP	{ int|sys||kqueue(void); }
 345	COMPAT_50 MODULAR compat RUMP { int|sys||kevent(int fd, \

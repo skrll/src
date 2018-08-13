@@ -1,4 +1,4 @@
-#	$NetBSD: files.macppc,v 1.105 2017/09/22 03:11:43 macallan Exp $
+#	$NetBSD: files.macppc,v 1.110 2018/05/02 22:07:37 macallan Exp $
 #
 # macppc-specific configuration info
 
@@ -65,11 +65,6 @@ include "dev/scsipi/files.scsipi"
 include "dev/ata/files.ata"
 
 #
-# Generic OpenFirmware device support
-#
-include "dev/ofw/files.ofw"
-
-#
 # Machine-independent I2O drivers
 #
 include "dev/i2o/files.i2o"
@@ -111,7 +106,7 @@ device grackle: pcibus, pic_heathrow
 attach grackle at mainbus
 file arch/macppc/pci/grackle.c			grackle
 
-device uninorth: pcibus, pic_openpic, ipi_openpic, pic_u3_ht
+device uninorth: pcibus, pic_openpic, ipi_openpic
 attach uninorth at mainbus
 file arch/macppc/pci/uninorth.c			uninorth
 
@@ -186,13 +181,12 @@ attach smu at mainbus
 file arch/macppc/dev/smu.c			smu needs-flag
 defflag	opt_smu.h	SMU_DEBUG
 
-define smuiic {}
-device smuiic: smuiic, i2cbus
+device smuiic: i2cbus
 attach smuiic at smu
 file arch/macppc/dev/smuiic.c			smuiic
 
 device smusat
-attach smusat at smuiic
+attach smusat at iic
 file arch/macppc/dev/smusat.c			smusat
 defflag	opt_smusat.h	SMUSAT_DEBUG
 
@@ -270,10 +264,6 @@ attach macgpio at obio with gpio_obio
 #attach gpio at macgpio with gpio_gpio
 file arch/macppc/dev/gpio.c			macgpio
 
-device macofcons: tty
-attach macofcons at pci
-file arch/macppc/dev/ofcons.c			macofcons needs-flag
-
 attach  com at mainbus with com_mainbus
 file    arch/macppc/dev/com_mainbus.c               com_mainbus
 
@@ -294,7 +284,6 @@ defflag opt_macppc.h	PB3400_CARDBUS_HACK UMAX_E100_HACK
 file arch/macppc/macppc/rbus_machdep.c		cardbus
 
 # Keywest I2C
-define ki2c {}
 device ki2c: i2cbus, ki2c
 attach ki2c at obio, uni_n
 file arch/macppc/dev/ki2c.c			ki2c
@@ -306,7 +295,6 @@ file arch/macppc/dev/snapper.c			snapper
 
 include "arch/powerpc/conf/majors.powerpc"
 
-define deq {}
 device deq
 attach deq at iic
 file arch/macppc/dev/deq.c				deq

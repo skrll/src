@@ -1,8 +1,8 @@
-#	$NetBSD: Makefile,v 1.81 2016/03/06 10:19:01 aymeric Exp $
+#	$NetBSD: Makefile,v 1.83 2018/05/01 19:59:46 christos Exp $
 
 HOSTLIB=	nbcompat
 
-.include <bsd.own.mk>
+.include <bsd.hostinit.mk>
 
 SRCS=		atoll.c basename.c cdbr.c cdbw.c dirname.c \
 		dprintf.c fgetln.c flock.c fparseln.c fpurge.c \

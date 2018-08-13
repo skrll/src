@@ -1,4 +1,4 @@
-/*	$NetBSD: if_axe.c,v 1.83 2017/10/28 00:37:12 pgoyette Exp $	*/
+/*	$NetBSD: if_axe.c,v 1.92 2018/08/02 06:09:04 riastradh Exp $	*/
 /*	$OpenBSD: if_axe.c,v 1.137 2016/04/13 11:03:37 mpi Exp $ */
 
 /*
@@ -87,7 +87,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_axe.c,v 1.83 2017/10/28 00:37:12 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_axe.c,v 1.92 2018/08/02 06:09:04 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -310,7 +310,7 @@ axe_cmd(struct axe_softc *sc, int cmd, int index, int val, void *buf)
 	KASSERT(mutex_owned(&sc->axe_mii_lock));
 
 	if (sc->axe_dying)
-		return 0;
+		return -1;
 
 	DPRINTFN(20, "cmd %#jx index %#jx val %#jx", cmd, index, val, 0);
 
@@ -344,7 +344,7 @@ axe_miibus_readreg_locked(device_t dev, int phy, int reg)
 
 	axe_cmd(sc, AXE_CMD_MII_OPMODE_SW, 0, 0, NULL);
 
-	err = axe_cmd(sc, AXE_CMD_MII_READ_REG, reg, phy, (void *)&val);
+	err = axe_cmd(sc, AXE_CMD_MII_READ_REG, reg, phy, &val);
 	axe_cmd(sc, AXE_CMD_MII_OPMODE_HW, 0, 0, NULL);
 	if (err) {
 		aprint_error_dev(sc->axe_dev, "read PHY failed\n");
@@ -396,7 +396,7 @@ axe_miibus_writereg_locked(device_t dev, int phy, int reg, int aval)
 	val = htole16(aval);
 
 	axe_cmd(sc, AXE_CMD_MII_OPMODE_SW, 0, 0, NULL);
-	err = axe_cmd(sc, AXE_CMD_MII_WRITE_REG, reg, phy, (void *)&val);
+	err = axe_cmd(sc, AXE_CMD_MII_WRITE_REG, reg, phy, &val);
 	axe_cmd(sc, AXE_CMD_MII_OPMODE_HW, 0, 0, NULL);
 
 	if (err) {
@@ -484,7 +484,11 @@ axe_setmulti(struct axe_softc *sc)
 		return;
 
 	axe_lock_mii(sc);
-	axe_cmd(sc, AXE_CMD_RXCTL_READ, 0, 0, (void *)&rxmode);
+	if (axe_cmd(sc, AXE_CMD_RXCTL_READ, 0, 0, &rxmode)) {
+		axe_unlock_mii(sc);
+		aprint_error_dev(sc->axe_dev, "can't read rxmode");
+		return;
+	}
 	rxmode = le16toh(rxmode);
 
 	rxmode &=
@@ -514,7 +518,7 @@ axe_setmulti(struct axe_softc *sc)
 	ifp->if_flags &= ~IFF_ALLMULTI;
 	rxmode |= AXE_RXCMD_MULTICAST;
 
-	axe_cmd(sc, AXE_CMD_WRITE_MCAST, 0, 0, (void *)&hashtbl);
+	axe_cmd(sc, AXE_CMD_WRITE_MCAST, 0, 0, hashtbl);
 	axe_cmd(sc, AXE_CMD_RXCTL_WRITE, 0, rxmode, NULL);
 	axe_unlock_mii(sc);
 	return;
@@ -524,6 +528,30 @@ axe_setmulti(struct axe_softc *sc)
 	rxmode |= AXE_RXCMD_ALLMULTI;
 	axe_cmd(sc, AXE_CMD_RXCTL_WRITE, 0, rxmode, NULL);
 	axe_unlock_mii(sc);
+}
+
+static void
+axe_ax_init(struct axe_softc *sc)
+{
+	int cmd = AXE_178_CMD_READ_NODEID;
+
+	if (sc->axe_flags & AX178) {
+		axe_ax88178_init(sc);
+	} else if (sc->axe_flags & AX772) {
+		axe_ax88772_init(sc);
+	} else if (sc->axe_flags & AX772A) {
+		axe_ax88772a_init(sc);
+	} else if (sc->axe_flags & AX772B) {
+		axe_ax88772b_init(sc);
+		return;
+	} else {
+		cmd = AXE_172_CMD_READ_NODEID;
+	}
+
+	if (axe_cmd(sc, cmd, 0, 0, sc->axe_enaddr)) {
+		aprint_error_dev(sc->axe_dev,
+		    "failed to read ethernet address\n");
+	}
 }
 
 
@@ -549,15 +577,8 @@ axe_reset(struct axe_softc *sc)
 #else
 	axe_lock_mii(sc);
 
-	if (sc->axe_flags & AX178) {
-		axe_ax88178_init(sc);
-	} else if (sc->axe_flags & AX772) {
-		axe_ax88772_init(sc);
-	} else if (sc->axe_flags & AX772A) {
-		axe_ax88772a_init(sc);
-	} else if (sc->axe_flags & AX772B) {
-		axe_ax88772b_init(sc);
-	}
+	axe_ax_init(sc);
+
 	axe_unlock_mii(sc);
 #endif
 }
@@ -601,7 +622,8 @@ axe_ax88178_init(struct axe_softc *sc)
 
 	axe_cmd(sc, AXE_CMD_SROM_WR_ENABLE, 0, 0, NULL);
 	/* XXX magic */
-	axe_cmd(sc, AXE_CMD_SROM_READ, 0, 0x0017, &eeprom);
+	if (axe_cmd(sc, AXE_CMD_SROM_READ, 0, 0x0017, &eeprom) != 0)
+		eeprom = 0xffff;
 	axe_cmd(sc, AXE_CMD_SROM_WR_DISABLE, 0, 0, NULL);
 
 	eeprom = le16toh(eeprom);
@@ -785,8 +807,7 @@ axe_ax88772_phywake(struct axe_softc *sc)
 	if (sc->axe_phyno == AXE_772_PHY_NO_EPHY) {
 		/* Manually select internal(embedded) PHY - MAC mode. */
 		axe_cmd(sc, AXE_CMD_SW_PHY_SELECT, 0,
-		    AXE_SW_PHY_SELECT_EMBEDDED,
-		    NULL);
+		    AXE_SW_PHY_SELECT_EMBEDDED, NULL);
 		usbd_delay_ms(sc->axe_udev, hztoms(hz / 32));
 	} else {
 		/*
@@ -848,7 +869,12 @@ axe_ax88772b_init(struct axe_softc *sc)
 	 * Save PHY power saving configuration(high byte) and
 	 * clear EEPROM checksum value(low byte).
 	 */
-	axe_cmd(sc, AXE_CMD_SROM_READ, 0, AXE_EEPROM_772B_PHY_PWRCFG, &eeprom);
+	if (axe_cmd(sc, AXE_CMD_SROM_READ, 0, AXE_EEPROM_772B_PHY_PWRCFG,
+	    &eeprom)) {
+		aprint_error_dev(sc->axe_dev, "failed to read eeprom\n");
+		return;
+	}
+
 	sc->sc_pwrcfg = le16toh(eeprom) & 0xFF00;
 
 	/*
@@ -858,8 +884,12 @@ axe_ax88772b_init(struct axe_softc *sc)
 	 */
 	uint8_t *eaddr = sc->axe_enaddr;
 	for (i = 0; i < ETHER_ADDR_LEN / 2; i++) {
-		axe_cmd(sc, AXE_CMD_SROM_READ, 0, AXE_EEPROM_772B_NODE_ID + i,
-		    &eeprom);
+		if (axe_cmd(sc, AXE_CMD_SROM_READ, 0,
+		    AXE_EEPROM_772B_NODE_ID + i, &eeprom)) {
+			aprint_error_dev(sc->axe_dev,
+			    "failed to read eeprom\n");
+		    eeprom = 0;
+		}
 		eeprom = le16toh(eeprom);
 		*eaddr++ = (uint8_t)(eeprom & 0xFF);
 		*eaddr++ = (uint8_t)((eeprom >> 8) & 0xFF);
@@ -976,7 +1006,10 @@ axe_attach(device_t parent, device_t self, void *aux)
 
 	/* We need the PHYID for init dance in some cases */
 	axe_lock_mii(sc);
-	axe_cmd(sc, AXE_CMD_READ_PHYID, 0, 0, (void *)&sc->axe_phyaddrs);
+	if (axe_cmd(sc, AXE_CMD_READ_PHYID, 0, 0, &sc->axe_phyaddrs)) {
+		aprint_error_dev(self, "failed to read phyaddrs\n");
+		return;
+	}
 
 	DPRINTF(" phyaddrs[0]: %jx phyaddrs[1]: %jx",
 	    sc->axe_phyaddrs[0], sc->axe_phyaddrs[1], 0, 0);
@@ -991,19 +1024,7 @@ axe_attach(device_t parent, device_t self, void *aux)
 
 	/* Initialize controller and get station address. */
 
-	if (sc->axe_flags & AX178) {
-		axe_ax88178_init(sc);
-		axe_cmd(sc, AXE_178_CMD_READ_NODEID, 0, 0, sc->axe_enaddr);
-	} else if (sc->axe_flags & AX772) {
-		axe_ax88772_init(sc);
-		axe_cmd(sc, AXE_178_CMD_READ_NODEID, 0, 0, sc->axe_enaddr);
-	} else if (sc->axe_flags & AX772A) {
-		axe_ax88772a_init(sc);
-		axe_cmd(sc, AXE_178_CMD_READ_NODEID, 0, 0, sc->axe_enaddr);
-	} else if (sc->axe_flags & AX772B) {
-		axe_ax88772b_init(sc);
-	} else
-		axe_cmd(sc, AXE_172_CMD_READ_NODEID, 0, 0, sc->axe_enaddr);
+	axe_ax_init(sc);
 
 	/*
 	 * Fetch IPG values.
@@ -1013,8 +1034,12 @@ axe_attach(device_t parent, device_t self, void *aux)
 		sc->axe_ipgs[0] = AXE_IPG0_DEFAULT;
 		sc->axe_ipgs[1] = AXE_IPG1_DEFAULT;
 		sc->axe_ipgs[2] = AXE_IPG2_DEFAULT;
-	} else
-		axe_cmd(sc, AXE_CMD_READ_IPG012, 0, 0, sc->axe_ipgs);
+	} else {
+		if (axe_cmd(sc, AXE_CMD_READ_IPG012, 0, 0, sc->axe_ipgs)) {
+			aprint_error_dev(self, "failed to read ipg\n");
+			return;
+		}
+	}
 
 	axe_unlock_mii(sc);
 
@@ -1127,11 +1152,9 @@ axe_detach(device_t self, int flags)
 	if (sc->axe_ep[AXE_ENDPT_INTR] != NULL)
 		usbd_abort_pipe(sc->axe_ep[AXE_ENDPT_INTR]);
 
-	/*
-	 * Remove any pending tasks.  They cannot be executing because they run
-	 * in the same thread as detach.
-	 */
-	usb_rem_task(sc->axe_udev, &sc->axe_tick_task);
+	callout_halt(&sc->axe_stat_ch, NULL);
+	usb_rem_task_wait(sc->axe_udev, &sc->axe_tick_task, USB_TASKQ_DRIVER,
+	    NULL);
 
 	s = splusb();
 
@@ -1203,7 +1226,7 @@ axe_rx_list_init(struct axe_softc *sc)
 		c->axe_idx = i;
 		if (c->axe_xfer == NULL) {
 			int err = usbd_create_xfer(sc->axe_ep[AXE_ENDPT_RX],
-			    sc->axe_bufsz, USBD_SHORT_XFER_OK, 0, &c->axe_xfer);
+			    sc->axe_bufsz, 0, 0, &c->axe_xfer);
 			if (err)
 				return err;
 			c->axe_buf = usbd_get_buffer(c->axe_xfer);
@@ -1680,7 +1703,7 @@ axe_start_locked(struct ifnet *ifp)
 	 * If there's a BPF listener, bounce a copy of this frame
 	 * to him.
 	 */
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 	m_freem(m);
 
 	ifp->if_flags |= IFF_OACTIVE;

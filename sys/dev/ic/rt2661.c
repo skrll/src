@@ -1,4 +1,4 @@
-/*	$NetBSD: rt2661.c,v 1.36 2017/10/23 09:31:17 msaitoh Exp $	*/
+/*	$NetBSD: rt2661.c,v 1.39 2018/06/26 06:48:00 msaitoh Exp $	*/
 /*	$OpenBSD: rt2661.c,v 1.17 2006/05/01 08:41:11 damien Exp $	*/
 /*	$FreeBSD: rt2560.c,v 1.5 2006/06/02 19:59:31 csjp Exp $	*/
 
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rt2661.c,v 1.36 2017/10/23 09:31:17 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rt2661.c,v 1.39 2018/06/26 06:48:00 msaitoh Exp $");
 
 
 #include <sys/param.h>
@@ -167,18 +167,6 @@ static void	rt2661_enable_tsf_sync(struct rt2661_softc *);
 static int	rt2661_get_rssi(struct rt2661_softc *, uint8_t);
 static void	rt2661_softintr(void *);
 
-/*
- * Supported rates for 802.11a/b/g modes (in 500Kbps unit).
- */
-static const struct ieee80211_rateset rt2661_rateset_11a =
-	{ 8, { 12, 18, 24, 36, 48, 72, 96, 108 } };
-
-static const struct ieee80211_rateset rt2661_rateset_11b =
-	{ 4, { 2, 4, 11, 22 } };
-
-static const struct ieee80211_rateset rt2661_rateset_11g =
-	{ 12, { 2, 4, 11, 22, 12, 18, 24, 36, 48, 72, 96, 108 } };
-
 static const struct {
 	uint32_t	reg;
 	uint32_t	val;
@@ -309,7 +297,7 @@ rt2661_attach(void *xsc, int id)
 
 	if (sc->rf_rev == RT2661_RF_5225 || sc->rf_rev == RT2661_RF_5325) {
 		/* set supported .11a rates */
-		ic->ic_sup_rates[IEEE80211_MODE_11A] = rt2661_rateset_11a;
+		ic->ic_sup_rates[IEEE80211_MODE_11A] = ieee80211_std_rateset_11a;
 
 		/* set supported .11a channels */
 		for (i = 36; i <= 64; i += 4) {
@@ -330,8 +318,8 @@ rt2661_attach(void *xsc, int id)
 	}
 
 	/* set supported .11b and .11g rates */
-	ic->ic_sup_rates[IEEE80211_MODE_11B] = rt2661_rateset_11b;
-	ic->ic_sup_rates[IEEE80211_MODE_11G] = rt2661_rateset_11g;
+	ic->ic_sup_rates[IEEE80211_MODE_11B] = ieee80211_std_rateset_11b;
+	ic->ic_sup_rates[IEEE80211_MODE_11G] = ieee80211_std_rateset_11g;
 
 	/* set supported .11b and .11g channels (1 through 14) */
 	for (i = 1; i <= 14; i++) {
@@ -1158,7 +1146,8 @@ rt2661_rx_intr(struct rt2661_softc *sc)
 			tap->wr_chan_flags = htole16(sc->sc_curchan->ic_flags);
 			tap->wr_antsignal = desc->rssi;
 
-			bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m);
+			bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m,
+			    BPF_D_IN);
 		}
 
 		wh = mtod(m, struct ieee80211_frame *);
@@ -1561,7 +1550,7 @@ rt2661_tx_mgt(struct rt2661_softc *sc, struct mbuf *m0,
 		tap->wt_chan_freq = htole16(sc->sc_curchan->ic_freq);
 		tap->wt_chan_flags = htole16(sc->sc_curchan->ic_flags);
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0, BPF_D_OUT);
 	}
 
 	data->m = m0;
@@ -1799,7 +1788,7 @@ rt2661_tx_data(struct rt2661_softc *sc, struct mbuf *m0,
 		tap->wt_chan_freq = htole16(sc->sc_curchan->ic_freq);
 		tap->wt_chan_flags = htole16(sc->sc_curchan->ic_flags);
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0, BPF_D_OUT);
 	}
 
 	data->m = m0;
@@ -1861,7 +1850,7 @@ rt2661_start(struct ifnet *ifp)
 
 			ni = M_GETCTX(m0, struct ieee80211_node *);
 			M_CLEARCTX(m0);
-			bpf_mtap3(ic->ic_rawbpf, m0);
+			bpf_mtap3(ic->ic_rawbpf, m0, BPF_D_OUT);
 			if (rt2661_tx_mgt(sc, m0, ni) != 0)
 				break;
 
@@ -1890,14 +1879,14 @@ rt2661_start(struct ifnet *ifp)
 				continue;
 			}
 
-			bpf_mtap3(ifp->if_bpf, m0);
+			bpf_mtap(ifp, m0, BPF_D_OUT);
 			m0 = ieee80211_encap(ic, m0, ni);
 			if (m0 == NULL) {
 				ieee80211_free_node(ni);
 				ifp->if_oerrors++;
 				continue;
 			}
-			bpf_mtap3(ic->ic_rawbpf, m0);
+			bpf_mtap3(ic->ic_rawbpf, m0, BPF_D_OUT);
 			if (rt2661_tx_data(sc, m0, ni, 0) != 0) {
 				if (ni != NULL)
 					ieee80211_free_node(ni);
@@ -2180,7 +2169,7 @@ rt2661_set_basicrates(struct rt2661_softc *sc,
 		 * Find h/w rate index.  We know it exists because the rate
 		 * set has already been negotiated.
 		 */
-		for (j = 0; rt2661_rateset_11g.rs_rates[j] != RV(rate); j++);
+		for (j = 0; ieee80211_std_rateset_11g.rs_rates[j] != RV(rate); j++);
 
 		mask |= 1 << j;
 	}

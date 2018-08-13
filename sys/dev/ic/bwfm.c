@@ -1,4 +1,4 @@
-/* $NetBSD: bwfm.c,v 1.4 2017/10/23 15:21:10 jmcneill Exp $ */
+/* $NetBSD: bwfm.c,v 1.12 2018/06/26 06:48:00 msaitoh Exp $ */
 /* $OpenBSD: bwfm.c,v 1.5 2017/10/16 22:27:16 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -21,7 +21,6 @@
 #include <sys/systm.h>
 #include <sys/buf.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
 #include <sys/device.h>
 #include <sys/queue.h>
 #include <sys/socket.h>
@@ -60,7 +59,6 @@ void	 bwfm_stop(struct ifnet *, int);
 void	 bwfm_watchdog(struct ifnet *);
 int	 bwfm_ioctl(struct ifnet *, u_long, void *);
 int	 bwfm_media_change(struct ifnet *);
-void	 bwfm_media_status(struct ifnet *, struct ifmediareq *);
 
 int	 bwfm_send_mgmt(struct ieee80211com *, struct ieee80211_node *,
 	     int, int);
@@ -86,9 +84,16 @@ void	 bwfm_chip_ai_reset(struct bwfm_softc *, struct bwfm_core *,
 void	 bwfm_chip_dmp_erom_scan(struct bwfm_softc *);
 int	 bwfm_chip_dmp_get_regaddr(struct bwfm_softc *, uint32_t *,
 	     uint32_t *, uint32_t *);
+int	 bwfm_chip_cr4_set_active(struct bwfm_softc *, const uint32_t);
 void	 bwfm_chip_cr4_set_passive(struct bwfm_softc *);
+int	 bwfm_chip_ca7_set_active(struct bwfm_softc *, const uint32_t);
 void	 bwfm_chip_ca7_set_passive(struct bwfm_softc *);
+int	 bwfm_chip_cm3_set_active(struct bwfm_softc *);
 void	 bwfm_chip_cm3_set_passive(struct bwfm_softc *);
+void	 bwfm_chip_socram_ramsize(struct bwfm_softc *, struct bwfm_core *);
+void	 bwfm_chip_sysmem_ramsize(struct bwfm_softc *, struct bwfm_core *);
+void	 bwfm_chip_tcm_ramsize(struct bwfm_softc *, struct bwfm_core *);
+void	 bwfm_chip_tcm_rambase(struct bwfm_softc *);
 
 int	 bwfm_proto_bcdc_query_dcmd(struct bwfm_softc *, int,
 	     int, char *, size_t *);
@@ -108,7 +113,7 @@ struct ieee80211_channel *bwfm_bss2chan(struct bwfm_softc *, struct bwfm_bss_inf
 void	 bwfm_scan(struct bwfm_softc *);
 void	 bwfm_connect(struct bwfm_softc *);
 
-void	 bwfm_rx(struct bwfm_softc *, char *, size_t);
+void	 bwfm_rx(struct bwfm_softc *, struct mbuf *);
 void	 bwfm_rx_event(struct bwfm_softc *, char *, size_t);
 void	 bwfm_scan_node(struct bwfm_softc *, struct bwfm_bss_info *, size_t);
 
@@ -134,7 +139,7 @@ bwfm_attach(struct bwfm_softc *sc)
 	char fw_version[BWFM_DCMD_SMLEN];
 	uint32_t bandlist[3];
 	uint32_t tmp;
-	int i, error;
+	int i, j, error;
 
 	error = workqueue_create(&sc->sc_taskq, DEVNAME(sc),
 	    bwfm_task, sc, PRI_NONE, IPL_NET, 0);
@@ -148,6 +153,9 @@ bwfm_attach(struct bwfm_softc *sc)
 		t->t_sc = sc;
 		pcq_put(sc->sc_freetask, t);
 	}
+
+	/* Stop the device in case it was previously initialized */
+	bwfm_fwvar_cmd_set_int(sc, BWFM_C_DOWN, 1);
 
 	if (bwfm_fwvar_cmd_get_int(sc, BWFM_C_GET_VERSION, &tmp)) {
 		printf("%s: could not read io type\n", DEVNAME(sc));
@@ -201,8 +209,8 @@ bwfm_attach(struct bwfm_softc *sc)
 			ic->ic_sup_rates[IEEE80211_MODE_11B] = ieee80211_std_rateset_11b;
 			ic->ic_sup_rates[IEEE80211_MODE_11G] = ieee80211_std_rateset_11g;
 
-			for (i = 0; i < __arraycount(bwfm_2ghz_channels); i++) {
-				uint8_t chan = bwfm_2ghz_channels[i];
+			for (j = 0; j < __arraycount(bwfm_2ghz_channels); j++) {
+				uint8_t chan = bwfm_2ghz_channels[j];
 				ic->ic_channels[chan].ic_freq =
 				    ieee80211_ieee2mhz(chan, IEEE80211_CHAN_2GHZ);
 				ic->ic_channels[chan].ic_flags =
@@ -213,8 +221,8 @@ bwfm_attach(struct bwfm_softc *sc)
 		case BWFM_BAND_5G:
 			ic->ic_sup_rates[IEEE80211_MODE_11A] = ieee80211_std_rateset_11a;
 
-			for (i = 0; i < __arraycount(bwfm_5ghz_channels); i++) {
-				uint8_t chan = bwfm_5ghz_channels[i];
+			for (j = 0; j < __arraycount(bwfm_5ghz_channels); j++) {
+				uint8_t chan = bwfm_5ghz_channels[j];
 				ic->ic_channels[chan].ic_freq =
 				    ieee80211_ieee2mhz(chan, IEEE80211_CHAN_5GHZ);
 				ic->ic_channels[chan].ic_flags =
@@ -254,7 +262,7 @@ bwfm_attach(struct bwfm_softc *sc)
 	ic->ic_recv_mgmt = bwfm_recv_mgmt;
 	ic->ic_crypto.cs_key_set = bwfm_key_set;
 	ic->ic_crypto.cs_key_delete = bwfm_key_delete;
-	ieee80211_media_init(ic, bwfm_media_change, bwfm_media_status);
+	ieee80211_media_init(ic, bwfm_media_change, ieee80211_media_status);
 
 	ieee80211_announce(ic);
 
@@ -305,6 +313,11 @@ bwfm_start(struct ifnet *ifp)
 			continue;
 		}
 
+		if (sc->sc_bus_ops->bs_txcheck(sc)) {
+			ifp->if_flags |= IFF_OACTIVE;
+			break;
+		}
+
 		IFQ_DEQUEUE(&ifp->if_snd, m);
 		if (m == NULL)
 			break;
@@ -337,7 +350,7 @@ bwfm_start(struct ifnet *ifp)
 			if (ni != NULL)
 				ieee80211_free_node(ni);
 		} else {
-			bpf_mtap3(ic->ic_rawbpf, m);
+			bpf_mtap3(ic->ic_rawbpf, m, BPF_D_OUT);
 		}
 	}
 }
@@ -420,6 +433,13 @@ bwfm_init(struct ifnet *ifp)
 	bwfm_fwvar_var_set_int(sc, "arpoe", 0);
 	bwfm_fwvar_var_set_int(sc, "ndoe", 0);
 	bwfm_fwvar_var_set_int(sc, "toe", 0);
+
+	/* Accept all multicast frames. */
+	bwfm_fwvar_var_set_int(sc, "allmulti", 1);
+
+	/* Setup promiscuous mode */
+	bwfm_fwvar_cmd_set_int(sc, BWFM_C_SET_PROMISC,
+	    (ifp->if_flags & IFF_PROMISC) ? 1 : 0);
 
 	/*
 	 * Tell the firmware supplicant that we are going to handle the
@@ -762,11 +782,6 @@ bwfm_media_change(struct ifnet *ifp)
 	return 0;
 }
 
-void
-bwfm_media_status(struct ifnet *ifp, struct ifmediareq *imr)
-{
-}
-
 /* Chip initialization (SDIO, PCIe) */
 int
 bwfm_chip_attach(struct bwfm_softc *sc)
@@ -844,24 +859,22 @@ bwfm_chip_attach(struct bwfm_softc *sc)
 		return 1;
 	}
 
-	if (bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CR4) != NULL)
-		bwfm_chip_cr4_set_passive(sc);
-	if (bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CA7) != NULL)
-		bwfm_chip_ca7_set_passive(sc);
-	if (bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CM3) != NULL)
-		bwfm_chip_cm3_set_passive(sc);
+	bwfm_chip_set_passive(sc);
 
 	if (sc->sc_buscore_ops->bc_reset) {
 		sc->sc_buscore_ops->bc_reset(sc);
-		if (bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CR4) != NULL)
-			bwfm_chip_cr4_set_passive(sc);
-		if (bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CA7) != NULL)
-			bwfm_chip_ca7_set_passive(sc);
-		if (bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CM3) != NULL)
-			bwfm_chip_cm3_set_passive(sc);
+		bwfm_chip_set_passive(sc);
 	}
 
-	/* TODO: get raminfo */
+	if ((core = bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CR4)) != NULL) {
+		bwfm_chip_tcm_ramsize(sc, core);
+		bwfm_chip_tcm_rambase(sc);
+	} else if ((core = bwfm_chip_get_core(sc, BWFM_AGENT_SYS_MEM)) != NULL) {
+		bwfm_chip_sysmem_ramsize(sc, core);
+		bwfm_chip_tcm_rambase(sc);
+	} else if ((core = bwfm_chip_get_core(sc, BWFM_AGENT_INTERNAL_MEM)) != NULL) {
+		bwfm_chip_socram_ramsize(sc, core);
+	}
 
 	core = bwfm_chip_get_core(sc, BWFM_AGENT_CORE_CHIPCOMMON);
 	sc->sc_chip.ch_cc_caps = sc->sc_buscore_ops->bc_read(sc,
@@ -1113,16 +1126,116 @@ bwfm_chip_dmp_get_regaddr(struct bwfm_softc *sc, uint32_t *erom,
 }
 
 /* Core configuration */
+int
+bwfm_chip_set_active(struct bwfm_softc *sc, const uint32_t rstvec)
+{
+	if (bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CR4) != NULL)
+		return bwfm_chip_cr4_set_active(sc, rstvec);
+	if (bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CA7) != NULL)
+		return bwfm_chip_ca7_set_active(sc, rstvec);
+	if (bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CM3) != NULL)
+		return bwfm_chip_cm3_set_active(sc);
+	return 1;
+}
+
+void
+bwfm_chip_set_passive(struct bwfm_softc *sc)
+{
+	if (bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CR4) != NULL) {
+		bwfm_chip_cr4_set_passive(sc);
+		return;
+	}
+	if (bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CA7) != NULL) {
+		bwfm_chip_ca7_set_passive(sc);
+		return;
+	}
+	if (bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CM3) != NULL) {
+		bwfm_chip_cm3_set_passive(sc);
+		return;
+	}
+}
+
+int
+bwfm_chip_cr4_set_active(struct bwfm_softc *sc, const uint32_t rstvec)
+{
+	struct bwfm_core *core;
+
+	sc->sc_buscore_ops->bc_activate(sc, rstvec);
+	core = bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CR4);
+	sc->sc_chip.ch_core_reset(sc, core,
+	    BWFM_AGENT_IOCTL_ARMCR4_CPUHALT, 0, 0);
+
+	return 0;
+}
+
 void
 bwfm_chip_cr4_set_passive(struct bwfm_softc *sc)
 {
-	panic("%s: CR4 not supported", DEVNAME(sc));
+	struct bwfm_core *core;
+	uint32_t val;
+
+	core = bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CR4);
+	val = sc->sc_buscore_ops->bc_read(sc,
+	    core->co_wrapbase + BWFM_AGENT_IOCTL);
+	sc->sc_chip.ch_core_reset(sc, core,
+	    val & BWFM_AGENT_IOCTL_ARMCR4_CPUHALT,
+	    BWFM_AGENT_IOCTL_ARMCR4_CPUHALT,
+	    BWFM_AGENT_IOCTL_ARMCR4_CPUHALT);
+
+	core = bwfm_chip_get_core(sc, BWFM_AGENT_CORE_80211);
+	sc->sc_chip.ch_core_reset(sc, core, BWFM_AGENT_D11_IOCTL_PHYRESET |
+	    BWFM_AGENT_D11_IOCTL_PHYCLOCKEN, BWFM_AGENT_D11_IOCTL_PHYCLOCKEN,
+	    BWFM_AGENT_D11_IOCTL_PHYCLOCKEN);
+}
+
+int
+bwfm_chip_ca7_set_active(struct bwfm_softc *sc, const uint32_t rstvec)
+{
+	struct bwfm_core *core;
+
+	sc->sc_buscore_ops->bc_activate(sc, rstvec);
+	core = bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CA7);
+	sc->sc_chip.ch_core_reset(sc, core,
+	    BWFM_AGENT_IOCTL_ARMCR4_CPUHALT, 0, 0);
+
+	return 0;
 }
 
 void
 bwfm_chip_ca7_set_passive(struct bwfm_softc *sc)
 {
-	panic("%s: CA7 not supported", DEVNAME(sc));
+	struct bwfm_core *core;
+	uint32_t val;
+
+	core = bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CA7);
+	val = sc->sc_buscore_ops->bc_read(sc,
+	    core->co_wrapbase + BWFM_AGENT_IOCTL);
+	sc->sc_chip.ch_core_reset(sc, core,
+	    val & BWFM_AGENT_IOCTL_ARMCR4_CPUHALT,
+	    BWFM_AGENT_IOCTL_ARMCR4_CPUHALT,
+	    BWFM_AGENT_IOCTL_ARMCR4_CPUHALT);
+
+	core = bwfm_chip_get_core(sc, BWFM_AGENT_CORE_80211);
+	sc->sc_chip.ch_core_reset(sc, core, BWFM_AGENT_D11_IOCTL_PHYRESET |
+	    BWFM_AGENT_D11_IOCTL_PHYCLOCKEN, BWFM_AGENT_D11_IOCTL_PHYCLOCKEN,
+	    BWFM_AGENT_D11_IOCTL_PHYCLOCKEN);
+}
+
+int
+bwfm_chip_cm3_set_active(struct bwfm_softc *sc)
+{
+	struct bwfm_core *core;
+
+	core = bwfm_chip_get_core(sc, BWFM_AGENT_INTERNAL_MEM);
+	if (!sc->sc_chip.ch_core_isup(sc, core))
+		return 1;
+
+	sc->sc_buscore_ops->bc_activate(sc, 0);
+
+	core = bwfm_chip_get_core(sc, BWFM_AGENT_CORE_ARM_CM3);
+	sc->sc_chip.ch_core_reset(sc, core, 0, 0, 0);
+
+	return 0;
 }
 
 void
@@ -1144,6 +1257,153 @@ bwfm_chip_cm3_set_passive(struct bwfm_softc *sc)
 		    core->co_base + BWFM_SOCRAM_BANKIDX, 3);
 		sc->sc_buscore_ops->bc_write(sc,
 		    core->co_base + BWFM_SOCRAM_BANKPDA, 0);
+	}
+}
+
+/* RAM size helpers */
+void
+bwfm_chip_socram_ramsize(struct bwfm_softc *sc, struct bwfm_core *core)
+{
+	uint32_t coreinfo, nb, lss, banksize, bankinfo;
+	uint32_t ramsize = 0, srsize = 0;
+	int i;
+
+	if (!sc->sc_chip.ch_core_isup(sc, core))
+		sc->sc_chip.ch_core_reset(sc, core, 0, 0, 0);
+
+	coreinfo = sc->sc_buscore_ops->bc_read(sc,
+	    core->co_base + BWFM_SOCRAM_COREINFO);
+	nb = (coreinfo & BWFM_SOCRAM_COREINFO_SRNB_MASK)
+	    >> BWFM_SOCRAM_COREINFO_SRNB_SHIFT;
+
+	if (core->co_rev <= 7 || core->co_rev == 12) {
+		banksize = coreinfo & BWFM_SOCRAM_COREINFO_SRBSZ_MASK;
+		lss = (coreinfo & BWFM_SOCRAM_COREINFO_LSS_MASK)
+		    >> BWFM_SOCRAM_COREINFO_LSS_SHIFT;
+		if (lss != 0)
+			nb--;
+		ramsize = nb * (1 << (banksize + BWFM_SOCRAM_COREINFO_SRBSZ_BASE));
+		if (lss != 0)
+			ramsize += (1 << ((lss - 1) + BWFM_SOCRAM_COREINFO_SRBSZ_BASE));
+	} else {
+		for (i = 0; i < nb; i++) {
+			sc->sc_buscore_ops->bc_write(sc,
+			    core->co_base + BWFM_SOCRAM_BANKIDX,
+			    (BWFM_SOCRAM_BANKIDX_MEMTYPE_RAM <<
+			    BWFM_SOCRAM_BANKIDX_MEMTYPE_SHIFT) | i);
+			bankinfo = sc->sc_buscore_ops->bc_read(sc,
+			    core->co_base + BWFM_SOCRAM_BANKINFO);
+			banksize = ((bankinfo & BWFM_SOCRAM_BANKINFO_SZMASK) + 1)
+			    * BWFM_SOCRAM_BANKINFO_SZBASE;
+			ramsize += banksize;
+			if (bankinfo & BWFM_SOCRAM_BANKINFO_RETNTRAM_MASK)
+				srsize += banksize;
+		}
+	}
+
+	switch (sc->sc_chip.ch_chip) {
+	case BRCM_CC_4334_CHIP_ID:
+		if (sc->sc_chip.ch_chiprev < 2)
+			srsize = 32 * 1024;
+		break;
+	case BRCM_CC_43430_CHIP_ID:
+		srsize = 64 * 1024;
+		break;
+	default:
+		break;
+	}
+
+	sc->sc_chip.ch_ramsize = ramsize;
+	sc->sc_chip.ch_srsize = srsize;
+}
+
+void
+bwfm_chip_sysmem_ramsize(struct bwfm_softc *sc, struct bwfm_core *core)
+{
+	uint32_t coreinfo, nb, banksize, bankinfo;
+	uint32_t ramsize = 0;
+	int i;
+
+	if (!sc->sc_chip.ch_core_isup(sc, core))
+		sc->sc_chip.ch_core_reset(sc, core, 0, 0, 0);
+
+	coreinfo = sc->sc_buscore_ops->bc_read(sc,
+	    core->co_base + BWFM_SOCRAM_COREINFO);
+	nb = (coreinfo & BWFM_SOCRAM_COREINFO_SRNB_MASK)
+	    >> BWFM_SOCRAM_COREINFO_SRNB_SHIFT;
+
+	for (i = 0; i < nb; i++) {
+		sc->sc_buscore_ops->bc_write(sc,
+		    core->co_base + BWFM_SOCRAM_BANKIDX,
+		    (BWFM_SOCRAM_BANKIDX_MEMTYPE_RAM <<
+		    BWFM_SOCRAM_BANKIDX_MEMTYPE_SHIFT) | i);
+		bankinfo = sc->sc_buscore_ops->bc_read(sc,
+		    core->co_base + BWFM_SOCRAM_BANKINFO);
+		banksize = ((bankinfo & BWFM_SOCRAM_BANKINFO_SZMASK) + 1)
+		    * BWFM_SOCRAM_BANKINFO_SZBASE;
+		ramsize += banksize;
+	}
+
+	sc->sc_chip.ch_ramsize = ramsize;
+}
+
+void
+bwfm_chip_tcm_ramsize(struct bwfm_softc *sc, struct bwfm_core *core)
+{
+	uint32_t cap, nab, nbb, totb, bxinfo, ramsize = 0;
+	int i;
+
+	cap = sc->sc_buscore_ops->bc_read(sc, core->co_base + BWFM_ARMCR4_CAP);
+	nab = (cap & BWFM_ARMCR4_CAP_TCBANB_MASK) >> BWFM_ARMCR4_CAP_TCBANB_SHIFT;
+	nbb = (cap & BWFM_ARMCR4_CAP_TCBBNB_MASK) >> BWFM_ARMCR4_CAP_TCBBNB_SHIFT;
+	totb = nab + nbb;
+
+	for (i = 0; i < totb; i++) {
+		sc->sc_buscore_ops->bc_write(sc,
+		    core->co_base + BWFM_ARMCR4_BANKIDX, i);
+		bxinfo = sc->sc_buscore_ops->bc_read(sc,
+		    core->co_base + BWFM_ARMCR4_BANKINFO);
+		ramsize += ((bxinfo & BWFM_ARMCR4_BANKINFO_BSZ_MASK) + 1) *
+		    BWFM_ARMCR4_BANKINFO_BSZ_MULT;
+	}
+
+	sc->sc_chip.ch_ramsize = ramsize;
+}
+
+void
+bwfm_chip_tcm_rambase(struct bwfm_softc *sc)
+{
+	switch (sc->sc_chip.ch_chip) {
+	case BRCM_CC_4345_CHIP_ID:
+		sc->sc_chip.ch_rambase = 0x198000;
+		break;
+	case BRCM_CC_4335_CHIP_ID:
+	case BRCM_CC_4339_CHIP_ID:
+	case BRCM_CC_4350_CHIP_ID:
+	case BRCM_CC_4354_CHIP_ID:
+	case BRCM_CC_4356_CHIP_ID:
+	case BRCM_CC_43567_CHIP_ID:
+	case BRCM_CC_43569_CHIP_ID:
+	case BRCM_CC_43570_CHIP_ID:
+	case BRCM_CC_4358_CHIP_ID:
+	case BRCM_CC_4359_CHIP_ID:
+	case BRCM_CC_43602_CHIP_ID:
+	case BRCM_CC_4371_CHIP_ID:
+		sc->sc_chip.ch_rambase = 0x180000;
+		break;
+	case BRCM_CC_43465_CHIP_ID:
+	case BRCM_CC_43525_CHIP_ID:
+	case BRCM_CC_4365_CHIP_ID:
+	case BRCM_CC_4366_CHIP_ID:
+		sc->sc_chip.ch_rambase = 0x200000;
+		break;
+	case CY_CC_4373_CHIP_ID:
+		sc->sc_chip.ch_rambase = 0x160000;
+		break;
+	default:
+		printf("%s: unknown chip: %d\n", DEVNAME(sc),
+		    sc->sc_chip.ch_chip);
+		break;
 	}
 }
 
@@ -1497,53 +1757,29 @@ bwfm_connect(struct bwfm_softc *sc)
 		}
 		kmem_free(params, sizeof(*params));
 	}
-
-	/* XXX: added for testing only, remove */
-	bwfm_fwvar_var_set_int(sc, "allmulti", 1);
-#if 0
-	bwfm_fwvar_cmd_set_int(sc, BWFM_C_SET_PROMISC, 1);
-#endif
 }
 
 void
-bwfm_rx(struct bwfm_softc *sc, char *buf, size_t len)
+bwfm_rx(struct bwfm_softc *sc, struct mbuf *m)
 {
 	struct ieee80211com *ic = &sc->sc_ic;
 	struct ifnet *ifp = ic->ic_ifp;
-	struct bwfm_event *e = (void *)buf;
-	struct mbuf *m;
-	char *mb;
+	struct bwfm_event *e = mtod(m, struct bwfm_event *);
 	int s;
 
-	DPRINTF(("%s: buf %p len %lu\n", __func__, buf, len));
-
-	if (len >= sizeof(e->ehdr) &&
+	if (m->m_len >= sizeof(e->ehdr) &&
 	    ntohs(e->ehdr.ether_type) == BWFM_ETHERTYPE_LINK_CTL &&
 	    memcmp(BWFM_BRCM_OUI, e->hdr.oui, sizeof(e->hdr.oui)) == 0 &&
-	    ntohs(e->hdr.usr_subtype) == BWFM_BRCM_SUBTYPE_EVENT)
-		bwfm_rx_event(sc, buf, len);
-
-	if (__predict_false(len > MCLBYTES || len == 0))
+	    ntohs(e->hdr.usr_subtype) == BWFM_BRCM_SUBTYPE_EVENT) {
+		bwfm_rx_event(sc, mtod(m, char *), m->m_len);
+		m_freem(m);
 		return;
-	MGETHDR(m, M_DONTWAIT, MT_DATA);
-	if (__predict_false(m == NULL))
-		return;
-	if (len > MHLEN) {
-		MCLGET(m, M_DONTWAIT);
-		if (!(m->m_flags & M_EXT)) {
-			m_free(m);
-			return;
-		}
 	}
 
 	s = splnet();
 
 	if ((ifp->if_flags & IFF_RUNNING) != 0) {
-		mb = mtod(m, char *);
-		memcpy(mb, buf, len);
-		m->m_pkthdr.len = m->m_len = len;
 		m_set_rcvif(m, ifp);
-
 		if_percpuq_enqueue(ifp->if_percpuq, m);
 	}
 
@@ -1629,7 +1865,7 @@ bwfm_rx_event(struct bwfm_softc *sc, char *buf, size_t len)
 		if (ntohl(e->msg.status) == BWFM_E_STATUS_SUCCESS &&
 		    ntohl(e->msg.reason) == 0)
 			break;
-		
+
 		/* Link status has changed */
 		ieee80211_new_state(ic, IEEE80211_S_SCAN, -1);
 		break;
@@ -1674,52 +1910,65 @@ bwfm_scan_node(struct bwfm_softc *sc, struct bwfm_bss_info *bss, size_t len)
 
 	/* Build scan result */
 	memset(&scan, 0, sizeof(scan));
-	scan.tstamp  = (uint8_t *)&tsf;
-	scan.bintval = le16toh(bss->beacon_period);
-	scan.capinfo = le16toh(bss->capability);
-	scan.bchan   = ieee80211_chan2ieee(ic, ic->ic_curchan);
-	scan.chan    = scan.bchan;
-	scan.rates   = rates;
-	scan.ssid    = ssid;
+	scan.sp_tstamp  = (uint8_t *)&tsf;
+	scan.sp_bintval = le16toh(bss->beacon_period);
+	scan.sp_capinfo = le16toh(bss->capability);
+	scan.sp_bchan   = ieee80211_chan2ieee(ic, ic->ic_curchan);
+	scan.sp_chan    = scan.sp_bchan;
+	scan.sp_rates   = rates;
+	scan.sp_ssid    = ssid;
 
 	for (frm = sfrm; frm < efrm; frm += frm[1] + 2) {
 		switch (frm[0]) {
 		case IEEE80211_ELEMID_COUNTRY:
-			scan.country = frm;
+			scan.sp_country = frm;
 			break;
 		case IEEE80211_ELEMID_FHPARMS:
 			if (ic->ic_phytype == IEEE80211_T_FH) {
-				scan.fhdwell = le16dec(&frm[2]);
-				scan.chan = IEEE80211_FH_CHAN(frm[4], frm[5]);
-				scan.fhindex = frm[6];
+				if (frm + 6 >= efrm)
+					break;
+				scan.sp_fhdwell = le16dec(&frm[2]);
+				scan.sp_chan = IEEE80211_FH_CHAN(frm[4], frm[5]);
+				scan.sp_fhindex = frm[6];
 			}
 			break;
 		case IEEE80211_ELEMID_DSPARMS:
-			if (ic->ic_phytype != IEEE80211_T_FH)
-				scan.chan = frm[2];
+			if (ic->ic_phytype != IEEE80211_T_FH) {
+				if (frm + 2 >= efrm)
+					break;
+				scan.sp_chan = frm[2];
+			}
 			break;
 		case IEEE80211_ELEMID_TIM:
-			scan.tim = frm;
-			scan.timoff = frm - sfrm;
+			scan.sp_tim = frm;
+			scan.sp_timoff = frm - sfrm;
 			break;
 		case IEEE80211_ELEMID_XRATES:
-			scan.xrates = frm;
+			scan.sp_xrates = frm;
 			break;
 		case IEEE80211_ELEMID_ERP:
+			if (frm + 1 >= efrm)
+				break;
 			if (frm[1] != 1) {
 				ic->ic_stats.is_rx_elem_toobig++;
 				break;
 			}
-			scan.erp = frm[2];
+			scan.sp_erp = frm[2];
 			break;
 		case IEEE80211_ELEMID_RSN:
-			scan.wpa = frm;
+			scan.sp_wpa = frm;
 			break;
 		case IEEE80211_ELEMID_VENDOR:
+			if (frm + 1 >= efrm)
+				break;
+			if (frm + frm[1] + 2 >= efrm)
+				break;
 			if (bwfm_iswpaoui(frm))
-				scan.wpa = frm;
+				scan.sp_wpa = frm;
 			break;
 		}
+		if (frm + 1 >= efrm)
+			break;
 	}
 
 	if (ic->ic_flags & IEEE80211_F_SCAN)

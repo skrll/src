@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_mmc.c,v 1.17 2017/11/15 13:53:26 jmcneill Exp $ */
+/* $NetBSD: sunxi_mmc.c,v 1.26 2018/06/13 11:17:02 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2014-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #include "opt_sunximmc.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_mmc.c,v 1.17 2017/11/15 13:53:26 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_mmc.c,v 1.26 2018/06/13 11:17:02 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -87,7 +87,7 @@ static const struct sunxi_mmc_delay sun9i_mmc_delays[] = {
 	[SUNXI_MMC_TIMING_50M_DDR_8BIT]	= {  72,	 72 },
 };
 
-#define SUNXI_MMC_NDESC		16
+#define SUNXI_MMC_NDESC		64
 
 struct sunxi_mmc_softc;
 
@@ -109,6 +109,7 @@ static int	sunxi_mmc_bus_clock(sdmmc_chipset_handle_t, int, bool);
 static int	sunxi_mmc_bus_width(sdmmc_chipset_handle_t, int);
 static int	sunxi_mmc_bus_rod(sdmmc_chipset_handle_t, int);
 static int	sunxi_mmc_signal_voltage(sdmmc_chipset_handle_t, int);
+static int	sunxi_mmc_execute_tuning(sdmmc_chipset_handle_t, int);
 static void	sunxi_mmc_exec_command(sdmmc_chipset_handle_t,
 				      struct sdmmc_command *);
 static void	sunxi_mmc_card_enable_intr(sdmmc_chipset_handle_t, int);
@@ -125,6 +126,7 @@ static struct sdmmc_chip_functions sunxi_mmc_chip_functions = {
 	.bus_width = sunxi_mmc_bus_width,
 	.bus_rod = sunxi_mmc_bus_rod,
 	.signal_voltage = sunxi_mmc_signal_voltage,
+	.execute_tuning = sunxi_mmc_execute_tuning,
 	.exec_command = sunxi_mmc_exec_command,
 	.card_enable_intr = sunxi_mmc_card_enable_intr,
 	.card_intr_ack = sunxi_mmc_card_intr_ack,
@@ -136,6 +138,7 @@ struct sunxi_mmc_config {
 #define	SUNXI_MMC_FLAG_CALIB_REG	0x01
 #define	SUNXI_MMC_FLAG_NEW_TIMINGS	0x02
 #define	SUNXI_MMC_FLAG_MASK_DATA0	0x04
+#define	SUNXI_MMC_FLAG_HS200		0x08
 	const struct sunxi_mmc_delay *delays;
 	uint32_t dma_ftrglevel;
 };
@@ -154,6 +157,8 @@ struct sunxi_mmc_softc {
 
 	int sc_mmc_width;
 	int sc_mmc_present;
+
+	u_int sc_max_frequency;
 
 	device_t sc_sdmmc_dev;
 
@@ -245,6 +250,29 @@ static const struct sunxi_mmc_config sun50i_a64_mmc_config = {
 		 SUNXI_MMC_FLAG_MASK_DATA0,
 };
 
+static const struct sunxi_mmc_config sun50i_a64_emmc_config = {
+	.idma_xferlen = 0x2000,
+	.dma_ftrglevel = 0x20070008,
+	.delays = NULL,
+	.flags = SUNXI_MMC_FLAG_CALIB_REG,
+};
+
+static const struct sunxi_mmc_config sun50i_h6_mmc_config = {
+	.idma_xferlen = 0x10000,
+	.dma_ftrglevel = 0x20070008,
+	.delays = NULL,
+	.flags = SUNXI_MMC_FLAG_CALIB_REG |
+		 SUNXI_MMC_FLAG_NEW_TIMINGS |
+		 SUNXI_MMC_FLAG_MASK_DATA0,
+};
+
+static const struct sunxi_mmc_config sun50i_h6_emmc_config = {
+	.idma_xferlen = 0x2000,
+	.dma_ftrglevel = 0x20070008,
+	.delays = NULL,
+	.flags = SUNXI_MMC_FLAG_CALIB_REG,
+};
+
 static const struct of_compat_data compat_data[] = {
 	{ "allwinner,sun4i-a10-mmc",	(uintptr_t)&sun4i_a10_mmc_config },
 	{ "allwinner,sun5i-a13-mmc",	(uintptr_t)&sun5i_a13_mmc_config },
@@ -252,6 +280,9 @@ static const struct of_compat_data compat_data[] = {
 	{ "allwinner,sun8i-a83t-emmc",	(uintptr_t)&sun8i_a83t_emmc_config },
 	{ "allwinner,sun9i-a80-mmc",	(uintptr_t)&sun9i_a80_mmc_config },
 	{ "allwinner,sun50i-a64-mmc",	(uintptr_t)&sun50i_a64_mmc_config },
+	{ "allwinner,sun50i-a64-emmc",	(uintptr_t)&sun50i_a64_emmc_config },
+	{ "allwinner,sun50i-h6-mmc",	(uintptr_t)&sun50i_h6_mmc_config },
+	{ "allwinner,sun50i-h6-emmc",	(uintptr_t)&sun50i_h6_emmc_config },
 	{ NULL }
 };
 
@@ -339,6 +370,9 @@ sunxi_mmc_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_non_removable = of_hasprop(phandle, "non-removable");
 	sc->sc_broken_cd = of_hasprop(phandle, "broken-cd");
+
+	if (of_getprop_uint32(phandle, "max-frequency", &sc->sc_max_frequency))
+		sc->sc_max_frequency = 52000000;
 
 	if (sunxi_mmc_dmabounce_setup(sc) != 0 ||
 	    sunxi_mmc_idma_setup(sc) != 0) {
@@ -440,22 +474,28 @@ static int
 sunxi_mmc_set_clock(struct sunxi_mmc_softc *sc, u_int freq, bool ddr)
 {
 	const struct sunxi_mmc_delay *delays;
-	int error, timing;
+	int error, timing = SUNXI_MMC_TIMING_400K;
 
-	if (freq <= 400) {
-		timing = SUNXI_MMC_TIMING_400K;
-	} else if (freq <= 25000) {
-		timing = SUNXI_MMC_TIMING_25M;
-	} else if (freq <= 52000) {
-		if (ddr) {
-			timing = sc->sc_mmc_width == 8 ?
-			    SUNXI_MMC_TIMING_50M_DDR_8BIT :
-			    SUNXI_MMC_TIMING_50M_DDR;
-		} else {
-			timing = SUNXI_MMC_TIMING_50M;
-		}
-	} else
-		return EINVAL;
+	if (sc->sc_config->delays) {
+		if (freq <= 400) {
+			timing = SUNXI_MMC_TIMING_400K;
+		} else if (freq <= 25000) {
+			timing = SUNXI_MMC_TIMING_25M;
+		} else if (freq <= 52000) {
+			if (ddr) {
+				timing = sc->sc_mmc_width == 8 ?
+				    SUNXI_MMC_TIMING_50M_DDR_8BIT :
+				    SUNXI_MMC_TIMING_50M_DDR;
+			} else {
+				timing = SUNXI_MMC_TIMING_50M;
+			}
+		} else
+			return EINVAL;
+	}
+	if (sc->sc_max_frequency) {
+		if (freq * 1000 > sc->sc_max_frequency)
+			return EINVAL;
+	}
 
 	error = clk_set_rate(sc->sc_clk_mmc, (freq * 1000) << ddr);
 	if (error != 0)
@@ -484,6 +524,7 @@ static void
 sunxi_mmc_attach_i(device_t self)
 {
 	struct sunxi_mmc_softc *sc = device_private(self);
+	const u_int flags = sc->sc_config->flags;
 	struct sdmmcbus_attach_args saa;
 	uint32_t width;
 
@@ -506,14 +547,20 @@ sunxi_mmc_attach_i(device_t self)
 	saa.saa_sch = sc;
 	saa.saa_dmat = sc->sc_dmat;
 	saa.saa_clkmin = 400;
-	saa.saa_clkmax = 52000;
+	saa.saa_clkmax = sc->sc_max_frequency / 1000;
 	saa.saa_caps = SMC_CAPS_DMA |
 		       SMC_CAPS_MULTI_SEG_DMA |
 		       SMC_CAPS_AUTO_STOP |
 		       SMC_CAPS_SD_HIGHSPEED |
 		       SMC_CAPS_MMC_HIGHSPEED |
-		       SMC_CAPS_MMC_DDR52 |
 		       SMC_CAPS_POLLING;
+
+	if (sc->sc_config->delays || (flags & SUNXI_MMC_FLAG_NEW_TIMINGS))
+		saa.saa_caps |= SMC_CAPS_MMC_DDR52;
+
+	if (flags & SUNXI_MMC_FLAG_HS200)
+		saa.saa_caps |= SMC_CAPS_MMC_HS200;
+
 	if (width == 4)
 		saa.saa_caps |= SMC_CAPS_4BIT_MODE;
 	if (width == 8)
@@ -529,7 +576,7 @@ static int
 sunxi_mmc_intr(void *priv)
 {
 	struct sunxi_mmc_softc *sc = priv;
-	uint32_t idst, rint;
+	uint32_t idst, rint, imask;
 
 	mutex_enter(&sc->sc_intr_lock);
 	idst = MMC_READ(sc, SUNXI_MMC_IDST);
@@ -539,17 +586,20 @@ sunxi_mmc_intr(void *priv)
 		return 0;
 	}
 	MMC_WRITE(sc, SUNXI_MMC_IDST, idst);
-	MMC_WRITE(sc, SUNXI_MMC_RINT, rint);
+	MMC_WRITE(sc, SUNXI_MMC_RINT, rint & ~SUNXI_MMC_INT_SDIO_INT);
 
 	DPRINTF(sc->sc_dev, "mmc intr idst=%08X rint=%08X\n",
 	    idst, rint);
 
 	if (idst != 0) {
+		MMC_WRITE(sc, SUNXI_MMC_IDIE, 0);
 		sc->sc_idma_idst |= idst;
 		cv_broadcast(&sc->sc_idst_cv);
 	}
 
 	if ((rint & ~SUNXI_MMC_INT_SDIO_INT) != 0) {
+		imask = MMC_READ(sc, SUNXI_MMC_IMASK);
+		MMC_WRITE(sc, SUNXI_MMC_IMASK, imask & ~SUNXI_MMC_INT_SDIO_INT);
 		sc->sc_intr_rint |= (rint & ~SUNXI_MMC_INT_SDIO_INT);
 		cv_broadcast(&sc->sc_intr_cv);
 	}
@@ -603,12 +653,14 @@ static int
 sunxi_mmc_host_reset(sdmmc_chipset_handle_t sch)
 {
 	struct sunxi_mmc_softc *sc = sch;
+	uint32_t gctrl;
 	int retry = 1000;
 
 	DPRINTF(sc->sc_dev, "host reset\n");
 
-	MMC_WRITE(sc, SUNXI_MMC_GCTRL,
-	    MMC_READ(sc, SUNXI_MMC_GCTRL) | SUNXI_MMC_GCTRL_RESET);
+	gctrl = MMC_READ(sc, SUNXI_MMC_GCTRL);
+	gctrl |= SUNXI_MMC_GCTRL_RESET;
+	MMC_WRITE(sc, SUNXI_MMC_GCTRL, gctrl);
 	while (--retry > 0) {
 		if (!(MMC_READ(sc, SUNXI_MMC_GCTRL) & SUNXI_MMC_GCTRL_RESET))
 			break;
@@ -617,12 +669,15 @@ sunxi_mmc_host_reset(sdmmc_chipset_handle_t sch)
 
 	MMC_WRITE(sc, SUNXI_MMC_TIMEOUT, 0xffffffff);
 
-	MMC_WRITE(sc, SUNXI_MMC_IMASK,
-	    SUNXI_MMC_INT_CMD_DONE | SUNXI_MMC_INT_ERROR |
-	    SUNXI_MMC_INT_DATA_OVER | SUNXI_MMC_INT_AUTO_CMD_DONE);
+	MMC_WRITE(sc, SUNXI_MMC_IMASK, 0);
 
-	MMC_WRITE(sc, SUNXI_MMC_GCTRL,
-	    MMC_READ(sc, SUNXI_MMC_GCTRL) | SUNXI_MMC_GCTRL_INTEN);
+	MMC_WRITE(sc, SUNXI_MMC_RINT, 0xffffffff);
+
+	gctrl = MMC_READ(sc, SUNXI_MMC_GCTRL);
+	gctrl |= SUNXI_MMC_GCTRL_INTEN;
+	gctrl &= ~SUNXI_MMC_GCTRL_WAIT_MEM_ACCESS_DONE;
+	gctrl &= ~SUNXI_MMC_GCTRL_ACCESS_BY_AHB;
+	MMC_WRITE(sc, SUNXI_MMC_GCTRL, gctrl);
 
 	return 0;
 }
@@ -860,6 +915,19 @@ sunxi_mmc_signal_voltage(sdmmc_chipset_handle_t sch, int signal_voltage)
 }
 
 static int
+sunxi_mmc_execute_tuning(sdmmc_chipset_handle_t sch, int timing)
+{
+	switch (timing) {
+	case SDMMC_TIMING_MMC_HS200:
+		break;
+	default:
+		return EINVAL;
+	}
+
+	return 0;
+}
+
+static int
 sunxi_mmc_dma_prepare(struct sunxi_mmc_softc *sc, struct sdmmc_command *cmd)
 {
 	struct sunxi_mmc_idma_descriptor *dma = sc->sc_idma_desc;
@@ -928,8 +996,9 @@ sunxi_mmc_dma_prepare(struct sunxi_mmc_softc *sc, struct sdmmc_command *cmd)
 	}
 	if (desc == sc->sc_idma_ndesc) {
 		aprint_error_dev(sc->sc_dev,
-		    "not enough descriptors for %d byte transfer!\n",
-		    cmd->c_datalen);
+		    "not enough descriptors for %d byte transfer! "
+		    "there are %u segments with a max xfer length of %u\n",
+		    cmd->c_datalen, map->dm_nsegs, sc->sc_config->idma_xferlen);
 		return EIO;
 	}
 
@@ -938,24 +1007,23 @@ sunxi_mmc_dma_prepare(struct sunxi_mmc_softc *sc, struct sdmmc_command *cmd)
 
 	sc->sc_idma_idst = 0;
 
+	MMC_WRITE(sc, SUNXI_MMC_DLBA, desc_paddr);
+	MMC_WRITE(sc, SUNXI_MMC_FTRGLEVEL, sc->sc_config->dma_ftrglevel);
+
 	val = MMC_READ(sc, SUNXI_MMC_GCTRL);
 	val |= SUNXI_MMC_GCTRL_DMAEN;
-	val |= SUNXI_MMC_GCTRL_INTEN;
 	MMC_WRITE(sc, SUNXI_MMC_GCTRL, val);
 	val |= SUNXI_MMC_GCTRL_DMARESET;
 	MMC_WRITE(sc, SUNXI_MMC_GCTRL, val);
+
 	MMC_WRITE(sc, SUNXI_MMC_DMAC, SUNXI_MMC_DMAC_SOFTRESET);
+	if (ISSET(cmd->c_flags, SCF_CMD_READ))
+		val = SUNXI_MMC_IDST_RECEIVE_INT;
+	else
+		val = 0;
+	MMC_WRITE(sc, SUNXI_MMC_IDIE, val);
 	MMC_WRITE(sc, SUNXI_MMC_DMAC,
 	    SUNXI_MMC_DMAC_IDMA_ON|SUNXI_MMC_DMAC_FIX_BURST);
-	val = MMC_READ(sc, SUNXI_MMC_IDIE);
-	val &= ~(SUNXI_MMC_IDST_RECEIVE_INT|SUNXI_MMC_IDST_TRANSMIT_INT);
-	if (ISSET(cmd->c_flags, SCF_CMD_READ))
-		val |= SUNXI_MMC_IDST_RECEIVE_INT;
-	else
-		val |= SUNXI_MMC_IDST_TRANSMIT_INT;
-	MMC_WRITE(sc, SUNXI_MMC_IDIE, val);
-	MMC_WRITE(sc, SUNXI_MMC_DLBA, desc_paddr);
-	MMC_WRITE(sc, SUNXI_MMC_FTRGLEVEL, sc->sc_config->dma_ftrglevel);
 
 	return 0;
 }
@@ -963,6 +1031,8 @@ sunxi_mmc_dma_prepare(struct sunxi_mmc_softc *sc, struct sdmmc_command *cmd)
 static void
 sunxi_mmc_dma_complete(struct sunxi_mmc_softc *sc, struct sdmmc_command *cmd)
 {
+	MMC_WRITE(sc, SUNXI_MMC_DMAC, 0);
+
 	bus_dmamap_sync(sc->sc_dmat, sc->sc_idma_map, 0,
 	    sc->sc_idma_size, BUS_DMASYNC_POSTWRITE);
 
@@ -984,6 +1054,7 @@ sunxi_mmc_exec_command(sdmmc_chipset_handle_t sch, struct sdmmc_command *cmd)
 {
 	struct sunxi_mmc_softc *sc = sch;
 	uint32_t cmdval = SUNXI_MMC_CMD_START;
+	uint32_t imask, oimask;
 	const bool poll = (cmd->c_flags & SCF_POLL) != 0;
 	int retry;
 
@@ -1003,6 +1074,9 @@ sunxi_mmc_exec_command(sdmmc_chipset_handle_t sch, struct sdmmc_command *cmd)
 	if (cmd->c_flags & SCF_RSP_CRC)
 		cmdval |= SUNXI_MMC_CMD_CHECK_RSP_CRC;
 
+	imask = oimask = MMC_READ(sc, SUNXI_MMC_IMASK);
+	imask |= SUNXI_MMC_INT_ERROR;
+
 	if (cmd->c_datalen > 0) {
 		unsigned int nblks;
 
@@ -1017,11 +1091,19 @@ sunxi_mmc_exec_command(sdmmc_chipset_handle_t sch, struct sdmmc_command *cmd)
 
 		if (nblks > 1) {
 			cmdval |= SUNXI_MMC_CMD_SEND_AUTO_STOP;
+			imask |= SUNXI_MMC_INT_AUTO_CMD_DONE;
+		} else {
+			imask |= SUNXI_MMC_INT_DATA_OVER;
 		}
 
 		MMC_WRITE(sc, SUNXI_MMC_BLKSZ, cmd->c_blklen);
 		MMC_WRITE(sc, SUNXI_MMC_BYTECNT, nblks * cmd->c_blklen);
+	} else {
+		imask |= SUNXI_MMC_INT_CMD_DONE;
 	}
+
+	MMC_WRITE(sc, SUNXI_MMC_IMASK, imask);
+	MMC_WRITE(sc, SUNXI_MMC_RINT, 0xffff);
 
 	sc->sc_intr_rint = 0;
 
@@ -1038,9 +1120,9 @@ sunxi_mmc_exec_command(sdmmc_chipset_handle_t sch, struct sdmmc_command *cmd)
 		cmd->c_resid = cmd->c_datalen;
 		cmd->c_error = sunxi_mmc_dma_prepare(sc, cmd);
 		MMC_WRITE(sc, SUNXI_MMC_CMD, cmdval | cmd->c_opcode);
-		if (cmd->c_error == 0) {
-			const uint32_t idst_mask =
-			    SUNXI_MMC_IDST_ERROR | SUNXI_MMC_IDST_COMPLETE;
+		if (cmd->c_error == 0 && ISSET(cmd->c_flags, SCF_CMD_READ)) {
+			const uint32_t idst_mask = SUNXI_MMC_IDST_RECEIVE_INT;
+
 			retry = 10;
 			while ((sc->sc_idma_idst & idst_mask) == 0) {
 				if (retry-- == 0) {
@@ -1050,17 +1132,6 @@ sunxi_mmc_exec_command(sdmmc_chipset_handle_t sch, struct sdmmc_command *cmd)
 				cv_timedwait(&sc->sc_idst_cv,
 				    &sc->sc_intr_lock, hz);
 			}
-		}
-		sunxi_mmc_dma_complete(sc, cmd);
-		if (sc->sc_idma_idst & SUNXI_MMC_IDST_ERROR) {
-			cmd->c_error = EIO;
-		} else if (!(sc->sc_idma_idst & SUNXI_MMC_IDST_COMPLETE)) {
-			cmd->c_error = ETIMEDOUT;
-		}
-		if (cmd->c_error) {
-			DPRINTF(sc->sc_dev,
-			    "xfer failed, error %d\n", cmd->c_error);
-			goto done;
 		}
 	}
 
@@ -1080,6 +1151,8 @@ sunxi_mmc_exec_command(sdmmc_chipset_handle_t sch, struct sdmmc_command *cmd)
 	}
 		
 	if (cmd->c_datalen > 0) {
+		sunxi_mmc_dma_complete(sc, cmd);
+
 		cmd->c_error = sunxi_mmc_wait_rint(sc,
 		    SUNXI_MMC_INT_ERROR|
 		    SUNXI_MMC_INT_AUTO_CMD_DONE|
@@ -1120,6 +1193,9 @@ sunxi_mmc_exec_command(sdmmc_chipset_handle_t sch, struct sdmmc_command *cmd)
 
 done:
 	cmd->c_flags |= SCF_ITSDONE;
+	MMC_WRITE(sc, SUNXI_MMC_IMASK, oimask);
+	MMC_WRITE(sc, SUNXI_MMC_RINT, 0xffff);
+	MMC_WRITE(sc, SUNXI_MMC_IDST, 0x337);
 	mutex_exit(&sc->sc_intr_lock);
 
 	if (cmd->c_error) {

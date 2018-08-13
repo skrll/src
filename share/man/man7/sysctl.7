@@ -1,4 +1,4 @@
-.\"	$NetBSD: sysctl.7,v 1.117 2017/07/30 16:07:06 maxv Exp $
+.\"	$NetBSD: sysctl.7,v 1.128 2018/06/18 02:57:51 eadler Exp $
 .\"
 .\" Copyright (c) 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -29,7 +29,7 @@
 .\"
 .\"	@(#)sysctl.3	8.4 (Berkeley) 5/9/95
 .\"
-.Dd July 30, 2017
+.Dd May 5, 2018
 .Dt SYSCTL 7
 .Os
 .Sh NAME
@@ -372,9 +372,8 @@ privilege may change the value.
 .El
 .Bl -tag -width "123456"
 .It Li kern.aio_listio_max
-The maximum number of asynchronous
-.Tn I/O
-operations in a single list I/O call.
+The maximum number of asynchronous I/O operations in a single list
+I/O call.
 Like with all variables related to
 .Xr aio 3 ,
 the variable may be created and removed dynamically
@@ -384,7 +383,7 @@ The maximum number of asynchronous I/O operations.
 .It Li kern.arandom
 This variable picks a random number each time it is queried.
 The used random number generator
-.Pf ( Tn RNG )
+.Pf ( RNG )
 is based on
 .Xr arc4random 3 .
 .It Li kern.argmax ( Dv KERN_ARGMAX )
@@ -787,7 +786,7 @@ The third level names for the settings are described below.
 .It Sy Third level name Ta Sy Type Ta Sy Changeable
 .It kern.module.autoload	integer	yes
 .It kern.module.autotime	integer	yes
-.It kern.module.verbose	integer	yes
+.It kern.module.verbose	boolean	yes
 .El
 .Pp
 The variables are as follows:
@@ -811,9 +810,7 @@ Returns the standard version the implementation of the
 Monotonic Clock Option conforms to,
 otherwise\ 0.
 .It Li kern.mqueue
-Settings related to
-.Tn POSIX
-message queues; see
+Settings related to POSIX message queues; see
 .Xr mqueue 3 .
 This node is created dynamically when
 the corresponding kernel module is loaded.
@@ -2017,10 +2014,7 @@ Default UDP receive buffer size.
 Default UDP send buffer size.
 .El
 .Pp
-We reuse net.*.tcp for
-.Tn TCP
-over
-.Tn IPv6 ,
+We reuse net.*.tcp for TCP over IPv6,
 and therefore we do not have variables net.*.tcp6.
 Variables net.inet6.udp6 have identical meaning to net.inet.udp.
 Please refer to
@@ -2047,7 +2041,6 @@ The currently defined variable and names are:
 .It esp_auth	integer	yes
 .It ah_keymin	integer	yes
 .El
-.Pp
 The variables are as follows:
 .Bl -tag -width "123456"
 .It Li debug
@@ -2065,7 +2058,7 @@ Allow IPsec processing when SPD policies are present.
 Force IPsec processing even when SPD policies are not present.
 .El
 .It Li used
-Based on if IPsec is enabled, and SPD rule existance, show if
+Based on if IPsec is enabled, and SPD rule existence, show if
 IPsec is being used.
 Note that currently once IPsec is being used, it cannot be disabled.
 .It Li spi_try
@@ -2096,6 +2089,66 @@ on ACQUIRE PF_KEY message.
 Minimum AH key length, in bits,
 The value is used when the kernel creates proposal payload
 on ACQUIRE PF_KEY message.
+.El
+.It Li net.local ( Dv PF_LOCAL )
+Get or set various global information about
+.Dv AF_LOCAL
+type sockets.
+For some variables, the third level name is the variable name:
+.Bl -column "Variable" "integer" "Changeable" -offset indent
+.It Sy Variable	Type Ta Sy Changeable
+.It inflight	integer	no
+.It deferred	integer	no
+.El
+The variables are as follows:
+.Bl -tag -width "123456"
+.It Li inflight
+The number of file descriptors currently passed between processes,
+.Qq in flight .
+.It Li deferred
+The number of file descriptors passed between processes that have been
+deferred for cleanup by a kernel task.
+.El
+.Pp
+Other variables are specific to a socket type:
+.Bl -column "seqpacket" "sendspace" "integer" "Changeable" -offset indent
+.It Sy "Socket Type"  	Sy Variable	Type Ta Sy Changeable
+.It dgram	pcblist	struct	no
+.It dgram	recvspace	integer	yes
+.It dgram	sendspace	integer	yes
+.It seqpacket	pcblist	struct	no
+.It stream	pcblist	struct	no
+.It stream	recvspace	integer	yes
+.It stream	sendspace	integer	yes
+.El
+The variables are as follows:
+.Bl -tag -width "123456"
+.It Li dgram.pcblist
+The Protocol Control Block list structure for datagram sockets.
+Parsed by
+.Xr netstat 8
+or
+.Xr sockstat 8 .
+.It Li dgram.recvspace
+The default datagram receive buffer size.
+.It Li dgram.sendspace
+The default datagram send buffer size.
+.It Li seqpacket.pcblist
+The Protocol Control Block list structure for Sequential Packet sockets.
+Parsed by
+.Xr netstat 8
+or
+.Xr sockstat 8 .
+.It Li stream.pcblist
+The Protocol Control Block list structure for stream sockets.
+Parsed by
+.Xr netstat 8
+or
+.Xr sockstat 8 .
+.It Li stream.recvspace
+The default stream receive buffer size.
+.It Li stream.sendspace
+The default stream send buffer size.
 .El
 .El
 .Ss The proc.* subtree
@@ -2453,52 +2506,59 @@ The information available for the
 level is detailed below.
 The changeable column shows whether a process with appropriate
 privilege may change the value.
-.\" XXX sort
 .Bl -column "Second level name" "integer" "Changeable" -offset indent
 .It Sy Second level name Ta Sy Type Ta Sy Changeable
-.It ddb.radix	integer	yes
+.It ddb.commandonenter	string	yes
+.It ddb.dumpstack 	integer	yes
+.It ddb.fromconsole	integer	yes
+.It ddb.lines	integer	yes
 .It ddb.maxoff	integer	yes
 .It ddb.maxwidth	integer	yes
-.It ddb.lines	integer	yes
-.It ddb.tabstops	integer	yes
 .It ddb.onpanic	integer	yes
-.It ddb.fromconsole	integer	yes
+.It ddb.panicstackframes	integer	yes
+.It ddb.radix	integer	yes
+.It ddb.tabstops	integer	yes
 .It ddb.tee_msgbuf	integer	yes
-.It ddb.commandonenter	string	yes
 .El
 .Bl -tag -width "123456"
-.It Li ddb.radix ( Dv DDBCTL_RADIX )
-The input and output radix.
+.It Li ddb.commandonenter
+If not empty, the string is used as the DDB command to be executed each time
+DDB is entered.
+.It Li ddb.dumpstack
+A value of 1 causes a stack trace to be printed on entering ddb from a panic.
+A value of 0 disables this behaviour.
+The default value is 1.
+.It Li ddb.fromconsole ( Dv DDBCTL_FROMCONSOLE )
+If not zero, DDB may be entered by sending a break on a serial
+console or by a special key sequence on a graphics console.
+.It Li ddb.lines ( Dv DDBCTL_LINES )
+Number of display lines.
 .It Li ddb.maxoff ( Dv DDBCTL_MAXOFF )
 The maximum symbol offset.
 .It Li ddb.maxwidth ( Dv DDBCTL_MAXWIDTH )
 The maximum output line width.
-.It Li ddb.lines ( Dv DDBCTL_LINES )
-Number of display lines.
-.It Li ddb.tabstops ( Dv DDBCTL_TABSTOPS )
-Tab width.
 .It Li ddb.onpanic ( Dv DDBCTL_ONPANIC )
 If greater than zero, DDB will be entered if the kernel panics.
-A value of 1 causes the system to enter DDB on panic, while a value of 2
-causes the kernel to attempt to print out a stack trace before entering DDB.
+A value of 1 causes the system to enter DDB on panic.
 A value of 0 causes the kernel to attempt to print a stack trace, then
 reboot, while a value of \-1 means neither a stack trace will be printed
 nor DDB entered.
-.It Li ddb.fromconsole ( Dv DDBCTL_FROMCONSOLE )
-If not zero, DDB may be entered by sending a break on a serial
-console or by a special key sequence on a graphics console.
+.It Li ddb.panicstackframes
+Number of stack frames to display on panic.
+Useful to avoid scrolling away the interesting frames on a glass tty.
+Default value is
+.Dv 65535
+(all frames), useful value around
+.Dv 10 .
+.It Li ddb.radix ( Dv DDBCTL_RADIX )
+The input and output radix.
+.It Li ddb.tabstops ( Dv DDBCTL_TABSTOPS )
+Tab width.
 .It Li ddb.tee_msgbuf
 If not zero, DDB will output also to the kernel message buffer.
-.It Li ddb.commandonenter
-If not empty, a command to be executed on each enter to the
-.Tn DDB .
-.\"
-.\" XXX: (a) ddb.commandonenter is missing in ddb(4);
-.\"	 (b) No DDBCTL definitions for tee_msgbuf and commandonenter.
 .El
 .Pp
-Some of these
-.Tn MIB
+Some of these MIB
 nodes are also available as variables from within the debugger.
 See
 .Xr ddb 4
@@ -2519,8 +2579,7 @@ The available second level names are:
 Available settings are detailed below.
 .Bl -tag -width "123456"
 .It Li security.curtain
-If non-zero, will filter return objects according to the user
-.Tn ID
+If non-zero, will filter return objects according to the user ID
 requesting information about them, preventing users from
 accessing any objects they do not own.
 .Pp

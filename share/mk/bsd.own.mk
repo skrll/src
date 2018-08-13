@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1025 2017/12/01 22:48:00 mrg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1072 2018/07/25 23:34:25 kamil Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -50,12 +50,6 @@ NEED_OWN_INSTALL_TARGET?=	yes
 
 TOOLCHAIN_MISSING?=	no
 
-.if ${MACHINE_CPU} == "aarch64" && !defined(EXTERNAL_TOOLCHAIN) && ${MKLLVM:Uyes} != "no"
-MKLLVM?=	yes
-HAVE_LLVM?=	yes
-MKGCC?=		no
-.endif
-
 #
 # GCC Using platforms.
 #
@@ -64,11 +58,7 @@ MKGCC?=		no
 #
 # What GCC is used?
 #
-.if ${MACHINE_CPU} == "aarch64"
-HAVE_GCC?=	0
-.else
-HAVE_GCC?=	53
-.endif
+HAVE_GCC?=	6
 
 #
 # Platforms that can't run a modern GCC natively
@@ -80,13 +70,28 @@ MKGCCCMDS?=	no
 # We import the old gcc as "gcc.old" when upgrading.  EXTERNAL_GCC_SUBDIR is
 # set to the relevant subdirectory in src/external/gpl3 for his HAVE_GCC.
 #
-.if ${HAVE_GCC} == 53
+.if ${HAVE_GCC} == 6
+EXTERNAL_GCC_SUBDIR?=	gcc
+.elif ${HAVE_GCC} == 5
 EXTERNAL_GCC_SUBDIR?=	gcc.old
 .else
 EXTERNAL_GCC_SUBDIR=?	/does/not/exist
 .endif
 .else
 MKGCCCMDS?=	no
+.endif
+
+#
+# What OpenSSL is used?
+# 
+HAVE_OPENSSL?=  11
+
+.if ${HAVE_OPENSSL} == 11
+EXTERNAL_OPENSSL_SUBDIR=openssl
+.elif ${HAVE_OPENSSL} == 10
+EXTERNAL_OPENSSL_SUBDIR=openssl.old
+.else
+EXTERNAL_OPENSSL_SUBDIR=/does/not/exist
 .endif
 
 .if !empty(MACHINE_ARCH:Mearm*)
@@ -109,14 +114,16 @@ HAVE_LIBGCC?=	yes
 .endif
 
 
-# ia64 is not support
+# Should libgcc have unwinding code?
 .if ${HAVE_LLVM:Uno} == "yes" || !empty(MACHINE_ARCH:Mearm*)
 HAVE_LIBGCC_EH?=	no
 .else
 HAVE_LIBGCC_EH?=	yes
 .endif
 
-.if ${MACHINE} == "alpha" || \
+# Coverity does not like SSP
+.if defined(COVERITY_TOP_CONFIG) || \
+    ${MACHINE} == "alpha" || \
     ${MACHINE} == "hppa" || \
     ${MACHINE} == "ia64" || \
     ${MACHINE_CPU} == "mips"
@@ -146,8 +153,10 @@ EXTERNAL_GDB_SUBDIR=		/does/not/exist
 #
 HAVE_BINUTILS?=	227
 
-.if ${HAVE_BINUTILS} == 227
+.if ${HAVE_BINUTILS} == 230
 EXTERNAL_BINUTILS_SUBDIR=	binutils
+.elif ${HAVE_BINUTILS} == 227
+EXTERNAL_BINUTILS_SUBDIR=	binutils.old
 .else
 EXTERNAL_BINUTILS_SUBDIR=	/does/not/exist
 .endif
@@ -302,6 +311,7 @@ TOOL_OBJC.clang=	${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-clang
 TOOL_CC.pcc=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-pcc
 TOOL_CPP.pcc=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-pcpp
 TOOL_CXX.pcc=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-p++
+.endif	# EXTERNAL_TOOLCHAIN						# }
 
 #
 # Make sure DESTDIR is set, so that builds with these tools always
@@ -310,16 +320,22 @@ TOOL_CXX.pcc=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-p++
 #
 DESTDIR?=
 
+# Don't append another copy of sysroot (coming from COMPATCPPFLAGS etc.
+# because it confuses Coverity. Still we need to cov-configure specially
+# for each specific sysroot argument.
 .if !defined(HOSTPROG) && !defined(HOSTLIB)
 .  if ${DESTDIR} != ""
+.	if empty(CPPFLAGS:M*--sysroot=*)
 CPPFLAGS+=	--sysroot=${DESTDIR}
+.	endif
 LDFLAGS+=	--sysroot=${DESTDIR}
 .  else
+.	if empty(CPPFLAGS:M*--sysroot=*)
 CPPFLAGS+=	--sysroot=/
+.	endif
 LDFLAGS+=	--sysroot=/
 .  endif
 .endif
-.endif	# EXTERNAL_TOOLCHAIN						# }
 
 DBSYM=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-dbsym
 ELF2AOUT=	${TOOLDIR}/bin/${_TOOL_PREFIX}m68k-elf2aout
@@ -363,7 +379,14 @@ TOOL_GPT=		${TOOLDIR}/bin/${_TOOL_PREFIX}gpt
 # grep exists in src/tools, but is not hooked up into the build.
 #TOOL_GREP=		${TOOLDIR}/bin/${_TOOL_PREFIX}grep
 TOOL_GREP=		grep
-TOOL_GROFF=		PATH=${TOOLDIR}/lib/groff:$${PATH} ${TOOLDIR}/bin/${_TOOL_PREFIX}groff
+GROFF_SHARE_PATH=	${TOOLDIR}/share/groff
+TOOL_GROFF_ENV= \
+    GROFF_ENCODING= \
+    GROFF_BIN_PATH=${TOOLDIR}/lib/groff \
+    GROFF_FONT_PATH=${GROFF_SHARE_PATH}/site-font:${GROFF_SHARE_PATH}/font \
+    GROFF_TMAC_PATH=${GROFF_SHARE_PATH}/site-tmac:${GROFF_SHARE_PATH}/tmac
+TOOL_GROFF=		${TOOL_GROFF_ENV} ${TOOLDIR}/bin/${_TOOL_PREFIX}groff ${GROFF_FLAGS}
+
 TOOL_HEXDUMP=		${TOOLDIR}/bin/${_TOOL_PREFIX}hexdump
 TOOL_HP300MKBOOT=	${TOOLDIR}/bin/${_TOOL_PREFIX}hp300-mkboot
 TOOL_HPPAMKBOOT=	${TOOLDIR}/bin/${_TOOL_PREFIX}hppa-mkboot
@@ -405,12 +428,12 @@ TOOL_PKG_CREATE=	${TOOLDIR}/bin/${_TOOL_PREFIX}pkg_create
 TOOL_POWERPCMKBOOTIMAGE=${TOOLDIR}/bin/${_TOOL_PREFIX}powerpc-mkbootimage
 TOOL_PWD_MKDB=		${TOOLDIR}/bin/${_TOOL_PREFIX}pwd_mkdb
 TOOL_REFER=		${TOOLDIR}/bin/${_TOOL_PREFIX}refer
-TOOL_ROFF_ASCII=	PATH=${TOOLDIR}/lib/groff:$${PATH} ${TOOLDIR}/bin/${_TOOL_PREFIX}nroff
+TOOL_ROFF_ASCII=	${TOOL_GROFF_ENV} ${TOOLDIR}/bin/${_TOOL_PREFIX}nroff
 TOOL_ROFF_DOCASCII=	${TOOL_GROFF} -Tascii
 TOOL_ROFF_DOCHTML=	${TOOL_GROFF} -Thtml
-TOOL_ROFF_DVI=		${TOOL_GROFF} -Tdvi
+TOOL_ROFF_DVI=		${TOOL_GROFF} -Tdvi ${ROFF_PAGESIZE}
 TOOL_ROFF_HTML=		${TOOL_GROFF} -Tlatin1 -mdoc2html
-TOOL_ROFF_PS=		${TOOL_GROFF} -Tps
+TOOL_ROFF_PS=		${TOOL_GROFF} -Tps ${ROFF_PAGESIZE}
 TOOL_ROFF_RAW=		${TOOL_GROFF} -Z
 TOOL_RPCGEN=		RPCGEN_CPP=${CPP:Q} ${TOOLDIR}/bin/${_TOOL_PREFIX}rpcgen
 TOOL_SED=		${TOOLDIR}/bin/${_TOOL_PREFIX}sed
@@ -519,9 +542,9 @@ TOOL_REFER=		refer
 TOOL_ROFF_ASCII=	nroff
 TOOL_ROFF_DOCASCII=	${TOOL_GROFF} -Tascii
 TOOL_ROFF_DOCHTML=	${TOOL_GROFF} -Thtml
-TOOL_ROFF_DVI=		${TOOL_GROFF} -Tdvi
+TOOL_ROFF_DVI=		${TOOL_GROFF} -Tdvi ${ROFF_PAGESIZE}
 TOOL_ROFF_HTML=		${TOOL_GROFF} -Tlatin1 -mdoc2html
-TOOL_ROFF_PS=		${TOOL_GROFF} -Tps
+TOOL_ROFF_PS=		${TOOL_GROFF} -Tps ${ROFF_PAGESIZE}
 TOOL_ROFF_RAW=		${TOOL_GROFF} -Z
 TOOL_RPCGEN=		rpcgen
 TOOL_SED=		sed
@@ -556,7 +579,7 @@ TOOL_CXX.false=		false
 TOOL_FC.false=		false
 TOOL_OBJC.false=	false
 
-AVAILABLE_COMPILER?=	${HAVE_PCC:Dpcc} ${HAVE_LLVM:Dclang} ${HAVE_GCC:Dgcc} ${EXTERNAL_TOOLCHAIN:Dgcc} false
+AVAILABLE_COMPILER?=	${HAVE_PCC:Dpcc} ${HAVE_LLVM:Dclang} ${HAVE_GCC:Dgcc} false
 
 .for _t in CC CPP CXX FC OBJC
 ACTIVE_${_t}=	${AVAILABLE_COMPILER:@.c.@ ${ !defined(UNSUPPORTED_COMPILER.${.c.}) && defined(TOOL_${_t}.${.c.}) :? ${.c.} : }@:[1]}
@@ -570,9 +593,9 @@ FC=		${TOOL_FC.${ACTIVE_FC}}
 OBJC=		${TOOL_OBJC.${ACTIVE_OBJC}}
 
 # For each ${MACHINE_CPU}, list the ports that use it.
-MACHINES.aarch64=	evbarm64
+MACHINES.aarch64=	evbarm
 MACHINES.alpha=		alpha
-MACHINES.arm=		acorn26 acorn32 cats epoc32 evbarm hpcarm \
+MACHINES.arm=		acorn32 cats epoc32 evbarm hpcarm \
 			iyonix netwinder shark zaurus
 MACHINES.coldfire=	evbcf
 MACHINES.i386=		i386
@@ -581,7 +604,7 @@ MACHINES.hppa=		hppa
 MACHINES.m68000=	sun2
 MACHINES.m68k=		amiga atari cesfic hp300 luna68k mac68k \
 			news68k next68k sun3 x68k
-MACHINES.mips=		arc cobalt algor cobalt emips evbmips ews4800mips \
+MACHINES.mips=		algor arc cobalt emips evbmips ews4800mips \
 			hpcmips mipsco newsmips pmax sbmips sgimips
 MACHINES.or1k=		or1k
 MACHINES.powerpc=	amigappc bebox evbppc ibmnws macppc mvmeppc \
@@ -752,8 +775,7 @@ MKGCC:= no
 MKGCC:= no
 .endif
 
-# No GDB support for aarch64
-MKGDB.aarch64=	no
+# No GDB support for aarch64eb
 MKGDB.aarch64eb=no
 MKGDB.or1k=	no
 MKGDB.riscv32=	no
@@ -911,8 +933,9 @@ dependall:	.NOTMAIN realdepend .MAKE
 # including bsd.own.mk.
 #
 .for var in \
-	NOCRYPTO NODOC NOHTML NOINFO NOLINKLIB NOLINT NOMAN NONLS NOOBJ NOPIC \
-	NOPICINSTALL NOPROFILE NOSHARE NOSTATICLIB NODEBUGLIB
+	NOCRYPTO NODOC NOHTML NOINFO NOLIBCSANITIZER NOLINKLIB NOLINT NOMAN \
+	NONLS NOOBJ NOPIC NOPICINSTALL NOPROFILE NOSHARE NOSTATICLIB \
+	NODEBUGLIB NOSANITIZER NORELRO
 .if defined(${var})
 MK${var:S/^NO//}:=	no
 .endif
@@ -995,13 +1018,15 @@ MKCTF?=		yes
 #
 # PIE is enabled on many platforms by default.
 #
-.if ${MACHINE_ARCH} == "i386" || \
+# Coverity does not like PIE
+.if !defined(COVERITY_TOP_CONFIG) && \
+    (${MACHINE_ARCH} == "i386" || \
     ${MACHINE_ARCH} == "x86_64" || \
     ${MACHINE_CPU} == "arm" || \
     ${MACHINE_CPU} == "m68k" || \
     ${MACHINE_CPU} == "mips" || \
     ${MACHINE_CPU} == "sh3" || \
-    ${MACHINE} == "sparc64"
+    ${MACHINE} == "sparc64")
 MKPIE?=		yes
 .else
 MKPIE?=		no
@@ -1017,8 +1042,8 @@ MKRELRO?=	partial
 MKRELRO?=	no
 .endif
 
-.if ${MACHINE_ARCH} == "x86_64"
-MKSTATICPIE?=	no
+.if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "i386"
+MKSTATICPIE?=	yes
 .else
 MKSTATICPIE?=	no
 .endif
@@ -1062,14 +1087,29 @@ _MKVARS.yes += MKGCCCMDS
 MKGCCCMDS?=	${MKGCC}
 
 #
+# Sanitizers, only "address" and "undefined" are supported by gcc
+#
+MKSANITIZER?=	no
+USE_SANITIZER?=	address
+
+#
+# Sanitizers implemented in libc, only "undefined" is supported
+#
+MKLIBCSANITIZER?=	no
+USE_LIBCSANITIZER?=	undefined
+
+#
 # Exceptions to the above:
 #
-.if ${MACHINE} == "acorn26"	# page size is prohibitive
-MKKMOD=		no
-.endif
 
 # Rump doesn't work yet on ia64
 .if ${MACHINE} == "ia64"
+MKRUMP=		no
+.endif
+
+# RUMP uses -nostdinc which coverity does not like
+# It also does not use many new files, so disable it
+.if defined(COVERITY_TOP_CONFIG)
 MKRUMP=		no
 .endif
 
@@ -1089,7 +1129,30 @@ MKDYNAMICROOT=	no
 
 .if defined(MKREPRO)
 MKARZERO ?= ${MKREPRO}
+GROFF_FLAGS ?= -dpaper=letter
+ROFF_PAGESIZE ?= -P-pletter
 .endif
+
+# Only install the general firmware on some systems
+MKFIRMWARE.amd64=		yes
+MKFIRMWARE.cobalt=		yes
+MKFIRMWARE.evbarm=		yes
+MKFIRMWARE.evbmips=		yes
+MKFIRMWARE.evbppc=		yes
+MKFIRMWARE.hpcarm=		yes
+MKFIRMWARE.hppa=		yes
+MKFIRMWARE.i386=		yes
+MKFIRMWARE.mac68k=		yes
+MKFIRMWARE.macppc=		yes
+MKFIRMWARE.sandpoint=		yes
+MKFIRMWARE.sparc64=		yes
+
+# Only install the radeon firmware on DRM-happy systems.
+MKRADEONFIRMWARE.x86_64=	yes
+MKRADEONFIRMWARE.i386=		yes
+
+# Only install the tegra firmware on evbarm.
+MKTEGRAFIRMWARE.evbarm=		yes
 
 #
 # MK* options which default to "no".  Note that MKZFS has a different
@@ -1102,6 +1165,7 @@ _MKVARS.no= \
 	MKCATPAGES MKCOMPATTESTS MKCOMPATX11 MKCTF \
 	MKDEBUG MKDEBUGLIB MKDTRACE \
 	MKEXTSRC \
+	MKFIRMWARE \
 	MKGROFFHTMLDOC \
 	MKKYUA \
 	MKLIBCXX MKLLD MKLLDB MKLLVM MKLINT \
@@ -1111,12 +1175,12 @@ _MKVARS.no= \
 	MKPCC MKPIGZGZIP \
 	MKRADEONFIRMWARE MKREPRO \
 	MKSLJIT MKSOFTFLOAT MKSTRIPIDENT \
-	MKTPM \
+	MKTEGRAFIRMWARE MKTPM \
 	MKUNPRIVED MKUPDATE \
 	MKX11 MKX11MOTIF MKXORG_SERVER \
 	MKZFS
 .for var in ${_MKVARS.no}
-${var}?=	${${var}.${MACHINE_ARCH}:Uno}
+${var}?=	${${var}.${MACHINE_ARCH}:U${${var}.${MACHINE}:Uno}}
 .endfor
 
 .if ${MACHINE_ARCH} == "i386" || \
@@ -1158,12 +1222,6 @@ MKSLJIT=	yes
     ${MACHINE} == "vax"		|| \
     ${MACHINE} == "zaurus"
 MKXORG_SERVER=yes
-.else
-.endif
-
-# Only install the radeon firmware on DRM-happy systems.
-.if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "i386"
-MKRADEONFIRMWARE=		yes
 .endif
 
 #
@@ -1299,7 +1357,7 @@ ${var}?= yes
 # USE_* options which default to "no".
 #
 # For now, disable pigz as compressor by default
-.for var in USE_PIGZGZIP USE_LIBTRE
+.for var in USE_PIGZGZIP
 ${var}?= no
 .endfor
 
@@ -1345,16 +1403,13 @@ X11SRCDIRMIT?=		${X11SRCDIR}/external/mit
 	FS ICE SM X11 XScrnSaver XTrap Xau Xcomposite Xcursor Xdamage \
 	Xdmcp Xevie Xext Xfixes Xfont Xfont2 Xft Xi Xinerama Xmu Xpresent Xpm \
 	Xrandr Xrender Xres Xt Xtst Xv XvMC Xxf86dga Xxf86misc Xxf86vm drm \
-	epoxy fontenc xkbfile xkbui Xaw Xfontcache pciaccess xcb xshmfence \
+	epoxy fontenc xkbfile xkbui Xaw pciaccess xcb xshmfence \
 	pthread-stubs
 X11SRCDIR.${_lib}?=		${X11SRCDIRMIT}/lib${_lib}/dist
 .endfor
 
 .for _proto in \
-	xcmisc xext xf86bigfont bigreqs input kb x fonts fixes scrnsaver \
-	xinerama dri2 dri3 render resource record video xf86dga xf86misc \
-	xf86vidmode composite damage trap gl randr fontcache xf86dri \
-	present xcb-
+	xcb- xorg
 X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
 .endfor
 
@@ -1557,7 +1612,8 @@ TARGETS+=	lintmanpages
 TESTSBASE=	/usr/tests${MLIBDIR:D/${MLIBDIR}}
 
 # Override with tools versions if needed
-.if ${MKCTF:Uno} != "no" && !defined(NOCTF)
+.if ${MKCTF:Uno} != "no" && !defined(NOCTF) && \
+    (exists(${TOOL_CTFCONVERT}) || exists(/usr/bin/${TOOL_CTFCONVERT}))
 CTFCONVERT=	${TOOL_CTFCONVERT}
 CTFMERGE=	${TOOL_CTFMERGE}
 .endif

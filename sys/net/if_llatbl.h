@@ -1,4 +1,4 @@
-/*	$NetBSD: if_llatbl.h,v 1.13 2017/11/10 07:24:28 ozaki-r Exp $	*/
+/*	$NetBSD: if_llatbl.h,v 1.16 2018/07/12 02:26:04 ozaki-r Exp $	*/
 /*
  * Copyright (c) 2004 Luigi Rizzo, Alessandro Cerri. All rights reserved.
  * Copyright (c) 2004-2008 Qing Li. All rights reserved.
@@ -37,6 +37,7 @@
 #endif
 
 #include <sys/rwlock.h>
+#include <sys/syslog.h>
 
 #include <netinet/in.h>
 
@@ -106,7 +107,7 @@ struct llentry {
 
 
 #if 0
-#define LLE_LOCK_TRACE(t, lle)	aprint_normal( \
+#define LLE_LOCK_TRACE(t, lle)	log(LOG_DEBUG, \
 				    "%s:%d: LOCK(" #t "): lle=%p\n", \
 				    __func__, __LINE__, (lle))
 #else
@@ -142,7 +143,7 @@ struct llentry {
 #define LLE_IS_VALID(lle)	(((lle) != NULL) && ((lle) != (void *)-1))
 
 #if 0
-#define LLE_REF_TRACE(t, n)	aprint_normal("%s:%d: REF(" #t "): refcnt=%d\n", \
+#define LLE_REF_TRACE(t, n)	log(LOG_DEBUG, "%s:%d: REF(" #t "): refcnt=%d\n", \
 				    __func__, __LINE__, (n))
 #else
 #define LLE_REF_TRACE(t, n)	do {} while (0)
@@ -266,6 +267,9 @@ size_t		llentry_free(struct llentry *);
 struct llentry  *llentry_alloc(struct ifnet *, struct lltable *,
 		    struct sockaddr_storage *);
 
+struct llentry  *llentry_pool_get(int);
+void		llentry_pool_put(struct llentry *);
+
 /* helper functions */
 size_t lltable_drop_entry_queue(struct llentry *);
 
@@ -278,7 +282,7 @@ void lltable_fill_sa_entry(const struct llentry *lle, struct sockaddr *sa);
 struct ifnet *lltable_get_ifp(const struct lltable *llt);
 int lltable_get_af(const struct lltable *llt);
 
-static inline unsigned int
+static __inline unsigned int
 lltable_get_entry_count(struct lltable *llt)
 {
 	return llt->llt_lle_count;

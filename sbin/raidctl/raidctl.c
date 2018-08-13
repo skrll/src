@@ -1,4 +1,4 @@
-/*      $NetBSD: raidctl.c,v 1.65 2016/01/06 22:57:44 wiz Exp $   */
+/*      $NetBSD: raidctl.c,v 1.67 2018/03/24 19:41:35 nakayama Exp $   */
 
 /*-
  * Copyright (c) 1996, 1997, 1998 The NetBSD Foundation, Inc.
@@ -39,7 +39,7 @@
 #include <sys/cdefs.h>
 
 #ifndef lint
-__RCSID("$NetBSD: raidctl.c,v 1.65 2016/01/06 22:57:44 wiz Exp $");
+__RCSID("$NetBSD: raidctl.c,v 1.67 2018/03/24 19:41:35 nakayama Exp $");
 #endif
 
 
@@ -615,9 +615,13 @@ rf_output_configuration(int fd, const char *name)
 	printf("\n");
 	do_ioctl(fd, RAIDFRAME_GET_INFO, &cfg_ptr, "RAIDFRAME_GET_INFO");
 
+	/*
+	 * After NetBSD 9, convert this to not output the numRow's value,
+	 * which is no longer required or ever used.
+	 */
 	printf("START array\n");
 	printf("# numRow numCol numSpare\n");
-	printf("%d %d %d\n", device_config.rows, device_config.cols,
+	printf("%d %d %d\n", 1, device_config.cols,
 	    device_config.nspares);
 	printf("\n");
 
@@ -649,7 +653,7 @@ rf_output_configuration(int fd, const char *name)
 	component_label.row = component_num / num_cols;
 	component_label.column = component_num % num_cols;
 	label_ptr = &component_label;
-	do_ioctl(fd, RAIDFRAME_GET_COMPONENT_LABEL, &label_ptr,
+	do_ioctl(fd, RAIDFRAME_GET_COMPONENT_LABEL, label_ptr,
 		  "RAIDFRAME_GET_COMPONENT_LABEL");
 
 	printf("START layout\n");
@@ -719,7 +723,6 @@ rf_fail_disk(int fd, char *component_to_fail, int do_recon)
 
 	get_component_number(fd, component_to_fail, &component_num, &num_cols);
 
-	recon_request.row = component_num / num_cols;
 	recon_request.col = component_num % num_cols;
 	if (do_recon) {
 		recon_request.flags = RF_FDFLAGS_RECON;
@@ -750,7 +753,7 @@ get_component_label(int fd, char *component)
 	component_label.column = component_num % num_cols;
 
 	label_ptr = &component_label;
-	do_ioctl( fd, RAIDFRAME_GET_COMPONENT_LABEL, &label_ptr,
+	do_ioctl( fd, RAIDFRAME_GET_COMPONENT_LABEL, label_ptr,
 		  "RAIDFRAME_GET_COMPONENT_LABEL");
 
 	printf("Component label for %s:\n",component);
@@ -1024,7 +1027,7 @@ do_meter(int fd, u_long option)
 	pInfoPtr=&progressInfo;
 
 	percent_done = 0;
-	do_ioctl(fd, option, &pInfoPtr, "");
+	do_ioctl(fd, option, pInfoPtr, "");
 	start_value = progressInfo.completed;
 	current_time = start_time;
 	simple_eta = 0;
@@ -1087,7 +1090,7 @@ do_meter(int fd, u_long option)
 		if (gettimeofday(&current_time,NULL) == -1)
 			err(1, "gettimeofday failed!?!?");
 
-		do_ioctl( fd, option, &pInfoPtr, "");
+		do_ioctl( fd, option, pInfoPtr, "");
 		
 
 	}

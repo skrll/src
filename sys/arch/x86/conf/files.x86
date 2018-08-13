@@ -1,7 +1,8 @@
-#	$NetBSD: files.x86,v 1.90 2017/08/15 08:51:38 maxv Exp $
+#	$NetBSD: files.x86,v 1.103 2018/07/16 06:18:31 maxv Exp $
 
 # options for MP configuration through the MP spec
-defflag opt_mpbios.h MPBIOS MPVERBOSE MPDEBUG MPBIOS_SCANPCI
+defflag opt_mpbios.h MPBIOS MPDEBUG MPBIOS_SCANPCI
+defparam opt_mpbios.h MPVERBOSE
 
 # MTRR support
 defflag                 MTRR
@@ -15,6 +16,8 @@ defflag opt_pcifixup.h	PCI_ADDR_FIXUP PCI_BUS_FIXUP
 
 # To be able to test for NetBSD/xen in shared files
 defflag	opt_xen.h		DO_NOT_DEFINE
+
+defflag	SVS
 
 define  cpubus { [apid = -1] }
 define	cpufeaturebus {}
@@ -92,9 +95,9 @@ file	arch/x86/x86/mtrr_i686.c	mtrr
 file 	arch/x86/x86/patch.c		machdep
 file	arch/x86/x86/platform.c		machdep
 file 	arch/x86/x86/pmap.c		machdep
-file 	arch/x86/x86/pmap_tlb.c		machdep
-file 	arch/x86/x86/pmc.c		machdep
+file 	arch/x86/x86/x86_tlb.c		machdep
 file	arch/x86/x86/procfs_machdep.c	procfs
+file 	arch/x86/x86/svs.c		machdep & svs
 file	arch/x86/x86/sys_machdep.c	machdep
 file	arch/x86/x86/syscall.c		machdep
 file	arch/x86/x86/tsc.c		machdep
@@ -108,6 +111,7 @@ file 	uvm/pmap/pmap_pvt.c		machdep
 file	arch/x86/x86/cpu_ucode.c	cpu_ucode needs-flag
 file	arch/x86/x86/cpu_ucode_amd.c	cpu_ucode needs-flag
 file	arch/x86/x86/cpu_ucode_intel.c	cpu_ucode needs-flag
+file    arch/x86/x86/compat_60_cpu_ucode.c	compat_60 & cpu_ucode
 
 define	lapic
 file	arch/x86/x86/lapic.c		lapic needs-flag
@@ -144,9 +148,6 @@ attach	ipmi at ipmibus
 file	arch/x86/x86/ipmi.c		ipmi needs-flag
 
 file	arch/x86/x86/vga_post.c		vga_post
-
-file	arch/x86/x86/tprof_pmi.c	tprof_pmi
-file	arch/x86/x86/tprof_amdpmi.c	tprof_amdpmi
 
 file	arch/x86/pci/pci_machdep.c	pci
 #file	arch/x86/pci/pci_ranges.c	pci

@@ -1,6 +1,6 @@
 /*
  * Linux interface driver for dhcpcd
- * Copyright (c) 2006-2017 Roy Marples <roy@marples.name>
+ * Copyright (c) 2006-2018 Roy Marples <roy@marples.name>
  * All rights reserved
 
  * Redistribution and use in source and binary forms, with or without
@@ -430,8 +430,6 @@ if_copyrt(struct dhcpcd_ctx *ctx, struct rt *rt, struct nlmsghdr *nlm)
 	memset(rt, 0, sizeof(*rt));
 	if (rtm->rtm_type == RTN_UNREACHABLE)
 		rt->rt_flags |= RTF_REJECT;
-	if (rtm->rtm_scope == RT_SCOPE_HOST)
-		rt->rt_flags |= RTF_HOST;
 
 	rta = (struct rtattr *)RTM_RTA(rtm);
 	len = RTM_PAYLOAD(nlm);
@@ -491,6 +489,8 @@ if_copyrt(struct dhcpcd_ctx *ctx, struct rt *rt, struct nlmsghdr *nlm)
 
 	rt->rt_netmask.sa_family = rtm->rtm_family;
 	sa_fromprefix(&rt->rt_netmask, rtm->rtm_dst_len);
+	if (sa_is_allones(&rt->rt_netmask))
+		rt->rt_flags |= RTF_HOST;
 
 	#if 0
 	if (rt->rtp_ifp == NULL && rt->src.s_addr != INADDR_ANY) {
@@ -609,7 +609,7 @@ link_addr(struct dhcpcd_ctx *ctx, struct interface *ifp, struct nlmsghdr *nlm)
 			rta = RTA_NEXT(rta, len);
 		}
 		ipv4_handleifa(ctx, nlm->nlmsg_type, NULL, ifp->name,
-		    &addr, &net, &brd, ifa->ifa_flags);
+		    &addr, &net, &brd, ifa->ifa_flags, (pid_t)nlm->nlmsg_pid);
 		break;
 #endif
 #ifdef INET6
@@ -625,7 +625,8 @@ link_addr(struct dhcpcd_ctx *ctx, struct interface *ifp, struct nlmsghdr *nlm)
 			rta = RTA_NEXT(rta, len);
 		}
 		ipv6_handleifa(ctx, nlm->nlmsg_type, NULL, ifp->name,
-		    &addr6, ifa->ifa_prefixlen, ifa->ifa_flags);
+		    &addr6, ifa->ifa_prefixlen, ifa->ifa_flags,
+		    (pid_t)nlm->nlmsg_pid);
 		break;
 #endif
 	}
@@ -648,23 +649,6 @@ l2addr_len(unsigned short if_type)
 	}
 
 	/* Impossible */
-	return 0;
-}
-
-static int
-handle_rename(struct dhcpcd_ctx *ctx, unsigned int ifindex, const char *ifname)
-{
-	struct interface *ifp;
-
-	TAILQ_FOREACH(ifp, ctx->ifaces, next) {
-		if (ifp->index == ifindex && strcmp(ifp->name, ifname)) {
-			dhcpcd_handleinterface(ctx, -1, ifp->name);
-			/* Let dev announce the interface for renaming */
-			if (!dev_listening(ctx))
-				dhcpcd_handleinterface(ctx, 1, ifname);
-			return 1;
-		}
-	}
 	return 0;
 }
 
@@ -769,7 +753,10 @@ link_netlink(struct dhcpcd_ctx *ctx, struct interface *ifp,
 	}
 
 	if (nlm->nlmsg_type == RTM_DELLINK) {
-		dhcpcd_handleinterface(ctx, -1, ifn);
+		/* If are listening to a dev manager, let that remove
+		 * the interface rather than the kernel. */
+		if (dev_listening(ctx) < 1)
+			dhcpcd_handleinterface(ctx, -1, ifn);
 		return 0;
 	}
 
@@ -782,16 +769,20 @@ link_netlink(struct dhcpcd_ctx *ctx, struct interface *ifp,
 		return 0;
 	}
 
-	/* Check for interface name change */
-	if (handle_rename(ctx, (unsigned int)ifi->ifi_index, ifn))
-		return 0;
-
 	/* Check for a new interface */
-	if ((ifp = if_find(ctx->ifaces, ifn)) == NULL) {
+	ifp = if_findindex(ctx->ifaces, (unsigned int)ifi->ifi_index);
+	if (ifp == NULL) {
 		/* If are listening to a dev manager, let that announce
 		 * the interface rather than the kernel. */
 		if (dev_listening(ctx) < 1)
 			dhcpcd_handleinterface(ctx, 1, ifn);
+		return 0;
+	}
+
+	/* Handle interface being renamed */
+	if (strcmp(ifp->name, ifn) != 0) {
+		dhcpcd_handleinterface(ctx, -1, ifn);
+		dhcpcd_handleinterface(ctx, 1, ifn);
 		return 0;
 	}
 
@@ -1237,7 +1228,7 @@ if_route(unsigned char cmd, const struct rt *rt)
 			nlm.rt.rtm_protocol = RTPROT_BOOT;
 		if (rt->rt_ifp->flags & IFF_LOOPBACK)
 			nlm.rt.rtm_scope = RT_SCOPE_HOST;
-		else if (gateway_unspec || sa_is_allones(&rt->rt_netmask))
+		else if (gateway_unspec)
 			nlm.rt.rtm_scope = RT_SCOPE_LINK;
 		else
 			nlm.rt.rtm_scope = RT_SCOPE_UNIVERSE;
@@ -1455,6 +1446,9 @@ if_address(unsigned char cmd, const struct ipv4_addr *addr)
 {
 	struct nlma nlm;
 	int retval = 0;
+#if defined(IFA_F_NOPREFIXROUTE)
+	uint32_t flags = 0;
+#endif
 
 	memset(&nlm, 0, sizeof(nlm));
 	nlm.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg));
@@ -1476,6 +1470,13 @@ if_address(unsigned char cmd, const struct ipv4_addr *addr)
 	if (cmd == RTM_NEWADDR)
 		add_attr_l(&nlm.hdr, sizeof(nlm), IFA_BROADCAST,
 		    &addr->brd.s_addr, sizeof(addr->brd.s_addr));
+
+#ifdef IFA_F_NOPREFIXROUTE
+	if (nlm.ifa.ifa_prefixlen < 32)
+		flags |= IFA_F_NOPREFIXROUTE;
+	if (flags)
+		add_attr_32(&nlm.hdr, sizeof(nlm), IFA_FLAGS, flags);
+#endif
 
 	if (send_netlink(addr->iface->ctx, NULL,
 	    NETLINK_ROUTE, &nlm.hdr, NULL) == -1)
@@ -1670,36 +1671,31 @@ if_disable_autolinklocal(struct dhcpcd_ctx *ctx, unsigned int ifindex)
 
 static const char *prefix = "/proc/sys/net/ipv6/conf";
 
-int
-if_checkipv6(struct dhcpcd_ctx *ctx, const struct interface *ifp)
+void
+if_setup_inet6(const struct interface *ifp)
 {
-	const char *ifname;
 	int ra;
 	char path[256];
 
-	if (ifp == NULL)
-		ifname = "all";
-	else if (!(ctx->options & DHCPCD_TEST)) {
-		if (if_disable_autolinklocal(ctx, ifp->index) == -1)
-			logdebug("%s: if_disable_autolinklocal",
-			    ifp->name);
-	}
-	if (ifp)
-		ifname = ifp->name;
+	/* The kernel cannot make stable private addresses. */
+	if (if_disable_autolinklocal(ifp->ctx, ifp->index) == -1)
+		logdebug("%s: if_disable_autolinklocal", ifp->name);
 
-	snprintf(path, sizeof(path), "%s/%s/autoconf", prefix, ifname);
+	/*
+	 * If not doing autoconf, don't disable the kernel from doing it.
+	 * If we need to, we should have another option actively disable it.
+	 */
+	if (!(ifp->options->options & DHCPCD_IPV6RS))
+		return;
+
+	snprintf(path, sizeof(path), "%s/%s/autoconf", prefix, ifp->name);
 	ra = check_proc_int(path);
-	if (ra != 1) {
-		if (ctx->options & DHCPCD_TEST)
-			logwarnx("%s: IPv6 kernel autoconf disabled", ifname);
-	} else if (ra != -1 && !(ctx->options & DHCPCD_TEST)) {
-		if (write_path(path, "0") == -1) {
+	if (ra != 1 && ra != -1) {
+		if (write_path(path, "0") == -1)
 			logerr("%s: %s", __func__, path);
-			return -1;
-		}
 	}
 
-	snprintf(path, sizeof(path), "%s/%s/accept_ra", prefix, ifname);
+	snprintf(path, sizeof(path), "%s/%s/accept_ra", prefix, ifp->name);
 	ra = check_proc_int(path);
 	if (ra == -1) {
 		logfunc_t *logfunc = errno == ENOENT? logdebug : logwarn;
@@ -1707,16 +1703,10 @@ if_checkipv6(struct dhcpcd_ctx *ctx, const struct interface *ifp)
 		/* The sysctl probably doesn't exist, but this isn't an
 		 * error as such so just log it and continue */
 		logfunc("%s", path);
-	} else if (ra != 0 && !(ctx->options & DHCPCD_TEST)) {
-		logdebugx("%s: disabling kernel IPv6 RA support", ifname);
-		if (write_path(path, "0") == -1) {
+	} else if (ra != 0) {
+		if (write_path(path, "0") == -1)
 			logerr("%s: %s", __func__, path);
-			return ra;
-		}
-		return 0;
 	}
-
-	return ra;
 }
 
 #ifdef IPV6_MANAGETEMPADDR

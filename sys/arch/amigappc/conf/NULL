@@ -1,4 +1,4 @@
-# $NetBSD: NULL,v 1.52 2017/09/14 07:58:39 mrg Exp $
+# $NetBSD: NULL,v 1.55 2018/08/01 20:04:10 maxv Exp $
 #
 # NULL machine description file
 # 
@@ -7,7 +7,7 @@ include "arch/amigappc/conf/std.amigappc"
 
 #options 	INCLUDE_CONFIG_FILE     # embed config file in kernel binary
 
-#ident          "GENERIC-$Revision: 1.52 $"
+#ident          "GENERIC-$Revision: 1.55 $"
 
 maxusers	8
 
@@ -40,8 +40,8 @@ options 	SCSIVERBOSE	# human readable SCSI error messages
 #options 	SYSVMSG		# System V-like messages
 #options 	SYSVSEM		# System V-like semaphores
 
-# Enable experimental buffer queue strategy for better responsiveness under 
-# high disk I/O load. Use it with caution - it's not proven to be stable yet.
+# Alternate buffer queue strategies for better responsiveness under high
+# disk I/O load.
 #options 	BUFQ_READPRIO
 #options 	BUFQ_PRIOCSCAN
 
@@ -110,7 +110,6 @@ options 	INET6		# IPV6
 #options 	IPSEC		# IP security
 #options 	IPSEC_DEBUG	# debug for IP security
 #options 	GATEWAY		# Packet forwarding
-#options 	DIRECTED_BROADCAST	# Broadcast across subnets
 
 #options 	MROUTING	# Multicast routing
 #options 	PIM		# Protocol Independent Multicast
@@ -120,9 +119,6 @@ options 	INET6		# IPV6
 #options 	PPP_BSDCOMP	# BSD-Compress compression support for PPP
 #options 	PPP_DEFLATE	# Deflate compression support for PPP
 #options 	PPP_FILTER	# Active filter support for PPP (requires bpf)
-#options 	IPFILTER_LOG	# ipmon(8) log support
-#options 	IPFILTER_LOOKUP	# ippool(8) support
-#options 	IPFILTER_DEFAULT_BLOCK	# block all packets by default
 
 #options 	ALTQ		# Manipulate network interfaces' output queues
 #options 	ALTQ_BLUE	# Stochastic Fair Blue
@@ -379,7 +375,7 @@ pseudo-device	loop			# loopback network interface
 #pseudo-device	gre			# generic L3 over IP tunnel
 #Bpseudo-device	bpfilter		# Berkeley packet filter
 #pseudo-device	carp			# Common Address Redundancy Protocol
-#pseudo-device	ipfilter		# IP Filter package
+#pseudo-device	npf			# NPF packet filter
 #pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 #pseudo-device	faith			# IPv[46] tcp relay translation i/f
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
@@ -387,8 +383,6 @@ pseudo-device	loop			# loopback network interface
 #pseudo-device	bridge			# simple inter-network bridging
 #options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
-#pseudo-device	pf			# PF packet filter
-#pseudo-device	pflog			# PF log if
 #pseudo-device	fss			# file system snapshot device
 
 pseudo-device	view		4	# views (needed for grfcc)

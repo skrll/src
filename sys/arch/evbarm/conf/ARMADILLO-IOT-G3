@@ -1,4 +1,4 @@
-# $NetBSD: ARMADILLO-IOT-G3,v 1.10 2017/11/25 04:53:24 christos Exp $
+# $NetBSD: ARMADILLO-IOT-G3,v 1.14 2018/08/01 20:04:10 maxv Exp $
 #
 # ARMADILLO-IOT-G3 -- Atmark Techno, Armadillo-IoT G3
 #
@@ -49,7 +49,6 @@ options 	BUFQ_PRIOCSCAN
 
 # Diagnostic/debugging support options
 options 	VERBOSE_INIT_ARM # verbose bootstraping messages
-#options 	PERFCTRS	# performance counters
 options 	DIAGNOSTIC	# internally consistency checks
 				# XXX to be commented out on release branch/
 #options 	DEBUG
@@ -64,7 +63,6 @@ options 	DDB			# in-kernel debugger
 #options 	DDB_COMMANDONENTER="bt"	# execute command when ddb is entered
 options 	DDB_ONPANIC=1		# see also sysctl(7): `ddb.onpanic'
 options 	DDB_HISTORY_SIZE=100	# Enable history editing in DDB
-#options 	IPKDB			# remote kernel debugging
 #options	KGDB
 #options 	KGDB_DEVNAME="\"imxuart\""
 #options 	KGDB_DEVADDR=0x30a70000
@@ -143,10 +141,6 @@ options 	NETATALK	# AppleTalk networking protocols
 options 	PPP_BSDCOMP	# BSD-Compress compression support for PPP
 options 	PPP_DEFLATE	# Deflate compression support for PPP
 options 	PPP_FILTER	# Active filter support for PPP (requires bpf)
-options 	IPFILTER_LOG	# ipmon(8) log support
-options 	IPFILTER_LOOKUP	# ippool(8) support
-options 	IPFILTER_COMPAT # Compat for IP-Filter
-#options 	IPFILTER_DEFAULT_BLOCK	# block all packets by default
 #options 	TCP_DEBUG	# Record last TCP_NDEBUG packets with SO_DEBUG
 
 #options 	ALTQ		# Manipulate network interfaces' output queues
@@ -330,7 +324,6 @@ options 	VND_COMPRESSION		# compressed vnd(4)
 # network pseudo-devices
 pseudo-device	bpfilter		# Berkeley packet filter
 #pseudo-device	carp			# Common Address Redundancy Protocol
-#pseudo-device	ipfilter		# IP filter (firewall) and NAT
 pseudo-device	loop			# network loopback
 #pseudo-device	mpls			# MPLS pseudo-interface
 pseudo-device	ppp			# Point-to-Point Protocol
@@ -348,9 +341,6 @@ pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
 #options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 pseudo-device	agr			# IEEE 802.3ad link aggregation
-#pseudo-device	pf			# PF packet filter
-#pseudo-device	pflog			# PF log if
-#pseudo-device	pfsync			# PF sync if
 #pseudo-device	npf			# NPF packet filter
 
 #
@@ -361,7 +351,6 @@ pseudo-device	accf_http		# "httpready" accept filter
 # miscellaneous pseudo-devices
 pseudo-device	pty			# pseudo-terminals
 pseudo-device	sequencer		# MIDI sequencer
-# rnd works; RND_COM does not on port i386 yet.
 #options 	RND_COM			# use "com" randomness as well (BROKEN)
 pseudo-device	clockctl		# user control of clock subsystem
 pseudo-device	ksyms			# /dev/ksyms

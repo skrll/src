@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.431 2017/06/19 20:10:18 christos Exp $
+#	$NetBSD: Makefile,v 1.433 2018/04/01 04:35:02 ryo Exp $
 #	from: @(#)Makefile	8.7 (Berkeley) 5/25/95
 
 # Environment variables without default values:
@@ -101,7 +101,7 @@ INSTALLATION_DIRS=	binary binary/sets binary/kernel installation
 BINOWN= root
 BINGRP= wheel
 UTMPGRP= utmp
-BIN1+=	bootptab changelist csh.cshrc csh.login \
+BIN1+=	auto_master bootptab changelist csh.cshrc csh.login \
 	csh.logout daily daily.conf dm.conf envsys.conf floppytab ftpchroot \
 	ftpusers gettytab gpio.conf group hosts hosts.lpd inetd.conf \
 	locate.conf login.conf mailer.conf man.conf monthly monthly.conf \
@@ -118,7 +118,8 @@ BIN1+=	etc.${MACHINE}/disktab
 BIN1+=	disktab
 .endif
 
-.if exists(etc.${MACHINE}/ld.so.conf) && empty(MACHINE_ARCH:M*arm*hf*)
+.if exists(etc.${MACHINE}/ld.so.conf) && \
+    empty(MACHINE_ARCH:M*arm*hf*) && ${MACHINE_ARCH} != "aarch64"
 BIN1+=	etc.${MACHINE}/ld.so.conf
 .endif
 
@@ -345,7 +346,7 @@ install-etc-files: .PHONY .MAKE check_DESTDIR MAKEDEV
     			/dev/null ${DESTDIR}${file}; \
 	else true; fi
 .endfor
-.for subdir in . defaults bluetooth iscsi mtree namedb pam.d powerd rc.d root skel ssh
+.for subdir in . defaults autofs bluetooth iscsi mtree namedb pam.d powerd rc.d root skel ssh
 	${MAKEDIRTARGET} ${subdir} configinstall
 .endfor
 	${MAKEDIRTARGET} ${NETBSDSRCDIR}/external/bsd/dhcpcd/sbin/dhcpcd configinstall

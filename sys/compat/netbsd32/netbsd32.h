@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32.h,v 1.114 2016/11/13 13:52:41 rin Exp $	*/
+/*	$NetBSD: netbsd32.h,v 1.118 2018/05/10 02:36:07 christos Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001, 2008, 2015 Matthew R. Green
@@ -49,6 +49,8 @@
 #include <compat/sys/ucontext.h>
 #include <compat/sys/mount.h>
 #include <compat/sys/signal.h>
+#include <compat/sys/siginfo.h>
+#include <compat/common/compat_util.h>
 
 #include <nfs/rpcv2.h>
 
@@ -290,6 +292,13 @@ struct netbsd32_ptrace_io_desc {
 	netbsd32_voidp piod_addr;	/* parent offset */
 	netbsd32_size_t piod_len;	/* request length (in) /
 					   actual count (out) */
+};
+
+struct netbsd32_ptrace_siginfo {
+	siginfo32_t	psi_siginfo;	/* signal information structure */
+	lwpid_t		psi_lwpid;	/* destination LWP of the signal
+					 * value 0 means the whole process
+					 * (route signal to all LWPs) */
 };
 
 /* from <sys/quotactl.h> */
@@ -706,6 +715,12 @@ struct netbsd32_omsghdr {
 	int		 msg_accrightslen;
 };
 
+typedef netbsd32_pointer_t netbsd32_mmsghdrp_t;
+struct netbsd32_mmsghdr {
+	struct netbsd32_msghdr msg_hdr;
+	unsigned int msg_len;
+};
+
 /* from <sys/stat.h> */
 typedef netbsd32_pointer_t netbsd32_stat12p_t;
 struct netbsd32_stat12 {		/* NetBSD-1.2 stat struct */
@@ -1114,13 +1129,13 @@ int	coredump_netbsd32(struct lwp *, struct coredump_iostate *);
 /*
  * random other stuff
  */
-#include <compat/common/compat_util.h>
-#include <compat/sys/siginfo.h>
 
 vaddr_t netbsd32_vm_default_addr(struct proc *, vaddr_t, vsize_t, int);
 void netbsd32_adjust_limits(struct proc *);
 
 void	netbsd32_si_to_si32(siginfo32_t *, const siginfo_t *);
+void	netbsd32_si32_to_si(siginfo_t *, const siginfo32_t *);
+
 void	netbsd32_ksi32_to_ksi(struct _ksiginfo *si, const struct __ksiginfo32 *si32);
 
 #ifdef KTRACE

@@ -1,4 +1,4 @@
-/* $NetBSD: xhcireg.h,v 1.9 2017/01/19 16:05:00 skrll Exp $ */
+/* $NetBSD: xhcireg.h,v 1.12 2018/07/18 10:44:17 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 2010 Hans Petter Selasky. All rights reserved.
@@ -35,6 +35,7 @@
 #define	PCI_USBREV		0x60	/* RO USB protocol revision */
 #define	 PCI_USBREV_MASK	0xFF
 #define	 PCI_USBREV_3_0		0x30	/* USB 3.0 */
+#define	 PCI_USBREV_3_1		0x31	/* USB 3.1 */
 
 #define	PCI_XHCI_FLADJ		0x61	/* RW frame length adjust */
 
@@ -50,6 +51,7 @@
 #define	 XHCI_HCIVERSION_0_9	0x0090	/* xHCI version 0.9 */
 #define	 XHCI_HCIVERSION_0_96	0x0096	/* xHCI version 0.96 */
 #define	 XHCI_HCIVERSION_1_0	0x0100	/* xHCI version 1.0 */
+#define	 XHCI_HCIVERSION_1_1	0x0110	/* xHCI version 1.1 */
 
 #define	XHCI_HCSPARAMS1		0x04	/* RO structual parameters 1 */
 #define	 XHCI_HCS1_MAXSLOTS(x)	((x) & 0xFF)
@@ -88,6 +90,15 @@
 
 #define	 XHCI_DBOFF		0x14	/* RO doorbell offset */
 #define	 XHCI_RTSOFF		0x18	/* RO runtime register space offset */
+#define XHCI_HCCPARAMS2	0x1c	/* RO capability parameters 2 */
+#define	 XHCI_HCC2_U3C(x)	(((x) >> 0) & 0x1)	/* U3 Entry capable */
+#define	 XHCI_HCC2_CMC(x)	(((x) >> 1) & 0x1)	/* CEC MaxExLatTooLg */
+#define	 XHCI_HCC2_FSC(x)	(((x) >> 2) & 0x1)	/* Foce Save Context */
+#define	 XHCI_HCC2_CTC(x)	(((x) >> 3) & 0x1)	/* Compliance Transc */
+#define	 XHCI_HCC2_LEC(x)	(((x) >> 4) & 0x1)	/* Large ESIT Paylod */
+#define	 XHCI_HCC2_CIC(x)	(((x) >> 5) & 0x1)	/* Configuration Inf */
+#define	 XHCI_HCC2_ETC(x)	(((x) >> 6) & 0x1)	/* Extended TBC */
+#define	 XHCI_HCC2_ETC_TSC(x)	(((x) >> 7) & 0x1)	/* ExtTBC TRB Status */
 
 /* XHCI operational registers.  Offset given by XHCI_CAPLENGTH register */
 #define	XHCI_USBCMD		0x00	/* XHCI command */
@@ -106,14 +117,17 @@
 
 #define	XHCI_USBSTS		0x04	/* XHCI status */
 #define	 XHCI_STS_HCH		0x00000001	/* RO - Host Controller Halted */
+#define	 XHCI_STS_RSVDZ0	0x00000002	/* RsvdZ - 2:2 */
 #define	 XHCI_STS_HSE		0x00000004	/* RW - Host System Error */
 #define	 XHCI_STS_EINT		0x00000008	/* RW - Event Interrupt */
 #define	 XHCI_STS_PCD		0x00000010	/* RW - Port Change Detect */
+#define	 XHCI_STS_RSVDZ1	__BITS(5, 7)	/* RsvdZ - 5:7 */
 #define	 XHCI_STS_SSS		0x00000100	/* RO - Save State Status */
 #define	 XHCI_STS_RSS		0x00000200	/* RO - Restore State Status */
 #define	 XHCI_STS_SRE		0x00000400	/* RW - Save/Restore Error */
 #define	 XHCI_STS_CNR		0x00000800	/* RO - Controller Not Ready */
 #define	 XHCI_STS_HCE		0x00001000	/* RO - Host Controller Error */
+#define	 XHCI_STS_RSVDP0	__BITS(13, 31)	/* RsvdP - 13:31 */
 
 #define	XHCI_PAGESIZE		0x08	/* XHCI page size mask */
 #define	 XHCI_PAGESIZE_4K	0x00000001	/* 4K Page Size */

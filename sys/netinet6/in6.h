@@ -1,4 +1,4 @@
-/*	$NetBSD: in6.h,v 1.87 2016/02/15 14:59:03 rtr Exp $	*/
+/*	$NetBSD: in6.h,v 1.92 2018/08/10 06:46:09 maxv Exp $	*/
 /*	$KAME: in6.h,v 1.83 2001/03/29 02:55:07 jinmei Exp $	*/
 
 /*
@@ -546,16 +546,14 @@ struct ip6_mtuinfo {
 #define IPV6CTL_FORWARDING	1	/* act as router */
 #define IPV6CTL_SENDREDIRECTS	2	/* may send redirects when forwarding*/
 #define IPV6CTL_DEFHLIM		3	/* default Hop-Limit */
-#ifdef notyet
-#define IPV6CTL_DEFMTU		4	/* default MTU */
-#endif
+/* IPV6CTL_DEFMTU=4, never implemented */
 #define IPV6CTL_FORWSRCRT	5	/* forward source-routed dgrams */
 #define IPV6CTL_STATS		6	/* stats */
 #define IPV6CTL_MRTSTATS	7	/* multicast forwarding stats */
 #define IPV6CTL_MRTPROTO	8	/* multicast routing protocol */
 #define IPV6CTL_MAXFRAGPACKETS	9	/* max packets reassembly queue */
 #define IPV6CTL_SOURCECHECK	10	/* verify source route and intf */
-#define IPV6CTL_SOURCECHECK_LOGINT 11	/* minimume logging interval */
+#define IPV6CTL_SOURCECHECK_LOGINT 11	/* minimum logging interval */
 #define IPV6CTL_ACCEPT_RTADV	12
 #define IPV6CTL_KEEPFAITH	13
 #define IPV6CTL_LOG_INTERVAL	14
@@ -700,7 +698,6 @@ int sockaddr_in6_cmp(const struct sockaddr *, const struct sockaddr *);
 struct sockaddr *sockaddr_in6_externalize(struct sockaddr *, socklen_t,
     const struct sockaddr *);
 int	in6_cksum(struct mbuf *, u_int8_t, u_int32_t, u_int32_t);
-void	in6_delayed_cksum(struct mbuf *);
 int	in6_localaddr(const struct in6_addr *);
 int	in6_addrscope(const struct in6_addr *);
 struct	in6_ifaddr *in6_ifawithifp(struct ifnet *, struct in6_addr *);
@@ -712,13 +709,17 @@ extern void in6_if_down(struct ifnet *);
 extern void addrsel_policy_init(void);
 extern	u_char	ip6_protox[];
 
+struct ip6_hdr;
+int in6_tunnel_validate(const struct ip6_hdr *, const struct in6_addr *,
+	const struct in6_addr *);
+
 #define	satosin6(sa)	((struct sockaddr_in6 *)(sa))
 #define	satocsin6(sa)	((const struct sockaddr_in6 *)(sa))
 #define	sin6tosa(sin6)	((struct sockaddr *)(sin6))
 #define	sin6tocsa(sin6)	((const struct sockaddr *)(sin6))
 #define	ifatoia6(ifa)	((struct in6_ifaddr *)(ifa))
 
-static inline void
+static __inline void
 sockaddr_in6_init1(struct sockaddr_in6 *sin6, const struct in6_addr *addr,
     in_port_t port, uint32_t flowinfo, uint32_t scope_id)
 {
@@ -728,7 +729,7 @@ sockaddr_in6_init1(struct sockaddr_in6 *sin6, const struct in6_addr *addr,
 	sin6->sin6_scope_id = scope_id;
 }
 
-static inline void
+static __inline void
 sockaddr_in6_init(struct sockaddr_in6 *sin6, const struct in6_addr *addr,
     in_port_t port, uint32_t flowinfo, uint32_t scope_id)
 {
@@ -737,7 +738,7 @@ sockaddr_in6_init(struct sockaddr_in6 *sin6, const struct in6_addr *addr,
 	sockaddr_in6_init1(sin6, addr, port, flowinfo, scope_id);
 }
 
-static inline struct sockaddr *
+static __inline struct sockaddr *
 sockaddr_in6_alloc(const struct in6_addr *addr, in_port_t port,
     uint32_t flowinfo, uint32_t scope_id, int flags)
 {

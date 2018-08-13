@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_machdep.c,v 1.43 2017/10/21 08:27:19 maxv Exp $	*/
+/*	$NetBSD: sys_machdep.c,v 1.48 2018/07/13 09:37:32 maxv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2009, 2017 The NetBSD Foundation, Inc.
@@ -30,10 +30,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_machdep.c,v 1.43 2017/10/21 08:27:19 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_machdep.c,v 1.48 2018/07/13 09:37:32 maxv Exp $");
 
 #include "opt_mtrr.h"
-#include "opt_pmc.h"
 #include "opt_user_ldt.h"
 #include "opt_compat_netbsd.h"
 #include "opt_xen.h"
@@ -76,11 +75,6 @@ __KERNEL_RCSID(0, "$NetBSD: sys_machdep.c,v 1.43 2017/10/21 08:27:19 maxv Exp $"
 
 #ifdef XEN
 #undef	USER_LDT
-#undef	PMC
-#endif
-
-#ifdef PMC
-#include <machine/pmc.h>
 #endif
 
 extern struct vm_map *kernel_map;
@@ -480,11 +474,13 @@ x86_set_ioperm(struct lwp *l, void *args, register_t *retval)
 		kmem_free(old, IOMAPSIZE);
 	}
 
+	CTASSERT(offsetof(struct cpu_tss, iomap) -
+	    offsetof(struct cpu_tss, tss) == IOMAP_VALIDOFF);
+
 	kpreempt_disable();
 	ci = curcpu();
-	memcpy(ci->ci_iomap, pcb->pcb_iomap, sizeof(ci->ci_iomap));
-	ci->ci_tss.tss_iobase =
-	    ((uintptr_t)ci->ci_iomap - (uintptr_t)&ci->ci_tss) << 16;
+	memcpy(ci->ci_tss->iomap, pcb->pcb_iomap, IOMAPSIZE);
+	ci->ci_tss->tss.tss_iobase = IOMAP_VALIDOFF << 16;
 	kpreempt_enable();
 
 	return error;
@@ -762,20 +758,6 @@ sys_sysarch(struct lwp *l, const struct sys_sysarch_args *uap, register_t *retva
 	case X86_SET_MTRR:
 		error = x86_set_mtrr(l, SCARG(uap, parms), retval);
 		break;
-
-#ifdef PMC
-	case X86_PMC_INFO:
-		error = sys_pmc_info(l, SCARG(uap, parms), retval);
-		break;
-
-	case X86_PMC_STARTSTOP:
-		error = sys_pmc_startstop(l, SCARG(uap, parms), retval);
-		break;
-
-	case X86_PMC_READ:
-		error = sys_pmc_read(l, SCARG(uap, parms), retval);
-		break;
-#endif
 
 	case X86_SET_FSBASE:
 		error = x86_set_sdbase(SCARG(uap, parms), 'f', curlwp, false);

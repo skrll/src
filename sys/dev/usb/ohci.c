@@ -1,4 +1,4 @@
-/*	$NetBSD: ohci.c,v 1.276 2017/11/17 08:22:02 skrll Exp $	*/
+/*	$NetBSD: ohci.c,v 1.284 2018/08/09 21:23:23 prlw1 Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2005, 2012 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.276 2017/11/17 08:22:02 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.284 2018/08/09 21:23:23 prlw1 Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -377,14 +377,10 @@ ohci_detach(struct ohci_softc *sc, int flags)
 	if (rv != 0)
 		return rv;
 
-	callout_halt(&sc->sc_tmo_rhsc, &sc->sc_lock);
-
-	usb_delay_ms(&sc->sc_bus, 300); /* XXX let stray task complete */
-	callout_destroy(&sc->sc_tmo_rhsc);
-
 	softint_disestablish(sc->sc_rhsc_si);
 
-	cv_destroy(&sc->sc_softwake_cv);
+	callout_halt(&sc->sc_tmo_rhsc, NULL);
+	callout_destroy(&sc->sc_tmo_rhsc);
 
 	mutex_destroy(&sc->sc_lock);
 	mutex_destroy(&sc->sc_intr_lock);
@@ -551,8 +547,8 @@ ohci_alloc_std_chain(ohci_softc_t *sc, struct usbd_xfer *xfer, int length, int r
 		cur->held = &ox->ox_stds[j];
 		cur->xfer = xfer;
 		cur->flags = 0;
-		DPRINTFN(10, "xfer=%p new std=%p held at %p", ox, cur,
-		    cur->held, 0);
+		DPRINTFN(10, "xfer=%#jx new std=%#jx held at %#jx", (uintptr_t)ox,
+		    (uintptr_t)cur, (uintptr_t)cur->held, 0);
 	}
 
 	return 0;
@@ -794,7 +790,6 @@ ohci_init(ohci_softc_t *sc)
 
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_SOFTUSB);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_USB);
-	cv_init(&sc->sc_softwake_cv, "ohciab");
 
 	sc->sc_rhsc_si = softint_establish(SOFTINT_USB | SOFTINT_MPSAFE,
 	    ohci_rhsc_softint, sc);
@@ -1078,6 +1073,10 @@ ohci_allocx(struct usbd_bus *bus, unsigned int nframes)
 	xfer = pool_cache_get(sc->sc_xferpool, PR_WAITOK);
 	if (xfer != NULL) {
 		memset(xfer, 0, sizeof(struct ohci_xfer));
+
+		/* Initialise this always so we can call remove on it. */
+		usb_init_task(&xfer->ux_aborttask, ohci_timeout_task, xfer,
+		    USB_TASKQ_MPSAFE);
 #ifdef DIAGNOSTIC
 		xfer->ux_state = XFER_BUSY;
 #endif
@@ -1117,6 +1116,7 @@ ohci_shutdown(device_t self, int flags)
 	OHCIHIST_FUNC(); OHCIHIST_CALLED();
 
 	DPRINTF("stopping the HC", 0, 0, 0, 0);
+	OWRITE4(sc, OHCI_INTERRUPT_DISABLE, OHCI_ALL_INTRS);
 	OWRITE4(sc, OHCI_CONTROL, OHCI_HCFS_RESET);
 	return true;
 }
@@ -1340,7 +1340,7 @@ ohci_intr1(ohci_softc_t *sc)
 	if (eintrs & OHCI_SF) {
 		struct ohci_xfer *ox, *tmp;
 		TAILQ_FOREACH_SAFE(ox, &sc->sc_abortingxfers, ox_abnext, tmp) {
-			DPRINTFN(10, "SF %p xfer %p", sc, ox, 0, 0);
+			DPRINTFN(10, "SF %#jx xfer %#jx", (uintptr_t)sc, (uintptr_t)ox, 0, 0);
 			ox->ox_abintrs &= ~OHCI_SF;
 			KASSERT(ox->ox_abintrs == 0);
 			TAILQ_REMOVE(&sc->sc_abortingxfers, ox, ox_abnext);
@@ -1348,7 +1348,7 @@ ohci_intr1(ohci_softc_t *sc)
 		cv_broadcast(&sc->sc_softwake_cv);
 
 		KASSERT(TAILQ_EMPTY(&sc->sc_abortingxfers));
-		DPRINTFN(10, "end SOF %p", sc, 0, 0, 0);
+		DPRINTFN(10, "end SOF %#jx", (uintptr_t)sc, 0, 0, 0);
 		/* Don't remove OHIC_SF from eintrs so it is blocked below */
 	}
 
@@ -1409,7 +1409,7 @@ ohci_softintr(void *v)
 	int len, cc;
 	int i, j, actlen, iframes, uedir;
 	ohci_physaddr_t done = 0;
-	bool polling = sc->sc_bus.ub_usepolling;
+	bool polling __diagused = sc->sc_bus.ub_usepolling;
 
 	KASSERT(polling || mutex_owned(&sc->sc_lock));
 
@@ -1420,11 +1420,11 @@ ohci_softintr(void *v)
 	 * other than an interrupt
 	 */
 	if (!(OREAD4(sc, OHCI_INTERRUPT_STATUS) & OHCI_WDH)) {
-		DPRINTFN(10, "no WDH %p", sc, 0, 0, 0);
+		DPRINTFN(10, "no WDH %#jx", (uintptr_t)sc, 0, 0, 0);
 		return;
 	}
 
-	DPRINTFN(10, "WDH %p", sc, 0, 0, 0);
+	DPRINTFN(10, "WDH %#jx", (uintptr_t)sc, 0, 0, 0);
 	usb_syncmem(&sc->sc_hccadma, offsetof(struct ohci_hcca, hcca_done_head),
 	    sizeof(sc->sc_hcca->hcca_done_head),
 	    BUS_DMASYNC_POSTWRITE | BUS_DMASYNC_POSTREAD);
@@ -1492,24 +1492,30 @@ ohci_softintr(void *v)
 			continue;
 		}
 		if (std->held == NULL) {
-			DPRINTFN(10, "std=%p held is null", std, 0, 0, 0);
+			DPRINTFN(10, "std=%#jx held is null", (uintptr_t)std, 0, 0, 0);
 			ohci_hash_rem_td(sc, std);
 			ohci_free_std_locked(sc, std);
 			continue;
 		}
-		/*
-		 * Make sure the timeout handler didn't run or ran to the end
-		 * and set the transfer status.
-		 */
-		callout_halt(&xfer->ux_callout, polling ? NULL : &sc->sc_lock);
 
-		if (xfer->ux_status == USBD_CANCELLED ||
-		    xfer->ux_status == USBD_TIMEOUT) {
-			DPRINTF("cancel/timeout %#jx", (uintptr_t)xfer, 0, 0,
-			    0);
-			/* Handled by abort routine. */
+		/*
+		 * If software has completed it, either by cancellation
+		 * or timeout, drop it on the floor.
+		 */
+		if (xfer->ux_status != USBD_IN_PROGRESS) {
+			KASSERT(xfer->ux_status == USBD_CANCELLED ||
+			    xfer->ux_status == USBD_TIMEOUT);
 			continue;
 		}
+
+		/*
+		 * Cancel the timeout and the task, which have not yet
+		 * run.  If they have already fired, at worst they are
+		 * waiting for the lock.  They will see that the xfer
+		 * is no longer in progress and give up.
+		 */
+		callout_stop(&xfer->ux_callout);
+		usb_rem_task(xfer->ux_pipe->up_dev, &xfer->ux_aborttask);
 
 		len = std->len;
 		if (std->td.td_cbp != 0)
@@ -1580,13 +1586,26 @@ ohci_softintr(void *v)
 		    0);
 		if (xfer == NULL)
 			continue;
-		if (xfer->ux_status == USBD_CANCELLED ||
-		    xfer->ux_status == USBD_TIMEOUT) {
-			DPRINTF("cancel/timeout %#jx",
-			    (uintptr_t)xfer, 0, 0, 0);
-			/* Handled by abort routine. */
+
+		/*
+		 * If software has completed it, either by cancellation
+		 * or timeout, drop it on the floor.
+		 */
+		if (xfer->ux_status != USBD_IN_PROGRESS) {
+			KASSERT(xfer->ux_status == USBD_CANCELLED ||
+			    xfer->ux_status == USBD_TIMEOUT);
 			continue;
 		}
+
+		/*
+		 * Cancel the timeout and the task, which have not yet
+		 * run.  If they have already fired, at worst they are
+		 * waiting for the lock.  They will see that the xfer
+		 * is no longer in progress and give up.
+		 */
+		callout_stop(&xfer->ux_callout);
+		usb_rem_task(xfer->ux_pipe->up_dev, &xfer->ux_aborttask);
+
 		KASSERT(!sitd->isdone);
 #ifdef DIAGNOSTIC
 		sitd->isdone = true;
@@ -1641,6 +1660,7 @@ ohci_softintr(void *v)
 	}
 
 	DPRINTFN(10, "done", 0, 0, 0, 0);
+	KASSERT(polling || mutex_owned(&sc->sc_lock));
 }
 
 void
@@ -1927,33 +1947,17 @@ ohci_hash_find_itd(ohci_softc_t *sc, ohci_physaddr_t a)
 void
 ohci_timeout(void *addr)
 {
+	OHCIHIST_FUNC(); OHCIHIST_CALLED();
 	struct usbd_xfer *xfer = addr;
 	ohci_softc_t *sc = OHCI_XFER2SC(xfer);
-	bool timeout = false;
+	struct usbd_device *dev = xfer->ux_pipe->up_dev;
 
-	OHCIHIST_FUNC(); OHCIHIST_CALLED();
-	DPRINTF("oxfer=%#jx", (uintptr_t)oxfer, 0, 0, 0);
+	DPRINTF("xfer=%#jx", (uintptr_t)xfer, 0, 0, 0);
 
 	mutex_enter(&sc->sc_lock);
-	if (sc->sc_dying) {
-		ohci_abort_xfer(xfer, USBD_TIMEOUT);
-		mutex_exit(&sc->sc_lock);
-		return;
-	}
-
-	if (xfer->ux_status != USBD_CANCELLED) {
-		xfer->ux_status = USBD_TIMEOUT;
-		timeout = true;
-	}
+	if (!sc->sc_dying && xfer->ux_status == USBD_IN_PROGRESS)
+		usb_add_task(dev, &xfer->ux_aborttask, USB_TASKQ_HC);
 	mutex_exit(&sc->sc_lock);
-
-	if (timeout) {
-		/* Execute the abort in a process context. */
-		usb_init_task(&xfer->ux_aborttask, ohci_timeout_task, addr,
-		    USB_TASKQ_MPSAFE);
-		usb_add_task(xfer->ux_pipe->up_dev, &xfer->ux_aborttask,
-		    USB_TASKQ_HC);
-	}
 }
 
 void
@@ -2268,63 +2272,68 @@ ohci_close_pipe(struct usbd_pipe *pipe, ohci_soft_ed_t *head)
 void
 ohci_abort_xfer(struct usbd_xfer *xfer, usbd_status status)
 {
+	OHCIHIST_FUNC(); OHCIHIST_CALLED();
 	struct ohci_pipe *opipe = OHCI_PIPE2OPIPE(xfer->ux_pipe);
 	ohci_softc_t *sc = OHCI_XFER2SC(xfer);
 	ohci_soft_ed_t *sed = opipe->sed;
 	ohci_soft_td_t *p, *n;
 	ohci_physaddr_t headp;
 	int hit;
-	int wake;
 
-	OHCIHIST_FUNC(); OHCIHIST_CALLED();
+	KASSERTMSG((status == USBD_CANCELLED || status == USBD_TIMEOUT),
+	    "invalid status for abort: %d", (int)status);
+
 	DPRINTF("xfer=%#jx pipe=%#jx sed=%#jx", (uintptr_t)xfer,
 	    (uintptr_t)opipe, (uintptr_t)sed, 0);
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 	ASSERT_SLEEPABLE();
 
-	if (sc->sc_dying) {
-		/* If we're dying, just do the software part. */
-		xfer->ux_status = status;
-		callout_halt(&xfer->ux_callout, &sc->sc_lock);
-		usb_transfer_complete(xfer);
-		return;
-	}
-
-	/*
-	 * If an abort is already in progress then just wait for it to
-	 * complete and return.
-	 */
-	if (xfer->ux_hcflags & UXFER_ABORTING) {
-		DPRINTFN(2, "already aborting", 0, 0, 0, 0);
-#ifdef DIAGNOSTIC
-		if (status == USBD_TIMEOUT)
-			printf("%s: TIMEOUT while aborting\n", __func__);
-#endif
-		/* Override the status which might be USBD_TIMEOUT. */
-		xfer->ux_status = status;
-		DPRINTFN(2, "waiting for abort to finish", 0, 0, 0, 0);
-		xfer->ux_hcflags |= UXFER_ABORTWAIT;
-		while (xfer->ux_hcflags & UXFER_ABORTING)
-			cv_wait(&xfer->ux_hccv, &sc->sc_lock);
-		goto done;
-	}
-	xfer->ux_hcflags |= UXFER_ABORTING;
-
-	/*
-	 * Step 1: When cancelling a transfer make sure the timeout handler
-	 * didn't run or ran to the end and saw the USBD_CANCELLED status.
-	 * Otherwise we must have got here via a timeout.
-	 */
 	if (status == USBD_CANCELLED) {
-		xfer->ux_status = status;
+		/*
+		 * We are synchronously aborting.  Try to stop the
+		 * callout and task, but if we can't, wait for them to
+		 * complete.
+		 */
+
 		callout_halt(&xfer->ux_callout, &sc->sc_lock);
+		usb_rem_task_wait(xfer->ux_pipe->up_dev, &xfer->ux_aborttask,
+		    USB_TASKQ_HC, &sc->sc_lock);
 	} else {
-		KASSERT(xfer->ux_status == USBD_TIMEOUT);
+		/* Otherwise, we are timing out.  */
+		KASSERT(status == USBD_TIMEOUT);
 	}
 
 	/*
-	 * Step 2: Unless the endpoint is already halted, we set the endpoint
+	 * The xfer cannot have been cancelled already.  It is the
+	 * responsibility of the caller of usbd_abort_pipe not to try
+	 * to abort a pipe multiple times, whether concurrently or
+	 * sequentially.
+	 */
+	KASSERT(xfer->ux_status != USBD_CANCELLED);
+
+	/* Only the timeout, which runs only once, can time it out.  */
+	KASSERT(xfer->ux_status != USBD_TIMEOUT);
+
+	/* If anyone else beat us, we're done.  */
+	if (xfer->ux_status != USBD_IN_PROGRESS)
+		return;
+
+	/* We beat everyone else.  Claim the status.  */
+	xfer->ux_status = status;
+
+	/*
+	 * If we're dying, skip the hardware action and just notify the
+	 * software that we're done.
+	 */
+	if (sc->sc_dying) {
+		DPRINTFN(4, "xfer %#jx dying %ju", (uintptr_t)xfer,
+		    xfer->ux_status, 0, 0);
+		goto dying;
+	}
+
+	/*
+	 * HC Step 1: Unless the endpoint is already halted, we set the endpoint
 	 * descriptor sKip bit and wait for hardware to complete processing.
 	 *
 	 * This includes ensuring that any TDs of the transfer that got onto
@@ -2337,14 +2346,14 @@ ohci_abort_xfer(struct usbd_xfer *xfer, usbd_status status)
 	    BUS_DMASYNC_POSTWRITE | BUS_DMASYNC_POSTREAD);
 	if (!(sed->ed.ed_flags & OHCI_HALTED)) {
 		/* force hardware skip */
-		DPRINTFN(1, "pausing ed=%p", sed, 0, 0, 0);
+		DPRINTFN(1, "pausing ed=%#jx", (uintptr_t)sed, 0, 0, 0);
 		sed->ed.ed_flags |= HTOO32(OHCI_ED_SKIP);
 		usb_syncmem(&sed->dma,
 		    sed->offs + offsetof(ohci_ed_t, ed_flags),
 		    sizeof(sed->ed.ed_flags),
 		    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
 
-		DPRINTFN(10, "WDH %p xfer %p", sc, xfer, 0, 0);
+		DPRINTFN(10, "WDH %#jx xfer %#jx", (uintptr_t)sc, (uintptr_t)xfer, 0, 0);
 		struct ohci_xfer *ox = OHCI_XFER2OXFER(xfer);
 		ox->ox_abintrs = OHCI_SF;
 		TAILQ_INSERT_TAIL(&sc->sc_abortingxfers, ox, ox_abnext);
@@ -2357,16 +2366,16 @@ ohci_abort_xfer(struct usbd_xfer *xfer, usbd_status status)
 		 * use of the xfer.
 		 */
 		while (ox->ox_abintrs != 0) {
-			DPRINTFN(10, "WDH %p xfer %p intrs %#x", sc, xfer,
-			    ox->ox_abintrs, 0);
+			DPRINTFN(10, "WDH %#jx xfer %#jx intrs %#x", (uintptr_t)sc,
+			    (uintptr_t)xfer, (uintptr_t)ox->ox_abintrs, 0);
 			cv_wait(&sc->sc_softwake_cv, &sc->sc_lock);
 		}
 	} else {
-		DPRINTFN(1, "halted ed=%p", sed, 0, 0, 0);
+		DPRINTFN(1, "halted ed=%#jx", (uintptr_t)sed, 0, 0, 0);
 	}
 
 	/*
-	 * Step 3: Remove any vestiges of the xfer from the hardware.
+	 * HC Step 3: Remove any vestiges of the xfer from the hardware.
 	 * The complication here is that the hardware may have executed
 	 * beyond the xfer we're trying to abort.  So as we're scanning
 	 * the TDs of this xfer we check if the hardware points to
@@ -2401,7 +2410,8 @@ ohci_abort_xfer(struct usbd_xfer *xfer, usbd_status status)
 			ohci_hash_rem_td(sc, p);
 			continue;
 		}
-		DPRINTFN(10, "std=%p has been touched by HC", p, 0, 0, 0);
+		DPRINTFN(10, "xfer=%#jx has been touched by HC", (uintptr_t)p,
+		   0, 0, 0);
 
 		mutex_exit(&sc->sc_lock);
 		ohci_soft_td_t *std = ohci_alloc_std(sc);
@@ -2411,7 +2421,8 @@ ohci_abort_xfer(struct usbd_xfer *xfer, usbd_status status)
 		}
 		mutex_enter(&sc->sc_lock);
 
-		DPRINTFN(10, "new std=%p now held at %p", std, p->held, 0, 0);
+		DPRINTFN(10, "new std=%#jx now held at %#jx", (uintptr_t)std,
+		    (uintptr_t)p->held, 0, 0);
 		*(p->held) = std;
 		std->held = p->held;
 		std->xfer = xfer;
@@ -2431,7 +2442,7 @@ ohci_abort_xfer(struct usbd_xfer *xfer, usbd_status status)
 	}
 
 	/*
-	 * Step 4: Turn on hardware again.
+	 * HC Step 4: Turn on hardware again.
 	 */
 	usb_syncmem(&sed->dma, sed->offs + offsetof(ohci_ed_t, ed_flags),
 	    sizeof(sed->ed.ed_flags),
@@ -2442,15 +2453,12 @@ ohci_abort_xfer(struct usbd_xfer *xfer, usbd_status status)
 	    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
 
 	/*
-	 * Step 5: Execute callback.
+	 * Final step: Notify completion to waiting xfers.
 	 */
-	wake = xfer->ux_hcflags & UXFER_ABORTWAIT;
-	xfer->ux_hcflags &= ~(UXFER_ABORTING | UXFER_ABORTWAIT);
+dying:
 	usb_transfer_complete(xfer);
-	if (wake)
-		cv_broadcast(&xfer->ux_hccv);
+	DPRINTFN(14, "end", 0, 0, 0, 0);
 
-done:
 	KASSERT(mutex_owned(&sc->sc_lock));
 }
 
@@ -2487,20 +2495,7 @@ ohci_roothub_ctrl(struct usbd_bus *bus, usb_device_request_t *req,
 		if (len == 0)
 			break;
 		switch (value) {
-		case C(0, UDESC_DEVICE): {
-			usb_device_descriptor_t devd;
-
-			totlen = min(buflen, sizeof(devd));
-			memcpy(&devd, buf, totlen);
-			USETW(devd.idVendor, sc->sc_id_vendor);
-			memcpy(buf, &devd, totlen);
-			break;
-		}
-		case C(1, UDESC_STRING):
 #define sd ((usb_string_descriptor_t *)buf)
-			/* Vendor */
-			totlen = usb_makestrdesc(sd, len, sc->sc_vendor);
-			break;
 		case C(2, UDESC_STRING):
 			/* Product */
 			totlen = usb_makestrdesc(sd, len, "OHCI root hub");
@@ -2697,12 +2692,10 @@ ohci_root_intr_start(struct usbd_xfer *xfer)
 Static void
 ohci_root_intr_abort(struct usbd_xfer *xfer)
 {
-	ohci_softc_t *sc = OHCI_XFER2SC(xfer);
+	ohci_softc_t *sc __diagused = OHCI_XFER2SC(xfer);
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 	KASSERT(xfer->ux_pipe->up_intrxfer == xfer);
-
-	sc->sc_intrxfer = NULL;
 
 	xfer->ux_status = USBD_CANCELLED;
 	usb_transfer_complete(xfer);
@@ -2751,8 +2744,10 @@ ohci_device_ctrl_init(struct usbd_xfer *xfer)
 	setup->held = &ox->ox_setup;
 	stat->held = &ox->ox_stat;
 
-	DPRINTFN(10, "xfer=%p setup=%p held at %p", ox, setup, setup->held, 0);
-	DPRINTFN(10, "xfer=%p stat= %p held at %p", ox, stat, stat->held, 0);
+	DPRINTFN(10, "xfer=%#jx setup=%#jx held at %#jx", (uintptr_t)ox,
+	    (uintptr_t)setup, (uintptr_t)setup->held, 0);
+	DPRINTFN(10, "xfer=%#jx stat= %#jx held at %#jx", (uintptr_t)ox,
+	    (uintptr_t)stat, (uintptr_t)stat->held, 0);
 
 	/* Set up data transaction */
 	if (len != 0) {
@@ -2858,7 +2853,8 @@ ohci_device_ctrl_start(struct usbd_xfer *xfer)
 	ox->ox_setup = setup;
 	setup->held = &ox->ox_setup;
 
-	DPRINTFN(10, "xfer=%p new setup=%p held at %p", ox, setup, setup->held, 0);
+	DPRINTFN(10, "xfer=%#jx new setup=%#jx held at %#jx", (uintptr_t)ox,
+	    (uintptr_t)setup, (uintptr_t)setup->held, 0);
 
 	stat = ox->ox_stat;
 
@@ -2867,7 +2863,8 @@ ohci_device_ctrl_start(struct usbd_xfer *xfer)
 	tail->held = &opipe->tail.td;
 	sed = opipe->sed;
 
-	DPRINTFN(10, "xfer=%p new tail=%p held at %p", ox, tail, tail->held, 0);
+	DPRINTFN(10, "xfer=%#jx new tail=%#jx held at %#jx", (uintptr_t)ox,
+	    (uintptr_t)tail, (uintptr_t)tail->held, 0);
 
 	KASSERTMSG(OHCI_ED_GET_FA(O32TOH(sed->ed.ed_flags)) == dev->ud_addr,
 	    "address ED %d pipe %d\n",
@@ -3031,7 +3028,7 @@ ohci_device_bulk_init(struct usbd_xfer *xfer)
 {
 	ohci_softc_t *sc = OHCI_XFER2SC(xfer);
 	int len = xfer->ux_bufsize;
-	int endpt = xfer->ux_pipe->up_endpoint->ue_edesc->bEndpointAddress;;
+	int endpt = xfer->ux_pipe->up_endpoint->ue_edesc->bEndpointAddress;
 	int isread = UE_GET_DIR(endpt) == UE_DIR_IN;
 	int err;
 
@@ -3132,7 +3129,8 @@ ohci_device_bulk_start(struct usbd_xfer *xfer)
 	ox->ox_stds[0] = data;
 	data->held = &ox->ox_stds[0];
 	ohci_reset_std_chain(sc, xfer, len, isread, data, &last);
-	DPRINTFN(10, "xfer=%p new data=%p held at %p", ox, data, data->held, 0);
+	DPRINTFN(10, "xfer=%#jx new data=%#jx held at %#jx",
+	    (uintptr_t)ox, (uintptr_t)data, (uintptr_t)data->held, 0);
 
 	/* point at sentinel */
 	tail = opipe->tail.td;
@@ -3140,7 +3138,8 @@ ohci_device_bulk_start(struct usbd_xfer *xfer)
 	tail->held = &opipe->tail.td;
 	tail->nexttd = NULL;
 	tail->xfer = NULL;
-	DPRINTFN(10, "xfer=%p new tail=%p held at %p", ox, tail, tail->held, 0);
+	DPRINTFN(10, "xfer=%#jx new tail=%#jx held at %#ux",
+	    (uintptr_t)ox, (uintptr_t)tail, (uintptr_t)tail->held, 0);
 	usb_syncmem(&tail->dma, tail->offs, sizeof(tail->td),
 	    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
 	xfer->ux_hcpriv = data;
@@ -3235,7 +3234,7 @@ ohci_device_intr_init(struct usbd_xfer *xfer)
 	struct ohci_xfer *ox = OHCI_XFER2OXFER(xfer);
 	ohci_softc_t *sc = OHCI_XFER2SC(xfer);
 	int len = xfer->ux_bufsize;
-	int endpt = xfer->ux_pipe->up_endpoint->ue_edesc->bEndpointAddress;;
+	int endpt = xfer->ux_pipe->up_endpoint->ue_edesc->bEndpointAddress;
 	int isread = UE_GET_DIR(endpt) == UE_DIR_IN;
 	int err;
 
@@ -3336,7 +3335,8 @@ ohci_device_intr_start(struct usbd_xfer *xfer)
 	ox->ox_stds[0] = data;
 	data->held = &ox->ox_stds[0];
 	ohci_reset_std_chain(sc, xfer, len, isread, data, &last);
-	DPRINTFN(10, "xfer=%p new data=%p held at %p", ox, data, data->held, 0);
+	DPRINTFN(10, "xfer=%#jx new data=%#jx held at %#jx",
+	    (uintptr_t)ox, (uintptr_t)data, (uintptr_t)data->held, 0);
 
 	/* point at sentinel */
 	tail = opipe->tail.td;
@@ -3344,7 +3344,8 @@ ohci_device_intr_start(struct usbd_xfer *xfer)
 	tail->held = &opipe->tail.td;
 	tail->nexttd = NULL;
 	tail->xfer = NULL;
-	DPRINTFN(10, "xfer=%p new tail=%p held at %p", ox, tail, tail->held, 0);
+	DPRINTFN(10, "xfer=%#jx new tail=%#jx held at %#jx",
+	    (uintptr_t)ox, (uintptr_t)tail, (uintptr_t)tail->held, 0);
 	usb_syncmem(&tail->dma, tail->offs, sizeof(tail->td),
 	    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
 	xfer->ux_hcpriv = data;
@@ -3549,7 +3550,8 @@ ohci_device_isoc_init(struct usbd_xfer *xfer)
 		sitd->held = &ox->ox_sitds[i];
 		sitd->xfer = xfer;
 		sitd->flags = 0;
-//		DPRINTFN(10, "xfer=%p new tail=%p held at %p", ox, tail, tail->held, 0);
+//		DPRINTFN(10, "xfer=%#jx new tail=%#jx held at %#jx",
+//		    (uintptr_t)ox, (uintptr_t)tail, (uintptr_t)tail->held, 0);
 	}
 
 	return 0;

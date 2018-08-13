@@ -1,4 +1,4 @@
-#	$NetBSD: files.exynos,v 1.24 2017/06/20 13:21:45 jmcneill Exp $
+#	$NetBSD: files.exynos,v 1.30 2018/07/05 13:11:58 jmcneill Exp $
 #
 # Configuration info for Samsung Exynos SoC ARM Peripherals
 #
@@ -13,7 +13,7 @@ file	arch/arm/arm32/arm32_kvminit.c
 file	arch/arm/arm32/arm32_reboot.c
 file	arch/arm/arm32/irq_dispatch.S
 file	arch/arm/arm32/armv7_generic_space.c
-file	arch/arm/arm32/armv7_generic_dma.c
+file	arch/arm/arm/arm_generic_dma.c
 file	arch/arm/arm/bus_space_a4x.S
 
 file	arch/arm/samsung/exynos_soc.c
@@ -50,23 +50,13 @@ device  exyointr
 attach  exyointr at fdt with exynos_intr
 file	arch/arm/samsung/exynos_combiner.c	exynos_intr
 
-# CHIP ID register
-device	chipid : fdtbus
-attach	chipid at fdt with exynos_chipid
-file	arch/arm/samsung/exynos_chipid.c	exynos_chipid
-
-# SYSMMU
-device	sysmmu : fdtbus
-attach	sysmmu at fdt with exynos_sysmmu
-file	arch/arm/samsung/exynos_sysmmu.c	exynos_sysmmu
-
 # real time clock
 device  exyortc : fdtbus
 attach  exyortc at fdt with exynos_rtc
 file    arch/arm/samsung/exynos_rtc.c		exynos_rtc
 
 # Multi Core timer
-device	mct { } : fdtbus, mpcorebus
+device	mct
 attach	mct at fdt with exyo_mct
 file	arch/arm/samsung/mct.c		exyo_mct
 
@@ -76,12 +66,9 @@ attach	exyowdt at fdt with exynos_wdt
 file	arch/arm/samsung/exynos_wdt.c	exynos_wdt needs-flag
 
 # UARTs
-device	sscom { } : bus_space_generic
-attach	sscom at fdt with exynos_sscom
-file	arch/arm/samsung/sscom.c	sscom needs-flag
-file	arch/arm/samsung/exynos_sscom.c	exynos_sscom 
-defflag opt_sscom.h     SSCOM0CONSOLE SSCOM1CONSOLE
-defparam opt_sscom.h    SSCOM_FREQ 
+device	exuart
+attach	exuart at fdt with exynos_uart
+file	arch/arm/samsung/exynos_uart.c		exynos_uart
 
 # PINCTL
 device  exyopctl : gpiobus
@@ -89,24 +76,23 @@ attach  exyopctl at fdt with exynos_pinctrl
 file	arch/arm/samsung/exynos_pinctrl.c	exynos_pinctrl needs-flag
 file	arch/arm/samsung/exynos_gpio.c		exynos_pinctrl needs-flag
 
-# USB2 phy
-device  exyousbphy
-attach  exyousbphy at fdt with exynos_usbphy
+# USB2 PHY
+device	exusbphy
+attach  exusbphy at fdt with exynos_usbphy
 file    arch/arm/samsung/exynos_usbphy.c	exynos_usbphy
+
+# USB DRD PHY
+device	exusbdrdphy
+attach	exusbdrdphy at fdt with exynos_usbdrdphy
+file	arch/arm/samsung/exynos_usbdrdphy.c	exynos_usbdrdphy
 
 # USB2 Host Controller (OHCI)
 attach	ohci at fdt with exynos_ohci
 file	arch/arm/samsung/exynos_ohci.c		exynos_ohci
 
-#USB 2 Host Controller (EHCI)
+# USB 2 Host Controller (EHCI)
 attach	ehci at fdt with exynos_ehci
 file	arch/arm/samsung/exynos_ehci.c		exynos_ehci
-
-# USB3 Host Controller (xHCI)
-device	exyousb : fdtbus
-attach	exyousb at fdt with exynos_usb
-attach  xhci at fdt
-file	arch/arm/samsung/exynos_usb3.c		exynos_usb
 
 # SD/MMC Host Controller
 attach	dwcmmc at fdt with exynos_dwcmmc
@@ -116,6 +102,11 @@ file	arch/arm/samsung/exynos_dwcmmc.c	exynos_dwcmmc
 device	exyoi2c: i2cbus, i2c_bitbang
 attach	exyoi2c at fdt with exynos_i2c
 file	arch/arm/samsung/exynos_i2c.c		exynos_i2c needs-flag
+
+# PWM timer
+device	expwm: pwm
+attach	expwm at fdt with exynos_pwm
+file	arch/arm/samsung/exynos_pwm.c		exynos_pwm
 
 device	exy5422clk: clk
 attach	exy5422clk at fdt with exynos5422_clock

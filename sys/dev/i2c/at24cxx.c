@@ -1,4 +1,4 @@
-/*	$NetBSD: at24cxx.c,v 1.25 2017/10/28 04:53:55 riastradh Exp $	*/
+/*	$NetBSD: at24cxx.c,v 1.30 2018/06/26 06:34:55 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at24cxx.c,v 1.25 2017/10/28 04:53:55 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at24cxx.c,v 1.30 2018/06/26 06:34:55 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -111,41 +111,27 @@ const struct cdevsw seeprom_cdevsw = {
 
 static int seeprom_wait_idle(struct seeprom_softc *);
 
-static const char * seeprom_compats[] = {
-	"i2c-at24c64",
-	"i2c-at34c02",
-	"atmel,24c02",
-	"atmel,24c16",
-	NULL
-};
-
-static const struct seeprom_size {
-	const char *name;
-	int size;
-} seeprom_sizes[] = {
-	{ "atmel,24c02", 256 },
-	{ "atmel,24c16", 2048 },
+static const struct device_compatible_entry compat_data[] = {
+	{ "i2c-at24c64",		8192 },
+	{ "i2c-at34c02",		256 },
+	{ "atmel,24c02",		256 },
+	{ "atmel,24c16",		2048 },
+	{ NULL,				0 }
 };
 
 static int
 seeprom_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct i2c_attach_args *ia = aux;
+	int match_result;
 
-	if (ia->ia_name) {
-		if (ia->ia_ncompat > 0) {
-			if (iic_compat_match(ia, seeprom_compats))
-				return (1);
-		} else {
-			if (strcmp(ia->ia_name, "seeprom") == 0)
-				return (1);
-		}
-	} else {
-		if ((ia->ia_addr & AT24CXX_ADDRMASK) == AT24CXX_ADDR)
-			return (1);
-	}
+	if (iic_use_direct_match(ia, cf, compat_data, &match_result))
+		return match_result;
 
-	return (0);
+	if ((ia->ia_addr & AT24CXX_ADDRMASK) == AT24CXX_ADDR)
+		return I2C_MATCH_ADDRESS_ONLY;
+
+	return 0;
 }
 
 static void
@@ -153,7 +139,7 @@ seeprom_attach(device_t parent, device_t self, void *aux)
 {
 	struct seeprom_softc *sc = device_private(self);
 	struct i2c_attach_args *ia = aux;
-	u_int n, m;
+	const struct device_compatible_entry *dce;
 
 	sc->sc_tag = ia->ia_tag;
 	sc->sc_address = ia->ia_addr;
@@ -183,19 +169,10 @@ seeprom_attach(device_t parent, device_t self, void *aux)
 	 */
 	if (device_cfdata(self)->cf_flags)
 		sc->sc_size = (device_cfdata(self)->cf_flags << 7);
-	else
-		sc->sc_size = ia->ia_size;
 
 	if (sc->sc_size <= 0 && ia->ia_ncompat > 0) {
-		for (n = 0; n < __arraycount(seeprom_sizes); n++) {
-			for (m = 0; m < ia->ia_ncompat; m++) {
-				if (!strcmp(seeprom_sizes[n].name,
-				    ia->ia_compat[m])) {
-					sc->sc_size = seeprom_sizes[n].size;
-					break;
-				}
-			}
-		}
+		if (iic_compatible_match(ia, compat_data, &dce))
+			sc->sc_size = dce->data;
 	}
 
 	switch (sc->sc_size) {

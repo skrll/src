@@ -1,4 +1,4 @@
-/*	$NetBSD: epe.c,v 1.36 2017/02/22 09:45:15 nonaka Exp $	*/
+/*	$NetBSD: epe.c,v 1.38 2018/06/26 06:47:57 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2004 Jesse Off
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: epe.c,v 1.36 2017/02/22 09:45:15 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: epe.c,v 1.38 2018/06/26 06:47:57 msaitoh Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -53,6 +53,7 @@ __KERNEL_RCSID(0, "$NetBSD: epe.c,v 1.36 2017/02/22 09:45:15 nonaka Exp $");
 #include <net/if_types.h>
 #include <net/if_media.h>
 #include <net/if_ether.h>
+#include <net/bpf.h>
 
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
@@ -64,9 +65,6 @@ __KERNEL_RCSID(0, "$NetBSD: epe.c,v 1.36 2017/02/22 09:45:15 nonaka Exp $");
 #include <netinet/ip.h>
 #include <netinet/if_inarp.h>
 #endif
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <arm/ep93xx/ep93xxreg.h>
 #include <arm/ep93xx/epereg.h> 
@@ -601,7 +599,7 @@ more:
 		IFQ_DEQUEUE(&ifp->if_snd, m);
 	}
 
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 
 	nsegs = sc->txq[bi].m_dmamap->dm_nsegs;
 	segs = sc->txq[bi].m_dmamap->dm_segs;
