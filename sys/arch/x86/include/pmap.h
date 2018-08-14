@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.81 2018/07/21 06:09:13 maxv Exp $	*/
+/*	$NetBSD: pmap.h,v 1.84 2018/08/12 13:31:16 maxv Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -160,8 +160,9 @@ struct bootspace {
 #define SLAREA_MAIN	3
 #define SLAREA_PCPU	4
 #define SLAREA_DMAP	5
-#define SLAREA_KERN	6
-#define SLSPACE_NAREAS	7
+#define SLAREA_HYPV	6
+#define SLAREA_KERN	7
+#define SLSPACE_NAREAS	8
 
 struct slotspace {
 	struct {
@@ -172,6 +173,8 @@ struct slotspace {
 		bool dropmax; /* !resizable */
 	} area[SLSPACE_NAREAS];
 };
+
+extern struct slotspace slotspace;
 
 #ifndef MAXGDTSIZ
 #define MAXGDTSIZ 65536 /* XXX */
@@ -556,7 +559,7 @@ void	pmap_free_ptps(struct vm_page *);
 
 #ifdef __HAVE_PCPU_AREA
 extern struct pcpu_area *pcpuarea;
-#define PDIR_SLOT_PCPU		384
+#define PDIR_SLOT_PCPU		510
 #define PMAP_PCPU_BASE		(VA_SIGN_NEG((PDIR_SLOT_PCPU * NBPD_L4)))
 #endif
 

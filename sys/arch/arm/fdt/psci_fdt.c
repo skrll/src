@@ -1,4 +1,4 @@
-/* $NetBSD: psci_fdt.c,v 1.10 2018/07/16 23:11:47 christos Exp $ */
+/* $NetBSD: psci_fdt.c,v 1.13 2018/08/13 12:28:02 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: psci_fdt.c,v 1.10 2018/07/16 23:11:47 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: psci_fdt.c,v 1.13 2018/08/13 12:28:02 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -154,14 +154,6 @@ psci_fdt_preinit(void)
 }
 
 #ifdef MULTIPROCESSOR
-static bus_addr_t psci_fdt_read_mpidr_aff(void)
-{
-#ifdef __aarch64__
-	return reg_mpidr_el1_read() & (MPIDR_AFF3|MPIDR_AFF2|MPIDR_AFF1|MPIDR_AFF0);
-#else
-	return armreg_mpidr_read() & (MPIDR_AFF2|MPIDR_AFF1|MPIDR_AFF0);
-#endif
-}
 
 static register_t
 psci_fdt_mpstart_pa(void)
@@ -181,7 +173,7 @@ psci_fdt_bootstrap(void)
 {
 #ifdef MULTIPROCESSOR
 	extern void cortex_mpstart(void);
-	bus_addr_t mpidr, bp_mpidr;
+	uint64_t mpidr, bp_mpidr;
 	int child;
 
 	const int cpus = OF_finddevice("/cpus");
@@ -201,14 +193,14 @@ psci_fdt_bootstrap(void)
 		return;
 
 	/* MPIDR affinity levels of boot processor. */
-	bp_mpidr = psci_fdt_read_mpidr_aff();
+	bp_mpidr = cpu_mpidr_aff_read();
 
 	/* Boot APs */
 	uint32_t started = 0;
 	for (child = OF_child(cpus); child; child = OF_peer(child)) {
 		if (!fdtbus_status_okay(child))
 			continue;
-		if (fdtbus_get_reg(child, 0, &mpidr, NULL) != 0)
+		if (fdtbus_get_reg64(child, 0, &mpidr, NULL) != 0)
 			continue;
 		if (mpidr == bp_mpidr)
 			continue; 	/* BP already started */
@@ -218,7 +210,7 @@ psci_fdt_bootstrap(void)
 			continue;
 
 		const u_int cpuid = __SHIFTOUT(mpidr, MPIDR_AFF0);
-		int ret = psci_cpu_on(cpuid, psci_fdt_mpstart_pa(), 0);
+		int ret = psci_cpu_on(mpidr, psci_fdt_mpstart_pa(), 0);
 		if (ret == PSCI_SUCCESS)
 			started |= __BIT(cpuid);
 	}

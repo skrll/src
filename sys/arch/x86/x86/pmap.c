@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.295 2018/07/26 17:20:08 maxv Exp $	*/
+/*	$NetBSD: pmap.c,v 1.302 2018/08/12 15:31:01 maxv Exp $	*/
 
 /*
  * Copyright (c) 2008, 2010, 2016, 2017 The NetBSD Foundation, Inc.
@@ -157,7 +157,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.295 2018/07/26 17:20:08 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.302 2018/08/12 15:31:01 maxv Exp $");
 
 #include "opt_user_ldt.h"
 #include "opt_lockdebug.h"
@@ -304,7 +304,11 @@ const vaddr_t ptp_masks[] = PTP_MASK_INITIALIZER;
 const int ptp_shifts[] = PTP_SHIFT_INITIALIZER;
 const long nkptpmax[] = NKPTPMAX_INITIALIZER;
 const long nbpd[] = NBPD_INITIALIZER;
+#ifdef i386
 pd_entry_t * const normal_pdes[] = PDES_INITIALIZER;
+#else
+pd_entry_t *normal_pdes[3];
+#endif
 
 long nkptp[] = NKPTP_INITIALIZER;
 
@@ -1371,7 +1375,8 @@ pmap_init_lapic(void)
 }
 #endif
 
-#if defined(__HAVE_PCPU_AREA) || defined(__HAVE_DIRECT_MAP)
+#if defined(__HAVE_PCPU_AREA) || defined(__HAVE_DIRECT_MAP) || \
+    (defined(XEN) && defined(__x86_64__))
 static size_t
 pmap_pagetree_nentries_range(vaddr_t startva, vaddr_t endva, size_t pgsz)
 {
@@ -1393,13 +1398,15 @@ slotspace_copy(int type, pd_entry_t *dst, pd_entry_t *src)
 }
 #endif
 
-#if defined(__HAVE_DIRECT_MAP)
+#if defined(__HAVE_DIRECT_MAP) || (defined(XEN) && defined(__x86_64__))
+vaddr_t slotspace_rand(int, size_t, size_t);
+
 /*
  * Randomize the location of an area. We count the holes in the VM space. We
  * randomly select one hole, and then randomly select an area within that hole.
  * Finally we update the associated entry in the slotspace structure.
  */
-static vaddr_t
+vaddr_t
 slotspace_rand(int type, size_t sz, size_t align)
 {
 	struct {
@@ -1415,17 +1422,36 @@ slotspace_rand(int type, size_t sz, size_t align)
 
 	/* Get the holes. */
 	nholes = 0;
-	for (i = 0; i < SLSPACE_NAREAS-1; i++) {
-		startsl = slotspace.area[i].sslot;
-		if (slotspace.area[i].active)
-			startsl += slotspace.area[i].mslot;
-		endsl = slotspace.area[i+1].sslot;
-		if (endsl - startsl >= nslots) {
-			holes[nholes].start = startsl;
-			holes[nholes].end = endsl;
+	size_t curslot = 0 + 256; /* end of SLAREA_USER */
+	while (1) {
+		/*
+		 * Find the first occupied slot after the current one.
+		 * The area between the two is a hole.
+		 */
+		size_t minsslot = 512;
+		size_t minnslot = 0;
+		for (i = 0; i < SLSPACE_NAREAS; i++) {
+			if (!slotspace.area[i].active)
+				continue;
+			if (slotspace.area[i].sslot >= curslot &&
+			    slotspace.area[i].sslot < minsslot) {
+				minsslot = slotspace.area[i].sslot;
+				minnslot = slotspace.area[i].nslot;
+			}
+		}
+		if (minsslot == 512) {
+			break;
+		}
+
+		if (minsslot - curslot >= nslots) {
+			holes[nholes].start = curslot;
+			holes[nholes].end = minsslot;
 			nholes++;
 		}
+
+		curslot = minsslot + minnslot;
 	}
+
 	if (nholes == 0) {
 		panic("%s: impossible", __func__);
 	}
@@ -1451,6 +1477,7 @@ slotspace_rand(int type, size_t sz, size_t align)
 	if (slotspace.area[type].dropmax) {
 		slotspace.area[type].mslot = slotspace.area[type].nslot;
 	}
+	slotspace.area[type].active = true;
 
 	return va;
 }
@@ -2295,6 +2322,8 @@ pmap_pdp_ctor(void *arg, void *v, int flags)
 	int s;
 #endif
 
+	memset(pdir, 0, PDP_SIZE * PAGE_SIZE);
+
 	/*
 	 * NOTE: The `pmaps_lock' is held when the PDP is allocated.
 	 */
@@ -2302,9 +2331,6 @@ pmap_pdp_ctor(void *arg, void *v, int flags)
 #if defined(XEN) && defined(__x86_64__)
 	/* Fetch the physical address of the page directory */
 	(void)pmap_extract(pmap_kernel(), (vaddr_t)pdir, &pdirpa);
-
-	/* Zero the area */
-	memset(pdir, 0, PAGE_SIZE); /* Xen wants a clean page */
 
 	/*
 	 * This pdir will NEVER be active in kernel mode, so mark
@@ -2322,9 +2348,6 @@ pmap_pdp_ctor(void *arg, void *v, int flags)
 	pdir[PDIR_SLOT_KERN + nkptp[PTP_LEVELS - 1] - 1] =
 	     (pd_entry_t)-1 & PG_FRAME;
 #else /* XEN && __x86_64__*/
-	/* Zero the area */
-	memset(pdir, 0, PDIR_SLOT_PTE * sizeof(pd_entry_t));
-
 	object = (vaddr_t)v;
 	for (i = 0; i < PDP_SIZE; i++, object += PAGE_SIZE) {
 		/* Fetch the physical address of the page directory */
@@ -2343,10 +2366,6 @@ pmap_pdp_ctor(void *arg, void *v, int flags)
 
 	memcpy(&pdir[PDIR_SLOT_KERN], &PDP_BASE[PDIR_SLOT_KERN],
 	    npde * sizeof(pd_entry_t));
-
-	/* Zero the rest */
-	memset(&pdir[PDIR_SLOT_KERN + npde], 0, (PAGE_SIZE * PDP_SIZE) -
-	    (PDIR_SLOT_KERN + npde) * sizeof(pd_entry_t));
 
 	if (VM_MIN_KERNEL_ADDRESS != KERNBASE) {
 		int idx = pl_i(KERNBASE, PTP_LEVELS);
@@ -2556,7 +2575,7 @@ pmap_check_inuse(struct pmap *pmap)
 		if (ci->ci_pmap == pmap)
 			panic("destroying pmap being used");
 #if defined(XEN) && defined(__x86_64__)
-		for (int i = 0; i < PDIR_SLOT_PTE; i++) {
+		for (int i = 0; i < PDIR_SLOT_USERLIM; i++) {
 			if (pmap->pm_pdir[i] != 0 &&
 			    ci->ci_kpm_pdir[i] == pmap->pm_pdir[i]) {
 				printf("pmap_destroy(%p) pmap_kernel %p "

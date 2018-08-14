@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1072 2018/07/25 23:34:25 kamil Exp $
+#	$NetBSD: bsd.own.mk,v 1.1074 2018/08/12 18:36:27 maya Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -271,7 +271,7 @@ STRIP=		${EXTERNAL_TOOLCHAIN}/bin/${MACHINE_GNU_PLATFORM}-strip
 TOOL_CC.gcc=		${EXTERNAL_TOOLCHAIN}/bin/${MACHINE_GNU_PLATFORM}-gcc
 TOOL_CPP.gcc=		${EXTERNAL_TOOLCHAIN}/bin/${MACHINE_GNU_PLATFORM}-cpp
 TOOL_CXX.gcc=		${EXTERNAL_TOOLCHAIN}/bin/${MACHINE_GNU_PLATFORM}-c++
-TOOL_FC.gcc=		${EXTERNAL_TOOLCHAIN}/bin/${MACHINE_GNU_PLATFORM}-g77
+TOOL_FC.gcc=		${EXTERNAL_TOOLCHAIN}/bin/${MACHINE_GNU_PLATFORM}-gfortran
 TOOL_OBJC.gcc=		${EXTERNAL_TOOLCHAIN}/bin/${MACHINE_GNU_PLATFORM}-gcc
 
 TOOL_CC.clang=		${EXTERNAL_TOOLCHAIN}/bin/${MACHINE_GNU_PLATFORM}-clang
@@ -297,7 +297,7 @@ STRIP=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-strip
 TOOL_CC.gcc=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-gcc
 TOOL_CPP.gcc=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-cpp
 TOOL_CXX.gcc=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-c++
-TOOL_FC.gcc=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-g77
+TOOL_FC.gcc=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-gfortran
 TOOL_OBJC.gcc=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-gcc
 .endif									#  }
 
@@ -376,9 +376,7 @@ TOOL_GENASSYM=		${TOOLDIR}/bin/${_TOOL_PREFIX}genassym
 TOOL_GENCAT=		${TOOLDIR}/bin/${_TOOL_PREFIX}gencat
 TOOL_GMAKE=		${TOOLDIR}/bin/${_TOOL_PREFIX}gmake
 TOOL_GPT=		${TOOLDIR}/bin/${_TOOL_PREFIX}gpt
-# grep exists in src/tools, but is not hooked up into the build.
-#TOOL_GREP=		${TOOLDIR}/bin/${_TOOL_PREFIX}grep
-TOOL_GREP=		grep
+TOOL_GREP=		${TOOLDIR}/bin/${_TOOL_PREFIX}grep
 GROFF_SHARE_PATH=	${TOOLDIR}/share/groff
 TOOL_GROFF_ENV= \
     GROFF_ENCODING= \
@@ -463,7 +461,7 @@ TOOL_OBJC.clang=	clang
 TOOL_CC.gcc=	gcc
 TOOL_CPP.gcc=	cpp
 TOOL_CXX.gcc=	c++
-TOOL_FC.gcc=	g77
+TOOL_FC.gcc=	gfortran
 TOOL_OBJC.gcc=	gcc
 
 # PCC supports C and Fortran
