@@ -135,14 +135,9 @@ fdt_putchar(char c)
 	const struct arm_platform *plat = arm_fdt_platform();
 	if (plat && plat->ap_early_putchar) {
 		plat->ap_early_putchar(c);
+	} else {
+		uartputc(c);
 	}
-#ifdef EARLYCONS
-	else {
-#define PLATFORM_EARLY_PUTCHAR ___CONCAT(EARLYCONS, _platform_early_putchar)
-		void PLATFORM_EARLY_PUTCHAR(char);
-		PLATFORM_EARLY_PUTCHAR(c);
-	}
-#endif
 }
 
 static void
@@ -160,7 +155,7 @@ earlyconsgetc(dev_t dev)
 #ifdef VERBOSE_INIT_ARM
 #define VPRINTF(...)	printf(__VA_ARGS__)
 #else
-#define VPRINTF(...)
+#define VPRINTF(...)	do { } while (/* CONSTCOND */ 0)
 #endif
 
 /*
@@ -204,8 +199,8 @@ fdt_get_memory(uint64_t *pstart, uint64_t *pend)
 void
 fdt_add_reserved_memory_range(uint64_t addr, uint64_t size)
 {
-	uint64_t start = trunc_page(addr);
-	uint64_t end = round_page(addr + size);
+	uint64_t start = addr;
+	uint64_t end = addr + size;
 
 	int error = extent_free(fdt_memory_ext, start,
 	     end - start, EX_NOWAIT);
@@ -222,6 +217,7 @@ fdt_add_reserved_memory_range(uint64_t addr, uint64_t size)
 static void
 fdt_add_reserved_memory(uint64_t min_addr, uint64_t max_addr)
 {
+	uint64_t lstart = 0, lend = 0;
 	uint64_t addr, size;
 	int index, error;
 
@@ -229,7 +225,13 @@ fdt_add_reserved_memory(uint64_t min_addr, uint64_t max_addr)
 	for (index = 0; index <= num; index++) {
 		error = fdt_get_mem_rsv(fdtbus_get_data(), index,
 		    &addr, &size);
-		if (error != 0 || size == 0)
+		if (error != 0)
+			continue;
+		if (lstart <= addr && addr <= lend) {
+			size -= (lend - addr);
+			addr = lend;
+		}
+		if (size == 0)
 			continue;
 		if (addr + size <= min_addr)
 			continue;
@@ -242,6 +244,8 @@ fdt_add_reserved_memory(uint64_t min_addr, uint64_t max_addr)
 		if (addr + size > max_addr)
 			size = max_addr - addr;
 		fdt_add_reserved_memory_range(addr, size);
+		lstart = addr;
+		lend = addr + size;
 	}
 }
 
@@ -393,16 +397,29 @@ initarm(void *arg)
 		OF_getprop(chosen, "bootargs", bootargs, sizeof(bootargs));
 	boot_args = bootargs;
 
-	VPRINTF("devmap\n");
-	pmap_devmap_register(plat->ap_devmap());
-#ifdef __aarch64__
-	pmap_devmap_bootstrap(plat->ap_devmap());
-#endif
+	/* XXX does this need to be even earlier */
 
 	/* Heads up ... Setup the CPU / MMU / TLB functions. */
 	VPRINTF("cpufunc\n");
 	if (set_cpufuncs())
 		panic("cpu not recognized!");
+
+	/*
+	 * aarch32 - don't know the l1pt at this point so can't bootstrap...
+	 * err, yes we do as it's in ttbr0.
+	 */
+
+	/*
+	 * Memory is mapped VA:PA at this point so using ttbr for l1pt VA is fine
+	 */
+
+	VPRINTF("devmap\n");
+#ifdef __aarch64__
+	pmap_devmap_bootstrap(plat->ap_devmap());
+#else
+	extern char TEMP_L1_TABLE[];
+	pmap_devmap_bootstrap((vaddr_t)TEMP_L1_TABLE, plat->ap_devmap());
+#endif
 
 	VPRINTF("bootstrap\n");
 	plat->ap_bootstrap();
@@ -443,6 +460,9 @@ initarm(void *arg)
 #endif
 	uint64_t memory_size = memory_end - memory_start;
 
+	VPRINTF("%s: memory start %" PRIx64 "end %" PRIx64 "(len %"
+	    PRIx64 ")\n", __func__, memory_start, memory_end, memory_size);
+
 	/* Parse ramdisk info */
 	fdt_probe_initrd(&initrd_start, &initrd_end);
 
@@ -450,6 +470,7 @@ initarm(void *arg)
 	 * Populate bootconfig structure for the benefit of
 	 * dodumpsys
 	 */
+	VPRINTF("%s: fdt_build_bootconfig\n", __func__);
 	fdt_build_bootconfig(memory_start, memory_end);
 
 	/* Perform PT build and VM init */
@@ -464,11 +485,13 @@ initarm(void *arg)
 	int nfdt_physmem = 0;
 	struct extent_region *er;
 
+	VPRINTF("Memory regions : %s\n", bootargs);
 	LIST_FOREACH(er, &fdt_memory_ext->ex_regions, er_link) {
 		VPRINTF("  %lx - %lx\n", er->er_start, er->er_end);
 		struct boot_physmem *bp = &fdt_physmem[nfdt_physmem++];
 
 		KASSERT(nfdt_physmem <= MAX_PHYSMEM);
+
 		bp->bp_start = atop(er->er_start);
 		bp->bp_pages = atop(er->er_end - er->er_start);
 		bp->bp_freelist = VM_FREELIST_DEFAULT;
@@ -486,8 +509,15 @@ initarm(void *arg)
 #endif
 	}
 
-	return initarm_common(KERNEL_VM_BASE, KERNEL_VM_SIZE, fdt_physmem,
+	u_int sp = initarm_common(KERNEL_VM_BASE, KERNEL_VM_SIZE, fdt_physmem,
 	     nfdt_physmem);
+
+	VPRINTF("mpinit\n");
+	if (plat->ap_mpstart)
+		plat->ap_mpstart();
+
+	// XXX Change free TEMP_INIT_TABLE and svcstk pages now
+	return sp;
 }
 
 static void

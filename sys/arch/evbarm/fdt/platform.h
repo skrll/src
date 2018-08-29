@@ -37,6 +37,7 @@ void fdt_add_reserved_memory_range(uint64_t, uint64_t);
 
 #define KERNEL_IO_VBASE		VM_KERNEL_IO_ADDRESS
 
+// XXX
 #define KERNEL_VM_BASE		VM_MIN_KERNEL_ADDRESS
 #define KERNEL_VM_SIZE		(VM_MAX_KERNEL_ADDRESS - VM_MIN_KERNEL_ADDRESS)
 
@@ -47,11 +48,11 @@ void fdt_add_reserved_memory_range(uint64_t, uint64_t);
 
 #ifdef __HAVE_MM_MD_DIRECT_MAPPED_PHYS
 #define KERNEL_VM_BASE		0xc0000000
-#define KERNEL_VM_SIZE		0x20000000 /* 0x20000000 = 512MB */
 #else
 #define KERNEL_VM_BASE		0x90000000
-#define KERNEL_VM_SIZE		0x50000000 /* 0x50000000 = 1.25GB */
 #endif
+
+#define KERNEL_VM_SIZE		(KERNEL_IO_VBASE - KERNEL_VM_BASE)
 
 #endif /* !__aarch64 */
 

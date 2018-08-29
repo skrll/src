@@ -292,8 +292,7 @@ printcpu:
 #define VERBOSE_PRINTCPU()
 #endif
 
-ENTRY_NP(aarch64_mpstart)
-ENTRY_NP(cortex_mpstart)	/* compat arm */
+ENTRY_NP(cpu_mpstart)
 	ADDR	x0, arm_cpu_hatch_arg	/* from cpu0 */
 	ldr	w27, [x0]		/* x27 = cpuindex */
 	mov	x0, #1
@@ -468,7 +467,7 @@ mp_vstart:
 	bl	_C_LABEL(cpu_hatch)
 	mov	x0, xzr
 	b	_C_LABEL(idle_loop)	/* never to return */
-END(aarch64_mpstart)
+END(cpu_mpstart)
 
 toomanycpus:
 	PRINTCPU()
@@ -479,11 +478,10 @@ toomanycpus:
 
 #else /* MULTIPROCESSOR */
 
-ENTRY_NP(aarch64_mpstart)
-ENTRY_NP(cortex_mpstart)	/* compat arm */
+ENTRY_NP(cpu_mpstart)
 1:	wfi
 	b	1b
-END(aarch64_mpstart)
+END(cpu_mpstart)
 
 #endif /* MULTIPROCESSOR */
 

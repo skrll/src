@@ -26,9 +26,10 @@
  * SUCH DAMAGE.
  */
 
-#include "opt_tegra.h"
-#include "opt_multiprocessor.h"
+#include "opt_arm_debug.h"
 #include "opt_fdt_arm.h"
+#include "opt_multiprocessor.h"
+#include "opt_tegra.h"
 
 #include "ukbd.h"
 
@@ -90,26 +91,32 @@ tegra_platform_devmap(void)
 	return devmap;
 }
 
-#ifdef SOC_TEGRA124
+#if defined(SOC_TEGRA124)
 static void
 tegra124_platform_bootstrap(void)
 {
-	tegra_bootstrap();
-
 #ifdef MULTIPROCESSOR
-	tegra124_mpinit();
+	arm_cpu_max = 1 + __SHIFTOUT(armreg_l2ctrl_read(), L2CTRL_NUMCPU);
 #endif
+
+	tegra_bootstrap();
 }
 #endif
 
-#ifdef SOC_TEGRA210
+#if defined(SOC_TEGRA210)
 static void
 tegra210_platform_bootstrap(void)
 {
-	tegra_bootstrap();
 
-#if defined(MULTIPROCESSOR) && defined(__aarch64__)
-	psci_fdt_bootstrap();
+	tegra_bootstrap();
+}
+
+static void
+tegra210_platform_npstart(void)
+{
+
+#if defined(__aarch64__)
+	psci_fdt_mpstart();
 #endif
 }
 #endif
@@ -211,7 +218,7 @@ tegra_platform_uart_freq(void)
 	return PLLP_OUT0_FREQ;
 }
 
-#ifdef SOC_TEGRA124
+#if defined(SOC_TEGRA124)
 static const struct arm_platform tegra124_platform = {
 	.ap_devmap = tegra_platform_devmap,
 	.ap_bootstrap = tegra124_platform_bootstrap,
@@ -221,12 +228,13 @@ static const struct arm_platform tegra124_platform = {
 	.ap_reset = tegra_platform_reset,
 	.ap_delay = tegra_platform_delay,
 	.ap_uart_freq = tegra_platform_uart_freq,
+	.ap_mpstart = tegra124_mpstart,
 };
 
 ARM_PLATFORM(tegra124, "nvidia,tegra124", &tegra124_platform);
 #endif
 
-#ifdef SOC_TEGRA210
+#if defined(SOC_TEGRA210)
 static const struct arm_platform tegra210_platform = {
 	.ap_devmap = tegra_platform_devmap,
 	.ap_bootstrap = tegra210_platform_bootstrap,
@@ -236,6 +244,7 @@ static const struct arm_platform tegra210_platform = {
 	.ap_reset = tegra_platform_reset,
 	.ap_delay = tegra_platform_delay,
 	.ap_uart_freq = tegra_platform_uart_freq,
+	.ap_mpstart = tegra210_platform_npstart,
 };
 
 ARM_PLATFORM(tegra210, "nvidia,tegra210", &tegra210_platform);

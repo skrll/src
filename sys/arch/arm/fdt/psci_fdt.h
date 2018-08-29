@@ -30,6 +30,7 @@
 #define _ARM_PSCI_FDT_H
 
 /* Initialize PSCI and boot APs */
+void	psci_fdt_mpstart(void);
 void	psci_fdt_bootstrap(void);
 
 /* Board reset */

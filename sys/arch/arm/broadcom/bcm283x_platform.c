@@ -108,6 +108,8 @@ __KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.16 2018/08/28 14:57:03 skrll 
 #include <ddb/db_extern.h>
 #endif
 
+#define RPI_CPU_MAX	4
+
 void bcm283x_platform_early_putchar(vaddr_t, paddr_t, char c);
 void bcm2835_platform_early_putchar(char c);
 void bcm2836_platform_early_putchar(char c);
@@ -718,24 +720,16 @@ bcm2836_bootparams(void)
 }
 
 static void
-bcm2836_bootstrap(void)
+bcm2836_mpstart(void)
 {
-#define RPI_CPU_MAX	4
-
 #ifdef VERBOSE_INIT_ARM
-#define DPRINTF(...)	printf(__VA_ARGS__)
+#define VPRINTF(...)	printf(__VA_ARGS__)
 #else
-#define DPRINTF(...)
+#define VPRINTF(...)
 #endif
 
 #ifdef MULTIPROCESSOR
-	arm_cpu_max = RPI_CPU_MAX;
-	DPRINTF("%s: %d cpus present\n", __func__, arm_cpu_max);
-#ifdef __arm__
-	extern int cortex_mmuinfo;
-	cortex_mmuinfo = armreg_ttbr_read();
-	DPRINTF("%s: cortex_mmuinfo %x\n", __func__, cortex_mmuinfo);
-#endif
+	VPRINTF("%s: %d cpus present\n", __func__, arm_cpu_max);
 #endif /* MULTIPROCESSOR */
 
 	/*
@@ -744,7 +738,6 @@ bcm2836_bootstrap(void)
 	 *   to share with arm/aarch64.
 	 */
 #ifdef __aarch64__
-	extern void aarch64_mpstart(void);
 	for (int i = 1; i < RPI_CPU_MAX; i++) {
 		/* argument for mpstart() */
 		arm_cpu_hatch_arg = i;
@@ -761,7 +754,7 @@ bcm2836_bootstrap(void)
 		cpu_release_addr = (void *)
 		    AARCH64_PA_TO_KVA(RPI3_ARMSTUB8_SPINADDR_BASE + i * 8);
 		*cpu_release_addr =
-		    aarch64_kern_vtophys((vaddr_t)aarch64_mpstart);
+		    aarch64_kern_vtophys((vaddr_t)cpu_mpstart);
 
 		/* need flush cache. secondary processors are cache disabled */
 		cpu_dcache_wb_range((vaddr_t)cpu_release_addr,
@@ -783,11 +776,11 @@ bcm2836_bootstrap(void)
 	/*
 	 * Even if no options MULTIPROCESSOR,
 	 * It is need to initialize the secondary CPU,
-	 * and go into wfi loop (cortex_mpstart),
+	 * and go into wfi loop (cpu_mpstart),
 	 * otherwise system would be freeze...
 	 * (because netbsd will use the spinning address)
 	 */
-	extern void cortex_mpstart(void);
+	extern void cpu_mpstart(void);
 
 	for (size_t i = 1; i < RPI_CPU_MAX; i++) {
 		bus_space_tag_t iot = &bcm2836_bs_tag;
@@ -795,7 +788,8 @@ bcm2836_bootstrap(void)
 
 		bus_space_write_4(iot, ioh,
 		    BCM2836_LOCAL_MAILBOX3_SETN(i),
-		    (uint32_t)cortex_mpstart);
+		    KERN_VTOPHYS((vaddr_t)cpu_mpstart));
+
 		/* Wake up AP in case firmware has placed it in WFE state */
 		__asm __volatile("sev" ::: "memory");
 
@@ -1224,7 +1218,9 @@ bcm2836_platform_bootstrap(void)
 
 	bcm2836_bootparams();
 
-	bcm2836_bootstrap();
+#ifdef MULTIPROCESSOR
+	arm_cpu_max = RPI_CPU_MAX;
+#endif
 }
 #endif
 
@@ -1415,6 +1411,7 @@ static const struct arm_platform bcm2836_platform = {
 	.ap_reset = bcm2835_system_reset,
 	.ap_delay = gtmr_delay,
 	.ap_uart_freq = bcm283x_platform_uart_freq,
+	.ap_mpstart = bcm2836_mpstart,
 };
 
 static const struct arm_platform bcm2837_platform = {
@@ -1426,6 +1423,7 @@ static const struct arm_platform bcm2837_platform = {
 	.ap_reset = bcm2835_system_reset,
 	.ap_delay = gtmr_delay,
 	.ap_uart_freq = bcm2837_platform_uart_freq,
+	.ap_mpstart = bcm2836_mpstart,
 };
 
 ARM_PLATFORM(bcm2836, "brcm,bcm2836", &bcm2836_platform);

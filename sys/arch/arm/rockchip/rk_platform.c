@@ -79,8 +79,6 @@ rk_platform_bootstrap(void)
 {
 	void *fdt_data = __UNCONST(fdtbus_get_data());
 
-	psci_fdt_bootstrap();
-
 	const int chosen_off = fdt_path_offset(fdt_data, "/chosen");
 	if (chosen_off < 0)
 		return;
@@ -153,6 +151,7 @@ static const struct arm_platform rk3328_platform = {
 	.ap_reset = psci_fdt_reset,
 	.ap_delay = gtmr_delay,
 	.ap_uart_freq = rk3328_platform_uart_freq,
+	.ap_mpstart = psci_fdt_mpstart,
 };
 
 ARM_PLATFORM(rk3328, "rockchip,rk3328", &rk3328_platform);

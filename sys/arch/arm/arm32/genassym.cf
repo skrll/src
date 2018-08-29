@@ -152,6 +152,12 @@ define	PGSHIFT			PGSHIFT
 
 define	MAXCPUS			MAXCPUS
 
+#define	PSR_HYP32_MODE		PSR_HYP32_MODE
+#define	PSR_SVC32_MODE		PSR_SVC32_MODE
+#define	PSR_MODE		PSR_MODE
+#define	CPU_CONTROL_DC_ENABLE	CPU_CONTROL_DC_ENABLE
+#define	TTBCR_S_PD0		TTBCR_S_PD0
+
 # Important offsets into the lwp and proc structs & associated constants
 define	L_PCB			offsetof(struct lwp, l_addr)
 define	L_CPU			offsetof(struct lwp, l_cpu)

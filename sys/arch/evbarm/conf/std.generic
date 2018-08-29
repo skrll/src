@@ -6,6 +6,9 @@ machine		evbarm arm
 include		"conf/std"
 include		"arch/arm/conf/std.arm"		# arch standard options
 
+options 	EXEC_ELF32
+options 	EXEC_SCRIPT
+
 # Architecture opions
 options 	ARM32
 
@@ -13,6 +16,7 @@ options 	__BUS_SPACE_HAS_STREAM_METHODS
 options 	__HAVE_CPU_COUNTER
 options 	__HAVE_CPU_UAREA_ALLOC_IDLELWP
 options 	__HAVE_FAST_SOFTINTS		# should be in types.h
+options 	__HAVE_GENERIC_START
 options 	__HAVE_PCI_CONF_HOOK
 options 	ARM_HAS_VBAR
 options 	ARM_INTR_IMPL="<arch/arm/fdt/fdt_intr.h>"
@@ -26,6 +30,10 @@ options 	MODULAR_DEFAULT_AUTOLOAD
 options 	PCI_NETBSD_CONFIGURE
 options 	TPIDRPRW_IS_CURCPU
 makeoptions	BOARDMKFRAG="${THISARM}/conf/mk.generic"
+
+# Fake
+makeoptions	KERNEL_BASE_PHYS="0x00000040"
+makeoptions	KERNEL_BASE_VIRT="0x80000040"
 
 # General options
 options 	CHILD_MAX=1024	# 160 is too few

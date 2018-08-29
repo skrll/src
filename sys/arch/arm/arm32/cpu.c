@@ -113,6 +113,7 @@ cpu_attach(device_t dv, cpuid_t id)
 		ci->ci_arm_cpuid = cpu_info_store.ci_arm_cpuid;
 		ci->ci_arm_cputype = cpu_info_store.ci_arm_cputype;
 		ci->ci_arm_cpurev = cpu_info_store.ci_arm_cpurev;
+		// XXXNH
 		ci->ci_ctrl = cpu_info_store.ci_ctrl;
 		ci->ci_undefsave[2] = cpu_info_store.ci_undefsave[2];
 		cpu_info[ci->ci_cpuid] = ci;
@@ -130,6 +131,8 @@ cpu_attach(device_t dv, cpuid_t id)
 #endif
 	}
 
+	// XXX Doesn't work for non-armv7
+	//ci->ci_ctrl = armreg_sctlr_read();
 	ci->ci_dev = dv;
 	dv->dv_private = ci;
 

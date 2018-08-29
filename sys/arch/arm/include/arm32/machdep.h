@@ -97,6 +97,7 @@ void arm32_kernel_vm_init(vaddr_t kvm_base, vaddr_t vectors,
 vaddr_t initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
         const struct boot_physmem *bp, size_t nbp);
 
+void uartputc(int);
 
 /* from arm/arm32/intr.c */
 void dosoftints(void);

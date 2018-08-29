@@ -198,12 +198,6 @@ sunxi_platform_bootstrap(void)
 	}
 }
 
-static void
-sunxi_platform_psci_bootstrap(void)
-{
-	psci_fdt_bootstrap();
-	sunxi_platform_bootstrap();
-}
 
 static void
 sun4i_platform_reset(void)
@@ -318,39 +312,42 @@ ARM_PLATFORM(sun5i_gr8, "nextthing,gr8", &sun5i_platform);
 
 static const struct arm_platform sun6i_platform = {
 	.ap_devmap = sunxi_platform_devmap,
-	.ap_bootstrap = sunxi_platform_psci_bootstrap,
+	.ap_bootstrap = sunxi_platform_bootstrap,
 	.ap_init_attach_args = sunxi_platform_init_attach_args,
 	.ap_early_putchar = sunxi_platform_early_putchar,
 	.ap_device_register = sunxi_platform_device_register,
 	.ap_reset = sun6i_platform_reset,
 	.ap_delay = gtmr_delay,
 	.ap_uart_freq = sunxi_platform_uart_freq,
+	.ap_mpstart = psci_fdt_mpstart,
 };
 
 ARM_PLATFORM(sun6i_a31, "allwinner,sun6i-a31", &sun6i_platform);
 
 static const struct arm_platform sun7i_platform = {
 	.ap_devmap = sunxi_platform_devmap,
-	.ap_bootstrap = sunxi_platform_psci_bootstrap,
+	.ap_bootstrap = sunxi_platform_bootstrap,
 	.ap_init_attach_args = sunxi_platform_init_attach_args,
 	.ap_early_putchar = sunxi_platform_early_putchar,
 	.ap_device_register = sunxi_platform_device_register,
 	.ap_reset = sun4i_platform_reset,
 	.ap_delay = sun4i_platform_delay,
 	.ap_uart_freq = sunxi_platform_uart_freq,
+	.ap_mpstart = psci_fdt_mpstart,
 };
 
 ARM_PLATFORM(sun7i_a20, "allwinner,sun7i-a20", &sun7i_platform);
 
 static const struct arm_platform sun8i_platform = {
 	.ap_devmap = sunxi_platform_devmap,
-	.ap_bootstrap = sunxi_platform_psci_bootstrap,
+	.ap_bootstrap = sunxi_platform_bootstrap,
 	.ap_init_attach_args = sunxi_platform_init_attach_args,
 	.ap_early_putchar = sunxi_platform_early_putchar,
 	.ap_device_register = sunxi_platform_device_register,
 	.ap_reset = sun6i_platform_reset,
 	.ap_delay = gtmr_delay,
 	.ap_uart_freq = sunxi_platform_uart_freq,
+	.ap_mpstart = psci_fdt_mpstart,
 };
 
 ARM_PLATFORM(sun8i_h2plus, "allwinner,sun8i-h2-plus", &sun8i_platform);
@@ -372,13 +369,14 @@ ARM_PLATFORM(sun9i_a80, "allwinner,sun9i-a80", &sun9i_platform);
 
 static const struct arm_platform sun50i_platform = {
 	.ap_devmap = sunxi_platform_devmap,
-	.ap_bootstrap = sunxi_platform_psci_bootstrap,
+	.ap_bootstrap = sunxi_platform_bootstrap,
 	.ap_init_attach_args = sunxi_platform_init_attach_args,
 	.ap_early_putchar = sunxi_platform_early_putchar,
 	.ap_device_register = sunxi_platform_device_register,
 	.ap_reset = sun6i_platform_reset,
 	.ap_delay = gtmr_delay,
 	.ap_uart_freq = sunxi_platform_uart_freq,
+	.ap_mpstart = psci_fdt_mpstart,
 };
 
 ARM_PLATFORM(sun50i_a64, "allwinner,sun50i-a64", &sun50i_platform);
@@ -386,13 +384,14 @@ ARM_PLATFORM(sun50i_h5, "allwinner,sun50i-h5", &sun50i_platform);
 
 static const struct arm_platform sun50i_h6_platform = {
 	.ap_devmap = sunxi_platform_devmap,
-	.ap_bootstrap = sunxi_platform_psci_bootstrap,
+	.ap_bootstrap = sunxi_platform_bootstrap,
 	.ap_init_attach_args = sunxi_platform_init_attach_args,
 	.ap_early_putchar = sunxi_platform_early_putchar,
 	.ap_device_register = sunxi_platform_device_register,
 	.ap_reset = sun50i_h6_platform_reset,
 	.ap_delay = gtmr_delay,
 	.ap_uart_freq = sunxi_platform_uart_freq,
+	.ap_mpstart = psci_fdt_mpstart,
 };
 
 ARM_PLATFORM(sun50i_h6, "allwinner,sun50i-h6", &sun50i_h6_platform);

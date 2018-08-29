@@ -44,6 +44,7 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.120 2018/08/22 07:47:33 skrll Exp $");
 
+#include "opt_arm_start.h"
 #include "opt_arm_debug.h"
 #include "opt_fdt.h"
 #include "opt_modular.h"
@@ -52,6 +53,7 @@ __KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.120 2018/08/22 07:47:33 skrll Ex
 #include "opt_multiprocessor.h"
 
 #include <sys/param.h>
+#include <sys/atomic.h>
 #include <sys/systm.h>
 #include <sys/reboot.h>
 #include <sys/proc.h>
@@ -271,8 +273,10 @@ cpu_startup(void)
 	vaddr_t minaddr;
 	vaddr_t maxaddr;
 
+#ifndef __HAVE_GENERIC_START
 	/* Set the CPU control register */
 	cpu_setup(boot_args);
+#endif
 
 #ifndef ARM_HAS_VBAR
 	/* Lock down zero page */
@@ -572,6 +576,7 @@ parse_mi_bootargs(char *args)
 	    || get_bootconf_option(args, "-x", BOOTOPT_TYPE_BOOLEAN, &integer))
 		if (integer)
 			boothowto |= AB_DEBUG;
+	boothowto |= AB_VERBOSE;
 }
 
 #ifdef __HAVE_FAST_SOFTINTS
@@ -690,7 +695,86 @@ cpu_uarea_alloc_idlelwp(struct cpu_info *ci)
 }
 #endif
 
+
+
 #ifdef MULTIPROCESSOR
+
+void 	armv7_dcache_l1inv_all(void);
+void	armv7_icache_inv_all(void);
+
+void
+cpu_init_secondary_processor(int cpuno)
+{
+	// pmap_kernel has been sucessfully built and we can switch to  it
+
+#ifdef ARM_MMU_EXTENDED
+	cpu_domains((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2))
+	    | (DOMAIN_CLIENT << (PMAP_DOMAIN_USER*2)));
+#else
+	cpu_domains((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2)) | DOMAIN_CLIENT);
+#endif
+	armv7_dcache_l1inv_all();
+//	cpu_idcache_wbinv_all();
+
+	VPRINTF(" ttb");
+
+	// B3.10.2
+	// Change bits
+	// isb
+	// tlb flush
+
+	cpu_setup(boot_args);
+
+#ifdef ARM_MMU_EXTENDED
+	/*
+	 * TTBCR should have been initialized by the MD start code.
+	 */
+	KASSERT((armreg_contextidr_read() & 0xff) == 0);
+	KASSERT(armreg_ttbcr_read() == __SHIFTIN(1, TTBCR_S_N));
+	/*
+	 * Disable lookups via TTBR0 until there is an activated pmap.
+	 */
+
+	cpu_setttb(pmap_kernel()->pm_l1_pa , KERNEL_PID);
+//	arm_dsb();
+	arm_isb();
+#else
+	cpu_setttb(pmap_kernel()->pm_l1->l1_physaddr, true);
+	cpu_domains(DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2));
+#endif
+
+	//cpu_tlb_flushID();
+	armreg_tlbiall_write(0);
+	arm_isb();
+//	armreg_bpiall_write(0);
+//	arm_dsb();
+//	arm_isb();
+
+	armv7_dcache_l1inv_all();
+	armreg_iciallu_write(0);
+
+#ifdef ARM_MMU_EXTENDED
+	VPRINTF(" (TTBCR=%#x TTBR0=%#x TTBR1=%#x)",
+	    armreg_ttbcr_read(), armreg_ttbr_read(), armreg_ttbr1_read());
+#else
+	VPRINTF(" (TTBR0=%#x)", armreg_ttbr_read());
+#endif
+
+	atomic_or_uint(&arm_cpu_hatched, __BIT(cpuno));
+
+	// Wait for cpu_boot_secondary_processors
+	while ((arm_cpu_mbox & __BIT(cpuno)) == 0) {
+		membar_consumer();
+		__asm ("wfe" ::: "memory");
+	}
+
+        atomic_and_32(&arm_cpu_mbox, ~(1 << cpuno));
+        membar_producer();
+        __asm __volatile("sev; sev; sev");
+
+
+}
+
 void
 cpu_boot_secondary_processors(void)
 {
@@ -761,27 +845,6 @@ cpu_kernel_vm_init(paddr_t memory_start, psize_t memory_size)
 {
 	const struct arm_platform *plat = arm_fdt_platform();
 
-#ifdef VERBOSE_INIT_ARM
-	extern char _end[];
-
-	const vaddr_t kernend = round_page((vaddr_t)_end);
-
-	const paddr_t kernstart_phys = KERNEL_BASE_PHYS;
-	const paddr_t kernend_phys = KERN_VTOPHYS(kernend);
-#endif
-
-	VPRINTF("KERNEL_BASE=0x%x, "
-	    "KERNEL_VM_BASE=0x%x, "
-	    "KERNEL_VM_BASE - KERNEL_BASE=0x%x, "
-	    "KERNEL_BASE_VOFFSET=0x%x\n",
-	    KERNEL_BASE,
-	    KERNEL_VM_BASE,
-	    KERNEL_VM_BASE - KERNEL_BASE,
-	    KERNEL_BASE_VOFFSET);
-
-	VPRINTF("%s: kernel phys start %lx end %lx\n", __func__,
-	    kernstart_phys, kernend_phys);
-
 #ifdef __HAVE_MM_MD_DIRECT_MAPPED_PHYS
 	const bool mapallmem_p = true;
 #ifndef PMAP_NEED_ALLOC_POOLPAGE
@@ -796,9 +859,13 @@ cpu_kernel_vm_init(paddr_t memory_start, psize_t memory_size)
 	const bool mapallmem_p = false;
 #endif
 
+	VPRINTF("%s: kernel phys start %" PRIxPADDR " end %" PRIxPADDR "\n",
+	    __func__, memory_start, memory_size);
+
 	arm32_bootmem_init(memory_start, memory_size, KERNEL_BASE_PHYS);
 	arm32_kernel_vm_init(KERNEL_VM_BASE, ARM_VECTORS_HIGH, 0,
 	    plat->ap_devmap(), mapallmem_p);
+
 }
 #endif
 

@@ -6740,8 +6740,8 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 	if (l1pt == 0)
 		panic("pmap_map_chunk: no L1 table provided");
 
-	VPRINTF("pmap_map_chunk: pa=0x%lx va=0x%lx size=0x%lx resid=0x%lx "
-	    "prot=0x%x cache=%d\n", pa, va, size, resid, prot, cache);
+// 	VPRINTF("pmap_map_chunk: pa=0x%lx va=0x%lx size=0x%lx resid=0x%lx "
+// 	    "prot=0x%x cache=%d\n", pa, va, size, resid, prot, cache);
 
 	switch (cache) {
 	case PTE_NOCACHE:
@@ -6797,6 +6797,8 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 			    | L1_S_PROT(PTE_KERNEL, prot) | f1
 			    | L1_S_DOM(PMAP_DOMAIN_KERNEL);
 			VPRINTF("S");
+// 			VPRINTF("pmap_map_chunk: pa=0x%lx va=0x%lx resid=0x%08lx "
+// 			    "npdep=%p pde=0x%x\n", pa, va, resid, &pdep[l1slot], npde);
 			l1pte_set(&pdep[l1slot], npde);
 			PDE_SYNC(&pdep[l1slot]);
 			va += L1_S_SIZE;
@@ -6909,12 +6911,12 @@ pmap_devmap_find_pa(paddr_t pa, psize_t size)
 	if (pmap_devmap_table == NULL)
 		return (NULL);
 
-	endpa = (uint64_t)pa + (uint64_t)(size - 1);
+	endpa = (uint64_t)pa + (uint64_t)(size);
 
 	for (i = 0; pmap_devmap_table[i].pd_size != 0; i++) {
 		if (pa >= pmap_devmap_table[i].pd_pa &&
 		    endpa <= (uint64_t)pmap_devmap_table[i].pd_pa +
-			     (uint64_t)(pmap_devmap_table[i].pd_size - 1))
+			     (uint64_t)(pmap_devmap_table[i].pd_size))
 			return (&pmap_devmap_table[i]);
 	}
 

@@ -245,7 +245,7 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	VPRINTF("page ");
 	uvm_md_init();
 
-	VPRINTF("pmap_physload ");
+	VPRINTF("pmap_physload\n");
 	KASSERT(bp != NULL || nbp == 0);
 	KASSERT(bp == NULL || nbp != 0);
 
@@ -254,36 +254,41 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 		paddr_t start = atop(pv->pv_pa);
 		const paddr_t end = start + atop(pv->pv_size);
 
-		while (start < end) {
-			int vm_freelist = VM_FREELIST_DEFAULT;
-			paddr_t segend = end;
-			/*
-			 * This assumes the bp list is sorted in ascending
-			 * order.
-			 */
-			for (size_t j = 0; j < nbp; j++) {
-				paddr_t bp_start = bp[j].bp_start;
-				paddr_t bp_end = bp_start + bp[j].bp_pages;
-				if (start < bp_start) {
-					if (segend > bp_start) {
-						segend = bp_start;
-					}
-					break;
-				}
-				if (start < bp_end) {
-					if (segend > bp_end) {
-						segend = bp_end;
-					}
-					vm_freelist = bp[j].bp_freelist;
-					break;
-				}
-			}
+		VPRINTF("block %2zu start %#08lx  end %#08lx\n", i,
+		    pv->pv_pa, pv->pv_pa + pv->pv_size);
 
-			uvm_page_physload(start, segend, start, segend,
-			    vm_freelist);
-			start = segend;
+		int vm_freelist = VM_FREELIST_DEFAULT;
+		paddr_t segend = end;
+		for (size_t j = 0; j < nbp; j++ /*, start = segend, segend = end */) {
+			paddr_t bp_start = bp[j].bp_start;
+			paddr_t bp_end = bp_start + bp[j].bp_pages;
+
+			VPRINTF("   bp %2zu start %#08lx  end %#08lx\n",
+			    j, ptoa(bp_start), ptoa(bp_end));
+			KASSERT(bp_start < bp_end);
+			if (start > bp_end || segend < bp_start)
+				continue;
+
+			if (start < bp_start)
+				start = bp_start;
+
+			if (start < bp_end) {
+				if (segend > bp_end) {
+					segend = bp_end;
+				}
+				vm_freelist = bp[j].bp_freelist;
+
+				uvm_page_physload(start, segend, start, segend,
+				    vm_freelist);
+				VPRINTF("         start %#08lx end %#08lx"
+				    "... loading in freelist %d\n", ptoa(start),
+				    ptoa(end), vm_freelist);
+				start = segend;
+				segend = end;
+			}
 		}
 	}
+	VPRINTF("\n");
 
 	/* Boot strap pmap telling it where the kernel page table is */
 	VPRINTF("pmap ");
@@ -336,13 +341,6 @@ cpu_hatch(struct cpu_info *ci, cpuid_t cpuid, void (*md_cpu_init)(struct cpu_inf
 	 * Raise our IPL to the max
 	 */
 	splhigh();
-
-#ifdef CPU_CORTEX
-#if 0
-	KASSERTMSG(armreg_auxctl_read() & CORTEXA9_AUXCTL_SMP, "auxctl %#x",
-	    armreg_auxctl_read());
-#endif
-#endif
 
 	VPRINTF("%s(%s): ", __func__, ci->ci_data.cpu_name);
 	uint32_t mpidr = armreg_mpidr_read();
@@ -406,17 +404,18 @@ cpu_hatch(struct cpu_info *ci, cpuid_t cpuid, void (*md_cpu_init)(struct cpu_inf
 
 	mutex_exit(&cpu_hatch_lock);
 
+	VPRINTF(" md(%p)", md_cpu_init);
+	if (md_cpu_init != NULL)
+		(*md_cpu_init)(ci);
+
 	VPRINTF(" interrupts");
 	/*
 	 * Let the interrupts do what they need to on this CPU.
 	 */
 	intr_cpu_init(ci);
 
-	VPRINTF(" md(%p)", md_cpu_init);
-	if (md_cpu_init != NULL)
-		(*md_cpu_init)(ci);
-
 	VPRINTF(" done!\n");
+
 	atomic_and_32(&arm_cpu_mbox, ~(1 << cpuid));
 	membar_producer();
 	__asm __volatile("sev; sev; sev");

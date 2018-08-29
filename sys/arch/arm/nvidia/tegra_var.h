@@ -75,10 +75,10 @@ struct tegra_cpufreq_func {
 void	tegra_cpufreq_register(const struct tegra_cpufreq_func *);
 
 #if defined(SOC_TEGRA124)
-void	tegra124_mpinit(void);
+void	tegra124_mpstart(void);
 #endif
 #if defined(SOC_TEGRA210)
-void	tegra210_mpinit(void);
+void	tegra210_mpstart(void);
 #endif
 
 static void inline

@@ -19,7 +19,7 @@ pseudo-device 	openfirm	# /dev/openfirm
 #options 	LOCKDEBUG
 #options 	PMAP_DEBUG	# Enable pmap_debug_level code
 #options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
-#options 	CONSADDR=0x1c090000
+#options 	EARLYCONS=vexpress, CONSADDR=0x1c090000
 
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1

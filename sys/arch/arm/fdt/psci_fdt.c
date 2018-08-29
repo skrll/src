@@ -32,11 +32,13 @@
 __KERNEL_RCSID(0, "$NetBSD: psci_fdt.c,v 1.15 2018/08/26 18:15:49 ryo Exp $");
 
 #include <sys/param.h>
+#include <sys/atomic.h>
 #include <sys/bus.h>
 #include <sys/device.h>
-#include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/atomic.h>
+#include <sys/systm.h>
+
+#include <uvm/uvm_extern.h>
 
 #include <dev/fdt/fdtvar.h>
 
@@ -159,18 +161,19 @@ psci_fdt_preinit(void)
 static register_t
 psci_fdt_mpstart_pa(void)
 {
-#ifdef __aarch64__
-	extern void aarch64_mpstart(void);
-	return (register_t)aarch64_kern_vtophys((vaddr_t)aarch64_mpstart);
-#else
-	extern void cortex_mpstart(void);
-	return (register_t)cortex_mpstart;
-#endif
+
+	bool ok __diagused;
+	paddr_t pa;
+
+	ok = pmap_extract(pmap_kernel(), (vaddr_t)cpu_mpstart, &pa);
+	KASSERT(ok);
+
+	return pa;
 }
 #endif
 
 void
-psci_fdt_bootstrap(void)
+psci_fdt_mpstart(void)
 {
 #ifdef MULTIPROCESSOR
 	uint64_t mpidr, bp_mpidr;

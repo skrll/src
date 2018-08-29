@@ -32,13 +32,14 @@
  */
 
 #include "assym.h"
+#include <sys/cdefs.h>
 #include <sys/syscall.h>
 #include <sys/errno.h>
 #include <arm/asm.h>
 #include <arm/locore.h>
 
 /* What size should this really be ? It is only used by init_arm() */
-#define INIT_ARM_STACK_SIZE	2048
+#define INIT_ARM_STACK_SIZE	8192
 
 	RCSID("$NetBSD: locore.S,v 1.38 2017/10/14 15:35:02 skrll Exp $")
 
@@ -103,6 +104,14 @@ ASENTRY_NP(start)
 	b	_C_LABEL(panic)
 	/* NOTREACHED */
 
+ENTRY_NP(uartputc)
+#ifdef EARLYCONS
+	b	___CONCAT(EARLYCONS, _platform_early_putchar)
+#endif
+	RET
+ASEND(uartputc)
+
+
 .Lstart:
 	.word	_edata
 	.word	_end
@@ -111,19 +120,23 @@ ASENTRY_NP(start)
 #else
 	.word	_C_LABEL(cpu_info_store)
 #endif
-	.word	svcstk + INIT_ARM_STACK_SIZE
+	.word	svcstk_end
 
 .Lmainreturned:
 	.asciz	"main() returned"
 	.align	0
 ASEND(start)
 
+#define MAXCPU 8
 	.bss
 #ifdef __ARM_EABI__
 	.align	3
 #endif
+	.global svcstk
+
 svcstk:
-	.space	INIT_ARM_STACK_SIZE
+	.space	INIT_ARM_STACK_SIZE * MAXCPU
+svcstk_end:
 
 	.text
 	.align	0

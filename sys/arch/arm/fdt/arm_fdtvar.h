@@ -38,6 +38,7 @@ struct fdt_attach_args;
 struct arm_platform {
 	const struct pmap_devmap * (*ap_devmap)(void);
 	void			(*ap_bootstrap)(void);
+	void			(*ap_mpstart)(void);
 	void			(*ap_init_attach_args)(struct fdt_attach_args *);
 	void			(*ap_early_putchar)(char);
 	void			(*ap_device_register)(device_t, void *);

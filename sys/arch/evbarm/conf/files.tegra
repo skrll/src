@@ -2,9 +2,12 @@
 #
 # NVIDIA Tegra configuration info
 #
+defparam opt_arm_debug.h	EARLYCONS
 
 include "arch/arm/pic/files.pic"
 include "arch/arm/cortex/files.cortex"
+
+include "arch/evbarm/conf/files.fdt"
 
 file	arch/arm/arm32/arm32_boot.c
 file	arch/arm/arm32/arm32_kvminit.c
@@ -13,7 +16,5 @@ file	arch/arm/arm32/irq_dispatch.S
 file	arch/arm/arm32/armv7_generic_space.c
 file	arch/arm/arm/arm_generic_dma.c
 file	arch/arm/arm/bus_space_a4x.S
-
-include "arch/evbarm/conf/files.fdt"
 
 include "arch/arm/nvidia/files.tegra"

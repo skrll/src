@@ -31,6 +31,7 @@
 
 #include "opt_exynos.h"
 #include "opt_arm_debug.h"
+#include "opt_multiprocessor.h"
 #include "gpio.h"
 
 #include <sys/cdefs.h>
@@ -38,6 +39,7 @@ __KERNEL_RCSID(1, "$NetBSD: exynos_combiner.c,v 1.8 2018/07/02 12:18:32 jmcneill
 
 #include <sys/param.h>
 #include <sys/bus.h>
+#include <sys/cpu.h>
 #include <sys/device.h>
 #include <sys/intr.h>
 #include <sys/systm.h>

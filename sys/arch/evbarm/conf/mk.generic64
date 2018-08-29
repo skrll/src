@@ -1,5 +1,6 @@
 #	$NetBSD: mk.generic64,v 1.1 2018/04/01 04:35:04 ryo Exp $
 
+# XXXNH
 SYSTEM_FIRST_OBJ=	fdt_start.o
 SYSTEM_FIRST_SFILE=	${THISARM}/fdt/fdt_start.S
 
@@ -10,6 +11,7 @@ BOARDTYPE=		evbarm64
 MKUBOOTIMAGEARGS=	-f arm64
 MKKNLIMG=		${THISARM}/compile/rpi-mkknlimg.sh
 
+# XXXNH
 GENASSYM_EXTRAS+=	${THISARM}/fdt/genassym.cf
 
 SYSTEM_LD_TAIL_EXTRA+=; \

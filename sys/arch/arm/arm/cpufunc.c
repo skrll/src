@@ -51,9 +51,11 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.173 2018/08/23 21:01:43 skrll Exp $");
 
+#include "opt_arm_start.h"
 #include "opt_compat_netbsd.h"
 #include "opt_cpuoptions.h"
 #include "opt_cputypes.h"
+#include "opt_multiprocessor.h"
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -1955,6 +1957,8 @@ set_cpufuncs(void)
 		pmap_pte_init_armv7();
 		if (arm_cache_prefer_mask)
 			uvmexp.ncolors = (arm_cache_prefer_mask >> PGSHIFT) + 1;
+
+		// XXXNH hmm
 		/*
 		 * Start and reset the PMC Cycle Counter.
 		 */
@@ -2881,6 +2885,11 @@ pj4bv7_setup(char *args)
 		cpuctrl |= CPU_CONTROL_VECRELOC;
 #endif
 
+	//
+	// XXXNH
+	// per cpu ops
+	//
+
 #ifdef L2CACHE_ENABLE
 	/* Setup L2 cache */
 	arm_scache.cache_type = CPU_CT_CTYPE_WT;
@@ -2940,19 +2949,30 @@ struct cpu_option armv7_options[] = {
 void
 armv7_setup(char *args)
 {
-
-	int cpuctrl = CPU_CONTROL_MMU_ENABLE | CPU_CONTROL_IC_ENABLE
-	    | CPU_CONTROL_DC_ENABLE | CPU_CONTROL_BPRD_ENABLE
+	int cpuctrl =
+	    CPU_CONTROL_MMU_ENABLE |
+	    CPU_CONTROL_IC_ENABLE |
+	    CPU_CONTROL_DC_ENABLE |
+	    CPU_CONTROL_BPRD_ENABLE |
+	    CPU_CONTROL_UNAL_ENABLE |
+	    0;
 #ifdef __ARMEB__
-	    | CPU_CONTROL_EX_BEND
+	cpuctrl |= CPU_CONTROL_EX_BEND;
 #endif
 #ifndef ARM32_DISABLE_ALIGNMENT_FAULTS
-	    | CPU_CONTROL_AFLT_ENABLE;
+	cpuctrl |= CPU_CONTROL_AFLT_ENABLE;
 #endif
-	    | CPU_CONTROL_UNAL_ENABLE;
+#ifdef ARM_MMU_EXTENDED
+	cpuctrl |= CPU_CONTROL_XP_ENABLE;
+#endif
 
-	int cpuctrlmask = cpuctrl | CPU_CONTROL_AFLT_ENABLE;
-
+	int cpuctrlmask = cpuctrl |
+	    CPU_CONTROL_EX_BEND |
+	    CPU_CONTROL_AFLT_ENABLE |
+	    CPU_CONTROL_TR_ENABLE |
+	    CPU_CONTROL_VECRELOC |
+	    CPU_CONTROL_XP_ENABLE |
+	    0;
 
 	cpuctrl = parse_cpu_options(args, armv7_options, cpuctrl);
 
@@ -2961,12 +2981,104 @@ armv7_setup(char *args)
 		cpuctrl |= CPU_CONTROL_VECRELOC;
 #endif
 
-	/* Clear out the cache */
-	cpu_idcache_wbinv_all();
+	// FreeBSD does inv_all
 
-	/* Set the control register */
+	/* Clear out the cache */
+	//cpu_idcache_wbinv_all();
+	//cpu_idcache_inv_all(); - we don't have one!!!
+
+#ifdef __HAVE_GENERIC_START
+
+	const u_int lcputype = cpufunc_id();
+	int actlr_set = 0;
+	int actlr_clr = 0;
+
+	if (CPU_ID_CORTEX_A5_P(lcputype)) {
+		/*
+		 * Disable exclusive L1/L2 cache control
+		 * Enable SMP mode
+		 * Enable Cache and TLB maintenance broadcast
+		 */
+
+		// SCU?!?
+
+		actlr_clr = CORTEXA5_ACTLR_EXCL;
+		actlr_set = CORTEXA5_ACTLR_SMP | CORTEXA5_ACTLR_FW;
+	} else if (CPU_ID_CORTEX_A7_P(lcputype)) {
+#ifdef MULTIPROCESSOR
+		actlr_set |= CORTEXA7_ACTLR_SMP;
+#endif
+	} else if (CPU_ID_CORTEX_A8_P(lcputype)) {
+		actlr_set = CORTEXA8_ACTLR_L2EN;
+		actlr_clr = CORTEXA8_ACTLR_L1ALIAS;
+	} else if (CPU_ID_CORTEX_A9_P(lcputype)) {
+
+
+		// SCU?!?
+
+		// CORTEXA9_AUXCTL_EXCL - clears
+		actlr_set =
+		    CORTEXA9_AUXCTL_FW |
+		    CORTEXA9_AUXCTL_L2PE |	// Not in FreeBSD
+		    CORTEXA9_AUXCTL_SMP |
+		    0;
+	} else if (CPU_ID_CORTEX_A15_P(lcputype)) {
+		actlr_set =
+		    CORTEXA15_ACTLR_SMP |
+		    CORTEXA15_ACTLR_SDEH |
+		    0;
+#if 0
+	} else if (CPU_ID_CORTEX_A12_P(lcputype) ||
+	    CPU_ID_CORTEX_A17_P(lcputype)) {
+		actlr_set =
+		    CORTEXA17_ACTLR_SMP;
+#endif
+	} else if (CPU_ID_CORTEX_A53_P(lcputype)) {
+	} else if (CPU_ID_CORTEX_A57_P(lcputype)) {
+	} else if (CPU_ID_CORTEX_A72_P(lcputype)) {
+	}
+
+	// No obvious effect
+	//armreg_tlbiall_write(0);
+
+	uint32_t actlr = armreg_auxctl_read();
+	actlr &= ~actlr_clr;
+	actlr |= actlr_set;
+
+	armreg_auxctl_write(actlr);
+
+	uint32_t sctlr = armreg_sctlr_read();
+	sctlr &= ~cpuctrlmask;
+	sctlr |= cpuctrl;
+
+	armreg_sctlr_write(sctlr);
+	arm_isb();
+
+	/* Set the control register - does dsb; isb */
+//	cpu_control(cpuctrlmask, cpuctrl);
+#if 0
+
+
+	// XXX curcpu not setup for AP yet - fixme
+//	curcpu()->ci_ctrl = cpu_control(0, 0);
+
+
+
+
+#endif
+	/* does tlb and branch predictor flush, and dsb; isb */
+	armreg_tlbiall_write(0);
+	armreg_bpiall_write(0);
+//	arm_dsb();
+	arm_isb();
+#else
+	/* Set the control register - does dsb; isb */
 	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(cpuctrlmask, cpuctrl);
+
+
+#endif
+
 }
 #endif /* CPU_ARMV7 */
 
@@ -3489,7 +3601,6 @@ sheeva_setup(char *args)
 }
 #endif	/* CPU_SHEEVA */
 
-
 bool
 cpu_gtmr_exists_p(void)
 {
@@ -3505,5 +3616,15 @@ cpu_clusterid(void)
 bool
 cpu_earlydevice_va_p(void)
 {
-	return armreg_sctlr_read() & CPU_CONTROL_MMU_ENABLE;
+
+	extern uint32_t cpu_ttb;
+
+	const bool cpul1pt_p =
+	    ((armreg_ttbr_read() & -L1_TABLE_SIZE) == cpu_ttb) ||
+	    ((armreg_ttbr1_read() & -L1_TABLE_SIZE) == cpu_ttb);
+
+	const bool mmu_enabled_p =
+	    armreg_sctlr_read() & CPU_CONTROL_MMU_ENABLE;
+
+	return mmu_enabled_p && cpul1pt_p;
 }

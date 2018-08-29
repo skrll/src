@@ -71,6 +71,7 @@ extern u_int arm_cpu_max;
 
 vaddr_t initarm_common(vaddr_t, vsize_t, const struct boot_physmem *, size_t);
 void cpu_kernel_vm_init(paddr_t, psize_t);
+void uartputc(int);
 
 void parse_mi_bootargs(char *);
 void dumpsys(void);

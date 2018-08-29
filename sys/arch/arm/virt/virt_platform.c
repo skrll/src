@@ -120,13 +120,13 @@ virt_platform_uart_freq(void)
 
 static const struct arm_platform virt_platform = {
 	.ap_devmap = virt_platform_devmap,
-	.ap_bootstrap = psci_fdt_bootstrap,
 	.ap_init_attach_args = virt_platform_init_attach_args,
 	.ap_early_putchar = virt_platform_early_putchar,
 	.ap_device_register = virt_platform_device_register,
 	.ap_reset = psci_fdt_reset,
 	.ap_delay = gtmr_delay,
 	.ap_uart_freq = virt_platform_uart_freq,
+	.ap_mpstart = psci_fdt_mpstart,
 };
 
 ARM_PLATFORM(virt, "linux,dummy-virt", &virt_platform);
