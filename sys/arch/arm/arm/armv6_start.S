@@ -934,7 +934,7 @@ ENTRY_NP(generic_printx)
 
 	cmp	r3, #9
 	add	r0, r3, #'0'
-	addgt	r0, r3, #'a'
+	addgt	r0, r3, #'a' - 10
 	bl	uartputc
 
 	cmp	r4, #0
