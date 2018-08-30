@@ -138,7 +138,7 @@ ENTRY_NP(generic_start)
 	VPRINTX(r4)
 	VPRINTF("\n\rttb1 :")
 	VPRINTX(r5)
-	VPRINTF("\n\rttb1 :")
+	VPRINTF("\n\rttcr :")
 	VPRINTX(r6)
 	VPRINTF("\n\r")
 #endif
