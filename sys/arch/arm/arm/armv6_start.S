@@ -128,7 +128,6 @@ ENTRY_NP(generic_start)
 	mov	r9, r6		// Save fdt_addr_r for mapping later
 
 	VPRINTX(r6)
-	VPRINTF("\n\r")
 
 #ifdef VERBOSE_INIT_ARM
 	mrc	p15, 0, r4, c2, c0, 0	// TTBR0 read
