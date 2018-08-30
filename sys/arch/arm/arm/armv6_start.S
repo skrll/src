@@ -581,17 +581,16 @@ armv7_init:
 	movw	r2, #:lower16:SCTLR_SET
 	movt	r2, #:upper16:SCTLR_SET
 
-	bic	r0, r0, r1			// disable icache/dcache/mmu
-	orr	r0, r0, r2			//
+	bic	r6, r0, r1			// disable icache/dcache/mmu
+	orr	r6, r0, r2			//
 
-	mcr	p15, 0, r0, c1, c0, 0		// SCTLR write
+	mcr	p15, 0, r6, c1, c0, 0		// SCTLR write
 	dsb
 	isb
 
 	VPRINTF("\n\rsctlr:")
-	bl	generic_printx
-	XPUTC('\n')
-	XPUTC('\r')
+	VPRINTX(r6)
+	VPRINTF("\n\r")
 	//
 	// invalidate the data cache
 	// FreeBSD does dcache_inv_poc_all and ICIALLU
