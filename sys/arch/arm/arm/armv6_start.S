@@ -121,7 +121,7 @@ ENTRY_NP(generic_start)
 	/*
 	 * ARM boot protocol has FDT address in r2
 	 */
-	VPRINTF("\n\fdt   :")
+	VPRINTF("\n\rfdt  :")
 	ldr	r8, =fdt_addr_r
 	sub	r8, r8, r10
 	str	r6, [r8]
@@ -139,8 +139,8 @@ ENTRY_NP(generic_start)
 	VPRINTF("\n\rttb1 :")
 	VPRINTX(r5)
 	VPRINTF("\n\rttb1 :")
-	VPRINTX(r6
-)
+	VPRINTX(r6)
+	VPRINTF("\n\r")
 #endif
 
 	// Let's work out what sort of CPU we're running on
@@ -433,7 +433,7 @@ arm_boot_l1pt_entry:
 	add	R_VA, R_VA, #1
 	add	R_PA, R_PA, #(L1_S_SIZE)
 
-	VPRINTF("\n\n")
+	VPRINTF("\n\r")
 
 	subs	R_NSEC, R_NSEC, #1
 	bhi	2b
