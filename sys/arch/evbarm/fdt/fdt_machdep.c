@@ -485,7 +485,7 @@ initarm(void *arg)
 	int nfdt_physmem = 0;
 	struct extent_region *er;
 
-	VPRINTF("Memory regions : %s\n", bootargs);
+	VPRINTF("Memory regions :\n");
 	LIST_FOREACH(er, &fdt_memory_ext->ex_regions, er_link) {
 		VPRINTF("  %lx - %lx\n", er->er_start, er->er_end);
 		struct boot_physmem *bp = &fdt_physmem[nfdt_physmem++];
