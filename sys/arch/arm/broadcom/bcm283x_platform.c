@@ -807,7 +807,7 @@ bcm2836_mpstart(void)
 
 #ifdef MULTIPROCESSOR
 	for (size_t i = 1; i < arm_cpu_max; i++) {
-		if ((arm_cpu_hatched & (1 << i)) == 0) {
+		if ((arm_cpu_hatched & __BIT(i)) == 0) {
 			printf("%s: warning: cpu%zu failed to hatch\n",
 			    __func__, i);
 		}

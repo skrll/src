@@ -117,7 +117,7 @@ cpu_attach(device_t dv, cpuid_t id)
 		ci->ci_ctrl = cpu_info_store.ci_ctrl;
 		ci->ci_undefsave[2] = cpu_info_store.ci_undefsave[2];
 		cpu_info[ci->ci_cpuid] = ci;
-		if ((arm_cpu_hatched & (1 << id)) == 0) {
+		if ((arm_cpu_hatched & __BIT(id)) == 0) {
 			ci->ci_dev = dv;
 			dv->dv_private = ci;
 			aprint_naive(": disabled\n");
