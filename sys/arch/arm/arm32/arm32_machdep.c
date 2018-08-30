@@ -44,13 +44,13 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.120 2018/08/22 07:47:33 skrll Exp $");
 
-#include "opt_arm_start.h"
 #include "opt_arm_debug.h"
+#include "opt_arm_start.h"
 #include "opt_fdt.h"
 #include "opt_modular.h"
 #include "opt_md.h"
-#include "opt_pmap_debug.h"
 #include "opt_multiprocessor.h"
+#include "opt_pmap_debug.h"
 
 #include <sys/param.h>
 #include <sys/atomic.h>
