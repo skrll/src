@@ -492,8 +492,8 @@ initarm(void *arg)
 
 		KASSERT(nfdt_physmem <= MAX_PHYSMEM);
 
-		bp->bp_start = atop(er->er_start);
-		bp->bp_pages = atop(er->er_end - er->er_start);
+		bp->bp_start = atop(round_page(er->er_start));
+		bp->bp_pages = atop(trunc_page(er->er_end + 1)) - bp->bp_start;
 		bp->bp_freelist = VM_FREELIST_DEFAULT;
 
 #ifdef _LP64
