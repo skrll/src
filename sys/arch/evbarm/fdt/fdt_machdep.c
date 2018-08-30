@@ -512,7 +512,7 @@ initarm(void *arg)
 	u_int sp = initarm_common(KERNEL_VM_BASE, KERNEL_VM_SIZE, fdt_physmem,
 	     nfdt_physmem);
 
-	VPRINTF("mpinit\n");
+	VPRINTF("mpstart\n");
 	if (plat->ap_mpstart)
 		plat->ap_mpstart();
 
