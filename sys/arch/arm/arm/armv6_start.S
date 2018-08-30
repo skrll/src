@@ -360,16 +360,6 @@ arm_boot_l1pt_init:
 	cmp	r0, r1
 	blt	1b
 
-//	add	r1, R_L1TABLE, #L1_TABLE_SIZE
-
-	XPUTC('s')
-	VPRINTX(R_L1TABLE)
-	XPUTC('e')
-	VPRINTX(r1)
-	XPUTC(':')
-
-	//__bss_end__ is equal to _end
-
 	ldr	r0, =KERNEL_BASE
 	ldr	r1, =TEMP_L1_TABLE
 	add	r1, r1, #L1_TABLE_SIZE
