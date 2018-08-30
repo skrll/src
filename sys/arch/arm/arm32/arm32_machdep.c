@@ -763,16 +763,12 @@ cpu_init_secondary_processor(int cpuno)
 	atomic_or_uint(&arm_cpu_hatched, __BIT(cpuno));
 
 	// Wait for cpu_boot_secondary_processors
-	while ((arm_cpu_mbox & __BIT(cpuno)) == 0) {
-		membar_consumer();
+	while (membar_consumer(), (arm_cpu_mbox & __BIT(cpuno)) == 0) {
 		__asm ("wfe" ::: "memory");
 	}
 
-        atomic_and_32(&arm_cpu_mbox, ~(1 << cpuno));
-        membar_producer();
-        __asm __volatile("sev; sev; sev");
-
-
+	atomic_and_32(&arm_cpu_mbox, ~__BIT(cpuno));
+	__asm __volatile("sev; sev; sev" ::: "memory");
 }
 
 void
@@ -784,8 +780,8 @@ cpu_boot_secondary_processors(void)
 #ifdef _ARM_ARCH_7
 	__asm __volatile("sev; sev; sev");
 #endif
-	while (arm_cpu_mbox) {
-		__asm("wfe");
+	while (membar_consumer(), arm_cpu_mbox) {
+		__asm __volatile("wfe" ::: "memory");
 	}
 }
 
