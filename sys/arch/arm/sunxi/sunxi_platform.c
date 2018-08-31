@@ -196,6 +196,8 @@ sunxi_platform_bootstrap(void)
 		fdt_setprop_string(fdt_data, chosen_off,
 		    "stdout-path", "serial0:115200n8");
 	}
+
+	psci_fdt_bootstrap();
 }
 
 

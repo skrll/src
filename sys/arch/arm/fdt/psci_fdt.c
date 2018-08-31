@@ -173,13 +173,36 @@ psci_fdt_mpstart_pa(void)
 #endif
 
 void
+psci_fdt_bootstrap(void)
+{
+#ifdef MULTIPROCESSOR
+	int child;
+
+	const int cpus = OF_finddevice("/cpus");
+	if (cpus == -1) {
+		arm_cpu_max = 1;
+		return;
+	}
+
+	/* Count CPUs */
+	arm_cpu_max = 0;
+	for (child = OF_child(cpus); child; child = OF_peer(child)) {
+		if (!fdtbus_status_okay(child))
+			continue;
+		const char *devtype = fdtbus_get_string(child, "device_type");
+		if (devtype && strcmp(devtype, "cpu") == 0)
+			arm_cpu_max++;
+	}
+#endif
+}
+
+void
 psci_fdt_mpstart(void)
 {
 #ifdef MULTIPROCESSOR
 	uint64_t mpidr, bp_mpidr;
 	u_int cpuindex;
 	int child;
-	const char *devtype;
 
 	const int cpus = OF_finddevice("/cpus");
 	if (cpus == -1) {
@@ -187,14 +210,6 @@ psci_fdt_mpstart(void)
 		arm_cpu_max = 1;
 		return;
 	}
-
-	/* Count CPUs */
-	arm_cpu_max = 0;
-	for (child = OF_child(cpus); child; child = OF_peer(child))
-		if (fdtbus_status_okay(child) && ((devtype =
-		    fdtbus_get_string(child, "device_type")) != NULL) &&
-		    (strcmp(devtype, "cpu") == 0))
-			arm_cpu_max++;
 
 	if (psci_fdt_preinit() != 0)
 		return;
