@@ -162,6 +162,7 @@ ASEND(generic_start)
         .globl  TEMP_L1_TABLE
 TEMP_L1_TABLE:
         .space  L1_TABLE_SIZE
+TEMP_L1_TABLE_END:
 
         .text
         .align  2
@@ -331,21 +332,16 @@ generic_startv6:
 //
 // On Entry
 //
-// R_L1TABLE	is l1pt physical address
-// R_PA		is kernel base physical address
-// R_ATTR	is the cpu attribute bits for the section mapping
-// r10 		is the va offset from pa (aka. kern_vtopdiff)
+// R_L1TABLE	is the PA of the temporary L1PT
+// R_ATTR	is the attribute bits to set for each section mapping
 //
-// registers used:
-//
-// r0 - r8 and r12
+// No R_VA/R_PA/R_NSEC needed here as we use KERNEL_BASE and
+// TEMP_L1_TABLE_END to calculate the initial direct VA:PA mapping
 
-
+// We push r0 to maintain stack alignment only
 arm_boot_l1pt_init:
 	push	{r0, lr}
 
-	// No VA needed here as we use KERNEL_BASE
-	// Build page table from scratch
 	// Start address to clear memory.
 	mov	r0, R_L1TABLE
 
@@ -358,23 +354,26 @@ arm_boot_l1pt_init:
 	cmp	r0, r1
 	blt	1b
 
-	ldr	r0, =KERNEL_BASE
-	ldr	r1, =TEMP_L1_TABLE
-	add	r1, r1, #L1_TABLE_SIZE
+	// Calculate the size of the kernel in L1_S_SIZE sections
 	ldr	r2, =(L1_S_SIZE - 1)
-
-	bic	r0, r2		// round kernel start down to 1M boundary
+	ldr	r0, =KERNEL_BASE
+	ldr	r1, =TEMP_L1_TABLE_END
 	add	r1, r2
-	bic	r1, r2		// round kernel end up to 1M boundary
+
+	bic	r0, r2		// round kernel start down to L1_S_SIZE boundary
+	bic	r1, r2		// round kernel end up to L1_S_SIZE boundary
 	sub	r1, r0
+
 	mov	R_NSEC, r1, lsr #(L1_S_SHIFT)
 
+	// VA:PA mapping for size of kernel
 	adr	R_VA, generic_start
 	bic	R_VA, r2
 	mov	R_PA, R_VA
 
 	pop	{r0, lr}
 
+// We push r0 to maintain stack alignment only
 arm_boot_l1pt_entry:
 	push	{r0, lr}
 
@@ -395,18 +394,6 @@ arm_boot_l1pt_entry:
 
 	VPRINTF("\n\r")
 	lsr	R_VA, R_VA, #L1_S_SHIFT
-
-//	mrc	p15, 0, r0, c0, c0, 5	// MPIDR read
-//	cmp	r0, #0			// not zero?
-
-
-// XXXNH this can be optimised
-
-//	beq	5f
-//	tst	attr, #(L1_S_C|L1_S_B)	// is this entry cacheable?
-//	orrne	attr, #L1_S_V6_S	//    yes, shareable attribute
-//
-//5:
 	orr	R_PA, R_ATTR
 
 2:
@@ -436,9 +423,8 @@ arm_boot_l1pt_entry:
 
 
 
-
 //
-// Coprocessor register initialization values
+// SCTLR register initialization values
 //
 #ifdef __ARMEL__
 #define CPU_CONTROL_EX_BEND_SET		0
@@ -460,11 +446,6 @@ arm_boot_l1pt_entry:
 #define CPU_CONTROL_XP_ENABLE_SET	0
 #endif
 
-#if 0
-	 CPU_CONTROL_DC_ENABLE		|	\
-	 CPU_CONTROL_IC_ENABLE		|	\
-
-#endif
 
 // bits to set in the Control Register
 //
@@ -482,8 +463,6 @@ arm_boot_l1pt_entry:
 	CPU_CONTROL_AFLT_ENABLE_CLR	|	\
 	CPU_CONTROL_XP_ENABLE_CLR	|	\
 	0)
-
-
 
 
 //
