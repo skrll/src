@@ -13,6 +13,7 @@ options 	MODULAR_DEFAULT_AUTOLOAD
 options 	__HAVE_CPU_COUNTER
 options 	__HAVE_FAST_SOFTINTS		# should be in types.h
 options 	__HAVE_CPU_UAREA_ALLOC_IDLELWP
+options 	__HAVE_GENERIC_START
 options 	ARM_HAS_VBAR
 #options 	__HAVE_MM_MD_DIRECT_MAPPED_PHYS
 #options 	PMAP_NEED_ALLOC_POOLPAGE
