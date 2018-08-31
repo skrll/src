@@ -127,7 +127,6 @@ ASEND(uartputc)
 	.align	0
 ASEND(start)
 
-#define MAXCPU 8
 	.bss
 #ifdef __ARM_EABI__
 	.align	3
@@ -135,7 +134,7 @@ ASEND(start)
 	.global svcstk
 
 svcstk:
-	.space	INIT_ARM_STACK_SIZE * MAXCPU
+	.space	INIT_ARM_STACK_SIZE * MAXCPUS
 svcstk_end:
 
 	.text

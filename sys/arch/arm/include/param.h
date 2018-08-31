@@ -145,6 +145,8 @@
 # endif /* __ARMEB__ */
 #endif /* !_KERNEL */
 
+#define MAXCPUS		8
+
 #define	MID_MACHINE	MID_ARM6
 
 /* ARM-specific macro to align a stack pointer (downwards). */

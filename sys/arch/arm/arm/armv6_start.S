@@ -70,7 +70,6 @@
  */
 
 	.text
-#define MAXCPU 8
 
 ENTRY_NP(generic_start)
 
@@ -87,7 +86,7 @@ ENTRY_NP(generic_start)
 	sub	r10, r10, r9
 
 	ldr	r9, =svcstk
-	add	r9, #INIT_ARM_STACK_SIZE * MAXCPU
+	add	r9, #INIT_ARM_STACK_SIZE * MAXCPUS
 	sub	sp, r9, r10
 
 	mov	r4, r0
@@ -765,7 +764,7 @@ ENTRY_NP(cpu_mpstart)
 	sub	r10, r10, r9
 
 	ldr	r9, =svcstk
-	add	r9, #INIT_ARM_STACK_SIZE * MAXCPU
+	add	r9, #INIT_ARM_STACK_SIZE * MAXCPUS
 	sub	r9, #64
 	sub	sp, r9, r10
 
@@ -815,7 +814,7 @@ ASEND(cpu_mpstart)
 #ifdef MULTIPROCESSOR
 armv7_mpcontinuation:
 	ldr	r9, =svcstk
-	add	r9, #INIT_ARM_STACK_SIZE * MAXCPU
+	add	r9, #INIT_ARM_STACK_SIZE * MAXCPUS
 	sub	r9, #64
 
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
