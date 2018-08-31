@@ -416,6 +416,7 @@ cpu_hatch(struct cpu_info *ci, cpuid_t cpuid, void (*md_cpu_init)(struct cpu_inf
 
 	VPRINTF(" done!\n");
 
+	/* Notify cpu_boot_secondary_processors that we're done */
 	atomic_and_32(&arm_cpu_mbox, ~__BIT(cpuid));
 	membar_producer();
 	__asm __volatile("sev; sev; sev");
