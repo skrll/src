@@ -112,7 +112,7 @@ tegra210_platform_bootstrap(void)
 }
 
 static void
-tegra210_platform_npstart(void)
+tegra210_platform_mpstart(void)
 {
 
 #if defined(__aarch64__)
@@ -244,7 +244,7 @@ static const struct arm_platform tegra210_platform = {
 	.ap_reset = tegra_platform_reset,
 	.ap_delay = tegra_platform_delay,
 	.ap_uart_freq = tegra_platform_uart_freq,
-	.ap_mpstart = tegra210_platform_npstart,
+	.ap_mpstart = tegra210_platform_mpstart,
 };
 
 ARM_PLATFORM(tegra210, "nvidia,tegra210", &tegra210_platform);
