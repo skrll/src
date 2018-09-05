@@ -214,13 +214,13 @@ generic_startv7:
 	ldr	r0, =(L1_S_SIZE - 1)
 	bic	R_PA, R_PA, r0
 
-	// attribute to map kernel - run without L1_S_CACHEABLE until later
+	// attribute to map kernel - run without L1_S_CACHEABLE
 	ldr	R_ATTR, =(L1_S_PROTO_armv7 | L1_S_APv7_KRW)
 	bl	arm_boot_l1pt_init
 
 	/*
 	 * Set up a preliminary mapping in the MMU to allow us to run
-	 * at KERNEL_BASE with caches on.
+	 * at KERNEL_BASE with caches off.
 	 */
 	ldr	R_L1TABLE, =TEMP_L1_TABLE
 	mov	r1, R_L1TABLE
@@ -245,7 +245,7 @@ generic_startv7:
 	adr	R_PA, generic_start
 	bic	R_PA, r2
 
-	// attribute to map kernel - run without L1_S_CACHEABLE until later
+	// attribute to map kernel - run without L1_S_CACHEABLE
 	ldr	R_ATTR, =(L1_S_PROTO_armv7 | L1_S_APv7_KRW)
 	bl	arm_boot_l1pt_entry
 
@@ -264,8 +264,6 @@ generic_startv7:
 	movw	R_ATTR, #:lower16:(L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_V6_XN)
 	movt	R_ATTR, #:upper16:(L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_V6_XN)
 
-	// which do we like here? (former works on all CPUs)
-//	ldr	R_L1TABLE, =TEMP_L1_TABLE
 	movw	R_L1TABLE, #:lower16:TEMP_L1_TABLE
 	movt	R_L1TABLE, #:upper16:TEMP_L1_TABLE
 	sub	R_L1TABLE, r10
@@ -523,15 +521,6 @@ armv7_init:
 
         XPUTC('B')
 
-#if 0
-	// Aug 22nd - removed
-        // FreeBSD doesn't do this
-        // Step 1b, invalidate the data cache
-	mrc	p15, 0, r0, c1, c0, 0
-	tst	r0, #CPU_CONTROL_DC_ENABLE
-	blne	armv7_dcache_wbinv_all
-#endif
-
 
 	// TeX remap
 
@@ -573,14 +562,9 @@ armv7_init:
 	// FreeBSD does dcache_inv_poc_all and ICIALLU
 	//
 	XPUTC(#'B')
-#if 1
-	// Aug 22nd - changed
-	bl	armv7_dcache_l1inv_all
-	mcr	p15, 0, r0, c7, c5,  0 /* Instruction cache invalidate all PoU */ // CP15_ICIALLU
 
-#else
-	bl	armv7_dcache_inv_all
-#endif
+	bl	armv7_dcache_l1inv_all
+	mcr	p15, 0, r0, c7, c5,  0		/* ICIALLU */
 
 	XPUTC(#'C')
 
