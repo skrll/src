@@ -524,7 +524,7 @@ armv7_init:
 
 	// TeX remap
 
-#define SCTLR_CLEAR	( 	\
+#define ARMV7_SCTLR_CLEAR	( 	\
     CPU_CONTROL_IC_ENABLE |	\
     CPU_CONTROL_DC_ENABLE |	\
     CPU_CONTROL_MMU_ENABLE |	\
@@ -535,17 +535,17 @@ armv7_init:
 
 // CPU_CONTROL_VECRELOC
 
-#define SCTLR_SET	( 	\
+#define ARMV7_SCTLR_SET	( 	\
     CPU_CONTROL_UNAL_ENABLE |	\
     0)
 
 
 	// Can remove after removing debug
 	mrc	p15, 0, r0, c1, c0, 0
-	movw	r1, #:lower16:SCTLR_CLEAR
-	movt	r1, #:upper16:SCTLR_CLEAR
-	movw	r2, #:lower16:SCTLR_SET
-	movt	r2, #:upper16:SCTLR_SET
+	movw	r1, #:lower16:ARMV7_SCTLR_CLEAR
+	movt	r1, #:upper16:ARMV7_SCTLR_CLEAR
+	movw	r2, #:lower16:ARMV7_SCTLR_SET
+	movt	r2, #:upper16:ARMV7_SCTLR_SET
 
 	bic	r6, r0, r1			// disable icache/dcache/mmu
 	orr	r6, r0, r2			//
