@@ -622,7 +622,7 @@ armv7_mmuinit:
 
 	// Set the Domain Access register.  Very important!
 	XPUTC(#'K')
-	mov	r1, #((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2)) | DOMAIN_CLIENT)
+	mov	r1, #DOMAIN_DEFAULT
 	mcr	p15, 0, r1, c3, c0, 0	// DACR write
 
 
