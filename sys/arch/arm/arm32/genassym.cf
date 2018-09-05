@@ -99,14 +99,11 @@ define	DCACHE_LINE_SIZE	offsetof(struct arm_cache_info, dcache_line_size)
 define	PV_PA			offsetof(pv_addr_t, pv_pa)
 define	PMAP_DOMAIN_KERNEL	PMAP_DOMAIN_KERNEL
 define	DOMAIN_CLIENT		DOMAIN_CLIENT
-ifdef ARM_MMU_EXTENDED
-define	DOMAIN_DEFAULT		((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2)) | (DOMAIN_CLIENT << (PMAP_DOMAIN_USER*2)))
-else
-define	DOMAIN_DEFAULT		((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2)) | DOMAIN_CLIENT)
-endif
+define	DOMAIN_DEFAULT		DOMAIN_DEFAULT
 
 define	L1_S_PROTO_generic	L1_S_PROTO_generic
 define	L1_S_PROTO_armv7	L1_S_PROTO_armv7
+
 define	L1_S_PROTO_xscale	L1_S_PROTO_xscale
 if ARM_NMMUS == 1
 define	L1_S_PROTO		L1_S_PROTO

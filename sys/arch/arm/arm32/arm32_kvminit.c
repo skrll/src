@@ -954,12 +954,8 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	 * XXX merge into generic boot cpu_setup?
 	 */
 
-#ifdef ARM_MMU_EXTENDED
-	cpu_domains((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2))
-	    | (DOMAIN_CLIENT << (PMAP_DOMAIN_USER*2)));
-#else
-	cpu_domains((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2)) | DOMAIN_CLIENT);
-#endif
+	cpu_domains(DOMAIN_DEFAULT);
+
 	cpu_idcache_wbinv_all();
 
 #ifdef __HAVE_GENERIC_START
@@ -996,7 +992,6 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	arm_isb();
 #else
 	cpu_setttb(l1pt_pa, true);
-	cpu_domains(DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2));
 #endif
 
 	// XXXNH

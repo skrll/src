@@ -729,8 +729,12 @@ extern void (*pmap_zero_page_func)(paddr_t);
  */
 #define	PMAP_DOMAINS		15	/* 15 'user' domains (1-15) */
 #define	PMAP_DOMAIN_KERNEL	0	/* The kernel pmap uses domain #0 */
+
 #ifdef ARM_MMU_EXTENDED
 #define	PMAP_DOMAIN_USER	1	/* User pmaps use domain #1 */
+#define	DOMAIN_DEFAULT		((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2)) | (DOMAIN_CLIENT << (PMAP_DOMAIN_USER*2)))
+#else
+#define	DOMAIN_DEFAULT		((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2)))
 #endif
 
 /*

@@ -707,12 +707,8 @@ cpu_init_secondary_processor(int cpuno)
 {
 	// pmap_kernel has been sucessfully built and we can switch to  it
 
-#ifdef ARM_MMU_EXTENDED
-	cpu_domains((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2))
-	    | (DOMAIN_CLIENT << (PMAP_DOMAIN_USER*2)));
-#else
-	cpu_domains((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2)) | DOMAIN_CLIENT);
-#endif
+	cpu_domains(DOMAIN_DEFAULT);
+
 	armv7_dcache_l1inv_all();
 //	cpu_idcache_wbinv_all();
 
