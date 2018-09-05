@@ -158,14 +158,14 @@ ASEND(generic_start)
 	.ltorg
 
 	.section ".init_pagetable", "aw", %nobits
-        .p2align  14 /* 16KiB aligned */
-        .globl  TEMP_L1_TABLE
+	.p2align  14 /* 16KiB aligned */
+	.globl  TEMP_L1_TABLE
 TEMP_L1_TABLE:
-        .space  L1_TABLE_SIZE
+	.space  L1_TABLE_SIZE
 TEMP_L1_TABLE_END:
 
-        .text
-        .align  2
+	.text
+	.align  2
 
 
 	// Use callee saved registers
@@ -519,7 +519,7 @@ armv7_init:
 	mov	sp, r5
 	// clear cache maybe check if cache is enabled
 
-        XPUTC('B')
+	XPUTC('B')
 
 
 	// TeX remap
@@ -622,7 +622,7 @@ armv7_mmuinit:
 
 	// Set the Domain Access register.  Very important!
 	XPUTC(#'K')
-	mov     r1, #((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2)) | DOMAIN_CLIENT)
+	mov	r1, #((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2)) | DOMAIN_CLIENT)
 	mcr	p15, 0, r1, c3, c0, 0	// DACR write
 
 
@@ -784,22 +784,22 @@ armv7_mpcontinuation:
 	ldr	r5, [r0, r4, lsl #2]		// load our cpu_info
 	ldr	r6, [r5, #CI_IDLELWP]		// get the idlelwp
 	ldr	r7, [r6, #L_PCB]		// now get its pcb
-        ldr     sp, [r7, #PCB_KSP]              // finally, we can load our SP
+	ldr	sp, [r7, #PCB_KSP]		// finally, we can load our SP
 #ifdef TPIDRPRW_IS_CURCPU
-        mcr     p15, 0, r5, c13, c0, 4          // squirrel away curcpu()
+	mcr	p15, 0, r5, c13, c0, 4		// squirrel away curcpu()
 #elif defined(TPIDRPRW_IS_CURLWP)
-        mcr     p15, 0, r6, c13, c0, 4          // squirrel away curlwp()
+	mcr	p15, 0, r6, c13, c0, 4		// squirrel away curlwp()
 #else
 #error either TPIDRPRW_IS_CURCPU or TPIDRPRW_IS_CURLWP must be defined
 #endif
-        str     r6, [r5, #CI_CURLWP]            // and note we are running on it
+	str	r6, [r5, #CI_CURLWP]		// and note we are running on it
 
-        mov     r0, r5                          // pass cpu_info
-        mov     r1, r4                          // pass cpu_id
-        movw    r2, #:lower16:MD_CPU_HATCH      // pass md_cpu_hatch
-        movt    r2, #:upper16:MD_CPU_HATCH      // pass md_cpu_hatch
-        bl      _C_LABEL(cpu_hatch)
-        b       _C_LABEL(idle_loop)             // never to return
+	mov	r0, r5				// pass cpu_info
+	mov	r1, r4				// pass cpu_id
+	movw	r2, #:lower16:MD_CPU_HATCH	// pass md_cpu_hatch
+	movt	r2, #:upper16:MD_CPU_HATCH	// pass md_cpu_hatch
+	bl	_C_LABEL(cpu_hatch)
+	b	_C_LABEL(idle_loop)		// never to return
 ASEND(armv7_mpcontinuation)
 #endif	// MULTIPROCESSOR
 
