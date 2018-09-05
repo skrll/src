@@ -4,11 +4,8 @@
 EXTRA_LINKFLAGS+=	--be8
 .endif
 
-SYSTEM_FIRST_OBJ=	exynos_start.o
-SYSTEM_FIRST_SFILE=	${THISARM}/exynos/exynos_start.S
-AFLAGS.exynos_start.S+=	-Wa,-march=armv7-a+virt
-
-GENASSYM_EXTRAS+=	${THISARM}/exynos/genassym.cf
+SYSTEM_FIRST_OBJ=	armv6_start.o
+SYSTEM_FIRST_SFILE=	${ARM}/arm/armv6_start.S
 
 _OSRELEASE!=		${HOST_SH} $S/conf/osrelease.sh
 
