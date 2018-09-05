@@ -168,6 +168,13 @@ TEMP_L1_TABLE_END:
         .align  2
 
 
+	// Use callee saved registers
+	R_L1TABLE	.req r4
+	R_VA		.req r5
+	R_PA		.req r6
+	R_NSEC		.req r7
+	R_ATTR		.req r8
+
 
 #if defined(_ARM_ARCH_7)
 
@@ -194,13 +201,6 @@ generic_startv7:
 	bl	armv7_init
 
 	VPRINTF("\n\r")
-
-	// Use callee saved registers
-	R_L1TABLE	.req r4
-	R_VA		.req r5
-	R_PA		.req r6
-	R_NSEC		.req r7
-	R_ATTR		.req r8
 
 	/*
 	 * Set up a preliminary mapping in the MMU to allow us to run
