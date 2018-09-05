@@ -667,35 +667,13 @@ armv7_mmuinit:
 	bic	r0, r0, r2
 
 
-	// do these?
-	pli	1f
+	mcr	p15, 0, r0, c1, c0, 0	/* SCTLR write */
+
 	dsb
+	isb
 
-	// turn mmu on!
-	//
-	mov	r0, r0			// fetch instruction cacheline
-1:	mcr	p15, 0, r0, c1, c0, 0	// SCTLR write
-
-	// FreeBSD: DSB
-	// FreeBSD: ISB
-
-	// Ensure that the coprocessor has finished turning on the MMU.
-	//
-	mrc	p15, 0, r0, c0, c0, 0	// Read an arbitrary value.
-	mov	r0, r0			// Stall until read completes.
-
-
-
-
-
-
-	// FreeBSD:	mcr	CP15_TLBIALL		/* Flush TLB */
-	// FreeBSD: 	mcr	CP15_BPIALL		/* Flush Branch predictor */
-	// FreeBSD:	DSB
-	// FreeBSD:	ISB
-
-	mcr	p15, 0, r0, c8, c7, 0 /* Invalidate entire unified TLB */ // CP15_TLBIALL		/* Flush TLB */
-	mcr	p15, 0, r0, c7, c5,  6 /* Branch predictor invalidate all */ // CP15_BPIALL		/* Flush Branch predictor */
+	mcr	p15, 0, r0, c8, c7, 0	/* TLBIALL - Flush TLB */
+	mcr	p15, 0, r0, c7, c5, 6	/* BPIALL - Branch predictor invalidate all */
 	dsb
 	isb
 
