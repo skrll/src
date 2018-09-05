@@ -708,7 +708,6 @@ cpu_init_secondary_processor(int cpuno)
 	// pmap_kernel has been sucessfully built and we can switch to  it
 
 	cpu_domains(DOMAIN_DEFAULT);
-
 	armv7_dcache_l1inv_all();
 //	cpu_idcache_wbinv_all();
 
@@ -732,13 +731,11 @@ cpu_init_secondary_processor(int cpuno)
 	 */
 
 	cpu_setttb(pmap_kernel()->pm_l1_pa , KERNEL_PID);
-//	arm_dsb();
-	arm_isb();
 #else
 	cpu_setttb(pmap_kernel()->pm_l1->l1_physaddr, true);
-	cpu_domains(DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2));
 #endif
 
+	/* cpu_setttb did armv7 isb */
 	//cpu_tlb_flushID();
 	armreg_tlbiall_write(0);
 	arm_isb();
