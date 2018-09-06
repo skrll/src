@@ -76,6 +76,7 @@ defparam opt_arm_intr_impl.h	ARM_INTR_IMPL
 # ARM-specific debug options
 defflag  opt_arm_debug.h	ARM_LOCK_CAS_DEBUG
 defflag  opt_arm_debug.h	VERBOSE_INIT_ARM
+defparam opt_arm_debug.h	EARLYCONS
 
 # Board-specific bus_space(9)/bus_dma(9) definitions
 defflag  opt_arm_bus_space.h	__BUS_SPACE_HAS_STREAM_METHODS

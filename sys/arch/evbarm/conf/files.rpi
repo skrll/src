@@ -3,8 +3,6 @@
 # Raspberry Pi
 #
 
-defparam opt_arm_debug.h	EARLYCONS
-
 include "arch/arm/pic/files.pic"
 include "arch/arm/cortex/files.cortex"
 

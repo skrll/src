@@ -31,6 +31,8 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "opt_arm_debug.h"
+
 #include "assym.h"
 #include <sys/cdefs.h>
 #include <sys/syscall.h>

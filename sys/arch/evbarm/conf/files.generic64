@@ -1,8 +1,7 @@
 #	$NetBSD: files.generic64,v 1.4 2018/08/26 21:06:46 rjs Exp $
 #
 # A generic (aarch64) kernel configuration info
-
-defparam opt_arm_debug.h	EARLYCONS
+#
 
 include "arch/arm/pic/files.pic"
 include "arch/arm/cortex/files.cortex"

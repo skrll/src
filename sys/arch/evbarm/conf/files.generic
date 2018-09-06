@@ -1,8 +1,7 @@
 #	$NetBSD: files.generic,v 1.1 2018/04/01 04:35:04 ryo Exp $
 #
 # A generic (aarch32) kernel configuration info
-
-defparam opt_arm_debug.h	EARLYCONS
+#
 
 include "arch/arm/pic/files.pic"
 include "arch/arm/cortex/files.cortex"

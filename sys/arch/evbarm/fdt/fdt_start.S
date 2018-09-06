@@ -26,7 +26,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "opt_arm_debug.h"	/* VERBOSE_INIT_ARM */
+#include "opt_arm_debug.h"	/* VERBOSE_INIT_ARM and EARLYCONS */
 
 #include <sys/cdefs.h>
 
