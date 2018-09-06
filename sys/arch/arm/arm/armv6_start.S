@@ -117,6 +117,7 @@ ENTRY_NP(generic_start)
 	str	r6, [r8, #(4*2)]
 	str	r7, [r8, #(4*3)]
 
+#if defined(FDT)
 	/*
 	 * ARM boot protocol has FDT address in r2
 	 */
@@ -127,6 +128,7 @@ ENTRY_NP(generic_start)
 	mov	r9, r6		// Save fdt_addr_r for mapping later
 
 	VPRINTX(r6)
+#endif
 
 #ifdef VERBOSE_INIT_ARM
 	mrc	p15, 0, r4, c2, c0, 0	// TTBR0 read
@@ -249,6 +251,7 @@ generic_startv7:
 	ldr	R_ATTR, =(L1_S_PROTO_armv7 | L1_S_APv7_KRW)
 	bl	arm_boot_l1pt_entry
 
+#if defined(FDT)
 	VPRINTF("DTB")
 
 	/*
@@ -268,6 +271,7 @@ generic_startv7:
 	movt	R_L1TABLE, #:upper16:TEMP_L1_TABLE
 	sub	R_L1TABLE, r10
 	bl	arm_boot_l1pt_entry
+#endif
 
 #ifdef CONSADDR
 	/* If CONSADDR exists add it VA:PA (1MB) */
