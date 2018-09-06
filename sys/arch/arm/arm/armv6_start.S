@@ -32,6 +32,7 @@
 #include "opt_arm_debug.h"
 #include "opt_cpuoptions.h"
 #include "opt_cputypes.h"
+#include "opt_fdt.h"
 #include "opt_fdt_arm.h"
 #include "opt_multiprocessor.h"
 
