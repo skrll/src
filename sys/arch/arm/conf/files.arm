@@ -74,8 +74,8 @@ defparam opt_cpuoptions.h	ARM_CBAR
 defparam opt_arm_intr_impl.h	ARM_INTR_IMPL
 
 # ARM-specific debug options
-defflag		opt_arm_debug.h		ARM_LOCK_CAS_DEBUG
-defflag		opt_arm_debug.h		VERBOSE_INIT_ARM
+defflag  opt_arm_debug.h	ARM_LOCK_CAS_DEBUG
+defflag  opt_arm_debug.h	VERBOSE_INIT_ARM
 
 # Board-specific bus_space(9)/bus_dma(9) definitions
 defflag  opt_arm_bus_space.h	__BUS_SPACE_HAS_STREAM_METHODS
@@ -90,7 +90,7 @@ defflag opt_arm_timer.h		__HAVE_GENERIC_CPU_INITCLOCKS
 defflag opt_arm_start.h		__HAVE_GENERIC_START
 
 # Floating point emulator
-obsolete defflag				ARMFPE
+obsolete defflag		ARMFPE
 
 # VFP support
 file	arch/arm/vfp/vfp_init.c			arm32
