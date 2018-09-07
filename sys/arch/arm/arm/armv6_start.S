@@ -317,6 +317,8 @@ generic_startv7:
 	b	start
 
 	/* NOTREACHED */
+	.ltorg
+
 #endif
 
 #if defined(_ARM_ARCH_6)
@@ -324,6 +326,8 @@ generic_startv7:
 
 generic_startv6:
 	// TODO
+
+	.ltorg
 
 #endif
 
