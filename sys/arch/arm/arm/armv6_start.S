@@ -425,7 +425,7 @@ arm_boot_l1pt_entry:
 	.unreq	R_ATTR
 	.unreq	R_L1TABLE
 
-
+#if defined(_ARM_ARCH_7)
 
 //
 // SCTLR register initialization values
@@ -809,7 +809,7 @@ armv7_mpcontinuation:
 ASEND(armv7_mpcontinuation)
 #endif	// MULTIPROCESSOR
 
-
+#endif
 
 ENTRY_NP(generic_vprint)
 	push	{r4, lr}
@@ -832,10 +832,6 @@ ENTRY_NP(generic_vprint)
 	mov	pc, lr
 ASEND(generic_prints)
 
-
-
-
-
 ENTRY_NP(generic_prints)
 	push	{r4, lr}
 
@@ -848,7 +844,6 @@ ENTRY_NP(generic_prints)
 	bl	uartputc
 	b	1b
 ASEND(generic_prints)
-
 
 ENTRY_NP(generic_printx)
 	push	{r4, r5, r6, lr}
