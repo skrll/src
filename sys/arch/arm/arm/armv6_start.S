@@ -60,13 +60,10 @@
 /*
  * A generic kernel start routine.
  *
- * XXX doesn't u-boot always have it off?
  * At this point, this code has been loaded into SDRAM and the MMU maybe on or
- * maybe off.
+ * maybe off.  Assume identity mapping (VA=PA) if MMU is on.
  *
  * Reference linux boot code (MMU off) and rpi boot protocol
- *
- * Place the initial pagetable table as the first 16KiB
  *
  */
 
