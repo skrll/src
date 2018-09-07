@@ -42,7 +42,6 @@
 #include "assym.h"
 
 #define INIT_MEMSIZE	128
-#define MD_CPU_HATCH	arm_fdt_cpu_hatch
 
 #define INIT_ARM_STACK_SIZE	8192
 
@@ -54,6 +53,10 @@
 #define XPUTC(c)	/* nothing */
 #define VPRINTF(string)	/* nothing */
 #define VPRINTX(regno)	/* nothing */
+#endif
+
+#ifdef FDT
+#define MD_CPU_HATCH	arm_fdt_cpu_hatch
 #endif
 
 /*
