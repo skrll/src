@@ -41,8 +41,6 @@
 #include <arm/armreg.h>
 #include "assym.h"
 
-#define INIT_MEMSIZE	128
-
 #define INIT_ARM_STACK_SIZE	8192
 
 #ifdef VERBOSE_INIT_ARM
