@@ -428,6 +428,7 @@ initarm(void *arg)
 	 * If stdout-path is specified on the command line, override the
 	 * value in /chosen/stdout-path before initializing console.
 	 */
+	VPRINTF("stdout\n");
 	fdt_update_stdout_path();
 
 	VPRINTF("consinit ");
