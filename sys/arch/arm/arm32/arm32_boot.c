@@ -253,17 +253,22 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 		pv_addr_t * const pv = &bmi->bmi_freeblocks[i];
 		paddr_t start = atop(pv->pv_pa);
 		const paddr_t end = start + atop(pv->pv_size);
+		int vm_freelist = VM_FREELIST_DEFAULT;
 
-		VPRINTF("block %2zu start %08lx  end %08lx\n", i,
+		VPRINTF("block %2zu start %08lx  end %08lx", i,
 		    pv->pv_pa, pv->pv_pa + pv->pv_size);
 
-		int vm_freelist = VM_FREELIST_DEFAULT;
+		if (!bp) {
+			VPRINTF("... loading in freelist %d\n", vm_freelist);
+			uvm_page_physload(start, end, start, end, VM_FREELIST_DEFAULT);
+			continue;
+		}
 		paddr_t segend = end;
 		for (size_t j = 0; j < nbp; j++ /*, start = segend, segend = end */) {
 			paddr_t bp_start = bp[j].bp_start;
 			paddr_t bp_end = bp_start + bp[j].bp_pages;
 
-			VPRINTF("   bp %2zu start %08lx  end %08lx\n",
+			VPRINTF("\n   bp %2zu start %08lx  end %08lx\n",
 			    j, ptoa(bp_start), ptoa(bp_end));
 			KASSERT(bp_start < bp_end);
 			if (start > bp_end || segend < bp_start)
@@ -288,7 +293,6 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 			}
 		}
 	}
-	VPRINTF("\n");
 
 	/* Boot strap pmap telling it where the kernel page table is */
 	VPRINTF("pmap ");
