@@ -30,6 +30,7 @@
  */
 
 #include "opt_arm_debug.h"
+#include "opt_com.h"
 #include "opt_cpuoptions.h"
 #include "opt_cputypes.h"
 #include "opt_fdt.h"
@@ -93,6 +94,9 @@ ENTRY_NP(generic_start)
 	mov	r7, r3
 
 	// We can now call functions
+
+	VPRINTF("\n\rpc   :")
+	VPRINTX(pc)
 
 	VPRINTF("\n\roff  :")
 	VPRINTX(r10)
@@ -408,6 +412,10 @@ arm_boot_l1pt_entry:
 	XPUTC('=')
 	VPRINTX(R_PA)
 
+	ldr	r0, [R_L1TABLE, R_VA, lsl #2]
+	cmp	r0, #0
+	bne	arm_boot_overlap
+
 	str	R_PA, [R_L1TABLE, R_VA, lsl #2]
 	add	R_VA, R_VA, #1
 	add	R_PA, R_PA, #(L1_S_SIZE)
@@ -425,6 +433,10 @@ arm_boot_l1pt_entry:
 	.unreq	R_ATTR
 	.unreq	R_L1TABLE
 
+arm_boot_overlap:
+	VPRINTF("\n\rpanic: overlapping mappings\n\r")
+3:
+	b	3b
 #if defined(_ARM_ARCH_7)
 
 //
