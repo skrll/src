@@ -143,7 +143,7 @@ extern bus_space_handle_t exynos_pmu_bsh;
 extern bus_space_handle_t exynos_cmu_bsh;
 extern bus_space_handle_t exynos_sysreg_bsh;
 
-extern void exynos_bootstrap(vaddr_t);
+extern void exynos_bootstrap(int);
 extern void exynos_dma_bootstrap(psize_t memsize);
 
 struct exynos_pinctrl_softc;
