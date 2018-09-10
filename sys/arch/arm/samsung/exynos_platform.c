@@ -66,13 +66,6 @@ void exynos_platform_early_putchar(char);
     ((vaddr_t)(((a) - EXYNOS_CORE_PBASE) + EXYNOS_CORE_VBASE))
 
 static void
-exynos_platform_bootstrap(void)
-{
-
-	exynos_bootstrap(EXYNOS_CORE_VBASE);
-}
-
-static void
 exynos_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	extern struct bus_space armv7_generic_bs_tag;
@@ -83,7 +76,6 @@ exynos_platform_init_attach_args(struct fdt_attach_args *faa)
 	faa->faa_a4x_bst = &armv7_generic_a4x_bs_tag;
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
-
 
 void
 exynos_platform_early_putchar(char c)
@@ -126,6 +118,7 @@ exynos_platform_uart_freq(void)
 
 
 #if defined(SOC_EXYNOS4)
+static void
 static const struct pmap_devmap *
 exynos4_platform_devmap(void)
 {
@@ -142,9 +135,18 @@ exynos4_platform_devmap(void)
 	return devmap;
 }
 
+void
+static void
+exynos4_platform_bootstrap(void)
+{
+	exynos_bootstrap(4);
+
+}
+
 static const struct arm_platform exynos4_platform = {
 	.ap_devmap = exynos4_platform_devmap,
-	.ap_bootstrap = exynos_platform_bootstrap,
+	.ap_mpstart = exynos4_mpstart,
+	.ap_bootstrap = exynos4_platform_bootstrap,
 	.ap_init_attach_args = exynos_platform_init_attach_args,
 	.ap_early_putchar = exynos_platform_early_putchar,
 	.ap_device_register = exynos_platform_device_register,
@@ -158,6 +160,7 @@ ARM_PLATFORM(exynos4, "samsung,exynos4", &exynos4_platform);
 
 
 #if defined(SOC_EXYNOS5)
+static void
 static const struct pmap_devmap *
 exynos5_platform_devmap(void)
 {
@@ -174,9 +177,15 @@ exynos5_platform_devmap(void)
 	return devmap;
 }
 
+exynos5_platform_bootstrap(void)
+{
+
+	exynos_bootstrap(5);
+}
+
 static const struct arm_platform exynos5_platform = {
 	.ap_devmap = exynos5_platform_devmap,
-	.ap_bootstrap = exynos_platform_bootstrap,
+	.ap_bootstrap = exynos5_platform_bootstrap,
 	.ap_init_attach_args = exynos_platform_init_attach_args,
 	.ap_early_putchar = exynos_platform_early_putchar,
 	.ap_device_register = exynos_platform_device_register,

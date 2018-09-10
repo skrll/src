@@ -159,8 +159,6 @@ vexpress_platform_bootstrap(void)
 
 #ifdef MULTIPROCESSOR
 	arm_cpu_max = 1 + __SHIFTOUT(armreg_l2ctrl_read(), L2CTRL_NUMCPU);
-
-	vexpress_a15_smp_init();
 #endif
 
 	if (match_bootconf_option(boot_args, "console", "fb")) {
@@ -226,6 +224,7 @@ vexpress_platform_uart_freq(void)
 static const struct arm_platform vexpress_platform = {
 	.ap_devmap = vexpress_platform_devmap,
 	.ap_bootstrap = vexpress_platform_bootstrap,
+	.ap_mpstart = vexpress_a15_smp_init,
 	.ap_init_attach_args = vexpress_platform_init_attach_args,
 	.ap_early_putchar = vexpress_platform_early_putchar,
 	.ap_device_register = vexpress_platform_device_register,

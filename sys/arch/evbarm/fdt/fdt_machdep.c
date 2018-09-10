@@ -428,6 +428,7 @@ initarm(void *arg)
 	 * If stdout-path is specified on the command line, override the
 	 * value in /chosen/stdout-path before initializing console.
 	 */
+	VPRINTF("stdout\n");
 	fdt_update_stdout_path();
 
 	VPRINTF("consinit ");
@@ -460,7 +461,7 @@ initarm(void *arg)
 #endif
 	uint64_t memory_size = memory_end - memory_start;
 
-	VPRINTF("%s: memory start %" PRIx64 "end %" PRIx64 "(len %"
+	VPRINTF("%s: memory start %" PRIx64 " end %" PRIx64 " (len %"
 	    PRIx64 ")\n", __func__, memory_start, memory_end, memory_size);
 
 	/* Parse ramdisk info */
