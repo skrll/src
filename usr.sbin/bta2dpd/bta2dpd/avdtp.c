@@ -1,4 +1,4 @@
-/* $NetBSD: avdtp.c,v 1.1 2017/01/28 16:55:54 nat Exp $ */
+/* $NetBSD: avdtp.c,v 1.2 2018/07/25 19:03:50 kamil Exp $ */
 
 /*-
  * Copyright (c) 2015 - 2016 Nathanial Sloss <nathanialsloss@yahoo.com.au>

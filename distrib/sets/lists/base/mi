@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1183 2018/08/12 17:11:55 christos Exp $
+# $NetBSD: mi,v 1.1186 2018/09/07 20:44:04 para Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -1215,9 +1215,9 @@
 ./usr/include/netipsec				base-c-usr
 ./usr/include/netisdn				base-c-usr
 ./usr/include/netiso				base-obsolete		obsolete
-./usr/include/netkey				base-c-usr
+./usr/include/netkey				base-obsolete		obsolete
 ./usr/include/netmpls				base-c-usr
-./usr/include/netnatm				base-c-usr
+./usr/include/netnatm				base-obsolete		obsolete
 ./usr/include/netns				base-obsolete		obsolete
 ./usr/include/netpgp				base-c-usr
 ./usr/include/netsmb				base-c-usr
@@ -1878,8 +1878,8 @@
 ./usr/sbin/procsystime				base-debug-bin		dtrace
 ./usr/sbin/psrset				base-sysutil-bin
 ./usr/sbin/pstat				base-sysutil-bin
-./usr/sbin/pvcsif				base-netutil-bin
-./usr/sbin/pvctxctl				base-netutil-bin
+./usr/sbin/pvcsif				base-obsolete		obsolete
+./usr/sbin/pvctxctl				base-obsolete		obsolete
 ./usr/sbin/pwd_mkdb				base-sysutil-bin
 ./usr/sbin/quot					base-sysutil-bin
 ./usr/sbin/quotacheck				base-sysutil-bin
@@ -5983,6 +5983,7 @@
 ./var/chroot/nsd/var				base-sys-root
 ./var/chroot/nsd/var/db				base-sys-root
 ./var/chroot/nsd/var/db/nsd			base-sys-root
+./var/chroot/nsd/var/run			base-sys-root
 ./var/chroot/ntpd				base-ntp-root
 ./var/chroot/ntpd/dev				base-ntp-root
 ./var/chroot/ntpd/etc				base-ntp-root

@@ -2192,19 +2192,6 @@ cache_info_lookup(const struct x86_cache_info *cai, uint8_t desc)
 	return (NULL);
 }
 
-static const struct x86_cache_info *
-cache_info_lookup(const struct x86_cache_info *cai, uint8_t desc)
-{
-	int i;
-
-	for (i = 0; cai[i].cai_desc != 0; i++) {
-		if (cai[i].cai_desc == desc)
-			return (&cai[i]);
-	}
-
-	return (NULL);
-}
-
 static const char *
 print_cache_config(struct cpu_info *ci, int cache_tag, const char *name,
     const char *sep)

@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm283x_platform.c,v 1.12 2018/08/10 04:44:15 rin Exp $	*/
+/*	$NetBSD: bcm283x_platform.c,v 1.17 2018/09/03 16:29:23 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.12 2018/08/10 04:44:15 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.17 2018/09/03 16:29:23 riastradh Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_bcm283x.h"
@@ -663,10 +663,9 @@ bcm283x_bootparams(bus_space_tag_t iot, bus_space_handle_t ioh)
 		curcpu()->ci_data.cpu_cc_freq = vb.vbt_armclockrate.rate;
 
 #ifdef VERBOSE_INIT_ARM
-	if (vcprop_tag_success_p(&vb.vbt_memory.tag)) {
-		printf("%s: memory size  %d\n", __func__,
-		    vb.vbt_armclockrate.rate);
-	}
+	if (vcprop_tag_success_p(&vb.vbt_memory.tag))
+		printf("%s: memory size  %zu\n", __func__,
+		    bcm283x_memorysize);
 	if (vcprop_tag_success_p(&vb.vbt_armclockrate.tag))
 		printf("%s: arm clock    %d\n", __func__,
 		    vb.vbt_armclockrate.rate);
@@ -739,12 +738,19 @@ bcm2836_bootstrap(void)
 #endif
 #endif /* MULTIPROCESSOR */
 
-#ifdef __aarch64__
 	/*
-	 * XXX: use psci_fdt_bootstrap()
+	 * XXX: TODO:
+	 *   should make cpu_fdt_bootstrap() that support spin-table and use it
+	 *   to share with arm/aarch64.
 	 */
+#ifdef __aarch64__
 	extern void aarch64_mpstart(void);
 	for (int i = 1; i < RPI_CPU_MAX; i++) {
+		/* argument for mpstart() */
+		arm_cpu_hatch_arg = i;
+		cpu_dcache_wb_range((vaddr_t)&arm_cpu_hatch_arg,
+		    sizeof(arm_cpu_hatch_arg));
+
 		/*
 		 * Reference:
 		 *   armstubs/armstub8.S
@@ -754,16 +760,22 @@ bcm2836_bootstrap(void)
 #define RPI3_ARMSTUB8_SPINADDR_BASE	0x000000d8
 		cpu_release_addr = (void *)
 		    AARCH64_PA_TO_KVA(RPI3_ARMSTUB8_SPINADDR_BASE + i * 8);
-		*cpu_release_addr = aarch64_kern_vtophys((vaddr_t)aarch64_mpstart);
+		*cpu_release_addr =
+		    aarch64_kern_vtophys((vaddr_t)aarch64_mpstart);
 
 		/* need flush cache. secondary processors are cache disabled */
-		cpu_dcache_wb_range((vaddr_t)cpu_release_addr, sizeof(cpu_release_addr));
+		cpu_dcache_wb_range((vaddr_t)cpu_release_addr,
+		    sizeof(cpu_release_addr));
+		/* Wake up AP in case firmware has placed it in WFE state */
 		__asm __volatile("sev" ::: "memory");
 
-#if defined(VERBOSE_INIT_ARM) && defined(EARLYCONS)
-		/* wait secondary processor's debug output */
-		gtmr_delay(100000);
-#endif
+		/* Wait for APs to start */
+		for (int loop = 0; loop < 16; loop++) {
+			membar_consumer();
+			if (arm_cpu_hatched & __BIT(i))
+				break;
+			gtmr_delay(10000);
+		}
 	}
 #endif /* __aarch64__ */
 
@@ -773,6 +785,7 @@ bcm2836_bootstrap(void)
 	 * It is need to initialize the secondary CPU,
 	 * and go into wfi loop (cortex_mpstart),
 	 * otherwise system would be freeze...
+	 * (because netbsd will use the spinning address)
 	 */
 	extern void cortex_mpstart(void);
 
@@ -783,29 +796,28 @@ bcm2836_bootstrap(void)
 		bus_space_write_4(iot, ioh,
 		    BCM2836_LOCAL_MAILBOX3_SETN(i),
 		    (uint32_t)cortex_mpstart);
+		/* Wake up AP in case firmware has placed it in WFE state */
+		__asm __volatile("sev" ::: "memory");
+
+#ifdef MULTIPROCESSOR
+		/* Wait for APs to start */
+		for (int loop = 0; loop < 16; loop++) {
+			membar_consumer();
+			if (arm_cpu_hatched & __BIT(i))
+				break;
+			gtmr_delay(10000);
+		}
+#endif
 	}
 #endif
 
 #ifdef MULTIPROCESSOR
-	/* Wake up AP in case firmware has placed it in WFE state */
-	__asm __volatile("sev" ::: "memory");
-
-	for (int loop = 0; loop < 16; loop++) {
-		if (arm_cpu_hatched == __BITS(arm_cpu_max - 1, 1))
-			break;
-		gtmr_delay(10000);
-	}
-
 	for (size_t i = 1; i < arm_cpu_max; i++) {
 		if ((arm_cpu_hatched & (1 << i)) == 0) {
 			printf("%s: warning: cpu%zu failed to hatch\n",
 			    __func__, i);
 		}
 	}
-#if defined(VERBOSE_INIT_ARM) && defined(EARLYCONS)
-	/* for viewability of secondary processor's debug outputs */
-	printf("\n");
-#endif
 #endif
 }
 
@@ -1042,7 +1054,7 @@ rpi_fb_do_cursor(struct wsdisplay_cursor *cur)
 		int i;
 		uint32_t val;
 
-		for (i = 0; i < min(cur->cmap.count, 3); i++) {
+		for (i = 0; i < uimin(cur->cmap.count, 3); i++) {
 			val = (cur->cmap.red[i] << 16 ) |
 			      (cur->cmap.green[i] << 8) |
 			      (cur->cmap.blue[i] ) |
@@ -1318,7 +1330,7 @@ bcm283x_platform_device_register(device_t dev, void *aux)
 		booted_device = dev;
 	}
 #endif
-	if (device_is_a(dev, "usmsc") &&
+	if ((device_is_a(dev, "usmsc") || device_is_a(dev, "mue")) &&
 	    vcprop_tag_success_p(&vb.vbt_macaddr.tag)) {
 		const uint8_t enaddr[ETHER_ADDR_LEN] = {
 		     (vb.vbt_macaddr.addr >> 0) & 0xff,

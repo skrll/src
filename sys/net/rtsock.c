@@ -1,4 +1,4 @@
-/*	$NetBSD: rtsock.c,v 1.241 2018/04/25 03:49:57 ozaki-r Exp $	*/
+/*	$NetBSD: rtsock.c,v 1.243 2018/09/07 06:08:16 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rtsock.c,v 1.241 2018/04/25 03:49:57 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rtsock.c,v 1.243 2018/09/07 06:08:16 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -1221,11 +1221,11 @@ COMPATNAME(rt_msg1)(int type, struct rt_addrinfo *rtinfo, void *data, int datale
 		m_copyback(m, len, sa->sa_len, sa);
 		if (dlen != sa->sa_len) {
 			/*
-			 * Up to 6 + 1 nul's since roundup is to
+			 * Up to 7 + 1 nul's since roundup is to
 			 * sizeof(uint64_t) (8 bytes)
 			 */
 			m_copyback(m, len + sa->sa_len,
-			    dlen - sa->sa_len, "\0\0\0\0\0\0");
+			    dlen - sa->sa_len, "\0\0\0\0\0\0\0");
 		}
 		len += dlen;
 	}
@@ -2063,7 +2063,6 @@ static const struct protosw COMPATNAME(route_protosw)[] = {
 		.pr_type = SOCK_RAW,
 		.pr_domain = &COMPATNAME(routedomain),
 		.pr_flags = PR_ATOMIC|PR_ADDR,
-		.pr_input = raw_input,
 		.pr_ctlinput = raw_ctlinput,
 		.pr_ctloutput = route_ctloutput,
 		.pr_usrreqs = &route_usrreqs,

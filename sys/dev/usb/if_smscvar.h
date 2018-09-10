@@ -1,4 +1,4 @@
-/*	$NetBSD: if_smscvar.h,v 1.5 2016/04/23 10:15:31 skrll Exp $	*/
+/*	$NetBSD: if_smscvar.h,v 1.6 2018/09/08 13:10:08 mlelstv Exp $	*/
 
 /*	$OpenBSD: if_smscreg.h,v 1.2 2012/09/27 12:38:11 jsg Exp $	*/
 /*-
@@ -48,7 +48,7 @@ struct smsc_cdata {
 	struct smsc_chain	 rx_chain[SMSC_RX_LIST_CNT];
 	int			 tx_free;
 	int			 tx_next;
-	int			 rx_prod;
+	int			 rx_next;
 };
 
 struct smsc_softc {

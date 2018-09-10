@@ -1,4 +1,4 @@
-/*	$NetBSD: if_smsc.c,v 1.37 2018/08/12 06:02:38 rin Exp $	*/
+/*	$NetBSD: if_smsc.c,v 1.38 2018/09/08 13:10:08 mlelstv Exp $	*/
 
 /*	$OpenBSD: if_smsc.c,v 1.4 2012/09/27 12:38:11 jsg Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/net/if_smsc.c,v 1.1 2012/08/15 04:03:55 gonzo Exp $ */
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_smsc.c,v 1.37 2018/08/12 06:02:38 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_smsc.c,v 1.38 2018/09/08 13:10:08 mlelstv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -644,7 +644,7 @@ smsc_init_locked(struct ifnet *ifp)
 
 	/* Start up the receive pipe. */
 	for (size_t i = 0; i < SMSC_RX_LIST_CNT; i++) {
-		struct smsc_chain *c = &sc->sc_cdata.rx_chain[i];
+		struct smsc_chain * const c = &sc->sc_cdata.rx_chain[i];
 		usbd_setup_xfer(c->sc_xfer, c, c->sc_buf, sc->sc_bufsz,
 		    USBD_SHORT_XFER_OK, USBD_NO_TIMEOUT, smsc_rxeof);
 		usbd_transfer(c->sc_xfer);
@@ -1661,7 +1661,7 @@ smsc_rx_list_init(struct smsc_softc *sc)
 		c->sc_mbuf = NULL;
 		if (c->sc_xfer == NULL) {
 			int error = usbd_create_xfer(sc->sc_ep[SMSC_ENDPT_RX],
-			    sc->sc_bufsz, 0, 0, &c->sc_xfer);
+			    sc->sc_bufsz, USBD_SHORT_XFER_OK, 0, &c->sc_xfer);
 			if (error)
 				return error;
 			c->sc_buf = usbd_get_buffer(c->sc_xfer);

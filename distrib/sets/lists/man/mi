@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1608 2018/08/12 17:11:55 christos Exp $
+# $NetBSD: mi,v 1.1616 2018/09/06 14:08:24 maxv Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -1057,7 +1057,7 @@
 ./usr/share/man/cat4/emips/enic.0		man-sys-catman		.cat
 ./usr/share/man/cat4/emips/intro.0		man-sys-catman		.cat
 ./usr/share/man/cat4/emuxki.0			man-sys-catman		.cat
-./usr/share/man/cat4/en.0			man-sys-catman		.cat
+./usr/share/man/cat4/en.0			man-obsolete		obsolete
 ./usr/share/man/cat4/envsys.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ep.0			man-sys-catman		.cat
 ./usr/share/man/cat4/epic.0			man-sys-catman		.cat
@@ -1071,7 +1071,7 @@
 ./usr/share/man/cat4/esp.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ess.0			man-sys-catman		.cat
 ./usr/share/man/cat4/et.0			man-sys-catman		.cat
-./usr/share/man/cat4/etherip.0			man-sys-catman		.cat
+./usr/share/man/cat4/etherip.0			man-obsolete		obsolete
 ./usr/share/man/cat4/etphy.0			man-sys-catman		.cat
 ./usr/share/man/cat4/evbarm/bcmgpio.0		man-sys-catman		.cat
 ./usr/share/man/cat4/evbarm/cpsw.0		man-sys-catman		.cat
@@ -1261,7 +1261,7 @@
 ./usr/share/man/cat4/i386/lpt.0			man-obsolete		obsolete
 ./usr/share/man/cat4/i386/mem.0			man-obsolete		obsolete
 ./usr/share/man/cat4/i386/mms.0			man-sys-catman		.cat
-./usr/share/man/cat4/i386/ndis.0		man-sys-catman		.cat
+./usr/share/man/cat4/i386/ndis.0		man-obsolete		obsolete
 ./usr/share/man/cat4/i386/npx.0			man-obsolete		obsolete
 ./usr/share/man/cat4/i386/olms.0		man-obsolete		obsolete
 ./usr/share/man/cat4/i386/omms.0		man-obsolete		obsolete
@@ -1455,6 +1455,7 @@
 ./usr/share/man/cat4/mt2131.0			man-sys-catman		.cat
 ./usr/share/man/cat4/mtd.0			man-sys-catman		.cat
 ./usr/share/man/cat4/mtio.0			man-sys-catman		.cat
+./usr/share/man/cat4/mue.0			man-sys-catman		.cat
 ./usr/share/man/cat4/multicast.0		man-sys-catman		.cat
 ./usr/share/man/cat4/music.0			man-sys-catman		.cat
 ./usr/share/man/cat4/mvme68k/autoconf.0		man-sys-catman		.cat
@@ -2602,7 +2603,7 @@
 ./usr/share/man/cat8/i386/makedev.0		man-obsolete		obsolete
 ./usr/share/man/cat8/i386/mbr.0			man-obsolete		obsolete
 ./usr/share/man/cat8/i386/multiboot.0		man-obsolete		obsolete
-./usr/share/man/cat8/i386/ndiscvt.0		man-netutil-catman	.cat
+./usr/share/man/cat8/i386/ndiscvt.0		man-obsolete		obsolete
 ./usr/share/man/cat8/i386/pxeboot.0		man-obsolete		obsolete
 ./usr/share/man/cat8/i386/reboot.0		man-obsolete		obsolete
 ./usr/share/man/cat8/i386/reboot_i386.0		man-obsolete		obsolete
@@ -2927,8 +2928,8 @@
 ./usr/share/man/cat8/pvchange.0			man-lvm-catman		lvm,.cat
 ./usr/share/man/cat8/pvck.0			man-lvm-catman		lvm,.cat
 ./usr/share/man/cat8/pvcreate.0			man-lvm-catman		lvm,.cat
-./usr/share/man/cat8/pvcsif.0			man-netutil-catman	.cat
-./usr/share/man/cat8/pvctxctl.0			man-netutil-catman	.cat
+./usr/share/man/cat8/pvcsif.0			man-obsolete		obsolete
+./usr/share/man/cat8/pvctxctl.0			man-obsolete		obsolete
 ./usr/share/man/cat8/pvdisplay.0		man-lvm-catman		lvm,.cat
 ./usr/share/man/cat8/pvmove.0			man-lvm-catman		lvm,.cat
 ./usr/share/man/cat8/pvremove.0			man-lvm-catman		lvm,.cat
@@ -4207,7 +4208,7 @@
 ./usr/share/man/html4/emips/enic.html		man-sys-htmlman		html
 ./usr/share/man/html4/emips/intro.html		man-sys-htmlman		html
 ./usr/share/man/html4/emuxki.html		man-sys-htmlman		html
-./usr/share/man/html4/en.html			man-sys-htmlman		html
+./usr/share/man/html4/en.html			man-obsolete		obsolete
 ./usr/share/man/html4/envsys.html		man-sys-htmlman		html
 ./usr/share/man/html4/ep.html			man-sys-htmlman		html
 ./usr/share/man/html4/epic.html			man-sys-htmlman		html
@@ -4221,7 +4222,7 @@
 ./usr/share/man/html4/esp.html			man-sys-htmlman		html
 ./usr/share/man/html4/ess.html			man-sys-htmlman		html
 ./usr/share/man/html4/et.html			man-sys-htmlman		html
-./usr/share/man/html4/etherip.html		man-sys-htmlman		html
+./usr/share/man/html4/etherip.html		man-obsolete		obsolete
 ./usr/share/man/html4/etphy.html		man-sys-htmlman		html
 ./usr/share/man/html4/evbarm/bcmgpio.html	man-sys-htmlman		html
 ./usr/share/man/html4/evbarm/cpsw.html		man-sys-htmlman		html
@@ -4396,7 +4397,7 @@
 ./usr/share/man/html4/i386/lpt.html		man-obsolete		obsolete
 ./usr/share/man/html4/i386/mem.html		man-obsolete		obsolete
 ./usr/share/man/html4/i386/mms.html		man-sys-htmlman		html
-./usr/share/man/html4/i386/ndis.html		man-sys-htmlman		html
+./usr/share/man/html4/i386/ndis.html		man-obsolete		obsolete
 ./usr/share/man/html4/i386/npx.html		man-obsolete		obsolete
 ./usr/share/man/html4/i386/pcibios.html		man-sys-htmlman		html
 ./usr/share/man/html4/i386/pnpbios.html		man-sys-htmlman		html
@@ -4566,6 +4567,7 @@
 ./usr/share/man/html4/mt2131.html		man-sys-htmlman		html
 ./usr/share/man/html4/mtd.html			man-sys-htmlman		html
 ./usr/share/man/html4/mtio.html			man-sys-htmlman		html
+./usr/share/man/html4/mue.html			man-sys-htmlman		html
 ./usr/share/man/html4/multicast.html		man-sys-htmlman		html
 ./usr/share/man/html4/music.html		man-sys-htmlman		html
 ./usr/share/man/html4/mvme68k/autoconf.html	man-sys-htmlman		html
@@ -5570,7 +5572,7 @@
 ./usr/share/man/html8/i386/dosboot.html		man-obsolete		obsolete
 ./usr/share/man/html8/i386/mbr.html		man-obsolete		obsolete
 ./usr/share/man/html8/i386/multiboot.html	man-obsolete		obsolete
-./usr/share/man/html8/i386/ndiscvt.html		man-netutil-htmlman	html
+./usr/share/man/html8/i386/ndiscvt.html		man-obsolete		obsolete
 ./usr/share/man/html8/i386/pxeboot.html		man-obsolete		obsolete
 ./usr/share/man/html8/i386/w95boot.html		man-obsolete		obsolete
 ./usr/share/man/html8/iasl.html			man-sysutil-htmlman	html
@@ -5827,8 +5829,8 @@
 ./usr/share/man/html8/pvchange.html		man-lvm-htmlman		lvm,html
 ./usr/share/man/html8/pvck.html			man-lvm-htmlman		lvm,html
 ./usr/share/man/html8/pvcreate.html		man-lvm-htmlman		lvm,html
-./usr/share/man/html8/pvcsif.html		man-netutil-htmlman	html
-./usr/share/man/html8/pvctxctl.html		man-netutil-htmlman	html
+./usr/share/man/html8/pvcsif.html		man-obsolete		obsolete
+./usr/share/man/html8/pvctxctl.html		man-obsolete		obsolete
 ./usr/share/man/html8/pvdisplay.html		man-lvm-htmlman		lvm,html
 ./usr/share/man/html8/pvmove.html		man-lvm-htmlman		lvm,html
 ./usr/share/man/html8/pvremove.html		man-lvm-htmlman		lvm,html
@@ -7129,7 +7131,7 @@
 ./usr/share/man/man4/emips/enic.4		man-sys-man		.man
 ./usr/share/man/man4/emips/intro.4		man-sys-man		.man
 ./usr/share/man/man4/emuxki.4			man-sys-man		.man
-./usr/share/man/man4/en.4			man-sys-man		.man
+./usr/share/man/man4/en.4			man-obsolete		obsolete
 ./usr/share/man/man4/envsys.4			man-sys-man		.man
 ./usr/share/man/man4/ep.4			man-sys-man		.man
 ./usr/share/man/man4/epic.4			man-sys-man		.man
@@ -7143,7 +7145,7 @@
 ./usr/share/man/man4/esp.4			man-sys-man		.man
 ./usr/share/man/man4/ess.4			man-sys-man		.man
 ./usr/share/man/man4/et.4			man-sys-man		.man
-./usr/share/man/man4/etherip.4			man-sys-man		.man
+./usr/share/man/man4/etherip.4			man-obsolete		obsolete
 ./usr/share/man/man4/etphy.4			man-sys-man		.man
 ./usr/share/man/man4/evbarm/bcmgpio.4		man-sys-man		.man
 ./usr/share/man/man4/evbarm/cpsw.4		man-sys-man		.man
@@ -7333,7 +7335,7 @@
 ./usr/share/man/man4/i386/lpt.4			man-obsolete		obsolete
 ./usr/share/man/man4/i386/mem.4			man-obsolete		obsolete
 ./usr/share/man/man4/i386/mms.4			man-sys-man		.man
-./usr/share/man/man4/i386/ndis.4		man-sys-man		.man
+./usr/share/man/man4/i386/ndis.4		man-obsolete		obsolete
 ./usr/share/man/man4/i386/npx.4			man-obsolete		obsolete
 ./usr/share/man/man4/i386/olms.4		man-obsolete		obsolete
 ./usr/share/man/man4/i386/omms.4		man-obsolete		obsolete
@@ -7527,6 +7529,7 @@
 ./usr/share/man/man4/mt2131.4			man-sys-man		.man
 ./usr/share/man/man4/mtd.4			man-sys-man		.man
 ./usr/share/man/man4/mtio.4			man-sys-man		.man
+./usr/share/man/man4/mue.4			man-sys-man		.man
 ./usr/share/man/man4/multicast.4		man-sys-man		.man
 ./usr/share/man/man4/music.4			man-sys-man		.man
 ./usr/share/man/man4/mvme68k/autoconf.4		man-sys-man		.man
@@ -8673,7 +8676,7 @@
 ./usr/share/man/man8/i386/makedev.8		man-obsolete		obsolete
 ./usr/share/man/man8/i386/mbr.8			man-obsolete		obsolete
 ./usr/share/man/man8/i386/multiboot.8		man-obsolete		obsolete
-./usr/share/man/man8/i386/ndiscvt.8		man-netutil-man		.man
+./usr/share/man/man8/i386/ndiscvt.8		man-obsolete		obsolete
 ./usr/share/man/man8/i386/pxeboot.8		man-obsolete		obsolete
 ./usr/share/man/man8/i386/reboot.8		man-obsolete		obsolete
 ./usr/share/man/man8/i386/reboot_i386.8		man-obsolete		obsolete
@@ -8999,8 +9002,8 @@
 ./usr/share/man/man8/pvchange.8			man-lvm-man		lvm,.man
 ./usr/share/man/man8/pvck.8			man-lvm-man		lvm,.man
 ./usr/share/man/man8/pvcreate.8			man-lvm-man		lvm,.man
-./usr/share/man/man8/pvcsif.8			man-netutil-man		.man
-./usr/share/man/man8/pvctxctl.8			man-netutil-man		.man
+./usr/share/man/man8/pvcsif.8			man-obsolete		obsolete
+./usr/share/man/man8/pvctxctl.8			man-obsolete		obsolete
 ./usr/share/man/man8/pvdisplay.8		man-lvm-man		lvm,.man
 ./usr/share/man/man8/pvmove.8			man-lvm-man		lvm,.man
 ./usr/share/man/man8/pvremove.8			man-lvm-man		lvm,.man

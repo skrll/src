@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.13 2018/08/14 08:53:06 christos Exp $
+# $NetBSD: Makefile,v 1.17 2018/08/16 06:24:40 kre Exp $
 
 .include <bsd.own.mk>
 
@@ -11,7 +11,6 @@ html.c \
 main.c \
 man_html.c \
 man_term.c \
-mandoc_xr.c \
 manpath.c \
 mdoc_html.c \
 mdoc_markdown.c \
@@ -36,5 +35,7 @@ SRCS.libmandoc!=cd ${.PARSEDIR}/../../lib/libmandoc && ${MAKE} -v SRCS
 
 SRCS+=		${SRCS.libmandoc} compat_strtonum.c compat_reallocarray.c
 .endif
+
+COPTS.man_term.c+= -Wno-error=array-bounds
 
 .include <bsd.prog.mk>

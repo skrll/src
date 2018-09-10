@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.117 2018/08/10 16:17:30 maxv Exp $	*/
+/*	$NetBSD: cpu.c,v 1.120 2018/08/15 06:06:05 skrll Exp $	*/
 
 /*
  * Copyright (c) 1995 Mark Brinicombe.
@@ -42,18 +42,19 @@
  */
 
 #include "opt_armfpe.h"
+#include "opt_cputypes.h"
 #include "opt_multiprocessor.h"
 
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.120 2018/08/15 06:06:05 skrll Exp $");
+
 #include <sys/param.h>
-
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.117 2018/08/10 16:17:30 maxv Exp $");
-
-#include <sys/systm.h>
 #include <sys/conf.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
 #include <sys/kmem.h>
 #include <sys/proc.h>
+#include <sys/systm.h>
 
 #include <uvm/uvm_extern.h>
 

@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.503 2018/08/14 06:37:59 maxv Exp $
+# $NetBSD: GENERIC,v 1.505 2018/09/06 05:36:49 maxv Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.503 $"
+#ident		"GENERIC-$Revision: 1.505 $"
 
 maxusers	64		# estimated number of users
 
@@ -116,6 +116,11 @@ makeoptions	DEBUG="-g"	# compile full symbol table for CTF
 #options 	SYSCALL_TIMES	# per syscall times
 #options 	SYSCALL_TIMES_HASCOUNTER	# use 'broken' rdtsc (soekris)
 options 	KDTRACE_HOOKS	# kernel DTrace hooks
+
+# Kernel Address Sanitizer (kASan). You need to disable SVS to use it.
+#makeoptions 	KASAN=1		# Kernel Address Sanitizer
+#options 	KASAN
+#no options	SVS
 
 # Compatibility options
 # x86_64 never shipped with a.out binaries; the two options below are
@@ -765,7 +770,6 @@ bnx*	at pci? dev ? function ?	# Broadcom NetXtremeII gigabit Ethernet
 bwi*	at pci? dev ? function ?	# Broadcom BCM43xx wireless
 bwfm*	at pci? dev ? function ?	# Broadcom FullMAC
 dge*	at pci? dev ? function ?	# Intel 82597 10GbE LR
-en*	at pci? dev ? function ?	# ENI/Adaptec ATM
 ep*	at pci? dev ? function ?	# 3Com 3c59x
 epic*	at pci? dev ? function ?	# SMC EPIC/100 Ethernet
 esh*	at pci? dev ? function ?	# Essential HIPPI card
