@@ -3616,15 +3616,18 @@ cpu_clusterid(void)
 bool
 cpu_earlydevice_va_p(void)
 {
+	const bool mmu_enabled_p =
+	    armreg_sctlr_read() & CPU_CONTROL_MMU_ENABLE;
 
+	if (!mmu_enabled_p)
+		return false;
+
+	/* Don't access cpu_ttb unless the mmu is enabled */
 	extern uint32_t cpu_ttb;
 
 	const bool cpul1pt_p =
 	    ((armreg_ttbr_read() & -L1_TABLE_SIZE) == cpu_ttb) ||
 	    ((armreg_ttbr1_read() & -L1_TABLE_SIZE) == cpu_ttb);
 
-	const bool mmu_enabled_p =
-	    armreg_sctlr_read() & CPU_CONTROL_MMU_ENABLE;
-
-	return mmu_enabled_p && cpul1pt_p;
+	return cpul1pt_p;
 }
