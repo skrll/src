@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.20 2018/08/26 18:15:49 ryo Exp $	*/
+/*	$NetBSD: locore.S,v 1.25 2018/09/10 11:05:12 ryo Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -35,7 +35,7 @@
 #include <aarch64/hypervisor.h>
 #include "assym.h"
 
-RCSID("$NetBSD: locore.S,v 1.20 2018/08/26 18:15:49 ryo Exp $")
+RCSID("$NetBSD: locore.S,v 1.25 2018/09/10 11:05:12 ryo Exp $")
 
 /* #define DEBUG_LOCORE */
 /* #define DEBUG_MMU */
@@ -78,6 +78,10 @@ ENTRY_NP(aarch64_start)
 	/* set stack pointer for boot */
 	ADDR	x0, bootstk
 	mov	sp, x0
+
+#ifdef VERBOSE_INIT_ARM
+	PRINT("boot NetBSD/evbarm (aarch64)\r\n")
+#endif
 
 #ifdef DEBUG_LOCORE
 	PRINT("PC               = ")
@@ -244,7 +248,7 @@ END(aarch64_start)
  * print "[CPU$x27] " (x27 as cpuindex)
  * XXX: max 4 digit
  */
-printcpu:
+ENTRY_NP(printcpu)
 	stp	x0, lr, [sp, #-16]!
 	stp	x25, x26, [sp, #-16]!
 	PRINT("[CPU")
@@ -281,6 +285,7 @@ printcpu:
 	ldp	x25, x26, [sp], #16
 	ldp	x0, lr, [sp], #16
 	ret
+END(printcpu)
 #define PRINTCPU()	bl	printcpu
 #else
 #define PRINTCPU()
@@ -292,15 +297,27 @@ printcpu:
 #define VERBOSE_PRINTCPU()
 #endif
 
-ENTRY_NP(cpu_mpstart)
-	ADDR	x0, arm_cpu_hatch_arg	/* from cpu0 */
-	ldr	w27, [x0]		/* x27 = cpuindex */
+ENTRY_NP(cpu_mpstart)	/* compat arm */
+	mrs	x3, mpidr_el1
+	ldr	x0, =(MPIDR_AFF0|MPIDR_AFF1|MPIDR_AFF2|MPIDR_AFF3)
+	and	x3, x3, x0
+
+	ADDR	x0, cpu_mpidr
+	mov	x1, xzr
+1:
+	add	x1, x1, #1
+	cmp	x1, MAXCPUS		/* cpuindex >= MAXCPUS ? */
+	bge	toomanycpus
+	ldr	x2, [x0, x1, lsl #3]	/* cpu_mpidr[cpunidex] */
+	cmp	x2, x3			/* == mpidr_el1 & MPIDR_AFF ? */
+	bne	1b
+
+	mov	x27, x1			/* x27 = cpuindex */
+
 	mov	x0, #1
 	lsl	x28, x0, x27		/* x28 = 1 << cpuindex */
 
 	/* x27 = cpuindex, x28 = (1 << cpuindex) */
-	cmp	x27, MAXCPUS
-	bge	toomanycpus
 
 	/* set stack pointer for boot */
 #define BOOT_STACKSIZE	256
@@ -471,7 +488,7 @@ END(cpu_mpstart)
 
 toomanycpus:
 	PRINTCPU()
-	PRINT("too many cpus\r\n")
+	PRINT("too many cpus, or MPIDR not exists in cpu_mpidr[]\r\n")
 1:	wfi
 	b	1b
 
@@ -493,28 +510,29 @@ END(cpu_mpstart)
  *    .ascii    "Hello\r\n\0" <- wouldn't return here
  *    .align    2
  *    nop                     <- return to here
+ *
+ * x0 is preserved despite being caller saved.
  */
-	.global xprint
-xprint:
-	mov	x11, lr
-	mov	x12, x0
-	ldrb	w0, [x11], #1
+ENTRY_NP(xprint)
+	stp	x0, x19, [sp, #-16]!
+
+	mov	x19, lr
+	ldrb	w0, [x19], #1
 	cbz	w0, 2f
 
 1:
 	bl	uartputc
-	ldrb	w0, [x11], #1
+	ldrb	w0, [x19], #1
 	cbnz	w0, 1b
 
 2:
-	add	x11, x11, #3
-	bic	lr, x11, #3
-	mov	x0, x12
+	add	x19, x19, #3
+	bic	lr, x19, #3
+	ldp	x0, x19, [sp], #16
 	ret
 END(xprint)
 
-	.global _C_LABEL(uartputs)
-_C_LABEL(uartputs):
+ENTRY_NP(uartputs)
 	mov	x11, x0
 	ldrb	w0, [x11], #1
 	cbz	w0, 9f
@@ -524,59 +542,64 @@ _C_LABEL(uartputs):
 9:
 	mov	x0, x11
 	ret
-END(_C_LABEL(uartputs))
+END(uartputs)
 
-	.global _print_x0
-_print_x0:
+/* x0 is preserved despite being caller saved. */
+ENTRY_NP(_print_x0)
 	stp	x0, lr, [sp, #-16]!
-	stp	x4, x5, [sp, #-16]!
-	stp	x6, x7, [sp, #-16]!
+	stp	x20, x21, [sp, #-16]!
 
-	mov	x7, x0		/* number to display */
-	mov	x4, #60		/* num of shift */
-	mov	x5, #0xf	/* mask */
+	mov	x21, x0		/* number to display */
+	mov	x20, #60	/* num of shift */
 1:
-	ror	x0, x7, x4
-	and	x0, x0, x5
+	ror	x0, x21, x20
+	and	x0, x0, #0xf
 	cmp	x0, #10
 	blt	2f
 	add	x0, x0, #('a' - 10 - '0')
 2:	add	x0, x0, #'0'
 	bl	uartputc
-	subs	x4, x4, #4
+	subs	x20, x20, #4
 	bge	1b
 
-	ldp	x6, x7, [sp], #16
-	ldp	x4, x5, [sp], #16
+	ldp	x20, x21, [sp], #16
 	ldp	x0, lr, [sp], #16
 	ret
 END(_print_x0)
 
-	.global _C_LABEL(print_x0)
-_C_LABEL(print_x0):
+/* Preserve x{0,1,2} despite them being caller saved */
+ENTRY_NP(print_x0)
 	stp	x0, lr, [sp, #-16]!
+	stp	x1, x2, [sp, #-16]!
 	bl	_print_x0
 	PRINT("\r\n")
+	ldp	x1, x2, [sp], #16
 	ldp	x0, lr, [sp], #16
 	ret
-END(_C_LABEL(print_x0))
+END(print_x0)
 
-printn_x1:
+/* Preserve x{0,1,2} despite them being caller saved */
+ENTRY_NP(printn_x1)
 	stp	x0, lr, [sp, #-16]!
+	stp	x1, x2, [sp, #-16]!
 	mov	x0, x1
 	bl	_print_x0
+	ldp	x1, x2, [sp], #16
 	ldp	x0, lr, [sp], #16
 	ret
+END(printn_x1)
 
-print_x2:
+/* Preserve x{0,1,2} despite them being caller saved */
+ENTRY_NP(print_x2)
 	stp	x0, lr, [sp, #-16]!
 	mov	x0, x2
 	bl	_print_x0
 	PRINT("\r\n")
 	ldp	x0, lr, [sp], #16
 	ret
+END(print_x2)
 
-arm_boot_l0pt_init:
+ENTRY_NP(arm_boot_l0pt_init)
 	stp	x0, lr, [sp, #-16]!
 
 	/* Clean the page table */
@@ -730,6 +753,7 @@ arm_boot_l0pt_init:
 
 	ldp	x0, lr, [sp], #16
 	ret
+END(arm_boot_l0pt_init)
 
 	.align 3
 .L_devmap_addr:
@@ -740,7 +764,7 @@ arm_boot_l0pt_init:
  *	x1 = vaddr
  *	x2 = l1table
  */
-l0_settable:
+ENTRY_NP(l0_settable)
 	stp	x0, lr, [sp, #-16]!
 
 	and	x2, x2, #~PAGE_MASK
@@ -759,6 +783,7 @@ l0_settable:
 
 	ldp	x0, lr, [sp], #16
 	ret
+END(l0_settable)
 
 /*
  *	x0 = l1table
@@ -767,43 +792,54 @@ l0_settable:
  *	x3 = attr
  *	x4 = N entries
  */
-l1_setblocks:
+ENTRY_NP(l1_setblocks)
 	stp	x0, lr, [sp, #-16]!
+	stp	x19, x20, [sp, #-16]!
+	stp	x21, x22, [sp, #-16]!
 
-	and	x2, x2, #L1_ADDR_BITS
-	mov	x8, #L1_BLOCK
-	orr	x2, x2, x8
-	orr	x2, x2, x3
-	mov	x8, #(LX_BLKPAG_AF|LX_BLKPAG_AP_RW)
-	orr	x2, x2, x8
+	mov	x19, x0			/* l1table */
+	mov	x22, x4			/* N entries */
+
+	and	x21, x2, #L1_ADDR_BITS	/* PA[38:30] */
+	mov	x9, #L1_BLOCK
+	orr	x21, x21, x9
+	orr	x21, x21, x3		/* add in attr */
+	mov	x9, #(LX_BLKPAG_AF|LX_BLKPAG_AP_RW)
+	orr	x21, x21, x9
 #ifdef MULTIPROCESSOR
-	orr	x2, x2, #LX_BLKPAG_SH_IS
+	orr	x21, x21, #LX_BLKPAG_SH_IS
 #endif
-	and	x1, x1, #L1_ADDR_BITS
-	lsr	x1, x1, #L1_SHIFT
+	and	x20, x1, #L1_ADDR_BITS	/* VA[38:30] */
+	lsr	x20, x20, #L1_SHIFT
 1:
-	str	x2, [x0, x1, lsl #3]	/* l1table[x1] = x2 */
+	str	x21, [x19, x20, lsl #3]	/* l1table[x20] = x21 */
+
 #ifdef DEBUG_MMU
 	PRINT("L1 entry[")
-	bl printn_x1
+	mov	x1, x20
+	bl	printn_x1
 	PRINT("]=")
-	bl print_x2
+	mov	x2, x21
+	bl	print_x2
 #endif
-	mov	x3, #L1_SIZE
-	add	x2, x2, x3
-	add	x1, x1, #1
-	subs	x4, x4, #1
+	mov	x9, #L1_SIZE
+	add	x21, x21, x9
+	add	x20, x20, #1
+	subs	x22, x22, #1
 	bne	1b
 
+	ldp	x21, x22, [sp], #16
+	ldp	x19, x20, [sp], #16
 	ldp	x0, lr, [sp], #16
 	ret
+END(l1_setblocks)
 
 /*
  *	x0 = l1table
  *	x1 = vaddr
  *	x2 = l2table
  */
-l1_settable:
+ENTRY_NP(l1_settable)
 	stp	x0, lr, [sp, #-16]!
 
 	and	x2, x2, #~PAGE_MASK
@@ -822,6 +858,7 @@ l1_settable:
 
 	ldp	x0, lr, [sp], #16
 	ret
+END(l1_settable)
 
 /*
  *	x0 = l2table
@@ -830,38 +867,49 @@ l1_settable:
  *	x3 = attr
  *	x4 = N entries
  */
-l2_setblocks:
+ENTRY_NP(l2_setblocks)
 	stp	x0, lr, [sp, #-16]!
+	stp	x19, x20, [sp, #-16]!
+	stp	x21, x22, [sp, #-16]!
 
-	and	x2, x2, #L2_BLOCK_MASK
-	mov	x8, #L2_BLOCK
-	orr	x2, x2, x8
-	orr	x2, x2, x3
-	mov	x8, #(LX_BLKPAG_AF|LX_BLKPAG_AP_RW)
-	orr	x2, x2, x8
+	mov	x19, x0			/* l1table */
+	mov	x22, x4			/* N entries */
+
+	and	x21, x2, #L2_BLOCK_MASK
+	mov	x9, #L2_BLOCK
+	orr	x21, x21, x9
+	orr	x21, x21, x3		/* Add attr bits */
+	mov	x9, #(LX_BLKPAG_AF|LX_BLKPAG_AP_RW)
+	orr	x21, x21, x9
 #ifdef MULTIPROCESSOR
-	orr	x2, x2, #LX_BLKPAG_SH_IS
+	orr	x21, x21, #LX_BLKPAG_SH_IS
 #endif
-	and	x1, x1, #L2_ADDR_BITS
-	lsr	x1, x1, #L2_SHIFT
+	and	x20, x1, #L2_ADDR_BITS
+	lsr	x20, x20, #L2_SHIFT
 1:
-	str	x2, [x0, x1, lsl #3]	/* l2table[x1] = x2 */
+	str	x21, [x19, x20, lsl #3]	/* l2table[x20] = x21 */
+
 #ifdef DEBUG_MMU
 	PRINT("L2 entry[")
-	bl printn_x1
+	mov	x1, x20
+	bl	printn_x1
 	PRINT("]=")
-	bl print_x2
+	mov	x2, x21
+	bl	print_x2
 #endif
-	mov	x3, #L2_SIZE
-	add	x2, x2, x3
-	add	x1, x1, #1
-	subs	x4, x4, #1
+	mov	x9, #L2_SIZE
+	add	x21, x21, x9
+	add	x20, x20, #1
+	subs	x22, x22, #1
 	bne	1b
 
+	ldp	x21, x22, [sp], #16
+	ldp	x19, x20, [sp], #16
 	ldp	x0, lr, [sp], #16
 	ret
+END(l2_setblocks)
 
-init_sysregs:
+ENTRY_NP(init_sysregs)
 	stp	x0, lr, [sp, #-16]!
 
 	/* Disable debug event */
@@ -883,16 +931,18 @@ init_sysregs:
 
 	ldp	x0, lr, [sp], #16
 	ret
+END(init_sysregs)
 
-mmu_disable:
+ENTRY_NP(mmu_disable)
 	dsb	sy
 	mrs	x0, sctlr_el1
 	bic	x0, x0, SCTLR_M		/* clear MMU enable bit */
 	msr	sctlr_el1, x0
 	isb
 	ret
+END(mmu_disable)
 
-mmu_enable:
+ENTRY_NP(mmu_enable)
 	dsb	sy
 
 	ADDR	x0, ttbr0_l0table
@@ -944,6 +994,7 @@ mmu_enable:
 	isb
 
 	ret
+END(mmu_enable)
 
 	.align 3
 mair_setting:

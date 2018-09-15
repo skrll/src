@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2222 2018/08/21 13:00:16 christos Exp $
+#	$NetBSD: mi,v 1.2228 2018/09/06 19:19:44 maxv Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -2295,7 +2295,7 @@
 ./usr/include/net/if.h				comp-c-include
 ./usr/include/net/if_arc.h			comp-c-include
 ./usr/include/net/if_arp.h			comp-c-include
-./usr/include/net/if_atm.h			comp-c-include
+./usr/include/net/if_atm.h			comp-obsolete		obsolete
 ./usr/include/net/if_bridgevar.h		comp-c-include
 ./usr/include/net/if_dl.h			comp-c-include
 ./usr/include/net/if_ether.h			comp-c-include
@@ -2384,7 +2384,7 @@
 ./usr/include/netinet/icmp6.h			comp-c-include
 ./usr/include/netinet/icmp_var.h		comp-c-include
 ./usr/include/netinet/if_arc.h			comp-obsolete		obsolete
-./usr/include/netinet/if_atm.h			comp-c-include
+./usr/include/netinet/if_atm.h			comp-obsolete		obsolete
 ./usr/include/netinet/if_ether.h		comp-c-include
 ./usr/include/netinet/if_inarp.h		comp-c-include
 ./usr/include/netinet/igmp.h			comp-c-include
@@ -2453,7 +2453,7 @@
 ./usr/include/netinet6/ip6_var.h		comp-c-include
 ./usr/include/netinet6/ip6protosw.h		comp-c-include
 ./usr/include/netinet6/ipcomp.h			comp-obsolete		obsolete
-./usr/include/netinet6/ipsec.h			comp-c-include
+./usr/include/netinet6/ipsec.h			comp-obsolete		obsolete
 ./usr/include/netinet6/mld6_var.h		comp-c-include
 ./usr/include/netinet6/nd6.h			comp-c-include
 ./usr/include/netinet6/pim6.h			comp-c-include
@@ -2510,10 +2510,10 @@
 ./usr/include/netkey/key_debug.h		comp-obsolete		obsolete
 ./usr/include/netkey/key_var.h			comp-obsolete		obsolete
 ./usr/include/netkey/keydb.h			comp-obsolete		obsolete
-./usr/include/netkey/keysock.h			comp-c-include
+./usr/include/netkey/keysock.h			comp-obsolete		obsolete
 ./usr/include/netkey/keyv2.h			comp-obsolete		obsolete
 ./usr/include/netmpls/mpls.h			comp-c-include
-./usr/include/netnatm/natm.h			comp-c-include
+./usr/include/netnatm/natm.h			comp-obsolete		obsolete
 ./usr/include/netns/idp.h			comp-obsolete		obsolete
 ./usr/include/netns/idp_var.h			comp-obsolete		obsolete
 ./usr/include/netns/ns.h			comp-obsolete		obsolete
@@ -2704,8 +2704,11 @@
 ./usr/include/pcap-namedb.h			comp-c-include
 ./usr/include/pcap.h				comp-c-include
 ./usr/include/pcap/bpf.h			comp-c-include
-./usr/include/pcap/export-defs.h		comp-c-include
+./usr/include/pcap/compiler-tests.h		comp-c-include
+./usr/include/pcap/export-defs.h		comp-obsolete		obsolete
+./usr/include/pcap/funcattrs.h			comp-c-include
 ./usr/include/pcap/namedb.h			comp-c-include
+./usr/include/pcap/pcap-inttypes.h		comp-c-include
 ./usr/include/pcap/pcap.h			comp-c-include
 ./usr/include/pci.h				comp-c-include
 ./usr/include/perfuse.h				comp-c-include

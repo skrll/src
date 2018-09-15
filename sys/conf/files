@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1204 2018/08/20 15:04:52 maxv Exp $
+#	$NetBSD: files,v 1.1207 2018/09/08 14:12:04 christos Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -237,7 +237,6 @@ include "netinet/files.netinet"
 include "netinet6/files.netinet6"
 include "netipsec/files.netipsec"
 include "netmpls/files.netmpls"
-include "netnatm/files.netnatm"
 include "netsmb/files.netsmb"
 
 include "net/npf/files.npf"
@@ -418,10 +417,9 @@ include "dev/splash/files.splash"
 include "dev/videomode/files.videomode"
 
 # net device attributes - we have generic code for arc(net), ether(net),
-# fddi, token ring, and atm.
+# fddi, and token ring.
 #
 define	arcnet
-define	atm
 define	ether
 define	fddi
 define	hippi
@@ -779,11 +777,6 @@ file	dev/ic/pdq_ifsubr.c		pdq
 #
 device	cy: tty
 file	dev/ic/cy.c			cy			needs-flag
-
-# Efficient Networks, Inc. ATM interface
-#
-device	en: atm, ifnet
-file	dev/ic/midway.c			en
 
 # NCR 53x9x or Emulex ESP SCSI Controller
 #
@@ -1635,3 +1628,8 @@ include "dev/clk/files.clk"
 #
 include "dev/ofw/files.ofw"
 include "dev/fdt/files.fdt"
+
+#
+# Name value library
+#
+include "external/bsd/libnv/conf/files.libnv"

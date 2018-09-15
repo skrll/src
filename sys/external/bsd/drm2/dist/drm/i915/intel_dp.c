@@ -1,4 +1,4 @@
-/*	$NetBSD: intel_dp.c,v 1.17 2018/08/27 13:41:23 riastradh Exp $	*/
+/*	$NetBSD: intel_dp.c,v 1.19 2018/09/13 08:25:55 mrg Exp $	*/
 
 /*
  * Copyright © 2008 Intel Corporation
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intel_dp.c,v 1.17 2018/08/27 13:41:23 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intel_dp.c,v 1.19 2018/09/13 08:25:55 mrg Exp $");
 
 #include <linux/i2c.h>
 #include <linux/slab.h>
@@ -1050,7 +1050,7 @@ intel_dp_aux_init(struct intel_dp *intel_dp, struct intel_connector *connector)
 	/* On SKL we don't have Aux for port E so we rely on VBT to set
 	 * a proper alternate aux channel.
 	 */
-	if (IS_SKYLAKE(dev) && port == PORT_E) {
+	if ((IS_SKYLAKE(dev) || IS_KABYLAKE(dev)) && port == PORT_E) {
 		switch (info->alternate_aux_channel) {
 		case DP_AUX_B:
 			porte_aux_ctl_reg = DPB_AUX_CH_CTL;
@@ -1248,7 +1248,7 @@ intel_dp_source_rates(struct drm_device *dev, const int **source_rates)
 	if (IS_BROXTON(dev)) {
 		*source_rates = bxt_rates;
 		size = ARRAY_SIZE(bxt_rates);
-	} else if (IS_SKYLAKE(dev)) {
+	} else if (IS_SKYLAKE(dev) || IS_KABYLAKE(dev)) {
 		*source_rates = skl_rates;
 		size = ARRAY_SIZE(skl_rates);
 	} else {
@@ -1568,7 +1568,7 @@ found:
 				&pipe_config->dp_m2_n2);
 	}
 
-	if (IS_SKYLAKE(dev) && is_edp(intel_dp))
+	if ((IS_SKYLAKE(dev) || IS_KABYLAKE(dev)) && is_edp(intel_dp))
 		skl_edp_set_pll_config(pipe_config);
 	else if (IS_BROXTON(dev))
 		/* handled in ddi */;
@@ -5014,8 +5014,6 @@ static void
 intel_dp_connector_destroy(struct drm_connector *connector)
 {
 	struct intel_connector *intel_connector = to_intel_connector(connector);
-	struct drm_device *dev = intel_connector->base.dev;
-	struct drm_i915_private *dev_priv = dev->dev_private;
 
 	kfree(intel_connector->detect_edid);
 
@@ -5028,11 +5026,6 @@ intel_dp_connector_destroy(struct drm_connector *connector)
 		intel_panel_fini(&intel_connector->panel);
 
 	drm_connector_cleanup(connector);
-#ifdef __NetBSD__
-	linux_mutex_destroy(&dev_priv->drrs.mutex);
-#else
-	mutex_destroy(&dev_priv->drrs.mutex);
-#endif
 	kfree(connector);
 }
 
@@ -6024,12 +6017,6 @@ intel_dp_init_connector(struct intel_digital_port *intel_dig_port,
 	int type;
 
 	intel_dp->pps_pipe = INVALID_PIPE;
-
-#ifdef __NetBSD__
-	linux_mutex_init(&dev_priv->drrs.mutex);
-#else
-	mutex_init(&dev_priv->drrs.mutex);
-#endif
 
 	/* intel_dp vfuncs */
 	if (INTEL_INFO(dev)->gen >= 9)

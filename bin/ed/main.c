@@ -865,10 +865,6 @@ exec_command(void)
 		printf("%ld\n", addr_cnt ? second_addr : addr_last);
 		break;
 	case '!':
-		if (secure) {
-			seterrmsg("'!' not allowed");
-			return ERR;
-		}
 		if (addr_cnt > 0) {
 			seterrmsg("unexpected address");
 			return ERR;

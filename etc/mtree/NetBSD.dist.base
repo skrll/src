@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.base,v 1.171 2018/07/17 18:55:24 joerg Exp $
+#	$NetBSD: NetBSD.dist.base,v 1.175 2018/09/12 15:29:11 christos Exp $
 #	@(#)4.4BSD.dist	8.1 (Berkeley) 6/13/93
 
 # Do not customize this file as it may be overwritten on upgrades.
@@ -220,8 +220,6 @@
 ./usr/include/netinet6
 ./usr/include/netipsec
 ./usr/include/netisdn
-./usr/include/netkey
-./usr/include/netnatm
 ./usr/include/netpgp
 ./usr/include/netsmb
 ./usr/include/nfs
@@ -1266,6 +1264,7 @@
 ./var/chroot/named/etc/namedb
 ./var/chroot/named/etc/namedb/cache	mode=0775 uname=named gname=named
 ./var/chroot/named/etc/namedb/keys	type=dir mode=0775 uname=named gname=named
+./var/chroot/named/etc/namedb/nta	type=dir mode=0775 uname=named gname=named
 ./var/chroot/named/usr
 ./var/chroot/named/usr/libexec
 ./var/chroot/named/var
@@ -1279,6 +1278,7 @@
 ./var/chroot/nsd/var		mode=0755 uname=_nsd gname=_nsd
 ./var/chroot/nsd/var/db		mode=0755 uname=_nsd gname=_nsd
 ./var/chroot/nsd/var/db/nsd	mode=0755 uname=_nsd gname=_nsd
+./var/chroot/nsd/var/run	mode=0775 uname=_nsd gname=_nsd
 ./var/chroot/ntpd
 ./var/chroot/ntpd/dev
 ./var/chroot/ntpd/etc

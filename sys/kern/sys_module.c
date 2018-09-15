@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_module.c,v 1.23 2018/01/18 13:31:20 maxv Exp $	*/
+/*	$NetBSD: sys_module.c,v 1.25 2018/09/04 14:31:18 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_module.c,v 1.23 2018/01/18 13:31:20 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_module.c,v 1.25 2018/09/04 14:31:18 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_modular.h"
@@ -123,8 +123,8 @@ handle_modctl_stat(struct iovec *iov, void *arg)
 	bool stataddr;
 
 	/* If not privileged, don't expose kernel addresses. */
-	error = kauth_authorize_system(kauth_cred_get(), KAUTH_SYSTEM_MODULE,
-	    0, (void *)(uintptr_t)MODCTL_STAT, NULL, NULL);
+	error = kauth_authorize_process(kauth_cred_get(), KAUTH_PROCESS_CANSEE,
+	    curproc, KAUTH_ARG(KAUTH_REQ_PROCESS_CANSEE_KPTR), NULL, NULL);
 	stataddr = (error == 0);
 
 	kernconfig_lock();
@@ -169,7 +169,7 @@ handle_modctl_stat(struct iovec *iov, void *arg)
 	}
 	kernconfig_unlock();
 	error = copyout(mso, iov->iov_base,
-	    min(mslen - sizeof(modstat_t), iov->iov_len));
+	    uimin(mslen - sizeof(modstat_t), iov->iov_len));
 	kmem_free(mso, mslen);
 	if (error == 0) {
 		iov->iov_len = mslen - sizeof(modstat_t);

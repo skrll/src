@@ -41,10 +41,6 @@ struct CXTargetInfoImpl {
   CXTranslationUnit TranslationUnit;
 };
 
-struct CXTargetInfoImpl {
-  CXTranslationUnit TranslationUnit;
-};
-
 namespace clang {
 namespace cxtu {
 

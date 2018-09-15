@@ -1,4 +1,4 @@
-/*	$NetBSD: npf_impl.h,v 1.70 2017/12/10 01:18:21 rmind Exp $	*/
+/*	$NetBSD: npf_impl.h,v 1.72 2018/09/12 21:58:38 christos Exp $	*/
 
 /*-
  * Copyright (c) 2009-2014 The NetBSD Foundation, Inc.
@@ -283,6 +283,8 @@ void		npf_addr_mask(const npf_addr_t *, const npf_netmask_t,
 int		npf_tcpsaw(const npf_cache_t *, tcp_seq *, tcp_seq *,
 		    uint32_t *);
 bool		npf_fetch_tcpopts(npf_cache_t *, uint16_t *, int *);
+bool		npf_set_mss(npf_cache_t *, uint16_t, uint16_t *, uint16_t *,
+		    bool *);
 bool		npf_return_block(npf_cache_t *, const int);
 
 /* BPF interface. */
@@ -403,6 +405,8 @@ npf_nat_t *	npf_nat_import(npf_t *, prop_dictionary_t, npf_ruleset_t *,
 		    npf_conn_t *);
 
 /* ALG interface. */
+void		npf_alg_sysinit(void);
+void		npf_alg_sysfini(void);
 void		npf_alg_init(npf_t *);
 void		npf_alg_fini(npf_t *);
 npf_alg_t *	npf_alg_register(npf_t *, const char *, const npfa_funcs_t *);
