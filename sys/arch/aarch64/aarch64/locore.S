@@ -297,7 +297,7 @@ END(printcpu)
 #define VERBOSE_PRINTCPU()
 #endif
 
-ENTRY_NP(cpu_mpstart)	/* compat arm */
+ENTRY_NP(cpu_mpstart)
 	mrs	x3, mpidr_el1
 	ldr	x0, =(MPIDR_AFF0|MPIDR_AFF1|MPIDR_AFF2|MPIDR_AFF3)
 	and	x3, x3, x0
