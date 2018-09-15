@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_var.h,v 1.187 2018/08/22 01:05:24 msaitoh Exp $	*/
+/*	$NetBSD: tcp_var.h,v 1.189 2018/09/14 05:09:51 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -646,7 +646,7 @@ struct syn_cache_head {
  * Compute the initial window for slow start.
  */
 #define	TCP_INITIAL_WINDOW(iw, segsz) \
-	min((iw) * (segsz), max(2 * (segsz), tcp_init_win_max[(iw)]))
+	uimin((iw) * (segsz), uimax(2 * (segsz), tcp_init_win_max[(iw)]))
 
 /*
  * TCP statistics.
@@ -876,7 +876,7 @@ void	 tcp_init_common(unsigned);
 #ifdef INET6
 int	 tcp6_input(struct mbuf **, int *, int);
 #endif
-void	 tcp_input(struct mbuf *, ...);
+void	 tcp_input(struct mbuf *, int, int);
 u_int	 tcp_hdrsz(struct tcpcb *);
 u_long	 tcp_mss_to_advertise(const struct ifnet *, int);
 void	 tcp_mss_from_peer(struct tcpcb *, int);

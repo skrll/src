@@ -1,4 +1,4 @@
-.\"    $NetBSD: npf.conf.5,v 1.66 2018/08/27 13:20:47 wiz Exp $
+.\"    $NetBSD: npf.conf.5,v 1.75 2018/09/04 15:36:01 maxv Exp $
 .\"
 .\" Copyright (c) 2009-2017 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -27,7 +27,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd August 27, 2018
+.Dd September 4, 2018
 .Dt NPF.CONF 5
 .Os
 .Sh NAME
@@ -87,8 +87,8 @@ table <black> type hash dynamic
 .Pp
 .Ed
 Currently, tables support three data storage types: "hash", "tree", or "cdb".
-Tables can also be set as containing "dynamic" or "static" data i.e. loaded from
- a specified file.
+Tables can also be set as containing "dynamic" or "static" data i.e. loaded
+from a specified file.
 Tables of type "hash" and "cdb" can only contain IP addresses.
 Only static data can be used with a storage type of "cdb".
 .Pp
@@ -99,50 +99,79 @@ form of:
 10.1.1.1
 .Ed
 .Ss Interfaces
-Interfaces can be specified as the values of the variables:
-.Bd -literal
-$pub_if_list = { inet4(wm0), inet4(wm1) }
-.Ed
+In NPF, an interface can be referenced directly by using its name, or can be
+passed to an extraction function which will return a list of IP addresses
+configured on the actual associated interface.
 .Pp
-In the context of filtering, an interface provides a list of all its IP
-addresses, both IPv4 and IPv6.
-Specific addresses configured on an interface can also be selected by family,
-e.g.:
-.Bd -literal
-$pub_if4 = inet4(wm0)
-$pub_if46 = { inet4(wm0), inet6(wm0) }
-.Ed
+It is legal to pass an extracted list from an interface in keywords where
+NPF would expect instead a direct reference to said interface.
+In this case, NPF infers a direct reference to the interface, and does not
+consider the list.
 .Pp
-In the above examples, NPF will statically capture the interface
-addresses on configuration load.
+There are two types of IP address lists.
+With a static list, NPF will capture the interface addresses on configuration
+load, whereas with a dynamic list NPF will capture the runtime list of
+addresses, reflecting any changes to the interface, including the attach and
+detach.
+Note that with a dynamic list, marking the interface as ``down'' has no effect,
+all addresses will remain present.
 .Pp
-The following can be used for dynamic handling of the interface addresses:
-.Bd -literal
-$pub_if = ifaddrs(wm0)
-.Ed
-.Pp
-In this case, the expression will represent the runtime list of addresses,
-reflecting any changes to the interface, including the attach and detach.
-Marking the interface as ``down'' has no effect, i.e. all addresses will
-remain present.
-.Pp
-A dynamic address list represents both the IPv4 and IPv6 addresses configured on
-an interface.
+Three functions exist, to extract addresses from an interface with a chosen
+list type and IP address type:
+.Bl -tag -width Xifaddrs()XX -offset indent
+.It Fn inet4
+Static list, IPv4 addresses.
+.It Fn inet6
+Static list, IPv6 addresses.
+.It Fn ifaddrs
+Dynamic list, both IPv4 and IPv6.
 The
 .Cd family
-keyword can be used in combination of a filtering rule to be explicit.
-.Ss Groups
-Groups may have the following options: name, interface, and direction.
-They are defined in the following form:
+keyword can be used in combination of a filtering rule to explicitly select
+an IP address type.
+.El
+.Pp
+Example of configuration:
 .Bd -literal
-group "my-name" in on wm0 {
-	# List of rules
+$var1 = inet4(wm0)
+$var2 = ifaddrs(wm0)
+group default {
+	block in on wm0 all               # rule 1
+	block in on $var1 all             # rule 2
+	block in on inet4(wm0) all        # rule 3
+	pass in on inet6(wm0) from $var2  # rule 4
+	pass in on wm0 from ifaddrs(wm0)  # rule 5
 }
 .Ed
-A minimal
-.Nm
-must contain a mandatory
+.Pp
+In the above example, $var1 is the static list of IPv4 addresses configured
+on wm0, and $var2 is the dynamic list of all the IPv4 and IPv6 addresses
+configured on wm0.
+The first three rules are equivalent, because with the
+.Cd block ... on <interface>
+syntax, NPF expects a direct reference to an interface, and therefore does
+not consider the extraction functions.
+The fourth and fifth rules are equivalent, for the same reason.
+.Ss Groups
+NPF requires that all rules be defined within groups.
+Groups can be thought of as higher level rules which can contain subrules.
+Groups may have the following options: name, interface, and direction.
+Packets matching group criteria are passed to the ruleset of that group.
+If a packet does not match any group, it is passed to the
 .Cd default group .
+The
+.Cd default group
+must always be defined.
+.Pp
+Example of configuration:
+.Bd -literal
+group "my-name" in on wm0 {
+	# List of rules, for packets received on wm0
+}
+group default {
+	# List of rules, for the other packets
+}
+.Ed
 .Ss Rules
 With a rule statement NPF is instructed to
 .Cd pass
@@ -158,9 +187,33 @@ option set, this rule is considered the last matching rule, and
 evaluation of subsequent rules is skipped.
 Otherwise, the last matching rule is used.
 .Pp
-A rule can also instruct NPF to create an entry in the state table
-when passing the packet, to notify the sender when blocking it, and
-to apply a procedure to the packet (e.g. "log") in either case.
+The
+.Cd proto
+keyword can be used to filter packets by layer 4 protocol (TCP, UDP, ICMP
+or other).
+Its parameter should be a protocol number or its symbolic name,
+as specified in the
+.Pa /etc/protocols
+file.
+This keyword can additionally have protocol-specific options, such as
+.Cd flags .
+.Pp
+The
+.Cd flags
+keyword can be used to match the packets against specific TCP flags,
+according to the following syntax:
+.Bl -tag -width protoXX -offset indent
+.It proto tcp flags Ar match[/mask]
+.El
+.Pp
+Where
+.Ar match
+is the set of TCP flags to be matched, out of the
+.Ar mask
+set, both sets being represented as a string combination of: S (SYN),
+A (ACK), F (FIN), R (RST). The flags that are not present in
+.Ar mask
+are ignored.
 .Pp
 To notify the sender of a blocking decision, three
 .Cd return
@@ -179,19 +232,18 @@ Return an ICMP UNREACHABLE message, when the packet being blocked is a UDP packe
 Applies to IPv4 and IPv6.
 .El
 .Pp
+Further packet specification at present is limited to TCP and UDP
+understanding source and destination ports, and ICMP and IPv6-ICMP
+understanding icmp-type.
+.Pp
+A rule can also instruct NPF to create an entry in the state table when
+passing the packet or to apply a procedure to the packet (e.g. "log").
+.Pp
 A "fully-featured" rule would for example be:
 .Bd -literal
 pass stateful in final family inet4 proto tcp flags S/SA \\
 	from $source port $sport to $dest port $dport apply "someproc"
 .Ed
-.Pp
-Any protocol in
-.Pa /etc/protocols
-can be specified.
-Further packet
-specification at present is limited to protocol TCP understanding flags,
-TCP and UDP understanding source and destination ports, and ICMP and
-IPv6-ICMP understanding icmp-type.
 .Pp
 Alternatively, NPF supports
 .Xr pcap-filter 7
@@ -214,25 +266,6 @@ The latter excludes the interface identifier and must be used with
 precaution.
 In both cases, a full TCP state tracking is performed for TCP connections
 and a limited tracking for message-based protocols (UDP and ICMP).
-.Pp
-The
-.Cd flags
-keyword can be used in conjunction with the
-.Cd stateful
-keyword to match the packets against specific TCP flags, according to
-the following syntax:
-.Bl -tag -width flagsXX -offset indent
-.It flags Ar match[/mask]
-.El
-.Pp
-Where
-.Ar match
-is the set of TCP flags to be matched, out of the
-.Ar mask
-set, both sets being represented as a string combination of: S (SYN),
-A (ACK), F (FIN), R (RST). The flags that are not present in
-.Ar mask
-are ignored.
 .Pp
 By default, a stateful rule implies SYN-only flag check ("flags S/SAFR")
 for the TCP packets.
@@ -263,21 +296,35 @@ specified by $pub_ip for the packets on the interface $ext_if.
 map $ext_if dynamic 10.1.1.0/24 -> $pub_ip
 .Ed
 .Pp
-Several NAT algorithms are available, and can be chosen using the
-.Cd algo
-keyword.
-By default, NPF will use the NAPT algorithm.
-The other available algorithms are:
-.Bl -tag -width Xnpt66XX -offset indent
-.It npt66
-IPv6-to-IPv6 network prefix translation (NPTv6).
-.El
-.Pp
 Translations are implicitly filtered by limiting the operation to the
 network segments specified, that is, translation would be performed only
 on packets originating from the 10.1.1.0/24 network.
 Explicit filter criteria can be specified using "pass <criteria>" as
 an additional option of the mapping.
+.Pp
+The
+.Cd dynamic
+NAT implies network address and port translation (NAPT).
+The port translation can be controlled explicitly.
+For example, the following provides "port forwarding", redirecting the
+public port 9022 to the port 22 of an internal host:
+.Bd -literal
+map $ext_if dynamic proto tcp 10.1.1.2 port 22 <- $ext_if port 9022
+.Ed
+.Pp
+The
+.Cd static
+NAT can have different address translation algorithms, which
+can be chosen using the
+.Cd algo
+keyword.
+The currently available algorithms are:
+.Bl -tag -width Xnpt66XX -offset indent
+.It npt66
+IPv6-to-IPv6 network prefix translation (NPTv6).
+.El
+.Pp
+Currently, the static NAT algorithms do not perform port translation.
 .Ss Application Level Gateways
 Certain application layer protocols are not compatible with NAT and require
 translation outside layers 3 and 4.
@@ -288,14 +335,16 @@ NPF supports the following ALGs:
 .Bl -tag -width XicmpXX -offset indent
 .It icmp
 ICMP ALG.
+Applies to IPv4 and IPv6.
 Allows to find an active connection by looking at the ICMP payload, and to
 perform NAT translation of the ICMP payload.
-Applies to IPv4 and IPv6.
+Generally, this ALG is necessary to support "traceroute" behind the NAT,
+when using the UDP or TCP probes.
 .El
 .Pp
-The ALGs are built-in, unless NPF is used as kernel module, in which case
-they come as kernel modules too.
-In that case, the ALG kernel modules can be autoloaded through the
+The ALGs are built-in.
+If NPF is used as kernel module, then they come as kernel modules too.
+In such case, the ALG kernel modules can be autoloaded through the
 configuration, using the
 .Cd alg
 keyword.
@@ -343,6 +392,7 @@ Randomize the IPv4 ID parameter.
 Enforce a minimum value for the IPv4 Time To Live (TTL) parameter.
 .It Do max-mss Dc Ar value
 Enforce a maximum value for the MSS on TCP packets.
+Typically, for "MSS clamping".
 .It Dq no-df
 Remove the Don't Fragment (DF) flag from IPv4 packets.
 .El
@@ -400,11 +450,12 @@ table-def	= "table" table-id "type" ( "hash" | "tree" | "cdb" )
 map		= "map" interface
 		  ( "static" [ "algo" map-algo ] | "dynamic" )
 		  [ map-flags ] [ proto ]
-		  net-seg ( "->" | "<-" | "<->" ) net-seg
+		  map-seg ( "->" | "<-" | "<->" ) map-seg
 		  [ "pass" [ proto ] filt-opts ]
 
 map-algo	= "npt66"
 map-flags	= "no-ports"
+map-seg		= ( addr-mask | interface ) [ port-opts ]
 
 # Rule procedure definition.  The name should be in the double quotes.
 #
@@ -434,17 +485,18 @@ rule		= static-rule | dynamic-ruleset
 
 tcp-flag-mask	= tcp-flags
 tcp-flags	= [ "S" ] [ "A" ] [ "F" ] [ "R" ]
-proto		= "proto" protocol [ proto-opts ]
 block-opts	= "return-rst" | "return-icmp" | "return"
+
 family-opt	= "inet4" | "inet6"
 proto-opts	= "flags" tcp-flags [ "/" tcp-flag-mask ] |
 		  "icmp-type" type [ "code" icmp-code ]
+proto		= "proto" protocol [ proto-opts ]
 
-addr-mask	= addr [ "/" mask ]
 filt-opts	= "from" filt-addr [ port-opts ] "to" filt-addr [ port-opts ]
-filt-addr	= [ "!" ] [ interface | var-name |
-                  addr-mask | table-id | "any" ]
-filt-port	= "port" ( port-num | port-from "-" port-to | var-name )
+filt-addr	= [ "!" ] [ interface | addr-mask | table-id | "any" ]
+
+port-opts	= "port" ( port-num | port-from "-" port-to | var-name )
+addr-mask	= addr [ "/" mask ]
 .Ed
 .\" -----
 .Sh FILES
@@ -477,33 +529,33 @@ map $ext_if dynamic 10.1.1.0/24 -> $ext_if
 map $ext_if dynamic proto tcp 10.1.1.2 port 22 <- $ext_if port 9022
 
 procedure "log" {
-	# The logging facility can be used together with npfd(8).
-	log: npflog0
+  # The logging facility can be used together with npfd(8).
+  log: npflog0
 }
 
 group "external" on $ext_if {
-	pass stateful out final all
+  pass stateful out final all
 
-	block in final from <blacklist>
-	pass stateful in final family inet4 proto tcp to $ext_if port ssh apply "log"
-	pass stateful in final proto tcp to $ext_if port $services_tcp
-	pass stateful in final proto udp to $ext_if port $services_udp
-	pass stateful in final proto tcp to $ext_if port 49151-65535	# Passive FTP
-	pass stateful in final proto udp to $ext_if port 33434-33600	# Traceroute
+  block in final from <blacklist>
+  pass stateful in final family inet4 proto tcp to $ext_if port ssh apply "log"
+  pass stateful in final proto tcp to $ext_if port $services_tcp
+  pass stateful in final proto udp to $ext_if port $services_udp
+  pass stateful in final proto tcp to $ext_if port 49151-65535  # passive FTP
+  pass stateful in final proto udp to $ext_if port 33434-33600  # traceroute
 }
 
 group "internal" on $int_if {
-	block in all
-	block in final from <limited>
+  block in all
+  block in final from <limited>
 
-	# Ingress filtering as per BCP 38 / RFC 2827.
-	pass in final from $localnet
-	pass out final all
+  # Ingress filtering as per BCP 38 / RFC 2827.
+  pass in final from $localnet
+  pass out final all
 }
 
 group default {
-	pass final on lo0 all
-	block all
+  pass final on lo0 all
+  block all
 }
 .Ed
 .\" -----

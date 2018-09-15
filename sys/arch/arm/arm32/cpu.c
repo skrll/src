@@ -64,6 +64,8 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.120 2018/08/15 06:06:05 skrll Exp $");
 extern const char *cpu_arch;
 
 #ifdef MULTIPROCESSOR
+uint64_t cpu_mpidr[MAXCPUS];
+
 volatile u_int arm_cpu_hatched __cacheline_aligned = 0;
 volatile uint32_t arm_cpu_mbox __cacheline_aligned = 0;
 uint32_t arm_cpu_marker[2] __cacheline_aligned = { 0, 0 };

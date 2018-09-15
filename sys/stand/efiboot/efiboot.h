@@ -1,4 +1,4 @@
-/*	$NetBSD: efiboot.h,v 1.2 2018/08/26 21:28:18 jmcneill Exp $	*/
+/*	$NetBSD: efiboot.h,v 1.6 2018/09/09 18:00:20 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -40,6 +40,10 @@ struct boot_command {
 	const char *c_help;
 };
 
+/* conf.c */
+extern struct fs_ops null_fs_ops;
+extern struct fs_ops tftp_fs_ops;
+
 /* boot.c */
 void boot(void);
 void clearit(void);
@@ -48,6 +52,10 @@ extern const struct boot_command commands[];
 void command_help(char *);
 int set_default_device(char *);
 char *get_default_device(void);
+int set_initrd_path(char *);
+char *get_initrd_path(void);
+int set_dtb_path(char *);
+char *get_dtb_path(void);
 
 /* console.c */
 int ischar(void);
@@ -59,6 +67,7 @@ extern EFI_LOADED_IMAGE *efi_li;
 void efi_cleanup(void);
 void efi_exit(void);
 void efi_delay(int);
+void efi_reboot(void);
 
 /* efichar.c */
 size_t ucs2len(const CHAR16 *);
@@ -68,6 +77,18 @@ int utf8_to_ucs2(const char *, CHAR16 **, size_t *);
 /* efidev.c */
 int efi_device_path_depth(EFI_DEVICE_PATH *dp, int);
 int efi_device_path_ncmp(EFI_DEVICE_PATH *, EFI_DEVICE_PATH *, int);
+
+/* efinet.c */
+int efi_net_open(struct open_file *, ...);
+void efi_net_probe(void);
+void efi_net_show(void);
+int efi_net_get_booted_interface_unit(void);
+extern struct netif_driver efinetif;
+
+/* efipxe.c */
+void efi_pxe_probe(void);
+void efi_pxe_show(void);
+bool efi_pxe_match_booted_interface(const EFI_MAC_ADDRESS *, UINT32);
 
 /* exec.c */
 int exec_netbsd(const char *, const char *);

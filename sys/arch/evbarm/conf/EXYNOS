@@ -1,5 +1,5 @@
 #
-#	$NetBSD: EXYNOS,v 1.32 2018/08/19 07:27:33 skrll Exp $
+#	$NetBSD: EXYNOS,v 1.33 2018/09/11 10:06:53 jmcneill Exp $
 #
 #	Samsung Exynos SoC kernel
 #
@@ -8,6 +8,9 @@ include	"arch/evbarm/conf/std.exynos"
 include	"arch/evbarm/conf/GENERIC.common"
 
 makeoptions 	DTS="
+	exynos4412-odroidx2.dts
+	exynos4412-odroidx.dts
+	exynos4412-odroidu3.dts
 	exynos5410-odroidxu.dts
 	exynos5410-smdk5410.dts
 	exynos5422-odroidxu3-lite.dts
@@ -17,6 +20,7 @@ makeoptions 	DTS="
 
 options 	CPU_CORTEXA7
 options 	CPU_CORTEXA15
+options 	SOC_EXYNOS4412
 options 	SOC_EXYNOS5422
 options 	MULTIPROCESSOR
 
@@ -54,8 +58,9 @@ syscon*		at fdt? pass 1		# Generic System Controller
 
 # Timer
 mct*		at fdt? pass 2		# Exynos Multi Core Timer (MCT)
+armgtmr*	at mct?
 gtmr*		at fdt? pass 2
-armgtmr0	at gtmr?
+armgtmr*	at gtmr?
 
 # Interrupt controller
 exyointr*	at fdt? pass 1

@@ -234,6 +234,10 @@ extern struct cpu_info *cpu_info[];
 #endif
 
 #if defined(MULTIPROCESSOR)
+
+extern volatile u_int arm_cpu_hatched;
+extern uint64_t cpu_mpidr[];
+
 void cpu_mpstart(void);
 void cpu_init_secondary_processor(int);
 void cpu_boot_secondary_processors(void);

@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm283x_platform.c,v 1.16 2018/08/28 14:57:03 skrll Exp $	*/
+/*	$NetBSD: bcm283x_platform.c,v 1.18 2018/09/10 11:05:12 ryo Exp $	*/
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.16 2018/08/28 14:57:03 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.18 2018/09/10 11:05:12 ryo Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_bcm283x.h"
@@ -138,6 +138,12 @@ struct bus_space bcm2836_a4x_bs_tag;
 
 static paddr_t bcm2835_bus_to_phys(bus_addr_t);
 static paddr_t bcm2836_bus_to_phys(bus_addr_t);
+
+#ifdef VERBOSE_INIT_ARM
+#define VPRINTF(...)	printf(__VA_ARGS__)
+#else
+#define VPRINTF(...)
+#endif
 
 static paddr_t
 bcm2835_bus_to_phys(bus_addr_t ba)
@@ -255,7 +261,11 @@ bcm2836_platform_devmap(void)
 
 		DEVMAP_ENTRY(BCM2836_ARM_LOCAL_VBASE, BCM2836_ARM_LOCAL_BASE,
 		    BCM2836_ARM_LOCAL_SIZE),
-
+#if defined(MULTIPROCESSOR) && defined(__aarch64__)
+		/* for fdt cpu spin-table */
+		DEVMAP_ENTRY(BCM2836_ARM_SMP_VBASE, BCM2836_ARM_SMP_BASE,
+		    BCM2836_ARM_SMP_SIZE),
+#endif
 		DEVMAP_ENTRY_END
 	};
 
@@ -722,97 +732,54 @@ bcm2836_bootparams(void)
 static void
 bcm2836_mpstart(void)
 {
-#ifdef VERBOSE_INIT_ARM
-#define VPRINTF(...)	printf(__VA_ARGS__)
-#else
-#define VPRINTF(...)
-#endif
-
 #ifdef MULTIPROCESSOR
-	VPRINTF("%s: %d cpus present\n", __func__, arm_cpu_max);
+	const char *method;
+
+	const int cpus = OF_finddevice("/cpus");
+	if (cpus == -1) {
+		aprint_error("%s: no /cpus node found\n", __func__);
+		arm_cpu_max = 1;
+		return;
+	}
+
+	/* implementation dependent string "brcm,bcm2836-smp" for ARM 32-bit */
+	method = fdtbus_get_string(cpus, "enable-method");
+	if ((method != NULL) && (strcmp(method, "brcm,bcm2836-smp") == 0)) {
+		arm_cpu_max = RPI_CPU_MAX;
+		VPRINTF("%s: %d cpus present\n", __func__, arm_cpu_max);
+
+		extern void cpu_mpstart(void);
+
+		for (size_t i = 1; i < RPI_CPU_MAX; i++) {
+			bus_space_tag_t iot = &bcm2836_bs_tag;
+			bus_space_handle_t ioh = BCM2836_ARM_LOCAL_VBASE;
+
+			bus_space_write_4(iot, ioh,
+			    BCM2836_LOCAL_MAILBOX3_SETN(i),
+			    KERN_VTOPHYS((vaddr_t)cpu_mpstart));
+		}
+
+		/* Wake up AP in case firmware has placed it in WFE state */
+		__asm __volatile("sev" ::: "memory");
+
+		for (int loop = 0; loop < 16; loop++) {
+			if (arm_cpu_hatched == __BITS(arm_cpu_max - 1, 1))
+				break;
+			gtmr_delay(10000);
+		}
+
+		for (size_t i = 1; i < arm_cpu_max; i++) {
+			if ((arm_cpu_hatched & __BIT(i)) == 0) {
+				printf("%s: warning: cpu%zu failed to hatch\n",
+				    __func__, i);
+			}
+		}
+		return;
+	}
+
+	/* try enable-method each cpus */
+	arm_fdt_cpu_bootstrap();
 #endif /* MULTIPROCESSOR */
-
-	/*
-	 * XXX: TODO:
-	 *   should make cpu_fdt_bootstrap() that support spin-table and use it
-	 *   to share with arm/aarch64.
-	 */
-#ifdef __aarch64__
-	for (int i = 1; i < RPI_CPU_MAX; i++) {
-		/* argument for mpstart() */
-		arm_cpu_hatch_arg = i;
-		cpu_dcache_wb_range((vaddr_t)&arm_cpu_hatch_arg,
-		    sizeof(arm_cpu_hatch_arg));
-
-		/*
-		 * Reference:
-		 *   armstubs/armstub8.S
-		 *   in https://github.com/raspberrypi/tools
-		 */
-		volatile uint64_t *cpu_release_addr;
-#define RPI3_ARMSTUB8_SPINADDR_BASE	0x000000d8
-		cpu_release_addr = (void *)
-		    AARCH64_PA_TO_KVA(RPI3_ARMSTUB8_SPINADDR_BASE + i * 8);
-		*cpu_release_addr =
-		    aarch64_kern_vtophys((vaddr_t)cpu_mpstart);
-
-		/* need flush cache. secondary processors are cache disabled */
-		cpu_dcache_wb_range((vaddr_t)cpu_release_addr,
-		    sizeof(cpu_release_addr));
-		/* Wake up AP in case firmware has placed it in WFE state */
-		__asm __volatile("sev" ::: "memory");
-
-		/* Wait for APs to start */
-		for (int loop = 0; loop < 16; loop++) {
-			membar_consumer();
-			if (arm_cpu_hatched & __BIT(i))
-				break;
-			gtmr_delay(10000);
-		}
-	}
-#endif /* __aarch64__ */
-
-#ifdef __arm__
-	/*
-	 * Even if no options MULTIPROCESSOR,
-	 * It is need to initialize the secondary CPU,
-	 * and go into wfi loop (cpu_mpstart),
-	 * otherwise system would be freeze...
-	 * (because netbsd will use the spinning address)
-	 */
-	extern void cpu_mpstart(void);
-
-	for (size_t i = 1; i < RPI_CPU_MAX; i++) {
-		bus_space_tag_t iot = &bcm2836_bs_tag;
-		bus_space_handle_t ioh = BCM2836_ARM_LOCAL_VBASE;
-
-		bus_space_write_4(iot, ioh,
-		    BCM2836_LOCAL_MAILBOX3_SETN(i),
-		    KERN_VTOPHYS((vaddr_t)cpu_mpstart));
-
-		/* Wake up AP in case firmware has placed it in WFE state */
-		__asm __volatile("sev" ::: "memory");
-
-#ifdef MULTIPROCESSOR
-		/* Wait for APs to start */
-		for (int loop = 0; loop < 16; loop++) {
-			membar_consumer();
-			if (arm_cpu_hatched & __BIT(i))
-				break;
-			gtmr_delay(10000);
-		}
-#endif
-	}
-#endif
-
-#ifdef MULTIPROCESSOR
-	for (size_t i = 1; i < arm_cpu_max; i++) {
-		if ((arm_cpu_hatched & __BIT(i)) == 0) {
-			printf("%s: warning: cpu%zu failed to hatch\n",
-			    __func__, i);
-		}
-	}
-#endif
 }
 
 #endif	/* SOC_BCM2836 */
@@ -1048,7 +1015,7 @@ rpi_fb_do_cursor(struct wsdisplay_cursor *cur)
 		int i;
 		uint32_t val;
 
-		for (i = 0; i < min(cur->cmap.count, 3); i++) {
+		for (i = 0; i < uimin(cur->cmap.count, 3); i++) {
 			val = (cur->cmap.red[i] << 16 ) |
 			      (cur->cmap.green[i] << 8) |
 			      (cur->cmap.blue[i] ) |

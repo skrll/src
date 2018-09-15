@@ -17,6 +17,7 @@ options 	__HAVE_CPU_COUNTER
 options 	__HAVE_CPU_UAREA_ALLOC_IDLELWP
 options 	__HAVE_FAST_SOFTINTS		# should be in types.h
 options 	__HAVE_GENERIC_START
+options 	__HAVE_GENERIC_CPU_INITCLOCKS
 options 	__HAVE_PCI_CONF_HOOK
 options 	ARM_HAS_VBAR
 options 	ARM_INTR_IMPL="<arch/arm/fdt/fdt_intr.h>"

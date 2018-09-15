@@ -1,4 +1,4 @@
-/* $NetBSD: efifdt.c,v 1.5 2018/08/28 01:24:39 jmcneill Exp $ */
+/* $NetBSD: efifdt.c,v 1.9 2018/09/09 13:37:54 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -65,6 +65,16 @@ efi_fdt_probe(void)
 	return 0;
 }
 
+int
+efi_fdt_set_data(void *data)
+{
+	if (fdt_check_header(data) != 0)
+		return EINVAL;
+
+	fdt_data = data;
+	return 0;
+}
+
 void *
 efi_fdt_data(void)
 {
@@ -75,6 +85,49 @@ int
 efi_fdt_size(void)
 {
 	return fdt_data == NULL ? 0 : fdt_totalsize(fdt_data);
+}
+
+void
+efi_fdt_init(u_long addr, u_long len)
+{
+	int error;
+
+	error = fdt_open_into(fdt_data, (void *)addr, len);
+	if (error < 0)
+		panic("fdt_open_into failed: %d", error);
+
+	fdt_data = (void *)addr;
+}
+
+void
+efi_fdt_fini(void)
+{
+	int error;
+
+	error = fdt_pack(fdt_data);
+	if (error < 0)
+		panic("fdt_pack failed: %d", error);
+}
+
+void
+efi_fdt_show(void)
+{
+	const char *model, *compat;
+	int n, ncompat;
+
+	if (fdt_data == NULL)
+		return;
+
+	model = fdt_getprop(fdt_data, fdt_path_offset(fdt_data, "/"), "model", NULL);
+	if (model)
+		printf("FDT: %s [", model);
+	ncompat = fdt_stringlist_count(fdt_data, fdt_path_offset(fdt_data, "/"), "compatible");
+	for (n = 0; n < ncompat; n++) {
+		compat = fdt_stringlist_get(fdt_data, fdt_path_offset(fdt_data, "/"),
+		    "compatible", n, NULL);
+		printf("%s%s", n == 0 ? "" : ", ", compat);
+	}
+	printf("]\n");
 }
 
 void
@@ -103,6 +156,12 @@ efi_fdt_memory_map(void)
 
 	memmap = LibMemoryMap(&nentries, &mapkey, &descsize, &descver);
 	for (n = 0, md = memmap; n < nentries; n++, md = NextMemoryDescriptor(md, descsize)) {
+#ifdef EFI_MEMORY_DEBUG
+		printf("MEM: %u: Type 0x%x Attr 0x%lx Phys 0x%lx Virt 0x%lx Size 0x%lx\n",
+		    n, md->Type, md->Attribute,
+		    md->PhysicalStart, md->VirtualStart,
+		    (u_long)md->NumberOfPages * EFI_PAGE_SIZE);
+#endif
 		if ((md->Attribute & EFI_MEMORY_WB) == 0)
 			continue;
 		if (!FDT_MEMORY_USABLE(md))
@@ -166,4 +225,22 @@ efi_fdt_bootargs(const char *bootargs)
 			break;
 		}
 	}
+}
+
+void
+efi_fdt_initrd(u_long initrd_addr, u_long initrd_size)
+{
+	int chosen;
+
+	if (initrd_size == 0)
+		return;
+
+	chosen = fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH);
+	if (chosen < 0)
+		chosen = fdt_add_subnode(fdt_data, fdt_path_offset(fdt_data, "/"), FDT_CHOSEN_NODE_NAME);
+	if (chosen < 0)
+		panic("FDT: Failed to create " FDT_CHOSEN_NODE_PATH " node");
+
+	fdt_setprop_u64(fdt_data, chosen, "linux,initrd-start", initrd_addr);
+	fdt_setprop_u64(fdt_data, chosen, "linux,initrd-end", initrd_addr + initrd_size);
 }

@@ -13,16 +13,6 @@
 // instruction is identical in hardware, the AMD and Intel
 // intrinsics are different!
 
-// NOTE: This should match the tests in llvm/test/CodeGen/X86/bmi-intrinsics-fast-isel.ll
-
-// The double underscore intrinsics are for compatibility with
-// AMD's BMI interface. The single underscore intrinsics
-// are for compatibility with Intel's BMI interface.
-// Apart from the underscores, the interfaces are identical
-// except in one case: although the 'bextr' register-form
-// instruction is identical in hardware, the AMD and Intel
-// intrinsics are different!
-
 unsigned short test__tzcnt_u16(unsigned short __X) {
   // CHECK-LABEL: test__tzcnt_u16
   // CHECK: zext i16 %{{.*}} to i32

@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.163 2018/07/06 02:36:35 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.166 2018/09/14 09:51:09 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -2620,11 +2620,11 @@ ixgbe_msix_que(void *arg)
 	if ((txr->bytes) && (txr->packets))
 		newitr = txr->bytes/txr->packets;
 	if ((rxr->bytes) && (rxr->packets))
-		newitr = max(newitr, (rxr->bytes / rxr->packets));
+		newitr = uimax(newitr, (rxr->bytes / rxr->packets));
 	newitr += 24; /* account for hardware frame, crc */
 
 	/* set an upper boundary */
-	newitr = min(newitr, 3000);
+	newitr = uimin(newitr, 3000);
 
 	/* Be nice to the mid range */
 	if ((newitr > 300) && (newitr < 1200))
@@ -2843,6 +2843,7 @@ ixgbe_media_change(struct ifnet *ifp)
 	if (hw->phy.media_type == ixgbe_media_type_backplane)
 		return (EPERM);
 
+	IXGBE_CORE_LOCK(adapter);
 	/*
 	 * We don't actually need to check against the supported
 	 * media types of the adapter; ifmedia will take care of
@@ -2855,6 +2856,7 @@ ixgbe_media_change(struct ifnet *ifp)
 		if (err != IXGBE_SUCCESS) {
 			device_printf(adapter->dev, "Unable to determine "
 			    "supported advertise speeds\n");
+			IXGBE_CORE_UNLOCK(adapter);
 			return (ENODEV);
 		}
 		speed |= link_caps;
@@ -2915,10 +2917,12 @@ ixgbe_media_change(struct ifnet *ifp)
 			adapter->advertise |= 1 << 5;
 	}
 
+	IXGBE_CORE_UNLOCK(adapter);
 	return (0);
 
 invalid:
 	device_printf(adapter->dev, "Invalid media type!\n");
+	IXGBE_CORE_UNLOCK(adapter);
 
 	return (EINVAL);
 } /* ixgbe_media_change */
@@ -3275,7 +3279,7 @@ ixgbe_add_device_sysctls(struct adapter *adapter)
 			aprint_error_dev(dev, "could not create sysctl\n");
 
 	/* for WoL-capable devices */
-	if (hw->device_id == IXGBE_DEV_ID_X550EM_X_10G_T) {
+	if (adapter->wol_support) {
 		if (sysctl_createv(log, 0, &rnode, &cnode, CTLFLAG_READWRITE,
 		    CTLTYPE_BOOL, "wol_enable",
 		    SYSCTL_DESCR("Enable/Disable Wake on LAN"),
@@ -3661,8 +3665,8 @@ ixgbe_setup_low_power_mode(struct adapter *adapter)
 		IXGBE_WRITE_REG(hw, IXGBE_WUC, 0);
 	} else {
 		/* Turn off support for APM wakeup. (Using ACPI instead) */
-		IXGBE_WRITE_REG(hw, IXGBE_GRC,
-		    IXGBE_READ_REG(hw, IXGBE_GRC) & ~(u32)2);
+		IXGBE_WRITE_REG(hw, IXGBE_GRC_BY_MAC(hw),
+		    IXGBE_READ_REG(hw, IXGBE_GRC_BY_MAC(hw)) & ~(u32)2);
 
 		/*
 		 * Clear Wake Up Status register to prevent any previous wakeup
@@ -6545,7 +6549,7 @@ ixgbe_configure_interrupts(struct adapter *adapter)
 #ifdef	RSS
 	/* If we're doing RSS, clamp at the number of RSS buckets */
 	if (adapter->feat_en & IXGBE_FEATURE_RSS)
-		queues = min(queues, rss_getnumbuckets());
+		queues = uimin(queues, rss_getnumbuckets());
 #endif
 	if (ixgbe_num_queues > queues) {
 		aprint_error_dev(adapter->dev, "ixgbe_num_queues (%d) is too large, using reduced amount (%d).\n", ixgbe_num_queues, queues);
@@ -6555,8 +6559,8 @@ ixgbe_configure_interrupts(struct adapter *adapter)
 	if (ixgbe_num_queues != 0)
 		queues = ixgbe_num_queues;
 	else
-		queues = min(queues,
-		    min(mac->max_tx_queues, mac->max_rx_queues));
+		queues = uimin(queues,
+		    uimin(mac->max_tx_queues, mac->max_rx_queues));
 
 	/* reflect correct sysctl value */
 	ixgbe_num_queues = queues;

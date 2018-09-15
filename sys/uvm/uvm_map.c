@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_map.c,v 1.354 2018/02/06 09:20:29 mrg Exp $	*/
+/*	$NetBSD: uvm_map.c,v 1.356 2018/09/12 15:58:08 maxv Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.354 2018/02/06 09:20:29 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.356 2018/09/12 15:58:08 maxv Exp $");
 
 #include "opt_ddb.h"
 #include "opt_pax.h"
@@ -1063,15 +1063,6 @@ uvm_map(struct vm_map *map, vaddr_t *startp /* IN/OUT */, vsize_t size,
 	int error;
 
 	KASSERT((size & PAGE_MASK) == 0);
-
-#ifndef __USER_VA0_IS_SAFE
-	if ((flags & UVM_FLAG_FIXED) && *startp == 0 &&
-	    !VM_MAP_IS_KERNEL(map) && user_va0_disable) {
-		uprintf("%s: process wants to map virtual address 0; see "
-		    "vm.user_va0_disable in sysctl(7).\n", __func__);
-		return EACCES;
-	}
-#endif
 
 	/*
 	 * for pager_map, allocate the new entry first to avoid sleeping
@@ -5013,7 +5004,7 @@ out:
 	if (pid != -1)
 		mutex_exit(p->p_lock);
 	if (error == 0) {
-		const u_int esize = min(sizeof(*vme), elem_size);
+		const u_int esize = uimin(sizeof(*vme), elem_size);
 		dp = oldp;
 		for (size_t i = 0; i < count; i++) {
 			if (oldp && (dp - (char *)oldp) < vmesize) {

@@ -1,4 +1,4 @@
-/*	$NetBSD: gtmr.c,v 1.32 2018/06/30 17:30:37 jmcneill Exp $	*/
+/*	$NetBSD: gtmr.c,v 1.34 2018/09/10 10:55:02 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gtmr.c,v 1.32 2018/06/30 17:30:37 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gtmr.c,v 1.34 2018/09/10 10:55:02 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -87,7 +87,9 @@ reg ## _stable_read(struct gtmr_softc *sc) \
 	return val; \
 }
 
+#ifdef DIAGNOSTIC
 stable_read(gtmr_cntv_cval);
+#endif
 stable_read(gtmr_cntvct);
 
 static int gtmr_match(device_t, cfdata_t, void *);
@@ -123,7 +125,7 @@ gtmr_match(device_t parent, cfdata_t cf, void *aux)
 	if (gtmr_sc.sc_dev != NULL)
 		return 0;
 
-	/* Genertic Timer is always implemented in ARMv8-A */
+	/* Generic Timer is always implemented in ARMv8-A */
 	if (!cpu_gtmr_exists_p())
 		return 0;
 
@@ -172,8 +174,10 @@ gtmr_attach(device_t parent, device_t self, void *aux)
 
 	evcnt_attach_dynamic(&gtmr_cntv_tval_write_ev, EVCNT_TYPE_MISC, NULL,
 	    device_xname(self), "CNTV_TVAL write retry max");
+#ifdef DIAGNOSTIC
 	evcnt_attach_dynamic(&gtmr_cntv_cval_read_ev, EVCNT_TYPE_MISC, NULL,
 	    device_xname(self), "CNTV_CVAL read retry max");
+#endif
 	evcnt_attach_dynamic(&gtmr_cntvct_read_ev, EVCNT_TYPE_MISC, NULL,
 	    device_xname(self), "CNTVCT read retry max");
 

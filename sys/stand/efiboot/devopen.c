@@ -1,4 +1,4 @@
-/* $NetBSD: devopen.c,v 1.2 2018/08/26 21:28:18 jmcneill Exp $ */
+/* $NetBSD: devopen.c,v 1.3 2018/09/03 00:04:02 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -35,7 +35,11 @@ devopen(struct open_file *f, const char *fname, char **file)
 {
 	int error;
 
-	error = efi_block_open(f, fname, file);
+	error = efi_net_open(f, fname, file);
+	file_system[0] = error ? null_fs_ops : tftp_fs_ops;
+
+	if (error)
+		error = efi_block_open(f, fname, file);
 	if (error)
 		error = efi_file_open(f, fname);
 
