@@ -46,7 +46,7 @@
 #define INIT_ARM_STACK_SIZE	8192
 
 #ifdef VERBOSE_INIT_ARM
-#define	XPUTC(n)	mov r0, n; bl uartputc
+#define XPUTC(n)	mov r0, n; bl uartputc
 #define VPRINTF(string)	bl generic_vprint; .asciz string; .align 2
 #define VPRINTX(regno)	mov r0, regno; bl generic_printx
 #else
