@@ -1,4 +1,4 @@
-/* $NetBSD: exynos_platform.c,v 1.15 2018/09/11 10:06:53 jmcneill Exp $ */
+/* $NetBSD: exynos_platform.c,v 1.16 2018/09/14 11:58:38 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -34,7 +34,7 @@
 #include "ukbd.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: exynos_platform.c,v 1.15 2018/09/11 10:06:53 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: exynos_platform.c,v 1.16 2018/09/14 11:58:38 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -132,6 +132,9 @@ exynos_platform_mpstart(void)
 {
 
 	void (*mp_start)(void) = NULL;
+
+//	exynos_bootstrap();
+
 	const struct of_compat_data *cd = of_search_compatible(OF_finddevice("/"), mp_compat_data);
 	if (cd)
 		mp_start = (void (*)(void))cd->data;
