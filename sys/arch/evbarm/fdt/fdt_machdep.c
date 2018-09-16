@@ -414,12 +414,8 @@ initarm(void *arg)
 	 */
 
 	VPRINTF("devmap\n");
-#ifdef __aarch64__
-	pmap_devmap_bootstrap(plat->ap_devmap());
-#else
-	extern char TEMP_L1_TABLE[];
-	pmap_devmap_bootstrap((vaddr_t)TEMP_L1_TABLE, plat->ap_devmap());
-#endif
+	extern char ARM_BOOTSTRAP_LxPT[];
+	pmap_devmap_bootstrap((vaddr_t)ARM_BOOTSTRAP_LxPT, plat->ap_devmap());
 
 	VPRINTF("bootstrap\n");
 	plat->ap_bootstrap();

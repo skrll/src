@@ -164,7 +164,8 @@ ASEND(generic_start)
 
 	.section ".init_pagetable", "aw", %nobits
 	.p2align  14 /* 16KiB aligned */
-	.globl  TEMP_L1_TABLE
+	.global ARM_BOOTSTRAP_LxPT
+ARM_BOOTSTRAP_LxPT:
 TEMP_L1_TABLE:
 	.space  L1_TABLE_SIZE
 TEMP_L1_TABLE_END:

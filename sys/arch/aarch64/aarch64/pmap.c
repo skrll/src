@@ -331,7 +331,7 @@ pmap_devmap_register(const struct pmap_devmap *table)
 }
 
 void
-pmap_devmap_bootstrap(const struct pmap_devmap *table)
+pmap_devmap_bootstrap(vaddr_t l0pt, const struct pmap_devmap *table)
 {
 	pd_entry_t *l0, *l1, *l2;
 	vaddr_t va;
@@ -339,7 +339,7 @@ pmap_devmap_bootstrap(const struct pmap_devmap *table)
 
 	pmap_devmap_register(table);
 
-	l0 = (void *)AARCH64_PA_TO_KVA(reg_ttbr1_el1_read());
+	l0 = (void *)l0pt;
 
 	VPRINTF("%s:\n", __func__);
 	for (i = 0; table[i].pd_size != 0; i++) {

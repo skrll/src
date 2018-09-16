@@ -1087,6 +1087,7 @@ bootstk:
 bootstk_cpus:
 #endif
 
+	.global ARM_BOOTSTRAP_LxPT
 
 	.align PGSHIFT
 mmutables_start:
@@ -1103,6 +1104,7 @@ ttbr0_l1table:
  * DEVMAP => PA mapping using L2 2MB block (devmap size, max 2MB*512=2Gbyte)
  * KSEG   => PA mapping using L1 1GB block * 512
  */
+ARM_BOOTSTRAP_LxPT:
 ttbr1_l0table:
 	.space	PAGE_SIZE
 ttbr1_l1table_kseg:

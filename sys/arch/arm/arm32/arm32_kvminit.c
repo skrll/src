@@ -190,10 +190,10 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 	 */
 #if defined(__HAVE_GENERIC_START)
 	extern char KERNEL_BASE_virt[];
-	extern char TEMP_L1_TABLE[];
+	extern char ARM_BOOTSTRAP_LxPT[];
 
 	vaddr_t kstartva = trunc_page((vaddr_t)KERNEL_BASE_virt);
-	vaddr_t kendva = round_page((vaddr_t)TEMP_L1_TABLE + L1_TABLE_SIZE);
+	vaddr_t kendva = round_page((vaddr_t)ARM_BOOTSTRAP_LxPT + L1_TABLE_SIZE);
 
 	kernelstart = KERN_VTOPHYS(kstartva);
 #else
