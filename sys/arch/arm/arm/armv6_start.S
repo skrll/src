@@ -53,7 +53,7 @@
 #define START_CONSADDR	CONSADDR
 #endif
 #if defined(CONADDR)
-#define START_CONSADDR	CONSADDR
+#define START_CONSADDR	CONADDR
 #endif
 
 #ifdef VERBOSE_INIT_ARM
