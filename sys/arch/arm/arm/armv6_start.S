@@ -45,6 +45,17 @@
 
 #define INIT_ARM_STACK_SIZE	8192
 
+#if defined(CONSADDR) && defined(CONADDR)
+#error Only one of CONSADDR and CONADDR should be defined
+#endif
+
+#if defined(CONSADDR)
+#define START_CONSADDR	CONSADDR
+#endif
+#if defined(CONADDR)
+#define START_CONSADDR	CONADDR
+#endif
+
 #ifdef VERBOSE_INIT_ARM
 #define XPUTC(n)	mov r0, n; bl uartputc
 #define VPRINTF(string)	bl generic_vprint; .asciz string; .align 2
@@ -277,12 +288,12 @@ generic_startv7:
 	bl	arm_boot_l1pt_entry
 #endif
 
-#ifdef CONSADDR
+#if defined(START_CONSADDR)
 	/* If CONSADDR exists add it VA:PA (1MB) */
 	VPRINTF("\n\rCONSADDR")
 	movw	r0, #:lower16:(L1_S_SIZE - 1)		/* align DTB PA to 1M */
 	movt	r0, #:upper16:(L1_S_SIZE - 1)
-	ldr	R_VA, =CONSADDR
+	ldr	R_VA, =START_CONSADDR
 	bic	R_VA, R_VA, r0
 	mov	R_PA, R_VA
 	mov	R_NSEC, #1
