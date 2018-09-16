@@ -120,6 +120,9 @@ ENTRY_NP(generic_start)
 	sub	r8, r8, r10
 	str	r10, [r8]
 
+	ldr	r8, =(L1_S_SIZE - 1)
+	ands	r9, r10, r8
+	bne	arm_bad_vtopdiff
 	/*
 	 * store uboot arguments to uboot_args[4]
 	 */
@@ -168,6 +171,16 @@ ENTRY_NP(generic_start)
 	cmp	r0, #0x60000
 	beq	generic_startv6
 #endif
+arm_cpu_unknown:
+	VPRINTF("\n\rpanic: unknown midr (")
+	mrc	p15, 0, r0, c0, c0, 0	/* Get MIDR */
+	VPRINTX(r0)
+	VPRINTF(")\n\r")
+1:	b	1b
+arm_bad_vtopdiff:
+	VPRINTF("\n\rpanic: vtop not L1_FRAME aligned (")
+	VPRINTX(r10)
+	VPRINTF(")\n\r")
 1:	b	 1b
 ASEND(generic_start)
 
