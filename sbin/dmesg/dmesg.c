@@ -1,4 +1,4 @@
-/*	$NetBSD: dmesg.c,v 1.33 2018/04/14 01:37:34 kre Exp $	*/
+/*	$NetBSD: dmesg.c,v 1.38 2018/09/20 06:06:06 kre Exp $	*/
 /*-
  * Copyright (c) 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -38,7 +38,7 @@ __COPYRIGHT("@(#) Copyright (c) 1991, 1993\
 #if 0
 static char sccsid[] = "@(#)dmesg.c	8.1 (Berkeley) 6/5/93";
 #else
-__RCSID("$NetBSD: dmesg.c,v 1.33 2018/04/14 01:37:34 kre Exp $");
+__RCSID("$NetBSD: dmesg.c,v 1.38 2018/09/20 06:06:06 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -47,6 +47,7 @@ __RCSID("$NetBSD: dmesg.c,v 1.33 2018/04/14 01:37:34 kre Exp $");
 #include <sys/sysctl.h>
 
 #include <err.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <time.h>
 #include <kvm.h>
@@ -58,16 +59,85 @@ __RCSID("$NetBSD: dmesg.c,v 1.33 2018/04/14 01:37:34 kre Exp $");
 #include <vis.h>
 
 #ifndef SMALL
+#include <langinfo.h>
+#include <locale.h>
+
 static struct nlist nl[] = {
 #define	X_MSGBUF	0
 	{ .n_name = "_msgbufp" },
 	{ .n_name = NULL },
 };
 
+static const char *radix;
+
 __dead static void	usage(void);
 
 #define	KREAD(addr, var) \
 	kvm_read(kd, addr, &var, sizeof(var)) != sizeof(var)
+
+static const char *
+fmtydhmsf(char *b, size_t l, intmax_t t, long nsec, int ht)
+{
+	intmax_t s, m, h;
+	int z;
+	int prec;
+	size_t o;
+
+	s = t % 60;
+	t /= 60;
+
+	m = t % 60;
+	t /= 60;
+
+	h = t;
+
+	z = 0;
+	o = 0;
+
+#define APPENDFMT(fmt, ...)  \
+    do { \
+	    z = snprintf(b + o, l - o, fmt, __VA_ARGS__); \
+	    if (z == -1) \
+		    return b; \
+	    o += (size_t)z; \
+	    if (o >= l) \
+		    return b; \
+    } while (/*CONSTCOND*/0)
+
+#define APPEND(a) \
+    do if (a) \
+        APPENDFMT("%jd%c", a, toupper((unsigned char)__STRING(a)[0])); \
+    while (/*CONSTCOND*/0)
+#define APPENDS(a, pr, ms) \
+    APPENDFMT("%jd%s%.*ld%c", a, radix, pr, ms, \
+	toupper((unsigned char)__STRING(a)[0]))
+
+	APPENDFMT("%s", "P");
+	APPENDFMT("%s", "T");
+	APPEND(h);
+	APPEND(m);
+	if (nsec)
+		nsec = (nsec + 500000) / 1000000;	/* now milliseconds */
+	prec = 3;
+	if (nsec && ht == 2) {
+		while (prec > 0 && (nsec % 10) == 0)
+			--prec, nsec /= 10;
+	}
+	if (nsec || ht > 2)
+		APPENDS(s, prec, nsec);
+	else
+		APPEND(s);
+	return b;
+}
+
+static void
+pnsec(long nsec, long fsec, int scale)
+{
+	if (scale > 6)
+		printf("%6.6ld", (nsec + 499) / 1000);
+	else
+		printf("%*.*ld%.*s", scale, scale, fsec, 6 - scale, "000000");
+}
 #endif
 
 int
@@ -91,6 +161,11 @@ main(int argc, char *argv[])
 	
 	static const int bmib[] = { CTL_KERN, KERN_BOOTTIME };
 	size = sizeof(boottime);
+
+	(void)setlocale(LC_ALL, "");
+	radix = nl_langinfo(RADIXCHAR);
+	if (radix == NULL)
+		radix = ".";	/* could also select "," */
 
 	boottime.tv_sec = 0;
 	boottime.tv_usec = 0;
@@ -116,7 +191,7 @@ main(int argc, char *argv[])
 			quiet = 1;
 			break;
 		case 'T':
-			humantime = 1;
+			humantime++;
 			break;
 		case '?':
 		default:
@@ -257,7 +332,7 @@ main(int argc, char *argv[])
 					nsec *= 10;
 				if (!quiet || deltas)
 					printf("[");
-				if (humantime) {
+				if (humantime == 1) {
 					time_t t;
 					struct tm tm;
 
@@ -268,14 +343,15 @@ main(int argc, char *argv[])
 						     &tm);
 						printf("%s", tbuf);
 					}
+				} else if (humantime > 1) {
+					const char *fp = fmtydhmsf(tbuf,
+					    sizeof(tbuf), sec, fsec, humantime);
+					if (fp) {
+						printf("%s", fp);
+					}
 				} else if (!quiet) {
-					if (scale > 6)
-						printf("% 5jd.%6.6ld",
-						    sec, (nsec + 499) / 1000);
-					else
-						printf("% 5jd.%*.*ld%.*s",
-						    sec, scale, scale, fsec,
-						    6 - scale, "000000");
+					printf(" %5jd.", sec);
+					pnsec(nsec, fsec, scale);
 				}
 				if (deltas) {
 					struct timespec nt = { sec, nsec };

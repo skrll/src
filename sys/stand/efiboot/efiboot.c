@@ -1,4 +1,4 @@
-/* $NetBSD: efiboot.c,v 1.6 2018/09/09 18:00:20 jmcneill Exp $ */
+/* $NetBSD: efiboot.c,v 1.8 2018/09/15 17:06:32 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -31,9 +31,13 @@
 #include "efiblock.h"
 #include "efifdt.h"
 
+#include <sys/reboot.h>
+
 EFI_HANDLE IH;
 EFI_DEVICE_PATH *efi_bootdp;
 EFI_LOADED_IMAGE *efi_li;
+
+int howto = 0;
 
 static EFI_PHYSICAL_ADDRESS heap_start;
 static UINTN heap_size = 1 * 1024 * 1024;
@@ -52,6 +56,8 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	InitializeLib(imageHandle, systemTable);
 
 	(void)uefi_call_wrapper(ST->ConOut->Reset, 2, ST->ConOut, FALSE);
+	if (ST->ConOut->ClearScreen)
+		(void)uefi_call_wrapper(ST->ConOut->ClearScreen, 1, ST->ConOut);
 
 	status = uefi_call_wrapper(BS->AllocatePages, 4, AllocateAnyPages, EfiLoaderData, sz, &heap_start);
 	if (EFI_ERROR(status))
@@ -130,4 +136,17 @@ efi_delay(int us)
 
 	uefi_call_wrapper(BS->SetTimer, 3, delay_ev, TimerRelative, us * 10);
 	uefi_call_wrapper(BS->WaitForEvent, 3, 1, &delay_ev, &val);
+}
+
+void
+efi_progress(const char *fmt, ...)
+{
+	va_list ap;
+
+	if ((howto & AB_SILENT) != 0)
+		return;
+
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
 }
