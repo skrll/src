@@ -579,7 +579,7 @@ armv7_init:
 	movt	r2, #:upper16:ARMV7_SCTLR_SET
 
 	bic	r6, r0, r1			// disable icache/dcache/mmu
-	orr	r6, r0, r2			//
+	orr	r6, r6, r2			//
 
 	mcr	p15, 0, r6, c1, c0, 0		// SCTLR write
 	dsb
