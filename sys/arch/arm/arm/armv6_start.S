@@ -30,11 +30,10 @@
  */
 
 #include "opt_arm_debug.h"
-#include "opt_com.h"
+#include "opt_console.h"
 #include "opt_cpuoptions.h"
 #include "opt_cputypes.h"
 #include "opt_fdt.h"
-#include "opt_fdt_arm.h"
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
