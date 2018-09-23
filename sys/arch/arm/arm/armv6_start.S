@@ -320,10 +320,9 @@ generic_startv7:
 #endif
 
 	XPUTC(#'M')
-	movw	r0, #:lower16:TEMP_L1_TABLE
-	movt	r0, #:upper16:TEMP_L1_TABLE
-	sub	r0, r10
-
+//	movw	r0, #:lower16:TEMP_L1_TABLE
+//	movt	r0, #:upper16:TEMP_L1_TABLE
+//	sub	r0, r10
 //	bl	generic_dumpl1pt
 
 	/*
