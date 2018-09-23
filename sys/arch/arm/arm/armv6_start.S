@@ -226,7 +226,7 @@ generic_startv7:
 	 * futz caches and tlb
 	 * SCU_INV_ALL, and enabled it.
 	 */
-	VPRINTF("v7: ")
+	VPRINTF("v7   :")
 
 	bl	armv7_init
 
