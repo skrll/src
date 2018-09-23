@@ -1,4 +1,4 @@
-/* $NetBSD: efifdt.h,v 1.4 2018/09/09 13:37:54 jmcneill Exp $ */
+/* $NetBSD: efienv.h,v 1.1 2018/09/09 17:55:22 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -26,13 +26,8 @@
  * SUCH DAMAGE.
  */
 
-int efi_fdt_probe(void);
-void efi_fdt_memory_map(void);
-int efi_fdt_set_data(void *);
-void *efi_fdt_data(void);
-int efi_fdt_size(void);
-void efi_fdt_show(void);
-void efi_fdt_bootargs(const char *);
-void efi_fdt_initrd(u_long, u_long);
-void efi_fdt_init(u_long, u_long);
-void efi_fdt_fini(void);
+void efi_env_set(const char *, char *);
+char *efi_env_get(const char *);
+void efi_env_clear(const char *);
+void efi_env_reset(void);
+void efi_env_print(void);

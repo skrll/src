@@ -1,4 +1,4 @@
-/*	$NetBSD: efiboot.h,v 1.4 2018/09/07 17:30:58 jmcneill Exp $	*/
+/*	$NetBSD: efiboot.h,v 1.6 2018/09/09 18:00:20 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -54,6 +54,8 @@ int set_default_device(char *);
 char *get_default_device(void);
 int set_initrd_path(char *);
 char *get_initrd_path(void);
+int set_dtb_path(char *);
+char *get_dtb_path(void);
 
 /* console.c */
 int ischar(void);
@@ -65,6 +67,7 @@ extern EFI_LOADED_IMAGE *efi_li;
 void efi_cleanup(void);
 void efi_exit(void);
 void efi_delay(int);
+void efi_reboot(void);
 
 /* efichar.c */
 size_t ucs2len(const CHAR16 *);
