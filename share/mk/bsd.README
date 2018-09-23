@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.README,v 1.382 2018/08/12 11:50:51 christos Exp $
+#	$NetBSD: bsd.README,v 1.384 2018/09/16 13:14:12 christos Exp $
 #	@(#)bsd.README	8.2 (Berkeley) 4/2/94
 
 This is the README file for the make "include" files for the NetBSD
@@ -1326,8 +1326,13 @@ SRCS		List of source files to build the library.  Suffix types
 		to .c files of the same name.  (This is not the default for
 		versions of make.)
 
-LIBDPLIBS	A list of the tuples:
+LIBDPLIBS/
+PROGDPLIBS	A list of the tuples:
 			libname  path-to-srcdir-of-libname
+
+		Instead of depending on installed versions of the libraries,
+		one can depend on their built version in the source directory.
+		This is useful for finding private libraries (LIBISPRIVATE).
 
 		For each tuple;
 		     *	LIBDO.libname contains the .OBJDIR of the library
@@ -1343,8 +1348,8 @@ LIBDPLIBS	A list of the tuples:
 		of the NetBSD source tree and only causes -llibname
 		to be added to LDADD.
 
-		This variable may be used for individual libraries, as
-		well as in parent directories to cache common libraries
+		This variable may be used for individual libraries/programs,
+		as well as in parent directories to cache common libraries
 		as a build-time optimization.
 
 The include file <bsd.lib.mk> includes the file named "../Makefile.inc"

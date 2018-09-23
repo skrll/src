@@ -1,4 +1,4 @@
-/*	$NetBSD: defs.h,v 1.17 2018/09/12 13:44:05 martin Exp $	*/
+/*	$NetBSD: defs.h,v 1.19 2018/09/20 12:27:42 rin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -347,10 +347,8 @@ int  clean_xfer_dir;
 #if !defined(SYSINST_FTP_DIR)
 #if defined(NETBSD_OFFICIAL_RELEASE)
 #define SYSINST_FTP_DIR		"pub/NetBSD/NetBSD-" REL
-#elif defined(BUILDID) && defined(REL_PATH)
-#define SYSINST_FTP_DIR		"pub/NetBSD-daily/" REL_PATH "/" BUILDID
 #elif defined(REL_PATH)
-#define SYSINST_FTP_DIR		"pub/NetBSD-daily/" REL_PATH
+#define SYSINST_FTP_DIR		"pub/NetBSD-daily/" REL_PATH "/latest"
 #else
 #define SYSINST_FTP_DIR		"pub/NetBSD/NetBSD-" REL
 #endif
@@ -615,9 +613,16 @@ void	unwind_mounts(void);
 int	target_mounted(void);
 
 /* from partman.c */
+#ifndef NO_PARTMAN
 int partman(void);
-int pm_partusage(pm_devs_t *, int, int);
 int pm_getrefdev(pm_devs_t *);
+void update_wedges(const char *);
+#else
+static inline int partman(void) { return -1; }
+static inline int pm_getrefdev(pm_devs_t *x __unused) { return -1; }
+#define update_wedges(x) __nothing
+#endif
+int pm_partusage(pm_devs_t *, int, int);
 void pm_setfstype(pm_devs_t *, int, int);
 int pm_editpart(int);
 void pm_rename(pm_devs_t *);
@@ -628,13 +633,16 @@ int pm_cgd_edit(void *, part_entry_t *);
 int pm_gpt_convert(pm_devs_t *);
 void pm_wedges_fill(pm_devs_t *);
 void pm_make_bsd_partitions(pm_devs_t *);
-void update_wedges(const char *);
 
 /* flags whether to offer the respective options (depending on helper
    programs available on install media */
 int have_raid, have_vnd, have_cgd, have_lvm, have_gpt, have_dk;
 /* initialize above variables */
+#ifndef NO_PARTMAN
 void check_available_binaries(void);
+#else
+#define check_available_binaries() __nothing
+#endif
 
 /* from bsddisklabel.c */
 int	make_bsd_partitions(void);
