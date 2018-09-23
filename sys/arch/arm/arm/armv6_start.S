@@ -232,8 +232,9 @@ generic_startv7:
 	VPRINTF("\n\r")
 
 	/*
-	 * Set up a preliminary mapping in the MMU to allow us to run
-	 * at KERNEL_BASE with caches off. (aka bootstrap page tables)
+	 * Initialise the l1pt for identity mapping of the kernel with caches off.
+	 * This will be updated further with additional mappings to form the
+	 * bootstrap table.
 	 */
 	ldr	R_L1TABLE, =TEMP_L1_TABLE
 	sub	R_L1TABLE, r10
@@ -282,8 +283,7 @@ generic_startv7:
 	VPRINTF("DTB")
 
 	/*
-	 * Add DTB VA:PA (1MB) from originaly r2, but saved in r9) to MMU
-	 * init table
+	 * Add DTB identity mapping (1MB) from originaly r2 (but saved in r9)
 	 */
 	movw	r0, #:lower16:(L1_S_SIZE - 1)		/* align DTB PA to 1M */
 	movt	r0, #:upper16:(L1_S_SIZE - 1)
@@ -301,7 +301,7 @@ generic_startv7:
 #endif
 
 #if defined(START_CONSADDR)
-	/* If CONSADDR exists add it VA:PA (1MB) */
+	/* If CONSADDR exists add its identity mapping (1MB) */
 	VPRINTF("\n\rCONSADDR")
 	movw	r0, #:lower16:(L1_S_SIZE - 1)		/* align DTB PA to 1M */
 	movt	r0, #:upper16:(L1_S_SIZE - 1)
