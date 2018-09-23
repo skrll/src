@@ -148,15 +148,15 @@ ENTRY_NP(generic_start)
 #endif
 
 #ifdef VERBOSE_INIT_ARM
-	mrc	p15, 0, r4, c2, c0, 0	// TTBR0 read
-	mrc	p15, 0, r5, c2, c0, 1	// TTBR1 read
-	mrc	p15, 0, r6, c2, c0, 2	// TTBCR read
 	VPRINTF("\n\rttb0 :")
-	VPRINTX(r4)
+	mrc	p15, 0, r0, c2, c0, 0	// TTBR0 read
+	VPRINTX(r0)
 	VPRINTF("\n\rttb1 :")
-	VPRINTX(r5)
+	mrc	p15, 0, r0, c2, c0, 1	// TTBR1 read
+	VPRINTX(r0)
 	VPRINTF("\n\rttcr :")
-	VPRINTX(r6)
+	mrc	p15, 0, r0, c2, c0, 2	// TTBCR read
+	VPRINTX(r0)
 	VPRINTF("\n\r")
 #endif
 
