@@ -233,7 +233,7 @@ generic_startv7:
 
 	/*
 	 * Set up a preliminary mapping in the MMU to allow us to run
-	 * at KERNEL_BASE with caches on.
+	 * at KERNEL_BASE with caches off. (aka bootstrap page tables)
 	 */
 	ldr	R_L1TABLE, =TEMP_L1_TABLE
 	sub	R_L1TABLE, r10
