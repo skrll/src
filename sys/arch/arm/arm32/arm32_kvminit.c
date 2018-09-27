@@ -192,10 +192,17 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 	extern char KERNEL_BASE_virt[];
 	extern char ARM_BOOTSTRAP_LxPT[];
 
+	KASSERTMSG(kern_vtopdiff == KERNEL_BASE_VOFFSET,
+	    "Mismatch in virt to phys offset %lx vs %x",
+	    kern_vtopdiff, KERNEL_BASE_VOFFSET);
+
 	vaddr_t kstartva = trunc_page((vaddr_t)KERNEL_BASE_virt);
 	vaddr_t kendva = round_page((vaddr_t)ARM_BOOTSTRAP_LxPT + L1_TABLE_SIZE);
 
+	VPRINTF("%s: kstartva=%#lx, kendva=%#lx, kern_vtopdiff=%#lx\n",
+	    __func__, kstartva, kendva, kern_vtopdiff);
 	kernelstart = KERN_VTOPHYS(kstartva);
+
 #else
 	vaddr_t kendva = round_page((vaddr_t)_end);
 
@@ -208,8 +215,10 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 #endif
 	paddr_t kernelend = KERN_VTOPHYS(kendva);
 
-	VPRINTF("%s: memstart=%#lx, memsize=%#lx, kernelstart=%#lx\n",
-	    __func__, memstart, memsize, kernelstart);
+	VPRINTF("%s: memstart=%#lx, memsize=%#lx\n",
+	    __func__, memstart, memsize);
+	VPRINTF("%s: kernelstart=%#lx, kernelend=%#lx\n", __func__,
+	    kernelstart, kernelend);
 
 	physical_start = bmi->bmi_start = memstart;
 	physical_end = bmi->bmi_end = memstart + memsize;
@@ -239,6 +248,7 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 	VPRINTF("%s: kernel phys start %#lx end %#lx\n", __func__, kernelstart,
 	    kernelend);
 
+	KASSERT((kernelstart & (L2_S_SEGSIZE - 1)) == 0);
 	/*
 	 * Now the rest of the free memory must be after the kernel.
 	 */
@@ -251,8 +261,7 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 	    pv->pv_pa + pv->pv_size - 1, pv->pv_va);
 	pv++;
 
-	// XXXNH should remove this
-#if !defined(FDT)
+#if !defined(__HAVE_GENERIC_START)
 	/*
 	 * Add a free block for any memory before the kernel.
 	 */
@@ -267,7 +276,6 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 		pv++;
 	}
 #endif
-
 	bmi->bmi_nfreeblocks = pv - bmi->bmi_freeblocks;
 
 	SLIST_INIT(&bmi->bmi_freechunks);
@@ -357,6 +365,8 @@ valloc_pages(struct bootmem_info *bmi, pv_addr_t *pv, size_t npages,
 	    && (free_pv->pv_pa & (L1_TABLE_SIZE - 1)) == 0
 	    && free_pv->pv_size >= L1_TABLE_SIZE) {
 		l1pt_found = true;
+		VPRINTF(" l1pt");
+
 		valloc_pages(bmi, &kernel_l1pt, L1_TABLE_SIZE / PAGE_SIZE,
 		    VM_PROT_READ|VM_PROT_WRITE, PTE_PAGETABLE, true);
 		add_pages(bmi, &kernel_l1pt);
@@ -599,6 +609,8 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 		 * This page will just contain the system vectors and can be
 		 * shared by all processes.
 		 */
+		VPRINTF(" vector");
+
 		valloc_pages(bmi, &systempage, 1, VM_PROT_READ|VM_PROT_WRITE|VM_PROT_EXECUTE,
 		    PTE_CACHE, true);
 	}
@@ -625,7 +637,8 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 		panic("%s: Failed to allocate or align the kernel "
 		    "page directory", __func__);
 
-	VPRINTF("Creating L1 page table at 0x%08lx\n", kernel_l1pt.pv_pa);
+	VPRINTF("Creating L1 page table at 0x%08lx/0x%08lx\n",
+	    kernel_l1pt.pv_va, kernel_l1pt.pv_pa);
 
 	/*
 	 * Now we start construction of the L1 page table
@@ -647,6 +660,10 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 
 	const vaddr_t kernel_base =
 	    KERN_PHYSTOV(bmi->bmi_kernelstart & -L2_S_SEGSIZE);
+
+	VPRINTF("%s: kernel_base %lx KERNEL_L2PT_KERNEL_NUM %zu\n", __func__,
+	    kernel_base, KERNEL_L2PT_KERNEL_NUM);
+
 	for (size_t idx = 0; idx < KERNEL_L2PT_KERNEL_NUM; idx++) {
 		pmap_link_l2pt(l1pt_va, kernel_base + idx * L2_S_SEGSIZE,
 		    &kernel_l2pt[idx]);
@@ -654,6 +671,9 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 		    __func__, kernel_l2pt[idx].pv_va,
 		    kernel_l2pt[idx].pv_pa, kernel_base + idx * L2_S_SEGSIZE);
 	}
+
+	VPRINTF("%s: kernel_vm_base %lx KERNEL_L2PT_KERNEL_NUM %zu\n", __func__,
+	    kernel_vm_base, KERNEL_L2PT_KERNEL_NUM);
 
 	for (size_t idx = 0; idx < KERNEL_L2PT_VMDATA_NUM; idx++) {
 		pmap_link_l2pt(l1pt_va, kernel_vm_base + idx * L2_S_SEGSIZE,
