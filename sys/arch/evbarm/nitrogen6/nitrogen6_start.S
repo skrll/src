@@ -131,6 +131,23 @@ _C_LABEL(nitrogen6_start):
 	bl	arm_cpuinit
 	PRINT("</arm_cpuinit>\r\n")
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #ifdef MULTIPROCESSOR
 	movw	r1, #:lower16:IMX6_AIPS1_BASE+AIPS1_SRC_BASE
 	movt	r1, #:upper16:IMX6_AIPS1_BASE+AIPS1_SRC_BASE

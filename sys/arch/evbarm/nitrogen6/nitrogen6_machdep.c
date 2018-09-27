@@ -61,11 +61,20 @@ __KERNEL_RCSID(0, "$NetBSD: nitrogen6_machdep.c,v 1.10 2018/09/21 12:04:09 skrll
 #include <machine/autoconf.h>
 #include <machine/bootconfig.h>
 
+#include <arm/cortex/a9tmr_var.h>
 #include <arm/cortex/scu_reg.h>
+
 #include <arm/imx/imx6var.h>
+#include <arm/imx/imxuartreg.h>
 #include <arm/imx/imxuartvar.h>
 
 #include <evbarm/nitrogen6/platform.h>
+
+#ifdef VERBOSE_INIT_ARM
+#define VPRINTF(...)	printf(__VA_ARGS__)
+#else
+#define VPRINTF(...)	do { } while (/* CONSTCOND */ 0)
+#endif
 
 extern int _end[];
 extern int KERNEL_BASE_phys[];
@@ -77,8 +86,6 @@ char *boot_args = NULL;
 
 /* filled in before cleaning bss. keep in .data */
 u_int uboot_args[4] __attribute__((__section__(".data")));
-
-#define KERN_VTOPDIFF	((vaddr_t)KERNEL_BASE_phys - (vaddr_t)KERNEL_BASE_virt)
 
 #ifndef CONADDR
 #define CONADDR	(IMX6_AIPS2_BASE + AIPS2_UART1_BASE)
@@ -92,10 +99,34 @@ u_int uboot_args[4] __attribute__((__section__(".data")));
 
 void nitrogen6_setup_iomux(void);
 void nitrogen6_device_register(device_t, void *);
+void nitrogen6_mpstart(void);
+void nitrogen6_platform_early_putchar(char);
+
 
 #ifdef KGDB
 #include <sys/kgdb.h>
 #endif
+
+static dev_type_cnputc(earlyconsputc);
+static dev_type_cngetc(earlyconsgetc);
+
+static struct consdev earlycons = {
+	.cn_putc = earlyconsputc,
+	.cn_getc = earlyconsgetc,
+	.cn_pollc = nullcnpollc,
+};
+
+static void
+earlyconsputc(dev_t dev, int c)
+{
+	uartputc(c);
+}
+
+static int
+earlyconsgetc(dev_t dev)
+{
+	return 0;	/* XXX */
+}
 
 /*
  * Static device mappings. These peripheral registers are mapped at
@@ -138,6 +169,171 @@ static struct boot_physmem bp_highgig = {
 };
 #endif
 
+void
+nitrogen6_platform_early_putchar(char c)
+{
+#define CONADDR_VA (CONADDR - IMX6_IOREG_PBASE + KERNEL_IO_IOREG_VBASE)
+	volatile uint32_t *uartaddr = cpu_earlydevice_va_p() ?
+	    (volatile uint32_t *)CONADDR_VA :
+	    (volatile uint32_t *)CONADDR;
+
+	int timo = 150000;
+
+	while ((uartaddr[IMX_USR2 / 4] & IMX_USR2_TXDC) == 0) {
+		if (--timo == 0)
+			break;
+	}
+
+	uartaddr[IMX_UTXD / 4] = c;
+
+	timo = 150000;
+	while ((uartaddr[IMX_USR2 / 4] & IMX_USR2_TXDC) == 0) {
+		if (--timo == 0)
+			break;
+	}
+}
+
+
+
+void
+nitrogen6_mpstart(void)
+{
+#ifdef MULTIPROCESSOR
+	uint32_t scu_cfg = bus_space_read_4(imx6_armcore_bst,
+	    imx6_armcore_bsh, ARMCORE_SCU_BASE + SCU_CFG);
+	scu_cfg |= SCU_CTL_SCU_ENA;
+	bus_space_write_4(imx6_armcore_bst, imx6_armcore_bsh,
+	    ARMCORE_SCU_BASE + SCU_CFG, scu_cfg);
+printf("%s: %d\n", __func__, __LINE__);
+
+//#if NARML2CC > 0
+//	arml2cc_init(imx6_armcore_bst, imx6_armcore_bsh, ARMCORE_L2C_BASE);
+//#endif
+
+
+
+
+
+
+
+
+
+
+
+
+#if 0
+	bus_space_handle_t scu;
+	bus_space_handle_t src;
+
+	uint32_t val;
+	int i;
+
+	if (bus_space_map(fdtbus_bs_tag, SCU_PHYSBASE, SCU_SIZE, 0, &scu) != 0)
+		panic("Couldn't map the SCU\n");
+	if (bus_space_map(fdtbus_bs_tag, SRC_PHYSBASE, SRC_SIZE, 0, &src) != 0)
+		panic("Couldn't map the system reset controller (SRC)\n");
+
+	/*
+	 * Invalidate SCU cache tags.  The 0x0000ffff constant invalidates all
+	 * ways on all cores 0-3.  Per the ARM docs, it's harmless to write to
+	 * the bits for cores that are not present.
+	 */
+	bus_space_write_4(fdtbus_bs_tag, scu, SCU_INV_TAGS_REG, 0x0000ffff);
+
+	/*
+	 * Erratum ARM/MP: 764369 (problems with cache maintenance).
+	 * Setting the "disable-migratory bit" in the undocumented SCU
+	 * Diagnostic Control Register helps work around the problem.
+	 */
+	val = bus_space_read_4(fdtbus_bs_tag, scu, SCU_DIAG_CONTROL);
+	bus_space_write_4(fdtbus_bs_tag, scu, SCU_DIAG_CONTROL, 
+	    val | SCU_DIAG_DISABLE_MIGBIT);
+
+	/*
+	 * Enable the SCU, then clean the cache on this core.  After these two
+	 * operations the cache tag ram in the SCU is coherent with the contents
+	 * of the cache on this core.  The other cores aren't running yet so
+	 * their caches can't contain valid data yet, but we've initialized
+	 * their SCU tag ram above, so they will be coherent from startup.
+	 */
+	val = bus_space_read_4(fdtbus_bs_tag, scu, SCU_CONTROL_REG);
+	bus_space_write_4(fdtbus_bs_tag, scu, SCU_CONTROL_REG, 
+	    val | SCU_CONTROL_ENABLE);
+	dcache_wbinv_poc_all();
+
+	/*
+	 * For each AP core, set the entry point address and argument registers,
+	 * and set the core-enable and core-reset bits in the control register.
+	 */
+	val = bus_space_read_4(fdtbus_bs_tag, src, SRC_CONTROL_REG);
+	for (i=1; i < mp_ncpus; i++) {
+		bus_space_write_4(fdtbus_bs_tag, src, SRC_GPR0_C1FUNC + 8*i,
+		    pmap_kextract((vm_offset_t)mpentry));
+		bus_space_write_4(fdtbus_bs_tag, src, SRC_GPR1_C1ARG  + 8*i, 0);
+
+		val |= ((1 << (SRC_CONTROL_C1ENA_SHIFT - 1 + i )) |
+		    ( 1 << (SRC_CONTROL_C1RST_SHIFT - 1 + i)));
+
+	}
+	bus_space_write_4(fdtbus_bs_tag, src, SRC_CONTROL_REG, val);
+
+	dsb();
+	sev();
+
+	bus_space_unmap(fdtbus_bs_tag, scu, SCU_SIZE);
+	bus_space_unmap(fdtbus_bs_tag, src, SRC_SIZE);
+#endif
+
+
+
+
+#if 0
+printf("%s: %d\n", __func__, __LINE__);
+	bus_space_tag_t bst = imx6_armcore_bst;
+	bus_space_handle_t bsh;
+	int error = bus_space_map(bst, ZYNQ7000_CPU1_ENTRY,
+	    ZYNQ7000_CPU1_ENTRY_SZ, 0, &bsh);
+	if (error)
+		panic("%s: Couldn't map OCM", __func__);
+
+printf("%s: %d\n", __func__, __LINE__);
+	/* Write start address for CPU1. */
+	bus_space_write_4(bst, bsh, 0, KERN_VTOPHYS((vaddr_t)cpu_mpstart));
+
+printf("%s: %d\n", __func__, __LINE__);
+	bus_space_unmap(bst, bsh, ZYNQ7000_CPU1_ENTRY_SZ);
+
+printf("%s: %d\n", __func__, __LINE__);
+	cpu_idcache_wbinv_all();
+	// cache flush
+	//        armv7_dcache_l1inv_all();
+#endif
+
+printf("%s: %d\n", __func__, __LINE__);
+	arm_dsb();
+	__asm __volatile("sev" ::: "memory");
+
+printf("%s: %d\n", __func__, __LINE__);
+	for (int loop = 0; loop < 16; loop++) {
+		if (arm_cpu_hatched == __BITS(arm_cpu_max - 1, 1))
+			break;
+		a9tmr_delay(10000);
+	}
+	for (size_t i = 1; i < arm_cpu_max; i++) {
+		if ((arm_cpu_hatched & __BIT(i)) == 0) {
+		printf("%s: warning: cpu%zu failed to hatch\n",
+			    __func__, i);
+		}
+	}
+
+	VPRINTF(" (%u cpu%s, hatched %#x)",
+	    arm_cpu_max, arm_cpu_max ? "s" : "",
+	    arm_cpu_hatched);
+#endif /* MULTIPROCESSOR */
+}
+
+
+
 /*
  * u_int initarm(...)
  *
@@ -155,9 +351,17 @@ initarm(void *arg)
 {
 	psize_t memsize;
 
-	kern_vtopdiff = KERN_VTOPDIFF;
+	/*
+	 * Heads up ... Setup the CPU / MMU / TLB functions
+	 */
+	if (set_cpufuncs())		// starts PMC counter
+		panic("cpu not recognized!");
 
-	pmap_devmap_register(devmap);
+	cn_tab = &earlycons;
+
+	extern char ARM_BOOTSTRAP_LxPT[];
+	pmap_devmap_bootstrap((vaddr_t)ARM_BOOTSTRAP_LxPT, devmap);
+
 	imx6_bootstrap(KERNEL_IO_IOREG_VBASE);
 
 #ifdef MULTIPROCESSOR
@@ -170,13 +374,7 @@ initarm(void *arg)
 	nitrogen6_setup_iomux();
 
 	consinit();
-
-	/*
-	 * Heads up ... Setup the CPU / MMU / TLB functions
-	 */
-	if (set_cpufuncs())		// starts PMC counter
-		panic("cpu not recognized!");
-
+//XXXNH
 	cpu_domains((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2)) | DOMAIN_CLIENT);
 
 #ifdef NO_POWERSAVE
@@ -219,7 +417,7 @@ initarm(void *arg)
 #endif
 
 	bootconfig.dramblocks = 1;
-	bootconfig.dram[0].address = KERN_VTOPHYS(KERNEL_BASE);
+	bootconfig.dram[0].address = IMX6_MEM_BASE;
 	bootconfig.dram[0].pages = memsize / PAGE_SIZE;
 
 #ifdef __HAVE_MM_MD_DIRECT_MAPPED_PHYS
@@ -241,8 +439,13 @@ initarm(void *arg)
 	arm32_kernel_vm_init(KERNEL_VM_BASE, ARM_VECTORS_LOW, 0, devmap,
 	    mapallmem_p);
 
+	VPRINTF("initarm_common");
+
 	/* we've a specific device_register routine */
 	evbarm_device_register = nitrogen6_device_register;
+
+	const struct boot_physmem *bp = NULL;
+	size_t nbp = 0;
 
 #ifdef PMAP_NEED_ALLOC_POOLPAGE
 	/*
@@ -252,11 +455,16 @@ initarm(void *arg)
 	if (atop(memsize) > bp_highgig.bp_pages) {
 		bp_highgig.bp_start += atop(memsize) - bp_highgig.bp_pages;
 		arm_poolpage_vmfreelist = bp_highgig.bp_freelist;
-		return initarm_common(KERNEL_VM_BASE, KERNEL_VM_SIZE,
-		    &bp_highgig, 1);
+		bp = &bp_highgig;
+		nbp = 1;
 	}
 #endif
-	return initarm_common(KERNEL_VM_BASE, KERNEL_VM_SIZE, NULL, 0);
+	u_int sp = initarm_common(KERNEL_VM_BASE, KERNEL_VM_SIZE, bp, nbp);
+
+	VPRINTF("mpstart\n");
+	nitrogen6_mpstart();
+
+	return sp;
 }
 
 #ifdef CONSDEVNAME
