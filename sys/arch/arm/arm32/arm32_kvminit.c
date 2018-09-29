@@ -192,6 +192,7 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 	extern char KERNEL_BASE_virt[];
 	extern char ARM_BOOTSTRAP_LxPT[];
 
+	VPRINTF("%s: kern_vtopdiff=%#lx\n", __func__, kern_vtopdiff);
 	KASSERTMSG(kern_vtopdiff == KERNEL_BASE_VOFFSET,
 	    "Mismatch in virt to phys offset %lx vs %x",
 	    kern_vtopdiff, KERNEL_BASE_VOFFSET);
@@ -199,9 +200,9 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 	vaddr_t kstartva = trunc_page((vaddr_t)KERNEL_BASE_virt);
 	vaddr_t kendva = round_page((vaddr_t)ARM_BOOTSTRAP_LxPT + L1_TABLE_SIZE);
 
-	VPRINTF("%s: kstartva=%#lx, kendva=%#lx, kern_vtopdiff=%#lx\n",
-	    __func__, kstartva, kendva, kern_vtopdiff);
 	kernelstart = KERN_VTOPHYS(kstartva);
+
+	VPRINTF("%s: kstartva=%#lx, kernelstart=%#lx\n", __func__, kstartva, kernelstart);
 
 #else
 	vaddr_t kendva = round_page((vaddr_t)_end);
@@ -967,8 +968,6 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 
 	extern uint32_t cpu_ttb;
 	cpu_ttb = l1pt_pa;
-
-	VPRINTF("\n");
 
 	/*
 	 * XXX merge into generic boot cpu_setup?
