@@ -65,6 +65,7 @@ __KERNEL_RCSID(0, "$NetBSD: nitrogen6_machdep.c,v 1.10 2018/09/21 12:04:09 skrll
 #include <arm/cortex/scu_reg.h>
 
 #include <arm/imx/imx6var.h>
+#include <arm/imx/imx6_srcreg.h>
 #include <arm/imx/imxuartreg.h>
 #include <arm/imx/imxuartvar.h>
 
@@ -194,130 +195,63 @@ nitrogen6_platform_early_putchar(char c)
 }
 
 
+#define	SCU_DIAG_CONTROL		0x30
+#define	  SCU_DIAG_DISABLE_MIGBIT	  __BIT(0)
+
 
 void
 nitrogen6_mpstart(void)
 {
 #ifdef MULTIPROCESSOR
-	uint32_t scu_cfg = bus_space_read_4(imx6_armcore_bst,
-	    imx6_armcore_bsh, ARMCORE_SCU_BASE + SCU_CFG);
-	scu_cfg |= SCU_CTL_SCU_ENA;
+	/*
+	 * Invalidate all SCU cache tags. That is, for all cores (0-3)
+	 */
 	bus_space_write_4(imx6_armcore_bst, imx6_armcore_bsh,
-	    ARMCORE_SCU_BASE + SCU_CFG, scu_cfg);
-printf("%s: %d\n", __func__, __LINE__);
+	    ARMCORE_SCU_BASE + SCU_INV_ALL_REG, 0xffff);
 
-//#if NARML2CC > 0
-//	arml2cc_init(imx6_armcore_bst, imx6_armcore_bsh, ARMCORE_L2C_BASE);
-//#endif
+	uint32_t diagctl = bus_space_read_4(imx6_armcore_bst,
+	    imx6_armcore_bsh, ARMCORE_SCU_BASE + SCU_DIAG_CONTROL);
+	diagctl |= SCU_DIAG_DISABLE_MIGBIT;
+	bus_space_write_4(imx6_armcore_bst, imx6_armcore_bsh,
+	    ARMCORE_SCU_BASE + SCU_DIAG_CONTROL, diagctl);
 
+	uint32_t scu_ctl = bus_space_read_4(imx6_armcore_bst,
+	    imx6_armcore_bsh, ARMCORE_SCU_BASE + SCU_CTL);
+	scu_ctl |= SCU_CTL_SCU_ENA;
+	bus_space_write_4(imx6_armcore_bst, imx6_armcore_bsh,
+	    ARMCORE_SCU_BASE + SCU_CTL, scu_ctl);
 
+	armv7_dcache_wbinv_all();
 
+	uint32_t srcctl = bus_space_read_4(imx6_ioreg_bst, imx6_ioreg_bsh,
+	    AIPS1_SRC_BASE + SRC_SCR);
+	srcctl &= ~(SRC_SCR_CORE1_ENABLE | SRC_SCR_CORE2_ENABLE	 |
+	    SRC_SCR_CORE3_ENABLE);
+	bus_space_write_4(imx6_ioreg_bst, imx6_ioreg_bsh,
+	    AIPS1_SRC_BASE + SRC_SCR, srcctl);
 
+	const paddr_t mpstart = KERN_VTOPHYS((vaddr_t)cpu_mpstart);
 
-
-
-
-
-
-
-
-#if 0
-	bus_space_handle_t scu;
-	bus_space_handle_t src;
-
-	uint32_t val;
-	int i;
-
-	if (bus_space_map(fdtbus_bs_tag, SCU_PHYSBASE, SCU_SIZE, 0, &scu) != 0)
-		panic("Couldn't map the SCU\n");
-	if (bus_space_map(fdtbus_bs_tag, SRC_PHYSBASE, SRC_SIZE, 0, &src) != 0)
-		panic("Couldn't map the system reset controller (SRC)\n");
-
-	/*
-	 * Invalidate SCU cache tags.  The 0x0000ffff constant invalidates all
-	 * ways on all cores 0-3.  Per the ARM docs, it's harmless to write to
-	 * the bits for cores that are not present.
-	 */
-	bus_space_write_4(fdtbus_bs_tag, scu, SCU_INV_TAGS_REG, 0x0000ffff);
-
-	/*
-	 * Erratum ARM/MP: 764369 (problems with cache maintenance).
-	 * Setting the "disable-migratory bit" in the undocumented SCU
-	 * Diagnostic Control Register helps work around the problem.
-	 */
-	val = bus_space_read_4(fdtbus_bs_tag, scu, SCU_DIAG_CONTROL);
-	bus_space_write_4(fdtbus_bs_tag, scu, SCU_DIAG_CONTROL, 
-	    val | SCU_DIAG_DISABLE_MIGBIT);
-
-	/*
-	 * Enable the SCU, then clean the cache on this core.  After these two
-	 * operations the cache tag ram in the SCU is coherent with the contents
-	 * of the cache on this core.  The other cores aren't running yet so
-	 * their caches can't contain valid data yet, but we've initialized
-	 * their SCU tag ram above, so they will be coherent from startup.
-	 */
-	val = bus_space_read_4(fdtbus_bs_tag, scu, SCU_CONTROL_REG);
-	bus_space_write_4(fdtbus_bs_tag, scu, SCU_CONTROL_REG, 
-	    val | SCU_CONTROL_ENABLE);
-	dcache_wbinv_poc_all();
-
-	/*
-	 * For each AP core, set the entry point address and argument registers,
-	 * and set the core-enable and core-reset bits in the control register.
-	 */
-	val = bus_space_read_4(fdtbus_bs_tag, src, SRC_CONTROL_REG);
-	for (i=1; i < mp_ncpus; i++) {
-		bus_space_write_4(fdtbus_bs_tag, src, SRC_GPR0_C1FUNC + 8*i,
-		    pmap_kextract((vm_offset_t)mpentry));
-		bus_space_write_4(fdtbus_bs_tag, src, SRC_GPR1_C1ARG  + 8*i, 0);
-
-		val |= ((1 << (SRC_CONTROL_C1ENA_SHIFT - 1 + i )) |
-		    ( 1 << (SRC_CONTROL_C1RST_SHIFT - 1 + i)));
-
+	for (size_t i = 1; i < arm_cpu_max; i++) {
+		bus_space_write_4(imx6_ioreg_bst, imx6_ioreg_bsh, AIPS1_SRC_BASE +
+		    SRC_GPRN_ENTRY(i), mpstart);
+		srcctl |= SRC_SCR_COREN_RST(i);
+		srcctl |= SRC_SCR_COREN_ENABLE(i);
 	}
-	bus_space_write_4(fdtbus_bs_tag, src, SRC_CONTROL_REG, val);
+	bus_space_write_4(imx6_ioreg_bst, imx6_ioreg_bsh,
+	    AIPS1_SRC_BASE + SRC_SCR, srcctl);
 
-	dsb();
-	sev();
-
-	bus_space_unmap(fdtbus_bs_tag, scu, SCU_SIZE);
-	bus_space_unmap(fdtbus_bs_tag, src, SRC_SIZE);
-#endif
-
-
-
-
-#if 0
-printf("%s: %d\n", __func__, __LINE__);
-	bus_space_tag_t bst = imx6_armcore_bst;
-	bus_space_handle_t bsh;
-	int error = bus_space_map(bst, ZYNQ7000_CPU1_ENTRY,
-	    ZYNQ7000_CPU1_ENTRY_SZ, 0, &bsh);
-	if (error)
-		panic("%s: Couldn't map OCM", __func__);
-
-printf("%s: %d\n", __func__, __LINE__);
-	/* Write start address for CPU1. */
-	bus_space_write_4(bst, bsh, 0, KERN_VTOPHYS((vaddr_t)cpu_mpstart));
-
-printf("%s: %d\n", __func__, __LINE__);
-	bus_space_unmap(bst, bsh, ZYNQ7000_CPU1_ENTRY_SZ);
-
-printf("%s: %d\n", __func__, __LINE__);
-	cpu_idcache_wbinv_all();
-	// cache flush
-	//        armv7_dcache_l1inv_all();
-#endif
-
-printf("%s: %d\n", __func__, __LINE__);
 	arm_dsb();
 	__asm __volatile("sev" ::: "memory");
 
-printf("%s: %d\n", __func__, __LINE__);
 	for (int loop = 0; loop < 16; loop++) {
+		VPRINTF("%u hatched %#x\n", loop, arm_cpu_hatched);
 		if (arm_cpu_hatched == __BITS(arm_cpu_max - 1, 1))
 			break;
-		a9tmr_delay(10000);
+		int timo = 1500000;
+		while (arm_cpu_hatched != __BITS(arm_cpu_max - 1, 1))
+			if (--timo == 0)
+				break;
 	}
 	for (size_t i = 1; i < arm_cpu_max; i++) {
 		if ((arm_cpu_hatched & __BIT(i)) == 0) {
