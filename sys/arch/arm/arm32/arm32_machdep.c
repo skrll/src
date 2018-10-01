@@ -711,12 +711,7 @@ cpu_init_secondary_processor(int cpuno)
 	armv7_dcache_l1inv_all();
 //	cpu_idcache_wbinv_all();
 
-	VPRINTF(" ttb");
-
-	// B3.10.2
-	// Change bits
-	// isb
-	// tlb flush
+//	VPRINTF(" ttb");
 
 	cpu_setup(boot_args);
 
@@ -730,21 +725,19 @@ cpu_init_secondary_processor(int cpuno)
 	 * Disable lookups via TTBR0 until there is an activated pmap.
 	 */
 
+	armreg_ttbcr_write(armreg_ttbcr_read() | TTBCR_S_PD0);
 	cpu_setttb(pmap_kernel()->pm_l1_pa , KERNEL_PID);
+	arm_isb();
 #else
 	cpu_setttb(pmap_kernel()->pm_l1->l1_physaddr, true);
 #endif
 
-	/* cpu_setttb did armv7 isb */
-	//cpu_tlb_flushID();
+	// XXXNH
 	armreg_tlbiall_write(0);
-	arm_isb();
-//	armreg_bpiall_write(0);
-//	arm_dsb();
-//	arm_isb();
+	armreg_bpiall_write(0);
 
-	armv7_dcache_l1inv_all();
-	armreg_iciallu_write(0);
+	//cpu_tlb_flushID();
+	arm_isb();
 
 #ifdef ARM_MMU_EXTENDED
 	VPRINTF(" (TTBCR=%#x TTBR0=%#x TTBR1=%#x)",
