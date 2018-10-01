@@ -206,30 +206,24 @@ TEMP_L1_TABLE_END:
 
 
 #if defined(_ARM_ARCH_7)
-
+/*
+ * Registers at this point are:
+ *
+ * r4	argument 0
+ * r5	argument 1
+ * r6	argument 2
+ * r7	argument 3
+ * r10	virtual to physical offset
+ */
 generic_startv7:
 
 	.arch		armv7a
 	.arch_extension	sec
 	.arch_extension	virt
 
-	// https://github.com/freebsd/freebsd/blob/master/sys/arm/arm/locore-v6.S
-
-	/*
-	 * This is the old skool cortex_init which does the following:
-	 *
-	 * exit hyp
-	 * set spsr
-	 * set actlr, sctlr, and l2ctrl
-	 *    set SMP bit, etc in sctlr
-	 * futz caches and tlb
-	 * SCU_INV_ALL, and enabled it.
-	 */
 	VPRINTF("v7   :")
 
 	bl	armv7_init
-
-	VPRINTF("\n\r")
 
 	/*
 	 * Initialise the l1pt for identity mapping of the kernel with caches off.
@@ -253,14 +247,13 @@ generic_startv7:
 	 * at KERNEL_BASE with caches off.
 	 */
 	ldr	R_L1TABLE, =TEMP_L1_TABLE
-	mov	r1, R_L1TABLE
-	add	r1, #L1_TABLE_SIZE	// kernel end VA
 	sub	R_L1TABLE, r10
 
 	ldr	r0, =KERNEL_BASE	// kernel start VA
-	ldr	r2, =(L1_S_SIZE - 1)
+	ldr	r1, =TEMP_L1_TABLE_END	// kernel end VA
 	add	r1, #L1_S_SIZE		// Make sure we have 1M to grow into
 
+	ldr	r2, =(L1_S_SIZE - 1)
 	add	r1, r2			// Round end VA to 1M boumdary step 1
 
 	bic	r0, r2			// round kernel start down to 1M boundary
@@ -398,7 +391,7 @@ arm_boot_l1pt_init:
 
 	mov	R_NSEC, r1, lsr #(L1_S_SHIFT)
 
-	// VA:PA mapping for size of kernel
+	// identity mapping for size of kernel
 	adr	R_VA, generic_start
 	bic	R_VA, r2
 	mov	R_PA, R_VA
@@ -559,10 +552,12 @@ armv7_init:
 	msr	spsr_sxc, r0			// set SPSR[23:8] to known value
 
 	mov	sp, r5
-	// clear cache maybe check if cache is enabled
 
-	XPUTC('B')
+	XPUTC('A')
 
+	mrc	p15, 0, r0, c1, c0, 0
+	tst	r0, #CPU_CONTROL_DC_ENABLE
+	blne	armv7_dcache_wbinv_all
 
 	// TeX remap
 
@@ -582,13 +577,13 @@ armv7_init:
     0)
 
 
-	// Can remove after removing debug
 	mrc	p15, 0, r0, c1, c0, 0
 	movw	r1, #:lower16:ARMV7_SCTLR_CLEAR
 	movt	r1, #:upper16:ARMV7_SCTLR_CLEAR
 	movw	r2, #:lower16:ARMV7_SCTLR_SET
 	movt	r2, #:upper16:ARMV7_SCTLR_SET
 
+	mov	r7, r0				// save for printing
 	bic	r6, r0, r1			// disable icache/dcache/mmu
 	orr	r6, r6, r2			//
 
@@ -596,21 +591,24 @@ armv7_init:
 	dsb
 	isb
 
-	VPRINTF("\n\rsctlr:")
-	VPRINTX(r6)
-	VPRINTF("\n\r")
-	//
-	// invalidate the data cache
-	// FreeBSD does dcache_inv_poc_all and ICIALLU
-	//
+	bl	armv7_dcache_inv_all
+	mcr	p15, 0, r0, c7, c5,  0		/* ICIALLU */
+	dsb
+	isb
+
 	XPUTC(#'B')
 
-	bl	armv7_dcache_l1inv_all
-	mcr	p15, 0, r0, c7, c5,  0		/* ICIALLU */
+
+	VPRINTF(" sctlr:")
+	VPRINTX(r7)
+	VPRINTF("/")
+	VPRINTX(r6)
+	VPRINTF(" ")
+
 
 	XPUTC(#'C')
 
-	bx	r4			// return
+	bx	r4				// return
 
 	.ltorg
 
@@ -809,9 +807,6 @@ armv7_mpcontinuation:
 
 
 	VPRINTF("go\n\r")
-
-	// http://src.illumos.org/source/xref/freebsd-head/sys/arm/arm/mp_machdep.c#148
-
 
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
 	and	r4, r4, #7			// get our cpu numder
