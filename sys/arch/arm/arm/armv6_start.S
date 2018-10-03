@@ -605,7 +605,6 @@ armv7_init:
 	VPRINTX(r6)
 	VPRINTF(" ")
 
-
 	XPUTC(#'C')
 
 	bx	r4				// return
