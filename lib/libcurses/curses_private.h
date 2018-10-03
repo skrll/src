@@ -1,4 +1,4 @@
-/*	$NetBSD: curses_private.h,v 1.62 2017/01/31 09:17:53 roy Exp $	*/
+/*	$NetBSD: curses_private.h,v 1.64 2018/10/02 17:35:44 roy Exp $	*/
 
 /*-
  * Copyright (c) 1998-2000 Brett Lymn
@@ -365,9 +365,10 @@ void	__cursesi_win_free_nsp(WINDOW *);
 void	__cursesi_putnsp(nschar_t *, const int, const int);
 void	__cursesi_chtype_to_cchar(chtype, cchar_t *);
 #endif /* HAVE_WCHAR */
+int	 __fgetc_resize(FILE *);
 int	 __unget(wint_t);
 int	 __mvcur(int, int, int, int, int);
-WINDOW  *__newwin(SCREEN *, int, int, int, int, int);
+WINDOW  *__newwin(SCREEN *, int, int, int, int, int, int);
 int	 __nodelay(void);
 int	 __notimeout(void);
 void	 __restartwin(void);
@@ -377,9 +378,10 @@ void     __restore_meta_state(void);
 void	 __restore_termios(void);
 void	 __restore_stophandler(void);
 void	 __restore_winchhandler(void);
-int	 __ripoffscreen(SCREEN *, int *);
+int	 __ripoffscreen(SCREEN *);
 void	 __ripoffresize(SCREEN *);
-int	 __rippedlines(const SCREEN *);
+void	 __ripofftouch(SCREEN *);
+int	 __rippedlines(const SCREEN *, int);
 void	 __save_termios(void);
 void	 __set_color(WINDOW *win, attr_t attr);
 void	 __set_stophandler(void);
