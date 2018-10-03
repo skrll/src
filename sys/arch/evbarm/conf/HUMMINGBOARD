@@ -25,8 +25,8 @@ options 	EARLYCONS=nitrogen6, CONADDR=0x02020000
 options 	CONSDEVNAME="\"imxuart\""
 options 	CONSPEED=115200	# Console speed
 
-#options		DIAGNOSTIC      # internal consistency checks
-#options		DEBUG
+#options 	DIAGNOSTIC	# internal consistency checks
+#options 	DEBUG
 #options 	KGDB
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
