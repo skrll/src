@@ -300,7 +300,7 @@ fdtbus_get_reg64(int phandle, u_int index, uint64_t *paddr, uint64_t *psize)
 	return 0;
 }
 
-#if !defined(FDTBASE)
+#if defined(FDT)
 const struct fdt_console *
 fdtbus_get_console(void)
 {
