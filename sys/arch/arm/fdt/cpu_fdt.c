@@ -1,4 +1,4 @@
-/* $NetBSD: cpu_fdt.c,v 1.14 2018/09/13 12:53:00 jmcneill Exp $ */
+/* $NetBSD: cpu_fdt.c,v 1.15 2018/10/04 08:58:13 ryo Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "psci_fdt.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.14 2018/09/13 12:53:00 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.15 2018/10/04 08:58:13 ryo Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -243,11 +243,6 @@ arm_fdt_cpu_bootstrap(void)
 		return;
 	}
 
-#if NPSCI_FDT > 0
-	if (psci_fdt_preinit() != 0)
-		return;
-#endif
-
 	/* Count CPUs */
 	arm_cpu_max = 0;
 
@@ -290,12 +285,20 @@ arm_fdt_cpu_mpstart(void)
 	u_int cpuindex;
 	int child, ret;
 	const char *method;
+#if NPSCI_FDT > 0
+	bool nopsci = false;
+#endif
 
 	const int cpus = OF_finddevice("/cpus");
 	if (cpus == -1) {
 		aprint_error("%s: no /cpus node found\n", __func__);
 		return;
 	}
+
+#if NPSCI_FDT > 0
+	if (psci_fdt_preinit() != 0)
+		nopsci = true;
+#endif
 
 	/* MPIDR affinity levels of boot processor. */
 	bp_mpidr = cpu_mpidr_aff_read();
@@ -337,7 +340,7 @@ arm_fdt_cpu_mpstart(void)
 				continue;
 
 #if NPSCI_FDT > 0
-		} else if (strcmp(method, "psci") == 0) {
+		} else if (!nopsci && (strcmp(method, "psci") == 0)) {
 			ret = psci_cpu_on(mpidr, cpu_fdt_mpstart_pa(), 0);
 			if (ret != PSCI_SUCCESS)
 				continue;

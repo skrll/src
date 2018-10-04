@@ -1,4 +1,4 @@
-/* $NetBSD: acpi.c,v 1.29 2017/09/28 06:55:08 msaitoh Exp $ */
+/* $NetBSD: acpi.c,v 1.31 2018/10/03 09:52:59 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 1998 Doug Rabson
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: acpi.c,v 1.29 2017/09/28 06:55:08 msaitoh Exp $");
+__RCSID("$NetBSD: acpi.c,v 1.31 2018/10/03 09:52:59 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/endian.h>
@@ -86,6 +86,7 @@ static void	acpi_handle_dbg2(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_einj(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_erst(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_hest(ACPI_TABLE_HEADER *sdp);
+static void	acpi_handle_lpit(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_madt(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_msct(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_ecdt(ACPI_TABLE_HEADER *sdp);
@@ -1709,6 +1710,79 @@ acpi_handle_hpet(ACPI_TABLE_HEADER *sdp)
 }
 
 static void
+acpi_print_native_lpit(ACPI_LPIT_NATIVE *nl)
+{
+	printf("\tEntryTrigger=");
+	acpi_print_gas(&nl->EntryTrigger);
+	printf("\tResidency=%u\n", nl->Residency);
+	printf("\tLatency=%u\n", nl->Latency);
+	if (nl->Header.Flags & ACPI_LPIT_NO_COUNTER)
+		printf("\tResidencyCounter=Not Present");
+	else {
+		printf("\tResidencyCounter=");
+		acpi_print_gas(&nl->ResidencyCounter);
+	}
+	if (nl->CounterFrequency)
+		printf("\tCounterFrequency=%ju\n", nl->CounterFrequency);
+	else
+		printf("\tCounterFrequency=TSC\n");
+}
+
+static void
+acpi_print_lpit(ACPI_LPIT_HEADER *lpit)
+{
+	if (lpit->Type == ACPI_LPIT_TYPE_NATIVE_CSTATE)
+		printf("\tType=ACPI_LPIT_TYPE_NATIVE_CSTATE\n");
+	else
+		warnx("unknown LPIT type %u", lpit->Type);
+
+	printf("\tLength=%u\n", lpit->Length);
+	printf("\tUniqueId=0x%04x\n", lpit->UniqueId);
+#define	PRINTFLAG(var, flag)	printflag((var), ACPI_LPIT_## flag, #flag)
+	printf("\tFlags=");
+	PRINTFLAG(lpit->Flags, STATE_DISABLED);
+	PRINTFLAG_END();
+#undef PRINTFLAG
+
+	if (lpit->Type == ACPI_LPIT_TYPE_NATIVE_CSTATE)
+		return acpi_print_native_lpit((ACPI_LPIT_NATIVE *)lpit);
+}
+
+static void
+acpi_walk_lpit(ACPI_TABLE_HEADER *table, void *first,
+    void (*action)(ACPI_LPIT_HEADER *))
+{
+	ACPI_LPIT_HEADER *subtable;
+	char *end;
+
+	subtable = first;
+	end = (char *)table + table->Length;
+	while ((char *)subtable < end) {
+		printf("\n");
+		if (subtable->Length < sizeof(ACPI_LPIT_HEADER)) {
+			warnx("invalid subtable length %u", subtable->Length);
+			return;
+		}
+		action(subtable);
+		subtable = (ACPI_LPIT_HEADER *)((char *)subtable +
+		    subtable->Length);
+	}
+}
+
+static void
+acpi_handle_lpit(ACPI_TABLE_HEADER *sdp)
+{
+	ACPI_TABLE_LPIT *lpit;
+
+	printf(BEGIN_COMMENT);
+	acpi_print_sdt(sdp);
+	lpit = (ACPI_TABLE_LPIT *)sdp;
+	acpi_walk_lpit(sdp, (lpit + 1), acpi_print_lpit);
+
+	printf(END_COMMENT);
+}
+
+static void
 acpi_handle_msct(ACPI_TABLE_HEADER *sdp)
 {
 	ACPI_TABLE_MSCT *msct;
@@ -2446,6 +2520,8 @@ devscope_type2str(int type)
 		return ("IOAPIC");
 	case 4:
 		return ("HPET");
+	case 5:
+		return ("ACPI Name space");
 	default:
 		snprintf(typebuf, sizeof(typebuf), "%d", type);
 		return (typebuf);
@@ -2593,6 +2669,17 @@ acpi_handle_dmar_rhsa(ACPI_DMAR_RHSA *rhsa)
 	printf("\tProximityDomain=0x%08x\n", rhsa->ProximityDomain);
 }
 
+static void
+acpi_handle_dmar_andd(ACPI_DMAR_ANDD *andd)
+{
+
+	printf("\n");
+	printf("\tType=ANDD\n");
+	printf("\tLength=%d\n", andd->Header.Length);
+	printf("\tDeviceNumber=%d\n", andd->DeviceNumber);
+	printf("\tDeviceName=0x%s\n", andd->DeviceName);
+}
+
 static int
 acpi_handle_dmar_remapping_structure(void *addr, int remaining)
 {
@@ -2616,6 +2703,9 @@ acpi_handle_dmar_remapping_structure(void *addr, int remaining)
 		break;
 	case ACPI_DMAR_TYPE_HARDWARE_AFFINITY:
 		acpi_handle_dmar_rhsa(addr);
+		break;
+	case ACPI_DMAR_TYPE_NAMESPACE:
+		acpi_handle_dmar_andd(addr);
 		break;
 	default:
 		printf("\n");
@@ -2647,6 +2737,7 @@ acpi_handle_dmar(ACPI_TABLE_HEADER *sdp)
 	printf("\tFlags=");
 	PRINTFLAG(dmar->Flags, INTR_REMAP);
 	PRINTFLAG(dmar->Flags, X2APIC_OPT_OUT);
+	PRINTFLAG(dmar->Flags, X2APIC_MODE);
 	PRINTFLAG_END();
 
 #undef PRINTFLAG
@@ -3323,6 +3414,8 @@ acpi_handle_rsdt(ACPI_TABLE_HEADER *rsdp)
 			acpi_handle_hpet(sdp);
 		else if (!memcmp(sdp->Signature, ACPI_SIG_ECDT, 4))
 			acpi_handle_ecdt(sdp);
+		else if (!memcmp(sdp->Signature, ACPI_SIG_LPIT, 4))
+			acpi_handle_lpit(sdp);
 		else if (!memcmp(sdp->Signature, ACPI_SIG_MCFG, 4))
 			acpi_handle_mcfg(sdp);
 		else if (!memcmp(sdp->Signature, ACPI_SIG_SBST, 4))
