@@ -13,9 +13,10 @@ options 	NITROGEN6
 options 	ARM_HAS_VBAR
 options 	__HAVE_CPU_COUNTER
 options 	__HAVE_FAST_SOFTINTS		# should be in types.h
-options 	TPIDRPRW_IS_CURCPU
+options 	__HAVE_GENERIC_START
 #options 	__HAVE_MM_MD_DIRECT_MAPPED_PHYS
 #options 	PMAP_NEED_ALLOC_POOLPAGE
+options 	TPIDRPRW_IS_CURCPU
 
 makeoptions	CPUFLAGS="-mcpu=cortex-a7 -mfpu=neon"
 
