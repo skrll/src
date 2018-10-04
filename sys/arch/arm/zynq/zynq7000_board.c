@@ -131,10 +131,3 @@ zynq7000_device_register(device_t self, void *aux)
 	}
 }
 
-#ifdef MULTIPROCESSOR
-void
-zynq7000_cpu_hatch(struct cpu_info *ci)
-{
-	a9tmr_init_cpu_clock(ci);
-}
-#endif

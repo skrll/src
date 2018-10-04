@@ -23,6 +23,8 @@ options		MEMSIZE=1024
 # Architecture options
 
 # Console options.    also need IMXUARTCONSOLE
+#options 	VERBOSE_INIT_ARM
+options 	EARLYCONS=zynq
 options 	CONSDEVNAME="\"zynquart\"",CONADDR=0xe0001000
 options 	CONSPEED=115200	# Console speed
 

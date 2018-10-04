@@ -86,7 +86,6 @@ struct cpu_softc {
 void zynq7000_bootstrap(vaddr_t);
 psize_t	zynq7000_memprobe(void);
 void zynq7000_device_register(device_t, void *);
-void zynq7000_cpu_hatch(struct cpu_info *);
 
 extern struct bus_space zynq_bs_tag;
 extern struct arm32_bus_dma_tag zynq_bus_dma_tag;
