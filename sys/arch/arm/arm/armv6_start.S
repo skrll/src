@@ -133,7 +133,7 @@ ENTRY_NP(generic_start)
 	str	r6, [r8, #(4*2)]
 	str	r7, [r8, #(4*3)]
 
-#if defined(FDT)
+#if defined(FDTBASE)
 	/*
 	 * ARM boot protocol has FDT address in r2
 	 */
@@ -272,7 +272,7 @@ generic_startv7:
 	ldr	R_ATTR, =(L1_S_PROTO_armv7 | L1_S_APv7_KRW)
 	bl	arm_boot_l1pt_entry
 
-#if defined(FDT)
+#if defined(FDTBASE)
 	VPRINTF("DTB")
 
 	/*

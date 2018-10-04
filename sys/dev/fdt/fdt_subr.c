@@ -29,6 +29,8 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: fdt_subr.c,v 1.23 2018/07/17 00:42:06 christos Exp $");
 
+#include "opt_fdt.h"
+
 #include <sys/param.h>
 #include <sys/bus.h>
 
@@ -298,6 +300,7 @@ fdtbus_get_reg64(int phandle, u_int index, uint64_t *paddr, uint64_t *psize)
 	return 0;
 }
 
+#if !defined(FDTBASE)
 const struct fdt_console *
 fdtbus_get_console(void)
 {
@@ -323,6 +326,7 @@ fdtbus_get_console(void)
 
 	return booted_console == NULL ? NULL : booted_console->ops;
 }
+#endif
 
 const char *
 fdtbus_get_stdout_path(void)
