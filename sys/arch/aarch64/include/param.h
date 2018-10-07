@@ -34,6 +34,8 @@
 
 #ifdef __aarch64__
 
+#include "opt_cputypes.h"
+
 /*
  * Machine dependent constants for all ARM processors
  */
@@ -77,6 +79,12 @@
 #endif /* !_KERNEL */
 
 #define	MID_MACHINE	MID_AARCH64
+
+
+#if defined(CPU_THUNDERX)
+#define COHERENCY_UNIT	128
+#define CACHE_LINE_SIZE	128
+#endif
 
 /* AARCH64-specific macro to align a stack pointer (downwards). */
 #define STACK_ALIGNBYTES	(16 - 1)
