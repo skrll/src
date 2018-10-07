@@ -61,11 +61,7 @@ struct cpu_info;
 #define	NIPI			6
 #endif
 
-#if 0
 #if !defined(__HAVE_PIC_SET_PRIORITY)
-#define __HAVE_PIC_PENDING_INTRS
-#endif
-#else
 #define __HAVE_PIC_PENDING_INTRS
 #endif
 
