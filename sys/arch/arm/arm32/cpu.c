@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.120 2018/08/15 06:06:05 skrll Exp $	*/
+/*	$NetBSD: cpu.c,v 1.121 2018/10/06 16:04:21 skrll Exp $	*/
 
 /*
  * Copyright (c) 1995 Mark Brinicombe.
@@ -46,7 +46,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.120 2018/08/15 06:06:05 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.121 2018/10/06 16:04:21 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>

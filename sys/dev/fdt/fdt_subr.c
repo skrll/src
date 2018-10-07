@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_subr.c,v 1.23 2018/07/17 00:42:06 christos Exp $ */
+/* $NetBSD: fdt_subr.c,v 1.24 2018/10/06 16:28:21 skrll Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_subr.c,v 1.23 2018/07/17 00:42:06 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_subr.c,v 1.24 2018/10/06 16:28:21 skrll Exp $");
+
+#include "opt_fdt.h"
 
 #include "opt_fdt.h"
 
