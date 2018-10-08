@@ -193,9 +193,6 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 	extern char ARM_BOOTSTRAP_LxPT[];
 
 	VPRINTF("%s: kern_vtopdiff=%#lx\n", __func__, kern_vtopdiff);
-	KASSERTMSG(kern_vtopdiff == KERNEL_BASE_VOFFSET,
-	    "Mismatch in virt to phys offset %lx vs %x",
-	    kern_vtopdiff, KERNEL_BASE_VOFFSET);
 
 	vaddr_t kstartva = trunc_page((vaddr_t)KERNEL_BASE_virt);
 	vaddr_t kendva = round_page((vaddr_t)ARM_BOOTSTRAP_LxPT + L1_TABLE_SIZE);
