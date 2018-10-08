@@ -991,10 +991,6 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	cpu_setup(boot_args);
 #endif
 
-	/*
-	 * XXX merge into generic boot cpu_setup?
-	 */
-
 	VPRINTF(" ttb");
 
 #ifdef ARM_MMU_EXTENDED
@@ -1027,10 +1023,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 #endif
 
 #ifdef MULTIPROCESSOR
-#ifdef __HAVE_GENERIC_START
-//	cpu_idcache_wbinv_all();
-#else
-
+#ifndef __HAVE_GENERIC_START
 	/*
 	 * Kick the secondaries to load the TTB.  After which they'll go
 	 * back to sleep to wait for the final kick so they will hatch.
