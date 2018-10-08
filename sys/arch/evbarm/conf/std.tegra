@@ -24,8 +24,8 @@ options 	PCI_NETBSD_CONFIGURE
 options 	__HAVE_PCI_CONF_HOOK
 options 	__BUS_SPACE_HAS_STREAM_METHODS
 
-makeoptions	KERNEL_BASE_PHYS="0x81000000"
-makeoptions	KERNEL_BASE_VIRT="0x81000000"
+makeoptions	KERNEL_BASE_PHYS="0x80000000"
+makeoptions	KERNEL_BASE_VIRT="0x80000000"
 makeoptions	BOARDTYPE="tegra"
 makeoptions	BOARDMKFRAG="${THISARM}/conf/mk.tegra"
 
