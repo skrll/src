@@ -431,6 +431,7 @@ arm_boot_l1pt_entry:
 
 	ldr	r0, [R_L1TABLE, R_VA, lsl #2]
 	cmp	r0, #0
+	cmpne	r0, R_PA
 	bne	arm_boot_overlap
 
 	str	R_PA, [R_L1TABLE, R_VA, lsl #2]
