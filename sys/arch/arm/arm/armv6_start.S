@@ -788,10 +788,8 @@ ENTRY_NP(cpu_mpstart)
 	movw	lr, #:lower16:armv7_mpcontinuation
 	movt	lr, #:upper16:armv7_mpcontinuation
 	b	armv7_mmuinit
-#endif // MULTIPROCESSOR
 ASEND(cpu_mpstart)
 
-#ifdef MULTIPROCESSOR
 armv7_mpcontinuation:
 	ldr	r9, =svcstk
 	add	r9, #INIT_ARM_STACK_SIZE * MAXCPUS
@@ -804,13 +802,10 @@ armv7_mpcontinuation:
 	lsl	r5, #13
 	sub	sp, r9, r5
 
-
 	VPRINTF("go\n\r")
 
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
 	and	r4, r4, #7			// get our cpu numder
-//	mov	r5, #1				// make a bitmask of it
-//	lsl	r5, r5, r4			// shift into position
 
 	mov	r0, r4
 	bl	cpu_init_secondary_processor
