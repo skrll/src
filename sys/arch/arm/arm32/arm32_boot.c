@@ -347,6 +347,7 @@ cpu_hatch(struct cpu_info *ci, cpuid_t cpuid, void (*md_cpu_init)(struct cpu_inf
 	splhigh();
 
 	VPRINTF("%s(%s): ", __func__, ci->ci_data.cpu_name);
+	ci->ci_ctrl = armreg_sctlr_read();
 	uint32_t mpidr = armreg_mpidr_read();
 	if (mpidr & MPIDR_MT) {
 		ci->ci_data.cpu_smt_id = mpidr & MPIDR_AFF0;

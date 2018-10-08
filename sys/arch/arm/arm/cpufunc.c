@@ -2459,7 +2459,6 @@ arm6_setup(char *args)
 	cpu_idcache_wbinv_all();
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(0xffffffff, cpuctrl);
 }
 #endif	/* CPU_ARM6 */
@@ -2508,7 +2507,6 @@ arm7_setup(char *args)
 	cpu_idcache_wbinv_all();
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(0xffffffff, cpuctrl);
 }
 #endif	/* CPU_ARM7 */
@@ -2546,7 +2544,6 @@ arm7tdmi_setup(char *args)
 	cpu_idcache_wbinv_all();
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(0xffffffff, cpuctrl);
 }
 #endif	/* CPU_ARM7TDMI */
@@ -2629,7 +2626,6 @@ arm8_setup(char *args)
 	cpu_idcache_wbinv_all();
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(0xffffffff, cpuctrl);
 
 	/* Set the clock/test register */
@@ -2686,7 +2682,6 @@ arm9_setup(char *args)
 	cpu_idcache_wbinv_all();
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(cpuctrlmask, cpuctrl);
 
 }
@@ -2743,7 +2738,6 @@ arm10_setup(char *args)
 	__asm volatile ("mcr\tp15, 0, r0, c7, c7, 0" : : );
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(0xffffffff, cpuctrl);
 
 	/* And again. */
@@ -2803,7 +2797,6 @@ arm11_setup(char *args)
 	armreg_cpacr_write(0x0fffffff);
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(cpuctrlmask, cpuctrl);
 
 	/* And again. */
@@ -2852,7 +2845,7 @@ arm11mpcore_setup(char *args)
 	armreg_cpacr_write(0x0fffffff);
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpu_control(cpuctrlmask, cpuctrl);
+	cpu_control(cpuctrlmask, cpuctrl);
 
 	/* And again. */
 	cpu_idcache_wbinv_all();
@@ -2931,8 +2924,6 @@ pj4bv7_setup(char *args)
 #ifdef L2CACHE_ENABLE
 	armadaxp_sdcache_wbinv_all();
 #endif
-
-	curcpu()->ci_ctrl = cpuctrl;
 }
 #endif /* CPU_PJ4B */
 
@@ -3063,7 +3054,6 @@ armv7_setup(char *args)
 	arm_isb();
 #else
 	/* Set the control register - does dsb; isb */
-	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(cpuctrlmask, cpuctrl);
 #endif
 
@@ -3171,7 +3161,6 @@ arm11x6_setup(char *args)
 	armreg_cpacr_write(0x0fffffff);
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(~cpuctrl_wax, cpuctrl);
 
 	/* Update auxctlr */
@@ -3235,7 +3224,6 @@ sa110_setup(char *args)
 	cpu_idcache_wbinv_all();
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpuctrl;
 #if 0
 	cpu_control(cpuctrlmask, cpuctrl);
 #endif
@@ -3303,7 +3291,6 @@ sa11x0_setup(char *args)
 	cpu_idcache_wbinv_all();
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(0xffffffff, cpuctrl);
 }
 #endif	/* CPU_SA1100 || CPU_SA1110 */
@@ -3358,7 +3345,6 @@ fa526_setup(char *args)
 	cpu_idcache_wbinv_all();
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(0xffffffff, cpuctrl);
 }
 #endif	/* CPU_FA526 */
@@ -3409,7 +3395,6 @@ ixp12x0_setup(char *args)
 	cpu_idcache_wbinv_all();
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpuctrl;
 	/* cpu_control(0xffffffff, cpuctrl); */
 	cpu_control(cpuctrlmask, cpuctrl);
 }
@@ -3479,7 +3464,6 @@ xscale_setup(char *args)
 	 * Set the control register.  Note that bits 6:3 must always
 	 * be set to 1.
 	 */
-	curcpu()->ci_ctrl = cpuctrl;
 #if 0
 	cpu_control(cpuctrlmask, cpuctrl);
 #endif
@@ -3578,7 +3562,6 @@ sheeva_setup(char *args)
 	__asm volatile ("mcr\tp15, 0, r0, c7, c7, 0" : : );
 
 	/* Set the control register */
-	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(0xffffffff, cpuctrl);
 
 	/* And again. */

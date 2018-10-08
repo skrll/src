@@ -90,6 +90,9 @@ cpu_attach(device_t dv, cpuid_t id)
 	if (id == 0) {
 		ci = curcpu();
 
+		/* Read SCTLR from cpu */
+		ci->ci_ctrl = cpu_control(0, 0);
+
 		/* Get the CPU ID from coprocessor 15 */
 
 		ci->ci_arm_cpuid = cpu_idnum();
@@ -115,8 +118,6 @@ cpu_attach(device_t dv, cpuid_t id)
 		ci->ci_arm_cpuid = cpu_info_store.ci_arm_cpuid;
 		ci->ci_arm_cputype = cpu_info_store.ci_arm_cputype;
 		ci->ci_arm_cpurev = cpu_info_store.ci_arm_cpurev;
-		// XXXNH
-		ci->ci_ctrl = cpu_info_store.ci_ctrl;
 		ci->ci_undefsave[2] = cpu_info_store.ci_undefsave[2];
 		cpu_info[ci->ci_cpuid] = ci;
 		if ((arm_cpu_hatched & __BIT(id)) == 0) {
@@ -133,8 +134,6 @@ cpu_attach(device_t dv, cpuid_t id)
 #endif
 	}
 
-	// XXX Doesn't work for non-armv7
-	//ci->ci_ctrl = armreg_sctlr_read();
 	ci->ci_dev = dv;
 	dv->dv_private = ci;
 
