@@ -2988,7 +2988,6 @@ armv7_setup(char *args)
 	//cpu_idcache_inv_all(); - we don't have one!!!
 
 #ifdef __HAVE_GENERIC_START
-
 	const u_int lcputype = cpufunc_id();
 	int actlr_set = 0;
 	int actlr_clr = 0;
@@ -3056,16 +3055,7 @@ armv7_setup(char *args)
 
 	/* Set the control register - does dsb; isb */
 //	cpu_control(cpuctrlmask, cpuctrl);
-#if 0
 
-
-	// XXX curcpu not setup for AP yet - fixme
-//	curcpu()->ci_ctrl = cpu_control(0, 0);
-
-
-
-
-#endif
 	/* does tlb and branch predictor flush, and dsb; isb */
 	armreg_tlbiall_write(0);
 	armreg_bpiall_write(0);
@@ -3075,8 +3065,6 @@ armv7_setup(char *args)
 	/* Set the control register - does dsb; isb */
 	curcpu()->ci_ctrl = cpuctrl;
 	cpu_control(cpuctrlmask, cpuctrl);
-
-
 #endif
 
 }
