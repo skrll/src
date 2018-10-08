@@ -6860,6 +6860,27 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 	return (size);
 }
 
+/*
+ * pmap_unmap_chunk:
+ *
+ *	Unmap a chunk of memory that was previously pmap_map_chunk
+ */
+void
+pmap_unmap_chunk(vaddr_t l1pt, vaddr_t va, vsize_t size)
+{
+	pd_entry_t * const pdep = (pd_entry_t *) l1pt;
+	const size_t l1slot = l1pte_index(va);
+
+	KASSERT(size == L1_SS_SIZE || size == L1_S_SIZE);
+
+	l1pte_set(&pdep[l1slot], 0);
+	PDE_SYNC_RANGE(&pdep[l1slot], size / L1_S_SIZE);
+
+	pmap_tlb_flush_SE(pmap_kernel(), va, PVF_REF);
+}
+
+
+
 /********************** Static device map routines ***************************/
 
 static const struct pmap_devmap *pmap_devmap_table;

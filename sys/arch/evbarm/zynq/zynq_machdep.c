@@ -196,8 +196,6 @@ static void
 zynq_mpstart(void)
 {
 #ifdef MULTIPROCESSOR
-
-
 	/*
 	 * Invalidate all SCU cache tags. That is, for all cores (0-3)
 	 */

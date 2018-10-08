@@ -1,4 +1,4 @@
-/*	$NetBSD: exynos_soc.c,v 1.36 2018/09/14 11:58:38 skrll Exp $	*/
+/*	$NetBSD: exynos_soc.c,v 1.37 2018/10/08 08:16:59 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -33,7 +33,7 @@
 #include "opt_exynos.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: exynos_soc.c,v 1.36 2018/09/14 11:58:38 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: exynos_soc.c,v 1.37 2018/10/08 08:16:59 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -492,6 +492,7 @@ exynos_bootstrap(int soc)
 	const vaddr_t iobase = EXYNOS_CORE_VBASE;
 
 	switch (soc) {
+#ifdef SOC_EXYNOS4
 	case 4:
 		core_size = EXYNOS4_CORE_SIZE;
 		audiocore_size = EXYNOS4_AUDIOCORE_SIZE;
@@ -505,6 +506,8 @@ exynos_bootstrap(int soc)
 		cpu_freq_settings = cpu_freq_settings_exynos4;
 		ncpu_freq_settings = __arraycount(cpu_freq_settings_exynos4);
 		break;
+#endif
+#ifdef SOC_EXYNOS5
 	case 5:
 		core_size = EXYNOS5_CORE_SIZE;
 		audiocore_size = EXYNOS5_AUDIOCORE_SIZE;
@@ -518,6 +521,7 @@ exynos_bootstrap(int soc)
 		cpu_freq_settings = cpu_freq_settings_exynos5;
 		ncpu_freq_settings = __arraycount(cpu_freq_settings_exynos5);
 		break;
+#endif
 	default:
 		panic("%s: unknown soc version", __func__);
 	}
