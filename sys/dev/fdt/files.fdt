@@ -2,7 +2,7 @@
 
 include	"external/bsd/libfdt/conf/files.libfdt"
 
-defflag opt_fdt.h				FDTBASE : libfdt, ofw_subr
+defflag	opt_fdt.h				FDTBASE : libfdt, ofw_subr
 defflag	opt_fdt.h				FDT: FDTBASE
 
 define	fdt { [pass = 10] } : clk, pwm
