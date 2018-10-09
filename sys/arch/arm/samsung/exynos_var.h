@@ -1,4 +1,4 @@
-/*	$NetBSD: exynos_var.h,v 1.26 2018/09/14 11:58:38 skrll Exp $	*/
+/*	$NetBSD: exynos_var.h,v 1.27 2018/10/08 08:17:00 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2013, 2014 The NetBSD Foundation, Inc.
