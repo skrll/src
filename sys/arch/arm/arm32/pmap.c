@@ -6932,12 +6932,12 @@ pmap_devmap_find_pa(paddr_t pa, psize_t size)
 	if (pmap_devmap_table == NULL)
 		return (NULL);
 
-	endpa = (uint64_t)pa + (uint64_t)(size);
+	endpa = (uint64_t)pa + (uint64_t)(size - 1);
 
 	for (i = 0; pmap_devmap_table[i].pd_size != 0; i++) {
 		if (pa >= pmap_devmap_table[i].pd_pa &&
 		    endpa <= (uint64_t)pmap_devmap_table[i].pd_pa +
-			     (uint64_t)(pmap_devmap_table[i].pd_size))
+			     (uint64_t)(pmap_devmap_table[i].pd_size - 1))
 			return (&pmap_devmap_table[i]);
 	}
 
