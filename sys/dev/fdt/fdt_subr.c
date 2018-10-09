@@ -31,8 +31,6 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_subr.c,v 1.24 2018/10/06 16:28:21 skrll Exp $");
 
 #include "opt_fdt.h"
 
-#include "opt_fdt.h"
-
 #include <sys/param.h>
 #include <sys/bus.h>
 
