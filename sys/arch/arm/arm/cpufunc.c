@@ -2972,12 +2972,6 @@ armv7_setup(char *args)
 		cpuctrl |= CPU_CONTROL_VECRELOC;
 #endif
 
-	// FreeBSD does inv_all
-
-	/* Clear out the cache */
-	//cpu_idcache_wbinv_all();
-	//cpu_idcache_inv_all(); - we don't have one!!!
-
 #ifdef __HAVE_GENERIC_START
 	const u_int lcputype = cpufunc_id();
 	int actlr_set = 0;
@@ -2989,9 +2983,6 @@ armv7_setup(char *args)
 		 * Enable SMP mode
 		 * Enable Cache and TLB maintenance broadcast
 		 */
-
-		// SCU?!?
-
 		actlr_clr = CORTEXA5_ACTLR_EXCL;
 		actlr_set = CORTEXA5_ACTLR_SMP | CORTEXA5_ACTLR_FW;
 	} else if (CPU_ID_CORTEX_A7_P(lcputype)) {
@@ -3002,11 +2993,6 @@ armv7_setup(char *args)
 		actlr_set = CORTEXA8_ACTLR_L2EN;
 		actlr_clr = CORTEXA8_ACTLR_L1ALIAS;
 	} else if (CPU_ID_CORTEX_A9_P(lcputype)) {
-
-
-		// SCU?!?
-
-		// CORTEXA9_AUXCTL_EXCL - clears
 		actlr_set =
 		    CORTEXA9_AUXCTL_FW |
 		    CORTEXA9_AUXCTL_L2PE |	// Not in FreeBSD
@@ -3028,30 +3014,17 @@ armv7_setup(char *args)
 	} else if (CPU_ID_CORTEX_A72_P(lcputype)) {
 	}
 
-	// No obvious effect
-	//armreg_tlbiall_write(0);
-
 	uint32_t actlr = armreg_auxctl_read();
 	actlr &= ~actlr_clr;
 	actlr |= actlr_set;
 
 	armreg_auxctl_write(actlr);
 
-	uint32_t sctlr = armreg_sctlr_read();
-	sctlr &= ~cpuctrlmask;
-	sctlr |= cpuctrl;
-
-	armreg_sctlr_write(sctlr);
-	arm_isb();
-
 	/* Set the control register - does dsb; isb */
-//	cpu_control(cpuctrlmask, cpuctrl);
+	cpu_control(cpuctrlmask, cpuctrl);
 
 	/* does tlb and branch predictor flush, and dsb; isb */
-	armreg_tlbiall_write(0);
-	armreg_bpiall_write(0);
-//	arm_dsb();
-	arm_isb();
+	cpu_tlb_flushID();
 #else
 	/* Set the control register - does dsb; isb */
 	cpu_control(cpuctrlmask, cpuctrl);
