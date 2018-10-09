@@ -11,7 +11,6 @@ include		"arch/evbarm/conf/files.nitrogen6"
 # Architecture opions
 options 	ARM_GENERIC_TODR
 options 	ARM_HAS_VBAR
-options 	ARM_GENERIC_TODR
 options 	ARM_INTR_IMPL="<arch/arm/imx/imx6_intr.h>"
 options 	CORTEX_PMC
 options 	CORTEX_PMC_CCNT_HZ=792000000
