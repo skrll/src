@@ -708,8 +708,7 @@ cpu_init_secondary_processor(int cpuno)
 	// pmap_kernel has been sucessfully built and we can switch to  it
 
 	cpu_domains(DOMAIN_DEFAULT);
-	armv7_dcache_l1inv_all();
-//	cpu_idcache_wbinv_all();
+	cpu_idcache_wbinv_all();
 
 //	VPRINTF(" ttb");
 
@@ -732,12 +731,7 @@ cpu_init_secondary_processor(int cpuno)
 	cpu_setttb(pmap_kernel()->pm_l1->l1_physaddr, true);
 #endif
 
-	// XXXNH
-	armreg_tlbiall_write(0);
-	armreg_bpiall_write(0);
-
-	//cpu_tlb_flushID();
-	arm_isb();
+	cpu_tlb_flushID();
 
 #ifdef ARM_MMU_EXTENDED
 	VPRINTF(" (TTBCR=%#x TTBR0=%#x TTBR1=%#x)",
