@@ -656,6 +656,10 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 		    bmi->bmi_vector_l2pt.pv_pa, systempage.pv_va);
 	}
 
+	/*
+	 * This enforces a alignment requirement of L2_S_SEGSIZE for kernel
+	 * start PA
+	 */
 	const vaddr_t kernel_base =
 	    KERN_PHYSTOV(bmi->bmi_kernelstart & -L2_S_SEGSIZE);
 
@@ -691,8 +695,8 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	pmap_curmaxkvaddr =
 	    kernel_vm_base + (KERNEL_L2PT_VMDATA_NUM * L2_S_SEGSIZE);
 
-	// This could be done earlier and then the kernel data and pages allocated
-	// above would get merged (concatentated)
+	// This could be done earlier and then the kernel data and pages
+	// allocated above would get merged (concatentated)
 
 	VPRINTF("Mapping kernel\n");
 
@@ -966,10 +970,6 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	extern uint32_t cpu_ttb;
 	cpu_ttb = l1pt_pa;
 
-	/*
-	 * XXX merge into generic boot cpu_setup?
-	 */
-
 	cpu_domains(DOMAIN_DEFAULT);
 
 	cpu_idcache_wbinv_all();
@@ -1006,11 +1006,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	cpu_setttb(l1pt_pa, true);
 #endif
 
-	// XXXNH
-	armreg_tlbiall_write(0);
-	armreg_bpiall_write(0);
-
-	//cpu_tlb_flushID();
+	cpu_tlb_flushID();
 
 #ifdef ARM_MMU_EXTENDED
 	VPRINTF("\nsctlr=%#x actlr=%#x\n",
