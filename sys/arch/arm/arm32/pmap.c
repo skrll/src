@@ -6910,11 +6910,17 @@ pmap_devmap_bootstrap(vaddr_t l1pt, const struct pmap_devmap *table)
 	pmap_devmap_table = table;
 
 	for (i = 0; pmap_devmap_table[i].pd_size != 0; i++) {
-		VPRINTF("devmap: %08lx -> %08lx @ %08lx\n",
-		    pmap_devmap_table[i].pd_pa,
-		    pmap_devmap_table[i].pd_pa +
-			pmap_devmap_table[i].pd_size - 1,
-		    pmap_devmap_table[i].pd_va);
+		const vaddr_t va = pmap_devmap_table[i].pd_va;
+		const paddr_t pa = pmap_devmap_table[i].pd_pa;
+		const psize_t sz = pmap_devmap_table[i].pd_size;
+
+		KASSERTMSG(VADDR_MAX - va >= sz - 1, "va %" PRIxVADDR
+		    " sz %" PRIxPSIZE, va, sz);
+		KASSERTMSG(PADDR_MAX - pa >= sz - 1, "pa %" PRIxPADDR
+		    " sz %" PRIxPSIZE, pa, sz);
+		VPRINTF("devmap: %08lx -> %08lx @ %08lx\n", pa, pa + sz - 1,
+		    va);
+
 		pmap_map_chunk(l1pt, pmap_devmap_table[i].pd_va,
 		    pmap_devmap_table[i].pd_pa,
 		    pmap_devmap_table[i].pd_size,
