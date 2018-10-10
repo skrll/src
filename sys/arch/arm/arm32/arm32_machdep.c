@@ -701,13 +701,7 @@ cpu_uarea_alloc_idlelwp(struct cpu_info *ci)
 }
 #endif
 
-
-
 #ifdef MULTIPROCESSOR
-
-void 	armv7_dcache_l1inv_all(void);
-void	armv7_icache_inv_all(void);
-
 /*
  * Initialise a secondary processor.
  *
