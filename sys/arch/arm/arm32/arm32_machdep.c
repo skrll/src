@@ -90,9 +90,15 @@ __KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.120 2018/08/22 07:47:33 skrll Ex
 #endif
 
 #ifdef VERBOSE_INIT_ARM
+void generic_prints(const char *);
+void generic_printx(int);
 #define VPRINTF(...)	printf(__VA_ARGS__)
+#define VPRINTS(s)	generic_prints(s)
+#define VPRINTX(x)	generic_printx(x)
 #else
-#define VPRINTF(...)	do { } while (/* CONSTCOND */ 0)
+#define VPRINTF(...)	__nothing
+#define VPRINTS(s)	__nothing
+#define VPRINTX(x)	__nothing
 #endif
 
 void (*cpu_reset_address)(void);	/* Used by locore */
@@ -702,15 +708,26 @@ cpu_uarea_alloc_idlelwp(struct cpu_info *ci)
 void 	armv7_dcache_l1inv_all(void);
 void	armv7_icache_inv_all(void);
 
+/*
+ * Initialise a secondary processor.
+ *
+ * printf isn't available to us for a number of reasons.
+ *
+ * -  kprint_init has been called and printf will try to take locks which we can't
+ *    do just yet because bootstrap translation tables do not allowing caching.
+ *
+ * -  kmutex(9) relies on curcpu which isn't setup yet.
+ *
+ */
 void
 cpu_init_secondary_processor(int cpuno)
 {
-	// pmap_kernel has been sucessfully built and we can switch to  it
+	// pmap_kernel has been sucessfully built and we can switch to it
 
 	cpu_domains(DOMAIN_DEFAULT);
 	cpu_idcache_wbinv_all();
 
-//	VPRINTF(" ttb");
+	VPRINTS(" ttb");
 
 	cpu_setup(boot_args);
 
@@ -733,11 +750,16 @@ cpu_init_secondary_processor(int cpuno)
 
 	cpu_tlb_flushID();
 
+	VPRINTS(" (TTBR0=");
+	VPRINTX(armreg_ttbr_read());
+	VPRINTS(")");
+
 #ifdef ARM_MMU_EXTENDED
-	VPRINTF(" (TTBCR=%#x TTBR0=%#x TTBR1=%#x)",
-	    armreg_ttbcr_read(), armreg_ttbr_read(), armreg_ttbr1_read());
-#else
-	VPRINTF(" (TTBR0=%#x)", armreg_ttbr_read());
+	VPRINTS(" (TTBR1=");
+	VPRINTX(armreg_ttbr1_read());
+	VPRINTS(")");
+	VPRINTS(" (TTBCR=");
+	VPRINTX(armreg_ttbcr_read());
 #endif
 
 	atomic_or_uint(&arm_cpu_hatched, __BIT(cpuno));
