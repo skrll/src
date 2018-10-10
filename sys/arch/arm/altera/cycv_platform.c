@@ -30,8 +30,6 @@ __KERNEL_RCSID(0, "$NetBSD: cycv_platform.c,v 1.1 2018/09/19 17:31:38 aymeric Ex
 #include <arm/fdt/arm_fdtvar.h>
 #include <dev/fdt/fdtvar.h>
 
-
-
 static void cycv_platform_early_putchar(char);
 
 static const struct pmap_devmap *
