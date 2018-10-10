@@ -582,7 +582,6 @@ parse_mi_bootargs(char *args)
 	    || get_bootconf_option(args, "-x", BOOTOPT_TYPE_BOOLEAN, &integer))
 		if (integer)
 			boothowto |= AB_DEBUG;
-	boothowto |= AB_VERBOSE;
 }
 
 #ifdef __HAVE_FAST_SOFTINTS
