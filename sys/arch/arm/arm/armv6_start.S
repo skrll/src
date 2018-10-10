@@ -746,7 +746,6 @@ ENTRY_NP(cpu_mpstart)
 
 	ldr	r9, =svcstk
 	add	r9, #INIT_ARM_STACK_SIZE * MAXCPUS
-	sub	r9, #64
 	sub	sp, r9, r10
 
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
@@ -791,10 +790,13 @@ ENTRY_NP(cpu_mpstart)
 	b	armv7_mmuinit
 ASEND(cpu_mpstart)
 
+
+/*
+ * Now running with real kernel VA via bootstrap tables
+ */
 armv7_mpcontinuation:
 	ldr	r9, =svcstk
 	add	r9, #INIT_ARM_STACK_SIZE * MAXCPUS
-	sub	r9, #64
 
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
 	and	r4, r4, #7			// get our cpu numder
