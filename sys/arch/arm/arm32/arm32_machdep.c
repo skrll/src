@@ -764,12 +764,7 @@ cpu_init_secondary_processor(int cpuno)
 
 	atomic_or_uint(&arm_cpu_hatched, __BIT(cpuno));
 
-	/* Wait for cpu_boot_secondary_processors */
-	while (membar_consumer(), (arm_cpu_mbox & __BIT(cpuno)) == 0) {
-		__asm ("wfe" ::: "memory");
-	}
-
-	/* Return to assembly for cpu_hatch, etc */
+	/* return to assembly to Wait for cpu_boot_secondary_processors */
 }
 
 void

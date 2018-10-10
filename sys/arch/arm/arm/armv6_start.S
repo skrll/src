@@ -42,7 +42,8 @@
 #include <arm/armreg.h>
 #include "assym.h"
 
-#define INIT_ARM_STACK_SIZE	8192
+#define INIT_ARM_STACK_SHIFT	9
+#define INIT_ARM_STACK_SIZE	(1 << INIT_ARM_STACK_SHIFT)
 
 #if defined(CONSADDR) && defined(CONADDR)
 #error Only one of CONSADDR and CONADDR should be defined
@@ -95,8 +96,7 @@ ENTRY_NP(generic_start)
 	ldr	r10, =generic_start
 	sub	r10, r10, r9
 
-	ldr	r9, =svcstk
-	add	r9, #INIT_ARM_STACK_SIZE * MAXCPUS
+	ldr	r9, =start_stacks_top
 	sub	sp, r9, r10
 
 	mov	r4, r0
@@ -184,6 +184,12 @@ arm_bad_vtopdiff:
 ASEND(generic_start)
 
 	.ltorg
+
+	.section ".init_stacks", "aw", %nobits
+	.p2align INIT_ARM_STACK_SHIFT
+start_stacks_bottom:
+	.space	INIT_ARM_STACK_SIZE * MAXCPUS
+start_stacks_top:
 
 	.section ".init_pagetable", "aw", %nobits
 	.p2align  14 /* 16KiB aligned */
@@ -744,15 +750,14 @@ ENTRY_NP(cpu_mpstart)
 	ldr	r10, =cpu_mpstart
 	sub	r10, r10, r9
 
-	ldr	r9, =svcstk
-	add	r9, #INIT_ARM_STACK_SIZE * MAXCPUS
+	ldr	r9, =start_stacks_top
 	sub	sp, r9, r10
 
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
 	and	r4, r4, #7			// get our cpu numder
 
 	mov	r5, r4
-	lsl	r5, #13
+	lsl	r5, #INIT_ARM_STACK_SHIFT
 	sub	sp, sp, r5
 
 	XPUTC('c')
@@ -795,14 +800,13 @@ ASEND(cpu_mpstart)
  * Now running with real kernel VA via bootstrap tables
  */
 armv7_mpcontinuation:
-	ldr	r9, =svcstk
-	add	r9, #INIT_ARM_STACK_SIZE * MAXCPUS
+	ldr	r9, =start_stacks_top
 
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
 	and	r4, r4, #7			// get our cpu numder
 
 	mov	r5, r4
-	lsl	r5, #13
+	lsl	r5, #INIT_ARM_STACK_SHIFT
 	sub	sp, r9, r5
 
 	VPRINTF("go\n\r")
@@ -812,6 +816,20 @@ armv7_mpcontinuation:
 
 	mov	r0, r4
 	bl	cpu_init_secondary_processor
+
+	/* Wait for cpu_boot_secondary_processors the when cpu_info is allocated, etc */
+
+	movw	r6, #:lower16:arm_cpu_mbox
+	movt	r6, #:upper16:arm_cpu_mbox
+
+	mov	r5, #1				// bitmask...
+	lsl	r5, r4				// ... for our cpu
+
+1:	dmb					// data memory barrier
+	ldr	r2, [r6]			// load mbox
+	tst	r2, r5				// is our bit set?
+	wfeeq					//    no, back to waiting
+	beq	1b				//    no, and try again
 
 	movw	r0, #:lower16:cpu_info
 	movt	r0, #:upper16:cpu_info		// get pointer to cpu_infos
