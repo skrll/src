@@ -103,7 +103,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pintr.c,v 1.7 2018/10/07 05:23:01 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pintr.c,v 1.9 2018/10/10 02:34:08 cherry Exp $");
 
 #include "opt_multiprocessor.h"
 #include "opt_xen.h"
@@ -143,8 +143,8 @@ struct intrstub x2apic_edge_stubs[MAX_INTR_SOURCES] = {{0,0}};
 struct intrstub x2apic_level_stubs[MAX_INTR_SOURCES] = {{0,0}};
 #include <machine/i82093var.h>
 int irq2port[NR_EVENT_CHANNELS] = {0}; /* actually port + 1, so that 0 is invaid */
-int irq2vect[256] = {0};
-int vect2irq[256] = {0};
+static int irq2vect[256] = {0};
+static int vect2irq[256] = {0};
 #endif /* NIOAPIC */
 #if NACPICA > 0
 #include <machine/mpconfig.h>
@@ -176,8 +176,7 @@ xen_vec_alloc(int gsi)
 			irq2vect[gsi] == op.u.irq_op.vector);
 		irq2vect[gsi] = op.u.irq_op.vector;
 		KASSERT(vect2irq[op.u.irq_op.vector] == 0 ||
-			(gsi > 0 && gsi < 16 &&
-			 vect2irq[op.u.irq_op.vector] == gsi));
+			 vect2irq[op.u.irq_op.vector] == gsi);
 		vect2irq[op.u.irq_op.vector] = gsi;
 	}
 
