@@ -142,7 +142,7 @@ static paddr_t bcm2836_bus_to_phys(bus_addr_t);
 #ifdef VERBOSE_INIT_ARM
 #define VPRINTF(...)	printf(__VA_ARGS__)
 #else
-#define VPRINTF(...)	do { } while (/* CONSTCOND */ 0)
+#define VPRINTF(...)	__nothing
 #endif
 
 static paddr_t
