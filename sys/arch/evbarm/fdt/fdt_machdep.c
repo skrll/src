@@ -415,12 +415,8 @@ initarm(void *arg)
 		panic("cpu not recognized!");
 
 	/*
-	 * aarch32 - don't know the l1pt at this point so can't bootstrap...
-	 * err, yes we do as it's in ttbr0.
-	 */
-
-	/*
-	 * Memory is mapped VA:PA at this point so using ttbr for l1pt VA is fine
+	 * Memory is still identity/flat mapped this point so using ttbr for
+	 * l1pt VA is fine
 	 */
 
 	VPRINTF("devmap\n");
