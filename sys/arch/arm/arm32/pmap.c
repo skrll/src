@@ -6768,15 +6768,13 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 
 	while (resid > 0) {
 		const size_t l1slot = l1pte_index(va);
-#if (ARM_MMU_V6 + ARM_MMU_V7) > 0
+#ifdef ARM_MMU_EXTENDED
 		/* See if we can use a supersection mapping. */
 		if (L1_SS_PROTO && L1_SS_MAPPABLE_P(va, pa, resid)) {
 			/* Supersection are always domain 0 */
 			const pd_entry_t npde = L1_SS_PROTO | pa
-#ifdef ARM_MMU_EXTENDED
 			    | ((prot & VM_PROT_EXECUTE) ? 0 : L1_S_V6_XN)
 			    | (va & 0x80000000 ? 0 : L1_S_V6_nG)
-#endif
 			    | L1_S_PROT(PTE_KERNEL, prot) | f1;
 			VPRINTF("sS");
 			l1pte_set(&pdep[l1slot], npde);
