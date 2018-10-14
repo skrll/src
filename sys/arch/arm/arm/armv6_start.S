@@ -80,6 +80,21 @@
  *
  */
 
+	// Use callee saved registers
+	R_L1TABLE	.req r4
+	R_VA		.req r5
+	R_PA		.req r6
+	R_NSEC		.req r7
+	R_ATTR		.req r8
+
+	R_DEVATTR	.req r9
+
+	R_TMP1		.req r8
+	R_TMP2		.req r9
+	R_VTOPDIFF	.req r10
+	R_FDTADDR	.req r11
+
+
 	.text
 
 ENTRY_NP(generic_start)
@@ -92,12 +107,12 @@ ENTRY_NP(generic_start)
 	/* disable IRQs/FIQs. */
 	cpsid	if
 
-	adr	r9, generic_start
-	ldr	r10, =generic_start
-	sub	r10, r10, r9
+	adr	R_TMP2, generic_start
+	ldr	R_VTOPDIFF, =generic_start
+	sub	R_VTOPDIFF, R_VTOPDIFF, R_TMP2
 
-	ldr	r9, =start_stacks_top
-	sub	sp, r9, r10
+	ldr	R_TMP2, =start_stacks_top
+	sub	sp, R_TMP2, R_VTOPDIFF
 
 	mov	r4, r0
 	mov	r5, r1
@@ -110,38 +125,38 @@ ENTRY_NP(generic_start)
 	VPRINTX(pc)
 
 	VPRINTF("\n\roff  :")
-	VPRINTX(r10)
+	VPRINTX(R_VTOPDIFF)
 
 	VPRINTF("\n\rsp   :")
 	VPRINTX(sp)
 
-	ldr	r8, =kern_vtopdiff
-	sub	r8, r8, r10
-	str	r10, [r8]
+	ldr	R_TMP1, =kern_vtopdiff
+	sub	R_TMP1, R_TMP1, R_VTOPDIFF
+	str	R_VTOPDIFF, [R_TMP1]
 
-	ldr	r8, =(L1_S_SIZE - 1)
-	ands	r9, r10, r8
+	ldr	R_TMP1, =(L1_S_SIZE - 1)
+	ands	R_TMP2, R_VTOPDIFF, R_TMP1
 	bne	arm_bad_vtopdiff
 	/*
 	 * store uboot arguments to uboot_args[4]
 	 */
-	ldr	r8, =uboot_args
-	sub	r8, r8, r10
+	ldr	R_TMP1, =uboot_args
+	sub	R_TMP1, R_TMP1, R_VTOPDIFF
 
-	str	r4, [r8, #(4*0)]
-	str	r5, [r8, #(4*1)]
-	str	r6, [r8, #(4*2)]
-	str	r7, [r8, #(4*3)]
+	str	r4, [R_TMP1, #(4*0)]
+	str	r5, [R_TMP1, #(4*1)]
+	str	r6, [R_TMP1, #(4*2)]
+	str	r7, [R_TMP1, #(4*3)]
 
 #if defined(FDTBASE)
 	/*
 	 * ARM boot protocol has FDT address in r2
 	 */
 	VPRINTF("\n\rfdt  :")
-	ldr	r8, =fdt_addr_r
-	sub	r8, r8, r10
-	str	r6, [r8]
-	mov	r9, r6		// Save fdt_addr_r for mapping later
+	ldr	R_TMP1, =fdt_addr_r
+	sub	R_TMP1, R_TMP1, R_VTOPDIFF
+	str	r6, [R_TMP1]
+	mov	R_FDTADDR, r6		// Save fdt_addr_r for mapping later
 
 	VPRINTX(r6)
 #endif
@@ -178,7 +193,7 @@ arm_cpu_unknown:
 1:	b	1b
 arm_bad_vtopdiff:
 	VPRINTF("\n\rpanic: vtop not L1_FRAME aligned (")
-	VPRINTX(r10)
+	VPRINTX(R_VTOPDIFF)
 	VPRINTF(")\n\r")
 1:	b	 1b
 ASEND(generic_start)
@@ -202,25 +217,7 @@ TEMP_L1_TABLE_END:
 	.text
 	.align  2
 
-
-	// Use callee saved registers
-	R_L1TABLE	.req r4
-	R_VA		.req r5
-	R_PA		.req r6
-	R_NSEC		.req r7
-	R_ATTR		.req r8
-
-
 #if defined(_ARM_ARCH_7)
-/*
- * Registers at this point are:
- *
- * r4	argument 0
- * r5	argument 1
- * r6	argument 2
- * r7	argument 3
- * r10	virtual to physical offset
- */
 generic_startv7:
 
 	.arch		armv7a
@@ -237,7 +234,7 @@ generic_startv7:
 	 * bootstrap table.
 	 */
 	ldr	R_L1TABLE, =TEMP_L1_TABLE
-	sub	R_L1TABLE, r10
+	sub	R_L1TABLE, R_VTOPDIFF
 
 	// PA of kernel rounded down to nearest L1_S boundary
 	adr	R_PA, generic_start
@@ -253,7 +250,7 @@ generic_startv7:
 	 * at KERNEL_BASE with caches off.
 	 */
 	ldr	R_L1TABLE, =TEMP_L1_TABLE
-	sub	R_L1TABLE, r10
+	sub	R_L1TABLE, R_VTOPDIFF
 
 	ldr	r0, =KERNEL_BASE	// kernel start VA
 	ldr	r1, =TEMP_L1_TABLE_END	// kernel end VA
@@ -282,11 +279,11 @@ generic_startv7:
 	VPRINTF("DTB")
 
 	/*
-	 * Add DTB identity mapping (1MB) from originaly r2 (but saved in r9)
+	 * Add DTB identity mapping (1MB) from originaly r2 (but saved in R_FDTADDR)
 	 */
 	movw	r0, #:lower16:(L1_S_SIZE - 1)		/* align DTB PA to 1M */
 	movt	r0, #:upper16:(L1_S_SIZE - 1)
-	bic	R_VA, r9, r0
+	bic	R_VA, R_FDTADDR, r0
 	mov	R_PA, R_VA
 	mov	R_NSEC, #1				/* 1MB mapping */
 
@@ -295,7 +292,7 @@ generic_startv7:
 
 	movw	R_L1TABLE, #:lower16:TEMP_L1_TABLE
 	movt	R_L1TABLE, #:upper16:TEMP_L1_TABLE
-	sub	R_L1TABLE, r10
+	sub	R_L1TABLE, R_VTOPDIFF
 	bl	arm_boot_l1pt_entry
 #endif
 
@@ -313,14 +310,14 @@ generic_startv7:
 	movt	R_ATTR, #:upper16:(L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_V6_XN)
 
 	ldr	R_L1TABLE, =TEMP_L1_TABLE
-	sub	R_L1TABLE, r10
+	sub	R_L1TABLE, R_VTOPDIFF
 	bl	arm_boot_l1pt_entry
 #endif
 
 	XPUTC(#'M')
 //	movw	r0, #:lower16:TEMP_L1_TABLE
 //	movt	r0, #:upper16:TEMP_L1_TABLE
-//	sub	r0, r10
+//	sub	r0, R_VTOPDIFF
 //	bl	generic_dumpl1pt
 
 	/*
@@ -328,7 +325,7 @@ generic_startv7:
 	 */
 	movw	r0, #:lower16:TEMP_L1_TABLE
 	movt	r0, #:upper16:TEMP_L1_TABLE
-	sub	r0, r10
+	sub	r0, R_VTOPDIFF
 
 	// Just return to 'start'?
 	movw	lr, #:lower16:1f
@@ -746,12 +743,12 @@ ENTRY_NP(cpu_mpstart)
 	/* disable IRQs/FIQs. */
 	cpsid	if
 
-	adr	r9, cpu_mpstart
-	ldr	r10, =cpu_mpstart
-	sub	r10, r10, r9
+	adr	R_TMP2, cpu_mpstart
+	ldr	R_VTOPDIFF, =cpu_mpstart
+	sub	R_VTOPDIFF, R_VTOPDIFF, R_TMP2
 
-	ldr	r9, =start_stacks_top
-	sub	sp, r9, r10
+	ldr	R_TMP2, =start_stacks_top
+	sub	sp, R_TMP2, R_VTOPDIFF
 
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
 	and	r4, r4, #7			// get our cpu numder
@@ -788,7 +785,7 @@ ENTRY_NP(cpu_mpstart)
 
 	movw	r0, #:lower16:TEMP_L1_TABLE
 	movt	r0, #:upper16:TEMP_L1_TABLE
-	sub	r0, r10
+	sub	r0, R_VTOPDIFF
 
 	movw	lr, #:lower16:armv7_mpcontinuation
 	movt	lr, #:upper16:armv7_mpcontinuation
@@ -800,14 +797,14 @@ ASEND(cpu_mpstart)
  * Now running with real kernel VA via bootstrap tables
  */
 armv7_mpcontinuation:
-	ldr	r9, =start_stacks_top
+	ldr	R_TMP2, =start_stacks_top
 
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
 	and	r4, r4, #7			// get our cpu numder
 
 	mov	r5, r4
 	lsl	r5, #INIT_ARM_STACK_SHIFT
-	sub	sp, r9, r5
+	sub	sp, R_TMP2, r5
 
 	VPRINTF("go\n\r")
 
