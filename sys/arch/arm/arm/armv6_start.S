@@ -86,14 +86,12 @@
 	R_PA		.req r6
 	R_NSEC		.req r7
 	R_ATTR		.req r8
-
 	R_DEVATTR	.req r9
 
 	R_TMP1		.req r8
 	R_TMP2		.req r9
 	R_VTOPDIFF	.req r10
 	R_FDTADDR	.req r11
-
 
 	.text
 
@@ -107,12 +105,12 @@ ENTRY_NP(generic_start)
 	/* disable IRQs/FIQs. */
 	cpsid	if
 
-	adr	R_TMP2, generic_start
+	adr	R_TMP1, generic_start
 	ldr	R_VTOPDIFF, =generic_start
-	sub	R_VTOPDIFF, R_VTOPDIFF, R_TMP2
+	sub	R_VTOPDIFF, R_VTOPDIFF, R_TMP1
 
-	ldr	R_TMP2, =start_stacks_top
-	sub	sp, R_TMP2, R_VTOPDIFF
+	ldr	R_TMP1, =start_stacks_top
+	sub	sp, R_TMP1, R_VTOPDIFF
 
 	mov	r4, r0
 	mov	r5, r1
@@ -174,23 +172,13 @@ ENTRY_NP(generic_start)
 	VPRINTF("\n\r")
 #endif
 
-	// Let's work out what sort of CPU we're running on
-	mrc	p15, 0, r0, c0, c0, 0	/* Get MIDR */
-	and	r0, #0xf0000
 #if defined(_ARM_ARCH_7)
-	cmp	r0, #0xf0000
-	beq	generic_startv7
+	b	generic_startv7
+#elif defined(_ARM_ARCH_6)
+	b	generic_startv6
+#else
+#error Unsupported CPU
 #endif
-#if defined(_ARM_ARCH_6)
-	cmp	r0, #0x60000
-	beq	generic_startv6
-#endif
-arm_cpu_unknown:
-	VPRINTF("\n\rpanic: unknown midr (")
-	mrc	p15, 0, r0, c0, c0, 0	/* Get MIDR */
-	VPRINTX(r0)
-	VPRINTF(")\n\r")
-1:	b	1b
 arm_bad_vtopdiff:
 	VPRINTF("\n\rpanic: vtop not L1_FRAME aligned (")
 	VPRINTX(R_VTOPDIFF)
@@ -217,21 +205,12 @@ TEMP_L1_TABLE_END:
 	.text
 	.align  2
 
-#if defined(_ARM_ARCH_7)
-generic_startv7:
-
-	.arch		armv7a
-	.arch_extension	sec
-	.arch_extension	virt
-
-	VPRINTF("v7   :")
-
-	bl	armv7_init
-
+arm_build_translation_table:
+	push	{r0, lr}
 	/*
-	 * Initialise the l1pt for identity mapping of the kernel with caches off.
-	 * This will be updated further with additional mappings to form the
-	 * bootstrap table.
+	 * Initialise the l1pt for identity mapping of the kernel with caches
+	 * off. This will be updated further with additional mappings to form
+	 * the bootstrap table.
 	 */
 	ldr	R_L1TABLE, =TEMP_L1_TABLE
 	sub	R_L1TABLE, R_VTOPDIFF
@@ -242,7 +221,7 @@ generic_startv7:
 	bic	R_PA, R_PA, r0
 
 	// attribute to map kernel - run without L1_S_CACHEABLE
-	ldr	R_ATTR, =(L1_S_PROTO_armv7 | L1_S_APv7_KRW)
+	ldr     R_ATTR, =(L1_S_PROTO | L1_S_AP_KRW)
 	bl	arm_boot_l1pt_init
 
 	/*
@@ -265,33 +244,27 @@ generic_startv7:
 	sub	r1, r0			// kernel size plus 1M to grow into
 	mov	R_NSEC, r1, lsr #(L1_S_SHIFT)
 
-
 	ldr	R_VA, =KERNEL_BASE
-	// PA of kernel rounded down to nearest L1_S boundary
-	adr	R_PA, generic_start
-	bic	R_PA, r2
+	adr	R_PA, generic_start	// PA of kernel
+	bic	R_PA, r2		// ...rounded down to L1_S boundary
 
 	// attribute to map kernel - run without L1_S_CACHEABLE
-	ldr	R_ATTR, =(L1_S_PROTO_armv7 | L1_S_APv7_KRW)
+	ldr     R_ATTR, =(L1_S_PROTO | L1_S_AP_KRW)
 	bl	arm_boot_l1pt_entry
 
 #if defined(FDTBASE)
 	VPRINTF("DTB")
 
 	/*
-	 * Add DTB identity mapping (1MB) from originaly r2 (but saved in R_FDTADDR)
+	 * Add DTB identity mapping (1MB) from originaly r2 (but saved in
+	 * R_FDTADDR)
 	 */
-	movw	r0, #:lower16:(L1_S_SIZE - 1)		/* align DTB PA to 1M */
-	movt	r0, #:upper16:(L1_S_SIZE - 1)
+	ldr	r0, =(L1_S_SIZE - 1)		/* align DTB PA to 1M */
 	bic	R_VA, R_FDTADDR, r0
 	mov	R_PA, R_VA
 	mov	R_NSEC, #1				/* 1MB mapping */
 
-	movw	R_ATTR, #:lower16:(L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_V6_XN)
-	movt	R_ATTR, #:upper16:(L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_V6_XN)
-
-	movw	R_L1TABLE, #:lower16:TEMP_L1_TABLE
-	movt	R_L1TABLE, #:upper16:TEMP_L1_TABLE
+	ldr	R_L1TABLE, =TEMP_L1_TABLE
 	sub	R_L1TABLE, R_VTOPDIFF
 	bl	arm_boot_l1pt_entry
 #endif
@@ -299,15 +272,14 @@ generic_startv7:
 #if defined(START_CONSADDR)
 	/* If CONSADDR exists add its identity mapping (1MB) */
 	VPRINTF("\n\rCONSADDR")
-	movw	r0, #:lower16:(L1_S_SIZE - 1)		/* align DTB PA to 1M */
-	movt	r0, #:upper16:(L1_S_SIZE - 1)
+	ldr	r0, =(L1_S_SIZE - 1)		/* align DTB PA to 1M */
 	ldr	R_VA, =START_CONSADDR
 	bic	R_VA, R_VA, r0
 	mov	R_PA, R_VA
 	mov	R_NSEC, #1
 
-	movw	R_ATTR, #:lower16:(L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_V6_XN)
-	movt	R_ATTR, #:upper16:(L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_V6_XN)
+	ldr     R_ATTR, =(L1_S_PROTO | L1_S_AP_KRW)
+	orr	R_ATTR, R_DEVATTR
 
 	ldr	R_L1TABLE, =TEMP_L1_TABLE
 	sub	R_L1TABLE, R_VTOPDIFF
@@ -315,46 +287,13 @@ generic_startv7:
 #endif
 
 	XPUTC(#'M')
-//	movw	r0, #:lower16:TEMP_L1_TABLE
-//	movt	r0, #:upper16:TEMP_L1_TABLE
-//	sub	r0, R_VTOPDIFF
+//	ldr	R_L1TABLE, =TEMP_L1_TABLE
+//	sub	R_L1TABLE, R_VTOPDIFF
 //	bl	generic_dumpl1pt
 
-	/*
-	 * Turn on the MMU.  Return to new enabled address space.
-	 */
-	movw	r0, #:lower16:TEMP_L1_TABLE
-	movt	r0, #:upper16:TEMP_L1_TABLE
-	sub	r0, R_VTOPDIFF
-
-	// Just return to 'start'?
-	movw	lr, #:lower16:1f
-	movt	lr, #:upper16:1f
-	b	armv7_mmuinit
-1:
-
-	VPRINTF("go\n\r")
-
-	/*
-	 * Jump to start in locore.S, which in turn will call initarm and main.
-	 */
-	b	start
-
-	/* NOTREACHED */
-	.ltorg
-
-#endif
-
-#if defined(_ARM_ARCH_6)
-
-
-generic_startv6:
-	// TODO
+	pop	{r0, pc}
 
 	.ltorg
-
-#endif
-
 
 // Set up a preliminary mapping in the MMU to allow us to run at KERNEL_BASE.
 //
@@ -448,16 +387,101 @@ arm_boot_l1pt_entry:
 
 	pop	{r0, pc}
 
-	.unreq	R_VA
-	.unreq	R_PA
-	.unreq	R_NSEC
-	.unreq	R_ATTR
-	.unreq	R_L1TABLE
-
 arm_boot_overlap:
 	VPRINTF("\n\rpanic: overlapping mappings\n\r")
 3:
 	b	3b
+
+#if defined(_ARM_ARCH_7)
+generic_startv7:
+
+	.arch		armv7a
+	.arch_extension	sec
+	.arch_extension	virt
+
+	VPRINTF("v7   :")
+
+	bl	armv7_init
+
+	mov	R_DEVATTR, #L1_S_V6_XN
+	bl	arm_build_translation_table
+
+	/*
+	 * Turn on the MMU.  Return to new enabled address space.
+	 */
+	movw	r0, #:lower16:TEMP_L1_TABLE
+	movt	r0, #:upper16:TEMP_L1_TABLE
+	sub	r0, R_VTOPDIFF
+
+	// Return to virtual addess after the call to armv7_mmuinit
+	movw	lr, #:lower16:1f
+	movt	lr, #:upper16:1f
+	b	armv7_mmuinit
+1:
+
+	VPRINTF("go\n\r")
+
+	/*
+	 * Jump to start in locore.S, which in turn will call initarm and main.
+	 */
+	b	start
+
+	/* NOTREACHED */
+	.ltorg
+#elif defined(_ARM_ARCH_6)
+generic_startv6:
+	VPRINTF("v6: ")
+
+	bl	armv6_init
+
+#ifdef ARM_MMU_EXTENDED
+	mov	R_DEVATTR, #L1_S_V6_XN
+#else
+	mov	R_DEVATTR, #0
+#endif
+	bl	arm_build_translation_table
+
+	XPUTC(#'E')
+	/*
+	 * Turn on the MMU.  Return to new enabled address space.
+	 */
+	ldr	r0, =TEMP_L1_TABLE
+	sub	r0, R_VTOPDIFF
+
+	ldr	lr, =1f
+	b	armv6_mmuinit
+1:
+	VPRINTF("go\n\r")
+	VPRINTX(pc)
+
+#ifdef VERBOSE_INIT_ARM
+	VPRINTF("\n\rttb0 :")
+	mrc	p15, 0, r0, c2, c0, 0	// TTBR0 read
+	VPRINTX(r0)
+	VPRINTF("\n\rttb1 :")
+	mrc	p15, 0, r0, c2, c0, 1	// TTBR1 read
+	VPRINTX(r0)
+	VPRINTF("\n\rttcr :")
+	mrc	p15, 0, r0, c2, c0, 2	// TTBCR read
+	VPRINTX(r0)
+	VPRINTF("\n\r")
+#endif
+
+
+	VPRINTF("\n\r")
+
+	/*
+	 * Jump to start in locore.S, which in turn will call initarm and main.
+	 */
+	b	start
+
+	/* NOTREACHED */
+	.ltorg
+
+#endif
+
+
+
 #if defined(_ARM_ARCH_7)
 
 //
@@ -475,7 +499,7 @@ arm_boot_overlap:
 #define CPU_CONTROL_AFLT_ENABLE_CLR	0
 #define CPU_CONTROL_AFLT_ENABLE_SET	CPU_CONTROL_AFLT_ENABLE
 #endif
-#ifdef ARM_MMU_EXTENDED_XXX
+#ifdef ARM_MMU_EXTENDED
 #define CPU_CONTROL_XP_ENABLE_CLR	0
 #define CPU_CONTROL_XP_ENABLE_SET	CPU_CONTROL_XP_ENABLE
 #else
@@ -573,9 +597,6 @@ armv7_init:
     CPU_CONTROL_TR_ENABLE |	\
     0)
 
-
-// CPU_CONTROL_VECRELOC
-
 #define ARMV7_SCTLR_SET	( 	\
     CPU_CONTROL_UNAL_ENABLE |	\
     0)
@@ -601,7 +622,6 @@ armv7_init:
 	isb
 
 	XPUTC(#'B')
-
 
 	VPRINTF(" sctlr:")
 	VPRINTX(r7)
@@ -632,8 +652,8 @@ armv7_mmuinit:
 	cmp	r1, #0
 	orrlt	r5, r5, #TTBR_MPATTR	// MP, cachable (Normal WB)
 	orrge	r5, r5, #TTBR_UPATTR	// Non-MP, cacheable, normal WB
-	XPUTC(#'0')
 
+	XPUTC(#'0')
 	mcr	p15, 0, r5, c2, c0, 0	// TTBR0 write
 
 #if defined(ARM_MMU_EXTENDED)
@@ -852,7 +872,179 @@ armv7_mpcontinuation:
 ASEND(armv7_mpcontinuation)
 #endif	// MULTIPROCESSOR
 
+#elif defined(_ARM_ARCH_6)
+
+ENTRY_NP(armv6_init)
+/*
+ * Workaround Erratum 411920
+ *
+ *	- value of arg 'reg' Should Be Zero
+ */
+#define Invalidate_I_cache(reg) \
+	.p2align 5;								\
+	mcr	p15, 0, reg, c7, c5, 0;	/* Invalidate Entire I cache */		\
+	mcr	p15, 0, reg, c7, c5, 0;	/* Invalidate Entire I cache */		\
+	mcr	p15, 0, reg, c7, c5, 0;	/* Invalidate Entire I cache */		\
+	mcr	p15, 0, reg, c7, c5, 0;	/* Invalidate Entire I cache */		\
+	nop;									\
+	nop;									\
+	nop;									\
+	nop;									\
+	nop;									\
+	nop;									\
+	nop;									\
+	nop;									\
+	nop;									\
+	nop;									\
+	nop;
+
+	mov	r4, lr
+	mov	r0, #0			/* SBZ */
+	Invalidate_I_cache(r0)
+
+	mcr	p15, 0, r0, c7, c14, 0	/* Clean and Invalidate Entire Data Cache */
+
+	ldr     r2, =(CPU_CONTROL_IC_ENABLE|CPU_CONTROL_DC_ENABLE)
+					/* Disable I+D caches */
+	mrc	p15, 0, r1, c1, c0, 0	/*  "       "   "     */
+	mov	r7, r1
+	bic	r1, r1, r2		/*  "       "   "     */
+	mov	r6, r1
+	mcr	p15, 0, r1, c1, c0, 0	/*  "       "   "     */
+
+	mcr	p15, 0, r0, c7, c10, 4	/* Drain the write buffers. */
+
+	XPUTC(#'B')
+
+	VPRINTF(" sctlr:")
+	VPRINTX(r7)
+	VPRINTF("/")
+	VPRINTX(r6)
+	VPRINTF(" ")
+
+	XPUTC(#'C')
+
+	bx	r4
+
+	.ltorg
+
+armv6_mmuinit:
+	mov	r4, lr
+	mov	r5, r0
+
+	XPUTC(#'0')
+	mcr	p15, 0, r5, c2, c0, 0	// TTBR0 write
+
+#if defined(ARM_MMU_EXTENDED)
+	// When using split TTBRs, we need to set both since the physical
+	// addresses we were/are using might be in either.
+	XPUTC(#'1')
+	mcr	p15, 0, r5, c2, c0, 1	/* TTBR1 write */
 #endif
+
+	XPUTC(#'H')
+#if defined(ARM_MMU_EXTENDED)
+	XPUTC(#'1')
+	mov	r1, #TTBCR_S_N_1        /* make sure TTBCR_S_N is 1 */
+#else
+	XPUTC(#'0')
+	mov	r1, #0			/* make sure TTBCR is 0 */
+#endif
+	mcr	p15, 0, r1, c2, c0, 2	/* TTBCR write */
+
+	XPUTC(#'I')
+
+	mov     r0, #0
+	mcr	p15, 0, r0, c8, c7, 0	/* Invalidate TLBs */
+
+	XPUTC(#'K')
+	/* Set the Domain Access register.  Very important! */
+	mov     r0, #DOMAIN_DEFAULT
+	mcr	p15, 0, r0, c3, c0, 0
+
+	/*
+	 * Enable the MMU, etc.
+	 */
+
+	VPRINTF(" sctlr:")
+	mrc     p15, 0, r0, c1, c0, 0
+	VPRINTX(r0)
+	VPRINTF("/")
+
+	mrc     p15, 0, r0, c1, c0, 0
+
+	ldr     r1, Lcontrol_wax
+	and	r0, r0, r1
+	ldr     r1, Lcontrol_clr
+	bic	r0, r0, r1
+	ldr     r1, Lcontrol_set
+	orr	r0, r0, r1
+
+	mov	r6, r0
+	VPRINTX(r6)
+	VPRINTF(" ")
+
+	.align 5
+	@ turn mmu on!
+	mov	r0, r6
+	mcr	p15, 0, r0, c1, c0, 0
+
+	/*
+	 * Ensure that the coprocessor has finished turning on the MMU.
+	 */
+	mrc	p15, 0, r0, c0, c0, 0	/* Read an arbitrary value. */
+	mov	r0, r0			/* Stall until read completes. */
+
+	nop
+	nop
+	nop
+	nop
+	nop
+
+#if 0
+	VPRINTF("MMU\n\r")
+
+	VPRINTX(r4)
+	VPRINTF("\n\r")
+#endif
+
+	mov	pc, r4
+
+	.ltorg
+
+
+	/* bits to set in the Control Register */
+Lcontrol_set:
+#ifdef ARM_MMU_EXTENDED
+#define	CPU_CONTROL_EXTRA	CPU_CONTROL_XP_ENABLE
+#else
+#define	CPU_CONTROL_EXTRA	CPU_CONTROL_SYST_ENABLE
+#endif
+	.word CPU_CONTROL_MMU_ENABLE  | \
+	      CPU_CONTROL_WBUF_ENABLE |    /* not defined in 1176 (SBO) */ \
+	      CPU_CONTROL_32BP_ENABLE |    /* SBO */ \
+	      CPU_CONTROL_32BD_ENABLE |    /* SBO */ \
+	      CPU_CONTROL_LABT_ENABLE |    /* SBO */ \
+		(1 << 16) | 	/* SBO - Global enable for data tcm */ \
+		(1 << 18) |	/* SBO - Global enable for insn tcm */ \
+	      CPU_CONTROL_UNAL_ENABLE | \
+	      CPU_CONTROL_EXTRA
+
+	/* bits to clear in the Control Register */
+Lcontrol_clr:
+	.word	0
+
+	/* bits to "write as existing" in the Control Register */
+Lcontrol_wax:
+	.word	(3 << 30) | \
+		(1 << 29) | \
+		(1 << 28) | \
+		(3 << 26) | \
+		(3 << 19) | \
+		(1 << 17) | \
+	        (1 << 10)
+#endif
+
 
 ENTRY_NP(generic_vprint)
 	push	{r4, lr}

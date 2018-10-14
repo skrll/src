@@ -580,8 +580,6 @@ bcm283x_uartinit(bus_space_tag_t iot, bus_space_handle_t ioh)
 
 	bcm2835_mbox_read(iot, ioh, BCMMBOX_CHANARM2VC, &res);
 
-	cpu_dcache_inv_range((vaddr_t)&vb_uart, sizeof(vb_uart));
-
 	if (vcprop_tag_success_p(&vb_uart.vbt_uartclockrate.tag))
 		uart_clk = vb_uart.vbt_uartclockrate.rate;
 	if (vcprop_tag_success_p(&vb_uart.vbt_vpuclockrate.tag))
@@ -644,8 +642,6 @@ bcm283x_bootparams(bus_space_tag_t iot, bus_space_handle_t ioh)
 	    KERN_VTOPHYS((vaddr_t)&vb));
 
 	bcm2835_mbox_read(iot, ioh, BCMMBOX_CHANARM2VC, &res);
-
-	cpu_dcache_inv_range((vaddr_t)&vb, sizeof(vb));
 
 	if (!vcprop_buffer_success_p(&vb.vb_hdr)) {
 		bootconfig.dramblocks = 1;

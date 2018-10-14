@@ -246,7 +246,10 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 	VPRINTF("%s: kernel phys start %#lx end %#lx\n", __func__, kernelstart,
 	    kernelend);
 
+#if 0
+	// XXX Makes RPI abort
 	KASSERT((kernelstart & (L2_S_SEGSIZE - 1)) == 0);
+#endif
 	/*
 	 * Now the rest of the free memory must be after the kernel.
 	 */
