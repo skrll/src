@@ -1,4 +1,4 @@
-/* $NetBSD: aarch64_machdep.c,v 1.12 2018/10/04 23:53:13 ryo Exp $ */
+/* $NetBSD: aarch64_machdep.c,v 1.14 2018/10/13 08:32:36 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,12 +30,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.12 2018/10/04 23:53:13 ryo Exp $");
+__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.14 2018/10/13 08:32:36 ryo Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
 #include "opt_kernhist.h"
 #include "opt_modular.h"
+#include "opt_fdt.h"
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -63,6 +64,7 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.12 2018/10/04 23:53:13 ryo Exp
 #include <aarch64/vmparam.h>
 
 #include <arch/evbarm/fdt/platform.h>
+#include <arm/fdt/arm_fdtvar.h>
 
 #ifdef VERBOSE_INIT_ARM
 #define VPRINTF(...)	printf(__VA_ARGS__)
@@ -526,12 +528,56 @@ mm_md_physacc(paddr_t pa, vm_prot_t prot)
 	    KAUTH_MACHDEP_UNMANAGEDMEM, NULL, NULL, NULL, NULL);
 }
 
+#ifdef __HAVE_MM_MD_KERNACC
+int
+mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
+{
+	extern char __kernel_text[];
+	extern char _end[];
+	extern char __data_start[];
+	extern char __rodata_start[];
+
+	vaddr_t kernstart = trunc_page((vaddr_t)__kernel_text);
+	vaddr_t kernend = round_page((vaddr_t)_end);
+	paddr_t kernstart_phys = KERN_VTOPHYS(kernstart);
+	vaddr_t data_start = (vaddr_t)__data_start;
+	vaddr_t rodata_start = (vaddr_t)__rodata_start;
+	vsize_t rosize = kernend - rodata_start;
+
+	const vaddr_t v = (vaddr_t)ptr;
+
+#define IN_RANGE(addr,sta,end)	(((sta) <= (addr)) && ((addr) < (end)))
+
+	*handled = false;
+	if (IN_RANGE(v, kernstart, kernend + kernend_extra)) {
+		*handled = true;
+		if ((v < data_start) && (prot & VM_PROT_WRITE))
+			return EFAULT;
+	} else if (IN_RANGE(v, AARCH64_KSEG_START, AARCH64_KSEG_END)) {
+		paddr_t pa = AARCH64_KVA_TO_PA(v);
+		if (IN_RANGE(pa, physical_start, physical_end)) {
+			*handled = true;
+			if (IN_RANGE(pa, kernstart_phys,
+			    kernstart_phys + rosize) &&
+			    (prot & VM_PROT_WRITE))
+				return EFAULT;
+		}
+	}
+	return 0;
+}
+#endif
+
 void
 cpu_startup(void)
 {
 	vaddr_t maxaddr, minaddr;
 
 	consinit();
+
+#ifdef FDT
+	if (arm_fdt_platform()->ap_startup != NULL)
+		arm_fdt_platform()->ap_startup();
+#endif
 
 	/*
 	 * Allocate a submap for physio.
