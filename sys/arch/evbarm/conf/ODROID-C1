@@ -27,7 +27,8 @@ options 	MULTIPROCESSOR
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
 #options 	VERBOSE_INIT_ARM
-options 	EARLYCONS=amlogic, CONSADDR=0xc81004c0, CONSPEED=115200
+#options 	EARLYCONS=amlogic
+options 	CONSADDR=0xc81004c0, CONSPEED=115200
 
 config		netbsd		root on ? type ?
 
