@@ -6779,6 +6779,8 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 			VPRINTF("sS");
 			l1pte_set(&pdep[l1slot], npde);
 			PDE_SYNC_RANGE(&pdep[l1slot], L1_SS_SIZE / L1_S_SIZE);
+//			VPRINTF("\npmap_map_chunk: pa=0x%lx va=0x%lx resid=0x%08lx "
+//			    "npdep=%p pde=0x%x\n", pa, va, resid, &pdep[l1slot], npde);
 			va += L1_SS_SIZE;
 			pa += L1_SS_SIZE;
 			resid -= L1_SS_SIZE;
@@ -6795,10 +6797,10 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 			    | L1_S_PROT(PTE_KERNEL, prot) | f1
 			    | L1_S_DOM(PMAP_DOMAIN_KERNEL);
 			VPRINTF("S");
-// 			VPRINTF("pmap_map_chunk: pa=0x%lx va=0x%lx resid=0x%08lx "
-// 			    "npdep=%p pde=0x%x\n", pa, va, resid, &pdep[l1slot], npde);
 			l1pte_set(&pdep[l1slot], npde);
 			PDE_SYNC(&pdep[l1slot]);
+//			VPRINTF("\npmap_map_chunk: pa=0x%lx va=0x%lx resid=0x%08lx "
+//			    "npdep=%p pde=0x%x\n", pa, va, resid, &pdep[l1slot], npde);
 			va += L1_S_SIZE;
 			pa += L1_S_SIZE;
 			resid -= L1_S_SIZE;
