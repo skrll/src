@@ -977,12 +977,6 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 #ifdef __HAVE_GENERIC_START
 
 	/*
-	 * This is currently done in cpu_start which is too late.
-	 * XXXNH does moving here break a lots of things?!?!???
-	 */
-	KASSERT((armreg_contextidr_read() & 0xff) == 0);
-	KASSERT(armreg_ttbcr_read() == __SHIFTIN(1, TTBCR_S_N));
-	/*
 	 * Turn on caches and set SCTLR/ACTLR
 	 */
 	cpu_setup(boot_args);
