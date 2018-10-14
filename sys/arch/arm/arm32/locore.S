@@ -41,7 +41,7 @@
 #include <arm/locore.h>
 
 /* What size should this really be ? It is only used by init_arm() */
-#define INIT_ARM_STACK_SIZE	8192
+#define INIT_ARM_STACK_SIZE	2048
 
 	RCSID("$NetBSD: locore.S,v 1.38 2017/10/14 15:35:02 skrll Exp $")
 
@@ -113,7 +113,6 @@ ENTRY_NP(uartputc)
 	RET
 ASEND(uartputc)
 
-
 .Lstart:
 	.word	_edata
 	.word	_end
@@ -133,10 +132,8 @@ ASEND(start)
 #ifdef __ARM_EABI__
 	.align	3
 #endif
-	.global svcstk
-
 svcstk:
-	.space	INIT_ARM_STACK_SIZE * MAXCPUS
+	.space	INIT_ARM_STACK_SIZE
 svcstk_end:
 
 	.text
