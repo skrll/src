@@ -33,7 +33,8 @@ options 	__HAVE_PCI_CONF_HOOK
 
 makeoptions	BOARDMKFRAG="${THISARM}/conf/mk.generic"
 
-# Fake
+# The physical address is chosen by u-boot and determined by armv6_start.S.
+# The 64 byte offset is due to u-boot header.
 makeoptions	KERNEL_BASE_PHYS="0x00000040"
 makeoptions	KERNEL_BASE_VIRT="0x80000040"
 

@@ -29,8 +29,8 @@ options 	__HAVE_PCI_CONF_HOOK
 makeoptions 	BOARDMKFRAG="${THISARM}/conf/mk.tegra"
 makeoptions 	BOARDTYPE="tegra"
 options 	KERNEL_BASE_EXT=0x80000000
-makeoptions 	KERNEL_BASE_PHYS="0x80000000"
-makeoptions 	KERNEL_BASE_VIRT="0x80000000"
+makeoptions 	KERNEL_BASE_PHYS="0x81000000"
+makeoptions 	KERNEL_BASE_VIRT="0x81000000"
 
 # initrd support
 options 	MEMORY_DISK_HOOKS

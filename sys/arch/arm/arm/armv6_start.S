@@ -226,25 +226,27 @@ arm_build_translation_table:
 
 	/*
 	 * Set up a preliminary mapping in the MMU to allow us to run
-	 * at KERNEL_BASE with caches off.
+	 * at KERNEL_BASE_VIRT (determined from generic_start) with caches off.
 	 */
 	ldr	R_L1TABLE, =TEMP_L1_TABLE
 	sub	R_L1TABLE, R_VTOPDIFF
 
-	ldr	r0, =KERNEL_BASE	// kernel start VA
+	// Calculate kernel size plus 1M to grow into
+	ldr	r0, =generic_start	// kernel start VA
 	ldr	r1, =TEMP_L1_TABLE_END	// kernel end VA
 	add	r1, #L1_S_SIZE		// Make sure we have 1M to grow into
 
 	ldr	r2, =(L1_S_SIZE - 1)
-	add	r1, r2			// Round end VA to 1M boumdary step 1
 
-	bic	r0, r2			// round kernel start down to 1M boundary
+	bic	r0, r2			// trunc kernel start to 1M boundary
 	add	r1, r2
-	bic	r1, r2			// round kernel end up to 1M boundary
+	bic	r1, r2			// round kernel end to 1M boundary
+
 	sub	r1, r0			// kernel size plus 1M to grow into
 	mov	R_NSEC, r1, lsr #(L1_S_SHIFT)
 
-	ldr	R_VA, =KERNEL_BASE
+	ldr	R_VA, =generic_start	// VA of kernel
+	bic	R_VA, r2		// ...rounded down to L1_S boundary
 	adr	R_PA, generic_start	// PA of kernel
 	bic	R_PA, r2		// ...rounded down to L1_S boundary
 
@@ -295,15 +297,16 @@ arm_build_translation_table:
 
 	.ltorg
 
-// Set up a preliminary mapping in the MMU to allow us to run at KERNEL_BASE.
+// Set up a preliminary mapping in the MMU to allow us to run at
+// KERNEL_BASE_VIRT (determined from generic_start)
 //
 // On Entry
 //
 // R_L1TABLE	is the PA of the temporary L1PT
 // R_ATTR	is the attribute bits to set for each section mapping
 //
-// No R_VA/R_PA/R_NSEC needed here as we use KERNEL_BASE and
-// TEMP_L1_TABLE_END to calculate the initial direct VA:PA mapping
+// No R_VA/R_PA/R_NSEC needed here as we use 'generic_start' and
+// 'TEMP_L1_TABLE_END' to calculate the initial direct VA:PA mapping
 
 // We push r0 to maintain stack alignment only
 arm_boot_l1pt_init:
@@ -322,15 +325,16 @@ arm_boot_l1pt_init:
 	blt	1b
 
 	// Calculate the size of the kernel in L1_S_SIZE sections
-	ldr	r2, =(L1_S_SIZE - 1)
-	ldr	r0, =KERNEL_BASE
+	ldr	r0, =generic_start
 	ldr	r1, =TEMP_L1_TABLE_END
+
+	ldr	r2, =(L1_S_SIZE - 1)
+
+	bic	r0, r2			// trunc kernel start to 1M boundary
 	add	r1, r2
+	bic	r1, r2			// round kernel end to 1M boundary
 
-	bic	r0, r2		// round kernel start down to L1_S_SIZE boundary
-	bic	r1, r2		// round kernel end up to L1_S_SIZE boundary
-	sub	r1, r0
-
+	sub	r1, r0			// kernel size plus 1M to grow into
 	mov	R_NSEC, r1, lsr #(L1_S_SHIFT)
 
 	// identity mapping for size of kernel
