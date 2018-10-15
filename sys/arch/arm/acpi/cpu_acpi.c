@@ -55,8 +55,8 @@ CFATTACH_DECL_NEW(cpu_acpi, 0, cpu_acpi_match, cpu_acpi_attach, NULL, NULL);
 static register_t
 cpu_acpi_mpstart_pa(void)
 {
-	extern void aarch64_mpstart(void);
-	return (register_t)aarch64_kern_vtophys((vaddr_t)aarch64_mpstart);
+
+	return (register_t)KERN_VTOPHYS((vaddr_t)cpu_mpstart);
 }
 
 static int
