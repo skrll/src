@@ -1958,7 +1958,6 @@ set_cpufuncs(void)
 		if (arm_cache_prefer_mask)
 			uvmexp.ncolors = (arm_cache_prefer_mask >> PGSHIFT) + 1;
 
-		// XXXNH hmm
 		/*
 		 * Start and reset the PMC Cycle Counter.
 		 */
