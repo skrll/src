@@ -1038,3 +1038,8 @@ bootstk_cpus:
 	.global ARM_BOOTSTRAP_LxPT
 ARM_BOOTSTRAP_LxPT:
 l0pt_kern:
+
+	.section "_init_memory", "aw", %nobits
+	.align PGSHIFT
+
+	/* None currently */

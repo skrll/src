@@ -407,8 +407,6 @@ initarm(void *arg)
 		OF_getprop(chosen, "bootargs", bootargs, sizeof(bootargs));
 	boot_args = bootargs;
 
-	/* XXX does this need to be even earlier */
-
 	/* Heads up ... Setup the CPU / MMU / TLB functions. */
 	VPRINTF("cpufunc\n");
 	if (set_cpufuncs())
@@ -525,7 +523,22 @@ initarm(void *arg)
 	if (plat->ap_mpstart)
 		plat->ap_mpstart();
 
-	// XXX Change free TEMP_INIT_TABLE and svcstk pages now
+	/*
+	 * Now we have APs started the pages used for stacks and L1PT can
+	 * be given to uvm
+	 */
+	extern char __start__init_memory[], __stop__init_memory[];
+	if (__start__init_memory != __stop__init_memory) {
+		const paddr_t spa = KERN_VTOPHYS((vaddr_t)__start__init_memory);
+		const paddr_t epa = KERN_VTOPHYS((vaddr_t)__stop__init_memory);
+		const paddr_t spg = atop(spa);
+		const paddr_t epg = atop(epa);
+
+		uvm_page_physload(spg, epg, spg, epg, VM_FREELIST_DEFAULT);
+
+		VPRINTF("           start %08lx  end %08lx", ptoa(spa), ptoa(epa));
+	}
+
 	return sp;
 }
 

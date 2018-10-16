@@ -188,13 +188,13 @@ ASEND(generic_start)
 
 	.ltorg
 
-	.section ".init_stacks", "aw", %nobits
+	.section "_init_memory", "aw", %nobits
 	.p2align INIT_ARM_STACK_SHIFT
 start_stacks_bottom:
 	.space	INIT_ARM_STACK_SIZE * MAXCPUS
 start_stacks_top:
 
-	.section ".init_pagetable", "aw", %nobits
+	.section "_init_memory", "aw", %nobits
 	.p2align  14 /* 16KiB aligned */
 	.global ARM_BOOTSTRAP_LxPT
 ARM_BOOTSTRAP_LxPT:
