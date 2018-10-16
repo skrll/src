@@ -1,4 +1,4 @@
-/* $NetBSD: ahcisata_acpi.c,v 1.3 2018/10/15 18:58:35 jdolecek Exp $ */
+/* $NetBSD: plgpio_acpi.c,v 1.1 2018/10/15 23:59:16 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,86 +30,73 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ahcisata_acpi.c,v 1.3 2018/10/15 18:58:35 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: plgpio_acpi.c,v 1.1 2018/10/15 23:59:16 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
-#include <sys/termios.h>
-
-#include <dev/ata/atavar.h>
-#include <dev/ic/ahcisatavar.h>
+#include <sys/gpio.h>
 
 #include <dev/acpi/acpireg.h>
 #include <dev/acpi/acpivar.h>
 
-#include <dev/pci/pcireg.h>
+#include <dev/gpio/gpiovar.h>
+#include <dev/ic/pl061var.h>
 
-static int	ahcisata_acpi_match(device_t, cfdata_t, void *);
-static void	ahcisata_acpi_attach(device_t, device_t, void *);
+static int	plgpio_acpi_match(device_t, cfdata_t, void *);
+static void	plgpio_acpi_attach(device_t, device_t, void *);
 
-CFATTACH_DECL_NEW(ahcisata_acpi, sizeof(struct ahci_softc), ahcisata_acpi_match, ahcisata_acpi_attach, NULL, NULL);
+CFATTACH_DECL_NEW(plgpio_acpi, sizeof(struct plgpio_softc), plgpio_acpi_match, plgpio_acpi_attach, NULL, NULL);
+
+static const char * const compatible[] = {
+	"ARMH0061",
+	NULL
+};
 
 static int
-ahcisata_acpi_match(device_t parent, cfdata_t cf, void *aux)
+plgpio_acpi_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct acpi_attach_args *aa = aux;
 
 	if (aa->aa_node->ad_type != ACPI_TYPE_DEVICE)
 		return 0;
 
-	return acpi_match_class(aa->aa_node->ad_handle,
-	    PCI_CLASS_MASS_STORAGE,
-	    PCI_SUBCLASS_MASS_STORAGE_SATA,
-	    PCI_INTERFACE_SATA_AHCI10);
+	return acpi_match_hid(aa->aa_node->ad_devinfo, compatible);
 }
 
 static void
-ahcisata_acpi_attach(device_t parent, device_t self, void *aux)
+plgpio_acpi_attach(device_t parent, device_t self, void *aux)
 {
-	struct ahci_softc * const sc = device_private(self);
+	struct plgpio_softc * const sc = device_private(self);
 	struct acpi_attach_args *aa = aux;
 	struct acpi_resources res;
 	struct acpi_mem *mem;
-	struct acpi_irq *irq;
 	ACPI_STATUS rv;
-	void *ih;
+	int error;
 
-	rv = acpi_resource_parse(self, aa->aa_node->ad_handle, "_CRS",
+	sc->sc_dev = self;
+
+	rv = acpi_resource_parse(sc->sc_dev, aa->aa_node->ad_handle, "_CRS",
 	    &res, &acpi_resource_parse_ops_default);
 	if (ACPI_FAILURE(rv))
 		return;
 
 	mem = acpi_res_mem(&res, 0);
 	if (mem == NULL) {
-		aprint_error(": couldn't find mem resource\n");
+		aprint_error_dev(self, "couldn't find mem resource\n");
 		goto done;
 	}
 
-	irq = acpi_res_irq(&res, 0);
-	if (irq == NULL) {
-		aprint_error(": couldn't find irq resource\n");
-		goto done;
-	}
-
-	sc->sc_atac.atac_dev = self;
-	sc->sc_dmat = aa->aa_dmat;
-	sc->sc_ahcit = aa->aa_memt;
-	sc->sc_ahcis = mem->ar_length;
-	if (bus_space_map(aa->aa_memt, mem->ar_base, mem->ar_length, 0, &sc->sc_ahcih) != 0) {
-		aprint_error(": couldn't map registers\n");
-		goto done;
-	}
-
-	const int type = (irq->ar_type == ACPI_EDGE_SENSITIVE) ? IST_EDGE : IST_LEVEL;
-	ih = intr_establish(irq->ar_irq, IPL_BIO, type, ahci_intr, sc);
-	if (ih == NULL) {
-		aprint_error_dev(self, "couldn't install interrupt handler\n");
+	sc->sc_dev = self;
+	sc->sc_bst = aa->aa_memt;
+	error = bus_space_map(sc->sc_bst, mem->ar_base, mem->ar_length, 0, &sc->sc_bsh);
+	if (error) {
+		aprint_error_dev(self, "couldn't map registers\n");
 		return;
 	}
 
-	ahci_attach(sc);
+	plgpio_attach(sc);
 
 done:
 	acpi_resource_cleanup(&res);
