@@ -1,4 +1,4 @@
-/* $NetBSD: cycv_platform.c,v 1.1 2018/09/19 17:31:38 aymeric Exp $ */
+/* $NetBSD: cycv_platform.c,v 1.2 2018/10/14 18:58:44 aymeric Exp $ */
 
 /* This file is in the public domain. */
 
@@ -6,7 +6,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cycv_platform.c,v 1.1 2018/09/19 17:31:38 aymeric Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cycv_platform.c,v 1.2 2018/10/14 18:58:44 aymeric Exp $");
 
 #define	_ARM32_BUS_DMA_PRIVATE
 #include <sys/param.h>
@@ -83,8 +83,8 @@ cycv_mpstart(void)
 
 	pmap_map_chunk(cpu_ttb, CYCV_SDRAM_VBASE, CYCV_SDRAM_BASE, L1_S_SIZE,
 	    VM_PROT_READ|VM_PROT_WRITE, PMAP_NOCACHE);
-	*(volatile uint32_t *) CYCV_SDRAM_VBASE = 0xea000000 |
-	    ((startfunc - 8 - 0x0) >> 2);
+	*(volatile uint32_t *) CYCV_SDRAM_VBASE =
+	    htole32(0xea000000 | ((startfunc - 8 - 0x0) >> 2));
 	pmap_unmap_chunk(cpu_ttb, CYCV_SDRAM_BASE, L1_S_SIZE);
 
 	arm_cpu_max = 2;
@@ -111,10 +111,10 @@ cycv_platform_early_putchar(char c) {
 #define CONSADDR_VA (CONSADDR - CYCV_PERIPHERAL_BASE + CYCV_PERIPHERAL_VBASE)
 	volatile uint32_t *uartaddr = (volatile uint32_t *) CONSADDR_VA;
 
-	while ((uartaddr[com_lsr] & LSR_TXRDY) == 0)
+	while ((le32toh(uartaddr[com_lsr]) & LSR_TXRDY) == 0)
 		;
 
-	uartaddr[com_data] = c;
+	uartaddr[com_data] = htole32(c);
 #endif
 }
 
