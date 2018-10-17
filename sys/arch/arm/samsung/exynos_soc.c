@@ -437,7 +437,7 @@ exynos_dump_clocks(void)
 }
 #undef DUMP_PLL
 #else
-#define VPRINTF(...)	do { } while (/* CONSTCOND */ 0)
+#define VPRINTF(...)	__nothing
 #endif
 
 
