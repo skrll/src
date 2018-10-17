@@ -19,10 +19,10 @@ options 	IMX6
 options 	MULTIPROCESSOR
 
 # Console options.    also need IMXUARTCONSOLE
-options 	VERBOSE_INIT_ARM
+options 	CONSDEVNAME="\"imxuart\"",CONADDR=0x02020000
+#options 	VERBOSE_INIT_ARM
+#options 	EARLYCONS=nitrogen6	# CONADDR already defined
 options 	IMXUARTCONSOLE
-options 	EARLYCONS=nitrogen6, CONADDR=0x02020000
-options 	CONSDEVNAME="\"imxuart\""
 options 	CONSPEED=115200	# Console speed
 
 #options 	DIAGNOSTIC	# internal consistency checks
@@ -42,8 +42,8 @@ makeoptions	COPY_SYMTAB=1
 options		BOOT_ARGS="\"verbose\""
 
 # Kernel root file system and dump configuration.
-config		netbsd		root on ? type ?
-#config		netbsd-wd0	root on wd0 type ffs
+#config		netbsd		root on ? type ?
+config		netbsd-wd0	root on wd0 type ffs
 
 #
 # Device configuration
