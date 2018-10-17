@@ -75,6 +75,7 @@ imx6_bootstrap(vaddr_t iobase)
 	if (error)
 		panic("%s: failed to map Imx %s registers: %d",
 		    __func__, "armcore", error);
+
 #if NARML2CC > 0
 	arml2cc_init(imx6_armcore_bst, imx6_armcore_bsh, ARMCORE_L2C_BASE);
 #endif
