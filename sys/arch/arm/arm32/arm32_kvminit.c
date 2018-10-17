@@ -200,7 +200,6 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 	kernelstart = KERN_VTOPHYS(kstartva);
 
 	VPRINTF("%s: kstartva=%#lx, kernelstart=%#lx\n", __func__, kstartva, kernelstart);
-
 #else
 	vaddr_t kendva = round_page((vaddr_t)_end);
 
