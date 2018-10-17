@@ -200,7 +200,6 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 	kernelstart = KERN_VTOPHYS(kstartva);
 
 	VPRINTF("%s: kstartva=%#lx, kernelstart=%#lx\n", __func__, kstartva, kernelstart);
-
 #else
 	vaddr_t kendva = round_page((vaddr_t)_end);
 
@@ -436,7 +435,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 #else
 	const size_t cpu_num = 1;
 #endif
-	printf("%s: cpu_num %zu\n", __func__, cpu_num);
+
 #ifdef ARM_HAS_VBAR
 	const bool map_vectors_p = false;
 #elif defined(CPU_ARMV7) || defined(CPU_ARM11)

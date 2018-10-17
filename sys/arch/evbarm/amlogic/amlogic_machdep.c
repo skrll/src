@@ -196,7 +196,7 @@ __KERNEL_RCSID(0, "$NetBSD: amlogic_machdep.c,v 1.24 2018/09/21 12:04:07 skrll E
 #ifdef VERBOSE_INIT_ARM
 #define VPRINTF(...)	printf(__VA_ARGS__)
 #else
-#define VPRINTF(...)	do { } while (/* CONSTCOND */ 0)
+#define VPRINTF(...)	__nothing
 #endif
 
 #ifndef AMLOGIC_MAX_BOOT_STRING

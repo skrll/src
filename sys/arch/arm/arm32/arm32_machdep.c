@@ -855,7 +855,6 @@ cpu_kernel_vm_init(paddr_t memory_start, psize_t memory_size)
 	arm32_bootmem_init(memory_start, memory_size, KERNEL_BASE_PHYS);
 	arm32_kernel_vm_init(KERNEL_VM_BASE, ARM_VECTORS_HIGH, 0,
 	    plat->ap_devmap(), mapallmem_p);
-
 }
 #endif
 

@@ -89,10 +89,6 @@ cycv_mpstart(void)
 
 	arm_cpu_max = 2;
 
-//	arm_dsb();
-
-//	armv7_dcache_wbinv_all();
-
 	bus_space_write_4(bst, bsh_rst, CYCV_RSTMGR_MPUMODRST,
 		bus_space_read_4(bst, bsh_rst, CYCV_RSTMGR_MPUMODRST) &
 			~CYCV_RSTMGR_MPUMODRST_CPU1);
