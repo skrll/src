@@ -436,7 +436,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 #else
 	const size_t cpu_num = 1;
 #endif
-	printf("%s: cpu_num %zu\n", __func__, cpu_num);
+
 #ifdef ARM_HAS_VBAR
 	const bool map_vectors_p = false;
 #elif defined(CPU_ARMV7) || defined(CPU_ARM11)
