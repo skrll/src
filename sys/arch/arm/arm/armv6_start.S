@@ -56,7 +56,7 @@
 #define START_CONSADDR	CONADDR
 #endif
 
-#ifdef VERBOSE_INIT_ARM
+#if defined( VERBOSE_INIT_ARM)
 #define XPUTC(n)	mov r0, n; bl uartputc
 #define VPRINTF(string)	bl generic_vprint; .asciz string; .align 2
 #define VPRINTX(regno)	mov r0, regno; bl generic_printx
@@ -66,18 +66,17 @@
 #define VPRINTX(regno)	/* nothing */
 #endif
 
-#ifdef FDT
+#if defined(FDT)
 #define MD_CPU_HATCH	arm_fdt_cpu_hatch
 #endif
 
 /*
  * A generic kernel start routine.
  *
- * At this point, this code has been loaded into SDRAM and the MMU maybe on or
- * maybe off.  Assume identity mapping (VA=PA) if MMU is on.
+ * At this point, this code has been loaded into SDRAM and the MMU should be off
+ * with data caches disabled.
  *
- * Reference linux boot code (MMU off) and rpi boot protocol
- *
+ * linux image type should be used in uboot images to ensure this is the case.
  */
 
 	// Use callee saved registers
@@ -135,6 +134,7 @@ ENTRY_NP(generic_start)
 	ldr	R_TMP1, =(L1_S_SIZE - 1)
 	ands	R_TMP2, R_VTOPDIFF, R_TMP1
 	bne	arm_bad_vtopdiff
+
 	/*
 	 * store uboot arguments to uboot_args[4]
 	 */
@@ -148,7 +148,7 @@ ENTRY_NP(generic_start)
 
 #if defined(FDTBASE)
 	/*
-	 * ARM boot protocol has FDT address in r2
+	 * ARM boot protocol has FDT address in r2 which is now in r6
 	 */
 	VPRINTF("\n\rfdt  :")
 	ldr	R_TMP1, =fdt_addr_r
@@ -188,6 +188,7 @@ ASEND(generic_start)
 
 	.ltorg
 
+	/* Allocate some memory after the kernel image for stacks and bootstrap L1PT */
 	.section "_init_memory", "aw", %nobits
 	.p2align INIT_ARM_STACK_SHIFT
 start_stacks_bottom:
@@ -264,7 +265,7 @@ arm_build_translation_table:
 	ldr	r0, =(L1_S_SIZE - 1)		/* align DTB PA to 1M */
 	bic	R_VA, R_FDTADDR, r0
 	mov	R_PA, R_VA
-	mov	R_NSEC, #1				/* 1MB mapping */
+	mov	R_NSEC, #1			/* 1MB mapping */
 
 	ldr	R_L1TABLE, =TEMP_L1_TABLE
 	sub	R_L1TABLE, R_VTOPDIFF
@@ -272,7 +273,7 @@ arm_build_translation_table:
 #endif
 
 #if defined(START_CONSADDR)
-	/* If CONSADDR exists add its identity mapping (1MB) */
+	/* If START_CONSADDR exists add its identity mapping (1MB) */
 	VPRINTF("\n\rCONSADDR")
 	ldr	r0, =(L1_S_SIZE - 1)		/* align DTB PA to 1M */
 	ldr	R_VA, =START_CONSADDR
@@ -289,26 +290,25 @@ arm_build_translation_table:
 #endif
 
 	XPUTC(#'M')
-//	ldr	R_L1TABLE, =TEMP_L1_TABLE
-//	sub	R_L1TABLE, R_VTOPDIFF
-//	bl	generic_dumpl1pt
 
 	pop	{r0, pc}
 
 	.ltorg
 
-// Set up a preliminary mapping in the MMU to allow us to run at
-// KERNEL_BASE_VIRT (determined from generic_start)
-//
-// On Entry
-//
-// R_L1TABLE	is the PA of the temporary L1PT
-// R_ATTR	is the attribute bits to set for each section mapping
-//
-// No R_VA/R_PA/R_NSEC needed here as we use 'generic_start' and
-// 'TEMP_L1_TABLE_END' to calculate the initial direct VA:PA mapping
+/*
+ * Set up a preliminary mapping in the MMU to allow us to run at
+ * KERNEL_BASE_VIRT (determined from generic_start)
+ *
+ * On Entry
+ *
+ * R_L1TABLE	is the PA of the temporary L1PT
+ * R_ATTR	is the attribute bits to set for each section mapping
+ *
+ * No R_VA/R_PA/R_NSEC needed here as we use 'generic_start' and
+ * 'TEMP_L1_TABLE_END' to calculate the initial direct VA:PA mapping
+ */
 
-// We push r0 to maintain stack alignment only
+/* We push r0 to maintain stack alignment only */
 arm_boot_l1pt_init:
 	push	{r0, lr}
 
@@ -343,6 +343,7 @@ arm_boot_l1pt_init:
 	mov	R_PA, R_VA
 
 	pop	{r0, lr}
+	/* Fallthrough */
 
 // We push r0 to maintain stack alignment only
 arm_boot_l1pt_entry:
@@ -456,23 +457,6 @@ generic_startv6:
 	b	armv6_mmuinit
 1:
 	VPRINTF("go\n\r")
-	VPRINTX(pc)
-
-#ifdef VERBOSE_INIT_ARM
-	VPRINTF("\n\rttb0 :")
-	mrc	p15, 0, r0, c2, c0, 0	// TTBR0 read
-	VPRINTX(r0)
-	VPRINTF("\n\rttb1 :")
-	mrc	p15, 0, r0, c2, c0, 1	// TTBR1 read
-	VPRINTX(r0)
-	VPRINTF("\n\rttcr :")
-	mrc	p15, 0, r0, c2, c0, 2	// TTBCR read
-	VPRINTX(r0)
-	VPRINTF("\n\r")
-#endif
-
-
-	VPRINTF("\n\r")
 
 	/*
 	 * Jump to start in locore.S, which in turn will call initarm and main.
@@ -531,14 +515,7 @@ generic_startv6:
 
 
 //
-// Perform the initialization of the Cortex core required by NetBSD.
-//
-// Probably best to turn off ic/dc and perform invalidation(?)
-//
-// registers used:
-//
-// r0 - r8 and r12
-
+// Perform the initialization of the an ARMv7 core required by NetBSD.
 armv7_init:
 
 	.arch		armv7a
@@ -646,7 +623,6 @@ armv7_mmuinit:
 	mov	r4, lr
 	mov	r5, r0			// save TTBR
 
-
 	// XXXNH dsb - Why?
 	XPUTC(#'F')
 	dsb				// Drain the write buffers.
@@ -681,19 +657,13 @@ armv7_mmuinit:
 	mov	r1, #0			// get KERNEL_PID
 	mcr	p15, 0, r1, c13, c0, 1	// CONTEXTIDR write
 
-
-
 	// XXXNH FreeBSD doesn't do this isb
 	isb
-
 
 	// Set the Domain Access register.  Very important!
 	XPUTC(#'K')
 	mov	r1, #DOMAIN_DEFAULT
 	mcr	p15, 0, r1, c3, c0, 0	// DACR write
-
-
-
 
 
 #if 0
@@ -709,8 +679,6 @@ armv7_mmuinit:
 295	mcr	CP15_NMRR(r0)
 #endif
 
-
-	// Could wait until reinit/cpu_ctrl update
 	XPUTC(#'I')
 	mov	r1, #0
 	mcr	p15, 0, r1, c8, c7, 0	// TLBIALL (just this core)
@@ -725,14 +693,12 @@ armv7_mmuinit:
 	XPUTC(#'\r')
 	mrc	p15, 0, r1, c1, c0, 0	// SCTLR read
 
-
 	movw	r3, #:lower16:CPU_CONTROL_SET
 	movt	r3, #:upper16:CPU_CONTROL_SET
 	movw	r2, #:lower16:CPU_CONTROL_CLR
 	movt	r2, #:upper16:CPU_CONTROL_CLR
 	orr	r0, r1, r3
 	bic	r0, r0, r2
-
 
 	mcr	p15, 0, r0, c1, c0, 0	/* SCTLR write */
 
@@ -748,7 +714,6 @@ armv7_mmuinit:
 	bx	r4			// return
 
 	.p2align 2
-
 
 	.text
 
