@@ -94,10 +94,10 @@ static bus_space_handle_t sysreg_bsh;
 
 void vexpress_platform_early_putchar(char);
 
-#ifdef MULTIPROCESSOR
 static void
 vexpress_a15_smp_init(void)
 {
+#ifdef MULTIPROCESSOR
 	bus_space_tag_t gicd_bst = &armv7_generic_bs_tag;
 	bus_space_handle_t gicd_bsh;
 	int started = 0;
@@ -131,8 +131,8 @@ vexpress_a15_smp_init(void)
 
 	/* Disable GIC distributor */
 	bus_space_write_4(gicd_bst, gicd_bsh, GICD_CTRL, 0);
-}
 #endif
+}
 
 
 static const struct pmap_devmap *
