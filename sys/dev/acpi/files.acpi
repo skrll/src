@@ -1,10 +1,10 @@
-#	$NetBSD: files.acpi,v 1.105 2018/10/16 00:30:08 jmcneill Exp $
+#	$NetBSD: files.acpi,v 1.107 2018/10/17 00:03:47 jmcneill Exp $
 
 include "dev/acpi/acpica/files.acpica"
 
 defflag	opt_acpi.h	ACPIVERBOSE ACPI_DEBUG ACPI_ACTIVATE_DEV
 			ACPI_DSDT_OVERRIDE ACPI_SCANPCI ACPI_BREAKPOINT
-			ACPI_REDUCED_HARDWARE ACPI__DIS_IS_BROKEN
+			ACPI_REDUCED_HW ACPI__DIS_IS_BROKEN
 defparam opt_acpi.h	ACPI_DSDT_FILE := "\"/dev/null\""
 defparam opt_acpi.h	ACPI_BLACKLIST_YEAR = 2000
 
@@ -236,5 +236,9 @@ file	dev/acpi/ahcisata_acpi.c	ahcisata_acpi
 # ARM PrimeCell PL061 GPIO controller
 attach	plgpio at acpinodebus with plgpio_acpi
 file	dev/acpi/plgpio_acpi.c		plgpio_acpi
+
+# DesignWare I2C controller
+attach	dwiic at acpinodebus with dwiic_acpi
+file	dev/acpi/dwiic_acpi.c		dwiic_acpi
 
 include	"dev/acpi/wmi/files.wmi"
