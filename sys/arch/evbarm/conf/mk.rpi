@@ -1,4 +1,4 @@
-#	$NetBSD: mk.rpi,v 1.5 2017/12/10 21:38:26 skrll Exp $
+#	$NetBSD: mk.rpi,v 1.6 2018/10/18 09:01:54 skrll Exp $
 
 SYSTEM_FIRST_OBJ=	armv6_start.o
 SYSTEM_FIRST_SFILE=	${ARM}/arm/armv6_start.S

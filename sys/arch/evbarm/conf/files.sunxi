@@ -1,4 +1,4 @@
-#	$NetBSD: files.sunxi,v 1.2 2018/04/01 04:35:04 ryo Exp $
+#	$NetBSD: files.sunxi,v 1.3 2018/10/18 09:01:54 skrll Exp $
 #
 # Allwinner sunxi configuration info
 #

@@ -1,4 +1,4 @@
-#	$NetBSD: std.zynq,v 1.5 2018/10/15 16:54:54 skrll Exp $
+#	$NetBSD: std.zynq,v 1.6 2018/10/18 09:01:54 skrll Exp $
 #
 # standard NetBSD/evbarm for ZYNQ options
 

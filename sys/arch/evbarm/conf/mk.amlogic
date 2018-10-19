@@ -1,4 +1,4 @@
-#	$NetBSD: mk.amlogic,v 1.1 2015/02/07 17:20:16 jmcneill Exp $
+#	$NetBSD: mk.amlogic,v 1.2 2018/10/18 09:01:54 skrll Exp $
 CPPFLAGS+=		-mcpu=cortex-a5 -mfpu=neon
 
 SYSTEM_FIRST_OBJ=	armv6_start.o

@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.h,v 1.5 2018/09/15 19:47:48 jakllsch Exp $	*/
+/*	$NetBSD: machdep.h,v 1.6 2018/10/18 09:01:51 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>

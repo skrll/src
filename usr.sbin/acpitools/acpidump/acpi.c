@@ -1,4 +1,4 @@
-/* $NetBSD: acpi.c,v 1.33 2018/10/16 21:44:37 jmcneill Exp $ */
+/* $NetBSD: acpi.c,v 1.38 2018/10/18 05:20:05 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 1998 Doug Rabson
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: acpi.c,v 1.33 2018/10/16 21:44:37 jmcneill Exp $");
+__RCSID("$NetBSD: acpi.c,v 1.38 2018/10/18 05:20:05 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/endian.h>
@@ -85,6 +85,7 @@ static void	acpi_handle_dbgp(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_dbg2(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_einj(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_erst(ACPI_TABLE_HEADER *sdp);
+static void	acpi_handle_gtdt(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_hest(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_lpit(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_madt(ACPI_TABLE_HEADER *sdp);
@@ -92,6 +93,7 @@ static void	acpi_handle_msct(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_ecdt(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_hpet(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_mcfg(ACPI_TABLE_HEADER *sdp);
+static void	acpi_handle_pptt(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_sbst(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_slit(ACPI_TABLE_HEADER *sdp);
 static void	acpi_handle_spcr(ACPI_TABLE_HEADER *sdp);
@@ -1270,6 +1272,39 @@ acpi_handle_dbgp(ACPI_TABLE_HEADER *sdp)
 	printf(END_COMMENT);
 }
 
+/* This function is used by DBG2 and SPCR. */
+static void
+acpi_print_dbg2_serial_subtype(uint16_t subtype)
+{
+
+	switch (subtype) {
+	case ACPI_DBG2_16550_COMPATIBLE:
+		printf("Fully 16550 compatible\n");
+		break;
+	case ACPI_DBG2_16550_SUBSET:
+		printf("16550 subset with DBGP Rev. 1\n");
+		break;
+	case ACPI_DBG2_ARM_PL011:
+		printf("ARM PL011\n");
+		break;
+	case ACPI_DBG2_ARM_SBSA_32BIT:
+		printf("ARM SBSA 32bit only\n");
+		break;
+	case ACPI_DBG2_ARM_SBSA_GENERIC:
+		printf("ARM SBSA Generic\n");
+		break;
+	case ACPI_DBG2_ARM_DCC:
+		printf("ARM DCC\n");
+		break;
+	case ACPI_DBG2_BCM2835:
+		printf("BCM2835\n");
+		break;
+	default:
+		printf("reserved (%04hx)\n", subtype);
+		break;
+	}
+}
+
 static void
 acpi_print_dbg2_device(ACPI_DBG2_DEVICE *dev)
 {
@@ -1293,32 +1328,7 @@ acpi_print_dbg2_device(ACPI_DBG2_DEVICE *dev)
 	switch (dev->PortType) {
 	case ACPI_DBG2_SERIAL_PORT:
 		printf("Serial\n" "\t\tPortSubtype=");
-		switch (dev->PortSubtype) {
-		case ACPI_DBG2_16550_COMPATIBLE:
-			printf("Fully 16550 compatible\n");
-			break;
-		case ACPI_DBG2_16550_SUBSET:
-			printf("16550 subset with DBGP Rev. 1\n");
-			break;
-		case ACPI_DBG2_ARM_PL011:
-			printf("ARM PL011\n");
-			break;
-		case ACPI_DBG2_ARM_SBSA_32BIT:
-			printf("ARM SBSA 32bit only\n");
-			break;
-		case ACPI_DBG2_ARM_SBSA_GENERIC:
-			printf("ARM SBSA Generic\n");
-			break;
-		case ACPI_DBG2_ARM_DCC:
-			printf("ARM DCC\n");
-			break;
-		case ACPI_DBG2_BCM2835:
-			printf("BCM2835\n");
-			break;
-		default:
-			printf("reserved (%04hx)\n", dev->PortSubtype);
-			break;
-		}
+		acpi_print_dbg2_serial_subtype(dev->PortSubtype);
 		break;
 	case ACPI_DBG2_1394_PORT:
 		printf("IEEE1394\n" "\t\tPortSubtype=");
@@ -1671,6 +1681,182 @@ acpi_handle_erst(ACPI_TABLE_HEADER *sdp)
 }
 
 static void
+acpi_print_gtd_timer(const char *name, uint32_t interrupt, uint32_t flags)
+{
+
+	printf("\t%s Timer GSIV=%d\n", name, interrupt);
+	printf("\t%s Flags={Mode=", name);
+	if (flags & ACPI_GTDT_INTERRUPT_MODE)
+		printf("edge");
+	else
+		printf("level");
+	printf(", Polarity=");
+	if (flags & ACPI_GTDT_INTERRUPT_POLARITY)
+		printf("active-lo");
+	else
+		printf("active-hi");
+	if (flags & ACPI_GTDT_ALWAYS_ON)
+		printf(", always-on");
+	printf("}\n");
+}
+
+static void
+acpi_print_gtd_block_timer_flags(const char *name, uint32_t interrupt,
+    uint32_t flags)
+{
+
+	printf("\t\t%s Timer GSIV=%d\n", name, interrupt);
+	printf("\t\t%s Timer Flags={Mode=", name);
+	if (flags & ACPI_GTDT_GT_IRQ_MODE)
+		printf("Secure");
+	else
+		printf("Non-Secure");
+	printf(", Polarity=");
+	if (flags & ACPI_GTDT_GT_IRQ_POLARITY)
+		printf("active-lo");
+	else
+		printf("active-hi");
+	printf("}\n");
+}
+
+static void
+acpi_print_gtblock(ACPI_GTDT_TIMER_BLOCK *gtblock)
+{
+	ACPI_GTDT_TIMER_ENTRY *entry;
+	unsigned int i;
+	
+	printf("\tType=GT Block\n");
+	printf("\tLength=%d\n", gtblock->Header.Length);
+	/* XXX might not 8byte aligned */
+	printf("\tBlockAddress=%016jx\n",
+	    (uintmax_t)gtblock->BlockAddress);
+
+	printf("\tGT Block Timer Count=%d\n", gtblock->TimerCount);
+	entry = (ACPI_GTDT_TIMER_ENTRY *)((vaddr_t)gtblock
+	    + gtblock->TimerOffset);
+	for (i = 0; i < gtblock->TimerCount; i++) {
+		printf("\n");
+		if (entry >= (ACPI_GTDT_TIMER_ENTRY *)((vaddr_t)gtblock
+		    + gtblock->Header.Length)) {
+			printf("\\ttWrong Timer entry\n");
+			break;
+		}
+		printf("\t\tFrame Number=%d\n", entry->FrameNumber);
+		/* XXX might not 8byte aligned */
+		printf("\t\tBaseAddress=%016jx\n",
+		    (uintmax_t)entry->BaseAddress);
+		/* XXX might not 8byte aligned */
+		printf("\t\tEl0BaseAddress=%016jx\n",
+		    (uintmax_t)entry->El0BaseAddress);
+
+		acpi_print_gtd_block_timer_flags("Physical",
+		    entry->TimerInterrupt, entry->TimerFlags);
+		acpi_print_gtd_block_timer_flags("Virtual",
+		    entry->VirtualTimerInterrupt, entry->VirtualTimerFlags);
+
+		printf("\t\tCommon Flags={Mode=");
+		if (entry->CommonFlags & ACPI_GTDT_GT_IS_SECURE_TIMER)
+			printf("Secure");
+		else
+			printf("Non-Secure");
+		if (entry->CommonFlags & ACPI_GTDT_GT_ALWAYS_ON)
+			printf(", always-on");
+		printf("}\n");
+
+		entry++;
+	}
+}
+
+static void
+acpi_print_sbsa_watchdog(ACPI_GTDT_WATCHDOG *wdog)
+{
+	
+	printf("\tType=Watchdog GT\n");
+	printf("\tLength=%d\n", wdog->Header.Length);
+	/* XXX might not 8byte aligned */
+	printf("\tRefreshFrameAddress=%016jx\n",
+	    (uintmax_t)wdog->RefreshFrameAddress);
+	/* XXX might not 8byte aligned */
+	printf("\tControlFrameAddress=%016jx\n",
+	    (uintmax_t)wdog->ControlFrameAddress);
+	printf("\tGSIV=%d\n", wdog->TimerInterrupt);
+
+	printf("\tFlags={Mode=");
+	if (wdog->TimerFlags & ACPI_GTDT_WATCHDOG_IRQ_MODE)
+		printf("edge");
+	else
+		printf("level");
+	printf(", Polarity=");
+	if (wdog->TimerFlags & ACPI_GTDT_WATCHDOG_IRQ_POLARITY)
+		printf("active-lo");
+	else
+		printf("active-hi");
+	if (wdog->TimerFlags & ACPI_GTDT_WATCHDOG_SECURE)
+		printf(", Secure");
+	else
+		printf(", Non-Secure");
+	printf("}\n");
+}
+
+static void
+acpi_handle_gtdt(ACPI_TABLE_HEADER *sdp)
+{
+	ACPI_TABLE_GTDT *gtdt;
+	ACPI_GTDT_HEADER *hdr;
+	u_int i;
+
+	printf(BEGIN_COMMENT);
+	acpi_print_sdt(sdp);
+	gtdt = (ACPI_TABLE_GTDT *)sdp;
+
+	printf("\tCounterBlockAddresss=%016jx\n",
+	    (uintmax_t)gtdt->CounterBlockAddresss); /* XXX not 8byte aligned */
+	printf("\tCounterReadBlockAddress=%016jx\n",
+	    (uintmax_t)gtdt->CounterReadBlockAddress);
+
+#define PRINTTIMER(gtdt, name) acpi_print_gtd_timer(	\
+		#name, (gtdt)-> name## Interrupt,	\
+	(gtdt)-> name ## Flags)
+
+	PRINTTIMER(gtdt, SecureEl1);
+	PRINTTIMER(gtdt, NonSecureEl1);
+	PRINTTIMER(gtdt, VirtualTimer);
+	PRINTTIMER(gtdt, NonSecureEl2);
+
+#undef PRINTTIMER
+
+	printf("\tPlatform Timer Count=%d\n", gtdt->PlatformTimerCount);
+
+	hdr = (ACPI_GTDT_HEADER *)((vaddr_t)sdp + gtdt->PlatformTimerOffset);
+	for (i = 0; i < gtdt->PlatformTimerCount; i++) {
+		printf("\n");
+		if (hdr >= (ACPI_GTDT_HEADER *)((vaddr_t)sdp + sdp->Length)) {
+			printf("\tWrong GTDT header"
+			    "(type = %hhu, length = %hu)\n",
+			    hdr->Type, hdr->Length);
+			break;
+		}
+
+		switch (hdr->Type) {
+		case ACPI_GTDT_TYPE_TIMER_BLOCK:
+			acpi_print_gtblock((ACPI_GTDT_TIMER_BLOCK *)hdr);
+			break;
+		case ACPI_GTDT_TYPE_WATCHDOG:
+			acpi_print_sbsa_watchdog((ACPI_GTDT_WATCHDOG *)hdr);
+			break;
+		default:
+			printf("\tUnknown Platform Timer Type"
+			    "(type = %hhu, length = %hu)\n",
+			    hdr->Type, hdr->Length);
+			break;
+		}
+		/* Next */
+		hdr = (ACPI_GTDT_HEADER *)((vaddr_t)hdr + hdr->Length);
+	}
+	printf(END_COMMENT);
+}
+
+static void
 acpi_handle_madt(ACPI_TABLE_HEADER *sdp)
 {
 	ACPI_TABLE_MADT *madt;
@@ -1864,6 +2050,149 @@ acpi_handle_mcfg(ACPI_TABLE_HEADER *sdp)
 }
 
 static void
+acpi_print_pptt_processor(ACPI_PPTT_PROCESSOR *processor)
+{
+	uint32_t *private;
+	unsigned int i;
+
+	printf("\tType=processor\n");
+	printf("\tLength=%d\n", processor->Header.Length);
+#define PRINTFLAG(var, flag)	printflag((var), ACPI_PPTT_## flag, #flag)
+
+	printf("\tFlags=");
+	PRINTFLAG(processor->Flags, PHYSICAL_PACKAGE);
+	PRINTFLAG(processor->Flags, ACPI_PROCESSOR_ID_VALID);
+	PRINTFLAG_END();
+
+#undef PRINTFLAG
+	printf("\tParent=%08x\n", processor->Parent);
+	printf("\tACPI Processor ID=0x%08x\n", processor->AcpiProcessorId);
+	printf("\tprivate resources=%d\n", processor->NumberOfPrivResources);
+
+	private = (uint32_t *)(processor + 1);
+	for (i = 0; i < processor->NumberOfPrivResources; i++)
+		printf("\tprivate resources%d=%08x\n", i, private[i]);
+}
+
+static void
+acpi_print_pptt_cache(ACPI_PPTT_CACHE *cache)
+{
+
+	printf("\tType=cache\n");
+	printf("\tLength=%d\n", cache->Header.Length);
+
+#define	PRINTFLAG(var, flag)	printflag((var), ACPI_PPTT_## flag, #flag)
+	printf("\tFlags=");
+	PRINTFLAG(cache->Flags, SIZE_PROPERTY_VALID);
+	PRINTFLAG(cache->Flags, NUMBER_OF_SETS_VALID);
+	PRINTFLAG(cache->Flags, ASSOCIATIVITY_VALID);
+	PRINTFLAG(cache->Flags, ALLOCATION_TYPE_VALID);
+	PRINTFLAG(cache->Flags, CACHE_TYPE_VALID);
+	PRINTFLAG(cache->Flags, WRITE_POLICY_VALID);
+	PRINTFLAG(cache->Flags, LINE_SIZE_VALID);
+	PRINTFLAG_END();
+#undef PRINTFLAG
+
+	printf("\tNextLevel=0x%08x\n", cache->NextLevelOfCache);
+	if (cache->Flags & ACPI_PPTT_SIZE_PROPERTY_VALID)
+		printf("\tSize=%d\n", cache->Size);
+	if (cache->Flags & ACPI_PPTT_NUMBER_OF_SETS_VALID)
+		printf("\tSets=%d\n", cache->NumberOfSets);
+	if (cache->Flags & ACPI_PPTT_ASSOCIATIVITY_VALID)
+		printf("\tAssociativity=%d\n", cache->Associativity);
+	if (cache->Flags & ACPI_PPTT_ALLOCATION_TYPE_VALID) {
+		printf("\tAllocation type=");
+		switch (cache->Attributes & ACPI_PPTT_MASK_ALLOCATION_TYPE) {
+		case ACPI_PPTT_CACHE_READ_ALLOCATE:
+			printf("Read allocate\n");
+			break;
+		case ACPI_PPTT_CACHE_WRITE_ALLOCATE:
+			printf("Write allocate\n");
+			break;
+		case ACPI_PPTT_CACHE_RW_ALLOCATE:
+		case ACPI_PPTT_CACHE_RW_ALLOCATE_ALT:
+			printf("Read and Write allocate\n");
+			break;
+		}
+	}
+	if (cache->Flags & ACPI_PPTT_CACHE_TYPE_VALID) {
+		printf("\tCache type=");
+		switch (cache->Attributes & ACPI_PPTT_MASK_CACHE_TYPE) {
+		case ACPI_PPTT_CACHE_TYPE_DATA:
+			printf("Data\n");
+			break;
+		case ACPI_PPTT_CACHE_TYPE_INSTR:
+			printf("Instruction\n");
+			break;
+		case ACPI_PPTT_CACHE_TYPE_UNIFIED:
+		case ACPI_PPTT_CACHE_TYPE_UNIFIED_ALT:
+			printf("Unified\n");
+			break;
+		}
+	}
+	if (cache->Flags & ACPI_PPTT_WRITE_POLICY_VALID)
+		printf("\tWrite Policy=Write %s \n",
+		    (cache->Attributes & ACPI_PPTT_MASK_WRITE_POLICY) ?
+		    "through" : "back");
+			
+	if (cache->Flags & ACPI_PPTT_LINE_SIZE_VALID)
+		printf("\tLine size=%d\n", cache->LineSize);
+}
+
+static void
+acpi_print_pptt_id(ACPI_PPTT_ID *id)
+{
+
+	printf("\tType=id\n");
+	printf("\tLength=%d\n", id->Header.Length);
+
+	printf("\tVENDOR_ID=");
+	acpi_print_string((char *)&id->VendorId, 4);
+	printf("\n");
+
+	printf("\tLEVEL_1_ID=%016" PRIx64 "\n", id->Level1Id);
+	printf("\tLEVEL_2_ID=%016" PRIx64 "\n", id->Level2Id);
+	printf("\tMajor=%hu", id->MajorRev);
+	printf("\tMinor=%hu", id->MinorRev);
+	printf("\tSpin=%hu", id->SpinRev);
+}
+
+static void
+acpi_print_pptt(ACPI_SUBTABLE_HEADER *hdr)
+{
+	switch (hdr->Type) {
+	case ACPI_PPTT_TYPE_PROCESSOR:
+		acpi_print_pptt_processor((ACPI_PPTT_PROCESSOR *)hdr);
+		break;
+	case ACPI_PPTT_TYPE_CACHE:
+		acpi_print_pptt_cache((ACPI_PPTT_CACHE *)hdr);
+		break;
+	case ACPI_PPTT_TYPE_ID:
+		acpi_print_pptt_id((ACPI_PPTT_ID *)hdr);
+		break;
+	default:
+		printf("\tUnknown structure"
+		    "(type = %hhu, length = %hhu)\n",
+		    hdr->Type, hdr->Length);
+		break;
+	}
+}
+
+static void
+acpi_handle_pptt(ACPI_TABLE_HEADER *sdp)
+{
+	ACPI_TABLE_PPTT *pptt;
+
+	printf(BEGIN_COMMENT);
+	acpi_print_sdt(sdp);
+
+	pptt = (ACPI_TABLE_PPTT *)sdp;
+	acpi_walk_subtables(sdp, (pptt + 1), acpi_print_pptt);
+
+	printf(END_COMMENT);
+}
+
+static void
 acpi_handle_sbst(ACPI_TABLE_HEADER *sdp)
 {
 	ACPI_TABLE_SBST *sbst;
@@ -1914,6 +2243,21 @@ acpi_handle_spcr(ACPI_TABLE_HEADER *sdp)
 	acpi_print_sdt(sdp);
 	spcr = (ACPI_TABLE_SPCR *)sdp;
 
+	printf("\n\tInterface Type=");
+	switch (sdp->Revision) {
+	case 1:
+		printf("full 16550%s\n",
+		    (spcr->InterfaceType == 1) ?
+		    "(must also accept writing FCR register)" : "");
+		break;
+	case 2:
+		acpi_print_dbg2_serial_subtype(spcr->InterfaceType);
+		break;
+	default:
+		printf("unknown Revision\n");
+		break;
+	}
+	
 	printf("\tSerial Port=");
 	acpi_print_gas(&spcr->SerialPort);
 	printf("\n\tInterrupt Type={");
@@ -1935,6 +2279,9 @@ acpi_handle_spcr(ACPI_TABLE_HEADER *sdp)
 	}
 	if (spcr->InterruptType & 0x4) {
 		printf("\n\t\tIO SAPIC={ GSI=%d }", spcr->Interrupt);
+	}
+	if (spcr->InterruptType & 0x8) {
+		printf("\n\t\tARMH GIC={ GSI=%d }", spcr->Interrupt);
 	}
 	printf("\n\t}\n");
 
@@ -3141,9 +3488,10 @@ acpi_print_fadt(ACPI_TABLE_HEADER *sdp)
 		printf("\tPM2_CNT_BLK=0x%x-0x%x\n",
 		       fadt->Pm2ControlBlock,
 		       fadt->Pm2ControlBlock + fadt->Pm2ControlLength - 1);
-	printf("\tPM_TMR_BLK=0x%x-0x%x\n",
-	       fadt->PmTimerBlock,
-	       fadt->PmTimerBlock + fadt->PmTimerLength - 1);
+	if (fadt->PmTimerBlock != 0)
+		printf("\tPM_TMR_BLK=0x%x-0x%x\n",
+		    fadt->PmTimerBlock,
+		    fadt->PmTimerBlock + fadt->PmTimerLength - 1);
 	if (fadt->Gpe0Block != 0)
 		printf("\tGPE0_BLK=0x%x-0x%x\n",
 		       fadt->Gpe0Block,
@@ -3239,8 +3587,10 @@ acpi_print_fadt(ACPI_TABLE_HEADER *sdp)
 		printf("\n\tX_PM2_CNT_BLK=");
 		acpi_print_gas(&fadt->XPm2ControlBlock);
 	}
-	printf("\n\tX_PM_TMR_BLK=");
-	acpi_print_gas(&fadt->XPmTimerBlock);
+	if (fadt->XPmTimerBlock.Address != 0) {
+		printf("\n\tX_PM_TMR_BLK=");
+		acpi_print_gas(&fadt->XPmTimerBlock);
+	}
 	if (fadt->XGpe0Block.Address != 0) {
 		printf("\n\tX_GPE0_BLK=");
 		acpi_print_gas(&fadt->XGpe0Block);
@@ -3409,6 +3759,8 @@ acpi_handle_rsdt(ACPI_TABLE_HEADER *rsdp)
 			acpi_handle_einj(sdp);
 		else if (!memcmp(sdp->Signature, ACPI_SIG_ERST, 4))
 			acpi_handle_erst(sdp);
+		else if (!memcmp(sdp->Signature, ACPI_SIG_GTDT, 4))
+			acpi_handle_gtdt(sdp);
 		else if (!memcmp(sdp->Signature, ACPI_SIG_MADT, 4))
 			acpi_handle_madt(sdp);
 		else if (!memcmp(sdp->Signature, ACPI_SIG_MSCT, 4))
@@ -3423,6 +3775,8 @@ acpi_handle_rsdt(ACPI_TABLE_HEADER *rsdp)
 			acpi_handle_lpit(sdp);
 		else if (!memcmp(sdp->Signature, ACPI_SIG_MCFG, 4))
 			acpi_handle_mcfg(sdp);
+		else if (!memcmp(sdp->Signature, ACPI_SIG_PPTT, 4))
+			acpi_handle_pptt(sdp);
 		else if (!memcmp(sdp->Signature, ACPI_SIG_SBST, 4))
 			acpi_handle_sbst(sdp);
 		else if (!memcmp(sdp->Signature, ACPI_SIG_SLIT, 4))

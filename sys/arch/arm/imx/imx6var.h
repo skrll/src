@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6var.h,v 1.8 2018/03/17 18:34:09 ryo Exp $	*/
+/*	$NetBSD: imx6var.h,v 1.9 2018/10/18 09:01:52 skrll Exp $	*/
 
 /*
  * Copyright (c) 2014 Ryo Shimizu <ryo@nerv.org>

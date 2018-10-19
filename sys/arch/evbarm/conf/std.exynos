@@ -1,4 +1,4 @@
-#	$NetBSD: std.exynos,v 1.9 2018/10/15 16:54:54 skrll Exp $
+#	$NetBSD: std.exynos,v 1.10 2018/10/18 09:01:54 skrll Exp $
 #
 
 machine		evbarm arm

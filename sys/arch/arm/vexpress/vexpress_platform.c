@@ -1,4 +1,4 @@
-/* $NetBSD: vexpress_platform.c,v 1.10 2018/09/21 12:04:07 skrll Exp $ */
+/* $NetBSD: vexpress_platform.c,v 1.11 2018/10/18 09:01:53 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "opt_console.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.10 2018/09/21 12:04:07 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.11 2018/10/18 09:01:53 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -94,10 +94,10 @@ static bus_space_handle_t sysreg_bsh;
 
 void vexpress_platform_early_putchar(char);
 
-#ifdef MULTIPROCESSOR
 static void
 vexpress_a15_smp_init(void)
 {
+#ifdef MULTIPROCESSOR
 	bus_space_tag_t gicd_bst = &armv7_generic_bs_tag;
 	bus_space_handle_t gicd_bsh;
 	int started = 0;
@@ -131,8 +131,8 @@ vexpress_a15_smp_init(void)
 
 	/* Disable GIC distributor */
 	bus_space_write_4(gicd_bst, gicd_bsh, GICD_CTRL, 0);
-}
 #endif
+}
 
 
 static const struct pmap_devmap *

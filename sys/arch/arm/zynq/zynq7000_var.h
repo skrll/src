@@ -1,4 +1,4 @@
-/*	$NetBSD: zynq7000_var.h,v 1.1 2015/01/23 12:34:09 hkenken Exp $	*/
+/*	$NetBSD: zynq7000_var.h,v 1.2 2018/10/18 09:01:53 skrll Exp $	*/
 /*-
  * Copyright (c) 2015  Genetec Corporation.  All rights reserved.
  * Written by Hashimoto Kenichi for Genetec Corporation.

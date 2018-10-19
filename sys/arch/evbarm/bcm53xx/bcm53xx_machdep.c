@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm53xx_machdep.c,v 1.16 2018/09/21 12:04:08 skrll Exp $	*/
+/*	$NetBSD: bcm53xx_machdep.c,v 1.18 2018/10/18 09:01:53 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -33,7 +33,7 @@
 #define IDM_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm53xx_machdep.c,v 1.16 2018/09/21 12:04:08 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm53xx_machdep.c,v 1.18 2018/10/18 09:01:53 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_console.h"

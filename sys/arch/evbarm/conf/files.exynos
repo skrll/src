@@ -1,4 +1,4 @@
-#	$NetBSD: files.exynos,v 1.4 2018/08/17 14:47:21 skrll Exp $
+#	$NetBSD: files.exynos,v 1.5 2018/10/18 09:01:54 skrll Exp $
 #
 # EXYNOS board configuration info
 #

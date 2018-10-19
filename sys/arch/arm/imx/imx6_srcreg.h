@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_srcreg.h,v 1.1 2014/09/25 05:05:28 ryo Exp $	*/
+/*	$NetBSD: imx6_srcreg.h,v 1.2 2018/10/18 09:01:52 skrll Exp $	*/
 
 /*
  * Copyright (c) 2014 Ryo Shimizu <ryo@nerv.org>

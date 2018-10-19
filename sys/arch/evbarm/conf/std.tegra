@@ -1,4 +1,4 @@
-#	$NetBSD: std.tegra,v 1.19 2018/10/15 16:54:54 skrll Exp $
+#	$NetBSD: std.tegra,v 1.20 2018/10/18 09:01:54 skrll Exp $
 #
 
 machine		evbarm arm

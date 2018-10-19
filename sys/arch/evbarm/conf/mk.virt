@@ -1,4 +1,4 @@
-#	$NetBSD: mk.virt,v 1.1 2018/06/14 10:56:39 jmcneill Exp $
+#	$NetBSD: mk.virt,v 1.2 2018/10/18 09:01:54 skrll Exp $
 
 .if !empty(MACHINE_ARCH:M*eb)
 EXTRA_LINKFLAGS+=	--be8

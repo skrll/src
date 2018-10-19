@@ -1,4 +1,4 @@
-/* $NetBSD: cycv_platform.c,v 1.2 2018/10/14 18:58:44 aymeric Exp $ */
+/* $NetBSD: cycv_platform.c,v 1.3 2018/10/18 09:01:52 skrll Exp $ */
 
 /* This file is in the public domain. */
 
@@ -6,7 +6,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cycv_platform.c,v 1.2 2018/10/14 18:58:44 aymeric Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cycv_platform.c,v 1.3 2018/10/18 09:01:52 skrll Exp $");
 
 #define	_ARM32_BUS_DMA_PRIVATE
 #include <sys/param.h>

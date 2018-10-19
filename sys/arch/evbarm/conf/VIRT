@@ -1,5 +1,5 @@
 #
-#	$NetBSD: VIRT,v 1.8 2018/10/15 23:50:48 jmcneill Exp $
+#	$NetBSD: VIRT,v 1.9 2018/10/18 09:01:54 skrll Exp $
 #
 #	QEMU ARM 'virt' virtual machine
 #

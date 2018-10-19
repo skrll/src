@@ -1,4 +1,4 @@
-# $NetBSD: std.altera,v 1.4 2018/10/15 16:54:54 skrll Exp $
+# $NetBSD: std.altera,v 1.5 2018/10/18 09:01:54 skrll Exp $
 
 machine 	evbarm	arm
 

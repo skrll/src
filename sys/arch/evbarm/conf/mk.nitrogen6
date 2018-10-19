@@ -1,4 +1,4 @@
-#	$NetBSD: mk.nitrogen6,v 1.2 2014/09/27 04:03:24 matt Exp $
+#	$NetBSD: mk.nitrogen6,v 1.3 2018/10/18 09:01:54 skrll Exp $
 
 SYSTEM_FIRST_OBJ=	armv6_start.o
 SYSTEM_FIRST_SFILE=	${ARM}/arm/armv6_start.S

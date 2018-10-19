@@ -1,4 +1,4 @@
-#	$NetBSD: files.aarch64,v 1.7 2018/10/12 01:28:57 ryo Exp $
+#	$NetBSD: files.aarch64,v 1.8 2018/10/18 09:01:51 skrll Exp $
 
 defflag opt_cpuoptions.h	AARCH64_ALIGNMENT_CHECK
 defflag opt_cpuoptions.h	AARCH64_EL0_STACK_ALIGNMENT_CHECK

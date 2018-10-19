@@ -1,4 +1,4 @@
-#	$NetBSD: std.generic,v 1.2 2018/10/08 10:22:17 skrll Exp $
+#	$NetBSD: std.generic,v 1.3 2018/10/18 09:01:54 skrll Exp $
 #
 # 	generic NetBSD/evbarm with FDT support
 

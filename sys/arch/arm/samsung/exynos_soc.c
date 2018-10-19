@@ -1,4 +1,4 @@
-/*	$NetBSD: exynos_soc.c,v 1.37 2018/10/08 08:16:59 skrll Exp $	*/
+/*	$NetBSD: exynos_soc.c,v 1.38 2018/10/18 09:01:53 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -33,7 +33,7 @@
 #include "opt_exynos.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: exynos_soc.c,v 1.37 2018/10/08 08:16:59 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: exynos_soc.c,v 1.38 2018/10/18 09:01:53 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

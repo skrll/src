@@ -1,4 +1,4 @@
-#       $NetBSD: std.virt,v 1.6 2018/10/15 16:54:54 skrll Exp $
+#       $NetBSD: std.virt,v 1.7 2018/10/18 09:01:54 skrll Exp $
 #
 # standard NetBSD/evbarm for VIRT options
 

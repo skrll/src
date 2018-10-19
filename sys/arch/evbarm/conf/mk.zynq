@@ -1,4 +1,4 @@
-#	$NetBSD: mk.zynq,v 1.1 2015/01/23 12:34:09 hkenken Exp $
+#	$NetBSD: mk.zynq,v 1.2 2018/10/18 09:01:54 skrll Exp $
 
 CPPFLAGS+= -mcpu=cortex-a9 -mfpu=neon
 

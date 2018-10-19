@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.155 2018/04/01 04:35:04 ryo Exp $	*/
+/*	$NetBSD: pmap.h,v 1.156 2018/10/18 09:01:52 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003 Wasabi Systems, Inc.

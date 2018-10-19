@@ -1,4 +1,4 @@
-/* $NetBSD: cpu_fdt.c,v 1.15 2018/10/04 08:58:13 ryo Exp $ */
+/* $NetBSD: cpu_fdt.c,v 1.16 2018/10/18 09:01:52 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "psci_fdt.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.15 2018/10/04 08:58:13 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.16 2018/10/18 09:01:52 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
