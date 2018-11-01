@@ -34,7 +34,9 @@
 
 #ifdef __aarch64__
 
+#ifdef _KERNEL_OPT
 #include "opt_cputypes.h"
+#endif
 
 /*
  * Machine dependent constants for all ARM processors
@@ -79,12 +81,6 @@
 #endif /* !_KERNEL */
 
 #define	MID_MACHINE	MID_AARCH64
-
-
-#if defined(CPU_THUNDERX)
-#define COHERENCY_UNIT	128
-#define CACHE_LINE_SIZE	128
-#endif
 
 /* AARCH64-specific macro to align a stack pointer (downwards). */
 #define STACK_ALIGNBYTES	(16 - 1)
@@ -136,16 +132,22 @@
 #endif
 
 #ifdef _KERNEL
+
+#if defined(CPU_THUNDERX)
+#define COHERENCY_UNIT	128
+#define CACHE_LINE_SIZE	128
+#endif
+
 void delay(unsigned int);
 #define	DELAY(x)	delay(x)
-#endif
+
 /*
  * Compatibility /dev/zero mapping.
  */
-#ifdef _KERNEL
 #ifdef COMPAT_16
 #define COMPAT_ZERODEV(x)	(x == makedev(0, _DEV_ZERO_oARM))
 #endif
+
 #endif /* _KERNEL */
 
 #define aarch64_btop(x)		((unsigned long)(x) >> PGSHIFT)
