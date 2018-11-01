@@ -92,12 +92,6 @@
 
 #define	MID_MACHINE	MID_AARCH64
 
-
-#if defined(CPU_THUNDERX)
-#define COHERENCY_UNIT	128
-#define CACHE_LINE_SIZE	128
-#endif
-
 /* AARCH64-specific macro to align a stack pointer (downwards). */
 #define STACK_ALIGNBYTES	(16 - 1)
 
@@ -152,7 +146,7 @@
 #ifndef __HIDE_DELAY
 void delay(unsigned int);
 #define	DELAY(x)	delay(x)
-#endif
+
 /*
  * Compatibility /dev/zero mapping.
  */
