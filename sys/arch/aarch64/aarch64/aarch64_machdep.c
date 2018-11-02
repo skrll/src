@@ -36,6 +36,7 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.56 2020/12/12 09:27:31 skrll E
 #include "opt_cpuoptions.h"
 #include "opt_ddb.h"
 #include "opt_fdt.h"
+#include "opt_kasan.h"
 #include "opt_kernhist.h"
 #include "opt_modular.h"
 
