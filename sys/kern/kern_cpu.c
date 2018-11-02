@@ -296,6 +296,9 @@ cpu_lookup(u_int idx)
 		return curcpu();
 	}
 
+	if (idx == maxcpus)
+		return NULL;
+
 	ci = cpu_infos[idx];
 	KASSERT(ci == NULL || cpu_index(ci) == idx);
 	KASSERTMSG(idx < maxcpus || ci == NULL, "idx %d ci %p", idx, ci);
