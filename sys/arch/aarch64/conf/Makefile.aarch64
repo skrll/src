@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.aarch64,v 1.12 2018/09/22 12:24:01 rin Exp $
+#	$NetBSD: Makefile.aarch64,v 1.13 2018/11/01 20:34:49 maxv Exp $
 
 # Makefile for NetBSD
 #
