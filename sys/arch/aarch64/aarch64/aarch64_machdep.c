@@ -400,7 +400,9 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	 */
 	pmap_bootstrap(kernelvmstart, VM_MAX_KERNEL_ADDRESS);
 
+#ifdef KASAN
 	kasan_init();
+#endif
 
 	/*
 	 * setup lwp0

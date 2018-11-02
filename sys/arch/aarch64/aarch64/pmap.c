@@ -1870,6 +1870,12 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 	opte = atomic_swap_64(ptep, 0);
 	need_sync_icache = (prot & VM_PROT_EXECUTE);
 
+#ifdef KASAN
+	if (!user) {
+		kasan_shadow_map((void *)va, PAGE_SIZE);
+	}
+#endif
+
 	/* for lock ordering for old page and new page */
 	pps[0] = pp;
 	pps[1] = NULL;
