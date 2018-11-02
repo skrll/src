@@ -309,12 +309,15 @@ cpu_lookup(u_int idx)
 {
 	struct cpu_info *ci;
 
-	KASSERT(idx < maxcpus);
+	KASSERT(idx <= maxcpus);
 
 	if (__predict_false(cpu_infos == NULL)) {
 		KASSERT(idx == 0);
 		return curcpu();
 	}
+
+	if (idx == maxcpus)
+		return NULL;
 
 	ci = cpu_infos[idx];
 	KASSERT(ci == NULL || cpu_index(ci) == idx);
