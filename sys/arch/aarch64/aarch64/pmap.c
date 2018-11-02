@@ -31,6 +31,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.32 2018/10/31 06:36:19 ryo Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
+#include "opt_kasan.h"
 #include "opt_multiprocessor.h"
 #include "opt_pmap.h"
 #include "opt_uvmhist.h"
@@ -40,6 +41,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.32 2018/10/31 06:36:19 ryo Exp $");
 #include <sys/kmem.h>
 #include <sys/vmem.h>
 #include <sys/atomic.h>
+#include <sys/asan.h>
 
 #include <uvm/uvm.h>
 
@@ -1406,6 +1408,12 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 	opte = pte;
 #endif
 	need_sync_icache = (prot & VM_PROT_EXECUTE);
+
+#ifdef KASAN
+	if (!user) {
+		kasan_shadow_map((void *)va, PAGE_SIZE);
+	}
+#endif
 
 	if (l3pte_valid(pte)) {
 		KASSERT(!kenter);	/* pmap_kenter_pa() cannot override */

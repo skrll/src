@@ -34,12 +34,14 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.17 2018/10/31 13:42:24 jmcneil
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
+#include "opt_kasan.h"
 #include "opt_kernhist.h"
 #include "opt_modular.h"
 #include "opt_fdt.h"
 
 #include <sys/param.h>
 #include <sys/types.h>
+#include <sys/asan.h>
 #include <sys/bus.h>
 #include <sys/kauth.h>
 #include <sys/module.h>
@@ -357,6 +359,10 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	 * virtual space start from 2MB aligned kernend
 	 */
 	pmap_bootstrap(kernelvmstart, VM_MAX_KERNEL_ADDRESS);
+
+#ifdef KASAN
+	kasan_init();
+#endif
 
 	/*
 	 * setup lwp0
