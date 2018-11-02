@@ -1,4 +1,4 @@
-/*	$NetBSD: ahcisata_pci.c,v 1.38 2016/10/13 17:11:09 jdolecek Exp $	*/
+/*	$NetBSD: ahcisata_pci.c,v 1.42 2018/10/25 21:03:19 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ahcisata_pci.c,v 1.38 2016/10/13 17:11:09 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ahcisata_pci.c,v 1.42 2018/10/25 21:03:19 jdolecek Exp $");
 
 #include <sys/types.h>
 #include <sys/malloc.h>
@@ -200,18 +200,21 @@ struct ahci_pci_softc {
 	struct ahci_softc ah_sc;
 	pci_chipset_tag_t sc_pc;
 	pcitag_t sc_pcitag;
-	void * sc_ih;
+	pci_intr_handle_t *sc_pihp;
+	void *sc_ih;
 };
 
 static int  ahci_pci_has_quirk(pci_vendor_id_t, pci_product_id_t);
 static int  ahci_pci_match(device_t, cfdata_t, void *);
 static void ahci_pci_attach(device_t, device_t, void *);
 static int  ahci_pci_detach(device_t, int);
+static void ahci_pci_childdetached(device_t, device_t);
 static bool ahci_pci_resume(device_t, const pmf_qual_t *);
 
 
-CFATTACH_DECL_NEW(ahcisata_pci, sizeof(struct ahci_pci_softc),
-    ahci_pci_match, ahci_pci_attach, ahci_pci_detach, NULL);
+CFATTACH_DECL3_NEW(ahcisata_pci, sizeof(struct ahci_pci_softc),
+    ahci_pci_match, ahci_pci_attach, ahci_pci_detach, NULL,
+    NULL, ahci_pci_childdetached, DVF_DETACH_SHUTDOWN);
 
 static int
 ahci_pci_has_quirk(pci_vendor_id_t vendor, pci_product_id_t product)
@@ -270,7 +273,6 @@ ahci_pci_attach(device_t parent, device_t self, void *aux)
 	const char *intrstr;
 	bool ahci_cap_64bit;
 	bool ahci_bad_64bit;
-	pci_intr_handle_t intrhandle;
 	char intrbuf[PCI_INTRSTR_LEN];
 
 	sc->sc_atac.atac_dev = self;
@@ -286,15 +288,18 @@ ahci_pci_attach(device_t parent, device_t self, void *aux)
 
 	pci_aprint_devinfo(pa, "AHCI disk controller");
 	
-	if (pci_intr_map(pa, &intrhandle) != 0) {
+	if (pci_intr_alloc(pa, &psc->sc_pihp, NULL, 0) != 0) {
 		aprint_error_dev(self, "couldn't map interrupt\n");
 		return;
 	}
-	intrstr = pci_intr_string(pa->pa_pc, intrhandle,
+	intrstr = pci_intr_string(pa->pa_pc, psc->sc_pihp[0],
 	    intrbuf, sizeof(intrbuf));
-	psc->sc_ih = pci_intr_establish_xname(pa->pa_pc, intrhandle, IPL_BIO,
-	    ahci_intr, sc, device_xname(sc->sc_atac.atac_dev));
+	psc->sc_ih = pci_intr_establish_xname(pa->pa_pc, psc->sc_pihp[0],
+	    IPL_BIO, ahci_intr, sc, device_xname(sc->sc_atac.atac_dev));
 	if (psc->sc_ih == NULL) {
+		pci_intr_release(psc->sc_pc, psc->sc_pihp, 1);
+		psc->sc_pihp = NULL;
+
 		aprint_error_dev(self, "couldn't establish interrupt\n");
 		return;
 	}
@@ -328,6 +333,15 @@ ahci_pci_attach(device_t parent, device_t self, void *aux)
 		aprint_error_dev(self, "couldn't establish power handler\n");
 }
 
+static void
+ahci_pci_childdetached(device_t dv, device_t child)
+{
+	struct ahci_pci_softc *psc = device_private(dv);
+	struct ahci_softc *sc = &psc->ah_sc;
+
+	ahci_childdetached(sc, child);
+}
+
 static int
 ahci_pci_detach(device_t dv, int flags)
 {
@@ -343,8 +357,15 @@ ahci_pci_detach(device_t dv, int flags)
 
 	pmf_device_deregister(dv);
 
-	if (psc->sc_ih != NULL)
+	if (psc->sc_ih != NULL) {
 		pci_intr_disestablish(psc->sc_pc, psc->sc_ih);
+		psc->sc_ih = NULL;
+	}
+
+	if (psc->sc_pihp != NULL) {
+		pci_intr_release(psc->sc_pc, psc->sc_pihp, 1);
+		psc->sc_pihp = NULL;
+	}
 
 	bus_space_unmap(sc->sc_ahcit, sc->sc_ahcih, sc->sc_ahcis);
 

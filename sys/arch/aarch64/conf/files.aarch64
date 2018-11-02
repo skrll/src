@@ -1,4 +1,4 @@
-#	$NetBSD: files.aarch64,v 1.6 2018/10/06 17:46:46 skrll Exp $
+#	$NetBSD: files.aarch64,v 1.9 2018/10/28 10:21:42 jmcneill Exp $
 
 defflag opt_cpuoptions.h	AARCH64_ALIGNMENT_CHECK
 defflag opt_cpuoptions.h	AARCH64_EL0_STACK_ALIGNMENT_CHECK
@@ -18,6 +18,7 @@ defparam opt_arm_intr_impl.h	ARM_INTR_IMPL
 # ARM-specific debug options (for compat arch/arm/*)
 defflag  opt_arm_debug.h	ARM_LOCK_CAS_DEBUG
 defflag  opt_arm_debug.h	VERBOSE_INIT_ARM
+defparam opt_arm_debug.h	EARLYCONS
 
 # Timer options
 defflag opt_arm_timer.h		__HAVE_GENERIC_CPU_INITCLOCKS
@@ -44,6 +45,10 @@ file	arch/arm/arm32/bus_dma.c
 device	psci
 file	arch/arm/arm/psci.c			psci
 file	arch/arm/arm/psci_arm.S			psci
+
+# EFI support
+defflag	opt_efi.h		EFI_RUNTIME
+file	arch/arm/arm/efi_runtime.c		efi_runtime
 
 # PMAP_DEBUG (heavily abused option)
 defflag				PMAP_DEBUG
@@ -110,6 +115,9 @@ file	arch/aarch64/aarch64/pmapboot.c
 file	arch/aarch64/aarch64/pmap_page.S
 #file	uvm/pmap/pmap_pvt.c
 
+# EFI runtime (machdep)
+file	arch/aarch64/aarch64/efi_machdep.c		efi_runtime
+
 # cyclecounter
 #file	arch/aarch64/aarch64/cctr_machdep.c
 #file	kern/kern_cctr.c
@@ -118,8 +126,7 @@ file	arch/aarch64/aarch64/pmap_page.S
 # NetBSD 32-bit binary compatibility
 include "compat/netbsd32/files.netbsd32"
 file	arch/aarch64/aarch64/netbsd32_machdep.c		compat_netbsd32
-#file	arch/aarch64/aarch32/aarch32_oabi_machdep.c	compat_aarch32_oabi
-#file	arch/aarch64/aarch32/aarch32_eabi_machdep.c	compat_aarch32_eabi
+file	arch/aarch64/aarch64/netbsd32_syscall.c		compat_netbsd32
 #file	arch/aarch64/aarch32/compat_13_machdep.c	compat_13 & compat_netbsd32
 #file	arch/aarch64/aarch32/compat_16_machdep.c	compat_16 & compat_netbsd32
 

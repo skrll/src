@@ -1,7 +1,7 @@
-#	$NetBSD: files.generic64,v 1.6 2018/10/03 09:24:36 skrll Exp $
+#	$NetBSD: files.generic64,v 1.9 2018/10/21 00:56:44 jmcneill Exp $
 #
-
-defparam opt_arm_debug.h	EARLYCONS
+# A generic (aarch64) kernel configuration info
+#
 
 include "arch/arm/pic/files.pic"
 include "arch/arm/cortex/files.cortex"
@@ -10,7 +10,7 @@ include "arch/evbarm/conf/files.fdt"
 
 # Add other board files here
 #
-include "arch/arm/amd/files.seattle"
+include "arch/arm/acpi/files.acpi"
 include "arch/arm/broadcom/files.bcm2835"
 include "arch/arm/cavium/files.thunderx"
 include "arch/arm/nvidia/files.tegra"

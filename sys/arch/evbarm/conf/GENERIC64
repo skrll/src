@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.43 2018/10/03 06:02:33 skrll Exp $
+#	$NetBSD: GENERIC64,v 1.61 2018/10/28 10:21:42 jmcneill Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -91,13 +91,27 @@ makeoptions	COPY_SYMTAB=1
 
 config		netbsd		root on ? type ?
 
+options 	COMPAT_NETBSD32
+options 	EXEC_ELF32
+
+# EFI runtime support
+options 	EFI_RUNTIME
+
 # Device tree support
 armfdt0		at root
 simplebus*	at fdt? pass 0
 
+# ACPI support
+acpifdt*	at fdt? pass 1
+acpi*		at acpifdt?
+acpibut*	at acpi?
+acpiged*	at acpi?
+acpilid*	at acpi?
+
 # CPUs
 cpus*		at fdt? pass 0
 cpu*		at fdt? pass 0
+cpu*		at acpi?
 
 # Performance monitors
 armpmu*		at fdt?
@@ -122,10 +136,12 @@ syscon*		at fdt? pass 1		# Generic System Controller
 
 # Timer
 gtmr*		at fdt? pass 1		# ARM Generic Timer
+gtmr*		at acpi?
 armgtmr0	at gtmr?
 tegratimer*	at fdt?			# Timers
 
 # Watchdog
+sbsawdt*	at acpi?		# ARM SBSA-compliant watchdog
 sunxiwdt*	at fdt?			# Allwinner watchdog
 watchdog*	at fdt?			# Broadcom BCM283x watchdog
 
@@ -133,8 +149,10 @@ watchdog*	at fdt?			# Broadcom BCM283x watchdog
 bcmicu*		at fdt? pass 1		# Broadcom BCM283x ICU
 tegralic*	at fdt? pass 1		# NVIDIA Tegra LIC
 gic*		at fdt? pass 1		# ARM GICv2
+gic*		at acpi?
 armgic0		at gic?
 gicvthree*	at fdt? pass 1		# ARM GICv3
+gicvthree*	at acpi?
 sunxinmi*	at fdt? pass 2		# Allwinner NMI / R_INTC
 
 # Memory controller
@@ -144,6 +162,7 @@ tegramc*	at fdt?	pass 4		# NVIDIA Tegra MC
 bcmmbox*	at fdt?			# Broadcom VideoCore IV mailbox
 vcmbox*		at bcmmbox?
 qemufwcfg*	at fdt?			# QEMU Firmware Configuration device
+qemufwcfg*	at acpi?
 
 # DMA controller
 bcmdmac*	at fdt?			# Broadcom BCM283x DMA controller
@@ -174,7 +193,8 @@ tegra210car*	at fdt? pass 3		# NVIDIA Tegra CAR (T210)
 
 # GPIO controller
 bcmgpio*	at fdt?			# Broadcom BCM283x GPIO
-pl061gpio*	at fdt?			# ARM PrimeCell PL061 GPIO
+plgpio*		at fdt?			# ARM PrimeCell PL061 GPIO
+plgpio*		at acpi?
 sunxigpio*	at fdt? pass 3		# Allwinner GPIO
 tegragpio*	at fdt? pass 2		# NVIDIA Tegra GPIO
 rkgpio*		at rkiomux?		# Rockchip GPIO
@@ -193,6 +213,7 @@ tegra210xphy*	at tegra210xpad?
 
 # PCIE
 pcihost*	at fdt?			# Generic PCI host controller
+acpipchb*	at acpi?		# ACPI PCIe host bridge
 tegrapcie0	at fdt?			# NVIDIA Tegra PCIE
 pci*		at pcibus? 
 ppb*		at pci? dev ? function ?
@@ -239,10 +260,12 @@ ukphy*		at mii? phy ?		# generic unknown PHYs
 # UART
 com*		at fdt?	pass 4		# UART
 plcom*		at fdt?	pass 4		# ARM PL011 UART
+plcom*		at acpi?
 
 # I2C controllers
 bsciic*		at fdt?			# Broadcom BCM283x Serial Control
 dwiic*		at fdt?			# Designware I2C
+dwiic*		at acpi?
 rkiic*		at fdt?			# Rockchip I2C
 sunxirsb*	at fdt?			# Allwinner RSB
 sunxitwi*	at fdt?			# Allwinner TWI
@@ -266,6 +289,8 @@ tcagpio*	at iic?
 
 # Random number generators
 bcmrng*		at fdt?			# Broadcom BCM283x RNG
+amdccp*		at fdt?			# AMD Cryptograhic Coprocessor RNG
+amdccp*		at acpi?
 
 # RTC
 plrtc*		at fdt?			# ARM PrimeCell RTC
@@ -287,6 +312,7 @@ ld*		at sdmmc?
 
 # SATA
 ahcisata*	at fdt?			# AHCI SATA
+ahcisata*	at acpi?
 atabus*		at ata?
 atapibus*	at atapi?
 wd*		at atabus? drive ?
@@ -356,11 +382,13 @@ tegrausbphy*	at fdt?			# NVIDIA Tegra USB PHY
 dwctwo*		at fdt?			# Designware USB DRD
 ehci*		at fdt?			# EHCI
 ehci*		at pci?			# EHCI
+ehci*		at acpi?		# EHCI
 motg*		at fdt?			# Mentor Graphics USB OTG
 ohci*		at fdt?			# OHCI
 ohci*		at pci?			# OHCI
 xhci*		at fdt?			# XHCI
 xhci*		at pci?			# XHCI
+xhci*		at acpi?		# XHCI
 usb*		at usbus?
 
 include "dev/usb/usbdevices.config"
@@ -368,6 +396,7 @@ midi*		at midibus?
 
 # Virtio devices
 virtio*		at fdt?			# Virtio MMIO device
+virtio*		at acpi?
 #viomb*		at virtio?		# Virtio memory balloon device
 ld*		at virtio?		# Virtio disk device
 vioif*		at virtio?		# Virtio network device

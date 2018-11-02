@@ -1,4 +1,4 @@
-/* $NetBSD: rk_platform.c,v 1.5 2018/09/21 12:04:07 skrll Exp $ */
+/* $NetBSD: rk_platform.c,v 1.8 2018/10/30 16:41:52 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #include "opt_console.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rk_platform.c,v 1.5 2018/09/21 12:04:07 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rk_platform.c,v 1.8 2018/10/30 16:41:52 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -148,11 +148,11 @@ static const struct arm_platform rk3328_platform = {
 	.ap_devmap = rk3328_platform_devmap,
 	.ap_bootstrap = rk_platform_bootstrap,
 	.ap_init_attach_args = rk_platform_init_attach_args,
-	.ap_early_putchar = rk3328_platform_early_putchar,
 	.ap_device_register = rk_platform_device_register,
 	.ap_reset = psci_fdt_reset,
 	.ap_delay = gtmr_delay,
 	.ap_uart_freq = rk3328_platform_uart_freq,
+	.ap_mpstart = arm_fdt_cpu_mpstart,
 };
 
 ARM_PLATFORM(rk3328, "rockchip,rk3328", &rk3328_platform);
@@ -206,11 +206,11 @@ static const struct arm_platform rk3399_platform = {
 	.ap_devmap = rk3399_platform_devmap,
 	.ap_bootstrap = rk_platform_bootstrap,
 	.ap_init_attach_args = rk_platform_init_attach_args,
-	.ap_early_putchar = rk3399_platform_early_putchar,
 	.ap_device_register = rk_platform_device_register,
 	.ap_reset = psci_fdt_reset,
 	.ap_delay = gtmr_delay,
 	.ap_uart_freq = rk3399_platform_uart_freq,
+	.ap_mpstart = arm_fdt_cpu_mpstart,
 };
 
 ARM_PLATFORM(rk3399, "rockchip,rk3399", &rk3399_platform);

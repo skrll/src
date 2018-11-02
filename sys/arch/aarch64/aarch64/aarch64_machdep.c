@@ -1,4 +1,4 @@
-/* $NetBSD: aarch64_machdep.c,v 1.12 2018/10/04 23:53:13 ryo Exp $ */
+/* $NetBSD: aarch64_machdep.c,v 1.17 2018/10/31 13:42:24 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,12 +30,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.12 2018/10/04 23:53:13 ryo Exp $");
+__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.17 2018/10/31 13:42:24 jmcneill Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
 #include "opt_kernhist.h"
 #include "opt_modular.h"
+#include "opt_fdt.h"
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -44,6 +45,7 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.12 2018/10/04 23:53:13 ryo Exp
 #include <sys/module.h>
 #include <sys/msgbuf.h>
 #include <sys/sysctl.h>
+#include <sys/reboot.h>
 
 #include <dev/mm.h>
 
@@ -63,11 +65,12 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.12 2018/10/04 23:53:13 ryo Exp
 #include <aarch64/vmparam.h>
 
 #include <arch/evbarm/fdt/platform.h>
+#include <arm/fdt/arm_fdtvar.h>
 
 #ifdef VERBOSE_INIT_ARM
 #define VPRINTF(...)	printf(__VA_ARGS__)
 #else
-#define VPRINTF(...)	do { } while (/* CONSTCOND */ 0)
+#define VPRINTF(...)	__nothing
 #endif
 
 char cpu_model[32];
@@ -226,9 +229,28 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	paddr_t kernstart_phys __unused = KERN_VTOPHYS(kernstart);
 	paddr_t kernend_phys __unused = KERN_VTOPHYS(kernend);
 
-	/* XXX */
+	/* XXX: arm/arm32/bus_dma.c refers physical_{start,end} */
 	physical_start = bootconfig.dram[0].address;
 	physical_end = physical_start + ptoa(bootconfig.dram[0].pages);
+
+	/*
+	 * msgbuf is allocated from the bottom of any one of memory blocks
+	 * to avoid corruption due to bootloader or changing kernel layout.
+	 */
+	paddr_t msgbufaddr = 0;
+	for (i = 0; i < bootconfig.dramblocks; i++) {
+		/* this block has enough space for msgbuf? */
+		if (bootconfig.dram[i].pages < atop(round_page(MSGBUFSIZE)))
+			continue;
+
+		/* allocate msgbuf from the bottom of this block */
+		bootconfig.dram[i].pages -= atop(round_page(MSGBUFSIZE));
+		msgbufaddr = bootconfig.dram[i].address +
+		    ptoa(bootconfig.dram[i].pages);
+		break;
+	}
+	KASSERT(msgbufaddr != 0);	/* no space for msgbuf */
+	initmsgbuf((void *)AARCH64_PA_TO_KVA(msgbufaddr), MSGBUFSIZE);
 
 	VPRINTF(
 	    "------------------------------------------\n"
@@ -236,6 +258,7 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	    "physical_start        = 0x%016lx\n"
 	    "kernel_start_phys     = 0x%016lx\n"
 	    "kernel_end_phys       = 0x%016lx\n"
+	    "msgbuf                = 0x%016lx\n"
 	    "physical_end          = 0x%016lx\n"
 	    "VM_MIN_KERNEL_ADDRESS = 0x%016lx\n"
 	    "kernel_start_l2       = 0x%016lx\n"
@@ -256,6 +279,7 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	    physical_start,
 	    kernstart_phys,
 	    kernend_phys,
+	    msgbufaddr,
 	    physical_end,
 	    VM_MIN_KERNEL_ADDRESS,
 	    kernstart_l2,
@@ -270,14 +294,6 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 #endif
 	    VM_KERNEL_IO_ADDRESS,
 	    VM_MAX_KERNEL_ADDRESS);
-
-	/*
-	 * msgbuf is always allocated from bottom of 1st memory block.
-	 * against corruption by bootloader, or changing kernel layout.
-	 */
-	physical_end -= round_page(MSGBUFSIZE);
-	bootconfig.dram[0].pages -= atop(round_page(MSGBUFSIZE));
-	initmsgbuf((void *)AARCH64_PA_TO_KVA(physical_end), MSGBUFSIZE);
 
 #ifdef DDB
 	db_machdep_init();
@@ -486,6 +502,20 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 void
 parse_mi_bootargs(char *args)
 {
+	int val;
+
+	if (get_bootconf_option(args, "-s", BOOTOPT_TYPE_BOOLEAN, &val) && val)
+		boothowto |= RB_SINGLE;
+	if (get_bootconf_option(args, "-d", BOOTOPT_TYPE_BOOLEAN, &val) && val)
+		boothowto |= RB_KDB;
+	if (get_bootconf_option(args, "-a", BOOTOPT_TYPE_BOOLEAN, &val) && val)
+		boothowto |= RB_ASKNAME;
+	if (get_bootconf_option(args, "-q", BOOTOPT_TYPE_BOOLEAN, &val) && val)
+		boothowto |= AB_QUIET;
+	if (get_bootconf_option(args, "-v", BOOTOPT_TYPE_BOOLEAN, &val) && val)
+		boothowto |= AB_VERBOSE;
+	if (get_bootconf_option(args, "-x", BOOTOPT_TYPE_BOOLEAN, &val) && val)
+		boothowto |= AB_DEBUG;
 }
 
 void
@@ -503,28 +533,83 @@ module_init_md(void)
 }
 #endif /* MODULAR */
 
+static bool
+in_dram_p(paddr_t pa, psize_t size)
+{
+	int i;
+
+	for (i = 0; i < bootconfig.dramblocks; i++) {
+		paddr_t s, e;
+		s = bootconfig.dram[i].address;
+		e = bootconfig.dram[i].address + ptoa(bootconfig.dram[i].pages);
+		if ((s <= pa) && ((pa + size) <= e))
+			return true;
+	}
+	return false;
+}
+
 bool
 mm_md_direct_mapped_phys(paddr_t pa, vaddr_t *vap)
 {
-	/* XXX */
-	if (physical_start <= pa && pa < physical_end) {
+	if (in_dram_p(pa, 0)) {
 		*vap = AARCH64_PA_TO_KVA(pa);
 		return true;
 	}
-
 	return false;
 }
 
 int
 mm_md_physacc(paddr_t pa, vm_prot_t prot)
 {
-	/* XXX */
-	if (physical_start <= pa && pa < physical_end)
+	if (in_dram_p(pa, 0))
 		return 0;
 
 	return kauth_authorize_machdep(kauth_cred_get(),
 	    KAUTH_MACHDEP_UNMANAGEDMEM, NULL, NULL, NULL, NULL);
 }
+
+#ifdef __HAVE_MM_MD_KERNACC
+int
+mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
+{
+	extern char __kernel_text[];
+	extern char _end[];
+	extern char __data_start[];
+	extern char __rodata_start[];
+
+	vaddr_t kernstart = trunc_page((vaddr_t)__kernel_text);
+	vaddr_t kernend = round_page((vaddr_t)_end);
+	paddr_t kernstart_phys = KERN_VTOPHYS(kernstart);
+	vaddr_t data_start = (vaddr_t)__data_start;
+	vaddr_t rodata_start = (vaddr_t)__rodata_start;
+	vsize_t rosize = kernend - rodata_start;
+
+	const vaddr_t v = (vaddr_t)ptr;
+
+#define IN_RANGE(addr,sta,end)	(((sta) <= (addr)) && ((addr) < (end)))
+
+	*handled = false;
+	if (IN_RANGE(v, kernstart, kernend + kernend_extra)) {
+		*handled = true;
+		if ((v < data_start) && (prot & VM_PROT_WRITE))
+			return EFAULT;
+	} else if (IN_RANGE(v, AARCH64_KSEG_START, AARCH64_KSEG_END)) {
+		/*
+		 * if defined PMAP_MAP_POOLPAGE, direct mapped address (KSEG)
+		 * will be appeared as kvm(3) address.
+		 */
+		paddr_t pa = AARCH64_KVA_TO_PA(v);
+		if (in_dram_p(pa, 0)) {
+			*handled = true;
+			if (IN_RANGE(pa, kernstart_phys,
+			    kernstart_phys + rosize) &&
+			    (prot & VM_PROT_WRITE))
+				return EFAULT;
+		}
+	}
+	return 0;
+}
+#endif
 
 void
 cpu_startup(void)
@@ -532,6 +617,11 @@ cpu_startup(void)
 	vaddr_t maxaddr, minaddr;
 
 	consinit();
+
+#ifdef FDT
+	if (arm_fdt_platform()->ap_startup != NULL)
+		arm_fdt_platform()->ap_startup();
+#endif
 
 	/*
 	 * Allocate a submap for physio.

@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.28 2018/10/04 23:53:13 ryo Exp $	*/
+/*	$NetBSD: locore.S,v 1.30 2018/10/18 09:01:51 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,6 +27,7 @@
  */
 
 #include "opt_arm_debug.h"
+#include "opt_compat_netbsd32.h"
 #include "opt_console.h"
 #include "opt_cpuoptions.h"
 #include "opt_ddb.h"
@@ -37,7 +38,7 @@
 #include <aarch64/hypervisor.h>
 #include "assym.h"
 
-RCSID("$NetBSD: locore.S,v 1.28 2018/10/04 23:53:13 ryo Exp $")
+RCSID("$NetBSD: locore.S,v 1.30 2018/10/18 09:01:51 skrll Exp $")
 
 
 /*#define DEBUG_LOCORE			/* debug print */
@@ -172,6 +173,7 @@ vstart:
 
 	/* lwp-private = NULL */
 	msr	tpidr_el0, xzr
+	msr	tpidrro_el0, xzr
 
 	/* set curcpu() */
 	ADDR	x0, cpu_info_store	/* cpu_info_store is cpu_info[0] */
@@ -340,7 +342,6 @@ printcpu:
 
 #endif /* DEBUG_LOCORE */
 
-ENTRY_NP(aarch64_mpstart)
 ENTRY_NP(cpu_mpstart)
 	mrs	x3, mpidr_el1
 	ldr	x0, =(MPIDR_AFF0|MPIDR_AFF1|MPIDR_AFF2|MPIDR_AFF3)
@@ -426,6 +427,7 @@ mp_vstart:
 
 	/* lwp-private = NULL */
 	msr	tpidr_el0, xzr
+	msr	tpidrro_el0, xzr
 
 	/* set curcpu(), and fill curcpu()->ci_{midr,mpidr} */
 	mov	x0, #CPU_INFO_SIZE
@@ -478,7 +480,7 @@ mp_vstart:
 	bl	_C_LABEL(cpu_hatch)
 	mov	x0, xzr
 	b	_C_LABEL(idle_loop)	/* never to return */
-END(aarch64_mpstart)
+END(cpu_mpstart)
 
 toomanycpus:
 	CPU_DPRINT("too many cpus, or MPIDR not exists in cpu_mpidr[]\n")
@@ -488,11 +490,10 @@ toomanycpus:
 
 #else /* MULTIPROCESSOR */
 
-ENTRY_NP(aarch64_mpstart)
-ENTRY_NP(cortex_mpstart)	/* compat arm */
+ENTRY_NP(cpu_mpstart)
 1:	wfi
 	b	1b
-END(aarch64_mpstart)
+END(cpu_mpstart)
 
 #endif /* MULTIPROCESSOR */
 
@@ -1037,3 +1038,8 @@ bootstk_cpus:
 	.global ARM_BOOTSTRAP_LxPT
 ARM_BOOTSTRAP_LxPT:
 l0pt_kern:
+
+	.section "_init_memory", "aw", %nobits
+	.align PGSHIFT
+
+	/* None currently */

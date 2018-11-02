@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1213 2018/09/23 09:21:03 maxv Exp $
+#	$NetBSD: files,v 1.1215 2018/10/19 21:09:10 jakllsch Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -1319,6 +1319,10 @@ file	dev/ic/pl041.c			aaci
 device	plkmi: pckbport
 file	dev/ic/pl050.c			plkmi
 
+# ARM PrimeCell PL061 (GPIO) general purpose input/output
+device	plgpio: gpiobus
+file	dev/ic/pl061.c			plgpio
+
 # ARM PrimeCell PL181 (MMCI) host controller
 device	plmmc: sdmmcbus
 file	dev/ic/pl181.c			plmmc
@@ -1381,6 +1385,10 @@ file	dev/ic/bwfm.c			bwfm
 # QEMU Firmware Configuration (fw_cfg) device
 device	qemufwcfg
 file	dev/ic/qemufwcfg.c		qemufwcfg
+
+# AMD Cryptographic Coprocessor
+device	amdccp
+file	dev/ic/amdccp.c			amdccp
 
 # legitimate pseudo-devices
 #

@@ -1,4 +1,4 @@
-/*      $NetBSD: xbdback_xenbus.c,v 1.67 2018/06/24 20:28:58 jdolecek Exp $      */
+/*      $NetBSD: xbdback_xenbus.c,v 1.69 2018/10/26 05:33:21 cherry Exp $      */
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xbdback_xenbus.c,v 1.67 2018/06/24 20:28:58 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xbdback_xenbus.c,v 1.69 2018/10/26 05:33:21 cherry Exp $");
 
 #include <sys/atomic.h>
 #include <sys/buf.h>
@@ -644,7 +644,7 @@ xbdback_connect(struct xbdback_instance *xbdi)
 	XENPRINTF(("xbdback %s: connect evchannel %d\n", xbusd->xbusd_path, xbdi->xbdi_evtchn));
 	xbdi->xbdi_evtchn = evop.u.bind_interdomain.local_port;
 
-	xbdi->xbdi_ih = intr_establish_xname(0, &xen_pic, xbdi->xbdi_evtchn,
+	xbdi->xbdi_ih = intr_establish_xname(-1, &xen_pic, xbdi->xbdi_evtchn,
 	    IST_LEVEL, IPL_BIO, xbdback_evthandler, xbdi, false,
 	    xbdi->xbdi_name);
 	KASSERT(xbdi->xbdi_ih != NULL);
@@ -654,7 +654,7 @@ xbdback_connect(struct xbdback_instance *xbdi)
 
 	/* enable the xbdback event handler machinery */
 	xbdi->xbdi_status = WAITING;
-	hypervisor_enable_event(xbdi->xbdi_evtchn);
+	hypervisor_unmask_event(xbdi->xbdi_evtchn);
 	hypervisor_notify_via_evtchn(xbdi->xbdi_evtchn);
 
 	if (kthread_create(PRI_NONE, KTHREAD_MPSAFE, NULL,

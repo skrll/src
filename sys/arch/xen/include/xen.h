@@ -1,4 +1,4 @@
-/*	$NetBSD: xen.h,v 1.39 2018/07/26 15:38:26 maxv Exp $	*/
+/*	$NetBSD: xen.h,v 1.41 2018/10/10 04:16:58 cherry Exp $	*/
 
 /*
  *
@@ -44,7 +44,7 @@ struct xen_netinfo {
 };
 
 union xen_cmdline_parseinfo {
-	char			xcp_bootdev[16]; /* sizeof(dv_xname) */
+	char			xcp_bootdev[144];
 	struct xen_netinfo	xcp_netinfo;
 	char			xcp_console[16];
 	char			xcp_pcidevs[64];
@@ -248,7 +248,7 @@ xen_atomic_clearbits_l (volatile XATOMIC_T *ptr, unsigned long bits) {
 static __inline XATOMIC_T
 xen_atomic_test_and_clear_bit(volatile void *ptr, unsigned long bitno)
 {
-	int result;
+	long result;
 
 	__asm volatile(__LOCK_PREFIX
 #ifdef __x86_64__

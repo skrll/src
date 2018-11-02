@@ -1,4 +1,4 @@
-/* $NetBSD: xenbus_comms.c,v 1.18 2018/06/24 13:35:33 jdolecek Exp $ */
+/* $NetBSD: xenbus_comms.c,v 1.20 2018/10/26 05:33:21 cherry Exp $ */
 /******************************************************************************
  * xenbus_comms.c
  *
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xenbus_comms.c,v 1.18 2018/06/24 13:35:33 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xenbus_comms.c,v 1.20 2018/10/26 05:33:21 cherry Exp $");
 
 #include <sys/types.h>
 #include <sys/null.h> 
@@ -221,10 +221,10 @@ xb_init_comms(device_t dev)
 
 	evtchn = xen_start_info.store_evtchn;
 
-	ih = intr_establish_xname(0, &xen_pic, evtchn, IST_LEVEL, IPL_TTY,
+	ih = intr_establish_xname(-1, &xen_pic, evtchn, IST_LEVEL, IPL_TTY,
 	    wake_waiting, NULL, false, device_xname(dev));
 
-	hypervisor_enable_event(evtchn);
+	hypervisor_unmask_event(evtchn);
 	aprint_verbose_dev(dev, "using event channel %d\n", evtchn);
 
 	return 0;
