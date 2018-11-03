@@ -1,12 +1,13 @@
-/* $NetBSD: cycv_platform.c,v 1.6 2018/10/30 16:41:52 skrll Exp $ */
+/* $NetBSD: cycv_platform.c,v 1.9 2018/11/02 18:13:11 aymeric Exp $ */
 
 /* This file is in the public domain. */
 
 #include "arml2cc.h"
+#include "opt_console.h"
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cycv_platform.c,v 1.6 2018/10/30 16:41:52 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cycv_platform.c,v 1.9 2018/11/02 18:13:11 aymeric Exp $");
 
 #define	_ARM32_BUS_DMA_PRIVATE
 #include <sys/param.h>
@@ -29,6 +30,7 @@ __KERNEL_RCSID(0, "$NetBSD: cycv_platform.c,v 1.6 2018/10/30 16:41:52 skrll Exp 
 
 #include <arm/fdt/arm_fdtvar.h>
 #include <dev/fdt/fdtvar.h>
+#include <dev/ic/comreg.h>
 
 void cycv_platform_early_putchar(char);
 
@@ -36,7 +38,9 @@ void
 cycv_platform_early_putchar(char c) {
 #ifdef CONSADDR
 #define CONSADDR_VA (CONSADDR - CYCV_PERIPHERAL_BASE + CYCV_PERIPHERAL_VBASE)
-	volatile uint32_t *uartaddr = (volatile uint32_t *) CONSADDR_VA;
+	volatile uint32_t *uartaddr = cpu_earlydevice_va_p() ?
+	    (volatile uint32_t *) CONSADDR_VA :
+	    (volatile uint32_t *) CONSADDR;
 
 	while ((le32toh(uartaddr[com_lsr]) & LSR_TXRDY) == 0)
 		;
@@ -68,6 +72,8 @@ cycv_platform_bootstrap(void)
 #if NARML2CC > 0
 	arml2cc_init(bst, bsh_l2c, 0);
 #endif
+
+	arm_fdt_cpu_bootstrap();
 }
 
 static void
@@ -81,8 +87,9 @@ cycv_mpstart(void)
 	bus_space_map(bst, CYCV_SCU_BASE, CYCV_SCU_SIZE, 0, &bsh_scu);
 
 	/* Enable Snoop Control Unit */
-	bus_space_write_4(bst, bsh_rst, SCU_CTL,
-		bus_space_read_4(bst, bsh_rst, SCU_CTL) | SCU_CTL_SCU_ENA);
+	bus_space_write_4(bst, bsh_scu, SCU_INV_ALL_REG, 0xff);
+	bus_space_write_4(bst, bsh_scu, SCU_CTL,
+		bus_space_read_4(bst, bsh_scu, SCU_CTL) | SCU_CTL_SCU_ENA);
 
 	const uint32_t startfunc = (uint32_t) KERN_VTOPHYS((vaddr_t)cpu_mpstart);
 
@@ -98,11 +105,16 @@ cycv_mpstart(void)
 	    htole32(0xea000000 | ((startfunc - 8 - 0x0) >> 2));
 	pmap_unmap_chunk(kernel_l1pt.pv_va, CYCV_SDRAM_VBASE, L1_S_SIZE);
 
-	arm_cpu_max = 2;
-
 	bus_space_write_4(bst, bsh_rst, CYCV_RSTMGR_MPUMODRST,
 		bus_space_read_4(bst, bsh_rst, CYCV_RSTMGR_MPUMODRST) &
 			~CYCV_RSTMGR_MPUMODRST_CPU1);
+
+	/* Wait for secondary processor to start */
+	for (int i = 0x10000000; i > 0; i--) {
+		membar_consumer();
+		if (arm_cpu_hatched == (1 << 1))
+			break;
+	}
 }
 
 static void

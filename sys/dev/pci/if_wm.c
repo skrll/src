@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.591 2018/11/02 03:22:19 msaitoh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.595 2018/11/02 08:26:32 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -83,7 +83,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.591 2018/11/02 03:22:19 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.595 2018/11/02 08:26:32 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -1870,10 +1870,9 @@ wm_attach(device_t parent, device_t self, void *aux)
 					0, &sc->sc_iot, &sc->sc_ioh,
 					NULL, &sc->sc_ios) == 0) {
 				sc->sc_flags |= WM_F_IOH_VALID;
-			} else {
+			} else
 				aprint_error_dev(sc->sc_dev,
 				    "WARNING: unable to map I/O space\n");
-			}
 		}
 
 	}
@@ -3259,9 +3258,9 @@ wm_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 
 		error = 0;
 
-		if (cmd == SIOCSIFCAP) {
+		if (cmd == SIOCSIFCAP)
 			error = (*ifp->if_init)(ifp);
-		} else if (cmd != SIOCADDMULTI && cmd != SIOCDELMULTI)
+		else if (cmd != SIOCADDMULTI && cmd != SIOCDELMULTI)
 			;
 		else if (ifp->if_flags & IFF_RUNNING) {
 			/*
@@ -3859,7 +3858,7 @@ wm_phy_post_reset(struct wm_softc *sc)
 	/* Perform any necessary post-reset workarounds */
 	if (sc->sc_type == WM_T_PCH)
 		wm_hv_phy_workaround_ich8lan(sc);
-	if (sc->sc_type == WM_T_PCH2)
+	else if (sc->sc_type == WM_T_PCH2)
 		wm_lv_phy_workaround_ich8lan(sc);
 
 	/* Clear the host wakeup bit after lcd reset */
@@ -3874,7 +3873,16 @@ wm_phy_post_reset(struct wm_softc *sc)
 	/* Configure the LCD with the extended configuration region in NVM */
 	wm_init_lcd_from_nvm(sc);
 
-	/* Configure the LCD with the OEM bits in NVM */
+	/* XXX Configure the LCD with the OEM bits in NVM */
+
+	if (sc->sc_type == WM_T_PCH2) {
+		/* Ungate automatic PHY configuration on non-managed 82579 */
+		if ((CSR_READ(sc, WMREG_FWSM) & FWSM_FW_VALID) == 0) {
+			delay(10 * 1000);
+			wm_gate_hw_phy_config_ich8lan(sc, false);
+		}
+		/* XXX Set EEE LPI Update Timer to 200usec */	
+	}
 }
 
 /* Only for PCH and newer */
@@ -4511,9 +4519,8 @@ wm_reset(struct wm_softc *sc)
 		if (sc->sc_type != WM_T_82574) {
 			CSR_WRITE(sc, WMREG_EIMC, 0xffffffffU);
 			CSR_WRITE(sc, WMREG_EIAC, 0);
-		} else {
+		} else
 			CSR_WRITE(sc, WMREG_EIAC_82574, 0);
-		}
 	}
 
 	/* Stop the transmit and receive processes. */
@@ -4652,6 +4659,14 @@ wm_reset(struct wm_softc *sc)
 		break;
 	}
 
+	/* Set Phy Config Counter to 50msec */
+	if (sc->sc_type == WM_T_PCH2) {
+		reg = CSR_READ(sc, WMREG_FEXTNVM3);
+		reg &= ~FEXTNVM3_PHY_CFG_COUNTER_MASK;
+		reg |= FEXTNVM3_PHY_CFG_COUNTER_50MS;
+		CSR_WRITE(sc, WMREG_FEXTNVM3, reg);
+	}
+	
 	if (phy_reset != 0)
 		wm_get_cfg_done(sc);
 
@@ -5868,9 +5883,9 @@ wm_init_locked(struct ifnet *ifp)
 			CSR_WRITE(sc, WMREG_RLPML, ETHER_MAX_LEN_JUMBO);
 	}
 
-	if (MCLBYTES == 2048) {
+	if (MCLBYTES == 2048)
 		sc->sc_rctl |= RCTL_2k;
-	} else {
+	else {
 		if (sc->sc_type >= WM_T_82543) {
 			switch (MCLBYTES) {
 			case 4096:
@@ -5887,7 +5902,8 @@ wm_init_locked(struct ifnet *ifp)
 				    MCLBYTES);
 				break;
 			}
-		} else panic("wm_init: i82542 requires MCLBYTES = 2048");
+		} else
+			panic("wm_init: i82542 requires MCLBYTES = 2048");
 	}
 
 	/* Enable ECC */
@@ -6927,9 +6943,9 @@ wm_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
 	if ((m0->m_pkthdr.csum_flags &
 	    (M_CSUM_TSOv4 | M_CSUM_UDPv4 | M_CSUM_TCPv4 | M_CSUM_IPv4)) != 0) {
 		iphl = M_CSUM_DATA_IPv4_IPHL(m0->m_pkthdr.csum_data);
-	} else {
+	} else
 		iphl = M_CSUM_DATA_IPv6_IPHL(m0->m_pkthdr.csum_data);
-	}
+
 	ipcse = offset + iphl - 1;
 
 	cmd = WTX_CMD_DEXT | WTX_DTYP_D;
@@ -7658,22 +7674,22 @@ wm_nq_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
 	if (m0->m_pkthdr.csum_flags &
 	    (M_CSUM_UDPv4 | M_CSUM_TCPv4 | M_CSUM_TSOv4)) {
 		WM_Q_EVCNT_INCR(txq, tusum);
-		if (m0->m_pkthdr.csum_flags & (M_CSUM_TCPv4 | M_CSUM_TSOv4)) {
+		if (m0->m_pkthdr.csum_flags & (M_CSUM_TCPv4 | M_CSUM_TSOv4))
 			cmdc |= NQTXC_CMD_TCP;
-		} else {
+		else
 			cmdc |= NQTXC_CMD_UDP;
-		}
+
 		cmdc |= NQTXC_CMD_IP4;
 		*fieldsp |= NQTXD_FIELDS_TUXSM;
 	}
 	if (m0->m_pkthdr.csum_flags &
 	    (M_CSUM_UDPv6 | M_CSUM_TCPv6 | M_CSUM_TSOv6)) {
 		WM_Q_EVCNT_INCR(txq, tusum6);
-		if (m0->m_pkthdr.csum_flags & (M_CSUM_TCPv6 | M_CSUM_TSOv6)) {
+		if (m0->m_pkthdr.csum_flags & (M_CSUM_TCPv6 | M_CSUM_TSOv6))
 			cmdc |= NQTXC_CMD_TCP;
-		} else {
+		else
 			cmdc |= NQTXC_CMD_UDP;
-		}
+
 		cmdc |= NQTXC_CMD_IP6;
 		*fieldsp |= NQTXD_FIELDS_TUXSM;
 	}
@@ -7971,9 +7987,9 @@ retry:
 				    htole32(WTX_CMD_VLE);
 				txq->txq_descs[nexttx].wtx_fields.wtxu_vlan =
 				    htole16(vlan_get_tag(m0));
-			} else {
+			} else
 				txq->txq_descs[nexttx].wtx_fields.wtxu_vlan =0;
-			}
+
 			dcmdlen = 0;
 		} else {
 			/* setup an advanced data descriptor */
@@ -9828,10 +9844,9 @@ wm_gmii_mediainit(struct wm_softc *sc, pci_product_id_t prodid)
 				CSR_WRITE(sc, WMREG_CTRL_EXT, ctrl_ext);
 			}
 		}
-	} else {
+	} else
 		mii_attach(sc->sc_dev, &sc->sc_mii, 0xffffffff, MII_PHY_ANY,
 		    MII_OFFSET_ANY, MIIF_DOPAUSE);
-	}
 
 	/*
 	 * If the MAC is PCH2 or PCH_LPT and failed to detect MII PHY, call
@@ -10087,27 +10102,34 @@ wm_gmii_mdic_readreg(device_t dev, int phy, int reg)
 	    MDIC_REGADD(reg));
 
 	for (i = 0; i < WM_GEN_POLL_TIMEOUT * 3; i++) {
+		delay(50);
 		mdic = CSR_READ(sc, WMREG_MDIC);
 		if (mdic & MDIC_READY)
 			break;
-		delay(50);
 	}
 
 	if ((mdic & MDIC_READY) == 0) {
 		log(LOG_WARNING, "%s: MDIC read timed out: phy %d reg %d\n",
 		    device_xname(dev), phy, reg);
-		rv = 0;
+		return 0;
 	} else if (mdic & MDIC_E) {
 #if 0 /* This is normal if no PHY is present. */
 		log(LOG_WARNING, "%s: MDIC read error: phy %d reg %d\n",
 		    device_xname(dev), phy, reg);
 #endif
-		rv = 0;
+		return 0;
 	} else {
 		rv = MDIC_DATA(mdic);
 		if (rv == 0xffff)
 			rv = 0;
 	}
+
+	/*
+	 * Allow some time after each MDIC transaction to avoid
+	 * reading duplicate data in the next MDIC transaction.
+	 */
+	if (sc->sc_type == WM_T_PCH2)
+		delay(100);
 
 	return rv;
 }
@@ -10134,18 +10156,28 @@ wm_gmii_mdic_writereg(device_t dev, int phy, int reg, int val)
 	    MDIC_REGADD(reg) | MDIC_DATA(val));
 
 	for (i = 0; i < WM_GEN_POLL_TIMEOUT * 3; i++) {
+		delay(50);
 		mdic = CSR_READ(sc, WMREG_MDIC);
 		if (mdic & MDIC_READY)
 			break;
-		delay(50);
 	}
 
-	if ((mdic & MDIC_READY) == 0)
+	if ((mdic & MDIC_READY) == 0) {
 		log(LOG_WARNING, "%s: MDIC write timed out: phy %d reg %d\n",
 		    device_xname(dev), phy, reg);
-	else if (mdic & MDIC_E)
+		return;
+	} else if (mdic & MDIC_E) {
 		log(LOG_WARNING, "%s: MDIC write error: phy %d reg %d\n",
 		    device_xname(dev), phy, reg);
+		return;
+	}
+
+	/*
+	 * Allow some time after each MDIC transaction to avoid
+	 * reading duplicate data in the next MDIC transaction.
+	 */
+	if (sc->sc_type == WM_T_PCH2)
+		delay(100);
 }
 
 /*
@@ -12144,9 +12176,8 @@ wm_ich8_cycle_init(struct wm_softc *sc)
 		hsfsts = ICH8_FLASH_READ16(sc, ICH_FLASH_HSFSTS);
 
 	/* May be check the Flash Des Valid bit in Hw status */
-	if ((hsfsts & HSFSTS_FLDVAL) == 0) {
+	if ((hsfsts & HSFSTS_FLDVAL) == 0)
 		return error;
-	}
 
 	/* Clear FCERR in Hw status by writing 1 */
 	/* Clear DAEL in Hw status by writing a 1 */
@@ -14618,9 +14649,8 @@ wm_phy_is_accessible_pchlan(struct wm_softc *sc)
 			continue;
 		break;
 	}
-	if (!MII_INVALIDID(id1) && !MII_INVALIDID(id2)) {
+	if (!MII_INVALIDID(id1) && !MII_INVALIDID(id2))
 		goto out;
-	}
 
 	if (sc->sc_type < WM_T_PCH_LPT) {
 		sc->phy.release(sc);
