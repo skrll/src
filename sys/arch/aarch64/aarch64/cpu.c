@@ -230,16 +230,22 @@ cpu_identify(device_t self, struct cpu_info *ci)
 	const char *m;
 
 	identify_aarch64_model(ci->ci_id.ac_midr, model, sizeof(model));
-	if (ci->ci_index == 0) {
-		m = cpu_getmodel();
-		if (m == NULL || *m == 0)
-			cpu_setmodel("%s", model);
-	}
 
 	aprint_naive("\n");
 	aprint_normal(": %s\n", model);
 	aprint_normal_dev(ci->ci_dev, "package %u, core %u, smt %u\n",
 	    ci->ci_package_id, ci->ci_core_id, ci->ci_smt_id);
+
+	if (ci->ci_index == 0) {
+		m = cpu_getmodel();
+		if (m == NULL || *m == 0)
+			cpu_setmodel("%s", model);
+
+		if (CPU_ID_ERRATA_CAVIUM_THUNDERX_1_1_P(ci->ci_midr))
+			aprint_normal("WARNING: ThunderX Pass 1.1 detected.\n"
+			    "This has known hardware bugs that may cause the "
+			    "incorrect operation of atomic operations.\n");
+	}
 }
 
 static void
