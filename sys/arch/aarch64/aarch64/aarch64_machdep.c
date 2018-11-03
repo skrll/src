@@ -41,7 +41,6 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.18 2018/11/01 20:34:49 maxv Ex
 
 #include <sys/param.h>
 #include <sys/types.h>
-#include <sys/asan.h>
 #include <sys/bus.h>
 #include <sys/kauth.h>
 #include <sys/module.h>
