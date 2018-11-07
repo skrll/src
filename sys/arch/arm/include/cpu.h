@@ -151,8 +151,8 @@ struct cpu_info {
 	volatile uint32_t
 			ci_softints;
 
-	lwp_t *		ci_curlwp;		/* current lwp */
-	lwp_t *		ci_lastlwp;		/* last lwp */
+	lwp_t *		ci_curlwp;	/* current lwp */
+	lwp_t *		ci_lastlwp;	/* last lwp */
 	struct evcnt	ci_arm700bugcount;
 	int32_t		ci_mtx_count;
 	int		ci_mtx_oldspl;
@@ -174,8 +174,8 @@ struct cpu_info {
 	struct evcnt	ci_und_cp15_ev;
 	struct evcnt	ci_vfp_evs[3];
 
-	uint64_t	ci_midr;	/* MIDR_EL1 */
-	uint64_t	ci_mpidr;	/* MPIDR_EL1 */
+	uint32_t	ci_midr;
+	uint32_t	ci_mpidr;
 
 	struct arm_cache_info *
 			ci_cacheinfo;
