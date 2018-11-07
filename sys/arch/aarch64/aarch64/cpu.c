@@ -96,8 +96,8 @@ struct cpu_info *cpu_info[NCPUINFO] __read_mostly = {
 void
 cpu_attach(device_t dv, cpuid_t id)
 {
-	struct cpu_info *ci;
 	const int unit = device_unit(dv);
+	struct cpu_info *ci;
 	uint64_t mpidr;
 
 	if (unit == 0) {
