@@ -57,7 +57,7 @@ extern u_long kern_vtopdiff;
 
 /* misc prototypes used by the many arm machdeps */
 void cortex_pmc_ccnt_init(void);
-void cpu_hatch(struct cpu_info *, cpuid_t, void (*)(struct cpu_info *));
+void cpu_hatch(struct cpu_info *, u_int, void (*)(struct cpu_info *));
 void halt(void);
 void parse_mi_bootargs(char *);
 void data_abort_handler(trapframe_t *);
