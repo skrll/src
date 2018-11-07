@@ -110,16 +110,6 @@ cpu_fdt_match(device_t parent, cfdata_t cf, void *aux)
 	case ARM_CPU_ARMV8:
 		if (fdtbus_get_reg(phandle, 0, &mpidr, NULL) != 0)
 			return 0;
-
-#ifndef __aarch64__
-		/* XXX NetBSD/arm requires all CPUs to be in the same cluster */
-		const u_int bp_clid = cpu_clusterid();
-		const u_int clid = __SHIFTOUT(mpidr, MPIDR_AFF1);
-
-		if (bp_clid != clid)
-			return 0;
-#endif
-		break;
 	default:
 		break;
 	}
@@ -149,9 +139,6 @@ cpu_fdt_attach(device_t parent, device_t self, void *aux)
 			aprint_error(": missing 'reg' property\n");
 			return;
 		}
-#ifndef __aarch64__
-		mpidr = __SHIFTOUT(mpidr, MPIDR_AFF0);
-#endif
 		cpuid = mpidr;
 		break;
 	default:
@@ -260,12 +247,7 @@ arm_fdt_cpu_bootstrap(void)
 			continue;
 		if (mpidr == bp_mpidr)
 			continue; 	/* BP already started */
-
-#ifdef __arm__
-		/* XXX NetBSD/arm requires all CPUs to be in the same cluster */
-		if ((mpidr & ~MPIDR_AFF0) != (bp_mpidr & ~MPIDR_AFF0))
-			continue;
-#endif
+printf("%s: cpuindex %d mpidr %llx\n", __func__, cpuindex, mpidr);
 
 		KASSERT(cpuindex < MAXCPUS);
 		cpu_mpidr[cpuindex] = mpidr;
@@ -286,7 +268,7 @@ arm_fdt_cpu_mpstart(void)
 	int child, ret;
 	const char *method;
 #if NPSCI_FDT > 0
-	bool nopsci = false;
+	bool psci_p = true;
 #endif
 
 	const int cpus = OF_finddevice("/cpus");
@@ -297,7 +279,7 @@ arm_fdt_cpu_mpstart(void)
 
 #if NPSCI_FDT > 0
 	if (psci_fdt_preinit() != 0)
-		nopsci = true;
+		psci_p = false;
 #endif
 
 	/* MPIDR affinity levels of boot processor. */
@@ -313,14 +295,9 @@ arm_fdt_cpu_mpstart(void)
 
 		if (fdtbus_get_reg64(child, 0, &mpidr, NULL) != 0)
 			continue;
+
 		if (mpidr == bp_mpidr)
 			continue; 	/* BP already started */
-
-#ifdef __arm__
-		/* XXX NetBSD/arm requires all CPUs to be in the same cluster */
-		if ((mpidr & ~MPIDR_AFF0) != (bp_mpidr & ~MPIDR_AFF0))
-			continue;
-#endif
 
 		method = fdtbus_get_string(child, "enable-method");
 		if (method == NULL)
@@ -340,7 +317,7 @@ arm_fdt_cpu_mpstart(void)
 				continue;
 
 #if NPSCI_FDT > 0
-		} else if (!nopsci && (strcmp(method, "psci") == 0)) {
+		} else if (psci_p && (strcmp(method, "psci") == 0)) {
 			ret = psci_cpu_on(mpidr, cpu_fdt_mpstart_pa(), 0);
 			if (ret != PSCI_SUCCESS)
 				continue;

@@ -723,13 +723,15 @@ cpu_uarea_alloc_idlelwp(struct cpu_info *ci)
  *
  */
 void
-cpu_init_secondary_processor(int cpuno)
+cpu_init_secondary_processor(int cpuindex)
 {
 	// pmap_kernel has been sucessfully built and we can switch to it
 
 	cpu_domains(DOMAIN_DEFAULT);
 	cpu_idcache_wbinv_all();
 
+	VPRINTS(" index ");
+	VPRINTX(cpuindex);
 	VPRINTS(" ttb");
 
 	cpu_setup(boot_args);
@@ -763,9 +765,14 @@ cpu_init_secondary_processor(int cpuno)
 	VPRINTS(")");
 	VPRINTS(" (TTBCR=");
 	VPRINTX(armreg_ttbcr_read());
+	VPRINTS(")");
 #endif
 
-	atomic_or_uint(&arm_cpu_hatched, __BIT(cpuno));
+	atomic_or_uint(&arm_cpu_hatched, __BIT(cpuindex));
+
+	VPRINTS(" hatched=");
+	VPRINTX(arm_cpu_hatched);
+	VPRINTF("\n\r");
 
 	/* return to assembly to Wait for cpu_boot_secondary_processors */
 }

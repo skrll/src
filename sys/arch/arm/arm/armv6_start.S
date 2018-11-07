@@ -514,8 +514,14 @@ generic_startv6:
 	0)
 
 
-//
-// Perform the initialization of the an ARMv7 core required by NetBSD.
+/*
+ * Perform the initialization of the an ARMv7 core required by NetBSD.
+ *
+ * Uses the following callee saved registers:
+ *
+ * Callee saved:
+ * 	r4, r5, r6, r7
+ */
 armv7_init:
 
 	.arch		armv7a
@@ -616,6 +622,14 @@ armv7_init:
 
 	.ltorg
 
+/*
+ * Transititions te CPU to using the TTB passed in r0.
+ *
+ * Uses the following callee saved registers:
+ *
+ * Callee saved:
+ * 	r4, r5
+ */
 
 armv7_mmuinit:
 	// Because the MMU may already be on do a typical sequence to set
@@ -667,16 +681,15 @@ armv7_mmuinit:
 
 
 #if 0
-//XXXNH FreeBSD
 
-288	/*
-289	 * Set TEX remap registers
-290	 *  - All is set to uncacheable memory
-291	 */
-292	ldr	r0, =0xAAAAA
-293	mcr	CP15_PRRR(r0)
-294	mov	r0, #0
-295	mcr	CP15_NMRR(r0)
+/*
+ * Set TEX remap registers
+ *  - All is set to uncacheable memory
+ */
+	ldr	r0, =0xAAAAA
+	mcr	CP15_PRRR(r0)
+	mov	r0, #0
+	mcr	CP15_NMRR(r0)
 #endif
 
 	XPUTC(#'I')
@@ -740,37 +753,44 @@ ENTRY_NP(cpu_mpstart)
 	sub	sp, R_TMP2, R_VTOPDIFF
 
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
-	and	r4, r4, #7			// get our cpu numder
 
-	mov	r5, r4
-	lsl	r5, #INIT_ARM_STACK_SHIFT
-	sub	sp, sp, r5
-
-	XPUTC('c')
-	mov	r0, r4
-	add	r0, #'0'
-	bl	uartputc
-	XPUTC(':')
-
-	mov	r0, sp
-	bl	generic_printx
-
+	VPRINTF("c: ")
+	VPRINTX(r4)
 	XPUTC('\n')
 	XPUTC('\r')
 
-#if 0
-	// We haven't used anything from memory yet so we can invalidate the
-	// L1 cache without fear of losing valuable data.  Afterwards, we can
-	// flush icache without worrying about anything getting written back
-	// to memory.
-	bl	armv7_dcache_l1inv_all		// toss-dcache
-	bl	armv7_icache_inv_all		// toss i-cache after d-cache
+	mov	r0, #0
+	ldr	r1, =cpu_mpidr
+	sub	r1, R_VTOPDIFF
+1:
+	ldr	r2, [r1, r0, lsl #2]		// r2 = cpu_mpidr[r0]
+	cmp	r2, r4
+	beq	2f				// found our mpidr
 
-#endif
+	add	r0, #1
+	cmp	r0, #MAXCPUS
+	bne	1b
+
+	// Not found our mpidr in the list - use Aff0 for cpuindex
+	and	r0, r4, #7
+2:
+	mov	R_TMP2, r0			// save cpu_index for later
+
+	VPRINTF("i: ")
+	VPRINTX(R_TMP2)
+	XPUTC('\n')
+	XPUTC('\r')
+
+	mov	r5, R_TMP2
+	lsl	r5, #INIT_ARM_STACK_SHIFT
+	sub	sp, sp, r5
+
+	VPRINTX(sp)
+	XPUTC('\n')
+	XPUTC('\r')
 
 	// disables and clears caches
 	bl	armv7_init
-
 
 	movw	r0, #:lower16:TEMP_L1_TABLE
 	movt	r0, #:upper16:TEMP_L1_TABLE
@@ -786,21 +806,12 @@ ASEND(cpu_mpstart)
  * Now running with real kernel VA via bootstrap tables
  */
 armv7_mpcontinuation:
-	ldr	R_TMP2, =start_stacks_top
-
-	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
-	and	r4, r4, #7			// get our cpu numder
-
-	mov	r5, r4
-	lsl	r5, #INIT_ARM_STACK_SHIFT
-	sub	sp, R_TMP2, r5
+	// Adjust stack back to KVA address
+	add	sp, sp, R_VTOPDIFF
 
 	VPRINTF("go\n\r")
 
-	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
-	and	r4, r4, #7			// get our cpu numder
-
-	mov	r0, r4
+	mov	r0, R_TMP2			// index into cpu_mpidr[] or cpu_number if not found
 	bl	cpu_init_secondary_processor
 
 	/* Wait for cpu_boot_secondary_processors the when cpu_info is allocated, etc */
@@ -809,7 +820,7 @@ armv7_mpcontinuation:
 	movt	r6, #:upper16:arm_cpu_mbox
 
 	mov	r5, #1				// bitmask...
-	lsl	r5, r4				// ... for our cpu
+	lsl	r5, R_TMP2			// ... for our cpu
 
 1:	dmb					// data memory barrier
 	ldr	r2, [r6]			// load mbox
