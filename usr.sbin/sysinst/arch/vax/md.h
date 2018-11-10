@@ -1,4 +1,4 @@
-/*	$NetBSD: md.h,v 1.1 2014/07/26 19:30:47 dholland Exp $	*/
+/*	$NetBSD: md.h,v 1.3 2018/11/07 21:20:23 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -59,11 +59,6 @@
 #define SET_KERNEL_1_NAME	"kern-GENERIC"
 
 /*
- * Disk names accepted as valid targets for a from-scratch installation.
- */
-#define DISK_NAMES "sd", "ra", "rd", "hp"
-
-/*
  * Machine-specific command to write a new label to a disk.
  * If not defined, we assume the port does not support disklabels and
  * the hand-edited disklabel will NOT be written by MI code.
@@ -74,4 +69,4 @@
 #ifdef CD_NAMES
 #undef CD_NAMES
 #endif
-#define CD_NAMES "cd0a","racd0a"
+#define CD_NAMES "cd*","racd*"

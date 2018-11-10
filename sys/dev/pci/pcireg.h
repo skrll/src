@@ -1,4 +1,4 @@
-/*	$NetBSD: pcireg.h,v 1.142 2018/10/03 06:46:09 msaitoh Exp $	*/
+/*	$NetBSD: pcireg.h,v 1.143 2018/11/05 03:51:31 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1995, 1996, 1999, 2000

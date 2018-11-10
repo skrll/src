@@ -1,4 +1,4 @@
-/*	$NetBSD: pci_subr.c,v 1.206 2018/10/04 07:43:12 msaitoh Exp $	*/
+/*	$NetBSD: pci_subr.c,v 1.207 2018/11/05 03:51:31 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1997 Zubin D. Dittia.  All rights reserved.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci_subr.c,v 1.206 2018/10/04 07:43:12 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_subr.c,v 1.207 2018/11/05 03:51:31 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_pci.h"
@@ -2483,12 +2483,13 @@ pci_conf_print_ea_cap(const pcireg_t *regs, int capoff)
 		bool baseis64, offsetis64;
 		unsigned int bei, entry_size;
 
+		printf("    Entry %u:\n", i);
 		/* The first DW */
 		reg = regs[o2i(entoff)];
-		printf("    The first register: 0x%08x\n", reg);
+		printf("      The first register: 0x%08x\n", reg);
 		entry_size = __SHIFTOUT(reg, PCI_EA_ES);
-		printf("      Entry size: %u\n", entry_size);
-		printf("      BAR Equivalent Indicator: ");
+		printf("        Entry size: %u\n", entry_size);
+		printf("        BAR Equivalent Indicator: ");
 		bei = __SHIFTOUT(reg, PCI_EA_BEI);
 		switch (bei) {
 		case PCI_EA_BEI_BAR0:
@@ -2521,7 +2522,10 @@ pci_conf_print_ea_cap(const pcireg_t *regs, int capoff)
 			printf("Reserved\n");
 			break;
 		}
+
+		printf("      Primary Properties: ");
 		pci_conf_print_ea_cap_prop(__SHIFTOUT(reg, PCI_EA_PP));
+		printf("      Secondary Properties: ");
 		pci_conf_print_ea_cap_prop(__SHIFTOUT(reg, PCI_EA_SP));
 		onoff("Writable", reg, PCI_EA_W);
 		onoff("Enable for this entry", reg, PCI_EA_E);
@@ -2535,11 +2539,11 @@ pci_conf_print_ea_cap(const pcireg_t *regs, int capoff)
 		reg = regs[o2i(entoff + 4)];
 		base = reg & PCI_EA_LOWMASK;
 		baseis64 = reg & PCI_EA_BASEMAXOFFSET_64BIT;
-		printf("    Base Address Register Low: 0x%08x\n", reg);
+		printf("      Base Address Register Low: 0x%08x\n", reg);
 		if (baseis64) {
 			/* 64bit */
 			reg2 = regs[o2i(entoff + 12)];
-			printf("    Base Address Register high: 0x%08x\n",
+			printf("      Base Address Register high: 0x%08x\n",
 			    reg2);
 			base |= (uint64_t)reg2 << 32;
 		}
@@ -2548,16 +2552,16 @@ pci_conf_print_ea_cap(const pcireg_t *regs, int capoff)
 		reg = regs[o2i(entoff + 8)];
 		offset = reg & PCI_EA_LOWMASK;
 		offsetis64 = reg & PCI_EA_BASEMAXOFFSET_64BIT;
-		printf("    Max Offset Register Low: 0x%08x\n", reg);
+		printf("      Max Offset Register Low: 0x%08x\n", reg);
 		if (offsetis64) {
 			/* 64bit */
 			reg2 = regs[o2i(entoff + (baseis64 ? 16 : 12))];
-			printf("    Max Offset Register high: 0x%08x\n",
+			printf("      Max Offset Register high: 0x%08x\n",
 			    reg2);
 			offset |= (uint64_t)reg2 << 32;
 		}
 
-		printf("      range: 0x%016" PRIx64 "-0x%016" PRIx64
+		printf("        range: 0x%016" PRIx64 "-0x%016" PRIx64
 			    "\n", base, base + offset);
 
 		entoff += 4;

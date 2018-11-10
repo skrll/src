@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.97 2018/11/01 18:23:25 skrll Exp $
+#	$NetBSD: Makefile.inc,v 1.99 2018/11/05 21:34:33 skrll Exp $
 #
 #	etc.evbarm/Makefile.inc -- evbarm-specific etc Makefile targets
 #
@@ -24,8 +24,6 @@ EVBARM_BOARDS.armv7+=		BCM5301X
 EVBARM_BOARDS.armv7hf+=		BCM5301X
 #EVBARM_BOARDS.armv7+=		BCM56340
 #EVBARM_BOARDS.armv7hf+= 	BCM56340
-KERNEL_SETS.armv7+=		GENERIC
-KERNEL_SETS.armv7hf+=		GENERIC
 KERNEL_SETS.armv7+=		SUNXI
 KERNEL_SETS.armv7hf+=		SUNXI
 KERNEL_SETS.armv7+=		VEXPRESS_A15
@@ -98,8 +96,6 @@ EVBARM_BOARDS.armv7+=		CUBOX
 EVBARM_BOARDS.armv7hf+= 	CUBOX
 EVBARM_BOARDS.armv7+=		CUBOX-I
 EVBARM_BOARDS.armv7hf+= 	CUBOX-I
-KERNEL_SETS.armv7+=		GENERIC
-KERNEL_SETS.armv7hf+=		GENERIC
 #EVBARM_BOARDS.armv7+=		IGEPV2
 EVBARM_BOARDS.armv7+=		IMX6UL-STARTER
 EVBARM_BOARDS.armv7hf+=		IMX6UL-STARTER
@@ -178,6 +174,10 @@ BUILD_KERNELS+=		${board}_INSTALL
 .endfor
 KERNEL_SETS+=		${KERNEL_SETS.${arch}}
 .endfor
+
+.if !empty(MACHINE_ARCH:Mearmv7*)
+KERNEL_SETS+=		GENERIC
+.endif
 
 .if !empty(MACHINE_ARCH:Maarch64)
 smp_efibootaa64:
