@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3.h,v 1.1 2018/08/08 19:02:28 jmcneill Exp $ */
+/* $NetBSD: gicv3.h,v 1.3 2018/11/10 01:56:28 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -31,21 +31,50 @@
 
 #include <sys/intr.h>
 
+struct gicv3_dma {
+	bus_dma_segment_t	segs[1];
+	bus_dmamap_t		map;
+	uint8_t			*base;
+	bus_size_t		len;
+};
+
+struct gicv3_cpu_init {
+	void			(*func)(void *, struct cpu_info *ci);
+	void			*arg;
+
+	LIST_ENTRY(gicv3_cpu_init) list;
+};
+
 struct gicv3_softc {
-	struct pic_softc	sc_pic;
+	struct pic_softc	sc_pic;		/* SGI/PPI/SGIs */
+	struct pic_softc	sc_lpi;		/* LPIs */
 	device_t		sc_dev;
 
 	bus_space_tag_t		sc_bst;
+	bus_dma_tag_t		sc_dmat;
 
 	bus_space_handle_t	sc_bsh_d;	/* GICD */
 	bus_space_handle_t	*sc_bsh_r;	/* GICR */
 	u_int			sc_bsh_r_count;
 
 	uint32_t		sc_enabled_sgippi;
-	uint64_t		sc_default_irouter;
+	uint64_t		sc_irouter[MAXCPUS];
+
+	/* LPI configuration table */
+	struct gicv3_dma	sc_lpiconf;
+
+	/* LPI pending tables */
+	struct gicv3_dma	sc_lpipend[MAXCPUS];
+
+	/* Unique identifier for PEs */
+	u_int			sc_processor_id[MAXCPUS];
+
+	/* CPU init callbacks */
+	LIST_HEAD(, gicv3_cpu_init) sc_cpu_init;
 };
 
 int	gicv3_init(struct gicv3_softc *);
+void	gicv3_dma_alloc(struct gicv3_softc *, struct gicv3_dma *, bus_size_t, bus_size_t);
 void	gicv3_irq_handler(void *);
 
 #endif /* _ARM_CORTEX_GICV3_H */

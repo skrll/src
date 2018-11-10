@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.11 2018/10/06 18:45:37 martin Exp $	*/
+/*	$NetBSD: main.c,v 1.13 2018/11/07 21:20:23 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -148,7 +148,7 @@ init(void)
 
 	for (arg = fflagopts; arg->name != NULL; arg++) {
 		if (arg->var == cdrom_dev)
-			strlcpy(arg->var, get_default_cdrom(), arg->size);
+			get_default_cdrom(arg->var, arg->size);
 		else
 			strlcpy(arg->var, arg->dflt, arg->size);
 	}
@@ -420,7 +420,22 @@ static void
 usage(void)
 {
 
-	(void)fprintf(stderr, "%s", msg_string(MSG_usage));
+	(void)fprintf(stderr, "usage: sysinst [-D] [-f definition_file] "
+	    "[-r release] [-C bg:fg]"
+#ifndef NO_PARTMAN
+	    " [-p]"
+#endif
+	    "\n"
+	    "where:\n"
+	    "\t-D\n\t\trun in debug mode\n"
+	    "\t-f definition_file\n\t\toverride built-in defaults from file\n"
+	    "\t-r release\n\t\toverride release name\n"
+	    "\t-C bg:fg\n\t\tuse different color scheme\n"
+#ifndef NO_PARTMAN
+	    "\t-p\n\t\tonly run the partition editor, no installation\n"
+#endif
+	    );
+
 	exit(1);
 }
 

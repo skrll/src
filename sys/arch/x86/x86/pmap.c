@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.308 2018/09/29 13:19:38 cherry Exp $	*/
+/*	$NetBSD: pmap.c,v 1.310 2018/11/07 07:14:51 maxv Exp $	*/
 
 /*
  * Copyright (c) 2008, 2010, 2016, 2017 The NetBSD Foundation, Inc.
@@ -130,7 +130,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.308 2018/09/29 13:19:38 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.310 2018/11/07 07:14:51 maxv Exp $");
 
 #include "opt_user_ldt.h"
 #include "opt_lockdebug.h"
@@ -149,6 +149,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.308 2018/09/29 13:19:38 cherry Exp $");
 #include <sys/intr.h>
 #include <sys/xcall.h>
 #include <sys/kcore.h>
+#include <sys/asan.h>
 
 #include <uvm/uvm.h>
 #include <uvm/pmap/pmap_pvt.h>
@@ -2377,6 +2378,7 @@ pmap_create(void)
 #endif
 	pmap->pm_flags = 0;
 	pmap->pm_gc_ptp = NULL;
+	pmap->pm_tlb_flush = NULL;
 
 	kcpuset_create(&pmap->pm_cpus, true);
 	kcpuset_create(&pmap->pm_kernel_cpus, true);
@@ -4494,7 +4496,6 @@ pmap_growkernel(vaddr_t maxkvaddr)
 #endif
 
 #ifdef KASAN
-	void kasan_shadow_map(void *, size_t);
 	kasan_shadow_map((void *)pmap_maxkvaddr,
 	    (size_t)(maxkvaddr - pmap_maxkvaddr));
 #endif

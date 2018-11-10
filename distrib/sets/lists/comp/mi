@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2233 2018/10/05 09:51:55 hannken Exp $
+#	$NetBSD: mi,v 1.2237 2018/10/28 00:44:37 uwe Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -6258,8 +6258,9 @@
 ./usr/share/man/cat3/curses_fileio.0		comp-c-catman		.cat
 ./usr/share/man/cat3/curses_inch.0		comp-c-catman		.cat
 ./usr/share/man/cat3/curses_input.0		comp-c-catman		.cat
+./usr/share/man/cat3/curses_insch.0		comp-c-catman		.cat
 ./usr/share/man/cat3/curses_insdelln.0		comp-c-catman		.cat
-./usr/share/man/cat3/curses_insertch.0		comp-c-catman		.cat
+./usr/share/man/cat3/curses_insertch.0		comp-obsolete		obsolete
 ./usr/share/man/cat3/curses_insertln.0		comp-c-catman		.cat
 ./usr/share/man/cat3/curses_keyname.0		comp-c-catman		.cat
 ./usr/share/man/cat3/curses_line.0		comp-c-catman		.cat
@@ -8436,6 +8437,7 @@
 ./usr/share/man/cat3/mvinchnstr.0		comp-c-catman		.cat
 ./usr/share/man/cat3/mvinchstr.0		comp-c-catman		.cat
 ./usr/share/man/cat3/mvinnstr.0			comp-c-catman		.cat
+./usr/share/man/cat3/mvinsch.0			comp-c-catman		.cat
 ./usr/share/man/cat3/mvinstr.0			comp-c-catman		.cat
 ./usr/share/man/cat3/mvprintw.0			comp-c-catman		.cat
 ./usr/share/man/cat3/mvvline.0			comp-c-catman		.cat
@@ -8449,6 +8451,7 @@
 ./usr/share/man/cat3/mvwgetnstr.0		comp-c-catman		.cat
 ./usr/share/man/cat3/mvwgetstr.0		comp-c-catman		.cat
 ./usr/share/man/cat3/mvwhline.0			comp-c-catman		.cat
+./usr/share/man/cat3/mvwinsch.0			comp-c-catman		.cat
 ./usr/share/man/cat3/mvwin.0			comp-c-catman		.cat
 ./usr/share/man/cat3/mvwinchnstr.0		comp-c-catman		.cat
 ./usr/share/man/cat3/mvwinchstr.0		comp-c-catman		.cat
@@ -14159,8 +14162,9 @@
 ./usr/share/man/html3/curses_fileio.html	comp-c-htmlman		html
 ./usr/share/man/html3/curses_inch.html		comp-c-htmlman		html
 ./usr/share/man/html3/curses_input.html		comp-c-htmlman		html
+./usr/share/man/html3/curses_insch.html		comp-c-htmlman		html
 ./usr/share/man/html3/curses_insdelln.html	comp-c-htmlman		html
-./usr/share/man/html3/curses_insertch.html	comp-c-htmlman		html
+./usr/share/man/html3/curses_insertch.html	comp-obsolete		obsolete
 ./usr/share/man/html3/curses_insertln.html	comp-c-htmlman		html
 ./usr/share/man/html3/curses_keyname.html	comp-c-htmlman		html
 ./usr/share/man/html3/curses_line.html		comp-c-htmlman		html
@@ -16311,6 +16315,7 @@
 ./usr/share/man/html3/mvinchnstr.html		comp-c-htmlman		html
 ./usr/share/man/html3/mvinchstr.html		comp-c-htmlman		html
 ./usr/share/man/html3/mvinnstr.html		comp-c-htmlman		html
+./usr/share/man/html3/mvinsch.html		comp-c-htmlman		html
 ./usr/share/man/html3/mvinstr.html		comp-c-htmlman		html
 ./usr/share/man/html3/mvprintw.html		comp-c-htmlman		html
 ./usr/share/man/html3/mvvline.html		comp-c-htmlman		html
@@ -16328,6 +16333,7 @@
 ./usr/share/man/html3/mvwinchnstr.html		comp-c-htmlman		html
 ./usr/share/man/html3/mvwinchstr.html		comp-c-htmlman		html
 ./usr/share/man/html3/mvwinnstr.html		comp-c-htmlman		html
+./usr/share/man/html3/mvwinsch.html		comp-c-htmlman		html
 ./usr/share/man/html3/mvwinstr.html		comp-c-htmlman		html
 ./usr/share/man/html3/mvwprintw.html		comp-c-htmlman		html
 ./usr/share/man/html3/mvwvline.html		comp-c-htmlman		html
@@ -22002,8 +22008,9 @@
 ./usr/share/man/man3/curses_fileio.3		comp-c-man		.man
 ./usr/share/man/man3/curses_inch.3		comp-c-man		.man
 ./usr/share/man/man3/curses_input.3		comp-c-man		.man
+./usr/share/man/man3/curses_insch.3		comp-c-man		.man
 ./usr/share/man/man3/curses_insdelln.3		comp-c-man		.man
-./usr/share/man/man3/curses_insertch.3		comp-c-man		.man
+./usr/share/man/man3/curses_insertch.3		comp-obsolete		obsolete
 ./usr/share/man/man3/curses_insertln.3		comp-c-man		.man
 ./usr/share/man/man3/curses_keyname.3		comp-c-man		.man
 ./usr/share/man/man3/curses_line.3		comp-c-man		.man
@@ -24192,6 +24199,7 @@
 ./usr/share/man/man3/mvinchnstr.3		comp-c-man		.man
 ./usr/share/man/man3/mvinchstr.3		comp-c-man		.man
 ./usr/share/man/man3/mvinnstr.3			comp-c-man		.man
+./usr/share/man/man3/mvinsch.3			comp-c-man		.man
 ./usr/share/man/man3/mvinstr.3			comp-c-man		.man
 ./usr/share/man/man3/mvprintw.3			comp-c-man		.man
 ./usr/share/man/man3/mvvline.3			comp-c-man		.man
@@ -24209,6 +24217,7 @@
 ./usr/share/man/man3/mvwinchnstr.3		comp-c-man		.man
 ./usr/share/man/man3/mvwinchstr.3		comp-c-man		.man
 ./usr/share/man/man3/mvwinnstr.3		comp-c-man		.man
+./usr/share/man/man3/mvwinsch.3			comp-c-man		.man
 ./usr/share/man/man3/mvwinstr.3			comp-c-man		.man
 ./usr/share/man/man3/mvwprintw.3		comp-c-man		.man
 ./usr/share/man/man3/mvwvline.3			comp-c-man		.man

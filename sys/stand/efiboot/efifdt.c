@@ -1,4 +1,4 @@
-/* $NetBSD: efifdt.c,v 1.9 2018/09/09 13:37:54 jmcneill Exp $ */
+/* $NetBSD: efifdt.c,v 1.13 2018/11/02 01:22:39 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -146,22 +146,14 @@ efi_fdt_memory_map(void)
 		panic("FDT: Failed to create " FDT_MEMORY_NODE_PATH " node");
 
 	fdt_delprop(fdt_data, memory, "reg");
-	while (fdt_num_mem_rsv(fdt_data) > 0) {
-		if (fdt_del_mem_rsv(fdt_data, 0) < 0)
-			panic("FDT: Failed to remove reserved memory map entry");
-	}
 
 	const int address_cells = fdt_address_cells(fdt_data, fdt_path_offset(fdt_data, "/"));
 	const int size_cells = fdt_size_cells(fdt_data, fdt_path_offset(fdt_data, "/"));
 
 	memmap = LibMemoryMap(&nentries, &mapkey, &descsize, &descver);
 	for (n = 0, md = memmap; n < nentries; n++, md = NextMemoryDescriptor(md, descsize)) {
-#ifdef EFI_MEMORY_DEBUG
-		printf("MEM: %u: Type 0x%x Attr 0x%lx Phys 0x%lx Virt 0x%lx Size 0x%lx\n",
-		    n, md->Type, md->Attribute,
-		    md->PhysicalStart, md->VirtualStart,
-		    (u_long)md->NumberOfPages * EFI_PAGE_SIZE);
-#endif
+		if ((md->Attribute & EFI_MEMORY_RUNTIME) != 0)
+			continue;
 		if ((md->Attribute & EFI_MEMORY_WB) == 0)
 			continue;
 		if (!FDT_MEMORY_USABLE(md))
@@ -220,6 +212,19 @@ efi_fdt_bootargs(const char *bootargs)
 			    bpart->hash, sizeof(bpart->hash));
 			fdt_setprop_u32(fdt_data, chosen, "netbsd,partition",
 			    bpart->index);
+			break;
+		case EFI_BLOCK_PART_GPT:
+			if (bpart->gpt.ent.ent_name[0] == 0x0000) {
+				fdt_setprop(fdt_data, chosen, "netbsd,gpt-guid",
+				    bpart->hash, sizeof(bpart->hash));
+			} else {
+				char *label = NULL;
+				int rv = ucs2_to_utf8(bpart->gpt.ent.ent_name, &label);
+				if (rv == 0) {
+					fdt_setprop_string(fdt_data, chosen, "netbsd,gpt-label", label);
+					FreePool(label);
+				}
+			}
 			break;
 		default:
 			break;

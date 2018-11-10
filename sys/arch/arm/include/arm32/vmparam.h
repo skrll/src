@@ -1,4 +1,4 @@
-/*	$NetBSD: vmparam.h,v 1.41 2017/02/13 09:46:30 skrll Exp $	*/
+/*	$NetBSD: vmparam.h,v 1.42 2018/10/27 13:26:23 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002 Wasabi Systems, Inc.

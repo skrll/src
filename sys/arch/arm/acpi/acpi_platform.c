@@ -1,4 +1,4 @@
-/* $NetBSD: acpi_platform.c,v 1.4 2018/10/19 15:29:00 jmcneill Exp $ */
+/* $NetBSD: acpi_platform.c,v 1.6 2018/10/30 16:41:51 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -31,9 +31,10 @@
 
 #include "com.h"
 #include "plcom.h"
+#include "opt_efi.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_platform.c,v 1.4 2018/10/19 15:29:00 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_platform.c,v 1.6 2018/10/30 16:41:51 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -63,9 +64,15 @@ __KERNEL_RCSID(0, "$NetBSD: acpi_platform.c,v 1.4 2018/10/19 15:29:00 jmcneill E
 #include <dev/ic/comreg.h>
 #include <dev/ic/comvar.h>
 
+#ifdef EFI_RUNTIME
+#include <arm/arm/efi_runtime.h>
+#endif
+
 #include <dev/acpi/acpireg.h>
 #include <dev/acpi/acpivar.h>
-#include <arch/arm/acpi/acpi_table.h>
+#include <arm/acpi/acpi_table.h>
+
+#include <libfdt.h>
 
 #define	SPCR_INTERFACE_TYPE_PL011		0x0003
 #define	SPCR_INTERFACE_TYPE_SBSA_32BIT		0x000d
@@ -207,11 +214,6 @@ acpi_platform_init_attach_args(struct fdt_attach_args *faa)
 }
 
 static void
-acpi_platform_early_putchar(char c)
-{
-}
-
-static void
 acpi_platform_device_register(device_t self, void *aux)
 {
 }
@@ -219,6 +221,10 @@ acpi_platform_device_register(device_t self, void *aux)
 static void
 acpi_platform_reset(void)
 {
+#ifdef EFI_RUNTIME
+	if (arm_efirt_reset(EFI_RESET_COLD) == 0)
+		return;
+#endif
 	if (psci_available())
 		psci_system_reset();
 }
@@ -234,7 +240,6 @@ static const struct arm_platform acpi_platform = {
 	.ap_bootstrap = acpi_platform_bootstrap,
 	.ap_startup = acpi_platform_startup,
 	.ap_init_attach_args = acpi_platform_init_attach_args,
-	.ap_early_putchar = acpi_platform_early_putchar,
 	.ap_device_register = acpi_platform_device_register,
 	.ap_reset = acpi_platform_reset,
 	.ap_delay = gtmr_delay,

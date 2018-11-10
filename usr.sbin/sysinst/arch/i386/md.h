@@ -1,4 +1,4 @@
-/*	$NetBSD: md.h,v 1.1 2014/07/26 19:30:45 dholland Exp $	*/
+/*	$NetBSD: md.h,v 1.3 2018/11/07 21:20:23 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -79,14 +79,6 @@
 #define SET_KERNEL_1_NAME	"kern-GENERIC"
 
 /*
- * Disk names accepted as valid targets for a from-scratch installation.
- *
- * On i386, we allow "wd"  ST-506/IDE disks,  "sd" scsi disks, "ld" logical
- * disks, "ed" IBM ESDI disks, "raid" raidframe disks
- */
-#define DISK_NAMES "wd", "sd", "ld", "ed", "raid:no_mbr", "xbd:no_mbr"
-
-/*
  * Machine-specific command to write a new label to a disk.
  * For example, i386  uses "/sbin/disklabel -w -r", just like i386
  * miniroot scripts, though this may leave a bogus incore label.
@@ -109,7 +101,7 @@ extern struct mbr_bootsel *mbs;
 #ifdef CD_NAMES
 #undef CD_NAMES
 #endif
-#define CD_NAMES "cd0a","mcd0a"
+#define CD_NAMES "cd*","mcd*"
 
 /*
  *  prototypes for MD code.

@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.58 2018/10/24 11:02:13 jmcneill Exp $
+#	$NetBSD: GENERIC64,v 1.62 2018/11/01 20:34:50 maxv Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -85,6 +85,10 @@ options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 #options 	EARLYCONS=thunderx, CONSADDR=0x87e024000000
 #options 	EARLYCONS=virt
 
+# Kernel Address Sanitizer (kASan).
+#makeoptions 	KASAN=1		# Kernel Address Sanitizer
+#options 	KASAN
+
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
 
@@ -92,6 +96,9 @@ config		netbsd		root on ? type ?
 
 options 	COMPAT_NETBSD32
 options 	EXEC_ELF32
+
+# EFI runtime support
+options 	EFI_RUNTIME
 
 # Device tree support
 armfdt0		at root
@@ -378,11 +385,13 @@ tegrausbphy*	at fdt?			# NVIDIA Tegra USB PHY
 dwctwo*		at fdt?			# Designware USB DRD
 ehci*		at fdt?			# EHCI
 ehci*		at pci?			# EHCI
+ehci*		at acpi?		# EHCI
 motg*		at fdt?			# Mentor Graphics USB OTG
 ohci*		at fdt?			# OHCI
 ohci*		at pci?			# OHCI
 xhci*		at fdt?			# XHCI
 xhci*		at pci?			# XHCI
+xhci*		at acpi?		# XHCI
 usb*		at usbus?
 
 include "dev/usb/usbdevices.config"

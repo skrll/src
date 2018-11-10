@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.98 2018/10/18 09:01:52 skrll Exp $	*/
+/*	$NetBSD: cpu.h,v 1.99 2018/10/25 07:13:55 skrll Exp $	*/
 
 /*
  * Copyright (c) 1994-1996 Mark Brinicombe.
@@ -153,6 +153,7 @@ struct cpu_info {
 
 	lwp_t *		ci_curlwp;	/* current lwp */
 	lwp_t *		ci_lastlwp;	/* last lwp */
+
 	struct evcnt	ci_arm700bugcount;
 	int32_t		ci_mtx_count;
 	int		ci_mtx_oldspl;
@@ -179,7 +180,6 @@ struct cpu_info {
 
 	struct arm_cache_info *
 			ci_cacheinfo;
-
 
 #if defined(MP_CPU_INFO_MEMBERS)
 	MP_CPU_INFO_MEMBERS

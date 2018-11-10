@@ -1,4 +1,4 @@
-/* $NetBSD: acpi_pci_machdep.c,v 1.4 2018/10/21 11:56:26 jmcneill Exp $ */
+/* $NetBSD: acpi_pci_machdep.c,v 1.7 2018/11/03 12:03:05 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_pci_machdep.c,v 1.4 2018/10/21 11:56:26 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_pci_machdep.c,v 1.7 2018/11/03 12:03:05 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -60,6 +60,7 @@ __KERNEL_RCSID(0, "$NetBSD: acpi_pci_machdep.c,v 1.4 2018/10/21 11:56:26 jmcneil
 #include <arm/pci/pci_msi_machdep.h>
 
 struct acpi_pci_prt {
+	u_int				prt_segment;
 	u_int				prt_bus;
 	ACPI_HANDLE			prt_handle;
 	TAILQ_ENTRY(acpi_pci_prt)	prt_list;
@@ -73,6 +74,7 @@ static void	acpi_pci_md_attach_hook(device_t, device_t,
 static int	acpi_pci_md_bus_maxdevs(void *, int);
 static pcitag_t	acpi_pci_md_make_tag(void *, int, int, int);
 static void	acpi_pci_md_decompose_tag(void *, pcitag_t, int *, int *, int *);
+static u_int	acpi_pci_md_get_segment(void *);
 static pcireg_t	acpi_pci_md_conf_read(void *, pcitag_t, int);
 static void	acpi_pci_md_conf_write(void *, pcitag_t, int, pcireg_t);
 static int	acpi_pci_md_conf_hook(void *, int, int, int, pcireg_t);
@@ -94,6 +96,7 @@ struct arm32_pci_chipset arm_acpi_pci_chipset = {
 	.pc_bus_maxdevs = acpi_pci_md_bus_maxdevs,
 	.pc_make_tag = acpi_pci_md_make_tag,
 	.pc_decompose_tag = acpi_pci_md_decompose_tag,
+	.pc_get_segment = acpi_pci_md_get_segment,
 	.pc_conf_read = acpi_pci_md_conf_read,
 	.pc_conf_write = acpi_pci_md_conf_write,
 	.pc_conf_hook = acpi_pci_md_conf_hook,
@@ -190,6 +193,7 @@ acpi_pci_md_attach_hook(device_t parent, device_t self,
 	if (handle != NULL) {
 		prt = kmem_alloc(sizeof(*prt), KM_SLEEP);
 		prt->prt_bus = pba->pba_bus;
+		prt->prt_segment = ap->ap_seg;
 		prt->prt_handle = handle;
 		TAILQ_INSERT_TAIL(&acpi_pci_irq_routes, prt, prt_list);
 	}
@@ -225,6 +229,14 @@ acpi_pci_md_decompose_tag(void *v, pcitag_t tag, int *bp, int *dp, int *fp)
 		*dp = (tag >> 11) & 0x1f;
 	if (fp)
 		*fp = (tag >> 8) & 0x7;
+}
+
+static u_int
+acpi_pci_md_get_segment(void *v)
+{
+	struct acpi_pci_context * const ap = v;
+
+	return ap->ap_seg;
 }
 
 static pcireg_t
@@ -264,13 +276,16 @@ acpi_pci_md_conf_interrupt(void *v, int bus, int dev, int ipin, int sqiz, int *i
 }
 
 static struct acpi_pci_prt *
-acpi_pci_md_intr_find_prt(u_int bus)
+acpi_pci_md_intr_find_prt(pci_chipset_tag_t pc, u_int bus)
 {
 	struct acpi_pci_prt *prt, *prtp;
+	u_int segment;
+
+	segment = pci_get_segment(pc);
 
 	prt = NULL;
 	TAILQ_FOREACH(prtp, &acpi_pci_irq_routes, prt_list)
-		if (prtp->prt_bus == bus) {
+		if (prtp->prt_segment == segment && prtp->prt_bus == bus) {
 			prt = prtp;
 			break;
 		}
@@ -291,7 +306,7 @@ acpi_pci_md_intr_map(const struct pci_attach_args *pa, pci_intr_handle_t *ih)
 	if (pa->pa_intrpin == PCI_INTERRUPT_PIN_NONE)
 		return EINVAL;
 
-	prt = acpi_pci_md_intr_find_prt(pa->pa_bus);
+	prt = acpi_pci_md_intr_find_prt(pa->pa_pc, pa->pa_bus);
 	if (prt == NULL)
 		return ENXIO;
 
@@ -331,9 +346,12 @@ static const char *
 acpi_pci_md_intr_string(void *v, pci_intr_handle_t ih, char *buf, size_t len)
 {
 	const int irq = __SHIFTOUT(ih, ARM_PCI_INTR_IRQ);
+	const int vec = __SHIFTOUT(ih, ARM_PCI_INTR_MSI_VEC);
 
-	if (ih & ARM_PCI_INTR_MSI)
-		snprintf(buf, len, "irq %d (MSI)", irq);
+	if (ih & ARM_PCI_INTR_MSIX)
+		snprintf(buf, len, "irq %d (MSI-X vec %d)", irq, vec);
+	else if (ih & ARM_PCI_INTR_MSI)
+		snprintf(buf, len, "irq %d (MSI vec %d)", irq, vec);
 	else
 		snprintf(buf, len, "irq %d", irq);
 
@@ -367,7 +385,7 @@ acpi_pci_md_intr_establish(void *v, pci_intr_handle_t ih, int ipl,
 {
 	struct acpi_pci_context * const ap = v;
 
-	if (ih & ARM_PCI_INTR_MSI)
+	if ((ih & (ARM_PCI_INTR_MSI | ARM_PCI_INTR_MSIX)) != 0)
 		return arm_pci_msi_intr_establish(&ap->ap_pc, ih, ipl, callback, arg);
 
 	const int irq = (int)__SHIFTOUT(ih, ARM_PCI_INTR_IRQ);
