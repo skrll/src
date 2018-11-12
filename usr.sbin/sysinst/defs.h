@@ -1,4 +1,4 @@
-/*	$NetBSD: defs.h,v 1.22 2018/11/08 20:29:37 martin Exp $	*/
+/*	$NetBSD: defs.h,v 1.24 2018/11/11 10:06:09 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -178,8 +178,14 @@ enum {
 #define PI_ISBSDFS(p) ((p)->pi_fstype == FS_BSDLFS || \
 		       (p)->pi_fstype == FS_BSDFFS)
 
-/* standard cd0 device */
+/*
+ * We do not offer CDs or floppies as installation target usually.
+ * Architectures might want to undefine if they want to allow
+ * these devices or redefine if they have unusual CD device names.
+ * Do not define to empty or an empty string, undefine instead.
+ */
 #define CD_NAMES "cd*"
+#define FLOPPY_NAMES "fd*"
 
 /* Types */
 
@@ -476,7 +482,7 @@ void	toplevel(void);
 bool	get_default_cdrom(char *, size_t);
 int	find_disks(const char *);
 bool enumerate_disks(void *state,bool (*func)(void *state, const char *dev));
-bool is_cdrom_device(const char *dev);
+bool is_cdrom_device(const char *dev, bool as_target);
 
 struct menudesc;
 void	fmt_fspart(struct menudesc *, int, void *);

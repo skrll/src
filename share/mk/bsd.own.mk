@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1079 2018/11/10 01:40:46 macallan Exp $
+#	$NetBSD: bsd.own.mk,v 1.1082 2018/11/11 18:02:23 christos Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -486,6 +486,7 @@ TOOL_CTFMERGE=		ctfmerge
 TOOL_CVSLATEST=		cvslatest
 TOOL_DB=		db
 TOOL_DISKLABEL=		disklabel
+TOOL_DTC=		dtc
 TOOL_EQN=		eqn
 TOOL_FDISK=		fdisk
 TOOL_FGEN=		fgen
@@ -980,7 +981,7 @@ MKCOMPATMODULES:=	no
 # These platforms use softfloat by default.
 #
 .if ${MACHINE_ARCH} == "mips64eb" || ${MACHINE_ARCH} == "mips64el"
-MKSOFTFLOAT?=	no
+MKSOFTFLOAT?=	yes
 .endif
 
 #
