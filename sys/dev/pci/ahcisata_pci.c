@@ -36,6 +36,10 @@ __KERNEL_RCSID(0, "$NetBSD: ahcisata_pci.c,v 1.57 2020/01/18 11:26:11 simonb Exp
 #include "opt_ahcisata_pci.h"
 #endif
 
+#ifdef _KERNEL_OPT
+#include "opt_ahcisata_pci.h"
+#endif
+
 #include <sys/types.h>
 #include <sys/kmem.h>
 #include <sys/param.h>
@@ -208,6 +212,8 @@ static const struct ahci_pci_quirk ahci_pci_quirks[] = {
 	    AHCI_QUIRK_BADPMP },
 	{ PCI_VENDOR_AMD, PCI_PRODUCT_AMD_HUDSON_SATA_AHCI,
 	    AHCI_QUIRK_BADPMP },
+	{ PCI_VENDOR_CAVIUM, PCI_PRODUCT_CAVIUM_THUNDERX_AHCI,
+	    AHCI_QUIRK_SKIP_RESET },
 };
 
 struct ahci_pci_softc {
@@ -410,16 +416,53 @@ ahci_pci_attach(device_t parent, device_t self, void *aux)
 
 	pci_aprint_devinfo(pa, "AHCI disk controller");
 
+	/* Allocation settings */
 	int counts[PCI_INTR_TYPE_SIZE] = {
 		[PCI_INTR_TYPE_INTX] = 1,
+#ifndef AHCISATA_DISABLE_MSI
 		[PCI_INTR_TYPE_MSI] = 1,
-		[PCI_INTR_TYPE_MSIX] = -1,
+#endif
+#ifndef AHCISATA_DISABLE_MSIX
+		[PCI_INTR_TYPE_MSIX] = 1,
+#endif
 	};
 
+alloc_retry:
 	/* Allocate and establish the interrupt. */
 	if (pci_intr_alloc(pa, &psc->sc_pihp, counts, PCI_INTR_TYPE_MSIX)) {
 		aprint_error_dev(self, "can't allocate handler\n");
 		goto fail;
+	}
+
+	intrstr = pci_intr_string(pa->pa_pc, psc->sc_pihp[0], intrbuf,
+	    sizeof(intrbuf));
+	psc->sc_ih = pci_intr_establish_xname(pa->pa_pc, psc->sc_pihp[0],
+	    IPL_BIO, ahci_intr, sc, device_xname(sc->sc_atac.atac_dev));
+	if (psc->sc_ih == NULL) {
+		const pci_intr_type_t intr_type = pci_intr_type(pa->pa_pc,
+		    psc->sc_pihp[0]);
+		pci_intr_release(pa->pa_pc, psc->sc_pihp, 1);
+		psc->sc_ih = NULL;
+		switch (intr_type) {
+		case PCI_INTR_TYPE_MSIX:
+			/* The next try is for MSI: Disable MSIX */
+			counts[PCI_INTR_TYPE_MSIX] = 0;
+			counts[PCI_INTR_TYPE_MSI] = 1;
+			counts[PCI_INTR_TYPE_INTX] = 1;
+			goto alloc_retry;
+		case PCI_INTR_TYPE_MSI:
+			/* The next try is for INTx: Disable MSI */
+			counts[PCI_INTR_TYPE_MSI] = 0;
+			counts[PCI_INTR_TYPE_INTX] = 1;
+			goto alloc_retry;
+		case PCI_INTR_TYPE_INTX:
+		default:
+			aprint_error_dev(self, "couldn't establish interrupt");
+			if (intrstr != NULL)
+				aprint_error(" at %s", intrstr);
+			aprint_error("\n");
+			goto fail;
+		}
 	}
 
 	psc->sc_nintr = counts[pci_intr_type(pa->pa_pc, psc->sc_pihp[0])];
