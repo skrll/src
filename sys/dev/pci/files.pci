@@ -234,6 +234,8 @@ file	dev/pci/pciide.c		pciide
 # AHCI SATA controllers
 attach	ahcisata at pci with ahcisata_pci
 file	dev/pci/ahcisata_pci.c		ahcisata_pci
+defflag	opt_ahcisata_pci.h		AHCISATA_DISABLE_MSI
+defflag	opt_ahcisata_pci.h		AHCISATA_DISABLE_MSIX
 
 # Acard IDE controllers
 device	acardide: ata, ata_dma, ata_udma, pciide_common, wdc_common
@@ -634,6 +636,7 @@ file	dev/pci/usb_pci.c		ehci_pci | ehci_cardbus
 attach	xhci at pci with xhci_pci
 file	dev/pci/xhci_pci.c		xhci_pci
 defflag	opt_xhci_pci.h			XHCI_DISABLE_MSI
+defflag	opt_xhci_pci.h			XHCI_DISABLE_MSIX
 
 # OHCI IEEE 1394 controller
 attach	fwohci at pci with fwohci_pci
