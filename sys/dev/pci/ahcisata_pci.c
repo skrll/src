@@ -222,7 +222,7 @@ CFATTACH_DECL3_NEW(ahcisata_pci, sizeof(struct ahci_pci_softc),
     ahci_pci_match, ahci_pci_attach, ahci_pci_detach, NULL,
     NULL, ahci_pci_childdetached, DVF_DETACH_SHUTDOWN);
 
-#define	AHCI_ABAR_CAVIUM	0x10
+#define	AHCI_PCI_ABAR_CAVIUM	0x10
 
 static int
 ahci_pci_has_quirk(pci_vendor_id_t vendor, pci_product_id_t product)
@@ -242,9 +242,11 @@ ahci_pci_abar(struct pci_attach_args *pa)
 	if (PCI_VENDOR(pa->pa_id) == PCI_VENDOR_CAVIUM) {
 		if (PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_CAVIUM_THUNDERX_AHCI ||
 		    PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_CAVIUM_THUNDERX_RAID) {
-			return AHCI_ABAR_CAVIUM;
+			return AHCI_PCI_ABAR_CAVIUM;
 		}
 	}
+
+	return AHCI_PCI_ABAR;
 }
 
 

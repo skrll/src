@@ -1979,7 +1979,7 @@ product CAVIUM THUNDERX_SGPIO		0xa02a	SGPIO (Serial GPIO controller for SATA dis
 product CAVIUM THUNDERX_SMI_MDIO	0xa02b	SMI / MDIO Controller
 product CAVIUM THUNDERX_DAP		0xa02c	DAP (Debug Access Port)
 product CAVIUM THUNDERX_PCIERC		0xa02d	PCIERC (PCIe Root Complex)
-product CAVIUM THUNDERX_MIOS-FUS	0xa031	MIO-FUS (Fuse Access Controller)
+product CAVIUM THUNDERX_MIOS_FUS	0xa031	MIO-FUS (Fuse Access Controller)
 product CAVIUM THUNDERX_FUSE		0xa032	FUSF (Fuse Controller)
 product CAVIUM THUNDERX_RNGVF		0xa033	Random Number Generator virtual function
 product CAVIUM THUNDERX_NICVF		0xa034	Network Interface Controller virtual function

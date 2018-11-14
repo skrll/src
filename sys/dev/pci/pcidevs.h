@@ -1986,7 +1986,7 @@
 #define	PCI_PRODUCT_CAVIUM_THUNDERX_SMI_MDIO	0xa02b		/* SMI / MDIO Controller */
 #define	PCI_PRODUCT_CAVIUM_THUNDERX_DAP	0xa02c		/* DAP (Debug Access Port) */
 #define	PCI_PRODUCT_CAVIUM_THUNDERX_PCIERC	0xa02d		/* PCIERC (PCIe Root Complex) */
-#define	PCI_PRODUCT_CAVIUM_THUNDERX_MIOS-FUS	0xa031		/* MIO-FUS (Fuse Access Controller) */
+#define	PCI_PRODUCT_CAVIUM_THUNDERX_MIOS_FUS	0xa031		/* MIO-FUS (Fuse Access Controller) */
 #define	PCI_PRODUCT_CAVIUM_THUNDERX_FUSE	0xa032		/* FUSF (Fuse Controller) */
 #define	PCI_PRODUCT_CAVIUM_THUNDERX_RNGVF	0xa033		/* Random Number Generator virtual function */
 #define	PCI_PRODUCT_CAVIUM_THUNDERX_NICVF	0xa034		/* Network Interface Controller virtual function */
