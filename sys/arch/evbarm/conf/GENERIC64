@@ -27,9 +27,9 @@ options 	MULTIPROCESSOR
 
 pseudo-device 	openfirm	# /dev/openfirm
 
-#options 	DIAGNOSTIC	# internal consistency checks
-#options 	DEBUG
-#options 	XHCI_DEBUG
+options 	DIAGNOSTIC	# internal consistency checks
+options 	DEBUG
+options 	XHCI_DEBUG
 #options 	LOCKDEBUG
 #options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 options 	INCLUDE_CONFIG_FILE
@@ -67,10 +67,14 @@ options 	ARMV81_PAN
 # Kernel Address Sanitizer (kASan). The quarantine is optional and can
 # help KASAN find more use-after-frees. Use KASAN_PANIC if you want panics
 # instead of warnings.
-#makeoptions 	KASAN=1		# mandatory
-#options 	KASAN		# mandatory
-#options 	POOL_QUARANTINE	# optional
-#options 	KASAN_PANIC	# optional
+makeoptions 	KASAN=1		# mandatory
+options 	KASAN		# mandatory
+options 	POOL_QUARANTINE	# optional
+options 	KASAN_PANIC	# optional
+
+# KERNHIST
+options 	KERNHIST
+options 	UVMHIST
 
 # These options enable verbose messages for several subsystems.
 # Warning, these may compile large string tables into the kernel!
