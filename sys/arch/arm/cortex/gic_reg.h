@@ -337,6 +337,11 @@
 #define	GITS_CTLR_ImDe			__BIT(1)
 #define	GITS_CTLR_Enabled		__BIT(0)
 
+#define	GITS_IIDR_ProductID		__BITS(31,24)
+#define	GITS_IIDR_Variant		__BITS(19,16)
+#define	GITS_IIDR_Revision		__BITS(15,12)
+#define	GITS_IIDR_Implementor		__BITS(11,0)
+
 #define	GITS_TYPER_VMOVP		__BIT(37)
 #define	GITS_TYPER_CIL			__BIT(36)
 #define	GITS_TYPER_CIDbits		__BITS(35,32)
