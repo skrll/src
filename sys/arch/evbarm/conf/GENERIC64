@@ -74,6 +74,7 @@ pseudo-device 	openfirm	# /dev/openfirm
 
 options 	DIAGNOSTIC	# internal consistency checks
 options 	DEBUG
+options 	XHCI_DEBUG
 #options 	LOCKDEBUG
 #options 	PMAP_DEBUG	# Enable pmap_debug_level code
 options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
@@ -87,8 +88,12 @@ options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 #options 	EARLYCONS=virt
 
 # Kernel Address Sanitizer (kASan).
-#makeoptions 	KASAN=1		# Kernel Address Sanitizer
-#options 	KASAN
+makeoptions 	KASAN=1		# Kernel Address Sanitizer
+options 	KASAN
+
+# KERNHIST
+options 	KERNHIST
+options 	UVMHIST
 
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
@@ -100,6 +105,9 @@ options 	EXEC_ELF32
 
 # EFI runtime support
 options 	EFI_RUNTIME
+
+
+#options 	PCI_CONFIG_DUMP
 
 # Device tree support
 armfdt0		at root
@@ -317,6 +325,7 @@ ld*		at sdmmc?
 # SATA
 ahcisata*	at fdt?			# AHCI SATA
 ahcisata*	at acpi?
+ahcisata*	at pci?
 atabus*		at ata?
 atapibus*	at atapi?
 wd*		at atabus? drive ?
