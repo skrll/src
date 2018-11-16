@@ -1,4 +1,4 @@
-/*	$NetBSD: disks.c,v 1.23 2018/11/09 15:20:36 martin Exp $ */
+/*	$NetBSD: disks.c,v 1.27 2018/11/14 02:30:00 martin Exp $ */
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -369,7 +369,7 @@ get_default_cdrom_helper(void *state, const char *dev)
 {
 	struct default_cdrom_data *data = state;
 
-	if (!is_cdrom_device(dev))
+	if (!is_cdrom_device(dev, false))
 		return true;
 
 	strlcpy(data->device, dev, data->max_len);
@@ -511,17 +511,86 @@ is_ffs_wedge(const char *dev)
 
 /*
  * Does this device match an entry in our default CDROM device list?
+ * If looking for install targets, we also flag floopy devices.
  */
 bool
-is_cdrom_device(const char *dev)
+is_cdrom_device(const char *dev, bool as_target)
 {
-	static const char *cdrom_devices[] = { CD_NAMES, 0 };
+	static const char *target_devices[] = {
+#ifdef CD_NAMES
+		CD_NAMES
+#endif
+#if defined(CD_NAMES) && defined(FLOPPY_NAMES)
+		,
+#endif
+#ifdef FLOPPY_NAMES
+		FLOPPY_NAMES
+#endif
+#if defined(CD_NAMES) || defined(FLOPPY_NAMES)
+		,
+#endif
+		0
+	};
+	static const char *src_devices[] = {
+#ifdef CD_NAMES
+		CD_NAMES ,
+#endif
+		0
+	};
 
-	for (const char **dev_pat = cdrom_devices; *dev_pat; dev_pat++)
+	for (const char **dev_pat = as_target ? target_devices : src_devices;
+	     *dev_pat; dev_pat++)
 		if (fnmatch(*dev_pat, dev, 0) == 0)
 			return true;
 
 	return false;
+}
+
+/* does this device match any entry in the driver list? */
+static bool
+dev_in_list(const char *dev, const char **list)
+{
+
+	for ( ; *list; list++) {
+
+		size_t len = strlen(*list);
+
+		/* start of name matches? */
+		if (strncmp(dev, *list, len) == 0) {
+			char *endp;
+			int e;
+
+			/* remainder of name is a decimal number? */
+			strtou(dev+len, &endp, 10, 0, INT_MAX, &e);
+			if (endp && *endp == 0 && e == 0)
+				return true;
+		}
+	}
+
+	return false;
+}
+
+bool
+is_bootable_device(const char *dev)
+{
+	static const char *non_bootable_devs[] = {
+		"raid",	/* bootcode lives outside of raid */
+		"xbd",	/* xen virtual device, can not boot from that */
+		NULL
+	};
+
+	return !dev_in_list(dev, non_bootable_devs);
+}
+
+bool
+is_partitionable_device(const char *dev)
+{
+	static const char *non_partitionable_devs[] = {
+		"dk",	/* this is alreay a partioned slice */
+		NULL
+	};
+
+	return !dev_in_list(dev, non_partitionable_devs);
 }
 
 /*
@@ -579,22 +648,14 @@ get_disks_helper(void *arg, const char *dev)
 	struct disklabel l;
 
 	/* is this a CD device? */
-	if (is_cdrom_device(dev))
+	if (is_cdrom_device(dev, true))
 		return true;
 
+	memset(state->dd, 0, sizeof(*state->dd));
 	strlcpy(state->dd->dd_name, dev, sizeof state->dd->dd_name - 2);
-	state->dd->dd_no_mbr = false;
-	state->dd->dd_no_part = false;
+	state->dd->dd_no_mbr = !is_bootable_device(dev);
+	state->dd->dd_no_part = !is_partitionable_device(dev);
 
-	if (strncmp(dev, "dk", 2) == 0) {
-		char *endp;
-		int e;
-
-		/* if this device is dkNNNN, no partitioning is possible */
-		strtou(dev+2, &endp, 10, 0, INT_MAX, &e);
-		if (endp && *endp == 0 && e == 0)
-			state->dd->dd_no_part = true;
-	}
 	if (state->dd->dd_no_part && !state->with_non_partitionable)
 		return true;
 

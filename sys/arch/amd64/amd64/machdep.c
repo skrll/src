@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.320 2018/10/31 06:26:25 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.322 2018/11/15 04:59:02 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
@@ -110,7 +110,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.320 2018/10/31 06:26:25 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.322 2018/11/15 04:59:02 riastradh Exp $");
 
 #include "opt_modular.h"
 #include "opt_user_ldt.h"
@@ -626,6 +626,7 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	/* Round down the stackpointer to a multiple of 16 for the ABI. */
 	fp = (struct sigframe_siginfo *)(((unsigned long)sp & ~15) - 8);
 
+	memset(&frame, 0, sizeof(frame));
 	frame.sf_ra = (uint64_t)ps->sa_sigdesc[sig].sd_tramp;
 	frame.sf_si._info = ksi->ksi_info;
 	frame.sf_uc.uc_flags = _UC_SIGMASK;
@@ -633,7 +634,6 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	frame.sf_uc.uc_link = l->l_ctxlink;
 	frame.sf_uc.uc_flags |= (l->l_sigstk.ss_flags & SS_ONSTACK)
 	    ? _UC_SETSTACK : _UC_CLRSTACK;
-	memset(&frame.sf_uc.uc_stack, 0, sizeof(frame.sf_uc.uc_stack));
 	sendsig_reset(l, sig);
 
 	mutex_exit(p->p_lock);
@@ -2285,23 +2285,30 @@ cpu_fsgs_reload(struct lwp *l, int fssel, int gssel)
 	kpreempt_enable();
 }
 
-#ifdef __HAVE_DIRECT_MAP
 bool
 mm_md_direct_mapped_io(void *addr, paddr_t *paddr)
 {
 	vaddr_t va = (vaddr_t)addr;
 
+#ifdef __HAVE_DIRECT_MAP
 	if (va >= PMAP_DIRECT_BASE && va < PMAP_DIRECT_END) {
 		*paddr = PMAP_DIRECT_UNMAP(va);
 		return true;
 	}
+#else
+	__USE(va);
+#endif
+
 	return false;
 }
 
 bool
 mm_md_direct_mapped_phys(paddr_t paddr, vaddr_t *vaddr)
 {
+#ifdef __HAVE_DIRECT_MAP
 	*vaddr = PMAP_DIRECT_MAP(paddr);
 	return true;
-}
+#else
+	return false;
 #endif
+}
