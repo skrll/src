@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_cpu.c,v 1.74 2018/07/04 07:25:47 msaitoh Exp $	*/
+/*	$NetBSD: kern_cpu.c,v 1.75 2018/11/13 11:06:19 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008, 2009, 2010, 2012 The NetBSD Foundation, Inc.
@@ -56,7 +56,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_cpu.c,v 1.74 2018/07/04 07:25:47 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_cpu.c,v 1.75 2018/11/13 11:06:19 skrll Exp $");
 
 #include "opt_cpu_ucode.h"
 
@@ -322,8 +322,7 @@ cpu_lookup(u_int idx)
 
 	ci = cpu_infos[idx];
 	KASSERT(ci == NULL || cpu_index(ci) == idx);
-	KASSERTMSG(idx != maxcpus || cpu_infos[idx] == NULL, "idx %d ci %p",
-	    idx, ci);
+	KASSERTMSG(idx < maxcpus || ci == NULL, "idx %d ci %p", idx, ci);
 
 	return ci;
 }
