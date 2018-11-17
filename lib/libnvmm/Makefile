@@ -1,6 +1,4 @@
-# $NetBSD: Makefile,v 1.1 2018/11/10 09:28:56 maxv Exp $
-
-USE_SHLIBDIR=   yes
+# $NetBSD: Makefile,v 1.5 2018/11/13 09:24:37 martin Exp $
 
 .include <bsd.own.mk>
 

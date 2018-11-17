@@ -1,4 +1,4 @@
-/*	$NetBSD: atapi_wdc.c,v 1.131 2018/10/22 20:13:47 jdolecek Exp $	*/
+/*	$NetBSD: atapi_wdc.c,v 1.133 2018/11/12 20:54:03 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atapi_wdc.c,v 1.131 2018/10/22 20:13:47 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atapi_wdc.c,v 1.133 2018/11/12 20:54:03 jdolecek Exp $");
 
 #ifndef ATADEBUG
 #define ATADEBUG
@@ -89,7 +89,7 @@ static int	wdc_atapi_start(struct ata_channel *,struct ata_xfer *);
 static int	wdc_atapi_intr(struct ata_channel *, struct ata_xfer *, int);
 static void	wdc_atapi_kill_xfer(struct ata_channel *,
 				    struct ata_xfer *, int);
-static void	wdc_atapi_phase_complete(struct ata_xfer *);
+static void	wdc_atapi_phase_complete(struct ata_xfer *, int);
 static void	wdc_atapi_poll(struct ata_channel *, struct ata_xfer *);
 static void	wdc_atapi_done(struct ata_channel *, struct ata_xfer *);
 static void	wdc_atapi_reset(struct ata_channel *, struct ata_xfer *);
@@ -808,7 +808,6 @@ wdc_atapi_intr(struct ata_channel *chp, struct ata_xfer *xfer, int irq)
 		printf("%s:%d:%d: device timeout, c_bcount=%d, c_skip=%d\n",
 		    device_xname(atac->atac_dev), chp->ch_channel,
 		    xfer->c_drive, xfer->c_bcount, xfer->c_skip);
-		ata_channel_unlock(chp);
 #if NATA_DMA
 		if (xfer->c_flags & C_DMA) {
 			ata_dmaerr(drvp,
@@ -816,6 +815,7 @@ wdc_atapi_intr(struct ata_channel *chp, struct ata_xfer *xfer, int irq)
 		}
 #endif
 		sc_xfer->error = XS_TIMEOUT;
+		ata_channel_unlock(chp);
 		wdc_atapi_reset(chp, xfer);
 		return 1;
 	}
@@ -828,9 +828,9 @@ wdc_atapi_intr(struct ata_channel *chp, struct ata_xfer *xfer, int irq)
 	 * and reset device.
 	 */
 	if ((xfer->c_flags & C_TIMEOU) && (xfer->c_flags & C_DMA)) {
-		ata_channel_unlock(chp);
 		ata_dmaerr(drvp, (xfer->c_flags & C_POLL) ? AT_POLL : 0);
 		sc_xfer->error = XS_RESET;
+		ata_channel_unlock(chp);
 		wdc_atapi_reset(chp, xfer);
 		return (1);
 	}
@@ -908,12 +908,12 @@ again:
 		if ((sc_xfer->xs_control & XS_CTL_DATA_OUT) == 0 ||
 		    (xfer->c_flags & C_DMA) != 0) {
 			printf("wdc_atapi_intr: bad data phase DATAOUT\n");
-			ata_channel_unlock(chp);
 			if (xfer->c_flags & C_DMA) {
 				ata_dmaerr(drvp,
 				    (xfer->c_flags & C_POLL) ? AT_POLL : 0);
 			}
 			sc_xfer->error = XS_TIMEOUT;
+			ata_channel_unlock(chp);
 			wdc_atapi_reset(chp, xfer);
 			return 1;
 		}
@@ -962,12 +962,12 @@ again:
 		if ((sc_xfer->xs_control & XS_CTL_DATA_IN) == 0 ||
 		    (xfer->c_flags & C_DMA) != 0) {
 			printf("wdc_atapi_intr: bad data phase DATAIN\n");
-			ata_channel_unlock(chp);
 			if (xfer->c_flags & C_DMA) {
 				ata_dmaerr(drvp,
 				    (xfer->c_flags & C_POLL) ? AT_POLL : 0);
 			}
 			sc_xfer->error = XS_TIMEOUT;
+			ata_channel_unlock(chp);
 			wdc_atapi_reset(chp, xfer);
 			return 1;
 		}
@@ -1018,7 +1018,7 @@ again:
 #endif
 		sc_xfer->resid = xfer->c_bcount;
 		/* this will unlock channel lock too */
-		wdc_atapi_phase_complete(xfer);
+		wdc_atapi_phase_complete(xfer, tfd);
 		return(1);
 
 	default:
@@ -1037,7 +1037,6 @@ again:
 			sc_xfer->error = XS_SHORTSENSE;
 			sc_xfer->sense.atapi_sense = ATACH_ERR(tfd);
 		} else {
-			ata_channel_unlock(chp);
 #if NATA_DMA
 			if (xfer->c_flags & C_DMA) {
 				ata_dmaerr(drvp,
@@ -1045,6 +1044,7 @@ again:
 			}
 #endif
 			sc_xfer->error = XS_RESET;
+			ata_channel_unlock(chp);
 			wdc_atapi_reset(chp, xfer);
 			return (1);
 		}
@@ -1058,7 +1058,7 @@ again:
 }
 
 static void
-wdc_atapi_phase_complete(struct ata_xfer *xfer)
+wdc_atapi_phase_complete(struct ata_xfer *xfer, int tfd)
 {
 	struct ata_channel *chp = xfer->c_chp;
 	struct atac_softc *atac = chp->ch_atac;
@@ -1067,7 +1067,6 @@ wdc_atapi_phase_complete(struct ata_xfer *xfer)
 #endif
 	struct scsipi_xfer *sc_xfer = xfer->c_scsipi;
 	struct ata_drive_datas *drvp = &chp->ch_drive[xfer->c_drive];
-	int tfd = 0;
 
 	ata_channel_lock_owned(chp);
 
@@ -1123,12 +1122,12 @@ wdc_atapi_phase_complete(struct ata_xfer *xfer)
 #if NATA_DMA || NATA_PIOBM
 		else if (wdc->dma_status &
 		    (WDC_DMAST_NOIRQ | WDC_DMAST_ERR)) {
-			ata_channel_unlock(chp);
 #if NATA_DMA
 			ata_dmaerr(drvp,
 			    (xfer->c_flags & C_POLL) ? AT_POLL : 0);
 #endif
 			sc_xfer->error = XS_RESET;
+			ata_channel_unlock(chp);
 			wdc_atapi_reset(chp, xfer);
 			return;
 		}
@@ -1207,5 +1206,5 @@ wdc_atapi_polldsc(void *arg)
 	ata_channel_lock(chp);
 
 	/* this will unlock channel lock too */
-	wdc_atapi_phase_complete(xfer);
+	wdc_atapi_phase_complete(xfer, 0);
 }

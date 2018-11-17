@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3.c,v 1.7 2018/11/10 11:46:31 jmcneill Exp $ */
+/* $NetBSD: gicv3.c,v 1.11 2018/11/17 00:17:54 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #define	_INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.7 2018/11/10 11:46:31 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.11 2018/11/17 00:17:54 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -245,7 +245,7 @@ gicv3_dist_enable(struct gicv3_softc *sc)
 		;
 
 	/* Enable Affinity routing and G1NS interrupts */
-	gicd_ctrl = GICD_CTRL_EnableGrp1NS | GICD_CTRL_Enable | GICD_CTRL_ARE_NS;
+	gicd_ctrl = GICD_CTRL_EnableGrp1A | GICD_CTRL_Enable | GICD_CTRL_ARE_NS;
 	gicd_write_4(sc, GICD_CTRL, gicd_ctrl);
 }
 
@@ -397,9 +397,8 @@ gicv3_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 	/* Set initial priority mask */
 	gicv3_set_priority(pic, IPL_HIGH);
 
-	/* Disable preemption */
-	const uint32_t icc_bpr = __SHIFTIN(0x7, ICC_BPR_EL1_BinaryPoint);
-	icc_bpr1_write(icc_bpr);
+	/* Set the binary point field to the minimum value */
+	icc_bpr1_write(0);
 
 	/* Enable group 1 interrupt signaling */
 	icc_igrpen1_write(ICC_IGRPEN_EL1_Enable);
@@ -673,7 +672,7 @@ gicv3_lpi_init(struct gicv3_softc *sc)
 	 * Allocate LPI pending tables
 	 */
 	const bus_size_t lpipend_sz = (sc->sc_lpi.pic_maxsources + sc->sc_lpi.pic_irqbase) / NBBY;
-	for (int cpuindex = 0; cpuindex < MAXCPUS; cpuindex++) {
+	for (int cpuindex = 0; cpuindex < ncpu; cpuindex++) {
 		gicv3_dma_alloc(sc, &sc->sc_lpipend[cpuindex], lpipend_sz, 0x10000);
 		KASSERT((sc->sc_lpipend[cpuindex].segs[0].ds_addr & ~GICR_PENDBASER_Physical_Address) == 0);
 	}
@@ -768,23 +767,23 @@ gicv3_init(struct gicv3_softc *sc)
 		gicv3_lpi_cpu_init(&sc->sc_lpi, curcpu());
 
 #ifdef __HAVE_PIC_FAST_SOFTINTS
-	intr_establish(SOFTINT_BIO, IPL_SOFTBIO, IST_MPSAFE | IST_EDGE, pic_handle_softint, (void *)SOFTINT_BIO);
-	intr_establish(SOFTINT_CLOCK, IPL_SOFTCLOCK, IST_MPSAFE | IST_EDGE, pic_handle_softint, (void *)SOFTINT_CLOCK);
-	intr_establish(SOFTINT_NET, IPL_SOFTNET, IST_MPSAFE | IST_EDGE, pic_handle_softint, (void *)SOFTINT_NET);
-	intr_establish(SOFTINT_SERIAL, IPL_SOFTSERIAL, IST_MPSAFE | IST_EDGE, pic_handle_softint, (void *)SOFTINT_SERIAL);
+	intr_establish_xname(SOFTINT_BIO, IPL_SOFTBIO, IST_MPSAFE | IST_EDGE, pic_handle_softint, (void *)SOFTINT_BIO, "softint bio");
+	intr_establish_xname(SOFTINT_CLOCK, IPL_SOFTCLOCK, IST_MPSAFE | IST_EDGE, pic_handle_softint, (void *)SOFTINT_CLOCK, "softint clock");
+	intr_establish_xname(SOFTINT_NET, IPL_SOFTNET, IST_MPSAFE | IST_EDGE, pic_handle_softint, (void *)SOFTINT_NET, "softint net");
+	intr_establish_xname(SOFTINT_SERIAL, IPL_SOFTSERIAL, IST_MPSAFE | IST_EDGE, pic_handle_softint, (void *)SOFTINT_SERIAL, "softint serial");
 #endif
 
 #ifdef MULTIPROCESSOR
-	intr_establish(IPI_AST, IPL_VM, IST_MPSAFE | IST_EDGE, pic_ipi_ast, (void *)-1);
-	intr_establish(IPI_XCALL, IPL_HIGH, IST_MPSAFE | IST_EDGE, pic_ipi_xcall, (void *)-1);
-	intr_establish(IPI_GENERIC, IPL_HIGH, IST_MPSAFE | IST_EDGE, pic_ipi_generic, (void *)-1);
-	intr_establish(IPI_NOP, IPL_VM, IST_MPSAFE | IST_EDGE, pic_ipi_nop, (void *)-1);
-	intr_establish(IPI_SHOOTDOWN, IPL_SCHED, IST_MPSAFE | IST_EDGE, pic_ipi_shootdown, (void *)-1);
+	intr_establish_xname(IPI_AST, IPL_VM, IST_MPSAFE | IST_EDGE, pic_ipi_ast, (void *)-1, "IPI ast");
+	intr_establish_xname(IPI_XCALL, IPL_HIGH, IST_MPSAFE | IST_EDGE, pic_ipi_xcall, (void *)-1, "IPI xcall");
+	intr_establish_xname(IPI_GENERIC, IPL_HIGH, IST_MPSAFE | IST_EDGE, pic_ipi_generic, (void *)-1, "IPI generic");
+	intr_establish_xname(IPI_NOP, IPL_VM, IST_MPSAFE | IST_EDGE, pic_ipi_nop, (void *)-1, "IPI nop");
+	intr_establish_xname(IPI_SHOOTDOWN, IPL_SCHED, IST_MPSAFE | IST_EDGE, pic_ipi_shootdown, (void *)-1, "IPI shootdown");
 #ifdef DDB
-	intr_establish(IPI_DDB, IPL_HIGH, IST_MPSAFE | IST_EDGE, pic_ipi_ddb, NULL);
+	intr_establish_xname(IPI_DDB, IPL_HIGH, IST_MPSAFE | IST_EDGE, pic_ipi_ddb, NULL, "IPI ddb");
 #endif
 #ifdef __HAVE_PREEMPTION
-	intr_establish(IPI_KPREEMPT, IPL_VM, IST_MPSAFE | IST_EDGE, pic_ipi_kpreempt, (void *)-1);
+	intr_establish_xname(IPI_KPREEMPT, IPL_VM, IST_MPSAFE | IST_EDGE, pic_ipi_kpreempt, (void *)-1, "IPI kpreempt");
 #endif
 #endif
 
