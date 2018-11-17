@@ -3,7 +3,7 @@
 .PATH: ../../arm/include/common
 
 .if 0
-INCS+=	ansi.h aout_machdep.h asan.h asm.h \
+INCS+=	ansi.h aout_machdep.h asm.h \
 	bswap.h \
 	cdefs.h cpu.h \
 	elf_machdep.h endian.h endian_machdep.h \
