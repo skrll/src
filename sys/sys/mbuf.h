@@ -1,4 +1,4 @@
-/*	$NetBSD: mbuf.h,v 1.210 2018/08/22 01:05:24 msaitoh Exp $	*/
+/*	$NetBSD: mbuf.h,v 1.215 2018/11/15 11:18:33 maxv Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1999, 2001, 2007 The NetBSD Foundation, Inc.
@@ -773,8 +773,7 @@ MALLOC_DECLARE(M_SONAME);
 
 struct	mbuf *m_copym(struct mbuf *, int, int, int);
 struct	mbuf *m_copypacket(struct mbuf *, int);
-struct	mbuf *m_devget(char *, int, int, struct ifnet *,
-    void (*copy)(const void *, void *, size_t));
+struct	mbuf *m_devget(char *, int, int, struct ifnet *);
 struct	mbuf *m_dup(struct mbuf *, int, int, int);
 struct	mbuf *m_get(int, int);
 struct	mbuf *m_gethdr(int, int);
@@ -818,29 +817,25 @@ void	m_tag_free(struct m_tag *);
 void	m_tag_prepend(struct mbuf *, struct m_tag *);
 void	m_tag_unlink(struct mbuf *, struct m_tag *);
 void	m_tag_delete(struct mbuf *, struct m_tag *);
-void	m_tag_delete_chain(struct mbuf *, struct m_tag *);
-void	m_tag_delete_nonpersistent(struct mbuf *);
-struct	m_tag *m_tag_find(const struct mbuf *, int, struct m_tag *);
+void	m_tag_delete_chain(struct mbuf *);
+struct	m_tag *m_tag_find(const struct mbuf *, int);
 struct	m_tag *m_tag_copy(struct m_tag *);
 int	m_tag_copy_chain(struct mbuf *, struct mbuf *);
-void	m_tag_init(struct mbuf *);
-struct	m_tag *m_tag_first(struct mbuf *);
-struct	m_tag *m_tag_next(struct mbuf *, struct m_tag *);
 
 /* Packet tag types */
-#define PACKET_TAG_NONE				0  /* Nothing */
-#define PACKET_TAG_SO				4  /* sending socket pointer */
-#define PACKET_TAG_PF				11 /* packet filter */
-#define PACKET_TAG_ALTQ_QID			12 /* ALTQ queue id */
-#define PACKET_TAG_IPSEC_OUT_DONE		18
-#define	PACKET_TAG_IPSEC_NAT_T_PORTS		25 /* two uint16_t */
-#define	PACKET_TAG_INET6			26 /* IPv6 info */
-#define	PACKET_TAG_TUNNEL_INFO			28 /* tunnel identification and
-						    * protocol callback, for
-						    * loop detection/recovery
-						    */
-#define	PACKET_TAG_MPLS				29 /* Indicate it's for MPLS */
-#define	PACKET_TAG_SRCROUTE			30 /* IPv4 source routing */
+#define PACKET_TAG_NONE			0  /* Nothing */
+#define PACKET_TAG_SO			4  /* sending socket pointer */
+#define PACKET_TAG_PF			11 /* packet filter */
+#define PACKET_TAG_ALTQ_QID		12 /* ALTQ queue id */
+#define PACKET_TAG_IPSEC_OUT_DONE	18
+#define PACKET_TAG_IPSEC_NAT_T_PORTS	25 /* two uint16_t */
+#define PACKET_TAG_INET6		26 /* IPv6 info */
+#define PACKET_TAG_TUNNEL_INFO		28 /* tunnel identification and
+					    * protocol callback, for loop
+					    * detection/recovery
+					    */
+#define PACKET_TAG_MPLS			29 /* Indicate it's for MPLS */
+#define PACKET_TAG_SRCROUTE		30 /* IPv4 source routing */
 
 /*
  * Return the number of bytes in the mbuf chain, m.
@@ -888,8 +883,32 @@ void m_print(const struct mbuf *, const char *, void (*)(const char *, ...)
     __printflike(1, 2));
 
 /* from uipc_mbufdebug.c */
-void	m_examine(const struct mbuf *, int, const char *, void (*)(const char *, ...)
-    __printflike(1, 2));
+void	m_examine(const struct mbuf *, int, const char *,
+    void (*)(const char *, ...) __printflike(1, 2));
+
+/* parsers for m_examine() */
+void m_examine_ether(const struct mbuf *, int, const char *,
+    void (*)(const char *, ...) __printflike(1, 2));
+void m_examine_pppoe(const struct mbuf *, int, const char *,
+    void (*)(const char *, ...) __printflike(1, 2));
+void m_examine_ppp(const struct mbuf *, int, const char *,
+    void (*)(const char *, ...) __printflike(1, 2));
+void m_examine_arp(const struct mbuf *, int, const char *,
+    void (*)(const char *, ...) __printflike(1, 2));
+void m_examine_ip(const struct mbuf *, int, const char *,
+    void (*)(const char *, ...) __printflike(1, 2));
+void m_examine_icmp(const struct mbuf *, int, const char *,
+    void (*)(const char *, ...) __printflike(1, 2));
+void m_examine_ip6(const struct mbuf *, int, const char *,
+    void (*)(const char *, ...) __printflike(1, 2));
+void m_examine_icmp6(const struct mbuf *, int, const char *,
+    void (*)(const char *, ...) __printflike(1, 2));
+void m_examine_tcp(const struct mbuf *, int, const char *,
+    void (*)(const char *, ...) __printflike(1, 2));
+void m_examine_udp(const struct mbuf *, int, const char *,
+    void (*)(const char *, ...) __printflike(1, 2));
+void m_examine_hex(const struct mbuf *, int, const char *,
+    void (*)(const char *, ...) __printflike(1, 2));
 
 /*
  * Get rcvif of a mbuf.

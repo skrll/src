@@ -1,4 +1,4 @@
-/*	$NetBSD: usb_subr.c,v 1.226 2018/08/02 06:09:04 riastradh Exp $	*/
+/*	$NetBSD: usb_subr.c,v 1.228 2018/10/23 01:49:37 manu Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/usb_subr.c,v 1.18 1999/11/17 22:33:47 n_hibma Exp $	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.226 2018/08/02 06:09:04 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.228 2018/10/23 01:49:37 manu Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -907,6 +907,7 @@ usbd_attachwholedevice(device_t parent, struct usbd_device *dev, int port,
 	dlocs[USBDEVIFCF_INTERFACE] = -1;
 
 	KERNEL_LOCK(1, curlwp);
+	config_pending_incr(parent);
 	dv = config_found_sm_loc(parent, "usbdevif", dlocs, &uaa, usbd_print,
 				 config_stdsubmatch);
 	KERNEL_UNLOCK_ONE(curlwp);
@@ -917,6 +918,7 @@ usbd_attachwholedevice(device_t parent, struct usbd_device *dev, int port,
 		dev->ud_nifaces_claimed = 1; /* XXX */
 		usbd_serialnumber(dv, dev);
 	}
+	config_pending_decr(parent);
 	return USBD_NORMAL_COMPLETION;
 }
 
@@ -1228,9 +1230,10 @@ usbd_new_device(device_t parent, struct usbd_bus *bus, int depth, int speed,
 	     adev = hub, hub = hub->ud_myhub)
 		;
 	if (hub) {
-		for (p = 0; p < hub->ud_hub->uh_hubdesc.bNbrPorts; p++) {
-			if (hub->ud_hub->uh_ports[p].up_dev == adev) {
-				dev->ud_myhsport = &hub->ud_hub->uh_ports[p];
+		for (p = 1; p <= hub->ud_hub->uh_hubdesc.bNbrPorts; p++) {
+			if (hub->ud_hub->uh_ports[p - 1].up_dev == adev) {
+				dev->ud_myhsport =
+				    &hub->ud_hub->uh_ports[p - 1];
 				goto found;
 			}
 		}
@@ -1556,8 +1559,8 @@ usbd_fill_deviceinfo(struct usbd_device *dev, struct usb_device_info *di,
 	}
 
 	const int nports = dev->ud_hub->uh_hubdesc.bNbrPorts;
-	for (i = 0; i < __arraycount(di->udi_ports) && i < nports; i++) {
-		p = &dev->ud_hub->uh_ports[i];
+	for (i = 1; i <= __arraycount(di->udi_ports) && i <= nports; i++) {
+		p = &dev->ud_hub->uh_ports[i - 1];
 		if (p->up_dev)
 			err = p->up_dev->ud_addr;
 		else {
@@ -1579,7 +1582,7 @@ usbd_fill_deviceinfo(struct usbd_device *dev, struct usb_device_info *di,
 			else
 				err = USB_PORT_DISABLED;
 		}
-		di->udi_ports[i] = err;
+		di->udi_ports[i - 1] = err;
 	}
 	di->udi_nports = nports;
 }
@@ -1631,9 +1634,9 @@ usbd_fill_deviceinfo_old(struct usbd_device *dev, struct usb_device_info_old *di
 	}
 
 	const int nports = dev->ud_hub->uh_hubdesc.bNbrPorts;
-	for (i = 0; i < __arraycount(di->udi_ports) && i < nports;
+	for (i = 1; i <= __arraycount(di->udi_ports) && i <= nports;
 	     i++) {
-		p = &dev->ud_hub->uh_ports[i];
+		p = &dev->ud_hub->uh_ports[i - 1];
 		if (p->up_dev)
 			err = p->up_dev->ud_addr;
 		else {
@@ -1647,7 +1650,7 @@ usbd_fill_deviceinfo_old(struct usbd_device *dev, struct usb_device_info_old *di
 			else
 				err = USB_PORT_DISABLED;
 		}
-		di->udi_ports[i] = err;
+		di->udi_ports[i - 1] = err;
 	}
 	di->udi_nports = nports;
 }

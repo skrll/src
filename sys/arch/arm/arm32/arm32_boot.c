@@ -1,4 +1,4 @@
-/*	$NetBSD: arm32_boot.c,v 1.21 2018/08/15 06:00:02 skrll Exp $	*/
+/*	$NetBSD: arm32_boot.c,v 1.27 2018/10/31 09:31:01 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003, 2005  Genetec Corporation.  All rights reserved.
@@ -122,7 +122,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.21 2018/08/15 06:00:02 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.27 2018/10/31 09:31:01 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_cputypes.h"
@@ -155,7 +155,7 @@ __KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.21 2018/08/15 06:00:02 skrll Exp $"
 #ifdef VERBOSE_INIT_ARM
 #define VPRINTF(...)	printf(__VA_ARGS__)
 #else
-#define VPRINTF(...)	do { } while (/* CONSTCOND */ 0)
+#define VPRINTF(...)	__nothing
 #endif
 
 #ifdef MULTIPROCESSOR
@@ -245,7 +245,7 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	VPRINTF("page ");
 	uvm_md_init();
 
-	VPRINTF("pmap_physload ");
+	VPRINTF("pmap_physload\n");
 	KASSERT(bp != NULL || nbp == 0);
 	KASSERT(bp == NULL || nbp != 0);
 
@@ -253,39 +253,49 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 		pv_addr_t * const pv = &bmi->bmi_freeblocks[i];
 		paddr_t start = atop(pv->pv_pa);
 		const paddr_t end = start + atop(pv->pv_size);
+		int vm_freelist = VM_FREELIST_DEFAULT;
 
-		while (start < end) {
-			int vm_freelist = VM_FREELIST_DEFAULT;
-			paddr_t segend = end;
-			/*
-			 * This assumes the bp list is sorted in ascending
-			 * order.
-			 */
-			for (size_t j = 0; j < nbp; j++) {
-				paddr_t bp_start = bp[j].bp_start;
-				paddr_t bp_end = bp_start + bp[j].bp_pages;
-				if (start < bp_start) {
-					if (segend > bp_start) {
-						segend = bp_start;
-					}
-					break;
+		VPRINTF("block %2zu start %08lx  end %08lx", i,
+		    pv->pv_pa, pv->pv_pa + pv->pv_size);
+
+		if (!bp) {
+			VPRINTF("... loading in freelist %d\n", vm_freelist);
+			uvm_page_physload(start, end, start, end, VM_FREELIST_DEFAULT);
+			continue;
+		}
+		VPRINTF("\n");
+		paddr_t segend = end;
+		for (size_t j = 0; j < nbp; j++ /*, start = segend, segend = end */) {
+			paddr_t bp_start = bp[j].bp_start;
+			paddr_t bp_end = bp_start + bp[j].bp_pages;
+
+			VPRINTF("   bp %2zu start %08lx  end %08lx\n",
+			    j, ptoa(bp_start), ptoa(bp_end));
+			KASSERT(bp_start < bp_end);
+			if (start > bp_end || segend < bp_start)
+				continue;
+
+			if (start < bp_start)
+				start = bp_start;
+
+			if (start < bp_end) {
+				if (segend > bp_end) {
+					segend = bp_end;
 				}
-				if (start < bp_end) {
-					if (segend > bp_end) {
-						segend = bp_end;
-					}
-					vm_freelist = bp[j].bp_freelist;
-					break;
-				}
+				vm_freelist = bp[j].bp_freelist;
+
+				uvm_page_physload(start, segend, start, segend,
+				    vm_freelist);
+				VPRINTF("         start %08lx  end %08lx"
+				    "... loading in freelist %d\n", ptoa(start),
+				    ptoa(segend), vm_freelist);
+				start = segend;
+				segend = end;
 			}
-
-			uvm_page_physload(start, segend, start, segend,
-			    vm_freelist);
-			start = segend;
 		}
 	}
 
-	/* Boot strap pmap telling it where the kernel page table is */
+	/* Boot strap pmap telling it where the managed kernel virtual memory is */
 	VPRINTF("pmap ");
 	pmap_bootstrap(kvm_base, kvm_base + kvm_size);
 
@@ -337,14 +347,8 @@ cpu_hatch(struct cpu_info *ci, cpuid_t cpuid, void (*md_cpu_init)(struct cpu_inf
 	 */
 	splhigh();
 
-#ifdef CPU_CORTEX
-#if 0
-	KASSERTMSG(armreg_auxctl_read() & CORTEXA9_AUXCTL_SMP, "auxctl %#x",
-	    armreg_auxctl_read());
-#endif
-#endif
-
 	VPRINTF("%s(%s): ", __func__, ci->ci_data.cpu_name);
+	ci->ci_ctrl = armreg_sctlr_read();
 	uint32_t mpidr = armreg_mpidr_read();
 	if (mpidr & MPIDR_MT) {
 		ci->ci_data.cpu_smt_id = mpidr & MPIDR_AFF0;
@@ -406,18 +410,20 @@ cpu_hatch(struct cpu_info *ci, cpuid_t cpuid, void (*md_cpu_init)(struct cpu_inf
 
 	mutex_exit(&cpu_hatch_lock);
 
+	VPRINTF(" md(%p)", md_cpu_init);
+	if (md_cpu_init != NULL)
+		(*md_cpu_init)(ci);
+
 	VPRINTF(" interrupts");
 	/*
 	 * Let the interrupts do what they need to on this CPU.
 	 */
 	intr_cpu_init(ci);
 
-	VPRINTF(" md(%p)", md_cpu_init);
-	if (md_cpu_init != NULL)
-		(*md_cpu_init)(ci);
-
 	VPRINTF(" done!\n");
-	atomic_and_32(&arm_cpu_mbox, ~(1 << cpuid));
+
+	/* Notify cpu_boot_secondary_processors that we're done */
+	atomic_and_32(&arm_cpu_mbox, ~__BIT(cpuid));
 	membar_producer();
 	__asm __volatile("sev; sev; sev");
 }

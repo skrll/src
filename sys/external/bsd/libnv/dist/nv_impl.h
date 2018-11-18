@@ -1,4 +1,4 @@
-/*	$NetBSD: nv_impl.h,v 1.3 2018/09/08 14:12:53 christos Exp $	*/
+/*	$NetBSD: nv_impl.h,v 1.5 2018/09/23 19:07:10 rmind Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
@@ -65,10 +65,11 @@ extern void *nv_calloc(size_t, size_t);
 # endif
 # define nv_realloc(buf, size)		realloc((buf), (size), M_NVLIST, \
 					    M_WAITOK)
-# define nv_free(buf)			free((buf), M_NVLIST)
 # ifdef __FreeBSD__
+#  define nv_free(buf)			free((buf), M_NVLIST)
 #  define nv_strdup(buf)		strdup((buf), M_NVLIST)
 # else
+extern void nv_free(void *);
 extern char *nv_strdup(const char *);
 # endif
 # define nv_vasprintf(ptr, ...)		vasprintf(ptr, M_NVLIST, __VA_ARGS__)
@@ -82,11 +83,11 @@ extern char *nv_strdup(const char *);
 #else /* USERLAND */
 
 # define nv_malloc(size)		malloc((size))
-# define nv_calloc(n, size)		calloc(n, size)
 # define nv_realloc(buf, size)		realloc((buf), (size))
 # define nv_free(buf)			free((buf))
-# define nv_strdup(buf)			strdup(buf)
 # define nv_vasprintf(ptr, ...)		vasprintf(ptr, __VA_ARGS__)
+void *nv_calloc(size_t, size_t);
+char *nv_strdup(const char *);
 
 # define ERRNO_SET(var)			do {				\
 						errno = (var); 		\

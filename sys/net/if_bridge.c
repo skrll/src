@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bridge.c,v 1.157 2018/09/14 11:05:09 msaitoh Exp $	*/
+/*	$NetBSD: if_bridge.c,v 1.160 2018/11/09 06:44:31 ozaki-r Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.157 2018/09/14 11:05:09 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.160 2018/11/09 06:44:31 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_bridge_ipf.h"
@@ -1060,6 +1060,12 @@ bridge_ioctl_rts(struct bridge_softc *sc, void *arg)
 
 	BRIDGE_RT_LOCK(sc);
 
+	/* The passed buffer is not enough, tell a required size. */
+	if (bac->ifbac_len < (sizeof(bareq) * sc->sc_brtcnt)) {
+		count = sc->sc_brtcnt;
+		goto out;
+	}
+
 	len = bac->ifbac_len;
 	BRIDGE_RTLIST_WRITER_FOREACH(brt, sc) {
 		if (len < sizeof(bareq))
@@ -1540,7 +1546,7 @@ bridge_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *sa,
 				used = true;
 				mc = m;
 			} else {
-				mc = m_copym(m, 0, M_COPYALL, M_NOWAIT);
+				mc = m_copypacket(m, M_DONTWAIT);
 				if (mc == NULL) {
 					sc->sc_if.if_oerrors++;
 					goto next;
@@ -1558,8 +1564,7 @@ bridge_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *sa,
 					used = true;
 					mc = m;
 				} else {
-					mc = m_copym(m, 0, M_COPYALL,
-					    M_DONTWAIT);
+					mc = m_copypacket(m, M_DONTWAIT);
 					if (mc == NULL) {
 						sc->sc_if.if_oerrors++;
 						goto next;
@@ -1764,7 +1769,9 @@ bridge_forward(struct bridge_softc *sc, struct mbuf *m)
 	bridge_release_member(sc, bif, &psref);
 
 	/*
-	 * Clear any in-bound checksum flags for this packet.
+	 * Before enqueueing this packet to the destination interface,
+	 * clear any in-bound checksum flags to prevent them from being
+	 * misused as out-bound flags.
 	 */
 	m->m_pkthdr.csum_flags = 0;
 
@@ -1973,16 +1980,17 @@ bridge_broadcast(struct bridge_softc *sc, struct ifnet *src_if,
 			goto next;
 
 		if (dst_if != src_if) {
-			mc = m_copym(m, 0, M_COPYALL, M_DONTWAIT);
+			mc = m_copypacket(m, M_DONTWAIT);
 			if (mc == NULL) {
 				sc->sc_if.if_oerrors++;
 				goto next;
 			}
-
 			/*
-			 * Clear any in-bound checksum flags for this packet.
+			 * Before enqueueing this packet to the destination
+			 * interface, clear any in-bound checksum flags to
+			 * prevent them from being misused as out-bound flags.
 			 */
-			m->m_pkthdr.csum_flags = 0;
+			mc->m_pkthdr.csum_flags = 0;
 
 			ACQUIRE_GLOBAL_LOCKS();
 			bridge_enqueue(sc, dst_if, mc, 1);
@@ -1990,7 +1998,7 @@ bridge_broadcast(struct bridge_softc *sc, struct ifnet *src_if,
 		}
 
 		if (bmcast) {
-			mc = m_copym(m, 0, M_COPYALL, M_DONTWAIT);
+			mc = m_copypacket(m, M_DONTWAIT);
 			if (mc == NULL) {
 				sc->sc_if.if_oerrors++;
 				goto next;

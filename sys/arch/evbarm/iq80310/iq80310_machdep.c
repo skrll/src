@@ -1,4 +1,4 @@
-/*	$NetBSD: iq80310_machdep.c,v 1.87 2018/07/31 06:46:27 skrll Exp $	*/
+/*	$NetBSD: iq80310_machdep.c,v 1.89 2018/10/28 14:30:31 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003 Wasabi Systems, Inc.
@@ -73,9 +73,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: iq80310_machdep.c,v 1.87 2018/07/31 06:46:27 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: iq80310_machdep.c,v 1.89 2018/10/28 14:30:31 skrll Exp $");
 
 #include "opt_arm_debug.h"
+#include "opt_console.h"
 #include "opt_ddb.h"
 #include "opt_pmap_debug.h"
 
@@ -723,7 +724,7 @@ initarm(void *arg)
 	    atop(physical_freestart), atop(physical_freeend),
 	    VM_FREELIST_DEFAULT);
 
-	/* Boot strap pmap telling it where the kernel page table is */
+	/* Boot strap pmap telling it where managed kernel virtual memory is */
 #ifdef VERBOSE_INIT_ARM
 	printf("pmap ");
 #endif

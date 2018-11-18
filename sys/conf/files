@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1207 2018/09/08 14:12:04 christos Exp $
+#	$NetBSD: files,v 1.1216 2018/11/07 07:43:07 maxv Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -1319,6 +1319,10 @@ file	dev/ic/pl041.c			aaci
 device	plkmi: pckbport
 file	dev/ic/pl050.c			plkmi
 
+# ARM PrimeCell PL061 (GPIO) general purpose input/output
+device	plgpio: gpiobus
+file	dev/ic/pl061.c			plgpio
+
 # ARM PrimeCell PL181 (MMCI) host controller
 device	plmmc: sdmmcbus
 file	dev/ic/pl181.c			plmmc
@@ -1357,41 +1361,6 @@ attach	cpciic at cpcbus with iic_cpcbus
 file	dev/ic/iic_cpcbus.c		iic_cpcbus
 
 
-# Attributes used by the ISDN subsystem
-#
-define	isdndev		# the ISDN subsystem
-define	passive_isdn	# files needed by passive cards (XXX - protocol
-			# specific)
-define	isdncapi	# ISDN CAPI (http://www.capi.org/)
-
-# The isac found on the Fritz V2.0 Card.
-define	nisacsx
-file	dev/ic/isacsx.c			nisacsx	needs-flag
-
-# The 'standard' isac
-define	nisac
-file	dev/ic/isac.c			nisac	needs-flag
-
-# ISDN cards based on the Siemens ISAC/HSCX chipset (or lookalikes)
-#
-device	isic: isdndev, passive_isdn, nisac
-
-file	dev/ic/isic.c			isic
-file	dev/ic/isic_l1.c		isic|ifpci|ifritz
-file	dev/ic/isic_l1fsm.c		isic|ifpci|ifritz
-file	dev/ic/hscx.c			isic
-file	dev/ic/isic_bchan.c		isic
-
-# (old) Diehl active ISDN cards
-#
-#device	daic: isdndev
-#file	dev/ic/daic.c			daic
-
-# AWM B1/T1
-# XXX: passive_isdn
-device	iavc: isdndev, isdncapi, passive_isdn
-file	dev/ic/iavc.c			iavc
-
 # Broadcom AirForce / Apple Airport Extreme
 device	bwi: arp, ifnet, firmload, wlan
 file	dev/ic/bwi.c			bwi
@@ -1416,6 +1385,10 @@ file	dev/ic/bwfm.c			bwfm
 # QEMU Firmware Configuration (fw_cfg) device
 device	qemufwcfg
 file	dev/ic/qemufwcfg.c		qemufwcfg
+
+# AMD Cryptographic Coprocessor
+device	amdccp
+file	dev/ic/amdccp.c			amdccp
 
 # legitimate pseudo-devices
 #
@@ -1462,19 +1435,6 @@ defpseudo clockctl
 #
 defpseudo accf_data
 defpseudo accf_http
-
-# ISDN userland pseudo devices
-#
-defpseudo isdntrc:	isdndev, tty
-defpseudo isdnbchan:	isdndev, tty
-defpseudo isdntel:	isdndev, tty
-defpseudo isdnctl:	isdndev, tty
-defpseudo isdn:		isdndev, tty
-
-# ISDN network interfaces
-defpseudo irip:		isdndev, ifnet
-defflag opt_irip.h	IRIP_VJ
-defpseudo ippp:		isdndev, sppp, ifnet
 
 # KTTCP network throughput testing pseudo-device
 defpseudo kttcp
@@ -1587,6 +1547,11 @@ include "lib/libx86emu/files.x86emu"
 # "tprof" profiler.
 #
 include	"dev/tprof/files.tprof"
+
+#
+# NetBSD Virtual Machine Monitor.
+#
+include	"dev/nvmm/files.nvmm"
 
 #
 # alternate memory device

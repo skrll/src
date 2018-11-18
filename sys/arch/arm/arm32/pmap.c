@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.368 2018/09/03 16:29:23 riastradh Exp $	*/
+/*	$NetBSD: pmap.c,v 1.371 2018/10/28 14:59:17 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -217,7 +217,7 @@
 
 #include <arm/locore.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.368 2018/09/03 16:29:23 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.371 2018/10/28 14:59:17 skrll Exp $");
 
 //#define PMAP_DEBUG
 #ifdef PMAP_DEBUG
@@ -262,7 +262,7 @@ int pmapdebug = 0;
 #ifdef VERBOSE_INIT_ARM
 #define VPRINTF(...)	printf(__VA_ARGS__)
 #else
-#define VPRINTF(...)	do { } while (/* CONSTCOND */ 0)
+#define VPRINTF(...)	__nothing
 #endif
 
 /*
@@ -6096,14 +6096,12 @@ pmap_init_l1(struct l1_ttable *l1, pd_entry_t *l1pt)
  * spread over a number of disparate files/functions.
  *
  * We are passed the following parameters
- *  - kernel_l1pt
- *    This is a pointer to the base of the kernel's L1 translation table.
  *  - vstart
  *    1MB-aligned start of managed kernel virtual memory.
  *  - vend
  *    1MB-aligned end of managed kernel virtual memory.
  *
- * We use the first parameter to build the metadata (struct l1_ttable and
+ * We use 'kernel_l1pt' to build the metadata (struct l1_ttable and
  * struct l2_dtable) necessary to track kernel mappings.
  */
 #define	PMAP_STATIC_L2_SIZE 16
@@ -6740,8 +6738,8 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 	if (l1pt == 0)
 		panic("pmap_map_chunk: no L1 table provided");
 
-	VPRINTF("pmap_map_chunk: pa=0x%lx va=0x%lx size=0x%lx resid=0x%lx "
-	    "prot=0x%x cache=%d\n", pa, va, size, resid, prot, cache);
+// 	VPRINTF("pmap_map_chunk: pa=0x%lx va=0x%lx size=0x%lx resid=0x%lx "
+// 	    "prot=0x%x cache=%d\n", pa, va, size, resid, prot, cache);
 
 	switch (cache) {
 	case PTE_NOCACHE:
@@ -6768,19 +6766,19 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 
 	while (resid > 0) {
 		const size_t l1slot = l1pte_index(va);
-#if (ARM_MMU_V6 + ARM_MMU_V7) > 0
+#ifdef ARM_MMU_EXTENDED
 		/* See if we can use a supersection mapping. */
 		if (L1_SS_PROTO && L1_SS_MAPPABLE_P(va, pa, resid)) {
 			/* Supersection are always domain 0 */
 			const pd_entry_t npde = L1_SS_PROTO | pa
-#ifdef ARM_MMU_EXTENDED
 			    | ((prot & VM_PROT_EXECUTE) ? 0 : L1_S_V6_XN)
 			    | (va & 0x80000000 ? 0 : L1_S_V6_nG)
-#endif
 			    | L1_S_PROT(PTE_KERNEL, prot) | f1;
 			VPRINTF("sS");
 			l1pte_set(&pdep[l1slot], npde);
 			PDE_SYNC_RANGE(&pdep[l1slot], L1_SS_SIZE / L1_S_SIZE);
+//			VPRINTF("\npmap_map_chunk: pa=0x%lx va=0x%lx resid=0x%08lx "
+//			    "npdep=%p pde=0x%x\n", pa, va, resid, &pdep[l1slot], npde);
 			va += L1_SS_SIZE;
 			pa += L1_SS_SIZE;
 			resid -= L1_SS_SIZE;
@@ -6799,6 +6797,8 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 			VPRINTF("S");
 			l1pte_set(&pdep[l1slot], npde);
 			PDE_SYNC(&pdep[l1slot]);
+//			VPRINTF("\npmap_map_chunk: pa=0x%lx va=0x%lx resid=0x%08lx "
+//			    "npdep=%p pde=0x%x\n", pa, va, resid, &pdep[l1slot], npde);
 			va += L1_S_SIZE;
 			pa += L1_S_SIZE;
 			resid -= L1_S_SIZE;
@@ -6858,6 +6858,27 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 	return (size);
 }
 
+/*
+ * pmap_unmap_chunk:
+ *
+ *	Unmap a chunk of memory that was previously pmap_map_chunk
+ */
+void
+pmap_unmap_chunk(vaddr_t l1pt, vaddr_t va, vsize_t size)
+{
+	pd_entry_t * const pdep = (pd_entry_t *) l1pt;
+	const size_t l1slot = l1pte_index(va);
+
+	KASSERT(size == L1_SS_SIZE || size == L1_S_SIZE);
+
+	l1pte_set(&pdep[l1slot], 0);
+	PDE_SYNC_RANGE(&pdep[l1slot], size / L1_S_SIZE);
+
+	pmap_tlb_flush_SE(pmap_kernel(), va, PVF_REF);
+}
+
+
+
 /********************** Static device map routines ***************************/
 
 static const struct pmap_devmap *pmap_devmap_table;
@@ -6887,16 +6908,17 @@ pmap_devmap_bootstrap(vaddr_t l1pt, const struct pmap_devmap *table)
 	pmap_devmap_table = table;
 
 	for (i = 0; pmap_devmap_table[i].pd_size != 0; i++) {
-		VPRINTF("devmap: %08lx -> %08lx @ %08lx\n",
-		    pmap_devmap_table[i].pd_pa,
-		    pmap_devmap_table[i].pd_pa +
-			pmap_devmap_table[i].pd_size - 1,
-		    pmap_devmap_table[i].pd_va);
-		pmap_map_chunk(l1pt, pmap_devmap_table[i].pd_va,
-		    pmap_devmap_table[i].pd_pa,
-		    pmap_devmap_table[i].pd_size,
-		    pmap_devmap_table[i].pd_prot,
-		    pmap_devmap_table[i].pd_cache);
+		const struct pmap_devmap *pdp = &pmap_devmap_table[i];
+
+		KASSERTMSG(VADDR_MAX - pdp->pd_va >= pdp->pd_size - 1, "va %" PRIxVADDR
+		    " sz %" PRIxPSIZE, pdp->pd_va, pdp->pd_size);
+		KASSERTMSG(PADDR_MAX - pdp->pd_pa >= pdp->pd_size - 1, "pa %" PRIxPADDR
+		    " sz %" PRIxPSIZE, pdp->pd_pa, pdp->pd_size);
+		VPRINTF("devmap: %08lx -> %08lx @ %08lx\n", pdp->pd_pa,
+		    pdp->pd_pa + pdp->pd_size - 1, pdp->pd_va);
+
+		pmap_map_chunk(l1pt, pdp->pd_va, pdp->pd_pa, pdp->pd_size,
+		    pdp->pd_prot, pdp->pd_cache);
 	}
 }
 

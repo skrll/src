@@ -1,4 +1,4 @@
-/*	$NetBSD: pci_subr.c,v 1.203 2018/09/12 07:42:22 msaitoh Exp $	*/
+/*	$NetBSD: pci_subr.c,v 1.207 2018/11/05 03:51:31 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1997 Zubin D. Dittia.  All rights reserved.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci_subr.c,v 1.203 2018/09/12 07:42:22 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_subr.c,v 1.207 2018/11/05 03:51:31 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_pci.h"
@@ -2409,7 +2409,167 @@ pci_conf_print_pciaf_cap(const pcireg_t *regs, int capoff)
 	onoff("Transaction Pending", reg, PCI_AFSR_TP);
 }
 
-/* XXX pci_conf_print_ea_cap */
+static void
+pci_conf_print_ea_cap_prop(unsigned int prop)
+{
+
+	switch (prop) {
+	case PCI_EA_PROP_MEM_NONPREF:
+		printf("Memory Space, Non-Prefetchable\n");
+		break;
+	case PCI_EA_PROP_MEM_PREF:
+		printf("Memory Space, Prefetchable\n");
+		break;
+	case PCI_EA_PROP_IO:
+		printf("I/O Space\n");
+		break;
+	case PCI_EA_PROP_VF_MEM_NONPREF:
+		printf("Resorce for VF use, Memory Space, Non-Prefetchable\n");
+		break;
+	case PCI_EA_PROP_VF_MEM_PREF:
+		printf("Resorce for VF use, Memory Space, Prefetch\n");
+		break;
+	case PCI_EA_PROP_BB_MEM_NONPREF:
+		printf("Behind the Bridge, Memory Space, Non-Pref\n");
+		break;
+	case PCI_EA_PROP_BB_MEM_PREF:
+		printf("Behind the Bridge, Memory Space. Prefetchable\n");
+		break;
+	case PCI_EA_PROP_BB_IO:
+		printf("Behind Bridge, I/O Space\n");
+		break;
+	case PCI_EA_PROP_MEM_UNAVAIL:
+		printf("Memory Space Unavailable\n");
+		break;
+	case PCI_EA_PROP_IO_UNAVAIL:
+		printf("IO Space Unavailable\n");
+		break;
+	case PCI_EA_PROP_UNAVAIL:
+		printf("Entry Unavailable for use\n");
+		break;
+	default:
+		printf("Reserved\n");
+		break;
+	}
+}
+
+static void
+pci_conf_print_ea_cap(const pcireg_t *regs, int capoff)
+{
+	pcireg_t reg, reg2;
+	unsigned int entries, entoff, i;
+
+	printf("\n  Enhanced Allocation Capability Register\n");
+
+	reg = regs[o2i(capoff + PCI_EA_CAP1)];
+	printf("    EA Num Entries register: 0x%04x\n", reg >> 16);
+	entries = __SHIFTOUT(reg, PCI_EA_CAP1_NUMENTRIES);
+	printf("      EA Num Entries: %u\n", entries);
+
+	/* Type 1 only */
+	if (PCI_HDRTYPE_TYPE(regs[o2i(PCI_BHLC_REG)]) == PCI_HDRTYPE_PPB) {
+		reg = regs[o2i(capoff + PCI_EA_CAP2)];
+		printf("    EA Capability Second register: 0x%08x\n", reg);
+		printf("      Fixed Secondary Bus Number: %hhu\n",
+		    (unsigned char)__SHIFTOUT(reg, PCI_EA_CAP2_SECONDARY));
+		printf("      Fixed Subordinate Bus Number: %hhu\n",
+		    (unsigned char)__SHIFTOUT(reg, PCI_EA_CAP2_SUBORDINATE));
+		entoff = capoff + 8;
+	} else
+		entoff = capoff + 4;
+
+	for (i = 0; i < entries; i++) {
+		uint64_t base, offset;
+		bool baseis64, offsetis64;
+		unsigned int bei, entry_size;
+
+		printf("    Entry %u:\n", i);
+		/* The first DW */
+		reg = regs[o2i(entoff)];
+		printf("      The first register: 0x%08x\n", reg);
+		entry_size = __SHIFTOUT(reg, PCI_EA_ES);
+		printf("        Entry size: %u\n", entry_size);
+		printf("        BAR Equivalent Indicator: ");
+		bei = __SHIFTOUT(reg, PCI_EA_BEI);
+		switch (bei) {
+		case PCI_EA_BEI_BAR0:
+		case PCI_EA_BEI_BAR1:
+		case PCI_EA_BEI_BAR2:
+		case PCI_EA_BEI_BAR3:
+		case PCI_EA_BEI_BAR4:
+		case PCI_EA_BEI_BAR5:
+			printf("BAR %u\n", bei - PCI_EA_BEI_BAR0);
+			break;
+		case PCI_EA_BEI_BEHIND:
+			printf("Behind the function\n");
+			break;
+		case PCI_EA_BEI_NOTIND:
+			printf("Not Indicated\n");
+			break;
+		case PCI_EA_BEI_EXPROM:
+			printf("Expansion ROM\n");
+			break;
+		case PCI_EA_BEI_VFBAR0:
+		case PCI_EA_BEI_VFBAR1:
+		case PCI_EA_BEI_VFBAR2:
+		case PCI_EA_BEI_VFBAR3:
+		case PCI_EA_BEI_VFBAR4:
+		case PCI_EA_BEI_VFBAR5:
+			printf("VF BAR %u\n", bei - PCI_EA_BEI_VFBAR0);
+			break;
+		case PCI_EA_BEI_RESERVED:
+		default:
+			printf("Reserved\n");
+			break;
+		}
+		
+		printf("      Primary Properties: ");
+		pci_conf_print_ea_cap_prop(__SHIFTOUT(reg, PCI_EA_PP));
+		printf("      Secondary Properties: ");
+		pci_conf_print_ea_cap_prop(__SHIFTOUT(reg, PCI_EA_SP));
+		onoff("Writable", reg, PCI_EA_W);
+		onoff("Enable for this entry", reg, PCI_EA_E);
+		    
+		if (entry_size == 0) {
+			entoff += 4;
+			continue;
+		}
+
+		/* Base addr */
+		reg = regs[o2i(entoff + 4)];
+		base = reg & PCI_EA_LOWMASK;
+		baseis64 = reg & PCI_EA_BASEMAXOFFSET_64BIT;
+		printf("      Base Address Register Low: 0x%08x\n", reg);
+		if (baseis64) {
+			/* 64bit */
+			reg2 = regs[o2i(entoff + 12)];
+			printf("      Base Address Register high: 0x%08x\n",
+			    reg2);
+			base |= (uint64_t)reg2 << 32;
+		}
+
+		/* Offset addr */
+		reg = regs[o2i(entoff + 8)];
+		offset = reg & PCI_EA_LOWMASK;
+		offsetis64 = reg & PCI_EA_BASEMAXOFFSET_64BIT;
+		printf("      Max Offset Register Low: 0x%08x\n", reg);
+		if (offsetis64) {
+			/* 64bit */
+			reg2 = regs[o2i(entoff + (baseis64 ? 16 : 12))];
+			printf("      Max Offset Register high: 0x%08x\n",
+			    reg2);
+			offset |= (uint64_t)reg2 << 32;
+		}
+
+		printf("        range: 0x%016" PRIx64 "-0x%016" PRIx64
+			    "\n", base, base + offset);
+
+		entoff += 4;
+		entoff += baseis64 ? 8 : 4;
+		entoff += offsetis64 ? 8 : 4;
+	}
+}
+
 /* XXX pci_conf_print_fpb_cap */
 
 static struct {
@@ -2439,7 +2599,7 @@ static struct {
 	{ PCI_CAP_MSIX,		"MSI-X",	pci_conf_print_msix_cap },
 	{ PCI_CAP_SATA,		"SATA",		pci_conf_print_sata_cap },
 	{ PCI_CAP_PCIAF,	"Advanced Features", pci_conf_print_pciaf_cap},
-	{ PCI_CAP_EA,		"Enhanced Allocation", NULL },
+	{ PCI_CAP_EA,		"Enhanced Allocation", pci_conf_print_ea_cap },
 	{ PCI_CAP_FPB,		"Flattening Portal Bridge", NULL }
 };
 
@@ -3061,6 +3221,18 @@ pci_conf_print_rcec_assoc_cap(const pcireg_t *regs, int extcapoff)
 	reg = regs[o2i(extcapoff + PCI_RCEC_ASSOC_ASSOCBITMAP)];
 	printf("    Association Bitmap for Root Complex Integrated Devices:"
 	    " 0x%08x\n", reg);
+
+	if (PCI_EXTCAPLIST_VERSION(regs[o2i(extcapoff)]) >= 2) {
+		reg = regs[o2i(extcapoff + PCI_RCEC_ASSOC_ASSOCBUSNUM)];
+		printf("    RCEC Associated Bus Numbers register: 0x%08x\n",
+		    reg);
+		printf("      RCEC Next Bus: %u\n",
+		    (unsigned int)__SHIFTOUT(reg,
+			PCI_RCEC_ASSOCBUSNUM_RCECNEXT));
+		printf("      RCEC Last Bus: %u\n",
+		    (unsigned int)__SHIFTOUT(reg,
+			PCI_RCEC_ASSOCBUSNUM_RCECLAST));
+	}
 }
 
 /* XXX pci_conf_print_mfvc_cap */
@@ -3526,7 +3698,7 @@ static void
 pci_conf_print_tph_req_cap(const pcireg_t *regs, int extcapoff)
 {
 	pcireg_t reg;
-	int size, i, j;
+	int size = 0, i, j;
 	uint8_t sttbloc;
 
 	printf("\n  TPH Requester Extended Capability\n");
@@ -3540,8 +3712,10 @@ pci_conf_print_tph_req_cap(const pcireg_t *regs, int extcapoff)
 	sttbloc = __SHIFTOUT(reg, PCI_TPH_REQ_CAP_STTBLLOC);
 	printf("      ST Table Location: %s\n",
 	    pci_conf_print_tph_req_cap_sttabloc(sttbloc));
-	size = __SHIFTOUT(reg, PCI_TPH_REQ_CAP_STTBLSIZ) + 1;
-	printf("      ST Table Size: %d\n", size);
+	if (sttbloc == PCI_TPH_REQ_STTBLLOC_TPHREQ) {
+		size = __SHIFTOUT(reg, PCI_TPH_REQ_CAP_STTBLSIZ) + 1;
+		printf("      ST Table Size: %d\n", size);
+	}
 
 	reg = regs[o2i(extcapoff + PCI_TPH_REQ_CTL)];
 	printf("    TPH Requester Control register: 0x%08x\n", reg);
@@ -4700,19 +4874,19 @@ pci_conf_print(
 	/* device-dependent header */
 	printf("  Device-dependent header:\n");
 	pci_conf_print_regs(regs, endoff, PCI_CONF_SIZE);
-	printf("\n");
 #ifdef _KERNEL
+	printf("\n");
 	if (printfn)
 		(*printfn)(pc, tag, regs);
 	else
 		printf("    Don't know how to pretty-print device-dependent header.\n");
-	printf("\n");
 #endif /* _KERNEL */
 
 	if (regs[o2i(PCI_EXTCAPLIST_BASE)] == 0xffffffff ||
 	    regs[o2i(PCI_EXTCAPLIST_BASE)] == 0)
 		return;
 
+	printf("\n");
 #ifdef _KERNEL
 	pci_conf_print_extcaplist(pc, tag, regs);
 #else

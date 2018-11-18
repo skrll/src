@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.base,v 1.175 2018/09/12 15:29:11 christos Exp $
+#	$NetBSD: NetBSD.dist.base,v 1.180 2018/11/09 21:33:50 abs Exp $
 #	@(#)4.4BSD.dist	8.1 (Berkeley) 6/13/93
 
 # Do not customize this file as it may be overwritten on upgrades.
@@ -219,7 +219,6 @@
 ./usr/include/net80211
 ./usr/include/netinet6
 ./usr/include/netipsec
-./usr/include/netisdn
 ./usr/include/netpgp
 ./usr/include/netsmb
 ./usr/include/nfs
@@ -375,7 +374,6 @@
 ./usr/share/examples/getdate
 ./usr/share/examples/hostapd
 ./usr/share/examples/ipf
-./usr/share/examples/isdn
 ./usr/share/examples/kerberos
 ./usr/share/examples/kyua-cli
 ./usr/share/examples/libsaslc
@@ -394,6 +392,7 @@
 ./usr/share/examples/racoon/roadwarrior/client
 ./usr/share/examples/racoon/roadwarrior/server
 ./usr/share/examples/rtadvd
+./usr/share/examples/slip
 ./usr/share/examples/smbfs
 ./usr/share/examples/supfiles
 ./usr/share/examples/syslogd
@@ -1296,6 +1295,8 @@
 ./var/chroot/unbound		mode=0755 uname=_unbound gname=_unbound
 ./var/chroot/unbound/etc	mode=0755 uname=_unbound gname=_unbound
 ./var/chroot/unbound/etc/unbound	mode=0755 uname=_unbound gname=_unbound
+./var/chroot/unbound/var
+./var/chroot/unbound/var/run	mode=0775 gname=_unbound
 ./var/crash			mode=0770
 ./var/cron
 ./var/cron/tabs			mode=0700

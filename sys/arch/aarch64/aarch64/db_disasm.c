@@ -1,4 +1,4 @@
-/* $NetBSD: db_disasm.c,v 1.3 2018/07/17 10:07:49 ryo Exp $ */
+/* $NetBSD: db_disasm.c,v 1.5 2018/10/12 01:28:57 ryo Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_disasm.c,v 1.3 2018/07/17 10:07:49 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_disasm.c,v 1.5 2018/10/12 01:28:57 ryo Exp $");
 
 #include <sys/param.h>
 #include <machine/db_machdep.h>
@@ -35,6 +35,7 @@ __KERNEL_RCSID(0, "$NetBSD: db_disasm.c,v 1.3 2018/07/17 10:07:49 ryo Exp $");
 #include <ddb/db_sym.h>
 #include <ddb/db_output.h>
 #include <ddb/db_access.h>
+#include <ddb/db_user.h>
 
 #include <arch/aarch64/aarch64/disasm.h>
 
@@ -120,3 +121,18 @@ strdisasm(vaddr_t pc)
 
 	return strdisasm_buf;
 }
+
+/*
+ * disassemble aarch32 insns?
+ */
+const char *
+strdisasm_aarch32(vaddr_t pc)
+{
+	uint32_t insn = *(uint32_t *)pc;
+
+	/* not supported any aarch32 insns yet... */
+	snprintf(strdisasm_buf, sizeof(strdisasm_buf), ".insn 0x%08x", insn);
+
+	return strdisasm_buf;
+}
+

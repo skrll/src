@@ -1,4 +1,4 @@
-#       $NetBSD: Makefile,v 1.429 2018/07/15 05:16:41 maxv Exp $
+#       $NetBSD: Makefile,v 1.432 2018/11/15 10:06:06 maxv Exp $
 
 #	Makefile for section 9 (kernel function and variable) manual pages.
 
@@ -357,6 +357,7 @@ MLINKS+=fstrans.9 fstrans_done.9 \
 	fstrans.9 fstrans_getstate.9 \
 	fstrans.9 fstrans_setstate.9 \
 	fstrans.9 fstrans_start.9 \
+	fstrans.9 fstrans_start_lazy.9 \
 	fstrans.9 fstrans_start_nowait.9 \
 	fstrans.9 fscow_establish.9 \
 	fstrans.9 fscow_disestablish.9 \
@@ -545,13 +546,9 @@ MLINKS+=m_tag.9 m_tag_copy.9 \
 	m_tag.9 m_tag_copy_chain.9 \
 	m_tag.9 m_tag_delete.9 \
 	m_tag.9 m_tag_delete_chain.9 \
-	m_tag.9 m_tag_delete_nonpersistent.9 \
 	m_tag.9 m_tag_find.9 \
-	m_tag.9 m_tag_first.9 \
 	m_tag.9 m_tag_free.9 \
 	m_tag.9 m_tag_get.9 \
-	m_tag.9 m_tag_init.9 \
-	m_tag.9 m_tag_next.9 \
 	m_tag.9 m_tag_prepend.9 \
 	m_tag.9 m_tag_unlink.9
 MLINKS+=namecache.9 cache_lookup.9 \
@@ -592,13 +589,6 @@ MLINKS+=pci.9 pci_conf_read.9 \
 	pci.9 pci_mapreg_type.9 \
 	pci.9 pci_mapreg_map.9 \
 	pci.9 pci_mapreg_info.9 \
-	pci.9 pci_intr_map.9 \
-	pci.9 pci_intr_string.9 \
-	pci.9 pci_intr_evcnt.9 \
-	pci.9 pci_intr_establish.9 \
-	pci.9 pci_intr_establish_xname.9 \
-	pci.9 pci_intr_disestablish.9 \
-	pci.9 pci_intr_setattr.9 \
 	pci.9 pci_get_powerstate.9 \
 	pci.9 pci_set_powerstate.9 \
 	pci.9 pci_vpd_read.9 \
@@ -610,6 +600,13 @@ MLINKS+=pci.9 pci_conf_read.9 \
 	pci.9 PCI_VENDOR.9 \
 	pci.9 PCI_PRODUCT.9 \
 	pci.9 PCI_REVISION.9
+MLINKS+=pci_intr.9 pci_intr_map.9 \
+	pci_intr.9 pci_intr_string.9 \
+	pci_intr.9 pci_intr_evcnt.9 \
+	pci_intr.9 pci_intr_establish.9 \
+	pci_intr.9 pci_intr_establish_xname.9 \
+	pci_intr.9 pci_intr_disestablish.9 \
+	pci_intr.9 pci_intr_setattr.9
 MLINKS+=pci_msi.9 pci_msix.9 \
 	pci_msi.9 pci_intr_alloc.9 \
 	pci_msi.9 pci_intr_release.9 \

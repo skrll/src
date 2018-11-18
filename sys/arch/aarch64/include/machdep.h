@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.h,v 1.4 2018/08/05 06:48:50 skrll Exp $	*/
+/*	$NetBSD: machdep.h,v 1.6 2018/10/18 09:01:51 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -36,6 +36,7 @@
 // initarm_common
 #include <machine/bootconfig.h>
 
+struct boot_physmem;
 
 static inline paddr_t
 aarch64_kern_vtophys(vaddr_t va)
@@ -71,6 +72,7 @@ extern u_int arm_cpu_max;
 
 vaddr_t initarm_common(vaddr_t, vsize_t, const struct boot_physmem *, size_t);
 void cpu_kernel_vm_init(paddr_t, psize_t);
+void uartputc(int);
 
 void parse_mi_bootargs(char *);
 void dumpsys(void);
@@ -108,6 +110,7 @@ void ucas_ras_check(struct trapframe *);
 int cpu_set_onfault(struct faultbuf *) __returns_twice;
 void cpu_jump_onfault(struct trapframe *, const struct faultbuf *, int);
 
+#if defined(_KERNEL)
 static inline void
 cpu_unset_onfault(void)
 {
@@ -128,6 +131,7 @@ cpu_disable_onfault(void)
 		curlwp->l_md.md_onfault = NULL;
 	return fb;
 }
+#endif
 
 /* fpu.c */
 void fpu_attach(struct cpu_info *);

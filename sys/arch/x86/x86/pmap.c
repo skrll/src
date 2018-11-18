@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.307 2018/08/29 16:26:25 maxv Exp $	*/
+/*	$NetBSD: pmap.c,v 1.310 2018/11/07 07:14:51 maxv Exp $	*/
 
 /*
  * Copyright (c) 2008, 2010, 2016, 2017 The NetBSD Foundation, Inc.
@@ -130,7 +130,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.307 2018/08/29 16:26:25 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.310 2018/11/07 07:14:51 maxv Exp $");
 
 #include "opt_user_ldt.h"
 #include "opt_lockdebug.h"
@@ -149,6 +149,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.307 2018/08/29 16:26:25 maxv Exp $");
 #include <sys/intr.h>
 #include <sys/xcall.h>
 #include <sys/kcore.h>
+#include <sys/asan.h>
 
 #include <uvm/uvm.h>
 #include <uvm/pmap/pmap_pvt.h>
@@ -1225,7 +1226,7 @@ pmap_bootstrap(vaddr_t kva_start)
 #endif
 	ldt_paddr = pmap_bootstrap_palloc(1);
 
-#if !defined(__x86_64__) && !defined(XEN)
+#if !defined(__x86_64__)
 	/* pentium f00f bug stuff */
 	pentium_idt_vaddr = pmap_bootstrap_valloc(1);
 #endif
@@ -2377,6 +2378,7 @@ pmap_create(void)
 #endif
 	pmap->pm_flags = 0;
 	pmap->pm_gc_ptp = NULL;
+	pmap->pm_tlb_flush = NULL;
 
 	kcpuset_create(&pmap->pm_cpus, true);
 	kcpuset_create(&pmap->pm_kernel_cpus, true);
@@ -4494,7 +4496,6 @@ pmap_growkernel(vaddr_t maxkvaddr)
 #endif
 
 #ifdef KASAN
-	void kasan_shadow_map(void *, size_t);
 	kasan_shadow_map((void *)pmap_maxkvaddr,
 	    (size_t)(maxkvaddr - pmap_maxkvaddr));
 #endif

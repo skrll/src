@@ -1,4 +1,4 @@
-/*	$NetBSD: vnd.c,v 1.264 2018/09/03 16:29:30 riastradh Exp $	*/
+/*	$NetBSD: vnd.c,v 1.269 2018/10/07 12:00:07 mlelstv Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2008 The NetBSD Foundation, Inc.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vnd.c,v 1.264 2018/09/03 16:29:30 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vnd.c,v 1.269 2018/10/07 12:00:07 mlelstv Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_vnd.h"
@@ -114,6 +114,7 @@ __KERNEL_RCSID(0, "$NetBSD: vnd.c,v 1.264 2018/09/03 16:29:30 riastradh Exp $");
 #include <sys/stat.h>
 #include <sys/mount.h>
 #include <sys/vnode.h>
+#include <sys/fstrans.h>
 #include <sys/file.h>
 #include <sys/uio.h>
 #include <sys/conf.h>
@@ -158,6 +159,7 @@ struct vndxfer {
     (MAKEDISKDEV(major((dev)), vndunit((dev)), RAW_PART))
 
 #define	VND_MAXPENDING(vnd)	((vnd)->sc_maxactive * 4)
+#define	VND_MAXPAGES(vnd)	(1024 * 1024 / PAGE_SIZE)
 
 
 static void	vndclear(struct vnd_softc *, int);
@@ -573,20 +575,18 @@ vnode_has_strategy(struct vnd_softc *vnd)
 	    vnode_has_op(vnd->sc_vp, VOFFSET(vop_strategy));
 }
 
+/* Verify that I/O requests cannot be smaller than the
+ * smallest I/O size supported by the backend.
+ */
 static bool
 vnode_has_large_blocks(struct vnd_softc *vnd)
 {
-	u_int32_t vnd_secsize, mnt_secsize;
-	uint64_t numsec;
-	unsigned secsize;
+	u_int32_t vnd_secsize, iosize;
 
-	if (getdisksize(vnd->sc_vp, &numsec, &secsize))
-		return true;
-
+	iosize = vnd->sc_iosize;
 	vnd_secsize = vnd->sc_geom.vng_secsize;
-	mnt_secsize = secsize;
 
-	return vnd_secsize % mnt_secsize != 0;
+	return vnd_secsize % iosize != 0;
 }
 
 /* XXX this function needs a reliable check to detect
@@ -804,16 +804,31 @@ handle_with_rdwr(struct vnd_softc *vnd, const struct buf *obp, struct buf *bp)
 		    bp->b_bcount);
 #endif
 
+	/* Make sure the request succeeds while suspending this fs. */
+	fstrans_start_lazy(vp->v_mount);
+
 	/* Issue the read or write operation. */
 	bp->b_error =
 	    vn_rdwr(doread ? UIO_READ : UIO_WRITE,
 	    vp, bp->b_data, len, offset, UIO_SYSSPACE,
-	    IO_ADV_ENCODE(POSIX_FADV_NOREUSE), vnd->sc_cred, &resid, NULL);
+	    IO_ADV_ENCODE(POSIX_FADV_NOREUSE) | IO_DIRECT,
+		vnd->sc_cred, &resid, NULL);
 	bp->b_resid = resid;
 
+	/*
+	 * Avoid caching too many pages, the vnd user
+	 * is usually a filesystem and caches itself.
+	 * We need some amount of caching to not hinder
+	 * read-ahead and write-behind operations.
+	 */
 	mutex_enter(vp->v_interlock);
-	(void) VOP_PUTPAGES(vp, 0, 0,
-	    PGO_ALLPAGES | PGO_CLEANIT | PGO_FREE | PGO_SYNCIO);
+	if (vp->v_uobj.uo_npages > VND_MAXPAGES(vnd))
+		(void) VOP_PUTPAGES(vp, 0, 0,
+		    PGO_ALLPAGES | PGO_CLEANIT | PGO_FREE);
+	else
+		mutex_exit(vp->v_interlock);
+
+	fstrans_done(vp->v_mount);
 
 	/* We need to increase the number of outputs on the vnode if
 	 * there was any write to it. */
@@ -1239,6 +1254,8 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 		fflags = FREAD;
 		if ((vio->vnd_flags & VNDIOF_READONLY) == 0)
 			fflags |= FWRITE;
+		if ((vio->vnd_flags & VNDIOF_FILEIO) != 0)
+			vnd->sc_flags |= VNF_USE_VN_RDWR;
 		error = pathbuf_copyin(vio->vnd_file, &pb);
 		if (error) {
 			goto unlock_and_exit;
@@ -1262,7 +1279,7 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 
 		/* If using a compressed file, initialize its info */
 		/* (or abort with an error if kernel has no compression) */
-		if (vio->vnd_flags & VNF_COMP) {
+		if (vio->vnd_flags & VNDIOF_COMP) {
 #ifdef VND_COMPRESSION
 			struct vnd_comp_header *ch;
 			int i;
@@ -1401,6 +1418,13 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 		vnd->sc_vp = nd.ni_vp;
 		vnd->sc_size = btodb(vattr.va_size);	/* note truncation */
 
+		/* get smallest I/O size for underlying device, fall back to
+		 * fundamental I/O size of underlying filesystem
+		 */
+		error = bdev_ioctl(vattr.va_fsid, DIOCGSECTORSIZE, &vnd->sc_iosize, FKIOCTL, l);
+		if (error)
+			vnd->sc_iosize = vnd->sc_vp->v_mount->mnt_stat.f_frsize;
+
 		/*
 		 * Use pseudo-geometry specified.  If none was provided,
 		 * use "standard" Adaptec fictitious geometry.
@@ -1414,12 +1438,19 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 			 * Sanity-check the sector size.
 			 */
 			if (!DK_DEV_BSIZE_OK(vnd->sc_geom.vng_secsize) ||
-			    vnd->sc_geom.vng_ncylinders == 0 ||
 			    vnd->sc_geom.vng_ntracks == 0 ||
 			    vnd->sc_geom.vng_nsectors == 0) {
 				error = EINVAL;
 				goto close_and_exit;
 			}
+
+			/*
+			 * Compute missing cylinder count from size
+			 */
+			if (vnd->sc_geom.vng_ncylinders == 0)
+				vnd->sc_geom.vng_ncylinders = vnd->sc_size /
+					(vnd->sc_geom.vng_ntracks *
+					vnd->sc_geom.vng_nsectors);
 
 			/*
 			 * Compute the size (in DEV_BSIZE blocks) specified

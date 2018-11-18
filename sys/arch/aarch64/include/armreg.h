@@ -1,4 +1,4 @@
-/* $NetBSD: armreg.h,v 1.18 2018/08/12 17:21:35 skrll Exp $ */
+/* $NetBSD: armreg.h,v 1.20 2018/11/07 06:47:38 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -102,6 +102,7 @@ AARCH64REG_WRITE_INLINE(fpcr)
 #define	 FPCR_RM		2		//  Round towards Minus infinity
 #define	 FPCR_RZ		3		//  Round towards Zero
 #define	FPCR_STRIDE		__BITS(21,20)
+#define	FPCR_FZ16		__BIT(19)	// Flush-To-Zero for FP16
 #define	FPCR_LEN		__BITS(18,16)
 #define	FPCR_IDE		__BIT(15)	// Input Denormal Exception enable
 #define	FPCR_IXE		__BIT(12)	// IneXact Exception enable
@@ -303,9 +304,11 @@ AARCH64REG_READ_INLINE(mvfr1_el1)
 #define	 MVFR1_FPHP_NONE	 0
 #define	 MVFR1_FPHP_HALF_SINGLE	 1
 #define	 MVFR1_FPHP_HALF_DOUBLE	 2
+#define	 MVFR1_FPHP_HALF_ARITH	 3
 #define	MVFR1_SIMDHP		__BITS(23,20)
 #define	 MVFR1_SIMDHP_NONE	 0
 #define	 MVFR1_SIMDHP_HALF	 1
+#define	 MVFR1_SIMDHP_HALF_ARITH 3
 #define	MVFR1_SIMDSP		__BITS(19,16)
 #define	 MVFR1_SIMDSP_NONE	 0
 #define	 MVFR1_SIMDSP_SINGLE	 1
@@ -599,6 +602,7 @@ AARCH64REG_WRITE_INLINE(spsr_el1)
 #define	SPSR_I	 		__BIT(7)	// IRQ Mask
 #define	SPSR_F	 		__BIT(6)	// FIQ Mask
 #define	SPSR_A32_T 		__BIT(5)	// A32 Thumb Mode
+#define	SPSR_A32		__BIT(4)	// A32 Mode (a part of SPSR_M)
 #define	SPSR_M	 		__BITS(4,0)	// Execution State
 #define	 SPSR_M_EL3H 		 0x0d
 #define	 SPSR_M_EL3T 		 0x0c

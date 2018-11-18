@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.318 2018/08/29 16:26:25 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.322 2018/11/15 04:59:02 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
@@ -110,7 +110,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.318 2018/08/29 16:26:25 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.322 2018/11/15 04:59:02 riastradh Exp $");
 
 #include "opt_modular.h"
 #include "opt_user_ldt.h"
@@ -152,6 +152,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.318 2018/08/29 16:26:25 maxv Exp $");
 #include <sys/device.h>
 #include <sys/lwp.h>
 #include <sys/proc.h>
+#include <sys/asan.h>
 
 #ifdef KGDB
 #include <sys/kgdb.h>
@@ -625,6 +626,7 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	/* Round down the stackpointer to a multiple of 16 for the ABI. */
 	fp = (struct sigframe_siginfo *)(((unsigned long)sp & ~15) - 8);
 
+	memset(&frame, 0, sizeof(frame));
 	frame.sf_ra = (uint64_t)ps->sa_sigdesc[sig].sd_tramp;
 	frame.sf_si._info = ksi->ksi_info;
 	frame.sf_uc.uc_flags = _UC_SIGMASK;
@@ -632,7 +634,6 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	frame.sf_uc.uc_link = l->l_ctxlink;
 	frame.sf_uc.uc_flags |= (l->l_sigstk.ss_flags & SS_ONSTACK)
 	    ? _UC_SETSTACK : _UC_CLRSTACK;
-	memset(&frame.sf_uc.uc_stack, 0, sizeof(frame.sf_uc.uc_stack));
 	sendsig_reset(l, sig);
 
 	mutex_exit(p->p_lock);
@@ -1397,11 +1398,6 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 /*
  * Initialize segments and descriptor tables
  */
-
-#ifdef XEN
-struct trap_info *xen_idt;
-int xen_idt_idx;
-#endif
 char *ldtstore;
 char *gdtstore;
 
@@ -1486,15 +1482,10 @@ set_sys_segment(struct sys_segment_descriptor *sd, void *base, size_t limit,
 void
 cpu_init_idt(void)
 {
-#ifndef XEN
 	struct region_descriptor region;
 
 	setregion(&region, idt, NIDT * sizeof(idt[0]) - 1);
 	lidt(&region);
-#else
-	if (HYPERVISOR_set_trap_table(xen_idt))
-		panic("HYPERVISOR_set_trap_table() failed");
-#endif
 }
 
 #define	IDTVEC(name)	__CONCAT(X, name)
@@ -1681,7 +1672,6 @@ init_x86_64(paddr_t first_avail)
 	extern vaddr_t lwp0uarea;
 #ifndef XEN
 	extern paddr_t local_apic_pa;
-	int ist;
 #endif
 
 	KASSERT(first_avail % PAGE_SIZE == 0);
@@ -1694,8 +1684,7 @@ init_x86_64(paddr_t first_avail)
 	init_pte();
 
 #ifdef KASAN
-	void kasan_early_init(void);
-	kasan_early_init();
+	kasan_early_init((void *)lwp0uarea);
 #endif
 
 	uvm_lwp_setuarea(&lwp0, lwp0uarea);
@@ -1777,7 +1766,6 @@ init_x86_64(paddr_t first_avail)
 	init_x86_msgbuf();
 
 #ifdef KASAN
-	void kasan_init(void);
 	kasan_init();
 #endif
 
@@ -1806,12 +1794,7 @@ init_x86_64(paddr_t first_avail)
 
 	pmap_update(pmap_kernel());
 
-#ifndef XEN
-	idt = (struct gate_descriptor *)idt_vaddr;
-#else
-	xen_idt = (struct trap_info *)idt_vaddr;
-	xen_idt_idx = 0;
-#endif
+	idt = (idt_descriptor_t *)idt_vaddr;
 	gdtstore = (char *)gdt_vaddr;
 	ldtstore = (char *)ldt_vaddr;
 
@@ -1870,8 +1853,14 @@ init_x86_64(paddr_t first_avail)
 
 	/* CPU-specific IDT exceptions. */
 	for (x = 0; x < NCPUIDT; x++) {
-#ifndef XEN
+		int sel, ist;
+
+		/* Reset to default. Special cases below */
+		sel = SEL_KPL;
+		ist = 0;
+
 		idt_vec_reserve(x);
+
 		switch (x) {
 		case 1:	/* DB */
 			ist = 4;
@@ -1879,56 +1868,31 @@ init_x86_64(paddr_t first_avail)
 		case 2:	/* NMI */
 			ist = 3;
 			break;
+		case 3:
+		case 4:			
+			sel = SEL_UPL;
+			break;
 		case 8:	/* double fault */
 			ist = 2;
 			break;
-		default:
-			ist = 0;
-			break;
-		}
-		setgate(&idt[x], x86_exceptions[x], ist, SDT_SYS386IGT,
-		    (x == 3 || x == 4) ? SEL_UPL : SEL_KPL,
-		    GSEL(GCODE_SEL, SEL_KPL));
-#else /* XEN */
-		pmap_changeprot_local(idt_vaddr, VM_PROT_READ|VM_PROT_WRITE);
-		idt_vec_reserve(x);
-		xen_idt[xen_idt_idx].vector = x;
-
-		switch (x) {
-		case 2:  /* NMI */
+#ifdef XEN			
 		case 18: /* MCA */
-			TI_SET_IF(&(xen_idt[xen_idt_idx]), 2);
+			sel |= 0x4; /* Auto EOI/mask */
 			break;
-		case 3:
-		case 4:
-			xen_idt[xen_idt_idx].flags = SEL_UPL;
-			break;
+#endif /* XEN */			
 		default:
-			xen_idt[xen_idt_idx].flags = SEL_KPL;
 			break;
 		}
 
-		xen_idt[xen_idt_idx].cs = GSEL(GCODE_SEL, SEL_KPL);
-		xen_idt[xen_idt_idx].address =
-		    (unsigned long)x86_exceptions[x];
-		xen_idt_idx++;
-#endif /* XEN */
+		set_idtgate(&idt[x], x86_exceptions[x], ist, SDT_SYS386IGT,
+		    sel, GSEL(GCODE_SEL, SEL_KPL));
 	}
 
 	/* new-style interrupt gate for syscalls */
-#ifndef XEN
 	idt_vec_reserve(128);
-	setgate(&idt[128], &IDTVEC(osyscall), 0, SDT_SYS386IGT, SEL_UPL,
+	set_idtgate(&idt[128], &IDTVEC(osyscall), 0, SDT_SYS386IGT, SEL_UPL,
 	    GSEL(GCODE_SEL, SEL_KPL));
-#else
-	idt_vec_reserve(128);
-	xen_idt[xen_idt_idx].vector = 128;
-	xen_idt[xen_idt_idx].flags = SEL_KPL;
-	xen_idt[xen_idt_idx].cs = GSEL(GCODE_SEL, SEL_KPL);
-	xen_idt[xen_idt_idx].address =  (unsigned long) &IDTVEC(osyscall);
-	xen_idt_idx++;
-	pmap_changeprot_local(idt_vaddr, VM_PROT_READ);
-#endif /* XEN */
+
 	kpreempt_enable();
 
 	setregion(&region, gdtstore, DYNSEL_START - 1);
@@ -2321,23 +2285,30 @@ cpu_fsgs_reload(struct lwp *l, int fssel, int gssel)
 	kpreempt_enable();
 }
 
-#ifdef __HAVE_DIRECT_MAP
 bool
 mm_md_direct_mapped_io(void *addr, paddr_t *paddr)
 {
 	vaddr_t va = (vaddr_t)addr;
 
+#ifdef __HAVE_DIRECT_MAP
 	if (va >= PMAP_DIRECT_BASE && va < PMAP_DIRECT_END) {
 		*paddr = PMAP_DIRECT_UNMAP(va);
 		return true;
 	}
+#else
+	__USE(va);
+#endif
+
 	return false;
 }
 
 bool
 mm_md_direct_mapped_phys(paddr_t paddr, vaddr_t *vaddr)
 {
+#ifdef __HAVE_DIRECT_MAP
 	*vaddr = PMAP_DIRECT_MAP(paddr);
 	return true;
-}
+#else
+	return false;
 #endif
+}

@@ -1,4 +1,4 @@
-$NetBSD: usbdevs,v 1.758 2018/08/12 04:17:54 rin Exp $
+$NetBSD: usbdevs,v 1.761 2018/11/08 08:27:54 mlelstv Exp $
 
 /*-
  * Copyright (c) 1998-2004 The NetBSD Foundation, Inc.
@@ -2583,6 +2583,7 @@ product PANASONIC KXLRW32AN	0x0d09	CD-R Drive KXL-RW32AN
 product PANASONIC KXLCB20AN	0x0d0a	CD-R Drive KXL-CB20AN
 product PANASONIC KXLCB35AN	0x0d0e	DVD-ROM & CD-R/RW
 product PANASONIC SDCAAE	0x1b00	MultiMediaCard Adapter
+product	PANASONIC N5HBZ0000055	0x3904	Wireless LAN USB Adapter
 product PANASONIC DMCFS45	0x2372	Lumix Camera DMC-FS45
 product PANASONIC TYTP50P6S	0x3900	TY-TP50P6-S 50in Touch Panel
 
@@ -2637,6 +2638,7 @@ product PHILIPS RT2870		0x200f	RT2870
 
 /* Philips Semiconductor products */
 product PHILIPSSEMI HUB1122	0x1122	hub
+product PHILIPSSEMI PN533	0x2533	NFC PN533
 
 /* P.I. Engineering products */
 product PIENGINEERING PS2USB	0x020b	PS2 to Mac USB Adapter
@@ -2979,6 +2981,8 @@ product SHUTTLE EUSCSI_C	0x000c	eUSCSI Bridge
 product SHUTTLE CDRW		0x0101	CD-RW Device
 product SHUTTLE ORCA		0x0325	eUSB ORCA Quad Reader
 product SHUTTLE SCM		0x1010	SCM Micro
+product SHUTTLE SCL3711		0x5591	SCM Micro SCL3711-NFC&RW
+product SHUTTLE SCL3712		0x5594	SCM Micro SCL3712-NFC&RW
 
 /* Siemens products */
 product SIEMENS SPEEDSTREAM	0x1001	SpeedStream USB

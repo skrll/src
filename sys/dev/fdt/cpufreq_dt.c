@@ -1,4 +1,4 @@
-/* $NetBSD: cpufreq_dt.c,v 1.5 2018/09/01 23:41:16 jmcneill Exp $ */
+/* $NetBSD: cpufreq_dt.c,v 1.7 2018/11/01 14:47:36 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpufreq_dt.c,v 1.5 2018/09/01 23:41:16 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpufreq_dt.c,v 1.7 2018/11/01 14:47:36 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -250,20 +250,6 @@ cpufreq_dt_sysctl_helper(SYSCTLFN_ARGS)
 	return error;
 }
 
-static int
-cpufreq_dt_instance_count(void)
-{
-	deviter_t di;
-	int count = 0;
-
-	deviter_init(&di, 0);
-	while (deviter_next(&di) != NULL)
-		++count;
-	deviter_release(&di);
-
-	return count;
-}
-
 static void
 cpufreq_dt_init_sysctl(struct cpufreq_dt_softc *sc)
 {
@@ -279,10 +265,10 @@ cpufreq_dt_init_sysctl(struct cpufreq_dt_softc *sc)
 		strcat(sc->sc_freq_available, buf);
 	}
 
-	if (cpufreq_dt_instance_count() > 1)
-		cpunodename = device_xname(sc->sc_dev);
-	else
+	if (device_unit(sc->sc_dev) == 0)
 		cpunodename = "cpu";
+	else
+		cpunodename = device_xname(sc->sc_dev);
 
 	error = sysctl_createv(&cpufreq_log, 0, NULL, &node,
 	    CTLFLAG_PERMANENT, CTLTYPE_NODE, "machdep", NULL,
@@ -357,9 +343,9 @@ cpufreq_dt_parse_opp_v2(struct cpufreq_dt_softc *sc)
 {
 	const int phandle = sc->sc_phandle;
 	struct cpufreq_dt_table *table;
+	const u_int *opp_uv;
 	uint64_t opp_hz;
-	uint32_t opp_uv;
-	int opp_node, i;
+	int opp_node, len, i;
 
 	const int opp_table = fdtbus_get_phandle(phandle, "operating-points-v2");
 	if (opp_table < 0)
@@ -388,10 +374,11 @@ cpufreq_dt_parse_opp_v2(struct cpufreq_dt_softc *sc)
 			continue;
 		if (of_getprop_uint64(opp_node, "opp-hz", &opp_hz) != 0)
 			return EINVAL;
-		if (of_getprop_uint32(opp_node, "opp-microvolt", &opp_uv) != 0)
+		opp_uv = fdtbus_get_prop(opp_node, "opp-microvolt", &len);
+		if (opp_uv == NULL || len < 1)
 			return EINVAL;
 		sc->sc_opp[i].freq_khz = (u_int)(opp_hz / 1000);
-		sc->sc_opp[i].voltage_uv = opp_uv;
+		sc->sc_opp[i].voltage_uv = be32toh(opp_uv[0]);
 		of_getprop_uint32(opp_node, "clock-latency-ns", &sc->sc_opp[i].latency_ns);
 	}
 

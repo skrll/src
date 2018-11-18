@@ -1,5 +1,5 @@
 #
-#	$NetBSD: VIRT,v 1.7 2018/07/14 15:09:41 maxv Exp $
+#	$NetBSD: VIRT,v 1.9 2018/10/18 09:01:54 skrll Exp $
 #
 #	QEMU ARM 'virt' virtual machine
 #
@@ -20,7 +20,7 @@ pseudo-device 	openfirm	# /dev/openfirm
 #options 	LOCKDEBUG
 #options 	PMAP_DEBUG	# Enable pmap_debug_level code
 #options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
-#options 	CONSADDR=0x09000000
+#options 	EARLYCONS=virt, CONSADDR=0x09000000
 
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
@@ -58,7 +58,7 @@ plcom*		at fdt?			# ARM PL011 UART
 plrtc*		at fdt?			# ARM PrimeCell RTC
 
 # GPIO
-pl061gpio*	at fdt?			# ARM PrimeCell GPIO
+plgpio*		at fdt?			# ARM PrimeCell GPIO
 
 # Virtio devices
 virtio*	at fdt?				# Virtio MMIO device

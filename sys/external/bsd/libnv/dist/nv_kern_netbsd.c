@@ -1,4 +1,4 @@
-/*	$NetBSD: nv_kern_netbsd.c,v 1.2 2018/09/08 14:12:53 christos Exp $	*/
+/*	$NetBSD: nv_kern_netbsd.c,v 1.6 2018/10/16 13:18:25 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: nv_kern_netbsd.c,v 1.2 2018/09/08 14:12:53 christos Exp $");
+__RCSID("$NetBSD: nv_kern_netbsd.c,v 1.6 2018/10/16 13:18:25 maxv Exp $");
 
 #if !defined(_KERNEL) && !defined(_STANDALONE)
 #include <sys/mman.h>
@@ -61,14 +61,26 @@ extern void dealloc(void *, unsigned int);
 #ifndef _STANDALONE
 #ifdef _KERNEL
 
+void 
+nv_free(void *buf)
+{
+	if (!buf) {
+		return;
+	}
+	free(buf, M_NVLIST);
+}
+
 int
 nvlist_copyin(const nvlist_ref_t *nref, nvlist_t **nvlp, size_t lim)
 {
 	const size_t len = nref->len;
+	int flags, error;
 	nvlist_t *nvl;
 	void *buf;
-	int error;
 
+	if (len == 0) {
+		return EINVAL;
+	}
 	if (len >= lim) {
 		return E2BIG;
 	}
@@ -78,7 +90,8 @@ nvlist_copyin(const nvlist_ref_t *nref, nvlist_t **nvlp, size_t lim)
 		kmem_free(buf, len);
 		return error;
 	}
-	nvl = nvlist_unpack(buf, len, nref->flags);
+	flags = nref->flags & (NV_FLAG_IGNORE_CASE | NV_FLAG_NO_UNIQUE);
+	nvl = nvlist_unpack(buf, len, flags);
 	kmem_free(buf, len);
 	if (nvl == NULL) {
 		return EINVAL;
@@ -114,10 +127,10 @@ nvlist_copyout(nvlist_ref_t *nref, const nvlist_t *nvl)
 	error = copyout(buf, uaddr, len);
 	if (error) {
 		uvm_unmap(&p->p_vmspace->vm_map, (vaddr_t)uaddr,
-		    (vaddr_t)uaddr + len);
+		    (vaddr_t)uaddr + rlen);
 		goto err;
 	}
-	nref->flags = nvlist_error(nvl);
+	nref->flags = nvlist_flags(nvl);
 	nref->buf = uaddr;
 	nref->len = len;
 err:
@@ -198,11 +211,11 @@ nvlist_recv_ioctl(int fd, unsigned long cmd, nvlist_t **nvlp)
 void *
 nv_calloc(size_t n, size_t s)
 {
-	n *= s;
-	void *buf = nv_malloc(n);
+	const size_t len = n * s;
+	void *buf = nv_malloc(len);
 	if (buf == NULL)
 		return NULL;
-	memset(buf, 0, n);
+	memset(buf, 0, len);
 	return buf;
 }
 
@@ -215,7 +228,7 @@ nv_strdup(const char *s1)
 	s2 = nv_malloc(len);
 	if (s2) {
 		memcpy(s2, s1, len);
-		s2[len] = '\0';
+		s2[len-1] = '\0';
 	}
 	return s2;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: msg.mi.pl,v 1.10 2018/09/11 08:05:18 martin Exp $	*/
+/*	$NetBSD: msg.mi.pl,v 1.12 2018/11/15 10:34:21 martin Exp $	*/
 /*	Based on english version: */
 /*	NetBSD: msg.mi.pl,v 1.36 2004/04/17 18:55:35 atatat Exp       */
 
@@ -35,10 +35,6 @@
  */
 
 /* MI Message catalog -- polish, machine independent */
-
-message usage
-{uzycie: sysinst [-D] [-f plik_definicja] [-r wersja] [-C bg:fg]
-}
 
 /*
  * We can not use non ascii characters in this message - it is displayed
@@ -1208,4 +1204,9 @@ message Auto_add_swap_part
 {A swap partition (named %s) seems to exist on %s. 
 Do you want to use that?}
 
+
+message parttype_mbr {Master Boot Record (MBR)}
+message parttype_mbr_short {MBR}
+message parttype_disklabel {BSD disklabel}
+message parttype_disklabel_short {disklabel}
 

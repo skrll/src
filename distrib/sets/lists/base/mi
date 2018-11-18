@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1187 2018/09/12 19:55:39 para Exp $
+# $NetBSD: mi,v 1.1193 2018/11/09 21:33:50 abs Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -509,7 +509,7 @@
 ./sbin/ifconfig					base-netutil-root
 ./sbin/init					base-sysutil-root
 ./sbin/ipf					base-ipf-root		ipfilter
-./sbin/ipppctl					base-netutil-root
+./sbin/ipppctl					base-obsolete		obsolete
 ./sbin/iscsictl					base-iscsi-bin		iscsi
 ./sbin/iscsid					base-iscsi-bin		iscsi
 ./sbin/ispppcontrol				base-obsolete		obsolete
@@ -546,6 +546,7 @@
 ./sbin/mount_procfs				base-sysutil-root
 ./sbin/mount_ptyfs				base-miscfs-root
 ./sbin/mount_puffs				base-sysutil-root
+./sbin/mount_qemufwcfg				base-sysutil-root
 ./sbin/mount_smbfs				base-smbfs-root
 ./sbin/mount_sysvbfs				base-sysutil-root
 ./sbin/mount_tmpfs				base-miscfs-root
@@ -1213,7 +1214,7 @@
 ./usr/include/netinet				base-c-usr
 ./usr/include/netinet6				base-c-usr
 ./usr/include/netipsec				base-c-usr
-./usr/include/netisdn				base-c-usr
+./usr/include/netisdn				base-obsolete		obsolete
 ./usr/include/netiso				base-obsolete		obsolete
 ./usr/include/netkey				base-obsolete		obsolete
 ./usr/include/netmpls				base-c-usr
@@ -1657,7 +1658,7 @@
 ./usr/sbin/cpuctl				base-sysutil-bin
 ./usr/sbin/crash				base-sysutil-bin
 ./usr/sbin/cron					base-cron-bin
-./usr/sbin/daicctl				base-isdn-bin
+./usr/sbin/daicctl				base-obsolete		obsolete
 ./usr/sbin/dbsym				base-sysutil-bin	binutils
 ./usr/sbin/ddns-confgen				base-bind-bin
 ./usr/sbin/dev_mkdb				base-sysutil-bin
@@ -1677,7 +1678,7 @@
 ./usr/sbin/dnssec-signzone			base-bind-bin
 ./usr/sbin/dnssec-verify			base-bind-bin
 ./usr/sbin/download-vulnerability-list		base-pkgutil-bin
-./usr/sbin/dtmfdecode				base-isdn-bin
+./usr/sbin/dtmfdecode				base-obsolete		obsolete
 ./usr/sbin/dtrace				base-debug-bin		dtrace
 ./usr/sbin/dtruss				base-debug-bin		dtrace
 ./usr/sbin/dumpfs				base-sysutil-bin
@@ -1740,11 +1741,11 @@
 ./usr/sbin/irdaattach				base-sysutil-bin
 ./usr/sbin/iscsi-initiator			base-iscsi-bin		iscsi
 ./usr/sbin/iscsi-target				base-iscsi-bin		iscsi
-./usr/sbin/isdnd				base-isdn-bin
-./usr/sbin/isdnmonitor				base-isdn-bin
-./usr/sbin/isdntel				base-isdn-bin
-./usr/sbin/isdntelctl				base-isdn-bin
-./usr/sbin/isdntrace				base-isdn-bin
+./usr/sbin/isdnd				base-obsolete		obsolete
+./usr/sbin/isdnmonitor				base-obsolete		obsolete
+./usr/sbin/isdntel				base-obsolete		obsolete
+./usr/sbin/isdntelctl				base-obsolete		obsolete
+./usr/sbin/isdntrace				base-obsolete		obsolete
 ./usr/sbin/isibootd				base-bootserver-bin
 ./usr/sbin/ispppcontrol				base-obsolete		obsolete
 ./usr/sbin/iwictl				base-sysutil-bin
@@ -2225,7 +2226,7 @@
 ./usr/share/examples/getdate			base-sys-examples
 ./usr/share/examples/hostapd			base-netutil-examples
 ./usr/share/examples/ipf			base-netutil-examples
-./usr/share/examples/isdn			base-isdn-examples
+./usr/share/examples/isdn			base-obsolete	obsolete
 ./usr/share/examples/kerberos			base-krb5-examples
 ./usr/share/examples/lua			base-sys-examples
 ./usr/share/examples/lua/README			base-sys-examples	share
@@ -2248,6 +2249,7 @@
 ./usr/share/examples/racoon/roadwarrior/client	base-netutil-examples
 ./usr/share/examples/racoon/roadwarrior/server	base-netutil-examples
 ./usr/share/examples/rtadvd			base-router-examples
+./usr/share/examples/slip			base-slip-examples
 ./usr/share/examples/smbfs			base-sysutil-examples
 ./usr/share/examples/supfiles			base-sup-examples
 ./usr/share/examples/syslogd			base-sysutil-examples
@@ -6006,6 +6008,8 @@
 ./var/chroot/unbound				base-sys-root
 ./var/chroot/unbound/etc			base-sys-root
 ./var/chroot/unbound/etc/unbound		base-sys-root
+./var/chroot/unbound/var			base-sys-root
+./var/chroot/unbound/var/run			base-sys-root
 ./var/crash					base-sys-root
 ./var/cron					base-cron-root
 ./var/cron/tabs					base-cron-root

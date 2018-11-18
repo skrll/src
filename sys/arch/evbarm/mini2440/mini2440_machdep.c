@@ -131,9 +131,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mini2440_machdep.c,v 1.11 2018/07/31 06:46:27 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mini2440_machdep.c,v 1.13 2018/10/28 14:30:32 skrll Exp $");
 
 #include "opt_arm_debug.h"
+#include "opt_console.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_pmap_debug.h"
@@ -896,7 +897,7 @@ initarm(void *arg)
 	    VM_FREELIST_DEFAULT);
 
 
-	/* Boot strap pmap telling it where the kernel page table is */
+	/* Boot strap pmap telling it where managed kernel virtual memory is */
 #ifdef VERBOSE_INIT_ARM
 	printf("pmap ");
 #endif

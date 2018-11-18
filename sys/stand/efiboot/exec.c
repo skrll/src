@@ -1,4 +1,4 @@
-/* $NetBSD: exec.c,v 1.5 2018/09/09 13:37:54 jmcneill Exp $ */
+/* $NetBSD: exec.c,v 1.8 2018/10/28 10:17:47 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -28,8 +28,9 @@
 
 #include "efiboot.h"
 #include "efifdt.h"
+#include "efiacpi.h"
 
-#include <loadfile.h>
+#include <sys/reboot.h>
 
 u_long load_offset = 0;
 
@@ -109,13 +110,16 @@ exec_netbsd(const char *fname, const char *args)
 	EFI_PHYSICAL_ADDRESS addr;
 	u_long marks[MARK_MAX], alloc_size;
 	EFI_STATUS status;
-	int fd;
+	int fd, ohowto;
 
 	load_file(get_initrd_path(), &initrd_addr, &initrd_size);
 	load_file(get_dtb_path(), &dtb_addr, &dtb_size);
 
 	memset(marks, 0, sizeof(marks));
+	ohowto = howto;
+	howto |= AB_SILENT;
 	fd = loadfile(fname, marks, COUNT_KERNEL | LOAD_NOTE);
+	howto = ohowto;
 	if (fd < 0) {
 		printf("boot: %s: %s\n", fname, strerror(errno));
 		return EIO;
@@ -149,6 +153,11 @@ exec_netbsd(const char *fname, const char *args)
 	close(fd);
 	load_offset = 0;
 
+#ifdef EFIBOOT_ACPI
+	if (efi_acpi_available()) {
+		efi_acpi_create_fdt();
+	} else
+#endif
 	if (dtb_addr && efi_fdt_set_data((void *)dtb_addr) != 0) {
 		printf("boot: invalid DTB data\n");
 		goto cleanup;
@@ -159,10 +168,14 @@ exec_netbsd(const char *fname, const char *args)
 		efi_fdt_initrd(initrd_addr, initrd_size);
 		efi_fdt_bootargs(args);
 		efi_fdt_memory_map();
-		efi_fdt_fini();
 	}
 
 	efi_cleanup();
+
+	if (efi_fdt_size() > 0) {
+		efi_fdt_fini();
+	}
+
 	efi_boot_kernel(marks);
 
 	/* This should not happen.. */

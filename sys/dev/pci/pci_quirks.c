@@ -1,4 +1,4 @@
-/*	$NetBSD: pci_quirks.c,v 1.10 2018/02/28 05:50:06 msaitoh Exp $	*/
+/*	$NetBSD: pci_quirks.c,v 1.12 2018/10/17 01:16:50 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 1998 Christopher G. Demetriou.  All rights reserved.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci_quirks.c,v 1.10 2018/02/28 05:50:06 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_quirks.c,v 1.12 2018/10/17 01:16:50 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>

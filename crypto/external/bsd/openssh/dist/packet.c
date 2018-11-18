@@ -1,4 +1,4 @@
-/*	$NetBSD: packet.c,v 1.33 2018/08/26 07:46:36 christos Exp $	*/
+/*	$NetBSD: packet.c,v 1.35 2018/10/02 22:40:28 christos Exp $	*/
 /* $OpenBSD: packet.c,v 1.277 2018/07/16 03:09:13 djm Exp $ */
 
 /*
@@ -40,7 +40,7 @@
  */
 
 #include "includes.h"
-__RCSID("$NetBSD: packet.c,v 1.33 2018/08/26 07:46:36 christos Exp $");
+__RCSID("$NetBSD: packet.c,v 1.35 2018/10/02 22:40:28 christos Exp $");
 
 #include <sys/param.h>	/* MIN roundup */
 #include <sys/types.h>

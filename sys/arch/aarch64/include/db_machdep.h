@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.h,v 1.6 2018/07/17 10:07:49 ryo Exp $ */
+/* $NetBSD: db_machdep.h,v 1.8 2018/10/12 01:28:58 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -68,6 +68,7 @@
 
 #include <sys/types.h>
 #include <aarch64/frame.h>
+#include <ddb/db_user.h>
 
 typedef long long int db_expr_t;
 #define DDB_EXPR_FMT "ll"
@@ -202,6 +203,7 @@ db_addr_t db_branch_taken(db_expr_t, db_addr_t, db_regs_t *);
 #define DB_MACHINE_COMMANDS
 void dump_trapframe(struct trapframe *, void (*)(const char *, ...));
 const char *strdisasm(vaddr_t);
+const char *strdisasm_aarch32(vaddr_t);
 void db_machdep_init(void);
 
 /* hardware breakpoint/watchpoint functions */
@@ -214,6 +216,7 @@ void aarch64_watchpoint_set(int, vaddr_t, int, int);
 #define WATCHPOINT_ACCESS_LOADSTORE	0x03
 #define WATCHPOINT_ACCESS_MASK		0x03
 
+#define DB_ELF_SYMBOLS
 
 #elif defined(__arm__)
 

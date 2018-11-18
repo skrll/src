@@ -1,4 +1,4 @@
-/* $NetBSD: pmap.h,v 1.9 2018/09/10 15:14:50 maxv Exp $ */
+/* $NetBSD: pmap.h,v 1.17 2018/11/01 20:34:50 maxv Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -34,6 +34,11 @@
 
 #ifdef __aarch64__
 
+#ifdef _KERNEL
+#ifdef _KERNEL_OPT
+#include "opt_kasan.h"
+#endif
+
 #include <sys/types.h>
 #include <sys/pool.h>
 #include <sys/queue.h>
@@ -45,6 +50,11 @@
 #define PMAP_STEAL_MEMORY
 
 #define __HAVE_VM_PAGE_MD
+
+#ifndef KASAN
+#define PMAP_MAP_POOLPAGE(pa)		AARCH64_PA_TO_KVA(pa)
+#define PMAP_UNMAP_POOLPAGE(va)		AARCH64_KVA_TO_PA(va)
+#endif
 
 struct pmap {
 	kmutex_t pm_lock;
@@ -77,24 +87,40 @@ struct vm_page_md {
 		(pg)->mdpage.mdpg_flags = 0;		\
 	} while (/*CONSTCOND*/ 0)
 
-#define l0pde_pa(pde)		((paddr_t)((pde) & LX_TBL_PA))
+
+/* saved permission bit for referenced/modified emulation */
+#define LX_BLKPAG_OS_READ		LX_BLKPAG_OS_0
+#define LX_BLKPAG_OS_WRITE		LX_BLKPAG_OS_1
+#define LX_BLKPAG_OS_WIRED		LX_BLKPAG_OS_2
+#define LX_BLKPAG_OS_BOOT		LX_BLKPAG_OS_3
+#define LX_BLKPAG_OS_RWMASK		(LX_BLKPAG_OS_WRITE|LX_BLKPAG_OS_READ)
+
+/* memory attributes are configured MAIR_EL1 in locore */
+#define LX_BLKPAG_ATTR_NORMAL_WB	__SHIFTIN(0, LX_BLKPAG_ATTR_INDX)
+#define LX_BLKPAG_ATTR_NORMAL_NC	__SHIFTIN(1, LX_BLKPAG_ATTR_INDX)
+#define LX_BLKPAG_ATTR_NORMAL_WT	__SHIFTIN(2, LX_BLKPAG_ATTR_INDX)
+#define LX_BLKPAG_ATTR_DEVICE_MEM	__SHIFTIN(3, LX_BLKPAG_ATTR_INDX)
+#define LX_BLKPAG_ATTR_MASK		LX_BLKPAG_ATTR_INDX
+
+#define lxpde_pa(pde)		((paddr_t)((pde) & LX_TBL_PA))
+#define l0pde_pa(pde)		lxpde_pa(pde)
 #define l0pde_index(v)		(((vaddr_t)(v) & L0_ADDR_BITS) >> L0_SHIFT)
 #define l0pde_valid(pde)	(((pde) & LX_VALID) == LX_VALID)
 /* l0pte always contains table entries */
 
-#define l1pde_pa(pde)		((paddr_t)((pde) & LX_TBL_PA))
+#define l1pde_pa(pde)		lxpde_pa(pde)
 #define l1pde_index(v)		(((vaddr_t)(v) & L1_ADDR_BITS) >> L1_SHIFT)
 #define l1pde_valid(pde)	(((pde) & LX_VALID) == LX_VALID)
 #define l1pde_is_block(pde)	(((pde) & LX_TYPE) == LX_TYPE_BLK)
 #define l1pde_is_table(pde)	(((pde) & LX_TYPE) == LX_TYPE_TBL)
 
-#define l2pde_pa(pde)		((paddr_t)((pde) & LX_TBL_PA))
+#define l2pde_pa(pde)		lxpde_pa(pde)
 #define l2pde_index(v)		(((vaddr_t)(v) & L2_ADDR_BITS) >> L2_SHIFT)
 #define l2pde_valid(pde)	(((pde) & LX_VALID) == LX_VALID)
 #define l2pde_is_block(pde)	(((pde) & LX_TYPE) == LX_TYPE_BLK)
 #define l2pde_is_table(pde)	(((pde) & LX_TYPE) == LX_TYPE_TBL)
 
-#define l3pte_pa(pde)		((paddr_t)((pde) & LX_TBL_PA))
+#define l3pte_pa(pde)		lxpde_pa(pde)
 #define l3pte_executable(pde,user)	\
     (((pde) & ((user) ? LX_BLKPAG_UXN : LX_BLKPAG_PXN)) == 0)
 #define l3pte_readable(pde)	((pde) & LX_BLKPAG_AF)
@@ -109,9 +135,22 @@ void pmap_bootstrap(vaddr_t, vaddr_t);
 bool pmap_fault_fixup(struct pmap *, vaddr_t, vm_prot_t, bool user);
 
 /* for ddb */
-void pmap_db_pteinfo(vaddr_t, void (*)(const char *, ...));
+void pmap_db_pteinfo(vaddr_t, void (*)(const char *, ...) __printflike(1, 2));
 pt_entry_t *kvtopte(vaddr_t);
 pt_entry_t pmap_kvattr(vaddr_t, vm_prot_t);
+
+/* locore.S */
+pd_entry_t *bootpage_alloc(void);
+
+/* pmap_locore.c */
+int pmapboot_enter(vaddr_t, paddr_t, psize_t, psize_t,
+    pt_entry_t, uint64_t, pd_entry_t *(*)(void),
+    void (*pr)(const char *, ...) __printflike(1, 2));
+#define PMAPBOOT_ENTER_NOBLOCK		0x00000001
+#define PMAPBOOT_ENTER_NOOVERWRITE	0x00000002
+int pmapboot_protect(vaddr_t, vaddr_t, vm_prot_t);
+void pmap_db_pte_print(pt_entry_t, int,
+    void (*pr)(const char *, ...) __printflike(1, 2));
 
 /* Hooks for the pool allocator */
 paddr_t vtophys(vaddr_t);
@@ -129,7 +168,7 @@ struct pmap_devmap {
 };
 
 void pmap_devmap_register(const struct pmap_devmap *);
-void pmap_devmap_bootstrap(const struct pmap_devmap *);
+void pmap_devmap_bootstrap(vaddr_t, const struct pmap_devmap *);
 const struct pmap_devmap *pmap_devmap_find_pa(paddr_t, psize_t);
 const struct pmap_devmap *pmap_devmap_find_va(vaddr_t, vsize_t);
 vaddr_t pmap_devmap_phystov(paddr_t);
@@ -137,9 +176,14 @@ paddr_t pmap_devmap_vtophys(paddr_t);
 
 pd_entry_t *pmap_alloc_pdp(struct pmap *, paddr_t *);
 
+#define L1_TRUNC_BLOCK(x)	((x) & L1_FRAME)
+#define L1_ROUND_BLOCK(x)	L1_TRUNC_BLOCK((x) + L1_SIZE - 1)
+#define L2_TRUNC_BLOCK(x)	((x) & L2_FRAME)
+#define L2_ROUND_BLOCK(x)	L2_TRUNC_BLOCK((x) + L2_SIZE - 1)
+
 /* devmap use L2 blocks. (2Mbyte) */
-#define DEVMAP_TRUNC_ADDR(x)	((x) & ~L2_OFFSET)
-#define DEVMAP_ROUND_SIZE(x)	(((x) + L2_SIZE - 1) & ~(L2_SIZE - 1))
+#define DEVMAP_TRUNC_ADDR(x)	L2_TRUNC_BLOCK((x))
+#define DEVMAP_ROUND_SIZE(x)	L2_ROUND_BLOCK((x))
 
 #define	DEVMAP_ENTRY(va, pa, sz)			\
 	{						\
@@ -213,8 +257,11 @@ aarch64_mmap_flags(paddr_t mdpgno)
 #define pmap_resident_count(pmap)	((pmap)->pm_stats.resident_count)
 
 bool	pmap_extract_coherency(pmap_t, vaddr_t, paddr_t *, bool *);
+void	pmap_icache_sync_range(pmap_t, vaddr_t, vaddr_t);
 
 #define	PMAP_MAPSIZE1	L2_SIZE
+
+#endif /* _KERNEL */
 
 #elif defined(__arm__)
 

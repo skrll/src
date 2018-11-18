@@ -1,4 +1,4 @@
-/*	$NetBSD: clock.c,v 1.70 2018/06/30 14:59:38 riastradh Exp $	*/
+/*	$NetBSD: clock.c,v 1.72 2018/10/26 05:33:21 cherry Exp $	*/
 
 /*-
  * Copyright (c) 2017, 2018 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: clock.c,v 1.70 2018/06/30 14:59:38 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: clock.c,v 1.72 2018/10/26 05:33:21 cherry Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -763,13 +763,13 @@ xen_resumeclocks(struct cpu_info *ci)
 	snprintf(intr_xname, sizeof(intr_xname), "%s clock",
 	    device_xname(ci->ci_dev));
 	/* XXX sketchy function pointer cast -- fix the API, please */
-	ci->ci_xen_timer_intrhand = intr_establish_xname(0, &xen_pic, evtch,
+	ci->ci_xen_timer_intrhand = intr_establish_xname(-1, &xen_pic, evtch,
 	    IST_LEVEL, IPL_CLOCK, (int (*)(void *))xen_timer_handler, ci, true,
 	    intr_xname);
 	if (ci->ci_xen_timer_intrhand == NULL)
 		panic("failed to establish timer interrupt handler");
 
-	hypervisor_enable_event(evtch);
+	hypervisor_unmask_event(evtch);
 
 	aprint_verbose("Xen %s: using event channel %d\n", intr_xname, evtch);
 
