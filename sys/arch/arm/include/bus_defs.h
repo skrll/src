@@ -1,4 +1,4 @@
-/*	$NetBSD: bus_defs.h,v 1.11 2018/04/01 04:35:04 ryo Exp $	*/
+/*	$NetBSD: bus_defs.h,v 1.13 2018/11/19 10:45:47 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2001 The NetBSD Foundation, Inc.

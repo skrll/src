@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.119 2018/07/25 11:47:07 maxv Exp $	*/
+/*	$NetBSD: pmap.h,v 1.121 2018/11/19 20:44:51 maxv Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -267,7 +267,8 @@
 #endif  /* !XEN */
 #define NPDPG			(PAGE_SIZE / sizeof (pd_entry_t))
 
-#define PTP_MASK_INITIALIZER	{ L1_FRAME, L2_FRAME }
+#define PTP_MASK_INITIALIZER	{ L1_MASK, L2_MASK }
+#define PTP_FRAME_INITIALIZER	{ L1_FRAME, L2_FRAME }
 #define PTP_SHIFT_INITIALIZER	{ L1_SHIFT, L2_SHIFT }
 #define NKPTP_INITIALIZER	{ NKL1_START_ENTRIES, NKL2_START_ENTRIES }
 #define NKPTPMAX_INITIALIZER	{ NKL1_MAX_ENTRIES, NKL2_MAX_ENTRIES }

@@ -1,4 +1,4 @@
-/*	$NetBSD: ahcisata_core.c,v 1.66 2018/11/02 21:27:30 jdolecek Exp $	*/
+/*	$NetBSD: ahcisata_core.c,v 1.70 2018/11/20 08:47:55 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ahcisata_core.c,v 1.66 2018/11/02 21:27:30 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ahcisata_core.c,v 1.70 2018/11/20 08:47:55 jdolecek Exp $");
 
 #include <sys/types.h>
 #include <sys/malloc.h>
@@ -456,19 +456,19 @@ ahci_attach(struct ahci_softc *sc)
 		ahci_setup_port(sc, i);
 		if (bus_space_subregion(sc->sc_ahcit, sc->sc_ahcih,
 		    AHCI_P_SSTS(i), 4,  &achp->ahcic_sstatus) != 0) {
-			aprint_error("%s: couldn't map channel %d "
+			aprint_error("%s: couldn't map port %d "
 			    "sata_status regs\n", AHCINAME(sc), i);
 			break;
 		}
 		if (bus_space_subregion(sc->sc_ahcit, sc->sc_ahcih,
 		    AHCI_P_SCTL(i), 4,  &achp->ahcic_scontrol) != 0) {
-			aprint_error("%s: couldn't map channel %d "
+			aprint_error("%s: couldn't map port %d "
 			    "sata_control regs\n", AHCINAME(sc), i);
 			break;
 		}
 		if (bus_space_subregion(sc->sc_ahcit, sc->sc_ahcih,
 		    AHCI_P_SERR(i), 4,  &achp->ahcic_serror) != 0) {
-			aprint_error("%s: couldn't map channel %d "
+			aprint_error("%s: couldn't map port %d "
 			    "sata_error regs\n", AHCINAME(sc), i);
 			break;
 		}
@@ -771,14 +771,14 @@ ahci_exec_fis(struct ata_channel *chp, int timeout, int flags, int slot)
 				 */
 				return ERROR;
 			}
-			aprint_debug("%s channel %d: error 0x%x sending FIS\n",
+			aprint_debug("%s port %d: error 0x%x sending FIS\n",
 			    AHCINAME(sc), chp->ch_channel, is);
 			return ERR_DF;
 		}
 		ata_delay(chp, 10, "ahcifis", flags);
 	}
 
-	aprint_debug("%s channel %d: timeout sending FIS\n",
+	aprint_debug("%s port %d: timeout sending FIS\n",
 	    AHCINAME(sc), chp->ch_channel);
 	return TIMEOUT;
 }
@@ -791,13 +791,11 @@ ahci_do_reset_drive(struct ata_channel *chp, int drive, int flags,
 	struct ahci_softc *sc = (struct ahci_softc *)chp->ch_atac;
 	struct ahci_cmd_tbl *cmd_tbl;
 	struct ahci_cmd_header *cmd_h;
-	int i;
+	int i, error = 0;
 	uint32_t sig;
 
-	KASSERT((AHCI_READ(sc, AHCI_P_CMD(chp->ch_channel)) & AHCI_P_CMD_CR) == 0);
 	ata_channel_lock_owned(chp);
 
-again:
 	/* clear port interrupt register */
 	AHCI_WRITE(sc, AHCI_P_IS(chp->ch_channel), 0xffffffff);
 	/* clear SErrors and start operations */
@@ -809,6 +807,9 @@ again:
 		 */
 		ahci_channel_start(sc, chp, flags, 1);
 	} else {
+		/* Can't handle command still running without CLO */
+		KASSERT((AHCI_READ(sc, AHCI_P_CMD(chp->ch_channel)) & AHCI_P_CMD_CR) == 0);
+
 		ahci_channel_start(sc, chp, flags, 0);
 	}
 	if (drive > 0) {
@@ -828,43 +829,38 @@ again:
 	memset(cmd_tbl->cmdt_cfis, 0, 64);
 	cmd_tbl->cmdt_cfis[fis_type] = RHD_FISTYPE;
 	cmd_tbl->cmdt_cfis[rhd_c] = drive;
-	cmd_tbl->cmdt_cfis[rhd_control] = WDCTL_RST;
-	switch(ahci_exec_fis(chp, 100, flags, c_slot)) {
+	cmd_tbl->cmdt_cfis[rhd_control] = WDCTL_RST | WDCTL_4BIT;
+	switch (ahci_exec_fis(chp, 100, flags, c_slot)) {
 	case ERR_DF:
 	case TIMEOUT:
-		aprint_error("%s channel %d: setting WDCTL_RST failed "
+		aprint_error("%s port %d: setting WDCTL_RST failed "
 		    "for drive %d\n", AHCINAME(sc), chp->ch_channel, drive);
-		if (sigp)
-			*sigp = 0xffffffff;
+		error = EBUSY;
 		goto end;
 	default:
 		break;
 	}
+
+	/*
+	 * SATA specification has toggle period for SRST bit of 5 usec. Some
+	 * controllers fail to process the SRST clear operation unless
+	 * we wait for at least this period between the set and clear commands.
+	 */
+	ata_delay(chp, 10, "ahcirstw", flags);
+
 	cmd_h->cmdh_flags = htole16(RHD_FISLEN / 4 |
 	    (drive << AHCI_CMDH_F_PMP_SHIFT));
 	cmd_h->cmdh_prdbc = 0;
 	memset(cmd_tbl->cmdt_cfis, 0, 64);
 	cmd_tbl->cmdt_cfis[fis_type] = RHD_FISTYPE;
 	cmd_tbl->cmdt_cfis[rhd_c] = drive;
-	cmd_tbl->cmdt_cfis[rhd_control] = 0;
-	switch(ahci_exec_fis(chp, 310, flags, c_slot)) {
+	cmd_tbl->cmdt_cfis[rhd_control] = WDCTL_4BIT;
+	switch (ahci_exec_fis(chp, 310, flags, c_slot)) {
 	case ERR_DF:
 	case TIMEOUT:
-		if ((sc->sc_ahci_quirks & AHCI_QUIRK_BADPMPRESET) != 0 &&
-		    drive == PMP_PORT_CTL) {
-			/*
-			 * some controllers fails to reset when
-			 * targeting a PMP but a single drive is attached.
-			 * try again with port 0
-			 */
-			drive = 0;
-			ahci_channel_stop(sc, chp, flags);
-			goto again;
-		}
-		aprint_error("%s channel %d: clearing WDCTL_RST failed "
+		aprint_error("%s port %d: clearing WDCTL_RST failed "
 		    "for drive %d\n", AHCINAME(sc), chp->ch_channel, drive);
-		if (sigp)
-			*sigp = 0xffffffff;
+		error = EBUSY;
 		goto end;
 	default:
 		break;
@@ -885,8 +881,6 @@ skip_reset:
 	if (i == AHCI_RST_WAIT) {
 		aprint_error("%s: BSY never cleared, TD 0x%x\n",
 		    AHCINAME(sc), sig);
-		if (sigp)
-			*sigp = 0xffffffff;
 		goto end;
 	}
 	AHCIDEBUG_PRINT(("%s: BSY took %d ms\n", AHCINAME(sc), i * 10),
@@ -904,7 +898,7 @@ end:
 	AHCI_WRITE(sc, AHCI_P_IS(chp->ch_channel), 0xffffffff);
 	ahci_channel_start(sc, chp, flags,
 	    (sc->sc_ahci_cap & AHCI_CAP_CLO) ? 1 : 0);
-	return 0;
+	return error;
 }
 
 static void
@@ -930,7 +924,7 @@ ahci_reset_channel(struct ata_channel *chp, int flags)
 	ahci_channel_start(sc, chp, flags,
 	    (sc->sc_ahci_cap & AHCI_CAP_CLO) ? 1 : 0);
 	/* wait 31s for BSY to clear */
-	for (i = 0; i <AHCI_RST_WAIT; i++) {
+	for (i = 0; i < AHCI_RST_WAIT; i++) {
 		tfd = AHCI_READ(sc, AHCI_P_TFD(chp->ch_channel));
 		if ((AHCI_TFD_ST(tfd) & WDCS_BSY) == 0)
 			break;
@@ -972,6 +966,7 @@ ahci_probe_drive(struct ata_channel *chp)
 	struct ahci_channel *achp = (struct ahci_channel *)chp;
 	uint32_t sig;
 	uint8_t c_slot;
+	int error;
 
 	ata_channel_lock(chp);
 
@@ -993,9 +988,24 @@ ahci_probe_drive(struct ata_channel *chp)
 	    achp->ahcic_sstatus, AT_WAIT)) {
 	case SStatus_DET_DEV:
 		ata_delay(chp, 500, "ahcidv", AT_WAIT);
+
+		/* Initial value, used in case the soft reset fails */
+		sig = AHCI_READ(sc, AHCI_P_SIG(chp->ch_channel));
+
 		if (sc->sc_ahci_cap & AHCI_CAP_SPM) {
-			ahci_do_reset_drive(chp, PMP_PORT_CTL, AT_WAIT, &sig,
-			    c_slot);
+			error = ahci_do_reset_drive(chp, PMP_PORT_CTL, AT_WAIT,
+			    &sig, c_slot);
+
+			/* If probe for PMP failed, just fallback to drive 0 */
+			if (error) {
+				aprint_error("%s port %d: drive %d reset "
+				    "failing, disabling PMP\n",
+				    AHCINAME(sc), chp->ch_channel,
+				PMP_PORT_CTL);
+
+				sc->sc_ahci_cap &= ~AHCI_CAP_SPM;
+				ahci_reset_channel(chp, AT_WAIT);
+			}
 		} else {
 			ahci_do_reset_drive(chp, 0, AT_WAIT, &sig, c_slot);
 		}
@@ -1193,7 +1203,7 @@ ahci_cmd_kill_xfer(struct ata_channel *chp, struct ata_xfer *xfer, int reason)
 	struct ata_command *ata_c = &xfer->c_ata_c;
 	bool deactivate = true;
 
-	AHCIDEBUG_PRINT(("ahci_cmd_kill_xfer channel %d\n", chp->ch_channel),
+	AHCIDEBUG_PRINT(("ahci_cmd_kill_xfer port %d\n", chp->ch_channel),
 	    DEBUG_FUNCS);
 
 	switch (reason) {
@@ -1226,7 +1236,7 @@ ahci_cmd_complete(struct ata_channel *chp, struct ata_xfer *xfer, int tfd)
 	struct ata_command *ata_c = &xfer->c_ata_c;
 	struct ahci_channel *achp = (struct ahci_channel *)chp;
 
-	AHCIDEBUG_PRINT(("ahci_cmd_complete channel %d CMD 0x%x CI 0x%x\n",
+	AHCIDEBUG_PRINT(("ahci_cmd_complete port %d CMD 0x%x CI 0x%x\n",
 	    chp->ch_channel,
 	    AHCI_READ(AHCI_CH2SC(chp), AHCI_P_CMD(chp->ch_channel)),
 	    AHCI_READ(AHCI_CH2SC(chp), AHCI_P_CI(chp->ch_channel))),
@@ -1268,7 +1278,7 @@ ahci_cmd_done(struct ata_channel *chp, struct ata_xfer *xfer)
 	uint16_t *idwordbuf;
 	int i;
 
-	AHCIDEBUG_PRINT(("ahci_cmd_done channel %d flags %#x/%#x\n",
+	AHCIDEBUG_PRINT(("ahci_cmd_done port %d flags %#x/%#x\n",
 	    chp->ch_channel, xfer->c_flags, ata_c->flags), DEBUG_FUNCS);
 
 	if (ata_c->flags & (AT_READ|AT_WRITE) && ata_c->bcount > 0) {
@@ -1433,7 +1443,7 @@ ahci_bio_kill_xfer(struct ata_channel *chp, struct ata_xfer *xfer, int reason)
 	struct ata_bio *ata_bio = &xfer->c_bio;
 	bool deactivate = true;
 
-	AHCIDEBUG_PRINT(("ahci_bio_kill_xfer channel %d\n", chp->ch_channel),
+	AHCIDEBUG_PRINT(("ahci_bio_kill_xfer port %d\n", chp->ch_channel),
 	    DEBUG_FUNCS);
 
 	ata_bio->flags |= ATA_ITSDONE;
@@ -1470,7 +1480,7 @@ ahci_bio_complete(struct ata_channel *chp, struct ata_xfer *xfer, int tfd)
 	struct ahci_channel *achp = (struct ahci_channel *)chp;
 	struct ahci_softc *sc = (struct ahci_softc *)chp->ch_atac;
 
-	AHCIDEBUG_PRINT(("ahci_bio_complete channel %d\n", chp->ch_channel),
+	AHCIDEBUG_PRINT(("ahci_bio_complete port %d\n", chp->ch_channel),
 	    DEBUG_FUNCS);
 
 	if (ata_waitdrain_xfer_check(chp, xfer))
@@ -1930,7 +1940,7 @@ ahci_atapi_complete(struct ata_channel *chp, struct ata_xfer *xfer, int tfd)
 	struct ahci_channel *achp = (struct ahci_channel *)chp;
 	struct ahci_softc *sc = (struct ahci_softc *)chp->ch_atac;
 
-	AHCIDEBUG_PRINT(("ahci_atapi_complete channel %d\n", chp->ch_channel),
+	AHCIDEBUG_PRINT(("ahci_atapi_complete port %d\n", chp->ch_channel),
 	    DEBUG_FUNCS);
 
 	if (ata_waitdrain_xfer_check(chp, xfer))

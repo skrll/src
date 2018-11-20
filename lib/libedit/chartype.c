@@ -1,4 +1,4 @@
-/*	$NetBSD: chartype.c,v 1.31 2017/01/09 02:54:18 christos Exp $	*/
+/*	$NetBSD: chartype.c,v 1.33 2018/11/18 17:15:41 christos Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -31,10 +31,11 @@
  */
 #include "config.h"
 #if !defined(lint) && !defined(SCCSID)
-__RCSID("$NetBSD: chartype.c,v 1.31 2017/01/09 02:54:18 christos Exp $");
+__RCSID("$NetBSD: chartype.c,v 1.33 2018/11/18 17:15:41 christos Exp $");
 #endif /* not lint && not SCCSID */
 
 #include <ctype.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -183,17 +184,11 @@ ct_decode_argv(int argc, const char *argv[], ct_buffer_t *conv)
 libedit_private size_t
 ct_enc_width(wchar_t c)
 {
-	/* UTF-8 encoding specific values */
-	if (c < 0x80)
-		return 1;
-	else if (c < 0x0800)
-		return 2;
-	else if (c < 0x10000)
-		return 3;
-	else if (c < 0x110000)
-		return 4;
-	else
-		return 0; /* not a valid codepoint */
+	char buf[MB_LEN_MAX];
+	int size;
+	if ((size = wctomb(buf, c)) < 0)
+		return 0;
+	return (size_t)size;
 }
 
 libedit_private ssize_t
