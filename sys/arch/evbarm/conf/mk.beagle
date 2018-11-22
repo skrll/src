@@ -8,14 +8,12 @@ CPPFLAGS+=		-mcpu=cortex-a8
 .endif
 CPPFLAGS+=		-mfpu=neon
 
-SYSTEM_FIRST_OBJ=	beagle_start.o
-SYSTEM_FIRST_SFILE=	${THISARM}/beagle/beagle_start.S
-
-GENASSYM_EXTRAS+=	${THISARM}/beagle/genassym.cf
+SYSTEM_FIRST_OBJ=	armv6_start.o
+SYSTEM_FIRST_SFILE=	${ARM}/arm/armv6_start.S
 
 _OSRELEASE!=		${HOST_SH} $S/conf/osrelease.sh
 
-MKUBOOTIMAGEARGS=	-A arm -T kernel
+MKUBOOTIMAGEARGS=	-A arm -T kernel -O linux
 MKUBOOTIMAGEARGS+=	-a $(LOADADDRESS) -e $(LOADADDRESS)
 MKUBOOTIMAGEARGS+=	-n "NetBSD/$(BOARDTYPE) ${_OSRELEASE}"
 MKUBOOTIMAGEARGS_NONE=	${MKUBOOTIMAGEARGS} -C none

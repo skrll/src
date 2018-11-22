@@ -14,6 +14,7 @@ options 	ARM_HAS_VBAR
 options 	ARM_INTR_IMPL="<arch/arm/omap/omap2_intr.h>"
 options 	CORTEX_PMC
 options 	FPU_VFP
+options 	MD_CPU_HATCH=beagle_cpu_hatch
 options 	MODULAR
 options 	MODULAR_DEFAULT_AUTOLOAD
 options 	TPIDRPRW_IS_CURCPU
