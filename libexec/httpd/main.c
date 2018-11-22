@@ -1,10 +1,10 @@
-/*	$NetBSD: main.c,v 1.16 2016/10/04 18:33:00 mrg Exp $	*/
+/*	$NetBSD: main.c,v 1.18 2018/11/20 01:15:50 mrg Exp $	*/
 
 /*	$eterna: main.c,v 1.6 2011/11/18 09:21:15 mrg Exp $	*/
 /* from: eterna: bozohttpd.c,v 1.159 2009/05/23 02:14:30 mrg Exp 	*/
 
 /*
- * Copyright (c) 1997-2016 Matthew R. Green
+ * Copyright (c) 1997-2018 Matthew R. Green
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -61,65 +61,75 @@ usage(bozohttpd_t *httpd, char *progname)
 	bozowarn(httpd, "usage: %s [options] slashdir [virtualhostname]",
 			progname);
 	bozowarn(httpd, "options:");
-#ifndef NO_DEBUG
-	bozowarn(httpd, "   -d\t\t\tenable debug support");
-#endif
-	bozowarn(httpd, "   -s\t\t\talways log to stderr");
-#ifndef NO_DYNAMIC_CONTENT
-	bozowarn(httpd, "   -M arg t c c11\tadd this mime extenstion");
-#endif
-#ifndef NO_USER_SUPPORT
-	bozowarn(httpd, "   -u\t\t\tenable ~user/public_html support");
-	bozowarn(httpd, "   -p dir\t\tchange `public_html' directory name");
-#ifndef NO_CGIBIN_SUPPORT
-	bozowarn(httpd, "   -E\t\t\tenable CGI support for user dirs");
-#endif
-#endif
-#ifndef NO_CGIBIN_SUPPORT
-#ifndef NO_DYNAMIC_CONTENT
-	bozowarn(httpd, "   -C arg prog\t\tadd this CGI handler");
-#endif
-	bozowarn(httpd,
-		"   -c cgibin\t\tenable cgi-bin support in this directory");
-#endif
-#ifndef NO_LUA_SUPPORT
-	bozowarn(httpd, "   -L arg script\tadd this Lua script");
-#endif
-	bozowarn(httpd, "   -I port\t\tbind or use on this port");
-#ifndef NO_DAEMON_MODE
-	bozowarn(httpd, "   -b\t\t\tbackground and go into daemon mode");
-	bozowarn(httpd, "   -f\t\t\tkeep daemon mode in the foreground");
-	bozowarn(httpd,
-		"   -i address\t\tbind on this address (daemon mode only)");
-	bozowarn(httpd, "   -P pidfile\t\tpath to the pid file to create");
-#endif
-	bozowarn(httpd, "   -S version\t\tset server version string");
-	bozowarn(httpd, "   -t dir\t\tchroot to `dir'");
-	bozowarn(httpd, "   -U username\t\tchange user to `user'");
-	bozowarn(httpd,
-		"   -e\t\t\tdon't clean the environment (-t and -U only)");
-	bozowarn(httpd,
-		"   -v virtualroot\tenable virtual host support "
-		"in this directory");
-	bozowarn(httpd, "   -V\t\tUnknown virtual hosts go to `slashdir'");
-#ifndef NO_DIRINDEX_SUPPORT
-	bozowarn(httpd,
-		"   -X\t\t\tenable automatic directory index support");
-	bozowarn(httpd,
-		"   -H\t\t\thide files starting with a period (.)"
-		" in index mode");
-#endif
-	bozowarn(httpd,
-		"   -x index\t\tchange default `index.html' file name");
-#ifndef NO_SSL_SUPPORT
-	bozowarn(httpd,
-		"   -z ciphers\t\tspecify SSL ciphers");
-	bozowarn(httpd,
-		"   -Z cert privkey\tspecify path to server certificate"
-			" and private key file\n"
-		"\t\t\tin pem format and enable bozohttpd in SSL mode");
-#endif /* NO_SSL_SUPPORT */
-	bozowarn(httpd, "   -G print version number and exit");
+
+	if (have_daemon_mode)
+		bozowarn(httpd, "   -b\t\t\tbackground and go into daemon mode");
+	if (have_cgibin &&
+	    have_dynamic_content)
+		bozowarn(httpd, "   -C arg prog\t\tadd this CGI handler");
+	if (have_cgibin)
+		bozowarn(httpd, "   -c cgibin\t\tenable cgi-bin support in "
+				"this directory");
+	if (have_debug)
+		bozowarn(httpd, "   -d\t\t\tenable debug support");
+	if (have_cgibin)
+		bozowarn(httpd, "   -E\t\t\tenable CGI support for user dirs");
+	if (have_user &&
+	    have_cgibin)
+		bozowarn(httpd, "   -e\t\t\tdon't clean the environment "
+				"(-t and -U only)");
+	if (have_daemon_mode)
+		bozowarn(httpd, "   -f\t\t\tforeground in daemon mode");
+	if (have_all)
+		bozowarn(httpd, "   -G print version number and exit");
+	if (have_dirindex)
+		bozowarn(httpd, "   -H\t\t\thide files starting with a period "
+				"(.) in index mode");
+	if (have_all)
+		bozowarn(httpd, "   -I port\t\tbind or use on this port");
+	if (have_daemon_mode)
+		bozowarn(httpd, "   -i address\t\tbind on this address "
+				"(daemon mode only)");
+	if (have_lua)
+		bozowarn(httpd, "   -L arg script\tadd this Lua script");
+	if (have_dynamic_content)
+		bozowarn(httpd, "   -M arg t c c11\tadd this mime extenstion");
+	if (have_daemon_mode)
+		bozowarn(httpd, "   -P pidfile\t\tpid file path");
+	if (have_user)
+		bozowarn(httpd, "   -p dir\t\t\"public_html\" directory name");
+
+	if (have_all) {
+		bozowarn(httpd, "   -S version\t\tset server version string");
+		bozowarn(httpd, "   -s\t\t\talways log to stderr");
+		bozowarn(httpd, "   -T type timeout\tset `type' timeout");
+		bozowarn(httpd, "   -t dir\t\tchroot to `dir'");
+		bozowarn(httpd, "   -U username\t\tchange user to `user'");
+	}
+	if (have_user)
+		bozowarn(httpd, "   -u\t\t\tenable ~user/public_html support");
+
+	if (have_all) {
+		bozowarn(httpd, "   -V\t\t\tUnknown virtual hosts go to "
+				"`slashdir'");
+		bozowarn(httpd, "   -v virtualroot\tenable virtual host "
+				"support in this directory");
+	}
+
+	if (have_dirindex)
+		bozowarn(httpd, "   -X\t\t\tdirectory index support");
+	if (have_all)
+		bozowarn(httpd, "   -x index\t\tdefault \"index.html\" "
+				"file name");
+
+	if (have_ssl) {
+		bozowarn(httpd, "   -Z cert privkey\tspecify path to server "
+				"certificate and private key file\n"
+				"\t\t\tin pem format and enable bozohttpd in "
+				"SSL mode");
+		bozowarn(httpd, "   -z ciphers\t\tspecify SSL ciphers");
+	}
+
 	bozoerr(httpd, 1, "%s failed to start", progname);
 }
 
@@ -130,7 +140,9 @@ main(int argc, char **argv)
 	bozohttpd_t	 httpd;
 	bozoprefs_t	 prefs;
 	char		*progname;
+#ifndef NO_DAEMON_MODE
 	const char	*val;
+#endif
 	int		 c;
 
 	(void) memset(&httpd, 0x0, sizeof(httpd));
@@ -150,7 +162,7 @@ main(int argc, char **argv)
 	 */
 
 	while ((c = getopt(argc, argv,
-	    "C:EGHI:L:M:P:S:U:VXZ:bc:defhi:np:st:uv:x:z:")) != -1) {
+	    "C:EGHI:L:M:P:S:T:U:VXZ:bc:defhi:np:st:uv:x:z:")) != -1) {
 		switch (c) {
 
 		case 'L':
@@ -172,7 +184,7 @@ main(int argc, char **argv)
 				"dynamic mime content support is not enabled");
 			/* NOTREACHED */
 #else
-			/* make sure there's four arguments */
+			/* make sure there're four arguments */
 			if (argc - optind < 3)
 				usage(&httpd, progname);
 			bozo_add_content_map_mime(&httpd, optarg, argv[optind],
@@ -361,6 +373,19 @@ main(int argc, char **argv)
 				printf("bozohttpd version %s\n", version);
 			}
 			return 0;
+
+		case 'T':
+			/* make sure there're two arguments */
+			if (argc - optind < 1)
+				usage(&httpd, progname);
+			if (bozo_set_timeout(&httpd, &prefs,
+					     optarg, argv[optind])) {
+				bozoerr(&httpd, 1,
+					"invalid type '%s'", optarg);
+				/* NOTREACHED */
+			}
+			optind++;
+			break;
 
 		default:
 			usage(&httpd, progname);

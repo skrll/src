@@ -1,4 +1,4 @@
-/*	$NetBSD: ahcisata_pci.c,v 1.42 2018/10/25 21:03:19 jdolecek Exp $	*/
+/*	$NetBSD: ahcisata_pci.c,v 1.45 2018/11/20 15:16:43 prlw1 Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ahcisata_pci.c,v 1.42 2018/10/25 21:03:19 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ahcisata_pci.c,v 1.45 2018/11/20 15:16:43 prlw1 Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ahcisata_pci.h"
@@ -340,19 +340,26 @@ alloc_retry:
 		pci_intr_release(pa->pa_pc, psc->sc_pihp, 1);
 		psc->sc_ih = NULL;
 		switch (intr_type) {
+#ifndef AHCISATA_DISABLE_MSIX
 		case PCI_INTR_TYPE_MSIX:
 			/* The next try is for MSI: Disable MSIX */
-			counts[PCI_INTR_TYPE_MSIX] = 0;
-			counts[PCI_INTR_TYPE_MSI] = 1;
 			counts[PCI_INTR_TYPE_INTX] = 1;
+#ifndef AHCISATA_DISABLE_MSI
+			counts[PCI_INTR_TYPE_MSI] = 1;
+#endif
+			counts[PCI_INTR_TYPE_MSIX] = 0;
 			goto alloc_retry;
+#endif
+#ifndef AHCISATA_DISABLE_MSI
 		case PCI_INTR_TYPE_MSI:
 			/* The next try is for INTx: Disable MSI */
 			counts[PCI_INTR_TYPE_MSI] = 0;
 			counts[PCI_INTR_TYPE_INTX] = 1;
 			goto alloc_retry;
+#endif
 		case PCI_INTR_TYPE_INTX:
 		default:
+			counts[PCI_INTR_TYPE_INTX] = 1;
 			aprint_error_dev(self, "couldn't establish interrupt");
 			if (intrstr != NULL)
 				aprint_error(" at %s", intrstr);

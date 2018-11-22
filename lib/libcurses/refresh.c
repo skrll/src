@@ -1,4 +1,4 @@
-/*	$NetBSD: refresh.c,v 1.92 2018/10/29 01:02:16 uwe Exp $	*/
+/*	$NetBSD: refresh.c,v 1.101 2018/11/18 02:46:24 uwe Exp $	*/
 
 /*
  * Copyright (c) 1981, 1993, 1994
@@ -34,7 +34,7 @@
 #if 0
 static char sccsid[] = "@(#)refresh.c	8.7 (Berkeley) 8/13/94";
 #else
-__RCSID("$NetBSD: refresh.c,v 1.92 2018/10/29 01:02:16 uwe Exp $");
+__RCSID("$NetBSD: refresh.c,v 1.101 2018/11/18 02:46:24 uwe Exp $");
 #endif
 #endif				/* not lint */
 
@@ -57,8 +57,20 @@ static void	scrolln(int, int, int, int, int);
 static int	_wnoutrefresh(WINDOW *, int, int, int, int, int, int);
 
 #ifdef HAVE_WCHAR
-int cellcmp( __LDATA *, __LDATA * );
-int linecmp( __LDATA *, __LDATA *, size_t );
+static int celleq(__LDATA *, __LDATA *);
+static int lineeq(__LDATA *, __LDATA *, size_t);
+#else  /* !HAVE_WCHAR */
+static inline int
+celleq(__LDATA *x, __LDATA *y)
+{
+	return memcmp(x, y, sizeof(__LDATA)) == 0;
+}
+
+static int
+lineeq(__LDATA *xl, __LDATA *yl, size_t len)
+{
+	return memcmp(xl, yl, len * __LDATASIZE) == 0;
+}
 #endif /* HAVE_WCHAR */
 
 #define	CHECK_INTERVAL		5 /* Change N lines before checking typeahead */
@@ -1201,38 +1213,23 @@ makech(int wy)
 
 	while (wx <= lch) {
 #ifdef DEBUG
-		__CTRACE(__CTRACE_REFRESH, "makech: wx=%d,lch=%d\n", wx, lch);
-#endif /* DEBUG */
 #ifndef HAVE_WCHAR
-		if (!(wlp->flags & __ISFORCED) &&
-		    (memcmp(nsp, csp, sizeof(__LDATA)) == 0))
-		{
-			if (wx <= lch) {
-				while (wx <= lch &&
-				    memcmp(nsp, csp, sizeof(__LDATA)) == 0)
-				{
-					nsp++;
-					if (!_cursesi_screen->curwin)
-						++csp;
-					++wx;
-				}
-				continue;
-			}
-			break;
-		}
+		__CTRACE(__CTRACE_REFRESH, "makech: wx=%d,lch=%d\n", wx, lch);
 #else
-#ifdef DEBUG
 		__CTRACE(__CTRACE_REFRESH, "makech: nsp=(%x,%x,%x,%x,%p)\n",
 			nsp->ch, nsp->attr, win->bch, win->battr, nsp->nsp);
 		__CTRACE(__CTRACE_REFRESH, "makech: csp=(%x,%x,%x,%x,%p)\n",
 			csp->ch, csp->attr, win->bch, win->battr, csp->nsp);
+#endif
 #endif /* DEBUG */
 		if (!(wlp->flags & __ISFORCED) &&
-		     (((nsp->attr & __WCWIDTH) != __WCWIDTH) &&
-		       cellcmp(nsp, csp)))
+#ifdef HAVE_WCHAR
+		    ((nsp->attr & __WCWIDTH) != __WCWIDTH) &&
+#endif
+		    celleq(nsp, csp))
 		{
 			if (wx <= lch) {
-				while (wx <= lch && cellcmp( csp, nsp )) {
+				while (wx <= lch && celleq(nsp, csp)) {
 					nsp++;
 					if (!_cursesi_screen->curwin)
 						++csp;
@@ -1242,7 +1239,7 @@ makech(int wy)
 			}
 			break;
 		}
-#endif /* HAVE_WCHAR */
+
 		domvcur(win, _cursesi_screen->ly, _cursesi_screen->lx, wy, wx);
 
 #ifdef DEBUG
@@ -1252,24 +1249,18 @@ makech(int wy)
 #endif
 		_cursesi_screen->ly = wy;
 		_cursesi_screen->lx = wx;
-#ifndef HAVE_WCHAR
 		while (wx <= lch &&
-		       ((memcmp(nsp, csp, sizeof(__LDATA)) != 0)
-			|| (wlp->flags & __ISFORCED)))
+		       ((wlp->flags & __ISFORCED) || !celleq(nsp, csp)))
 		{
-			if (ce != NULL &&
-			    wx >= nlsp && nsp->ch == ' ' && nsp->attr == lspc)
-			{
-#else
-		while ((!cellcmp(nsp, csp) || (wlp->flags & __ISFORCED)) &&
-			wx <= lch)
-		{
+#ifndef HAVE_WCHAR
 			if (ce != NULL && wx >= nlsp
-			   && nsp->ch == (wchar_t)btowc((int)' ') /* XXX */
-			   && (nsp->attr & WA_ATTRIBUTES) == lspc)
-			{
-
+			    && nsp->ch == ' ' && nsp->attr == lspc)
+#else
+			if (ce != NULL && wx >= nlsp
+			    && nsp->ch == (wchar_t)btowc((int)' ') /* XXX */
+			    && (nsp->attr & WA_ATTRIBUTES) == lspc)
 #endif
+			{
 				/* Check for clear to end-of-line. */
 				cep = &curscr->alines[wy]->line[win->maxx - 1];
 #ifndef HAVE_WCHAR
@@ -1476,22 +1467,12 @@ quickch(void)
 	 * Find how many lines from the top of the screen are unchanged.
 	 */
 	for (top = 0; top < __virtscr->maxy; top++) {
-#ifndef HAVE_WCHAR
 		if (__virtscr->alines[top]->flags & __ISDIRTY &&
 		    (__virtscr->alines[top]->hash != curscr->alines[top]->hash ||
-		    memcmp(__virtscr->alines[top]->line,
-		    curscr->alines[top]->line,
-		    (size_t) __virtscr->maxx * __LDATASIZE)
-		    != 0))
+		     !lineeq(__virtscr->alines[top]->line,
+			     curscr->alines[top]->line,
+			     (size_t) __virtscr->maxx)))
 			break;
-#else
-		if (__virtscr->alines[top]->flags & __ISDIRTY &&
-		    (__virtscr->alines[top]->hash != curscr->alines[top]->hash ||
-		    !linecmp(__virtscr->alines[top]->line,
-		    curscr->alines[top]->line,
-	(size_t) __virtscr->maxx )))
-			break;
-#endif /* HAVE_WCHAR */
 		else
 			__virtscr->alines[top]->flags &= ~__ISDIRTY;
 	}
@@ -1499,22 +1480,12 @@ quickch(void)
 	 * Find how many lines from bottom of screen are unchanged.
 	 */
 	for (bot = __virtscr->maxy - 1; bot >= 0; bot--) {
-#ifndef HAVE_WCHAR
 		if (__virtscr->alines[bot]->flags & __ISDIRTY &&
 		    (__virtscr->alines[bot]->hash != curscr->alines[bot]->hash ||
-		    memcmp(__virtscr->alines[bot]->line,
-		    curscr->alines[bot]->line,
-		    (size_t) __virtscr->maxx * __LDATASIZE)
-		    != 0))
+		     !lineeq(__virtscr->alines[bot]->line,
+			     curscr->alines[bot]->line,
+			     (size_t) __virtscr->maxx)))
 			break;
-#else
-		if (__virtscr->alines[bot]->flags & __ISDIRTY &&
-		    (__virtscr->alines[bot]->hash != curscr->alines[bot]->hash ||
-		    !linecmp(__virtscr->alines[bot]->line,
-		    curscr->alines[bot]->line,
-		    (size_t) __virtscr->maxx )))
-			break;
-#endif /* HAVE_WCHAR */
 		else
 			__virtscr->alines[bot]->flags &= ~__ISDIRTY;
 	}
@@ -1574,18 +1545,10 @@ quickch(void)
 					continue;
 				for (curw = startw, curs = starts;
 					curs < starts + bsize; curw++, curs++)
-#ifndef HAVE_WCHAR
-					if (memcmp(__virtscr->alines[curw]->line,
-					    curscr->alines[curs]->line,
-					    (size_t) __virtscr->maxx *
-					    __LDATASIZE) != 0)
+					if (!lineeq(__virtscr->alines[curw]->line,
+						    curscr->alines[curs]->line,
+						    (size_t) __virtscr->maxx))
 						break;
-#else
-					if (!linecmp(__virtscr->alines[curw]->line,
-					    curscr->alines[curs]->line,
-					    (size_t) __virtscr->maxx))
-						break;
-#endif /* HAVE_WCHAR */
 				if (curs == starts + bsize)
 					goto done;
 			}
@@ -1734,20 +1697,11 @@ done:
 			if ((n > 0 && target >= top && target < top + n) ||
 			    (n < 0 && target <= bot && target > bot + n))
 			{
-#ifndef HAVE_WCHAR
 				if (clp->hash != blank_hash ||
-				    memcmp(clp->line, clp->line + 1,
-				    (__virtscr->maxx - 1)
-				    * __LDATASIZE) ||
-				    memcmp(clp->line, buf, __LDATASIZE))
+				    !lineeq(clp->line, clp->line + 1,
+					    (__virtscr->maxx - 1)) ||
+				    !celleq(clp->line, buf))
 				{
-#else
-				if (clp->hash != blank_hash
-				    || linecmp(clp->line, clp->line + 1,
-				    (unsigned int) (__virtscr->maxx - 1))
-				    || cellcmp(clp->line, buf))
-				{
-#endif /* HAVE_WCHAR */
 					for (i = __virtscr->maxx;
 					    i > BLANKSIZE;
 					    i -= BLANKSIZE) {
@@ -2035,11 +1989,11 @@ __unsetattr(int checkms)
 #ifdef HAVE_WCHAR
 /* compare two cells on screen, must have the same forground/background,
  * and the same sequence of non-spacing characters */
-int
-cellcmp( __LDATA *x, __LDATA *y )
+static int
+celleq(__LDATA *x, __LDATA *y)
 {
 	nschar_t *xnp = x->nsp, *ynp = y->nsp;
-	int ret = ( x->ch == y->ch ) & ( x->attr == y->attr );
+	int ret = ( x->ch == y->ch ) && ( x->attr == y->attr );
 
 	if (!ret)
 		return 0;
@@ -2058,14 +2012,14 @@ cellcmp( __LDATA *x, __LDATA *y )
 }
 
 /* compare two line segments */
-int
-linecmp( __LDATA *xl, __LDATA *yl, size_t len )
+static int
+lineeq(__LDATA *xl, __LDATA *yl, size_t len)
 {
 	int i = 0;
 	__LDATA *xp = xl, *yp = yl;
 
 	for (i = 0; i < len; i++, xp++, yp++) {
-		if (!cellcmp(xp, yp))
+		if (!celleq(xp, yp))
 			return 0;
 	}
 	return 1;
