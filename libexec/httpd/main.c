@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.20 2018/11/22 18:21:59 mrg Exp $	*/
+/*	$NetBSD: main.c,v 1.22 2018/11/25 07:37:20 mrg Exp $	*/
 
 /*	$eterna: main.c,v 1.6 2011/11/18 09:21:15 mrg Exp $	*/
 /* from: eterna: bozohttpd.c,v 1.159 2009/05/23 02:14:30 mrg Exp 	*/
@@ -253,6 +253,9 @@ main(int argc, char **argv)
 			if (!have_daemon_mode)
 				goto no_daemon_mode;
 
+			bozo_set_pref(&httpd, &prefs, "bind address", optarg);
+			break;
+
 		case 'L':
 			if (!have_lua)
 				bozoerr(&httpd, 1, "Lua support not enabled");
@@ -333,10 +336,6 @@ main(int argc, char **argv)
 			bozo_set_pref(&httpd, &prefs, "enable users", "true");
 			break;
 
-			bozo_set_pref(&httpd, &prefs, "directory indexing",
-				      "true");
-			break;
-
 		case 'V':
 			bozo_set_pref(&httpd, &prefs, "unknown slash", "true");
 			break;
@@ -348,6 +347,10 @@ main(int argc, char **argv)
 		case 'X':
 			if (!have_dirindex)
 				goto no_dirindex_support;
+
+			bozo_set_pref(&httpd, &prefs, "directory indexing",
+				      "true");
+			break;
 
 		case 'x':
 			bozo_set_pref(&httpd, &prefs, "index.html", optarg);
@@ -369,9 +372,6 @@ main(int argc, char **argv)
 				goto no_ssl;
 
 			bozo_ssl_set_ciphers(&httpd, optarg);
-			break;
-
-			bozo_set_pref(&httpd, &prefs, "bind address", optarg);
 			break;
 
 		default:

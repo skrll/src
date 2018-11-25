@@ -1,4 +1,4 @@
-/*	$NetBSD: gic_reg.h,v 1.9 2018/11/13 22:25:28 jmcneill Exp $	*/
+/*	$NetBSD: gic_reg.h,v 1.10 2018/11/24 15:40:57 skrll Exp $	*/
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
  * All rights reserved.
