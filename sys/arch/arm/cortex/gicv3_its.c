@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3_its.c,v 1.4 2018/11/21 11:44:26 jmcneill Exp $ */
+/* $NetBSD: gicv3_its.c,v 1.8 2018/11/24 15:40:57 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -32,12 +32,13 @@
 #define _INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.4 2018/11/21 11:44:26 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.8 2018/11/24 15:40:57 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/kmem.h>
 #include <sys/bus.h>
 #include <sys/cpu.h>
+#include <sys/bitops.h>
 
 #include <uvm/uvm.h>
 
@@ -54,6 +55,13 @@ __KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.4 2018/11/21 11:44:26 jmcneill Exp $
 #define	GITS_COMMANDS_ALIGN	0x10000
 
 #define	GITS_ITT_ALIGN		0x100
+
+/*
+ * IIDR values used for errata
+ */
+#define GITS_IIDR_PID_CAVIUM_THUNDERX	0xa1
+#define GITS_IIDR_IMP_CAVIUM		0x34c
+
 
 static inline uint32_t
 gits_read_4(struct gicv3_its *its, bus_size_t reg)
@@ -281,26 +289,36 @@ gicv3_its_devid(pci_chipset_tag_t pc, pcitag_t tag)
 	return (b << 8) | (d << 3) | f;
 }
 
-static struct gicv3_its_device *
-gicv3_its_device_lookup(struct gicv3_its *its, uint32_t devid)
+static int
+gicv3_its_device_map(struct gicv3_its *its, uint32_t devid, u_int count)
 {
 	struct gicv3_its_device *dev;
 
 	LIST_FOREACH(dev, &its->its_devices, dev_list)
 		if (dev->dev_id == devid)
-			return dev;
+			return EEXIST;
+
+	const u_int vectors = MAX(2, count);
+	if (!powerof2(vectors))
+		return EINVAL;
 
 	const uint64_t typer = gits_read_8(its, GITS_TYPER);
 	const u_int id_bits = __SHIFTOUT(typer, GITS_TYPER_ID_bits) + 1;
 	const u_int itt_entry_size = __SHIFTOUT(typer, GITS_TYPER_ITT_entry_size) + 1;
-	const u_int itt_size = roundup2(itt_entry_size * (1 << id_bits), GITS_ITT_ALIGN);
+	const u_int itt_size = roundup(vectors * itt_entry_size, GITS_ITT_ALIGN);
 
 	dev = kmem_alloc(sizeof(*dev), KM_SLEEP);
 	dev->dev_id = devid;
 	gicv3_dma_alloc(its->its_gic, &dev->dev_itt, itt_size, GITS_ITT_ALIGN);
 	LIST_INSERT_HEAD(&its->its_devices, dev, dev_list);
 
-	return dev;
+	/*
+	 * Map the device to the ITT
+	 */
+	gits_command_mapd(its, devid, dev->dev_itt.segs[0].ds_addr, id_bits - 1, true);
+	gits_wait(its);
+
+	return 0;
 }
 
 static void
@@ -397,7 +415,6 @@ gicv3_its_msi_alloc(struct arm_pci_msi *msi, int *count,
 {
 	struct gicv3_its * const its = msi->msi_priv;
 	struct cpu_info * const ci = cpu_lookup(0);
-	struct gicv3_its_device *dev;
 	pci_intr_handle_t *vectors;
 	int n, off;
 
@@ -411,12 +428,8 @@ gicv3_its_msi_alloc(struct arm_pci_msi *msi, int *count,
 
 	const uint32_t devid = gicv3_its_devid(pa->pa_pc, pa->pa_tag);
 
-	/*
-	 * Map device
-	 */
-	dev = gicv3_its_device_lookup(its, devid);
-	gits_command_mapd(its, devid, dev->dev_itt.segs[0].ds_addr, id_bits - 1, true);
-	gits_wait(its);
+	if (gicv3_its_device_map(its, devid, *count) != 0)
+		return NULL;
 
 	vectors = kmem_alloc(sizeof(*vectors) * *count, KM_SLEEP);
 	for (n = 0; n < *count; n++) {
@@ -450,7 +463,6 @@ gicv3_its_msix_alloc(struct arm_pci_msi *msi, u_int *table_indexes, int *count,
 {
 	struct gicv3_its * const its = msi->msi_priv;
 	struct cpu_info *ci = cpu_lookup(0);
-	struct gicv3_its_device *dev;
 	pci_intr_handle_t *vectors;
 	bus_space_tag_t bst;
 	bus_space_handle_t bsh;
@@ -482,12 +494,10 @@ gicv3_its_msix_alloc(struct arm_pci_msi *msi, u_int *table_indexes, int *count,
 
 	const uint32_t devid = gicv3_its_devid(pa->pa_pc, pa->pa_tag);
 
-	/*
-	 * Map device
-	 */
-	dev = gicv3_its_device_lookup(its, devid);
-	gits_command_mapd(its, devid, dev->dev_itt.segs[0].ds_addr, id_bits - 1, true);
-	gits_wait(its);
+	if (gicv3_its_device_map(its, devid, *count) != 0) {
+		bus_space_unmap(bst, bsh, bsz);
+		return NULL;
+	}
 
 	vectors = kmem_alloc(sizeof(*vectors) * *count, KM_SLEEP);
 	for (n = 0; n < *count; n++) {
@@ -591,7 +601,26 @@ gicv3_its_table_init(struct gicv3_softc *sc, struct gicv3_its *its)
 	int tab;
 
 	const uint64_t typer = gits_read_8(its, GITS_TYPER);
-	const u_int devbits = __SHIFTOUT(typer, GITS_TYPER_Devbits) + 1;
+
+	/* devbits and innercache defaults */
+	u_int devbits = __SHIFTOUT(typer, GITS_TYPER_Devbits) + 1;
+	u_int innercache = GITS_Cache_NORMAL_NC;
+
+	uint32_t iidr = gits_read_4(its, GITS_IIDR);
+	const uint32_t ctx =
+	   __SHIFTIN(GITS_IIDR_IMP_CAVIUM, GITS_IIDR_Implementor) |
+	   __SHIFTIN(GITS_IIDR_PID_CAVIUM_THUNDERX, GITS_IIDR_ProductID) |
+	   __SHIFTIN(0, GITS_IIDR_Variant);
+	const uint32_t mask =
+	    GITS_IIDR_Implementor |
+	    GITS_IIDR_ProductID |
+	    GITS_IIDR_Variant;
+
+	if ((iidr & mask) == ctx) {
+		devbits = 20;		/* 8Mb */
+		innercache = GITS_Cache_DEVICE_nGnRnE;
+		aprint_normal_dev(sc->sc_dev, "Cavium ThunderX errata detected\n");
+	}
 
 	for (tab = 0; tab < 8; tab++) {
 		baser = gits_read_8(its, GITS_BASERn(tab));
@@ -643,11 +672,11 @@ gicv3_its_table_init(struct gicv3_softc *sc, struct gicv3_its *its)
 		baser &= ~GITS_BASER_Physical_Address;
 		baser |= its->its_tab[tab].segs[0].ds_addr;
 		baser &= ~GITS_BASER_InnerCache;
-		baser |= __SHIFTIN(GITS_Cache_NORMAL_NC, GITS_BASER_InnerCache);
+		baser |= __SHIFTIN(innercache, GITS_BASER_InnerCache);
 		baser &= ~GITS_BASER_Shareability;
 		baser |= __SHIFTIN(GITS_Shareability_NS, GITS_BASER_Shareability);
 		baser |= GITS_BASER_Valid;
-		
+
 		gits_write_8(its, GITS_BASERn(tab), baser);
 	}
 }
@@ -693,7 +722,7 @@ gicv3_its_get_affinity(void *priv, size_t irq, kcpuset_t *affinity)
 	struct cpu_info *ci;
 
 	kcpuset_zero(affinity);
-	ci = its->its_targets[irq - its->its_pic->pic_irqbase];
+	ci = its->its_targets[irq];
 	if (ci)
 		kcpuset_set(affinity, cpu_index(ci));
 }
@@ -709,7 +738,7 @@ gicv3_its_set_affinity(void *priv, size_t irq, const kcpuset_t *affinity)
 	if (set != 1)
 		return EINVAL;
 
-	pa = its->its_pa[irq - its->its_pic->pic_irqbase];
+	pa = its->its_pa[irq];
 	if (pa == NULL)
 		return EINVAL;
 
@@ -719,7 +748,7 @@ gicv3_its_set_affinity(void *priv, size_t irq, const kcpuset_t *affinity)
 	gits_command_movi(its, devid, devid, cpu_index(ci));
 	gits_command_sync(its, its->its_rdbase[cpu_index(ci)]);
 
-	its->its_targets[irq - its->its_pic->pic_irqbase] = ci;
+	its->its_targets[irq] = ci;
 
 	return 0;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_x86_svm.c,v 1.4 2018/11/19 17:35:12 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86_svm.c,v 1.6 2018/11/25 14:09:57 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.4 2018/11/19 17:35:12 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.6 2018/11/25 14:09:57 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1205,6 +1205,7 @@ svm_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 	exit->exitstate[NVMM_X64_EXITSTATE_CR8] = __SHIFTOUT(vmcb->ctrl.v,
 	    VMCB_CTRL_V_TPR);
+	exit->exitstate[NVMM_X64_EXITSTATE_RFLAGS] = vmcb->state.rflags;
 
 	return 0;
 }
@@ -1234,6 +1235,7 @@ svm_memalloc(paddr_t *pa, vaddr_t *va, size_t npages)
 		pmap_kenter_pa(_va + i * PAGE_SIZE, _pa + i * PAGE_SIZE,
 		    VM_PROT_READ | VM_PROT_WRITE, PMAP_WRITE_BACK);
 	}
+	pmap_update(pmap_kernel());
 
 	memset((void *)_va, 0, npages * PAGE_SIZE);
 
