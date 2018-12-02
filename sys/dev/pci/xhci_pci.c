@@ -206,9 +206,9 @@ xhci_pci_attach(device_t parent, device_t self, void *aux)
 		break;
 	default:
 		if (usbrev < PCI_USBREV_3_0) {
-			aprint_error_dev(self, "Unknown revision (%02x)\n",
+			aprint_error_dev(self, "Unknown revision (%02x). Set to 3.0\n",
 			    usbrev);
-			sc->sc_bus.ub_revision = USBREV_UNKNOWN;
+			sc->sc_bus.ub_revision = USBREV_3_0;
 		} else {
 			/* Default to the latest revision */
 			aprint_normal_dev(self,
