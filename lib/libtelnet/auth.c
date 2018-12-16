@@ -1,4 +1,4 @@
-/*	$NetBSD: auth.c,v 1.21 2012/03/21 05:33:27 matt Exp $	*/
+/*	$NetBSD: auth.c,v 1.23 2018/12/15 23:22:51 maya Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -34,7 +34,7 @@
 #if 0
 static char sccsid[] = "@(#)auth.c	8.3 (Berkeley) 5/30/95"
 #else
-__RCSID("$NetBSD: auth.c,v 1.21 2012/03/21 05:33:27 matt Exp $");
+__RCSID("$NetBSD: auth.c,v 1.23 2018/12/15 23:22:51 maya Exp $");
 #endif
 #endif /* not lint */
 
@@ -106,22 +106,6 @@ static void auth_intr(int);
  * in priority order, i.e. try the first one first.
  */
 Authenticator authenticators[] = {
-#ifdef	SPX
-	{ AUTHTYPE_SPX, AUTH_WHO_CLIENT|AUTH_HOW_MUTUAL,
-				spx_init,
-				spx_send,
-				spx_is,
-				spx_reply,
-				spx_status,
-				spx_printsub },
-	{ AUTHTYPE_SPX, AUTH_WHO_CLIENT|AUTH_HOW_ONE_WAY,
-				spx_init,
-				spx_send,
-				spx_is,
-				spx_reply,
-				spx_status,
-				spx_printsub },
-#endif
 #ifdef	KRB5
 # ifdef	ENCRYPTION
 	{ AUTHTYPE_KERBEROS_V5, AUTH_WHO_CLIENT|AUTH_HOW_MUTUAL,
@@ -216,7 +200,7 @@ auth_disable_name(char *name)
 }
 
 int
-getauthmask(char *type, int *maskp)
+getauthmask(const char *type, int *maskp)
 {
 	register int x;
 
@@ -235,19 +219,19 @@ getauthmask(char *type, int *maskp)
 }
 
 int
-auth_enable(char *type)
+auth_enable(const char *type)
 {
 	return(auth_onoff(type, 1));
 }
 
 int
-auth_disable(char *type)
+auth_disable(const char *type)
 {
 	return(auth_onoff(type, 0));
 }
 
 int
-auth_onoff(char *type, int on)
+auth_onoff(const char *type, int on)
 {
 	int i, mask = -1;
 	Authenticator *ap;
@@ -289,7 +273,7 @@ auth_togdebug(int on)
 }
 
 int
-auth_status(char *s)
+auth_status(const char *s)
 {
 	Authenticator *ap;
 	int i, mask;

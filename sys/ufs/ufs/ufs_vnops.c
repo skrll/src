@@ -1,4 +1,4 @@
-/*	$NetBSD: ufs_vnops.c,v 1.239 2017/10/28 00:37:13 pgoyette Exp $	*/
+/*	$NetBSD: ufs_vnops.c,v 1.241 2018/12/10 20:48:34 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ufs_vnops.c,v 1.239 2017/10/28 00:37:13 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ufs_vnops.c,v 1.241 2018/12/10 20:48:34 jdolecek Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"

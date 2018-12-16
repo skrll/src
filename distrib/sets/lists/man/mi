@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1628 2018/11/24 18:37:50 bouyer Exp $
+# $NetBSD: mi,v 1.1632 2018/12/12 08:20:53 maxv Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -653,6 +653,7 @@
 ./usr/share/man/cat1/zless.0			man-util-catman		.cat
 ./usr/share/man/cat1/zmore.0			man-util-catman		.cat
 ./usr/share/man/cat1/znew.0			man-util-catman		.cat
+./usr/share/man/cat1/ztest.0			man-zfs-catman		zfs,.cat
 ./usr/share/man/cat3/atari/ahdi_buildlabel.0	man-obsolete		obsolete
 ./usr/share/man/cat3/atari/ahdi_checklabel.0	man-obsolete		obsolete
 ./usr/share/man/cat3/atari/ahdi_readlabel.0	man-obsolete		obsolete
@@ -1058,6 +1059,7 @@
 ./usr/share/man/cat4/emips/intro.0		man-sys-catman		.cat
 ./usr/share/man/cat4/emuxki.0			man-sys-catman		.cat
 ./usr/share/man/cat4/en.0			man-obsolete		obsolete
+./usr/share/man/cat4/ena.0			man-sys-catman		.cat
 ./usr/share/man/cat4/envsys.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ep.0			man-sys-catman		.cat
 ./usr/share/man/cat4/epic.0			man-sys-catman		.cat
@@ -1384,7 +1386,7 @@
 ./usr/share/man/cat4/lii.0			man-sys-catman		.cat
 ./usr/share/man/cat4/lkm.0			man-obsolete		obsolete
 ./usr/share/man/cat4/lm.0			man-sys-catman		.cat
-./usr/share/man/cat4/lmc.0			man-sys-catman		.cat
+./usr/share/man/cat4/lmc.0			man-obsolete		obsolete
 ./usr/share/man/cat4/lmenv.0			man-sys-catman		.cat
 ./usr/share/man/cat4/lmtemp.0			man-sys-catman		.cat
 ./usr/share/man/cat4/lo.0			man-sys-catman		.cat
@@ -1503,6 +1505,7 @@
 ./usr/share/man/cat4/ntwoc.0			man-sys-catman		.cat
 ./usr/share/man/cat4/null.0			man-sys-catman		.cat
 ./usr/share/man/cat4/nvme.0			man-sys-catman		.cat
+./usr/share/man/cat4/nvmm.0			man-sys-catman		.cat
 ./usr/share/man/cat4/nxt2k.0			man-sys-catman		.cat
 ./usr/share/man/cat4/oak.0			man-sys-catman		.cat
 ./usr/share/man/cat4/oboe.0			man-sys-catman		.cat
@@ -2669,7 +2672,7 @@
 ./usr/share/man/cat8/ldpd.0			man-router-catman	.cat
 ./usr/share/man/cat8/lfs_cleanerd.0		man-sysutil-catman	.cat
 ./usr/share/man/cat8/link.0			man-sysutil-catman	.cat
-./usr/share/man/cat8/lmcconfig.0		man-sysutil-catman	.cat
+./usr/share/man/cat8/lmcconfig.0		man-obsolete		obsolete
 ./usr/share/man/cat8/lmcctl.0			man-obsolete		obsolete
 ./usr/share/man/cat8/lmtp.0			man-postfix-catman	postfix,.cat
 ./usr/share/man/cat8/local.0			man-postfix-catman	postfix,.cat
@@ -3861,6 +3864,7 @@
 ./usr/share/man/html1/zless.html		man-util-htmlman	html
 ./usr/share/man/html1/zmore.html		man-util-htmlman	html
 ./usr/share/man/html1/znew.html			man-util-htmlman	html
+./usr/share/man/html1/ztest.html		man-zfs-htmlman		zfs,html
 ./usr/share/man/html3/libbozohttpd.html		man-sys-htmlman		html
 ./usr/share/man/html3/libunbound.html		man-netutil-htmlman	html,unbound
 ./usr/share/man/html3lua/bozohttpd.html		man-sys-htmlman		html
@@ -4211,6 +4215,7 @@
 ./usr/share/man/html4/emips/intro.html		man-sys-htmlman		html
 ./usr/share/man/html4/emuxki.html		man-sys-htmlman		html
 ./usr/share/man/html4/en.html			man-obsolete		obsolete
+./usr/share/man/html4/ena.html			man-sys-htmlman		html
 ./usr/share/man/html4/envsys.html		man-sys-htmlman		html
 ./usr/share/man/html4/ep.html			man-sys-htmlman		html
 ./usr/share/man/html4/epic.html			man-sys-htmlman		html
@@ -4503,7 +4508,7 @@
 ./usr/share/man/html4/lii.html			man-sys-htmlman		html
 ./usr/share/man/html4/lkm.html			man-obsolete		obsolete
 ./usr/share/man/html4/lm.html			man-sys-htmlman		html
-./usr/share/man/html4/lmc.html			man-sys-htmlman		html
+./usr/share/man/html4/lmc.html			man-obsolete		obsolete
 ./usr/share/man/html4/lmenv.html		man-sys-htmlman		html
 ./usr/share/man/html4/lmtemp.html		man-sys-htmlman		html
 ./usr/share/man/html4/lo.html			man-sys-htmlman		html
@@ -4613,6 +4618,7 @@
 ./usr/share/man/html4/ntwoc.html		man-sys-htmlman		html
 ./usr/share/man/html4/null.html			man-sys-htmlman		html
 ./usr/share/man/html4/nvme.html			man-sys-htmlman		html
+./usr/share/man/html4/nvmm.html			man-sys-htmlman		html
 ./usr/share/man/html4/nxt2k.html		man-sys-htmlman		html
 ./usr/share/man/html4/oak.html			man-sys-htmlman		html
 ./usr/share/man/html4/oboe.html			man-sys-htmlman		html
@@ -5632,7 +5638,7 @@
 ./usr/share/man/html8/ldpd.html			man-router-htmlman	html
 ./usr/share/man/html8/lfs_cleanerd.html		man-sysutil-htmlman	html
 ./usr/share/man/html8/link.html			man-sysutil-htmlman	html
-./usr/share/man/html8/lmcconfig.html		man-sysutil-htmlman	html
+./usr/share/man/html8/lmcconfig.html		man-obsolete		obsolete
 ./usr/share/man/html8/lmtp.html			man-postfix-htmlman	postfix,html
 ./usr/share/man/html8/local.html		man-postfix-htmlman	postfix,html
 ./usr/share/man/html8/locate.updatedb.html	man-sysutil-htmlman	html
@@ -6716,6 +6722,7 @@
 ./usr/share/man/man1/xmlwf.1			man-util-man		.man
 ./usr/share/man/man1/xz.1			man-util-man		.man
 ./usr/share/man/man1/xzcat.1			man-util-man		.man
+./usr/share/man/man1/ztest.1			man-zfs-man		zfs,.man
 ./usr/share/man/man1/yes.1			man-util-man		.man
 ./usr/share/man/man1/ypcat.1			man-nis-man		yp,.man
 ./usr/share/man/man1/ypmatch.1			man-nis-man		yp,.man
@@ -7136,6 +7143,7 @@
 ./usr/share/man/man4/emips/intro.4		man-sys-man		.man
 ./usr/share/man/man4/emuxki.4			man-sys-man		.man
 ./usr/share/man/man4/en.4			man-obsolete		obsolete
+./usr/share/man/man4/ena.4			man-sys-man		.man
 ./usr/share/man/man4/envsys.4			man-sys-man		.man
 ./usr/share/man/man4/ep.4			man-sys-man		.man
 ./usr/share/man/man4/epic.4			man-sys-man		.man
@@ -7462,7 +7470,7 @@
 ./usr/share/man/man4/lii.4			man-sys-man		.man
 ./usr/share/man/man4/lkm.4			man-obsolete 		obsolete
 ./usr/share/man/man4/lm.4			man-sys-man		.man
-./usr/share/man/man4/lmc.4			man-sys-man		.man
+./usr/share/man/man4/lmc.4			man-obsolete 		obsolete
 ./usr/share/man/man4/lmenv.4			man-sys-man		.man
 ./usr/share/man/man4/lmtemp.4			man-sys-man		.man
 ./usr/share/man/man4/lo.4			man-sys-man		.man
@@ -7581,6 +7589,7 @@
 ./usr/share/man/man4/ntwoc.4			man-sys-man		.man
 ./usr/share/man/man4/null.4			man-sys-man		.man
 ./usr/share/man/man4/nvme.4			man-sys-man		.man
+./usr/share/man/man4/nvmm.4			man-sys-man		.man
 ./usr/share/man/man4/nxt2k.4			man-sys-man		.man
 ./usr/share/man/man4/oak.4			man-sys-man		.man
 ./usr/share/man/man4/oboe.4			man-sys-man		.man
@@ -8747,7 +8756,7 @@
 ./usr/share/man/man8/ldpd.8			man-router-man		.man
 ./usr/share/man/man8/lfs_cleanerd.8		man-sysutil-man		.man
 ./usr/share/man/man8/link.8			man-sysutil-man		.man
-./usr/share/man/man8/lmcconfig.8		man-sysutil-man		.man
+./usr/share/man/man8/lmcconfig.8		man-obsolete		obsolete
 ./usr/share/man/man8/lmcctl.8			man-obsolete		obsolete
 ./usr/share/man/man8/lmtp.8			man-postfix-man		postfix,.man
 ./usr/share/man/man8/local.8			man-postfix-man		postfix,.man
