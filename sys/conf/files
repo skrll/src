@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1216 2018/11/07 07:43:07 maxv Exp $
+#	$NetBSD: files,v 1.1218 2018/12/08 21:14:37 thorpej Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -30,6 +30,7 @@ defparam opt_syslimits.h	CHILD_MAX OPEN_MAX
 defflag opt_diagnostic.h	_DIAGNOSTIC
 defflag				GPROF
 defflag				KASAN
+defflag				KLEAK
 
 defparam opt_copy_symtab.h	makeoptions_COPY_SYMTAB
 
@@ -880,8 +881,7 @@ file	dev/ic/ne2000.c			ne
 defflag	opt_com.h		COM_DEBUG
 # XXX In a perfect world, this would be done with attributes
 defflag	opt_com.h		COM_16650 COM_16750
-				COM_HAYESP COM_PXA2X0 COM_AU1X00
-				COM_REGMAP COM_FUNCMAP
+				COM_HAYESP COM_PXA2X0
 defparam opt_com.h		COM_TOLERANCE
 device	com { } : tty
 file	dev/ic/com.c			com			needs-flag

@@ -1,4 +1,4 @@
-#	$NetBSD: files.pci,v 1.408 2018/11/14 06:56:30 skrll Exp $
+#	$NetBSD: files.pci,v 1.412 2018/12/12 07:04:05 maxv Exp $
 #
 # Config file and device description for machine-independent PCI code.
 # Included by ports that need it.  Requires that the SCSI files be
@@ -152,6 +152,11 @@ file	dev/pci/isp_pci.c		isp_pci
 attach	mfi at pci with mfi_pci
 file	dev/pci/mfi_pci.c		mfi_pci
 
+# LSI MegaRAID SAS Fusion RAID controllers 
+device	mfii: scsi
+attach	mfii at pci
+file	dev/pci/mfii.c			mfii
+
 # LSILogic Fusion-MPT I/O Processor family
 # device declaration in sys/conf/files
 attach	mpt at pci with mpt_pci
@@ -234,6 +239,8 @@ file	dev/pci/pciide.c		pciide
 # AHCI SATA controllers
 attach	ahcisata at pci with ahcisata_pci
 file	dev/pci/ahcisata_pci.c		ahcisata_pci
+defflag	opt_ahcisata_pci.h		AHCISATA_DISABLE_MSI
+defflag	opt_ahcisata_pci.h		AHCISATA_DISABLE_MSIX
 
 # Acard IDE controllers
 device	acardide: ata, ata_dma, ata_udma, pciide_common, wdc_common
@@ -371,6 +378,7 @@ file	dev/pci/toshide.c	toshide
 device	ppb: pcibus
 attach	ppb at pci
 file	dev/pci/ppb.c			ppb
+defflag opt_ppb.h	PPB_USEINTR
 
 # Cyclades Cyclom-8/16/32
 attach	cy at pci with cy_pci
@@ -417,11 +425,6 @@ file	dev/pci/if_tl.c			tl
 # device declaration in sys/conf/files
 attach	ntwoc at pci with ntwoc_pci
 file	dev/pci/if_ntwoc_pci.c		ntwoc_pci
-
-# Lan Media Corporation T1/HSSI/DS3 driver
-device	lmc: ifnet, sppp
-attach	lmc at pci
-file	dev/pci/if_lmc.c		lmc
 
 # Essential Communications HIPPI interface
 # device declaration in sys/conf/files

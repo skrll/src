@@ -1,4 +1,4 @@
-/* $NetBSD: gic_v2m.c,v 1.3 2018/10/31 15:43:19 jmcneill Exp $ */
+/* $NetBSD: gic_v2m.c,v 1.5 2018/12/07 17:56:41 jakllsch Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
 #define _INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gic_v2m.c,v 1.3 2018/10/31 15:43:19 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gic_v2m.c,v 1.5 2018/12/07 17:56:41 jakllsch Exp $");
 
 #include <sys/param.h>
 #include <sys/kmem.h>
@@ -128,7 +128,7 @@ gic_v2m_msi_disable(struct gic_v2m_frame *frame, int spi)
 	int off;
 
 	if (!pci_get_capability(pc, tag, PCI_CAP_MSI, &off, NULL))
-		panic("gic_v2m_msi_enable: device is not MSI-capable");
+		panic("gic_v2m_msi_disable: device is not MSI-capable");
 
 	ctl = pci_conf_read(pc, tag, off + PCI_MSI_CTL);
 	ctl &= ~PCI_MSI_CTL_MSI_ENABLE;
@@ -282,7 +282,7 @@ gic_v2m_msix_alloc(struct arm_pci_msi *msi, u_int *table_indexes, int *count,
 
 static void *
 gic_v2m_msi_intr_establish(struct arm_pci_msi *msi,
-    pci_intr_handle_t ih, int ipl, int (*func)(void *), void *arg)
+    pci_intr_handle_t ih, int ipl, int (*func)(void *), void *arg, const char *xname)
 {
 	struct gic_v2m_frame * const frame = msi->msi_priv;
 
@@ -290,7 +290,7 @@ gic_v2m_msi_intr_establish(struct arm_pci_msi *msi,
 	const int mpsafe = (ih & ARM_PCI_INTR_MPSAFE) ? IST_MPSAFE : 0;
 
 	return pic_establish_intr(frame->frame_pic, spi, ipl,
-	    IST_EDGE | mpsafe, func, arg);
+	    IST_EDGE | mpsafe, func, arg, xname);
 }
 
 static void

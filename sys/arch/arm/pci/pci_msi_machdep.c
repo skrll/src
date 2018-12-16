@@ -1,4 +1,4 @@
-/* $NetBSD: pci_msi_machdep.c,v 1.2 2018/10/31 15:42:17 jmcneill Exp $ */
+/* $NetBSD: pci_msi_machdep.c,v 1.5 2018/12/01 20:38:45 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci_msi_machdep.c,v 1.2 2018/10/31 15:42:17 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_msi_machdep.c,v 1.5 2018/12/01 20:38:45 skrll Exp $");
 
 #include <sys/kernel.h>
 #include <sys/kmem.h>
@@ -117,7 +117,7 @@ arm_pci_msi_add(struct arm_pci_msi *msi)
 
 void *
 arm_pci_msi_intr_establish(pci_chipset_tag_t pc, pci_intr_handle_t pih,
-    int ipl, int (*func)(void *), void *arg)
+    int ipl, int (*func)(void *), void *arg, const char *xname)
 {
 	struct arm_pci_msi *msi;
 
@@ -125,7 +125,7 @@ arm_pci_msi_intr_establish(pci_chipset_tag_t pc, pci_intr_handle_t pih,
 	if (msi == NULL)
 		return NULL;
 
-	return msi->msi_intr_establish(msi, pih, ipl, func, arg);
+	return msi->msi_intr_establish(msi, pih, ipl, func, arg, xname);
 }
 
 /*
@@ -188,7 +188,7 @@ pci_intr_alloc(const struct pci_attach_args *pa, pci_intr_handle_t **ihps, int *
 	error = EINVAL;
 	intx_count = 1;
 	msi_count = 1;
-	msix_count = 0;
+	msix_count = 1;
 
 	if (counts != NULL) {
 		switch (max_type) {
@@ -212,9 +212,8 @@ pci_intr_alloc(const struct pci_attach_args *pa, pci_intr_handle_t **ihps, int *
 	if (msix_count == -1)
 		msix_count = pci_msix_count(pa->pa_pc, pa->pa_tag);
 	if (msix_count > 0 && (error = pci_msix_alloc_exact(pa, ihps, msix_count)) == 0) {
-		if (counts == NULL)
-			return EINVAL;
-		counts[PCI_INTR_TYPE_MSIX] = msix_count;
+		if (counts != NULL)
+			counts[PCI_INTR_TYPE_MSIX] = msix_count;
 		return 0;
 	}
 

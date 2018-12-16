@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.210 2018/11/07 07:43:08 maxv Exp $
+#	$NetBSD: Makefile,v 1.213 2018/11/27 06:31:15 pgoyette Exp $
 
 .include <bsd.own.mk>
 
@@ -258,6 +258,7 @@ SUBDIR+=	wmimsi
 .endif
 
 .if ${MACHINE_CPU} == "arm" \
+    || ${MACHINE_ARCH} == "sparc64" \
     || (!empty(MACHINE_ARCH:Mmips64*) && !defined(BSD_MK_COMPAT_FILE))
 SUBDIR+=	compat_netbsd32
 SUBDIR+=	compat_netbsd32_mqueue

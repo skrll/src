@@ -1,4 +1,4 @@
-/*	$NetBSD: pci_machdep.h,v 1.15 2018/11/02 15:01:18 jmcneill Exp $	*/
+/*	$NetBSD: pci_machdep.h,v 1.17 2018/12/08 15:04:40 jmcneill Exp $	*/
 
 /*
  * Modified for arm32 by Mark Brinicombe
@@ -92,6 +92,7 @@ struct arm32_pci_chipset {
 	void		(*pc_decompose_tag)(void *, pcitag_t, int *,
 			    int *, int *);
 	u_int		(*pc_get_segment)(void *);
+	uint32_t	(*pc_get_devid)(void *, uint32_t);
 	pcireg_t	(*pc_conf_read)(void *, pcitag_t, int);
 	void		(*pc_conf_write)(void *, pcitag_t, int, pcireg_t);
 
@@ -104,7 +105,7 @@ struct arm32_pci_chipset {
 	int		(*pc_intr_setattr)(void *, pci_intr_handle_t *,
 			    int, uint64_t);
 	void		*(*pc_intr_establish)(void *, pci_intr_handle_t,
-			    int, int (*)(void *), void *);
+			    int, int (*)(void *), void *, const char *);
 	void		(*pc_intr_disestablish)(void *, void *);
 
 #ifdef __HAVE_PCI_CONF_HOOK
@@ -148,6 +149,8 @@ struct arm32_pci_chipset {
     (*(c)->pc_decompose_tag)((c)->pc_conf_v, (t), (bp), (dp), (fp))
 #define pci_get_segment(c)						\
     ((c)->pc_get_segment ? (*(c)->pc_get_segment)((c)->pc_conf_v) : 0)
+#define pci_get_devid(c, d)						\
+    ((c)->pc_get_devid ? (*(c)->pc_get_devid)((c)->pc_conf_v, (d)) : (d))
 #define	pci_conf_read(c, t, r)						\
     (*(c)->pc_conf_read)((c)->pc_conf_v, (t), (r))
 #define	pci_conf_write(c, t, r, v)					\
@@ -159,7 +162,7 @@ struct arm32_pci_chipset {
 #define	pci_intr_evcnt(c, ih)						\
     (*(c)->pc_intr_evcnt)((c)->pc_intr_v, (ih))
 #define	pci_intr_establish(c, ih, l, h, a)				\
-    (*(c)->pc_intr_establish)((c)->pc_intr_v, (ih), (l), (h), (a))
+    (*(c)->pc_intr_establish)((c)->pc_intr_v, (ih), (l), (h), (a), NULL)
 #define	pci_intr_disestablish(c, iv)					\
     (*(c)->pc_intr_disestablish)((c)->pc_intr_v, (iv))
 #ifdef __HAVE_PCI_CONF_HOOK
@@ -176,6 +179,13 @@ pci_intr_setattr(pci_chipset_tag_t pc, pci_intr_handle_t *ihp,
 	if (!pc->pc_intr_setattr)
 		return ENODEV;
 	return pc->pc_intr_setattr(pc, ihp, attr, data);
+}
+
+static inline void *
+pci_intr_establish_xname(pci_chipset_tag_t pc, pci_intr_handle_t ih,
+    int level, int (*func)(void *), void *arg, const char *xname)
+{
+	return pc->pc_intr_establish(pc->pc_intr_v, ih, level, func, arg, xname);
 }
 
 #ifdef __HAVE_PCI_MSI_MSIX

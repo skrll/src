@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi_mcfg.c,v 1.13 2018/11/02 19:51:08 jmcneill Exp $	*/
+/*	$NetBSD: acpi_mcfg.c,v 1.15 2018/12/08 15:02:06 jmcneill Exp $	*/
 
 /*-
  * Copyright (C) 2015 NONAKA Kimihiro <nonaka@NetBSD.org>
@@ -28,7 +28,7 @@
 #include "opt_pci.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_mcfg.c,v 1.13 2018/11/02 19:51:08 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_mcfg.c,v 1.15 2018/12/08 15:02:06 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -539,6 +539,10 @@ acpimcfg_device_probe(const struct pci_attach_args *pa)
 	return 0;
 }
 
+#ifdef PCI_MACHDEP_ENUMERATE_BUS
+#define pci_enumerate_bus PCI_MACHDEP_ENUMERATE_BUS
+#endif
+
 static void
 acpimcfg_scan_bus(struct pci_softc *sc, pci_chipset_tag_t pc, int bus)
 {
@@ -713,7 +717,8 @@ acpimcfg_configure_bus_cb(ACPI_RESOURCE *res, void *ctx)
 	const char *s;
 	int error;
 
-	if (res->Type != ACPI_RESOURCE_TYPE_ADDRESS32 &&
+	if (res->Type != ACPI_RESOURCE_TYPE_ADDRESS16 &&
+	    res->Type != ACPI_RESOURCE_TYPE_ADDRESS32 &&
 	    res->Type != ACPI_RESOURCE_TYPE_ADDRESS64)
 		return AE_OK;
 

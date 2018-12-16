@@ -1,4 +1,4 @@
-/* $NetBSD: armreg.h,v 1.20 2018/11/07 06:47:38 riastradh Exp $ */
+/* $NetBSD: armreg.h,v 1.22 2018/12/13 10:44:25 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -251,12 +251,20 @@ AARCH64REG_READ_INLINE(id_aa64mmfr0_el1)
 #define	 ID_AA64MMFR0_EL1_PARANGE_256T	 5
 
 AARCH64REG_READ_INLINE(id_aa64mmfr1_el1)
+AARCH64REG_READ_INLINE(id_aa64mmfr2_el1)
 AARCH64REG_READ_INLINE(id_aa64pfr0_el1)
 AARCH64REG_READ_INLINE(id_aa64pfr1_el1)
+AARCH64REG_READ_INLINE(id_aa64zfr0_el1)
 AARCH64REG_READ_INLINE(id_pfr1_el1)
 AARCH64REG_READ_INLINE(isr_el1)
 AARCH64REG_READ_INLINE(midr_el1)
 AARCH64REG_READ_INLINE(mpidr_el1)
+
+#define	MIDR_EL1_IMPL		__BITS(31,24)		// Implementor
+#define	MIDR_EL1_VARIANT	__BITS(23,20)		// CPU Variant
+#define	MIDR_EL1_ARCH		__BITS(19,16)		// Architecture
+#define	MIDR_EL1_PARTNUM	__BITS(15,4)		// PartNum
+#define	MIDR_EL1_REVISION	__BITS(3,0)		// Revision
 
 #define	MPIDR_AFF3		__BITS(32,39)
 #define	MPIDR_U	 		__BIT(30)		// 1 = Uni-Processor System
@@ -588,6 +596,7 @@ AARCH64REG_WRITE_INLINE(spsr_el1)
 #define	SPSR_A32_IT1 		__BIT(23)	// A32: IT[1]
 #define	SPSR_A32_IT0 		__BIT(22)	// A32: IT[0]
 #define	SPSR_SS	 		__BIT(21)	// Software Step
+#define	SPSR_SS_SHIFT		21
 #define	SPSR_IL	 		__BIT(20)	// Instruction Length
 #define	SPSR_GE	 		__BITS(19,16)	// A32: SIMD GE
 #define	SPSR_IT7 		__BIT(15)	// A32: IT[7]
@@ -796,6 +805,19 @@ AARCH64REG_WRITE_INLINE(dbgwvr15_el1)
 
 AARCH64REG_READ_INLINE(mdscr_el1) // Monitor Debug System Control Register
 AARCH64REG_WRITE_INLINE(mdscr_el1)
+
+#define	MDSCR_RXFULL		__BIT(30)	// for EDSCR.RXfull
+#define	MDSCR_TXFULL		__BIT(29)	// for EDSCR.TXfull
+#define	MDSCR_RXO		__BIT(27)	// for EDSCR.RXO
+#define	MDSCR_TXU		__BIT(26)	// for EDSCR.TXU
+#define	MDSCR_INTDIS		__BITS(32,22)	// for EDSCR.INTdis
+#define	MDSCR_TDA		__BIT(21)	// for EDSCR.TDA
+#define	MDSCR_MDE		__BIT(15)	// Monitor debug events
+#define	MDSCR_HDE		__BIT(14)	// for EDSCR.HDE
+#define	MDSCR_KDE		__BIT(13)	// Local debug enable
+#define	MDSCR_TDCC		__BIT(12)	// Trap Debug CommCh access
+#define	MDSCR_ERR		__BIT(6)	// for EDSCR.ERR
+#define	MDSCR_SS		__BIT(0)	// Software step
 
 AARCH64REG_WRITE_INLINE(oslar_el1)	// OS Lock Access Register
 
@@ -1135,5 +1157,34 @@ gtmr_cntv_cval_read(void)
 	return reg_cntv_cval_el0_read();
 }
 #endif /* _KERNEL */
+
+/*
+ * Structure attached to machdep.cpuN.cpu_id sysctl node.
+ * Always add new members to the end, and avoid arrays.
+ */
+struct aarch64_sysctl_cpu_id {
+	uint64_t ac_midr;	/* Main ID Register */
+	uint64_t ac_revidr;	/* Revision ID Register */
+	uint64_t ac_mpidr;	/* Multiprocessor Affinity Register */
+
+	uint64_t ac_aa64dfr0;	/* A64 Debug Feature Register 0 */
+	uint64_t ac_aa64dfr1;	/* A64 Debug Feature Register 1 */
+
+	uint64_t ac_aa64isar0;	/* A64 Instruction Set Attribute Register 0 */
+	uint64_t ac_aa64isar1;	/* A64 Instruction Set Attribute Register 1 */
+
+	uint64_t ac_aa64mmfr0;	/* A64 Memroy Model Feature Register 0 */
+	uint64_t ac_aa64mmfr1;	/* A64 Memroy Model Feature Register 1 */
+	uint64_t ac_aa64mmfr2;	/* A64 Memroy Model Feature Register 2 */
+
+	uint64_t ac_aa64pfr0;	/* A64 Processor Feature Register 0 */
+	uint64_t ac_aa64pfr1;	/* A64 Processor Feature Register 1 */
+
+	uint64_t ac_aa64zfr0;	/* A64 SVE Feature ID Register 0 */
+
+	uint32_t ac_mvfr0;	/* Media and VFP Feature Register 0 */
+	uint32_t ac_mvfr1;	/* Media and VFP Feature Register 1 */
+	uint32_t ac_mvfr2;	/* Media and VFP Feature Register 2 */
+};
 
 #endif /* _AARCH64_ARMREG_H_ */

@@ -1,4 +1,4 @@
-#	$NetBSD: XEN3PAE_DOM0,v 1.7 2018/10/23 19:58:52 jdolecek Exp $
+#	$NetBSD: XEN3PAE_DOM0,v 1.9 2018/12/12 06:29:37 maxv Exp $
 #
 #	XEN3_0: Xen 3.0 domain0 kernel
 
@@ -334,7 +334,6 @@ iwm*	at pci? dev ? function ?	# Intel Wireless WiFi Link 7xxx
 jme*	at pci? dev ? function ?	# JMicron JMC2[56]0 Ethernet
 le*	at pci? dev ? function ?	# PCnet-PCI Ethernet
 lii*	at pci? dev ? function ?	# Atheros L2 Fast-Ethernet
-lmc*	at pci? dev ? function ?	# Lan Media Corp SSI/HSSI/DS3
 mskc*	at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 msk*	at mskc?			# Marvell Yukon 2 Gigabit Ethernet
 mtd*	at pci? dev ? function ?	# Myson MTD803 3-in-1 Ethernet
@@ -482,6 +481,7 @@ dpt*	at pci? dev ? function ?	# DPT SmartCache/SmartRAID
 iha*	at pci? dev ? function ?	# Initio INIC-940/950 SCSI
 isp*	at pci? dev ? function ?	# Qlogic ISP [12]0x0 SCSI/FibreChannel
 mfi*	at pci? dev ? function ?	# LSI MegaRAID SAS
+mfii*	at pci? dev ? function ?	# LSI MegaRAID SAS (Fusion and newer)
 mly*	at pci? dev ? function ?	# Mylex AcceleRAID and eXtremeRAID
 mpt*	at pci? dev ? function ?	# LSILogic 9x9 and 53c1030 (Fusion-MPT)
 mpii*	at pci? dev ? function ?	# LSI Logic Fusion-MPT II

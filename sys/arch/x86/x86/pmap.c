@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.310 2018/11/07 07:14:51 maxv Exp $	*/
+/*	$NetBSD: pmap.c,v 1.313 2018/12/07 15:47:11 maxv Exp $	*/
 
 /*
  * Copyright (c) 2008, 2010, 2016, 2017 The NetBSD Foundation, Inc.
@@ -130,7 +130,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.310 2018/11/07 07:14:51 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.313 2018/12/07 15:47:11 maxv Exp $");
 
 #include "opt_user_ldt.h"
 #include "opt_lockdebug.h"
@@ -138,6 +138,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.310 2018/11/07 07:14:51 maxv Exp $");
 #include "opt_xen.h"
 #include "opt_svs.h"
 #include "opt_kasan.h"
+#include "opt_kaslr.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -240,6 +241,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.310 2018/11/07 07:14:51 maxv Exp $");
  */
 
 const vaddr_t ptp_masks[] = PTP_MASK_INITIALIZER;
+const vaddr_t ptp_frames[] = PTP_FRAME_INITIALIZER;
 const int ptp_shifts[] = PTP_SHIFT_INITIALIZER;
 const long nkptpmax[] = NKPTPMAX_INITIALIZER;
 const long nbpd[] = NBPD_INITIALIZER;
@@ -1359,6 +1361,9 @@ slotspace_rand(int type, size_t sz, size_t align)
 
 	/* Select a hole. */
 	cpu_earlyrng(&hole, sizeof(hole));
+#ifdef NO_X86_ASLR
+	hole = 0;
+#endif
 	hole %= nholes;
 	startsl = holes[hole].start;
 	endsl = holes[hole].end;
@@ -1366,6 +1371,9 @@ slotspace_rand(int type, size_t sz, size_t align)
 
 	/* Select an area within the hole. */
 	cpu_earlyrng(&va, sizeof(va));
+#ifdef NO_X86_ASLR
+	va = 0;
+#endif
 	winsize = ((endsl - startsl) * NBPD_L4) - sz;
 	va %= winsize;
 	va = rounddown(va, align);
@@ -3539,7 +3547,7 @@ pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
 			/*
 			 * skip a range corresponding to an invalid pde.
 			 */
-			blkendva = (va & ptp_masks[lvl - 1]) + nbpd[lvl - 1];
+			blkendva = (va & ptp_frames[lvl - 1]) + nbpd[lvl - 1];
  			continue;
 		}
 

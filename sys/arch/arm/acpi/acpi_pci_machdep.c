@@ -1,4 +1,4 @@
-/* $NetBSD: acpi_pci_machdep.c,v 1.7 2018/11/03 12:03:05 jmcneill Exp $ */
+/* $NetBSD: acpi_pci_machdep.c,v 1.9 2018/12/08 15:04:40 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_pci_machdep.c,v 1.7 2018/11/03 12:03:05 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_pci_machdep.c,v 1.9 2018/12/08 15:04:40 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -55,6 +55,7 @@ __KERNEL_RCSID(0, "$NetBSD: acpi_pci_machdep.c,v 1.7 2018/11/03 12:03:05 jmcneil
 #include <dev/acpi/acpi_mcfg.h>
 #include <dev/acpi/acpi_pci.h>
 
+#include <arm/acpi/acpi_iort.h>
 #include <arm/acpi/acpi_pci_machdep.h>
 
 #include <arm/pci/pci_msi_machdep.h>
@@ -75,6 +76,7 @@ static int	acpi_pci_md_bus_maxdevs(void *, int);
 static pcitag_t	acpi_pci_md_make_tag(void *, int, int, int);
 static void	acpi_pci_md_decompose_tag(void *, pcitag_t, int *, int *, int *);
 static u_int	acpi_pci_md_get_segment(void *);
+static uint32_t	acpi_pci_md_get_devid(void *, uint32_t);
 static pcireg_t	acpi_pci_md_conf_read(void *, pcitag_t, int);
 static void	acpi_pci_md_conf_write(void *, pcitag_t, int, pcireg_t);
 static int	acpi_pci_md_conf_hook(void *, int, int, int, pcireg_t);
@@ -88,7 +90,8 @@ static const struct evcnt *acpi_pci_md_intr_evcnt(void *, pci_intr_handle_t);
 static int	acpi_pci_md_intr_setattr(void *, pci_intr_handle_t *, int,
 					uint64_t);
 static void *	acpi_pci_md_intr_establish(void *, pci_intr_handle_t,
-					 int, int (*)(void *), void *);
+					 int, int (*)(void *), void *,
+					 const char *);
 static void	acpi_pci_md_intr_disestablish(void *, void *);
 
 struct arm32_pci_chipset arm_acpi_pci_chipset = {
@@ -97,6 +100,7 @@ struct arm32_pci_chipset arm_acpi_pci_chipset = {
 	.pc_make_tag = acpi_pci_md_make_tag,
 	.pc_decompose_tag = acpi_pci_md_decompose_tag,
 	.pc_get_segment = acpi_pci_md_get_segment,
+	.pc_get_devid = acpi_pci_md_get_devid,
 	.pc_conf_read = acpi_pci_md_conf_read,
 	.pc_conf_write = acpi_pci_md_conf_write,
 	.pc_conf_hook = acpi_pci_md_conf_hook,
@@ -237,6 +241,14 @@ acpi_pci_md_get_segment(void *v)
 	struct acpi_pci_context * const ap = v;
 
 	return ap->ap_seg;
+}
+
+static uint32_t
+acpi_pci_md_get_devid(void *v, uint32_t devid)
+{
+	struct acpi_pci_context * const ap = v;
+
+	return acpi_iort_pci_root_map(ap->ap_seg, devid);
 }
 
 static pcireg_t
@@ -381,17 +393,17 @@ acpi_pci_md_intr_setattr(void *v, pci_intr_handle_t *ih, int attr, uint64_t data
 
 static void *
 acpi_pci_md_intr_establish(void *v, pci_intr_handle_t ih, int ipl,
-    int (*callback)(void *), void *arg)
+    int (*callback)(void *), void *arg, const char *xname)
 {
 	struct acpi_pci_context * const ap = v;
 
 	if ((ih & (ARM_PCI_INTR_MSI | ARM_PCI_INTR_MSIX)) != 0)
-		return arm_pci_msi_intr_establish(&ap->ap_pc, ih, ipl, callback, arg);
+		return arm_pci_msi_intr_establish(&ap->ap_pc, ih, ipl, callback, arg, xname);
 
 	const int irq = (int)__SHIFTOUT(ih, ARM_PCI_INTR_IRQ);
 	const int mpsafe = (ih & ARM_PCI_INTR_MPSAFE) ? IST_MPSAFE : 0;
 
-	return intr_establish(irq, ipl, IST_LEVEL | mpsafe, callback, arg);
+	return intr_establish_xname(irq, ipl, IST_LEVEL | mpsafe, callback, arg, xname);
 }
 
 static void

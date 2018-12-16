@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1083 2018/11/15 09:23:50 martin Exp $
+#	$NetBSD: bsd.own.mk,v 1.1085 2018/12/03 19:15:35 christos Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -151,7 +151,7 @@ EXTERNAL_GDB_SUBDIR=		/does/not/exist
 #
 HAVE_BINUTILS?=	227
 
-.if ${HAVE_BINUTILS} == 230
+.if ${HAVE_BINUTILS} == 231
 EXTERNAL_BINUTILS_SUBDIR=	binutils
 .elif ${HAVE_BINUTILS} == 227
 EXTERNAL_BINUTILS_SUBDIR=	binutils.old
@@ -420,7 +420,7 @@ TOOL_NCDCS=		${TOOLDIR}/bin/${_TOOL_PREFIX}ibmnws-ncdcs
 TOOL_PAX=		${TOOLDIR}/bin/${_TOOL_PREFIX}pax
 TOOL_PIC=		${TOOLDIR}/bin/${_TOOL_PREFIX}pic
 TOOL_PIGZ=		${TOOLDIR}/bin/${_TOOL_PREFIX}pigz
-TOOL_XZ=		${TOOLDIR}/bin/xz
+TOOL_XZ=		${TOOLDIR}/bin/${_TOOL_PREFIX}xz
 TOOL_PKG_CREATE=	${TOOLDIR}/bin/${_TOOL_PREFIX}pkg_create
 TOOL_POWERPCMKBOOTIMAGE=${TOOLDIR}/bin/${_TOOL_PREFIX}powerpc-mkbootimage
 TOOL_PWD_MKDB=		${TOOLDIR}/bin/${_TOOL_PREFIX}pwd_mkdb

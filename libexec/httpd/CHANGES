@@ -1,4 +1,30 @@
-$NetBSD: CHANGES,v 1.25 2017/01/31 14:33:54 mrg Exp $
+$NetBSD: CHANGES,v 1.32 2018/12/15 12:52:36 leot Exp $
+
+changes in bozohttpd 20181215:
+	o  avoid .htpasswd exposure to authenticated users.  reported by JP,
+	   from leot@netbsd.org
+	o  avoid possible null dereference when receiving a big request that
+	   timeout.  reported by maya@netbsd.org, from leot@netbsd.org
+	o  fix handling of -T option, from leot@netbsd.org
+	o  cleanups and portability improvements, from maya@netbsd.org
+
+changes in bozohttpd 20181204:
+	o  change directory indexing to use html tables.  from
+	   rajeev_v_pillai@yahoo.com
+
+changes in bozohttpd 20181125:
+	o  fixes for option parsing introduced in bozohttpd 20181123
+
+changes in bozohttpd 20181121:
+	o  add url remap support via .bzremap file, from martin@netbsd.org
+	o  handle redirections for any protocol, not just http:
+	o  fix a denial of service attack against header contents, which
+	   is now bounded at 16KiB.  reported by JP
+	o  reduce default timeouts, and add expand timeouts to handle the
+	   initial line, each header, and the total time spent
+	o  add -T option to expose new timeout settings
+	o  minor RFC fixes related to timeout handling
+	o  fix special file (.htpasswd, .bz*) bypass.  reported by JP
 
 changes in bozohttpd 20170201:
 	o  fix an infinite loop in cgi processing
@@ -83,7 +109,7 @@ changes in bozohttpd 20100617:
 
 changes in bozohttpd 20100509:
 	o  major rework and clean up of internal interfaces.  move the main
-	   program into main.c, the remaining parts are useable as library.
+	   program into main.c, the remaining parts are useable as library
 	   add bindings for lua.  by Alistair G. Crooks <agc@netbsd.org>
 	o  fix http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=566325
 

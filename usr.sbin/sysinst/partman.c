@@ -1,4 +1,4 @@
-/*	$NetBSD: partman.c,v 1.22 2018/05/18 12:23:22 joerg Exp $ */
+/*	$NetBSD: partman.c,v 1.25 2018/12/13 12:28:25 martin Exp $ */
 
 /*
  * Copyright 2012 Eugene Lozovoy
@@ -234,8 +234,12 @@ pm_edit(int menu_entries_count, void (*menu_fmt)(menudesc *, int, void *),
 
 	menu_ent menu_entries[menu_entries_count];
 	for (i = 0; i < menu_entries_count - 1; i++)
-		menu_entries[i] = (menu_ent) {NULL, OPT_NOMENU, 0, action};
-	menu_entries[i] = (menu_ent) {MSG_fremove, OPT_NOMENU, OPT_EXIT, action};
+		menu_entries[i] = (menu_ent) {	.opt_menu=OPT_NOMENU,
+						.opt_action=action };
+	menu_entries[i] = (menu_ent) {	.opt_name=MSG_fremove,
+					.opt_menu=OPT_NOMENU,
+					.opt_flags=OPT_EXIT,
+					.opt_action=action };
 
 	int menu_no = -1;
 	menu_no = new_menu(NULL, menu_entries, menu_entries_count,
@@ -443,8 +447,10 @@ pm_raid_set_value(menudesc *m, void *arg)
 	raids_t *dev_ptr = arg;
 
 	static menu_ent menuent_disk_adddel[] = {
-	    {MSG_add, OPT_NOMENU, OPT_EXIT, pm_raid_disk_add}, 
-	    {MSG_remove, OPT_NOMENU, OPT_EXIT, pm_raid_disk_del}
+	    { .opt_name=MSG_add, .opt_menu=OPT_NOMENU, .opt_flags=OPT_EXIT,
+	      .opt_action=pm_raid_disk_add },
+	    { .opt_name=MSG_remove, .opt_menu=OPT_NOMENU, .opt_flags=OPT_EXIT,
+	      .opt_action=pm_raid_disk_del }
 	};
 	static int menu_disk_adddel = -1;
 	if (menu_disk_adddel == -1) {
@@ -907,7 +913,7 @@ pm_vnd_commit(void)
 			for (ii = 0; ii < 6; ii++) {
 				strcpy(buf, pm_i->bsdlabel[ii].pi_mount);
 				if (buf[strlen(buf)-1] != '/')
-					sprintf(buf,"%s/", buf);
+					strcat(buf, "/");
 				printf("%s\n",buf);
 				if (strstr(vnds[i].filepath, buf) == vnds[i].filepath)
 					if (part_suit < 0 || pm_suit == NULL ||
@@ -1347,8 +1353,10 @@ pm_lvm_set_value(menudesc *m, void *arg)
 	lvms_t *dev_ptr = arg;
 
 	static menu_ent menuent_disk_adddel[] = {
-	    {MSG_add, OPT_NOMENU, OPT_EXIT, pm_lvm_disk_add}, 
-	    {MSG_remove, OPT_NOMENU, OPT_EXIT, pm_lvm_disk_del}
+	    { .opt_name=MSG_add, .opt_menu=OPT_NOMENU, .opt_flags=OPT_EXIT,
+	      .opt_action=pm_lvm_disk_add },
+	    { .opt_name=MSG_remove, .opt_menu=OPT_NOMENU, .opt_flags=OPT_EXIT,
+	      .opt_action=pm_lvm_disk_del }
 	};
 	static int menu_disk_adddel = -1;
 	if (menu_disk_adddel == -1) {
@@ -2496,7 +2504,7 @@ pm_menufmt(menudesc *m, int opt, void *arg)
 			snprintf(buf, STRSIZE, "dk%d: %s",
 				part_num,
 				wedges[part_num].pm->bsdlabel[wedges[part_num].ptn].pi_mount);
-			wprintw(m->mw, "   %-30.29s %-22.21s %11uM",
+			wprintw(m->mw, "   %-30.29s %-22.21s %11luM",
 				buf,
 				(wedges[part_num].pm->bsdlabel[wedges[part_num].ptn].lvmpv) ? 
 					"lvm pv" :
@@ -2515,7 +2523,7 @@ pm_menufmt(menudesc *m, int opt, void *arg)
 						strlen (pm_cur->bsdlabel[part_num].pi_mount ) < 1 ||
 						pm_cur->bsdlabel[part_num].pi_flags & PIF_MOUNT) ?
 						"" : msg_string(MSG_pmunused));
-			wprintw(m->mw, "   %-30.29s %-22.21s %11uM",
+			wprintw(m->mw, "   %-30.29s %-22.21s %11luM",
 				buf,
 				(pm_cur->bsdlabel[part_num].lvmpv) ? 
 					"lvm pv" :
@@ -2525,7 +2533,7 @@ pm_menufmt(menudesc *m, int opt, void *arg)
 		case PM_SPEC_T:
 			snprintf(buf, STRSIZE, "%s: %s",
 				pm_cur->diskdev_descr, pm_cur->bsdlabel[0].pi_mount);
-			wprintw(m->mw, "%-33.32s %-22.21s %11uM", buf,
+			wprintw(m->mw, "%-33.32s %-22.21s %11luM", buf,
 				getfslabelname(pm_cur->bsdlabel[0].pi_fstype),
 				pm_cur->bsdlabel[0].pi_size / (MEG / pm_cur->sectorsize));
 			break;
