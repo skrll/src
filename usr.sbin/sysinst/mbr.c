@@ -1,4 +1,4 @@
-/*	$NetBSD: mbr.c,v 1.7 2018/11/15 10:34:21 martin Exp $ */
+/*	$NetBSD: mbr.c,v 1.10 2018/11/27 17:13:41 martin Exp $ */
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -959,24 +959,25 @@ edit_mbr_entry(menudesc *m, void *arg)
 
 	static menu_ent ptn_opts[] = {
 #define PTN_OPT_TYPE		0
-		{NULL, OPT_NOMENU, 0, edit_mbr_type},
+		{ .opt_menu=OPT_NOMENU, .opt_action=edit_mbr_type },
 #define PTN_OPT_START		1
-		{NULL, OPT_NOMENU, 0, edit_mbr_start},
+		{ .opt_menu=OPT_NOMENU, .opt_action=edit_mbr_start },
 #define PTN_OPT_SIZE		2
-		{NULL, OPT_NOMENU, 0, edit_mbr_size},
+		{ .opt_menu=OPT_NOMENU, .opt_action=edit_mbr_size },
 #define PTN_OPT_END		3
-		{NULL, OPT_NOMENU, OPT_IGNORE, NULL},	/* display end */
+		{ .opt_menu=OPT_NOMENU, .opt_flags=OPT_IGNORE }, /* display end */
 #define PTN_OPT_ACTIVE		4
-		{NULL, OPT_NOMENU, 0, edit_mbr_active},
+		{ .opt_menu=OPT_NOMENU, .opt_action=edit_mbr_active },
 #define PTN_OPT_INSTALL		5
-		{NULL, OPT_NOMENU, 0, edit_mbr_install},
+		{ .opt_menu=OPT_NOMENU, .opt_action=edit_mbr_install },
 #ifdef BOOTSEL
 #define PTN_OPT_BOOTMENU	6
-		{NULL, OPT_NOMENU, 0, edit_mbr_bootmenu},
+		{ .opt_menu=OPT_NOMENU, .opt_action=edit_mbr_bootmenu },
 #define PTN_OPT_BOOTDEFAULT	7
-		{NULL, OPT_NOMENU, 0, edit_mbr_bootdefault},
+		{ .opt_menu=OPT_NOMENU, .opt_action=edit_mbr_bootdefault },
 #endif
-		{MSG_askunits, MENU_sizechoice, OPT_SUB, NULL},
+		{ .opt_name=MSG_askunits, .opt_menu=MENU_sizechoice,
+		  .opt_flags=OPT_SUB },
 	};
 
 	if (ptn_menu == -1)
@@ -1283,10 +1284,10 @@ edit_mbr(mbr_info_t *mbri)
 		char min_size[5], build_size[5];
 
 		humanize_number(min_size, sizeof(min_size),
-		    3 * m_size * 1024*1024UL,
+		    2 * m_size * MEG,
 		    "", HN_AUTOSCALE, HN_B | HN_NOSPACE | HN_DECIMAL);
 		humanize_number(build_size, sizeof(build_size),
-		     SYSTEM_BUILD_SIZE * 1024 * 1024UL, "", HN_AUTOSCALE,
+		     SYSTEM_BUILD_SIZE * MEG, "", HN_AUTOSCALE,
 		     HN_B | HN_NOSPACE | HN_DECIMAL);
 
 		msg_display_subst(MSG_fullpart, 7,
@@ -1484,7 +1485,7 @@ read_mbr(const char *disk, mbr_info_t *mbri)
 
 	ptn_0_offset = bsec;
 	/* use 1MB default offset on large disks as fdisk(8) */
-	if (pm->dlsize > 2048 * 1024 * 128)
+	if ((unsigned long)pm->dlsize > 128 * GIG / 512)
 		ptn_0_offset = 2048;
 
 	memset(mbri, 0, sizeof *mbri);
@@ -1916,7 +1917,7 @@ get_ptn_alignment(struct mbr_partition *mbrp0)
 		}
 	} else {
 		/* Use 1MB offset for large (>128GB) disks */
-		if (pm->dlsize > 2048 * 1024 * 128) {
+		if ((unsigned long)pm->dlsize > 128 * GIG / 512) {
 			ptn_alignment = 2048;
 			ptn_0_offset = 2048;
 		}

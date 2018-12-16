@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci_pci.c,v 1.15 2018/10/31 16:11:29 jmcneill Exp $	*/
+/*	$NetBSD: xhci_pci.c,v 1.18 2018/11/30 17:47:54 jdolecek Exp $	*/
 /*	OpenBSD: xhci_pci.c,v 1.4 2014/07/12 17:38:51 yuo Exp	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci_pci.c,v 1.15 2018/10/31 16:11:29 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci_pci.c,v 1.18 2018/11/30 17:47:54 jdolecek Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_xhci_pci.h"
@@ -123,7 +123,6 @@ xhci_pci_attach(device_t parent, device_t self, void *aux)
 	struct pci_attach_args *const pa = (struct pci_attach_args *)aux;
 	const pci_chipset_tag_t pc = pa->pa_pc;
 	const pcitag_t tag = pa->pa_tag;
-	pci_intr_type_t intr_type;
 	char const *intrstr;
 	pcireg_t csr, memtype, usbrev;
 	int err;
@@ -139,9 +138,6 @@ xhci_pci_attach(device_t parent, device_t self, void *aux)
 
 	/* check if memory space access is enabled */
 	csr = pci_conf_read(pc, tag, PCI_COMMAND_STATUS_REG);
-#ifdef DEBUG
-	printf("%s: csr: %08x\n", __func__, csr);
-#endif
 	if ((csr & PCI_COMMAND_MEM_ENABLE) == 0) {
 		sc->sc_ios = 0;
 		aprint_error_dev(self, "memory access is disabled\n");
@@ -180,20 +176,8 @@ xhci_pci_attach(device_t parent, device_t self, void *aux)
 	pci_conf_write(pc, tag, PCI_COMMAND_STATUS_REG,
 		       csr | PCI_COMMAND_MASTER_ENABLE);
 
-	/* Allocation settings */
-	int counts[PCI_INTR_TYPE_SIZE] = {
-		[PCI_INTR_TYPE_INTX] = 1,
-#ifndef XHCI_DISABLE_MSI
-		[PCI_INTR_TYPE_MSI] = 1,
-#endif
-#ifndef XHCI_DISABLE_MSIX
-		[PCI_INTR_TYPE_MSIX] = 1,
-#endif
-	};
-
-alloc_retry:
 	/* Allocate and establish the interrupt. */
-	if (pci_intr_alloc(pa, &psc->sc_pihp, counts, PCI_INTR_TYPE_MSIX)) {
+	if (pci_intr_alloc(pa, &psc->sc_pihp, NULL, 0)) {
 		aprint_error_dev(self, "can't allocate handler\n");
 		goto fail;
 	}
@@ -202,29 +186,13 @@ alloc_retry:
 	psc->sc_ih = pci_intr_establish_xname(pc, psc->sc_pihp[0], IPL_USB,
 	    xhci_intr, sc, device_xname(sc->sc_dev));
 	if (psc->sc_ih == NULL) {
-		intr_type = pci_intr_type(pc, psc->sc_pihp[0]);
 		pci_intr_release(pc, psc->sc_pihp, 1);
 		psc->sc_ih = NULL;
-		switch (intr_type) {
-		case PCI_INTR_TYPE_MSIX:
-			/* The next try is for MSI: Disable MSIX */
-			counts[PCI_INTR_TYPE_MSIX] = 0;
-			counts[PCI_INTR_TYPE_MSI] = 1;
-			counts[PCI_INTR_TYPE_INTX] = 1;
-			goto alloc_retry;
-		case PCI_INTR_TYPE_MSI:
-			/* The next try is for INTx: Disable MSI */
-			counts[PCI_INTR_TYPE_MSI] = 0;
-			counts[PCI_INTR_TYPE_INTX] = 1;
-			goto alloc_retry;
-		case PCI_INTR_TYPE_INTX:
-		default:
-			aprint_error_dev(self, "couldn't establish interrupt");
-			if (intrstr != NULL)
-				aprint_error(" at %s", intrstr);
-			aprint_error("\n");
-			goto fail;
-		}
+		aprint_error_dev(self, "couldn't establish interrupt");
+		if (intrstr != NULL)
+			aprint_error(" at %s", intrstr);
+		aprint_error("\n");
+		goto fail;
 	}
 	aprint_normal_dev(self, "interrupting at %s\n", intrstr);
 
@@ -238,9 +206,9 @@ alloc_retry:
 		break;
 	default:
 		if (usbrev < PCI_USBREV_3_0) {
-			aprint_error_dev(self, "Unknown revision (%02x)\n",
+			aprint_error_dev(self, "Unknown revision (%02x). Set to 3.0\n",
 			    usbrev);
-			sc->sc_bus.ub_revision = USBREV_UNKNOWN;
+			sc->sc_bus.ub_revision = USBREV_3_0;
 		} else {
 			/* Default to the latest revision */
 			aprint_normal_dev(self,

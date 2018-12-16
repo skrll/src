@@ -1182,7 +1182,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 * holding up the transaction if the data copy hangs
 			 * up on a pagefault (e.g., from an NFS server mapping).
 			 */
-#ifdef illumos
+#if defined(illumos) || defined(__NetBSD__)
 			size_t cbytes;
 #endif
 
@@ -1190,7 +1190,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    max_blksz);
 			ASSERT(abuf != NULL);
 			ASSERT(arc_buf_size(abuf) == max_blksz);
-#ifdef illumos
+#if defined(illumos) || defined(__NetBSD__)
 			if (error = uiocopy(abuf->b_data, max_blksz,
 			    UIO_WRITE, uio, &cbytes)) {
 				dmu_return_arcbuf(abuf);
@@ -1202,17 +1202,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ssize_t resid = uio->uio_resid;
 
 			error = vn_io_fault_uiomove(abuf->b_data, max_blksz, uio);
-			if (error != 0) {
-				uio->uio_offset -= resid - uio->uio_resid;
-				uio->uio_resid = resid;
-				dmu_return_arcbuf(abuf);
-				break;
-			}
-#endif
-#ifdef __NetBSD__
-			ssize_t resid = uio->uio_resid;
-
-			error = uiomove(abuf->b_data, max_blksz, UIO_WRITE, uio);
 			if (error != 0) {
 				uio->uio_offset -= resid - uio->uio_resid;
 				uio->uio_resid = resid;
@@ -1297,7 +1286,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				dmu_assign_arcbuf(sa_get_db(zp->z_sa_hdl),
 				    woff, abuf, tx);
 			}
-#ifdef illumos
+#if defined(illumos) || defined(__NetBSD__)
 			ASSERT(tx_bytes <= uio->uio_resid);
 			uioskip(uio, tx_bytes);
 #endif
@@ -4191,11 +4180,13 @@ zfs_rename(vnode_t *sdvp, vnode_t **svpp, struct componentname *scnp,
 		goto unlockout;
 	}
 
+#ifndef __NetBSD__
 	/* If source and target are the same file, there is nothing to do. */
 	if ((*svpp) == (*tvpp)) {
 		error = 0;
 		goto unlockout;
 	}
+#endif
 
 	if (((*svpp)->v_type == VDIR && (*svpp)->v_mountedhere != NULL) ||
 	    ((*tvpp) != NULL && (*tvpp)->v_type == VDIR &&
@@ -5051,6 +5042,10 @@ zfs_netbsd_access(void *v)
 	KASSERT(VOP_ISLOCKED(vp));
 	error = zfs_access(vp, zfs_mode, 0, cred, NULL);
 
+	/* We expect EACCES as common error. */
+	if (error == EPERM)
+		error = EACCES;
+
 	return (error);
 }
 
@@ -5122,8 +5117,15 @@ zfs_netbsd_lookup(void *v)
 				error = EJUSTRETURN;
 				break;
 			}
-			/* FALLTHROUGH */
+			break;
 		case DELETE:
+			if (error == 0) {
+				error = VOP_ACCESS(dvp, VWRITE, cnp->cn_cred);
+				if (error) {
+					VN_RELE(*vpp);
+					*vpp = NULL;
+				}
+			}
 			break;
 		}
 	}
@@ -5330,10 +5332,13 @@ zfs_netbsd_setattr(void *v)
 	vnode_t *vp = ap->a_vp;
 	vattr_t *vap = ap->a_vap;
 	cred_t *cred = ap->a_cred;
+	znode_t *zp = VTOZ(vp);
 	xvattr_t xvap;
-	u_long fflags;
+	kauth_action_t action;
+	u_long fflags, sfflags = 0;
 	uint64_t zflags;
-	int flags = 0;
+	int error, flags = 0;
+	bool changing_sysflags;
 
 	vattr_init_mask(vap);
 	vap->va_mask &= ~AT_NOSET;
@@ -5351,40 +5356,14 @@ zfs_netbsd_setattr(void *v)
 		fflags = vap->va_flags;
 		if ((fflags & ~(SF_IMMUTABLE|SF_APPEND|SF_NOUNLINK|UF_NODUMP)) != 0)
 			return (EOPNOTSUPP);
-		/*
-		 * Callers may only modify the file flags on objects they
-		 * have VADMIN rights for.
-		 */
-		if ((error = VOP_ACCESS(vp, VWRITE, cred)) != 0)
-			return (error);
-		/*
-		 * Unprivileged processes are not permitted to unset system
-		 * flags, or modify flags if any system flags are set.
-		 * Privileged non-jail processes may not modify system flags
-		 * if securelevel > 0 and any existing system flags are set.
-		 * Privileged jail processes behave like privileged non-jail
-		 * processes if the security.jail.chflags_allowed sysctl is
-		 * is non-zero; otherwise, they behave like unprivileged
-		 * processes.
-		 */
-		if (kauth_authorize_system(cred, KAUTH_SYSTEM_CHSYSFLAGS, 0,
-			NULL, NULL, NULL) != 0) {
-
-			if (zflags &
-			    (ZFS_IMMUTABLE | ZFS_APPENDONLY | ZFS_NOUNLINK)) {
-				return (EPERM);
-			}
-			if (fflags &
-			    (SF_IMMUTABLE | SF_APPEND | SF_NOUNLINK)) {
-				return (EPERM);
-			}
-		}
 
 #define	FLAG_CHANGE(fflag, zflag, xflag, xfield)	do {		\
 	if (((fflags & (fflag)) && !(zflags & (zflag))) ||		\
 	    ((zflags & (zflag)) && !(fflags & (fflag)))) {		\
 		XVA_SET_REQ(&xvap, (xflag));				\
 		(xfield) = ((fflags & (fflag)) != 0);			\
+		if (((fflag) & SF_SETTABLE) != 0)			\
+			sfflags |= (fflag);				\
 	}								\
 } while (0)
 		/* Convert chflags into ZFS-type flags. */
@@ -5398,7 +5377,34 @@ zfs_netbsd_setattr(void *v)
 		FLAG_CHANGE(UF_NODUMP, ZFS_NODUMP, XAT_NODUMP,
 		    xvap.xva_xoptattrs.xoa_nodump);
 #undef	FLAG_CHANGE
+
+		action = KAUTH_VNODE_WRITE_FLAGS;
+		changing_sysflags = false;
+
+		if (zflags & (ZFS_IMMUTABLE|ZFS_APPENDONLY|ZFS_NOUNLINK)) {
+			action |= KAUTH_VNODE_HAS_SYSFLAGS;
+		}
+		if (sfflags != 0) {
+			action |= KAUTH_VNODE_WRITE_SYSFLAGS;
+			changing_sysflags = true;
+		}
+
+		error = kauth_authorize_vnode(cred, action, vp, NULL,
+		    genfs_can_chflags(cred, vp->v_type, zp->z_uid,
+		    changing_sysflags));
+		if (error)
+			return error;
 	}
+
+	if (vap->va_atime.tv_sec != VNOVAL || vap->va_mtime.tv_sec != VNOVAL ||
+	    vap->va_birthtime.tv_sec != VNOVAL) {
+		error = kauth_authorize_vnode(cred, KAUTH_VNODE_WRITE_TIMES, vp,
+		     NULL, genfs_can_chtimes(vp, vap->va_vaflags, zp->z_uid,
+		     cred));
+		if (error)
+			return error;
+	}
+
 	return (zfs_setattr(vp, (vattr_t *)&xvap, flags, cred, NULL));
 }
 
@@ -5465,7 +5471,8 @@ zfs_netbsd_rename(void *v)
 
 	VN_RELE(fdvp);
 	VN_RELE(tdvp);
-	VN_RELE(fvp);
+	if (fvp != NULL)
+		VN_RELE(fvp);
 	if (tvp != NULL)
 		VN_RELE(tvp);
 
@@ -5826,13 +5833,11 @@ zfs_putapage(vnode_t *vp, page_t **pp, int count, int flags)
 	}
 	dmu_tx_commit(tx);
 
-	if (async) {
-		mutex_enter(mtx);
-		mutex_enter(&uvm_pageqlock);
-		uvm_page_unbusy(pp, count);
-		mutex_exit(&uvm_pageqlock);
-		mutex_exit(mtx);
-	}
+	mutex_enter(mtx);
+	mutex_enter(&uvm_pageqlock);
+	uvm_page_unbusy(pp, count);
+	mutex_exit(&uvm_pageqlock);
+	mutex_exit(mtx);
 
 out:
 	return (err);

@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.c,v 1.9 2018/10/12 01:28:57 ryo Exp $ */
+/* $NetBSD: db_machdep.c,v 1.11 2018/11/28 19:13:15 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.9 2018/10/12 01:28:57 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.11 2018/11/28 19:13:15 ryo Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd32.h"
@@ -357,7 +357,7 @@ db_md_sysreg_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 #define SHOW_ARMREG(x)	\
 	db_printf("%-16s = %016" PRIx64 "\n", #x, reg_ ## x ## _read())
 
-	SHOW_ARMREG(cbar_el1);
+//	SHOW_ARMREG(cbar_el1);	/* Cortex */
 	SHOW_ARMREG(ccsidr_el1);
 	SHOW_ARMREG(clidr_el1);
 	SHOW_ARMREG(cntfrq_el0);
@@ -397,7 +397,7 @@ db_md_sysreg_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 	SHOW_ARMREG(id_aa64pfr0_el1);
 	SHOW_ARMREG(id_aa64pfr1_el1);
 	SHOW_ARMREG(isr_el1);
-	SHOW_ARMREG(l2ctlr_el1);
+//	SHOW_ARMREG(l2ctlr_el1);	/* Cortex */
 	SHOW_ARMREG(mair_el1);
 	SHOW_ARMREG(mdscr_el1);
 	SHOW_ARMREG(midr_el1);
@@ -761,14 +761,16 @@ void
 db_md_switch_cpu_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
     const char *modif)
 {
-	if (addr >= ncpu) {
-		db_printf("cpu %"DDB_EXPR_FMT"d out of range", addr);
+	u_int cpuno = (u_int)addr;
+
+	if (!have_addr || (cpuno >= ncpu)) {
+		db_printf("cpu: 0..%d\n", ncpu - 1);
 		return;
 	}
 
-	struct cpu_info *new_ci = cpu_lookup(addr);
+	struct cpu_info *new_ci = cpu_lookup(cpuno);
 	if (new_ci == NULL) {
-		db_printf("cpu %"DDB_EXPR_FMT"d does not exist", addr);
+		db_printf("cpu %u does not exist", cpuno);
 		return;
 	}
 

@@ -1,4 +1,4 @@
-/* $NetBSD: pcihost_fdt.c,v 1.3 2018/11/11 21:24:38 jmcneill Exp $ */
+/* $NetBSD: pcihost_fdt.c,v 1.6 2018/11/19 11:08:16 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pcihost_fdt.c,v 1.3 2018/11/11 21:24:38 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pcihost_fdt.c,v 1.6 2018/11/19 11:08:16 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -118,11 +118,12 @@ static int	pcihost_intr_map(const struct pci_attach_args *,
 				    pci_intr_handle_t *);
 static const char *pcihost_intr_string(void *, pci_intr_handle_t,
 					  char *, size_t);
-const struct evcnt *pcihost_intr_evcnt(void *, pci_intr_handle_t);
+static const struct evcnt *pcihost_intr_evcnt(void *, pci_intr_handle_t);
 static int	pcihost_intr_setattr(void *, pci_intr_handle_t *, int,
 					uint64_t);
 static void *	pcihost_intr_establish(void *, pci_intr_handle_t,
-					 int, int (*)(void *), void *);
+					 int, int (*)(void *), void *,
+					 const char *);
 static void	pcihost_intr_disestablish(void *, void *);
 
 CFATTACH_DECL_NEW(pcihost_fdt, sizeof(struct pcihost_softc),
@@ -202,15 +203,14 @@ pcihost_attach(device_t parent, device_t self, void *aux)
 	pba.pba_flags = PCI_FLAGS_MRL_OKAY |
 			PCI_FLAGS_MRM_OKAY |
 			PCI_FLAGS_MWI_OKAY |
-			PCI_FLAGS_MEM_OKAY |
-			PCI_FLAGS_IO_OKAY;
+			PCI_FLAGS_MEM_OKAY;
 #ifdef __HAVE_PCI_MSI_MSIX
 	if (sc->sc_type == PCIHOST_ECAM) {
 		pba.pba_flags |= PCI_FLAGS_MSI_OKAY |
 				 PCI_FLAGS_MSIX_OKAY;
 	}
 #endif
-	pba.pba_iot = sc->sc_bst;
+	pba.pba_iot = 0;
 	pba.pba_memt = sc->sc_bst;
 	pba.pba_dmat = sc->sc_dmat;
 #ifdef _PCI_HAVE_DMA64
@@ -573,7 +573,7 @@ pcihost_intr_setattr(void *v, pci_intr_handle_t *ih, int attr, uint64_t data)
 
 static void *
 pcihost_intr_establish(void *v, pci_intr_handle_t ih, int ipl,
-    int (*callback)(void *), void *arg)
+    int (*callback)(void *), void *arg, const char *xname)
 {
 	struct pcihost_softc *sc = v;
 	const int flags = (ih & IH_MPSAFE) ? FDT_INTR_MPSAFE : 0;
@@ -581,7 +581,7 @@ pcihost_intr_establish(void *v, pci_intr_handle_t ih, int ipl,
 	int ihandle;
 
 	if ((ih & (ARM_PCI_INTR_MSI | ARM_PCI_INTR_MSIX)) != 0)
-		return arm_pci_msi_intr_establish(&sc->sc_pc, ih, ipl, callback, arg);
+		return arm_pci_msi_intr_establish(&sc->sc_pc, ih, ipl, callback, arg, xname);
 
 	specifier = pcihost_find_intr(sc, ih & IH_INDEX_MASK, &ihandle);
 	if (specifier == NULL)

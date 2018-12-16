@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1627 2018/09/30 15:56:47 jmcneill Exp $
+# $NetBSD: mi,v 1.1629 2018/12/01 11:17:28 jdolecek Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -1058,6 +1058,7 @@
 ./usr/share/man/cat4/emips/intro.0		man-sys-catman		.cat
 ./usr/share/man/cat4/emuxki.0			man-sys-catman		.cat
 ./usr/share/man/cat4/en.0			man-obsolete		obsolete
+./usr/share/man/cat4/ena.0			man-sys-catman		.cat
 ./usr/share/man/cat4/envsys.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ep.0			man-sys-catman		.cat
 ./usr/share/man/cat4/epic.0			man-sys-catman		.cat
@@ -1433,6 +1434,7 @@
 ./usr/share/man/cat4/md.0			man-sys-catman		.cat
 ./usr/share/man/cat4/mfb.0			man-sys-catman		.cat
 ./usr/share/man/cat4/mfi.0			man-sys-catman		.cat
+./usr/share/man/cat4/mfii.0			man-sys-catman		.cat
 ./usr/share/man/cat4/mgadrm.0			man-sys-catman		.cat
 ./usr/share/man/cat4/mhzc.0			man-sys-catman		.cat
 ./usr/share/man/cat4/micphy.0			man-sys-catman		.cat
@@ -4210,6 +4212,7 @@
 ./usr/share/man/html4/emips/intro.html		man-sys-htmlman		html
 ./usr/share/man/html4/emuxki.html		man-sys-htmlman		html
 ./usr/share/man/html4/en.html			man-obsolete		obsolete
+./usr/share/man/html4/ena.html			man-sys-htmlman		html
 ./usr/share/man/html4/envsys.html		man-sys-htmlman		html
 ./usr/share/man/html4/ep.html			man-sys-htmlman		html
 ./usr/share/man/html4/epic.html			man-sys-htmlman		html
@@ -4546,6 +4549,7 @@
 ./usr/share/man/html4/md.html			man-sys-htmlman		html
 ./usr/share/man/html4/mfb.html			man-sys-htmlman		html
 ./usr/share/man/html4/mfi.html			man-sys-htmlman		html
+./usr/share/man/html4/mfii.html			man-sys-htmlman		html
 ./usr/share/man/html4/mgadrm.html		man-sys-htmlman		html
 ./usr/share/man/html4/mhzc.html			man-sys-htmlman		html
 ./usr/share/man/html4/micphy.html		man-sys-htmlman		html
@@ -7134,6 +7138,7 @@
 ./usr/share/man/man4/emips/intro.4		man-sys-man		.man
 ./usr/share/man/man4/emuxki.4			man-sys-man		.man
 ./usr/share/man/man4/en.4			man-obsolete		obsolete
+./usr/share/man/man4/ena.4			man-sys-man		.man
 ./usr/share/man/man4/envsys.4			man-sys-man		.man
 ./usr/share/man/man4/ep.4			man-sys-man		.man
 ./usr/share/man/man4/epic.4			man-sys-man		.man
@@ -7509,6 +7514,7 @@
 ./usr/share/man/man4/md.4			man-sys-man		.man
 ./usr/share/man/man4/mfb.4			man-sys-man		.man
 ./usr/share/man/man4/mfi.4			man-sys-man		.man
+./usr/share/man/man4/mfii.4			man-sys-man		.man
 ./usr/share/man/man4/mgadrm.4			man-sys-man		.man
 ./usr/share/man/man4/mhzc.4			man-sys-man		.man
 ./usr/share/man/man4/micphy.4			man-sys-man		.man
