@@ -1,4 +1,4 @@
-/*	$NetBSD: init_sysctl.c,v 1.219 2018/11/24 17:26:27 maxv Exp $ */
+/*	$NetBSD: init_sysctl.c,v 1.221 2018/12/05 18:16:51 christos Exp $ */
 
 /*-
  * Copyright (c) 2003, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: init_sysctl.c,v 1.219 2018/11/24 17:26:27 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: init_sysctl.c,v 1.221 2018/12/05 18:16:51 christos Exp $");
 
 #include "opt_sysv.h"
 #include "opt_compat_netbsd.h"
@@ -85,8 +85,6 @@ int kern_has_sysvmsg = 0;
 int kern_has_sysvshm = 0;
 int kern_has_sysvsem = 0;
 
-int kern_expose_address = 0;
-
 static const u_int sysctl_lwpprflagmap[] = {
 	LPR_DETACHED, L_DETACHED,
 	0
@@ -129,7 +127,6 @@ static int sysctl_kern_root_partition(SYSCTLFN_PROTO);
 static int sysctl_kern_drivers(SYSCTLFN_PROTO);
 static int sysctl_security_setidcore(SYSCTLFN_PROTO);
 static int sysctl_security_setidcorename(SYSCTLFN_PROTO);
-static int sysctl_security_expose_address(SYSCTLFN_PROTO);
 static int sysctl_kern_cpid(SYSCTLFN_PROTO);
 static int sysctl_hw_usermem(SYSCTLFN_PROTO);
 static int sysctl_hw_cnmagic(SYSCTLFN_PROTO);
@@ -602,12 +599,6 @@ SYSCTL_SETUP(sysctl_kern_setup, "sysctl kern subtree setup")
 			SYSCTL_DESCR("Kernel message verbosity"),
 			sysctl_kern_messages, 0, NULL, 0,
 			CTL_KERN, CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-			CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-			CTLTYPE_INT, "expose_address",
-			SYSCTL_DESCR("Expose kernel addresses to userland"),
-			sysctl_security_expose_address, 0, &kern_expose_address,
-			0, CTL_KERN, CTL_CREATE, CTL_EOL);
 }
 
 SYSCTL_SETUP(sysctl_hw_misc_setup, "sysctl hw subtree misc setup")
@@ -1346,37 +1337,6 @@ sysctl_security_setidcore(SYSCTLFN_ARGS)
 	*(int *)rnode->sysctl_data = newsize;
 
 	return 0;
-}
-
-static int
-sysctl_security_expose_address(SYSCTLFN_ARGS)
-{
-	int expose_address, error;
-	struct sysctlnode node;
-
-	node = *rnode;
-	node.sysctl_data = &expose_address;
-	expose_address = *(int *)rnode->sysctl_data;
-	error = sysctl_lookup(SYSCTLFN_CALL(&node));
-	if (error || newp == NULL)
-		return error;
-
-	if (kauth_authorize_system(l->l_cred, KAUTH_SYSTEM_KERNADDR,
-	    0, NULL, NULL, NULL))
-		return (EPERM);
-
-	*(int *)rnode->sysctl_data = expose_address;
-
-	return 0;
-}
-
-bool
-get_expose_address(struct proc *p)
-{
-	/* allow only if sysctl variable is set or privileged */
-	return kern_expose_address || kauth_authorize_process(kauth_cred_get(),
-	    KAUTH_PROCESS_CANSEE, p,
-	    KAUTH_ARG(KAUTH_REQ_PROCESS_CANSEE_KPTR), NULL, NULL) == 0;
 }
 
 static int

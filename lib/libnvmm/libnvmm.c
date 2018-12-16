@@ -1,4 +1,4 @@
-/*	$NetBSD: libnvmm.c,v 1.3 2018/11/29 19:55:20 maxv Exp $	*/
+/*	$NetBSD: libnvmm.c,v 1.5 2018/12/15 13:39:43 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -57,89 +57,28 @@ static size_t nvmm_page_size = 0;
 
 /* -------------------------------------------------------------------------- */
 
-static int
-__area_unmap(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa,
- size_t size)
-{
-	struct nvmm_ioc_gpa_unmap args;
-	int ret;
-
-	args.machid = mach->machid;
-	args.gpa = gpa;
-	args.size = size;
-
-	ret = ioctl(nvmm_fd, NVMM_IOC_GPA_UNMAP, &args);
-	if (ret == -1)
-		return -1;
-
-	ret = munmap((void *)hva, size);
-
-	return ret;
-}
-
-static int
-__area_dig_hole(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa,
+static bool
+__area_isvalid(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa,
     size_t size)
 {
 	area_list_t *areas = mach->areas;
-	area_t *ent, *tmp, *nxt;
-	size_t diff;
+	area_t *ent;
 
-	LIST_FOREACH_SAFE(ent, areas, list, nxt) {
-		/* Case 1. */
-		if ((gpa < ent->gpa) && (gpa + size > ent->gpa)) {
-			diff = (gpa + size) - ent->gpa;
-			if (__area_unmap(mach, ent->hva, ent->gpa, diff) == -1) {
-				return -1;
-			}
-			ent->gpa  += diff;
-			ent->hva  += diff;
-			ent->size -= diff;
+	LIST_FOREACH(ent, areas, list) {
+		/* Collision on GPA */
+		if (gpa >= ent->gpa && gpa < ent->gpa + ent->size) {
+			return false;
 		}
-
-		/* Case 2. */
-		if ((gpa >= ent->gpa) && (gpa + size <= ent->gpa + ent->size)) {
-			/* First half. */
-			tmp = malloc(sizeof(*tmp));
-			tmp->gpa = ent->gpa;
-			tmp->hva = ent->hva;
-			tmp->size = (gpa - ent->gpa);
-			LIST_INSERT_BEFORE(ent, tmp, list);
-			/* Second half. */
-			ent->gpa  += tmp->size;
-			ent->hva  += tmp->size;
-			ent->size -= tmp->size;
-			diff = size;
-			if (__area_unmap(mach, ent->hva, ent->gpa, diff) == -1) {
-				return -1;
-			}
-			ent->gpa  += diff;
-			ent->hva  += diff;
-			ent->size -= diff;
+		if (gpa + size > ent->gpa &&
+		    gpa + size <= ent->gpa + ent->size) {
+			return false;
 		}
-
-		/* Case 3. */
-		if ((gpa < ent->gpa + ent->size) &&
-		    (gpa + size > ent->gpa + ent->size)) {
-			diff = (ent->gpa + ent->size) - gpa;
-			if (__area_unmap(mach, hva, gpa, diff) == -1) {
-				return -1;
-			}
-			ent->size -= diff;
-		}
-
-		/* Case 4. */
-		if ((gpa < ent->gpa + ent->size) &&
-		    (gpa + size > ent->gpa + ent->size)) {
-			if (__area_unmap(mach, ent->hva, ent->gpa, ent->size) == -1) {
-				return -1;
-			}
-			LIST_REMOVE(ent, list);
-			free(ent);
+		if (gpa <= ent->gpa && gpa + size >= ent->gpa + ent->size) {
+			return false;
 		}
 	}
 
-	return 0;
+	return true;
 }
 
 static int
@@ -147,7 +86,11 @@ __area_add(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa, size_t size)
 {
 	area_list_t *areas = mach->areas;
 	area_t *area;
-	int ret;
+
+	if (!__area_isvalid(mach, hva, gpa, size)) {
+		errno = EINVAL;
+		return -1;
+	}
 
 	area = malloc(sizeof(*area));
 	if (area == NULL)
@@ -156,14 +99,27 @@ __area_add(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa, size_t size)
 	area->hva = hva;
 	area->size = size;
 
-	ret = __area_dig_hole(mach, hva, gpa, size);
-	if (ret == -1) {
-		free(area);
-		return -1;
+	LIST_INSERT_HEAD(areas, area, list);
+
+	return 0;
+}
+
+static int
+__area_delete(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa,
+    size_t size)
+{
+	area_list_t *areas = mach->areas;
+	area_t *ent, *nxt;
+
+	LIST_FOREACH_SAFE(ent, areas, list, nxt) {
+		if (hva == ent->hva && gpa == ent->gpa && size == ent->size) {
+			LIST_REMOVE(ent, list);
+			free(ent);
+			return 0;
+		}
 	}
 
-	LIST_INSERT_HEAD(areas, area, list);
-	return 0;
+	return -1;
 }
 
 static void
@@ -450,11 +406,70 @@ int
 nvmm_gpa_unmap(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa,
     size_t size)
 {
+	struct nvmm_ioc_gpa_unmap args;
+	int ret;
+
 	if (nvmm_init() == -1) {
 		return -1;
 	}
 
-	return __area_dig_hole(mach, hva, gpa, size);
+	ret = __area_delete(mach, hva, gpa, size);
+	if (ret == -1)
+		return -1;
+
+	args.machid = mach->machid;
+	args.gpa = gpa;
+	args.size = size;
+
+	ret = ioctl(nvmm_fd, NVMM_IOC_GPA_UNMAP, &args);
+	if (ret == -1) {
+		/* Can't recover. */
+		abort();
+	}
+
+	return 0;
+}
+
+int
+nvmm_hva_map(struct nvmm_machine *mach, uintptr_t hva, size_t size)
+{
+	struct nvmm_ioc_hva_map args;
+	int ret;
+
+	if (nvmm_init() == -1) {
+		return -1;
+	}
+
+	args.machid = mach->machid;
+	args.hva = hva;
+	args.size = size;
+
+	ret = ioctl(nvmm_fd, NVMM_IOC_HVA_MAP, &args);
+	if (ret == -1)
+		return -1;
+
+	return 0;
+}
+
+int
+nvmm_hva_unmap(struct nvmm_machine *mach, uintptr_t hva, size_t size)
+{
+	struct nvmm_ioc_hva_map args;
+	int ret;
+
+	if (nvmm_init() == -1) {
+		return -1;
+	}
+
+	args.machid = mach->machid;
+	args.hva = hva;
+	args.size = size;
+
+	ret = ioctl(nvmm_fd, NVMM_IOC_HVA_MAP, &args);
+	if (ret == -1)
+		return -1;
+
+	return 0;
 }
 
 /*
@@ -473,15 +488,10 @@ nvmm_gpa_to_hva(struct nvmm_machine *mach, gpaddr_t gpa, uintptr_t *hva)
 	}
 
 	LIST_FOREACH(ent, areas, list) {
-		if (gpa < ent->gpa) {
-			continue;
+		if (gpa >= ent->gpa && gpa < ent->gpa + ent->size) {
+			*hva = ent->hva + (gpa - ent->gpa);
+			return 0;
 		}
-		if (gpa >= ent->gpa + ent->size) {
-			continue;
-		}
-
-		*hva = ent->hva + (gpa - ent->gpa);
-		return 0;
 	}
 
 	errno = ENOENT;

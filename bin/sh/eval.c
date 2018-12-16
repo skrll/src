@@ -1,4 +1,4 @@
-/*	$NetBSD: eval.c,v 1.165 2018/11/30 23:22:45 kre Exp $	*/
+/*	$NetBSD: eval.c,v 1.168 2018/12/03 06:43:19 kre Exp $	*/
 
 /*-
  * Copyright (c) 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)eval.c	8.9 (Berkeley) 6/8/95";
 #else
-__RCSID("$NetBSD: eval.c,v 1.165 2018/11/30 23:22:45 kre Exp $");
+__RCSID("$NetBSD: eval.c,v 1.168 2018/12/03 06:43:19 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -87,8 +87,10 @@ __RCSID("$NetBSD: eval.c,v 1.165 2018/11/30 23:22:45 kre Exp $");
 #endif
 
 
-STATIC enum skipstate evalskip;	/* != SKIPNONE if we are skipping commands */
-STATIC int skipcount;		/* number of levels to skip */
+STATIC struct skipsave s_k_i_p;
+#define	evalskip	(s_k_i_p.state)
+#define	skipcount	(s_k_i_p.count)
+
 STATIC int loopnest;		/* current loop nesting level */
 STATIC int funcnest;		/* depth of function calls */
 STATIC int builtin_flags;	/* evalcommand flags for builtins */
@@ -278,6 +280,8 @@ evaltree(union node *n, int flags)
 		next = NULL;
 		CTRACE(DBG_EVAL, ("pid %d, evaltree(%p: %s(%d), %#x) called\n",
 		    getpid(), n, NODETYPENAME(n->type), n->type, flags));
+		if (n->type != NCMD && traps_invalid)
+			free_traps();
 		switch (n->type) {
 		case NSEMI:
 			evaltree(n->nbinary.ch1, sflags);
@@ -888,18 +892,11 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 	varflag = 1;
 	/* Expand arguments, ignoring the initial 'name=value' ones */
 	for (argp = cmd->ncmd.args ; argp ; argp = argp->narg.next) {
-		char *p = argp->narg.text;
-
-		line_number = argp->narg.lineno;
-		if (varflag && is_name(*p)) {
-			do {
-				p++;
-			} while (is_in_name(*p));
-			if (*p == '=')
-				continue;
-		}
-		expandarg(argp, &arglist, EXP_FULL | EXP_TILDE);
+		if (varflag && isassignment(argp->narg.text))
+			continue;
 		varflag = 0;
+		line_number = argp->narg.lineno;
+		expandarg(argp, &arglist, EXP_FULL | EXP_TILDE);
 	}
 	*arglist.lastp = NULL;
 
@@ -908,15 +905,8 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 	/* Now do the initial 'name=value' ones we skipped above */
 	varlist.lastp = &varlist.list;
 	for (argp = cmd->ncmd.args ; argp ; argp = argp->narg.next) {
-		char *p = argp->narg.text;
-
 		line_number = argp->narg.lineno;
-		if (!is_name(*p))
-			break;
-		do
-			p++;
-		while (is_in_name(*p));
-		if (*p != '=')
+		if (!isassignment(argp->narg.text))
 			break;
 		expandarg(argp, &varlist, EXP_VARTILDE);
 	}
@@ -1040,6 +1030,9 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 			cmdentry.cmdtype = CMDBUILTIN;
 	}
 
+	if (traps_invalid && cmdentry.cmdtype != CMDSPLBLTIN)
+		free_traps();
+
 	/* Fork off a child process if necessary. */
 	if (cmd->ncmd.backgnd || (have_traps() && (flags & EV_EXIT) != 0)
 	 || ((cmdentry.cmdtype == CMDNORMAL || cmdentry.cmdtype == CMDUNKNOWN)
@@ -1099,7 +1092,8 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 				}
 				savehandler = handler;
 				handler = &jmploc;
-				listmklocal(varlist.list, VEXPORT | VNOFUNC);
+				listmklocal(varlist.list,
+				    VDOEXPORT | VEXPORT | VNOFUNC);
 				forkchild(jp, cmd, mode, vforked);
 				break;
 			default:
@@ -1203,7 +1197,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 			    cmdentry.lineno, cmdentry.lno_frel?" (=1)":"",
 			    funclinebase));
 		}
-		listmklocal(varlist.list, VEXPORT);
+		listmklocal(varlist.list, VDOEXPORT | VEXPORT);
 		/* stop shell blowing its stack */
 		if (++funcnest > 1000)
 			error("too many nested function calls");
@@ -1331,7 +1325,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 		    (vforked ? REDIR_VFORK : 0) | REDIR_KEEP);
 		if (!vforked)
 			for (sp = varlist.list ; sp ; sp = sp->next)
-				setvareq(sp->text, VEXPORT|VSTACK);
+				setvareq(sp->text, VDOEXPORT|VEXPORT|VSTACK);
 		envp = environment();
 		shellexec(argv, envp, path, cmdentry.u.index, vforked);
 		break;
@@ -1386,6 +1380,18 @@ enum skipstate
 current_skipstate(void)
 {
 	return evalskip;
+}
+
+void
+save_skipstate(struct skipsave *p)
+{
+	*p = s_k_i_p;
+}
+
+void
+restore_skipstate(const struct skipsave *p)
+{
+	s_k_i_p = *p;
 }
 
 void
@@ -1593,7 +1599,7 @@ execcmd(int argc, char **argv)
 		mflag = 0;
 		optschanged();
 		for (sp = cmdenviron; sp; sp = sp->next)
-			setvareq(sp->text, VEXPORT|VSTACK);
+			setvareq(sp->text, VDOEXPORT|VEXPORT|VSTACK);
 		shellexec(argv + 1, environment(), pathval(), 0, 0);
 	}
 	return 0;
