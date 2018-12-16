@@ -191,11 +191,6 @@ nitrogen6_platform_early_putchar(char c)
 	}
 }
 
-
-#define	SCU_DIAG_CONTROL		0x30
-#define	  SCU_DIAG_DISABLE_MIGBIT	  __BIT(0)
-
-
 void
 nitrogen6_mpstart(void)
 {

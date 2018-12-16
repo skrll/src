@@ -7,12 +7,12 @@ include		"arch/evbarm/conf/std.evbarm"
 
 include		"arch/evbarm/conf/files.overo"
 
+options 	ARM_GENERIC_TODR
+options 	ARM_INTR_IMPL="<arch/arm/omap/omap2_intr.h>"
 options 	CORTEX_PMC
-options 	__HAVE_FAST_SOFTINTS		# should be in types.h
+options 	MD_CPU_HATCH=gumstix_cpu_hatch
 options 	TPIDRPRW_IS_CURCPU
+options 	__HAVE_FAST_SOFTINTS		# should be in types.h
 
 makeoptions 	LOADADDRESS="0x80200000"
 makeoptions 	BOARDMKFRAG="${THISARM}/conf/mk.gumstix"
-
-options 	ARM_INTR_IMPL="<arch/arm/omap/omap2_intr.h>"
-options 	ARM_GENERIC_TODR

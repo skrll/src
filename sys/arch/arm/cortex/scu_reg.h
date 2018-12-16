@@ -42,6 +42,8 @@
 #define	SCU_CFG			0x04	// SCU Configuration Register
 #define	SCU_CPU_PWR_STS		0x08	// SCU CPU Power Status
 #define	SCU_INV_ALL_REG		0x0c	// SCU Invalidate All Registers in Secure State
+#define	SCU_DIAG_CONTROL	0x30
+
 #define	SCU_FILTER_START	0x40	// Filtering Start Address
 #define	SCU_FILTER_END		0x44	// Filtering End Address
 #define	SCU_ACCESS_CONTROL	0x50	// SCU Access Control
@@ -69,5 +71,7 @@
 #define	SCU_CFG_CPU1_SMP		__BIT(5)
 #define	SCU_CFG_CPU0_SMP		__BIT(4)
 #define	SCU_CFG_CPUMAX			__BITS(0,1)	// # of CPU - 1
+
+#define SCU_DIAG_DISABLE_MIGBIT	  __BIT(0)
 
 #endif /* _ARM_CORTEX_SCUREG_H_ */
