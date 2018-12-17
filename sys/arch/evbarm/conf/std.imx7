@@ -8,27 +8,24 @@ include		"arch/evbarm/conf/std.evbarm"
 # Pull in imx7 config definitions.
 include		"arch/evbarm/conf/files.imx7"
 
+options 	ARM_GENERIC_TODR
+options 	ARM_HAS_VBAR
+options 	ARM_INTR_IMPL="<arch/arm/imx/imx7_intr.h>"
+options 	CORTEX_PMC
+options 	CORTEX_PMC_CCNT_HZ=792000000
+options 	FPU_VFP
 options 	IMX7BOARD
 
-options 	ARM_HAS_VBAR
+options 	TPIDRPRW_IS_CURCPU
 options 	__HAVE_CPU_COUNTER
 options 	__HAVE_FAST_SOFTINTS		# should be in types.h
 options 	__HAVE_CPU_UAREA_ALLOC_IDLELWP
 options 	__HAVE_MM_MD_DIRECT_MAPPED_PHYS
-options 	TPIDRPRW_IS_CURCPU
 
 makeoptions 	CPUFLAGS="-mcpu=cortex-a7 -mfpu=neon"
 
-# To support easy transit to ../arch/arm/arm32
-options 	FPU_VFP
-options 	CORTEX_PMC
-options 	CORTEX_PMC_CCNT_HZ=792000000
-
+makeoptions 	BOARDMKFRAG="${THISARM}/conf/mk.imx7"
+makeoptions 	CPPFLAGS+="-I$S/../../../include"
 makeoptions 	KERNEL_BASE_PHYS="0x82000000"
 makeoptions 	KERNEL_BASE_VIRT="0x82000000"
 
-makeoptions 	BOARDMKFRAG="${THISARM}/conf/mk.imx7"
-makeoptions 	CPPFLAGS+="-I$S/../../../include"
-
-options 	ARM_INTR_IMPL="<arch/arm/imx/imx7_intr.h>"
-options 	ARM_GENERIC_TODR
