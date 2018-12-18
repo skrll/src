@@ -13,6 +13,7 @@ options 	CORTEX_PMC
 options 	MD_CPU_HATCH=gumstix_cpu_hatch
 options 	TPIDRPRW_IS_CURCPU
 options 	__HAVE_FAST_SOFTINTS		# should be in types.h
+options 	__HAVE_GENERIC_START
 
 makeoptions 	LOADADDRESS="0x80200000"
 makeoptions 	BOARDMKFRAG="${THISARM}/conf/mk.gumstix"
