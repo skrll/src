@@ -300,7 +300,6 @@ initarm(void *arg)
 	nitrogen6_setup_iomux();
 
 	consinit();
-//XXXNH
 	cpu_domains((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2)) | DOMAIN_CLIENT);
 
 #ifdef NO_POWERSAVE
