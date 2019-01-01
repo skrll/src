@@ -98,7 +98,7 @@ cpu_attach(device_t dv, cpuid_t id)
 
 		/* Get the CPU ID from coprocessor 15 */
 
-		ci->ci_cpuid = id;
+		ci->ci_cpuid = unit;
 		ci->ci_arm_cpuid = cpu_idnum();
 		ci->ci_arm_cputype = ci->ci_arm_cpuid & CPU_ID_CPU_MASK;
 		ci->ci_arm_cpurev = ci->ci_arm_cpuid & CPU_ID_REVISION_MASK;
@@ -110,7 +110,7 @@ cpu_attach(device_t dv, cpuid_t id)
 		KASSERT(cpu_info[unit] == NULL);
 		ci = kmem_zalloc(sizeof(*ci), KM_SLEEP);
 		ci->ci_cpl = IPL_HIGH;
-		ci->ci_cpuid = id;
+		ci->ci_cpuid = unit;
 		ci->ci_mpidr = armreg_mpidr_read();
 		if (ci->ci_mpidr & MPIDR_MT) {
 			ci->ci_smt_id = ci->ci_mpidr & MPIDR_AFF0;

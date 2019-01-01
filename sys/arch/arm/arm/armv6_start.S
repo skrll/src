@@ -755,6 +755,7 @@ ENTRY_NP(cpu_mpstart)
 	sub	sp, R_TMP2, R_VTOPDIFF
 
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
+	and	r4, #(MPIDR_AFF2|MPIDR_AFF1|MPIDR_AFF0)
 
 	VPRINTF("c: ")
 	VPRINTX(r4)
