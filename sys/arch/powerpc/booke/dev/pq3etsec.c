@@ -1,4 +1,4 @@
-/*	$NetBSD: pq3etsec.c,v 1.37 2018/09/03 16:29:26 riastradh Exp $	*/
+/*	$NetBSD: pq3etsec.c,v 1.39 2018/12/22 14:28:56 maxv Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -41,7 +41,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.37 2018/09/03 16:29:26 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.39 2018/12/22 14:28:56 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -2107,10 +2107,10 @@ pq3etsec_tx_offload(
 			return;
 		}
 
-		M_MOVE_PKTHDR(mn, m);
+		m_move_pkthdr(mn, m);
 		mn->m_next = m;
 		m = mn;
-		MH_ALIGN(m, sizeof(fcb));
+		m_align(m, sizeof(fcb));
 		m->m_len = sizeof(fcb);
 		*mp = m;
 	}
