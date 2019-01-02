@@ -833,7 +833,7 @@ armv7_mpcontinuation:
 
 	movw	r0, #:lower16:cpu_info
 	movt	r0, #:upper16:cpu_info		// get pointer to cpu_infos
-	ldr	r5, [r0, r4, lsl #2]		// load our cpu_info
+	ldr	r5, [r0, R_TMP2, lsl #2]	// load our cpu_info
 	ldr	r6, [r5, #CI_IDLELWP]		// get the idlelwp
 	ldr	r7, [r6, #L_PCB]		// now get its pcb
 	ldr	sp, [r7, #PCB_KSP]		// finally, we can load our SP
