@@ -160,6 +160,12 @@ ENTRY_NP(generic_start)
 #endif
 
 #ifdef VERBOSE_INIT_ARM
+	VPRINTF("\n\rmidr :")
+	mrc	p15, 0, r0, c0, c0, 0	// MIDR
+	VPRINTX(r0)
+	VPRINTF("\n\rmpidr:")
+	mrc	p15, 0, r0, c0, c0, 5	// MPIDR
+	VPRINTX(r0)
 	VPRINTF("\n\rttb0 :")
 	mrc	p15, 0, r0, c2, c0, 0	// TTBR0 read
 	VPRINTX(r0)
@@ -754,13 +760,17 @@ ENTRY_NP(cpu_mpstart)
 	ldr	R_TMP2, =start_stacks_top
 	sub	sp, R_TMP2, R_VTOPDIFF
 
+#ifdef VERBOSE_INIT_ARM
+	VPRINTF("\n\rmidr :")
+	mrc	p15, 0, r0, c0, c0, 0		// MIDR
+	VPRINTX(r0)
+	VPRINTF("\n\rmpidr:")
+	mrc	p15, 0, r0, c0, c0, 5		// MPIDR
+	VPRINTX(r0)
+#endif
+
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
 	and	r4, #(MPIDR_AFF2|MPIDR_AFF1|MPIDR_AFF0)
-
-	VPRINTF("c: ")
-	VPRINTX(r4)
-	XPUTC('\n')
-	XPUTC('\r')
 
 	mov	r0, #0
 	ldr	r1, =cpu_mpidr
@@ -779,7 +789,7 @@ ENTRY_NP(cpu_mpstart)
 2:
 	mov	R_TMP2, r0			// save cpu_index for later
 
-	VPRINTF("i: ")
+	VPRINTF("index: ")
 	VPRINTX(R_TMP2)
 	XPUTC('\n')
 	XPUTC('\r')
