@@ -247,7 +247,6 @@ arm_fdt_cpu_bootstrap(void)
 			continue;
 		if (mpidr == bp_mpidr)
 			continue; 	/* BP already started */
-printf("%s: cpuindex %d mpidr %llx\n", __func__, cpuindex, mpidr);
 
 		KASSERT(cpuindex < MAXCPUS);
 		cpu_mpidr[cpuindex] = mpidr;
