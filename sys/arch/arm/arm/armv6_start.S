@@ -847,7 +847,7 @@ armv7_mpcontinuation:
 	str	r6, [r5, #CI_CURLWP]		// and note we are running on it
 
 	mov	r0, r5				// pass cpu_info
-	mov	r1, r4				// pass cpu_id
+	mov	r1, R_TMP2			// pass cpu_index
 	movw	r2, #:lower16:MD_CPU_HATCH	// pass md_cpu_hatch
 	movt	r2, #:upper16:MD_CPU_HATCH	// pass md_cpu_hatch
 	bl	_C_LABEL(cpu_hatch)
