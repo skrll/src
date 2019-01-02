@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1196 2018/12/30 00:42:47 kre Exp $
+# $NetBSD: mi,v 1.1198 2019/01/01 18:46:09 maya Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
