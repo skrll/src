@@ -704,7 +704,7 @@ mm_md_physacc(paddr_t pa, vm_prot_t prot)
 vaddr_t
 cpu_uarea_alloc_idlelwp(struct cpu_info *ci)
 {
-	const vaddr_t va = idlestack.pv_va + ci->ci_cpuid * USPACE;
+	const vaddr_t va = idlestack.pv_va + cpu_index(ci) * USPACE;
 	// printf("%s: %s: va=%lx\n", __func__, ci->ci_data.cpu_name, va);
 	return va;
 }
