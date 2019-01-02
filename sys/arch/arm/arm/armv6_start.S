@@ -625,7 +625,7 @@ armv7_init:
 	.ltorg
 
 /*
- * Transititions te CPU to using the TTB passed in r0.
+ * Transititions the CPU to using the TTB passed in r0.
  *
  * Uses the following callee saved registers:
  *
