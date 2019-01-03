@@ -1,4 +1,4 @@
-/*	$NetBSD: armv6_start.S,v 1.1 2018/10/18 09:01:52 skrll Exp $	*/
+/*	$NetBSD: armv6_start.S,v 1.4 2019/01/02 16:27:04 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2017, 2018 The NetBSD Foundation, Inc.
@@ -160,6 +160,12 @@ ENTRY_NP(generic_start)
 #endif
 
 #ifdef VERBOSE_INIT_ARM
+	VPRINTF("\n\rmidr :")
+	mrc	p15, 0, r0, c0, c0, 0	// MIDR
+	VPRINTX(r0)
+	VPRINTF("\n\rmpidr:")
+	mrc	p15, 0, r0, c0, c0, 5	// MPIDR
+	VPRINTX(r0)
 	VPRINTF("\n\rttb0 :")
 	mrc	p15, 0, r0, c2, c0, 0	// TTBR0 read
 	VPRINTX(r0)
@@ -625,7 +631,7 @@ armv7_init:
 	.ltorg
 
 /*
- * Transititions te CPU to using the TTB passed in r0.
+ * Transititions the CPU to using the TTB passed in r0.
  *
  * Uses the following callee saved registers:
  *
@@ -754,13 +760,17 @@ ENTRY_NP(cpu_mpstart)
 	ldr	R_TMP2, =start_stacks_top
 	sub	sp, R_TMP2, R_VTOPDIFF
 
+#ifdef VERBOSE_INIT_ARM
+	VPRINTF("\n\rmidr :")
+	mrc	p15, 0, r0, c0, c0, 0		// MIDR
+	VPRINTX(r0)
+	VPRINTF("\n\rmpidr:")
+	mrc	p15, 0, r0, c0, c0, 5		// MPIDR
+	VPRINTX(r0)
+#endif
+
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
 	and	r4, #(MPIDR_AFF2|MPIDR_AFF1|MPIDR_AFF0)
-
-	VPRINTF("c: ")
-	VPRINTX(r4)
-	XPUTC('\n')
-	XPUTC('\r')
 
 	mov	r0, #0
 	ldr	r1, =cpu_mpidr
@@ -779,7 +789,7 @@ ENTRY_NP(cpu_mpstart)
 2:
 	mov	R_TMP2, r0			// save cpu_index for later
 
-	VPRINTF("i: ")
+	VPRINTF("index: ")
 	VPRINTX(R_TMP2)
 	XPUTC('\n')
 	XPUTC('\r')
@@ -833,7 +843,7 @@ armv7_mpcontinuation:
 
 	movw	r0, #:lower16:cpu_info
 	movt	r0, #:upper16:cpu_info		// get pointer to cpu_infos
-	ldr	r5, [r0, r4, lsl #2]		// load our cpu_info
+	ldr	r5, [r0, R_TMP2, lsl #2]	// load our cpu_info
 	ldr	r6, [r5, #CI_IDLELWP]		// get the idlelwp
 	ldr	r7, [r6, #L_PCB]		// now get its pcb
 	ldr	sp, [r7, #PCB_KSP]		// finally, we can load our SP
@@ -847,7 +857,7 @@ armv7_mpcontinuation:
 	str	r6, [r5, #CI_CURLWP]		// and note we are running on it
 
 	mov	r0, r5				// pass cpu_info
-	mov	r1, r4				// pass cpu_id
+	mov	r1, R_TMP2			// pass cpu_index
 	movw	r2, #:lower16:MD_CPU_HATCH	// pass md_cpu_hatch
 	movt	r2, #:upper16:MD_CPU_HATCH	// pass md_cpu_hatch
 	bl	_C_LABEL(cpu_hatch)
@@ -984,13 +994,6 @@ armv6_mmuinit:
 	nop
 	nop
 
-#if 0
-	VPRINTF("MMU\n\r")
-
-	VPRINTX(r4)
-	VPRINTF("\n\r")
-#endif
-
 	mov	pc, r4
 
 	.ltorg
@@ -1048,7 +1051,7 @@ ENTRY_NP(generic_vprint)
 	pop	{r4}
 	add	sp, sp, #4
 	mov	pc, lr
-ASEND(generic_prints)
+ASEND(generic_vprint)
 
 ENTRY_NP(generic_prints)
 	push	{r4, lr}

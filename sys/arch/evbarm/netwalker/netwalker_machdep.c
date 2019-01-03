@@ -259,8 +259,6 @@ initarm(void *arg)
 
 	cpu_domains((DOMAIN_CLIENT << (PMAP_DOMAIN_KERNEL*2)) | DOMAIN_CLIENT);
 
-	/* Register devmap for devices we mapped in start */
-	pmap_devmap_register(netwalker_devmap);
 	setup_ioports();
 
 	consinit();

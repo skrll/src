@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1085 2018/12/03 19:15:35 christos Exp $
+#	$NetBSD: bsd.own.mk,v 1.1092 2019/01/02 16:08:53 christos Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -149,7 +149,7 @@ EXTERNAL_GDB_SUBDIR=		/does/not/exist
 #
 # What binutils is used?
 #
-HAVE_BINUTILS?=	227
+HAVE_BINUTILS?=	231
 
 .if ${HAVE_BINUTILS} == 231
 EXTERNAL_BINUTILS_SUBDIR=	binutils
@@ -336,8 +336,9 @@ LDFLAGS+=	--sysroot=/
 .endif
 
 DBSYM=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-dbsym
-ELF2AOUT=	${TOOLDIR}/bin/${_TOOL_PREFIX}m68k-elf2aout
-ELF2ECOFF=	${TOOLDIR}/bin/${_TOOL_PREFIX}mips-elf2ecoff
+ARM_ELF2AOUT=	${TOOLDIR}/bin/${_TOOL_PREFIX}arm-elf2aout
+M68K_ELF2AOUT=	${TOOLDIR}/bin/${_TOOL_PREFIX}m68k-elf2aout
+MIPS_ELF2ECOFF=	${TOOLDIR}/bin/${_TOOL_PREFIX}mips-elf2ecoff
 INSTALL=	${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-install
 LEX=		${TOOLDIR}/bin/${_TOOL_PREFIX}lex
 LINT=		CC=${CC:Q} ${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-lint
@@ -403,6 +404,7 @@ TOOL_MANDOC_HTML=	${TOOLDIR}/bin/${_TOOL_PREFIX}mandoc -Thtml
 TOOL_MANDOC_LINT=	${TOOLDIR}/bin/${_TOOL_PREFIX}mandoc -Tlint
 TOOL_MDSETIMAGE=	${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-mdsetimage
 TOOL_MENUC=		MENUDEF=${TOOLDIR}/share/misc ${TOOLDIR}/bin/${_TOOL_PREFIX}menuc
+TOOL_ARMELF2AOUT=	${TOOLDIR}/bin/${_TOOL_PREFIX}arm-elf2aout
 TOOL_M68KELF2AOUT=	${TOOLDIR}/bin/${_TOOL_PREFIX}m68k-elf2aout
 TOOL_MIPSELF2ECOFF=	${TOOLDIR}/bin/${_TOOL_PREFIX}mips-elf2ecoff
 TOOL_MKCSMAPPER=	${TOOLDIR}/bin/${_TOOL_PREFIX}mkcsmapper
@@ -516,6 +518,7 @@ TOOL_MANDOC_HTML=	mandoc -Thtml
 TOOL_MANDOC_LINT=	mandoc -Tlint
 TOOL_MDSETIMAGE=	mdsetimage
 TOOL_MENUC=		menuc
+TOOL_ARMELF2AOUT=	arm-elf2aout
 TOOL_M68KELF2AOUT=	m68k-elf2aout
 TOOL_MIPSELF2ECOFF=	mips-elf2ecoff
 TOOL_MKCSMAPPER=	mkcsmapper
@@ -1426,7 +1429,7 @@ X11SRCDIR.${_lib}?=		${X11SRCDIRMIT}/lib${_lib}/dist
 X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
 .endfor
 
-# During transition from xorg-server 1.10 to 1.18
+# During transition from xorg-server 1.10 to 1.20
 .if \
     ${MACHINE} == "alpha"	|| \
     ${MACHINE} == "amiga"	|| \
@@ -1442,10 +1445,10 @@ X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
     ${MACHINE} == "zaurus"
 HAVE_XORG_SERVER_VER?=110
 .else
-HAVE_XORG_SERVER_VER?=118
+HAVE_XORG_SERVER_VER?=120
 .endif
 
-.if ${HAVE_XORG_SERVER_VER} == "118"
+.if ${HAVE_XORG_SERVER_VER} == "120"
 XORG_SERVER_SUBDIR?=xorg-server
 . if ${MACHINE} == "amd64" || ${MACHINE} == "i386"
 HAVE_XORG_GLAMOR?=	yes
@@ -1496,7 +1499,7 @@ X11SRCDIR.xf86-input-${_i}?=	${X11SRCDIRMIT}/xf86-input-${_i}/dist
 
 # xf86-video-modesetting move into the server build.
 EXTRA_DRIVERS=
-.if ${HAVE_XORG_SERVER_VER} == "118"
+.if ${HAVE_XORG_SERVER_VER} == "120"
 X11SRCDIR.xf86-video-modesetting=${X11SRCDIR.xorg-server}/hw/xfree86/drivers/modesetting
 .else
 EXTRA_DRIVERS=	modesetting 

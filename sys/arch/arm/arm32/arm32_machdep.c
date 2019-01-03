@@ -704,7 +704,7 @@ mm_md_physacc(paddr_t pa, vm_prot_t prot)
 vaddr_t
 cpu_uarea_alloc_idlelwp(struct cpu_info *ci)
 {
-	const vaddr_t va = idlestack.pv_va + ci->ci_cpuid * USPACE;
+	const vaddr_t va = idlestack.pv_va + cpu_index(ci) * USPACE;
 	// printf("%s: %s: va=%lx\n", __func__, ci->ci_data.cpu_name, va);
 	return va;
 }
@@ -736,6 +736,23 @@ cpu_init_secondary_processor(int cpuindex)
 	VPRINTS(" ttb");
 
 	cpu_setup(boot_args);
+
+#if 0
+
+	// cpu_mpidr might not be populated
+
+	uint32_t mpidr = armreg_mpidr_read();
+	KASSERTMSG(mpidr == cpu_mpidr[cpuindex], "mpidr %x cpuindex %d ... %x",
+	    mpidr, cpuindex, cpu_mpidr[cpuindex]);
+
+	const u_int cpuno = __SHIFTOUT(mpidr, MPIDR_AFF0);
+	const u_int clusterno = __SHIFTOUT(mpidr, MPIDR_AFF1);
+
+	if (clusterno != cpu_bootcluster && cpuno == 0) {
+		// CCI stuff
+	}
+#endif
+
 
 #ifdef ARM_MMU_EXTENDED
 	/*

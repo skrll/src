@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1219 2018/12/19 13:57:52 maxv Exp $
+#	$NetBSD: files,v 1.1221 2018/12/29 11:30:12 maxv Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -152,7 +152,6 @@ defflag	opt_compat_netbsd.h	COMPAT_10: COMPAT_11, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_09: COMPAT_10, COMPAT_NETBSD
 defflag				COMPAT_OSSAUDIO
 defflag				COMPAT_FREEBSD: COMPAT_30
-defflag				COMPAT_IBCS2
 defflag				COMPAT_LINUX: COMPAT_NETBSD
 defflag				COMPAT_OSF1
 defflag				COMPAT_SUNOS: COMPAT_30
@@ -337,6 +336,7 @@ define	onewirebus	{ }
 define 	pckbport	{[slot = -1]}
 define	pckbport_machdep_cnattach
 define	firmload
+define	ipmibus		{ }
 
 # speaker devices, attaches to audio or pcppi drivers
 device	spkr: wsbelldev
@@ -1466,6 +1466,10 @@ include "dev/dm/files.dm"
 
 # LED framework
 file	dev/led.c			leds
+
+# IPMI
+device	ipmi: sysmon_envsys, sysmon_wdog
+attach	ipmi at ipmibus
 
 #
 # File systems

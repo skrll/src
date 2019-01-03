@@ -1,4 +1,4 @@
-/* $NetBSD: cpu_fdt.c,v 1.16 2018/10/18 09:01:52 skrll Exp $ */
+/* $NetBSD: cpu_fdt.c,v 1.17 2019/01/02 16:13:49 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "psci_fdt.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.16 2018/10/18 09:01:52 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.17 2019/01/02 16:13:49 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -247,7 +247,6 @@ arm_fdt_cpu_bootstrap(void)
 			continue;
 		if (mpidr == bp_mpidr)
 			continue; 	/* BP already started */
-printf("%s: cpuindex %d mpidr %llx\n", __func__, cpuindex, mpidr);
 
 		KASSERT(cpuindex < MAXCPUS);
 		cpu_mpidr[cpuindex] = mpidr;
