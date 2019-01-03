@@ -1,4 +1,4 @@
-/*	$NetBSD: key.c,v 1.257 2018/08/23 01:55:38 ozaki-r Exp $	*/
+/*	$NetBSD: key.c,v 1.260 2018/12/26 08:58:51 knakahara Exp $	*/
 /*	$FreeBSD: key.c,v 1.3.2.3 2004/02/14 22:23:23 bms Exp $	*/
 /*	$KAME: key.c,v 1.191 2001/06/27 10:46:49 sakane Exp $	*/
 
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: key.c,v 1.257 2018/08/23 01:55:38 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: key.c,v 1.260 2018/12/26 08:58:51 knakahara Exp $");
 
 /*
  * This code is referred to RFC 2367
@@ -1972,6 +1972,20 @@ _key_msg2sp(const struct sadb_x_policy *xpl0, size_t len, int *error,
 		(*p_isr)->level = xisr->sadb_x_ipsecrequest_level;
 
 		/* set IP addresses if there */
+		/*
+		 * NOTE:
+		 * MOBIKE Extensions for PF_KEY draft says:
+		 *     If tunnel mode is specified, the sadb_x_ipsecrequest
+		 *     structure is followed by two sockaddr structures that
+		 *     define the tunnel endpoint addresses.  In the case that
+		 *     transport mode is used, no additional addresses are
+		 *     specified.
+		 * see: https://tools.ietf.org/html/draft-schilcher-mobike-pfkey-extension-01
+		 *
+		 * And then, the IP addresses will be set by
+		 * ipsec_fill_saidx_bymbuf() from packet in transport mode.
+		 * This behavior is used by NAT-T enabled ipsecif(4).
+		 */
 		if (xisr->sadb_x_ipsecrequest_len > sizeof(*xisr)) {
 			const struct sockaddr *paddr;
 
@@ -4553,13 +4567,13 @@ key_saidx_match(
 		sa1dst = &saidx1->dst.sa;
 		/*
 		 * If NAT-T is enabled, check ports for tunnel mode.
-		 * Don't do it for transport mode, as there is no
-		 * port information available in the SP.
-		 * Also don't check ports if they are set to zero
+		 * For ipsecif(4), check ports for transport mode, too.
+		 * Don't check ports if they are set to zero
 		 * in the SPD: This means we have a non-generated
 		 * SPD which can't know UDP ports.
 		 */
-		if (saidx1->mode == IPSEC_MODE_TUNNEL)
+		if (saidx1->mode == IPSEC_MODE_TUNNEL ||
+		    saidx1->mode == IPSEC_MODE_TRANSPORT)
 			chkport = PORT_LOOSE;
 		else
 			chkport = PORT_NONE;
@@ -6395,7 +6409,7 @@ key_getcomb_esp(int mflag)
 			    "l=%u > MLEN=%lu", l, (u_long) MLEN);
 			MGET(m, mflag, MT_DATA);
 			if (m) {
-				M_ALIGN(m, l);
+				m_align(m, l);
 				m->m_len = l;
 				m->m_next = NULL;
 				memset(mtod(m, void *), 0, m->m_len);
@@ -6495,7 +6509,7 @@ key_getcomb_ah(int mflag)
 			    "l=%u > MLEN=%lu", l, (u_long) MLEN);
 			MGET(m, mflag, MT_DATA);
 			if (m) {
-				M_ALIGN(m, l);
+				m_align(m, l);
 				m->m_len = l;
 				m->m_next = NULL;
 			}
@@ -6545,7 +6559,7 @@ key_getcomb_ipcomp(int mflag)
 			    "l=%u > MLEN=%lu", l, (u_long) MLEN);
 			MGET(m, mflag, MT_DATA);
 			if (m) {
-				M_ALIGN(m, l);
+				m_align(m, l);
 				m->m_len = l;
 				m->m_next = NULL;
 			}

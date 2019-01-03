@@ -1,4 +1,4 @@
-/*	$NetBSD: armv6_start.S,v 1.1 2018/10/18 09:01:52 skrll Exp $	*/
+/*	$NetBSD: armv6_start.S,v 1.4 2019/01/02 16:27:04 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2017, 2018 The NetBSD Foundation, Inc.
@@ -480,6 +480,7 @@ generic_startv6:
 #else
 #define CPU_CONTROL_EX_BEND_SET		CPU_CONTROL_EX_BEND
 #endif
+
 #ifdef ARM32_DISABLE_ALIGNMENT_FAULTS
 #define CPU_CONTROL_AFLT_ENABLE_CLR	CPU_CONTROL_AFLT_ENABLE
 #define CPU_CONTROL_AFLT_ENABLE_SET	0
@@ -487,6 +488,7 @@ generic_startv6:
 #define CPU_CONTROL_AFLT_ENABLE_CLR	0
 #define CPU_CONTROL_AFLT_ENABLE_SET	CPU_CONTROL_AFLT_ENABLE
 #endif
+
 #ifdef ARM_MMU_EXTENDED
 #define CPU_CONTROL_XP_ENABLE_CLR	0
 #define CPU_CONTROL_XP_ENABLE_SET	CPU_CONTROL_XP_ENABLE
@@ -667,16 +669,15 @@ armv7_mmuinit:
 
 
 #if 0
-//XXXNH FreeBSD
 
-288	/*
-289	 * Set TEX remap registers
-290	 *  - All is set to uncacheable memory
-291	 */
-292	ldr	r0, =0xAAAAA
-293	mcr	CP15_PRRR(r0)
-294	mov	r0, #0
-295	mcr	CP15_NMRR(r0)
+/*
+ * Set TEX remap registers
+ *  - All is set to uncacheable memory
+ */
+	ldr	r0, =0xAAAAA
+	mcr	CP15_PRRR(r0)
+	mov	r0, #0
+	mcr	CP15_NMRR(r0)
 #endif
 
 	XPUTC(#'I')
@@ -758,19 +759,8 @@ ENTRY_NP(cpu_mpstart)
 	XPUTC('\n')
 	XPUTC('\r')
 
-#if 0
-	// We haven't used anything from memory yet so we can invalidate the
-	// L1 cache without fear of losing valuable data.  Afterwards, we can
-	// flush icache without worrying about anything getting written back
-	// to memory.
-	bl	armv7_dcache_l1inv_all		// toss-dcache
-	bl	armv7_icache_inv_all		// toss i-cache after d-cache
-
-#endif
-
 	// disables and clears caches
 	bl	armv7_init
-
 
 	movw	r0, #:lower16:TEMP_L1_TABLE
 	movt	r0, #:upper16:TEMP_L1_TABLE
@@ -970,13 +960,6 @@ armv6_mmuinit:
 	nop
 	nop
 
-#if 0
-	VPRINTF("MMU\n\r")
-
-	VPRINTX(r4)
-	VPRINTF("\n\r")
-#endif
-
 	mov	pc, r4
 
 	.ltorg
@@ -1034,7 +1017,7 @@ ENTRY_NP(generic_vprint)
 	pop	{r4}
 	add	sp, sp, #4
 	mov	pc, lr
-ASEND(generic_prints)
+ASEND(generic_vprint)
 
 ENTRY_NP(generic_prints)
 	push	{r4, lr}
