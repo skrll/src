@@ -1,4 +1,4 @@
-/*	$NetBSD: armv6_start.S,v 1.1 2018/10/18 09:01:52 skrll Exp $	*/
+/*	$NetBSD: armv6_start.S,v 1.4 2019/01/02 16:27:04 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2017, 2018 The NetBSD Foundation, Inc.
@@ -994,13 +994,6 @@ armv6_mmuinit:
 	nop
 	nop
 
-#if 0
-	VPRINTF("MMU\n\r")
-
-	VPRINTX(r4)
-	VPRINTF("\n\r")
-#endif
-
 	mov	pc, r4
 
 	.ltorg
@@ -1058,7 +1051,7 @@ ENTRY_NP(generic_vprint)
 	pop	{r4}
 	add	sp, sp, #4
 	mov	pc, lr
-ASEND(generic_prints)
+ASEND(generic_vprint)
 
 ENTRY_NP(generic_prints)
 	push	{r4, lr}
