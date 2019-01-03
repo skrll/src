@@ -716,8 +716,9 @@ cpu_uarea_alloc_idlelwp(struct cpu_info *ci)
  *
  * printf isn't available to us for a number of reasons.
  *
- * -  kprint_init has been called and printf will try to take locks which we can't
- *    do just yet because bootstrap translation tables do not allowing caching.
+ * -  kprint_init has been called and printf will try to take locks which we
+ *    can't  do just yet because bootstrap translation tables do not allowing
+ *    caching.
  *
  * -  kmutex(9) relies on curcpu which isn't setup yet.
  *
@@ -742,10 +743,10 @@ cpu_init_secondary_processor(int cpuindex)
 	 */
 	KASSERT((armreg_contextidr_read() & 0xff) == 0);
 	KASSERT(armreg_ttbcr_read() == __SHIFTIN(1, TTBCR_S_N));
+
 	/*
 	 * Disable lookups via TTBR0 until there is an activated pmap.
 	 */
-
 	armreg_ttbcr_write(armreg_ttbcr_read() | TTBCR_S_PD0);
 	cpu_setttb(pmap_kernel()->pm_l1_pa , KERNEL_PID);
 	arm_isb();
@@ -772,7 +773,7 @@ cpu_init_secondary_processor(int cpuindex)
 
 	VPRINTS(" hatched=");
 	VPRINTX(arm_cpu_hatched);
-	VPRINTF("\n\r");
+	VPRINTS("\n\r");
 
 	/* return to assembly to Wait for cpu_boot_secondary_processors */
 }
