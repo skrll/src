@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.99 2018/10/25 07:13:55 skrll Exp $	*/
+/*	$NetBSD: cpu.h,v 1.100 2019/01/03 10:26:41 skrll Exp $	*/
 
 /*
  * Copyright (c) 1994-1996 Mark Brinicombe.

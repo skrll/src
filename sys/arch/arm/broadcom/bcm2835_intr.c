@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_intr.c,v 1.15 2017/12/10 21:38:26 skrll Exp $	*/
+/*	$NetBSD: bcm2835_intr.c,v 1.16 2019/01/03 10:26:41 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2015 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_intr.c,v 1.15 2017/12/10 21:38:26 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_intr.c,v 1.16 2019/01/03 10:26:41 skrll Exp $");
 
 #define _INTR_PRIVATE
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: arm32_machdep.c,v 1.124 2018/10/19 08:30:57 skrll Exp $	*/
+/*	$NetBSD: arm32_machdep.c,v 1.125 2019/01/03 10:26:41 skrll Exp $	*/
 
 /*
  * Copyright (c) 1994-1998 Mark Brinicombe.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.124 2018/10/19 08:30:57 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.125 2019/01/03 10:26:41 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_arm_start.h"
@@ -731,7 +731,7 @@ cpu_init_secondary_processor(int cpuindex)
 	cpu_domains(DOMAIN_DEFAULT);
 	cpu_idcache_wbinv_all();
 
-	VPRINTS(" index ");
+	VPRINTS("index: ");
 	VPRINTX(cpuindex);
 	VPRINTS(" ttb");
 

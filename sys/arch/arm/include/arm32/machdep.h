@@ -1,4 +1,4 @@
-/* $NetBSD: machdep.h,v 1.27 2018/10/18 09:01:52 skrll Exp $ */
+/* $NetBSD: machdep.h,v 1.28 2019/01/03 10:26:41 skrll Exp $ */
 
 #ifndef _ARM32_MACHDEP_H_
 #define _ARM32_MACHDEP_H_
