@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1092 2019/01/02 16:08:53 christos Exp $
+#	$NetBSD: bsd.own.mk,v 1.1094 2019/01/09 23:52:29 mrg Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -1442,6 +1442,7 @@ X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
     ${MACHINE} == "newsmips"	|| \
     ${MACHINE} == "sgimips"	|| \
     ${MACHINE} == "vax"		|| \
+    ${MACHINE} == "x68k"	|| \
     ${MACHINE} == "zaurus"
 HAVE_XORG_SERVER_VER?=110
 .else
@@ -1513,7 +1514,7 @@ EXTRA_DRIVERS=	modesetting
 	r128 rendition \
 	s3 s3virge savage siliconmotion sis suncg14 \
 	suncg6 sunffb sunleo suntcx \
-	tdfx tga trident tseng vesa vga vmware wsfb xgi
+	tdfx tga trident tseng vboxvideo vesa vga vmware wsfb xgi
 X11SRCDIR.xf86-video-${_v}?=	${X11SRCDIRMIT}/xf86-video-${_v}/dist
 .endfor
 
