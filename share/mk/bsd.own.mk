@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1093 2019/01/03 17:41:26 christos Exp $
+#	$NetBSD: bsd.own.mk,v 1.1095 2019/01/19 12:58:37 mrg Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -72,6 +72,8 @@ MKGCCCMDS?=	no
 #
 .if ${HAVE_GCC} == 6
 EXTERNAL_GCC_SUBDIR?=	gcc.old
+.elif ${HAVE_GCC} == 7
+EXTERNAL_GCC_SUBDIR?=	gcc
 .else
 EXTERNAL_GCC_SUBDIR=?	/does/not/exist
 .endif
@@ -1514,7 +1516,7 @@ EXTRA_DRIVERS=	modesetting
 	r128 rendition \
 	s3 s3virge savage siliconmotion sis suncg14 \
 	suncg6 sunffb sunleo suntcx \
-	tdfx tga trident tseng vesa vga vmware wsfb xgi
+	tdfx tga trident tseng vboxvideo vesa vga vmware wsfb xgi
 X11SRCDIR.xf86-video-${_v}?=	${X11SRCDIRMIT}/xf86-video-${_v}/dist
 .endfor
 

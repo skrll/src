@@ -1,4 +1,4 @@
-/* $NetBSD: param.h,v 1.9 2019/01/04 21:39:38 rin Exp $ */
+/* $NetBSD: param.h,v 1.11 2019/01/19 09:11:55 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -89,14 +89,6 @@
 #define ALIGN32(p)		\
 	(((uintptr_t)(p) + ALIGNBYTES32) & ~ALIGNBYTES32)
 
-#define DEV_BSHIFT		9	/* log2(DEV_BSIZE) */
-#define DEV_BSIZE		(1 << DEV_BSHIFT)
-#define BLKDEV_IOSIZE		2048
-
-#ifndef MAXPHYS
-#define MAXPHYS			65536	/* max I/O transfer size */
-#endif
-
 #define NKMEMPAGES_MIN_DEFAULT		((128UL * 1024 * 1024) >> PAGE_SHIFT)
 #define NKMEMPAGES_MAX_UNLIMITED	1
 
@@ -131,7 +123,7 @@
 
 
 #ifndef MSGBUFSIZE
-#define MSGBUFSIZE		16384	/* default message buffer size */
+#define MSGBUFSIZE		65536	/* default message buffer size */
 #endif
 
 #define COHERENCY_UNIT		128
