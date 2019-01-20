@@ -7,8 +7,17 @@
 include	"arch/evbarm/conf/std.beagle"
 include "arch/evbarm/conf/GENERIC.common"
 
-# CPU options
+#
+# FDT files supported by this kernel - add to DTSSUBDIR and DTS as
+# appropriate
+#
+makeoptions 	DTSARCH="arm"
+makeoptions 	DTSGNUARCH="arm"
+makeoptions 	DTS="
+	am335x-bone.dts
+"
 
+# CPU options
 options 	CPU_CORTEXA8
 options 	TI_AM335X
 
@@ -23,6 +32,9 @@ options 	TI_AM335X
 options 	DEBUG
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
+
+#options 	VERBOSE_INIT_ARM
+#options 	EARLYCONS=beagle	# CONSADDR set below
 
 ## USB Debugging options
 options USB_DEBUG
