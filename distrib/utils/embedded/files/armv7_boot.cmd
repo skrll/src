@@ -2,6 +2,8 @@ if test "${board}" = "am335x" ; then
 	setenv kernel netbsd-BEAGLEBONE.ub
 	setenv mmcpart 0:1
 	setenv bootargs root=ld0a
+	setenv use_fdt 1
+	setenv fdtfile am335x-bone.dtb
 fi
 if test "${board}" = "de0-nano-soc" ; then
 	setenv kernel netbsd-GENERIC.ub
