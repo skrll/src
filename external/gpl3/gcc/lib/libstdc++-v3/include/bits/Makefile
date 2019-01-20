@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.19 2017/11/14 00:55:29 mrg Exp $
+#	$NetBSD: Makefile,v 1.21 2019/01/19 20:02:06 mrg Exp $
 
 .include <bsd.init.mk>
 
@@ -9,7 +9,7 @@
 GNUHOSTDIST=	${DIST}
 
 BUILDINCS=	basic_file.h c++allocator.h c++io.h c++locale.h
-BUILDINCS+=	messages_members.h time_members.h opt_random.h gthr-default.h
+BUILDINCS+=	messages_members.h time_members.h opt_random.h
 
 INCS=		${G_bits_headers} ${G_c_base_headers_extra} ${G_host_headers}
 INCS+=		gthr.h gthr-single.h gthr-posix.h
@@ -27,6 +27,8 @@ INCS+=		c++config.h
 
 INCSDIR=	/usr/include/g++/bits
 
+SYMLINKS+=	${INCSDIR}/gthr-posix.h ${INCSDIR}/gthr-default.h
+
 .include "${.CURDIR}/../Makefile.includes"
 
 CLEANFILES+=	${BUILDINCS}
@@ -40,13 +42,6 @@ COPYHEADERS= \
 	c++io.h			${CXXDIST}/${G_CSTDIO_H} \
 	messages_members.h	${CXXDIST}/${G_CMESSAGES_H} \
 	time_members.h		${CXXDIST}/${G_CTIME_H}
-
-# gthr-default.h is a little special
-.for _src _dst in ${G_CONFIGLINKS}
-. if ${_dst} == "gthr-default.h"
-COPYHEADERS+=	${_dst} ${_src}
-. endif
-.endfor
 
 .for _h _s in ${COPYHEADERS}
 ${_h}: ${_s}
