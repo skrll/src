@@ -10,16 +10,17 @@ include		"arch/evbarm/conf/files.bcm53xx"
 
 options 	ARM_GENERIC_TODR
 options 	ARM_INTR_IMPL="<arch/arm/broadcom/bcm53xx_intr.h>"
+options 	CORTEX_PMC
 options 	COM_TOLERANCE=40
 options 	FPU_VFP
-options 	CORTEX_PMC
 options 	PMAP_NEED_ALLOC_POOLPAGE
 options 	SOSEND_NO_LOAN
 options 	TPIDRPRW_IS_CURCPU
 options 	_ARM32_NEED_BUS_DMA_BOUNCE
+options 	__HAVE_FAST_SOFTINTS		# should be in types.h
+options 	__HAVE_GENERIC_START
 options 	__HAVE_MM_MD_DIRECT_MAPPED_PHYS
 options 	__HAVE_MM_MD_CACHE_ALIASING
-options 	__HAVE_FAST_SOFTINTS		# should be in types.h
 options 	__HAVE_CPU_UAREA_ALLOC_IDLELWP
 options 	__HAVE_CPU_COUNTER
 options 	__HAVE_PCI_CONF_HOOK
