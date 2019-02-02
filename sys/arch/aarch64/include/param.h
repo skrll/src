@@ -1,4 +1,4 @@
-/* $NetBSD: param.h,v 1.8 2018/12/06 18:36:06 skrll Exp $ */
+/* $NetBSD: param.h,v 1.10 2019/01/07 22:00:30 jdolecek Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -85,17 +85,9 @@
 /* AARCH64-specific macro to align a stack pointer (downwards). */
 #define STACK_ALIGNBYTES	(16 - 1)
 
-#define ALIGNBYTES32		(4 - 1)
+#define ALIGNBYTES32		(8 - 1)
 #define ALIGN32(p)		\
 	(((uintptr_t)(p) + ALIGNBYTES32) & ~ALIGNBYTES32)
-
-#define DEV_BSHIFT		9	/* log2(DEV_BSIZE) */
-#define DEV_BSIZE		(1 << DEV_BSHIFT)
-#define BLKDEV_IOSIZE		2048
-
-#ifndef MAXPHYS
-#define MAXPHYS			65536	/* max I/O transfer size */
-#endif
 
 #define NKMEMPAGES_MIN_DEFAULT		((128UL * 1024 * 1024) >> PAGE_SHIFT)
 #define NKMEMPAGES_MAX_UNLIMITED	1

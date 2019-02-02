@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.sys.mk,v 1.287 2018/12/02 21:00:13 maxv Exp $
+#	$NetBSD: bsd.sys.mk,v 1.289 2019/01/01 19:06:38 christos Exp $
 #
 # Build definitions used for NetBSD source tree builds.
 
@@ -247,7 +247,9 @@ PIE_LDFLAGS?=       -pie ${${ACTIVE_CC} == "gcc":? -shared-libgcc :}
 PIE_AFLAGS?=	    -fPIE
 .endif
 
-ELF2ECOFF?=	elf2ecoff
+ARM_ELF2AOUT?=	elf2aout
+M68K_ELF2AOUT?=	elf2aout
+MIPS_ELF2ECOFF?=	elf2ecoff
 MKDEP?=		mkdep
 MKDEPCXX?=	mkdep
 OBJCOPY?=	objcopy

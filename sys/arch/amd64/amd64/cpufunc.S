@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.S,v 1.33 2018/07/21 06:09:13 maxv Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.35 2019/01/06 14:35:31 cherry Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2008 The NetBSD Foundation, Inc.

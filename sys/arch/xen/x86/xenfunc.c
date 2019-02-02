@@ -1,4 +1,4 @@
-/*	$NetBSD: xenfunc.c,v 1.22 2018/10/18 04:17:18 cherry Exp $	*/
+/*	$NetBSD: xenfunc.c,v 1.24 2019/01/06 14:35:31 cherry Exp $	*/
 
 /*
  * Copyright (c) 2004 Christian Limpach.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xenfunc.c,v 1.22 2018/10/18 04:17:18 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xenfunc.c,v 1.24 2019/01/06 14:35:31 cherry Exp $");
 
 #include <sys/param.h>
 

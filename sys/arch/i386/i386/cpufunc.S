@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.S,v 1.25 2018/10/18 04:11:14 cherry Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.27 2019/01/06 14:35:31 cherry Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2007 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
 #include <sys/errno.h>
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.25 2018/10/18 04:11:14 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.27 2019/01/06 14:35:31 cherry Exp $");
 
 #include "opt_xen.h"
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_l2tp.c,v 1.30 2018/10/19 00:12:56 knakahara Exp $	*/
+/*	$NetBSD: if_l2tp.c,v 1.33 2018/12/27 07:56:11 knakahara Exp $	*/
 
 /*
  * Copyright (c) 2017 Internet Initiative Japan Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_l2tp.c,v 1.30 2018/10/19 00:12:56 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_l2tp.c,v 1.33 2018/12/27 07:56:11 knakahara Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -426,9 +426,12 @@ l2tpintr(struct l2tp_variant *var)
 	}
 
 	for (;;) {
+		int len;
+
 		IFQ_DEQUEUE(&ifp->if_snd, m);
 		if (m == NULL)
 			break;
+		len = m->m_pkthdr.len;
 		m->m_flags &= ~(M_BCAST|M_MCAST);
 		bpf_mtap(ifp, m, BPF_D_OUT);
 		switch (var->lv_psrc->sa_family) {
@@ -452,13 +455,9 @@ l2tpintr(struct l2tp_variant *var)
 			ifp->if_oerrors++;
 		else {
 			ifp->if_opackets++;
-			/*
-			 * obytes is incremented at ether_output() or
-			 * bridge_enqueue().
-			 */
+			ifp->if_obytes += len;
 		}
 	}
-
 }
 
 void
@@ -506,7 +505,7 @@ l2tp_input(struct mbuf *m, struct ifnet *ifp)
 			m_freem(m);
 			return;
 		}
-		M_MOVE_PKTHDR(m_head, m);
+		m_move_pkthdr(m_head, m);
 
 		/*
 		 * m_head should be:
@@ -518,7 +517,7 @@ l2tp_input(struct mbuf *m, struct ifnet *ifp)
 		 *                          ^              ^
 		 *                          m_data         4 byte aligned
 		 */
-		MH_ALIGN(m_head, L2TP_COPY_LENGTH + roundup(pad, 4));
+		m_align(m_head, L2TP_COPY_LENGTH + roundup(pad, 4));
 		m_head->m_data += pad;
 
 		memcpy(mtod(m_head, void *), mtod(m, void *), copy_length);
@@ -570,6 +569,7 @@ int
 l2tp_transmit(struct ifnet *ifp, struct mbuf *m)
 {
 	int error;
+	int len;
 	struct psref psref;
 	struct l2tp_variant *var;
 	struct l2tp_softc *sc = container_of(ifp, struct l2tp_softc,
@@ -587,6 +587,7 @@ l2tp_transmit(struct ifnet *ifp, struct mbuf *m)
 		goto out;
 	}
 
+	len = m->m_pkthdr.len;
 	m->m_flags &= ~(M_BCAST|M_MCAST);
 	bpf_mtap(ifp, m, BPF_D_OUT);
 	switch (var->lv_psrc->sa_family) {
@@ -610,9 +611,7 @@ l2tp_transmit(struct ifnet *ifp, struct mbuf *m)
 		ifp->if_oerrors++;
 	else {
 		ifp->if_opackets++;
-		/*
-		 * obytes is incremented at ether_output() or bridge_enqueue().
-		 */
+		ifp->if_obytes += len;
 	}
 
 out:

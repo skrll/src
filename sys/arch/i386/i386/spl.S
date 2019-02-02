@@ -1,4 +1,4 @@
-/*	$NetBSD: spl.S,v 1.43 2018/04/04 22:52:58 christos Exp $	*/
+/*	$NetBSD: spl.S,v 1.46 2018/12/26 11:12:57 cherry Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: spl.S,v 1.43 2018/04/04 22:52:58 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spl.S,v 1.46 2018/12/26 11:12:57 cherry Exp $");
 
 #include "opt_ddb.h"
 #include "opt_spldebug.h"
@@ -44,7 +44,6 @@ __KERNEL_RCSID(0, "$NetBSD: spl.S,v 1.43 2018/04/04 22:52:58 christos Exp $");
 
 	.text
 
-#ifndef XEN
 /*
  * int splraise(int s);
  */
@@ -67,6 +66,8 @@ ENTRY(splraise)
 #endif /* SPLDEBUG */
 	ret
 END(splraise)
+
+#ifndef XEN
 
 /*
  * void spllower(int s);
@@ -200,6 +201,7 @@ IDTVEC(spllower)
 	jz	.Lspllower_panic
 #endif /* XEN */
 #endif /* defined(DEBUG) */
+#if !defined(XEN)
 	movl	%ebx,%eax			/* get cpl */
 	movl	CPUVAR(IUNMASK)(,%eax,4),%eax
 	andl	CPUVAR(IPENDING),%eax		/* any non-masked bits left? */
@@ -208,7 +210,19 @@ IDTVEC(spllower)
 	btrl	%eax,CPUVAR(IPENDING)
 	movl	CPUVAR(ISOURCES)(,%eax,4),%eax
 	jmp	*IS_RECURSE(%eax)
+#endif
 2:
+#if defined(XEN)
+	movl	%ebx,%eax			/* get cpl */
+	movl	CPUVAR(XUNMASK)(,%eax,4),%eax
+	andl	CPUVAR(XPENDING),%eax		/* any non-masked bits left? */
+	jz	3f
+	bsrl	%eax,%eax
+	btrl	%eax,CPUVAR(XPENDING)
+	movl	CPUVAR(XSOURCES)(,%eax,4),%eax
+	jmp	*IS_RECURSE(%eax)
+#endif
+3:
 	movl	%ebx,CPUVAR(ILEVEL)
 #ifdef XEN
 	STIC(%eax)
@@ -264,6 +278,7 @@ IDTVEC(doreti)
 	jz	.Ldoreti_panic
 #endif /* XEN */
 #endif /* defined(DEBUG) */
+#if !defined(XEN)
 	movl	%ebx,%eax
 	movl	CPUVAR(IUNMASK)(,%eax,4),%eax
 	andl	CPUVAR(IPENDING),%eax
@@ -272,7 +287,19 @@ IDTVEC(doreti)
 	btrl	%eax,CPUVAR(IPENDING)
 	movl	CPUVAR(ISOURCES)(,%eax, 4),%eax
 	jmp	*IS_RESUME(%eax)
+#endif
 2:	/* Check for ASTs on exit to user mode. */
+#if	defined(XEN)
+	movl	%ebx,%eax
+	movl	CPUVAR(XUNMASK)(,%eax,4),%eax
+	andl	CPUVAR(XPENDING),%eax
+	jz	3f
+	bsrl	%eax,%eax		/* slow, but not worth optimizing */
+	btrl	%eax,CPUVAR(XPENDING)
+	movl	CPUVAR(XSOURCES)(,%eax, 4),%eax
+	jmp	*IS_RESUME(%eax)
+#endif
+3:
 	movl	%ebx,CPUVAR(ILEVEL)
 5:
 	testb	$CHK_UPL,TF_CS(%esp)

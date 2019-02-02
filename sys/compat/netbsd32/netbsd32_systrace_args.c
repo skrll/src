@@ -1,4 +1,4 @@
-/* $NetBSD: netbsd32_systrace_args.c,v 1.27 2018/08/10 21:47:15 pgoyette Exp $ */
+/* $NetBSD: netbsd32_systrace_args.c,v 1.29 2018/12/24 21:27:37 mrg Exp $ */
 
 /*
  * System call argument to DTrace register array converstion.
@@ -171,7 +171,7 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 	}
 	/* netbsd32_mount */
 	case 21: {
-		const struct netbsd32_mount_args *p = params;
+		const struct compat_40_netbsd32_mount_args *p = params;
 		uarg[0] = (intptr_t) SCARG(p, type).i32; /* netbsd32_charp */
 		uarg[1] = (intptr_t) SCARG(p, path).i32; /* netbsd32_charp */
 		iarg[2] = SCARG(p, flags); /* int */

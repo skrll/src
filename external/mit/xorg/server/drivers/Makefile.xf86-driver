@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.xf86-driver,v 1.24 2016/10/08 20:08:57 mrg Exp $
+#	$NetBSD: Makefile.xf86-driver,v 1.26 2019/01/03 23:25:52 mrg Exp $
 
 LIBISMODULE=	yes
 SHLIB_MAJOR=	${PACKAGE_MAJOR}

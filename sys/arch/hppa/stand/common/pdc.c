@@ -1,4 +1,4 @@
-/*	$NetBSD: pdc.c,v 1.2 2018/09/05 07:32:45 riastradh Exp $	*/
+/*	$NetBSD: pdc.c,v 1.4 2019/01/08 19:14:08 christos Exp $	*/
 
 /*	$OpenBSD: pdc.c,v 1.10 1999/05/06 02:27:44 mickey Exp $	*/
 
@@ -61,6 +61,7 @@
  *	Utah $Hdr: pdc.c 1.8 92/03/14$
  */
 
+#include <sys/param.h>
 #include <sys/time.h>
 #include "libsa.h"
 #include <sys/reboot.h>
@@ -70,7 +71,6 @@
 #include <machine/pdc.h>
 #include <machine/iomod.h>
 #include <machine/nvm.h>
-#include <machine/param.h>
 #include <machine/cpufunc.h>
 
 #include "dev_hppa.h"
