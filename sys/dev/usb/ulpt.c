@@ -1,4 +1,4 @@
-/*	$NetBSD: ulpt.c,v 1.100 2018/09/03 16:29:34 riastradh Exp $	*/
+/*	$NetBSD: ulpt.c,v 1.101 2019/01/22 06:38:28 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2003 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ulpt.c,v 1.100 2018/09/03 16:29:34 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ulpt.c,v 1.101 2019/01/22 06:38:28 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

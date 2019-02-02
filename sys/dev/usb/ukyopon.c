@@ -1,4 +1,4 @@
-/*	$NetBSD: ukyopon.c,v 1.19 2016/11/25 12:56:29 skrll Exp $	*/
+/*	$NetBSD: ukyopon.c,v 1.20 2019/01/22 06:47:20 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2005 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ukyopon.c,v 1.19 2016/11/25 12:56:29 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ukyopon.c,v 1.20 2019/01/22 06:47:20 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

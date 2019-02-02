@@ -1,4 +1,4 @@
-/*	$NetBSD: if_mue.c,v 1.27 2019/01/05 07:56:07 mlelstv Exp $	*/
+/*	$NetBSD: if_mue.c,v 1.30 2019/01/31 05:25:48 rin Exp $	*/
 /*	$OpenBSD: if_mue.c,v 1.3 2018/08/04 16:42:46 jsg Exp $	*/
 
 /*
@@ -20,7 +20,7 @@
 /* Driver for Microchip LAN7500/LAN7800 chipsets. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mue.c,v 1.27 2019/01/05 07:56:07 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mue.c,v 1.30 2019/01/31 05:25:48 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -117,8 +117,8 @@ static int	mue_wait_for_bits(struct mue_softc *sc, uint32_t, uint32_t,
 static void	mue_lock_mii(struct mue_softc *);
 static void	mue_unlock_mii(struct mue_softc *);
 
-static int	mue_miibus_readreg(device_t, int, int);
-static void	mue_miibus_writereg(device_t, int, int, int);
+static int	mue_miibus_readreg(device_t, int, int, uint16_t *);
+static int	mue_miibus_writereg(device_t, int, int, uint16_t);
 static void	mue_miibus_statchg(struct ifnet *);
 static int	mue_ifmedia_upd(struct ifnet *);
 static void	mue_ifmedia_sts(struct ifnet *, struct ifmediareq *);
@@ -279,18 +279,19 @@ mue_unlock_mii(struct mue_softc *sc)
 }
 
 static int
-mue_miibus_readreg(device_t dev, int phy, int reg)
+mue_miibus_readreg(device_t dev, int phy, int reg, uint16_t *val)
 {
 	struct mue_softc *sc = device_private(dev);
-	uint32_t val;
+	uint32_t data;
+	int rv = 0;
 
 	if (sc->mue_dying) {
 		DPRINTF(sc, "dying\n");
-		return 0;
+		return -1;
 	}
 
 	if (sc->mue_phyno != phy)
-		return 0;
+		return -1;
 
 	mue_lock_mii(sc);
 	if (MUE_WAIT_CLR(sc, MUE_MII_ACCESS, MUE_MII_ACCESS_BUSY, 0)) {
@@ -304,48 +305,55 @@ mue_miibus_readreg(device_t dev, int phy, int reg)
 	    MUE_MII_ACCESS_PHYADDR(phy));
 
 	if (MUE_WAIT_CLR(sc, MUE_MII_ACCESS, MUE_MII_ACCESS_BUSY, 0)) {
-		mue_unlock_mii(sc);
 		MUE_PRINTF(sc, "timed out\n");
-		return -1;
+		rv = ETIMEDOUT;
+		goto out;
 	}
 
-	val = mue_csr_read(sc, MUE_MII_DATA);
+	data = mue_csr_read(sc, MUE_MII_DATA);
+	*val = data & 0xffff;
+
+out:
 	mue_unlock_mii(sc);
-	return val & 0xffff;
+	return rv;
 }
 
-static void
-mue_miibus_writereg(device_t dev, int phy, int reg, int data)
+static int
+mue_miibus_writereg(device_t dev, int phy, int reg, uint16_t val)
 {
 	struct mue_softc *sc = device_private(dev);
+	int rv = 0;
 
 	if (sc->mue_dying) {
 		DPRINTF(sc, "dying\n");
-		return;
+		return -1;
 	}
 
 	if (sc->mue_phyno != phy) {
 		DPRINTF(sc, "sc->mue_phyno (%d) != phy (%d)\n",
 		    sc->mue_phyno, phy);
-		return;
+		return -1;
 	}
 
 	mue_lock_mii(sc);
 	if (MUE_WAIT_CLR(sc, MUE_MII_ACCESS, MUE_MII_ACCESS_BUSY, 0)) {
-		mue_unlock_mii(sc);
 		MUE_PRINTF(sc, "not ready\n");
-		return;
+		rv = EBUSY;
+		goto out;
 	}
 
-	mue_csr_write(sc, MUE_MII_DATA, data);
+	mue_csr_write(sc, MUE_MII_DATA, val);
 	mue_csr_write(sc, MUE_MII_ACCESS, MUE_MII_ACCESS_WRITE |
 	    MUE_MII_ACCESS_BUSY | MUE_MII_ACCESS_REGADDR(reg) |
 	    MUE_MII_ACCESS_PHYADDR(phy));
 
-	if (MUE_WAIT_CLR(sc, MUE_MII_ACCESS, MUE_MII_ACCESS_BUSY, 0))
+	if (MUE_WAIT_CLR(sc, MUE_MII_ACCESS, MUE_MII_ACCESS_BUSY, 0)) {
 		MUE_PRINTF(sc, "timed out\n");
-
+		rv = ETIMEDOUT;
+	}
+out:
 	mue_unlock_mii(sc);
+	return rv;
 }
 
 static void
@@ -1069,6 +1077,7 @@ mue_detach(device_t self, int flags)
 	if (ifp->if_flags & IFF_RUNNING)
 		mue_stop(ifp, 1);
 
+	callout_destroy(&sc->mue_stat_ch);
 	rnd_detach_source(&sc->mue_rnd_source);
 	mii_detach(&sc->mue_mii, MII_PHY_ANY, MII_OFFSET_ANY);
 	ifmedia_delete_instance(&sc->mue_mii.mii_media, IFM_INST_ANY);
@@ -1394,17 +1403,23 @@ mue_sethwcsum(struct mue_softc *sc)
 	reg = (sc->mue_flags & LAN7500) ? MUE_7500_RFE_CTL : MUE_7800_RFE_CTL;
 	val = mue_csr_read(sc, reg);
 
-	if (ifp->if_capenable & (IFCAP_CSUM_TCPv4_Rx|IFCAP_CSUM_UDPv4_Rx)) {
-		DPRINTF(sc, "enabled\n");
-		val |= MUE_RFE_CTL_IGMP_COE | MUE_RFE_CTL_ICMP_COE;
-		val |= MUE_RFE_CTL_TCPUDP_COE | MUE_RFE_CTL_IP_COE;
+	if (ifp->if_capenable & IFCAP_CSUM_IPv4_Rx) {
+		DPRINTF(sc, "RX IPv4 hwcsum enabled\n");
+		val |= MUE_RFE_CTL_IP_COE;
 	} else {
-		DPRINTF(sc, "disabled\n");
-		val &=
-		    ~(MUE_RFE_CTL_IGMP_COE | MUE_RFE_CTL_ICMP_COE);
-		val &=
-		    ~(MUE_RFE_CTL_TCPUDP_COE | MUE_RFE_CTL_IP_COE);
-        }
+		DPRINTF(sc, "RX IPv4 hwcsum disabled\n");
+		val &= ~MUE_RFE_CTL_IP_COE;
+	}
+
+	if (ifp->if_capenable &
+	    (IFCAP_CSUM_TCPv4_Rx | IFCAP_CSUM_UDPv4_Rx |
+	     IFCAP_CSUM_TCPv6_Rx | IFCAP_CSUM_UDPv6_Rx)) {
+		DPRINTF(sc, "RX L4 hwcsum enabled\n");
+		val |= MUE_RFE_CTL_TCPUDP_COE;
+	} else {
+		DPRINTF(sc, "RX L4 hwcsum disabled\n");
+		val &= ~MUE_RFE_CTL_TCPUDP_COE;
+	}
 
 	val &= ~MUE_RFE_CTL_VLAN_FILTER;
 

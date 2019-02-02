@@ -1,4 +1,4 @@
-/*	$NetBSD: ubsa.c,v 1.34 2016/12/04 10:12:35 skrll Exp $	*/
+/*	$NetBSD: ubsa.c,v 1.35 2019/01/22 06:47:20 skrll Exp $	*/
 /*-
  * Copyright (c) 2002, Alexander Kabaev <kan.FreeBSD.org>.
  * All rights reserved.
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ubsa.c,v 1.34 2016/12/04 10:12:35 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ubsa.c,v 1.35 2019/01/22 06:47:20 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

@@ -1,4 +1,4 @@
-/*	$NetBSD: print.c,v 1.2 2018/08/19 14:50:24 jmcneill Exp $	*/
+/*	$NetBSD: print.c,v 1.4 2019/01/27 04:17:39 oster Exp $	*/
 
 /*++
 

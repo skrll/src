@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.35 2019/01/19 17:11:02 mrg Exp $
+#	$NetBSD: Makefile,v 1.39 2019/02/01 10:37:13 mrg Exp $
 
 REQUIRETOOLS=	yes
 NOLINT=		# defined
@@ -47,19 +47,22 @@ CWARNFLAGS.clang+=	-Wno-logical-op-parentheses \
 .include "${.CURDIR}/arch/${LIBSTDCXX_MACHINE_ARCH}/defs.mk"
 
 SHLIB_MAJOR=	8
-SHLIB_MINOR=	1
+SHLIB_MINOR=	2
 
 SUBDIR=		include
 
 SRCS=		${LIBSUPCXXSRCS} ${LIBSTDCXXSRCS}
+
+CXXFLAGS+=	-fno-implicit-templates
+CPPFLAGS+=	-I${DIST}/libstdc++-v3/include
+CPPFLAGS+=	-I${.CURDIR}/arch/${LIBSTDCXX_MACHINE_ARCH}
+CPPFLAGS+=	-D_GLIBCXX_SHARED -DGTHREAD_USE_WEAK -DSUPPORTS_WEAK
+
 # affects profiling; can't switch it off just for profiling easily.
 #CXXFLAGS+=	${G_SECTION_FLAGS}
 #CXXFLAGS+=	-ffunction-sections -fdata-sections 
-CXXFLAGS+=	-fno-implicit-templates -fdiagnostics-show-location=once
-CPPFLAGS+=	-I${DIST}/libstdc++-v3/include
-CPPFLAGS+=	-I${.CURDIR}/arch/${LIBSTDCXX_MACHINE_ARCH}
-# include backwards compatible code
-CPPFLAGS+=     -D_GLIBCXX_SHARED -DGTHREAD_USE_WEAK -DSUPPORTS_WEAK
+COPTS.bitmap_allocator.cc+=	-ffunction-sections -fdata-sections 
+COPTS.pool_allocator.cc+=	-ffunction-sections -fdata-sections 
 
 CONF=		${DIST}/libstdc++-v3/config
 
@@ -82,8 +85,12 @@ COPTS.cxx11-locale-inst.cc +=-Wno-stack-protector
 COPTS.cxx11-wlocale-inst.cc +=-Wno-stack-protector
 COPTS.compatibility-thread-c++0x.cc += -Wno-deprecated-declarations
 COPTS.concept-inst.cc += -fimplicit-templates
+COPTS.collate_members_cow.cc += -fimplicit-templates
+COPTS.messages_members_cow.cc += -fimplicit-templates
+COPTS.monetary_members_cow.cc += -fimplicit-templates
+COPTS.numeric_members_cow.cc += -fimplicit-templates
 COPTS.hashtable_c++0x.cc += -fimplicit-templates
-COPTS.bitmap_allocator.cc += -fimplicit-templates
+COPTS.c++locale.cc += -fimplicit-templates
 COPTS.functexcept.cc += -Wno-deprecated-declarations
 COPTS.future.cc += -Wno-deprecated-declarations
 COPTS.shared_ptr.cc += -Wno-deprecated-declarations
@@ -145,18 +152,11 @@ CXX11_ALWAYS=	localename.cc \
 		compatibility-chrono.cc \
 		compatibility-condvar.cc \
 		ios_failure.cc
-.for _s in ${SRCS:M*.cc}
-. if empty(COPTS.${_s}:M-std=*)
-COPTS.${_s}+= -std=gnu++98
-. endif
-.endfor
-.for _s in ${G_CPP11_SOURCES:M*.cc} ${CXX11_ALWAYS}
-# XXX error: 'template<class> class std::auto_ptr' is deprecated
-COPTS.${_s}+= -std=gnu++11 -Wno-error
+
+.for _s in ${CXX11_ALWAYS}
+COPTS.${_s}+= -std=gnu++11
 .endfor
 
-COPTS.del_ops.cc += -Wno-c++14-compat
-COPTS.del_opvs.cc += -Wno-c++14-compat
 COPTS.cp-demangle.c += -Wno-unused-function
 
 COPTS.ext-inst.cc+= -Wno-error
@@ -176,6 +176,7 @@ COPTS.${f}.cc+= -fimplicit-templates ${G_GLIBCXX_ABI_FLAGS}
 .PATH:	${DIST}/libstdc++-v3/src \
 	${DIST}/libstdc++-v3/src/c++98 \
 	${DIST}/libstdc++-v3/src/c++11 \
+	${DIST}/libstdc++-v3/src/filesystem \
 	${DIST}/libstdc++-v3/libsupc++ \
 	${DIST}/libstdc++-v3/config/os/bsd/netbsd \
 	${CONF}/locale/generic \

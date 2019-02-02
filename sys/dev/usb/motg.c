@@ -1,4 +1,4 @@
-/*	$NetBSD: motg.c,v 1.23 2018/09/03 16:29:33 riastradh Exp $	*/
+/*	$NetBSD: motg.c,v 1.24 2019/01/22 06:39:24 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2011, 2012, 2014 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: motg.c,v 1.23 2018/09/03 16:29:33 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: motg.c,v 1.24 2019/01/22 06:39:24 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

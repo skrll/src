@@ -1609,10 +1609,10 @@ nvlist_lookup_nvpair_ei_sep(nvlist_t *nvl, const char *name, const char sep,
 {
 	nvpair_t	*nvp;
 	const char	*np;
-	char		*sepp = NULL;
+	char		*sepp;
 	char		*idxp, *idxep;
 	nvlist_t	**nva;
-	long		idx = -1;
+	long		idx;
 	int		n;
 
 	if (ip)

@@ -1,4 +1,4 @@
-/*	$NetBSD: umass_scsipi.c,v 1.56 2018/11/13 10:30:57 mlelstv Exp $	*/
+/*	$NetBSD: umass_scsipi.c,v 1.57 2019/01/22 06:46:21 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001, 2003, 2012 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: umass_scsipi.c,v 1.56 2018/11/13 10:30:57 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: umass_scsipi.c,v 1.57 2019/01/22 06:46:21 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

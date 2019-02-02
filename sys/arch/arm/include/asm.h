@@ -1,4 +1,4 @@
-/*	$NetBSD: asm.h,v 1.28 2018/04/01 04:35:04 ryo Exp $	*/
+/*	$NetBSD: asm.h,v 1.30 2019/01/27 04:52:07 dholland Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.

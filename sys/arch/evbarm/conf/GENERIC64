@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.73 2019/01/03 10:44:04 jmcneill Exp $
+#	$NetBSD: GENERIC64,v 1.77 2019/01/30 11:25:40 jmcneill Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -138,6 +138,7 @@ gpioleds*	at fdt?
 
 # System Controller
 syscon*		at fdt? pass 1		# Generic System Controller
+sunxisramc*	at fdt? pass 1		# Allwinner System Control
 
 # Timer
 gtmr*		at fdt? pass 1		# ARM Generic Timer
@@ -191,6 +192,7 @@ sun50ia64ccu*	at fdt? pass 2		# Allwinner A64 CCU
 sun50ia64rccu*	at fdt? pass 2		# Allwinner A64 CCU (PRCM)
 sun50ih6ccu*	at fdt? pass 2		# Allwinner H6 CCU
 sun50ih6rccu*	at fdt? pass 2		# Allwinner H6 CCU (PRCM)
+sunxide2ccu*	at fdt? pass 2		# Allwinner DE2 clock controller
 sunxiresets*	at fdt? pass 1		# Allwinner misc. resets
 sunxigates*	at fdt? pass 1		# Allwinner misc. gates
 sunxigmacclk*	at fdt? pass 2		# Allwinner GMAC MII/RGMII clock mux
@@ -357,6 +359,14 @@ tegracec0	at fdt?			# NVIDIA Tegra HDMI CEC
 hdmicec*	at hdmicecbus?
 
 # Display
+dispcon*	at fdt?			# Display connector devices
+dwhdmi* 	at fdt?			# Designware HDMI TX
+sunxide2bus*	at fdt? pass 4		# Allwinner DE2 bus
+sunxidrm*	at fdt?	pass 5		# Allwinner Display Pipeline
+sunxifb*	at sunxidrm?		# Allwinner DRM framebuffer
+sunxihdmiphy*	at fdt? pass 9		# Allwinner HDMI TX PHY
+sunxilcdc*	at fdt?			# Allwinner DE2 timing controller
+sunximixer*	at fdt?			# Allwinner DE2 mixer
 #tegradrm*	at fdt?			# NVIDIA Tegra Display
 #tegrafb*	at tegrafbbus?
 genfb*		at fdt?			# Simple Framebuffer

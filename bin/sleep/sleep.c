@@ -1,4 +1,4 @@
-/* $NetBSD: sleep.c,v 1.25 2019/01/19 13:27:12 kre Exp $ */
+/* $NetBSD: sleep.c,v 1.29 2019/01/27 02:00:45 christos Exp $ */
 
 /*
  * Copyright (c) 1988, 1993, 1994
@@ -39,7 +39,7 @@ __COPYRIGHT("@(#) Copyright (c) 1988, 1993, 1994\
 #if 0
 static char sccsid[] = "@(#)sleep.c	8.3 (Berkeley) 4/2/94";
 #else
-__RCSID("$NetBSD: sleep.c,v 1.25 2019/01/19 13:27:12 kre Exp $");
+__RCSID("$NetBSD: sleep.c,v 1.29 2019/01/27 02:00:45 christos Exp $");
 #endif
 #endif /* not lint */
 
@@ -55,6 +55,8 @@ __RCSID("$NetBSD: sleep.c,v 1.25 2019/01/19 13:27:12 kre Exp $");
 
 __dead static void alarmhandle(int);
 __dead static void usage(void);
+
+static void report(const time_t, const time_t, const char *const);
 
 static volatile sig_atomic_t report_requested;
 static void
@@ -72,7 +74,8 @@ main(int argc, char *argv[])
 	double fval, ival, val;
 	struct timespec ntime;
 	time_t original;
-	int ch, fracflag, rv;
+	int ch, fracflag;
+	unsigned delay;
 
 	setprogname(argv[0]);
 	(void)setlocale(LC_ALL, "");
@@ -106,6 +109,8 @@ main(int argc, char *argv[])
 	 * into the floating point conversion path if the input
 	 * is hex (the 'x' in 0xA is not a digit).  Then if
 	 * strtod() handles hex (on NetBSD it does) so will we.
+	 * That path is also taken for scientific notation (1.2e+3)
+	 * and when the input is simply nonsense.
 	 */
 	fracflag = 0;
 	arg = *argv;
@@ -117,30 +122,33 @@ main(int argc, char *argv[])
 
 	if (fracflag) {
 		/*
-		 * If the radix char in the arg was a '.'
-		 * (as is likely when used from scripts, etc)
-		 * then force the C locale, so atof() works
-		 * as intended, even if the user's locale
-		 * expects something different, like ','
-		 * (but leave the locale alone otherwise, so if
-		 * the user entered 2,4 and that is correct for
-		 * the locale, it will work).
+		 * If we cannot convert the value using the user's locale
+		 * then try again using the C locale, so strtod() can always
+		 * parse values like 2.5, even if the user's locale uses
+		 * a different decimal radix character (like ',')
+		 *
+		 * (but only if that is the potential problem)
 		 */
-		if (ch == '.')
-			(void)setlocale(LC_ALL, "C");
 		val = strtod(arg, &temp);
+		if (*temp != '\0')
+			val = strtod_l(arg, &temp, LC_C_LOCALE);
 		if (val < 0 || temp == arg || *temp != '\0')
 			usage();
+
 		ival = floor(val);
 		fval = (1000000000 * (val-ival));
 		ntime.tv_sec = ival;
+		if ((double)ntime.tv_sec != ival)
+			errx(1, "requested delay (%s) out of range", arg);
 		ntime.tv_nsec = fval;
+
 		if (ntime.tv_sec == 0 && ntime.tv_nsec == 0)
 			return EXIT_SUCCESS;	/* was 0.0 or underflowed */
 	} else {
 		ntime.tv_sec = strtol(arg, &temp, 10);
 		if (ntime.tv_sec < 0 || temp == arg || *temp != '\0')
 			usage();
+
 		if (ntime.tv_sec == 0)
 			return EXIT_SUCCESS;
 		ntime.tv_nsec = 0;
@@ -153,29 +161,55 @@ main(int argc, char *argv[])
 		msg = "";
 
 	signal(SIGINFO, report_request);
-	while ((rv = nanosleep(&ntime, &ntime)) != 0) {
-		if (report_requested) {
-			/* Reporting does not bother (much) with nanoseconds. */
-			if (ntime.tv_sec == 0)
-			    warnx("in the final moments of the original"
-			       " %ld%s second%s", (long)original, msg,
-			       original == 1 && *msg == '\0' ? "" : "s");
-			else
-			    warnx("between %ld and %ld seconds left"
-				" out of the original %ld%s",
-				(long)ntime.tv_sec, (long)ntime.tv_sec + 1,
-				(long)original, msg);
 
+	if (ntime.tv_sec <= 10000) {			/* arbitrary */
+		while (nanosleep(&ntime, &ntime) != 0) {
+			if (report_requested) {
+				report(ntime.tv_sec, original, msg);
+				report_requested = 0;
+			} else
+				err(EXIT_FAILURE, "nanosleep failed");
+		}
+	} else while (ntime.tv_sec > 0) {
+		delay = (unsigned int)ntime.tv_sec;
+
+		if ((time_t)delay != ntime.tv_sec || delay > 30 * 86400)
+			delay = 30 * 86400;
+
+		ntime.tv_sec -= delay;
+		delay = sleep(delay);
+		ntime.tv_sec += delay;
+
+		if (delay != 0 && report_requested) {
+			report(ntime.tv_sec, original, "");
 			report_requested = 0;
 		} else
 			break;
 	}
 
-	if (rv == -1)
-		err(EXIT_FAILURE, "nanosleep failed");
-
 	return EXIT_SUCCESS;
 	/* NOTREACHED */
+}
+
+	/* Reporting does not bother with nanoseconds. */
+static void
+report(const time_t remain, const time_t original, const char * const msg)
+{
+	if (remain == 0)
+		warnx("In the final moments of the original"
+		    " %jd%s second%s", (intmax_t)original, msg,
+		    original == 1 && *msg == '\0' ? "" : "s");
+	else if (remain < 2000)
+		warnx("Between %jd and %jd seconds left"
+		    " out of the original %g%s",
+		    (intmax_t)remain, (intmax_t)remain + 1, (double)original,
+		    msg);
+	else if ((original - remain) < 100000 && (original-remain) < original/8)
+		warnx("Have waited only %jd seconds of the original %g",
+			(intmax_t)(original - remain), (double)original);
+	else
+		warnx("Approximately %g seconds left out of the original %g",
+			(double)remain, (double)original);
 }
 
 static void

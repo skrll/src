@@ -1,4 +1,4 @@
-/*	$NetBSD: uatp.c,v 1.18 2018/09/03 16:29:33 riastradh Exp $	*/
+/*	$NetBSD: uatp.c,v 1.19 2019/01/22 06:47:20 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2011-2014 The NetBSD Foundation, Inc.
@@ -146,7 +146,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uatp.c,v 1.18 2018/09/03 16:29:33 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uatp.c,v 1.19 2019/01/22 06:47:20 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

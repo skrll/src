@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_netbsdkintf.c,v 1.357 2019/01/08 07:18:18 mrg Exp $	*/
+/*	$NetBSD: rf_netbsdkintf.c,v 1.360 2019/01/29 09:28:50 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2008-2011 The NetBSD Foundation, Inc.
@@ -101,7 +101,7 @@
  ***********************************************************/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.357 2019/01/08 07:18:18 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.360 2019/01/29 09:28:50 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -128,6 +128,7 @@ __KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.357 2019/01/08 07:18:18 mrg Exp
 #include <sys/reboot.h>
 #include <sys/kauth.h>
 #include <sys/module.h>
+#include <sys/compat_stub.h>
 
 #include <prop/proplib.h>
 
@@ -149,13 +150,9 @@ __KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.357 2019/01/08 07:18:18 mrg Exp
 #include "rf_parityscan.h"
 #include "rf_threadstuff.h"
 
-#ifdef COMPAT_50
 #include "rf_compat50.h"
-#endif
 
-#ifdef COMPAT_80
 #include "rf_compat80.h"
-#endif
 
 #ifdef COMPAT_NETBSD32
 #include "rf_compat32.h"
@@ -469,8 +466,15 @@ rf_autoconfig(device_t self)
 
 static int
 rf_containsboot(RF_Raid_t *r, device_t bdv) {
-	const char *bootname = device_xname(bdv);
-	size_t len = strlen(bootname);
+	const char *bootname;
+	size_t len;
+
+	/* if bdv is NULL, the set can't contain it. exit early. */
+	if (bdv == NULL)
+		return 0;
+
+	bootname = device_xname(bdv);
+	len = strlen(bootname);
 
 	for (int col = 0; col < r->numCol; col++) {
 		const char *devname = r->Disks[col].devname;
@@ -509,8 +513,8 @@ rf_buildroothack(RF_ConfigSet_t *config_sets)
 		    cset->ac->clabel->autoconfigure == 1) {
 			sc = rf_auto_config_set(cset);
 			if (sc != NULL) {
-				aprint_debug("raid%d: configured ok\n",
-				    sc->sc_unit);
+				aprint_debug("raid%d: configured ok, rootable %d\n",
+				    sc->sc_unit, cset->rootable);
 				if (cset->rootable) {
 					rsc = sc;
 					num_root++;
@@ -534,8 +538,10 @@ rf_buildroothack(RF_ConfigSet_t *config_sets)
 	/* if the user has specified what the root device should be
 	   then we don't touch booted_device or boothowto... */
 
-	if (rootspec != NULL)
+	if (rootspec != NULL) {
+		DPRINTF("%s: rootspec %s\n", __func__, rootspec);
 		return;
+	}
 
 	/* we found something bootable... */
 
@@ -577,9 +583,12 @@ rf_buildroothack(RF_ConfigSet_t *config_sets)
 			candidate_root = dksc->sc_dev;
 		DPRINTF("%s: candidate root=%p\n", __func__, candidate_root);
 		DPRINTF("%s: booted_device=%p root_partition=%d "
-		   "contains_boot=%d\n", __func__, booted_device,
-		   rsc->sc_r.root_partition,
-		   rf_containsboot(&rsc->sc_r, booted_device));
+			"contains_boot=%d",
+		    __func__, booted_device, rsc->sc_r.root_partition,
+			   rf_containsboot(&rsc->sc_r, booted_device));
+		/* XXX the check for booted_device == NULL can probably be
+		 * dropped, now that rf_containsboot handles that case.
+		 */
 		if (booted_device == NULL ||
 		    rsc->sc_r.root_partition == 1 ||
 		    rf_containsboot(&rsc->sc_r, booted_device)) {
@@ -1104,16 +1113,6 @@ raidioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 	case RAIDFRAME_PARITYMAP_GET_DISABLE:
 	case RAIDFRAME_PARITYMAP_SET_DISABLE:
 	case RAIDFRAME_PARITYMAP_SET_PARAMS:
-#ifdef COMPAT_50
-	case RAIDFRAME_GET_INFO50:
-#endif
-#ifdef COMPAT_80
-	case RAIDFRAME_CHECK_RECON_STATUS_EXT80:
-	case RAIDFRAME_CHECK_PARITYREWRITE_STATUS_EXT80:
-	case RAIDFRAME_CHECK_COPYBACK_STATUS_EXT80:
-	case RAIDFRAME_GET_INFO80:
-	case RAIDFRAME_GET_COMPONENT_LABEL80:
-#endif
 #ifdef COMPAT_NETBSD32
 #ifdef _LP64
 	case RAIDFRAME_GET_INFO32:
@@ -1123,38 +1122,44 @@ raidioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 			return (ENXIO);
 	}
 
+	/*
+	 * Handle compat ioctl calls
+	 *
+	 * * If compat code is not loaded, stub returns ENOSYS and we just
+	 *   check the "native" cmd's
+	 * * If compat code is loaded but does not recognize the cmd, it
+	 *   returns EPASSTHROUGH, and we just check the "native" cmd's
+	 * * If compat code returns EAGAIN, we need to finish via config
+	 * * Otherwise the cmd has been handled and we just return
+	 */
+	MODULE_CALL_HOOK(raidframe_ioctl_50_hook,
+	    (cmd, (rs->sc_flags & RAIDF_INITED),raidPtr, unit, data, &k_cfg),
+	    enosys(), retcode);
+	if (retcode == ENOSYS)
+		retcode = 0;
+	else if (retcode == EAGAIN)
+		goto config;
+	else if (retcode != EPASSTHROUGH)
+		return retcode;
+
+	MODULE_CALL_HOOK(raidframe_ioctl_80_hook,
+	    (cmd, (rs->sc_flags & RAIDF_INITED),raidPtr, unit, data, &k_cfg),
+	    enosys(), retcode);
+	if (retcode == ENOSYS)
+		retcode = 0;
+	else if (retcode == EAGAIN)
+		goto config;
+	else if (retcode != EPASSTHROUGH)
+		return retcode;
+
+	/*
+	 * XXX
+	 * Handling of FAIL_DISK80 command requires us to retain retcode's
+	 * value of EPASSTHROUGH.  If you add more compat code later, make
+	 * sure you don't overwrite retcode and break this!
+	 */
+
 	switch (cmd) {
-#ifdef COMPAT_50
-	case RAIDFRAME_GET_INFO50:
-		return rf_get_info50(raidPtr, data);
-
-	case RAIDFRAME_CONFIGURE50:
-		if ((retcode = rf_config50(raidPtr, unit, data, &k_cfg)) != 0)
-			return retcode;
-		goto config;
-#endif
-
-#ifdef COMPAT_80
-	case RAIDFRAME_CHECK_RECON_STATUS_EXT80:
-		return rf_check_recon_status_ext80(raidPtr, data);
-
-	case RAIDFRAME_CHECK_PARITYREWRITE_STATUS_EXT80:
-		return rf_check_parityrewrite_status_ext80(raidPtr, data);
-
-	case RAIDFRAME_CHECK_COPYBACK_STATUS_EXT80:
-		return rf_check_copyback_status_ext80(raidPtr, data);
-
-	case RAIDFRAME_GET_INFO80:
-		return rf_get_info80(raidPtr, data);
-
-	case RAIDFRAME_GET_COMPONENT_LABEL80:
-		return rf_get_component_label80(raidPtr, data);
-
-	case RAIDFRAME_CONFIGURE80:
-		if ((retcode = rf_config80(raidPtr, unit, data, &k_cfg)) != 0)
-			return retcode;
-		goto config;
-#endif
 
 		/* configure the system */
 	case RAIDFRAME_CONFIGURE:
@@ -1563,11 +1568,12 @@ raidioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 		return (0);
 
 		/* fail a disk & optionally start reconstruction */
-	case RAIDFRAME_FAIL_DISK:
-#ifdef COMPAT_80
 	case RAIDFRAME_FAIL_DISK80:
-#endif
-
+		/* Check if we called compat code for this cmd */
+		if (retcode != EPASSTHROUGH)
+			return EINVAL;
+		/* FALLTHRU */
+	case RAIDFRAME_FAIL_DISK:
 		if (raidPtr->Layout.map->faultsTolerated == 0) {
 			/* Can't do this on a RAID 0!! */
 			return(EINVAL);
