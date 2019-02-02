@@ -1,4 +1,4 @@
-/*	$NetBSD: crypto.c,v 1.15 2018/09/29 21:52:34 christos Exp $	*/
+/*	$NetBSD: crypto.c,v 1.17 2019/01/27 04:28:18 dholland Exp $	*/
 
 /*
  * HMS: we need to test:

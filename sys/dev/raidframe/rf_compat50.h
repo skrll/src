@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_compat50.h,v 1.2 2015/09/06 06:01:00 dholland Exp $	*/
+/*	$NetBSD: rf_compat50.h,v 1.4 2019/01/31 12:31:50 christos Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.

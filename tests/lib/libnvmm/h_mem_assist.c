@@ -60,7 +60,7 @@ init_seg(struct nvmm_x64_state_seg *seg, int type, int sel)
 	seg->attrib.lng = 1;
 	seg->attrib.def32 = 0;
 	seg->attrib.gran = 1;
-	seg->limit = 0xFFFFFFFF;
+	seg->limit = 0x0000FFFF;
 	seg->base = 0x00000000;
 }
 
@@ -81,10 +81,10 @@ reset_machine(struct nvmm_machine *mach)
 	init_seg(&state.segs[NVMM_X64_SEG_GS], SDT_MEMRWA, GSEL(GDATA_SEL, SEL_KPL));
 
 	/* Blank. */
-	init_seg(&state.segs[NVMM_X64_SEG_GDT], 0, 0x0000);
-	init_seg(&state.segs[NVMM_X64_SEG_IDT], 0, 0x0000);
-	init_seg(&state.segs[NVMM_X64_SEG_LDT], 0, 0x0000);
-	init_seg(&state.segs[NVMM_X64_SEG_TR], 0, 0x0000);
+	init_seg(&state.segs[NVMM_X64_SEG_GDT], 0, 0);
+	init_seg(&state.segs[NVMM_X64_SEG_IDT], 0, 0);
+	init_seg(&state.segs[NVMM_X64_SEG_LDT], SDT_SYSLDT, 0);
+	init_seg(&state.segs[NVMM_X64_SEG_TR], SDT_SYS386BSY, 0);
 
 	/* Protected mode enabled. */
 	state.crs[NVMM_X64_CR_CR0] = CR0_PG|CR0_PE|CR0_NE|CR0_TS|CR0_MP|CR0_WP|CR0_AM;
@@ -290,6 +290,8 @@ extern uint8_t test6_begin, test6_end;
 extern uint8_t test7_begin, test7_end;
 extern uint8_t test8_begin, test8_end;
 extern uint8_t test9_begin, test9_end;
+extern uint8_t test10_begin, test10_end;
+extern uint8_t test11_begin, test11_end;
 
 static const struct test tests[] = {
 	{ "test1 - MOV", &test1_begin, &test1_end, 0x3004 },
@@ -301,6 +303,8 @@ static const struct test tests[] = {
 	{ "test7 - STOS", &test7_begin, &test7_end, 0x00123456 },
 	{ "test8 - LODS", &test8_begin, &test8_end, 0x12345678 },
 	{ "test9 - MOVS", &test9_begin, &test9_end, 0x12345678 },
+	{ "test10 - MOVZXB", &test10_begin, &test10_end, 0x00000078 },
+	{ "test11 - MOVZXW", &test11_begin, &test11_end, 0x00005678 },
 	{ NULL, NULL, NULL, -1 }
 };
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_compat_40.c,v 1.2 2018/12/24 21:27:05 mrg Exp $	*/
+/*	$NetBSD: netbsd32_compat_40.c,v 1.4 2019/01/28 18:53:52 mlelstv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001, 2008, 2018 Matthew R. Green
@@ -29,11 +29,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_40.c,v 1.2 2018/12/24 21:27:05 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_40.c,v 1.4 2019/01/28 18:53:52 mlelstv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/module.h>
 #include <sys/mount.h>
+#include <sys/syscallvar.h>
 #include <sys/syscallargs.h>
 
 #include <compat/netbsd32/netbsd32.h>
@@ -61,3 +63,30 @@ compat_40_netbsd32_mount(struct lwp *l,
 
 	return compat_40_sys_mount(l, &ua, retval);
 }
+
+static struct syscall_package compat_netbsd32_40_syscalls[] = {
+	{ NETBSD32_SYS_compat_40_netbsd32_mount, 0,
+	    (sy_call_t *)compat_40_netbsd32_mount },
+	{ 0, 0, NULL }
+};    
+
+MODULE(MODULE_CLASS_EXEC, compat_netbsd32_40, "compat_netbsd32_50,compat_40");
+ 
+static int
+compat_netbsd32_40_modcmd(modcmd_t cmd, void *arg)
+{
+ 
+	switch (cmd) {
+	case MODULE_CMD_INIT:
+		return syscall_establish(&emul_netbsd32,
+		    compat_netbsd32_40_syscalls);
+ 
+	case MODULE_CMD_FINI:
+		return syscall_disestablish(&emul_netbsd32,
+		    compat_netbsd32_40_syscalls);
+
+	default:
+		return ENOTTY;
+	}
+}
+

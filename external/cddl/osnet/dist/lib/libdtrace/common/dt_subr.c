@@ -931,7 +931,7 @@ dtrace_addr2str(dtrace_hdl_t *dtp, uint64_t addr, char *str, int nbytes)
 
 	if (err == 0 && addr != sym.st_value) {
 		(void) snprintf(s, n, "%s`%s+0x%llx", dts.dts_object,
-		    dts.dts_name, (unsigned long long)addr - sym.st_value);
+		    dts.dts_name, (u_longlong_t)addr - sym.st_value);
 	} else if (err == 0) {
 		(void) snprintf(s, n, "%s`%s",
 		    dts.dts_object, dts.dts_name);
@@ -943,9 +943,9 @@ dtrace_addr2str(dtrace_hdl_t *dtp, uint64_t addr, char *str, int nbytes)
 		 */
 		if (dtrace_lookup_by_addr(dtp, addr, NULL, &dts) == 0) {
 			(void) snprintf(s, n, "%s`0x%llx", dts.dts_object,
-			    (unsigned long long)addr);
+			    (u_longlong_t)addr);
 		} else {
-			(void) snprintf(s, n, "0x%llx", (unsigned long long)addr);
+			(void) snprintf(s, n, "0x%llx", (u_longlong_t)addr);
 		}
 	}
 
@@ -978,7 +978,7 @@ dtrace_uaddr2str(dtrace_hdl_t *dtp, pid_t pid,
 
 		if (addr > sym.st_value) {
 			(void) snprintf(c, sizeof (c), "%s`%s+0x%llx", obj,
-			    name, (unsigned long long)(addr - sym.st_value));
+			    name, (u_longlong_t)(addr - sym.st_value));
 		} else {
 			(void) snprintf(c, sizeof (c), "%s`%s", obj, name);
 		}

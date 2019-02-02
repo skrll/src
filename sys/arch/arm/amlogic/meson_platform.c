@@ -1,4 +1,4 @@
-/* $NetBSD: meson_platform.c,v 1.1 2019/01/19 20:56:03 jmcneill Exp $ */
+/* $NetBSD: meson_platform.c,v 1.4 2019/01/31 13:06:10 skrll Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared McNeill <jmcneill@invisible.ca>
@@ -33,7 +33,7 @@
 #include "arml2cc.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: meson_platform.c,v 1.1 2019/01/19 20:56:03 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: meson_platform.c,v 1.4 2019/01/31 13:06:10 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -57,6 +57,8 @@ __KERNEL_RCSID(0, "$NetBSD: meson_platform.c,v 1.1 2019/01/19 20:56:03 jmcneill 
 
 #include <evbarm/fdt/platform.h>
 #include <evbarm/fdt/machdep.h>
+
+#include <net/if_ether.h>
 
 #include <libfdt.h>
 
@@ -168,7 +170,83 @@ meson_platform_early_putchar(char c)
 static void
 meson_platform_device_register(device_t self, void *aux)
 {
+	prop_dictionary_t dict = device_properties(self);
+
+	if (device_is_a(self, "awge") && device_unit(self) == 0) {
+		uint8_t enaddr[ETHER_ADDR_LEN];
+		if (get_bootconf_option(boot_args, "awge0.mac-address",
+		    BOOTOPT_TYPE_MACADDR, enaddr)) {
+			prop_data_t pd = prop_data_create_data(enaddr,
+			    sizeof(enaddr));
+			prop_dictionary_set(dict, "mac-address", pd);
+			prop_object_release(pd);
+		}
+	}
+
+	if (device_is_a(self, "genfb")) {
+		int scale, depth;
+
+		if (get_bootconf_option(boot_args, "fb.scale",
+		    BOOTOPT_TYPE_INT, &scale) && scale > 0) {
+			prop_dictionary_set_uint32(dict, "scale", scale);
+		}
+		if (get_bootconf_option(boot_args, "fb.depth",
+		    BOOTOPT_TYPE_INT, &depth)) {
+			prop_dictionary_set_uint32(dict, "depth", depth);
+		}
+	}
 }
+
+#if defined(SOC_MESON8B)
+#define	MESON8B_BOOTINFO_REG	0xd901ff04
+static int
+meson8b_get_boot_id(void)
+{
+	static int boot_id = -1;
+	bus_space_tag_t bst = &arm_generic_bs_tag;
+	bus_space_handle_t bsh;
+
+	if (boot_id == -1) {
+		if (bus_space_map(bst, MESON8B_BOOTINFO_REG, 4, 0, &bsh) != 0)
+			return -1;
+
+		boot_id = (int)bus_space_read_4(bst, bsh, 0);
+
+		bus_space_unmap(bst, bsh, 4);
+	}
+
+	return boot_id;
+}
+
+static void
+meson8b_platform_device_register(device_t self, void *aux)
+{
+	device_t parent = device_parent(self);
+	char *ptr;
+
+	if (device_is_a(self, "ld") &&
+	    device_is_a(parent, "sdmmc") &&
+	    (device_is_a(device_parent(parent), "mesonsdhc") ||
+	     device_is_a(device_parent(parent), "mesonsdio"))) {
+
+		const int boot_id = meson8b_get_boot_id();
+		const bool has_rootdev = get_bootconf_option(boot_args, "root", BOOTOPT_TYPE_STRING, &ptr) != 0;
+
+		if (!has_rootdev) {
+			char rootarg[64];
+			snprintf(rootarg, sizeof(rootarg), " root=%sa", device_xname(self));
+
+			/* Assume that SDIO is used for SD cards and SDHC is used for eMMC */
+			if (device_is_a(device_parent(parent), "mesonsdhc") && boot_id == 0)
+				strcat(boot_args, rootarg);
+			else if (device_is_a(device_parent(parent), "mesonsdio") && boot_id != 0)
+				strcat(boot_args, rootarg);
+		}
+	}
+			
+	meson_platform_device_register(self, aux);
+}
+#endif
 
 static u_int
 meson_platform_uart_freq(void)
@@ -319,15 +397,16 @@ cpu_enable_meson8b(int phandle)
 ARM_CPU_METHOD(meson8b, "amlogic,meson8b-smp", cpu_enable_meson8b);
 #endif
 
-static void
+static int
 meson_mpstart(void)
 {
+	int ret = 0;
 #ifdef MULTIPROCESSOR
 	const bus_addr_t cbar = armreg_cbar_read();
 	bus_space_tag_t bst = &arm_generic_bs_tag;
 
 	if (cbar == 0)
-		return;
+		return ret;
 
 	const bus_space_handle_t scu_bsh =
 	    cbar - MESON8B_ARM_PBASE + MESON8B_ARM_VBASE;
@@ -336,7 +415,7 @@ meson_mpstart(void)
 	const u_int ncpus = (scu_cfg & SCU_CFG_CPUMAX) + 1;
 
 	if (ncpus < 2)
-		return;
+		return ret;
 
 	/*
 	 * Invalidate all SCU cache tags. That is, for all cores (0-3)
@@ -349,8 +428,9 @@ meson_mpstart(void)
 
 	armv7_dcache_wbinv_all();
 
-	arm_fdt_cpu_mpstart();
+	ret = arm_fdt_cpu_mpstart();
 #endif
+	return ret;
 }
 
 
@@ -359,7 +439,7 @@ static const struct arm_platform meson8b_platform = {
 	.ap_devmap = meson_platform_devmap,
 	.ap_bootstrap = meson8b_platform_bootstrap,
 	.ap_init_attach_args = meson_platform_init_attach_args,
-	.ap_device_register = meson_platform_device_register,
+	.ap_device_register = meson8b_platform_device_register,
 	.ap_reset = meson_platform_reset,
 	.ap_delay = a9tmr_delay,
 	.ap_uart_freq = meson_platform_uart_freq,
