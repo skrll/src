@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_machdep.c,v 1.3 2018/11/27 14:09:53 maxv Exp $	*/
+/*	$NetBSD: netbsd32_machdep.c,v 1.5 2019/01/27 19:13:04 alnsn Exp $	*/
 
 /*
  * Copyright (c) 2018 Ryo Shimizu <ryo@nerv.org>
@@ -27,9 +27,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.3 2018/11/27 14:09:53 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.5 2019/01/27 19:13:04 alnsn Exp $");
 
+#if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/core.h>
@@ -306,7 +308,7 @@ startlwp32(void *arg)
 int
 cpu_mcontext32_validate(struct lwp *l, const mcontext32_t *mcp)
 {
-	struct proc * const p = l->l_proc;
+	struct proc * const p __diagused = l->l_proc;
 	const uint32_t spsr = mcp->__gregs[_REG_CPSR];
 
 	KASSERT(p->p_flag & PK_32);
@@ -536,4 +538,18 @@ netbsd32_vm_default_addr(struct proc *p, vaddr_t base, vsize_t sz,
 		return VM_DEFAULT_ADDRESS32_TOPDOWN(base, sz);
 	else
 		return VM_DEFAULT_ADDRESS32_BOTTOMUP(base, sz);
+}
+
+void  
+netbsd32_machdep_md_init(void)
+{ 
+ 
+	/* nothing to do */
+}
+ 
+void
+netbsd32_machdep_md_fini(void)
+{
+ 
+	/* nothing to do */
 }

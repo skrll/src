@@ -1,4 +1,4 @@
-/*	$NetBSD: if_43.c,v 1.15 2018/09/06 06:41:59 maxv Exp $	*/
+/*	$NetBSD: if_43.c,v 1.19 2019/01/29 09:28:50 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1990, 1993
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_43.c,v 1.15 2018/09/06 06:41:59 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_43.c,v 1.19 2019/01/29 09:28:50 pgoyette Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -54,6 +54,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_43.c,v 1.15 2018/09/06 06:41:59 maxv Exp $");
 #include <sys/resourcevar.h>
 #include <sys/mbuf.h>		/* for MLEN */
 #include <sys/protosw.h>
+#include <sys/compat_stub.h>
 
 #include <sys/syscallargs.h>
 
@@ -72,12 +73,25 @@ __KERNEL_RCSID(0, "$NetBSD: if_43.c,v 1.15 2018/09/06 06:41:59 maxv Exp $");
 #include <compat/sys/sockio.h>
 
 #include <compat/common/compat_util.h>
-#include <compat/common/if_43.h>
+#include <compat/common/compat_mod.h>
 #include <uvm/uvm_extern.h>
 
-u_long 
-compat_cvtcmd(u_long cmd)
+#if defined(COMPAT_43)
+
+/* 
+ * Use a wrapper so that the compat_cvtcmd() can return a u_long
+ */
+static int 
+do_compat_cvtcmd(u_long *ncmd, u_long ocmd)
 { 
+
+	*ncmd = compat_cvtcmd(ocmd);
+	return 0;
+}
+
+u_long
+compat_cvtcmd(u_long cmd)
+{
 	u_long ncmd;
 
 	if (IOCPARM_LEN(cmd) != sizeof(struct oifreq))
@@ -145,10 +159,6 @@ compat_cvtcmd(u_long cmd)
 		case GRESADDRS:
 		case GRESPROTO:
 		case GRESSOCK:
-#ifdef COMPAT_20
-		case OSIOCG80211STATS:
-		case OSIOCG80211ZSTATS:
-#endif /* COMPAT_20 */
 		case SIOCADDMULTI:
 		case SIOCDELMULTI:
 		case SIOCDIFADDR:
@@ -202,7 +212,14 @@ compat_cvtcmd(u_long cmd)
 		case TAPGIFNAME:
 			return ncmd;
 		default:
+		    {	int rv;
+
+			MODULE_CALL_HOOK(if43_cvtcmd_20_hook, (ncmd), enosys(),
+			    rv);
+			if (rv == 0)
+				return ncmd;
 			return cmd;
+		    }
 		}
 	}
 }
@@ -278,27 +295,21 @@ compat_ifioctl(struct socket *so, u_long ocmd, u_long cmd, void *data,
 	return error;
 }
 
-#if defined(COMPAT_43)
-static u_long (*orig_compat_cvtcmd)(u_long);
-static int (*orig_compat_ifioctl)(struct socket *, u_long, u_long,
-    void *, struct lwp *);
-
-void
+int
 if_43_init(void)
 {
 
-	orig_compat_cvtcmd = vec_compat_cvtcmd;
-	vec_compat_cvtcmd = compat_cvtcmd;
-
-	orig_compat_ifioctl = vec_compat_ifioctl;
-	vec_compat_ifioctl =  compat_ifioctl;
+	MODULE_SET_HOOK(if_cvtcmd_43_hook, "if_43", do_compat_cvtcmd);
+	MODULE_SET_HOOK(if_ifioctl_43_hook, "if_43", compat_ifioctl);
+	return 0;
 }
 
-void
+int
 if_43_fini(void)
 {
 
-	vec_compat_cvtcmd = orig_compat_cvtcmd;
-	vec_compat_ifioctl = orig_compat_ifioctl;
+	MODULE_UNSET_HOOK(if_cvtcmd_43_hook);
+	MODULE_UNSET_HOOK(if_ifioctl_43_hook);
+	return 0;
 }
 #endif /* defined(COMPAT_43) */

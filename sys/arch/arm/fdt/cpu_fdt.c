@@ -1,4 +1,4 @@
-/* $NetBSD: cpu_fdt.c,v 1.20 2019/01/03 14:14:08 jmcneill Exp $ */
+/* $NetBSD: cpu_fdt.c,v 1.22 2019/01/31 13:06:10 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "psci_fdt.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.20 2019/01/03 14:14:08 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.22 2019/01/31 13:06:10 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -272,9 +272,10 @@ arm_fdt_cpu_enable(int phandle, const char *method)
 }
 #endif
 
-void
+int
 arm_fdt_cpu_mpstart(void)
 {
+	int ret = 0;
 #ifdef MULTIPROCESSOR
 	uint64_t mpidr, bp_mpidr;
 	u_int cpuindex, i;
@@ -284,7 +285,7 @@ arm_fdt_cpu_mpstart(void)
 	const int cpus = OF_finddevice("/cpus");
 	if (cpus == -1) {
 		aprint_error("%s: no /cpus node found\n", __func__);
-		return;
+		return 0;
 	}
 
 	/* MPIDR affinity levels of boot processor. */
@@ -318,17 +319,21 @@ arm_fdt_cpu_mpstart(void)
 		__asm __volatile("sev" ::: "memory");
 
 		/* Wait for AP to start */
-		for (i = 0x100000; i > 0; i--) {
+		for (i = 0x10000000; i > 0; i--) {
 			membar_consumer();
 			if (arm_cpu_hatched & __BIT(cpuindex))
 				break;
 		}
-		if (i == 0)
+
+		if (i == 0) {
+			ret++;
 			aprint_error("cpu%d: WARNING: AP failed to start\n", cpuindex);
+		}
 
 		cpuindex++;
 	}
 #endif /* MULTIPROCESSOR */
+	return ret;
 }
 
 static int

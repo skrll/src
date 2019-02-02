@@ -1,4 +1,4 @@
-/* $NetBSD: ciphy.c,v 1.26 2016/07/07 06:55:41 msaitoh Exp $ */
+/* $NetBSD: ciphy.c,v 1.29 2019/01/22 03:42:27 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 2004
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ciphy.c,v 1.26 2016/07/07 06:55:41 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ciphy.c,v 1.29 2019/01/22 03:42:27 msaitoh Exp $");
 
 /*
  * Driver for the Cicada CS8201 10/100/1000 copper PHY.
@@ -132,9 +132,10 @@ ciphyattach(device_t parent, device_t self, void *aux)
 
 	ciphy_reset(sc);
 
-	sc->mii_capabilities = PHY_READ(sc, MII_BMSR) & ma->mii_capmask;
+	PHY_READ(sc, MII_BMSR, &sc->mii_capabilities);
+	sc->mii_capabilities &= ma->mii_capmask;
 	if (sc->mii_capabilities & BMSR_EXTSTAT)
-		sc->mii_extcapabilities = PHY_READ(sc, MII_EXTSR);
+		PHY_READ(sc, MII_EXTSR, &sc->mii_extcapabilities);
 	aprint_normal_dev(self, "");
 	if ((sc->mii_capabilities & BMSR_MEDIAMASK) == 0)
 		aprint_error("no media present");
@@ -147,7 +148,7 @@ static int
 ciphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
-	int reg, speed, gig;
+	uint16_t reg, speed, gig;
 
 	switch (cmd) {
 	case MII_POLLSTAT:
@@ -164,7 +165,7 @@ ciphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		 * isolate ourselves.
 		 */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst) {
-			reg = PHY_READ(sc, MII_BMCR);
+			PHY_READ(sc, MII_BMCR, &reg);
 			PHY_WRITE(sc, MII_BMCR, reg | BMCR_ISO);
 			return (0);
 		}
@@ -183,37 +184,38 @@ ciphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 			/*
 			 * If we're already in auto mode, just return.
 			 */
-			if (PHY_READ(sc, CIPHY_MII_BMCR) & CIPHY_BMCR_AUTOEN)
+			PHY_READ(sc, MII_BMCR, &reg);
+			if (reg & BMCR_AUTOEN)
 				return (0);
 #endif
 			(void) mii_phy_auto(sc, 0);
 			break;
 		case IFM_1000_T:
-			speed = CIPHY_S1000;
+			speed = BMCR_S1000;
 			goto setit;
 		case IFM_100_TX:
-			speed = CIPHY_S100;
+			speed = BMCR_S100;
 			goto setit;
 		case IFM_10_T:
-			speed = CIPHY_S10;
+			speed = BMCR_S10;
 setit:
 			if ((ife->ifm_media & IFM_GMASK) == IFM_FDX) {
-				speed |= CIPHY_BMCR_FDX;
-				gig = CIPHY_1000CTL_AFD;
+				speed |= BMCR_FDX;
+				gig = GTCR_ADV_1000TFDX;
 			} else {
-				gig = CIPHY_1000CTL_AHD;
+				gig = GTCR_ADV_1000THDX;
 			}
 
-			PHY_WRITE(sc, CIPHY_MII_1000CTL, 0);
-			PHY_WRITE(sc, CIPHY_MII_BMCR, speed);
-			PHY_WRITE(sc, CIPHY_MII_ANAR, CIPHY_SEL_TYPE);
+			PHY_WRITE(sc, MII_GTCR, 0);
+			PHY_WRITE(sc, MII_BMCR, speed);
+			PHY_WRITE(sc, MII_ANAR, ANAR_CSMA);
 
 			if (IFM_SUBTYPE(ife->ifm_media) != IFM_1000_T)
 				break;
 
-			PHY_WRITE(sc, CIPHY_MII_1000CTL, gig);
-			PHY_WRITE(sc, CIPHY_MII_BMCR,
-			    speed|CIPHY_BMCR_AUTOEN|CIPHY_BMCR_STARTNEG);
+			PHY_WRITE(sc, MII_GTCR, gig);
+			PHY_WRITE(sc, MII_BMCR,
+			    speed | BMCR_AUTOEN | BMCR_STARTNEG);
 
 			/*
 			 * When setting the link manually, one side must
@@ -224,15 +226,15 @@ setit:
 			 * be a master, otherwise it's a slave.
 			 */
 			if ((mii->mii_ifp->if_flags & IFF_LINK0)) {
-				PHY_WRITE(sc, CIPHY_MII_1000CTL,
-				    gig|CIPHY_1000CTL_MSE|CIPHY_1000CTL_MSC);
+				PHY_WRITE(sc, MII_GTCR,
+				    gig | GTCR_MAN_MS | GTCR_ADV_MS);
 			} else {
-				PHY_WRITE(sc, CIPHY_MII_1000CTL,
-				    gig|CIPHY_1000CTL_MSE);
+				PHY_WRITE(sc, MII_GTCR,
+				    gig | GTCR_MAN_MS);
 			}
 			break;
 		case IFM_NONE:
-			PHY_WRITE(sc, MII_BMCR, BMCR_ISO|BMCR_PDOWN);
+			PHY_WRITE(sc, MII_BMCR, BMCR_ISO | BMCR_PDOWN);
 			break;
 		case IFM_100_T4:
 		default:
@@ -271,7 +273,8 @@ setit:
 		 * need to restart the autonegotiation process.  Read
 		 * the BMSR twice in case it's latched.
 		 */
-		reg = PHY_READ(sc, MII_BMSR) | PHY_READ(sc, MII_BMSR);
+		PHY_READ(sc, MII_BMSR, &reg);
+		PHY_READ(sc, MII_BMSR, &reg);
 		if (reg & BMSR_LINK) {
 			/*
 			 * Reset autonegotiation timer to 0 in case the link
@@ -320,30 +323,31 @@ static void
 ciphy_status(struct mii_softc *sc)
 {
 	struct mii_data *mii = sc->mii_pdata;
-	int bmsr, bmcr;
+	uint16_t bmsr, bmcr;
 
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
 
-	bmsr = PHY_READ(sc, MII_BMSR) | PHY_READ(sc, MII_BMSR);
+	PHY_READ(sc, MII_BMSR, &bmsr);
+	PHY_READ(sc, MII_BMSR, &bmsr);
 
 	if (bmsr & BMSR_LINK)
 		mii->mii_media_status |= IFM_ACTIVE;
 
-	bmcr = PHY_READ(sc, CIPHY_MII_BMCR);
+	PHY_READ(sc, MII_BMCR, &bmcr);
 
-	if (bmcr & CIPHY_BMCR_LOOP)
+	if (bmcr & BMCR_LOOP)
 		mii->mii_media_active |= IFM_LOOP;
 
-	if (bmcr & CIPHY_BMCR_AUTOEN) {
-		if ((bmsr & CIPHY_BMSR_ACOMP) == 0) {
+	if (bmcr & BMCR_AUTOEN) {
+		if ((bmsr & BMSR_ACOMP) == 0) {
 			/* Erg, still trying, I guess... */
 			mii->mii_media_active |= IFM_NONE;
 			return;
 		}
 	}
 
-	bmsr = PHY_READ(sc, CIPHY_MII_AUXCSR);
+	PHY_READ(sc, CIPHY_MII_AUXCSR, &bmsr);
 	switch (bmsr & CIPHY_AUXCSR_SPEED) {
 	case CIPHY_SPEED10:
 		mii->mii_media_active |= IFM_10_T;
@@ -377,19 +381,37 @@ ciphy_reset(struct mii_softc *sc)
 	return;
 }
 
-#define PHY_SETBIT(x, y, z) \
-	PHY_WRITE(x, y, (PHY_READ(x, y) | (z)))
-#define PHY_CLRBIT(x, y, z) \
-	PHY_WRITE(x, y, (PHY_READ(x, y) & ~(z)))
+static inline int
+PHY_SETBIT(struct mii_softc *sc, int y, uint16_t z)
+{
+	uint16_t _tmp;
+	int rv;
+
+	if ((rv = PHY_READ(sc, y, &_tmp)) != 0)
+		return rv;
+	return PHY_WRITE(sc, y, _tmp | z);
+}
+
+static inline int
+PHY_CLRBIT(struct mii_softc *sc, int y, uint16_t z)
+{
+	uint16_t _tmp;
+	int rv;
+
+	if ((rv = PHY_READ(sc, y, &_tmp)) != 0)
+	    return rv;
+	return PHY_WRITE(sc, y, _tmp & ~z);
+}
 
 static void
 ciphy_fixup(struct mii_softc *sc)
 {
-	uint16_t		model;
-	uint16_t		status, speed;
+	uint16_t	model, status, speed;
+	uint16_t	reg;
 
-	model = MII_MODEL(PHY_READ(sc, CIPHY_MII_PHYIDR2));
-	status = PHY_READ(sc, CIPHY_MII_AUXCSR);
+	PHY_READ(sc, MII_PHYIDR2, &reg);
+	model = MII_MODEL(reg);
+	PHY_READ(sc, CIPHY_MII_AUXCSR, &status);
 	speed = status & CIPHY_AUXCSR_SPEED;
 
 	if (device_is_a(device_parent(sc->mii_dev), "nfe")) {

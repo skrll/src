@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.802 2018/12/27 19:35:31 christos Exp $
+# $NetBSD: mi,v 1.804 2019/01/25 18:33:58 christos Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -2205,7 +2205,6 @@
 ./usr/tests/kernel/t_subr_prf			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_sysctl			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_sysv			tests-kernel-tests	compattestfile,atf
-./usr/tests/kernel/t_threadpool			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_time			tests-obsolete		obsolete
 ./usr/tests/kernel/t_timeleft			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_trapsignal			tests-kernel-tests	compattestfile,atf
@@ -3338,6 +3337,7 @@
 ./usr/tests/net/if_ipsec/Kyuafile		tests-net-tests		atf,rump,kyua
 ./usr/tests/net/if_ipsec/t_ipsec		tests-net-tests		atf,rump
 ./usr/tests/net/if_ipsec/t_ipsec_natt		tests-net-tests		atf,rump
+./usr/tests/net/if_ipsec/t_ipsec_pfil		tests-net-tests		atf,rump
 ./usr/tests/net/if_l2tp				tests-net-tests		compattestfile,atf
 ./usr/tests/net/if_l2tp/Atffile			tests-net-tests		atf,rump
 ./usr/tests/net/if_l2tp/Kyuafile		tests-net-tests		atf,rump,kyua

@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1094 2019/01/09 23:52:29 mrg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1097 2019/01/30 22:51:33 scole Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -72,6 +72,8 @@ MKGCCCMDS?=	no
 #
 .if ${HAVE_GCC} == 6
 EXTERNAL_GCC_SUBDIR?=	gcc.old
+.elif ${HAVE_GCC} == 7
+EXTERNAL_GCC_SUBDIR?=	gcc
 .else
 EXTERNAL_GCC_SUBDIR=?	/does/not/exist
 .endif
@@ -809,7 +811,6 @@ NOPROFILE=	# defined
 #
 # The ia64 port is incomplete.
 #
-MKLINT.ia64=	no
 MKGDB.ia64=	no
 
 #
@@ -1103,11 +1104,6 @@ USE_LIBCSANITIZER?=	undefined
 #
 # Exceptions to the above:
 #
-
-# Rump doesn't work yet on ia64
-.if ${MACHINE} == "ia64"
-MKRUMP=		no
-.endif
 
 # RUMP uses -nostdinc which coverity does not like
 # It also does not use many new files, so disable it

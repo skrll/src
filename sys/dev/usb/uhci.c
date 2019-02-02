@@ -1,4 +1,4 @@
-/*	$NetBSD: uhci.c,v 1.284 2018/09/16 20:21:56 mrg Exp $	*/
+/*	$NetBSD: uhci.c,v 1.286 2019/01/22 15:02:33 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2011, 2012 The NetBSD Foundation, Inc.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.284 2018/09/16 20:21:56 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.286 2019/01/22 15:02:33 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

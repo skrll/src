@@ -1,4 +1,4 @@
-/*	$NetBSD: difftime.c,v 1.19 2018/10/19 23:05:35 christos Exp $	*/
+/*	$NetBSD: difftime.c,v 1.21 2019/01/27 04:38:38 dholland Exp $	*/
 
 /* Return the difference between two timestamps.  */
 
@@ -12,7 +12,7 @@
 #if 0
 static char	elsieid[] = "@(#)difftime.c	8.1";
 #else
-__RCSID("$NetBSD: difftime.c,v 1.19 2018/10/19 23:05:35 christos Exp $");
+__RCSID("$NetBSD: difftime.c,v 1.21 2019/01/27 04:38:38 dholland Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
