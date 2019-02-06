@@ -1,0 +1,92 @@
+$NetBSD: README.gcc7,v 1.8 2019/02/05 14:07:24 mrg Exp $
+
+new stuff (from gcc 5):
+	cc1objcplus
+	libcilkrts
+	libmpx
+	liboffloadmic
+	libvtv
+	libitm
+
+known todo for gcc7:
+	- sanitizer file lists are not updated properly
+		- pull out more stuff via mknative-gcc vs hand coded in Makefile??
+
+
+arch/feature list.  anything not here has been switched already:
+
+tools:		does build.sh tools work?
+kernels:	does a kernel run?
+libgcc:		does libgcc build?
+native-gcc:	does a full mknative-gcc complete?
+make release:	does build.sh release complete? 
+runs:		does the system boot with a full world?
+atf:		does atf run / compare well
+
+
+architecture	tools	kernels	libgcc	native-gcc	make release	runs	atf
+------------	-----	-------	------	----------	------------	----	---
+aarch64		y	y	y	y		y		y	?
+alpha		y	y	y	y		y		y	?
+arm		y	y	y	y		y		y	?
+armeb		y	?	y	y		y		?	?
+earm		?	?	?	?		?		?	?
+earmeb		?	?	?	?		?		?	?
+earmhf		?	?	?	?		?		?	?
+earmhfeb	?	?	?	?		?		?	?
+earmv4		y	y	n[5]	y		?		?	?
+earmv4eb	?	?	?	?		?		?	?
+earmv6		?	?	?	?		?		?	?
+earmv6eb	?	?	?	?		?		?	?
+earmv6hf	?	?	?	?		?		?	?
+earmv6hfeb	?	?	?	?		?		?	?
+earmv7		?	?	?	?		?		?	?
+earmv7eb	?	?	?	?		?		?	?
+earmv7hf	?	?	?	?		?		?	?
+earmv7hfeb	?	?	?	?		?		?	?
+hppa		y	n[6]	y	y		n[7]		?	?
+i386		y	y	y	y		y		y	?
+ia64		y	?	?	y		?		?	?
+m68000		n[4]	?	?	?		?		?	?
+m68k		y	?	y	y		?		?	?
+mipseb		y	?	?	y		?		?	?
+mipsel		y	?	?	y		?		?	?
+mips64eb	y	y	y	y		y		y	?
+mips64el	y	?	?	y		?		?	?
+powerpc		y	y	y	y		y		y	?
+powerpc64	y	?	y	y		n[9]		?	?
+sh3eb		y	?	y	y		?		?	?
+sh3el		y	?	y	y		?		?	?
+sparc		y	y	y	y		y		y	?
+sparc64		y	y	y	y[1]		n[8]		y	?
+vax		y	?	?	y		y/n[3]		?	?
+x86_64		y	y	y	y		y		y	y
+--
+or1k		
+riscv32		
+riscv64		
+coldfire	?	N/A	?	?		?		N/A	N/A
+------------	-----	-------	------	----------	------------	----	---
+architecture	tools	kernels	libgcc	native-gcc	make release	runs	atf
+
+[1] - sparc64-gcc gets ICE at startup.  because sizeof(ufast8/16/32) != sizeof(sfast8/16/32)
+	-- uncommited hack to workaround it seems to work fine.
+[2]
+[3] - gcc can't be built: 
+	/usr/src6/external/gpl3/gcc/dist/gcc/calls.c:1361:1: error: unrecognizable insn:
+	 }
+	 ^
+	(insn 444 443 445 19 (set (reg:SI 389)
+		(subreg:SI (mem:DI (plus:SI (plus:SI (mult:SI (reg:SI 387)
+				    (const_int 8 [0x8]))
+				(reg/f:SI 17 virtual-stack-vars))
+			    (const_int -224 [0xffffffffffffff20])) [18 *_176+0 S8 A32]) 4)) "/usr/src6/external/gpl3/gcc/dist/gcc/wide-int.h":1817 -1
+	     (nil))
+	/usr/src6/external/gpl3/gcc/dist/gcc/calls.c:1361:1: internal compiler error: in extract_insn, at recog.c:2311
+    - the rest of the world builds fine.
+[4] - ar: netbsd.o: No such file or directory
+[5] - libstdc++ eh_personality.cc ends up with refs to arm eabi specific functions that are in libunwind for us
+[6] - uncommited changes that need confirming.
+[7] - ramdisk fails:  32,nbmakefs: Writing inode 1562 (work/./usr/mdec/boot), bytes 229376 + 4096: No space left on device
+[8] - ramdisk fails:  32,nbmakefs: Writing inode 1026 (work/./usr/share/zoneinfo/US/Alaska), bytes 0 + 2380: No space left on device
+[9] - /usr/src6/external/gpl3/gcc/dist/libgcc/libgcc2.c:2036:1: error: unrecognizable insn:

@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ubsan.c,v 1.1 2018/08/03 04:18:40 kamil Exp $	*/
+/*	$NetBSD: t_ubsan.c,v 1.3 2019/02/04 03:10:33 mrg Exp $	*/
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
 #include <sys/cdefs.h>
 __COPYRIGHT("@(#) Copyright (c) 2018\
  The NetBSD Foundation, inc. All rights reserved.");
-__RCSID("$NetBSD: t_ubsan.c,v 1.1 2018/08/03 04:18:40 kamil Exp $");
+__RCSID("$NetBSD: t_ubsan.c,v 1.3 2019/02/04 03:10:33 mrg Exp $");
 
 #include <sys/types.h>
 #include <sys/wait.h>
