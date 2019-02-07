@@ -1,4 +1,4 @@
-/*	$NetBSD: supextern.h,v 1.25 2019/02/03 12:13:37 mrg Exp $	*/
+/*	$NetBSD: supextern.h,v 1.27 2019/02/06 17:21:51 christos Exp $	*/
 
 struct stat;
 
