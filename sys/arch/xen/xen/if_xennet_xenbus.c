@@ -1,4 +1,4 @@
-/*      $NetBSD: if_xennet_xenbus.c,v 1.82 2018/12/24 14:55:42 cherry Exp $      */
+/*      $NetBSD: if_xennet_xenbus.c,v 1.84 2019/02/05 06:17:02 msaitoh Exp $      */
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -84,7 +84,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_xennet_xenbus.c,v 1.82 2018/12/24 14:55:42 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_xennet_xenbus.c,v 1.84 2019/02/05 06:17:02 msaitoh Exp $");
 
 #include "opt_xen.h"
 #include "opt_nfs_boot.h"
@@ -123,7 +123,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_xennet_xenbus.c,v 1.82 2018/12/24 14:55:42 cherry
 #include <xen/hypervisor.h>
 #include <xen/evtchn.h>
 #include <xen/granttables.h>
-#include <xen/xen-public/io/netif.h>
+#include <xen/include/public/io/netif.h>
 #include <xen/xenpmap.h>
 
 #include <xen/xenbus.h>
@@ -370,7 +370,7 @@ xennet_xenbus_attach(device_t parent, device_t self, void *aux)
 	ifp->if_watchdog = xennet_watchdog;
 	ifp->if_init = xennet_init;
 	ifp->if_stop = xennet_stop;
-	ifp->if_flags = IFF_BROADCAST|IFF_SIMPLEX|IFF_NOTRAILERS|IFF_MULTICAST;
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 	ifp->if_timer = 0;
 	ifp->if_snd.ifq_maxlen = uimax(ifqmaxlen, NET_TX_RING_SIZE * 2);
 	ifp->if_capabilities = IFCAP_CSUM_TCPv4_Tx | IFCAP_CSUM_UDPv4_Tx;

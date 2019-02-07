@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ptrace_wait.c,v 1.69 2019/01/22 03:47:45 kamil Exp $	*/
+/*	$NetBSD: t_ptrace_wait.c,v 1.71 2019/02/07 00:24:59 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2016 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: t_ptrace_wait.c,v 1.69 2019/01/22 03:47:45 kamil Exp $");
+__RCSID("$NetBSD: t_ptrace_wait.c,v 1.71 2019/02/07 00:24:59 kamil Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -113,6 +113,7 @@ traceme_raise(int sigval)
 		case SIGKILL:
 			/* NOTREACHED */
 			FORKEE_ASSERTX(0 && "This shall not be reached");
+			__unreachable();
 		default:
 			DPRINTF("Before exiting of the child process\n");
 			_exit(exitval);
@@ -189,6 +190,11 @@ traceme_crash(int sig)
 #endif
 	struct ptrace_siginfo info;
 
+#ifndef PTRACE_ILLEGAL_ASM
+	if (sig == SIGILL)
+		atf_tc_skip("PTRACE_ILLEGAL_ASM not defined");
+#endif
+
 	memset(&info, 0, sizeof(info));
 
 	DPRINTF("Before forking process PID=%d\n", getpid());
@@ -246,9 +252,9 @@ traceme_crash(int sig)
 	case SIGSEGV:
 		ATF_REQUIRE_EQ(info.psi_siginfo.si_code, SEGV_MAPERR);
 		break;
-//	case SIGILL:
-//		ATF_REQUIRE_EQ(info.psi_siginfo.si_code, ILL_ILLOP);
-//		break;
+	case SIGILL:
+		ATF_REQUIRE_EQ(info.psi_siginfo.si_code, ILL_PRVOPC);
+		break;
 	case SIGFPE:
 		ATF_REQUIRE_EQ(info.psi_siginfo.si_code, FPE_INTDIV);
 		break;
@@ -284,7 +290,7 @@ ATF_TC_BODY(test, tc)							\
 
 TRACEME_CRASH(traceme_crash_trap, SIGTRAP)
 TRACEME_CRASH(traceme_crash_segv, SIGSEGV)
-//TRACEME_CRASH(traceme_crash_ill, SIGILL)
+TRACEME_CRASH(traceme_crash_ill, SIGILL)
 TRACEME_CRASH(traceme_crash_fpe, SIGFPE)
 TRACEME_CRASH(traceme_crash_bus, SIGBUS)
 
@@ -800,6 +806,7 @@ traceme_vfork_raise(int sigval)
 		case SIGHUP:
 			/* NOTREACHED */
 			FORKEE_ASSERTX(0 && "This shall not be reached");
+			__unreachable();
 		default:
 			DPRINTF("Before exiting of the child process\n");
 			_exit(exitval);
@@ -869,6 +876,11 @@ traceme_vfork_crash(int sig)
 	int status;
 #endif
 
+#ifndef PTRACE_ILLEGAL_ASM
+	if (sig == SIGILL)
+		atf_tc_skip("PTRACE_ILLEGAL_ASM not defined");
+#endif
+
 	DPRINTF("Before forking process PID=%d\n", getpid());
 	SYSCALL_REQUIRE((child = vfork()) != -1);
 	if (child == 0) {
@@ -928,7 +940,7 @@ ATF_TC_BODY(test, tc)							\
 
 TRACEME_VFORK_CRASH(traceme_vfork_crash_trap, SIGTRAP)
 TRACEME_VFORK_CRASH(traceme_vfork_crash_segv, SIGSEGV)
-//TRACEME_VFORK_CRASH(traceme_vfork_crash_ill, SIGILL)
+TRACEME_VFORK_CRASH(traceme_vfork_crash_ill, SIGILL)
 TRACEME_VFORK_CRASH(traceme_vfork_crash_fpe, SIGFPE)
 TRACEME_VFORK_CRASH(traceme_vfork_crash_bus, SIGBUS)
 
@@ -1008,6 +1020,11 @@ unrelated_tracer_sees_crash(int sig)
 	int status;
 #endif
 	struct ptrace_siginfo info;
+
+#ifndef PTRACE_ILLEGAL_ASM
+	if (sig == SIGILL)
+		atf_tc_skip("PTRACE_ILLEGAL_ASM not defined");
+#endif
 
 	memset(&info, 0, sizeof(info));
 
@@ -1095,9 +1112,9 @@ unrelated_tracer_sees_crash(int sig)
 		case SIGSEGV:
 			ATF_REQUIRE_EQ(info.psi_siginfo.si_code, SEGV_MAPERR);
 			break;
-//		case SIGILL:
-//			ATF_REQUIRE_EQ(info.psi_siginfo.si_code, ILL_ILLOP);
-//			break;
+		case SIGILL:
+			ATF_REQUIRE_EQ(info.psi_siginfo.si_code, ILL_PRVOPC);
+			break;
 		case SIGFPE:
 			ATF_REQUIRE_EQ(info.psi_siginfo.si_code, FPE_INTDIV);
 			break;
@@ -1116,6 +1133,9 @@ unrelated_tracer_sees_crash(int sig)
 		DPRINTF("Before calling %s() for tracee\n", TWAIT_FNAME);
 		TWAIT_REQUIRE_FAILURE(ECHILD,
 		    wpid = TWAIT_GENERIC(tracee, &status, 0));
+
+		/* Inform parent that tracer is exiting normally */
+		CHILD_TO_PARENT("tracer done", parent_tracer, msg);
 
 		DPRINTF("Before exiting of the tracer process\n");
 		_exit(0 /* collect by initproc */);
@@ -1148,6 +1168,9 @@ unrelated_tracer_sees_crash(int sig)
 
 	validate_status_signaled(status, SIGKILL, 0);
 
+	DPRINTF("Await normal exit of tracer\n");
+	PARENT_FROM_CHILD("tracer done", parent_tracer, msg);
+
 	msg_close(&parent_tracer);
 	msg_close(&parent_tracee);
 }
@@ -1169,7 +1192,7 @@ ATF_TC_BODY(test, tc)							\
 
 UNRELATED_TRACER_SEES_CRASH(unrelated_tracer_sees_crash_trap, SIGTRAP)
 UNRELATED_TRACER_SEES_CRASH(unrelated_tracer_sees_crash_segv, SIGSEGV)
-//UNRELATED_TRACER_SEES_CRASH(unrelated_tracer_sees_crash_ill, SIGILL)
+UNRELATED_TRACER_SEES_CRASH(unrelated_tracer_sees_crash_ill, SIGILL)
 UNRELATED_TRACER_SEES_CRASH(unrelated_tracer_sees_crash_fpe, SIGFPE)
 UNRELATED_TRACER_SEES_CRASH(unrelated_tracer_sees_crash_bus, SIGBUS)
 #endif
@@ -5677,7 +5700,7 @@ ATF_TP_ADD_TCS(tp)
 
 	ATF_TP_ADD_TC(tp, traceme_crash_trap);
 	ATF_TP_ADD_TC(tp, traceme_crash_segv);
-//	ATF_TP_ADD_TC(tp, traceme_crash_ill);
+	ATF_TP_ADD_TC(tp, traceme_crash_ill);
 	ATF_TP_ADD_TC(tp, traceme_crash_fpe);
 	ATF_TP_ADD_TC(tp, traceme_crash_bus);
 
@@ -5712,7 +5735,7 @@ ATF_TP_ADD_TCS(tp)
 
 	ATF_TP_ADD_TC(tp, traceme_vfork_crash_trap);
 	ATF_TP_ADD_TC(tp, traceme_vfork_crash_segv);
-//	ATF_TP_ADD_TC(tp, traceme_vfork_crash_ill);
+	ATF_TP_ADD_TC(tp, traceme_vfork_crash_ill);
 	ATF_TP_ADD_TC(tp, traceme_vfork_crash_fpe);
 	ATF_TP_ADD_TC(tp, traceme_vfork_crash_bus);
 
@@ -5720,7 +5743,7 @@ ATF_TP_ADD_TCS(tp)
 
 	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_sees_crash_trap);
 	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_sees_crash_segv);
-//	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_sees_crash_ill);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_sees_crash_ill);
 	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_sees_crash_fpe);
 	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_sees_crash_bus);
 
