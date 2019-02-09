@@ -838,8 +838,9 @@ axen_attach(device_t parent, device_t self, void *aux)
 	if_initialize(ifp);
 	sc->axen_ipq = if_percpuq_create(&sc->axen_ec.ec_if);
 	ether_ifattach(ifp, eaddr);
-	if_register(ifp);
 	ether_set_ifflags_cb(&sc->axen_ec, axen_ifflags_cb);
+	if_register(ifp);
+
 	rnd_attach_source(&sc->rnd_source, device_xname(sc->axen_dev),
 	    RND_TYPE_NET, RND_FLAG_DEFAULT);
 

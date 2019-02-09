@@ -1116,8 +1116,8 @@ axe_attach(device_t parent, device_t self, void *aux)
 	if_initialize(ifp);
 	sc->axe_ipq = if_percpuq_create(&sc->axe_ec.ec_if);
 	ether_ifattach(ifp, sc->axe_enaddr);
-	if_register(ifp);
 	ether_set_ifflags_cb(&sc->axe_ec, axe_ifflags_cb);
+	if_register(ifp);
 
 	rnd_attach_source(&sc->rnd_source, device_xname(sc->axe_dev),
 	    RND_TYPE_NET, RND_FLAG_DEFAULT);
