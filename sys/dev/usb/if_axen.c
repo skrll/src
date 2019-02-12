@@ -1542,21 +1542,30 @@ axen_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct axen_softc *sc = ifp->if_softc;
 
-	int s = splnet();
 	int error = ether_ioctl(ifp, cmd, data);
 
+	mutex_enter(&sc->sc_lock);
 	if (error == ENETRESET) {
 		error = 0;
 		switch (cmd) {
 		case SIOCSIFCAP:
 			axen_setcoe(sc);
 			break;
+		case SIOCADDMULTI:
+		case SIOCDELMULTI:
+			axen_iff(sc);
 		default:
 			break;
 		}
 	}
 
-	splx(s);
+	mutex_enter(&sc->sc_rxlock);
+	mutex_enter(&sc->sc_txlock);
+	sc->sc_if_flags = ifp->if_flags;
+	mutex_exit(&sc->sc_txlock);
+	mutex_exit(&sc->sc_rxlock);
+
+	mutex_exit(&sc->axen_lock);
 
 	return error;
 }
@@ -1566,21 +1575,20 @@ axen_ifflags_cb(struct ethercom *ec)
 {
 	struct ifnet *ifp = &ec->ec_if;
 	struct axen_softc *sc = ifp->if_softc;
-	int ret;
 
 	mutex_enter(&sc->axen_lock);
 
-	int change = ifp->if_flags ^ sc->axen_if_flags;
-	sc->axen_if_flags = ifp->if_flags;
+	const int change = ifp->if_flags ^ sc->axen_if_flags;
+	if ((change & ~(IFF_CANTCHANGE | IFF_DEBUG)) != 0) {
+		mutex_exit(&sc->axen_lock);
+		return ENETRESET;
+	}
 
-	if ((change & IFF_PROMISC) == 0) {
-		ret = ENETRESET;
-	} else {
+	if ((change & IFF_PROMISC) != 0) {
 		axen_iff(sc);
-		ret = 0;
 	}
 	mutex_exit(&sc->axen_lock);
-	return ret;
+	return 0;
 }
 
 static void

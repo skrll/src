@@ -485,6 +485,8 @@ axe_setmulti(struct axe_softc *sc)
 	uint16_t rxmode;
 	uint8_t hashtbl[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
+	KASSERT(mutex_owned(&sc->sc_lock);
+
 	if (sc->axe_dying)
 		return;
 
@@ -510,16 +512,20 @@ axe_setmulti(struct axe_softc *sc)
 	}
 
 	/* Now program new ones */
+	ETHER_LOCK(&sc->sc_ec);
 	ETHER_FIRST_MULTI(step, &sc->axe_ec, enm);
 	while (enm != NULL) {
-		if (memcmp(enm->enm_addrlo, enm->enm_addrhi,
-		    ETHER_ADDR_LEN) != 0)
+		if (memcmp(enm->enm_addrlo, enm->enm_addrhi,ETHER_ADDR_LEN) != 0)
+			ETHER_UNLOCK(&sc->sc_ec);
 			goto allmulti;
+		}
 
 		h = ether_crc32_be(enm->enm_addrlo, ETHER_ADDR_LEN) >> 26;
 		hashtbl[h >> 3] |= 1U << (h & 7);
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(&sc->sc_ec);
+
 	ifp->if_flags &= ~IFF_ALLMULTI;
 	rxmode |= AXE_RXCMD_MULTICAST;
 
@@ -529,7 +535,7 @@ axe_setmulti(struct axe_softc *sc)
 	return;
 
  allmulti:
-	ifp->if_flags |= IFF_ALLMULTI;
+//	ifp->if_flags |= IFF_ALLMULTI;
 	rxmode |= AXE_RXCMD_ALLMULTI;
 	axe_cmd(sc, AXE_CMD_RXCTL_WRITE, 0, rxmode, NULL);
 	axe_unlock_mii(sc);
@@ -1007,8 +1013,6 @@ axe_attach(device_t parent, device_t self, void *aux)
 		}
 	}
 
-	s = splnet();
-
 	/* We need the PHYID for init dance in some cases */
 	axe_lock_mii(sc);
 	if (axe_cmd(sc, AXE_CMD_READ_PHYID, 0, 0, &sc->axe_phyaddrs)) {
@@ -1112,6 +1116,9 @@ axe_attach(device_t parent, device_t self, void *aux)
 	} else
 		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_AUTO);
 
+	callout_init(&sc->axe_stat_ch, 0);
+	callout_setfunc(&sc->axe_stat_ch, axe_tick, sc);
+
 	/* Attach the interface. */
 	if_initialize(ifp);
 	sc->axe_ipq = if_percpuq_create(&sc->axe_ec.ec_if);
@@ -1122,11 +1129,7 @@ axe_attach(device_t parent, device_t self, void *aux)
 	rnd_attach_source(&sc->rnd_source, device_xname(sc->axe_dev),
 	    RND_TYPE_NET, RND_FLAG_DEFAULT);
 
-	callout_init(&sc->axe_stat_ch, 0);
-	callout_setfunc(&sc->axe_stat_ch, axe_tick, sc);
-
 	sc->axe_attached = true;
-	splx(s);
 
 	usbd_add_drv_event(USB_EVENT_DRIVER_ATTACH, sc->axe_udev, sc->axe_dev);
 
@@ -1148,23 +1151,16 @@ axe_detach(device_t self, int flags)
 
 	pmf_device_deregister(self);
 
+	mutex_enter(&sc->sc_lock)
 	sc->axe_dying = true;
 
-	if (sc->axe_ep[AXE_ENDPT_TX] != NULL)
-		usbd_abort_pipe(sc->axe_ep[AXE_ENDPT_TX]);
-	if (sc->axe_ep[AXE_ENDPT_RX] != NULL)
-		usbd_abort_pipe(sc->axe_ep[AXE_ENDPT_RX]);
-	if (sc->axe_ep[AXE_ENDPT_INTR] != NULL)
-		usbd_abort_pipe(sc->axe_ep[AXE_ENDPT_INTR]);
+	if (ifp->if_flags & IFF_RUNNING)
+		axe_stop_locked(ifp, 1);
 
-	callout_halt(&sc->axe_stat_ch, NULL);
+	mutex_exit(&sc->sc_lock);
+
 	usb_rem_task_wait(sc->axe_udev, &sc->axe_tick_task, USB_TASKQ_DRIVER,
 	    NULL);
-
-	s = splusb();
-
-	if (ifp->if_flags & IFF_RUNNING)
-		axe_stop(ifp, 1);
 
 
 	if (--sc->axe_refcnt >= 0) {
@@ -1191,8 +1187,6 @@ axe_detach(device_t self, int flags)
 #endif
 
 	sc->axe_attached = false;
-
-	splx(s);
 
 	usbd_add_drv_event(USB_EVENT_DRIVER_DETACH, sc->axe_udev, sc->axe_dev);
 
@@ -1306,20 +1300,28 @@ axe_rxeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 	uint32_t total_len;
 	struct mbuf *m;
 
+	mutex_enter(&sc->axe_rxlock);
+
 	c = (struct axe_chain *)priv;
 	sc = c->axe_sc;
 	buf = c->axe_buf;
 	ifp = &sc->sc_if;
 
-	if (sc->axe_dying)
+	if ((sc->sc_stopping) {
+		mutex_exit(&sc->axe_rxlock);
 		return;
+	}
 
-	if ((ifp->if_flags & IFF_RUNNING) == 0)
+	if ((ifp->sc_if_flags & IFF_RUNNING) == 0) {
+		mutex_exit(&sc->axe_rxlock);
 		return;
+	}
 
 	if (status != USBD_NORMAL_COMPLETION) {
-		if (status == USBD_NOT_STARTED || status == USBD_CANCELLED)
+		if (status == USBD_NOT_STARTED || status == USBD_CANCELLED) {
+			mutex_exit(&sc->axe_rxlock);
 			return;
+		}
 		if (usbd_ratecheck(&sc->axe_rx_notice)) {
 			aprint_error_dev(sc->axe_dev, "usb errors on rx: %s\n",
 			    usbd_errstr(status));
@@ -1483,10 +1485,19 @@ axe_rxeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 
 		DPRINTFN(10, "deliver %jd (%#jx)", m->m_len, m->m_len, 0, 0);
 
+		mutex_exit(&sc->axe_rxlock);
+
 		if_percpuq_enqueue(sc->axe_ipq, (m));
+
+		mutex_enter(&sc->axe_rxlock);
+		if ((sc->sc_stopping) {
+			mutex_exit(&sc->axe_rxlock);
+			return;
+		}
 	} while (total_len > 0);
 
  done:
+	mutex_exit(&sc->axe_rxlock);
 
 	/* Setup new transfer. */
 	usbd_setup_xfer(xfer, c, c->axe_buf, sc->axe_bufsz,
@@ -1514,14 +1525,11 @@ axe_txeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 	if (sc->axe_dying)
 		return;
 
-	s = splnet();
-
 	ifp->if_timer = 0;
 	ifp->if_flags &= ~IFF_OACTIVE;
 
 	if (status != USBD_NORMAL_COMPLETION) {
 		if (status == USBD_NOT_STARTED || status == USBD_CANCELLED) {
-			splx(s);
 			return;
 		}
 		ifp->if_oerrors++;
@@ -1529,7 +1537,6 @@ axe_txeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 		    usbd_errstr(status));
 		if (status == USBD_STALLED)
 			usbd_clear_endpoint_stall_async(sc->axe_ep[AXE_ENDPT_TX]);
-		splx(s);
 		return;
 	}
 	ifp->if_opackets++;
@@ -1537,7 +1544,6 @@ axe_txeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 	if (!IFQ_IS_EMPTY(&ifp->if_snd))
 		axe_start(ifp);
 
-	splx(s);
 }
 
 static void
@@ -1577,8 +1583,6 @@ axe_tick_task(void *xsc)
 	if (mii == NULL)
 		return;
 
-	s = splnet();
-
 	mii_tick(mii);
 	if (sc->axe_link == 0 &&
 	    (mii->mii_media_status & IFM_ACTIVE) != 0 &&
@@ -1590,8 +1594,6 @@ axe_tick_task(void *xsc)
 	}
 
 	callout_schedule(&sc->axe_stat_ch, hz);
-
-	splx(s);
 }
 
 static int
@@ -1692,7 +1694,8 @@ axe_start(struct ifnet *ifp)
 	struct axe_softc *sc = ifp->if_softc;
 
 	mutex_enter(&sc->axe_txlock);
-	axe_start_locked(ifp);
+	if (!sc->sc_stopping)
+		axe_start_locked(ifp);
 	mutex_exit(&sc->axe_txlock);
 }
 
@@ -1702,7 +1705,9 @@ axe_start_locked(struct ifnet *ifp)
 	struct axe_softc *sc = ifp->if_softc;
 	struct mbuf *m;
 
-	if ((ifp->if_flags & (IFF_OACTIVE|IFF_RUNNING)) != IFF_RUNNING)
+	KASSERT(mutex_owned(&sc->axe_txlock));
+
+	if ((sc->sc_if_flags & (IFF_OACTIVE|IFF_RUNNING)) != IFF_RUNNING)
 		return;
 
 	IFQ_POLL(&ifp->if_snd, m);
@@ -1907,12 +1912,7 @@ static int
 axe_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct axe_softc *sc = ifp->if_softc;
-	int s;
-	int error = 0;
-
-	s = splnet();
-	error = ether_ioctl(ifp, cmd, data);
-	splx(s);
+	int error = ether_ioctl(ifp, cmd, data);
 
 	if (error == ENETRESET) {
 		error = 0;
@@ -1924,6 +1924,12 @@ axe_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			}
 		}
 	}
+
+	mutex_enter(&sc->axe_rxlock);
+	mutex_enter(&sc->axe_txlock);
+	sc->sc_if_flags = ifp->if_flags;
+	mutex_exit(&sc->axe_txlock);
+	mutex_exit(&sc->axe_rxlock);
 
 	return error;
 }
@@ -1941,14 +1947,12 @@ axe_watchdog(struct ifnet *ifp)
 	ifp->if_oerrors++;
 	aprint_error_dev(sc->axe_dev, "watchdog timeout\n");
 
-	s = splusb();
 	c = &sc->axe_cdata.axe_tx_chain[0];
 	usbd_get_xfer_status(c->axe_xfer, NULL, NULL, NULL, &stat);
 	axe_txeof(c->axe_xfer, c, stat);
 
 	if (!IFQ_IS_EMPTY(&ifp->if_snd))
 		axe_start(ifp);
-	splx(s);
 }
 
 /*

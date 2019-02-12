@@ -1154,6 +1154,26 @@ cue_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	if (sc->cue_dying)
 		return EIO;
 
+	int error = ether_ioctl(ifp, cmd, data);
+
+	if (error == ENETRESET) {
+		error = 0;
+		if (cmd == SIOCADDMULTI || cmd == SIOCDELMULTI) {
+			if (ifp->if_flags & IFF_RUNNING) {
+				mutex_enter(&sc->sc_lock);
+				smsc_setmulti(sc);
+				mutex_exit(&sc->sc_lock);
+			}
+		}
+	}
+
+	mutex_enter(&sc->sc_rxlock);
+	mutex_enter(&sc->sc_txlock);
+	sc->sc_if_flags = ifp->if_flags;
+	mutex_exit(&sc->sc_txlock);
+	mutex_exit(&sc->sc_rxlock);
+
+XXX
 	s = splnet();
 	error = ether_ioctl(ifp, cmd, data);
 	splx(s);

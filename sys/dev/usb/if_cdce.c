@@ -345,7 +345,7 @@ cdce_detach(device_t self, int flags)
 Static void
 cdce_start(struct ifnet *ifp)
 {
-	struct cdce_softc	*sc = ifp->if_softc;
+	struct cdce_softc const *sc = ifp->if_softc;
 	KASSERT(ifp->if_extflags & IFEF_MPSAFE);
 
 	mutex_enter(&sc->cdce_txlock);
@@ -469,14 +469,11 @@ Static int
 cdce_ioctl(struct ifnet *ifp, u_long command, void *data)
 {
 	struct cdce_softc	*sc = ifp->if_softc;
-	int			 s, error = 0;
 
 	if (sc->cdce_dying)
 		return EIO;
 
-	s = splnet();
-	error = ether_ioctl(ifp, command, data);
-	splx(s);
+	int error = ether_ioctl(ifp, cmd, data);
 
 	if (error == ENETRESET)
 		error = 0;

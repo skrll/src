@@ -352,7 +352,7 @@ smsc_miibus_statchg_locked(struct ifnet *ifp)
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 
-	if ((ifp->if_flags & IFF_RUNNING) == 0) {
+	if ((sc->sc_if_flags & IFF_RUNNING) == 0) {
 		smsc_dbg_printf(sc, "%s: not running\n", __func__);
 		return;
 	}
@@ -506,6 +506,8 @@ allmulti:
 	}
 
 	/* Write the hash table and mac control registers */
+
+	//XXX should we be doing this?
 	ifp->if_flags &= ~IFF_ALLMULTI;
 	smsc_write_reg(sc, SMSC_HASHH, hashtbl[1]);
 	smsc_write_reg(sc, SMSC_HASHL, hashtbl[0]);
@@ -659,12 +661,15 @@ smsc_init_locked(struct ifnet *ifp)
 		usbd_transfer(c->sc_xfer);
 	}
 
-	mutex_exit(&sc->sc_txlock);
-	mutex_exit(&sc->sc_rxlock);
-
+	KASSERT(IFNET_LOCKED(ifp));
 	/* Indicate we are up and running. */
 	ifp->if_flags |= IFF_RUNNING;
 	ifp->if_flags &= ~IFF_OACTIVE;
+
+	sc->sc_if_flags = ifp->if_flags;
+
+	mutex_exit(&sc->sc_txlock);
+	mutex_exit(&sc->sc_rxlock);
 
 	callout_reset(&sc->sc_stat_ch, hz, smsc_tick, sc);
 
@@ -712,7 +717,7 @@ smsc_start_locked(struct ifnet *ifp)
 		return;
 	}
 
-	if ((ifp->if_flags & (IFF_OACTIVE|IFF_RUNNING)) != IFF_RUNNING) {
+	if ((sc->sc_if_flags & IFF_RUNNING) != IFF_RUNNING) {
 		smsc_dbg_printf(sc, "%s: not running\n", __func__);
 		return;
 	}
@@ -753,7 +758,7 @@ smsc_tick(void *xsc)
 
 	mutex_enter(&sc->sc_lock);
 
-	if (sc->sc_dying) {
+	if (sc->sc_dying || sc->sc_stopping) {
 		mutex_exit(&sc->sc_lock);
 		return;
 	}
@@ -789,7 +794,7 @@ smsc_stop_locked(struct ifnet *ifp, int disable)
 	mutex_exit(&sc->sc_txlock);
 	mutex_exit(&sc->sc_rxlock);
 
-	callout_stop(&sc->sc_stat_ch);
+	callout_halt(&sc->sc_stat_ch, &sc->sc_lock);
 
 	/* Stop transfers. */
 	if (sc->sc_ep[SMSC_ENDPT_RX] != NULL) {
@@ -1046,13 +1051,12 @@ smsc_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 
 	int error = ether_ioctl(ifp, cmd, data);
 
+	mutex_enter(&sc->sc_lock);
 	if (error == ENETRESET) {
 		error = 0;
 		if (cmd == SIOCADDMULTI || cmd == SIOCDELMULTI) {
 			if (ifp->if_flags & IFF_RUNNING) {
-				mutex_enter(&sc->sc_lock);
 				smsc_setmulti(sc);
-				mutex_exit(&sc->sc_lock);
 			}
 		}
 	}
@@ -1062,6 +1066,8 @@ smsc_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	sc->sc_if_flags = ifp->if_flags;
 	mutex_exit(&sc->sc_txlock);
 	mutex_exit(&sc->sc_rxlock);
+
+	mutex_exit(&sc->sc_lock);
 
 	return error;
 }
@@ -1246,12 +1252,11 @@ smsc_detach(device_t self, int flags)
 
 	mutex_enter(&sc->sc_lock);
 	sc->sc_dying = true;
-	mutex_exit(&sc->sc_lock);
 
-	callout_halt(&sc->sc_stat_ch, NULL);
-
-	if (ifp->if_flags & IFF_RUNNING)
+	if (sc->sc_if_flags & IFF_RUNNING)
 		smsc_stop_locked(ifp, 1);
+
+	mutex_exit(&sc->sc_lock);
 
 	/*
 	 * Remove any pending tasks.  They cannot be executing because they run
@@ -1306,7 +1311,7 @@ smsc_tick_task(void *xsc)
 
 	mutex_enter(&sc->sc_lock);
 
-	if (sc->sc_dying) {
+	if (sc->sc_dying || sc->sc_stopping) {
 		mutex_exit(&sc->sc_lock);
 		return;
 	}
@@ -1327,7 +1332,7 @@ smsc_tick_task(void *xsc)
 	if (--sc->sc_refcnt < 0)
 		cv_broadcast(&sc->sc_detachcv);
 
-	if (sc->sc_dying) {
+	if (sc->sc_dying || sc->sc_stopping) {
 		mutex_exit(&sc->sc_lock);
 		return;
 	}

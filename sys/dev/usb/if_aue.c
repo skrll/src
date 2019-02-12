@@ -1578,14 +1578,25 @@ Static int
 aue_ioctl(struct ifnet *ifp, u_long command, void *data)
 {
 	struct aue_softc	*sc = ifp->if_softc;
-	int			s, error = 0;
 
-	if (sc->aue_dying)
-		return EIO;
+	int error = ether_ioctl(ifp, cmd, data);
 
-	s = splnet();
-	error = ether_ioctl(ifp, command, data);
-	splx(s);
+	if (error == ENETRESET) {
+		error = 0;
+		if (cmd == SIOCADDMULTI || cmd == SIOCDELMULTI) {
+			if (ifp->if_flags & IFF_RUNNING) {
+				mutex_enter(&sc->sc_lock);
+				aue_setmulti(sc);
+				mutex_exit(&sc->sc_lock);
+			}
+		}
+	}
+
+	mutex_enter(&sc->sc_rxlock);
+	mutex_enter(&sc->sc_txlock);
+	sc->aue_if_flags = ifp->if_flags;
+	mutex_exit(&sc->sc_txlock);
+	mutex_exit(&sc->sc_rxlock);
 
 	return error;
 }
@@ -1598,19 +1609,20 @@ aue_ifflags_cb(struct ethercom *ec)
 
 	mutex_enter(&sc->aue_lock);
 
-	if (ifp->if_flags & IFF_UP) {
-		if (ifp->if_flags & IFF_RUNNING &&
-		    ifp->if_flags & IFF_PROMISC &&
-		    !(sc->aue_if_flags & IFF_PROMISC)) {
-			AUE_SETBIT(sc, AUE_CTL2, AUE_CTL2_RX_PROMISC);
-		} else if (ifp->if_flags & IFF_RUNNING &&
-		    !(ifp->if_flags & IFF_PROMISC) &&
-		    sc->aue_if_flags & IFF_PROMISC) {
-			AUE_CLRBIT(sc, AUE_CTL2, AUE_CTL2_RX_PROMISC);
-		}
+	const int change = ifp->if_flags ^ sc->aue_if_flags;
+	if ((change & ~(IFF_CANTCHANGE | IFF_DEBUG)) != 0) {
+		mutex_exit(&sc->sc_lock);
+		return ENETRESET;
 	}
-	sc->aue_if_flags = ifp->if_flags;
-	aue_setmulti(sc);
+
+	if ((change & IFF_PROMISC) != 0) {
+		if (ifp->if_flags & IFF_PROMISC)
+			AUE_SETBIT(sc, AUE_CTL2, AUE_CTL2_RX_PROMISC);
+		else
+			AUE_CLRBIT(sc, AUE_CTL2, AUE_CTL2_RX_PROMISC);
+		aue_setmulti(sc);
+	}
+
 	mutex_exit(&sc->aue_lock);
 
 	return 0;
