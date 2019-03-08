@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.173 2019/01/23 09:47:52 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.176 2019/03/05 10:26:08 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -1570,7 +1570,8 @@ ixgbe_update_stats_counters(struct adapter *adapter)
 	u32                   missed_rx = 0, bprc, lxon, lxoff, total;
 	u64                   total_missed_rx = 0;
 	uint64_t              crcerrs, rlec;
-	int		      i, j;
+	unsigned int          queue_counters;
+	int		      i;
 
 	crcerrs = IXGBE_READ_REG(hw, IXGBE_CRCERRS);
 	stats->crcerrs.ev_count += crcerrs;
@@ -1580,20 +1581,19 @@ ixgbe_update_stats_counters(struct adapter *adapter)
 	if (hw->mac.type == ixgbe_mac_X550)
 		stats->mbsdc.ev_count += IXGBE_READ_REG(hw, IXGBE_MBSDC);
 
-	/* 16 registers */
-	for (i = 0; i < __arraycount(stats->qprc); i++) {
-		j = i % adapter->num_queues;
-
-		stats->qprc[j].ev_count += IXGBE_READ_REG(hw, IXGBE_QPRC(i));
-		stats->qptc[j].ev_count += IXGBE_READ_REG(hw, IXGBE_QPTC(i));
+	/* 16 registers exist */
+	queue_counters = uimin(__arraycount(stats->qprc), adapter->num_queues);
+	for (i = 0; i < queue_counters; i++) {
+		stats->qprc[i].ev_count += IXGBE_READ_REG(hw, IXGBE_QPRC(i));
+		stats->qptc[i].ev_count += IXGBE_READ_REG(hw, IXGBE_QPTC(i));
 		if (hw->mac.type >= ixgbe_mac_82599EB) {
-			stats->qprdc[j].ev_count
+			stats->qprdc[i].ev_count
 			    += IXGBE_READ_REG(hw, IXGBE_QPRDC(i));
 		}
 	}
 
-	/* 8 registers */
-	for (i = 0; i < IXGBE_DCB_MAX_TRAFFIC_CLASS; i++) {
+	/* 8 registers exist */
+	for (i = 0; i < IXGBE_TC_COUNTER_NUM; i++) {
 		uint32_t mp;
 
 		/* MPC */
@@ -1628,7 +1628,7 @@ ixgbe_update_stats_counters(struct adapter *adapter)
 	stats->mpctotal.ev_count += total_missed_rx;
 
 	/* Document says M[LR]FC are valid when link is up and 10Gbps */
-	if ((adapter->link_active == TRUE)
+	if ((adapter->link_active == LINK_STATE_UP)
 	    && (adapter->link_speed == IXGBE_LINK_SPEED_10GB_FULL)) {
 		stats->mlfc.ev_count += IXGBE_READ_REG(hw, IXGBE_MLFC);
 		stats->mrfc.ev_count += IXGBE_READ_REG(hw, IXGBE_MRFC);
@@ -1773,7 +1773,7 @@ ixgbe_add_hw_stats(struct adapter *adapter)
 
 	/* Max number of traffic class is 8 */
 	KASSERT(IXGBE_DCB_MAX_TRAFFIC_CLASS == 8);
-	for (i = 0; i < IXGBE_DCB_MAX_TRAFFIC_CLASS; i++) {
+	for (i = 0; i < IXGBE_TC_COUNTER_NUM; i++) {
 		snprintf(adapter->tcs[i].evnamebuf,
 		    sizeof(adapter->tcs[i].evnamebuf), "%s tc%d",
 		    xname, i);
@@ -2072,7 +2072,7 @@ ixgbe_clear_evcnt(struct adapter *adapter)
 	adapter->msf_sicount.ev_count = 0;
 	adapter->phy_sicount.ev_count = 0;
 
-	for (i = 0; i < IXGBE_DCB_MAX_TRAFFIC_CLASS; i++) {
+	for (i = 0; i < IXGBE_TC_COUNTER_NUM; i++) {
 		if (i < __arraycount(stats->mpc)) {
 			stats->mpc[i].ev_count = 0;
 			if (hw->mac.type == ixgbe_mac_82598EB)
@@ -2751,7 +2751,7 @@ ixgbe_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 	ifmr->ifm_status = IFM_AVALID;
 	ifmr->ifm_active = IFM_ETHER;
 
-	if (!adapter->link_active) {
+	if (adapter->link_active != LINK_STATE_UP) {
 		ifmr->ifm_active |= IFM_NONE;
 		IXGBE_CORE_UNLOCK(adapter);
 		return;
@@ -3605,7 +3605,7 @@ ixgbe_detach(device_t dev, int flags)
 	evcnt_detach(&adapter->msf_sicount);
 	evcnt_detach(&adapter->phy_sicount);
 
-	for (i = 0; i < IXGBE_DCB_MAX_TRAFFIC_CLASS; i++) {
+	for (i = 0; i < IXGBE_TC_COUNTER_NUM; i++) {
 		if (i < __arraycount(stats->mpc)) {
 			evcnt_detach(&stats->mpc[i]);
 			if (hw->mac.type == ixgbe_mac_82598EB)
@@ -4759,7 +4759,7 @@ ixgbe_update_link_status(struct adapter *adapter)
 	KASSERT(mutex_owned(&adapter->core_mtx));
 
 	if (adapter->link_up) {
-		if (adapter->link_active == FALSE) {
+		if (adapter->link_active != LINK_STATE_UP) {
 			/*
 			 * To eliminate influence of the previous state
 			 * in the same way as ixgbe_init_locked().
@@ -4808,7 +4808,7 @@ ixgbe_update_link_status(struct adapter *adapter)
 				device_printf(dev, "Link is up %s %s \n",
 				    bpsmsg, "Full Duplex");
 			}
-			adapter->link_active = TRUE;
+			adapter->link_active = LINK_STATE_UP;
 			/* Update any Flow Control changes */
 			ixgbe_fc_enable(&adapter->hw);
 			/* Update DMA coalescing config */
@@ -4818,12 +4818,17 @@ ixgbe_update_link_status(struct adapter *adapter)
 			if (adapter->feat_en & IXGBE_FEATURE_SRIOV)
 				ixgbe_ping_all_vfs(adapter);
 		}
-	} else { /* Link down */
-		if (adapter->link_active == TRUE) {
+	} else {
+		/*
+		 * Do it when link active changes to DOWN. i.e.
+		 * a) LINK_STATE_UNKNOWN -> LINK_STATE_DOWN
+		 * b) LINK_STATE_UP      -> LINK_STATE_DOWN
+		 */
+		if (adapter->link_active != LINK_STATE_DOWN) {
 			if (bootverbose)
 				device_printf(dev, "Link is Down\n");
 			if_link_state_change(ifp, LINK_STATE_DOWN);
-			adapter->link_active = FALSE;
+			adapter->link_active = LINK_STATE_DOWN;
 			if (adapter->feat_en & IXGBE_FEATURE_SRIOV)
 				ixgbe_ping_all_vfs(adapter);
 			ixgbe_drain_all(adapter);

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.42 2018/03/11 09:43:38 mrg Exp $
+#	$NetBSD: Makefile,v 1.45 2019/03/08 11:14:49 mrg Exp $
 
 # build libraries for xorg
 

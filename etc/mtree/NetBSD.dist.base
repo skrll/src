@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.base,v 1.189 2019/02/05 06:11:29 mrg Exp $
+#	$NetBSD: NetBSD.dist.base,v 1.194 2019/02/24 02:29:09 rin Exp $
 #	@(#)4.4BSD.dist	8.1 (Berkeley) 6/13/93
 
 # Do not customize this file as it may be overwritten on upgrades.
@@ -132,9 +132,12 @@
 ./usr/include/dev/pci
 ./usr/include/dev/pckbc
 ./usr/include/dev/pcmcia
+./usr/include/dev/pud
+./usr/include/dev/putter
 ./usr/include/dev/raidframe
 ./usr/include/dev/sbus
 ./usr/include/dev/scsipi
+./usr/include/dev/spi
 ./usr/include/dev/sun
 ./usr/include/dev/tc
 ./usr/include/dev/usb
@@ -216,13 +219,14 @@
 ./usr/include/msdosfs
 ./usr/include/net
 ./usr/include/net/agr
+./usr/include/net80211
 ./usr/include/netatalk
 ./usr/include/netbt
 ./usr/include/netcan
 ./usr/include/netinet
-./usr/include/net80211
 ./usr/include/netinet6
 ./usr/include/netipsec
+./usr/include/netmpls
 ./usr/include/netpgp
 ./usr/include/netsmb
 ./usr/include/nfs

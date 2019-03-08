@@ -38,7 +38,7 @@ Boston, MA 02111-1307, USA.  */
     /* The GNU C++ standard library requires this.  */		\
     if (c_dialect_cxx ())					\
       builtin_define ("_GNU_SOURCE");				\
-    if (!TARGET_HARD_FLOAT_ABI)					\
+    if (!TARGET_HARD_FLOAT)					\
       builtin_define ("_SOFT_FLOAT");				\
   } while (0)
 
@@ -63,43 +63,8 @@ Boston, MA 02111-1307, USA.  */
 #undef NETBSD_ENTRY_POINT
 #define NETBSD_ENTRY_POINT	"_start"
 
-#define SIG_ATOMIC_TYPE   "int"
-
-#define INT8_TYPE "signed char"
-#define INT16_TYPE "short int"
-#define INT32_TYPE "int"
-#define INT64_TYPE "long long int"
-#define UINT8_TYPE "unsigned char"
-#define UINT16_TYPE "short unsigned int"
-#define UINT32_TYPE "unsigned int"
-#define UINT64_TYPE "long long unsigned int"
-
-#define INT_LEAST8_TYPE "signed char"
-#define INT_LEAST16_TYPE "short int"
-#define INT_LEAST32_TYPE "int"
-#define INT_LEAST64_TYPE "long long int"
-#define UINT_LEAST8_TYPE "unsigned char"
-#define UINT_LEAST16_TYPE "short unsigned int"
-#define UINT_LEAST32_TYPE "unsigned int"
-#define UINT_LEAST64_TYPE "long long unsigned int"
-
-#define INT_FAST8_TYPE "signed char"
-#define INT_FAST16_TYPE "short int"
-#define INT_FAST32_TYPE "int"
-#define INT_FAST64_TYPE "long long int"
-#define UINT_FAST8_TYPE "unsigned char"
-#define UINT_FAST16_TYPE "short unsigned int"
-#define UINT_FAST32_TYPE "unsigned int"
-#define UINT_FAST64_TYPE "long long unsigned int"
-
-#undef PTRDIFF_TYPE
-#define PTRDIFF_TYPE "long int"
-
 #undef SIZE_TYPE
 #define SIZE_TYPE "long unsigned int"
-
-#define INTPTR_TYPE PTRDIFF_TYPE
-#define UINTPTR_TYPE SIZE_TYPE
 
 #undef INTMAX_TYPE
 #define INTMAX_TYPE "long long int"

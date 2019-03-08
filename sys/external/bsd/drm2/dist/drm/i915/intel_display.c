@@ -1,4 +1,4 @@
-/*	$NetBSD: intel_display.c,v 1.24 2018/09/24 00:42:34 christos Exp $	*/
+/*	$NetBSD: intel_display.c,v 1.26 2019/02/19 00:30:16 christos Exp $	*/
 
 /*
  * Copyright © 2006-2007 Intel Corporation
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intel_display.c,v 1.24 2018/09/24 00:42:34 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intel_display.c,v 1.26 2019/02/19 00:30:16 christos Exp $");
 
 #include <linux/dmi.h>
 #include <linux/module.h>

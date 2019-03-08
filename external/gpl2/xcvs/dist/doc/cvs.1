@@ -674,6 +674,111 @@ Available with the following commands: \fBimport\fR,
 and \fBupdate\fR.
 .SP
 .SP
+.SH "add"
+.SS "Add files and directories to the repository"
+.IX "add (subcommand)"
+.SP
+.IP "\(bu" 2
+Synopsis: add [-k rcs-kflag] [-m message] files...
+.IP "\(bu" 2
+Requires: repository, working directory.
+.IP "\(bu" 2
+Changes: repository, working directory.
+.SP
+The \fBadd\fR command is used to present new files
+and directories for addition into the \fBcvs\fR
+repository.  When \fBadd\fR is used on a directory,
+a new directory is created in the repository
+immediately.  When used on a file, only the working
+directory is updated.  Changes to the repository are
+not made until the \fBcommit\fR command is used on
+the newly added file. 
+.SP
+The \fBadd\fR command also resurrects files that
+have been previously removed.  This can be done
+before or after the \fBcommit\fR command is used
+to finalize the removal of files.  Resurrected files
+are restored into the working directory at the time
+the \fBadd\fR command is executed.
+.SP
+.SH "add options"
+.SP
+These standard options are supported by \fBadd\fR
+(see node `Common options\(aq in the CVS manual, for a complete description of
+them):
+.SP
+.IP "" 0
+\fB-k \fIkflag\fB\fR
+.IP "" 2
+Process keywords according to \fIkflag\fR.  See
+see node `Keyword substitution\(aq in the CVS manual.
+This option is sticky; future updates of
+this file in this working directory will use the same
+\fIkflag\fR.  The \fBstatus\fR command can be viewed
+to see the sticky options.  For more information on
+the \fBstatus\fR command, see node `Invoking CVS\(aq in the CVS manual.
+.SP
+.IP "" 0
+\fB-m \fImessage\fB\fR
+.IP "" 2
+Use \fImessage\fR as the log message, instead of
+invoking an editor.
+.SP
+.SH "add examples"
+.SP
+.SS "Adding a directory"
+.SP
+.PD 0
+.SP
+.IP "" 2
+$ mkdir doc
+.IP "" 2
+$ cvs add doc
+.IP "" 2
+Directory /path/to/repository/doc added to the repository
+
+.PD
+.IP "" 0
+.SP
+.SS "Adding a file"
+.SP
+.PD 0
+.SP
+.SP
+.IP "" 2
+$ >TODO
+.IP "" 2
+$ cvs add TODO
+.IP "" 2
+cvs add: scheduling file \`TODO\(aq for addition
+.IP "" 2
+cvs add: use \(aqcvs commit\(aq to add this file permanently
+
+.PD
+.IP "" 0
+.SP
+.SS "Undoing a \fBremove\fR command"
+.SP
+.PD 0
+.SP
+.IP "" 2
+$ rm -f makefile
+.IP "" 2
+$ cvs remove makefile
+.IP "" 2
+cvs remove: scheduling \`makefile\(aq for removal
+.IP "" 2
+cvs remove: use \(aqcvs commit\(aq to remove this file permanently
+.IP "" 2
+$ cvs add makefile
+.IP "" 2
+U makefile
+.IP "" 2
+cvs add: makefile, version 1.2, resurrected
+
+.PD
+.IP "" 0
+.SP
 .SH "admin"
 .SS "Administration"
 .IX "Admin (subcommand)"
@@ -2976,6 +3081,42 @@ see node `modules\(aq in the CVS manual.)
 .SP
 See see node `Tracking sources\(aq in the CVS manual, and see node `From files\(aq in the CVS manual.
 .SP
+.SH "init"
+.SS "Initialize a repository"
+.IX "init (subcommand)"
+.SP
+.IP "\(bu" 2
+Synopsis: init
+.IP "\(bu" 2
+Requires: working directory.
+.IP "\(bu" 2
+Changes: repository, working directory.
+.SP
+The \fBinit\fR command initializes a repository by adding the
+\fBCVSROOT\fR subdirectory and some default control files. You must
+use this command or initialize the repository in some other way before
+you can use it. Specify the root of the repository with the general
+\fB-d\fR option.  This will set up an empty repository in the
+\fBcvs\fR root specified in the usual way (see node `Repository\(aq in the CVS manual).
+.SP
+\fBinit\fR is careful to never overwrite any existing files in the
+repository, so no harm is done if you run \fBinit\fR on an already
+set-up repository. Note you may need to be a member of the group
+\fBcvsadmin\fR to do this.
+.SP
+Note \fBinit\fR will enable history logging; if you don\(aqt want that,
+remove the history file after running \fBinit\fR (see node `history file\(aq in the CVS manual).
+.SP
+.SH "init examples"
+.SP
+.PD 0
+.SP
+.IP "" 2
+$ cvs -d /usr/local/cvsroot init
+
+.PD
+.IP "" 0
+.SP
 .SH "log"
 .SS "Print out log information for files"
 .IX "log (subcommand)"
@@ -3624,6 +3765,131 @@ $
 .PD
 .IP "" 0
 .SP
+.SH "remove"
+.SS "Remove files from active use"
+.IX "remove (subcommand)"
+.SP
+.IP "\(bu" 2
+Synopsis: remove [-flR] [files...]
+.IP "\(bu" 2
+Requires: repository, working directory.
+.IP "\(bu" 2
+Changes: working directory.
+.SP
+The \fBremove\fR command is used to remove unwanted
+files from active use.  The user normally deletes the
+files from the working directory prior to invocation
+of the \fBremove\fR command.  Only the working
+directory is updated.  Changes to the repository are
+not made until the \fBcommit\fR command is run.
+.SP
+The \fBremove\fR command does not delete files from
+from the repository.  \fBcvs\fR keeps all historical
+data in the repository so that it is possible to
+reconstruct previous states of the projects under
+revision control.
+.SP
+To undo \fBcvs\fR \fBremove\fR or to resurrect files
+that were previously removed, see node `add\(aq in the CVS manual.
+.SP
+.SH "remove options"
+.SP
+These standard options are supported by \fBremove\fR
+(see node `Common options\(aq in the CVS manual for a complete description of
+them):
+.SP
+.IP "" 0
+\fB-l\fR
+.IP "" 2
+Local; run only in current working directory.  See see node `Recursive behavior\(aq in the CVS manual.
+.SP
+.IP "" 0
+\fB-R\fR
+.IP "" 2
+Process directories recursively.  See see node `Recursive behavior\(aq in the CVS manual.
+.SP
+.SP
+In addition, these options are also supported:
+.SP
+.IP "" 0
+\fB-f\fR
+.IP "" 2
+Note that this is not the standard behavior of
+the \fB-f\fR option as defined in see node `Common options\(aq in the CVS manual.
+.SP
+Delete files before removing them.
+.SP
+Entire directory hierarchies are easily removed
+using \fB-f\fR, but take note that it is not as
+easy to resurrect directory hierarchies as it is
+to remove them.
+.SP
+.SP
+.SH "remove examples"
+.SP
+.SS "Removing a file"
+.SP
+.PD 0
+.SP
+.IP "" 2
+$ cvs remove remove.me
+.IP "" 2
+cvs remove: file \`remove.me\(aq still in working directory
+.IP "" 2
+cvs remove: 1 file exists; remove it first
+.IP "" 2
+$ rm -f remove.me
+.IP "" 2
+$ cvs remove remove.me
+.IP "" 2
+cvs remove: scheduling \`remove.me\(aq for removal
+.IP "" 2
+cvs remove: use \(aqcvs commit\(aq to remove this file permanently
+.SP
+.IP "" 2
+$ ls remove.it
+.IP "" 2
+remove.it
+.IP "" 2
+$ cvs remove -f remove.it
+.IP "" 2
+cvs remove: scheduling \`remove.it\(aq for removal
+.IP "" 2
+cvs remove: use \(aqcvs commit\(aq to remove this file permanently
+
+.PD
+.IP "" 0
+.SP
+.SS "Removing entire directories"
+.SP
+.PD 0
+.IP "" 2
+$ tree -d a
+.IP "" 2
+a
+.IP "" 2
+|-- CVS
+.IP "" 2
+\`-- b
+.IP "" 2
+    \`-- CVS
+.SP
+.IP "" 2
+3 directories
+.IP "" 2
+$ cvs remove -f a
+.IP "" 2
+cvs remove: Removing a
+.IP "" 2
+cvs remove: Removing a/b
+.IP "" 2
+cvs remove: scheduling \`a/b/c\(aq for removal
+.IP "" 2
+cvs remove: use \(aqcvs commit\(aq to remove this file permanently
+
+.PD
+.IP "" 0
+.SP
 .SH "server & pserver"
 .SS "Act as a server for a client on stdin/stdout"
 .IX "pserver (subcommand)"
@@ -3670,7 +3936,7 @@ Requires: repository, working directory.
 .IP "\(bu" 2
 Changes: working directory.
 .SP
-After you\(aqve run checkout to create your private copy
+After you\(aqve run \fBcheckout\fR to create your private copy
 of source from the common repository, other developers
 will continue changing the central source.  From time
 to time, when it is convenient in your development
@@ -3724,19 +3990,6 @@ Local; run only in current working directory.  see node `Recursive behavior\(aq 
 Prune empty directories.  See see node `Moving directories\(aq in the CVS manual.
 .SP
 .IP "" 0
-\fB-t\fR
-.IP "" 2
-Preserve source timestamps.  Unlike \fBcheckout\fR where files are created
-using the original timestamp of the file in the repository, \fBupdate\fR
-updates files using the current time of the machine.  This is convenient
-because updated files appear newer than any other files on the system so
-.BR make ( 1 )
-knows that are their corresponding built artifacts are out of date and
-they will get rebuilt.  The \fB-t\fR flag instead preserves the timestamps
-of the original repository files, behaving exactly like \fBcheckout\fR.
-This is useful for maintaining a tree in the original checked-out state.
-.SP
-.IP "" 0
 \fB-p\fR
 .IP "" 2
 Pipe files to the standard output.
@@ -3755,6 +4008,18 @@ and \fItag\fR is a branch tag, the version from the branch \fItag\fR as it
 existed on \fIdate\fR.  This option is sticky, and implies \fB-P\fR.
 See see node `Sticky tags\(aq in the CVS manual, for more information on sticky tags/dates. Also
 see see node `Common options\(aq in the CVS manual.
+.SP
+.IP "" 0
+\fB-t\fR
+.IP "" 2
+Preserve source timestamps.  Unlike \fBcheckout\fR, where files are created
+using the original timestamp of the file in the repository, \fBupdate\fR
+updates files using the current time of the machine.  This is convenient
+because updated files appear newer than any other files on the system so
+\fBmake(1)\fR knows that their corresponding built artifacts are out of date
+and they will get rebuilt.  The \fB-t\fR flag instead preserves the timestamps
+of the original repository files, behaving exactly like \fBcheckout\fR.
+This is useful for maintaining a tree in the original checked-out state.
 .SP
 These special options are also available with
 \fBupdate\fR.

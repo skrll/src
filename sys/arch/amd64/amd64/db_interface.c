@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.34 2018/09/23 00:59:59 cherry Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.36 2019/02/14 07:12:40 cherry Exp $	*/
 
 /*
  * Mach Operating System
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.34 2018/09/23 00:59:59 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.36 2019/02/14 07:12:40 cherry Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -52,9 +52,13 @@ __KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.34 2018/09/23 00:59:59 cherry Exp
 #include <machine/cpufunc.h>
 #include <machine/db_machdep.h>
 #include <machine/cpuvar.h>
+#if NIOAPIC > 0
 #include <machine/i82093var.h>
+#endif
+#if NLAPIC > 0
 #include <machine/i82489reg.h>
 #include <machine/i82489var.h>
+#endif
 
 #include <ddb/db_sym.h>
 #include <ddb/db_command.h>
@@ -88,9 +92,9 @@ void kdbprinttrap(int, int);
 #ifdef MULTIPROCESSOR
 extern void ddb_ipi(struct trapframe);
 static void ddb_suspend(struct trapframe *);
-#ifndef XEN
+#ifndef XENPV
 int ddb_vec;
-#endif /* XEN */
+#endif /* XENPV */
 static bool ddb_mp_online;
 #endif
 
@@ -106,7 +110,7 @@ db_machine_init(void)
 {
 
 #ifdef MULTIPROCESSOR
-#ifndef XEN
+#ifndef XENPV
 	vector *handler = &Xintr_ddbipi;
 #if NLAPIC > 0
 	if (lapic_is_x2apic())
@@ -117,7 +121,7 @@ db_machine_init(void)
 	    GSEL(GCODE_SEL, SEL_KPL));
 #else
 	/* Initialised as part of xen_ipi_init() */
-#endif /* XEN */
+#endif /* XENPV */
 #endif
 }
 
@@ -131,10 +135,10 @@ db_suspend_others(void)
 	int cpu_me = cpu_number();
 	int win;
 
-#ifndef XEN
+#ifndef XENPV
 	if (ddb_vec == 0)
 		return 1;
-#endif /* XEN */
+#endif /* XENPV */
 
 	__cpu_simple_lock(&db_lock);
 	if (ddb_cpu == NOCPU)
@@ -142,11 +146,13 @@ db_suspend_others(void)
 	win = (ddb_cpu == cpu_me);
 	__cpu_simple_unlock(&db_lock);
 	if (win) {
-#ifdef XEN
+#ifdef XENPV
 		xen_broadcast_ipi(XEN_IPI_DDB);
 #else
+#if NLAPIC > 0
 		x86_ipi(ddb_vec, LAPIC_DEST_ALLEXCL, LAPIC_DLMODE_FIXED);
-#endif /* XEN */
+#endif
+#endif /* XENPV */
 	}
 	ddb_mp_online = x86_mp_online;
 	x86_mp_online = false;

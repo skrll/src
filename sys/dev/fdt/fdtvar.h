@@ -1,4 +1,4 @@
-/* $NetBSD: fdtvar.h,v 1.48 2019/01/30 01:24:00 jmcneill Exp $ */
+/* $NetBSD: fdtvar.h,v 1.50 2019/02/27 17:01:57 jakllsch Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -283,6 +283,8 @@ i2c_tag_t	fdtbus_get_i2c_tag(int);
 i2c_tag_t	fdtbus_i2c_acquire(int, const char *);
 void *		fdtbus_intr_establish(int, u_int, int, int,
 		    int (*func)(void *), void *arg);
+void *		fdtbus_intr_establish_byname(int, const char *, int, int,
+		    int (*func)(void *), void *arg);
 void *		fdtbus_intr_establish_raw(int, const u_int *, int, int,
 		    int (*func)(void *), void *arg);
 void		fdtbus_intr_disestablish(int, void *);
@@ -379,6 +381,7 @@ bool		fdtbus_status_okay(int);
 const void *	fdtbus_get_prop(int, const char *, int *);
 const char *	fdtbus_get_string(int, const char *);
 const char *	fdtbus_get_string_index(int, const char *, u_int);
+int		fdtbus_get_index(int, const char *, const char *, u_int *);
 
 void		fdt_add_bus(device_t, int, struct fdt_attach_args *);
 void		fdt_add_bus_match(device_t, int, struct fdt_attach_args *,

@@ -1,4 +1,4 @@
-/* $NetBSD: meson_clk_gate.c,v 1.1 2019/01/19 20:56:03 jmcneill Exp $ */
+/* $NetBSD: meson_clk_gate.c,v 1.2 2019/02/25 19:30:17 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017-2019 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: meson_clk_gate.c,v 1.1 2019/01/19 20:56:03 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: meson_clk_gate.c,v 1.2 2019/02/25 19:30:17 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -48,12 +48,16 @@ meson_clk_gate_enable(struct meson_clk_softc *sc, struct meson_clk_clk *clk,
 
 	set = (gate->flags & MESON_CLK_GATE_SET_TO_DISABLE) ? !enable : enable;
 
+	CLK_LOCK(sc);
+
 	val = CLK_READ(sc, gate->reg);
 	if (set)
 		val |= gate->mask;
 	else
 		val &= ~gate->mask;
 	CLK_WRITE(sc, gate->reg, val);
+
+	CLK_UNLOCK(sc);
 
 	return 0;
 }

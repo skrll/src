@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.805 2019/02/03 03:20:23 thorpej Exp $
+# $NetBSD: mi,v 1.809 2019/02/26 10:01:40 isaki Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -89,6 +89,7 @@
 ./usr/libdata/debug/usr/tests/lib/libbluetooth				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libbpfjit				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc					tests-lib-debug		compattestfile,atf
+./usr/libdata/debug/usr/tests/lib/libc/atomic				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc/c063				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc/db				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc/gen				tests-lib-debug		compattestfile,atf
@@ -2442,6 +2443,23 @@
 ./usr/tests/lib/libc				tests-lib-tests	compattestfile,atf
 ./usr/tests/lib/libc/Atffile			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/Kyuafile			tests-lib-tests		compattestfile,atf,kyua
+./usr/tests/lib/libc/atomic			tests-lib-tests	compattestfile,atf
+./usr/tests/lib/libc/atomic/Atffile		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t___sync_add	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t___sync_and	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t___sync_compare_and_swap	tests-lib-tests	compattestfile,atf
+./usr/tests/lib/libc/atomic/t___sync_lock	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t___sync_nand	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t___sync_or		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t___sync_sub	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t___sync_xor	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t_atomic_add	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t_atomic_and	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t_atomic_cas	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t_atomic_dec	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t_atomic_inc	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t_atomic_or		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/atomic/t_atomic_swap	tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/c063			tests-lib-tests	compattestfile,atf
 ./usr/tests/lib/libc/c063/Atffile		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/c063/Kyuafile		tests-lib-tests		compattestfile,atf,kyua
@@ -3698,6 +3716,7 @@
 ./usr/tests/usr.bin/cc/t_asan_poison		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/cc/t_asan_uaf		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/cc/t_hello			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/cc/t_libgomp		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/cc/t_ubsan_int_add_overflow		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/cc/t_ubsan_int_divzero		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/cc/t_ubsan_int_neg_overflow		tests-usr.bin-tests	compattestfile,atf

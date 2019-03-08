@@ -1,4 +1,4 @@
-/*	$NetBSD: if_axen.c,v 1.35 2019/02/06 08:38:41 rin Exp $	*/
+/*	$NetBSD: if_axen.c,v 1.37 2019/02/17 09:33:19 rin Exp $	*/
 /*	$OpenBSD: if_axen.c,v 1.3 2013/10/21 10:10:22 yuo Exp $	*/
 
 /*
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.35 2019/02/06 08:38:41 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.37 2019/02/17 09:33:19 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -950,7 +950,6 @@ axen_rx_list_init(struct axen_softc *sc)
 	for (i = 0; i < AXEN_RX_LIST_CNT; i++) {
 		c = &cd->axen_rx_chain[i];
 		c->axen_sc = sc;
-		c->axen_idx = i;
 		if (c->axen_xfer == NULL) {
 			int err = usbd_create_xfer(sc->axen_ep[AXEN_ENDPT_RX],
 			    sc->axen_rx_bufsz, 0, 0, &c->axen_xfer);
@@ -976,7 +975,6 @@ axen_tx_list_init(struct axen_softc *sc)
 	for (i = 0; i < AXEN_TX_LIST_CNT; i++) {
 		c = &cd->axen_tx_chain[i];
 		c->axen_sc = sc;
-		c->axen_idx = i;
 		if (c->axen_xfer == NULL) {
 			int err = usbd_create_xfer(sc->axen_ep[AXEN_ENDPT_TX],
 			    sc->axen_tx_bufsz, USBD_FORCE_SHORT_XFER, 0,
@@ -1291,7 +1289,7 @@ axen_encap(struct axen_softc *sc, struct mbuf *m, int idx)
 	struct axen_chain *c;
 	usbd_status err;
 	struct axen_sframe_hdr hdr;
-	int length, boundary;
+	u_int length, boundary;
 
 	c = &sc->axen_cdata.axen_tx_chain[idx];
 

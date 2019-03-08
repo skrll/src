@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.162 2018/12/26 06:37:31 cherry Exp $	*/
+/*	$NetBSD: locore.S,v 1.165 2019/03/07 13:26:24 maxv Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -128,7 +128,7 @@
  */
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.162 2018/12/26 06:37:31 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.165 2019/03/07 13:26:24 maxv Exp $");
 
 #include "opt_copy_symtab.h"
 #include "opt_ddb.h"
@@ -153,18 +153,18 @@ __KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.162 2018/12/26 06:37:31 cherry Exp $");
 #include <machine/i82489reg.h>
 #include <machine/cputypes.h>
 
-#ifndef XEN
+#ifndef XENPV
 #include <machine/multiboot.h>
 #endif
 
 /* Get definitions for IOM_BEGIN, IOM_END, and IOM_SIZE */
 #include <dev/isa/isareg.h>
 
-#ifndef XEN
+#ifndef XENPV
 #define	_RELOC(x)	((x) - KERNBASE)
 #else
 #define	_RELOC(x)	((x))
-#endif /* XEN */
+#endif /* XENPV */
 #define	RELOC(x)	_RELOC(_C_LABEL(x))
 
 /* 32bit version of PG_NX */
@@ -244,6 +244,20 @@ __KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.162 2018/12/26 06:37:31 cherry Exp $");
 
 #ifdef XEN
 /*
+ * Unfortunately, the Xen codebase uses nonstandard preprocessing tools.
+ * See: https://xenbits.xen.org/gitweb/?p=xen.git&a=search&h=HEAD&st=grep&s=__UnDeF__
+ * for a fine selection of examples.
+ *
+ * What this means for us here is that we can't include the standard
+ * xen.h header in assembler code.
+ *
+ * So we have to manually define, and keep track of the values we need, ourselves.
+ */
+#define __HYPERVISOR_xen_version          17
+#endif	/* XEN */
+
+#ifdef XENPV
+/*
  * Xen guest identifier and loader selection
  */
 .section __xen_guest
@@ -259,7 +273,7 @@ __KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.162 2018/12/26 06:37:31 cherry Exp $");
 	.ascii	",BSD_SYMTAB=yes"
 #endif
 	.byte	0
-#endif	/* XEN */
+#endif	/* XENPV */
 
 /*
  * Initialization
@@ -304,19 +318,19 @@ END(PDPpaddr)
 	.size	tmpstk, tmpstk - .
 	.space	512
 tmpstk:
-#ifdef XEN
+#ifdef XENPV
 	.align 		PAGE_SIZE, 0x0	/* Align on page boundary */
 LABEL(tmpgdt)
 	.space 		PAGE_SIZE	/* Xen expects a page */
 END(tmpgdt)
-#endif /* XEN */
+#endif /* XENPV */
 
 	.text
 	.globl	_C_LABEL(kernel_text)
 	.set	_C_LABEL(kernel_text),KERNTEXTOFF
 
 ENTRY(start)
-#ifndef XEN
+#ifndef XENPV
 
 	/* Warm boot */
 	movw	$0x1234,0x472
@@ -679,7 +693,7 @@ no_NOX:
 	movl	$RELOC(__rodata_start),%ecx
 	subl	%eax,%ecx
 	shrl	$PGSHIFT,%ecx
-	orl	$(PG_V|PG_KR),%eax
+	orl	$(PG_V),%eax
 	fillkpt
 
 	/* Map the kernel rodata R. */
@@ -687,7 +701,7 @@ no_NOX:
 	movl	$RELOC(__data_start),%ecx
 	subl	%eax,%ecx
 	shrl	$PGSHIFT,%ecx
-	orl	$(PG_V|PG_KR),%eax
+	orl	$(PG_V),%eax
 	fillkpt_nox
 
 	/* Map the kernel data+bss RW. */
@@ -842,7 +856,7 @@ begin:
 	addl	$NGDT*8,%esp		/* pop temporary gdt */
 
 	call 	_C_LABEL(main)
-#else /* XEN */
+#else /* XENPV */
 	/* First, reset the PSL. */
 	pushl	$PSL_MBO
 	popfl
@@ -910,17 +924,21 @@ begin:
 	call	_C_LABEL(init386)
 	addl	$PDE_SIZE,%esp		/* pop paddr_t */
 	call 	_C_LABEL(main)
-#endif /* XEN */
+#endif /* XENPV */
 END(start)
 
 #if defined(XEN)
 /* space for the hypercall call page */
 #define HYPERCALL_PAGE_OFFSET 0x1000
-.org HYPERCALL_PAGE_OFFSET
-ENTRY(hypercall_page)
-.skip 0x1000
+.align HYPERCALL_PAGE_OFFSET
+ENTRY(hypercall_page) /* Returns -1, on HYPERVISOR_xen_version() */
+.skip	(__HYPERVISOR_xen_version*32), 0x90
+	movl	$-1, %eax
+	retl
+.align HYPERCALL_PAGE_OFFSET, 0x90
 END(hypercall_page)
 
+#ifdef XENPV
 /*
  * void lgdt_finish(void);
  * Finish load a new GDT pointer (do any necessary cleanup).
@@ -945,6 +963,7 @@ ENTRY(lgdt_finish)
 	lret
 END(lgdt_finish)
 
+#endif /* XENPV */
 #endif /* XEN */
 
 /*
@@ -1061,7 +1080,7 @@ ENTRY(cpu_switchto)
 	pushl	%esi
 	pushl	%edi
 
-#if defined(DIAGNOSTIC) && !defined(XEN)
+#if defined(DIAGNOSTIC) && !defined(XENPV)
 	cmpl	$IPL_SCHED,CPUVAR(ILEVEL)
 	jbe	0f
 	pushl	CPUVAR(ILEVEL)
@@ -1102,7 +1121,7 @@ skip_save:
 	jnz	switch_return
 
 	/* Switch ring0 stack */
-#ifdef XEN
+#ifdef XENPV
 	pushl	%edi
 	call	_C_LABEL(i386_switch_context)
 	addl	$4,%esp
@@ -1118,7 +1137,7 @@ skip_save:
 	call	_C_LABEL(x86_dbregs_switch)
 	addl	$8,%esp
 
-#ifndef XEN
+#ifndef XENPV
 	pushl	%edx
 	movb	_C_LABEL(x86_fpu_eager),%dl
 	testb	%dl,%dl
@@ -1135,7 +1154,7 @@ skip_save:
 	testl	$LW_SYSTEM,L_FLAG(%edi)
 	jnz	switch_return
 
-#ifndef XEN
+#ifndef XENPV
 	/* Restore thread-private %fs/%gs descriptors. */
 	movl	CPUVAR(GDT),%ecx
 	movl	PCB_FSD(%ebx),%eax
@@ -1146,7 +1165,7 @@ skip_save:
 	movl	PCB_GSD+4(%ebx),%edx
 	movl	%eax,(GUGS_SEL*8)(%ecx)
 	movl	%edx,(GUGS_SEL*8+4)(%ecx)
-#endif /* !XEN */
+#endif /* !XENPV */
 
 	/* Switch I/O bitmap */
 	movl	PCB_IOMAP(%ebx),%eax
@@ -1178,11 +1197,11 @@ no_RAS:
 	 * FPU IPIs can alter the LWP's saved cr0.  Dropping the priority
 	 * is deferred until mi_switch(), when cpu_switchto() returns.
 	 */
-#ifdef XEN
+#ifdef XENPV
 	pushl	%edi
 	call	_C_LABEL(i386_tls_switch)
 	addl	$4,%esp
-#else /* !XEN */
+#else /* !XENPV */
 	movl	$IPL_HIGH,CPUVAR(ILEVEL)
 	movl	PCB_CR0(%ebx),%ecx		/* has CR0_TS clear */
 	movl	%cr0,%edx
@@ -1200,7 +1219,7 @@ skip_TS:
 	cmpl	%edx,%ecx
 	je	switch_return
 	movl	%ecx,%cr0
-#endif /* !XEN */
+#endif /* !XENPV */
 
 switch_return:
 	/* Return to the new LWP, returning 'oldlwp' in %eax. */

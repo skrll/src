@@ -1,4 +1,4 @@
-/*	$NetBSD: if_mue.c,v 1.41 2019/02/06 22:54:41 rin Exp $	*/
+/*	$NetBSD: if_mue.c,v 1.43 2019/03/05 08:25:03 msaitoh Exp $	*/
 /*	$OpenBSD: if_mue.c,v 1.3 2018/08/04 16:42:46 jsg Exp $	*/
 
 /*
@@ -20,7 +20,7 @@
 /* Driver for Microchip LAN7500/LAN7800 chipsets. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mue.c,v 1.41 2019/02/06 22:54:41 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mue.c,v 1.43 2019/03/05 08:25:03 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -183,8 +183,6 @@ static struct mbuf *mue_newbuf(void);
 
 #define ETHER_IS_ZERO(addr) \
 	(!(addr[0] | addr[1] | addr[2] | addr[3] | addr[4] | addr[5]))
-
-#define ETHER_ALIGN 2
 
 CFATTACH_DECL_NEW(mue, sizeof(struct mue_softc), mue_match, mue_attach,
     mue_detach, mue_activate);
@@ -515,7 +513,7 @@ mue_read_eeprom(struct mue_softc *sc, uint8_t *dest, int off, int cnt)
 {
 	uint32_t val = 0; /* XXX gcc */
 	uint8_t byte;
-	int i, err;
+	int i, err = 0;
 
 	/* 
 	 * EEPROM pins are muxed with the LED function on LAN7800 device.

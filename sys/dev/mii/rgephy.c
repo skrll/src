@@ -1,4 +1,4 @@
-/*	$NetBSD: rgephy.c,v 1.46 2019/01/22 03:42:27 msaitoh Exp $	*/
+/*	$NetBSD: rgephy.c,v 1.51 2019/02/26 05:26:10 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2003
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rgephy.c,v 1.46 2019/01/22 03:42:27 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rgephy.c,v 1.51 2019/02/26 05:26:10 msaitoh Exp $");
 
 
 /*
@@ -83,17 +83,10 @@ static const struct mii_phy_funcs rgephy_funcs = {
 };
 
 static const struct mii_phydesc rgephys[] = {
-	{ MII_OUI_xxREALTEK,		MII_MODEL_xxREALTEK_RTL8169S,
-	  MII_STR_xxREALTEK_RTL8169S },
-
-	{ MII_OUI_REALTEK,		MII_MODEL_REALTEK_RTL8169S,
-	  MII_STR_REALTEK_RTL8169S },
-
-	{ MII_OUI_REALTEK,		MII_MODEL_REALTEK_RTL8251,
-	  MII_STR_REALTEK_RTL8251 },
-
-	{ 0,				0,
-	  NULL }
+	MII_PHY_DESC(xxREALTEK, RTL8169S),
+	MII_PHY_DESC(REALTEK, RTL8169S),
+	MII_PHY_DESC(REALTEK, RTL8251),
+	MII_PHY_END,
 };
 
 static int
@@ -125,7 +118,6 @@ rgephy_attach(device_t parent, device_t self, void *aux)
 	rev = MII_REV(ma->mii_id2);
 	mpd = mii_phy_match(ma, rgephys);
 	aprint_naive(": Media interface\n");
-	aprint_normal(": %s, rev. %d\n", mpd->mpd_name, rev);
 
 	sc->mii_dev = self;
 	sc->mii_inst = mii->mii_instance;
@@ -133,6 +125,15 @@ rgephy_attach(device_t parent, device_t self, void *aux)
 	sc->mii_mpd_oui = MII_OUI(ma->mii_id1, ma->mii_id2);
 	sc->mii_mpd_model = MII_MODEL(ma->mii_id2);
 	sc->mii_mpd_rev = MII_REV(ma->mii_id2);
+
+	if (sc->mii_mpd_model == MII_MODEL_REALTEK_RTL8169S) {
+		aprint_normal(": RTL8211");
+		if (sc->mii_mpd_rev != 0)
+			aprint_normal("%c",'@' + sc->mii_mpd_rev);
+		aprint_normal(" 1000BASE-T media interface\n");
+	} else
+		aprint_normal(": %s, rev. %d\n", mpd->mpd_name, rev);
+
 	sc->mii_pdata = mii;
 	sc->mii_flags = ma->mii_flags;
 	sc->mii_anegticks = MII_ANEGTICKS_GIGE;
@@ -695,13 +696,11 @@ rgephy_reset(struct mii_softc *sc)
 	/* NWay enable and Restart NWay */
 	PHY_WRITE(sc, MII_BMCR, BMCR_RESET | BMCR_AUTOEN | BMCR_STARTNEG);
 
-	if (sc->mii_mpd_rev == RGEPHY_8211F) {
+	if (sc->mii_mpd_rev >= RGEPHY_8211D) {
 		/* RTL8211F */
 		delay(10000);
 		/* disable EEE */
-		PHY_WRITE(sc, MII_MMDACR, MMDACR_FN_ADDRESS | MDIO_MMD_AN);
-		PHY_WRITE(sc, MII_MMDAADR, MDIO_AN_EEEADVERT);
-		PHY_WRITE(sc, MII_MMDACR, MMDACR_FN_DATANPI | MDIO_MMD_AN);
-		PHY_WRITE(sc, MII_MMDAADR, 0x0000);
+		MMD_INDIRECT_WRITE(sc, MDIO_MMD_AN | MMDACR_FN_DATA,
+		    MDIO_AN_EEEADVERT, 0x0000);
 	}
 }

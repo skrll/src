@@ -1,4 +1,4 @@
-/*	$NetBSD: eval.c,v 1.171 2019/02/04 11:16:41 kre Exp $	*/
+/*	$NetBSD: eval.c,v 1.174 2019/02/09 09:17:59 kre Exp $	*/
 
 /*-
  * Copyright (c) 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)eval.c	8.9 (Berkeley) 6/8/95";
 #else
-__RCSID("$NetBSD: eval.c,v 1.171 2019/02/04 11:16:41 kre Exp $");
+__RCSID("$NetBSD: eval.c,v 1.174 2019/02/09 09:17:59 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -545,19 +545,19 @@ evalsubshell(union node *n, int flags)
 		outxc('\n');
 		flushout(outx);
 	}
+	INTOFF;
 	if ((!backgnd && flags & EV_EXIT && !have_traps()) ||
 	    forkshell(jp = makejob(n, 1), n, backgnd?FORK_BG:FORK_FG) == 0) {
-		INTON;
 		if (backgnd)
 			flags &=~ EV_TESTED;
 		redirect(n->nredir.redirect, REDIR_KEEP);
-		evaltree(n->nredir.n, flags | EV_EXIT);   /* never returns */
-	} else if (!backgnd) {
-		INTOFF;
-		exitstatus = waitforjob(jp);
 		INTON;
-	} else
+		evaltree(n->nredir.n, flags | EV_EXIT);   /* never returns */
+	} else if (backgnd)
 		exitstatus = 0;
+	else
+		exitstatus = waitforjob(jp);
+	INTON;
 
 	if (!backgnd && xflag && n->nredir.redirect) {
 		outxstr(expandstr(ps4val(), line_number));
@@ -714,11 +714,9 @@ evalpipe(union node *n)
 		close(pip[1]);
 	}
 	if (n->npipe.backgnd == 0) {
-		INTOFF;
 		exitstatus = waitforjob(jp);
 		CTRACE(DBG_EVAL, ("evalpipe:  job done exit status %d\n",
 		    exitstatus));
-		INTON;
 	} else
 		exitstatus = 0;
 	INTON;
@@ -843,7 +841,6 @@ parse_command_args(int argc, char **argv, int *use_syspath)
 }
 
 int vforked = 0;
-extern char *trap[];
 
 /*
  * Execute a simple command.
@@ -979,6 +976,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 		 */
 		cmdentry.cmdtype = CMDBUILTIN;
 		cmdentry.u.bltin = bltincmd;
+		VTRACE(DBG_CMDS, ("No command name, assume \"comamnd\"\n"));
 	} else {
 		static const char PATH[] = "PATH=";
 
@@ -994,6 +992,8 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 			int argsused, use_syspath;
 
 			find_command(argv[0], &cmdentry, cmd_flags, path);
+			VTRACE(DBG_CMDS, ("Command %s type %d\n", argv[0],
+			    cmdentry.cmdtype));
 #if 0
 			/*
 			 * This short circuits all of the processing that
@@ -1013,10 +1013,13 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 			if (cmdentry.cmdtype != CMDBUILTIN ||
 			    cmdentry.u.bltin != bltincmd)
 				break;
+			VTRACE(DBG_CMDS, ("Command \"command\"\n"));
 			cmd_flags |= DO_NOFUNC;
 			argsused = parse_command_args(argc, argv, &use_syspath);
 			if (argsused == 0) {
 				/* use 'type' builtin to display info */
+				VTRACE(DBG_CMDS,
+				    ("Command \"command\" -> \"type\"\n"));
 				cmdentry.u.bltin = typecmd;
 				break;
 			}
@@ -1121,6 +1124,9 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 			default:
 				VFORK_UNDO();
 						/* restore from vfork(2) */
+				CTRACE(DBG_PROCS|DBG_CMDS,
+				    ("parent after vfork - vforked=%d\n",
+				      vforked));
 				handler = savehandler;
 				poplocalvars();
 				localvars = savelocalvars;
@@ -1149,6 +1155,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 #endif
 			if (forkshell(jp, cmd, mode) != 0)
 				goto parent;	/* at end of routine */
+			CTRACE(DBG_PROCS|DBG_CMDS, ("Child sets EV_EXIT\n"));
 			flags |= EV_EXIT;
 			FORCEINTON;
 #ifdef DO_SHAREDVFORK

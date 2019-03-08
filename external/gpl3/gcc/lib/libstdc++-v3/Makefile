@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.41 2019/02/06 02:57:39 christos Exp $
+#	$NetBSD: Makefile,v 1.45 2019/03/01 08:15:23 mrg Exp $
 
 REQUIRETOOLS=	yes
 NOLINT=		# defined
@@ -18,22 +18,29 @@ LIBDPLIBS+=	m ${.CURDIR}/../../../../../lib/libm
 COPTS.random.cc+=	${${ACTIVE_CC} == "clang":? -mrdrnd :}
 .endif
 
+DIST=		${GCCDIST}
+GNUVER=		${DIST}/libstdc++-v3/config/abi/pre/gnu.ver
+SYMBOLS=	libstdc++-symbols.ver
 .if ${MKPIC} != "no"
-libstdc++-symbols.ver:
-	cat ${DIST}/libstdc++-v3/config/abi/pre/gnu.ver ${G_port_specific_symbol_files} | \
+${SYMBOLS}: Makefile ${GNUVER}
+	cat ${GNUVER} ${G_port_specific_symbol_files} | \
 	${TOOL_GREP} -E -v '^[     ]*#(#| |$$)' | \
-	${CXX} -I${DESTDIR}/usr/include/g++ -E -P -include ${.CURDIR}/arch/${LIBSTDCXX_MACHINE_ARCH}/c++config.h - > \
+	${CXX} -I${DESTDIR}/usr/include/g++ -E -P -include ${.CURDIR}/arch/${LIBSTDCXX_MACHINE_ARCH}/symver-config.h - > \
 	${.TARGET}.tmp && mv ${.TARGET}.tmp ${.TARGET} && rm -f ${.TARGET}.tmp
 
+CLEANFILES+=	${SYMBOLS} ${SYMBOLS}.tmp
+
+DPADD+=		${SYMBOLS}
+
 .if ${MKPICLIB} != "no"
-libstdc++_pic.a:: libstdc++-symbols.ver
+libstdc++_pic.a:: ${SYMBOLS}
 .else
-libstdc++.a:: libstdc++-symbols.ver
+libstdc++.a:: ${SYMBOLS}
 .endif
 
 LDFLAGS+=	-Wl,-O1 \
 		-Wl,--gc-sections \
-		-Wl,--version-script=libstdc++-symbols.ver
+		-Wl,--version-script=${SYMBOLS}
 .endif
 
 CXXFLAGS.clang+=	-stdlib=libstdc++ -std=c++11 -D_GLIBCXX_ABI_TAG_CXX11=
@@ -143,18 +150,16 @@ SRCS+=	c98-codecvt.cc c11-codecvt.cc
 
 .include "../Makefile.gthr"
 
-# XXX Make this either/or, not one, and maybe another
+# XXX Special rules in c++98/Makefile; may move into c++11 in future GCC.
 CXX11_ALWAYS=	localename.cc \
-		locale_init.cc \
-		compatibility-c++0x.cc \
-		compatibility-atomic-c++0x.cc \
-		compatibility-thread-c++0x.cc \
-		compatibility-chrono.cc \
-		compatibility-condvar.cc \
-		ios_failure.cc
+		locale_init.cc
 
-.for _s in ${CXX11_ALWAYS}
+.for _s in ${G_cxx11_sources} ${CXX11_ALWAYS}
 COPTS.${_s}+= -std=gnu++11
+.endfor
+
+.for _s in ${G_cxx98_sources}
+COPTS.${_s}+= -std=gnu++98
 .endfor
 
 COPTS.cp-demangle.c += -Wno-unused-function

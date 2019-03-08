@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.164 2018/12/04 19:27:22 cherry Exp $	*/
+/*	$NetBSD: cpu.c,v 1.167 2019/02/15 08:54:01 nonaka Exp $	*/
 
 /*
  * Copyright (c) 2000-2012 NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.164 2018/12/04 19:27:22 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.167 2019/02/15 08:54:01 nonaka Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */
@@ -691,8 +691,10 @@ cpu_boot_secondary_processors(void)
 	kcpuset_t *cpus;
 	u_long i;
 
+#ifndef XEN
 	/* Now that we know the number of CPUs, patch the text segment. */
 	x86_patch(false);
+#endif
 
 	kcpuset_create(&cpus, true);
 	kcpuset_set(cpus, cpu_index(curcpu()));
@@ -754,12 +756,14 @@ cpu_init_idle_lwps(void)
 void
 cpu_start_secondary(struct cpu_info *ci)
 {
-	paddr_t mp_pdirpa;
 	u_long psl;
 	int i;
 
+#if NLAPIC > 0
+	paddr_t mp_pdirpa;
 	mp_pdirpa = pmap_init_tmp_pgtbl(mp_trampoline_paddr);
 	cpu_copy_trampoline(mp_pdirpa);
+#endif
 
 	atomic_or_32(&ci->ci_flags, CPUF_AP);
 	ci->ci_curlwp = ci->ci_data.cpu_idlelwp;
@@ -774,7 +778,7 @@ cpu_start_secondary(struct cpu_info *ci)
 	KASSERT(cpu_starting == NULL);
 	cpu_starting = ci;
 	for (i = 100000; (!(ci->ci_flags & CPUF_PRESENT)) && i > 0; i--) {
-		i8254_delay(10);
+		x86_delay(10);
 	}
 
 	if ((ci->ci_flags & CPUF_PRESENT) == 0) {
@@ -810,7 +814,7 @@ cpu_boot_secondary(struct cpu_info *ci)
 
 	atomic_or_32(&ci->ci_flags, CPUF_GO);
 	for (i = 100000; (!(ci->ci_flags & CPUF_RUNNING)) && i > 0; i--) {
-		i8254_delay(10);
+		x86_delay(10);
 	}
 	if ((ci->ci_flags & CPUF_RUNNING) == 0) {
 		aprint_error_dev(ci->ci_dev, "failed to start\n");
@@ -948,7 +952,9 @@ cpu_hatch(void *v)
 	cpu_get_tsc_freq(ci);
 
 	s = splhigh();
+#if NLAPIC > 0
 	lapic_write_tpri(0);
+#endif
 	x86_enable_intr();
 	splx(s);
 	x86_errata();
@@ -1032,7 +1038,6 @@ cpu_copy_trampoline(paddr_t pdir_pa)
 int
 mp_cpu_start(struct cpu_info *ci, paddr_t target)
 {
-	unsigned short dwordptr[2];
 	int error;
 
 	/*
@@ -1048,15 +1053,15 @@ mp_cpu_start(struct cpu_info *ci, paddr_t target)
 	outb(IO_RTC, NVRAM_RESET);
 	outb(IO_RTC+1, NVRAM_RESET_JUMP);
 
+#if NLAPIC > 0
 	/*
 	 * "and the warm reset vector (DWORD based at 40:67) to point
 	 * to the AP startup code ..."
 	 */
-
+	unsigned short dwordptr[2];
 	dwordptr[0] = 0;
 	dwordptr[1] = target >> 4;
 
-#if NLAPIC > 0
 	memcpy((uint8_t *)cmos_data_mapping + 0x467, dwordptr, 4);
 #endif
 
@@ -1079,7 +1084,7 @@ mp_cpu_start(struct cpu_info *ci, paddr_t target)
 			    __func__);
 			return error;
 		}
-		i8254_delay(10000);
+		x86_delay(10000);
 
 		error = x86_ipi_startup(ci->ci_cpuid, target / PAGE_SIZE);
 		if (error != 0) {
@@ -1087,7 +1092,7 @@ mp_cpu_start(struct cpu_info *ci, paddr_t target)
 			    __func__);
 			return error;
 		}
-		i8254_delay(200);
+		x86_delay(200);
 
 		error = x86_ipi_startup(ci->ci_cpuid, target / PAGE_SIZE);
 		if (error != 0) {
@@ -1095,7 +1100,7 @@ mp_cpu_start(struct cpu_info *ci, paddr_t target)
 			    __func__);
 			return error;
 		}
-		i8254_delay(200);
+		x86_delay(200);
 	}
 
 	return 0;
@@ -1253,7 +1258,7 @@ cpu_get_tsc_freq(struct cpu_info *ci)
 
 	if (cpu_hascounter()) {
 		last_tsc = cpu_counter_serializing();
-		i8254_delay(100000);
+		x86_delay(100000);
 		ci->ci_data.cpu_cc_freq =
 		    (cpu_counter_serializing() - last_tsc) * 10;
 	}

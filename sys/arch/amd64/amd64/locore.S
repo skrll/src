@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.175 2019/02/02 12:32:54 cherry Exp $	*/
+/*	$NetBSD: locore.S,v 1.179 2019/03/07 13:26:24 maxv Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -278,6 +278,9 @@
 #define __ASSEMBLY__
 #include <xen/include/public/elfnote.h>
 #include <xen/include/public/xen.h>
+#endif	/* XEN */
+
+#ifdef XENPV	
 #define ELFNOTE(name, type, desctype, descdata...) \
 .pushsection .note.name			;	\
   .align 4				;	\
@@ -310,7 +313,7 @@
 #if NKSYMS > 0 || defined(DDB) || defined(MODULAR)
 	ELFNOTE(Xen, XEN_ELFNOTE_BSD_SYMTAB,     .asciz, "yes")
 #endif
-#endif	/* XEN */
+#endif  /* XENPV */	
 
 /*
  * Initialization
@@ -378,7 +381,7 @@ END(biosextmem)
 LABEL(lwp0uarea)	.quad	0
 END(lwp0uarea)
 
-#ifndef XEN
+#ifndef XENPV
 	.globl	gdt64_lo
 	.globl	gdt64_hi
 
@@ -414,7 +417,7 @@ _C_LABEL(farjmp64):
 	.word	GSEL(GCODE_SEL, SEL_KPL)
 END(farjmp64)
 
-#endif	/* !XEN */
+#endif	/* !XENPV */
 
 	/* Space for the temporary stack */
 	.size	tmpstk, tmpstk - .
@@ -431,7 +434,7 @@ tmpstk:
 	.set	_C_LABEL(kernel_text),KERNTEXTOFF
 
 ENTRY(start)
-#ifndef XEN
+#ifndef XENPV
 	.code32
 
 	/* Warm boot */
@@ -677,7 +680,7 @@ ENTRY(start)
 	movl	$RELOC(__rodata_start),%ecx
 	subl	%eax,%ecx
 	shrl	$PGSHIFT,%ecx
-	orl	$(PG_V|PG_KR),%eax
+	orl	$(PG_V),%eax
 	fillkpt
 
 	/* Map the kernel rodata R. */
@@ -685,7 +688,7 @@ ENTRY(start)
 	movl	$RELOC(__data_start),%ecx
 	subl	%eax,%ecx
 	shrl	$PGSHIFT,%ecx
-	orl	$(PG_V|PG_KR),%eax
+	orl	$(PG_V),%eax
 	fillkpt_nox
 
 	/* Map the kernel data+bss RW. */
@@ -881,7 +884,7 @@ longmode_hi:
 	/* The first physical page available. */
 	leaq	(TABLESIZE)(%rsi),%rdi
 
-#else	/* XEN */
+#else	/* XENPV */
 	/* First, reset the PSL. */
 	pushq	$2
 	popfq
@@ -964,7 +967,7 @@ longmode_hi:
 	movq	%rsi,%rdi
 	addq	$(USPACE+PAGE_SIZE),%rdi
 	subq	$KERNBASE,%rdi	/* init_x86_64 wants a physical address */
-#endif	/* XEN */
+#endif	/* XENPV */
 
 	pushq	%rdi
 	call	_C_LABEL(init_bootspace)
@@ -977,9 +980,12 @@ END(start)
 #if defined(XEN)
 /* space for the hypercall call page */
 #define HYPERCALL_PAGE_OFFSET 0x1000
-.org HYPERCALL_PAGE_OFFSET
-ENTRY(hypercall_page)
-.skip 0x1000
+.align HYPERCALL_PAGE_OFFSET
+ENTRY(hypercall_page) /* Returns -1, on HYPERVISOR_xen_version() */
+.skip	(__HYPERVISOR_xen_version*32), 0x90
+	movq	$-1, %rax
+	retq
+.align HYPERCALL_PAGE_OFFSET, 0x90
 END(hypercall_page)
 #endif /* XEN */
 
@@ -1126,7 +1132,7 @@ ENTRY(cpu_switchto)
 .Lno_svs_switch:
 #endif
 
-#if !defined(XEN)
+#if !defined(XENPV)
 	movq	PCB_RSP0(%r14),%rax
 	movq	CPUVAR(TSS),%rdi
 	movq	%rax,TSS_RSP0(%rdi)
@@ -1141,7 +1147,7 @@ ENTRY(cpu_switchto)
 	movq	%r12,%rsi
 	callq	_C_LABEL(x86_dbregs_switch)
 
-#ifndef XEN
+#ifndef XENPV
 	movb	_C_LABEL(x86_fpu_eager),%dl
 	testb	%dl,%dl
 	jz	.Lno_eagerfpu
@@ -1173,7 +1179,7 @@ ENTRY(cpu_switchto)
 	 * Restore cr0 including FPU state (may have CR0_TS set).  Note that
 	 * IPL_SCHED prevents from FPU interrupt altering the LWP's saved cr0.
 	 */
-#ifndef XEN
+#ifndef XENPV
 	movl	$IPL_HIGH,CPUVAR(ILEVEL)
 	movl	PCB_CR0(%r14),%ecx	/* has CR0_TS clear */
 	movq	%cr0,%rdx
@@ -1374,7 +1380,7 @@ END(lwp_trampoline)
 
 .macro	SYSCALL_ENTRY	name,is_svs
 IDTVEC(\name)
-#ifndef XEN
+#ifndef XENPV
 	/*
 	 * The user %rip is in %rcx and the user %rflags in %r11. The kernel %cs
 	 * and %ss are loaded, but nothing else is.
@@ -1459,7 +1465,7 @@ IDTVEC_END(syscall32)
  */
 	TEXT_USER_BEGIN
 IDTVEC(osyscall)
-#ifdef XEN
+#ifdef XENPV
 	movq (%rsp),%rcx
 	movq 8(%rsp),%r11
 	addq $0x10,%rsp
@@ -1481,7 +1487,7 @@ LABEL(syscall_sysret)
 	IBRS_LEAVE
 	INTR_RESTORE_GPRS
 	SWAPGS
-#ifndef XEN
+#ifndef XENPV
 	movq	TF_RIP(%rsp),%rcx	/* %rip for sysret */
 	movq	TF_RFLAGS(%rsp),%r11	/* %flags for sysret */
 	movq	TF_RSP(%rsp),%rsp
@@ -1579,7 +1585,7 @@ LABEL(intrfastexit)
 	je	.Luexit64
 	cmpw	$GSEL(GUCODE_SEL, SEL_UPL),TF_BACKW(TF_CS, %rsp)
 	je	.Luexit64
-#ifdef XEN
+#ifdef XENPV
 	cmpw	$FLAT_RING3_CS64,TF_BACKW(TF_CS, %rsp)
 	je	.Luexit64
 #endif
@@ -1592,7 +1598,7 @@ do_mov_ds:
 	movw	TF_BACKW(TF_DS, %rsp),%ds
 do_mov_fs:
 	movw	TF_BACKW(TF_FS, %rsp),%fs
-#ifndef XEN
+#ifndef XENPV
 do_mov_gs:
 	movw	TF_BACKW(TF_GS, %rsp),%gs
 #endif

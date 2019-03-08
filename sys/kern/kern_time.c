@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_time.c,v 1.194 2019/01/31 20:09:05 maxv Exp $	*/
+/*	$NetBSD: kern_time.c,v 1.196 2019/02/24 07:23:11 mlelstv Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2004, 2005, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_time.c,v 1.194 2019/01/31 20:09:05 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_time.c,v 1.196 2019/02/24 07:23:11 mlelstv Exp $");
 
 #include <sys/param.h>
 #include <sys/resourcevar.h>
@@ -603,8 +603,7 @@ timer_create1(timer_t *tid, clockid_t id, struct sigevent *evp,
 	if ((pts = p->p_timers) == NULL)
 		pts = timers_alloc(p);
 
-	pt = pool_get(&ptimer_pool, PR_WAITOK);
-	memset(pt, 0, sizeof(*pt));
+	pt = pool_get(&ptimer_pool, PR_WAITOK | PR_ZERO);
 	if (evp != NULL) {
 		if (((error =
 		    (*fetch_event)(evp, &pt->pt_ev, sizeof(pt->pt_ev))) != 0) ||
@@ -1166,8 +1165,7 @@ dosetitimer(struct proc *p, int which, struct itimerval *itvp)
 	if (pt == NULL) {
 		if (spare == NULL) {
 			mutex_spin_exit(&timer_lock);
-			spare = pool_get(&ptimer_pool, PR_WAITOK);
-			memset(spare, 0, sizeof(*spare));
+			spare = pool_get(&ptimer_pool, PR_WAITOK | PR_ZERO);
 			goto retry;
 		}
 		pt = spare;
@@ -1179,7 +1177,7 @@ dosetitimer(struct proc *p, int which, struct itimerval *itvp)
 		pt->pt_type = which;
 		pt->pt_entry = which;
 		pt->pt_queued = false;
-		if (pt->pt_type == CLOCK_REALTIME)
+		if (!CLOCK_VIRTUAL_P(which))
 			callout_init(&pt->pt_ch, CALLOUT_MPSAFE);
 		else
 			pt->pt_active = 0;

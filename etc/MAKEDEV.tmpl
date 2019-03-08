@@ -1,5 +1,5 @@
 #!/bin/sh -
-#	$NetBSD: MAKEDEV.tmpl,v 1.197 2019/01/27 08:53:28 maxv Exp $
+#	$NetBSD: MAKEDEV.tmpl,v 1.199 2019/02/23 10:43:25 mlelstv Exp $
 #
 # Copyright (c) 2003,2007,2008 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -272,6 +272,7 @@
 #	se*	SCSI Ethernet
 #	ses*	SES/SAF-TE SCSI Devices
 #	speaker	PC speaker		(XXX - installed)
+#	spi*	SPI bus device
 #	sram	battery backuped memory (x68k)
 #	ss*	SCSI scanner
 #	stic*	PixelStamp interface chip
@@ -1584,6 +1585,12 @@ iic[0-9]*)
 	mkdev iic$unit c %iic_chr% $unit 600
 	;;
 
+spi[0-9]*)
+	unit=${i#spi}
+	: ${unit:-0}
+	mkdev spi$unit c %spi_chr% $unit 600
+	;;
+
 amr[0-9]*)
 	unit=${i#amr}
 	mkdev amr$unit c %amr_chr% $unit
@@ -2207,6 +2214,10 @@ nvmm)
 autofs)
 	mkdev autofs c %autofs_chr% 0 600
 	;;
+
+kcov)
+        mkdev kcov c %kcov_chr% 0
+        ;;
 
 midevend)
 %MI_DEVICES_END%

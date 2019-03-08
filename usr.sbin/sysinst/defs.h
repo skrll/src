@@ -1,4 +1,4 @@
-/*	$NetBSD: defs.h,v 1.31 2019/01/27 04:15:11 oster Exp $	*/
+/*	$NetBSD: defs.h,v 1.33 2019/02/12 18:32:15 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.

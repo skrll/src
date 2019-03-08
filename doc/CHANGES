@@ -1,4 +1,4 @@
-# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2498 $>
+# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2507 $>
 #
 #
 # [Note: This file does not mention every change made to the NetBSD source tree.
@@ -48,6 +48,7 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 	lm(4): Add support for NCT5174D, NCT6775F, NCT6779D and NCT679[1235]D.
 		[msaitoh 20170711]
 	arm: Add support for NVIDIA Tegra X1 SoC. [jmcneill 20170720]
+	arm: Add support for Allwinner A64 SoC. [jmcneill 20170723]
 	gzip(1): Add SIGINFO support. [mrg 20170804]
 	i386: Remove vm86. [maxv 20170812]
 	itesio(4): Add support IT8628E. [hauke 20170814]
@@ -61,6 +62,7 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 	tcpdump(8): Import 4.9.2. [christos 20170908]
 	veriexecgen(8): Drop support for MD5, SHA1, RMD160. [sevan 20170909]
 	itesio(4): Add support IT8728GF and IT877[12]E [hauke 20170814]
+	arm: Add support for Allwinner A13 and R8 SoCs. [jmcneill 20170825]
 	veriexec(4): Drop support for VERIFIED_EXEC_FP_MD5,
 		VERIFIED_EXEC_FP_SHA1, and VERIFIED_EXEC_FP_RMD160 options.
 		[sevan 20170913]
@@ -73,6 +75,7 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 		[jdolecek 20171007]
 	OpenSSH: Imported 7.6. [christos 20171007]
 	amd64: Add support for Kernel ASLR [maxv 20171010]
+	arm: Add support for Allwinner H5 SoC. [jmcneill 20171011]
 	tmux(1): Imported 2.6. [christos 20171012]
 	amd64: Add support for SMAP. [maxv 20171017]
 	amd64: Add support for USER_LDT. [maxv 20171021]
@@ -83,6 +86,7 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 	kernhist(9): Reworked the export-via-sysctl code to use uintptr_t
 		arguments, PR kern/52639.  Requires contemporaneous update
 		of vmstat(1). [pgoyette 20171028]
+	arm: Add support for NextThing GR8 SoC. [jmcneill 20171106]
 	acpi(4): Updated ACPICA to 20171110. [christos 20171111]
 	sunxinand(4): Add driver for Allwinner NAND Flash Controller.
 		[jmcneill 20171113]
@@ -254,6 +258,7 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 	kernel: Add NVMM, the NetBSD virtualization driver, with initial
 		support for x86. [maxv 20181107]
 	aarch64: Add support for kASan. [maxv 20181108]
+	gcc: Import GCC 6.5.  [mrg 20181103]
 	aarch64: Add support for ARM Server Base System Architecture (SBSA).
 		The SBSA is a hardware system architecture for servers based on
 		64-bit ARM processors. The Server Base Boot Requirements (SBBR)
@@ -283,7 +288,7 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 	threadpool(9): Added threadpool(9) API. [thorpej 20181224]
 	systat(1): Extend vmstat display for better insight about bufcache.
 		[sevan 20181226]
-	arm: Support kernel crash dumps on 64 bit platforms.  [mrg 20181227]
+	aarch64: Support kernel crash dumps on arm64 platforms.  [mrg 20181227]
 	kernel: Remove M_ALIGN, MH_ALIGN, M_COPY_PKTHDR and M_MOVE_PKTHDR.
 		[maxv 20181228]
 	cgdroot: Support mounting boot partition from a wedge labelled cgd.conf.
@@ -297,6 +302,8 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 	binutils: Updated to FSF binutils 2.31.1.  [christos 20181231]
 	services(5), protocols(5): Pull iana-generated services and protocols
 	    [christos 20190103]
+	arm: Add SMP support for Allwinner multi-cluster SoCs (A83T, A80)
+	    [jmcneill 20190103]
 	wpa: Import wpa_supplicant and hostapd 2.7. [christos 20190104]
 	acpi(4): Updated ACPICA to 20181213. [christos 20190104]
 	tmux(1): Imported 2.8. [christos 20190104]
@@ -312,6 +319,9 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 		NETMAP algorithm for static NAT, lock-free lookup for 'ipset'
 		tables, lock-free state lookup, incremental state G/C, etc).
 		[rmind 20190119]
+	gcc: Import GCC 7.4.  [mrg 20190119]
+	arm: Update Amlogic S805 SoC support to use FDT based configuration.
+		[jmcneill 20190119]
 	dhcpcd: Import dhcpcd-7.1.0. [roy 20190122]
 	kernel: Remove the satlink driver. [maxv 20190127]
 	kernel: Merged [pgoyette-compat] branch - for details, see
@@ -324,3 +334,12 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 		[sevan 20190128]
 	ure(4): Add driver for Realtek RTL8152/RTL8153 from OpenBSD.
 		[rin 20190206]
+	dhcpcd: Import dhcpcd-7.1.1 [roy 20190207]
+	nsd: Import 4.1.26 [prlw1 20190212]
+	macppc: The kernels for the G5s are now built by default. These are
+		currently intended for netbooting via TFTP. [sevan 20190219]
+	bge(4): Add support for BCM5762, BCM5725, BCM5727, BCM57764, BCM57767
+		and BCM57787 [msaitoh 20190220]
+	bind: Import version 9.13.7. [christos 20190224]
+	arm: Add support for Amlogic S905 SoC. [jmcneill 20190225]
+	jemalloc: Import 5.1.0 [christos 20190304]

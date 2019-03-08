@@ -1,4 +1,4 @@
-/*	$NetBSD: socket.c,v 1.5 2019/01/27 01:51:00 christos Exp $	*/
+/*	$NetBSD: socket.c,v 1.8 2019/02/24 20:01:32 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -47,7 +47,6 @@
 #include <isc/list.h>
 #include <isc/log.h>
 #include <isc/mem.h>
-#include <isc/msgs.h>
 #include <isc/mutex.h>
 #include <isc/net.h>
 #include <isc/once.h>
@@ -351,14 +350,6 @@ struct isc__socket {
 	char				name[16];
 	void *				tag;
 
-	/*
-	 * Internal events.  Posted when a descriptor is readable or
-	 * writable.  These are statically allocated and never freed.
-	 * They will be set to non-purgable before use.
-	 */
-	intev_t			readable_ev;
-	intev_t			writable_ev;
-
 	ISC_LIST(isc_socketevent_t)		send_list;
 	ISC_LIST(isc_socketevent_t)		recv_list;
 	ISC_LIST(isc_socket_newconnev_t)	accept_list;
@@ -366,9 +357,7 @@ struct isc__socket {
 
 	isc_sockaddr_t		peer_address;       /* remote address */
 
-	unsigned int		pending_recv : 1,
-				pending_send : 1,
-				listener : 1,       /* listener socket */
+	unsigned int		listener : 1,       /* listener socket */
 				connected : 1,
 				connecting : 1,     /* connect pending */
 				bound : 1,          /* bound to local addr */
@@ -380,10 +369,10 @@ struct isc__socket {
 	unsigned char		overflow; /* used for MSG_TRUNC fake */
 #endif
 
-        void                    *fdwatcharg;    
-        isc_sockfdwatch_t       fdwatchcb;
-        int                     fdwatchflags;
-        isc_task_t              *fdwatchtask;
+	void			*fdwatcharg;
+	isc_sockfdwatch_t	fdwatchcb;
+	int			fdwatchflags;
+	isc_task_t              *fdwatchtask;
 	unsigned int		dscp;
 };
 
@@ -474,8 +463,8 @@ static void internal_accept(isc__socket_t *);
 static void internal_connect(isc__socket_t *);
 static void internal_recv(isc__socket_t *);
 static void internal_send(isc__socket_t *);
-static void internal_fdwatch_write(isc_task_t *, isc_event_t *);
-static void internal_fdwatch_read(isc_task_t *, isc_event_t *);
+static void internal_fdwatch_write(isc__socket_t *);
+static void internal_fdwatch_read(isc__socket_t *);
 static void process_cmsg(isc__socket_t *, struct msghdr *, isc_socketevent_t *);
 static void build_msghdr_send(isc__socket_t *, char *, isc_socketevent_t *,
 			      struct msghdr *, struct iovec *, size_t *);
@@ -646,12 +635,10 @@ thread_log(isc__socketthread_t *thread,
 static void
 socket_log(isc__socket_t *sock, const isc_sockaddr_t *address,
 	   isc_logcategory_t *category, isc_logmodule_t *module, int level,
-	   isc_msgcat_t *msgcat, int msgset, int message,
-	   const char *fmt, ...) ISC_FORMAT_PRINTF(9, 10);
+	   const char *fmt, ...) ISC_FORMAT_PRINTF(6, 7);
 static void
 socket_log(isc__socket_t *sock, const isc_sockaddr_t *address,
 	   isc_logcategory_t *category, isc_logmodule_t *module, int level,
-	   isc_msgcat_t *msgcat, int msgset, int message,
 	   const char *fmt, ...)
 {
 	char msgbuf[2048];
@@ -666,14 +653,12 @@ socket_log(isc__socket_t *sock, const isc_sockaddr_t *address,
 	va_end(ap);
 
 	if (address == NULL) {
-		isc_log_iwrite(isc_lctx, category, module, level,
-			       msgcat, msgset, message,
-			       "socket %p: %s", sock, msgbuf);
+		isc_log_write(isc_lctx, category, module, level,
+			      "socket %p: %s", sock, msgbuf);
 	} else {
 		isc_sockaddr_format(address, peerbuf, sizeof(peerbuf));
-		isc_log_iwrite(isc_lctx, category, module, level,
-			       msgcat, msgset, message,
-			       "socket %p %s: %s", sock, peerbuf, msgbuf);
+		isc_log_write(isc_lctx, category, module, level,
+			      "socket %p %s: %s", sock, peerbuf, msgbuf);
 	}
 }
 
@@ -981,10 +966,7 @@ select_poke(isc__socketmgr_t *mgr, int threadid, int fd, int msg) {
 	if (cc < 0) {
 		strerror_r(errno, strbuf, sizeof(strbuf));
 		FATAL_ERROR(__FILE__, __LINE__,
-			    isc_msgcat_get(isc_msgcat, ISC_MSGSET_SOCKET,
-					   ISC_MSG_WRITEFAILED,
-					   "write() failed "
-					   "during watcher poke: %s"),
+			    "write() failed during watcher poke: %s",
 			    strbuf);
 	}
 
@@ -1009,10 +991,7 @@ select_readmsg(isc__socketthread_t *thread, int *fd, int *msg) {
 
 		strerror_r(errno, strbuf, sizeof(strbuf));
 		FATAL_ERROR(__FILE__, __LINE__,
-			    isc_msgcat_get(isc_msgcat, ISC_MSGSET_SOCKET,
-					   ISC_MSG_READFAILED,
-					   "read() failed "
-					   "during watcher poke: %s"),
+			    "read() failed during watcher poke: %s",
 			    strbuf);
 	}
 	INSIST(cc == sizeof(buf));
@@ -1160,7 +1139,6 @@ process_cmsg(isc__socket_t *sock, struct msghdr *msg, isc_socketevent_t *dev) {
 	cmsgp = CMSG_FIRSTHDR(msg);
 	while (cmsgp != NULL) {
 		socket_log(sock, NULL, TRACE,
-			   isc_msgcat, ISC_MSGSET_SOCKET, ISC_MSG_PROCESSCMSG,
 			   "processing cmsg %p", cmsgp);
 
 		if (cmsgp->cmsg_level == IPPROTO_IPV6
@@ -1171,8 +1149,6 @@ process_cmsg(isc__socket_t *sock, struct msghdr *msg, isc_socketevent_t *dev) {
 				sizeof(struct in6_pktinfo));
 			dev->attributes |= ISC_SOCKEVENTATTR_PKTINFO;
 			socket_log(sock, NULL, TRACE,
-				   isc_msgcat, ISC_MSGSET_SOCKET,
-				   ISC_MSG_IFRECEIVED,
 				   "interface received on ifindex %u",
 				   dev->pktinfo.ipi6_ifindex);
 			if (IN6_IS_ADDR_MULTICAST(&pktinfop->ipi6_addr))
@@ -1252,9 +1228,6 @@ build_msghdr_send(isc__socket_t *sock, char* cmsgbuf, isc_socketevent_t *dev,
 		msg->msg_namelen = 0;
 	}
 
-	write_count = 0;
-	iovcount = 0;
-
 	write_count = dev->region.length - dev->n;
 	iov[0].iov_base = (void *)(dev->region.base + dev->n);
 	iov[0].iov_len = write_count;
@@ -1273,7 +1246,6 @@ build_msghdr_send(isc__socket_t *sock, char* cmsgbuf, isc_socketevent_t *dev,
 		struct in6_pktinfo *pktinfop;
 
 		socket_log(sock, NULL, TRACE,
-			   isc_msgcat, ISC_MSGSET_SOCKET, ISC_MSG_SENDTODATA,
 			   "sendto pktinfo data, ifindex %u",
 			   dev->pktinfo.ipi6_ifindex);
 
@@ -1343,12 +1315,8 @@ build_msghdr_send(isc__socket_t *sock, char* cmsgbuf, isc_socketevent_t *dev,
 				strerror_r(errno, strbuf, sizeof(strbuf));
 				UNEXPECTED_ERROR(__FILE__, __LINE__,
 						 "setsockopt(%d, IP_TOS, %.02x)"
-						 " %s: %s",
+						 " failed: %s",
 						 sock->fd, dscp >> 2,
-						 isc_msgcat_get(isc_msgcat,
-							ISC_MSGSET_GENERAL,
-							ISC_MSG_FAILED,
-							"failed"),
 						 strbuf);
 			} else
 				sock->dscp = dscp;
@@ -1373,12 +1341,8 @@ build_msghdr_send(isc__socket_t *sock, char* cmsgbuf, isc_socketevent_t *dev,
 				strerror_r(errno, strbuf, sizeof(strbuf));
 				UNEXPECTED_ERROR(__FILE__, __LINE__,
 						 "setsockopt(%d, IPV6_TCLASS, "
-						 "%.02x) %s: %s",
+						 "%.02x) failed: %s",
 						 sock->fd, dscp >> 2,
-						 isc_msgcat_get(isc_msgcat,
-							ISC_MSGSET_GENERAL,
-							ISC_MSG_FAILED,
-							"failed"),
 						 strbuf);
 			} else
 				sock->dscp = dscp;
@@ -1428,8 +1392,6 @@ build_msghdr_recv(isc__socket_t *sock, char *cmsgbuf, isc_socketevent_t *dev,
 		msg->msg_namelen = 0;
 		dev->address = sock->peer_address;
 	}
-
-	read_count = 0;
 
 	read_count = dev->region.length - dev->n;
 	iov[0].iov_base = (void *)(dev->region.base + dev->n);
@@ -1567,8 +1529,6 @@ doio_recv(isc__socket_t *sock, isc_socketevent_t *dev) {
 		if (isc_log_wouldlog(isc_lctx, IOEVENT_LEVEL)) {
 			strerror_r(recv_errno, strbuf, sizeof(strbuf));
 			socket_log(sock, NULL, IOEVENT,
-				   isc_msgcat, ISC_MSGSET_SOCKET,
-				   ISC_MSG_DOIORECV,
 				  "doio_recv: recvmsg(%d) %d bytes, err %d/%s",
 				   sock->fd, cc, recv_errno, strbuf);
 		}
@@ -1636,8 +1596,6 @@ doio_recv(isc__socket_t *sock, isc_socketevent_t *dev) {
 		if (isc_sockaddr_getport(&dev->address) == 0) {
 			if (isc_log_wouldlog(isc_lctx, IOEVENT_LEVEL)) {
 				socket_log(sock, &dev->address, IOEVENT,
-					   isc_msgcat, ISC_MSGSET_SOCKET,
-					   ISC_MSG_ZEROPORT,
 					   "dropping source port zero packet");
 			}
 			return (DOIO_SOFT);
@@ -1651,7 +1609,6 @@ doio_recv(isc__socket_t *sock, isc_socketevent_t *dev) {
 	}
 
 	socket_log(sock, &dev->address, IOEVENT,
-		   isc_msgcat, ISC_MSGSET_SOCKET, ISC_MSG_PKTRECV,
 		   "packet received correctly");
 
 	/*
@@ -1798,9 +1755,7 @@ doio_send(isc__socket_t *sock, isc_socketevent_t *dev) {
 		inc_stats(sock->manager->stats,
 			  sock->statsindex[STATID_SENDFAIL]);
 		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "doio_send: send() %s 0",
-				 isc_msgcat_get(isc_msgcat, ISC_MSGSET_GENERAL,
-						ISC_MSG_RETURNED, "returned"));
+				 "doio_send: send() returned 0");
 	}
 
 	/*
@@ -1898,8 +1853,7 @@ destroy(isc__socket_t **sockp) {
 	isc__socketmgr_t *manager = sock->manager;
 	isc__socketthread_t *thread;
 
-	socket_log(sock, NULL, CREATION, isc_msgcat, ISC_MSGSET_SOCKET,
-		   ISC_MSG_DESTROYING, "destroying");
+	socket_log(sock, NULL, CREATION, "destroying");
 
 	INSIST(ISC_LIST_EMPTY(sock->connect_list));
 	INSIST(ISC_LIST_EMPTY(sock->accept_list));
@@ -1962,8 +1916,6 @@ allocate_socket(isc__socketmgr_t *manager, isc_sockettype_t type,
 	ISC_LIST_INIT(sock->accept_list);
 	ISC_LIST_INIT(sock->connect_list);
 	sock->listener = 0;
-	sock->pending_recv = 0;
-	sock->pending_send = 0;
 	sock->connected = 0;
 	sock->connecting = 0;
 	sock->bound = 0;
@@ -1973,16 +1925,6 @@ allocate_socket(isc__socketmgr_t *manager, isc_sockettype_t type,
 	 * Initialize the lock.
 	 */
 	isc_mutex_init(&sock->lock);
-
-	/*
-	 * Initialize readable and writable events.
-	 */
-	ISC_EVENT_INIT(&sock->readable_ev, sizeof(intev_t),
-		       ISC_EVENTATTR_NOPURGE, NULL, ISC_SOCKEVENT_INTR,
-		       NULL, sock, sock, NULL, NULL);
-	ISC_EVENT_INIT(&sock->writable_ev, sizeof(intev_t),
-		       ISC_EVENTATTR_NOPURGE, NULL, ISC_SOCKEVENT_INTW,
-		       NULL, sock, sock, NULL, NULL);
 
 	sock->common.magic = ISCAPI_SOCKET_MAGIC;
 	sock->common.impmagic = SOCKET_MAGIC;
@@ -2005,8 +1947,6 @@ free_socket(isc__socket_t **socketp) {
 	INSIST(VALID_SOCKET(sock));
 	INSIST(isc_refcount_current(&sock->references) == 0);
 	INSIST(!sock->connecting);
-	INSIST(!sock->pending_recv);
-	INSIST(!sock->pending_send);
 	INSIST(ISC_LIST_EMPTY(sock->recv_list));
 	INSIST(ISC_LIST_EMPTY(sock->send_list));
 	INSIST(ISC_LIST_EMPTY(sock->accept_list));
@@ -2316,12 +2256,10 @@ opensocket(isc__socketmgr_t *manager, isc__socket_t *sock,
 
 	if (sock->fd >= (int)manager->maxsocks) {
 		(void)close(sock->fd);
-		isc_log_iwrite(isc_lctx, ISC_LOGCATEGORY_GENERAL,
-			       ISC_LOGMODULE_SOCKET, ISC_LOG_ERROR,
-			       isc_msgcat, ISC_MSGSET_SOCKET,
-			       ISC_MSG_TOOMANYFDS,
-			       "socket: file descriptor exceeds limit (%d/%u)",
-			       sock->fd, manager->maxsocks);
+		isc_log_write(isc_lctx, ISC_LOGCATEGORY_GENERAL,
+			      ISC_LOGMODULE_SOCKET, ISC_LOG_ERROR,
+			      "socket: file descriptor exceeds limit (%d/%u)",
+			      sock->fd, manager->maxsocks);
 		inc_stats(manager->stats, sock->statsindex[STATID_OPENFAIL]);
 		return (ISC_R_NORESOURCES);
 	}
@@ -2331,11 +2269,9 @@ opensocket(isc__socketmgr_t *manager, isc__socket_t *sock,
 		case EMFILE:
 		case ENFILE:
 			strerror_r(errno, strbuf, sizeof(strbuf));
-			isc_log_iwrite(isc_lctx, ISC_LOGCATEGORY_GENERAL,
-				       ISC_LOGMODULE_SOCKET, ISC_LOG_ERROR,
-				       isc_msgcat, ISC_MSGSET_SOCKET,
-				       ISC_MSG_TOOMANYFDS,
-				       "%s: %s", err, strbuf);
+			isc_log_write(isc_lctx, ISC_LOGCATEGORY_GENERAL,
+				      ISC_LOGMODULE_SOCKET, ISC_LOG_ERROR,
+				      "%s: %s", err, strbuf);
 			/* fallthrough */
 		case ENOBUFS:
 			inc_stats(manager->stats,
@@ -2357,11 +2293,7 @@ opensocket(isc__socketmgr_t *manager, isc__socket_t *sock,
 		default:
 			strerror_r(errno, strbuf, sizeof(strbuf));
 			UNEXPECTED_ERROR(__FILE__, __LINE__,
-					 "%s() %s: %s", err,
-					 isc_msgcat_get(isc_msgcat,
-							ISC_MSGSET_GENERAL,
-							ISC_MSG_FAILED,
-							"failed"),
+					 "%s() failed: %s", err,
 					 strbuf);
 			inc_stats(manager->stats,
 				  sock->statsindex[STATID_OPENFAIL]);
@@ -2387,10 +2319,8 @@ opensocket(isc__socketmgr_t *manager, isc__socket_t *sock,
 		       (void *)&on, sizeof(on)) < 0) {
 		strerror_r(errno, strbuf, sizeof(strbuf));
 		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "setsockopt(%d, SO_BSDCOMPAT) %s: %s",
+				 "setsockopt(%d, SO_BSDCOMPAT) failed: %s",
 				 sock->fd,
-				 isc_msgcat_get(isc_msgcat, ISC_MSGSET_GENERAL,
-						ISC_MSG_FAILED, "failed"),
 				 strbuf);
 		/* Press on... */
 	}
@@ -2401,10 +2331,8 @@ opensocket(isc__socketmgr_t *manager, isc__socket_t *sock,
 		       (void *)&on, sizeof(on)) < 0) {
 		strerror_r(errno, strbuf, sizeof(strbuf));
 		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "setsockopt(%d, SO_NOSIGPIPE) %s: %s",
+				 "setsockopt(%d, SO_NOSIGPIPE) failed: %s",
 				 sock->fd,
-				 isc_msgcat_get(isc_msgcat, ISC_MSGSET_GENERAL,
-						ISC_MSG_FAILED, "failed"),
 				 strbuf);
 		/* Press on... */
 	}
@@ -2428,12 +2356,8 @@ opensocket(isc__socketmgr_t *manager, isc__socket_t *sock,
 		    && errno != ENOPROTOOPT) {
 			strerror_r(errno, strbuf, sizeof(strbuf));
 			UNEXPECTED_ERROR(__FILE__, __LINE__,
-					 "setsockopt(%d, SO_TIMESTAMP) %s: %s",
+					 "setsockopt(%d, SO_TIMESTAMP) failed: %s",
 					 sock->fd,
-					 isc_msgcat_get(isc_msgcat,
-							ISC_MSGSET_GENERAL,
-							ISC_MSG_FAILED,
-							"failed"),
 					 strbuf);
 			/* Press on... */
 		}
@@ -2447,11 +2371,7 @@ opensocket(isc__socketmgr_t *manager, isc__socket_t *sock,
 			strerror_r(errno, strbuf, sizeof(strbuf));
 			UNEXPECTED_ERROR(__FILE__, __LINE__,
 					 "setsockopt(%d, IPV6_RECVPKTINFO) "
-					 "%s: %s", sock->fd,
-					 isc_msgcat_get(isc_msgcat,
-							ISC_MSGSET_GENERAL,
-							ISC_MSG_FAILED,
-							"failed"),
+					 "failed: %s", sock->fd,
 					 strbuf);
 		}
 #else
@@ -2461,12 +2381,8 @@ opensocket(isc__socketmgr_t *manager, isc__socket_t *sock,
 				   (void *)&on, sizeof(on)) < 0)) {
 			strerror_r(errno, strbuf, sizeof(strbuf));
 			UNEXPECTED_ERROR(__FILE__, __LINE__,
-					 "setsockopt(%d, IPV6_PKTINFO) %s: %s",
+					 "setsockopt(%d, IPV6_PKTINFO) failed: %s",
 					 sock->fd,
-					 isc_msgcat_get(isc_msgcat,
-							ISC_MSGSET_GENERAL,
-							ISC_MSG_FAILED,
-							"failed"),
 					 strbuf);
 		}
 #endif /* IPV6_RECVPKTINFO */
@@ -2527,12 +2443,8 @@ opensocket(isc__socketmgr_t *manager, isc__socket_t *sock,
 			       (void *)&rcvbuf, sizeof(rcvbuf)) == -1) {
 				strerror_r(errno, strbuf, sizeof(strbuf));
 				UNEXPECTED_ERROR(__FILE__, __LINE__,
-					"setsockopt(%d, SO_RCVBUF, %d) %s: %s",
+					"setsockopt(%d, SO_RCVBUF, %d) failed: %s",
 					sock->fd, rcvbuf,
-					isc_msgcat_get(isc_msgcat,
-						       ISC_MSGSET_GENERAL,
-						       ISC_MSG_FAILED,
-						       "failed"),
 					strbuf);
 			}
 		}
@@ -2548,12 +2460,8 @@ opensocket(isc__socketmgr_t *manager, isc__socket_t *sock,
 			       (void *)&sndbuf, sizeof(sndbuf)) == -1) {
 				strerror_r(errno, strbuf, sizeof(strbuf));
 				UNEXPECTED_ERROR(__FILE__, __LINE__,
-					"setsockopt(%d, SO_SNDBUF, %d) %s: %s",
+					"setsockopt(%d, SO_SNDBUF, %d) failed: %s",
 					sock->fd, sndbuf,
-					isc_msgcat_get(isc_msgcat,
-						       ISC_MSGSET_GENERAL,
-						       ISC_MSG_FAILED,
-						       "failed"),
 					strbuf);
 			}
 		}
@@ -2566,9 +2474,7 @@ opensocket(isc__socketmgr_t *manager, isc__socket_t *sock,
 		strerror_r(errno, strbuf, sizeof(strbuf));
 		UNEXPECTED_ERROR(__FILE__, __LINE__,
 				 "setsockopt(%d, IPV6_RECVTCLASS) "
-				 "%s: %s", sock->fd,
-				 isc_msgcat_get(isc_msgcat, ISC_MSGSET_GENERAL,
-						ISC_MSG_FAILED, "failed"),
+				 "failed: %s", sock->fd,
 				 strbuf);
 	}
 #endif
@@ -2579,9 +2485,7 @@ opensocket(isc__socketmgr_t *manager, isc__socket_t *sock,
 		strerror_r(errno, strbuf, sizeof(strbuf));
 		UNEXPECTED_ERROR(__FILE__, __LINE__,
 				 "setsockopt(%d, IP_RECVTOS) "
-				 "%s: %s", sock->fd,
-				 isc_msgcat_get(isc_msgcat, ISC_MSGSET_GENERAL,
-						ISC_MSG_FAILED, "failed"),
+				 "failed: %s", sock->fd,
 				 strbuf);
 	}
 #endif
@@ -2686,8 +2590,8 @@ socket_create(isc_socketmgr_t *manager0, int pf, isc_sockettype_t type,
 #endif
 	UNLOCK(&manager->lock);
 
-	socket_log(sock, NULL, CREATION, isc_msgcat, ISC_MSGSET_SOCKET,
-		   ISC_MSG_CREATED, dup_socket != NULL ? "dupped" : "created");
+	socket_log(sock, NULL, CREATION,
+		   dup_socket != NULL ? "dupped" : "created");
 
 	return (ISC_R_SUCCESS);
 }
@@ -2820,8 +2724,6 @@ isc_socket_close(isc_socket_t *sock0) {
 	REQUIRE(sock->fd >= 0 && sock->fd < (int)sock->manager->maxsocks);
 
 	INSIST(!sock->connecting);
-	INSIST(!sock->pending_recv);
-	INSIST(!sock->pending_send);
 	INSIST(ISC_LIST_EMPTY(sock->recv_list));
 	INSIST(ISC_LIST_EMPTY(sock->send_list));
 	INSIST(ISC_LIST_EMPTY(sock->accept_list));
@@ -2849,65 +2751,22 @@ isc_socket_close(isc_socket_t *sock0) {
 	return (ISC_R_SUCCESS);
 }
 
-/*
- * I/O is possible on a given socket.  Schedule an event to this task that
- * will call an internal function to do the I/O.  This will charge the
- * task with the I/O operation and let our select loop handler get back
- * to doing something real as fast as possible.
- *
- * The socket and manager must be locked before calling this function.
- */
 static void
 dispatch_recv(isc__socket_t *sock) {
-	intev_t *iev;
-	isc_task_t *sender;
-
 	if (sock->type != isc_sockettype_fdwatch) {
 		internal_recv(sock);
-		return;
+	} else {
+		internal_fdwatch_read(sock);
 	}
-#if 0
-	INSIST(!sock->pending_recv);
-#else
-	// XXX: locking
-	if (sock->pending_recv)
-		return;
-#endif
-
-	sender = sock->fdwatchtask;
-	sock->pending_recv = 1;
-	iev = &sock->readable_ev;
-
-	sock->references++;
-	iev->ev_sender = sock;
-	iev->ev_action = internal_fdwatch_read;
-	iev->ev_arg = sock;
-
-	isc_task_send(sender, (isc_event_t **)&iev);
 }
 
 static void
 dispatch_send(isc__socket_t *sock) {
-	intev_t *iev;
-	isc_task_t *sender;
-
 	if (sock->type != isc_sockettype_fdwatch) {
 		internal_send(sock);
-		return;
+	} else {
+		internal_fdwatch_write(sock);
 	}
-
-	INSIST(!sock->pending_send);
-
-	sender = sock->fdwatchtask;
-	sock->pending_send = 1;
-	iev = &sock->writable_ev;
-
-	sock->references++;
-	iev->ev_sender = sock;
-	iev->ev_action = internal_fdwatch_write;
-	iev->ev_arg = sock;
-
-	isc_task_send(sender, (isc_event_t **)&iev);
 }
 
 /*
@@ -3013,7 +2872,6 @@ internal_accept(isc__socket_t *sock) {
 
 	LOCK(&sock->lock);
 	socket_log(sock, NULL, TRACE,
-		   isc_msgcat, ISC_MSGSET_SOCKET, ISC_MSG_ACCEPTLOCK,
 		   "internal_accept called, locked socket");
 
 	manager = sock->manager;
@@ -3070,12 +2928,10 @@ internal_accept(isc__socket_t *sock) {
 		switch (errno) {
 		case ENFILE:
 		case EMFILE:
-			isc_log_iwrite(isc_lctx, ISC_LOGCATEGORY_GENERAL,
-				       ISC_LOGMODULE_SOCKET, ISC_LOG_ERROR,
-				       isc_msgcat, ISC_MSGSET_SOCKET,
-				       ISC_MSG_TOOMANYFDS,
-				       "%s: too many open file descriptors",
-				       err);
+			isc_log_write(isc_lctx, ISC_LOGCATEGORY_GENERAL,
+				      ISC_LOGMODULE_SOCKET, ISC_LOG_ERROR,
+				      "%s: too many open file descriptors",
+				      err);
 			goto soft_error;
 
 		case ENOBUFS:
@@ -3099,11 +2955,7 @@ internal_accept(isc__socket_t *sock) {
 		}
 		strerror_r(errno, strbuf, sizeof(strbuf));
 		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "internal_accept: %s() %s: %s", err,
-				 isc_msgcat_get(isc_msgcat,
-						ISC_MSGSET_GENERAL,
-						ISC_MSG_FAILED,
-						"failed"),
+				 "internal_accept: %s() failed: %s", err,
 				 strbuf);
 		fd = -1;
 		result = ISC_R_UNEXPECTED;
@@ -3129,13 +2981,10 @@ internal_accept(isc__socket_t *sock) {
 			(void)close(fd);
 			goto soft_error;
 		} else if (fd >= (int)manager->maxsocks) {
-			isc_log_iwrite(isc_lctx, ISC_LOGCATEGORY_GENERAL,
-				       ISC_LOGMODULE_SOCKET, ISC_LOG_ERROR,
-				       isc_msgcat, ISC_MSGSET_SOCKET,
-				       ISC_MSG_TOOMANYFDS,
-				       "accept: "
-				       "file descriptor exceeds limit (%d/%u)",
-				       fd, manager->maxsocks);
+			isc_log_write(isc_lctx, ISC_LOGCATEGORY_GENERAL,
+				      ISC_LOGMODULE_SOCKET, ISC_LOG_ERROR,
+				      "accept: file descriptor exceeds limit (%d/%u)",
+				      fd, manager->maxsocks);
 			(void)close(fd);
 			goto soft_error;
 		}
@@ -3218,7 +3067,6 @@ internal_accept(isc__socket_t *sock) {
 #endif
 
 		socket_log(sock, &NEWCONNSOCK(dev)->peer_address, CREATION,
-			   isc_msgcat, ISC_MSGSET_SOCKET, ISC_MSG_ACCEPTEDCXN,
 			   "accepted connection, new socket %p",
 			   dev->newsocket);
 
@@ -3264,7 +3112,6 @@ internal_recv(isc__socket_t *sock) {
 	}
 
 	socket_log(sock, NULL, IOEVENT,
-		   isc_msgcat, ISC_MSGSET_SOCKET, ISC_MSG_INTERNALRECV,
 		   "internal_recv: event %p -> task %p", dev, dev->ev_sender);
 
 	/*
@@ -3317,8 +3164,8 @@ internal_send(isc__socket_t *sock) {
 	if (dev == NULL) {
 		goto finish;
 	}
-	socket_log(sock, NULL, EVENT, NULL, 0, 0,
-		   "internal_send:  event %p -> task %p",
+	socket_log(sock, NULL, EVENT,
+		   "internal_send: event %p -> task %p",
 		   dev, dev->ev_sender);
 
 	/*
@@ -3348,35 +3195,22 @@ internal_send(isc__socket_t *sock) {
 }
 
 static void
-internal_fdwatch_write(isc_task_t *me, isc_event_t *ev) {
-	isc__socket_t *sock;
+internal_fdwatch_write(isc__socket_t *sock)
+{
 	int more_data;
 
-	INSIST(ev->ev_type == ISC_SOCKEVENT_INTW);
-
-	/*
-	 * Find out what socket this is and lock it.
-	 */
-	sock = (isc__socket_t *)ev->ev_sender;
 	INSIST(VALID_SOCKET(sock));
 
 	LOCK(&sock->lock);
-	socket_log(sock, NULL, IOEVENT,
-		   isc_msgcat, ISC_MSGSET_SOCKET, ISC_MSG_INTERNALSEND,
-		   "internal_fdwatch_write: task %p got event %p", me, ev);
-
-	INSIST(sock->pending_send == 1);
-
+	isc_refcount_increment(&sock->references);
 	UNLOCK(&sock->lock);
-	more_data = (sock->fdwatchcb)(me, (isc_socket_t *)sock,
+
+	more_data = (sock->fdwatchcb)(sock->fdwatchtask, (isc_socket_t *)sock,
 				      sock->fdwatcharg, ISC_SOCKFDWATCH_WRITE);
+
 	LOCK(&sock->lock);
 
-	sock->pending_send = 0;
-
-	INSIST(sock->references > 0);
-	sock->references--;  /* the internal event is done with this socket */
-	if (sock->references == 0) {
+	if (isc_refcount_decrement(&sock->references) == 0) {
 		UNLOCK(&sock->lock);
 		destroy(&sock);
 		return;
@@ -3390,34 +3224,22 @@ internal_fdwatch_write(isc_task_t *me, isc_event_t *ev) {
 }
 
 static void
-internal_fdwatch_read(isc_task_t *me, isc_event_t *ev) {
-	isc__socket_t *sock;
+internal_fdwatch_read(isc__socket_t *sock)
+{
 	int more_data;
 
-	INSIST(ev->ev_type == ISC_SOCKEVENT_INTR);
-
-	/*
-	 * Find out what socket this is and lock it.
-	 */
-	sock = (isc__socket_t *)ev->ev_sender;
 	INSIST(VALID_SOCKET(sock));
 
 	LOCK(&sock->lock);
-	socket_log(sock, NULL, IOEVENT,
-		   isc_msgcat, ISC_MSGSET_SOCKET, ISC_MSG_INTERNALRECV,
-		   "internal_fdwatch_read: task %p got event %p", me, ev);
-
-	INSIST(sock->pending_recv == 1);
-	sock->pending_recv = 0;
-
+	isc_refcount_increment(&sock->references);
 	UNLOCK(&sock->lock);
-	more_data = (sock->fdwatchcb)(me, (isc_socket_t *)sock,
+
+	more_data = (sock->fdwatchcb)(sock->fdwatchtask, (isc_socket_t *)sock,
 				      sock->fdwatcharg, ISC_SOCKFDWATCH_READ);
+
 	LOCK(&sock->lock);
 
-	INSIST(sock->references > 0);
-	sock->references--;  /* the internal event is done with this socket */
-	if (sock->references == 0) {
+	if (isc_refcount_decrement(&sock->references) == 0) {
 		UNLOCK(&sock->lock);
 		destroy(&sock);
 		return;
@@ -3463,7 +3285,7 @@ process_fd(isc__socketthread_t *thread, int fd, bool readable,
 		/*
 		 * Sock is being closed, it will be destroyed, bail.
 		 */
-		isc_refcount_decrement(&sock->references);
+		(void)isc_refcount_decrement(&sock->references);
 		UNLOCK(&thread->fdlock[lockid]);
 		return;
 	}
@@ -3634,10 +3456,7 @@ process_ctlfd(isc__socketthread_t *thread) {
 		select_readmsg(thread, &fd, &msg);
 
 		thread_log(thread, IOEVENT,
-			   isc_msgcat_get(isc_msgcat, ISC_MSGSET_SOCKET,
-					  ISC_MSG_WATCHERMSG,
-					  "watcher got message %d "
-					  "for socket %d"), msg, fd);
+			   "watcher got message %d for socket %d", msg, fd);
 
 		/*
 		 * Nothing to read?
@@ -3783,11 +3602,7 @@ netthread(void *uap) {
 			if (cc < 0 && !SOFT_ERROR(errno)) {
 				strerror_r(errno, strbuf, sizeof(strbuf));
 				FATAL_ERROR(__FILE__, __LINE__,
-					    "%s %s: %s", fnname,
-					    isc_msgcat_get(isc_msgcat,
-							   ISC_MSGSET_GENERAL,
-							   ISC_MSG_FAILED,
-							   "failed"), strbuf);
+					    "%s failed: %s", fnname, strbuf);
 			}
 
 #if defined(USE_DEVPOLL) && defined(ISC_SOCKET_USE_POLLWATCH)
@@ -3833,9 +3648,7 @@ netthread(void *uap) {
 #endif
 	}
 
-	thread_log(thread, TRACE, "%s",
-		   isc_msgcat_get(isc_msgcat, ISC_MSGSET_GENERAL,
-				  ISC_MSG_EXITING, "watcher exiting"));
+	thread_log(thread, TRACE, "watcher exiting");
 	return ((isc_threadresult_t)0);
 }
 
@@ -3894,9 +3707,7 @@ setup_thread(isc__socketthread_t *thread) {
 	if (pipe(thread->pipe_fds) != 0) {
 		strerror_r(errno, strbuf, sizeof(strbuf));
 		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "pipe() %s: %s",
-				 isc_msgcat_get(isc_msgcat, ISC_MSGSET_GENERAL,
-						ISC_MSG_FAILED, "failed"),
+				 "pipe() failed: %s",
 				 strbuf);
 		return (ISC_R_UNEXPECTED);
 	}
@@ -3912,9 +3723,7 @@ setup_thread(isc__socketthread_t *thread) {
 		result = isc__errno2result(errno);
 		strerror_r(errno, strbuf, sizeof(strbuf));
 		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "kqueue %s: %s",
-				 isc_msgcat_get(isc_msgcat, ISC_MSGSET_GENERAL,
-						ISC_MSG_FAILED, "failed"),
+				 "kqueue failed: %s",
 				 strbuf);
 		isc_mem_put(thread->manager->mctx, thread->events,
 			    sizeof(struct kevent) * thread->nevents);
@@ -3947,9 +3756,7 @@ setup_thread(isc__socketthread_t *thread) {
 		result = isc__errno2result(errno);
 		strerror_r(errno, strbuf, sizeof(strbuf));
 		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "epoll_create %s: %s",
-				 isc_msgcat_get(isc_msgcat, ISC_MSGSET_GENERAL,
-						ISC_MSG_FAILED, "failed"),
+				 "epoll_create failed: %s",
 						strbuf);
 		return (result);
 
@@ -3982,9 +3789,7 @@ setup_thread(isc__socketthread_t *thread) {
 		result = isc__errno2result(errno);
 		strerror_r(errno, strbuf, sizeof(strbuf));
 		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "open(/dev/poll) %s: %s",
-				 isc_msgcat_get(isc_msgcat, ISC_MSGSET_GENERAL,
-						ISC_MSG_FAILED, "failed"),
+				 "open(/dev/poll) failed: %s",
 				 strbuf);
 		isc_mem_put(thread->manager->mctx, thread->events,
 			    sizeof(struct pollfd) * thread->nevents);
@@ -4044,9 +3849,7 @@ cleanup_thread(isc_mem_t *mctx, isc__socketthread_t *thread) {
 	result = unwatch_fd(thread, thread->pipe_fds[0], SELECT_POKE_READ);
 	if (result != ISC_R_SUCCESS) {
 		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "epoll_ctl(DEL) %s",
-				 isc_msgcat_get(isc_msgcat, ISC_MSGSET_GENERAL,
-						ISC_MSG_FAILED, "failed"));
+				 "epoll_ctl(DEL) failed");
 	}
 #ifdef USE_KQUEUE
 	close(thread->kqueue_fd);
@@ -4207,10 +4010,7 @@ isc_socketmgr_destroy(isc_socketmgr_t **managerp) {
 	 * Wait for all sockets to be destroyed.
 	 */
 	while (!ISC_LIST_EMPTY(manager->socklist)) {
-		manager_log(manager, CREATION, "%s",
-			    isc_msgcat_get(isc_msgcat, ISC_MSGSET_SOCKET,
-					   ISC_MSG_SOCKETSREMAIN,
-					   "sockets exist"));
+		manager_log(manager, CREATION, "sockets exist");
 		WAIT(&manager->shutdown_ok, &manager->lock);
 	}
 
@@ -4233,11 +4033,7 @@ isc_socketmgr_destroy(isc_socketmgr_t **managerp) {
 		result = isc_thread_join(manager->threads[i].thread, NULL);
 		if (result != ISC_R_SUCCESS) {
 			UNEXPECTED_ERROR(__FILE__, __LINE__,
-					 "isc_thread_join() %s",
-					 isc_msgcat_get(isc_msgcat,
-							ISC_MSGSET_GENERAL,
-							ISC_MSG_FAILED,
-							"failed"));
+					 "isc_thread_join() failed");
 		}
 		cleanup_thread(manager->mctx, &manager->threads[i]);
 	}
@@ -4314,7 +4110,7 @@ socket_recv(isc__socket_t *sock, isc_socketevent_t *dev, isc_task_t *task,
 				    SELECT_POKE_READ);
 		}
 
-		socket_log(sock, NULL, EVENT, NULL, 0, 0,
+		socket_log(sock, NULL, EVENT,
 			   "socket_recv: event %p -> task %p",
 			   dev, ntask);
 
@@ -4415,10 +4211,9 @@ socket_send(isc__socket_t *sock, isc_socketevent_t *dev, isc_task_t *task,
 
 		if (!isc_sockaddr_issitelocal(&dev->address) &&
 		    !isc_sockaddr_islinklocal(&dev->address)) {
-			socket_log(sock, NULL, TRACE, isc_msgcat,
-				   ISC_MSGSET_SOCKET, ISC_MSG_PKTINFOPROVIDED,
-				   "pktinfo structure provided, ifindex %u "
-				   "(set to 0)", pktinfo->ipi6_ifindex);
+			socket_log(sock, NULL, TRACE,
+				   "pktinfo structure provided, ifindex %u (set to 0)",
+				   pktinfo->ipi6_ifindex);
 
 			/*
 			 * Set the pktinfo index to 0 here, to let the
@@ -4468,7 +4263,7 @@ socket_send(isc__socket_t *sock, isc_socketevent_t *dev, isc_task_t *task,
 					    sock->fd,
 					    SELECT_POKE_WRITE);
 			}
-			socket_log(sock, NULL, EVENT, NULL, 0, 0,
+			socket_log(sock, NULL, EVENT,
 				   "socket_send: event %p -> task %p",
 				   dev, ntask);
 
@@ -4778,17 +4573,13 @@ isc_socket_bind(isc_socket_t *sock0, const isc_sockaddr_t *sockaddr,
 			       (void *)&on, sizeof(on)) < 0)
 		{
 			UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "setsockopt(%d) %s", sock->fd,
-				 isc_msgcat_get(isc_msgcat, ISC_MSGSET_GENERAL,
-						ISC_MSG_FAILED, "failed"));
+					 "setsockopt(%d) failed", sock->fd);
 		}
 		if (setsockopt(sock->fd, SOL_SOCKET, SO_REUSEPORT,
 			       (void *)&on, sizeof(on)) < 0)
 		{
 			UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "setsockopt(%d) %s", sock->fd,
-				 isc_msgcat_get(isc_msgcat, ISC_MSGSET_GENERAL,
-						ISC_MSG_FAILED, "failed"));
+					 "setsockopt(%d) failed", sock->fd);
 		}
 		/* Press on... */
 	}
@@ -4817,8 +4608,7 @@ isc_socket_bind(isc_socket_t *sock0, const isc_sockaddr_t *sockaddr,
 		}
 	}
 
-	socket_log(sock, sockaddr, TRACE,
-		   isc_msgcat, ISC_MSGSET_SOCKET, ISC_MSG_BOUND, "bound");
+	socket_log(sock, sockaddr, TRACE, "bound");
 	sock->bound = 1;
 
 	UNLOCK(&sock->lock);
@@ -4851,9 +4641,8 @@ isc_socket_filter(isc_socket_t *sock0, const char *filter) {
 	if (setsockopt(sock->fd, SOL_SOCKET, SO_ACCEPTFILTER,
 			 &afa, sizeof(afa)) == -1) {
 		strerror_r(errno, strbuf, sizeof(strbuf));
-		socket_log(sock, NULL, CREATION, isc_msgcat, ISC_MSGSET_SOCKET,
-			   ISC_MSG_FILTER, "setsockopt(SO_ACCEPTFILTER): %s",
-			   strbuf);
+		socket_log(sock, NULL, CREATION,
+			   "setsockopt(SO_ACCEPTFILTER): %s", strbuf);
 		return (ISC_R_FAILURE);
 	}
 	return (ISC_R_SUCCESS);
@@ -5518,13 +5307,8 @@ isc_socket_ipv6only(isc_socket_t *sock0, bool yes) {
 			char strbuf[ISC_STRERRORSIZE];
 			strerror_r(errno, strbuf, sizeof(strbuf));
 			UNEXPECTED_ERROR(__FILE__, __LINE__,
-					 "setsockopt(%d, IPV6_V6ONLY) "
-					 "%s: %s", sock->fd,
-					 isc_msgcat_get(isc_msgcat,
-							ISC_MSGSET_GENERAL,
-							ISC_MSG_FAILED,
-							"failed"),
-					 strbuf);
+					 "setsockopt(%d, IPV6_V6ONLY) failed: %s",
+					 sock->fd, strbuf);
 		}
 	}
 #endif
@@ -5545,12 +5329,8 @@ setdscp(isc__socket_t *sock, isc_dscp_t dscp) {
 			char strbuf[ISC_STRERRORSIZE];
 			strerror_r(errno, strbuf, sizeof(strbuf));
 			UNEXPECTED_ERROR(__FILE__, __LINE__,
-					 "setsockopt(%d, IP_TOS, %.02x) "
-					 "%s: %s", sock->fd, value >> 2,
-					 isc_msgcat_get(isc_msgcat,
-							ISC_MSGSET_GENERAL,
-							ISC_MSG_FAILED,
-							"failed"),
+					 "setsockopt(%d, IP_TOS, %.02x) failed: %s",
+					 sock->fd, value >> 2,
 					 strbuf);
 		}
 	}
@@ -5562,13 +5342,8 @@ setdscp(isc__socket_t *sock, isc_dscp_t dscp) {
 			char strbuf[ISC_STRERRORSIZE];
 			strerror_r(errno, strbuf, sizeof(strbuf));
 			UNEXPECTED_ERROR(__FILE__, __LINE__,
-					 "setsockopt(%d, IPV6_TCLASS, %.02x) "
-					 "%s: %s", sock->fd, dscp >> 2,
-					 isc_msgcat_get(isc_msgcat,
-							ISC_MSGSET_GENERAL,
-							ISC_MSG_FAILED,
-							"failed"),
-					 strbuf);
+					 "setsockopt(%d, IPV6_TCLASS, %.02x) failed: %s",
+					 sock->fd, dscp >> 2, strbuf);
 		}
 	}
 #endif
@@ -5764,14 +5539,6 @@ isc_socketmgr_renderxml(isc_socketmgr_t *mgr0, xmlTextWriterPtr writer) {
 		}
 
 		TRY0(xmlTextWriterStartElement(writer, ISC_XMLCHAR "states"));
-		if (sock->pending_recv)
-			TRY0(xmlTextWriterWriteElement(writer,
-						ISC_XMLCHAR "state",
-						ISC_XMLCHAR "pending-receive"));
-		if (sock->pending_send)
-			TRY0(xmlTextWriterWriteElement(writer,
-						  ISC_XMLCHAR "state",
-						  ISC_XMLCHAR "pending-send"));
 		if (sock->listener)
 			TRY0(xmlTextWriterWriteElement(writer,
 						       ISC_XMLCHAR "state",
@@ -5879,18 +5646,6 @@ isc_socketmgr_renderjson(isc_socketmgr_t *mgr0, json_object *stats) {
 		states = json_object_new_array();
 		CHECKMEM(states);
 		json_object_object_add(entry, "states", states);
-
-		if (sock->pending_recv) {
-			obj = json_object_new_string("pending-receive");
-			CHECKMEM(obj);
-			json_object_array_add(states, obj);
-		}
-
-		if (sock->pending_send) {
-			obj = json_object_new_string("pending-send");
-			CHECKMEM(obj);
-			json_object_array_add(states, obj);
-		}
 
 		if (sock->listener) {
 			obj = json_object_new_string("listener");
@@ -6020,8 +5775,7 @@ isc_socket_fdwatchcreate(isc_socketmgr_t *manager0, int fd, int flags,
 		select_poke(sock->manager, sock->threadid, sock->fd,
 		    SELECT_POKE_WRITE);
 
-	socket_log(sock, NULL, CREATION, isc_msgcat, ISC_MSGSET_SOCKET,
-		   ISC_MSG_CREATED, "fdwatch-created");
+	socket_log(sock, NULL, CREATION, "fdwatch-created");
 
 	return (ISC_R_SUCCESS);
 }
@@ -6047,19 +5801,16 @@ isc_socket_fdwatchpoke(isc_socket_t *sock0, int flags)
 
 	if ((flags & (ISC_SOCKFDWATCH_READ | ISC_SOCKFDWATCH_WRITE)) != 0) {
 		LOCK(&sock->lock);
-		if (((flags & ISC_SOCKFDWATCH_READ) != 0) &&
-		    !sock->pending_recv)
+		if ((flags & ISC_SOCKFDWATCH_READ) != 0)
 			select_poke(sock->manager, sock->threadid, sock->fd,
 				    SELECT_POKE_READ);
-		if (((flags & ISC_SOCKFDWATCH_WRITE) != 0) &&
-		    !sock->pending_send)
+		if ((flags & ISC_SOCKFDWATCH_WRITE) != 0)
 			select_poke(sock->manager, sock->threadid, sock->fd,
 				    SELECT_POKE_WRITE);
 		UNLOCK(&sock->lock);
 	}
 
-	socket_log(sock, NULL, TRACE, isc_msgcat, ISC_MSGSET_SOCKET,
-		   ISC_MSG_POKED, "fdwatch-poked flags: %d", flags);
+	socket_log(sock, NULL, TRACE, "fdwatch-poked flags: %d", flags);
 
 	return (ISC_R_SUCCESS);
 }

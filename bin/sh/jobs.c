@@ -1,4 +1,4 @@
-/*	$NetBSD: jobs.c,v 1.103 2018/12/03 02:38:30 kre Exp $	*/
+/*	$NetBSD: jobs.c,v 1.105 2019/02/09 09:31:33 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)jobs.c	8.5 (Berkeley) 5/4/95";
 #else
-__RCSID("$NetBSD: jobs.c,v 1.103 2018/12/03 02:38:30 kre Exp $");
+__RCSID("$NetBSD: jobs.c,v 1.105 2019/02/09 09:31:33 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -277,8 +277,8 @@ do_fgcmd(const char *arg_ptr)
 		error("Cannot set tty process group (%s) at %d",
 		    strerror(errno), __LINE__);
 	}
-	restartjob(jp);
 	INTOFF;
+	restartjob(jp);
 	status = waitforjob(jp);
 	INTON;
 	return status;
@@ -374,16 +374,19 @@ STATIC void
 restartjob(struct job *jp)
 {
 	struct procstat *ps;
-	int i;
+	int i, e;
 
 	if (jp->state == JOBDONE)
 		return;
 	INTOFF;
-	for (i = 0; i < jp->nprocs; i++)
+	for (e = i = 0; i < jp->nprocs; i++) {
 		if (killpg(jp->ps[i].pid, SIGCONT) != -1)
 			break;
+		if (e == 0 && errno != ESRCH)
+			e = errno;
+	}
 	if (i >= jp->nprocs)
-		error("Cannot continue job (%s)", strerror(errno));
+		error("Cannot continue job (%s)", strerror(e ? e : ESRCH));
 	for (ps = jp->ps, i = jp->nprocs ; --i >= 0 ; ps++) {
 		if (WIFSTOPPED(ps->status)) {
 			VTRACE(DBG_JOBS, (
@@ -535,13 +538,15 @@ jobscmd(int argc, char **argv)
 			mode = SHOW_PID;
 		else
 			mode = SHOW_PGID;
-	if (!iflag)
+
+	if (!iflag && !posix)
 		mode |= SHOW_NO_FREE;
-	if (*argptr)
+
+	if (*argptr) {
 		do
 			showjob(out1, getjob(*argptr,0), mode);
 		while (*++argptr);
-	else
+	} else
 		showjobs(out1, mode);
 	return 0;
 }
@@ -1110,7 +1115,6 @@ forkshell(struct job *jp, union node *n, int mode)
 	case -1:
 		serrno = errno;
 		VTRACE(DBG_JOBS, ("Fork failed, errno=%d\n", serrno));
-		INTON;
 		error("Cannot fork (%s)", strerror(serrno));
 		break;
 	case 0:
