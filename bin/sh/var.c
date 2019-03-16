@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.75 2019/01/21 13:27:29 kre Exp $	*/
+/*	$NetBSD: var.c,v 1.78 2019/02/14 11:15:24 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)var.c	8.3 (Berkeley) 5/4/95";
 #else
-__RCSID("$NetBSD: var.c,v 1.75 2019/01/21 13:27:29 kre Exp $");
+__RCSID("$NetBSD: var.c,v 1.78 2019/02/14 11:15:24 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -194,6 +194,7 @@ STATIC int strequal(const char *, const char *);
 STATIC struct var *find_var(const char *, struct var ***, int *);
 STATIC void showvar(struct var *, const char *, const char *, int);
 static void export_usage(const char *) __dead;
+STATIC int makespecial(const char *);
 
 /*
  * Initialize the varable symbol tables and import the environment
@@ -562,13 +563,19 @@ char *
 lookupvar(const char *name)
 {
 	struct var *v;
+	char *p;
 
 	v = find_var(name, NULL, NULL);
 	if (v == NULL || v->flags & VUNSET)
 		return NULL;
-	if (v->rfunc && (v->flags & VFUNCREF) != 0)
-		return (*v->rfunc)(v) + v->name_len + 1;
-	return v->text + v->name_len + 1;
+	if (v->rfunc && (v->flags & VFUNCREF) != 0) {
+		p = (*v->rfunc)(v);
+		if (p == NULL)
+			return NULL;
+	} else
+		p = v->text;
+
+	return p + v->name_len + 1;
 }
 
 
@@ -584,6 +591,7 @@ bltinlookup(const char *name, int doall)
 {
 	struct strlist *sp;
 	struct var *v;
+	char *p;
 
 	for (sp = cmdenviron ; sp ; sp = sp->next) {
 		if (strequal(sp->text, name))
@@ -594,9 +602,15 @@ bltinlookup(const char *name, int doall)
 
 	if (v == NULL || v->flags & VUNSET || (!doall && !(v->flags & VEXPORT)))
 		return NULL;
-	if (v->rfunc && (v->flags & VFUNCREF) != 0)
-		return (*v->rfunc)(v) + v->name_len + 1;
-	return v->text + v->name_len + 1;
+
+	if (v->rfunc && (v->flags & VFUNCREF) != 0) {
+		p = (*v->rfunc)(v);
+		if (p == NULL)
+			return NULL;
+	} else
+		p = v->text;
+
+	return p + v->name_len + 1;
 }
 
 
@@ -626,9 +640,11 @@ environment(void)
 	for (vpp = vartab ; vpp < vartab + VTABSIZE ; vpp++) {
 		for (vp = *vpp ; vp ; vp = vp->next)
 			if ((vp->flags & (VEXPORT|VUNSET)) == VEXPORT) {
-				if (vp->rfunc && (vp->flags & VFUNCREF))
-					*ep++ = (*vp->rfunc)(vp);
-				else
+				if (vp->rfunc && (vp->flags & VFUNCREF)) {
+					*ep = (*vp->rfunc)(vp);
+					if (*ep != NULL)
+						ep++;
+				} else
 					*ep++ = vp->text;
 				VTRACE(DBG_VARS, ("environment: %s\n", ep[-1]));
 			}
@@ -763,16 +779,20 @@ showvar(struct var *vp, const char *cmd, const char *xtra, int show_value)
 {
 	const char *p;
 
+	p = vp->text;
+	if (vp->rfunc && (vp->flags & VFUNCREF) != 0) {
+		p = (*vp->rfunc)(vp);
+		if (p == NULL) {
+			if (!(show_value & 2))
+				return;
+			p = vp->text;
+			show_value = 0;
+		}
+	}
 	if (cmd)
 		out1fmt("%s ", cmd);
 	if (xtra)
 		out1fmt("%s ", xtra);
-	p = vp->text;
-	if (vp->rfunc && (vp->flags & VFUNCREF) != 0) {
-		p = (*vp->rfunc)(vp);
-		if (p == NULL)
-			p = vp->text;
-	}
 	for ( ; *p != '=' ; p++)
 		out1c(*p);
 	if (!(vp->flags & VUNSET) && show_value) {
@@ -1342,16 +1362,17 @@ make_space(struct space_reserved *m, int bytes)
 		return 1;
 
 	bytes = SHELL_ALIGN(bytes);
+	INTOFF;
 	/* not ckrealloc() - we want failure, not error() here */
 	p = realloc(m->b, bytes);
-	if (p == NULL)	/* what we had should still be there */
-		return 0;
+	if (p != NULL) {
+		m->b = p;
+		m->len = bytes;
+		m->b[bytes - 1] = '\0';
+	}
+	INTON;
 
-	m->b = p;
-	m->len = bytes;
-	m->b[bytes - 1] = '\0';
-
-	return 1;
+	return p != NULL;
 }
 #endif
 
@@ -1428,8 +1449,8 @@ get_tod(struct var *vp)
 
 	if (tz != NULL) {
 		if (tzs.b == NULL || strcmp(tzs.b, tz) != 0) {
+			INTOFF;
 			if (make_space(&tzs, strlen(tz) + 1)) {
-				INTOFF;
 				strcpy(tzs.b, tz);
 				if (last_zone)
 					tzfree(last_zone);
@@ -1450,8 +1471,10 @@ get_tod(struct var *vp)
 		if (tmp == NULL) {
 			if (buf.len >= vp->name_len+2+(int)(sizeof t_err - 1)) {
 				strcpy(buf.b + vp->name_len + 1, t_err);
-				if (zone && zone != last_zone)
+				if (zone && zone != last_zone) {
 					tzfree(zone);
+					INTON;
+				}
 				return buf.b;
 			}
 			len = vp->name_len + 4 + sizeof t_err - 1;
@@ -1459,16 +1482,20 @@ get_tod(struct var *vp)
 		}
 		if (strftime_z(zone, buf.b + vp->name_len + 1,
 		     buf.len - vp->name_len - 2, fmt, tmp)) {
-			if (zone && zone != last_zone)
+			if (zone && zone != last_zone) {
 				tzfree(zone);
+				INTON;
+			}
 			return buf.b;
 		}
 		if (len >= 4096)	/* Let's be reasonable */
 			break;
 		len <<= 1;
 	}
-	if (zone && zone != last_zone)
+	if (zone && zone != last_zone) {
 		tzfree(zone);
+		INTON;
+	}
 	return vp->text;
 }
 
@@ -1509,9 +1536,11 @@ get_euser(struct var *vp)
 		return vp->text;
 
 	if (make_space(&buf, vp->name_len + 2 + strlen(pw->pw_name))) {
+		INTOFF;
 		lastuid = euid;
 		snprintf(buf.b, buf.len, "%.*s=%s", vp->name_len, vp->text,
 		    pw->pw_name);
+		INTON;
 		return buf.b;
 	}
 
@@ -1543,6 +1572,7 @@ get_random(struct var *vp)
 			 * initialisation (without pre-seeding),
 			 * or explictly requesting a truly random seed.
 			 */
+			INTOFF;
 			fd = open("/dev/urandom", 0);
 			if (fd == -1) {
 				out2str("RANDOM initialisation failed\n");
@@ -1555,6 +1585,7 @@ get_random(struct var *vp)
 				} while (n != sizeof random_val);
 				close(fd);
 			}
+			INTON;
 		} else
 			/* good enough for today */
 			random_val = strtoimax(vp->text+vp->name_len+1,NULL,0);
@@ -1574,14 +1605,58 @@ get_random(struct var *vp)
 	snprintf(buf.b, buf.len, "%.*s=%jd", vp->name_len, vp->text,
 	    random_val);
 
+	INTOFF;
 	if (buf.b != vp->text && (vp->flags & (VTEXTFIXED|VSTACK)) == 0)
 		free(vp->text);
 	vp->flags |= VTEXTFIXED;
 	vp->text = buf.b;
+	INTON;
 
 	return vp->text;
 #undef random
 #undef srandom
+}
+
+STATIC int
+makespecial(const char *name)
+{
+	const struct varinit *ip;
+	struct var *vp;
+
+	CTRACE(DBG_VARS, ("makespecial('%s') -> ", name));
+	for (ip = varinit ; (vp = ip->var) != NULL ; ip++) {
+		if (strequal(ip->text, name)) {
+			if (!(ip->flags & VFUNCREF)) {
+				CTRACE(DBG_VARS, ("+1\n"));
+				return 1;
+			}
+			INTOFF;
+			vp->flags &= ~VUNSET;
+			vp->v_u = ip->v_u;
+			INTON;
+			CTRACE(DBG_VARS, ("0\n"));
+			return 0;
+		}
+	}
+	CTRACE(DBG_VARS, ("1\n"));
+	return 1;
+}
+
+int
+specialvarcmd(int argc, char **argv)
+{
+	int res = 0;
+	char **ap;
+
+	(void) nextopt("");
+
+	if (!*argptr)
+		error("Usage: specialvar var...");
+
+	for (ap = argptr; *ap ; ap++)
+		res |= makespecial(*ap);
+
+	return res;
 }
 
 #endif /* SMALL */

@@ -1,4 +1,4 @@
-/*      $NetBSD: xennetback_xenbus.c,v 1.73 2018/12/24 14:55:42 cherry Exp $      */
+/*      $NetBSD: xennetback_xenbus.c,v 1.75 2019/03/09 08:42:25 maxv Exp $      */
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xennetback_xenbus.c,v 1.73 2018/12/24 14:55:42 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xennetback_xenbus.c,v 1.75 2019/03/09 08:42:25 maxv Exp $");
 
 #include "opt_xen.h"
 
@@ -298,8 +298,7 @@ xennetback_xenbus_create(struct xenbus_device *xbusd)
 	aprint_verbose_ifnet(ifp, "Ethernet address %s\n",
 	    ether_sprintf(xneti->xni_enaddr));
 	xneti->xni_ec.ec_capabilities |= ETHERCAP_VLAN_MTU;
-	ifp->if_flags =
-	    IFF_BROADCAST|IFF_SIMPLEX|IFF_NOTRAILERS|IFF_MULTICAST;
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 	ifp->if_snd.ifq_maxlen =
 	    uimax(ifqmaxlen, NET_TX_RING_SIZE * 2);
 	ifp->if_capabilities = IFCAP_CSUM_TCPv4_Tx | IFCAP_CSUM_UDPv4_Tx;
@@ -1078,7 +1077,7 @@ xennetback_ifsoftstart_transfer(void *arg)
 			 */
 			xpmap_ptom_map(xmit_pa, newp_ma);
 			MULTI_update_va_mapping(mclp, xmit_va,
-			    newp_ma | PG_V | PG_RW | PG_U | PG_M | xpmap_pg_nx, 0);
+			    newp_ma | PTE_P | PTE_W | PTE_A | PTE_D | xpmap_pg_nx, 0);
 			mclp++;
 			gop->mfn = xmit_ma >> PAGE_SHIFT;
 			gop->domid = xneti->xni_domid;
@@ -1269,8 +1268,8 @@ xennetback_mbuf_addr(struct mbuf *m, paddr_t *xmit_pa, int *offset)
 		*offset = 0;
 		break;
 	}
-	*offset += (*xmit_pa & ~PG_FRAME);
-	*xmit_pa = (*xmit_pa & PG_FRAME);
+	*offset += (*xmit_pa & ~PTE_FRAME);
+	*xmit_pa = (*xmit_pa & PTE_FRAME);
 }
 
 static void

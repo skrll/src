@@ -1,4 +1,4 @@
-/*	$NetBSD: uhci.c,v 1.286 2019/01/22 15:02:33 skrll Exp $	*/
+/*	$NetBSD: uhci.c,v 1.288 2019/02/17 04:17:52 rin Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2011, 2012 The NetBSD Foundation, Inc.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.286 2019/01/22 15:02:33 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.288 2019/02/17 04:17:52 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -675,9 +675,11 @@ uhci_freex(struct usbd_bus *bus, struct usbd_xfer *xfer)
 	struct uhci_softc *sc = UHCI_BUS2SC(bus);
 	struct uhci_xfer *uxfer __diagused = UHCI_XFER2UXFER(xfer);
 
-	KASSERTMSG(xfer->ux_state == XFER_BUSY, "xfer %p state %d\n", xfer,
-	    xfer->ux_state);
-	KASSERTMSG(uxfer->ux_isdone, "xfer %p not done\n", xfer);
+	KASSERTMSG(xfer->ux_state == XFER_BUSY ||
+	    xfer->ux_status == USBD_NOT_STARTED,
+	    "xfer %p state %d\n", xfer, xfer->ux_state);
+	KASSERTMSG(uxfer->ux_isdone || xfer->ux_status == USBD_NOT_STARTED,
+	    "xfer %p not done\n", xfer);
 #ifdef DIAGNOSTIC
 	xfer->ux_state = XFER_FREE;
 #endif
@@ -3353,18 +3355,15 @@ uhci_add_intr(uhci_softc_t *sc, uhci_soft_qh_t *sqh)
 
 	eqh = vf->eqh;
 	usb_syncmem(&eqh->dma, eqh->offs + offsetof(uhci_qh_t, qh_hlink),
-	    sizeof(eqh->qh.qh_hlink),
-	    BUS_DMASYNC_POSTWRITE);
+	    sizeof(eqh->qh.qh_hlink), BUS_DMASYNC_POSTWRITE);
 	sqh->hlink       = eqh->hlink;
 	sqh->qh.qh_hlink = eqh->qh.qh_hlink;
 	usb_syncmem(&sqh->dma, sqh->offs + offsetof(uhci_qh_t, qh_hlink),
-	    sizeof(sqh->qh.qh_hlink),
-	    BUS_DMASYNC_PREWRITE);
+	    sizeof(sqh->qh.qh_hlink), BUS_DMASYNC_PREWRITE);
 	eqh->hlink       = sqh;
 	eqh->qh.qh_hlink = htole32(sqh->physaddr | UHCI_PTR_QH);
 	usb_syncmem(&eqh->dma, eqh->offs + offsetof(uhci_qh_t, qh_hlink),
-	    sizeof(eqh->qh.qh_hlink),
-	    BUS_DMASYNC_PREWRITE);
+	    sizeof(eqh->qh.qh_hlink), BUS_DMASYNC_PREWRITE);
 	vf->eqh = sqh;
 	vf->bandwidth++;
 }

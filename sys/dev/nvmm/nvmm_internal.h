@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_internal.h,v 1.3 2019/01/26 15:25:51 maxv Exp $	*/
+/*	$NetBSD: nvmm_internal.h,v 1.7 2019/03/07 15:22:21 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -34,8 +34,8 @@
 
 #define NVMM_MAX_MACHINES	128
 #define NVMM_MAX_VCPUS		256
-#define NVMM_MAX_SEGS		32
-#define NVMM_MAX_RAM		(4UL * (1 << 30))
+#define NVMM_MAX_HMAPPINGS	32
+#define NVMM_MAX_RAM		(128ULL * (1 << 30))
 
 struct nvmm_cpu {
 	/* Shared. */
@@ -53,7 +53,7 @@ struct nvmm_cpu {
 	void *cpudata;
 };
 
-struct nvmm_seg {
+struct nvmm_hmapping {
 	bool present;
 	uintptr_t hva;
 	size_t size;
@@ -71,8 +71,8 @@ struct nvmm_machine {
 	gpaddr_t gpa_begin;
 	gpaddr_t gpa_end;
 
-	/* Segments */
-	struct nvmm_seg segs[NVMM_MAX_SEGS];
+	/* Host Mappings */
+	struct nvmm_hmapping hmap[NVMM_MAX_HMAPPINGS];
 
 	/* CPU */
 	struct nvmm_cpu cpus[NVMM_MAX_VCPUS];
@@ -97,7 +97,7 @@ struct nvmm_impl {
 
 	int (*vcpu_create)(struct nvmm_machine *, struct nvmm_cpu *);
 	void (*vcpu_destroy)(struct nvmm_machine *, struct nvmm_cpu *);
-	void (*vcpu_setstate)(struct nvmm_cpu *, void *, uint64_t);
+	void (*vcpu_setstate)(struct nvmm_cpu *, const void *, uint64_t);
 	void (*vcpu_getstate)(struct nvmm_cpu *, void *, uint64_t);
 	int (*vcpu_inject)(struct nvmm_machine *, struct nvmm_cpu *,
 	    struct nvmm_event *);
@@ -109,5 +109,6 @@ int nvmm_vcpu_get(struct nvmm_machine *, nvmm_cpuid_t, struct nvmm_cpu **);
 void nvmm_vcpu_put(struct nvmm_cpu *);
 
 extern const struct nvmm_impl nvmm_x86_svm;
+extern const struct nvmm_impl nvmm_x86_vmx;
 
 #endif /* _NVMM_INTERNAL_H_ */

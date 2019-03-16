@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.274 2018/12/27 19:35:31 christos Exp $
+# $NetBSD: mi,v 1.279 2019/03/12 15:10:44 christos Exp $
 ./etc/mtree/set.debug                           comp-sys-root
 ./usr/lib					comp-sys-usr		compatdir
 ./usr/lib/i18n/libBIG5_g.a			comp-c-debuglib		debuglib,compatfile
@@ -85,6 +85,7 @@
 ./usr/lib/libisccfg_g.a				comp-c-debuglib		debuglib,compatfile
 ./usr/lib/libiscsi_g.a				comp-c-debuglib		debuglib,compatfile,iscsi
 ./usr/lib/libisns_g.a				comp-c-debuglib		debuglib,compatfile
+./usr/lib/libjemalloc_g.a			comp-c-debuglib		debuglib,compatfile
 ./usr/lib/libkadm5clnt_g.a			comp-c-debuglib		debuglib,compatfile,kerberos
 ./usr/lib/libkadm5srv_g.a			comp-c-debuglib		debuglib,compatfile,kerberos
 ./usr/lib/libkafs_g.a				comp-c-debuglib		debuglib,compatfile,kerberos
@@ -547,7 +548,7 @@
 ./usr/libdata/debug/usr/bin/g77.debug		comp-obsolete	obsolete
 ./usr/libdata/debug/usr/bin/gcc.debug		comp-c-debug		gcccmds,debug
 ./usr/libdata/debug/usr/bin/gcore.debug		comp-debug-debug	debug
-./usr/libdata/debug/usr/bin/gcov-dump.debug	comp-debug-debug	gcccmds,debug,gcc=6
+./usr/libdata/debug/usr/bin/gcov-dump.debug	comp-debug-debug	gcccmds,debug
 ./usr/libdata/debug/usr/bin/gcov.debug		comp-debug-debug	gcccmds,debug
 ./usr/libdata/debug/usr/bin/gdb.debug		comp-debug-debug	gdb,debug
 ./usr/libdata/debug/usr/bin/gdbtui.debug	comp-debug-debug	gdb,debug
@@ -1731,6 +1732,7 @@
 ./usr/libdata/debug/usr/tests/kernel/t_extent.debug			tests-kernel-tests	debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/kernel/t_filedesc.debug			tests-kernel-tests	debug,atf,rump
 ./usr/libdata/debug/usr/tests/kernel/t_kauth_pr_47598.debug		tests-kernel-tests	debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/kernel/t_ksem.debug			tests-kernel-tests	debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/kernel/t_lock.debug			tests-kernel-tests	debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/kernel/t_lockf.debug			tests-kernel-tests	debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/kernel/t_lwpctl.debug			tests-obsolete		obsolete,compattestfile
@@ -1888,6 +1890,21 @@
 ./usr/libdata/debug/usr/tests/lib/libbpfjit/t_bpfjit.debug		tests-lib-debug		debug,atf,sljit,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libbpfjit/t_cop.debug			tests-lib-debug		debug,atf,sljit,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libbpfjit/t_extmem.debug		tests-lib-debug		debug,atf,sljit,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t___sync_add.debug	tests-lib-tests		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t___sync_and.debug	tests-lib-tests		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t___sync_compare_and_swap.debug	tests-lib-tests	debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t___sync_lock.debug	tests-lib-tests		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t___sync_nand.debug	tests-lib-tests		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t___sync_or.debug		tests-lib-tests		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t___sync_sub.debug	tests-lib-tests		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t___sync_xor.debug	tests-lib-tests		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t_atomic_add.debug	tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t_atomic_and.debug	tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t_atomic_cas.debug	tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t_atomic_dec.debug	tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t_atomic_inc.debug	tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t_atomic_or.debug		tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/atomic/t_atomic_swap.debug	tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/c063/t_faccessat.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/c063/t_fchmodat.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/c063/t_fchownat.debug		tests-lib-debug		debug,atf,compattestfile

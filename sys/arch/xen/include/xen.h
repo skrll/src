@@ -1,4 +1,4 @@
-/*	$NetBSD: xen.h,v 1.41 2018/10/10 04:16:58 cherry Exp $	*/
+/*	$NetBSD: xen.h,v 1.43 2019/02/04 18:14:53 cherry Exp $	*/
 
 /*
  *
@@ -121,6 +121,12 @@ void printk(const char *, ...);
 
 /* Everything below this point is not included by assembler (.S) files. */
 #ifndef _LOCORE
+
+/* Version Specific Glue */
+#if __XEN_INTERFACE_VERSION__ >= 0x00030203
+#define console_mfn    console.domU.mfn
+#define console_evtchn console.domU.evtchn
+#endif
 
 /* some function prototypes */
 void trap_init(void);
@@ -341,7 +347,7 @@ xen_atomic_clear_bit(volatile void *ptr, unsigned long bitno)
 
 void	wbinvd(void);
 
-#include <xen/xen-public/features.h>
+#include <xen/include/public/features.h>
 #include <sys/systm.h>
 
 extern bool xen_feature_tables[];

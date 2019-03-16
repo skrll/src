@@ -1,4 +1,4 @@
-/*	$NetBSD: menu_sys.def,v 1.64 2019/01/09 19:43:37 martin Exp $	*/
+/*	$NetBSD: menu_sys.def,v 1.67 2019/02/25 20:47:37 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -141,7 +141,8 @@ init_menu(menudesc *m)
 	y = m->y;
 	w = m->w;
 	wmax = 0;
-	hadd = ((m->mopt & MC_NOBOX) ? 0 : 2);
+	hadd = ((m->mopt & MC_NOBOX) ? 0 :
+	    ((m->mopt & MC_CONTINUOUS) ? 1 : 2));
 	wadd = ((m->mopt & MC_NOBOX) ? 2 : 4);
 	if (!(m->mopt & MC_NOSHORTCUT))
 		wadd += 3;
@@ -358,7 +359,8 @@ draw_menu(menudesc *m, void *arg)
 			if (ep == NULL || *ep == 0)
 				break;
 		}
-		tadd++;
+		if ((m->mopt & MC_CONTINUOUS) == 0)
+			tadd++;
 	}
 
 	cury = tadd;
@@ -688,7 +690,7 @@ void
 process_menu(int num, void *arg)
 {
 	int sel = 0;
-	int req;
+	int req, rv;
 	menu_ent *opt;
 
 	menudesc *m;
@@ -754,8 +756,13 @@ process_menu(int num, void *arg)
 			continue;
 		if (opt->opt_flags & OPT_ENDWIN)
 			endwin();
-		if (opt->opt_action && (*opt->opt_action)(m, arg))
-			break;
+		if (opt->opt_action) {
+			rv = (*opt->opt_action)(m, arg);
+			if (rv == -1)
+				continue;
+			else if (rv != 0)
+				break;
+		}
 
 		if (opt->opt_menu != -1) {
 			if (!(opt->opt_flags & OPT_SUB)) {
@@ -807,6 +814,15 @@ set_menu_numopts(int menu, int numopts)
 {
 
 	MENUS(menu).numopts = numopts;
+}
+
+menudesc *
+get_menudesc(int menu)
+{
+	if (menu < 0 || menu >= num_menus)
+		return NULL;
+
+	return &MENUS(menu);
 }
 
 /* Control L is end of standard routines, remaining only for dynamic. */

@@ -1,4 +1,4 @@
-/*	$NetBSD: evtchn.c,v 1.83 2018/12/25 06:50:12 cherry Exp $	*/
+/*	$NetBSD: evtchn.c,v 1.85 2019/02/13 06:52:43 cherry Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -54,7 +54,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: evtchn.c,v 1.83 2018/12/25 06:50:12 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: evtchn.c,v 1.85 2019/02/13 06:52:43 cherry Exp $");
 
 #include "opt_xen.h"
 #include "isa.h"
@@ -256,6 +256,7 @@ void
 events_init(void)
 {
 	mutex_init(&evtchn_lock, MUTEX_DEFAULT, IPL_NONE);
+#ifdef XENPV
 	debug_port = bind_virq_to_evtch(VIRQ_DEBUG);
 
 	KASSERT(debug_port != -1);
@@ -273,6 +274,7 @@ events_init(void)
 #if NPCI > 0 || NISA > 0
 	hypervisor_ack_pirq_event(debug_port);
 #endif /* NPCI > 0 || NISA > 0 */
+#endif /* XENPV */
 	x86_enable_intr();		/* at long last... */
 }
 
@@ -943,6 +945,7 @@ event_set_iplhandler(struct cpu_info *ci,
 		    KM_NOSLEEP);
 		if (ipls == NULL)
 			panic("can't allocate fixed interrupt source");
+		ipls->is_recurse = xenev_stubs[level].ist_entry;
 		ipls->is_recurse = xenev_stubs[level].ist_recurse;
 		ipls->is_resume = xenev_stubs[level].ist_resume;
 		ipls->is_handlers = ih;
@@ -1079,6 +1082,7 @@ xen_debug_handler(void *arg)
 	return 0;
 }
 
+#ifdef XENPV
 static struct evtsource *
 event_get_handler(const char *intrid)
 {
@@ -1206,3 +1210,4 @@ interrupt_construct_intrids(const kcpuset_t *cpuset)
 
 	return ii_handler;
 }
+#endif /* XENPV */

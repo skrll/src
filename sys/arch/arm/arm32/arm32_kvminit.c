@@ -1,4 +1,4 @@
-/*	$NetBSD: arm32_kvminit.c,v 1.48 2018/11/13 20:48:14 skrll Exp $	*/
+/*	$NetBSD: arm32_kvminit.c,v 1.52 2019/02/06 13:28:08 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003, 2005  Genetec Corporation.  All rights reserved.
@@ -127,7 +127,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arm32_kvminit.c,v 1.48 2018/11/13 20:48:14 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm32_kvminit.c,v 1.52 2019/02/06 13:28:08 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -190,12 +190,12 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 	 */
 #if defined(__HAVE_GENERIC_START)
 	extern char KERNEL_BASE_virt[];
-	extern char ARM_BOOTSTRAP_LxPT[];
+	extern char const __stop__init_memory[];
 
 	VPRINTF("%s: kern_vtopdiff=%#lx\n", __func__, kern_vtopdiff);
 
 	vaddr_t kstartva = trunc_page((vaddr_t)KERNEL_BASE_virt);
-	vaddr_t kendva = round_page((vaddr_t)ARM_BOOTSTRAP_LxPT + L1_TABLE_SIZE);
+	vaddr_t kendva = round_page((vaddr_t)__stop__init_memory);
 
 	kernelstart = KERN_VTOPHYS(kstartva);
 
@@ -212,8 +212,8 @@ arm32_bootmem_init(paddr_t memstart, psize_t memsize, vsize_t kernelstart)
 #endif
 	paddr_t kernelend = KERN_VTOPHYS(kendva);
 
-	VPRINTF("%s: memstart=%#lx, memsize=%#lx\n",
-	    __func__, memstart, memsize);
+	VPRINTF("%s: memstart=%#lx, memsize=%#lx\n", __func__,
+	    memstart, memsize);
 	VPRINTF("%s: kernelstart=%#lx, kernelend=%#lx\n", __func__,
 	    kernelstart, kernelend);
 
@@ -672,8 +672,8 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 		    kernel_l2pt[idx].pv_pa, kernel_base + idx * L2_S_SEGSIZE);
 	}
 
-	VPRINTF("%s: kernel_vm_base %lx KERNEL_L2PT_KERNEL_NUM %zu\n", __func__,
-	    kernel_vm_base, KERNEL_L2PT_KERNEL_NUM);
+	VPRINTF("%s: kernel_vm_base %lx KERNEL_L2PT_VMDATA_NUM %d\n", __func__,
+	    kernel_vm_base, KERNEL_L2PT_VMDATA_NUM);
 
 	for (size_t idx = 0; idx < KERNEL_L2PT_VMDATA_NUM; idx++) {
 		pmap_link_l2pt(l1pt_va, kernel_vm_base + idx * L2_S_SEGSIZE,
@@ -720,7 +720,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	data.pv_pa = text.pv_pa + textsize;
 	data.pv_va = text.pv_va + textsize;
 	data.pv_size = totalsize - textsize;
-	data.pv_prot = VM_PROT_READ|VM_PROT_WRITE;
+	data.pv_prot = VM_PROT_READ | VM_PROT_WRITE;
 	data.pv_cache = PTE_CACHE;
 
 	VPRINTF("%s: adding chunk for kernel data/bss %#lx..%#lx (VA %#lx)\n",
@@ -831,9 +831,11 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 		}
 	}
 
-	// The amount we can direct is limited by the start of the
-	// virtual part of the kernel address space.  Don't overrun
-	// into it.
+	/*
+	 * The amount we can direct map is limited by the start of the
+	 * virtual part of the kernel address space.  Don't overrun
+	 * into it.
+	 */
 	if (mapallmem_p && cur_pv.pv_va + cur_pv.pv_size > kernel_vm_base) {
 		cur_pv.pv_size = kernel_vm_base - cur_pv.pv_va;
 	}

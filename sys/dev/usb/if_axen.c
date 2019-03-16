@@ -1,4 +1,4 @@
-/*	$NetBSD: if_axen.c,v 1.24 2019/01/31 15:27:57 rin Exp $	*/
+/*	$NetBSD: if_axen.c,v 1.37 2019/02/17 09:33:19 rin Exp $	*/
 /*	$OpenBSD: if_axen.c,v 1.3 2013/10/21 10:10:22 yuo Exp $	*/
 
 /*
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.24 2019/01/31 15:27:57 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.37 2019/02/17 09:33:19 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -49,6 +49,9 @@ __KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.24 2019/01/31 15:27:57 rin Exp $");
 #include <net/if_media.h>
 
 #include <net/bpf.h>
+
+#include <netinet/in.h>		/* XXX for netinet/ip.h */
+#include <netinet/ip.h>		/* XXX for IP_MAXPACKET */
 
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
@@ -269,9 +272,8 @@ axen_miibus_statchg(struct ifnet *ifp)
 	if ((mii->mii_media_active & IFM_GMASK) == IFM_FDX)
 		val |= AXEN_MEDIUM_FDX;
 
-	val |= (AXEN_MEDIUM_RECV_EN | AXEN_MEDIUM_ALWAYS_ONE);
-	val |= (AXEN_MEDIUM_RXFLOW_CTRL_EN | AXEN_MEDIUM_TXFLOW_CTRL_EN);
-
+	val |= AXEN_MEDIUM_RXFLOW_CTRL_EN | AXEN_MEDIUM_TXFLOW_CTRL_EN |
+	    AXEN_MEDIUM_RECV_EN;
 	switch (IFM_SUBTYPE(mii->mii_media_active)) {
 	case IFM_1000_T:
 		val |= AXEN_MEDIUM_GIGA | AXEN_MEDIUM_EN_125MHZ;
@@ -586,9 +588,9 @@ axen_ax88179_init(struct axen_softc *sc)
 	DPRINTF(("axen: Monitor mode = 0x%02x\n", val));
 
 	/* set medium type */
-	ctl = AXEN_MEDIUM_GIGA | AXEN_MEDIUM_FDX | AXEN_MEDIUM_ALWAYS_ONE |
-	      AXEN_MEDIUM_RXFLOW_CTRL_EN | AXEN_MEDIUM_TXFLOW_CTRL_EN;
-	ctl |= AXEN_MEDIUM_RECV_EN;
+	ctl = AXEN_MEDIUM_GIGA | AXEN_MEDIUM_FDX | AXEN_MEDIUM_EN_125MHZ |
+	    AXEN_MEDIUM_RXFLOW_CTRL_EN | AXEN_MEDIUM_TXFLOW_CTRL_EN |
+	    AXEN_MEDIUM_RECV_EN;
 	wval = htole16(ctl);
 	DPRINTF(("axen: set to medium mode: 0x%04x\n", ctl));
 	axen_cmd(sc, AXEN_CMD_MAC_WRITE2, 2, AXEN_MEDIUM_STATUS, &wval);
@@ -719,15 +721,19 @@ axen_attach(device_t parent, device_t self, void *aux)
 	/* decide on what our bufsize will be */
 	switch (sc->axen_udev->ud_speed) {
 	case USB_SPEED_SUPER:
-		sc->axen_bufsz = AXEN_BUFSZ_SS * 1024;
+		sc->axen_rx_bufsz = AXEN_BUFSZ_SS * 1024;
 		break;
 	case USB_SPEED_HIGH:
-		sc->axen_bufsz = AXEN_BUFSZ_HS * 1024;
+		sc->axen_rx_bufsz = AXEN_BUFSZ_HS * 1024;
 		break;
 	default:
-		sc->axen_bufsz = AXEN_BUFSZ_LS * 1024;
+		sc->axen_rx_bufsz = AXEN_BUFSZ_LS * 1024;
 		break;
 	}
+
+	sc->axen_tx_bufsz = IP_MAXPACKET +
+	    ETHER_HDR_LEN + ETHER_CRC_LEN + ETHER_VLAN_ENCAP_LEN +
+	    sizeof(struct axen_sframe_hdr);
 
 	/* Find endpoints. */
 	for (i = 0; i < id->bNumEndpoints; i++) {
@@ -792,7 +798,10 @@ axen_attach(device_t parent, device_t self, void *aux)
 	IFQ_SET_READY(&ifp->if_snd);
 
 	sc->axen_ec.ec_capabilities = ETHERCAP_VLAN_MTU;
-	ifp->if_capabilities |= IFCAP_CSUM_IPv4_Rx | IFCAP_CSUM_IPv4_Tx |
+
+	/* Adapter does not support TSOv6 (They call it LSOv2). */
+	ifp->if_capabilities |= IFCAP_TSOv4 |
+	    IFCAP_CSUM_IPv4_Rx  | IFCAP_CSUM_IPv4_Tx  |
 	    IFCAP_CSUM_TCPv4_Rx | IFCAP_CSUM_TCPv4_Tx |
 	    IFCAP_CSUM_UDPv4_Rx | IFCAP_CSUM_UDPv4_Tx |
 	    IFCAP_CSUM_TCPv6_Rx | IFCAP_CSUM_TCPv6_Tx |
@@ -941,10 +950,9 @@ axen_rx_list_init(struct axen_softc *sc)
 	for (i = 0; i < AXEN_RX_LIST_CNT; i++) {
 		c = &cd->axen_rx_chain[i];
 		c->axen_sc = sc;
-		c->axen_idx = i;
 		if (c->axen_xfer == NULL) {
 			int err = usbd_create_xfer(sc->axen_ep[AXEN_ENDPT_RX],
-			    sc->axen_bufsz, 0, 0, &c->axen_xfer);
+			    sc->axen_rx_bufsz, 0, 0, &c->axen_xfer);
 			if (err)
 				return err;
 			c->axen_buf = usbd_get_buffer(c->axen_xfer);
@@ -967,16 +975,17 @@ axen_tx_list_init(struct axen_softc *sc)
 	for (i = 0; i < AXEN_TX_LIST_CNT; i++) {
 		c = &cd->axen_tx_chain[i];
 		c->axen_sc = sc;
-		c->axen_idx = i;
 		if (c->axen_xfer == NULL) {
 			int err = usbd_create_xfer(sc->axen_ep[AXEN_ENDPT_TX],
-			    sc->axen_bufsz, USBD_FORCE_SHORT_XFER, 0,
+			    sc->axen_tx_bufsz, USBD_FORCE_SHORT_XFER, 0,
 			    &c->axen_xfer);
 			if (err)
 				return err;
 			c->axen_buf = usbd_get_buffer(c->axen_xfer);
 		}
 	}
+
+	cd->axen_tx_prod = cd->axen_tx_cnt = 0;
 
 	return 0;
 }
@@ -1010,12 +1019,13 @@ axen_rxeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 		return;
 
 	if (status != USBD_NORMAL_COMPLETION) {
+		if (status == USBD_INVAL)
+			return;	/* XXX plugged out or down */
 		if (status == USBD_NOT_STARTED || status == USBD_CANCELLED)
 			return;
-		if (usbd_ratecheck(&sc->axen_rx_notice)) {
+		if (usbd_ratecheck(&sc->axen_rx_notice))
 			aprint_error_dev(sc->axen_dev, "usb errors on rx: %s\n",
 			    usbd_errstr(status));
-		}
 		if (status == USBD_STALLED)
 			usbd_clear_endpoint_stall_async(sc->axen_ep[AXEN_ENDPT_RX]);
 		goto done;
@@ -1024,6 +1034,7 @@ axen_rxeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 	usbd_get_xfer_status(xfer, NULL, NULL, &total_len, NULL);
 
 	if (total_len < sizeof(pkt_hdr)) {
+		aprint_error_dev(sc->axen_dev, "rxeof: too short transfer\n");
 		ifp->if_ierrors++;
 		goto done;
 	}
@@ -1038,13 +1049,14 @@ axen_rxeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 	hdr_offset = (uint16_t)(rx_hdr >> 16);
 	pkt_count  = (uint16_t)(rx_hdr & 0xffff);
 
-	if (total_len > sc->axen_bufsz) {
+	if (total_len > sc->axen_rx_bufsz) {
 		aprint_error_dev(sc->axen_dev, "rxeof: too large transfer\n");
 		goto done;
 	}
 
 	/* sanity check */
 	if (hdr_offset > total_len) {
+		aprint_error_dev(sc->axen_dev, "rxeof: invalid hdr offset\n");
 		ifp->if_ierrors++;
 		usbd_delay_ms(sc->axen_udev, 100);
 		goto done;
@@ -1124,11 +1136,8 @@ nextpkt:
 	} while( pkt_count > 0);
 
 done:
-	/* clear buffer for next transaction */
-	memset(c->axen_buf, 0, sc->axen_bufsz);
-
 	/* Setup new transfer. */
-	usbd_setup_xfer(xfer, c, c->axen_buf, sc->axen_bufsz,
+	usbd_setup_xfer(xfer, c, c->axen_buf, sc->axen_rx_bufsz,
 	    USBD_SHORT_XFER_OK, USBD_NO_TIMEOUT, axen_rxeof);
 	usbd_transfer(xfer);
 
@@ -1189,6 +1198,7 @@ axen_txeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 {
 	struct axen_chain *c = (struct axen_chain *)priv;
 	struct axen_softc *sc = c->axen_sc;
+	struct axen_cdata *cd = &sc->axen_cdata;
 	struct ifnet *ifp = GET_IFP(sc);
 	int s;
 
@@ -1196,15 +1206,17 @@ axen_txeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 		return;
 
 	s = splnet();
-
+	KASSERT(cd->axen_tx_cnt > 0);
+	cd->axen_tx_cnt--;
 	if (status != USBD_NORMAL_COMPLETION) {
 		if (status == USBD_NOT_STARTED || status == USBD_CANCELLED) {
 			splx(s);
 			return;
 		}
 		ifp->if_oerrors++;
-		aprint_error_dev(sc->axen_dev, "usb error on tx: %s\n",
-		    usbd_errstr(status));
+		if (usbd_ratecheck(&sc->axen_tx_notice))
+			aprint_error_dev(sc->axen_dev, "usb error on tx: %s\n",
+			    usbd_errstr(status));
 		if (status == USBD_STALLED)
 			usbd_clear_endpoint_stall_async(sc->axen_ep[AXEN_ENDPT_TX]);
 		splx(s);
@@ -1277,27 +1289,41 @@ axen_encap(struct axen_softc *sc, struct mbuf *m, int idx)
 	struct axen_chain *c;
 	usbd_status err;
 	struct axen_sframe_hdr hdr;
-	int length, boundary;
+	u_int length, boundary;
 
 	c = &sc->axen_cdata.axen_tx_chain[idx];
 
-	boundary = (sc->axen_udev->ud_speed == USB_SPEED_HIGH) ? 512 : 64;
+	/* XXX Is this need? */
+	switch (sc->axen_udev->ud_speed) {
+	case USB_SPEED_SUPER:
+		boundary = 4096;
+		break;
+	case USB_SPEED_HIGH:
+		boundary = 512;
+		break;
+	default:
+		boundary = 64;
+		break;
+	}
+
+	length = m->m_pkthdr.len + sizeof(hdr);
+	KASSERT(length <= sc->axen_tx_bufsz);
 
 	hdr.plen = htole32(m->m_pkthdr.len);
-	hdr.gso = 0; /* disable segmentation offloading */
+
+	hdr.gso = (m->m_pkthdr.csum_flags & M_CSUM_TSOv4) ?
+	    m->m_pkthdr.segsz : 0;
+	if ((length % boundary) == 0) {
+		DPRINTF(("%s: boundary hit\n", device_xname(sc->axen_dev)));
+		hdr.gso |= 0x80008000;	/* XXX enable padding */
+	}
+	hdr.gso = htole32(hdr.gso);
 
 	memcpy(c->axen_buf, &hdr, sizeof(hdr));
-	length = sizeof(hdr);
+	m_copydata(m, 0, m->m_pkthdr.len, c->axen_buf + sizeof(hdr));
 
-	m_copydata(m, 0, m->m_pkthdr.len, c->axen_buf + length);
-	length += m->m_pkthdr.len;
-
-	if ((length % boundary) == 0) {
-		hdr.plen = 0x0;
-		hdr.gso |= 0x80008000;  /* enable padding */
-		memcpy(c->axen_buf + length, &hdr, sizeof(hdr));
-		length += sizeof(hdr);
-	}
+	if (__predict_false(c->axen_xfer == NULL))
+		return EIO;	/* XXX plugged out or down */
 
 	usbd_setup_xfer(c->axen_xfer, c, c->axen_buf, length,
 	    USBD_FORCE_SHORT_XFER, 10000, axen_txeof);
@@ -1309,18 +1335,16 @@ axen_encap(struct axen_softc *sc, struct mbuf *m, int idx)
 		return EIO;
 	}
 
-	sc->axen_cdata.axen_tx_cnt++;
-
 	return 0;
 }
 
 static void
 axen_start(struct ifnet *ifp)
 {
-	struct axen_softc *sc;
+	struct axen_softc *sc = ifp->if_softc;
 	struct mbuf *m;
-
-	sc = ifp->if_softc;
+	struct axen_cdata *cd = &sc->axen_cdata;
+	int idx;
 
 	if (sc->axen_link == 0)
 		return;
@@ -1328,24 +1352,33 @@ axen_start(struct ifnet *ifp)
 	if ((ifp->if_flags & (IFF_OACTIVE|IFF_RUNNING)) != IFF_RUNNING)
 		return;
 
-	IFQ_POLL(&ifp->if_snd, m);
-	if (m == NULL)
-		return;
+	idx = cd->axen_tx_prod;
+	while (cd->axen_tx_cnt < AXEN_TX_LIST_CNT) {
+		IFQ_POLL(&ifp->if_snd, m);
+		if (m == NULL)
+			break;
 
-	if (axen_encap(sc, m, 0)) {
-		ifp->if_flags |= IFF_OACTIVE;
-		return;
+		if (axen_encap(sc, m, idx)) {
+			ifp->if_flags |= IFF_OACTIVE; /* XXX */
+			ifp->if_oerrors++;
+			break;
+		}
+		IFQ_DEQUEUE(&ifp->if_snd, m);
+
+		/*
+		 * If there's a BPF listener, bounce a copy of this frame
+		 * to him.
+		 */
+		bpf_mtap(ifp, m, BPF_D_OUT);
+		m_freem(m);
+
+		idx = (idx + 1) % AXEN_TX_LIST_CNT;
+		cd->axen_tx_cnt++;
 	}
-	IFQ_DEQUEUE(&ifp->if_snd, m);
+	cd->axen_tx_prod = idx;
 
-	/*
-	 * If there's a BPF listener, bounce a copy of this frame
-	 * to him.
-	 */
-	bpf_mtap(ifp, m, BPF_D_OUT);
-	m_freem(m);
-
-	ifp->if_flags |= IFF_OACTIVE;
+	if (cd->axen_tx_cnt >= AXEN_TX_LIST_CNT)
+		ifp->if_flags |= IFF_OACTIVE;
 
 	/*
 	 * Set a timeout in case the chip goes out to lunch.
@@ -1432,7 +1465,7 @@ axen_init(struct ifnet *ifp)
 	for (i = 0; i < AXEN_RX_LIST_CNT; i++) {
 		c = &sc->axen_cdata.axen_rx_chain[i];
 
-		usbd_setup_xfer(c->axen_xfer, c, c->axen_buf, sc->axen_bufsz,
+		usbd_setup_xfer(c->axen_xfer, c, c->axen_buf, sc->axen_rx_bufsz,
 		    USBD_SHORT_XFER_OK, USBD_NO_TIMEOUT, axen_rxeof);
 		usbd_transfer(c->axen_xfer);
 	}
@@ -1531,6 +1564,7 @@ static void
 axen_stop(struct ifnet *ifp, int disable)
 {
 	struct axen_softc *sc = ifp->if_softc;
+	struct axen_chain *c;
 	usbd_status err;
 	int i;
 	uint16_t rxmode, wval;
@@ -1550,6 +1584,7 @@ axen_stop(struct ifnet *ifp, int disable)
 	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
 
 	callout_stop(&sc->axen_stat_ch);
+	sc->axen_link = 0;
 
 	/* Stop transfers. */
 	if (sc->axen_ep[AXEN_ENDPT_RX] != NULL) {
@@ -1579,17 +1614,19 @@ axen_stop(struct ifnet *ifp, int disable)
 
 	/* Free RX resources. */
 	for (i = 0; i < AXEN_RX_LIST_CNT; i++) {
-		if (sc->axen_cdata.axen_rx_chain[i].axen_xfer != NULL) {
-			usbd_destroy_xfer(sc->axen_cdata.axen_rx_chain[i].axen_xfer);
-			sc->axen_cdata.axen_rx_chain[i].axen_xfer = NULL;
+		c = &sc->axen_cdata.axen_rx_chain[i];
+		if (c->axen_xfer != NULL) {
+			usbd_destroy_xfer(c->axen_xfer);
+			c->axen_xfer = NULL;
 		}
 	}
 
 	/* Free TX resources. */
 	for (i = 0; i < AXEN_TX_LIST_CNT; i++) {
-		if (sc->axen_cdata.axen_tx_chain[i].axen_xfer != NULL) {
-			usbd_destroy_xfer(sc->axen_cdata.axen_tx_chain[i].axen_xfer);
-			sc->axen_cdata.axen_tx_chain[i].axen_xfer = NULL;
+		c = &sc->axen_cdata.axen_tx_chain[i];
+		if (c->axen_xfer != NULL) {
+			usbd_destroy_xfer(c->axen_xfer);
+			c->axen_xfer = NULL;
 		}
 	}
 
@@ -1620,8 +1657,6 @@ axen_stop(struct ifnet *ifp, int disable)
 		}
 		sc->axen_ep[AXEN_ENDPT_INTR] = NULL;
 	}
-
-	sc->axen_link = 0;
 }
 
 MODULE(MODULE_CLASS_DRIVER, if_axen, NULL);

@@ -1,4 +1,4 @@
-/*	$NetBSD: asan.h,v 1.1 2018/10/31 06:26:26 maxv Exp $	*/
+/*	$NetBSD: asan.h,v 1.3 2019/03/09 08:42:25 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -102,19 +102,19 @@ kasan_md_shadow_map_page(vaddr_t va)
 
 	if (!pmap_valid_entry(L4_BASE[pl4_i(va)])) {
 		pa = __md_palloc();
-		L4_BASE[pl4_i(va)] = pa | PG_KW | pmap_pg_nx | PG_V;
+		L4_BASE[pl4_i(va)] = pa | PTE_W | pmap_pg_nx | PTE_P;
 	}
 	if (!pmap_valid_entry(L3_BASE[pl3_i(va)])) {
 		pa = __md_palloc();
-		L3_BASE[pl3_i(va)] = pa | PG_KW | pmap_pg_nx | PG_V;
+		L3_BASE[pl3_i(va)] = pa | PTE_W | pmap_pg_nx | PTE_P;
 	}
 	if (!pmap_valid_entry(L2_BASE[pl2_i(va)])) {
 		pa = __md_palloc();
-		L2_BASE[pl2_i(va)] = pa | PG_KW | pmap_pg_nx | PG_V;
+		L2_BASE[pl2_i(va)] = pa | PTE_W | pmap_pg_nx | PTE_P;
 	}
 	if (!pmap_valid_entry(L1_BASE[pl1_i(va)])) {
 		pa = __md_palloc();
-		L1_BASE[pl1_i(va)] = pa | PG_KW | pmap_pg_g | pmap_pg_nx | PG_V;
+		L1_BASE[pl1_i(va)] = pa | PTE_W | pmap_pg_g | pmap_pg_nx | PTE_P;
 	}
 }
 
@@ -165,7 +165,9 @@ static inline bool
 __md_unwind_end(const char *name)
 {
 	if (!strcmp(name, "syscall") ||
+	    !strcmp(name, "alltraps") ||
 	    !strcmp(name, "handle_syscall") ||
+	    !strncmp(name, "Xtrap", 5) ||
 	    !strncmp(name, "Xintr", 5) ||
 	    !strncmp(name, "Xhandle", 7) ||
 	    !strncmp(name, "Xresume", 7) ||

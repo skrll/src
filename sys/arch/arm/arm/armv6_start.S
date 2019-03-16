@@ -1,4 +1,4 @@
-/*	$NetBSD: armv6_start.S,v 1.5 2019/01/03 10:26:41 skrll Exp $	*/
+/*	$NetBSD: armv6_start.S,v 1.8 2019/02/09 07:20:21 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2017, 2018 The NetBSD Foundation, Inc.
@@ -162,6 +162,9 @@ ENTRY_NP(generic_start)
 #ifdef VERBOSE_INIT_ARM
 	VPRINTF("\n\rmidr :")
 	mrc	p15, 0, r0, c0, c0, 0	// MIDR
+	VPRINTX(r0)
+	VPRINTF("\n\rrevidr: ")
+	mrc	p15, 0, r0, c0, c0, 6	// REVIDR
 	VPRINTX(r0)
 	VPRINTF("\n\rmpidr:")
 	mrc	p15, 0, r0, c0, c0, 5	// MPIDR
@@ -631,7 +634,7 @@ armv7_init:
 	.ltorg
 
 /*
- * Transititions the CPU to using the TTB passed in r0.
+ * Transitions the CPU to using the TTB passed in r0.
  *
  * Uses the following callee saved registers:
  *
@@ -757,18 +760,6 @@ ENTRY_NP(cpu_mpstart)
 	ldr	R_VTOPDIFF, =cpu_mpstart
 	sub	R_VTOPDIFF, R_VTOPDIFF, R_TMP2
 
-	ldr	R_TMP2, =start_stacks_top
-	sub	sp, R_TMP2, R_VTOPDIFF
-
-#ifdef VERBOSE_INIT_ARM
-	VPRINTF("\n\rmidr :")
-	mrc	p15, 0, r0, c0, c0, 0		// MIDR
-	VPRINTX(r0)
-	VPRINTF("\n\rmpidr:")
-	mrc	p15, 0, r0, c0, c0, 5		// MPIDR
-	VPRINTX(r0)
-#endif
-
 	mrc	p15, 0, r4, c0, c0, 5		// MPIDR get
 	and	r4, #(MPIDR_AFF2|MPIDR_AFF1|MPIDR_AFF0)
 
@@ -789,15 +780,27 @@ ENTRY_NP(cpu_mpstart)
 2:
 	mov	R_TMP2, r0			// save cpu_index for later
 
-	VPRINTF("index: ")
-	VPRINTX(R_TMP2)
-	XPUTC('\n')
-	XPUTC('\r')
+	ldr	R_TMP1, =start_stacks_top
+	sub	sp, R_TMP1, R_VTOPDIFF
 
 	mov	r5, R_TMP2
 	lsl	r5, #INIT_ARM_STACK_SHIFT
 	sub	sp, sp, r5
 
+#ifdef VERBOSE_INIT_ARM
+	VPRINTF("\n\rmidr  : ")
+	mrc	p15, 0, r0, c0, c0, 0		// MIDR
+	VPRINTX(r0)
+	VPRINTF("\n\rrevidr: ")
+	mrc	p15, 0, r0, c0, c0, 6		// REVIDR
+	VPRINTX(r0)
+	VPRINTF("\n\rmpidr : ")
+	mrc	p15, 0, r0, c0, c0, 5		// MPIDR
+	VPRINTX(r0)
+#endif
+	VPRINTF("\n\rindex : ")
+	VPRINTX(R_TMP2)
+	VPRINTF("\n\rsp    : ")
 	VPRINTX(sp)
 	XPUTC('\n')
 	XPUTC('\r')

@@ -1,4 +1,4 @@
-/*	$NetBSD: machfb.c,v 1.95 2018/09/03 16:29:32 riastradh Exp $	*/
+/*	$NetBSD: machfb.c,v 1.97 2019/02/05 06:12:39 mrg Exp $	*/
 
 /*
  * Copyright (c) 2002 Bang Jun-Young
@@ -34,7 +34,7 @@
 
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0,
-	"$NetBSD: machfb.c,v 1.95 2018/09/03 16:29:32 riastradh Exp $");
+	"$NetBSD: machfb.c,v 1.97 2019/02/05 06:12:39 mrg Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -519,6 +519,7 @@ mach64_attach(device_t parent, device_t self, void *aux)
 		case PCI_PRODUCT_ATI_MACH64_GX:
 		case PCI_PRODUCT_ATI_MACH64_CX:
 			is_gx = 1;
+			/* FALLTHROUGH */
 		case PCI_PRODUCT_ATI_MACH64_CT:
 			sc->has_dsp = 0;
 			break;
@@ -528,7 +529,7 @@ mach64_attach(device_t parent, device_t self, void *aux)
 				sc->has_dsp = 0;
 				break;
 			}
-			/* Otherwise fall through. */
+			/* FALLTHROUGH */
 		default:
 			sc->has_dsp = 1;
 	}
@@ -645,7 +646,7 @@ mach64_attach(device_t parent, device_t self, void *aux)
 			}
 		}
 		/* got nothing? try to pick one based on firmware parameters */
-		if (setmode == 0) {
+		if (setmode == 0 && width > 0 && height > 0) {
 			/* no EDID data? */
 			mode = pick_mode_by_ref(width, height, 60);
 			memcpy(&default_mode, mode, sizeof(struct videomode));

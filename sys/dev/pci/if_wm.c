@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.623 2019/01/31 15:30:23 msaitoh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.631 2019/03/05 03:49:06 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -75,15 +75,14 @@
  *	- Check XXX'ed comments
  *	- TX Multi queue improvement (refine queue selection logic)
  *	- Split header buffer for newer descriptors
- *	- EEE (Energy Efficiency Ethernet)
+ *	- EEE (Energy Efficiency Ethernet) for I354
  *	- Virtual Function
  *	- Set LED correctly (based on contents in EEPROM)
  *	- Rework how parameters are loaded from the EEPROM.
- *	- Image Unique ID
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.623 2019/01/31 15:30:23 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.631 2019/03/05 03:49:06 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -158,7 +157,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.623 2019/01/31 15:30:23 msaitoh Exp $");
 int	wm_debug = WM_DEBUG_TX | WM_DEBUG_RX | WM_DEBUG_LINK | WM_DEBUG_GMII
     | WM_DEBUG_MANAGE | WM_DEBUG_NVM | WM_DEBUG_INIT | WM_DEBUG_LOCK;
 
-#define	DPRINTF(x, y)	if (wm_debug & (x)) printf y
+#define	DPRINTF(x, y)	do { if (wm_debug & (x)) printf y; } while (0)
 #else
 #define	DPRINTF(x, y)	__nothing
 #endif /* WM_DEBUG */
@@ -1476,7 +1475,7 @@ static const struct wm_product {
 	  WM_T_I210,		WMP_F_COPPER },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I210_COPPER_WOF,
-	  "I210 Ethernet (FLASH less)",
+	  "I210 Ethernet (Copper, FLASH less)",
 	  WM_T_I210,		WMP_F_COPPER },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I210_FIBER,
@@ -1488,11 +1487,15 @@ static const struct wm_product {
 	  WM_T_I210,		WMP_F_SERDES },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I210_SERDES_WOF,
-	  "I210 Gigabit Ethernet (FLASH less)",
+	  "I210 Gigabit Ethernet (SERDES, FLASH less)",
 	  WM_T_I210,		WMP_F_SERDES },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I210_SGMII,
 	  "I210 Gigabit Ethernet (SGMII)",
+	  WM_T_I210,		WMP_F_COPPER },
+
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I210_SGMII_WOF,
+	  "I210 Gigabit Ethernet (SGMII, FLASH less)",
 	  WM_T_I210,		WMP_F_COPPER },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I211_COPPER,
@@ -1522,18 +1525,6 @@ static const struct wm_product {
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I218_LM3,
 	  "I218 LM Ethernet Connection",
 	  WM_T_PCH_LPT,		WMP_F_COPPER },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V,
-	  "I219 V Ethernet Connection",
-	  WM_T_PCH_SPT,		WMP_F_COPPER },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V2,
-	  "I219 V Ethernet Connection",
-	  WM_T_PCH_SPT,		WMP_F_COPPER },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V4,
-	  "I219 V Ethernet Connection",
-	  WM_T_PCH_SPT,		WMP_F_COPPER },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V5,
-	  "I219 V Ethernet Connection",
-	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM,
 	  "I219 LM Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
@@ -1549,17 +1540,41 @@ static const struct wm_product {
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM5,
 	  "I219 LM Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM6,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM7,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM8,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM9,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V,
+	  "I219 V Ethernet Connection",
+	  WM_T_PCH_SPT,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V2,
+	  "I219 V Ethernet Connection",
+	  WM_T_PCH_SPT,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V4,
+	  "I219 V Ethernet Connection",
+	  WM_T_PCH_SPT,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V5,
+	  "I219 V Ethernet Connection",
+	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V6,
 	  "I219 V Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V7,
 	  "I219 V Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM6,
-	  "I219 LM Ethernet Connection",
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V8,
+	  "I219 V Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM7,
-	  "I219 LM Ethernet Connection",
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V9,
+	  "I219 V Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ 0,			0,
 	  NULL,
@@ -2992,6 +3007,8 @@ wm_detach(device_t self, int flags __unused)
 	evcnt_detach(&sc->sc_ev_rx_macctl);
 #endif /* WM_EVENT_COUNTERS */
 
+	rnd_detach_source(&sc->rnd_source);
+
 	/* Tell the firmware about the release */
 	WM_CORE_LOCK(sc);
 	wm_release_manageability(sc);
@@ -3641,6 +3658,8 @@ wm_rar_count(struct wm_softc *sc)
 		size = WM_RAL_TABSIZE_PCH_LPT;
 		break;
 	case WM_T_82575:
+	case WM_T_I210:
+	case WM_T_I211:
 		size = WM_RAL_TABSIZE_82575;
 		break;
 	case WM_T_82576:
@@ -8981,13 +9000,14 @@ wm_linkintr_gmii(struct wm_softc *sc, uint32_t icr)
 	/* Link status changed */
 	status = CSR_READ(sc, WMREG_STATUS);
 	link = status & STATUS_LU;
-	if (link)
+	if (link) {
 		DPRINTF(WM_DEBUG_LINK, ("%s: LINK: LSC -> up %s\n",
 			device_xname(dev),
 			(status & STATUS_FD) ? "FDX" : "HDX"));
-	else
+	} else {
 		DPRINTF(WM_DEBUG_LINK, ("%s: LINK: LSC -> down\n",
 			device_xname(dev)));
+	}
 	if ((sc->sc_type == WM_T_ICH8) && (link == false))
 		wm_gig_downshift_workaround_ich8lan(sc);
 
@@ -12003,13 +12023,14 @@ wm_check_for_link(struct wm_softc *sc)
 			__func__));
 		CSR_WRITE(sc, WMREG_TXCW, sc->sc_txcw);
 		CSR_WRITE(sc, WMREG_CTRL, (ctrl & ~CTRL_SLU));
-	} else if (signal && ((rxcw & RXCW_C) != 0))
+	} else if (signal && ((rxcw & RXCW_C) != 0)) {
 		DPRINTF(WM_DEBUG_LINK, ("%s: %s: /C/",
 			device_xname(sc->sc_dev), __func__));
-	else
+	} else {
 		DPRINTF(WM_DEBUG_LINK, ("%s: %s: linkup %08x,%08x,%08x\n",
 			device_xname(sc->sc_dev), __func__, rxcw, ctrl,
 			status));
+	}
 
 	return 0;
 }
@@ -13473,7 +13494,7 @@ wm_nvm_version(struct wm_softc *sc)
 	 *	82572EI	0x5069	5.6.9?
 	 *	82574L	0x1080	1.8.0?	(the spec update notes about 2.1.4)
 	 *		0x2013	2.1.3?
-	 *	82583	0x10a0	1.10.0? (document says it's default vaule)
+	 *	82583	0x10a0	1.10.0? (document says it's default value)
 	 */
 
 	/*
@@ -15026,7 +15047,7 @@ wm_enable_wakeup(struct wm_softc *sc)
 			goto pme;
 	} else {
 		/* Enable wakeup by the MAC */
-		CSR_WRITE(sc, WMREG_WUC, WUC_PME_EN);
+		CSR_WRITE(sc, WMREG_WUC, WUC_APME | WUC_PME_EN);
 		CSR_WRITE(sc, WMREG_WUFC, WUFC_MAG);
 	}
 
@@ -15177,6 +15198,8 @@ wm_set_eee_i350(struct wm_softc *sc)
 	uint32_t ipcnfg_mask
 	    = IPCNFG_EEE_1G_AN | IPCNFG_EEE_100M_AN | IPCNFG_10BASE_TE;
 	uint32_t eeer_mask = EEER_TX_LPI_EN | EEER_RX_LPI_EN | EEER_LPI_FC;
+
+	KASSERT(sc->sc_mediatype == WM_MEDIATYPE_COPPER);
 
 	ipcnfg = CSR_READ(sc, WMREG_IPCNFG);
 	eeer = CSR_READ(sc, WMREG_EEER);

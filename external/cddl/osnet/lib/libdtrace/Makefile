@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.19 2018/06/07 13:21:44 kamil Exp $
+#	$NetBSD: Makefile,v 1.21 2019/02/11 17:49:37 tnn Exp $
 
 # $FreeBSD: head/cddl/lib/libdtrace/Makefile 314654 2017-03-04 11:30:04Z ngie $
 
@@ -105,6 +105,7 @@ CPPFLAGS+=	-I${OPENSOLARIS_SYS_DISTDIR}/uts/sparc
 CPPFLAGS+=	-I${OPENSOLARIS_SYS_DISTDIR}/uts/arm
 .PATH:		${.CURDIR}/../../dist/lib/libdtrace/arm
 .endif
+COPTS.dt_link.c	+= ${${ACTIVE_CC} == "gcc" :? -Wno-format-truncation :}
 
 LFLAGS+=-l
 

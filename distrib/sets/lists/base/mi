@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1199 2019/01/19 13:06:50 mrg Exp $
+# $NetBSD: mi,v 1.1202 2019/02/26 07:31:49 rin Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -995,6 +995,7 @@
 ./usr/bin/units					base-util-bin
 ./usr/bin/unlzf					base-util-bin
 ./usr/bin/unlzma				base-util-bin
+./usr/bin/unpigz				base-util-bin
 ./usr/bin/unvis					base-util-bin
 ./usr/bin/unxz					base-util-bin
 ./usr/bin/unzip					base-util-bin
@@ -1077,6 +1078,7 @@
 ./usr/include/dev				base-c-usr
 ./usr/include/dev/apm				base-c-usr
 ./usr/include/dev/ata				base-c-usr
+./usr/include/dev/bluetooth			comp-c-usr
 ./usr/include/dev/dec				base-c-usr
 ./usr/include/dev/dm	                        base-c-usr
 ./usr/include/dev/dmover			base-c-usr
@@ -1111,6 +1113,7 @@
 ./usr/include/dev/rcons				base-obsolete		obsolete
 ./usr/include/dev/sbus				base-c-usr
 ./usr/include/dev/scsipi			base-c-usr
+./usr/include/dev/spi				base-c-usr
 ./usr/include/dev/sun				base-c-usr
 ./usr/include/dev/tc				base-c-usr
 ./usr/include/dev/usb				base-c-usr

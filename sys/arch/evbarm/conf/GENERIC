@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC,v 1.22 2019/01/20 17:58:37 jmcneill Exp $
+#	$NetBSD: GENERIC,v 1.27 2019/03/09 15:25:33 skrll Exp $
 #
 #	GENERIC ARM (aarch32) kernel
 #
@@ -19,6 +19,7 @@ makeoptions	DTS="
 	bcm2836-rpi-2-b.dts
 	bcm2837-rpi-3-b.dts
 	bcm2837-rpi-3-b-plus.dts
+	bcm2837-rpi-cm3-io3.dts
 
 	exynos4412-odroidu3.dts
 	exynos4412-odroidx.dts
@@ -30,6 +31,7 @@ makeoptions	DTS="
 	exynos5422-odroidxu3.dts
 	exynos5422-odroidxu4.dts
 
+	meson8b-ec100.dts
 	meson8b-mxq.dts
 	meson8b-odroidc1.dts
 
@@ -119,11 +121,12 @@ makeoptions	DTS="
 	sun8i-h2-plus-orangepi-r1.dts
 	sun8i-h2-plus-orangepi-zero.dts
 
+	sun8i-h3-bananapi-m2-plus-v1.2.dts
 	sun8i-h3-bananapi-m2-plus.dts
 	sun8i-h3-beelink-x2.dts
 	sun8i-h3-libretech-all-h3-cc.dts
-	sun8i-h3-nanopi-m1.dts
 	sun8i-h3-nanopi-m1-plus.dts
+	sun8i-h3-nanopi-m1.dts
 	sun8i-h3-nanopi-neo.dts
 	sun8i-h3-nanopi-neo-air.dts
 	sun8i-h3-orangepi-2.dts
@@ -133,6 +136,7 @@ makeoptions	DTS="
 	sun8i-h3-orangepi-pc.dts
 	sun8i-h3-orangepi-plus.dts
 	sun8i-h3-orangepi-plus2e.dts
+	sun8i-h3-orangepi-zero-plus2.dts
 
 	sun9i-a80-cubieboard4.dts
 	sun9i-a80-optimus.dts
@@ -156,6 +160,7 @@ makeoptions	DTS="
 	sun50i-h5-orangepi-zero-plus2.dts
 
 	tegra124-apalis-eval.dts
+	tegra124-apalis-v1.2-eval.dts
 	tegra124-jetson-tk1.dts
 	tegra124-nyan-big.dts
 	tegra124-nyan-blaze.dts
@@ -549,7 +554,8 @@ hdmicec*	at hdmicecbus?
 #tegradrm*	at fdt?			# NVIDIA Tegra Display
 #tegrafb*	at tegrafbbus?
 genfb*		at fdt?			# Simple Framebuffer
-wsdisplay*	at genfb?
+mesonfb*	at fdt?			# Amlogic Meson Framebuffer
+wsdisplay*	at wsemuldisplaydev?
 sunxidebe*      at fdt? pass 4  # Display Backend
 genfb*          at sunxidebe?
 sunxitcon*      at fdt? pass 4  # LCD LVDS/RGB controller
@@ -571,6 +577,7 @@ options 	WSDISPLAY_COMPAT_USL
 options 	WSDISPLAY_COMPAT_RAWKBD
 options 	WSDISPLAY_DEFAULTSCREENS=4
 options 	WSDISPLAY_MULTICONS
+options 	WSDISPLAY_SCROLLSUPPORT
 pseudo-device	wsmux
 pseudo-device	wsfont
 

@@ -1,4 +1,4 @@
-$NetBSD: acronyms,v 1.276 2018/12/12 22:27:03 dholland Exp $
+$NetBSD: acronyms,v 1.279 2019/03/08 08:47:17 leot Exp $
 10Q	thank you
 10X	thanks
 1337	elite ("leet")
@@ -98,6 +98,7 @@ COTS	commercial off-the-shelf
 CPC	cost per click
 CPE	customer premises equipment
 CRM	customer relationship management
+CTF	capture the flag
 CTN	can't talk now
 CU	see you
 CUL	see you later
@@ -444,6 +445,8 @@ PTO	{paid,personal} time off
 PTO	parent-teacher organization
 PTO	please turn over
 PTO	power takeoff
+PTT	push-to-talk
+PTT	post-telephone-telegraph
 PTV	parental tunnel vision
 QED	quod erat demonstrandum
 QFT	quoted for truth
@@ -472,6 +475,7 @@ SCNR	sorry, could not resist
 SEP	someone else's problem
 SERP	search engine results page
 SFAICT	so far as I can tell
+SGTM	sounds good to me
 SHID	slaps head in disgust
 SIMCA	sitting in my chair amused
 SITD	still in the dark

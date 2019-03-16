@@ -1,4 +1,4 @@
-/*	$NetBSD: rtsock.c,v 1.246 2019/01/29 09:28:51 pgoyette Exp $	*/
+/*	$NetBSD: rtsock.c,v 1.248 2019/03/01 11:06:57 pgoyette Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rtsock.c,v 1.246 2019/01/29 09:28:51 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rtsock.c,v 1.248 2019/03/01 11:06:57 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -333,11 +333,11 @@ sysctl_iflist(int af, struct rt_walkarg *w, int type)
 				error = sysctl_iflist_if(ifp, w, &info, len);
 				break;
 			case NET_RT_OOIFLIST: /* old _50 */
-				MODULE_CALL_HOOK(rtsock_iflist_50_hook,
+				MODULE_HOOK_CALL(rtsock_iflist_50_hook,
 				    (ifp, w, &info, len), enosys(), error);
 				break;
 			case NET_RT_OOOIFLIST: /* old _14 */
-				MODULE_CALL_HOOK(rtsock_iflist_14_hook,
+				MODULE_HOOK_CALL(rtsock_iflist_14_hook,
 				   (ifp, w, &info, len), enosys(), error);
 				break;
 			default:
@@ -367,7 +367,7 @@ sysctl_iflist(int af, struct rt_walkarg *w, int type)
 			case NET_RT_OIFLIST:
 			case NET_RT_OOIFLIST:
 			case NET_RT_OOOIFLIST:
-				MODULE_CALL_HOOK(rtsock_iflist_70_hook,
+				MODULE_HOOK_CALL(rtsock_iflist_70_hook,
 				    (w, ifa, &info), enosys(), error);
 				break;
 			default:
@@ -432,6 +432,7 @@ again:
 	w.w_needed = 0 - w.w_given;
 	w.w_where = where;
 
+	SOFTNET_KERNEL_LOCK_UNLESS_NET_MPSAFE();
 	s = splsoftnet();
 	switch (w.w_op) {
 
@@ -478,6 +479,7 @@ again:
 		break;
 	}
 	splx(s);
+	SOFTNET_KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 
 	/* check to see if we couldn't allocate memory with NOWAIT */
 	if (error == ENOBUFS && w.w_tmem == 0 && w.w_tmemneeded)

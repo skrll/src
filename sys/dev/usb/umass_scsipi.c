@@ -1,4 +1,4 @@
-/*	$NetBSD: umass_scsipi.c,v 1.57 2019/01/22 06:46:21 skrll Exp $	*/
+/*	$NetBSD: umass_scsipi.c,v 1.60 2019/02/10 19:23:55 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 2001, 2003, 2012 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: umass_scsipi.c,v 1.57 2019/01/22 06:46:21 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: umass_scsipi.c,v 1.60 2019/02/10 19:23:55 jdolecek Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -48,6 +48,7 @@ __KERNEL_RCSID(0, "$NetBSD: umass_scsipi.c,v 1.57 2019/01/22 06:46:21 skrll Exp 
 #include <sys/disk.h>		/* XXX */
 #include <sys/ioctl.h>
 #include <sys/kernel.h>
+#include <sys/kmem.h>
 #include <sys/lwp.h>
 #include <sys/malloc.h>
 #include <sys/systm.h>
@@ -144,11 +145,20 @@ umass_scsi_attach(struct umass_softc *sc)
 		scsiprint);
 	mutex_enter(&sc->sc_lock);
 	if (--sc->sc_refcnt < 0)
-		usb_detach_broadcast(sc->sc_dev, &sc->sc_detach_cv);
+		cv_broadcast(&sc->sc_detach_cv);
 	mutex_exit(&sc->sc_lock);
 
 
 	return 0;
+}
+
+void
+umass_scsi_detach(struct umass_softc *sc)
+{
+	struct umass_scsipi_softc *scbus = (struct umass_scsipi_softc *)sc->bus;
+
+	kmem_free(scbus, sizeof(*scbus));
+	sc->bus = NULL;
 }
 #endif
 
@@ -177,10 +187,19 @@ umass_atapi_attach(struct umass_softc *sc)
 		atapiprint);
 	mutex_enter(&sc->sc_lock);
 	if (--sc->sc_refcnt < 0)
-		usb_detach_broadcast(sc->sc_dev, &sc->sc_detach_cv);
+		cv_broadcast(&sc->sc_detach_cv);
 	mutex_exit(&sc->sc_lock);
 
 	return 0;
+}
+
+void
+umass_atapi_detach(struct umass_softc *sc)
+{
+	struct umass_scsipi_softc *scbus = (struct umass_scsipi_softc *)sc->bus;
+
+	kmem_free(scbus, sizeof(*scbus));
+	sc->bus = NULL;
 }
 #endif
 
@@ -189,7 +208,7 @@ umass_scsipi_setup(struct umass_softc *sc)
 {
 	struct umass_scsipi_softc *scbus;
 
-	scbus = malloc(sizeof(*scbus), M_DEVBUF, M_WAITOK | M_ZERO);
+	scbus = kmem_zalloc(sizeof(*scbus), KM_SLEEP);
 	sc->bus = &scbus->base;
 
 	/* Only use big commands for USB SCSI devices. */

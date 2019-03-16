@@ -1,4 +1,4 @@
-/*	$NetBSD: ncr53c9x.c,v 1.149 2018/09/03 16:29:31 riastradh Exp $	*/
+/*	$NetBSD: ncr53c9x.c,v 1.151 2019/02/10 17:13:33 christos Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2002 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ncr53c9x.c,v 1.149 2018/09/03 16:29:31 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ncr53c9x.c,v 1.151 2019/02/10 17:13:33 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -372,6 +372,7 @@ ncr53c9x_reset(struct ncr53c9x_softc *sc)
 	case NCR_VARIANT_FAS408:
 		NCR_WRITE_REG(sc, NCR_CFG5, sc->sc_cfg5 | NCRCFG5_SINT);
 		NCR_WRITE_REG(sc, NCR_CFG4, sc->sc_cfg4);
+		/* FALLTHROUGH */
 	case NCR_VARIANT_AM53C974:
 	case NCR_VARIANT_FAS216:
 	case NCR_VARIANT_NCR53C94:
@@ -379,9 +380,11 @@ ncr53c9x_reset(struct ncr53c9x_softc *sc)
 	case NCR_VARIANT_ESP200:
 		sc->sc_features |= NCR_F_HASCFG3;
 		NCR_WRITE_REG(sc, NCR_CFG3, sc->sc_cfg3);
+		/* FALLTHROUGH */
 	case NCR_VARIANT_ESP100A:
 		sc->sc_features |= NCR_F_SELATN3;
 		NCR_WRITE_REG(sc, NCR_CFG2, sc->sc_cfg2);
+		/* FALLTHROUGH */
 	case NCR_VARIANT_ESP100:
 		NCR_WRITE_REG(sc, NCR_CFG1, sc->sc_cfg1);
 		NCR_WRITE_REG(sc, NCR_CCF, sc->sc_ccf);
@@ -840,12 +843,10 @@ ncr53c9x_get_ecb(struct ncr53c9x_softc *sc, int flags)
 	int s;
 
 	s = splbio();
-	ecb = pool_get(&ecb_pool, PR_NOWAIT);
-	splx(s);
-	if (ecb) {
-		memset(ecb, 0, sizeof(*ecb));
+	ecb = pool_get(&ecb_pool, PR_NOWAIT | PR_ZERO);
+	if (ecb)
 		ecb->flags |= ECB_ALLOC;
-	}
+	splx(s);
 	return ecb;
 }
 

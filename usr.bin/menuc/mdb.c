@@ -1,4 +1,4 @@
-/*	$NetBSD: mdb.c,v 1.49 2019/01/09 19:43:37 martin Exp $	*/
+/*	$NetBSD: mdb.c,v 1.51 2019/02/25 20:47:37 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -41,7 +41,7 @@
 #include <sys/cdefs.h>
 
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: mdb.c,v 1.49 2019/01/09 19:43:37 martin Exp $");
+__RCSID("$NetBSD: mdb.c,v 1.51 2019/02/25 20:47:37 martin Exp $");
 #endif
 
 
@@ -225,6 +225,7 @@ write_menu_file(char *initcode)
 		MC_OPT(MC_DFLTEXIT)
 		MC_OPT(MC_ALWAYS_SCROLL)
 		MC_OPT(MC_SUBMENU)
+		MC_OPT(MC_CONTINUOUS)
 		MC_OPT(MC_VALID)
 #undef MC_OPT
 #undef STR
@@ -248,6 +249,7 @@ write_menu_file(char *initcode)
 			    "const char *, const char *);\n"
 			"void free_menu(int);\n"
 			"void set_menu_numopts(int, int);\n"
+			"menudesc *get_menudesc(int);\n"
 			);
 
 	(void)fprintf(out_file, "\n/* Menu names */\n");

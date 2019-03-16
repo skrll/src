@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.80 2019/01/19 14:20:22 kre Exp $	*/
+/*	$NetBSD: main.c,v 1.82 2019/02/09 09:33:20 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -42,7 +42,7 @@ __COPYRIGHT("@(#) Copyright (c) 1991, 1993\
 #if 0
 static char sccsid[] = "@(#)main.c	8.7 (Berkeley) 7/19/95";
 #else
-__RCSID("$NetBSD: main.c,v 1.80 2019/01/19 14:20:22 kre Exp $");
+__RCSID("$NetBSD: main.c,v 1.82 2019/02/09 09:33:20 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -244,6 +244,10 @@ main(int argc, char **argv)
 	if (sflag || minusc == NULL) {
  state4:	/* XXX ??? - why isn't this before the "if" statement */
 		cmdloop(1);
+		if (iflag) {
+			out2str("\n");
+			flushout(&errout);
+		}
 	}
 #if PROFILE
 	monitor(0);
@@ -347,7 +351,9 @@ read_profile(const char *name)
 	    if (vflag)
 		    vflag = 0, vflag_set = 1;
 	}
+	(void)set_dot_funcnest(1);	/* allow profile to "return" */
 	cmdloop(0);
+	(void)set_dot_funcnest(0);
 	if (qflag)  {
 	    if (xflag_set)
 		    xflag = 1;

@@ -1,4 +1,4 @@
-/*	$NetBSD: xen_machdep.c,v 1.19 2018/07/26 15:38:26 maxv Exp $	*/
+/*	$NetBSD: xen_machdep.c,v 1.22 2019/03/09 08:42:25 maxv Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -53,7 +53,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xen_machdep.c,v 1.19 2018/07/26 15:38:26 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xen_machdep.c,v 1.22 2019/03/09 08:42:25 maxv Exp $");
 
 #include "opt_xen.h"
 
@@ -69,7 +69,7 @@ __KERNEL_RCSID(0, "$NetBSD: xen_machdep.c,v 1.19 2018/07/26 15:38:26 maxv Exp $"
 
 #include <xen/hypervisor.h>
 #include <xen/shutdown_xenbus.h>
-#include <xen/xen-public/version.h>
+#include <xen/include/public/version.h>
 
 #define DPRINTK(x) printk x
 #if 0
@@ -80,6 +80,7 @@ u_int	tsc_get_timecount(struct timecounter *);
 
 bool xen_suspend_allow;
 
+#ifdef XENPV
 extern uint64_t tsc_freq;	/* XXX */
 
 static int sysctl_xen_suspend(SYSCTLFN_ARGS);
@@ -333,7 +334,7 @@ xen_prepare_resume(void)
 {
 	/* map the new shared_info page */
 	if (HYPERVISOR_update_va_mapping((vaddr_t)HYPERVISOR_shared_info,
-	    xen_start_info.shared_info | PG_RW | PG_V,
+	    xen_start_info.shared_info | PTE_W | PTE_P,
 	    UVMF_INVLPG)) {
 		DPRINTK(("could not map new shared info page"));
 		HYPERVISOR_crash();
@@ -419,6 +420,7 @@ xen_suspend_domain(void)
 	aprint_verbose("domain resumed\n");
 
 }
+#endif /* XENPV */
 
 #define PRINTK_BUFSIZE 1024
 void

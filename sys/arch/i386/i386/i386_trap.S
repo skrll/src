@@ -1,4 +1,4 @@
-/*	$NetBSD: i386_trap.S,v 1.16 2018/12/25 09:00:26 cherry Exp $	*/
+/*	$NetBSD: i386_trap.S,v 1.18 2019/02/11 17:28:52 cherry Exp $	*/
 
 /*
  * Copyright 2002 (c) Wasabi Systems, Inc.
@@ -66,7 +66,7 @@
 
 #if 0
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: i386_trap.S,v 1.16 2018/12/25 09:00:26 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i386_trap.S,v 1.18 2019/02/11 17:28:52 cherry Exp $");
 #endif
 
 /*
@@ -95,7 +95,7 @@ IDTVEC_END(trap00)
  * without restoring the segregs, because we could fault while doing that.
  */
 IDTVEC(trap01)
-#ifndef XEN
+#ifndef XENPV
 	pushl	$0
 	pushl	$T_TRCTRAP
 	INTRENTRY
@@ -248,7 +248,7 @@ IDTVEC(trap0d)
 IDTVEC_END(trap0d)
 
 IDTVEC(trap0e)
-#ifndef XEN
+#ifndef XENPV
 	pushl	$T_PAGEFLT
 	INTRENTRY
 	STI(%eax)
@@ -345,13 +345,8 @@ IDTVEC_END(trap17)
 IDTVEC_END(trap16)
 IDTVEC_END(trap15)
 IDTVEC_END(trap14)
-#ifndef XEN
 IDTVEC_END(trap13)
 IDTVEC_END(trap12)
-#else
-IDTVEC_END(trap13)
-IDTVEC_END(trap12)
-#endif
 IDTVEC_END(trap11)
 
 IDTVEC(exceptions)

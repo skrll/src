@@ -1,4 +1,4 @@
-/*	$NetBSD: usb.c,v 1.176 2019/01/29 09:28:50 pgoyette Exp $	*/
+/*	$NetBSD: usb.c,v 1.178 2019/03/01 11:06:56 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 1998, 2002, 2008, 2012 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb.c,v 1.176 2019/01/29 09:28:50 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb.c,v 1.178 2019/03/01 11:06:56 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -671,7 +671,7 @@ usbread(dev_t dev, struct uio *uio, int flag)
 	case sizeof(struct usb_event_old):
 		ueo = kmem_zalloc(sizeof(struct usb_event_old), KM_SLEEP);
 		useold = 1;
-		/* FALLTHRU */
+		/* FALLTHROUGH */
 	case sizeof(struct usb_event):
 		ue = usb_alloc_event();
 		break;
@@ -696,7 +696,7 @@ usbread(dev_t dev, struct uio *uio, int flag)
 	mutex_exit(&usb_event_lock);
 	if (!error) {
 		if (useold) { /* copy fields to old struct */
-			MODULE_CALL_HOOK(usb_subr_copy_30_hook,
+			MODULE_HOOK_CALL(usb_subr_copy_30_hook,
 			    (ue, ueo, uio), enosys(), error);
 			if (error == ENOSYS)
 				error = EINVAL;
@@ -877,13 +877,14 @@ usbioctl(dev_t devt, u_long cmd, void *data, int flag, struct lwp *l)
 			error = ENXIO;
 			goto fail;
 		}
-		MODULE_CALL_HOOK(usb_subr_fill_30_hook,
+		MODULE_HOOK_CALL(usb_subr_fill_30_hook,
 		    (dev, di, 1, usbd_devinfo_vp, usbd_printBCD),
 		    enosys(), error);
 		if (error == ENOSYS)
 			error = EINVAL;
 		if (error)
 			goto fail;
+		break;
 	}
 
 	case USB_DEVICESTATS:

@@ -1,4 +1,4 @@
-/*	$NetBSD: expand.c,v 1.129 2018/12/03 06:41:30 kre Exp $	*/
+/*	$NetBSD: expand.c,v 1.131 2019/02/27 04:10:56 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)expand.c	8.5 (Berkeley) 5/15/95";
 #else
-__RCSID("$NetBSD: expand.c,v 1.129 2018/12/03 06:41:30 kre Exp $");
+__RCSID("$NetBSD: expand.c,v 1.131 2019/02/27 04:10:56 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -208,9 +208,13 @@ expandarg(union node *arg, struct arglist *arglist, int flag)
 			expandmeta(exparg.list, flag);
 		else
 			add_args(exparg.list);
+#if 0
+	} else if (flag & EXP_REDIR) {
+		/* if EXP_REDIR ever happens, it happens here */
+		/* for now just (below) remove escapes, and leave it alone */
+#endif
 	} else {
-		if (flag & EXP_REDIR) /*XXX - for now, just remove escapes */
-			rmescapes(p);
+		rmescapes(p);	/* we might have escaped CTL bytes to remove */
 		sp = stalloc(sizeof(*sp));
 		sp->text = p;
 		*exparg.lastp = sp;
@@ -286,7 +290,7 @@ argstr(const char *p, int flag)
 			ifs_split = EXP_IFS_SPLIT;
 			break;
 		case CTLESC:
-			if (quotes)
+			if (quotes || ISCTL(*p))
 				STPUTC(c, expdest);
 			c = *p++;
 			STPUTC(c, expdest);
@@ -437,7 +441,7 @@ exptilde(const char *p, int flag)
 		CTRACE(DBG_EXPAND, (": returning unused \"%s\"\n", startp));
 		return startp;
 	} while ((c = *home++) != '\0') {
-		if (quotes && NEEDESC(c))
+		if ((quotes && NEEDESC(c)) || ISCTL(c))
 			STPUTC(CTLESC, expdest);
 		STPUTC(c, expdest);
 	}
@@ -659,7 +663,8 @@ expbackq(union node *cmd, int quoted, int flag)
 					}
 					CHECKSTRSPACE(2, dest);
 				}
-				if (quotes && quoted && NEEDESC(lastc))
+				if ((quotes && quoted && NEEDESC(lastc)) ||
+				    ISCTL(lastc))
 					USTPUTC(CTLESC, dest);
 				USTPUTC(lastc, dest);
 			}
@@ -938,17 +943,34 @@ evalvar(const char *p, int flag)
 		} else {
 
 			if (subtype == VSLENGTH) {
-				for (;*val; val++)
+				for (; *val; val++)
 					varlen++;
 			} else if (quotes && varflags & VSQUOTE) {
+				/*
+				 * If we are going to look for magic in the
+				 * value (quotes is set) and the expansion
+				 * occurs inside "" (VSQUOTE) then any char
+				 * that has any potential special meaning
+				 * needs to have that meaning suppressed,
+				 * so supply a CTLESC prefix for it.
+				 */
 				for (; (c = *val) != '\0'; val++) {
 					if (NEEDESC(c))
 						STPUTC(CTLESC, expdest);
 					STPUTC(c, expdest);
 				}
 			} else {
-				while (*val)
-					STPUTC(*val++, expdest);
+				/*
+				 * We are going to rmescapes() later,
+				 * so make sure that any data char that
+				 * might be mistaken for one of our CTLxxx
+				 * magic chars is protected ... always.
+				 */
+				for (; (c = *val) != '\0'; val++) {
+					if (ISCTL(c))
+						STPUTC(CTLESC, expdest);
+					STPUTC(c, expdest);
+				}
 			}
 		}
 	}
@@ -1148,8 +1170,11 @@ varvalue(const char *name, int quoted, int subtype, int flag)
 				STPUTC(*p++, expdest); \
 			} \
 		} else \
-			while (*p) \
+			while (*p) { \
+				if (ISCTL(*p)) \
+					STPUTC(CTLESC, expdest); \
 				STPUTC(*p++, expdest); \
+			} \
 	} while (0)
 
 
@@ -1968,7 +1993,7 @@ rmescapes(char *str)
 	char *p, *q;
 
 	p = str;
-	while (*p != CTLESC && !IS_BORING(*p)) {
+	while (!ISCTL(*p)) {
 		if (*p++ == '\0')
 			return;
 	}
@@ -1985,6 +2010,10 @@ rmescapes(char *str)
 		}
 		if (*p == CTLESC)
 			p++;
+#ifdef DEBUG
+		else if (ISCTL(*p))
+			abort();
+#endif
 		*q++ = *p++;
 	}
 	*q = '\0';
@@ -2007,7 +2036,7 @@ rmescapes_nl(char *str)
 	int nls = 0, holdnl = 0, holdlast;
 
 	p = str;
-	while (*p != CTLESC && !IS_BORING(*p)) {
+	while (!ISCTL(*p)) {
 		if (*p++ == '\0')
 			return;
 	}
@@ -2031,6 +2060,10 @@ rmescapes_nl(char *str)
 		}
 		if (*p == CTLESC)
 			p++;
+#ifdef DEBUG
+		else if (ISCTL(*p))
+			abort();
+#endif
 
 		holdlast = holdnl;
 		holdnl = is_in_name(*p);	/* letters, digits, _ */

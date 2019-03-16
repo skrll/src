@@ -1,4 +1,4 @@
-/*	$NetBSD: partman.c,v 1.25 2018/12/13 12:28:25 martin Exp $ */
+/*	$NetBSD: partman.c,v 1.30 2019/02/12 18:32:15 martin Exp $ */
 
 /*
  * Copyright 2012 Eugene Lozovoy
@@ -259,15 +259,16 @@ pm_getdevstring(char *buf, int len, pm_devs_t *pm_cur, int num)
 
 	if (pm_cur->isspecial)
 		snprintf(buf, len, "%s", pm_cur->diskdev);
-	else if (num + 'a' < 'a' || num + 'a' > 'a' + MAXPARTITIONS)
+	else if (num + 'a' < 'a' || num + 'a' > 'a' + MAXPARTITIONS) {
 		snprintf(buf, len, "%sd", pm_cur->diskdev);
-	else if (pm_cur->gpt) {
+	} else if (pm_cur->gpt) {
 		for (i = 0; i < MAX_WEDGES; i++)
 			if (wedges[i].pm == pm_cur &&
 				wedges[i].ptn == num)
 				snprintf(buf, len, "dk%d", i); // XXX: xxx
-	} else
+	} else {
 		snprintf(buf, len, "%s%c", pm_cur->diskdev, num + 'a');
+	}
 
 	return;
 }
@@ -1902,10 +1903,11 @@ pm_getrefdev(pm_devs_t *pm_cur)
 		for (i = 0; i < MAX_CGD; i++)
 			if (cgds[i].blocked && cgds[i].node == dev_num) {
 				pm_cur->refdev = &cgds[i];
-
-				snprintf(pm_cur->diskdev_descr, STRSIZE, "%s (%s, %s-%d)",
-					pm_cur->diskdev_descr, cgds[i].pm_name,
-					cgds[i].enc_type, cgds[i].key_size);
+				snprintf(pm_cur->diskdev_descr,
+				    sizeof(pm_cur->diskdev_descr),
+				    "%s (%s, %s-%d)",
+				    pm_cur->diskdev_descr, cgds[i].pm_name,
+				    cgds[i].enc_type, cgds[i].key_size);
 				break;
 			}
  	} else if (! strncmp(pm_cur->diskdev, "vnd", 3)) {
@@ -1913,9 +1915,13 @@ pm_getrefdev(pm_devs_t *pm_cur)
  		for (i = 0; i < MAX_VND; i++)
 			if (vnds[i].blocked && vnds[i].node == dev_num) {
 				pm_cur->refdev = &vnds[i];
-				pm_getdevstring(dev, SSTRSIZE, vnds[i].pm, vnds[i].pm_part);
-				snprintf(pm_cur->diskdev_descr, STRSIZE, "%s (%s, %s)",
-					pm_cur->diskdev_descr, dev, vnds[i].filepath);
+				pm_getdevstring(dev, SSTRSIZE, vnds[i].pm,
+				    vnds[i].pm_part);
+				snprintf(pm_cur->diskdev_descr,
+				    sizeof(pm_cur->diskdev_descr),
+				    "%s (%s, %s)",
+				    pm_cur->diskdev_descr, dev,
+				    vnds[i].filepath);
 				break;
 			}
 	} else if (! strncmp(pm_cur->diskdev, "raid", 4)) {
@@ -1931,7 +1937,8 @@ pm_getrefdev(pm_devs_t *pm_cur)
 						else
 							num_devs++;
 					}
-				snprintf(pm_cur->diskdev_descr, STRSIZE,
+				snprintf(pm_cur->diskdev_descr,
+					sizeof(pm_cur->diskdev_descr),
 					"%s (lvl %d, %d disks, %d spare)", pm_cur->diskdev_descr,
 					raids[i].raid_level, num_devs, num_devs_s);
 				break;
@@ -2184,7 +2191,8 @@ pm_mount(pm_devs_t *pm_cur, int part_num)
 	if (strlen(pm_cur->bsdlabel[part_num].mounted) > 0)
 		return 0;
 
-	snprintf(buf, MOUNTLEN, "/tmp/%s%c", pm_cur->diskdev, part_num + 'a');
+	snprintf(buf, sizeof(buf), "/tmp/%s%c", pm_cur->diskdev,
+	    part_num + 'a');
 	if (! dir_exists_p(buf))
 		run_program(RUN_DISPLAY | RUN_PROGRESS, "/bin/mkdir -p %s", buf);
 	if (pm_cur->bsdlabel[part_num].pi_flags & PIF_MOUNT &&
@@ -2531,8 +2539,9 @@ pm_menufmt(menudesc *m, int opt, void *arg)
 				pm_cur->bsdlabel[part_num].pi_size / (MEG / pm_cur->sectorsize));
 			break;
 		case PM_SPEC_T:
-			snprintf(buf, STRSIZE, "%s: %s",
-				pm_cur->diskdev_descr, pm_cur->bsdlabel[0].pi_mount);
+			snprintf(buf, sizeof(buf), "%s: %s",
+			    pm_cur->diskdev_descr,
+			    pm_cur->bsdlabel[0].pi_mount);
 			wprintw(m->mw, "%-33.32s %-22.21s %11luM", buf,
 				getfslabelname(pm_cur->bsdlabel[0].pi_fstype),
 				pm_cur->bsdlabel[0].pi_size / (MEG / pm_cur->sectorsize));

@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_x86.h,v 1.3 2019/01/06 16:10:51 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86.h,v 1.8 2019/03/03 07:01:09 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -33,12 +33,12 @@
 #define _NVMM_X86_H_
 
 /* Segments. */
-#define NVMM_X64_SEG_CS			0
-#define NVMM_X64_SEG_DS			1
-#define NVMM_X64_SEG_ES			2
-#define NVMM_X64_SEG_FS			3
-#define NVMM_X64_SEG_GS			4
-#define NVMM_X64_SEG_SS			5
+#define NVMM_X64_SEG_ES			0
+#define NVMM_X64_SEG_CS			1
+#define NVMM_X64_SEG_SS			2
+#define NVMM_X64_SEG_DS			3
+#define NVMM_X64_SEG_FS			4
+#define NVMM_X64_SEG_GS			5
 #define NVMM_X64_SEG_GDT		6
 #define NVMM_X64_SEG_IDT		7
 #define NVMM_X64_SEG_LDT		8
@@ -47,21 +47,21 @@
 
 /* General Purpose Registers. */
 #define NVMM_X64_GPR_RAX		0
-#define NVMM_X64_GPR_RBX		1
-#define NVMM_X64_GPR_RCX		2
-#define NVMM_X64_GPR_RDX		3
-#define NVMM_X64_GPR_R8			4
-#define NVMM_X64_GPR_R9			5
-#define NVMM_X64_GPR_R10		6
-#define NVMM_X64_GPR_R11		7
-#define NVMM_X64_GPR_R12		8
-#define NVMM_X64_GPR_R13		9
-#define NVMM_X64_GPR_R14		10
-#define NVMM_X64_GPR_R15		11
-#define NVMM_X64_GPR_RDI		12
-#define NVMM_X64_GPR_RSI		13
-#define NVMM_X64_GPR_RBP		14
-#define NVMM_X64_GPR_RSP		15
+#define NVMM_X64_GPR_RCX		1
+#define NVMM_X64_GPR_RDX		2
+#define NVMM_X64_GPR_RBX		3
+#define NVMM_X64_GPR_RSP		4
+#define NVMM_X64_GPR_RBP		5
+#define NVMM_X64_GPR_RSI		6
+#define NVMM_X64_GPR_RDI		7
+#define NVMM_X64_GPR_R8			8
+#define NVMM_X64_GPR_R9			9
+#define NVMM_X64_GPR_R10		10
+#define NVMM_X64_GPR_R11		11
+#define NVMM_X64_GPR_R12		12
+#define NVMM_X64_GPR_R13		13
+#define NVMM_X64_GPR_R14		14
+#define NVMM_X64_GPR_R15		15
 #define NVMM_X64_GPR_RIP		16
 #define NVMM_X64_GPR_RFLAGS		17
 #define NVMM_X64_NGPR			18
@@ -98,11 +98,10 @@
 #define NVMM_X64_NMSR			10
 
 /* Misc. */
-#define NVMM_X64_MISC_CPL		0
-#define NVMM_X64_MISC_INT_SHADOW	1
-#define NVMM_X64_MISC_INT_WINDOW_EXIT	2
-#define NVMM_X64_MISC_NMI_WINDOW_EXIT	3
-#define NVMM_X64_NMISC			4
+#define NVMM_X64_MISC_INT_SHADOW	0
+#define NVMM_X64_MISC_INT_WINDOW_EXIT	1
+#define NVMM_X64_MISC_NMI_WINDOW_EXIT	2
+#define NVMM_X64_NMISC			3
 
 #ifndef ASM_NVMM
 
@@ -110,18 +109,19 @@
 #include <x86/cpu_extended_state.h>
 
 struct nvmm_x64_state_seg {
-	uint64_t selector;
+	uint16_t selector;
 	struct {		/* hidden */
-		uint64_t type:5;
-		uint64_t dpl:2;
-		uint64_t p:1;
-		uint64_t avl:1;
-		uint64_t lng:1;
-		uint64_t def32:1;
-		uint64_t gran:1;
-		uint64_t rsvd:52;
+		uint16_t type:4;
+		uint16_t s:1;
+		uint16_t dpl:2;
+		uint16_t p:1;
+		uint16_t avl:1;
+		uint16_t l:1;
+		uint16_t def:1;
+		uint16_t g:1;
+		uint16_t rsvd:4;
 	} attrib;
-	uint64_t limit;		/* hidden */
+	uint32_t limit;		/* hidden */
 	uint64_t base;		/* hidden */
 };
 
@@ -173,6 +173,19 @@ struct nvmm_x86_conf_cpuid {
 		uint32_t edx;
 	} del;
 };
+
+#ifdef _KERNEL
+struct nvmm_x86_cpuid_mask {
+	uint32_t eax;
+	uint32_t ebx;
+	uint32_t ecx;
+	uint32_t edx;
+};
+extern const struct nvmm_x64_state nvmm_x86_reset_state;
+extern const struct nvmm_x86_cpuid_mask nvmm_cpuid_00000001;
+extern const struct nvmm_x86_cpuid_mask nvmm_cpuid_00000007;
+extern const struct nvmm_x86_cpuid_mask nvmm_cpuid_80000001;
+#endif
 
 #endif /* ASM_NVMM */
 

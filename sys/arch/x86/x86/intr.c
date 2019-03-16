@@ -1,4 +1,4 @@
-/*	$NetBSD: intr.c,v 1.141 2018/12/25 06:50:12 cherry Exp $	*/
+/*	$NetBSD: intr.c,v 1.144 2019/02/15 08:54:01 nonaka Exp $	*/
 
 /*
  * Copyright (c) 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -133,7 +133,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.141 2018/12/25 06:50:12 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.144 2019/02/15 08:54:01 nonaka Exp $");
 
 #include "opt_intrdebug.h"
 #include "opt_multiprocessor.h"
@@ -166,6 +166,15 @@ __KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.141 2018/12/25 06:50:12 cherry Exp $");
 #include "lapic.h"
 #include "pci.h"
 #include "acpica.h"
+#ifndef XEN
+#include "hyperv.h"
+#if NHYPERV > 0
+#include <dev/hyperv/hypervvar.h>
+
+extern void Xresume_hyperv_hypercall(void);
+extern void Xrecurse_hyperv_hypercall(void);
+#endif
+#endif
 
 #if NIOAPIC > 0 || NACPICA > 0
 #include <machine/i82093var.h>
@@ -1131,7 +1140,7 @@ intr_string(intr_handle_t ih, char *buf, size_t len)
 		snprintf(buf, len, "irq %d", APIC_IRQ_LEGACY_IRQ(ih));
 
 #elif NLAPIC > 0
-	snprintf(buf, len, "irq %d" APIC_IRQ_LEGACY_IRQ(ih));
+	snprintf(buf, len, "irq %d", APIC_IRQ_LEGACY_IRQ(ih));
 #else
 	snprintf(buf, len, "irq %d", (int) ih);
 #endif
@@ -1150,6 +1159,9 @@ struct intrhand fake_softbio_intrhand;
 struct intrhand fake_timer_intrhand;
 struct intrhand fake_ipi_intrhand;
 struct intrhand fake_preempt_intrhand;
+#if NHYPERV > 0
+struct intrhand fake_hyperv_intrhand;
+#endif
 
 #if NLAPIC > 0 && defined(MULTIPROCESSOR)
 static const char *x86_ipi_names[X86_NIPI] = X86_IPI_NAMES;
@@ -1180,7 +1192,8 @@ redzone_const_or_zero(int x)
 void
 cpu_intr_init(struct cpu_info *ci)
 {
-#if (NLAPIC > 0) || defined(MULTIPROCESSOR) || defined(__HAVE_PREEMPTION)
+#if (NLAPIC > 0) || defined(MULTIPROCESSOR) || defined(__HAVE_PREEMPTION) || \
+    (NHYPERV > 0)
 	struct intrsource *isp;
 #endif
 #if NLAPIC > 0
@@ -1215,6 +1228,20 @@ cpu_intr_init(struct cpu_info *ci)
 	for (i = 0; i < X86_NIPI; i++)
 		evcnt_attach_dynamic(&ci->ci_ipi_events[i], EVCNT_TYPE_MISC,
 		    NULL, device_xname(ci->ci_dev), x86_ipi_names[i]);
+#endif
+
+#if NHYPERV > 0
+	if (hyperv_hypercall_enabled()) {
+		isp = kmem_zalloc(sizeof(*isp), KM_SLEEP);
+		isp->is_recurse = Xrecurse_hyperv_hypercall;
+		isp->is_resume = Xresume_hyperv_hypercall;
+		fake_hyperv_intrhand.ih_level = IPL_NET;
+		isp->is_handlers = &fake_hyperv_intrhand;
+		isp->is_pic = &local_pic;
+		ci->ci_isources[LIR_HV] = isp;
+		evcnt_attach_dynamic(&isp->is_evcnt, EVCNT_TYPE_INTR, NULL,
+		    device_xname(ci->ci_dev), "Hyper-V hypercall");
+	}
 #endif
 #endif
 
@@ -1256,6 +1283,13 @@ cpu_intr_init(struct cpu_info *ci)
 #endif
 
 	ci->ci_idepth = -1;
+
+#ifdef XENPVHVM
+	ci->ci_xunmask[0] = 0xfffffffe;
+	for (int i = 1; i < NIPL; i++)
+		ci->ci_xunmask[i] = ci->ci_xunmask[i - 1] & ~(1 << i);
+#endif
+
 }
 
 #if defined(INTRDEBUG) || defined(DDB)

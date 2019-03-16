@@ -297,7 +297,11 @@ uptr internal_lstat(const char *path, void *buf) {
 }
 
 uptr internal_fstat(fd_t fd, void *buf) {
-#if SANITIZER_FREEBSD || SANITIZER_NETBSD || SANITIZER_LINUX_USES_64BIT_SYSCALLS
+#if SANITIZER_FREEBSD || SANITIZER_NETBSD
+  return internal_syscall(SYSCALL(fstat), fd, (uptr)buf);
+#elif SANITIZER_USES_CANONICAL_LINUX_SYSCALLS
+  return = internal_syscall(SYSCALL(fstat), fd, &kbuf);
+#elif SANITIZER_LINUX_USES_64BIT_SYSCALLS
 # if SANITIZER_MIPS64
   // For mips64, fstat syscall fills buffer in the format of kernel_stat
   struct kernel_stat kbuf;
@@ -1342,6 +1346,7 @@ void internal_join_thread(void *th) {}
 #endif
 
 #if defined(__aarch64__)
+#if SANITIZER_LINUX
 // Android headers in the older NDK releases miss this definition.
 struct __sanitizer_esr_context {
   struct _aarch64_ctx head;
@@ -1362,6 +1367,11 @@ static bool Aarch64GetESR(ucontext_t *ucontext, u64 *esr) {
   }
   return false;
 }
+#else
+static bool Aarch64GetESR(ucontext_t *ucontext, u64 *esr) {
+  return false;
+}
+#endif
 #endif
 
 SignalContext::WriteFlag SignalContext::GetWriteFlag(void *context) {
@@ -1376,7 +1386,7 @@ SignalContext::WriteFlag SignalContext::GetWriteFlag(void *context) {
   uptr err = ucontext->uc_mcontext.gregs[REG_ERR];
 #endif
   return err & PF_WRITE ? WRITE : READ;
-#elif defined(__arm__)
+#elif defined(__arm__) && !SANITIZER_NETBSD
   static const uptr FSR_WRITE = 1U << 11;
   uptr fsr = ucontext->uc_mcontext.error_code;
   return fsr & FSR_WRITE ? WRITE : READ;

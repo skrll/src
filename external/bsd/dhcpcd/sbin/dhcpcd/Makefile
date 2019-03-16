@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.43 2018/02/02 01:02:39 mrg Exp $
+# $NetBSD: Makefile,v 1.45 2019/02/07 21:38:53 roy Exp $
 #
 
 WARNS?=		6
@@ -73,10 +73,5 @@ CLEANFILES+=		dhcpcd-embedded.c dhcpcd-embedded.h
 ${f}:	${f}.in
 	${TOOL_SED} ${SED_SYS} ${DIST}/src/${f}.in > $@
 .endfor
-
-# XXXGCC5
-.if defined(HAVE_GCC) && ${HAVE_GCC} >= 5 && ${ACTIVE_CC} == "gcc"
-COPTS.if-bsd.c+=  -Wno-error=sign-conversion
-.endif
 
 .include <bsd.prog.mk>

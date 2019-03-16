@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.1.1.1 1999/06/21 15:56:03 minoura Exp $
+#	$NetBSD: Makefile,v 1.3 2019/02/08 08:55:35 isaki Exp $
 
 .if ${MACHINE} == "x68k"
 PROG=	memswitch

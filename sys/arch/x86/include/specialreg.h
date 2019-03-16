@@ -1,4 +1,4 @@
-/*	$NetBSD: specialreg.h,v 1.137 2019/01/13 12:19:09 maxv Exp $	*/
+/*	$NetBSD: specialreg.h,v 1.143 2019/03/13 05:22:07 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1991 The Regents of the University of California.
@@ -45,7 +45,7 @@
  * Bits in 486 special registers:
  */
 #define CR0_NE	0x00000020	/* Numeric Error enable (EX16 vs IRQ13) */
-#define CR0_WP	0x00010000	/* Write Protect (honor PG_RW in all modes) */
+#define CR0_WP	0x00010000	/* Write Protect (honor PTE_W in all modes) */
 #define CR0_AM	0x00040000	/* Alignment Mask (set to enable AC flag) */
 #define CR0_NW	0x20000000	/* Not Write-through */
 #define CR0_CD	0x40000000	/* Cache Disable */
@@ -167,12 +167,12 @@
 	"\35" "HTT"	"\36" "TM"	"\37" "IA64"	"\40" "SBF"
 
 /* Blacklists of CPUID flags - used to mask certain features */
-#ifdef XEN
+#ifdef XENPV
 /* Not on Xen */
 #define CPUID_FEAT_BLACKLIST	 (CPUID_PGE|CPUID_PSE|CPUID_MTRR)
 #else
 #define CPUID_FEAT_BLACKLIST	 0
-#endif /* XEN */
+#endif /* XENPV */
 
 /*
  * CPUID "features" bits in Fn00000001 %ecx
@@ -398,6 +398,7 @@
 #define CPUID_SEF_UMIP		__BIT(2)  /* User-Mode Instruction prevention */
 #define CPUID_SEF_PKU		__BIT(3)  /* Protection Keys for User-mode pages */
 #define CPUID_SEF_OSPKE		__BIT(4)  /* OS has set CR4.PKE to ena. protec. keys */
+#define CPUID_SEF_WAITPKG	__BIT(5)  /* TPAUSE,UMONITOR,UMWAIT */
 #define CPUID_SEF_AVX512_VBMI2	__BIT(6)  /* AVX-512 Vector Byte Manipulation 2 */
 #define CPUID_SEF_GFNI		__BIT(8)
 #define CPUID_SEF_VAES		__BIT(9)
@@ -407,30 +408,37 @@
 #define CPUID_SEF_AVX512_VPOPCNTDQ __BIT(14)
 #define CPUID_SEF_MAWAU		__BITS(21, 17) /* MAWAU for BND{LD,ST}X */
 #define CPUID_SEF_RDPID		__BIT(22) /* RDPID and IA32_TSC_AUX */
+#define CPUID_SEF_CLDEMOTE	__BIT(25) /* Cache line demote */
+#define CPUID_SEF_MOVDIRI	__BIT(27) /* MOVDIRI instruction */
+#define CPUID_SEF_MOVDIR64B	__BIT(28) /* MOVDIR64B instruction */
 #define CPUID_SEF_SGXLC		__BIT(30) /* SGX Launch Configuration */
 
 #define CPUID_SEF_FLAGS1	"\177\20" \
 	"b\0PREFETCHWT1\0" "b\1AVX512_VBMI\0" "b\2UMIP\0" "b\3PKU\0"	\
-	"b\4OSPKE\0"			"b\6AVX512_VBMI2\0"		\
+	"b\4OSPKE\0"	"b\5WAITPKG\0"	"b\6AVX512_VBMI2\0"		      \
 	"b\10GFNI\0"	"b\11VAES\0"	"b\12VPCLMULQDQ\0" "b\13AVX512_VNNI\0"\
 	"b\14AVX512_BITALG\0"		"b\16AVX512_VPOPCNTDQ\0"	\
 	"f\21\5MAWAU\0"							\
 					"b\26RDPID\0"			\
-					"b\36SGXLC\0"
+			"b\31CLDEMOTE\0"		"b\33MOVDIRI\0"	\
+	"b\34MOVDIR64B\0"		"b\36SGXLC\0"
 
 /* %edx */
 #define CPUID_SEF_AVX512_4VNNIW	__BIT(2)
 #define CPUID_SEF_AVX512_4FMAPS	__BIT(3)
+#define CPUID_SEF_TSX_FORCE_ABORT __BIT(13) /* MSR_TSX_FORCE_ABORT bit 0 */
 #define CPUID_SEF_IBRS		__BIT(26) /* IBRS / IBPB Speculation Control */
 #define CPUID_SEF_STIBP		__BIT(27) /* STIBP Speculation Control */
 #define CPUID_SEF_L1D_FLUSH	__BIT(28) /* IA32_FLUSH_CMD MSR */
 #define CPUID_SEF_ARCH_CAP	__BIT(29) /* IA32_ARCH_CAPABILITIES */
+#define CPUID_SEF_CORE_CAP	__BIT(30) /* IA32_CORE_CAPABILITIES */
 #define CPUID_SEF_SSBD		__BIT(31) /* Speculative Store Bypass Disable */
 
 #define CPUID_SEF_FLAGS2	"\20" \
 				"\3" "AVX512_4VNNIW" "\4" "AVX512_4FMAPS" \
-					"\33" "IBRS"	"\34" "STIBP"	\
-	"\35" "L1D_FLUSH" "\36" "ARCH_CAP"		"\40" "SSBD"
+			"\16" "TSX_FORCE_ABORT"				\
+	"\33" "IBRS"	"\34" "STIBP"					\
+	"\35" "L1D_FLUSH" "\36" "ARCH_CAP" "\37CORE_CAP"	"\40" "SSBD"
 
 /*
  * Intel CPUID Architectural Performance Monitoring Fn0000000a
@@ -458,8 +466,8 @@
 #define CPUID_PERF_BRMISPRRETR	__BIT(6)       /* No branch mispredict retry */
 
 #define CPUID_PERF_FLAGS1	"\177\20"				      \
-	"b\0\1CORECYCL\0" "b\1\1INSTRETRY\0" "b\2\1REFCYCL\0" "b\3\1LLCREF\0" \
-	"b\4\1LLCMISS\0" "b\5\1BRINSRETR\0" "b\6\1BRMISPRRETR\0"
+	"b\0CORECYCL\0" "b\1INSTRETRY\0" "b\2REFCYCL\0" "b\3LLCREF\0" \
+	"b\4LLCMISS\0" "b\5BRINSRETR\0" "b\6BRMISPRRETR\0"
 
 /* %edx */
 #define CPUID_PERF_NFFPC	__BITS(4, 0)   /* Num of fixed-funct perfcnt */
@@ -739,8 +747,9 @@
 #define 	IA32_ARCH_RSBA		0x04
 #define 	IA32_ARCH_SKIP_L1DFL_VMENTRY 0x08
 #define 	IA32_ARCH_SSB_NO	0x10
-#define MSR_IA32_FLUSH_CMD 0x10b
+#define MSR_IA32_FLUSH_CMD	0x10b
 #define 	IA32_FLUSH_CMD_L1D_FLUSH 0x01
+#define MSR_TSX_FORCE_ABORT	0x10f
 #define MSR_BBL_CR_ADDR		0x116	/* PII+ only */
 #define MSR_BBL_CR_DECC		0x118	/* PII+ only */
 #define MSR_BBL_CR_CTL		0x119	/* PII+ only */
@@ -762,7 +771,16 @@
 #define MSR_THERM_STATUS	0x19c
 #define MSR_THERM2_CTL		0x19d	/* Pentium M */
 #define MSR_MISC_ENABLE		0x1a0
-#define 	IA32_MISC_MWAIT_EN	0x40000
+#define 	IA32_MISC_FAST_STR_EN	__BIT(0)
+#define 	IA32_MISC_ATCC_EN	__BIT(3)
+#define 	IA32_MISC_PERFMON_EN	__BIT(7)
+#define 	IA32_MISC_BTS_UNAVAIL	__BIT(11)
+#define 	IA32_MISC_PEBS_UNAVAIL	__BIT(12)
+#define 	IA32_MISC_EISST_EN	__BIT(16)
+#define 	IA32_MISC_MWAIT_EN	__BIT(18)
+#define 	IA32_MISC_LIMIT_CPUID	__BIT(22)
+#define 	IA32_MISC_XTPR_DIS	__BIT(23)
+#define 	IA32_MISC_XD_DIS	__BIT(34)
 #define MSR_TEMPERATURE_TARGET	0x1a2
 #define MSR_DEBUGCTLMSR		0x1d9
 #define MSR_LASTBRANCHFROMIP	0x1db
