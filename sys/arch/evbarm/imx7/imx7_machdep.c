@@ -359,6 +359,10 @@ initarm(void *arg)
 	}
 #endif
 	u_int sp = initarm_common(KERNEL_VM_BASE, KERNEL_VM_SIZE, NULL, 0);
+
+	/*
+	 * initarm_common flushes cache if required before AP start
+	 */
 	imx7_mpstart();
 
 	return sp;

@@ -391,6 +391,9 @@ initarm(void *arg)
 	u_int sp = initarm_common(KERNEL_VM_BASE, KERNEL_VM_SIZE,
 	    (bigmem_p ? &bp_first256 : NULL), (bigmem_p ? 1 : 0));
 
+	/*
+	 * initarm_common flushes cache if required before AP start
+	 */
 	bcm53xx_mpstart();
 
 	return sp;

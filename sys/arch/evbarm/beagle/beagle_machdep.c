@@ -727,7 +727,11 @@ initarm(void *arg)
 
 	u_int sp = initarm_common(KERNEL_VM_BASE, KERNEL_VM_SIZE, NULL, 0);
 
+	/*
+	 * initarm_common flushes cache if required before AP start
+	 */
 	VPRINTF("mpstart\n");
+
 	beagle_mpstart();
 
 	return sp;
