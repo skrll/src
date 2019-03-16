@@ -1,4 +1,4 @@
-#	 $NetBSD: mi,v 1.202 2019/03/08 09:58:23 mrg Exp $
+#	 $NetBSD: mi,v 1.207 2019/03/12 03:37:23 mrg Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -29,10 +29,12 @@
 ./usr/X11R7/include/GL/internal/sarea.h			-unknown-	obsolete
 ./usr/X11R7/include/GL/osmesa.h				-unknown-	xorg
 ./usr/X11R7/include/GL/wglext.h				-unknown-	xorg
-./usr/X11R7/include/GL/wmesa.h				-unknown-	xorg
+./usr/X11R7/include/GL/wmesa.h				-unknown-	xorg,obsolete,mesa_ver=18
+./usr/X11R7/include/GL/wmesa.h				-unknown-	xorg,mesa_ver=10
 ./usr/X11R7/include/GL/xmesa.h				-unknown-	obsolete
 ./usr/X11R7/include/GL/xmesa_x.h			-unknown-	obsolete
 ./usr/X11R7/include/GL/xmesa_xf86.h			-unknown-	obsolete
+./usr/X11R7/include/KHR/khrplatform.h			-unknown-	xorg,mesa_ver=18
 ./usr/X11R7/include/X11/CallbackI.h			-unknown-	xorg
 ./usr/X11R7/include/X11/Composite.h			-unknown-	xorg
 ./usr/X11R7/include/X11/CompositeP.h			-unknown-	xorg
@@ -1483,6 +1485,7 @@
 ./usr/X11R7/man/cat3/FcCharSetIntersect.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcCharSetIntersectCount.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcCharSetIsSubset.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcCharSetMerge.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcCharSetNew.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcCharSetNextPage.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcCharSetSubtract.0		-unknown-	.cat,xorg
@@ -1495,6 +1498,9 @@
 ./usr/X11R7/man/cat3/FcConfigCreate.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigDestroy.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigEnableHome.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcConfigFileInfoIterGet.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcConfigFileInfoIterInit.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcConfigFileInfoIterNext.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigFilename.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigGetBlanks.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigGetCache.0			-unknown-	.cat,xorg
@@ -1505,17 +1511,25 @@
 ./usr/X11R7/man/cat3/FcConfigGetFontDirs.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigGetFonts.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigGetRescanInterval.0	-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcConfigGetSysRoot.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigHome.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigParseAndLoad.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcConfigParseAndLoadFromMemory.0	-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcConfigReference.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigSetCurrent.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigSetRescanInterval.0	-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcConfigSetSysRoot.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigSubstitute.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigSubstituteWithPat.0	-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcConfigUptoDate.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcDefaultSubstitute.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcDirCacheClean.0			-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcDirCacheCreateUUID.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcDirCacheDeleteUUID.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcDirCacheLoad.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcDirCacheLoadFile.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcDirCacheRead.0			-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcDirCacheRescan.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcDirCacheUnlink.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcDirCacheUnload.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcDirCacheValid.0			-unknown-	.cat,xorg
@@ -1540,6 +1554,7 @@
 ./usr/X11R7/man/cat3/FcFreeTypeCharSet.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcFreeTypeCharSetAndSpacing.0	-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcFreeTypeQuery.0			-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcFreeTypeQueryAll.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcFreeTypeQueryFace.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcGetDefaultLangs.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcGetLangs.0			-unknown-	.cat,xorg
@@ -1552,6 +1567,7 @@
 ./usr/X11R7/man/cat3/FcIsLower.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcIsUpper.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcLangGetCharSet.0			-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcLangNormalize.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcLangSetAdd.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcLangSetCompare.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcLangSetContains.0		-unknown-	.cat,xorg
@@ -1560,6 +1576,7 @@
 ./usr/X11R7/man/cat3/FcLangSetDel.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcLangSetDestroy.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcLangSetEqual.0			-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcLangSetGetLangs.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcLangSetHasLang.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcLangSetHash.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcLangSetSubtract.0		-unknown-	.cat,xorg
@@ -1594,12 +1611,29 @@
 ./usr/X11R7/man/cat3/FcPatternDuplicate.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcPatternEqual.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcPatternEqualSubset.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcPatternFilter.0			-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcPatternFindIter.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcPatternFormat.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcPatternGet-Type.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcPatternGet.0			-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcPatternGetWithBinding.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcPatternHash.0			-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcPatternIterEqual.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcPatternIterGetObject.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcPatternIterGetValue.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcPatternIterIsValid.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcPatternIterNext.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcPatternIterStart.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcPatternIterValueCount.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcPatternObjectCount.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcPatternPrint.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcPatternReference.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcPatternRemove.0			-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcRangeCopy.0			-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcRangeCreateDouble.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcRangeCreateInteger.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcRangeDestroy.0			-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcRangeGetDouble.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcStrBasename.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcStrCmp.0				-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcStrCmpIgnoreCase.0		-unknown-	.cat,xorg
@@ -1610,6 +1644,7 @@
 ./usr/X11R7/man/cat3/FcStrFree.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcStrListCreate.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcStrListDone.0			-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcStrListFirst.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcStrListNext.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcStrPlus.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcStrSetAdd.0			-unknown-	.cat,xorg
@@ -1631,6 +1666,10 @@
 ./usr/X11R7/man/cat3/FcValueEqual.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcValuePrint.0			-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FcValueSave.0			-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcWeightFromOpenType.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcWeightFromOpenTypeDouble.0	-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcWeightToOpenType.0		-unknown-	.cat,xorg
+./usr/X11R7/man/cat3/FcWeightToOpenTypeDouble.0		-unknown-	.cat,xorg
 ./usr/X11R7/man/cat3/FontCacheChangeCacheSettings.0	-unknown-	obsolete
 ./usr/X11R7/man/cat3/FontCacheGetCacheSettings.0	-unknown-	obsolete
 ./usr/X11R7/man/cat3/FontCacheGetCacheStatistics.0	-unknown-	obsolete
@@ -2394,6 +2433,7 @@
 ./usr/X11R7/man/html3/FcCharSetIntersect.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcCharSetIntersectCount.html	-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcCharSetIsSubset.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcCharSetMerge.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcCharSetNew.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcCharSetNextPage.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcCharSetSubtract.html		-unknown-	html,xorg
@@ -2406,6 +2446,9 @@
 ./usr/X11R7/man/html3/FcConfigCreate.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigDestroy.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigEnableHome.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcConfigFileInfoIterGet.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcConfigFileInfoIterInit.html	-unknown-	html,xorg
+./usr/X11R7/man/html3/FcConfigFileInfoIterNext.html	-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigFilename.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigGetBlanks.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigGetCache.html		-unknown-	html,xorg
@@ -2416,17 +2459,25 @@
 ./usr/X11R7/man/html3/FcConfigGetFontDirs.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigGetFonts.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigGetRescanInterval.html	-unknown-	html,xorg
+./usr/X11R7/man/html3/FcConfigGetSysRoot.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigHome.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigParseAndLoad.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcConfigParseAndLoadFromMemory.html	-unknown-	html,xorg
+./usr/X11R7/man/html3/FcConfigReference.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigSetCurrent.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigSetRescanInterval.html	-unknown-	html,xorg
+./usr/X11R7/man/html3/FcConfigSetSysRoot.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigSubstitute.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigSubstituteWithPat.html	-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcConfigUptoDate.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcDefaultSubstitute.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcDirCacheClean.html			-unknown-	html,xorg
+./usr/X11R7/man/html3/FcDirCacheCreateUUID.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcDirCacheDeleteUUID.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcDirCacheLoad.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcDirCacheLoadFile.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcDirCacheRead.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcDirCacheRescan.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcDirCacheUnlink.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcDirCacheUnload.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcDirCacheValid.html		-unknown-	html,xorg
@@ -2451,6 +2502,7 @@
 ./usr/X11R7/man/html3/FcFreeTypeCharSet.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcFreeTypeCharSetAndSpacing.html	-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcFreeTypeQuery.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcFreeTypeQueryAll.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcFreeTypeQueryFace.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcGetDefaultLangs.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcGetLangs.html			-unknown-	html,xorg
@@ -2463,6 +2515,7 @@
 ./usr/X11R7/man/html3/FcIsLower.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcIsUpper.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcLangGetCharSet.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcLangNormalize.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcLangSetAdd.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcLangSetCompare.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcLangSetContains.html		-unknown-	html,xorg
@@ -2471,6 +2524,7 @@
 ./usr/X11R7/man/html3/FcLangSetDel.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcLangSetDestroy.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcLangSetEqual.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcLangSetGetLangs.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcLangSetHasLang.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcLangSetHash.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcLangSetSubtract.html		-unknown-	html,xorg
@@ -2505,12 +2559,29 @@
 ./usr/X11R7/man/html3/FcPatternDuplicate.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcPatternEqual.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcPatternEqualSubset.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcPatternFilter.html			-unknown-	html,xorg
+./usr/X11R7/man/html3/FcPatternFindIter.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcPatternFormat.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcPatternGet-Type.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcPatternGet.html			-unknown-	html,xorg
+./usr/X11R7/man/html3/FcPatternGetWithBinding.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcPatternHash.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcPatternIterEqual.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcPatternIterGetObject.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcPatternIterGetValue.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcPatternIterIsValid.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcPatternIterNext.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcPatternIterStart.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcPatternIterValueCount.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcPatternObjectCount.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcPatternPrint.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcPatternReference.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcPatternRemove.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcRangeCopy.html			-unknown-	html,xorg
+./usr/X11R7/man/html3/FcRangeCreateDouble.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcRangeCreateInteger.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcRangeDestroy.html			-unknown-	html,xorg
+./usr/X11R7/man/html3/FcRangeGetDouble.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcStrBasename.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcStrCmp.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcStrCmpIgnoreCase.html		-unknown-	html,xorg
@@ -2521,6 +2592,7 @@
 ./usr/X11R7/man/html3/FcStrFree.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcStrListCreate.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcStrListDone.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcStrListFirst.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcStrListNext.html		-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcStrPlus.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcStrSetAdd.html			-unknown-	html,xorg
@@ -2542,6 +2614,10 @@
 ./usr/X11R7/man/html3/FcValueEqual.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcValuePrint.html			-unknown-	html,xorg
 ./usr/X11R7/man/html3/FcValueSave.html			-unknown-	html,xorg
+./usr/X11R7/man/html3/FcWeightFromOpenType.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcWeightFromOpenTypeDouble.html	-unknown-	html,xorg
+./usr/X11R7/man/html3/FcWeightToOpenType.html		-unknown-	html,xorg
+./usr/X11R7/man/html3/FcWeightToOpenTypeDouble.html	-unknown-	html,xorg
 ./usr/X11R7/man/html3/FontCacheChangeCacheSettings.html	-unknown-	obsolete
 ./usr/X11R7/man/html3/FontCacheGetCacheSettings.html	-unknown-	obsolete
 ./usr/X11R7/man/html3/FontCacheGetCacheStatistics.html	-unknown-	obsolete

@@ -1,4 +1,4 @@
-/*	$NetBSD: specialreg.h,v 1.141 2019/02/16 12:05:30 maxv Exp $	*/
+/*	$NetBSD: specialreg.h,v 1.143 2019/03/13 05:22:07 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1991 The Regents of the University of California.
@@ -45,7 +45,7 @@
  * Bits in 486 special registers:
  */
 #define CR0_NE	0x00000020	/* Numeric Error enable (EX16 vs IRQ13) */
-#define CR0_WP	0x00010000	/* Write Protect (honor PG_RW in all modes) */
+#define CR0_WP	0x00010000	/* Write Protect (honor PTE_W in all modes) */
 #define CR0_AM	0x00040000	/* Alignment Mask (set to enable AC flag) */
 #define CR0_NW	0x20000000	/* Not Write-through */
 #define CR0_CD	0x40000000	/* Cache Disable */
@@ -426,6 +426,7 @@
 /* %edx */
 #define CPUID_SEF_AVX512_4VNNIW	__BIT(2)
 #define CPUID_SEF_AVX512_4FMAPS	__BIT(3)
+#define CPUID_SEF_TSX_FORCE_ABORT __BIT(13) /* MSR_TSX_FORCE_ABORT bit 0 */
 #define CPUID_SEF_IBRS		__BIT(26) /* IBRS / IBPB Speculation Control */
 #define CPUID_SEF_STIBP		__BIT(27) /* STIBP Speculation Control */
 #define CPUID_SEF_L1D_FLUSH	__BIT(28) /* IA32_FLUSH_CMD MSR */
@@ -435,7 +436,8 @@
 
 #define CPUID_SEF_FLAGS2	"\20" \
 				"\3" "AVX512_4VNNIW" "\4" "AVX512_4FMAPS" \
-					"\33" "IBRS"	"\34" "STIBP"	\
+			"\16" "TSX_FORCE_ABORT"				\
+	"\33" "IBRS"	"\34" "STIBP"					\
 	"\35" "L1D_FLUSH" "\36" "ARCH_CAP" "\37CORE_CAP"	"\40" "SSBD"
 
 /*
@@ -745,8 +747,9 @@
 #define 	IA32_ARCH_RSBA		0x04
 #define 	IA32_ARCH_SKIP_L1DFL_VMENTRY 0x08
 #define 	IA32_ARCH_SSB_NO	0x10
-#define MSR_IA32_FLUSH_CMD 0x10b
+#define MSR_IA32_FLUSH_CMD	0x10b
 #define 	IA32_FLUSH_CMD_L1D_FLUSH 0x01
+#define MSR_TSX_FORCE_ABORT	0x10f
 #define MSR_BBL_CR_ADDR		0x116	/* PII+ only */
 #define MSR_BBL_CR_DECC		0x118	/* PII+ only */
 #define MSR_BBL_CR_CTL		0x119	/* PII+ only */

@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.328 2019/03/07 13:26:24 maxv Exp $	*/
+/*	$NetBSD: pmap.c,v 1.331 2019/03/12 08:29:52 gson Exp $	*/
 
 /*
  * Copyright (c) 2008, 2010, 2016, 2017 The NetBSD Foundation, Inc.
@@ -130,7 +130,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.328 2019/03/07 13:26:24 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.331 2019/03/12 08:29:52 gson Exp $");
 
 #include "opt_user_ldt.h"
 #include "opt_lockdebug.h"
@@ -511,11 +511,11 @@ pmap_stats_update(struct pmap *pmap, int resid_diff, int wired_diff)
 static inline void
 pmap_stats_update_bypte(struct pmap *pmap, pt_entry_t npte, pt_entry_t opte)
 {
-	int resid_diff = ((npte & PG_V) ? 1 : 0) - ((opte & PG_V) ? 1 : 0);
+	int resid_diff = ((npte & PTE_P) ? 1 : 0) - ((opte & PTE_P) ? 1 : 0);
 	int wired_diff = ((npte & PG_W) ? 1 : 0) - ((opte & PG_W) ? 1 : 0);
 
-	KASSERT((npte & (PG_V | PG_W)) != PG_W);
-	KASSERT((opte & (PG_V | PG_W)) != PG_W);
+	KASSERT((npte & (PTE_P | PG_W)) != PG_W);
+	KASSERT((opte & (PTE_P | PG_W)) != PG_W);
 
 	pmap_stats_update(pmap, resid_diff, wired_diff);
 }
@@ -833,7 +833,7 @@ pmap_pat_flags(u_int flags)
 			/* results in PGC_UCMINUS on cpus which have
 			 * the cpuid PAT but PAT "disabled"
 			 */
-			return PG_N;
+			return PTE_PCD;
 		default:
 			return 0;
 		}
@@ -888,7 +888,7 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 	} else
 #endif /* DOM0OPS */
 		npte = pmap_pa2pte(pa);
-	npte |= protection_codes[prot] | PG_V | pmap_pg_g;
+	npte |= protection_codes[prot] | PTE_P | pmap_pg_g;
 	npte |= pmap_pat_flags(flags);
 	opte = pmap_pte_testset(pte, npte); /* zap! */
 
@@ -897,9 +897,9 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 	 * large pages created are for the kernel image, and they should never
 	 * be kentered.
 	 */
-	KASSERTMSG(!(opte & PG_PS), "PG_PS va=%#"PRIxVADDR, va);
+	KASSERTMSG(!(opte & PTE_PS), "PTE_PS va=%#"PRIxVADDR, va);
 
-	if ((opte & (PG_V | PG_U)) == (PG_V | PG_U)) {
+	if ((opte & (PTE_P | PTE_A)) == (PTE_P | PTE_A)) {
 		/* This should not happen. */
 		printf_nolog("%s: mapping already present\n", __func__);
 		kpreempt_disable();
@@ -932,9 +932,9 @@ pmap_changeprot_local(vaddr_t va, vm_prot_t prot)
 	npte = opte = *pte;
 
 	if ((prot & VM_PROT_WRITE) != 0)
-		npte |= PG_RW;
+		npte |= PTE_W;
 	else
-		npte &= ~PG_RW;
+		npte &= ~PTE_W;
 
 	if (opte != npte) {
 		pmap_pte_set(pte, npte);
@@ -967,11 +967,11 @@ pmap_kremove1(vaddr_t sva, vsize_t len, bool localonly)
 	for (va = sva; va < eva; va += PAGE_SIZE) {
 		pte = kvtopte(va);
 		opte = pmap_pte_testset(pte, 0); /* zap! */
-		if ((opte & (PG_V | PG_U)) == (PG_V | PG_U) && !localonly) {
+		if ((opte & (PTE_P | PTE_A)) == (PTE_P | PTE_A) && !localonly) {
 			pmap_tlb_shootdown(pmap_kernel(), va, opte,
 			    TLBSHOOT_KREMOVE);
 		}
-		KASSERTMSG((opte & PG_PS) == 0,
+		KASSERTMSG((opte & PTE_PS) == 0,
 		    "va %#" PRIxVADDR " is a large page", va);
 		KASSERTMSG((opte & PG_PVLIST) == 0,
 		    "va %#" PRIxVADDR " is a pv tracked page", va);
@@ -1053,7 +1053,7 @@ pmap_bootstrap(vaddr_t kva_start)
 	int i;
 	vaddr_t kva;
 
-	pmap_pg_nx = (cpu_feature[2] & CPUID_NOX ? PG_NX : 0);
+	pmap_pg_nx = (cpu_feature[2] & CPUID_NOX ? PTE_NX : 0);
 
 	/*
 	 * Set up our local static global vars that keep track of the usage of
@@ -1071,10 +1071,10 @@ pmap_bootstrap(vaddr_t kva_start)
 	protection_codes[VM_PROT_EXECUTE] = PG_X;
 	protection_codes[VM_PROT_READ] = pmap_pg_nx;
 	protection_codes[VM_PROT_READ|VM_PROT_EXECUTE] = PG_X;
-	protection_codes[VM_PROT_WRITE] = PG_RW | pmap_pg_nx;
-	protection_codes[VM_PROT_WRITE|VM_PROT_EXECUTE] = PG_RW | PG_X;
-	protection_codes[VM_PROT_WRITE|VM_PROT_READ] = PG_RW | pmap_pg_nx;
-	protection_codes[VM_PROT_ALL] = PG_RW | PG_X;
+	protection_codes[VM_PROT_WRITE] = PTE_W | pmap_pg_nx;
+	protection_codes[VM_PROT_WRITE|VM_PROT_EXECUTE] = PTE_W | PG_X;
+	protection_codes[VM_PROT_WRITE|VM_PROT_READ] = PTE_W | pmap_pg_nx;
+	protection_codes[VM_PROT_ALL] = PTE_W | PG_X;
 
 	/*
 	 * Now we init the kernel's pmap.
@@ -1122,9 +1122,9 @@ pmap_bootstrap(vaddr_t kva_start)
 	 * (and happens later)
 	 */
 	if (cpu_feature[0] & CPUID_PGE) {
-		pmap_pg_g = PG_G;		/* enable software */
+		pmap_pg_g = PTE_G;		/* enable software */
 
-		/* add PG_G attribute to already mapped kernel pages */
+		/* add PTE_G attribute to already mapped kernel pages */
 		pmap_remap_global();
 	}
 #endif
@@ -1194,7 +1194,7 @@ pmap_bootstrap(vaddr_t kva_start)
 	memset((void *)(xen_dummy_user_pgd + KERNBASE), 0, PAGE_SIZE);
 	/* Mark read-only */
 	HYPERVISOR_update_va_mapping(xen_dummy_user_pgd + KERNBASE,
-	    pmap_pa2pte(xen_dummy_user_pgd) | PG_V | pmap_pg_nx,
+	    pmap_pa2pte(xen_dummy_user_pgd) | PTE_P | pmap_pg_nx,
 	    UVMF_INVLPG);
 	/* Pin as L4 */
 	xpq_queue_pin_l4_table(xpmap_ptom_masked(xen_dummy_user_pgd));
@@ -1406,7 +1406,7 @@ pmap_init_pcpu(void)
 	size_t size;
 	int i;
 
-	const pd_entry_t pteflags = PG_V | PG_KW | pmap_pg_nx;
+	const pd_entry_t pteflags = PTE_P | PTE_W | pmap_pg_nx;
 
 	size = sizeof(struct pcpu_area);
 
@@ -1424,11 +1424,11 @@ pmap_init_pcpu(void)
 		KASSERT(L4_BASE[L4e_idx+i] == 0);
 
 		pa = pmap_bootstrap_palloc(1);
-		*pte = (pa & PG_FRAME) | pteflags;
+		*pte = (pa & PTE_FRAME) | pteflags;
 		pmap_update_pg(tmpva);
 		memset((void *)tmpva, 0, PAGE_SIZE);
 
-		L4_BASE[L4e_idx+i] = pa | pteflags | PG_U;
+		L4_BASE[L4e_idx+i] = pa | pteflags | PTE_A;
 	}
 
 	/* Build L3 */
@@ -1438,11 +1438,11 @@ pmap_init_pcpu(void)
 		KASSERT(L3_BASE[L3e_idx+i] == 0);
 
 		pa = pmap_bootstrap_palloc(1);
-		*pte = (pa & PG_FRAME) | pteflags;
+		*pte = (pa & PTE_FRAME) | pteflags;
 		pmap_update_pg(tmpva);
 		memset((void *)tmpva, 0, PAGE_SIZE);
 
-		L3_BASE[L3e_idx+i] = pa | pteflags | PG_U;
+		L3_BASE[L3e_idx+i] = pa | pteflags | PTE_A;
 	}
 
 	/* Build L2 */
@@ -1453,11 +1453,11 @@ pmap_init_pcpu(void)
 		KASSERT(L2_BASE[L2e_idx+i] == 0);
 
 		pa = pmap_bootstrap_palloc(1);
-		*pte = (pa & PG_FRAME) | pteflags;
+		*pte = (pa & PTE_FRAME) | pteflags;
 		pmap_update_pg(tmpva);
 		memset((void *)tmpva, 0, PAGE_SIZE);
 
-		L2_BASE[L2e_idx+i] = pa | pteflags | PG_U;
+		L2_BASE[L2e_idx+i] = pa | pteflags | PTE_A;
 	}
 
 	/* Build L1 */
@@ -1503,8 +1503,8 @@ pmap_init_directmap(struct pmap *kpm)
 	phys_ram_seg_t *mc;
 	int i;
 
-	const pd_entry_t pteflags = PG_V | PG_KW | pmap_pg_nx;
-	const pd_entry_t holepteflags = PG_V | pmap_pg_nx;
+	const pd_entry_t pteflags = PTE_P | PTE_W | pmap_pg_nx;
+	const pd_entry_t holepteflags = PTE_P | pmap_pg_nx;
 
 	CTASSERT(NL4_SLOT_DIRECT * NBPD_L4 == MAXPHYSMEM);
 
@@ -1540,11 +1540,11 @@ pmap_init_directmap(struct pmap *kpm)
 		KASSERT(L4_BASE[L4e_idx+i] == 0);
 
 		pa = pmap_bootstrap_palloc(1);
-		*pte = (pa & PG_FRAME) | pteflags;
+		*pte = (pa & PTE_FRAME) | pteflags;
 		pmap_update_pg(tmpva);
 		memset((void *)tmpva, 0, PAGE_SIZE);
 
-		L4_BASE[L4e_idx+i] = pa | pteflags | PG_U;
+		L4_BASE[L4e_idx+i] = pa | pteflags | PTE_A;
 	}
 
 	/* Build L3 */
@@ -1554,11 +1554,11 @@ pmap_init_directmap(struct pmap *kpm)
 		KASSERT(L3_BASE[L3e_idx+i] == 0);
 
 		pa = pmap_bootstrap_palloc(1);
-		*pte = (pa & PG_FRAME) | pteflags;
+		*pte = (pa & PTE_FRAME) | pteflags;
 		pmap_update_pg(tmpva);
 		memset((void *)tmpva, 0, PAGE_SIZE);
 
-		L3_BASE[L3e_idx+i] = pa | pteflags | PG_U;
+		L3_BASE[L3e_idx+i] = pa | pteflags | PTE_A;
 	}
 
 	/* Build L2 */
@@ -1570,11 +1570,11 @@ pmap_init_directmap(struct pmap *kpm)
 		pa = (paddr_t)(i * NBPD_L2);
 
 		if (spahole <= pa && pa < epahole) {
-			L2_BASE[L2e_idx+i] = pa | holepteflags | PG_U |
-			    PG_PS | pmap_pg_g;
+			L2_BASE[L2e_idx+i] = pa | holepteflags | PTE_A |
+			    PTE_PS | pmap_pg_g;
 		} else {
-			L2_BASE[L2e_idx+i] = pa | pteflags | PG_U |
-			    PG_PS | pmap_pg_g;
+			L2_BASE[L2e_idx+i] = pa | pteflags | PTE_A |
+			    PTE_PS | pmap_pg_g;
 		}
 	}
 
@@ -1590,7 +1590,7 @@ pmap_init_directmap(struct pmap *kpm)
 
 #if !defined(XENPV)
 /*
- * Remap all of the virtual pages created so far with the PG_G bit.
+ * Remap all of the virtual pages created so far with the PTE_G bit.
  */
 static void
 pmap_remap_global(void)
@@ -1660,7 +1660,7 @@ pmap_remap_largepages(void)
 		pa = roundup(bootspace.segs[i].pa, NBPD_L2);
 		for (/* */; kva < kva_end; kva += NBPD_L2, pa += NBPD_L2) {
 			pde = &L2_BASE[pl2_i(kva)];
-			*pde = pa | pmap_pg_g | PG_PS | PG_V;
+			*pde = pa | pmap_pg_g | PTE_PS | PTE_P;
 			tlbflushg();
 		}
 	}
@@ -1679,7 +1679,7 @@ pmap_remap_largepages(void)
 		pa = roundup(bootspace.segs[i].pa, NBPD_L2);
 		for (/* */; kva < kva_end; kva += NBPD_L2, pa += NBPD_L2) {
 			pde = &L2_BASE[pl2_i(kva)];
-			*pde = pa | pmap_pg_g | PG_PS | pmap_pg_nx | PG_V;
+			*pde = pa | pmap_pg_g | PTE_PS | pmap_pg_nx | PTE_P;
 			tlbflushg();
 		}
 	}
@@ -1698,7 +1698,7 @@ pmap_remap_largepages(void)
 		pa = roundup(bootspace.segs[i].pa, NBPD_L2);
 		for (/* */; kva < kva_end; kva += NBPD_L2, pa += NBPD_L2) {
 			pde = &L2_BASE[pl2_i(kva)];
-			*pde = pa | pmap_pg_g | PG_PS | pmap_pg_nx | PG_KW | PG_V;
+			*pde = pa | pmap_pg_g | PTE_PS | pmap_pg_nx | PTE_W | PTE_P;
 			tlbflushg();
 		}
 	}
@@ -2147,7 +2147,7 @@ pmap_get_ptp(struct pmap *pmap, vaddr_t va, pd_entry_t * const *pdes, int flags)
 		pmap->pm_ptphint[i - 2] = ptp;
 		pa = VM_PAGE_TO_PHYS(ptp);
 		pmap_pte_set(&pva[index], (pd_entry_t)
-		    (pmap_pa2pte(pa) | PG_u | PG_RW | PG_V));
+		    (pmap_pa2pte(pa) | PTE_U | PTE_W | PTE_P));
 
 		/*
 		 * On Xen-amd64 or SVS, we need to sync the top level page
@@ -2241,10 +2241,10 @@ pmap_pdp_ctor(void *arg, void *v, int flags)
 	 * don't put kernel mappings on Xen.
 	 *
 	 * But we need to make pmap_create() happy, so put a dummy
-	 * (without PG_V) value at the right place.
+	 * (without PTE_P) value at the right place.
 	 */
 	pdir[PDIR_SLOT_KERN + nkptp[PTP_LEVELS - 1] - 1] =
-	     (pd_entry_t)-1 & PG_FRAME;
+	     (pd_entry_t)-1 & PTE_FRAME;
 #else /* XENPV && __x86_64__*/
 	object = (vaddr_t)v;
 	for (i = 0; i < PDP_SIZE; i++, object += PAGE_SIZE) {
@@ -2252,10 +2252,10 @@ pmap_pdp_ctor(void *arg, void *v, int flags)
 		(void)pmap_extract(pmap_kernel(), object, &pdirpa);
 
 		/* Put in recursive PDE to map the PTEs */
-		pdir[PDIR_SLOT_PTE + i] = pmap_pa2pte(pdirpa) | PG_V |
+		pdir[PDIR_SLOT_PTE + i] = pmap_pa2pte(pdirpa) | PTE_P |
 		    pmap_pg_nx;
 #ifndef XENPV
-		pdir[PDIR_SLOT_PTE + i] |= PG_KW;
+		pdir[PDIR_SLOT_PTE + i] |= PTE_W;
 #endif
 	}
 
@@ -2338,7 +2338,7 @@ pmap_pdp_dtor(void *arg, void *v)
 	for (i = 0; i < PDP_SIZE; i++, object += PAGE_SIZE) {
 		/* Set page RW again */
 		pte = kvtopte(object);
-		pmap_pte_set(pte, *pte | PG_RW);
+		pmap_pte_set(pte, *pte | PTE_W);
 		xen_bcast_invlpg((vaddr_t)object);
 	}
 	splx(s);
@@ -3031,22 +3031,28 @@ pmap_deactivate(struct lwp *l)
  * some misc. functions
  */
 
-int
-pmap_pdes_invalid(vaddr_t va, pd_entry_t * const *pdes, pd_entry_t *lastpde)
+bool
+pmap_pdes_valid(vaddr_t va, pd_entry_t * const *pdes, pd_entry_t *lastpde,
+    int *lastlvl)
 {
-	int i;
 	unsigned long index;
 	pd_entry_t pde;
+	int i;
 
 	for (i = PTP_LEVELS; i > 1; i--) {
 		index = pl_i(va, i);
 		pde = pdes[i - 2][index];
-		if ((pde & PG_V) == 0)
-			return i;
+		if ((pde & PTE_P) == 0) {
+			*lastlvl = i;
+			return false;
+		}
+		if (pde & PTE_PS)
+			break;
 	}
 	if (lastpde != NULL)
 		*lastpde = pde;
-	return 0;
+	*lastlvl = i;
+	return true;
 }
 
 /*
@@ -3063,6 +3069,7 @@ pmap_extract(struct pmap *pmap, vaddr_t va, paddr_t *pap)
 	paddr_t pa;
 	lwp_t *l;
 	bool hard, rv;
+	int lvl;
 
 	if (__predict_false(pmap->pm_extract != NULL)) {
 		return (*pmap->pm_extract)(pmap, va, pap);
@@ -3083,8 +3090,8 @@ pmap_extract(struct pmap *pmap, vaddr_t va, paddr_t *pap)
 
 	kpreempt_disable();
 	ci = l->l_cpu;
-	if (__predict_true(!ci->ci_want_pmapload && ci->ci_pmap == pmap) ||
-	    pmap == pmap_kernel()) {
+	if (pmap == pmap_kernel() ||
+	    __predict_true(!ci->ci_want_pmapload && ci->ci_pmap == pmap)) {
 		/*
 		 * no need to lock, because it's pmap_kernel() or our
 		 * own pmap and is active.  if a user pmap, the caller
@@ -3101,14 +3108,17 @@ pmap_extract(struct pmap *pmap, vaddr_t va, paddr_t *pap)
 		hard = true;
 		pmap_map_ptes(pmap, &pmap2, &ptes, &pdes);
 	}
-	if (pmap_pdes_valid(va, pdes, &pde)) {
-		pte = ptes[pl1_i(va)];
-		if (pde & PG_PS) {
-			pa = (pde & PG_LGFRAME) | (va & (NBPD_L2 - 1));
+	if (pmap_pdes_valid(va, pdes, &pde, &lvl)) {
+		if (lvl == 2) {
+			pa = (pde & PTE_LGFRAME) | (va & (NBPD_L2 - 1));
 			rv = true;
-		} else if (__predict_true((pte & PG_V) != 0)) {
-			pa = pmap_pte2pa(pte) | (va & (NBPD_L1 - 1));
-			rv = true;
+		} else {
+			KASSERT(lvl == 1);
+			pte = ptes[pl1_i(va)];
+			if (__predict_true((pte & PTE_P) != 0)) {
+				pa = pmap_pte2pa(pte) | (va & (NBPD_L1 - 1));
+				rv = true;
+			}
 		}
 	}
 	if (__predict_false(hard)) {
@@ -3178,7 +3188,7 @@ pmap_zero_page(paddr_t pa)
 	pt_entry_t *zpte;
 	vaddr_t zerova;
 
-	const pd_entry_t pteflags = PG_V | PG_RW | pmap_pg_nx | PG_M | PG_U;
+	const pd_entry_t pteflags = PTE_P | PTE_W | pmap_pg_nx | PTE_D | PTE_A;
 
 	kpreempt_disable();
 
@@ -3220,7 +3230,7 @@ pmap_pageidlezero(paddr_t pa)
 	vaddr_t zerova;
 	bool rv;
 
-	const pd_entry_t pteflags = PG_V | PG_RW | pmap_pg_nx | PG_M | PG_U;
+	const pd_entry_t pteflags = PTE_P | PTE_W | pmap_pg_nx | PTE_D | PTE_A;
 
 	ci = curcpu();
 	zerova = ci->vpage[VPAGE_ZER];
@@ -3263,7 +3273,7 @@ pmap_copy_page(paddr_t srcpa, paddr_t dstpa)
 	pt_entry_t *srcpte, *dstpte;
 	vaddr_t srcva, dstva;
 
-	const pd_entry_t pteflags = PG_V | PG_RW | pmap_pg_nx | PG_U;
+	const pd_entry_t pteflags = PTE_P | PTE_W | pmap_pg_nx | PTE_A;
 
 	kpreempt_disable();
 
@@ -3276,7 +3286,7 @@ pmap_copy_page(paddr_t srcpa, paddr_t dstpa)
 	KASSERT(*srcpte == 0 && *dstpte == 0);
 
 	pmap_pte_set(srcpte, pmap_pa2pte(srcpa) | pteflags);
-	pmap_pte_set(dstpte, pmap_pa2pte(dstpa) | pteflags | PG_M);
+	pmap_pte_set(dstpte, pmap_pa2pte(dstpa) | pteflags | PTE_D);
 	pmap_pte_flush();
 	pmap_update_pg(srcva);
 	pmap_update_pg(dstva);
@@ -3306,9 +3316,9 @@ pmap_map_ptp(struct vm_page *ptp)
 	KASSERT(kpreempt_disabled());
 
 #ifndef XENPV
-	const pd_entry_t pteflags = PG_V | PG_RW | pmap_pg_nx | PG_U | PG_M;
+	const pd_entry_t pteflags = PTE_P | PTE_W | pmap_pg_nx | PTE_A | PTE_D;
 #else
-	const pd_entry_t pteflags = PG_V | pmap_pg_nx | PG_U | PG_M;
+	const pd_entry_t pteflags = PTE_P | pmap_pg_nx | PTE_A | PTE_D;
 #endif
 
 	ci = curcpu();
@@ -3409,11 +3419,11 @@ static inline uint8_t
 pmap_pte_to_pp_attrs(pt_entry_t pte)
 {
 	uint8_t ret = 0;
-	if (pte & PG_M)
+	if (pte & PTE_D)
 		ret |= PP_ATTRS_M;
-	if (pte & PG_U)
+	if (pte & PTE_A)
 		ret |= PP_ATTRS_U;
-	if (pte & PG_RW)
+	if (pte & PTE_W)
 		ret |= PP_ATTRS_W;
 	return ret;
 }
@@ -3423,11 +3433,11 @@ pmap_pp_attrs_to_pte(uint8_t attrs)
 {
 	pt_entry_t pte = 0;
 	if (attrs & PP_ATTRS_M)
-		pte |= PG_M;
+		pte |= PTE_D;
 	if (attrs & PP_ATTRS_U)
-		pte |= PG_U;
+		pte |= PTE_A;
 	if (attrs & PP_ATTRS_W)
-		pte |= PG_RW;
+		pte |= PTE_W;
 	return pte;
 }
 
@@ -3472,11 +3482,11 @@ pmap_remove_pte(struct pmap *pmap, struct vm_page *ptp, pt_entry_t *pte,
 		 */
 		ptp->wire_count--;
 		if (ptp->wire_count <= 1) {
-			opte |= PG_U;
+			opte |= PTE_A;
 		}
 	}
 
-	if ((opte & PG_U) != 0) {
+	if ((opte & PTE_A) != 0) {
 		pmap_tlb_shootdown(pmap, va, opte, TLBSHOOT_REMOVE_PTE);
 	}
 
@@ -3531,6 +3541,7 @@ pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
 	vaddr_t blkendva, va = sva;
 	struct vm_page *ptp;
 	struct pmap *pmap2;
+	int lvl;
 
 	if (__predict_false(pmap->pm_remove != NULL)) {
 		(*pmap->pm_remove)(pmap, sva, eva);
@@ -3545,7 +3556,8 @@ pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
 	 */
 
 	if (va + PAGE_SIZE == eva) {
-		if (pmap_pdes_valid(va, pdes, &pde)) {
+		if (pmap_pdes_valid(va, pdes, &pde, &lvl)) {
+			KASSERT(lvl == 1);
 
 			/* PA of the PTP */
 			ptppa = pmap_pte2pa(pde);
@@ -3572,19 +3584,17 @@ pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
 				pmap_free_ptp(pmap, ptp, va, ptes, pdes);
 		}
 	} else for (/* null */ ; va < eva ; va = blkendva) {
-		int lvl;
-
 		/* determine range of block */
 		blkendva = x86_round_pdr(va+1);
 		if (blkendva > eva)
 			blkendva = eva;
 
-		lvl = pmap_pdes_invalid(va, pdes, &pde);
-		if (lvl != 0) {
+		if (!pmap_pdes_valid(va, pdes, &pde, &lvl)) {
 			/* Skip a range corresponding to an invalid pde. */
 			blkendva = (va & ptp_frames[lvl - 1]) + nbpd[lvl - 1];
  			continue;
 		}
+		KASSERT(lvl == 1);
 
 		/* PA of the PTP */
 		ptppa = pmap_pte2pa(pde);
@@ -3647,7 +3657,7 @@ pmap_sync_pv(struct pv_pte *pvpte, paddr_t pa, int clearbits, uint8_t *oattrs,
 		    optep);
 	}
 
-	expect = pmap_pa2pte(pa) | PG_V;
+	expect = pmap_pa2pte(pa) | PTE_P;
 
 	if (clearbits != ~0) {
 		KASSERT((clearbits & ~(PP_ATTRS_M|PP_ATTRS_U|PP_ATTRS_W)) == 0);
@@ -3657,10 +3667,10 @@ pmap_sync_pv(struct pv_pte *pvpte, paddr_t pa, int clearbits, uint8_t *oattrs,
 	ptep = pmap_map_pte(pmap, ptp, va);
 	do {
 		opte = *ptep;
-		KASSERT((opte & (PG_M | PG_U)) != PG_M);
-		KASSERT((opte & (PG_U | PG_V)) != PG_U);
-		KASSERT(opte == 0 || (opte & PG_V) != 0);
-		if ((opte & (PG_FRAME | PG_V)) != expect) {
+		KASSERT((opte & (PTE_D | PTE_A)) != PTE_D);
+		KASSERT((opte & (PTE_A | PTE_P)) != PTE_A);
+		KASSERT(opte == 0 || (opte & PTE_P) != 0);
+		if ((opte & (PTE_FRAME | PTE_P)) != expect) {
 			/*
 			 * We lost a race with a V->P operation like
 			 * pmap_remove().  Wait for the competitor
@@ -3672,7 +3682,7 @@ pmap_sync_pv(struct pv_pte *pvpte, paddr_t pa, int clearbits, uint8_t *oattrs,
 			pmap_unmap_pte();
 			if (clearbits != 0) {
 				pmap_tlb_shootdown(pmap, va,
-				    (pmap == pmap_kernel() ? PG_G : 0),
+				    (pmap == pmap_kernel() ? PTE_G : 0),
 				    TLBSHOOT_SYNC_PV1);
 			}
 			return EAGAIN;
@@ -3687,24 +3697,24 @@ pmap_sync_pv(struct pv_pte *pvpte, paddr_t pa, int clearbits, uint8_t *oattrs,
 		}
 
 		/*
-		 * We need a shootdown if the PTE is cached (PG_U) ...
-		 * ... Unless we are clearing only the PG_RW bit and
-		 * it isn't cached as RW (PG_M).
+		 * We need a shootdown if the PTE is cached (PTE_A) ...
+		 * ... Unless we are clearing only the PTE_W bit and
+		 * it isn't cached as RW (PTE_D).
 		 */
-		need_shootdown = (opte & PG_U) != 0 &&
-		    !(clearbits == PG_RW && (opte & PG_M) == 0);
+		need_shootdown = (opte & PTE_A) != 0 &&
+		    !(clearbits == PTE_W && (opte & PTE_D) == 0);
 
 		npte = opte & ~clearbits;
 
 		/*
-		 * If we need a shootdown anyway, clear PG_U and PG_M.
+		 * If we need a shootdown anyway, clear PTE_A and PTE_D.
 		 */
 		if (need_shootdown) {
-			npte &= ~(PG_U | PG_M);
+			npte &= ~(PTE_A | PTE_D);
 		}
-		KASSERT((npte & (PG_M | PG_U)) != PG_M);
-		KASSERT((npte & (PG_U | PG_V)) != PG_U);
-		KASSERT(npte == 0 || (opte & PG_V) != 0);
+		KASSERT((npte & (PTE_D | PTE_A)) != PTE_D);
+		KASSERT((npte & (PTE_A | PTE_P)) != PTE_A);
+		KASSERT(npte == 0 || (opte & PTE_P) != 0);
 	} while (pmap_pte_cas(ptep, opte, npte) != opte);
 
 	if (need_shootdown) {
@@ -3989,9 +3999,9 @@ pmap_pv_clear_attrs(paddr_t pa, unsigned clearbits)
 /*
  * pmap_write_protect: write-protect pages in a pmap.
  *
- * Note for Xen-amd64. Xen automatically adds PG_u to the kernel pages, but we
+ * Note for Xen-amd64. Xen automatically adds PTE_U to the kernel pages, but we
  * don't need to remove this bit when re-entering the PTEs here: Xen tracks the
- * kernel pages with a reserved bit (_PAGE_GUEST_KERNEL), so even if PG_u is
+ * kernel pages with a reserved bit (_PAGE_GUEST_KERNEL), so even if PTE_U is
  * present the page will still be considered as a kernel page, and the privilege
  * separation will be enforced correctly.
  */
@@ -4003,6 +4013,7 @@ pmap_write_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 	pt_entry_t * const *pdes;
 	struct pmap *pmap2;
 	vaddr_t blockend, va;
+	int lvl;
 
 	KASSERT(curlwp->l_md.md_gc_pmap != pmap);
 
@@ -4013,14 +4024,14 @@ pmap_write_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 
 	bit_rem = 0;
 	if (!(prot & VM_PROT_WRITE))
-		bit_rem = PG_RW;
+		bit_rem = PTE_W;
 
 	bit_put = 0;
 	if (!(prot & VM_PROT_EXECUTE))
 		bit_put = pmap_pg_nx;
 
-	sva &= PG_FRAME;
-	eva &= PG_FRAME;
+	sva &= PTE_FRAME;
+	eva &= PTE_FRAME;
 
 	/* Acquire pmap. */
 	kpreempt_disable();
@@ -4034,10 +4045,11 @@ pmap_write_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 			blockend = eva;
 
 		/* Is it a valid block? */
-		if (!pmap_pdes_valid(va, pdes, NULL)) {
+		if (!pmap_pdes_valid(va, pdes, NULL, &lvl)) {
 			continue;
 		}
 		KASSERT(va < VM_MAXUSER_ADDRESS || va >= VM_MAX_ADDRESS);
+		KASSERT(lvl == 1);
 
 		spte = &ptes[pl1_i(va)];
 		epte = &ptes[pl1_i(blockend)];
@@ -4053,7 +4065,7 @@ pmap_write_protect(struct pmap *pmap, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 				npte = (opte & ~bit_rem) | bit_put;
 			} while (pmap_pte_cas(spte, opte, npte) != opte);
 
-			if ((opte & PG_M) != 0) {
+			if ((opte & PTE_D) != 0) {
 				vaddr_t tva = x86_ptob(spte - ptes);
 				pmap_tlb_shootdown(pmap, tva, opte,
 				    TLBSHOOT_WRITE_PROTECT);
@@ -4078,6 +4090,7 @@ pmap_unwire(struct pmap *pmap, vaddr_t va)
 	pt_entry_t *ptes, *ptep, opte;
 	pd_entry_t * const *pdes;
 	struct pmap *pmap2;
+	int lvl;
 
 	if (__predict_false(pmap->pm_unwire != NULL)) {
 		(*pmap->pm_unwire)(pmap, va);
@@ -4088,9 +4101,10 @@ pmap_unwire(struct pmap *pmap, vaddr_t va)
 	kpreempt_disable();
 	pmap_map_ptes(pmap, &pmap2, &ptes, &pdes);
 
-	if (!pmap_pdes_valid(va, pdes, NULL)) {
+	if (!pmap_pdes_valid(va, pdes, NULL, &lvl)) {
 		panic("%s: invalid PDE va=%#" PRIxVADDR, __func__, va);
 	}
+	KASSERT(lvl == 1);
 
 	ptep = &ptes[pl1_i(va)];
 	opte = *ptep;
@@ -4103,7 +4117,7 @@ pmap_unwire(struct pmap *pmap, vaddr_t va)
 		pmap_stats_update_bypte(pmap, npte, opte);
 	} else {
 		printf("%s: wiring for pmap %p va %#" PRIxVADDR
-		    "did not change!\n", __func__, pmap, va);
+		    " did not change!\n", __func__, pmap, va);
 	}
 
 	/* Release pmap. */
@@ -4171,20 +4185,20 @@ pmap_enter_ma(struct pmap *pmap, vaddr_t va, paddr_t ma, paddr_t pa,
 	KASSERT(domid == DOMID_SELF || pa == 0);
 #endif
 
-	npte = ma | protection_codes[prot] | PG_V;
+	npte = ma | protection_codes[prot] | PTE_P;
 	npte |= pmap_pat_flags(flags);
 	if (wired)
 	        npte |= PG_W;
 	if (va < VM_MAXUSER_ADDRESS)
-		npte |= PG_u;
+		npte |= PTE_U;
 
 	if (pmap == pmap_kernel())
 		npte |= pmap_pg_g;
 	if (flags & VM_PROT_ALL) {
-		npte |= PG_U;
+		npte |= PTE_A;
 		if (flags & VM_PROT_WRITE) {
-			KASSERT((npte & PG_RW) != 0);
-			npte |= PG_M;
+			KASSERT((npte & PTE_W) != 0);
+			npte |= PTE_D;
 		}
 	}
 
@@ -4265,10 +4279,10 @@ pmap_enter_ma(struct pmap *pmap, vaddr_t va, paddr_t ma, paddr_t pa,
 		opte = *ptep;
 
 		/*
-		 * if the same page, inherit PG_U and PG_M.
+		 * if the same page, inherit PTE_A and PTE_D.
 		 */
-		if (((opte ^ npte) & (PG_FRAME | PG_V)) == 0) {
-			npte |= opte & (PG_U | PG_M);
+		if (((opte ^ npte) & (PTE_FRAME | PTE_P)) == 0) {
+			npte |= opte & (PTE_A | PTE_D);
 		}
 #if defined(XENPV)
 		if (domid != DOMID_SELF) {
@@ -4305,7 +4319,7 @@ pmap_enter_ma(struct pmap *pmap, vaddr_t va, paddr_t ma, paddr_t pa,
 	/*
 	 * If the same page, we can skip pv_entry handling.
 	 */
-	if (((opte ^ npte) & (PG_FRAME | PG_V)) == 0) {
+	if (((opte ^ npte) & (PTE_FRAME | PTE_P)) == 0) {
 		KASSERT(((opte ^ npte) & PG_PVLIST) == 0);
 		goto same_pa;
 	}
@@ -4313,7 +4327,7 @@ pmap_enter_ma(struct pmap *pmap, vaddr_t va, paddr_t ma, paddr_t pa,
 	/*
 	 * If old page is pv-tracked, remove pv_entry from its list.
 	 */
-	if ((~opte & (PG_V | PG_PVLIST)) == 0) {
+	if ((~opte & (PTE_P | PG_PVLIST)) == 0) {
 		if ((old_pg = PHYS_TO_VM_PAGE(oldpa)) != NULL) {
 			KASSERT(uvm_page_locked_p(old_pg));
 			old_pp = VM_PAGE_TO_PP(old_pg);
@@ -4342,8 +4356,8 @@ same_pa:
 	 * shootdown tlb if necessary.
 	 */
 
-	if ((~opte & (PG_V | PG_U)) == 0 &&
-	    ((opte ^ npte) & (PG_FRAME | PG_RW)) != 0) {
+	if ((~opte & (PTE_P | PTE_A)) == 0 &&
+	    ((opte ^ npte) & (PTE_FRAME | PTE_W)) != 0) {
 		pmap_tlb_shootdown(pmap, va, opte, TLBSHOOT_ENTER);
 	}
 
@@ -4389,8 +4403,8 @@ pmap_get_physpage(void)
 		}
 #endif
 		kpreempt_disable();
-		pmap_pte_set(early_zero_pte, pmap_pa2pte(pa) | PG_V |
-		    PG_RW | pmap_pg_nx);
+		pmap_pte_set(early_zero_pte, pmap_pa2pte(pa) | PTE_P |
+		    PTE_W | pmap_pg_nx);
 		pmap_pte_flush();
 		pmap_update_pg((vaddr_t)early_zerop);
 		memset(early_zerop, 0, PAGE_SIZE);
@@ -4448,7 +4462,7 @@ pmap_alloc_level(struct pmap *cpm, vaddr_t kva, long *needed_ptps)
 
 			KASSERT(!pmap_valid_entry(pdep[i]));
 			pa = pmap_get_physpage();
-			pte = pmap_pa2pte(pa) | PG_V | PG_RW;
+			pte = pmap_pa2pte(pa) | PTE_P | PTE_W;
 			pmap_pte_set(&pdep[i], pte);
 
 #ifdef XENPV
@@ -4623,6 +4637,7 @@ pmap_dump(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
 	pd_entry_t * const *pdes;
 	struct pmap *pmap2;
 	vaddr_t blkendva;
+	int lvl;
 
 	/*
 	 * if end is out of range truncate.
@@ -4651,8 +4666,9 @@ pmap_dump(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
 			blkendva = eva;
 
 		/* valid block? */
-		if (!pmap_pdes_valid(sva, pdes, NULL))
+		if (!pmap_pdes_valid(sva, pdes, NULL, &lvl))
 			continue;
+		KASSERT(lvl == 1);
 
 		pte = &ptes[pl1_i(sva)];
 		for (/* null */; sva < blkendva ; sva += PAGE_SIZE, pte++) {
@@ -4765,21 +4781,21 @@ pmap_init_tmp_pgtbl(paddr_t pg)
 	 * 510: unused
 	 * 511: maps 3->4GB (kernel)
 	 */
-	tmp_pml[508] = x86_tmp_pml_paddr[PTP_LEVELS - 1] | PG_V;
+	tmp_pml[508] = x86_tmp_pml_paddr[PTP_LEVELS - 1] | PTE_P;
 	tmp_pml[509] = 0;
 	tmp_pml[510] = 0;
-	tmp_pml[511] = pmap_pdirpa(pmap_kernel(), PDIR_SLOT_KERN) | PG_V;
+	tmp_pml[511] = pmap_pdirpa(pmap_kernel(), PDIR_SLOT_KERN) | PTE_P;
 #endif
 
 	for (level = PTP_LEVELS - 1; level > 0; --level) {
 		tmp_pml = (void *)x86_tmp_pml_vaddr[level];
 
 		tmp_pml[pl_i(pg, level + 1)] =
-		    (x86_tmp_pml_paddr[level - 1] & PG_FRAME) | PG_RW | PG_V;
+		    (x86_tmp_pml_paddr[level - 1] & PTE_FRAME) | PTE_W | PTE_P;
 	}
 
 	tmp_pml = (void *)x86_tmp_pml_vaddr[0];
-	tmp_pml[pl_i(pg, 1)] = (pg & PG_FRAME) | PG_RW | PG_V;
+	tmp_pml[pl_i(pg, 1)] = (pg & PTE_FRAME) | PTE_W | PTE_P;
 
 #ifdef PAE
 	/* Return the PA of the L3 page (entry 508 of the L2 page) */
@@ -5185,9 +5201,9 @@ pmap_ept_enter(struct pmap *pmap, vaddr_t va, paddr_t pa, vm_prot_t prot,
 		opte = *ptep;
 
 		/*
-		 * if the same page, inherit PG_U and PG_M.
+		 * if the same page, inherit PTE_A and PTE_D.
 		 */
-		if (((opte ^ npte) & (PG_FRAME | PG_V)) == 0) {
+		if (((opte ^ npte) & (PG_FRAME | EPT_R)) == 0) {
 			npte |= opte & (EPT_A | EPT_D);
 		}
 	} while (pmap_pte_cas(ptep, opte, npte) != opte);
@@ -5537,9 +5553,9 @@ pmap_ept_sync_pv(struct vm_page *ptp, vaddr_t va, paddr_t pa, int clearbits,
 		}
 
 		/*
-		 * We need a shootdown if the PTE is cached (PG_U) ...
-		 * ... Unless we are clearing only the PG_RW bit and
-		 * it isn't cached as RW (PG_M).
+		 * We need a shootdown if the PTE is cached (EPT_A) ...
+		 * ... Unless we are clearing only the EPT_W bit and
+		 * it isn't cached as RW (EPT_D).
 		 */
 		if (pmap_ept_has_ad) {
 			need_shootdown = (opte & EPT_A) != 0 &&
@@ -5551,7 +5567,7 @@ pmap_ept_sync_pv(struct vm_page *ptp, vaddr_t va, paddr_t pa, int clearbits,
 		npte = opte & ~clearbits;
 
 		/*
-		 * If we need a shootdown anyway, clear PG_U and PG_M.
+		 * If we need a shootdown anyway, clear EPT_A and EPT_D.
 		 */
 		if (need_shootdown) {
 			npte &= ~(EPT_A | EPT_D);
