@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.6 2019/03/12 15:13:25 christos Exp $
+#	$NetBSD: Makefile.inc,v 1.8 2019/03/29 15:13:44 christos Exp $
 
 JEMALLOC:=${.PARSEDIR}/..
 
@@ -38,8 +38,7 @@ witness.c
 .SUFFIXES: .3
 .PATH.3: ${JEMALLOC}/dist/doc
 .for i in ${JEMALLOC_SRCS}
-CPPFLAGS.${i}+=-I${JEMALLOC}/include -DJEMALLOC_NO_PRIVATE_NAMESPACE \
-    -DJEMALLOC_PROTECT_NOSTD -DJEMALLOC_DEBUG
+CPPFLAGS.${i}+=-I${JEMALLOC}/include -DJEMALLOC_PROTECT_NOSTD -DJEMALLOC_DEBUG
 COPTS.${i}+= -fvisibility=hidden -funroll-loops 
 .endfor
 
@@ -47,6 +46,12 @@ COPTS.background_thread.c+=-Wno-error=stack-protector
 COPTS.ctl.c+=-Wno-error=stack-protector
 COPTS.stats.c+=-Wno-error=stack-protector
 COPTS.tcache.c+=-Wno-error=stack-protector
+
+.if ${MACHINE_ARCH} == "vax"
+# in merge_overlapping_regs, at regrename.c
+COPTS.arena.c+=-O0
+COPTS.extent.c+=-O0
+.endif
 
 SRCS+=${JEMALLOC_SRCS}
 

@@ -85,6 +85,7 @@
 #include <miscfs/genfs/genfs_node.h>
 #include <uvm/uvm_extern.h>
 #include <sys/fstrans.h>
+#include <sys/malloc.h>
 
 uint_t zfs_putpage_key;
 #endif
@@ -2754,7 +2755,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int *ncookies, off_t
 #endif
 #ifdef __NetBSD__
 		ncooks = uio->uio_resid / _DIRENT_MINSIZE(odp);
-		cooks = kmem_alloc(ncooks * sizeof(off_t), KM_SLEEP);
+		cooks = malloc(ncooks * sizeof(off_t), M_TEMP, M_WAITOK);
 #endif
 		*cookies = cooks;
 		*ncookies = ncooks;
@@ -3072,7 +3073,7 @@ zfs_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	vap->va_nodeid = zp->z_id;
 #endif
 #ifdef __NetBSD__
-	vap->va_fsid = vp->v_mount->mnt_stat.f_fsidx.__fsid_val[0];
+	vap->va_fsid = vp->v_mount->mnt_stat.f_fsid;
 	vap->va_nodeid = zp->z_id;
 	/*
 	 * If we are a snapshot mounted under .zfs, return
@@ -5842,6 +5843,9 @@ zfs_netbsd_getpages(void *v)
 
 	if (async) {
 		return 0;
+	}
+	if (*ap->a_count != 1) {
+		return EBUSY;
 	}
 
 	ZFS_ENTER(zfsvfs);

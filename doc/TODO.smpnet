@@ -1,4 +1,4 @@
-$NetBSD: TODO.smpnet,v 1.27 2019/01/21 02:28:25 pgoyette Exp $
+$NetBSD: TODO.smpnet,v 1.29 2019/03/27 06:56:37 ozaki-r Exp $
 
 MP-safe components
 ==================
@@ -203,3 +203,50 @@ Makefile:
 	CPPFLAGS+=	NET_MPSAFE
 
 Failure to do this may result in unpredictable behavior.
+
+IPv4 address initialization atomicity
+-------------------------------------
+
+An IPv4 address is referenced by several data structures: an associated
+interface, its local route, a connected route (if necessary), the global list,
+the global hash table, etc.  These data structures are not updated atomically,
+i.e., there can be inconsistent states on an IPv4 address in the kernel during
+the initialization of an IPv4 address.
+
+One known failure of the issue is that incoming packets destinating to an
+initializing address can loop in the network stack in a short period of time.
+The address initialization creates an local route first and then registers an
+initializing address to the global hash table that is used to decide if an
+incoming packet destinates to the host by checking the destination of the packet
+is registered to the hash table.  So, if the host allows forwaring, an incoming
+packet can match on a local route of an initializing address at ip_output while
+it fails the to-self check described above at ip_input.  Because a matched local
+route points a loopback interface as its destination interface, an incoming
+packet sends to the network stack (ip_input) again, which results in looping.
+The loop stops once an initializing address is registered to the hash table.
+
+One solution of the issue is to reorder the address initialization instructions,
+first register an address to the hash table then create its routes.  Another
+solution is to use the routing table for the to-self check instead of using the
+global hash table, like IPv6.
+
+if_flags
+--------
+
+To avoid data race on if_flags it should be protected by a lock (currently it's
+IFNET_LOCK).  Thus, if_flags should not be accessed on packet processing to
+avoid performance degradation by lock contentions.  Traditionally IFF_RUNNING,
+IFF_UP and IFF_OACTIVE flags of if_flags are checked on packet processing.  If
+you make a driver MP-safe you must remove such checks.
+
+IFF_ALLMULTI can be set/unset via if_mcast_op.  To protect updates of the flag,
+we had added IFNET_LOCK around if_mcast_op.  However that was not a good
+approach because if_mcast_op is typically called in the middle of a call path
+and holding IFNET_LOCK such places is problematic.  Actually a deadlock is
+observed.  Probably we should remove IFNET_LOCK and manage IFF_ALLMULTI
+somewhere other than if_flags, for example ethercom or driver itself (or a
+common driver framework once it appears).  Such a change is feasible because
+IFF_ALLMULTI is only set/unset by a driver and not accessed from any common
+components such as network protocols.
+
+Also IFF_PROMISC is checked in ether_input and we should get rid of it somehow.

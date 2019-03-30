@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1639 2019/02/26 07:31:49 rin Exp $
+# $NetBSD: mi,v 1.1642 2019/03/26 12:22:07 pgoyette Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -1757,7 +1757,9 @@
 ./usr/share/man/cat4/spkr.0			man-sys-catman		.cat
 ./usr/share/man/cat4/spp.0			man-obsolete		obsolete
 ./usr/share/man/cat4/sqphy.0			man-sys-catman		.cat
+./usr/share/man/cat4/srt.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ss.0			man-sys-catman		.cat
+./usr/share/man/cat4/ssdfb.0			man-sys-catman		.cat
 ./usr/share/man/cat4/st.0			man-sys-catman		.cat
 ./usr/share/man/cat4/stderr.0			man-sys-catman		.cat
 ./usr/share/man/cat4/stdin.0			man-sys-catman		.cat
@@ -2447,7 +2449,7 @@
 ./usr/share/man/cat8/compat_ibcs2.0		man-obsolete		obsolete
 ./usr/share/man/cat8/compat_linux.0		man-sys-catman		.cat
 ./usr/share/man/cat8/compat_netbsd32.0		man-sys-catman		.cat
-./usr/share/man/cat8/compat_osf1.0		man-sys-catman		.cat
+./usr/share/man/cat8/compat_osf1.0		man-obsolete		obsolete
 ./usr/share/man/cat8/compat_pecoff.0		man-obsolete		obsolete
 ./usr/share/man/cat8/compat_sco.0		man-obsolete		obsolete
 ./usr/share/man/cat8/compat_solaris.0		man-obsolete		obsolete
@@ -4845,7 +4847,9 @@
 ./usr/share/man/html4/spif.html			man-sys-htmlman		html
 ./usr/share/man/html4/spkr.html			man-sys-htmlman		html
 ./usr/share/man/html4/sqphy.html		man-sys-htmlman		html
+./usr/share/man/html4/srt.html			man-sys-htmlman		html
 ./usr/share/man/html4/ss.html			man-sys-htmlman		html
+./usr/share/man/html4/ssdfb.html		man-sys-htmlman		html
 ./usr/share/man/html4/st.html			man-sys-htmlman		html
 ./usr/share/man/html4/stderr.html		man-sys-htmlman		html
 ./usr/share/man/html4/stdin.html		man-sys-htmlman		html
@@ -5465,7 +5469,7 @@
 ./usr/share/man/html8/compat_ibcs2.html		man-obsolete		obsolete
 ./usr/share/man/html8/compat_linux.html		man-sys-htmlman		html
 ./usr/share/man/html8/compat_netbsd32.html	man-sys-htmlman		html
-./usr/share/man/html8/compat_osf1.html		man-sys-htmlman		html
+./usr/share/man/html8/compat_osf1.html		man-obsolete		obsolete
 ./usr/share/man/html8/compat_pecoff.html	man-obsolete		obsolete
 ./usr/share/man/html8/compat_sco.html		man-obsolete		obsolete
 ./usr/share/man/html8/compat_solaris.html	man-obsolete		obsolete
@@ -7847,7 +7851,9 @@
 ./usr/share/man/man4/spkr.4			man-sys-man		.man
 ./usr/share/man/man4/spp.4			man-obsolete		obsolete
 ./usr/share/man/man4/sqphy.4			man-sys-man		.man
+./usr/share/man/man4/srt.4			man-sys-man		.man
 ./usr/share/man/man4/ss.4			man-sys-man		.man
+./usr/share/man/man4/ssdfb.4			man-sys-man		.man
 ./usr/share/man/man4/st.4			man-sys-man		.man
 ./usr/share/man/man4/stderr.4			man-sys-man		.man
 ./usr/share/man/man4/stdin.4			man-sys-man		.man
@@ -8536,7 +8542,7 @@
 ./usr/share/man/man8/compat_ibcs2.8		man-obsolete		obsolete
 ./usr/share/man/man8/compat_linux.8		man-sys-man		.man
 ./usr/share/man/man8/compat_netbsd32.8		man-sys-man		.man
-./usr/share/man/man8/compat_osf1.8		man-sys-man		.man
+./usr/share/man/man8/compat_osf1.8		man-obsolete		obsolete
 ./usr/share/man/man8/compat_pecoff.8		man-obsolete		obsolete
 ./usr/share/man/man8/compat_sco.8		man-obsolete		obsolete
 ./usr/share/man/man8/compat_solaris.8		man-obsolete		obsolete

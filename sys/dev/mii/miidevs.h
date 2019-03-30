@@ -1,10 +1,10 @@
-/*	$NetBSD: miidevs.h,v 1.147 2019/03/15 04:00:29 msaitoh Exp $	*/
+/*	$NetBSD: miidevs.h,v 1.149 2019/03/25 11:44:10 msaitoh Exp $	*/
 
 /*
  * THIS FILE AUTOMATICALLY GENERATED.  DO NOT EDIT.
  *
  * generated from:
- *	NetBSD: miidevs,v 1.149 2019/03/15 04:00:06 msaitoh Exp
+ *	NetBSD: miidevs,v 1.151 2019/03/25 11:43:50 msaitoh Exp
  */
 
 /*-
@@ -62,6 +62,8 @@
 #define	MII_OUI_DATATRACK	0x0002c6	/* Data Track Technology */
 #define	MII_OUI_CICADA	0x0003f1	/* Cicada Semiconductor */
 #define	MII_OUI_AGERE	0x00053d	/* Agere */
+#define	MII_OUI_BANKSPEED	0x0006b8	/* Bankspeed Pty */
+#define	MII_OUI_NETEXCELL	0x0008bb	/* NetExcell */
 #define	MII_OUI_NETAS	0x0009c3	/* Netas */
 #define	MII_OUI_BROADCOM2	0x000af7	/* Broadcom Corporation */
 #define	MII_OUI_RALINK	0x000c43	/* Ralink Technology */
@@ -290,7 +292,7 @@
 #define	MII_STR_BROADCOM4_BCM5725C	"BCM5725C 1000BASE-T media interface"
 #define	MII_MODEL_xxBROADCOM_ALT1_BCM5906	0x0004
 #define	MII_STR_xxBROADCOM_ALT1_BCM5906	"BCM5906 10/100baseTX media interface"
- 
+
 /* Cicada Semiconductor PHYs (now owned by Vitesse?) */
 #define	MII_MODEL_CICADA_CS8201	0x0001
 #define	MII_STR_CICADA_CS8201	"Cicada CS8201 10/100/1000TX PHY"

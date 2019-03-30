@@ -149,6 +149,8 @@ struct bnx_softc
 	uint32_t		bnx_shared_hw_cfg;
 	uint32_t		bnx_port_hw_cfg;
 
+	int			bnx_flowflags;
+	
 	uint16_t		bus_speed_mhz;		/* PCI bus speed */
 	uint16_t		link_width;		/* PCIe link width */
 	uint16_t		link_speed;		/* PCIe link speed */
@@ -209,6 +211,7 @@ struct bnx_softc
 	uint16_t		tx_cons;
 	uint32_t		tx_prod_bseq;	/* Counts the bytes used.  */
 
+	int			bnx_link;
 	struct callout		bnx_timeout;
 	int			bnx_detaching;
 

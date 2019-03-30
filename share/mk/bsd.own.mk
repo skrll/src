@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1112 2019/03/11 09:20:14 mrg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1119 2019/03/28 15:45:23 christos Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -172,13 +172,7 @@ EXTERNAL_BINUTILS_SUBDIR=	/does/not/exist
 # What version of jemalloc we use (100 is the one
 # built-in to libc from 2005 (pre version 3).
 #
-.if ${MACHINE_CPU} == "x86_64"	|| \
-    ${MACHINE_CPU} == "i386"	|| \
-    ${MACHINE_CPU} == "aarch64"	
 HAVE_JEMALLOC?=		510
-.else
-HAVE_JEMALLOC?=		100
-.endif
 
 .if empty(.MAKEFLAGS:tW:M*-V .OBJDIR*)
 .if defined(MAKEOBJDIRPREFIX) || defined(MAKEOBJDIR)
@@ -1072,7 +1066,7 @@ _MKVARS.yes= \
 	MKGCC MKGDB MKGROFF \
 	MKHESIOD MKHTML \
 	MKIEEEFP MKINET6 MKINFO MKIPFILTER MKISCSI \
-	MKKERBEROS \
+	MKKERBEROS MKLLVMCMDS \
 	MKKMOD \
 	MKLDAP MKLIBSTDCXX MKLINKLIB MKLVM \
 	MKMAN MKMANDOC \
@@ -1233,6 +1227,16 @@ MKXORG_SERVER=yes
 .endif
 
 #
+# MesaLib.old and MesaLib7 go together, and MesaLib is alone.
+#
+HAVE_MESA_VER?=	10
+.if ${HAVE_MESA_VER} == "10"
+EXTERNAL_MESALIB_DIR?=	MesaLib.old
+.else
+EXTERNAL_MESALIB_DIR?=	MesaLib
+.endif
+
+#
 # Force some options off if their dependencies are off.
 #
 
@@ -1292,6 +1296,23 @@ _NEEDS_LIBCXX.x86_64=		yes
 
 .if ${MKLLVM} == "yes" && ${_NEEDS_LIBCXX.${MACHINE_ARCH}:Uno} == "yes"
 MKLIBCXX:=	yes
+.endif
+
+#
+# If we're building X11 (not the default) on x86, and we're using
+# Mesa >= 18, turn on LLVM libs, and maybe turn off building clang.
+#
+.if ${HAVE_MESA_VER} == "18"
+_NEEDS_LLVMLIB.x86_64=		yes
+_NEEDS_LLVMLIB.i386=		yes
+.endif
+
+.if ${MKX11} != "no" && ${_NEEDS_LLVMLIB.${MACHINE_ARCH}:Uno} == "yes"
+MKLLVM:=			yes
+.endif
+
+.if ${HAVE_LLVM:Uno} != "yes"
+MKLLVMCMDS:=			no
 .endif
 
 #
@@ -1464,14 +1485,6 @@ X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
 HAVE_XORG_SERVER_VER?=110
 .else
 HAVE_XORG_SERVER_VER?=120
-.endif
-
-# MesaLib.old and MesaLib7 go together, and MesaLib is alone.
-HAVE_MESA_VER?=	10
-.if ${HAVE_MESA_VER} == "10"
-EXTERNAL_MESALIB_DIR?=	MesaLib.old
-.else
-EXTERNAL_MESALIB_DIR?=	MesaLib
 .endif
 
 .if ${HAVE_XORG_SERVER_VER} == "120"

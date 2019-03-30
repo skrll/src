@@ -1,4 +1,4 @@
-/*	$NetBSD: wd.c,v 1.443 2018/10/24 19:46:44 jdolecek Exp $ */
+/*	$NetBSD: wd.c,v 1.446 2019/03/19 16:56:29 mlelstv Exp $ */
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.  All rights reserved.
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wd.c,v 1.443 2018/10/24 19:46:44 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wd.c,v 1.446 2019/03/19 16:56:29 mlelstv Exp $");
 
 #include "opt_ata.h"
 #include "opt_wd.h"
@@ -309,7 +309,7 @@ wdattach(device_t parent, device_t self, void *aux)
 	struct dk_softc *dksc = &wd->sc_dksc;
 	struct ata_device *adev= aux;
 	int i, blank;
-	char tbuf[41], pbuf[9], c, *p, *q;
+	char tbuf[41],pbuf[9], c, *p, *q;
 	const struct wd_quirk *wdq;
 	int dtype = DKTYPE_UNKNOWN;
 
@@ -321,6 +321,7 @@ wdattach(device_t parent, device_t self, void *aux)
 	SLIST_INIT(&wd->sc_bslist);
 #endif
 	wd->atabus = adev->adev_bustype;
+	wd->inflight = 0;
 	wd->drvp = adev->adev_drv_data;
 
 	wd->drvp->drv_openings = 1;
@@ -359,7 +360,8 @@ wdattach(device_t parent, device_t self, void *aux)
 	}
 	*q++ = '\0';
 
-	aprint_normal_dev(self, "<%s>\n", tbuf);
+	wd->sc_typename = kmem_asprintf("%s", tbuf);
+	aprint_normal_dev(self, "<%s>\n", wd->sc_typename);
 
 	wdq = wd_lookup_quirks(tbuf);
 	if (wdq != NULL)
@@ -534,11 +536,11 @@ wddetach(device_t self, int flags)
 
 	bufq_free(dksc->sc_bufq);
 
-	if (flags & DETACH_POWEROFF)
-		wd_standby(wd, AT_POLL);
-
 	/* Delete all of our wedges. */
 	dkwedge_delall(&dksc->sc_dkdev);
+
+	if (flags & DETACH_POWEROFF)
+		wd_standby(wd, AT_POLL);
 
 	/* Detach from the disk list. */
 	disk_detach(&dksc->sc_dkdev);
@@ -555,6 +557,10 @@ wddetach(device_t self, int flags)
 	}
 	wd->sc_bscount = 0;
 #endif
+	if (wd->sc_typename != NULL) {
+		kmem_free(wd->sc_typename, strlen(wd->sc_typename) + 1);
+		wd->sc_typename = NULL;
+	}
 
 	pmf_device_deregister(self);
 
@@ -724,6 +730,7 @@ wdstart1(struct wd_softc *wd, struct buf *bp, struct ata_xfer *xfer)
 		xfer->c_bio.flags |= ATA_FUA;
 	}
 
+	wd->inflight++;
 	switch (wd->atabus->ata_bio(wd->drvp, xfer)) {
 	case ATACMD_TRY_AGAIN:
 		panic("wdstart1: try again");
@@ -744,10 +751,25 @@ wd_diskstart(device_t dev, struct buf *bp)
 	struct dk_softc *dksc = &wd->sc_dksc;
 #endif
 	struct ata_xfer *xfer;
+	struct ata_channel *chp;
+	unsigned openings;
 
 	mutex_enter(&wd->sc_lock);
 
-	xfer = ata_get_xfer(wd->drvp->chnl_softc, false);
+	chp = wd->drvp->chnl_softc;
+
+	ata_channel_lock(chp);
+	openings = ata_queue_openings(chp);
+	ata_channel_unlock(chp);
+
+	openings = uimin(openings, wd->drvp->drv_openings);
+
+	if (wd->inflight >= openings) {
+		mutex_exit(&wd->sc_lock);
+		return EAGAIN;
+	}
+
+	xfer = ata_get_xfer(chp, false);
 	if (xfer == NULL) {
 		ATADEBUG_PRINT(("wd_diskstart %s no xfer\n",
 		    dksc->sc_xname), DEBUG_XFERS);
@@ -947,7 +969,9 @@ noerror:	if ((xfer->c_bio.flags & ATA_CORR) || xfer->c_retries > 0)
 
 	ata_free_xfer(wd->drvp->chnl_softc, xfer);
 
+	wd->inflight--;
 	dk_done(dksc, bp);
+	dk_start(dksc, NULL);
 }
 
 static void
@@ -1608,7 +1632,7 @@ wd_set_geometry(struct wd_softc *wd)
 	if ((wd->sc_flags & WDF_LBA) == 0)
 		dg->dg_ncylinders = wd->sc_params.atap_cylinders;
 
-	disk_set_info(dksc->sc_dev, &dksc->sc_dkdev, NULL);
+	disk_set_info(dksc->sc_dev, &dksc->sc_dkdev, wd->sc_typename);
 }
 
 int
@@ -1729,6 +1753,7 @@ wd_standby(struct wd_softc *wd, int flags)
 	struct ata_xfer *xfer;
 	int error;
 
+	aprint_debug_dev(dksc->sc_dev, "standby immediate\n");
 	xfer = ata_get_xfer(wd->drvp->chnl_softc, true);
 
 	xfer->c_ata_c.r_command = WDCC_STANDBY_IMMED;
@@ -1745,6 +1770,8 @@ wd_standby(struct wd_softc *wd, int flags)
 	if (xfer->c_ata_c.flags & AT_ERROR) {
 		if (xfer->c_ata_c.r_error == WDCE_ABRT) {
 			/* command not supported */
+			aprint_debug_dev(dksc->sc_dev,
+				"standby immediate not supported\n");
 			error = ENODEV;
 			goto out;
 		}
