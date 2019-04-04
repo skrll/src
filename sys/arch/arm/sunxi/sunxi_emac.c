@@ -1123,7 +1123,7 @@ sunxi_emac_setup_resources(struct sunxi_emac_softc *sc)
 	return 0;
 }
 
-static void 
+static void
 sunxi_emac_get_eaddr(struct sunxi_emac_softc *sc, uint8_t *eaddr)
 {
 	uint32_t maclo, machi;

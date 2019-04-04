@@ -409,7 +409,7 @@ gem_attach(struct gem_softc *sc, const uint8_t *enaddr)
 			aprint_debug_dev(sc->sc_dev, "using external PHY\n");
 #endif
 		/* Look for internal PHY if no external PHY was found */
-		if (LIST_EMPTY(&mii->mii_phys) && 
+		if (LIST_EMPTY(&mii->mii_phys) &&
 		    ((sc->sc_mif_config & GEM_MIF_CONFIG_MDI0) ||
 		     (sc->sc_variant == GEM_APPLE_K2_GMAC))) {
 			sc->sc_mif_config &= ~GEM_MIF_CONFIG_PHY_SEL;
@@ -2074,7 +2074,7 @@ gem_eint(struct gem_softc *sc, u_int status)
 	}
 	snprintb(bits, sizeof(bits), GEM_INTR_BITS, status);
 	printf("%s: status=%s\n", device_xname(sc->sc_dev), bits);
-		
+
 	return (1);
 }
 
@@ -2186,7 +2186,7 @@ gem_intr(void *v)
 #endif
 	DPRINTF(sc, ("%s: gem_intr: cplt 0x%x status %s\n",
 		device_xname(sc->sc_dev), (status >> 19), bits));
-		
+
 
 	if ((status & (GEM_INTR_RX_TAG_ERR | GEM_INTR_BERR)) != 0)
 		r |= gem_eint(sc, status);

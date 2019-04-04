@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_x86.h,v 1.8 2019/03/03 07:01:09 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86.h,v 1.10 2019/04/03 19:10:58 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -95,7 +95,8 @@
 #define NVMM_X64_MSR_SYSENTER_ESP	7
 #define NVMM_X64_MSR_SYSENTER_EIP	8
 #define NVMM_X64_MSR_PAT		9
-#define NVMM_X64_NMSR			10
+#define NVMM_X64_MSR_TSC		10
+#define NVMM_X64_NMSR			11
 
 /* Misc. */
 #define NVMM_X64_MISC_INT_SHADOW	0
@@ -185,6 +186,7 @@ extern const struct nvmm_x64_state nvmm_x86_reset_state;
 extern const struct nvmm_x86_cpuid_mask nvmm_cpuid_00000001;
 extern const struct nvmm_x86_cpuid_mask nvmm_cpuid_00000007;
 extern const struct nvmm_x86_cpuid_mask nvmm_cpuid_80000001;
+bool nvmm_x86_pat_validate(uint64_t);
 #endif
 
 #endif /* ASM_NVMM */

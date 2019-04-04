@@ -230,8 +230,8 @@ struct pq3etsec_softc {
 	uint64_t sc_mii_last_tick;
 
 	struct ifqueue sc_rx_bufcache;
-	struct pq3etsec_mapcache *sc_rx_mapcache; 
-	struct pq3etsec_mapcache *sc_tx_mapcache; 
+	struct pq3etsec_mapcache *sc_rx_mapcache;
+	struct pq3etsec_mapcache *sc_tx_mapcache;
 
 	/* Interrupt Coalescing parameters */
 	int sc_ic_rx_time;
@@ -659,14 +659,14 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 		goto fail_2;
 	}
 
-	error = pq3etsec_mapcache_create(sc, &sc->sc_rx_mapcache, 
+	error = pq3etsec_mapcache_create(sc, &sc->sc_rx_mapcache,
 	    ETSEC_MAXRXMBUFS, MCLBYTES, ETSEC_NRXSEGS);
 	if (error) {
 		aprint_error(": failed to allocate rx dmamaps: %d\n", error);
 		goto fail_3;
 	}
 
-	error = pq3etsec_mapcache_create(sc, &sc->sc_tx_mapcache, 
+	error = pq3etsec_mapcache_create(sc, &sc->sc_tx_mapcache,
 	    ETSEC_MAXTXMBUFS, MCLBYTES, ETSEC_NTXSEGS);
 	if (error) {
 		aprint_error(": failed to allocate tx dmamaps: %d\n", error);
@@ -713,7 +713,7 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	 */
 	if (mdio == CPUNODECF_MDIO_DEFAULT) {
 		aprint_normal("\n");
-		cfdata_t mdio_cf = config_search_ia(pq3mdio_find, self, NULL, cna); 
+		cfdata_t mdio_cf = config_search_ia(pq3mdio_find, self, NULL, cna);
 		if (mdio_cf != NULL) {
 			sc->sc_mdio_dev = config_attach(self, mdio_cf, cna, NULL);
 		}
@@ -1241,7 +1241,7 @@ pq3etsec_rxq_desc_presync(
 	volatile struct rxbd *rxbd,
 	size_t count)
 {
-	bus_dmamap_sync(sc->sc_dmat, rxq->rxq_descmap, 
+	bus_dmamap_sync(sc->sc_dmat, rxq->rxq_descmap,
 	    (rxbd - rxq->rxq_first) * sizeof(*rxbd), count * sizeof(*rxbd),
 	    BUS_DMASYNC_PREREAD|BUS_DMASYNC_PREWRITE);
 }
@@ -1253,7 +1253,7 @@ pq3etsec_rxq_desc_postsync(
 	volatile struct rxbd *rxbd,
 	size_t count)
 {
-	bus_dmamap_sync(sc->sc_dmat, rxq->rxq_descmap, 
+	bus_dmamap_sync(sc->sc_dmat, rxq->rxq_descmap,
 	    (rxbd - rxq->rxq_first) * sizeof(*rxbd), count * sizeof(*rxbd),
 	    BUS_DMASYNC_POSTREAD|BUS_DMASYNC_POSTWRITE);
 }
@@ -1265,7 +1265,7 @@ pq3etsec_txq_desc_presync(
 	volatile struct txbd *txbd,
 	size_t count)
 {
-	bus_dmamap_sync(sc->sc_dmat, txq->txq_descmap, 
+	bus_dmamap_sync(sc->sc_dmat, txq->txq_descmap,
 	    (txbd - txq->txq_first) * sizeof(*txbd), count * sizeof(*txbd),
 	    BUS_DMASYNC_PREREAD|BUS_DMASYNC_PREWRITE);
 }
@@ -1277,7 +1277,7 @@ pq3etsec_txq_desc_postsync(
 	volatile struct txbd *txbd,
 	size_t count)
 {
-	bus_dmamap_sync(sc->sc_dmat, txq->txq_descmap, 
+	bus_dmamap_sync(sc->sc_dmat, txq->txq_descmap,
 	    (txbd - txq->txq_first) * sizeof(*txbd), count * sizeof(*txbd),
 	    BUS_DMASYNC_POSTREAD|BUS_DMASYNC_POSTWRITE);
 }
@@ -1738,7 +1738,7 @@ pq3etsec_rxq_purge(
 				m = m0;
 			}
 		}
-			
+
 	}
 
 	rxq->rxq_mconsumer = NULL;
@@ -2380,7 +2380,7 @@ pq3etsec_tx_intr(void *arg)
 	etsec_write(sc, IEVENT, ievent);	/* write 1 to clear */
 
 #if 0
-	aprint_normal_dev(sc->sc_dev, "%s: ievent=%#x imask=%#x\n", 
+	aprint_normal_dev(sc->sc_dev, "%s: ievent=%#x imask=%#x\n",
 	    __func__, ievent, etsec_read(sc, IMASK));
 #endif
 
@@ -2452,7 +2452,7 @@ pq3etsec_error_intr(void *arg)
 			return rv;
 		}
 #if 0
-		aprint_normal_dev(sc->sc_dev, "%s: ievent=%#x imask=%#x\n", 
+		aprint_normal_dev(sc->sc_dev, "%s: ievent=%#x imask=%#x\n",
 		    __func__, ievent, etsec_read(sc, IMASK));
 #endif
 
@@ -2542,7 +2542,7 @@ pq3etsec_soft_intr(void *arg)
 
 	if (soft_flags & (SOFT_RXINTR|SOFT_RXBSY)) {
 		/*
-		 * Let's consume 
+		 * Let's consume
 		 */
 		pq3etsec_rxq_consume(sc, &sc->sc_rxq);
 		imask |= IEVENT_RXF;

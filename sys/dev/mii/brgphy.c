@@ -916,9 +916,9 @@ brgphy_reset(struct mii_softc *sc)
 			}
 
 			/* Increase TX signal amplitude */
-			if ((chip_id == BNX_CHIP_ID_5708_A0) ||
-			    (chip_id == BNX_CHIP_ID_5708_B0) ||
-			    (chip_id == BNX_CHIP_ID_5708_B1)) {
+			if ((_BNX_CHIP_ID(bsc->sc_chipid) == BNX_CHIP_ID_5708_A0) ||
+			    (_BNX_CHIP_ID(bsc->sc_chipid) == BNX_CHIP_ID_5708_B0) ||
+			    (_BNX_CHIP_ID(bsc->sc_chipid) == BNX_CHIP_ID_5708_B1)) {
 				PHY_WRITE(sc, BRGPHY_5708S_BLOCK_ADDR,
 					BRGPHY_5708S_TX_MISC_PG5);
 				PHY_READ(sc, BRGPHY_5708S_PG5_TXACTL1, &reg);

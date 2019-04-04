@@ -342,7 +342,7 @@ lan9118_intr(void *arg)
 		if (int_sts & LAN9118_INT_RSFL) /* RX Status FIFO Level */
 			lan9118_rxintr(sc);
 	}
- 
+
 	if (handled)
 		if_schedule_deferred_start(ifp);
 

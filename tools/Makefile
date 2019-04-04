@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.199 2019/03/20 22:51:37 mrg Exp $
+#	$NetBSD: Makefile,v 1.201 2019/04/03 15:22:05 joerg Exp $
 
 .include <bsd.own.mk>
 .include <bsd.endian.mk>
@@ -121,19 +121,21 @@ SUBDIR += .WAIT texinfo \
 .endif
 SUBDIR+= stat .WAIT config xz-bin
 
-.if ${MKLLVM} != "no"
+.if ${MKLLVM} != "no" || ${MKLLVMRT} != "no"
 SUBDIR+= \
 	llvm .WAIT \
 	llvm-lib/libLLVMDemangle llvm-lib/libLLVMSupport llvm-lib/libLLVMTableGen .WAIT \
-	llvm-tblgen llvm-clang-tblgen
+	llvm-tblgen
+.endif
+.if ${MKLLVM} != "no"
+SUBDIR+= \
+	llvm-clang-tblgen
 .endif
 .if ${MKLLVM} != "no" && !defined(EXTERNAL_TOOLCHAIN)
 SUBDIR+= \
 	.WAIT llvm-include .WAIT \
-	llvm-lib
-. if ${MKLLVMCMDS} != "no"
-SUBDIR+=	.WAIT llvm-clang
-. endif
+	llvm-lib .WAIT \
+	llvm-clang
 . if ${MKLLD} != "no"
 SUBDIR+=	llvm-lld
 . endif

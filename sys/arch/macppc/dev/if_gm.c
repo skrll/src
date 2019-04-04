@@ -249,7 +249,7 @@ gmac_attach(device_t parent, device_t self, void *aux)
 	if_deferred_start_init(ifp, NULL);
 	ether_ifattach(ifp, laddr);
 	rnd_attach_source(&sc->sc_rnd_source, xname, RND_TYPE_NET,
-			  RND_FLAG_DEFAULT); 
+			  RND_FLAG_DEFAULT);
 }
 
 u_int

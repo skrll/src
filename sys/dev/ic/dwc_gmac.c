@@ -423,7 +423,7 @@ dwc_gmac_miibus_read_reg(device_t self, int phy, int reg, uint16_t *val)
 
 	if (cnt >= 1000)
 		return ETIMEDOUT;
-	
+
 	return 0;
 }
 

@@ -2084,7 +2084,7 @@ bge_chipinit(struct bge_softc *sc)
 		/* Restore */
 		CSR_WRITE_4(sc, BGE_MODE_CTL, mode_ctl);
 	}
-	
+
 	if (BGE_IS_57765_FAMILY(sc)) {
 		if (sc->bge_chipid == BGE_CHIPID_BCM57765_A0) {
 			/* Save */
@@ -2094,7 +2094,7 @@ bge_chipinit(struct bge_softc *sc)
 			reg = mode_ctl & ~BGE_MODECTL_PCIE_TLPADDRMASK;
 			CSR_WRITE_4(sc, BGE_MODE_CTL,
 			    reg | BGE_MODECTL_PCIE_TLPADDR1);
-		
+
 			/* Control TLP */
 			reg = CSR_READ_4(sc, BGE_TLP_CONTROL_REG +
 			    BGE_TLP_PHYCTL5);
@@ -4060,7 +4060,7 @@ bge_reset(struct bge_softc *sc)
 		mac_mode_mask |= BGE_MACMODE_APE_RX_EN | BGE_MACMODE_APE_TX_EN;
 	/* Keep mac_mode_mask's bits of BGE_MAC_MODE register into mac_mode */
 	mac_mode = CSR_READ_4(sc, BGE_MAC_MODE) & mac_mode_mask;
-	
+
 	if (BGE_IS_575X_PLUS(sc) && !BGE_IS_5714_FAMILY(sc) &&
 	    (BGE_ASICREV(sc->bge_chipid) != BGE_ASICREV_BCM5906)) {
 	    	if (sc->bge_flags & BGEF_PCIE)
@@ -4270,7 +4270,7 @@ bge_reset(struct bge_softc *sc)
 	/* 57XX step 21 */
 	if (BGE_CHIPREV(sc->bge_chipid) == BGE_CHIPREV_5704_BX) {
 		pcireg_t msidata;
-	
+
 		msidata = pci_conf_read(sc->sc_pc, sc->sc_pcitag,
 		    BGE_PCI_MSI_DATA);
 		msidata |= ((1 << 13 | 1 << 12 | 1 << 10) << 16);
@@ -5408,7 +5408,7 @@ bge_start(struct ifnet *ifp)
 			m_freem(m_head);
 			continue;
 		}
-				
+
 		/* now we are committed to transmit the packet */
 		IFQ_DEQUEUE(&ifp->if_snd, m);
 		KASSERT(m == m_head);
@@ -5866,7 +5866,7 @@ bge_watchdog(struct ifnet *ifp)
 			 * the condition to clear.
 			 */
 			CSR_WRITE_4(sc, BGE_RX_STS, status);
-			ifp->if_timer = 5; 
+			ifp->if_timer = 5;
 			return;
 		} else if ((status & BGE_RXSTAT_RCVD_XOFF) != 0 &&
 		    (status & BGE_RXSTAT_RCVD_XON) != 0) {
@@ -5875,12 +5875,12 @@ bge_watchdog(struct ifnet *ifp)
 			 * the condition to clear.
 			 */
 			CSR_WRITE_4(sc, BGE_RX_STS, status);
-			ifp->if_timer = 5; 
-			return;       
+			ifp->if_timer = 5;
+			return;
 		}
 		/*
-		 * Any other condition is unexpected and the controller 
-		 * should be reset.  
+		 * Any other condition is unexpected and the controller
+		 * should be reset.
 		 */
 	}
 

@@ -103,7 +103,7 @@ struct npe_softc {
 	struct ethercom	sc_ethercom;
 	uint8_t		sc_enaddr[ETHER_ADDR_LEN];
 	struct mii_data	sc_mii;
-	bus_space_tag_t	sc_iot;		
+	bus_space_tag_t	sc_iot;
 	bus_dma_tag_t	sc_dt;
 	bus_space_handle_t sc_ioh;	/* MAC register window */
 	bus_space_handle_t sc_miih;	/* MII register window */
@@ -1385,7 +1385,7 @@ npestop(struct ifnet *ifp, int disable)
 
 	/*
 	 * The MAC core rx/tx disable may leave the MAC hardware in an
-	 * unpredictable state. A hw reset is executed before resetting 
+	 * unpredictable state. A hw reset is executed before resetting
 	 * all the MAC parameters to a known value.
 	 */
 	WR4(sc, NPE_MAC_CORE_CNTRL, NPE_CORE_RESET);

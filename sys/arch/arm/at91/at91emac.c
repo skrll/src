@@ -228,8 +228,8 @@ emac_intr(void *arg)
 	}
 
 	isr = EMAC_READ(ETH_ISR) & imr;
-#ifdef EMAC_DEBUG 
-	uint32_t rsr = 
+#ifdef EMAC_DEBUG
+	uint32_t rsr =
 #endif
 	EMAC_READ(ETH_RSR);		// get receive status register
 
@@ -251,7 +251,7 @@ emac_intr(void *arg)
 		ifp->if_ipackets++;
 		DPRINTFN(1,("%s: receive overrun\n", __FUNCTION__));
 	}
-	
+
 	if (isr & ETH_ISR_RCOM) {			// packet has been received!
 		uint32_t nfo;
 		// @@@ if memory is NOT coherent, then we're in trouble @@@@
@@ -271,10 +271,10 @@ emac_intr(void *arg)
 			if (m != NULL && (m->m_flags & M_EXT)) {
 				bus_dmamap_sync(sc->sc_dmat, sc->rxq[bi].m_dmamap, 0,
 						MCLBYTES, BUS_DMASYNC_POSTREAD);
-				bus_dmamap_unload(sc->sc_dmat, 
+				bus_dmamap_unload(sc->sc_dmat,
 					sc->rxq[bi].m_dmamap);
 				m_set_rcvif(sc->rxq[bi].m, ifp);
-				sc->rxq[bi].m->m_pkthdr.len = 
+				sc->rxq[bi].m->m_pkthdr.len =
 					sc->rxq[bi].m->m_len = fl;
 				DPRINTFN(2,("received %u bytes packet\n", fl));
 				if_percpuq_enqueue(ifp->if_percpuq, sc->rxq[bi].m);
@@ -282,8 +282,8 @@ emac_intr(void *arg)
 					m_adj(m, mtod(m, intptr_t) & 3);
 				}
 				sc->rxq[bi].m = m;
-				bus_dmamap_load(sc->sc_dmat, 
-					sc->rxq[bi].m_dmamap, 
+				bus_dmamap_load(sc->sc_dmat,
+					sc->rxq[bi].m_dmamap,
 					m->m_ext.ext_buf, MCLBYTES,
 					NULL, BUS_DMA_NOWAIT);
 				bus_dmamap_sync(sc->sc_dmat, sc->rxq[bi].m_dmamap, 0,
@@ -300,7 +300,7 @@ emac_intr(void *arg)
 					m_freem(m);
 				}
 				ifp->if_ierrors++;
-			} 
+			}
 			sc->rxqi++;
 		}
 //		bus_dmamap_sync(sc->sc_dmat, sc->rbqpage_dmamap, 0, sc->rbqlen, BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
@@ -418,8 +418,8 @@ emac_init(struct emac_softc *sc)
 		if (mtod(m, intptr_t) & 3) {
 			m_adj(m, mtod(m, intptr_t) & 3);
 		}
-		err = bus_dmamap_load(sc->sc_dmat, sc->rxq[i].m_dmamap, 
-			m->m_ext.ext_buf, MCLBYTES, NULL, 
+		err = bus_dmamap_load(sc->sc_dmat, sc->rxq[i].m_dmamap,
+			m->m_ext.ext_buf, MCLBYTES, NULL,
 			BUS_DMA_WAITOK);
 		if (err) {
 			panic("%s: dmamap_load failed: %i\n", __FUNCTION__, err);
@@ -442,7 +442,7 @@ emac_init(struct emac_softc *sc)
 	}
 
 	/* Program each queue's start addr, cur addr, and len registers
-	 * with the physical addresses. 
+	 * with the physical addresses.
 	 */
 	bus_dmamap_sync(sc->sc_dmat, sc->rbqpage_dmamap, 0, sc->rbqlen,
 			 BUS_DMASYNC_PREREAD);
@@ -546,7 +546,7 @@ emac_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 	return 0;
 }
 
-	
+
 void
 emac_statchg(struct ifnet *ifp)
 {
@@ -576,7 +576,7 @@ emac_tick(void *arg)
 	ifp->if_collisions += EMAC_READ(ETH_SCOL) + EMAC_READ(ETH_MCOL);
 	/* These misses are ok, they will happen if the RAM/CPU can't keep up */
 	misses = EMAC_READ(ETH_DRFC);
-	if (misses > 0) 
+	if (misses > 0)
 		printf("%s: %d rx misses\n", device_xname(sc->sc_dev), misses);
 
 	s = splnet();
@@ -623,7 +623,7 @@ emac_ifstart(struct ifnet *ifp)
 	bus_dma_segment_t *segs;
 	int s, bi, err, nsegs;
 
-	s = splnet();	
+	s = splnet();
 start:
 	if (emac_gctx(sc) == 0) {
 		/* Enable transmit-buffer-free interrupt */
@@ -644,13 +644,13 @@ start:
 //more:
 	bi = (sc->txqi + sc->txqc) % TX_QLEN;
 	if ((err = bus_dmamap_load_mbuf(sc->sc_dmat, sc->txq[bi].m_dmamap, m,
-		BUS_DMA_NOWAIT)) || 
+		BUS_DMA_NOWAIT)) ||
 		sc->txq[bi].m_dmamap->dm_segs[0].ds_addr & 0x3 ||
 		sc->txq[bi].m_dmamap->dm_nsegs > 1) {
 		/* Copy entire mbuf chain to new single */
 		struct mbuf *mn;
 
-		if (err == 0) 
+		if (err == 0)
 			bus_dmamap_unload(sc->sc_dmat, sc->txq[bi].m_dmamap);
 
 		MGETHDR(mn, M_DONTWAIT, MT_DATA);
@@ -692,8 +692,8 @@ start:
 	}
 #endif
 
-	bus_dmamap_sync(sc->sc_dmat, sc->txq[bi].m_dmamap, 0, 
-		sc->txq[bi].m_dmamap->dm_mapsize, 
+	bus_dmamap_sync(sc->sc_dmat, sc->txq[bi].m_dmamap, 0,
+		sc->txq[bi].m_dmamap->dm_mapsize,
 		BUS_DMASYNC_PREWRITE);
 
 	EMAC_WRITE(ETH_TAR, segs->ds_addr);

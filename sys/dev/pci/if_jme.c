@@ -2009,7 +2009,7 @@ jme_eeprom_macaddr(struct jme_softc *sc)
 		}
 		if (fup & JME_EEPROM_DESC_END)
 			break;
-		
+
 		/* Try next eeprom descriptor. */
 		offset += JME_EEPROM_DESC_BYTES;
 	} while (match != ETHER_ADDR_LEN && offset < JME_EEPROM_END);

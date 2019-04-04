@@ -606,7 +606,7 @@ Maintainer:	Jason Evans
 Archive Site:	https://github.com/jemalloc/jemalloc
 Home Page:	https://jemalloc.net
 Date:		2019-03-04
-Mailing List:	
+Mailing List:
 Responsible:	christos
 License:	BSD
 Location:	external/bsd/jemalloc

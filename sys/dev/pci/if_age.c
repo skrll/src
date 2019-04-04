@@ -1108,7 +1108,7 @@ age_shutdown(device_t self, int howto)
 	age_stop(ifp, 1);
 
 	return true;
-}      
+}
 
 
 static int
@@ -1278,7 +1278,7 @@ age_encap(struct age_softc *sc, struct mbuf **m_head)
 		sc->age_cdata.age_tx_cnt++;
 		if (i == (nsegs - 1))
 			break;
-	
+
 		/* sync this descriptor and go to the next one */
 		bus_dmamap_sync(sc->sc_dmat, sc->age_cdata.age_tx_ring_map,
 		    prod * sizeof(struct tx_desc), sizeof(struct tx_desc),

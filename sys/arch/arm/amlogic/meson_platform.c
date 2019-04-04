@@ -244,7 +244,7 @@ meson8b_platform_device_register(device_t self, void *aux)
 				strcat(boot_args, rootarg);
 		}
 	}
-			
+
 	meson_platform_device_register(self, aux);
 }
 #endif

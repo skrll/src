@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_x86.c,v 1.3 2019/03/03 07:01:09 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86.c,v 1.5 2019/04/03 19:10:58 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86.c,v 1.3 2019/03/03 07:01:09 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86.c,v 1.5 2019/04/03 19:10:58 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -210,6 +210,7 @@ const struct nvmm_x64_state nvmm_x86_reset_state = {
 		    PATENTRY(2, PAT_UCMINUS) | PATENTRY(3, PAT_UC) |
 		    PATENTRY(4, PAT_WB) | PATENTRY(5, PAT_WT) |
 		    PATENTRY(6, PAT_UCMINUS) | PATENTRY(7, PAT_UC),
+		[NVMM_X64_MSR_TSC] = 0,
 	},
 
 	.misc = {
@@ -312,3 +313,19 @@ const struct nvmm_x86_cpuid_mask nvmm_cpuid_80000001 = {
 	    CPUID_EM64T | CPUID_3DNOW2 |
 	    CPUID_3DNOW
 };
+
+bool
+nvmm_x86_pat_validate(uint64_t val)
+{
+	uint8_t *pat = (uint8_t *)&val;
+	size_t i;
+
+	for (i = 0; i < 8; i++) {
+		if (__predict_false(pat[i] & ~__BITS(2,0)))
+			return false;
+		if (__predict_false(pat[i] == 2 || pat[i] == 3))
+			return false;
+	}
+
+	return true;
+}

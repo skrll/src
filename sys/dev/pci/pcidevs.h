@@ -6841,7 +6841,7 @@
 #define	PCI_PRODUCT_RALINK_RT5390_3	0x539a		/* RT5390 */
 #define	PCI_PRODUCT_RALINK_RT5390_4	0x539b		/* RT5390 */
 #define	PCI_PRODUCT_RALINK_RT5390_5	0x539f		/* RT5390 */
-	
+
 /* RATOC Systems products */
 #define	PCI_PRODUCT_RATOC_REXPCI31	0x0853		/* REX PCI-31/33 SCSI */
 
@@ -6929,7 +6929,7 @@
 
 /* Rockchip products */
 #define	PCI_PRODUCT_ROCKCHIP_RK3399_RC	0x0100		/* RK3399 Root Complex */
- 
+
 /* S2io products */
 #define	PCI_PRODUCT_S2IO_XFRAME	0x5831		/* Xframe 10 Gigabit Ethernet Adapter */
 #define	PCI_PRODUCT_S2IO_XFRAME2	0x5832		/* Xframe2 10 Gigabit Ethernet Adapter */
