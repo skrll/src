@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_disk.c,v 1.124 2019/04/03 22:10:52 christos Exp $	*/
+/*	$NetBSD: subr_disk.c,v 1.126 2019/04/04 11:49:06 christos Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1999, 2000, 2009 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_disk.c,v 1.124 2019/04/03 22:10:52 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_disk.c,v 1.126 2019/04/04 11:49:06 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -744,7 +744,7 @@ disk_set_info(device_t dev, struct disk *dk, const char *type)
 #ifndef __HAVE_SETDISKLABEL
 
 #ifdef DEBUG
-#define DPRINTF(a, ...) printf(a, __VA_ARGS__)
+#define DPRINTF(a, ...) printf(a, ##__VA_ARGS__)
 #else
 #define DPRINTF(a, ...) __nothing
 #endif
@@ -787,7 +787,7 @@ setdisklabel(struct disklabel *olp, struct disklabel *nlp, u_long openmask,
 		i = ffs(openmask) - 1;
 		openmask &= ~(1 << i);
 		if (i >= nlp->d_npartitions) {
-			DPRINTF("partition not found\n");
+			DPRINTF("%s: partition not found\n", __func__);
 			return EBUSY;
 		}
 		opp = &olp->d_partitions[i];
