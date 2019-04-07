@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1123 2019/04/03 21:41:21 christos Exp $
+#	$NetBSD: bsd.own.mk,v 1.1128 2019/04/05 15:58:17 maya Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -59,7 +59,6 @@ TOOLCHAIN_MISSING?=	no
 # What GCC is used?
 #
 .if \
-    ${MACHINE_CPU} == "hppa"	|| \
     ${MACHINE_CPU} == "ia64"	|| \
     ${MACHINE_ARCH} == "powerpc64"
 HAVE_GCC?=	6
@@ -1288,12 +1287,13 @@ MKLIBCXX:=	yes
 .endif
 
 # MesaLib.old and MesaLib7 go together, and MesaLib is alone.
-HAVE_MESA_VER?=	10
+HAVE_MESA_VER?=	18
 .if ${HAVE_MESA_VER} == "10"
 EXTERNAL_MESALIB_DIR?=	MesaLib.old
 .elif ${HAVE_MESA_VER} == "18"
 EXTERNAL_MESALIB_DIR?=	MesaLib
-.  if ${MKX11} != "no"
+.  if ${MKX11} != "no" && \
+    (${MACHINE} == "amd64" || ${MACHINE} == "i386")
 MKLLVMRT:=		yes
 .  endif
 .endif
