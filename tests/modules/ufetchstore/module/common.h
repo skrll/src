@@ -1,11 +1,11 @@
-/*	$NetBSD: drm_copy_netbsd.h,v 1.2 2014/03/18 18:20:43 riastradh Exp $	*/
+/*	$NetBSD: common.h,v 1.1 2019/04/06 03:06:29 thorpej Exp $	*/
 
 /*-
- * Copyright (c) 2013 The NetBSD Foundation, Inc.
+ * Copyright (c) 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Taylor R. Campbell.
+ * by Jason R. Thorpe.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,24 +29,31 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _DRM_DRM_COPY_NETBSD_H_
-#define _DRM_DRM_COPY_NETBSD_H_
+#ifndef _UFETCHSTORE_TESTER_COMMON_H_
+#define	_UFETCHSTORE_TESTER_COMMON_H_
 
-#include <sys/types.h>
-#include <sys/systm.h>
+#define	OP_LOAD		0
+#define	OP_STORE	1
+#define	OP_CAS		2
 
-static inline int
-DRM_COPY_FROM_USER(void *kernel_addr, const void *user_addr, size_t len)
-{
-	/* XXX errno NetBSD->Linux */
-	return -copyin(user_addr, kernel_addr, len);
-}
+struct ufetchstore_test_args {
+	int		pointer_size;
+	int		test_op;
+	int		size;
+	int		fetchstore_error;
+	uint64_t	uaddr64;
+	union {
+		uint8_t  val8;
+		uint16_t val16;
+		uint32_t val32;
+		uint64_t val64;
+	};
+	union {
+		uint8_t  ea_val8;
+		uint16_t ea_val16;
+		uint32_t ea_val32;
+		uint64_t ea_val64;
+	};
+};
 
-static inline int
-DRM_COPY_TO_USER(void *user_addr, const void *kernel_addr, size_t len)
-{
-	/* XXX errno NetBSD->Linux */
-	return -copyout(kernel_addr, user_addr, len);
-}
-
-#endif  /* _DRM_DRM_OS_NETBSD_H_ */
+#endif /* _UFETCHSTORE_TESTER_COMMON_H_ */

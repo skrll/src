@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_fork.c,v 1.206 2019/04/03 08:08:00 kamil Exp $	*/
+/*	$NetBSD: kern_fork.c,v 1.209 2019/04/07 14:50:41 kamil Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2001, 2004, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_fork.c,v 1.206 2019/04/03 08:08:00 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_fork.c,v 1.209 2019/04/07 14:50:41 kamil Exp $");
 
 #include "opt_ktrace.h"
 #include "opt_dtrace.h"
@@ -87,6 +87,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_fork.c,v 1.206 2019/04/03 08:08:00 kamil Exp $"
 #include <sys/ktrace.h>
 #include <sys/sched.h>
 #include <sys/signalvar.h>
+#include <sys/syscall.h>
 #include <sys/kauth.h>
 #include <sys/atomic.h>
 #include <sys/syscallargs.h>
@@ -477,11 +478,11 @@ fork1(struct lwp *l1, int flags, int exitsig, void *stack, size_t stacksize,
 	 * Trace fork(2) and vfork(2)-like events on demand in a debugger.
 	 */
 	tracefork = (p1->p_slflag & (PSL_TRACEFORK|PSL_TRACED)) ==
-	    (PSL_TRACEFORK|PSL_TRACED) && (flags && FORK_PPWAIT) == 0;
+	    (PSL_TRACEFORK|PSL_TRACED) && (flags & FORK_PPWAIT) == 0;
 	tracevfork = (p1->p_slflag & (PSL_TRACEVFORK|PSL_TRACED)) ==
-	    (PSL_TRACEVFORK|PSL_TRACED) && (flags && FORK_PPWAIT) != 0;
+	    (PSL_TRACEVFORK|PSL_TRACED) && (flags & FORK_PPWAIT) != 0;
 	tracevforkdone = (p1->p_slflag & (PSL_TRACEVFORK_DONE|PSL_TRACED)) ==
-	    (PSL_TRACEVFORK_DONE|PSL_TRACED) && (flags && FORK_PPWAIT);
+	    (PSL_TRACEVFORK_DONE|PSL_TRACED) && (flags & FORK_PPWAIT);
 	if (tracefork || tracevfork)
 		proc_changeparent(p2, p1->p_pptr);
 	if (tracefork) {
@@ -609,4 +610,39 @@ fork1(struct lwp *l1, int flags, int exitsig, void *stack, size_t stacksize,
 		mutex_exit(proc_lock);
 
 	return 0;
+}
+
+void
+child_return(void *arg)
+{
+	struct lwp *l = arg;
+	struct proc *p = l->l_proc;
+
+	if (p->p_slflag & PSL_TRACED) {
+		/* Paranoid check */
+		mutex_enter(proc_lock);
+		if (!(p->p_slflag & PSL_TRACED)) {
+			mutex_exit(proc_lock);
+			goto my_tracer_is_gone;
+		}
+
+		mutex_enter(p->p_lock);
+		p->p_xsig = SIGTRAP;
+		p->p_sigctx.ps_faked = true; // XXX
+		p->p_sigctx.ps_info._signo = p->p_xsig;
+		p->p_sigctx.ps_info._code = TRAP_CHLD;
+		sigswitch(0, SIGTRAP, false);
+		// XXX ktrpoint(KTR_PSIG)
+		mutex_exit(p->p_lock);
+	}
+
+my_tracer_is_gone:
+	md_child_return(l);
+
+	/*
+	 * Return SYS_fork for all fork types, including vfork(2) and clone(2).
+	 *
+	 * This approach simplifies the code and avoids extra locking.
+	 */
+	ktrsysret(SYS_fork, 0, 0);
 }
