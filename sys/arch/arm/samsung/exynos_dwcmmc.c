@@ -65,7 +65,7 @@ struct exynos_dwcmmc_softc {
 	u_int			sc_ciu_div;
 };
 
-CFATTACH_DECL_NEW(exynos_dwcmmc, sizeof(struct dwc_mmc_softc),
+CFATTACH_DECL_NEW(exynos_dwcmmc, sizeof(struct exynos_dwcmmc_softc),
 	exynos_dwcmmc_match, exynos_dwcmmc_attach, NULL, NULL);
 
 static const char * const exynos_dwcmmc_compat[] = {
