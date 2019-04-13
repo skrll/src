@@ -1,4 +1,4 @@
-/* $NetBSD: copy.c,v 1.9 2019/04/06 03:06:28 thorpej Exp $ */
+/* $NetBSD: copy.c,v 1.11 2019/04/10 04:10:54 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2007 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: copy.c,v 1.9 2019/04/06 03:06:28 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: copy.c,v 1.11 2019/04/10 04:10:54 thorpej Exp $");
 
 #define	__UFETCHSTORE_PRIVATE
 #define	__UCAS_PRIVATE
@@ -97,38 +97,24 @@ kcopy(const void *src, void *dst, size_t len)
 }
 
 int
-_ucas_32(volatile uint32_t *uaddr, uint32_t old, uint32_t new, uint32_t *ret)
-{
-	*ret = atomic_cas_32(uaddr, old, new);
-}
-
-#ifdef _LP64
-int
-_ucas_64(volatile uint64_t *uaddr, uint64_t old, uint64_t new, uint64_t *ret)
-{
-	*ret = atomic_cas_64(uaddr, old, new);
-}
-#endif /* _LP64 */
-
-int
 _ufetch_8(const uint8_t *uaddr, uint8_t *valp)
 {
 	*valp = *uaddr;
-	return 0
+	return 0;
 }
 
 int
 _ufetch_16(const uint16_t *uaddr, uint16_t *valp)
 {
 	*valp = *uaddr;
-	return 0
+	return 0;
 }
 
 int
 _ufetch_32(const uint32_t *uaddr, uint32_t *valp)
 {
 	*valp = *uaddr;
-	return 0
+	return 0;
 }
 
 #ifdef _LP64
@@ -136,7 +122,7 @@ int
 _ufetch_64(const uint64_t *uaddr, uint64_t *valp)
 {
 	*valp = *uaddr;
-	return 0
+	return 0;
 }
 #endif /* _LP64 */
 
@@ -144,21 +130,21 @@ int
 _ustore_8(uint8_t *uaddr, uint8_t val)
 {
 	*uaddr = val;
-	return 0
+	return 0;
 }
 
 int
 _ustore_16(uint16_t *uaddr, uint16_t val)
 {
 	*uaddr = val;
-	return 0
+	return 0;
 }
 
 int
 _ustore_32(uint32_t *uaddr, uint32_t val)
 {
 	*uaddr = val;
-	return 0
+	return 0;
 }
 
 #ifdef _LP64
@@ -166,6 +152,6 @@ int
 _ustore_64(uint64_t *uaddr, uint64_t val)
 {
 	*uaddr = val;
-	return 0
+	return 0;
 }
 #endif /* _LP64 */

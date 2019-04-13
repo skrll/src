@@ -669,7 +669,7 @@ eap_pwd_process_commit_resp(struct eap_sm *sm, struct eap_pwd_data *data,
 {
 	const u8 *ptr;
 	struct crypto_bignum *cofactor = NULL;
-	struct crypto_ec_point *K = NULL, *point = NULL;
+	struct crypto_ec_point *K = NULL;
 	int res = 0;
 	size_t prime_len, order_len;
 
@@ -688,9 +688,8 @@ eap_pwd_process_commit_resp(struct eap_sm *sm, struct eap_pwd_data *data,
 
 	data->k = crypto_bignum_init();
 	cofactor = crypto_bignum_init();
-	point = crypto_ec_point_init(data->grp->group);
 	K = crypto_ec_point_init(data->grp->group);
-	if (!data->k || !cofactor || !point || !K) {
+	if (!data->k || !cofactor || !K) {
 		wpa_printf(MSG_INFO, "EAP-PWD (server): peer data allocation "
 			   "fail");
 		goto fin;
@@ -704,33 +703,27 @@ eap_pwd_process_commit_resp(struct eap_sm *sm, struct eap_pwd_data *data,
 
 	/* element, x then y, followed by scalar */
 	ptr = payload;
-	data->peer_element = crypto_ec_point_from_bin(data->grp->group, ptr);
+	data->peer_element = eap_pwd_get_element(data->grp, ptr);
 	if (!data->peer_element) {
 		wpa_printf(MSG_INFO, "EAP-PWD (server): setting peer element "
 			   "fail");
 		goto fin;
 	}
 	ptr += prime_len * 2;
-	data->peer_scalar = crypto_bignum_init_set(ptr, order_len);
+	data->peer_scalar = eap_pwd_get_scalar(data->grp, ptr);
 	if (!data->peer_scalar) {
 		wpa_printf(MSG_INFO, "EAP-PWD (server): peer data allocation "
 			   "fail");
 		goto fin;
 	}
 
-	/* check to ensure peer's element is not in a small sub-group */
-	if (!crypto_bignum_is_one(cofactor)) {
-		if (crypto_ec_point_mul(data->grp->group, data->peer_element,
-					cofactor, point) != 0) {
-			wpa_printf(MSG_INFO, "EAP-PWD (server): cannot "
-				   "multiply peer element by order");
-			goto fin;
-		}
-		if (crypto_ec_point_is_at_infinity(data->grp->group, point)) {
-			wpa_printf(MSG_INFO, "EAP-PWD (server): peer element "
-				   "is at infinity!\n");
-			goto fin;
-		}
+	/* detect reflection attacks */
+	if (crypto_bignum_cmp(data->my_scalar, data->peer_scalar) == 0 ||
+	    crypto_ec_point_cmp(data->grp->group, data->my_element,
+				data->peer_element) == 0) {
+		wpa_printf(MSG_INFO,
+			   "EAP-PWD (server): detected reflection attack!");
+		goto fin;
 	}
 
 	/* compute the shared key, k */
@@ -775,7 +768,6 @@ eap_pwd_process_commit_resp(struct eap_sm *sm, struct eap_pwd_data *data,
 
 fin:
 	crypto_ec_point_deinit(K, 1);
-	crypto_ec_point_deinit(point, 1);
 	crypto_bignum_deinit(cofactor, 1);
 
 	if (res)

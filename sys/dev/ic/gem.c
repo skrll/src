@@ -1,4 +1,4 @@
-/*	$NetBSD: gem.c,v 1.114 2019/02/05 06:17:02 msaitoh Exp $ */
+/*	$NetBSD: gem.c,v 1.116 2019/04/11 04:50:47 msaitoh Exp $ */
 
 /*
  *
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.114 2019/02/05 06:17:02 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.116 2019/04/11 04:50:47 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -1044,12 +1044,12 @@ gem_pcs_start(struct gem_softc *sc)
 	bus_space_write_4(t, h, GEM_MII_CONFIG, 0);
 	v = bus_space_read_4(t, h, GEM_MII_ANAR);
 	v |= (GEM_MII_ANEG_SYM_PAUSE | GEM_MII_ANEG_ASYM_PAUSE);
-	if (sc->sc_mii_media == IFM_AUTO)
+	if (IFM_SUBTYPE(sc->sc_mii_media) == IFM_AUTO)
 		v |= (GEM_MII_ANEG_FUL_DUPLX | GEM_MII_ANEG_HLF_DUPLX);
-	else if (sc->sc_mii_media == IFM_FDX) {
+	else if ((IFM_OPTIONS(sc->sc_mii_media) & IFM_FDX) != 0) {
 		v |= GEM_MII_ANEG_FUL_DUPLX;
 		v &= ~GEM_MII_ANEG_HLF_DUPLX;
-	} else if (sc->sc_mii_media == IFM_HDX) {
+	} else if ((IFM_OPTIONS(sc->sc_mii_media) & IFM_HDX) != 0) {
 		v &= ~GEM_MII_ANEG_FUL_DUPLX;
 		v |= GEM_MII_ANEG_HLF_DUPLX;
 	}
@@ -2570,22 +2570,22 @@ gem_ser_mediachange(struct ifnet *ifp)
 		return 0;
 	}
 	if (s == IFM_1000_SX) {
-		t = IFM_OPTIONS(sc->sc_mii.mii_media.ifm_media);
-		if (t == IFM_FDX || t == IFM_HDX) {
-			if (sc->sc_mii_media != t) {
-				sc->sc_mii_media = t;
+		t = IFM_OPTIONS(sc->sc_mii.mii_media.ifm_media)
+		    & (IFM_FDX | IFM_HDX);
+		if ((sc->sc_mii_media & (IFM_FDX | IFM_HDX)) != t) {
+			sc->sc_mii_media &= ~(IFM_FDX | IFM_HDX);
+			sc->sc_mii_media |= t;
 #ifdef GEM_DEBUG
-				aprint_debug_dev(sc->sc_dev,
-				    "setting media to 1000baseSX-%s\n",
-				    t == IFM_FDX ? "FDX" : "HDX");
+			aprint_debug_dev(sc->sc_dev,
+			    "setting media to 1000baseSX-%s\n",
+			    t == IFM_FDX ? "FDX" : "HDX");
 #endif
-				if (ifp->if_flags & IFF_UP) {
-					gem_pcs_stop(sc, 0);
-					gem_pcs_start(sc);
-				}
+			if (ifp->if_flags & IFF_UP) {
+				gem_pcs_stop(sc, 0);
+				gem_pcs_start(sc);
 			}
-			return 0;
 		}
+		return 0;
 	}
 	return EINVAL;
 }
