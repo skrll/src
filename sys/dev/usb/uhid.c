@@ -1,4 +1,4 @@
-/*	$NetBSD: uhid.c,v 1.104 2019/01/29 09:28:50 pgoyette Exp $	*/
+/*	$NetBSD: uhid.c,v 1.107 2019/03/23 02:19:31 mrg Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2008, 2012 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uhid.c,v 1.104 2019/01/29 09:28:50 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uhid.c,v 1.107 2019/03/23 02:19:31 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -230,10 +230,8 @@ uhid_detach(device_t self, int flags)
 			/* Wake everyone */
 			cv_broadcast(&sc->sc_cv);
 			/* Wait for processes to go away. */
-			if (cv_timedwait(&sc->sc_detach_cv, &sc->sc_lock, hz * 60)) {
-				printf("%s: %s didn't detach\n", __func__,
-				    device_xname(sc->sc_hdev.sc_dev));
-			}
+			if (cv_timedwait(&sc->sc_detach_cv, &sc->sc_lock, hz * 60))
+				aprint_error_dev(self, ": didn't detach\n");
 		}
 	}
 	mutex_exit(&sc->sc_lock);
@@ -319,21 +317,23 @@ uhidopen(dev_t dev, int flag, int mode, struct lwp *l)
 	if (sc->sc_dying)
 		return ENXIO;
 
-	mutex_enter(&sc->sc_access_lock);
+	mutex_enter(&sc->sc_lock);
 
 	/*
 	 * uhid interrupts aren't enabled yet, so setup sc_q now, as
 	 * long as they're not already allocated.
 	 */
 	if (sc->sc_hdev.sc_state & UHIDEV_OPEN) {
-		mutex_exit(&sc->sc_access_lock);
+		mutex_exit(&sc->sc_lock);
 		return EBUSY;
 	}
+	mutex_exit(&sc->sc_lock);
+
 	if (clalloc(&sc->sc_q, UHID_BSIZE, 0) == -1) {
-		mutex_exit(&sc->sc_access_lock);
 		return ENOMEM;
 	}
 
+	mutex_enter(&sc->sc_access_lock);
 	error = uhidev_open(&sc->sc_hdev);
 	if (error) {
 		clfree(&sc->sc_q);
@@ -656,7 +656,7 @@ uhid_do_ioctl(struct uhid_softc *sc, u_long cmd, void *addr,
 				     (struct usb_device_info *)addr, 0);
 		break;
 	case USB_GET_DEVICEINFO_OLD:
-		MODULE_CALL_HOOK(usb_subr_fill_30_hook,
+		MODULE_HOOK_CALL(usb_subr_fill_30_hook,
                     (sc->sc_hdev.sc_parent->sc_udev,
 		      (struct usb_device_info_old *)addr, 0,
                       usbd_devinfo_vp, usbd_printBCD),

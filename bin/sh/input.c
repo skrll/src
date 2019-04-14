@@ -1,4 +1,4 @@
-/*	$NetBSD: input.c,v 1.69 2019/01/16 07:14:17 kre Exp $	*/
+/*	$NetBSD: input.c,v 1.71 2019/02/09 09:20:47 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)input.c	8.3 (Berkeley) 6/9/95";
 #else
-__RCSID("$NetBSD: input.c,v 1.69 2019/01/16 07:14:17 kre Exp $");
+__RCSID("$NetBSD: input.c,v 1.71 2019/02/09 09:20:47 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -216,22 +216,22 @@ preadfd(void)
 
 
 	if (nr <= 0) {
-                if (nr < 0) {
-                        if (errno == EINTR)
-                                goto retry;
-                        if (parsefile->fd == 0 && errno == EWOULDBLOCK) {
-                                int flags = fcntl(0, F_GETFL, 0);
+		if (nr < 0) {
+			if (errno == EINTR)
+				goto retry;
+			if (parsefile->fd == 0 && errno == EWOULDBLOCK) {
+				int flags = fcntl(0, F_GETFL, 0);
 
-                                if (flags >= 0 && flags & O_NONBLOCK) {
-                                        flags &=~ O_NONBLOCK;
-                                        if (fcntl(0, F_SETFL, flags) >= 0) {
+				if (flags >= 0 && flags & O_NONBLOCK) {
+					flags &=~ O_NONBLOCK;
+					if (fcntl(0, F_SETFL, flags) >= 0) {
 						out2str("sh: turning off NDELAY mode\n");
-                                                goto retry;
-                                        }
-                                }
-                        }
-                }
-                nr = -1;
+						goto retry;
+					}
+				}
+			}
+		}
+		nr = -1;
 	}
 	return nr;
 }
@@ -532,6 +532,7 @@ setinputfd(int fd, int push)
 {
 	VTRACE(DBG_INPUT, ("setinputfd(%d, %spush)\n", fd, push?"":"no"));
 
+	INTOFF;
 	register_sh_fd(fd, input_fd_swap);
 	(void) fcntl(fd, F_SETFD, FD_CLOEXEC);
 	if (push)
@@ -543,6 +544,7 @@ setinputfd(int fd, int push)
 		parsefile->buf = ckmalloc(BUFSIZ);
 	parselleft = parsenleft = 0;
 	plinno = 1;
+	INTON;
 
 	CTRACE(DBG_INPUT, ("setinputfd(%d, %spush) done; plinno=1\n", fd,
 	    push ? "" : "no"));
@@ -563,11 +565,11 @@ setinputstring(char *string, int push, int line1)
 	parsenextc = string;
 	parselleft = parsenleft = strlen(string);
 	plinno = line1;
+	INTON;
 
 	CTRACE(DBG_INPUT,
 	    ("setinputstring(\"%.20s%s\" (%d), %spush, @ %d)\n", string,
 	    (parsenleft > 20 ? "..." : ""), parsenleft, push?"":"no", line1));
-	INTON;
 }
 
 

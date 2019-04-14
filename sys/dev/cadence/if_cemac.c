@@ -593,7 +593,7 @@ cemac_init(struct cemac_softc *sc)
 	 * We can support hardware checksumming.
 	 */
 	ifp->if_capabilities |=
-	    IFCAP_CSUM_IPv4_Tx | IFCAP_CSUM_IPv4_Rx |  
+	    IFCAP_CSUM_IPv4_Tx | IFCAP_CSUM_IPv4_Rx |
 	    IFCAP_CSUM_TCPv4_Tx | IFCAP_CSUM_TCPv4_Rx |
 	    IFCAP_CSUM_UDPv4_Tx | IFCAP_CSUM_UDPv4_Rx |
 	    IFCAP_CSUM_TCPv6_Tx | IFCAP_CSUM_TCPv6_Rx |

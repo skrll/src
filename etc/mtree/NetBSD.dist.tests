@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.tests,v 1.154 2018/12/23 15:43:42 jakllsch Exp $
+#	$NetBSD: NetBSD.dist.tests,v 1.158 2019/04/04 19:50:47 kamil Exp $
 
 ./usr/libdata/debug/usr/tests
 ./usr/libdata/debug/usr/tests/atf
@@ -75,6 +75,7 @@
 ./usr/libdata/debug/usr/tests/lib/libbluetooth
 ./usr/libdata/debug/usr/tests/lib/libbpfjit
 ./usr/libdata/debug/usr/tests/lib/libc
+./usr/libdata/debug/usr/tests/lib/libc/atomic
 ./usr/libdata/debug/usr/tests/lib/libc/c063
 ./usr/libdata/debug/usr/tests/lib/libc/db
 ./usr/libdata/debug/usr/tests/lib/libc/gen
@@ -259,6 +260,7 @@
 ./usr/tests/lib/csu
 ./usr/tests/lib/libbluetooth
 ./usr/tests/lib/libc
+./usr/tests/lib/libc/atomic
 ./usr/tests/lib/libc/c063
 ./usr/tests/lib/libc/db
 ./usr/tests/lib/libc/gen
@@ -400,7 +402,7 @@
 ./usr/tests/usr.bin/grep
 ./usr/tests/usr.bin/gzip
 ./usr/tests/usr.bin/id
-./usr/tests/usr.bin/netpgpverify
+./usr/tests/usr.bin/indent
 ./usr/tests/usr.bin/infocmp
 ./usr/tests/usr.bin/jot
 ./usr/tests/usr.bin/ld
@@ -410,6 +412,7 @@
 ./usr/tests/usr.bin/mixerctl
 ./usr/tests/usr.bin/mkdep
 ./usr/tests/usr.bin/nbperf
+./usr/tests/usr.bin/netpgpverify
 ./usr/tests/usr.bin/pkill
 ./usr/tests/usr.bin/pr
 ./usr/tests/usr.bin/printf

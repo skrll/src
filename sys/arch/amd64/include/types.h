@@ -1,4 +1,4 @@
-/*	$NetBSD: types.h,v 1.58 2018/11/15 04:59:02 riastradh Exp $	*/
+/*	$NetBSD: types.h,v 1.60 2019/04/06 03:06:24 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -96,13 +96,14 @@ typedef	unsigned char		__cpu_simple_lock_nv_t;
 #define	__HAVE_COMPAT_NETBSD32
 #define	__HAVE_MM_MD_DIRECT_MAPPED_IO
 #define	__HAVE_MM_MD_DIRECT_MAPPED_PHYS
+#define	__HAVE_UCAS_FULL
 
 #ifdef _KERNEL_OPT
 #define	__HAVE_RAS
 
 #include "opt_xen.h"
 #include "opt_kasan.h"
-#if defined(__x86_64__) && !defined(XEN)
+#if defined(__x86_64__) && !defined(XENPV)
 #if !defined(KASAN)
 #define	__HAVE_PCPU_AREA 1
 #define	__HAVE_DIRECT_MAP 1

@@ -1427,7 +1427,7 @@ ex_ifflags_cb(struct ethercom *ec)
 	struct ifnet *ifp = &ec->ec_if;
 	struct ex_softc *sc = ifp->if_softc;
 	int change = ifp->if_flags ^ sc->sc_if_flags;
-	 
+
 	if ((change & ~(IFF_CANTCHANGE|IFF_DEBUG)) != 0)
 		return ENETRESET;
 	else if ((change & IFF_PROMISC) != 0)

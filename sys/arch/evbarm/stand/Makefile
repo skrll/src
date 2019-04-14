@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.7 2018/08/25 00:07:09 jmcneill Exp $
+#	$NetBSD: Makefile,v 1.10 2019/03/30 13:54:09 jmcneill Exp $
 
 .include <bsd.endian.mk>
 
@@ -14,6 +14,10 @@ SUBDIR+= bootimx23
 
 .if ${MACHINE_CPU} == "aarch64"
 SUBDIR+= ../../../stand/efiboot/bootaa64
+.endif
+
+.if ${MACHINE_ARCH} == "earmv7hf"
+SUBDIR+= ../../../stand/efiboot/bootarm
 .endif
 
 .include <bsd.subdir.mk>

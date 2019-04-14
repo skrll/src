@@ -1,4 +1,4 @@
-/*	$NetBSD: sysv_shm.c,v 1.132 2018/09/03 16:29:35 riastradh Exp $	*/
+/*	$NetBSD: sysv_shm.c,v 1.134 2019/04/10 10:03:50 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2007 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sysv_shm.c,v 1.132 2018/09/03 16:29:35 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sysv_shm.c,v 1.134 2019/04/10 10:03:50 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_sysv.h"
@@ -557,7 +557,16 @@ shmctl1(struct lwp *l, int shmid, int cmd, struct shmid_ds *shmbuf)
 	case IPC_STAT:
 		if ((error = ipcperm(cred, &shmseg->shm_perm, IPC_R)) != 0)
 			break;
-		memcpy(shmbuf, shmseg, sizeof(struct shmid_ds));
+		memset(shmbuf, 0, sizeof *shmbuf);
+		shmbuf->shm_perm = shmseg->shm_perm;
+		shmbuf->shm_perm.mode &= 0777;
+		shmbuf->shm_segsz = shmseg->shm_segsz;
+		shmbuf->shm_lpid = shmseg->shm_lpid;
+		shmbuf->shm_cpid = shmseg->shm_cpid;
+		shmbuf->shm_nattch = shmseg->shm_nattch;
+		shmbuf->shm_atime = shmseg->shm_atime;
+		shmbuf->shm_dtime = shmseg->shm_dtime;
+		shmbuf->shm_ctime = shmseg->shm_ctime;
 		break;
 	case IPC_SET:
 		if ((error = ipcperm(cred, &shmseg->shm_perm, IPC_M)) != 0)
@@ -953,7 +962,7 @@ shmrealloc(int newshmni)
 	return 0;
 }
 
-void
+int
 shminit(struct sysctllog **clog)
 {
 	vaddr_t v;
@@ -968,8 +977,10 @@ shminit(struct sysctllog **clog)
 	    ALIGN(shminfo.shmmni * sizeof(kcondvar_t));
 	sz = round_page(sz);
 	v = uvm_km_alloc(kernel_map, sz, 0, UVM_KMF_WIRED|UVM_KMF_ZERO);
-	if (v == 0)
-		panic("sysv_shm: cannot allocate memory");
+	if (v == 0) {
+		printf("sysv_shm: cannot allocate memory");
+		return ENOMEM;
+	}
 	shmsegs = (void *)v;
 	shm_cv = (void *)((uintptr_t)shmsegs +
 	    ALIGN(shminfo.shmmni * sizeof(struct shmid_ds)));
@@ -1001,6 +1012,7 @@ shminit(struct sysctllog **clog)
 	if (clog)
 		sysctl_ipc_shm_setup(clog);
 #endif
+	return 0;
 }
 
 int

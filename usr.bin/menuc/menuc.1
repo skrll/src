@@ -1,4 +1,4 @@
-.\"	$NetBSD: menuc.1,v 1.34 2019/01/04 15:27:19 martin Exp $
+.\"	$NetBSD: menuc.1,v 1.37 2019/02/25 20:47:37 martin Exp $
 .\"
 .\" Copyright 1997 Piermont Information Systems Inc.
 .\" All rights reserved.
@@ -29,7 +29,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 .\" THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd November 20, 2018
+.Dd February 25, 2019
 .Dt MENUC 1
 .Os
 .Sh NAME
@@ -233,6 +233,9 @@ menu window is created.
 .It Ic sub menu
 If specified, the screen contents that the menu window overwrites are saved
 and restored when the menu exits.
+.It Ic continuous title
+If specified there is no vertical space between the title and the menu
+content.
 .El
 .Pp
 The
@@ -458,6 +461,7 @@ struct menudesc {
 #define MC_DFLTEXIT 32
 #define MC_ALWAYS_SCROLL 64
 #define MC_SUBMENU 128
+#define MC_CONTINUOUS 256
 
 int new_menu(const char *title, menu_ent *opts, int numopts,
         int x, int y, int h, int w, int mopt,
@@ -539,6 +543,30 @@ is the text for the exit line of the menu.
 If it's null, string
 .Dq Exit
 is used.
+.Sh MENU ITEM ACTIONS
+When creating dynamic menus, the programer supplies function pointers
+for the menu items
+.Dv opt_action
+member.
+This functions return one of three possible values:
+.Bl -tag -width "-1" -compact
+.It 0
+process sub menu (if set) and continue with the current (or new) menu
+as usual.
+.It 1
+exit the current menu.
+This is equivalen to specifying
+.Dq exit
+in a non-dynamic menu specification.
+.It -1
+do not handle the current item any further and restart handling the (same)
+menu.
+This return value is used when actions modify the menu definition on the
+fly, e.g. adding or removing additional menu items.
+The action may set
+.Dq cursel
+to jump to an arbitrary menu item (in the modified menu).
+.El
 .Sh MENU ITEM EXPANSION
 With the
 .Ic enable expansion

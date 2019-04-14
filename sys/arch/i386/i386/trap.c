@@ -1,5 +1,5 @@
 
-/*	$NetBSD: trap.c,v 1.297 2019/02/03 03:19:26 mrg Exp $	*/
+/*	$NetBSD: trap.c,v 1.300 2019/04/06 03:06:25 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000, 2005, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -69,7 +69,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.297 2019/02/03 03:19:26 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.300 2019/04/06 03:06:25 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -129,7 +129,7 @@ dtrace_doubletrap_func_t	dtrace_doubletrap_func = NULL;
 void trap(struct trapframe *);
 void trap_tss(struct i386tss *, int, int);
 void trap_return_fault_return(struct trapframe *) __dead;
-#ifndef XEN
+#ifndef XENPV
 int ss_shadow(struct trapframe *tf);
 #endif
 
@@ -240,7 +240,7 @@ trap_print(const struct trapframe *frame, const lwp_t *l)
 	    l, l->l_proc->p_pid, l->l_lid, KSTACK_LOWEST_ADDR(l));
 }
 
-#ifndef XEN
+#ifndef XENPV
 int
 ss_shadow(struct trapframe *tf)
 {
@@ -275,7 +275,7 @@ trap(struct trapframe *frame)
 	struct lwp *l = curlwp;
 	struct proc *p;
 	struct pcb *pcb;
-	extern char fusubail[], kcopy_fault[], return_address_fault[];
+	extern char kcopy_fault[], return_address_fault[];
 	struct trapframe *vframe;
 	ksiginfo_t ksi;
 	void *onfault;
@@ -312,7 +312,7 @@ trap(struct trapframe *frame)
 	 * A trap can occur while DTrace executes a probe. Before
 	 * executing the probe, DTrace blocks re-scheduling and sets
 	 * a flag in its per-cpu flags to indicate that it doesn't
-	 * want to fault. On returning from the the probe, the no-fault
+	 * want to fault. On returning from the probe, the no-fault
 	 * flag is cleared and finally re-scheduling is enabled.
 	 *
 	 * If the DTrace kernel module has registered a trap handler,
@@ -568,12 +568,8 @@ kernelfault:
 		if (__predict_false(l == NULL))
 			goto we_re_toast;
 
-		/*
-		 * fusubail is used by [fs]uswintr() to prevent page faulting
-		 * from inside the profiling interrupt.
-		 */
 		onfault = pcb->pcb_onfault;
-		if (onfault == fusubail || onfault == return_address_fault) {
+		if (onfault == return_address_fault) {
 			goto copyefault;
 		}
 		if (cpu_intr_p() || (l->l_pflag & LP_INTR) != 0) {
@@ -678,7 +674,7 @@ faultcommon:
 				 * the copy functions, and so visible
 				 * to cpu_kpreempt_exit().
 				 */
-#ifndef XEN
+#ifndef XENPV
 				x86_disable_intr();
 #endif
 				l->l_nopreempt--;
@@ -686,7 +682,7 @@ faultcommon:
 				    pfail) {
 					return;
 				}
-#ifndef XEN
+#ifndef XENPV
 				x86_enable_intr();
 #endif
 				/*

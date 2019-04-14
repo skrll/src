@@ -1,4 +1,4 @@
-/*	$NetBSD: mvphy.c,v 1.11 2019/01/23 03:38:26 msaitoh Exp $	*/
+/*	$NetBSD: mvphy.c,v 1.13 2019/03/25 07:34:13 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2006 Sam Leffler, Errno Consulting
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mvphy.c,v 1.11 2019/01/23 03:38:26 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mvphy.c,v 1.13 2019/03/25 07:34:13 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -86,11 +86,8 @@ static const struct mii_phy_funcs mvphy_funcs = {
 };
 
 static const struct mii_phydesc mvphys[] = {
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E6060,
-	  MII_STR_xxMARVELL_E6060 },
-
-	{ 0,				0,
-	  NULL },
+	MII_PHY_DESC(xxMARVELL, E6060),
+	MII_PHY_END,
 };
 
 /*
@@ -171,9 +168,9 @@ mvphymatch(device_t parent, cfdata_t match, void *aux)
 	struct mii_attach_args *ma = aux;
 
 	if (mii_phy_match(ma, mvphys) != NULL)
-		return (10);
+		return 10;
 
-	return (0);
+	return 0;
 }
 
 static void
@@ -225,11 +222,9 @@ mvphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 
 	switch (cmd) {
 	case MII_POLLSTAT:
-		/*
-		 * If we're not polling our PHY instance, just return.
-		 */
+		/* If we're not polling our PHY instance, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
-			return (0);
+			return 0;
 		break;
 
 	case MII_MEDIACHG:
@@ -239,12 +234,10 @@ mvphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		 */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst) {
 			/* XXX? */
-			return (0);
+			return 0;
 		}
 
-		/*
-		 * If the interface is not up, don't do anything.
-		 */
+		/* If the interface is not up, don't do anything. */
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			break;
 
@@ -252,19 +245,17 @@ mvphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		break;
 
 	case MII_TICK:
-		/*
-		 * If we're not currently selected, just return.
-		 */
+		/* If we're not currently selected, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
-			return (0);
+			return 0;
 
 		if (mii_phy_tick(sc) == EJUSTRETURN)
-			return (0);
+			return 0;
 		break;
 
 	case MII_DOWN:
 		mii_phy_down(sc);
-		return (0);
+		return 0;
 	}
 
 	/* Update the media status. */
@@ -272,7 +263,7 @@ mvphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 
 	/* Callback if something changed. */
 	mii_phy_update(sc, cmd);
-	return (0);
+	return 0;
 }
 
 static void
@@ -326,7 +317,8 @@ mvphy_switchconfig(struct mii_softc *sc, int port)
 	    conf->vlanSetting);
 	/* XXX administrative control of port enable? */
 	MV_WRITE(sc, conf->switchPortAddr, MV_PORT_CONTROL, conf->portControl);
-	MV_WRITE(sc, conf->switchPortAddr, MV_PORT_ASSOCIATION_VECTOR, 1<<port);
+	MV_WRITE(sc, conf->switchPortAddr, MV_PORT_ASSOCIATION_VECTOR,
+	    1 << port);
 }
 
 /*

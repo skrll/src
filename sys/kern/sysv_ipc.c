@@ -1,4 +1,4 @@
-/*	$NetBSD: sysv_ipc.c,v 1.36 2019/01/29 09:28:50 pgoyette Exp $	*/
+/*	$NetBSD: sysv_ipc.c,v 1.39 2019/04/10 10:03:50 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2007 The NetBSD Foundation, Inc.
@@ -30,10 +30,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sysv_ipc.c,v 1.36 2019/01/29 09:28:50 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sysv_ipc.c,v 1.39 2019/04/10 10:03:50 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_sysv.h"
+#include "opt_sysvparam.h"
 #include "opt_compat_netbsd.h"
 #endif
 
@@ -179,13 +180,30 @@ sysv_ipc_modcmd(modcmd_t cmd, void *arg)
 		 * sysctl data
 		 */
 #ifdef SYSVSHM
-		shminit(&sysctl_sysvipc_clog);
+		error = shminit(&sysctl_sysvipc_clog);
+		if (error != 0)
+			return error;
 #endif
 #ifdef SYSVSEM
-		seminit(&sysctl_sysvipc_clog);
+		error = seminit(&sysctl_sysvipc_clog);
+		if (error != 0) {
+#ifdef SYSVSHM
+			shmfini();
+#endif
+			return error;
+		}
 #endif
 #ifdef SYSVMSG
-		msginit(&sysctl_sysvipc_clog);
+		error = msginit(&sysctl_sysvipc_clog);
+		if (error != 0) {
+#ifdef SYSVSEM
+			semfini();
+#endif
+#ifdef SYSVSHM
+			shmfini();
+#endif
+			return error;
+		}
 #endif
 
 #ifdef _MODULE
@@ -375,7 +393,7 @@ sysctl_kern_sysvipc(SYSCTLFN_ARGS)
  * to the non-compat sysctl code.
  */
 
-	MODULE_CALL_HOOK(sysvipc_sysctl_50_hook, (SYSCTLFN_CALL(rnode)),
+	MODULE_HOOK_CALL(sysvipc_sysctl_50_hook, (SYSCTLFN_CALL(rnode)),
 	    stub_sysvipc50_sysctl(SYSCTLFN_CALL(rnode)), error);
 	if (error != EPASSTHROUGH)
 		return error;

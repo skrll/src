@@ -1,4 +1,4 @@
-/*	$NetBSD: ohci.c,v 1.287 2018/09/16 20:21:56 mrg Exp $	*/
+/*	$NetBSD: ohci.c,v 1.289 2019/03/22 07:25:15 mrg Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2005, 2012 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.287 2018/09/16 20:21:56 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.289 2019/03/22 07:25:15 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -589,7 +589,7 @@ ohci_reset_std_chain(ohci_softc_t *sc, struct usbd_xfer *xfer,
 	OHCIHIST_FUNC(); OHCIHIST_CALLED();
 	DPRINTF("start len=%jd", alen, 0, 0, 0);
 
-	KASSERT(mutex_owned(&sc->sc_lock));
+	KASSERT(sc->sc_bus.ub_usepolling || mutex_owned(&sc->sc_lock));
 
 	DPRINTFN(8, "addr=%jd endpt=%jd len=%jd speed=%jd",
 	    xfer->ux_pipe->up_dev->ud_addr,
@@ -1089,7 +1089,8 @@ ohci_freex(struct usbd_bus *bus, struct usbd_xfer *xfer)
 {
 	ohci_softc_t *sc = OHCI_BUS2SC(bus);
 
-	KASSERTMSG(xfer->ux_state == XFER_BUSY,
+	KASSERTMSG(xfer->ux_state == XFER_BUSY ||
+	    xfer->ux_status == USBD_NOT_STARTED,
 	    "xfer=%p not busy, 0x%08x\n", xfer, xfer->ux_state);
 #ifdef DIAGNOSTIC
 	xfer->ux_state = XFER_FREE;

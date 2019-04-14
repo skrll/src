@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1101 2019/02/06 11:05:30 mrg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1128 2019/04/05 15:58:17 maya Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -58,7 +58,12 @@ TOOLCHAIN_MISSING?=	no
 #
 # What GCC is used?
 #
+.if \
+    ${MACHINE_CPU} == "ia64"	|| \
+    ${MACHINE_ARCH} == "powerpc64"
 HAVE_GCC?=	6
+.endif
+HAVE_GCC?=	7
 
 #
 # Platforms that can't run a modern GCC natively
@@ -160,6 +165,12 @@ EXTERNAL_BINUTILS_SUBDIR=	binutils.old
 .else
 EXTERNAL_BINUTILS_SUBDIR=	/does/not/exist
 .endif
+
+#
+# What version of jemalloc we use (100 is the one
+# built-in to libc from 2005 (pre version 3).
+#
+HAVE_JEMALLOC?=		510
 
 .if empty(.MAKEFLAGS:tW:M*-V .OBJDIR*)
 .if defined(MAKEOBJDIRPREFIX) || defined(MAKEOBJDIR)
@@ -1156,7 +1167,7 @@ _MKVARS.no= \
 	MKFIRMWARE \
 	MKGROFFHTMLDOC \
 	MKKYUA \
-	MKLIBCXX MKLLD MKLLDB MKLLVM MKLINT \
+	MKLIBCXX MKLLD MKLLDB MKLLVM MKLLVMRT MKLINT \
 	MKMANZ MKMCLINKER \
 	MKNSD \
 	MKOBJDIRS \
@@ -1273,6 +1284,18 @@ _NEEDS_LIBCXX.x86_64=		yes
 
 .if ${MKLLVM} == "yes" && ${_NEEDS_LIBCXX.${MACHINE_ARCH}:Uno} == "yes"
 MKLIBCXX:=	yes
+.endif
+
+# MesaLib.old and MesaLib7 go together, and MesaLib is alone.
+HAVE_MESA_VER?=	18
+.if ${HAVE_MESA_VER} == "10"
+EXTERNAL_MESALIB_DIR?=	MesaLib.old
+.elif ${HAVE_MESA_VER} == "18"
+EXTERNAL_MESALIB_DIR?=	MesaLib
+.  if ${MKX11} != "no" && \
+    (${MACHINE} == "amd64" || ${MACHINE} == "i386")
+MKLLVMRT:=		yes
+.  endif
 .endif
 
 #
@@ -1417,7 +1440,7 @@ X11SRCDIRMIT?=		${X11SRCDIR}/external/mit
 	FS ICE SM X11 XScrnSaver XTrap Xau Xcomposite Xcursor Xdamage \
 	Xdmcp Xevie Xext Xfixes Xfont Xfont2 Xft Xi Xinerama Xmu Xpresent Xpm \
 	Xrandr Xrender Xres Xt Xtst Xv XvMC Xxf86dga Xxf86misc Xxf86vm drm \
-	epoxy fontenc xkbfile xkbui Xaw pciaccess xcb xshmfence \
+	epoxy fontenc vdpau xkbfile xkbui Xaw pciaccess xcb xshmfence \
 	pthread-stubs
 X11SRCDIR.${_lib}?=		${X11SRCDIRMIT}/lib${_lib}/dist
 .endfor
@@ -1466,10 +1489,10 @@ HAVE_XORG_GLAMOR?=	no
 	xorg-cf-files imake xbiff xkeyboard-config \
 	xbitmaps appres xeyes xev xedit sessreg pixman \
 	beforelight bitmap editres makedepend fonttosfnt fslsfonts fstobdf \
-	glu glw mesa-demos MesaGLUT MesaLib MesaLib7 \
+	glu glw mesa-demos MesaGLUT MesaLib MesaLib.old MesaLib7 \
 	ico iceauth listres lndir \
 	luit xproxymanagementprotocol mkfontdir oclock proxymngr rgb \
-	rstart setxkbmap showfont smproxy twm viewres \
+	rstart setxkbmap showfont smproxy transset twm viewres \
 	x11perf xauth xcalc xclipboard \
 	xclock xcmsdb xconsole xditview xdpyinfo xdriinfo xdm \
 	xfd xf86dga xfindproxy xfontsel xfwp xgamma xgc xhost xinit \
@@ -1490,6 +1513,9 @@ HAVE_XORG_GLAMOR?=	no
 	font-sony-misc font-util ttf-bitstream-vera encodings
 X11SRCDIR.${_dir}?=		${X11SRCDIRMIT}/${_dir}/dist
 .endfor
+
+# X11SRCDIR.Mesa points to the currently used Mesa sources
+X11SRCDIR.Mesa?=		${X11SRCDIRMIT}/${EXTERNAL_MESALIB_DIR}/dist
 
 .for _i in \
 	elographics keyboard mouse synaptics vmmouse void ws

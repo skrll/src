@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.90 2019/02/03 11:57:25 mrg Exp $
+#	$NetBSD: Makefile,v 1.93 2019/03/19 05:55:00 mrg Exp $
 
 .include <bsd.hostinit.mk>
 
@@ -36,7 +36,6 @@ COMMON_CONFIGURE_ARGS=	--target=${MACHINE_GNU_PLATFORM} \
 			--with-pkgversion="NetBSD ${NETBSD_GCC_VERSION}" \
 			--with-system-zlib \
 			--without-isl \
-			--disable-libstdcxx-dual-abi \
 			--enable-__cxa_atexit \
 			--enable-libstdcxx-time=rt \
 			--enable-libstdcxx-threads \
@@ -46,6 +45,13 @@ COMMON_CONFIGURE_ARGS+=	--with-arch=${GCC_CONFIG_ARCH.${MACHINE_ARCH}}
 .endif
 .if defined(GCC_CONFIG_TUNE.${MACHINE_ARCH})
 COMMON_CONFIGURE_ARGS+=	--with-tune=${GCC_CONFIG_TUNE.${MACHINE_ARCH}}
+.endif
+
+# Too many CPUs have one or both of these bugs, the common code should
+# default to safety.
+.if ${MACHINE_CPU} == "aarch64"
+COMMON_CONFIGURE_ARGS+=	--enable-fix-cortex-a53-835769 \
+			--enable-fix-cortex-a53-843419
 .endif
 
 .if ${HAVE_GCC} >= 7
@@ -187,7 +193,6 @@ EXTRA_GCC_TARGETS=	i386-builtin-types.inc
 
 NATIVE_CONFIGURE_ARGS+=	\
 			--disable-multilib \
-			--disable-symvers \
 			--disable-libstdcxx-pch \
 			--build=`${GCCDIST}/config.guess` \
 			--host=${MACHINE_GNU_PLATFORM} \

@@ -1,16 +1,16 @@
-/*	$NetBSD: etphy.c,v 1.2 2019/01/22 03:42:27 msaitoh Exp $	*/
+/*	$NetBSD: etphy.c,v 1.4 2019/03/25 09:29:08 msaitoh Exp $	*/
 /*	$OpenBSD: etphy.c,v 1.4 2008/04/02 20:12:58 brad Exp $	*/
 
 /*
  * Copyright (c) 2007 The DragonFly Project.  All rights reserved.
- * 
+ *
  * This code is derived from software contributed to The DragonFly Project
  * by Sepherosa Ziehau <sepherosa@gmail.com>
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
- * 
+ *
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
@@ -20,7 +20,7 @@
  * 3. Neither the name of The DragonFly Project nor the names of its
  *    contributors may be used to endorse or promote products derived
  *    from this software without specific, prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
@@ -33,12 +33,12 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
  * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- * 
+ *
  * $DragonFly: src/sys/dev/netif/mii_layer/truephy.c,v 1.1 2007/10/12 14:12:42 sephe Exp $
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: etphy.c,v 1.2 2019/01/22 03:42:27 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: etphy.c,v 1.4 2019/03/25 09:29:08 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -88,10 +88,8 @@ const struct mii_phy_funcs etphy_funcs = {
 };
 
 static const struct mii_phydesc etphys[] = {
-	{ MII_OUI_AGERE,	MII_MODEL_AGERE_ET1011,
-	  MII_STR_AGERE_ET1011 },
-	{ 0,			0,
-	  NULL },
+	MII_PHY_DESC(AGERE, ET1011),
+	MII_PHY_END,
 };
 
 CFATTACH_DECL_NEW(etphy, sizeof(struct mii_softc),
@@ -195,9 +193,7 @@ etphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 
 	switch (cmd) {
 	case MII_POLLSTAT:
-		/*
-		 * If we're not polling our PHY instance, just return.
-		 */
+		/* If we're not polling our PHY instance, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
 			return 0;
 		break;
@@ -213,9 +209,7 @@ etphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 			return 0;
 		}
 
-		/*
-		 * If the interface is not up, don't do anything.
-		 */
+		/* If the interface is not up, don't do anything. */
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			break;
 
@@ -241,9 +235,7 @@ etphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		break;
 
 	case MII_TICK:
-		/*
-		 * If we're not currently selected, just return.
-		 */
+		/* If we're not currently selected, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
 			return 0;
 

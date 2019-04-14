@@ -1,4 +1,4 @@
-/*	$NetBSD: xen_mainbus.c,v 1.4 2018/12/22 08:35:04 maxv Exp $	*/
+/*	$NetBSD: xen_mainbus.c,v 1.6 2019/02/14 08:18:26 cherry Exp $	*/
 /*	NetBSD: mainbus.c,v 1.19 2017/05/23 08:54:39 nonaka Exp 	*/
 /*	NetBSD: mainbus.c,v 1.53 2003/10/27 14:11:47 junyoung Exp 	*/
 
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xen_mainbus.c,v 1.4 2018/12/22 08:35:04 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xen_mainbus.c,v 1.6 2019/02/14 08:18:26 cherry Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -79,7 +79,7 @@ __KERNEL_RCSID(0, "$NetBSD: xen_mainbus.c,v 1.4 2018/12/22 08:35:04 maxv Exp $")
 #endif
 #endif
 
-#if defined(MPBIOS) || NACPICA > 0
+#if defined(XENPV) && (defined(MPBIOS) || NACPICA > 0)
 struct mp_bus *mp_busses;
 int mp_nbus;
 struct mp_intr_map *mp_intrs;
@@ -130,7 +130,9 @@ xen_mainbus_match(device_t parent, cfdata_t match, void *aux)
 void
 xen_mainbus_attach(device_t parent, device_t self, void *aux)
 {
+#if NIPMI > 0 || NHYPERVISOR > 0
 	union xen_mainbus_attach_args mba;
+#endif
 
 #if NIPMI > 0
 	memset(&mba.mba_ipmi, 0, sizeof(mba.mba_ipmi));

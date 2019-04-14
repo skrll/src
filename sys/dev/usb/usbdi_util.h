@@ -1,4 +1,4 @@
-/*	$NetBSD: usbdi_util.h,v 1.48 2018/11/08 02:11:54 manu Exp $	*/
+/*	$NetBSD: usbdi_util.h,v 1.49 2019/02/07 13:20:41 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004 The NetBSD Foundation, Inc.

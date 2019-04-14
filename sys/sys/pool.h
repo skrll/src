@@ -1,4 +1,4 @@
-/*	$NetBSD: pool.h,v 1.83 2018/12/16 21:03:35 maxv Exp $	*/
+/*	$NetBSD: pool.h,v 1.87 2019/03/27 18:27:47 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 1999, 2000, 2007 The NetBSD Foundation, Inc.
@@ -115,13 +115,13 @@ struct pool {
 	struct pool_cache *pr_cache;	/* Cache for this pool */
 	unsigned int	pr_size;	/* Size of item */
 	unsigned int	pr_align;	/* Requested alignment, must be 2^n */
-	unsigned int	pr_itemoffset;	/* Align this offset in item */
+	unsigned int	pr_itemoffset;	/* offset of the item space */
 	unsigned int	pr_minitems;	/* minimum # of items to keep */
 	unsigned int	pr_minpages;	/* same in page units */
 	unsigned int	pr_maxpages;	/* maximum # of pages to keep */
 	unsigned int	pr_npages;	/* # of pages allocated */
 	unsigned int	pr_itemsperpage;/* # items that fit in a page */
-	unsigned int	pr_slack;	/* unused space in a page */
+	unsigned int	pr_poolid;	/* id of the pool */
 	unsigned int	pr_nitems;	/* number of available items in pool */
 	unsigned int	pr_nout;	/* # items currently allocated */
 	unsigned int	pr_hardlimit;	/* hard limit to number of allocated
@@ -149,6 +149,8 @@ struct pool {
 #define	PR_LARGECACHE	0x1000	/* use large cache groups */
 #define	PR_GROWING	0x2000	/* pool_grow in progress */
 #define	PR_GROWINGNOWAIT 0x4000	/* pool_grow in progress by PR_NOWAIT alloc */
+#define	PR_ZERO		0x8000	/* zero data before returning */
+#define	PR_USEBMAP	0x10000	/* use a bitmap to manage freed items */
 
 	/*
 	 * `pr_lock' protects the pool's data structures when removing
@@ -167,7 +169,7 @@ struct pool {
 
 	int		pr_maxcolor;	/* Cache colouring */
 	int		pr_curcolor;
-	int		pr_phoffset;	/* Offset in page of page header */
+	int		pr_phoffset;	/* unused */
 
 	/*
 	 * Warning message to be issued, and a per-time-delta rate cap,
@@ -285,11 +287,6 @@ typedef struct pool_cache *pool_cache_t;
 extern struct pool_allocator pool_allocator_kmem;
 extern struct pool_allocator pool_allocator_nointr;
 extern struct pool_allocator pool_allocator_meta;
-#ifdef POOL_SUBPAGE
-/* The above are subpage allocators in this case. */
-extern struct pool_allocator pool_allocator_kmem_fullpage;
-extern struct pool_allocator pool_allocator_nointr_fullpage;
-#endif
 
 void		pool_subsystem_init(void);
 

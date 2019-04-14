@@ -1,4 +1,4 @@
-/*	$NetBSD: frame.h,v 1.20 2018/11/19 15:43:32 kre Exp $	*/
+/*	$NetBSD: frame.h,v 1.22 2019/02/14 08:18:25 cherry Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.

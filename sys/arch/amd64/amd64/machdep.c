@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.324 2019/01/27 02:08:37 pgoyette Exp $	*/
+/*	$NetBSD: machdep.c,v 1.329 2019/03/24 15:58:32 maxv Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
@@ -110,7 +110,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.324 2019/01/27 02:08:37 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.329 2019/03/24 15:58:32 maxv Exp $");
 
 #include "opt_modular.h"
 #include "opt_user_ldt.h"
@@ -123,7 +123,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.324 2019/01/27 02:08:37 pgoyette Exp $
 #include "opt_svs.h"
 #include "opt_kaslr.h"
 #include "opt_kasan.h"
-#ifndef XEN
+#ifndef XENPV
 #include "opt_physmem.h"
 #endif
 #include "isa.h"
@@ -193,7 +193,9 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.324 2019/01/27 02:08:37 pgoyette Exp $
 #include <xen/xen.h>
 #include <xen/hypervisor.h>
 #include <xen/evtchn.h>
-#endif
+#include <xen/include/public/version.h>
+#include <xen/include/public/vcpu.h>
+#endif /* XEN */
 
 #ifdef DDB
 #include <machine/db_machdep.h>
@@ -273,14 +275,14 @@ struct vm_map *phys_map = NULL;
 
 extern paddr_t lowmem_rsvd;
 extern paddr_t avail_start, avail_end;
-#ifdef XEN
+#ifdef XENPV
 extern paddr_t pmap_pa_start, pmap_pa_end;
 #endif
 
-#ifndef XEN
+#ifndef XENPV
 void (*delay_func)(unsigned int) = i8254_delay;
 void (*initclock_func)(void) = i8254_initclocks;
-#else /* XEN */
+#else /* XENPV */
 void (*delay_func)(unsigned int) = xen_delay;
 void (*initclock_func)(void) = xen_initclocks;
 #endif
@@ -407,14 +409,14 @@ cpu_startup(void)
 	x86_64_proc0_pcb_ldt_init();
 
 	cpu_init_tss(&cpu_info_primary);
-#if !defined(XEN)
+#if !defined(XENPV)
 	ltr(cpu_info_primary.ci_tss_sel);
 #endif
 
 	x86_startup();
 }
 
-#ifdef XEN
+#ifdef XENPV
 /* used in assembly */
 void hypervisor_callback(void);
 void failsafe_callback(void);
@@ -472,7 +474,7 @@ x86_64_tls_switch(struct lwp *l)
 		HYPERVISOR_set_segment_base(SEGBASE_GS_USER, pcb->pcb_gs);
 	}
 }
-#endif /* XEN */
+#endif /* XENPV */
 
 /*
  * Set up proc0's PCB and LDT.
@@ -492,7 +494,7 @@ x86_64_proc0_pcb_ldt_init(void)
 	pcb->pcb_cr0 = rcr0() & ~CR0_TS;
 	l->l_md.md_regs = (struct trapframe *)pcb->pcb_rsp0 - 1;
 
-#if !defined(XEN)
+#if !defined(XENPV)
 	lldt(GSYSSEL(GLDT_SEL, SEL_KPL));
 #else
 	struct physdev_op physop;
@@ -735,9 +737,9 @@ haltsys:
 
 		acpi_enter_sleep_state(ACPI_STATE_S5);
 #endif
-#ifdef XEN
+#ifdef XENPV
 		HYPERVISOR_shutdown();
-#endif /* XEN */
+#endif /* XENPV */
 	}
 
 	cpu_broadcast_halt();
@@ -1369,17 +1371,18 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 
 	fpu_save_area_clear(l, pack->ep_osversion >= 699002600
 	    ? __NetBSD_NPXCW__ : __NetBSD_COMPAT_NPXCW__);
-	pcb->pcb_flags = 0;
 	x86_dbregs_clear(l);
 
+	kpreempt_disable();
+	pcb->pcb_flags = 0;
 	l->l_proc->p_flag &= ~PK_32;
-
 	l->l_md.md_flags = MDL_IRET;
+	cpu_segregs64_zero(l);
+	kpreempt_enable();
 
 	tf = l->l_md.md_regs;
 	tf->tf_ds = GSEL(GUDATA_SEL, SEL_UPL);
 	tf->tf_es = GSEL(GUDATA_SEL, SEL_UPL);
-	cpu_segregs64_zero(l);
 	tf->tf_rdi = 0;
 	tf->tf_rsi = 0;
 	tf->tf_rbp = 0;
@@ -1500,7 +1503,7 @@ init_x86_64_ksyms(void)
 #if NKSYMS || defined(DDB) || defined(MODULAR)
 	extern int end;
 	extern int *esym;
-#ifndef XEN
+#ifndef XENPV
 	struct btinfo_symtab *symtab;
 	vaddr_t tssym, tesym;
 #endif
@@ -1509,7 +1512,7 @@ init_x86_64_ksyms(void)
 	db_machine_init();
 #endif
 
-#ifndef XEN
+#ifndef XENPV
 	symtab = lookup_bootinfo(BTINFO_SYMTAB);
 	if (symtab) {
 #ifdef KASLR
@@ -1523,13 +1526,13 @@ init_x86_64_ksyms(void)
 	} else
 		ksyms_addsyms_elf(*(long *)(void *)&end,
 		    ((long *)(void *)&end) + 1, esym);
-#else  /* XEN */
+#else  /* XENPV */
 	esym = xen_start_info.mod_start ?
 	    (void *)xen_start_info.mod_start :
 	    (void *)xen_start_info.mfn_list;
 	ksyms_addsyms_elf(*(int *)(void *)&end,
 	    ((int *)(void *)&end) + 1, esym);
-#endif /* XEN */
+#endif /* XENPV */
 #endif
 }
 
@@ -1584,11 +1587,11 @@ init_bootspace(void)
 static void __noasan
 init_pte(void)
 {
-#ifndef XEN
+#ifndef XENPV
 	extern uint32_t nox_flag;
 	pd_entry_t *pdir = (pd_entry_t *)bootspace.pdir;
-	pdir[L4_SLOT_PTE] = PDPpaddr | PG_KW | ((uint64_t)nox_flag << 32) |
-	    PG_V;
+	pdir[L4_SLOT_PTE] = PDPpaddr | PTE_W | ((uint64_t)nox_flag << 32) |
+	    PTE_P;
 #endif
 
 	extern pd_entry_t *normal_pdes[3];
@@ -1609,7 +1612,7 @@ init_slotspace(void)
 	slotspace.area[SLAREA_USER].nslot = PDIR_SLOT_USERLIM+1;
 	slotspace.area[SLAREA_USER].active = true;
 
-#ifdef XEN
+#ifdef XENPV
 	/* PTE. */
 	slotspace.area[SLAREA_PTE].sslot = PDIR_SLOT_PTE;
 	slotspace.area[SLAREA_PTE].nslot = 1;
@@ -1628,7 +1631,7 @@ init_slotspace(void)
 	slotspace.area[SLAREA_DMAP].active = false;
 #endif
 
-#ifdef XEN
+#ifdef XENPV
 	/* Hypervisor. */
 	slotspace.area[SLAREA_HYPV].sslot = 256;
 	slotspace.area[SLAREA_HYPV].nslot = 17;
@@ -1653,7 +1656,7 @@ init_slotspace(void)
 	vm_min_kernel_address = va;
 	vm_max_kernel_address = va + NKL4_MAX_ENTRIES * NBPD_L4;
 
-#ifndef XEN
+#ifndef XENPV
 	/* PTE. */
 	va = slotspace_rand(SLAREA_PTE, NBPD_L4, NBPD_L4);
 	pte_base = (pd_entry_t *)va;
@@ -1669,13 +1672,13 @@ init_x86_64(paddr_t first_avail)
 	int x;
 	struct pcb *pcb;
 	extern vaddr_t lwp0uarea;
-#ifndef XEN
+#ifndef XENPV
 	extern paddr_t local_apic_pa;
 #endif
 
 	KASSERT(first_avail % PAGE_SIZE == 0);
 
-#ifdef XEN
+#ifdef XENPV
 	KASSERT(HYPERVISOR_shared_info != NULL);
 	cpu_info_primary.ci_vcpu = &HYPERVISOR_shared_info->vcpu_info[0];
 #endif
@@ -1700,7 +1703,7 @@ init_x86_64(paddr_t first_avail)
 	use_pae = 1; /* PAE always enabled in long mode */
 
 	pcb = lwp_getpcb(&lwp0);
-#ifdef XEN
+#ifdef XENPV
 	mutex_init(&pte_lock, MUTEX_DEFAULT, IPL_VM);
 	pcb->pcb_cr3 = xen_start_info.pt_base - KERNBASE;
 #else
@@ -1722,7 +1725,7 @@ init_x86_64(paddr_t first_avail)
 
 	avail_start = first_avail;
 
-#ifndef XEN
+#ifndef XENPV
 	/*
 	 * Low memory reservations:
 	 * Page 0:	BIOS data
@@ -1753,7 +1756,7 @@ init_x86_64(paddr_t first_avail)
 	 */
 	pmap_bootstrap(VM_MIN_KERNEL_ADDRESS);
 
-#ifndef XEN
+#ifndef XENPV
 	/* Internalize the physical pages into the VM system. */
 	init_x86_vm(avail_start);
 #else
@@ -1772,7 +1775,7 @@ init_x86_64(paddr_t first_avail)
 
 	kpreempt_disable();
 
-#ifndef XEN
+#ifndef XENPV
 	pmap_kenter_pa(local_apic_va, local_apic_pa,
 	    VM_PROT_READ|VM_PROT_WRITE, 0);
 	pmap_update(pmap_kernel());
@@ -1787,7 +1790,7 @@ init_x86_64(paddr_t first_avail)
 	memset((void *)gdt_vaddr, 0, PAGE_SIZE);
 	memset((void *)ldt_vaddr, 0, PAGE_SIZE);
 
-#ifndef XEN
+#ifndef XENPV
 	pmap_changeprot_local(idt_vaddr, VM_PROT_READ);
 #endif
 
@@ -1812,7 +1815,7 @@ init_x86_64(paddr_t first_avail)
 	set_mem_segment(GDT_ADDR_MEM(gdtstore, GUDATA_SEL), 0,
 	    x86_btop(VM_MAXUSER_ADDRESS) - 1, SDT_MEMRWA, SEL_UPL, 1, 0, 1);
 
-#ifndef XEN
+#ifndef XENPV
 	set_sys_segment(GDT_ADDR_SYS(gdtstore, GLDT_SEL), ldtstore,
 	    LDT_SIZE - 1, SDT_SYSLDT, SEL_KPL, 0);
 #endif
@@ -1874,11 +1877,11 @@ init_x86_64(paddr_t first_avail)
 		case 8:	/* double fault */
 			ist = 2;
 			break;
-#ifdef XEN			
+#ifdef XENPV			
 		case 18: /* MCA */
 			sel |= 0x4; /* Auto EOI/mask */
 			break;
-#endif /* XEN */			
+#endif /* XENPV */			
 		default:
 			break;
 		}
@@ -1897,19 +1900,20 @@ init_x86_64(paddr_t first_avail)
 	setregion(&region, gdtstore, DYNSEL_START - 1);
 	lgdt(&region);
 
-#ifdef XEN
+#ifdef XENPV
 	/* Init Xen callbacks and syscall handlers */
 	if (HYPERVISOR_set_callbacks(
 	    (unsigned long) hypervisor_callback,
 	    (unsigned long) failsafe_callback,
 	    (unsigned long) Xsyscall))
 		panic("HYPERVISOR_set_callbacks() failed");
-#endif /* XEN */
+#endif /* XENPV */
+
 	cpu_init_idt();
 
 	init_x86_64_ksyms();
 
-#ifndef XEN
+#ifndef XENPV
 	intr_default_setup();
 #else
 	events_default_setup();
@@ -1939,7 +1943,7 @@ cpu_reset(void)
 {
 	x86_disable_intr();
 
-#ifdef XEN
+#ifdef XENPV
 	HYPERVISOR_reboot();
 #else
 
@@ -1963,7 +1967,7 @@ cpu_reset(void)
 	memset((void *)PTD, 0, PAGE_SIZE);
 	tlbflush();
 #endif
-#endif	/* XEN */
+#endif	/* XENPV */
 
 	for (;;);
 }
@@ -2060,7 +2064,7 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 		tf->tf_rsp  = gr[_REG_RSP];
 		tf->tf_ss   = LSEL(LUDATA_SEL, SEL_UPL);
 
-#ifdef XEN
+#ifdef XENPV
 		/*
 		 * Xen has its own way of dealing with %cs and %ss,
 		 * reset them to proper values.
@@ -2118,7 +2122,7 @@ cpu_mcontext_validate(struct lwp *l, const mcontext_t *mcp)
 	if (!VALID_USER_DSEL(sel))
 		return EINVAL;
 
-#ifndef XEN
+#ifndef XENPV
 	sel = gr[_REG_SS] & 0xffff;
 	if (!VALID_USER_DSEL(sel))
 		return EINVAL;
@@ -2195,12 +2199,12 @@ cpu_segregs64_zero(struct lwp *l)
 	struct pcb *pcb;
 	uint64_t zero = 0;
 
+	KASSERT(kpreempt_disabled());
 	KASSERT((l->l_proc->p_flag & PK_32) == 0);
 	KASSERT(l == curlwp);
 
 	pcb = lwp_getpcb(l);
 
-	kpreempt_disable();
 	tf->tf_fs = 0;
 	tf->tf_gs = 0;
 	setds(GSEL(GUDATA_SEL, SEL_UPL));
@@ -2208,7 +2212,7 @@ cpu_segregs64_zero(struct lwp *l)
 	setfs(0);
 	setusergs(0);
 
-#ifndef XEN
+#ifndef XENPV
 	wrmsr(MSR_FSBASE, 0);
 	wrmsr(MSR_KERNELGSBASE, 0);
 #else
@@ -2220,7 +2224,6 @@ cpu_segregs64_zero(struct lwp *l)
 	pcb->pcb_gs = 0;
 	update_descriptor(&curcpu()->ci_gdt[GUFS_SEL], &zero);
 	update_descriptor(&curcpu()->ci_gdt[GUGS_SEL], &zero);
-	kpreempt_enable();
 }
 
 /*
@@ -2234,12 +2237,12 @@ cpu_segregs32_zero(struct lwp *l)
 	struct pcb *pcb;
 	uint64_t zero = 0;
 
+	KASSERT(kpreempt_disabled());
 	KASSERT(l->l_proc->p_flag & PK_32);
 	KASSERT(l == curlwp);
 
 	pcb = lwp_getpcb(l);
 
-	kpreempt_disable();
 	tf->tf_fs = 0;
 	tf->tf_gs = 0;
 	setds(GSEL(GUDATA32_SEL, SEL_UPL));
@@ -2250,7 +2253,6 @@ cpu_segregs32_zero(struct lwp *l)
 	pcb->pcb_gs = 0;
 	update_descriptor(&curcpu()->ci_gdt[GUFS_SEL], &zero);
 	update_descriptor(&curcpu()->ci_gdt[GUGS_SEL], &zero);
-	kpreempt_enable();
 }
 
 /*
@@ -2275,7 +2277,7 @@ cpu_fsgs_reload(struct lwp *l, int fssel, int gssel)
 	update_descriptor(&curcpu()->ci_gdt[GUFS_SEL], &pcb->pcb_fs);
 	update_descriptor(&curcpu()->ci_gdt[GUGS_SEL], &pcb->pcb_gs);
 
-#ifdef XEN
+#ifdef XENPV
 	setusergs(gssel);
 #endif
 

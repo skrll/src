@@ -1,5 +1,5 @@
 /*	$KAME: sctp_usrreq.c,v 1.50 2005/06/16 20:45:29 jinmei Exp $	*/
-/*	$NetBSD: sctp_usrreq.c,v 1.14 2019/01/28 12:53:01 martin Exp $	*/
+/*	$NetBSD: sctp_usrreq.c,v 1.18 2019/02/25 06:49:44 maxv Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Cisco Systems, Inc.
@@ -33,7 +33,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctp_usrreq.c,v 1.14 2019/01/28 12:53:01 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctp_usrreq.c,v 1.18 2019/02/25 06:49:44 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -638,6 +638,11 @@ sctp_send(struct socket *so, struct mbuf *m, struct sockaddr *addr,
 		return EINVAL;
 	}
 #endif /* INET6 */
+
+	/*
+	 * XXX XXX XXX Check addr->sa_len?
+	 */
+
  connected_type:
 	/* now what about control */
 	if (control) {
@@ -2290,6 +2295,7 @@ sctp_optsget(struct socket *so, struct sockopt *sopt)
 		SCTP_TCB_UNLOCK(stcb);
 		sopt->sopt_size = sizeof(*s_info);
 	}
+	break;
 	case SCTP_INITMSG:
 	{
 		struct sctp_initmsg *sinit;
@@ -3341,6 +3347,11 @@ sctp_connect(struct socket *so, struct sockaddr *nam, struct lwp *l)
 		return (EINVAL);
 	}
 #endif /* INET6 */
+
+	/*
+	 * XXX XXX XXX Check nam->sa_len?
+	 */
+
 	if ((inp->sctp_flags & SCTP_PCB_FLAGS_UNBOUND) ==
 	    SCTP_PCB_FLAGS_UNBOUND) {
 		/* Bind a ephemeral port */

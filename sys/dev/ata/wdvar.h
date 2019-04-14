@@ -1,4 +1,4 @@
-/*	$NetBSD: wdvar.h,v 1.47 2018/10/22 20:13:47 jdolecek Exp $	*/
+/*	$NetBSD: wdvar.h,v 1.49 2019/04/05 18:23:45 bouyer Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.
@@ -53,6 +53,7 @@ struct wd_softc {
 #define WDF_WAIT	0x020 /* waiting for resources */
 #define WDF_LBA		0x040 /* using LBA mode */
 #define WDF_LBA48	0x100 /* using 48-bit LBA mode */
+#define WDF_DIRTY	0x200 /* disk cache dirty */
 #define WDF_OPEN	0x400 /* device is open */
 	uint64_t sc_capacity; /* full capacity of the device */
 	uint64_t sc_capacity512; /* ... in DEV_BSIZE blocks */
@@ -86,6 +87,8 @@ struct wd_softc {
 	int drv_chaos_freq;		/* frequency of simulated bio errors */
 	int drv_chaos_cnt;		/* count of processed bio read xfers */
 #endif
+	unsigned inflight;
+	char *sc_typename;
 };
 
 #endif /* _DEV_ATA_WDVAR_H_ */

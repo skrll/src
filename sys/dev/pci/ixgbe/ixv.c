@@ -1,4 +1,4 @@
-/*$NetBSD: ixv.c,v 1.108 2019/01/23 06:56:19 msaitoh Exp $*/
+/*$NetBSD: ixv.c,v 1.112 2019/03/18 11:38:03 msaitoh Exp $*/
 
 /******************************************************************************
 
@@ -203,7 +203,7 @@ TUNABLE_INT("hw.ixv.rx_process_limit", &ixv_rx_process_limit);
 static int ixv_tx_process_limit = 256;
 TUNABLE_INT("hw.ixv.tx_process_limit", &ixv_tx_process_limit);
 
-/* Which pakcet processing uses workqueue or softint */
+/* Which packet processing uses workqueue or softint */
 static bool ixv_txrx_workqueue = false;
 
 /*
@@ -1027,7 +1027,7 @@ ixv_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 	ifmr->ifm_status = IFM_AVALID;
 	ifmr->ifm_active = IFM_ETHER;
 
-	if (!adapter->link_active) {
+	if (adapter->link_active != LINK_STATE_UP) {
 		ifmr->ifm_active |= IFM_NONE;
 		IXGBE_CORE_UNLOCK(adapter);
 		return;
@@ -1302,7 +1302,7 @@ ixv_update_link_status(struct adapter *adapter)
 	KASSERT(mutex_owned(&adapter->core_mtx));
 
 	if (adapter->link_up) {
-		if (adapter->link_active == FALSE) {
+		if (adapter->link_active != LINK_STATE_UP) {
 			if (bootverbose) {
 				const char *bpsmsg;
 
@@ -1332,15 +1332,20 @@ ixv_update_link_status(struct adapter *adapter)
 				device_printf(dev, "Link is up %s %s \n",
 				    bpsmsg, "Full Duplex");
 			}
-			adapter->link_active = TRUE;
+			adapter->link_active = LINK_STATE_UP;
 			if_link_state_change(ifp, LINK_STATE_UP);
 		}
-	} else { /* Link down */
-		if (adapter->link_active == TRUE) {
+	} else {
+		/*
+		 * Do it when link active changes to DOWN. i.e.
+		 * a) LINK_STATE_UNKNOWN -> LINK_STATE_DOWN
+		 * b) LINK_STATE_UP      -> LINK_STATE_DOWN
+		 */
+		if (adapter->link_active != LINK_STATE_DOWN) {
 			if (bootverbose)
 				device_printf(dev, "Link is Down\n");
 			if_link_state_change(ifp, LINK_STATE_DOWN);
-			adapter->link_active = FALSE;
+			adapter->link_active = LINK_STATE_DOWN;
 		}
 	}
 } /* ixv_update_link_status */
@@ -1967,27 +1972,31 @@ ixv_setup_vlan_support(struct adapter *adapter)
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct rx_ring  *rxr;
 	u32		ctrl, vid, vfta, retry;
+	bool		hwtagging;
 
 	/*
-	 * We get here thru init_locked, meaning
-	 * a soft reset, this has already cleared
-	 * the VFTA and other state, so if there
-	 * have been no vlan's registered do nothing.
+	 *  This function is called from both if_init and ifflags_cb()
+	 * on NetBSD.
 	 */
-	if (!VLAN_ATTACHED(ec))
-		return;
+
+	/* Enable HW tagging only if any vlan is attached */
+	hwtagging = (ec->ec_capenable & ETHERCAP_VLAN_HWTAGGING)
+	    && VLAN_ATTACHED(ec);
 
 	/* Enable the queues */
 	for (int i = 0; i < adapter->num_queues; i++) {
 		rxr = &adapter->rx_rings[i];
 		ctrl = IXGBE_READ_REG(hw, IXGBE_VFRXDCTL(rxr->me));
-		ctrl |= IXGBE_RXDCTL_VME;
+		if (hwtagging)
+			ctrl |= IXGBE_RXDCTL_VME;
+		else
+			ctrl &= ~IXGBE_RXDCTL_VME;
 		IXGBE_WRITE_REG(hw, IXGBE_VFRXDCTL(rxr->me), ctrl);
 		/*
 		 * Let Rx path know that it needs to store VLAN tag
 		 * as part of extra mbuf info.
 		 */
-		rxr->vtag_strip = TRUE;
+		rxr->vtag_strip = hwtagging ? TRUE : FALSE;
 	}
 
 #if 1

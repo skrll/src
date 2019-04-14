@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.sys.mk,v 1.290 2019/01/21 21:11:54 christos Exp $
+#	$NetBSD: bsd.sys.mk,v 1.291 2019/02/23 03:10:06 kamil Exp $
 #
 # Build definitions used for NetBSD source tree builds.
 
@@ -165,7 +165,7 @@ LINTFLAGS+=	${DESTDIR:D-d ${DESTDIR}/usr/include}
 CPPFLAGS+=	-D_FORTIFY_SOURCE=2
 .   endif
 .   if !defined(COVERITY_TOP_CONFIG)
-COPTS+=	-fstack-protector -Wstack-protector 
+COPTS+=	-fstack-protector -Wstack-protector
 
 # GCC 4.8 on m68k erroneously does not protect functions with
 # variables needing special alignement, see
@@ -180,7 +180,7 @@ COPTS+=	-fstack-protector -Wstack-protector
        ${MACHINE_ARCH} == "vax" || \
        ${MACHINE_CPU} == "m68k" || \
        ${MACHINE_CPU} == "or1k" )
-COPTS+=	-Wno-error=stack-protector 
+COPTS+=	-Wno-error=stack-protector
 .	endif
 
 COPTS+=	${${ACTIVE_CC} == "clang":? --param ssp-buffer-size=1 :}
@@ -238,6 +238,14 @@ KLEAKFLAGS=	-fsanitize-coverage=trace-pc
 KLEAKFLAGS.${f}=	# empty
 .endfor
 CFLAGS+=	${KLEAKFLAGS.${.IMPSRC:T}:U${KLEAKFLAGS}}
+.endif
+
+.if ${KCOV:U0} > 0
+KCOVFLAGS=	-fsanitize-coverage=trace-pc
+.for f in subr_kcov.c subr_lwp_specificdata.c subr_specificdata.c
+KCOVFLAGS.${f}=		# empty
+.endfor
+CFLAGS+=	${KCOVFLAGS.${.IMPSRC:T}:U${KCOVFLAGS}}
 .endif
 
 .if !defined(NOPIE) && (!defined(LDSTATIC) || ${LDSTATIC} != "-static")

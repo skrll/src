@@ -1,4 +1,4 @@
-/*	$NetBSD: if_aue.c,v 1.147 2019/01/22 06:38:53 skrll Exp $	*/
+/*	$NetBSD: if_aue.c,v 1.149 2019/04/11 09:16:56 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998, 1999, 2000
@@ -77,7 +77,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_aue.c,v 1.147 2019/01/22 06:38:53 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_aue.c,v 1.149 2019/04/11 09:16:56 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -541,7 +541,7 @@ aue_miibus_statchg(struct ifnet *ifp)
 		AUE_CLRBIT(sc, AUE_CTL1, AUE_CTL1_SPEEDSEL);
 	}
 
-	if ((mii->mii_media_active & IFM_GMASK) == IFM_FDX)
+	if ((mii->mii_media_active & IFM_FDX) != 0)
 		AUE_SETBIT(sc, AUE_CTL1, AUE_CTL1_DUPLEX);
 	else
 		AUE_CLRBIT(sc, AUE_CTL1, AUE_CTL1_DUPLEX);
@@ -875,6 +875,9 @@ aue_attach(device_t parent, device_t self, void *aux)
 
 	usbd_add_drv_event(USB_EVENT_DRIVER_ATTACH, sc->aue_udev, sc->aue_dev);
 
+	if (!pmf_device_register(self, NULL, NULL))
+		aprint_error_dev(self, "couldn't establish power handler\n");
+
 	return;
 }
 
@@ -891,6 +894,8 @@ aue_detach(device_t self, int flags)
 		/* Detached before attached finished, so just bail out. */
 		return 0;
 	}
+
+	pmf_device_deregister(self);
 
 	/*
 	 * XXX Halting callout guarantees no more tick tasks.  What
@@ -1575,7 +1580,7 @@ aue_ifmedia_upd(struct ifnet *ifp)
 }
 
 Static int
-aue_ioctl(struct ifnet *ifp, u_long command, void *data)
+aue_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct aue_softc	*sc = ifp->if_softc;
 
@@ -1585,18 +1590,18 @@ aue_ioctl(struct ifnet *ifp, u_long command, void *data)
 		error = 0;
 		if (cmd == SIOCADDMULTI || cmd == SIOCDELMULTI) {
 			if (ifp->if_flags & IFF_RUNNING) {
-				mutex_enter(&sc->sc_lock);
+				mutex_enter(&sc->aue_lock);
 				aue_setmulti(sc);
-				mutex_exit(&sc->sc_lock);
+				mutex_exit(&sc->aue_lock);
 			}
 		}
 	}
 
-	mutex_enter(&sc->sc_rxlock);
-	mutex_enter(&sc->sc_txlock);
+	mutex_enter(&sc->aue_rxlock);
+	mutex_enter(&sc->aue_txlock);
 	sc->aue_if_flags = ifp->if_flags;
-	mutex_exit(&sc->sc_txlock);
-	mutex_exit(&sc->sc_rxlock);
+	mutex_exit(&sc->aue_txlock);
+	mutex_exit(&sc->aue_rxlock);
 
 	return error;
 }
@@ -1611,7 +1616,7 @@ aue_ifflags_cb(struct ethercom *ec)
 
 	const int change = ifp->if_flags ^ sc->aue_if_flags;
 	if ((change & ~(IFF_CANTCHANGE | IFF_DEBUG)) != 0) {
-		mutex_exit(&sc->sc_lock);
+		mutex_exit(&sc->aue_lock);
 		return ENETRESET;
 	}
 

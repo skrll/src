@@ -1,4 +1,4 @@
-/*	$NetBSD: mii.h,v 1.25 2019/01/16 08:32:24 msaitoh Exp $	*/
+/*	$NetBSD: mii.h,v 1.27 2019/04/11 09:14:07 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1997 Manuel Bouyer.  All rights reserved.
@@ -64,7 +64,7 @@
 #define	BMCR_S100	BMCR_SPEED0	/* 100 Mb/s */
 #define	BMCR_S1000	BMCR_SPEED1	/* 1000 Mb/s */
 
-#define	BMCR_SPEED(x)	((x) & (BMCR_SPEED0|BMCR_SPEED1))
+#define	BMCR_SPEED(x)	((x) & (BMCR_SPEED0 | BMCR_SPEED1))
 
 #define	MII_BMSR	0x01	/* Basic mode status register (ro) */
 #define	BMSR_100T4	0x8000	/* 100 base T4 capable */
@@ -90,8 +90,8 @@
  * states that all 1000 Mb/s capable PHYs will set this bit to 1.
  */
 
-#define	BMSR_MEDIAMASK	(BMSR_100T4|BMSR_100TXFDX|BMSR_100TXHDX| \
-			 BMSR_10TFDX|BMSR_10THDX|BMSR_100T2FDX|BMSR_100T2HDX)
+#define	BMSR_MEDIAMASK	(BMSR_100T4 | BMSR_100TXFDX | BMSR_100TXHDX | \
+	    BMSR_10TFDX | BMSR_10THDX | BMSR_100T2FDX | BMSR_100T2HDX)
 
 /*
  * Convert BMSR media capabilities to ANAR bits for autonegotiation.
@@ -292,9 +292,9 @@
 #define	MMDACR_FUNCMASK	0xc000	/* function */
 #define	MMDACR_DADDRMASK 0x001f	/* device address */
 #define	MMDACR_FN_ADDRESS	(0 << 14) /* address */
-#define	MMDACR_FN_DATANPI	(1 << 14) /* data, no post increment */
-#define	MMDACR_FN_DATAPIRW	(2 << 14) /* data, post increment on r/w */
-#define	MMDACR_FN_DATAPIW	(3 << 14) /* data, post increment on wr only */
+#define	MMDACR_FN_DATA		(1 << 14) /* data, no post increment */
+#define	MMDACR_FN_DATA_INC_RW	(2 << 14) /* data, post increment on r/w */
+#define	MMDACR_FN_DATA_INC_W	(3 << 14) /* data, post increment on wr only */
 
 #define	MII_MMDAADR	0x0e	/* MMD access address data register */
 
@@ -304,7 +304,7 @@
 #define	EXTSR_1000TFDX	0x2000	/* 1000T full-duplex capable */
 #define	EXTSR_1000THDX	0x1000	/* 1000T half-duplex capable */
 
-#define	EXTSR_MEDIAMASK	(EXTSR_1000XFDX|EXTSR_1000XHDX| \
-			 EXTSR_1000TFDX|EXTSR_1000THDX)
+#define	EXTSR_MEDIAMASK	(EXTSR_1000XFDX | EXTSR_1000XHDX | \
+	    EXTSR_1000TFDX | EXTSR_1000THDX)
 
 #endif /* _DEV_MII_MII_H_ */

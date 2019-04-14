@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.1200 2019/01/27 08:53:30 maxv Exp $
+# $NetBSD: GENERIC,v 1.1204 2019/03/01 12:23:10 nonaka Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/i386/conf/std.i386"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.1200 $"
+#ident		"GENERIC-$Revision: 1.1204 $"
 
 maxusers	64		# estimated number of users
 
@@ -37,6 +37,7 @@ options 	SPECTRE_V2_GCC_MITIGATION
 acpicpu*	at cpu?		# ACPI CPU (including frequency scaling)
 coretemp*	at cpu?		# Intel on-die thermal sensor
 est0		at cpu0		# Intel Enhanced SpeedStep (non-ACPI)
+hyperv0		at cpu0		# Microsoft Hyper-V
 #odcm0		at cpu0		# On-demand clock modulation
 #padlock0	at cpu0		# VIA PadLock
 powernow0	at cpu0		# AMD PowerNow! and Cool'n'Quiet (non-ACPI)
@@ -119,10 +120,15 @@ options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #options 	KGDB		# remote debugger
 #options 	KGDB_DEVNAME="\"com\"",KGDB_DEVADDR=0x3f8,KGDB_DEVRATE=9600
 #makeoptions	DEBUG="-g"	# compile full symbol table
+#options	KUBSAN		# Kernel Undefined Behavior Sanitizer (kUBSan)
 #options 	SYSCALL_STATS	# per syscall counts
 #options 	SYSCALL_TIMES	# per syscall times
 #options 	SYSCALL_TIMES_HASCOUNTER	# use 'broken' rdtsc (soekris)
 options 	KDTRACE_HOOKS	# kernel DTrace hooks
+
+# Kernel Code Coverage Driver.
+#makeoptions	KCOV=1
+#options	KCOV
 
 # Compatibility options
 include 	"conf/compat_netbsd09.config"
@@ -1419,6 +1425,15 @@ ld* at virtio?				# Virtio disk device
 vioif* at virtio?			# Virtio network device
 viornd* at virtio?			# Virtio entropy device
 vioscsi* at virtio?			# Virtio SCSI device
+
+# Hyper-V devices
+vmbus*		at acpi?		# Hyper-V VMBus
+hvn*		at vmbus?		# Hyper-V NetVSC
+hvs*		at vmbus?		# Hyper-V StorVSC
+hvheartbeat*	at vmbus?		# Hyper-V Heartbeat Service
+hvshutdown*	at vmbus?		# Hyper-V Guest Shutdown Service
+hvtimesync*	at vmbus?		# Hyper-V Time Synchronization Service
+#hvkvp*		at vmbus?		# Hyper-V Data Exchange Service
 
 
 # Pull in optional local configuration

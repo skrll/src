@@ -1,4 +1,4 @@
-/*	$NetBSD: intr.h,v 1.57 2018/12/13 16:16:51 cherry Exp $	*/
+/*	$NetBSD: intr.h,v 1.60 2019/02/14 08:18:25 cherry Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -71,9 +71,7 @@
  */
 
 struct intrstub {
-#if !defined(XEN)
 	void *ist_entry;
-#endif
 	void *ist_recurse;
 	void *ist_resume;
 };
@@ -122,6 +120,7 @@ struct intrhand {
 #if defined(XEN)
 	/*
 	 * Note: This is transitional and will go away.
+	 * The only current consumer is xen_intr_disestablish()
 	 *
 	 * We ought to use a union here, but too much effort.
 	 * We use this field to tear down the cookie handed to us
@@ -232,7 +231,7 @@ int x86_send_ipi(struct cpu_info *, int);
 void x86_broadcast_ipi(int);
 void x86_ipi_handler(void);
 
-#ifndef XEN
+#ifndef XENPV
 extern void (* const ipifunc[X86_NIPI])(struct cpu_info *);
 #endif
 

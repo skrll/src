@@ -45,7 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: epe.c,v 1.40 2019/02/05 06:17:01 msaitoh Exp $");
 
 #include <arm/cpufunc.h>
 
-#include <arm/ep93xx/epsocvar.h> 
+#include <arm/ep93xx/epsocvar.h>
 #include <arm/ep93xx/ep93xxvar.h>
 
 #include <net/if.h>
@@ -67,8 +67,8 @@ __KERNEL_RCSID(0, "$NetBSD: epe.c,v 1.40 2019/02/05 06:17:01 msaitoh Exp $");
 #endif
 
 #include <arm/ep93xx/ep93xxreg.h>
-#include <arm/ep93xx/epereg.h> 
-#include <arm/ep93xx/epevar.h> 
+#include <arm/ep93xx/epereg.h>
+#include <arm/ep93xx/epevar.h>
 
 #define DEFAULT_MDCDIV	32
 
@@ -131,7 +131,7 @@ epe_attach(device_t parent, device_t self, void *aux)
 	sc->sc_intr = sa->sa_intr;
 	sc->sc_dmat = sa->sa_dmat;
 
-	if (bus_space_map(sa->sa_iot, sa->sa_addr, sa->sa_size, 
+	if (bus_space_map(sa->sa_iot, sa->sa_addr, sa->sa_size,
 		0, &sc->sc_ioh))
 		panic("%s: Cannot map registers", device_xname(self));
 
@@ -161,8 +161,8 @@ epe_gctx(struct epe_softc *sc)
 	cur = (uint32_t *)(EPE_READ(TXStsQCurAdd) -
 		sc->ctrlpage_dsaddr + (char*)sc->ctrlpage);
 
-	if (sc->TXStsQ_cur != cur) { 
-		CTRLPAGE_DMASYNC(TX_QLEN * 2 * sizeof(uint32_t), 
+	if (sc->TXStsQ_cur != cur) {
+		CTRLPAGE_DMASYNC(TX_QLEN * 2 * sizeof(uint32_t),
 			TX_QLEN * sizeof(uint32_t), BUS_DMASYNC_PREREAD);
 	} else {
 		return 0;
@@ -188,7 +188,7 @@ epe_gctx(struct epe_softc *sc)
 		if (sc->TXStsQ_cur >= sc->TXStsQ + TX_QLEN) {
 			sc->TXStsQ_cur = sc->TXStsQ;
 		}
-	} while (sc->TXStsQ_cur != cur); 
+	} while (sc->TXStsQ_cur != cur);
 
 	sc->TXDQ_avail += ndq;
 	if (ifp->if_flags & IFF_OACTIVE) {
@@ -211,10 +211,10 @@ begin:
 	cur = (uint32_t *)(EPE_READ(RXStsQCurAdd) -
 		sc->ctrlpage_dsaddr + (char*)sc->ctrlpage);
 	CTRLPAGE_DMASYNC(TX_QLEN * 3 * sizeof(uint32_t),
-		RX_QLEN * 4 * sizeof(uint32_t), 
+		RX_QLEN * 4 * sizeof(uint32_t),
 		BUS_DMASYNC_PREREAD);
 	while (sc->RXStsQ_cur != cur) {
-		if ((sc->RXStsQ_cur[0] & (RXStsQ_RWE|RXStsQ_RFP|RXStsQ_EOB)) == 
+		if ((sc->RXStsQ_cur[0] & (RXStsQ_RWE|RXStsQ_RFP|RXStsQ_EOB)) ==
 			(RXStsQ_RWE|RXStsQ_RFP|RXStsQ_EOB)) {
 			uint32_t bi = (sc->RXStsQ_cur[1] >> 16) & 0x7fff;
 			uint32_t fl = sc->RXStsQ_cur[1] & 0xffff;
@@ -223,19 +223,19 @@ begin:
 			MGETHDR(m, M_DONTWAIT, MT_DATA);
 			if (m != NULL) MCLGET(m, M_DONTWAIT);
 			if (m != NULL && (m->m_flags & M_EXT)) {
-				bus_dmamap_unload(sc->sc_dmat, 
+				bus_dmamap_unload(sc->sc_dmat,
 					sc->rxq[bi].m_dmamap);
 				m_set_rcvif(sc->rxq[bi].m, ifp);
-				sc->rxq[bi].m->m_pkthdr.len = 
+				sc->rxq[bi].m->m_pkthdr.len =
 					sc->rxq[bi].m->m_len = fl;
 				if_percpuq_enqueue(ifp->if_percpuq,
 				    sc->rxq[bi].m);
 				sc->rxq[bi].m = m;
-				bus_dmamap_load(sc->sc_dmat, 
-					sc->rxq[bi].m_dmamap, 
+				bus_dmamap_load(sc->sc_dmat,
+					sc->rxq[bi].m_dmamap,
 					m->m_ext.ext_buf, MCLBYTES,
 					NULL, BUS_DMA_NOWAIT);
-				sc->RXDQ[bi * 2] = 
+				sc->RXDQ[bi * 2] =
 					sc->rxq[bi].m_dmamap->dm_segs[0].ds_addr;
 			} else {
 				/* Drop packets until we can get replacement
@@ -245,7 +245,7 @@ begin:
 					m_freem(m);
 				}
 				ifp->if_ierrors++;
-			} 
+			}
 		} else {
 			ifp->if_ierrors++;
 		}
@@ -261,7 +261,7 @@ begin:
 	if (ndq > 0) {
 		ifp->if_ipackets += ndq;
 		CTRLPAGE_DMASYNC(TX_QLEN * 3 * sizeof(uint32_t),
- 			RX_QLEN * 4 * sizeof(uint32_t), 
+ 			RX_QLEN * 4 * sizeof(uint32_t),
 			BUS_DMASYNC_PREWRITE|BUS_DMASYNC_PREREAD);
 		EPE_WRITE(RXStsEnq, ndq);
 		EPE_WRITE(RXDEnq, ndq);
@@ -270,7 +270,7 @@ begin:
 
 	if (epe_gctx(sc) > 0 && IFQ_IS_EMPTY(&ifp->if_snd) == 0) {
 		if_schedule_deferred_start(ifp);
-	} 
+	}
 
 	irq = EPE_READ(IntStsC);
 	if ((irq & (IntSts_RxSQ|IntSts_ECI)) != 0)
@@ -296,7 +296,7 @@ epe_init(struct epe_softc *sc)
 	/* Read ethernet MAC, should already be set by bootrom */
 	bus_space_read_region_1(sc->sc_iot, sc->sc_ioh, EPE_IndAd,
 		sc->sc_enaddr, ETHER_ADDR_LEN);
-	aprint_normal_dev(sc->sc_dev, "MAC address %s\n", 
+	aprint_normal_dev(sc->sc_dev, "MAC address %s\n",
 		ether_sprintf(sc->sc_enaddr));
 
 	/* Soft Reset the MAC */
@@ -312,10 +312,10 @@ epe_init(struct epe_softc *sc)
 	EPE_WRITE(TXDThrshld, 0x40002);
 
 	/* Allocate a page of memory for descriptor and status queues */
-	err = bus_dmamem_alloc(sc->sc_dmat, PAGE_SIZE, 0, PAGE_SIZE, 
+	err = bus_dmamem_alloc(sc->sc_dmat, PAGE_SIZE, 0, PAGE_SIZE,
 		&segs, 1, &rsegs, BUS_DMA_WAITOK);
 	if (err == 0) {
-		err = bus_dmamem_map(sc->sc_dmat, &segs, 1, PAGE_SIZE, 
+		err = bus_dmamem_map(sc->sc_dmat, &segs, 1, PAGE_SIZE,
 			&sc->ctrlpage, (BUS_DMA_WAITOK|BUS_DMA_COHERENT));
 	}
 	if (err == 0) {
@@ -331,7 +331,7 @@ epe_init(struct epe_softc *sc)
 	}
 	sc->ctrlpage_dsaddr = sc->ctrlpage_dmamap->dm_segs[0].ds_addr;
 	memset(sc->ctrlpage, 0, PAGE_SIZE);
-	
+
 	/* Set up pointers to start of each queue in kernel addr space.
 	 * Each descriptor queue or status queue entry uses 2 words
 	 */
@@ -345,12 +345,12 @@ epe_init(struct epe_softc *sc)
 	sc->RXStsQ_cur = sc->RXStsQ;
 
 	/* Program each queue's start addr, cur addr, and len registers
-	 * with the physical addresses. 
+	 * with the physical addresses.
 	 */
 	addr = (char *)sc->ctrlpage_dmamap->dm_segs[0].ds_addr;
 	EPE_WRITE(TXDQBAdd, (uint32_t)addr);
 	EPE_WRITE(TXDQCurAdd, (uint32_t)addr);
-	EPE_WRITE(TXDQBLen, TX_QLEN * 2 * sizeof(uint32_t)); 
+	EPE_WRITE(TXDQBLen, TX_QLEN * 2 * sizeof(uint32_t));
 
 	addr += (sc->TXStsQ - sc->TXDQ) * sizeof(uint32_t);
 	EPE_WRITE(TXStsQBAdd, (uint32_t)addr);
@@ -361,7 +361,7 @@ epe_init(struct epe_softc *sc)
 	EPE_WRITE(RXDQBAdd, (uint32_t)addr);
 	EPE_WRITE(RXDCurAdd, (uint32_t)addr);
 	EPE_WRITE(RXDQBLen, RX_QLEN * 2 * sizeof(uint32_t));
-	
+
 	addr += (sc->RXStsQ - sc->RXDQ) * sizeof(uint32_t);
 	EPE_WRITE(RXStsQBAdd, (uint32_t)addr);
 	EPE_WRITE(RXStsQCurAdd, (uint32_t)addr);
@@ -376,8 +376,8 @@ epe_init(struct epe_softc *sc)
 		MGETHDR(m, M_WAIT, MT_DATA);
 		MCLGET(m, M_WAIT);
 		sc->rxq[i].m = m;
-		bus_dmamap_load(sc->sc_dmat, sc->rxq[i].m_dmamap, 
-			m->m_ext.ext_buf, MCLBYTES, NULL, 
+		bus_dmamap_load(sc->sc_dmat, sc->rxq[i].m_dmamap,
+			m->m_ext.ext_buf, MCLBYTES, NULL,
 			BUS_DMA_WAITOK);
 
 		sc->RXDQ[i * 2] = sc->rxq[i].m_dmamap->dm_segs[0].ds_addr;
@@ -418,7 +418,7 @@ epe_init(struct epe_softc *sc)
 	while((EPE_READ(BMSts) & BMSts_RxAct) == 0)
 		continue;
 	/* enqueue the entries in RXStsQ and RXDQ */
-	CTRLPAGE_DMASYNC(0, sc->ctrlpage_dmamap->dm_mapsize, 
+	CTRLPAGE_DMASYNC(0, sc->ctrlpage_dmamap->dm_mapsize,
 		BUS_DMASYNC_PREWRITE|BUS_DMASYNC_PREREAD);
 	EPE_WRITE(RXDEnq, RX_QLEN - 1);
 	EPE_WRITE(RXStsEnq, RX_QLEN - 1);
@@ -480,7 +480,7 @@ epe_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 	return 0;
 }
 
-	
+
 void
 epe_statchg(struct ifnet *ifp)
 {
@@ -510,9 +510,9 @@ epe_tick(void *arg)
 	ifp->if_collisions += EPE_READ(TXCollCnt);
 	/* These misses are ok, they will happen if the RAM/CPU can't keep up */
 	misses = EPE_READ(RXMissCnt);
-	if (misses > 0) 
+	if (misses > 0)
 		printf("%s: %d rx misses\n", device_xname(sc->sc_dev), misses);
-	
+
 	s = splnet();
 	if (epe_gctx(sc) > 0 && IFQ_IS_EMPTY(&ifp->if_snd) == 0) {
 		epe_ifstart(ifp);
@@ -548,7 +548,7 @@ epe_ifstart(struct ifnet *ifp)
 	bus_dma_segment_t *segs;
 	int s, bi, err, nsegs, ndq;
 
-	s = splnet();	
+	s = splnet();
 start:
 	ndq = 0;
 	if (sc->TXDQ_avail == 0) {
@@ -560,9 +560,9 @@ start:
 			splx(s);
 			return;
 		}
-	} 
+	}
 
-	bi = sc->TXDQ_cur - sc->TXDQ; 
+	bi = sc->TXDQ_cur - sc->TXDQ;
 
 	IFQ_POLL(&ifp->if_snd, m);
 	if (m == NULL) {
@@ -571,13 +571,13 @@ start:
 	}
 more:
 	if ((err = bus_dmamap_load_mbuf(sc->sc_dmat, sc->txq[bi].m_dmamap, m,
-		BUS_DMA_NOWAIT)) || 
+		BUS_DMA_NOWAIT)) ||
 		sc->txq[bi].m_dmamap->dm_segs[0].ds_addr & 0x3 ||
 		sc->txq[bi].m_dmamap->dm_nsegs > (sc->TXDQ_avail - ndq)) {
 		/* Copy entire mbuf chain to new and 32-bit aligned storage */
 		struct mbuf *mn;
 
-		if (err == 0) 
+		if (err == 0)
 			bus_dmamap_unload(sc->sc_dmat, sc->txq[bi].m_dmamap);
 
 		MGETHDR(mn, M_DONTWAIT, MT_DATA);
@@ -589,7 +589,7 @@ more:
 				goto stop;
 			}
 		}
-		mn->m_data = (void *)(((uint32_t)mn->m_data + 0x3) & (~0x3)); 
+		mn->m_data = (void *)(((uint32_t)mn->m_data + 0x3) & (~0x3));
 		m_copydata(m, 0, m->m_pkthdr.len, mtod(mn, void *));
 		mn->m_pkthdr.len = mn->m_len = m->m_pkthdr.len;
 		IFQ_DEQUEUE(&ifp->if_snd, m);
@@ -605,8 +605,8 @@ more:
 
 	nsegs = sc->txq[bi].m_dmamap->dm_nsegs;
 	segs = sc->txq[bi].m_dmamap->dm_segs;
-	bus_dmamap_sync(sc->sc_dmat, sc->txq[bi].m_dmamap, 0, 
-		sc->txq[bi].m_dmamap->dm_mapsize, 
+	bus_dmamap_sync(sc->sc_dmat, sc->txq[bi].m_dmamap, 0,
+		sc->txq[bi].m_dmamap->dm_mapsize,
 		BUS_DMASYNC_PREREAD|BUS_DMASYNC_PREWRITE);
 
 	/* XXX: This driver hasn't been tested w/nsegs > 1 */
@@ -634,7 +634,7 @@ more:
 		if (m != NULL) {
 			goto more;
 		}
-	} 
+	}
 stop:
 	if (ndq > 0) {
 		sc->TXDQ_avail -= ndq;
@@ -658,7 +658,7 @@ epe_ifwatchdog(struct ifnet *ifp)
 
 	if ((ifp->if_flags & IFF_RUNNING) == 0)
 		return;
-       	printf("%s: device timeout, BMCtl = 0x%08x, BMSts = 0x%08x\n", 
+       	printf("%s: device timeout, BMCtl = 0x%08x, BMSts = 0x%08x\n",
 		device_xname(sc->sc_dev), EPE_READ(BMCtl), EPE_READ(BMSts));
 }
 
@@ -717,12 +717,12 @@ epe_setaddr(struct ifnet *ifp)
 
 	/* disable receiver temporarily */
 	EPE_WRITE(RXCtl, rxctl & ~RXCtl_SRxON);
-	
+
 	rxctl &= ~(RXCtl_MA|RXCtl_PA|RXCtl_IA2|RXCtl_IA3);
 
 	if (ifp->if_flags & IFF_PROMISC) {
 		rxctl |= RXCtl_PA;
-	} 
+	}
 
 	ifp->if_flags &= ~IFF_ALLMULTI;
 
@@ -747,7 +747,7 @@ epe_setaddr(struct ifnet *ifp)
 
 		if (nma < 2) {
 			/* We can program 2 perfect address filters for mcast */
-			memcpy(ias[nma], enm->enm_addrlo, ETHER_ADDR_LEN);			
+			memcpy(ias[nma], enm->enm_addrlo, ETHER_ADDR_LEN);
 			rxctl |= (1 << (nma + 2));
 		} else {
 			/*
@@ -765,9 +765,9 @@ epe_setaddr(struct ifnet *ifp)
 		ETHER_NEXT_MULTI(step, enm);
 		nma++;
 	}
-	
+
 	EPE_WRITE(AFP, 0);
-	bus_space_write_region_1(sc->sc_iot, sc->sc_ioh, EPE_IndAd, 
+	bus_space_write_region_1(sc->sc_iot, sc->sc_ioh, EPE_IndAd,
 		sc->sc_enaddr, ETHER_ADDR_LEN);
 	if (rxctl & RXCtl_IA2) {
 		EPE_WRITE(AFP, 2);

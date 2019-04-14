@@ -1,4 +1,4 @@
-/*	$NetBSD: intel_ddi.c,v 1.8 2018/09/13 08:25:55 mrg Exp $	*/
+/*	$NetBSD: intel_ddi.c,v 1.10 2019/02/19 00:30:16 christos Exp $	*/
 
 /*
  * Copyright © 2012 Intel Corporation
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intel_ddi.c,v 1.8 2018/09/13 08:25:55 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intel_ddi.c,v 1.10 2019/02/19 00:30:16 christos Exp $");
 
 #include <linux/math64.h>
 

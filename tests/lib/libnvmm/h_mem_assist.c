@@ -1,3 +1,5 @@
+/*	$NetBSD: h_mem_assist.c,v 1.9 2019/03/22 01:50:14 htodd Exp $	*/
+
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -54,12 +56,13 @@ init_seg(struct nvmm_x64_state_seg *seg, int type, int sel)
 {
 	seg->selector = sel;
 	seg->attrib.type = type;
+	seg->attrib.s = (type & 0b10000) != 0;
 	seg->attrib.dpl = 0;
 	seg->attrib.p = 1;
 	seg->attrib.avl = 1;
-	seg->attrib.lng = 1;
-	seg->attrib.def32 = 0;
-	seg->attrib.gran = 1;
+	seg->attrib.l = 1;
+	seg->attrib.def = 0;
+	seg->attrib.g = 1;
 	seg->limit = 0x0000FFFF;
 	seg->base = 0x00000000;
 }
@@ -120,6 +123,7 @@ static void
 map_pages(struct nvmm_machine *mach)
 {
 	pt_entry_t *L4, *L3, *L2, *L1;
+	int ret;
 
 	instbuf = mmap(NULL, PAGE_SIZE, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE,
 	    -1, 0);
@@ -128,7 +132,9 @@ map_pages(struct nvmm_machine *mach)
 
 	if (nvmm_hva_map(mach, (uintptr_t)instbuf, PAGE_SIZE) == -1)
 		err(errno, "nvmm_hva_map");
-	if (nvmm_gpa_map(mach, (uintptr_t)instbuf, 0x2000, PAGE_SIZE, 0) == -1)
+	ret = nvmm_gpa_map(mach, (uintptr_t)instbuf, 0x2000, PAGE_SIZE,
+	    PROT_READ|PROT_EXEC);
+	if (ret == -1)
 		err(errno, "nvmm_gpa_map");
 
 	L4 = mmap(NULL, PAGE_SIZE, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE,
@@ -157,13 +163,21 @@ map_pages(struct nvmm_machine *mach)
 	if (nvmm_hva_map(mach, (uintptr_t)L1, PAGE_SIZE) == -1)
 		err(errno, "nvmm_hva_map");
 
-	if (nvmm_gpa_map(mach, (uintptr_t)L4, 0x3000, PAGE_SIZE, 0) == -1)
+	ret = nvmm_gpa_map(mach, (uintptr_t)L4, 0x3000, PAGE_SIZE,
+	    PROT_READ|PROT_WRITE);
+	if (ret == -1)
 		err(errno, "nvmm_gpa_map");
-	if (nvmm_gpa_map(mach, (uintptr_t)L3, 0x4000, PAGE_SIZE, 0) == -1)
+	ret = nvmm_gpa_map(mach, (uintptr_t)L3, 0x4000, PAGE_SIZE,
+	    PROT_READ|PROT_WRITE);
+	if (ret == -1)
 		err(errno, "nvmm_gpa_map");
-	if (nvmm_gpa_map(mach, (uintptr_t)L2, 0x5000, PAGE_SIZE, 0) == -1)
+	ret = nvmm_gpa_map(mach, (uintptr_t)L2, 0x5000, PAGE_SIZE,
+	    PROT_READ|PROT_WRITE);
+	if (ret == -1)
 		err(errno, "nvmm_gpa_map");
-	if (nvmm_gpa_map(mach, (uintptr_t)L1, 0x6000, PAGE_SIZE, 0) == -1)
+	ret = nvmm_gpa_map(mach, (uintptr_t)L1, 0x6000, PAGE_SIZE,
+	    PROT_READ|PROT_WRITE);
+	if (ret == -1)
 		err(errno, "nvmm_gpa_map");
 
 	memset(L4, 0, PAGE_SIZE);
@@ -171,11 +185,11 @@ map_pages(struct nvmm_machine *mach)
 	memset(L2, 0, PAGE_SIZE);
 	memset(L1, 0, PAGE_SIZE);
 
-	L4[0] = PG_V | PG_RW | 0x4000;
-	L3[0] = PG_V | PG_RW | 0x5000;
-	L2[0] = PG_V | PG_RW | 0x6000;
-	L1[0x2000 / PAGE_SIZE] = PG_V | PG_RW | 0x2000;
-	L1[0x1000 / PAGE_SIZE] = PG_V | PG_RW | 0x1000;
+	L4[0] = PTE_P | PTE_W | 0x4000;
+	L3[0] = PTE_P | PTE_W | 0x5000;
+	L2[0] = PTE_P | PTE_W | 0x6000;
+	L1[0x2000 / PAGE_SIZE] = PTE_P | PTE_W | 0x2000;
+	L1[0x1000 / PAGE_SIZE] = PTE_P | PTE_W | 0x1000;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -292,10 +306,13 @@ extern uint8_t test8_begin, test8_end;
 extern uint8_t test9_begin, test9_end;
 extern uint8_t test10_begin, test10_end;
 extern uint8_t test11_begin, test11_end;
+extern uint8_t test12_begin, test12_end;
+extern uint8_t test13_begin, test13_end;
+extern uint8_t test14_begin, test14_end;
 
 static const struct test tests[] = {
 	{ "test1 - MOV", &test1_begin, &test1_end, 0x3004 },
-	{ "test2 - OR",  &test2_begin, &test2_end, 0x14FF },
+	{ "test2 - OR",  &test2_begin, &test2_end, 0x16FF },
 	{ "test3 - AND", &test3_begin, &test3_end, 0x1FC0 },
 	{ "test4 - XOR", &test4_begin, &test4_end, 0x10CF },
 	{ "test5 - Address Sizes", &test5_begin, &test5_end, 0x1F00 },
@@ -305,6 +322,9 @@ static const struct test tests[] = {
 	{ "test9 - MOVS", &test9_begin, &test9_end, 0x12345678 },
 	{ "test10 - MOVZXB", &test10_begin, &test10_end, 0x00000078 },
 	{ "test11 - MOVZXW", &test11_begin, &test11_end, 0x00005678 },
+	{ "test12 - CMP", &test12_begin, &test12_end, 0x00000001 },
+	{ "test13 - SUB", &test13_begin, &test13_end, 0x0000000F0000A0FF },
+	{ "test14 - TEST", &test14_begin, &test14_end, 0x00000001 },
 	{ NULL, NULL, NULL, -1 }
 };
 

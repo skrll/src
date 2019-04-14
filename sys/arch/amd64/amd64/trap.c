@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.116 2019/02/03 03:19:26 mrg Exp $	*/
+/*	$NetBSD: trap.c,v 1.119 2019/04/06 03:06:24 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1998, 2000, 2017 The NetBSD Foundation, Inc.
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.116 2019/02/03 03:19:26 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.119 2019/04/06 03:06:24 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -102,7 +102,7 @@ __KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.116 2019/02/03 03:19:26 mrg Exp $");
 
 #include <x86/nmi.h>
 
-#ifndef XEN
+#ifndef XENPV
 #include "isa.h"
 #endif
 
@@ -264,7 +264,7 @@ trap(struct trapframe *frame)
 	struct lwp *l = curlwp;
 	struct proc *p;
 	struct pcb *pcb;
-	extern char fusuintrfailure[], kcopy_fault[];
+	extern char kcopy_fault[];
 	extern char IDTVEC(osyscall)[];
 	extern char IDTVEC(syscall32)[];
 	ksiginfo_t ksi;
@@ -296,7 +296,7 @@ trap(struct trapframe *frame)
 	 * A trap can occur while DTrace executes a probe. Before
 	 * executing the probe, DTrace blocks re-scheduling and sets
 	 * a flag in its per-cpu flags to indicate that it doesn't
-	 * want to fault. On returning from the the probe, the no-fault
+	 * want to fault. On returning from the probe, the no-fault
 	 * flag is cleared and finally re-scheduling is enabled.
 	 *
 	 * If the DTrace kernel module has registered a trap handler,
@@ -470,15 +470,8 @@ trap(struct trapframe *frame)
 		if (__predict_false(l == NULL))
 			goto we_re_toast;
 
-		/*
-		 * fusuintrfailure is used by [fs]uswintr() to prevent
-		 * page faulting from inside the profiling interrupt.
-		 */
 		onfault = pcb->pcb_onfault;
-		if (onfault == fusuintrfailure) {
-			onfault_restore(frame, fusuintrfailure, EFAULT);
-			return;
-		}
+
 		if (cpu_intr_p() || (l->l_pflag & LP_INTR) != 0) {
 			goto we_re_toast;
 		}
@@ -590,7 +583,7 @@ faultcommon:
 				 * the copy functions, and so visible
 				 * to cpu_kpreempt_exit().
 				 */
-#ifndef XEN
+#ifndef XENPV
 				x86_disable_intr();
 #endif
 				l->l_nopreempt--;
@@ -598,7 +591,7 @@ faultcommon:
 				    pfail) {
 					return;
 				}
-#ifndef XEN
+#ifndef XENPV
 				x86_enable_intr();
 #endif
 				/*

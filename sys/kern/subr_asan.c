@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_asan.c,v 1.2 2018/12/23 12:15:01 maxv Exp $	*/
+/*	$NetBSD: subr_asan.c,v 1.7 2019/04/11 17:43:45 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_asan.c,v 1.2 2018/12/23 12:15:01 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_asan.c,v 1.7 2019/04/11 17:43:45 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -50,17 +50,6 @@ __KERNEL_RCSID(0, "$NetBSD: subr_asan.c,v 1.2 2018/12/23 12:15:01 maxv Exp $");
 
 /* The MD code. */
 #include <machine/asan.h>
-
-/* Our redzone values. */
-#define KASAN_GLOBAL_REDZONE	0xFA
-#define KASAN_MEMORY_REDZONE	0xFB
-
-/* Stack redzone values. Part of the compiler ABI. */
-#define KASAN_STACK_LEFT	0xF1
-#define KASAN_STACK_MID		0xF2
-#define KASAN_STACK_RIGHT	0xF3
-#define KASAN_STACK_PARTIAL	0xF4
-#define KASAN_USE_AFTER_SCOPE	0xF8
 
 /* ASAN ABI version. */
 #if defined(__clang__) && (__clang_major__ - 0 >= 6)
@@ -163,12 +152,43 @@ kasan_init(void)
 	kasan_ctors();
 }
 
-static void
-kasan_report(unsigned long addr, size_t size, bool write, unsigned long pc)
+static inline const char *
+kasan_code_name(uint8_t code)
 {
-	printf("kASan: Unauthorized Access In %p: Addr %p [%zu byte%s, %s]\n",
+	switch (code) {
+	case KASAN_GENERIC_REDZONE:
+		return "GenericRedZone";
+	case KASAN_MALLOC_REDZONE:
+		return "MallocRedZone";
+	case KASAN_KMEM_REDZONE:
+		return "KmemRedZone";
+	case KASAN_POOL_REDZONE:
+		return "PoolRedZone";
+	case KASAN_POOL_FREED:
+		return "PoolUseAfterFree";
+	case 1 ... 7:
+		return "RedZonePartial";
+	case KASAN_STACK_LEFT:
+		return "StackLeft";
+	case KASAN_STACK_RIGHT:
+		return "StackRight";
+	case KASAN_STACK_PARTIAL:
+		return "StackPartial";
+	case KASAN_USE_AFTER_SCOPE:
+		return "UseAfterScope";
+	default:
+		return "Unknown";
+	}
+}
+
+static void
+kasan_report(unsigned long addr, size_t size, bool write, unsigned long pc,
+    uint8_t code)
+{
+	printf("ASan: Unauthorized Access In %p: Addr %p [%zu byte%s, %s,"
+	    " %s]\n",
 	    (void *)pc, (void *)addr, size, (size > 1 ? "s" : ""),
-	    (write ? "write" : "read"));
+	    (write ? "write" : "read"), kasan_code_name(code));
 	kasan_md_unwind();
 }
 
@@ -182,7 +202,17 @@ kasan_shadow_1byte_markvalid(unsigned long addr)
 }
 
 static __always_inline void
-kasan_shadow_Nbyte_fill(const void *addr, size_t size, uint8_t val)
+kasan_shadow_Nbyte_markvalid(const void *addr, size_t size)
+{
+	size_t i;
+
+	for (i = 0; i < size; i++) {
+		kasan_shadow_1byte_markvalid((unsigned long)addr+i);
+	}
+}
+
+static __always_inline void
+kasan_shadow_Nbyte_fill(const void *addr, size_t size, uint8_t code)
 {
 	void *shad;
 
@@ -197,7 +227,7 @@ kasan_shadow_Nbyte_fill(const void *addr, size_t size, uint8_t val)
 	shad = (void *)kasan_md_addr_to_shad(addr);
 	size = size >> KASAN_SHADOW_SCALE_SHIFT;
 
-	__builtin_memset(shad, val, size);
+	__builtin_memset(shad, code, size);
 }
 
 void
@@ -208,19 +238,13 @@ kasan_add_redzone(size_t *size)
 }
 
 static void
-kasan_markmem(const void *addr, size_t size, bool valid)
+kasan_markmem(const void *addr, size_t size, bool valid, uint8_t code)
 {
-	size_t i;
-
 	KASSERT((vaddr_t)addr % KASAN_SHADOW_SCALE_SIZE == 0);
-
 	if (valid) {
-		for (i = 0; i < size; i++) {
-			kasan_shadow_1byte_markvalid((unsigned long)addr+i);
-		}
+		kasan_shadow_Nbyte_markvalid(addr, size);
 	} else {
-		KASSERT(size % KASAN_SHADOW_SCALE_SIZE == 0);
-		kasan_shadow_Nbyte_fill(addr, size, KASAN_MEMORY_REDZONE);
+		kasan_shadow_Nbyte_fill(addr, size, code);
 	}
 }
 
@@ -236,16 +260,16 @@ kasan_softint(struct lwp *l)
  * In an area of size 'sz_with_redz', mark the 'size' first bytes as valid,
  * and the rest as invalid. There are generally two use cases:
  *
- *  o kasan_mark(addr, origsize, size), with origsize < size. This marks the
- *    redzone at the end of the buffer as invalid.
+ *  o kasan_mark(addr, origsize, size, code), with origsize < size. This marks
+ *    the redzone at the end of the buffer as invalid.
  *
- *  o kasan_mark(addr, size, size). This marks the entire buffer as valid.
+ *  o kasan_mark(addr, size, size, 0). This marks the entire buffer as valid.
  */
 void
-kasan_mark(const void *addr, size_t size, size_t sz_with_redz)
+kasan_mark(const void *addr, size_t size, size_t sz_with_redz, uint8_t code)
 {
-	kasan_markmem(addr, sz_with_redz, false);
-	kasan_markmem(addr, size, true);
+	kasan_markmem(addr, sz_with_redz, false, code);
+	kasan_markmem(addr, size, true, code);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -255,69 +279,85 @@ kasan_mark(const void *addr, size_t size, size_t sz_with_redz)
 	    ((addr + size - 1) >> KASAN_SHADOW_SCALE_SHIFT)
 
 static __always_inline bool
-kasan_shadow_1byte_isvalid(unsigned long addr)
+kasan_shadow_1byte_isvalid(unsigned long addr, uint8_t *code)
 {
 	int8_t *byte = kasan_md_addr_to_shad((void *)addr);
 	int8_t last = (addr & KASAN_SHADOW_MASK) + 1;
 
-	return __predict_true(*byte == 0 || last <= *byte);
+	if (__predict_true(*byte == 0 || last <= *byte)) {
+		return true;
+	}
+	*code = *byte;
+	return false;
 }
 
 static __always_inline bool
-kasan_shadow_2byte_isvalid(unsigned long addr)
+kasan_shadow_2byte_isvalid(unsigned long addr, uint8_t *code)
 {
 	int8_t *byte, last;
 
 	if (ADDR_CROSSES_SCALE_BOUNDARY(addr, 2)) {
-		return (kasan_shadow_1byte_isvalid(addr) &&
-		    kasan_shadow_1byte_isvalid(addr+1));
+		return (kasan_shadow_1byte_isvalid(addr, code) &&
+		    kasan_shadow_1byte_isvalid(addr+1, code));
 	}
 
 	byte = kasan_md_addr_to_shad((void *)addr);
 	last = ((addr + 1) & KASAN_SHADOW_MASK) + 1;
 
-	return __predict_true(*byte == 0 || last <= *byte);
+	if (__predict_true(*byte == 0 || last <= *byte)) {
+		return true;
+	}
+	*code = *byte;
+	return false;
 }
 
 static __always_inline bool
-kasan_shadow_4byte_isvalid(unsigned long addr)
+kasan_shadow_4byte_isvalid(unsigned long addr, uint8_t *code)
 {
 	int8_t *byte, last;
 
 	if (ADDR_CROSSES_SCALE_BOUNDARY(addr, 4)) {
-		return (kasan_shadow_2byte_isvalid(addr) &&
-		    kasan_shadow_2byte_isvalid(addr+2));
+		return (kasan_shadow_2byte_isvalid(addr, code) &&
+		    kasan_shadow_2byte_isvalid(addr+2, code));
 	}
 
 	byte = kasan_md_addr_to_shad((void *)addr);
 	last = ((addr + 3) & KASAN_SHADOW_MASK) + 1;
 
-	return __predict_true(*byte == 0 || last <= *byte);
+	if (__predict_true(*byte == 0 || last <= *byte)) {
+		return true;
+	}
+	*code = *byte;
+	return false;
 }
 
 static __always_inline bool
-kasan_shadow_8byte_isvalid(unsigned long addr)
+kasan_shadow_8byte_isvalid(unsigned long addr, uint8_t *code)
 {
 	int8_t *byte, last;
 
 	if (ADDR_CROSSES_SCALE_BOUNDARY(addr, 8)) {
-		return (kasan_shadow_4byte_isvalid(addr) &&
-		    kasan_shadow_4byte_isvalid(addr+4));
+		return (kasan_shadow_4byte_isvalid(addr, code) &&
+		    kasan_shadow_4byte_isvalid(addr+4, code));
 	}
 
 	byte = kasan_md_addr_to_shad((void *)addr);
 	last = ((addr + 7) & KASAN_SHADOW_MASK) + 1;
 
-	return __predict_true(*byte == 0 || last <= *byte);
+	if (__predict_true(*byte == 0 || last <= *byte)) {
+		return true;
+	}
+	*code = *byte;
+	return false;
 }
 
 static __always_inline bool
-kasan_shadow_Nbyte_isvalid(unsigned long addr, size_t size)
+kasan_shadow_Nbyte_isvalid(unsigned long addr, size_t size, uint8_t *code)
 {
 	size_t i;
 
 	for (i = 0; i < size; i++) {
-		if (!kasan_shadow_1byte_isvalid(addr+i))
+		if (!kasan_shadow_1byte_isvalid(addr+i, code))
 			return false;
 	}
 
@@ -328,6 +368,7 @@ static __always_inline void
 kasan_shadow_check(unsigned long addr, size_t size, bool write,
     unsigned long retaddr)
 {
+	uint8_t code;
 	bool valid;
 
 	if (__predict_false(!kasan_enabled))
@@ -340,27 +381,27 @@ kasan_shadow_check(unsigned long addr, size_t size, bool write,
 	if (__builtin_constant_p(size)) {
 		switch (size) {
 		case 1:
-			valid = kasan_shadow_1byte_isvalid(addr);
+			valid = kasan_shadow_1byte_isvalid(addr, &code);
 			break;
 		case 2:
-			valid = kasan_shadow_2byte_isvalid(addr);
+			valid = kasan_shadow_2byte_isvalid(addr, &code);
 			break;
 		case 4:
-			valid = kasan_shadow_4byte_isvalid(addr);
+			valid = kasan_shadow_4byte_isvalid(addr, &code);
 			break;
 		case 8:
-			valid = kasan_shadow_8byte_isvalid(addr);
+			valid = kasan_shadow_8byte_isvalid(addr, &code);
 			break;
 		default:
-			valid = kasan_shadow_Nbyte_isvalid(addr, size);
+			valid = kasan_shadow_Nbyte_isvalid(addr, size, &code);
 			break;
 		}
 	} else {
-		valid = kasan_shadow_Nbyte_isvalid(addr, size);
+		valid = kasan_shadow_Nbyte_isvalid(addr, size, &code);
 	}
 
 	if (__predict_false(!valid)) {
-		kasan_report(addr, size, write, retaddr);
+		kasan_report(addr, size, write, retaddr, code);
 	}
 }
 
@@ -438,6 +479,38 @@ kasan_strlen(const char *str)
 	return (s - str);
 }
 
+#undef copyinstr
+#undef copyoutstr
+#undef copyin
+
+int	kasan_copyinstr(const void *, void *, size_t, size_t *);
+int	kasan_copyoutstr(const void *, void *, size_t, size_t *);
+int	kasan_copyin(const void *, void *, size_t);
+int	copyinstr(const void *, void *, size_t, size_t *);
+int	copyoutstr(const void *, void *, size_t, size_t *);
+int	copyin(const void *, void *, size_t);
+
+int
+kasan_copyin(const void *uaddr, void *kaddr, size_t len)
+{
+	kasan_shadow_check((unsigned long)kaddr, len, true, __RET_ADDR);
+	return copyin(uaddr, kaddr, len);
+}
+
+int
+kasan_copyinstr(const void *uaddr, void *kaddr, size_t len, size_t *done)
+{
+	kasan_shadow_check((unsigned long)kaddr, len, true, __RET_ADDR);
+	return copyinstr(uaddr, kaddr, len, done);
+}
+
+int
+kasan_copyoutstr(const void *kaddr, void *uaddr, size_t len, size_t *done)
+{
+	kasan_shadow_check((unsigned long)kaddr, len, false, __RET_ADDR);
+	return copyoutstr(kaddr, uaddr, len, done);
+}
+
 /* -------------------------------------------------------------------------- */
 
 void __asan_register_globals(struct __asan_global *, size_t);
@@ -450,7 +523,7 @@ __asan_register_globals(struct __asan_global *globals, size_t n)
 
 	for (i = 0; i < n; i++) {
 		kasan_mark(globals[i].beg, globals[i].size,
-		    globals[i].size_with_redzone);
+		    globals[i].size_with_redzone, KASAN_GENERIC_REDZONE);
 	}
 }
 
@@ -537,3 +610,17 @@ ASAN_SET_SHADOW(f2);
 ASAN_SET_SHADOW(f3);
 ASAN_SET_SHADOW(f5);
 ASAN_SET_SHADOW(f8);
+
+void __asan_poison_stack_memory(const void *, size_t);
+void __asan_unpoison_stack_memory(const void *, size_t);
+
+void __asan_poison_stack_memory(const void *addr, size_t size)
+{
+	size = roundup(size, KASAN_SHADOW_SCALE_SIZE);
+	kasan_shadow_Nbyte_fill(addr, size, KASAN_USE_AFTER_SCOPE);
+}
+
+void __asan_unpoison_stack_memory(const void *addr, size_t size)
+{
+	kasan_shadow_Nbyte_markvalid(addr, size);
+}

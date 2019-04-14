@@ -1,4 +1,4 @@
-/*	$NetBSD: if_axen.c,v 1.35 2019/02/06 08:38:41 rin Exp $	*/
+/*	$NetBSD: if_axen.c,v 1.38 2019/04/11 08:50:59 msaitoh Exp $	*/
 /*	$OpenBSD: if_axen.c,v 1.3 2013/10/21 10:10:22 yuo Exp $	*/
 
 /*
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.35 2019/02/06 08:38:41 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.38 2019/04/11 08:50:59 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -275,7 +275,7 @@ axen_miibus_statchg(struct ifnet *ifp)
 		return;
 
 	val = 0;
-	if ((mii->mii_media_active & IFM_GMASK) == IFM_FDX)
+	if ((mii->mii_media_active & IFM_FDX) != 0)
 		val |= AXEN_MEDIUM_FDX;
 
 	val |= AXEN_MEDIUM_RXFLOW_CTRL_EN | AXEN_MEDIUM_TXFLOW_CTRL_EN |
@@ -965,7 +965,6 @@ axen_rx_list_init(struct axen_softc *sc)
 	for (i = 0; i < AXEN_RX_LIST_CNT; i++) {
 		c = &cd->axen_rx_chain[i];
 		c->axen_sc = sc;
-		c->axen_idx = i;
 		if (c->axen_xfer == NULL) {
 			int err = usbd_create_xfer(sc->axen_ep[AXEN_ENDPT_RX],
 			    sc->axen_rx_bufsz, 0, 0, &c->axen_xfer);
@@ -1002,7 +1001,6 @@ axen_tx_list_init(struct axen_softc *sc)
 	for (i = 0; i < AXEN_TX_LIST_CNT; i++) {
 		c = &cd->axen_tx_chain[i];
 		c->axen_sc = sc;
-		c->axen_idx = i;
 		if (c->axen_xfer == NULL) {
 			int err = usbd_create_xfer(sc->axen_ep[AXEN_ENDPT_TX],
 			    sc->axen_tx_bufsz, USBD_FORCE_SHORT_XFER, 0,
@@ -1325,7 +1323,7 @@ axen_encap(struct axen_softc *sc, struct mbuf *m, int idx)
 	struct axen_chain *c;
 	usbd_status err;
 	struct axen_sframe_hdr hdr;
-	int length, boundary;
+	u_int length, boundary;
 
 	c = &sc->axen_cdata.axen_tx_chain[idx];
 
@@ -1544,7 +1542,7 @@ axen_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 
 	int error = ether_ioctl(ifp, cmd, data);
 
-	mutex_enter(&sc->sc_lock);
+	mutex_enter(&sc->axen_lock);
 	if (error == ENETRESET) {
 		error = 0;
 		switch (cmd) {
@@ -1559,11 +1557,11 @@ axen_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		}
 	}
 
-	mutex_enter(&sc->sc_rxlock);
-	mutex_enter(&sc->sc_txlock);
-	sc->sc_if_flags = ifp->if_flags;
-	mutex_exit(&sc->sc_txlock);
-	mutex_exit(&sc->sc_rxlock);
+	mutex_enter(&sc->axen_rxlock);
+	mutex_enter(&sc->axen_txlock);
+	sc->axen_if_flags = ifp->if_flags;
+	mutex_exit(&sc->axen_txlock);
+	mutex_exit(&sc->axen_rxlock);
 
 	mutex_exit(&sc->axen_lock);
 

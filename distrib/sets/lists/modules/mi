@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.119 2019/02/06 11:55:05 rin Exp $
+# $NetBSD: mi,v 1.121 2019/03/26 00:36:14 pgoyette Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -228,6 +228,8 @@
 ./@MODULEDIR@/if_stf/if_stf.kmod		base-kernel-modules	kmod
 ./@MODULEDIR@/if_strip				base-kernel-modules	kmod
 ./@MODULEDIR@/if_strip/if_strip.kmod		base-kernel-modules	kmod
+./@MODULEDIR@/if_tap				base-kernel-modules	kmod
+./@MODULEDIR@/if_tap/if_tap.kmod		base-kernel-modules	kmod
 ./@MODULEDIR@/if_tun				base-kernel-modules	kmod
 ./@MODULEDIR@/if_tun/if_tun.kmod		base-kernel-modules	kmod
 ./@MODULEDIR@/if_ure				base-kernel-modules	kmod
@@ -390,6 +392,8 @@
 ./@MODULEDIR@/spkr_synch			base-obsolete		obsolete
 ./@MODULEDIR@/sppp_subr				base-kernel-modules	kmod
 ./@MODULEDIR@/sppp_subr/sppp_subr.kmod		base-kernel-modules	kmod
+./@MODULEDIR@/srt				base-kernel-modules	kmod
+./@MODULEDIR@/srt/srt.kmod			base-kernel-modules	kmod
 ./@MODULEDIR@/suser				base-kernel-modules	kmod
 ./@MODULEDIR@/suser/suser.kmod			base-kernel-modules	kmod
 ./@MODULEDIR@/swcrypto				base-kernel-modules	kmod
@@ -416,6 +420,8 @@
 ./@MODULEDIR@/tmpfs/tmpfs.kmod			base-kernel-modules	kmod
 ./@MODULEDIR@/tprof				base-kernel-modules	kmod
 ./@MODULEDIR@/tprof/tprof.kmod			base-kernel-modules	kmod
+./@MODULEDIR@/tap				base-kernel-modules	kmod
+./@MODULEDIR@/tap/tap.kmod			base-kernel-modules	kmod
 ./@MODULEDIR@/tun				base-kernel-modules	kmod
 ./@MODULEDIR@/tun/tun.kmod			base-kernel-modules	kmod
 ./@MODULEDIR@/twa				base-obsolete		obsolete

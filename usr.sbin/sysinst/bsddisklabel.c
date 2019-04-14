@@ -1,4 +1,4 @@
-/*	$NetBSD: bsddisklabel.c,v 1.6 2018/11/20 19:02:07 martin Exp $	*/
+/*	$NetBSD: bsddisklabel.c,v 1.8 2019/02/12 18:32:15 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.

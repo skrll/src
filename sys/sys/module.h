@@ -1,4 +1,4 @@
-/*	$NetBSD: module.h,v 1.44 2019/01/27 18:29:10 christos Exp $	*/
+/*	$NetBSD: module.h,v 1.46 2019/04/08 11:32:49 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
 #define	MAXMODNAME	32
 #define	MAXMODDEPS	10
 
-/* Module classes, provided only for system boot and cosmetic purposes. */
+/* Module classes, provided only for system boot and module validation. */
 typedef enum modclass {
 	MODULE_CLASS_ANY,
 	MODULE_CLASS_MISC,
@@ -45,7 +45,8 @@ typedef enum modclass {
 	MODULE_CLASS_DRIVER,
 	MODULE_CLASS_EXEC,
 	MODULE_CLASS_SECMODEL,
-	MODULE_CLASS_BUFQ
+	MODULE_CLASS_BUFQ,
+	MODULE_CLASS_MAX
 } modclass_t;
 
 /* Module sources: where did it come from? */

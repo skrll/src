@@ -1,4 +1,4 @@
-/*	$NetBSD: umass_scsipi.c,v 1.57 2019/01/22 06:46:21 skrll Exp $	*/
+/*	$NetBSD: umass_scsipi.c,v 1.61 2019/03/28 10:44:29 kardel Exp $	*/
 
 /*
  * Copyright (c) 2001, 2003, 2012 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: umass_scsipi.c,v 1.57 2019/01/22 06:46:21 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: umass_scsipi.c,v 1.61 2019/03/28 10:44:29 kardel Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -151,6 +151,15 @@ umass_scsi_attach(struct umass_softc *sc)
 
 	return 0;
 }
+
+void
+umass_scsi_detach(struct umass_softc *sc)
+{
+	struct umass_scsipi_softc *scbus = (struct umass_scsipi_softc *)sc->bus;
+
+	kmem_free(scbus, sizeof(*scbus));
+	sc->bus = NULL;
+}
 #endif
 
 #if NATAPIBUS > 0
@@ -183,6 +192,15 @@ umass_atapi_attach(struct umass_softc *sc)
 
 	return 0;
 }
+
+void
+umass_atapi_detach(struct umass_softc *sc)
+{
+	struct umass_scsipi_softc *scbus = (struct umass_scsipi_softc *)sc->bus;
+
+	kmem_free(scbus, sizeof(*scbus));
+	sc->bus = NULL;
+}
 #endif
 
 Static struct umass_scsipi_softc *
@@ -194,7 +212,8 @@ umass_scsipi_setup(struct umass_softc *sc)
 	sc->bus = &scbus->base;
 
 	/* Only use big commands for USB SCSI devices. */
-	sc->sc_busquirks |= PQUIRK_ONLYBIG;
+	/* Do not ask for timeouts.  */
+	sc->sc_busquirks |= PQUIRK_ONLYBIG|PQUIRK_NOREPSUPPOPC;
 
 	/* Fill in the adapter. */
 	memset(&scbus->sc_adapter, 0, sizeof(scbus->sc_adapter));

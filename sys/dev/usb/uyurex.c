@@ -1,4 +1,4 @@
-/*	$NetBSD: uyurex.c,v 1.14 2019/01/22 06:47:20 skrll Exp $ */
+/*	$NetBSD: uyurex.c,v 1.15 2019/02/07 12:41:21 skrll Exp $ */
 /*	$OpenBSD: uyurex.c,v 1.3 2010/03/04 03:47:22 deraadt Exp $ */
 
 /*
@@ -22,7 +22,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uyurex.c,v 1.14 2019/01/22 06:47:20 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uyurex.c,v 1.15 2019/02/07 12:41:21 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

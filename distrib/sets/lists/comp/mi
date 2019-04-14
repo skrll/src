@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2256 2019/02/04 03:26:27 mrg Exp $
+#	$NetBSD: mi,v 1.2268 2019/04/06 12:33:18 kamil Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -708,6 +708,7 @@
 ./usr/include/dev/scsipi/ses.h			comp-c-include
 ./usr/include/dev/scsipi/ss_mustek.h		comp-obsolete		obsolete
 ./usr/include/dev/scsipi/ssvar.h		comp-obsolete		obsolete
+./usr/include/dev/spi/spi_io.h			comp-c-include
 ./usr/include/dev/spkrio.h			comp-c-include
 ./usr/include/dev/sun/disklabel.h		comp-c-include
 ./usr/include/dev/sun/eeprom.h			comp-c-include
@@ -2056,8 +2057,6 @@
 ./usr/include/gcc-5/mwaitxintrin.h		comp-obsolete		obsolete
 ./usr/include/gcc-5/nmmintrin.h			comp-obsolete		obsolete
 ./usr/include/gcc-5/omp.h			comp-obsolete		obsolete
-./usr/include/gcc-5/omp.h			comp-obsolete		obsolete
-./usr/include/gcc-5/openacc.h			comp-obsolete		obsolete
 ./usr/include/gcc-5/openacc.h			comp-obsolete		obsolete
 ./usr/include/gcc-5/pmmintrin.h			comp-obsolete		obsolete
 ./usr/include/gcc-5/popcntintrin.h		comp-obsolete		obsolete
@@ -2070,7 +2069,6 @@
 ./usr/include/gcc-5/sanitizer/tsan_interface_atomic.h	comp-obsolete		obsolete
 ./usr/include/gcc-5/shaintrin.h			comp-obsolete		obsolete
 ./usr/include/gcc-5/smmintrin.h			comp-obsolete		obsolete
-./usr/include/gcc-5/stdatomic.h			comp-obsolete		obsolete
 ./usr/include/gcc-5/stdatomic.h			comp-obsolete		obsolete
 ./usr/include/gcc-5/tbmintrin.h			comp-obsolete		obsolete
 ./usr/include/gcc-5/tgmath.h			comp-obsolete		obsolete
@@ -2729,8 +2727,7 @@
 ./usr/include/openssl/ssl3.h			comp-c-include
 ./usr/include/openssl/sslerr.h			comp-c-include	openssl=11
 ./usr/include/openssl/stack.h			comp-c-include
-./usr/include/openssl/store.h			comp-c-include	openssl=10
-./usr/include/openssl/store.h			comp-obsolete	openssl=11,obsolete
+./usr/include/openssl/store.h			comp-c-include
 ./usr/include/openssl/storeerr.h		comp-c-include	openssl=11
 ./usr/include/openssl/symhacks.h		comp-c-include
 ./usr/include/openssl/tls1.h			comp-c-include
@@ -3021,6 +3018,7 @@
 ./usr/include/sys/ipc.h				comp-c-include
 ./usr/include/sys/joystick.h			comp-c-include
 ./usr/include/sys/kcore.h			comp-c-include
+./usr/include/sys/kcov.h			comp-c-include
 ./usr/include/sys/kcpuset.h			comp-c-include
 ./usr/include/sys/kernel.h			comp-obsolete		obsolete
 ./usr/include/sys/keylock.h			comp-obsolete		obsolete
@@ -3451,6 +3449,8 @@
 ./usr/lib/libiscsi_p.a				comp-iscsi-proflib	compatfile,iscsi,profile
 ./usr/lib/libisns.a				comp-isns-lib		compatfile
 ./usr/lib/libisns_p.a				comp-isns-proflib	compatfile,profile
+./usr/lib/libjemalloc.a				comp-c-lib		compatfile
+./usr/lib/libjemalloc_p.a			comp-c-proflib		compatfile,profile
 ./usr/lib/libkadm.a				comp-obsolete		obsolete
 ./usr/lib/libkadm5clnt.a			comp-krb5-lib		compatfile,kerberos
 ./usr/lib/libkadm5clnt_p.a			comp-krb5-proflib	compatfile,kerberos,profile
@@ -3899,6 +3899,7 @@
 ./usr/libdata/lint/llib-lisccfg.ln		comp-bind-lintlib	lint
 ./usr/libdata/lint/llib-liscsi.ln		comp-c-lintlib		lint,iscsi
 ./usr/libdata/lint/llib-lisns.ln		comp-isns-lintlib	lint
+./usr/libdata/lint/llib-ljemalloc.ln		comp-c-lintlib		lint
 ./usr/libdata/lint/llib-lkdc.ln			comp-krb5-lintlib	lint,kerberos
 ./usr/libdata/lint/llib-lkstream.ln		comp-obsolete		obsolete
 ./usr/libdata/lint/llib-lkvm.ln			comp-c-lintlib		lint
@@ -11012,7 +11013,7 @@
 ./usr/share/man/cat9/fdremove.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/fdshare.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/fdunshare.0		comp-sys-catman		.cat
-./usr/share/man/cat9/fetch.0			comp-sys-catman		.cat
+./usr/share/man/cat9/fetch.0			comp-obsolete		obsolete
 ./usr/share/man/cat9/ffree.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/fgetown.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/file.0			comp-sys-catman		.cat
@@ -11042,12 +11043,12 @@
 ./usr/share/man/cat9/fstrans_start.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/fstrans_start_lazy.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/fstrans_start_nowait.0	comp-sys-catman		.cat
-./usr/share/man/cat9/fubyte.0			comp-sys-catman		.cat
-./usr/share/man/cat9/fuibyte.0			comp-sys-catman		.cat
-./usr/share/man/cat9/fuiword.0			comp-sys-catman		.cat
-./usr/share/man/cat9/fuswintr.0			comp-sys-catman		.cat
-./usr/share/man/cat9/fusword.0			comp-sys-catman		.cat
-./usr/share/man/cat9/fuword.0			comp-sys-catman		.cat
+./usr/share/man/cat9/fubyte.0			comp-obsolete		obsolete
+./usr/share/man/cat9/fuibyte.0			comp-obsolete		obsolete
+./usr/share/man/cat9/fuiword.0			comp-obsolete		obsolete
+./usr/share/man/cat9/fuswintr.0			comp-obsolete		obsolete
+./usr/share/man/cat9/fusword.0			comp-obsolete		obsolete
+./usr/share/man/cat9/fuword.0			comp-obsolete		obsolete
 ./usr/share/man/cat9/genfs.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/genfs_rename.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/getbintime.0		comp-sys-catman		.cat
@@ -11763,6 +11764,7 @@
 ./usr/share/man/cat9/specificdata_key_delete.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/specificdata_setspecific.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/specificdata_setspecific_nowait.0 comp-sys-catman	.cat
+./usr/share/man/cat9/spi.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/spinlockinit.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/spinlockmgr.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/spl.0			comp-sys-catman		.cat
@@ -11788,19 +11790,19 @@
 ./usr/share/man/cat9/splx.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/sprintf.0			comp-obsolete		obsolete
 ./usr/share/man/cat9/stathz.0			comp-sys-catman		.cat
-./usr/share/man/cat9/store.0			comp-sys-catman		.cat
-./usr/share/man/cat9/subyte.0			comp-sys-catman		.cat
-./usr/share/man/cat9/suibyte.0			comp-sys-catman		.cat
-./usr/share/man/cat9/suiword.0			comp-sys-catman		.cat
+./usr/share/man/cat9/store.0			comp-obsolete		obsolete
+./usr/share/man/cat9/subyte.0			comp-obsolete		obsolete
+./usr/share/man/cat9/suibyte.0			comp-obsolete		obsolete
+./usr/share/man/cat9/suiword.0			comp-obsolete		obsolete
 ./usr/share/man/cat9/sun3/isr_add.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/sun3/isr_add_autovect.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/sun3/isr_add_custom.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/sun3/isr_add_vectored.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/suser.0			comp-obsolete		obsolete
 ./usr/share/man/cat9/suspendsched.0		comp-sys-catman		.cat
-./usr/share/man/cat9/suswintr.0			comp-sys-catman		.cat
-./usr/share/man/cat9/susword.0			comp-sys-catman		.cat
-./usr/share/man/cat9/suword.0			comp-sys-catman		.cat
+./usr/share/man/cat9/suswintr.0			comp-obsolete		obsolete
+./usr/share/man/cat9/susword.0			comp-obsolete		obsolete
+./usr/share/man/cat9/suword.0			comp-obsolete		obsolete
 ./usr/share/man/cat9/sysctl.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/sysctl_create.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/sysctl_createv.0		comp-sys-catman		.cat
@@ -11845,18 +11847,18 @@
 ./usr/share/man/cat9/tc_wmb.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/tcp_congctl.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/threadpool.0		comp-sys-catman		.cat
+./usr/share/man/cat9/threadpool_cancel_job.0	comp-sys-catman		.cat
+./usr/share/man/cat9/threadpool_cancel_job_async.0 comp-sys-catman	.cat
 ./usr/share/man/cat9/threadpool_get.0		comp-sys-catman		.cat
-./usr/share/man/cat9/threadpool_put.0		comp-sys-catman		.cat
+./usr/share/man/cat9/threadpool_job_destroy.0	comp-sys-catman		.cat
+./usr/share/man/cat9/threadpool_job_done.0	comp-sys-catman		.cat
+./usr/share/man/cat9/threadpool_job_init.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/threadpool_percpu_get.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/threadpool_percpu_put.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/threadpool_percpu_ref.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/threadpool_percpu_ref_remote.0 comp-sys-catman	.cat
-./usr/share/man/cat9/threadpool_job_init.0	comp-sys-catman		.cat
-./usr/share/man/cat9/threadpool_job_destroy.0	comp-sys-catman		.cat
-./usr/share/man/cat9/threadpool_job_done.0	comp-sys-catman		.cat
+./usr/share/man/cat9/threadpool_put.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/threadpool_schedule_job.0	comp-sys-catman		.cat
-./usr/share/man/cat9/threadpool_cancel_job.0	comp-sys-catman		.cat
-./usr/share/man/cat9/threadpool_cancel_job_async.0 comp-sys-catman	.cat
 ./usr/share/man/cat9/tick.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/tickadj.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/time.0			comp-obsolete		obsolete
@@ -11896,6 +11898,16 @@
 ./usr/share/man/cat9/ubc_zerorange.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/ucas.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/ucom.0			comp-sys-catman		.cat
+./usr/share/man/cat9/ufetch.0			comp-sys-catman		.cat
+./usr/share/man/cat9/ufetch_16.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ufetch_32.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ufetch_64.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ufetch_8.0			comp-sys-catman		.cat
+./usr/share/man/cat9/ufetch_char.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ufetch_int.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ufetch_long.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ufetch_ptr.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ufetch_short.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/uiomove.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/ungetnewvnode.0		comp-obsolete		obsolete
 ./usr/share/man/cat9/untimeout.0		comp-sys-catman		.cat
@@ -11904,6 +11916,16 @@
 ./usr/share/man/cat9/usbdi.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/useracc.0			comp-obsolete		obsolete
 ./usr/share/man/cat9/userret.0			comp-sys-catman		.cat
+./usr/share/man/cat9/ustore.0			comp-sys-catman		.cat
+./usr/share/man/cat9/ustore_16.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ustore_32.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ustore_64.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ustore_8.0			comp-sys-catman		.cat
+./usr/share/man/cat9/ustore_char.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ustore_int.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ustore_long.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ustore_ptr.0		comp-sys-catman		.cat
+./usr/share/man/cat9/ustore_short.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/uvm.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/uvm_chgkprot.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/uvm_coredump.0		comp-obsolete		obsolete
@@ -18872,7 +18894,7 @@
 ./usr/share/man/html9/fdremove.html		comp-sys-htmlman	html
 ./usr/share/man/html9/fdshare.html		comp-sys-htmlman	html
 ./usr/share/man/html9/fdunshare.html		comp-sys-htmlman	html
-./usr/share/man/html9/fetch.html		comp-sys-htmlman	html
+./usr/share/man/html9/fetch.html		comp-obsolete		obsolete
 ./usr/share/man/html9/ffree.html		comp-sys-htmlman	html
 ./usr/share/man/html9/fgetown.html		comp-sys-htmlman	html
 ./usr/share/man/html9/file.html			comp-sys-htmlman	html
@@ -18902,12 +18924,12 @@
 ./usr/share/man/html9/fstrans_start.html	comp-sys-htmlman	html
 ./usr/share/man/html9/fstrans_start_lazy.html	comp-sys-htmlman	html
 ./usr/share/man/html9/fstrans_start_nowait.html comp-sys-htmlman	html
-./usr/share/man/html9/fubyte.html		comp-sys-htmlman	html
-./usr/share/man/html9/fuibyte.html		comp-sys-htmlman	html
-./usr/share/man/html9/fuiword.html		comp-sys-htmlman	html
-./usr/share/man/html9/fuswintr.html		comp-sys-htmlman	html
-./usr/share/man/html9/fusword.html		comp-sys-htmlman	html
-./usr/share/man/html9/fuword.html		comp-sys-htmlman	html
+./usr/share/man/html9/fubyte.html		comp-obsolete		obsolete
+./usr/share/man/html9/fuibyte.html		comp-obsolete		obsolete
+./usr/share/man/html9/fuiword.html		comp-obsolete		obsolete
+./usr/share/man/html9/fuswintr.html		comp-obsolete		obsolete
+./usr/share/man/html9/fusword.html		comp-obsolete		obsolete
+./usr/share/man/html9/fuword.html		comp-obsolete		obsolete
 ./usr/share/man/html9/genfs.html		comp-sys-htmlman	html
 ./usr/share/man/html9/genfs_rename.html		comp-sys-htmlman	html
 ./usr/share/man/html9/getbintime.html		comp-sys-htmlman	html
@@ -19597,6 +19619,7 @@
 ./usr/share/man/html9/specificdata_key_delete.html comp-sys-htmlman	html
 ./usr/share/man/html9/specificdata_setspecific.html comp-sys-htmlman	html
 ./usr/share/man/html9/specificdata_setspecific_nowait.html comp-sys-htmlman html
+./usr/share/man/html9/spi.html			comp-sys-htmlman	html
 ./usr/share/man/html9/spinlockinit.html		comp-sys-htmlman	html
 ./usr/share/man/html9/spinlockmgr.html		comp-sys-htmlman	html
 ./usr/share/man/html9/spl.html			comp-sys-htmlman	html
@@ -19622,18 +19645,18 @@
 ./usr/share/man/html9/splx.html			comp-sys-htmlman	html
 ./usr/share/man/html9/sprintf.html		comp-obsolete		obsolete
 ./usr/share/man/html9/stathz.html		comp-sys-htmlman	html
-./usr/share/man/html9/store.html		comp-sys-htmlman	html
-./usr/share/man/html9/subyte.html		comp-sys-htmlman	html
-./usr/share/man/html9/suibyte.html		comp-sys-htmlman	html
-./usr/share/man/html9/suiword.html		comp-sys-htmlman	html
+./usr/share/man/html9/store.html		comp-obsolete		obsolete
+./usr/share/man/html9/subyte.html		comp-obsolete		obsolete
+./usr/share/man/html9/suibyte.html		comp-obsolete		obsolete
+./usr/share/man/html9/suiword.html		comp-obsolete		obsolete
 ./usr/share/man/html9/sun3/isr_add.html		comp-sys-htmlman	html
 ./usr/share/man/html9/sun3/isr_add_autovect.html	comp-sys-htmlman	html
 ./usr/share/man/html9/sun3/isr_add_custom.html	comp-sys-htmlman	html
 ./usr/share/man/html9/sun3/isr_add_vectored.html	comp-sys-htmlman	html
 ./usr/share/man/html9/suspendsched.html		comp-sys-htmlman	html
-./usr/share/man/html9/suswintr.html		comp-sys-htmlman	html
-./usr/share/man/html9/susword.html		comp-sys-htmlman	html
-./usr/share/man/html9/suword.html		comp-sys-htmlman	html
+./usr/share/man/html9/suswintr.html		comp-obsolete		obsolete
+./usr/share/man/html9/susword.html		comp-obsolete		obsolete
+./usr/share/man/html9/suword.html		comp-obsolete		obsolete
 ./usr/share/man/html9/sysctl.html		comp-sys-htmlman	html
 ./usr/share/man/html9/sysctl_create.html	comp-sys-htmlman	html
 ./usr/share/man/html9/sysctl_createv.html	comp-sys-htmlman	html
@@ -19678,18 +19701,18 @@
 ./usr/share/man/html9/tc_wmb.html		comp-sys-htmlman	html
 ./usr/share/man/html9/tcp_congctl.html		comp-sys-htmlman	html
 ./usr/share/man/html9/threadpool.html		comp-sys-htmlman	html
+./usr/share/man/html9/threadpool_cancel_job.html comp-sys-htmlman	html
+./usr/share/man/html9/threadpool_cancel_job_async.html comp-sys-htmlman	html
 ./usr/share/man/html9/threadpool_get.html	comp-sys-htmlman	html
-./usr/share/man/html9/threadpool_put.html	comp-sys-htmlman	html
+./usr/share/man/html9/threadpool_job_destroy.html comp-sys-htmlman	html
+./usr/share/man/html9/threadpool_job_done.html	comp-sys-htmlman	html
+./usr/share/man/html9/threadpool_job_init.html	comp-sys-htmlman	html
 ./usr/share/man/html9/threadpool_percpu_get.html comp-sys-htmlman	html
 ./usr/share/man/html9/threadpool_percpu_put.html comp-sys-htmlman	html
 ./usr/share/man/html9/threadpool_percpu_ref.html comp-sys-htmlman	html
 ./usr/share/man/html9/threadpool_percpu_ref_remote.html comp-sys-htmlman html
-./usr/share/man/html9/threadpool_job_init.html	comp-sys-htmlman	html
-./usr/share/man/html9/threadpool_job_destroy.html comp-sys-htmlman	html
-./usr/share/man/html9/threadpool_job_done.html	comp-sys-htmlman	html
+./usr/share/man/html9/threadpool_put.html	comp-sys-htmlman	html
 ./usr/share/man/html9/threadpool_schedule_job.html comp-sys-htmlman	html
-./usr/share/man/html9/threadpool_cancel_job.html comp-sys-htmlman	html
-./usr/share/man/html9/threadpool_cancel_job_async.html comp-sys-htmlman	html
 ./usr/share/man/html9/tick.html			comp-sys-htmlman	html
 ./usr/share/man/html9/tickadj.html		comp-sys-htmlman	html
 ./usr/share/man/html9/time_second.html		comp-sys-htmlman	html
@@ -19725,6 +19748,16 @@
 ./usr/share/man/html9/ubc_zerorange.html	comp-sys-htmlman	html
 ./usr/share/man/html9/ucas.html			comp-sys-htmlman	html
 ./usr/share/man/html9/ucom.html			comp-sys-htmlman	html
+./usr/share/man/html9/ufetch.html		comp-sys-htmlman	html
+./usr/share/man/html9/ufetch_16.html		comp-sys-htmlman	html
+./usr/share/man/html9/ufetch_32.html		comp-sys-htmlman	html
+./usr/share/man/html9/ufetch_64.html		comp-sys-htmlman	html
+./usr/share/man/html9/ufetch_8.html		comp-sys-htmlman	html
+./usr/share/man/html9/ufetch_char.html		comp-sys-htmlman	html
+./usr/share/man/html9/ufetch_int.html		comp-sys-htmlman	html
+./usr/share/man/html9/ufetch_long.html		comp-sys-htmlman	html
+./usr/share/man/html9/ufetch_ptr.html		comp-sys-htmlman	html
+./usr/share/man/html9/ufetch_short.html		comp-sys-htmlman	html
 ./usr/share/man/html9/uiomove.html		comp-sys-htmlman	html
 ./usr/share/man/html9/ungetnewvnode.html	comp-obsolete		obsolete
 ./usr/share/man/html9/untimeout.html		comp-sys-htmlman	html
@@ -19732,6 +19765,16 @@
 ./usr/share/man/html9/usbd_status.html		comp-sys-htmlman	html
 ./usr/share/man/html9/usbdi.html		comp-sys-htmlman	html
 ./usr/share/man/html9/userret.html		comp-sys-htmlman	html
+./usr/share/man/html9/ustore.html		comp-sys-htmlman	html
+./usr/share/man/html9/ustore_16.html		comp-sys-htmlman	html
+./usr/share/man/html9/ustore_32.html		comp-sys-htmlman	html
+./usr/share/man/html9/ustore_64.html		comp-sys-htmlman	html
+./usr/share/man/html9/ustore_8.html		comp-sys-htmlman	html
+./usr/share/man/html9/ustore_char.html		comp-sys-htmlman	html
+./usr/share/man/html9/ustore_int.html		comp-sys-htmlman	html
+./usr/share/man/html9/ustore_long.html		comp-sys-htmlman	html
+./usr/share/man/html9/ustore_ptr.html		comp-sys-htmlman	html
+./usr/share/man/html9/ustore_short.html		comp-sys-htmlman	html
 ./usr/share/man/html9/uvm.html			comp-sys-htmlman	html
 ./usr/share/man/html9/uvm_chgkprot.html		comp-sys-htmlman	html
 ./usr/share/man/html9/uvm_deallocate.html	comp-sys-htmlman	html
@@ -26878,7 +26921,7 @@
 ./usr/share/man/man9/fdremove.9			comp-sys-man		.man
 ./usr/share/man/man9/fdshare.9			comp-sys-man		.man
 ./usr/share/man/man9/fdunshare.9		comp-sys-man		.man
-./usr/share/man/man9/fetch.9			comp-sys-man		.man
+./usr/share/man/man9/fetch.9			comp-obsolete		obsolete
 ./usr/share/man/man9/ffree.9			comp-sys-man		.man
 ./usr/share/man/man9/fgetown.9			comp-sys-man		.man
 ./usr/share/man/man9/file.9			comp-sys-man		.man
@@ -26908,12 +26951,12 @@
 ./usr/share/man/man9/fstrans_start.9		comp-sys-man		.man
 ./usr/share/man/man9/fstrans_start_lazy.9	comp-sys-man		.man
 ./usr/share/man/man9/fstrans_start_nowait.9	comp-sys-man		.man
-./usr/share/man/man9/fubyte.9			comp-sys-man		.man
-./usr/share/man/man9/fuibyte.9			comp-sys-man		.man
-./usr/share/man/man9/fuiword.9			comp-sys-man		.man
-./usr/share/man/man9/fuswintr.9			comp-sys-man		.man
-./usr/share/man/man9/fusword.9			comp-sys-man		.man
-./usr/share/man/man9/fuword.9			comp-sys-man		.man
+./usr/share/man/man9/fubyte.9			comp-obsolete		obsolete
+./usr/share/man/man9/fuibyte.9			comp-obsolete		obsolete
+./usr/share/man/man9/fuiword.9			comp-obsolete		obsolete
+./usr/share/man/man9/fuswintr.9			comp-obsolete		obsolete
+./usr/share/man/man9/fusword.9			comp-obsolete		obsolete
+./usr/share/man/man9/fuword.9			comp-obsolete		obsolete
 ./usr/share/man/man9/genfs.9			comp-sys-man		.man
 ./usr/share/man/man9/genfs_rename.9		comp-sys-man		.man
 ./usr/share/man/man9/getbintime.9		comp-sys-man		.man
@@ -27629,6 +27672,7 @@
 ./usr/share/man/man9/specificdata_key_delete.9	comp-sys-man		.man
 ./usr/share/man/man9/specificdata_setspecific.9	comp-sys-man		.man
 ./usr/share/man/man9/specificdata_setspecific_nowait.9 comp-sys-man	.man
+./usr/share/man/man9/spi.9			comp-sys-man		.man
 ./usr/share/man/man9/spinlockinit.9		comp-sys-man		.man
 ./usr/share/man/man9/spinlockmgr.9		comp-sys-man		.man
 ./usr/share/man/man9/spl.9			comp-sys-man		.man
@@ -27654,19 +27698,19 @@
 ./usr/share/man/man9/splx.9			comp-sys-man		.man
 ./usr/share/man/man9/sprintf.9			comp-obsolete		obsolete
 ./usr/share/man/man9/stathz.9			comp-sys-man		.man
-./usr/share/man/man9/store.9			comp-sys-man		.man
-./usr/share/man/man9/subyte.9			comp-sys-man		.man
-./usr/share/man/man9/suibyte.9			comp-sys-man		.man
-./usr/share/man/man9/suiword.9			comp-sys-man		.man
+./usr/share/man/man9/store.9			comp-obsolete		obsolete
+./usr/share/man/man9/subyte.9			comp-obsolete		obsolete
+./usr/share/man/man9/suibyte.9			comp-obsolete		obsolete
+./usr/share/man/man9/suiword.9			comp-obsolete		obsolete
 ./usr/share/man/man9/sun3/isr_add.9		comp-sys-man		.man
 ./usr/share/man/man9/sun3/isr_add_autovect.9	comp-sys-man		.man
 ./usr/share/man/man9/sun3/isr_add_custom.9	comp-sys-man		.man
 ./usr/share/man/man9/sun3/isr_add_vectored.9	comp-sys-man		.man
 ./usr/share/man/man9/suser.9			comp-obsolete		obsolete
 ./usr/share/man/man9/suspendsched.9		comp-sys-man		.man
-./usr/share/man/man9/suswintr.9			comp-sys-man		.man
-./usr/share/man/man9/susword.9			comp-sys-man		.man
-./usr/share/man/man9/suword.9			comp-sys-man		.man
+./usr/share/man/man9/suswintr.9			comp-obsolete		obsolete
+./usr/share/man/man9/susword.9			comp-obsolete		obsolete
+./usr/share/man/man9/suword.9			comp-obsolete		obsolete
 ./usr/share/man/man9/sysctl.9			comp-sys-man		.man
 ./usr/share/man/man9/sysctl_create.9		comp-sys-man		.man
 ./usr/share/man/man9/sysctl_createv.9		comp-sys-man		.man
@@ -27711,18 +27755,18 @@
 ./usr/share/man/man9/tc_wmb.9			comp-sys-man		.man
 ./usr/share/man/man9/tcp_congctl.9		comp-sys-man		.man
 ./usr/share/man/man9/threadpool.9		comp-sys-man		.man
+./usr/share/man/man9/threadpool_cancel_job.9	comp-sys-man		.man
+./usr/share/man/man9/threadpool_cancel_job_async.9 comp-sys-man		.man
 ./usr/share/man/man9/threadpool_get.9		comp-sys-man		.man
-./usr/share/man/man9/threadpool_put.9		comp-sys-man		.man
+./usr/share/man/man9/threadpool_job_destroy.9	comp-sys-man		.man
+./usr/share/man/man9/threadpool_job_done.9	comp-sys-man		.man
+./usr/share/man/man9/threadpool_job_init.9	comp-sys-man		.man
 ./usr/share/man/man9/threadpool_percpu_get.9	comp-sys-man		.man
 ./usr/share/man/man9/threadpool_percpu_put.9	comp-sys-man		.man
 ./usr/share/man/man9/threadpool_percpu_ref.9	comp-sys-man		.man
 ./usr/share/man/man9/threadpool_percpu_ref_remote.9 comp-sys-man	.man
-./usr/share/man/man9/threadpool_job_init.9	comp-sys-man		.man
-./usr/share/man/man9/threadpool_job_destroy.9	comp-sys-man		.man
-./usr/share/man/man9/threadpool_job_done.9	comp-sys-man		.man
+./usr/share/man/man9/threadpool_put.9		comp-sys-man		.man
 ./usr/share/man/man9/threadpool_schedule_job.9	comp-sys-man		.man
-./usr/share/man/man9/threadpool_cancel_job.9	comp-sys-man		.man
-./usr/share/man/man9/threadpool_cancel_job_async.9 comp-sys-man		.man
 ./usr/share/man/man9/tick.9			comp-sys-man		.man
 ./usr/share/man/man9/tickadj.9			comp-sys-man		.man
 ./usr/share/man/man9/time.9			comp-obsolete		obsolete
@@ -27762,6 +27806,16 @@
 ./usr/share/man/man9/ubc_zerorange.9		comp-sys-man		.man
 ./usr/share/man/man9/ucas.9			comp-sys-man		.man
 ./usr/share/man/man9/ucom.9			comp-sys-man		.man
+./usr/share/man/man9/ufetch.9			comp-sys-man		.man
+./usr/share/man/man9/ufetch_16.9		comp-sys-man		.man
+./usr/share/man/man9/ufetch_32.9		comp-sys-man		.man
+./usr/share/man/man9/ufetch_64.9		comp-sys-man		.man
+./usr/share/man/man9/ufetch_8.9			comp-sys-man		.man
+./usr/share/man/man9/ufetch_char.9		comp-sys-man		.man
+./usr/share/man/man9/ufetch_int.9		comp-sys-man		.man
+./usr/share/man/man9/ufetch_long.9		comp-sys-man		.man
+./usr/share/man/man9/ufetch_ptr.9		comp-sys-man		.man
+./usr/share/man/man9/ufetch_short.9		comp-sys-man		.man
 ./usr/share/man/man9/uiomove.9			comp-sys-man		.man
 ./usr/share/man/man9/ungetnewvnode.9		comp-obsolete		obsolete
 ./usr/share/man/man9/untimeout.9		comp-sys-man		.man
@@ -27770,6 +27824,16 @@
 ./usr/share/man/man9/usbdi.9			comp-sys-man		.man
 ./usr/share/man/man9/useracc.9			comp-obsolete		obsolete
 ./usr/share/man/man9/userret.9			comp-sys-man		.man
+./usr/share/man/man9/ustore.9			comp-sys-man		.man
+./usr/share/man/man9/ustore_16.9		comp-sys-man		.man
+./usr/share/man/man9/ustore_32.9		comp-sys-man		.man
+./usr/share/man/man9/ustore_64.9		comp-sys-man		.man
+./usr/share/man/man9/ustore_8.9			comp-sys-man		.man
+./usr/share/man/man9/ustore_char.9		comp-sys-man		.man
+./usr/share/man/man9/ustore_int.9		comp-sys-man		.man
+./usr/share/man/man9/ustore_long.9		comp-sys-man		.man
+./usr/share/man/man9/ustore_ptr.9		comp-sys-man		.man
+./usr/share/man/man9/ustore_short.9		comp-sys-man		.man
 ./usr/share/man/man9/uvm.9			comp-sys-man		.man
 ./usr/share/man/man9/uvm_chgkprot.9		comp-sys-man		.man
 ./usr/share/man/man9/uvm_coredump.9		comp-obsolete		obsolete

@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.31 2018/08/30 05:39:21 maya Exp $
+# $NetBSD: mi,v 1.34 2019/03/11 05:05:31 nakayama Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -44,12 +44,14 @@
 ./etc/fonts/conf.avail/20-unhint-small-vera.conf	-unknown-	xorg
 ./etc/fonts/conf.avail/25-unhint-nonlatin.conf		-unknown-	xorg
 ./etc/fonts/conf.avail/30-metric-aliases.conf		-unknown-	xorg
-./etc/fonts/conf.avail/30-urw-aliases.conf		-unknown-	xorg
+./etc/fonts/conf.avail/30-urw-aliases.conf		-unknown-	obsolete
 ./etc/fonts/conf.avail/40-nonlatin.conf			-unknown-	xorg
+./etc/fonts/conf.avail/45-generic.conf			-unknown-	xorg
 ./etc/fonts/conf.avail/45-latin.conf			-unknown-	xorg
 ./etc/fonts/conf.avail/49-sansserif.conf		-unknown-	xorg
 ./etc/fonts/conf.avail/50-user.conf			-unknown-	xorg
 ./etc/fonts/conf.avail/51-local.conf			-unknown-	xorg
+./etc/fonts/conf.avail/60-generic.conf			-unknown-	xorg
 ./etc/fonts/conf.avail/60-latin.conf			-unknown-	xorg
 ./etc/fonts/conf.avail/65-fonts-persian.conf		-unknown-	xorg
 ./etc/fonts/conf.avail/65-khmer.conf			-unknown-	xorg
@@ -64,12 +66,14 @@
 ./etc/fonts/conf.d/20-fix-globaladvance.conf		-unknown-	obsolete
 ./etc/fonts/conf.d/20-unhint-small-vera.conf		-unknown-	xorg
 ./etc/fonts/conf.d/30-metric-aliases.conf		-unknown-	xorg
-./etc/fonts/conf.d/30-urw-aliases.conf			-unknown-	xorg
+./etc/fonts/conf.d/30-urw-aliases.conf			-unknown-	obsolete
 ./etc/fonts/conf.d/40-nonlatin.conf			-unknown-	xorg
+./etc/fonts/conf.d/45-generic.conf			-unknown-	xorg
 ./etc/fonts/conf.d/45-latin.conf			-unknown-	xorg
 ./etc/fonts/conf.d/49-sansserif.conf			-unknown-	xorg
 ./etc/fonts/conf.d/50-user.conf				-unknown-	xorg
 ./etc/fonts/conf.d/51-local.conf			-unknown-	xorg
+./etc/fonts/conf.d/60-generic.conf			-unknown-	xorg
 ./etc/fonts/conf.d/60-latin.conf			-unknown-	xorg
 ./etc/fonts/conf.d/65-fonts-persian.conf		-unknown-	xorg
 ./etc/fonts/conf.d/65-nonlatin.conf			-unknown-	xorg

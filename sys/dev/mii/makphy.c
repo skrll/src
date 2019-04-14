@@ -1,4 +1,4 @@
-/*	$NetBSD: makphy.c,v 1.52 2019/01/22 03:42:27 msaitoh Exp $	*/
+/*	$NetBSD: makphy.c,v 1.59 2019/03/25 07:34:13 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: makphy.c,v 1.52 2019/01/22 03:42:27 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: makphy.c,v 1.59 2019/03/25 07:34:13 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -76,11 +76,12 @@ __KERNEL_RCSID(0, "$NetBSD: makphy.c,v 1.52 2019/01/22 03:42:27 msaitoh Exp $");
 #include <dev/mii/miidevs.h>
 
 #include <dev/mii/makphyreg.h>
+#include <dev/mii/makphyvar.h>
 
 static int	makphymatch(device_t, cfdata_t, void *);
 static void	makphyattach(device_t, device_t, void *);
 
-CFATTACH_DECL_NEW(makphy, sizeof(struct mii_softc),
+CFATTACH_DECL_NEW(makphy, sizeof(struct makphy_softc),
     makphymatch, makphyattach, mii_phy_detach, mii_phy_activate);
 
 static int	makphy_service(struct mii_softc *, struct mii_data *, int);
@@ -92,78 +93,47 @@ static const struct mii_phy_funcs makphy_funcs = {
 };
 
 static const struct mii_phydesc makphys[] = {
-	{ MII_OUI_MARVELL,		MII_MODEL_MARVELL_E1000_0,
-	  MII_STR_MARVELL_E1000_0 },
-
-	{ MII_OUI_MARVELL,		MII_MODEL_MARVELL_E1000_3,
-	  MII_STR_MARVELL_E1000_3 },
-
-	{ MII_OUI_MARVELL,		MII_MODEL_MARVELL_E1000_5,
-	  MII_STR_MARVELL_E1000_5 },
-
-	{ MII_OUI_MARVELL,		MII_MODEL_MARVELL_E1000_6,
-	  MII_STR_MARVELL_E1000_6 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1000_3,
-	  MII_STR_xxMARVELL_E1000_3 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1000_5,
-	  MII_STR_xxMARVELL_E1000_5 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1000S,
-	  MII_STR_xxMARVELL_E1000S },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1011,
-	  MII_STR_xxMARVELL_E1011 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1111,
-	  MII_STR_xxMARVELL_E1111 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1112,
-	  MII_STR_xxMARVELL_E1112 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1116,
-	  MII_STR_xxMARVELL_E1116 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1116R,
-	  MII_STR_xxMARVELL_E1116R },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1116R_29,
-	  MII_STR_xxMARVELL_E1116R_29 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1118,
-	  MII_STR_xxMARVELL_E1118 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1145,
-	  MII_STR_xxMARVELL_E1145 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1149,
-	  MII_STR_xxMARVELL_E1149 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1149R,
-	  MII_STR_xxMARVELL_E1149R },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1512,
-	  MII_STR_xxMARVELL_E1512 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E1543,
-	  MII_STR_xxMARVELL_E1543 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E3016,
-	  MII_STR_xxMARVELL_E3016 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_E3082,
-	  MII_STR_xxMARVELL_E3082 },
-
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_PHYG65G,
-	  MII_STR_xxMARVELL_PHYG65G },
-
-	{ 0,				0,
-	  NULL },
+	MII_PHY_DESC(MARVELL, E1000_0),
+	MII_PHY_DESC(MARVELL, E1000_3),
+	MII_PHY_DESC(MARVELL, E1000_5),
+	MII_PHY_DESC(MARVELL, E1000_6),
+	MII_PHY_DESC(xxMARVELL, E1000_3),
+	MII_PHY_DESC(xxMARVELL, E1000_5),
+	MII_PHY_DESC(xxMARVELL, E1000S),
+	MII_PHY_DESC(xxMARVELL, E1011),
+	MII_PHY_DESC(xxMARVELL, E1101),
+	MII_PHY_DESC(xxMARVELL, E1111),
+	MII_PHY_DESC(xxMARVELL, E1112),
+	MII_PHY_DESC(xxMARVELL, E1116),
+	MII_PHY_DESC(xxMARVELL, E1116R),
+	MII_PHY_DESC(xxMARVELL, E1118),
+	MII_PHY_DESC(xxMARVELL, E1145),
+	MII_PHY_DESC(xxMARVELL, E1149),
+	MII_PHY_DESC(xxMARVELL, E1149R),
+	MII_PHY_DESC(xxMARVELL, E1240),
+	MII_PHY_DESC(xxMARVELL, E1318S),
+	MII_PHY_DESC(xxMARVELL, E1512),
+	MII_PHY_DESC(xxMARVELL, E1543),
+	MII_PHY_DESC(xxMARVELL, E3016),
+	MII_PHY_DESC(xxMARVELL, E3082),
+	MII_PHY_DESC(xxMARVELL, PHYG65G),
+	MII_PHY_END,
 };
 
 #define MAKARG_PDOWN	true	/* Power DOWN */
 #define MAKARG_PUP	false	/* Power UP */
+
+static bool
+makphy_isi210(device_t parent, struct mii_attach_args *ma)
+{
+
+	/* I21[01]'s model number is 0 */
+	if ((MII_OUI(ma->mii_id1, ma->mii_id2) == MII_OUI_xxMARVELL)
+	    && (MII_MODEL(ma->mii_id2) == MII_MODEL_xxMARVELL_I210)
+	    && (device_is_a(parent, "wm")))
+		return true;
+	return false;
+}
 
 static int
 makphymatch(device_t parent, cfdata_t match, void *aux)
@@ -171,9 +141,12 @@ makphymatch(device_t parent, cfdata_t match, void *aux)
 	struct mii_attach_args *ma = aux;
 
 	if (mii_phy_match(ma, makphys) != NULL)
-		return (10);
+		return 10;
 
-	return (0);
+	if (makphy_isi210(parent, ma))
+		return 10;
+
+	return 0;
 }
 
 static void
@@ -183,15 +156,24 @@ makphyattach(device_t parent, device_t self, void *aux)
 	struct mii_attach_args *ma = aux;
 	struct mii_data *mii = ma->mii_data;
 	const struct mii_phydesc *mpd;
-	uint16_t reg;
+	struct makphy_softc *maksc = (struct makphy_softc *)sc;
+	const char *name;
+	uint16_t reg, model;
 
 	mpd = mii_phy_match(ma, makphys);
 	aprint_naive(": Media interface\n");
-	aprint_normal(": %s, rev. %d\n", mpd->mpd_name, MII_REV(ma->mii_id2));
+	if (mpd)
+		name = mpd->mpd_name;
+	else if (makphy_isi210(parent, ma)) {
+		name = MII_STR_xxMARVELL_I210;
+		maksc->sc_flags |= MAKPHY_F_I210;
+	} else
+		panic("Unknown PHY");
+	aprint_normal(": %s, rev. %d\n", name, MII_REV(ma->mii_id2));
 
 	sc->mii_dev = self;
 	sc->mii_mpd_oui = MII_OUI(ma->mii_id1, ma->mii_id2);
-	sc->mii_mpd_model = MII_MODEL(ma->mii_id2);
+	sc->mii_mpd_model = model = MII_MODEL(ma->mii_id2);
 	sc->mii_mpd_rev = MII_REV(ma->mii_id2);
 	sc->mii_inst = mii->mii_instance;
 	sc->mii_phy = ma->mii_phyno;
@@ -200,10 +182,26 @@ makphyattach(device_t parent, device_t self, void *aux)
 	sc->mii_flags = ma->mii_flags;
 	sc->mii_anegticks = MII_ANEGTICKS;
 
-	/* Make sure page 0 is selected. */
-	PHY_WRITE(sc, MAKPHY_EADR, 0);
+	switch (model) {
+	case MII_MODEL_xxMARVELL_E1000:
+		if ((maksc->sc_flags & MAKPHY_F_I210) != 0)
+			goto page0;
+		/* FALLTHROUGH */
+	case MII_MODEL_xxMARVELL_E1000_3:
+	case MII_MODEL_xxMARVELL_E1000S:
+	case MII_MODEL_xxMARVELL_E1000_5:
+		/* 88E1000 series has no EADR */
+		break;
+	default:
+page0:
+		/* Make sure page 0 is selected. */
+		if (PHY_WRITE(sc, MAKPHY_EADR, 0) != 0)
+			aprint_verbose_dev(self,
+			    "Failed to access EADR. Are you an emulator?\n");
+		break;
+	}
 
-	switch (sc->mii_mpd_model) {
+	switch (model) {
 	case MII_MODEL_xxMARVELL_E1011:
 	case MII_MODEL_xxMARVELL_E1112:
 		PHY_READ(sc, MAKPHY_ESSR, &reg);
@@ -233,6 +231,7 @@ makphyattach(device_t parent, device_t self, void *aux)
 static void
 makphy_reset(struct mii_softc *sc)
 {
+	struct makphy_softc *maksc = (struct makphy_softc *)sc;
 	uint16_t reg;
 
 	mii_phy_reset(sc);
@@ -245,6 +244,9 @@ makphy_reset(struct mii_softc *sc)
 	/* Assert CRS on transmit. */
 	switch (sc->mii_mpd_model) {
 	case MII_MODEL_MARVELL_E1000_0:
+		if ((maksc->sc_flags & MAKPHY_F_I210) != 0)
+			break;
+		/* FALLTHROUGH */
 	case MII_MODEL_MARVELL_E1000_3:
 	case MII_MODEL_MARVELL_E1000_5:
 	case MII_MODEL_MARVELL_E1000_6:
@@ -313,15 +315,13 @@ makphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 	uint16_t bmcr;
 
 	if (!device_is_active(sc->mii_dev))
-		return (ENXIO);
+		return ENXIO;
 
 	switch (cmd) {
 	case MII_POLLSTAT:
-		/*
-		 * If we're not polling our PHY instance, just return.
-		 */
+		/* If we're not polling our PHY instance, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
-			return (0);
+			return 0;
 		break;
 
 	case MII_MEDIACHG:
@@ -332,12 +332,10 @@ makphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst) {
 			PHY_READ(sc, MII_BMCR, &bmcr);
 			PHY_WRITE(sc, MII_BMCR, bmcr | BMCR_ISO);
-			return (0);
+			return 0;
 		}
 
-		/*
-		 * If the interface is not up, don't do anything.
-		 */
+		/* If the interface is not up, don't do anything. */
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			break;
 
@@ -360,19 +358,17 @@ makphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		break;
 
 	case MII_TICK:
-		/*
-		 * If we're not currently selected, just return.
-		 */
+		/* If we're not currently selected, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
-			return (0);
+			return 0;
 
 		if (mii_phy_tick(sc) == EJUSTRETURN)
-			return (0);
+			return 0;
 		break;
 
 	case MII_DOWN:
 		mii_phy_down(sc);
-		return (0);
+		return 0;
 	}
 
 	/* Update the media status. */
@@ -380,7 +376,7 @@ makphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 
 	/* Callback if something changed. */
 	mii_phy_update(sc, cmd);
-	return (0);
+	return 0;
 }
 
 static void

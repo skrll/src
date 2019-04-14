@@ -1,4 +1,4 @@
-/* $NetBSD: rk_gmac.c,v 1.8 2018/08/12 16:48:05 jmcneill Exp $ */
+/* $NetBSD: rk_gmac.c,v 1.11 2019/02/28 03:05:46 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: rk_gmac.c,v 1.8 2018/08/12 16:48:05 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rk_gmac.c,v 1.11 2019/02/28 03:05:46 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -152,7 +152,7 @@ rk3328_gmac_set_speed_rgmii(struct dwc_gmac_softc *sc, int speed)
 #define	 RK3399_GRF_SOC_CON5_RMII_MODE		__BIT(6)
 #define	 RK3399_GRF_SOC_CON5_GMAC_CLK_SEL	__BITS(5,4)
 #define	  RK3399_GRF_SOC_CON5_GMAC_CLK_SEL_125M	0
-#define	  RK3399_GRF_SOC_CON5_GMAC_CLK_SEL_25M	1
+#define	  RK3399_GRF_SOC_CON5_GMAC_CLK_SEL_25M	3
 #define	  RK3399_GRF_SOC_CON5_GMAC_CLK_SEL_2_5M	2
 #define	 RK3399_GRF_SOC_CON5_RMII_CLK_SEL	__BIT(3)
 #define	RK3399_GRF_SOC_CON6		0x0c218
@@ -171,8 +171,13 @@ rk3399_gmac_set_mode_rgmii(struct dwc_gmac_softc *sc, u_int tx_delay, u_int rx_d
 	const uint32_t con5 = __SHIFTIN(1, RK3399_GRF_SOC_CON5_GMAC_PHY_INTF_SEL);
 
 	const uint32_t con6_mask =
-	    (RK3399_GRF_SOC_CON6_GMAC_CLK_RX_DL_CFG | RK3399_GRF_SOC_CON6_GMAC_CLK_TX_DL_CFG) << 16;
+	    (RK3399_GRF_SOC_CON6_GMAC_RXCLK_DLY_ENA |
+		RK3399_GRF_SOC_CON6_GMAC_TXCLK_DLY_ENA |
+		RK3399_GRF_SOC_CON6_GMAC_CLK_RX_DL_CFG |
+		RK3399_GRF_SOC_CON6_GMAC_CLK_TX_DL_CFG) << 16;
 	const uint32_t con6 =
+	    (tx_delay ? RK3399_GRF_SOC_CON6_GMAC_TXCLK_DLY_ENA : 0) |
+	    (rx_delay ? RK3399_GRF_SOC_CON6_GMAC_RXCLK_DLY_ENA : 0) |
 	    __SHIFTIN(rx_delay, RK3399_GRF_SOC_CON6_GMAC_CLK_RX_DL_CFG) |
 	    __SHIFTIN(tx_delay, RK3399_GRF_SOC_CON6_GMAC_CLK_TX_DL_CFG);
 
@@ -408,7 +413,7 @@ rk_gmac_attach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal(": GMAC\n");
 
-	if (dwc_gmac_attach(sc, GMAC_MII_CLK_150_250M_DIV102) != 0)
+	if (dwc_gmac_attach(sc, MII_PHY_ANY, GMAC_MII_CLK_150_250M_DIV102) != 0)
 		return;
 
 	if (fdtbus_intr_establish(phandle, 0, IPL_NET, 0, rk_gmac_intr, sc) == NULL) {

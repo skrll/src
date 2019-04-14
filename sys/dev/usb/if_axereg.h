@@ -1,4 +1,4 @@
-/*	$NetBSD: if_axereg.h,v 1.19 2016/12/04 10:07:06 skrll Exp $	*/
+/*	$NetBSD: if_axereg.h,v 1.20 2019/03/05 08:25:03 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998, 1999, 2000-2003
@@ -432,6 +432,7 @@ struct axe_softc {
 	int			axe_refcnt;
 	bool			axe_dying;
 	bool			axe_attached;
+	bool			axe_stopping;
 
 	struct usb_task		axe_tick_task;
 
@@ -454,8 +455,6 @@ struct axe_softc {
 
 #define sc_if	axe_ec.ec_if
 };
-
-#define ETHER_ALIGN		2
 
 #define	AXE_IS_178_FAMILY(sc)						  \
 	((sc)->axe_flags & (AX772 | AX772A | AX772B | AX178))

@@ -345,7 +345,7 @@ cdce_detach(device_t self, int flags)
 Static void
 cdce_start(struct ifnet *ifp)
 {
-	struct cdce_softc const *sc = ifp->if_softc;
+	struct cdce_softc *sc = ifp->if_softc;
 	KASSERT(ifp->if_extflags & IFEF_MPSAFE);
 
 	mutex_enter(&sc->cdce_txlock);
@@ -466,9 +466,9 @@ cdce_stop_locked(struct ifnet *ifp, int disable)
 }
 
 Static int
-cdce_ioctl(struct ifnet *ifp, u_long command, void *data)
+cdce_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
-	struct cdce_softc	*sc = ifp->if_softc;
+	struct cdce_softc const *sc = ifp->if_softc;
 
 	if (sc->cdce_dying)
 		return EIO;
@@ -484,7 +484,7 @@ cdce_ioctl(struct ifnet *ifp, u_long command, void *data)
 Static void
 cdce_watchdog(struct ifnet *ifp)
 {
-	struct cdce_softc	*sc = ifp->if_softc;
+	struct cdce_softc const *sc = ifp->if_softc;
 
 	if (sc->cdce_dying)
 		return;

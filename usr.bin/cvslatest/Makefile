@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.1 2016/01/24 17:08:16 christos Exp $
+#	$NetBSD: Makefile,v 1.3 2019/03/09 16:18:37 christos Exp $
 
 WARNS=6
 PROG=	cvslatest

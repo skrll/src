@@ -1,4 +1,4 @@
-# $NetBSD: shl.mi,v 1.855 2019/02/02 22:39:32 mrg Exp $
+# $NetBSD: shl.mi,v 1.861 2019/03/20 05:09:26 mrg Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -18,7 +18,7 @@
 ./lib/libblacklist.so.0.0			base-sys-shlib		dynamicroot
 ./lib/libc.so					base-sys-shlib		dynamicroot
 ./lib/libc.so.12				base-sys-shlib		dynamicroot
-./lib/libc.so.12.211				base-sys-shlib		dynamicroot
+./lib/libc.so.12.212				base-sys-shlib		dynamicroot
 ./lib/libcrypt.so				base-sys-shlib		dynamicroot
 ./lib/libcrypt.so.1				base-sys-shlib		dynamicroot
 ./lib/libcrypt.so.1.0				base-sys-shlib		dynamicroot
@@ -103,9 +103,6 @@
 ./lib/npf/ext_rndblock.so.0			base-npf-shlib		compatfile,npf
 ./lib/npf/ext_rndblock.so.0.0			base-npf-shlib		compatfile,npf
 ./libexec/ld.elf_so				base-sys-shlib		dynamicroot
-./usr/lib/libbozohttpd.so 			base-sys-shlib		compatfile
-./usr/lib/libbozohttpd.so.0			base-sys-shlib		compatfile
-./usr/lib/libbozohttpd.so.0.0			base-sys-shlib		compatfile
 ./usr/lib/i18n/libBIG5.so			base-i18n-shlib		compatfile
 ./usr/lib/i18n/libBIG5.so.5			base-i18n-shlib		compatfile
 ./usr/lib/i18n/libBIG5.so.5.0			base-i18n-shlib		compatfile
@@ -199,19 +196,20 @@
 ./usr/lib/libavl.so				base-zfs-shlib		compatfile,zfs
 ./usr/lib/libavl.so.0				base-zfs-shlib		compatfile,zfs
 ./usr/lib/libavl.so.0.0          		base-zfs-shlib		compatfile,zfs
-./usr/lib/libbfd.so.15				base-sys-shlib		compatfile,binutils=227
-./usr/lib/libbfd.so.15.0			base-sys-shlib		compatfile,binutils=227
 ./usr/lib/libbfd.so.16				base-sys-shlib		compatfile,binutils=231
 ./usr/lib/libbfd.so.16.0			base-sys-shlib		compatfile,binutils=231
 ./usr/lib/libbind9.so				base-bind-shlib		compatfile
-./usr/lib/libbind9.so.10				base-bind-shlib		compatfile
-./usr/lib/libbind9.so.10.0			base-bind-shlib		compatfile
+./usr/lib/libbind9.so.11				base-bind-shlib		compatfile
+./usr/lib/libbind9.so.11.0			base-bind-shlib		compatfile
 ./usr/lib/libblacklist.so			base-sys-shlib		compatfile
 ./usr/lib/libblacklist.so.0			base-sys-shlib		compatfile
 ./usr/lib/libblacklist.so.0.0			base-sys-shlib		compatfile
 ./usr/lib/libbluetooth.so			base-sys-shlib		compatfile
 ./usr/lib/libbluetooth.so.4			base-sys-shlib		compatfile
 ./usr/lib/libbluetooth.so.4.2			base-sys-shlib		compatfile
+./usr/lib/libbozohttpd.so 			base-sys-shlib		compatfile
+./usr/lib/libbozohttpd.so.0			base-sys-shlib		compatfile
+./usr/lib/libbozohttpd.so.0.0			base-sys-shlib		compatfile
 ./usr/lib/libbsdmalloc.so			base-sys-shlib		compatfile
 ./usr/lib/libbsdmalloc.so.0			base-sys-shlib		compatfile
 ./usr/lib/libbsdmalloc.so.0.0			base-sys-shlib		compatfile
@@ -223,7 +221,7 @@
 ./usr/lib/libc++.so.1.0				base-sys-shlib		compatfile,libcxx
 ./usr/lib/libc.so				base-sys-shlib		compatfile
 ./usr/lib/libc.so.12				base-sys-shlib		compatfile
-./usr/lib/libc.so.12.211			base-sys-shlib		compatfile
+./usr/lib/libc.so.12.212			base-sys-shlib		compatfile
 ./usr/lib/libcdk.so				base-obsolete		compatfile,obsolete
 ./usr/lib/libcom_err.so				base-krb5-shlib		compatfile,kerberos
 ./usr/lib/libcom_err.so.8			base-krb5-shlib		compatfile,kerberos
@@ -261,8 +259,8 @@
 ./usr/lib/libdm.so.0				base-sys-shlib		compatfile
 ./usr/lib/libdm.so.0.0				base-sys-shlib		compatfile
 ./usr/lib/libdns.so				base-bind-shlib		compatfile
-./usr/lib/libdns.so.10				base-bind-shlib		compatfile
-./usr/lib/libdns.so.10.0			base-bind-shlib		compatfile
+./usr/lib/libdns.so.11				base-bind-shlib		compatfile
+./usr/lib/libdns.so.11.0			base-bind-shlib		compatfile
 ./usr/lib/libdns_sd.so				base-mdns-shlib		compatfile,mdns
 ./usr/lib/libdns_sd.so.0			base-mdns-shlib		compatfile,mdns
 ./usr/lib/libdns_sd.so.0.0			base-mdns-shlib		compatfile,mdns
@@ -337,23 +335,26 @@
 ./usr/lib/libipsec.so.3				base-net-shlib		compatfile
 ./usr/lib/libipsec.so.3.0			base-net-shlib		compatfile
 ./usr/lib/libirs.so				base-bind-shlib		compatfile
-./usr/lib/libirs.so.10				base-bind-shlib		compatfile
-./usr/lib/libirs.so.10.0			base-bind-shlib		compatfile
+./usr/lib/libirs.so.11				base-bind-shlib		compatfile
+./usr/lib/libirs.so.11.0			base-bind-shlib		compatfile
 ./usr/lib/libisc.so				base-bind-shlib		compatfile
-./usr/lib/libisc.so.10				base-bind-shlib		compatfile
-./usr/lib/libisc.so.10.0			base-bind-shlib		compatfile
+./usr/lib/libisc.so.11				base-bind-shlib		compatfile
+./usr/lib/libisc.so.11.0			base-bind-shlib		compatfile
 ./usr/lib/libisccc.so				base-bind-shlib		compatfile
-./usr/lib/libisccc.so.10			base-bind-shlib		compatfile
-./usr/lib/libisccc.so.10.0			base-bind-shlib		compatfile
+./usr/lib/libisccc.so.11			base-bind-shlib		compatfile
+./usr/lib/libisccc.so.11.0			base-bind-shlib		compatfile
 ./usr/lib/libisccfg.so				base-bind-shlib		compatfile
-./usr/lib/libisccfg.so.10			base-bind-shlib		compatfile
-./usr/lib/libisccfg.so.10.0			base-bind-shlib		compatfile
+./usr/lib/libisccfg.so.11			base-bind-shlib		compatfile
+./usr/lib/libisccfg.so.11.0			base-bind-shlib		compatfile
 ./usr/lib/libiscsi.so				base-iscsi-shlib	iscsi,compatfile
 ./usr/lib/libiscsi.so.2				base-iscsi-shlib	iscsi,compatfile
 ./usr/lib/libiscsi.so.2.0			base-iscsi-shlib	iscsi,compatfile
 ./usr/lib/libisns.so				base-isns-shlib		compatfile
 ./usr/lib/libisns.so.0				base-isns-shlib		compatfile
 ./usr/lib/libisns.so.0.0			base-isns-shlib		compatfile
+./usr/lib/libjemalloc.so			base-sys-shlib		compatfile
+./usr/lib/libjemalloc.so.0			base-sys-shlib		compatfile
+./usr/lib/libjemalloc.so.0.0			base-sys-shlib		compatfile
 ./usr/lib/libkadm.so				base-obsolete		obsolete
 ./usr/lib/libkadm5clnt.so			base-krb5-shlib		compatfile,kerberos
 ./usr/lib/libkadm5clnt.so.14			base-krb5-shlib		compatfile,kerberos
@@ -429,8 +430,8 @@
 ./usr/lib/libnpf.so.0				base-npf-shlib		npf,compatfile
 ./usr/lib/libnpf.so.0.1				base-npf-shlib		npf,compatfile
 ./usr/lib/libns.so				base-bind-shlib		compatfile
-./usr/lib/libns.so.10				base-bind-shlib		compatfile
-./usr/lib/libns.so.10.0				base-bind-shlib		compatfile
+./usr/lib/libns.so.11				base-bind-shlib		compatfile
+./usr/lib/libns.so.11.0				base-bind-shlib		compatfile
 ./usr/lib/libnvpair.so				base-zfs-shlib		compatfile,zfs
 ./usr/lib/libnvpair.so.0			base-zfs-shlib		compatfile,zfs
 ./usr/lib/libnvpair.so.0.0			base-zfs-shlib		compatfile,zfs
@@ -829,9 +830,10 @@
 ./usr/lib/libssl.so.14				base-crypto-shlib	compatfile,openssl=11
 ./usr/lib/libssl.so.14.0			base-crypto-shlib	compatfile,openssl=11
 ./usr/lib/libstdc++.so				base-sys-shlib		compatfile,gcc,cxx,libstdcxx
-./usr/lib/libstdc++.so.8			base-sys-shlib		compatfile,gcc,cxx,libstdcxx
+./usr/lib/libstdc++.so.8			base-sys-shlib		compatfile,gcc=6,cxx,libstdcxx
 ./usr/lib/libstdc++.so.8.1			base-sys-shlib		compatfile,gcc=6,cxx,libstdcxx
-./usr/lib/libstdc++.so.8.2			base-sys-shlib		compatfile,gcc=7,cxx,libstdcxx
+./usr/lib/libstdc++.so.9			base-sys-shlib		compatfile,gcc=7,cxx,libstdcxx
+./usr/lib/libstdc++.so.9.0			base-sys-shlib		compatfile,gcc=7,cxx,libstdcxx
 ./usr/lib/libtelnet.so				base-obsolete		obsolete
 ./usr/lib/libtermcap.so				base-sys-shlib		compatfile
 ./usr/lib/libtermcap.so.0			base-sys-shlib		compatfile

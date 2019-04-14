@@ -1,4 +1,4 @@
-/*	$NetBSD: asan.h,v 1.4 2018/11/10 18:30:58 ryo Exp $	*/
+/*	$NetBSD: asan.h,v 1.6 2019/04/08 21:18:22 ryo Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@ __md_palloc(void)
 	if (__predict_false(__md_early))
 		pa = (paddr_t)bootpage_alloc();
 	else
-		pmap_alloc_pdp(pmap_kernel(), &pa);
+		pa = pmap_alloc_pdp(pmap_kernel(), NULL, 0, false);
 
 	return pa;
 }

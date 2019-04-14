@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_malloc.c,v 1.155 2018/12/23 12:15:01 maxv Exp $	*/
+/*	$NetBSD: kern_malloc.c,v 1.157 2019/04/07 09:20:04 maxv Exp $	*/
 
 /*
  * Copyright (c) 1987, 1991, 1993
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_malloc.c,v 1.155 2018/12/23 12:15:01 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_malloc.c,v 1.157 2019/04/07 09:20:04 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/malloc.h>
@@ -139,7 +139,7 @@ kern_malloc(unsigned long reqsize, int flags)
 #endif
 	mh++;
 
-	kasan_mark(mh, origsize, size);
+	kasan_mark(mh, origsize, size, KASAN_MALLOC_REDZONE);
 
 	return mh;
 }
@@ -152,7 +152,8 @@ kern_free(void *addr)
 	mh = addr;
 	mh--;
 
-	kasan_mark(addr, mh->mh_size, mh->mh_size);
+	kasan_mark(addr, mh->mh_size - sizeof(struct malloc_header),
+	    mh->mh_size - sizeof(struct malloc_header), KASAN_MALLOC_REDZONE);
 
 	if (mh->mh_size >= PAGE_SIZE + sizeof(struct malloc_header))
 		kmem_intr_free((char *)addr - PAGE_SIZE,

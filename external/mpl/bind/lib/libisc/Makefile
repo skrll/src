@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.3 2019/01/09 16:55:23 christos Exp $
+#	$NetBSD: Makefile,v 1.8 2019/02/28 22:18:21 joerg Exp $
 
 LIB=isc
 #USE_SHLIBDIR=   yes
@@ -20,7 +20,6 @@ UNIX_SRCS=	app.c backtrace.c dir.c entropy.c errno2result.c file.c \
 		fsaccess.c interfaceiter.c net.c os.c resource.c \
 		socket.c stdio.c stdtime.c syslog.c time.c \
 		backtrace-emptytbl.c meminfo.c
-NLS_SRCS=	msgcat.c
 PTHREAD_SRCS=	condition.c mutex.c thread.c
 
 CRYPTO_SRCS=	aes.c
@@ -35,9 +34,7 @@ SRCS=		assertions.c base32.c base64.c bind9.c buffer.c \
 		region.c result.c rwlock.c serial.c \
 		sockaddr.c stats.c string.c symtab.c task.c \
 		taskpool.c timer.c tm.c version.c \
-		${UNIX_SRCS} ${NLS_SRCS} ${PTHREAD_SRCS} ${CRYPTO_SRCS}
-
-
+		${UNIX_SRCS} ${PTHREAD_SRCS} ${CRYPTO_SRCS}
 
 .if (${USE_INET6} == "no")
 CPPFLAGS.net.c=	-Wno-error

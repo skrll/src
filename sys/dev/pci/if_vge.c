@@ -1,4 +1,4 @@
-/* $NetBSD: if_vge.c,v 1.67 2019/01/22 03:42:27 msaitoh Exp $ */
+/* $NetBSD: if_vge.c,v 1.69 2019/04/11 08:50:59 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 2004
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vge.c,v 1.67 2019/01/22 03:42:27 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vge.c,v 1.69 2019/04/11 08:50:59 msaitoh Exp $");
 
 /*
  * VIA Networking Technologies VT612x PCI gigabit ethernet NIC driver.
@@ -143,7 +143,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_vge.c,v 1.67 2019/01/22 03:42:27 msaitoh Exp $");
  *
  * See also comment in vge_encap().
  */
-#define ETHER_ALIGN		2
 
 #ifdef __NO_STRICT_ALIGNMENT
 #define VGE_RX_BUFSIZE		MCLBYTES
@@ -1928,7 +1927,7 @@ vge_miibus_statchg(struct ifnet *ifp)
 	case IFM_100_TX:
 	case IFM_10_T:
 		CSR_SETBIT_1(sc, VGE_DIAGCTL, VGE_DIAGCTL_MACFORCE);
-		if ((ife->ifm_media & IFM_GMASK) == IFM_FDX) {
+		if ((ife->ifm_media & IFM_FDX) != 0) {
 			CSR_SETBIT_1(sc, VGE_DIAGCTL, VGE_DIAGCTL_FDXFORCE);
 		} else {
 			CSR_CLRBIT_1(sc, VGE_DIAGCTL, VGE_DIAGCTL_FDXFORCE);

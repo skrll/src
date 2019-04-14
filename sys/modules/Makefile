@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.219 2019/02/06 11:55:06 rin Exp $
+#	$NetBSD: Makefile,v 1.221 2019/03/26 00:36:14 pgoyette Exp $
 
 .include <bsd.own.mk>
 
@@ -10,7 +10,7 @@ SUBDIR+=	compat_util
 SUBDIR+=	compat_43   compat_sysctl_09_43
 SUBDIR+=	compat_09   compat_10   compat_12   compat_13   compat_14
 SUBDIR+=	compat_16   compat_20   compat_30   compat_40   compat_50
-SUBDIR+=	compat_60   compat_70   compat_80 
+SUBDIR+=	compat_60   compat_70   compat_80
 
 SUBDIR+=	compat_sysv_10 compat_sysv_14 compat_sysv_50
 
@@ -84,9 +84,10 @@ SUBDIR+=	if_ppp
 SUBDIR+=	if_pppoe
 SUBDIR+=	if_sl
 SUBDIR+=	if_smsc
-SUBDIR+=	if_srt
+SUBDIR+=	if_srt srt
 SUBDIR+=	if_stf
 SUBDIR+=	if_strip
+SUBDIR+=	if_tap tap
 SUBDIR+=	if_tun tun
 SUBDIR+=	if_ure
 SUBDIR+=	if_vlan

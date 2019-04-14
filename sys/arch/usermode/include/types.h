@@ -1,4 +1,4 @@
-/* $NetBSD: types.h,v 1.14 2018/06/01 07:19:50 reinoud Exp $ */
+/* $NetBSD: types.h,v 1.16 2019/04/10 04:10:53 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2007 Jared D. McNeill <jmcneill@invisible.ca>

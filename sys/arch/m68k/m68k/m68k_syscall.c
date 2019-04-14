@@ -1,4 +1,4 @@
-/*	$NetBSD: m68k_syscall.c,v 1.51 2018/12/19 13:57:48 maxv Exp $	*/
+/*	$NetBSD: m68k_syscall.c,v 1.54 2019/04/06 11:54:20 kamil Exp $	*/
 
 /*-
  * Portions Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: m68k_syscall.c,v 1.51 2018/12/19 13:57:48 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: m68k_syscall.c,v 1.54 2019/04/06 11:54:20 kamil Exp $");
 
 #include "opt_execfmt.h"
 #include "opt_compat_netbsd.h"
@@ -169,7 +169,9 @@ syscall_plain(register_t code, struct lwp *l, struct frame *frame)
 		/*
 		 * Code is first argument, followed by actual args.
 		 */
-		code = fuword(params);
+		error = ufetch_long((void *)params, (u_long *)&code);
+		if (error)
+			goto bad;
 		params += sizeof(int);
 #if defined(COMPAT_13) || defined(COMPAT_16)
 		/*
@@ -194,7 +196,11 @@ syscall_plain(register_t code, struct lwp *l, struct frame *frame)
 		 * Like syscall, but code is a quad, so as to maintain
 		 * quad alignment for the rest of the arguments.
 		 */
-		code = fuword(params + _QUAD_LOWWORD * sizeof(int));
+		error = ufetch_long((void *)(params +
+					     _QUAD_LOWWORD * sizeof(int)),
+				    (u_long *)&code);
+		if (error)
+			goto bad;
 		params += sizeof(quad_t);
 		break;
 	default:
@@ -291,7 +297,9 @@ syscall_fancy(register_t code, struct lwp *l, struct frame *frame)
 		/*
 		 * Code is first argument, followed by actual args.
 		 */
-		code = fuword(params);
+		error = ufetch_long((void *)params, (u_long *)&code);
+		if (error)
+			goto bad;
 		params += sizeof(int);
 #if defined(COMPAT_13) || defined(COMPAT_16)
 		/*
@@ -316,7 +324,11 @@ syscall_fancy(register_t code, struct lwp *l, struct frame *frame)
 		 * Like syscall, but code is a quad, so as to maintain
 		 * quad alignment for the rest of the arguments.
 		 */
-		code = fuword(params + _QUAD_LOWWORD * sizeof(int));
+		error = ufetch_long((void *)(params +
+					     _QUAD_LOWWORD * sizeof(int)),
+				    (u_long *)&code);
+		if (error)
+			goto bad;
 		params += sizeof(quad_t);
 		break;
 	default:
@@ -391,9 +403,8 @@ out:
 }
 
 void
-child_return(void *arg)
+md_child_return(struct lwp *l)
 {
-	struct lwp *l = arg;
 	/* See cpu_lwp_fork() */
 	struct frame *f = (struct frame *)l->l_md.md_regs;
 
@@ -402,7 +413,6 @@ child_return(void *arg)
 	f->f_format = FMT0;
 
 	machine_userret(l, f, 0);
-	ktrsysret(SYS_fork, 0, 0);
 }
 
 /*

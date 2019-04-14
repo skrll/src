@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_machdep.c,v 1.118 2019/01/27 02:08:37 pgoyette Exp $	*/
+/*	$NetBSD: netbsd32_machdep.c,v 1.120 2019/03/24 15:58:32 maxv Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.118 2019/01/27 02:08:37 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.120 2019/03/24 15:58:32 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -138,21 +138,22 @@ netbsd32_setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 
 	netbsd32_adjust_limits(p);
 
-	l->l_md.md_flags = MDL_COMPAT32;	/* Force iret not sysret */
-	pcb->pcb_flags = PCB_COMPAT32;
-
 	fpu_save_area_clear(l, pack->ep_osversion >= 699002600
 	    ?  __NetBSD_NPXCW__ : __NetBSD_COMPAT_NPXCW__);
-
 	x86_dbregs_clear(l);
 
+	kpreempt_disable();
+	pcb->pcb_flags = PCB_COMPAT32;
 	p->p_flag |= PK_32;
+	l->l_md.md_flags = MDL_COMPAT32;	/* force iret not sysret */
+	cpu_segregs32_zero(l);
+	cpu_fsgs_reload(l, LSEL(LUDATA32_SEL, SEL_UPL),
+	    LSEL(LUDATA32_SEL, SEL_UPL));
+	kpreempt_enable();
 
 	tf = l->l_md.md_regs;
 	tf->tf_ds = LSEL(LUDATA32_SEL, SEL_UPL);
 	tf->tf_es = LSEL(LUDATA32_SEL, SEL_UPL);
-	cpu_segregs32_zero(l);
-	cpu_fsgs_reload(l, tf->tf_ds, tf->tf_es);
 	tf->tf_rdi = 0;
 	tf->tf_rsi = 0;
 	tf->tf_rbp = 0;
@@ -280,7 +281,7 @@ void
 netbsd32_sendsig(const ksiginfo_t *ksi, const sigset_t *mask)
 {
 
-	MODULE_CALL_VOID_HOOK(netbsd32_sendsig_hook, (ksi, mask),
+	MODULE_HOOK_CALL_VOID(netbsd32_sendsig_hook, (ksi, mask),
 	    netbsd32_sendsig_siginfo(ksi, mask));
 }
 
@@ -981,12 +982,12 @@ void
 netbsd32_machdep_md_init(void)
 {
 
-	MODULE_SET_HOOK(netbsd32_machine32_hook, "mach32", netbsd32_machine32);
+	MODULE_HOOK_SET(netbsd32_machine32_hook, "mach32", netbsd32_machine32);
 }
 
 void
 netbsd32_machdep_md_fini(void)
 {
 
-	MODULE_UNSET_HOOK(netbsd32_machine32_hook);
+	MODULE_HOOK_UNSET(netbsd32_machine32_hook);
 }

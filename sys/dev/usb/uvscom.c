@@ -1,4 +1,4 @@
-/*	$NetBSD: uvscom.c,v 1.31 2016/11/25 12:56:29 skrll Exp $	*/
+/*	$NetBSD: uvscom.c,v 1.32 2019/02/07 12:41:03 skrll Exp $	*/
 /*-
  * Copyright (c) 2001-2002, Shunsuke Akiyama <akiyama@jp.FreeBSD.org>.
  * All rights reserved.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvscom.c,v 1.31 2016/11/25 12:56:29 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvscom.c,v 1.32 2019/02/07 12:41:03 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

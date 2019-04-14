@@ -1,32 +1,32 @@
-/*	$NetBSD: ikphy.c,v 1.13 2019/01/22 03:42:27 msaitoh Exp $	*/
+/*	$NetBSD: ikphy.c,v 1.15 2019/03/25 07:34:13 msaitoh Exp $	*/
 
 /*******************************************************************************
-Copyright (c) 2001-2005, Intel Corporation 
+Copyright (c) 2001-2005, Intel Corporation
 All rights reserved.
 
-Redistribution and use in source and binary forms, with or without 
+Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
 
- 1. Redistributions of source code must retain the above copyright notice, 
+ 1. Redistributions of source code must retain the above copyright notice,
     this list of conditions and the following disclaimer.
 
- 2. Redistributions in binary form must reproduce the above copyright 
-    notice, this list of conditions and the following disclaimer in the 
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
     documentation and/or other materials provided with the distribution.
 
- 3. Neither the name of the Intel Corporation nor the names of its 
-    contributors may be used to endorse or promote products derived from 
+ 3. Neither the name of the Intel Corporation nor the names of its
+    contributors may be used to endorse or promote products derived from
     this software without specific prior written permission.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE 
-ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE 
-LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
-CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF 
-SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
-INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
-CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
@@ -59,7 +59,7 @@ POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ikphy.c,v 1.13 2019/01/22 03:42:27 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ikphy.c,v 1.15 2019/03/25 07:34:13 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -92,11 +92,8 @@ static const struct mii_phy_funcs ikphy_funcs = {
 };
 
 static const struct mii_phydesc ikphys[] = {
-	{ MII_OUI_xxMARVELL,		MII_MODEL_xxMARVELL_I82563,
-	  MII_STR_xxMARVELL_I82563 },
-
-	{ 0,				0,
-	  NULL },
+	MII_PHY_DESC(xxMARVELL, I82563),
+	MII_PHY_END,
 };
 
 static int
@@ -105,9 +102,9 @@ ikphymatch(device_t parent, cfdata_t match, void *aux)
 	struct mii_attach_args *ma = aux;
 
 	if (mii_phy_match(ma, ikphys) != NULL)
-		return (10);
+		return 10;
 
-	return (0);
+	return 0;
 }
 
 static void
@@ -156,11 +153,9 @@ ikphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 
 	switch (cmd) {
 	case MII_POLLSTAT:
-		/*
-		 * If we're not polling our PHY instance, just return.
-		 */
+		/* If we're not polling our PHY instance, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
-			return (0);
+			return 0;
 		break;
 
 	case MII_MEDIACHG:
@@ -171,12 +166,10 @@ ikphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst) {
 			PHY_READ(sc, MII_BMCR, &reg);
 			PHY_WRITE(sc, MII_BMCR, reg | BMCR_ISO);
-			return (0);
+			return 0;
 		}
 
-		/*
-		 * If the interface is not up, don't do anything.
-		 */
+		/* If the interface is not up, don't do anything. */
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			break;
 
@@ -184,19 +177,17 @@ ikphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		break;
 
 	case MII_TICK:
-		/*
-		 * If we're not currently selected, just return.
-		 */
+		/* If we're not currently selected, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
-			return (0);
+			return 0;
 
 		if (mii_phy_tick(sc) == EJUSTRETURN)
-			return (0);
+			return 0;
 		break;
 
 	case MII_DOWN:
 		mii_phy_down(sc);
-		return (0);
+		return 0;
 	}
 
 	/* Update the media status. */
@@ -204,7 +195,7 @@ ikphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 
 	/* Callback if something changed. */
 	mii_phy_update(sc, cmd);
-	return (0);
+	return 0;
 }
 
 static void
@@ -260,7 +251,7 @@ ikphy_setmedia(struct mii_softc *sc)
 	mii_phy_setmedia(sc);
 	if (IFM_SUBTYPE(ife->ifm_media) != IFM_AUTO) {
 		/*
-		 * when not in auto mode, we need to restart nego
+		 * When not in auto mode, we need to restart nego
 		 * anyway, or a switch from a fixed mode to another
 		 * fixed mode may not be seen by the switch.
 		 */

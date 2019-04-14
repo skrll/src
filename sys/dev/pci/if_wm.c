@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.624 2019/02/06 07:20:13 msaitoh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.632 2019/03/25 05:32:01 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -39,21 +39,21 @@
 
   Copyright (c) 2001-2005, Intel Corporation
   All rights reserved.
- 
+
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
- 
+
    1. Redistributions of source code must retain the above copyright notice,
       this list of conditions and the following disclaimer.
- 
+
    2. Redistributions in binary form must reproduce the above copyright
       notice, this list of conditions and the following disclaimer in the
       documentation and/or other materials provided with the distribution.
- 
+
    3. Neither the name of the Intel Corporation nor the names of its
       contributors may be used to endorse or promote products derived from
       this software without specific prior written permission.
- 
+
   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -75,15 +75,14 @@
  *	- Check XXX'ed comments
  *	- TX Multi queue improvement (refine queue selection logic)
  *	- Split header buffer for newer descriptors
- *	- EEE (Energy Efficiency Ethernet)
+ *	- EEE (Energy Efficiency Ethernet) for I354
  *	- Virtual Function
  *	- Set LED correctly (based on contents in EEPROM)
  *	- Rework how parameters are loaded from the EEPROM.
- *	- Image Unique ID
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.624 2019/02/06 07:20:13 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.632 2019/03/25 05:32:01 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -158,7 +157,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.624 2019/02/06 07:20:13 msaitoh Exp $");
 int	wm_debug = WM_DEBUG_TX | WM_DEBUG_RX | WM_DEBUG_LINK | WM_DEBUG_GMII
     | WM_DEBUG_MANAGE | WM_DEBUG_NVM | WM_DEBUG_INIT | WM_DEBUG_LOCK;
 
-#define	DPRINTF(x, y)	if (wm_debug & (x)) printf y
+#define	DPRINTF(x, y)	do { if (wm_debug & (x)) printf y; } while (0)
 #else
 #define	DPRINTF(x, y)	__nothing
 #endif /* WM_DEBUG */
@@ -1476,7 +1475,7 @@ static const struct wm_product {
 	  WM_T_I210,		WMP_F_COPPER },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I210_COPPER_WOF,
-	  "I210 Ethernet (FLASH less)",
+	  "I210 Ethernet (Copper, FLASH less)",
 	  WM_T_I210,		WMP_F_COPPER },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I210_FIBER,
@@ -1488,11 +1487,15 @@ static const struct wm_product {
 	  WM_T_I210,		WMP_F_SERDES },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I210_SERDES_WOF,
-	  "I210 Gigabit Ethernet (FLASH less)",
+	  "I210 Gigabit Ethernet (SERDES, FLASH less)",
 	  WM_T_I210,		WMP_F_SERDES },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I210_SGMII,
 	  "I210 Gigabit Ethernet (SGMII)",
+	  WM_T_I210,		WMP_F_COPPER },
+
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I210_SGMII_WOF,
+	  "I210 Gigabit Ethernet (SGMII, FLASH less)",
 	  WM_T_I210,		WMP_F_COPPER },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I211_COPPER,
@@ -1522,18 +1525,6 @@ static const struct wm_product {
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I218_LM3,
 	  "I218 LM Ethernet Connection",
 	  WM_T_PCH_LPT,		WMP_F_COPPER },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V,
-	  "I219 V Ethernet Connection",
-	  WM_T_PCH_SPT,		WMP_F_COPPER },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V2,
-	  "I219 V Ethernet Connection",
-	  WM_T_PCH_SPT,		WMP_F_COPPER },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V4,
-	  "I219 V Ethernet Connection",
-	  WM_T_PCH_SPT,		WMP_F_COPPER },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V5,
-	  "I219 V Ethernet Connection",
-	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM,
 	  "I219 LM Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
@@ -1549,17 +1540,41 @@ static const struct wm_product {
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM5,
 	  "I219 LM Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM6,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM7,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM8,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM9,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V,
+	  "I219 V Ethernet Connection",
+	  WM_T_PCH_SPT,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V2,
+	  "I219 V Ethernet Connection",
+	  WM_T_PCH_SPT,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V4,
+	  "I219 V Ethernet Connection",
+	  WM_T_PCH_SPT,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V5,
+	  "I219 V Ethernet Connection",
+	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V6,
 	  "I219 V Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V7,
 	  "I219 V Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM6,
-	  "I219 LM Ethernet Connection",
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V8,
+	  "I219 V Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM7,
-	  "I219 LM Ethernet Connection",
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V9,
+	  "I219 V Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ 0,			0,
 	  NULL,
@@ -1809,7 +1824,7 @@ wm_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Disable MSI for Errata:
 	 * "Message Signaled Interrupt Feature May Corrupt Write Transactions"
-	 * 
+	 *
 	 *  82544: Errata 25
 	 *  82540: Errata  6 (easy to reproduce device timeout)
 	 *  82545: Errata  4 (easy to reproduce device timeout)
@@ -2242,8 +2257,8 @@ alloc_retry:
 		}
 		sc->phy.acquire = wm_get_phy_82575;
 		sc->phy.release = wm_put_phy_82575;
-		sc->nvm.acquire = wm_get_nvm_80003;	
-		sc->nvm.release = wm_put_nvm_80003;	
+		sc->nvm.acquire = wm_get_nvm_80003;
+		sc->nvm.release = wm_put_nvm_80003;
 		break;
 	case WM_T_ICH8:
 	case WM_T_ICH9:
@@ -2992,6 +3007,8 @@ wm_detach(device_t self, int flags __unused)
 	evcnt_detach(&sc->sc_ev_rx_macctl);
 #endif /* WM_EVENT_COUNTERS */
 
+	rnd_detach_source(&sc->rnd_source);
+
 	/* Tell the firmware about the release */
 	WM_CORE_LOCK(sc);
 	wm_release_manageability(sc);
@@ -3317,7 +3334,7 @@ ec:
 
 	/* ec related updates */
 	wm_set_eee(sc);
-	
+
 out:
 	if (needreset)
 		rc = ENETRESET;
@@ -3563,7 +3580,7 @@ wm_set_ral(struct wm_softc *sc, const uint8_t *enaddr, int idx)
 			addrl = WMREG_PCH_LPT_SHRAL(idx - 1);
 			addrh = WMREG_PCH_LPT_SHRAH(idx - 1);
 		}
-		
+
 		if ((wlock_mac == 0) || (idx <= wlock_mac)) {
 			rv = wm_get_swflag_ich8lan(sc);
 			if (rv != 0)
@@ -3654,7 +3671,7 @@ wm_rar_count(struct wm_softc *sc)
 		size = WM_RAL_TABSIZE_I350;
 		break;
 	default:
-		size = WM_RAL_TABSIZE;    
+		size = WM_RAL_TABSIZE;
 	}
 
 	return size;
@@ -4055,7 +4072,7 @@ wm_phy_post_reset(struct wm_softc *sc)
 			delay(10 * 1000);
 			wm_gate_hw_phy_config_ich8lan(sc, false);
 		}
-		/* Set EEE LPI Update Timer to 200usec */	
+		/* Set EEE LPI Update Timer to 200usec */
 		rv = sc->phy.acquire(sc);
 		if (rv)
 			return rv;
@@ -4162,7 +4179,7 @@ wm_init_lcd_from_nvm(struct wm_softc *sc)
 		device_xname(sc->sc_dev), __func__));
 	/* word_addr is in DWORD */
 	word_addr = __SHIFTOUT(extcnfctr, EXTCNFCTR_EXT_CNF_POINTER) << 1;
-	
+
 	reg = CSR_READ(sc, WMREG_EXTCNFSIZE);
 	cnf_size = __SHIFTOUT(reg, EXTCNFSIZE_LENGTH);
 	if (cnf_size == 0)
@@ -4209,11 +4226,11 @@ wm_init_lcd_from_nvm(struct wm_softc *sc)
 		    reg_data);
 	}
 
-release:	
+release:
 	sc->phy.release(sc);
 	return rv;
 }
-    
+
 /*
  *  wm_oem_bits_config_ich8lan - SW-based LCD Configuration
  *  @sc:       pointer to the HW structure
@@ -4248,7 +4265,7 @@ wm_oem_bits_config_ich8lan(struct wm_softc *sc, bool d0_state)
 		goto release;
 
 	mac_reg = CSR_READ(sc, WMREG_PHY_CTRL);
-	
+
 	rv = wm_gmii_hv_readreg_locked(sc->sc_dev, 1, HV_OEM_BITS, &oem_reg);
 	if (rv != 0)
 		goto release;
@@ -4565,7 +4582,7 @@ wm_reset_phy(struct wm_softc *sc)
 	CSR_WRITE_FLUSH(sc);
 
 	delay(150);
-	
+
 	sc->phy.release(sc);
 
 	wm_get_cfg_done(sc);
@@ -4615,7 +4632,7 @@ wm_flush_desc_rings(struct wm_softc *sc)
 
 	bus_space_barrier(sc->sc_st, sc->sc_sh, 0, 0,
 	    BUS_SPACE_BARRIER_WRITE);
-		
+
 	txq->txq_next = WM_NEXTTX(txq, txq->txq_next);
 	CSR_WRITE(sc, WMREG_TDT(0), txq->txq_next);
 	bus_space_barrier(sc->sc_st, sc->sc_sh, 0, 0,
@@ -4926,7 +4943,7 @@ wm_reset(struct wm_softc *sc)
 		reg |= FEXTNVM3_PHY_CFG_COUNTER_50MS;
 		CSR_WRITE(sc, WMREG_FEXTNVM3, reg);
 	}
-	
+
 	if (phy_reset != 0)
 		wm_get_cfg_done(sc);
 
@@ -5078,7 +5095,7 @@ wm_reset(struct wm_softc *sc)
 	if (sc->sc_type == WM_T_80003) {
 		/* default to TRUE to enable the MDIC W/A */
 		sc->sc_flags |= WM_F_80003_MDIC_WA;
-	
+
 		rv = wm_kmrn_readreg(sc,
 		    KUMCTRLSTA_OFFSET >> KUMCTRLSTA_OFFSET_SHIFT, &kmreg);
 		if (rv == 0) {
@@ -8233,7 +8250,7 @@ retry:
 
 		/* Set up offload parameters for this packet. */
 		uint32_t cmdlen, fields, dcmdlen;
-		if (m0->m_pkthdr.csum_flags & 
+		if (m0->m_pkthdr.csum_flags &
 		    (M_CSUM_TSOv4 | M_CSUM_TSOv6 |
 			M_CSUM_IPv4 | M_CSUM_TCPv4 | M_CSUM_UDPv4 |
 			M_CSUM_TCPv6 | M_CSUM_UDPv6)) {
@@ -8983,13 +9000,14 @@ wm_linkintr_gmii(struct wm_softc *sc, uint32_t icr)
 	/* Link status changed */
 	status = CSR_READ(sc, WMREG_STATUS);
 	link = status & STATUS_LU;
-	if (link)
+	if (link) {
 		DPRINTF(WM_DEBUG_LINK, ("%s: LINK: LSC -> up %s\n",
 			device_xname(dev),
 			(status & STATUS_FD) ? "FDX" : "HDX"));
-	else
+	} else {
 		DPRINTF(WM_DEBUG_LINK, ("%s: LINK: LSC -> down\n",
 			device_xname(dev)));
+	}
 	if ((sc->sc_type == WM_T_ICH8) && (link == false))
 		wm_gig_downshift_workaround_ich8lan(sc);
 
@@ -9648,7 +9666,7 @@ wm_linkintr_msix(void *arg)
 
 out:
 	WM_CORE_UNLOCK(sc);
-	
+
 	if (sc->sc_type == WM_T_82574) {
 		if (!has_rxo)
 			CSR_WRITE(sc, WMREG_IMS, ICR_OTHER | ICR_LSC);
@@ -10101,7 +10119,7 @@ wm_gmii_setup_phytype(struct wm_softc *sc, uint32_t phy_oui,
 	if ((mii->mii_readreg != NULL) && (mii->mii_readreg != new_readreg))
 		aprint_error_dev(dev, "Previously assumed PHY read/write "
 		    "function was incorrect.\n");
-	
+
 	/* Update now */
 	sc->sc_phytype = new_phytype;
 	mii->mii_readreg = new_readreg;
@@ -10613,7 +10631,7 @@ wm_gmii_i82544_readreg(device_t dev, int phy, int reg, uint16_t *val)
 	}
 
 	rv = wm_gmii_i82544_readreg_locked(dev, phy, reg, val);
-	
+
 	sc->phy.release(sc);
 
 	return rv;
@@ -10623,14 +10641,17 @@ static int
 wm_gmii_i82544_readreg_locked(device_t dev, int phy, int reg, uint16_t *val)
 {
 	struct wm_softc *sc = device_private(dev);
+	int rv;
 
 	if (reg > BME1000_MAX_MULTI_PAGE_REG) {
 		switch (sc->sc_phytype) {
 		case WMPHY_IGP:
 		case WMPHY_IGP_2:
 		case WMPHY_IGP_3:
-			wm_gmii_mdic_writereg(dev, phy, MII_IGPHY_PAGE_SELECT,
-			    reg);
+			rv = wm_gmii_mdic_writereg(dev, phy,
+			    MII_IGPHY_PAGE_SELECT, reg);
+			if (rv != 0)
+				return rv;
 			break;
 		default:
 #ifdef WM_DEBUG
@@ -10640,7 +10661,7 @@ wm_gmii_i82544_readreg_locked(device_t dev, int phy, int reg, uint16_t *val)
 			break;
 		}
 	}
-	
+
 	wm_gmii_mdic_readreg(dev, phy, reg & MII_ADDRMASK, val);
 
 	return 0;
@@ -10672,14 +10693,17 @@ static int
 wm_gmii_i82544_writereg_locked(device_t dev, int phy, int reg, uint16_t val)
 {
 	struct wm_softc *sc = device_private(dev);
+	int rv;
 
 	if (reg > BME1000_MAX_MULTI_PAGE_REG) {
 		switch (sc->sc_phytype) {
 		case WMPHY_IGP:
 		case WMPHY_IGP_2:
 		case WMPHY_IGP_3:
-			wm_gmii_mdic_writereg(dev, phy, MII_IGPHY_PAGE_SELECT,
-			    reg);
+			rv = wm_gmii_mdic_writereg(dev, phy,
+			    MII_IGPHY_PAGE_SELECT, reg);
+			if (rv != 0)
+				return rv;
 			break;
 		default:
 #ifdef WM_DEBUG
@@ -10689,7 +10713,7 @@ wm_gmii_i82544_writereg_locked(device_t dev, int phy, int reg, uint16_t val)
 			break;
 		}
 	}
-			
+
 	wm_gmii_mdic_writereg(dev, phy, reg & MII_ADDRMASK, val);
 
 	return 0;
@@ -10730,15 +10754,15 @@ wm_gmii_i80003_readreg(device_t dev, int phy, int reg, uint16_t *val)
 	temp = reg >> GG82563_PAGE_SHIFT;
 	if ((rv = wm_gmii_mdic_writereg(dev, phy, page_select, temp)) != 0)
 		goto out;
-	
+
 	if ((sc->sc_flags & WM_F_80003_MDIC_WA) != 0) {
 		/*
 		 * Wait more 200us for a bug of the ready bit in the MDIC
 		 * register.
 		 */
 		delay(200);
-		wm_gmii_mdic_readreg(dev, phy, page_select, &temp2);
-		if (temp2 != temp) {
+		rv = wm_gmii_mdic_readreg(dev, phy, page_select, &temp2);
+		if ((rv != 0) || (temp2 != temp)) {
 			device_printf(dev, "%s failed\n", __func__);
 			rv = -1;
 			goto out;
@@ -10795,8 +10819,8 @@ wm_gmii_i80003_writereg(device_t dev, int phy, int reg, uint16_t val)
 		 * register.
 		 */
 		delay(200);
-		wm_gmii_mdic_readreg(dev, phy, page_select, &temp2);
-		if (temp2 != temp) {
+		rv = wm_gmii_mdic_readreg(dev, phy, page_select, &temp2);
+		if ((rv != 0) || (temp2 != temp)) {
 			device_printf(dev, "%s failed\n", __func__);
 			rv = -1;
 			goto out;
@@ -11962,7 +11986,7 @@ wm_check_for_link(struct wm_softc *sc)
 	ctrl = CSR_READ(sc, WMREG_CTRL);
 	status = CSR_READ(sc, WMREG_STATUS);
 	signal = wm_tbi_havesignal(sc, ctrl);
-	
+
 	DPRINTF(WM_DEBUG_LINK,
 	    ("%s: %s: signal = %d, status_lu = %d, rxcw_c = %d\n",
 		device_xname(sc->sc_dev), __func__, signal,
@@ -12005,13 +12029,14 @@ wm_check_for_link(struct wm_softc *sc)
 			__func__));
 		CSR_WRITE(sc, WMREG_TXCW, sc->sc_txcw);
 		CSR_WRITE(sc, WMREG_CTRL, (ctrl & ~CTRL_SLU));
-	} else if (signal && ((rxcw & RXCW_C) != 0))
+	} else if (signal && ((rxcw & RXCW_C) != 0)) {
 		DPRINTF(WM_DEBUG_LINK, ("%s: %s: /C/",
 			device_xname(sc->sc_dev), __func__));
-	else
+	} else {
 		DPRINTF(WM_DEBUG_LINK, ("%s: %s: linkup %08x,%08x,%08x\n",
 			device_xname(sc->sc_dev), __func__, rxcw, ctrl,
 			status));
+	}
 
 	return 0;
 }
@@ -13018,7 +13043,7 @@ wm_read_ich8_data(struct wm_softc *sc, uint32_t index,
 			else
 				hsfsts = ICH8_FLASH_READ16(sc,
 				    ICH_FLASH_HSFSTS);
-					
+
 			if (hsfsts & HSFSTS_ERR) {
 				/* Repeat for some time before giving up. */
 				continue;
@@ -13256,7 +13281,7 @@ wm_nvm_read_invm(struct wm_softc *sc, int offset, int words, uint16_t *data)
 {
 	int rv = 0;
 	int i;
-	
+
 	DPRINTF(WM_DEBUG_NVM, ("%s: %s called\n",
 		device_xname(sc->sc_dev), __func__));
 
@@ -13475,7 +13500,7 @@ wm_nvm_version(struct wm_softc *sc)
 	 *	82572EI	0x5069	5.6.9?
 	 *	82574L	0x1080	1.8.0?	(the spec update notes about 2.1.4)
 	 *		0x2013	2.1.3?
-	 *	82583	0x10a0	1.10.0? (document says it's default vaule)
+	 *	82583	0x10a0	1.10.0? (document says it's default value)
 	 */
 
 	/*
@@ -13588,7 +13613,7 @@ wm_nvm_read(struct wm_softc *sc, int word, int wordcnt, uint16_t *data)
 		return -1;
 
 	rv = sc->nvm.read(sc, word, wordcnt, data);
-	
+
 	return rv;
 }
 
@@ -13695,7 +13720,7 @@ wm_put_eecd(struct wm_softc *sc)
 		wm_nvm_eec_clock_raise(sc, &reg);
 		wm_nvm_eec_clock_lower(sc, &reg);
 	}
-	
+
 	reg = CSR_READ(sc, WMREG_EECD);
 	reg &= ~EECD_EE_REQ;
 	CSR_WRITE(sc, WMREG_EECD, reg);
@@ -14012,7 +14037,7 @@ wm_get_swflag_ich8lan(struct wm_softc *sc)
 		delay(1000);
 	}
 	if (timeout >= WM_PHY_CFG_TIMEOUT) {
-		printf("%s: SW has already locked the resource\n", 
+		printf("%s: SW has already locked the resource\n",
 		    device_xname(sc->sc_dev));
 		goto out;
 	}
@@ -14905,7 +14930,7 @@ out:
 		/* Reset PHY to activate OEM bits on 82577/8 */
 		if (sc->sc_type == WM_T_PCH)
 			wm_reset_phy(sc);
-		
+
 		if (sc->phy.acquire(sc) != 0)
 			return;
 		wm_write_smbus_addr(sc);
@@ -15028,7 +15053,7 @@ wm_enable_wakeup(struct wm_softc *sc)
 			goto pme;
 	} else {
 		/* Enable wakeup by the MAC */
-		CSR_WRITE(sc, WMREG_WUC, WUC_PME_EN);
+		CSR_WRITE(sc, WMREG_WUC, WUC_APME | WUC_PME_EN);
 		CSR_WRITE(sc, WMREG_WUFC, WUFC_MAG);
 	}
 
@@ -15179,6 +15204,8 @@ wm_set_eee_i350(struct wm_softc *sc)
 	uint32_t ipcnfg_mask
 	    = IPCNFG_EEE_1G_AN | IPCNFG_EEE_100M_AN | IPCNFG_10BASE_TE;
 	uint32_t eeer_mask = EEER_TX_LPI_EN | EEER_RX_LPI_EN | EEER_LPI_FC;
+
+	KASSERT(sc->sc_mediatype == WM_MEDIATYPE_COPPER);
 
 	ipcnfg = CSR_READ(sc, WMREG_IPCNFG);
 	eeer = CSR_READ(sc, WMREG_EEER);
@@ -15489,7 +15516,7 @@ release:
 
 	return rv;
 
-	
+
 }
 
 /*
@@ -15599,7 +15626,7 @@ wm_k1_workaround_lpt_lp(struct wm_softc *sc, bool link)
 			goto release;
 		delay(20);
 		CSR_WRITE(sc, WMREG_FEXTNVM6, fextnvm6 | FEXTNVM6_REQ_PLL_CLK);
-		
+
 		rv = wm_kmrn_readreg_locked(sc, KUMCTRLSTA_OFFSET_K1_CONFIG,
 		    &phyreg);
 release:
@@ -15639,7 +15666,7 @@ update_fextnvm6:
 	CSR_WRITE(sc, WMREG_FEXTNVM6, fextnvm6);
 	return 0;
 }
-	
+
 /*
  *  wm_k1_gig_workaround_hv - K1 Si workaround
  *  @sc:   pointer to the HW structure
@@ -15692,7 +15719,7 @@ wm_k1_workaround_lv(struct wm_softc *sc)
 	uint32_t reg;
 	uint16_t phyreg;
 	int rv;
-	
+
 	if (sc->sc_type != WM_T_PCH2)
 		return 0;
 
@@ -16006,7 +16033,7 @@ wm_platform_pm_pch_lpt(struct wm_softc *sc, bool link)
 	uint16_t scale = 0, lat_enc = 0;
 	int32_t obff_hwm = 0;
 	int64_t lat_ns, value;
-	
+
 	DPRINTF(WM_DEBUG_INIT, ("%s: %s called\n",
 		device_xname(sc->sc_dev), __func__));
 
@@ -16107,7 +16134,7 @@ wm_platform_pm_pch_lpt(struct wm_softc *sc, bool link)
 	reg = CSR_READ(sc, WMREG_SVCR);
 	reg |= SVCR_OFF_EN | SVCR_OFF_MASKINT;
 	CSR_WRITE(sc, WMREG_SVCR, reg);
-	
+
 	return 0;
 }
 

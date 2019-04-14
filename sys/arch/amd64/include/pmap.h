@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.58 2018/11/19 20:44:51 maxv Exp $	*/
+/*	$NetBSD: pmap.h,v 1.60 2019/03/09 09:09:56 maxv Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -79,7 +79,7 @@
 #endif
 
 #include <uvm/uvm_object.h>
-#ifdef XEN
+#ifdef XENPV
 #include <xen/xenfunc.h>
 #include <xen/xenpmap.h>
 #endif
@@ -99,7 +99,7 @@
 
 #define NL4_SLOT_DIRECT		32
 
-#ifndef XEN
+#ifndef XENPV
 #define L4_SLOT_PTE		slotspace.area[SLAREA_PTE].sslot
 #else
 #define L4_SLOT_PTE		509
@@ -118,7 +118,7 @@
  * PDP_BASE: the base VA of the recursive mapping of the PTD
  */
 
-#ifndef XEN
+#ifndef XENPV
 extern pt_entry_t *pte_base;
 #define PTE_BASE	pte_base
 #else
@@ -163,14 +163,16 @@ extern pt_entry_t *pte_base;
 #define PTP_LEVELS	4
 
 /*
- * PG_AVAIL usage: we make use of the ignored bits of the PTE
+ * PTE_AVL usage: we make use of the ignored bits of the PTE
  */
+#define PTE_WIRED	PTE_AVL1	/* Wired Mapping */
+#define PTE_PVLIST	PTE_AVL2	/* Mapping has entry on pvlist */
+#define PTE_X		0		/* Dummy */
 
-#define PG_W		PG_AVAIL1	/* "wired" mapping */
-#define PG_PVLIST	PG_AVAIL2	/* mapping has entry on pvlist */
-/* PG_AVAIL3 not used */
-
-#define	PG_X		0		/* dummy */
+/* XXX To be deleted. */
+#define PG_W		PTE_WIRED
+#define PG_PVLIST	PTE_PVLIST
+#define PG_X		PTE_X
 
 void svs_pmap_sync(struct pmap *, int);
 void svs_lwp_switch(struct lwp *, struct lwp *);
@@ -180,9 +182,9 @@ extern bool svs_enabled;
 
 #include <x86/pmap.h>
 
-#ifndef XEN
+#ifndef XENPV
 #define pmap_pa2pte(a)			(a)
-#define pmap_pte2pa(a)			((a) & PG_FRAME)
+#define pmap_pte2pa(a)			((a) & PTE_FRAME)
 #define pmap_pte_set(p, n)		do { *(p) = (n); } while (0)
 #define pmap_pte_cas(p, o, n)		atomic_cas_64((p), (o), (n))
 #define pmap_pte_testset(p, n)		\
@@ -204,7 +206,7 @@ pmap_pa2pte(paddr_t pa)
 static __inline paddr_t
 pmap_pte2pa(pt_entry_t pte)
 {
-	return xpmap_mtop_masked(pte & PG_FRAME);
+	return xpmap_mtop_masked(pte & PTE_FRAME);
 }
 
 static __inline void

@@ -1,4 +1,4 @@
-/*	$NetBSD: xen_pmap.c,v 1.28 2019/02/02 12:32:55 cherry Exp $	*/
+/*	$NetBSD: xen_pmap.c,v 1.31 2019/03/10 16:30:01 maxv Exp $	*/
 
 /*
  * Copyright (c) 2007 Manuel Bouyer.
@@ -101,7 +101,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xen_pmap.c,v 1.28 2019/02/02 12:32:55 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xen_pmap.c,v 1.31 2019/03/10 16:30:01 maxv Exp $");
 
 #include "opt_user_ldt.h"
 #include "opt_lockdebug.h"
@@ -175,7 +175,7 @@ pmap_kenter_ma(vaddr_t va, paddr_t ma, vm_prot_t prot, u_int flags)
 	else
 		pte = kvtopte(va);
 
-	npte = ma | ((prot & VM_PROT_WRITE) ? PG_RW : PG_RO) | PG_V;
+	npte = ma | ((prot & VM_PROT_WRITE) ? PTE_W : 0) | PTE_P;
 	if (flags & PMAP_NOCACHE)
 		npte |= PG_N;
 
@@ -212,20 +212,22 @@ pmap_extract_ma(struct pmap *pmap, vaddr_t va, paddr_t *pap)
 	pd_entry_t pde;
 	pd_entry_t * const *pdes;
 	struct pmap *pmap2;
+	int lvl;
 
 	kpreempt_disable();
 	pmap_map_ptes(pmap, &pmap2, &ptes, &pdes);
-	if (!pmap_pdes_valid(va, pdes, &pde)) {
+	if (!pmap_pdes_valid(va, pdes, &pde, &lvl)) {
 		pmap_unmap_ptes(pmap, pmap2);
 		kpreempt_enable();
 		return false;
 	}
 
+	KASSERT(lvl == 1);
 	pte = ptes[pl1_i(va)];
 	pmap_unmap_ptes(pmap, pmap2);
 	kpreempt_enable();
 
-	if (__predict_true((pte & PG_V) != 0)) {
+	if (__predict_true((pte & PTE_P) != 0)) {
 		if (pap != NULL)
 			*pap = (pte & PG_FRAME) | (va & (NBPD_L1 - 1));
 		return true;
@@ -274,7 +276,7 @@ pmap_map_recursive_entries(void)
 		for (i = 0; i < PDP_SIZE; i++) {
 			xpq_queue_pte_update(
 			    xpmap_ptom(pmap_pdirpa(pm, PDIR_SLOT_PTE + i)),
-			    xpmap_ptom((pm)->pm_pdirpa[i]) | PG_V);
+			    xpmap_ptom((pm)->pm_pdirpa[i]) | PTE_P);
 		}
 	}
 	mutex_exit(&pmaps_lock);
@@ -282,7 +284,7 @@ pmap_map_recursive_entries(void)
 	for (i = 0; i < PDP_SIZE; i++) {
 		xpq_queue_pte_update(
 		    xpmap_ptom(pmap_pdirpa(pmap_kernel(), PDIR_SLOT_PTE + i)),
-		    xpmap_ptom(pmap_kernel()->pm_pdirpa[i]) | PG_V);
+		    xpmap_ptom(pmap_kernel()->pm_pdirpa[i]) | PTE_P);
 	}
 }
 

@@ -485,7 +485,7 @@ axe_setmulti(struct axe_softc *sc)
 	uint16_t rxmode;
 	uint8_t hashtbl[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
-	KASSERT(mutex_owned(&sc->sc_lock);
+	KASSERT(mutex_owned(&sc->axe_lock));
 
 	if (sc->axe_dying)
 		return;
@@ -512,11 +512,11 @@ axe_setmulti(struct axe_softc *sc)
 	}
 
 	/* Now program new ones */
-	ETHER_LOCK(&sc->sc_ec);
+	ETHER_LOCK(&sc->axe_ec);
 	ETHER_FIRST_MULTI(step, &sc->axe_ec, enm);
 	while (enm != NULL) {
-		if (memcmp(enm->enm_addrlo, enm->enm_addrhi,ETHER_ADDR_LEN) != 0)
-			ETHER_UNLOCK(&sc->sc_ec);
+		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, ETHER_ADDR_LEN) != 0) {
+			ETHER_UNLOCK(&sc->axe_ec);
 			goto allmulti;
 		}
 
@@ -524,7 +524,7 @@ axe_setmulti(struct axe_softc *sc)
 		hashtbl[h >> 3] |= 1U << (h & 7);
 		ETHER_NEXT_MULTI(step, enm);
 	}
-	ETHER_UNLOCK(&sc->sc_ec);
+	ETHER_UNLOCK(&sc->axe_ec);
 
 	ifp->if_flags &= ~IFF_ALLMULTI;
 	rxmode |= AXE_RXCMD_MULTICAST;
@@ -943,7 +943,7 @@ axe_attach(device_t parent, device_t self, void *aux)
 	char *devinfop;
 	const char *devname = device_xname(self);
 	struct ifnet *ifp;
-	int i, s;
+	int i;
 
 	aprint_naive("\n");
 	aprint_normal("\n");
@@ -1142,7 +1142,6 @@ axe_detach(device_t self, int flags)
 {
 	AXEHIST_FUNC(); AXEHIST_CALLED();
 	struct axe_softc *sc = device_private(self);
-	int s;
 	struct ifnet *ifp = &sc->sc_if;
 
 	/* Detached before attached finished, so just bail out. */
@@ -1151,13 +1150,13 @@ axe_detach(device_t self, int flags)
 
 	pmf_device_deregister(self);
 
-	mutex_enter(&sc->sc_lock)
+	mutex_enter(&sc->axe_lock);
 	sc->axe_dying = true;
 
 	if (ifp->if_flags & IFF_RUNNING)
 		axe_stop_locked(ifp, 1);
 
-	mutex_exit(&sc->sc_lock);
+	mutex_exit(&sc->axe_lock);
 
 	usb_rem_task_wait(sc->axe_udev, &sc->axe_tick_task, USB_TASKQ_DRIVER,
 	    NULL);
@@ -1293,26 +1292,22 @@ static void
 axe_rxeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 {
 	AXEHIST_FUNC(); AXEHIST_CALLED();
-	struct axe_softc *sc;
-	struct axe_chain *c;
-	struct ifnet *ifp;
-	uint8_t *buf;
+	struct axe_chain *c = priv;
+	struct axe_softc *sc = c->axe_sc;
+	struct ifnet *ifp = &sc->sc_if;
+	uint8_t *buf = c->axe_buf;
 	uint32_t total_len;
 	struct mbuf *m;
 
 	mutex_enter(&sc->axe_rxlock);
 
-	c = (struct axe_chain *)priv;
-	sc = c->axe_sc;
-	buf = c->axe_buf;
-	ifp = &sc->sc_if;
 
-	if ((sc->sc_stopping) {
+	if (sc->axe_stopping) {
 		mutex_exit(&sc->axe_rxlock);
 		return;
 	}
 
-	if ((ifp->sc_if_flags & IFF_RUNNING) == 0) {
+	if ((ifp->if_flags & IFF_RUNNING) == 0) {
 		mutex_exit(&sc->axe_rxlock);
 		return;
 	}
@@ -1490,7 +1485,7 @@ axe_rxeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 		if_percpuq_enqueue(sc->axe_ipq, (m));
 
 		mutex_enter(&sc->axe_rxlock);
-		if ((sc->sc_stopping) {
+		if (sc->axe_stopping) {
 			mutex_exit(&sc->axe_rxlock);
 			return;
 		}
@@ -1519,8 +1514,6 @@ axe_txeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 	struct axe_chain *c = priv;
 	struct axe_softc *sc = c->axe_sc;
 	struct ifnet *ifp = &sc->sc_if;
-	int s;
-
 
 	if (sc->axe_dying)
 		return;
@@ -1566,7 +1559,6 @@ static void
 axe_tick_task(void *xsc)
 {
 	AXEHIST_FUNC(); AXEHIST_CALLED();
-	int s;
 	struct axe_softc *sc = xsc;
 	struct ifnet *ifp;
 	struct mii_data *mii;
@@ -1694,7 +1686,7 @@ axe_start(struct ifnet *ifp)
 	struct axe_softc *sc = ifp->if_softc;
 
 	mutex_enter(&sc->axe_txlock);
-	if (!sc->sc_stopping)
+	if (!sc->axe_stopping)
 		axe_start_locked(ifp);
 	mutex_exit(&sc->axe_txlock);
 }
@@ -1707,7 +1699,7 @@ axe_start_locked(struct ifnet *ifp)
 
 	KASSERT(mutex_owned(&sc->axe_txlock));
 
-	if ((sc->sc_if_flags & (IFF_OACTIVE|IFF_RUNNING)) != IFF_RUNNING)
+	if ((sc->axe_if_flags & (IFF_OACTIVE|IFF_RUNNING)) != IFF_RUNNING)
 		return;
 
 	IFQ_POLL(&ifp->if_snd, m);
@@ -1927,7 +1919,7 @@ axe_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 
 	mutex_enter(&sc->axe_rxlock);
 	mutex_enter(&sc->axe_txlock);
-	sc->sc_if_flags = ifp->if_flags;
+	sc->axe_if_flags = ifp->if_flags;
 	mutex_exit(&sc->axe_txlock);
 	mutex_exit(&sc->axe_rxlock);
 
@@ -1940,7 +1932,6 @@ axe_watchdog(struct ifnet *ifp)
 	struct axe_softc *sc;
 	struct axe_chain *c;
 	usbd_status stat;
-	int s;
 
 	sc = ifp->if_softc;
 

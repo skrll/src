@@ -1148,8 +1148,7 @@ fail:
 Static int
 cue_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
-	struct cue_softc	*sc = ifp->if_softc;
-	int			s, error = 0;
+	struct cue_softc const *sc = ifp->if_softc;
 
 	if (sc->cue_dying)
 		return EIO;

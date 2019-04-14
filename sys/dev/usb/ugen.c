@@ -1,4 +1,4 @@
-/*	$NetBSD: ugen.c,v 1.143 2019/01/29 09:28:50 pgoyette Exp $	*/
+/*	$NetBSD: ugen.c,v 1.145 2019/03/01 11:06:56 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ugen.c,v 1.143 2019/01/29 09:28:50 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ugen.c,v 1.145 2019/03/01 11:06:56 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -1089,10 +1089,8 @@ ugen_detach(device_t self, int flags)
 		for (i = 0; i < USB_MAX_ENDPOINTS; i++)
 			cv_signal(&sc->sc_endpoints[i][IN].cv);
 		/* Wait for processes to go away. */
-		if (cv_timedwait(&sc->sc_detach_cv, &sc->sc_lock, hz * 60)) {
-			printf("%s: %s didn't detach\n", __func__, 
-			    device_xname(sc->sc_dev));
-		}
+		if (cv_timedwait(&sc->sc_detach_cv, &sc->sc_lock, hz * 60))
+			aprint_error_dev(self, ": didn't detach\n");
 	}
 	mutex_exit(&sc->sc_lock);
 
@@ -1851,7 +1849,7 @@ ugen_do_ioctl(struct ugen_softc *sc, int endpt, u_long cmd,
 	case USB_GET_DEVICEINFO_OLD:
 	{
 		int ret;
-		MODULE_CALL_HOOK(usb_subr_fill_30_hook,
+		MODULE_HOOK_CALL(usb_subr_fill_30_hook,
 		    (sc->sc_udev, (struct usb_device_info_old *)addr, 0,
 		      usbd_devinfo_vp, usbd_printBCD),
 		    enosys(), ret);
