@@ -1,4 +1,4 @@
-/* $NetBSD: if_admsw.c,v 1.18 2018/09/03 16:29:25 riastradh Exp $ */
+/* $NetBSD: if_admsw.c,v 1.21 2019/04/22 06:09:19 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 2007 Ruslan Ermilov and Vsevolod Lobko.
@@ -76,7 +76,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_admsw.c,v 1.18 2018/09/03 16:29:25 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_admsw.c,v 1.21 2019/04/22 06:09:19 msaitoh Exp $");
 
 
 #include <sys/param.h>
@@ -103,9 +103,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_admsw.c,v 1.18 2018/09/03 16:29:25 riastradh Exp 
 #include <net/if_ether.h>
 
 #include <net/bpf.h>
-
-#include <dev/mii/mii.h>
-#include <dev/mii/miivar.h>
 
 #include <sys/gpio.h>
 #include <dev/gpio/gpiovar.h>
@@ -1232,12 +1229,12 @@ admsw_mediachange(struct ifnet *ifp)
 	if (IFM_SUBTYPE(ifm->ifm_media) == IFM_AUTO) {
 		val = PHY_CNTL2_AUTONEG|PHY_CNTL2_100M|PHY_CNTL2_FDX;
 	} else if (IFM_SUBTYPE(ifm->ifm_media) == IFM_100_TX) {
-		if ((ifm->ifm_media & IFM_GMASK) == IFM_FDX)
+		if ((ifm->ifm_media & IFM_FDX) != 0)
 			val = PHY_CNTL2_100M|PHY_CNTL2_FDX;
 		else
 			val = PHY_CNTL2_100M;
 	} else if (IFM_SUBTYPE(ifm->ifm_media) == IFM_10_T) {
-		if ((ifm->ifm_media & IFM_GMASK) == IFM_FDX)
+		if ((ifm->ifm_media & IFM_FDX) != 0)
 			val = PHY_CNTL2_FDX;
 		else
 			val = 0;

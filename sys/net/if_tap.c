@@ -1,4 +1,4 @@
-/*	$NetBSD: if_tap.c,v 1.107 2018/09/03 16:29:35 riastradh Exp $	*/
+/*	$NetBSD: if_tap.c,v 1.110 2019/04/16 04:26:02 msaitoh Exp $	*/
 
 /*
  *  Copyright (c) 2003, 2004, 2008, 2009 The NetBSD Foundation.
@@ -33,12 +33,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.107 2018/09/03 16:29:35 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.110 2019/04/16 04:26:02 msaitoh Exp $");
 
 #if defined(_KERNEL_OPT)
 
 #include "opt_modular.h"
-#include "opt_compat_netbsd.h"
 #endif
 
 #include <sys/param.h>
@@ -69,8 +68,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.107 2018/09/03 16:29:35 riastradh Exp $
 #include <net/if_media.h>
 #include <net/if_tap.h>
 #include <net/bpf.h>
-
-#include <compat/sys/sockio.h>
 
 #include "ioconf.h"
 
@@ -273,20 +270,32 @@ tapdetach(void)
 {
 	int error = 0;
 
-	if (tap_count != 0)
-		return EBUSY;
-
+	if_clone_detach(&tap_cloners);
 #ifdef _MODULE
-	if (error == 0)
-		error = devsw_detach(NULL, &tap_cdevsw);
+	error = devsw_detach(NULL, &tap_cdevsw);
+	if (error != 0)
+		goto out2;
 #endif
-	if (error == 0)
-		sysctl_teardown(&tap_sysctl_clog);
-	if (error == 0)
-		if_clone_detach(&tap_cloners);
 
-	if (error == 0)
-		error = config_cfattach_detach(tap_cd.cd_name, &tap_ca);
+	if (tap_count != 0) {
+		error = EBUSY;
+		goto out1;
+	}
+
+	error = config_cfattach_detach(tap_cd.cd_name, &tap_ca);
+	if (error != 0)
+		goto out1;
+
+	sysctl_teardown(&tap_sysctl_clog);
+
+	return 0;
+
+ out1:
+#ifdef _MODULE
+	devsw_attach("tap", NULL, &tap_bmajor, &tap_cdevsw, &tap_cmajor);
+ out2:
+#endif
+	if_clone_attach(&tap_cloners);
 
 	return error;
 }
@@ -569,9 +578,6 @@ tap_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	s = splnet();
 
 	switch (cmd) {
-#ifdef OSIOCSIFMEDIA
-	case OSIOCSIFMEDIA:
-#endif
 	case SIOCSIFMEDIA:
 	case SIOCGIFMEDIA:
 		error = ifmedia_ioctl(ifp, ifr, &sc->sc_im, cmd);
@@ -1152,9 +1158,6 @@ tap_dev_ioctl(int unit, u_long cmd, void *data, struct lwp *l)
 		else
 			sc->sc_flags &= ~TAP_NBIO;
 		return 0;
-#ifdef OTAPGIFNAME
-	case OTAPGIFNAME:
-#endif
 	case TAPGIFNAME:
 		{
 			struct ifreq *ifr = (struct ifreq *)data;

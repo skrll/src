@@ -1,4 +1,4 @@
-/* $NetBSD: meson_platform.c,v 1.5 2019/02/25 19:30:17 jmcneill Exp $ */
+/* $NetBSD: meson_platform.c,v 1.11 2019/04/21 15:57:33 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared McNeill <jmcneill@invisible.ca>
@@ -33,7 +33,7 @@
 #include "arml2cc.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: meson_platform.c,v 1.5 2019/02/25 19:30:17 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: meson_platform.c,v 1.11 2019/04/21 15:57:33 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -67,41 +67,53 @@ __KERNEL_RCSID(0, "$NetBSD: meson_platform.c,v 1.5 2019/02/25 19:30:17 jmcneill 
 #define	MESON_CORE_APB3_PBASE	0xc0000000
 #define	MESON_CORE_APB3_SIZE	0x01400000
 
-#define MESON_CBUS_OFFSET	0x01100000
+#define	MESON_CBUS_OFFSET	0x01100000
 
-#define	MESON_WATCHDOG_BASE	0xc1109900
-#define	MESON_WATCHDOG_SIZE	0x8
-#define	 MESON_WATCHDOG_TC	0x00
-#define	  WATCHDOG_TC_CPUS	__BITS(27,24)
-#define	  WATCHDOG_TC_ENABLE	__BIT(19)
-#define	  WATCHDOG_TC_TCNT	__BITS(15,0)
-#define	 MESON_WATCHDOG_RESET	0x04
-#define	  WATCHDOG_RESET_COUNT	__BITS(15,0)
+#define	MESON8B_WATCHDOG_BASE	0xc1109900
+#define	MESON8B_WATCHDOG_SIZE	0x8
+#define	 MESON8B_WATCHDOG_TC	0x00
+#define	  MESON8B_WATCHDOG_TC_CPUS	__BITS(27,24)
+#define	  MESON8B_WATCHDOG_TC_ENABLE	__BIT(19)
+#define	  MESON8B_WATCHDOG_TC_TCNT	__BITS(15,0)
+#define	 MESON8B_WATCHDOG_RESET	0x04
+#define	  MESON8B_WATCHDOG_RESET_COUNT	__BITS(15,0)
 
-#define MESON8B_ARM_VBASE	(MESON_CORE_APB3_VBASE + MESON_CORE_APB3_SIZE)
+#define	MESONGX_WATCHDOG_BASE	0xc11098d0
+#define	MESONGX_WATCHDOG_SIZE	0x10
+#define	 MESONGX_WATCHDOG_CNTL	0x00
+#define	  MESONGX_WATCHDOG_CNTL_CLK_EN		__BIT(24)
+#define	  MESONGX_WATCHDOG_CNTL_SYS_RESET_N_EN	__BIT(21)
+#define	  MESONGX_WATCHDOG_CNTL_WDOG_EN		__BIT(18)
+#define	 MESONGX_WATCHDOG_CNTL1	0x04
+#define	 MESONGX_WATCHDOG_TCNT	0x08
+#define	  MESONGX_WATCHDOG_TCNT_COUNT	__BITS(15,0)
+#define	 MESONGX_WATCHDOG_RESET	0x0c
+
+#define	MESON8B_ARM_VBASE	(MESON_CORE_APB3_VBASE + MESON_CORE_APB3_SIZE)
 #define	MESON8B_ARM_PBASE	0xc4200000
-#define MESON8B_ARM_SIZE	0x00200000
-#define MESON8B_ARM_PL310_BASE	0x00000000
-#define MESON8B_ARM_SCU_BASE	0x00100000
+#define	MESON8B_ARM_SIZE	0x00200000
+#define	MESON8B_ARM_PL310_BASE	0x00000000
+#define	MESON8B_ARM_SCU_BASE	0x00100000
 
-#define MESON8B_AOBUS_VBASE	(MESON8B_ARM_VBASE + MESON8B_ARM_SIZE)
+#define	MESON8B_AOBUS_VBASE	(MESON8B_ARM_VBASE + MESON8B_ARM_SIZE)
 #define	MESON8B_AOBUS_PBASE	0xc8000000
-#define MESON8B_AOBUS_SIZE	0x00200000
+#define	MESON8B_AOBUS_SIZE	0x00200000
+#define	MESON8B_AOBUS_RTI_OFFSET 0x00100000
 
-#define MESON_AOBUS_PWR_CTRL0_REG	0xe0
-#define MESON_AOBUS_PWR_CTRL1_REG	0xe4
-#define MESON_AOBUS_PWR_MEM_PD0_REG	0xf4
+#define	MESON_AOBUS_PWR_CTRL0_REG	0xe0
+#define	MESON_AOBUS_PWR_CTRL1_REG	0xe4
+#define	MESON_AOBUS_PWR_MEM_PD0_REG	0xf4
 
-#define MESON_CBUS_CPU_CLK_CNTL_REG	0x419c
+#define	MESON_CBUS_CPU_CLK_CNTL_REG	0x419c
 
 
-#define MESON8B_SRAM_VBASE	(MESON8B_AOBUS_VBASE + MESON8B_AOBUS_SIZE)
-#define MESON8B_SRAM_PBASE	0xd9000000
-#define MESON8B_SRAM_SIZE	0x00200000	/* 0x10000 rounded up */
+#define	MESON8B_SRAM_VBASE	(MESON8B_AOBUS_VBASE + MESON8B_AOBUS_SIZE)
+#define	MESON8B_SRAM_PBASE	0xd9000000
+#define	MESON8B_SRAM_SIZE	0x00200000	/* 0x10000 rounded up */
 
-#define MESON8B_SRAM_CPUCONF_OFFSET		0x1ff80
-#define MESON8B_SRAM_CPUCONF_CTRL_REG		0x00
-#define MESON8B_SRAM_CPUCONF_CPU_ADDR_REG(n)	(0x04 * (n))
+#define	MESON8B_SRAM_CPUCONF_OFFSET		0x1ff80
+#define	MESON8B_SRAM_CPUCONF_CTRL_REG		0x00
+#define	MESON8B_SRAM_CPUCONF_CPU_ADDR_REG(n)	(0x04 * (n))
 
 
 extern struct arm32_bus_dma_tag arm_generic_dma_tag;
@@ -148,7 +160,7 @@ void
 meson_platform_early_putchar(char c)
 {
 #ifdef CONSADDR
-#define CONSADDR_VA	((CONSADDR - MESON8B_AOBUS_PBASE) + MESON8B_AOBUS_VBASE)
+#define	CONSADDR_VA	((CONSADDR - MESON8B_AOBUS_PBASE) + MESON8B_AOBUS_VBASE)
 	volatile uint32_t *uartaddr = cpu_earlydevice_va_p() ?
 	    (volatile uint32_t *)CONSADDR_VA :
 	    (volatile uint32_t *)CONSADDR;
@@ -244,7 +256,7 @@ meson8b_platform_device_register(device_t self, void *aux)
 				strcat(boot_args, rootarg);
 		}
 	}
-			
+
 	meson_platform_device_register(self, aux);
 }
 #endif
@@ -294,26 +306,24 @@ meson8b_platform_bootstrap(void)
 
 	meson_platform_bootstrap();
 }
-#endif
 
 static void
-meson_platform_reset(void)
+meson8b_platform_reset(void)
 {
 	bus_space_tag_t bst = &meson_bs_tag;
 	bus_space_handle_t bsh;
 
-	bus_space_map(bst, MESON_WATCHDOG_BASE, MESON_WATCHDOG_SIZE, 0, &bsh);
+	bus_space_map(bst, MESON8B_WATCHDOG_BASE, MESON8B_WATCHDOG_SIZE, 0, &bsh);
 
-	bus_space_write_4(bst, bsh, MESON_WATCHDOG_TC,
-	    WATCHDOG_TC_CPUS | WATCHDOG_TC_ENABLE | __SHIFTIN(0xfff, WATCHDOG_TC_TCNT));
-	bus_space_write_4(bst, bsh, MESON_WATCHDOG_RESET, 0);
+	bus_space_write_4(bst, bsh, MESON8B_WATCHDOG_TC,
+	    MESON8B_WATCHDOG_TC_CPUS | MESON8B_WATCHDOG_TC_ENABLE | __SHIFTIN(0xfff, MESON8B_WATCHDOG_TC_TCNT));
+	bus_space_write_4(bst, bsh, MESON8B_WATCHDOG_RESET, 0);
 
 	for (;;) {
 		__asm("wfi");
 	}
 }
 
-#if defined(SOC_MESON8B)
 static void
 meson8b_mpinit_delay(u_int n)
 {
@@ -332,7 +342,7 @@ cpu_enable_meson8b(int phandle)
 	const bus_space_handle_t cpuconf_bsh =
 	    MESON8B_SRAM_VBASE + MESON8B_SRAM_CPUCONF_OFFSET;
 	const bus_space_handle_t ao_bsh =
-	    MESON8B_AOBUS_VBASE;
+	    MESON8B_AOBUS_VBASE + MESON8B_AOBUS_RTI_OFFSET;
 	const bus_space_handle_t cbus_bsh =
 	    MESON_CORE_APB3_VBASE + MESON_CBUS_OFFSET;
 	uint32_t pwr_sts, pwr_cntl0, pwr_cntl1, cpuclk, mempd0;
@@ -436,7 +446,7 @@ static const struct arm_platform meson8b_platform = {
 	.ap_bootstrap = meson8b_platform_bootstrap,
 	.ap_init_attach_args = meson_platform_init_attach_args,
 	.ap_device_register = meson8b_platform_device_register,
-	.ap_reset = meson_platform_reset,
+	.ap_reset = meson8b_platform_reset,
 	.ap_delay = a9tmr_delay,
 	.ap_uart_freq = meson_platform_uart_freq,
 	.ap_mpstart = meson8b_mpstart,
@@ -445,17 +455,45 @@ static const struct arm_platform meson8b_platform = {
 ARM_PLATFORM(meson8b, "amlogic,meson8b", &meson8b_platform);
 #endif	/* SOC_MESON8B */
 
-#if defined(SOC_MESONGXBB)
-static const struct arm_platform mesongxbb_platform = {
+#if defined(SOC_MESONGX)
+static void
+mesongx_platform_reset(void)
+{
+	bus_space_tag_t bst = &meson_bs_tag;
+	bus_space_handle_t bsh;
+	uint32_t val;
+
+	bus_space_map(bst, MESONGX_WATCHDOG_BASE, MESONGX_WATCHDOG_SIZE, 0, &bsh);
+
+	val = MESONGX_WATCHDOG_CNTL_SYS_RESET_N_EN |
+	      MESONGX_WATCHDOG_CNTL_WDOG_EN |
+	      MESONGX_WATCHDOG_CNTL_CLK_EN;
+	bus_space_write_4(bst, bsh, MESONGX_WATCHDOG_CNTL, val);
+
+	bus_space_write_4(bst, bsh, MESONGX_WATCHDOG_TCNT, 1);
+
+	bus_space_write_4(bst, bsh, MESONGX_WATCHDOG_RESET, 0);
+
+	for (;;) {
+		__asm("wfi");
+	}
+}
+
+static const struct arm_platform mesongx_platform = {
 	.ap_devmap = meson_platform_devmap,
 	.ap_bootstrap = meson_platform_bootstrap,
 	.ap_init_attach_args = meson_platform_init_attach_args,
 	.ap_device_register = meson_platform_device_register,
-	.ap_reset = meson_platform_reset,
+	.ap_reset = mesongx_platform_reset,
 	.ap_delay = gtmr_delay,
 	.ap_uart_freq = meson_platform_uart_freq,
 	.ap_mpstart = arm_fdt_cpu_mpstart,
 };
 
-ARM_PLATFORM(mesongxbb, "amlogic,meson-gxbb", &mesongxbb_platform);
-#endif
+#if defined(SOC_MESONGXBB)
+ARM_PLATFORM(mesongxbb, "amlogic,meson-gxbb", &mesongx_platform);
+#endif	/* SOC_MESONGXBB */
+#if defined(SOC_MESONGXL)
+ARM_PLATFORM(mesongxl, "amlogic,meson-gxl", &mesongx_platform);
+#endif	/* SOC_MESONGXL */
+#endif	/* SOC_MESONGX */

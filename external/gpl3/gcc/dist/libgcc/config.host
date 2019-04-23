@@ -168,9 +168,6 @@ or1k-*-* | or1knd-*-*)
 powerpc*-*-*)
 	cpu_type=rs6000
 	;;
-riscv*-*-*)
-	cpu_type=riscv
-	;;
 rs6000*-*-*)
 	;;
 riscv*-*-*)
@@ -802,7 +799,7 @@ ia64*-*-linux*)
 	;;
 ia64*-*-netbsd*)
 	extra_parts="${extra_parts} crtfastmath.o"
-	tmake_file="${tmake_file} ia64/t-ia64 ia64/t-ia64-elf t-crtfm ia64/t-softfp t-softfp ia64/t-eh-ia64"
+	tmake_file="${tmake_file} ia64/t-ia64 ia64/t-ia64-elf ia64/t-eh-ia64 t-crtfm t-softfp-tf ia64/t-softfp t-softfp ia64/t-softfp-compat"
 	;;
 ia64*-*-hpux*)
 	tmake_file="ia64/t-ia64 ia64/t-ia64-elf ia64/t-hpux t-slibgcc ia64/t-slibgcc-hpux t-slibgcc-hpux"
@@ -1157,7 +1154,12 @@ riscv*-*-linux*)
 	md_unwind_header=riscv/linux-unwind.h
 	;;
 riscv*-*-netbsd*)
-	# nothing needed for NetBSD
+	tmake_file="${tmake_file} riscv/t-netbsd"
+	case ${host} in
+	riscv64*)
+		tmake_file="${tmake_file} riscv/t-netbsd64"
+		;;
+	esac
 	;;
 riscv*-*-*)
 	tmake_file="${tmake_file} riscv/t-softfp${host_address} t-softfp riscv/t-elf riscv/t-elf${host_address}"

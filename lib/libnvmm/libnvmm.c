@@ -1,4 +1,4 @@
-/*	$NetBSD: libnvmm.c,v 1.6 2018/12/27 07:22:31 maxv Exp $	*/
+/*	$NetBSD: libnvmm.c,v 1.9 2019/04/10 18:49:04 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -50,6 +50,7 @@ typedef struct __area {
 	gpaddr_t gpa;
 	uintptr_t hva;
 	size_t size;
+	nvmm_prot_t prot;
 } area_t;
 
 typedef LIST_HEAD(, __area) area_list_t;
@@ -83,10 +84,20 @@ __area_isvalid(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa,
 }
 
 static int
-__area_add(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa, size_t size)
+__area_add(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa, size_t size,
+    int prot)
 {
 	area_list_t *areas = mach->areas;
+	nvmm_prot_t nprot;
 	area_t *area;
+
+	nprot = 0;
+	if (prot & PROT_READ)
+		nprot |= NVMM_PROT_READ;
+	if (prot & PROT_WRITE)
+		nprot |= NVMM_PROT_WRITE;
+	if (prot & PROT_EXEC)
+		nprot |= NVMM_PROT_EXEC;
 
 	if (!__area_isvalid(mach, hva, gpa, size)) {
 		errno = EINVAL;
@@ -99,6 +110,7 @@ __area_add(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa, size_t size)
 	area->gpa = gpa;
 	area->hva = hva;
 	area->size = size;
+	area->prot = nprot;
 
 	LIST_INSERT_HEAD(areas, area, list);
 
@@ -374,7 +386,7 @@ nvmm_vcpu_run(struct nvmm_machine *mach, nvmm_cpuid_t cpuid,
 
 int
 nvmm_gpa_map(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa,
-    size_t size, int flags)
+    size_t size, int prot)
 {
 	struct nvmm_ioc_gpa_map args;
 	int ret;
@@ -383,7 +395,7 @@ nvmm_gpa_map(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa,
 		return -1;
 	}
 
-	ret = __area_add(mach, hva, gpa, size);
+	ret = __area_add(mach, hva, gpa, size, prot);
 	if (ret == -1)
 		return -1;
 
@@ -391,7 +403,7 @@ nvmm_gpa_map(struct nvmm_machine *mach, uintptr_t hva, gpaddr_t gpa,
 	args.hva = hva;
 	args.gpa = gpa;
 	args.size = size;
-	args.flags = flags;
+	args.prot = prot;
 
 	ret = ioctl(nvmm_fd, NVMM_IOC_GPA_MAP, &args);
 	if (ret == -1) {
@@ -477,7 +489,8 @@ nvmm_hva_unmap(struct nvmm_machine *mach, uintptr_t hva, size_t size)
  */
 
 int
-nvmm_gpa_to_hva(struct nvmm_machine *mach, gpaddr_t gpa, uintptr_t *hva)
+nvmm_gpa_to_hva(struct nvmm_machine *mach, gpaddr_t gpa, uintptr_t *hva,
+    nvmm_prot_t *prot)
 {
 	area_list_t *areas = mach->areas;
 	area_t *ent;
@@ -485,6 +498,7 @@ nvmm_gpa_to_hva(struct nvmm_machine *mach, gpaddr_t gpa, uintptr_t *hva)
 	LIST_FOREACH(ent, areas, list) {
 		if (gpa >= ent->gpa && gpa < ent->gpa + ent->size) {
 			*hva = ent->hva + (gpa - ent->gpa);
+			*prot = ent->prot;
 			return 0;
 		}
 	}
@@ -505,4 +519,25 @@ void
 nvmm_callbacks_register(const struct nvmm_callbacks *cbs)
 {
 	memcpy(&__callbacks, cbs, sizeof(__callbacks));
+}
+
+int
+nvmm_ctl(int op, void *data, size_t size)
+{
+	struct nvmm_ioc_ctl args;
+	int ret;
+
+	if (nvmm_init() == -1) {
+		return -1;
+	}
+
+	args.op = op;
+	args.data = data;
+	args.size = size;
+
+	ret = ioctl(nvmm_fd, NVMM_IOC_CTL, &args);
+	if (ret == -1)
+		return -1;
+
+	return 0;
 }

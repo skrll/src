@@ -1,4 +1,4 @@
-# $NetBSD: md.amd64,v 1.269 2019/02/14 20:42:40 christos Exp $
+# $NetBSD: md.amd64,v 1.271 2019/04/03 15:12:44 joerg Exp $
 ./usr/include/amd64				comp-c-include
 ./usr/include/amd64/ansi.h			comp-c-include
 ./usr/include/amd64/aout_machdep.h		comp-c-include

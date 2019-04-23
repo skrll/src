@@ -86,7 +86,7 @@ static bool	hme_shutdown(device_t, int);
 static int	hme_init(struct ifnet *);
 static void	hme_meminit(struct hme_softc *);
 static void	hme_mifinit(struct hme_softc *);
-static void	hme_reset(struct hme_softc *);  
+static void	hme_reset(struct hme_softc *);
 static void	hme_chipreset(struct hme_softc *);
 static void	hme_setladrf(struct hme_softc *);
 
@@ -1115,7 +1115,7 @@ hme_eint(struct hme_softc *sc, u_int status)
 
 	snprintb(bits, sizeof(bits), HME_SEB_STAT_BITS, status);
 	printf("%s: status=%s\n", device_xname(sc->sc_dev), bits);
-		
+
 	return (1);
 }
 

@@ -1,4 +1,4 @@
-/* $NetBSD: mesongx_mmc.c,v 1.3 2019/03/15 11:45:17 jmcneill Exp $ */
+/* $NetBSD: mesongx_mmc.c,v 1.5 2019/04/21 13:08:48 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mesongx_mmc.c,v 1.3 2019/03/15 11:45:17 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mesongx_mmc.c,v 1.5 2019/04/21 13:08:48 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -463,7 +463,7 @@ mesongx_mmc_set_clock(struct mesongx_mmc_softc *sc, u_int freq, bool ddr)
 	best_sel = 0;
 	best_div = 0;
 
-	const u_int target_rate = (freq * 1000) >> ddr;
+	const u_int target_rate = (freq * 1000) << ddr;
 	for (sel = 0; sel <= 1; sel++) {
 		const u_int parent_rate = clk_get_rate(sc->sc_clk_clkin[sel]);
 		for (div = 1; div <= 63; div++) {
@@ -526,8 +526,11 @@ mesongx_mmc_attach_i(device_t self)
 	saa.saa_dmat = sc->sc_dmat;
 	saa.saa_clkmin = SDMMC_SDCLK_400K;
 	saa.saa_clkmax = sc->sc_max_frequency / 1000;
-	saa.saa_caps = SMC_CAPS_DMA |
-		       SMC_CAPS_MULTI_SEG_DMA;
+	saa.saa_caps = SMC_CAPS_DMA;
+#if notyet
+	/* XXX causes init to die when using root on eMMC with ODROID-C2 */
+	saa.saa_caps |= SMC_CAPS_MULTI_SEG_DMA;
+#endif
 
 	sc->sc_host_ocr = MMC_OCR_3_2V_3_3V | MMC_OCR_3_3V_3_4V;
 
@@ -537,6 +540,10 @@ mesongx_mmc_attach_i(device_t self)
 	}
 	if (of_getprop_bool(sc->sc_phandle, "cap-mmc-highspeed"))
 		saa.saa_caps |= SMC_CAPS_MMC_HIGHSPEED;
+
+	if (of_getprop_bool(sc->sc_phandle, "mmc-ddr-3_3v")) {
+		saa.saa_caps |= SMC_CAPS_MMC_DDR52;
+	}
 
 	if (of_getprop_bool(sc->sc_phandle, "mmc-ddr-1_8v")) {
 		saa.saa_caps |= SMC_CAPS_MMC_DDR52;

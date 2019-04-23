@@ -298,7 +298,7 @@ next:
 			if (strcmp(desc, "local-mac-address") != 0)
 				continue;
 			desc += strlen("local-mac-address") + 1;
-				
+
 			memcpy(enaddrs[lma], desc, ETHER_ADDR_LEN);
 			lma++;
 			rv = 0;
@@ -1307,7 +1307,7 @@ cas_rint(struct cas_softc *sc)
 
 			cp = rxs->rxs_kva + off * 256 + ETHER_ALIGN;
 			m = m_devget(cp, len, 0, ifp);
-		
+
 			if (word[0] & CAS_RC0_RELEASE_HDR)
 				cas_add_rxbuf(sc, idx);
 

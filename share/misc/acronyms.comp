@@ -1,10 +1,11 @@
-$NetBSD: acronyms.comp,v 1.234 2019/03/04 14:31:26 sevan Exp $
+$NetBSD: acronyms.comp,v 1.248 2019/04/22 12:27:50 sevan Exp $
 3WHS	three-way handshake
 8VSB	8-state vestigial side band modulation
 AA	anti-aliasing
 AAA	authentication, authorization, [and] accounting
 AAT	average access time
 ABI	application binary interface
+ABNF	augmented backus-naur form
 ABR	available bit rate
 ABRT	automatic bug reporting tool
 AC	alternating current
@@ -90,6 +91,8 @@ ASIC	application-specific integrated circuit
 ASK	amplitude shift keying
 ASLR	address space layout randomization
 ASN	autonomous system number
+ASP	active server pages
+ASP	auxiliary storage pool
 ASPM	active state power management
 ASQ	automated software quality
 ASR	address space register
@@ -103,6 +106,7 @@ ATC	address translation cache
 ATM	asynchronous transfer mode
 ATX	advanced technology extended
 AV	anti virus
+AVB	audio video bridging
 AVL	Adelson-Velsky-Landis
 AVX	advanced vector extensions
 BA	byte align
@@ -111,6 +115,7 @@ BAR	base address register
 BBS	bulletin board system
 BCC	blind carbon copy
 BCD	binary coded decimal
+BCH	boot console handler
 BCR	byte count register
 BCS	base configuration space
 BD	baud
@@ -175,6 +180,7 @@ BT	BitTorrent
 BT	Bluetooth
 BT	bit test
 BTC	bit test [and] complement
+BTM	bus transport mechanism
 BTR	bit test [and] reset
 BTS	bit test [and] set
 BTS	bug tracking system
@@ -202,6 +208,7 @@ CCNUMA	cache-coherent non-uniform memory access
 CD	cache disable
 CD	compact disc
 CDDA	compact disc digital audio
+CDL	compiler description language
 CDMA	code division multiple access
 CDP	Cisco Discovery Protocol
 CDRAM	cache dynamic random access memory
@@ -250,6 +257,7 @@ COF	current operating frequency
 COFDM	coded orthogonal frequency division multiplexing
 COFF	common object file format
 COM	component object model
+COM	computer on module
 COMA	cache-only memory architecture
 CORBA	common object request broker architecture
 COS	class of service
@@ -401,6 +409,7 @@ DSA	digital signature algorithm
 DSAP	destination service access point
 DSB	double-sideband modulation
 DSDT	differentiated system descriptor table
+DSF	device special file
 DSL	dataset and snapshot layer
 DSL	digital subscriber line
 DSL	domain specific language
@@ -431,6 +440,7 @@ EAP	Extensible Authentication Protocol
 EAPOL	EAP over Lan
 EBCDIC	Extended Binary Coded Decimal Interchange Code
 EBDA	Extended BIOS Data Area
+EBNF	extended backus-naur form
 EBR	extended boot record
 EC	elliptic curve
 ECC	elliptic curve cryptography
@@ -599,6 +609,7 @@ HECI	host embedded controller interface
 HEST	hardware error source table
 HF	high frequency
 HFM	highest frequency mode
+HFS	hierarchical file system
 HID	human interface device
 HKP	HTTP Keyserver Protocol
 HLL	high-level language
@@ -609,7 +620,7 @@ HP	Hewlett-Packard
 HPC	high performance computing
 HPET	high precision event timer
 HSM	hardware security module
-HSM	hierarchical storage management 
+HSM	hierarchical storage management
 HT	hyper-threading
 HTC	hardware thermal control
 HTCC	high temperature co-fired ceramic
@@ -673,12 +684,14 @@ IMSI	international mobile subscriber identity
 INCITS	InterNational Committee for Information Technology Standards
 IO	input/output
 IOCTL	input/output control
+IOM	input/output managers
 IOMMU	input/output memory management unit
 IOT	Internet of Things
 IP	Internet Protocol
 IP	intellectual property
 IPC	instructions per cycle
 IPC	interprocess communication
+IPCF	interprocess communication facility
 IPE	integrated programming environment
 IPI	intelligent peripheral interface
 IPI	interprocessor interrupt
@@ -701,6 +714,7 @@ ISA	industry standard architecture
 ISA	instruction set architecture
 ISDN	integrated services digital network
 ISI	inter-symbol interference
+ISL	initial system load
 ISM	industrial, scientific, [and] medical
 ISN	initial serial number
 ISO	International Standards Organization
@@ -718,6 +732,7 @@ ITSM	IT service management
 IV	initialization vector
 IVT	interrupt vector table
 JBOD	just a bunch of disks
+JCL	Job Control Language
 JFET	junction [gate] field-effect transistor
 JIT	just in time
 JPEG	Joint Photographic Experts Group
@@ -737,11 +752,13 @@ KVA	kernel virtual address
 KVM	kernel virtual machine
 KVM	kernel virtual memory
 KVM	keyboard, video, [and] mouse
+L2CAP	link layer control and adaptation protocol
 LAMP	Linux Apache MySQL {Perl,PHP,Python}
 LAN	local area network
 LAPIC	local advanced programmable interrupt controller
 LAR	load access rights
 LBA	logical block addressing
+LBNF	labeled backus-naur form
 LBS	location-based service
 LCD	liquid crystal display
 LCP	link control protocol
@@ -761,6 +778,7 @@ LFO	low-frequency oscillation
 LFS	log-structured file system
 LFU	least frequently used
 LHP	loop heat pipe
+LIF	logical interchange format
 LIFO	last in, first out
 LILO	LInux LOader
 LILO	last in, last out
@@ -773,6 +791,8 @@ LKML	Linux kernel mailing list
 LL	load linked
 LL/SC	load linked/store conditional
 LLC	logical link control
+LLD	low-level design
+LLDD	low-level design document
 LLDP	link layer discovery protocol
 LLF	low level format
 LLMNR	link-local multicast name resolution
@@ -813,6 +833,7 @@ LVM	logical volume management
 LVT	local vector table
 LVDS	Low-Voltage Differential Signaling
 LWP	light-weight process
+LZSS	Lempel Ziv Storer Szymanski
 LZW	Lempel Ziv Welch
 MAC	mandatory access control
 MAC	{media,medium} access control
@@ -847,6 +868,7 @@ MFC	Microsoft Foundation Classes
 MFM	modified frequency modulation
 MFU	most frequently used
 MI	machine-independent
+MI	machine interface
 MIB	management information base
 MIC	message integrity {check,code}
 MID	mobile Internet device
@@ -926,8 +948,10 @@ NAS	network attached storage
 NAT	network address translation
 NAV	network allocation vector
 NC	numerical control
+NC-SI	network controller sideband interface
 NCO	numerically-controlled oscillator
 NCP	Network Control Protocol
+NCSI	network connectivity status indicator
 NCQ	native command queuing
 ND	neighbor discovery
 NDFA	nondeterministic finite automaton
@@ -961,6 +985,8 @@ NSA	National Security Agency
 NTM	non-deterministic Turing machine
 NTP	Network Time Protocol
 NUMA	non-uniform memory access
+NVMM	NetBSD Virtual Machine Monitor
+NVMM	non-volatile main memory
 NVRAM	non-volatile random access memory
 NW	not write-through
 NX	no execute
@@ -970,6 +996,8 @@ OBO	off by one
 OBOE	off by one error
 OCL	object constraint language
 OCR	optical character recognition
+ODE	offline device environment
+ODM	object data manager
 ODCM	on-demand clock modulation
 ODT	on-die termination
 OEM	original equipment manufacturer
@@ -1173,6 +1201,7 @@ RAS	remote access service
 RAS	restartable atomic sequence
 RAS	row address strobe
 RBF	radial basis function
+RBNF	routing backus-naur form
 RBT	red-black tree
 RC	release candidate
 RC	remote control
@@ -1286,7 +1315,7 @@ SDEI	software delegated exception interface
 SDI	symbol deinterleave
 SDK	software development kit
 SDL	Simple Declarative Language
-SDL	Simple Direct-media Layer 
+SDL	Simple Direct-media Layer
 SDLC	{software,system,systems} development life cycle
 SDN	software defined networking
 SDP	Session Description Protocol
@@ -1323,6 +1352,7 @@ SLDRAM	synchronous-link dynamic random access memory
 SLED	single large expensive disk
 SLI	scalable link interface
 SLI	scan-line interleave
+SLIC	system license internal code
 SLOC	source lines of code
 SLRU	segmented LRU
 SMA	smart memory access
@@ -1356,6 +1386,7 @@ SOF	start of frame
 SOH	start of header
 SOHO	small office/home office
 SOL	serial over LAN
+SOM	system on module
 SP	service pack
 SP	stack pointer
 SPA	storage pool allocator
@@ -1416,6 +1447,7 @@ TAOCP	The Art of Computer Programming
 TAP	Test Anything Protocol
 TAS	test and set
 TB	terabyte
+TBNF	transitional backus-naur form
 TCB	trace capture buffer
 TCB	trusted computing base
 TCC	thermal control circuit
@@ -1540,6 +1572,7 @@ VCO	voltage-controlled oscillator
 VCS	version control system
 VESA	Video Electronics Standards Association
 VFO	variable-frequency oscillator
+VFS	virtual file system
 VG	volume group
 VGA	Video Graphics Array
 VHDCI	very high density cable interconnect
@@ -1556,6 +1589,7 @@ VME	virtual mode extension
 VMX	vector multimedia extensions
 VMX	virtual machine extensions
 VOD	video on demand
+VPD	vital product data
 VPN	virtual private network
 VR	virtual reality
 VRAM	video random access memory
@@ -1564,8 +1598,11 @@ VRM	voltage regulator module
 VRRP	Virtual Router Redundancy Protocol
 VSTP	VLAN Spanning Tree Protocol
 VTP	VLAN Trunking Protocol
+VXFS	Veritas file sytem
+VXVM	Veritas volume manager
 W	watt
 W3C	World Wide Web Consortium
+WAFL	write anywhere file layout
 WAMP	Web Application Messaging Protocol
 WAN	wide area network
 WAP	Wireless Application Protocol
@@ -1629,5 +1666,7 @@ ZIF	zero insertion force
 ZIFS	zero insertion force socket
 ZIL	ZFS intent log
 ZMA	zone multicast address
+ZOI	zero one infinity
+ZOI	zone of influence
 ZPL	ZFS Posix layer
 ZVOL	ZFS Volume

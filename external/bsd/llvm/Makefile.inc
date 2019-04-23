@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.86 2018/07/17 18:55:24 joerg Exp $
+#	$NetBSD: Makefile.inc,v 1.88 2019/04/04 12:34:31 joerg Exp $
 
 .if !defined(LLVM_TOPLEVEL_MK)
 LLVM_TOPLEVEL_MK=
@@ -38,7 +38,7 @@ CPPFLAGS+=	-I. -I${CLANG_SRCDIR}/include -I${LLD_SRCDIR}/include \
 		-DCLANG_OPENMP_NVPTX_DEFAULT_ARCH=\"sm_35\" \
 		-DCLANG_DEFAULT_OBJCOPY=\"objcopy\"
 
-.if defined(HOSTLIB) || defined(HOSTPROG)
+.if defined(HOSTLIB) || defined(HOSTPROG) || defined(_BSD_HOSTINIT_MK_)
 LLVM_INCLUDE_CONFIG=	${LLVM_TOOLCONF_OBJDIR}/config/include
 CLANG_INCLUDE_CONFIG=	${LLVM_TOOLCONF_OBJDIR}/config/tools/clang/include
 MCLINKER_INCLUDE_CONFIG= ${LLVM_TOPLEVEL}/config/mclinker
@@ -47,11 +47,13 @@ LLVM_TOOLCONF_OBJDIR!=	cd ${NETBSDSRCDIR}/tools/llvm && ${PRINTOBJDIR}
 HOST_CPPFLAGS+=	${CPPFLAGS}
 HOST_CXXFLAGS+=	-O2 -fno-rtti -fno-exceptions
 HOST_CPPFLAGS+=	-std=c++11
+LLVM_TARGETS=	x86,powerpc,sparc,aarch64,arm,mips
 .else
 LLVM_INCLUDE_CONFIG=	${LLVM_TOPLEVEL}/config
 CLANG_INCLUDE_CONFIG=	${LLVM_TOPLEVEL}/config
 MCLINKER_INCLUDE_CONFIG= ${LLVM_TOPLEVEL}/config/mclinker
 LLVM_INCLUDE_OBJDIR!=	cd ${LLVM_TOPLEVEL}/include && ${PRINTOBJDIR}
+LLVM_TARGETS=	x86,powerpc,sparc,aarch64,arm,mips,amdgpu
 
 .if ${MKLLDB:Uno} == "yes"
 CPPFLAGS+=	-DLLDB_DISABLE_PYTHON
@@ -69,7 +71,7 @@ CPPFLAGS+=	-I${LLVM_INCLUDE_OBJDIR} -I${LLVM_INCLUDE_CONFIG} \
 LLVM_PLATFORM=${MACHINE_GNU_ARCH}--netbsd
 
 LLVM_CONFIGURE_ARGS=	\
-	--enable-targets=x86,powerpc,sparc,aarch64,arm,mips \
+	--enable-targets=${LLVM_TARGETS} \
 	--with-c-include-dirs=/usr/include/clang-${CLANG_VERSION:R}:/usr/include \
 	--disable-timestamps --prefix=/usr --sysconfdir=/etc/llvm \
 	--with-clang-default-openmp-runtime=libomp \

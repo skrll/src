@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1603 2019/03/12 16:59:16 christos Exp $
+#	$NetBSD: 3RDPARTY,v 1.1613 2019/04/20 17:25:13 christos Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -140,11 +140,11 @@ The libc and include parts of the resolver are now part of libbind.
 
 Package:	unbound
 Version:	1.7.3
-Current Vers:	1.8.3
-Maintainer:	Christos Zoulas
+Current Vers:	1.9.1
+Maintainer:	Nlnetlabs
 Archive Site:	https://www.unbound.net/downloads/unbound-latest.tar.gz
 Home Page:	https://www.unbound.net/
-Date:		2019-01-09
+Date:		2019-03-17
 Mailing List:	https://unbound.nlnetlabs.nl/mailman/listinfo/unbound-users
 Responsible:	christos
 License:	BSD-like
@@ -156,10 +156,10 @@ run configure and update config files in include
 Package:	nsd
 Version:	4.1.26
 Current Vers:	4.1.26
-Maintainer:	Christos Zoulas
+Maintainer:	Nlnetlabs
 Archive Site:	https://www.nlnetlabs.nl/svn/nsd/
 Home Page:	https://www.nlnetlabs.nl/projects/nsd/
-Date:		2019-01-09
+Date:		2019-03-17
 Mailing List:	https://open.nlnetlabs.nl/mailman/listinfo/nsd-users/
 Responsible:	christos
 License:	BSD-like
@@ -341,8 +341,8 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	7.1.1
-Current Vers:	7.1.1
+Version:	7.2.0
+Current Vers:	7.2.0
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
@@ -602,11 +602,11 @@ sync with ipsec-tools-0_7-branch)
 Package:	jemalloc
 Version:	5.1.0
 Current Vers:	5.1.0
-Maintainer:	Christos Zoulas
+Maintainer:	Jason Evans
 Archive Site:	https://github.com/jemalloc/jemalloc
 Home Page:	https://jemalloc.net
 Date:		2019-03-04
-Mailing List:	
+Mailing List:
 Responsible:	christos
 License:	BSD
 Location:	external/bsd/jemalloc
@@ -744,7 +744,7 @@ Notes:
 
 Package:	llvm
 Version:	7.0.0svn (r337282)
-Current Vers.:	7.0.0svn
+Current Vers.:	8.0.0
 Maintainer:	llvm-dev@lists.llvm.org
 Home Page:	https://llvm.org
 Date:		2019-01-09
@@ -917,12 +917,12 @@ Location:	sys/external/bsd/drm/dist
 Notes:
 
 Package:	MesaLib
-Version:	10.3.5
-Current Vers:	18.3.1
+Version:	18.3.4
+Current Vers:	19.0.1
 Maintainer:	mesa-git@?
 Archive Site:	ftp://ftp.freedesktop.org/pub/mesa/
 Home Page:	http://www.mesa3d.org/
-Date:		2019-01-09
+Date:		2019-04-05
 Mailing List:
 Responsible:	riastradh, mrg
 License:	ISC
@@ -1058,12 +1058,12 @@ Notes:
 Patch applied after OpenSSH import.
 
 Package:	OpenSSH
-Version:	7.8
-Current Vers:	7.9 / portable 7.9p1
+Version:	8.0
+Current Vers:	8.0 / portable 8.0p1
 Maintainer:	OpenSSH
 Archive Site:	http://www.openssh.com/ftp.html
 Home Page:	http://www.openssh.com/portable.html
-Date:		2019-01-09
+Date:		2019-04-20
 Mailing List:	openssh-unix-announce@mindrot.org
 Responsible:	thorpej, christos, elric
 License:	BSD. See src/crypto/external/bsd/openssh/dist/LICENSE
@@ -1180,8 +1180,8 @@ definition (files.pf).  userland code is imported into src/dist/pf, and
 reachover Makefiles are in src/usr.sbin/pf.
 
 Package:	pkg_install
-Version:	20180325
-Current Vers:	20180425
+Version:	20190405
+Current Vers:	20190405
 Maintainer:	The pkgsrc developers
 Home Page:	http://www.pkgsrc.org/
 Date:		2019-01-09
@@ -1397,8 +1397,8 @@ Notes:
 Added changes from a5 -> a12 manually.
 
 Package:	tz
-Version:	tzcode2018i / tzdata2018i
-Current Vers:	tzcode2018i / tzdata2018i
+Version:	tzcode2019a / tzdata2019a
+Current Vers:	tzcode2019a / tzdata2019a
 Maintainer:	Paul Eggert <eggert@cs.ucla.edu>
 Archive Site:	ftp://ftp.iana.org/tz/releases/
 Archive Site:	ftp://munnari.oz.au/pub/oldtz/
@@ -2160,3 +2160,15 @@ Notes:
 Use src/external/gpl2/texinfo/texinfo2netbsd for preparing the source tree
 for the import.
 
+Package:	indent
+Version:	FreeBSD-2018-11-04 r340138
+Current Vers:	FreeBSD-2018-11-04 r340138
+Maintainer:	The FreeBSD Project
+Archive Site:	none
+Home Page:	https://svnweb.freebsd.org/base/head/usr.bin/indent/
+Mailing List:	none
+Responsible:
+License:	BSD-like (4-clause)
+Location:	usr.bin/indent
+Notes:
+Tests are stored in tests/usr.bin/indent.

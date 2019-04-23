@@ -64,7 +64,7 @@ typedef int malloc_cpuid_t;
 #  ifdef __alpha__
 #    define LG_QUANTUM		4
 #  endif
-#  if (defined(__sparc64__) || defined(__sparcv9) || defined(__sparc_v9__))
+#  ifdef __sparc__
 #    define LG_QUANTUM		4
 #  endif
 #  if (defined(__amd64__) || defined(__x86_64__) || defined(_M_X64))
@@ -97,6 +97,9 @@ typedef int malloc_cpuid_t;
 #  if defined(__riscv) || defined(__riscv__)
 #    define LG_QUANTUM		4
 #  endif
+#  ifdef __sh3__
+#    define LG_QUANTUM		3
+#  endif
 #  ifdef __s390__
 #    define LG_QUANTUM		4
 #  endif
@@ -108,6 +111,9 @@ typedef int malloc_cpuid_t;
 #    define LG_QUANTUM		4
 #  endif
 #  ifdef __le32__
+#    define LG_QUANTUM		4
+#  endif
+#  ifdef __vax__
 #    define LG_QUANTUM		4
 #  endif
 #  ifndef LG_QUANTUM

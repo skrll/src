@@ -1,4 +1,4 @@
-/*	$NetBSD: menu_sys.def,v 1.67 2019/02/25 20:47:37 martin Exp $	*/
+/*	$NetBSD: menu_sys.def,v 1.69 2019/04/12 15:59:34 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.

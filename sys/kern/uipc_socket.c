@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_socket.c,v 1.271 2019/03/07 12:29:14 maxv Exp $	*/
+/*	$NetBSD: uipc_socket.c,v 1.278 2019/04/15 10:53:17 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 2002, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.271 2019/03/07 12:29:14 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.278 2019/04/15 10:53:17 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -104,11 +104,10 @@ __KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.271 2019/03/07 12:29:14 maxv Exp $
 #include <sys/mutex.h>
 #include <sys/condvar.h>
 #include <sys/kthread.h>
+#include <sys/compat_stub.h>
 
-#ifdef COMPAT_50
 #include <compat/sys/time.h>
 #include <compat/sys/socket.h>
-#endif
 
 #include <uvm/uvm_extern.h>
 #include <uvm/uvm_loan.h>
@@ -749,6 +748,7 @@ soclose(struct socket *so)
  discard:
 	KASSERT((so->so_state & SS_NOFDREF) == 0);
 	kauth_cred_free(so->so_cred);
+	so->so_cred = NULL;
 	so->so_state |= SS_NOFDREF;
 	sofree(so);
 	return error;
@@ -1415,15 +1415,21 @@ dontblock:
 	moff = 0;
 	offset = 0;
 	while (m != NULL && uio->uio_resid > 0 && error == 0) {
+		/*
+		 * If the type of mbuf has changed, end the receive
+		 * operation and do a short read.
+		 */
 		if (m->m_type == MT_OOBDATA) {
 			if (type != MT_OOBDATA)
 				break;
 		} else if (type == MT_OOBDATA) {
 			break;
+		} else if (m->m_type == MT_CONTROL) {
+			break;
 		}
 #ifdef DIAGNOSTIC
 		else if (m->m_type != MT_DATA && m->m_type != MT_HEADER) {
-			panic("receive 3");
+			panic("%s: m_type=%d", __func__, m->m_type);
 		}
 #endif
 
@@ -1700,12 +1706,14 @@ sorflush(struct socket *so)
 static int
 sosetopt1(struct socket *so, const struct sockopt *sopt)
 {
-	int error = EINVAL, opt;
+	int error, opt;
 	int optval = 0; /* XXX: gcc */
 	struct linger l;
 	struct timeval tv;
 
-	switch ((opt = sopt->sopt_name)) {
+	opt = sopt->sopt_name;
+
+	switch (opt) {
 
 	case SO_ACCEPTFILTER:
 		error = accept_filt_setopt(so, sopt);
@@ -1740,9 +1748,6 @@ sosetopt1(struct socket *so, const struct sockopt *sopt)
 	case SO_TIMESTAMP:
 	case SO_NOSIGPIPE:
 	case SO_RERROR:
-#ifdef SO_OTIMESTAMP
-	case SO_OTIMESTAMP:
-#endif
 		error = sockopt_getint(sopt, &optval);
 		solock(so);
 		if (error)
@@ -1808,32 +1813,17 @@ sosetopt1(struct socket *so, const struct sockopt *sopt)
 		}
 		break;
 
-#ifdef COMPAT_50
-	case SO_OSNDTIMEO:
-	case SO_ORCVTIMEO: {
-		struct timeval50 otv;
-		error = sockopt_get(sopt, &otv, sizeof(otv));
-		if (error) {
-			solock(so);
+	case SO_SNDTIMEO:
+	case SO_RCVTIMEO:
+		solock(so);
+		error = sockopt_get(sopt, &tv, sizeof(tv));
+		if (error)
+			break;
+
+		if (tv.tv_sec < 0 || tv.tv_usec < 0 || tv.tv_usec >= 1000000) {
+			error = EDOM;
 			break;
 		}
-		timeval50_to_timeval(&otv, &tv);
-		opt = opt == SO_OSNDTIMEO ? SO_SNDTIMEO : SO_RCVTIMEO;
-		error = 0;
-		/*FALLTHROUGH*/
-	}
-#endif /* COMPAT_50 */
-
-		/*FALLTHROUGH*/
-	case SO_SNDTIMEO:
-		/*FALLTHROUGH*/
-	case SO_RCVTIMEO:
-		if (error)
-			error = sockopt_get(sopt, &tv, sizeof(tv));
-		solock(so);
-		if (error)
-			break;
-
 		if (tv.tv_sec > (INT_MAX - tv.tv_usec / tick) / hz) {
 			error = EDOM;
 			break;
@@ -1854,8 +1844,12 @@ sosetopt1(struct socket *so, const struct sockopt *sopt)
 		break;
 
 	default:
-		solock(so);
-		error = ENOPROTOOPT;
+		MODULE_HOOK_CALL(uipc_socket_50_setopt1_hook,
+		    (opt, so, sopt), enosys(), error);
+		if (error == ENOSYS || error == EPASSTHROUGH) {
+			solock(so);
+			error = ENOPROTOOPT;
+		}
 		break;
 	}
 	KASSERT(solocked(so));
@@ -1944,9 +1938,6 @@ sogetopt1(struct socket *so, struct sockopt *sopt)
 	case SO_TIMESTAMP:
 	case SO_NOSIGPIPE:
 	case SO_RERROR:
-#ifdef SO_OTIMESTAMP
-	case SO_OTIMESTAMP:
-#endif
 	case SO_ACCEPTCONN:
 		error = sockopt_setint(sopt, (so->so_options & opt) ? 1 : 0);
 		break;
@@ -1980,22 +1971,6 @@ sogetopt1(struct socket *so, struct sockopt *sopt)
 		error = sockopt_setint(sopt, so->so_rcv.sb_lowat);
 		break;
 
-#ifdef COMPAT_50
-	case SO_OSNDTIMEO:
-	case SO_ORCVTIMEO: {
-		struct timeval50 otv;
-
-		optval = (opt == SO_OSNDTIMEO ?
-		     so->so_snd.sb_timeo : so->so_rcv.sb_timeo);
-
-		otv.tv_sec = optval / hz;
-		otv.tv_usec = (optval % hz) * tick;
-
-		error = sockopt_set(sopt, &otv, sizeof(otv));
-		break;
-	}
-#endif /* COMPAT_50 */
-
 	case SO_SNDTIMEO:
 	case SO_RCVTIMEO:
 		optval = (opt == SO_SNDTIMEO ?
@@ -2012,7 +1987,10 @@ sogetopt1(struct socket *so, struct sockopt *sopt)
 		break;
 
 	default:
-		error = ENOPROTOOPT;
+		MODULE_HOOK_CALL(uipc_socket_50_getopt1_hook,
+		    (opt, so, sopt), enosys(), error);
+		if (error)
+			error = ENOPROTOOPT;
 		break;
 	}
 
@@ -2430,19 +2408,13 @@ struct mbuf **
 sbsavetimestamp(int opt, struct mbuf **mp)
 {
 	struct timeval tv;
+	int error;
+
 	microtime(&tv);
 
-#ifdef SO_OTIMESTAMP
-	if (opt & SO_OTIMESTAMP) {
-		struct timeval50 tv50;
-
-		timeval_to_timeval50(&tv, &tv50);
-		*mp = sbcreatecontrol(&tv50, sizeof(tv50),
-		    SCM_OTIMESTAMP, SOL_SOCKET);
-		if (*mp)
-			mp = &(*mp)->m_next;
-	} else
-#endif
+	MODULE_HOOK_CALL(uipc_socket_50_sbts_hook, (opt, mp), enosys(), error);
+	if (error == 0)
+		return mp;
 
 	if (opt & SO_TIMESTAMP) {
 		*mp = sbcreatecontrol(&tv, sizeof(tv),

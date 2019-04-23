@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.23 2019/03/10 10:51:58 mrg Exp $
+#	$NetBSD: Makefile,v 1.26 2019/04/18 22:49:08 mrg Exp $
 
 .include <bsd.own.mk>
 
@@ -191,7 +191,8 @@ LIBDPLIBS=	Xext		${.CURDIR}/../libXext \
 		xcb-dri2	${.CURDIR}/../libxcb/dri2 \
 		xcb-glx		${.CURDIR}/../libxcb/glx \
 		expat		${NETBSDSRCDIR}/external/mit/expat/lib/libexpat \
-		m		${NETBSDSRCDIR}/lib/libm
+		m		${NETBSDSRCDIR}/lib/libm \
+		pthread		${NETBSDSRCDIR}/lib/libpthread
 
 MKLINT=no
 
@@ -201,13 +202,13 @@ PKGDIST.gl=	${X11SRCDIR.Mesa}/src/mesa
 PKGCONFIG_VERSION.gl=	${MESA_VER}
 
 # XXX remove these from bsd.x11.mk
-# XXX enable GLX TLS?  it's enabled in the code, but not here..
+
 PKGCONFIG_SED_FLAGS= \
-	-e "s,@GL_PC_REQ_PRIV@,x11 xext,; \
-	    s,@GL_LIB@,GL,; \
-	    s,@GL_PC_LIB_PRIV@,-lm -lpthread,; \
+	-e "s,@GL_PC_REQ_PRIV@,libdrm x11 xext xdamage xfixes xcb-glx xcb-dri2 xxf86vm,; \
+	    s,@GL_PKGCONF_LIB@,GL,; \
+	    s,@GL_PC_LIB_PRIV@,-lm -lpthread -pthread,; \
 	    s,@GL_PC_CFLAGS@,,; \
-	    s,@GLX_TLS@,no,"
+	    s,@GLX_TLS@,yes,"
 
 
 CWARNFLAGS.clang+=	-Wno-tautological-compare -Wno-format -Wno-constant-conversion \

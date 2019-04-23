@@ -1,4 +1,4 @@
-#  $NetBSD: Makefile,v 1.206 2019/02/22 18:17:22 maya Exp $
+#  $NetBSD: Makefile,v 1.208 2019/04/17 07:45:23 mrg Exp $
 #
 #  @(#)Makefile 5.1beta 93/09/24
 #
@@ -175,6 +175,8 @@ WARNS?=5
 
 .elif (${LIBC_MACHINE_CPU} == "riscv")
 .PATH:	${.CURDIR}/arch/riscv
+
+COMMON_SRCS+= s_nexttoward.c s_rintl.c
 
 .if ${MKSOFTFLOAT} == "no"
 COMMON_SRCS += fenv.c

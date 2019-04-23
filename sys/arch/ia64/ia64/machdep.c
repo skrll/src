@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.41 2019/01/18 18:47:16 scole Exp $	*/
+/*	$NetBSD: machdep.c,v 1.43 2019/04/19 16:28:32 scole Exp $	*/
 
 /*-
  * Copyright (c) 2003,2004 Marcel Moolenaar
@@ -267,18 +267,24 @@ map_vhpt(uintptr_t vhpt)
         pt_entry_t pte;
         uint64_t psr;
 
+	/*
+	 * XXX read pmap_vhpt_log2size before any memory translation
+	 * instructions to avoid "Data Nested TLB faults".  Not
+	 * exactly sure why this is needed with GCC 7.4
+	 */
+	register uint64_t log2size = pmap_vhpt_log2size << 2;
+	
         pte = PTE_PRESENT | PTE_MA_WB | PTE_ACCESSED | PTE_DIRTY |
 		PTE_PL_KERN | PTE_AR_RW;
         pte |= vhpt & PTE_PPN_MASK;
 
-        __asm __volatile("ptr.d %0,%1" :: "r"(vhpt),
-			 "r"(pmap_vhpt_log2size << 2));
+        __asm __volatile("ptr.d %0,%1" :: "r"(vhpt), "r"(log2size));
 
         __asm __volatile("mov   %0=psr" : "=r"(psr));
         __asm __volatile("rsm   psr.ic|psr.i");
         ia64_srlz_i();
         ia64_set_ifa(vhpt);
-        ia64_set_itir(pmap_vhpt_log2size << 2);
+	ia64_set_itir(log2size);
         ia64_srlz_d();
         __asm __volatile("itr.d dtr[%0]=%1" :: "r"(3), "r"(pte));
         __asm __volatile("mov   psr.l=%0" :: "r" (psr));
@@ -755,16 +761,17 @@ setregs(register struct lwp *l, struct exec_package *pack, vaddr_t stack)
 		 */
 
 		/* in0 = *cleanup */
-		suword((char *)tf->tf_special.bspstore - 32, 0);
+		ustore_long((u_long *)(tf->tf_special.bspstore - 32), 0);
 
 		/* in1 == *obj */
-		suword((char *)tf->tf_special.bspstore -  24, 0);
+		ustore_long((u_long *)(tf->tf_special.bspstore -  24), 0);
 
 		/* in2 == ps_strings */
-		suword((char *)tf->tf_special.bspstore -  16, l->l_proc->p_psstrp);
+		ustore_long((u_long *)(tf->tf_special.bspstore -  16),
+		    l->l_proc->p_psstrp);
 
 		/* in3 = sp */
-		suword((char *)tf->tf_special.bspstore - 8,
+		ustore_long((u_long *)(tf->tf_special.bspstore - 8),
 		    stack);
 
 	}

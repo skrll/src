@@ -87,17 +87,6 @@ extern int dot_symbols;
 
 #define ELFv2_ABI_CHECK (rs6000_elf_abi == 2)                   
 
-#undef CC1_OS_NETBSD_SPEC
-#define CC1_OS_NETBSD_SPEC \
-  NETBSD_CC1_AND_CC1PLUS_SPEC \
-  "%{!m32: %{!mrelocatable: %{!fno-pie: %{!fno-pic: \
-     %{!fpie: %{!fpic: \
-       %{!fPIE: %{!fPIC:-fPIC}}}}}}}}"
-/* %{!m32: %{!mcmodel*: -mcmodel=medium}}" */
-
-#undef CC1PLUS_SPEC
-#define CC1PLUS_SPEC CC1_OS_NETBSD_SPEC
-
 #undef	SUBSUBTARGET_OVERRIDE_OPTIONS
 #define	SUBSUBTARGET_OVERRIDE_OPTIONS				\
   do								\
@@ -152,6 +141,7 @@ extern int dot_symbols;
 		error ("-mcmodel incompatible with other toc options"); \
 	      SET_CMODEL (CMODEL_SMALL);			\
 	    }							\
+	  else							\
 	    {							\
 	      if (!global_options_set.x_rs6000_current_cmodel)	\
 		SET_CMODEL (CMODEL_MEDIUM);			\
@@ -179,17 +169,6 @@ extern int dot_symbols;
 	}							\
     }								\
   while (0)
-
-#ifdef	RS6000_BI_ARCH
-
-#if 0
-#undef	OVERRIDE_OPTIONS
-#define	OVERRIDE_OPTIONS \
-  rs6000_override_options (((TARGET_DEFAULT ^ target_flags) & MASK_64BIT) \
-			   ? (char *) 0 : TARGET_CPU_DEFAULT)
-#endif
-
-#endif
 
 #undef	ASM_DEFAULT_SPEC
 #undef	ASM_SPEC
@@ -262,18 +241,20 @@ extern int dot_symbols;
 
 #endif
 
-/* Use standard DWARF numbering for DWARF debugging information.  */
-#define RS6000_USE_DWARF_NUMBERING
+/* We use NetBSD libc _mcount for profiling.  */
+#define NO_PROFILE_COUNTERS 1
+#define PROFILE_HOOK(LABEL) \
+  do { if (TARGET_64BIT) output_profile_hook (LABEL); } while (0)
 
 /* PowerPC64 NetBSD word-aligns FP doubles when -malign-power is given.  */
 #undef  ADJUST_FIELD_ALIGN
 #define ADJUST_FIELD_ALIGN(FIELD, TYPE, COMPUTED) \
   (rs6000_special_adjust_field_align_p ((TYPE), (COMPUTED))		\
-   ? 128                                                                \
-   : (TARGET_64BIT                                                      \
-      && TARGET_ALIGN_NATURAL == 0                                      \
-      && TYPE_MODE (strip_array_types (TYPE)) == DFmode)   		\
-   ? MIN ((COMPUTED), 32)                                               \
+   ? 128								\
+   : (TARGET_64BIT							\
+      && TARGET_ALIGN_NATURAL == 0					\
+      && TYPE_MODE (strip_array_types (TYPE)) == DFmode)		\
+   ? MIN ((COMPUTED), 32)						\
    : (COMPUTED))
 
 /* PowerPC64 NetBSD increases natural record alignment to doubleword if
@@ -318,21 +299,23 @@ extern int dot_symbols;
   (!(FIRST) ? upward : FUNCTION_ARG_PADDING (MODE, TYPE))
 
 /* NetBSD doesn't support saving and restoring 64-bit regs in a 32-bit
-   process.  XXXMRG?  */
-#define OS_MISSING_POWERPC64 !TARGET_64BIT
+   process.  */
+#define OS_MISSING_POWERPC64 (!TARGET_64BIT)
 
 #undef  TARGET_OS_CPP_BUILTINS
 #define TARGET_OS_CPP_BUILTINS()			\
   do							\
     {							\
       NETBSD_OS_CPP_BUILTINS_ELF();			\
+      builtin_define ("__PPC__");			\
+      builtin_define ("__ppc__");			\
+      builtin_define ("__powerpc__");			\
       if (TARGET_ISEL)					\
 	builtin_define ("__PPC_ISEL__");		\
       if (TARGET_64BIT)					\
 	{						\
-	  builtin_define ("__PPC__");			\
+	  builtin_define ("__arch64__");		\
 	  builtin_define ("__PPC64__");			\
-	  builtin_define ("__powerpc__");		\
 	  builtin_define ("__powerpc64__");		\
 	  builtin_define_with_int_value ("__PIC__", 2);	\
 	  builtin_assert ("cpu=powerpc64");		\
@@ -360,6 +343,17 @@ extern int dot_symbols;
       builtin_assert ("machine=bigendian");	\
     }						\
   while (0)
+
+#undef CC1_OS_NETBSD_SPEC
+#define CC1_OS_NETBSD_SPEC \
+  NETBSD_CC1_AND_CC1PLUS_SPEC \
+  "%{!m32: %{!mrelocatable: %{!fno-pie: %{!fno-pic: \
+     %{!fpie: %{!fpic: \
+       %{!fPIE: %{!fPIC:-fPIC}}}}}}}}"
+/* %{!m32: %{!mcmodel*: -mcmodel=medium}}" */
+
+#undef CC1PLUS_SPEC
+#define CC1PLUS_SPEC CC1_OS_NETBSD_SPEC
 
 #undef  CPP_OS_DEFAULT_SPEC
 #define CPP_OS_DEFAULT_SPEC "%(cpp_os_netbsd)"
@@ -390,6 +384,9 @@ extern int dot_symbols;
   %{rdynamic:-export-dynamic} \
   %{!dynamic-linker:-dynamic-linker /usr/libexec/ld.elf_so}}}"
 
+/* Use standard DWARF numbering for DWARF debugging information.  */
+#define RS6000_USE_DWARF_NUMBERING
+
 #undef  TOC_SECTION_ASM_OP
 #define TOC_SECTION_ASM_OP \
   (TARGET_64BIT						\
@@ -403,6 +400,43 @@ extern int dot_symbols;
    : (flag_pic						\
       ? "\t.section\t\".got2\",\"aw\""			\
       : "\t.section\t\".got1\",\"aw\""))
+
+/* This is how to declare the size of a function.  */
+#undef  ASM_DECLARE_FUNCTION_SIZE
+#define ASM_DECLARE_FUNCTION_SIZE(FILE, FNAME, DECL)                    \
+  do                                                                    \
+    {                                                                   \
+      if (!flag_inhibit_size_directive)                                 \
+        {                                                               \
+          fputs ("\t.size\t", (FILE));                                  \
+          if (TARGET_64BIT && DOT_SYMBOLS)                              \
+            putc ('.', (FILE));                                         \
+          assemble_name ((FILE), (FNAME));                              \
+          fputs (",.-", (FILE));                                        \
+          rs6000_output_function_entry (FILE, FNAME);                   \
+          putc ('\n', (FILE));                                          \
+        }                                                               \
+    }                                                                   \
+  while (0)
+
+#undef  ASM_OUTPUT_SPECIAL_POOL_ENTRY_P
+#define ASM_OUTPUT_SPECIAL_POOL_ENTRY_P(X, MODE)                        \
+  (TARGET_TOC                                                           \
+   && (GET_CODE (X) == SYMBOL_REF                                       \
+       || (GET_CODE (X) == CONST && GET_CODE (XEXP (X, 0)) == PLUS      \
+           && GET_CODE (XEXP (XEXP (X, 0), 0)) == SYMBOL_REF)           \
+       || GET_CODE (X) == LABEL_REF                                     \
+       || (GET_CODE (X) == CONST_INT                                    \
+           && GET_MODE_BITSIZE (MODE) <= GET_MODE_BITSIZE (Pmode))      \
+       || (GET_CODE (X) == CONST_DOUBLE                                 \
+           && ((TARGET_64BIT                                            \
+                && (TARGET_MINIMAL_TOC                                  \
+                    || (SCALAR_FLOAT_MODE_P (GET_MODE (X))              \
+                        && ! TARGET_NO_FP_IN_TOC)))                     \
+               || (!TARGET_64BIT                                        \
+                   && !TARGET_NO_FP_IN_TOC                              \
+                   && SCALAR_FLOAT_MODE_P (GET_MODE (X))                \
+                   && BITS_PER_WORD == HOST_BITS_PER_INT)))))
 
 /* Make GCC agree with <machine/ansi.h>.  */
 
@@ -516,10 +550,6 @@ extern int dot_symbols;
 #undef  ASM_APP_OFF
 #define ASM_APP_OFF "#NO_APP\n"
 
-/* PowerPC no-op instruction.  */
-#undef  RS6000_CALL_GLUE
-#define RS6000_CALL_GLUE (TARGET_64BIT ? "nop" : "cror 31,31,31")
-
 #undef  RS6000_MCOUNT
 #define RS6000_MCOUNT "_mcount"
 
@@ -546,79 +576,13 @@ extern int dot_symbols;
 /* FP save and restore routines.  */
 #undef  SAVE_FP_PREFIX
 #define SAVE_FP_PREFIX (TARGET_64BIT ? "._savef" : "_savefpr_")
-#undef  SAVE_FP_SUFFIX
-#define SAVE_FP_SUFFIX (TARGET_64BIT ? "" : "_l")
 #undef  RESTORE_FP_PREFIX
 #define RESTORE_FP_PREFIX (TARGET_64BIT ? "._restf" : "_restfpr_")
-#undef  RESTORE_FP_SUFFIX
-#define RESTORE_FP_SUFFIX (TARGET_64BIT ? "" : "_l")
-
-/* Dwarf2 debugging.  */
-#undef  PREFERRED_DEBUGGING_TYPE
-#define PREFERRED_DEBUGGING_TYPE DWARF2_DEBUG
-
-/* This is how to declare the size of a function.  */
-#undef	ASM_DECLARE_FUNCTION_SIZE
-#define	ASM_DECLARE_FUNCTION_SIZE(FILE, FNAME, DECL)			\
-  do									\
-    {									\
-      if (!flag_inhibit_size_directive)					\
-	{								\
-	  fputs ("\t.size\t", (FILE));					\
-	  if (TARGET_64BIT && DOT_SYMBOLS)				\
-	    putc ('.', (FILE));						\
-	  assemble_name ((FILE), (FNAME));				\
-	  fputs (",.-", (FILE));					\
-	  rs6000_output_function_entry (FILE, FNAME);			\
-	  putc ('\n', (FILE));						\
-	}								\
-    }									\
-  while (0)
-
-/* Return nonzero if this entry is to be written into the constant
-   pool in a special way.  We do so if this is a SYMBOL_REF, LABEL_REF
-   or a CONST containing one of them.  If -mfp-in-toc (the default),
-   we also do this for floating-point constants.  We actually can only
-   do this if the FP formats of the target and host machines are the
-   same, but we can't check that since not every file that uses
-   the macros includes real.h.  We also do this when we can write the
-   entry into the TOC and the entry is not larger than a TOC entry.  */
-
-#undef  ASM_OUTPUT_SPECIAL_POOL_ENTRY_P
-#define ASM_OUTPUT_SPECIAL_POOL_ENTRY_P(X, MODE)			\
-  (TARGET_TOC								\
-   && (GET_CODE (X) == SYMBOL_REF					\
-       || (GET_CODE (X) == CONST && GET_CODE (XEXP (X, 0)) == PLUS	\
-	   && GET_CODE (XEXP (XEXP (X, 0), 0)) == SYMBOL_REF)		\
-       || GET_CODE (X) == LABEL_REF					\
-       || (GET_CODE (X) == CONST_INT 					\
-	   && GET_MODE_BITSIZE (MODE) <= GET_MODE_BITSIZE (Pmode))	\
-       || (GET_CODE (X) == CONST_DOUBLE					\
-	   && ((TARGET_64BIT						\
-		&& (TARGET_MINIMAL_TOC					\
-		    || (SCALAR_FLOAT_MODE_P (GET_MODE (X))		\
-			&& ! TARGET_NO_FP_IN_TOC)))			\
-	       || (!TARGET_64BIT					\
-		   && !TARGET_NO_FP_IN_TOC				\
-		   && SCALAR_FLOAT_MODE_P (GET_MODE (X))		\
-		   && BITS_PER_WORD == HOST_BITS_PER_INT)))))
-
-/* Select a format to encode pointers in exception handling data.  CODE
-   is 0 for data, 1 for code labels, 2 for function pointers.  GLOBAL is
-   true if the symbol may be affected by dynamic relocations.  */
-#undef	ASM_PREFERRED_EH_DATA_FORMAT
-#define	ASM_PREFERRED_EH_DATA_FORMAT(CODE, GLOBAL) \
-  (TARGET_64BIT || flag_pic						\
-   ? (((GLOBAL) ? DW_EH_PE_indirect : 0) | DW_EH_PE_pcrel		\
-      | (TARGET_64BIT ? DW_EH_PE_udata8 : DW_EH_PE_sdata4))		\
-   : DW_EH_PE_absptr)
 
 /* For backward compatibility, we must continue to use the AIX
    structure return convention.  */
 #undef DRAFT_V4_STRUCT_RET
 #define DRAFT_V4_STRUCT_RET (!TARGET_64BIT)
-
-#define TARGET_POSIX_IO
 
 #define LINK_GCC_C_SEQUENCE_SPEC \
   "%{static:--start-group} %G %L %{static:--end-group}%{!static:%G}"
@@ -631,4 +595,11 @@ extern int dot_symbols;
 /* NetBSD ppc64 has 128-bit long double support.  */
 #undef	RS6000_DEFAULT_LONG_DOUBLE_SIZE
 #define RS6000_DEFAULT_LONG_DOUBLE_SIZE 128
+
 #define POWERPC_NETBSD
+
+/* The IEEE 128-bit emulator is only built on Linux systems.  Flag that we
+   should enable the type handling for KFmode on VSX systems even if we are not
+   enabling the __float128 keyword.  */
+#undef	TARGET_FLOAT128_ENABLE_TYPE
+#define TARGET_FLOAT128_ENABLE_TYPE 1

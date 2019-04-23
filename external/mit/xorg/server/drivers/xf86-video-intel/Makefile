@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.29 2019/01/02 22:58:44 mrg Exp $
+#	$NetBSD: Makefile,v 1.31 2019/04/13 09:29:49 maya Exp $
 
 .include <bsd.own.mk>
 
@@ -41,6 +41,7 @@ SRCS+=		gen7_render.c
 SRCS+=		gen8_eu.c
 SRCS+=		gen8_render.c
 SRCS+=		gen8_vertex.c
+SRCS+=		gen9_render.c
 
 SRCS+=		sna_accel.c
 SRCS+=		sna_acpi.c
@@ -126,11 +127,11 @@ SRCS+=		intel_uxa.c
 SRCS+=		intel_uxa_video.c
 SRCS+=		intel_video.c
 SRCS+=		intel_video_overlay.c
+SRCS+=		uxa.c
 SRCS+=		uxa-accel.c
 SRCS+=		uxa-glyphs.c
 SRCS+=		uxa-render.c
 SRCS+=		uxa-unaccel.c
-SRCS+=		uxa.c
 
 MAN=		intel.4
 
@@ -178,11 +179,17 @@ CPPFLAGS+=	-DUMS=1
 CPPFLAGS+=	-DUSE_BACKLIGHT=1
 CPPFLAGS+=	-DUSE_SNA=1
 CPPFLAGS+=	-DUSE_UXA=1
+# XXX without this we get visual corruption, but it doesn't seem to be tearing
+CPPFLAGS+=	-DTEARFREE
 
 # XXX This should not be hard-coded here...
 DRI_DRIVER_PATH=	/usr/X11R7/lib/modules/dri
-CPPFLAGS+=	-DDRI_DRIVER_PATH=\"${DRI_DRIVER_PATH:Q}\"
-CPPFLAGS+=		-DHAVE_XF86_CURSOR_RESET_CURSOR
+CPPFLAGS+=		-DDRI_DRIVER_PATH=\"${DRI_DRIVER_PATH:Q}\" \
+			-DHAVE_XF86_CURSOR_RESET_CURSOR \
+			-DDEFAULT_DRI_LEVEL=2
+
+# XXX new version things:
+CPPFLAGS+=		-DHAVE_DEV_WSCONS_WSCONSIO_H
 
 # XXX Probably better to set this in Makefile.xf86-driver, conditional
 # on ELF &c.

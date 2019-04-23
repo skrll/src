@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.446 2019/03/01 11:06:57 pgoyette Exp $	*/
+/*	$NetBSD: if.c,v 1.451 2019/04/20 22:16:47 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.446 2019/03/01 11:06:57 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.451 2019/04/20 22:16:47 pgoyette Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -119,6 +119,7 @@ __KERNEL_RCSID(0, "$NetBSD: if.c,v 1.446 2019/03/01 11:06:57 pgoyette Exp $");
 #include <sys/xcall.h>
 #include <sys/cpu.h>
 #include <sys/intr.h>
+#include <sys/module_hook.h>
 #include <sys/compat_stub.h>
 
 #include <net/if.h>
@@ -161,7 +162,6 @@ __KERNEL_RCSID(0, "$NetBSD: if.c,v 1.446 2019/03/01 11:06:57 pgoyette Exp $");
 #endif
 
 #include <compat/sys/sockio.h>
-#include <compat/sys/socket.h>
 
 MALLOC_DEFINE(M_IFADDR, "ifaddr", "interface address");
 MALLOC_DEFINE(M_IFMADDR, "ether_multi", "link-level multicast address");
@@ -243,6 +243,11 @@ static void if_deferred_start_destroy(struct ifnet *);
 #if defined(INET) || defined(INET6)
 static void sysctl_net_pktq_setup(struct sysctllog **, int);
 #endif
+
+/*
+ * Hook for if_vlan - needed by if_agr
+ */
+struct if_vlan_vlan_input_hook_t if_vlan_vlan_input_hook;
 
 static void if_sysctl_setup(struct sysctllog **);
 
@@ -3153,12 +3158,13 @@ doifioctl(struct socket *so, u_long cmd, void *data, struct lwp *l)
 	}
 
 	ifr = data;
+	/* Pre-conversion */
 	MODULE_HOOK_CALL(if_cvtcmd_43_hook, (&cmd, ocmd), enosys(), hook);
 	if (hook != ENOSYS) {
 		if (cmd != ocmd) {
 			oifr = data;
 			data = ifr = &ifrb;
-			ifreqo2n(oifr, ifr);
+			IFREQO2N_43(oifr, ifr);
 		}
 	}
 
@@ -3269,8 +3275,10 @@ doifioctl(struct socket *so, u_long cmd, void *data, struct lwp *l)
 			splx(s);
 		}
 	}
+
+	/* Post-conversion */
 	if (cmd != ocmd)
-		ifreqn2o(oifr, ifr);
+		IFREQN2O_43(oifr, ifr);
 
 	IFNET_UNLOCK(ifp);
 	KERNEL_UNLOCK_UNLESS_IFP_MPSAFE(ifp);
@@ -3323,6 +3331,7 @@ ifconf(u_long cmd, void *data)
 	int bound;
 	struct psref psref;
 
+	memset(&ifr, 0, sizeof(ifr));
 	if (docopy) {
 		space = ifc->ifc_len;
 		ifrp = ifc->ifc_req;
@@ -3415,7 +3424,7 @@ ifreq_setaddr(u_long cmd, struct ifreq *ifr, const struct sockaddr *sa)
 		if (cmd != ocmd) {
 			oifr = (struct oifreq *)(void *)ifr;
 			ifr = &ifrb;
-			ifreqo2n(oifr, ifr);
+			IFREQO2N_43(oifr, ifr);
 				len = sizeof(oifr->ifr_addr);
 		}
 	}
@@ -3427,7 +3436,7 @@ ifreq_setaddr(u_long cmd, struct ifreq *ifr, const struct sockaddr *sa)
 	sockaddr_copy(&ifr->ifr_addr, len, sa);
 
 	if (cmd != ocmd)
-		ifreqn2o(oifr, ifr);
+		IFREQN2O_43(oifr, ifr);
 	return 0;
 }
 

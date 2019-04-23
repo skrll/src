@@ -1335,7 +1335,9 @@ sfs_snapshot_mount(vnode_t *vp, const char *snapname)
 	if (error)
 		goto out;
 
-	vfs_getnewfsid(vfsp);
+	/* Set f_fsidx from parent to cheat NFSD. */
+	vfsp->mnt_stat.f_fsidx = vp->v_vfsp->mnt_stat.f_fsidx;
+
 	strlcpy(vfsp->mnt_stat.f_mntfromname, osname,
 	    sizeof(vfsp->mnt_stat.f_mntfromname));
 	set_statvfs_info(path, UIO_SYSSPACE, vfsp->mnt_stat.f_mntfromname,
@@ -1622,7 +1624,7 @@ sfs_getattr(void *v)
 	vap->va_nlink = 2;
 	vap->va_uid = 0;
 	vap->va_gid = 0;
-	vap->va_fsid = vp->v_vfsp->mnt_stat.f_fsidx.__fsid_val[0];
+	vap->va_fsid = vp->v_vfsp->mnt_stat.f_fsid;
 	vap->va_fileid = node->sn_id;
 	vap->va_size = 0;
 	vap->va_blocksize = 0;
@@ -1883,6 +1885,33 @@ zfsctl_loadvnode(vfs_t *vfsp, vnode_t *vp,
 	return 0;
 }
 
+int
+zfsctl_vptofh(vnode_t *vp, fid_t *fidp, size_t *fh_size)
+{
+	struct sfs_node *node = VTOSFS(vp);
+	uint64_t object = node->sn_id;
+	zfid_short_t *zfid = (zfid_short_t *)fidp;
+	int i;
+
+	SFS_NODE_ASSERT(vp);
+
+	if (*fh_size < SHORT_FID_LEN) {
+		*fh_size = SHORT_FID_LEN;
+		return SET_ERROR(E2BIG);
+	}
+	*fh_size = SHORT_FID_LEN;
+
+	zfid->zf_len = SHORT_FID_LEN;
+	for (i = 0; i < sizeof(zfid->zf_object); i++)
+		zfid->zf_object[i] = (uint8_t)(object >> (8 * i));
+
+	/* .zfs nodes always have a generation number of 0 */
+	for (i = 0; i < sizeof(zfid->zf_gen); i++)
+		zfid->zf_gen[i] = 0;
+
+	return 0;
+}
+
 /*
  * Return the ".zfs" vnode.
  */
@@ -1944,8 +1973,23 @@ zfsctl_destroy(zfsvfs_t *zfsvfs)
 int
 zfsctl_lookup_objset(vfs_t *vfsp, uint64_t objsetid, zfsvfs_t **zfsvfsp)
 {
+	struct sfs_node_key key = {
+		.parent_id = ZFSCTL_INO_SNAPDIR,
+		.id = objsetid
+	};
+	vnode_t *vp;
+	int error;
 
-	return EINVAL;
+	*zfsvfsp = NULL;
+	error = vcache_get(vfsp, &key, sizeof(key), &vp);
+	if (error == 0) {
+		if (vp->v_mountedhere)
+			*zfsvfsp = vp->v_mountedhere->mnt_data;
+		vrele(vp);
+	}
+	if (*zfsvfsp == NULL)
+		return SET_ERROR(EINVAL);
+	return 0;
 }
 
 int

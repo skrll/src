@@ -1,4 +1,4 @@
-/*	$NetBSD: if_alc.c,v 1.31 2019/03/05 08:25:02 msaitoh Exp $	*/
+/*	$NetBSD: if_alc.c,v 1.32 2019/04/22 09:08:14 msaitoh Exp $	*/
 /*	$OpenBSD: if_alc.c,v 1.1 2009/08/08 09:31:13 kevlo Exp $	*/
 /*-
  * Copyright (c) 2009, Pyun YongHyeon <yongari@FreeBSD.org>
@@ -536,7 +536,7 @@ alc_dsp_fixup(struct alc_softc *sc, int media)
 		}
  	}
 }
- 
+
 static void
 alc_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr)
 {
@@ -2004,7 +2004,7 @@ alc_start(struct ifnet *ifp)
 			break;
 		}
 		enq = 1;
-	
+
 		/*
 		 * If there's a BPF listener, bounce a copy of this frame
 		 * to him.
@@ -2050,8 +2050,6 @@ static int
 alc_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct alc_softc *sc = ifp->if_softc;
-	struct mii_data *mii = &sc->sc_miibus;
-	struct ifreq *ifr = (struct ifreq *)data;
 	int s, error = 0;
 
 	s = splnet();
@@ -2063,7 +2061,7 @@ alc_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		if (!(ifp->if_flags & IFF_RUNNING))
 			alc_init(ifp);
 		break;
- 
+
 	case SIOCSIFFLAGS:
 		if (ifp->if_flags & IFF_UP) {
 			if (ifp->if_flags & IFF_RUNNING)
@@ -2076,16 +2074,11 @@ alc_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		}
 		break;
  
-	case SIOCSIFMEDIA:
-	case SIOCGIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &mii->mii_media, cmd);
-		break;
- 
 	default:
 		error = ether_ioctl(ifp, cmd, data);
 		break;
 	}
- 
+
 	if (error == ENETRESET) {
 		if (ifp->if_flags & IFF_RUNNING)
 			alc_iff(sc);
@@ -2796,7 +2789,7 @@ alc_init_backend(struct ifnet *ifp, bool init)
 			    IDLE_DECISN_TIMER_DEFAULT_1MS);
 	} else
 		CSR_WRITE_4(sc, ALC_CLK_GATING_CFG, 0);
- 
+
 
 	/* Reprogram the station address. */
 	memcpy(eaddr, CLLADDR(ifp->if_sadl), sizeof(eaddr));

@@ -1,10 +1,10 @@
-/*	$NetBSD: miidevs.h,v 1.147 2019/03/15 04:00:29 msaitoh Exp $	*/
+/*	$NetBSD: miidevs.h,v 1.150 2019/04/22 09:30:09 jmcneill Exp $	*/
 
 /*
  * THIS FILE AUTOMATICALLY GENERATED.  DO NOT EDIT.
  *
  * generated from:
- *	NetBSD: miidevs,v 1.149 2019/03/15 04:00:06 msaitoh Exp
+ *	NetBSD: miidevs,v 1.152 2019/04/22 09:29:55 jmcneill Exp
  */
 
 /*-
@@ -62,6 +62,8 @@
 #define	MII_OUI_DATATRACK	0x0002c6	/* Data Track Technology */
 #define	MII_OUI_CICADA	0x0003f1	/* Cicada Semiconductor */
 #define	MII_OUI_AGERE	0x00053d	/* Agere */
+#define	MII_OUI_BANKSPEED	0x0006b8	/* Bankspeed Pty */
+#define	MII_OUI_NETEXCELL	0x0008bb	/* NetExcell */
 #define	MII_OUI_NETAS	0x0009c3	/* Netas */
 #define	MII_OUI_BROADCOM2	0x000af7	/* Broadcom Corporation */
 #define	MII_OUI_RALINK	0x000c43	/* Ralink Technology */
@@ -78,6 +80,7 @@
 #define	MII_OUI_VIA	0x004063	/* VIA Technologies */
 #define	MII_OUI_MARVELL	0x005043	/* Marvell Semiconductor */
 #define	MII_OUI_QUALSEMI	0x006051	/* Quality Semiconductor */
+#define	MII_OUI_AMLOGIC	0x006051	/* Amlogic */
 #define	MII_OUI_DAVICOM	0x00606e	/* Davicom Semiconductor */
 #define	MII_OUI_SMSC	0x00800f	/* SMSC */
 #define	MII_OUI_ICPLUS	0x0090c3	/* IC Plus Corp. */
@@ -105,6 +108,7 @@
 #define	MII_OUI_xxTSC	0x00039c	/* TDK Semiconductor */
 #define	MII_OUI_xxASIX	0x000674	/* Asix Semiconductor */
 #define	MII_OUI_xxDAVICOM	0x000676	/* Davicom Semiconductor */
+#define	MII_OUI_xxAMLOGIC	0x00068a	/* Amlogic */
 #define	MII_OUI_xxQUALSEMI	0x00068a	/* Quality Semiconductor */
 #define	MII_OUI_xxREALTEK	0x000732	/* Realtek */
 #define	MII_OUI_xxBROADCOM	0x000818	/* Broadcom Corporation */
@@ -153,6 +157,12 @@
 #define	MII_STR_ALTIMA_Am79C875	"Am79C875 10/100 media interface"
 #define	MII_MODEL_ALTIMA_Am79C874	0x0021
 #define	MII_STR_ALTIMA_Am79C874	"Am79C874 10/100 media interface"
+
+/* Amlogic PHYs */
+#define	MII_MODEL_AMLOGIC_GXL	0x0000
+#define	MII_STR_AMLOGIC_GXL	"Meson GXL internal PHY"
+#define	MII_MODEL_xxAMLOGIC_GXL	0x0000
+#define	MII_STR_xxAMLOGIC_GXL	"Meson GXL internal PHY"
 
 /* Atheros PHYs */
 #define	MII_MODEL_ATHEROS_F1	0x0001
@@ -290,7 +300,7 @@
 #define	MII_STR_BROADCOM4_BCM5725C	"BCM5725C 1000BASE-T media interface"
 #define	MII_MODEL_xxBROADCOM_ALT1_BCM5906	0x0004
 #define	MII_STR_xxBROADCOM_ALT1_BCM5906	"BCM5906 10/100baseTX media interface"
- 
+
 /* Cicada Semiconductor PHYs (now owned by Vitesse?) */
 #define	MII_MODEL_CICADA_CS8201	0x0001
 #define	MII_STR_CICADA_CS8201	"Cicada CS8201 10/100/1000TX PHY"

@@ -1,6 +1,7 @@
-#	$NetBSD: Makefile.inc,v 1.39 2019/01/31 06:47:21 mrg Exp $
+#	$NetBSD: Makefile.inc,v 1.42 2019/04/16 08:08:18 mrg Exp $
 
 LIBGCC_MACHINE_ARCH?=${MACHINE_ARCH:S/earmv5/earm/}
+GCC_MACHINE_SUBDIR=${MACHINE_CPU:C/powerpc.*/rs6000/:C/x86_64/i386/}
 
 .if ${MKGCC} != "no"
 .if exists(${.CURDIR}/../arch/${LIBGCC_MACHINE_ARCH}/defs.mk)
@@ -22,11 +23,7 @@ CPPFLAGS+=	-I${GCCARCH} ${GCPPFLAGS:M-D*} ${GCPPFLAGS:M-I*:N-I.*}
 CPPFLAGS+=	${GCPPFLAGS:M-m*} ${GCPPFLAGS:M-f*}
 CPPFLAGS+=	${G_EXTRA_HEADERS:M/*:H:u:S/^/-I/g}
 CPPFLAGS+=	-I${DIST}/libgcc -I${DIST}/libgcc/config
-.if ${LIBGCC_MACHINE_ARCH} == "x86_64"
-CPPFLAGS+=	-I${DIST}/libgcc/config/i386
-.else
-CPPFLAGS+=	-I${DIST}/libgcc/config/${LIBGCC_MACHINE_ARCH}
-.endif
+CPPFLAGS+=	-I${DIST}/libgcc/config/${GCC_MACHINE_SUBDIR}
 CPPFLAGS+=	-I${DIST}/gcc -I${DIST}/include -I.
 CPPFLAGS+=	${G_INTERNAL_CFLAGS:M-DHAVE_CC_TLS}
 
@@ -74,7 +71,9 @@ LIB2FUNCS_ALL+= \
 
 EXTRA_FUNC_SIZES=	sf df xf
 
-.if ${LIBGCC_MACHINE_ARCH} != "x86_64" && ${LIBGCC_MACHINE_ARCH} != "i386"
+.if ${LIBGCC_MACHINE_ARCH} != "x86_64" && \
+    ${LIBGCC_MACHINE_ARCH} != "i386" && \
+    ${LIBGCC_MACHINE_ARCH} != "ia64"
 EXTRA_FUNC_SIZES+=	tf
 .endif
 
@@ -118,7 +117,7 @@ LIB2_EHASM=	${G_LIB2ADDEH:M*.S:T}
 # from the list of files we create.
 .if !empty(G_LIB1ASMFUNCS)
 . for f in ${G_LIB1ASMFUNCS:=.S}
-.  if !exists(${DIST}/libgcc/config/${MACHINE_CPU}/${f})
+.  if !exists(${DIST}/libgcc/config/${GCC_MACHINE_SUBDIR}/${f})
 LIB1ASMFUNCS+=	${f}
 .  endif
 . endfor
@@ -182,16 +181,17 @@ ${G_LIB2_DIVMOD_FUNCS:=.pico}: $(.PREFIX).c
 	${_MKTARGET_COMPILE}
 	${COMPILE.c} ${CPICFLAGS} -fexceptions -fnon-call-exceptions ${COPTS.${.IMPSRC:T}} -o ${.TARGET} ${.IMPSRC}
 
+CPPFLAGS.fp-bit.c+=	-DFLOAT=1
 dp-bit.c: ${.CURDIR}/Makefile
 	${_MKTARGET_CREATE}
-	printf '#define FLOAT\n#include <fp-bit.c>\n' >${.TARGET}
+	printf '#include <fp-bit.c>\n' >${.TARGET}
 
 #
 # Common rules.
 #
 
 .PATH: ${DIST}/gcc ${DIST}/gcc/cp ${DIST}/gcc/cp/inc ${DIST}/gcc/config \
-	${DIST}/libgcc/config ${DIST}/libgcc/config/${MACHINE_CPU} \
+	${DIST}/libgcc/config ${DIST}/libgcc/config/${GCC_MACHINE_SUBDIR} \
 	${G_LIB2ADD:H:O:u} ${G_LIB2ADDEH:H:O:u} ${GCCARCHLIBGCC}
 
 .include "../Makefile.tconfigh"

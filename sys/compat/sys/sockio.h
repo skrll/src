@@ -1,4 +1,4 @@
-/*	$NetBSD: sockio.h,v 1.13 2019/01/27 02:08:41 pgoyette Exp $	*/
+/*	$NetBSD: sockio.h,v 1.18 2019/04/16 04:31:42 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1990, 1993, 1994
@@ -32,29 +32,7 @@
 #ifndef _COMPAT_SYS_SOCKIO_H_
 #define	_COMPAT_SYS_SOCKIO_H_
 
-#ifdef _KERNEL_OPT
-
-#include "opt_compat_netbsd.h"
-#include "opt_modular.h"
-
 #include <sys/ioccom.h>
-
-#if defined(COMPAT_09) || defined(COMPAT_10) || defined(COMPAT_11) || \
-    defined(COMPAT_12) || defined(COMPAT_13) || defined(COMPAT_14) || \
-    defined(COMPAT_15) || defined(COMPAT_16) || defined(COMPAT_20) || \
-    defined(COMPAT_30) || defined(COMPAT_40) || defined(MODULAR)
-#define COMPAT_OIFREQ
-#endif
-
-#if defined(COMPAT_09) || defined(COMPAT_10) || defined(COMPAT_11) || \
-    defined(COMPAT_12) || defined(COMPAT_13) || defined(COMPAT_14) || \
-    defined(COMPAT_15) || defined(COMPAT_16) || defined(COMPAT_20) || \
-    defined(COMPAT_30) || defined(COMPAT_40) || defined(COMPAT_50) || \
-    defined(MODULAR)
-#define COMPAT_OIFDATA
-#endif
-
-#endif /* _KERNEL_OPT */
 
 #define OIFNAMSIZ	16
 
@@ -141,44 +119,41 @@ struct oifdatareq {
 							     zero ctrs*/
 
 
-
-
 #define	OBIOCGETIF	 _IOR('B', 107, struct oifreq)
 #define	OBIOCSETIF	 _IOW('B', 108, struct oifreq)
 #define	OTAPGIFNAME	 _IOR('e', 0, struct oifreq)
 
-#define ifreqn2o(oi, ni) \
-	do { \
-		(void)memcpy((oi)->ifr_name, (ni)->ifr_name, \
-		    sizeof((oi)->ifr_name)); \
-		(void)memcpy(&(oi)->ifr_ifru, &(ni)->ifr_ifru, \
-		    sizeof((oi)->ifr_ifru)); \
+#define IFREQN2O_43(oi, ni)					\
+	do {							\
+		(void)memcpy((oi)->ifr_name, (ni)->ifr_name,	\
+		    sizeof((oi)->ifr_name));			\
+		(void)memcpy(&(oi)->ifr_ifru, &(ni)->ifr_ifru,	\
+		    sizeof((oi)->ifr_ifru));			\
 	} while (/*CONSTCOND*/0)
 
-#define ifreqo2n(oi, ni) \
-	do { \
-		(void)memcpy((ni)->ifr_name, (oi)->ifr_name, \
-		    sizeof((oi)->ifr_name)); \
-		(void)memcpy(&(ni)->ifr_ifru, &(oi)->ifr_ifru, \
-		    sizeof((oi)->ifr_ifru)); \
+#define IFREQO2N_43(oi, ni)					\
+	do {							\
+		(void)memcpy((ni)->ifr_name, (oi)->ifr_name,	\
+		    sizeof((oi)->ifr_name));			\
+		(void)memcpy(&(ni)->ifr_ifru, &(oi)->ifr_ifru,	\
+		    sizeof((oi)->ifr_ifru));			\
 	} while (/*CONSTCOND*/0)
 
-#define ifdatan2o(oi, ni) \
-	do { \
-		(void)memcpy((oi), (ni),  sizeof(*(oi))); \
-		(oi)->ifi_lastchange.tv_sec = \
-		    (int32_t)(ni)->ifi_lastchange.tv_sec; \
-		(oi)->ifi_lastchange.tv_usec = \
-		    (ni)->ifi_lastchange.tv_nsec / 1000; \
+#define ifdatan2o(oi, ni)					\
+	do {							\
+		(void)memcpy((oi), (ni),  sizeof(*(oi)));	\
+		(oi)->ifi_lastchange.tv_sec =			\
+		    (int32_t)(ni)->ifi_lastchange.tv_sec;	\
+		(oi)->ifi_lastchange.tv_usec =			\
+		    (ni)->ifi_lastchange.tv_nsec / 1000;	\
 	} while (/*CONSTCOND*/0)
 
-#define ifdatao2n(oi, ni) \
-	do { \
-		(void)memcpy((ni), (oi),  sizeof(*(oi))); \
-		    sizeof((oi)->ifr_name)); \
+#define ifdatao2n(oi, ni)						   \
+	do {								   \
+		(void)memcpy((ni), (oi),  sizeof(*(oi)));		   \
 		(ni)->ifi_lastchange.tv_sec = (oi)->ifi_lastchange.tv_sec; \
-		(ni)->ifi_lastchange.tv_nsec = \
-		    (oi)->ifi_lastchange.tv_usec * 1000; \
+		(ni)->ifi_lastchange.tv_nsec =				   \
+		    (oi)->ifi_lastchange.tv_usec * 1000;		   \
 	} while (/*CONSTCOND*/0)
 
 #endif /* _COMPAT_SYS_SOCKIO_H_ */

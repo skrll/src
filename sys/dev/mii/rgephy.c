@@ -1,4 +1,4 @@
-/*	$NetBSD: rgephy.c,v 1.51 2019/02/26 05:26:10 msaitoh Exp $	*/
+/*	$NetBSD: rgephy.c,v 1.54 2019/04/11 09:14:07 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2003
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rgephy.c,v 1.51 2019/02/26 05:26:10 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rgephy.c,v 1.54 2019/04/11 09:14:07 msaitoh Exp $");
 
 
 /*
@@ -147,7 +147,7 @@ rgephy_attach(device_t parent, device_t self, void *aux)
 
 #ifdef __FreeBSD__
 	ADD(IFM_MAKEWORD(IFM_ETHER, IFM_100_TX, IFM_LOOP, sc->mii_inst),
-	    BMCR_LOOP|BMCR_S100);
+	    BMCR_LOOP | BMCR_S100);
 #endif
 
 	PHY_READ(sc, MII_BMSR, &sc->mii_capabilities);
@@ -184,9 +184,7 @@ rgephy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 
 	switch (cmd) {
 	case MII_POLLSTAT:
-		/*
-		 * If we're not polling our PHY instance, just return.
-		 */
+		/* If we're not polling our PHY instance, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
 			return 0;
 		break;
@@ -202,9 +200,7 @@ rgephy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 			return 0;
 		}
 
-		/*
-		 * If the interface is not up, don't do anything.
-		 */
+		/* If the interface is not up, don't do anything. */
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			break;
 
@@ -216,9 +212,7 @@ rgephy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		switch (IFM_SUBTYPE(ife->ifm_media)) {
 		case IFM_AUTO:
 #ifdef foo
-			/*
-			 * If we're already in auto mode, just return.
-			 */
+			/* If we're already in auto mode, just return. */
 			PHY_READ(sc, MII_BMCR, &reg);
 			if (reg & BMCR_AUTOEN)
 				return 0;
@@ -237,7 +231,7 @@ rgephy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 			anar |= ANAR_10_FD | ANAR_10;
  setit:
 			rgephy_loop(sc);
-			if ((ife->ifm_media & IFM_GMASK) == IFM_FDX) {
+			if ((ife->ifm_media & IFM_FDX) != 0) {
 				speed |= BMCR_FDX;
 				gig = GTCR_ADV_1000TFDX;
 				anar &= ~(ANAR_TX | ANAR_10);
@@ -249,30 +243,29 @@ rgephy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 			if (IFM_SUBTYPE(ife->ifm_media) != IFM_1000_T) {
 				PHY_WRITE(sc, MII_100T2CR, 0);
 				PHY_WRITE(sc, MII_ANAR, anar);
-				PHY_WRITE(sc, MII_BMCR, speed |
-				    BMCR_AUTOEN | BMCR_STARTNEG);
+				PHY_WRITE(sc, MII_BMCR,
+				    speed | BMCR_AUTOEN | BMCR_STARTNEG);
 				break;
 			}
 
 			/*
-			 * When setting the link manually, one side must
-			 * be the master and the other the slave. However
-			 * ifmedia doesn't give us a good way to specify
-			 * this, so we fake it by using one of the LINK
-			 * flags. If LINK0 is set, we program the PHY to
-			 * be a master, otherwise it's a slave.
+			 * When setting the link manually, one side must be the
+			 * master and the other the slave. However ifmedia
+			 * doesn't give us a good way to specify this, so we
+			 * fake it by using one of the LINK flags. If LINK0 is
+			 * set, we program the PHY to be a master, otherwise
+			 * it's a slave.
 			 */
 			if ((mii->mii_ifp->if_flags & IFF_LINK0)) {
 				PHY_WRITE(sc, MII_100T2CR,
-				    gig|GTCR_MAN_MS|GTCR_ADV_MS);
-			} else {
-				PHY_WRITE(sc, MII_100T2CR, gig|GTCR_MAN_MS);
-			}
-			PHY_WRITE(sc, MII_BMCR, speed |
-			    BMCR_AUTOEN | BMCR_STARTNEG);
+				    gig | GTCR_MAN_MS | GTCR_ADV_MS);
+			} else
+				PHY_WRITE(sc, MII_100T2CR, gig | GTCR_MAN_MS);
+			PHY_WRITE(sc, MII_BMCR,
+			    speed | BMCR_AUTOEN | BMCR_STARTNEG);
 			break;
 		case IFM_NONE:
-			PHY_WRITE(sc, MII_BMCR, BMCR_ISO|BMCR_PDOWN);
+			PHY_WRITE(sc, MII_BMCR, BMCR_ISO | BMCR_PDOWN);
 			break;
 		case IFM_100_T4:
 		default:
@@ -281,21 +274,15 @@ rgephy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 		break;
 
 	case MII_TICK:
-		/*
-		 * If we're not currently selected, just return.
-		 */
+		/* If we're not currently selected, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
 			return 0;
 
-		/*
-		 * Is the interface even up?
-		 */
+		/* Is the interface even up? */
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			return 0;
 
-		/*
-		 * Only used for autonegotiation.
-		 */
+		/* Only used for autonegotiation. */
 		if ((IFM_SUBTYPE(ife->ifm_media) != IFM_AUTO) &&
 		    (IFM_SUBTYPE(ife->ifm_media) != IFM_1000_T)) {
 			/*
@@ -351,7 +338,6 @@ rgephy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 	/*
 	 * Callback if something changed. Note that we need to poke
 	 * the DSP on the RealTek PHYs if the media changes.
-	 *
 	 */
 	if (sc->mii_media_active != mii->mii_media_active ||
 	    sc->mii_media_status != mii->mii_media_status ||
@@ -465,7 +451,6 @@ rgephy_status(struct mii_softc *sc)
 	}
 }
 
-
 static int
 rgephy_mii_phy_auto(struct mii_softc *mii)
 {
@@ -536,11 +521,10 @@ PHY_CLRBIT(struct mii_softc *sc, int y, uint16_t z)
 }
 
 /*
- * Initialize RealTek PHY per the datasheet. The DSP in the PHYs of
- * existing revisions of the 8169S/8110S chips need to be tuned in
- * order to reliably negotiate a 1000Mbps link. This is only needed
- * for rev 0 and rev 1 of the PHY. Later versions work without
- * any fixups.
+ * Initialize RealTek PHY per the datasheet. The DSP in the PHYs of existing
+ * revisions of the 8169S/8110S chips need to be tuned in order to reliably
+ * negotiate a 1000Mbps link. This is only needed for rev 0 and rev 1 of the
+ * PHY. Later versions work without any fixups.
  */
 static void
 rgephy_load_dspcode(struct mii_softc *sc)

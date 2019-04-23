@@ -1,4 +1,4 @@
-/*	$NetBSD: psl.h,v 1.58 2019/02/08 20:09:24 palle Exp $ */
+/*	$NetBSD: psl.h,v 1.60 2019/04/06 21:40:15 nakayama Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -322,11 +322,13 @@ static __inline void set##name(type _val)				\
 	__asm volatile(#wr " %0,0,%" #reg : : "r" (_val) : "memory");	\
 }
 
-#ifdef __arch64__
+/*
+ * XXX: clang's "r" constraint cannot handle 64-bit,
+ * so use 32-bit kernel code as a workaround.
+ */
+#if defined(__arch64__) && !defined(__clang__)
 #define SPARC64_RDCONST64_DEF(rd, name, reg) \
 	SPARC64_RDCONST_DEF(rd, name, reg, uint64_t)
-#define SPARC64_RD64_DEF(rd, name, reg) SPARC64_RD_DEF(rd, name, reg, uint64_t)
-#define SPARC64_WR64_DEF(wr, name, reg) SPARC64_WR_DEF(wr, name, reg, uint64_t)
 #else
 #define SPARC64_RDCONST64_DEF(rd, name, reg)				\
 static __inline __constfunc uint64_t get##name(void)			\
@@ -336,6 +338,12 @@ static __inline __constfunc uint64_t get##name(void)			\
 		: "=r" (_hi), "=r" (_lo) : : constasm_clobbers);	\
 	return ((uint64_t)_hi << 32) | _lo;				\
 }
+#endif
+
+#ifdef __arch64__
+#define SPARC64_RD64_DEF(rd, name, reg) SPARC64_RD_DEF(rd, name, reg, uint64_t)
+#define SPARC64_WR64_DEF(wr, name, reg) SPARC64_WR_DEF(wr, name, reg, uint64_t)
+#else
 #define SPARC64_RD64_DEF(rd, name, reg)					\
 static __inline uint64_t get##name(void)				\
 {									\

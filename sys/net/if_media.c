@@ -1,4 +1,4 @@
-/*	$NetBSD: if_media.c,v 1.38 2019/02/28 05:40:58 msaitoh Exp $	*/
+/*	$NetBSD: if_media.c,v 1.42 2019/04/22 11:10:52 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -76,7 +76,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_media.c,v 1.38 2019/02/28 05:40:58 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_media.c,v 1.42 2019/04/22 11:10:52 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -89,8 +89,10 @@ __KERNEL_RCSID(0, "$NetBSD: if_media.c,v 1.38 2019/02/28 05:40:58 msaitoh Exp $"
 #include <net/if_media.h>
 #include <net/netisr.h>
 
-static void	ifmedia_status(struct ifmedia *, struct ifnet *, struct ifmediareq *);
-static int	_ifmedia_ioctl(struct ifnet *, struct ifreq *, struct ifmedia *, u_long);
+static void	ifmedia_status(struct ifmedia *, struct ifnet *,
+    struct ifmediareq *);
+static int	_ifmedia_ioctl(struct ifnet *, struct ifreq *,
+    struct ifmedia *, u_long);
 
 /*
  * Compile-time options:
@@ -248,20 +250,11 @@ _ifmedia_ioctl(struct ifnet *ifp, struct ifreq *ifr, struct ifmedia *ifm,
 	struct ifmedia_entry *match;
 	struct ifmediareq *ifmr = (struct ifmediareq *)ifr;
 	int error = 0;
-#ifdef OSIOCSIFMEDIA
-	struct oifreq *oifr = (struct oifreq *)ifr;
-#endif
 
 	if (ifp == NULL || ifr == NULL || ifm == NULL)
 		return (EINVAL);
 
 	switch (cmd) {
-
-#ifdef OSIOCSIFMEDIA
-	case OSIOCSIFMEDIA:
-		ifr->ifr_media = oifr->ifr_media;
-		/*FALLTHROUGH*/
-#endif
 	/*
 	 * Set the current media.
 	 */
@@ -348,9 +341,10 @@ _ifmedia_ioctl(struct ifnet *ifp, struct ifreq *ifr, struct ifmedia *ifm,
 			    ? (size_t)ifmr->ifm_count : nwords;
 			int *kptr = malloc(minwords * sizeof(int), M_TEMP,
 			    M_WAITOK);
-			/*
-			 * Get the media words from the interface's list.
-			 */
+
+			if (kptr == NULL)
+				return ENOMEM;
+			/* Get the media words from the interface's list. */
 			ep = TAILQ_FIRST(&ifm->ifm_list);
 			for (count = 0; ep != NULL && count < minwords;
 			    ep = TAILQ_NEXT(ep, ifm_list), count++)

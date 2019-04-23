@@ -1,4 +1,4 @@
-/*	$NetBSD: fault.c,v 1.7 2018/10/12 01:28:57 ryo Exp $	*/
+/*	$NetBSD: fault.c,v 1.9 2019/04/06 03:06:24 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fault.c,v 1.7 2018/10/12 01:28:57 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fault.c,v 1.9 2019/04/06 03:06:24 thorpej Exp $");
 
 #include "opt_compat_netbsd32.h"
 #include "opt_ddb.h"
@@ -197,8 +197,6 @@ data_abort_handler(struct trapframe *tf, uint32_t eclass)
 	if (__predict_true(error == 0)) {
 		if (user)
 			uvm_grow(p, va);
-		else
-			ucas_ras_check(tf);
 
 		UVMHIST_LOG(pmaphist, "uvm_fault success: va=%016llx",
 		    tf->tf_far, 0, 0, 0);
@@ -244,7 +242,7 @@ data_abort_handler(struct trapframe *tf, uint32_t eclass)
 			/*
 			 * fatal abort in usermode
 			 */
-			switch (esr) {
+			switch (fsc) {
 			case ESR_ISS_FSC_TLB_CONFLICT_FAULT:
 			case ESR_ISS_FSC_LOCKDOWN_ABORT:
 			case ESR_ISS_FSC_UNSUPPORTED_EXCLUSIVE:

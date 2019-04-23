@@ -1,4 +1,4 @@
-/*	$NetBSD: apropos-utils.c,v 1.41 2019/03/07 22:08:59 christos Exp $	*/
+/*	$NetBSD: apropos-utils.c,v 1.43 2019/04/19 20:35:13 abhinav Exp $	*/
 /*-
  * Copyright (c) 2011 Abhinav Upadhyay <er.abhinav.upadhyay@gmail.com>
  * All rights reserved.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: apropos-utils.c,v 1.41 2019/03/07 22:08:59 christos Exp $");
+__RCSID("$NetBSD: apropos-utils.c,v 1.43 2019/04/19 20:35:13 abhinav Exp $");
 
 #include <sys/queue.h>
 #include <sys/stat.h>
@@ -580,7 +580,7 @@ generate_search_query(query_args *args, const char *snippet_args[3])
 			if ((temp = sqlite3_mprintf("%Q%c", args->sections[i], c)) == NULL)
 				goto RETURN;
 			concat(&section_clause, temp);
-			free(temp);
+			sqlite3_free(temp);
 		}
 	}
 
@@ -648,9 +648,9 @@ generate_search_query(query_args *args, const char *snippet_args[3])
 	}
 
 RETURN:
-	free(machine_clause);
-	free(section_clause);
-	free(limit_clause);
+	sqlite3_free(machine_clause);
+	sqlite3_free(section_clause);
+	sqlite3_free(limit_clause);
 	return query;
 }
 
@@ -699,10 +699,13 @@ execute_search_query(sqlite3 *db, char *query, query_args *args)
 		name_temp = (const char *) sqlite3_column_text(stmt, 1);
 		callback_args.name_desc = (const char *) sqlite3_column_text(stmt, 2);
 		callback_args.machine = (const char *) sqlite3_column_text(stmt, 3);
-		if (!args->legacy)
+		if (!args->legacy) {
 			callback_args.snippet = (const char *) sqlite3_column_text(stmt, 4);
-		else
+			callback_args.snippet_length = strlen(callback_args.snippet);
+		} else {
 			callback_args.snippet = "";
+			callback_args.snippet_length = 1;
+		}
 		if ((slash_ptr = strrchr(name_temp, '/')) != NULL)
 			name_temp = slash_ptr + 1;
 		if (callback_args.machine && callback_args.machine[0]) {

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.3 2019/03/10 10:51:58 mrg Exp $
+#	$NetBSD: Makefile,v 1.5 2019/04/20 17:31:22 maya Exp $
 
 .include <bsd.own.mk>
 
@@ -15,7 +15,8 @@ SRCS.dri=	\
 
 BUILDSYMLINKS+= ${X11SRCDIR.Mesa}/src/util/debug.c UTILdebug.c
 SRCS.util=      \
-	UTILdebug.c
+	UTILdebug.c \
+	u_process.c
 CPPFLAGS.UTILdebug.c+=          -I${X11SRCDIR.Mesa}/src/util \
 				-I${X11SRCDIR.Mesa}/src/mesa \
 				-I${X11SRCDIR.Mesa}/src \
@@ -40,6 +41,7 @@ COPTS.gbm_dri.c+=	-Wno-error
 .include "../libloader.mk"
 
 .PATH:	${X11SRCDIR.Mesa}/src/gbm/main
+.PATH:	${X11SRCDIR.Mesa}/src/gbm/backends/dri
 INCS=		gbm.h
 INCSDIR=	${X11INCDIR}
 

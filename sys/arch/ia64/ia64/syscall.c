@@ -1,4 +1,4 @@
-/* $NetBSD: syscall.c,v 1.7 2018/11/14 21:10:59 scole Exp $ */
+/* $NetBSD: syscall.c,v 1.9 2019/04/06 11:54:20 kamil Exp $ */
 
 /*
  * Copyright (c) 2006 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: syscall.c,v 1.7 2018/11/14 21:10:59 scole Exp $");
+__KERNEL_RCSID(0, "$NetBSD: syscall.c,v 1.9 2019/04/06 11:54:20 kamil Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -76,10 +76,9 @@ syscall_fancy(struct lwp *l, u_int64_t code, struct trapframe *framep)
  * Process the tail end of a fork() for the child.
  */
 void
-child_return(void *arg)
+md_child_return(struct lwp *l)
 {
 	panic("XXX %s: not implemented\n", __func__);
-	return;
 }
 
 /*

@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1112 2019/03/11 09:20:14 mrg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1132 2019/04/19 21:34:26 mrg Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -59,10 +59,7 @@ TOOLCHAIN_MISSING?=	no
 # What GCC is used?
 #
 .if \
-    ${MACHINE_CPU} == "hppa"	|| \
-    ${MACHINE_CPU} == "ia64"	|| \
-    ${MACHINE_ARCH} == "powerpc64"	|| \
-    ${MACHINE_CPU} == "vax"
+    ${MACHINE_ARCH} == "powerpc64"
 HAVE_GCC?=	6
 .endif
 HAVE_GCC?=	7
@@ -172,13 +169,7 @@ EXTERNAL_BINUTILS_SUBDIR=	/does/not/exist
 # What version of jemalloc we use (100 is the one
 # built-in to libc from 2005 (pre version 3).
 #
-.if ${MACHINE_CPU} == "x86_64"	|| \
-    ${MACHINE_CPU} == "i386"	|| \
-    ${MACHINE_CPU} == "aarch64"	
 HAVE_JEMALLOC?=		510
-.else
-HAVE_JEMALLOC?=		100
-.endif
 
 .if empty(.MAKEFLAGS:tW:M*-V .OBJDIR*)
 .if defined(MAKEOBJDIRPREFIX) || defined(MAKEOBJDIR)
@@ -1175,7 +1166,7 @@ _MKVARS.no= \
 	MKFIRMWARE \
 	MKGROFFHTMLDOC \
 	MKKYUA \
-	MKLIBCXX MKLLD MKLLDB MKLLVM MKLINT \
+	MKLIBCXX MKLLD MKLLDB MKLLVM MKLLVMRT MKLINT \
 	MKMANZ MKMCLINKER \
 	MKNSD \
 	MKOBJDIRS \
@@ -1292,6 +1283,18 @@ _NEEDS_LIBCXX.x86_64=		yes
 
 .if ${MKLLVM} == "yes" && ${_NEEDS_LIBCXX.${MACHINE_ARCH}:Uno} == "yes"
 MKLIBCXX:=	yes
+.endif
+
+# MesaLib.old and MesaLib7 go together, and MesaLib is alone.
+HAVE_MESA_VER?=	18
+.if ${HAVE_MESA_VER} == "10"
+EXTERNAL_MESALIB_DIR?=	MesaLib.old
+.elif ${HAVE_MESA_VER} == "18"
+EXTERNAL_MESALIB_DIR?=	MesaLib
+.  if ${MKX11} != "no" && \
+    (${MACHINE} == "amd64" || ${MACHINE} == "i386")
+MKLLVMRT:=		yes
+.  endif
 .endif
 
 #
@@ -1466,17 +1469,9 @@ HAVE_XORG_SERVER_VER?=110
 HAVE_XORG_SERVER_VER?=120
 .endif
 
-# MesaLib.old and MesaLib7 go together, and MesaLib is alone.
-HAVE_MESA_VER?=	10
-.if ${HAVE_MESA_VER} == "10"
-EXTERNAL_MESALIB_DIR?=	MesaLib.old
-.else
-EXTERNAL_MESALIB_DIR?=	MesaLib
-.endif
-
 .if ${HAVE_XORG_SERVER_VER} == "120"
 XORG_SERVER_SUBDIR?=xorg-server
-. if ${MACHINE} == "amd64" || ${MACHINE} == "i386"
+. if ${MACHINE} == "amd64" || ${MACHINE} == "i386" || ${MACHINE} == "evbarm"
 HAVE_XORG_GLAMOR?=	yes
 . endif
 .else

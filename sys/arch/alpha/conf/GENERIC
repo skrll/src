@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.390 2019/03/16 08:03:03 maxv Exp $
+# $NetBSD: GENERIC,v 1.393 2019/04/13 08:22:58 isaki Exp $
 #
 # This machine description file is used to generate the default NetBSD
 # kernel.
@@ -19,7 +19,7 @@ include 	"arch/alpha/conf/std.alpha"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-ident		"GENERIC-$Revision: 1.390 $"
+ident		"GENERIC-$Revision: 1.393 $"
 
 maxusers 32
 
@@ -129,9 +129,6 @@ options 	PPP_FILTER	# Active filter support for PPP (requires bpf)
 # Binary compatibility with previous versions of NetBSD.
 include 	"conf/compat_netbsd09.config"
 
-# OSF/1 binary compatibility
-#options 	COMPAT_OSF1
-
 # Linux binary compatibility
 options 	COMPAT_LINUX
 
@@ -146,7 +143,10 @@ options 	SYSVSHM
 
 # p1003.1b semaphore support
 
-# Loadable Kernel Modules
+# new style module(7) framework
+# XXX does not work yet
+#options 	MODULAR
+#options 	MODULAR_DEFAULT_AUTOLOAD
 
 # Disable kernel security.
 #options 	INSECURE
@@ -748,6 +748,7 @@ pseudo-device	vcoda			# coda minicache <-> venus comm.
 # a pseudo device needed for SMBFS
 pseudo-device	nsmb			# experimental - SMB requester
 pseudo-device	clockctl		# user control of clock subsystem
+pseudo-device	drvctl			# user control of drive subsystem
 pseudo-device	wsfont
 pseudo-device	wsmux			# mouse and keyboad multiplexing
 pseudo-device	ksyms			# /dev/ksyms

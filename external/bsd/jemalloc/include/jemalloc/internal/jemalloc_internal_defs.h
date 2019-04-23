@@ -151,7 +151,9 @@
 /* #undef JEMALLOC_MUTEX_INIT_CB */
 
 /* Non-empty if the tls_model attribute is supported. */
+#if !defined(__vax__) && !defined(__mc68010__)
 #define JEMALLOC_TLS_MODEL __attribute__((tls_model("initial-exec")))
+#endif
 
 /*
  * JEMALLOC_DEBUG enables assertions and other sanity checks, and disables
@@ -200,7 +202,13 @@
 
 /* One page is 2^LG_PAGE bytes. */
 #include <machine/vmparam.h>
+#if defined(PAGE_SHIFT)
 #define LG_PAGE PAGE_SHIFT
+#elif defined(MIN_PAGE_SHIFT)
+#define LG_PAGE MIN_PAGE_SHIFT
+#else
+#error "PAGE_SHIFT is not defined"
+#endif
 
 /*
  * One huge page is 2^LG_HUGEPAGE bytes.  Note that this is defined even if the
@@ -227,7 +235,9 @@
 /* #undef JEMALLOC_RETAIN */
 
 /* TLS is used to map arenas and magazine caches to threads. */
+#if !defined(__vax__) && !defined(__mc68010__)
 #define JEMALLOC_TLS 
+#endif
 
 /*
  * Used to mark unreachable code to quiet "end of non-void" compiler warnings.

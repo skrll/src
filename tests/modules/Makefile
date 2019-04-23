@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.15 2019/02/23 03:10:06 kamil Exp $
+# $NetBSD: Makefile,v 1.17 2019/04/15 23:41:23 christos Exp $
 
 .include <bsd.own.mk>
 
@@ -13,8 +13,12 @@ CPPFLAGS+=	-D_KERNTYPES
 TESTS_C=	t_modctl
 TESTS_C+=	t_builtin
 TESTS_C+=	t_kcov
-LDADD=		-lprop
-LDADD+=		-lrumpfs_kernfs -lrumpvfs -lrump -lrumpuser -lrump -lpthread
+TESTS_C+=	t_ufetchstore
+CPPFLAGS.t_ufetchstore.c+=-I${.CURDIR}/ufetchstore
+.for i in t_modctl t_builtin t_kcov
+LDADD.${i}=	-lprop
+LDADD.${i}+=	-lrumpfs_kernfs -lrumpvfs -lrump -lrumpuser -lrump -lpthread
+.endfor
 
 TESTS_SH=	t_abi_uvm
 TESTS_SH+=	t_modload
@@ -26,5 +30,6 @@ SUBDIR+=	k_helper2
 SUBDIR+=	k_helper3
 SUBDIR+=	k_uvm
 SUBDIR+=	threadpool_tester
+SUBDIR+=	ufetchstore
 
 .include <bsd.test.mk>

@@ -1,4 +1,4 @@
-/*	$NetBSD: rtld.c,v 1.195 2018/12/30 01:48:37 christos Exp $	 */
+/*	$NetBSD: rtld.c,v 1.197 2019/04/14 19:21:37 christos Exp $	 */
 
 /*
  * Copyright 1996 John D. Polstra.
@@ -40,7 +40,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: rtld.c,v 1.195 2018/12/30 01:48:37 christos Exp $");
+__RCSID("$NetBSD: rtld.c,v 1.197 2019/04/14 19:21:37 christos Exp $");
 #endif /* not lint */
 
 #include <sys/param.h>
