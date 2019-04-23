@@ -1,4 +1,4 @@
-/*	$NetBSD: synaptics.c,v 1.46 2018/12/04 10:10:15 blymn Exp $	*/
+/*	$NetBSD: synaptics.c,v 1.48 2019/04/22 00:53:59 blymn Exp $	*/
 
 /*
  * Copyright (c) 2005, Steve C. Woodford
@@ -48,7 +48,7 @@
 #include "opt_pms.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: synaptics.c,v 1.46 2018/12/04 10:10:15 blymn Exp $");
+__KERNEL_RCSID(0, "$NetBSD: synaptics.c,v 1.48 2019/04/22 00:53:59 blymn Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -297,25 +297,28 @@ pms_synaptics_probe_extended(struct pms_softc *psc)
  *					for noise.
  * 1	0x08	image sensor		image sensor tracks 5 fingers, but only
  *					reports 2.
- * 1	0x01	uniform clickpad	whole clickpad moves instead of being
+ * 1	0x10	uniform clickpad	whole clickpad moves instead of being
  *					hinged at the top.
  * 1	0x20	report min		query 0x0f gives min coord reported
  */
 		if (res == 0) {
-			u_char clickpad_type = (resp[0] & 0x10);
-			clickpad_type |=       (resp[1] & 0x01);
+			uint val = SYN_CCAP_VALUE(resp);
 
 			aprint_debug_dev(psc->sc_dev, "%s: Continued "
 			    "Capabilities 0x%02x 0x%02x 0x%02x.\n", __func__,
 			    resp[0], resp[1], resp[2]);
-			switch (clickpad_type) {
-			case 0x10:
+			switch (SYN_CCAP_CLICKPAD_TYPE(val)) {
+			case 0: /* not a clickpad */
+				break;
+			case 1:
 				sc->flags |= SYN_FLAG_HAS_ONE_BUTTON_CLICKPAD;
 				break;
-			case 0x01:
+			case 2:
 				sc->flags |= SYN_FLAG_HAS_TWO_BUTTON_CLICKPAD;
 				break;
+			case 3: /* reserved */
 			default:
+				/* unreached */
 				break;
 			}
 		}
@@ -395,7 +398,7 @@ pms_synaptics_probe_init(void *vsc)
 		goto doreset;
 	}
 
-	sc->caps = (resp[0] << 8) | resp[2];
+	sc->caps = SYNAPTICS_CAP_VALUE(resp);
 
 	if (sc->caps & SYNAPTICS_CAP_MBUTTON)
 		sc->flags |= SYN_FLAG_HAS_MIDDLE_BUTTON;

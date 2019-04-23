@@ -1,4 +1,4 @@
-/* $NetBSD: cpu_fdt.c,v 1.22 2019/01/31 13:06:10 skrll Exp $ */
+/* $NetBSD: cpu_fdt.c,v 1.25 2019/04/13 19:15:25 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "psci_fdt.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.22 2019/01/31 13:06:10 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.25 2019/04/13 19:15:25 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -153,7 +153,7 @@ cpu_fdt_attach(device_t parent, device_t self, void *aux)
 	config_found(self, faa, NULL);
 }
 
-#ifdef MULTIPROCESSOR
+#if defined(MULTIPROCESSOR) && (NPSCI_FDT > 0 || defined(__aarch64__))
 static register_t
 cpu_fdt_mpstart_pa(void)
 {
@@ -165,32 +165,7 @@ cpu_fdt_mpstart_pa(void)
 
 	return pa;
 }
-
-static int
-spintable_cpu_on(u_int cpuindex, paddr_t entry_point_address, paddr_t cpu_release_addr)
-{
-	/*
-	 * we need devmap for cpu-release-addr in advance.
-	 * __HAVE_MM_MD_DIRECT_MAPPED_PHYS nor pmap didn't work at this point.
-	 */
-	if (pmap_devmap_find_pa(cpu_release_addr, sizeof(paddr_t)) == NULL) {
-		aprint_error("%s: devmap for cpu-release-addr"
-		    " 0x%08"PRIxPADDR" required\n", __func__, cpu_release_addr);
-		return -1;
-	} else {
-		extern struct bus_space arm_generic_bs_tag;
-		bus_space_handle_t ioh;
-
-		bus_space_map(&arm_generic_bs_tag, cpu_release_addr,
-		    sizeof(paddr_t), 0, &ioh);
-		bus_space_write_4(&arm_generic_bs_tag, ioh, 0,
-		    entry_point_address);
-		bus_space_unmap(&arm_generic_bs_tag, ioh, sizeof(paddr_t));
-	}
-
-	return 0;
-}
-#endif /* MULTIPROCESSOR */
+#endif
 
 #ifdef MULTIPROCESSOR
 static bool
@@ -259,16 +234,29 @@ arm_fdt_cpu_bootstrap(void)
 }
 
 #ifdef MULTIPROCESSOR
-static int
-arm_fdt_cpu_enable(int phandle, const char *method)
+static struct arm_cpu_method *
+arm_fdt_cpu_enable_method(int phandle)
 {
+	const char *method;
+
+ 	method = fdtbus_get_string(phandle, "enable-method");
+	if (method == NULL)
+		return NULL;
+
 	__link_set_decl(arm_cpu_methods, struct arm_cpu_method);
-	struct arm_cpu_method * const *acm;
-	__link_set_foreach(acm, arm_cpu_methods) {
-		if (strcmp(method, (*acm)->acm_compat) == 0)
-			return (*acm)->acm_enable(phandle);
+	struct arm_cpu_method * const *acmp;
+	__link_set_foreach(acmp, arm_cpu_methods) {
+		if (strcmp(method, (*acmp)->acm_compat) == 0)
+			return *acmp;
 	}
-	return ENOSYS;
+
+	return NULL;
+}
+
+static int
+arm_fdt_cpu_enable(int phandle, struct arm_cpu_method *acm)
+{
+	return acm->acm_enable(phandle);
 }
 #endif
 
@@ -280,7 +268,7 @@ arm_fdt_cpu_mpstart(void)
 	uint64_t mpidr, bp_mpidr;
 	u_int cpuindex, i;
 	int child, error;
-	const char *method;
+	struct arm_cpu_method *acm;
 
 	const int cpus = OF_finddevice("/cpus");
 	if (cpus == -1) {
@@ -303,15 +291,15 @@ arm_fdt_cpu_mpstart(void)
 		if (mpidr == bp_mpidr)
 			continue; 	/* BP already started */
 
-		method = fdtbus_get_string(child, "enable-method");
-		if (method == NULL)
-			method = fdtbus_get_string(cpus, "enable-method");
-		if (method == NULL)
+		acm = arm_fdt_cpu_enable_method(child);
+		if (acm == NULL)
+			acm = arm_fdt_cpu_enable_method(cpus);
+		if (acm == NULL)
 			continue;
 
-		error = arm_fdt_cpu_enable(child, method);
+		error = arm_fdt_cpu_enable(child, acm);
 		if (error != 0) {
-			aprint_error("%s: %s: unsupported enable-method\n", __func__, method);
+			aprint_error("%s: failed to enable CPU %#" PRIx64 "\n", __func__, mpidr);
 			continue;
 		}
 
@@ -369,7 +357,32 @@ cpu_enable_psci(int phandle)
 ARM_CPU_METHOD(psci, "psci", cpu_enable_psci);
 #endif
 
-#if defined(MULTIPROCESSOR)
+#if defined(MULTIPROCESSOR) && defined(__aarch64__)
+static int
+spintable_cpu_on(u_int cpuindex, paddr_t entry_point_address, paddr_t cpu_release_addr)
+{
+	/*
+	 * we need devmap for cpu-release-addr in advance.
+	 * __HAVE_MM_MD_DIRECT_MAPPED_PHYS nor pmap didn't work at this point.
+	 */
+	if (pmap_devmap_find_pa(cpu_release_addr, sizeof(paddr_t)) == NULL) {
+		aprint_error("%s: devmap for cpu-release-addr"
+		    " 0x%08"PRIxPADDR" required\n", __func__, cpu_release_addr);
+		return -1;
+	} else {
+		extern struct bus_space arm_generic_bs_tag;
+		bus_space_handle_t ioh;
+
+		bus_space_map(&arm_generic_bs_tag, cpu_release_addr,
+		    sizeof(paddr_t), 0, &ioh);
+		bus_space_write_4(&arm_generic_bs_tag, ioh, 0,
+		    entry_point_address);
+		bus_space_unmap(&arm_generic_bs_tag, ioh, sizeof(paddr_t));
+	}
+
+	return 0;
+}
+
 static int
 cpu_enable_spin_table(int phandle)
 {

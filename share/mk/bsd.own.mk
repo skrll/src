@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1128 2019/04/05 15:58:17 maya Exp $
+#	$NetBSD: bsd.own.mk,v 1.1132 2019/04/19 21:34:26 mrg Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -59,7 +59,6 @@ TOOLCHAIN_MISSING?=	no
 # What GCC is used?
 #
 .if \
-    ${MACHINE_CPU} == "ia64"	|| \
     ${MACHINE_ARCH} == "powerpc64"
 HAVE_GCC?=	6
 .endif
@@ -1472,7 +1471,7 @@ HAVE_XORG_SERVER_VER?=120
 
 .if ${HAVE_XORG_SERVER_VER} == "120"
 XORG_SERVER_SUBDIR?=xorg-server
-. if ${MACHINE} == "amd64" || ${MACHINE} == "i386"
+. if ${MACHINE} == "amd64" || ${MACHINE} == "i386" || ${MACHINE} == "evbarm"
 HAVE_XORG_GLAMOR?=	yes
 . endif
 .else

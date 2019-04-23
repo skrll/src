@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_emac.c,v 1.23 2019/03/05 08:25:02 msaitoh Exp $ */
+/* $NetBSD: sunxi_emac.c,v 1.25 2019/04/22 14:53:51 maya Exp $ */
 
 /*-
  * Copyright (c) 2016-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -33,7 +33,7 @@
 #include "opt_net_mpsafe.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.23 2019/03/05 08:25:02 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.25 2019/04/22 14:53:51 maya Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -908,8 +908,6 @@ static int
 sunxi_emac_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct sunxi_emac_softc *sc = ifp->if_softc;
-	struct mii_data *mii = &sc->mii;
-	struct ifreq *ifr = data;
 	int error, s;
 
 #ifndef EMAC_MPSAFE
@@ -917,16 +915,6 @@ sunxi_emac_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 #endif
 
 	switch (cmd) {
-	case SIOCSIFMEDIA:
-	case SIOCGIFMEDIA:
-#ifdef EMAC_MPSAFE
-		s = splnet();
-#endif
-		error = ifmedia_ioctl(ifp, ifr, &mii->mii_media, cmd);
-#ifdef EMAC_MPSAFE
-		splx(s);
-#endif
-		break;
 	default:
 #ifdef EMAC_MPSAFE
 		s = splnet();
