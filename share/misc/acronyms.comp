@@ -1,4 +1,4 @@
-$NetBSD: acronyms.comp,v 1.243 2019/04/10 10:57:51 sevan Exp $
+$NetBSD: acronyms.comp,v 1.248 2019/04/22 12:27:50 sevan Exp $
 3WHS	three-way handshake
 8VSB	8-state vestigial side band modulation
 AA	anti-aliasing
@@ -115,6 +115,7 @@ BAR	base address register
 BBS	bulletin board system
 BCC	blind carbon copy
 BCD	binary coded decimal
+BCH	boot console handler
 BCR	byte count register
 BCS	base configuration space
 BD	baud
@@ -408,6 +409,7 @@ DSA	digital signature algorithm
 DSAP	destination service access point
 DSB	double-sideband modulation
 DSDT	differentiated system descriptor table
+DSF	device special file
 DSL	dataset and snapshot layer
 DSL	digital subscriber line
 DSL	domain specific language
@@ -607,6 +609,7 @@ HECI	host embedded controller interface
 HEST	hardware error source table
 HF	high frequency
 HFM	highest frequency mode
+HFS	hierarchical file system
 HID	human interface device
 HKP	HTTP Keyserver Protocol
 HLL	high-level language
@@ -711,6 +714,7 @@ ISA	industry standard architecture
 ISA	instruction set architecture
 ISDN	integrated services digital network
 ISI	inter-symbol interference
+ISL	initial system load
 ISM	industrial, scientific, [and] medical
 ISN	initial serial number
 ISO	International Standards Organization
@@ -748,6 +752,7 @@ KVA	kernel virtual address
 KVM	kernel virtual machine
 KVM	kernel virtual memory
 KVM	keyboard, video, [and] mouse
+L2CAP	link layer control and adaptation protocol
 LAMP	Linux Apache MySQL {Perl,PHP,Python}
 LAN	local area network
 LAPIC	local advanced programmable interrupt controller
@@ -773,6 +778,7 @@ LFO	low-frequency oscillation
 LFS	log-structured file system
 LFU	least frequently used
 LHP	loop heat pipe
+LIF	logical interchange format
 LIFO	last in, first out
 LILO	LInux LOader
 LILO	last in, last out
@@ -827,6 +833,7 @@ LVM	logical volume management
 LVT	local vector table
 LVDS	Low-Voltage Differential Signaling
 LWP	light-weight process
+LZSS	Lempel Ziv Storer Szymanski
 LZW	Lempel Ziv Welch
 MAC	mandatory access control
 MAC	{media,medium} access control
@@ -941,8 +948,10 @@ NAS	network attached storage
 NAT	network address translation
 NAV	network allocation vector
 NC	numerical control
+NC-SI	network controller sideband interface
 NCO	numerically-controlled oscillator
 NCP	Network Control Protocol
+NCSI	network connectivity status indicator
 NCQ	native command queuing
 ND	neighbor discovery
 NDFA	nondeterministic finite automaton
@@ -976,6 +985,8 @@ NSA	National Security Agency
 NTM	non-deterministic Turing machine
 NTP	Network Time Protocol
 NUMA	non-uniform memory access
+NVMM	NetBSD Virtual Machine Monitor
+NVMM	non-volatile main memory
 NVRAM	non-volatile random access memory
 NW	not write-through
 NX	no execute
@@ -985,6 +996,8 @@ OBO	off by one
 OBOE	off by one error
 OCL	object constraint language
 OCR	optical character recognition
+ODE	offline device environment
+ODM	object data manager
 ODCM	on-demand clock modulation
 ODT	on-die termination
 OEM	original equipment manufacturer
@@ -1576,6 +1589,7 @@ VME	virtual mode extension
 VMX	vector multimedia extensions
 VMX	virtual machine extensions
 VOD	video on demand
+VPD	vital product data
 VPN	virtual private network
 VR	virtual reality
 VRAM	video random access memory
@@ -1584,6 +1598,8 @@ VRM	voltage regulator module
 VRRP	Virtual Router Redundancy Protocol
 VSTP	VLAN Spanning Tree Protocol
 VTP	VLAN Trunking Protocol
+VXFS	Veritas file sytem
+VXVM	Veritas volume manager
 W	watt
 W3C	World Wide Web Consortium
 WAFL	write anywhere file layout
@@ -1650,5 +1666,7 @@ ZIF	zero insertion force
 ZIFS	zero insertion force socket
 ZIL	ZFS intent log
 ZMA	zone multicast address
+ZOI	zero one infinity
+ZOI	zone of influence
 ZPL	ZFS Posix layer
 ZVOL	ZFS Volume

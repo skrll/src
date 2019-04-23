@@ -20,9 +20,6 @@ along with this program; see the file COPYING.  If not, write to
 the Free Software Foundation, 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
 
-#undef TARGET_USE_GP
-#define TARGET_USE_GP 0
-
 #undef DRIVER_SELF_SPECS
 #define DRIVER_SELF_SPECS ""
 
@@ -35,6 +32,7 @@ Boston, MA 02111-1307, USA.  */
 #define TARGET_OS_CPP_BUILTINS()				\
   do {								\
     NETBSD_OS_CPP_BUILTINS_ELF();				\
+    builtin_define ("__riscv__");				\
     /* The GNU C++ standard library requires this.  */		\
     if (c_dialect_cxx ())					\
       builtin_define ("_GNU_SOURCE");				\
@@ -48,26 +46,29 @@ Boston, MA 02111-1307, USA.  */
 #undef LIB_SPEC
 #define LIB_SPEC NETBSD_LIB_SPEC
 
-#undef LINK_SPEC
-#define LINK_SPEC NETBSD_LINK_SPEC_ELF
-/* Provide a LINK_SPEC appropriate for a NetBSD/mips target.
-   This is a copy of LINK_SPEC from <netbsd-elf.h> tweaked for
-   the MIPS target.  */
+#define EXTRA_SPECS NETBSD_SUBTARGET_EXTRA_SPECS
+
+#undef STARTFILE_PREFIX_SPEC
+
+#define LD_EMUL_SUFFIX \
+  "%{mabi=lp64d:}" \
+  "%{mabi=lp64f:_lp64f}" \
+  "%{mabi=lp64:_lp64}" \
+  "%{mabi=ilp32d:}" \
+  "%{mabi=ilp32f:_ilp32f}" \
+  "%{mabi=ilp32:_ilp32}"
 
 #undef LINK_SPEC
 #define LINK_SPEC \
-  "%{m64:-m elf64lriscv} \
-   %{m32:-m elf32lriscv} \
-   %(netbsd_link_spec)"
+  "-melf" XLEN_SPEC "lriscv" LD_EMUL_SUFFIX \
+  "%(netbsd_link_spec)"
 
 #undef NETBSD_ENTRY_POINT
 #define NETBSD_ENTRY_POINT	"_start"
 
-#undef SIZE_TYPE
-#define SIZE_TYPE "long unsigned int"
+/* Override netbsd-stdint.h uintptr_t and inptr_t. */
+#undef UINTPTR_TYPE
+#define UINTPTR_TYPE "long unsigned int"
 
-#undef INTMAX_TYPE
-#define INTMAX_TYPE "long long int"
-
-#undef UINTMAX_TYPE
-#define UINTMAX_TYPE "long long unsigned int"
+#undef INTPTR_TYPE
+#define INTPTR_TYPE "long int"

@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.448 2019/04/11 03:07:11 msaitoh Exp $	*/
+/*	$NetBSD: if.c,v 1.451 2019/04/20 22:16:47 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.448 2019/04/11 03:07:11 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.451 2019/04/20 22:16:47 pgoyette Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -3158,12 +3158,13 @@ doifioctl(struct socket *so, u_long cmd, void *data, struct lwp *l)
 	}
 
 	ifr = data;
+	/* Pre-conversion */
 	MODULE_HOOK_CALL(if_cvtcmd_43_hook, (&cmd, ocmd), enosys(), hook);
 	if (hook != ENOSYS) {
 		if (cmd != ocmd) {
 			oifr = data;
 			data = ifr = &ifrb;
-			ifreqo2n(oifr, ifr);
+			IFREQO2N_43(oifr, ifr);
 		}
 	}
 
@@ -3274,8 +3275,10 @@ doifioctl(struct socket *so, u_long cmd, void *data, struct lwp *l)
 			splx(s);
 		}
 	}
+
+	/* Post-conversion */
 	if (cmd != ocmd)
-		ifreqn2o(oifr, ifr);
+		IFREQN2O_43(oifr, ifr);
 
 	IFNET_UNLOCK(ifp);
 	KERNEL_UNLOCK_UNLESS_IFP_MPSAFE(ifp);
@@ -3328,6 +3331,7 @@ ifconf(u_long cmd, void *data)
 	int bound;
 	struct psref psref;
 
+	memset(&ifr, 0, sizeof(ifr));
 	if (docopy) {
 		space = ifc->ifc_len;
 		ifrp = ifc->ifc_req;
@@ -3420,7 +3424,7 @@ ifreq_setaddr(u_long cmd, struct ifreq *ifr, const struct sockaddr *sa)
 		if (cmd != ocmd) {
 			oifr = (struct oifreq *)(void *)ifr;
 			ifr = &ifrb;
-			ifreqo2n(oifr, ifr);
+			IFREQO2N_43(oifr, ifr);
 				len = sizeof(oifr->ifr_addr);
 		}
 	}
@@ -3432,7 +3436,7 @@ ifreq_setaddr(u_long cmd, struct ifreq *ifr, const struct sockaddr *sa)
 	sockaddr_copy(&ifr->ifr_addr, len, sa);
 
 	if (cmd != ocmd)
-		ifreqn2o(oifr, ifr);
+		IFREQN2O_43(oifr, ifr);
 	return 0;
 }
 
