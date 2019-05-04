@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_ptrace_common.c,v 1.47 2019/02/03 03:19:28 mrg Exp $	*/
+/*	$NetBSD: sys_ptrace_common.c,v 1.52 2019/05/02 00:23:01 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -118,7 +118,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.47 2019/02/03 03:19:28 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.52 2019/05/02 00:23:01 kamil Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ptrace.h"
@@ -1106,6 +1106,12 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 		piod.piod_op = write ? PIOD_WRITE_D : PIOD_READ_D;
 		if ((error = ptrace_doio(l, t, lt, &piod, addr, true)) != 0)
 			break;
+#if 0 // XXX: GDB depends on it
+		if (piod.piod_len < sizeof(tmp)) {
+			error = EIO;
+			break;
+		}
+#endif
 		if (!write)
 			*retval = tmp;
 		break;
@@ -1113,8 +1119,18 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 	case PT_IO:
 		if ((error = ptm->ptm_copyin_piod(&piod, addr, data)) != 0)
 			break;
+		if (piod.piod_len < 1) {
+			error = EINVAL;
+			break;
+		}
 		if ((error = ptrace_doio(l, t, lt, &piod, addr, false)) != 0)
 			break;
+#if 0 // XXX: GDB depends on it
+		if (piod.piod_len < 1) {
+			error = EIO;
+			break;
+		}
+#endif
 		error = ptm->ptm_copyout_piod(&piod, addr, data);
 		break;
 
@@ -1232,6 +1248,21 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 				error = EDEADLK;
 				break;
 			}
+		}
+
+		/*
+		 * If the address parameter is 0, report error.
+		 *
+		 * It's a popular mistake to set Program Counter to 0x0.
+		 * In certain kernels this is allowable parameter and causes
+		 * portability issue.
+		 *
+		 * Disallow explicitly zeroed PC, instead of triggering
+		 * a harder to debug crash later.
+		 */
+		if (addr == 0) {
+			error = EINVAL;
+			break;
 		}
 
 		/* If the address parameter is not (int *)1, set the pc. */
@@ -1576,7 +1607,7 @@ process_auxv_offset(struct proc *p, struct uio *uio)
 }
 #endif /* PTRACE */
 
-MODULE(MODULE_CLASS_EXEC, ptrace_common, "");
+MODULE(MODULE_CLASS_EXEC, ptrace_common, NULL);
  
 static int
 ptrace_common_modcmd(modcmd_t cmd, void *arg)

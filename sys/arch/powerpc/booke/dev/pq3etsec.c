@@ -1,4 +1,4 @@
-/*	$NetBSD: pq3etsec.c,v 1.41 2019/03/08 08:12:39 msaitoh Exp $	*/
+/*	$NetBSD: pq3etsec.c,v 1.43 2019/04/26 06:33:33 msaitoh Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -41,7 +41,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.41 2019/03/08 08:12:39 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.43 2019/04/26 06:33:33 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -61,10 +61,9 @@ __KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.41 2019/03/08 08:12:39 msaitoh Exp $"
 #include <net/if_dl.h>
 #include <net/if_ether.h>
 #include <net/if_media.h>
+#include <net/bpf.h>
 
 #include <dev/mii/miivar.h>
-
-#include <net/bpf.h>
 
 #ifdef INET
 #include <netinet/in.h>
@@ -80,7 +79,6 @@ __KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.41 2019/03/08 08:12:39 msaitoh Exp $"
 
 #include <powerpc/spr.h>
 #include <powerpc/booke/spr.h>
-
 #include <powerpc/booke/cpuvar.h>
 #include <powerpc/booke/e500var.h>
 #include <powerpc/booke/e500reg.h>
@@ -537,8 +535,8 @@ pq3etsec_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr)
 
 	mii_pollstat(&sc->sc_mii);
 	ether_mediastatus(ifp, ifmr);
-        ifmr->ifm_status = sc->sc_mii.mii_media_status;
-        ifmr->ifm_active = sc->sc_mii.mii_media_active;
+	ifmr->ifm_status = sc->sc_mii.mii_media_status;
+	ifmr->ifm_active = sc->sc_mii.mii_media_active;
 }
 
 static int
@@ -740,8 +738,8 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	char enaddr[ETHER_ADDR_LEN] = {
 	    [0] = sc->sc_macstnaddr2 >> 16,
 	    [1] = sc->sc_macstnaddr2 >> 24,
-	    [2] = sc->sc_macstnaddr1 >>  0,
-	    [3] = sc->sc_macstnaddr1 >>  8,
+	    [2] = sc->sc_macstnaddr1 >>	 0,
+	    [3] = sc->sc_macstnaddr1 >>	 8,
 	    [4] = sc->sc_macstnaddr1 >> 16,
 	    [5] = sc->sc_macstnaddr1 >> 24,
 	};
@@ -1200,7 +1198,6 @@ pq3etsec_ifioctl(struct ifnet *ifp, u_long cmd, void *data)
 
 	switch (cmd) {
 	case SIOCSIFMEDIA:
-	case SIOCGIFMEDIA:
 		/* Flow control requires full-duplex mode. */
 		if (IFM_SUBTYPE(ifr->ifr_media) == IFM_AUTO ||
 		    (ifr->ifr_media & IFM_FDX) == 0)
@@ -1738,7 +1735,6 @@ pq3etsec_rxq_purge(
 				m = m0;
 			}
 		}
-
 	}
 
 	rxq->rxq_mconsumer = NULL;
@@ -2541,9 +2537,13 @@ pq3etsec_soft_intr(void *arg)
 	}
 
 	if (soft_flags & (SOFT_RXINTR|SOFT_RXBSY)) {
+<<<<<<< HEAD
 		/*
 		 * Let's consume
 		 */
+=======
+		/* Let's consume */
+>>>>>>> upstream/trunk
 		pq3etsec_rxq_consume(sc, &sc->sc_rxq);
 		imask |= IEVENT_RXF;
 	}
