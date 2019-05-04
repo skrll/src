@@ -1,4 +1,4 @@
-#  $NetBSD: Makefile,v 1.208 2019/04/17 07:45:23 mrg Exp $
+#  $NetBSD: Makefile,v 1.210 2019/04/27 23:04:32 kamil Exp $
 #
 #  @(#)Makefile 5.1beta 93/09/24
 #
@@ -383,6 +383,7 @@ MLINKS+=ceil.3 ceilf.3 \
 MLINKS+=copysign.3 copysignf.3 \
 	copysign.3 copysignl.3
 MLINKS+=cos.3 cosf.3
+MLINKS+=cos.3 cosl.3
 MLINKS+=cosh.3 coshf.3
 MLINKS+=erf.3 erff.3 \
 	erf.3 erfl.3 \
@@ -423,7 +424,8 @@ MLINKS+=modf.3 modff.3 \
 MLINKS+=nextafter.3 nextafterf.3 \
 	nextafter.3 nextafterl.3 \
 	nextafter.3 nexttoward.3 \
-	nextafter.3 nexttowardf.3
+	nextafter.3 nexttowardf.3 \
+	nextafter.3 nexttowardl.3
 MLINKS+=lrint.3 lrintf.3 lrint.3 llrint.3 lrint.3 llrintf.3
 MLINKS+=remainder.3 remainderf.3 \
 	remainder.3 remquo.3 \

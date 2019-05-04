@@ -9,11 +9,7 @@
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
 
-SYSTEMTESTTOP=..
-. $SYSTEMTESTTOP/conf.sh
+# shellcheck source=conf.sh
+. "$SYSTEMTESTTOP/conf.sh"
 
-if [ "@DLZ_SYSTEM_TEST@" != "filesystem" ]; then
-        echo_i "DLZ filesystem driver not supported"
-        exit 255
-fi
-exit 0
+$SHELL clean.sh

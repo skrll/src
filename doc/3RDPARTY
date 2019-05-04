@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1613 2019/04/20 17:25:13 christos Exp $
+#	$NetBSD: 3RDPARTY,v 1.1616 2019/04/29 01:18:58 christos Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -42,11 +42,11 @@
 
 Package:	acpica
 Version:	20181213
-Current Vers:	20190108
+Current Vers:	20190405
 Maintainer:	Intel
 Archive Site:	http://www.acpica.org/downloads/
 Home Page:	http://www.acpica.org/
-Date:		2019-01-09
+Date:		2019-04-28
 Mailing List:	devel@acpica.org
 License:	BSD-like
 Responsible:	jruoho
@@ -120,12 +120,12 @@ Notes:
 bc includes dc, both of which are in the NetBSD tree.
 
 Package:	bind [named and utils]
-Version:	9.10.8-P1/BSD	9.13.7/MPL
-Current Vers:			9.13.7/MPL
+Version:	9.10.8-P1/BSD	9.14.1/MPL
+Current Vers:			9.14.1/MPL
 Maintainer:	ISC
 Archive Site:	ftp://ftp.isc.org/isc/bind9/
 Home Page:	http://www.isc.org/software/bind/
-Date:		2019-01-09
+Date:		2019-04-27
 Mailing List:	https://lists.isc.org/mailman/listinfo/bind-announce
 Mailing List:	https://lists.isc.org/mailman/listinfo/bind-users
 Responsible:	christos
@@ -341,12 +341,12 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	7.2.0
-Current Vers:	7.2.0
+Version:	7.2.1
+Current Vers:	7.2.1
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
-Date:		2019-02-07
+Date:		2019-04-26
 Mailing List: 	dhcpcd-discuss@marples.name
 License:	BSD (2-clause)
 Location:	external/bsd/dhcpcd/dist

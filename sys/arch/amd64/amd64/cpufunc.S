@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.S,v 1.36 2019/02/11 14:59:32 cherry Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.38 2019/05/01 15:17:49 maxv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2008 The NetBSD Foundation, Inc.
@@ -264,24 +264,6 @@ END(x86_write_flags)
 STRONG_ALIAS(x86_write_psl,x86_write_flags)
 #endif /* XENPV */
 
-ENTRY(rdmsr)
-	movq	%rdi, %rcx
-	xorq	%rax, %rax
-	rdmsr
-	shlq	$32, %rdx
-	orq	%rdx, %rax
-	ret
-END(rdmsr)
-
-ENTRY(wrmsr)
-	movq	%rdi, %rcx
-	movq	%rsi, %rax
-	movq	%rsi, %rdx
-	shrq	$32, %rdx
-	wrmsr
-	ret
-END(wrmsr)
-
 ENTRY(rdmsr_locked)
 	movq	%rdi, %rcx
 	xorq	%rax, %rax
@@ -324,23 +306,6 @@ ENTRY(rdmsr_safe)
 	ret
 END(rdmsr_safe)
 
-ENTRY(rdxcr)
-	movq	%rdi, %rcx
-	xgetbv
-	shlq	$32, %rdx
-	orq	%rdx, %rax
-	ret
-END(rdxcr)
-
-ENTRY(wrxcr)
-	movq	%rdi, %rcx
-	movq	%rsi, %rax
-	movq	%rsi, %rdx
-	shrq	$32, %rdx
-	xsetbv
-	ret
-END(wrxcr)
-
 /*
  * MSR operations fault handler
  */
@@ -373,23 +338,6 @@ ENTRY(cpu_counter32)
 	addl	CPUVAR(CC_SKEW), %eax
 	ret
 END(cpu_counter32)
-
-ENTRY(rdpmc)
-	movq	%rdi, %rcx
-	xorq	%rax, %rax
-	rdpmc
-	shlq	$32, %rdx
-	orq	%rdx, %rax
-	ret
-END(rdpmc)
-
-ENTRY(rdtsc)
-	xorq	%rax,%rax
-	rdtsc
-	shlq	$32,%rdx
-	orq	%rdx,%rax
-	ret
-END(rdtsc)
 
 ENTRY(breakpoint)
 	pushq	%rbp
@@ -507,11 +455,6 @@ ENTRY(x86_mwait)
 	ret
 END(x86_mwait)
 
-ENTRY(x86_pause)
-	pause
-	ret
-END(x86_pause)
-
 ENTRY(x86_cpuid2)
 	movq	%rbx, %r8
 	movq	%rdi, %rax
@@ -530,11 +473,6 @@ ENTRY(x86_getss)
 	movl	%ss, %eax
 	ret
 END(x86_getss)
-
-ENTRY(fldcw)
-	fldcw	(%rdi)
-	ret
-END(fldcw)
 
 ENTRY(fnclex)
 	fnclex
@@ -566,23 +504,10 @@ ENTRY(fnstsw)
 	ret
 END(fnstsw)
 
-ENTRY(fp_divide_by_0)
-	fldz
-	fld1
-	fdiv	%st, %st(1)
-	fwait
-	ret
-END(fp_divide_by_0)
-
 ENTRY(frstor)
 	frstor	(%rdi)
 	ret
 END(frstor)
-
-ENTRY(fwait)
-	fwait
-	ret
-END(fwait)
 
 ENTRY(clts)
 	clts
