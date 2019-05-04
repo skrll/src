@@ -1,4 +1,4 @@
-/*	$NetBSD: rtsock_70.c,v 1.5 2019/03/01 11:06:56 pgoyette Exp $	*/
+/*	$NetBSD: rtsock_70.c,v 1.7 2019/04/29 08:31:29 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 2016 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rtsock_70.c,v 1.5 2019/03/01 11:06:56 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rtsock_70.c,v 1.7 2019/04/29 08:31:29 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"

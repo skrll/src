@@ -1,4 +1,4 @@
-/*	$NetBSD: rtsock_shared.c,v 1.5 2019/04/10 04:06:52 thorpej Exp $	*/
+/*	$NetBSD: rtsock_shared.c,v 1.9 2019/05/03 02:10:58 pgoyette Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rtsock_shared.c,v 1.5 2019/04/10 04:06:52 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rtsock_shared.c,v 1.9 2019/05/03 02:10:58 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -1364,9 +1364,9 @@ COMPATNAME(rt_ifmsg)(struct ifnet *ifp)
  * be unnecessary as the routing socket will automatically generate
  * copies of it.
  */
-void
-COMPATNAME(rt_newaddrmsg)(int cmd, struct ifaddr *ifa, int error,
-    struct rtentry *rt)
+static void
+COMPATNAME(rt_addrmsg0)(int cmd, struct ifaddr *ifa, int error,
+    struct rtentry *rt, const struct sockaddr *src)
 {
 #define	cmdpass(__cmd, __pass)	(((__cmd) << 2) | (__pass))
 	struct rt_addrinfo info;
@@ -1387,7 +1387,7 @@ COMPATNAME(rt_newaddrmsg)(int cmd, struct ifaddr *ifa, int error,
 		(*vec_sctp_delete_ip_address)(ifa);
 	}
 
-	COMPATCALL(rt_newaddrmsg, (cmd, ifa, error, rt));
+	COMPATCALL(rt_addrmsg_rt, (cmd, ifa, error, rt));
 	if (COMPATNAME(route_info).ri_cb.any_count == 0)
 		return;
 	for (pass = 1; pass < 3; pass++) {
@@ -1428,6 +1428,7 @@ COMPATNAME(rt_newaddrmsg)(int cmd, struct ifaddr *ifa, int error,
 			info.rti_info[RTAX_IFP] = ifp->if_dl->ifa_addr;
 			info.rti_info[RTAX_NETMASK] = ifa->ifa_netmask;
 			info.rti_info[RTAX_BRD] = ifa->ifa_dstaddr;
+			info.rti_info[RTAX_AUTHOR] = src;
 			memset(&ifam, 0, sizeof(ifam));
 			ifam.ifam_index = ifp->if_index;
 			ifam.ifam_metric = ifa->ifa_metric;
@@ -1467,6 +1468,29 @@ COMPATNAME(rt_newaddrmsg)(int cmd, struct ifaddr *ifa, int error,
 		COMPATNAME(route_enqueue)(m, sa ? sa->sa_family : 0);
 	}
 #undef cmdpass
+}
+
+void
+COMPATNAME(rt_addrmsg)(int cmd, struct ifaddr *ifa)
+{
+
+	COMPATNAME(rt_addrmsg0)(cmd, ifa, 0, NULL, NULL);
+}
+
+void
+COMPATNAME(rt_addrmsg_rt)(int cmd, struct ifaddr *ifa, int error,
+    struct rtentry *rt)
+{
+
+	COMPATNAME(rt_addrmsg0)(cmd, ifa, error, rt, NULL);
+}
+
+void
+COMPATNAME(rt_addrmsg_src)(int cmd, struct ifaddr *ifa,
+    const struct sockaddr *src)
+{
+
+	COMPATNAME(rt_addrmsg0)(cmd, ifa, 0, NULL, src);
 }
 
 static struct mbuf *
@@ -1610,15 +1634,13 @@ COMPATNAME(route_init)(void)
 
 #ifndef COMPAT_RTSOCK
 	rt_init();
-#endif
 #ifdef NET_MPSAFE
 	rt_so_mtx = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 
 	cv_init(&rt_update_cv, "rtsock_cv");
 #endif
 
-#ifndef COMPAT_RTSOCK
-	sysctl_net_route_setup(NULL);
+	sysctl_net_route_setup(NULL, PF_ROUTE, "rtable");
 #endif
 	ri->ri_intrq.ifq_maxlen = ri->ri_maxqlen;
 	ri->ri_sih = softint_establish(SOFTINT_NET | SOFTINT_MPSAFE,

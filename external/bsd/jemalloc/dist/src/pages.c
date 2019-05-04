@@ -55,8 +55,8 @@ static void os_pages_unmap(void *addr, size_t size);
 
 static void *
 os_pages_map(void *addr, size_t size, size_t alignment, bool *commit) {
-	assert(os_page != PAGE || ALIGNMENT_ADDR2BASE(addr, os_page) == addr);
-	assert(os_page != PAGE || ALIGNMENT_CEILING(size, os_page) == size);
+	assert(ALIGNMENT_ADDR2BASE(addr, os_page) == addr);
+	assert(ALIGNMENT_CEILING(size, os_page) == size);
 	assert(size != 0);
 
 	if (os_overcommits) {
@@ -79,9 +79,10 @@ os_pages_map(void *addr, size_t size, size_t alignment, bool *commit) {
 	{
 		int flags = mmap_flags;
 #ifdef MAP_ALIGNED
-		int a = ilog2(alignment);
-		if (a > LG_PAGE && a < ilog2(sizeof(void *)))
+		if (alignment > os_page || PAGE > os_page) {
+			int a = ilog2(MAX(alignment, PAGE));
 			flags |= MAP_ALIGNED(a);
+		}
 #endif
 		int prot = *commit ? PAGES_PROT_COMMIT : PAGES_PROT_DECOMMIT;
 
@@ -135,8 +136,8 @@ os_pages_trim(void *addr, size_t alloc_size, size_t leadsize, size_t size,
 
 static void
 os_pages_unmap(void *addr, size_t size) {
-	assert(os_page != PAGE || ALIGNMENT_ADDR2BASE(addr, os_page) == addr);
-	assert(os_page != PAGE || ALIGNMENT_CEILING(size, os_page) == size);
+	assert(ALIGNMENT_ADDR2BASE(addr, os_page) == addr);
+	assert(ALIGNMENT_CEILING(size, os_page) == size);
 
 #ifdef _WIN32
 	if (VirtualFree(addr, 0, MEM_RELEASE) == 0)
@@ -187,7 +188,7 @@ pages_map_slow(size_t size, size_t alignment, bool *commit) {
 void *
 pages_map(void *addr, size_t size, size_t alignment, bool *commit) {
 	assert(alignment >= PAGE);
-	assert(os_page != PAGE || ALIGNMENT_ADDR2BASE(addr, alignment) == addr);
+	assert(ALIGNMENT_ADDR2BASE(addr, alignment) == addr);
 
 	/*
 	 * Ideally, there would be a way to specify alignment to mmap() (like
@@ -570,7 +571,7 @@ label_error:
 bool
 pages_boot(void) {
 	os_page = os_page_detect();
-	if (os_page < PAGE) {
+	if (os_page > PAGE) {
 		malloc_write("<jemalloc>: Unsupported system page size\n");
 		if (opt_abort) {
 			abort();

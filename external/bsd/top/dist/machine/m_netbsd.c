@@ -1,4 +1,4 @@
-/*	$NetBSD: m_netbsd.c,v 1.21 2018/10/30 21:15:09 kre Exp $	*/
+/*	$NetBSD: m_netbsd.c,v 1.23 2019/04/27 14:10:01 christos Exp $	*/
 
 /*
  * top - a top users display for Unix
@@ -37,12 +37,12 @@
  *		Andrew Doran <ad@NetBSD.org>
  *
  *
- * $Id: m_netbsd.c,v 1.21 2018/10/30 21:15:09 kre Exp $
+ * $Id: m_netbsd.c,v 1.23 2019/04/27 14:10:01 christos Exp $
  */
 #include <sys/cdefs.h>
 
 #ifndef lint
-__RCSID("$NetBSD: m_netbsd.c,v 1.21 2018/10/30 21:15:09 kre Exp $");
+__RCSID("$NetBSD: m_netbsd.c,v 1.23 2019/04/27 14:10:01 christos Exp $");
 #endif
 
 #include <sys/param.h>
@@ -879,6 +879,25 @@ format_next_proc(caddr_t handle, char *(*get_userid)(int))
 }
 
 static char *
+countable(char *p, size_t l)
+{
+	static const char digits[] = "0123456789";
+	size_t first = strcspn(p, digits);		// non digits
+	size_t last = strspn(p + first, digits);	// trailing digits
+	size_t len = first + last;			
+	if (p[len] || last == 0)	// should be total and must have digits
+		return p;
+	if (len < l)			// if shorter, done
+		return p;
+	if (l < last + 1)		// if not enough for digits, done
+		return p;
+	size_t start = l - last - 1;	// compute starting point
+	p[start] = '*';			// put a star
+	memmove(p + start + 1, p + first, last + 1);	// move digits and NUL
+	return p;
+}
+
+static char *
 format_next_lwp(caddr_t handle, char *(*get_userid)(int))
 {
 	struct kinfo_proc2 *pp;
@@ -946,7 +965,7 @@ format_next_lwp(caddr_t handle, char *(*get_userid)(int))
 	    format_time(cputime),
 	    100.0 * weighted_cpu(l_, pct, pl),
 	    100.0 * pct,
-	    printable(pl->l_name),
+	    countable(printable(pl->l_name), 9),
 	    get_command(hp->sel, pp));
 
 	/* return the result */
