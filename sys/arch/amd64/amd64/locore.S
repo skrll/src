@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.180 2019/03/09 08:42:25 maxv Exp $	*/
+/*	$NetBSD: locore.S,v 1.183 2019/05/15 18:27:51 maxv Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -1147,7 +1147,6 @@ ENTRY(cpu_switchto)
 	movq	%r12,%rsi
 	callq	_C_LABEL(x86_dbregs_switch)
 
-#ifndef XENPV
 	movb	_C_LABEL(x86_fpu_eager),%dl
 	testb	%dl,%dl
 	jz	.Lno_eagerfpu
@@ -1155,7 +1154,6 @@ ENTRY(cpu_switchto)
 	movq	%r12,%rsi
 	callq	_C_LABEL(fpu_eagerswitch)
 .Lno_eagerfpu:
-#endif
 
 	/* Don't bother with the rest if switching to a system process. */
 	testl	$LW_SYSTEM,L_FLAG(%r12)
@@ -1483,6 +1481,7 @@ IDTVEC_END(osyscall)
 	TEXT_USER_BEGIN
 	_ALIGN_TEXT
 LABEL(syscall_sysret)
+	MDS_LEAVE
 	SVS_LEAVE
 	IBRS_LEAVE
 	INTR_RESTORE_GPRS
@@ -1574,6 +1573,7 @@ END(pagezero)
 	_ALIGN_TEXT
 LABEL(intrfastexit)
 	NOT_XEN(cli;)
+	MDS_LEAVE
 	SVS_LEAVE
 	IBRS_LEAVE
 	INTR_RESTORE_GPRS
@@ -1619,10 +1619,6 @@ END(intrfastexit)
 	.globl	svs_enter_altstack, svs_enter_altstack_end
 	.globl	svs_leave, svs_leave_end
 	.globl	svs_leave_altstack, svs_leave_altstack_end
-	.globl	nosvs_enter, nosvs_enter_end
-	.globl	nosvs_enter_altstack, nosvs_enter_altstack_end
-	.globl	nosvs_leave, nosvs_leave_end
-	.globl	nosvs_leave_altstack, nosvs_leave_altstack_end
 
 LABEL(svs_enter)
 	movabs	SVS_UTLS+UTLS_KPDIRPA,%rax
@@ -1666,30 +1662,6 @@ LABEL(svs_leave_nmi)
 	movq	(FRAMESIZE+1*8)(%rsp),%rax	/* nmistore->scratch */
 	movq	%rax,%cr3
 LABEL(svs_leave_nmi_end)
-
-LABEL(nosvs_enter)
-	NOSVS_ENTER
-LABEL(nosvs_enter_end)
-
-LABEL(nosvs_enter_altstack)
-	NOSVS_ENTER_ALTSTACK
-LABEL(nosvs_enter_altstack_end)
-
-LABEL(nosvs_enter_nmi)
-	NOSVS_ENTER_NMI
-LABEL(nosvs_enter_nmi_end)
-
-LABEL(nosvs_leave)
-	NOSVS_LEAVE
-LABEL(nosvs_leave_end)
-
-LABEL(nosvs_leave_altstack)
-	NOSVS_LEAVE_ALTSTACK
-LABEL(nosvs_leave_altstack_end)
-
-LABEL(nosvs_leave_nmi)
-	NOSVS_LEAVE_NMI
-LABEL(nosvs_leave_nmi_end)
 #endif
 
 	.globl	ibrs_enter, ibrs_enter_end
@@ -1721,3 +1693,18 @@ LABEL(noibrs_enter_end)
 LABEL(noibrs_leave)
 	NOIBRS_LEAVE
 LABEL(noibrs_leave_end)
+
+	.globl	mds_leave, mds_leave_end
+
+LABEL(mds_leave)
+	testb	$SEL_UPL,TF_CS(%rsp)
+	jz	1234f
+	pushq	$GSEL(GDATA_SEL, SEL_KPL)
+	verw	(%rsp)
+	addq	$8,%rsp
+1234:
+LABEL(mds_leave_end)
+
+LABEL(nomds_leave)
+	NOMDS_LEAVE
+LABEL(nomds_leave_end)

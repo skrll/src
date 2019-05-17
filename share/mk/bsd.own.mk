@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1132 2019/04/19 21:34:26 mrg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1135 2019/05/16 20:00:49 nakayama Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -58,10 +58,6 @@ TOOLCHAIN_MISSING?=	no
 #
 # What GCC is used?
 #
-.if \
-    ${MACHINE_ARCH} == "powerpc64"
-HAVE_GCC?=	6
-.endif
 HAVE_GCC?=	7
 
 #
@@ -369,7 +365,7 @@ TOOL_AWK=		${TOOLDIR}/bin/${_TOOL_PREFIX}awk
 TOOL_CAP_MKDB=		${TOOLDIR}/bin/${_TOOL_PREFIX}cap_mkdb
 TOOL_CAT=		${TOOLDIR}/bin/${_TOOL_PREFIX}cat
 TOOL_CKSUM=		${TOOLDIR}/bin/${_TOOL_PREFIX}cksum
-TOOL_CLANG_TBLGEN=		${TOOLDIR}/bin/${_TOOL_PREFIX}clang-tblgen
+TOOL_CLANG_TBLGEN=	${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-clang-tblgen
 TOOL_COMPILE_ET=	${TOOLDIR}/bin/${_TOOL_PREFIX}compile_et
 TOOL_CONFIG=		${TOOLDIR}/bin/${_TOOL_PREFIX}config
 TOOL_CRUNCHGEN=		MAKE=${.MAKE:Q} ${TOOLDIR}/bin/${_TOOL_PREFIX}crunchgen
@@ -403,7 +399,7 @@ TOOL_INDXBIB=		${TOOLDIR}/bin/${_TOOL_PREFIX}indxbib
 TOOL_INSTALLBOOT=	${TOOLDIR}/bin/${_TOOL_PREFIX}installboot
 TOOL_INSTALL_INFO=	${TOOLDIR}/bin/${_TOOL_PREFIX}install-info
 TOOL_JOIN=		${TOOLDIR}/bin/${_TOOL_PREFIX}join
-TOOL_LLVM_TBLGEN=		${TOOLDIR}/bin/${_TOOL_PREFIX}llvm-tblgen
+TOOL_LLVM_TBLGEN=	${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-llvm-tblgen
 TOOL_M4=		${TOOLDIR}/bin/${_TOOL_PREFIX}m4
 TOOL_MACPPCFIXCOFF=	${TOOLDIR}/bin/${_TOOL_PREFIX}macppc-fixcoff
 TOOL_MAKEFS=		${TOOLDIR}/bin/${_TOOL_PREFIX}makefs
@@ -1531,7 +1527,7 @@ EXTRA_DRIVERS=	modesetting
 
 .for _v in \
 	ag10e amdgpu apm ark ast ati ati-kms chips cirrus crime \
-	geode glint i128 i740 igs imstt intel intel-old \
+	geode glint i128 i740 igs imstt intel intel-old intel-2014 \
 	${EXTRA_DRIVERS} mach64 mga \
 	neomagic newport nouveau nsc nv openchrome pnozz \
 	r128 rendition \

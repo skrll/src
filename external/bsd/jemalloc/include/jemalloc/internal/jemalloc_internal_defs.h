@@ -152,7 +152,15 @@
 
 /* Non-empty if the tls_model attribute is supported. */
 #if !defined(__vax__) && !defined(__mc68010__)
-#define JEMALLOC_TLS_MODEL __attribute__((tls_model("initial-exec")))
+# if defined(__clang__) && defined(__ppc__) && defined(__pic__)
+/*
+ * XXX: In pic mode clang generates PPC32_GOT instead of PPC32_PICGOT for
+ * tls model initial-exec. It shouldn't; see PPCISelLowering.h
+ */
+#  define JEMALLOC_TLS_MODEL __attribute__((tls_model("global-dynamic")))
+# else
+#  define JEMALLOC_TLS_MODEL __attribute__((tls_model("initial-exec")))
+# endif
 #endif
 
 /*
@@ -202,10 +210,10 @@
 
 /* One page is 2^LG_PAGE bytes. */
 #include <machine/vmparam.h>
-#if defined(PAGE_SHIFT)
-#define LG_PAGE PAGE_SHIFT
-#elif defined(MAX_PAGE_SHIFT)
+#if defined(MAX_PAGE_SHIFT)
 #define LG_PAGE MAX_PAGE_SHIFT
+#elif defined(PAGE_SHIFT)
+#define LG_PAGE PAGE_SHIFT
 #else
 #error "PAGE_SHIFT is not defined"
 #endif
