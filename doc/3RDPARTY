@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1616 2019/04/29 01:18:58 christos Exp $
+#	$NetBSD: 3RDPARTY,v 1.1620 2019/05/13 09:21:06 wiz Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -41,7 +41,7 @@
 #
 
 Package:	acpica
-Version:	20181213
+Version:	20190405
 Current Vers:	20190405
 Maintainer:	Intel
 Archive Site:	http://www.acpica.org/downloads/
@@ -120,8 +120,8 @@ Notes:
 bc includes dc, both of which are in the NetBSD tree.
 
 Package:	bind [named and utils]
-Version:	9.10.8-P1/BSD	9.14.1/MPL
-Current Vers:			9.14.1/MPL
+Version:	9.14.1/MPL
+Current Vers:	9.14.1/MPL
 Maintainer:	ISC
 Archive Site:	ftp://ftp.isc.org/isc/bind9/
 Home Page:	http://www.isc.org/software/bind/
@@ -341,8 +341,8 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	7.2.1
-Current Vers:	7.2.1
+Version:	7.2.2
+Current Vers:	7.2.2
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
@@ -439,7 +439,7 @@ There is a flex2netbsd script to help newer imports.
 
 Package:	gcc
 Version:	6.5
-Current Vers:	6.5/7.4/8.2
+Current Vers:	6.5/7.4/8.2/9.1
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gcc/
 Home Page:	http://www.gnu.org/software/gcc/
@@ -470,7 +470,7 @@ Before importing a new version of external/gpl3/gcc:
 
 Package:	gdb
 Version:	8.0.1
-Current Vers:	8.2.1
+Current Vers:	8.3
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gdb/
 Home Page:	http://www.gnu.org/software/gdb/

@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_mutex.c,v 1.77 2019/04/17 02:29:43 ozaki-r Exp $	*/
+/*	$NetBSD: kern_mutex.c,v 1.79 2019/05/09 05:00:31 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
 #define	__MUTEX_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_mutex.c,v 1.77 2019/04/17 02:29:43 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_mutex.c,v 1.79 2019/05/09 05:00:31 ozaki-r Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -271,7 +271,7 @@ __strong_alias(mutex_spin_exit,mutex_vector_exit);
 
 static void	mutex_abort(const char *, size_t, const kmutex_t *,
     const char *);
-static void	mutex_dump(const volatile void *);
+static void	mutex_dump(const volatile void *, lockop_printer_t);
 
 lockops_t mutex_spin_lockops = {
 	.lo_name = "Mutex",
@@ -298,12 +298,12 @@ syncobj_t mutex_syncobj = {
  *
  *	Dump the contents of a mutex structure.
  */
-void
-mutex_dump(const volatile void *cookie)
+static void
+mutex_dump(const volatile void *cookie, lockop_printer_t pr)
 {
 	const volatile kmutex_t *mtx = cookie;
 
-	printf_nolog("owner field  : %#018lx wait/spin: %16d/%d\n",
+	pr("owner field  : %#018lx wait/spin: %16d/%d\n",
 	    (long)MUTEX_OWNER(mtx->mtx_owner), MUTEX_HAS_WAITERS(mtx),
 	    MUTEX_SPIN_P(mtx));
 }
@@ -315,7 +315,7 @@ mutex_dump(const volatile void *cookie)
  *	generates a lot of machine code in the DIAGNOSTIC case, so
  *	we ask the compiler to not inline it.
  */
-void __noinline
+static void __noinline
 mutex_abort(const char *func, size_t line, const kmutex_t *mtx, const char *msg)
 {
 
