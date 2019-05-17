@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.92 2019/04/24 11:43:19 kamil Exp $
+#	$NetBSD: Makefile,v 1.94 2019/05/07 18:45:37 maya Exp $
 #
 
 NOSANITIZER=	# defined
@@ -268,6 +268,20 @@ MLINKS+=	tss.3 tss_get.3
 MLINKS+=	tss.3 tss_set.3
 
 INCS+=		threads.h
+
+# PR lib/54001: create libpthread.a as a single large object, with all the
+# symbols in one section. ensures that if any libpthread function is used,
+# you get all of them from libpthread, and not the libc stubs.
+#
+# This makes -lpthread equivalent to -Wl,--whole-archive -lpthread
+
+__archivebuild: .USE
+	${_MKTARGET_BUILD}
+	@rm -f ${.TARGET}
+	${LD} -r -o ${.TARGET}.o `NM=${NM} ${LORDER} ${.ALLSRC:M*o} | ${TSORT}`
+	${AR} ${_ARFL} ${.TARGET} ${.TARGET}.o
+
+CLEANFILES+=	${_LIBS:=.o}
 
 .include <bsd.lib.mk>
 

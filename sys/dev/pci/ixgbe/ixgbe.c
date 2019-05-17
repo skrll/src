@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.179 2019/03/18 11:38:03 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.184 2019/05/17 07:39:33 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -1440,25 +1440,12 @@ ixgbe_add_media_types(struct adapter *adapter)
 		ADD(IFM_10G_CX4 | IFM_FDX, 0);
 	}
 
-#ifdef IFM_ETH_XTYPE
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KR) {
 		ADD(IFM_10G_KR | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KX4) {
-		ADD(AIFM_10G_KX4 | IFM_FDX, 0);
+		ADD(IFM_10G_KX4 | IFM_FDX, 0);
 	}
-#else
-	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KR) {
-		device_printf(dev, "Media supported: 10GbaseKR\n");
-		device_printf(dev, "10GbaseKR mapped to 10GbaseSR\n");
-		ADD(IFM_10G_SR | IFM_FDX, 0);
-	}
-	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KX4) {
-		device_printf(dev, "Media supported: 10GbaseKX4\n");
-		device_printf(dev, "10GbaseKX4 mapped to 10GbaseCX4\n");
-		ADD(IFM_10G_CX4 | IFM_FDX, 0);
-	}
-#endif
 	if (layer & IXGBE_PHYSICAL_LAYER_1000BASE_KX) {
 		ADD(IFM_1000_KX | IFM_FDX, 0);
 	}
@@ -2840,11 +2827,7 @@ ixgbe_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KR)
 		switch (adapter->link_speed) {
 		case IXGBE_LINK_SPEED_10GB_FULL:
-#ifndef IFM_ETH_XTYPE
-			ifmr->ifm_active |= IFM_10G_SR | IFM_FDX;
-#else
 			ifmr->ifm_active |= IFM_10G_KR | IFM_FDX;
-#endif
 			break;
 		case IXGBE_LINK_SPEED_2_5GB_FULL:
 			ifmr->ifm_active |= IFM_2500_KX | IFM_FDX;
@@ -2858,11 +2841,7 @@ ixgbe_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 	    layer & IXGBE_PHYSICAL_LAYER_1000BASE_KX)
 		switch (adapter->link_speed) {
 		case IXGBE_LINK_SPEED_10GB_FULL:
-#ifndef IFM_ETH_XTYPE
-			ifmr->ifm_active |= IFM_10G_CX4 | IFM_FDX;
-#else
 			ifmr->ifm_active |= IFM_10G_KX4 | IFM_FDX;
-#endif
 			break;
 		case IXGBE_LINK_SPEED_2_5GB_FULL:
 			ifmr->ifm_active |= IFM_2500_KX | IFM_FDX;
@@ -2940,13 +2919,10 @@ ixgbe_media_change(struct ifnet *ifp)
 	case IFM_10G_LRM:
 	case IFM_10G_LR:
 	case IFM_10G_TWINAX:
-#ifndef IFM_ETH_XTYPE
-	case IFM_10G_SR: /* KR, too */
-	case IFM_10G_CX4: /* KX4 */
-#else
+	case IFM_10G_SR:
+	case IFM_10G_CX4:
 	case IFM_10G_KR:
 	case IFM_10G_KX4:
-#endif
 		speed |= IXGBE_LINK_SPEED_10GB_FULL;
 		break;
 	case IFM_5000_T:
@@ -3018,10 +2994,10 @@ ixgbe_set_promisc(struct adapter *adapter)
 	KASSERT(mutex_owned(&adapter->core_mtx));
 	rctl = IXGBE_READ_REG(&adapter->hw, IXGBE_FCTRL);
 	rctl &= (~IXGBE_FCTRL_UPE);
-	if (ifp->if_flags & IFF_ALLMULTI)
+	ETHER_LOCK(ec);
+	if (ec->ec_flags & ETHER_F_ALLMULTI)
 		mcnt = MAX_NUM_MULTICAST_ADDRESSES;
 	else {
-		ETHER_LOCK(ec);
 		ETHER_FIRST_MULTI(step, ec, enm);
 		while (enm != NULL) {
 			if (mcnt == MAX_NUM_MULTICAST_ADDRESSES)
@@ -3029,7 +3005,6 @@ ixgbe_set_promisc(struct adapter *adapter)
 			mcnt++;
 			ETHER_NEXT_MULTI(step, enm);
 		}
-		ETHER_UNLOCK(ec);
 	}
 	if (mcnt < MAX_NUM_MULTICAST_ADDRESSES)
 		rctl &= (~IXGBE_FCTRL_MPE);
@@ -3038,11 +3013,12 @@ ixgbe_set_promisc(struct adapter *adapter)
 	if (ifp->if_flags & IFF_PROMISC) {
 		rctl |= (IXGBE_FCTRL_UPE | IXGBE_FCTRL_MPE);
 		IXGBE_WRITE_REG(&adapter->hw, IXGBE_FCTRL, rctl);
-	} else if (ifp->if_flags & IFF_ALLMULTI) {
+	} else if (ec->ec_flags & ETHER_F_ALLMULTI) {
 		rctl |= IXGBE_FCTRL_MPE;
 		rctl &= ~IXGBE_FCTRL_UPE;
 		IXGBE_WRITE_REG(&adapter->hw, IXGBE_FCTRL, rctl);
 	}
+	ETHER_UNLOCK(ec);
 } /* ixgbe_set_promisc */
 
 /************************************************************************
@@ -4355,14 +4331,14 @@ ixgbe_set_multi(struct adapter *adapter)
 	mta = adapter->mta;
 	bzero(mta, sizeof(*mta) * MAX_NUM_MULTICAST_ADDRESSES);
 
-	ifp->if_flags &= ~IFF_ALLMULTI;
 	ETHER_LOCK(ec);
+	ec->ec_flags &= ~ETHER_F_ALLMULTI;
 	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if ((mcnt == MAX_NUM_MULTICAST_ADDRESSES) ||
 		    (memcmp(enm->enm_addrlo, enm->enm_addrhi,
 			ETHER_ADDR_LEN) != 0)) {
-			ifp->if_flags |= IFF_ALLMULTI;
+			ec->ec_flags |= ETHER_F_ALLMULTI;
 			break;
 		}
 		bcopy(enm->enm_addrlo,
@@ -4371,15 +4347,15 @@ ixgbe_set_multi(struct adapter *adapter)
 		mcnt++;
 		ETHER_NEXT_MULTI(step, enm);
 	}
-	ETHER_UNLOCK(ec);
 
 	fctrl = IXGBE_READ_REG(&adapter->hw, IXGBE_FCTRL);
 	fctrl &= ~(IXGBE_FCTRL_UPE | IXGBE_FCTRL_MPE);
 	if (ifp->if_flags & IFF_PROMISC)
 		fctrl |= (IXGBE_FCTRL_UPE | IXGBE_FCTRL_MPE);
-	else if (ifp->if_flags & IFF_ALLMULTI) {
+	else if (ec->ec_flags & ETHER_F_ALLMULTI) {
 		fctrl |= IXGBE_FCTRL_MPE;
 	}
+	ETHER_UNLOCK(ec);
 
 	IXGBE_WRITE_REG(&adapter->hw, IXGBE_FCTRL, fctrl);
 
@@ -6164,7 +6140,7 @@ ixgbe_ifflags_cb(struct ethercom *ec)
 
 	if ((change & ~(IFF_CANTCHANGE | IFF_DEBUG)) != 0)
 		rc = ENETRESET;
-	else if ((change & (IFF_PROMISC | IFF_ALLMULTI)) != 0)
+	else if ((change & IFF_PROMISC) != 0)
 		ixgbe_set_promisc(adapter);
 
 	/* Set up VLAN support and filter */

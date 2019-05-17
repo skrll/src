@@ -1,4 +1,4 @@
-# $NetBSD: md.i386,v 1.187 2019/04/03 15:12:44 joerg Exp $
+# $NetBSD: md.i386,v 1.189 2019/05/11 13:41:52 christos Exp $
 ./usr/include/clang-3.4/__wmmintrin_aes.h	comp-obsolete		obsolete
 ./usr/include/clang-3.4/__wmmintrin_pclmul.h	comp-obsolete		obsolete
 ./usr/include/clang-3.4/ammintrin.h		comp-obsolete		obsolete
