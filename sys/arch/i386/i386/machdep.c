@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.818 2019/03/09 08:42:25 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.820 2019/05/19 08:46:15 maxv Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2004, 2006, 2008, 2009, 2017
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.818 2019/03/09 08:42:25 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.820 2019/05/19 08:46:15 maxv Exp $");
 
 #include "opt_beep.h"
 #include "opt_compat_freebsd.h"
@@ -507,28 +507,27 @@ i386_tls_switch(lwp_t *l)
 {
 	struct cpu_info *ci = curcpu();
 	struct pcb *pcb = lwp_getpcb(l);
+
 	/*
-         * Raise the IPL to IPL_HIGH.
+	 * Raise the IPL to IPL_HIGH.
 	 * FPU IPIs can alter the LWP's saved cr0.  Dropping the priority
 	 * is deferred until mi_switch(), when cpu_switchto() returns.
 	 */
 	(void)splhigh();
 
-        /*
+	/*
 	 * If our floating point registers are on a different CPU,
 	 * set CR0_TS so we'll trap rather than reuse bogus state.
 	 */
-
 	if (l != ci->ci_fpcurlwp) {
 		HYPERVISOR_fpu_taskswitch(1);
 	}
 
 	/* Update TLS segment pointers */
 	update_descriptor(&ci->ci_gdt[GUFS_SEL],
-			  (union descriptor *) &pcb->pcb_fsd);
+	    (union descriptor *)&pcb->pcb_fsd);
 	update_descriptor(&ci->ci_gdt[GUGS_SEL],
-			  (union descriptor *) &pcb->pcb_gsd);
-
+	    (union descriptor *)&pcb->pcb_gsd);
 }
 #endif /* XENPV */
 
@@ -667,7 +666,7 @@ buildcontext(struct lwp *l, int sel, void *catcher, void *fp)
 	tf->tf_ss = GSEL(GUDATA_SEL, SEL_UPL);
 
 	/* Ensure FP state is reset. */
-	fpu_save_area_reset(l);
+	fpu_sigreset(l);
 }
 
 void
@@ -866,7 +865,7 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 	pmap_ldt_cleanup(l);
 #endif
 
-	fpu_save_area_clear(l, pack->ep_osversion >= 699002600
+	fpu_clear(l, pack->ep_osversion >= 699002600
 	    ? __INITIAL_NPXCW__ : __NetBSD_COMPAT_NPXCW__);
 
 	memcpy(&pcb->pcb_fsd, &gdtstore[GUDATA_SEL], sizeof(pcb->pcb_fsd));
