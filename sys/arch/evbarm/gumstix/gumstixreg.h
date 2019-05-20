@@ -1,4 +1,4 @@
-/*	$NetBSD: gumstixreg.h,v 1.9 2016/10/15 16:30:46 kiyohara Exp $  */
+/*	$NetBSD: gumstixreg.h,v 1.10 2019/05/18 08:49:24 skrll Exp $  */
 /*
  * Copyright (C) 2005, 2006 WIDE Project and SOUM Corporation.
  * All rights reserved.

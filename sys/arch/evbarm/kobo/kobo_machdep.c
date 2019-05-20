@@ -1,4 +1,4 @@
-/*	$NetBSD: kobo_machdep.c,v 1.5 2018/09/21 12:04:09 skrll Exp $	*/
+/*	$NetBSD: kobo_machdep.c,v 1.6 2019/05/18 08:49:24 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003, 2005, 2010  Genetec Corporation.
@@ -102,7 +102,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kobo_machdep.c,v 1.5 2018/09/21 12:04:09 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kobo_machdep.c,v 1.6 2019/05/18 08:49:24 skrll Exp $");
 
 #include "opt_evbarm_boardtype.h"
 #include "opt_arm_debug.h"

@@ -1,5 +1,5 @@
 #
-#	$NetBSD: OMAP5EVM,v 1.15 2018/10/23 19:58:52 jdolecek Exp $
+#	$NetBSD: OMAP5EVM,v 1.16 2019/05/18 08:49:23 skrll Exp $
 #
 #	PANDABOARD -- TI OMAP 4430 Eval Board Kernel
 #

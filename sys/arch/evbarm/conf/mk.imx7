@@ -1,4 +1,4 @@
-#	$NetBSD: mk.imx7,v 1.1 2016/05/17 06:44:46 ryo Exp $
+#	$NetBSD: mk.imx7,v 1.2 2019/05/18 08:49:23 skrll Exp $
 
 SYSTEM_FIRST_OBJ=	armv6_start.o
 SYSTEM_FIRST_SFILE=	${ARM}/arm/armv6_start.S

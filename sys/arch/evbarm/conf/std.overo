@@ -1,4 +1,4 @@
-#	$NetBSD: std.overo,v 1.10 2018/10/15 16:54:54 skrll Exp $
+#	$NetBSD: std.overo,v 1.11 2019/05/18 08:49:23 skrll Exp $
 #
 # standard NetBSD/evbarm for OVERO options
 

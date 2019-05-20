@@ -1,4 +1,4 @@
-/* $NetBSD: omap2_reg.h,v 1.34 2016/10/04 16:03:39 kiyohara Exp $ */
+/* $NetBSD: omap2_reg.h,v 1.35 2019/05/18 08:49:23 skrll Exp $ */
 
 /*
  * Copyright (c) 2007 Microsoft

@@ -1,4 +1,4 @@
-/*	$NetBSD: gumstix_start.S,v 1.15 2017/01/02 21:46:59 skrll Exp $ */
+/*	$NetBSD: gumstix_start.S,v 1.16 2019/05/18 08:49:24 skrll Exp $ */
 /*
  * Copyright (C) 2005, 2006 WIDE Project and SOUM Corporation.
  * All rights reserved.
@@ -68,7 +68,7 @@
 #include "assym.h"
 
 
-RCSID("$NetBSD: gumstix_start.S,v 1.15 2017/01/02 21:46:59 skrll Exp $")
+RCSID("$NetBSD: gumstix_start.S,v 1.16 2019/05/18 08:49:24 skrll Exp $")
 
 /*
  * CPWAIT -- Canonical method to wait for CP15 update.

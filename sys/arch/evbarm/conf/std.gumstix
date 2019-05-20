@@ -1,4 +1,4 @@
-#	$NetBSD: std.gumstix,v 1.10 2018/10/07 07:48:44 skrll Exp $
+#	$NetBSD: std.gumstix,v 1.11 2019/05/18 08:49:23 skrll Exp $
 #
 # standard NetBSD/evbarm for GUMSTIX options
 
