@@ -1,4 +1,4 @@
-/*	$NetBSD: qe.c,v 1.71 2019/02/05 06:17:03 msaitoh Exp $	*/
+/*	$NetBSD: qe.c,v 1.75 2019/05/29 10:07:30 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: qe.c,v 1.71 2019/02/05 06:17:03 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: qe.c,v 1.75 2019/05/29 10:07:30 msaitoh Exp $");
 
 #define QEDEBUG
 
@@ -262,8 +262,8 @@ qeattach(device_t parent, device_t self, void *aux)
 
 	/* Map DMA buffer in CPU addressable space */
 	if ((error = bus_dmamem_map(dmatag, &seg, rseg, size,
-			            &sc->sc_rb.rb_membase,
-			            BUS_DMA_NOWAIT|BUS_DMA_COHERENT)) != 0) {
+				    &sc->sc_rb.rb_membase,
+				    BUS_DMA_NOWAIT | BUS_DMA_COHERENT)) != 0) {
 		aprint_error_dev(self, "DMA buffer map error %d\n",
 			error);
 		bus_dmamem_free(dmatag, &seg, rseg);
@@ -283,17 +283,18 @@ qeattach(device_t parent, device_t self, void *aux)
 	sc->sc_rb.rb_dmabase = sc->sc_dmamap->dm_segs[0].ds_addr;
 
 	/* Initialize media properties */
+	sc->sc_ethercom.ec_ifmedia = &sc->sc_ifmedia;
 	ifmedia_init(&sc->sc_ifmedia, 0, qe_ifmedia_upd, qe_ifmedia_sts);
 	ifmedia_add(&sc->sc_ifmedia,
-		    IFM_MAKEWORD(IFM_ETHER,IFM_10_T,0,0),
+		    IFM_MAKEWORD(IFM_ETHER, IFM_10_T, 0, 0),
 		    0, NULL);
 	ifmedia_add(&sc->sc_ifmedia,
-		    IFM_MAKEWORD(IFM_ETHER,IFM_10_5,0,0),
+		    IFM_MAKEWORD(IFM_ETHER, IFM_10_5, 0, 0),
 		    0, NULL);
 	ifmedia_add(&sc->sc_ifmedia,
-		    IFM_MAKEWORD(IFM_ETHER,IFM_AUTO,0,0),
+		    IFM_MAKEWORD(IFM_ETHER, IFM_AUTO, 0, 0),
 		    0, NULL);
-	ifmedia_set(&sc->sc_ifmedia, IFM_ETHER|IFM_AUTO);
+	ifmedia_set(&sc->sc_ifmedia, IFM_ETHER | IFM_AUTO);
 
 	memcpy(ifp->if_xname, device_xname(self), IFNAMSIZ);
 	ifp->if_softc = sc;
@@ -872,7 +873,6 @@ qeioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct qe_softc *sc = ifp->if_softc;
 	struct ifaddr *ifa = data;
-	struct ifreq *ifr = data;
 	int s, error = 0;
 
 	s = splnet();
@@ -896,7 +896,7 @@ qeioctl(struct ifnet *ifp, u_long cmd, void *data)
 		if ((error = ifioctl_common(ifp, cmd, data)) != 0)
 			break;
 		/* XXX re-use ether_ioctl() */
-		switch (ifp->if_flags & (IFF_UP|IFF_RUNNING)) {
+		switch (ifp->if_flags & (IFF_UP | IFF_RUNNING)) {
 		case IFF_RUNNING:
 			/*
 			 * If interface is marked down and it is running, then
@@ -937,11 +937,6 @@ qeioctl(struct ifnet *ifp, u_long cmd, void *data)
 				qe_mcreset(sc);
 			error = 0;
 		}
-		break;
-
-	case SIOCGIFMEDIA:
-	case SIOCSIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &sc->sc_ifmedia, cmd);
 		break;
 
 	default:
@@ -1092,6 +1087,7 @@ qe_mcreset(struct qe_softc *sc)
 
 	hash[3] = hash[2] = hash[1] = hash[0] = 0;
 
+	ETHER_LOCK(ec);
 	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi,
@@ -1119,6 +1115,7 @@ qe_mcreset(struct qe_softc *sc)
 		hash[crc >> 4] |= 1 << (crc & 0xf);
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 
 	/* We need to byte-swap the hash before writing to the chip. */
 	for (i = 0; i < 7; i += 2) {

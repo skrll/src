@@ -1,4 +1,4 @@
-/*	$NetBSD: i82586.c,v 1.81 2019/04/26 06:33:33 msaitoh Exp $	*/
+/*	$NetBSD: i82586.c,v 1.85 2019/05/29 10:07:29 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -137,7 +137,7 @@ Mode of operation:
 */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i82586.c,v 1.81 2019/04/26 06:33:33 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i82586.c,v 1.85 2019/05/29 10:07:29 msaitoh Exp $");
 
 
 #include <sys/param.h>
@@ -200,7 +200,7 @@ static int	i82586_start_cmd(struct ie_softc *, int, int, int, int);
 static int	i82586_cmd_wait(struct ie_softc *);
 
 #if I82586_DEBUG
-void 		print_rbd(struct ie_softc *, int);
+void		print_rbd(struct ie_softc *, int);
 #endif
 
 static char* padbuf = NULL;
@@ -245,6 +245,7 @@ i82586_attach(struct ie_softc *sc, const char *name, uint8_t *etheraddr,
 	IFQ_SET_READY(&ifp->if_snd);
 
 	/* Initialize media goo. */
+	sc->sc_ethercom.ec_ifmedia = &sc->sc_media;
 	ifmedia_init(&sc->sc_media, 0, i82586_mediachange, i82586_mediastatus);
 	if (media != NULL) {
 		for (i = 0; i < nmedia; i++)
@@ -963,7 +964,7 @@ ieget(struct ie_softc *sc, int head, int totlen)
 		len = uimin(thisrblen, thismblen);
 
 		(sc->memcopyin)(sc, mtod(m, char *) + thismboff,
-				IE_RBUF_ADDR(sc,head) + thisrboff,
+				IE_RBUF_ADDR(sc, head) + thisrboff,
 				(u_int)len);
 		resid -= len;
 
@@ -1102,7 +1103,7 @@ iexmit(struct ie_softc *sc)
 			i82586_start_transceiver(sc);
 		}
 	} else {
-		sc->ie_bus_write16(sc, IE_CMD_XMIT_LINK(sc->xmit_cmds,cur),
+		sc->ie_bus_write16(sc, IE_CMD_XMIT_LINK(sc->xmit_cmds, cur),
 				       0xffff);
 
 		sc->ie_bus_write16(sc, IE_CMD_XMIT_CMD(sc->xmit_cmds, cur),
@@ -1415,18 +1416,18 @@ i82586_setup_bufs(struct ie_softc *sc)
 		int m = (n == sc->nframes - 1) ? 0 : n + 1;
 
 		/* Clear status */
-		sc->ie_bus_write16(sc, IE_RFRAME_STATUS(sc->rframes,n), 0);
+		sc->ie_bus_write16(sc, IE_RFRAME_STATUS(sc->rframes, n), 0);
 
 		/* RBD link = NULL */
-		sc->ie_bus_write16(sc, IE_RFRAME_BUFDESC(sc->rframes,n),
+		sc->ie_bus_write16(sc, IE_RFRAME_BUFDESC(sc->rframes, n),
 				       0xffff);
 
 		/* Make a circular list */
-		sc->ie_bus_write16(sc, IE_RFRAME_NEXT(sc->rframes,n),
-				       IE_RFRAME_ADDR(sc->rframes,m));
+		sc->ie_bus_write16(sc, IE_RFRAME_NEXT(sc->rframes, n),
+				       IE_RFRAME_ADDR(sc->rframes, m));
 
 		/* Mark last as EOL */
-		sc->ie_bus_write16(sc, IE_RFRAME_LAST(sc->rframes,n),
+		sc->ie_bus_write16(sc, IE_RFRAME_LAST(sc->rframes, n),
 				       ((m==0)? (IE_FD_EOL | IE_FD_SUSP) : 0));
 	}
 
@@ -1437,16 +1438,16 @@ i82586_setup_bufs(struct ie_softc *sc)
 		int m = (n == sc->nrxbuf - 1) ? 0 : n + 1;
 
 		/* Clear status */
-		sc->ie_bus_write16(sc, IE_RBD_STATUS(sc->rbds,n), 0);
+		sc->ie_bus_write16(sc, IE_RBD_STATUS(sc->rbds, n), 0);
 
 		/* Make a circular list */
-		sc->ie_bus_write16(sc, IE_RBD_NEXT(sc->rbds,n),
-				       IE_RBD_ADDR(sc->rbds,m));
+		sc->ie_bus_write16(sc, IE_RBD_NEXT(sc->rbds, n),
+				       IE_RBD_ADDR(sc->rbds, m));
 
 		/* Link to data buffers */
 		sc->ie_bus_write24(sc, IE_RBD_BUFADDR(sc->rbds, n),
 				       IE_RBUF_ADDR(sc, n));
-		sc->ie_bus_write16(sc, IE_RBD_BUFLEN(sc->rbds,n),
+		sc->ie_bus_write16(sc, IE_RBD_BUFLEN(sc->rbds, n),
 				       IE_RBUF_SIZE | ((m==0)?IE_RBD_EOL:0));
 	}
 
@@ -1681,11 +1682,11 @@ i82586_start_transceiver(struct ie_softc *sc)
 	/*
 	 * Start RU at current position in frame & RBD lists.
 	 */
-	sc->ie_bus_write16(sc, IE_RFRAME_BUFDESC(sc->rframes,sc->rfhead),
+	sc->ie_bus_write16(sc, IE_RFRAME_BUFDESC(sc->rframes, sc->rfhead),
 			       IE_RBD_ADDR(sc->rbds, sc->rbhead));
 
 	sc->ie_bus_write16(sc, IE_SCB_RCVLST(sc->scb),
-			       IE_RFRAME_ADDR(sc->rframes,sc->rfhead));
+			       IE_RFRAME_ADDR(sc->rframes, sc->rfhead));
 
 	if (sc->do_xmitnopchain) {
 		/* Stop transmit command chain */
@@ -1725,15 +1726,10 @@ int
 i82586_ioctl(struct ifnet *ifp, unsigned long cmd, void *data)
 {
 	struct ie_softc *sc = ifp->if_softc;
-	struct ifreq *ifr = (struct ifreq *)data;
 	int s, error = 0;
 
 	s = splnet();
-	switch(cmd) {
-	case SIOCGIFMEDIA:
-	case SIOCSIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
-		break;
+	switch (cmd) {
 	default:
 		error = ether_ioctl(ifp, cmd, data);
 		if (error == ENETRESET) {
@@ -1758,6 +1754,7 @@ i82586_ioctl(struct ifnet *ifp, unsigned long cmd, void *data)
 static void
 ie_mc_reset(struct ie_softc *sc)
 {
+	struct ethercom *ec = &sc->sc_ethercom;
 	struct ether_multi *enm;
 	struct ether_multistep step;
 	int size;
@@ -1768,18 +1765,20 @@ ie_mc_reset(struct ie_softc *sc)
 again:
 	size = 0;
 	sc->mcast_count = 0;
-	ETHER_FIRST_MULTI(step, &sc->sc_ethercom, enm);
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm) {
 		size += 6;
 		if (sc->mcast_count >= IE_MAXMCAST ||
 		    memcmp(enm->enm_addrlo, enm->enm_addrhi, 6) != 0) {
-			sc->sc_ethercom.ec_if.if_flags |= IFF_ALLMULTI;
-			i82586_ioctl(&sc->sc_ethercom.ec_if,
-				     SIOCSIFFLAGS, NULL);
+			ec->ec_if.if_flags |= IFF_ALLMULTI;
+			i82586_ioctl(&ec->ec_if, SIOCSIFFLAGS, NULL);
+			ETHER_UNLOCK(ec);
 			return;
 		}
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 
 	if (size > sc->mcast_addrs_size) {
 		/* Need to allocate more space */
@@ -1793,15 +1792,19 @@ again:
 	/*
 	 * We've got the space; now copy the addresses
 	 */
-	ETHER_FIRST_MULTI(step, &sc->sc_ethercom, enm);
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm) {
-		if (sc->mcast_count >= IE_MAXMCAST)
+		if (sc->mcast_count >= IE_MAXMCAST) {
+			ETHER_UNLOCK(ec);
 			goto again; /* Just in case */
+		}
 
 		memcpy(&sc->mcast_addrs[sc->mcast_count], enm->enm_addrlo, 6);
 		sc->mcast_count++;
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 	sc->want_mcsetup = 1;
 }
 
@@ -1836,10 +1839,10 @@ print_rbd(struct ie_softc *sc, int n)
 {
 
 	printf("RBD at %08x:\n	status %04x, next %04x, buffer %lx\n"
-		"length/EOL %04x\n", IE_RBD_ADDR(sc->rbds,n),
-		sc->ie_bus_read16(sc, IE_RBD_STATUS(sc->rbds,n)),
-		sc->ie_bus_read16(sc, IE_RBD_NEXT(sc->rbds,n)),
+		"length/EOL %04x\n", IE_RBD_ADDR(sc->rbds, n),
+		sc->ie_bus_read16(sc, IE_RBD_STATUS(sc->rbds, n)),
+		sc->ie_bus_read16(sc, IE_RBD_NEXT(sc->rbds, n)),
 		(u_long)0,/*bus_space_read_4(sc->bt, sc->bh, IE_RBD_BUFADDR(sc->rbds,n)),-* XXX */
-		sc->ie_bus_read16(sc, IE_RBD_BUFLEN(sc->rbds,n)));
+		sc->ie_bus_read16(sc, IE_RBD_BUFLEN(sc->rbds, n)));
 }
 #endif

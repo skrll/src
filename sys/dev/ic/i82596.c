@@ -1,4 +1,4 @@
-/* $NetBSD: i82596.c,v 1.40 2019/04/26 06:33:34 msaitoh Exp $ */
+/* $NetBSD: i82596.c,v 1.42 2019/05/29 10:07:29 msaitoh Exp $ */
 
 /*
  * Copyright (c) 2003 Jochen Kunz.
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i82596.c,v 1.40 2019/04/26 06:33:34 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i82596.c,v 1.42 2019/05/29 10:07:29 msaitoh Exp $");
 
 /* autoconfig and device stuff */
 #include <sys/param.h>
@@ -466,7 +466,8 @@ void
 iee_cb_setup(struct iee_softc *sc, uint32_t cmd)
 {
 	struct iee_cb *cb = SC_CB(sc, sc->sc_next_cb);
-	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
+	struct ethercom *ec = &sc->sc_ethercom;
+	struct ifnet *ifp = &ec->ec_if;
 	struct ether_multistep step;
 	struct ether_multi *enm;
 
@@ -499,7 +500,8 @@ iee_cb_setup(struct iee_softc *sc, uint32_t cmd)
 		cb = SC_CB(sc, sc->sc_next_cb + 1);
 		cb->cb_cmd = cmd;
 		cb->cb_mcast.mc_size = 0;
-		ETHER_FIRST_MULTI(step, &sc->sc_ethercom, enm);
+		ETHER_LOCK(ec);
+		ETHER_FIRST_MULTI(step, ec, enm);
 		while (enm != NULL) {
 			if (memcmp(enm->enm_addrlo, enm->enm_addrhi,
 			    ETHER_ADDR_LEN) != 0 || cb->cb_mcast.mc_size
@@ -515,6 +517,7 @@ iee_cb_setup(struct iee_softc *sc, uint32_t cmd)
 			ETHER_NEXT_MULTI(step, enm);
 			cb->cb_mcast.mc_size += ETHER_ADDR_LEN;
 		}
+		ETHER_UNLOCK(ec);
 		if (cb->cb_mcast.mc_size == 0) {
 			/* Can't do exact mcast filtering, do ALLMULTI mode. */
 			ifp->if_flags |= IFF_ALLMULTI;
@@ -643,6 +646,8 @@ iee_attach(struct iee_softc *sc, uint8_t *eth_addr, int *media, int nmedia,
 	bus_dmamap_sync(sc->sc_dmat, sc->sc_shmem_map, 0, sc->sc_shmem_sz,
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
+	/* Initialize ifmedia structures. */
+	sc->sc_ethercom.ec_ifmedia = &sc->sc_ifmedia;
 	ifmedia_init(&sc->sc_ifmedia, 0, iee_mediachange, iee_mediastatus);
 	if (media != NULL) {
 		for (n = 0 ; n < nmedia ; n++)
@@ -830,12 +835,6 @@ iee_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 
 	s = splnet();
 	switch (cmd) {
-	case SIOCSIFMEDIA:
-	case SIOCGIFMEDIA:
-		err = ifmedia_ioctl(ifp, (struct ifreq *)data,
-		    &sc->sc_ifmedia, cmd);
-		break;
-
 	default:
 		err = ether_ioctl(ifp, cmd, data);
 		if (err == ENETRESET) {

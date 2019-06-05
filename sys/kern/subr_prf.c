@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_prf.c,v 1.176 2019/01/14 19:21:54 jdolecek Exp $	*/
+/*	$NetBSD: subr_prf.c,v 1.181 2019/05/21 04:57:02 christos Exp $	*/
 
 /*-
  * Copyright (c) 1986, 1988, 1991, 1993
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_prf.c,v 1.176 2019/01/14 19:21:54 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_prf.c,v 1.181 2019/05/21 04:57:02 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -67,6 +67,7 @@ __KERNEL_RCSID(0, "$NetBSD: subr_prf.c,v 1.176 2019/01/14 19:21:54 jdolecek Exp 
 #include <sys/cpu.h>
 #include <sys/sha2.h>
 #include <sys/rndsource.h>
+#include <sys/kmem.h>
 
 #include <dev/cons.h>
 
@@ -1179,6 +1180,19 @@ vsnprintf(char *bf, size_t size, const char *fmt, va_list ap)
 			bf[retval] = '\0';
 	}
 	return retval;
+}
+
+int
+vasprintf(char **bf, const char *fmt, va_list ap)
+{
+	int retval;
+	va_list cap;
+
+	va_copy(cap, ap);
+	retval = kprintf(fmt, TOBUFONLY, NULL, NULL, cap) + 1;
+	va_end(cap);
+	*bf = kmem_alloc(retval, KM_SLEEP);
+	return vsnprintf(*bf, retval, fmt, ap);
 }
 
 /*

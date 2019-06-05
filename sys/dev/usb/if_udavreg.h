@@ -199,6 +199,8 @@ struct udav_softc {
 	int			sc_dying;
 	int                     sc_refcnt;
 
+	int			sc_if_flags;
+
 	struct usb_task		sc_tick_task;
 	struct usb_task		sc_stop_task;
 

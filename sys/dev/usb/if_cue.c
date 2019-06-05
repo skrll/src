@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cue.c,v 1.81 2019/05/05 03:17:54 mrg Exp $	*/
+/*	$NetBSD: if_cue.c,v 1.84 2019/05/28 07:41:50 msaitoh Exp $	*/
 /*
  * Copyright (c) 1997, 1998, 1999, 2000
  *	Bill Paul <wpaul@ee.columbia.edu>.  All rights reserved.
@@ -56,7 +56,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_cue.c,v 1.81 2019/05/05 03:17:54 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cue.c,v 1.84 2019/05/28 07:41:50 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -94,11 +94,11 @@ __KERNEL_RCSID(0, "$NetBSD: if_cue.c,v 1.81 2019/05/05 03:17:54 mrg Exp $");
 
 #ifdef CUE_DEBUG
 #define DPRINTF(x)	if (cuedebug) printf x
-#define DPRINTFN(n,x)	if (cuedebug >= (n)) printf x
+#define DPRINTFN(n, x)	if (cuedebug >= (n)) printf x
 int	cuedebug = 0;
 #else
 #define DPRINTF(x)
-#define DPRINTFN(n,x)
+#define DPRINTFN(n, x)
 #endif
 
 /*
@@ -363,6 +363,7 @@ cue_crc(const char *addr)
 Static void
 cue_setmulti(struct cue_softc *sc)
 {
+	struct ethercom		*ec = &sc->cue_ec;
 	struct ifnet		*ifp;
 	struct ether_multi	*enm;
 	struct ether_multistep	step;
@@ -388,16 +389,20 @@ allmulti:
 		sc->cue_mctab[i] = 0;
 
 	/* now program new ones */
-	ETHER_FIRST_MULTI(step, &sc->cue_ec, enm);
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo,
-		    enm->enm_addrhi, ETHER_ADDR_LEN) != 0)
+		    enm->enm_addrhi, ETHER_ADDR_LEN) != 0) {
+			ETHER_UNLOCK(ec);
 			goto allmulti;
+		}
 
 		h = cue_crc(enm->enm_addrlo);
 		sc->cue_mctab[h >> 3] |= 1 << (h & 0x7);
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 
 	ifp->if_flags &= ~IFF_ALLMULTI;
 
@@ -1148,7 +1153,7 @@ fail:
 Static int
 cue_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
-	struct cue_softc const *sc = ifp->if_softc;
+	struct cue_softc *sc = ifp->if_softc;
 
 	if (sc->cue_dying)
 		return EIO;
@@ -1159,23 +1164,20 @@ cue_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		error = 0;
 		if (cmd == SIOCADDMULTI || cmd == SIOCDELMULTI) {
 			if (ifp->if_flags & IFF_RUNNING) {
-				mutex_enter(&sc->sc_lock);
-				smsc_setmulti(sc);
-				mutex_exit(&sc->sc_lock);
+				mutex_enter(&sc->cue_lock);
+				cue_setmulti(sc);
+				mutex_exit(&sc->cue_lock);
 			}
 		}
 	}
 
-	mutex_enter(&sc->sc_rxlock);
-	mutex_enter(&sc->sc_txlock);
-	sc->sc_if_flags = ifp->if_flags;
-	mutex_exit(&sc->sc_txlock);
-	mutex_exit(&sc->sc_rxlock);
+	mutex_enter(&sc->cue_rxlock);
+	mutex_enter(&sc->cue_txlock);
+	sc->cue_if_flags = ifp->if_flags;
+	mutex_exit(&sc->cue_txlock);
+	mutex_exit(&sc->cue_rxlock);
 
-XXX
-	s = splnet();
 	error = ether_ioctl(ifp, cmd, data);
-	splx(s);
 
 	if (error == ENETRESET) {
 		error = 0;

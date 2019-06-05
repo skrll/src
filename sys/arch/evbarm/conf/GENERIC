@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC,v 1.31 2019/04/28 19:26:48 jmcneill Exp $
+#	$NetBSD: GENERIC,v 1.35 2019/05/28 21:56:24 jmcneill Exp $
 #
 #	GENERIC ARM (aarch32) kernel
 #
@@ -17,6 +17,7 @@ makeoptions	DTSGNUARCH="arm arm64"
 makeoptions	DTSSUBDIR="allwinner broadcom nvidia rockchip socfpga"
 makeoptions	DTS="
 	bcm2836-rpi-2-b.dts
+	bcm2837-rpi-3-a-plus.dts
 	bcm2837-rpi-3-b.dts
 	bcm2837-rpi-3-b-plus.dts
 	bcm2837-rpi-cm3-io3.dts
@@ -120,6 +121,7 @@ makeoptions	DTS="
 	sun8i-h3-bananapi-m2-plus.dts
 	sun8i-h3-beelink-x2.dts
 	sun8i-h3-libretech-all-h3-cc.dts
+	sun8i-h3-mapleboard-mp130.dts
 	sun8i-h3-nanopi-m1-plus.dts
 	sun8i-h3-nanopi-m1.dts
 	sun8i-h3-nanopi-neo.dts
@@ -249,7 +251,10 @@ sun9ia80ccu*	at fdt? pass 2		# Allwinner A80 CCU
 sunxiresets*	at fdt? pass 1		# Allwinner Misc. clock resets
 sunxigates*	at fdt? pass 1		# Allwinner Misc. clock gates
 sunxigmacclk*	at fdt? pass 2		# Allwinner GMAC MII/RGMII clock mux
+sun8iapbclk*	at fdt? pass 2		# Allwinner A23 APB0
+sun9icpusclk*	at fdt? pass 2		# Allwinner A80 CPUS
 sun9immcclk*	at fdt? pass 2		# Allwinner A80 SD/MMC-COMM
+sun9iusbclk*	at fdt? pass 2		# Allwinner A80 USB HCI
 tegra124car*	at fdt? pass 3		# NVIDIA Tegra CAR (T124)
 tegra210car*	at fdt? pass 3		# NVIDIA Tegra CAR (T210)
 
@@ -410,6 +415,7 @@ plcom*		at fdt?			# ARM PL011 UART
 mesonuart*	at fdt?			# Amlogic Meson UART
 
 # I2C controllers
+options 	I2C_MAX_ADDR=0xfff
 bsciic*		at fdt?			# Broadcom BCM283x Serial Control
 exyoi2c*	at fdt?			# Samsung Exynos I2C
 sunxirsb*	at fdt? pass 4		# Allwinner RSB
@@ -418,6 +424,7 @@ tegrai2c*	at fdt? pass 4		# NVIDIA Tegra I2C
 iic*		at i2cbus?
 
 # I2C devices
+ac100ic*	at iic?			# AC100 integrated audio codec and RTC
 as3722pmic*	at iic?
 as3722reg*	at as3722pmic?
 axp20x*		at iic?			# AXP209 Power Management IC
@@ -579,6 +586,7 @@ tegrasoctherm*	at fdt?			# NVIDIA Tegra SOC_THERM
 exusbphy*	at fdt? pass 9		# Samsung Exynos USB2 PHY
 exusbdrdphy*	at fdt? pass 9		# Samsung Exynos USB3 DRD PHY
 mesonusbphy*	at fdt? pass 9		# Amlogic Meson USB2 PHY
+sun9iusbphy*	at fdt? pass 9		# Allwinner A80 USB PHY
 sunxiusbphy*	at fdt? pass 9		# Allwinner USB PHY
 sunxiusb3phy*	at fdt? pass 9		# Allwinner USB3 PHY
 tegrausbphy*	at fdt?			# NVIDIA Tegra USB PHY

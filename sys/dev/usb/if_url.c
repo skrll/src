@@ -1,4 +1,4 @@
-/*	$NetBSD: if_url.c,v 1.63 2019/05/05 03:17:54 mrg Exp $	*/
+/*	$NetBSD: if_url.c,v 1.65 2019/05/28 07:41:50 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002
@@ -44,7 +44,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_url.c,v 1.63 2019/05/05 03:17:54 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_url.c,v 1.65 2019/05/28 07:41:50 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -130,11 +130,11 @@ Static int url_mem(struct url_softc *, int, int, void *, int);
 /* Macros */
 #ifdef URL_DEBUG
 #define DPRINTF(x)	if (urldebug) printf x
-#define DPRINTFN(n,x)	if (urldebug >= (n)) printf x
+#define DPRINTFN(n, x)	if (urldebug >= (n)) printf x
 int urldebug = 0;
 #else
 #define DPRINTF(x)
-#define DPRINTFN(n,x)
+#define DPRINTFN(n, x)
 #endif
 
 #define	URL_SETBIT(sc, reg, x)	\
@@ -553,9 +553,9 @@ url_init(struct ifnet *ifp)
 
 	/* If we want promiscuous mode, accept all physical frames. */
 	if (ifp->if_flags & IFF_PROMISC)
-		URL_SETBIT2(sc, URL_RCR, URL_RCR_AAM|URL_RCR_AAP);
+		URL_SETBIT2(sc, URL_RCR, URL_RCR_AAM | URL_RCR_AAP);
 	else
-		URL_CLRBIT2(sc, URL_RCR, URL_RCR_AAM|URL_RCR_AAP);
+		URL_CLRBIT2(sc, URL_RCR, URL_RCR_AAM | URL_RCR_AAP);
 
 
 	/* Load the multicast filter */
@@ -654,6 +654,7 @@ url_activate(device_t self, enum devact act)
 Static void
 url_setmulti(struct url_softc *sc)
 {
+	struct ethercom *ec = &sc->sc_ec;
 	struct ifnet *ifp;
 	struct ether_multi *enm;
 	struct ether_multistep step;
@@ -669,10 +670,10 @@ url_setmulti(struct url_softc *sc)
 	ifp = GET_IFP(sc);
 
 	if (ifp->if_flags & IFF_PROMISC) {
-		URL_SETBIT2(sc, URL_RCR, URL_RCR_AAM|URL_RCR_AAP);
+		URL_SETBIT2(sc, URL_RCR, URL_RCR_AAM | URL_RCR_AAP);
 		return;
 	} else if (ifp->if_flags & IFF_ALLMULTI) {
-	allmulti:
+allmulti:
 		ifp->if_flags |= IFF_ALLMULTI;
 		URL_SETBIT2(sc, URL_RCR, URL_RCR_AAM);
 		URL_CLRBIT2(sc, URL_RCR, URL_RCR_AAP);
@@ -684,11 +685,14 @@ url_setmulti(struct url_softc *sc)
 	url_csr_write_4(sc, URL_MAR4, 0);
 
 	/* now program new ones */
-	ETHER_FIRST_MULTI(step, &sc->sc_ec, enm);
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi,
-			   ETHER_ADDR_LEN) != 0)
+		    ETHER_ADDR_LEN) != 0) {
+			ETHER_UNLOCK(ec);
 			goto allmulti;
+		}
 
 		h = url_calchash(enm->enm_addrlo);
 		if (h < 32)
@@ -698,12 +702,13 @@ url_setmulti(struct url_softc *sc)
 		mcnt++;
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 
 	ifp->if_flags &= ~IFF_ALLMULTI;
 
-	URL_CLRBIT2(sc, URL_RCR, URL_RCR_AAM|URL_RCR_AAP);
+	URL_CLRBIT2(sc, URL_RCR, URL_RCR_AAM | URL_RCR_AAP);
 
-	if (mcnt){
+	if (mcnt) {
 		URL_SETBIT2(sc, URL_RCR, URL_RCR_AM);
 	} else {
 		URL_CLRBIT2(sc, URL_RCR, URL_RCR_AM);
@@ -913,7 +918,7 @@ url_send(struct url_softc *sc, struct mbuf *m, int idx)
 		    URL_MIN_FRAME_LEN - total_len);
 		total_len = URL_MIN_FRAME_LEN;
 	}
-	usbd_setup_xfer(c->url_xfer,c, c->url_buf, total_len,
+	usbd_setup_xfer(c->url_xfer, c, c->url_buf, total_len,
 	    USBD_FORCE_SHORT_XFER, URL_TX_TIMEOUT, url_txeof);
 
 	/* Transmit */
@@ -1087,21 +1092,11 @@ Static int
 url_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct url_softc *sc = ifp->if_softc;
-	int s, error = 0;
 
 	DPRINTF(("%s: %s: enter\n", device_xname(sc->sc_dev), __func__));
 
 	if (sc->sc_dying)
 		return EIO;
-
-	s = splnet();
-
-	error = ether_ioctl(ifp, cmd, data);
-	if (error == ENETRESET) {
-		if (ifp->if_flags & IFF_RUNNING)
-			url_setmulti(sc);
-		error = 0;
-	}
 
 	int error = ether_ioctl(ifp, cmd, data);
 
@@ -1110,7 +1105,7 @@ url_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		if (cmd == SIOCADDMULTI || cmd == SIOCDELMULTI) {
 			if (ifp->if_flags & IFF_RUNNING) {
 				mutex_enter(&sc->sc_lock);
-				smsc_setmulti(sc);
+				url_setmulti(sc);
 				mutex_exit(&sc->sc_lock);
 			}
 		}
@@ -1121,7 +1116,6 @@ url_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	sc->sc_if_flags = ifp->if_flags;
 	mutex_exit(&sc->sc_txlock);
 	mutex_exit(&sc->sc_rxlock);
-	splx(s);
 
 	return error;
 }

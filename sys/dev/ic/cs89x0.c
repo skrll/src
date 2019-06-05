@@ -1,4 +1,4 @@
-/*	$NetBSD: cs89x0.c,v 1.44 2019/04/26 06:33:33 msaitoh Exp $	*/
+/*	$NetBSD: cs89x0.c,v 1.47 2019/05/29 10:07:29 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2004 Christopher Gilbert
@@ -212,7 +212,7 @@
 */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cs89x0.c,v 1.44 2019/04/26 06:33:33 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cs89x0.c,v 1.47 2019/05/29 10:07:29 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -399,6 +399,7 @@ cs_attach(struct cs_softc *sc, uint8_t *enaddr, int *media,
 	IFQ_SET_READY(&ifp->if_snd);
 
 	/* Initialize ifmedia structures. */
+	sc->sc_ethercom.ec_ifmedia = &sc->sc_media;
 	ifmedia_init(&sc->sc_media, 0, cs_mediachange, cs_mediastatus);
 
 	if (media != NULL) {
@@ -572,17 +573,18 @@ cs_get_default_media(struct cs_softc *sc)
 
 	switch (adp_cfg & ADPTR_CFG_MEDIA) {
 	case ADPTR_CFG_AUI:
-		ifmedia_set(&sc->sc_media, IFM_ETHER|IFM_10_5);
+		ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_10_5);
 		break;
 	case ADPTR_CFG_10BASE2:
-		ifmedia_set(&sc->sc_media, IFM_ETHER|IFM_10_2);
+		ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_10_2);
 		break;
 	case ADPTR_CFG_10BASET:
 	default:
 		if (xmit_ctl & XMIT_CTL_FDX)
-			ifmedia_set(&sc->sc_media, IFM_ETHER|IFM_10_T|IFM_FDX);
+			ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_10_T
+			    | IFM_FDX);
 		else
-			ifmedia_set(&sc->sc_media, IFM_ETHER|IFM_10_T);
+			ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_10_T);
 		break;
 	}
 	return;
@@ -591,7 +593,7 @@ cs_get_default_media(struct cs_softc *sc)
 	aprint_error_dev(sc->sc_dev,
 	    "WARNING: default media setting may be inaccurate\n");
 	/* XXX Arbitrary... */
-	ifmedia_set(&sc->sc_media, IFM_ETHER|IFM_10_T);
+	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_10_T);
 }
 
 /*
@@ -1249,6 +1251,7 @@ cs_set_ladr_filt(struct cs_softc *sc, struct ethercom *ec)
 	 * addresses, in which case we will just accept all packets.
 	 * Justification for this is given in the next comment.
 	 */
+	ETHER_LOCK(ec);
 	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi,
@@ -1279,6 +1282,7 @@ cs_set_ladr_filt(struct cs_softc *sc, struct ethercom *ec)
 			ETHER_NEXT_MULTI(step, enm);
 		}
 	}
+	ETHER_UNLOCK(ec);
 
 	/* Now program the chip with the addresses */
 	CS_WRITE_PACKET_PAGE(sc, PKTPG_LOG_ADDR + 0, af[0]);
@@ -1315,7 +1319,6 @@ int
 cs_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct cs_softc *sc = ifp->if_softc;
-	struct ifreq *ifr = data;
 	int state;
 	int result;
 
@@ -1324,11 +1327,6 @@ cs_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	result = 0;		/* Only set if something goes wrong */
 
 	switch (cmd) {
-	case SIOCGIFMEDIA:
-	case SIOCSIFMEDIA:
-		result = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
-		break;
-
 	default:
 		result = ether_ioctl(ifp, cmd, data);
 		if (result == ENETRESET) {

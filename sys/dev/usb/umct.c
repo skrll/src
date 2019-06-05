@@ -326,6 +326,7 @@ umct_childdet(device_t self, device_t child)
 static void
 umct_close_pipe(struct umct_softc *sc)
 {
+	int err;
 
 	if (sc->sc_intr_pipe != NULL) {
 		err = usbd_abort_pipe(sc->sc_intr_pipe);
@@ -604,7 +605,6 @@ umct_open(void *addr, int portno)
 void
 umct_close(void *addr, int portno)
 {
-	struct umct_softc *sc = addr;
 
 	DPRINTF(("umct_close: close\n"));
 

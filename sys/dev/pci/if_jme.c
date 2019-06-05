@@ -1,4 +1,4 @@
-/*	$NetBSD: if_jme.c,v 1.39 2019/04/22 06:35:39 msaitoh Exp $	*/
+/*	$NetBSD: if_jme.c,v 1.43 2019/05/28 07:41:49 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2008 Manuel Bouyer.  All rights reserved.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_jme.c,v 1.39 2019/04/22 06:35:39 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_jme.c,v 1.43 2019/05/28 07:41:49 msaitoh Exp $");
 
 
 #include <sys/param.h>
@@ -112,7 +112,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_jme.c,v 1.39 2019/04/22 06:35:39 msaitoh Exp $");
 #include <dev/mii/miivar.h>
 
 struct jme_product_desc {
-	u_int32_t jme_product;
+	uint32_t jme_product;
 	const char *jme_desc;
 };
 
@@ -128,9 +128,9 @@ struct jme_product_desc {
 struct jme_softc {
 	device_t jme_dev;		/* base device */
 	bus_space_tag_t jme_bt_mac;
-	bus_space_handle_t jme_bh_mac;  /* Mac registers */
+	bus_space_handle_t jme_bh_mac;	/* Mac registers */
 	bus_space_tag_t jme_bt_phy;
-	bus_space_handle_t jme_bh_phy;  /* PHY registers */
+	bus_space_handle_t jme_bh_phy;	/* PHY registers */
 	bus_space_tag_t jme_bt_misc;
 	bus_space_handle_t jme_bh_misc; /* Misc registers */
 	bus_dma_tag_t jme_dmatag;
@@ -152,12 +152,12 @@ struct jme_softc {
 	void* jme_ih;			/* our interrupt */
 	struct ethercom jme_ec;
 	struct callout jme_tick_ch;	/* tick callout */
-	u_int8_t jme_enaddr[ETHER_ADDR_LEN];/* hardware address */
-	u_int8_t jme_phyaddr;		/* address of integrated phy */
-	u_int8_t jme_chip_rev;		/* chip revision */
-	u_int8_t jme_rev;		/* PCI revision */
+	uint8_t jme_enaddr[ETHER_ADDR_LEN];/* hardware address */
+	uint8_t jme_phyaddr;		/* address of integrated phy */
+	uint8_t jme_chip_rev;		/* chip revision */
+	uint8_t jme_rev;		/* PCI revision */
 	mii_data_t jme_mii;		/* mii bus */
-	u_int32_t jme_flags;		/* device features, see below */
+	uint32_t jme_flags;		/* device features, see below */
 	uint32_t jme_txcsr;		/* TX config register */
 	uint32_t jme_rxcsr;		/* RX config register */
 	krndsource_t rnd_source;
@@ -265,6 +265,7 @@ jme_pci_attach(device_t parent, device_t self, void *aux)
 	struct pci_attach_args * const pa = (struct pci_attach_args *)aux;
 	const struct jme_product_desc *jp;
 	struct ifnet * const ifp = &sc->jme_if;
+	struct mii_data * const mii = &sc->jme_mii;
 	bus_space_tag_t iot1, iot2, memt;
 	bus_space_handle_t ioh1, ioh2, memh;
 	bus_size_t size, size2;
@@ -453,20 +454,19 @@ jme_pci_attach(device_t parent, device_t self, void *aux)
 	 * 10baseT.  By ignoring the instance, it allows us to not have
 	 * to specify it on the command line when switching media.
 	 */
-	sc->jme_mii.mii_ifp = ifp;
-	sc->jme_mii.mii_readreg = jme_mii_read;
-	sc->jme_mii.mii_writereg = jme_mii_write;
-	sc->jme_mii.mii_statchg = jme_statchg;
-	sc->jme_ec.ec_mii = &sc->jme_mii;
-	ifmedia_init(&sc->jme_mii.mii_media, IFM_IMASK, jme_mediachange,
+	mii->mii_ifp = ifp;
+	mii->mii_readreg = jme_mii_read;
+	mii->mii_writereg = jme_mii_write;
+	mii->mii_statchg = jme_statchg;
+	sc->jme_ec.ec_mii = mii;
+	ifmedia_init(&mii->mii_media, IFM_IMASK, jme_mediachange,
 	    ether_mediastatus);
-	mii_attach(self, &sc->jme_mii, 0xffffffff, MII_PHY_ANY,
-	    MII_OFFSET_ANY, 0);
-	if (LIST_FIRST(&sc->jme_mii.mii_phys) == NULL) {
-		ifmedia_add(&sc->jme_mii.mii_media, IFM_ETHER|IFM_NONE, 0, NULL);
-		ifmedia_set(&sc->jme_mii.mii_media, IFM_ETHER|IFM_NONE);
+	mii_attach(self, mii, 0xffffffff, MII_PHY_ANY, MII_OFFSET_ANY, 0);
+	if (LIST_FIRST(&mii->mii_phys) == NULL) {
+		ifmedia_add(&mii->mii_media, IFM_ETHER | IFM_NONE, 0, NULL);
+		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_NONE);
 	} else
-		ifmedia_set(&sc->jme_mii.mii_media, IFM_ETHER|IFM_AUTO);
+		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_AUTO);
 
 	/*
 	 * We can support 802.1Q VLAN-sized frames.
@@ -583,7 +583,7 @@ jme_stop_rx(jme_softc_t *sc)
 			break;
 	}
 	if (i == 0)
-		aprint_error_dev(sc->jme_dev, "stopping recevier timeout!\n");
+		aprint_error_dev(sc->jme_dev, "stopping receiver timeout!\n");
 
 }
 
@@ -701,7 +701,7 @@ jme_add_rxbuf(jme_softc_t *sc, struct mbuf *m)
 	KASSERT(m->m_len == MCLBYTES);
 
 	error = bus_dmamap_load_mbuf(sc->jme_dmatag, map, m,
-	    BUS_DMA_READ|BUS_DMA_NOWAIT);
+	    BUS_DMA_READ | BUS_DMA_NOWAIT);
 	if (error) {
 		sc->jme_rxmbuf[i] = NULL;
 		aprint_error_dev(sc->jme_dev,
@@ -874,8 +874,8 @@ jme_init(struct ifnet *ifp, int do_ifinit)
 	 */
 	reg |= RXMAC_PAD_10BYTES;
 	if ((ifp->if_capenable &
-	    (IFCAP_CSUM_IPv4_Rx|IFCAP_CSUM_TCPv4_Rx|IFCAP_CSUM_UDPv4_Rx|
-	     IFCAP_CSUM_TCPv6_Rx|IFCAP_CSUM_UDPv6_Rx)) != 0)
+	    (IFCAP_CSUM_IPv4_Rx | IFCAP_CSUM_TCPv4_Rx | IFCAP_CSUM_UDPv4_Rx |
+	     IFCAP_CSUM_TCPv6_Rx | IFCAP_CSUM_UDPv6_Rx)) != 0)
 		reg |= RXMAC_CSUM_ENB;
 	reg |= RXMAC_VLAN_ENB; /* enable hardware vlan */
 	bus_space_write_4(sc->jme_bt_mac, sc->jme_bh_mac, JME_RXMAC, reg);
@@ -1040,7 +1040,7 @@ jme_mii_write(device_t self, int phy, int reg, uint16_t val)
 void
 jme_statchg(struct ifnet *ifp)
 {
-	if ((ifp->if_flags & (IFF_UP|IFF_RUNNING)) == (IFF_UP|IFF_RUNNING))
+	if ((ifp->if_flags & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING))
 		jme_init(ifp, 0);
 }
 
@@ -1049,7 +1049,7 @@ jme_intr_rx(jme_softc_t *sc) {
 	struct mbuf *m, *mhead;
 	bus_dmamap_t mmap;
 	struct ifnet *ifp = &sc->jme_if;
-	uint32_t flags,  buflen;
+	uint32_t flags,	 buflen;
 	int i, ipackets, nsegs, seg, error;
 	struct jme_desc *desc;
 
@@ -1061,13 +1061,13 @@ jme_intr_rx(jme_softc_t *sc) {
 	    sc->jme_rx_cons, le32toh(sc->jme_rxring[sc->jme_rx_cons].flags));
 #endif
 	ipackets = 0;
-	while((le32toh(sc->jme_rxring[sc->jme_rx_cons].flags) & JME_RD_OWN)
+	while ((le32toh(sc->jme_rxring[sc->jme_rx_cons].flags) & JME_RD_OWN)
 	    == 0) {
 		i = sc->jme_rx_cons;
 		desc = &sc->jme_rxring[i];
 #ifdef JMEDEBUG_RX
 		printf("rxintr i %d flags 0x%x buflen 0x%x\n",
-		    i,  le32toh(desc->flags), le32toh(desc->buflen));
+		    i, le32toh(desc->flags), le32toh(desc->buflen));
 #endif
 		if (sc->jme_rxmbuf[i] == NULL) {
 			if ((error = jme_add_rxbuf(sc, NULL)) != 0) {
@@ -1302,14 +1302,14 @@ jme_ifioctl(struct ifnet *ifp, unsigned long cmd, void *data)
 	 * we can't support at the same time jumbo frames and
 	 * TX checksums offload/TSO
 	 */
-	switch(cmd) {
+	switch (cmd) {
 	case SIOCSIFMTU:
 		ifr = data;
 		if (ifr->ifr_mtu > JME_TX_FIFO_SIZE &&
 		    (ifp->if_capenable & (
-		    IFCAP_CSUM_IPv4_Tx|IFCAP_CSUM_TCPv4_Tx|IFCAP_CSUM_UDPv4_Tx|
-		    IFCAP_CSUM_TCPv6_Tx|IFCAP_CSUM_UDPv6_Tx|
-		    IFCAP_TSOv4|IFCAP_TSOv6)) != 0) {
+		    IFCAP_CSUM_IPv4_Tx | IFCAP_CSUM_TCPv4_Tx |
+		    IFCAP_CSUM_UDPv4_Tx | IFCAP_CSUM_TCPv6_Tx |
+		    IFCAP_CSUM_UDPv6_Tx | IFCAP_TSOv4 | IFCAP_TSOv6)) != 0) {
 			splx(s);
 			return EINVAL;
 		}
@@ -1318,9 +1318,9 @@ jme_ifioctl(struct ifnet *ifp, unsigned long cmd, void *data)
 		ifcr = data;
 		if (ifp->if_mtu > JME_TX_FIFO_SIZE &&
 		    (ifcr->ifcr_capenable & (
-		    IFCAP_CSUM_IPv4_Tx|IFCAP_CSUM_TCPv4_Tx|IFCAP_CSUM_UDPv4_Tx|
-		    IFCAP_CSUM_TCPv6_Tx|IFCAP_CSUM_UDPv6_Tx|
-		    IFCAP_TSOv4|IFCAP_TSOv6)) != 0) {
+		    IFCAP_CSUM_IPv4_Tx | IFCAP_CSUM_TCPv4_Tx |
+		    IFCAP_CSUM_UDPv4_Tx | IFCAP_CSUM_TCPv6_Tx |
+		    IFCAP_CSUM_UDPv6_Tx | IFCAP_TSOv4 | IFCAP_TSOv6)) != 0) {
 			splx(s);
 			return EINVAL;
 		}
@@ -1348,7 +1348,8 @@ jme_encap(struct jme_softc *sc, struct mbuf **m_head)
 	int error, i, prod, headdsc, nsegs;
 	uint32_t cflags, tso_segsz;
 
-	if (((*m_head)->m_pkthdr.csum_flags & (M_CSUM_TSOv4|M_CSUM_TSOv6)) != 0){
+	if (((*m_head)->m_pkthdr.csum_flags & (M_CSUM_TSOv4 | M_CSUM_TSOv6))
+	    != 0) {
 		/*
 		 * Due to the adherence to NDIS specification JMC250
 		 * assumes upper stack computed TCP pseudo checksum
@@ -1475,15 +1476,17 @@ jme_encap(struct jme_softc *sc, struct mbuf **m_head)
 	cflags = 0;
 	tso_segsz = 0;
 	/* Configure checksum offload and TSO. */
-	if ((m->m_pkthdr.csum_flags & (M_CSUM_TSOv4|M_CSUM_TSOv6)) != 0) {
+	if ((m->m_pkthdr.csum_flags & (M_CSUM_TSOv4 | M_CSUM_TSOv6)) != 0) {
 		tso_segsz = (uint32_t)m->m_pkthdr.segsz << JME_TD_MSS_SHIFT;
 		cflags |= JME_TD_TSO;
 	} else {
 		if ((m->m_pkthdr.csum_flags & M_CSUM_IPv4) != 0)
 			cflags |= JME_TD_IPCSUM;
-		if ((m->m_pkthdr.csum_flags & (M_CSUM_TCPv4|M_CSUM_TCPv6)) != 0)
+		if ((m->m_pkthdr.csum_flags & (M_CSUM_TCPv4 | M_CSUM_TCPv6))
+		    != 0)
 			cflags |= JME_TD_TCPCSUM;
-		if ((m->m_pkthdr.csum_flags & (M_CSUM_UDPv4|M_CSUM_UDPv6)) != 0)
+		if ((m->m_pkthdr.csum_flags & (M_CSUM_UDPv4 | M_CSUM_UDPv6))
+		    != 0)
 			cflags |= JME_TD_UDPCSUM;
 	}
 	/* Configure VLAN. */
@@ -1524,7 +1527,7 @@ jme_encap(struct jme_softc *sc, struct mbuf **m_head)
 #endif
 	/*
 	 * Finally request interrupt and give the first descriptor
-	 * owenership to hardware.
+	 * ownership to hardware.
 	 */
 	desc = &sc->jme_txring[headdsc];
 	desc->flags |= htole32(JME_TD_OWN | JME_TD_INTR);
@@ -1602,7 +1605,7 @@ jme_txeof(struct jme_softc *sc)
 		/*
 		 * Only the first descriptor of multi-descriptor
 		 * transmission is updated so driver have to skip entire
-		 * chained buffers for the transmiited frame. In other
+		 * chained buffers for the transmitted frame. In other
 		 * words, JME_TD_OWN bit is valid only at the first
 		 * descriptor of a multi-descriptor transmission.
 		 */
@@ -1654,7 +1657,7 @@ jme_ifstart(struct ifnet *ifp)
 	     JME_INTR_STATUS, INTR_TXQ_COMP);
 	jme_txeof(sc);
 
-	if ((sc->jme_if.if_flags & (IFF_RUNNING|IFF_OACTIVE)) != IFF_RUNNING)
+	if ((sc->jme_if.if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
 		return;
 	for (enq = 0;; enq++) {
 nexttx:
@@ -1839,6 +1842,7 @@ jme_mac_config(jme_softc_t *sc)
 static void
 jme_set_filter(jme_softc_t *sc)
 {
+	struct ethercom *ec = &sc->jme_ec;
 	struct ifnet *ifp = &sc->jme_if;
 	struct ether_multistep step;
 	struct ether_multi *enm;
@@ -1876,7 +1880,8 @@ jme_set_filter(jme_softc_t *sc)
 	rxcfg |= RXMAC_MULTICAST;
 	memset(hash, 0, sizeof(hash));
 
-	ETHER_FIRST_MULTI(step, &sc->jme_ec, enm);
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 #ifdef JEMDBUG
 		printf("%s: addrs %s %s\n", __func__,
@@ -1895,6 +1900,7 @@ jme_set_filter(jme_softc_t *sc)
 		}
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 #ifdef JMEDEBUG
 	printf("%s: hash1 %x has2 %x\n", __func__, hash[0], hash[1]);
 #endif
@@ -1909,9 +1915,9 @@ jme_multicast_hash(uint8_t *a)
 {
 	int hash;
 
-#define DA(addr,bit) (addr[5 - (bit / 8)] & (1 << (bit % 8)))
+#define DA(addr, bit) (addr[5 - (bit / 8)] & (1 << (bit % 8)))
 #define xor8(a,b,c,d,e,f,g,h)						\
-	(((a != 0) + (b != 0) + (c != 0) + (d != 0) + 			\
+	(((a != 0) + (b != 0) + (c != 0) + (d != 0) +			\
 	  (e != 0) + (f != 0) + (g != 0) + (h != 0)) & 1)
 
 	hash  = xor8(DA(a,0), DA(a, 6), DA(a,12), DA(a,18), DA(a,24), DA(a,30),
@@ -1993,7 +1999,7 @@ jme_eeprom_macaddr(struct jme_softc *sc)
 		if (jme_eeprom_read_byte(sc, offset, &fup) != 0)
 			break;
 		if (JME_EEPROM_MKDESC(JME_EEPROM_FUNC0, JME_EEPROM_PAGE_BAR1)
-		    == (fup & (JME_EEPROM_FUNC_MASK|JME_EEPROM_PAGE_MASK))) {
+		    == (fup & (JME_EEPROM_FUNC_MASK | JME_EEPROM_PAGE_MASK))) {
 			if (jme_eeprom_read_byte(sc, offset + 1, &reg) != 0)
 				break;
 			if (reg >= JME_PAR0 &&

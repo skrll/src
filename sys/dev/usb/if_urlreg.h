@@ -178,6 +178,12 @@ struct url_softc {
 	krndsource_t	rnd_source;
 	struct url_cdata	sc_cdata;
 
+	int			sc_if_flags;
+
+	kmutex_t		sc_lock;
+	kmutex_t		sc_rxlock;
+	kmutex_t		sc_txlock;
+
 	int                     sc_attached;
 	int			sc_dying;
 	int                     sc_refcnt;

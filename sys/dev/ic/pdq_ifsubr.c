@@ -1,4 +1,4 @@
-/*	$NetBSD: pdq_ifsubr.c,v 1.63 2019/04/24 07:46:55 msaitoh Exp $	*/
+/*	$NetBSD: pdq_ifsubr.c,v 1.67 2019/05/29 10:07:29 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1995, 1996 Matt Thomas <matt@3am-software.com>
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pdq_ifsubr.c,v 1.63 2019/04/24 07:46:55 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pdq_ifsubr.c,v 1.67 2019/05/29 10:07:29 msaitoh Exp $");
 
 #ifdef __NetBSD__
 #include "opt_inet.h"
@@ -176,7 +176,7 @@ pdq_ifstart(struct ifnet *ifp)
 			if (!bus_dmamap_create(sc->sc_dmatag, m->m_pkthdr.len,
 			    255, m->m_pkthdr.len, 0, BUS_DMA_NOWAIT, &map)) {
 				if (!bus_dmamap_load_mbuf(sc->sc_dmatag, map,
-				    m, BUS_DMA_WRITE|BUS_DMA_NOWAIT)) {
+				    m, BUS_DMA_WRITE | BUS_DMA_NOWAIT)) {
 					bus_dmamap_sync(sc->sc_dmatag, map, 0,
 					    m->m_pkthdr.len,
 					    BUS_DMASYNC_PREWRITE);
@@ -233,7 +233,8 @@ pdq_os_receive_pdu(pdq_t *pdq, struct mbuf *m, size_t pktlen, int drop)
 #endif
 	m->m_pkthdr.len = pktlen;
 	fh = mtod(m, struct fddi_header *);
-	if (drop || (fh->fddi_fc & (FDDIFC_L|FDDIFC_F)) != FDDIFC_LLC_ASYNC) {
+	if (drop || (fh->fddi_fc & (FDDIFC_L | FDDIFC_F))
+	    != FDDIFC_LLC_ASYNC) {
 		PDQ_OS_DATABUF_FREE(pdq, m);
 		return;
 	}
@@ -269,6 +270,7 @@ void
 pdq_os_addr_fill(pdq_t *pdq, pdq_lanaddr_t *addr, size_t num_addrs)
 {
 	pdq_softc_t *sc = pdq->pdq_os_ctx;
+	struct ethercom *ec = PDQ_FDDICOM(sc);
 	struct ether_multistep step;
 	struct ether_multi *enm;
 
@@ -283,7 +285,8 @@ pdq_os_addr_fill(pdq_t *pdq, pdq_lanaddr_t *addr, size_t num_addrs)
 	sc->sc_if.if_flags &= ~IFF_ALLMULTI;
 #endif
 
-	ETHER_FIRST_MULTI(step, PDQ_FDDICOM(sc), enm);
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL && num_addrs > 0) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, 6) == 0) {
 			((u_short *)addr->lanaddr_bytes)[0] = ((u_short *)enm->enm_addrlo)[0];
@@ -299,6 +302,7 @@ pdq_os_addr_fill(pdq_t *pdq, pdq_lanaddr_t *addr, size_t num_addrs)
 		}
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 	/*
 	 * If not all the address fit into the CAM, turn on all-multicast mode.
 	 */
@@ -354,7 +358,7 @@ pdq_os_update_status(pdq_t *pdq, const void *arg)
 	int media = 0;
 
 	switch (rsp->status_chars_get.pmd_type[0]) {
-	case PDQ_PMD_TYPE_ANSI_MUTLI_MODE:         media = IFM_FDDI_MMF; break;
+	case PDQ_PMD_TYPE_ANSI_MUTLI_MODE:	   media = IFM_FDDI_MMF; break;
 	case PDQ_PMD_TYPE_ANSI_SINGLE_MODE_TYPE_1: media = IFM_FDDI_SMF; break;
 	case PDQ_PMD_TYPE_ANSI_SIGNLE_MODE_TYPE_2: media = IFM_FDDI_SMF; break;
 	case PDQ_PMD_TYPE_UNSHIELDED_TWISTED_PAIR: media = IFM_FDDI_UTP; break;
@@ -382,7 +386,7 @@ pdq_ifioctl(struct ifnet *ifp, ioctl_cmd_t cmd, void *data)
 
 		ifp->if_flags |= IFF_UP;
 		pdq_ifinit(sc);
-		switch(ifa->ifa_addr->sa_family) {
+		switch (ifa->ifa_addr->sa_family) {
 #if defined(INET)
 		case AF_INET:
 			PDQ_ARP_IFINIT(sc, ifa);
@@ -432,15 +436,6 @@ pdq_ifioctl(struct ifnet *ifp, ioctl_cmd_t cmd, void *data)
 	}
 #endif /* SIOCSIFMTU */
 
-#if defined(IFM_FDDI) && defined(SIOCSIFMEDIA)
-	case SIOCSIFMEDIA:
-	case SIOCGIFMEDIA: {
-		struct ifreq *ifr = (struct ifreq *)data;
-		error = ifmedia_ioctl(ifp, ifr, &sc->sc_ifmedia, cmd);
-		break;
-	}
-#endif
-
 	default: {
 		error = ether_ioctl(ifp, cmd, data);
 		break;
@@ -475,6 +470,9 @@ pdq_ifattach(pdq_softc_t *sc, ifnet_ret_t (*ifwatchdog)(int unit))
 #if defined(IFM_FDDI)
 	{
 	const int media = sc->sc_ifmedia.ifm_media;
+
+	/* Initialize ifmedia structures. */
+	PDQ_FDDICOM(sc)->ec_ifmedia = &sc->sc_ifmedia;
 	ifmedia_init(&sc->sc_ifmedia, IFM_FDX,
 	    pdq_ifmedia_change, pdq_ifmedia_status);
 	ifmedia_add(&sc->sc_ifmedia, media, 0, 0);
@@ -543,8 +541,7 @@ pdq_os_memalloc_contig(
 	if (!not_ok) {
 		steps = 6;
 		not_ok = bus_dmamap_create(sc->sc_dmatag, ui_segs[0].ds_len, 1,
-		    PDQ_OS_PAGESIZE, 0, BUS_DMA_NOWAIT,
-		    &sc->sc_uimap);
+		    PDQ_OS_PAGESIZE, 0, BUS_DMA_NOWAIT, &sc->sc_uimap);
 	}
 	if (!not_ok) {
 		steps = 7;
@@ -666,11 +663,11 @@ pdq_os_databuf_sync(pdq_os_ctx_t *sc, struct mbuf *m, size_t offset,
 extern void
 pdq_os_databuf_free(pdq_os_ctx_t *sc, struct mbuf *m)
 {
-	if (m->m_flags & (M_HASRXDMAMAP|M_HASTXDMAMAP)) {
+	if (m->m_flags & (M_HASRXDMAMAP | M_HASTXDMAMAP)) {
 		bus_dmamap_t map = M_GETCTX(m, bus_dmamap_t);
 		bus_dmamap_unload(sc->sc_dmatag, map);
 		bus_dmamap_destroy(sc->sc_dmatag, map);
-		m->m_flags &= ~(M_HASRXDMAMAP|M_HASTXDMAMAP);
+		m->m_flags &= ~(M_HASRXDMAMAP | M_HASTXDMAMAP);
 	}
 	m_freem(m);
 }
@@ -702,7 +699,7 @@ pdq_os_databuf_alloc(pdq_os_ctx_t *sc)
 		return NULL;
 	}
 	if (bus_dmamap_load_mbuf(sc->sc_dmatag, map, m,
-		BUS_DMA_READ|BUS_DMA_NOWAIT)) {
+		BUS_DMA_READ | BUS_DMA_NOWAIT)) {
 		aprint_error_dev(sc->sc_dev, "can't load dmamap\n");
 		bus_dmamap_destroy(sc->sc_dmatag, map);
 		m_free(m);
