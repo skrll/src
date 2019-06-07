@@ -1,4 +1,4 @@
-/*	$NetBSD: am79c950.c,v 1.43 2019/04/26 06:33:33 msaitoh Exp $	*/
+/*	$NetBSD: am79c950.c,v 1.46 2019/05/29 10:07:28 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1997 David Huang <khym@bga.com>
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: am79c950.c,v 1.43 2019/04/26 06:33:33 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: am79c950.c,v 1.46 2019/05/29 10:07:28 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -154,9 +154,10 @@ mcsetup(struct mc_softc *sc, uint8_t *lladdr)
 	ifp->if_watchdog = mcwatchdog;
 
 	/* Initialize ifmedia structures */
+	sc->sc_ethercom.ec_ifmedia = &sc->sc_media;
 	ifmedia_init(&sc->sc_media, 0, mc_mediachange, mc_mediastatus);
-	ifmedia_add(&sc->sc_media, IFM_ETHER|IFM_MANUAL, 0, NULL);
-	ifmedia_set(&sc->sc_media, IFM_ETHER|IFM_MANUAL);
+	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_MANUAL, 0, NULL);
+	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_MANUAL);
 
 	if_attach(ifp);
 	if_deferred_start_init(ifp, NULL);
@@ -170,7 +171,6 @@ mcioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct mc_softc *sc = ifp->if_softc;
 	struct ifaddr *ifa;
-	struct ifreq *ifr;
 
 	int	s = splnet(), err = 0;
 
@@ -231,12 +231,6 @@ mcioctl(struct ifnet *ifp, u_long cmd, void *data)
 				mcreset(sc);
 			err = 0;
 		}
-		break;
-
-	case SIOCGIFMEDIA:
-	case SIOCSIFMEDIA:
-		ifr = (struct ifreq *) data;
-		err = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
 		break;
 
 	default:
@@ -646,9 +640,9 @@ mace_get(struct mc_softc *sc, uint8_t *pkt, int totlen)
  * address filter.
  */
 void
-mace_calcladrf(struct ethercom *ac, uint8_t *af)
+mace_calcladrf(struct ethercom *ec, uint8_t *af)
 {
-	struct ifnet *ifp = &ac->ec_if;
+	struct ifnet *ifp = &ec->ec_if;
 	struct ether_multi *enm;
 	register u_char *cp, c;
 	register uint32_t crc;
@@ -665,7 +659,8 @@ mace_calcladrf(struct ethercom *ac, uint8_t *af)
 
 	*((uint32_t *)af) = *((uint32_t *)af + 1) = 0;
 
-	ETHER_FIRST_MULTI(step, ac, enm);
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (ETHER_CMP(enm->enm_addrlo, enm->enm_addrhi)) {
 			/*
@@ -676,6 +671,7 @@ mace_calcladrf(struct ethercom *ac, uint8_t *af)
 			 * ranges is for IP multicast routing, for which the
 			 * range is big enough to require all bits set.)
 			 */
+			ETHER_UNLOCK(ec);
 			goto allmulti;
 		}
 
@@ -700,6 +696,7 @@ mace_calcladrf(struct ethercom *ac, uint8_t *af)
 
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 	ifp->if_flags &= ~IFF_ALLMULTI;
 	return;
 

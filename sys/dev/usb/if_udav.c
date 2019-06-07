@@ -1,4 +1,4 @@
-/*	$NetBSD: if_udav.c,v 1.57 2019/05/05 03:17:54 mrg Exp $	*/
+/*	$NetBSD: if_udav.c,v 1.59 2019/05/28 07:41:50 msaitoh Exp $	*/
 /*	$nabe: if_udav.c,v 1.3 2003/08/21 16:57:19 nabe Exp $	*/
 
 /*
@@ -45,7 +45,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_udav.c,v 1.57 2019/05/05 03:17:54 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_udav.c,v 1.59 2019/05/28 07:41:50 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -133,11 +133,11 @@ Static int udav_mem_write1(struct udav_softc *, int, unsigned char);
 /* Macros */
 #ifdef UDAV_DEBUG
 #define DPRINTF(x)	if (udavdebug) printf x
-#define DPRINTFN(n,x)	if (udavdebug >= (n)) printf x
+#define DPRINTFN(n, x)	if (udavdebug >= (n)) printf x
 int udavdebug = 0;
 #else
 #define DPRINTF(x)
-#define DPRINTFN(n,x)
+#define DPRINTFN(n, x)
 #endif
 
 #define	UDAV_SETBIT(sc, reg, x)	\
@@ -663,9 +663,9 @@ udav_init(struct ifnet *ifp)
 
 	/* If we want promiscuous mode, accept all physical frames. */
 	if (ifp->if_flags & IFF_PROMISC)
-		UDAV_SETBIT(sc, UDAV_RCR, UDAV_RCR_ALL|UDAV_RCR_PRMSC);
+		UDAV_SETBIT(sc, UDAV_RCR, UDAV_RCR_ALL | UDAV_RCR_PRMSC);
 	else
-		UDAV_CLRBIT(sc, UDAV_RCR, UDAV_RCR_ALL|UDAV_RCR_PRMSC);
+		UDAV_CLRBIT(sc, UDAV_RCR, UDAV_RCR_ALL | UDAV_RCR_PRMSC);
 
 	/* Load the multicast filter */
 	udav_setmulti(sc);
@@ -783,6 +783,7 @@ udav_activate(device_t self, enum devact act)
 Static void
 udav_setmulti(struct udav_softc *sc)
 {
+	struct ethercom *ec = &sc->sc_ec;
 	struct ifnet *ifp;
 	struct ether_multi *enm;
 	struct ether_multistep step;
@@ -803,10 +804,10 @@ udav_setmulti(struct udav_softc *sc)
 	}
 
 	if (ifp->if_flags & IFF_PROMISC) {
-		UDAV_SETBIT(sc, UDAV_RCR, UDAV_RCR_ALL|UDAV_RCR_PRMSC);
+		UDAV_SETBIT(sc, UDAV_RCR, UDAV_RCR_ALL | UDAV_RCR_PRMSC);
 		return;
 	} else if (ifp->if_flags & IFF_ALLMULTI) {
-	allmulti:
+allmulti:
 		ifp->if_flags |= IFF_ALLMULTI;
 		UDAV_SETBIT(sc, UDAV_RCR, UDAV_RCR_ALL);
 		UDAV_CLRBIT(sc, UDAV_RCR, UDAV_RCR_PRMSC);
@@ -819,16 +820,20 @@ udav_setmulti(struct udav_softc *sc)
 	udav_csr_write(sc, UDAV_MAR, hashes, sizeof(hashes));
 
 	/* now program new ones */
-	ETHER_FIRST_MULTI(step, &sc->sc_ec, enm);
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi,
-			   ETHER_ADDR_LEN) != 0)
+		    ETHER_ADDR_LEN) != 0) {
+			ETHER_UNLOCK(ec);
 			goto allmulti;
+		}
 
 		h = UDAV_CALCHASH(enm->enm_addrlo);
 		hashes[h>>3] |= 1 << (h & 0x7);
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 
 	/* disable all multicast */
 	ifp->if_flags &= ~IFF_ALLMULTI;

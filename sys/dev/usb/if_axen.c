@@ -1,4 +1,4 @@
-/*	$NetBSD: if_axen.c,v 1.38 2019/04/11 08:50:59 msaitoh Exp $	*/
+/*	$NetBSD: if_axen.c,v 1.41 2019/05/28 07:41:50 msaitoh Exp $	*/
 /*	$OpenBSD: if_axen.c,v 1.3 2013/10/21 10:10:22 yuo Exp $	*/
 
 /*
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.38 2019/04/11 08:50:59 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.41 2019/05/28 07:41:50 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -66,11 +66,11 @@ __KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.38 2019/04/11 08:50:59 msaitoh Exp $")
 
 #ifdef AXEN_DEBUG
 #define DPRINTF(x)	do { if (axendebug) printf x; } while (/*CONSTCOND*/0)
-#define DPRINTFN(n,x)	do { if (axendebug >= (n)) printf x; } while (/*CONSTCOND*/0)
+#define DPRINTFN(n, x)	do { if (axendebug >= (n)) printf x; } while (/*CONSTCOND*/0)
 int	axendebug = 0;
 #else
 #define DPRINTF(x)
-#define DPRINTFN(n,x)
+#define DPRINTFN(n, x)
 #endif
 
 /*
@@ -370,6 +370,7 @@ allmulti:	ifp->if_flags |= IFF_ALLMULTI;
 		/* now program new ones */
 		DPRINTF(("%s: initializing hash table\n",
 		    device_xname(sc->axen_dev)));
+		ETHER_LOCK(ec);
 		ETHER_FIRST_MULTI(step, ec, enm);
 		while (enm != NULL) {
 			if (memcmp(enm->enm_addrlo, enm->enm_addrhi,
@@ -377,6 +378,7 @@ allmulti:	ifp->if_flags |= IFF_ALLMULTI;
 				DPRINTF(("%s: allmulti\n",
 				    device_xname(sc->axen_dev)));
 				memset(hashtbl, 0, sizeof(hashtbl));
+				ETHER_UNLOCK(ec);
 				goto allmulti;
 			}
 			h = ether_crc32_be(enm->enm_addrlo,
@@ -387,6 +389,7 @@ allmulti:	ifp->if_flags |= IFF_ALLMULTI;
 			    ether_sprintf(enm->enm_addrlo)));
 			ETHER_NEXT_MULTI(step, enm);
 		}
+		ETHER_UNLOCK(ec);
 		rxmode |= AXEN_RXCTL_ACPT_MCAST;
 	}
 
@@ -409,7 +412,7 @@ axen_reset(struct axen_softc *sc)
 }
 
 #if 0 /* not used */
-#define AXEN_GPIO_WRITE(x,y) do {				\
+#define AXEN_GPIO_WRITE(x, y) do {				\
 	axen_cmd(sc, AXEN_CMD_WRITE_GPIO, 0, (x), NULL);	\
 	usbd_delay_ms(sc->axen_udev, (y));			\
 } while (/*CONSTCOND*/0)
@@ -801,7 +804,7 @@ axen_attach(device_t parent, device_t self, void *aux)
 
 	/* Adapter does not support TSOv6 (They call it LSOv2). */
 	ifp->if_capabilities |= IFCAP_TSOv4 |
-	    IFCAP_CSUM_IPv4_Rx  | IFCAP_CSUM_IPv4_Tx  |
+	    IFCAP_CSUM_IPv4_Rx	| IFCAP_CSUM_IPv4_Tx  |
 	    IFCAP_CSUM_TCPv4_Rx | IFCAP_CSUM_TCPv4_Tx |
 	    IFCAP_CSUM_UDPv4_Rx | IFCAP_CSUM_UDPv4_Tx |
 	    IFCAP_CSUM_TCPv6_Rx | IFCAP_CSUM_TCPv6_Tx |
@@ -1080,10 +1083,10 @@ axen_rxeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 #endif
 
 	do {
-		if ((buf[0] != 0xee) || (buf[1] != 0xee)){
+		if ((buf[0] != 0xee) || (buf[1] != 0xee)) {
 			aprint_error_dev(sc->axen_dev,
 			    "invalid buffer(pkt#%d), continue\n", pkt_count);
-	    		ifp->if_ierrors += pkt_count;
+			ifp->if_ierrors += pkt_count;
 			goto done;
 		}
 
@@ -1094,7 +1097,7 @@ axen_rxeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 		   device_xname(sc->axen_dev), pkt_count, pkt_hdr, pkt_len));
 
 		if (pkt_hdr & (AXEN_RXHDR_CRC_ERR | AXEN_RXHDR_DROP_ERR)) {
-	    		ifp->if_ierrors++;
+			ifp->if_ierrors++;
 			/* move to next pkt header */
 			DPRINTF(("%s: %s err (pkt#%d)\n",
 			    device_xname(sc->axen_dev),
@@ -1133,7 +1136,7 @@ nextpkt:
 		buf = buf + temp;
 		hdr_p++;
 		pkt_count--;
-	} while( pkt_count > 0);
+	} while(pkt_count > 0);
 
 done:
 	/* Setup new transfer. */
@@ -1349,7 +1352,7 @@ axen_start(struct ifnet *ifp)
 	if (sc->axen_link == 0)
 		return;
 
-	if ((ifp->if_flags & (IFF_OACTIVE|IFF_RUNNING)) != IFF_RUNNING)
+	if ((ifp->if_flags & (IFF_OACTIVE | IFF_RUNNING)) != IFF_RUNNING)
 		return;
 
 	idx = cd->axen_tx_prod;
@@ -1515,7 +1518,7 @@ axen_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			break;
 
 		error = 0;
-		switch(cmd) {
+		switch (cmd) {
 		case SIOCADDMULTI:
 		case SIOCDELMULTI:
 			axen_iff(sc);

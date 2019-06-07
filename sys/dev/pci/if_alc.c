@@ -1,4 +1,4 @@
-/*	$NetBSD: if_alc.c,v 1.34 2019/05/01 14:10:26 msaitoh Exp $	*/
+/*	$NetBSD: if_alc.c,v 1.37 2019/05/28 07:41:49 msaitoh Exp $	*/
 /*	$OpenBSD: if_alc.c,v 1.1 2009/08/08 09:31:13 kevlo Exp $	*/
 /*-
  * Copyright (c) 2009, Pyun YongHyeon <yongari@FreeBSD.org>
@@ -534,7 +534,7 @@ alc_dsp_fixup(struct alc_softc *sc, int media)
 			val |= (DBG_MSE20DB_TH_DEFAULT << DBG_MSE20DB_TH_SHIFT);
 			alc_miidbg_writereg(sc, MII_DBG_MSE20DB, val);
 		}
- 	}
+	}
 }
 
 static void
@@ -756,7 +756,7 @@ alc_get_macaddr_816x(struct alc_softc *sc)
 				}
 			} else if (alcdebug)
 				printf("%s: reloading EEPROM/FLASH timed out!\n",
-			  	  device_xname(sc->sc_dev));
+				  device_xname(sc->sc_dev));
 		}
 	}
 
@@ -1181,6 +1181,7 @@ alc_attach(device_t parent, device_t self, void *aux)
 	pci_intr_handle_t ih;
 	const char *intrstr;
 	struct ifnet *ifp;
+	struct mii_data * const mii = &sc->sc_miibus;
 	pcireg_t memtype;
 	const char *aspm_state[] = { "L0s/L1", "L0s", "L1", "L0s/L1" };
 	uint16_t burst;
@@ -1272,16 +1273,16 @@ alc_attach(device_t parent, device_t self, void *aux)
 		CSR_WRITE_4(sc, ALC_PEX_UNC_ERR_SEV, val);
 
 		if ((sc->alc_flags & ALC_FLAG_AR816X_FAMILY) == 0) {
- 			CSR_WRITE_4(sc, ALC_LTSSM_ID_CFG,
- 			    CSR_READ_4(sc, ALC_LTSSM_ID_CFG) & ~LTSSM_ID_WRO_ENB);
- 			CSR_WRITE_4(sc, ALC_PCIE_PHYMISC,
- 			    CSR_READ_4(sc, ALC_PCIE_PHYMISC) |
- 			    PCIE_PHYMISC_FORCE_RCV_DET);
- 			if (sc->alc_ident->deviceid == PCI_PRODUCT_ATTANSIC_AR8152_B &&
+			CSR_WRITE_4(sc, ALC_LTSSM_ID_CFG,
+			    CSR_READ_4(sc, ALC_LTSSM_ID_CFG) & ~LTSSM_ID_WRO_ENB);
+			CSR_WRITE_4(sc, ALC_PCIE_PHYMISC,
+			    CSR_READ_4(sc, ALC_PCIE_PHYMISC) |
+			    PCIE_PHYMISC_FORCE_RCV_DET);
+			if (sc->alc_ident->deviceid == PCI_PRODUCT_ATTANSIC_AR8152_B &&
 			    sc->alc_rev == ATHEROS_AR8152_B_V10) {
- 				val = CSR_READ_4(sc, ALC_PCIE_PHYMISC2);
- 				val &= ~(PCIE_PHYMISC2_SERDES_CDR_MASK |
- 				    PCIE_PHYMISC2_SERDES_TH_MASK);
+				val = CSR_READ_4(sc, ALC_PCIE_PHYMISC2);
+				val &= ~(PCIE_PHYMISC2_SERDES_CDR_MASK |
+				    PCIE_PHYMISC2_SERDES_TH_MASK);
 				val |= 3 << PCIE_PHYMISC2_SERDES_CDR_SHIFT;
 				val |= 3 << PCIE_PHYMISC2_SERDES_TH_SHIFT;
 				CSR_WRITE_4(sc, ALC_PCIE_PHYMISC2, val);
@@ -1460,27 +1461,26 @@ alc_attach(device_t parent, device_t self, void *aux)
 	}
 
 	/* Set up MII bus. */
-	sc->sc_miibus.mii_ifp = ifp;
-	sc->sc_miibus.mii_readreg = alc_miibus_readreg;
-	sc->sc_miibus.mii_writereg = alc_miibus_writereg;
-	sc->sc_miibus.mii_statchg = alc_miibus_statchg;
+	mii->mii_ifp = ifp;
+	mii->mii_readreg = alc_miibus_readreg;
+	mii->mii_writereg = alc_miibus_writereg;
+	mii->mii_statchg = alc_miibus_statchg;
 
-	sc->sc_ec.ec_mii = &sc->sc_miibus;
-	ifmedia_init(&sc->sc_miibus.mii_media, 0, alc_mediachange,
-	    alc_mediastatus);
+	sc->sc_ec.ec_mii = mii;
+	ifmedia_init(&mii->mii_media, 0, alc_mediachange, alc_mediastatus);
 	mii_flags = 0;
 	if ((sc->alc_flags & ALC_FLAG_JUMBO) != 0)
 		mii_flags |= MIIF_DOPAUSE;
-	mii_attach(self, &sc->sc_miibus, 0xffffffff, MII_PHY_ANY,
+	mii_attach(self, mii, 0xffffffff, MII_PHY_ANY,
 		MII_OFFSET_ANY, mii_flags);
 
-	if (LIST_FIRST(&sc->sc_miibus.mii_phys) == NULL) {
+	if (LIST_FIRST(&mii->mii_phys) == NULL) {
 		printf("%s: no PHY found!\n", device_xname(sc->sc_dev));
-		ifmedia_add(&sc->sc_miibus.mii_media, IFM_ETHER | IFM_MANUAL,
+		ifmedia_add(&mii->mii_media, IFM_ETHER | IFM_MANUAL,
 		    0, NULL);
-		ifmedia_set(&sc->sc_miibus.mii_media, IFM_ETHER | IFM_MANUAL);
+		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_MANUAL);
 	} else
-		ifmedia_set(&sc->sc_miibus.mii_media, IFM_ETHER | IFM_AUTO);
+		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_AUTO);
 
 	if_attach(ifp);
 	if_deferred_start_init(ifp, NULL);
@@ -2365,7 +2365,7 @@ alc_txeof(struct alc_softc *sc)
 
 	if ((sc->alc_flags & ALC_FLAG_CMB_BUG) == 0)
 	    bus_dmamap_sync(sc->sc_dmat, sc->alc_cdata.alc_cmb_map, 0,
-	        sc->alc_cdata.alc_cmb_map->dm_mapsize, BUS_DMASYNC_PREREAD);
+		sc->alc_cdata.alc_cmb_map->dm_mapsize, BUS_DMASYNC_PREREAD);
 	sc->alc_cdata.alc_tx_cons = cons;
 	/*
 	 * Unarm watchdog timer only when there is no pending
@@ -2589,7 +2589,7 @@ alc_rxeof(struct alc_softc *sc, struct rx_rdesc *rrd)
 			 * was intentionally disabled.
 			 */
 			if (status & RRD_VLAN_TAG) {
-				u_int32_t vtag = RRD_VLAN(le32toh(rrd->vtag));
+				uint32_t vtag = RRD_VLAN(le32toh(rrd->vtag));
 				vlan_set_tag(m, ntohs(vtag));
 			}
 #endif
@@ -2790,7 +2790,6 @@ alc_init_backend(struct ifnet *ifp, bool init)
 			    IDLE_DECISN_TIMER_DEFAULT_1MS);
 	} else
 		CSR_WRITE_4(sc, ALC_CLK_GATING_CFG, 0);
-
 
 	/* Reprogram the station address. */
 	memcpy(eaddr, CLLADDR(ifp->if_sadl), sizeof(eaddr));
@@ -3050,7 +3049,7 @@ alc_init_backend(struct ifnet *ifp, bool init)
 		    RXQ_CFG_816X_IDT_TBL_SIZE_MASK;
 	if ((sc->alc_flags & ALC_FLAG_FASTETHER) == 0 &&
 	    sc->alc_ident->deviceid != PCI_PRODUCT_ATTANSIC_AR8151_V2)
- 		reg |= RXQ_CFG_ASPM_THROUGHPUT_LIMIT_1M;
+		reg |= RXQ_CFG_ASPM_THROUGHPUT_LIMIT_1M;
 	CSR_WRITE_4(sc, ALC_RXQ_CFG, reg);
 
 	/* Configure DMA parameters. */
@@ -3274,7 +3273,7 @@ alc_stop_queue(struct alc_softc *sc)
 			reg &= ~RXQ_CFG_QUEUE0_ENB;
 			CSR_WRITE_4(sc, ALC_RXQ_CFG, reg);
 		}
- 	}
+	}
 	/* Disable TxQ. */
 	reg = CSR_READ_4(sc, ALC_TXQ_CFG);
 	if ((reg & TXQ_CFG_ENB) != 0) {
@@ -3429,12 +3428,14 @@ alc_iff(struct alc_softc *sc)
 		/* Program new filter. */
 		memset(mchash, 0, sizeof(mchash));
 
+		ETHER_LOCK(ec);
 		ETHER_FIRST_MULTI(step, ec, enm);
 		while (enm != NULL) {
 			crc = ether_crc32_be(enm->enm_addrlo, ETHER_ADDR_LEN);
 			mchash[crc >> 31] |= 1 << ((crc >> 26) & 0x1f);
 			ETHER_NEXT_MULTI(step, enm);
 		}
+		ETHER_UNLOCK(ec);
 	}
 
 	CSR_WRITE_4(sc, ALC_MAR0, mchash[0]);

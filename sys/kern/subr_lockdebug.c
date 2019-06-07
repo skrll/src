@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_lockdebug.c,v 1.70 2019/05/09 05:00:31 ozaki-r Exp $	*/
+/*	$NetBSD: subr_lockdebug.c,v 1.72 2019/05/28 07:39:16 ryo Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_lockdebug.c,v 1.70 2019/05/09 05:00:31 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_lockdebug.c,v 1.72 2019/05/28 07:39:16 ryo Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -59,7 +59,11 @@ unsigned int		ld_panic;
 
 #ifdef LOCKDEBUG
 
+#ifdef __ia64__
+#define	LD_BATCH_SHIFT	16
+#else
 #define	LD_BATCH_SHIFT	9
+#endif
 #define	LD_BATCH	(1 << LD_BATCH_SHIFT)
 #define	LD_BATCH_MASK	(LD_BATCH - 1)
 #define	LD_MAX_LOCKS	1048576
@@ -908,7 +912,7 @@ lockdebug_show_all_locks_cpu(void (*pr)(const char *, ...) __printflike(1, 2),
 #ifdef MULTIPROCESSOR
 				lockdebug_show_trace(ci->ci_curlwp, pr);
 #else
-				lockdebug_show_trace(ci->ci_curlwp, pr);
+				lockdebug_show_trace(curlwp, pr);
 #endif
 			(*pr)("\n");
 		}

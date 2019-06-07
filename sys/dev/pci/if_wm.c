@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.636 2019/05/15 02:56:47 ozaki-r Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.639 2019/05/28 08:59:35 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.636 2019/05/15 02:56:47 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.639 2019/05/28 08:59:35 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -390,7 +390,7 @@ struct wm_txqueue {
 	WM_Q_EVCNT_DEFINE(txq, tusum6)	    /* TCP/UDP v6 cksums comp. */
 	WM_Q_EVCNT_DEFINE(txq, tso)	    /* TCP seg offload (IPv4) */
 	WM_Q_EVCNT_DEFINE(txq, tso6)	    /* TCP seg offload (IPv6) */
-	WM_Q_EVCNT_DEFINE(txq, tsopain)     /* Painful header manip. for TSO */
+	WM_Q_EVCNT_DEFINE(txq, tsopain)	    /* Painful header manip. for TSO */
 	WM_Q_EVCNT_DEFINE(txq, pcqdrop)	    /* Pkt dropped in pcq */
 	WM_Q_EVCNT_DEFINE(txq, descdrop)    /* Pkt dropped in MAC desc ring */
 					    /* other than toomanyseg */
@@ -6789,7 +6789,7 @@ wm_alloc_txrx_queues(struct wm_softc *sc)
 	if (error)
 		goto fail_1;
 
-	/* For recieve */
+	/* For receive */
 	error = 0;
 	rx_done = 0;
 	for (i = 0; i < sc->sc_nqueues; i++) {
@@ -10642,9 +10642,7 @@ wm_gmii_i82544_readreg_locked(device_t dev, int phy, int reg, uint16_t *val)
 		}
 	}
 
-	wm_gmii_mdic_readreg(dev, phy, reg & MII_ADDRMASK, val);
-
-	return 0;
+	return wm_gmii_mdic_readreg(dev, phy, reg & MII_ADDRMASK, val);
 }
 
 /*
@@ -10694,9 +10692,7 @@ wm_gmii_i82544_writereg_locked(device_t dev, int phy, int reg, uint16_t val)
 		}
 	}
 
-	wm_gmii_mdic_writereg(dev, phy, reg & MII_ADDRMASK, val);
-
-	return 0;
+	return wm_gmii_mdic_writereg(dev, phy, reg & MII_ADDRMASK, val);
 }
 
 /*
@@ -11835,7 +11831,7 @@ wm_tbi_mediachange(struct ifnet *ifp)
 	CSR_WRITE_FLUSH(sc);
 	delay(1000);
 
-	ctrl =  CSR_READ(sc, WMREG_CTRL);
+	ctrl = CSR_READ(sc, WMREG_CTRL);
 	signal = wm_tbi_havesignal(sc, ctrl);
 
 	DPRINTF(WM_DEBUG_LINK, ("%s: signal = %d\n", device_xname(sc->sc_dev),
@@ -11850,12 +11846,12 @@ wm_tbi_mediachange(struct ifnet *ifp)
 		}
 
 		DPRINTF(WM_DEBUG_LINK,("%s: i = %d after waiting for link\n",
-			device_xname(sc->sc_dev),i));
+			device_xname(sc->sc_dev), i));
 
 		status = CSR_READ(sc, WMREG_STATUS);
 		DPRINTF(WM_DEBUG_LINK,
 		    ("%s: status after final read = 0x%x, STATUS_LU = 0x%x\n",
-			device_xname(sc->sc_dev),status, STATUS_LU));
+			device_xname(sc->sc_dev), status, STATUS_LU));
 		if (status & STATUS_LU) {
 			/* Link is up. */
 			DPRINTF(WM_DEBUG_LINK,
@@ -15491,8 +15487,6 @@ release:
 	sc->phy.release(sc);
 
 	return rv;
-
-
 }
 
 /*
@@ -15783,7 +15777,7 @@ wm_set_mdio_slow_mode_hv(struct wm_softc *sc)
 	if (rv != 0)
 		return rv;
 
-	return  wm_gmii_hv_writereg(sc->sc_dev, 1, HV_KMRN_MODE_CTRL,
+	return wm_gmii_hv_writereg(sc->sc_dev, 1, HV_KMRN_MODE_CTRL,
 	    reg | HV_KMRN_MDIO_SLOW);
 }
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_axe.c,v 1.95 2019/01/22 03:42:28 msaitoh Exp $	*/
+/*	$NetBSD: if_axe.c,v 1.98 2019/05/28 07:41:50 msaitoh Exp $	*/
 /*	$OpenBSD: if_axe.c,v 1.137 2016/04/13 11:03:37 mpi Exp $ */
 
 /*
@@ -87,7 +87,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_axe.c,v 1.95 2019/01/22 03:42:28 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_axe.c,v 1.98 2019/05/28 07:41:50 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -165,7 +165,7 @@ SYSCTL_SETUP(sysctl_hw_axe_setup, "sysctl hw.axe setup")
 
 	/* control debugging printfs */
 	err = sysctl_createv(clog, 0, &rnode, &cnode,
-	    CTLFLAG_PERMANENT|CTLFLAG_READWRITE, CTLTYPE_INT,
+	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE, CTLTYPE_INT,
 	    "debug", SYSCTL_DESCR("Enable debugging output"),
 	    NULL, 0, &axedebug, sizeof(axedebug), CTL_CREATE, CTL_EOL);
 	if (err)
@@ -210,7 +210,7 @@ static const struct axe_type axe_devs[] = {
 	{ { USB_VENDOR_IODATA,		USB_PRODUCT_IODATA_ETGUS2 }, AX178 },
 	{ { USB_VENDOR_JVC,		USB_PRODUCT_JVC_MP_PRX1}, 0 },
 	{ { USB_VENDOR_LENOVO,		USB_PRODUCT_LENOVO_ETHERNET }, AX772B },
-	{ { USB_VENDOR_LINKSYS, 	USB_PRODUCT_LINKSYS_HG20F9}, AX772B },
+	{ { USB_VENDOR_LINKSYS,		USB_PRODUCT_LINKSYS_HG20F9}, AX772B },
 	{ { USB_VENDOR_LINKSYS2,	USB_PRODUCT_LINKSYS2_USB200M}, 0 },
 	{ { USB_VENDOR_LINKSYS4,	USB_PRODUCT_LINKSYS4_USB1000 }, AX178 },
 	{ { USB_VENDOR_LOGITEC,		USB_PRODUCT_LOGITEC_LAN_GTJU2}, AX178 },
@@ -471,6 +471,7 @@ static void
 axe_setmulti(struct axe_softc *sc)
 {
 	AXEHIST_FUNC(); AXEHIST_CALLED();
+	struct ethercom *ec = &sc->axe_ec;
 	struct ifnet *ifp = &sc->sc_if;
 	struct ether_multi *enm;
 	struct ether_multistep step;
@@ -503,16 +504,20 @@ axe_setmulti(struct axe_softc *sc)
 	}
 
 	/* Now program new ones */
-	ETHER_FIRST_MULTI(step, &sc->axe_ec, enm);
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi,
-		    ETHER_ADDR_LEN) != 0)
+		    ETHER_ADDR_LEN) != 0) {
+			ETHER_UNLOCK(ec);
 			goto allmulti;
+		}
 
 		h = ether_crc32_be(enm->enm_addrlo, ETHER_ADDR_LEN) >> 26;
 		hashtbl[h >> 3] |= 1U << (h & 7);
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 	ifp->if_flags &= ~IFF_ALLMULTI;
 	rxmode |= AXE_RXCMD_MULTICAST;
 
@@ -1317,7 +1322,7 @@ axe_rxeof(struct usbd_xfer *xfer, void * priv, usbd_status status)
 		} else if ((sc->axe_flags & AXCSUM_FRAME) != 0) {
 			struct axe_csum_hdr csum_hdr;
 
-			if (total_len <  sizeof(csum_hdr)) {
+			if (total_len <	 sizeof(csum_hdr)) {
 				ifp->if_ierrors++;
 				goto done;
 			}
@@ -1547,7 +1552,7 @@ axe_encap(struct axe_softc *sc, struct mbuf *m, int idx)
 	 * bytes at the beginning to hold the frame length.
 	 */
 	if (AXE_IS_178_FAMILY(sc)) {
-	    	struct axe_sframe_hdr hdr;
+		struct axe_sframe_hdr hdr;
 
 		boundary = (sc->axe_udev->ud_speed == USB_SPEED_HIGH) ? 512 : 64;
 
@@ -1632,7 +1637,7 @@ axe_start(struct ifnet *ifp)
 
 	sc = ifp->if_softc;
 
-	if ((ifp->if_flags & (IFF_OACTIVE|IFF_RUNNING)) != IFF_RUNNING)
+	if ((ifp->if_flags & (IFF_OACTIVE | IFF_RUNNING)) != IFF_RUNNING)
 		return;
 
 	IFQ_POLL(&ifp->if_snd, m);
@@ -1828,7 +1833,7 @@ axe_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 
 	s = splnet();
 
-	switch(cmd) {
+	switch (cmd) {
 	case SIOCSIFFLAGS:
 		if ((error = ifioctl_common(ifp, cmd, data)) != 0)
 			break;

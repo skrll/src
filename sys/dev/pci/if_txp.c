@@ -1,4 +1,4 @@
-/* $NetBSD: if_txp.c,v 1.54 2019/05/07 15:23:32 msaitoh Exp $ */
+/* $NetBSD: if_txp.c,v 1.57 2019/05/29 10:07:29 msaitoh Exp $ */
 
 /*
  * Copyright (c) 2001
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_txp.c,v 1.54 2019/05/07 15:23:32 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_txp.c,v 1.57 2019/05/29 10:07:29 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -291,6 +291,8 @@ txp_attach(device_t parent, device_t self, void *aux)
 	    ether_sprintf(enaddr));
 	sc->sc_cold = 0;
 
+	/* Initialize ifmedia structures. */
+	sc->sc_arpcom.ec_ifmedia = &sc->sc_ifmedia;
 	ifmedia_init(&sc->sc_ifmedia, 0, txp_ifmedia_upd, txp_ifmedia_sts);
 	if (flags & TXP_FIBER) {
 		ifmedia_add(&sc->sc_ifmedia, IFM_ETHER | IFM_100_FX,
@@ -313,7 +315,7 @@ txp_attach(device_t parent, device_t self, void *aux)
 		ifmedia_add(&sc->sc_ifmedia, IFM_ETHER | IFM_100_TX | IFM_FDX,
 			    0, NULL);
 	}
-	ifmedia_add(&sc->sc_ifmedia, IFM_ETHER|IFM_AUTO, 0, NULL);
+	ifmedia_add(&sc->sc_ifmedia, IFM_ETHER | IFM_AUTO, 0, NULL);
 
 	sc->sc_xcvr = TXP_XCVR_AUTO;
 	txp_command(sc, TXP_CMD_XCVR_SELECT, TXP_XCVR_AUTO, 0, 0,
@@ -352,7 +354,7 @@ txp_attach(device_t parent, device_t self, void *aux)
 	return;
 
 cleanupintr:
-	pci_intr_disestablish(pc,sc->sc_ih);
+	pci_intr_disestablish(pc, sc->sc_ih);
 
 	return;
 
@@ -1249,7 +1251,6 @@ int
 txp_ioctl(struct ifnet *ifp, u_long command, void *data)
 {
 	struct txp_softc *sc = ifp->if_softc;
-	struct ifreq *ifr = (struct ifreq *)data;
 	struct ifaddr *ifa = (struct ifaddr *)data;
 	int s, error = 0;
 
@@ -1262,7 +1263,7 @@ txp_ioctl(struct ifnet *ifp, u_long command, void *data)
 	}
 #endif
 
-	switch(command) {
+	switch (command) {
 	case SIOCINITIFADDR:
 		ifp->if_flags |= IFF_UP;
 		txp_init(sc);
@@ -1303,10 +1304,6 @@ txp_ioctl(struct ifnet *ifp, u_long command, void *data)
 			txp_set_filter(sc);
 		}
 		break;
-	case SIOCGIFMEDIA:
-	case SIOCSIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &sc->sc_ifmedia, command);
-		break;
 	default:
 		error = ether_ioctl(ifp, command, data);
 		break;
@@ -1314,7 +1311,7 @@ txp_ioctl(struct ifnet *ifp, u_long command, void *data)
 
 	splx(s);
 
-	return(error);
+	return (error);
 }
 
 void
@@ -1927,7 +1924,7 @@ txp_show_descriptor(void *d)
 void
 txp_set_filter(struct txp_softc *sc)
 {
-	struct ethercom *ac = &sc->sc_arpcom;
+	struct ethercom *ec = &sc->sc_arpcom;
 	struct ifnet *ifp = &sc->sc_arpcom.ec_if;
 	uint32_t crc, carry, hashbit, hash[2];
 	uint16_t filter;
@@ -1952,7 +1949,8 @@ again:
 	else {
 		hash[0] = hash[1] = 0;
 
-		ETHER_FIRST_MULTI(step, ac, enm);
+		ETHER_LOCK(ec);
+		ETHER_FIRST_MULTI(step, ec, enm);
 		while (enm != NULL) {
 			if (memcmp(enm->enm_addrlo, enm->enm_addrhi,
 			    ETHER_ADDR_LEN)) {
@@ -1967,6 +1965,7 @@ again:
 				 * all bits set.)
 				 */
 				ifp->if_flags |= IFF_ALLMULTI;
+				ETHER_UNLOCK(ec);
 				goto again;
 			}
 
@@ -1989,6 +1988,7 @@ again:
 			hash[hashbit / 32] |= (1 << hashbit % 32);
 			ETHER_NEXT_MULTI(step, enm);
 		}
+		ETHER_UNLOCK(ec);
 
 		if (mcnt > 0) {
 			filter |= TXP_RXFILT_HASHMULTI;

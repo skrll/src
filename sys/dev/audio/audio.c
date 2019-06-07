@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.7 2019/05/13 08:50:25 nakayama Exp $	*/
+/*	$NetBSD: audio.c,v 1.10 2019/05/25 02:42:03 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -131,14 +131,7 @@
  *   neither lock were necessary.  Currently, on the other hand, since
  *   these may be also called after attach, the thread lock is required.
  *
- * In addition, there are two additional locks.
- *
- * - file->lock.  This is a variable protected by sc_lock and is similar
- *   to the "thread lock".  This is one for each file.  If any thread
- *   context and software interrupt context who want to access the file
- *   structure, they must acquire this lock before.  It protects
- *   descriptor's consistency among multithreaded accesses.  Since this
- *   lock uses sc_lock, don't acquire from hardware interrupt context.
+ * In addition, there is an additional lock.
  *
  * - track->lock.  This is an atomic variable and is similar to the
  *   "interrupt lock".  This is one for each track.  If any thread context
@@ -149,7 +142,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.7 2019/05/13 08:50:25 nakayama Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.10 2019/05/25 02:42:03 isaki Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -507,8 +500,6 @@ static void audio_softintr_wr(void *);
 static int  audio_enter_exclusive(struct audio_softc *);
 static void audio_exit_exclusive(struct audio_softc *);
 static int audio_track_waitio(struct audio_softc *, audio_track_t *);
-static int audio_file_acquire(struct audio_softc *, audio_file_t *);
-static void audio_file_release(struct audio_softc *, audio_file_t *);
 
 static int audioclose(struct file *);
 static int audioread(struct file *, off_t *, struct uio *, kauth_cred_t, int);
@@ -580,11 +571,7 @@ static int audio_sysctl_blk_ms(SYSCTLFN_PROTO);
 static int audio_sysctl_multiuser(SYSCTLFN_PROTO);
 #if defined(AUDIO_DEBUG)
 static int audio_sysctl_debug(SYSCTLFN_PROTO);
-#endif
-#if defined(DIAGNOSTIC) || defined(AUDIO_DEBUG)
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
-#endif
-#if defined(AUDIO_DEBUG)
 static void audio_print_format2(const char *, const audio_format2_t *) __unused;
 #endif
 
@@ -1435,57 +1422,6 @@ audio_track_waitio(struct audio_softc *sc, audio_track_t *track)
 }
 
 /*
- * Acquire the file lock.
- * If file is acquired successfully, returns 0.  Otherwise returns errno.
- * In both case, sc_lock is released.
- */
-static int
-audio_file_acquire(struct audio_softc *sc, audio_file_t *file)
-{
-	int error;
-
-	KASSERT(!mutex_owned(sc->sc_lock));
-
-	mutex_enter(sc->sc_lock);
-	if (sc->sc_dying) {
-		mutex_exit(sc->sc_lock);
-		return EIO;
-	}
-
-	while (__predict_false(file->lock != 0)) {
-		error = cv_wait_sig(&sc->sc_exlockcv, sc->sc_lock);
-		if (sc->sc_dying)
-			error = EIO;
-		if (error) {
-			mutex_exit(sc->sc_lock);
-			return error;
-		}
-	}
-
-	/* Mark this file locked */
-	file->lock = 1;
-	mutex_exit(sc->sc_lock);
-
-	return 0;
-}
-
-/*
- * Release the file lock.
- */
-static void
-audio_file_release(struct audio_softc *sc, audio_file_t *file)
-{
-
-	KASSERT(!mutex_owned(sc->sc_lock));
-
-	mutex_enter(sc->sc_lock);
-	KASSERT(file->lock);
-	file->lock = 0;
-	cv_broadcast(&sc->sc_exlockcv);
-	mutex_exit(sc->sc_lock);
-}
-
-/*
  * Try to acquire track lock.
  * It doesn't block if the track lock is already aquired.
  * Returns true if the track lock was acquired, or false if the track
@@ -1567,11 +1503,7 @@ audioclose(struct file *fp)
 	sc = file->sc;
 	dev = file->dev;
 
-	/* Acquire file lock and exlock */
-	/* XXX what should I do when an error occurs? */
-	error = audio_file_acquire(sc, file);
-	if (error)
-		return error;
+	/* audio_{enter,exit}_exclusive() is called by lower audio_close() */
 
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	switch (AUDIODEV(dev)) {
@@ -1594,11 +1526,6 @@ audioclose(struct file *fp)
 		fp->f_audioctx = NULL;
 	}
 
-	/*
-	 * Since file has already been destructed,
-	 * audio_file_release() is not necessary.
-	 */
-
 	return error;
 }
 
@@ -1616,10 +1543,6 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	sc = file->sc;
 	dev = file->dev;
 
-	error = audio_file_acquire(sc, file);
-	if (error)
-		return error;
-
 	if (fp->f_flag & O_NONBLOCK)
 		ioflag |= IO_NDELAY;
 
@@ -1636,7 +1559,6 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 		error = ENXIO;
 		break;
 	}
-	audio_file_release(sc, file);
 
 	return error;
 }
@@ -1655,10 +1577,6 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	sc = file->sc;
 	dev = file->dev;
 
-	error = audio_file_acquire(sc, file);
-	if (error)
-		return error;
-
 	if (fp->f_flag & O_NONBLOCK)
 		ioflag |= IO_NDELAY;
 
@@ -1675,7 +1593,6 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 		error = ENXIO;
 		break;
 	}
-	audio_file_release(sc, file);
 
 	return error;
 }
@@ -1693,10 +1610,6 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 	file = fp->f_audioctx;
 	sc = file->sc;
 	dev = file->dev;
-
-	error = audio_file_acquire(sc, file);
-	if (error)
-		return error;
 
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -1718,7 +1631,6 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 		error = ENXIO;
 		break;
 	}
-	audio_file_release(sc, file);
 
 	return error;
 }
@@ -1754,9 +1666,6 @@ audiopoll(struct file *fp, int events)
 	sc = file->sc;
 	dev = file->dev;
 
-	if (audio_file_acquire(sc, file) != 0)
-		return 0;
-
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
 	case AUDIO_DEVICE:
@@ -1770,7 +1679,6 @@ audiopoll(struct file *fp, int events)
 		revents = POLLERR;
 		break;
 	}
-	audio_file_release(sc, file);
 
 	return revents;
 }
@@ -1788,10 +1696,6 @@ audiokqfilter(struct file *fp, struct knote *kn)
 	sc = file->sc;
 	dev = file->dev;
 
-	error = audio_file_acquire(sc, file);
-	if (error)
-		return error;
-
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
 	case AUDIO_DEVICE:
@@ -1805,7 +1709,6 @@ audiokqfilter(struct file *fp, struct knote *kn)
 		error = ENXIO;
 		break;
 	}
-	audio_file_release(sc, file);
 
 	return error;
 }
@@ -1824,10 +1727,6 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 	sc = file->sc;
 	dev = file->dev;
 
-	error = audio_file_acquire(sc, file);
-	if (error)
-		return error;
-
 	mutex_enter(sc->sc_lock);
 	device_active(sc->sc_dev, DVA_SYSTEM); /* XXXJDM */
 	mutex_exit(sc->sc_lock);
@@ -1844,7 +1743,6 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 		error = ENOTSUP;
 		break;
 	}
-	audio_file_release(sc, file);
 
 	return error;
 }
@@ -1891,11 +1789,6 @@ audiobellclose(audio_file_t *file)
 
 	sc = file->sc;
 
-	/* XXX what should I do when an error occurs? */
-	error = audio_file_acquire(sc, file);
-	if (error)
-		return error;
-
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	error = audio_close(sc, file);
 
@@ -1915,13 +1808,7 @@ audiobellwrite(audio_file_t *file, struct uio *uio)
 	int error;
 
 	sc = file->sc;
-	error = audio_file_acquire(sc, file);
-	if (error)
-		return error;
-
 	error = audio_write(sc, uio, 0, file);
-
-	audio_file_release(sc, file);
 	return error;
 }
 
@@ -2183,6 +2070,9 @@ bad1:
 	return error;
 }
 
+/*
+ * Must NOT called with sc_lock nor sc_exlock held.
+ */
 int
 audio_close(struct audio_softc *sc, audio_file_t *file)
 {
@@ -2190,7 +2080,6 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	int error;
 
 	KASSERT(!mutex_owned(sc->sc_lock));
-	KASSERT(file->lock);
 
 	TRACEF(1, file, "%spid=%d.%d po=%d ro=%d",
 	    (audiodebug >= 3) ? "start " : "",
@@ -2213,10 +2102,8 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	/* Then, acquire exclusive lock to protect counters. */
 	/* XXX what should I do when an error occurs? */
 	error = audio_enter_exclusive(sc);
-	if (error) {
-		audio_file_release(sc, file);
+	if (error)
 		return error;
-	}
 
 	if (file->ptrack) {
 		/* Call hw halt_output if this is the last playback track. */
@@ -2298,7 +2185,6 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	TRACET(2, track, "resid=%zd", uio->uio_resid);
 
 	KASSERT(!mutex_owned(sc->sc_lock));
-	KASSERT(file->lock);
 
 	/* I think it's better than EINVAL. */
 	if (track->mmapped)
@@ -2371,7 +2257,6 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 		audio_track_lock_enter(track);
 		audio_track_record(track);
-		audio_track_lock_exit(track);
 
 		/* uiomove from usrbuf as much as possible. */
 		bytes = uimin(usrbuf->used, uio->uio_resid);
@@ -2381,6 +2266,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 			error = uiomove((uint8_t *)usrbuf->mem + head, len,
 			    uio);
 			if (error) {
+				audio_track_lock_exit(track);
 				device_printf(sc->sc_dev,
 				    "uiomove(len=%d) failed with %d\n",
 				    len, error);
@@ -2393,6 +2279,8 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 			    usrbuf->head, usrbuf->used, usrbuf->capacity);
 			bytes -= len;
 		}
+
+		audio_track_lock_exit(track);
 	}
 
 abort:
@@ -2429,7 +2317,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 	    uio->uio_resid, (int)curproc->p_pid, (int)curlwp->l_lid, ioflag);
 
 	KASSERT(!mutex_owned(sc->sc_lock));
-	KASSERT(file->lock);
 
 	/* I think it's better than EINVAL. */
 	if (track->mmapped)
@@ -2496,6 +2383,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		}
 		mutex_exit(sc->sc_lock);
 
+		audio_track_lock_enter(track);
+
 		/* uiomove to usrbuf as much as possible. */
 		bytes = uimin(track->usrbuf_usedhigh - usrbuf->used,
 		    uio->uio_resid);
@@ -2505,6 +2394,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 			error = uiomove((uint8_t *)usrbuf->mem + tail, len,
 			    uio);
 			if (error) {
+				audio_track_lock_exit(track);
 				device_printf(sc->sc_dev,
 				    "uiomove(len=%d) failed with %d\n",
 				    len, error);
@@ -2519,11 +2409,11 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		}
 
 		/* Convert them as much as possible. */
-		audio_track_lock_enter(track);
 		while (usrbuf->used >= track->usrbuf_blksize &&
 		    outbuf->used < outbuf->capacity) {
 			audio_track_play(track);
 		}
+
 		audio_track_lock_exit(track);
 	}
 
@@ -2548,7 +2438,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	int error;
 
 	KASSERT(!mutex_owned(sc->sc_lock));
-	KASSERT(file->lock);
 
 #if defined(AUDIO_DEBUG)
 	const char *ioctlnames[] = {
@@ -2853,7 +2742,6 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	bool out_is_valid;
 
 	KASSERT(!mutex_owned(sc->sc_lock));
-	KASSERT(file->lock);
 
 #if defined(AUDIO_DEBUG)
 #define POLLEV_BITMAP "\177\020" \
@@ -3008,7 +2896,6 @@ audio_kqfilter(struct audio_softc *sc, audio_file_t *file, struct knote *kn)
 	struct klist *klist;
 
 	KASSERT(!mutex_owned(sc->sc_lock));
-	KASSERT(file->lock);
 
 	TRACEF(3, file, "kn=%p kn_filter=%x", kn, (int)kn->kn_filter);
 
@@ -3046,7 +2933,6 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	int error;
 
 	KASSERT(!mutex_owned(sc->sc_lock));
-	KASSERT(file->lock);
 
 	TRACEF(2, file, "off=%lld, prot=%d", (long long)(*offp), prot);
 
@@ -5792,7 +5678,7 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 	track->pstate = AUDIO_STATE_DRAINING;
 
 	for (;;) {
-		/* I want to display it bofore condition evaluation. */
+		/* I want to display it before condition evaluation. */
 		TRACET(3, track, "pid=%d.%d trkseq=%d hwseq=%d out=%d/%d/%d",
 		    (int)curproc->p_pid, (int)curlwp->l_lid,
 		    (int)track->seq, (int)mixer->hwseq,
@@ -6751,7 +6637,12 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	if (ptrack) {
 		pchanges = audio_track_setinfo_check(&pfmt, pi);
 		if (pchanges == -1) {
-			TRACET(1, ptrack, "check play.params failed");
+#if defined(AUDIO_DEBUG)
+			char fmtbuf[64];
+			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), &pfmt);
+			TRACET(1, ptrack, "check play.params failed: %s",
+			    fmtbuf);
+#endif
 			return EINVAL;
 		}
 		if (SPECIFIED(ai->mode))
@@ -6760,7 +6651,12 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	if (rtrack) {
 		rchanges = audio_track_setinfo_check(&rfmt, ri);
 		if (rchanges == -1) {
-			TRACET(1, rtrack, "check record.params failed");
+#if defined(AUDIO_DEBUG)
+			char fmtbuf[64];
+			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), &rfmt);
+			TRACET(1, rtrack, "check record.params failed: %s",
+			    fmtbuf);
+#endif
 			return EINVAL;
 		}
 		if (SPECIFIED(ai->mode))
@@ -6894,14 +6790,8 @@ audio_track_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 	}
 
 	if (changes) {
-		if (audio_check_params(fmt) != 0) {
-#ifdef DIAGNOSTIC
-			char fmtbuf[64];
-			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), fmt);
-			printf("%s failed: %s\n", __func__, fmtbuf);
-#endif
+		if (audio_check_params(fmt) != 0)
 			return -1;
-		}
 	}
 
 	return changes;
@@ -7662,7 +7552,7 @@ audio_resume(device_t dv, const pmf_qual_t *qual)
 	return true;
 }
 
-#if defined(DIAGNOSTIC) || defined(AUDIO_DEBUG)
+#if defined(AUDIO_DEBUG)
 static void
 audio_format2_tostr(char *buf, size_t bufsize, const audio_format2_t *fmt)
 {

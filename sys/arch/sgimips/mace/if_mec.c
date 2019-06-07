@@ -1,4 +1,4 @@
-/* $NetBSD: if_mec.c,v 1.58 2019/01/22 03:42:26 msaitoh Exp $ */
+/* $NetBSD: if_mec.c,v 1.61 2019/05/30 02:32:17 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 2004, 2008 Izumi Tsutsui.  All rights reserved.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mec.c,v 1.58 2019/01/22 03:42:26 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mec.c,v 1.61 2019/05/30 02:32:17 msaitoh Exp $");
 
 #include "opt_ddb.h"
 
@@ -430,6 +430,7 @@ mec_attach(device_t parent, device_t self, void *aux)
 	struct mec_softc *sc = device_private(self);
 	struct mace_attach_args *maa = aux;
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
+	struct mii_data *mii = &sc->sc_mii;
 	uint64_t address, command;
 	const char *macaddr;
 	struct mii_softc *child;
@@ -572,26 +573,24 @@ mec_attach(device_t parent, device_t self, void *aux)
 
 	/* Done, now attach everything */
 
-	sc->sc_mii.mii_ifp = ifp;
-	sc->sc_mii.mii_readreg = mec_mii_readreg;
-	sc->sc_mii.mii_writereg = mec_mii_writereg;
-	sc->sc_mii.mii_statchg = mec_statchg;
+	mii->mii_ifp = ifp;
+	mii->mii_readreg = mec_mii_readreg;
+	mii->mii_writereg = mec_mii_writereg;
+	mii->mii_statchg = mec_statchg;
 
 	/* Set up PHY properties */
-	sc->sc_ethercom.ec_mii = &sc->sc_mii;
-	ifmedia_init(&sc->sc_mii.mii_media, 0, ether_mediachange,
-	    ether_mediastatus);
-	mii_attach(self, &sc->sc_mii, 0xffffffff, MII_PHY_ANY,
-	    MII_OFFSET_ANY, 0);
+	sc->sc_ethercom.ec_mii = mii;
+	ifmedia_init(&mii->mii_media, 0, ether_mediachange, ether_mediastatus);
+	mii_attach(self, mii, 0xffffffff, MII_PHY_ANY, MII_OFFSET_ANY, 0);
 
-	child = LIST_FIRST(&sc->sc_mii.mii_phys);
+	child = LIST_FIRST(&mii->mii_phys);
 	if (child == NULL) {
 		/* No PHY attached */
-		ifmedia_add(&sc->sc_mii.mii_media, IFM_ETHER | IFM_MANUAL,
+		ifmedia_add(&mii->mii_media, IFM_ETHER | IFM_MANUAL,
 		    0, NULL);
-		ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER | IFM_MANUAL);
+		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_MANUAL);
 	} else {
-		ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER | IFM_AUTO);
+		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_AUTO);
 		sc->sc_phyaddr = child->mii_phy;
 	}
 
@@ -954,7 +953,7 @@ mec_start(struct ifnet *ifp)
 	int len, bufoff, buflen, nsegs, align, resid, pseg, nptr, slen, i;
 	uint32_t txdcmd;
 
-	if ((ifp->if_flags & (IFF_RUNNING|IFF_OACTIVE)) != IFF_RUNNING)
+	if ((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
 		return;
 
 	/*
@@ -1124,8 +1123,8 @@ mec_start(struct ifnet *ifp)
 				 * alignd, but we have to put some data into
 				 * txdesc buffer anyway even if the buffer
 				 * is uint64_t aligned.
-				 */ 
-				DPRINTF(MEC_DEBUG_START|MEC_DEBUG_TXSEGS,
+				 */
+				DPRINTF(MEC_DEBUG_START | MEC_DEBUG_TXSEGS,
 				    ("%s: re-allocating mbuf\n", __func__));
 
 				MGETHDR(m, M_DONTWAIT, MT_DATA);
@@ -1381,7 +1380,7 @@ mec_start(struct ifnet *ifp)
 
 		/* sync TX descriptor */
 		MEC_TXDESCSYNC(sc, nexttx,
-		    BUS_DMASYNC_PREREAD|BUS_DMASYNC_PREWRITE);
+		    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 		/* start TX */
 		bus_space_write_8(st, sh, MEC_TX_RING_PTR, MEC_NEXTTX(nexttx));
@@ -1514,6 +1513,7 @@ mec_setfilter(struct mec_softc *sc)
 
 	mcnt = 0;
 	mchash = 0;
+	ETHER_LOCK(ec);
 	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, ETHER_ADDR_LEN)) {
@@ -1522,6 +1522,7 @@ mec_setfilter(struct mec_softc *sc)
 			bus_space_write_8(st, sh, MEC_MULTICAST,
 			    0xffffffffffffffffULL);
 			bus_space_write_8(st, sh, MEC_MAC_CONTROL, control);
+			ETHER_UNLOCK(ec);
 			return;
 		}
 
@@ -1532,6 +1533,7 @@ mec_setfilter(struct mec_softc *sc)
 		mcnt++;
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 
 	ifp->if_flags &= ~IFF_ALLMULTI;
 
@@ -1856,7 +1858,7 @@ mec_txintr(struct mec_softc *sc, uint32_t txptr)
 		txd = &sc->sc_txdesc[i];
 
 		MEC_TXCMDSYNC(sc, i,
-		    BUS_DMASYNC_POSTREAD|BUS_DMASYNC_POSTWRITE);
+		    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 
 		txstat = txd->txd_stat;
 		DPRINTF(MEC_DEBUG_TXINTR,
