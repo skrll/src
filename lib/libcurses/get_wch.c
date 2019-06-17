@@ -1,4 +1,4 @@
-/*   $NetBSD: get_wch.c,v 1.21 2019/03/14 00:36:06 rin Exp $ */
+/*   $NetBSD: get_wch.c,v 1.23 2019/06/09 07:40:14 blymn Exp $ */
 
 /*
  * Copyright (c) 2005 The NetBSD Foundation Inc.
@@ -36,7 +36,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: get_wch.c,v 1.21 2019/03/14 00:36:06 rin Exp $");
+__RCSID("$NetBSD: get_wch.c,v 1.23 2019/06/09 07:40:14 blymn Exp $");
 #endif						  /* not lint */
 
 #include <errno.h>
@@ -608,7 +608,7 @@ wget_wch(WINDOW *win, wint_t *ch)
 					( inp == KEY_DC ||
 					  inp == KEY_BACKSPACE ||
 					  inp == KEY_LEFT )) {
-				wmove( win, win->cury, win->curx - 1 );
+				wmove( win, win->cury, win->curx - 1);
 				wdelch( win );
 			}
 		} else {

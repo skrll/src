@@ -1,4 +1,4 @@
-/* $NetBSD: locore.S,v 1.7 2018/02/05 10:41:12 maya Exp $ */
+/* $NetBSD: locore.S,v 1.9 2019/06/16 07:42:52 maxv Exp $ */
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -51,6 +51,11 @@ ENTRY_NP(start)
 	li	s10, PAGE_SIZE
 	li	s9, USPACE
 
+	/*
+	 * XXX XXX XXX: This is completely broken and wrong, we should map only
+	 * the kernel sections, and the direct map should be mapped later in C.
+	 */
+#if 0
 #if 0
 	// The kernel doesn't use gp/_gp since we'd have to reload it on
 	// each exception.
@@ -120,6 +125,7 @@ ENTRY_NP(start)
 	add	s3, s3, SZREG		// advance to next PDE slot
 	addi	a7, a7, -1		// count down segment
 	bgtz	a6, .Lfill		// loop if more
+#endif
 
 	csrw	sptbr, s1		// set the page table base
 	li	t0, SR_VM
@@ -144,7 +150,7 @@ ENTRY_NP(start)
 
 	PTR_LA	t1, _C_LABEL(kernel_pmap_store)
 	add	t2, s2, s11 		// PA -> VA
-	PTR_S	t2, PM_PDETAB(t1)	// VA of kernel PDETAB
+	PTR_S	t2, PM_MD_PDETAB(t1)	// VA of kernel PDETAB
 	PTR_S	s2, PM_MD_PTBR(t1)	// PA of kernel PDETAB
 
 	// Now we should ready to start initializing the kernel.

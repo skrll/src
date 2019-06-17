@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cemac.c,v 1.18 2019/05/19 13:32:35 alnsn Exp $	*/
+/*	$NetBSD: if_cemac.c,v 1.21 2019/05/28 07:41:48 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2015  Genetec Corporation.  All rights reserved.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_cemac.c,v 1.18 2019/05/19 13:32:35 alnsn Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cemac.c,v 1.21 2019/05/28 07:41:48 msaitoh Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -97,7 +97,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_cemac.c,v 1.18 2019/05/19 13:32:35 alnsn Exp $");
 #define	TX_QLEN	2		/* I'm very sorry but that's where we can get */
 
 struct cemac_qmeta {
-	struct mbuf 	*m;
+	struct mbuf	*m;
 	bus_dmamap_t	m_dmamap;
 };
 
@@ -147,9 +147,9 @@ static void	cemac_setaddr(struct ifnet *);
 
 #ifdef	CEMAC_DEBUG
 int cemac_debug = CEMAC_DEBUG;
-#define	DPRINTFN(n,fmt)	if (cemac_debug >= (n)) printf fmt
+#define	DPRINTFN(n, fmt)	if (cemac_debug >= (n)) printf fmt
 #else
-#define	DPRINTFN(n,fmt)
+#define	DPRINTFN(n, fmt)
 #endif
 
 CFATTACH_DECL_NEW(cemac, sizeof(struct cemac_softc),
@@ -200,9 +200,9 @@ cemac_attach_common(device_t self, bus_space_tag_t iot,
 	u = CEMAC_READ(ETH_TSR);
 	CEMAC_WRITE(ETH_TSR, (u & (ETH_TSR_UND | ETH_TSR_COMP | ETH_TSR_BNQ
 				  | ETH_TSR_IDLE | ETH_TSR_RLE
-				  | ETH_TSR_COL|ETH_TSR_OVR)));
+				  | ETH_TSR_COL | ETH_TSR_OVR)));
 	u = CEMAC_READ(ETH_RSR);
-	CEMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR|ETH_RSR_REC|ETH_RSR_BNA)));
+	CEMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR | ETH_RSR_REC | ETH_RSR_BNA)));
 
 	/* Fetch the Ethernet address from property if set. */
 	enaddr = prop_dictionary_get(device_properties(self), "mac-address");
@@ -282,7 +282,8 @@ cemac_intr(void *arg)
 	int bi;
 
 	imr = ~CEMAC_READ(ETH_IMR);
-	if (!(imr & (ETH_ISR_RCOM|ETH_ISR_TBRE|ETH_ISR_TIDLE|ETH_ISR_RBNA|ETH_ISR_ROVR|ETH_ISR_TCOM))) {
+	if (!(imr & (ETH_ISR_RCOM | ETH_ISR_TBRE | ETH_ISR_TIDLE |
+	    ETH_ISR_RBNA | ETH_ISR_ROVR | ETH_ISR_TCOM))) {
 		// interrupt not enabled, can't be us
 		return 0;
 	}
@@ -320,7 +321,7 @@ cemac_intr(void *arg)
 			struct mbuf *m;
 
 			nfo = sc->RDSC[bi].Info;
-		  	fl = (nfo & ETH_RDSC_I_LEN) - 4;
+			fl = (nfo & ETH_RDSC_I_LEN) - 4;
 			DPRINTFN(2,("## nfo=0x%08X\n", nfo));
 
 			MGETHDR(m, M_DONTWAIT, MT_DATA);
@@ -351,7 +352,7 @@ cemac_intr(void *arg)
 				}
 				sc->rxq[bi].m->m_pkthdr.csum_flags = csum;
 				DPRINTFN(2,("received %u bytes packet\n", fl));
-                                if_percpuq_enqueue(ifp->if_percpuq,
+				if_percpuq_enqueue(ifp->if_percpuq,
 						   sc->rxq[bi].m);
 				if (mtod(m, intptr_t) & 3)
 					m_adj(m, mtod(m, intptr_t) & 3);
@@ -382,7 +383,7 @@ cemac_intr(void *arg)
 		if_schedule_deferred_start(ifp);
 #if 0 // reloop
 	irq = CEMAC_READ(IntStsC);
-	if ((irq & (IntSts_RxSQ|IntSts_ECI)) != 0)
+	if ((irq & (IntSts_RxSQ | IntSts_ECI)) != 0)
 		goto begin;
 #endif
 
@@ -396,6 +397,7 @@ cemac_init(struct cemac_softc *sc)
 	bus_dma_segment_t segs;
 	int rsegs, err, i;
 	struct ifnet * ifp = &sc->sc_ethercom.ec_if;
+	struct mii_data * const mii = &sc->sc_mii;
 	uint32_t u;
 #if 0
 	int mdcdiv = DEFAULT_MDCDIV;
@@ -427,9 +429,9 @@ cemac_init(struct cemac_softc *sc)
 	u = CEMAC_READ(ETH_TSR);
 	CEMAC_WRITE(ETH_TSR, (u & (ETH_TSR_UND | ETH_TSR_COMP | ETH_TSR_BNQ
 		    | ETH_TSR_IDLE | ETH_TSR_RLE
-		    | ETH_TSR_COL|ETH_TSR_OVR)));
+		    | ETH_TSR_COL | ETH_TSR_OVR)));
 	u = CEMAC_READ(ETH_RSR);
-	CEMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR|ETH_RSR_REC|ETH_RSR_BNA)));
+	CEMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR | ETH_RSR_REC | ETH_RSR_BNA)));
 
 #if 0
 	if (device_cfdata(sc->sc_dev)->cf_flags)
@@ -459,7 +461,7 @@ cemac_init(struct cemac_softc *sc)
 	if (err == 0) {
 		DPRINTFN(1,("%s: -> bus_dmamem_map\n", __FUNCTION__));
 		err = bus_dmamem_map(sc->sc_dmat, &segs, 1, sc->rbqlen,
-		    &sc->rbqpage, (BUS_DMA_WAITOK|BUS_DMA_COHERENT));
+		    &sc->rbqpage, (BUS_DMA_WAITOK | BUS_DMA_COHERENT));
 	}
 	if (err == 0) {
 		DPRINTFN(1,("%s: -> bus_dmamap_create\n", __FUNCTION__));
@@ -489,7 +491,7 @@ cemac_init(struct cemac_softc *sc)
 	if (err == 0) {
 		DPRINTFN(1,("%s: -> bus_dmamem_map\n", __FUNCTION__));
 		err = bus_dmamem_map(sc->sc_dmat, &segs, 1, sc->tbqlen,
-		    &sc->tbqpage, (BUS_DMA_WAITOK|BUS_DMA_COHERENT));
+		    &sc->tbqpage, (BUS_DMA_WAITOK | BUS_DMA_COHERENT));
 	}
 	if (err == 0) {
 		DPRINTFN(1,("%s: -> bus_dmamap_create\n", __FUNCTION__));
@@ -523,7 +525,7 @@ cemac_init(struct cemac_softc *sc)
 
 	/* Populate the RXQ with mbufs */
 	sc->rxqi = 0;
-	for(i = 0; i < RX_QLEN; i++) {
+	for (i = 0; i < RX_QLEN; i++) {
 		struct mbuf *m;
 
 		err = bus_dmamap_create(sc->sc_dmat, MCLBYTES, 1, MCLBYTES, PAGE_SIZE,
@@ -567,16 +569,16 @@ cemac_init(struct cemac_softc *sc)
 	CEMAC_WRITE(ETH_TBQP, (uint32_t)sc->tbqpage_dsaddr);
 
 	/* Divide HCLK by 32 for MDC clock */
-	sc->sc_ethercom.ec_mii = &sc->sc_mii;
-	sc->sc_mii.mii_ifp = ifp;
-	sc->sc_mii.mii_readreg = cemac_mii_readreg;
-	sc->sc_mii.mii_writereg = cemac_mii_writereg;
-	sc->sc_mii.mii_statchg = cemac_statchg;
-	ifmedia_init(&sc->sc_mii.mii_media, IFM_IMASK, cemac_mediachange,
+	sc->sc_ethercom.ec_mii = mii;
+	mii->mii_ifp = ifp;
+	mii->mii_readreg = cemac_mii_readreg;
+	mii->mii_writereg = cemac_mii_writereg;
+	mii->mii_statchg = cemac_statchg;
+	ifmedia_init(&mii->mii_media, IFM_IMASK, cemac_mediachange,
 	    cemac_mediastatus);
-	mii_attach(sc->sc_dev, &sc->sc_mii, 0xffffffff, MII_PHY_ANY,
+	mii_attach(sc->sc_dev, mii, 0xffffffff, MII_PHY_ANY,
 	    MII_OFFSET_ANY, 0);
-	ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER|IFM_AUTO);
+	ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_AUTO);
 
 #if 0
 	// enable / disable interrupts
@@ -605,18 +607,18 @@ cemac_init(struct cemac_softc *sc)
 	sc->sc_ethercom.ec_capabilities |= ETHERCAP_VLAN_MTU;
 
 	strcpy(ifp->if_xname, device_xname(sc->sc_dev));
-        ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-        ifp->if_ioctl = cemac_ifioctl;
-        ifp->if_start = cemac_ifstart;
-        ifp->if_watchdog = cemac_ifwatchdog;
-        ifp->if_init = cemac_ifinit;
-        ifp->if_stop = cemac_ifstop;
-        ifp->if_timer = 0;
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
+	ifp->if_ioctl = cemac_ifioctl;
+	ifp->if_start = cemac_ifstart;
+	ifp->if_watchdog = cemac_ifwatchdog;
+	ifp->if_init = cemac_ifinit;
+	ifp->if_stop = cemac_ifstop;
+	ifp->if_timer = 0;
 	ifp->if_softc = sc;
-        IFQ_SET_READY(&ifp->if_snd);
-        if_attach(ifp);
+	IFQ_SET_READY(&ifp->if_snd);
+	if_attach(ifp);
 	if_deferred_start_init(ifp, NULL);
-        ether_ifattach(ifp, (sc)->sc_enaddr);
+	ether_ifattach(ifp, (sc)->sc_enaddr);
 }
 
 static int
@@ -649,7 +651,8 @@ cemac_mii_readreg(device_t self, int phy, int reg, uint16_t *val)
 			     | ((phy << ETH_MAN_PHYA_SHIFT) & ETH_MAN_PHYA)
 			     | ((reg << ETH_MAN_REGA_SHIFT) & ETH_MAN_REGA)
 			     | ETH_MAN_CODE_IEEE802_3));
-	while (!(CEMAC_READ(ETH_SR) & ETH_SR_IDLE));
+	while (!(CEMAC_READ(ETH_SR) & ETH_SR_IDLE))
+		;
 
 	*val = CEMAC_READ(ETH_MAN) & ETH_MAN_DATA;
 	return 0;
@@ -667,7 +670,8 @@ cemac_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 			     | ((reg << ETH_MAN_REGA_SHIFT) & ETH_MAN_REGA)
 			     | ETH_MAN_CODE_IEEE802_3
 			     | (val & ETH_MAN_DATA)));
-	while (!(CEMAC_READ(ETH_SR) & ETH_SR_IDLE)) ;
+	while (!(CEMAC_READ(ETH_SR) & ETH_SR_IDLE))
+		;
 
 	return 0;
 }
@@ -676,18 +680,18 @@ cemac_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 static void
 cemac_statchg(struct ifnet *ifp)
 {
-        struct cemac_softc *sc = ifp->if_softc;
+	struct cemac_softc *sc = ifp->if_softc;
 	struct mii_data *mii = &sc->sc_mii;
-        uint32_t reg;
+	uint32_t reg;
 
-        /*
-         * We must keep the MAC and the PHY in sync as
-         * to the status of full-duplex!
-         */
+	/*
+	 * We must keep the MAC and the PHY in sync as
+	 * to the status of full-duplex!
+	 */
 	reg = CEMAC_READ(ETH_CFG);
 	reg &= ~ETH_CFG_FD;
-        if (sc->sc_mii.mii_media_active & IFM_FDX)
-                reg |= ETH_CFG_FD;
+	if (sc->sc_mii.mii_media_active & IFM_FDX)
+		reg |= ETH_CFG_FD;
 
 	reg &= ~ETH_CFG_SPD;
 	if (ISSET(sc->cemac_flags, CEMAC_FLAG_GEM))
@@ -742,7 +746,7 @@ cemac_ifioctl(struct ifnet *ifp, u_long cmd, void *data)
 	int s, error;
 
 	s = splnet();
-	switch(cmd) {
+	switch (cmd) {
 	default:
 		error = ether_ioctl(ifp, cmd, data);
 		if (error != ENETRESET)
@@ -917,7 +921,7 @@ cemac_ifinit(struct ifnet *ifp)
 
 	mii_mediachg(&sc->sc_mii);
 	callout_reset(&sc->cemac_tick_ch, hz, cemac_tick, sc);
-        ifp->if_flags |= IFF_RUNNING;
+	ifp->if_flags |= IFF_RUNNING;
 	splx(s);
 	return 0;
 }
@@ -943,9 +947,9 @@ cemac_ifstop(struct ifnet *ifp, int disable)
 	u = CEMAC_READ(ETH_TSR);
 	CEMAC_WRITE(ETH_TSR, (u & (ETH_TSR_UND | ETH_TSR_COMP | ETH_TSR_BNQ
 				  | ETH_TSR_IDLE | ETH_TSR_RLE
-				  | ETH_TSR_COL|ETH_TSR_OVR)));
+				  | ETH_TSR_COL | ETH_TSR_OVR)));
 	u = CEMAC_READ(ETH_RSR);
-	CEMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR|ETH_RSR_REC|ETH_RSR_BNA)));
+	CEMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR | ETH_RSR_REC | ETH_RSR_BNA)));
 #endif
 	callout_stop(&sc->cemac_tick_ch);
 
@@ -961,7 +965,7 @@ static void
 cemac_setaddr(struct ifnet *ifp)
 {
 	struct cemac_softc *sc = ifp->if_softc;
-	struct ethercom *ac = &sc->sc_ethercom;
+	struct ethercom *ec = &sc->sc_ethercom;
 	struct ether_multi *enm;
 	struct ether_multistep step;
 	uint8_t ias[3][ETHER_ADDR_LEN];
@@ -975,7 +979,7 @@ cemac_setaddr(struct ifnet *ifp)
 	cfg &= ~(ETH_CFG_MTI | ETH_CFG_UNI | ETH_CFG_CAF | ETH_CFG_UNI);
 
 	if (ifp->if_flags & IFF_PROMISC) {
-		cfg |=  ETH_CFG_CAF;
+		cfg |=	ETH_CFG_CAF;
 	} else {
 		cfg &= ~ETH_CFG_CAF;
 	}
@@ -984,7 +988,8 @@ cemac_setaddr(struct ifnet *ifp)
 
 	ifp->if_flags &= ~IFF_ALLMULTI;
 
-	ETHER_FIRST_MULTI(step, ac, enm);
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, ETHER_ADDR_LEN)) {
 			/*
@@ -1026,6 +1031,7 @@ cemac_setaddr(struct ifnet *ifp)
 		ETHER_NEXT_MULTI(step, enm);
 		nma++;
 	}
+	ETHER_UNLOCK(ec);
 
 	// program...
 	DPRINTFN(1,("%s: en0 %02x:%02x:%02x:%02x:%02x:%02x\n", __FUNCTION__,

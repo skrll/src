@@ -1,4 +1,4 @@
-/*	$NetBSD: audiodef.h,v 1.2 2019/05/08 13:40:17 isaki Exp $	*/
+/*	$NetBSD: audiodef.h,v 1.4 2019/06/10 13:49:39 isaki Exp $	*/
 
 /*
  * Copyright (C) 2017 Tetsuya Isaki. All rights reserved.
@@ -62,12 +62,6 @@
  * For now, there are no user interfaces to get/set it.
  */
 /* #define AUDIO_SUPPORT_TRACK_VOLUME */
-
-/*
- * Whether use C language's "implementation defined" behavior (note that
- * it's not "undefined" behavior).  It improves performance well.
- */
-#define AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR
 
 /* conversion stage */
 typedef struct {
@@ -181,13 +175,6 @@ struct audio_file {
 
 	/* process who wants audio SIGIO. */
 	pid_t		async_audio;
-
-	/*
-	 * Non-zero if some thread context is using this file structure
-	 * (including ptrack and rtrack) now.
-	 * Must be protected by sc_lock.
-	 */
-	volatile int lock;
 
 	SLIST_ENTRY(audio_file) entry;
 };

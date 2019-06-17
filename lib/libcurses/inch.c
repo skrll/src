@@ -1,4 +1,4 @@
-/*	$NetBSD: inch.c,v 1.12 2018/11/18 22:34:32 uwe Exp $	*/
+/*	$NetBSD: inch.c,v 1.14 2019/06/09 07:40:14 blymn Exp $	*/
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: inch.c,v 1.12 2018/11/18 22:34:32 uwe Exp $");
+__RCSID("$NetBSD: inch.c,v 1.14 2019/06/09 07:40:14 blymn Exp $");
 #endif				/* not lint */
 
 #include "curses.h"

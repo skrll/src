@@ -1,4 +1,4 @@
-/*	$NetBSD: if_xi.c,v 1.87 2019/04/22 08:36:03 msaitoh Exp $ */
+/*	$NetBSD: if_xi.c,v 1.90 2019/05/28 07:41:49 msaitoh Exp $ */
 /*	OpenBSD: if_xe.c,v 1.9 1999/09/16 11:28:42 niklas Exp 	*/
 
 /*
@@ -55,7 +55,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_xi.c,v 1.87 2019/04/22 08:36:03 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_xi.c,v 1.90 2019/05/28 07:41:49 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -133,7 +133,7 @@ int xidebug = 0;
 STATIC int xi_enable(struct xi_softc *);
 STATIC void xi_disable(struct xi_softc *);
 STATIC void xi_cycle_power(struct xi_softc *);
-STATIC int xi_ether_ioctl(struct ifnet *, u_long cmd, void *);
+STATIC int xi_ether_ioctl(struct ifnet *, u_long, void *);
 STATIC void xi_full_reset(struct xi_softc *);
 STATIC void xi_init(struct xi_softc *);
 STATIC int xi_ioctl(struct ifnet *, u_long, void *);
@@ -152,6 +152,7 @@ void
 xi_attach(struct xi_softc *sc, uint8_t *myea)
 {
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
+	struct mii_data * const mii = &sc->sc_mii;
 #ifdef XIDEBUG
 	uint16_t bmsr;
 #endif
@@ -201,7 +202,7 @@ xi_attach(struct xi_softc *sc, uint8_t *myea)
 	/* Reset and initialize the card. */
 	xi_full_reset(sc);
 
-	printf("%s: MAC address %s\n", device_xname(sc->sc_dev), ether_sprintf(myea));
+	device_printf(sc->sc_dev, "MAC address %s\n", ether_sprintf(myea));
 
 	ifp = &sc->sc_ethercom.ec_if;
 	/* Initialize the ifnet structure. */
@@ -224,24 +225,22 @@ xi_attach(struct xi_softc *sc, uint8_t *myea)
 	/*
 	 * Initialize our media structures and probe the MII.
 	 */
-	sc->sc_mii.mii_ifp = ifp;
-	sc->sc_mii.mii_readreg = xi_mdi_read;
-	sc->sc_mii.mii_writereg = xi_mdi_write;
-	sc->sc_mii.mii_statchg = xi_statchg;
-	sc->sc_ethercom.ec_mii = &sc->sc_mii;
-	ifmedia_init(&sc->sc_mii.mii_media, 0, xi_mediachange,
-	    ether_mediastatus);
+	mii->mii_ifp = ifp;
+	mii->mii_readreg = xi_mdi_read;
+	mii->mii_writereg = xi_mdi_write;
+	mii->mii_statchg = xi_statchg;
+	sc->sc_ethercom.ec_mii = mii;
+	ifmedia_init(&mii->mii_media, 0, xi_mediachange, ether_mediastatus);
 #ifdef XIDEBUG
 	xi_mdi_read(sc->sc_dev, 0, 1, &bmsr);
 	DPRINTF(XID_MII | XID_CONFIG, ("xi: bmsr %x\n", bmsr));
 #endif
 
-	mii_attach(sc->sc_dev, &sc->sc_mii, 0xffffffff, MII_PHY_ANY,
+	mii_attach(sc->sc_dev, mii, 0xffffffff, MII_PHY_ANY,
 		MII_OFFSET_ANY, 0);
-	if (LIST_FIRST(&sc->sc_mii.mii_phys) == NULL)
-		ifmedia_add(&sc->sc_mii.mii_media, IFM_ETHER | IFM_AUTO, 0,
-		    NULL);
-	ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER | IFM_AUTO);
+	if (LIST_FIRST(&mii->mii_phys) == NULL)
+		ifmedia_add(&mii->mii_media, IFM_ETHER | IFM_AUTO, 0, NULL);
+	ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_AUTO);
 
 	rnd_attach_source(&sc->sc_rnd_source, device_xname(sc->sc_dev),
 			  RND_TYPE_NET, RND_FLAG_DEFAULT);
@@ -452,7 +451,7 @@ xi_get(struct xi_softc *sc)
 		len = uimin(pktlen, len);
 		data = mtod(m, uint8_t *);
 		if (len > 1) {
-		        len &= ~1;
+			len &= ~1;
 			bus_space_read_multi_2(sc->sc_bst, sc->sc_bsh, EDP,
 			    (uint16_t *)data, len>>1);
 		} else
@@ -885,7 +884,7 @@ xi_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		if ((error = ifioctl_common(ifp, cmd, data)) != 0)
 			break;
 		/* XXX re-use ether_ioctl() */
-		switch (ifp->if_flags & (IFF_UP|IFF_RUNNING)) {
+		switch (ifp->if_flags & (IFF_UP | IFF_RUNNING)) {
 		case IFF_RUNNING:
 			/*
 			 * If interface is marked down and it is running,
@@ -904,7 +903,7 @@ xi_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 				break;
 			xi_init(sc);
 			break;
-		case IFF_UP|IFF_RUNNING:
+		case IFF_UP | IFF_RUNNING:
 			/*
 			 * Reset the interface to pick up changes in any
 			 * other flags that affect hardware registers.
@@ -945,7 +944,7 @@ xi_set_address(struct xi_softc *sc)
 {
 	bus_space_tag_t bst = sc->sc_bst;
 	bus_space_handle_t bsh = sc->sc_bsh;
-	struct ethercom *ether = &sc->sc_ethercom;
+	struct ethercom *ec = &sc->sc_ethercom;
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 	struct ether_multistep step;
 	struct ether_multi *enm;
@@ -966,12 +965,13 @@ xi_set_address(struct xi_softc *sc)
 			indaddr[i] = enaddr[i];
 	num = 1;
 
-	if (ether->ec_multicnt > 9) {
+	if (ec->ec_multicnt > 9) {
 		ifp->if_flags |= IFF_ALLMULTI;
 		goto done;
 	}
 
-	ETHER_FIRST_MULTI(step, ether, enm);
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
 	for (; enm; num++) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi,
 		    sizeof(enm->enm_addrlo)) != 0) {
@@ -981,6 +981,7 @@ xi_set_address(struct xi_softc *sc)
 			 * XXX should we be setting IFF_ALLMULTI here?
 			 */
 			ifp->if_flags |= IFF_ALLMULTI;
+			ETHER_UNLOCK(ec);
 			goto done;
 		}
 		if (sc->sc_chipset >= XI_CHIPSET_MOHAWK)
@@ -991,6 +992,7 @@ xi_set_address(struct xi_softc *sc)
 				indaddr[num * 6 + i] = enm->enm_addrlo[i];
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 	ifp->if_flags &= ~IFF_ALLMULTI;
 
 done:
@@ -1034,7 +1036,7 @@ done:
 	x = SWC1_IND_ADDR;
 	if (ifp->if_flags & IFF_PROMISC)
 		x |= SWC1_PROMISC;
-	if (ifp->if_flags & (IFF_ALLMULTI|IFF_PROMISC))
+	if (ifp->if_flags & (IFF_ALLMULTI | IFF_PROMISC))
 		x |= SWC1_MCAST_PROM;
 	if (!LIST_FIRST(&sc->sc_mii.mii_phys))
 		x |= SWC1_AUTO_MEDIA;

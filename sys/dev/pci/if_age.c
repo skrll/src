@@ -1,4 +1,4 @@
-/*	$NetBSD: if_age.c,v 1.56 2019/03/05 08:25:02 msaitoh Exp $ */
+/*	$NetBSD: if_age.c,v 1.59 2019/05/28 07:41:49 msaitoh Exp $ */
 /*	$OpenBSD: if_age.c,v 1.1 2009/01/16 05:00:34 kevlo Exp $	*/
 
 /*-
@@ -31,7 +31,7 @@
 /* Driver for Attansic Technology Corp. L1 Gigabit Ethernet. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_age.c,v 1.56 2019/03/05 08:25:02 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_age.c,v 1.59 2019/05/28 07:41:49 msaitoh Exp $");
 
 #include "vlan.h"
 
@@ -143,6 +143,7 @@ age_attach(device_t parent, device_t self, void *aux)
 	pci_intr_handle_t ih;
 	const char *intrstr;
 	struct ifnet *ifp = &sc->sc_ec.ec_if;
+	struct mii_data * const mii = &sc->sc_miibus;
 	pcireg_t memtype;
 	int error = 0;
 	char intrbuf[PCI_INTRSTR_LEN];
@@ -160,11 +161,11 @@ age_attach(device_t parent, device_t self, void *aux)
 	 */
 	memtype = pci_mapreg_type(sc->sc_pct, sc->sc_pcitag, AGE_PCIR_BAR);
 	switch (memtype) {
-        case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_32BIT:
-        case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_32BIT_1M:
-        case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_64BIT:
+	case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_32BIT:
+	case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_32BIT_1M:
+	case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_64BIT:
 		break;
-        default:
+	default:
 		aprint_error_dev(self, "invalid base address register\n");
 		break;
 	}
@@ -264,24 +265,22 @@ age_attach(device_t parent, device_t self, void *aux)
 #endif
 
 	/* Set up MII bus. */
-	sc->sc_miibus.mii_ifp = ifp;
-	sc->sc_miibus.mii_readreg = age_miibus_readreg;
-	sc->sc_miibus.mii_writereg = age_miibus_writereg;
-	sc->sc_miibus.mii_statchg = age_miibus_statchg;
+	mii->mii_ifp = ifp;
+	mii->mii_readreg = age_miibus_readreg;
+	mii->mii_writereg = age_miibus_writereg;
+	mii->mii_statchg = age_miibus_statchg;
 
-	sc->sc_ec.ec_mii = &sc->sc_miibus;
-	ifmedia_init(&sc->sc_miibus.mii_media, 0, age_mediachange,
-	    age_mediastatus);
-	mii_attach(self, &sc->sc_miibus, 0xffffffff, MII_PHY_ANY,
+	sc->sc_ec.ec_mii = mii;
+	ifmedia_init(&mii->mii_media, 0, age_mediachange, age_mediastatus);
+	mii_attach(self, mii, 0xffffffff, MII_PHY_ANY,
 	   MII_OFFSET_ANY, MIIF_DOPAUSE);
 
-	if (LIST_FIRST(&sc->sc_miibus.mii_phys) == NULL) {
+	if (LIST_FIRST(&mii->mii_phys) == NULL) {
 		aprint_error_dev(self, "no PHY found!\n");
-		ifmedia_add(&sc->sc_miibus.mii_media, IFM_ETHER | IFM_MANUAL,
-		    0, NULL);
-		ifmedia_set(&sc->sc_miibus.mii_media, IFM_ETHER | IFM_MANUAL);
+		ifmedia_add(&mii->mii_media, IFM_ETHER | IFM_MANUAL, 0, NULL);
+		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_MANUAL);
 	} else
-		ifmedia_set(&sc->sc_miibus.mii_media, IFM_ETHER | IFM_AUTO);
+		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_AUTO);
 
 	if_attach(ifp);
 	if_deferred_start_init(ifp, NULL);
@@ -371,7 +370,7 @@ age_miibus_readreg(device_t dev, int phy, int reg, uint16_t *val)
 }
 
 /*
- * 	Write a PHY register on the MII of the L1.
+ *	Write a PHY register on the MII of the L1.
  */
 static int
 age_miibus_writereg(device_t dev, int phy, int reg, uint16_t val)
@@ -484,10 +483,10 @@ age_mediachange(struct ifnet *ifp)
 static int
 age_intr(void *arg)
 {
-        struct age_softc *sc = arg;
-        struct ifnet *ifp = &sc->sc_ec.ec_if;
+	struct age_softc *sc = arg;
+	struct ifnet *ifp = &sc->sc_ec.ec_if;
 	struct cmb *cmb;
-        uint32_t status;
+	uint32_t status;
 
 	status = CSR_READ_4(sc, AGE_INTR_STATUS);
 	if (status == 0 || (status & AGE_INTRS) == 0)
@@ -504,7 +503,7 @@ age_intr(void *arg)
 
 	bus_dmamap_sync(sc->sc_dmat, sc->age_cdata.age_cmb_block_map, 0,
 	    sc->age_cdata.age_cmb_block_map->dm_mapsize,
-	    BUS_DMASYNC_POSTREAD|BUS_DMASYNC_POSTWRITE);
+	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 	status = le32toh(cmb->intr_status);
 	/* ACK/reenable interrupts */
 	CSR_WRITE_4(sc, AGE_INTR_STATUS, status);
@@ -518,7 +517,7 @@ age_intr(void *arg)
 		cmb->intr_status = 0;
 		bus_dmamap_sync(sc->sc_dmat, sc->age_cdata.age_cmb_block_map, 0,
 		    sc->age_cdata.age_cmb_block_map->dm_mapsize,
-		    BUS_DMASYNC_PREREAD|BUS_DMASYNC_PREWRITE);
+		    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 		if (ifp->if_flags & IFF_RUNNING) {
 			if (status & INTR_CMB_RX)
@@ -547,7 +546,7 @@ age_intr(void *arg)
 		/* check if more interrupts did came in */
 		bus_dmamap_sync(sc->sc_dmat, sc->age_cdata.age_cmb_block_map, 0,
 		    sc->age_cdata.age_cmb_block_map->dm_mapsize,
-		    BUS_DMASYNC_POSTREAD|BUS_DMASYNC_POSTWRITE);
+		    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 		status = le32toh(cmb->intr_status);
 	}
 
@@ -1025,8 +1024,8 @@ age_dma_free(struct age_softc *sc)
 static void
 age_start(struct ifnet *ifp)
 {
-        struct age_softc *sc = ifp->if_softc;
-        struct mbuf *m_head;
+	struct age_softc *sc = ifp->if_softc;
+	struct mbuf *m_head;
 	int enq;
 
 	if ((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
@@ -1109,7 +1108,6 @@ age_shutdown(device_t self, int howto)
 
 	return true;
 }
-
 
 static int
 age_ioctl(struct ifnet *ifp, u_long cmd, void *data)
@@ -1216,7 +1214,7 @@ age_encap(struct age_softc *sc, struct mbuf **m_head)
 		}
 
 		error = bus_dmamap_load_mbuf(sc->sc_dmat, map, *m_head,
-		  	    BUS_DMA_NOWAIT);
+			    BUS_DMA_NOWAIT);
 
 		if (error != 0) {
 			printf("%s: could not load defragged TX mbuf\n",
@@ -1279,7 +1277,7 @@ age_encap(struct age_softc *sc, struct mbuf **m_head)
 		if (i == (nsegs - 1))
 			break;
 
-		/* sync this descriptor and go to the next one */
+		/* Sync this descriptor and go to the next one */
 		bus_dmamap_sync(sc->sc_dmat, sc->age_cdata.age_tx_ring_map,
 		    prod * sizeof(struct tx_desc), sizeof(struct tx_desc),
 		    BUS_DMASYNC_PREWRITE);
@@ -1318,7 +1316,6 @@ age_txintr(struct age_softc *sc, int tpd_cons)
 	struct ifnet *ifp = &sc->sc_ec.ec_if;
 	struct age_txdesc *txd;
 	int cons, prog;
-
 
 	if (sc->age_cdata.age_tx_cnt <= 0) {
 		if (ifp->if_timer != 0)
@@ -1631,11 +1628,11 @@ age_init(struct ifnet *ifp)
 
 	/* Initialize descriptors. */
 	error = age_init_rx_ring(sc);
-        if (error != 0) {
+	if (error != 0) {
 		printf("%s: no memory for Rx buffers.\n", device_xname(sc->sc_dev));
 		age_stop(ifp, 0);
 		return error;
-        }
+	}
 	age_init_rr_ring(sc);
 	age_init_tx_ring(sc);
 	age_init_cmb_block(sc);
@@ -1674,7 +1671,7 @@ age_init(struct ifnet *ifp)
 	/* Tell hardware that we're ready to load descriptors. */
 	CSR_WRITE_4(sc, AGE_DMA_BLOCK, DMA_BLOCK_LOAD);
 
-        /*
+	/*
 	 * Initialize mailbox register.
 	 * Updated producer/consumer index information is exchanged
 	 * through this mailbox register. However Tx producer and
@@ -1845,7 +1842,7 @@ age_init(struct ifnet *ifp)
 	 */
 	CSR_WRITE_4(sc, AGE_WOL_CFG, 0);
 
-        /*
+	/*
 	 * Configure Tx/Rx MACs.
 	 *  - Auto-padding for short frames.
 	 *  - Enable CRC generation.
@@ -2183,7 +2180,7 @@ age_init_cmb_block(struct age_softc *sc)
 	memset(rd->age_cmb_block, 0, AGE_CMB_BLOCK_SZ);
 	bus_dmamap_sync(sc->sc_dmat, sc->age_cdata.age_cmb_block_map, 0,
 	    sc->age_cdata.age_cmb_block_map->dm_mapsize,
-	    BUS_DMASYNC_PREREAD|BUS_DMASYNC_PREWRITE);
+	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 }
 
 static void
@@ -2290,12 +2287,14 @@ age_rxfilter(struct age_softc *sc)
 		/* Program new filter. */
 		memset(mchash, 0, sizeof(mchash));
 
+		ETHER_LOCK(ec);
 		ETHER_FIRST_MULTI(step, ec, enm);
 		while (enm != NULL) {
 			crc = ether_crc32_le(enm->enm_addrlo, ETHER_ADDR_LEN);
 			mchash[crc >> 31] |= 1 << ((crc >> 26) & 0x1f);
 			ETHER_NEXT_MULTI(step, enm);
 		}
+		ETHER_UNLOCK(ec);
 	}
 
 	CSR_WRITE_4(sc, AGE_MAR0, mchash[0]);

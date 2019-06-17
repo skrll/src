@@ -1,4 +1,4 @@
-/*	$NetBSD: dm9000.c,v 1.17 2019/04/24 08:21:25 msaitoh Exp $	*/
+/*	$NetBSD: dm9000.c,v 1.21 2019/05/29 10:07:29 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2009 Paul Fleischer
@@ -179,16 +179,16 @@ void	dme_mediastatus(struct ifnet *, struct ifmediareq *);
 /*** Internal methods ***/
 
 /* Prepare data to be transmitted (i.e. dequeue and load it into the DM9000) */
-void    dme_prepare(struct dme_softc *, struct ifnet *);
+void	dme_prepare(struct dme_softc *, struct ifnet *);
 
 /* Transmit prepared data */
-void    dme_transmit(struct dme_softc *);
+void	dme_transmit(struct dme_softc *);
 
 /* Receive data */
-void    dme_receive(struct dme_softc *, struct ifnet *);
+void	dme_receive(struct dme_softc *, struct ifnet *);
 
 /* Software Initialize/Reset of the DM9000 */
-void    dme_reset(struct dme_softc *);
+void	dme_reset(struct dme_softc *);
 
 /* Configure multicast filter */
 void	dme_set_addr_filter(struct dme_softc *);
@@ -214,7 +214,8 @@ dme_phy_read(struct dme_softc *sc, int reg)
 	dme_write(sc, DM9000_EPCR, DM9000_EPCR_ERPRR + DM9000_EPCR_EPOS_PHY);
 
 	/* Wait until access to PHY has completed */
-	while (dme_read(sc, DM9000_EPCR) & DM9000_EPCR_ERRE);
+	while (dme_read(sc, DM9000_EPCR) & DM9000_EPCR_ERRE)
+		;
 
 	/* Reset ERPRR-bit */
 	dme_write(sc, DM9000_EPCR, DM9000_EPCR_EPOS_PHY);
@@ -436,6 +437,7 @@ dme_attach(struct dme_softc *sc, const uint8_t *enaddr)
 	IFQ_SET_READY(&ifp->if_snd);
 
 	/* Initialize ifmedia structures. */
+	sc->sc_ethercom.ec_ifmedia = &sc->sc_media;
 	ifmedia_init(&sc->sc_media, 0, dme_mediachange, dme_mediastatus);
 	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_AUTO, 0, NULL);
 	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_10_T | IFM_FDX, 0, NULL);
@@ -443,7 +445,7 @@ dme_attach(struct dme_softc *sc, const uint8_t *enaddr)
 	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_100_TX | IFM_FDX, 0, NULL);
 	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_100_TX, 0, NULL);
 
-	ifmedia_set(&sc->sc_media, IFM_ETHER|IFM_AUTO);
+	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_AUTO);
 
 	if (enaddr != NULL)
 		memcpy(sc->sc_enaddr, enaddr, sizeof(sc->sc_enaddr));
@@ -491,7 +493,7 @@ dme_attach(struct dme_softc *sc, const uint8_t *enaddr)
 	    DM9000_IOMODE_MASK) >> DM9000_IOMODE_SHIFT;
 
 	DPRINTF(("DM9000 Operation Mode: "));
-	switch( io_mode) {
+	switch (io_mode) {
 	case DM9000_MODE_16BIT:
 		DPRINTF(("16-bit mode"));
 		sc->sc_data_width = 2;
@@ -692,16 +694,11 @@ int
 dme_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct dme_softc *sc = ifp->if_softc;
-	struct ifreq *ifr = data;
 	int s, error = 0;
 
 	s = splnet();
 
-	switch(cmd) {
-	case SIOCGIFMEDIA:
-	case SIOCSIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
-		break;
+	switch (cmd) {
 	default:
 		error = ether_ioctl(ifp, cmd, data);
 		if (error == ENETRESET) {
@@ -917,19 +914,20 @@ dme_set_addr_filter(struct dme_softc *sc)
 	af[0] = af[1] = af[2] = af[3] = 0x0000;
 	ifp->if_flags &= ~IFF_ALLMULTI;
 
+	ETHER_LOCK(ec);
 	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		uint16_t hash;
 		if (memcpy(enm->enm_addrlo, enm->enm_addrhi,
 		    sizeof(enm->enm_addrlo))) {
 			/*
-	                 * We must listen to a range of multicast addresses.
-	                 * For now, just accept all multicasts, rather than
-	                 * trying to set only those filter bits needed to match
-	                 * the range.  (At this time, the only use of address
-	                 * ranges is for IP multicast routing, for which the
-	                 * range is big enough to require all bits set.)
-	                 */
+			 * We must listen to a range of multicast addresses.
+			 * For now, just accept all multicasts, rather than
+			 * trying to set only those filter bits needed to match
+			 * the range.  (At this time, the only use of address
+			 * ranges is for IP multicast routing, for which the
+			 * range is big enough to require all bits set.)
+			 */
 			ifp->if_flags |= IFF_ALLMULTI;
 			af[0] = af[1] = af[2] = af[3] = 0xffff;
 			break;
@@ -939,6 +937,7 @@ dme_set_addr_filter(struct dme_softc *sc)
 			ETHER_NEXT_MULTI(step, enm);
 		}
 	}
+	ETHER_UNLOCK(ec);
 
 	/* Write the multicast address filter */
 	for (i = 0; i < 4; i++) {
@@ -1039,8 +1038,8 @@ dme_pkt_write_2(struct dme_softc *sc, struct mbuf *bufChain)
 				}
 				to_write -= i * 2;
 			}
-		} /* while(...) */
-	} /* for(...) */
+		} /* while (...) */
+	} /* for (...) */
 
 	return length;
 }
@@ -1131,7 +1130,7 @@ dme_pkt_write_1(struct dme_softc *sc, struct mbuf *bufChain)
 			    sc->dme_data, *write_ptr);
 			write_ptr++;
 		}
-	} /* for(...) */
+	} /* for (...) */
 
 	return length;
 }

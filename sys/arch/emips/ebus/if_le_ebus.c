@@ -1,4 +1,4 @@
-/*	$NetBSD: if_le_ebus.c,v 1.17 2019/02/05 06:17:01 msaitoh Exp $	*/
+/*	$NetBSD: if_le_ebus.c,v 1.20 2019/05/29 10:07:28 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_le_ebus.c,v 1.17 2019/02/05 06:17:01 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_le_ebus.c,v 1.20 2019/05/29 10:07:28 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -194,9 +194,10 @@ enic_attach(device_t parent, device_t self, void *aux)
 	IFQ_SET_READY(&ifp->if_snd);
 
 	/* Initialize ifmedia structures. */
+	sc->sc_ethercom.ec_ifmedia = &sc->sc_media;
 	ifmedia_init(&sc->sc_media, 0, enic_mediachange, enic_mediastatus);
-	ifmedia_add(&sc->sc_media, IFM_ETHER|IFM_MANUAL, 0, NULL);
-	ifmedia_set(&sc->sc_media, IFM_ETHER|IFM_MANUAL);
+	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_MANUAL, 0, NULL);
+	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_MANUAL);
 
 	/* Make sure the chip is stopped. */
 	enic_stop(ifp, 0);
@@ -240,7 +241,7 @@ static int enic_gethwinfo(struct enic_softc *sc)
 	/*
 	 * First thing first, get the MAC address
 	 */
-	memset(buffer,0,sizeof buffer);
+	memset(buffer, 0, sizeof buffer);
 	buffer[0] = ENIC_CMD_GET_ADDRESS;
 	buffer[3] = ENIC_CMD_GET_ADDRESS;	/* bswap bug */
 	sc->sc_regs->SizeAndFlags = (sizeof buffer) | ES_F_CMD;
@@ -266,7 +267,7 @@ static int enic_gethwinfo(struct enic_softc *sc)
 	/*
 	 * Next get the HW parameters
 	 */
-	memset(buffer,0,sizeof buffer);
+	memset(buffer, 0, sizeof buffer);
 	buffer[0] = ENIC_CMD_GET_INFO;
 	buffer[3] = ENIC_CMD_GET_INFO;	/* bswap bug */
 	sc->sc_regs->SizeAndFlags = (sizeof buffer) | ES_F_CMD;
@@ -317,7 +318,7 @@ enic_reset(struct ifnet *ifp)
 	int s;
 
 	s = splnet();
-	enic_stop(ifp,0);
+	enic_stop(ifp, 0);
 	enic_init(ifp);
 	splx(s);
 }
@@ -508,7 +509,7 @@ void enic_refill(struct enic_softc *sc)
 	m->m_len = MCLBYTES;
 	ADJUST_MBUF_OFFSET(m);
 
-	enic_post_recv(sc,m);
+	enic_post_recv(sc, m);
 }
 
 int
@@ -524,7 +525,7 @@ enic_init(struct ifnet *ifp)
 		enic_kill_xmit(sc);
 
 		/* Re-post all recv buffers */
-		enic_post_recv(sc,NULL);
+		enic_post_recv(sc, NULL);
 	}
 
 	/* Start the eNIC */
@@ -535,7 +536,7 @@ enic_init(struct ifnet *ifp)
 	ctl &= ~EC_RXDIS;
 	sc->sc_regs->Control = ctl;
 #if 0
-	printf("enic_init <- %x\n",ctl);
+	printf("enic_init <- %x\n", ctl);
 #endif
 
 	if_schedule_deferred_start(ifp);
@@ -597,7 +598,6 @@ enic_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	s = splnet();
 
 	switch (cmd) {
-	case SIOCGIFMEDIA:
 	case SIOCSIFMEDIA:
 #if 0 /*DEBUG*/
 	    {
@@ -619,7 +619,7 @@ enic_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 
 			for (i = 0; i < 64; i++)
 				if (ei_drops[i])
-					printf(" %d.%d",i,ei_drops[i]);
+					printf(" %d.%d", i, ei_drops[i]);
 			printf("\n");
 		}
 	    }
@@ -635,7 +635,7 @@ enic_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			 * on after a stop. So.
 			 */
 #if 0
-			printf("enic_ioctl(%lx)\n",cmd);
+			printf("enic_ioctl(%lx)\n", cmd);
 #endif
 			enic_init(ifp);
 		}
@@ -663,7 +663,7 @@ enic_intr(void *cookie, void *f)
 	isr = sc->sc_regs->Control;
 
 	/* Make sure there is one and that we should take it */
-	if ((isr & (EC_INTEN|EC_DONE)) != (EC_INTEN|EC_DONE))
+	if ((isr & (EC_INTEN | EC_DONE)) != (EC_INTEN | EC_DONE))
 		return 0;
 
 	if (isr & EC_ERROR) {
@@ -685,9 +685,9 @@ enic_intr(void *cookie, void *f)
 
 		fl = saf & (ES_F_MASK &~ ES_F_DONE);
 		if (fl == ES_F_RECV)
-			enic_rint(sc,saf,lo);
+			enic_rint(sc, saf, lo);
 		else if (fl == ES_F_XMIT)
-			enic_tint(sc,saf,lo);
+			enic_tint(sc, saf, lo);
 		else {
 			/*
 			 * we do not currently expect or care for
@@ -748,7 +748,7 @@ enic_rint(struct enic_softc *sc, uint32_t saf, paddr_t phys)
 		ifp->if_ierrors++;
 
 		/* reuse it */
-		enic_post_recv(sc,m);
+		enic_post_recv(sc, m);
 		return;
 	}
 
@@ -897,7 +897,7 @@ enic_start(struct ifnet *ifp)
 
 		sc->sc_no_td++;
 
-		tpostone(phys,len);
+		tpostone(phys, len);
 
 		if (sc->sc_regs->Control & EC_IF_FULL) {
 			ifp->if_flags |= IFF_OACTIVE;

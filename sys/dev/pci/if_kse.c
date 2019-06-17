@@ -1,4 +1,4 @@
-/*	$NetBSD: if_kse.c,v 1.35 2019/04/26 06:33:34 msaitoh Exp $	*/
+/*	$NetBSD: if_kse.c,v 1.38 2019/05/29 10:07:29 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2006 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_kse.c,v 1.35 2019/04/26 06:33:34 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_kse.c,v 1.38 2019/05/29 10:07:29 msaitoh Exp $");
 
 
 #include <sys/param.h>
@@ -490,7 +490,9 @@ kse_attach(device_t parent, device_t self, void *aux)
 	callout_init(&sc->sc_callout, 0);
 	callout_init(&sc->sc_stat_ch, 0);
 
+	/* Initialize ifmedia structures. */
 	ifm = &sc->sc_media;
+	sc->sc_ethercom.ec_ifmedia = ifm;
 	if (sc->sc_chip == 0x8841) {
 		ifmedia_init(ifm, 0, ifmedia_upd, ifmedia_sts);
 		ifmedia_add(ifm, IFM_ETHER | IFM_10_T, 0, NULL);
@@ -638,17 +640,11 @@ static int
 kse_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct kse_softc *sc = ifp->if_softc;
-	struct ifreq *ifr = (struct ifreq *)data;
 	int s, error;
 
 	s = splnet();
 
 	switch (cmd) {
-	case SIOCSIFMEDIA:
-	case SIOCGIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
-		break;
-
 	default:
 		if ((error = ether_ioctl(ifp, cmd, data)) != ENETRESET)
 			break;
@@ -1023,7 +1019,8 @@ kse_set_filter(struct kse_softc *sc)
 {
 	struct ether_multistep step;
 	struct ether_multi *enm;
-	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
+	struct ethercom *ec = &sc->sc_ethercom;
+	struct ifnet *ifp = &ec->ec_if;
 	uint32_t h, hashes[2];
 
 	sc->sc_rxc &= ~(RXC_MHTE | RXC_RM);
@@ -1031,9 +1028,12 @@ kse_set_filter(struct kse_softc *sc)
 	if (ifp->if_flags & IFF_PROMISC)
 		return;
 
-	ETHER_FIRST_MULTI(step, &sc->sc_ethercom, enm);
-	if (enm == NULL)
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
+	if (enm == NULL) {
+		ETHER_UNLOCK(ec);
 		return;
+	}
 	hashes[0] = hashes[1] = 0;
 	do {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, ETHER_ADDR_LEN)) {
@@ -1045,12 +1045,14 @@ kse_set_filter(struct kse_softc *sc)
 			 * ranges is for IP multicast routing, for which the
 			 * range is big enough to require all bits set.)
 			 */
+			ETHER_UNLOCK(ec);
 			goto allmulti;
 		}
 		h = ether_crc32_le(enm->enm_addrlo, ETHER_ADDR_LEN) >> 26;
 		hashes[h >> 5] |= 1 << (h & 0x1f);
 		ETHER_NEXT_MULTI(step, enm);
 	} while (enm != NULL);
+	ETHER_UNLOCK(ec);
 	sc->sc_rxc |= RXC_MHTE;
 	CSR_WRITE_4(sc, MTR0, hashes[0]);
 	CSR_WRITE_4(sc, MTR1, hashes[1]);

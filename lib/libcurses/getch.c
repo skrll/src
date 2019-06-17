@@ -1,4 +1,4 @@
-/*	$NetBSD: getch.c,v 1.71 2019/03/14 00:36:06 rin Exp $	*/
+/*	$NetBSD: getch.c,v 1.73 2019/06/09 07:40:14 blymn Exp $	*/
 
 /*
  * Copyright (c) 1981, 1993, 1994
@@ -34,7 +34,7 @@
 #if 0
 static char sccsid[] = "@(#)getch.c	8.2 (Berkeley) 5/4/94";
 #else
-__RCSID("$NetBSD: getch.c,v 1.71 2019/03/14 00:36:06 rin Exp $");
+__RCSID("$NetBSD: getch.c,v 1.73 2019/06/09 07:40:14 blymn Exp $");
 #endif
 #endif					/* not lint */
 
@@ -820,6 +820,29 @@ wgetch(WINDOW *win)
 
 	if (is_wintouched(win))
 		wrefresh(win);
+	else {
+		if ((_cursesi_screen->curscr->cury != (win->begy + win->cury))
+		    || (_cursesi_screen->curscr->curx != (win->begx + win->curx))) {
+#ifdef DEBUG
+			__CTRACE(__CTRACE_INPUT, "wgetch: curscr cury %d cury %d curscr curx %d curx %d\n",
+			_cursesi_screen->curscr->cury, win->begy + win->cury,
+			_cursesi_screen->curscr->curx, win->begx + win->curx);
+#endif
+			/*
+			 * Just in case the window is not dirty but the
+			 * cursor was  moved, check and update the 
+			 * cursor location.
+			 */
+			mvcur(_cursesi_screen->curscr->cury,
+			    _cursesi_screen->curscr->curx,
+		      	    win->cury + win->begy, win->curx + win->begx);
+			_cursesi_screen->curscr->cury =
+			    win->cury + win->begy;
+			_cursesi_screen->curscr->curx =
+			    win->curx + win->begx;
+		}
+	}
+
 #ifdef DEBUG
 	__CTRACE(__CTRACE_INPUT, "wgetch: __echoit = %d, "
 	    "__rawmode = %d, __nl = %d, flags = %#.4x, delay = %d\n",

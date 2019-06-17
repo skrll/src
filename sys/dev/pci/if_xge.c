@@ -1,4 +1,4 @@
-/*      $NetBSD: if_xge.c,v 1.29 2019/04/26 06:33:34 msaitoh Exp $ */
+/*      $NetBSD: if_xge.c,v 1.32 2019/05/29 10:07:29 msaitoh Exp $ */
 
 /*
  * Copyright (c) 2004, SUNET, Swedish University Computer Network.
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_xge.c,v 1.29 2019/04/26 06:33:34 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_xge.c,v 1.32 2019/05/29 10:07:29 msaitoh Exp $");
 
 
 #include <sys/param.h>
@@ -93,11 +93,11 @@ __KERNEL_RCSID(0, "$NetBSD: if_xge.c,v 1.29 2019/04/26 06:33:34 msaitoh Exp $");
 /*
  * Use clever macros to avoid a bunch of #ifdef's.
  */
-#define XCONCAT3(x,y,z) x ## y ## z
-#define CONCAT3(x,y,z) XCONCAT3(x,y,z)
-#define NDESC_BUFMODE CONCAT3(NDESC_,RX_MODE,BUFMODE)
-#define rxd_4k CONCAT3(rxd,RX_MODE,_4k)
-#define rxdesc ___CONCAT(rxd,RX_MODE)
+#define XCONCAT3(x, y, z) x ## y ## z
+#define CONCAT3(x, y, z) XCONCAT3(x, y, z)
+#define NDESC_BUFMODE CONCAT3(NDESC_, RX_MODE, BUFMODE)
+#define rxd_4k CONCAT3(rxd, RX_MODE, _4k)
+#define rxdesc ___CONCAT(rxd, RX_MODE)
 
 #define NEXTTX(x)	(((x)+1) % NTXDESCS)
 #define NRXFRAGS	RX_MODE /* hardware imposed frags */
@@ -517,6 +517,7 @@ xge_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Setup media stuff.
 	 */
+	sc->sc_ethercom.ec_ifmedia = &sc->xena_media;
 	ifmedia_init(&sc->xena_media, IFM_IMASK, xge_xgmii_mediachange,
 	    xge_ifmedia_status);
 	ifmedia_add(&sc->xena_media, IFM_ETHER | IFM_10G_LR, 0, NULL);
@@ -845,16 +846,12 @@ xge_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	case SIOCSIFMTU:
 		if (ifr->ifr_mtu < ETHERMIN || ifr->ifr_mtu > XGE_MAX_MTU)
 			error = EINVAL;
-		else if ((error = ifioctl_common(ifp, cmd, data)) == ENETRESET){
+		else if ((error = ifioctl_common(ifp, cmd, data))
+		    == ENETRESET) {
 			PIF_WCSR(RMAC_MAX_PYLD_LEN,
 			    RMAC_PYLD_LEN(ifr->ifr_mtu));
 			error = 0;
 		}
-		break;
-
-	case SIOCGIFMEDIA:
-	case SIOCSIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &sc->xena_media, cmd);
 		break;
 
 	default:
@@ -886,14 +883,18 @@ xge_mcast_filter(struct xge_softc *sc)
 	int i, numaddr = 1; /* first slot used for card unicast address */
 	uint64_t val;
 
+	ETHER_LOCK(ec);
 	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, ETHER_ADDR_LEN)) {
 			/* Skip ranges */
+			ETHER_UNLOCK(ec);
 			goto allmulti;
 		}
-		if (numaddr == MAX_MCAST_ADDR)
+		if (numaddr == MAX_MCAST_ADDR) {
+			ETHER_UNLOCK(ec);
 			goto allmulti;
+		}
 		for (val = 0, i = 0; i < ETHER_ADDR_LEN; i++) {
 			val <<= 8;
 			val |= enm->enm_addrlo[i];
@@ -907,6 +908,7 @@ xge_mcast_filter(struct xge_softc *sc)
 		numaddr++;
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 	/* set the remaining entries to the broadcast address */
 	for (i = numaddr; i < MAX_MCAST_ADDR; i++) {
 		PIF_WCSR(RMAC_ADDR_DATA0_MEM, 0xffffffffffff0000ULL);

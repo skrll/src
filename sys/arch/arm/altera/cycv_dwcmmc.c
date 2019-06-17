@@ -1,4 +1,4 @@
-/* $NetBSD: cycv_dwcmmc.c,v 1.1 2018/09/19 17:31:38 aymeric Exp $ */
+/* $NetBSD: cycv_dwcmmc.c,v 1.3 2019/05/24 10:37:39 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cycv_dwcmmc.c,v 1.1 2018/09/19 17:31:38 aymeric Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cycv_dwcmmc.c,v 1.3 2019/05/24 10:37:39 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -51,6 +51,11 @@ static int	cycv_dwcmmc_card_detect(struct dwc_mmc_softc *);
 
 struct cycv_dwcmmc_softc {
 	struct dwc_mmc_softc	sc;
+	int			sc_phandle;
+	bool			sc_non_removable;
+	bool			sc_broken_cd;
+	struct fdtbus_gpio_pin	*sc_gpio_cd;
+	bool			sc_gpio_cd_inverted;
 	struct clk		*sc_clk_biu;
 	struct clk		*sc_clk_ciu;
 };
@@ -133,6 +138,13 @@ cycv_dwcmmc_attach(device_t parent, device_t self, void *aux)
 	sc->sc_card_detect = cycv_dwcmmc_card_detect;
 	sc->sc_write_protect = NULL;
 
+	esc->sc_phandle = phandle;
+	esc->sc_gpio_cd = fdtbus_gpio_acquire(phandle, "cd-gpios", GPIO_PIN_INPUT);
+	esc->sc_gpio_cd_inverted = of_hasprop(phandle, "cd-inverted") ? 0 : 1;
+
+	esc->sc_non_removable = of_hasprop(phandle, "non-removable");
+	esc->sc_broken_cd = of_hasprop(phandle, "broken-cd");
+
 	aprint_naive("\n");
 	aprint_normal(": MHS (%u Hz)\n", sc->sc_clock_freq);
 
@@ -157,7 +169,17 @@ cycv_dwcmmc_attach(device_t parent, device_t self, void *aux)
 static int
 cycv_dwcmmc_card_detect(struct dwc_mmc_softc *sc)
 {
-	/* Card detection is broken on the nanosoc. Pretend it's present. */
+	struct cycv_dwcmmc_softc *esc = device_private(sc->sc_dev);
+	int val;
 
-	return 0;
+	if (esc->sc_non_removable || esc->sc_broken_cd) {
+		return 1;
+	} else if (esc->sc_gpio_cd != NULL) {
+		val = fdtbus_gpio_read(esc->sc_gpio_cd);
+		if (esc->sc_gpio_cd_inverted)
+			val = !val;
+		return val;
+	} else {
+		return 1;
+	}
 }

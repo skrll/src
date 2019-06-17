@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_ptrace_common.c,v 1.53 2019/05/10 21:08:26 mgorny Exp $	*/
+/*	$NetBSD: sys_ptrace_common.c,v 1.55 2019/06/11 23:18:55 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -118,7 +118,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.53 2019/05/10 21:08:26 mgorny Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.55 2019/06/11 23:18:55 kamil Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ptrace.h"
@@ -162,6 +162,8 @@ __KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.53 2019/05/10 21:08:26 mgorn
 
 static kauth_listener_t ptrace_listener;
 static int process_auxv_offset(struct proc *, struct uio *);
+
+extern int user_va0_disable;
 
 #if 0
 static int ptrace_cbref;
@@ -625,6 +627,8 @@ ptrace_get_event_mask(struct proc *t, void *addr, size_t data)
 	    PTRACE_LWP_CREATE : 0;
 	pe.pe_set_event |= ISSET(t->p_slflag, PSL_TRACELWP_EXIT) ?
 	    PTRACE_LWP_EXIT : 0;
+	pe.pe_set_event |= ISSET(t->p_slflag, PSL_TRACEPOSIX_SPAWN) ?
+	    PTRACE_POSIX_SPAWN : 0;
 	DPRINTF(("%s: lwp=%d event=%#x\n", __func__,
 	    t->p_sigctx.ps_lwp, pe.pe_set_event));
 	return copyout(&pe, addr, sizeof(pe));
@@ -669,6 +673,12 @@ ptrace_set_event_mask(struct proc *t, void *addr, size_t data)
 		SET(t->p_slflag, PSL_TRACELWP_EXIT);
 	else
 		CLR(t->p_slflag, PSL_TRACELWP_EXIT);
+
+	if (pe.pe_set_event & PTRACE_POSIX_SPAWN)
+		SET(t->p_slflag, PSL_TRACEPOSIX_SPAWN);
+	else
+		CLR(t->p_slflag, PSL_TRACEPOSIX_SPAWN);
+
 	return 0;
 }
 
@@ -698,6 +708,9 @@ ptrace_get_process_state(struct proc *t, void *addr, size_t data)
 	} else if (t->p_lwp_exited) {
 		ps.pe_report_event = PTRACE_LWP_EXIT;
 		ps.pe_lwp = t->p_lwp_exited;
+	} else if (t->p_pspid) {
+		ps.pe_report_event = PTRACE_POSIX_SPAWN;
+		ps.pe_other_pid = t->p_pspid;
 	}
 	DPRINTF(("%s: lwp=%d event=%#x pid=%d lwp=%d\n", __func__,
 	    t->p_sigctx.ps_lwp, ps.pe_report_event,
@@ -883,6 +896,7 @@ ptrace_sendsig(struct proc *t, struct lwp *lt, int signo, int resume_all)
 	t->p_vfpid_done = 0;
 	t->p_lwp_created = 0;
 	t->p_lwp_exited = 0;
+	t->p_pspid = 0;
 
 	/* Finally, deliver the requested signal (or none). */
 	if (t->p_stat == SSTOP) {
@@ -1106,12 +1120,15 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 		piod.piod_op = write ? PIOD_WRITE_D : PIOD_READ_D;
 		if ((error = ptrace_doio(l, t, lt, &piod, addr, true)) != 0)
 			break;
-#if 0 // XXX: GDB depends on it
-		if (piod.piod_len < sizeof(tmp)) {
-			error = EIO;
-			break;
-		}
-#endif
+		/*
+		 * For legacy reasons we treat here two results as success:
+		 *  - incomplete transfer  piod.piod_len < sizeof(tmp)
+		 *  - no transfer          piod.piod_len == 0
+		 *
+		 * This means that there is no way to determine whether
+		 * transfer operation was performed in PT_WRITE and PT_READ
+		 * calls.
+		 */
 		if (!write)
 			*retval = tmp;
 		break;
@@ -1125,12 +1142,11 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 		}
 		if ((error = ptrace_doio(l, t, lt, &piod, addr, false)) != 0)
 			break;
-#if 0 // XXX: GDB depends on it
-		if (piod.piod_len < 1) {
-			error = EIO;
-			break;
-		}
-#endif
+		/*
+		 * For legacy reasons we treat here two results as success:
+		 *  - incomplete transfer  piod.piod_len < sizeof(tmp)
+		 *  - no transfer          piod.piod_len == 0
+		 */
 		error = ptm->ptm_copyout_piod(&piod, addr, data);
 		break;
 
@@ -1251,16 +1267,15 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 		}
 
 		/*
-		 * If the address parameter is 0, report error.
+		 * Reject setting program cunter to 0x0 if VA0 is disabled.
 		 *
-		 * It's a popular mistake to set Program Counter to 0x0.
-		 * In certain kernels this is allowable parameter and causes
-		 * portability issue.
-		 *
-		 * Disallow explicitly zeroed PC, instead of triggering
-		 * a harder to debug crash later.
+		 * Not all kernels implement this feature to set Program
+		 * Counter in one go in PT_CONTINUE and similar operations.
+		 * This causes portability issues as passing address 0x0
+		 * on these kernels is no-operation, but can cause failure
+		 * in most cases on NetBSD.
 		 */
-		if (addr == 0) {
+		if (user_va0_disable && addr == 0) {
 			error = EINVAL;
 			break;
 		}

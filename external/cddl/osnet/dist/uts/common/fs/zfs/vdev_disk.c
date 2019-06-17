@@ -34,6 +34,7 @@
 #include <sys/zio.h>
 #include <sys/sunldi.h>
 #include <sys/fm/fs/zfs.h>
+#include <sys/disk.h>
 #include <sys/disklabel.h>
 #include <sys/dkio.h>
 #include <sys/workqueue.h>
@@ -146,6 +147,8 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	spa_t *spa = vd->vdev_spa;
 	vdev_disk_t *dvd;
 	vnode_t *vp;
+	struct dkwedge_info dkw;
+	struct disk *pdk;
 	int error, cmd;
 	struct partinfo pinfo;
 
@@ -216,6 +219,27 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 		return (SET_ERROR(EINVAL));
 	}
 
+	/* XXXNETBSD Once tls-maxphys gets merged this block becomes:
+		pdk = disk_find_blk(vp->v_rdev);
+		dvd->vd_maxphys = (pdk ? disk_maxphys(pdk) : MACHINE_MAXPHYS);
+	*/
+	{
+		struct buf buf = { .b_bcount = MAXPHYS };
+		const char *dev_name;
+
+		dev_name = devsw_blk2name(major(vp->v_rdev));
+		if (dev_name) {
+			char disk_name[16];
+
+			snprintf(disk_name, sizeof(disk_name), "%s%d",
+			    dev_name, DISKUNIT(vp->v_rdev));
+			pdk = disk_find(disk_name);
+			if (pdk && pdk->dk_driver && pdk->dk_driver->d_minphys)
+				(*pdk->dk_driver->d_minphys)(&buf);
+		}
+		dvd->vd_maxphys = buf.b_bcount;
+	}
+
 	/*
 	 * XXXNETBSD Compare the devid to the stored value.
 	 */
@@ -235,9 +259,20 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 skip_open:
 	/*
 	 * Determine the actual size of the device.
-	 * XXXNETBSD wedges.
+	 * Try wedge info first as it supports larger disks.
 	 */
-	error = VOP_IOCTL(vp, DIOCGPARTINFO, &pinfo, FREAD|FWRITE, kcred);
+	error = VOP_IOCTL(vp, DIOCGWEDGEINFO, &dkw, FREAD, NOCRED);
+	if (error == 0) {
+		pdk = disk_find(dkw.dkw_parent);
+		if (pdk) {
+			pinfo.pi_secsize = (1 << pdk->dk_byteshift);
+			pinfo.pi_size = dkw.dkw_size;
+			pinfo.pi_offset = dkw.dkw_offset;
+		} else	
+			error = ENODEV;
+	}
+	if (error)
+		error = VOP_IOCTL(vp, DIOCGPARTINFO, &pinfo, FREAD, kcred);
 	if (error != 0) {
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
 		return (SET_ERROR(error));
@@ -407,6 +442,7 @@ vdev_disk_io_start(zio_t *zio)
 		zio_interrupt(zio);
 		return;
 	}
+	ASSERT3U(dvd->vd_maxphys, >, 0);
 	vp = dvd->vd_vp;
 #endif
 
@@ -459,7 +495,7 @@ vdev_disk_io_start(zio_t *zio)
 		mutex_exit(vp->v_interlock);
 	}
 
-	if (bp->b_bcount <= MAXPHYS) {
+	if (bp->b_bcount <= dvd->vd_maxphys) {
 		/* We can do this I/O in one pass. */
 		(void)VOP_STRATEGY(vp, bp);
 	} else {
@@ -470,7 +506,7 @@ vdev_disk_io_start(zio_t *zio)
 		resid = zio->io_size;
 		off = 0;
 		while (resid != 0) {
-			size = uimin(resid, MAXPHYS);
+			size = uimin(resid, dvd->vd_maxphys);
 			nbp = getiobuf(vp, true);
 			nbp->b_blkno = btodb(zio->io_offset + off);
 			/* Below call increments v_numoutput. */

@@ -1,4 +1,4 @@
-/*	$NetBSD: wd.c,v 1.449 2019/04/07 13:00:00 bouyer Exp $ */
+/*	$NetBSD: wd.c,v 1.452 2019/06/06 20:55:43 mlelstv Exp $ */
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.  All rights reserved.
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wd.c,v 1.449 2019/04/07 13:00:00 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wd.c,v 1.452 2019/06/06 20:55:43 mlelstv Exp $");
 
 #include "opt_ata.h"
 #include "opt_wd.h"
@@ -734,7 +734,8 @@ wdstart1(struct wd_softc *wd, struct buf *bp, struct ata_xfer *xfer)
 		xfer->c_bio.flags |= ATA_FUA;
 	}
 
-	wd->inflight++;
+	if (xfer->c_retries == 0)
+		wd->inflight++;
 	switch (wd->atabus->ata_bio(wd->drvp, xfer)) {
 	case ATACMD_TRY_AGAIN:
 		panic("wdstart1: try again");
@@ -757,6 +758,7 @@ wd_diskstart(device_t dev, struct buf *bp)
 	struct ata_xfer *xfer;
 	struct ata_channel *chp;
 	unsigned openings;
+	int ticks;
 
 	mutex_enter(&wd->sc_lock);
 
@@ -769,22 +771,37 @@ wd_diskstart(device_t dev, struct buf *bp)
 	openings = uimin(openings, wd->drvp->drv_openings);
 
 	if (wd->inflight >= openings) {
-		mutex_exit(&wd->sc_lock);
-		return EAGAIN;
+		/*
+		 * pretend we run out of memory when the queue is full,
+		 * so that the operation is retried after a minimal
+		 * delay.
+		 */
+		xfer = NULL;
+		ticks = 1;
+	} else {
+		/*
+		 * If there is no available memory, retry later. This
+		 * happens very rarely and only under memory pressure,
+		 * so wait relatively long before retry.
+		 */
+		xfer = ata_get_xfer(chp, false);
+		ticks = hz/2;
 	}
 
-	xfer = ata_get_xfer(chp, false);
 	if (xfer == NULL) {
 		ATADEBUG_PRINT(("wd_diskstart %s no xfer\n",
 		    dksc->sc_xname), DEBUG_XFERS);
 
 		/*
-		 * No available memory, retry later. This happens very rarely
-		 * and only under memory pressure, so wait relatively long
-		 * before retry.
+		 * The disk queue is pushed automatically when an I/O
+		 * operation finishes or another one is queued. We
+		 * need this extra timeout because an ATA channel
+		 * might be shared by more than one disk queue and
+		 * all queues need to be restarted when another slot
+		 * becomes available.
 		 */
 		if (!callout_pending(&wd->sc_restart_diskqueue)) {
-			callout_reset(&wd->sc_restart_diskqueue, hz / 2,
+			callout_reset(&wd->sc_restart_diskqueue, ticks,
 			    wdrestart, dev);
 		}
 
@@ -973,7 +990,9 @@ noerror:	if ((xfer->c_bio.flags & ATA_CORR) || xfer->c_retries > 0)
 
 	ata_free_xfer(wd->drvp->chnl_softc, xfer);
 
+	mutex_enter(&wd->sc_lock);
 	wd->inflight--;
+	mutex_exit(&wd->sc_lock);
 	dk_done(dksc, bp);
 	dk_start(dksc, NULL);
 }
@@ -1644,6 +1663,7 @@ int
 wd_get_params(struct wd_softc *wd, uint8_t flags, struct ataparams *params)
 {
 	int retry = 0;
+	struct ata_channel *chp = wd->drvp->chnl_softc;
 
 again:
 	switch (wd->atabus->ata_get_params(wd->drvp, flags, params)) {
@@ -1652,7 +1672,9 @@ again:
 	case CMD_ERR:
 		if (retry == 0) {
 			retry++;
+			ata_channel_lock(chp);
 			(*wd->atabus->ata_reset_drive)(wd->drvp, flags, NULL);
+			ata_channel_unlock(chp);
 			goto again;
 		}
 

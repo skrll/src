@@ -1,4 +1,4 @@
-/*	$NetBSD: readline.c,v 1.152 2019/04/26 16:56:57 christos Exp $	*/
+/*	$NetBSD: readline.c,v 1.155 2019/06/07 15:21:48 christos Exp $	*/
 
 /*-
  * Copyright (c) 1997 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include "config.h"
 #if !defined(lint) && !defined(SCCSID)
-__RCSID("$NetBSD: readline.c,v 1.152 2019/04/26 16:56:57 christos Exp $");
+__RCSID("$NetBSD: readline.c,v 1.155 2019/06/07 15:21:48 christos Exp $");
 #endif /* not lint && not SCCSID */
 
 #include <sys/types.h>
@@ -107,7 +107,7 @@ int rl_inhibit_completion = 0;
 int rl_attempted_completion_over = 0;
 const char *rl_basic_word_break_characters = break_chars;
 char *rl_completer_word_break_characters = NULL;
-char *rl_completer_quote_characters = NULL;
+const char *rl_completer_quote_characters = NULL;
 rl_compentry_func_t *rl_completion_entry_function = NULL;
 char *(*rl_completion_word_break_hook)(void) = NULL;
 rl_completion_func_t *rl_attempted_completion_function = NULL;
@@ -258,8 +258,14 @@ rl_set_prompt(const char *prompt)
 	if (rl_prompt == NULL)
 		return -1;
 
-	while ((p = strchr(rl_prompt, RL_PROMPT_END_IGNORE)) != NULL)
-		*p = RL_PROMPT_START_IGNORE;
+	while ((p = strchr(rl_prompt, RL_PROMPT_END_IGNORE)) != NULL) {
+		/* Remove adjacent end/start markers to avoid double-escapes. */
+		if (p[1] == RL_PROMPT_START_IGNORE) {
+			memmove(p, p + 2, 1 + strlen(p + 2));
+		} else {
+			*p = RL_PROMPT_START_IGNORE;
+		}
+	}
 
 	return 0;
 }
@@ -2231,6 +2237,7 @@ _rl_update_pos(void)
 
 	rl_point = (int)(li->cursor - li->buffer);
 	rl_end = (int)(li->lastchar - li->buffer);
+	rl_line_buffer[rl_end] = '\0';
 }
 
 void

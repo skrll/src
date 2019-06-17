@@ -1,4 +1,4 @@
-/*	$NetBSD: addnstr.c,v 1.15 2017/01/06 13:53:18 roy Exp $	*/
+/*	$NetBSD: addnstr.c,v 1.17 2019/06/09 07:40:14 blymn Exp $	*/
 
 /*
  * Copyright (c) 1993, 1994
@@ -34,7 +34,7 @@
 #if 0
 static char sccsid[] = "@(#)addnstr.c	8.2 (Berkeley) 5/4/94";
 #else
-__RCSID("$NetBSD: addnstr.c,v 1.15 2017/01/06 13:53:18 roy Exp $");
+__RCSID("$NetBSD: addnstr.c,v 1.17 2019/06/09 07:40:14 blymn Exp $");
 #endif
 #endif				/* not lint */
 

@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.27 2019/05/16 01:22:35 christos Exp $
+# $NetBSD: Makefile,v 1.32 2019/06/09 01:56:49 mrg Exp $
 
 # Link the gallium mega driver.
 
@@ -89,15 +89,17 @@ BUILD_VDPAU=0
 BUILD_LLVMPIPE=0
 BUILD_I915=0
 .if ${MACHINE_ARCH} == "i386" || ${MACHINE_ARCH} == "x86_64"
-BUILD_RADEON=1
 BUILD_I915=1
-.if ${MKLLVMRT} != "no"
-BUILD_LLVMPIPE=1
-.endif
+. if ${MKLLVMRT} != "no"
+BUILD_RADEON=1
+. endif
 .endif
 .if ${MACHINE_ARCH} == "i386" || ${MACHINE_ARCH} == "x86_64" || ${MACHINE} == "evbarm"
 BUILD_NOUVEAU=1
 BUILD_VDPAU=1
+. if ${MKLLVMRT} != "no"
+BUILD_LLVMPIPE=1
+. endif
 .endif
 
 DRIVERS=		kms_swrast swrast
@@ -959,6 +961,8 @@ LIBDPLIBS+=	expat		${.CURDIR}/../../../../../external/mit/expat/lib/libexpat
 LIBDPLIBS+=	terminfo	${.CURDIR}/../../../../../lib/libterminfo
 LIBDPLIBS+=	z		${.CURDIR}/../../../../../lib/libz
 LIBDPLIBS+=	execinfo	${.CURDIR}/../../../../../lib/libexecinfo
+LIBDPLIBS+=	X11-xcb         ${.CURDIR}/../libX11/libX11-xcb
+LIBDPLIBS+=	xcb-dri2        ${.CURDIR}/../libxcb/dri2
 
 # gallium drivers requiring LLVM
 .if ${BUILD_LLVMPIPE} == 1 || ${BUILD_RADEON} == 1
@@ -992,6 +996,31 @@ LLVMRT_LIBS+=	\
 		X86TargetInfo \
 		X86Utils
 .endif
+
+.if ${MACHINE_CPU} == "aarch64"
+# XXX duplicates
+LLVMRT_LIBS+=	\
+		AArch64AsmParser \
+		AArch64CodeGen \
+		AArch64MCTargetDesc \
+		AArch64Utils \
+		AArch64AsmPrinter \
+		AArch64Disassembler \
+		AArch64TargetInfo
+.endif
+
+.if ${MACHINE_CPU} == "arm"
+# XXX duplicates
+LLVMRT_LIBS+=	\
+		ARMCodeGen \
+		ARMDisassembler \
+		ARMTargetInfo \
+		ARMMCTargetDesc \
+		ARMAsmParser \
+		ARMAsmPrinter \
+		ARMUtils
+.endif
+
 LLVMRT_LIBS+=	\
 		GlobalISel \
 		MCDisassembler \
@@ -1074,11 +1103,13 @@ CPPFLAGS.target.c += \
 CPPFLAGS.target.c += \
 	-DGALLIUM_LLVMPIPE
 .endif  #${BUILD_LLVMPIPE} == 1
+
 .if ${BUILD_I915} == 1
 CPPFLAGS.target.c += \
 	-DGALLIUM_I915 \
 	-DGALLIUM_ILO
 .endif
+
 .if ${BUILD_RADEON} == 1
 CPPFLAGS.target.c += \
 	-DGALLIUM_R200 \

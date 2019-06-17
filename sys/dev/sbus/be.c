@@ -1,4 +1,4 @@
-/*	$NetBSD: be.c,v 1.92 2019/04/26 06:33:34 msaitoh Exp $	*/
+/*	$NetBSD: be.c,v 1.94 2019/05/29 10:07:30 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -57,7 +57,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: be.c,v 1.92 2019/04/26 06:33:34 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: be.c,v 1.94 2019/05/29 10:07:30 msaitoh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_inet.h"
@@ -337,6 +337,7 @@ beattach(device_t parent, device_t self, void *aux)
 	mii->mii_writereg = be_mii_writereg;
 	mii->mii_statchg = be_mii_statchg;
 
+	sc->sc_ethercom.ec_mii = mii;
 	ifmedia_init(&mii->mii_media, 0, be_ifmedia_upd, be_ifmedia_sts);
 
 	/*
@@ -932,9 +933,10 @@ berint(struct be_softc *sc)
 int
 beioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
+#ifdef BEDEBUG
 	struct be_softc *sc = ifp->if_softc;
+#endif
 	struct ifaddr *ifa = data;
-	struct ifreq *ifr = data;
 	int s, error = 0;
 
 	s = splnet();
@@ -991,10 +993,6 @@ beioctl(struct ifnet *ifp, u_long cmd, void *data)
 #endif
 		break;
 
-	case SIOCGIFMEDIA:
-	case SIOCSIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
-		break;
 	default:
 		if ((error = ether_ioctl(ifp, cmd, data)) == ENETRESET) {
 			/*
@@ -1148,6 +1146,7 @@ be_mcreset(struct be_softc *sc)
 
 	hash[3] = hash[2] = hash[1] = hash[0] = 0;
 
+	ETHER_LOCK(ec);
 	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, ETHER_ADDR_LEN)) {
@@ -1163,6 +1162,7 @@ be_mcreset(struct be_softc *sc)
 			 */
 			hash[3] = hash[2] = hash[1] = hash[0] = 0xffff;
 			ifp->if_flags |= IFF_ALLMULTI;
+			ETHER_UNLOCK(ec);
 			goto chipit;
 		}
 
@@ -1173,6 +1173,7 @@ be_mcreset(struct be_softc *sc)
 		hash[crc >> 4] |= 1 << (crc & 0xf);
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 
 	ifp->if_flags &= ~IFF_ALLMULTI;
 

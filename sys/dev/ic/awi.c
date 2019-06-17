@@ -1,4 +1,4 @@
-/*	$NetBSD: awi.c,v 1.96 2019/04/26 06:33:33 msaitoh Exp $	*/
+/*	$NetBSD: awi.c,v 1.98 2019/05/28 07:41:48 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1999,2000,2001 The NetBSD Foundation, Inc.
@@ -78,7 +78,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: awi.c,v 1.96 2019/04/26 06:33:33 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: awi.c,v 1.98 2019/05/28 07:41:48 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -635,7 +635,7 @@ awi_stop(struct ifnet *ifp, int disable)
 		awi_write_1(sc, AWI_CA_FTX_CF, 0);
 		(void)awi_cmd(sc, AWI_CMD_FLUSH_TX, AWI_WAIT);
 	}
-	ifp->if_flags &= ~(IFF_RUNNING|IFF_OACTIVE);
+	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
 	ifp->if_timer = 0;
 	sc->sc_tx_timer = sc->sc_rx_timer = 0;
 	if (sc->sc_rxpend != NULL) {
@@ -1015,6 +1015,7 @@ awi_media_status(struct ifnet *ifp, struct ifmediareq *imr)
 static int
 awi_mode_init(struct awi_softc *sc)
 {
+	struct ethercom *ec = &sc->sc_ec;
 	struct ifnet *ifp = &sc->sc_if;
 	int n, error;
 	struct ether_multi *enm;
@@ -1029,16 +1030,20 @@ awi_mode_init(struct awi_softc *sc)
 		goto set_mib;
 	}
 	sc->sc_mib_mac.aPromiscuous_Enable = 0;
-	ETHER_FIRST_MULTI(step, &sc->sc_ec, enm);
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (n == AWI_GROUP_ADDR_SIZE ||
-		    !IEEE80211_ADDR_EQ(enm->enm_addrlo, enm->enm_addrhi))
+		    !IEEE80211_ADDR_EQ(enm->enm_addrlo, enm->enm_addrhi)) {
+			ETHER_UNLOCK(ec);
 			goto set_mib;
+		}
 		IEEE80211_ADDR_COPY(sc->sc_mib_addr.aGroup_Addresses[n],
 		    enm->enm_addrlo);
 		n++;
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 	for (; n < AWI_GROUP_ADDR_SIZE; n++)
 		memset(sc->sc_mib_addr.aGroup_Addresses[n], 0,
 		    IEEE80211_ADDR_LEN);

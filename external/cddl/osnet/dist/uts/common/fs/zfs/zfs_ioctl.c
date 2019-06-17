@@ -211,11 +211,8 @@ static struct cdev *zfsdev;
 #endif
 
 #ifdef __NetBSD__
-static int zfs_cmajor = -1;
-static int zfs_bmajor = -1;
-dev_info_t *zfs_dip;
-
-#define ddi_driver_major(x)	zfs_cmajor
+static dev_info_t __zfs_devinfo = { -1, -1 };
+dev_info_t *zfs_dip = &__zfs_devinfo;
 
 #define zfs_init() /* nothing */
 #define zfs_fini() /* nothing */
@@ -3363,10 +3360,8 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 		if (error != 0)
 			(void) dsl_destroy_head(fsname);
 	}
-#ifdef __FreeBSD__
 	if (error == 0 && type == DMU_OST_ZVOL)
 		zvol_create_minors(fsname);
-#endif
 	return (error);
 }
 
@@ -3408,10 +3403,8 @@ zfs_ioc_clone(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 		if (error != 0)
 			(void) dsl_destroy_head(fsname);
 	}
-#ifdef __FreeBSD__
 	if (error == 0)
 		zvol_create_minors(fsname);
-#endif
 	return (error);
 }
 
@@ -3684,9 +3677,7 @@ zfs_ioc_destroy_snaps(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
 		error = zfs_unmount_snap(name);
 		if (error != 0)
 			return (error);
-#if defined(__FreeBSD__)
 		zvol_remove_minors(name);
-#endif
 	}
 
 	return (dsl_destroy_snapshots_nvl(snaps, defer, outnvl));
@@ -3810,7 +3801,7 @@ zfs_ioc_destroy(zfs_cmd_t *zc)
 	else
 		err = dsl_destroy_head(zc->zc_name);
 	if (zc->zc_objset_type == DMU_OST_ZVOL && err == 0)
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__) || defined(__NetBSD__)
 		zvol_remove_minors(zc->zc_name);
 #else
 		(void) zvol_remove_minor(zc->zc_name);
@@ -4553,10 +4544,8 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 	}
 #endif
 
-#ifdef __FreeBSD__
 	if (error == 0)
 		zvol_create_minors(tofs);
-#endif
 
 	/*
 	 * On error, restore the original props.
@@ -6169,7 +6158,9 @@ zfsdev_minor_alloc(void)
 	static minor_t last_minor;
 	minor_t m;
 
+#ifndef __NetBSD__
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
+#endif
 
 	for (m = last_minor + 1; m != last_minor; m++) {
 		if (m > ZFSDEV_MAX_MINOR)
@@ -6294,6 +6285,7 @@ zfsdev_close(dev_t dev, int flag, int otyp, cred_t *cr)
 #ifdef __FreeBSD__
 		return;
 #else
+		return zvol_close(dev, flag, otyp, cr);
 		return 0;
 #endif
 	}
@@ -6312,7 +6304,7 @@ zfsdev_ioctl(struct cdev *dev, u_long zcmd, caddr_t arg, int flag,
 #endif
 #ifdef __NetBSD__
 static int
-zfsdev_ioctl(dev_t dev, int zcmd, intptr_t iarg, int flag, cred_t *cr, int *rvalp)
+zfsdev_ioctl(dev_t dev, u_long zcmd, intptr_t iarg, int flag, cred_t *cr, int *rvalp)
 #endif
 {
 	zfs_cmd_t *zc;
@@ -7204,8 +7196,8 @@ zfs_modcmd(modcmd_t cmd, void *arg)
 		zfs_ioctl_init();
 		zfs_sysctl_init();
 
-		error = devsw_attach("zfs", &zfs_bdevsw, &zfs_bmajor,
-		    &zfs_cdevsw, &zfs_cmajor);
+		error = devsw_attach("zfs", &zfs_bdevsw, &zfs_dip->di_bmajor,
+		    &zfs_cdevsw, &zfs_dip->di_cmajor);
 		if (error != 0) {
 			goto attacherr;
 		}

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_mvgbe.c,v 1.54 2019/04/22 08:05:01 msaitoh Exp $	*/
+/*	$NetBSD: if_mvgbe.c,v 1.57 2019/05/28 07:41:49 msaitoh Exp $	*/
 /*
  * Copyright (c) 2007, 2008, 2013 KIYOHARA Takashi
  * All rights reserved.
@@ -25,7 +25,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mvgbe.c,v 1.54 2019/04/22 08:05:01 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mvgbe.c,v 1.57 2019/05/28 07:41:49 msaitoh Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -69,11 +69,11 @@ __KERNEL_RCSID(0, "$NetBSD: if_mvgbe.c,v 1.54 2019/04/22 08:05:01 msaitoh Exp $"
 /* #define MVGBE_DEBUG 3 */
 #ifdef MVGBE_DEBUG
 #define DPRINTF(x)	if (mvgbe_debug) printf x
-#define DPRINTFN(n,x)	if (mvgbe_debug >= (n)) printf x
+#define DPRINTFN(n, x)	if (mvgbe_debug >= (n)) printf x
 int mvgbe_debug = MVGBE_DEBUG;
 #else
 #define DPRINTF(x)
-#define DPRINTFN(n,x)
+#define DPRINTFN(n, x)
 #endif
 
 
@@ -227,7 +227,7 @@ struct mvgbe_softc {
 
 	struct ethercom sc_ethercom;
 	struct mii_data sc_mii;
-	u_int8_t sc_enaddr[ETHER_ADDR_LEN];	/* station addr */
+	uint8_t sc_enaddr[ETHER_ADDR_LEN];	/* station addr */
 
 	callout_t sc_tick_ch;		/* tick callout */
 
@@ -713,6 +713,7 @@ mvgbe_attach(device_t parent, device_t self, void *aux)
 	prop_dictionary_t dict;
 	prop_data_t enaddrp;
 	struct ifnet *ifp;
+	struct mii_data * const mii = &sc->sc_mii;
 	bus_dma_segment_t seg;
 	bus_dmamap_t dmamap;
 	int rseg, i;
@@ -778,11 +779,11 @@ mvgbe_attach(device_t parent, device_t self, void *aux)
 
 	if (enaddrp) {
 		memcpy(enaddr, prop_data_data_nocopy(enaddrp), ETHER_ADDR_LEN);
-		maddrh  = enaddr[0] << 24;
+		maddrh	= enaddr[0] << 24;
 		maddrh |= enaddr[1] << 16;
 		maddrh |= enaddr[2] << 8;
 		maddrh |= enaddr[3];
-		maddrl  = enaddr[4] << 8;
+		maddrl	= enaddr[4] << 8;
 		maddrl |= enaddr[5];
 		MVGBE_WRITE(sc, MVGBE_MACAH, maddrh);
 		MVGBE_WRITE(sc, MVGBE_MACAL, maddrl);
@@ -891,23 +892,21 @@ mvgbe_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Do MII setup.
 	 */
-	sc->sc_mii.mii_ifp = ifp;
-	sc->sc_mii.mii_readreg = mvgbec_miibus_readreg;
-	sc->sc_mii.mii_writereg = mvgbec_miibus_writereg;
-	sc->sc_mii.mii_statchg = mvgbec_miibus_statchg;
+	mii->mii_ifp = ifp;
+	mii->mii_readreg = mvgbec_miibus_readreg;
+	mii->mii_writereg = mvgbec_miibus_writereg;
+	mii->mii_statchg = mvgbec_miibus_statchg;
 
-	sc->sc_ethercom.ec_mii = &sc->sc_mii;
-	ifmedia_init(&sc->sc_mii.mii_media, 0,
-	    mvgbe_mediachange, mvgbe_mediastatus);
-	mii_attach(self, &sc->sc_mii, 0xffffffff,
-	    MII_PHY_ANY, parent == mvgbec0 ? 0 : 1, 0);
-	if (LIST_FIRST(&sc->sc_mii.mii_phys) == NULL) {
+	sc->sc_ethercom.ec_mii = mii;
+	ifmedia_init(&mii->mii_media, 0, mvgbe_mediachange, mvgbe_mediastatus);
+	mii_attach(self, mii, 0xffffffff, MII_PHY_ANY,
+	    parent == mvgbec0 ? 0 : 1, 0);
+	if (LIST_FIRST(&mii->mii_phys) == NULL) {
 		aprint_error_dev(self, "no PHY found!\n");
-		ifmedia_add(&sc->sc_mii.mii_media,
-		    IFM_ETHER|IFM_MANUAL, 0, NULL);
-		ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER|IFM_MANUAL);
+		ifmedia_add(&mii->mii_media, IFM_ETHER | IFM_MANUAL, 0, NULL);
+		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_MANUAL);
 	} else
-		ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER|IFM_AUTO);
+		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_AUTO);
 
 	/*
 	 * Call MI attach routines.
@@ -1073,7 +1072,7 @@ mvgbe_start(struct ifnet *ifp)
 	DPRINTFN(3, ("mvgbe_start (idx %d, tx_chain[idx] %p)\n", idx,
 	    sc->sc_cdata.mvgbe_tx_chain[idx].mvgbe_mbuf));
 
-	if ((ifp->if_flags & (IFF_RUNNING|IFF_OACTIVE)) != IFF_RUNNING)
+	if ((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
 		return;
 	/* If Link is DOWN, can't start TX */
 	if (!MVGBE_IS_LINKUP(sc))
@@ -1346,8 +1345,8 @@ mvgbe_stop(struct ifnet *ifp, int disable)
 		txfifoemp = MVGBE_PS_TXFIFOEMP;
 	}
 
-#define RX_DISABLE_TIMEOUT          0x1000000
-#define TX_FIFO_EMPTY_TIMEOUT       0x1000000
+#define RX_DISABLE_TIMEOUT	    0x1000000
+#define TX_FIFO_EMPTY_TIMEOUT	    0x1000000
 	/* Wait for all Rx activity to terminate. */
 	cnt = 0;
 	do {
@@ -1473,7 +1472,7 @@ mvgbe_ifflags_cb(struct ethercom *ec)
 	if (change != 0)
 		sc->sc_if_flags = ifp->if_flags;
 
-	if ((change & ~(IFF_CANTCHANGE|IFF_DEBUG)) != 0)
+	if ((change & ~(IFF_CANTCHANGE | IFF_DEBUG)) != 0)
 		return ENETRESET;
 
 	if ((change & IFF_PROMISC) != 0)
@@ -2152,7 +2151,7 @@ mvgbe_crc8(const uint8_t *data, size_t size)
 	uint8_t crc = 0;
 	const uint8_t poly = 0x07;
 
-	while(size--)
+	while (size--)
 	  for (byte = *data++, bit = NBBY-1; bit >= 0; bit--)
 	    crc = (crc << 1) ^ ((((crc >> 7) ^ (byte >> bit)) & 1) ? poly : 0);
 
@@ -2177,14 +2176,16 @@ mvgbe_filter_setup(struct mvgbe_softc *sc)
 	memset(dfsmt, 0, sizeof(dfsmt));
 	memset(dfomt, 0, sizeof(dfomt));
 
-	if (ifp->if_flags & (IFF_ALLMULTI|IFF_PROMISC)) {
+	if (ifp->if_flags & (IFF_ALLMULTI | IFF_PROMISC)) {
 		goto allmulti;
 	}
 
+	ETHER_LOCK(ec);
 	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, ETHER_ADDR_LEN)) {
 			/* ranges are complex and somewhat rare */
+			ETHER_UNLOCK(ec);
 			goto allmulti;
 		}
 		/* chip handles some IPv4 multicast specially */
@@ -2200,10 +2201,11 @@ mvgbe_filter_setup(struct mvgbe_softc *sc)
 
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 	goto set;
 
 allmulti:
-	if (ifp->if_flags & (IFF_ALLMULTI|IFF_PROMISC)) {
+	if (ifp->if_flags & (IFF_ALLMULTI | IFF_PROMISC)) {
 		for (i = 0; i < MVGBE_NDFSMT; i++) {
 			dfsmt[i] = dfomt[i] =
 			    MVGBE_DF(0, MVGBE_DF_QUEUE(0) | MVGBE_DF_PASS) |

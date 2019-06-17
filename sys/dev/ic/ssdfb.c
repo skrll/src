@@ -1,4 +1,4 @@
-/* $NetBSD: ssdfb.c,v 1.3 2019/03/17 04:03:17 tnn Exp $ */
+/* $NetBSD: ssdfb.c,v 1.6 2019/06/05 20:32:28 tnn Exp $ */
 
 /*
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -30,13 +30,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ssdfb.c,v 1.3 2019/03/17 04:03:17 tnn Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ssdfb.c,v 1.6 2019/06/05 20:32:28 tnn Exp $");
 
 #include "opt_ddb.h"
 
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/conf.h>
+#include <uvm/uvm.h>
 #include <uvm/uvm_page.h>
 #include <uvm/uvm_device.h>
 #include <sys/condvar.h>
@@ -853,6 +854,7 @@ ssdfb_thread(void *arg)
 	}
 
 	mutex_exit(&sc->sc_cond_mtx);
+	kthread_exit(0);
 }
 
 static void
@@ -989,7 +991,7 @@ ssdfb_pick_font(int *cookiep, struct wsdisplay_font **fontp)
 	uint8_t d[4][2] = {{5, 8}, {8, 8}, {8, 10} ,{8, 16}};
 
 	/*
-	 * Try to find fonts in order of inreasing size.
+	 * Try to find fonts in order of increasing size.
 	 */
 	wsfont_init();
 	for(i = 0; i < __arraycount(d); i++) {

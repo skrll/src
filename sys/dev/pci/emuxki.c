@@ -1,4 +1,4 @@
-/*	$NetBSD: emuxki.c,v 1.68 2019/05/08 13:40:18 isaki Exp $	*/
+/*	$NetBSD: emuxki.c,v 1.70 2019/06/08 08:02:38 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2007 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: emuxki.c,v 1.68 2019/05/08 13:40:18 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: emuxki.c,v 1.70 2019/06/08 08:02:38 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -336,9 +336,6 @@ dmamem_alloc(struct emuxki_softc *sc, size_t size)
 		    "%s bus_dmamap_load failed\n", __func__);
 		goto destroy;
 	}
-
-	DPRINTF("map ds=%p\n", (char*)mem->map->dm_segs[0].ds_addr);
-	DPRINTF("segs ds=%p\n", (char*)mem->segs[0].ds_addr);
 
 	return mem;
 
@@ -1237,7 +1234,8 @@ static int
 emuxki_get_props(void *hdl)
 {
 
-	return AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
+	    AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
 }
 
 static int

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ure.c,v 1.4 2019/03/07 14:00:25 msaitoh Exp $	*/
+/*	$NetBSD: if_ure.c,v 1.10 2019/06/16 21:04:08 christos Exp $	*/
 /*	$OpenBSD: if_ure.c,v 1.10 2018/11/02 21:32:30 jcs Exp $	*/
 /*-
  * Copyright (c) 2015-2016 Kevin Lo <kevlo@FreeBSD.org>
@@ -29,7 +29,7 @@
 /* RealTek RTL8152/RTL8153 10/100/Gigabit USB Ethernet device */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ure.c,v 1.4 2019/03/07 14:00:25 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ure.c,v 1.10 2019/06/16 21:04:08 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -200,7 +200,7 @@ ure_read_1(struct ure_softc *sc, uint16_t reg, uint16_t index)
 
 	shift = (reg & 3) << 3;
 	reg &= ~3;
-	
+
 	ure_read_mem(sc, reg, index, &temp, 4);
 	val = UGETDW(temp);
 	val >>= shift;
@@ -412,6 +412,7 @@ ure_ifmedia_sts(struct ifnet *ifp, struct ifmediareq *ifmr)
 static void
 ure_iff(struct ure_softc *sc)
 {
+	struct ethercom *ec = &sc->ure_ec;
 	struct ifnet *ifp = GET_IFP(sc);
 	struct ether_multi *enm;
 	struct ether_multistep step;
@@ -440,11 +441,14 @@ allmulti:	ifp->if_flags |= IFF_ALLMULTI;
 	} else {
 		rxmode |= URE_RCR_AM;
 
-		ETHER_FIRST_MULTI(step, &sc->ure_ec, enm);
+		ETHER_LOCK(ec);
+		ETHER_FIRST_MULTI(step, ec, enm);
 		while (enm != NULL) {
 			if (memcmp(enm->enm_addrlo, enm->enm_addrhi,
-			    ETHER_ADDR_LEN))
+			    ETHER_ADDR_LEN)) {
+				ETHER_UNLOCK(ec);
 				goto allmulti;
+			}
 
 			hash = ether_crc32_be(enm->enm_addrlo, ETHER_ADDR_LEN)
 			    >> 26;
@@ -455,6 +459,7 @@ allmulti:	ifp->if_flags |= IFF_ALLMULTI;
 
 			ETHER_NEXT_MULTI(step, enm);
 		}
+		ETHER_UNLOCK(ec);
 
 		hash = bswap32(hashes[0]);
 		hashes[0] = bswap32(hashes[1]);
@@ -513,7 +518,7 @@ ure_init(struct ifnet *ifp)
 	ure_write_2(sc, URE_PLA_FMC, URE_MCU_TYPE_PLA,
 	    ure_read_2(sc, URE_PLA_FMC, URE_MCU_TYPE_PLA) |
 	    URE_FMC_FCR_MCU_EN);
-	    
+
 	/* Enable transmit and receive. */
 	ure_write_1(sc, URE_PLA_CR, URE_MCU_TYPE_PLA,
 	    ure_read_1(sc, URE_PLA_CR, URE_MCU_TYPE_PLA) | URE_CR_RE |
@@ -583,7 +588,7 @@ ure_start(struct ifnet *ifp)
 	int idx;
 
 	if ((sc->ure_flags & URE_FLAG_LINK) == 0 ||
-	    (ifp->if_flags & (IFF_OACTIVE|IFF_RUNNING)) != IFF_RUNNING) {
+	    (ifp->if_flags & (IFF_OACTIVE | IFF_RUNNING)) != IFF_RUNNING) {
 		return;
 	}
 
@@ -757,7 +762,7 @@ ure_rtl8153_init(struct ure_softc *sc)
 	ure_write_mem(sc, URE_USB_TOLERANCE,
 	    URE_MCU_TYPE_USB | URE_BYTE_EN_SIX_BYTES, u1u2, sizeof(u1u2));
 
-        for (i = 0; i < URE_TIMEOUT; i++) {
+	for (i = 0; i < URE_TIMEOUT; i++) {
 		if (ure_read_2(sc, URE_PLA_BOOT_CTRL, URE_MCU_TYPE_PLA) &
 		    URE_AUTOLOAD_DONE)
 			break;
@@ -775,7 +780,7 @@ ure_rtl8153_init(struct ure_softc *sc)
 	}
 	if (i == URE_TIMEOUT)
 		URE_PRINTF(sc, "timeout waiting for phy to stabilize\n");
-	
+
 	ure_write_2(sc, URE_USB_U2P3_CTRL, URE_MCU_TYPE_USB,
 	    ure_read_2(sc, URE_USB_U2P3_CTRL, URE_MCU_TYPE_USB) &
 	    ~URE_U2P3_ENABLE);
@@ -807,7 +812,7 @@ ure_rtl8153_init(struct ure_softc *sc)
 	ure_write_1(sc, URE_USB_CSR_DUMMY2, URE_MCU_TYPE_USB,
 	    ure_read_1(sc, URE_USB_CSR_DUMMY2, URE_MCU_TYPE_USB) |
 	    URE_EP4_FULL_FC);
-	
+
 	ure_write_2(sc, URE_USB_WDT11_CTRL, URE_MCU_TYPE_USB,
 	    ure_read_2(sc, URE_USB_WDT11_CTRL, URE_MCU_TYPE_USB) &
 	    ~URE_TIMER11_EN);
@@ -815,7 +820,7 @@ ure_rtl8153_init(struct ure_softc *sc)
 	ure_write_2(sc, URE_PLA_LED_FEATURE, URE_MCU_TYPE_PLA,
 	    ure_read_2(sc, URE_PLA_LED_FEATURE, URE_MCU_TYPE_PLA) &
 	    ~URE_LED_MODE_MASK);
-	    
+
 	if ((sc->ure_chip & URE_CHIP_VER_5C10) &&
 	    sc->ure_udev->ud_speed != USB_SPEED_SUPER)
 		val = URE_LPM_TIMER_500MS;
@@ -862,7 +867,7 @@ ure_rtl8153_init(struct ure_softc *sc)
 	ure_write_2(sc, URE_USB_U2P3_CTRL, URE_MCU_TYPE_USB, val);
 
 	memset(u1u2, 0x00, sizeof(u1u2));
-        ure_write_mem(sc, URE_USB_TOLERANCE,
+	ure_write_mem(sc, URE_USB_TOLERANCE,
 	    URE_MCU_TYPE_USB | URE_BYTE_EN_SIX_BYTES, u1u2, sizeof(u1u2));
 
 	/* Disable ALDPS. */
@@ -894,7 +899,7 @@ ure_disable_teredo(struct ure_softc *sc)
 {
 
 	ure_write_4(sc, URE_PLA_TEREDO_CFG, URE_MCU_TYPE_PLA,
-	    ure_read_4(sc, URE_PLA_TEREDO_CFG, URE_MCU_TYPE_PLA) & 
+	    ure_read_4(sc, URE_PLA_TEREDO_CFG, URE_MCU_TYPE_PLA) &
 	    ~(URE_TEREDO_SEL | URE_TEREDO_RS_EVENT_MASK | URE_OOB_TEREDO_EN));
 	ure_write_2(sc, URE_PLA_WDT6_CTRL, URE_MCU_TYPE_PLA,
 	    URE_WDT6_SET_MODE);
@@ -925,7 +930,7 @@ ure_init_fifo(struct ure_softc *sc)
 			    URE_CKADSEL_L | URE_ADC_EN | URE_EN_EMI_L);
 		if (sc->ure_chip & URE_CHIP_VER_5C00)
 			ure_ocp_reg_write(sc, URE_OCP_EEE_CFG,
-			    ure_ocp_reg_read(sc, URE_OCP_EEE_CFG) & 
+			    ure_ocp_reg_read(sc, URE_OCP_EEE_CFG) &
 			    ~URE_CTAP_SHORT_EN);
 		ure_ocp_reg_write(sc, URE_OCP_POWER_CFG,
 		    ure_ocp_reg_read(sc, URE_OCP_POWER_CFG) |
@@ -1090,6 +1095,17 @@ ure_attach(device_t parent, device_t self, void *aux)
 	aprint_normal_dev(self, "%s\n", devinfop);
 	usbd_devinfo_free(devinfop);
 
+	callout_init(&sc->ure_stat_ch, 0);
+	usb_init_task(&sc->ure_tick_task, ure_tick_task, sc, 0);
+	mutex_init(&sc->ure_mii_lock, MUTEX_DEFAULT, IPL_NONE);
+
+	/*
+	 * ure_phyno is set to 0 below when configuration has succeeded.
+	 * if it is still -1 in detach, then ifmedia/mii/etc was not
+	 * setup and should not be torn down.
+	 */
+	sc->ure_phyno = -1;
+
 #define URE_CONFIG_NO	1 /* XXX */
 	error = usbd_set_config_no(dev, URE_CONFIG_NO, 1);
 	if (error) {
@@ -1100,9 +1116,6 @@ ure_attach(device_t parent, device_t self, void *aux)
 
 	if (uaa->uaa_product == USB_PRODUCT_REALTEK_RTL8152)
 		sc->ure_flags |= URE_FLAG_8152;
-
-	usb_init_task(&sc->ure_tick_task, ure_tick_task, sc, 0);
-	mutex_init(&sc->ure_mii_lock, MUTEX_DEFAULT, IPL_NONE);
 
 #define URE_IFACE_IDX  0 /* XXX */
 	error = usbd_device2interface_handle(dev, URE_IFACE_IDX, &sc->ure_iface);
@@ -1230,8 +1243,6 @@ ure_attach(device_t parent, device_t self, void *aux)
 	rnd_attach_source(&sc->ure_rnd_source, device_xname(sc->ure_dev),
 	    RND_TYPE_NET, RND_FLAG_DEFAULT);
 
-	callout_init(&sc->ure_stat_ch, 0);
-
 	splx(s);
 
 	usbd_add_drv_event(USB_EVENT_DRIVER_ATTACH, sc->ure_udev, sc->ure_dev);
@@ -1263,16 +1274,18 @@ ure_detach(device_t self, int flags)
 
 	s = splusb();
 
-	if (ifp->if_flags & IFF_RUNNING)
-		ure_stop(ifp, 1);
+	/* partial-attach, below items weren't configured. */
+	if (sc->ure_phyno != -1) {
+		if (ifp->if_flags & IFF_RUNNING)
+			ure_stop(ifp, 1);
 
-	callout_destroy(&sc->ure_stat_ch);
-	rnd_detach_source(&sc->ure_rnd_source);
-	mii_detach(&sc->ure_mii, MII_PHY_ANY, MII_OFFSET_ANY);
-	ifmedia_delete_instance(&sc->ure_mii.mii_media, IFM_INST_ANY);
-	if (ifp->if_softc != NULL) {
-		ether_ifdetach(ifp);
-		if_detach(ifp);
+		rnd_detach_source(&sc->ure_rnd_source);
+		mii_detach(&sc->ure_mii, MII_PHY_ANY, MII_OFFSET_ANY);
+		ifmedia_delete_instance(&sc->ure_mii.mii_media, IFM_INST_ANY);
+		if (ifp->if_softc != NULL) {
+			ether_ifdetach(ifp);
+			if_detach(ifp);
+		}
 	}
 
 	if (--sc->ure_refcnt >= 0) {
@@ -1281,9 +1294,10 @@ ure_detach(device_t self, int flags)
 	}
 	splx(s);
 
-	usbd_add_drv_event(USB_EVENT_DRIVER_DETACH, sc->ure_udev, sc->ure_dev);
-
+	callout_destroy(&sc->ure_stat_ch);
 	mutex_destroy(&sc->ure_mii_lock);
+
+	usbd_add_drv_event(USB_EVENT_DRIVER_DETACH, sc->ure_udev, sc->ure_dev);
 
 	return 0;
 }
@@ -1358,7 +1372,7 @@ ure_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 	struct mbuf *m;
 	int s;
 	struct ure_rxpkt rxhdr;
-	
+
 	if (sc->ure_dying)
 		return;
 
@@ -1446,13 +1460,13 @@ ure_rxcsum(struct ifnet *ifp, struct ure_rxpkt *rp)
 			flags |= M_CSUM_TCPv4;
 		if (csum & URE_RXPKT_UDP_CS)
 			flags |= M_CSUM_UDPv4;
-        } else if (csum & URE_RXPKT_IPV6_CS) {
+	} else if (csum & URE_RXPKT_IPV6_CS) {
 		flags = 0;
 		if (csum & URE_RXPKT_TCP_CS)
 			flags |= M_CSUM_TCPv6;
 		if (csum & URE_RXPKT_UDP_CS)
 			flags |= M_CSUM_UDPv6;
-        }
+	}
 
 	flags &= enabled;
 	if (__predict_false((flags & M_CSUM_IPv4) &&
@@ -1503,9 +1517,11 @@ ure_txeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 	}
 
 	ifp->if_flags &= ~IFF_OACTIVE;
+	ifp->if_opackets++;
 
-	if (IFQ_IS_EMPTY(&ifp->if_snd) == 0)
+	if (!IFQ_IS_EMPTY(&ifp->if_snd)) {
 		ure_start(ifp);
+	}
 
 	splx(s);
 }

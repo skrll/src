@@ -1,4 +1,4 @@
-/*	$NetBSD: refresh.c,v 1.109 2019/05/12 02:19:23 blymn Exp $	*/
+/*	$NetBSD: refresh.c,v 1.111 2019/06/09 07:40:14 blymn Exp $	*/
 
 /*
  * Copyright (c) 1981, 1993, 1994
@@ -34,7 +34,7 @@
 #if 0
 static char sccsid[] = "@(#)refresh.c	8.7 (Berkeley) 8/13/94";
 #else
-__RCSID("$NetBSD: refresh.c,v 1.109 2019/05/12 02:19:23 blymn Exp $");
+__RCSID("$NetBSD: refresh.c,v 1.111 2019/06/09 07:40:14 blymn Exp $");
 #endif
 #endif				/* not lint */
 
@@ -45,7 +45,7 @@ __RCSID("$NetBSD: refresh.c,v 1.109 2019/05/12 02:19:23 blymn Exp $");
 #include "curses.h"
 #include "curses_private.h"
 
-static void	domvcur(const WINDOW *, int, int, int, int);
+static void	domvcur(WINDOW *, int, int, int, int);
 static void	putattr(__LDATA *);
 static void	putattr_out(__LDATA *);
 static int	putch(__LDATA *, __LDATA *, int, int);
@@ -270,7 +270,8 @@ _wnoutrefresh(WINDOW *win, int begy, int begx, int wbegy, int wbegx,
 			continue;
 #ifdef DEBUG
 		__CTRACE(__CTRACE_REFRESH,
-		"_wnoutrefresh: line is dirty\n");
+		"_wnoutrefresh: line y_off %d (dy_off %d) is dirty\n",
+			y_off, dy_off);
 #endif
 
 		wlp = swin->alines[wy];
@@ -1431,12 +1432,12 @@ makech(int wy)
  *	Do a mvcur, leaving attributes if necessary.
  */
 static void
-domvcur(const WINDOW *win, int oy, int ox, int ny, int nx)
+domvcur(WINDOW *win, int oy, int ox, int ny, int nx)
 {
 
 #ifdef DEBUG
-	__CTRACE(__CTRACE_REFRESH, "domvcur: (%x,%d)=>(%d,%d)\n",
-	    oy, ox, ny, nx );
+	__CTRACE(__CTRACE_REFRESH, "domvcur: (%d,%d)=>(%d,%d) win 0x%p\n",
+	    oy, ox, ny, nx, win );
 #endif /* DEBUG */
 
 	__unsetattr(1);

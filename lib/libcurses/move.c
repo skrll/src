@@ -1,4 +1,4 @@
-/*	$NetBSD: move.c,v 1.19 2018/09/26 18:51:45 kamil Exp $	*/
+/*	$NetBSD: move.c,v 1.21 2019/06/09 07:40:14 blymn Exp $	*/
 
 /*
  * Copyright (c) 1981, 1993, 1994
@@ -34,7 +34,7 @@
 #if 0
 static char sccsid[] = "@(#)move.c	8.2 (Berkeley) 5/4/94";
 #else
-__RCSID("$NetBSD: move.c,v 1.19 2018/09/26 18:51:45 kamil Exp $");
+__RCSID("$NetBSD: move.c,v 1.21 2019/06/09 07:40:14 blymn Exp $");
 #endif
 #endif				/* not lint */
 
@@ -62,7 +62,6 @@ move(int y, int x)
 int
 wmove(WINDOW *win, int y, int x)
 {
-
 #ifdef DEBUG
 	__CTRACE(__CTRACE_MISC, "wmove: (%d, %d)\n", y, x);
 #endif
@@ -70,12 +69,10 @@ wmove(WINDOW *win, int y, int x)
 		return ERR;
 	if (x >= win->maxx || y >= win->maxy)
 		return ERR;
+
 	win->curx = x;
-	win->alines[win->cury]->flags &= ~__ISPASTEOL;
-	win->alines[win->cury]->flags |= __ISDIRTY;
 	win->cury = y;
-	win->alines[y]->flags &= ~__ISPASTEOL;
-	win->alines[y]->flags |= __ISDIRTY;
+
 	return OK;
 }
 

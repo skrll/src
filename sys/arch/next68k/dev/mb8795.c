@@ -1,4 +1,4 @@
-/*	$NetBSD: mb8795.c,v 1.62 2019/04/24 07:32:50 msaitoh Exp $	*/
+/*	$NetBSD: mb8795.c,v 1.65 2019/05/29 10:07:29 msaitoh Exp $	*/
 /*
  * Copyright (c) 1998 Darrin B. Jewell
  * All rights reserved.
@@ -25,13 +25,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mb8795.c,v 1.62 2019/04/24 07:32:50 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mb8795.c,v 1.65 2019/05/29 10:07:29 msaitoh Exp $");
 
 #include "opt_inet.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/mbuf.h> 
+#include <sys/mbuf.h>
 #include <sys/syslog.h>
 #include <sys/socket.h>
 #include <sys/device.h>
@@ -111,8 +111,8 @@ mb8795_config(struct mb8795_softc *sc, int *media, int nmedia, int defmedia)
 	ifp->if_flags = IFF_BROADCAST;
 
 	/* Initialize media goo. */
-	ifmedia_init(&sc->sc_media, 0, mb8795_mediachange,
-		     mb8795_mediastatus);
+	sc->sc_ethercom.ec_ifmedia = &sc->sc_media;
+	ifmedia_init(&sc->sc_media, 0, mb8795_mediachange, mb8795_mediastatus);
 	if (media != NULL) {
 		int i;
 		for (i = 0; i < nmedia; i++)
@@ -156,10 +156,10 @@ mb8795_mediachange(struct ifnet *ifp)
 		    !(bus_space_read_1(sc->sc_bmap_bst, sc->sc_bmap_bsh,
 			    BMAP_DATA) & BMAP_DATA_UTPCARRIER_MASK)) {
 			data = BMAP_DATA_UTPENABLE;
-			sc->sc_media.ifm_cur->ifm_data = IFM_ETHER|IFM_10_T;
+			sc->sc_media.ifm_cur->ifm_data = IFM_ETHER | IFM_10_T;
 		} else {
 			data = BMAP_DATA_BNCENABLE;
-			sc->sc_media.ifm_cur->ifm_data = IFM_ETHER|IFM_10_2;
+			sc->sc_media.ifm_cur->ifm_data = IFM_ETHER | IFM_10_2;
 		}
 		break;
 	case IFM_10_T:
@@ -188,7 +188,7 @@ void
 mb8795_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr)
 {
 	struct mb8795_softc *sc = ifp->if_softc;
-	
+
 	if (turbo)
 		return;
 
@@ -215,19 +215,19 @@ mb8795_hex_dump(unsigned char *pkt, size_t len)
 	size_t i, j;
 
 	printf("00000000  ");
-	for(i=0; i<len; i++) {
+	for (i=0; i<len; i++) {
 		printf("%c%c ", XCHR(pkt[i]>>4), XCHR(pkt[i]));
 		if ((i+1) % 16 == 8) {
 			printf(" ");
 		}
 		if ((i+1) % 16 == 0) {
 			printf(" %c", '|');
-			for(j=0; j<16; j++) {
+			for (j=0; j<16; j++) {
 				printf("%c",
 				    (pkt[i-15+j] >= 32 && pkt[i-15+j] < 127)
 				    ? pkt[i-15+j] : '.');
 			}
-			printf("%c\n%c%c%c%c%c%c%c%c  ", '|', 
+			printf("%c\n%c%c%c%c%c%c%c%c  ", '|',
 			    XCHR((i+1)>>28), XCHR((i+1)>>24), XCHR((i+1)>>20),
 			    XCHR((i+1)>>16), XCHR((i+1)>>12), XCHR((i+1)>>8),
 			    XCHR((i+1)>>4), XCHR(i+1));
@@ -296,7 +296,7 @@ mb8795_rint(struct mb8795_softc *sc)
 			/* CRC is included with the packet; trim it. */
 			m->m_pkthdr.len = m->m_len = m->m_len - ETHER_CRC_LEN;
 			m_set_rcvif(m, ifp);
-			
+
 			/* Find receive length, keep crc */
 			/* enable DMA interrupts while we process the packet */
 			splx(s);
@@ -336,7 +336,7 @@ mb8795_rint(struct mb8795_softc *sc)
 
 		snprintb(sbuf, sizeof(sbuf), MB8795_RXSTAT_BITS,
 		    MB_READ_REG(sc, MB8795_RXSTAT));
-				
+
 		printf("rxstat = %s\n", sbuf);
 
 		snprintb(sbuf, sizeof(sbuf), MB8795_RXMASK_BITS,
@@ -430,7 +430,7 @@ mb8795_reset(struct mb8795_softc *sc)
 
 	DPRINTF (("%s: mb8795_reset()\n", device_xname(sc->sc_dev)));
 
-	sc->sc_ethercom.ec_if.if_flags &= ~(IFF_RUNNING|IFF_OACTIVE);
+	sc->sc_ethercom.ec_if.if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
 	sc->sc_ethercom.ec_if.if_timer = 0;
 
 	MBDMA_RESET(sc);
@@ -438,18 +438,18 @@ mb8795_reset(struct mb8795_softc *sc)
 	MB_WRITE_REG(sc, MB8795_RESET,  MB8795_RESET_MODE);
 
 	mb8795_mediachange(&sc->sc_ethercom.ec_if);
-		
+
 #if 0 /* This interrupt was sometimes failing to ack correctly
        * causing a loop @@@
        */
-	MB_WRITE_REG(sc, MB8795_TXMASK, 
+	MB_WRITE_REG(sc, MB8795_TXMASK,
 	    MB8795_TXMASK_UNDERFLOWIE | MB8795_TXMASK_COLLIE
 	    | MB8795_TXMASK_COLL16IE | MB8795_TXMASK_PARERRIE);
 #else
 	MB_WRITE_REG(sc, MB8795_TXMASK, 0);
 #endif
 	MB_WRITE_REG(sc, MB8795_TXSTAT, MB8795_TXSTAT_CLEAR);
-	
+
 #if 0
 	MB_WRITE_REG(sc, MB8795_RXMASK,
 	    MB8795_RXMASK_OKIE | MB8795_RXMASK_RESETIE | MB8795_RXMASK_SHORTIE
@@ -460,20 +460,20 @@ mb8795_reset(struct mb8795_softc *sc)
 	    MB8795_RXMASK_OKIE | MB8795_RXMASK_RESETIE
 	    | MB8795_RXMASK_SHORTIE);
 #endif
-	
+
 	MB_WRITE_REG(sc, MB8795_RXSTAT, MB8795_RXSTAT_CLEAR);
-	
-	for(i=0;i<sizeof(sc->sc_enaddr);i++)
+
+	for (i=0;i<sizeof(sc->sc_enaddr);i++)
 		MB_WRITE_REG(sc, MB8795_ENADDR+i, sc->sc_enaddr[i]);
-	
+
 	DPRINTF(("%s: initializing ethernet %02x:%02x:%02x:%02x:%02x:%02x, "
 		"size=%d\n", device_xname(sc->sc_dev),
 		 sc->sc_enaddr[0],sc->sc_enaddr[1],sc->sc_enaddr[2],
 		 sc->sc_enaddr[3],sc->sc_enaddr[4],sc->sc_enaddr[5],
 		 sizeof(sc->sc_enaddr)));
-	
+
 	MB_WRITE_REG(sc, MB8795_RESET, 0);
-	
+
 	splx(s);
 }
 
@@ -518,12 +518,12 @@ mb8795_init(struct mb8795_softc *sc)
 		/* XXX add support for multicast */
 		if (turbo)
 			rxmode |= MB8795_RXMODE_TEST;
-		
+
 		/* switching mode probably borken now with turbo */
 		MB_WRITE_REG(sc, MB8795_TXMODE,
 		    turbo ? MB8795_TXMODE_TURBO1 : MB8795_TXMODE_LB_DISABLE);
 		MB_WRITE_REG(sc, MB8795_RXMODE, rxmode);
-		
+
 		if ((ifp->if_flags & IFF_RUNNING) == 0) {
 			MBDMA_RX_SETUP(sc);
 			MBDMA_TX_SETUP(sc);
@@ -531,7 +531,7 @@ mb8795_init(struct mb8795_softc *sc)
 			ifp->if_flags |= IFF_RUNNING;
 			ifp->if_flags &= ~IFF_OACTIVE;
 			ifp->if_timer = 0;
-			
+
 			MBDMA_RX_GO(sc);
 		}
 		splx(s);
@@ -561,7 +561,6 @@ mb8795_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct mb8795_softc *sc = ifp->if_softc;
 	struct ifaddr *ifa = (struct ifaddr *)data;
-	struct ifreq *ifr = (struct ifreq *)data;
 	int s, error = 0;
 
 	s = splnet();
@@ -593,7 +592,7 @@ mb8795_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			device_xname(sc->sc_dev)));
 		if ((error = ifioctl_common(ifp, cmd, data)) != 0)
 			break;
-		switch (ifp->if_flags & (IFF_UP|IFF_RUNNING)) {
+		switch (ifp->if_flags & (IFF_UP | IFF_RUNNING)) {
 		case IFF_RUNNING:
 			/*
 			 * If interface is marked down and it is running, then
@@ -640,13 +639,6 @@ mb8795_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 				mb8795_init(sc);
 			error = 0;
 		}
-		break;
-
-	case SIOCGIFMEDIA:
-	case SIOCSIFMEDIA:
-		DPRINTF(("%s: mb8795_ioctl() SIOCSIFMEDIA\n",
-			device_xname(sc->sc_dev)));
-		error = ifmedia_ioctl(ifp, ifr, &sc->sc_media, cmd);
 		break;
 
 	default:

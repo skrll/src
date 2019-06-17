@@ -1,4 +1,4 @@
-/*	$NetBSD: instr.c,v 1.5 2019/02/24 20:20:18 roy Exp $	*/
+/*	$NetBSD: instr.c,v 1.7 2019/06/09 07:40:14 blymn Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: instr.c,v 1.5 2019/02/24 20:20:18 roy Exp $");
+__RCSID("$NetBSD: instr.c,v 1.7 2019/06/09 07:40:14 blymn Exp $");
 #endif				/* not lint */
 
 #include "curses.h"

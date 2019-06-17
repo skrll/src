@@ -1,5 +1,4 @@
-/*	$Id: at91emac.c,v 1.25 2019/04/22 08:05:00 msaitoh Exp $	*/
-/*	$NetBSD: at91emac.c,v 1.25 2019/04/22 08:05:00 msaitoh Exp $	*/
+/*	$NetBSD: at91emac.c,v 1.29 2019/05/28 07:41:46 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2007 Embedtronics Oy
@@ -33,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at91emac.c,v 1.25 2019/04/22 08:05:00 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at91emac.c,v 1.29 2019/05/28 07:41:46 msaitoh Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -92,7 +91,7 @@ __KERNEL_RCSID(0, "$NetBSD: at91emac.c,v 1.25 2019/04/22 08:05:00 msaitoh Exp $"
 static int	emac_match(device_t, cfdata_t, void *);
 static void	emac_attach(device_t, device_t, void *);
 static void	emac_init(struct emac_softc *);
-static int      emac_intr(void* arg);
+static int	emac_intr(void* arg);
 static int	emac_gctx(struct emac_softc *);
 static int	emac_mediachange(struct ifnet *);
 static void	emac_mediastatus(struct ifnet *, struct ifmediareq *);
@@ -112,9 +111,9 @@ CFATTACH_DECL_NEW(at91emac, sizeof(struct emac_softc),
 
 #ifdef	EMAC_DEBUG
 int emac_debug = EMAC_DEBUG;
-#define	DPRINTFN(n,fmt)	if (emac_debug >= (n)) printf fmt
+#define	DPRINTFN(n, fmt)	if (emac_debug >= (n)) printf fmt
 #else
-#define	DPRINTFN(n,fmt)
+#define	DPRINTFN(n, fmt)
 #endif
 
 static int
@@ -149,15 +148,16 @@ emac_attach(device_t parent, device_t self, void *aux)
 	EMAC_WRITE(ETH_CTL, 0);			// disable everything
 	EMAC_WRITE(ETH_IDR, -1);		// disable interrupts
 	EMAC_WRITE(ETH_RBQP, 0);		// clear receive
-	EMAC_WRITE(ETH_CFG, ETH_CFG_CLK_32 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
+	EMAC_WRITE(ETH_CFG,
+	    ETH_CFG_CLK_32 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
 	EMAC_WRITE(ETH_TCR, 0);			// send nothing
 	//(void)EMAC_READ(ETH_ISR);
 	u = EMAC_READ(ETH_TSR);
 	EMAC_WRITE(ETH_TSR, (u & (ETH_TSR_UND | ETH_TSR_COMP | ETH_TSR_BNQ
 				  | ETH_TSR_IDLE | ETH_TSR_RLE
-				  | ETH_TSR_COL|ETH_TSR_OVR)));
+				  | ETH_TSR_COL | ETH_TSR_OVR)));
 	u = EMAC_READ(ETH_RSR);
-	EMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR|ETH_RSR_REC|ETH_RSR_BNA)));
+	EMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR | ETH_RSR_REC | ETH_RSR_BNA)));
 
 	/* Fetch the Ethernet address from property if set. */
 	enaddr = prop_dictionary_get(device_properties(self), "mac-address");
@@ -174,7 +174,8 @@ emac_attach(device_t parent, device_t self, void *aux)
 		memcpy(sc->sc_enaddr, hardcoded, ETHER_ADDR_LEN);
 	}
 
-        at91_intr_establish(sc->sc_pid, IPL_NET, INTR_HIGH_LEVEL, emac_intr, sc);
+	at91_intr_establish(sc->sc_pid, IPL_NET, INTR_HIGH_LEVEL, emac_intr,
+	    sc);
 	emac_init(sc);
 }
 
@@ -194,10 +195,11 @@ emac_gctx(struct emac_softc *sc)
 	while (sc->txqc > (tsr & ETH_TSR_IDLE ? 0 : 1)) {
 		int i = sc->txqi % TX_QLEN;
 		bus_dmamap_sync(sc->sc_dmat, sc->txq[i].m_dmamap, 0,
-				sc->txq[i].m->m_pkthdr.len, BUS_DMASYNC_POSTWRITE);
+		    sc->txq[i].m->m_pkthdr.len, BUS_DMASYNC_POSTWRITE);
 		bus_dmamap_unload(sc->sc_dmat, sc->txq[i].m_dmamap);
 		m_freem(sc->txq[i].m);
-		DPRINTFN(2,("%s: freed idx #%i mbuf %p (txqc=%i)\n", __FUNCTION__, i, sc->txq[i].m, sc->txqc));
+		DPRINTFN(2,("%s: freed idx #%i mbuf %p (txqc=%i)\n",
+			__FUNCTION__, i, sc->txq[i].m, sc->txqc));
 		sc->txq[i].m = NULL;
 		sc->txqi = (i + 1) % TX_QLEN;
 		sc->txqc--;
@@ -222,7 +224,8 @@ emac_intr(void *arg)
 	int bi;
 
 	imr = ~EMAC_READ(ETH_IMR);
-	if (!(imr & (ETH_ISR_RCOM|ETH_ISR_TBRE|ETH_ISR_TIDLE|ETH_ISR_RBNA|ETH_ISR_ROVR))) {
+	if (!(imr & (ETH_ISR_RCOM | ETH_ISR_TBRE | ETH_ISR_TIDLE
+	    | ETH_ISR_RBNA | ETH_ISR_ROVR))) {
 		// interrupt not enabled, can't be us
 		return 0;
 	}
@@ -233,7 +236,8 @@ emac_intr(void *arg)
 #endif
 	EMAC_READ(ETH_RSR);		// get receive status register
 
-	DPRINTFN(2, ("%s: isr=0x%08X rsr=0x%08X imr=0x%08X\n", __FUNCTION__, isr, rsr, imr));
+	DPRINTFN(2, ("%s: isr=0x%08X rsr=0x%08X imr=0x%08X\n", __FUNCTION__,
+		isr, rsr, imr));
 
 	if (isr & ETH_ISR_RBNA) {		// out of receive buffers
 		EMAC_WRITE(ETH_RSR, ETH_RSR_BNA);	// clear interrupt
@@ -257,20 +261,22 @@ emac_intr(void *arg)
 		// @@@ if memory is NOT coherent, then we're in trouble @@@@
 //		bus_dmamap_sync(sc->sc_dmat, sc->rbqpage_dmamap, 0, sc->rbqlen, BUS_DMASYNC_POSTWRITE | BUS_DMASYNC_POSTREAD);
 //		printf("## RDSC[%i].ADDR=0x%08X\n", sc->rxqi % RX_QLEN, sc->RDSC[sc->rxqi % RX_QLEN].Addr);
-		DPRINTFN(2,("#2 RDSC[%i].INFO=0x%08X\n", sc->rxqi % RX_QLEN, sc->RDSC[sc->rxqi % RX_QLEN].Info));
+		DPRINTFN(2,("#2 RDSC[%i].INFO=0x%08X\n", sc->rxqi % RX_QLEN,
+			sc->RDSC[sc->rxqi % RX_QLEN].Info));
 		while (sc->RDSC[(bi = sc->rxqi % RX_QLEN)].Addr & ETH_RDSC_F_USED) {
 			int fl;
 			struct mbuf *m;
 
 			nfo = sc->RDSC[bi].Info;
-		  	fl = (nfo & ETH_RDSC_I_LEN) - 4;
+			fl = (nfo & ETH_RDSC_I_LEN) - 4;
 			DPRINTFN(2,("## nfo=0x%08X\n", nfo));
 
 			MGETHDR(m, M_DONTWAIT, MT_DATA);
 			if (m != NULL) MCLGET(m, M_DONTWAIT);
 			if (m != NULL && (m->m_flags & M_EXT)) {
-				bus_dmamap_sync(sc->sc_dmat, sc->rxq[bi].m_dmamap, 0,
-						MCLBYTES, BUS_DMASYNC_POSTREAD);
+				bus_dmamap_sync(sc->sc_dmat,
+				    sc->rxq[bi].m_dmamap, 0,
+				    MCLBYTES, BUS_DMASYNC_POSTREAD);
 				bus_dmamap_unload(sc->sc_dmat,
 					sc->rxq[bi].m_dmamap);
 				m_set_rcvif(sc->rxq[bi].m, ifp);
@@ -286,8 +292,9 @@ emac_intr(void *arg)
 					sc->rxq[bi].m_dmamap,
 					m->m_ext.ext_buf, MCLBYTES,
 					NULL, BUS_DMA_NOWAIT);
-				bus_dmamap_sync(sc->sc_dmat, sc->rxq[bi].m_dmamap, 0,
-						MCLBYTES, BUS_DMASYNC_PREREAD);
+				bus_dmamap_sync(sc->sc_dmat,
+				    sc->rxq[bi].m_dmamap, 0,
+				    MCLBYTES, BUS_DMASYNC_PREREAD);
 				sc->RDSC[bi].Info = 0;
 				sc->RDSC[bi].Addr =
 					sc->rxq[bi].m_dmamap->dm_segs[0].ds_addr
@@ -310,7 +317,7 @@ emac_intr(void *arg)
 		if_schedule_deferred_start(ifp);
 #if 0 // reloop
 	irq = EMAC_READ(IntStsC);
-	if ((irq & (IntSts_RxSQ|IntSts_ECI)) != 0)
+	if ((irq & (IntSts_RxSQ | IntSts_ECI)) != 0)
 		goto begin;
 #endif
 
@@ -325,6 +332,7 @@ emac_init(struct emac_softc *sc)
 	void *addr;
 	int rsegs, err, i;
 	struct ifnet * ifp = &sc->sc_ec.ec_if;
+	struct mii_data * const mii = &sc->sc_mii;
 	uint32_t u;
 #if 0
 	int mdcdiv = DEFAULT_MDCDIV;
@@ -336,18 +344,20 @@ emac_init(struct emac_softc *sc)
 	EMAC_WRITE(ETH_CTL, ETH_CTL_MPE);	// disable everything
 	EMAC_WRITE(ETH_IDR, -1);		// disable interrupts
 	EMAC_WRITE(ETH_RBQP, 0);		// clear receive
-	EMAC_WRITE(ETH_CFG, ETH_CFG_CLK_32 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
+	EMAC_WRITE(ETH_CFG,
+	    ETH_CFG_CLK_32 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
 	EMAC_WRITE(ETH_TCR, 0);			// send nothing
 //	(void)EMAC_READ(ETH_ISR);
 	u = EMAC_READ(ETH_TSR);
 	EMAC_WRITE(ETH_TSR, (u & (ETH_TSR_UND | ETH_TSR_COMP | ETH_TSR_BNQ
 				  | ETH_TSR_IDLE | ETH_TSR_RLE
-				  | ETH_TSR_COL|ETH_TSR_OVR)));
+				  | ETH_TSR_COL | ETH_TSR_OVR)));
 	u = EMAC_READ(ETH_RSR);
-	EMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR|ETH_RSR_REC|ETH_RSR_BNA)));
+	EMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR | ETH_RSR_REC | ETH_RSR_BNA)));
 
 	/* configure EMAC */
-	EMAC_WRITE(ETH_CFG, ETH_CFG_CLK_32 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
+	EMAC_WRITE(ETH_CFG,
+	    ETH_CFG_CLK_32 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
 	EMAC_WRITE(ETH_CTL, ETH_CTL_MPE);
 #if 0
 	if (device_cfdata(sc->sc_dev)->cf_flags)
@@ -377,7 +387,7 @@ emac_init(struct emac_softc *sc)
 	if (err == 0) {
 		DPRINTFN(1,("%s: -> bus_dmamem_map\n", __FUNCTION__));
 		err = bus_dmamem_map(sc->sc_dmat, &segs, 1, sc->rbqlen,
-			&sc->rbqpage, (BUS_DMA_WAITOK|BUS_DMA_COHERENT));
+			&sc->rbqpage, (BUS_DMA_WAITOK | BUS_DMA_COHERENT));
 	}
 	if (err == 0) {
 		DPRINTFN(1,("%s: -> bus_dmamap_create\n", __FUNCTION__));
@@ -404,14 +414,15 @@ emac_init(struct emac_softc *sc)
 
 	/* Populate the RXQ with mbufs */
 	sc->rxqi = 0;
-	for(i = 0; i < RX_QLEN; i++) {
+	for (i = 0; i < RX_QLEN; i++) {
 		struct mbuf *m;
 
-		err = bus_dmamap_create(sc->sc_dmat, MCLBYTES, 1, MCLBYTES, PAGE_SIZE,
-			BUS_DMA_WAITOK, &sc->rxq[i].m_dmamap);
-		if (err) {
-			panic("%s: dmamap_create failed: %i\n", __FUNCTION__, err);
-		}
+		err = bus_dmamap_create(sc->sc_dmat, MCLBYTES, 1, MCLBYTES,
+		    PAGE_SIZE, BUS_DMA_WAITOK, &sc->rxq[i].m_dmamap);
+		if (err)
+			panic("%s: dmamap_create failed: %i\n",
+			    __FUNCTION__, err);
+
 		MGETHDR(m, M_WAIT, MT_DATA);
 		MCLGET(m, M_WAIT);
 		sc->rxq[i].m = m;
@@ -421,9 +432,10 @@ emac_init(struct emac_softc *sc)
 		err = bus_dmamap_load(sc->sc_dmat, sc->rxq[i].m_dmamap,
 			m->m_ext.ext_buf, MCLBYTES, NULL,
 			BUS_DMA_WAITOK);
-		if (err) {
-			panic("%s: dmamap_load failed: %i\n", __FUNCTION__, err);
-		}
+		if (err)
+			panic("%s: dmamap_load failed: %i\n",
+			    __FUNCTION__, err);
+
 		sc->RDSC[i].Addr = sc->rxq[i].m_dmamap->dm_segs[0].ds_addr
 			| (i == (RX_QLEN-1) ? ETH_RDSC_F_WRAP : 0);
 		sc->RDSC[i].Info = 0;
@@ -450,16 +462,16 @@ emac_init(struct emac_softc *sc)
 	EMAC_WRITE(ETH_RBQP, (uint32_t)addr);
 
 	/* Divide HCLK by 32 for MDC clock */
-	sc->sc_mii.mii_ifp = ifp;
-	sc->sc_mii.mii_readreg = emac_mii_readreg;
-	sc->sc_mii.mii_writereg = emac_mii_writereg;
-	sc->sc_mii.mii_statchg = emac_statchg;
-	sc->sc_ec.ec_mii = &sc->sc_mii;
-	ifmedia_init(&sc->sc_mii.mii_media, IFM_IMASK, emac_mediachange,
+	mii->mii_ifp = ifp;
+	mii->mii_readreg = emac_mii_readreg;
+	mii->mii_writereg = emac_mii_writereg;
+	mii->mii_statchg = emac_statchg;
+	sc->sc_ec.ec_mii = mii;
+	ifmedia_init(&mii->mii_media, IFM_IMASK, emac_mediachange,
 		emac_mediastatus);
-	mii_attach((device_t )sc, &sc->sc_mii, 0xffffffff, MII_PHY_ANY,
+	mii_attach((device_t )sc, mii, 0xffffffff, MII_PHY_ANY,
 		MII_OFFSET_ANY, 0);
-	ifmedia_set(&sc->sc_mii.mii_media, IFM_ETHER|IFM_AUTO);
+	ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_AUTO);
 
 	// enable / disable interrupts
 
@@ -479,19 +491,19 @@ emac_init(struct emac_softc *sc)
 	 */
 	sc->sc_ec.ec_capabilities |= ETHERCAP_VLAN_MTU;
 
-        strcpy(ifp->if_xname, device_xname(sc->sc_dev));
-        ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-        ifp->if_ioctl = emac_ifioctl;
-        ifp->if_start = emac_ifstart;
-        ifp->if_watchdog = emac_ifwatchdog;
-        ifp->if_init = emac_ifinit;
-        ifp->if_stop = emac_ifstop;
-        ifp->if_timer = 0;
+	strcpy(ifp->if_xname, device_xname(sc->sc_dev));
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
+	ifp->if_ioctl = emac_ifioctl;
+	ifp->if_start = emac_ifstart;
+	ifp->if_watchdog = emac_ifwatchdog;
+	ifp->if_init = emac_ifinit;
+	ifp->if_stop = emac_ifstop;
+	ifp->if_timer = 0;
 	ifp->if_softc = sc;
-        IFQ_SET_READY(&ifp->if_snd);
-        if_attach(ifp);
+	IFQ_SET_READY(&ifp->if_snd);
+	if_attach(ifp);
 	if_deferred_start_init(ifp, NULL);
-        ether_ifattach(ifp, (sc)->sc_enaddr);
+	ether_ifattach(ifp, (sc)->sc_enaddr);
 }
 
 static int
@@ -524,7 +536,8 @@ emac_mii_readreg(device_t self, int phy, int reg, uint16_t *val)
 			     | ((phy << ETH_MAN_PHYA_SHIFT) & ETH_MAN_PHYA)
 			     | ((reg << ETH_MAN_REGA_SHIFT) & ETH_MAN_REGA)
 			     | ETH_MAN_CODE_IEEE802_3));
-	while (!(EMAC_READ(ETH_SR) & ETH_SR_IDLE)) ;
+	while (!(EMAC_READ(ETH_SR) & ETH_SR_IDLE))
+		;
 	*val = EMAC_READ(ETH_MAN) & ETH_MAN_DATA;
 
 	return 0;
@@ -542,27 +555,27 @@ emac_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 			     | ((reg << ETH_MAN_REGA_SHIFT) & ETH_MAN_REGA)
 			     | ETH_MAN_CODE_IEEE802_3
 			     | (val & ETH_MAN_DATA)));
-	while (!(EMAC_READ(ETH_SR) & ETH_SR_IDLE)) ;
+	while (!(EMAC_READ(ETH_SR) & ETH_SR_IDLE))
+		;
 
 	return 0;
 }
 
-
 void
 emac_statchg(struct ifnet *ifp)
 {
-        struct emac_softc *sc = ifp->if_softc;
-        uint32_t reg;
+	struct emac_softc *sc = ifp->if_softc;
+	uint32_t reg;
 
-        /*
-         * We must keep the MAC and the PHY in sync as
-         * to the status of full-duplex!
-         */
+	/*
+	 * We must keep the MAC and the PHY in sync as
+	 * to the status of full-duplex!
+	 */
 	reg = EMAC_READ(ETH_CFG);
-        if (sc->sc_mii.mii_media_active & IFM_FDX)
-                reg |= ETH_CFG_FD;
-        else
-                reg &= ~ETH_CFG_FD;
+	if (sc->sc_mii.mii_media_active & IFM_FDX)
+		reg |= ETH_CFG_FD;
+	else
+		reg &= ~ETH_CFG_FD;
 	EMAC_WRITE(ETH_CFG, reg);
 }
 
@@ -594,11 +607,10 @@ emac_tick(void *arg)
 static int
 emac_ifioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
-	struct emac_softc *sc = ifp->if_softc;
 	int s, error;
 
 	s = splnet();
-	switch(cmd) {
+	switch (cmd) {
 	default:
 		error = ether_ioctl(ifp, cmd, data);
 		if (error == ENETRESET) {
@@ -709,7 +721,7 @@ emac_ifwatchdog(struct ifnet *ifp)
 
 	if ((ifp->if_flags & IFF_RUNNING) == 0)
 		return;
-       	printf("%s: device timeout, CTL = 0x%08x, CFG = 0x%08x\n",
+	printf("%s: device timeout, CTL = 0x%08x, CFG = 0x%08x\n",
 		device_xname(sc->sc_dev), EMAC_READ(ETH_CTL), EMAC_READ(ETH_CFG));
 }
 
@@ -732,7 +744,7 @@ emac_ifinit(struct ifnet *ifp)
 
 	mii_mediachg(&sc->sc_mii);
 	callout_reset(&sc->emac_tick_ch, hz, emac_tick, sc);
-        ifp->if_flags |= IFF_RUNNING;
+	ifp->if_flags |= IFF_RUNNING;
 	splx(s);
 	return 0;
 }
@@ -747,15 +759,16 @@ emac_ifstop(struct ifnet *ifp, int disable)
 	EMAC_WRITE(ETH_CTL, ETH_CTL_MPE);	// disable everything
 	EMAC_WRITE(ETH_IDR, -1);		// disable interrupts
 //	EMAC_WRITE(ETH_RBQP, 0);		// clear receive
-	EMAC_WRITE(ETH_CFG, ETH_CFG_CLK_32 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
+	EMAC_WRITE(ETH_CFG,
+	    ETH_CFG_CLK_32 | ETH_CFG_SPD | ETH_CFG_FD | ETH_CFG_BIG);
 	EMAC_WRITE(ETH_TCR, 0);			// send nothing
 //	(void)EMAC_READ(ETH_ISR);
 	u = EMAC_READ(ETH_TSR);
 	EMAC_WRITE(ETH_TSR, (u & (ETH_TSR_UND | ETH_TSR_COMP | ETH_TSR_BNQ
 				  | ETH_TSR_IDLE | ETH_TSR_RLE
-				  | ETH_TSR_COL|ETH_TSR_OVR)));
+				  | ETH_TSR_COL | ETH_TSR_OVR)));
 	u = EMAC_READ(ETH_RSR);
-	EMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR|ETH_RSR_REC|ETH_RSR_BNA)));
+	EMAC_WRITE(ETH_RSR, (u & (ETH_RSR_OVR | ETH_RSR_REC | ETH_RSR_BNA)));
 #endif
 	callout_stop(&sc->emac_tick_ch);
 
@@ -771,7 +784,7 @@ static void
 emac_setaddr(struct ifnet *ifp)
 {
 	struct emac_softc *sc = ifp->if_softc;
-	struct ethercom *ac = &sc->sc_ec;
+	struct ethercom *ec = &sc->sc_ec;
 	struct ether_multi *enm;
 	struct ether_multistep step;
 	uint8_t ias[3][ETHER_ADDR_LEN];
@@ -785,7 +798,7 @@ emac_setaddr(struct ifnet *ifp)
 	cfg &= ~(ETH_CFG_MTI | ETH_CFG_UNI | ETH_CFG_CAF | ETH_CFG_UNI);
 
 	if (ifp->if_flags & IFF_PROMISC) {
-		cfg |=  ETH_CFG_CAF;
+		cfg |=	ETH_CFG_CAF;
 	} else {
 		cfg &= ~ETH_CFG_CAF;
 	}
@@ -794,7 +807,8 @@ emac_setaddr(struct ifnet *ifp)
 
 	ifp->if_flags &= ~IFF_ALLMULTI;
 
-	ETHER_FIRST_MULTI(step, ac, enm);
+	ETHER_LOCK(ec);
+	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, ETHER_ADDR_LEN)) {
 			/*
@@ -832,6 +846,7 @@ emac_setaddr(struct ifnet *ifp)
 		ETHER_NEXT_MULTI(step, enm);
 		nma++;
 	}
+	ETHER_UNLOCK(ec);
 
 	// program...
 	DPRINTFN(1,("%s: en0 %02x:%02x:%02x:%02x:%02x:%02x\n", __FUNCTION__,
@@ -843,9 +858,10 @@ emac_setaddr(struct ifnet *ifp)
 	EMAC_WRITE(ETH_SA1H, (sc->sc_enaddr[5] << 8)
 		   | (sc->sc_enaddr[4]));
 	if (nma > 1) {
-		DPRINTFN(1,("%s: en1 %02x:%02x:%02x:%02x:%02x:%02x\n", __FUNCTION__,
-		       ias[0][0], ias[0][1], ias[0][2],
-		       ias[0][3], ias[0][4], ias[0][5]));
+		DPRINTFN(1,("%s: en1 %02x:%02x:%02x:%02x:%02x:%02x\n",
+			__FUNCTION__,
+			ias[0][0], ias[0][1], ias[0][2],
+			ias[0][3], ias[0][4], ias[0][5]));
 		EMAC_WRITE(ETH_SA2L, (ias[0][3] << 24)
 			   | (ias[0][2] << 16) | (ias[0][1] << 8)
 			   | (ias[0][0]));
@@ -853,9 +869,10 @@ emac_setaddr(struct ifnet *ifp)
 			   | (ias[0][5]));
 	}
 	if (nma > 2) {
-		DPRINTFN(1,("%s: en2 %02x:%02x:%02x:%02x:%02x:%02x\n", __FUNCTION__,
-		       ias[1][0], ias[1][1], ias[1][2],
-		       ias[1][3], ias[1][4], ias[1][5]));
+		DPRINTFN(1,("%s: en2 %02x:%02x:%02x:%02x:%02x:%02x\n",
+			__FUNCTION__,
+			ias[1][0], ias[1][1], ias[1][2],
+			ias[1][3], ias[1][4], ias[1][5]));
 		EMAC_WRITE(ETH_SA3L, (ias[1][3] << 24)
 			   | (ias[1][2] << 16) | (ias[1][1] << 8)
 			   | (ias[1][0]));
@@ -863,9 +880,10 @@ emac_setaddr(struct ifnet *ifp)
 			   | (ias[1][5]));
 	}
 	if (nma > 3) {
-		DPRINTFN(1,("%s: en3 %02x:%02x:%02x:%02x:%02x:%02x\n", __FUNCTION__,
-		       ias[2][0], ias[2][1], ias[2][2],
-		       ias[2][3], ias[2][4], ias[2][5]));
+		DPRINTFN(1,("%s: en3 %02x:%02x:%02x:%02x:%02x:%02x\n",
+			__FUNCTION__,
+			ias[2][0], ias[2][1], ias[2][2],
+			ias[2][3], ias[2][4], ias[2][5]));
 		EMAC_WRITE(ETH_SA3L, (ias[2][3] << 24)
 			   | (ias[2][2] << 16) | (ias[2][1] << 8)
 			   | (ias[2][0]));

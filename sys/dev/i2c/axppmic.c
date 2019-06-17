@@ -1,4 +1,4 @@
-/* $NetBSD: axppmic.c,v 1.18 2019/01/02 18:38:03 jmcneill Exp $ */
+/* $NetBSD: axppmic.c,v 1.24 2019/05/28 20:22:18 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2014-2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: axppmic.c,v 1.18 2019/01/02 18:38:03 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: axppmic.c,v 1.24 2019/05/28 20:22:18 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -53,6 +53,8 @@ __KERNEL_RCSID(0, "$NetBSD: axppmic.c,v 1.18 2019/01/02 18:38:03 jmcneill Exp $"
 #define	 AXP_POWER_MODE_BATT_VALID	__BIT(4)
 #define	 AXP_POWER_MODE_BATT_PRESENT	__BIT(5)
 #define	 AXP_POWER_MODE_BATT_CHARGING	__BIT(6)
+
+#define	AXP_CHIP_ID_REG		0x03
 
 #define AXP_POWER_DISABLE_REG	0x32
 #define	 AXP_POWER_DISABLE_CTRL	__BIT(7)
@@ -98,6 +100,10 @@ __KERNEL_RCSID(0, "$NetBSD: axppmic.c,v 1.18 2019/01/02 18:38:03 jmcneill Exp $"
 #define	 AXP_BATT_CAP_WARN_LV1	__BITS(7,4)
 #define	 AXP_BATT_CAP_WARN_LV2	__BITS(3,0)
 
+#define	AXP_ADDR_EXT_REG	0xff	/* AXP806 */
+#define	 AXP_ADDR_EXT_MASTER	0
+#define	 AXP_ADDR_EXT_SLAVE	__BIT(4)
+
 struct axppmic_ctrl {
 	device_t	c_dev;
 
@@ -108,9 +114,12 @@ struct axppmic_ctrl {
 	u_int		c_step1cnt;
 	u_int		c_step2;
 	u_int		c_step2cnt;
+	u_int		c_step2start;
 
 	uint8_t		c_enable_reg;
 	uint8_t		c_enable_mask;
+	uint8_t		c_enable_val;
+	uint8_t		c_disable_val;
 
 	uint8_t		c_voltage_reg;
 	uint8_t		c_voltage_mask;
@@ -121,6 +130,7 @@ struct axppmic_ctrl {
 	  .c_step1 = (step), .c_step1cnt = (((max) - (min)) / (step)) + 1, \
 	  .c_step2 = 0, .c_step2cnt = 0,				\
 	  .c_enable_reg = (ereg), .c_enable_mask = (emask),		\
+	  .c_enable_val = (emask), .c_disable_val = 0,			\
 	  .c_voltage_reg = (vreg), .c_voltage_mask = (vmask) }
 
 #define AXP_CTRL2(name, min, max, step1, step1cnt, step2, step2cnt, ereg, emask, vreg, vmask) \
@@ -128,7 +138,30 @@ struct axppmic_ctrl {
 	  .c_step1 = (step1), .c_step1cnt = (step1cnt),			\
 	  .c_step2 = (step2), .c_step2cnt = (step2cnt),			\
 	  .c_enable_reg = (ereg), .c_enable_mask = (emask),		\
+	  .c_enable_val = (emask), .c_disable_val = 0,			\
 	  .c_voltage_reg = (vreg), .c_voltage_mask = (vmask) }
+
+#define AXP_CTRL2_RANGE(name, min, max, step1, step1cnt, step2start, step2, step2cnt, ereg, emask, vreg, vmask) \
+	{ .c_name = (name), .c_min = (min), .c_max = (max),		\
+	  .c_step1 = (step1), .c_step1cnt = (step1cnt),			\
+	  .c_step2start = (step2start),					\
+	  .c_step2 = (step2), .c_step2cnt = (step2cnt),			\
+	  .c_enable_reg = (ereg), .c_enable_mask = (emask),		\
+	  .c_enable_val = (emask), .c_disable_val = 0,			\
+	  .c_voltage_reg = (vreg), .c_voltage_mask = (vmask) }
+
+#define AXP_CTRL_IO(name, min, max, step, ereg, emask, eval, dval, vreg, vmask)	\
+	{ .c_name = (name), .c_min = (min), .c_max = (max),		\
+	  .c_step1 = (step), .c_step1cnt = (((max) - (min)) / (step)) + 1, \
+	  .c_step2 = 0, .c_step2cnt = 0,				\
+	  .c_enable_reg = (ereg), .c_enable_mask = (emask),		\
+	  .c_enable_val = (eval), .c_disable_val = (dval),		\
+	  .c_voltage_reg = (vreg), .c_voltage_mask = (vmask) }
+
+#define AXP_CTRL_SW(name, ereg, emask)					\
+	{ .c_name = (name), 						\
+	  .c_enable_reg = (ereg), .c_enable_mask = (emask),		\
+	  .c_enable_val = (emask), .c_disable_val = 0 }
 
 static const struct axppmic_ctrl axp803_ctrls[] = {
 	AXP_CTRL("dldo1", 700, 3300, 100,
@@ -202,6 +235,46 @@ static const struct axppmic_ctrl axp805_ctrls[] = {
 		0x11, __BIT(6), 0x26, __BITS(4,0)),
 };
 
+static const struct axppmic_ctrl axp809_ctrls[] = {
+	AXP_CTRL("dc5ldo", 700, 1400, 100,
+		0x10, __BIT(0), 0x1c, __BITS(2,0)),
+	AXP_CTRL("dcdc1", 1600, 3400, 100,
+		0x10, __BIT(1), 0x21, __BITS(4,0)),
+	AXP_CTRL("dcdc2", 600, 1540, 20,
+		0x10, __BIT(2), 0x22, __BITS(5,0)),
+	AXP_CTRL("dcdc3", 600, 1860, 20,
+		0x10, __BIT(3), 0x23, __BITS(5,0)),
+	AXP_CTRL2_RANGE("dcdc4", 600, 2600, 20, 47, 1800, 100, 9,
+		0x10, __BIT(4), 0x24, __BITS(5,0)),
+	AXP_CTRL("dcdc5", 1000, 2550, 50,
+		0x10, __BIT(5), 0x25, __BITS(4,0)),
+	AXP_CTRL("aldo1", 700, 3300, 100,
+		0x10, __BIT(6), 0x28, __BITS(4,0)),
+	AXP_CTRL("aldo2", 700, 3300, 100,
+		0x10, __BIT(7), 0x29, __BITS(4,0)),
+	AXP_CTRL("eldo1", 700, 3300, 100,
+		0x12, __BIT(0), 0x19, __BITS(4,0)),
+	AXP_CTRL("eldo2", 700, 3300, 100,
+		0x12, __BIT(1), 0x1a, __BITS(4,0)),
+	AXP_CTRL("eldo3", 700, 3300, 100,
+		0x12, __BIT(2), 0x1b, __BITS(4,0)),
+	AXP_CTRL2_RANGE("dldo1", 700, 4000, 100, 26, 3400, 200, 4,
+		0x12, __BIT(3), 0x15, __BITS(4,0)),
+	AXP_CTRL("dldo2", 700, 3300, 100,
+		0x12, __BIT(4), 0x16, __BITS(4,0)),
+	AXP_CTRL("aldo3", 700, 3300, 100,
+		0x12, __BIT(5), 0x2a, __BITS(4,0)),
+	AXP_CTRL_SW("sw",
+		0x12, __BIT(6)),
+	/* dc1sw is another switch for dcdc1 */
+	AXP_CTRL("dc1sw", 1600, 3400, 100,
+		0x12, __BIT(7), 0x21, __BITS(4,0)),
+	AXP_CTRL_IO("ldo_io0", 700, 3300, 100,
+		0x90, __BITS(3,0), 0x3, 0x7, 0x91, __BITS(4,0)),
+	AXP_CTRL_IO("ldo_io1", 700, 3300, 100,
+		0x92, __BITS(3,0), 0x3, 0x7, 0x93, __BITS(4,0)),
+};
+
 static const struct axppmic_ctrl axp813_ctrls[] = {
 	AXP_CTRL("dldo1", 700, 3300, 100,
 		0x12, __BIT(3), 0x15, __BITS(4,0)),
@@ -258,6 +331,7 @@ struct axppmic_config {
 	u_int irq_regs;
 	bool has_battery;
 	bool has_fuel_gauge;
+	bool has_mode_set;
 	struct axppmic_irq poklirq;
 	struct axppmic_irq acinirq;
 	struct axppmic_irq vbusirq;
@@ -339,11 +413,28 @@ static const struct axppmic_config axp803_config = {
 };
 
 static const struct axppmic_config axp805_config = {
-	.name = "AXP805/806",
+	.name = "AXP805",
 	.controls = axp805_ctrls,
 	.ncontrols = __arraycount(axp805_ctrls),
 	.irq_regs = 2,
 	.poklirq = AXPPMIC_IRQ(2, __BIT(0)),
+};
+
+static const struct axppmic_config axp806_config = {
+	.name = "AXP806",
+	.controls = axp805_ctrls,
+	.ncontrols = __arraycount(axp805_ctrls),
+#if notyet
+	.irq_regs = 2,
+	.poklirq = AXPPMIC_IRQ(2, __BIT(0)),
+#endif
+	.has_mode_set = true,
+};
+
+static const struct axppmic_config axp809_config = {
+	.name = "AXP809",
+	.controls = axp809_ctrls,
+	.ncontrols = __arraycount(axp809_ctrls),
 };
 
 static const struct axppmic_config axp813_config = {
@@ -369,7 +460,8 @@ static const struct axppmic_config axp813_config = {
 static const struct device_compatible_entry compat_data[] = {
 	{ "x-powers,axp803",		(uintptr_t)&axp803_config },
 	{ "x-powers,axp805",		(uintptr_t)&axp805_config },
-	{ "x-powers,axp806",		(uintptr_t)&axp805_config },
+	{ "x-powers,axp806",		(uintptr_t)&axp806_config },
+	{ "x-powers,axp809",		(uintptr_t)&axp809_config },
 	{ "x-powers,axp813",		(uintptr_t)&axp813_config },
 	{ NULL,				0 }
 };
@@ -408,6 +500,10 @@ axppmic_set_voltage(i2c_tag_t tag, i2c_addr_t addr, const struct axppmic_ctrl *c
 		++reg_val;
 		vol += c->c_step1;
 	}
+
+	if (c->c_step2start)
+		vol = c->c_step2start;
+
 	for (nstep = 0; nstep < c->c_step2cnt && vol < min; nstep++) {
 		++reg_val;
 		vol += c->c_step2;
@@ -446,6 +542,9 @@ axppmic_get_voltage(i2c_tag_t tag, i2c_addr_t addr, const struct axppmic_ctrl *c
 	reg_val = __SHIFTOUT(val, c->c_voltage_mask);
 	if (reg_val < c->c_step1cnt) {
 		*pvol = c->c_min + reg_val * c->c_step1;
+	} else if (c->c_step2start) {
+		*pvol = c->c_step2start +
+		    ((reg_val - c->c_step1cnt) * c->c_step2);
 	} else {
 		*pvol = c->c_min + (c->c_step1cnt * c->c_step1) +
 		    ((reg_val - c->c_step1cnt) * c->c_step2);
@@ -808,7 +907,8 @@ axppmic_attach(device_t parent, device_t self, void *aux)
 	struct axpreg_attach_args aaa;
 	struct i2c_attach_args *ia = aux;
 	int phandle, child, i;
-	uint32_t irq_mask;
+	uint8_t irq_mask, val;
+	int error;
 	void *ih;
 
 	(void) iic_compatible_match(ia, compat_data, &dce);
@@ -824,33 +924,54 @@ axppmic_attach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal(": %s\n", c->name);
 
+	if (c->has_mode_set) {
+		const bool master_mode = of_hasprop(sc->sc_phandle, "x-powers,self-working-mode") ||
+		    of_hasprop(sc->sc_phandle, "x-powers,master-mode");
+
+		iic_acquire_bus(sc->sc_i2c, I2C_F_POLL);
+		axppmic_write(sc->sc_i2c, sc->sc_addr, AXP_ADDR_EXT_REG,
+		    master_mode ? AXP_ADDR_EXT_MASTER : AXP_ADDR_EXT_SLAVE, I2C_F_POLL);
+		iic_release_bus(sc->sc_i2c, I2C_F_POLL);
+	}
+
+	iic_acquire_bus(sc->sc_i2c, I2C_F_POLL);
+	error = axppmic_read(sc->sc_i2c, sc->sc_addr, AXP_CHIP_ID_REG, &val, I2C_F_POLL);
+	iic_release_bus(sc->sc_i2c, I2C_F_POLL);
+	if (error != 0) {
+		aprint_error_dev(self, "couldn't read chipid\n");
+		return;
+	}
+	aprint_debug_dev(self, "chipid %#x\n", val);
+
 	sc->sc_smpsw.smpsw_name = device_xname(self);
 	sc->sc_smpsw.smpsw_type = PSWITCH_TYPE_POWER;
 	sysmon_pswitch_register(&sc->sc_smpsw);
 
-	iic_acquire_bus(sc->sc_i2c, I2C_F_POLL);
-	for (i = 1; i <= c->irq_regs; i++) {
-		irq_mask = 0;
-		if (i == c->poklirq.reg)
-			irq_mask |= c->poklirq.mask;
-		if (i == c->acinirq.reg)
-			irq_mask |= c->acinirq.mask;
-		if (i == c->vbusirq.reg)
-			irq_mask |= c->vbusirq.mask;
-		if (i == c->battirq.reg)
-			irq_mask |= c->battirq.mask;
-		if (i == c->chargeirq.reg)
-			irq_mask |= c->chargeirq.mask;
-		if (i == c->chargestirq.reg)
-			irq_mask |= c->chargestirq.mask;
-		axppmic_write(sc->sc_i2c, sc->sc_addr, AXP_IRQ_ENABLE_REG(i), irq_mask, I2C_F_POLL);
-	}
-	iic_release_bus(sc->sc_i2c, I2C_F_POLL);
+	if (c->irq_regs > 0) {
+		iic_acquire_bus(sc->sc_i2c, I2C_F_POLL);
+		for (i = 1; i <= c->irq_regs; i++) {
+			irq_mask = 0;
+			if (i == c->poklirq.reg)
+				irq_mask |= c->poklirq.mask;
+			if (i == c->acinirq.reg)
+				irq_mask |= c->acinirq.mask;
+			if (i == c->vbusirq.reg)
+				irq_mask |= c->vbusirq.mask;
+			if (i == c->battirq.reg)
+				irq_mask |= c->battirq.mask;
+			if (i == c->chargeirq.reg)
+				irq_mask |= c->chargeirq.mask;
+			if (i == c->chargestirq.reg)
+				irq_mask |= c->chargestirq.mask;
+			axppmic_write(sc->sc_i2c, sc->sc_addr, AXP_IRQ_ENABLE_REG(i), irq_mask, I2C_F_POLL);
+		}
+		iic_release_bus(sc->sc_i2c, I2C_F_POLL);
 
-	ih = fdtbus_intr_establish(sc->sc_phandle, 0, IPL_VM, FDT_INTR_MPSAFE,
-	    axppmic_intr, sc);
-	if (ih == NULL) {
-		aprint_error_dev(self, "WARNING: couldn't establish interrupt handler\n");
+		ih = fdtbus_intr_establish(sc->sc_phandle, 0, IPL_VM, FDT_INTR_MPSAFE,
+		    axppmic_intr, sc);
+		if (ih == NULL) {
+			aprint_error_dev(self, "WARNING: couldn't establish interrupt handler\n");
+		}
 	}
 
 	fdtbus_register_power_controller(sc->sc_dev, sc->sc_phandle,
@@ -870,6 +991,9 @@ axppmic_attach(device_t parent, device_t self, void *aux)
 			config_found(sc->sc_dev, &aaa, NULL);
 		}
 	}
+
+	/* Notify pinctrl drivers that regulators are available. */
+	fdtbus_pinctrl_configure();
 
 	if (c->has_battery)
 		axppmic_attach_sensors(sc);
@@ -900,10 +1024,11 @@ axpreg_enable(device_t dev, bool enable)
 
 	iic_acquire_bus(sc->sc_i2c, flags);
 	if ((error = axppmic_read(sc->sc_i2c, sc->sc_addr, c->c_enable_reg, &val, flags)) == 0) {
+		val &= ~c->c_enable_mask;
 		if (enable)
-			val |= c->c_enable_mask;
+			val |= c->c_enable_val;
 		else
-			val &= ~c->c_enable_mask;
+			val |= c->c_disable_val;
 		error = axppmic_write(sc->sc_i2c, sc->sc_addr, c->c_enable_reg, val, flags);
 	}
 	iic_release_bus(sc->sc_i2c, flags);
@@ -958,6 +1083,7 @@ axpreg_attach(device_t parent, device_t self, void *aux)
 	struct axpreg_attach_args *aaa = aux;
 	const int phandle = aaa->reg_phandle;
 	const char *name;
+	u_int uvol, min_uvol, max_uvol;
 
 	sc->sc_dev = self;
 	sc->sc_i2c = aaa->reg_i2c;
@@ -973,6 +1099,21 @@ axpreg_attach(device_t parent, device_t self, void *aux)
 		aprint_normal(": %s\n", name);
 	else
 		aprint_normal("\n");
+
+	axpreg_get_voltage(self, &uvol);
+	if (of_getprop_uint32(phandle, "regulator-min-microvolt", &min_uvol) == 0 &&
+	    of_getprop_uint32(phandle, "regulator-max-microvolt", &max_uvol) == 0) {
+		if (uvol < min_uvol || uvol > max_uvol) {
+			aprint_debug_dev(self, "fix voltage %u uV -> %u/%u uV\n",
+			    uvol, min_uvol, max_uvol);
+			axpreg_set_voltage(self, min_uvol, max_uvol);
+		}
+	}
+
+	if (of_hasprop(phandle, "regulator-always-on") ||
+	    of_hasprop(phandle, "regulator-boot-on")) {
+		axpreg_enable(self, true);
+	}
 }
 
 CFATTACH_DECL_NEW(axppmic, sizeof(struct axppmic_softc),

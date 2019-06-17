@@ -1,11 +1,11 @@
-/* $NetBSD: pmap.h,v 1.1 2014/09/19 17:36:26 matt Exp $ */
+/* $NetBSD: pmap.h,v 1.3 2019/06/16 07:42:52 maxv Exp $ */
 
-/*-
- * Copyright (c) 2014 The NetBSD Foundation, Inc.
+/*
+ * Copyright (c) 2014, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Matt Thomas of 3am Software Foundry.
+ * by Matt Thomas (of 3am Software Foundry) and Maxime Villard.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -42,22 +42,24 @@
 #include <sys/pool.h>
 #include <sys/evcnt.h>
 
+#include <uvm/uvm_physseg.h>
 #include <uvm/pmap/vmpagemd.h>
 
 #include <riscv/pte.h>
 
-#define	PMAP_SEGTABSIZE		(__SHIFTOUT(PTE_PPN0, PTE_PPN0) + 1)
-#define	PMAP_PDETABSIZE		(__SHIFTOUT(PTE_PPN0, PTE_PPN0) + 1)
+#define	PMAP_SEGTABSIZE	NPTEPG
 
-#define NBSEG		(NBPG*NPTEPG)
+#define NBSEG		(PAGE_SIZE * NPTEPG)
+
 #ifdef _LP64
-#define NBXSEG		(NBSEG*NSEGPG)
+#define NBXSEG		(NBSEG * NSEGPG)
 #define XSEGSHIFT	(SEGSHIFT + PGSHIFT - 3)
-#define XSEGOFSET	(PTE_PPN1|SEGOFSET)
+#define XSEGOFSET	(PTE_PPN1 | SEGOFSET)
 #define SEGSHIFT	(PGSHIFT + PGSHIFT - 3)
 #else
 #define SEGSHIFT	(PGSHIFT + PGSHIFT - 2)
 #endif
+
 #define SEGOFSET	(PTE_PPN0|PAGE_MASK)
 
 #define KERNEL_PID	0
@@ -76,6 +78,15 @@
 
 #define pmap_phys_address(x)		(x)
 
+#ifndef __BSD_PTENTRY_T__
+#define __BSD_PTENTRY_T__
+#ifdef _LP64
+#define PRIxPTE         PRIx64
+#else
+#define PRIxPTE         PRIx32
+#endif
+#endif /* __BSD_PTENTRY_T__ */
+
 #define PMAP_NEED_PROCWR
 static inline void
 pmap_procwr(struct proc *p, vaddr_t va, vsize_t len)
@@ -83,9 +94,7 @@ pmap_procwr(struct proc *p, vaddr_t va, vsize_t len)
 	__asm __volatile("fence\trw,rw; fence.i");
 }
 
-
 #include <uvm/pmap/tlb.h>
-
 #include <uvm/pmap/pmap_tlb.h>
 
 #define PMAP_GROWKERNEL
@@ -96,6 +105,7 @@ pmap_procwr(struct proc *p, vaddr_t va, vsize_t len)
 #define __HAVE_PMAP_MD
 struct pmap_md {
 	paddr_t md_ptbr;
+	pd_entry_t *md_pdetab;
 };
 
 struct vm_page *
@@ -112,6 +122,12 @@ bool    pmap_md_tlb_check_entry(void *, vaddr_t, tlb_asid_t, pt_entry_t);
 
 void	pmap_md_pdetab_activate(struct pmap *);
 void	pmap_md_pdetab_init(struct pmap *);
+bool	pmap_md_ok_to_steal_p(const uvm_physseg_t, size_t);
+
+extern vaddr_t pmap_direct_base;
+extern vaddr_t pmap_direct_end;
+#define PMAP_DIRECT_MAP(pa)	(pmap_direct_base + (pa))
+#define PMAP_DIRECT_UNMAP(va)	((paddr_t)(va) - pmap_direct_base)
 
 #ifdef __PMAP_PRIVATE
 static inline void
@@ -148,9 +164,6 @@ pmap_md_tlb_asid_max(void)
 #endif /* __PMAP_PRIVATE */
 #endif /* _KERNEL */
 
-#define POOL_VTOPHYS(va)	((paddr_t)((vaddr_t)(va)-VM_MAX_KERNEL_ADDRESS))
-#define POOL_PHYSTOV(pa)	((vaddr_t)(paddr_t)(pa)+VM_MAX_KERNEL_ADDRESS)
-
 #include <uvm/pmap/pmap.h>
 
 #endif /* !_MODULE */
@@ -166,9 +179,9 @@ pmap_md_tlb_asid_max(void)
 struct vm_page_md {
 	uintptr_t mdpg_dummy[3];
 };
-#endif /* !__HVE_VM_PAGE_MD */
-
 __CTASSERT(sizeof(struct vm_page_md) == sizeof(uintptr_t)*3);
+
+#endif /* !__HAVE_VM_PAGE_MD */
 
 #endif /* MODULAR || _MODULE */
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: line.c,v 1.9 2017/01/06 13:53:18 roy Exp $	*/
+/*	$NetBSD: line.c,v 1.11 2019/06/09 07:40:14 blymn Exp $	*/
 
 /*-
  * Copyright (c) 1998-1999 Brett Lymn
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: line.c,v 1.9 2017/01/06 13:53:18 roy Exp $");
+__RCSID("$NetBSD: line.c,v 1.11 2019/06/09 07:40:14 blymn Exp $");
 #endif				/* not lint */
 
 #include <string.h>
