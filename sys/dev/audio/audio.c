@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.10 2019/05/25 02:42:03 isaki Exp $	*/
+/*	$NetBSD: audio.c,v 1.17 2019/06/12 13:53:25 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -121,7 +121,7 @@
  *	allocm 			-	- +	(*1)
  *	freem 			-	- +	(*1)
  *	round_buffersize 	-	x
- *	get_props 		-	x
+ *	get_props 		-	x	Called at attach time
  *	trigger_output 		x	x +
  *	trigger_input 		x	x +
  *	dev_ioctl 		-	x
@@ -142,7 +142,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.10 2019/05/25 02:42:03 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.17 2019/06/12 13:53:25 isaki Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -458,6 +458,28 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 #define SPECIFIED(x)	((x) != ~0)
 #define SPECIFIED_CH(x)	((x) != (u_char)~0)
 
+/*
+ * AUDIO_SCALEDOWN()
+ * This macro should be used for audio wave data only.
+ *
+ * The arithmetic shift right (ASR) (in other words, floor()) is good for
+ * this purpose, and will be faster than division on the most platform.
+ * The division (in other words, truncate()) is not so bad alternate for
+ * this purpose, and will be fast enough.
+ * (Using ASR is 1.9 times faster than division on my amd64, and 1.3 times
+ * faster on my m68k.  -- isaki 201801.)
+ *
+ * However, the right shift operator ('>>') for negative integer is
+ * "implementation defined" behavior in C (note that it's not "undefined"
+ * behavior).  So only if implementation defines '>>' as ASR, we use it.
+ */
+#if defined(__GNUC__)
+/* gcc defines '>>' as ASR. */
+#define AUDIO_SCALEDOWN(value, bits)	((value) >> (bits))
+#else
+#define AUDIO_SCALEDOWN(value, bits)	((value) / (1 << (bits)))
+#endif
+
 /* Device timeout in msec */
 #define AUDIO_TIMEOUT	(3000)
 
@@ -550,7 +572,6 @@ static int audio_hw_set_format(struct audio_softc *, int,
 	audio_filter_reg_t *, audio_filter_reg_t *);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
-static int audio_get_props(struct audio_softc *);
 static bool audio_can_playback(struct audio_softc *);
 static bool audio_can_capture(struct audio_softc *);
 static int audio_check_params(audio_format2_t *);
@@ -838,9 +859,11 @@ audioattach(device_t parent, device_t self, void *aux)
 	audio_filter_reg_t rfil;
 	const struct sysctlnode *node;
 	void *hdlp;
-	bool is_indep;
+	bool has_playback;
+	bool has_capture;
+	bool has_indep;
+	bool has_fulldup;
 	int mode;
-	int props;
 	int error;
 
 	sc = device_private(self);
@@ -881,33 +904,45 @@ audioattach(device_t parent, device_t self, void *aux)
 	cv_init(&sc->sc_exlockcv, "audiolk");
 
 	mutex_enter(sc->sc_lock);
-	props = audio_get_props(sc);
+	sc->sc_props = hw_if->get_props(sc->hw_hdl);
 	mutex_exit(sc->sc_lock);
 
-	if ((props & AUDIO_PROP_FULLDUPLEX))
-		aprint_normal(": full duplex");
-	else
-		aprint_normal(": half duplex");
+	/* MMAP is now supported by upper layer.  */
+	sc->sc_props |= AUDIO_PROP_MMAP;
 
-	is_indep = (props & AUDIO_PROP_INDEPENDENT);
+	has_playback = (sc->sc_props & AUDIO_PROP_PLAYBACK);
+	has_capture  = (sc->sc_props & AUDIO_PROP_CAPTURE);
+	has_indep    = (sc->sc_props & AUDIO_PROP_INDEPENDENT);
+	has_fulldup  = (sc->sc_props & AUDIO_PROP_FULLDUPLEX);
+
+	KASSERT(has_playback || has_capture);
+	/* Unidirectional device must have neither FULLDUP nor INDEPENDENT. */
+	if (!has_playback || !has_capture) {
+		KASSERT(!has_indep);
+		KASSERT(!has_fulldup);
+	}
+
 	mode = 0;
-	if ((props & AUDIO_PROP_PLAYBACK)) {
+	if (has_playback) {
+		aprint_normal(": playback");
 		mode |= AUMODE_PLAY;
-		aprint_normal(", playback");
 	}
-	if ((props & AUDIO_PROP_CAPTURE)) {
+	if (has_capture) {
+		aprint_normal("%c capture", has_playback ? ',' : ':');
 		mode |= AUMODE_RECORD;
-		aprint_normal(", capture");
 	}
-	if ((props & AUDIO_PROP_MMAP) != 0)
-		aprint_normal(", mmap");
-	if (is_indep)
-		aprint_normal(", independent");
+	if (has_playback && has_capture) {
+		if (has_fulldup)
+			aprint_normal(", full duplex");
+		else
+			aprint_normal(", half duplex");
+
+		if (has_indep)
+			aprint_normal(", independent");
+	}
 
 	aprint_naive("\n");
 	aprint_normal("\n");
-
-	KASSERT((mode & (AUMODE_PLAY | AUMODE_RECORD)) != 0);
 
 	/* probe hw params */
 	memset(&phwfmt, 0, sizeof(phwfmt));
@@ -915,7 +950,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	memset(&pfil, 0, sizeof(pfil));
 	memset(&rfil, 0, sizeof(rfil));
 	mutex_enter(sc->sc_lock);
-	error = audio_hw_probe(sc, is_indep, &mode, &phwfmt, &rhwfmt);
+	error = audio_hw_probe(sc, has_indep, &mode, &phwfmt, &rhwfmt);
 	if (error) {
 		mutex_exit(sc->sc_lock);
 		aprint_error_dev(self, "audio_hw_probe failed, "
@@ -1847,7 +1882,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		goto bad1;
 	}
 
-	fullduplex = (audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX);
+	fullduplex = (sc->sc_props & AUDIO_PROP_FULLDUPLEX);
 
 	/*
 	 * On half duplex hardware,
@@ -1933,17 +1968,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			 * hw_if->open() is always (FREAD | FWRITE)
 			 * regardless of this open()'s flags.
 			 * see also dev/isa/aria.c
-			 * but ckeck its playback or recording capability.
 			 * On half duplex hardware, the flags passed to
 			 * hw_if->open() is either FREAD or FWRITE.
 			 * see also arch/evbarm/mini2440/audio_mini2440.c
 			 */
 			if (fullduplex) {
 				hwflags = FREAD | FWRITE;
-				if (!audio_can_playback(sc))
-					hwflags &= ~FWRITE;
-				if (!audio_can_capture(sc))
-					hwflags &= ~FREAD;
 			} else {
 				/* Construct hwflags from af->mode. */
 				hwflags = 0;
@@ -2645,16 +2675,14 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		 * it is full duplex.  Otherwise half duplex.
 		 */
 		mutex_enter(sc->sc_lock);
-		fd = (audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX)
+		fd = (sc->sc_props & AUDIO_PROP_FULLDUPLEX)
 		    && (sc->sc_pmixer && sc->sc_rmixer);
 		mutex_exit(sc->sc_lock);
 		*(int *)addr = fd;
 		break;
 
 	case AUDIO_GETPROPS:
-		mutex_enter(sc->sc_lock);
-		*(int *)addr = audio_get_props(sc);
-		mutex_exit(sc->sc_lock);
+		*(int *)addr = sc->sc_props;
 		break;
 
 	case AUDIO_QUERYFORMAT:
@@ -3194,11 +3222,7 @@ audio_track_chvol(audio_filter_arg_t *arg)
 		for (ch = 0; ch < channels; ch++) {
 			aint2_t val;
 			val = *s++;
-#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-			val = val * ch_volume[ch] >> 8;
-#else
-			val = val * ch_volume[ch] / 256;
-#endif
+			val = AUDIO_SCALEDOWN(val * ch_volume[ch], 8);
 			*d++ = (aint_t)val;
 		}
 	}
@@ -3220,11 +3244,7 @@ audio_track_chmix_mixLR(audio_filter_arg_t *arg)
 	d = arg->dst;
 
 	for (i = 0; i < arg->count; i++) {
-#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-		*d++ = (s[0] >> 1) + (s[1] >> 1);
-#else
-		*d++ = (s[0] / 2) + (s[1] / 2);
-#endif
+		*d++ = AUDIO_SCALEDOWN(s[0], 1) + AUDIO_SCALEDOWN(s[1], 1);
 		s += arg->srcfmt->channels;
 	}
 }
@@ -5021,11 +5041,7 @@ audio_pmixer_process(struct audio_softc *sc)
 		if (vol != 256) {
 			m = mixer->mixsample;
 			for (i = 0; i < sample_count; i++) {
-#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-				*m = *m * vol >> 8;
-#else
-				*m = *m * vol / 256;
-#endif
+				*m = AUDIO_SCALEDOWN(*m * vol, 8);
 				m++;
 			}
 		}
@@ -5113,11 +5129,9 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 #if defined(AUDIO_SUPPORT_TRACK_VOLUME)
 		if (track->volume != 256) {
 			for (i = 0; i < sample_count; i++) {
-#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-				*d++ = ((aint2_t)*s++) * track->volume >> 8;
-#else
-				*d++ = ((aint2_t)*s++) * track->volume / 256;
-#endif
+				aint2_t v;
+				v = *s++;
+				*d++ = AUDIO_SCALEDOWN(v * track->volume, 8)
 			}
 		} else
 #endif
@@ -5126,16 +5140,17 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 				*d++ = ((aint2_t)*s++);
 			}
 		}
+		/* Fill silence if the first track is not filled. */
+		for (; i < mixer->frames_per_block * mixer->mixfmt.channels; i++)
+			*d++ = 0;
 	} else {
 		/* If this is the second or later, add it. */
 #if defined(AUDIO_SUPPORT_TRACK_VOLUME)
 		if (track->volume != 256) {
 			for (i = 0; i < sample_count; i++) {
-#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-				*d++ += ((aint2_t)*s++) * track->volume >> 8;
-#else
-				*d++ += ((aint2_t)*s++) * track->volume / 256;
-#endif
+				aint2_t v;
+				v = *s++;
+				*d++ += AUDIO_SCALEDOWN(v * track->volume, 8);
 			}
 		} else
 #endif
@@ -5199,7 +5214,7 @@ audio_pmixer_output(struct audio_softc *sc)
 			    start, end, blksize, audio_pintr, sc, &params);
 			if (error) {
 				device_printf(sc->sc_dev,
-				    "trigger_output failed with %d", error);
+				    "trigger_output failed with %d\n", error);
 				return;
 			}
 		}
@@ -5211,7 +5226,7 @@ audio_pmixer_output(struct audio_softc *sc)
 		    start, blksize, audio_pintr, sc);
 		if (error) {
 			device_printf(sc->sc_dev,
-			    "start_output failed with %d", error);
+			    "start_output failed with %d\n", error);
 			return;
 		}
 	}
@@ -5470,7 +5485,7 @@ audio_rmixer_input(struct audio_softc *sc)
 			    start, end, blksize, audio_rintr, sc, &params);
 			if (error) {
 				device_printf(sc->sc_dev,
-				    "trigger_input failed with %d", error);
+				    "trigger_input failed with %d\n", error);
 				return;
 			}
 		}
@@ -5482,7 +5497,7 @@ audio_rmixer_input(struct audio_softc *sc)
 		    start, blksize, audio_rintr, sc);
 		if (error) {
 			device_printf(sc->sc_dev,
-			    "start_input failed with %d", error);
+			    "start_input failed with %d\n", error);
 			return;
 		}
 	}
@@ -6289,7 +6304,6 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 	audio_filter_reg_t pfil;
 	audio_filter_reg_t rfil;
 	int mode;
-	int props;
 	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
@@ -6322,8 +6336,7 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 	}
 
 	/* On non-independent devices, use the same format for both. */
-	props = audio_get_props(sc);
-	if ((props & AUDIO_PROP_INDEPENDENT) == 0) {
+	if ((sc->sc_props & AUDIO_PROP_INDEPENDENT) == 0) {
 		if (mode == AUMODE_RECORD) {
 			phwfmt = rhwfmt;
 		} else {
@@ -6333,9 +6346,9 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 	}
 
 	/* Then, unset the direction not exist on the hardware. */
-	if ((props & AUDIO_PROP_PLAYBACK) == 0)
+	if ((sc->sc_props & AUDIO_PROP_PLAYBACK) == 0)
 		mode &= ~AUMODE_PLAY;
-	if ((props & AUDIO_PROP_CAPTURE) == 0)
+	if ((sc->sc_props & AUDIO_PROP_CAPTURE) == 0)
 		mode &= ~AUMODE_RECORD;
 
 	/* debug */
@@ -7152,34 +7165,6 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	}
 
 	return 0;
-}
-
-/*
- * Must be called with sc_lock held.
- */
-static int
-audio_get_props(struct audio_softc *sc)
-{
-	const struct audio_hw_if *hw;
-	int props;
-
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	hw = sc->hw_if;
-	props = hw->get_props(sc->hw_hdl);
-
-	/*
-	 * For historical reasons, if neither playback nor capture
-	 * properties are reported, assume both are supported.
-	 * XXX Ideally (all) hardware driver should be updated...
-	 */
-	if ((props & (AUDIO_PROP_PLAYBACK|AUDIO_PROP_CAPTURE)) == 0)
-		props |= (AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE);
-
-	/* MMAP is now supported by upper layer.  */
-	props |= AUDIO_PROP_MMAP;
-
-	return props;
 }
 
 /*

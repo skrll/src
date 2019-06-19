@@ -1,4 +1,4 @@
-$NetBSD: acronyms.comp,v 1.253 2019/05/28 22:11:32 sevan Exp $
+$NetBSD: acronyms.comp,v 1.266 2019/06/17 15:53:20 sevan Exp $
 3WHS	three-way handshake
 8VSB	8-state vestigial side band modulation
 AA	anti-aliasing
@@ -56,10 +56,12 @@ AN	Arabic number
 ANR	application not responding
 ANSI	American National Standards Institute
 AO	analog output
+AOC	add-on card
 AOL	Alert-on-LAN
 AOS	add or subtract
 AP	access point
 AP	application processor
+APFS	Apple file system
 API	application programming interface
 APEI	ACPI platform error interface
 APIC	advanced programmable interrupt controller
@@ -96,6 +98,7 @@ ASP	auxiliary storage pool
 ASPM	active state power management
 ASQ	automated software quality
 ASR	address space register
+ASR	Apple software restore
 AST	abstract syntax tree
 AST	asynchronous system trap
 AT	access time
@@ -205,6 +208,7 @@ CC	carbon copy
 CCD	charge coupled device
 CCI	co-channel interferer
 CCNUMA	cache-coherent non-uniform memory access
+CCTL	command completion time limit
 CD	cache disable
 CD	compact disc
 CDDA	compact disc digital audio
@@ -224,6 +228,7 @@ CGA	Color Graphics Adapter
 CGI	common gateway interface
 CGN	Carrier-Grade NAT
 CHAP	Challenge-Handshake Authentication Protocol
+CHFS	chip file system
 CHS	cylinder/head/sector
 CI	continuous integration
 CI	{common,component} interface
@@ -237,7 +242,9 @@ CISC	complex instruction set {computer,computing}
 CJK	Chinese, Japanese, [and] Korean
 CLF	common log format
 CLI	command line interface
+CLI	common language infrastructure
 CLR	common language runtime
+CLS	common language specification
 CLTT	closed loop thermal throttling
 CLUT	color look-up table
 CLV	constant linear velocity
@@ -276,6 +283,7 @@ CPL	current privilege level
 CPLD	complex programmable logic device
 CPP	C preprocessor
 CPS	characters per second
+CPS	continuation-passing style
 CPT	command pass through
 CPU	central processing unit
 CR	carriage return
@@ -294,6 +302,10 @@ CSI	common system interface
 CSMA	carrier sense multiple access
 CSMA/CA	carrier sense multiple access with collision avoidance
 CSMA/CD	carrier sense multiple access with collision detection
+CSP	communicating sequential processes
+CSP	content security policy
+CSP	constrain satisfaction problems
+CSP	cryptographic service provider
 CSR	control [and] status registers
 CSRG	Computer Systems Research Group
 CSS	cascading style sheets
@@ -302,6 +314,7 @@ CTF	compact c type format
 CTM	close to metal
 CTR	counter [mode]
 CTS	clear to send
+CTS	common type system
 CUA	common user access
 CUT	coordinated universal time
 CV	control voltage
@@ -491,6 +504,7 @@ EPIC	explicitly parallel instruction computing
 EPP	enhanced parallel port
 EPRML	extended partial response, maximum likelihood
 EPROM	erasable programmable read only memory
+ERC	error recovery control
 ERD	emergency recovery disk
 ERD	entity relationship diagram
 ERE	extended regular expression
@@ -715,6 +729,7 @@ IRTF	Internet Research Task Force
 IS	information system
 ISA	industry standard architecture
 ISA	instruction set architecture
+ISE	instant secure erase
 ISDN	integrated services digital network
 ISI	inter-symbol interference
 ISL	initial system load
@@ -814,6 +829,7 @@ LRC	longitudinal redundancy check
 LRM	left-to-right mark
 LRO	left-to-right override
 LRU	least recently used
+LS	link state
 LSAN	Leak Sanitizer
 LSB	Linux standards base
 LSB	least significant {bit,byte}
@@ -843,6 +859,7 @@ MAC	mandatory access control
 MAC	{media,medium} access control
 MAC	message authentication {check,code}
 MADT	multiple APIC descriptor table
+MAMR	microwave-assisted magnetic recording
 MB	megabyte
 MBA	multi-boot agent
 MBR	master boot record
@@ -921,6 +938,7 @@ MPS	memory pool system
 MPS	multiprocessor specification
 MQTT	Message Queuing Telemetry Transport
 MR	modem ready
+MRO	method resolution order
 MRU	most recently used
 MS	Microsoft
 MSAN	Memory Sanitizer
@@ -1332,6 +1350,8 @@ SDS	software defined storage
 SDT	syntax-directed translation
 SEA	synchronous external abort
 SEGV	segmentation violation
+SED	self-encrypting drive
+SED	stream editor
 SEO	search engine optimization
 SES	SCSI enclosure services
 SFC	sequential function chart
@@ -1378,6 +1398,7 @@ SMF	single mode fiber
 SMI	structure of management information
 SMI	system management interrupt
 SMM	system management mode
+SMP	serial management protocol
 SMP	symmetric multiprocessing
 SMT	simultaneous multithreading
 SMTP	Simple Mail Transfer Protocol
@@ -1481,6 +1502,7 @@ TKIP	Temporal Key Integrity Protocol
 TLA	top level aggregator
 TLB	translation lookaside buffer
 TLD	top level domain
+TLER	time-limited error recovery
 TLI	transport layer interface
 TLS	thread local storage
 TLS	transport layer security
@@ -1579,10 +1601,13 @@ VAX	virtual address extension
 VB	Visual Basic
 VCA	variable-gain amplifier
 VCC	common collector voltage
+VCCP	virtual chassis control protocol
 VCF	voltage-controlled filter
 VCM	virtual channel memory
 VCO	voltage-controlled oscillator
+VCP	virtual chassis port
 VCS	version control system
+VES	virtual execution system
 VESA	Video Electronics Standards Association
 VFO	variable-frequency oscillator
 VFS	virtual file system
@@ -1609,6 +1634,7 @@ VR	virtual reality
 VRAM	video random access memory
 VRF	virtual routing and forwarding
 VRM	voltage regulator module
+VROC	Virtual RAID On CPU
 VRRP	Virtual Router Redundancy Protocol
 VSTP	VLAN Spanning Tree Protocol
 VTP	VLAN Trunking Protocol
@@ -1662,6 +1688,7 @@ XOR	exclusive or
 XP	extreme programming
 XSI	X/Open System Interface
 XSL	extensible stylesheet language
+XSLT	extensible stylesheet language transformations
 XSS	cross site scripting
 XT	extended technology
 XTI	X/Open transport interface

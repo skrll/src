@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC,v 1.35 2019/05/28 21:56:24 jmcneill Exp $
+#	$NetBSD: GENERIC,v 1.40 2019/06/14 21:28:10 tnn Exp $
 #
 #	GENERIC ARM (aarch32) kernel
 #
@@ -113,6 +113,7 @@ makeoptions	DTS="
 	sun8i-a83t-tbs-a711.dts
 
 	sun8i-h2-plus-bananapi-m2-zero.dts
+	sun8i-h2-plus-bananapi-p2-zero.dts
 	sun8i-h2-plus-libretech-all-h3-cc.dts
 	sun8i-h2-plus-orangepi-r1.dts
 	sun8i-h2-plus-orangepi-zero.dts
@@ -146,6 +147,20 @@ makeoptions	DTS="
 	tegra124-venice2.dts
 
 	vexpress-v2p-ca15-tc1.dts
+
+	zynq-cc108.dts
+	zynq-microzed.dts
+	zynq-parallella.dts
+	zynq-zc702.dts
+	zynq-zc706.dts
+	zynq-zc770-xm010.dts
+	zynq-zc770-xm011.dts
+	zynq-zc770-xm012.dts
+	zynq-zc770-xm013.dts
+	zynq-zed.dts
+	zynq-zturn.dts
+	zynq-zybo.dts
+	zynq-zybo-z7.dts
 "
 
 options 	CPU_CORTEXA5
@@ -176,6 +191,8 @@ options 	SOC_SUN9I_A80
 options 	SOC_TEGRA124
 
 options 	SOC_VIRT
+
+options 	SOC_ZYNQ7000
 
 options 	MULTIPROCESSOR
 
@@ -213,6 +230,8 @@ pseudo-device 	openfirm	# /dev/openfirm
 
 #options 	EARLYCONS=vexpress, CONSADDR=0x1c090000
 #options 	EARLYCONS=virt, CONSADDR=0x09000000
+
+#options 	EARLYCONS=zynq, CONSADDR=0xe0001000
 
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
@@ -274,6 +293,7 @@ sunxisramc*     at fdt? pass 4          # SRAM controller
 
 # System Controller
 syscon*		at fdt? pass 1		# Generic System Controller
+#zynqslcr*	at fdt? pass 1		# Zynq 7000 system Controller
 
 # Timer
 a9tmr* 		at fdt? pass 2		# ARM Cortex A5/A9 Timer
@@ -282,7 +302,8 @@ gtmr*		at fdt? pass 1		# ARM Generic Timer
 armgtmr0	at gtmr?
 mct*		at fdt? pass 2		# Exynos Multi Core Timer (MCT)
 armgtmr*	at mct?
-sunxitimer*     at fdt?                 # Allwinner async timer
+sunxitimer*	at fdt?			# Allwinner async timer
+sunxihstimer*	at fdt?			# Allwinner High-Speed timer
 tegratimer*	at fdt?			# Timers
 
 # Watchdog
@@ -314,8 +335,8 @@ vcmbox*		at bcmmbox?
 
 # DMA controller
 bcmdmac*	at fdt?			# Broadcom BCM283x DMA controller
-sun4idma*       at fdt?			# Allwinner DMA controller (sun4i)
-sun6idma*	at fdt?			# Allwinner DMA controller (sun6i)
+sun4idma*	at fdt? pass 4		# Allwinner DMA controller (sun4i)
+sun6idma*	at fdt?	pass 4		# Allwinner DMA controller (sun6i)
 tegraapbdma*	at fdt? pass 4		# NVIDIA Tegra APB DMA
 
 # FUSE controller
@@ -371,6 +392,7 @@ pci*		at ppb?
 
 # Ethernet
 awge*		at fdt?			# Allwinner Gigabit Ethernet (GMAC)
+cemac*		at fdt?			# Cadence EMAC/GEM ethernet controller
 emac*		at fdt?			# Allwinner Fast/Gigabit Ethernet (EMAC)
 smsh*		at fdt?			# SMSC LAN9118
 
@@ -413,6 +435,7 @@ com*		at fdt?			# UART
 exuart*		at fdt?			# SSCOM UART
 plcom*		at fdt?			# ARM PL011 UART
 mesonuart*	at fdt?			# Amlogic Meson UART
+zynquart*	at fdt?			# Cadence UART
 
 # I2C controllers
 options 	I2C_MAX_ADDR=0xfff
@@ -515,6 +538,7 @@ flash*          at nand? dynamic 1
 
 # SATA
 ahcisata*	at fdt?			# AHCI SATA
+ahcisata*	at pci? dev ? function ?
 atabus*		at ata?
 atapibus*	at atapi?
 wd*		at atabus? drive ?

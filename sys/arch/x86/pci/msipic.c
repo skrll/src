@@ -1,4 +1,4 @@
-/*	$NetBSD: msipic.c,v 1.12 2019/04/01 06:20:40 msaitoh Exp $	*/
+/*	$NetBSD: msipic.c,v 1.16 2019/06/18 10:06:49 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2015 Internet Initiative Japan Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: msipic.c,v 1.12 2019/04/01 06:20:40 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: msipic.c,v 1.16 2019/06/18 10:06:49 msaitoh Exp $");
 
 #include "opt_intrdebug.h"
 
@@ -203,7 +203,7 @@ msipic_find_msi_pic_locked(int devid)
 	KASSERT(mutex_owned(&msipic_list_lock));
 
 	LIST_FOREACH(mpp, &msipic_list, mp_list) {
-		if(mpp->mp_devid == devid)
+		if (mpp->mp_devid == devid)
 			return mpp->mp_pic;
 	}
 	return NULL;
@@ -250,7 +250,8 @@ msipic_construct_common_msi_pic(const struct pci_attach_args *pa,
 	}
 
 	memcpy(pic, pic_tmpl, sizeof(*pic));
-	pic->pic_edge_stubs = x2apic_mode ? x2apic_edge_stubs : ioapic_edge_stubs,
+	pic->pic_edge_stubs
+	    = x2apic_mode ? x2apic_edge_stubs : ioapic_edge_stubs;
 	pic->pic_msipic = msipic;
 	msipic->mp_pic = pic;
 	pci_decompose_tag(pa->pa_pc, pa->pa_tag,
@@ -384,9 +385,18 @@ msi_addroute(struct pic *pic, struct cpu_info *ci,
 	addr = LAPIC_MSIADDR_BASE | __SHIFTIN(ci->ci_cpuid,
 	    LAPIC_MSIADDR_DSTID_MASK);
 	/* If trigger mode is edge, it don't care level for trigger mode. */
-	data = __SHIFTIN(idt_vec, LAPIC_MSIDATA_VECTOR_MASK)
-		| LAPIC_MSIDATA_TRGMODE_EDGE | LAPIC_MSIDATA_DM_FIXED;
+	data = __SHIFTIN(idt_vec, LAPIC_VECTOR_MASK)
+		| LAPIC_TRIGMODE_EDGE | LAPIC_DLMODE_FIXED;
 
+	/*
+	 * The size of the message data register is 16bit if the extended
+	 * message data is not implemented. If it's 16bit and the per-vector
+	 * masking is not capable, the location of the upper 16bit is out of
+	 * the MSI capability structure's range. The PCI spec says the upper
+	 * 16bit is driven to 0 if the message data register is 16bit. It's the
+	 * spec, so it's OK just to write it regardless of the value of the
+	 * upper 16bit.
+	 */
 	ctl = pci_conf_read(pc, tag, off + PCI_MSI_CTL);
 	if (ctl & PCI_MSI_CTL_64BIT_ADDR) {
 		pci_conf_write(pc, tag, off + PCI_MSI_MADDR64_LO, addr);
@@ -550,8 +560,8 @@ msix_addroute(struct pic *pic, struct cpu_info *ci,
 	addr = LAPIC_MSIADDR_BASE | __SHIFTIN(ci->ci_cpuid,
 	    LAPIC_MSIADDR_DSTID_MASK);
 	/* If trigger mode is edge, it don't care level for trigger mode. */
-	data = __SHIFTIN(idt_vec, LAPIC_MSIDATA_VECTOR_MASK)
-		| LAPIC_MSIDATA_TRGMODE_EDGE | LAPIC_MSIDATA_DM_FIXED;
+	data = __SHIFTIN(idt_vec, LAPIC_VECTOR_MASK)
+		| LAPIC_TRIGMODE_EDGE | LAPIC_DLMODE_FIXED;
 
 	bstag = pic->pic_msipic->mp_bstag;
 	bshandle = pic->pic_msipic->mp_bshandle;
@@ -644,7 +654,7 @@ msipic_construct_msix_pic(const struct pci_attach_args *pa)
 	tbl = pci_conf_read(pc, tag, off + PCI_MSIX_TBLOFFSET);
 	table_offset = tbl & PCI_MSIX_TBLOFFSET_MASK;
 	bir = tbl & PCI_MSIX_PBABIR_MASK;
-	switch(bir) {
+	switch (bir) {
 	case 0:
 		bar = PCI_BAR0;
 		break;
@@ -664,18 +674,19 @@ msipic_construct_msix_pic(const struct pci_attach_args *pa)
 		bar = PCI_BAR5;
 		break;
 	default:
-		aprint_error("detect an illegal device! The device use reserved BIR values.\n");
+		aprint_error("detect an illegal device! "
+		    "The device use reserved BIR values.\n");
 		msipic_destruct_common_msi_pic(msix_pic);
 		return NULL;
 	}
 	memtype = pci_mapreg_type(pc, tag, bar);
-	 /*
-	  * PCI_MSIX_TABLE_ENTRY_SIZE consists below
-	  *     - Vector Control (32bit)
-	  *     - Message Data (32bit)
-	  *     - Message Upper Address (32bit)
-	  *     - Message Lower Address (32bit)
-	  */
+	/*
+	 * PCI_MSIX_TABLE_ENTRY_SIZE consists below
+	 *     - Vector Control (32bit)
+	 *     - Message Data (32bit)
+	 *     - Message Upper Address (32bit)
+	 *     - Message Lower Address (32bit)
+	 */
 	table_size = table_nentry * PCI_MSIX_TABLE_ENTRY_SIZE;
 #if 0
 	err = pci_mapreg_submap(pa, bar, memtype, BUS_SPACE_MAP_LINEAR,

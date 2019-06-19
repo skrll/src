@@ -1,4 +1,4 @@
-/*	$NetBSD: lwp.h,v 1.183 2019/05/17 03:34:26 ozaki-r Exp $	*/
+/*	$NetBSD: lwp.h,v 1.185 2019/06/18 22:40:09 kamil Exp $	*/
 
 /*
  * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2010
@@ -132,6 +132,7 @@ struct lwp {
 	callout_t	l_timeout_ch;	/* !: callout for tsleep */
 	u_int		l_emap_gen;	/* !: emap generation number */
 	kcondvar_t	l_waitcv;	/* a: vfork() wait */
+	bool		l_vforkwaiting;	/* a: vfork() waiting */
 
 #if PCU_UNIT_COUNT > 0
 	struct cpu_info	* volatile l_pcu_cpu[PCU_UNIT_COUNT];
@@ -256,7 +257,6 @@ extern int		maxlwp __read_mostly;	/* max number of lwps */
 #define	LP_INTR		0x00000040 /* Soft interrupt handler */
 #define	LP_SYSCTLWRITE	0x00000080 /* sysctl write lock held */
 #define	LP_MUSTJOIN	0x00000100 /* Must join kthread on exit */
-#define	LP_VFORKWAIT	0x00000200 /* Waiting at vfork() for a child */
 #define	LP_SINGLESTEP	0x00000400 /* Single step thread in ptrace(2) */
 #define	LP_TIMEINTR	0x00010000 /* Time this soft interrupt */
 #define	LP_PREEMPTING	0x00020000 /* mi_switch called involuntarily */
@@ -287,8 +287,7 @@ extern int		maxlwp __read_mostly;	/* max number of lwps */
 #define	LSSLEEP		3	/* Sleeping on an address. */
 #define	LSSTOP		4	/* Process debugging or suspension. */
 #define	LSZOMB		5	/* Awaiting collection by parent. */
-/* unused, for source compatibility with NetBSD 4.0 and earlier. */
-#define	LSDEAD		6	/* Process is almost a zombie. */
+/* define	LSDEAD	6	Process is almost a zombie. (removed in 5.0) */
 #define	LSONPROC	7	/* Process is currently on a CPU. */
 #define	LSSUSPENDED	8	/* Not running, not signalable. */
 

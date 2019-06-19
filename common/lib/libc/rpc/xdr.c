@@ -1,4 +1,4 @@
-/*	$NetBSD: xdr.c,v 1.34 2017/05/03 21:39:27 christos Exp $	*/
+/*	$NetBSD: xdr.c,v 1.3 2019/06/16 16:01:44 christos Exp $	*/
 
 /*
  * Copyright (c) 2010, Oracle America, Inc.
@@ -37,7 +37,7 @@
 static char *sccsid = "@(#)xdr.c 1.35 87/08/12";
 static char *sccsid = "@(#)xdr.c	2.1 88/07/29 4.0 RPCSRC";
 #else
-__RCSID("$NetBSD: xdr.c,v 1.34 2017/05/03 21:39:27 christos Exp $");
+__RCSID("$NetBSD: xdr.c,v 1.3 2019/06/16 16:01:44 christos Exp $");
 #endif
 #endif
 
@@ -50,6 +50,14 @@ __RCSID("$NetBSD: xdr.c,v 1.34 2017/05/03 21:39:27 christos Exp $");
  * most common data items.  See xdr.h for more info on the interface to
  * xdr.
  */
+
+#if defined(_KERNEL) || defined(_STANDALONE)
+
+#include <lib/libkern/libkern.h>
+#include <rpc/types.h>
+#include <rpc/xdr.h>
+
+#else /* _KERNEL || _STANDALONE */
 
 #include "namespace.h"
 
@@ -94,6 +102,8 @@ __weak_alias(xdr_union,_xdr_union)
 __weak_alias(xdr_void,_xdr_void)
 __weak_alias(xdr_wrapstring,_xdr_wrapstring)
 #endif
+
+#endif /* _KERNEL || _STANDALONE */
 
 /*
  * constants specific to the xdr "protocol"
@@ -536,7 +546,7 @@ xdr_enum(XDR *xdrs, enum_t *ep)
  * cp points to the opaque object and cnt gives the byte length.
  */
 bool_t
-xdr_opaque(XDR *xdrs, caddr_t cp, u_int cnt)
+xdr_opaque(XDR *xdrs, char *cp, u_int cnt)
 {
 	u_int rndup;
 	static int crud[BYTES_PER_XDR_UNIT];
@@ -562,7 +572,7 @@ xdr_opaque(XDR *xdrs, caddr_t cp, u_int cnt)
 		}
 		if (rndup == 0)
 			return (TRUE);
-		return (XDR_GETBYTES(xdrs, (caddr_t)(void *)crud, rndup));
+		return (XDR_GETBYTES(xdrs, (void *)crud, rndup));
 	}
 
 	if (xdrs->x_op == XDR_ENCODE) {
@@ -633,7 +643,7 @@ xdr_bytes(XDR *xdrs, char **cpp, u_int *sizep, u_int maxsize)
 		ret = xdr_opaque(xdrs, sp, nodesize);
 		if ((xdrs->x_op == XDR_DECODE) && (ret == FALSE)) {
 			if (allocated == TRUE) {
-				free(sp);
+				mem_free(sp, nodesize);
 				*cpp = NULL;
 			}
 		}
@@ -793,7 +803,7 @@ xdr_string(XDR *xdrs, char **cpp, u_int maxsize)
 		ret = xdr_opaque(xdrs, sp, size);
 		if ((xdrs->x_op == XDR_DECODE) && (ret == FALSE)) {
 			if (allocated == TRUE) {
-				free(sp);
+				mem_free(sp, nodesize);
 				*cpp = NULL;
 			}
 		}
@@ -808,6 +818,8 @@ xdr_string(XDR *xdrs, char **cpp, u_int maxsize)
 	return (FALSE);
 }
 
+#if !defined(_KERNEL) && !defined(_STANDALONE)
+
 /* 
  * Wrapper for xdr_string that can be called directly from 
  * routines like clnt_call
@@ -821,6 +833,8 @@ xdr_wrapstring(XDR *xdrs, char **cpp)
 
 	return xdr_string(xdrs, cpp, RPC_MAXDATASIZE);
 }
+
+#endif /* !_KERNEL && !_STANDALONE */
 
 /*
  * NOTE: xdr_hyper(), xdr_u_hyper(), xdr_longlong_t(), and xdr_u_longlong_t()
