@@ -5,7 +5,7 @@ h_run()
 
 	export COLUMNS=80
 	export LINES=24
-	$(atf_get_srcdir)/director \
+	$(atf_get_srcdir)/director $2 \
 	    -T $(atf_get_srcdir) \
 	    -t atf \
 	    -I $(atf_get_srcdir)/tests \
@@ -290,7 +290,7 @@ delay_output_head()
 }
 delay_output_body()
 {
-	h_run delay_output
+	h_run delay_output -v
 }
 
 atf_test_case derwin
@@ -763,9 +763,9 @@ atf_init_test_cases()
 	atf_add_test_case curs_set
 	atf_add_test_case define_key
 #	atf_add_test_case delay_output # not working
-#	atf_add_test_case derwin # not working
+	atf_add_test_case derwin
 	atf_add_test_case doupdate
-#	atf_add_test_case dupwin # not working
+	atf_add_test_case dupwin
 	atf_add_test_case erasechar
 	atf_add_test_case flash
 	atf_add_test_case getattrs
@@ -785,7 +785,7 @@ atf_init_test_cases()
 	atf_add_test_case innstr
 	atf_add_test_case is_linetouched
 	atf_add_test_case is_wintouched
-#	atf_add_test_case keyname # not working
+	atf_add_test_case keyname
 	atf_add_test_case keyok
 	atf_add_test_case killchar
 	atf_add_test_case meta

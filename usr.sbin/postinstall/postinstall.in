@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# $NetBSD: postinstall,v 1.226 2019/05/11 19:31:03 maxv Exp $
+# $NetBSD: postinstall.in,v 1.5 2019/06/15 13:07:09 christos Exp $
 #
 # Copyright (c) 2002-2015 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -566,6 +566,37 @@ obsolete_libs()
 	_obsolete_libs "/usr/libdata/debug/${dir}"
 }
 
+exclude()
+{
+	local dollar
+	case "$1" in
+	-t)
+		dollar='$'
+		shift
+		;;
+	*)
+		dollar=
+		;;
+	esac
+	if [ -z "$*" ]; then
+		cat
+	else
+		eval ${GREP} -v -E "'(^$(echo $* | \
+		    ${SED} -e s/\\./\\\\./g -e 's/ /'${dollar}'|^/'g)${dollar})'"
+	fi
+}
+
+#
+# find all the target symlinks of shared libaries and exclude them
+# from consideration for removal
+#
+exclude_libs() {
+	local target="$(ls -l lib*.so.* \
+	    | ${AWK} '{ print $11; }' \
+	    | ${SED} -e 's@.*/@@' | ${SORT} -u)"
+	exclude -t ${target}
+}
+
 _obsolete_libs()
 {
 	dir="$1"
@@ -622,7 +653,7 @@ function checklib(results, line, regex) {
 		checklib(major, $0, "^lib.*\\.so\\.")
 }
 
-#}'
+#}' | exclude_libs
 
 	)
 }
@@ -847,21 +878,23 @@ additem defaults "/etc/defaults/ being up to date"
 do_defaults()
 {
 	[ -n "$1" ] || err 3 "USAGE: do_defaults  fix|check"
-	op="$1"
-	failed=0
+	local op="$1"
+	local failed=0
+	local etcsets=$(getetcsets)
 
-	# Except for i386 and amd64, rc.conf(5) should be the same as the
-	# one obtained from a source directory
-	extra_scripts="rc.conf"
-	if [ "$MACHINE" = "i386" -o "$MACHINE" = "amd64" ]; then
-		if $SOURCEMODE; then
-			extra_scripts=	# clear
+	local rc_exclude_scripts=""
+	if $SOURCEMODE; then
+		# For most architectures rc.conf(5) should be the same as the
+		# one obtained from a source directory, except for the ones
+		# that have an append file for it.
+		local rc_conf_app="${SRC_DIR}/etc/etc.${MACHINE}/rc.conf.append"
+		if [ -f "${rc_conf_app}" ]; then
+			rc_exclude_scripts="rc.conf"
 
 			# Generate and compare the correct rc.conf(5) file
 			mkdir "${SCRATCHDIR}/defaults"
 
-			cat "${SRC_DIR}/etc/defaults/rc.conf" \
-			    "${SRC_DIR}/etc/etc.${MACHINE}/rc.conf.append" \
+			cat "${SRC_DIR}/etc/defaults/rc.conf" "${rc_conf_app}" \
 			    > "${SCRATCHDIR}/defaults/rc.conf"
 
 			compare_dir "${op}" "${SCRATCHDIR}/defaults" \
@@ -872,18 +905,23 @@ do_defaults()
 		fi
 	fi
 
-	compare_dir "$op" "${SRC_DIR}/etc/defaults" "${DEST_DIR}/etc/defaults" \
-		444 \
-		daily.conf monthly.conf pkgpath.conf security.conf \
-		weekly.conf ${extra_scripts}
-	failed=$(( ${failed} + $? ))
-
 	find_file_in_dirlist pf.boot.conf "pf.boot.conf" \
 	    "${SRC_DIR}/usr.sbin/pf/etc/defaults" "${SRC_DIR}/etc/defaults" \
 	    || return 1
-			# ${dir} is set by find_file_in_dirlist()
+	# ${dir} is set by find_file_in_dirlist()
 	compare_dir "$op" "${dir}" "${DEST_DIR}/etc/defaults" 444 pf.boot.conf
 	failed=$(( ${failed} + $? ))
+
+	rc_exclude_scripts="${rc_exclude_scripts} pf.boot.conf"
+
+	local rc_default_conf_files="$(select_set_files /etc/defaults/ \
+	    "/etc/defaults/\([^[:space:]]*\.conf\)" ${etcsets} | \
+	    exclude ${rc_exclude_scripts})"
+	compare_dir "$op" "${SRC_DIR}/etc/defaults" "${DEST_DIR}/etc/defaults" \
+		444 \
+		${rc_default_conf_files}
+	failed=$(( ${failed} + $? ))
+
 
 	return ${failed}
 }
@@ -965,17 +1003,21 @@ additem envsys "envsys configuration is up to date"
 do_envsys()
 {
 	[ -n "$1" ] || err 3 "USAGE: do_envsys fix|check"
-	op="$1"
-	failed=0
+	local op="$1"
+	local failed=0
+	local etcsets=$(getetcsets)
 
 	populate_dir "$op" true "${SRC_DIR}/etc" "${DEST_DIR}/etc" 644 \
 		envsys.conf
 	failed=$(( ${failed} + $? ))
 
+	local powerd_scripts="$(select_set_files /etc/powerd/scripts/ \
+	    "/etc/powerd/scripts/\([^[:space:]/]*\)" ${etcsets})"
+
 	populate_dir "$op" true "${SRC_DIR}/etc/powerd/scripts" \
-		"${DEST_DIR}/etc/powerd/scripts" 555 sensor_battery \
-		sensor_drive sensor_fan sensor_indicator sensor_power \
-		sensor_resistance sensor_temperature sensor_voltage
+		"${DEST_DIR}/etc/powerd/scripts" \
+		555 \
+		${powerd_scripts}
 	failed=$(( ${failed} + $? ))
 
 	return ${failed}
@@ -1002,38 +1044,42 @@ do_fontconfig()
 		msg "${FONTCONFIG_DIR} is not a directory; skipping check"
 		return 0
 	fi
-
-	populate_dir "$op" false "${FONTCONFIG_DIR}" "${DEST_DIR}/etc/fonts/conf.avail" 444 \
-		10-autohint.conf \
-		10-no-sub-pixel.conf \
-		10-scale-bitmap-fonts.conf \
-		10-sub-pixel-bgr.conf \
-		10-sub-pixel-rgb.conf \
-		10-sub-pixel-vbgr.conf \
-		10-sub-pixel-vrgb.conf \
-		10-unhinted.conf \
-		11-lcdfilter-default.conf \
-		11-lcdfilter-legacy.conf \
-		11-lcdfilter-light.conf \
-		20-unhint-small-vera.conf \
-		25-unhint-nonlatin.conf \
-		30-metric-aliases.conf \
-		40-nonlatin.conf \
-		45-generic.conf \
-		45-latin.conf \
-		49-sansserif.conf \
-		50-user.conf \
-		51-local.conf \
-		60-generic.conf \
-		60-latin.conf \
-		65-fonts-persian.conf \
-		65-khmer.conf \
-		65-nonlatin.conf \
-		69-unifont.conf \
-		70-no-bitmaps.conf \
-		70-yes-bitmaps.conf \
-		80-delicious.conf \
-		90-synthetic.conf
+	local regular_fonts="
+10-autohint.conf
+10-no-sub-pixel.conf
+10-scale-bitmap-fonts.conf
+10-sub-pixel-bgr.conf
+10-sub-pixel-rgb.conf
+10-sub-pixel-vbgr.conf
+10-sub-pixel-vrgb.conf
+10-unhinted.conf
+11-lcdfilter-default.conf
+11-lcdfilter-legacy.conf
+11-lcdfilter-light.conf
+20-unhint-small-vera.conf
+25-unhint-nonlatin.conf
+30-metric-aliases.conf
+40-nonlatin.conf
+45-generic.conf
+45-latin.conf
+49-sansserif.conf
+50-user.conf
+51-local.conf
+60-generic.conf
+60-latin.conf
+65-fonts-persian.conf
+65-khmer.conf
+65-nonlatin.conf
+69-unifont.conf
+70-no-bitmaps.conf
+70-yes-bitmaps.conf
+80-delicious.conf
+90-synthetic.conf
+"
+	populate_dir "$op" false "${FONTCONFIG_DIR}" \
+	    "${DEST_DIR}/etc/fonts/conf.avail" \
+	    444 \
+	    ${regular_fonts}
 	failed=$(( ${failed} + $? ))
 
 	if ! $SOURCEMODE; then
@@ -1048,31 +1094,33 @@ do_fontconfig()
 
 	# We can't modify conf.d easily; someone might have removed a file.
 
-	conf_d_failed=0
 	# Look for old files that need to be deleted.
-	if [ -f "${DEST_DIR}/etc/fonts/conf.d/10-unhinted.conf" -a \
-	     -f "${DEST_DIR}/etc/fonts/conf.d/10-autohint.conf" ]; then
-		conf_d_failed=1
-		failed=$(( ${failed} + 1 ))
-	fi
+	obsolete_fonts="
+10-autohint.conf
+10-no-sub-pixel.conf
+10-sub-pixel-bgr.conf
+10-sub-pixel-rgb.conf
+10-sub-pixel-vbgr.conf
+10-sub-pixel-vrgb.conf
+10-unhinted.conf
+25-unhint-nonlatin.conf
+65-khmer.conf
+70-no-bitmaps.conf
+70-yes-bitmaps.conf
+"
+	failed_fonts=""
+	for i in ${obsolete_fonts}; do
+	    if [ -f "${DEST_DIR}/etc/fonts/conf.d/$i" ]; then
+		    conf_d_failed=1
+		    failed_fonts="$failed_fonts $i"
+	    fi
+	done
 
-	if [ "$conf_d_failed" = 1 ]; then
+	if [ -n "$failed_fonts" ]; then
 		msg \
-    "Broken fontconfig configuration found; please delete these files"
-		msg \
-    "in the ${DEST_DIR}/etc/fonts/conf.d/ subdirectory:"
-		msg \
-    "   10-autohint.conf 10-no-sub-pixel.conf 10-sub-pixel-bgr.conf"
-		msg \
-    "   10-sub-pixel-rgb.conf 10-sub-pixel-vbgr.conf"
-		msg \
-    "   10-sub-pixel-vrgb.conf 10-unhinted.conf 25-unhint-nonlatin.conf"
-		msg \
-    "   65-khmer.conf 70-no-bitmaps.conf 70-yes-bitmaps.conf"
-		msg \
-    "(This warning only appears if both the 10-unhinted.conf and"
-		msg \
-    "10-autohint.conf files are present."
+    "Broken fontconfig configuration found; please delete these files:"
+		msg "[$failed_fonts]"
+		failed=$(( ${failed} + 1 ))
 	fi
 
 	return ${failed}
@@ -1367,157 +1415,6 @@ do_pwd_mkdb()
 #	rc
 #
 
-# XXX Generate these from ../../distrib/sets/lists
-rc_644_files="
-rc
-rc.subr
-rc.shutdown
-"
-rc_555_files="
-DAEMON
-DISKS
-LOGIN
-NETWORKING
-SERVERS
-accounting
-altqd
-amd
-apmd
-bluetooth
-bootconf.sh
-bootparams
-ccd
-cgd
-cleartmp
-cron
-devpubd
-dhcpcd
-dhcpd
-dhcpd6
-dhcrelay
-dmesg
-downinterfaces
-envsys
-fsck
-fsck_root
-ftp_proxy
-ftpd
-gpio
-hostapd
-httpd
-identd
-ifwatchd
-inetd
-ip6addrctl
-ipfilter
-ipfs
-ipmon
-ipnat
-ipsec
-irdaattach
-iscsi_target
-iscsid
-isibootd
-kdc
-ldconfig
-ldpd
-local
-lpd
-lvm
-makemandb
-mdnsd
-mixerctl
-modules
-mopd
-motd
-mountall
-mountcritlocal
-mountcritremote
-mountd
-moused
-mrouted
-named
-ndbootd
-network
-newsyslog
-nfsd
-nfslocking
-npf
-npfd
-ntpd
-ntpdate
-perusertmp
-pf
-pf_boot
-pflogd
-postfix
-powerd
-ppp
-pwcheck
-quota
-racoon
-raidframe
-raidframeparity
-random_seed
-rarpd
-rbootd
-resize_root
-rndctl
-root
-route6d
-routed
-rpcbind
-rtadvd
-rtclocaltime
-rwho
-savecore
-screenblank
-securelevel
-smtoff
-sshd
-staticroute
-swap1
-swap2
-sysctl
-sysdb
-syslogd
-timed
-tpctl
-ttys
-veriexec
-virecover
-wdogctl
-wpa_supplicant
-wscons
-wsmoused
-ypbind
-yppasswdd
-ypserv
-"
-rc_obsolete_files="
-NETWORK
-btattach
-btconfig
-btcontrol
-btdevctl
-bthcid
-btuartd
-daemon
-fsck.sh
-gated
-isdnd
-kerberos
-login
-nfsiod
-poffd
-portmap
-rtsold
-sdpd
-servers
-sunndd
-systemfs
-xntpd
-"
 rc_obsolete_vars="
 amd amd_master
 btcontrol btcontrol_devices
@@ -1551,21 +1448,69 @@ update_rc()
 	return $?
 }
 
+# select non-obsolete files in a sets file
+# $1: directory pattern
+# $2: file pattern
+# $3: filename
+select_set_files()
+{
+	local qdir="$(echo $1 | ${SED} -e s@/@\\\\/@g -e s/\\./\\\\./g)"
+	${SED} -n -e /obsolete/d \
+	    -e "/^\.${qdir}/s@^.$2[[:space:]].*@\1@p" $3
+}
+
+# select obsolete files in a sets file
+# $1: directory pattern
+# $2: file pattern
+# $3: filename
+select_obsolete_files()
+{
+	${SED} -n -e "/obsolete/s@\.$1$2[[:space:]].*@\1@p" $3
+}
+
+
+getetcsets()
+{
+	if $SOURCEMODE; then
+		echo "${SRC_DIR}/distrib/sets/lists/etc/mi"
+	else
+		echo "${SRC_DIR}/etc/mtree/set.etc"
+	fi
+}
+
 additem rc "/etc/rc* and /etc/rc.d/ being up to date"
 do_rc()
 {
 	[ -n "$1" ] || err 3 "USAGE: do_rc  fix|check"
-	op="$1"
-	failed=0
-	generated_scripts=""
+	local op="$1"
+	local failed=0
+	local generated_scripts=""
+	local etcsets=$(getetcsets)
 	if [ "${MKX11}" != "no" ]; then
 		generated_scripts="${generated_scripts} xdm xfs"
 	fi
+
+	# Directories of external programs that have rc files (in bsd)
+	local rc_external_files="blacklist nsd unbound"
+
+	# rc* files in /etc/
+	local rc_444_files="$(select_set_files /etc/rc \
+	    "/etc/\(rc[^[:space:]/]*\)" ${etcsets})"
+
+	# no-obsolete rc files in /etc/rc.d
+	local rc_555_files="$(select_set_files /etc/rc.d/ \
+	    "/etc/rc\.d/\([^[:space:]]*\)" ${etcsets} | \
+	    exclude ${rc_external_files})"
+
+	# obsolete rc file in /etc/rc.d
+	local rc_obsolete_files="$(select_obsolete_files /etc/rc.d/ \
+	    "\([^[:space:]]*\)" ${etcsets})"
 
 	compare_dir "${op}" "${SRC_DIR}/etc" "${DEST_DIR}/etc" 644 \
 		${rc_644_files}
 	failed=$(( ${failed} + $? ))
 
+	local extra_scripts
 	if ! $SOURCEMODE; then
 		extra_scripts="${generated_scripts}"
 	else
@@ -1577,17 +1522,17 @@ do_rc()
 		${extra_scripts}
 	failed=$(( ${failed} + $? ))
 
-	update_rc "${op}" "${dir}" blacklistd /sbin \
-	    "${SRC_DIR}/external/bsd/blacklist/etc/rc.d"
-	failed=$(( ${failed} + $? ))
-
-	update_rc "${op}" "${dir}" unbound /usr/sbin \
-	    "${SRC_DIR}/external/bsd/unbound/etc/rc.d"
-	failed=$(( ${failed} + $? ))
-
-	update_rc "${op}" "${dir}" nsd /usr/sbin \
-	    "${SRC_DIR}/external/bsd/nsd/etc/rc.d"
-	failed=$(( ${failed} + $? ))
+	for i in ${rc_external_files}; do
+	    local rc_file 
+	    case $i in
+	    *d) rc_file=${i};;
+	    *)	rc_file=${i}d;;
+	    esac
+		
+	    update_rc "${op}" "${dir}" ${rc_file} /sbin \
+		"${SRC_DIR}/external/bsd/$i/etc/rc.d"
+	    failed=$(( ${failed} + $? ))
+	done
 
 	if $SOURCEMODE && [ -n "${generated_scripts}" ]; then
 		# generate scripts
@@ -1605,7 +1550,7 @@ do_rc()
 
 		# check for obsolete rc.d files
 	for f in ${rc_obsolete_files}; do
-		fd="/etc/rc.d/${f}"
+		local fd="/etc/rc.d/${f}"
 		[ -e "${DEST_DIR}${fd}" ] && echo "${fd}"
 	done | obsolete_paths "${op}"
 	failed=$(( ${failed} + $? ))
@@ -2283,6 +2228,38 @@ do_obsolete_stand()
 	return ${failed}
 }
 
+listarchsubdirs() {
+	if ! $SOURCEMODE; then
+		echo "@ARCHSUBDIRS@"
+	else
+		${SED} -n -e '/ARCHDIR_SUBDIR/s/[[:space:]]//gp' \
+		    ${SRC_DIR}/compat/archdirs.mk 
+	fi
+}
+
+
+getarchsubdirs() {
+	local m
+	case ${MACHINE_ARCH} in
+	*arm*|*aarch64*)	m=arm;;
+	x86_64)			m=amd64;;
+	*)			m=${MACHINE_ARCH};;
+	esac
+
+	for i in $(listarchsubdirs); do
+		echo $i
+	done | ${SORT} -u | ${SED} -n -e "/=${m}/s@.*=${m}/\(.*\)@\1@p"
+}
+
+getcompatlibdirs() {
+	for i in $(getarchsubdirs); do
+		echo $i 1>&2
+		if [ -d /usr/lib/$i ]; then
+			echo /usr/lib/$i
+		fi
+	done
+}
+
 #
 #	obsolete
 #	(this item is last to allow other items to move obsolete files)
@@ -2303,8 +2280,9 @@ do_obsolete()
 		obsolete_libs /usr/lib/i18n
 		obsolete_libs /usr/X11R6/lib
 		obsolete_libs /usr/X11R7/lib
-		[ "$MACHINE" = "amd64" ] && obsolete_libs /usr/lib/i386
-		[ "$MACHINE" = "sparc64" ] && obsolete_libs /usr/lib/sparc
+		for i in $(getcompatlibdirs); do
+			obsolete_libs $i
+		done
 	) | obsolete_paths "${op}"
 	failed=$(( ${failed} + $? ))
 
@@ -2609,6 +2587,11 @@ _Fix_me_
 
 	esac
 }
+
+if [ -n "$POSTINSTALL_FUNCTION" ]; then
+	eval "$POSTINSTALL_FUNCTION"
+	exit 0
+fi
 
 # defaults
 #

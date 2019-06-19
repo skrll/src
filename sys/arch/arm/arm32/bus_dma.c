@@ -1,4 +1,4 @@
-/*	$NetBSD: bus_dma.c,v 1.113 2018/09/14 10:13:02 skrll Exp $	*/
+/*	$NetBSD: bus_dma.c,v 1.115 2019/06/14 09:09:12 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
 #include "opt_cputypes.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.113 2018/09/14 10:13:02 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.115 2019/06/14 09:09:12 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

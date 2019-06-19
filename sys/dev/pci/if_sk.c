@@ -1,4 +1,4 @@
-/*	$NetBSD: if_sk.c,v 1.98 2019/05/30 02:32:18 msaitoh Exp $	*/
+/*	$NetBSD: if_sk.c,v 1.100 2019/06/03 15:49:04 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -115,7 +115,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_sk.c,v 1.98 2019/05/30 02:32:18 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_sk.c,v 1.100 2019/06/03 15:49:04 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -154,9 +154,9 @@ __KERNEL_RCSID(0, "$NetBSD: if_sk.c,v 1.98 2019/05/30 02:32:18 msaitoh Exp $");
 #include <dev/pci/if_skvar.h>
 
 int skc_probe(device_t, cfdata_t, void *);
-void skc_attach(device_t, device_t, void *aux);
+void skc_attach(device_t, device_t, void *);
 int sk_probe(device_t, cfdata_t, void *);
-void sk_attach(device_t, device_t, void *aux);
+void sk_attach(device_t, device_t, void *);
 int skcprint(void *, const char *);
 int sk_intr(void *);
 void sk_intr_bcom(struct sk_if_softc *);
@@ -168,7 +168,9 @@ int sk_encap(struct sk_if_softc *, struct mbuf *, uint32_t *);
 void sk_start(struct ifnet *);
 int sk_ioctl(struct ifnet *, u_long, void *);
 int sk_init(struct ifnet *);
+void sk_unreset_xmac(struct sk_if_softc *);
 void sk_init_xmac(struct sk_if_softc *);
+void sk_unreset_yukon(struct sk_if_softc *);
 void sk_init_yukon(struct sk_if_softc *);
 void sk_stop(struct ifnet *, int);
 void sk_watchdog(struct ifnet *);
@@ -1160,7 +1162,8 @@ skc_probe(device_t parent, cfdata_t match, void *aux)
 /*
  * Force the GEnesis into reset, then bring it out of reset.
  */
-void sk_reset(struct sk_softc *sc)
+void
+sk_reset(struct sk_softc *sc)
 {
 	DPRINTFN(2, ("sk_reset\n"));
 
@@ -1397,7 +1400,8 @@ sk_attach(device_t parent, device_t self, void *aux)
 	ifp = &sc_if->sk_ethercom.ec_if;
 	/* Try to allocate memory for jumbo buffers. */
 	if (sk_alloc_jumbo_mem(sc_if)) {
-		aprint_error("%s: jumbo buffer allocation failed\n", ifp->if_xname);
+		aprint_error("%s: jumbo buffer allocation failed\n",
+		    ifp->if_xname);
 		goto fail;
 	}
 	sc_if->sk_ethercom.ec_capabilities = ETHERCAP_VLAN_MTU
@@ -1420,12 +1424,12 @@ sk_attach(device_t parent, device_t self, void *aux)
 	 */
 	switch (sc->sk_type) {
 	case SK_GENESIS:
-		sk_init_xmac(sc_if);
+		sk_unreset_xmac(sc_if);
 		break;
 	case SK_YUKON:
 	case SK_YUKON_LITE:
 	case SK_YUKON_LP:
-		sk_init_yukon(sc_if);
+		sk_unreset_yukon(sc_if);
 		break;
 	default:
 		aprint_error_dev(sc->sk_dev, "unknown device type %d\n",
@@ -1646,8 +1650,8 @@ skc_attach(device_t parent, device_t self, void *aux)
 	}
 
 	intrstr = pci_intr_string(pc, ih, intrbuf, sizeof(intrbuf));
-	sc->sk_intrhand = pci_intr_establish_xname(pc, ih, IPL_NET, sk_intr, sc,
-	    device_xname(sc->sk_dev));
+	sc->sk_intrhand = pci_intr_establish_xname(pc, ih, IPL_NET, sk_intr,
+	    sc, device_xname(sc->sk_dev));
 	if (sc->sk_intrhand == NULL) {
 		aprint_error(": couldn't establish interrupt");
 		if (intrstr != NULL)
@@ -1852,7 +1856,8 @@ skc_attach(device_t parent, device_t self, void *aux)
 	    sk_sysctl_handler, 0, (void *)sc,
 	    0, CTL_HW, sk_root_num, sk_nodenum, CTL_CREATE,
 	    CTL_EOL)) != 0) {
-		aprint_normal_dev(sc->sk_dev, "couldn't create int_mod sysctl node\n");
+		aprint_normal_dev(sc->sk_dev,
+		    "couldn't create int_mod sysctl node\n");
 		goto fail_1;
 	}
 
@@ -2429,17 +2434,16 @@ sk_intr(void *xsc)
 }
 
 void
-sk_init_xmac(struct sk_if_softc	*sc_if)
+sk_unreset_xmac(struct sk_if_softc *sc_if)
 {
 	struct sk_softc		*sc = sc_if->sk_softc;
-	struct ifnet		*ifp = &sc_if->sk_ethercom.ec_if;
 	static const struct sk_bcom_hack     bhack[] = {
 	{ 0x18, 0x0c20 }, { 0x17, 0x0012 }, { 0x15, 0x1104 }, { 0x17, 0x0013 },
 	{ 0x15, 0x0404 }, { 0x17, 0x8006 }, { 0x15, 0x0132 }, { 0x17, 0x8006 },
 	{ 0x15, 0x0232 }, { 0x17, 0x800D }, { 0x15, 0x000F }, { 0x18, 0x0420 },
 	{ 0, 0 } };
 
-	DPRINTFN(1, ("sk_init_xmac\n"));
+	DPRINTFN(1, ("sk_unreset_xmac\n"));
 
 	/* Unreset the XMAC. */
 	SK_IF_WRITE_2(sc_if, 0, SK_TXF1_MACCTL, SK_TXMACCTL_XMAC_UNRESET);
@@ -2495,6 +2499,15 @@ sk_init_xmac(struct sk_if_softc	*sc_if)
 			}
 		}
 	}
+}
+
+void
+sk_init_xmac(struct sk_if_softc *sc_if)
+{
+	struct sk_softc		*sc = sc_if->sk_softc;
+	struct ifnet		*ifp = &sc_if->sk_ethercom.ec_if;
+
+	sk_unreset_xmac(sc_if);
 
 	/* Set station address */
 	SK_XM_WRITE_2(sc_if, XM_PAR0,
@@ -2593,14 +2606,13 @@ sk_init_xmac(struct sk_if_softc	*sc_if)
 	sc_if->sk_link = 1;
 }
 
-void sk_init_yukon(struct sk_if_softc *sc_if)
+void
+sk_unreset_yukon(struct sk_if_softc *sc_if)
 {
 	uint32_t		/*mac, */phy;
-	uint16_t		reg;
 	struct sk_softc		*sc;
-	int			i;
 
-	DPRINTFN(1, ("sk_init_yukon: start: sk_csr=%#x\n",
+	DPRINTFN(1, ("sk_unreset_yukon: start: sk_csr=%#x\n",
 		     CSR_READ_4(sc_if->sk_softc, SK_CSR)));
 
 	sc = sc_if->sk_softc;
@@ -2608,9 +2620,9 @@ void sk_init_yukon(struct sk_if_softc *sc_if)
 	    sc->sk_rev >= SK_YUKON_LITE_REV_A3) {
 		/* Take PHY out of reset. */
 		sk_win_write_4(sc, SK_GPIO,
-			(sk_win_read_4(sc, SK_GPIO) | SK_GPIO_DIR9) & ~SK_GPIO_DAT9);
+		    (sk_win_read_4(sc, SK_GPIO) | SK_GPIO_DIR9)
+		    & ~SK_GPIO_DAT9);
 	}
-
 
 	/* GMAC and GPHY Reset */
 	SK_IF_WRITE_4(sc_if, 0, SK_GPHY_CTRL, SK_GPHY_RESET_SET);
@@ -2651,8 +2663,16 @@ void sk_init_yukon(struct sk_if_softc *sc_if)
 
 	DPRINTFN(3, ("sk_init_yukon: gmac_ctrl=%#x\n",
 		     SK_IF_READ_4(sc_if, 0, SK_GMAC_CTRL)));
+}
 
-	DPRINTFN(6, ("sk_init_yukon: 3\n"));
+void
+sk_init_yukon(struct sk_if_softc *sc_if)
+{
+	uint16_t		reg;
+	int			i;
+
+	DPRINTFN(1, ("sk_init_yukon: start\n"));
+	sk_unreset_yukon(sc_if);
 
 	/* unused read of the interrupt source register */
 	DPRINTFN(6, ("sk_init_yukon: 4\n"));
@@ -2681,7 +2701,7 @@ void sk_init_yukon(struct sk_if_softc *sc_if)
 	/* transmit parameter register */
 	DPRINTFN(6, ("sk_init_yukon: 8\n"));
 	SK_YU_WRITE_2(sc_if, YUKON_TPR, YU_TPR_JAM_LEN(0x3) |
-		      YU_TPR_JAM_IPG(0xb) | YU_TPR_JAM2DATA_IPG(0x1a) );
+		      YU_TPR_JAM_IPG(0xb) | YU_TPR_JAM2DATA_IPG(0x1a));
 
 	/* serial mode register */
 	DPRINTFN(6, ("sk_init_yukon: 9\n"));
@@ -3029,7 +3049,7 @@ void
 sk_dump_txdesc(struct sk_tx_desc *desc, int idx)
 {
 #define DESC_PRINT(X)					\
-	if (X)					\
+	if (X)						\
 		printf("txdesc[%d]." #X "=%#x\n",	\
 		       idx, X);
 

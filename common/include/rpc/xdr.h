@@ -1,4 +1,4 @@
-/*	$NetBSD: xdr.h,v 1.30 2017/08/16 08:35:48 christos Exp $	*/
+/*	$NetBSD: xdr.h,v 1.2 2019/06/16 16:01:44 christos Exp $	*/
 
 /*
  * Sun RPC is a product of Sun Microsystems, Inc. and is provided for
@@ -209,8 +209,8 @@ xdr_putint32(XDR *xdrs, int32_t *ip)
 		(*(xdrs)->x_ops->x_destroy)(xdrs)
 
 #define XDR_CONTROL(xdrs, req, op)			\
-	if ((xdrs)->x_ops->x_control)			\
-		(*(xdrs)->x_ops->x_control)(xdrs, req, op)
+	(((xdrs)->x_ops->x_control == NULL) ? (FALSE) : \
+		(*(xdrs)->x_ops->x_control)(xdrs, req, op))
 #define xdr_control(xdrs, req, op) XDR_CONTROL(xdrs, req, op)
 
 #define xdr_rpcvers(xdrs, versp) xdr_u_int32_t(xdrs, versp)
@@ -326,6 +326,19 @@ typedef struct netobj netobj;
 extern bool_t   xdr_netobj(XDR *, struct netobj *);
 
 /*
+ * These are XDR control operators
+ */
+
+#define XDR_GET_BYTES_AVAIL	1
+
+struct xdr_bytesrec {
+	bool_t xc_is_last_record;
+	size_t xc_num_avail;
+};
+
+typedef struct xdr_bytesrec xdr_bytesrec;
+
+/*
  * These are the public routines for the various implementations of
  * xdr streams.
  */
@@ -351,7 +364,7 @@ extern bool_t xdrrec_skiprecord(XDR *);
 
 /* true if no more input */
 extern bool_t xdrrec_eof(XDR *);
-extern unsigned xdrrec_readbytes(XDR *, caddr_t, unsigned int);
+extern unsigned xdrrec_readbytes(XDR *, char *, unsigned int);
 __END_DECLS
 
 #endif /* !_RPC_XDR_H_ */

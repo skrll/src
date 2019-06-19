@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3_its.c,v 1.10 2018/12/08 15:04:40 jmcneill Exp $ */
+/* $NetBSD: gicv3_its.c,v 1.14 2019/06/16 19:19:30 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
 #define _INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.10 2018/12/08 15:04:40 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.14 2019/06/16 19:19:30 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/kmem.h>
@@ -260,11 +260,14 @@ static int
 gicv3_its_msi_alloc_lpi(struct gicv3_its *its,
     const struct pci_attach_args *pa)
 {
+	struct pci_attach_args *new_pa;
 	int n;
 
 	for (n = 0; n < its->its_pic->pic_maxsources; n++) {
 		if (its->its_pa[n] == NULL) {
-			its->its_pa[n] = pa;
+			new_pa = kmem_alloc(sizeof(*new_pa), KM_SLEEP);
+			memcpy(new_pa, pa, sizeof(*new_pa));
+			its->its_pa[n] = new_pa;
 			return n + its->its_pic->pic_irqbase;
 		}
 	}
@@ -275,8 +278,13 @@ gicv3_its_msi_alloc_lpi(struct gicv3_its *its,
 static void
 gicv3_its_msi_free_lpi(struct gicv3_its *its, int lpi)
 {
+	struct pci_attach_args *pa;
+
 	KASSERT(lpi >= its->its_pic->pic_irqbase);
+
+	pa = its->its_pa[lpi - its->its_pic->pic_irqbase];
 	its->its_pa[lpi - its->its_pic->pic_irqbase] = NULL;
+	kmem_free(pa, sizeof(*pa));
 }
 
 static uint32_t
@@ -328,7 +336,7 @@ gicv3_its_device_map(struct gicv3_its *its, uint32_t devid, u_int count)
 }
 
 static void
-gicv3_its_msi_enable(struct gicv3_its *its, int lpi)
+gicv3_its_msi_enable(struct gicv3_its *its, int lpi, int count)
 {
 	const struct pci_attach_args *pa = its->its_pa[lpi - its->its_pic->pic_irqbase];
 	pci_chipset_tag_t pc = pa->pa_pc;
@@ -338,6 +346,15 @@ gicv3_its_msi_enable(struct gicv3_its *its, int lpi)
 
 	if (!pci_get_capability(pc, tag, PCI_CAP_MSI, &off, NULL))
 		panic("gicv3_its_msi_enable: device is not MSI-capable");
+
+	ctl = pci_conf_read(pc, tag, off + PCI_MSI_CTL);
+	ctl &= ~PCI_MSI_CTL_MSI_ENABLE;
+	pci_conf_write(pc, tag, off + PCI_MSI_CTL, ctl);
+
+	ctl = pci_conf_read(pc, tag, off + PCI_MSI_CTL);
+	ctl &= ~PCI_MSI_CTL_MME_MASK;
+	ctl |= __SHIFTIN(ilog2(count), PCI_MSI_CTL_MME_MASK);
+	pci_conf_write(pc, tag, off + PCI_MSI_CTL, ctl);
 
 	const uint64_t addr = its->its_base + GITS_TRANSLATER;
 	ctl = pci_conf_read(pc, tag, off + PCI_MSI_CTL);
@@ -385,6 +402,10 @@ gicv3_its_msix_enable(struct gicv3_its *its, int lpi, int msix_vec,
 
 	if (!pci_get_capability(pc, tag, PCI_CAP_MSIX, &off, NULL))
 		panic("gicv3_its_msix_enable: device is not MSI-X-capable");
+
+	ctl = pci_conf_read(pc, tag, off + PCI_MSIX_CTL);
+	ctl &= ~PCI_MSIX_CTL_ENABLE;
+	pci_conf_write(pc, tag, off + PCI_MSIX_CTL, ctl);
 
 	const uint64_t addr = its->its_base + GITS_TRANSLATER;
 	const uint64_t entry_base = PCI_MSIX_TABLE_ENTRY_SIZE * msix_vec;
@@ -445,7 +466,8 @@ gicv3_its_msi_alloc(struct arm_pci_msi *msi, int *count,
 		    __SHIFTIN(n, ARM_PCI_INTR_MSI_VEC) |
 		    __SHIFTIN(msi->msi_id, ARM_PCI_INTR_FRAME);
 
-		gicv3_its_msi_enable(its, lpi);
+		if (n == 0)
+			gicv3_its_msi_enable(its, lpi, *count);
 
 		/*
 		 * Record target PE
@@ -702,7 +724,9 @@ gicv3_its_cpu_init(void *priv, struct cpu_info *ci)
 {
 	struct gicv3_its * const its = priv;
 	struct gicv3_softc * const sc = its->its_gic;
+	const struct pci_attach_args *pa;
 	uint64_t rdbase;
+	size_t irq;
 
 	const uint64_t typer = bus_space_read_8(sc->sc_bst, its->its_bsh, GITS_TYPER);
 	if (typer & GITS_TYPER_PTA) {
@@ -719,6 +743,22 @@ gicv3_its_cpu_init(void *priv, struct cpu_info *ci)
 	gits_command_mapc(its, cpu_index(ci), rdbase, true);
 	gits_command_invall(its, cpu_index(ci));
 	gits_wait(its);
+
+	/*
+	 * Update routing for LPIs targetting this CPU
+	 */
+	for (irq = 0; irq < its->its_pic->pic_maxsources; irq++) {
+		if (its->its_targets[irq] != ci)
+			continue;
+		pa = its->its_pa[irq];
+		KASSERT(pa != NULL);
+
+		const uint32_t devid = gicv3_its_devid(pa->pa_pc, pa->pa_tag);
+		gits_command_movi(its, devid, irq + its->its_pic->pic_irqbase, cpu_index(ci));
+		gits_command_sync(its, its->its_rdbase[cpu_index(ci)]);
+	}
+
+	its->its_cpuonline[cpu_index(ci)] = true;
 }
 
 static void
@@ -749,12 +789,13 @@ gicv3_its_set_affinity(void *priv, size_t irq, const kcpuset_t *affinity)
 		return EINVAL;
 
 	ci = cpu_lookup(kcpuset_ffs(affinity) - 1);
-
-	const uint32_t devid = gicv3_its_devid(pa->pa_pc, pa->pa_tag);
-	gits_command_movi(its, devid, devid, cpu_index(ci));
-	gits_command_sync(its, its->its_rdbase[cpu_index(ci)]);
-
 	its->its_targets[irq] = ci;
+
+	if (its->its_cpuonline[cpu_index(ci)] == true) {
+		const uint32_t devid = gicv3_its_devid(pa->pa_pc, pa->pa_tag);
+		gits_command_movi(its, devid, irq + its->its_pic->pic_irqbase, cpu_index(ci));
+		gits_command_sync(its, its->its_rdbase[cpu_index(ci)]);
+	}
 
 	return 0;
 }

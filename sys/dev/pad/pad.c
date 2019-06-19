@@ -1,4 +1,4 @@
-/* $NetBSD: pad.c,v 1.59 2019/05/08 13:40:18 isaki Exp $ */
+/* $NetBSD: pad.c,v 1.61 2019/06/19 12:52:41 isaki Exp $ */
 
 /*-
  * Copyright (c) 2007 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.59 2019/05/08 13:40:18 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.61 2019/06/19 12:52:41 isaki Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -140,7 +140,7 @@ static const struct audio_hw_if pad_hw_if = {
 static const struct audio_format pad_formats[PAD_NFORMATS] = {
 	{
 		.mode		= AUMODE_PLAY,
-		.encoding	= AUDIO_ENCODING_SLINEAR_NE,
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
 		.validbits	= PADPREC,
 		.precision	= PADPREC,
 		.channels	= PADCHAN,
@@ -615,12 +615,14 @@ pad_start_output(void *opaque, void *block, int blksize,
 	err = pad_add_block(sc, block, blksize);
 	mutex_exit(&sc->sc_cond_lock);
 	cv_broadcast(&sc->sc_condvar);
+	if (err)
+		return err;
 
 	ms = blksize * 1000 / PADCHAN / (PADPREC / NBBY) / PADFREQ;
 	DPRINTF("%s: callout ms=%d\n", __func__, ms);
 	callout_reset(&sc->sc_pcallout, mstohz(ms), pad_done_output, sc);
 
-	return err;
+	return 0;
 }
 
 static int
