@@ -1,4 +1,4 @@
-/*	$NetBSD: exec.c,v 1.69 2017/10/07 10:26:38 maxv Exp $	 */
+/*	$NetBSD: exec.c,v 1.72 2019/06/24 13:58:24 pgoyette Exp $	 */
 
 /*
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -94,7 +94,6 @@
 
 #include <sys/param.h>
 #include <sys/reboot.h>
-#include <sys/reboot.h>
 
 #include <i386/multiboot.h>
 
@@ -121,6 +120,8 @@
 #endif
 
 #define MODULE_WARNING_SEC	5
+
+#define MAXMODNAME	32	/* from <sys/module.h> */
 
 extern struct btinfo_console btinfo_console;
 
@@ -189,6 +190,42 @@ void
 fs_add(char *name)
 {
 	return module_add_common(name, BM_TYPE_FS);
+}
+
+/*
+ * Add a /-separated list of module names to the boot list
+ */
+void
+module_add_split(const char *name, uint8_t type)
+{
+	char mod_name[MAXMODNAME];
+	int i;
+	const char *mp = name;
+	char *ep;
+
+	while (*mp) {				/* scan list of module names */
+		i = MAXMODNAME;
+		ep = mod_name;
+		while (--i) {			/* scan for end of first name */
+			*ep = *mp;
+			if (*ep == '/')		/* NUL-terminate the name */
+				*ep = '\0';
+
+			if (*ep == 0 ) {	/* add non-empty name */
+				if (ep != mod_name)
+					module_add_common(mod_name, type);
+				break;
+			}
+			ep++; mp++;
+		}
+		if (*ep != 0) {
+			printf("module name too long\n");
+			return;
+		}
+		if  (*mp == '/') {		/* skip separator if more */
+			mp++;
+		}
+	}
 }
 
 static void
@@ -275,6 +312,7 @@ common_load_prekern(const char *file, u_long *basemem, u_long *extmem,
 {
 	paddr_t kernpa_start, kernpa_end;
 	char prekernpath[] = "/prekern";
+	u_long prekern_start;
 	int fd, flags;
 
 	*extmem = getextmem();
@@ -283,13 +321,17 @@ common_load_prekern(const char *file, u_long *basemem, u_long *extmem,
 	marks[MARK_START] = loadaddr;
 
 	/* Load the prekern (static) */
-	flags = LOAD_KERNEL & ~(LOAD_HDR|COUNT_HDR|LOAD_SYM|COUNT_SYM);
+	flags = LOAD_KERNEL & ~(LOAD_HDR|LOAD_SYM);
 	if ((fd = loadfile(prekernpath, marks, flags)) == -1)
 		return EIO;
 	close(fd);
 
-	marks[MARK_END] = (1UL << 21); /* the kernel starts at 2MB XXX */
-	kernpa_start = marks[MARK_END];
+	prekern_start = marks[MARK_START];
+
+	/* The kernel starts at 2MB. */
+	marks[MARK_START] = loadaddr;
+	marks[MARK_END] = loadaddr + (1UL << 21);
+	kernpa_start = (1UL << 21);
 
 	/* Load the kernel (dynamic) */
 	flags = (LOAD_KERNEL | LOAD_DYN) & ~(floppy ? LOAD_BACKWARDS : 0);
@@ -297,11 +339,11 @@ common_load_prekern(const char *file, u_long *basemem, u_long *extmem,
 		return EIO;
 	close(fd);
 
-	kernpa_end = marks[MARK_END];
+	kernpa_end = marks[MARK_END] - loadaddr;
 
 	/* If the root fs type is unusual, load its module. */
 	if (fsmod != NULL)
-		module_add_common(fsmod, BM_TYPE_KMOD);
+		module_add_split(fsmod, BM_TYPE_KMOD);
 
 	bi_prekern.kernpa_start = kernpa_start;
 	bi_prekern.kernpa_end = kernpa_end;
@@ -319,6 +361,7 @@ common_load_prekern(const char *file, u_long *basemem, u_long *extmem,
 	bi_getmemmap();
 #endif
 
+	marks[MARK_START] = prekern_start;
 	marks[MARK_END] = (((u_long)marks[MARK_END] + sizeof(int) - 1)) &
 	    (-sizeof(int));
 	image_end = marks[MARK_END];
@@ -378,7 +421,7 @@ common_load_kernel(const char *file, u_long *basemem, u_long *extmem,
 
 	/* If the root fs type is unusual, load its module. */
 	if (fsmod != NULL)
-		module_add_common(fsmod, BM_TYPE_KMOD);
+		module_add_split(fsmod, BM_TYPE_KMOD);
 
 	/*
 	 * Gather some information for the kernel. Do this after the
@@ -518,7 +561,7 @@ exec_netbsd(const char *file, physaddr_t loadaddr, int boothowto, int floppy,
 	}
 
 	efi_kernel_start = marks[MARK_START];
-	efi_kernel_size = image_end - efi_loadaddr - efi_kernel_start;
+	efi_kernel_size = image_end - (efi_loadaddr + efi_kernel_start);
 #endif
 	startprog(marks[MARK_ENTRY], BOOT_NARGS, boot_argv,
 	    x86_trunc_page(basemem * 1024));
@@ -541,6 +584,15 @@ count_netbsd(const char *file, u_long *rsz)
 	u_long sz;
 	int err, fd;
 
+	if (has_prekern) {
+		/*
+		 * Hardcoded for now. Need to count both the prekern and the
+		 * kernel. 128MB is enough in all cases, so use that.
+		 */
+		*rsz = (128UL << 20);
+		return 0;
+	}
+
 	howto = AB_SILENT;
 
 	memset(marks, 0, sizeof(marks));
@@ -558,7 +610,7 @@ count_netbsd(const char *file, u_long *rsz)
 
 		/* If the root fs type is unusual, load its module. */
 		if (fsmod != NULL)
-			module_add_common(fsmod, BM_TYPE_KMOD);
+			module_add_split(fsmod, BM_TYPE_KMOD);
 
 		for (bm = boot_modules; bm; bm = bm->bm_next) {
 			fd = module_open(bm, 0, kdev, base_path, false);

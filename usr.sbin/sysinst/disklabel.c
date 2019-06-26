@@ -1,4 +1,4 @@
-/*	$NetBSD: disklabel.c,v 1.2 2019/06/13 06:20:34 martin Exp $	*/
+/*	$NetBSD: disklabel.c,v 1.5 2019/06/25 07:14:45 martin Exp $	*/
 
 /*
  * Copyright 2018 The NetBSD Foundation, Inc.
@@ -75,10 +75,10 @@ disklabel_init_default_alignment(struct disklabel_disk_partitions *parts,
 	if (dl_maxpart == 0)
 		dl_maxpart = getmaxpartitions();
 
-#if defined(__sun__) || defined(__sparc__)
-	/* sun labels are always cylinder aligned */
-	parts->ptn_alignment = track;
-#else
+#ifdef MD_DISKLABEL_SET_ALIGN_PRE
+	if (MD_DISKLABEL_SET_ALIGN_PRE(parts->ptn_alignment, track))
+		return;
+#endif
 	/* Use 1MB alignemnt for large (>128GB) disks */
 	if (parts->dp.disk_size > HUGE_DISK_SIZE) {
 		parts->ptn_alignment = 2048;
@@ -87,6 +87,8 @@ disklabel_init_default_alignment(struct disklabel_disk_partitions *parts,
 	} else {
 		parts->ptn_alignment = 1;
 	}
+#ifdef MD_DISKLABEL_SET_ALIGN_POST
+	MD_DISKLABEL_SET_ALIGN_POST(parts->ptn_alignment, track);
 #endif
 }
 
@@ -269,6 +271,8 @@ disklabel_write_to_disk(struct disk_partitions *arg)
 	const struct partition *lp;
 	char *d;
 	size_t n;
+
+	assert(parts->l.d_secsize != 0);
 
 	sprintf(fname, "/tmp/disklabel.%u", getpid());
 	f = fopen(fname, "w");
@@ -687,13 +691,11 @@ disklabel_get_free_spaces_internal(const struct
 	size_t cnt = 0, i;
 	daddr_t s, e, from, size, end_of_disk;
 
-	if (start <= LABELSECTOR)
-		start = LABELSECTOR+1;
-	if (parts->dp.disk_start != 0 && parts->dp.disk_start > start)
+	if (start < parts->dp.disk_start)
 		start = parts->dp.disk_start;
 	if (min_space_size < 1)
 		min_space_size = 1;
-	if (align > 1)
+	if (align > 1 && (start % align) != 0)
 		start = max(roundup(start, align), align);
 	end_of_disk = parts->dp.disk_start + parts->dp.disk_size;
 	from = start;

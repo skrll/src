@@ -1,4 +1,4 @@
-$NetBSD: acronyms.comp,v 1.266 2019/06/17 15:53:20 sevan Exp $
+$NetBSD: acronyms.comp,v 1.270 2019/06/23 17:17:18 alnsn Exp $
 3WHS	three-way handshake
 8VSB	8-state vestigial side band modulation
 AA	anti-aliasing
@@ -41,6 +41,7 @@ AL	access list
 AL	active link
 ALE	address latch enable
 ALS	ambient light sensor
+ALSA	advanced Linux sound architecture
 ALU	arithmetic and logical unit
 ALUA	asymmetric logical unit access
 AM	access method
@@ -129,6 +130,7 @@ BEDO	burst extended data output
 BER	basic encoding rules
 BER	bit error {rate,ratio}
 BERT	boot error record table
+BFD	bidirectional forwarding detection
 BFD	binary {file,format} descriptor
 BFKL	big fscking kernel lock
 BFS	breadth-first search
@@ -261,6 +263,7 @@ CMYK	cyan magenta yellow black
 CN	{common,canonical} name
 CNC	computer numerical control
 CNR	carrier-to-noise ratio
+COA	change of authority
 COF	current operating frequency
 COFDM	coded orthogonal frequency division multiplexing
 COFF	common object file format
@@ -309,6 +312,7 @@ CSP	cryptographic service provider
 CSR	control [and] status registers
 CSRG	Computer Systems Research Group
 CSS	cascading style sheets
+CST	common spanning tree
 CSV	comma-separated values
 CTF	compact c type format
 CTM	close to metal
@@ -355,6 +359,7 @@ DCT	discrete cosine transform
 DCU	data cache unit
 DDC	display data channel
 DDE	dynamic data exchange
+DDI	device drivers interface
 DDK	device driver kit
 DDL	data description language
 DDR	double data rate
@@ -382,6 +387,7 @@ DHCP	Dynamic Host Configuration Protocol
 DIFS	distributed inter-frame space
 DIMM	dual inline memory module
 DIRT	design in real time
+DKI	driver/kernel interface
 DL	diode logic
 DL	discrete logarithm
 DL	download
@@ -420,9 +426,11 @@ DRI	direct rendering infrastructure
 DRM	digital rights management
 DRRS	display refresh rate switching
 DS	debug store
+DS	differentiated services
 DSA	digital signature algorithm
 DSAP	destination service access point
 DSB	double-sideband modulation
+DSCP	differentiated services code point
 DSDT	differentiated system descriptor table
 DSF	device special file
 DSL	dataset and snapshot layer
@@ -453,6 +461,8 @@ EAI	Email Address Internationalization
 EAI	Enterprise Application Integration
 EAP	Extensible Authentication Protocol
 EAPOL	EAP over Lan
+EAV	entity-attribute-value model
+EAV	ethernet audio/video bridging
 EBCDIC	Extended Binary Coded Decimal Interchange Code
 EBDA	Extended BIOS Data Area
 EBNF	extended backus-naur form
@@ -476,6 +486,8 @@ EDGE	explicit data graph execution
 EDID	extended display identification data
 EDO	extended data out
 EDS	electronical data sheet
+EDSAC	electronic delay storage automatic calculator
+EDVAC	electronic discrete variable automatic computer
 EEE	energy efficient ethernet
 EEPROM	electrically erasable programmable read only memory
 EFI	extensible firmware interface
@@ -494,6 +506,7 @@ EMI	electro-magnetic interference
 EMP	electro-magnetic pulse
 EMR	electro-magnetic radiation
 EMACS	Editor MACroS
+ENIAC	electronic numerical integrator and computer
 EOF	end of file
 EOI	end of interrupt
 EOIS	end of interactive support
@@ -722,6 +735,7 @@ IPS	intrusion prevention system
 IPSEC	Internet Protocol Security
 IRC	Internet Relay Chat
 IRDA	infrared data association
+IRDP	ICMP Router Discovery Protocol
 IRQ	interrupt request
 IRQL	interrupt request level
 IRR	interrupt request register
@@ -740,6 +754,7 @@ ISOC	Internet Society
 ISP	Internet service provider
 ISR	in-service register
 ISR	interrupt service routine
+IST	internal spanning tree
 IST	interrupt stack table
 ISV	independent software vendor
 IT	information technology
@@ -855,6 +870,7 @@ LVDS	Low-Voltage Differential Signaling
 LWP	light-weight process
 LZSS	Lempel Ziv Storer Szymanski
 LZW	Lempel Ziv Welch
+MAB	MAC authentication bypass
 MAC	mandatory access control
 MAC	{media,medium} access control
 MAC	message authentication {check,code}
@@ -871,6 +887,7 @@ MCC	multiversion concurrency control
 MCE	machine check exception
 MCGA	Multi-Color Graphics Array
 MCH	memory controller hub
+MCLAG	multi-chassis link aggregation
 MCM	multi-chip module
 MCQ	memory controlled queue
 MD	machine-dependent
@@ -978,6 +995,7 @@ NCSI	network connectivity status indicator
 NCQ	native command queuing
 ND	neighbor discovery
 NDFA	nondeterministic finite automaton
+NDIS	network driver interface specification
 NE	numeric error
 NEWS	Network extensible Window System
 NFA	nondeterministic finite automaton
@@ -1020,6 +1038,7 @@ OBOE	off by one error
 OCL	object constraint language
 OCR	optical character recognition
 ODE	offline device environment
+ODI	open data-link interface
 ODM	object data manager
 ODCM	on-demand clock modulation
 ODT	on-die termination
@@ -1491,6 +1510,7 @@ TDM	time division multiplexing
 TDMA	time division multiple access
 TDOA	time difference of arrival
 TDP	thermal design {point,power}
+TDR	time-domain reflectometry
 TECO	Text Editor and Corrector
 TFT	thin film transistor
 TFTP	Trivial File Transfer Protocol
@@ -1560,6 +1580,7 @@ UC	uncacheable
 UCS	uniform-cost search
 UCS	unified computing system
 UCS	universal coded character set
+UDI	uniform driver interface
 UDMA	ultra DMA
 UDO	ultra density optical
 UDP	User Datagram Protocol
