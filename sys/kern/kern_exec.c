@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_exec.c,v 1.468 2019/06/18 23:53:55 kamil Exp $	*/
+/*	$NetBSD: kern_exec.c,v 1.473 2019/06/26 00:30:39 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.468 2019/06/18 23:53:55 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.473 2019/06/26 00:30:39 christos Exp $");
 
 #include "opt_exec.h"
 #include "opt_execfmt.h"
@@ -608,6 +608,12 @@ exec_autoload(void)
 #endif
 }
 
+/*
+ * Copy the user or kernel supplied upath to the allocated pathbuffer pbp
+ * making it absolute in the process, by prepending the current working
+ * directory if it is not. If offs is supplied it will contain the offset
+ * where the original supplied copy of upath starts.
+ */
 int
 exec_makepathbuf(struct lwp *l, const char *upath, enum uio_seg seg,
     struct pathbuf **pbp, size_t *offs)
@@ -624,9 +630,8 @@ exec_makepathbuf(struct lwp *l, const char *upath, enum uio_seg seg,
 		error = copyinstr(upath, path, MAXPATHLEN, &len);
 	}
 	if (error) {
-		PNBUF_PUT(path);
 		DPRINTF(("%s: copyin path @%p %d\n", __func__, upath, error));
-		return error;
+		goto err;
 	}
 
 	if (path[0] == '/') {
@@ -651,17 +656,20 @@ exec_makepathbuf(struct lwp *l, const char *upath, enum uio_seg seg,
 	if (error) {
 		DPRINTF(("%s: getcwd_common path %s %d\n", __func__, path,
 		    error));
-		goto out;
+		goto err;
 	}
 	tlen = path + MAXPATHLEN - bp;
 
 	memmove(path, bp, tlen);
-	path[tlen] = '\0';
+	path[tlen - 1] = '\0';
 	if (offs)
 		*offs = tlen - len;
 out:
 	*pbp = pathbuf_assimilate(path);
 	return 0;
+err:
+	PNBUF_PUT(path);
+	return error;
 }
 
 vaddr_t

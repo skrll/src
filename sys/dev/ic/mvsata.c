@@ -1,4 +1,4 @@
-/*	$NetBSD: mvsata.c,v 1.46 2018/11/12 20:54:03 jdolecek Exp $	*/
+/*	$NetBSD: mvsata.c,v 1.48 2019/06/23 06:33:17 tsutsui Exp $	*/
 /*
  * Copyright (c) 2008 KIYOHARA Takashi
  * All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mvsata.c,v 1.46 2018/11/12 20:54:03 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mvsata.c,v 1.48 2019/06/23 06:33:17 tsutsui Exp $");
 
 #include "opt_mvsata.h"
 
@@ -113,7 +113,8 @@ int	mvsata_debug = 0;
 					   sending a cmd */
 #define ATAPI_MODE_DELAY	1000	/* 1s, timeout for SET_FEATURE cmds */
 
-#define MVSATA_EPRD_MAX_SIZE	(sizeof(struct eprd) * (MAXPHYS / PAGE_SIZE))
+#define MVSATA_MAX_SEGS		(MAXPHYS / PAGE_SIZE + 1)
+#define MVSATA_EPRD_MAX_SIZE	(sizeof(struct eprd) * MVSATA_MAX_SEGS)
 
 
 static void mvsata_probe_drive(struct ata_channel *);
@@ -3110,7 +3111,7 @@ mvsata_port_init(struct mvsata_hc *mvhc, int port)
 	}
 	for (i = 0; i < MVSATA_EDMAQ_LEN; i++) {
 		rv = bus_dmamap_create(mvport->port_dmat, MAXPHYS,
-		    MAXPHYS / PAGE_SIZE, MAXPHYS, 0, BUS_DMA_NOWAIT,
+		    MVSATA_MAX_SEGS, MAXPHYS, 0, BUS_DMA_NOWAIT,
 		    &mvport->port_reqtbl[i].data_dmamap);
 		if (rv != 0) {
 			aprint_error("%s:%d:%d:"
@@ -3282,7 +3283,7 @@ mvsata_dma_bufload(struct mvsata_port *mvport, int index, void *databuf,
 	rv = bus_dmamap_load(mvport->port_dmat, data_dmamap, databuf, datalen,
 	    NULL, BUS_DMA_NOWAIT | lop);
 	if (rv) {
-		aprint_error("%s:%d:%d: buffer load failed: error=%d",
+		aprint_error("%s:%d:%d: buffer load failed: error=%d\n",
 		    device_xname(MVSATA_DEV2(mvport)), mvport->port_hc->hc,
 		    mvport->port, rv);
 		return rv;
