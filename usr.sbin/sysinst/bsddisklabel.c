@@ -1,4 +1,4 @@
-/*	$NetBSD: bsddisklabel.c,v 1.13 2019/06/20 00:43:55 christos Exp $	*/
+/*	$NetBSD: bsddisklabel.c,v 1.16 2019/06/22 20:46:07 christos Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -316,7 +316,7 @@ draw_size_menu_line(menudesc *m, int opt, void *arg)
 		    getfslabelname(pset->infos[opt].fs_type,
 		    pset->infos[opt].fs_version));
 		mount = swap;
-	} else if (pset->infos[opt].mount && pset->infos[opt].mount[0]) {
+	} else if (pset->infos[opt].mount[0]) {
 		mount = pset->infos[opt].mount;
 	} else {
 		mount = getfslabelname(pset->infos[opt].fs_type,
@@ -414,17 +414,14 @@ fill_ptn_menu(struct partition_usage_set *pset)
 	memset(pset->menu_opts, 0, (pset->num+3)*sizeof(*pset->menu_opts));
 	for (m = pset->menu_opts, p = pset->infos, i = 0; i < pset->num;
 	    m++, p++, i++) {
-		m->opt_menu = OPT_NOMENU;
 		m->opt_action = set_ptn_size;
 	}
 
 	m->opt_name = size_separator;
-	m->opt_menu = OPT_NOMENU;
 	m->opt_flags = OPT_IGNORE|OPT_NOSHORT;
 	m++;
 
 	m->opt_name = MSG_add_another_ptn;
-	m->opt_menu = OPT_NOMENU;
 	m->opt_action = add_other_ptn_size;
 	m++;
 
@@ -874,24 +871,18 @@ ask_layout(struct disk_partitions *parts, bool have_existing)
 
 	if (have_existing) {
 		opt->opt_name = MSG_Keep_existing_partitions;
-		opt->opt_exp_name = NULL;
-		opt->opt_menu = OPT_NOMENU;
 		opt->opt_flags = OPT_EXIT;
 		opt->opt_action = set_keep_existing;
 		opt++;
 		num_opts++;
 	}
 	opt->opt_name = MSG_Set_Sizes;
-	opt->opt_exp_name = NULL;
-	opt->opt_menu = OPT_NOMENU;
 	opt->opt_flags = OPT_EXIT;
 	opt->opt_action = set_edit_part_sizes;
 	opt++;
 	num_opts++;
 
 	opt->opt_name = MSG_Use_Default_Parts;
-	opt->opt_exp_name = NULL;
-	opt->opt_menu = OPT_NOMENU;
 	opt->opt_flags = OPT_EXIT;
 	opt->opt_action = set_use_default_sizes;
 	opt++;
@@ -987,8 +978,8 @@ static void
 fill_defaults(struct partition_usage_set *wanted, struct disk_partitions *parts,
     daddr_t ptstart, daddr_t ptsize)
 {
-	size_t i, root = ~0U, usr = ~0U, swap = ~0U;
-	daddr_t free_space, dump_space;
+	size_t i, root = ~0U, usr = ~0U, swap = ~0U, def_usr = ~0U;
+	daddr_t free_space, dump_space, required;
 #if defined(DEFAULT_UFS2) && !defined(HAVE_UFS2_BOOT)
 	size_t boot = ~0U;
 #endif
@@ -1017,12 +1008,16 @@ fill_defaults(struct partition_usage_set *wanted, struct disk_partitions *parts,
 		if (wanted->infos[i].instflags & PUIINST_BOOT)
 			boot = i;
 #endif
-		if (wanted->infos[i].type == PT_root
-		    && wanted->infos[i].size > 0) {
-			if (strcmp(wanted->infos[i].mount, "/") == 0)
+		if (wanted->infos[i].type == PT_root) {
+			if (strcmp(wanted->infos[i].mount, "/") == 0) {
 				root = i;
-			else if (strcmp(wanted->infos[i].mount, "/usr") == 0)
-				usr = i;
+			} else if (
+			    strcmp(wanted->infos[i].mount, "/usr") == 0) {
+				if (wanted->infos[i].size > 0)
+					usr = i;
+				else
+					def_usr = i;
+			}
 			wanted->infos[i].fs_type = FS_BSDFFS;
 #ifdef DEFAULT_UFS2
 #ifndef HAVE_UFS2_BOOT
@@ -1130,8 +1125,20 @@ fill_defaults(struct partition_usage_set *wanted, struct disk_partitions *parts,
 	 * impossible defaults.
 	 */
 	free_space = parts->free_space;
+	required = 0;
+	if (root < wanted->num)
+		required += wanted->infos[root].size;
+	if (usr < wanted->num)
+		required += wanted->infos[usr].size;
+	else if (def_usr < wanted->num)
+			required += wanted->infos[def_usr].def_size;
+	free_space -= required;
 	for (i = 0; i < wanted->num; i++) {
+		if (i == root || i == usr)
+			continue;	/* already accounted above */
 		if (wanted->infos[i].cur_part_id != NO_PART)
+			continue;
+		if (wanted->infos[i].size == 0)
 			continue;
 		if (wanted->infos[i].flags
 		    & (PUIFLG_IS_OUTER|PUIFLG_JUST_MOUNTPOINT))
@@ -1147,7 +1154,6 @@ fill_defaults(struct partition_usage_set *wanted, struct disk_partitions *parts,
 		free_space += inc;
 		wanted->infos[swap].size -= inc;
 	}
-
 	if (root < wanted->num) {
 		/* Add space for 2 system dumps to / (traditional) */
 		dump_space = get_ramsize() * (MEG/512);

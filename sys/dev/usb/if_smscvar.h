@@ -98,7 +98,6 @@ struct smsc_softc {
 #define	SMSC_FLAG_LINK      0x0001
 
 	struct if_percpuq *sc_ipq;		/* softint-based input queues */
-
 };
 
 #define SMSC_MIN_BUFSZ		2048

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.4 2002/12/08 20:20:05 thorpej Exp $
+#	$NetBSD: Makefile,v 1.6 2019/06/22 13:42:53 hannken Exp $
 
 HOSTPROGNAME=	${_TOOL_PREFIX}rpcgen
 HOST_SRCDIR=	usr.bin/rpcgen
