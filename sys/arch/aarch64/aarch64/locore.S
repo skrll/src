@@ -27,7 +27,6 @@
  */
 
 #include "opt_arm_debug.h"
-#include "opt_compat_netbsd32.h"
 #include "opt_console.h"
 #include "opt_cpuoptions.h"
 #include "opt_ddb.h"
