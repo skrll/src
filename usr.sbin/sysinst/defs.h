@@ -1,4 +1,4 @@
-/*	$NetBSD: defs.h,v 1.36 2019/06/21 21:54:39 christos Exp $	*/
+/*	$NetBSD: defs.h,v 1.38 2019/07/13 17:13:36 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -249,8 +249,9 @@ struct part_usage_info {
 					 * is available */
 #define	PUIFLAG_ADD_OUTER	2	/* Add this partition to the outer
 					 * partitions (if available) */
-#define	PUIFLG_IS_OUTER		4
-#define	PUIFLG_JUST_MOUNTPOINT	8	/* tmpfs of mfs mountpoints */
+#define	PUIFLG_IS_OUTER		4	/* this is an existing outer one */
+#define	PUIFLAG_ADD_INNER	8	/* add outer also to inner */
+#define	PUIFLG_JUST_MOUNTPOINT	16	/* tmpfs of mfs mountpoints */
 	uint flags;
 	struct disk_partitions *parts;	/* Where does this partition live?
 					 * We currently only support
@@ -576,7 +577,7 @@ bool	md_gpt_post_write(struct disk_partitions*, part_id root_id,
  */
 bool	md_pre_disklabel(struct install_partition_desc*, struct disk_partitions*);
 bool	md_post_disklabel(struct install_partition_desc*, struct disk_partitions*);
-int	md_pre_mount(struct install_partition_desc*);
+int	md_pre_mount(struct install_partition_desc*, size_t);
 int	md_post_newfs(struct install_partition_desc*);
 int	md_post_extract(struct install_partition_desc*);
 void	md_cleanup_install(struct install_partition_desc*);

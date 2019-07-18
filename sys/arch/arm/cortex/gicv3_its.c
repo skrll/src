@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3_its.c,v 1.17 2019/06/23 16:19:51 jmcneill Exp $ */
+/* $NetBSD: gicv3_its.c,v 1.21 2019/06/30 17:33:59 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
 #define _INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.17 2019/06/23 16:19:51 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.21 2019/06/30 17:33:59 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/kmem.h>
@@ -61,7 +61,29 @@ __KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.17 2019/06/23 16:19:51 jmcneill Exp 
  */
 #define GITS_IIDR_PID_CAVIUM_THUNDERX	0xa1
 #define GITS_IIDR_IMP_CAVIUM		0x34c
+#define	GITS_IIDR_CAVIUM_ERRATA_MASK	(GITS_IIDR_Implementor|GITS_IIDR_ProductID|GITS_IIDR_Variant)
+#define	GITS_IIDR_CAVIUM_ERRATA_VALUE							\
+		(__SHIFTIN(GITS_IIDR_IMP_CAVIUM, GITS_IIDR_Implementor) |		\
+		 __SHIFTIN(GITS_IIDR_PID_CAVIUM_THUNDERX, GITS_IIDR_ProductID) |	\
+		 __SHIFTIN(0, GITS_IIDR_Variant))
 
+static const char * gits_cache_type[] = {
+	[GITS_Cache_DEVICE_nGnRnE]	= "Device-nGnRnE",
+	[GITS_Cache_NORMAL_NC]		= "Non-cacheable",
+	[GITS_Cache_NORMAL_RA_WT]	= "Cacheable RA WT",
+	[GITS_Cache_NORMAL_RA_WB]	= "Cacheable RA WB",
+	[GITS_Cache_NORMAL_WA_WT]	= "Cacheable WA WT",
+	[GITS_Cache_NORMAL_WA_WB]	= "Cacheable WA WB",
+	[GITS_Cache_NORMAL_RA_WA_WT]	= "Cacheable RA WA WT",
+	[GITS_Cache_NORMAL_RA_WA_WB]	= "Cacheable RA WA WB",
+};
+
+static const char * gits_share_type[] = {
+	[GITS_Shareability_NS]		= "Non-shareable",
+	[GITS_Shareability_IS]		= "Inner shareable",
+	[GITS_Shareability_OS]		= "Outer shareable",
+	[3]				= "(Reserved)",
+};
 
 static inline uint32_t
 gits_read_4(struct gicv3_its *its, bus_size_t reg)
@@ -329,8 +351,8 @@ gicv3_its_device_map(struct gicv3_its *its, uint32_t devid, u_int count)
 	/*
 	 * Map the device to the ITT
 	 */
-	const u_int size = ilog2(vectors) - 1;
-	gits_command_mapd(its, devid, dev->dev_itt.segs[0].ds_addr, size, true);
+	const u_int id_bits = __SHIFTOUT(typer, GITS_TYPER_ID_bits) + 1;
+	gits_command_mapd(its, devid, dev->dev_itt.segs[0].ds_addr, id_bits - 1, true);
 	gits_wait(its);
 
 	return 0;
@@ -347,10 +369,6 @@ gicv3_its_msi_enable(struct gicv3_its *its, int lpi, int count)
 
 	if (!pci_get_capability(pc, tag, PCI_CAP_MSI, &off, NULL))
 		panic("gicv3_its_msi_enable: device is not MSI-capable");
-
-	ctl = pci_conf_read(pc, tag, off + PCI_MSI_CTL);
-	ctl &= ~PCI_MSI_CTL_MSI_ENABLE;
-	pci_conf_write(pc, tag, off + PCI_MSI_CTL, ctl);
 
 	ctl = pci_conf_read(pc, tag, off + PCI_MSI_CTL);
 	ctl &= ~PCI_MSI_CTL_MME_MASK;
@@ -405,10 +423,6 @@ gicv3_its_msix_enable(struct gicv3_its *its, int lpi, int msix_vec,
 
 	if (!pci_get_capability(pc, tag, PCI_CAP_MSIX, &off, NULL))
 		panic("gicv3_its_msix_enable: device is not MSI-X-capable");
-
-	ctl = pci_conf_read(pc, tag, off + PCI_MSIX_CTL);
-	ctl &= ~PCI_MSIX_CTL_ENABLE;
-	pci_conf_write(pc, tag, off + PCI_MSIX_CTL, ctl);
 
 	const uint64_t addr = its->its_base + GITS_TRANSLATER;
 	const uint64_t entry_base = PCI_MSIX_TABLE_ENTRY_SIZE * msix_vec;
@@ -625,33 +639,36 @@ gicv3_its_command_init(struct gicv3_softc *sc, struct gicv3_its *its)
 }
 
 static void
+gicv3_its_table_params(struct gicv3_softc *sc, struct gicv3_its *its,
+    u_int *devbits, u_int *innercache, u_int *share)
+{
+
+	const uint64_t typer = gits_read_8(its, GITS_TYPER);
+	const uint32_t iidr = gits_read_4(its, GITS_IIDR);
+
+	/* Default values */
+	*devbits = __SHIFTOUT(typer, GITS_TYPER_Devbits) + 1;
+	*innercache = GITS_Cache_NORMAL_WA_WB;
+	*share = GITS_Shareability_IS;
+
+	/* Cavium ThunderX errata */
+	if ((iidr & GITS_IIDR_CAVIUM_ERRATA_MASK) == GITS_IIDR_CAVIUM_ERRATA_VALUE) {
+		*devbits = 20;		/* 8Mb */
+		*innercache = GITS_Cache_DEVICE_nGnRnE;
+		aprint_normal_dev(sc->sc_dev, "Cavium ThunderX errata detected\n");
+	}
+}
+
+static void
 gicv3_its_table_init(struct gicv3_softc *sc, struct gicv3_its *its)
 {
 	u_int table_size, page_size, table_align;
+	u_int devbits, innercache, share;
+	const char *table_type;
 	uint64_t baser;
 	int tab;
 
-	const uint64_t typer = gits_read_8(its, GITS_TYPER);
-
-	/* devbits and innercache defaults */
-	u_int devbits = __SHIFTOUT(typer, GITS_TYPER_Devbits) + 1;
-	u_int innercache = GITS_Cache_NORMAL_NC;
-
-	uint32_t iidr = gits_read_4(its, GITS_IIDR);
-	const uint32_t ctx =
-	   __SHIFTIN(GITS_IIDR_IMP_CAVIUM, GITS_IIDR_Implementor) |
-	   __SHIFTIN(GITS_IIDR_PID_CAVIUM_THUNDERX, GITS_IIDR_ProductID) |
-	   __SHIFTIN(0, GITS_IIDR_Variant);
-	const uint32_t mask =
-	    GITS_IIDR_Implementor |
-	    GITS_IIDR_ProductID |
-	    GITS_IIDR_Variant;
-
-	if ((iidr & mask) == ctx) {
-		devbits = 20;		/* 8Mb */
-		innercache = GITS_Cache_DEVICE_nGnRnE;
-		aprint_normal_dev(sc->sc_dev, "Cavium ThunderX errata detected\n");
-	}
+	gicv3_its_table_params(sc, its, &devbits, &innercache, &share);
 
 	for (tab = 0; tab < 8; tab++) {
 		baser = gits_read_8(its, GITS_BASERn(tab));
@@ -680,12 +697,14 @@ gicv3_its_table_init(struct gicv3_softc *sc, struct gicv3_its *its)
 			 * Table size scales with the width of the DeviceID.
 			 */
 			table_size = roundup(entry_size * (1 << devbits), page_size);
+			table_type = "Devices";
 			break;
 		case GITS_Type_InterruptCollections:
 			/*
 			 * Allocate space for one interrupt collection per CPU.
 			 */
 			table_size = roundup(entry_size * MAXCPUS, page_size);
+			table_type = "Collections";
 			break;
 		default:
 			table_size = 0;
@@ -695,7 +714,6 @@ gicv3_its_table_init(struct gicv3_softc *sc, struct gicv3_its *its)
 		if (table_size == 0)
 			continue;
 
-		aprint_normal_dev(sc->sc_dev, "ITS TT%u type %#x size %#x\n", tab, (u_int)__SHIFTOUT(baser, GITS_BASER_Type), table_size);
 		gicv3_dma_alloc(sc, &its->its_tab[tab], table_size, table_align);
 
 		baser &= ~GITS_BASER_Size;
@@ -705,10 +723,24 @@ gicv3_its_table_init(struct gicv3_softc *sc, struct gicv3_its *its)
 		baser &= ~GITS_BASER_InnerCache;
 		baser |= __SHIFTIN(innercache, GITS_BASER_InnerCache);
 		baser &= ~GITS_BASER_Shareability;
-		baser |= __SHIFTIN(GITS_Shareability_NS, GITS_BASER_Shareability);
+		baser |= __SHIFTIN(share, GITS_BASER_Shareability);
 		baser |= GITS_BASER_Valid;
 
 		gits_write_8(its, GITS_BASERn(tab), baser);
+
+		baser = gits_read_8(its, GITS_BASERn(tab));
+		if (__SHIFTOUT(baser, GITS_BASER_Shareability) == GITS_Shareability_NS) {
+			baser &= ~GITS_BASER_InnerCache;
+			baser |= __SHIFTIN(GITS_Cache_NORMAL_NC, GITS_BASER_InnerCache);
+
+			gits_write_8(its, GITS_BASERn(tab), baser);
+		}
+
+		baser = gits_read_8(its, GITS_BASERn(tab));
+		aprint_normal_dev(sc->sc_dev, "ITS [#%d] %s table @ %#lx/%#x, %s, %s\n",
+		    tab, table_type, its->its_tab[tab].segs[0].ds_addr, table_size,
+		    gits_cache_type[__SHIFTOUT(baser, GITS_BASER_InnerCache)],
+		    gits_share_type[__SHIFTOUT(baser, GITS_BASER_Shareability)]);
 	}
 }
 
@@ -821,6 +853,7 @@ gicv3_its_init(struct gicv3_softc *sc, bus_space_handle_t bsh,
 	its->its_dmat = sc->sc_dmat;
 	its->its_base = its_base;
 	its->its_pic = &sc->sc_lpi;
+	snprintf(its->its_pic->pic_name, sizeof(its->its_pic->pic_name), "gicv3-its");
 	KASSERT(its->its_pic->pic_maxsources > 0);
 	its->its_pa = kmem_zalloc(sizeof(struct pci_attach_args *) * its->its_pic->pic_maxsources, KM_SLEEP);
 	its->its_targets = kmem_zalloc(sizeof(struct cpu_info *) * its->its_pic->pic_maxsources, KM_SLEEP);

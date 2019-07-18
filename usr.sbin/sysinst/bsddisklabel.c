@@ -1,4 +1,4 @@
-/*	$NetBSD: bsddisklabel.c,v 1.16 2019/06/22 20:46:07 christos Exp $	*/
+/*	$NetBSD: bsddisklabel.c,v 1.21 2019/07/15 19:13:05 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -72,7 +72,7 @@ default_parts_init[] =
 	  .mount = PART_BOOT_MOUNT,
 	  .instflags = PUIINST_MOUNT|PUIINST_BOOT,
 #else
-	  .instflags = PUIINST_MOUNT|PUIINST_BOOT,
+	  .instflags = PUIINST_BOOT,
 #endif
 #ifdef PART_BOOT_TYPE
 	  .fs_type = PART_BOOT_TYPE,
@@ -829,7 +829,6 @@ set_use_default_sizes(menudesc *m, void *arg)
  * Check if there is a reasonable pre-existing partition for
  * NetBSD.
  */
-
 static bool
 check_existing_netbsd(struct disk_partitions *parts)
 {
@@ -838,8 +837,11 @@ check_existing_netbsd(struct disk_partitions *parts)
 
 	nbsd_parts = 0;
 	for (part_id p = 0; p < parts->num_part; p++) {
-		if (parts->pscheme->get_part_info(parts, p, &info) &&
-		    info.nat_type && info.nat_type->generic_ptype == PT_root)
+		if (!parts->pscheme->get_part_info(parts, p, &info))
+			continue;
+		if (info.flags & (PTI_PSCHEME_INTERNAL|PTI_RAW_PART))
+			continue;
+		if (info.nat_type && info.nat_type->generic_ptype == PT_root)
 			nbsd_parts++;
 	}
 
@@ -994,6 +996,11 @@ fill_defaults(struct partition_usage_set *wanted, struct disk_partitions *parts,
 	}
 
 	memcpy(wanted->infos, default_parts_init, sizeof(default_parts_init));
+
+#ifdef MD_PART_DEFAULTS
+	MD_PART_DEFAULTS(pm, wanted->infos, wanted->num);
+#endif
+
 	for (i = 0; i < wanted->num; i++) {
 		wanted->infos[i].parts = parts;
 		wanted->infos[i].cur_part_id = NO_PART;
@@ -1018,13 +1025,16 @@ fill_defaults(struct partition_usage_set *wanted, struct disk_partitions *parts,
 				else
 					def_usr = i;
 			}
-			wanted->infos[i].fs_type = FS_BSDFFS;
+			if (wanted->infos[i].fs_type == FS_UNUSED)
+				wanted->infos[i].fs_type = FS_BSDFFS;
+			if (wanted->infos[i].fs_type == FS_BSDFFS) {
 #ifdef DEFAULT_UFS2
 #ifndef HAVE_UFS2_BOOT
-			if (boot < wanted->num || i != root)
+				if (boot < wanted->num || i != root)
 #endif
-				wanted->infos[i].fs_version = 2;
+					wanted->infos[i].fs_version = 2;
 #endif
+			}
 		}
 		if ((wanted->infos[i].flags & PUIFLG_JUST_MOUNTPOINT) &&
 		    wanted->infos[i].size == 0)
@@ -1032,10 +1042,6 @@ fill_defaults(struct partition_usage_set *wanted, struct disk_partitions *parts,
 			wanted->infos[i].def_size =
 			    get_ramsize() * (MEG/512/4);
 	}
-
-#ifdef MD_PART_DEFAULTS
-	MD_PART_DEFAULTS(pm, wanted->infos[i].parts, wanted->num);
-#endif
 
 	/*
 	 * Now we have the defaults as if we were installing to an
@@ -1212,8 +1218,10 @@ sort_and_sync_parts(struct partition_usage_set *pset)
 			continue;
 		if (pset->parts != pset->infos[i].parts)
 			continue;
-		if (pset->infos[i].flags &
-		    (PUIFLG_IS_OUTER|PUIFLG_JUST_MOUNTPOINT))
+		if (pset->infos[i].flags & PUIFLG_JUST_MOUNTPOINT)
+			continue;
+		if ((pset->infos[i].flags & (PUIFLG_IS_OUTER|PUIFLAG_ADD_INNER))
+		    == PUIFLG_IS_OUTER)
 			continue;
 		if (pno >= pset->parts->num_part)
 			continue;
@@ -1285,7 +1293,8 @@ apply_settings_to_partitions(struct pm_devs *p, struct disk_partitions *parts,
 		if ((wanted->infos[i].flags & PUIFLAG_EXTEND) &&
 		    exp_ndx == ~0U)
 			exp_ndx = i;
-		if (wanted->infos[i].flags & PUIFLG_JUST_MOUNTPOINT)
+		if (wanted->infos[i].flags &
+		    (PUIFLG_JUST_MOUNTPOINT|PUIFLG_IS_OUTER))
 			continue;
 		nsp = wanted->infos[i].size;
 		if (wanted->infos[i].cur_part_id != NO_PART) {
@@ -1334,14 +1343,65 @@ apply_settings_to_partitions(struct pm_devs *p, struct disk_partitions *parts,
 		ps->pscheme->set_part_info(ps, want->cur_part_id,
 		    &infos[i], NULL);
 	}
-	/* Now add new partitions */
+
 	from = -1;
+	/*
+	 * First add all outer partitions - we need to align those exactly
+	 * with the inner counterpart later.
+	 */
+	if (parts->parent) {
+		ps = parts->parent;
+		daddr_t outer_align = ps->pscheme->get_part_alignment(ps);
+
+		for (i = 0; i < wanted->num; i++) {
+			struct part_usage_info *want = &wanted->infos[i];
+
+			if (want->cur_part_id != NO_PART)
+				continue;
+			if (!(want->flags & PUIFLAG_ADD_OUTER))
+				continue;
+			if (want->size <= 0)
+				continue;
+
+			size_t cnt = ps->pscheme->get_free_spaces(ps,
+			    &space, 1, want->size-2*outer_align,
+			    outer_align, from, -1);
+
+			if (cnt == 0)	/* no free space for this partition */
+				continue;
+
+			infos[i].start = space.start;
+			infos[i].size = min(want->size, space.size);
+			infos[i].nat_type =
+			    ps->pscheme->get_fs_part_type(
+			        want->fs_type, want->fs_version);
+			infos[i].last_mounted = want->mount;
+			infos[i].fs_type = want->fs_type;
+			infos[i].fs_sub_type = want->fs_version;
+			new_part_id = ps->pscheme->add_partition(ps,
+			    &infos[i], NULL);
+			if (new_part_id == NO_PART)
+				continue;	/* failed to add, skip */
+
+			ps->pscheme->get_part_info(ps,
+			    new_part_id, &infos[i]);
+			want->cur_part_id = new_part_id;
+
+			want->flags |= PUIFLAG_ADD_INNER|PUIFLG_IS_OUTER;
+			from = rounddown(infos[i].start + 
+			    infos[i].size+outer_align, outer_align);
+		}
+	}
+
+	/*
+	 * Now add new inner partitions
+	 */
 	for (i = 0; i < wanted->num && from < wanted->parts->disk_size; i++) {
 		struct part_usage_info *want = &wanted->infos[i];
 
 		if (want->cur_part_id != NO_PART)
 			continue;
-		if (want->flags & PUIFLG_JUST_MOUNTPOINT)
+		if (want->flags & (PUIFLG_JUST_MOUNTPOINT|PUIFLG_IS_OUTER))
 			continue;
 		if (want->size <= 0)
 			continue;
@@ -1361,8 +1421,11 @@ apply_settings_to_partitions(struct pm_devs *p, struct disk_partitions *parts,
 		infos[i].last_mounted = want->mount;
 		infos[i].fs_type = want->fs_type;
 		infos[i].fs_sub_type = want->fs_version;
-		if (want->fs_type != FS_UNUSED && want->type != PT_swap)
-			want->instflags |= PUIINST_NEWFS|PUIINST_MOUNT;
+		if (want->fs_type != FS_UNUSED && want->type != PT_swap) {
+			want->instflags |= PUIINST_NEWFS;
+			if (want->mount[0] != 0)
+				want->instflags |= PUIINST_MOUNT;
+		}
 		new_part_id = wanted->parts->pscheme->add_partition(
 		    wanted->parts, &infos[i], NULL);
 		if (new_part_id == NO_PART)
@@ -1373,15 +1436,59 @@ apply_settings_to_partitions(struct pm_devs *p, struct disk_partitions *parts,
 		from = rounddown(infos[i].start+infos[i].size+align, align);
 	}
 
+
+	/*
+	* If there are any outer partitions that we need as inner ones
+	 * too, add them to the inner partitioning scheme.
+	 */
+	for (i = 0; i < wanted->num; i++) {
+		struct part_usage_info *want = &wanted->infos[i];
+
+		if (want->cur_part_id != NO_PART)
+			continue;
+		if (want->flags & PUIFLG_JUST_MOUNTPOINT)
+			continue;
+		if (want->size <= 0)
+			continue;
+
+		if ((want->flags & (PUIFLAG_ADD_INNER|PUIFLG_IS_OUTER)) !=
+		    (PUIFLAG_ADD_INNER|PUIFLG_IS_OUTER))
+			continue;
+
+		infos[i].start = want->cur_start;
+		infos[i].size = want->size;
+		infos[i].nat_type = wanted->parts->pscheme->get_fs_part_type(
+		    want->fs_type, want->fs_version);
+		infos[i].last_mounted = want->mount;
+		infos[i].fs_type = want->fs_type;
+		infos[i].fs_sub_type = want->fs_version;
+
+		if (wanted->parts->pscheme->add_outer_partition
+		    != NULL)
+			new_part_id = wanted->parts->pscheme->
+			    add_outer_partition(
+			    wanted->parts, &infos[i], NULL);
+		else
+			new_part_id = wanted->parts->pscheme->
+			    add_partition(
+			    wanted->parts, &infos[i], NULL);
+		
+		if (new_part_id == NO_PART)
+			continue;	/* failed to add, skip */
+
+		wanted->parts->pscheme->get_part_info(
+		    wanted->parts, new_part_id, &infos[i]);
+	}
+
 	/*
 	 * Note: all part_ids are invalid now, as we have added things!
 	 */
 	for (i = 0; i < wanted->num; i++)
 		wanted->infos[i].cur_part_id = NO_PART;
-	for (pno = 0; pno < ps->num_part; pno++) {
+	for (pno = 0; pno < parts->num_part; pno++) {
 		struct disk_part_info t;
 
-		if (!ps->pscheme->get_part_info(ps, pno, &t))
+		if (!parts->pscheme->get_part_info(parts, pno, &t))
 			continue;
 
 		for (i = 0; i < wanted->num; i++) {
@@ -1557,6 +1664,10 @@ make_bsd_partitions(struct install_partition_desc *install)
 	return true;
 }
 
+#ifndef MD_NEED_BOOTBLOCK
+#define MD_NEED_BOOTBLOCK(A)	true
+#endif
+
 /*
  * check that there is at least a / somewhere.
  */
@@ -1572,30 +1683,34 @@ check_partitions(struct install_partition_desc *install)
 #endif
 
 #ifdef HAVE_BOOTXX_xFS
-	/* check if we have boot code for the root partition type */
-	bootxx = bootxx_name(install);
-	if (bootxx != NULL) {
-		rv = access(bootxx, R_OK);
-		free(bootxx);
-	} else
-		rv = -1;
-	if (rv != 0) {
-		hit_enter_to_continue(NULL, MSG_No_Bootcode);
-		return false;
+	if (MD_NEED_BOOTBLOCK(install)) {
+		/* check if we have boot code for the root partition type */
+		bootxx = bootxx_name(install);
+		if (bootxx != NULL) {
+			rv = access(bootxx, R_OK);
+			free(bootxx);
+		} else
+			rv = -1;
+		if (rv != 0) {
+			hit_enter_to_continue(NULL, MSG_No_Bootcode);
+			return false;
+		}
 	}
 #endif
 #ifndef HAVE_UFS2_BOOT
-	for (i = 0; i < install->num; i++) {
-		if (install->infos[i].type != PT_root)
-			continue;
-		if (strcmp(install->infos[i].mount, "/") != 0)
-			continue;
-		if (install->infos[i].fs_type != FS_BSDFFS)
-			continue;
-		if (install->infos[i].fs_version != 2)
-			continue;
-		hit_enter_to_continue(NULL, MSG_cannot_ufs2_root);
-		return false;
+	if (MD_NEED_BOOTBLOCK(install)) {
+		for (i = 0; i < install->num; i++) {
+			if (install->infos[i].type != PT_root)
+				continue;
+			if (strcmp(install->infos[i].mount, "/") != 0)
+				continue;
+			if (install->infos[i].fs_type != FS_BSDFFS)
+				continue;
+			if (install->infos[i].fs_version != 2)
+				continue;
+			hit_enter_to_continue(NULL, MSG_cannot_ufs2_root);
+			return false;
+		}
 	}
 #endif
 

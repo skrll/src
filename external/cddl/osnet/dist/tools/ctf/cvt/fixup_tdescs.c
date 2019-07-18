@@ -41,6 +41,7 @@
 #include "ctftools.h"
 #include "hash.h"
 #include "memory.h"
+#include "traverse.h"
 
 /*
  * Due to 4432619, the 6.1 compiler will sometimes incorrectly generate pointer
@@ -276,8 +277,107 @@ fix_small_cpu_struct(tdata_t *td, size_t ptrsize)
 	lml->ml_next = cpum;
 }
 
+#ifdef __NetBSD__
+
+/*
+ * The kmutex structure comes in two flavours, with or without __MUTEX_PRIVATE
+ * defined.  Since many structures include kmutexes this causes massive amounts
+ * of duplication on merge (~ 40% for a GENERIC kernel).  Remove the private
+ * fields if we see them.
+ */
+static void
+fix_kmutex_private(tdata_t *td, size_t ptrsize)
+{
+	tdesc_t *desc;
+	mlist_t *ml;
+
+	/*
+	 * X86 kmutex is either
+	 *	union {
+	 *		volatile uintptr_t mtxa_owner;
+	 *	} u
+	 * or
+	 *	union {
+	 *		volatile uintptr_t mtxa_owner;
+	 *		struct {
+	 *			...
+	 *		} s;
+	 *	} u
+	 * so we remove "struct s" if we find it.
+	 */
+	if ((desc = lookup_tdesc(td, "kmutex")) != NULL &&
+	    desc->t_type == STRUCT &&
+	    (ml = desc->t_members) != NULL &&
+	    streq(ml->ml_name, "u") &&
+	    (desc = ml->ml_type) != NULL &&
+	    desc->t_type == UNION &&
+	    (ml = desc->t_members) != NULL &&
+	    streq(ml->ml_name, "mtxa_owner") &&
+	    (ml = ml->ml_next) != NULL &&
+	    streq(ml->ml_name, "s") &&
+	    ml->ml_next == NULL) {
+		/* Found, delete member "s". */
+		desc->t_members->ml_next = NULL;
+	}
+}
+
+/*
+ * XXX: A crude hack to bring down the number of types for a
+ * GENRIC kernel below 2**15-1 (from ~34000 to ~29800).
+ *
+ * Remove the type attributes "volatile", "const" and "restrict",
+ * for DTRACE these attributes are of little value.
+ */
+
+static int
+fix_kill_attr_cb(tdesc_t *tdp, tdesc_t **tdpp, void *private __unused)
+{
+
+	while (tdp->t_type == VOLATILE ||
+	    tdp->t_type == RESTRICT ||
+	    tdp->t_type == CONST)
+		tdp = tdp->t_tdesc;
+
+	*tdpp = tdp;
+
+	return 1;
+}
+
+static tdtrav_cb_f fix_kill_attr_tab[] = {
+	NULL,
+	NULL,			/* intrinsic */
+	NULL,			/* pointer */
+	NULL,			/* reference */
+	NULL,			/* array */
+	NULL,			/* function */
+	NULL,			/* struct */
+	NULL,			/* union */
+	NULL,			/* class */
+	NULL,			/* enum */
+	NULL		,	/* forward */
+	NULL,			/* typedef */
+	NULL,			/* typedef unres */
+	fix_kill_attr_cb,	/* volatile */
+	fix_kill_attr_cb,	/* const */
+	fix_kill_attr_cb,	/* restrict */
+};
+
+static void
+fix_kill_attr(tdata_t *td, size_t ptrsize)
+{
+
+	(void) iitraverse_hash(td->td_iihash, &td->td_curvgen,
+	    fix_kill_attr_tab, NULL, NULL, NULL);
+}
+
+#endif /* __NetBSD__ */
+
 void
 cvt_fixups(tdata_t *td, size_t ptrsize)
 {
 	fix_small_cpu_struct(td, ptrsize);
+#ifdef __NetBSD__
+	fix_kmutex_private(td, ptrsize);
+	fix_kill_attr(td, ptrsize);
+#endif
 }

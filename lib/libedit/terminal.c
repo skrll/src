@@ -1,4 +1,4 @@
-/*	$NetBSD: terminal.c,v 1.36 2019/04/12 17:30:49 christos Exp $	*/
+/*	$NetBSD: terminal.c,v 1.38 2019/06/30 13:30:15 christos Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)term.c	8.2 (Berkeley) 4/30/95";
 #else
-__RCSID("$NetBSD: terminal.c,v 1.36 2019/04/12 17:30:49 christos Exp $");
+__RCSID("$NetBSD: terminal.c,v 1.38 2019/06/30 13:30:15 christos Exp $");
 #endif
 #endif /* not lint && not SCCSID */
 
@@ -509,15 +509,14 @@ terminal_move_to_line(EditLine *el, int where)
 		return;
 	}
 	if ((del = where - el->el_cursor.v) > 0) {
-		if ((del > 1) && GoodStr(T_DO)) {
-			terminal_tputs(el, tgoto(Str(T_DO), del, del), del);
-			del = 0;
-		} else {
-			for (; del > 0; del--)
-				terminal__putc(el, '\n');
-			/* because the \n will become \r\n */
-			el->el_cursor.h = 0;
-		}
+		/*
+		 * We don't use DO here because some terminals are buggy
+		 * if the destination is beyond bottom of the screen.
+		 */
+		for (; del > 0; del--)
+			terminal__putc(el, '\n');
+		/* because the \n will become \r\n */
+		el->el_cursor.h = 0;
 	} else {		/* del < 0 */
 		if (GoodStr(T_UP) && (-del > 1 || !GoodStr(T_up)))
 			terminal_tputs(el, tgoto(Str(T_UP), -del, -del), -del);

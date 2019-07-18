@@ -1,4 +1,4 @@
-/*	$NetBSD: ixdp425_machdep.c,v 1.41 2018/10/28 14:30:31 skrll Exp $ */
+/*	$NetBSD: ixdp425_machdep.c,v 1.43 2019/07/16 14:41:46 skrll Exp $ */
 /*
  * Copyright (c) 2003
  *	Ichiro FUKUHARA <ichiro@ichiro.org>.
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ixdp425_machdep.c,v 1.41 2018/10/28 14:30:31 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ixdp425_machdep.c,v 1.43 2019/07/16 14:41:46 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_console.h"
@@ -360,7 +360,7 @@ static const struct pmap_devmap ixp425_devmap[] = {
 };
 
 /*
- * u_int initarm(...)
+ * vaddr_t initarm(...)
  *
  * Initial entry point on startup. This gets called before main() is
  * entered.
@@ -372,7 +372,7 @@ static const struct pmap_devmap ixp425_devmap[] = {
  *   Setting up page tables for the kernel
  *   Relocating the kernel to the bottom of physical memory
  */
-u_int
+vaddr_t
 initarm(void *arg)
 {
 	extern vaddr_t xscale_cache_clean_addr;
@@ -742,7 +742,7 @@ initarm(void *arg)
 #endif
 
 	/* We return the new stack pointer address */
-	return(kernelstack.pv_va + USPACE_SVC_STACK_TOP);
+	return kernelstack.pv_va + USPACE_SVC_STACK_TOP;
 }
 
 /*
