@@ -1,4 +1,4 @@
-/*	$NetBSD: disks.c,v 1.36 2019/06/22 20:46:07 christos Exp $ */
+/*	$NetBSD: disks.c,v 1.38 2019/07/14 11:25:10 martin Exp $ */
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -1031,7 +1031,7 @@ make_filesystems(struct install_partition_desc *install)
 			    "/sbin/newfs -V2 -O2 %s", rdev);
 		}
 
-		md_pre_mount(install);
+		md_pre_mount(install, 0);
 
 		make_target_dir("/");
 
@@ -1053,9 +1053,8 @@ make_filesystems(struct install_partition_desc *install)
 
 	for (i = 0; i < install->num; i++) {
 		/*
-		 * newfs and mount. For now, process only BSD filesystems.
-		 * but if this is the mounted-on root, has no mount
-		 * point defined, or is marked preserve, don't touch it!
+		 * Newfs all file systems mareked as needing this.
+		 * Mount the ones that have a mountpoint in the target.
 		 */
 		ptn = &install->infos[i];
 		parts = ptn->parts;
@@ -1068,8 +1067,7 @@ make_filesystems(struct install_partition_desc *install)
 		    && is_active_rootpart(devdev, partno))
 			continue;
 
-		if ((ptn->instflags & PUIINST_MOUNT) == 0)
-			/* No mount point */
+		if (!(ptn->instflags & PUIINST_NEWFS))
 			continue;
 
 		parts->pscheme->get_part_device(parts, ptn->cur_part_id,
@@ -1147,7 +1145,7 @@ make_filesystems(struct install_partition_desc *install)
 			return error;
 
 		ptn->instflags &= ~PUIINST_NEWFS;
-		md_pre_mount(install);
+		md_pre_mount(install, i);
 
 		if (partman_go == 0 && (ptn->instflags & PUIINST_MOUNT) &&
 				mnt_opts != NULL) {
@@ -1493,7 +1491,7 @@ mount_root(const char *devdev, struct install_partition_desc *install)
 	if (error != 0)
 		return error;
 
-	md_pre_mount(install);
+	md_pre_mount(install, 0);
 
 	/* Mount devdev on target's "".
 	 * If we pass "" as mount-on, Prefixing will DTRT.

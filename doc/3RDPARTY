@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1630 2019/06/22 22:49:18 sevan Exp $
+#	$NetBSD: 3RDPARTY,v 1.1635 2019/07/17 18:35:00 roy Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -341,12 +341,12 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	7.2.2
-Current Vers:	7.2.2
+Version:	7.2.3
+Current Vers:	7.2.3
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
-Date:		2019-04-26
+Date:		2019-06-26
 Mailing List: 	dhcpcd-discuss@marples.name
 License:	BSD (2-clause)
 Location:	external/bsd/dhcpcd/dist
@@ -397,7 +397,7 @@ Notes:
 
 Package:	expat
 Version:	2.2.1
-Current Vers:	2.2.6
+Current Vers:	2.2.7
 Maintainer:	Expat Project
 Archive Site:	http://sourceforge.net/projects/expat/files/expat/
 Home Page:	http://www.libexpat.org/
@@ -1031,12 +1031,12 @@ Location:	external/bsd/openpam/dist
 Notes:
 
 Package:	openresolv
-Version:	3.9.0
-Current Vers:	3.9.0
+Version:	3.9.1
+Current Vers:	3.9.1
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/openresolv/
 Home Page:	http://roy.marples.name/projects/openresolv/
-Date:		2019-01-09
+Date:		2019-07-17
 Mailing List: 	openresolv-discuss@marples.name
 License:	BSD (2-clause)
 Location:	external/bsd/openresolv/dist
@@ -1211,10 +1211,11 @@ now to do a new import.
 
 Package:	Postfix
 Version:	3.1.4
-Current Vers:	3.1.9/3.2.6/3.3.2
+Current Vers:	3.1.13/3.2.10/3.3.5/3.4.6
 Maintainer:	Wietse Venema <wietse@porcupine.org>
 Archive Site:
 Home Page:	http://www.postfix.org/
+Date: 		2019-07-03
 Mailing List:	postfix-users@postfix.org
 Responsible:	christos
 License:	IBM Public License. See also src/external/ibm-public/postfix/dist.
@@ -1397,13 +1398,14 @@ Notes:
 Added changes from a5 -> a12 manually.
 
 Package:	tz
-Version:	tzcode2019a / tzdata2019a
-Current Vers:	tzcode2019a / tzdata2019a
+Version:	tzcode2019b / tzdata2019a
+Current Vers:	tzcode2019b / tzdata2019b
 Maintainer:	Paul Eggert <eggert@cs.ucla.edu>
 Archive Site:	ftp://ftp.iana.org/tz/releases/
 Archive Site:	ftp://munnari.oz.au/pub/oldtz/
 Old Archive Site:	ftp://elsie.nci.nih.gov/pub/
 Home Page:	http://www.iana.org/time-zones
+Date:		2019-07-03
 Mailing List:	tz@iana.org
 Responsible:	kleink, christos, kre
 License:	Public domain

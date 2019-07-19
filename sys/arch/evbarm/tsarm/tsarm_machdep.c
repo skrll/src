@@ -1,4 +1,4 @@
-/*	$NetBSD: tsarm_machdep.c,v 1.27 2018/10/28 14:30:32 skrll Exp $ */
+/*	$NetBSD: tsarm_machdep.c,v 1.29 2019/07/16 14:41:48 skrll Exp $ */
 
 /*
  * Copyright (c) 2001, 2002, 2003 Wasabi Systems, Inc.
@@ -73,7 +73,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tsarm_machdep.c,v 1.27 2018/10/28 14:30:32 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tsarm_machdep.c,v 1.29 2019/07/16 14:41:48 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_console.h"
@@ -358,7 +358,7 @@ static const struct pmap_devmap tsarm_devmap[] = {
 };
 
 /*
- * u_int initarm(...)
+ * vaddr_t initarm(...)
  *
  * Initial entry point on startup. This gets called before main() is
  * entered.
@@ -370,7 +370,7 @@ static const struct pmap_devmap tsarm_devmap[] = {
  *   Setting up page tables for the kernel
  *   Initialising interrupt controllers to a sane default state
  */
-u_int
+vaddr_t
 initarm(void *arg)
 {
 #ifdef FIXME
@@ -789,7 +789,7 @@ initarm(void *arg)
 #endif
 
 	/* We return the new stack pointer address */
-	return(kernelstack.pv_va + USPACE_SVC_STACK_TOP);
+	return kernelstack.pv_va + USPACE_SVC_STACK_TOP;
 }
 
 void

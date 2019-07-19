@@ -1,4 +1,4 @@
-/*	$NetBSD: at91bus.c,v 1.23 2018/10/28 14:30:30 skrll Exp $	*/
+/*	$NetBSD: at91bus.c,v 1.25 2019/07/16 14:41:43 skrll Exp $	*/
 
 /*
  * Copyright (c) 2007 Embedtronics Oy
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at91bus.c,v 1.23 2018/10/28 14:30:30 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at91bus.c,v 1.25 2019/07/16 14:41:43 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_console.h"
@@ -232,7 +232,7 @@ at91bus_init(void)
 	return 0;
 }
 
-u_int
+vaddr_t
 at91bus_setup(BootConfig *mem)
 {
 	int loop;
@@ -553,7 +553,7 @@ at91bus_setup(BootConfig *mem)
 #endif
 
 	/* We return the new stack pointer address */
-	return(kernelstack.pv_va + USPACE_SVC_STACK_TOP);
+	return kernelstack.pv_va + USPACE_SVC_STACK_TOP;
 }
 
 static int

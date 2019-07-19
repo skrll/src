@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3.c,v 1.18 2019/06/17 10:15:08 jmcneill Exp $ */
+/* $NetBSD: gicv3.c,v 1.20 2019/06/30 11:11:38 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #define	_INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.18 2019/06/17 10:15:08 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.20 2019/06/30 11:11:38 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -40,6 +40,8 @@ __KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.18 2019/06/17 10:15:08 jmcneill Exp $");
 #include <sys/intr.h>
 #include <sys/systm.h>
 #include <sys/cpu.h>
+
+#include <machine/cpufunc.h>
 
 #include <arm/locore.h>
 #include <arm/armreg.h>
@@ -249,9 +251,7 @@ gicv3_dist_enable(struct gicv3_softc *sc)
 		;
 
 	/* Enable Affinity routing and G1NS interrupts */
-	gicd_ctrl = GICD_CTRL_EnableGrp1A | GICD_CTRL_Enable | GICD_CTRL_ARE_NS;
-	if (ISSET(sc->sc_flags, GICV3_F_SECURE))
-		gicd_ctrl = (gicd_ctrl & ~GICD_CTRL_EnableGrp1A) << 1;
+	gicd_ctrl = GICD_CTRL_EnableGrp1A | GICD_CTRL_ARE_NS;
 	gicd_write_4(sc, GICD_CTRL, gicd_ctrl);
 }
 
@@ -518,10 +518,13 @@ gicv3_lpi_unblock_irqs(struct pic_softc *pic, size_t irqbase, uint32_t mask)
 
 	while ((bit = ffs(mask)) != 0) {
 		sc->sc_lpiconf.base[irqbase + bit - 1] |= GIC_LPICONF_Enable;
+		if (sc->sc_lpiconf_flush)
+			cpu_dcache_wb_range((vaddr_t)&sc->sc_lpiconf.base[irqbase + bit - 1], 1);
 		mask &= ~__BIT(bit - 1);
 	}
 
-	bus_dmamap_sync(sc->sc_dmat, sc->sc_lpiconf.map, irqbase, 32, BUS_DMASYNC_PREWRITE);
+	if (!sc->sc_lpiconf_flush)
+		__asm __volatile ("dsb ishst");
 }
 
 static void
@@ -532,10 +535,13 @@ gicv3_lpi_block_irqs(struct pic_softc *pic, size_t irqbase, uint32_t mask)
 
 	while ((bit = ffs(mask)) != 0) {
 		sc->sc_lpiconf.base[irqbase + bit - 1] &= ~GIC_LPICONF_Enable;
+		if (sc->sc_lpiconf_flush)
+			cpu_dcache_wb_range((vaddr_t)&sc->sc_lpiconf.base[irqbase + bit - 1], 1);
 		mask &= ~__BIT(bit - 1);
 	}
 
-	bus_dmamap_sync(sc->sc_dmat, sc->sc_lpiconf.map, irqbase, 32, BUS_DMASYNC_PREWRITE);
+	if (!sc->sc_lpiconf_flush)
+		__asm __volatile ("dsb ishst");
 }
 
 static void
@@ -545,7 +551,10 @@ gicv3_lpi_establish_irq(struct pic_softc *pic, struct intrsource *is)
 
 	sc->sc_lpiconf.base[is->is_irq] = IPL_TO_LPIPRIO(sc, is->is_ipl) | GIC_LPICONF_Res1;
 
-	bus_dmamap_sync(sc->sc_dmat, sc->sc_lpiconf.map, is->is_irq, 1, BUS_DMASYNC_PREWRITE);
+	if (sc->sc_lpiconf_flush)
+		cpu_dcache_wb_range((vaddr_t)&sc->sc_lpiconf.base[is->is_irq], 1);
+	else
+		__asm __volatile ("dsb ishst");
 }
 
 static void
@@ -553,6 +562,7 @@ gicv3_lpi_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 {
 	struct gicv3_softc * const sc = LPITOSOFTC(pic);
 	struct gicv3_lpi_callback *cb;
+	uint64_t propbase, pendbase;
 	uint32_t ctlr;
 
 	/* If physical LPIs are not supported on this redistributor, just return. */
@@ -570,18 +580,36 @@ gicv3_lpi_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 	arm_dsb();
 
 	/* Setup the LPI configuration table */
-	const uint64_t propbase = sc->sc_lpiconf.segs[0].ds_addr |
+	propbase = sc->sc_lpiconf.segs[0].ds_addr |
 	    __SHIFTIN(ffs(pic->pic_maxsources) - 1, GICR_PROPBASER_IDbits) |
-	    __SHIFTIN(GICR_Shareability_NS, GICR_PROPBASER_Shareability) |
-	    __SHIFTIN(GICR_Cache_NORMAL_NC, GICR_PROPBASER_InnerCache);
+	    __SHIFTIN(GICR_Shareability_IS, GICR_PROPBASER_Shareability) |
+	    __SHIFTIN(GICR_Cache_NORMAL_RA_WA_WB, GICR_PROPBASER_InnerCache);
 	gicr_write_8(sc, ci->ci_gic_redist, GICR_PROPBASER, propbase);
+	propbase = gicr_read_8(sc, ci->ci_gic_redist, GICR_PROPBASER);
+	if (__SHIFTOUT(propbase, GICR_PROPBASER_Shareability) != GICR_Shareability_IS) {
+		if (__SHIFTOUT(propbase, GICR_PROPBASER_Shareability) == GICR_Shareability_NS) {
+			propbase &= ~GICR_PROPBASER_Shareability;
+			propbase |= __SHIFTIN(GICR_Shareability_NS, GICR_PROPBASER_Shareability);
+			propbase &= ~GICR_PROPBASER_InnerCache;
+			propbase |= __SHIFTIN(GICR_Cache_NORMAL_NC, GICR_PROPBASER_InnerCache);
+			gicr_write_8(sc, ci->ci_gic_redist, GICR_PROPBASER, propbase);
+		}
+		sc->sc_lpiconf_flush = true;
+	}
 
 	/* Setup the LPI pending table */
-	const uint64_t pendbase = sc->sc_lpipend[cpu_index(ci)].segs[0].ds_addr |
-	    __SHIFTIN(GICR_Shareability_NS, GICR_PENDBASER_Shareability) |
-	    __SHIFTIN(GICR_Cache_NORMAL_NC, GICR_PENDBASER_InnerCache) |
-	    GICR_PENDBASER_PTZ;
+	pendbase = sc->sc_lpipend[cpu_index(ci)].segs[0].ds_addr |
+	    __SHIFTIN(GICR_Shareability_IS, GICR_PENDBASER_Shareability) |
+	    __SHIFTIN(GICR_Cache_NORMAL_RA_WA_WB, GICR_PENDBASER_InnerCache);
 	gicr_write_8(sc, ci->ci_gic_redist, GICR_PENDBASER, pendbase);
+	pendbase = gicr_read_8(sc, ci->ci_gic_redist, GICR_PENDBASER);
+	if (__SHIFTOUT(pendbase, GICR_PENDBASER_Shareability) == GICR_Shareability_NS) {
+		pendbase &= ~GICR_PENDBASER_Shareability;
+		pendbase |= __SHIFTIN(GICR_Shareability_NS, GICR_PENDBASER_Shareability);
+		pendbase &= ~GICR_PENDBASER_InnerCache;
+		pendbase |= __SHIFTIN(GICR_Cache_NORMAL_NC, GICR_PENDBASER_InnerCache);
+		gicr_write_8(sc, ci->ci_gic_redist, GICR_PENDBASER, pendbase);
+	}
 
 	/* Enable LPIs */
 	ctlr = gicr_read_4(sc, ci->ci_gic_redist, GICR_CTLR);
@@ -668,7 +696,7 @@ gicv3_lpi_init(struct gicv3_softc *sc)
 	/*
 	 * Allocate LPI pending tables
 	 */
-	const bus_size_t lpipend_sz = sc->sc_lpi.pic_maxsources / NBBY;
+	const bus_size_t lpipend_sz = (8192 + sc->sc_lpi.pic_maxsources) / NBBY;
 	for (int cpuindex = 0; cpuindex < ncpu; cpuindex++) {
 		gicv3_dma_alloc(sc, &sc->sc_lpipend[cpuindex], lpipend_sz, 0x10000);
 		KASSERT((sc->sc_lpipend[cpuindex].segs[0].ds_addr & ~GICR_PENDBASER_Physical_Address) == 0);
@@ -713,6 +741,28 @@ gicv3_irq_handler(void *frame)
 		pic_set_priority(ci, oldipl);
 }
 
+static int
+gicv3_detect_pmr_bits(struct gicv3_softc *sc)
+{
+	const uint32_t opmr = icc_pmr_read();
+	icc_pmr_write(0xff);
+	const uint32_t npmr = icc_pmr_read();
+	icc_pmr_write(opmr);
+
+	return NBBY - (ffs(npmr) - 1);
+}
+
+static int
+gicv3_detect_ipriority_bits(struct gicv3_softc *sc)
+{
+	const uint32_t oipriorityr = gicd_read_4(sc, GICD_IPRIORITYRn(8));
+	gicd_write_4(sc, GICD_IPRIORITYRn(8), oipriorityr | 0xff);
+	const uint32_t nipriorityr = gicd_read_4(sc, GICD_IPRIORITYRn(8));
+	gicd_write_4(sc, GICD_IPRIORITYRn(8), oipriorityr);
+
+	return NBBY - (ffs(nipriorityr & 0xff) - 1);
+}
+
 int
 gicv3_init(struct gicv3_softc *sc)
 {
@@ -728,27 +778,21 @@ gicv3_init(struct gicv3_softc *sc)
 		sc->sc_irouter[n] = UINT64_MAX;
 
 	sc->sc_priority_shift = 4;
-	const uint32_t oldnsacr = gicd_read_4(sc, GICD_NSACRn(2));
-	gicd_write_4(sc, GICD_NSACRn(2), oldnsacr ^ 0xffffffff);
-	if (gicd_read_4(sc, GICD_NSACRn(2)) != oldnsacr) {
-		gicd_write_4(sc, GICD_NSACRn(2), oldnsacr);
-		sc->sc_priority_shift--;
-		SET(sc->sc_flags, GICV3_F_SECURE);
-	}
-	aprint_verbose_dev(sc->sc_dev, "access is %ssecure\n",
-	    ISSET(sc->sc_flags, GICV3_F_SECURE) ? "" : "in");
-
 	sc->sc_pmr_shift = 4;
+
 	if ((gicd_ctrl & GICD_CTRL_DS) == 0) {
-		const uint32_t icc_ctlr = icc_ctlr_read();
-		const u_int nbits = __SHIFTOUT(icc_ctlr, ICC_CTLR_EL1_PRIbits) + 1;
-		const u_int oldpmr = icc_pmr_read();
-		icc_pmr_write(0xff);
-		const u_int pmr = icc_pmr_read();
-		icc_pmr_write(oldpmr);
-		if (nbits == 8 - (ffs(pmr) - 1))
-			sc->sc_pmr_shift--;
+		const int pmr_bits = gicv3_detect_pmr_bits(sc);
+		const int ipriority_bits = gicv3_detect_ipriority_bits(sc);
+
+		if (ipriority_bits != pmr_bits)
+			--sc->sc_priority_shift;
+
+		aprint_verbose_dev(sc->sc_dev, "%d pmr bits, %d ipriority bits\n",
+		    pmr_bits, ipriority_bits);
+	} else {
+		aprint_verbose_dev(sc->sc_dev, "security disabled\n");
 	}
+
 	aprint_verbose_dev(sc->sc_dev, "priority shift %d, pmr shift %d\n",
 	    sc->sc_priority_shift, sc->sc_pmr_shift);
 

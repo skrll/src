@@ -1,4 +1,4 @@
-/*$NetBSD: ixv.c,v 1.115 2019/05/29 10:07:30 msaitoh Exp $*/
+/*$NetBSD: ixv.c,v 1.120 2019/07/17 03:26:24 msaitoh Exp $*/
 
 /******************************************************************************
 
@@ -47,6 +47,7 @@
  * Driver version
  ************************************************************************/
 static const char ixv_driver_version[] = "2.0.1-k";
+/* XXX NetBSD: + 1.5.17 */
 
 /************************************************************************
  * PCI Device ID Table
@@ -107,7 +108,7 @@ static int	ixv_negotiate_api(struct adapter *);
 static void	ixv_initialize_transmit_units(struct adapter *);
 static void	ixv_initialize_receive_units(struct adapter *);
 static void	ixv_initialize_rss_mapping(struct adapter *);
-static void	ixv_check_link(struct adapter *);
+static s32	ixv_check_link(struct adapter *);
 
 static void	ixv_enable_intr(struct adapter *);
 static void	ixv_disable_intr(struct adapter *);
@@ -119,18 +120,16 @@ static void	ixv_configure_ivars(struct adapter *);
 static u8 *	ixv_mc_array_itr(struct ixgbe_hw *, u8 **, u32 *);
 static void	ixv_eitr_write(struct adapter *, uint32_t, uint32_t);
 
-static void	ixv_setup_vlan_support(struct adapter *);
-#if 0
-static void	ixv_register_vlan(void *, struct ifnet *, u16);
-static void	ixv_unregister_vlan(void *, struct ifnet *, u16);
-#endif
+static int	ixv_setup_vlan_support(struct adapter *);
+static int	ixv_vlan_cb(struct ethercom *, uint16_t, bool);
+static int	ixv_register_vlan(void *, struct ifnet *, u16);
+static int	ixv_unregister_vlan(void *, struct ifnet *, u16);
 
 static void	ixv_add_device_sysctls(struct adapter *);
 static void	ixv_save_stats(struct adapter *);
 static void	ixv_init_stats(struct adapter *);
 static void	ixv_update_stats(struct adapter *);
 static void	ixv_add_stats_sysctls(struct adapter *);
-
 
 /* Sysctl handlers */
 static void	ixv_set_sysctl_value(struct adapter *, const char *,
@@ -471,12 +470,7 @@ ixv_attach(device_t parent, device_t dev, void *aux)
 	}
 
 	/* Register for VLAN events */
-#if 0 /* XXX delete after write? */
-	adapter->vlan_attach = EVENTHANDLER_REGISTER(vlan_config,
-	    ixv_register_vlan, adapter, EVENTHANDLER_PRI_FIRST);
-	adapter->vlan_detach = EVENTHANDLER_REGISTER(vlan_unconfig,
-	    ixv_unregister_vlan, adapter, EVENTHANDLER_PRI_FIRST);
-#endif
+	ether_set_vlan_cb(&adapter->osdep.ec, ixv_vlan_cb);
 
 	/* Sysctls for limiting the amount of work done in the taskqueues */
 	ixv_set_sysctl_value(adapter, "rx_processing_limit",
@@ -617,14 +611,6 @@ ixv_detach(device_t dev, int flags)
 
 	/* Drain the Mailbox(link) queue */
 	softint_disestablish(adapter->link_si);
-
-	/* Unregister VLAN events */
-#if 0 /* XXX msaitoh delete after write? */
-	if (adapter->vlan_attach != NULL)
-		EVENTHANDLER_DEREGISTER(vlan_config, adapter->vlan_attach);
-	if (adapter->vlan_detach != NULL)
-		EVENTHANDLER_DEREGISTER(vlan_unconfig, adapter->vlan_detach);
-#endif
 
 	ether_ifdetach(adapter->ifp);
 	callout_halt(&adapter->timer, NULL);
@@ -823,6 +809,7 @@ ixv_init_locked(struct adapter *adapter)
 
 	/* Update saved flags. See ixgbe_ifflags_cb() */
 	adapter->if_flags = ifp->if_flags;
+	adapter->ec_capenable = adapter->osdep.ec.ec_capenable;
 
 	/* Now inform the stack we're ready */
 	ifp->if_flags |= IFF_RUNNING;
@@ -1203,7 +1190,10 @@ ixv_local_timer_locked(void *arg)
 
 	KASSERT(mutex_owned(&adapter->core_mtx));
 
-	ixv_check_link(adapter);
+	if (ixv_check_link(adapter)) {
+		ixv_init_locked(adapter);
+		return;
+	}
 
 	/* Stats Update */
 	ixv_update_stats(adapter);
@@ -1554,7 +1544,8 @@ ixv_setup_interface(device_t dev, struct adapter *adapter)
 			     |	IFCAP_TSOv6;
 	ifp->if_capenable = 0;
 
-	ec->ec_capabilities |= ETHERCAP_VLAN_HWTAGGING
+	ec->ec_capabilities |= ETHERCAP_VLAN_HWFILTER
+			    |  ETHERCAP_VLAN_HWTAGGING
 			    |  ETHERCAP_VLAN_HWCSUM
 			    |  ETHERCAP_JUMBO_MTU
 			    |  ETHERCAP_VLAN_MTU;
@@ -1740,7 +1731,7 @@ ixv_initialize_receive_units(struct adapter *adapter)
 	struct	rx_ring	*rxr = adapter->rx_rings;
 	struct ixgbe_hw	*hw = &adapter->hw;
 	struct ifnet	*ifp = adapter->ifp;
-	u32		bufsz, rxcsum, psrtype;
+	u32		bufsz, psrtype;
 
 	if (ifp->if_mtu > ETHERMTU)
 		bufsz = 4096 >> IXGBE_SRRCTL_BSIZEPKT_SHIFT;
@@ -1834,7 +1825,7 @@ ixv_initialize_receive_units(struct adapter *adapter)
 		if ((adapter->feat_en & IXGBE_FEATURE_NETMAP) &&
 		    (ifp->if_capenable & IFCAP_NETMAP)) {
 			struct netmap_adapter *na = NA(adapter->ifp);
-			struct netmap_kring *kring = &na->rx_rings[i];
+			struct netmap_kring *kring = na->rx_rings[i];
 			int t = na->num_rx_desc - 1 - nm_kr_rxspace(kring);
 
 			IXGBE_WRITE_REG(hw, IXGBE_VFRDT(rxr->me), t);
@@ -1844,22 +1835,7 @@ ixv_initialize_receive_units(struct adapter *adapter)
 			    adapter->num_rx_desc - 1);
 	}
 
-	rxcsum = IXGBE_READ_REG(hw, IXGBE_RXCSUM);
-
 	ixv_initialize_rss_mapping(adapter);
-
-	if (adapter->num_queues > 1) {
-		/* RSS and RX IPP Checksum are mutually exclusive */
-		rxcsum |= IXGBE_RXCSUM_PCSD;
-	}
-
-	if (ifp->if_capenable & IFCAP_RXCSUM)
-		rxcsum |= IXGBE_RXCSUM_PCSD;
-
-	if (!(rxcsum & IXGBE_RXCSUM_PCSD))
-		rxcsum |= IXGBE_RXCSUM_IPPCSE;
-
-	IXGBE_WRITE_REG(hw, IXGBE_RXCSUM, rxcsum);
 } /* ixv_initialize_receive_units */
 
 /************************************************************************
@@ -1966,19 +1942,23 @@ ixv_sysctl_rdt_handler(SYSCTLFN_ARGS)
 /************************************************************************
  * ixv_setup_vlan_support
  ************************************************************************/
-static void
+static int
 ixv_setup_vlan_support(struct adapter *adapter)
 {
 	struct ethercom *ec = &adapter->osdep.ec;
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct rx_ring	*rxr;
 	u32		ctrl, vid, vfta, retry;
+	struct vlanid_list *vlanidp;
+	int rv, error = 0;
+	bool usevlan;
 	bool		hwtagging;
 
 	/*
 	 *  This function is called from both if_init and ifflags_cb()
 	 * on NetBSD.
 	 */
+	usevlan = VLAN_ATTACHED(ec);
 
 	/* Enable HW tagging only if any vlan is attached */
 	hwtagging = (ec->ec_capenable & ETHERCAP_VLAN_HWTAGGING)
@@ -2000,11 +1980,23 @@ ixv_setup_vlan_support(struct adapter *adapter)
 		rxr->vtag_strip = hwtagging ? TRUE : FALSE;
 	}
 
-#if 1
-	/* XXX dirty hack. Enable all VIDs */
+	if (!usevlan)
+		return 0;
+
+	/* Cleanup shadow_vfta */
 	for (int i = 0; i < IXGBE_VFTA_SIZE; i++)
-	  adapter->shadow_vfta[i] = 0xffffffff;
-#endif
+		adapter->shadow_vfta[i] = 0;
+	/* Generate shadow_vfta from ec_vids */
+	mutex_enter(ec->ec_lock);
+	SIMPLEQ_FOREACH(vlanidp, &ec->ec_vids, vid_list) {
+		uint32_t idx;
+
+		idx = vlanidp->vid / 32;
+		KASSERT(idx < IXGBE_VFTA_SIZE);
+		adapter->shadow_vfta[idx] |= 1 << vlanidp->vid % 32;
+	}
+	mutex_exit(ec->ec_lock);
+	
 	/*
 	 * A soft reset zero's out the VFTA, so
 	 * we need to repopulate it now.
@@ -2023,16 +2015,41 @@ ixv_setup_vlan_support(struct adapter *adapter)
 			if ((vfta & (1 << j)) == 0)
 				continue;
 			vid = (i * 32) + j;
+			
 			/* Call the shared code mailbox routine */
-			while (hw->mac.ops.set_vfta(hw, vid, 0, TRUE, FALSE)) {
-				if (++retry > 5)
+			while ((rv = hw->mac.ops.set_vfta(hw, vid, 0, TRUE,
+			    FALSE)) != 0) {
+				if (++retry > 5) {
+					device_printf(adapter->dev,
+					    "%s: max retry exceeded\n",
+						__func__);
 					break;
+				}
+			}
+			if (rv != 0) {
+				device_printf(adapter->dev,
+				    "failed to set vlan %d\n", vid);
+				error = EACCES;
 			}
 		}
 	}
+	return error;
 } /* ixv_setup_vlan_support */
 
-#if 0	/* XXX Badly need to overhaul vlan(4) on NetBSD. */
+static int
+ixv_vlan_cb(struct ethercom *ec, uint16_t vid, bool set)
+{
+	struct ifnet *ifp = &ec->ec_if;
+	int rv;
+
+	if (set)
+		rv = ixv_register_vlan(ifp->if_softc, ifp, vid);
+	else
+		rv = ixv_unregister_vlan(ifp->if_softc, ifp, vid);
+
+	return rv;
+}
+
 /************************************************************************
  * ixv_register_vlan
  *
@@ -2041,25 +2058,32 @@ ixv_setup_vlan_support(struct adapter *adapter)
  *   creates the entry in the soft version of the VFTA, init
  *   will repopulate the real table.
  ************************************************************************/
-static void
+static int
 ixv_register_vlan(void *arg, struct ifnet *ifp, u16 vtag)
 {
 	struct adapter	*adapter = ifp->if_softc;
+	struct ixgbe_hw *hw = &adapter->hw;
 	u16		index, bit;
+	int error;
 
 	if (ifp->if_softc != arg) /* Not our event */
-		return;
+		return EINVAL;
 
 	if ((vtag == 0) || (vtag > 4095)) /* Invalid */
-		return;
-
+		return EINVAL;
 	IXGBE_CORE_LOCK(adapter);
 	index = (vtag >> 5) & 0x7F;
 	bit = vtag & 0x1F;
 	adapter->shadow_vfta[index] |= (1 << bit);
-	/* Re-init to load the changes */
-	ixv_init_locked(adapter);
+	error = hw->mac.ops.set_vfta(hw, vtag, 0, true, false);
 	IXGBE_CORE_UNLOCK(adapter);
+
+	if (error != 0) {
+		device_printf(adapter->dev, "failed to register vlan %hu\n",
+		    vtag);
+		error = EACCES;
+	}
+	return error;
 } /* ixv_register_vlan */
 
 /************************************************************************
@@ -2068,27 +2092,34 @@ ixv_register_vlan(void *arg, struct ifnet *ifp, u16 vtag)
  *   Run via a vlan unconfig EVENT, remove our entry
  *   in the soft vfta.
  ************************************************************************/
-static void
+static int
 ixv_unregister_vlan(void *arg, struct ifnet *ifp, u16 vtag)
 {
 	struct adapter	*adapter = ifp->if_softc;
+	struct ixgbe_hw *hw = &adapter->hw;
 	u16		index, bit;
+	int 		error;
 
 	if (ifp->if_softc !=  arg)
-		return;
+		return EINVAL;
 
 	if ((vtag == 0) || (vtag > 4095))  /* Invalid */
-		return;
+		return EINVAL;
 
 	IXGBE_CORE_LOCK(adapter);
 	index = (vtag >> 5) & 0x7F;
 	bit = vtag & 0x1F;
 	adapter->shadow_vfta[index] &= ~(1 << bit);
-	/* Re-init to load the changes */
-	ixv_init_locked(adapter);
+	error = hw->mac.ops.set_vfta(hw, vtag, 0, false, false);
 	IXGBE_CORE_UNLOCK(adapter);
+
+	if (error != 0) {
+		device_printf(adapter->dev, "failed to unregister vlan %hu\n",
+		    vtag);
+		error = EIO;
+	}
+	return error;
 } /* ixv_unregister_vlan */
-#endif
 
 /************************************************************************
  * ixv_enable_intr
@@ -2616,16 +2647,12 @@ static void
 ixv_print_debug_info(struct adapter *adapter)
 {
 	device_t	dev = adapter->dev;
-	struct ixgbe_hw *hw = &adapter->hw;
 	struct ix_queue *que = adapter->queues;
 	struct rx_ring	*rxr;
 	struct tx_ring	*txr;
 #ifdef LRO
 	struct lro_ctrl *lro;
 #endif /* LRO */
-
-	device_printf(dev, "Error Byte Count = %u \n",
-	    IXGBE_READ_REG(hw, IXGBE_ERRBC));
 
 	for (int i = 0; i < adapter->num_queues; i++, que++) {
 		txr = que->txr;
@@ -2640,10 +2667,10 @@ ixv_print_debug_info(struct adapter *adapter)
 		device_printf(dev, "RX(%d) Bytes Received: %lu\n",
 		    rxr->me, (long)rxr->rx_bytes.ev_count);
 #ifdef LRO
-		device_printf(dev, "RX(%d) LRO Queued= %lld\n",
-		    rxr->me, (long long)lro->lro_queued);
-		device_printf(dev, "RX(%d) LRO Flushed= %lld\n",
-		    rxr->me, (long long)lro->lro_flushed);
+		device_printf(dev, "RX(%d) LRO Queued= %ju\n",
+		    rxr->me, (uintmax_t)lro->lro_queued);
+		device_printf(dev, "RX(%d) LRO Flushed= %ju\n",
+		    rxr->me, (uintmax_t)lro->lro_flushed);
 #endif /* LRO */
 		device_printf(dev, "TX(%d) Packets Sent: %lu\n",
 		    txr->me, (long)txr->total_packets.ev_count);
@@ -2745,7 +2772,7 @@ ixv_ifflags_cb(struct ethercom *ec)
 {
 	struct ifnet *ifp = &ec->ec_if;
 	struct adapter *adapter = ifp->if_softc;
-	int change, rc = 0;
+	int change, rv = 0;
 
 	IXGBE_CORE_LOCK(adapter);
 
@@ -2753,15 +2780,33 @@ ixv_ifflags_cb(struct ethercom *ec)
 	if (change != 0)
 		adapter->if_flags = ifp->if_flags;
 
-	if ((change & ~(IFF_CANTCHANGE | IFF_DEBUG)) != 0)
-		rc = ENETRESET;
+	if ((change & ~(IFF_CANTCHANGE | IFF_DEBUG)) != 0) {
+		rv = ENETRESET;
+		goto out;
+	}
+
+	/* Check for ec_capenable. */
+	change = ec->ec_capenable ^ adapter->ec_capenable;
+	adapter->ec_capenable = ec->ec_capenable;
+	if ((change & ~(ETHERCAP_VLAN_MTU | ETHERCAP_VLAN_HWTAGGING
+	    | ETHERCAP_VLAN_HWFILTER)) != 0) {
+		rv = ENETRESET;
+		goto out;
+	}
+
+	/*
+	 * Special handling is not required for ETHERCAP_VLAN_MTU.
+	 * PF's MAXFRS(MHADD) does not include the 4bytes of the VLAN header.
+	 */
 
 	/* Set up VLAN support and filter */
-	ixv_setup_vlan_support(adapter);
+	if ((change & (ETHERCAP_VLAN_HWTAGGING | ETHERCAP_VLAN_HWFILTER)) != 0)
+		rv = ixv_setup_vlan_support(adapter);
 
+out:
 	IXGBE_CORE_UNLOCK(adapter);
 
-	return rc;
+	return rv;
 }
 
 
@@ -3147,15 +3192,18 @@ ixv_handle_link(void *context)
 /************************************************************************
  * ixv_check_link - Used in the local timer to poll for link changes
  ************************************************************************/
-static void
+static s32
 ixv_check_link(struct adapter *adapter)
 {
+	s32 error;
 
 	KASSERT(mutex_owned(&adapter->core_mtx));
 
 	adapter->hw.mac.get_link_status = TRUE;
 
-	adapter->hw.mac.ops.check_link(&adapter->hw, &adapter->link_speed,
-	    &adapter->link_up, FALSE);
+	error = adapter->hw.mac.ops.check_link(&adapter->hw,
+	    &adapter->link_speed, &adapter->link_up, FALSE);
 	ixv_update_link_status(adapter);
+
+	return error;
 } /* ixv_check_link */

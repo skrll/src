@@ -1,4 +1,4 @@
-$NetBSD: TODO.usbmp,v 1.12 2019/05/07 22:00:10 mrg Exp $
+$NetBSD: TODO.usbmp,v 1.13 2019/06/30 22:19:55 mrg Exp $
 
 
 the majority of the USB MP device interface is documented in usbdivar.h.
@@ -22,7 +22,6 @@ usb_detach_{waitold,wakeup} to cv_{wait,broadcast} conversion:
   - drivers:
       if_aue.c
       if_axe.c
-      if_axen.c
       if_udav.c
       if_url.c
       ubt.c
@@ -65,8 +64,6 @@ splusb drivers:
   - if_athn_usb.c
   - if_aue.c
   - if_axe.c
-  - if_axen.c
-  - if_cdce.c
   - if_cue.c
   - if_kue.c
   - if_otus.c
@@ -114,7 +111,6 @@ missing D_MPSAFE drivers:
 missing CALLOUT_MPSAFE drivers:
   - if_aue.c
   - if_axe.c
-  - if_axen.c
   - if_cue.c
   - if_otus.c
   - if_rum.c
@@ -173,7 +169,8 @@ driver testing:		STATUS
   - irmce
   - aue
   - axe			working
-  - cdce
+  - axen		working
+  - cdce		working
   - cue
   - kue
   - udav
@@ -184,8 +181,9 @@ driver testing:		STATUS
   - ral
   - rum
   - run
+  - ure			working
   - urtw		working
-  - urtwn
+  - urtwn		working
   - upgt
   - zyd
   - upl
@@ -209,14 +207,14 @@ ucom attachments:
   - umodem		working
   - uark
   - ubsa
-  - uchcom
+  - uchcom		working
   - uftdi		working
   - uipaq
   - umct
   - uplcom		attaches ok
   - uslsa		working
-  - uvscom
-  - umcs
+  - uvscom		working
+  - umcs		working
   - uvisor
   - ukyopon
   - u3g

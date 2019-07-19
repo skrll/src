@@ -1,4 +1,4 @@
-/*	$NetBSD: part_edit.c,v 1.5 2019/06/22 20:46:07 christos Exp $ */
+/*	$NetBSD: part_edit.c,v 1.7 2019/07/12 18:25:08 martin Exp $ */
 
 /*
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -834,7 +834,6 @@ parts_use_wholedisk(struct disk_partitions *parts,
 			    1, info.size, align, -1, -1) != 1)
 				return false;
 			info.start = space.start;
-			info.size = space.size;
 			if (parts->pscheme->add_partition(parts, &info, NULL)
 			    == NO_PART)
 				return false;
@@ -1085,24 +1084,25 @@ edit_outer_parts(struct disk_partitions *parts)
 	if (pm && (pm->no_part || pm->no_mbr))
 		return true;
 
-	/* Make sure pm has been properly initialized */
-	assert(pm->parts && pm->parts->pscheme);
+	/* Make sure parts has been properly initialized */
+	assert(parts && parts->pscheme);
 
-	if (partman_go)
+	if (parts->pscheme->secondary_scheme == NULL)
+		return true;	/* no outer parts */
+
+	if (partman_go) {
 		layout = LY_SETSIZES;
-	else {
+	} else {
 		/* Ask full/part */
 		const struct disk_partitioning_scheme *sec =
-		    pm->parts->pscheme->secondary_scheme;
-
-		assert(sec != NULL);
+		    parts->pscheme->secondary_scheme;
 
 		uint64_t m_size =
 		    DEFROOTSIZE + DEFSWAPSIZE + DEFUSRSIZE + XNEEDMB;
 		char min_size[5], build_size[5];
 		const char
-		    *prim_name = msg_string(pm->parts->pscheme->name),
-		    *prim_short = msg_string(pm->parts->pscheme->short_name),
+		    *prim_name = msg_string(parts->pscheme->name),
+		    *prim_short = msg_string(parts->pscheme->short_name),
 		    *sec_name = msg_string(sec->name),
 		    *sec_short = msg_string(sec->short_name);
 
@@ -1120,7 +1120,7 @@ edit_outer_parts(struct disk_partitions *parts)
 		    min_size, build_size);
 		msg_display_add("\n\n");
 
-		layout = ask_fullpart(pm->parts);
+		layout = ask_fullpart(parts);
 	}
 
 	if (layout == LY_USEFULL) {
@@ -1132,6 +1132,8 @@ edit_outer_parts(struct disk_partitions *parts)
 			if (!parts->pscheme->get_part_info(parts, i, &info))
 				continue;
 			if (info.size == 0)
+				continue;
+			if (info.flags & (PTI_PSCHEME_INTERNAL|PTI_RAW_PART))
 				continue;
 			if (info.nat_type != NULL
 			    && info.nat_type->generic_ptype != PT_root

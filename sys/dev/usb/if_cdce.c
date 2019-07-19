@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cdce.c,v 1.50 2019/06/23 02:14:14 mrg Exp $ */
+/*	$NetBSD: if_cdce.c,v 1.52 2019/06/29 07:46:19 skrll Exp $ */
 
 /*
  * Copyright (c) 1997, 1998, 1999, 2000-2003 Bill Paul <wpaul@windriver.com>
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_cdce.c,v 1.50 2019/06/23 02:14:14 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cdce.c,v 1.52 2019/06/29 07:46:19 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -156,7 +156,7 @@ static void	cdce_watchdog(struct ifnet *);
 static void	cdce_tick(void *);
 static void	cdce_tick_task(void *);
 static void	cdce_stop(struct ifnet *, int);
-static void	cdce_stop_locked(struct ifnet *, int);
+static void	cdce_stop_locked(struct cdce_softc *);
 
 static const struct cdce_type cdce_devs[] = {
   {{ USB_VENDOR_ACERLABS, USB_PRODUCT_ACERLABS_M5632 }, CDCE_NO_UNION },
@@ -356,6 +356,7 @@ cdce_attach(device_t parent, device_t self, void *aux)
 	ifp->if_ioctl = cdce_ioctl;
 	ifp->if_init = cdce_init;
 	ifp->if_start = cdce_start;
+	ifp->if_stop = cdce_stop;
 	strlcpy(ifp->if_xname, device_xname(sc->cdce_dev), IFNAMSIZ);
 
 	IFQ_SET_READY(&ifp->if_snd);
@@ -398,8 +399,11 @@ cdce_detach(device_t self, int flags)
 	usb_rem_task_wait(sc->cdce_udev, &sc->cdce_tick_task,
 	    USB_TASKQ_DRIVER, NULL);
 
-	if (ifp->if_flags & IFF_RUNNING)
-		cdce_stop(ifp, 1);
+	if (ifp->if_flags & IFF_RUNNING) {
+		IFNET_LOCK(ifp);
+		cdce_stop(ifp, 0);
+		IFNET_UNLOCK(ifp);
+	}
 
 	callout_destroy(&sc->cdce_stat_ch);
 	ether_ifdetach(ifp);
@@ -432,8 +436,8 @@ cdce_start_locked(struct ifnet *ifp)
 	struct mbuf		*m_head = NULL;
 
 	KASSERT(mutex_owned(&sc->cdce_txlock));
-	if (sc->cdce_dying || sc->cdce_stopping ||
-	    (ifp->if_flags & IFF_OACTIVE))
+
+	if (sc->cdce_dying || sc->cdce_cdata.cdce_tx_cnt == CDCE_TX_LIST_CNT)
 		return;
 
 	IFQ_POLL(&ifp->if_snd, m_head);
@@ -448,17 +452,16 @@ cdce_start_locked(struct ifnet *ifp)
 
 	bpf_mtap(ifp, m_head, BPF_D_OUT);
 
-	ifp->if_flags |= IFF_OACTIVE;
-
 	/*
 	 * Set a timeout in case the chip goes out to lunch.
 	 */
-	ifp->if_timer = 6;
+	sc->cdce_timer = 6;
 }
 
 static int
 cdce_encap(struct cdce_softc *sc, struct mbuf *m, int idx)
 {
+	struct ifnet *ifp = GET_IFP(sc);
 	struct cdce_chain	*c = &sc->cdce_cdata.cdce_tx_chain[idx];
 	int			 extra = 0;
 
@@ -481,30 +484,25 @@ cdce_encap(struct cdce_softc *sc, struct mbuf *m, int idx)
 	    USBD_FORCE_SHORT_XFER, 10000, cdce_txeof);
 	usbd_status err = usbd_transfer(c->cdce_xfer);
 	if (err != USBD_IN_PROGRESS) {
-		cdce_stop(GET_IFP(sc), 0);
+		/* XXXSMP IFNET_LOCK */
+		cdce_stop(ifp, 0);
 		return EIO;
 	}
 
 	sc->cdce_cdata.cdce_tx_cnt++;
+	KASSERT(sc->cdce_cdata.cdce_tx_cnt <= CDCE_TX_LIST_CNT);
 
 	return 0;
 }
 
 static void
-cdce_stop(struct ifnet *ifp, int disable)
+cdce_stop_locked(struct cdce_softc *sc)
 {
-	struct cdce_softc * const sc = ifp->if_softc;
-
-	mutex_enter(&sc->cdce_lock);
-	cdce_stop_locked(ifp, disable);
-	mutex_exit(&sc->cdce_lock);
-}
-
-static void
-cdce_stop_locked(struct ifnet *ifp, int disable)
-{
-	struct cdce_softc * const sc = ifp->if_softc;
+	struct ifnet *ifp = GET_IFP(sc);
 	usbd_status err;
+
+	/* XXXSMP can't KASSERT(IFNET_LOCKED(ifp)); */
+	KASSERT(mutex_owned(&sc->cdce_lock));
 
 	mutex_enter(&sc->cdce_rxlock);
 	mutex_enter(&sc->cdce_txlock);
@@ -512,8 +510,15 @@ cdce_stop_locked(struct ifnet *ifp, int disable)
 	mutex_exit(&sc->cdce_txlock);
 	mutex_exit(&sc->cdce_rxlock);
 
-	ifp->if_timer = 0;
-	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
+	/*
+	 * XXXSMP Would like to
+	 *	KASSERT(IFNET_LOCKED(ifp))
+	 * here but the locking order is:
+	 *	ifnet -> sc lock -> rxlock -> txlock
+	 * and sc lock is already held.
+	 */
+	ifp->if_flags &= ~IFF_RUNNING;
+	sc->cdce_timer = 0;
 
 	callout_stop(&sc->cdce_stat_ch);
 
@@ -550,7 +555,16 @@ cdce_stop_locked(struct ifnet *ifp, int disable)
 			    device_xname(sc->cdce_dev), usbd_errstr(err));
 		sc->cdce_bulkout_pipe = NULL;
 	}
-	mutex_exit(&sc->cdce_txlock);
+}
+
+static void
+cdce_stop(struct ifnet *ifp, int disable)
+{
+	struct cdce_softc * const sc = ifp->if_softc;
+
+	mutex_enter(&sc->cdce_lock);
+	cdce_stop_locked(sc);
+	mutex_exit(&sc->cdce_lock);
 }
 
 static int
@@ -601,7 +615,7 @@ cdce_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			cdce_init(sc);
 			break;
 		case IFF_RUNNING:
-			cdce_stop(sc);
+			cdce_stop(ifp, 0);
 			break;
 		default:
 			break;
@@ -632,12 +646,16 @@ cdce_watchdog(struct ifnet *ifp)
 	ifp->if_oerrors++;
 	aprint_error_dev(sc->cdce_dev, "watchdog timeout\n");
 
+	mutex_enter(&sc->cdce_txlock);
+
 	c = &sc->cdce_cdata.cdce_rx_chain[0];
 	usbd_get_xfer_status(c->cdce_xfer, NULL, NULL, NULL, &stat);
 	cdce_txeof(c->cdce_xfer, c, stat);
 
 	if (!IFQ_IS_EMPTY(&ifp->if_snd))
 		cdce_start_locked(ifp);
+
+	mutex_exit(&sc->cdce_txlock);
 }
 
 static int
@@ -665,7 +683,7 @@ cdce_init_locked(struct ifnet *ifp)
 
 
 	err = usbd_open_pipe(sc->cdce_data_iface, sc->cdce_bulkin_no,
-	    USBD_EXCLUSIVE_USE, &sc->cdce_bulkin_pipe);
+	    USBD_EXCLUSIVE_USE | USBD_MPSAFE, &sc->cdce_bulkin_pipe);
 	if (err) {
 		printf("%s: open rx pipe failed: %s\n", device_xname(sc->cdce_dev),
 		    usbd_errstr(err));
@@ -673,7 +691,7 @@ cdce_init_locked(struct ifnet *ifp)
 	}
 
 	err = usbd_open_pipe(sc->cdce_data_iface, sc->cdce_bulkout_no,
-	    USBD_EXCLUSIVE_USE, &sc->cdce_bulkout_pipe);
+	    USBD_EXCLUSIVE_USE | USBD_MPSAFE, &sc->cdce_bulkout_pipe);
 	if (err) {
 		printf("%s: open tx pipe failed: %s\n",
 		    device_xname(sc->cdce_dev), usbd_errstr(err));
@@ -690,6 +708,10 @@ cdce_init_locked(struct ifnet *ifp)
 		goto fail3;
 	}
 
+	mutex_enter(&sc->cdce_rxlock);
+	mutex_enter(&sc->cdce_txlock);
+	sc->cdce_stopping = false;
+
 	for (i = 0; i < CDCE_RX_LIST_CNT; i++) {
 		c = &sc->cdce_cdata.cdce_rx_chain[i];
 
@@ -698,8 +720,10 @@ cdce_init_locked(struct ifnet *ifp)
 		usbd_transfer(c->cdce_xfer);
 	}
 
+	mutex_exit(&sc->cdce_txlock);
+	mutex_exit(&sc->cdce_rxlock);
+
 	ifp->if_flags |= IFF_RUNNING;
-	ifp->if_flags &= ~IFF_OACTIVE;
 
 	callout_schedule(&sc->cdce_stat_ch, hz);
 
@@ -885,12 +909,12 @@ cdce_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 	if_percpuq_enqueue(ifp->if_percpuq, m);
 	mutex_enter(&sc->cdce_rxlock);
 
+done:
 	if (sc->cdce_stopping || sc->cdce_dying) {
 		mutex_exit(&sc->cdce_rxlock);
 		return;
 	}
 
-done:
 	mutex_exit(&sc->cdce_rxlock);
 
 	/* Setup new transfer. */
@@ -912,8 +936,10 @@ cdce_txeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 	if (sc->cdce_dying)
 		goto out;
 
+	KASSERT(sc->cdce_cdata.cdce_tx_cnt > 0);
+	sc->cdce_cdata.cdce_tx_cnt--;
+
 	sc->cdce_timer = 0;
-	ifp->if_flags &= ~IFF_OACTIVE;
 
 	switch (status) {
 	case USBD_NOT_STARTED:
