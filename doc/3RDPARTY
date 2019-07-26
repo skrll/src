@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1635 2019/07/17 18:35:00 roy Exp $
+#	$NetBSD: 3RDPARTY,v 1.1638 2019/07/25 08:59:32 roy Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -239,12 +239,12 @@ Notes:
 See /usr/src/external/bsd/byacc/byacc2netbsd for update instructions.
 
 Package:	bzip2
-Version:	1.0.6
-Current Vers:	1.0.6
+Version:	1.0.8
+Current Vers:	1.0.8
 Maintainer:	Julian Seward <jseward@acm.org>
-Archive Site:	http://sources.redhat.com/bzip2/files/
-Home Page:	http://www.bzip.org/
-Date:		2019-01-09
+Archive Site:	https://sourceware.org/pub/bzip2/
+Home Page:	https://www.sourceware.org/bzip2/
+Date:		2019-07-21
 Mailing List:
 Responsible:
 License:	BSD (4-clause)
@@ -341,12 +341,12 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	7.2.3
-Current Vers:	7.2.3
+Version:	8.0.1
+Current Vers:	8.0.1
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
-Date:		2019-06-26
+Date:		2019-07-25
 Mailing List: 	dhcpcd-discuss@marples.name
 License:	BSD (2-clause)
 Location:	external/bsd/dhcpcd/dist

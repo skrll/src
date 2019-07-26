@@ -1,4 +1,4 @@
-/*	$NetBSD: disklabel.c,v 1.7 2019/07/12 18:22:36 martin Exp $	*/
+/*	$NetBSD: disklabel.c,v 1.9 2019/07/21 11:56:20 martin Exp $	*/
 
 /*
  * Copyright 2018 The NetBSD Foundation, Inc.
@@ -99,18 +99,18 @@ disklabel_change_geom(struct disk_partitions *arg, int ncyl, int nhead,
 	struct disklabel_disk_partitions *parts =
 	    (struct disklabel_disk_partitions*)arg;
 
+	assert(parts->l.d_secsize != 0);
+	assert(parts->l.d_nsectors != 0);
+	assert(parts->l.d_ntracks != 0);
+	assert(parts->l.d_ncylinders != 0);
+	assert(parts->l.d_secpercyl != 0);
+
 	disklabel_init_default_alignment(parts, nhead * nsec);
-
-	parts->l.d_ncylinders = ncyl;
-	parts->l.d_ntracks = nhead;
-	parts->l.d_nsectors = nsec;
-	parts->l.d_secsize = DEV_BSIZE;
-	parts->l.d_secpercyl = nsec * nhead;
-
 	if (ncyl*nhead*nsec <= TINY_DISK_SIZE)
 		set_default_sizemult(1);
 	else
 		set_default_sizemult(MEG/512);
+
 	return true;
 }
 
@@ -273,6 +273,10 @@ disklabel_write_to_disk(struct disk_partitions *arg)
 	size_t n;
 
 	assert(parts->l.d_secsize != 0);
+	assert(parts->l.d_nsectors != 0);
+	assert(parts->l.d_ntracks != 0);
+	assert(parts->l.d_ncylinders != 0);
+	assert(parts->l.d_secpercyl != 0);
 
 	sprintf(fname, "/tmp/disklabel.%u", getpid());
 	f = fopen(fname, "w");
@@ -300,32 +304,34 @@ disklabel_write_to_disk(struct disk_partitions *arg)
 		    sizeof(parts->l.d_typename));
 
 	lp = parts->l.d_partitions;
-	fprintf(f, "%s|NetBSD installation generated:\\\n",
+	scripting_fprintf(NULL, "cat <<EOF >%s\n", fname);
+	scripting_fprintf(f, "%s|NetBSD installation generated:\\\n",
 	    parts->l.d_typename);
-	fprintf(f, "\t:nc#%d:nt#%d:ns#%d:\\\n",
+	scripting_fprintf(f, "\t:nc#%d:nt#%d:ns#%d:\\\n",
 	    parts->l.d_ncylinders, parts->l.d_ntracks, parts->l.d_nsectors);
-	fprintf(f, "\t:sc#%d:su#%" PRIu32 ":\\\n",
+	scripting_fprintf(f, "\t:sc#%d:su#%" PRIu32 ":\\\n",
 	    parts->l.d_secpercyl, lp[RAW_PART].p_offset+lp[RAW_PART].p_size);
-	fprintf(f, "\t:se#%d:\\\n", parts->l.d_secsize);
+	scripting_fprintf(f, "\t:se#%d:\\\n", parts->l.d_secsize);
 
 	for (i = 0; i < parts->l.d_npartitions; i++) {
-		fprintf(f, "\t:p%c#%" PRIu32 ":o%c#%" PRIu32
+		scripting_fprintf(f, "\t:p%c#%" PRIu32 ":o%c#%" PRIu32
 		    ":t%c=%s:", 'a'+i, (uint32_t)lp[i].p_size,
 		    'a'+i, (uint32_t)lp[i].p_offset, 'a'+i,
 		    getfslabelname(lp[i].p_fstype, 0));
 		if (lp[i].p_fstype == FS_BSDLFS ||
 		    lp[i].p_fstype == FS_BSDFFS)
-			fprintf (f, "b%c#%" PRIu32 ":f%c#%" PRIu32
+			scripting_fprintf (f, "b%c#%" PRIu32 ":f%c#%" PRIu32
 			    ":", 'a'+i,
 			    (uint32_t)(lp[i].p_fsize *
 			    lp[i].p_frag),
 			    'a'+i, (uint32_t)lp[i].p_fsize);
 	
 		if (i < parts->l.d_npartitions - 1)
-			fprintf(f, "\\\n");
+			scripting_fprintf(f, "\\\n");
 		else
-			fprintf(f, "\n");
+			scripting_fprintf(f, "\n");
 	}
+	scripting_fprintf(NULL, "EOF\n");
 
 	fclose(f);
 
