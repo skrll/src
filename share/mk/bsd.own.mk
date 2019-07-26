@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1146 2019/06/11 04:52:44 mrg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1149 2019/07/24 09:28:29 roy Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -1053,6 +1053,7 @@ MKSTATICPIE?=	no
 _MKVARS.yes= \
 	MKATF \
 	MKBINUTILS \
+	MKBSDTAR \
 	MKCOMPLEX MKCVS MKCXX \
 	MKDOC MKDTC \
 	MKDYNAMICROOT \
@@ -1141,7 +1142,9 @@ MKFIRMWARE.macppc=		yes
 MKFIRMWARE.sandpoint=		yes
 MKFIRMWARE.sparc64=		yes
 
-# Only install the radeon firmware on DRM-happy systems.
+# Only install the nouveau and radeon firmwares on DRM-happy systems.
+MKNOUVEAUFIRMWARE.x86_64=	yes
+MKNOUVEAUFIRMWARE.i386=		yes
 MKRADEONFIRMWARE.x86_64=	yes
 MKRADEONFIRMWARE.i386=		yes
 
@@ -1172,7 +1175,7 @@ MKLLVMRT.aarch64=	yes
 #
 _MKVARS.no= \
 	MKARZERO \
-	MKBSDGREP MKBSDTAR \
+	MKBSDGREP \
 	MKCATPAGES MKCOMPATTESTS MKCOMPATX11 MKCTF \
 	MKDEBUG MKDEBUGLIB MKDTRACE \
 	MKEXTSRC \
@@ -1181,7 +1184,7 @@ _MKVARS.no= \
 	MKKYUA \
 	MKLIBCXX MKLLD MKLLDB MKLLVM MKLLVMRT MKLINT \
 	MKMANZ MKMCLINKER \
-	MKNSD \
+	MKNOUVEAUFIRMWARE MKNSD \
 	MKOBJDIRS \
 	MKPCC MKPIGZGZIP \
 	MKRADEONFIRMWARE MKREPRO \
@@ -1493,6 +1496,7 @@ HAVE_XORG_GLAMOR?=	no
 	ico iceauth listres lndir \
 	luit xproxymanagementprotocol mkfontdir oclock proxymngr rgb \
 	rstart setxkbmap showfont smproxy transset twm viewres \
+	util-macros \
 	x11perf xauth xcalc xclipboard \
 	xclock xcmsdb xconsole xditview xdpyinfo xdriinfo xdm \
 	xfd xf86dga xfindproxy xfontsel xfwp xgamma xgc xhost xinit \

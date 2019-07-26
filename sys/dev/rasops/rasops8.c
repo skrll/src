@@ -1,4 +1,4 @@
-/* 	$NetBSD: rasops8.c,v 1.35 2018/12/04 09:27:59 mlelstv Exp $	*/
+/* 	$NetBSD: rasops8.c,v 1.42 2019/07/25 15:18:53 rin Exp $	*/
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rasops8.c,v 1.35 2018/12/04 09:27:59 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rasops8.c,v 1.42 2019/07/25 15:18:53 rin Exp $");
 
 #include "opt_rasops.h"
 
@@ -53,7 +53,7 @@ static void	rasops8_makestamp(struct rasops_info *ri, long);
 /*
  * 4x1 stamp for optimized character blitting
  */
-static int32_t	stamp[16];
+static uint32_t	stamp[16];
 static long	stamp_attr;
 static int	stamp_mutex;	/* XXX see note in README */
 #endif
@@ -67,7 +67,7 @@ static int	stamp_mutex;	/* XXX see note in README */
  */
 #define STAMP_SHIFT(fb,n)	((n*4-2) >= 0 ? (fb)>>(n*4-2):(fb)<<-(n*4-2))
 #define STAMP_MASK		(0xf << 2)
-#define STAMP_READ(o)		(*(int32_t *)((char *)stamp + (o)))
+#define STAMP_READ(o)		(*(uint32_t *)((char *)stamp + (o)))
 
 /*
  * Initialize a 'rasops_info' descriptor for this depth.
@@ -106,95 +106,14 @@ rasops8_init(struct rasops_info *ri)
 	}
 }
 
-/*
- * Put a single character.
- */
-static void
-rasops8_putchar(void *cookie, int row, int col, u_int uc, long attr)
-{
-	int width, height, cnt, fs, fb;
-	u_char *dp, *rp, *hp, *hrp, *fr, clr[2];
-	struct rasops_info *ri = (struct rasops_info *)cookie;
-	struct wsdisplay_font *font = PICK_FONT(ri, uc);
-
-	hp = hrp = NULL;
-
-	if (!CHAR_IN_FONT(uc, font))
-		return;
-
-#ifdef RASOPS_CLIPPING
-	/* Catches 'row < 0' case too */
-	if ((unsigned)row >= (unsigned)ri->ri_rows)
-		return;
-
-	if ((unsigned)col >= (unsigned)ri->ri_cols)
-		return;
-#endif
-	rp = ri->ri_bits + row * ri->ri_yscale + col * ri->ri_xscale;
-	if (ri->ri_hwbits)
-		hrp = ri->ri_hwbits + row * ri->ri_yscale + col *
-		    ri->ri_xscale;
-
-	height = font->fontheight;
-	width = font->fontwidth;
-	clr[0] = (u_char)ri->ri_devcmap[(attr >> 16) & 0xf];
-	clr[1] = (u_char)ri->ri_devcmap[(attr >> 24) & 0xf];
-
-	if (uc == ' ') {
-		u_char c = clr[0];
-
-		while (height--) {
-			memset(rp, c, width);
-			if (ri->ri_hwbits) {
-				memset(hrp, c, width);
-				hrp += ri->ri_stride;
-			}
-			rp += ri->ri_stride;
-		}
-	} else {
-		fr = WSFONT_GLYPH(uc, font);
-		fs = font->stride;
-
-		while (height--) {
-			dp = rp;
-			if (ri->ri_hwbits)
-				hp = hrp;
-			fb = fr[3] | (fr[2] << 8) | (fr[1] << 16) | (fr[0] << 24);
-			fr += fs;
-			rp += ri->ri_stride;
-			if (ri->ri_hwbits)
-				hrp += ri->ri_stride;
-
-			for (cnt = width; cnt; cnt--) {
-				*dp++ = clr[(fb >> 31) & 1];
-				if (ri->ri_hwbits)
-					*hp++ = clr[(fb >> 31) & 1];
-				fb <<= 1;
-			}
-		}
-	}
-
-	/* Do underline */
-	if ((attr & WSATTR_UNDERLINE) != 0) {
-		u_char c = clr[1];
-
-		rp -= (ri->ri_stride << 1);
-		if (ri->ri_hwbits)
-			hrp -= (ri->ri_stride << 1);
-
-		while (width--) {
-			*rp++ = c;
-			if (ri->ri_hwbits)
-				*hrp++ = c;
-		}
-	}
-}
+#define	RASOPS_DEPTH	8
+#include "rasops_putchar.h"
 
 static void
 rasops8_putchar_aa(void *cookie, int row, int col, u_int uc, long attr)
 {
 	int width, height;
-	u_char *rp, *hrp, *fr, bg, fg, pixel;
+	uint8_t *rp, *hrp, *fr, bg, fg, pixel;
 	struct rasops_info *ri = (struct rasops_info *)cookie;
 	struct wsdisplay_font *font = PICK_FONT(ri, uc);
 	int x, y, r, g, b, aval;
@@ -221,8 +140,8 @@ rasops8_putchar_aa(void *cookie, int row, int col, u_int uc, long attr)
 
 	height = font->fontheight;
 	width = font->fontwidth;
-	bg = (u_char)ri->ri_devcmap[(attr >> 16) & 0xf];
-	fg = (u_char)ri->ri_devcmap[(attr >> 24) & 0xf];
+	bg = (uint8_t)ri->ri_devcmap[(attr >> 16) & 0xf];
+	fg = (uint8_t)ri->ri_devcmap[(attr >> 24) & 0xf];
 
 	if (uc == ' ') {
 
@@ -235,7 +154,7 @@ rasops8_putchar_aa(void *cookie, int row, int col, u_int uc, long attr)
 			rp += ri->ri_stride;
 		}
 	} else {
-		fr = WSFONT_GLYPH(uc, font);
+		fr = FONT_GLYPH(uc, font, ri);
 		/*
 		 * we need the RGB colours here, get offsets into rasops_cmap
 		 */
@@ -299,7 +218,7 @@ rasops8_putchar_aa(void *cookie, int row, int col, u_int uc, long attr)
 static void
 rasops8_makestamp(struct rasops_info *ri, long attr)
 {
-	int32_t fg, bg;
+	uint32_t fg, bg;
 	int i;
 
 	fg = ri->ri_devcmap[(attr >> 24) & 0xf] & 0xff;
@@ -328,285 +247,16 @@ rasops8_makestamp(struct rasops_info *ri, long attr)
 	}
 }
 
-/*
- * Put a single character. This is for 8-pixel wide fonts.
- */
-static void
-rasops8_putchar8(void *cookie, int row, int col, u_int uc, long attr)
-{
-	struct rasops_info *ri = (struct rasops_info *)cookie;
-	struct wsdisplay_font *font = PICK_FONT(ri, uc);
-	int height, fs;
-	int32_t *rp, *hp;
-	u_char *fr;
+#define	RASOPS_WIDTH	8
+#include "rasops_putchar_width.h"
+#undef	RASOPS_WIDTH
 
-	/* Can't risk remaking the stamp if it's already in use */
-	if (stamp_mutex++) {
-		stamp_mutex--;
-		rasops8_putchar(cookie, row, col, uc, attr);
-		return;
-	}
+#define	RASOPS_WIDTH	12
+#include "rasops_putchar_width.h"
+#undef	RASOPS_WIDTH
 
-	hp = NULL;
+#define	RASOPS_WIDTH	16
+#include "rasops_putchar_width.h"
+#undef	RASOPS_WIDTH
 
-	if (!CHAR_IN_FONT(uc, font))
-		return;
-
-#ifdef RASOPS_CLIPPING
-	if ((unsigned)row >= (unsigned)ri->ri_rows) {
-		stamp_mutex--;
-		return;
-	}
-
-	if ((unsigned)col >= (unsigned)ri->ri_cols) {
-		stamp_mutex--;
-		return;
-	}
 #endif
-
-	/* Recompute stamp? */
-	if (attr != stamp_attr)
-		rasops8_makestamp(ri, attr);
-
-	rp = (int32_t *)(ri->ri_bits + row*ri->ri_yscale + col*ri->ri_xscale);
-	if (ri->ri_hwbits)
-		hp = (int32_t *)(ri->ri_hwbits + row*ri->ri_yscale +
-		    col*ri->ri_xscale);
-	height = font->fontheight;
-
-	if (uc == ' ') {
-		while (height--) {
-			rp[0] = rp[1] = stamp[0];
-			DELTA(rp, ri->ri_stride, int32_t *);
-			if (ri->ri_hwbits) {
-				hp[0] = stamp[0];
-				hp[1] = stamp[0];
-				DELTA(hp, ri->ri_stride, int32_t *);
-			}
-		}
-	} else {
-		fr = WSFONT_GLYPH(uc, font);
-		fs = font->stride;
-
-		while (height--) {
-			rp[0] = STAMP_READ(STAMP_SHIFT(fr[0], 1) & STAMP_MASK);
-			rp[1] = STAMP_READ(STAMP_SHIFT(fr[0], 0) & STAMP_MASK);
-			if (ri->ri_hwbits) {
-				hp[0] = STAMP_READ(STAMP_SHIFT(fr[0], 1) &
-				    STAMP_MASK);
-				hp[1] = STAMP_READ(STAMP_SHIFT(fr[0], 0) &
-				    STAMP_MASK);
-			}
-
-			fr += fs;
-			DELTA(rp, ri->ri_stride, int32_t *);
-			if (ri->ri_hwbits)
-				DELTA(hp, ri->ri_stride, int32_t *);
-		}
-	}
-
-	/* Do underline */
-	if ((attr & WSATTR_UNDERLINE) != 0) {
-		DELTA(rp, -(ri->ri_stride << 1), int32_t *);
-		rp[0] = rp[1] = stamp[15];
-		if (ri->ri_hwbits) {
-			DELTA(hp, -(ri->ri_stride << 1), int32_t *);
-			hp[0] = stamp[15];
-			hp[1] = stamp[15];
-		}
-	}
-
-	stamp_mutex--;
-}
-
-/*
- * Put a single character. This is for 12-pixel wide fonts.
- */
-static void
-rasops8_putchar12(void *cookie, int row, int col, u_int uc, long attr)
-{
-	struct rasops_info *ri = (struct rasops_info *)cookie;
-	struct wsdisplay_font *font = PICK_FONT(ri, uc);
-	int height, fs;
-	int32_t *rp,  *hrp;
-	u_char *fr;
-
-	/* Can't risk remaking the stamp if it's already in use */
-	if (stamp_mutex++) {
-		stamp_mutex--;
-		rasops8_putchar(cookie, row, col, uc, attr);
-		return;
-	}
-
-	hrp = NULL;
-
-	if (!CHAR_IN_FONT(uc, font))
-	    return;
-
-#ifdef RASOPS_CLIPPING
-	if ((unsigned)row >= (unsigned)ri->ri_rows) {
-		stamp_mutex--;
-		return;
-	}
-
-	if ((unsigned)col >= (unsigned)ri->ri_cols) {
-		stamp_mutex--;
-		return;
-	}
-#endif
-
-	/* Recompute stamp? */
-	if (attr != stamp_attr)
-		rasops8_makestamp(ri, attr);
-
-	rp = (int32_t *)(ri->ri_bits + row*ri->ri_yscale + col*ri->ri_xscale);
-	if (ri->ri_hwbits)
-		hrp = (int32_t *)(ri->ri_hwbits + row*ri->ri_yscale +
-		    col*ri->ri_xscale);
-	height = font->fontheight;
-
-	if (uc == ' ') {
-		while (height--) {
-			int32_t c = stamp[0];
-
-			rp[0] = rp[1] = rp[2] = c;
-			DELTA(rp, ri->ri_stride, int32_t *);
-			if (ri->ri_hwbits) {
-				hrp[0] = c;
-				hrp[1] = c;
-				hrp[2] = c;
-				DELTA(hrp, ri->ri_stride, int32_t *);
-			}
-		}
-	} else {
-		fr = WSFONT_GLYPH(uc, font);
-		fs = font->stride;
-
-		while (height--) {
-			rp[0] = STAMP_READ(STAMP_SHIFT(fr[0], 1) & STAMP_MASK);
-			rp[1] = STAMP_READ(STAMP_SHIFT(fr[0], 0) & STAMP_MASK);
-			rp[2] = STAMP_READ(STAMP_SHIFT(fr[1], 1) & STAMP_MASK);
-			if (ri->ri_hwbits) {
-				hrp[0] = STAMP_READ(STAMP_SHIFT(fr[0], 1) & STAMP_MASK);
-				hrp[1] = STAMP_READ(STAMP_SHIFT(fr[0], 0) & STAMP_MASK);
-				hrp[2] = STAMP_READ(STAMP_SHIFT(fr[1], 1) & STAMP_MASK);
-			}
-
-			fr += fs;
-			DELTA(rp, ri->ri_stride, int32_t *);
-			if (ri->ri_hwbits)
-				DELTA(hrp, ri->ri_stride, int32_t *);
-		}
-	}
-
-	/* Do underline */
-	if ((attr & WSATTR_UNDERLINE) != 0) {
-		DELTA(rp, -(ri->ri_stride << 1), int32_t *);
-		rp[0] = rp[1] = rp[2] = stamp[15];
-		if (ri->ri_hwbits) {
-			DELTA(hrp, -(ri->ri_stride << 1), int32_t *);
-			hrp[0] = stamp[15];
-			hrp[1] = stamp[15];
-			hrp[2] = stamp[15];
-		}
-	}
-
-	stamp_mutex--;
-}
-
-/*
- * Put a single character. This is for 16-pixel wide fonts.
- */
-static void
-rasops8_putchar16(void *cookie, int row, int col, u_int uc, long attr)
-{
-	struct rasops_info *ri = (struct rasops_info *)cookie;
-	struct wsdisplay_font *font = PICK_FONT(ri, uc);
-	int height, fs;
-	int32_t *rp, *hrp;
-	u_char *fr;
-
-	/* Can't risk remaking the stamp if it's already in use */
-	if (stamp_mutex++) {
-		stamp_mutex--;
-		rasops8_putchar(cookie, row, col, uc, attr);
-		return;
-	}
-
-	hrp = NULL;
-
-	if (!CHAR_IN_FONT(uc, font))
-		return;
-
-#ifdef RASOPS_CLIPPING
-	if ((unsigned)row >= (unsigned)ri->ri_rows) {
-		stamp_mutex--;
-		return;
-	}
-
-	if ((unsigned)col >= (unsigned)ri->ri_cols) {
-		stamp_mutex--;
-		return;
-	}
-#endif
-
-	/* Recompute stamp? */
-	if (attr != stamp_attr)
-		rasops8_makestamp(ri, attr);
-
-	rp = (int32_t *)(ri->ri_bits + row*ri->ri_yscale + col*ri->ri_xscale);
-	if (ri->ri_hwbits)
-		hrp = (int32_t *)(ri->ri_hwbits + row*ri->ri_yscale +
-		    col*ri->ri_xscale);
-
-	height = font->fontheight;
-
-	if (uc == ' ') {
-		while (height--) {
-			rp[0] = rp[1] = rp[2] = rp[3] = stamp[0];
-			if (ri->ri_hwbits) {
-				hrp[0] = stamp[0];
-				hrp[1] = stamp[0];
-				hrp[2] = stamp[0];
-				hrp[3] = stamp[0];
-			}
-		}
-	} else {
-		fr = WSFONT_GLYPH(uc, font);
-		fs = font->stride;
-
-		while (height--) {
-			rp[0] = STAMP_READ(STAMP_SHIFT(fr[0], 1) & STAMP_MASK);
-			rp[1] = STAMP_READ(STAMP_SHIFT(fr[0], 0) & STAMP_MASK);
-			rp[2] = STAMP_READ(STAMP_SHIFT(fr[1], 1) & STAMP_MASK);
-			rp[3] = STAMP_READ(STAMP_SHIFT(fr[1], 0) & STAMP_MASK);
-			if (ri->ri_hwbits) {
-				hrp[0] = STAMP_READ(STAMP_SHIFT(fr[0], 1) & STAMP_MASK);
-				hrp[1] = STAMP_READ(STAMP_SHIFT(fr[0], 0) & STAMP_MASK);
-				hrp[2] = STAMP_READ(STAMP_SHIFT(fr[1], 1) & STAMP_MASK);
-				hrp[3] = STAMP_READ(STAMP_SHIFT(fr[1], 0) & STAMP_MASK);
-			}
-
-			fr += fs;
-			DELTA(rp, ri->ri_stride, int32_t *);
-			if (ri->ri_hwbits)
-				DELTA(hrp, ri->ri_stride, int32_t *);
-		}
-	}
-
-	/* Do underline */
-	if ((attr & WSATTR_UNDERLINE) != 0) {
-		DELTA(rp, -(ri->ri_stride << 1), int32_t *);
-		rp[0] = rp[1] = rp[2] = rp[3] = stamp[15];
-		if (ri->ri_hwbits) {
-			DELTA(hrp, -(ri->ri_stride << 1), int32_t *);
-			hrp[0] = stamp[15];
-			hrp[1] = stamp[15];
-			hrp[2] = stamp[15];
-			hrp[3] = stamp[15];
-		}
-	}
-
-	stamp_mutex--;
-}
-#endif /* !RASOPS_SMALL */

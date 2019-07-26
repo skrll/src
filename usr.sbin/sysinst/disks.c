@@ -1,4 +1,4 @@
-/*	$NetBSD: disks.c,v 1.38 2019/07/14 11:25:10 martin Exp $ */
+/*	$NetBSD: disks.c,v 1.44 2019/07/25 13:11:15 martin Exp $ */
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -518,7 +518,7 @@ bool
 is_partitionable_device(const char *dev)
 {
 	static const char *non_partitionable_devs[] = {
-		"dk",	/* this is alreay a partioned slice */
+		"dk",	/* this is already a partitioned slice */
 		NULL
 	};
 
@@ -761,11 +761,32 @@ convert_scheme(struct pm_devs *p, bool is_boot_drive, const char **err_msg)
 	return true;
 }
 
+static struct pm_devs *
+dummy_whole_system_pm(void)
+{
+	static struct pm_devs whole_system = {
+		.diskdev = "/",
+		.no_mbr = true,
+		.no_part = true,
+		.cur_system = true,
+	};
+	static bool init = false;
+
+	if (!init) {
+		strlcpy(whole_system.diskdev_descr,
+		    msg_string(MSG_running_system),
+		    sizeof whole_system.diskdev_descr);
+	}
+
+	return &whole_system;
+}
+
 int
-find_disks(const char *doingwhat)
+find_disks(const char *doingwhat, bool allow_cur_system)
 {
 	struct disk_desc disks[MAX_DISKS];
-	menu_ent dsk_menu[__arraycount(disks) + 1]; // + 1 for extended partitioning entry
+	/* need two more menu entries: current system + extended partitioning */
+	menu_ent dsk_menu[__arraycount(disks) + 2];
 	struct disk_desc *disk;
 	int i = 0, skipped = 0;
 	int already_found, numdisks, selected_disk = -1;
@@ -790,16 +811,23 @@ find_disks(const char *doingwhat)
 	 *                  all disks
 	 */
 	if (partman_go <= 0) {
-		if (numdisks == 0) {
+		if (numdisks == 0 && !allow_cur_system) {
 			/* No disks found! */
 			hit_enter_to_continue(MSG_nodisk, NULL);
 			/*endwin();*/
 			return -1;
 		} else {
-			/* One or more disks found! */
-			for (i = 0; i < numdisks; i++) {
+			/* One or more disks found or current system allowed */
+			i = 0;
+			if (allow_cur_system) {
+				dsk_menu[i].opt_name = MSG_running_system;
+				dsk_menu[i].opt_flags = OPT_EXIT;
+				dsk_menu[i].opt_action = set_menu_select;
+				i++;
+			}
+			for (; i < numdisks+allow_cur_system; i++) {
 				dsk_menu[i].opt_name =
-				    disks[i].dd_descr;
+				    disks[i-allow_cur_system].dd_descr;
 				dsk_menu[i].opt_flags = OPT_EXIT;
 				dsk_menu[i].opt_action = set_menu_select;
 			}
@@ -807,10 +835,10 @@ find_disks(const char *doingwhat)
 				dsk_menu[i].opt_name = MSG_partman;
 				dsk_menu[i].opt_flags = OPT_EXIT;
 				dsk_menu[i].opt_action = set_menu_select;
+				i++;
 			}
 			menu_no = new_menu(MSG_Available_disks,
-				dsk_menu, numdisks
-				 + ((partman_go<0)?1:0), -1,
+				dsk_menu, i, -1,
 				 4, 0, 0, MC_SCROLL,
 				NULL, NULL, NULL, NULL, NULL);
 			if (menu_no == -1)
@@ -818,6 +846,14 @@ find_disks(const char *doingwhat)
 			msg_fmt_display(MSG_ask_disk, "%s", doingwhat);
 			process_menu(menu_no, &selected_disk);
 			free_menu(menu_no);
+			if (allow_cur_system) {
+				if (selected_disk == 0) {
+					pm = dummy_whole_system_pm();
+					return 1;
+				} else {
+					selected_disk--;
+				}
+			}
 		}
 		if (partman_go < 0 && selected_disk == numdisks) {
 			partman_go = 1;
@@ -837,15 +873,27 @@ find_disks(const char *doingwhat)
 			already_found = 0;
 			SLIST_FOREACH(pm_i, &pm_head, l) {
 				pm_last = pm_i;
-				if (!already_found &&
-				    strcmp(pm_i->diskdev, disk->dd_name) == 0) {
-					pm_i->found = 1;
+				if (strcmp(pm_i->diskdev, disk->dd_name) == 0) {
+					already_found = 1;
 					break;
 				}
 			}
-			if (pm_i != NULL && pm_i->found)
-				/* We already added this device, skipping */
+			if (pm_i != NULL && already_found) {
+				/*
+				 * We already added this device, but
+				 * partitions might have changed
+				 */
+				if (!pm_i->found) {
+					pm_i->found = true;
+					if (pm_i->parts == NULL) {
+						pm_i->parts =
+						    partitions_read_disk(
+						    pm_i->diskdev,
+						    disk->dd_totsec);
+					}
+				}
 				continue;
+			}
 		}
 		pm = pm_new;
 		pm->found = 1;
@@ -1020,6 +1068,9 @@ make_filesystems(struct install_partition_desc *install)
 	struct disk_partitions *parts;
 	const char *mnt_opts = NULL, *fsname = NULL;
 
+	if (pm->cur_system)
+		return 1;
+
 	if (pm->no_part) {
 		/* check if this target device already has a ffs */
 		snprintf(rdev, sizeof rdev, _PATH_DEV "/r%s", pm->diskdev);
@@ -1170,6 +1221,9 @@ make_fstab(struct install_partition_desc *install)
 	const char *dump_dev = NULL;
 	const char *dev;
 	char dev_buf[PATH_MAX], swap_dev[PATH_MAX];
+
+	if (pm->cur_system)
+		return 1;
 
 	swap_dev[0] = 0;
 
@@ -1514,6 +1568,10 @@ mount_disks(struct install_partition_desc *install)
 	int   fstabsize;
 	int   error;
 	char devdev[PATH_MAX];
+	size_t i;
+
+	if (install->cur_system)
+		return 0;
 
 	static struct lookfor fstabbuf[] = {
 		{"/dev/", "/dev/%s %s ffs %s", "c", NULL, 0, 0, foundffs},
@@ -1530,10 +1588,18 @@ mount_disks(struct install_partition_desc *install)
 		/* avoid needing to call target_already_root() again */
 		targetroot_mnt[0] = 0;
 	else {
-		assert(install != NULL && install->num > 0);
-		assert(strcmp(install->infos[0].mount, "/") == 0);
-		if (!install->infos[0].parts->pscheme->get_part_device(
-		    install->infos[0].parts, install->infos[0].cur_part_id,
+		for (i = 0; i < install->num; i++) {
+			if (is_root_part_mount(install->infos[i].mount))
+				break;
+		}
+
+		if (i >= install->num) {
+			hit_enter_to_continue(MSG_noroot, NULL);
+			return -1;
+		}
+
+		if (!install->infos[i].parts->pscheme->get_part_device(
+		    install->infos[i].parts, install->infos[i].cur_part_id,
 		    devdev, sizeof devdev, NULL, plain_name, true))
 			return -1;
 		error = mount_root(devdev, install);

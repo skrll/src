@@ -1,4 +1,4 @@
-/*	$NetBSD: udsir.c,v 1.7 2018/09/03 16:29:34 riastradh Exp $	*/
+/*	$NetBSD: udsir.c,v 1.8 2019/07/22 06:24:57 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: udsir.c,v 1.7 2018/09/03 16:29:34 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udsir.c,v 1.8 2019/07/22 06:24:57 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>

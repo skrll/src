@@ -1,4 +1,4 @@
-/*	$NetBSD: mbr.c,v 1.16 2019/07/12 18:23:06 martin Exp $ */
+/*	$NetBSD: mbr.c,v 1.18 2019/07/25 18:55:40 martin Exp $ */
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -223,13 +223,20 @@ dump_mbr(mbr_info_t *m, const char *label)
 #endif
 
 static void
+free_last_mounted(mbr_info_t *m)
+{
+	size_t i;
+
+	for (i = 0; i < MBR_PART_COUNT; i++)
+		free(__UNCONST(m->last_mounted[i]));
+}
+
+static void
 free_mbr_info(mbr_info_t *m)
 {
 	if (m == NULL)
 		return;
-
-	for (int i = 0; i < MBR_PART_COUNT; i++)
-		free(__UNCONST(m->last_mounted[i]));
+	free_last_mounted(m);
 	free(m);
 }
 
@@ -439,19 +446,6 @@ validate_and_set_names(mbr_info_t *mbri, const struct mbr_bootsel *src,
 }
 #endif
 
-static void
-free_mbr(mbr_info_t *mbri)
-{
-	mbr_info_t *m = mbri->extended, *next;
-
-	while (m != NULL) {
-		next = m->extended;
-		free_mbr_info(m);
-		m = next;
-	}
-	free_mbr_info(mbri);
-}
-
 static int
 valid_mbr(struct mbr_sector *mbrs)
 {
@@ -570,7 +564,7 @@ read_mbr(const char *disk, mbr_info_t *mbri)
 			ext_base = next_ext;
 			next_ext = 0;
 		}
-		ext = calloc(sizeof *ext, 1);
+		ext = calloc(1, sizeof *ext);
 		if (!ext)
 			break;
 		mbrs = &ext->mbr;
@@ -829,7 +823,7 @@ mbr_create_new(const char *disk, daddr_t start, daddr_t len, daddr_t total,
 	if (start != 0)
 		return NULL;
 
-	parts = calloc(sizeof(*parts), 1);
+	parts = calloc(1, sizeof(*parts));
 	if (!parts)
 		return NULL;
 
@@ -892,7 +886,7 @@ mbr_read_from_disk(const char *disk, daddr_t start, daddr_t len)
 	if (start != 0)
 		return NULL;
 
-	parts = calloc(sizeof(*parts), 1);
+	parts = calloc(1, sizeof(*parts));
 	if (!parts)
 		return NULL;
 
@@ -2390,7 +2384,8 @@ mbr_free(struct disk_partitions *arg)
 	if (parts->dlabel)
 		parts->dlabel->pscheme->free(parts->dlabel);
 
-	free_mbr(&parts->mbr);
+	free_mbr_info(parts->mbr.extended);
+	free_last_mounted(&parts->mbr);
 	free(parts);
 }
 

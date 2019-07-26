@@ -1,4 +1,4 @@
-/*$NetBSD: ixv.c,v 1.120 2019/07/17 03:26:24 msaitoh Exp $*/
+/*$NetBSD: ixv.c,v 1.124 2019/07/26 03:27:24 msaitoh Exp $*/
 
 /******************************************************************************
 
@@ -826,7 +826,7 @@ ixv_enable_queue(struct adapter *adapter, u32 vector)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct ix_queue *que = &adapter->queues[vector];
-	u32		queue = 1 << vector;
+	u32		queue = 1UL << vector;
 	u32		mask;
 
 	mutex_enter(&que->dc_mtx);
@@ -847,7 +847,7 @@ ixv_disable_queue(struct adapter *adapter, u32 vector)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct ix_queue *que = &adapter->queues[vector];
-	u64		queue = (u64)(1 << vector);
+	u32		queue = 1UL << vector;
 	u32		mask;
 
 	mutex_enter(&que->dc_mtx);
@@ -1993,7 +1993,7 @@ ixv_setup_vlan_support(struct adapter *adapter)
 
 		idx = vlanidp->vid / 32;
 		KASSERT(idx < IXGBE_VFTA_SIZE);
-		adapter->shadow_vfta[idx] |= 1 << vlanidp->vid % 32;
+		adapter->shadow_vfta[idx] |= (u32)1 << (vlanidp->vid % 32);
 	}
 	mutex_exit(ec->ec_lock);
 	
@@ -2012,7 +2012,7 @@ ixv_setup_vlan_support(struct adapter *adapter)
 		 */
 		for (int j = 0; j < 32; j++) {
 			retry = 0;
-			if ((vfta & (1 << j)) == 0)
+			if ((vfta & ((u32)1 << j)) == 0)
 				continue;
 			vid = (i * 32) + j;
 			
@@ -2074,7 +2074,7 @@ ixv_register_vlan(void *arg, struct ifnet *ifp, u16 vtag)
 	IXGBE_CORE_LOCK(adapter);
 	index = (vtag >> 5) & 0x7F;
 	bit = vtag & 0x1F;
-	adapter->shadow_vfta[index] |= (1 << bit);
+	adapter->shadow_vfta[index] |= ((u32)1 << bit);
 	error = hw->mac.ops.set_vfta(hw, vtag, 0, true, false);
 	IXGBE_CORE_UNLOCK(adapter);
 
@@ -2109,7 +2109,7 @@ ixv_unregister_vlan(void *arg, struct ifnet *ifp, u16 vtag)
 	IXGBE_CORE_LOCK(adapter);
 	index = (vtag >> 5) & 0x7F;
 	bit = vtag & 0x1F;
-	adapter->shadow_vfta[index] &= ~(1 << bit);
+	adapter->shadow_vfta[index] &= ~((u32)1 << bit);
 	error = hw->mac.ops.set_vfta(hw, vtag, 0, false, false);
 	IXGBE_CORE_UNLOCK(adapter);
 
@@ -2190,8 +2190,8 @@ ixv_set_ivar(struct adapter *adapter, u8 entry, u8 vector, s8 type)
 	} else {	  /* RX/TX IVARS */
 		index = (16 * (entry & 1)) + (8 * type);
 		ivar = IXGBE_READ_REG(hw, IXGBE_VTIVAR(entry >> 1));
-		ivar &= ~(0xFF << index);
-		ivar |= (vector << index);
+		ivar &= ~(0xffUL << index);
+		ivar |= ((u32)vector << index);
 		IXGBE_WRITE_REG(hw, IXGBE_VTIVAR(entry >> 1), ivar);
 	}
 } /* ixv_set_ivar */

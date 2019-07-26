@@ -1,4 +1,4 @@
-/*	$NetBSD: nvpair.c,v 1.6 2019/02/15 22:49:24 rmind Exp $	*/
+/*	$NetBSD: nvpair.c,v 1.11 2019/07/24 14:25:56 martin Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
@@ -36,7 +36,7 @@
 #ifdef __FreeBSD__
 __FBSDID("$FreeBSD: head/sys/contrib/libnv/nvpair.c 335382 2018-06-19 18:43:02Z lwhsu $");
 #else
-__RCSID("$NetBSD: nvpair.c,v 1.6 2019/02/15 22:49:24 rmind Exp $");
+__RCSID("$NetBSD: nvpair.c,v 1.11 2019/07/24 14:25:56 martin Exp $");
 #endif
 
 #include <sys/param.h>
@@ -49,6 +49,7 @@ __RCSID("$NetBSD: nvpair.c,v 1.6 2019/02/15 22:49:24 rmind Exp $");
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/systm.h>
+#include <sys/kmem.h>
 
 #ifdef __FreeBSD__
 #include <machine/stdarg.h>
@@ -1191,7 +1192,7 @@ nvpair_name(const nvpair_t *nvp)
 	return (nvp->nvp_name);
 }
 
-#if !defined(_KERNEL) && !defined(_STANDALONE) && !defined(__NetBSD__)
+#if !defined(_STANDALONE)
 nvpair_t *
 nvpair_create_stringf(const char *name, const char *valuefmt, ...)
 {
@@ -1212,11 +1213,11 @@ nvpair_create_stringv(const char *name, const char *valuefmt, va_list valueap)
 	char *str;
 	int len;
 
-	len = nv_vasprintf(&str, valuefmt, valueap);
+	len = vasprintf(&str, valuefmt, valueap);
 	if (len < 0)
 		return (NULL);
 	nvp = nvpair_create_string(name, str);
-	nv_free(str);
+	nv_kmem_free(str, len+1);
 	return (nvp);
 }
 #endif
