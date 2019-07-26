@@ -197,4 +197,5 @@ const struct arm_platform imx6_platform = {
 };
 
 ARM_PLATFORM(imx6, "fsl,imx6q", &imx6_platform);
+ARM_PLATFORM(imx6dl, "fsl,imx6dl", &imx6_platform);
 
