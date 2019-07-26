@@ -28,6 +28,7 @@
 __KERNEL_RCSID(0, "$NetBSD: imx6_platform.c,v 1.3 2019/07/26 06:59:48 skrll Exp $");
 
 #include "arml2cc.h"
+#include "opt_console.h"
 #include "opt_fdt.h"
 #include "opt_multiprocessor.h"
 #include "opt_soc.h"
@@ -57,7 +58,7 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_platform.c,v 1.3 2019/07/26 06:59:48 skrll Exp 
 #include <arm/imx/imx6_srcreg.h>
 #include <arm/imx/imxuartreg.h>
 
-#include <arm/imx/fdt/imx6_platform.h>
+#include <arm/nxp/imx6_platform.h>
 
 #include <libfdt.h>
 

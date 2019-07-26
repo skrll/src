@@ -28,6 +28,7 @@
 __KERNEL_RCSID(0, "$NetBSD: imxusb.c,v 1.15 2019/07/26 06:57:54 skrll Exp $");
 
 #include "locators.h"
+#include "opt_imx.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>

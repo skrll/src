@@ -32,6 +32,7 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: imx6_ccm.c,v 1.12 2019/07/26 06:57:54 skrll Exp $");
 
+#include "opt_imx.h"
 #include "opt_cputypes.h"
 
 #include "locators.h"

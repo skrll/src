@@ -7,6 +7,17 @@
 include	"arch/evbarm/conf/std.nitrogen6"
 include	"arch/evbarm/conf/GENERIC.common"
 
+#
+# FDT files supported by this kernel - add to DTSSUBDIR and DTS as
+# appropriate
+#
+makeoptions	DTSARCH="arm"
+makeoptions	DTSGNUARCH="arm"
+#makeoptions	DTSSUBDIR="allwinner broadcom nvidia rockchip socfpga"
+makeoptions	DTS="
+	imx6dl-hummingboard.dts
+"
+
 # Board Type
 options 	EVBARM_BOARDTYPE=hummingboard
 #options 	EVBARM_BOARDTYPE=hummingboard_edge
@@ -18,10 +29,11 @@ options 	CPU_CORTEXA9
 options 	IMX6
 options 	MULTIPROCESSOR
 
+
 # Console options.    also need IMXUARTCONSOLE
 options 	CONSDEVNAME="\"imxuart\"",CONADDR=0x02020000
-#options 	VERBOSE_INIT_ARM
-#options 	EARLYCONS=nitrogen6	# CONADDR already defined
+options 	VERBOSE_INIT_ARM
+options 	EARLYCONS=nitrogen6	# CONADDR already defined
 options 	IMXUARTCONSOLE
 options 	CONSPEED=115200	# Console speed
 
