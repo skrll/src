@@ -57,7 +57,7 @@
 #define	TMR_CTR			0x0004	// Timer Counter Register
 #define	TMR_CTL			0x0008	// Timer Control Register
 #define	TMR_INT			0x000C	// Timer Interrupt Status
-#define	TMR_RST			0x0010  // Timer Reset Status (WDOG only)
+#define	TMR_WDOGRST		0x0010  // Timer Reset Status (WDOG only)
 #define	TMR_WDOGDIS		0x0014  // [WO] Timer Disable (WDOG only)
 
 #define	TMR_CTL_PRESCALER	__BITS(15,8)
