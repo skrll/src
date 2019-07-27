@@ -103,7 +103,6 @@ __KERNEL_RCSID(0, "$Id: imx31_ahb.c,v 1.6 2012/10/27 17:17:39 chs Exp $");
 
 #include "locators.h"
 #include "avic.h"
-#include "imxgpio.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>

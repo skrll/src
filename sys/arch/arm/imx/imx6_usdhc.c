@@ -30,8 +30,6 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: imx6_usdhc.c,v 1.8 2019/07/24 12:33:18 hkenken Exp $");
 
-#include "imxgpio.h"
-
 #define	_INTR_PRIVATE
 
 #include <sys/param.h>
