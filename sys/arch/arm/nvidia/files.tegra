@@ -83,7 +83,7 @@ file	arch/arm/nvidia/tegra210_xusbpad.c	tegra210_xusbpad
 
 # UART
 attach	com at fdt with tegra_com
-file	arch/arm/nvidia/tegra_com.c		tegra_com needs-flag
+file	arch/arm/nvidia/tegra_com.c		tegra_com
 
 # I2C
 device	tegrai2c: i2cbus, i2cexec
