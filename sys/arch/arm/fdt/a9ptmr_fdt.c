@@ -35,19 +35,11 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/param.h>
 #include <sys/bus.h>
 
-#if 0
 #include <sys/device.h>
-#include <sys/kernel.h>
 #include <sys/intr.h>
-#include <sys/systm.h>
-
-#include <arm/cortex/a9tmr_intr.h>
-#endif
 
 #include <arm/cortex/mpcore_var.h>
 #include <arm/cortex/a9ptmr_var.h>
-#if 0
-#endif
 
 #include <dev/fdt/fdtvar.h>
 #include <arm/fdt/arm_fdtvar.h>
@@ -55,8 +47,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 static int	a9ptmr_fdt_match(device_t, cfdata_t, void *);
 static void	a9ptmr_fdt_attach(device_t, device_t, void *);
 
-//static void	a9ptmr_fdt_cpu_hatch(void *, struct cpu_info *);
-//static void	a9ptmr_fdt_speed_changed(device_t);
+static void	a9ptmr_fdt_cpu_hatch(void *, struct cpu_info *);
 
 struct a9ptmr_fdt_softc {
 	device_t	sc_dev;
@@ -139,6 +130,12 @@ a9ptmr_fdt_attach(device_t parent, device_t self, void *aux)
 
 	config_found(self, &mpcaa, NULL);
 
+	arm_fdt_cpu_hatch_register(self, a9ptmr_fdt_cpu_hatch);
 	arm_fdt_timer_register(a9ptmr_cpu_initclocks);
 }
 
+static void
+a9ptmr_fdt_cpu_hatch(void *priv, struct cpu_info *ci)
+{
+	a9ptmr_init_cpu_clock(ci);
+}

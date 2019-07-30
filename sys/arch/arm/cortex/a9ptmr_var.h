@@ -35,6 +35,9 @@
 
 void	a9ptmr_cpu_initclocks(void);
 
+struct cpu_info;
+void	a9ptmr_init_cpu_clock(struct cpu_info *);
+
 int	a9ptmr_intr(void *);
 void	a9ptmr_delay(unsigned int n);
 #endif

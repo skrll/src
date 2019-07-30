@@ -50,10 +50,7 @@ static struct a9ptmr_softc *a9ptmr_sc;
 static int a9ptmr_match(device_t, cfdata_t, void *);
 static void a9ptmr_attach(device_t, device_t, void *);
 
-//static u_int a9ptmr_get_timecount(struct timecounter *);
-
 struct a9ptmr_softc {
-//	struct sysmon_wdog sc_smw;
 	device_t sc_dev;
 	bus_space_tag_t sc_memt;
 	bus_space_handle_t sc_memh;
@@ -160,21 +157,10 @@ a9ptmr_attach(device_t parent, device_t self, void *aux)
 	sc->sc_freq /= sc->sc_prescaler;
 #endif
 
-	// Disable Private timer and acknowledge any event
-	a9ptmr_write(sc, TMR_CTL, 0);
-	a9ptmr_write(sc, TMR_INT, TMR_INT_EVENT);
-
-
 	sc->sc_ctl = TMR_CTL_INT_ENABLE | TMR_CTL_AUTO_RELOAD | TMR_CTL_ENABLE;
 
         sc->sc_load = (sc->sc_freq / hz) - 1;
-
-	// Autoload value?
-	//
-
-	a9ptmr_write(sc, TMR_LOAD, sc->sc_load);
-
-	a9ptmr_write(sc, TMR_CTL, sc->sc_ctl);
+	a9ptmr_init_cpu_clock(curcpu());
 
 	aprint_naive("\n");
 	if (CPU_ID_CORTEX_A5_P(curcpu()->ci_arm_cpuid)) {
@@ -238,6 +224,25 @@ a9ptmr_cpu_initclocks(void)
 
 }
 
+void
+a9ptmr_init_cpu_clock(struct cpu_info *ci)
+{
+	struct a9ptmr_softc * const sc = a9ptmr_sc;
+
+	/* Disable Private timer and acknowledge any event */
+	a9ptmr_write(sc, TMR_CTL, 0);
+	a9ptmr_write(sc, TMR_INT, TMR_INT_EVENT);
+
+	/*
+	 * Provide the auto load value for the decrementing counter and
+	 * start it.
+	 */
+	a9ptmr_write(sc, TMR_LOAD, sc->sc_load);
+	a9ptmr_write(sc, TMR_CTL, sc->sc_ctl);
+
+}
+
+
 
 /*
  * a9ptmr_intr:
@@ -255,8 +260,3 @@ a9ptmr_intr(void *arg)
 
 	return 1;
 }
-
-
-
-
-
