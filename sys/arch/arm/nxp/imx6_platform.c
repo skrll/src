@@ -191,7 +191,7 @@ const struct arm_platform imx6_platform = {
 	.ap_init_attach_args = imx_platform_init_attach_args,
 	.ap_device_register = imx_platform_device_register,
 	.ap_reset = imx6_platform_reset,
-	.ap_delay = a9tmr_delay,
+	.ap_delay = a9ptmr_delay,
 	.ap_uart_freq = imx_platform_uart_freq,
 	.ap_mpstart = imx_platform_mpstart,
 };

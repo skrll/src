@@ -129,6 +129,9 @@ imxccm_attach(device_t parent, device_t self, void *aux)
 
 	imxccm_attach_common(self);
 
+	aprint_naive("\n");
+	aprint_normal(": Clock Control Module\n");
+
 	imx6_clk_fixed_from_fdt("ckil");
 	imx6_clk_fixed_from_fdt("ckih");
 	imx6_clk_fixed_from_fdt("osc");

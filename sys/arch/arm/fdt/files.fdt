@@ -17,6 +17,14 @@ device	a9tmr: mpcorebus
 attach	a9tmr at fdt with a9tmr_fdt
 file	arch/arm/fdt/a9tmr_fdt.c		a9tmr_fdt
 
+device	a9ptmr: mpcorebus
+attach	a9ptmr at fdt with a9ptmr_fdt
+file	arch/arm/fdt/a9ptmr_fdt.c		a9ptmr_fdt
+
+device	a9wdt: mpcorebus
+attach	a9wdt at fdt with a9wdt_fdt
+file	arch/arm/fdt/a9wdt_fdt.c		a9wdt_fdt
+
 device	gtmr: mpcorebus
 attach	gtmr at fdt with gtmr_fdt
 file	arch/arm/fdt/gtmr_fdt.c			gtmr_fdt

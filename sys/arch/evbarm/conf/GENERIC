@@ -214,7 +214,7 @@ options 	DEBUG
 
 options 	MSGBUFSIZE=32768
 
-#options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
+options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 
 # EARLYCONS is required for early init messages from VERBOSE_INIT_ARM.
 
@@ -233,7 +233,7 @@ options 	MSGBUFSIZE=32768
 #options 	EARLYCONS=bcm2837, CONSADDR=0x3f215040
 
 #options 	EARLYCONS=cycv, CONSADDR=0xffc02000
-#options 	EARLYCONS=imx, CONSADDR=0x02020000
+options 	EARLYCONS=imx, CONSADDR=0x02020000
 #options 	EARLYCONS=rk3328, CONSADDR=0xff130000
 #options 	EARLYCONS=sunxi, CONSADDR=0x01c28000
 
@@ -309,6 +309,8 @@ syscon*		at fdt? pass 1		# Generic System Controller
 #zynqslcr*	at fdt? pass 1		# Zynq 7000 system Controller
 
 # Timer
+a9ptmr* 	at fdt? pass 2		# ARM Cortex A5/A9 Private Timer
+arma9ptmr*	at a9ptmr?
 a9tmr* 		at fdt? pass 2		# ARM Cortex A5/A9 Timer
 arma9tmr* 	at a9tmr?
 gtmr*		at fdt? pass 1		# ARM Generic Timer
@@ -320,6 +322,8 @@ sunxihstimer* 	at fdt?			# Allwinner High-Speed timer
 tegratimer* 	at fdt?			# Timers
 
 # Watchdog
+a9wdt*  	at fdt? pass 2		# ARM Cortex A5/A9 Watchdog
+arma9wdt* 	at a9wdt?
 dwcwdt* 	at fdt?			# DesignWare watchdog
 mesonwdt* 	at fdt?			# Amlogic Meson watchdog
 sunxiwdt* 	at fdt?			# Allwinner watchdog
@@ -398,7 +402,7 @@ tegra210xphy* 	at tegra210xpad?
 
 # PCIE
 pcihost* 	at fdt?			# Generic PCI host controller
-imxpcie* 	at fdt?
+#imxpcie* 	at fdt?
 tegrapcie0 	at fdt?			# NVIDIA Tegra PCIE
 pci* 		at pcibus?
 ppb* 		at pci? dev ? function ?
