@@ -67,7 +67,7 @@ struct a9wdt_softc {
 #define	A9WDT_PERIOD_DEFAULT	12
 #endif
 
-CFATTACH_DECL_NEW(a9wdt, sizeof(struct a9wdt_softc),
+CFATTACH_DECL_NEW(arma9wdt, sizeof(struct a9wdt_softc),
     a9wdt_match, a9wdt_attach, NULL, NULL);
 
 static bool attached;
@@ -191,8 +191,10 @@ a9wdt_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	sc->sc_memt = mpcaa->mpcaa_memt;
 
+
+	// XXXNH TMR_WDOG_BASE! and register locations
 	bus_space_subregion(sc->sc_memt, mpcaa->mpcaa_memh,
-	    TMR_WDOG_BASE, TMR_WDOG_SIZE, &sc->sc_wdog_memh);
+	     mpcaa->mpcaa_off1, TMR_WDOG_SIZE, &sc->sc_wdog_memh);
 
 	/*
 	 * This runs at the ARM PERIPHCLOCK which should be 1/2 of the
@@ -214,7 +216,7 @@ a9wdt_attach(device_t parent, device_t self, void *aux)
 		/*
 		 * Let's hope the timer frequency isn't prime.
 		 */
-		for (size_t div = 256; div >= 2; div++) {
+		for (size_t div = 256; div >= 2; div--) {
 			if (sc->sc_freq % div == 0) {
 				sc->sc_wdog_prescaler = div;
 				break;
