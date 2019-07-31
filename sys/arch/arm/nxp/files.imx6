@@ -1,21 +1,21 @@
-#	$NetBSD: files.imx6,v 1.1 2019/07/24 13:12:33 hkenken Exp $
+#	$NetBSD: files.imx6,v 1.4 2019/07/30 06:52:57 hkenken Exp $
 #
 # Configuration info for the Freescale i.MX6
 #
 
-file	arch/arm/nxp/imx6_platform.c	soc_imx
+file	arch/arm/nxp/imx6_platform.c		soc_imx
 
 # SOC parameters
-defflag	opt_soc.h			SOC_IMX
-defflag	opt_soc.h			SOC_IMX6QDL: SOC_IMX
+defflag	opt_soc.h				SOC_IMX
+defflag	opt_soc.h				SOC_IMX6QDL: SOC_IMX
 
-defflag opt_imx.h			IMX6
+defflag opt_imx.h				IMX6
 
 # Clock
 device	imxccm : clk
 attach	imxccm at fdt
-file	arch/arm/imx/imx6_ccm.c		imxccm
-file	arch/arm/nxp/imx6_clk.c	imxccm
+file	arch/arm/imx/imx6_ccm.c			imxccm
+file	arch/arm/nxp/imx6_clk.c			imxccm
 
 # GPC
 device	imxgpc
@@ -25,35 +25,35 @@ file	arch/arm/nxp/imx6_gpc.c	imxgpc
 # IOMUX
 device	imxiomux
 attach	imxiomux at fdt
-file	arch/arm/nxp/imx6_iomux.c	imxiomux
+file	arch/arm/nxp/imx6_iomux.c		imxiomux
 
 # GPIO controller
 device	imxgpio: gpiobus
 attach	imxgpio at fdt
-file	arch/arm/imx/imxgpio.c		imxgpio
-file	arch/arm/nxp/imx6_gpio.c	imxgpio
+file	arch/arm/imx/imxgpio.c			imxgpio	needs-flag
+file	arch/arm/nxp/imx6_gpio.c		imxgpio
 
 # UART
 device	imxuart { } : bus_space_generic
 attach	imxuart at fdt with imx6_com
-file	arch/arm/imx/imxuart.c		imxuart	needs-flag
+file	arch/arm/imx/imxuart.c			imxuart	needs-flag
 file	arch/arm/nxp/imx6_com.c	imx6_com needs-flag
-defflag opt_imxuart.h			IMXUARTCONSOLE
+defflag opt_imxuart.h				IMXUARTCONSOLE
 
 # FEC
 device	enet: ether, ifnet, arp, mii, bus_dma_generic
-attach	enet at fdt
-file	arch/arm/imx/if_enet.c		enet
-file	arch/arm/nxp/if_enet_imx.c	enet
+attach	enet at fdt with enet_fdt
+file	arch/arm/imx/if_enet.c			enet
+file	arch/arm/nxp/if_enet_imx.c		enet_fdt
 
 # SATA
 attach	ahcisata at fdt with imx6_ahcisata
-file	arch/arm/nxp/imx6_ahcisata.c	imx6_ahcisata
+file	arch/arm/nxp/imx6_ahcisata.c		imx6_ahcisata
 
 # USB Controller
 device	imxusbc { [unit=-1], [irq=-1] } : bus_dma_generic
 attach	imxusbc at fdt with imxusbc_fdt
-file	arch/arm/nxp/imx6_usb.c		imxusbc_fdt
+file	arch/arm/nxp/imx6_usb.c			imxusbc_fdt
 
 attach	ehci at imxusbc with imxehci
 file	arch/arm/imx/imxusb.c			imxehci
@@ -61,14 +61,20 @@ file	arch/arm/imx/imxusb.c			imxehci
 # USB PHY
 device	imxusbphy
 attach	imxusbphy at fdt
-file	arch/arm/nxp/imx6_usbphy.c	imxusbphy
+file	arch/arm/nxp/imx6_usbphy.c		imxusbphy
 
 # SDMMC
 attach	sdhc at fdt with imx6_sdhc
-file	arch/arm/nxp/imx6_sdhc.c	imx6_sdhc
+file	arch/arm/nxp/imx6_sdhc.c		imx6_sdhc
 
 # PCIe
 device	imxpcie: pcibus
 attach	imxpcie at fdt with imxpcie_fdt
 file	arch/arm/imx/imxpcie.c			imxpcie
 file	arch/arm/nxp/imx6_pcie.c		imxpcie_fdt
+
+# iMX iic Controler
+device	imxi2c: motoi2c, i2cbus, i2cexec
+attach	imxi2c at fdt
+file	arch/arm/imx/imxi2c.c			imxi2c
+file	arch/arm/nxp/imx6_i2c.c			imxi2c

@@ -1,4 +1,4 @@
-/*	$NetBSD: a9tmr_reg.h,v 1.1 2012/09/01 00:03:14 matt Exp $	*/
+/*	$NetBSD: a9tmr_reg.h,v 1.2 2019/07/27 07:02:09 skrll Exp $	*/
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
  * All rights reserved.

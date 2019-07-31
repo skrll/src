@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1638 2019/07/25 08:59:32 roy Exp $
+#	$NetBSD: 3RDPARTY,v 1.1640 2019/07/30 14:57:06 joerg Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -341,12 +341,12 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	8.0.1
-Current Vers:	8.0.1
+Version:	8.0.2
+Current Vers:	8.0.2
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
-Date:		2019-07-25
+Date:		2019-07-30
 Mailing List: 	dhcpcd-discuss@marples.name
 License:	BSD (2-clause)
 Location:	external/bsd/dhcpcd/dist
@@ -700,12 +700,12 @@ for importation.  Run ./configure beforehand to generate "defines.h".
 Talk to mrg before importing any new version.
 
 Package:	libarchive
-Version:	3.3.2pre
-Current Vers:	3.3.2
+Version:	3.4.0
+Current Vers:	3.4.0
 Maintainer:	kientzle@freebsd.org, joerg@NetBSD.org
-Archive Site:	https://github.com/libarchive/libarchive/downloads
+Archive Site:	https://github.com/libarchive/libarchive/releases
 Home Page: 	http://www.libarchive.org
-Date:		2019-01-09
+Date:		2019-06-13
 Responsible:	joerg
 License:	BSD (2-clause)
 Location:	external/bsd/libarchive/dist

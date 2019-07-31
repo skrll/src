@@ -1,4 +1,4 @@
-#	$NetBSD: std.imx6ul,v 1.5 2018/10/18 09:01:54 skrll Exp $
+#	$NetBSD: std.imx6ul,v 1.6 2019/07/29 10:25:30 skrll Exp $
 #
 # standard NetBSD/evbarm options for i.MX6UL
 

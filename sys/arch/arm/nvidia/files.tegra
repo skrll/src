@@ -1,4 +1,4 @@
-#	$NetBSD: files.tegra,v 1.49 2018/07/08 11:37:50 jmcneill Exp $
+#	$NetBSD: files.tegra,v 1.50 2019/07/27 14:05:04 skrll Exp $
 #
 # Configuration info for NVIDIA Tegra ARM Peripherals
 #
