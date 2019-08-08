@@ -112,7 +112,7 @@ a9ptmr_match(device_t parent, cfdata_t cf, void *aux)
 static void
 a9ptmr_attach(device_t parent, device_t self, void *aux)
 {
-        struct a9ptmr_softc * const sc = device_private(self);
+	struct a9ptmr_softc * const sc = device_private(self);
 	struct mpcore_attach_args * const mpcaa = aux;
 	prop_dictionary_t dict = device_properties(self);
 	char freqbuf[sizeof("XXX SHz")];
@@ -143,7 +143,6 @@ a9ptmr_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_ctl = a9ptmr_read(sc, TMR_CTL);
 
-#if notyet
 	sc->sc_prescaler = 1;
 	/*
 	 * Let's hope the timer frequency isn't prime.
@@ -155,11 +154,14 @@ a9ptmr_attach(device_t parent, device_t self, void *aux)
 		}
 	}
 	sc->sc_freq /= sc->sc_prescaler;
-#endif
 
+	aprint_debug_dev(sc->sc_dev, ": freq %d prescaler %d", sc->sc_freq,
+	    sc->sc_prescaler);
 	sc->sc_ctl = TMR_CTL_INT_ENABLE | TMR_CTL_AUTO_RELOAD | TMR_CTL_ENABLE;
+	sc->sc_ctl |= __SHIFTIN(sc->sc_prescaler - 1, TMR_CTL_PRESCALER);
 
-        sc->sc_load = (sc->sc_freq / hz) - 1;
+	sc->sc_load = (sc->sc_freq / hz) - 1;
+
 	a9ptmr_init_cpu_clock(curcpu());
 
 	aprint_naive("\n");
