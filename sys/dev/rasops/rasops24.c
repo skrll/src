@@ -1,4 +1,4 @@
-/* 	$NetBSD: rasops24.c,v 1.41 2019/07/31 02:04:14 rin Exp $	*/
+/* 	$NetBSD: rasops24.c,v 1.43 2019/07/31 05:08:10 rin Exp $	*/
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rasops24.c,v 1.41 2019/07/31 02:04:14 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rasops24.c,v 1.43 2019/07/31 05:08:10 rin Exp $");
 
 #include "opt_rasops.h"
 
@@ -51,6 +51,9 @@ static void 	rasops24_erasecols(void *, int, int, int, long);
 static void 	rasops24_eraserows(void *, int, int, long);
 static void 	rasops24_putchar(void *, int, int, u_int, long);
 static void 	rasops24_putchar_aa(void *, int, int, u_int, long);
+static __inline void
+		rasops24_makestamp1(struct rasops_info *, uint32_t *,
+				    uint32_t, uint32_t, uint32_t, uint32_t);
 #ifndef RASOPS_SMALL
 static void 	rasops24_putchar8(void *, int, int, u_int, long);
 static void 	rasops24_putchar12(void *, int, int, u_int, long);
@@ -117,6 +120,27 @@ rasops24_init(struct rasops_info *ri)
 #include "rasops_putchar.h"
 #include "rasops_putchar_aa.h"
 
+static __inline void
+rasops24_makestamp1(struct rasops_info *ri, uint32_t *stamp,
+    uint32_t c1, uint32_t c2, uint32_t c3, uint32_t c4)
+{
+
+	stamp[0] = (c1 <<  8) | (c2 >> 16);
+	stamp[1] = (c2 << 16) | (c3 >>  8);
+	stamp[2] = (c3 << 24) |  c4;
+
+#if BYTE_ORDER == LITTLE_ENDIAN
+	if ((ri->ri_flg & RI_BSWAP) == 0)
+#else
+	if ((ri->ri_flg & RI_BSWAP) != 0)
+#endif
+	{
+		stamp[0] = bswap32(stamp[0]);
+		stamp[1] = bswap32(stamp[1]);
+		stamp[2] = bswap32(stamp[2]);
+	}
+}
+
 #ifndef RASOPS_SMALL
 /*
  * Recompute the blitting stamp.
@@ -144,19 +168,7 @@ rasops24_makestamp(struct rasops_info *ri, long attr)
 		c3 = i & 16 ? fg : bg;
 		c4 = i & 32 ? fg : bg;
 #endif
-		stamp[i + 0] = (c1 <<  8) | (c2 >> 16);
-		stamp[i + 1] = (c2 << 16) | (c3 >>  8);
-		stamp[i + 2] = (c3 << 24) |  c4;
-
-#if BYTE_ORDER == LITTLE_ENDIAN
-		if ((ri->ri_flg & RI_BSWAP) == 0) {
-#else
-		if ((ri->ri_flg & RI_BSWAP) != 0) {
-#endif
-			stamp[i + 0] = bswap32(stamp[i + 0]);
-			stamp[i + 1] = bswap32(stamp[i + 1]);
-			stamp[i + 2] = bswap32(stamp[i + 2]);
-		}
+		rasops24_makestamp1(ri, &stamp[i], c1, c2, c3, c4);
 	}
 }
 
@@ -181,7 +193,8 @@ static void
 rasops24_eraserows(void *cookie, int row, int num, long attr)
 {
 	struct rasops_info *ri = (struct rasops_info *)cookie;
-	int n9, n3, n1, cnt, stride;
+	uint32_t *buf = (uint32_t *)ri->ri_buf;
+	int full, slop, cnt, stride;
 	uint32_t *rp, *dp, *hp, clr, stamp[3];
 
 	hp = NULL;	/* XXX GCC */
@@ -209,19 +222,7 @@ rasops24_eraserows(void *cookie, int row, int num, long attr)
 #endif
 
 	clr = ri->ri_devcmap[((uint32_t)attr >> 16) & 0xf] & 0xffffff;
-	stamp[0] = (clr <<  8) | (clr >> 16);
-	stamp[1] = (clr << 16) | (clr >>  8);
-	stamp[2] = (clr << 24) |  clr;
-
-#if BYTE_ORDER == LITTLE_ENDIAN
-	if ((ri->ri_flg & RI_BSWAP) == 0) {
-#else
-	if ((ri->ri_flg & RI_BSWAP) != 0) {
-#endif
-		stamp[0] = bswap32(stamp[0]);
-		stamp[1] = bswap32(stamp[1]);
-		stamp[2] = bswap32(stamp[2]);
-	}
+	rasops24_makestamp1(ri, stamp, clr, clr, clr, clr);
 
 	/*
 	 * XXX the wsdisplay_emulops interface seems a little deficient in
@@ -243,34 +244,28 @@ rasops24_eraserows(void *cookie, int row, int num, long attr)
 			hp = (uint32_t *)(ri->ri_hwbits + row * ri->ri_yscale);
 	}
 
-	n9 = stride / (4 * 9);
-	cnt = n9 * (4 * 9);
-	n3 = (stride - cnt) / (4 * 3);
-	cnt += n3 * (4 * 3);
-	n1 = (stride - cnt) / 4;
+	full = stride / (4 * 3);
+	slop = (stride - full * (4 * 3)) / 4;
+
+	dp = buf;
+
+	for (cnt = full; cnt; cnt--) {
+		dp[0] = stamp[0];
+		dp[1] = stamp[1];
+		dp[2] = stamp[2];
+		dp += 3;
+	}
+
+	for (cnt = 0; cnt < slop; cnt++)
+		*dp++ = stamp[cnt];
 
 	while (num--) {
-		dp = rp;
-		for (cnt = n9; cnt; cnt--) {
-			dp[0] = stamp[0]; dp[1] = stamp[1]; dp[2] = stamp[2];
-			dp[3] = stamp[0]; dp[4] = stamp[1]; dp[5] = stamp[2];
-			dp[6] = stamp[0]; dp[7] = stamp[1]; dp[8] = stamp[2];
-			dp += 9;
-		}
-
-		for (cnt = n3; cnt; cnt--) {
-			dp[0] = stamp[0]; dp[1] = stamp[1]; dp[2] = stamp[2];
-			dp += 3;
-		}
-
-		for (cnt = 0; cnt < n1; cnt++)
-			*dp++ = stamp[cnt];
-
+		memcpy(rp, buf, stride);
+		DELTA(rp, ri->ri_stride, uint32_t *);
 		if (ri->ri_hwbits) {
-			memcpy(hp, rp, stride);
+			memcpy(hp, buf, stride);
 			DELTA(hp, ri->ri_stride, uint32_t *);
 		}
-		DELTA(rp, ri->ri_stride, uint32_t *);
 	}
 }
 
@@ -281,7 +276,8 @@ static void
 rasops24_erasecols(void *cookie, int row, int col, int num, long attr)
 {
 	struct rasops_info *ri = (struct rasops_info *)cookie;
-	int n12, n4, height, cnt, slop1, slop2, clr, stamp[3];
+	uint8_t *buf = (uint8_t *)ri->ri_buf;
+	int height, cnt, full, slop1, slop2, clr, stamp[3];
 	uint32_t *dp;
 	uint8_t *rp, *hp, *dbp;
 
@@ -321,19 +317,7 @@ rasops24_erasecols(void *cookie, int row, int col, int num, long attr)
 	height = ri->ri_font->fontheight;
 
 	clr = ri->ri_devcmap[((uint32_t)attr >> 16) & 0xf] & 0xffffff;
-	stamp[0] = (clr <<  8) | (clr >> 16);
-	stamp[1] = (clr << 16) | (clr >>  8);
-	stamp[2] = (clr << 24) |  clr;
-
-#if BYTE_ORDER == LITTLE_ENDIAN
-	if ((ri->ri_flg & RI_BSWAP) == 0) {
-#else
-	if ((ri->ri_flg & RI_BSWAP) != 0) {
-#endif
-		stamp[0] = bswap32(stamp[0]);
-		stamp[1] = bswap32(stamp[1]);
-		stamp[2] = bswap32(stamp[2]);
-	}
+	rasops24_makestamp1(ri, stamp, clr, clr, clr, clr);
 
 	/*
 	 * The current byte offset mod 4 tells us the number of 24-bit pels
@@ -346,52 +330,45 @@ rasops24_erasecols(void *cookie, int row, int col, int num, long attr)
 	 */
 	slop1 = (uintptr_t)rp & 3;
 	cnt = slop1;
-	n12 = (num - cnt) / 12;
-	cnt += n12 * 12;
-	n4 = (num - cnt) / 4;
-	cnt += n4 * 4;
+	full = (num /* - cnt */) / 4;
+	cnt += full * 4;
 	slop2 = num - cnt;
 
+	/* Align to 4 bytes */
+	/* XXX handle with masks, bring under control of RI_BSWAP */
+	dbp = buf;
+	for (cnt = slop1; cnt; cnt--) {
+		*dbp++ = (clr >> 16);
+		*dbp++ = (clr >> 8);
+		*dbp++ =  clr;
+	}
+
+	/* 4 pels per loop */
+	dp = (uint32_t *)dbp;
+	for (cnt = full; cnt; cnt--) {
+		dp[0] = stamp[0];
+		dp[1] = stamp[1];
+		dp[2] = stamp[2];
+		dp += 3;
+	}
+
+	/* Trailing slop */
+	/* XXX handle with masks, bring under control of RI_BSWAP */
+	dbp = (uint8_t *)dp;
+	for (cnt = slop2; cnt; cnt--) {
+		*dbp++ = (clr >> 16);
+		*dbp++ = (clr >> 8);
+		*dbp++ =  clr;
+	}
+
+	num *= 3;
+
 	while (height--) {
-		dbp = rp;
-
-		/* Align to 4 bytes */
-		/* XXX handle with masks, bring under control of RI_BSWAP */
-		for (cnt = slop1; cnt; cnt--) {
-			*dbp++ = (clr >> 16);
-			*dbp++ = (clr >> 8);
-			*dbp++ =  clr;
-		}
-
-		dp = (uint32_t *)dbp;
-
-		/* 12 pels per loop */
-		for (cnt = n12; cnt; cnt--) {
-			dp[0] = stamp[0]; dp[1] = stamp[1]; dp[2] = stamp[2];
-			dp[3] = stamp[0]; dp[4] = stamp[1]; dp[5] = stamp[2];
-			dp[6] = stamp[0]; dp[7] = stamp[1]; dp[8] = stamp[2];
-			dp += 9;
-		}
-
-		/* 4 pels per loop */
-		for (cnt = n4; cnt; cnt--) {
-			dp[0] = stamp[0]; dp[1] = stamp[1]; dp[2] = stamp[2];
-			dp += 3;
-		}
-
-		/* Trailing slop */
-		/* XXX handle with masks, bring under control of RI_BSWAP */
-		dbp = (uint8_t *)dp;
-		for (cnt = slop2; cnt; cnt--) {
-			*dbp++ = (clr >> 16);
-			*dbp++ = (clr >> 8);
-			*dbp++ =  clr;
-		}
-
+		memcpy(rp, buf, num);
+		rp += ri->ri_stride;
 		if (ri->ri_hwbits) {
-			memcpy(hp, rp, num * 3);
+			memcpy(hp, buf, num);
 			hp += ri->ri_stride;
 		}
-		rp += ri->ri_stride;
 	}
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: bsddisklabel.c,v 1.23 2019/07/28 16:30:36 martin Exp $	*/
+/*	$NetBSD: bsddisklabel.c,v 1.26 2019/08/01 17:50:16 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -365,24 +365,25 @@ add_other_ptn_size(menudesc *menu, void *arg)
 			/* we need absolute mount paths */
 			memmove(new_mp+1, new_mp, sizeof(new_mp)-1);
 			new_mp[0] = '/';
-			/* duplicates? */
-			bool duplicate = false;
-			for (size_t i = 0; i < pset->num; i++) {
-				if (strcmp(pset->infos[i].mount,
-				    new_mp) == 0) {
-				    	args = new_mp;
-					err = str_arg_subst(
-					    msg_string(MSG_mp_already_exists),
-					    1, &args);
-					err_msg_win(err);
-					free(err);
-					duplicate = true;
-					break;
-				}
-			}
-			if (!duplicate)
-				break;
 		}
+
+		/* duplicates? */
+		bool duplicate = false;
+		for (size_t i = 0; i < pset->num; i++) {
+			if (strcmp(pset->infos[i].mount,
+			    new_mp) == 0) {
+			    	args = new_mp;
+				err = str_arg_subst(
+				    msg_string(MSG_mp_already_exists),
+				    1, &args);
+				err_msg_win(err);
+				free(err);
+				duplicate = true;
+				break;
+			}
+		}
+		if (!duplicate)
+			break;
 	}
 
 	m = realloc(pset->menu_opts, (pset->num+4)*sizeof(*pset->menu_opts));
@@ -400,6 +401,11 @@ add_other_ptn_size(menudesc *menu, void *arg)
 	p += pset->num;
 	memset(m, 0, sizeof(*m));
 	memset(p, 0, sizeof(*p));
+	p->parts = pset->parts;
+	p->cur_part_id = NO_PART;
+	p->type = PT_root;
+	p->fs_type = FS_BSDFFS;
+	p->fs_version = 2;
 	strncpy(p->mount, new_mp, sizeof(p->mount));
 
 	menu->cursel = pset->num;
@@ -1418,8 +1424,12 @@ apply_settings_to_partitions(struct pm_devs *p, struct disk_partitions *parts,
 			continue;
 
 		size_t cnt = wanted->parts->pscheme->get_free_spaces(
-		    wanted->parts, &space, 1, want->size-2*align, align, from,
+		    wanted->parts, &space, 1, want->size-align, align, from,
 		    -1);
+		if (cnt == 0)
+			cnt = wanted->parts->pscheme->get_free_spaces(
+			    wanted->parts, &space, 1,
+			    want->size-5*align, align, from, -1);
 
 		if (cnt == 0)
 			continue;	/* no free space for this partition */
