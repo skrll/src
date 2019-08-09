@@ -1,4 +1,4 @@
-#	$NetBSD: files.imx6,v 1.1 2019/07/24 13:12:33 hkenken Exp $
+#	$NetBSD: files.imx6,v 1.4 2019/07/30 06:52:57 hkenken Exp $
 #
 # Configuration info for the Freescale i.MX6
 #
@@ -36,7 +36,7 @@ file	arch/arm/imx/fdt/imx6_iomux.c	imxiomux
 # GPIO controller
 device	imxgpio: gpiobus
 attach	imxgpio at fdt
-file	arch/arm/imx/imxgpio.c		imxgpio
+file	arch/arm/imx/imxgpio.c		imxgpio		needs-flag
 file	arch/arm/imx/fdt/imx6_gpio.c	imxgpio
 
 # UART
@@ -48,9 +48,9 @@ defflag opt_imxuart.h			IMXUARTCONSOLE
 
 # FEC
 device	enet: ether, ifnet, arp, mii, bus_dma_generic
-attach	enet at fdt
+attach	enet at fdt with enet_fdt
 file	arch/arm/imx/if_enet.c		enet
-file	arch/arm/imx/fdt/if_enet_imx.c	enet
+file	arch/arm/imx/fdt/if_enet_imx.c	enet_fdt
 
 # SATA
 attach	ahcisata at fdt with imx6_ahcisata
@@ -78,3 +78,9 @@ device	imxpcie: pcibus
 attach	imxpcie at fdt with imxpcie_fdt
 file	arch/arm/imx/imxpcie.c			imxpcie
 file	arch/arm/imx/fdt/imx6_pcie.c		imxpcie_fdt
+
+# iMX iic Controler
+device	imxi2c: motoi2c, i2cbus, i2cexec
+attach	imxi2c at fdt
+file	arch/arm/imx/imxi2c.c			imxi2c
+file	arch/arm/imx/fdt/imx6_i2c.c		imxi2c

@@ -1,4 +1,4 @@
-/*	$NetBSD: bsddisklabel.c,v 1.21 2019/07/15 19:13:05 martin Exp $	*/
+/*	$NetBSD: bsddisklabel.c,v 1.26 2019/08/01 17:50:16 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -319,8 +319,15 @@ draw_size_menu_line(menudesc *m, int opt, void *arg)
 	} else if (pset->infos[opt].mount[0]) {
 		mount = pset->infos[opt].mount;
 	} else {
-		mount = getfslabelname(pset->infos[opt].fs_type,
-		    pset->infos[opt].fs_version);
+		mount = NULL;
+		if (pset->infos[opt].parts->pscheme->other_partition_identifier
+		    && pset->infos[opt].cur_part_id != NO_PART)
+			mount = pset->infos[opt].parts->pscheme->
+			    other_partition_identifier(pset->infos[opt].parts,
+			    pset->infos[opt].cur_part_id);
+		if (mount == NULL)
+			mount = getfslabelname(pset->infos[opt].fs_type,
+			    pset->infos[opt].fs_version);
 		mount = str_arg_subst(msg_string(MSG_size_ptn_not_mounted),
 		    1, &mount);
 		free_mount = true;
@@ -358,24 +365,25 @@ add_other_ptn_size(menudesc *menu, void *arg)
 			/* we need absolute mount paths */
 			memmove(new_mp+1, new_mp, sizeof(new_mp)-1);
 			new_mp[0] = '/';
-			/* duplicates? */
-			bool duplicate = false;
-			for (size_t i = 0; i < pset->num; i++) {
-				if (strcmp(pset->infos[i].mount,
-				    new_mp) == 0) {
-				    	args = new_mp;
-					err = str_arg_subst(
-					    msg_string(MSG_mp_already_exists),
-					    1, &args);
-					err_msg_win(err);
-					free(err);
-					duplicate = true;
-					break;
-				}
-			}
-			if (!duplicate)
-				break;
 		}
+
+		/* duplicates? */
+		bool duplicate = false;
+		for (size_t i = 0; i < pset->num; i++) {
+			if (strcmp(pset->infos[i].mount,
+			    new_mp) == 0) {
+			    	args = new_mp;
+				err = str_arg_subst(
+				    msg_string(MSG_mp_already_exists),
+				    1, &args);
+				err_msg_win(err);
+				free(err);
+				duplicate = true;
+				break;
+			}
+		}
+		if (!duplicate)
+			break;
 	}
 
 	m = realloc(pset->menu_opts, (pset->num+4)*sizeof(*pset->menu_opts));
@@ -393,6 +401,11 @@ add_other_ptn_size(menudesc *menu, void *arg)
 	p += pset->num;
 	memset(m, 0, sizeof(*m));
 	memset(p, 0, sizeof(*p));
+	p->parts = pset->parts;
+	p->cur_part_id = NO_PART;
+	p->type = PT_root;
+	p->fs_type = FS_BSDFFS;
+	p->fs_version = 2;
 	strncpy(p->mount, new_mp, sizeof(p->mount));
 
 	menu->cursel = pset->num;
@@ -904,17 +917,18 @@ ask_layout(struct disk_partitions *parts, bool have_existing)
 static void
 merge_part_with_wanted(struct disk_partitions *parts, part_id pno,
     const struct disk_part_info *info, struct partition_usage_set *wanted,
-    bool is_outer)
+    size_t wanted_num, bool is_outer)
 {
 	struct part_usage_info *infos;
 
 	/*
 	 * does this partition match something in the wanted set?
 	 */
-	for (size_t i = 0; i < wanted->num; i++) {
+	for (size_t i = 0; i < wanted_num; i++) {
 		if (wanted->infos[i].type != info->nat_type->generic_ptype)
 			continue;
-		if (info->last_mounted != NULL && info->last_mounted[0] != 0 &&
+		if (wanted->infos[i].type == PT_root &&
+		    info->last_mounted != NULL && info->last_mounted[0] != 0 &&
 		    strcmp(info->last_mounted, wanted->infos[i].mount) != 0)
 			continue;
 		if (wanted->infos[i].cur_part_id != NO_PART)
@@ -929,6 +943,8 @@ merge_part_with_wanted(struct disk_partitions *parts, part_id pno,
 			wanted->infos[i].instflags |= PUIINST_MOUNT;
 		if (is_outer)
 			wanted->infos[i].flags |= PUIFLG_IS_OUTER;
+		else
+			wanted->infos[i].flags &= ~PUIFLG_IS_OUTER;
 		return;
 	}
 
@@ -1050,6 +1066,7 @@ fill_defaults(struct partition_usage_set *wanted, struct disk_partitions *parts,
 	 * The only thing outside of target range that we care for
 	 * is a potential swap partition - we assume one is enough.
 	 */
+	size_t num = wanted->num;
 	if (parts->parent) {
 		for (part_id pno = 0; pno < parts->parent->num_part; pno++) {
 			struct disk_part_info info;
@@ -1060,7 +1077,7 @@ fill_defaults(struct partition_usage_set *wanted, struct disk_partitions *parts,
 			if (info.nat_type->generic_ptype != PT_swap)
 				continue;
 			merge_part_with_wanted(parts->parent, pno, &info,
-			    wanted, true);
+			    wanted, num, true);
 			break;
 		}
 	}
@@ -1079,7 +1096,7 @@ fill_defaults(struct partition_usage_set *wanted, struct disk_partitions *parts,
 			continue;
 
 		merge_part_with_wanted(parts, pno, &info,
-		    wanted, false);
+		    wanted, num, false);
 	}
 
 	daddr_t align = parts->pscheme->get_part_alignment(parts);
@@ -1407,8 +1424,12 @@ apply_settings_to_partitions(struct pm_devs *p, struct disk_partitions *parts,
 			continue;
 
 		size_t cnt = wanted->parts->pscheme->get_free_spaces(
-		    wanted->parts, &space, 1, want->size-2*align, align, from,
+		    wanted->parts, &space, 1, want->size-align, align, from,
 		    -1);
+		if (cnt == 0)
+			cnt = wanted->parts->pscheme->get_free_spaces(
+			    wanted->parts, &space, 1,
+			    want->size-5*align, align, from, -1);
 
 		if (cnt == 0)
 			continue;	/* no free space for this partition */

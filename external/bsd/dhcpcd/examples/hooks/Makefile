@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.1 2017/04/02 20:18:37 roy Exp $
+# $NetBSD: Makefile,v 1.3 2019/07/26 13:29:36 roy Exp $
 #
 
 .include <bsd.own.mk>
@@ -8,10 +8,12 @@
 
 .if ${MKSHARE} != "no"
 FILES=			10-wpa_supplicant 15-timezone 29-lookup-hostname
-FILES+=			50-ypbind
 
+.if ${MKYP} != "no"
 FILESBUILD_50-ypbind=	YES
+FILES+=			50-ypbind
 CLEANFILES+=		50-ypbind
+.endif
 
 FILESDIR=		/usr/share/examples/dhcpcd/hooks
 
