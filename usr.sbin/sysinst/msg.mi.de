@@ -1,4 +1,4 @@
-/*	$NetBSD: msg.mi.de,v 1.12 2019/06/12 06:20:18 martin Exp $	*/
+/*	$NetBSD: msg.mi.de,v 1.15 2019/08/17 17:51:19 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -679,8 +679,11 @@ Installation abgebrochen.}
 message delete_xfer_file
 {Nach der Installation löschen}
 
+/* Called with: 			Example
+ *  $0 = set name			base
+ */
 message notarfile
-{Das Release-Paket %s existiert nicht.}
+{Das Release-Paket $0 existiert nicht.}
 
 message endtarok
 {Alle Distributionspakete wurden erfolgreich entpackt.}
@@ -1263,6 +1266,11 @@ Möchten Sie diese benutzen?}
 
 message parttype_disklabel {BSD disklabel}
 message parttype_disklabel_short {disklabel}
+/*
+ * This is used on architectures with MBR above disklabel when there is
+ * no MBR on a disk.
+ */
+message parttype_only_disklabel {disklabel (nur NetBSD)}
 
 message select_part_scheme
 {Dieses Gerät wurde anscheinend noch nicht partitioniert. 
@@ -1470,3 +1478,5 @@ message	gpt_flag_desc	{, (S)tart}
  *  $0 = file system type		FFSv2
  */
 message size_ptn_not_mounted		{(Sonstige: $0)}
+
+message running_system			{aktuelles System}

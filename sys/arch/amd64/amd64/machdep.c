@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.332 2019/06/12 14:28:38 christos Exp $	*/
+/*	$NetBSD: machdep.c,v 1.336 2019/08/21 20:30:36 skrll Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
@@ -110,7 +110,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.332 2019/06/12 14:28:38 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.336 2019/08/21 20:30:36 skrll Exp $");
 
 #include "opt_modular.h"
 #include "opt_user_ldt.h"
@@ -1739,7 +1739,7 @@ init_x86_64(paddr_t first_avail)
 	 */
 	lowmem_rsvd = 8 * PAGE_SIZE;
 
-	/* Initialize the memory clusters (needed in pmap_boostrap). */
+	/* Initialize the memory clusters (needed in pmap_bootstrap). */
 	init_x86_clusters();
 #else
 	/* Parse Xen command line (replace bootinfo) */
@@ -2063,15 +2063,6 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 		tf->tf_rflags = rflags | (gr[_REG_RFLAGS] & PSL_USER);
 		tf->tf_rsp  = gr[_REG_RSP];
 		tf->tf_ss   = LSEL(LUDATA_SEL, SEL_UPL);
-
-#ifdef XENPV
-		/*
-		 * Xen has its own way of dealing with %cs and %ss,
-		 * reset them to proper values.
-		 */
-		tf->tf_ss = GSEL(GUDATA_SEL, SEL_UPL);
-		tf->tf_cs = GSEL(GUCODE_SEL, SEL_UPL);
-#endif
 
 		l->l_md.md_flags |= MDL_IRET;
 	}

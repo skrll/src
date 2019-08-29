@@ -1,4 +1,4 @@
-/*	$NetBSD: defs.h,v 1.36 2019/06/21 21:54:39 christos Exp $	*/
+/*	$NetBSD: defs.h,v 1.44 2019/08/27 14:11:00 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -249,8 +249,9 @@ struct part_usage_info {
 					 * is available */
 #define	PUIFLAG_ADD_OUTER	2	/* Add this partition to the outer
 					 * partitions (if available) */
-#define	PUIFLG_IS_OUTER		4
-#define	PUIFLG_JUST_MOUNTPOINT	8	/* tmpfs of mfs mountpoints */
+#define	PUIFLG_IS_OUTER		4	/* this is an existing outer one */
+#define	PUIFLAG_ADD_INNER	8	/* add outer also to inner */
+#define	PUIFLG_JUST_MOUNTPOINT	16	/* tmpfs of mfs mountpoints */
 	uint flags;
 	struct disk_partitions *parts;	/* Where does this partition live?
 					 * We currently only support
@@ -323,6 +324,7 @@ struct single_part_fs_edit {
 struct install_partition_desc {
 	size_t num;				/* how many entries in infos */
 	struct part_usage_info *infos;		/* individual partitions */
+	bool cur_system;			/* target is the life system */
 };
 
 /* variables */
@@ -382,6 +384,12 @@ struct pm_devs {
 	 * Used for wedges (dk*) or LVM devices.
 	 */
 	bool no_part;
+
+	/*
+	 * This is a pseudo-device representing the currently running
+	 * system (i.e. all mounted file systems).
+	 */
+	bool cur_system;
 
 	/* Actual values for current disk - set by find_disks() or
 	   md_get_info() */
@@ -576,7 +584,7 @@ bool	md_gpt_post_write(struct disk_partitions*, part_id root_id,
  */
 bool	md_pre_disklabel(struct install_partition_desc*, struct disk_partitions*);
 bool	md_post_disklabel(struct install_partition_desc*, struct disk_partitions*);
-int	md_pre_mount(struct install_partition_desc*);
+int	md_pre_mount(struct install_partition_desc*, size_t);
 int	md_post_newfs(struct install_partition_desc*);
 int	md_post_extract(struct install_partition_desc*);
 void	md_cleanup_install(struct install_partition_desc*);
@@ -591,7 +599,7 @@ void	toplevel(void);
 
 /* from disks.c */
 bool	get_default_cdrom(char *, size_t);
-int	find_disks(const char *);
+int	find_disks(const char *, bool);
 bool enumerate_disks(void *state,bool (*func)(void *state, const char *dev));
 bool is_cdrom_device(const char *dev, bool as_target);
 bool is_bootable_device(const char *dev);
@@ -640,6 +648,7 @@ int	fs_is_lfs(void *);
  */
 const char *get_last_mounted(int fd, daddr_t offset, uint *fs_type,
      uint *fs_sub_type, uint flags);
+void	canonicalize_last_mounted(char*);
 int	edit_and_check_label(struct pm_devs *p, struct partition_usage_set *pset);
 int edit_ptn(menudesc *, void *);
 int checkoverlap(struct disk_partitions *parts);
@@ -683,7 +692,7 @@ int	do_system(const char *);
 
 /* from upgrade.c */
 void	do_upgrade(void);
-void	do_reinstall_sets(struct install_partition_desc*);
+void	do_reinstall_sets(void);
 void	restore_etc(void);
 
 /* from part_edit.c */
@@ -703,6 +712,7 @@ bool	parts_use_wholedisk(struct disk_partitions*,
 bool	md_parts_use_wholedisk(struct disk_partitions*);
 
 /* from util.c */
+bool	root_is_read_only(void);
 void	get_ptn_alignment(const struct disk_partitions *parts, daddr_t *align, daddr_t *p0off);
 char*	str_arg_subst(const char *, size_t, const char **);
 void	msg_display_subst(const char *, size_t, ...);
@@ -770,6 +780,7 @@ void	free_install_desc(struct install_partition_desc*);
 #if defined(DEBUG)  ||	defined(DEBUG_ROOT)
 void	backtowin(void);
 #endif
+bool	is_root_part_mount(const char *);
 const	char *concat_paths(const char *, const char *);
 const	char *target_expand(const char *);
 bool	needs_expanding(const char *, size_t);
@@ -796,6 +807,7 @@ int	target_file_exists_p(const char *);
 int	target_symlink_exists_p(const char *);
 void	unwind_mounts(void);
 int	target_mounted(void);
+void	umount_root(void);
 
 /* from partman.c */
 #ifndef NO_PARTMAN

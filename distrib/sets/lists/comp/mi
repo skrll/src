@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2277 2019/06/10 10:28:41 mrg Exp $
+#	$NetBSD: mi,v 1.2283 2019/08/23 08:17:27 mrg Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -2094,6 +2094,7 @@
 ./usr/include/gcc-7/sanitizer/allocator_interface.h	comp-gcc-include	gcc=7
 ./usr/include/gcc-7/sanitizer/asan_interface.h	comp-gcc-include	gcc=7
 ./usr/include/gcc-7/sanitizer/common_interface_defs.h	comp-gcc-include	gcc=7
+./usr/include/gcc-7/sanitizer/lsan_interface.h	comp-gcc-include	gcc=7
 ./usr/include/gcc-7/sanitizer/tsan_interface_atomic.h	comp-gcc-include	gcc=7
 ./usr/include/gcc-7/stdatomic.h			comp-gcc-include	gcc=7
 ./usr/include/gelf.h				comp-c-include
@@ -2583,14 +2584,14 @@
 ./usr/include/objc/encoding.h			comp-obsolete		obsolete
 ./usr/include/objc/hash.h			comp-obsolete		obsolete
 ./usr/include/objc/list.h			comp-obsolete		obsolete
-./usr/include/objc/message.h			comp-objc-include	libstdcxx,gcc
+./usr/include/objc/message.h			comp-objc-include	gcc
 ./usr/include/objc/objc-api.h			comp-obsolete		obsolete
-./usr/include/objc/objc-decls.h			comp-cxx-include	gcc,cxx
-./usr/include/objc/objc-exception.h		comp-objc-include	libstdcxx,gcc
+./usr/include/objc/objc-decls.h			comp-objc-include	gcc
+./usr/include/objc/objc-exception.h		comp-objc-include	gcc
 ./usr/include/objc/objc-list.h			comp-obsolete		obsolete
-./usr/include/objc/objc-sync.h			comp-objc-include	libstdcxx,gcc
+./usr/include/objc/objc-sync.h			comp-objc-include	gcc
 ./usr/include/objc/objc.h			comp-c-include		gcc
-./usr/include/objc/runtime.h			comp-objc-include	libstdcxx,gcc
+./usr/include/objc/runtime.h			comp-objc-include	gcc
 ./usr/include/objc/sarray.h			comp-obsolete		obsolete
 ./usr/include/objc/thr.h			comp-c-include		gcc
 ./usr/include/objc/typedstream.h		comp-obsolete		obsolete
@@ -3297,6 +3298,20 @@
 ./usr/include/zconf.h				comp-c-include
 ./usr/include/zlib.h				comp-c-include
 ./usr/lib					base-sys-usr		compatdir
+./usr/lib/clang/7.0.0/include/sanitizer/allocator_interface.h	comp-cxx-include		llvm
+./usr/lib/clang/7.0.0/include/sanitizer/asan_interface.h	comp-cxx-include		llvm
+./usr/lib/clang/7.0.0/include/sanitizer/common_interface_defs.h	comp-cxx-include		llvm
+./usr/lib/clang/7.0.0/include/sanitizer/coverage_interface.h	comp-cxx-include		llvm
+./usr/lib/clang/7.0.0/include/sanitizer/lsan_interface.h	comp-cxx-include		llvm
+./usr/lib/clang/7.0.0/include/sanitizer/msan_interface.h	comp-cxx-include		llvm
+./usr/lib/clang/7.0.0/include/sanitizer/netbsd_syscall_hooks.h	comp-cxx-include		llvm
+./usr/lib/clang/7.0.0/include/sanitizer/tsan_interface.h	comp-cxx-include		llvm
+./usr/lib/clang/7.0.0/include/sanitizer/tsan_interface_atomic.h	comp-cxx-include		llvm
+./usr/lib/clang/7.0.0/include/xray/xray_interface.h	comp-cxx-include		llvm
+./usr/lib/clang/7.0.0/include/xray/xray_log_interface.h	comp-cxx-include		llvm
+./usr/lib/clang/7.0.0/include/xray/xray_records.h	comp-cxx-include		llvm
+./usr/lib/clang/7.0.0/share/asan_blacklist.txt	comp-cxx-include		llvm
+./usr/lib/clang/7.0.0/share/msan_blacklist.txt	comp-cxx-include		llvm
 ./usr/lib/crt0.o				comp-c-lib		compatfile
 ./usr/lib/gcrt0.o				comp-c-lib		compatfile
 ./usr/lib/i18n/libBIG5.a			comp-i18n-lib		compatfile
@@ -3326,8 +3341,8 @@
 ./usr/lib/libamu_p.a				comp-obsolete		obsolete
 ./usr/lib/libarchive.a				comp-c-lib		compatfile
 ./usr/lib/libarchive_p.a			comp-c-proflib		compatfile,profile
-./usr/lib/libasan.a				comp-c-lib		compatfile,gcc
-./usr/lib/libasan_p.a				comp-c-proflib		compatfile,profile,gcc
+./usr/lib/libasan.a				comp-c-lib		compatfile,cxx,gcc
+./usr/lib/libasan_p.a				comp-c-proflib		compatfile,profile,cxx,gcc
 ./usr/lib/libasn1.a				comp-krb5-lib		compatfile,kerberos
 ./usr/lib/libasn1_p.a				comp-krb5-proflib	compatfile,kerberos,profile
 ./usr/lib/libatf-c++.a				comp-atf-lib		compatfile,atf
@@ -3481,8 +3496,8 @@
 ./usr/lib/libldap_p.a				comp-ldap-proflib	compatfile,ldap,profile
 ./usr/lib/libldap_r.a				comp-ldap-lib		compatfile,ldap
 ./usr/lib/libldap_r_p.a				comp-ldap-proflib	compatfile,ldap,profile
-./usr/lib/liblsan.a				comp-c-lib		compatfile,gcc
-./usr/lib/liblsan_p.a				comp-c-proflib		compatfile,profile,gcc
+./usr/lib/liblsan.a				comp-c-lib		compatfile,cxx,gcc
+./usr/lib/liblsan_p.a				comp-c-proflib		compatfile,profile,cxx,gcc
 ./usr/lib/liblua.a				comp-c-lib		compatfile
 ./usr/lib/liblua_p.a				comp-c-proflib		compatfile,profile
 ./usr/lib/liblutok.a				comp-c-lib		compatfile,kyua
@@ -3810,8 +3825,8 @@
 ./usr/lib/libtre_p.a				comp-c-proflib		compatfile,profile
 ./usr/lib/libtspi.a				comp-c-lib		compatfile,tpm
 ./usr/lib/libtspi_p.a				comp-c-proflib		compatfile,tpm,profile
-./usr/lib/libubsan.a				comp-c-lib		compatfile,gcc
-./usr/lib/libubsan_p.a				comp-c-proflib		compatfile,profile,gcc
+./usr/lib/libubsan.a				comp-c-lib		compatfile,cxx,gcc
+./usr/lib/libubsan_p.a				comp-c-proflib		compatfile,profile,cxx,gcc
 ./usr/lib/libukfs.a				comp-c-lib		compatfile,rump
 ./usr/lib/libukfs_p.a				comp-c-proflib		compatfile,rump,profile
 ./usr/lib/libumem.a				comp-zfs-lib		compatfile,zfs
@@ -5557,6 +5572,7 @@
 ./usr/share/man/cat3/archive_entry_linkresolver_free.0	comp-c-catman		.cat
 ./usr/share/man/cat3/archive_entry_linkresolver_new.0	comp-c-catman		.cat
 ./usr/share/man/cat3/archive_entry_linkresolver_set_strategy.0	comp-c-catman		.cat
+./usr/share/man/cat3/archive_entry_misc.0	comp-c-catman		.cat
 ./usr/share/man/cat3/archive_entry_mode.0	comp-c-catman		.cat
 ./usr/share/man/cat3/archive_entry_mtime.0	comp-c-catman		.cat
 ./usr/share/man/cat3/archive_entry_mtime_is_set.0	comp-c-catman		.cat
@@ -11951,6 +11967,7 @@
 ./usr/share/man/cat9/uprintf.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/usbd_status.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/usbdi.0			comp-sys-catman		.cat
+./usr/share/man/cat9/usbnet.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/useracc.0			comp-obsolete		obsolete
 ./usr/share/man/cat9/userret.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/ustore.0			comp-sys-catman		.cat
@@ -13613,6 +13630,7 @@
 ./usr/share/man/html3/archive_entry_linkresolver_free.html	comp-c-htmlman		html
 ./usr/share/man/html3/archive_entry_linkresolver_new.html	comp-c-htmlman		html
 ./usr/share/man/html3/archive_entry_linkresolver_set_strategy.html	comp-c-htmlman		html
+./usr/share/man/html3/archive_entry_misc.html	comp-c-htmlman		html
 ./usr/share/man/html3/archive_entry_mode.html	comp-c-htmlman		html
 ./usr/share/man/html3/archive_entry_mtime.html	comp-c-htmlman		html
 ./usr/share/man/html3/archive_entry_mtime_is_set.html	comp-c-htmlman		html
@@ -19837,6 +19855,7 @@
 ./usr/share/man/html9/uprintf.html		comp-sys-htmlman	html
 ./usr/share/man/html9/usbd_status.html		comp-sys-htmlman	html
 ./usr/share/man/html9/usbdi.html		comp-sys-htmlman	html
+./usr/share/man/html9/usbnet.html		comp-sys-htmlman	html
 ./usr/share/man/html9/userret.html		comp-sys-htmlman	html
 ./usr/share/man/html9/ustore.html		comp-sys-htmlman	html
 ./usr/share/man/html9/ustore_16.html		comp-sys-htmlman	html
@@ -21506,6 +21525,7 @@
 ./usr/share/man/man3/archive_entry_linkresolver_free.3	comp-c-man		.man
 ./usr/share/man/man3/archive_entry_linkresolver_new.3	comp-c-man		.man
 ./usr/share/man/man3/archive_entry_linkresolver_set_strategy.3	comp-c-man		.man
+./usr/share/man/man3/archive_entry_misc.3	comp-c-man		.man
 ./usr/share/man/man3/archive_entry_mode.3	comp-c-man		.man
 ./usr/share/man/man3/archive_entry_mtime.3	comp-c-man		.man
 ./usr/share/man/man3/archive_entry_mtime_is_set.3	comp-c-man		.man
@@ -27930,6 +27950,7 @@
 ./usr/share/man/man9/uprintf.9			comp-sys-man		.man
 ./usr/share/man/man9/usbd_status.9		comp-sys-man		.man
 ./usr/share/man/man9/usbdi.9			comp-sys-man		.man
+./usr/share/man/man9/usbnet.9			comp-sys-man		.man
 ./usr/share/man/man9/useracc.9			comp-obsolete		obsolete
 ./usr/share/man/man9/userret.9			comp-sys-man		.man
 ./usr/share/man/man9/ustore.9			comp-sys-man		.man

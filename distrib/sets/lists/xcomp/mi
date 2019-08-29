@@ -1,4 +1,4 @@
-#	 $NetBSD: mi,v 1.208 2019/04/16 21:20:51 mrg Exp $
+#	 $NetBSD: mi,v 1.210 2019/07/21 12:15:13 rjs Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -547,6 +547,7 @@
 ./usr/X11R7/include/drm/via_3d_reg.h			-unknown-	obsolete
 ./usr/X11R7/include/drm/via_drm.h			-unknown-	obsolete
 ./usr/X11R7/include/drm/xgi_drm.h			-unknown-	obsolete
+./usr/X11R7/include/epoxy/common.h			-unknown-	xorg
 ./usr/X11R7/include/epoxy/egl.h				-unknown-	xorg
 ./usr/X11R7/include/epoxy/egl_generated.h		-unknown-	xorg
 ./usr/X11R7/include/epoxy/gl.h				-unknown-	xorg
@@ -580,6 +581,7 @@
 ./usr/X11R7/include/freetype2/freetype/ftcffdrv.h	-unknown-	obsolete
 ./usr/X11R7/include/freetype2/freetype/ftchapters.h	-unknown-	xorg
 ./usr/X11R7/include/freetype2/freetype/ftcid.h		-unknown-	xorg
+./usr/X11R7/include/freetype2/freetype/ftcolor.h	-unknown-	xorg
 ./usr/X11R7/include/freetype2/freetype/ftdriver.h		-unknown-	xorg
 ./usr/X11R7/include/freetype2/freetype/fterrdef.h	-unknown-	xorg
 ./usr/X11R7/include/freetype2/freetype/fterrors.h	-unknown-	xorg

@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.40 2019/03/29 20:27:45 christos Exp $	*/
+/*	$NetBSD: machdep.c,v 1.42 2019/07/16 14:41:49 skrll Exp $	*/
 /*	$OpenBSD: zaurus_machdep.c,v 1.25 2006/06/20 18:24:04 todd Exp $	*/
 
 /*
@@ -107,7 +107,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.40 2019/03/29 20:27:45 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.42 2019/07/16 14:41:49 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -620,7 +620,7 @@ hw_isc1000(void)
 }
 
 /*
- * u_int initarm(...)
+ * vaddr_t initarm(...)
  *
  * Initial entry point on startup. This gets called before main() is
  * entered.
@@ -632,7 +632,7 @@ hw_isc1000(void)
  *   Setting up page tables for the kernel
  *   Relocating the kernel to the bottom of physical memory
  */
-u_int
+vaddr_t
 initarm(void *arg)
 {
 #ifdef DIAGNOSTIC
@@ -1132,7 +1132,7 @@ initarm(void *arg)
 #endif
 
 	/* We return the new stack pointer address */
-	return (kernelstack.pv_va + USPACE_SVC_STACK_TOP);
+	return kernelstack.pv_va + USPACE_SVC_STACK_TOP;
 }
 
 void *

@@ -1,4 +1,4 @@
-$NetBSD: TODO.usbmp,v 1.12 2019/05/07 22:00:10 mrg Exp $
+$NetBSD: TODO.usbmp,v 1.16 2019/08/23 07:29:29 mrg Exp $
 
 
 the majority of the USB MP device interface is documented in usbdivar.h.
@@ -21,11 +21,6 @@ KERNEL_LOCK
 usb_detach_{waitold,wakeup} to usb_detach_{wait,broadcast} conversion:
   - drivers:
       if_aue.c
-      if_axe.c
-      if_axen.c
-      if_smsc.c
-      if_udav.c
-      if_url.c
       stuirda.c
       ubt.c
       ucom.c
@@ -62,32 +57,33 @@ convert uhidev users to MPSAFE:
   uyurex(4)
   - sysmon -- hm?
 
-splusb drivers:
+splusb drivers to convert:
   - auvitek_dtv.c
   - auvitek_video.c
   - emdtv_dtv.c
   - if_athn_usb.c
-  - if_aue.c
-  - if_axe.c
-  - if_axen.c
-  - if_cdce.c
-  - if_cue.c
-  - if_kue.c
   - if_otus.c
   - if_rum.c
   - if_run.c
-  - if_smsc.c
-  - if_udav.c
-  - if_upl.c
+  - if_umb.c
   - if_ural.c
-  - if_url.c
-  - if_urndis.c
   - if_urtw.c
   - if_urtwn.c
   - if_zyd.c
   - ubt.c
   - ucycom.c
   - udsir.c
+  - uhso.c
+  - uirda.c
+  - ukbd.c
+  - ulpt.c
+  - urio.c
+  - usbdi.h
+  - uscanner.c
+  - usscanner.c
+  - ustir.c
+  - utoppy.c
+  - uvideo.c
 
 wakeup/tsleep drivers:
   - if_otus.c
@@ -118,18 +114,11 @@ missing D_MPSAFE drivers:
   - utoppy
 
 missing CALLOUT_MPSAFE drivers:
-  - if_aue.c
-  - if_axe.c
-  - if_axen.c
-  - if_cue.c
   - if_otus.c
   - if_rum.c
   - if_run.c
-  - if_smsc.c
-  - if_udav.c
   - if_upgt.c
   - if_ural.c
-  - if_url.c
   - if_urtw.c
   - if_urtwn.c
   - if_zyd.c
@@ -158,22 +147,24 @@ driver testing:		STATUS
   - irmce
   - aue
   - axe			working
-  - cdce
-  - cue
-  - kue
+  - axen		working
+  - cdce		working
+  - cue			working
+  - kue			working
   - udav
-  - url
-  - urndis
+  - url			working
+  - urndis		working
   - atu
   - otus
   - ral
   - rum
   - run
+  - ure			working
   - urtw		working
-  - urtwn
+  - urtwn		working
   - upgt
   - zyd
-  - upl
+  - upl			working
   - uberry
   - uipad
   - urio
@@ -194,14 +185,14 @@ ucom attachments:
   - umodem		working
   - uark
   - ubsa
-  - uchcom
-  - uftdi
+  - uchcom		working
+  - uftdi		working
   - uipaq
   - umct
   - uplcom		attaches ok
   - uslsa		working
-  - uvscom
-  - umcs
+  - uvscom		working
+  - umcs		working
   - uvisor
   - ukyopon
   - u3g

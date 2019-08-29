@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.106 2019/05/27 17:32:36 maxv Exp $	*/
+/*	$NetBSD: cpu.h,v 1.108 2019/08/07 06:23:48 maxv Exp $	*/
 
 /*
  * Copyright (c) 1990 The Regents of the University of California.
@@ -245,7 +245,7 @@ struct cpu_info {
 #ifdef SVS
 	pd_entry_t *	ci_svs_updir;
 	paddr_t		ci_svs_updirpa;
-	paddr_t		ci_unused;
+	int		ci_svs_ldt_sel;
 	kmutex_t	ci_svs_mtx;
 	pd_entry_t *	ci_svs_rsp0_pte;
 	vaddr_t		ci_svs_rsp0;
@@ -459,6 +459,8 @@ extern int x86_fpu_save;
 #define	FPU_SAVE_XSAVEOPT	3
 extern unsigned int x86_fpu_save_size;
 extern uint64_t x86_xsave_features;
+extern size_t x86_xsave_offsets[];
+extern size_t x86_xsave_sizes[];
 extern uint32_t x86_fpu_mxcsr_mask;
 extern bool x86_fpu_eager;
 

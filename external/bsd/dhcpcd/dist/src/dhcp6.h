@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dhcpcd - DHCP client daemon
  * Copyright (c) 2006-2019 Roy Marples <roy@marples.name>
@@ -207,6 +208,7 @@ struct dhcp6_state {
 	char leasefile[sizeof(LEASEFILE6) + IF_NAMESIZE + (IF_SSIDLEN * 4) +3];
 	const char *reason;
 	uint16_t lerror; /* Last error received from DHCPv6 reply. */
+	bool has_no_binding;
 	struct authstate auth;
 };
 
@@ -228,14 +230,13 @@ size_t dhcp6_find_delegates(struct interface *);
 int dhcp6_start(struct interface *, enum DH6S);
 void dhcp6_reboot(struct interface *);
 void dhcp6_renew(struct interface *);
-ssize_t dhcp6_env(char **, const char *, const struct interface *,
+ssize_t dhcp6_env(FILE *, const char *, const struct interface *,
     const struct dhcp6_message *, size_t);
 void dhcp6_free(struct interface *);
 void dhcp6_handleifa(int, struct ipv6_addr *, pid_t);
 int dhcp6_dadcompleted(const struct interface *);
 void dhcp6_abort(struct interface *);
 void dhcp6_drop(struct interface *, const char *);
-void dhcp6_dropnondelegates(struct interface *ifp);
 int dhcp6_dump(struct interface *);
 #endif /* DHCP6 */
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_lwp.c,v 1.67 2019/05/03 22:34:21 kamil Exp $	*/
+/*	$NetBSD: sys_lwp.c,v 1.69 2019/07/10 17:52:22 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_lwp.c,v 1.67 2019/05/03 22:34:21 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_lwp.c,v 1.69 2019/07/10 17:52:22 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -52,6 +52,8 @@ __KERNEL_RCSID(0, "$NetBSD: sys_lwp.c,v 1.67 2019/05/03 22:34:21 kamil Exp $");
 #include <uvm/uvm_extern.h>
 
 #define	LWP_UNPARK_MAX		1024
+
+static const stack_t lwp_ss_init = SS_INIT;
 
 static syncobj_t lwp_park_sobj = {
 	.sobj_flag	= SOBJ_SLEEPQ_LIFO,
@@ -111,7 +113,7 @@ do_lwp_create(lwp_t *l, void *arg, u_long flags, lwpid_t *new_lwp,
 		return ENOMEM;
 
 	error = lwp_create(l, p, uaddr, flags & LWP_DETACHED, NULL, 0,
-	    mi_startlwp, arg, &l2, l->l_class, sigmask, &SS_INIT);
+	    mi_startlwp, arg, &l2, l->l_class, sigmask, &lwp_ss_init);
 	if (__predict_false(error)) {
 		uvm_uarea_free(uaddr);
 		return error;
@@ -839,6 +841,7 @@ sys__lwp_getname(struct lwp *l, const struct sys__lwp_getname_args *uap,
 	} */
 	char name[MAXCOMLEN];
 	lwpid_t target;
+	size_t len;
 	proc_t *p;
 	lwp_t *t;
 
@@ -859,7 +862,9 @@ sys__lwp_getname(struct lwp *l, const struct sys__lwp_getname_args *uap,
 	lwp_unlock(t);
 	mutex_exit(p->p_lock);
 
-	return copyoutstr(name, SCARG(uap, name), SCARG(uap, len), NULL);
+	len = uimin(SCARG(uap, len), sizeof(name));
+
+	return copyoutstr(name, SCARG(uap, name), len, NULL);
 }
 
 int

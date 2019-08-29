@@ -1,4 +1,4 @@
-/*	$NetBSD: iscsi_main.c,v 1.29 2019/04/21 11:26:46 mlelstv Exp $	*/
+/*	$NetBSD: iscsi_main.c,v 1.31 2019/08/07 00:38:02 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2004,2005,2006,2011 The NetBSD Foundation, Inc.
@@ -252,6 +252,9 @@ iscsi_attach(device_t parent, device_t self, void *aux)
 	iscsi_detaching = false;
 	iscsi_init_cleanup();
 
+	if (!pmf_device_register(self, NULL, NULL))
+		aprint_error_dev(self, "couldn't establish power handler\n");
+
 	aprint_normal("%s: attached.  major = %d\n", iscsi_cd.cd_name,
 	    cdevsw_lookup_major(&iscsi_cdevsw));
 }
@@ -284,6 +287,8 @@ iscsi_detach(device_t self, int flags)
 	error = iscsi_destroy_cleanup();
 	if (error)
 		return error;
+
+	pmf_device_deregister(sc->dev);
 
 	mutex_destroy(&sc->lock);
 
@@ -672,7 +677,6 @@ iscsi_modcmd(modcmd_t cmd, void *arg)
 #ifdef _MODULE
 	devmajor_t cmajor = NODEVMAJOR, bmajor = NODEVMAJOR;
 	int error;
-	static struct sysctllog *clog;
 #endif
 
 	switch (cmd) {
@@ -718,8 +722,6 @@ iscsi_modcmd(modcmd_t cmd, void *arg)
 			config_cfdriver_detach(&iscsi_cd);
 			return ENXIO;
 		}
-
-		sysctl_iscsi_setup(&clog);
 #endif
 		return 0;
 		break;
@@ -729,8 +731,6 @@ iscsi_modcmd(modcmd_t cmd, void *arg)
 		error = config_cfdata_detach(iscsi_cfdata);
 		if (error)
 			return error;
-
-		sysctl_teardown(&clog);
 
 		config_cfattach_detach(iscsi_cd.cd_name, &iscsi_ca);
 		config_cfdriver_detach(&iscsi_cd);

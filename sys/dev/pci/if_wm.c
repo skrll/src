@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.641 2019/06/12 01:54:11 msaitoh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.646 2019/08/01 14:28:33 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.641 2019/06/12 01:54:11 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.646 2019/08/01 14:28:33 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -234,7 +234,7 @@ static int wm_watchdog_timeout = WM_WATCHDOG_TIMEOUT;
  * packet.  We allocate 256 receive descriptors, each with a 2k
  * buffer (MCLBYTES), which gives us room for 50 jumbo packets.
  */
-#define	WM_NRXDESC		256
+#define	WM_NRXDESC		256U
 #define	WM_NRXDESC_MASK		(WM_NRXDESC - 1)
 #define	WM_NEXTRX(x)		(((x) + 1) & WM_NRXDESC_MASK)
 #define	WM_PREVRX(x)		(((x) - 1) & WM_NRXDESC_MASK)
@@ -458,6 +458,7 @@ struct wm_queue {
 	struct wm_rxqueue wmq_rxq;
 
 	void *wmq_si;
+	krndsource_t rnd_source;	/* random source */
 };
 
 struct wm_phyop {
@@ -586,8 +587,6 @@ struct wm_softc {
 	int sc_tbi_serdes_ticks;	/* tbi ticks */
 
 	int sc_mchash_type;		/* multicast filter offset */
-
-	krndsource_t rnd_source;	/* random source */
 
 	struct if_percpuq *sc_ipq;	/* softint-based input queues */
 
@@ -2889,9 +2888,11 @@ alloc_retry:
 	}
 
 	/* If we're a i82543 or greater, we can support VLANs. */
-	if (sc->sc_type >= WM_T_82543)
+	if (sc->sc_type >= WM_T_82543) {
 		sc->sc_ethercom.ec_capabilities |=
 		    ETHERCAP_VLAN_MTU | ETHERCAP_VLAN_HWTAGGING;
+		sc->sc_ethercom.ec_capenable |= ETHERCAP_VLAN_HWTAGGING;
+	}
 
 	if ((sc->sc_flags & WM_F_EEE) != 0)
 		sc->sc_ethercom.ec_capabilities |= ETHERCAP_EEE;
@@ -2954,8 +2955,6 @@ alloc_retry:
 	ether_ifattach(ifp, enaddr);
 	ether_set_ifflags_cb(&sc->sc_ethercom, wm_ifflags_cb);
 	if_register(ifp);
-	rnd_attach_source(&sc->rnd_source, xname, RND_TYPE_NET,
-	    RND_FLAG_DEFAULT);
 
 #ifdef WM_EVENT_COUNTERS
 	/* Attach event counters. */
@@ -3009,8 +3008,6 @@ wm_detach(device_t self, int flags __unused)
 	evcnt_detach(&sc->sc_ev_rx_xon);
 	evcnt_detach(&sc->sc_ev_rx_macctl);
 #endif /* WM_EVENT_COUNTERS */
-
-	rnd_detach_source(&sc->rnd_source);
 
 	/* Tell the firmware about the release */
 	WM_CORE_LOCK(sc);
@@ -5139,8 +5136,12 @@ wm_add_rxbuf(struct wm_rxqueue *rxq, int idx)
 	rxs->rxs_mbuf = m;
 
 	m->m_len = m->m_pkthdr.len = m->m_ext.ext_size;
-	error = bus_dmamap_load_mbuf(sc->sc_dmat, rxs->rxs_dmamap, m,
-	    BUS_DMA_READ | BUS_DMA_NOWAIT);
+	/*
+	 * Cannot use bus_dmamap_load_mbuf() here because m_data may be
+	 * sc_align_tweak'd between bus_dmamap_load() and bus_dmamap_sync().
+	 */
+	error = bus_dmamap_load(sc->sc_dmat, rxs->rxs_dmamap, m->m_ext.ext_buf,
+	    m->m_ext.ext_size, NULL, BUS_DMA_READ | BUS_DMA_NOWAIT);
 	if (error) {
 		/* XXX XXX XXX */
 		aprint_error_dev(sc->sc_dev,
@@ -6825,6 +6826,15 @@ wm_alloc_txrx_queues(struct wm_softc *sc)
 	if (error)
 		goto fail_2;
 
+	for (i = 0; i < sc->sc_nqueues; i++) {
+		char rndname[16];
+
+		snprintf(rndname, sizeof(rndname), "%sTXRX%d",
+		    device_xname(sc->sc_dev), i);
+		rnd_attach_source(&sc->sc_queue[i].rnd_source, rndname,
+		    RND_TYPE_NET, RND_FLAG_DEFAULT);
+	}
+
 	return 0;
 
  fail_2:
@@ -6859,6 +6869,9 @@ static void
 wm_free_txrx_queues(struct wm_softc *sc)
 {
 	int i;
+
+	for (i = 0; i < sc->sc_nqueues; i++)
+		rnd_detach_source(&sc->sc_queue[i].rnd_source);
 
 	for (i = 0; i < sc->sc_nqueues; i++) {
 		struct wm_rxqueue *rxq = &sc->sc_queue[i].wmq_rxq;
@@ -8526,9 +8539,6 @@ wm_txeof(struct wm_txqueue *txq, u_int limit)
 	DPRINTF(WM_DEBUG_TX,
 	    ("%s: TX: txsdirty -> %d\n", device_xname(sc->sc_dev), i));
 
-	if (count != 0)
-		rnd_add_uint32(&sc->rnd_source, count);
-
 	/*
 	 * If there are no more pending transmissions, cancel the watchdog
 	 * timer.
@@ -8941,9 +8951,6 @@ wm_rxeof(struct wm_rxqueue *rxq, u_int limit)
 		if (rxq->rxq_stopping)
 			break;
 	}
-
-	if (count != 0)
-		rnd_add_uint32(&sc->rnd_source, count);
 
 	DPRINTF(WM_DEBUG_RX,
 	    ("%s: RX: rxptr -> %d\n", device_xname(sc->sc_dev), i));
@@ -9410,6 +9417,8 @@ wm_intr_legacy(void *arg)
 		 * So, we can call wm_rxeof() in interrupt context.
 		 */
 		wm_rxeof(rxq, UINT_MAX);
+		/* Fill lower bits with RX index. See below for the upper. */
+		rndval |= rxq->rxq_ptr & WM_NRXDESC_MASK;
 
 		mutex_exit(rxq->rxq_lock);
 		mutex_enter(txq->txq_lock);
@@ -9428,6 +9437,8 @@ wm_intr_legacy(void *arg)
 		}
 #endif
 		wm_txeof(txq, UINT_MAX);
+		/* Fill upper bits with TX index. See above for the lower. */
+		rndval = txq->txq_next * WM_NRXDESC;
 
 		mutex_exit(txq->txq_lock);
 		WM_CORE_LOCK(sc);
@@ -9452,7 +9463,7 @@ wm_intr_legacy(void *arg)
 		}
 	}
 
-	rnd_add_uint32(&sc->rnd_source, rndval);
+	rnd_add_uint32(&sc->sc_queue[0].rnd_source, rndval);
 
 	if (handled) {
 		/* Try to get more packets going. */
@@ -9509,6 +9520,7 @@ wm_txrxintr_msix(void *arg)
 	struct wm_softc *sc = txq->txq_sc;
 	u_int txlimit = sc->sc_tx_intr_process_limit;
 	u_int rxlimit = sc->sc_rx_intr_process_limit;
+	uint32_t rndval = 0;
 	bool txmore;
 	bool rxmore;
 
@@ -9528,6 +9540,8 @@ wm_txrxintr_msix(void *arg)
 
 	WM_Q_EVCNT_INCR(txq, txdw);
 	txmore = wm_txeof(txq, txlimit);
+	/* Fill upper bits with TX index. See below for the lower. */
+	rndval = txq->txq_next * WM_NRXDESC;
 	/* wm_deferred start() is done in wm_handle_queue(). */
 	mutex_exit(txq->txq_lock);
 
@@ -9542,9 +9556,19 @@ wm_txrxintr_msix(void *arg)
 
 	WM_Q_EVCNT_INCR(rxq, intr);
 	rxmore = wm_rxeof(rxq, rxlimit);
+
+	/* Fill lower bits with RX index. See above for the upper. */
+	rndval |= rxq->rxq_ptr & WM_NRXDESC_MASK;
 	mutex_exit(rxq->rxq_lock);
 
 	wm_itrs_writereg(sc, wmq);
+
+	/*
+	 * This function is called in the hardware interrupt context and
+	 * per-CPU, so it's not required to take a lock.
+	 */
+	if (rndval != 0)
+		rnd_add_uint32(&sc->sc_queue[wmq->wmq_id].rnd_source, rndval);
 
 	if (txmore || rxmore)
 		softint_schedule(wmq->wmq_si);
@@ -10389,7 +10413,7 @@ wm_i82543_mii_sendbits(struct wm_softc *sc, uint32_t data, int nbits)
 	v &= ~(MDI_IO | MDI_CLK | (CTRL_SWDPIO_MASK << CTRL_SWDPIO_SHIFT));
 	v |= MDI_DIR | CTRL_SWDPIO(3);
 
-	for (i = 1 << (nbits - 1); i != 0; i >>= 1) {
+	for (i = __BIT(nbits - 1); i != 0; i >>= 1) {
 		if (data & i)
 			v |= MDI_IO;
 		else
@@ -14642,7 +14666,8 @@ wm_ulp_disable(struct wm_softc *sc)
 	if (rv != 0) {
 		uint32_t reg2;
 
-		printf("%s: Force SMBus first.\n", __func__);
+		aprint_debug_dev(sc->sc_dev, "%s: Force SMBus first.\n",
+			__func__);
 		reg2 = CSR_READ(sc, WMREG_CTRL_EXT);
 		reg2 |= CTRL_EXT_FORCE_SMBUS;
 		CSR_WRITE(sc, WMREG_CTRL_EXT, reg2);

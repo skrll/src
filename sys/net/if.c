@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.455 2019/05/21 09:18:37 msaitoh Exp $	*/
+/*	$NetBSD: if.c,v 1.459 2019/08/20 10:59:00 roy Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.455 2019/05/21 09:18:37 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.459 2019/08/20 10:59:00 roy Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -1043,9 +1043,9 @@ static inline bool
 if_snd_is_used(struct ifnet *ifp)
 {
 
-	return ifp->if_transmit == NULL || ifp->if_transmit == if_nulltransmit ||
-	    ifp->if_transmit == if_transmit ||
-	    ALTQ_IS_ENABLED(&ifp->if_snd);
+	return ALTQ_IS_ENABLED(&ifp->if_snd) ||
+		ifp->if_transmit == if_transmit ||
+		ifp->if_transmit == NULL || ifp->if_transmit == if_nulltransmit;
 }
 
 /*
@@ -1611,6 +1611,8 @@ if_clone_destroy(const char *name)
 	struct if_clone *ifc;
 	struct ifnet *ifp;
 	struct psref psref;
+	int error;
+	int (*if_ioctl)(struct ifnet *, u_long, void *);
 
 	KASSERT(mutex_owned(&if_clone_mtx));
 
@@ -1627,6 +1629,7 @@ if_clone_destroy(const char *name)
 
 	/* We have to disable ioctls here */
 	IFNET_LOCK(ifp);
+	if_ioctl = ifp->if_ioctl;
 	ifp->if_ioctl = if_nullioctl;
 	IFNET_UNLOCK(ifp);
 
@@ -1636,7 +1639,16 @@ if_clone_destroy(const char *name)
 	 */
 	if_put(ifp, &psref);
 
-	return (*ifc->ifc_destroy)(ifp);
+	error = (*ifc->ifc_destroy)(ifp);
+
+	if (error != 0) {
+		/* We have to restore if_ioctl on error */
+		IFNET_LOCK(ifp);
+		ifp->if_ioctl = if_ioctl;
+		IFNET_UNLOCK(ifp);
+	}
+
+	return error;
 }
 
 static bool
@@ -2902,6 +2914,7 @@ ifioctl_common(struct ifnet *ifp, u_long cmd, void *data)
 	struct ifreq *ifr;
 	struct ifcapreq *ifcr;
 	struct ifdatareq *ifdr;
+	unsigned short flags;
 
 	switch (cmd) {
 	case SIOCSIFCAP:
@@ -2973,8 +2986,13 @@ ifioctl_common(struct ifnet *ifp, u_long cmd, void *data)
 			splx(s);
 		}
 		KERNEL_UNLOCK_IF_IFP_MPSAFE(ifp);
-		ifp->if_flags = (ifp->if_flags & IFF_CANTCHANGE) |
-			(ifr->ifr_flags &~ IFF_CANTCHANGE);
+		flags = (ifp->if_flags & IFF_CANTCHANGE) |
+		    (ifr->ifr_flags &~ IFF_CANTCHANGE);
+		if (ifp->if_flags != flags) {
+			ifp->if_flags = flags;
+			/* Notify that the flags have changed. */
+			rt_ifmsg(ifp);
+		}
 		break;
 	case SIOCGIFFLAGS:
 		ifr = data;
@@ -3050,6 +3068,58 @@ ifioctl_common(struct ifnet *ifp, u_long cmd, void *data)
 		KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 #endif
 		return ENETRESET;
+	case SIOCSIFDESCR:
+		{
+			char *descrbuf;
+
+ 			ifr = data;
+
+ 			if (ifr->ifr_buflen > IFDESCRSIZE)
+				return ENAMETOOLONG;
+
+ 			if (ifr->ifr_buf == NULL || ifr->ifr_buflen == 0) {
+				/* unset description */
+				descrbuf = NULL;
+			} else {
+				int error;
+
+ 				descrbuf = kmem_zalloc(IFDESCRSIZE, KM_SLEEP);
+				/* copy (IFDESCRSIZE - 1) bytes to ensure terminating nul */
+				error = copyin(ifr->ifr_buf, descrbuf, IFDESCRSIZE - 1);
+				if (error) {
+					kmem_free(descrbuf, IFDESCRSIZE);
+					return error;
+				}
+			}
+
+ 			if (ifp->if_description != NULL)
+				kmem_free(ifp->if_description, IFDESCRSIZE);
+
+ 			ifp->if_description = descrbuf;
+		}
+		break;
+
+ 	case SIOCGIFDESCR:
+		{
+			char *descr;
+
+ 			ifr = data;
+			descr = ifp->if_description;
+
+ 			if (descr == NULL)
+				return ENOMSG;
+
+ 			if (ifr->ifr_buflen < IFDESCRSIZE)
+				return EINVAL;
+			else {
+				int error;
+				error = copyout(descr, ifr->ifr_buf, IFDESCRSIZE);
+				if (error)
+					return error;
+			}
+		}
+ 		break;
+
 	default:
 		return ENOTTY;
 	}

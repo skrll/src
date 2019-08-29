@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dhcpcd - DHCP client daemon
  * Copyright (c) 2006-2019 Roy Marples <roy@marples.name>
@@ -59,7 +60,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
 
 #include "common.h"
 #include "dev.h"
@@ -307,16 +307,15 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 	struct if_spec spec;
 #ifdef AF_LINK
 	const struct sockaddr_dl *sdl;
-#ifdef SIOCGIFPRIORITY
-	struct ifreq ifr;
-#endif
 #ifdef IFLR_ACTIVE
 	struct if_laddrreq iflr = { .flags = IFLR_PREFIX };
 	int link_fd;
 #endif
-
 #elif AF_PACKET
 	const struct sockaddr_ll *sll;
+#endif
+#if defined(SIOCGIFPRIORITY) || defined(SIOCGIFHWADDR)
+	struct ifreq ifr;
 #endif
 
 	if ((ifs = malloc(sizeof(*ifs))) == NULL) {
@@ -512,10 +511,21 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 				memcpy(ifp->hwaddr, sll->sll_addr, ifp->hwlen);
 #endif
 		}
-#ifdef __linux__
-		/* PPP addresses on Linux don't have hardware addresses */
-		else
-			ifp->index = if_nametoindex(ifp->name);
+#ifdef SIOCGIFHWADDR
+		else {
+			/* This is a huge bug in getifaddrs(3) as there
+			 * is no reason why this can't be returned in
+			 * ifa_addr. */
+			memset(&ifr, 0, sizeof(ifr));
+			strlcpy(ifr.ifr_name, ifa->ifa_name,
+			    sizeof(ifr.ifr_name));
+			if (ioctl(ctx->pf_inet_fd, SIOCGIFHWADDR, &ifr) == -1)
+				logerr("%s: SIOCGIFHWADDR", ifa->ifa_name);
+			ifp->family = ifr.ifr_hwaddr.sa_family;
+			if (ioctl(ctx->pf_inet_fd, SIOCGIFINDEX, &ifr) == -1)
+				logerr("%s: SIOCGIFINDEX", ifa->ifa_name);
+			ifp->index = (unsigned int)ifr.ifr_ifindex;
+		}
 #endif
 
 		/* Ensure hardware address is valid. */
@@ -535,6 +545,9 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 #endif
 #ifdef ARPHRD_PPP
 			case ARPHRD_PPP:
+#endif
+#ifdef ARPHRD_NONE
+			case ARPHRD_NONE:
 #endif
 				/* We don't warn for supported families */
 				break;
@@ -704,58 +717,6 @@ if_domtu(const struct interface *ifp, short int mtu)
 	return ifr.ifr_mtu;
 }
 
-/* Interface comparer for working out ordering. */
-static int
-if_cmp(const struct interface *si, const struct interface *ti)
-{
-#ifdef INET
-	int r;
-#endif
-
-	/* Check active first */
-	if (si->active > ti->active)
-		return -1;
-	if (si->active < ti->active)
-		return 1;
-
-	/* Check carrier status next */
-	if (si->carrier > ti->carrier)
-		return -1;
-	if (si->carrier < ti->carrier)
-		return 1;
-#ifdef INET
-	if (D_STATE_RUNNING(si) && !D_STATE_RUNNING(ti))
-		return -1;
-	if (!D_STATE_RUNNING(si) && D_STATE_RUNNING(ti))
-		return 1;
-#endif
-#ifdef INET6
-	if (RS_STATE_RUNNING(si) && !RS_STATE_RUNNING(ti))
-		return -1;
-	if (!RS_STATE_RUNNING(si) && RS_STATE_RUNNING(ti))
-		return 1;
-#endif
-#ifdef DHCP6
-	if (D6_STATE_RUNNING(si) && !D6_STATE_RUNNING(ti))
-		return -1;
-	if (!D6_STATE_RUNNING(si) && D6_STATE_RUNNING(ti))
-		return 1;
-#endif
-
-#ifdef INET
-	/* Special attention needed here due to states and IPv4LL. */
-	if ((r = ipv4_ifcmp(si, ti)) != 0)
-		return r;
-#endif
-
-	/* Finally, metric */
-	if (si->metric < ti->metric)
-		return -1;
-	if (si->metric > ti->metric)
-		return 1;
-	return 0;
-}
-
 #ifdef ALIAS_ADDR
 int
 if_makealias(char *alias, size_t alias_len, const char *ifname, int lun)
@@ -766,35 +727,6 @@ if_makealias(char *alias, size_t alias_len, const char *ifname, int lun)
 	return snprintf(alias, alias_len, "%s:%u", ifname, lun);
 }
 #endif
-
-/* Sort the interfaces into a preferred order - best first, worst last. */
-void
-if_sortinterfaces(struct dhcpcd_ctx *ctx)
-{
-	struct if_head sorted;
-	struct interface *ifp, *ift;
-
-	if (ctx->ifaces == NULL ||
-	    (ifp = TAILQ_FIRST(ctx->ifaces)) == NULL ||
-	    TAILQ_NEXT(ifp, next) == NULL)
-		return;
-
-	TAILQ_INIT(&sorted);
-	TAILQ_REMOVE(ctx->ifaces, ifp, next);
-	TAILQ_INSERT_HEAD(&sorted, ifp, next);
-	while ((ifp = TAILQ_FIRST(ctx->ifaces))) {
-		TAILQ_REMOVE(ctx->ifaces, ifp, next);
-		TAILQ_FOREACH(ift, &sorted, next) {
-			if (if_cmp(ifp, ift) == -1) {
-				TAILQ_INSERT_BEFORE(ift, ifp, next);
-				break;
-			}
-		}
-		if (ift == NULL)
-			TAILQ_INSERT_TAIL(&sorted, ifp, next);
-	}
-	TAILQ_CONCAT(ctx->ifaces, &sorted, next);
-}
 
 struct interface *
 if_findifpfromcmsg(struct dhcpcd_ctx *ctx, struct msghdr *msg, int *hoplimit)

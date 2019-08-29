@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * BSD interface driver for dhcpcd
  * Copyright (c) 2006-2019 Roy Marples <roy@marples.name>
@@ -50,6 +51,8 @@
 #include <netinet6/nd6.h>
 #ifdef __NetBSD__
 #include <net/if_vlanvar.h> /* Needs netinet/if_ether.h */
+#elif defined(__DragonFly__)
+#include <net/vlan/if_vlan_var.h>
 #else
 #include <net/if_vlan_var.h>
 #endif
@@ -188,6 +191,8 @@ if_opensockets_os(struct dhcpcd_ctx *ctx)
 	if (setsockopt(ctx->link_fd, PF_ROUTE, ROUTE_MSGFILTER,
 	    &msgfilter_mask, sizeof(msgfilter_mask)) == -1)
 		logerr(__func__);
+#else
+#warning kernel does not support route message filtering
 #endif
 
 	return 0;
@@ -496,6 +501,8 @@ if_route(unsigned char cmd, const struct rt *rt)
 	bool gateway_unspec;
 
 	assert(rt != NULL);
+	assert(rt->rt_ifp != NULL);
+	assert(rt->rt_ifp->ctx != NULL);
 	ctx = rt->rt_ifp->ctx;
 
 #define ADDSA(sa) do {							      \
@@ -538,7 +545,7 @@ if_route(unsigned char cmd, const struct rt *rt)
  * try to encourage someone to fix that by logging a waring during compile.
  */
 #if defined(__FreeBSD__) || defined(__OpenBSD__)
-#warning OS does not allow IPv6 address sharing
+#warning kernel does not allow IPv6 address sharing
 			if (!gateway_unspec || rt->rt_dest.sa_family!=AF_INET6)
 #endif
 			rtm->rtm_addrs |= RTA_IFP;
@@ -655,11 +662,8 @@ if_copyrt(struct dhcpcd_ctx *ctx, struct rt *rt, const struct rt_msghdr *rtm)
 	}
 #endif
 
-	/* We have already checked that at least one address must be
-	 * present after the rtm structure. */
-	/* coverity[ptr_arith] */
-	if (get_addrs(rtm->rtm_addrs, rtm + 1,
-		      rtm->rtm_msglen - sizeof(*rtm), rti_info) == -1)
+	if (get_addrs(rtm->rtm_addrs, (const char *)rtm + sizeof(*rtm),
+	              rtm->rtm_msglen - sizeof(*rtm), rti_info) == -1)
 		return -1;
 	memset(rt, 0, sizeof(*rt));
 
@@ -695,15 +699,13 @@ if_copyrt(struct dhcpcd_ctx *ctx, struct rt *rt, const struct rt_msghdr *rtm)
 }
 
 int
-if_initrt(struct dhcpcd_ctx *ctx, int af)
+if_initrt(struct dhcpcd_ctx *ctx, rb_tree_t *kroutes, int af)
 {
 	struct rt_msghdr *rtm;
 	int mib[6];
 	size_t needed;
 	char *buf, *p, *end;
-	struct rt rt;
-
-	rt_headclear(&ctx->kroutes, af);
+	struct rt rt, *rtn;
 
 	mib[0] = CTL_NET;
 	mib[1] = PF_ROUTE;
@@ -730,10 +732,15 @@ if_initrt(struct dhcpcd_ctx *ctx, int af)
 			errno = EINVAL;
 			break;
 		}
-		if (if_copyrt(ctx, &rt, rtm) == 0) {
-			rt.rt_dflags |= RTDF_INIT;
-			rt_recvrt(RTM_ADD, &rt, rtm->rtm_pid);
+		if (if_copyrt(ctx, &rt, rtm) != 0)
+			continue;
+		if ((rtn = rt_new(rt.rt_ifp)) == NULL) {
+			logerr(__func__);
+			break;
 		}
+		memcpy(rtn, &rt, sizeof(*rtn));
+		if (rb_tree_insert_node(kroutes, rtn) != rtn)
+			rt_free(rtn);
 	}
 	free(buf);
 	return p == end ? 0 : -1;
@@ -1107,10 +1114,7 @@ if_ifa(struct dhcpcd_ctx *ctx, const struct ifa_msghdr *ifam)
 	if ((ifp = if_findindex(ctx->ifaces, ifam->ifam_index)) == NULL)
 		return 0;
 
-	/* We have already checked that at least one address must be
-	 * present after the ifam structure. */
-	/* coverity[ptr_arith] */
-	if (get_addrs(ifam->ifam_addrs, ifam + 1,
+	if (get_addrs(ifam->ifam_addrs, (const char *)ifam + sizeof(*ifam),
 		      ifam->ifam_msglen - sizeof(*ifam), rti_info) == -1)
 		return -1;
 
@@ -1305,30 +1309,42 @@ if_dispatch(struct dhcpcd_ctx *ctx, const struct rt_msghdr *rtm)
 		return if_ifa(ctx, (const void *)rtm);
 #ifdef RTM_DESYNC
 	case RTM_DESYNC:
-		return dhcpcd_linkoverflow(ctx);
+		dhcpcd_linkoverflow(ctx);
+#elif !defined(SO_RERROR)
+#warning cannot detect route socket overflow within kernel
 #endif
 	}
 
 	return 0;
 }
 
+__CTASSERT(offsetof(struct rt_msghdr, rtm_msglen) == 0);
 int
 if_handlelink(struct dhcpcd_ctx *ctx)
 {
 	struct rtm rtm;
-	struct iovec iov = { .iov_base = &rtm, .iov_len = sizeof(rtm) };
-	struct msghdr msg = { .msg_iov = &iov, .msg_iovlen = 1 };
 	ssize_t len;
 
-	len = recvmsg(ctx->link_fd, &msg, 0);
+	len = read(ctx->link_fd, &rtm, sizeof(rtm));
 	if (len == -1)
 		return -1;
 	if (len == 0)
 		return 0;
-	if (len < rtm.hdr.rtm_msglen) {
+	if ((size_t)len < sizeof(rtm.hdr.rtm_msglen) ||
+	    len != rtm.hdr.rtm_msglen)
+	{
 		errno = EINVAL;
 		return -1;
 	}
+	/*
+	 * Coverity thinks that the data could be tainted from here.
+	 * I have no idea how because the length of the data we read
+	 * is guarded by len and checked to match rtm_msglen.
+	 * The issue seems to be related to extracting the addresses
+	 * at the end of the header, but seems to have no issues with the
+	 * equivalent call in if_initrt.
+	 */
+	/* coverity[tainted_data] */
 	return if_dispatch(ctx, &rtm.hdr);
 }
 

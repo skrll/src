@@ -1,4 +1,4 @@
-/*	$NetBSD: specialreg.h,v 1.147 2019/05/29 16:54:41 maxv Exp $	*/
+/*	$NetBSD: specialreg.h,v 1.150 2019/07/26 10:03:40 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2014-2019 The NetBSD Foundation, Inc.
@@ -145,6 +145,26 @@
  */
 #define XCR0_FPU	(XCR0_X87 | XCR0_SSE | XCR0_YMM_Hi128 | \
 			 XCR0_Opmask | XCR0_ZMM_Hi256 | XCR0_Hi16_ZMM)
+
+/*
+ * XSAVE component indices.
+ */
+#define XSAVE_X87	0
+#define XSAVE_SSE	1
+#define XSAVE_YMM_Hi128	2
+#define XSAVE_BNDREGS	3
+#define XSAVE_BNDCSR	4
+#define XSAVE_Opmask	5
+#define XSAVE_ZMM_Hi256	6
+#define XSAVE_Hi16_ZMM	7
+#define XSAVE_PT	8
+#define XSAVE_PKRU	9
+#define XSAVE_HDC	10
+
+/*
+ * Highest XSAVE component enabled by XCR0_FPU.
+ */
+#define XSAVE_MAX_COMPONENT XSAVE_Hi16_ZMM
 
 /*
  * CPUID "features" bits
@@ -681,12 +701,16 @@
 #define CPUID_APM_TSC	0x00000100	/* TSC invariant */
 #define CPUID_APM_CPB	0x00000200	/* Core performance boost */
 #define CPUID_APM_EFF	0x00000400	/* Effective Frequency (read-only) */
+#define CPUID_APM_PROCFI 0x00000800	/* Proc Feedback Interface */
+#define CPUID_APM_PROCPR 0x00001000	/* Proc Power Reporting  */
+#define CPUID_APM_CONNSTBY 0x00002000	/* Connected Standby */
+#define CPUID_APM_RAPL	0x00004000	/* Running Average Power Limit */
 
-#define CPUID_APM_FLAGS		"\20" \
-	"\1" "TS"	"\2" "FID"	"\3" "VID"	"\4" "TTP" \
-	"\5" "HTC"	"\6" "STC"	"\7" "100"	"\10" "HWP" \
-	"\11" "TSC"	"\12" "CPB"	"\13" "EffFreq"	"\14" "B11" \
-	"\15" "B12"
+#define CPUID_APM_FLAGS		"\20"					      \
+	"\1" "TS"	"\2" "FID"	"\3" "VID"	"\4" "TTP"	      \
+	"\5" "HTC"	"\6" "STC"	"\7" "100"	"\10" "HWP"	      \
+	"\11" "TSC"	"\12" "CPB"	"\13" "EffFreq"	"\14" "PROCFI"	      \
+	"\15" "PROCPR"	"\16" "CONNSTBY" "\17" "RAPL"
 
 /* AMD Fn8000000a %edx features (SVM features) */
 #define CPUID_AMD_SVM_NP		0x00000001
@@ -710,6 +734,14 @@
 	"\15" "PFThreshold" "\16" "AVIC" "\17" "B14"			\
 						"\20" "V_VMSAVE_VMLOAD"	\
 	"\21" "VGIF"
+
+/*
+ * AMD Fn8000_0001d  Cache Topology Information.
+ * It's almost the same as Intel Deterministic Cache Parameter Leaf(0x04)
+ * except the following:
+ *	No Cores/package (%eax bit 31..26)
+ *	No Complex cache indexing (%edx bit 2)
+ */
 
 /*
  * Centaur Extended Feature flags

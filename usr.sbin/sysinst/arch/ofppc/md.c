@@ -1,4 +1,4 @@
-/*	$NetBSD: md.c,v 1.6 2019/06/20 00:43:57 christos Exp $	*/
+/*	$NetBSD: md.c,v 1.8 2019/08/14 12:55:37 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -89,7 +89,7 @@ md_get_info(struct install_partition_desc *install)
 		    select_part_scheme(pm, NULL, true, NULL);
 
 		if (!ps)
-			return true;
+			return false;
 
 		struct disk_partitions *parts =
 		   (*ps->create_new_for_disk)(pm->diskdev,
@@ -669,7 +669,7 @@ rdbchksum(void *bdata)
 }
 
 int
-md_pre_mount(struct install_partition_desc *install)
+md_pre_mount(struct install_partition_desc *install, size_t ndx)
 {
 
 	return 0;

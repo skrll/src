@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.22 2019/06/26 07:47:25 isaki Exp $	*/
+/*	$NetBSD: audio.c,v 1.29 2019/08/23 09:41:26 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -142,7 +142,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.22 2019/06/26 07:47:25 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.29 2019/08/23 09:41:26 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -593,6 +593,7 @@ static int audio_mixer_init(struct audio_softc *, int,
 static void audio_mixer_destroy(struct audio_softc *, audio_trackmixer_t *);
 static void audio_pmixer_start(struct audio_softc *, bool);
 static void audio_pmixer_process(struct audio_softc *);
+static void audio_pmixer_agc(audio_trackmixer_t *, int);
 static int  audio_pmixer_mix_track(audio_trackmixer_t *, audio_track_t *, int);
 static void audio_pmixer_output(struct audio_softc *);
 static int  audio_pmixer_halt(struct audio_softc *);
@@ -2155,6 +2156,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 		if (sc->sc_popens == 0) {
 			mutex_enter(sc->sc_intr_lock);
 			sc->sc_pmixer->volume = 256;
+			sc->sc_pmixer->voltimer = 0;
 			mutex_exit(sc->sc_intr_lock);
 		}
 	}
@@ -2211,15 +2213,23 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	audio_ring_t *input;
 	int error;
 
-	track = file->rtrack;
-	KASSERT(track);
-	TRACET(2, track, "resid=%zd", uio->uio_resid);
-
 	KASSERT(!mutex_owned(sc->sc_lock));
+
+	/*
+	 * On half-duplex hardware, O_RDWR is treated as O_WRONLY.
+	 * However read() system call itself can be called because it's
+	 * opened with O_RDWR.  So in this case, deny this read().
+	 */
+	track = file->rtrack;
+	if (track == NULL) {
+		return EBADF;
+	}
 
 	/* I think it's better than EINVAL. */
 	if (track->mmapped)
 		return EPERM;
+
+	TRACET(2, track, "resid=%zd", uio->uio_resid);
 
 #ifdef AUDIO_PM_IDLE
 	mutex_enter(sc->sc_lock);
@@ -2227,15 +2237,6 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		device_active(&sc->sc_dev, DVA_SYSTEM);
 	mutex_exit(sc->sc_lock);
 #endif
-
-	/*
-	 * On half-duplex hardware, O_RDWR is treated as O_WRONLY.
-	 * However read() system call itself can be called because it's
-	 * opened with O_RDWR.  So in this case, deny this read().
-	 */
-	if ((file->mode & AUMODE_RECORD) == 0) {
-		return EBADF;
-	}
 
 	usrbuf = &track->usrbuf;
 	input = track->input;
@@ -2339,17 +2340,18 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 	audio_ring_t *outbuf;
 	int error;
 
+	KASSERT(!mutex_owned(sc->sc_lock));
+
 	track = file->ptrack;
 	KASSERT(track);
-	TRACET(2, track, "%sresid=%zd pid=%d.%d ioflag=0x%x",
-	    audiodebug >= 3 ? "begin " : "",
-	    uio->uio_resid, (int)curproc->p_pid, (int)curlwp->l_lid, ioflag);
-
-	KASSERT(!mutex_owned(sc->sc_lock));
 
 	/* I think it's better than EINVAL. */
 	if (track->mmapped)
 		return EPERM;
+
+	TRACET(2, track, "%sresid=%zd pid=%d.%d ioflag=0x%x",
+	    audiodebug >= 3 ? "begin " : "",
+	    uio->uio_resid, (int)curproc->p_pid, (int)curlwp->l_lid, ioflag);
 
 	if (uio->uio_resid == 0) {
 		track->eofcounter++;
@@ -4683,13 +4685,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 			return ENOMEM;
 		}
 	} else {
-		mixer->hwbuf.mem = kern_malloc(bufsize, M_NOWAIT);
-		if (mixer->hwbuf.mem == NULL) {
-			device_printf(sc->sc_dev,
-			    "%s: malloc hwbuf(%zu) failed\n",
-			    __func__, bufsize);
-			return ENOMEM;
-		}
+		mixer->hwbuf.mem = kmem_alloc(bufsize, KM_SLEEP);
 	}
 
 	/* From here, audio_mixer_destroy is necessary to exit. */
@@ -4799,18 +4795,17 @@ abort:
 static void
 audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 {
-	int mode;
+	int bufsize;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	mode = mixer->mode;
-	KASSERT(mode == AUMODE_PLAY || mode == AUMODE_RECORD);
+	bufsize = frametobyte(&mixer->hwbuf.fmt, mixer->hwbuf.capacity);
 
 	if (mixer->hwbuf.mem != NULL) {
 		if (sc->hw_if->freem) {
-			sc->hw_if->freem(sc->hw_hdl, mixer->hwbuf.mem, mode);
+			sc->hw_if->freem(sc->hw_hdl, mixer->hwbuf.mem, bufsize);
 		} else {
-			kern_free(mixer->hwbuf.mem);
+			kmem_free(mixer->hwbuf.mem, bufsize);
 		}
 		mixer->hwbuf.mem = NULL;
 	}
@@ -4972,59 +4967,32 @@ audio_pmixer_process(struct audio_softc *sc)
 		memset(mixer->mixsample, 0,
 		    frametobyte(&mixer->mixfmt, frame_count));
 	} else {
-		aint2_t ovf_plus;
-		aint2_t ovf_minus;
-		int vol;
-
-		/* Overflow detection */
-		ovf_plus = AINT_T_MAX;
-		ovf_minus = AINT_T_MIN;
-		m = mixer->mixsample;
-		for (i = 0; i < sample_count; i++) {
-			aint2_t val;
-
-			val = *m++;
-			if (val > ovf_plus)
-				ovf_plus = val;
-			else if (val < ovf_minus)
-				ovf_minus = val;
+		if (mixed > 1) {
+			/* If there are multiple tracks, do auto gain control */
+			audio_pmixer_agc(mixer, sample_count);
 		}
 
-		/* Master Volume Auto Adjust */
-		vol = mixer->volume;
-		if (ovf_plus > (aint2_t)AINT_T_MAX
-		 || ovf_minus < (aint2_t)AINT_T_MIN) {
-			aint2_t ovf;
-			int vol2;
-
-			/* XXX TODO: Check AINT2_T_MIN ? */
-			ovf = ovf_plus;
-			if (ovf < -ovf_minus)
-				ovf = -ovf_minus;
-
-			/* Turn down the volume if overflow occured. */
-			vol2 = (int)((aint2_t)AINT_T_MAX * 256 / ovf);
-			if (vol2 < vol)
-				vol = vol2;
-
-			if (vol < mixer->volume) {
-				/* Turn down gradually to 128. */
-				if (mixer->volume > 128) {
-					mixer->volume =
-					    (mixer->volume * 95) / 100;
-					TRACE(2,
-					    "auto volume adjust: volume %d",
-					    mixer->volume);
-				}
-			}
-		}
-
-		/* Apply Master Volume. */
-		if (vol != 256) {
+		/* Apply master volume */
+		if (mixer->volume < 256) {
 			m = mixer->mixsample;
 			for (i = 0; i < sample_count; i++) {
-				*m = AUDIO_SCALEDOWN(*m * vol, 8);
+				*m = AUDIO_SCALEDOWN(*m * mixer->volume, 8);
 				m++;
+			}
+
+			/*
+			 * Recover the volume gradually at the pace of
+			 * several times per second.  If it's too fast, you
+			 * can recognize that the volume changes up and down
+			 * quickly and it's not so comfortable.
+			 */
+			mixer->voltimer += mixer->blktime_n;
+			if (mixer->voltimer * 4 >= mixer->blktime_d) {
+				mixer->volume++;
+				mixer->voltimer = 0;
+#if defined(AUDIO_DEBUG_AGC)
+				TRACE(1, "volume recover: %d", mixer->volume);
+#endif
 			}
 		}
 	}
@@ -5066,6 +5034,62 @@ audio_pmixer_process(struct audio_softc *sc)
 	    (int)mixer->mixseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
 	    (mixed == 0) ? " silent" : "");
+}
+
+/*
+ * Do auto gain control.
+ * Must be called sc_intr_lock held.
+ */
+static void
+audio_pmixer_agc(audio_trackmixer_t *mixer, int sample_count)
+{
+	struct audio_softc *sc __unused;
+	aint2_t val;
+	aint2_t maxval;
+	aint2_t minval;
+	aint2_t over_plus;
+	aint2_t over_minus;
+	aint2_t *m;
+	int newvol;
+	int i;
+
+	sc = mixer->sc;
+
+	/* Overflow detection */
+	maxval = AINT_T_MAX;
+	minval = AINT_T_MIN;
+	m = mixer->mixsample;
+	for (i = 0; i < sample_count; i++) {
+		val = *m++;
+		if (val > maxval)
+			maxval = val;
+		else if (val < minval)
+			minval = val;
+	}
+
+	/* Absolute value of overflowed amount */
+	over_plus = maxval - AINT_T_MAX;
+	over_minus = AINT_T_MIN - minval;
+
+	if (over_plus > 0 || over_minus > 0) {
+		if (over_plus > over_minus) {
+			newvol = (int)((aint2_t)AINT_T_MAX * 256 / maxval);
+		} else {
+			newvol = (int)((aint2_t)AINT_T_MIN * 256 / minval);
+		}
+
+		/*
+		 * Change the volume only if new one is smaller.
+		 * Reset the timer even if the volume isn't changed.
+		 */
+		if (newvol <= mixer->volume) {
+			mixer->volume = newvol;
+			mixer->voltimer = 0;
+#if defined(AUDIO_DEBUG_AGC)
+			TRACE(1, "auto volume adjust: %d", mixer->volume);
+#endif
+		}
+	}
 }
 
 /*
@@ -5936,11 +5960,14 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	if ((mode & AUMODE_PLAY)) {
-		if (sc->sc_pmixer) {
+		if (sc->sc_pmixer == NULL) {
+			sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer),
+			    KM_SLEEP);
+		} else {
+			/* destroy() doesn't free memory. */
 			audio_mixer_destroy(sc, sc->sc_pmixer);
-			kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
+			memset(sc->sc_pmixer, 0, sizeof(*sc->sc_pmixer));
 		}
-		sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer), KM_SLEEP);
 		error = audio_mixer_init(sc, AUMODE_PLAY, phwfmt, pfil);
 		if (error) {
 			aprint_error_dev(sc->sc_dev,
@@ -5951,11 +5978,14 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 		}
 	}
 	if ((mode & AUMODE_RECORD)) {
-		if (sc->sc_rmixer) {
+		if (sc->sc_rmixer == NULL) {
+			sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer),
+			    KM_SLEEP);
+		} else {
+			/* destroy() doesn't free memory. */
 			audio_mixer_destroy(sc, sc->sc_rmixer);
-			kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
+			memset(sc->sc_rmixer, 0, sizeof(*sc->sc_rmixer));
 		}
-		sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer), KM_SLEEP);
 		error = audio_mixer_init(sc, AUMODE_RECORD, rhwfmt, rfil);
 		if (error) {
 			aprint_error_dev(sc->sc_dev,
@@ -7696,7 +7726,9 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		} else {
 			ma = NULL;
 		}
+		mutex_enter(sc->sc_lock);
 		mixer_remove(sc);	/* remove old entry */
+		mutex_exit(sc->sc_lock);
 		if (ma != NULL) {
 			ma->next = sc->sc_async_mixer;
 			ma->pid = curproc->p_pid;

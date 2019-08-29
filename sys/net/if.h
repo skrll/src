@@ -1,4 +1,4 @@
-/*	$NetBSD: if.h,v 1.273 2019/06/24 06:24:33 skrll Exp $	*/
+/*	$NetBSD: if.h,v 1.275 2019/08/10 21:13:54 rmind Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -74,6 +74,11 @@
  * Note: this is the same size as a generic device's external name.
  */
 #define IF_NAMESIZE 16
+
+/*
+ * Length of interface description, including terminating '\0'.
+ */
+#define	IFDESCRSIZE	64
 
 #if defined(_NETBSD_SOURCE)
 
@@ -335,6 +340,7 @@ typedef struct ifnet {
 	struct mowner	*if_mowner;	/* ?: who owns mbufs for this interface */
 
 	void		*if_agrprivate;	/* ?: used only when #if NAGR > 0 */
+	void		*if_npf_private;/* ?: associated NPF context */
 
 	/*
 	 * pf specific data, used only when #if NPF > 0.
@@ -365,6 +371,7 @@ typedef struct ifnet {
 	int		(*if_setflags)	/* :: */
 			    (struct ifnet *, const short);
 	kmutex_t	*if_ioctl_lock;	/* :: */
+	char		*if_description;	/* i: interface description */
 #ifdef _KERNEL /* XXX kvm(3) */
 	struct callout	*if_slowtimo_ch;/* :: */
 	struct krwlock	*if_afdata_lock;/* :: */

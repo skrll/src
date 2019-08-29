@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dhcpcd - DHCP client daemon
  * Copyright (c) 2006-2019 Roy Marples <roy@marples.name>
@@ -90,9 +91,6 @@
 	    ((addr & IN_CLASSB_NET) == 0xc0a80000))
 #endif
 
-#define RAW_EOF			1 << 0
-#define RAW_PARTIALCSUM		2 << 0
-
 #ifndef CLLADDR
 #ifdef AF_LINK
 #  define CLLADDR(sdl) (const void *)((sdl)->sdl_data + (sdl)->sdl_nlen)
@@ -123,7 +121,6 @@ void if_deletestaleaddrs(struct if_head *);
 struct interface *if_find(struct if_head *, const char *);
 struct interface *if_findindex(struct if_head *, unsigned int);
 struct interface *if_loopback(struct dhcpcd_ctx *);
-void if_sortinterfaces(struct dhcpcd_ctx *);
 void if_free(struct interface *);
 int if_domtu(const struct interface *, short int);
 #define if_getmtu(ifp) if_domtu((ifp), 0)
@@ -186,7 +183,7 @@ int if_handlelink(struct dhcpcd_ctx *);
 #endif
 
 int if_route(unsigned char, const struct rt *rt);
-int if_initrt(struct dhcpcd_ctx *, int);
+int if_initrt(struct dhcpcd_ctx *, rb_tree_t *, int);
 
 #ifdef INET
 int if_address(unsigned char, const struct ipv4_addr *);

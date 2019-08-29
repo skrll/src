@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_machdep.c,v 1.23 2018/09/03 16:29:26 riastradh Exp $	*/
+/*	$NetBSD: pmap_machdep.c,v 1.25 2019/08/15 12:24:08 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap_machdep.c,v 1.23 2018/09/03 16:29:26 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_machdep.c,v 1.25 2019/08/15 12:24:08 maxv Exp $");
 
 /*
  *	Manages physical address maps.
@@ -378,12 +378,6 @@ pmap_bootstrap(void)
 	sysmap_size = (VM_PHYS_SIZE + (ubc_nwins << ubc_winshift) +
 	    bufsz + 16 * NCARGS + pager_map_size) / NBPG +
 	    (maxproc * UPAGES) + nkmempages;
-#ifdef DEBUG
-	{
-		extern int kmem_guard_depth;
-		sysmap_size += kmem_guard_depth;
-	}
-#endif
 
 #ifdef SYSVSHM
 	sysmap_size += shminfo.shmall;
@@ -945,7 +939,7 @@ pmap_md_vca_add(struct vm_page *pg, vaddr_t va, pt_entry_t *ptep)
 	KASSERT(pv->pv_pmap != NULL);
 	bool ret = false;
 	for (pv_entry_t npv = pv; npv && npv->pv_pmap;) {
-		if (npv->pv_va & PV_KENTER) {
+		if (PV_ISKENTER_P(npv)) {
 			npv = npv->pv_next;
 			continue;
 		}

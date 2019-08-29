@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.596 2019/06/25 03:41:05 pgoyette Exp $	*/
+/*	$NetBSD: param.h,v 1.610 2019/08/20 12:33:04 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -67,7 +67,7 @@
  *	2.99.9		(299000900)
  */
 
-#define	__NetBSD_Version__	899004800	/* NetBSD 8.99.48 */
+#define	__NetBSD_Version__	999001000	/* NetBSD 9.99.10 */
 
 #define __NetBSD_Prereq__(M,m,p) (((((M) * 100000000) + \
     (m) * 1000000) + (p) * 100) <= __NetBSD_Version__)
@@ -253,9 +253,22 @@
  * any desired pointer type.
  *
  * ALIGNED_POINTER is a boolean macro that checks whether an address
- * is valid to fetch data elements of type t from on this architecture.
- * This does not reflect the optimal alignment, just the possibility
- * (within reasonable limits).
+ * is valid to fetch data elements of type t from on this architecture
+ * using ALIGNED_POINTER_LOAD.  This does not reflect the optimal
+ * alignment, just the possibility (within reasonable limits).
+ *
+ *	uint32_t x;
+ *	unsigned char *p = ...;
+ *
+ *	if (ALIGNED_POINTER(p, uint32_t)) {
+ *		uint32_t t;
+ *		ALIGNED_POINTER_LOAD(&t, p, uint32_t);
+ *		x = t;
+ *	} else {
+ *		uint32_t t;
+ *		memcpy(&t, p, sizeof(t));
+ *		x = t;
+ *	}
  *
  */
 #define ALIGNBYTES	__ALIGNBYTES
@@ -264,6 +277,9 @@
 #endif
 #ifndef ALIGNED_POINTER
 #define	ALIGNED_POINTER(p,t)	((((uintptr_t)(p)) & (sizeof(t) - 1)) == 0)
+#endif
+#ifndef ALIGNED_POINTER_LOAD
+#define	ALIGNED_POINTER_LOAD(q,p,t)	(*(q) = *((const t *)(p)))
 #endif
 
 /*

@@ -1,4 +1,4 @@
-/* $NetBSD: dwc_gmac.c,v 1.62 2019/05/23 13:10:51 msaitoh Exp $ */
+/* $NetBSD: dwc_gmac.c,v 1.64 2019/07/21 08:24:32 mrg Exp $ */
 
 /*-
  * Copyright (c) 2013, 2014 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: dwc_gmac.c,v 1.62 2019/05/23 13:10:51 msaitoh Exp $");
+__KERNEL_RCSID(1, "$NetBSD: dwc_gmac.c,v 1.64 2019/07/21 08:24:32 mrg Exp $");
 
 /* #define	DWC_GMAC_DEBUG	1 */
 
@@ -57,6 +57,7 @@ __KERNEL_RCSID(1, "$NetBSD: dwc_gmac.c,v 1.62 2019/05/23 13:10:51 msaitoh Exp $"
 #include <sys/systm.h>
 #include <sys/sockio.h>
 #include <sys/cprng.h>
+#include <sys/rndsource.h>
 
 #include <net/if.h>
 #include <net/if_ether.h>
@@ -177,10 +178,6 @@ static void dwc_gmac_dump_rx_desc(struct dwc_gmac_softc *);
 static void dwc_dump_and_abort(struct dwc_gmac_softc *, const char *);
 static void dwc_dump_status(struct dwc_gmac_softc *);
 static void dwc_gmac_dump_ffilt(struct dwc_gmac_softc *, uint32_t);
-#endif
-
-#ifdef NET_MPSAFE
-#define DWCGMAC_MPSAFE	1
 #endif
 
 int
@@ -333,6 +330,8 @@ dwc_gmac_attach(struct dwc_gmac_softc *sc, int phy_id, uint32_t mii_clk)
 	ether_ifattach(ifp, enaddr);
 	ether_set_ifflags_cb(&sc->sc_ec, dwc_gmac_ifflags_cb);
 	if_register(ifp);
+	rnd_attach_source(&sc->rnd_source, device_xname(sc->sc_dev),
+	    RND_TYPE_NET, RND_FLAG_DEFAULT);
 
 	/*
 	 * Enable interrupts
@@ -695,7 +694,7 @@ fail:
 static void
 dwc_gmac_txdesc_sync(struct dwc_gmac_softc *sc, int start, int end, int ops)
 {
-	/* 'end' is pointing one descriptor beyound the last we want to sync */
+	/* 'end' is pointing one descriptor beyond the last we want to sync */
 	if (end > start) {
 		bus_dmamap_sync(sc->sc_dmat, sc->sc_dma_ring_map,
 		    TX_DESC_OFFSET(start),
@@ -1454,6 +1453,8 @@ dwc_gmac_intr(struct dwc_gmac_softc *sc)
 		dwc_dump_and_abort(sc, "interrupt error condition");
 #endif
 	}
+
+	rnd_add_uint32(&sc->rnd_source, dma_status);
 
 	/* ack interrupt */
 	if (dma_status)

@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1630 2019/06/22 22:49:18 sevan Exp $
+#	$NetBSD: 3RDPARTY,v 1.1644 2019/08/21 17:14:26 roy Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -239,12 +239,12 @@ Notes:
 See /usr/src/external/bsd/byacc/byacc2netbsd for update instructions.
 
 Package:	bzip2
-Version:	1.0.6
-Current Vers:	1.0.6
+Version:	1.0.8
+Current Vers:	1.0.8
 Maintainer:	Julian Seward <jseward@acm.org>
-Archive Site:	http://sources.redhat.com/bzip2/files/
-Home Page:	http://www.bzip.org/
-Date:		2019-01-09
+Archive Site:	https://sourceware.org/pub/bzip2/
+Home Page:	https://www.sourceware.org/bzip2/
+Date:		2019-07-21
 Mailing List:
 Responsible:
 License:	BSD (4-clause)
@@ -341,12 +341,12 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	7.2.2
-Current Vers:	7.2.2
+Version:	8.0.3
+Current Vers:	8.0.3
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
-Date:		2019-04-26
+Date:		2019-08-21
 Mailing List: 	dhcpcd-discuss@marples.name
 License:	BSD (2-clause)
 Location:	external/bsd/dhcpcd/dist
@@ -397,7 +397,7 @@ Notes:
 
 Package:	expat
 Version:	2.2.1
-Current Vers:	2.2.6
+Current Vers:	2.2.7
 Maintainer:	Expat Project
 Archive Site:	http://sourceforge.net/projects/expat/files/expat/
 Home Page:	http://www.libexpat.org/
@@ -700,12 +700,12 @@ for importation.  Run ./configure beforehand to generate "defines.h".
 Talk to mrg before importing any new version.
 
 Package:	libarchive
-Version:	3.3.2pre
-Current Vers:	3.3.2
+Version:	3.4.0
+Current Vers:	3.4.0
 Maintainer:	kientzle@freebsd.org, joerg@NetBSD.org
-Archive Site:	https://github.com/libarchive/libarchive/downloads
+Archive Site:	https://github.com/libarchive/libarchive/releases
 Home Page: 	http://www.libarchive.org
-Date:		2019-01-09
+Date:		2019-06-13
 Responsible:	joerg
 License:	BSD (2-clause)
 Location:	external/bsd/libarchive/dist
@@ -947,11 +947,11 @@ Delete the otherOS directory before importing.
 
 Package:	nawk
 Version:	2012-12-20
-Current Vers:	2012-12-20
+Current Vers:	2018-08-27
 Maintainer:	Brian Kernighan <bwk@princeton.edu>
 Archive Site:	https://github.com/onetrueawk/awk
 Home Page:	http://www.cs.princeton.edu/~bwk/btl.mirror/
-Date:		2019-01-09
+Date:		2019-08-13
 Mailing List:
 Responsible:	jdolecek
 License:	BSD-like
@@ -1005,12 +1005,12 @@ Notes:
 We have lots of local fixes.
 
 Package:	OpenLDAP
-Version:	2.4.45
-Current Vers:	2.4.47
+Version:	2.4.48
+Current Vers:	2.4.48
 Maintainer:	OpenLDAP Foundation
 Archive Site:	http://www.openldap.org/
 Home Page:	http://www.openldap.org/
-Date:		2019-01-09
+Date:		2019-08-08
 Mailing List:
 Responsible:
 License:	BSD (3-clause)
@@ -1031,12 +1031,12 @@ Location:	external/bsd/openpam/dist
 Notes:
 
 Package:	openresolv
-Version:	3.9.0
-Current Vers:	3.9.0
+Version:	3.9.1
+Current Vers:	3.9.1
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/openresolv/
 Home Page:	http://roy.marples.name/projects/openresolv/
-Date:		2019-01-09
+Date:		2019-07-17
 Mailing List: 	openresolv-discuss@marples.name
 License:	BSD (2-clause)
 Location:	external/bsd/openresolv/dist
@@ -1211,10 +1211,11 @@ now to do a new import.
 
 Package:	Postfix
 Version:	3.1.4
-Current Vers:	3.1.9/3.2.6/3.3.2
+Current Vers:	3.1.13/3.2.10/3.3.5/3.4.6
 Maintainer:	Wietse Venema <wietse@porcupine.org>
 Archive Site:
 Home Page:	http://www.postfix.org/
+Date: 		2019-07-03
 Mailing List:	postfix-users@postfix.org
 Responsible:	christos
 License:	IBM Public License. See also src/external/ibm-public/postfix/dist.
@@ -1397,13 +1398,14 @@ Notes:
 Added changes from a5 -> a12 manually.
 
 Package:	tz
-Version:	tzcode2019a / tzdata2019a
-Current Vers:	tzcode2019a / tzdata2019a
+Version:	tzcode2019b / tzdata2019a
+Current Vers:	tzcode2019b / tzdata2019b
 Maintainer:	Paul Eggert <eggert@cs.ucla.edu>
 Archive Site:	ftp://ftp.iana.org/tz/releases/
 Archive Site:	ftp://munnari.oz.au/pub/oldtz/
 Old Archive Site:	ftp://elsie.nci.nih.gov/pub/
 Home Page:	http://www.iana.org/time-zones
+Date:		2019-07-03
 Mailing List:	tz@iana.org
 Responsible:	kleink, christos, kre
 License:	Public domain
@@ -2107,6 +2109,7 @@ Notes:
 Use groff2netbsd from external/gpl2/groff/groff2netbsd to prepare the
 distribution for import.
 Update MDATE in src/external/gpl2/groff/Makefile.inc.
+
 Package:	gmake
 Version:	3.81 (Last GPlv2+ version)
 Current Vers:	4.2
@@ -2172,3 +2175,15 @@ License:	BSD-like (4-clause)
 Location:	usr.bin/indent
 Notes:
 Tests are stored in tests/usr.bin/indent.
+
+Package:	ena
+Version:	0.8.1
+Current Vers:	2.0.0
+Maintainer:	Amazon.com
+Archive Site:	https://github.com/amzn/amzn-drivers/tree/master/kernel/fbsd/ena
+Home Page:	https://github.com/amzn/amzn-drivers/
+Mailing List:	none
+Responsible:
+License:	BSD-like (2 and 3-clause)
+Location:	sys/external/bsd/ena-com
+Notes:

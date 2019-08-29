@@ -1,4 +1,4 @@
-/*	$NetBSD: upgrade.c,v 1.9 2019/06/24 18:48:08 martin Exp $	*/
+/*	$NetBSD: upgrade.c,v 1.13 2019/08/27 14:11:00 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -54,7 +54,7 @@ static int merge_X(const char *);
 void
 do_upgrade(void)
 {
-	struct install_partition_desc install;
+	struct install_partition_desc install = {};
 	int retcode = 0;
 	partman_go = 0;
 
@@ -64,15 +64,24 @@ do_upgrade(void)
 
 	get_ramsize();
 
-	if (find_disks(msg_string(MSG_upgrade)) < 0)
+	if (find_disks(msg_string(MSG_upgrade), !root_is_read_only()) < 0)
 		return;
 
-	if (pm->parts->pscheme->pre_update_verify) {
-		if (pm->parts->pscheme->pre_update_verify(pm->parts))
-			pm->parts->pscheme->write_to_disk(pm->parts);
+	if (pm->parts == NULL && !pm->cur_system) {
+		hit_enter_to_continue(MSG_noroot, NULL);
+		return;
 	}
 
-	install_desc_from_parts(&install, pm->parts);
+	if (!pm->cur_system) {
+		if (pm->parts->pscheme->pre_update_verify) {
+			if (pm->parts->pscheme->pre_update_verify(pm->parts))
+				pm->parts->pscheme->write_to_disk(pm->parts);
+		}
+
+		install_desc_from_parts(&install, pm->parts);
+	} else {
+		install.cur_system = true;
+	}
 
 	if (set_swap_if_low_ram(&install) < 0)
 		return;
@@ -188,29 +197,43 @@ merge_X(const char *xroot)
  * Unpacks sets,  clobbering existing contents.
  */
 void
-do_reinstall_sets(struct install_partition_desc *install)
+do_reinstall_sets()
 {
+	struct install_partition_desc install = {};
 	int retcode = 0;
+	partman_go = 0;
 
 	unwind_mounts();
 	msg_display(MSG_reinstallusure);
 	if (!ask_noyes(NULL))
 		return;
 
-	if (find_disks(msg_string(MSG_reinstall)) < 0)
+	if (find_disks(msg_string(MSG_reinstall), !root_is_read_only()) < 0)
 		return;
 
-	/* XXX find proper pm pointer and pass it here, make sure we have
-	 * read partitions and provide "infos" in there */
-	if (mount_disks(install) != 0)
-		return;
+	if (!pm->cur_system) {
+		if (pm->parts == NULL) {
+			hit_enter_to_continue(MSG_noroot, NULL);
+			return;
+		}
+
+		install_desc_from_parts(&install, pm->parts);
+	} else {
+		install.cur_system = true;
+	}
+
+	if (mount_disks(&install) != 0)
+		goto free_install;
 
 	/* Unpack the distribution. */
 	process_menu(MENU_distset, &retcode);
 	if (retcode == 0)
-		return;
+		goto free_install;
 	if (get_and_unpack_sets(0, NULL, MSG_unpackcomplete, MSG_abortunpack) != 0)
-		return;
+		goto free_install;
 
 	sanity_check();
+
+free_install:
+	free_install_desc(&install);
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: partman.c,v 1.35 2019/06/22 20:46:07 christos Exp $ */
+/*	$NetBSD: partman.c,v 1.42 2019/08/13 17:57:49 martin Exp $ */
 
 /*
  * Copyright 2012 Eugene Lozovoy
@@ -454,11 +454,12 @@ pm_fmt_disk_line(WINDOW *w, const char *line, const char *on,
 		line = out;
 	}
 	if (no_size_display != NULL) {
-		wprintw(w, "%-34s (%s)", line, no_size_display);
+		wprintw(w, "   %-56s (%s)", line, no_size_display);
 	} else {
 		humanize_number(human, sizeof(human),
-	            total, "", HN_AUTOSCALE, HN_B | HN_NOSPACE | HN_DECIMAL);
-		wprintw(w, "%-34s %s", line, human);
+	            total * 512, "",
+		    HN_AUTOSCALE, HN_B | HN_NOSPACE | HN_DECIMAL);
+		wprintw(w, "   %-56s %s", line, human);
 	}
 }
 
@@ -2273,7 +2274,7 @@ pm_mountall(void)
 			ok = 1;
 		}
 		if (ok)
-			md_pre_mount();
+			md_pre_mount(NULL, 0);
 	}
 	if (strlen(localfs_dev) < 1) {
 		hit_enter_to_continue(MSG_noroot, NULL);
@@ -2650,6 +2651,7 @@ pm_menufmt(menudesc *m, int opt, void *arg)
 	char buf[STRSIZE], dev[STRSIZE];
 	part_id part_num = ((struct part_entry *)arg)[opt].id;
 	struct pm_devs *pm_cur = ((struct part_entry *)arg)[opt].dev_ptr;
+	struct disk_partitions *parts = ((struct part_entry *)arg)[opt].parts;
 	struct disk_part_info info;
 	const char *mount_point, *fstype;
 
@@ -2668,19 +2670,37 @@ pm_menufmt(menudesc *m, int opt, void *arg)
 				dev_status);
 			break;
 		case PM_PART:
-			pm_cur->parts->pscheme->get_part_device(pm_cur->parts,
-			    part_num, dev, sizeof dev, NULL, plain_name, false);
-			pm_cur->parts->pscheme->get_part_info(pm_cur->parts,
+			if (parts->pscheme->get_part_device != NULL)
+				parts->pscheme->get_part_device(
+				    parts,  part_num,
+				    dev, sizeof dev, NULL, plain_name, false);
+			else
+				strcpy(dev, "-");
+			parts->pscheme->get_part_info(parts,
 			    part_num, &info);
-			if (pm_cur->mounted[part_num] != NULL &&
+			if (pm_cur->mounted != NULL &&
+			    pm_cur->mounted[part_num] != NULL &&
 			    pm_cur->mounted[part_num][0] != 0)
 				mount_point = msg_string(MSG_pmmounted);
 			else
 				mount_point = msg_string(MSG_pmunused);
-			fstype = getfslabelname(info.fs_type, info.fs_sub_type);
-			snprintf(buf, STRSIZE, "%s (%s) %s",
-				info.last_mounted, fstype, mount_point);
-			pm_fmt_disk_line(m->mw, dev, buf, info.size, NULL);
+			fstype = getfslabelname(info.fs_type,
+			    info.fs_sub_type);
+			if (info.last_mounted != NULL) {
+				snprintf(buf, STRSIZE, "%s (%s) %s",
+				    info.last_mounted, fstype,
+				     mount_point);
+				pm_fmt_disk_line(m->mw, dev, buf,
+				    info.size, NULL);
+			} else {
+				if (fstype != NULL) {
+					strlcat(dev, " (", sizeof(dev));
+					strlcat(dev, fstype, sizeof(dev));
+					strlcat(dev, ")", sizeof(dev));
+				}
+				pm_fmt_disk_line(m->mw, dev, NULL,
+				    info.size, NULL);
+			}
 			break;
 		case PM_SPEC:
 			/* XXX ? */
@@ -2754,6 +2774,8 @@ pm_upddevlist(menudesc *m, void *arg)
 	int i = 0;
 	size_t ii;
 	struct pm_devs *pm_i;
+	struct disk_partitions *secondary;
+	const struct disk_partitioning_scheme *ps;
 	struct disk_part_info info;
 
 	if (arg != NULL)
@@ -2771,7 +2793,7 @@ pm_upddevlist(menudesc *m, void *arg)
 	}
 
 	/* Detect all present devices */
-	(void)find_disks("partman");
+	(void)find_disks("partman", false);
 	if (have_lvm)
 		pm_lvm_find();
 	pm_clean();
@@ -2780,29 +2802,65 @@ pm_upddevlist(menudesc *m, void *arg)
 		return -1;
 
 	SLIST_FOREACH(pm_i, &pm_head, l) {
-		m->opts[i].opt_name = NULL;
-		m->opts[i].opt_exp_name = NULL;
+		memset(&m->opts[i], 0, sizeof m->opts[i]);
 		m->opts[i].opt_action = pm_submenu;
 		((struct part_entry *)arg)[i].dev_ptr = pm_i;
 		((struct part_entry *)arg)[i].id = NO_PART;
 		if (pm_i->no_part)
 			((struct part_entry *)arg)[i].type = PM_SPEC;
 		else {
+			ps = pm_i->parts != NULL ? pm_i->parts->pscheme : NULL;
+			secondary = NULL;
+
 			((struct part_entry *)arg)[i].type = PM_DISK;
-			for (ii = 0; ii < pm_i->parts->num_part; ii++) {
-				if (!pm_i->parts->pscheme->get_part_info(
-				    pm_i->parts, i, &info))
+
+			for (ii = 0; pm_i->parts != NULL &&
+			    ii < pm_i->parts->num_part; ii++) {
+				if (!ps->get_part_info(
+				    pm_i->parts, ii, &info))
 					continue;
-				if (info.flags & (PTI_SEC_CONTAINER|
-				    PTI_WHOLE_DISK|PTI_PSCHEME_INTERNAL|
-				    PTI_RAW_PART))
+				if (info.flags & PTI_SEC_CONTAINER) {
+					if (secondary == NULL &&
+					    ps->secondary_scheme != NULL)
+						secondary = ps->
+						    secondary_partitions(
+						    pm_i->parts,
+						    info.start, false);
+					continue;
+				}
+				if (info.flags & (PTI_WHOLE_DISK|
+				    PTI_PSCHEME_INTERNAL|PTI_RAW_PART))
 					continue;
 				if (info.fs_type == FS_UNUSED)
 					continue;
+				if (i >= MAX_ENTRIES)
+					break;
 				i++;
-				m->opts[i].opt_name = NULL;
-				m->opts[i].opt_exp_name = NULL;
+				memset(&m->opts[i], 0, sizeof m->opts[i]);
 				m->opts[i].opt_action = pm_submenu;
+				((struct part_entry *)arg)[i].parts =
+				    pm_i->parts;
+				((struct part_entry *)arg)[i].dev_ptr = pm_i;
+				((struct part_entry *)arg)[i].id = ii;
+				((struct part_entry *)arg)[i].type = PM_PART;
+			}
+
+			for (ii = 0; secondary != NULL &&
+			    ii < secondary->num_part; ii++) {
+				if (!secondary->pscheme->get_part_info(
+				    secondary, ii, &info))
+					continue;
+				if (info.flags & (PTI_WHOLE_DISK|
+				    PTI_PSCHEME_INTERNAL|PTI_RAW_PART))
+					continue;
+				if (info.fs_type == FS_UNUSED)
+					continue;
+				if (i >= MAX_ENTRIES)
+					break;
+				i++;
+				memset(&m->opts[i], 0, sizeof m->opts[i]);
+				m->opts[i].opt_action = pm_submenu;
+				((struct part_entry *)arg)[i].parts = secondary;
 				((struct part_entry *)arg)[i].dev_ptr = pm_i;
 				((struct part_entry *)arg)[i].id = ii;
 				((struct part_entry *)arg)[i].type = PM_PART;
@@ -2958,7 +3016,7 @@ partman(void)
 			free_menu(menu_no);
 		}
 
-		if (args[0].retvalue == 0) {
+		if (args[0].retvalue == 0 && pm->parts != NULL) {
 			struct install_partition_desc install;
 
 			install_desc_from_parts(&install, pm->parts);

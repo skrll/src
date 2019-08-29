@@ -167,8 +167,8 @@ struct bpf_program *npfctl_bpf_complete(npf_bpf_t *);
 const void *	npfctl_bpf_bmarks(npf_bpf_t *, size_t *);
 void		npfctl_bpf_destroy(npf_bpf_t *);
 
-void		npfctl_bpf_group(npf_bpf_t *);
-void		npfctl_bpf_endgroup(npf_bpf_t *, bool);
+void		npfctl_bpf_group_enter(npf_bpf_t *);
+void		npfctl_bpf_group_exit(npf_bpf_t *, bool);
 
 void		npfctl_bpf_proto(npf_bpf_t *, sa_family_t, int);
 void		npfctl_bpf_cidr(npf_bpf_t *, u_int, sa_family_t,
@@ -210,6 +210,8 @@ void		npfctl_build_natseg(int, int, unsigned, const char *,
 		    const opt_proto_t *, const filt_opts_t *, unsigned);
 void		npfctl_build_maprset(const char *, int, const char *);
 void		npfctl_build_table(const char *, u_int, const char *);
+
+void		npfctl_setparam(const char *, int);
 
 /*
  * For the systems which do not define TH_ECE and TW_CRW.

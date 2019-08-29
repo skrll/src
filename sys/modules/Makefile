@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.222 2019/06/20 03:31:29 pgoyette Exp $
+#	$NetBSD: Makefile,v 1.224 2019/08/08 16:06:14 skrll Exp $
 
 .include <bsd.own.mk>
 
@@ -89,6 +89,7 @@ SUBDIR+=	if_stf
 SUBDIR+=	if_strip
 SUBDIR+=	if_tap tap
 SUBDIR+=	if_tun tun
+SUBDIR+=	if_udav
 SUBDIR+=	if_ure
 SUBDIR+=	if_vlan
 SUBDIR+=	iic
@@ -163,6 +164,7 @@ SUBDIR+=	udf
 SUBDIR+=	ufs
 SUBDIR+=	umap
 SUBDIR+=	union
+SUBDIR+=	usbnet
 SUBDIR+=	usbverbose
 SUBDIR+=	vcoda
 SUBDIR+=	v7fs

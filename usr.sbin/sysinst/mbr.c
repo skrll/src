@@ -1,4 +1,4 @@
-/*	$NetBSD: mbr.c,v 1.15 2019/06/20 00:43:55 christos Exp $ */
+/*	$NetBSD: mbr.c,v 1.21 2019/08/27 17:23:24 martin Exp $ */
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -113,6 +113,7 @@ const struct {
 	{ .ptype=MBR_PTYPE_FAT16B, .desc="DOS FAT16, >32M" },
 	{ .ptype=MBR_PTYPE_FAT16L, .desc="Windows FAT16, LBA" },
 	{ .ptype=MBR_PTYPE_FAT32, .desc="Windows FAT32" },
+	{ .ptype=MBR_PTYPE_EFI, .desc="(U)EFI Boot" },
 };
 
 /* bookeeping of available partition types (including custom ones) */
@@ -222,13 +223,20 @@ dump_mbr(mbr_info_t *m, const char *label)
 #endif
 
 static void
+free_last_mounted(mbr_info_t *m)
+{
+	size_t i;
+
+	for (i = 0; i < MBR_PART_COUNT; i++)
+		free(__UNCONST(m->last_mounted[i]));
+}
+
+static void
 free_mbr_info(mbr_info_t *m)
 {
 	if (m == NULL)
 		return;
-
-	for (int i = 0; i < MBR_PART_COUNT; i++)
-		free(__UNCONST(m->last_mounted[i]));
+	free_last_mounted(m);
 	free(m);
 }
 
@@ -438,19 +446,6 @@ validate_and_set_names(mbr_info_t *mbri, const struct mbr_bootsel *src,
 }
 #endif
 
-static void
-free_mbr(mbr_info_t *mbri)
-{
-	mbr_info_t *m = mbri->extended, *next;
-
-	while (m != NULL) {
-		next = m->extended;
-		free_mbr_info(m);
-		m = next;
-	}
-	free_mbr_info(mbri);
-}
-
 static int
 valid_mbr(struct mbr_sector *mbrs)
 {
@@ -552,7 +547,9 @@ read_mbr(const char *disk, mbr_info_t *mbri)
 					    &mbri->fs_type[i],
 					    &mbri->fs_sub_type[i],
 					    flags);
-					mbri->last_mounted[i] = strdup(mount);
+					char *p = strdup(mount);
+					canonicalize_last_mounted(p);
+					mbri->last_mounted[i] = p;
 				}
 			}
 #if BOOTSEL
@@ -569,7 +566,7 @@ read_mbr(const char *disk, mbr_info_t *mbri)
 			ext_base = next_ext;
 			next_ext = 0;
 		}
-		ext = calloc(sizeof *ext, 1);
+		ext = calloc(1, sizeof *ext);
 		if (!ext)
 			break;
 		mbrs = &ext->mbr;
@@ -828,7 +825,7 @@ mbr_create_new(const char *disk, daddr_t start, daddr_t len, daddr_t total,
 	if (start != 0)
 		return NULL;
 
-	parts = calloc(sizeof(*parts), 1);
+	parts = calloc(1, sizeof(*parts));
 	if (!parts)
 		return NULL;
 
@@ -883,7 +880,8 @@ mbr_calc_free_space(struct mbr_disk_partitions *parts)
 }
 
 static struct disk_partitions *
-mbr_read_from_disk(const char *disk, daddr_t start, daddr_t len)
+mbr_read_from_disk(const char *disk, daddr_t start, daddr_t len,
+    const struct disk_partitioning_scheme *scheme)
 {
 	struct mbr_disk_partitions *parts;
 
@@ -891,11 +889,11 @@ mbr_read_from_disk(const char *disk, daddr_t start, daddr_t len)
 	if (start != 0)
 		return NULL;
 
-	parts = calloc(sizeof(*parts), 1);
+	parts = calloc(1, sizeof(*parts));
 	if (!parts)
 		return NULL;
 
-	parts->dp.pscheme = &mbr_parts;
+	parts->dp.pscheme = scheme;
 	parts->dp.disk = disk;
 	if (len >= mbr_parts.size_limit)
 		len = mbr_parts.size_limit;
@@ -1049,6 +1047,9 @@ mbr_get_fs_part_type(unsigned fs_type, unsigned sub_type)
 	case FS_EX2FS:
 		return &mbr_gen_type_desc[MBR_PTYPE_LNXEXT2].gen;
 	case FS_MSDOS:
+		if (sub_type == 0)
+			sub_type = MBR_PTYPE_FAT32L;
+
 		switch (sub_type) {
 		case MBR_PTYPE_FAT12:
 		case MBR_PTYPE_FAT16S:
@@ -1632,7 +1633,8 @@ mbr_read_disklabel(struct disk_partitions *arg, daddr_t start, bool force_empty)
 
 		if (!force_empty)
 			myparts->dlabel = disklabel_parts.read_from_disk(
-			    myparts->dp.disk, part.start, part.size);
+			    myparts->dp.disk, part.start, part.size,
+			    &disklabel_parts);
 
 		if (myparts->dlabel == NULL && part.size > 0) {
 			/* we just created the outer partitions? */
@@ -2389,7 +2391,8 @@ mbr_free(struct disk_partitions *arg)
 	if (parts->dlabel)
 		parts->dlabel->pscheme->free(parts->dlabel);
 
-	free_mbr(&parts->mbr);
+	free_mbr_info(parts->mbr.extended);
+	free_last_mounted(&parts->mbr);
 	free(parts);
 }
 

@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.100 2019/06/22 07:58:55 skrll Exp $
+#	$NetBSD: GENERIC64,v 1.105 2019/08/13 17:21:01 tnn Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -138,8 +138,8 @@ options 	INCLUDE_CONFIG_FILE
 # instead of warnings.
 #makeoptions 	KASAN=1		# mandatory
 #options 	KASAN		# mandatory
-#options	POOL_QUARANTINE	# optional
-#options	KASAN_PANIC	# optional
+#options 	POOL_QUARANTINE	# optional
+#options 	KASAN_PANIC	# optional
 
 # KERNHIST
 options 	KERNHIST
@@ -298,6 +298,7 @@ ena*		at pci? dev ? function ?	# Amazon.com Elastic Network Adapter
 mskc*		at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 msk*		at mskc?
 re*		at pci? dev ? function ?	# Realtek RTL8111GS
+wm*		at pci? dev ? function ?	# Intel Gigabit Ethernet
 
 # MII/PHY support
 exphy* 		at mii? phy ?		# 3Com internal PHYs
@@ -406,13 +407,16 @@ ld*		at nvme? nsid ?
 
 # SPI controllers
 bcmspi*		at fdt?			# Broadcom BCM283x SPI
+rkspi*		at fdt?			# Rockchip SPI
 spi*		at spibus?
+m25p*		at spi?
+spiflash*	at spiflashbus?
 
 # Audio support
 hdaudio*	at fdt?			# Intel HDA
+hdaudio*	at pci? dev ? function ?
 hdafg*		at hdaudiobus?
 options 	HDAUDIOVERBOSE
-options 	HDAUDIO_32BIT_ACCESS
 options 	HDAUDIO_ENABLE_HDMI
 options 	HDAUDIO_ENABLE_DISPLAYPORT
 ausoc*		at fdt?			# Simple SoC audio card

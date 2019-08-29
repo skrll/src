@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_exec.c,v 1.473 2019/06/26 00:30:39 christos Exp $	*/
+/*	$NetBSD: kern_exec.c,v 1.478 2019/07/05 17:14:48 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.473 2019/06/26 00:30:39 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.478 2019/07/05 17:14:48 maxv Exp $");
 
 #include "opt_exec.h"
 #include "opt_execfmt.h"
@@ -629,10 +629,8 @@ exec_makepathbuf(struct lwp *l, const char *upath, enum uio_seg seg,
 	} else {
 		error = copyinstr(upath, path, MAXPATHLEN, &len);
 	}
-	if (error) {
-		DPRINTF(("%s: copyin path @%p %d\n", __func__, upath, error));
+	if (error)
 		goto err;
-	}
 
 	if (path[0] == '/') {
 		if (offs)
@@ -641,8 +639,10 @@ exec_makepathbuf(struct lwp *l, const char *upath, enum uio_seg seg,
 	}
 
 	len++;
-	if (len + 1 >= MAXPATHLEN)
-		goto out;
+	if (len + 1 >= MAXPATHLEN) {
+		error = ENAMETOOLONG;
+		goto err;
+	}
 	bp = path + MAXPATHLEN - len;
 	memmove(bp, path, len);
 	*(--bp) = '/';
@@ -653,11 +653,8 @@ exec_makepathbuf(struct lwp *l, const char *upath, enum uio_seg seg,
 	    GETCWD_CHECK_ACCESS, l);
 	rw_exit(&cwdi->cwdi_lock);
 
-	if (error) {
-		DPRINTF(("%s: getcwd_common path %s %d\n", __func__, path,
-		    error));
+	if (error)
 		goto err;
-	}
 	tlen = path + MAXPATHLEN - bp;
 
 	memmove(path, bp, tlen);
@@ -695,7 +692,7 @@ execve_loadvm(struct lwp *l, const char *path, char * const *args,
 	struct proc		*p;
 	char			*dp;
 	u_int			modgen;
-	size_t			offs = 0;	// XXX: GCC
+	size_t			offs;
 
 	KASSERT(data != NULL);
 
@@ -2077,6 +2074,7 @@ spawn_return(void *arg)
 	/* handle posix_spawnattr */
 	if (spawn_data->sed_attrs != NULL) {
 		struct sigaction sigact;
+		memset(&sigact, 0, sizeof(sigact));
 		sigact._sa_u._sa_handler = SIG_DFL;
 		sigact.sa_flags = 0;
 

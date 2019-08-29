@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_ptrace_common.c,v 1.56 2019/06/24 20:29:41 christos Exp $	*/
+/*	$NetBSD: sys_ptrace_common.c,v 1.58 2019/07/18 20:10:46 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -118,7 +118,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.56 2019/06/24 20:29:41 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.58 2019/07/18 20:10:46 kamil Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ptrace.h"
@@ -367,14 +367,19 @@ ptrace_find(struct lwp *l, int req, pid_t pid)
 }
 
 static int
-ptrace_allowed(struct lwp *l, int req, struct proc *t, struct proc *p)
+ptrace_allowed(struct lwp *l, int req, struct proc *t, struct proc *p,
+    bool *locked)
 {
+	*locked = false;
+
 	/*
 	 * Grab a reference on the process to prevent it from execing or
 	 * exiting.
 	 */
 	if (!rw_tryenter(&t->p_reflock, RW_READER))
 		return EBUSY;
+
+	*locked = true;
 
 	/* Make sure we can operate on it. */
 	switch (req) {
@@ -547,9 +552,9 @@ ptrace_update_lwp(struct proc *t, struct lwp **lt, lwpid_t lid)
 	if (lid == 0 || lid == (*lt)->l_lid || t->p_nlwps == 1)
 		return 0;
 
-	lwp_delref(*lt);
-
 	mutex_enter(t->p_lock);
+	lwp_delref2(*lt);
+
 	*lt = lwp_find(t, lid);
 	if (*lt == NULL) {
 		mutex_exit(t->p_lock);
@@ -557,6 +562,7 @@ ptrace_update_lwp(struct proc *t, struct lwp **lt, lwpid_t lid)
 	}
 
 	if ((*lt)->l_flag & LW_SYSTEM) {
+		mutex_exit(t->p_lock);
 		*lt = NULL;
 		return EINVAL;
 	}
@@ -595,9 +601,6 @@ ptrace_set_siginfo(struct proc *t, struct lwp **lt, struct ptrace_methods *ptm,
 	/* Check that the data is a valid signal number or zero. */
 	if (psi.psi_siginfo.si_signo < 0 || psi.psi_siginfo.si_signo >= NSIG)
 		return EINVAL;
-
-	if ((error = ptrace_update_lwp(t, lt, psi.psi_lwpid)) != 0)
-		return error;
 
 	t->p_sigctx.ps_faked = true;
 	t->p_sigctx.ps_info = psi.psi_siginfo._info;
@@ -1045,6 +1048,7 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 	int error, write, tmp, pheld;
 	int signo = 0;
 	int resume_all;
+	bool locked;
 	error = 0;
 
 	/*
@@ -1060,7 +1064,7 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 	}
 
 	pheld = 1;
-	if ((error = ptrace_allowed(l, req, t, p)) != 0)
+	if ((error = ptrace_allowed(l, req, t, p, &locked)) != 0)
 		goto out;
 
 	if ((error = kauth_authorize_process(l->l_cred,
@@ -1427,7 +1431,8 @@ out:
 	}
 	if (lt != NULL)
 		lwp_delref(lt);
-	rw_exit(&t->p_reflock);
+	if (locked)
+		rw_exit(&t->p_reflock);
 
 	return error;
 }

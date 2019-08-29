@@ -1,4 +1,4 @@
-/*	$NetBSD: smdk2800_machdep.c,v 1.45 2018/10/28 14:30:32 skrll Exp $ */
+/*	$NetBSD: smdk2800_machdep.c,v 1.47 2019/07/16 14:41:48 skrll Exp $ */
 
 /*
  * Copyright (c) 2002, 2003, 2005 Fujitsu Component Limited
@@ -106,7 +106,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: smdk2800_machdep.c,v 1.45 2018/10/28 14:30:32 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: smdk2800_machdep.c,v 1.47 2019/07/16 14:41:48 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_console.h"
@@ -330,7 +330,7 @@ static const struct pmap_devmap smdk2800_devmap[] = {
 #define	ioreg32(pa)	(*(volatile uint32_t *)ioreg_vaddr(pa))
 
 /*
- * u_int initarm(...)
+ * vaddr_t initarm(...)
  *
  * Initial entry point on startup. This gets called before main() is
  * entered.
@@ -343,7 +343,7 @@ static const struct pmap_devmap smdk2800_devmap[] = {
  *   Relocating the kernel to the bottom of physical memory
  */
 
-u_int
+vaddr_t
 initarm(void *arg)
 {
 	int loop;
@@ -815,7 +815,7 @@ initarm(void *arg)
 #endif
 
 	/* We return the new stack pointer address */
-	return (kernelstack.pv_va + USPACE_SVC_STACK_TOP);
+	return kernelstack.pv_va + USPACE_SVC_STACK_TOP;
 }
 
 void

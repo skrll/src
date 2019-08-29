@@ -1,4 +1,4 @@
-/*	$NetBSD: if_jme.c,v 1.43 2019/05/28 07:41:49 msaitoh Exp $	*/
+/*	$NetBSD: if_jme.c,v 1.45 2019/08/07 15:29:02 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2008 Manuel Bouyer.  All rights reserved.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_jme.c,v 1.43 2019/05/28 07:41:49 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_jme.c,v 1.45 2019/08/07 15:29:02 msaitoh Exp $");
 
 
 #include <sys/param.h>
@@ -473,6 +473,7 @@ jme_pci_attach(device_t parent, device_t self, void *aux)
 	 */
 	sc->jme_ec.ec_capabilities |=
 	    ETHERCAP_VLAN_MTU | ETHERCAP_VLAN_HWTAGGING;
+	sc->jme_ec.ec_capenable |= ETHERCAP_VLAN_HWTAGGING;
 
 	if (sc->jme_flags & JME_FLAG_GIGA)
 		sc->jme_ec.ec_capabilities |= ETHERCAP_JUMBO_MTU;
@@ -1020,7 +1021,7 @@ jme_mii_write(device_t self, int phy, int reg, uint16_t val)
 
 	bus_space_write_4(sc->jme_bt_mac, sc->jme_bh_mac, JME_SMI,
 	    SMI_OP_WRITE | SMI_OP_EXECUTE |
-	    ((val << SMI_DATA_SHIFT) & SMI_DATA_MASK) |
+	    (((uint32_t)val << SMI_DATA_SHIFT) & SMI_DATA_MASK) |
 	    SMI_PHY_ADDR(phy) | SMI_REG_ADDR(reg));
 	for (i = JME_PHY_TIMEOUT / 10; i > 0; i--) {
 		delay(10);

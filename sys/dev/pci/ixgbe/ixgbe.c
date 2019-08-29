@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.188 2019/06/04 09:43:15 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.204 2019/08/28 08:54:21 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -81,7 +81,7 @@
  * Driver version
  ************************************************************************/
 static const char ixgbe_driver_version[] = "4.0.1-k";
-/* XXX NetBSD: + 3.3.6 */
+/* XXX NetBSD: + 3.3.10 */
 
 /************************************************************************
  * PCI Device ID Table
@@ -219,11 +219,11 @@ static void	ixgbe_configure_ivars(struct adapter *);
 static u8 *	ixgbe_mc_array_itr(struct ixgbe_hw *, u8 **, u32 *);
 static void	ixgbe_eitr_write(struct adapter *, uint32_t, uint32_t);
 
+static void	ixgbe_setup_vlan_hw_tagging(struct adapter *);
 static void	ixgbe_setup_vlan_hw_support(struct adapter *);
-#if 0
-static void	ixgbe_register_vlan(void *, struct ifnet *, u16);
-static void	ixgbe_unregister_vlan(void *, struct ifnet *, u16);
-#endif
+static int	ixgbe_vlan_cb(struct ethercom *, uint16_t, bool);
+static int	ixgbe_register_vlan(struct adapter *, u16);
+static int	ixgbe_unregister_vlan(struct adapter *, u16);
 
 static void	ixgbe_add_device_sysctls(struct adapter *);
 static void	ixgbe_add_hw_stats(struct adapter *);
@@ -610,7 +610,7 @@ ixgbe_initialize_receive_units(struct adapter *adapter)
 
 		/* Set RQSMR (Receive Queue Statistic Mapping) register */
 		reg = IXGBE_READ_REG(hw, IXGBE_RQSMR(regnum));
-		reg &= ~(0x000000ff << (regshift * 8));
+		reg &= ~(0x000000ffUL << (regshift * 8));
 		reg |= i << (regshift * 8);
 		IXGBE_WRITE_REG(hw, IXGBE_RQSMR(regnum), reg);
 
@@ -699,7 +699,7 @@ ixgbe_initialize_transmit_units(struct adapter *adapter)
 		else
 			tqsmreg = IXGBE_TQSM(regnum);
 		reg = IXGBE_READ_REG(hw, tqsmreg);
-		reg &= ~(0x000000ff << (regshift * 8));
+		reg &= ~(0x000000ffUL << (regshift * 8));
 		reg |= i << (regshift * 8);
 		IXGBE_WRITE_REG(hw, tqsmreg, reg);
 
@@ -904,6 +904,9 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 
 	/* Enable WoL (if supported) */
 	ixgbe_check_wol_support(adapter);
+
+	/* Register for VLAN events */
+	ether_set_vlan_cb(&adapter->osdep.ec, ixgbe_vlan_cb);
 
 	/* Verify adapter fan is still functional (if applicable) */
 	if (adapter->feat_en & IXGBE_FEATURE_FAN_FAIL) {
@@ -1486,6 +1489,8 @@ ixgbe_is_sfp(struct ixgbe_hw *hw)
 			return (TRUE);
 		return (FALSE);
 	case ixgbe_mac_82599EB:
+	case ixgbe_mac_X550EM_x:
+	case ixgbe_mac_X550EM_a:
 		switch (hw->mac.ops.get_media_type(hw)) {
 		case ixgbe_media_type_fiber:
 		case ixgbe_media_type_fiber_qsfp:
@@ -1493,11 +1498,6 @@ ixgbe_is_sfp(struct ixgbe_hw *hw)
 		default:
 			return (FALSE);
 		}
-	case ixgbe_mac_X550EM_x:
-	case ixgbe_mac_X550EM_a:
-		if (hw->mac.ops.get_media_type(hw) == ixgbe_media_type_fiber)
-			return (TRUE);
-		return (FALSE);
 	default:
 		return (FALSE);
 	}
@@ -2299,7 +2299,31 @@ ixgbe_sysctl_rdt_handler(SYSCTLFN_ARGS)
 	return sysctl_lookup(SYSCTLFN_CALL(&node));
 } /* ixgbe_sysctl_rdt_handler */
 
-#if 0	/* XXX Badly need to overhaul vlan(4) on NetBSD. */
+static int
+ixgbe_vlan_cb(struct ethercom *ec, uint16_t vid, bool set)
+{
+	struct ifnet *ifp = &ec->ec_if;
+	struct adapter *adapter = ifp->if_softc;
+	int rv;
+
+	if (set)
+		rv = ixgbe_register_vlan(adapter, vid);
+	else
+		rv = ixgbe_unregister_vlan(adapter, vid);
+
+	if (rv != 0)
+		return rv;
+
+	/*
+	 * Control VLAN HW tagging when ec_nvlan is changed from 1 to 0
+	 * or 0 to 1.
+	 */
+	if ((set && (ec->ec_nvlans == 1)) || (!set && (ec->ec_nvlans == 0)))
+		ixgbe_setup_vlan_hw_tagging(adapter);
+
+	return rv;
+}
+
 /************************************************************************
  * ixgbe_register_vlan
  *
@@ -2308,24 +2332,26 @@ ixgbe_sysctl_rdt_handler(SYSCTLFN_ARGS)
  *   just creates the entry in the soft version of the
  *   VFTA, init will repopulate the real table.
  ************************************************************************/
-static void
-ixgbe_register_vlan(void *arg, struct ifnet *ifp, u16 vtag)
+static int
+ixgbe_register_vlan(struct adapter *adapter, u16 vtag)
 {
-	struct adapter	*adapter = ifp->if_softc;
 	u16		index, bit;
-
-	if (ifp->if_softc != arg)   /* Not our event */
-		return;
+	int		error;
 
 	if ((vtag == 0) || (vtag > 4095))	/* Invalid */
-		return;
+		return EINVAL;
 
 	IXGBE_CORE_LOCK(adapter);
 	index = (vtag >> 5) & 0x7F;
 	bit = vtag & 0x1F;
-	adapter->shadow_vfta[index] |= (1 << bit);
-	ixgbe_setup_vlan_hw_support(adapter);
+	adapter->shadow_vfta[index] |= ((u32)1 << bit);
+	error = adapter->hw.mac.ops.set_vfta(&adapter->hw, vtag, 0, true,
+	    true);
 	IXGBE_CORE_UNLOCK(adapter);
+	if (error != 0)
+		error = EACCES;
+
+	return error;
 } /* ixgbe_register_vlan */
 
 /************************************************************************
@@ -2333,42 +2359,37 @@ ixgbe_register_vlan(void *arg, struct ifnet *ifp, u16 vtag)
  *
  *   Run via vlan unconfig EVENT, remove our entry in the soft vfta.
  ************************************************************************/
-static void
-ixgbe_unregister_vlan(void *arg, struct ifnet *ifp, u16 vtag)
+static int
+ixgbe_unregister_vlan(struct adapter *adapter, u16 vtag)
 {
-	struct adapter	*adapter = ifp->if_softc;
 	u16		index, bit;
-
-	if (ifp->if_softc != arg)
-		return;
+	int		error;
 
 	if ((vtag == 0) || (vtag > 4095))	/* Invalid */
-		return;
+		return EINVAL;
 
 	IXGBE_CORE_LOCK(adapter);
 	index = (vtag >> 5) & 0x7F;
 	bit = vtag & 0x1F;
-	adapter->shadow_vfta[index] &= ~(1 << bit);
-	/* Re-init to load the changes */
-	ixgbe_setup_vlan_hw_support(adapter);
+	adapter->shadow_vfta[index] &= ~((u32)1 << bit);
+	error = adapter->hw.mac.ops.set_vfta(&adapter->hw, vtag, 0, false,
+	    true);
 	IXGBE_CORE_UNLOCK(adapter);
+	if (error != 0)
+		error = EACCES;
+
+	return error;
 } /* ixgbe_unregister_vlan */
-#endif
 
 static void
-ixgbe_setup_vlan_hw_support(struct adapter *adapter)
+ixgbe_setup_vlan_hw_tagging(struct adapter *adapter)
 {
 	struct ethercom *ec = &adapter->osdep.ec;
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct rx_ring	*rxr;
-	int		i;
 	u32		ctrl;
+	int		i;
 	bool		hwtagging;
-
-	/*
-	 *  This function is called from both if_init and ifflags_cb()
-	 * on NetBSD.
-	 */
 
 	/* Enable HW tagging only if any vlan is attached */
 	hwtagging = (ec->ec_capenable & ETHERCAP_VLAN_HWTAGGING)
@@ -2391,14 +2412,56 @@ ixgbe_setup_vlan_hw_support(struct adapter *adapter)
 		rxr->vtag_strip = hwtagging ? TRUE : FALSE;
 	}
 
+	/* VLAN hw tagging for 82598 */
+	if (hw->mac.type == ixgbe_mac_82598EB) {
+		ctrl = IXGBE_READ_REG(hw, IXGBE_VLNCTRL);
+		if (hwtagging)
+			ctrl |= IXGBE_VLNCTRL_VME;
+		else
+			ctrl &= ~IXGBE_VLNCTRL_VME;
+		IXGBE_WRITE_REG(hw, IXGBE_VLNCTRL, ctrl);
+	}
+} /* ixgbe_setup_vlan_hw_tagging */
+
+static void
+ixgbe_setup_vlan_hw_support(struct adapter *adapter)
+{
+	struct ethercom *ec = &adapter->osdep.ec;
+	struct ixgbe_hw *hw = &adapter->hw;
+	int		i;
+	u32		ctrl;
+	struct vlanid_list *vlanidp;
+
 	/*
-	 * A soft reset zero's out the VFTA, so
-	 * we need to repopulate it now.
+	 *  This function is called from both if_init and ifflags_cb()
+	 * on NetBSD.
 	 */
+
+	/*
+	 * Part 1:
+	 * Setup VLAN HW tagging
+	 */
+	ixgbe_setup_vlan_hw_tagging(adapter);
+
+	/*
+	 * Part 2:
+	 * Setup VLAN HW filter
+	 */
+	/* Cleanup shadow_vfta */
 	for (i = 0; i < IXGBE_VFTA_SIZE; i++)
-		if (adapter->shadow_vfta[i] != 0)
-			IXGBE_WRITE_REG(hw, IXGBE_VFTA(i),
-			    adapter->shadow_vfta[i]);
+		adapter->shadow_vfta[i] = 0;
+	/* Generate shadow_vfta from ec_vids */
+	ETHER_LOCK(ec);
+	SIMPLEQ_FOREACH(vlanidp, &ec->ec_vids, vid_list) {
+		uint32_t idx;
+
+		idx = vlanidp->vid / 32;
+		KASSERT(idx < IXGBE_VFTA_SIZE);
+		adapter->shadow_vfta[idx] |= (u32)1 << (vlanidp->vid % 32);
+	}
+	ETHER_UNLOCK(ec);
+	for (i = 0; i < IXGBE_VFTA_SIZE; i++)
+		IXGBE_WRITE_REG(hw, IXGBE_VFTA(i), adapter->shadow_vfta[i]);
 
 	ctrl = IXGBE_READ_REG(hw, IXGBE_VLNCTRL);
 	/* Enable the Filter Table if enabled */
@@ -2406,13 +2469,6 @@ ixgbe_setup_vlan_hw_support(struct adapter *adapter)
 		ctrl |= IXGBE_VLNCTRL_VFE;
 	else
 		ctrl &= ~IXGBE_VLNCTRL_VFE;
-	/* VLAN hw tagging for 82598 */
-	if (hw->mac.type == ixgbe_mac_82598EB) {
-		if (hwtagging)
-			ctrl |= IXGBE_VLNCTRL_VME;
-		else
-			ctrl &= ~IXGBE_VLNCTRL_VME;
-	}
 	IXGBE_WRITE_REG(hw, IXGBE_VLNCTRL, ctrl);
 } /* ixgbe_setup_vlan_hw_support */
 
@@ -2532,7 +2588,7 @@ ixgbe_enable_queue(struct adapter *adapter, u32 vector)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct ix_queue *que = &adapter->queues[vector];
-	u64		queue = (u64)(1ULL << vector);
+	u64		queue = 1ULL << vector;
 	u32		mask;
 
 	mutex_enter(&que->dc_mtx);
@@ -2562,7 +2618,7 @@ ixgbe_disable_queue_internal(struct adapter *adapter, u32 vector, bool nestok)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct ix_queue *que = &adapter->queues[vector];
-	u64		queue = (u64)(1ULL << vector);
+	u64		queue = 1ULL << vector;
 	u32		mask;
 
 	mutex_enter(&que->dc_mtx);
@@ -3057,6 +3113,34 @@ ixgbe_msix_link(void *arg)
 	/* Clear interrupt with write */
 	IXGBE_WRITE_REG(hw, IXGBE_EICR, eicr);
 
+	if (ixgbe_is_sfp(hw)) {
+		/* Pluggable optics-related interrupt */
+		if (hw->mac.type >= ixgbe_mac_X540)
+			eicr_mask = IXGBE_EICR_GPI_SDP0_X540;
+		else
+			eicr_mask = IXGBE_EICR_GPI_SDP2_BY_MAC(hw);
+
+		/*
+		 *  An interrupt might not arrive when a module is inserted.
+		 * When an link status change interrupt occurred and the driver
+		 * still regard SFP as unplugged, issue the module softint
+		 * and then issue LSC interrupt.
+		 */
+		if ((eicr & eicr_mask)
+		    || ((hw->phy.sfp_type == ixgbe_sfp_type_not_present)
+			&& (eicr & IXGBE_EICR_LSC))) {
+			IXGBE_WRITE_REG(hw, IXGBE_EICR, eicr_mask);
+			softint_schedule(adapter->mod_si);
+		}
+
+		if ((hw->mac.type == ixgbe_mac_82599EB) &&
+		    (eicr & IXGBE_EICR_GPI_SDP1_BY_MAC(hw))) {
+			IXGBE_WRITE_REG(hw, IXGBE_EICR,
+			    IXGBE_EICR_GPI_SDP1_BY_MAC(hw));
+			softint_schedule(adapter->msf_si);
+		}
+	}
+
 	/* Link status change */
 	if (eicr & IXGBE_EICR_LSC) {
 		IXGBE_WRITE_REG(hw, IXGBE_EIMC, IXGBE_EIMC_LSC);
@@ -3113,26 +3197,6 @@ ixgbe_msix_link(void *arg)
 		if ((adapter->feat_en & IXGBE_FEATURE_SRIOV) &&
 		    (eicr & IXGBE_EICR_MAILBOX))
 			softint_schedule(adapter->mbx_si);
-	}
-
-	if (ixgbe_is_sfp(hw)) {
-		/* Pluggable optics-related interrupt */
-		if (hw->mac.type >= ixgbe_mac_X540)
-			eicr_mask = IXGBE_EICR_GPI_SDP0_X540;
-		else
-			eicr_mask = IXGBE_EICR_GPI_SDP2_BY_MAC(hw);
-
-		if (eicr & eicr_mask) {
-			IXGBE_WRITE_REG(hw, IXGBE_EICR, eicr_mask);
-			softint_schedule(adapter->mod_si);
-		}
-
-		if ((hw->mac.type == ixgbe_mac_82599EB) &&
-		    (eicr & IXGBE_EICR_GPI_SDP1_BY_MAC(hw))) {
-			IXGBE_WRITE_REG(hw, IXGBE_EICR,
-			    IXGBE_EICR_GPI_SDP1_BY_MAC(hw));
-			softint_schedule(adapter->msf_si);
-		}
 	}
 
 	/* Check for fan failure */
@@ -3535,8 +3599,13 @@ ixgbe_detach(device_t dev, int flags)
 		return (EBUSY);
 	}
 
-	/* Stop the interface. Callouts are stopped in it. */
-	ixgbe_ifstop(adapter->ifp, 1);
+	/*
+	 * Stop the interface. ixgbe_setup_low_power_mode() calls ixgbe_stop(),
+	 * so it's not required to call ixgbe_stop() directly.
+	 */
+	IXGBE_CORE_LOCK(adapter);
+	ixgbe_setup_low_power_mode(adapter);
+	IXGBE_CORE_UNLOCK(adapter);
 #if NVLAN > 0
 	/* Make sure VLANs are not using driver */
 	if (!VLAN_ATTACHED(&adapter->osdep.ec))
@@ -3552,10 +3621,6 @@ ixgbe_detach(device_t dev, int flags)
 	pmf_device_deregister(dev);
 
 	ether_ifdetach(adapter->ifp);
-	/* Stop the adapter */
-	IXGBE_CORE_LOCK(adapter);
-	ixgbe_setup_low_power_mode(adapter);
-	IXGBE_CORE_UNLOCK(adapter);
 
 	ixgbe_free_softint(adapter);
 
@@ -4019,7 +4084,7 @@ ixgbe_init_locked(struct adapter *adapter)
 		if ((adapter->feat_en & IXGBE_FEATURE_NETMAP) &&
 		    (ifp->if_capenable & IFCAP_NETMAP)) {
 			struct netmap_adapter *na = NA(adapter->ifp);
-			struct netmap_kring *kring = &na->rx_rings[i];
+			struct netmap_kring *kring = na->rx_rings[i];
 			int t = na->num_rx_desc - 1 - nm_kr_rxspace(kring);
 
 			IXGBE_WRITE_REG(hw, IXGBE_RDT(rxr->me), t);
@@ -4107,6 +4172,7 @@ ixgbe_init_locked(struct adapter *adapter)
 
 	/* Update saved flags. See ixgbe_ifflags_cb() */
 	adapter->if_flags = ifp->if_flags;
+	adapter->ec_capenable = adapter->osdep.ec.ec_capenable;
 
 	/* Now inform the stack we're ready */
 	ifp->if_flags |= IFF_RUNNING;
@@ -4154,8 +4220,8 @@ ixgbe_set_ivar(struct adapter *adapter, u8 entry, u8 vector, s8 type)
 			entry += (type * 64);
 		index = (entry >> 2) & 0x1F;
 		ivar = IXGBE_READ_REG(hw, IXGBE_IVAR(index));
-		ivar &= ~(0xFF << (8 * (entry & 0x3)));
-		ivar |= (vector << (8 * (entry & 0x3)));
+		ivar &= ~(0xffUL << (8 * (entry & 0x3)));
+		ivar |= ((u32)vector << (8 * (entry & 0x3)));
 		IXGBE_WRITE_REG(&adapter->hw, IXGBE_IVAR(index), ivar);
 		break;
 	case ixgbe_mac_82599EB:
@@ -4166,14 +4232,14 @@ ixgbe_set_ivar(struct adapter *adapter, u8 entry, u8 vector, s8 type)
 		if (type == -1) { /* MISC IVAR */
 			index = (entry & 1) * 8;
 			ivar = IXGBE_READ_REG(hw, IXGBE_IVAR_MISC);
-			ivar &= ~(0xFF << index);
-			ivar |= (vector << index);
+			ivar &= ~(0xffUL << index);
+			ivar |= ((u32)vector << index);
 			IXGBE_WRITE_REG(hw, IXGBE_IVAR_MISC, ivar);
 		} else {	/* RX/TX IVARS */
 			index = (16 * (entry & 1)) + (8 * type);
 			ivar = IXGBE_READ_REG(hw, IXGBE_IVAR(entry >> 1));
-			ivar &= ~(0xFF << index);
-			ivar |= (vector << index);
+			ivar &= ~(0xffUL << index);
+			ivar |= ((u32)vector << index);
 			IXGBE_WRITE_REG(hw, IXGBE_IVAR(entry >> 1), ivar);
 		}
 		break;
@@ -4464,7 +4530,7 @@ ixgbe_local_timer1(void *arg)
 	for (i = 0; i < adapter->num_queues; i++, que++) {
 		/* Keep track of queues with work for soft irq */
 		if (que->txr->busy)
-			queues |= ((u64)1 << que->me);
+			queues |= 1ULL << que->me;
 		/*
 		 * Each time txeof runs without cleaning, but there
 		 * are uncleaned descriptors it increments busy. If
@@ -4473,12 +4539,12 @@ ixgbe_local_timer1(void *arg)
 		if (que->busy == IXGBE_QUEUE_HUNG) {
 			++hung;
 			/* Mark the queue as inactive */
-			adapter->active_queues &= ~((u64)1 << que->me);
+			adapter->active_queues &= ~(1ULL << que->me);
 			continue;
 		} else {
 			/* Check if we've come back from hung */
-			if ((adapter->active_queues & ((u64)1 << que->me)) == 0)
-				adapter->active_queues |= ((u64)1 << que->me);
+			if ((adapter->active_queues & (1ULL << que->me)) == 0)
+				adapter->active_queues |= 1ULL << que->me;
 		}
 		if (que->busy >= IXGBE_MAX_TX_BUSY) {
 			device_printf(dev,
@@ -6137,7 +6203,7 @@ ixgbe_ifflags_cb(struct ethercom *ec)
 {
 	struct ifnet *ifp = &ec->ec_if;
 	struct adapter *adapter = ifp->if_softc;
-	int change, rc = 0;
+	int change, rv = 0;
 
 	IXGBE_CORE_LOCK(adapter);
 
@@ -6145,17 +6211,34 @@ ixgbe_ifflags_cb(struct ethercom *ec)
 	if (change != 0)
 		adapter->if_flags = ifp->if_flags;
 
-	if ((change & ~(IFF_CANTCHANGE | IFF_DEBUG)) != 0)
-		rc = ENETRESET;
-	else if ((change & IFF_PROMISC) != 0)
+	if ((change & ~(IFF_CANTCHANGE | IFF_DEBUG)) != 0) {
+		rv = ENETRESET;
+		goto out;
+	} else if ((change & IFF_PROMISC) != 0)
 		ixgbe_set_promisc(adapter);
 
-	/* Set up VLAN support and filter */
-	ixgbe_setup_vlan_hw_support(adapter);
+	/* Check for ec_capenable. */
+	change = ec->ec_capenable ^ adapter->ec_capenable;
+	adapter->ec_capenable = ec->ec_capenable;
+	if ((change & ~(ETHERCAP_VLAN_MTU | ETHERCAP_VLAN_HWTAGGING
+	    | ETHERCAP_VLAN_HWFILTER)) != 0) {
+		rv = ENETRESET;
+		goto out;
+	}
 
+	/*
+	 * Special handling is not required for ETHERCAP_VLAN_MTU.
+	 * MAXFRS(MHADD) does not include the 4bytes of the VLAN header.
+	 */
+
+	/* Set up VLAN support and filter */
+	if ((change & (ETHERCAP_VLAN_HWTAGGING | ETHERCAP_VLAN_HWFILTER)) != 0)
+		ixgbe_setup_vlan_hw_support(adapter);
+
+out:
 	IXGBE_CORE_UNLOCK(adapter);
 
-	return rc;
+	return rv;
 }
 
 /************************************************************************
@@ -6540,7 +6623,7 @@ ixgbe_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 			goto err_out;
 		}
 		que->msix = vector;
-		adapter->active_queues |= (u64)(1 << que->msix);
+		adapter->active_queues |= 1ULL << que->msix;
 
 		if (adapter->feat_en & IXGBE_FEATURE_RSS) {
 #ifdef	RSS

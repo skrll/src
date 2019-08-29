@@ -1,4 +1,4 @@
-/*	$NetBSD: install.c,v 1.8 2019/06/20 00:43:55 christos Exp $	*/
+/*	$NetBSD: install.c,v 1.11 2019/08/17 18:08:06 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -119,7 +119,7 @@ do_install(void)
 {
 	int find_disks_ret;
 	int retcode = 0;
-	struct install_partition_desc install;
+	struct install_partition_desc install = {};
 	struct disk_partitions *parts;
 
 #ifndef NO_PARTMAN
@@ -139,7 +139,7 @@ do_install(void)
 	get_ramsize();
 
 	/* Create and mount partitions */
-	find_disks_ret = find_disks(msg_string(MSG_install));
+	find_disks_ret = find_disks(msg_string(MSG_install), false);
 	if (partman_go == 1) {
 		if (partman() < 0) {
 			hit_enter_to_continue(MSG_abort_part, NULL);
@@ -165,7 +165,7 @@ do_install(void)
 		if (!md_get_info(&install) ||
 		    !md_make_bsd_partitions(&install)) {
 			hit_enter_to_continue(MSG_abort_inst, NULL);
-			return;
+			goto error;
 		}
 
 		/* Last chance ... do you really want to do this? */
@@ -173,7 +173,7 @@ do_install(void)
 		refresh();
 		msg_fmt_display(MSG_lastchance, "%s", pm->diskdev);
 		if (!ask_noyes(NULL))
-			return;
+			goto error;
 
 		/*
 		 * Check if we have a secondary partitioning and
@@ -194,19 +194,19 @@ do_install(void)
 		    make_filesystems(&install) ||
 		    make_fstab(&install) != 0 ||
 		    md_post_newfs(&install) != 0)
-		return;
+		goto error;
 	}
 
 	/* Unpack the distribution. */
 	process_menu(MENU_distset, &retcode);
 	if (retcode == 0)
-		return;
+		goto error;
 	if (get_and_unpack_sets(0, MSG_disksetupdone,
 	    MSG_extractcomplete, MSG_abortinst) != 0)
-		return;
+		goto error;
 
 	if (md_post_extract(&install) != 0)
-		return;
+		goto error;
 
 	do_configmenu(&install);
 
@@ -214,7 +214,8 @@ do_install(void)
 
 	md_cleanup_install(&install);
 
-	free(install.infos);
-
 	hit_enter_to_continue(MSG_instcomplete, NULL);
+
+error:
+	free(install.infos);
 }

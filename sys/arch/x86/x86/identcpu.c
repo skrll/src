@@ -1,4 +1,4 @@
-/*	$NetBSD: identcpu.c,v 1.91 2019/05/24 14:28:48 nonaka Exp $	*/
+/*	$NetBSD: identcpu.c,v 1.93 2019/07/26 10:03:40 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.91 2019/05/24 14:28:48 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.93 2019/07/26 10:03:40 msaitoh Exp $");
 
 #include "opt_xen.h"
 
@@ -62,11 +62,8 @@ __KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.91 2019/05/24 14:28:48 nonaka Exp $")
 
 static const struct x86_cache_info intel_cpuid_cache_info[] = INTEL_CACHE_INFO;
 
-static const struct x86_cache_info amd_cpuid_l2cache_assoc_info[] = 
-	AMD_L2CACHE_INFO;
-
-static const struct x86_cache_info amd_cpuid_l3cache_assoc_info[] = 
-	AMD_L3CACHE_INFO;
+static const struct x86_cache_info amd_cpuid_l2l3cache_assoc_info[] = 
+	AMD_L2L3CACHE_INFO;
 
 int cpu_vendor;
 char cpu_brand_string[49];
@@ -74,6 +71,8 @@ char cpu_brand_string[49];
 int x86_fpu_save __read_mostly;
 unsigned int x86_fpu_save_size __read_mostly = sizeof(struct save87);
 uint64_t x86_xsave_features __read_mostly = 0;
+size_t x86_xsave_offsets[XSAVE_MAX_COMPONENT+1] __read_mostly;
+size_t x86_xsave_sizes[XSAVE_MAX_COMPONENT+1] __read_mostly;
 
 /*
  * Note: these are just the ones that may not have a cpuid instruction.
@@ -105,6 +104,66 @@ cache_info_lookup(const struct x86_cache_info *cai, uint8_t desc)
 	}
 
 	return (NULL);
+}
+
+/*
+ * Get cache info from one of the following:
+ *	Intel Deterministic Cache Parameter Leaf (0x04)
+ *	AMD Cache Topology Information Leaf (0x8000001d)
+ */
+static void
+cpu_dcp_cacheinfo(struct cpu_info *ci, uint32_t leaf)
+{
+	u_int descs[4];
+	int type, level, ways, partitions, linesize, sets, totalsize;
+	int caitype = -1;
+	int i;
+
+	for (i = 0; ; i++) {
+		x86_cpuid2(leaf, i, descs);
+		type = __SHIFTOUT(descs[0], CPUID_DCP_CACHETYPE);
+		if (type == CPUID_DCP_CACHETYPE_N)
+			break;
+		level = __SHIFTOUT(descs[0], CPUID_DCP_CACHELEVEL);
+		switch (level) {
+		case 1:
+			if (type == CPUID_DCP_CACHETYPE_I)
+				caitype = CAI_ICACHE;
+			else if (type == CPUID_DCP_CACHETYPE_D)
+				caitype = CAI_DCACHE;
+			else
+				caitype = -1;
+			break;
+		case 2:
+			if (type == CPUID_DCP_CACHETYPE_U)
+				caitype = CAI_L2CACHE;
+			else
+				caitype = -1;
+			break;
+		case 3:
+			if (type == CPUID_DCP_CACHETYPE_U)
+				caitype = CAI_L3CACHE;
+			else
+				caitype = -1;
+			break;
+		default:
+			caitype = -1;
+			break;
+		}
+		if (caitype == -1)
+			continue;
+
+		ways = __SHIFTOUT(descs[1], CPUID_DCP_WAYS) + 1;
+		partitions =__SHIFTOUT(descs[1], CPUID_DCP_PARTITIONS)
+		    + 1;
+		linesize = __SHIFTOUT(descs[1], CPUID_DCP_LINESIZE)
+		    + 1;
+		sets = descs[2] + 1;
+		totalsize = ways * partitions * linesize * sets;
+		ci->ci_cinfo[caitype].cai_totalsize = totalsize;
+		ci->ci_cinfo[caitype].cai_associativity = ways;
+		ci->ci_cinfo[caitype].cai_linesize = linesize;
+	}
 }
 
 static void
@@ -140,59 +199,11 @@ cpu_probe_intel_cache(struct cpu_info *ci)
 		}
 	}
 
-	if (cpuid_level >= 4) {
-		int type, level;
-		int ways, partitions, linesize, sets;
-		int caitype = -1;
-		int totalsize;
+	if (cpuid_level < 4)
+		return;
 
-		/* Parse the cache info from `cpuid leaf 4', if we have it. */
-		for (i = 0; ; i++) {
-			x86_cpuid2(4, i, descs);
-			type = __SHIFTOUT(descs[0], CPUID_DCP_CACHETYPE);
-			if (type == CPUID_DCP_CACHETYPE_N)
-				break;
-			level = __SHIFTOUT(descs[0], CPUID_DCP_CACHELEVEL);
-			switch (level) {
-			case 1:
-				if (type == CPUID_DCP_CACHETYPE_I)
-					caitype = CAI_ICACHE;
-				else if (type == CPUID_DCP_CACHETYPE_D)
-					caitype = CAI_DCACHE;
-				else
-					caitype = -1;
-				break;
-			case 2:
-				if (type == CPUID_DCP_CACHETYPE_U)
-					caitype = CAI_L2CACHE;
-				else
-					caitype = -1;
-				break;
-			case 3:
-				if (type == CPUID_DCP_CACHETYPE_U)
-					caitype = CAI_L3CACHE;
-				else
-					caitype = -1;
-				break;
-			default:
-				caitype = -1;
-				break;
-			}
-			if (caitype == -1)
-				continue;
-
-			ways = __SHIFTOUT(descs[1], CPUID_DCP_WAYS) + 1;
-			partitions =__SHIFTOUT(descs[1], CPUID_DCP_PARTITIONS)
-			    + 1;
-			linesize = __SHIFTOUT(descs[1], CPUID_DCP_LINESIZE)
-			    + 1;
-			sets = descs[2] + 1;
-			totalsize = ways * partitions * linesize * sets;
-			ci->ci_cinfo[caitype].cai_totalsize = totalsize;
-			ci->ci_cinfo[caitype].cai_associativity = ways;
-			ci->ci_cinfo[caitype].cai_linesize = linesize;
-		}
-	}
+	/* Parse the cache info from `cpuid leaf 4', if we have it. */
+	cpu_dcp_cacheinfo(ci, 4);
 }
 
 static void
@@ -236,31 +247,21 @@ cpu_probe_amd_cache(struct cpu_info *ci)
 	family = CPUID_TO_FAMILY(ci->ci_signature);
 	model = CPUID_TO_MODEL(ci->ci_signature);
 
-	/*
-	 * K5 model 0 has none of this info.
-	 */
+	/* K5 model 0 has none of this info. */
 	if (family == 5 && model == 0)
 		return;
 
-	/*
-	 * Determine the largest extended function value.
-	 */
+	/* Determine the largest extended function value. */
 	x86_cpuid(0x80000000, descs);
 	lfunc = descs[0];
 
-	/*
-	 * Determine L1 cache/TLB info.
-	 */
-	if (lfunc < 0x80000005) {
-		/* No L1 cache info available. */
+	if (lfunc < 0x80000005)
 		return;
-	}
 
+	/* Determine L1 cache/TLB info. */
 	x86_cpuid(0x80000005, descs);
 
-	/*
-	 * K6-III and higher have large page TLBs.
-	 */
+	/* K6-III and higher have large page TLBs. */
 	if ((family == 5 && model >= 9) || family >= 6) {
 		cai = &ci->ci_cinfo[CAI_ITLB2];
 		cai->cai_totalsize = AMD_L1_EAX_ITLB_ENTRIES(descs[0]);
@@ -293,14 +294,10 @@ cpu_probe_amd_cache(struct cpu_info *ci)
 	cai->cai_associativity = AMD_L1_EDX_IC_ASSOC(descs[3]);
 	cai->cai_linesize = AMD_L1_EDX_IC_LS(descs[3]);
 
-	/*
-	 * Determine L2 cache/TLB info.
-	 */
-	if (lfunc < 0x80000006) {
-		/* No L2 cache info available. */
+	if (lfunc < 0x80000006)
 		return;
-	}
 
+	/* Determine L2 cache/TLB info. */
 	x86_cpuid(0x80000006, descs);
 
 	cai = &ci->ci_cinfo[CAI_L2CACHE];
@@ -308,35 +305,33 @@ cpu_probe_amd_cache(struct cpu_info *ci)
 	cai->cai_associativity = AMD_L2_ECX_C_ASSOC(descs[2]);
 	cai->cai_linesize = AMD_L2_ECX_C_LS(descs[2]);
 
-	cp = cache_info_lookup(amd_cpuid_l2cache_assoc_info,
+	cp = cache_info_lookup(amd_cpuid_l2l3cache_assoc_info,
 	    cai->cai_associativity);
 	if (cp != NULL)
 		cai->cai_associativity = cp->cai_associativity;
 	else
 		cai->cai_associativity = 0;	/* XXX Unknown/reserved */
 
-	if (family < 0xf) {
-		/* No L3 cache info available. */
+	if (family < 0xf)
 		return;
-	}
 
+	/* Determine L3 cache info on AMD Family 10h and newer processors */
 	cai = &ci->ci_cinfo[CAI_L3CACHE];
 	cai->cai_totalsize = AMD_L3_EDX_C_SIZE(descs[3]);
 	cai->cai_associativity = AMD_L3_EDX_C_ASSOC(descs[3]);
 	cai->cai_linesize = AMD_L3_EDX_C_LS(descs[3]);
 
-	cp = cache_info_lookup(amd_cpuid_l3cache_assoc_info,
+	cp = cache_info_lookup(amd_cpuid_l2l3cache_assoc_info,
 	    cai->cai_associativity);
 	if (cp != NULL)
 		cai->cai_associativity = cp->cai_associativity;
 	else
 		cai->cai_associativity = 0;	/* XXX Unknown reserved */
 
-	if (lfunc < 0x80000019) {
-		/* No 1GB Page TLB */
+	if (lfunc < 0x80000019)
 		return;
-	}
 
+	/* Determine 1GB TLB info. */
 	x86_cpuid(0x80000019, descs);
 
 	cai = &ci->ci_cinfo[CAI_L1_1GBDTLB];
@@ -358,6 +353,11 @@ cpu_probe_amd_cache(struct cpu_info *ci)
 	cai->cai_totalsize = AMD_L2_1GB_EBX_IUTLB_ENTRIES(descs[0]);
 	cai->cai_associativity = AMD_L2_1GB_EBX_IUTLB_ASSOC(descs[0]);
 	cai->cai_linesize = (1 * 1024);
+
+	if (lfunc < 0x8000001d)
+		return;
+
+	cpu_dcp_cacheinfo(ci, 0x8000001d);
 }
 
 static void
@@ -755,6 +755,7 @@ static void
 cpu_probe_fpu(struct cpu_info *ci)
 {
 	u_int descs[4];
+	int i;
 
 	x86_fpu_eager = true;
 	x86_fpu_save = FPU_SAVE_FSAVE;
@@ -816,6 +817,15 @@ cpu_probe_fpu(struct cpu_info *ci)
 		x86_fpu_save_size = descs[2];
 
 	x86_xsave_features = (uint64_t)descs[3] << 32 | descs[0];
+
+	/* Get component offsets and sizes for the save area */
+	for (i = XSAVE_YMM_Hi128; i < __arraycount(x86_xsave_offsets); i++) {
+		if (x86_xsave_features & __BIT(i)) {
+			x86_cpuid2(0xd, i, descs);
+			x86_xsave_offsets[i] = descs[1];
+			x86_xsave_sizes[i] = descs[0];
+		}
+	}
 }
 
 void

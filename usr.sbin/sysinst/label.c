@@ -1,4 +1,4 @@
-/*	$NetBSD: label.c,v 1.8 2019/06/22 20:46:07 christos Exp $	*/
+/*	$NetBSD: label.c,v 1.12 2019/08/04 10:29:41 martin Exp $	*/
 
 /*
  * Copyright 1997 Jonathan Stone
@@ -36,7 +36,7 @@
 
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: label.c,v 1.8 2019/06/22 20:46:07 christos Exp $");
+__RCSID("$NetBSD: label.c,v 1.12 2019/08/04 10:29:41 martin Exp $");
 #endif
 
 #include <sys/types.h>
@@ -915,8 +915,9 @@ update_edit_ptn_menu(menudesc *m, void *arg)
 			/* can only install onto PT_root partitions */
 			continue;
 		if (m->opts[i].opt_action == edit_fs_preserve &&
-		    t != FS_BSDFFS && t != FS_BSDLFS && t != FS_APPLEUFS) {
-			/* Can only newfs UFS and LFS filesystems */
+		    t != FS_BSDFFS && t != FS_BSDLFS && t != FS_APPLEUFS &&
+		    t != FS_MSDOS && t != FS_EX2FS) {
+			/* Can not newfs this filesystem */
 			edit->wanted->instflags &= ~PUIINST_NEWFS;
 			continue;
 		}
@@ -1479,6 +1480,30 @@ edit_and_check_label(struct pm_devs *p, struct partition_usage_set *pset)
 }
 
 /*
+ * strip trailing / to avoid confusion in path comparisions later
+ */
+void
+canonicalize_last_mounted(char *path)
+{
+	char *p;
+
+	if (path == NULL)
+		return;
+
+	if (strcmp(path, "/") == 0)
+		return;	/* in this case a "trailing" slash is allowed */
+
+	for (;;) {
+		p = strrchr(path, '/');
+		if (p == NULL)
+			return;
+		if (p[1] != 0)
+			return;
+		p[0] = 0;
+	}
+}
+
+/*
  * Try to get 'last mounted on' (or equiv) from fs superblock.
  */
 const char *
@@ -1553,7 +1578,7 @@ get_last_mounted(int fd, daddr_t partstart, uint *fs_type, uint *fs_sub_type,
 			if (fs_type)
 				*fs_type = FS_BSDFFS;
 			if (fs_sub_type)
-				*fs_sub_type = 2;
+				*fs_sub_type = 1;
 			continue;
 		case FS_UFS2_MAGIC:
 		case FS_UFS2_MAGIC_SWAPPED:

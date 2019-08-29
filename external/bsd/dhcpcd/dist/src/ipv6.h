@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dhcpcd - DHCP client daemon
  * Copyright (c) 2006-2019 Roy Marples <roy@marples.name>
@@ -99,7 +100,8 @@
 #endif
 
 /* This was fixed in NetBSD */
-#if defined(__NetBSD_Version__) && __NetBSD_Version__ >= 699002000
+#if (defined(__DragonFly_version) && __DragonFly_version >= 500704) || \
+    (defined(__NetBSD_Version__) && __NetBSD_Version__ >= 699002000)
 #  undef IPV6_POLLADDRFLAG
 #endif
 
@@ -146,6 +148,19 @@
 #    define IN6_IFF_DUPLICATED	0x08
 #  endif
 #  define IN6_IFF_DETACHED	0
+#endif
+
+/*
+ * ND6 Advertising is only used for IP address sharing to prefer
+ * the address on a specific interface.
+ * This just fails to work on OpenBSD and causes erroneous duplicate
+ * address messages on BSD's other then DragonFly and NetBSD.
+ */
+#if !defined(SMALL) && \
+    ((defined(__DragonFly_version) && __DragonFly_version >= 500703) || \
+    (defined(__NetBSD_Version__) && __NetBSD_Version__ >= 899002800) || \
+    defined(__linux__))
+#  define ND6_ADVERTISE
 #endif
 
 #ifdef INET6
@@ -287,9 +302,9 @@ void ipv6_addtempaddrs(struct interface *, const struct timespec *);
 int ipv6_start(struct interface *);
 int ipv6_staticdadcompleted(const struct interface *);
 int ipv6_startstatic(struct interface *);
-ssize_t ipv6_env(char **, const char *, const struct interface *);
+ssize_t ipv6_env(FILE *, const char *, const struct interface *);
 void ipv6_ctxfree(struct dhcpcd_ctx *);
-bool inet6_getroutes(struct dhcpcd_ctx *, struct rt_head *);
+bool inet6_getroutes(struct dhcpcd_ctx *, rb_tree_t *);
 #endif /* INET6 */
 
 #endif /* INET6_H */

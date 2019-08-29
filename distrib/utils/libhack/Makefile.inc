@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.inc,v 1.30 2019/06/22 22:50:39 christos Exp $
+# $NetBSD: Makefile.inc,v 1.32 2019/07/28 10:27:57 martin Exp $
 #
 # Include this fragment to build libhack.o
 # It is .o and not .a to make sure these are the
@@ -22,10 +22,24 @@ CPPFLAGS+=	-DSMALL
 CPPFLAGS+=	-DLIBHACK
 HACKOBJS+=	getcap.o getgrent.o getnet.o getnetgr.o getpwent.o jemalloc.o \
 		localeconv.o multibyte.o perror.o runetable.o setlocale.o \
+		nl_langinfo.o strcasecmp.o \
 		strerror.o strsignal.o syslog.o utmp.o fmtcheck.o
 
 .if (${USE_YP} != "no")
 HACKOBJS+=	yplib.o
+.endif
+
+.if ${HACK_CURSES:Uno} == "yes"
+CURSES_SRC!=	cd ${HACKSRC}/../../../lib/libcurses && \
+		${MAKE} DISABLE_WCHAR=yes -v SRCS
+
+.for s in ${CURSES_SRC}
+CPPFLAGS.${s}+=	-DDISABLE_WCHAR -DSMALL \
+		-I${HACKSRC}/../../../lib/libcurses \
+		-I${HACKSRC}/../../../lib/libterminfo
+HACKOBJS+=	${s:S/.c/.o/}
+${s:S/.c/.o/}:	${HACKSRC}/../../../lib/libcurses/${s}
+.endfor
 .endif
 
 CPPFLAGS.runetable.c+= -I${HACKSRC}/../../../lib/libc/citrus \

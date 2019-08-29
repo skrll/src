@@ -1,4 +1,4 @@
-/*	$NetBSD: target.c,v 1.6 2019/06/15 08:20:33 martin Exp $	*/
+/*	$NetBSD: target.c,v 1.10 2019/08/07 10:08:04 martin Exp $	*/
 
 /*
  * Copyright 1997 Jonathan Stone
@@ -71,7 +71,7 @@
 
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: target.c,v 1.6 2019/06/15 08:20:33 martin Exp $");
+__RCSID("$NetBSD: target.c,v 1.10 2019/08/07 10:08:04 martin Exp $");
 #endif
 
 /*
@@ -163,14 +163,23 @@ target_already_root(void)
 	if (pm == last_pm)
 		return last_res;
 
+	if (pm->cur_system)
+		return 1;
+
 	last_pm = pm;
-	last_res = 1;
+	last_res = 0;
 
 	parts = pm->parts;
-	if (pm->no_part || parts == NULL) {
+	if (parts == NULL) {
 		last_res = 0;
 		return 0;
 	}
+
+	if (pm->no_part) {
+		last_res = is_active_rootpart(pm->diskdev, -1);
+		return last_res;
+	}
+
 	if (pm->parts->pscheme->secondary_partitions != NULL)
 		parts = pm->parts->pscheme->secondary_partitions(parts,
 		    pm->ptstart, false);
@@ -180,20 +189,33 @@ target_already_root(void)
 			continue;
 		if (info.nat_type->generic_ptype != PT_root)
 			continue;
-		if (strcmp(info.last_mounted, "/") != 0)
+		if (!is_root_part_mount(info.last_mounted))
 			continue;
-
 		if (!parts->pscheme->get_part_device(parts, ptn,
 		    dev, sizeof dev, &rootpart, plain_name, false))
 			continue;
 
 		last_res = is_active_rootpart(dev, rootpart);
-		return last_res;
-	}
+		break;
+ 	}
 
-	return 1;
+	return last_res;
 }
 
+/*
+ * Could something with this "last mounted on" information be a potential
+ * root partition?
+ */
+bool
+is_root_part_mount(const char *last_mounted)
+{
+	if (last_mounted == NULL)
+		return false;
+
+	return strcmp(last_mounted, "/") == 0 ||
+	    strcmp(last_mounted, "/targetroot") == 0 ||
+	    strcmp(last_mounted, "/altroot") == 0;
+}
 
 /*
  * Is this device partition (e.g., "sd0a") mounted as root? 
@@ -462,6 +484,28 @@ target_mount_do(const char *opts, const char *from, const char *on)
 	unwind_mountlist = m;
 	return 0;
 }
+
+/*
+ * Special case - we have mounted the target / readonly
+ * to peek at etc/fstab, and now want it undone.
+ */
+void
+umount_root(void)
+{
+
+	/* verify this is the only mount */
+	if (unwind_mountlist == NULL)
+		return;
+	if (unwind_mountlist->um_prev != NULL)
+		return;
+
+	if (run_program(0, "/sbin/umount %s", target_prefix()) != 0)
+		return;
+
+	free(unwind_mountlist);
+	unwind_mountlist = NULL;
+}
+
 
 int
 target_mount(const char *opts, const char *from, const char *on)

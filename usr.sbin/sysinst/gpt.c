@@ -1,4 +1,4 @@
-/*	$NetBSD: gpt.c,v 1.2 2019/06/23 11:47:08 martin Exp $	*/
+/*	$NetBSD: gpt.c,v 1.11 2019/08/26 12:14:06 martin Exp $	*/
 
 /*
  * Copyright 2018 The NetBSD Foundation, Inc.
@@ -212,8 +212,7 @@ gpt_add_info(struct gpt_part_entry *part, const char *tag, char *val,
 	} else if (strcmp(tag, "GUID:") == 0) {
 		strlcpy(part->gp_id, val, sizeof(part->gp_id));
 	} else if (strcmp(tag, "Label:") == 0) {
-		if (strlen(val) > 0)
-			strlcpy(part->gp_label, val, sizeof(part->gp_label));
+		strlcpy(part->gp_label, val, sizeof(part->gp_label));
 	} else if (strcmp(tag, "Attributes:") == 0) {
 		char *n;
 
@@ -229,11 +228,35 @@ gpt_add_info(struct gpt_part_entry *part, const char *tag, char *val,
 	}
 }
 
+/*
+ * Find the partition matching this wedge info and record that we
+ * have a wedge already.
+ */
+static void
+update_part_from_wedge_info(struct gpt_disk_partitions *parts,
+    const struct dkwedge_info *dkw)
+{
+	for (struct gpt_part_entry *p = parts->partitions; p != NULL;
+	    p = p->gp_next) {
+		if (p->gp_start != dkw->dkw_offset ||
+		    (uint64_t)p->gp_size != dkw->dkw_size)
+			continue;
+		p->gp_flags |= GPEF_WEDGE;
+		strlcpy(p->gp_dev_name, dkw->dkw_devname,
+		    sizeof p->gp_dev_name);
+		return;
+	}
+}
+
 static struct disk_partitions *
-gpt_read_from_disk(const char *dev, daddr_t start, daddr_t len)
+gpt_read_from_disk(const char *dev, daddr_t start, daddr_t len,
+    const struct disk_partitioning_scheme *scheme)
 {
 	char diskpath[MAXPATHLEN];
 	int fd;
+	struct dkwedge_info *dkw;
+	struct dkwedge_list dkwl;
+	size_t bufsize, dk;
 
 	assert(start == 0);
 	assert(have_gpt);
@@ -340,7 +363,7 @@ gpt_read_from_disk(const char *dev, daddr_t start, daddr_t len)
 		return NULL;
 	}
 
-	parts->dp.pscheme = &gpt_parts;
+	parts->dp.pscheme = scheme;
 	parts->dp.disk = dev;
 	parts->dp.disk_start = start;
 	parts->dp.disk_size = disk_size;
@@ -354,30 +377,57 @@ gpt_read_from_disk(const char *dev, daddr_t start, daddr_t len)
 		bool fs_is_default = false;
 #endif
 
-		if (p->gp_type->fsflags != 0) {
-			const char *lm = get_last_mounted(fd, p->gp_start,
-			    &p->fs_type, &p->fs_sub_type, p->gp_type->fsflags);
-			if (lm != NULL && *lm != 0) {
-				p->last_mounted = strdup(lm);
+		if (p->gp_type != NULL) {
+
+			if (p->gp_type->fsflags != 0) {
+				const char *lm = get_last_mounted(fd,
+				    p->gp_start, &p->fs_type,
+				    &p->fs_sub_type, p->gp_type->fsflags);
+				if (lm != NULL && *lm != 0) {
+					char *path = strdup(lm);
+					canonicalize_last_mounted(path);
+					p->last_mounted = path;
+				} else {
+					p->fs_type = p->gp_type->
+					    default_fs_type;
+#ifdef DEFAULT_UFS2
+					fs_is_default = true;
+#endif
+				}
 			} else {
 				p->fs_type = p->gp_type->default_fs_type;
 #ifdef DEFAULT_UFS2
 				fs_is_default = true;
 #endif
 			}
-		} else {
-			p->fs_type = p->gp_type->default_fs_type;
 #ifdef DEFAULT_UFS2
-			fs_is_default = true;
+			if (fs_is_default && p->fs_type == FS_BSDFFS)
+				p->fs_sub_type = 2;
 #endif
 		}
-#ifdef DEFAULT_UFS2
-		if (fs_is_default && p->fs_type == FS_BSDFFS)
-			p->fs_sub_type = 2;
-#endif
 
 		parts->dp.free_space -= p->gp_size;
 	}
+
+	/*
+	 * Check if we have any (matching/auto-configured) wedges already
+	 */
+	dkw = NULL;
+	dkwl.dkwl_buf = dkw;
+	dkwl.dkwl_bufsize = 0;
+	if (ioctl(fd, DIOCLWEDGES, &dkwl) == 0) {
+		/* do not even try to deal with any races at this point */
+		bufsize = dkwl.dkwl_nwedges * sizeof(*dkw);
+		dkw = malloc(bufsize);
+		dkwl.dkwl_buf = dkw;
+		dkwl.dkwl_bufsize = bufsize;
+		if (dkw != NULL && ioctl(fd, DIOCLWEDGES, &dkwl) == 0) {
+			for (dk = 0; dk < dkwl.dkwl_ncopied; dk++)
+				update_part_from_wedge_info(parts, &dkw[dk]);
+		}
+		free(dkw);
+	}
+
 	close(fd);
 
 	return &parts->dp;
@@ -394,7 +444,7 @@ gpt_create_new(const char *disk, daddr_t start, daddr_t len, daddr_t total,
 		return NULL;
 	}
 
-	parts = calloc(sizeof(*parts), 1);
+	parts = calloc(1, sizeof(*parts));
 	if (!parts)
 		return NULL;
 
@@ -416,6 +466,9 @@ static bool
 gpt_get_part_info(const struct disk_partitions *arg, part_id id,
     struct disk_part_info *info)
 {
+	static const struct part_type_desc gpt_unknown_type =
+		{ .generic_ptype = PT_undef,
+		  .short_desc = "<unknown>" };
 	const struct gpt_disk_partitions *parts =
 	    (const struct gpt_disk_partitions*)arg;
 	const struct gpt_part_entry *p = parts->partitions;
@@ -432,6 +485,8 @@ gpt_get_part_info(const struct disk_partitions *arg, part_id id,
 	info->size = p->gp_size;
 	if (p->gp_type)
 		info->nat_type = &p->gp_type->gent;
+	else
+		info->nat_type = &gpt_unknown_type;
 	info->last_mounted = p->last_mounted;
 	info->fs_type = p->fs_type;
 	info->fs_sub_type = p->fs_sub_type;
@@ -1076,7 +1131,7 @@ gpt_modify_part(const char *disk, struct gpt_part_entry *p)
 	/* Check label */
 	if (strcmp(p->gp_label, old.gp_label) != 0) {
 		if (run_program(RUN_SILENT,
-		    "gpt label -b %" PRIu64 " -l %s %s",
+		    "gpt label -b %" PRIu64 " -l \'%s\' %s",
 		    p->gp_start, p->gp_label, disk) != 0)
 			return false;
 	}
@@ -1158,6 +1213,20 @@ gpt_add_wedge(const char *disk, struct gpt_part_entry *p)
 	return true;
 }
 
+static void
+escape_spaces(char *dest, const char *src)
+{
+	unsigned char c;
+
+	while (*src) {
+		c = *src++;
+		if (isspace(c) || c == '\\')
+			*dest++ = '\\';
+		*dest++ = c;
+	}
+	*dest = 0;
+}
+
 static bool
 gpt_get_part_device(const struct disk_partitions *arg,
     part_id id, char *devname, size_t max_devname_len, int *part,
@@ -1166,6 +1235,7 @@ gpt_get_part_device(const struct disk_partitions *arg,
 	const struct gpt_disk_partitions *parts =
 	    (const struct gpt_disk_partitions*)arg;
 	struct  gpt_part_entry *p = parts->partitions;
+	char tmpname[GPT_LABEL_LEN*2];
 	part_id no;
 
 
@@ -1184,12 +1254,14 @@ gpt_get_part_device(const struct disk_partitions *arg,
 
 	switch (usage) {
 	case logical_name:
-		if (p->gp_label[0] != 0)
+		if (p->gp_label[0] != 0) {
+			escape_spaces(tmpname, p->gp_label);
 			snprintf(devname, max_devname_len,
-			    "NAME=%s", p->gp_label);
-		else
+			    "NAME=%s", tmpname);
+		} else {
 			snprintf(devname, max_devname_len,
 			    "NAME=%s", p->gp_id);
+		}
 		break;
 	case plain_name:
 		assert(p->gp_flags & GPEF_WEDGE);
@@ -1220,7 +1292,7 @@ gpt_write_to_disk(struct disk_partitions *arg)
 {
 	struct gpt_disk_partitions *parts = (struct gpt_disk_partitions*)arg;
 	struct gpt_part_entry *p, *n;
-	char label_arg[sizeof(p->gp_label) + 4];
+	char label_arg[sizeof(p->gp_label) + 10];
 	char diskpath[MAXPATHLEN];
 	int fd, bits = 0;
 	bool root_is_new = false, efi_is_new = false;
@@ -1240,12 +1312,10 @@ gpt_write_to_disk(struct disk_partitions *arg)
 	close(fd);
 
 	/*
-	 * Mark all partitions as "have no wedge yet". While there,
-	 * collect first root and efi partition (if available)
+	 * Collect first root and efi partition (if available)
 	 */
 	for (pno = 0, p = parts->partitions; p != NULL; p = p->gp_next, pno++) {
-		p->gp_flags &= ~GPEF_WEDGE;
-		if (root_id == NO_PART) {
+		if (root_id == NO_PART && p->gp_type != NULL) {
 			if (p->gp_type->gent.generic_ptype == PT_root &&
 			    p->gp_start == pm->ptstart) {
 				root_id = pno;
@@ -1318,12 +1388,19 @@ gpt_write_to_disk(struct disk_partitions *arg)
 		if (p->gp_label[0] == 0)
 			label_arg[0] = 0;
 		else
-			sprintf(label_arg, "-l %s", p->gp_label);
+			sprintf(label_arg, "-l \'%s\'", p->gp_label);
 
-		run_program(RUN_SILENT,
-		    "gpt -n add -b %" PRIu64 " -s %" PRIu64 "s -t %s %s %s",
-		    p->gp_start, p->gp_size, p->gp_type->tid,
-		    label_arg, arg->disk);
+		if (p->gp_type != NULL)
+			run_program(RUN_SILENT,
+			    "gpt -n add -b %" PRIu64 " -s %" PRIu64
+			    "s -t %s %s %s",
+			    p->gp_start, p->gp_size, p->gp_type->tid,
+			    label_arg, arg->disk);
+		else
+			run_program(RUN_SILENT,
+			    "gpt -n add -b %" PRIu64 " -s %" PRIu64
+			    "s %s %s",
+			    p->gp_start, p->gp_size, label_arg, arg->disk);
 		gpt_apply_attr(arg->disk, "set", p->gp_start, p->gp_attr);
 		gpt_read_part(arg->disk, p->gp_start, p);
 		p->gp_flags |= GPEF_ON_DISK;
@@ -1337,6 +1414,24 @@ gpt_write_to_disk(struct disk_partitions *arg)
 		return false;
 
 	return true;
+}
+
+static part_id
+gpt_find_by_name(struct disk_partitions *arg, const char *name)
+{
+	struct gpt_disk_partitions *parts = (struct gpt_disk_partitions*)arg;
+	struct gpt_part_entry *p;
+	part_id pno;
+
+	for (pno = 0, p = parts->partitions; p != NULL;
+	    p = p->gp_next, pno++) {
+		if (strcmp(p->gp_label, name) == 0)
+			return pno;
+		if (strcmp(p->gp_id, name) == 0)
+			return pno;
+	}
+
+	return NO_PART;
 }
 
 bool
@@ -1397,10 +1492,31 @@ gpt_custom_attribute_writable(const struct disk_partitions *arg,
 	if (p == NULL)
 		return false;
 
-	if (p->fs_type == FS_SWAP || p->gp_type->gent.generic_ptype == PT_swap)
+	if (p->fs_type == FS_SWAP ||
+	    (p->gp_type != NULL && p->gp_type->gent.generic_ptype == PT_swap))
 		return false;
 
 	return true;
+}
+
+static const char *
+gpt_get_label_str(const struct disk_partitions *arg, part_id ptn)
+{
+	const struct gpt_disk_partitions *parts =
+	    (const struct gpt_disk_partitions*)arg;
+	size_t i;
+	struct gpt_part_entry *p;
+
+	for (i = 0, p = parts->partitions; p != NULL; i++, p = p->gp_next)
+		if (i == ptn)
+			break;
+
+	if (p == NULL)
+		return NULL;
+
+	if (p->gp_label[0] != 0)
+		return p->gp_label;
+	return p->gp_id;
 }
 
 static bool
@@ -1435,9 +1551,12 @@ gpt_format_custom_attribute(const struct disk_partitions *arg,
 		strlcpy(out, p->gp_label, out_space);
 	else if (label == MSG_ptn_uuid)
 		strlcpy(out, p->gp_id, out_space);
-	else if (label == MSG_ptn_gpt_type)
-		strlcpy(out, p->gp_type->gent.description, out_space);
-	else if (label == MSG_ptn_boot)
+	else if (label == MSG_ptn_gpt_type) {
+		if (p->gp_type != NULL)
+			strlcpy(out, p->gp_type->gent.description, out_space);
+		else if (out_space > 1)
+			out[0] = 0;
+	} else if (label == MSG_ptn_boot)
 		strlcpy(out, msg_string(p->gp_attr & GPT_ATTR_BOOT ?
 		    MSG_Yes : MSG_No), out_space);
 	else
@@ -1542,11 +1661,13 @@ gpt_parts = {
 	.read_from_disk = gpt_read_from_disk,
 	.create_new_for_disk = gpt_create_new,
 	.have_boot_support = gpt_have_boot_support,
+	.find_by_name = gpt_find_by_name,
 	.can_add_partition = gpt_can_add_partition,
 	.custom_attribute_writable = gpt_custom_attribute_writable,
 	.format_custom_attribute = gpt_format_custom_attribute,
 	.custom_attribute_toggle = gpt_custom_attribute_toggle,
 	.custom_attribute_set_str = gpt_custom_attribute_set_str,
+	.other_partition_identifier = gpt_get_label_str,
 	.get_part_device = gpt_get_part_device,
 	.max_free_space_at = gpt_max_free_space_at,
 	.get_free_spaces = gpt_get_free_spaces,

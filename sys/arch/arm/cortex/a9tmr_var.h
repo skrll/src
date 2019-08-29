@@ -1,4 +1,4 @@
-/* $NetBSD: a9tmr_var.h,v 1.6 2018/06/20 05:01:39 hkenken Exp $ */
+/* $NetBSD: a9tmr_var.h,v 1.7 2019/08/10 17:03:59 skrll Exp $ */
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -54,6 +54,9 @@ void	a9tmr_cpu_initclocks(void);
 int	a9tmr_intr(void *);
 void	a9tmr_update_freq(uint32_t);
 void	a9tmr_delay(unsigned int n);
+
+int	a9ptmr_intr(void *);
+void	a9ptmr_delay(unsigned int n);
 #endif
 
 #endif /* _ARM_CORTEX_A9TMR_VAR_ */

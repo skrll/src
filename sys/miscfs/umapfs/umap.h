@@ -1,4 +1,4 @@
-/*	$NetBSD: umap.h,v 1.17 2017/04/11 07:51:37 hannken Exp $	*/
+/*	$NetBSD: umap.h,v 1.19 2019/08/20 21:18:10 perseant Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -51,6 +51,7 @@ struct umap_args {
 	int 		gnentries;	/* # of entries in group map array */
 	u_long 		(*mapdata)[2];	/* pointer to array of user mappings */
 	u_long 		(*gmapdata)[2];	/* pointer to array of group mappings */
+	u_long		fsid;		/* user-supplied per-fs ident */
 };
 
 #ifdef _KERNEL
