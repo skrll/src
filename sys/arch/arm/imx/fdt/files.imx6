@@ -1,15 +1,7 @@
-#	$NetBSD: files.imx6,v 1.4 2019/07/30 06:52:57 hkenken Exp $
+#	$NetBSD: files.imx6,v 1.6 2019/08/19 11:41:36 hkenken Exp $
 #
 # Configuration info for the Freescale i.MX6
 #
-
-file	arch/arm/arm32/arm32_boot.c
-file	arch/arm/arm32/arm32_kvminit.c
-file	arch/arm/arm32/arm32_reboot.c
-file	arch/arm/arm32/irq_dispatch.S
-file	arch/arm/arm32/armv7_generic_space.c
-file	arch/arm/arm/arm_generic_dma.c
-file	arch/arm/arm/bus_space_a4x.S
 
 file	arch/arm/imx/fdt/imx6_platform.c	soc_imx
 
@@ -84,3 +76,11 @@ device	imxi2c: motoi2c, i2cbus, i2cexec
 attach	imxi2c at fdt
 file	arch/arm/imx/imxi2c.c			imxi2c
 file	arch/arm/imx/fdt/imx6_i2c.c		imxi2c
+
+# SPI bus controlloer
+device  imxspi : spibus
+attach	imxspi at fdt with imxspi_fdt
+file    arch/arm/imx/imxspi.c			imxspi
+file	arch/arm/imx/fdt/imx6_spi.c		imxspi_fdt
+defparam opt_imxspi.h                   	IMXSPINSLAVES
+

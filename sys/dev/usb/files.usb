@@ -1,4 +1,4 @@
-#	$NetBSD: files.usb,v 1.158 2019/07/31 10:19:55 martin Exp $
+#	$NetBSD: files.usb,v 1.167 2019/08/23 08:45:25 mrg Exp $
 #
 # Config file and device description for machine-independent USB code.
 # Included by ports that need it.  Ports that use it must provide
@@ -75,6 +75,7 @@ defflag opt_usb.h	URTWN_DEBUG: USB_DEBUG
 defflag opt_usb.h	URTW_DEBUG: USB_DEBUG
 defflag opt_usb.h	USCANNER_DEBUG: USB_DEBUG
 defflag opt_usb.h	USLSA_DEBUG: USB_DEBUG
+defflag opt_usb.h	USMSC_DEBUG: USB_DEBUG
 defflag opt_usb.h	USSCANNER_DEBUG: USB_DEBUG
 defflag opt_usb.h	USTIR_DEBUG: USB_DEBUG
 defflag opt_usb.h	UTHUM_DEBUG: USB_DEBUG
@@ -333,7 +334,7 @@ file	dev/usb/uthum.c			uthum
 
 # Ethernet adapters
 # ADMtek AN986 Pegasus
-device	aue: arp, ether, ifnet, mii, mii_phy
+device	aue: arp, ether, ifnet, mii, mii_phy, usbnet
 attach	aue at usbdevif
 file	dev/usb/if_aue.c		aue
 
@@ -343,27 +344,27 @@ attach	cdce at usbifif
 file	dev/usb/if_cdce.c		cdce
 
 # CATC USB-EL1201A
-device	cue: arp, ether, ifnet
+device	cue: arp, ether, ifnet, usbnet
 attach	cue at usbdevif
 file	dev/usb/if_cue.c		cue
 
 # Kawasaki LSI KL5KUSB101B
-device	kue: arp, ether, ifnet
+device	kue: arp, ether, ifnet, usbnet
 attach	kue at usbdevif
 file	dev/usb/if_kue.c		kue
 
 # Prolific PL2302 host-host
-device	upl: ifnet
+device	upl: ifnet, usbnet
 attach	upl at usbdevif
 file	dev/usb/if_upl.c		upl
 
 # Realtek RTL8150L(M)
-device	url: arp, ether, ifnet, mii
+device	url: arp, ether, ifnet, mii, usbnet
 attach	url at usbdevif
 file	dev/usb/if_url.c		url
 
 # ASIX AX88172
-device	axe: arp, ether, ifnet, mii, mii_phy
+device	axe: arp, ether, ifnet, mii, mii_phy, usbnet
 attach	axe at usbdevif
 file	dev/usb/if_axe.c		axe
 
@@ -373,12 +374,12 @@ attach	axen at usbdevif
 file	dev/usb/if_axen.c		axen
 
 # Microchip LAN750x and LAN85xx
-device	mue: arp, ether, ifnet, mii, mii_phy
+device	mue: arp, ether, ifnet, mii, mii_phy, usbnet
 attach	mue at usbdevif
 file	dev/usb/if_mue.c		mue
 
 # DAVICOM DM9601
-device	udav: arp, ether, ifnet, mii, mii_phy
+device	udav: arp, ether, ifnet, mii, mii_phy, usbnet
 attach	udav at usbdevif
 file	dev/usb/if_udav.c		udav
 
@@ -393,7 +394,7 @@ attach	umb at usbifif
 file	dev/usb/if_umb.c		umb
 
 # RealTek RTL8152 and RTL8153
-device	ure: arp, ether, ifnet, mii, mii_phy
+device	ure: arp, ether, ifnet, mii, mii_phy, usbnet
 attach	ure at usbdevif
 file	dev/usb/if_ure.c		ure
 
@@ -489,7 +490,7 @@ attach	upgt at usbdevif
 file	dev/usb/if_upgt.c		upgt
 
 # SMSC LAN95xx
-device	usmsc: arp, ether, ifnet, mii, mii_phy
+device	usmsc: arp, ether, ifnet, mii, mii_phy, usbnet
 attach	usmsc at usbdevif
 file	dev/usb/if_smsc.c		usmsc
 
@@ -528,7 +529,7 @@ attach	uyurex at uhidbus
 file	dev/usb/uyurex.c		uyurex
 
 # Microsoft RNDIS
-device	urndis: arp, ether, ifnet
+device	urndis: arp, ether, ifnet, usbnet
 attach	urndis at usbifif
 file	dev/usb/if_urndis.c		urndis
 

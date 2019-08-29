@@ -1,4 +1,4 @@
-/*	$NetBSD: defs.h,v 1.42 2019/07/26 08:18:47 martin Exp $	*/
+/*	$NetBSD: defs.h,v 1.44 2019/08/27 14:11:00 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -712,6 +712,7 @@ bool	parts_use_wholedisk(struct disk_partitions*,
 bool	md_parts_use_wholedisk(struct disk_partitions*);
 
 /* from util.c */
+bool	root_is_read_only(void);
 void	get_ptn_alignment(const struct disk_partitions *parts, daddr_t *align, daddr_t *p0off);
 char*	str_arg_subst(const char *, size_t, const char **);
 void	msg_display_subst(const char *, size_t, ...);
@@ -806,6 +807,7 @@ int	target_file_exists_p(const char *);
 int	target_symlink_exists_p(const char *);
 void	unwind_mounts(void);
 int	target_mounted(void);
+void	umount_root(void);
 
 /* from partman.c */
 #ifndef NO_PARTMAN

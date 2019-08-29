@@ -1,4 +1,4 @@
-/*	$NetBSD: nd6.c,v 1.256 2019/07/26 10:18:42 christos Exp $	*/
+/*	$NetBSD: nd6.c,v 1.260 2019/08/27 21:11:26 roy Exp $	*/
 /*	$KAME: nd6.c,v 1.279 2002/06/08 11:16:51 itojun Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nd6.c,v 1.256 2019/07/26 10:18:42 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nd6.c,v 1.260 2019/08/27 21:11:26 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -666,8 +666,12 @@ nd6_timer_work(struct work *wk, void *arg)
 			if (ip6_use_tempaddr &&
 			    (ia6->ia6_flags & IN6_IFF_TEMPORARY) != 0 &&
 			    (oldflags & IN6_IFF_DEPRECATED) == 0) {
+				int ret;
 
-				if (regen_tmpaddr(ia6) == 0) {
+				IFNET_LOCK(ia6->ia_ifa.ifa_ifp);
+				ret = regen_tmpaddr(ia6);
+				IFNET_UNLOCK(ia6->ia_ifa.ifa_ifp);
+				if (ret == 0) {
 					/*
 					 * A new temporary address is
 					 * generated.
@@ -1185,9 +1189,9 @@ nd6_is_addr_neighbor(const struct sockaddr_in6 *addr, struct ifnet *ifp)
 static void
 nd6_free(struct llentry *ln, int gc)
 {
-	struct nd_defrouter *dr;
 	struct ifnet *ifp;
 	struct in6_addr *in6;
+	struct sockaddr_in6 sin6;
 
 	KASSERT(ln != NULL);
 	LLE_WLOCK_ASSERT(ln);
@@ -1199,81 +1203,70 @@ nd6_free(struct llentry *ln, int gc)
 	 * even though it is not harmful, it was not really necessary.
 	 */
 
-	if (!ip6_forwarding) {
-		ND6_WLOCK();
-		dr = nd6_defrouter_lookup(in6, ifp);
-
-		if (dr != NULL && dr->expire &&
-		    ln->ln_state == ND6_LLINFO_STALE && gc) {
+	if (!ip6_forwarding && ln->ln_router) {
+		if (ln->ln_state == ND6_LLINFO_STALE && gc) {
 			/*
 			 * If the reason for the deletion is just garbage
-			 * collection, and the neighbor is an active default
+			 * collection, and the neighbor is an active
 			 * router, do not delete it.  Instead, reset the GC
 			 * timer using the router's lifetime.
-			 * Simply deleting the entry would affect default
+			 * Simply deleting the entry may affect default
 			 * router selection, which is not necessarily a good
 			 * thing, especially when we're using router preference
 			 * values.
 			 * XXX: the check for ln_state would be redundant,
 			 *      but we intentionally keep it just in case.
 			 */
-			if (dr->expire > time_uptime)
+			if (ln->ln_expire > time_uptime)
 				nd6_llinfo_settimer(ln,
-				    (dr->expire - time_uptime) * hz);
+				    (ln->ln_expire - time_uptime) * hz);
 			else
 				nd6_llinfo_settimer(ln, nd6_gctimer * hz);
-			ND6_UNLOCK();
 			LLE_WUNLOCK(ln);
 			return;
 		}
 
-		if (ln->ln_router || dr) {
-			/*
-			 * We need to unlock to avoid a LOR with nd6_rt_flush()
-			 * with the rnh and for the calls to
-			 * nd6_pfxlist_onlink_check() and nd6_defrouter_select() in the
-			 * block further down for calls into nd6_lookup().
-			 * We still hold a ref.
-			 */
-			LLE_WUNLOCK(ln);
+		ND6_WLOCK();
 
-			/*
-			 * nd6_rt_flush must be called whether or not the neighbor
-			 * is in the Default Router List.
-			 * See a corresponding comment in nd6_na_input().
-			 */
-			nd6_rt_flush(in6, ifp);
-		}
+		/*
+		 * We need to unlock to avoid a LOR with nd6_rt_flush()
+		 * with the rnh and for the calls to
+		 * nd6_pfxlist_onlink_check() and nd6_defrouter_select() in the
+		 * block further down for calls into nd6_lookup().
+		 * We still hold a ref.
+		 *
+		 * Temporarily fake the state to choose a new default
+		 * router and to perform on-link determination of
+		 * prefixes correctly.
+		 * Below the state will be set correctly,
+		 * or the entry itself will be deleted.
+		 */
+		ln->ln_state = ND6_LLINFO_INCOMPLETE;
+		LLE_WUNLOCK(ln);
 
-		if (dr) {
-			/*
-			 * Unreachablity of a router might affect the default
-			 * router selection and on-link detection of advertised
-			 * prefixes.
-			 */
+		/*
+		 * nd6_rt_flush must be called whether or not the neighbor
+		 * is in the Default Router List.
+		 * See a corresponding comment in nd6_na_input().
+		 */
+		nd6_rt_flush(in6, ifp);
 
-			/*
-			 * Temporarily fake the state to choose a new default
-			 * router and to perform on-link determination of
-			 * prefixes correctly.
-			 * Below the state will be set correctly,
-			 * or the entry itself will be deleted.
-			 */
-			ln->ln_state = ND6_LLINFO_INCOMPLETE;
+		/*
+		 * Unreachablity of a router might affect the default
+		 * router selection and on-link detection of advertised
+		 * prefixes.
+		 *
+		 * Since nd6_defrouter_select() does not affect the
+		 * on-link determination and MIP6 needs the check
+		 * before the default router selection, we perform
+		 * the check now.
+		 */
+		nd6_pfxlist_onlink_check();
 
-			/*
-			 * Since nd6_defrouter_select() does not affect the
-			 * on-link determination and MIP6 needs the check
-			 * before the default router selection, we perform
-			 * the check now.
-			 */
-			nd6_pfxlist_onlink_check();
-
-			/*
-			 * refresh default router list
-			 */
-			nd6_defrouter_select();
-		}
+		/*
+		 * refresh default router list
+		 */
+		nd6_defrouter_select();
 
 #ifdef __FreeBSD__
 		/*
@@ -1283,11 +1276,14 @@ nd6_free(struct llentry *ln, int gc)
 		if (ln->la_flags & LLE_REDIRECT)
 			nd6_free_redirect(ln);
 #endif
-		ND6_UNLOCK();
 
-		if (ln->ln_router || dr)
-			LLE_WLOCK(ln);
+		ND6_UNLOCK();
+		LLE_WLOCK(ln);
 	}
+
+	sockaddr_in6_init(&sin6, in6, 0, 0, 0);
+	rt_clonedmsg(RTM_DELETE, sin6tosa(&sin6),
+	    (const uint8_t *)&ln->ll_addr, ifp);
 
 	/*
 	 * Save to unlock. We still hold an extra reference and will not
@@ -2221,11 +2217,13 @@ nd6_cache_lladdr(
 		break;
 	}
 
-#if 0
-	/* XXX should we send rtmsg as it used to be? */
-	if (do_update)
-		rt_newmsg(RTM_CHANGE, rt);  /* tell user process */
-#endif
+	if (do_update) {
+		struct sockaddr_in6 sin6;
+
+		sockaddr_in6_init(&sin6, from, 0, 0, 0);
+		rt_clonedmsg(is_newentry ? RTM_ADD : RTM_CHANGE,
+		    sin6tosa(&sin6), lladdr, ifp);
+	}
 
 	if (ln != NULL) {
 		router = ln->ln_router;
@@ -2353,7 +2351,8 @@ nd6_resolve(struct ifnet *ifp, const struct rtentry *rt, struct mbuf *m,
 		}
 
 		sockaddr_in6_init(&sin6, &ln->r_l3addr.addr6, 0, 0, 0);
-		rt_clonedmsg(sin6tosa(&sin6), ifp, rt);
+		if (rt != NULL)
+			rt_clonedmsg(RTM_ADD, sin6tosa(&sin6), NULL, ifp);
 
 		created = true;
 	}
