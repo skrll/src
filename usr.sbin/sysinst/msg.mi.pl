@@ -1,4 +1,4 @@
-/*	$NetBSD: msg.mi.pl,v 1.20 2019/07/23 18:13:40 martin Exp $	*/
+/*	$NetBSD: msg.mi.pl,v 1.22 2019/08/17 17:51:19 martin Exp $	*/
 /*	Based on english version: */
 /*	NetBSD: msg.mi.pl,v 1.36 2004/04/17 18:55:35 atatat Exp       */
 
@@ -648,8 +648,11 @@ Instalacja przerwana.}
 message delete_xfer_file
 {Usun po zakonczeniu instalacji}
 
+/* Called with: 			Example
+ *  $0 = set name			base
+ */
 message notarfile
-{Pakiet %s nie istnieje.}
+{Pakiet $0 nie istnieje.}
 
 message endtarok
 {Wszystkie wybrane pakiety dystrybucji zostaly rozpakowane.}
@@ -1188,6 +1191,11 @@ Chcesz jej uzyc?}
 
 message parttype_disklabel {disklabel BSD}
 message parttype_disklabel_short {disklabel}
+/*
+ * This is used on architectures with MBR above disklabel when there is
+ * no MBR on a disk.
+ */
+message parttype_only_disklabel {disklabel (NetBSD only)}
 
 message select_part_scheme
 {Ten dysk nie byl wczesniej partycjonowany. Wybierz typ tablicy

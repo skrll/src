@@ -1,4 +1,4 @@
-/* 	$NetBSD: rasops.h,v 1.42 2019/07/31 04:45:44 rin Exp $ */
+/* 	$NetBSD: rasops.h,v 1.48 2019/08/14 00:51:10 rin Exp $ */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -31,6 +31,8 @@
 
 #ifndef _RASOPS_H_
 #define _RASOPS_H_ 1
+
+#include <sys/param.h>
 
 #include <dev/wscons/wsconsio.h>
 #include <dev/wsfont/wsfont.h>
@@ -113,6 +115,22 @@ struct rasops_info {
 	int	ri_emustride;	/* bytes per row we actually care about */
 	int	ri_rows;	/* number of rows (characters, not pels) */
 	int	ri_cols;	/* number of columns (characters, not pels) */
+#if __NetBSD_Prereq__(9, 99, 1)
+	struct {
+		int	off;	/* offset of underline from bottom */
+		int	height;	/* height of underline */
+	} ri_ul;
+#else
+	/*
+	 * XXX
+	 * hack to keep ABI compatibility for netbsd-9, -8, and -7.
+	 */
+	// int	ri_delta;	/* obsoleted */
+	struct {
+		short	off;
+		short	height;
+	} __packed ri_ul;
+#endif
 	int	ri_pelbytes;	/* bytes per pel (may be zero) */
 	int	ri_fontscale;	/* fontheight * fontstride */
 	int	ri_xscale;	/* fontwidth * pelbytes */
@@ -131,28 +149,20 @@ struct rasops_info {
 	/* Callbacks so we can share some code */
 	void	(*ri_do_cursor)(struct rasops_info *);
 
-	/* buffer capable of single-row pixels */
-	void	*ri_buf;
-	size_t	ri_buflen;
-
-	/* 4x1 stamp for optimized character blitting */
-	void	*ri_stamp;
-	long	ri_stamp_attr;
-	size_t	ri_stamp_len;
-
 #if NRASOPS_ROTATION > 0
 	/* Used to intercept putchar to permit display rotation */
 	struct	wsdisplay_emulops ri_real_ops;
 #endif
 };
 
-#define CHAR_IN_FONT(c,font) 					\
-       ((c) >= (font)->firstchar && 				\
-	((c) - (font)->firstchar) < (font)->numchars)
+#define CHAR_IN_FONT(c, font)						\
+	((c) >= (font)->firstchar &&					\
+	    (c) - (font)->firstchar < (font)->numchars)
 
-#define PICK_FONT(ri, c) (((c & WSFONT_FLAGS_MASK) == WSFONT_FLAG_OPT) && \
-			  (ri->ri_optfont.data != NULL)) ? \
-			 &ri->ri_optfont : ri->ri_font
+#define PICK_FONT(ri, c)						\
+	((((c) & WSFONT_FLAGS_MASK) == WSFONT_FLAG_OPT &&		\
+	    (ri)->ri_optfont.data != NULL) ?				\
+		&(ri)->ri_optfont : (ri)->ri_font)
 
 /*
  * rasops_init().
@@ -190,16 +200,62 @@ void	rasops15_init(struct rasops_info *);
 void	rasops24_init(struct rasops_info *);
 void	rasops32_init(struct rasops_info *);
 
-void	rasops_allocstamp(struct rasops_info *, size_t);
+#define	ATTR_BG(ri, attr) ((ri)->ri_devcmap[((uint32_t)(attr) >> 16) & 0xf])
+#define	ATTR_FG(ri, attr) ((ri)->ri_devcmap[((uint32_t)(attr) >> 24) & 0xf])
+
+#define	ATTR_MASK_BG __BITS(16, 19)
+#define	ATTR_MASK_FG __BITS(24, 27)
 
 #define	DELTA(p, d, cast) ((p) = (cast)((uint8_t *)(p) + (d)))
+
+#define	FBOFFSET(ri, row, col)						\
+	((row) * (ri)->ri_yscale + (col) * (ri)->ri_xscale)
 
 #define	FONT_GLYPH(uc, font, ri)					\
 	((uint8_t *)(font)->data + ((uc) - ((font)->firstchar)) *	\
 	    (ri)->ri_fontscale)
 
+static __inline void
+rasops_memset32(void *p, uint32_t val, size_t bytes)
+{
+	int slop1, slop2, full;
+	uint8_t *dp = (uint8_t *)p;
+
+	if (bytes == 1) {
+		*dp = val;
+		return;
+	}
+
+	slop1 = (4 - ((uintptr_t)dp & 3)) & 3;
+	slop2 = (bytes - slop1) & 3;
+	full = (bytes - slop1 /* - slop2 */) >> 2;
+
+	if (slop1 & 1)
+		*dp++ = val;
+
+	if (slop1 & 2) {
+		*(uint16_t *)dp = val;
+		dp += 2;
+	}
+
+	for (; full; full--) {
+		*(uint32_t *)dp = val;
+		dp += 4;
+	}
+
+	if (slop2 & 2) {
+		*(uint16_t *)dp = val;
+		dp += 2;
+	}
+
+	if (slop2 & 1)
+		*dp = val;
+
+	return;
+}
+
 static __inline uint32_t
-be32uatoh(uint8_t *p)
+rasops_be32uatoh(uint8_t *p)
 {
 	uint32_t u;
 

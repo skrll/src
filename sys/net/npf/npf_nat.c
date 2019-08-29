@@ -67,7 +67,7 @@
 
 #ifdef _KERNEL
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: npf_nat.c,v 1.46 2019/07/23 00:52:01 rmind Exp $");
+__KERNEL_RCSID(0, "$NetBSD: npf_nat.c,v 1.48 2019/08/25 13:21:03 rmind Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -381,19 +381,20 @@ npf_nat_which(const unsigned type, bool forw)
 static npf_natpolicy_t *
 npf_nat_inspect(npf_cache_t *npc, const int di)
 {
-	int slock = npf_config_read_enter();
-	npf_ruleset_t *rlset = npf_config_natset(npc->npc_ctx);
+	npf_t *npf = npc->npc_ctx;
+	int slock = npf_config_read_enter(npf);
+	npf_ruleset_t *rlset = npf_config_natset(npf);
 	npf_natpolicy_t *np;
 	npf_rule_t *rl;
 
 	rl = npf_ruleset_inspect(npc, rlset, di, NPF_LAYER_3);
 	if (rl == NULL) {
-		npf_config_read_exit(slock);
+		npf_config_read_exit(npf, slock);
 		return NULL;
 	}
 	np = npf_rule_getnat(rl);
 	atomic_inc_uint(&np->n_refcnt);
-	npf_config_read_exit(slock);
+	npf_config_read_exit(npf, slock);
 	return np;
 }
 
@@ -444,6 +445,7 @@ npf_nat_create(npf_cache_t *npc, npf_natpolicy_t *np, npf_conn_t *con)
 {
 	const int proto = npc->npc_proto;
 	const unsigned alen = npc->npc_alen;
+	npf_t *npf = npc->npc_ctx;
 	npf_addr_t *taddr;
 	npf_nat_t *nt;
 
@@ -455,7 +457,7 @@ npf_nat_create(npf_cache_t *npc, npf_natpolicy_t *np, npf_conn_t *con)
 	if (__predict_false(!nt)) {
 		return NULL;
 	}
-	npf_stats_inc(npc->npc_ctx, NPF_STAT_NAT_CREATE);
+	npf_stats_inc(npf, NPF_STAT_NAT_CREATE);
 	nt->nt_natpolicy = np;
 	nt->nt_conn = con;
 	nt->nt_alg = NULL;
@@ -464,12 +466,16 @@ npf_nat_create(npf_cache_t *npc, npf_natpolicy_t *np, npf_conn_t *con)
 	 * Select the translation address.
 	 */
 	if (np->n_flags & NPF_NAT_USETABLE) {
+		int slock = npf_config_read_enter(npf);
 		taddr = npf_nat_getaddr(npc, np, alen);
 		if (__predict_false(!taddr)) {
+			npf_config_read_exit(npf, slock);
 			pool_cache_put(nat_cache, nt);
 			return NULL;
 		}
 		memcpy(&nt->nt_taddr, taddr, alen);
+		npf_config_read_exit(npf, slock);
+
 	} else if (np->n_algo == NPF_ALGO_NETMAP) {
 		const unsigned which = npf_nat_which(np->n_type, true);
 		npf_nat_algo_netmap(npc, np, which, &nt->nt_taddr);
@@ -514,7 +520,8 @@ npf_nat_create(npf_cache_t *npc, npf_natpolicy_t *np, npf_conn_t *con)
 
 	/* Get a new port for translation. */
 	if ((np->n_flags & NPF_NAT_PORTMAP) != 0) {
-		nt->nt_tport = npf_portmap_get(np->n_npfctx, alen, taddr);
+		npf_portmap_t *pm = np->n_npfctx->portmap;
+		nt->nt_tport = npf_portmap_get(pm, alen, taddr);
 	} else {
 		nt->nt_tport = np->n_tport;
 	}
@@ -745,7 +752,8 @@ npf_nat_destroy(npf_nat_t *nt)
 
 	/* Return taken port to the portmap. */
 	if ((np->n_flags & NPF_NAT_PORTMAP) != 0 && nt->nt_tport) {
-		npf_portmap_put(npf, nt->nt_alen, &nt->nt_taddr, nt->nt_tport);
+		npf_portmap_t *pm = npf->portmap;
+		npf_portmap_put(pm, nt->nt_alen, &nt->nt_taddr, nt->nt_tport);
 	}
 	npf_stats_inc(np->n_npfctx, NPF_STAT_NAT_DESTROY);
 
@@ -804,10 +812,14 @@ npf_nat_import(npf_t *npf, const nvlist_t *nat,
 	nt->nt_tport = dnvlist_get_number(nat, "tport", 0);
 
 	/* Take a specific port from port-map. */
-	if ((np->n_flags & NPF_NAT_PORTMAP) != 0 && nt->nt_tport &&
-	    !npf_portmap_take(npf, nt->nt_alen, &nt->nt_taddr, nt->nt_tport)) {
-		pool_cache_put(nat_cache, nt);
-		return NULL;
+	if ((np->n_flags & NPF_NAT_PORTMAP) != 0 && nt->nt_tport) {
+		npf_portmap_t *pm = npf->portmap;
+
+		if (!npf_portmap_take(pm, nt->nt_alen,
+		    &nt->nt_taddr, nt->nt_tport)) {
+			pool_cache_put(nat_cache, nt);
+			return NULL;
+		}
 	}
 	npf_stats_inc(npf, NPF_STAT_NAT_CREATE);
 

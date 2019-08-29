@@ -1,4 +1,4 @@
-#	$NetBSD: t_ndp.sh,v 1.33 2019/07/18 04:00:09 ozaki-r Exp $
+#	$NetBSD: t_ndp.sh,v 1.35 2019/08/19 03:20:27 ozaki-r Exp $
 #
 # Copyright (c) 2015 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -114,6 +114,7 @@ get_timeout()
 
 ndp_cache_expiration_body()
 {
+	local macaddr=
 
 	rump_server_start $SOCKSRC netinet6
 	rump_server_start $SOCKDST netinet6
@@ -121,11 +122,18 @@ ndp_cache_expiration_body()
 	setup_dst_server
 	setup_src_server
 
-	export RUMP_SERVER=$SOCKSRC
-
 	# Shorten the expire time of cache entries
+	export RUMP_SERVER=$SOCKSRC
 	atf_check -s exit:0 -o match:'basereachable=7s0ms' \
 	    rump.ndp -i shmif0 basereachable=7000
+
+	# Make a permanent cache entry to avoid sending an NS packet disturbing
+	# the test
+	macaddr=$(get_macaddr $SOCKSRC shmif0)
+	export RUMP_SERVER=$SOCKDST
+	atf_check -s exit:0 -o ignore rump.ndp -s $IP6SRC $macaddr
+
+	export RUMP_SERVER=$SOCKSRC
 
 	#
 	# Check if a cache is expired expectedly
@@ -679,7 +687,7 @@ ndp_stray_entries_cleanup()
 }
 
 atf_test_case ndp_cache_state cleanup
-ndp_stray_entries_head()
+ndp_cache_state_head()
 {
 
 	atf_set "descr" "Tests states of neighbor cache entries"
@@ -710,6 +718,7 @@ wait_until_stalled()
 
 ndp_cache_state_body()
 {
+	local macaddr=
 
 	rump_server_start $SOCKSRC netinet6
 	rump_server_start $SOCKDST netinet6
@@ -717,11 +726,18 @@ ndp_cache_state_body()
 	setup_dst_server
 	setup_src_server
 
-	export RUMP_SERVER=$SOCKSRC
-
 	# Shorten the expire time of cache entries
+	export RUMP_SERVER=$SOCKSRC
 	atf_check -s exit:0 -o match:'basereachable=7s0ms' \
 	    rump.ndp -i shmif0 basereachable=7000
+
+	# Make a permanent cache entry to avoid sending an NS packet disturbing
+	# the test
+	macaddr=$(get_macaddr $SOCKSRC shmif0)
+	export RUMP_SERVER=$SOCKDST
+	atf_check -s exit:0 -o ignore rump.ndp -s $IP6SRC $macaddr
+
+	export RUMP_SERVER=$SOCKSRC
 
 	#
 	# Reachability confirmation (RFC 4861 7.3.3)

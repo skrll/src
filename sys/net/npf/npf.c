@@ -33,7 +33,7 @@
 
 #ifdef _KERNEL
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: npf.c,v 1.38 2019/07/23 00:52:01 rmind Exp $");
+__KERNEL_RCSID(0, "$NetBSD: npf.c,v 1.41 2019/08/25 13:21:03 rmind Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -49,7 +49,7 @@ __KERNEL_RCSID(0, "$NetBSD: npf.c,v 1.38 2019/07/23 00:52:01 rmind Exp $");
 static __read_mostly npf_t *	npf_kernel_ctx = NULL;
 
 __dso_public int
-npf_sysinit(unsigned nworkers)
+npfk_sysinit(unsigned nworkers)
 {
 	npf_bpf_sysinit();
 	npf_tableset_sysinit();
@@ -58,7 +58,7 @@ npf_sysinit(unsigned nworkers)
 }
 
 __dso_public void
-npf_sysfini(void)
+npfk_sysfini(void)
 {
 	npf_worker_sysfini();
 	npf_nat_sysfini();
@@ -67,30 +67,34 @@ npf_sysfini(void)
 }
 
 __dso_public npf_t *
-npf_create(int flags, const npf_mbufops_t *mbufops, const npf_ifops_t *ifops)
+npfk_create(int flags, const npf_mbufops_t *mbufops, const npf_ifops_t *ifops)
 {
 	npf_t *npf;
 
 	npf = kmem_zalloc(sizeof(npf_t), KM_SLEEP);
-	npf->qsbr = pserialize_create();
+	npf->ebr = npf_ebr_create();
 	npf->stats_percpu = percpu_alloc(NPF_STATS_SIZE);
 	npf->mbufops = mbufops;
 
 	npf_param_init(npf);
 	npf_state_sysinit(npf);
 	npf_ifmap_init(npf, ifops);
-	npf_conn_init(npf, flags);
+	npf_conn_init(npf);
 	npf_portmap_init(npf);
 	npf_alg_init(npf);
 	npf_ext_init(npf);
 
 	/* Load an empty configuration. */
 	npf_config_init(npf);
+
+	if ((flags & NPF_NO_GC) == 0) {
+		npf_worker_register(npf, npf_conn_worker);
+	}
 	return npf;
 }
 
 __dso_public void
-npf_destroy(npf_t *npf)
+npfk_destroy(npf_t *npf)
 {
 	/*
 	 * Destroy the current configuration.  Note: at this point all
@@ -107,34 +111,34 @@ npf_destroy(npf_t *npf)
 	npf_state_sysfini(npf);
 	npf_param_fini(npf);
 
-	pserialize_destroy(npf->qsbr);
+	npf_ebr_destroy(npf->ebr);
 	percpu_free(npf->stats_percpu, NPF_STATS_SIZE);
 	kmem_free(npf, sizeof(npf_t));
 }
 
 __dso_public int
-npf_load(npf_t *npf, void *config_ref, npf_error_t *err)
+npfk_load(npf_t *npf, void *config_ref, npf_error_t *err)
 {
 	return npfctl_load(npf, 0, config_ref);
 }
 
 __dso_public void
-npf_gc(npf_t *npf)
+npfk_gc(npf_t *npf)
 {
 	npf_conn_worker(npf);
 }
 
 __dso_public void
-npf_thread_register(npf_t *npf)
+npfk_thread_register(npf_t *npf)
 {
-	pserialize_register(npf->qsbr);
+	npf_ebr_register(npf->ebr);
 }
 
 __dso_public void
-npf_thread_unregister(npf_t *npf)
+npfk_thread_unregister(npf_t *npf)
 {
-	pserialize_perform(npf->qsbr);
-	pserialize_unregister(npf->qsbr);
+	npf_ebr_full_sync(npf->ebr);
+	npf_ebr_unregister(npf->ebr);
 }
 
 void
@@ -194,14 +198,14 @@ npf_stats_clear_cb(void *mem, void *arg, struct cpu_info *ci)
  */
 
 __dso_public void
-npf_stats(npf_t *npf, uint64_t *buf)
+npfk_stats(npf_t *npf, uint64_t *buf)
 {
 	memset(buf, 0, NPF_STATS_SIZE);
 	percpu_foreach(npf->stats_percpu, npf_stats_collect, buf);
 }
 
 __dso_public void
-npf_stats_clear(npf_t *npf)
+npfk_stats_clear(npf_t *npf)
 {
 	percpu_foreach(npf->stats_percpu, npf_stats_clear_cb, NULL);
 }

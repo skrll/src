@@ -1,4 +1,4 @@
-/*	$NetBSD: usbnet.h,v 1.2 2019/07/31 23:47:16 mrg Exp $	*/
+/*	$NetBSD: usbnet.h,v 1.14 2019/08/23 04:32:57 mrg Exp $	*/
 
 /*
  * Copyright (c) 2019 Matthew R. Green
@@ -50,12 +50,15 @@
  *   can be stored in un_sc member)
  * - use MII bus lock / access methods
  * - usbnet_attach() to initialise and allocate rx/tx chains
+ * - usbnet_attach_ifp() to attach the interface, and either ether_ifattach()
+ *   for ethernet devices, or if_alloc_sadl()/bpf_attach() pair otherwise.
  * - usbnet_detach() to clean them up
  * - usbnet_activate() for autoconf
  * - interface ioctl and start have direct frontends with callbacks for
  *   device specific handling:
- *   - ioctl replies upon ether_ioctl() and a device-specific callback
- *     to handle setting multicast/offload/etc
+ *   - ioctl can use either a device-specific override (useful for special
+ *     cases), but provides a normal handler with callback to handle
+ *     ENETRESET conditions that should be sufficient for most users
  *   - start uses usbnet send callback
  * - interface init and stop have helper functions
  *   - device specific init should use usbnet_init_rx_tx() to open pipes
@@ -73,27 +76,22 @@
  *     transmit queue and use the send callback for the given mbuf.
  *     the usb callback will use usbnet_txeof() for the transmit
  *     completion function (internal to usbnet)
- */
-
-/*
- * Converted drivers:  if_axe if_axen if_cdce if_ure.
- *
- * Note: these drivers have slightly different mbuf handling that need to be
- * adjusted to the common method (see if_cdce conversion):
- *
- * if_atu if_aue if_cue if_smsc if_udav if_upl if_url if_urndis.
+ *   - there is special interrupt pipe handling
+ * - timer/tick:
+ *   - the uno_tick callback will be called once a second if present.
  */
 
 #include <sys/device.h>
 #include <sys/mbuf.h>
 #include <sys/rndsource.h>
 #include <sys/mutex.h>
+#include <sys/module.h>
 
 #include <net/bpf.h>
 #include <net/if.h>
 #include <net/if_arp.h>
-#include <net/if_dl.h> 
-#include <net/if_ether.h>  
+#include <net/if_dl.h>
+#include <net/if_ether.h>
 #include <net/if_media.h>
 
 #include <dev/mii/mii.h>
@@ -106,31 +104,18 @@
 #include <dev/usb/usbdevs.h>
 
 /*
- * Per-transfer data, initialised in usbnet_[rt]x_list_init().
+ * Per-transfer data.
  *
- * Front-end must set uncd_tx_list_cnt and uncd_rx_list_cnt before calling
- * list init, which the first time, will allocate the chain arrays, which
- * must also be NULL to indicate the first call.
+ * Front-end must set un_rx_list_cnt and un_tx_list_cnt before
+ * calling usbnet_attach(), and then call usbnet_rx_tx_init()
+ * which will allocate the chain arrays, and must be NULL to
+ * indicate the first call.
  */
 struct usbnet;
 struct usbnet_chain {
 	struct usbnet		*unc_un;
 	struct usbd_xfer	*unc_xfer;
 	uint8_t			*unc_buf;
-};
-
-struct usbnet_cdata {
-	struct usbnet_chain	*uncd_tx_chain;
-	struct usbnet_chain	*uncd_rx_chain;
-
-	unsigned		uncd_rx_bufsz;
-	unsigned		uncd_tx_bufsz;
-	unsigned		uncd_rx_list_cnt;
-	unsigned		uncd_tx_list_cnt;
-
-	int			uncd_tx_prod;
-	int			uncd_tx_cnt;
-	int			uncd_rx_cnt;
 };
 
 /*
@@ -150,123 +135,254 @@ typedef void (*usbnet_stop_cb)(struct ifnet *, int);
 typedef int (*usbnet_ioctl_cb)(struct ifnet *, u_long, void *);
 /* Initialise device callback. */
 typedef int (*usbnet_init_cb)(struct ifnet *);
+
 /* MII read register callback. */
-typedef usbd_status (*usbnet_mii_read_reg_cb)(struct usbnet *, int reg,
-					      int phy, uint16_t *val);
+typedef int (*usbnet_mii_read_reg_cb)(struct usbnet *, int reg,
+				      int phy, uint16_t *val);
 /* MII write register callback. */
-typedef usbd_status (*usbnet_mii_write_reg_cb)(struct usbnet *, int reg,
-					       int phy, uint16_t val);
+typedef int (*usbnet_mii_write_reg_cb)(struct usbnet *, int reg,
+				       int phy, uint16_t val);
 /* MII status change callback. */
 typedef void (*usbnet_mii_statchg_cb)(struct ifnet *);
+
 /* Prepare packet to send callback, returns length. */
 typedef unsigned (*usbnet_tx_prepare_cb)(struct usbnet *, struct mbuf *,
 					 struct usbnet_chain *);
 /* Receive some packets callback. */
-typedef void (*usbnet_rx_loop_cb)(struct usbnet *, struct usbd_xfer *,
-			          struct usbnet_chain *, uint32_t);
+typedef void (*usbnet_rx_loop_cb)(struct usbnet *, struct usbnet_chain *,
+				  uint32_t);
+/* Tick callback. */
+typedef void (*usbnet_tick_cb)(struct usbnet *);
+/* Interrupt pipe callback. */
+typedef void (*usbnet_intr_cb)(struct usbnet *, usbd_status);
+
+struct usbnet_ops {
+	usbnet_stop_cb		uno_stop;
+	usbnet_ioctl_cb		uno_ioctl;
+	usbnet_ioctl_cb		uno_override_ioctl;
+	usbnet_init_cb		uno_init;
+	usbnet_mii_read_reg_cb	uno_read_reg;
+	usbnet_mii_write_reg_cb uno_write_reg;
+	usbnet_mii_statchg_cb	uno_statchg;
+	usbnet_tx_prepare_cb	uno_tx_prepare;
+	usbnet_rx_loop_cb	uno_rx_loop;
+	usbnet_tick_cb		uno_tick;
+	usbnet_intr_cb		uno_intr;
+};
 
 /*
- * Generic USB ethernet structure.  Use this as ifp->if_softc and
- * set as device_private() in attach.
+ * USB interrupt pipe support.  Use this if usbd_open_pipe_intr() should
+ * be used for the interrupt pipe.
  */
+struct usbnet_intr {
+	/*
+	 * Point un_intr to this structure to use usbd_open_pipe_intr() not
+	 * usbd_open_pipe() for USBNET_ENDPT_INTR, with this buffer, size,
+	 * and interval.
+	 */
+	void			*uni_buf;
+	unsigned		uni_bufsz;
+	unsigned		uni_interval;
+};
+
+/*
+ * Structure to setup MII.  Use the USBNET_MII_DECL_DEFAULT() macro for
+ * sane default.  Pass a copy to usbnet_attach_ifp().  Not used
+ * after the usbnet_attach_ifp() function returns.
+ */
+struct usbnet_mii {
+	int			un_mii_flags;
+	int			un_mii_capmask;
+	int			un_mii_phyloc;
+	int			un_mii_offset;
+};
+
+#define UBSNET_MII_DECL(name, capmask, loc, off, flags)	\
+	struct usbnet_mii name = {			\
+		.un_mii_capmask = capmask,		\
+		.un_mii_phyloc = loc,			\
+		.un_mii_offset = off,			\
+		.un_mii_flags = flags,			\
+	}
+#define USBNET_MII_DECL_DEFAULT(name)				\
+	UBSNET_MII_DECL(name, 0xffffffff, MII_PHY_ANY, MII_OFFSET_ANY, 0)
+
+/*
+ * Generic USB ethernet structure.  Use this as ifp->if_softc and set as
+ * device_private() in attach unless already using struct usbnet here.
+ *
+ * Devices without MII should call usbnet_attach_ifp() with have_mii set
+ * to true, and should ensure that the un_statchg_cb callback sets the
+ * un_link member.  Devices without MII have this forced to true.
+ */
+struct usbnet_private;
 struct usbnet {
+	/*
+	 * This section should be filled in before calling
+	 * usbnet_attach().
+	 */
 	void			*un_sc;			/* real softc */
 	device_t		un_dev;
 	struct usbd_interface	*un_iface;
-	struct usbd_device *	un_udev;
-	krndsource_t		un_rndsrc;
+	struct usbd_device	*un_udev;
+	struct usbnet_ops	*un_ops;
+	struct usbnet_intr	*un_intr;
 
-	struct ethercom		un_ec;
-	struct mii_data		un_mii;
-	int			un_phyno;
-	uint8_t			un_eaddr[ETHER_ADDR_LEN];
-
-	enum usbnet_ep		un_ed[USBNET_ENDPT_MAX];
-	struct usbd_pipe	*un_ep[USBNET_ENDPT_MAX];
-
-	struct usbnet_cdata	un_cdata;
-	struct callout		un_stat_ch;
-	int			un_if_flags;
-
-	/*
-	 * - un_lock protects most of the structure
-	 * - un_miilock must be held to access this device's MII bus
-	 * - un_rxlock protects the rx path and its data
-	 * - un_txlock protects the tx path and its data
-	 * - un_detachcv handles detach vs open references
-	 */
-	kmutex_t		un_lock;
-	kmutex_t		un_miilock;
-	kmutex_t		un_rxlock;
-	kmutex_t		un_txlock;
-	kcondvar_t		un_detachcv;
-
-	struct usb_task		un_ticktask;
-
-	int			un_refcnt;
-	int			un_timer;
-
-	bool			un_dying;
-	bool			un_stopping;
-	bool			un_link;
-	bool			un_attached;
-
-	struct timeval		un_rx_notice;
-	struct timeval		un_tx_notice;
-
-	usbnet_stop_cb		un_stop_cb;
-	usbnet_ioctl_cb		un_ioctl_cb;
-	usbnet_init_cb		un_init_cb;
-	usbnet_mii_read_reg_cb	un_read_reg_cb;
-	usbnet_mii_write_reg_cb un_write_reg_cb;
-	usbnet_mii_statchg_cb	un_statchg_cb;
-	usbnet_tx_prepare_cb	un_tx_prepare_cb;
-	usbnet_rx_loop_cb	un_rx_loop_cb;
-
-	/* Passed to usbd_setup_xfer(). */
+	/* Inputs for rx/tx chain control. */
+	unsigned		un_rx_bufsz;
+	unsigned		un_tx_bufsz;
+	unsigned		un_rx_list_cnt;
+	unsigned		un_tx_list_cnt;
 	int			un_rx_xfer_flags;
 	int			un_tx_xfer_flags;
+
+	/*
+	 * This section should be filled in before calling
+	 * usbnet_attach_ifp().
+	 */
+	enum usbnet_ep		un_ed[USBNET_ENDPT_MAX];
+
+	/* MII specific. Not used without MII. */
+	int			un_phyno;
+	/* Ethernet specific. All zeroes indicates non-Ethernet. */
+	uint8_t			un_eaddr[ETHER_ADDR_LEN];
+
+	/*
+	 * This section is for driver to use, not touched by usbnet.
+	 */
+	unsigned		un_flags;
+
+	/*
+	 * This section is private to usbnet. Don't touch.
+	 */
+	struct usbnet_private	*un_pri;
 };
 
-#define usbnet_ifp(un)		(&(un)->un_ec.ec_if)
-#define usbnet_mii(un)		(un->un_ec.ec_mii)
-#define usbnet_softc(un)	(un->un_sc)
+/* Various accessors. */
+
+void usbnet_set_link(struct usbnet *, bool);
+void usbnet_set_dying(struct usbnet *, bool);
+
+struct ifnet *usbnet_ifp(struct usbnet *);
+struct ethercom *usbnet_ec(struct usbnet *);
+struct mii_data *usbnet_mii(struct usbnet *);
+krndsource_t *usbnet_rndsrc(struct usbnet *);
+void *usbnet_softc(struct usbnet *);
+
+bool usbnet_havelink(struct usbnet *);
+bool usbnet_isdying(struct usbnet *);
+
+
+/*
+ * Locking.  Note that the isowned() are implemented here so that
+ * empty-KASSERT() causes them to be elided for non-DIAG builds.
+ */
+void	usbnet_lock(struct usbnet *);
+void	usbnet_unlock(struct usbnet *);
+kmutex_t *usbnet_mutex(struct usbnet *);
+static __inline__ void
+usbnet_isowned(struct usbnet *un)
+{
+	KASSERT(mutex_owned(usbnet_mutex(un)));
+}
+
+void	usbnet_lock_rx(struct usbnet *);
+void	usbnet_unlock_rx(struct usbnet *);
+kmutex_t *usbnet_mutex_rx(struct usbnet *);
+static __inline__ void
+usbnet_isowned_rx(struct usbnet *un)
+{
+	KASSERT(mutex_owned(usbnet_mutex_rx(un)));
+}
+
+void	usbnet_lock_tx(struct usbnet *);
+void	usbnet_unlock_tx(struct usbnet *);
+kmutex_t *usbnet_mutex_tx(struct usbnet *);
+static __inline__ void
+usbnet_isowned_tx(struct usbnet *un)
+{
+	KASSERT(mutex_owned(usbnet_mutex_tx(un)));
+}
 
 /*
  * Endpoint / rx/tx chain management:
  *
- * usbnet_attach() allocates rx and tx chains
+ * usbnet_attach() initialises usbnet and allocates rx and tx chains
  * usbnet_init_rx_tx() open pipes, initialises the rx/tx chains for use
  * usbnet_stop() stops pipes, cleans (not frees) rx/tx chains, locked
- *                version assumes un_lock is held
+ *               version assumes un_lock is held
  * usbnet_detach() frees the rx/tx chains
  *
- * Setup un_ed[] with valid end points before calling usbnet_init_rx_tx().
- * Will return with un_ep[] initialised upon success.
+ * Setup un_ed[] with valid end points before calling usbnet_attach().
+ * Call usbnet_init_rx_tx() to initialise pipes, which will be open
+ * upon success.
  */
-int	usbnet_init_rx_tx(struct usbnet * const, unsigned, unsigned);
+int	usbnet_init_rx_tx(struct usbnet * const);
 
-/* mii */
+/* MII. */
 void	usbnet_lock_mii(struct usbnet *);
 void	usbnet_lock_mii_un_locked(struct usbnet *);
 void	usbnet_unlock_mii(struct usbnet *);
 void	usbnet_unlock_mii_un_locked(struct usbnet *);
+kmutex_t *usbnet_mutex_mii(struct usbnet *);
+static __inline__ void
+usbnet_isowned_mii(struct usbnet *un)
+{
+	KASSERT(mutex_owned(usbnet_mutex_mii(un)));
+}
 
-int	usbnet_miibus_readreg(device_t, int, int, uint16_t *);
-int	usbnet_miibus_writereg(device_t, int, int, uint16_t);
-void	usbnet_miibus_statchg(struct ifnet *);
+
+int	usbnet_mii_readreg(device_t, int, int, uint16_t *);
+int	usbnet_mii_writereg(device_t, int, int, uint16_t);
+void	usbnet_mii_statchg(struct ifnet *);
 
 /* interrupt handling */
-void	usbnet_enqueue(struct usbnet * const, uint8_t *, size_t, int);
+void	usbnet_enqueue(struct usbnet * const, uint8_t *, size_t, int,
+		       uint32_t, int);
+void	usbnet_input(struct usbnet * const, uint8_t *, size_t);
 
 /* autoconf */
-void	usbnet_attach(struct usbnet *un, const char *, unsigned, unsigned);
-void	usbnet_attach_ifp(struct usbnet *, bool, unsigned, unsigned, int);
+void	usbnet_attach(struct usbnet *un, const char *);
+void	usbnet_attach_ifp(struct usbnet *, unsigned, unsigned, const struct usbnet_mii *);
 int	usbnet_detach(device_t, int);
 int	usbnet_activate(device_t, devact_t);
 
 /* stop backend */
 void	usbnet_stop(struct usbnet *, struct ifnet *, int);
-void	usbnet_stop_locked(struct usbnet *, struct ifnet *, int);
+
+/* module hook up */
+
+#ifdef _MODULE
+#define USENET_INIT(name)						\
+	error = config_init_component(cfdriver_ioconf_##name,		\
+	    cfattach_ioconf_##name, cfdata_ioconf_##name);
+#define USENET_FINI(name)						\
+	error = config_fini_component(cfdriver_ioconf_##name,		\
+	    cfattach_ioconf_##name, cfdata_ioconf_##name);
+#else
+#define USENET_INIT(name)
+#define USENET_FINI(name)
+#endif
+
+#define USBNET_MODULE(name)						\
+									\
+MODULE(MODULE_CLASS_DRIVER, if_##name, "usbnet");			\
+									\
+static int								\
+if_##name##_modcmd(modcmd_t cmd, void *aux)				\
+{									\
+	int error = 0;							\
+									\
+	switch (cmd) {							\
+	case MODULE_CMD_INIT:						\
+		USENET_INIT(name)					\
+		return error;						\
+	case MODULE_CMD_FINI:						\
+		USENET_FINI(name)					\
+		return error;						\
+	default:							\
+		return ENOTTY;						\
+	}								\
+}
 
 #endif /* _DEV_USB_USBNET_H */

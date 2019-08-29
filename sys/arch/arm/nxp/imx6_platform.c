@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_platform.c,v 1.4 2019/07/27 07:41:43 skrll Exp $	*/
+/*	$NetBSD: imx6_platform.c,v 1.6 2019/08/19 10:44:35 hkenken Exp $	*/
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
  * Written by Hashimoto Kenichi for Genetec Corporation.
@@ -25,7 +25,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_platform.c,v 1.4 2019/07/27 07:41:43 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx6_platform.c,v 1.6 2019/08/19 10:44:35 hkenken Exp $");
 
 #include "arml2cc.h"
 #include "opt_console.h"
@@ -196,6 +196,7 @@ const struct arm_platform imx6_platform = {
 	.ap_mpstart = imx_platform_mpstart,
 };
 
-ARM_PLATFORM(imx6, "fsl,imx6q", &imx6_platform);
 ARM_PLATFORM(imx6dl, "fsl,imx6dl", &imx6_platform);
+ARM_PLATFORM(imx6q, "fsl,imx6q", &imx6_platform);
+ARM_PLATFORM(imx6qp, "fsl,imx6qp", &imx6_platform);
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: util.c,v 1.29 2019/07/24 10:22:04 roy Exp $	*/
+/*	$NetBSD: util.c,v 1.32 2019/08/27 14:11:00 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -537,6 +537,17 @@ boot_media_still_needed(void)
 	return 0;
 }
 
+bool
+root_is_read_only(void)
+{
+	struct statvfs sb;
+
+	if (statvfs("/", &sb) == 0)
+		return sb.f_flag & ST_RDONLY;
+
+	return false;
+}
+
 /*
  * Get from a CDROM distribution.
  * Also used on "installation using bootable install media"
@@ -916,20 +927,26 @@ extract_file(distinfo *dist, int update)
 	if (!file_exists_p(path)) {
 
 #ifdef SUPPORT_8_3_SOURCE_FILESYSTEM
-	/*
-	 * Update path to use dist->name truncated to the first eight
-	 * characters and check again
-	 */
-	(void)snprintf(path, sizeof path, "%s/%.8s%.4s", /* 4 as includes '.' */
-	    ext_dir_for_set(dist->name), dist->name, set_postfix(dist->name));
+		/*
+		 * Update path to use dist->name truncated to the first eight
+		 * characters and check again
+		 */
+		(void)snprintf(path, sizeof path,
+		    "%s/%.8s%.4s", /* 4 as includes '.' */
+		    ext_dir_for_set(dist->name), dist->name,
+		    set_postfix(dist->name));
+
 		if (!file_exists_p(path)) {
 #endif /* SUPPORT_8_3_SOURCE_FILESYSTEM */
+			tarstats.nnotfound++;
 
-		tarstats.nnotfound++;
-
-		hit_enter_to_continue(MSG_notarfile, NULL);
-		return SET_RETRY;
-	}
+			char *err = str_arg_subst(msg_string(MSG_notarfile),
+			    1, &dist->name);
+			hit_enter_to_continue(err, NULL);
+			free(err);
+			free(owd);
+			return SET_RETRY;
+		}
 #ifdef SUPPORT_8_3_SOURCE_FILESYSTEM
 	}
 #endif /* SUPPORT_8_3_SOURCE_FILESYSTEM */

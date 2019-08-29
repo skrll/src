@@ -1,4 +1,4 @@
-/* 	$NetBSD: rasops_bitops.h,v 1.19 2019/08/01 03:43:54 rin Exp $	*/
+/* 	$NetBSD: rasops_bitops.h,v 1.25 2019/08/10 01:24:17 rin Exp $	*/
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -32,6 +32,20 @@
 #ifndef _RASOPS_BITOPS_H_
 #define _RASOPS_BITOPS_H_ 1
 
+#if   RASOPS_DEPTH == 1
+#define	PIXEL_SHIFT	0
+#elif RASOPS_DEPTH == 2
+#define	PIXEL_SHIFT	1
+#elif RASOPS_DEPTH == 4
+#define	PIXEL_SHIFT	2
+#else
+#error "Depth not supported"
+#endif
+
+#define	NAME(name)		NAME1(RASOPS_DEPTH, name)
+#define	NAME1(depth, name)	NAME2(depth, name)
+#define	NAME2(depth, name)	rasops ## depth ## _ ## name
+
 /*
  * Erase columns.
  */
@@ -39,12 +53,11 @@ static void
 NAME(erasecols)(void *cookie, int row, int col, int num, long attr)
 {
 	struct rasops_info *ri = (struct rasops_info *)cookie;
-	uint32_t lclr, rclr, clr;
-	uint32_t *dp, *rp, *hp, tmp, lmask, rmask;
 	int height, cnt;
+	uint32_t bg, lbg, rbg, lmask, rmask, tmp;
+	uint32_t *dp, *rp, *hp;
 
 	hp = NULL;	/* XXX GCC */
-
 
 #ifdef RASOPS_CLIPPING
 	if ((unsigned)row >= (unsigned)ri->ri_rows)
@@ -61,30 +74,34 @@ NAME(erasecols)(void *cookie, int row, int col, int num, long attr)
 	if (num <= 0)
 		return;
 #endif
+
+	height = ri->ri_font->fontheight;
 	col *= ri->ri_font->fontwidth << PIXEL_SHIFT;
 	num *= ri->ri_font->fontwidth << PIXEL_SHIFT;
-	height = ri->ri_font->fontheight;
-	clr = ri->ri_devcmap[((uint32_t)attr >> 16) & 0xf];
+
 	rp = (uint32_t *)(ri->ri_bits + row*ri->ri_yscale + ((col >> 3) & ~3));
 	if (ri->ri_hwbits)
 		hp = (uint32_t *)(ri->ri_hwbits + row*ri->ri_yscale +
 		    ((col >> 3) & ~3));
+
 	col &= 31;
+
+	bg = ATTR_BG(ri, attr);
 
 	if (col + num <= 32) {
 		lmask = ~rasops_pmask[col][num & 31];
-		lclr = clr & ~lmask;
+		bg &= ~lmask;
 
 		while (height--) {
-			dp = rp;
-			DELTA(rp, ri->ri_stride, uint32_t *);
+			tmp = (*rp & lmask) | bg;
+			*rp = tmp;
 
-			tmp = (*dp & lmask) | lclr;
-			*dp = tmp;
 			if (ri->ri_hwbits) {
 				*hp = tmp;
 				DELTA(hp, ri->ri_stride, uint32_t *);
 			}
+
+			DELTA(rp, ri->ri_stride, uint32_t *);
 		}
 	} else {
 		lmask = rasops_rmask[col];
@@ -95,28 +112,29 @@ NAME(erasecols)(void *cookie, int row, int col, int num, long attr)
 		else
 			num = num >> 5;
 
-		lclr = clr & ~lmask;
-		rclr = clr & ~rmask;
+		lbg = bg & ~lmask;
+		rbg = bg & ~rmask;
 
 		while (height--) {
 			dp = rp;
 
 			if (lmask) {
-				*dp = (*dp & lmask) | lclr;
+				*dp = (*dp & lmask) | lbg;
 				dp++;
 			}
 
 			for (cnt = num; cnt > 0; cnt--)
-				*dp++ = clr;
+				*dp++ = bg;
 
 			if (rmask)
-				*dp = (*dp & rmask) | rclr;
+				*dp = (*dp & rmask) | rbg;
 
 			if (ri->ri_hwbits) {
 				memcpy(hp, rp, ((lmask != 0) + num +
 				    (rmask != 0)) << 2);
 				DELTA(hp, ri->ri_stride, uint32_t *);
 			}
+
 			DELTA(rp, ri->ri_stride, uint32_t *);
 		}
 	}
@@ -128,24 +146,28 @@ NAME(erasecols)(void *cookie, int row, int col, int num, long attr)
 static void
 NAME(do_cursor)(struct rasops_info *ri)
 {
-	int height, row, col, num, cnt;
-	uint32_t *dp, *rp, *hp, tmp, lmask, rmask;
+	int row, col, height, width, cnt;
+	uint32_t lmask, rmask, tmp;
+	uint32_t *dp, *rp, *hp;
 
 	hp = NULL;	/* XXX GCC */
 
 	row = ri->ri_crow;
 	col = ri->ri_ccol * ri->ri_font->fontwidth << PIXEL_SHIFT;
+
 	height = ri->ri_font->fontheight;
-	num = ri->ri_font->fontwidth << PIXEL_SHIFT;
+	width = ri->ri_font->fontwidth << PIXEL_SHIFT;
+
 	rp = (uint32_t *)(ri->ri_bits + row * ri->ri_yscale +
 	    ((col >> 3) & ~3));
 	if (ri->ri_hwbits)
 		hp = (uint32_t *)(ri->ri_hwbits + row * ri->ri_yscale +
 		    ((col >> 3) & ~3));
+
 	col &= 31;
 
-	if (col + num <= 32) {
-		lmask = rasops_pmask[col][num & 31];
+	if (col + width <= 32) {
+		lmask = rasops_pmask[col][width & 31];
 
 		while (height--) {
 			tmp = *rp ^ lmask;
@@ -158,34 +180,33 @@ NAME(do_cursor)(struct rasops_info *ri)
 		}
 	} else {
 		lmask = ~rasops_rmask[col];
-		rmask = ~rasops_lmask[(col + num) & 31];
+		rmask = ~rasops_lmask[(col + width) & 31];
 
 		if (lmask != -1)
-			num = (num - (32 - col)) >> 5;
+			width = (width - (32 - col)) >> 5;
 		else
-			num = num >> 5;
+			width = width >> 5;
 
 		while (height--) {
 			dp = rp;
 
-			if (lmask != -1) {
-				*dp = *dp ^ lmask;
-				dp++;
-			}
+			if (lmask != -1)
+				*dp++ ^= lmask;
 
-			for (cnt = num; cnt; cnt--) {
+			for (cnt = width; cnt; cnt--) {
 				*dp = ~*dp;
 				dp++;
 			}
 
 			if (rmask != -1)
-				*dp = *dp ^ rmask;
+				*dp ^= rmask;
 
 			if (ri->ri_hwbits) {
-				memcpy(hp, rp, ((lmask != -1) + num +
+				memcpy(hp, rp, ((lmask != -1) + width +
 				    (rmask != -1)) << 2);
 				DELTA(hp, ri->ri_stride, uint32_t *);
 			}
+
 			DELTA(rp, ri->ri_stride, uint32_t *);
 		}
 	}
@@ -198,16 +219,17 @@ static void
 NAME(copycols)(void *cookie, int row, int src, int dst, int num)
 {
 	struct rasops_info *ri = (struct rasops_info *)cookie;
-	int height, lnum, rnum, sb, db, cnt, full;
-	uint32_t tmp, lmask, rmask;
-	uint32_t *sp, *dp, *srp, *drp, *dhp, *hp;
+	int height, width, lnum, rnum, sb, db, full, cnt, sboff;
+	uint32_t lmask, rmask, tmp;
+	uint32_t *sp, *dp, *srp, *drp, *hp;
+	bool sbover;
 
-	dhp = hp = NULL;	/* XXX GCC */
+	hp = NULL;	/* XXX GCC */
 
-#ifdef RASOPS_CLIPPING
-	if (dst == src)
+	if (__predict_false(dst == src))
 		return;
 
+#ifdef RASOPS_CLIPPING
 	/* Catches < 0 case too */
 	if ((unsigned)row >= (unsigned)ri->ri_rows)
 		return;
@@ -232,12 +254,16 @@ NAME(copycols)(void *cookie, int row, int src, int dst, int num)
 		return;
 #endif
 
-	cnt = ri->ri_font->fontwidth << PIXEL_SHIFT;
-	src *= cnt;
-	dst *= cnt;
-	num *= cnt;
-	row *= ri->ri_yscale;
 	height = ri->ri_font->fontheight;
+	width = ri->ri_font->fontwidth << PIXEL_SHIFT;
+
+	row *= ri->ri_yscale;
+
+	src *= width;
+	dst *= width;
+	num *= width;
+
+	sb = src & 31;
 	db = dst & 31;
 
 	if (db + num <= 32) {
@@ -245,16 +271,15 @@ NAME(copycols)(void *cookie, int row, int src, int dst, int num)
 		srp = (uint32_t *)(ri->ri_bits + row + ((src >> 3) & ~3));
 		drp = (uint32_t *)(ri->ri_bits + row + ((dst >> 3) & ~3));
 		if (ri->ri_hwbits)
-			dhp = (uint32_t *)(ri->ri_hwbits + row +
+			hp = (uint32_t *)(ri->ri_hwbits + row +
 			    ((dst >> 3) & ~3));
-		sb = src & 31;
 
 		while (height--) {
 			GETBITS(srp, sb, num, tmp);
 			PUTBITS(tmp, db, num, drp);
 			if (ri->ri_hwbits) {
-				PUTBITS(tmp, db, num, dhp);
-				DELTA(dhp, ri->ri_stride, uint32_t *);
+				*hp = *drp;
+				DELTA(hp, ri->ri_stride, uint32_t *);
 			}	
 			DELTA(srp, ri->ri_stride, uint32_t *);
 			DELTA(drp, ri->ri_stride, uint32_t *);
@@ -268,27 +293,25 @@ NAME(copycols)(void *cookie, int row, int src, int dst, int num)
 	lnum = (32 - db) & 31;
 	rnum = (dst + num) & 31;
 
-	if (lmask)
-		full = (num - (32 - (dst & 31))) >> 5;
+	if (lmask != 0)
+		full = (num - lnum) >> 5;
 	else
 		full = num >> 5;
 
 	if (src < dst && src + num > dst) {
 		/* Copy right-to-left */
-		bool sbover;
-		int sboff;
-
 		srp = (uint32_t *)(ri->ri_bits + row +
 		    (((src + num) >> 3) & ~3));
 		drp = (uint32_t *)(ri->ri_bits + row +
 		    (((dst + num) >> 3) & ~3));
-		if (ri->ri_hwbits)
-			dhp = (uint32_t *)(ri->ri_hwbits + row +
+		if (ri->ri_hwbits) {
+			hp = (uint32_t *)(ri->ri_hwbits + row +
 			    (((dst + num) >> 3) & ~3));
+			hp -= (lmask != 0) + full;
+		}
 
-		sb = src & 31;
-		sbover = (sb + lnum) >= 32;
 		sboff = (src + num) & 31;
+		sbover = sb + lnum >= 32;
 		if ((sboff -= rnum) < 0) {
 			srp--;
 			sboff += 32;
@@ -297,10 +320,8 @@ NAME(copycols)(void *cookie, int row, int src, int dst, int num)
 		while (height--) {
 			sp = srp;
 			dp = drp;
-			DELTA(srp, ri->ri_stride, uint32_t *);
-			DELTA(drp, ri->ri_stride, uint32_t *);
 
-			if (rnum) {
+			if (rmask != 0) {
 				GETBITS(sp, sboff, rnum, tmp);
 				PUTBITS(tmp, 0, rnum, dp);
 			}
@@ -313,7 +334,7 @@ NAME(copycols)(void *cookie, int row, int src, int dst, int num)
 				*dp = tmp;
 			}
 
-			if (lmask) {
+			if (lmask != 0) {
 				if (sbover)
 					--sp;
 				--dp;
@@ -322,53 +343,54 @@ NAME(copycols)(void *cookie, int row, int src, int dst, int num)
  			}
 
 			if (ri->ri_hwbits) {
-				hp = dhp;
-				hp -= full + (lmask != 0);
-				memcpy(hp, dp, ((rmask != 0) + cnt +
-				    (lmask != 0)) << 2);
-				DELTA(dhp, ri->ri_stride, uint32_t *);
+				memcpy(hp, dp, ((lmask != 0) + full +
+				    (rmask != 0)) << 2);
+				DELTA(hp, ri->ri_stride, uint32_t *);
 			}
+
+			DELTA(srp, ri->ri_stride, uint32_t *);
+			DELTA(drp, ri->ri_stride, uint32_t *);
  		}
 	} else {
 		/* Copy left-to-right */
 		srp = (uint32_t *)(ri->ri_bits + row + ((src >> 3) & ~3));
 		drp = (uint32_t *)(ri->ri_bits + row + ((dst >> 3) & ~3));
 		if (ri->ri_hwbits)
-			dhp = (uint32_t *)(ri->ri_hwbits + row +
+			hp = (uint32_t *)(ri->ri_hwbits + row +
 			    ((dst >> 3) & ~3));
-		db = dst & 31;
 
 		while (height--) {
-			sb = src & 31;
 			sp = srp;
 			dp = drp;
 
-			if (lmask) {
-				GETBITS(sp, sb, lnum, tmp);
+			sboff = sb;
+
+			if (lmask != 0) {
+				GETBITS(sp, sboff, lnum, tmp);
 				PUTBITS(tmp, db, lnum, dp);
 				dp++;
 
-				if (sb += lnum > 31) {
+				if ((sboff += lnum) > 31) {
 					sp++;
-					sb -= 32;
+					sboff -= 32;
 				}
 			}
 
 			/* Now aligned to 32-bits wrt dp */
 			for (cnt = full; cnt; cnt--, sp++) {
-				GETBITS(sp, sb, 32, tmp);
+				GETBITS(sp, sboff, 32, tmp);
 				*dp++ = tmp;
 			}
 
-			if (rmask) {
-				GETBITS(sp, sb, rnum, tmp);
+			if (rmask != 0) {
+				GETBITS(sp, sboff, rnum, tmp);
 				PUTBITS(tmp, 0, rnum, dp);
  			}
 
 			if (ri->ri_hwbits) {
-				memcpy(dhp, drp, ((lmask != 0) + full +
+				memcpy(hp, drp, ((lmask != 0) + full +
 				    (rmask != 0)) << 2);
-				DELTA(dhp, ri->ri_stride, uint32_t *);
+				DELTA(hp, ri->ri_stride, uint32_t *);
 			}
 
 			DELTA(srp, ri->ri_stride, uint32_t *);
@@ -376,5 +398,11 @@ NAME(copycols)(void *cookie, int row, int src, int dst, int num)
  		}
  	}
 }
+
+#undef	PIXEL_SHIFT
+
+#undef	NAME
+#undef	NAME1
+#undef	NAME2
 
 #endif /* _RASOPS_BITOPS_H_ */

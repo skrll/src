@@ -1,4 +1,4 @@
-/*	$NetBSD: sysv_shm.c,v 1.135 2019/06/10 00:35:47 chs Exp $	*/
+/*	$NetBSD: sysv_shm.c,v 1.138 2019/08/23 10:22:14 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2007 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sysv_shm.c,v 1.135 2019/06/10 00:35:47 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sysv_shm.c,v 1.138 2019/08/23 10:22:14 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_sysv.h"
@@ -119,6 +119,26 @@ SYSCTL_SETUP_PROTO(sysctl_ipc_shm_setup);
 #endif
 
 static int shmrealloc(int);
+
+/*
+ * Find the shared memory segment permission by the index. Only used by
+ * compat_linux to implement SHM_STAT.
+ */
+int
+shm_find_segment_perm_by_index(int index, struct ipc_perm *perm)
+{
+	struct shmid_ds *shmseg;
+
+	mutex_enter(&shm_lock);
+	if (index < 0 || index >= shminfo.shmmni) {
+		mutex_exit(&shm_lock);
+		return EINVAL;
+	}
+	shmseg = &shmsegs[index];
+	memcpy(perm, &shmseg->shm_perm, sizeof(*perm));
+	mutex_exit(&shm_lock);
+	return 0;
+}
 
 /*
  * Find the shared memory segment by the identifier.
@@ -425,14 +445,19 @@ sys_shmat(struct lwp *l, const struct sys_shmat_args *uap, register_t *retval)
 	shmseg->shm_lpid = p->p_pid;
 	shmseg->shm_nattch++;
 	shm_realloc_disable++;
-	mutex_exit(&shm_lock);
 
 	/*
-	 * Add a reference to the memory object, map it to the
-	 * address space, and lock the memory, if needed.
+	 * Add a reference to the uvm object while we hold the
+	 * shm_lock.
 	 */
 	uobj = shmseg->_shm_internal;
 	uao_reference(uobj);
+	mutex_exit(&shm_lock);
+
+	/*
+	 * Drop the shm_lock to map it into the address space, and lock
+	 * the memory, if needed (XXX where does this lock memory?).
+	 */
 	error = uvm_map(&vm->vm_map, &attach_va, size, uobj, 0, 0,
 	    UVM_MAPFLAG(prot, prot, UVM_INH_SHARE, UVM_ADV_RANDOM, flags));
 	if (error)
@@ -928,7 +953,7 @@ shmrealloc(int newshmni)
 }
 
 int
-shminit(struct sysctllog **clog)
+shminit(void)
 {
 	vaddr_t v;
 	size_t sz;
@@ -973,10 +998,6 @@ shminit(struct sysctllog **clog)
 	uvm_shmexit = shmexit;
 	uvm_shmfork = shmfork;
 
-#ifdef _MODULE
-	if (clog)
-		sysctl_ipc_shm_setup(clog);
-#endif
 	return 0;
 }
 
