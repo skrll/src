@@ -1,4 +1,4 @@
-/*	$NetBSD: db_examine.c,v 1.37 2019/02/03 03:19:26 mrg Exp $	*/
+/*	$NetBSD: db_examine.c,v 1.39 2019/09/10 09:32:05 ryo Exp $	*/
 
 /*
  * Mach Operating System
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_examine.c,v 1.37 2019/02/03 03:19:26 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_examine.c,v 1.39 2019/09/10 09:32:05 ryo Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -101,19 +101,24 @@ db_examine(db_addr_t addr, char *fmt, int count)
 				size = 4;
 				width = 12;
 				break;
-			case 'q':
-				if (sizeof(db_expr_t) != sizeof(uint64_t)) {
-					size = -1;
-					db_error("q not supported\n");
-					/*NOTREACHED*/
-				}
-				/* FALLTHROUGH */
+			case 'q':	/* quad-word */
+				size = 8;
+				width = 16;
+				break;
 			case 'L':	/* implementation maximum */
 				size = sizeof value;
 				width = 12 * (sizeof value / 4);
 				break;
 			case 'a':	/* address */
 				db_printf("= 0x%lx\n", (long)addr);
+				break;
+			case 'p':
+				size = sizeof(void *);
+				value = db_get_value(addr, size, true);
+				addr += size;
+				db_printf("= 0x%lx ", (long)value);
+				db_printsym((db_addr_t)value, DB_STGY_ANY, db_printf);
+				db_printf("\n");
 				break;
 			case 'r':	/* signed, current radix */
 				value = db_get_value(addr, size, true);
@@ -138,13 +143,19 @@ db_examine(db_addr_t addr, char *fmt, int count)
 				do {
 					for (i = 0; i < size; i++) {
 						value =
- 						    db_get_value(addr+bytes, 1,
-							false);
+#if BYTE_ORDER == LITTLE_ENDIAN
+						    db_get_value(addr +
+						    (bytes & ~(size - 1)) +
+						    size - i - 1, 1, false);
+#else
+						    db_get_value(addr + bytes,
+						    1, false);
+#endif
 						db_printf(
 						    "%02" DDB_EXPR_FMT "x",
 						    value);
 						bytes++;
-						if (!(bytes % 4))
+						if (!(bytes % size))
 							db_printf(" ");
 					}
 				} while ((bytes != 16) && count--);

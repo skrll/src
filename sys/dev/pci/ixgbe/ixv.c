@@ -1,4 +1,4 @@
-/*$NetBSD: ixv.c,v 1.128 2019/08/21 10:01:53 msaitoh Exp $*/
+/*$NetBSD: ixv.c,v 1.131 2019/09/05 10:01:30 msaitoh Exp $*/
 
 /******************************************************************************
 
@@ -131,6 +131,7 @@ static void	ixv_save_stats(struct adapter *);
 static void	ixv_init_stats(struct adapter *);
 static void	ixv_update_stats(struct adapter *);
 static void	ixv_add_stats_sysctls(struct adapter *);
+static void	ixv_clear_evcnt(struct adapter *);
 
 /* Sysctl handlers */
 static void	ixv_set_sysctl_value(struct adapter *, const char *,
@@ -516,7 +517,7 @@ ixv_attach(device_t parent, device_t dev, void *aux)
 
 	error = ixv_allocate_msix(adapter, pa);
 	if (error) {
-		device_printf(dev, "ixv_allocate_msix() failed!\n");
+		aprint_error_dev(dev, "ixv_allocate_msix() failed!\n");
 		goto err_late;
 	}
 
@@ -2406,7 +2407,8 @@ ixv_sysctl_instance(struct adapter *adapter)
 
 	return rnode;
 err:
-	printf("%s: sysctl_createv failed, rc = %d\n", __func__, rc);
+	device_printf(adapter->dev,
+	    "%s: sysctl_createv failed, rc = %d\n", __func__, rc);
 	return NULL;
 }
 
@@ -2628,6 +2630,76 @@ ixv_add_stats_sysctls(struct adapter *adapter)
 	    xname, "RSTs");
 
 } /* ixv_add_stats_sysctls */
+
+static void
+ixv_clear_evcnt(struct adapter *adapter)
+{
+	struct tx_ring		*txr = adapter->tx_rings;
+	struct rx_ring		*rxr = adapter->rx_rings;
+	struct ixgbevf_hw_stats *stats = &adapter->stats.vf;
+	struct ixgbe_hw *hw = &adapter->hw;
+	int i;
+
+	/* Driver Statistics */
+	adapter->efbig_tx_dma_setup.ev_count = 0;
+	adapter->mbuf_defrag_failed.ev_count = 0;
+	adapter->efbig2_tx_dma_setup.ev_count = 0;
+	adapter->einval_tx_dma_setup.ev_count = 0;
+	adapter->other_tx_dma_setup.ev_count = 0;
+	adapter->eagain_tx_dma_setup.ev_count = 0;
+	adapter->enomem_tx_dma_setup.ev_count = 0;
+	adapter->watchdog_events.ev_count = 0;
+	adapter->tso_err.ev_count = 0;
+	adapter->link_irq.ev_count = 0;
+
+	for (i = 0; i < adapter->num_queues; i++, rxr++, txr++) {
+		adapter->queues[i].irqs.ev_count = 0;
+		adapter->queues[i].handleq.ev_count = 0;
+		adapter->queues[i].req.ev_count = 0;
+		txr->tso_tx.ev_count = 0;
+		txr->no_desc_avail.ev_count = 0;
+		txr->total_packets.ev_count = 0;
+#ifndef IXGBE_LEGACY_TX
+		txr->pcq_drops.ev_count = 0;
+#endif
+		txr->q_efbig_tx_dma_setup = 0;
+		txr->q_mbuf_defrag_failed = 0;
+		txr->q_efbig2_tx_dma_setup = 0;
+		txr->q_einval_tx_dma_setup = 0;
+		txr->q_other_tx_dma_setup = 0;
+		txr->q_eagain_tx_dma_setup = 0;
+		txr->q_enomem_tx_dma_setup = 0;
+		txr->q_tso_err = 0;
+
+		rxr->rx_packets.ev_count = 0;
+		rxr->rx_bytes.ev_count = 0;
+		rxr->rx_copies.ev_count = 0;
+		rxr->no_jmbuf.ev_count = 0;
+		rxr->rx_discarded.ev_count = 0;
+	}
+
+	/* MAC stats get their own sub node */
+
+	stats->ipcs.ev_count = 0;
+	stats->l4cs.ev_count = 0;
+	stats->ipcs_bad.ev_count = 0;
+	stats->l4cs_bad.ev_count = 0;
+
+	/* Packet Reception Stats */
+	stats->vfgprc.ev_count = 0;
+	stats->vfgorc.ev_count = 0;
+	stats->vfmprc.ev_count = 0;
+	stats->vfgptc.ev_count = 0;
+	stats->vfgotc.ev_count = 0;
+
+	/* Mailbox Stats */
+	hw->mbx.stats.msgs_tx.ev_count = 0;
+	hw->mbx.stats.msgs_rx.ev_count = 0;
+	hw->mbx.stats.acks.ev_count = 0;
+	hw->mbx.stats.reqs.ev_count = 0;
+	hw->mbx.stats.rsts.ev_count = 0;
+
+} /* ixv_clear_evcnt */
 
 /************************************************************************
  * ixv_set_sysctl_value
@@ -2861,6 +2933,11 @@ ixv_ioctl(struct ifnet *ifp, u_long command, void *data)
 		break;
 	case SIOCSIFMTU:
 		IOCTL_DEBUGOUT("ioctl: SIOCSIFMTU (Set Interface MTU)");
+		break;
+	case SIOCZIFDATA:
+		IOCTL_DEBUGOUT("ioctl: SIOCZIFDATA (Zero counter)");
+		ixv_update_stats(adapter);
+		ixv_clear_evcnt(adapter);
 		break;
 	default:
 		IOCTL_DEBUGOUT1("ioctl: UNKNOWN (0x%X)", (int)command);

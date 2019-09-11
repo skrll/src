@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci.c,v 1.111 2019/08/28 07:09:52 mrg Exp $	*/
+/*	$NetBSD: xhci.c,v 1.114 2019/09/08 18:58:38 mrg Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.111 2019/08/28 07:09:52 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.114 2019/09/08 18:58:38 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -2885,8 +2885,13 @@ xhci_address_device(struct xhci_softc * const sc,
 	usbd_status err;
 
 	XHCIHIST_FUNC();
-	XHCIHIST_CALLARGS("icp %jx slot %jx %sbsr",
-	    icp, slot_id, bsr ? "" : "no ", 0);
+	if (bsr) {
+		XHCIHIST_CALLARGS("icp %jx slot %jx with bsr",
+		    icp, slot_id, 0, 0);
+	} else {
+		XHCIHIST_CALLARGS("icp %jx slot %jx nobsr",
+		    icp, slot_id, 0, 0);
+	}
 
 	trb.trb_0 = icp;
 	trb.trb_2 = 0;
@@ -3876,7 +3881,7 @@ xhci_device_ctrl_start(struct usbd_xfer *xfer)
 		parameter = DMAADDR(dma, 0);
 		KASSERTMSG(len <= 0x10000, "len %d", len);
 		status = XHCI_TRB_2_IRQ_SET(0) |
-		    XHCI_TRB_2_TDSZ_SET(1) |
+		    XHCI_TRB_2_TDSZ_SET(0) |
 		    XHCI_TRB_2_BYTES_SET(len);
 		control = (isread ? XHCI_TRB_3_DIR_IN : 0) |
 		    XHCI_TRB_3_TYPE_SET(XHCI_TRB_TYPE_DATA_STAGE) |
@@ -4006,7 +4011,7 @@ xhci_device_bulk_start(struct usbd_xfer *xfer)
 	 */
 	KASSERTMSG(len <= 0x10000, "len %d", len);
 	status = XHCI_TRB_2_IRQ_SET(0) |
-	    XHCI_TRB_2_TDSZ_SET(1) |
+	    XHCI_TRB_2_TDSZ_SET(0) |
 	    XHCI_TRB_2_BYTES_SET(len);
 	control = XHCI_TRB_3_TYPE_SET(XHCI_TRB_TYPE_NORMAL) |
 	    (usbd_xfer_isread(xfer) ? XHCI_TRB_3_ISP_BIT : 0) |
@@ -4116,7 +4121,7 @@ xhci_device_intr_start(struct usbd_xfer *xfer)
 	parameter = DMAADDR(dma, 0);
 	KASSERTMSG(len <= 0x10000, "len %d", len);
 	status = XHCI_TRB_2_IRQ_SET(0) |
-	    XHCI_TRB_2_TDSZ_SET(1) |
+	    XHCI_TRB_2_TDSZ_SET(0) |
 	    XHCI_TRB_2_BYTES_SET(len);
 	control = XHCI_TRB_3_TYPE_SET(XHCI_TRB_TYPE_NORMAL) |
 	    (usbd_xfer_isread(xfer) ? XHCI_TRB_3_ISP_BIT : 0) |
