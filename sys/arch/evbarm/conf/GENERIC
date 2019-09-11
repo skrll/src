@@ -499,9 +499,15 @@ pseudo-device 	canloop			# CAN loopback interface
 sunxican* 	at fdt?			# A10/A20 CAN controller
 
 # SPI
+imxspi* 	at fdt?
 sun4ispi* 	at fdt?
 sun6ispi* 	at fdt?
 spi* 		at spibus?
+spi* 		at imxspi?
+
+# SPI NOR-Flash
+spiflash* 	at spiflashbus?
+m25p* 		at spi? slave ?
 
 # Random number generators
 bcmrng* 	at fdt?			# Broadcom BCM283x RNG
