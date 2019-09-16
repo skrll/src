@@ -1,4 +1,4 @@
-$NetBSD: acronyms.comp,v 1.285 2019/08/22 21:30:47 sevan Exp $
+$NetBSD: acronyms.comp,v 1.290 2019/09/09 18:11:20 sevan Exp $
 3WHS	three-way handshake
 8VSB	8-state vestigial side band modulation
 AA	anti-aliasing
@@ -298,6 +298,7 @@ CR	carriage return
 CRC	cyclic redundancy check
 CRL	carrier recovery loop
 CRLF	carriage return line feed
+CSU	C start up
 CRT	cathode ray tube
 CRUD	create, read, update, and delete
 CS	cable select
@@ -605,6 +606,7 @@ GCM	Galois counter mode
 GCR	group-coded recording
 GDI	Graphics Device Interface
 GDT	global descriptor table
+GECOS	general comprehensive operating supervisor
 GEM	graphics environment manager
 GEM	graphics execution manager
 GENA	general event notification architecture
@@ -726,6 +728,7 @@ IMR	interrupt mask register
 IMS	information management system
 IMSI	international mobile subscriber identity
 INCITS	InterNational Committee for Information Technology Standards
+INODE	index node
 IO	input/output
 IOCTL	input/output control
 IOM	input/output managers
@@ -1214,6 +1217,8 @@ PPP	Point-to-Point Protocol
 PPPOA	Point-to-Point Protocol over ATM
 PPPOE	Point-to-Point Protocol over Ethernet
 PPR	processor programming reference
+PPT	powerpoint
+PPT	punched paper tape
 PPU	physics processing unit
 PRAM	Parameter RAM
 PRBS	pseudorandom bit sequence
@@ -1423,6 +1428,7 @@ SGMII	serial gigabit media independent interface
 SGPIO	serial general purpose input/output
 SGRAM	synchronous graphics random access memory
 SHA	secure hash algorithm
+SICP	structure and interpretation of computer programs
 SIDH	supersingular isogeny Diffie-Hellman
 SIEM	security information and event management
 SIF	source input format
@@ -1515,6 +1521,7 @@ SSL	secure sockets layer
 SSP	stack smashing protection
 STC	software thermal control
 STD	state transition diagram
+STM	software transactional memory
 STOMP	Streaming Text Oriented Messaging Protocol
 STP	Spanning Tree Protocol
 STP	shielded twisted pair
@@ -1656,6 +1663,7 @@ UT	unit test
 UTC	coordinated universal time
 UTF	unicode transformation formats
 UTP	unshielded twisted pair
+UTS	UNIX time-sharing
 UUCP	Unix-to-Unix Copy Protocol
 UUID	universally unique identifier
 UUOC	useless use of cat

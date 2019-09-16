@@ -590,6 +590,12 @@ configure_interface1(struct interface *ifp)
 		}
 	}
 #endif
+
+	/* If root is network mounted, we don't want to kill the connection
+	 * if the DHCP server goes the way of the dodo OR dhcpcd is rebooting
+	 * and the lease file has expired. */
+	if (is_root_local() == 0)
+		ifo->options |= DHCPCD_LASTLEASE_EXTEND;
 }
 
 int
@@ -950,12 +956,7 @@ dhcpcd_prestartinterface(void *arg)
 
 	if ((!(ifp->ctx->options & DHCPCD_MASTER) ||
 	    ifp->options->options & DHCPCD_IF_UP) &&
-	    if_up(ifp) == -1
-#ifdef __sun
-	    /* Interface could not yet be plumbed. */
-	    && errno != ENXIO
-#endif
-	    )
+	    if_up(ifp) == -1)
 		logerr("%s: %s", __func__, ifp->name);
 
 	dhcpcd_startinterface(ifp);

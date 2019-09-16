@@ -1176,11 +1176,8 @@ read_lease(struct interface *ifp, struct bootp **bootp)
 	bytes = dhcp_read_lease_fd(fd, (void **)&lease);
 	if (fd_opened)
 		close(fd);
-	if (bytes == 0) {
-		free(lease);
-		logerr("%s: dhcp_read_lease_fd", __func__);
+	if (bytes == 0)
 		return 0;
-	}
 
 	/* Ensure the packet is at lease BOOTP sized
 	 * with a vendor area of 4 octets
@@ -1584,7 +1581,7 @@ eexit:
 }
 
 static uint16_t
-in_cksum(void *data, size_t len, uint32_t *isum)
+in_cksum(const void *data, size_t len, uint32_t *isum)
 {
 	const uint16_t *word = data;
 	uint32_t sum = isum != NULL ? *isum : 0;
@@ -1593,7 +1590,7 @@ in_cksum(void *data, size_t len, uint32_t *isum)
 		sum += *word++;
 
 	if (len == 1)
-		sum += *(const uint8_t *)word;
+		sum += htons((uint16_t)(*(const uint8_t *)word << 8));
 
 	if (isum != NULL)
 		*isum = sum;
@@ -2237,7 +2234,7 @@ dhcp_bind(struct interface *ifp)
 	ipv4_applyaddr(ifp);
 
 #ifdef IP_PKTINFO
-	/* Close the BPF filter as we can now receive the DHCP renew messages
+	/* Close the BPF filter as we can now receive DHCP messages
 	 * on a UDP socket. */
 	if (state->udp_fd == -1 ||
 	    (state->old != NULL && state->old->yiaddr != state->new->yiaddr))
@@ -2246,9 +2243,15 @@ dhcp_bind(struct interface *ifp)
 		/* If not in master mode, open an address specific socket. */
 		if (ctx->udp_fd == -1) {
 			state->udp_fd = dhcp_openudp(ifp);
-			if (state->udp_fd == -1)
+			if (state->udp_fd == -1) {
 				logerr(__func__);
-			else
+				/* Address sharing without master mode is
+				 * not supported. It's also possible another
+				 * DHCP client could be running which is
+				 * even worse.
+				 * We still need to work, so re-open BPF. */
+				dhcp_openbpf(ifp);
+			} else
 				eloop_event_add(ctx->eloop,
 				    state->udp_fd, dhcp_handleifudp, ifp);
 		}
@@ -3247,7 +3250,7 @@ valid_udp_packet(void *packet, size_t plen, struct in_addr *from,
 		.ip_dst = ip->ip_dst
 	};
 	size_t ip_hlen;
-	uint16_t ip_len, uh_sum;
+	uint16_t ip_len, udp_len, uh_sum;
 	struct udphdr *udp;
 	uint32_t csum;
 
@@ -3261,7 +3264,13 @@ valid_udp_packet(void *packet, size_t plen, struct in_addr *from,
 	if (from != NULL)
 		from->s_addr = ip->ip_src.s_addr;
 
+	/* Check we have the IP header */
 	ip_hlen = (size_t)ip->ip_hl * 4;
+	if (ip_hlen > plen) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
 	if (in_cksum(ip, ip_hlen, NULL) != 0) {
 		errno = EINVAL;
 		return -1;
@@ -3273,27 +3282,32 @@ valid_udp_packet(void *packet, size_t plen, struct in_addr *from,
 		errno = ERANGE;
 		return -1;
 	}
-	/* Check we don't go beyond the payload */
+	/* Check IP doesn't go beyond the payload */
 	if (ip_len > plen) {
 		errno = ENOBUFS;
 		return -1;
 	}
 
-	if (flags & BPF_PARTIALCSUM)
+	/* Check UDP doesn't go beyond the payload */
+	udp = (struct udphdr *)(void *)((char *)ip + ip_hlen);
+	udp_len = ntohs(udp->uh_ulen);
+	if (udp_len > plen - ip_hlen) {
+		errno =  ENOBUFS;
+		return -1;
+	}
+
+	if (udp->uh_sum == 0 || flags & BPF_PARTIALCSUM)
 		return 0;
 
 	/* UDP checksum is based on a pseudo IP header alongside
 	 * the UDP header and payload. */
-	udp = (struct udphdr *)(void *)((char *)ip + ip_hlen);
-	if (udp->uh_sum == 0)
-		return 0;
-
 	uh_sum = udp->uh_sum;
 	udp->uh_sum = 0;
 	pseudo_ip.ip_len = udp->uh_ulen;
 	csum = 0;
 	in_cksum(&pseudo_ip, sizeof(pseudo_ip), &csum);
-	if (in_cksum(udp, ntohs(udp->uh_ulen), &csum) != uh_sum) {
+	csum = in_cksum(udp, udp_len, &csum);
+	if (csum != uh_sum) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -3334,12 +3348,13 @@ dhcp_handlepacket(struct interface *ifp, uint8_t *data, size_t len)
 	const struct dhcp_state *state = D_CSTATE(ifp);
 
 	if (valid_udp_packet(data, len, &from, state->bpf_flags) == -1) {
+		const char *errstr;
+
 		if (errno == EINVAL)
-			logerrx("%s: checksum failure from %s",
-			  ifp->name, inet_ntoa(from));
+			errstr = "checksum failure";
 		else
-			logerr("%s: invalid UDP packet from %s",
-			  ifp->name, inet_ntoa(from));
+			errstr = "invalid UDP packet";
+		logerrx("%s: %s from %s", errstr, ifp->name, inet_ntoa(from));
 		return;
 	}
 
@@ -3662,6 +3677,7 @@ static void
 dhcp_start1(void *arg)
 {
 	struct interface *ifp = arg;
+	struct dhcpcd_ctx *ctx = ifp->ctx;
 	struct if_options *ifo = ifp->options;
 	struct dhcp_state *state;
 	struct stat st;
@@ -3672,17 +3688,19 @@ dhcp_start1(void *arg)
 		return;
 
 	/* Listen on *.*.*.*:bootpc so that the kernel never sends an
-	 * ICMP port unreachable message back to the DHCP server */
-	if (ifp->ctx->udp_fd == -1) {
-		ifp->ctx->udp_fd = dhcp_openudp(NULL);
-		if (ifp->ctx->udp_fd == -1) {
+	 * ICMP port unreachable message back to the DHCP server.
+	 * Only do this in master mode so we don't swallow messages
+	 * for dhcpcd running on another interface. */
+	if (ctx->udp_fd == -1 && ctx->options & DHCPCD_MASTER) {
+		ctx->udp_fd = dhcp_openudp(NULL);
+		if (ctx->udp_fd == -1) {
 			/* Don't log an error if some other process
 			 * is handling this. */
 			if (errno != EADDRINUSE)
 				logerr("%s: dhcp_openudp", __func__);
 		} else
-			eloop_event_add(ifp->ctx->eloop,
-			    ifp->ctx->udp_fd, dhcp_handleudp, ifp->ctx);
+			eloop_event_add(ctx->eloop,
+			    ctx->udp_fd, dhcp_handleudp, ctx);
 	}
 
 	if (dhcp_init(ifp) == -1) {

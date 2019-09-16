@@ -1,4 +1,4 @@
-/* $NetBSD: spiflash.c,v 1.21 2018/09/03 16:29:33 riastradh Exp $ */
+/* $NetBSD: spiflash.c,v 1.23 2019/09/14 15:12:12 tnn Exp $ */
 
 /*-
  * Copyright (c) 2006 Urbana-Champaign Independent Media Center.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: spiflash.c,v 1.21 2018/09/03 16:29:33 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spiflash.c,v 1.23 2019/09/14 15:12:12 tnn Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>

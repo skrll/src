@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.204 2019/08/28 08:54:21 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.210 2019/09/13 07:55:07 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -1403,7 +1403,6 @@ static void
 ixgbe_add_media_types(struct adapter *adapter)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
-	device_t	dev = adapter->dev;
 	u64		layer;
 
 	layer = adapter->phy_layer;
@@ -1469,7 +1468,7 @@ ixgbe_add_media_types(struct adapter *adapter)
 		ADD(IFM_5000_T | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_1000BASE_BX)
-		device_printf(dev, "Media supported: 1000baseBX\n");
+		ADD(IFM_1000_BX10 | IFM_FDX, 0);
 	/* XXX no ifmedia_set? */
 
 	ADD(IFM_AUTO, 0);
@@ -1572,7 +1571,7 @@ ixgbe_update_stats_counters(struct adapter *adapter)
 	stats->illerrc.ev_count += IXGBE_READ_REG(hw, IXGBE_ILLERRC);
 	stats->errbc.ev_count += IXGBE_READ_REG(hw, IXGBE_ERRBC);
 	stats->mspdc.ev_count += IXGBE_READ_REG(hw, IXGBE_MSPDC);
-	if (hw->mac.type == ixgbe_mac_X550)
+	if (hw->mac.type >= ixgbe_mac_X550)
 		stats->mbsdc.ev_count += IXGBE_READ_REG(hw, IXGBE_MBSDC);
 
 	/* 16 registers exist */
@@ -2127,7 +2126,8 @@ ixgbe_clear_evcnt(struct adapter *adapter)
 	stats->illerrc.ev_count = 0;
 	stats->errbc.ev_count = 0;
 	stats->mspdc.ev_count = 0;
-	stats->mbsdc.ev_count = 0;
+	if (hw->mac.type >= ixgbe_mac_X550)
+		stats->mbsdc.ev_count = 0;
 	stats->mpctotal.ev_count = 0;
 	stats->mlfc.ev_count = 0;
 	stats->mrfc.ev_count = 0;
@@ -3306,7 +3306,8 @@ ixgbe_sysctl_instance(struct adapter *adapter)
 
 	return rnode;
 err:
-	printf("%s: sysctl_createv failed, rc = %d\n", __func__, rc);
+	device_printf(adapter->dev,
+	    "%s: sysctl_createv failed, rc = %d\n", __func__, rc);
 	return NULL;
 }
 
@@ -6203,7 +6204,8 @@ ixgbe_ifflags_cb(struct ethercom *ec)
 {
 	struct ifnet *ifp = &ec->ec_if;
 	struct adapter *adapter = ifp->if_softc;
-	int change, rv = 0;
+	u_short change;
+	int rv = 0;
 
 	IXGBE_CORE_LOCK(adapter);
 
@@ -6467,7 +6469,9 @@ ixgbe_allocate_legacy(struct adapter *adapter,
 	int		counts[PCI_INTR_TYPE_SIZE];
 	pci_intr_type_t intr_type, max_type;
 	char		intrbuf[PCI_INTRSTR_LEN];
+	char		wqname[MAXCOMLEN];
 	const char	*intrstr = NULL;
+	int defertx_error = 0, error;
 
 	/* We allocate a single interrupt resource */
 	max_type = PCI_INTR_TYPE_MSI;
@@ -6529,15 +6533,27 @@ alloc_retry:
 	 * Try allocating a fast interrupt and the associated deferred
 	 * processing contexts.
 	 */
-	if (!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX))
+	if (!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX)) {
 		txr->txr_si =
 		    softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 			ixgbe_deferred_mq_start, txr);
+
+		snprintf(wqname, sizeof(wqname), "%sdeferTx", device_xname(dev));
+		defertx_error = workqueue_create(&adapter->txr_wq, wqname,
+		    ixgbe_deferred_mq_start_work, adapter, IXGBE_WORKQUEUE_PRI,
+		    IPL_NET, IXGBE_WORKQUEUE_FLAGS);
+		adapter->txr_wq_enqueued = percpu_alloc(sizeof(u_int));
+	}
 	que->que_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 	    ixgbe_handle_que, que);
+	snprintf(wqname, sizeof(wqname), "%sTxRx", device_xname(dev));
+	error = workqueue_create(&adapter->que_wq, wqname,
+	    ixgbe_handle_que_work, adapter, IXGBE_WORKQUEUE_PRI, IPL_NET,
+	    IXGBE_WORKQUEUE_FLAGS);
 
 	if ((!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX)
-		& (txr->txr_si == NULL)) || (que->que_si == NULL)) {
+		&& ((txr->txr_si == NULL) || defertx_error != 0))
+	    || (que->que_si == NULL) || error != 0) {
 		aprint_error_dev(dev,
 		    "could not establish software interrupts\n");
 
