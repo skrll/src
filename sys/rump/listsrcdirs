@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-#	$NetBSD: listsrcdirs,v 1.36 2019/02/17 23:50:53 bad Exp $
+#	$NetBSD: listsrcdirs,v 1.45 2019/09/12 21:37:06 bad Exp $
 #
 
 #
@@ -63,8 +63,32 @@ lsrc ()
 	iswanted ${what} && for arg in $* ; do echo src${pfx}${arg} ; done
 }
 
+include_headerlist ()
+{
+	what=$1
+	pfx=$2
+	shift 2
+
+	if iswanted ${what}; then
+		[ -f headerlist ] \
+			|| { echo 'missing file: headerlist' 1>&2; exit 1; }
+		sed -E -e '/^#/d' -e '/^[  ]*$/d' \
+		    -e "/^\.?\/?/s##src${pfx}#" headerlist \
+		    | egrep -v "^src${pfx}($(echo "$@" | tr ' ' \|))/include"
+	fi
+}
+
 ARCHS="amd64 i386 x86 arm evbarm sparc sparc64 powerpc evbppc mips evbmips aarch64 riscv"
 ARCHS_EXTRA="arm/arm32 Makefile"
+# files listed in src/tools/Makefile.nbincludes
+ARCHS_EXTRA="$ARCHS_EXTRA ews4800mips/include/pdinfo.h
+ews4800mips/include/vtoc.h
+dreamcast/include/endian_machdep.h
+evbsh3/include/endian_machdep.h
+hpcsh/include/endian_machdep.h
+landisk/include/endian_machdep.h
+mmeye/include/endian_machdep.h
+sh3/include/endian_machdep.h"
 
 # sources necessary for building rump kernel components.  This list
 # depends on TOOLS_BUILDRUMP=yes.
@@ -75,12 +99,14 @@ lsrc sys /lib/lib		c util
 lsrc sys /external/bsd/		flex mdocml byacc
 lsrc sys /external/cddl/	osnet
 lsrc sys /external/historical/	nawk
-lsrc sys /bin/			cat
+lsrc sys /external/public-domain/	xz
+lsrc sys /bin/			cat pax
 lsrc sys /usr.bin/		make xinstall config mktemp sed tsort
 lsrc sys /usr.bin/		lorder join cksum m4 mkdep Makefile.inc
 lsrc sys /usr.bin/		rpcgen rump_wmd
-lsrc sys /usr.bin/		genassym stat uname
+lsrc sys /usr.bin/		genassym grep stat uname
 lsrc sys /usr.sbin/		mtree
+lsrc sys /sbin/			mknod
 
 # sources hosted in the NetBSD tree that are required/useful
 # when targeting POSIX-y platforms
@@ -95,12 +121,12 @@ lsrc usr /lib/			i18n_module
 lsrc usr /lib/lib		crypt ipsec kvm m npf pci prop
 lsrc usr /lib/lib		pthread rmt y z
 lsrc usr /libexec/		ld.elf_so
-lsrc usr /bin/			chmod cp dd df ed ln ls mkdir mv pax
+lsrc usr /bin/			chmod cp dd df ed ln ls mkdir mv
 lsrc usr /bin/			rm rmdir
 lsrc usr /sbin/			brconfig cgdconfig chown
 lsrc usr /sbin/			disklabel dump fdisk
 lsrc usr /sbin/			fsck fsck_ext2fs fsck_ffs fsck_msdos
-lsrc usr /sbin/			ifconfig mknod
+lsrc usr /sbin/			ifconfig
 lsrc usr /sbin/			modstat mount
 lsrc usr /sbin/			mount_ext2fs mount_ffs mount_msdos mount_tmpfs
 lsrc usr /sbin/			newfs newfs_ext2fs newfs_msdos
@@ -128,6 +154,10 @@ if ${cvsmode}; then
 	for arch in ${ARCHS}; do
 		lsrc sys /sys/arch/${arch}/ include ${arch} Makefile
 	done
+	# the includes mentioned in src/tools/headerlist are required.
+	# but pull in only those that have not been pulled in by the previous
+	# loop
+	include_headerlist sys /sys/arch/ ${ARCHS}
 	for extra in ${ARCHS_EXTRA}; do
 		lsrc sys /sys/arch/ ${extra}
 	done
