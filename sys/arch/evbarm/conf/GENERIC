@@ -217,7 +217,7 @@ options 	DEBUG
 
 options 	MSGBUFSIZE=32768
 
-options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
+#options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 
 # EARLYCONS is required for early init messages from VERBOSE_INIT_ARM.
 
@@ -236,7 +236,7 @@ options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 #options 	EARLYCONS=bcm2837, CONSADDR=0x3f215040
 
 #options 	EARLYCONS=cycv, CONSADDR=0xffc02000
-options 	EARLYCONS=imx, CONSADDR=0x02020000
+#options 	EARLYCONS=imx, CONSADDR=0x02020000
 #options 	EARLYCONS=rk3328, CONSADDR=0xff130000
 #options 	EARLYCONS=sunxi, CONSADDR=0x01c28000
 
