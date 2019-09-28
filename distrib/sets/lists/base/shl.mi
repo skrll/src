@@ -1,4 +1,4 @@
-# $NetBSD: shl.mi,v 1.870 2019/09/06 11:12:06 christos Exp $
+# $NetBSD: shl.mi,v 1.872 2019/09/22 22:59:37 christos Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -13,12 +13,15 @@
 #
 # Note:	libtermcap and libtermlib are hardlinked and share the same version.
 #
+./lib/libavl.so					base-zfs-shlib		dynamicroot,zfs
+./lib/libavl.so.0				base-zfs-shlib		dynamicroot,zfs
+./lib/libavl.so.0.0          			base-zfs-shlib		dynamicroot,zfs
 ./lib/libblacklist.so				base-sys-shlib		dynamicroot
 ./lib/libblacklist.so.0				base-sys-shlib		dynamicroot
 ./lib/libblacklist.so.0.0			base-sys-shlib		dynamicroot
 ./lib/libc.so					base-sys-shlib		dynamicroot
 ./lib/libc.so.12				base-sys-shlib		dynamicroot
-./lib/libc.so.12.213				base-sys-shlib		dynamicroot
+./lib/libc.so.12.214				base-sys-shlib		dynamicroot
 ./lib/libcrypt.so				base-sys-shlib		dynamicroot
 ./lib/libcrypt.so.1				base-sys-shlib		dynamicroot
 ./lib/libcrypt.so.1.0				base-sys-shlib		dynamicroot
@@ -60,6 +63,9 @@
 ./lib/libnpf.so					base-npf-shlib		dynamicroot,npf
 ./lib/libnpf.so.0				base-npf-shlib		dynamicroot,npf
 ./lib/libnpf.so.0.1				base-npf-shlib		dynamicroot,npf
+./lib/libnvpair.so				base-zfs-shlib		dynamicroot,zfs
+./lib/libnvpair.so.0				base-zfs-shlib		dynamicroot,zfs
+./lib/libnvpair.so.0.0				base-zfs-shlib		dynamicroot,zfs
 ./lib/libpcap.so				base-sys-shlib		dynamicroot
 ./lib/libpcap.so.7				base-sys-shlib		dynamicroot
 ./lib/libpcap.so.7.0				base-sys-shlib		dynamicroot
@@ -69,6 +75,9 @@
 ./lib/libprop.so				base-sys-shlib		dynamicroot
 ./lib/libprop.so.1				base-sys-shlib		dynamicroot
 ./lib/libprop.so.1.1				base-sys-shlib		dynamicroot
+./lib/libpthread.so				base-sys-shlib		dynamicroot
+./lib/libpthread.so.1				base-sys-shlib		dynamicroot
+./lib/libpthread.so.1.4				base-sys-shlib		dynamicroot
 ./lib/libradius.so				base-sys-shlib		dynamicroot
 ./lib/libradius.so.4				base-sys-shlib		dynamicroot
 ./lib/libradius.so.4.0				base-sys-shlib		dynamicroot
@@ -87,12 +96,27 @@
 ./lib/libtermlib.so				base-sys-shlib		dynamicroot
 ./lib/libtermlib.so.0				base-sys-shlib		dynamicroot
 ./lib/libtermlib.so.0.6				base-sys-shlib		dynamicroot
+./lib/libumem.so				base-zfs-shlib		dynamicroot,zfs
+./lib/libumem.so.0				base-zfs-shlib		dynamicroot,zfs
+./lib/libumem.so.0.0				base-zfs-shlib		dynamicroot,zfs
 ./lib/libutil.so				base-sys-shlib		dynamicroot
 ./lib/libutil.so.7				base-sys-shlib		dynamicroot
 ./lib/libutil.so.7.24				base-sys-shlib		dynamicroot
+./lib/libuutil.so				base-zfs-shlib		dynamicroot,zfs
+./lib/libuutil.so.0				base-zfs-shlib		dynamicroot,zfs
+./lib/libuutil.so.0.0				base-zfs-shlib		dynamicroot,zfs
 ./lib/libz.so					base-sys-shlib		dynamicroot
 ./lib/libz.so.1					base-sys-shlib		dynamicroot
 ./lib/libz.so.1.0				base-sys-shlib		dynamicroot
+./lib/libzfs.so					base-zfs-shlib		dynamicroot,zfs
+./lib/libzfs.so.0				base-zfs-shlib		dynamicroot,zfs
+./lib/libzfs.so.0.0				base-zfs-shlib		dynamicroot,zfs
+./lib/libzfs_core.so				base-zfs-shlib		dynamicroot,zfs
+./lib/libzfs_core.so.0				base-zfs-shlib		dynamicroot,zfs
+./lib/libzfs_core.so.0.0			base-zfs-shlib		dynamicroot,zfs
+./lib/libzpool.so				base-zfs-shlib		dynamicroot,zfs
+./lib/libzpool.so.0				base-zfs-shlib		dynamicroot,zfs
+./lib/libzpool.so.0.0				base-zfs-shlib		dynamicroot,zfs
 ./lib/npf/ext_log.so				base-npf-shlib		compatfile,npf
 ./lib/npf/ext_log.so.0				base-npf-shlib		compatfile,npf
 ./lib/npf/ext_log.so.0.0			base-npf-shlib		compatfile,npf
@@ -221,7 +245,7 @@
 ./usr/lib/libc++.so.1.0				base-sys-shlib		compatfile,libcxx
 ./usr/lib/libc.so				base-sys-shlib		compatfile
 ./usr/lib/libc.so.12				base-sys-shlib		compatfile
-./usr/lib/libc.so.12.213			base-sys-shlib		compatfile
+./usr/lib/libc.so.12.214			base-sys-shlib		compatfile
 ./usr/lib/libcdk.so				base-obsolete		compatfile,obsolete
 ./usr/lib/libcom_err.so				base-krb5-shlib		compatfile,kerberos
 ./usr/lib/libcom_err.so.8			base-krb5-shlib		compatfile,kerberos

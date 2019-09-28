@@ -1,4 +1,4 @@
-/*	$NetBSD: nd6.c,v 1.263 2019/09/01 19:26:21 roy Exp $	*/
+/*	$NetBSD: nd6.c,v 1.265 2019/09/25 09:53:38 ozaki-r Exp $	*/
 /*	$KAME: nd6.c,v 1.279 2002/06/08 11:16:51 itojun Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nd6.c,v 1.263 2019/09/01 19:26:21 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nd6.c,v 1.265 2019/09/25 09:53:38 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -136,6 +136,8 @@ void
 nd6_init(void)
 {
 	int error;
+
+	nd6_nbr_init();
 
 	rw_init(&nd6_lock);
 
@@ -735,7 +737,8 @@ nd6_timer_work(struct work *wk, void *arg)
 			 * Just invalidate the prefix here. Removing it
 			 * will be done when purging an associated address.
 			 */
-			KASSERT(pr->ndpr_refcnt > 0);
+			KASSERTMSG(pr->ndpr_refcnt > 0, "ndpr_refcnt=%d",
+			    pr->ndpr_refcnt);
 			nd6_invalidate_prefix(pr);
 		}
 	}
@@ -896,7 +899,8 @@ nd6_purge(struct ifnet *ifp, struct in6_ifextra *ext)
 			/*
 			 * All addresses referencing pr should be already freed.
 			 */
-			KASSERT(pr->ndpr_refcnt == 0);
+			KASSERTMSG(pr->ndpr_refcnt == 0, "ndpr_refcnt=%d",
+			    pr->ndpr_refcnt);
 			nd6_prelist_remove(pr);
 		}
 	}
@@ -1964,7 +1968,8 @@ nd6_ioctl(u_long cmd, void *data, struct ifnet *ifp)
 			}
 			pserialize_read_exit(_s);
 
-			KASSERT(pfx->ndpr_refcnt == 0);
+			KASSERTMSG(pfx->ndpr_refcnt == 0, "ndpr_refcnt=%d",
+			    pfx->ndpr_refcnt);
 			nd6_prelist_remove(pfx);
 		}
 		ND6_UNLOCK();

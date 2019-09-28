@@ -1,4 +1,4 @@
-/*	$NetBSD: mbuf.h,v 1.220 2019/08/25 16:38:20 rmind Exp $	*/
+/*	$NetBSD: mbuf.h,v 1.222 2019/09/23 08:04:35 maxv Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1999, 2001, 2007 The NetBSD Foundation, Inc.
@@ -499,18 +499,23 @@ do {									\
 	mowner_ref((m), M_EXT);						\
 } while (/* CONSTCOND */ 0)
 
+#define M_BUFADDR(m)							\
+	(((m)->m_flags & M_EXT) ? (m)->m_ext.ext_buf :			\
+	    ((m)->m_flags & M_PKTHDR) ? (m)->m_pktdat : (m)->m_dat)
+
+#define M_BUFSIZE(m)							\
+	(((m)->m_flags & M_EXT) ? (m)->m_ext.ext_size :			\
+	    ((m)->m_flags & M_PKTHDR) ? MHLEN : MLEN)
+
+#define MRESETDATA(m)	(m)->m_data = M_BUFADDR(m)
+
 /*
- * Reset the data pointer on an mbuf.
+ * Compute the offset of the beginning of the data buffer of a non-ext
+ * mbuf.
  */
-#define MRESETDATA(m)							\
-do {									\
-	if ((m)->m_flags & M_EXT)					\
-		(m)->m_data = (m)->m_ext.ext_buf;			\
-	else if ((m)->m_flags & M_PKTHDR)				\
-		(m)->m_data = (m)->m_pktdat;				\
-	else								\
-		(m)->m_data = (m)->m_dat;				\
-} while (/* CONSTCOND */ 0)
+#define M_BUFOFFSET(m)							\
+	(((m)->m_flags & M_PKTHDR) ?					\
+	 offsetof(struct mbuf, m_pktdat) : offsetof(struct mbuf, m_dat))
 
 /*
  * Determine if an mbuf's data area is read-only.  This is true
@@ -532,16 +537,11 @@ do {									\
 	(((m)->m_flags & (M_EXT|M_EXT_ROMAP)) == (M_EXT|M_EXT_ROMAP))
 
 /*
- * Compute the amount of space available
- * before the current start of data in an mbuf.
+ * Compute the amount of space available before the current start of
+ * data in an mbuf.
  */
-#define _M_LEADINGSPACE(m)						\
-	((m)->m_flags & M_EXT ? (m)->m_data - (m)->m_ext.ext_buf :	\
-	 (m)->m_flags & M_PKTHDR ? (m)->m_data - (m)->m_pktdat :	\
-	 (m)->m_data - (m)->m_dat)
-
 #define M_LEADINGSPACE(m)						\
-	(M_READONLY((m)) ? 0 : _M_LEADINGSPACE((m)))
+	(M_READONLY((m)) ? 0 : ((m)->m_data - M_BUFADDR(m)))
 
 /*
  * Compute the amount of space available
@@ -554,20 +554,6 @@ do {									\
 
 #define M_TRAILINGSPACE(m)						\
 	(M_READONLY((m)) ? 0 : _M_TRAILINGSPACE((m)))
-
-/*
- * Compute the address of an mbuf's data area.
- */
-#define M_BUFADDR(m)							\
-	(((m)->m_flags & M_PKTHDR) ? (m)->m_pktdat : (m)->m_dat)
-
-/*
- * Compute the offset of the beginning of the data buffer of a non-ext
- * mbuf.
- */
-#define M_BUFOFFSET(m)							\
-	(((m)->m_flags & M_PKTHDR) ?					\
-	 offsetof(struct mbuf, m_pktdat) : offsetof(struct mbuf, m_dat))
 
 /*
  * Arrange to prepend space of size plen to mbuf m.
