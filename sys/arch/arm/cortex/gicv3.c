@@ -348,7 +348,7 @@ gicv3_find_redist(struct gicv3_softc *sc)
 static uint64_t
 gicv3_sgir(struct gicv3_softc *sc)
 {
-	const uint64_t cpu_identity = gicv3_cpu_identity();	
+	const uint64_t cpu_identity = gicv3_cpu_identity();
 
 	const u_int aff0 = __SHIFTOUT(cpu_identity, GICR_TYPER_Affinity_Value_Aff0);
 	const u_int aff1 = __SHIFTOUT(cpu_identity, GICR_TYPER_Affinity_Value_Aff1);
@@ -358,7 +358,7 @@ gicv3_sgir(struct gicv3_softc *sc)
 	return __SHIFTIN(__BIT(aff0), ICC_SGIR_EL1_TargetList) |
 	       __SHIFTIN(aff1, ICC_SGIR_EL1_Aff1) |
 	       __SHIFTIN(aff2, ICC_SGIR_EL1_Aff2) |
-	       __SHIFTIN(aff3, ICC_SGIR_EL1_Aff3); 
+	       __SHIFTIN(aff3, ICC_SGIR_EL1_Aff3);
 }
 
 static void
