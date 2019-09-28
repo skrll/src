@@ -83,4 +83,4 @@ file	arch/arm/nxp/imx6_i2c.c			imxi2c
 device	imxspi: spibus
 attach	imxspi at fdt with imxspi_fdt
 file	arch/arm/imx/imxspi.c			imxspi
-file	arch/arm/imx/fdt/imx6_spi.c		imxspi_fdt
+file	arch/arm/nxp/imx6_spi.c			imxspi_fdt
