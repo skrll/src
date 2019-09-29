@@ -1,4 +1,4 @@
-.\"	$NetBSD: boot.8,v 1.17 2019/08/18 08:12:36 wiz Exp $
+.\"	$NetBSD: boot.8,v 1.20 2019/09/16 01:57:58 manu Exp $
 .\"
 .\" Copyright (c) 1991, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -32,7 +32,7 @@
 .\"
 .\"     @(#)boot_i386.8	8.2 (Berkeley) 4/19/94
 .\"
-.Dd August 18, 2019
+.Dd September 13, 2019
 .Dt BOOT 8 x86
 .Os
 .Sh NAME
@@ -436,7 +436,12 @@ being separated with spaces
 .It Ic bootdev Ns = Ns Ar dev Po or Ic root Ns = Ns Ar dev Pc
 Override the default boot device.
 .Ar dev
-can be a unit name
+is of the form
+.Va NAME=partition_label
+for
+.Xr gpt 8
+partitioned disks.
+It can also be a unit name
 .Po Dq wd0
 .Pc ,
 or an interface name
@@ -820,11 +825,6 @@ is derived from the
 field of the
 .Nx
 disklabel (if it is a hard disk).
-.Pp
-.Ic multiboot
-is not supported by
-.Tn UEFI
-bootstrap code.
 .Pp
 .Tn UEFI
 implementation are supposed to support either

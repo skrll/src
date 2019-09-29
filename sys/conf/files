@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1237 2019/06/15 06:40:34 maxv Exp $
+#	$NetBSD: files,v 1.1240 2019/09/22 22:59:38 christos Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -141,7 +141,8 @@ defflag opt_todr.h		TODR_DEBUG
 # compatibility options
 #
 defflag opt_compat_netbsd.h	COMPAT_NETBSD
-defflag	opt_compat_netbsd.h	COMPAT_80: COMPAT_NETBSD
+defflag	opt_compat_netbsd.h	COMPAT_90: COMPAT_NETBSD
+defflag	opt_compat_netbsd.h	COMPAT_80: COMPAT_90, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_70: COMPAT_80, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_60: COMPAT_70, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_50: COMPAT_60, COMPAT_NETBSD
@@ -196,8 +197,8 @@ include "crypto/camellia/files.camellia"
 # General-purpose crypto processing framework.
 include "opencrypto/files.opencrypto"
 
-# NIST SP800.90 CTR DRBG
-include "crypto/nist_ctr_drbg/files.nist_ctr_drbg"
+# NIST SP800-90A Hash_DRBG
+include "crypto/nist_hash_drbg/files.nist_hash_drbg"
 
 # ChaCha-based fast PRNG
 include "crypto/cprng_fast/files.cprng_fast"
@@ -1289,6 +1290,11 @@ file	dev/usb/ehci.c			ehci			needs-flag
 #
 device	xhci: usbus, usbroothub, usb_dma
 file	dev/usb/xhci.c			xhci			needs-flag
+
+# vHCI USB controller
+#
+defpseudodev vhci: usbus, usbroothub
+file	dev/usb/vhci.c			vhci			needs-flag
 
 # Mentor graphics OTG IP
 device	motg: usbus, usbroothub

@@ -1,4 +1,4 @@
-/*	$NetBSD: nvme.c,v 1.44 2019/06/28 15:08:47 jmcneill Exp $	*/
+/*	$NetBSD: nvme.c,v 1.46 2019/09/26 11:50:32 nonaka Exp $	*/
 /*	$OpenBSD: nvme.c,v 1.49 2016/04/18 05:59:50 dlg Exp $ */
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvme.c,v 1.44 2019/06/28 15:08:47 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvme.c,v 1.46 2019/09/26 11:50:32 nonaka Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -397,6 +397,10 @@ nvme_attach(struct nvme_softc *sc)
 
 	if (nvme_identify(sc, NVME_CAP_MPSMIN(cap)) != 0) {
 		aprint_error_dev(sc->sc_dev, "unable to identify controller\n");
+		goto disable;
+	}
+	if (sc->sc_nn == 0) {
+		aprint_error_dev(sc->sc_dev, "namespace not found\n");
 		goto disable;
 	}
 
@@ -1302,8 +1306,8 @@ nvme_poll_done(struct nvme_queue *q, struct nvme_ccb *ccb,
 {
 	struct nvme_poll_state *state = ccb->ccb_cookie;
 
-	SET(cqe->flags, htole16(NVME_CQE_PHASE));
 	state->c = *cqe;
+	SET(state->c.flags, htole16(NVME_CQE_PHASE));
 
 	ccb->ccb_cookie = state->cookie;
 	state->done(q, ccb, &state->c);

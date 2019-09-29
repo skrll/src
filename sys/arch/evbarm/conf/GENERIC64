@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.105 2019/08/13 17:21:01 tnn Exp $
+#	$NetBSD: GENERIC64,v 1.107 2019/09/21 14:04:12 jmcneill Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -123,6 +123,9 @@ options 	XHCI_DEBUG
 #options 	PMAP_DEBUG	# Enable pmap_debug_level code
 #options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 options 	INCLUDE_CONFIG_FILE
+#options 	UVMHIST
+#options 	UVMHIST_PRINT,KERNHIST_DELAY=0
+
 # EARLYCONS is required for early init messages from VERBOSE_INIT_ARM.
 #options 	EARLYCONS=bcm2837
 #options 	EARLYCONS=meson, CONSADDR=0xc81004c0
@@ -295,6 +298,7 @@ pci*		at ppb?
 awge*		at fdt?				# DesignWare Gigabit Ethernet
 emac*		at fdt?				# Allwinner Gigabit Ethernet (EMAC)
 ena*		at pci? dev ? function ?	# Amazon.com Elastic Network Adapter
+mcx*		at pci? dev ? function ?	# Mellanox 5th generation Ethernet
 mskc*		at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 msk*		at mskc?
 re*		at pci? dev ? function ?	# Realtek RTL8111GS

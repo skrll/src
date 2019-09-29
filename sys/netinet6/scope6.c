@@ -1,4 +1,4 @@
-/*	$NetBSD: scope6.c,v 1.20 2018/05/01 07:21:39 maxv Exp $	*/
+/*	$NetBSD: scope6.c,v 1.22 2019/09/23 23:12:47 kamil Exp $	*/
 /*	$KAME$	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: scope6.c,v 1.20 2018/05/01 07:21:39 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: scope6.c,v 1.22 2019/09/23 23:12:47 kamil Exp $");
 
 #include <sys/param.h>
 #include <sys/malloc.h>

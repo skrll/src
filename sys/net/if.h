@@ -1,4 +1,4 @@
-/*	$NetBSD: if.h,v 1.275 2019/08/10 21:13:54 rmind Exp $	*/
+/*	$NetBSD: if.h,v 1.277 2019/09/19 06:07:24 knakahara Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -369,7 +369,7 @@ typedef struct ifnet {
 			    (struct ifnet *, const unsigned long,
 			    const struct sockaddr *);
 	int		(*if_setflags)	/* :: */
-			    (struct ifnet *, const short);
+			    (struct ifnet *, const u_short);
 	kmutex_t	*if_ioctl_lock;	/* :: */
 	char		*if_description;	/* i: interface description */
 #ifdef _KERNEL /* XXX kvm(3) */
@@ -1108,7 +1108,7 @@ int	ifpromisc_locked(struct ifnet *, int);
 int	if_addr_init(ifnet_t *, struct ifaddr *, bool);
 int	if_do_dad(struct ifnet *);
 int	if_mcast_op(ifnet_t *, const unsigned long, const struct sockaddr *);
-int	if_flags_set(struct ifnet *, const short);
+int	if_flags_set(struct ifnet *, const u_short);
 int	if_clone_list(int, char *, int *);
 
 struct	ifnet *ifunit(const char *);
@@ -1122,6 +1122,33 @@ void	if_acquire(struct ifnet *, struct psref *);
 #define	if_release	if_put
 
 int if_tunnel_check_nesting(struct ifnet *, struct mbuf *, int);
+percpu_t *if_tunnel_alloc_ro_percpu(void);
+void if_tunnel_free_ro_percpu(percpu_t *);
+void if_tunnel_ro_percpu_rtcache_free(percpu_t *);
+
+struct tunnel_ro {
+	struct route *tr_ro;
+	kmutex_t *tr_lock;
+};
+
+static inline void
+if_tunnel_get_ro(percpu_t *ro_percpu, struct route **ro, kmutex_t **lock)
+{
+	struct tunnel_ro *tro;
+
+	tro = percpu_getref(ro_percpu);
+	*ro = tro->tr_ro;
+	*lock = tro->tr_lock;
+	mutex_enter(*lock);
+}
+
+static inline void
+if_tunnel_put_ro(percpu_t *ro_percpu, kmutex_t *lock)
+{
+
+	mutex_exit(lock);
+	percpu_putref(ro_percpu);
+}
 
 static __inline if_index_t
 if_get_index(const struct ifnet *ifp)

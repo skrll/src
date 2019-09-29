@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_socket.c,v 1.281 2019/07/16 22:57:55 pgoyette Exp $	*/
+/*	$NetBSD: uipc_socket.c,v 1.284 2019/09/27 00:32:03 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 2002, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.281 2019/07/16 22:57:55 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.284 2019/09/27 00:32:03 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -928,7 +928,8 @@ sosend(struct socket *so, struct sockaddr *addr, struct uio *uio,
 		}
 		if (so->so_error) {
 			error = so->so_error;
-			so->so_error = 0;
+			if ((flags & MSG_PEEK) == 0)
+				so->so_error = 0;
 			goto release;
 		}
 		if ((so->so_state & SS_ISCONNECTED) == 0) {
@@ -1225,15 +1226,13 @@ restart:
 			panic("receive 1");
 #endif
 		if (so->so_error || so->so_rerror) {
+			u_short *e;
 			if (m != NULL)
 				goto dontblock;
-			if (so->so_error) {
-				error = so->so_error;
-				so->so_error = 0;
-			} else {
-				error = so->so_rerror;
-				so->so_rerror = 0;
-			}
+			e = so->so_error ? &so->so_error : &so->so_rerror;
+			error = *e;
+			if ((flags & MSG_PEEK) == 0)
+				*e = 0;
 			goto release;
 		}
 		if (so->so_state & SS_CANTRCVMORE) {
@@ -2420,7 +2419,7 @@ sbsavetimestamp(int opt, struct mbuf **mp)
 
 	microtime(&tv);
 
-	MODULE_HOOK_CALL(uipc_socket_50_sbts_hook, (opt, mp), enosys(), error);
+	MODULE_HOOK_CALL(uipc_socket_50_sbts_hook, (opt, &mp), enosys(), error);
 	if (error == 0)
 		return mp;
 

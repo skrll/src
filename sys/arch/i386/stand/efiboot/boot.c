@@ -1,4 +1,4 @@
-/*	$NetBSD: boot.c,v 1.14 2019/08/18 02:18:24 manu Exp $	*/
+/*	$NetBSD: boot.c,v 1.17 2019/09/26 12:21:03 nonaka Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -111,6 +111,7 @@ const struct bootblk_command commands[] = {
 	{ NULL,		NULL },
 };
 
+static char *default_fsname;
 static char *default_devname;
 static int default_unit, default_partition;
 static const char *default_filename;
@@ -125,12 +126,16 @@ parsebootfile(const char *fname, char **fsname, char **devname, int *unit,
 {
 	const char *col;
 	static char savedevname[MAXDEVNAME+1];
+#if defined(SUPPORT_NFS) || defined(SUPPORT_TFTP)
+	const struct netboot_fstab *nf;
+#endif
 
-	*fsname = "ufs";
+	*fsname = default_fsname;
 	if (default_part_name == NULL) {
 		*devname = default_devname;
 	} else {
-		snprintf(savedevname, MAXDEVNAME, "NAME=%s", default_part_name);
+		snprintf(savedevname, sizeof(savedevname),
+		    "NAME=%s", default_part_name);
 		*devname = savedevname;
 	}
 	*unit = default_unit;
@@ -151,6 +156,7 @@ parsebootfile(const char *fname, char **fsname, char **devname, int *unit,
 
 		if (strstr(fname, "NAME=") == fname) {
 			strlcpy(savedevname, fname, devlen + 1);
+			*fsname = "ufs";
 			*devname = savedevname;
 			*unit = -1;
 			*partition = -1;
@@ -187,6 +193,13 @@ parsebootfile(const char *fname, char **fsname, char **devname, int *unit,
 		if (i != devlen)
 			return ENXIO;
 
+#if defined(SUPPORT_NFS) || defined(SUPPORT_TFTP)
+		nf = netboot_fstab_find(savedevname);
+		if (nf != NULL)
+			*fsname = (char *)nf->name;
+		else
+#endif
+		*fsname = "ufs";
 		*devname = savedevname;
 		*unit = u;
 		*partition = p;
@@ -277,6 +290,9 @@ boot(void)
 {
 	int currname;
 	int c;
+#if defined(SUPPORT_NFS) || defined(SUPPORT_TFTP)
+	const struct netboot_fstab *nf;
+#endif
 
 	boot_modules_enabled = !(boot_params.bp_flags & X86_BP_FLAGS_NOMODULES);
 
@@ -286,6 +302,14 @@ boot(void)
 
 	/* if the user types "boot" without filename */
 	default_filename = DEFFILENAME;
+
+#if defined(SUPPORT_NFS) || defined(SUPPORT_TFTP)
+	nf = netboot_fstab_find(default_devname);
+	if (nf != NULL)
+		default_fsname = (char *)nf->name;
+	else
+#endif
+	default_fsname = "ufs";
 
 	if (!(boot_params.bp_flags & X86_BP_FLAGS_NOBOOTCONF)) {
 #ifdef EFIBOOTCFG_FILENAME
@@ -455,7 +479,7 @@ command_dev(char *arg)
 {
 	static char savedevname[MAXDEVNAME + 1];
 	char buf[80];
-	char *fsname, *devname;
+	char *devname;
 	const char *file; /* dummy */
 
 	if (*arg == '\0') {
@@ -473,7 +497,7 @@ command_dev(char *arg)
 	}
 
 	if (strchr(arg, ':') == NULL ||
-	    parsebootfile(arg, &fsname, &devname, &default_unit,
+	    parsebootfile(arg, &default_fsname, &devname, &default_unit,
 	      &default_partition, &file)) {
 		command_help(NULL);
 		return;
@@ -557,7 +581,7 @@ command_consdev(char *arg)
 						goto error;
 				}
 			}
-			consinit(cdp->tag, ioport, speed);
+			efi_consinit(cdp->tag, ioport, speed);
 			print_banner();
 			return;
 		}

@@ -1,10 +1,10 @@
-/*	$NetBSD: miidevs.h,v 1.152 2019/08/16 15:20:18 msaitoh Exp $	*/
+/*	$NetBSD: miidevs.h,v 1.155 2019/09/19 14:39:08 msaitoh Exp $	*/
 
 /*
  * THIS FILE AUTOMATICALLY GENERATED.  DO NOT EDIT.
  *
  * generated from:
- *	NetBSD: miidevs,v 1.154 2019/08/16 15:19:48 msaitoh Exp
+ *	NetBSD: miidevs,v 1.157 2019/09/19 14:38:45 msaitoh Exp
  */
 
 /*-
@@ -74,7 +74,9 @@
 #define	MII_OUI_ENABLESEMI	0x0010dd	/* Enable Semiconductor */
 #define	MII_OUI_SUNPLUS	0x001105	/* Sunplus Technology */
 #define	MII_OUI_ATHEROS	0x001374	/* Atheros */
+#define	MII_OUI_TERANETICS	0x0014a6	/* Teranetics */
 #define	MII_OUI_RALINK2	0x0017a5	/* Ralink Technology */
+#define	MII_OUI_AQUANTIA	0x0017b6	/* Aquantia Corporation */
 #define	MII_OUI_BROADCOM3	0x001be9	/* Broadcom Corporation */
 #define	MII_OUI_LEVEL1	0x00207b	/* Level 1 */
 #define	MII_OUI_VIA	0x004063	/* VIA Technologies */
@@ -83,7 +85,6 @@
 #define	MII_OUI_AMLOGIC	0x006051	/* Amlogic */
 #define	MII_OUI_DAVICOM	0x00606e	/* Davicom Semiconductor */
 #define	MII_OUI_SMSC	0x00800f	/* SMSC */
-#define	MII_OUI_ICPLUS	0x0090c3	/* IC Plus Corp. */
 #define	MII_OUI_SEEQ	0x00a07d	/* Seeq */
 #define	MII_OUI_ICS	0x00a0be	/* Integrated Circuit Systems */
 #define	MII_OUI_INTEL	0x00aa00	/* Intel */
@@ -100,6 +101,7 @@
 #define	MII_OUI_NATSEMI	0x080017	/* National Semiconductor */
 #define	MII_OUI_TI	0x080028	/* Texas Instruments */
 #define	MII_OUI_BROADCOM4	0x18c086	/* Broadcom Corporation */
+#define	MII_OUI_RENESAS	0x749050	/* Renesas */
 
 /* Unregisterd or wrong OUI */
 #define	MII_OUI_yyREALTEK	0x000004	/* Realtek */
@@ -113,6 +115,7 @@
 #define	MII_OUI_xxREALTEK	0x000732	/* Realtek */
 #define	MII_OUI_xxBROADCOM	0x000818	/* Broadcom Corporation */
 #define	MII_OUI_xxPMCSIERRA	0x0009c0	/* PMC-Sierra */
+#define	MII_OUI_xxICPLUS	0x0009c3	/* IC Plus Corp. */
 #define	MII_OUI_xxMARVELL	0x000ac2	/* Marvell Semiconductor */
 #define	MII_OUI_xxINTEL	0x001f00	/* Intel */
 #define	MII_OUI_xxBROADCOM_ALT1	0x0050ef	/* Broadcom Corporation */
@@ -341,14 +344,14 @@
 #define	MII_STR_xxDAVICOM_DM9601	"DM9601 internal 10/100 media interface"
 
 /* IC Plus Corp. PHYs */
-#define	MII_MODEL_ICPLUS_IP100	0x0004
-#define	MII_STR_ICPLUS_IP100	"IP100 10/100 PHY"
-#define	MII_MODEL_ICPLUS_IP101	0x0005
-#define	MII_STR_ICPLUS_IP101	"IP101 10/100 PHY"
-#define	MII_MODEL_ICPLUS_IP1000A	0x0008
-#define	MII_STR_ICPLUS_IP1000A	"IP1000A 10/100/1000 PHY"
-#define	MII_MODEL_ICPLUS_IP1001	0x0019
-#define	MII_STR_ICPLUS_IP1001	"IP1001 10/100/1000 PHY"
+#define	MII_MODEL_xxICPLUS_IP100	0x0004
+#define	MII_STR_xxICPLUS_IP100	"IP100 10/100 PHY"
+#define	MII_MODEL_xxICPLUS_IP101	0x0005
+#define	MII_STR_xxICPLUS_IP101	"IP101 10/100 PHY"
+#define	MII_MODEL_xxICPLUS_IP1000A	0x0008
+#define	MII_STR_xxICPLUS_IP1000A	"IP1000A 10/100/1000 PHY"
+#define	MII_MODEL_xxICPLUS_IP1001	0x0019
+#define	MII_STR_xxICPLUS_IP1001	"IP1001 10/100/1000 PHY"
 
 /* Integrated Circuit Systems PHYs */
 #define	MII_MODEL_ICS_1889	0x0001

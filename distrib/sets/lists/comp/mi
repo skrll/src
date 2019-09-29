@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2283 2019/08/23 08:17:27 mrg Exp $
+#	$NetBSD: mi,v 1.2286 2019/09/15 16:58:11 christos Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -4311,6 +4311,7 @@
 ./usr/share/man/cat2/fcntl.0			comp-c-catman		.cat
 ./usr/share/man/cat2/fdatasync.0		comp-c-catman		.cat
 ./usr/share/man/cat2/fdiscard.0			comp-c-catman		.cat
+./usr/share/man/cat2/fexecve.0			comp-c-catman		.cat
 ./usr/share/man/cat2/fhopen.0			comp-c-catman		.cat
 ./usr/share/man/cat2/fhstat.0			comp-c-catman		.cat
 ./usr/share/man/cat2/fhstatfs.0			comp-obsolete		obsolete
@@ -6336,6 +6337,7 @@
 ./usr/share/man/cat3/curses_touch.0		comp-c-catman		.cat
 ./usr/share/man/cat3/curses_tty.0		comp-c-catman		.cat
 ./usr/share/man/cat3/curses_underscore.0	comp-c-catman		.cat
+./usr/share/man/cat3/curses_version.0		comp-c-catman		.cat
 ./usr/share/man/cat3/curses_window.0		comp-c-catman		.cat
 ./usr/share/man/cat3/cuserid.0			comp-c-catman		.cat
 ./usr/share/man/cat3/d2i_ASN1_OBJECT.0	comp-c-catman	.cat,openssl=10
@@ -11899,6 +11901,7 @@
 ./usr/share/man/cat9/tc_syncbus.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/tc_wmb.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/tcp_congctl.0		comp-sys-catman		.cat
+./usr/share/man/cat9/thmap.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/threadpool.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/threadpool_cancel_job.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/threadpool_cancel_job_async.0 comp-sys-catman	.cat
@@ -12374,6 +12377,7 @@
 ./usr/share/man/html2/fcntl.html		comp-c-htmlman		html
 ./usr/share/man/html2/fdatasync.html		comp-c-htmlman		html
 ./usr/share/man/html2/fdiscard.html		comp-c-htmlman		html
+./usr/share/man/html2/fexecve.html		comp-c-htmlman		html
 ./usr/share/man/html2/fhopen.html		comp-c-htmlman		html
 ./usr/share/man/html2/fhstat.html		comp-c-htmlman		html
 ./usr/share/man/html2/fhstatvfs.html		comp-c-htmlman		html
@@ -14341,6 +14345,7 @@
 ./usr/share/man/html3/curses_touch.html		comp-c-htmlman		html
 ./usr/share/man/html3/curses_tty.html		comp-c-htmlman		html
 ./usr/share/man/html3/curses_underscore.html	comp-c-htmlman		html
+./usr/share/man/html3/curses_version.html	comp-c-htmlman		html
 ./usr/share/man/html3/curses_window.html	comp-c-htmlman		html
 ./usr/share/man/html3/cuserid.html		comp-c-htmlman		html
 ./usr/share/man/html3/d2i_ASN1_OBJECT.html	comp-c-htmlman	html,openssl=10
@@ -19791,6 +19796,7 @@
 ./usr/share/man/html9/tc_syncbus.html		comp-sys-htmlman	html
 ./usr/share/man/html9/tc_wmb.html		comp-sys-htmlman	html
 ./usr/share/man/html9/tcp_congctl.html		comp-sys-htmlman	html
+./usr/share/man/html9/thmap.html		comp-sys-htmlman	html
 ./usr/share/man/html9/threadpool.html		comp-sys-htmlman	html
 ./usr/share/man/html9/threadpool_cancel_job.html comp-sys-htmlman	html
 ./usr/share/man/html9/threadpool_cancel_job_async.html comp-sys-htmlman	html
@@ -20254,6 +20260,7 @@
 ./usr/share/man/man2/fcntl.2			comp-c-man		.man
 ./usr/share/man/man2/fdatasync.2		comp-c-man		.man
 ./usr/share/man/man2/fdiscard.2			comp-c-man		.man
+./usr/share/man/man2/fexecve.2			comp-c-man		.man
 ./usr/share/man/man2/fhopen.2			comp-c-man		.man
 ./usr/share/man/man2/fhstat.2			comp-c-man		.man
 ./usr/share/man/man2/fhstatfs.2			comp-obsolete		obsolete
@@ -22289,6 +22296,7 @@
 ./usr/share/man/man3/curses_touch.3		comp-c-man		.man
 ./usr/share/man/man3/curses_tty.3		comp-c-man		.man
 ./usr/share/man/man3/curses_underscore.3	comp-c-man		.man
+./usr/share/man/man3/curses_version.3		comp-c-man		.man
 ./usr/share/man/man3/curses_window.3		comp-c-man		.man
 ./usr/share/man/man3/cuserid.3			comp-c-man		.man
 ./usr/share/man/man3/d2i_ASN1_OBJECT.3	comp-c-man	.man,openssl=10
@@ -27882,6 +27890,7 @@
 ./usr/share/man/man9/tc_syncbus.9		comp-sys-man		.man
 ./usr/share/man/man9/tc_wmb.9			comp-sys-man		.man
 ./usr/share/man/man9/tcp_congctl.9		comp-sys-man		.man
+./usr/share/man/man9/thmap.9			comp-sys-man		.man
 ./usr/share/man/man9/threadpool.9		comp-sys-man		.man
 ./usr/share/man/man9/threadpool_cancel_job.9	comp-sys-man		.man
 ./usr/share/man/man9/threadpool_cancel_job_async.9 comp-sys-man		.man

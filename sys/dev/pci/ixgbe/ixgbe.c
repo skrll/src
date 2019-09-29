@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.204 2019/08/28 08:54:21 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.213 2019/09/18 10:42:44 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -211,8 +211,7 @@ static void	ixgbe_initialize_rss_mapping(struct adapter *);
 static void	ixgbe_enable_intr(struct adapter *);
 static void	ixgbe_disable_intr(struct adapter *);
 static void	ixgbe_update_stats_counters(struct adapter *);
-static void	ixgbe_set_promisc(struct adapter *);
-static void	ixgbe_set_multi(struct adapter *);
+static void	ixgbe_set_rxfilter(struct adapter *);
 static void	ixgbe_update_link_status(struct adapter *);
 static void	ixgbe_set_ivar(struct adapter *, u8, u8, s8);
 static void	ixgbe_configure_ivars(struct adapter *);
@@ -1403,7 +1402,6 @@ static void
 ixgbe_add_media_types(struct adapter *adapter)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
-	device_t	dev = adapter->dev;
 	u64		layer;
 
 	layer = adapter->phy_layer;
@@ -1469,7 +1467,7 @@ ixgbe_add_media_types(struct adapter *adapter)
 		ADD(IFM_5000_T | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_1000BASE_BX)
-		device_printf(dev, "Media supported: 1000baseBX\n");
+		ADD(IFM_1000_BX10 | IFM_FDX, 0);
 	/* XXX no ifmedia_set? */
 
 	ADD(IFM_AUTO, 0);
@@ -1572,7 +1570,7 @@ ixgbe_update_stats_counters(struct adapter *adapter)
 	stats->illerrc.ev_count += IXGBE_READ_REG(hw, IXGBE_ILLERRC);
 	stats->errbc.ev_count += IXGBE_READ_REG(hw, IXGBE_ERRBC);
 	stats->mspdc.ev_count += IXGBE_READ_REG(hw, IXGBE_MSPDC);
-	if (hw->mac.type == ixgbe_mac_X550)
+	if (hw->mac.type >= ixgbe_mac_X550)
 		stats->mbsdc.ev_count += IXGBE_READ_REG(hw, IXGBE_MBSDC);
 
 	/* 16 registers exist */
@@ -2127,7 +2125,8 @@ ixgbe_clear_evcnt(struct adapter *adapter)
 	stats->illerrc.ev_count = 0;
 	stats->errbc.ev_count = 0;
 	stats->mspdc.ev_count = 0;
-	stats->mbsdc.ev_count = 0;
+	if (hw->mac.type >= ixgbe_mac_X550)
+		stats->mbsdc.ev_count = 0;
 	stats->mpctotal.ev_count = 0;
 	stats->mlfc.ev_count = 0;
 	stats->mrfc.ev_count = 0;
@@ -3042,49 +3041,6 @@ invalid:
 } /* ixgbe_media_change */
 
 /************************************************************************
- * ixgbe_set_promisc
- ************************************************************************/
-static void
-ixgbe_set_promisc(struct adapter *adapter)
-{
-	struct ifnet *ifp = adapter->ifp;
-	int	     mcnt = 0;
-	u32	     rctl;
-	struct ether_multi *enm;
-	struct ether_multistep step;
-	struct ethercom *ec = &adapter->osdep.ec;
-
-	KASSERT(mutex_owned(&adapter->core_mtx));
-	rctl = IXGBE_READ_REG(&adapter->hw, IXGBE_FCTRL);
-	rctl &= (~IXGBE_FCTRL_UPE);
-	ETHER_LOCK(ec);
-	if (ec->ec_flags & ETHER_F_ALLMULTI)
-		mcnt = MAX_NUM_MULTICAST_ADDRESSES;
-	else {
-		ETHER_FIRST_MULTI(step, ec, enm);
-		while (enm != NULL) {
-			if (mcnt == MAX_NUM_MULTICAST_ADDRESSES)
-				break;
-			mcnt++;
-			ETHER_NEXT_MULTI(step, enm);
-		}
-	}
-	if (mcnt < MAX_NUM_MULTICAST_ADDRESSES)
-		rctl &= (~IXGBE_FCTRL_MPE);
-	IXGBE_WRITE_REG(&adapter->hw, IXGBE_FCTRL, rctl);
-
-	if (ifp->if_flags & IFF_PROMISC) {
-		rctl |= (IXGBE_FCTRL_UPE | IXGBE_FCTRL_MPE);
-		IXGBE_WRITE_REG(&adapter->hw, IXGBE_FCTRL, rctl);
-	} else if (ec->ec_flags & ETHER_F_ALLMULTI) {
-		rctl |= IXGBE_FCTRL_MPE;
-		rctl &= ~IXGBE_FCTRL_UPE;
-		IXGBE_WRITE_REG(&adapter->hw, IXGBE_FCTRL, rctl);
-	}
-	ETHER_UNLOCK(ec);
-} /* ixgbe_set_promisc */
-
-/************************************************************************
  * ixgbe_msix_link - Link status change ISR (MSI/MSI-X)
  ************************************************************************/
 static int
@@ -3306,7 +3262,8 @@ ixgbe_sysctl_instance(struct adapter *adapter)
 
 	return rnode;
 err:
-	printf("%s: sysctl_createv failed, rc = %d\n", __func__, rc);
+	device_printf(adapter->dev,
+	    "%s: sysctl_createv failed, rc = %d\n", __func__, rc);
 	return NULL;
 }
 
@@ -3993,7 +3950,7 @@ ixgbe_init_locked(struct adapter *adapter)
 	ixgbe_initialize_transmit_units(adapter);
 
 	/* Setup Multicast table */
-	ixgbe_set_multi(adapter);
+	ixgbe_set_rxfilter(adapter);
 
 	/* Determine the correct mbuf pool, based on frame size */
 	if (adapter->max_frame_size <= MCLBYTES)
@@ -4382,12 +4339,12 @@ ixgbe_config_delay_values(struct adapter *adapter)
 } /* ixgbe_config_delay_values */
 
 /************************************************************************
- * ixgbe_set_multi - Multicast Update
+ * ixgbe_set_rxfilter - Multicast Update
  *
  *   Called whenever multicast address list is updated.
  ************************************************************************/
 static void
-ixgbe_set_multi(struct adapter *adapter)
+ixgbe_set_rxfilter(struct adapter *adapter)
 {
 	struct ixgbe_mc_addr	*mta;
 	struct ifnet		*ifp = adapter->ifp;
@@ -4399,7 +4356,7 @@ ixgbe_set_multi(struct adapter *adapter)
 	struct ether_multistep	step;
 
 	KASSERT(mutex_owned(&adapter->core_mtx));
-	IOCTL_DEBUGOUT("ixgbe_set_multi: begin");
+	IOCTL_DEBUGOUT("ixgbe_set_rxfilter: begin");
 
 	mta = adapter->mta;
 	bzero(mta, sizeof(*mta) * MAX_NUM_MULTICAST_ADDRESSES);
@@ -4422,30 +4379,32 @@ ixgbe_set_multi(struct adapter *adapter)
 	}
 
 	fctrl = IXGBE_READ_REG(&adapter->hw, IXGBE_FCTRL);
-	fctrl &= ~(IXGBE_FCTRL_UPE | IXGBE_FCTRL_MPE);
 	if (ifp->if_flags & IFF_PROMISC)
 		fctrl |= (IXGBE_FCTRL_UPE | IXGBE_FCTRL_MPE);
 	else if (ec->ec_flags & ETHER_F_ALLMULTI) {
 		fctrl |= IXGBE_FCTRL_MPE;
-	}
-	ETHER_UNLOCK(ec);
+		fctrl &= ~IXGBE_FCTRL_UPE;
+	} else
+		fctrl &= ~(IXGBE_FCTRL_UPE | IXGBE_FCTRL_MPE);
 
 	IXGBE_WRITE_REG(&adapter->hw, IXGBE_FCTRL, fctrl);
 
-	if (mcnt < MAX_NUM_MULTICAST_ADDRESSES) {
+	/* Update multicast filter entries only when it's not ALLMULTI */
+	if ((ec->ec_flags & ETHER_F_ALLMULTI) == 0) {
+		ETHER_UNLOCK(ec);
 		update_ptr = (u8 *)mta;
 		ixgbe_update_mc_addr_list(&adapter->hw, update_ptr, mcnt,
 		    ixgbe_mc_array_itr, TRUE);
-	}
-
-} /* ixgbe_set_multi */
+	} else
+		ETHER_UNLOCK(ec);
+} /* ixgbe_set_rxfilter */
 
 /************************************************************************
  * ixgbe_mc_array_itr
  *
  *   An iterator function needed by the multicast shared code.
  *   It feeds the shared code routine the addresses in the
- *   array of ixgbe_set_multi() one by one.
+ *   array of ixgbe_set_rxfilter() one by one.
  ************************************************************************/
 static u8 *
 ixgbe_mc_array_itr(struct ixgbe_hw *hw, u8 **update_ptr, u32 *vmdq)
@@ -6203,7 +6162,8 @@ ixgbe_ifflags_cb(struct ethercom *ec)
 {
 	struct ifnet *ifp = &ec->ec_if;
 	struct adapter *adapter = ifp->if_softc;
-	int change, rv = 0;
+	u_short change;
+	int rv = 0;
 
 	IXGBE_CORE_LOCK(adapter);
 
@@ -6215,7 +6175,7 @@ ixgbe_ifflags_cb(struct ethercom *ec)
 		rv = ENETRESET;
 		goto out;
 	} else if ((change & IFF_PROMISC) != 0)
-		ixgbe_set_promisc(adapter);
+		ixgbe_set_rxfilter(adapter);
 
 	/* Check for ec_capenable. */
 	change = ec->ec_capenable ^ adapter->ec_capenable;
@@ -6373,7 +6333,7 @@ ixgbe_ioctl(struct ifnet * ifp, u_long command, void *data)
 			 */
 			IXGBE_CORE_LOCK(adapter);
 			ixgbe_disable_intr(adapter);
-			ixgbe_set_multi(adapter);
+			ixgbe_set_rxfilter(adapter);
 			ixgbe_enable_intr(adapter);
 			IXGBE_CORE_UNLOCK(adapter);
 		}
@@ -6467,7 +6427,9 @@ ixgbe_allocate_legacy(struct adapter *adapter,
 	int		counts[PCI_INTR_TYPE_SIZE];
 	pci_intr_type_t intr_type, max_type;
 	char		intrbuf[PCI_INTRSTR_LEN];
+	char		wqname[MAXCOMLEN];
 	const char	*intrstr = NULL;
+	int defertx_error = 0, error;
 
 	/* We allocate a single interrupt resource */
 	max_type = PCI_INTR_TYPE_MSI;
@@ -6529,15 +6491,27 @@ alloc_retry:
 	 * Try allocating a fast interrupt and the associated deferred
 	 * processing contexts.
 	 */
-	if (!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX))
+	if (!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX)) {
 		txr->txr_si =
 		    softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 			ixgbe_deferred_mq_start, txr);
+
+		snprintf(wqname, sizeof(wqname), "%sdeferTx", device_xname(dev));
+		defertx_error = workqueue_create(&adapter->txr_wq, wqname,
+		    ixgbe_deferred_mq_start_work, adapter, IXGBE_WORKQUEUE_PRI,
+		    IPL_NET, IXGBE_WORKQUEUE_FLAGS);
+		adapter->txr_wq_enqueued = percpu_alloc(sizeof(u_int));
+	}
 	que->que_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 	    ixgbe_handle_que, que);
+	snprintf(wqname, sizeof(wqname), "%sTxRx", device_xname(dev));
+	error = workqueue_create(&adapter->que_wq, wqname,
+	    ixgbe_handle_que_work, adapter, IXGBE_WORKQUEUE_PRI, IPL_NET,
+	    IXGBE_WORKQUEUE_FLAGS);
 
 	if ((!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX)
-		& (txr->txr_si == NULL)) || (que->que_si == NULL)) {
+		&& ((txr->txr_si == NULL) || defertx_error != 0))
+	    || (que->que_si == NULL) || error != 0) {
 		aprint_error_dev(dev,
 		    "could not establish software interrupts\n");
 

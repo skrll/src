@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_syscalls.c,v 1.533 2019/07/06 14:37:24 maxv Exp $	*/
+/*	$NetBSD: vfs_syscalls.c,v 1.537 2019/09/26 01:34:16 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_syscalls.c,v 1.533 2019/07/06 14:37:24 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_syscalls.c,v 1.537 2019/09/26 01:34:16 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_fileassoc.h"
@@ -163,7 +163,7 @@ const char * const mountcompatnames[] = {
 	MOUNT_AFS,	/* 9 */
 };
 
-const int nmountcompatnames = __arraycount(mountcompatnames);
+const u_int nmountcompatnames = __arraycount(mountcompatnames);
 
 static int 
 fd_nameiat(struct lwp *l, int fdat, struct nameidata *ndp)
@@ -1187,7 +1187,7 @@ do_sys_pstatvfs(struct lwp *l, const char *path, int flags, struct statvfs *sb)
 
 /* ARGSUSED */
 int
-sys_statvfs1(struct lwp *l, const struct sys_statvfs1_args *uap, register_t *retval)
+sys___statvfs190(struct lwp *l, const struct sys___statvfs190_args *uap, register_t *retval)
 {
 	/* {
 		syscallarg(const char *) path;
@@ -1226,7 +1226,7 @@ do_sys_fstatvfs(struct lwp *l, int fd, int flags, struct statvfs *sb)
 
 /* ARGSUSED */
 int
-sys_fstatvfs1(struct lwp *l, const struct sys_fstatvfs1_args *uap, register_t *retval)
+sys___fstatvfs190(struct lwp *l, const struct sys___fstatvfs190_args *uap, register_t *retval)
 {
 	/* {
 		syscallarg(int) fd;
@@ -1307,7 +1307,8 @@ out:
 }
 
 int
-sys_getvfsstat(struct lwp *l, const struct sys_getvfsstat_args *uap, register_t *retval)
+sys___getvfsstat90(struct lwp *l, const struct sys___getvfsstat90_args *uap,
+    register_t *retval)
 {
 	/* {
 		syscallarg(struct statvfs *) buf;
@@ -1571,6 +1572,13 @@ do_open(lwp_t *l, struct vnode *dvp, struct pathbuf *pb, int open_flags,
 	if (open_flags & O_SEARCH) {
 		open_flags &= ~(int)O_SEARCH;
 	}
+
+	/*
+	 * Only one of the O_EXEC, O_RDONLY, O_WRONLY and O_RDWR flags
+	 * may be specified.
+	 */     
+	if ((open_flags & O_EXEC) && (open_flags & O_ACCMODE))
+		return EINVAL;
 
 	flags = FFLAGS(open_flags);
 	if ((flags & (FREAD | FWRITE)) == 0)
@@ -2132,7 +2140,7 @@ do_fhstatvfs(struct lwp *l, const void *ufhp, size_t fhsize, struct statvfs *sb,
 
 /* ARGSUSED */
 int
-sys___fhstatvfs140(struct lwp *l, const struct sys___fhstatvfs140_args *uap, register_t *retval)
+sys___fhstatvfs190(struct lwp *l, const struct sys___fhstatvfs190_args *uap, register_t *retval)
 {
 	/* {
 		syscallarg(const void *) fhp;
@@ -3922,14 +3930,22 @@ do_sys_utimes(struct lwp *l, struct vnode *vp, const char *path, int flag,
 		if ((tptr[0].tv_usec == UTIME_NOW) || 
 		    (tptr[0].tv_usec == UTIME_OMIT))
 			ts[0].tv_nsec = tptr[0].tv_usec;
-		else
+		else {
+			if (tptr[0].tv_usec < 0 || tptr[0].tv_usec >= 1000000)
+				return EINVAL;
+
 			TIMEVAL_TO_TIMESPEC(&tptr[0], &ts[0]);
+		}
 
 		if ((tptr[1].tv_usec == UTIME_NOW) || 
 		    (tptr[1].tv_usec == UTIME_OMIT))
 			ts[1].tv_nsec = tptr[1].tv_usec;
-		else
+		else {
+			if (tptr[1].tv_usec < 0 || tptr[1].tv_usec >= 1000000)
+				return EINVAL;
+
 			TIMEVAL_TO_TIMESPEC(&tptr[1], &ts[1]);
+		}
 
 		tsptr = &ts[0];	
 	}

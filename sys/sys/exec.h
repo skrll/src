@@ -1,4 +1,4 @@
-/*	$NetBSD: exec.h,v 1.154 2019/01/27 02:08:50 pgoyette Exp $	*/
+/*	$NetBSD: exec.h,v 1.156 2019/09/17 15:19:27 christos Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -188,7 +188,8 @@ struct exec_fakearg {
 
 struct exec_package {
 	const char *ep_kname;		/* kernel-side copy of file's name */
-	char *ep_resolvedname;		/* fully resolved path from namei */
+	char	*ep_resolvedname;	/* fully resolved path from namei */
+	int	ep_xfd;			/* fexecve file descriptor */
 	void	*ep_hdr;		/* file's exec header */
 	u_int	ep_hdrlen;		/* length of ep_hdr */
 	u_int	ep_hdrvalid;		/* bytes of ep_hdr that are valid */
@@ -268,7 +269,7 @@ void	setregs			(struct lwp *, struct exec_package *, vaddr_t);
 int	check_veriexec		(struct lwp *, struct vnode *,
 				     struct exec_package *, int);
 int	check_exec		(struct lwp *, struct exec_package *,
-				     struct pathbuf *);
+				     struct pathbuf *, char **);
 int	exec_init		(int);
 int	exec_read_from		(struct lwp *, struct vnode *, u_long off,
 				    void *, size_t);
@@ -301,14 +302,14 @@ void	new_vmcmd(struct exec_vmcmd_set *,
 	new_vmcmd(evsp,lwp,len,addr,vp,offset,prot,flags)
 
 typedef	int (*execve_fetch_element_t)(char * const *, size_t, char **);
-int	execve1(struct lwp *, const char *, char * const *, char * const *,
-    execve_fetch_element_t);
+int	execve1(struct lwp *, bool, const char *, int, char * const *,
+    char * const *, execve_fetch_element_t);
 
 struct posix_spawn_file_actions;
 struct posix_spawnattr;
 int	check_posix_spawn	(struct lwp *);
 void	posix_spawn_fa_free(struct posix_spawn_file_actions *, size_t);
-int	do_posix_spawn(struct lwp *, pid_t *, bool*, const char *,
+int	do_posix_spawn(struct lwp *, pid_t *, bool *, const char *,
     struct posix_spawn_file_actions *, struct posix_spawnattr *,
     char *const *, char *const *, execve_fetch_element_t);
 int      exec_makepathbuf(struct lwp *, const char *, enum uio_seg,
