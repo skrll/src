@@ -1,4 +1,4 @@
-/*	$NetBSD: cdefs.h,v 1.143 2019/09/15 15:18:45 kamil Exp $	*/
+/*	$NetBSD: cdefs.h,v 1.146 2019/09/22 23:23:12 kamil Exp $	*/
 
 /* * Copyright (c) 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -172,8 +172,11 @@
 #define	__CTASSERT99(x, a, b)	__CTASSERT0(x, __CONCAT(__ctassert,a), \
 					       __CONCAT(_,b))
 #endif
-#define	__CTASSERT0(x, y, z)	__CTASSERT1(x, y, z) 
-#define	__CTASSERT1(x, y, z)	typedef char y ## z[/*CONSTCOND*/(x) ? 1 : -1] __unused
+#define	__CTASSERT0(x, y, z)	__CTASSERT1(x, y, z)
+#define	__CTASSERT1(x, y, z)	\
+	typedef struct { \
+		unsigned int y ## z : /*CONSTCOND*/(x) ? 1 : -1; \
+	} y ## z ## _struct __unused
 
 /*
  * The following macro is used to remove const cast-away warnings
@@ -331,10 +334,19 @@
 #else
 #define	__noasan	/* nothing */
 #endif
+
+#if defined(__clang__)
+#define __noubsan	__attribute__((no_sanitize("undefined")))
+#elif __GNUC_PREREQ__(4, 9)
+#define __noubsan	__attribute__((no_sanitize_undefined))
+#else
+#define __noubsan	/* nothing */
+#endif
 #endif
 
 #if defined(__COVERITY__) ||						\
-    __has_feature(address_sanitizer) || defined(__SANITIZE_ADDRESS__)
+    __has_feature(address_sanitizer) || defined(__SANITIZE_ADDRESS__) ||\
+    __has_feature(leak_sanitizer) || defined(__SANITIZE_LEAK__)
 #define	__NO_LEAKS
 #endif
 

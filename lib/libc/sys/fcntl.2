@@ -1,4 +1,4 @@
-.\"	$NetBSD: fcntl.2,v 1.42 2019/09/15 16:25:58 christos Exp $
+.\"	$NetBSD: fcntl.2,v 1.45 2019/09/27 07:20:07 wiz Exp $
 .\"
 .\" Copyright (c) 1983, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -29,7 +29,7 @@
 .\"
 .\"     @(#)fcntl.2	8.2 (Berkeley) 1/12/94
 .\"
-.Dd September 15, 2019
+.Dd September 26, 2019
 .Dt FCNTL 2
 .Os
 .Sh NAME
@@ -155,9 +155,9 @@ Set or clear the
 .Dv O_NOSIGPIPE
 in the file descriptor.
 .It Dv F_GETPATH
-Place a pathname corresponding to 
+Place a pathname corresponding to
 .Fa fd
-in the buffer pointed by
+in the buffer pointed to by
 .Fa arg .
 .Fa arg
 should be pointing to a buffer of at least
@@ -325,14 +325,14 @@ request fails or blocks respectively when another process has existing
 locks on bytes in the specified region and the type of any of those
 locks conflicts with the type specified in the request.
 .Sh NOTES
-Tbe
+The
 .Dv F_GETPATH
 functionality is implemented using the reverse
 .Xr namei 9
 cache.
-The implications of this are: 
+The implications of this are:
 .Bl -bullet -compact
-.It 
+.It
 For hard links where the file descriptor can resolve to multiple pathnames,
 the first entry found in the cache is returned.
 .It
@@ -420,6 +420,12 @@ error.
 .Fn fcntl
 will fail if:
 .Bl -tag -width Er
+.It Bq Er EACCES
+The argument
+.Fa cmd
+is
+.Dv F_GETPATH
+and read or search permission was denied for a component of the pathname.
 .It Bq Er EAGAIN
 The argument
 .Fa arg
@@ -522,6 +528,12 @@ is
 .Dv F_DUPFD
 and system-wide the maximum allowed number of file descriptors are
 currently open.
+.It Bq Er ENOENT
+The argument
+.Fa cmd
+is
+.Dv F_GETPATH
+and a component of the pathname no longer exists.
 .It Bq Er ENOLCK
 The argument
 .Fa cmd
@@ -531,6 +543,19 @@ or
 .Dv F_SETLKW ,
 and satisfying the lock or unlock request would result in the
 number of locked regions in the system exceeding a system-imposed limit.
+.It Bq Er ENOMEM
+The argument
+.Fa cmd
+is
+.Dv F_GETPATH
+and insufficient memory is available.
+.It Bq Er ERANGE
+The argument
+.Fa cmd
+is
+.Dv F_GETPATH
+and the resulting path would be greater than
+.Dv MAXPATHLEN .
 .It Bq Er ESRCH
 .Fa cmd
 is
