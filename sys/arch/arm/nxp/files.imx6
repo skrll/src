@@ -84,3 +84,4 @@ device	imxspi: spibus
 attach	imxspi at fdt with imxspi_fdt
 file	arch/arm/imx/imxspi.c			imxspi
 file	arch/arm/nxp/imx6_spi.c			imxspi_fdt
+defparam opt_imxspi.h				IMXSPI_DEBUG
