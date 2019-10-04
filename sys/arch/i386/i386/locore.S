@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.168 2019/05/19 08:17:02 maxv Exp $	*/
+/*	$NetBSD: locore.S,v 1.171 2019/10/04 15:28:00 maxv Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -128,7 +128,7 @@
  */
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.168 2019/05/19 08:17:02 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.171 2019/10/04 15:28:00 maxv Exp $");
 
 #include "opt_copy_symtab.h"
 #include "opt_ddb.h"
@@ -1137,15 +1137,12 @@ skip_save:
 	call	_C_LABEL(x86_dbregs_switch)
 	addl	$8,%esp
 
+	/* Switch the FPU. */
 	pushl	%edx
-	movb	_C_LABEL(x86_fpu_eager),%dl
-	testb	%dl,%dl
-	jz	.Lno_eagerfpu
 	pushl	%edi
 	pushl	%esi
-	call	_C_LABEL(fpu_eagerswitch)
+	call	_C_LABEL(fpu_switch)
 	addl	$8,%esp
-.Lno_eagerfpu:
 	popl	%edx
 
 	/* Don't bother with the rest if switching to a system process. */
@@ -1267,6 +1264,7 @@ IDTVEC(syscall)
 	pushl	$T_ASTFLT	/* trap # for doing ASTs */
 	INTRENTRY
 	STI(%eax)
+
 #ifdef DIAGNOSTIC
 	movl	CPUVAR(ILEVEL),%ebx
 	testl	%ebx,%ebx
@@ -1279,6 +1277,7 @@ IDTVEC(syscall)
 #endif
 1:
 #endif /* DIAGNOSTIC */
+
 	addl	$1,CPUVAR(NSYSCALL)	/* count it atomically */
 	adcl	$0,CPUVAR(NSYSCALL)+4	/* count it atomically */
 	movl	CPUVAR(CURLWP),%edi
@@ -1293,6 +1292,7 @@ IDTVEC(syscall)
 	movl	L_MD_ASTPENDING(%edi), %eax
 	orl	CPUVAR(WANT_PMAPLOAD), %eax
 	jnz	9f
+
 #ifdef XEN
 	STIC(%eax)
 	jz	14f
@@ -1316,12 +1316,15 @@ IDTVEC(syscall)
 	jmp	.Lsyscall_checkast
 14:
 #endif /* XEN */
-#ifndef DIAGNOSTIC
-	INTRFASTEXIT
-#else /* DIAGNOSTIC */
+
+#ifdef DIAGNOSTIC
 	cmpl	$IPL_NONE,CPUVAR(ILEVEL)
 	jne	3f
+#endif
+
 	INTRFASTEXIT
+
+#ifdef DIAGNOSTIC
 3:	STI(%eax)
 	pushl	$4f
 	call	_C_LABEL(panic)
@@ -1332,7 +1335,8 @@ IDTVEC(syscall)
 	jmp	.Lsyscall_checkast
 4:	.asciz	"SPL NOT LOWERED ON SYSCALL EXIT\n"
 5:	.asciz	"SPL NOT ZERO ON SYSCALL ENTRY\n"
-#endif /* DIAGNOSTIC */
+#endif
+
 9:
 	cmpl	$0, CPUVAR(WANT_PMAPLOAD)
 	jz	10f
