@@ -1,4 +1,4 @@
-/*	$NetBSD: utmpentry.c,v 1.18 2015/11/21 15:01:43 christos Exp $	*/
+/*	$NetBSD: utmpentry.c,v 1.20 2019/10/04 11:43:07 mrg Exp $	*/
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: utmpentry.c,v 1.18 2015/11/21 15:01:43 christos Exp $");
+__RCSID("$NetBSD: utmpentry.c,v 1.20 2019/10/04 11:43:07 mrg Exp $");
 #endif
 
 #include <sys/stat.h>

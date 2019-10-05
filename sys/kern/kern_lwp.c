@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_lwp.c,v 1.202 2019/06/04 11:54:03 kamil Exp $	*/
+/*	$NetBSD: kern_lwp.c,v 1.204 2019/10/03 22:48:44 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2006, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -211,7 +211,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_lwp.c,v 1.202 2019/06/04 11:54:03 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_lwp.c,v 1.204 2019/10/03 22:48:44 kamil Exp $");
 
 #include "opt_ddb.h"
 #include "opt_lockdebug.h"
@@ -239,6 +239,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_lwp.c,v 1.202 2019/06/04 11:54:03 kamil Exp $")
 #include <sys/fstrans.h>
 #include <sys/dtrace_bsd.h>
 #include <sys/sdt.h>
+#include <sys/ptrace.h>
 #include <sys/xcall.h>
 #include <sys/uidinfo.h>
 #include <sys/sysctl.h>
@@ -407,6 +408,11 @@ lwp_suspend(struct lwp *curl, struct lwp *t)
 		return (EDEADLK);
 	}
 
+	if ((t->l_flag & LW_DBGSUSPEND) != 0) {
+		lwp_unlock(t);
+		return 0;
+	}
+
 	error = 0;
 
 	switch (t->l_stat) {
@@ -471,7 +477,7 @@ lwp_continue(struct lwp *l)
 
 	l->l_flag &= ~LW_WSUSPEND;
 
-	if (l->l_stat != LSSUSPENDED) {
+	if (l->l_stat != LSSUSPENDED || (l->l_flag & LW_DBGSUSPEND) != 0) {
 		lwp_unlock(l);
 		return;
 	}
@@ -495,6 +501,8 @@ lwp_unstop(struct lwp *l)
 	KASSERT(mutex_owned(p->p_lock));
 
 	lwp_lock(l);
+
+	KASSERT((l->l_flag & LW_DBGSUSPEND) == 0);
 
 	/* If not stopped, then just bail out. */
 	if (l->l_stat != LSSTOP) {
@@ -1091,8 +1099,7 @@ lwp_exit(struct lwp *l)
 			 * about a terminating LWP as it would deadlock.
 			 */
 		} else {
-			p->p_lwp_exited = l->l_lid;
-			eventswitch(TRAP_LWP);
+			eventswitch(TRAP_LWP, PTRACE_LWP_EXIT, l->l_lid);
 			mutex_enter(proc_lock);
 		}
 	}

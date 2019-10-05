@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ptrace_wait.c,v 1.131 2019/07/01 02:04:37 kamil Exp $	*/
+/*	$NetBSD: t_ptrace_wait.c,v 1.134 2019/10/02 23:15:09 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2016, 2017, 2018, 2019 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: t_ptrace_wait.c,v 1.131 2019/07/01 02:04:37 kamil Exp $");
+__RCSID("$NetBSD: t_ptrace_wait.c,v 1.134 2019/10/02 23:15:09 kamil Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -41,6 +41,7 @@ __RCSID("$NetBSD: t_ptrace_wait.c,v 1.131 2019/07/01 02:04:37 kamil Exp $");
 #include <sys/uio.h>
 #include <sys/wait.h>
 #include <machine/reg.h>
+#include <assert.h>
 #include <elf.h>
 #include <err.h>
 #include <errno.h>
@@ -72,6 +73,20 @@ __RCSID("$NetBSD: t_ptrace_wait.c,v 1.131 2019/07/01 02:04:37 kamil Exp $");
 #include <gelf.h>
 
 #include <atf-c.h>
+
+/* Assumptions in the kernel code that must be kept. */
+static_assert(sizeof(((struct ptrace_state *)0)->pe_report_event) ==
+    sizeof(((siginfo_t *)0)->si_pe_report_event),
+    "pe_report_event and si_pe_report_event must be of the same size");
+static_assert(sizeof(((struct ptrace_state *)0)->pe_other_pid) ==
+    sizeof(((siginfo_t *)0)->si_pe_other_pid),
+    "pe_other_pid and si_pe_other_pid must be of the same size");
+static_assert(sizeof(((struct ptrace_state *)0)->pe_lwp) ==
+    sizeof(((siginfo_t *)0)->si_pe_lwp),
+    "pe_lwp and si_pe_lwp must be of the same size");
+static_assert(sizeof(((struct ptrace_state *)0)->pe_other_pid) ==
+    sizeof(((struct ptrace_state *)0)->pe_lwp),
+    "pe_other_pid and pe_lwp must be of the same size");
 
 #include "h_macros.h"
 
@@ -125,7 +140,10 @@ traceme_raise(int sigval)
 	int status;
 #endif
 
+	ptrace_state_t state, zero_state;
+	const int slen = sizeof(state);
 	struct ptrace_siginfo info;
+	memset(&zero_state, 0, sizeof(zero_state));
 	memset(&info, 0, sizeof(info));
 
 	DPRINTF("Before forking process PID=%d\n", getpid());
@@ -155,6 +173,9 @@ traceme_raise(int sigval)
 	switch (sigval) {
 	case SIGKILL:
 		validate_status_signaled(status, sigval, 0);
+		SYSCALL_REQUIRE(
+		    ptrace(PT_GET_PROCESS_STATE, child, &state, slen) == -1);
+
 		break;
 	default:
 		validate_status_stopped(status, sigval);
@@ -172,6 +193,11 @@ traceme_raise(int sigval)
 
 		ATF_REQUIRE_EQ(info.psi_siginfo.si_signo, sigval);
 		ATF_REQUIRE_EQ(info.psi_siginfo.si_code, SI_LWP);
+
+		DPRINTF("Assert that PT_GET_PROCESS_STATE returns non-error");
+		SYSCALL_REQUIRE(
+		    ptrace(PT_GET_PROCESS_STATE, child, &state, slen) != -1);
+		ATF_REQUIRE(memcmp(&state, &zero_state, slen) == 0);
 
 		DPRINTF("Before resuming the child process where it left off "
 		    "and without signal to be sent\n");
@@ -6328,133 +6354,6 @@ lwp_main_stop(void *arg)
 	_lwp_exit();
 }
 
-ATF_TC(suspend1);
-ATF_TC_HEAD(suspend1, tc)
-{
-	atf_tc_set_md_var(tc, "descr",
-	    "Verify that a thread can be suspended by a debugger and later "
-	    "resumed by a tracee");
-}
-
-ATF_TC_BODY(suspend1, tc)
-{
-	const int exitval = 5;
-	const int sigval = SIGSTOP;
-	pid_t child, wpid;
-#if defined(TWAIT_HAVE_STATUS)
-	int status;
-#endif
-	ucontext_t uc;
-	lwpid_t lid;
-	static const size_t ssize = 16*1024;
-	void *stack;
-	struct ptrace_lwpinfo pl;
-	struct ptrace_siginfo psi;
-	volatile int go = 0;
-
-	DPRINTF("Before forking process PID=%d\n", getpid());
-	SYSCALL_REQUIRE((child = fork()) != -1);
-	if (child == 0) {
-		DPRINTF("Before calling PT_TRACE_ME from child %d\n", getpid());
-		FORKEE_ASSERT(ptrace(PT_TRACE_ME, 0, NULL, 0) != -1);
-
-		DPRINTF("Before raising %s from child\n", strsignal(sigval));
-		FORKEE_ASSERT(raise(sigval) == 0);
-
-		DPRINTF("Before allocating memory for stack in child\n");
-		FORKEE_ASSERT((stack = malloc(ssize)) != NULL);
-
-		DPRINTF("Before making context for new lwp in child\n");
-		_lwp_makecontext(&uc, lwp_main_stop, NULL, NULL, stack, ssize);
-
-		DPRINTF("Before creating new in child\n");
-		FORKEE_ASSERT(_lwp_create(&uc, 0, &lid) == 0);
-
-		while (go == 0)
-			continue;
-
-		raise(SIGINT);
-
-		FORKEE_ASSERT(_lwp_continue(lid) == 0);
-
-		DPRINTF("Before waiting for lwp %d to exit\n", lid);
-		FORKEE_ASSERT(_lwp_wait(lid, NULL) == 0);
-
-		DPRINTF("Before verifying that reported %d and running lid %d "
-		    "are the same\n", lid, the_lwp_id);
-		FORKEE_ASSERT_EQ(lid, the_lwp_id);
-
-		DPRINTF("Before exiting of the child process\n");
-		_exit(exitval);
-	}
-	DPRINTF("Parent process PID=%d, child's PID=%d\n", getpid(), child);
-
-	DPRINTF("Before calling %s() for the child\n", TWAIT_FNAME);
-	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0), child);
-
-	validate_status_stopped(status, sigval);
-
-	DPRINTF("Before resuming the child process where it left off and "
-	    "without signal to be sent\n");
-	SYSCALL_REQUIRE(ptrace(PT_CONTINUE, child, (void *)1, 0) != -1);
-
-	DPRINTF("Before calling %s() for the child - expected stopped "
-	    "SIGTRAP\n", TWAIT_FNAME);
-	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0), child);
-
-	validate_status_stopped(status, SIGTRAP);
-
-	DPRINTF("Before reading siginfo and lwpid_t\n");
-	SYSCALL_REQUIRE(ptrace(PT_GET_SIGINFO, child, &psi, sizeof(psi)) != -1);
-
-	DPRINTF("Before suspending LWP %d\n", psi.psi_lwpid);
-	SYSCALL_REQUIRE(ptrace(PT_SUSPEND, child, NULL, psi.psi_lwpid) != -1);
-
-        DPRINTF("Write new go to tracee (PID=%d) from tracer (PID=%d)\n",
-	    child, getpid());
-	SYSCALL_REQUIRE(ptrace(PT_WRITE_D, child, __UNVOLATILE(&go), 1) != -1);
-
-	DPRINTF("Before resuming the child process where it left off and "
-	    "without signal to be sent\n");
-	SYSCALL_REQUIRE(ptrace(PT_CONTINUE, child, (void *)1, 0) != -1);
-
-	DPRINTF("Before calling %s() for the child - expected stopped "
-	    "SIGINT\n", TWAIT_FNAME);
-	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0), child);
-
-	validate_status_stopped(status, SIGINT);
-
-	pl.pl_lwpid = 0;
-
-	SYSCALL_REQUIRE(ptrace(PT_LWPINFO, child, &pl, sizeof(pl)) != -1);
-	while (pl.pl_lwpid != 0) {
-
-		SYSCALL_REQUIRE(ptrace(PT_LWPINFO, child, &pl, sizeof(pl)) != -1);
-		switch (pl.pl_lwpid) {
-		case 1:
-			ATF_REQUIRE_EQ(pl.pl_event, PL_EVENT_SIGNAL);
-			break;
-		case 2:
-			ATF_REQUIRE_EQ(pl.pl_event, PL_EVENT_SUSPENDED);
-			break;
-		}
-	}
-
-	DPRINTF("Before resuming the child process where it left off and "
-	    "without signal to be sent\n");
-	SYSCALL_REQUIRE(ptrace(PT_CONTINUE, child, (void *)1, 0) != -1);
-
-	DPRINTF("Before calling %s() for the child - expected exited\n",
-	    TWAIT_FNAME);
-	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0), child);
-
-	validate_status_exited(status, exitval);
-
-	DPRINTF("Before calling %s() for the child - expected no process\n",
-	    TWAIT_FNAME);
-	TWAIT_REQUIRE_FAILURE(ECHILD, wpid = TWAIT_GENERIC(child, &status, 0));
-}
-
 ATF_TC(suspend2);
 ATF_TC_HEAD(suspend2, tc)
 {
@@ -8216,7 +8115,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, signal9);
 	ATF_TP_ADD_TC(tp, signal10);
 
-	ATF_TP_ADD_TC(tp, suspend1);
 	ATF_TP_ADD_TC(tp, suspend2);
 
 	ATF_TP_ADD_TC(tp, resume1);
