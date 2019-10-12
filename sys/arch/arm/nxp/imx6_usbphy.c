@@ -1,4 +1,5 @@
 /*	$NetBSD: imx6_usbphy.c,v 1.1 2019/07/24 13:12:33 hkenken Exp $	*/
+
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
  * Written by Hashimoto Kenichi for Genetec Corporation.
@@ -37,8 +38,6 @@ __KERNEL_RCSID(1, "$NetBSD: imx6_usbphy.c,v 1.1 2019/07/24 13:12:33 hkenken Exp 
 #include <sys/bus.h>
 #include <sys/device.h>
 
-#include <arm/nxp/imx6var.h>
-#include <arm/nxp/imx6_reg.h>
 #include <arm/nxp/imx6_usbphyreg.h>
 
 #include <dev/fdt/fdtvar.h>

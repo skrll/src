@@ -36,8 +36,6 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_com.c,v 1.1 2019/07/24 13:12:33 hkenken Exp $")
 
 #include <dev/fdt/fdtvar.h>
 
-#include <arm/nxp/imx6_reg.h>
-#include <arm/nxp/imx6var.h>
 #include <arm/imx/imxuartreg.h>
 #include <arm/imx/imxuartvar.h>
 

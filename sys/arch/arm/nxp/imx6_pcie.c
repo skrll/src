@@ -59,8 +59,6 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_pcie.c,v 1.4 2019/09/02 01:28:41 hkenken Exp $"
 #include <arm/imx/imxpcievar.h>
 #include <arm/imx/imxgpioreg.h>
 #include <arm/imx/imxgpiovar.h>
-#include <arm/nxp/imx6var.h>
-#include <arm/nxp/imx6_reg.h>
 #include <arm/nxp/imx6_iomuxreg.h>
 #include <arm/nxp/imx6_ccmreg.h>
 #include <arm/nxp/imx6_ccmvar.h>

@@ -1,4 +1,5 @@
 /*	$NetBSD: imx6_platform.c,v 1.6 2019/08/19 10:44:35 hkenken Exp $	*/
+
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
  * Written by Hashimoto Kenichi for Genetec Corporation.

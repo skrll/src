@@ -47,8 +47,6 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_usb.c,v 1.2 2019/08/19 03:45:51 hkenken Exp $")
 #include <dev/usb/ehcireg.h>
 #include <dev/usb/ehcivar.h>
 
-#include <arm/nxp/imx6var.h>
-#include <arm/nxp/imx6_reg.h>
 #include <arm/nxp/imx6_usbreg.h>
 #include <arm/imx/imxusbvar.h>
 

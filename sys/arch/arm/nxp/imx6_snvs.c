@@ -33,16 +33,12 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: imx6_snvs.c,v 1.2 2016/05/17 06:44:45 ryo Exp $");
 
-#include "opt_imx.h"
-
 #include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/param.h>
 
 #include <dev/fdt/fdtvar.h>
 
-#include <arm/nxp/imx6var.h>
-#include <arm/nxp/imx6_reg.h>
 #include <arm/imx/imxsnvsvar.h>
 
 int

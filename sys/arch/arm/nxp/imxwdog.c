@@ -33,11 +33,8 @@ __KERNEL_RCSID(0, "$NetBSD: imxwdog.c,v 1.3 2014/09/25 05:05:28 ryo Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
-//#include <sys/cpu.h>
 #include <sys/device.h>
 #include <sys/wdog.h>
-
-//#include <prop/proplib.h>
 
 #include <dev/sysmon/sysmonvar.h>
 

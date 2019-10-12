@@ -1,4 +1,5 @@
 /*	$NetBSD: imx6_iomux.c,v 1.2 2019/10/02 01:34:09 hkenken Exp $	*/
+
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
  * Written by Hashimoto Kenichi for Genetec Corporation.
@@ -24,6 +25,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: imx6_iomux.c,v 1.2 2019/10/02 01:34:09 hkenken Exp $");
 
@@ -33,8 +35,6 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_iomux.c,v 1.2 2019/10/02 01:34:09 hkenken Exp $
 #include <sys/bus.h>
 #include <sys/device.h>
 
-#include <arm/nxp/imx6var.h>
-#include <arm/nxp/imx6_reg.h>
 #include <arm/nxp/imx6_iomuxreg.h>
 
 #include <dev/fdt/fdtvar.h>

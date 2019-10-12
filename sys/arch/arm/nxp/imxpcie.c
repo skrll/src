@@ -62,7 +62,6 @@ __KERNEL_RCSID(0, "$NetBSD: imxpcie.c,v 1.2 2019/09/02 01:28:41 hkenken Exp $");
 
 #include <arm/imx/imxpciereg.h>
 #include <arm/imx/imxpcievar.h>
-#include <arm/nxp/imx6var.h>
 #include <arm/nxp/imx6_iomuxreg.h>
 
 #define PCIE_CONF_LOCK(s)	(s) = disable_interrupts(I32_bit)
