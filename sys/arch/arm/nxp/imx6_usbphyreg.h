@@ -26,8 +26,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _ARM_IMX_IMX6_USBPHYREG_H
-#define _ARM_IMX_IMX6_USBPHYREG_H
+#ifndef _ARM_NXP_IMX6_USBPHYREG_H
+#define _ARM_NXP_IMX6_USBPHYREG_H
 
 #include <sys/cdefs.h>
 
@@ -61,4 +61,4 @@
 #define USBPHY_DEBUG1			0x00000070
 #define USBPHY_VERSION			0x00000080
 
-#endif /* _ARM_IMX_IMX6_USBPHYREG_H */
+#endif /* _ARM_NXP_IMX6_USBPHYREG_H */

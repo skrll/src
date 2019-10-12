@@ -26,8 +26,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _ARM_IMX_IMX6_CCMREG_H
-#define _ARM_IMX_IMX6_CCMREG_H
+#ifndef _ARM_NXP_IMX6_CCMREG_H
+#define _ARM_NXP_IMX6_CCMREG_H
 
 #include <sys/cdefs.h>
 
@@ -505,4 +505,4 @@
 #define  USB_ANALOG_DIGPROG_MAJOR		__BITS(23, 8)
 #define  USB_ANALOG_DIGPROG_MINOR		__BITS(7, 0)
 
-#endif /* _ARM_IMX_IMX6_CCMREG_H */
+#endif /* _ARM_NXP_IMX6_CCMREG_H */

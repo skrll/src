@@ -26,9 +26,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _ARM_IMX_IMX6_OCOTPVAR_H_
-#define _ARM_IMX_IMX6_OCOTPVAR_H_
+#ifndef _ARM_NXP_IMX6_OCOTPVAR_H_
+#define _ARM_NXP_IMX6_OCOTPVAR_H_
 
 uint32_t imxocotp_read(uint32_t);
 
-#endif /* _ARM_IMX_IMX6_OCOTPVAR_H_ */
+#endif /* _ARM_NXP_IMX6_OCOTPVAR_H_ */

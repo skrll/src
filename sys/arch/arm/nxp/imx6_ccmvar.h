@@ -25,8 +25,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef	_ARM_IMX_IMX6_CCMVAR_H_
-#define	_ARM_IMX_IMX6_CCMVAR_H_
+#ifndef	_ARM_NXP_IMX6_CCMVAR_H_
+#define	_ARM_NXP_IMX6_CCMVAR_H_
 
 #include <dev/clk/clk.h>
 #include <dev/clk/clk_backend.h>
@@ -566,4 +566,4 @@ struct imx6_clk {
 	}							\
 }
 
-#endif	/* _ARM_IMX_IMX6_CCMVAR_H_ */
+#endif	/* _ARM_NXP_IMX6_CCMVAR_H_ */

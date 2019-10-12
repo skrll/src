@@ -26,8 +26,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _ARM_IMX_IMX6_IOMUXREG_H_
-#define _ARM_IMX_IMX6_IOMUXREG_H_
+#ifndef _ARM_NXP_IMX6_IOMUXREG_H_
+#define _ARM_NXP_IMX6_IOMUXREG_H_
 
 #define IOMUX_GPR0					0x00000000
 #define IOMUX_GPR1					0x00000004
@@ -2298,4 +2298,4 @@
 	IOMUX_PIN(prefix##_IOMUXC_SW_MUX_CTL_PAD_##name,	\
 	    prefix##_IOMUXC_SW_PAD_CTL_PAD_##name)
 
-#endif /* _ARM_IMX_IMX6_IOMUXREG_H_ */
+#endif /* _ARM_NXP_IMX6_IOMUXREG_H_ */

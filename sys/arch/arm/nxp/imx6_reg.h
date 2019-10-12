@@ -1,4 +1,5 @@
 /*	$NetBSD: imx6_reg.h,v 1.10 2019/07/24 11:58:00 hkenken Exp $	*/
+
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -28,8 +29,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _ARM_IMX_IMX6_REG_H_
-#define _ARM_IMX_IMX6_REG_H_
+#ifndef _ARM_NXP_IMX6_REG_H_
+#define _ARM_NXP_IMX6_REG_H_
 
 #define	IMX6_IOREG_PBASE	IMX6_AIPS1_BASE
 #define	IMX6_IOREG_SIZE		(IMX6_AIPS1_SIZE + IMX6_AIPS2_SIZE)
@@ -222,4 +223,4 @@
 #define	AIPS2_DAP_BASE		0x00040000
 #define	AIPS2_CAAM_BASE		0x00000000
 
-#endif /* _ARM_IMX_IMX6_REG_H_ */
+#endif /* _ARM_NXP_IMX6_REG_H_ */

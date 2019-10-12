@@ -26,8 +26,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _ARM_IMX_IMX6VAR_H
-#define _ARM_IMX_IMX6VAR_H
+#ifndef _ARM_NXP_IMX6VAR_H
+#define _ARM_NXP_IMX6VAR_H
 
 #include <sys/cdefs.h>
 
@@ -81,4 +81,4 @@ uint32_t imx6_chip_id(void);
 #define IMX6_CHIPID_MAJOR(v)		((v) & CHIPID_MAJOR_MASK)
 #define IMX6_CHIPID_MINOR(v)		((v) & CHIPID_MINOR_MASK)
 
-#endif /* _ARM_IMX_IMX6VAR_H */
+#endif /* _ARM_NXP_IMX6VAR_H */
