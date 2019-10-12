@@ -1,4 +1,5 @@
 /*	$NetBSD: if_enet_imx.c,v 1.3 2019/08/19 03:45:51 hkenken Exp $	*/
+
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
  * Written by Hashimoto Kenichi for Genetec Corporation.
@@ -24,6 +25,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: if_enet_imx.c,v 1.3 2019/08/19 03:45:51 hkenken Exp $");
 

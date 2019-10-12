@@ -25,6 +25,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(1, "$NetBSD: imx6_usbphy.c,v 1.1 2019/07/24 13:12:33 hkenken Exp $");
 

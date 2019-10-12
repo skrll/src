@@ -25,6 +25,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: imx6_platform.c,v 1.6 2019/08/19 10:44:35 hkenken Exp $");
 

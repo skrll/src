@@ -1,4 +1,5 @@
 /*	$NetBSD: imx6_gpc.c,v 1.1 2019/07/24 13:12:33 hkenken Exp $	*/
+
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
  * Written by Hashimoto Kenichi for Genetec Corporation.
@@ -24,6 +25,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: imx6_gpc.c,v 1.1 2019/07/24 13:12:33 hkenken Exp $");
 
