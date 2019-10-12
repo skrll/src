@@ -81,7 +81,7 @@ imx_platform_devmap(void)
 		DEVMAP_ENTRY(KERNEL_IO_IOREG_VBASE, IMX6_IOREG_PBASE, IMX6_IOREG_SIZE),
 		DEVMAP_ENTRY(KERNEL_IO_ARMCORE_VBASE, IMX6_ARMCORE_PBASE, IMX6_ARMCORE_SIZE),
 		DEVMAP_ENTRY_END
-};
+	};
 
 	return devmap;
 }
@@ -159,7 +159,6 @@ imx_platform_mpstart(void)
 	if (bus_space_map(bst, IMX6_AIPS1_BASE + AIPS1_SRC_BASE, AIPS1_SRC_SIZE, 0, &bsh) != 0)
 		panic("couldn't map SRC");
 
-
 	uint32_t srcctl = bus_space_read_4(bst, bsh, SRC_SCR);
 	const paddr_t mpstart = KERN_VTOPHYS((vaddr_t)cpu_mpstart);
 
@@ -199,4 +198,3 @@ const struct arm_platform imx6_platform = {
 ARM_PLATFORM(imx6dl, "fsl,imx6dl", &imx6_platform);
 ARM_PLATFORM(imx6q, "fsl,imx6q", &imx6_platform);
 ARM_PLATFORM(imx6qp, "fsl,imx6qp", &imx6_platform);
-
