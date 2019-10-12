@@ -110,13 +110,13 @@ file   arch/arm/imx/imxusb.c			imxehci
 attach	sdhc at axi with sdhc_axi
 file	arch/arm/imx/imx51_esdhc.c		sdhc_axi
 
-# iic Controler
+# iic Controller
 device	imxi2c: motoi2c, i2cbus, i2cexec
 attach	imxi2c at axi
 file	arch/arm/imx/imxi2c.c		imxi2c
 file	arch/arm/imx/imx51_i2c.c	imxi2c
 
-# SPI bus controlloer
+# SPI bus controller
 # attach of this driver need to be specified in paltform configuration
 # use flags to module version
 device  imxspi : spibus
@@ -136,7 +136,7 @@ defparam opt_imxspi.h				IMXSPI_DEBUG
 # device	imxi2s {} : bus_dma_generic
 # file	arch/arm/imx/imx51_i2s.c		imxi2s needs-flag
 
-# PWM controlloer
+# PWM controller
 device	imxpwm
 file	arch/arm/imx/imxpwm.c			imxpwm
 file	arch/arm/imx/imx51_pwm.c		imxpwm

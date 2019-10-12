@@ -60,7 +60,7 @@ device	imxiomux
 attach	imxiomux at axi
 file	arch/arm/imx/imx7_iomux.c		imxiomux
 
-# iMX iic Controler
+# iMX iic Controller
 device	imxi2c: motoi2c, i2cbus, i2cexec
 attach	imxi2c at axi
 file	arch/arm/imx/imxi2c.c			imxi2c
