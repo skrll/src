@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_ahcisatareg.h,v 1.1 2014/09/25 05:05:28 ryo Exp $	*/
+/*	$NetBSD: imx_ahcisatareg.h,v 1.1 2014/09/25 05:05:28 ryo Exp $	*/
 
 /*
  * Copyright (c) 2014 Ryo Shimizu <ryo@nerv.org>
@@ -26,8 +26,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _ARM_NXP_IMX6_AHCISATAREG_H_
-#define _ARM_NXP_IMX6_AHCISATAREG_H_
+#ifndef _ARM_NXP_IMX_AHCISATAREG_H_
+#define _ARM_NXP_IMX_AHCISATAREG_H_
 
 #define SATA_CAP				0x00000000
 #define  SATA_CAP_SSS				__BIT(27)
@@ -73,4 +73,4 @@
 #define SATA_PHY_LANE0_RX_OVRD_RX_EN		__BIT(2)
 #define SATA_PHY_LANE0_RX_OVRD_RX_PLL_PWRON	__BIT(1)
 
-#endif /* _ARM_NXP_IMX6_AHCISATAREG_H_ */
+#endif /* _ARM_NXP_IMX_AHCISATAREG_H_ */

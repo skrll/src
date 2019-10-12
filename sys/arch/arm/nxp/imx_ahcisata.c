@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_ahcisata.c,v 1.3 2019/10/04 06:49:40 hkenken Exp $	*/
+/*	$NetBSD: imx_ahcisata.c,v 1.3 2019/10/04 06:49:40 hkenken Exp $	*/
 
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_ahcisata.c,v 1.3 2019/10/04 06:49:40 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx_ahcisata.c,v 1.3 2019/10/04 06:49:40 hkenken Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -39,17 +39,17 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_ahcisata.c,v 1.3 2019/10/04 06:49:40 hkenken Ex
 #include <dev/ata/atavar.h>
 #include <dev/ic/ahcisatavar.h>
 
-#include <arm/nxp/imx6_ahcisatareg.h>
+#include <arm/nxp/imx_ahcisatareg.h>
 #include <arm/nxp/imx6_iomuxreg.h>
 #include <arm/nxp/imx6_ccmreg.h>
 #include <arm/nxp/imx6_ccmvar.h>
 
 #include <dev/fdt/fdtvar.h>
 
-static int imx6_ahcisata_match(device_t, cfdata_t, void *);
-static void imx6_ahcisata_attach(device_t, device_t, void *);
+static int imx_ahcisata_match(device_t, cfdata_t, void *);
+static void imx_ahcisata_attach(device_t, device_t, void *);
 
-struct imx6_ahcisata_softc {
+struct imx_ahcisata_softc {
 	struct ahci_softc sc;
 
 	device_t sc_dev;
@@ -69,18 +69,18 @@ struct imx6_ahcisata_softc {
 	struct clk *sc_clk_ahb;
 };
 
-static int imx6_ahcisata_init(struct imx6_ahcisata_softc *);
-static int imx6_ahcisata_phy_ctrl(struct imx6_ahcisata_softc *, uint32_t, int);
-static int imx6_ahcisata_phy_addr(struct imx6_ahcisata_softc *, uint32_t);
-static int imx6_ahcisata_phy_write(struct imx6_ahcisata_softc *, uint32_t, uint16_t);
-static int imx6_ahcisata_phy_read(struct imx6_ahcisata_softc *, uint32_t);
-static int imx6_ahcisata_init_clocks(struct imx6_ahcisata_softc *);
+static int imx_ahcisata_init(struct imx_ahcisata_softc *);
+static int imx_ahcisata_phy_ctrl(struct imx_ahcisata_softc *, uint32_t, int);
+static int imx_ahcisata_phy_addr(struct imx_ahcisata_softc *, uint32_t);
+static int imx_ahcisata_phy_write(struct imx_ahcisata_softc *, uint32_t, uint16_t);
+static int imx_ahcisata_phy_read(struct imx_ahcisata_softc *, uint32_t);
+static int imx_ahcisata_init_clocks(struct imx_ahcisata_softc *);
 
-CFATTACH_DECL_NEW(imx6_ahcisata, sizeof(struct imx6_ahcisata_softc),
-	imx6_ahcisata_match, imx6_ahcisata_attach, NULL, NULL);
+CFATTACH_DECL_NEW(imx_ahcisata, sizeof(struct imx_ahcisata_softc),
+	imx_ahcisata_match, imx_ahcisata_attach, NULL, NULL);
 
 static int
-imx6_ahcisata_match(device_t parent, cfdata_t cf, void *aux)
+imx_ahcisata_match(device_t parent, cfdata_t cf, void *aux)
 {
 	const char * const compatible[] = { "fsl,imx6q-ahci", NULL };
 	struct fdt_attach_args * const faa = aux;
@@ -89,9 +89,9 @@ imx6_ahcisata_match(device_t parent, cfdata_t cf, void *aux)
 }
 
 static void
-imx6_ahcisata_attach(device_t parent, device_t self, void *aux)
+imx_ahcisata_attach(device_t parent, device_t self, void *aux)
 {
-	struct imx6_ahcisata_softc * const sc = device_private(self);
+	struct imx_ahcisata_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
 	bus_addr_t ahci_addr;
@@ -168,12 +168,12 @@ imx6_ahcisata_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	if (imx6_ahcisata_init_clocks(sc) != 0) {
+	if (imx_ahcisata_init_clocks(sc) != 0) {
 		aprint_error_dev(self, "couldn't init clocks\n");
 		return;
 	}
 
-	if (imx6_ahcisata_init(sc) != 0) {
+	if (imx_ahcisata_init(sc) != 0) {
 		aprint_error_dev(self, "couldn't init ahci\n");
 		return;
 	}
@@ -196,7 +196,7 @@ imx6_ahcisata_attach(device_t parent, device_t self, void *aux)
 }
 
 static int
-imx6_ahcisata_phy_ctrl(struct imx6_ahcisata_softc *sc, uint32_t bitmask, int on)
+imx_ahcisata_phy_ctrl(struct imx_ahcisata_softc *sc, uint32_t bitmask, int on)
 {
 	uint32_t v;
 	int timeout;
@@ -222,32 +222,32 @@ imx6_ahcisata_phy_ctrl(struct imx6_ahcisata_softc *sc, uint32_t bitmask, int on)
 }
 
 static int
-imx6_ahcisata_phy_addr(struct imx6_ahcisata_softc *sc, uint32_t addr)
+imx_ahcisata_phy_addr(struct imx_ahcisata_softc *sc, uint32_t addr)
 {
 	delay(100);
 
 	bus_space_write_4(sc->sc_iot, sc->sc_ioh, SATA_P0PHYCR, addr);
 
-	if (imx6_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_CAP_ADDR, 1) != 0)
+	if (imx_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_CAP_ADDR, 1) != 0)
 		return -1;
-	if (imx6_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_CAP_ADDR, 0) != 0)
+	if (imx_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_CAP_ADDR, 0) != 0)
 		return -1;
 
 	return 0;
 }
 
 static int
-imx6_ahcisata_phy_write(struct imx6_ahcisata_softc *sc, uint32_t addr,
+imx_ahcisata_phy_write(struct imx_ahcisata_softc *sc, uint32_t addr,
                         uint16_t data)
 {
-	if (imx6_ahcisata_phy_addr(sc, addr) != 0)
+	if (imx_ahcisata_phy_addr(sc, addr) != 0)
 		return -1;
 
 	bus_space_write_4(sc->sc_iot, sc->sc_ioh, SATA_P0PHYCR, data);
 
-	if (imx6_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_CAP_DATA, 1) != 0)
+	if (imx_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_CAP_DATA, 1) != 0)
 		return -1;
-	if (imx6_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_CAP_DATA, 0) != 0)
+	if (imx_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_CAP_DATA, 0) != 0)
 		return -1;
 
 	if ((addr == SATA_PHY_CLOCK_RESET) && data) {
@@ -257,28 +257,28 @@ imx6_ahcisata_phy_write(struct imx6_ahcisata_softc *sc, uint32_t addr,
 		return 0;
 	}
 
-	if (imx6_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_WRITE, 1) != 0)
+	if (imx_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_WRITE, 1) != 0)
 		return -1;
-	if (imx6_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_WRITE, 0) != 0)
+	if (imx_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_WRITE, 0) != 0)
 		return -1;
 
 	return 0;
 }
 
 static int
-imx6_ahcisata_phy_read(struct imx6_ahcisata_softc *sc, uint32_t addr)
+imx_ahcisata_phy_read(struct imx_ahcisata_softc *sc, uint32_t addr)
 {
 	uint32_t v;
 
-	if (imx6_ahcisata_phy_addr(sc, addr) != 0)
+	if (imx_ahcisata_phy_addr(sc, addr) != 0)
 		return -1;
 
-	if (imx6_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_READ, 1) != 0)
+	if (imx_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_READ, 1) != 0)
 		return -1;
 
 	v = bus_space_read_4(sc->sc_iot, sc->sc_ioh, SATA_P0PHYSR);
 
-	if (imx6_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_READ, 0) != 0)
+	if (imx_ahcisata_phy_ctrl(sc, SATA_P0PHYCR_CR_READ, 0) != 0)
 		return -1;
 
 	return SATA_P0PHYSR_CR_DATA_OUT(v);
@@ -359,7 +359,7 @@ const static int rx_eq[] = {
 };
 
 static int
-imx6_ahcisata_search_regval(const int *values, int count, int val)
+imx_ahcisata_search_regval(const int *values, int count, int val)
 {
 	for (int i = 0; i < count; i++)
 		if (values[i] == val)
@@ -369,7 +369,7 @@ imx6_ahcisata_search_regval(const int *values, int count, int val)
 }
 
 static int
-imx6_ahcisata_init(struct imx6_ahcisata_softc *sc)
+imx_ahcisata_init(struct imx_ahcisata_softc *sc)
 {
 	uint32_t v;
 	int timeout;
@@ -406,7 +406,7 @@ imx6_ahcisata_init(struct imx6_ahcisata_softc *sc)
 	};
 	for (int i = 0; i < __arraycount(gpr13_sata_phy_settings); i++) {
 		int val;
-		val = imx6_ahcisata_search_regval(
+		val = imx_ahcisata_search_regval(
 			gpr13_sata_phy_settings[i].array,
 			gpr13_sata_phy_settings[i].count,
 			gpr13_sata_phy_settings[i].val);
@@ -422,7 +422,7 @@ imx6_ahcisata_init(struct imx6_ahcisata_softc *sc)
 	bus_space_write_4(sc->sc_iot, sc->sc_gpr_ioh, IOMUX_GPR13, v);
 
 	/* phy reset */
-	if (imx6_ahcisata_phy_write(sc, SATA_PHY_CLOCK_RESET,
+	if (imx_ahcisata_phy_write(sc, SATA_PHY_CLOCK_RESET,
 	    SATA_PHY_CLOCK_RESET_RST) < 0) {
 		aprint_error_dev(sc->sc_dev, "cannot reset PHY\n");
 		return -1;
@@ -430,7 +430,7 @@ imx6_ahcisata_init(struct imx6_ahcisata_softc *sc)
 
 	for (timeout = 50; timeout > 0; --timeout) {
 		delay(100);
-		pllstat = imx6_ahcisata_phy_read(sc, SATA_PHY_LANE0_OUT_STAT);
+		pllstat = imx_ahcisata_phy_read(sc, SATA_PHY_LANE0_OUT_STAT);
 		if (pllstat < 0) {
 			aprint_error_dev(sc->sc_dev,
 			    "cannot read LANE0 status\n");
@@ -458,7 +458,7 @@ imx6_ahcisata_init(struct imx6_ahcisata_softc *sc)
 }
 
 static int
-imx6_ahcisata_init_clocks(struct imx6_ahcisata_softc *sc)
+imx_ahcisata_init_clocks(struct imx_ahcisata_softc *sc)
 {
 	int error;
 
