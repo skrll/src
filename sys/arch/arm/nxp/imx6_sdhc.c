@@ -41,8 +41,8 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_sdhc.c,v 1.3 2019/09/27 02:54:57 hkenken Exp $"
 #include <dev/sdmmc/sdhcvar.h>
 #include <dev/sdmmc/sdmmcvar.h>
 
-#include <arm/imx/imx6_reg.h>
-#include <arm/imx/imx6var.h>
+#include <arm/nxp/imx6_reg.h>
+#include <arm/nxp/imx6var.h>
 
 #include <dev/fdt/fdtvar.h>
 

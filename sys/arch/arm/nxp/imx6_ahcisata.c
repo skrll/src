@@ -37,12 +37,12 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_ahcisata.c,v 1.3 2019/10/04 06:49:40 hkenken Ex
 #include <dev/ata/atavar.h>
 #include <dev/ic/ahcisatavar.h>
 
-#include <arm/imx/imx6_reg.h>
-#include <arm/imx/imx6var.h>
-#include <arm/imx/imx6_ahcisatareg.h>
-#include <arm/imx/imx6_iomuxreg.h>
-#include <arm/imx/imx6_ccmreg.h>
-#include <arm/imx/imx6_ccmvar.h>
+#include <arm/nxp/imx6_reg.h>
+#include <arm/nxp/imx6var.h>
+#include <arm/nxp/imx6_ahcisatareg.h>
+#include <arm/nxp/imx6_iomuxreg.h>
+#include <arm/nxp/imx6_ccmreg.h>
+#include <arm/nxp/imx6_ccmvar.h>
 
 #include <dev/fdt/fdtvar.h>
 

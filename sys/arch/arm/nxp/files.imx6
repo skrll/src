@@ -14,7 +14,7 @@ defflag opt_imx.h				IMX6
 # Clock
 device	imxccm : clk
 attach	imxccm at fdt
-file	arch/arm/imx/imx6_ccm.c			imxccm
+file	arch/arm/nxp/imx6_ccm.c			imxccm
 file	arch/arm/nxp/imx6_clk.c			imxccm
 
 # GPC
@@ -37,7 +37,7 @@ file	arch/arm/nxp/imx6_gpio.c		imxgpio
 device	imxuart { } : bus_space_generic
 attach	imxuart at fdt with imx6_com
 file	arch/arm/imx/imxuart.c			imxuart	needs-flag
-file	arch/arm/nxp/imx6_com.c	imx6_com needs-flag
+file	arch/arm/nxp/imx6_com.c			imx6_com needs-flag
 defflag opt_imxuart.h				IMXUARTCONSOLE
 
 # FEC
@@ -50,7 +50,7 @@ file	arch/arm/nxp/if_enet_imx.c		enet_fdt
 attach	ahcisata at fdt with imx6_ahcisata
 file	arch/arm/nxp/imx6_ahcisata.c		imx6_ahcisata
 
-# USB Controller
+# USB controller
 device	imxusbc { [unit=-1], [irq=-1] } : bus_dma_generic
 attach	imxusbc at fdt with imxusbc_fdt
 file	arch/arm/nxp/imx6_usb.c			imxusbc_fdt
@@ -70,18 +70,41 @@ file	arch/arm/nxp/imx6_sdhc.c		imx6_sdhc
 # PCIe
 device	imxpcie: pcibus
 attach	imxpcie at fdt with imxpcie_fdt
-file	arch/arm/imx/imxpcie.c			imxpcie
+file	arch/arm/nxp/imxpcie.c			imxpcie
 file	arch/arm/nxp/imx6_pcie.c		imxpcie_fdt
 
-# iMX iic Controler
+# iMX iic controller
 device	imxi2c: motoi2c, i2cbus, i2cexec
 attach	imxi2c at fdt
-file	arch/arm/imx/imxi2c.c			imxi2c
+file	arch/arm/nxp/imxi2c.c			imxi2c
 file	arch/arm/nxp/imx6_i2c.c			imxi2c
 
- # SPI bus controlloer
+# SPI bus controller
 device	imxspi: spibus
 attach	imxspi at fdt with imxspi_fdt
 file	arch/arm/imx/imxspi.c			imxspi
 file	arch/arm/nxp/imx6_spi.c			imxspi_fdt
 defparam opt_imxspi.h				IMXSPI_DEBUG
+
+# iMX6 On-Chip OTP controller
+device	imxocotp
+attach	imxocotp at fdt
+file	arch/arm/nxp/imx6_ocotp.c		imxocotp	needs-flag
+
+# iMX6 Enhanced Periodic Interrupt Timer
+#device	imxclock
+#attach	imxclock at axi
+#file	arch/arm/imx/imxclock.c			imxclock
+#file	arch/arm/imx/imx6_clock.c		imxclock
+
+# iMX6 Secure Non-Volatile Storage (SNVS)
+device	imxsnvs
+attach	imxsnvs at fdt
+file	arch/arm/imx/imxsnvs.c			imxsnvs
+file	arch/arm/nxp/imx6_snvs.c		imxsnvs
+
+# Watchdog
+device imxwdog: sysmon_wdog
+attach imxwdog at fdt
+file	arch/arm/nxp/imxwdog.c			imxwdog
+

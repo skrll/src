@@ -301,6 +301,9 @@ gpiokeys*	at fdt?
 wskbd*		at gpiokeys? console ? mux 1
 gpioleds*	at fdt?
 
+
+imxsnvs*	at fdt? pass 1		# Secure Non-Volatile Storage
+
 # ARM Motherboard Express uATX system registers
 vxsysreg* 	at fdt?
 
@@ -309,6 +312,9 @@ sunxisramc* 	at fdt? pass 4		# SRAM controller
 
 # System Controller
 syscon*		at fdt? pass 1		# Generic System Controller
+imxocotp0	at fdt? pass 1		# On-Chip OTP Controller
+
+
 #zynqslcr*	at fdt? pass 1		# Zynq 7000 system Controller
 
 # Timer
@@ -328,10 +334,11 @@ tegratimer* 	at fdt?			# Timers
 # Watchdog
 a9wdt*  	at fdt? pass 2		# ARM Cortex A5/A9 Watchdog
 arma9wdt* 	at a9wdt?
+bcmpmwdog* 	at fdt?			# Broadcom BCM283x watchdog
 dwcwdt* 	at fdt?			# DesignWare watchdog
+imxwdog*	at fdt?			# NXP i.MX watchdog
 mesonwdt* 	at fdt?			# Amlogic Meson watchdog
 sunxiwdt* 	at fdt?			# Allwinner watchdog
-bcmpmwdog* 	at fdt?			# Broadcom BCM283x watchdog
 
 # Interrupt controller
 gic*		at fdt? pass 1		# ARM GIC

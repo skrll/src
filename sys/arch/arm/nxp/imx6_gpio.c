@@ -44,7 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_gpio.c,v 1.2 2019/08/19 03:45:51 hkenken Exp $"
 #include <dev/gpio/gpiovar.h>
 
 #include <arm/pic/picvar.h>
-#include <arm/imx/imx6_reg.h>
+#include <arm/nxp/imx6_reg.h>
 
 #include <arm/imx/imxgpioreg.h>
 #include <arm/imx/imxgpiovar.h>

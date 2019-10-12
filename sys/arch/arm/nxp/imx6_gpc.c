@@ -33,9 +33,9 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_gpc.c,v 1.1 2019/07/24 13:12:33 hkenken Exp $")
 #include <sys/bus.h>
 #include <sys/device.h>
 
-#include <arm/imx/imx6var.h>
-#include <arm/imx/imx6_reg.h>
-#include <arm/imx/imx6_gpcreg.h>
+#include <arm/nxp/imx6var.h>
+#include <arm/nxp/imx6_reg.h>
+#include <arm/nxp/imx6_gpcreg.h>
 
 #include <arm/cortex/gic_intr.h>
 

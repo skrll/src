@@ -39,7 +39,7 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_clk.c,v 1.1 2019/07/24 13:12:33 hkenken Exp $")
 #include <sys/kmem.h>
 #include <sys/param.h>
 
-#include <arm/imx/imx6_ccmvar.h>
+#include <arm/nxp/imx6_ccmvar.h>
 
 #include <dev/clk/clk_backend.h>
 #include <dev/fdt/fdtvar.h>

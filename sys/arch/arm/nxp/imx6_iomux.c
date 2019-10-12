@@ -33,9 +33,9 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_iomux.c,v 1.2 2019/10/02 01:34:09 hkenken Exp $
 #include <sys/bus.h>
 #include <sys/device.h>
 
-#include <arm/imx/imx6var.h>
-#include <arm/imx/imx6_reg.h>
-#include <arm/imx/imx6_iomuxreg.h>
+#include <arm/nxp/imx6var.h>
+#include <arm/nxp/imx6_reg.h>
+#include <arm/nxp/imx6_iomuxreg.h>
 
 #include <dev/fdt/fdtvar.h>
 

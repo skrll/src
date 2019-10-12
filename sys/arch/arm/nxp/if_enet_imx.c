@@ -33,8 +33,8 @@ __KERNEL_RCSID(0, "$NetBSD: if_enet_imx.c,v 1.3 2019/08/19 03:45:51 hkenken Exp 
 #include <sys/bus.h>
 #include <sys/device.h>
 
-#include <arm/imx/imx6var.h>
-#include <arm/imx/imx6_reg.h>
+#include <arm/nxp/imx6var.h>
+#include <arm/nxp/imx6_reg.h>
 #include <arm/imx/if_enetreg.h>
 #include <arm/imx/if_enetvar.h>
 

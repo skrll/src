@@ -39,35 +39,39 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_snvs.c,v 1.2 2016/05/17 06:44:45 ryo Exp $");
 #include <sys/device.h>
 #include <sys/param.h>
 
-#include <arm/imx/imx6var.h>
-#include <arm/imx/imx6_reg.h>
+#include <dev/fdt/fdtvar.h>
+
+#include <arm/nxp/imx6var.h>
+#include <arm/nxp/imx6_reg.h>
 #include <arm/imx/imxsnvsvar.h>
-#include "locators.h"
 
-/* ARGSUSED */
 int
-imxsnvs_match(device_t parent __unused, struct cfdata *match __unused, void *aux)
+imxsnvs_match(device_t parent, struct cfdata *match, void *aux)
 {
-	struct axi_attach_args *aa = aux;
+	const char * const compatible[] = {
+	    "fsl,imx6q-snvs-lpgpr",
+	    "fsl,imx6ul-snvs-lpgpr",
+	     NULL
+	};
+	struct fdt_attach_args * const faa = aux;
 
-	switch (aa->aa_addr) {
-	case IMX6_AIPS1_BASE + AIPS1_SNVS_BASE:
-		return 1;
-	}
-
-	return 0;
+	return of_match_compatible(faa->faa_phandle, compatible);
 }
 
-/* ARGSUSED */
 void
-imxsnvs_attach(device_t parent __unused, device_t self, void *aux)
+imxsnvs_attach(device_t parent, device_t self, void *aux)
 {
-	struct axi_attach_args *aa = aux;
+	struct fdt_attach_args * const faa = aux;
+	const int phandle = faa->faa_phandle;
+	bus_addr_t addr;
+	bus_size_t size;
 
-	if (aa->aa_size == AXICF_SIZE_DEFAULT)
-		aa->aa_size = AIPS1_SNVS_SIZE;
+	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
+		aprint_error(": couldn't get registers\n");
+		return;
+	}
 
 	imxsnvs_attach_common(parent, self,
-	    aa->aa_iot, aa->aa_addr, aa->aa_size, aa->aa_irq, 0);
+	    faa->faa_bst, addr, size, 0, 0);
 }
 

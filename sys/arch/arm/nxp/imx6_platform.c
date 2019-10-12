@@ -54,8 +54,8 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_platform.c,v 1.6 2019/08/19 10:44:35 hkenken Ex
 #include <arm/cortex/gic_reg.h>
 #include <arm/cortex/pl310_var.h>
 
-#include <arm/imx/imx6_reg.h>
-#include <arm/imx/imx6_srcreg.h>
+#include <arm/nxp/imx6_reg.h>
+#include <arm/nxp/imx6_srcreg.h>
 #include <arm/imx/imxuartreg.h>
 
 #include <arm/nxp/imx6_platform.h>
