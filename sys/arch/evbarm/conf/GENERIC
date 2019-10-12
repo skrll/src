@@ -27,12 +27,20 @@ makeoptions	DTS="
 	exynos5422-odroidxu3.dts
 	exynos5422-odroidxu4.dts
 
-	imx6q-cubox-i.dts
 	imx6dl-cubox-i.dts
-	imx6q-hummingboard.dts
+	imx6dl-hummingboard-emmc-som-v15.dts
+	imx6dl-hummingboard-som-v15.dts
 	imx6dl-hummingboard.dts
-	imx6q-hummingboard2.dts
+	imx6dl-hummingboard2-emmc-som-v15.dts
+	imx6dl-hummingboard2-som-v15.dts
 	imx6dl-hummingboard2.dts
+	imx6q-cubox-i.dts
+	imx6q-hummingboard-emmc-som-v15.dts
+	imx6q-hummingboard-som-v15.dts
+	imx6q-hummingboard.dts
+	imx6q-hummingboard2-emmc-som-v15.dts
+	imx6q-hummingboard2-som-v15.dts
+	imx6q-hummingboard2.dts
 
 	meson8b-ec100.dts
 	meson8b-mxq.dts
@@ -702,8 +710,3 @@ include "dev/usb/usbdevices.config"
 midi* 		at midibus?
 
 cinclude "arch/evbarm/conf/GENERIC.local"
-
-
-
-
-
