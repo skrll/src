@@ -16,6 +16,7 @@ options 	FPU_VFP
 options 	TPIDRPRW_IS_CURCPU
 options 	__HAVE_CPU_COUNTER
 options 	__HAVE_FAST_SOFTINTS		# should be in types.h
+options 	__HAVE_GENERIC_START
 options 	__HAVE_MM_MD_DIRECT_MAPPED_PHYS
 
 makeoptions 	LOADADDRESS="0x80300000"
