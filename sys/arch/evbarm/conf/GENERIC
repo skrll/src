@@ -34,6 +34,7 @@ makeoptions	DTS="
 	imx6dl-hummingboard2-emmc-som-v15.dts
 	imx6dl-hummingboard2-som-v15.dts
 	imx6dl-hummingboard2.dts
+	imx6dl-nitrogen6x.dts
 	imx6q-cubox-i.dts
 	imx6q-hummingboard-emmc-som-v15.dts
 	imx6q-hummingboard-som-v15.dts
@@ -41,6 +42,12 @@ makeoptions	DTS="
 	imx6q-hummingboard2-emmc-som-v15.dts
 	imx6q-hummingboard2-som-v15.dts
 	imx6q-hummingboard2.dts
+	imx6q-nitrogen6_max.dts
+	imx6q-nitrogen6_som2.dts
+	imx6q-nitrogen6x.dts
+	imx6qp-nitrogen6_max.dts
+	imx6qp-nitrogen6_som2.dts
+	imx6sx-nitrogen6sx.dts
 
 	meson8b-ec100.dts
 	meson8b-mxq.dts
