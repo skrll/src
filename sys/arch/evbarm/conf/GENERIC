@@ -320,7 +320,7 @@ sunxisramc* 	at fdt? pass 4		# SRAM controller
 
 # System Controller
 syscon*		at fdt? pass 1		# Generic System Controller
-imxocotp0	at fdt? pass 1		# On-Chip OTP Controller
+imxocotp0	at fdt? pass 2		# On-Chip OTP Controller
 
 
 #zynqslcr*	at fdt? pass 1		# Zynq 7000 system Controller

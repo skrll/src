@@ -49,8 +49,7 @@ int
 imxsnvs_match(device_t parent, struct cfdata *match, void *aux)
 {
 	const char * const compatible[] = {
-	    "fsl,imx6q-snvs-lpgpr",
-	    "fsl,imx6ul-snvs-lpgpr",
+	    "fsl,sec-v4.0-mon",
 	     NULL
 	};
 	struct fdt_attach_args * const faa = aux;
