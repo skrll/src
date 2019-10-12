@@ -39,8 +39,6 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_ocotp.c,v 1.1 2014/09/25 05:05:28 ryo Exp $");
 
 #include <dev/fdt/fdtvar.h>
 
-#include <arm/nxp/imx6var.h>
-#include <arm/nxp/imx6_reg.h>
 #include <arm/nxp/imx6_ocotpreg.h>
 #include <arm/nxp/imx6_ocotpvar.h>
 
@@ -50,6 +48,7 @@ struct imxocotp_softc {
 	bus_addr_t sc_addr;
 	bus_space_tag_t sc_iot;
 	bus_space_handle_t sc_ioh;
+	bus_size_t sc_ios;
 
 	struct clk *sc_clk;
 
@@ -119,6 +118,7 @@ imxocotp_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	ocotp_softc = sc;
+	sc->sc_ios = size;
 
 	uint32_t v = imxocotp_read(OCOTP_VERSION);
 	aprint_normal_dev(self, "OCOTP_VERSION %d.%d.%d\n", (v >> 24) & 0xff, (v >> 16) & 0xff, v & 0xffff);
@@ -129,12 +129,12 @@ imxocotp_attach(device_t parent, device_t self, void *aux)
 uint32_t
 imxocotp_read(uint32_t addr)
 {
-	struct imxocotp_softc *sc;
+	struct imxocotp_softc *sc = ocotp_softc;
 
-	if ((sc = ocotp_softc) == NULL)
+	if (sc == NULL)
 		return 0;
 
-	if (addr > AIPS2_OCOTP_CTRL_SIZE)
+	if (addr > sc->sc_ios)
 		return 0;
 
 	return bus_space_read_4(sc->sc_iot, sc->sc_ioh, addr);
