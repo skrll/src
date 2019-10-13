@@ -288,7 +288,7 @@ cycvclkmgr* 	at fdt? pass 1		# Cyclone V clock manager
 cycvrstmgr* 	at fdt? pass 0		# Cyclone V reset manager
 exy5410clk* 	at fdt? pass 3		# Exynos5410 clock controller
 exy5422clk* 	at fdt? pass 3		# Exynos5422 clock controller
-imxccm* 	at fdt? pass 1		# i.MX6 ccm
+imx6ccm* 	at fdt? pass 1		# i.MX6 ccm
 meson8bclkc* 	at fdt? pass 2		# Amlogic Meson8b clock controller
 mesonresets* 	at fdt? pass 2		# Amlogic Meson misc. clock resets
 sun4ia10ccu* 	at fdt? pass 2		# Allwinner A10/A20 CCU
@@ -493,6 +493,7 @@ options		IMXUARTCONSOLE
 options 	I2C_MAX_ADDR=0xfff
 bsciic* 	at fdt?			# Broadcom BCM283x Serial Control
 exyoi2c* 	at fdt?			# Samsung Exynos I2C
+imxi2c* 	at fdt?			# Freescale i.MX I2C
 sunxirsb* 	at fdt? pass 4		# Allwinner RSB
 sunxitwi* 	at fdt?			# Allwinner TWI
 tegrai2c* 	at fdt? pass 4		# NVIDIA Tegra I2C

@@ -85,14 +85,14 @@ imx6_clk_fixed_from_fdt(const char *name)
 		iclk->clk.fixed.rate = 0;
 }
 
-static int imxccm_match(device_t, cfdata_t, void *);
-static void imxccm_attach(device_t, device_t, void *);
+static int imx6ccm_match(device_t, cfdata_t, void *);
+static void imx6ccm_attach(device_t, device_t, void *);
 
-CFATTACH_DECL_NEW(imxccm, sizeof(struct imxccm_softc),
-    imxccm_match, imxccm_attach, NULL, NULL);
+CFATTACH_DECL_NEW(imx6ccm, sizeof(struct imx6ccm_softc),
+    imx6ccm_match, imx6ccm_attach, NULL, NULL);
 
 static int
-imxccm_match(device_t parent, cfdata_t cfdata, void *aux)
+imx6ccm_match(device_t parent, cfdata_t cfdata, void *aux)
 {
 	const char * const compatible[] = { "fsl,imx6q-ccm", NULL };
 	struct fdt_attach_args * const faa = aux;
@@ -101,9 +101,9 @@ imxccm_match(device_t parent, cfdata_t cfdata, void *aux)
 }
 
 static void
-imxccm_attach(device_t parent, device_t self, void *aux)
+imx6ccm_attach(device_t parent, device_t self, void *aux)
 {
-	struct imxccm_softc * const sc = device_private(self);
+	struct imx6ccm_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
 	bus_addr_t addr;
 	bus_size_t size;
@@ -129,7 +129,7 @@ imxccm_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	imxccm_attach_common(self);
+	imx6ccm_attach_common(self);
 
 	aprint_naive("\n");
 	aprint_normal(": Clock Control Module\n");

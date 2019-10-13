@@ -31,7 +31,7 @@
 #include <dev/clk/clk.h>
 #include <dev/clk/clk_backend.h>
 
-struct imxccm_softc {
+struct imx6ccm_softc {
 	device_t sc_dev;
 	bus_space_tag_t sc_iot;
 	bus_space_handle_t sc_ioh;
@@ -40,7 +40,7 @@ struct imxccm_softc {
 	struct clk_domain sc_clkdom;
 };
 
-void imxccm_attach_common(device_t);
+void imx6ccm_attach_common(device_t);
 
 struct clk *imx6_get_clock(const char *);
 struct clk *imx6_get_clock_by_id(u_int);

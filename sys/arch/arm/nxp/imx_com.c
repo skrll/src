@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_com.c,v 1.1 2019/07/24 13:12:33 hkenken Exp $	*/
+/*	$NetBSD: imx_com.c,v 1.1 2019/07/24 13:12:33 hkenken Exp $	*/
 
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_com.c,v 1.1 2019/07/24 13:12:33 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx_com.c,v 1.1 2019/07/24 13:12:33 hkenken Exp $");
 
 #include "opt_fdt.h"
 #include "opt_imxuart.h"
@@ -41,11 +41,11 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_com.c,v 1.1 2019/07/24 13:12:33 hkenken Exp $")
 #include <arm/imx/imxuartreg.h>
 #include <arm/imx/imxuartvar.h>
 
-static int imx6_com_match(device_t, struct cfdata *, void *);
-static void imx6_com_attach(device_t, device_t, void *);
+static int imx_com_match(device_t, struct cfdata *, void *);
+static void imx_com_attach(device_t, device_t, void *);
 
-CFATTACH_DECL_NEW(imx6_com, sizeof(struct imxuart_softc),
-    imx6_com_match, imx6_com_attach, NULL, NULL);
+CFATTACH_DECL_NEW(imx_com, sizeof(struct imxuart_softc),
+    imx_com_match, imx_com_attach, NULL, NULL);
 
 static const char * const compatible[] = {
 	"fsl,imx6q-uart",
@@ -53,7 +53,7 @@ static const char * const compatible[] = {
 };
 
 static int
-imx6_com_match(device_t parent, struct cfdata *cf, void *aux)
+imx_com_match(device_t parent, struct cfdata *cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
@@ -61,7 +61,7 @@ imx6_com_match(device_t parent, struct cfdata *cf, void *aux)
 }
 
 static void
-imx6_com_attach(device_t parent, device_t self, void *aux)
+imx_com_attach(device_t parent, device_t self, void *aux)
 {
 	struct imxuart_softc *sc = device_private(self);
 	struct imxuart_regs *regsp = &sc->sc_regs;
@@ -114,13 +114,13 @@ imx6_com_attach(device_t parent, device_t self, void *aux)
  */
 
 static int
-imx6_com_console_match(int phandle)
+imx_com_console_match(int phandle)
 {
 	return of_match_compatible(phandle, compatible);
 }
 
 static void
-imx6_com_console_consinit(struct fdt_attach_args *faa, u_int uart_freq)
+imx_com_console_consinit(struct fdt_attach_args *faa, u_int uart_freq)
 {
 	const int phandle = faa->faa_phandle;
 	bus_space_tag_t bst = faa->faa_bst;
@@ -140,9 +140,9 @@ imx6_com_console_consinit(struct fdt_attach_args *faa, u_int uart_freq)
 		panic("cannot attach console UART");
 }
 
-static const struct fdt_console imx6_com_console = {
-	.match = imx6_com_console_match,
-	.consinit = imx6_com_console_consinit,
+static const struct fdt_console imx_com_console = {
+	.match = imx_com_console_match,
+	.consinit = imx_com_console_consinit,
 };
 
-FDT_CONSOLE(imx6_com, &imx6_com_console);
+FDT_CONSOLE(imx_com, &imx_com_console);

@@ -891,7 +891,7 @@ static struct imx6_clk imx6_clks[] = {
 static struct imx6_clk *imx6_clk_find(const char *);
 static struct imx6_clk *imx6_clk_find_by_id(u_int);
 
-static void imxccm_init_clocks(struct imxccm_softc *);
+static void imxccm_init_clocks(struct imx6ccm_softc *);
 static struct clk *imxccm_clk_get(void *, const char *);
 static void imxccm_clk_put(void *, struct clk *);
 static u_int imxccm_clk_get_rate(void *, struct clk *);
@@ -913,9 +913,9 @@ static const struct clk_funcs imxccm_clk_funcs = {
 };
 
 void
-imxccm_attach_common(device_t self)
+imx6ccm_attach_common(device_t self)
 {
-	struct imxccm_softc * const sc = device_private(self);
+	struct imx6ccm_softc * const sc = device_private(self);
 
 	sc->sc_dev = self;
 
@@ -1004,7 +1004,7 @@ struct imxccm_init_parent {
 };
 
 static void
-imxccm_init_clocks(struct imxccm_softc *sc)
+imxccm_init_clocks(struct imx6ccm_softc *sc)
 {
 	struct clk *clk;
 	struct clk *clk_parent;
@@ -1027,7 +1027,7 @@ imxccm_init_clocks(struct imxccm_softc *sc)
 }
 
 static u_int
-imxccm_clk_get_rate_pll_generic(struct imxccm_softc *sc, struct imx6_clk *iclk,
+imxccm_clk_get_rate_pll_generic(struct imx6ccm_softc *sc, struct imx6_clk *iclk,
     const u_int rate_parent)
 {
 	struct imx6_clk_pll *pll = &iclk->clk.pll;
@@ -1043,7 +1043,7 @@ imxccm_clk_get_rate_pll_generic(struct imxccm_softc *sc, struct imx6_clk *iclk,
 }
 
 static u_int
-imxccm_clk_get_rate_pll_sys(struct imxccm_softc *sc, struct imx6_clk *iclk,
+imxccm_clk_get_rate_pll_sys(struct imx6ccm_softc *sc, struct imx6_clk *iclk,
     const u_int rate_parent)
 {
 	struct imx6_clk_pll *pll = &iclk->clk.pll;
@@ -1061,7 +1061,7 @@ imxccm_clk_get_rate_pll_sys(struct imxccm_softc *sc, struct imx6_clk *iclk,
 #define PLL_AUDIO_VIDEO_DENOM_OFFSET	0x20
 
 static u_int
-imxccm_clk_get_rate_pll_audio_video(struct imxccm_softc *sc,
+imxccm_clk_get_rate_pll_audio_video(struct imx6ccm_softc *sc,
     struct imx6_clk *iclk, const u_int rate_parent)
 {
 	struct imx6_clk_pll *pll = &iclk->clk.pll;
@@ -1082,7 +1082,7 @@ imxccm_clk_get_rate_pll_audio_video(struct imxccm_softc *sc,
 }
 
 static u_int
-imxccm_clk_get_rate_pll_enet(struct imxccm_softc *sc,
+imxccm_clk_get_rate_pll_enet(struct imx6ccm_softc *sc,
     struct imx6_clk *iclk, const u_int rate_parent)
 {
 	struct imx6_clk_pll *pll = &iclk->clk.pll;
@@ -1093,7 +1093,7 @@ imxccm_clk_get_rate_pll_enet(struct imxccm_softc *sc,
 }
 
 static u_int
-imxccm_clk_get_rate_fixed_factor(struct imxccm_softc *sc, struct imx6_clk *iclk)
+imxccm_clk_get_rate_fixed_factor(struct imx6ccm_softc *sc, struct imx6_clk *iclk)
 {
 	struct imx6_clk_fixed_factor *fixed_factor = &iclk->clk.fixed_factor;
 	struct imx6_clk *parent;
@@ -1109,7 +1109,7 @@ imxccm_clk_get_rate_fixed_factor(struct imxccm_softc *sc, struct imx6_clk *iclk)
 }
 
 static u_int
-imxccm_clk_get_rate_pll(struct imxccm_softc *sc, struct imx6_clk *iclk)
+imxccm_clk_get_rate_pll(struct imx6ccm_softc *sc, struct imx6_clk *iclk)
 {
 	struct imx6_clk_pll *pll = &iclk->clk.pll;
 	struct imx6_clk *parent;
@@ -1138,7 +1138,7 @@ imxccm_clk_get_rate_pll(struct imxccm_softc *sc, struct imx6_clk *iclk)
 }
 
 static u_int
-imxccm_clk_get_rate_div(struct imxccm_softc *sc, struct imx6_clk *iclk)
+imxccm_clk_get_rate_div(struct imx6ccm_softc *sc, struct imx6_clk *iclk)
 {
 	struct imx6_clk_div *div = &iclk->clk.div;
 	struct imx6_clk *parent;
@@ -1173,7 +1173,7 @@ imxccm_clk_get_rate_div(struct imxccm_softc *sc, struct imx6_clk *iclk)
 }
 
 static u_int
-imxccm_clk_get_rate_pfd(struct imxccm_softc *sc, struct imx6_clk *iclk)
+imxccm_clk_get_rate_pfd(struct imx6ccm_softc *sc, struct imx6_clk *iclk)
 {
 	struct imx6_clk_pfd *pfd = &iclk->clk.pfd;
 	struct imx6_clk *parent;
@@ -1194,7 +1194,7 @@ imxccm_clk_get_rate_pfd(struct imxccm_softc *sc, struct imx6_clk *iclk)
 }
 
 static int
-imxccm_clk_mux_wait(struct imxccm_softc *sc, struct imx6_clk_mux *mux)
+imxccm_clk_mux_wait(struct imx6ccm_softc *sc, struct imx6_clk_mux *mux)
 {
 	KASSERT(mux->busy_reg == 0);
 	KASSERT(mux->busy_mask == 0);
@@ -1212,7 +1212,7 @@ imxccm_clk_mux_wait(struct imxccm_softc *sc, struct imx6_clk_mux *mux)
 }
 
 static int
-imxccm_clk_set_parent_mux(struct imxccm_softc *sc,
+imxccm_clk_set_parent_mux(struct imx6ccm_softc *sc,
     struct imx6_clk *iclk, struct clk *parent)
 {
 	struct imx6_clk_mux *mux = &iclk->clk.mux;
@@ -1249,7 +1249,7 @@ imxccm_clk_set_parent_mux(struct imxccm_softc *sc,
 }
 
 static struct imx6_clk *
-imxccm_clk_get_parent_mux(struct imxccm_softc *sc, struct imx6_clk *iclk)
+imxccm_clk_get_parent_mux(struct imx6ccm_softc *sc, struct imx6_clk *iclk)
 {
 	struct imx6_clk_mux *mux = &iclk->clk.mux;
 
@@ -1272,7 +1272,7 @@ imxccm_clk_get_parent_mux(struct imxccm_softc *sc, struct imx6_clk *iclk)
 }
 
 static int
-imxccm_clk_set_rate_pll(struct imxccm_softc *sc,
+imxccm_clk_set_rate_pll(struct imx6ccm_softc *sc,
     struct imx6_clk *eclk, u_int rate)
 {
 	/* ToDo */
@@ -1312,7 +1312,7 @@ imxccm_clk_get_rate(void *priv, struct clk *clk)
 {
 	struct imx6_clk *iclk = (struct imx6_clk *)clk;
 	struct clk *parent;
-	struct imxccm_softc *sc = priv;
+	struct imx6ccm_softc *sc = priv;
 
 	switch (iclk->type) {
 	case IMX6_CLK_FIXED:
@@ -1338,7 +1338,7 @@ static int
 imxccm_clk_set_rate(void *priv, struct clk *clk, u_int rate)
 {
 	struct imx6_clk *iclk = (struct imx6_clk *)clk;
-	struct imxccm_softc *sc = priv;
+	struct imx6ccm_softc *sc = priv;
 
 	switch (iclk->type) {
 	case IMX6_CLK_FIXED:
@@ -1358,7 +1358,7 @@ imxccm_clk_set_rate(void *priv, struct clk *clk, u_int rate)
 }
 
 static int
-imxccm_clk_enable_pll(struct imxccm_softc *sc, struct imx6_clk *iclk, bool enable)
+imxccm_clk_enable_pll(struct imx6ccm_softc *sc, struct imx6_clk *iclk, bool enable)
 {
 	struct imx6_clk_pll *pll = &iclk->clk.pll;
 
@@ -1386,7 +1386,7 @@ imxccm_clk_enable_pll(struct imxccm_softc *sc, struct imx6_clk *iclk, bool enabl
 }
 
 static int
-imxccm_clk_enable_gate(struct imxccm_softc *sc, struct imx6_clk *iclk, bool enable)
+imxccm_clk_enable_gate(struct imx6ccm_softc *sc, struct imx6_clk *iclk, bool enable)
 {
 	struct imx6_clk_gate *gate = &iclk->clk.gate;
 
@@ -1418,7 +1418,7 @@ imxccm_clk_enable(void *priv, struct clk *clk)
 {
 	struct imx6_clk *iclk = (struct imx6_clk *)clk;
 	struct imx6_clk *parent = NULL;
-	struct imxccm_softc *sc = priv;
+	struct imx6ccm_softc *sc = priv;
 
 	if ((parent = imx6_clk_find(iclk->parent)) != NULL)
 		imxccm_clk_enable(sc, &parent->base);
@@ -1444,7 +1444,7 @@ static int
 imxccm_clk_disable(void *priv, struct clk *clk)
 {
 	struct imx6_clk *iclk = (struct imx6_clk *)clk;
-	struct imxccm_softc *sc = priv;
+	struct imx6ccm_softc *sc = priv;
 
 	switch (iclk->type) {
 	case IMX6_CLK_FIXED:
@@ -1467,7 +1467,7 @@ static int
 imxccm_clk_set_parent(void *priv, struct clk *clk, struct clk *parent)
 {
 	struct imx6_clk *iclk = (struct imx6_clk *)clk;
-	struct imxccm_softc *sc = priv;
+	struct imx6ccm_softc *sc = priv;
 
 	switch (iclk->type) {
 	case IMX6_CLK_FIXED:
@@ -1489,7 +1489,7 @@ imxccm_clk_get_parent(void *priv, struct clk *clk)
 {
 	struct imx6_clk *iclk = (struct imx6_clk *)clk;
 	struct imx6_clk *parent = NULL;
-	struct imxccm_softc *sc = priv;
+	struct imx6ccm_softc *sc = priv;
 
 	switch (iclk->type) {
 	case IMX6_CLK_FIXED:
