@@ -64,8 +64,8 @@ attach	imxusbphy at fdt
 file	arch/arm/nxp/imx6_usbphy.c		imxusbphy
 
 # SDMMC
-attach	sdhc at fdt with imx6_sdhc
-file	arch/arm/nxp/imx6_sdhc.c		imx6_sdhc
+attach	sdhc at fdt with imx_sdhc
+file	arch/arm/nxp/imx_sdhc.c			imx_sdhc
 
 # PCIe
 device	imxpcie: pcibus

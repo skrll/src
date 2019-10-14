@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_sdhc.c,v 1.3 2019/09/27 02:54:57 hkenken Exp $	*/
+/*	$NetBSD: imx_sdhc.c,v 1.3 2019/09/27 02:54:57 hkenken Exp $	*/
 
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_sdhc.c,v 1.3 2019/09/27 02:54:57 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx_sdhc.c,v 1.3 2019/09/27 02:54:57 hkenken Exp $");
 
 #include "opt_fdt.h"
 
@@ -45,13 +45,13 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_sdhc.c,v 1.3 2019/09/27 02:54:57 hkenken Exp $"
 
 #include <dev/fdt/fdtvar.h>
 
-static int imx6_sdhc_match(device_t, cfdata_t, void *);
-static void imx6_sdhc_attach(device_t, device_t, void *);
+static int imx_sdhc_match(device_t, cfdata_t, void *);
+static void imx_sdhc_attach(device_t, device_t, void *);
 
-static int imx6_sdhc_card_detect(struct sdhc_softc *);
-static int imx6_sdhc_write_protect(struct sdhc_softc *);
+static int imx_sdhc_card_detect(struct sdhc_softc *);
+static int imx_sdhc_write_protect(struct sdhc_softc *);
 
-struct imx6_sdhc_softc {
+struct imx_sdhc_softc {
 	struct sdhc_softc sc_sdhc;
 
 	bus_space_tag_t		sc_bst;
@@ -67,8 +67,8 @@ struct imx6_sdhc_softc {
 	struct fdtbus_gpio_pin	*sc_pin_wp;
 };
 
-CFATTACH_DECL_NEW(imx6_sdhc, sizeof(struct imx6_sdhc_softc),
-	imx6_sdhc_match, imx6_sdhc_attach, NULL, NULL);
+CFATTACH_DECL_NEW(imx_sdhc, sizeof(struct imx_sdhc_softc),
+	imx_sdhc_match, imx_sdhc_attach, NULL, NULL);
 
 static const char * const compatible[] = {
 	"fsl,imx6q-usdhc",
@@ -76,7 +76,7 @@ static const char * const compatible[] = {
 };
 
 static int
-imx6_sdhc_match(device_t parent, cfdata_t cf, void *aux)
+imx_sdhc_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
@@ -84,9 +84,9 @@ imx6_sdhc_match(device_t parent, cfdata_t cf, void *aux)
 }
 
 static void
-imx6_sdhc_attach(device_t parent, device_t self, void *aux)
+imx_sdhc_attach(device_t parent, device_t self, void *aux)
 {
-	struct imx6_sdhc_softc * const sc = device_private(self);
+	struct imx_sdhc_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
 	char intrstr[128];
 	bus_addr_t addr;
@@ -137,14 +137,14 @@ imx6_sdhc_attach(device_t parent, device_t self, void *aux)
 	sc->sc_pin_cd = fdtbus_gpio_acquire(faa->faa_phandle,
 	    "cd-gpios", GPIO_PIN_INPUT);
 	if (sc->sc_pin_cd) {
-		sc->sc_sdhc.sc_vendor_card_detect = imx6_sdhc_card_detect;
+		sc->sc_sdhc.sc_vendor_card_detect = imx_sdhc_card_detect;
 		sc->sc_sdhc.sc_flags |= SDHC_FLAG_POLL_CARD_DET;
 	}
 
 	sc->sc_pin_wp = fdtbus_gpio_acquire(faa->faa_phandle,
 	    "wp-gpios", GPIO_PIN_INPUT);
 	if (sc->sc_pin_wp) {
-		sc->sc_sdhc.sc_vendor_write_protect = imx6_sdhc_write_protect;
+		sc->sc_sdhc.sc_vendor_write_protect = imx_sdhc_write_protect;
 	}
 
 	error = clk_enable(sc->sc_clk_per);
@@ -186,9 +186,9 @@ imx6_sdhc_attach(device_t parent, device_t self, void *aux)
 }
 
 static int
-imx6_sdhc_card_detect(struct sdhc_softc *ssc)
+imx_sdhc_card_detect(struct sdhc_softc *ssc)
 {
-	struct imx6_sdhc_softc *sc = device_private(ssc->sc_dev);
+	struct imx_sdhc_softc *sc = device_private(ssc->sc_dev);
 
 	KASSERT(sc->sc_pin_cd != NULL);
 
@@ -196,9 +196,9 @@ imx6_sdhc_card_detect(struct sdhc_softc *ssc)
 }
 
 static int
-imx6_sdhc_write_protect(struct sdhc_softc *ssc)
+imx_sdhc_write_protect(struct sdhc_softc *ssc)
 {
-	struct imx6_sdhc_softc *sc = device_private(ssc->sc_dev);
+	struct imx_sdhc_softc *sc = device_private(ssc->sc_dev);
 
 	KASSERT(sc->sc_pin_wp != NULL);
 
