@@ -101,7 +101,7 @@ file	arch/arm/nxp/imx6_ocotp.c		imxocotp	needs-flag
 device	imxsnvs
 attach	imxsnvs at fdt
 file	arch/arm/imx/imxsnvs.c			imxsnvs
-file	arch/arm/nxp/imx6_snvs.c		imxsnvs
+file	arch/arm/nxp/imx_snvs.c			imxsnvs
 
 # Watchdog
 device imxwdog: sysmon_wdog
