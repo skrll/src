@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.17 2019/04/20 17:16:40 christos Exp $
+#	$NetBSD: Makefile,v 1.19 2019/10/13 07:28:05 mrg Exp $
 
 .include <bsd.own.mk>
 
@@ -15,7 +15,7 @@ SRCS=	sshd.c auth-rhosts.c auth-passwd.c \
 	auth2-none.c auth2-passwd.c auth2-pubkey.c \
 	monitor.c monitor_wrap.c \
 	kexgexs.c sftp-server.c sftp-common.c \
-	sandbox-rlimit.c pfilter.c
+	sftp-realpath.c sandbox-rlimit.c pfilter.c
 
 COPTS.auth-options.c+=	-Wno-pointer-sign
 COPTS.ldapauth.c+=	-Wno-format-nonliteral	# XXX: should fix
@@ -58,8 +58,6 @@ LDADD+=	-lldap -lssl -llber
 DPADD+=	${LIBLDAP} ${LIBSSL} ${LIBLBER}
 .endif
 
-.include <bsd.prog.mk>
-
 LDADD+=	-lcrypt -lutil
 DPADD+=	${LIBCRYPT} ${LIBUTIL}
 
@@ -72,3 +70,8 @@ CPPFLAGS+=-DSMALL
 LDADD+=	-lblacklist
 DPADD+=	${LIBBLACKLIST}
 .endif
+
+COPTS.sshlogin.c+=	${GCC_NO_STRINGOP_TRUNCATION}
+COPTS.ldapauth.c+=	${GCC_NO_STRINGOP_TRUNCATION} ${GCC_NO_STRINGOP_OVERFLOW}
+
+.include <bsd.prog.mk>

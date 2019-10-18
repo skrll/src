@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.27 2019/04/20 17:16:41 christos Exp $
+#	$NetBSD: Makefile,v 1.29 2019/10/13 07:28:05 mrg Exp $
 
 .include <bsd.own.mk>
 
@@ -20,7 +20,6 @@ cipher-chachapoly.c \
 cipher.c \
 cleanup.c \
 compat.c \
-crc32.c \
 dh.c \
 dispatch.c \
 dns.c \
@@ -70,7 +69,6 @@ uidswap.c \
 umac.c \
 umac128.c \
 utf8.c \
-uuencode.c \
 verify.c \
 xmalloc.c \
 xmss_commons.c \
@@ -121,5 +119,8 @@ COPTS.channels.c+=	-fno-strict-aliasing
 COPTS.poly1305.c+=	-O0
 COPTS.umac.c+=		-O0
 .endif
+
+COPTS.hostfile.c+=	${GCC_NO_FORMAT_TRUNCATION}
+COPTS.sshkey.c+=	${GCC_NO_FORMAT_TRUNCATION}
 
 .include <bsd.lib.mk>

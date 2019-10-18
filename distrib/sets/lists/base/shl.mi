@@ -1,4 +1,4 @@
-# $NetBSD: shl.mi,v 1.874 2019/10/03 00:59:50 mrg Exp $
+# $NetBSD: shl.mi,v 1.876 2019/10/12 18:34:14 christos Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -851,16 +851,14 @@
 ./usr/lib/libsqlite3.so.1.4			base-sys-shlib		compatfile
 ./usr/lib/libss.so				base-obsolete		obsolete
 ./usr/lib/libssh.so				base-secsh-shlib	compatfile
-./usr/lib/libssh.so.34				base-secsh-shlib	compatfile
-./usr/lib/libssh.so.34.0			base-secsh-shlib	compatfile
+./usr/lib/libssh.so.35				base-secsh-shlib	compatfile
+./usr/lib/libssh.so.35.0			base-secsh-shlib	compatfile
 ./usr/lib/libssl.so				base-crypto-shlib	compatfile
 ./usr/lib/libssl.so.12				base-crypto-shlib	compatfile,openssl=10
 ./usr/lib/libssl.so.12.0			base-crypto-shlib	compatfile,openssl=10
 ./usr/lib/libssl.so.14				base-crypto-shlib	compatfile,openssl=11
 ./usr/lib/libssl.so.14.0			base-crypto-shlib	compatfile,openssl=11
 ./usr/lib/libstdc++.so				base-sys-shlib		compatfile,gcc,cxx,libstdcxx
-./usr/lib/libstdc++.so.8			base-sys-shlib		compatfile,obsolete
-./usr/lib/libstdc++.so.8.1			base-sys-shlib		compatfile,obsolete
 ./usr/lib/libstdc++.so.9			base-sys-shlib		compatfile,gcc=7,cxx,libstdcxx
 ./usr/lib/libstdc++.so.9.0			base-sys-shlib		compatfile,gcc=7,cxx,libstdcxx
 ./usr/lib/libstdc++.so.9			base-sys-shlib		compatfile,gcc=8,cxx,libstdcxx

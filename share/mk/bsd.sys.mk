@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.sys.mk,v 1.292 2019/05/22 08:31:25 kamil Exp $
+#	$NetBSD: bsd.sys.mk,v 1.294 2019/10/15 15:05:00 christos Exp $
 #
 # Build definitions used for NetBSD source tree builds.
 
@@ -103,7 +103,11 @@ CFLAGS+=	-Wcast-qual -Wwrite-strings
 CFLAGS+=	-Wextra -Wno-unused-parameter
 # Readd -Wno-sign-compare to override -Wextra with clang
 CFLAGS+=	-Wno-sign-compare
+.if "${ACTIVE_CC}" == "gcc" && ${HAVE_GCC} != "8"
+#  XXX: Won't warn about anything.  -Wabi warns about differences from
+#  the most up-to-date ABI, which in g++ 8 is used by default.
 CXXFLAGS+=	-Wabi
+.endif
 CXXFLAGS+=	-Wold-style-cast
 CXXFLAGS+=	-Wctor-dtor-privacy -Wnon-virtual-dtor -Wreorder \
 		-Wno-deprecated -Woverloaded-virtual -Wsign-promo -Wsynth
@@ -329,7 +333,7 @@ MV?=		mv -f
 
 # Lex
 LFLAGS+=	${LPREFIX.${.IMPSRC:T}:D-P${LPREFIX.${.IMPSRC:T}}}
-LFLAGS+=	${LPREFIX:D-P${LPREFIX}}
+LFLAGS+=	${LPREFIX:D-P${LPREFIX}} ${LFLAGS.${.IMPSRC:T}}
 
 .l.c:
 	${_MKTARGET_LEX}
@@ -337,7 +341,7 @@ LFLAGS+=	${LPREFIX:D-P${LPREFIX}}
 
 # Yacc
 YFLAGS+=	${YPREFIX.${.IMPSRC:T}:D-p${YPREFIX.${.IMPSRC:T}}} ${YHEADER.${.IMPSRC:T}:D-d}
-YFLAGS+=	${YPREFIX:D-p${YPREFIX}} ${YHEADER:D-d}
+YFLAGS+=	${YPREFIX:D-p${YPREFIX}} ${YHEADER:D-d} ${YFLAGS.${.IMPSRC:T}}
 
 .y.c:
 	${_MKTARGET_YACC}
