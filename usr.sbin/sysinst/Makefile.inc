@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.24 2019/10/04 09:47:28 mrg Exp $
+#	$NetBSD: Makefile.inc,v 1.27 2019/10/13 07:28:21 mrg Exp $
 #
 # Makefile for sysinst
 
@@ -122,12 +122,7 @@ COPTS += -Os
 CPPFLAGS+=-DINET6
 .endif
 
-.if defined(HAVE_GCC) && ${HAVE_GCC} >= 7 && ${ACTIVE_CC} == "gcc"
-COPTS+=-Wno-format-truncation
-.endif
-
-# XXX overlapping strncpy/snprintf buffers!
-COPTS.partman.c+=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} == 8:? -Wno-error :}
+COPTS+=	${GCC_NO_FORMAT_TRUNCATION}
 
 # Host to ftp from.  Default:
 #	"ftp.NetBSD.org"

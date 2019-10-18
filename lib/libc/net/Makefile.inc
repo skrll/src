@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.88 2018/08/02 08:40:48 rjs Exp $
+#	$NetBSD: Makefile.inc,v 1.91 2019/10/13 07:28:10 mrg Exp $
 #	@(#)Makefile.inc	8.2 (Berkeley) 9/5/93
 
 # net sources
@@ -150,3 +150,5 @@ MLINKS+=getaddrinfo.3 freeaddrinfo.3 \
 MAN+=	sctp_bindx.3 sctp_connectx.3 sctp_freepaddrs.3 sctp_getaddrlen.3 \
 	sctp_getassocid.3 sctp_getpaddrs.3 sctp_opt_info.3 sctp_peeloff.3 \
 	sctp_recvmsg.3 sctp_send.3 sctp_sendmsg.3
+
+COPTS.getaddrinfo.c+=	${GCC_NO_STRINGOP_OVERFLOW}

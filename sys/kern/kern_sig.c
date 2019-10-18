@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_sig.c,v 1.366 2019/10/03 22:48:44 kamil Exp $	*/
+/*	$NetBSD: kern_sig.c,v 1.375 2019/10/16 18:29:49 christos Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_sig.c,v 1.366 2019/10/03 22:48:44 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_sig.c,v 1.375 2019/10/16 18:29:49 christos Exp $");
 
 #include "opt_ptrace.h"
 #include "opt_dtrace.h"
@@ -125,13 +125,15 @@ static int	sigchecktrace(void);
 static int	sigpost(struct lwp *, sig_t, int, int);
 static int	sigput(sigpend_t *, struct proc *, ksiginfo_t *);
 static int	sigunwait(struct proc *, const ksiginfo_t *);
+static void	sigswitch(int, int, bool);
+static void	sigswitch_unlock_and_switch_away(struct lwp *);
 
 static void	sigacts_poolpage_free(struct pool *, void *);
 static void	*sigacts_poolpage_alloc(struct pool *, int);
 
 void (*sendsig_sigcontext_vec)(const struct ksiginfo *, const sigset_t *);
 int (*coredump_vec)(struct lwp *, const char *) =
-    (int (*)(struct lwp *, const char *))enosys;
+    __FPTRCAST(int (*)(struct lwp *, const char *), enosys);
 
 /*
  * DTrace SDT provider definitions
@@ -913,6 +915,7 @@ trapsignal(struct lwp *l, ksiginfo_t *ksi)
 	mutex_enter(proc_lock);
 	mutex_enter(p->p_lock);
 
+repeat:
 	/*
 	 * If we are exiting, demise now.
 	 *
@@ -924,6 +927,17 @@ trapsignal(struct lwp *l, ksiginfo_t *ksi)
 		lwp_exit(l);
 		panic("trapsignal");
 		/* NOTREACHED */
+	}
+
+	/*
+	 * The process is already stopping.
+	 */
+	if ((p->p_sflag & PS_STOPPING) != 0) {
+		mutex_exit(proc_lock);
+		sigswitch_unlock_and_switch_away(l);
+		mutex_enter(proc_lock);
+		mutex_enter(p->p_lock);
+		goto repeat;
 	}
 
 	mask = &l->l_sigmask;
@@ -938,7 +952,7 @@ trapsignal(struct lwp *l, ksiginfo_t *ksi)
 		p->p_sigctx.ps_faked = true;
 		p->p_sigctx.ps_lwp = ksi->ksi_lid;
 		p->p_sigctx.ps_info = ksi->ksi_info;
-		sigswitch(0, signo, false);
+		sigswitch(0, signo, true);
 
 		if (ktrpoint(KTR_PSIG)) {
 			if (p->p_emul->e_ktrpsig)
@@ -1588,18 +1602,38 @@ eventswitch(int code, int pe_report_event, int entity)
 	KASSERT(p->p_nrlwps > 0);
 	KASSERT((code == TRAP_CHLD) || (code == TRAP_LWP) ||
 	        (code == TRAP_EXEC));
+	KASSERT((code != TRAP_CHLD) || (entity > 1)); /* prevent pid1 */
+	KASSERT((code != TRAP_LWP) || (entity > 0));
 
+repeat:
 	/*
 	 * If we are exiting, demise now.
 	 *
 	 * This avoids notifying tracer and deadlocking.
-	*/
+	 */
 	if (__predict_false(ISSET(p->p_sflag, PS_WEXIT))) {
 		mutex_exit(p->p_lock);
 		mutex_exit(proc_lock);
+
+		if (pe_report_event == PTRACE_LWP_EXIT) {
+			/* Avoid double lwp_exit() and panic. */
+			return;
+		}
+
 		lwp_exit(l);
 		panic("eventswitch");
 		/* NOTREACHED */
+	}
+
+	/*
+	 * If we are no longer traced, abandon this event signal.
+	 *
+	 * This avoids killing a process after detaching the debugger.
+	 */
+	if (__predict_false(!ISSET(p->p_slflag, PSL_TRACED))) {
+		mutex_exit(p->p_lock);
+		mutex_exit(proc_lock);
+		return;
 	}
 
 	/*
@@ -1610,6 +1644,17 @@ eventswitch(int code, int pe_report_event, int entity)
 		mutex_exit(p->p_lock);
 		mutex_exit(proc_lock);
 		return;
+	}
+
+	/*
+	 * The process is already stopping.
+	 */
+	if ((p->p_sflag & PS_STOPPING) != 0) {
+		mutex_exit(proc_lock);
+		sigswitch_unlock_and_switch_away(l);
+		mutex_enter(proc_lock);
+		mutex_enter(p->p_lock);
+		goto repeat;
 	}
 
 	KSI_INIT_TRAP(&ksi);
@@ -1631,7 +1676,7 @@ eventswitch(int code, int pe_report_event, int entity)
 	p->p_sigctx.ps_lwp = ksi.ksi_lid;
 	p->p_sigctx.ps_info = ksi.ksi_info;
 
-	sigswitch(0, signo, false);
+	sigswitch(0, signo, true);
 
 	if (code == TRAP_CHLD) {
 		mutex_enter(proc_lock);
@@ -1651,30 +1696,20 @@ eventswitch(int code, int pe_report_event, int entity)
 /*
  * Stop the current process and switch away when being stopped or traced.
  */
-void
-sigswitch(int ppmask, int signo, bool relock)
+static void
+sigswitch(int ppmask, int signo, bool proc_lock_held)
 {
 	struct lwp *l = curlwp;
 	struct proc *p = l->l_proc;
-	int biglocks;
 
 	KASSERT(mutex_owned(p->p_lock));
 	KASSERT(l->l_stat == LSONPROC);
 	KASSERT(p->p_nrlwps > 0);
 
-	/*
-	 * If we are exiting, demise now.
-	 *
-	 * This avoids notifying tracer and deadlocking.
-	 */
-	if (__predict_false(ISSET(p->p_sflag, PS_WEXIT))) {
-		mutex_exit(p->p_lock);
-		if (!relock) {
-			mutex_exit(proc_lock);
-		}
-		lwp_exit(l);
-		panic("sigswitch");
-		/* NOTREACHED */
+	if (proc_lock_held) {
+		KASSERT(mutex_owned(proc_lock));
+	} else {
+		KASSERT(!mutex_owned(proc_lock));
 	}
 
 	/*
@@ -1693,7 +1728,7 @@ sigswitch(int ppmask, int signo, bool relock)
 	 * a new signal, then signal the parent.
 	 */
 	if ((p->p_sflag & PS_STOPPING) != 0) {
-		if (relock && !mutex_tryenter(proc_lock)) {
+		if (!proc_lock_held && !mutex_tryenter(proc_lock)) {
 			mutex_exit(p->p_lock);
 			mutex_enter(proc_lock);
 			mutex_enter(p->p_lock);
@@ -1710,9 +1745,26 @@ sigswitch(int ppmask, int signo, bool relock)
 		mutex_exit(proc_lock);
 	}
 
-	/*
-	 * Unlock and switch away.
-	 */
+	sigswitch_unlock_and_switch_away(l);
+}
+
+/*
+ * Unlock and switch away.
+ */
+static void
+sigswitch_unlock_and_switch_away(struct lwp *l)
+{
+	struct proc *p;
+	int biglocks;
+
+	p = l->l_proc;
+
+	KASSERT(mutex_owned(p->p_lock));
+	KASSERT(!mutex_owned(proc_lock));
+
+	KASSERT(l->l_stat == LSONPROC);
+	KASSERT(p->p_nrlwps > 0);
+
 	KERNEL_UNLOCK_ALL(l, &biglocks);
 	if (p->p_stat == SSTOP || (p->p_sflag & PS_STOPPING) != 0) {
 		p->p_nrlwps--;
@@ -1802,9 +1854,9 @@ issignal(struct lwp *l)
 		 * we awaken, check for a signal from the debugger.
 		 */
 		if (p->p_stat == SSTOP || (p->p_sflag & PS_STOPPING) != 0) {
-			sigswitch(PS_NOCLDSTOP, 0, true);
+			sigswitch_unlock_and_switch_away(l);
 			mutex_enter(p->p_lock);
-			signo = sigchecktrace();
+			continue;
 		} else if (p->p_stat == SACTIVE)
 			signo = sigchecktrace();
 		else
@@ -1874,7 +1926,7 @@ issignal(struct lwp *l)
 			p->p_xsig = signo;
 
 			/* Handling of signal trace */
-			sigswitch(0, signo, true);
+			sigswitch(0, signo, false);
 			mutex_enter(p->p_lock);
 
 			/* Check for a signal from the debugger. */
@@ -1931,7 +1983,7 @@ issignal(struct lwp *l)
 				p->p_xsig = signo;
 				p->p_sflag &= ~PS_CONTINUED;
 				signo = 0;
-				sigswitch(PS_NOCLDSTOP, p->p_xsig, true);
+				sigswitch(PS_NOCLDSTOP, p->p_xsig, false);
 				mutex_enter(p->p_lock);
 			} else if (prop & SA_IGNORE) {
 				/*
@@ -2448,6 +2500,7 @@ proc_stoptrace(int trapno, int sysnum, const register_t args[],
 
 	mutex_enter(p->p_lock);
 
+repeat:
 	/*
 	 * If we are exiting, demise now.
 	 *
@@ -2469,6 +2522,25 @@ proc_stoptrace(int trapno, int sysnum, const register_t args[],
 		return;
 	}
 
+	/*
+	 * If we are no longer traced, abandon this event signal.
+	 *
+	 * This avoids killing a process after detaching the debugger.
+	 */
+	if (__predict_false(!ISSET(p->p_slflag, PSL_TRACED))) {
+		mutex_exit(p->p_lock);
+		return;
+	}
+
+	/*
+	 * The process is already stopping.
+	 */
+	if ((p->p_sflag & PS_STOPPING) != 0) {
+		sigswitch_unlock_and_switch_away(l);
+		mutex_enter(p->p_lock);
+		goto repeat;
+	}
+
 	/* Needed for ktrace */
 	ps = p->p_sigacts;
 	action = SIGACTION_PS(ps, signo).sa_handler;
@@ -2477,7 +2549,7 @@ proc_stoptrace(int trapno, int sysnum, const register_t args[],
 	p->p_xsig = signo;
 	p->p_sigctx.ps_lwp = ksi.ksi_lid;
 	p->p_sigctx.ps_info = ksi.ksi_info;
-	sigswitch(0, signo, true);
+	sigswitch(0, signo, false);
 
 	if (ktrpoint(KTR_PSIG)) {
 		if (p->p_emul->e_ktrpsig)

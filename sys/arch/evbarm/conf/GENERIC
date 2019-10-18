@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC,v 1.52 2019/09/05 16:15:57 bouyer Exp $
+#	$NetBSD: GENERIC,v 1.54 2019/10/08 23:03:01 bad Exp $
 #
 #	GENERIC ARM (aarch32) kernel
 #
@@ -124,8 +124,10 @@ makeoptions	DTS="
 	sun8i-h3-beelink-x2.dts
 	sun8i-h3-libretech-all-h3-cc.dts
 	sun8i-h3-mapleboard-mp130.dts
+	sun8i-h3-nanopi-duo2.dts
 	sun8i-h3-nanopi-m1-plus.dts
 	sun8i-h3-nanopi-m1.dts
+	sun8i-h3-nanopi-r1.dts
 	sun8i-h3-nanopi-neo.dts
 	sun8i-h3-nanopi-neo-air.dts
 	sun8i-h3-orangepi-2.dts
@@ -559,8 +561,8 @@ tegracec0 	at fdt?			# NVIDIA Tegra HDMI CEC
 hdmicec* 	at hdmicecbus?
 
 # Display
-tegradrm* 	at fdt?			# NVIDIA Tegra Display
-tegrafb* 	at tegrafbbus?
+#tegradrm* 	at fdt?			# NVIDIA Tegra Display
+#tegrafb* 	at tegrafbbus?
 genfb* 		at fdt?			# Simple Framebuffer
 mesonfb* 	at fdt?			# Amlogic Meson Framebuffer
 wsdisplay* 	at wsemuldisplaydev?

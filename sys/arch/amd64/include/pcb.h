@@ -1,4 +1,4 @@
-/*	$NetBSD: pcb.h,v 1.29 2018/07/26 09:29:08 maxv Exp $	*/
+/*	$NetBSD: pcb.h,v 1.31 2019/10/12 15:44:46 christos Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -96,11 +96,12 @@ struct pcb {
 
 	uint32_t pcb_unused[8];		/* unused */
 
-	struct cpu_info *pcb_fpcpu;	/* cpu holding our fp state. */
 	union savefpu	pcb_savefpu __aligned(64); /* floating point state */
 	/* **** DO NOT ADD ANYTHING HERE **** */
 };
+#ifndef __lint__
 __CTASSERT(sizeof(struct pcb) - sizeof (union savefpu) ==  128);
+#endif
 
 #else	/*	__x86_64__	*/
 
