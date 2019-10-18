@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_pcie.c,v 1.4 2019/09/02 01:28:41 hkenken Exp $	*/
+/*	$NetBSD: imx6_pcie.c,v 1.5 2019/10/16 11:16:30 hkenken Exp $	*/
 
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_pcie.c,v 1.4 2019/09/02 01:28:41 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx6_pcie.c,v 1.5 2019/10/16 11:16:30 hkenken Exp $");
 
 #include "opt_pci.h"
 #include "opt_fdt.h"
@@ -158,19 +158,19 @@ imx6_pcie_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_clk_pcie_axi = fdtbus_clock_get(phandle, "pcie");
-	if (sc->sc_clk_pcie_axi == NULL) {
-		aprint_error(": couldn't get clock pcie_axi\n");
+	sc->sc_clk_pcie = fdtbus_clock_get(phandle, "pcie_axi");
+	if (sc->sc_clk_pcie == NULL) {
+		aprint_error(": couldn't get clock pcie\n");
 		return;
 	}
-	sc->sc_clk_lvds1_gate = fdtbus_clock_get(phandle, "pcie_bus");
-	if (sc->sc_clk_lvds1_gate == NULL) {
-		aprint_error(": couldn't get clock lvds1_gate\n");
+	sc->sc_clk_pcie_bus = fdtbus_clock_get(phandle, "lvds1_gate");
+	if (sc->sc_clk_pcie_bus == NULL) {
+		aprint_error(": couldn't get clock pcie_bus\n");
 		return;
 	}
-	sc->sc_clk_pcie_ref = fdtbus_clock_get(phandle, "pcie_phy");
-	if (sc->sc_clk_pcie_ref == NULL) {
-		aprint_error(": couldn't get clock pcie_ref\n");
+	sc->sc_clk_pcie_phy = fdtbus_clock_get(phandle, "pcie_ref_125m");
+	if (sc->sc_clk_pcie_phy == NULL) {
+		aprint_error(": couldn't get clock pcie_phy\n");
 		return;
 	}
 
@@ -197,18 +197,6 @@ imx6_pcie_attach(device_t parent, device_t self, void *aux)
 		if (sc->sc_clk_pcie_ext_src == NULL) {
 			aprint_error(": couldn't get clock pcie_ext_src\n");
 			return;
-		}
-
-		struct clk *clk_lvds1_in = imx6_get_clock("lvds1_in");
-		if (clk_lvds1_in == NULL) {
-			aprint_error(": couldn't get clock lvds1_in\n");
-			return;
-		}
-		int error = clk_set_parent(sc->sc_clk_pcie_ext_src, clk_lvds1_in);
-		if (error) {
-			aprint_error_dev(sc->sc_dev,
-			    "couldn't set '%s' parent to '%s': %d\n",
-			    sc->sc_clk_pcie_ext_src->name, clk_lvds1_in->name, error);
 		}
 	} else {
 		sc->sc_ext_osc = false;

@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1153 2019/09/29 22:10:55 mrg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1156 2019/10/13 10:12:13 mrg Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -806,6 +806,15 @@ NOPROFILE=	# defined
 .endif
 
 #
+# GCC warnings with simple disables.  Use these with eg
+# COPTS.foo.c+= ${GCC_NO_STRINGOP_TRUNCATION}.
+#
+GCC_NO_FORMAT_TRUNCATION=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-format-truncation :}
+GCC_NO_STRINGOP_OVERFLOW=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-stringop-overflow :}
+GCC_NO_STRINGOP_TRUNCATION=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wno-stringop-truncation :}
+GCC_NO_CAST_FUNCTION_TYPE=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wno-cast-function-type :}
+
+#
 # The ia64 port is incomplete.
 #
 MKGDB.ia64=	no
@@ -1175,6 +1184,7 @@ MKLLVMRT.aarch64=	yes
 # sorted with at most one letter per line.
 #
 _MKVARS.no= \
+	MKARGON2 \
 	MKARZERO \
 	MKBSDGREP \
 	MKCATPAGES MKCOMPATTESTS MKCOMPATX11 MKCTF \

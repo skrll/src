@@ -1,4 +1,4 @@
-#	$NetBSD: files.imx51,v 1.19 2019/07/24 12:33:18 hkenken Exp $
+#	$NetBSD: files.imx51,v 1.20 2019/10/12 06:46:13 skrll Exp $
 #
 # Configuration info for the Freescale i.MX5x
 #
@@ -110,7 +110,7 @@ file   arch/arm/imx/imxusb.c			imxehci
 attach	sdhc at axi with sdhc_axi
 file	arch/arm/imx/imx51_esdhc.c		sdhc_axi
 
-# iic Controller
+# iic controller
 device	imxi2c: motoi2c, i2cbus, i2cexec
 attach	imxi2c at axi
 file	arch/arm/imx/imxi2c.c		imxi2c

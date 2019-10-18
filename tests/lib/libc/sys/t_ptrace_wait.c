@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ptrace_wait.c,v 1.134 2019/10/02 23:15:09 kamil Exp $	*/
+/*	$NetBSD: t_ptrace_wait.c,v 1.137 2019/10/13 09:42:15 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2016, 2017, 2018, 2019 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: t_ptrace_wait.c,v 1.134 2019/10/02 23:15:09 kamil Exp $");
+__RCSID("$NetBSD: t_ptrace_wait.c,v 1.137 2019/10/13 09:42:15 kamil Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -126,7 +126,7 @@ static int debug = 0;
 #endif
 
 #ifndef TEST_LWP_ENABLED
-#define TEST_LWP_ENABLED 0
+#define TEST_LWP_ENABLED 1
 #endif
 
 /// ----------------------------------------------------------------------------
@@ -5455,16 +5455,21 @@ TRACEME_EXEC(traceme_signalignored_exec, false, true)
 
 /// ----------------------------------------------------------------------------
 
+#define TRACE_THREADS_NUM 100
+
 static volatile int done;
+pthread_mutex_t trace_threads_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 static void *
 trace_threads_cb(void *arg __unused)
 {
 
+	pthread_mutex_lock(&trace_threads_mtx);
 	done++;
+	pthread_mutex_unlock(&trace_threads_mtx);
 
-	while (done < 3)
-		continue;
+	while (done < TRACE_THREADS_NUM)
+		sched_yield();
 
 	return NULL;
 }
@@ -5483,7 +5488,7 @@ trace_threads(bool trace_create, bool trace_exit)
 	const int elen = sizeof(event);
 	struct ptrace_siginfo info;
 
-	pthread_t t[3];
+	pthread_t t[TRACE_THREADS_NUM];
 	int rv;
 	size_t n;
 	lwpid_t lid;
