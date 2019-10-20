@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.821 2019/10/12 06:31:03 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.823 2019/10/18 01:38:28 manu Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2004, 2006, 2008, 2009, 2017
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.821 2019/10/12 06:31:03 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.823 2019/10/18 01:38:28 manu Exp $");
 
 #include "opt_beep.h"
 #include "opt_compat_freebsd.h"
@@ -118,6 +118,8 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.821 2019/10/12 06:31:03 maxv Exp $");
 #include <uvm/uvm_page.h>
 
 #include <sys/sysctl.h>
+
+#include <x86/efi.h>
 
 #include <machine/cpu.h>
 #include <machine/cpufunc.h>
@@ -418,7 +420,8 @@ cpu_startup(void)
 	initmsgbuf((void *)msgbuf_vaddr, sz);
 
 #ifdef MULTIBOOT
-	multiboot_print_info();
+	multiboot1_print_info();
+	multiboot2_print_info();
 #endif
 
 #if NCARDBUS > 0
@@ -1061,7 +1064,10 @@ init386_ksyms(void)
 #endif
 
 #if defined(MULTIBOOT)
-	if (multiboot_ksyms_addsyms_elf())
+	if (multiboot1_ksyms_addsyms_elf())
+		return;
+
+	if (multiboot2_ksyms_addsyms_elf())
 		return;
 #endif
 
@@ -1368,10 +1374,15 @@ init386(paddr_t first_avail)
 	init386_ksyms();
 
 #if NMCA > 0
-	/* check for MCA bus, needed to be done before ISA stuff - if
+	/* 
+	 * check for MCA bus, needed to be done before ISA stuff - if
 	 * MCA is detected, ISA needs to use level triggered interrupts
-	 * by default */
-	mca_busprobe();
+	 * by default
+	 * And we do not search for MCA using bioscall() on EFI systems
+	 * that lacks it (they lack MCA too, anyway).
+	 */
+	if (lookup_bootinfo(BTINFO_EFI) == NULL)
+		mca_busprobe();
 #endif
 
 #ifdef XENPV

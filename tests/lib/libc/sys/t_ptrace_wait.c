@@ -1140,7 +1140,7 @@ traceme_sendsignal_ignored(int sigsent)
 	SYSCALL_REQUIRE((child = fork()) != -1);
 	if (child == 0) {
 		DPRINTF("Before calling PT_TRACE_ME from child %d\n", getpid());
-
+		
 		FORKEE_ASSERT(ptrace(PT_TRACE_ME, 0, NULL, 0) != -1);
 
 		memset(&sa, 0, sizeof(sa));
@@ -4412,7 +4412,7 @@ access_regs(const char *regset, const char *aux)
 #if defined(HAVE_FPREGS)
 	struct fpreg fpr;
 #endif
-
+	
 #if !defined(HAVE_GPREGS)
 	if (strcmp(regset, "regs") == 0)
 		atf_tc_fail("Impossible test scenario!");

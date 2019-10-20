@@ -1,4 +1,4 @@
-/* $NetBSD: if_bce.c,v 1.52 2019/05/30 02:32:18 msaitoh Exp $	 */
+/* $NetBSD: if_bce.c,v 1.56 2019/10/18 23:08:29 msaitoh Exp $	 */
 
 /*
  * Copyright (c) 2003 Clifford Wright. All rights reserved.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bce.c,v 1.52 2019/05/30 02:32:18 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bce.c,v 1.56 2019/10/18 23:08:29 msaitoh Exp $");
 
 #include "vlan.h"
 
@@ -63,8 +63,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_bce.c,v 1.52 2019/05/30 02:32:18 msaitoh Exp $");
 
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
-#include <dev/mii/miidevs.h>
-#include <dev/mii/brgphyreg.h>
 
 #include <dev/pci/if_bcereg.h>
 
@@ -423,6 +421,8 @@ bce_attach(device_t parent, device_t self, void *aux)
 	ifp->if_stop = bce_stop;
 	IFQ_SET_READY(&ifp->if_snd);
 
+	sc->ethercom.ec_capabilities |= ETHERCAP_VLAN_MTU;
+
 	/* Initialize our media structures and probe the MII. */
 
 	mii->mii_ifp = ifp;
@@ -653,7 +653,7 @@ bce_watchdog(struct ifnet *ifp)
 {
 	struct bce_softc *sc = ifp->if_softc;
 
-	aprint_error_dev(sc->bce_dev, "device timeout\n");
+	device_printf(sc->bce_dev, "device timeout\n");
 	ifp->if_oerrors++;
 
 	(void) bce_init(ifp);
@@ -920,10 +920,15 @@ bce_init(struct ifnet *ifp)
 	sc->bce_txsnext = 0;
 	sc->bce_txin = 0;
 
-	/* enable crc32 generation */
+	/* enable crc32 generation and set proper LED modes */
 	bus_space_write_4(sc->bce_btag, sc->bce_bhandle, BCE_MACCTL,
 	    bus_space_read_4(sc->bce_btag, sc->bce_bhandle, BCE_MACCTL) |
-	    BCE_EMC_CG);
+	    BCE_EMC_CRC32_ENAB | BCE_EMC_LED);
+
+	/* reset or clear powerdown control bit  */
+	bus_space_write_4(sc->bce_btag, sc->bce_bhandle, BCE_MACCTL,
+	    bus_space_read_4(sc->bce_btag, sc->bce_bhandle, BCE_MACCTL) &
+	    ~BCE_EMC_PDOWN);
 
 	/* setup DMA interrupt control */
 	bus_space_write_4(sc->bce_btag, sc->bce_bhandle, BCE_DMAI_CTL, 1 << 24);	/* MAGIC */
@@ -959,7 +964,7 @@ bce_init(struct ifnet *ifp)
 	bus_space_write_4(sc->bce_btag, sc->bce_bhandle, BCE_DMA_RXADDR,
 	    sc->bce_ring_map->dm_segs[0].ds_addr + 0x40000000);		/* MAGIC */
 
-	/* Initalize receive descriptors */
+	/* Initialize receive descriptors */
 	for (i = 0; i < BCE_NRXDESC; i++) {
 		if (sc->bce_cdata.bce_rx_chain[i] == NULL) {
 			if ((error = bce_add_rxbuf(sc, i)) != 0) {
@@ -1010,7 +1015,7 @@ bce_add_mac(struct bce_softc *sc, uint8_t *mac, u_long idx)
 	uint32_t	rval;
 
 	bus_space_write_4(sc->bce_btag, sc->bce_bhandle, BCE_FILT_LOW,
-	    mac[2] << 24 | mac[3] << 16 | mac[4] << 8 | mac[5]);
+	    (uint32_t)mac[2] << 24 | mac[3] << 16 | mac[4] << 8 | mac[5]);
 	bus_space_write_4(sc->bce_btag, sc->bce_bhandle, BCE_FILT_HI,
 	    mac[0] << 8 | mac[1] | 0x10000);	/* MAGIC */
 	bus_space_write_4(sc->bce_btag, sc->bce_bhandle, BCE_FILT_CTL,
@@ -1476,9 +1481,11 @@ static void
 bce_tick(void *v)
 {
 	struct bce_softc *sc = v;
+	int s;
 
-	/* Tick the MII. */
+	s = splnet();
 	mii_tick(&sc->bce_mii);
+	splx(s);
 
 	callout_reset(&sc->bce_timeout, hz, bce_tick, sc);
 }
