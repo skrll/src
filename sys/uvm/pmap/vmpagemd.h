@@ -1,4 +1,4 @@
-/*	$NetBSD: vmpagemd.h,v 1.12 2019/07/12 10:39:12 skrll Exp $	*/
+/*	$NetBSD: vmpagemd.h,v 1.15 2019/10/20 08:29:38 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2011 The NetBSD Foundation, Inc.
@@ -75,14 +75,14 @@ typedef struct pv_entry {
 #define	VM_PAGEMD_UNCACHED	__BIT(4)	/* page is mapped uncached */
 #endif
 
+#define	VM_PAGEMD_REFERENCED_P(mdpg)	(((mdpg)->mdpg_attrs & VM_PAGEMD_REFERENCED) != 0)
+#define	VM_PAGEMD_MODIFIED_P(mdpg)	(((mdpg)->mdpg_attrs & VM_PAGEMD_MODIFIED) != 0)
+#define	VM_PAGEMD_POOLPAGE_P(mdpg)	(((mdpg)->mdpg_attrs & VM_PAGEMD_POOLPAGE) != 0)
+#define	VM_PAGEMD_EXECPAGE_P(mdpg)	(((mdpg)->mdpg_attrs & VM_PAGEMD_EXECPAGE) != 0)
 #ifdef PMAP_VIRTUAL_CACHE_ALIASES
 #define	VM_PAGEMD_CACHED_P(mdpg)	(((mdpg)->mdpg_attrs & VM_PAGEMD_UNCACHED) == 0)
 #define	VM_PAGEMD_UNCACHED_P(mdpg)	(((mdpg)->mdpg_attrs & VM_PAGEMD_UNCACHED) != 0)
 #endif
-#define	VM_PAGEMD_MODIFIED_P(mdpg)	(((mdpg)->mdpg_attrs & VM_PAGEMD_MODIFIED) != 0)
-#define	VM_PAGEMD_REFERENCED_P(mdpg)	(((mdpg)->mdpg_attrs & VM_PAGEMD_REFERENCED) != 0)
-#define	VM_PAGEMD_POOLPAGE_P(mdpg)	(((mdpg)->mdpg_attrs & VM_PAGEMD_POOLPAGE) != 0)
-#define	VM_PAGEMD_EXECPAGE_P(mdpg)	(((mdpg)->mdpg_attrs & VM_PAGEMD_EXECPAGE) != 0)
 
 #endif /* !_MODULE */
 
@@ -101,11 +101,13 @@ struct vm_page_md {
 #define	VM_PAGEMD_PVLIST_LOCK_INIT(mdpg)	__nothing
 #endif /* MULTIPROCESSOR || MODULAR */
 
-#define	VM_PAGEMD_PVLIST_LOCK(mdpg)		pmap_pvlist_lock(mdpg, 1)
-#define	VM_PAGEMD_PVLIST_READLOCK(mdpg)		pmap_pvlist_lock(mdpg, 0)
-#define	VM_PAGEMD_PVLIST_UNLOCK(mdpg)		pmap_pvlist_unlock(mdpg)
-#define	VM_PAGEMD_PVLIST_LOCKED_P(mdpg)		pmap_pvlist_locked_p(mdpg)
-#define	VM_PAGEMD_PVLIST_GEN(mdpg)		((mdpg)->mdpg_attrs >> 16)
+#define	VM_PAGEMD_PVLIST_LOCK(mdpg)	pmap_pvlist_lock(mdpg, 1)
+#define	VM_PAGEMD_PVLIST_READLOCK(mdpg)	pmap_pvlist_lock(mdpg, 0)
+#define	VM_PAGEMD_PVLIST_UNLOCK(mdpg)	pmap_pvlist_unlock(mdpg)
+#define	VM_PAGEMD_PVLIST_LOCKED_P(mdpg)	pmap_pvlist_locked_p(mdpg)
+#define	VM_PAGEMD_PVLIST_GEN(mdpg)	((mdpg)->mdpg_attrs >> 16)
+
+#define	VM_PAGEMD_PVLIST_EMPTY_P(mdpg)	((mdpg)->mdpg_first.pv_pmap == NULL)
 
 #ifdef _KERNEL
 #if defined(MULTIPROCESSOR) || defined(MODULAR)
