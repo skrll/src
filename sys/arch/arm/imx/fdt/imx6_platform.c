@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_platform.c,v 1.6 2019/08/19 10:44:35 hkenken Exp $	*/
+/*	$NetBSD: imx6_platform.c,v 1.8 2019/10/23 02:34:43 hkenken Exp $	*/
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
  * Written by Hashimoto Kenichi for Genetec Corporation.
@@ -25,7 +25,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_platform.c,v 1.6 2019/08/19 10:44:35 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx6_platform.c,v 1.8 2019/10/23 02:34:43 hkenken Exp $");
 
 #include "arml2cc.h"
 #include "opt_console.h"
@@ -57,6 +57,7 @@ __KERNEL_RCSID(0, "$NetBSD: imx6_platform.c,v 1.6 2019/08/19 10:44:35 hkenken Ex
 #include <arm/imx/imx6_reg.h>
 #include <arm/imx/imx6_srcreg.h>
 #include <arm/imx/imxuartreg.h>
+#include <arm/imx/imxwdogreg.h>
 
 #include <arm/imx/fdt/imx6_platform.h>
 
@@ -116,6 +117,20 @@ imx_platform_early_putchar(char c)
 static void
 imx_platform_device_register(device_t self, void *aux)
 {
+	prop_dictionary_t prop = device_properties(self);
+
+	if (device_is_a(self, "atphy")) {
+		const char * compat[] = {
+			"fsl,imx6dl-sabresd",
+			"fsl,imx6q-sabresd",
+			"fsl,imx6qp-sabresd",
+			"solidrun,hummingboard2/q",
+			"solidrun,hummingboard2/dl",
+			NULL
+		};
+		if (of_match_compatible(OF_finddevice("/"), compat))
+			prop_dictionary_set_uint32(prop, "clk_25m", 125000000);
+	}
 }
 
 static u_int
@@ -183,6 +198,27 @@ imx_platform_mpstart(void)
 static void
 imx6_platform_reset(void)
 {
+	bus_space_tag_t bst = &armv7_generic_bs_tag;
+	bus_space_handle_t bsh;
+
+	if (bus_space_map(bst, IMX6_AIPS1_BASE + AIPS1_WDOG1_BASE, AIPS1_WDOG_SIZE, 0, &bsh))
+		panic("couldn't map wdog1 registers");
+
+	delay(1000);	/* wait for flushing FIFO of serial console */
+
+	cpsid(I32_bit|F32_bit);
+
+	/* software reset signal on wdog */
+	bus_space_write_2(bst, bsh, IMX_WDOG_WCR, WCR_WDE);
+
+	/*
+	 * write twice due to errata.
+	 * Reference: ERR004346: IMX6DQCE Chip Errata for the i.MX 6Dual/6Quad
+	 */
+	bus_space_write_2(bst, bsh, IMX_WDOG_WCR, WCR_WDE);
+
+	for (;;)
+		__asm("wfi");
 }
 
 const struct arm_platform imx6_platform = {

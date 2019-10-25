@@ -1,4 +1,4 @@
-/*	$NetBSD: h_mem_assist.c,v 1.14 2019/10/14 10:39:24 maxv Exp $	*/
+/*	$NetBSD: h_mem_assist.c,v 1.16 2019/10/23 12:02:55 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
@@ -90,25 +90,25 @@ handle_memory(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu)
 static void
 run_machine(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu)
 {
-	struct nvmm_exit *exit = vcpu->exit;
+	struct nvmm_vcpu_exit *exit = vcpu->exit;
 
 	while (1) {
 		if (nvmm_vcpu_run(mach, vcpu) == -1)
 			err(errno, "nvmm_vcpu_run");
 
 		switch (exit->reason) {
-		case NVMM_EXIT_NONE:
+		case NVMM_VCPU_EXIT_NONE:
 			break;
 
-		case NVMM_EXIT_MSR:
+		case NVMM_VCPU_EXIT_RDMSR:
 			/* Stop here. */
 			return;
 
-		case NVMM_EXIT_MEMORY:
+		case NVMM_VCPU_EXIT_MEMORY:
 			handle_memory(mach, vcpu);
 			break;
 
-		case NVMM_EXIT_SHUTDOWN:
+		case NVMM_VCPU_EXIT_SHUTDOWN:
 			printf("Shutting down!\n");
 			return;
 
@@ -119,7 +119,7 @@ run_machine(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu)
 	}
 }
 
-static struct nvmm_callbacks callbacks = {
+static struct nvmm_assist_callbacks callbacks = {
 	.io = NULL,
 	.mem = mem_callback
 };
@@ -357,7 +357,7 @@ test_vm64(void)
 		err(errno, "nvmm_machine_create");
 	if (nvmm_vcpu_create(&mach, 0, &vcpu) == -1)
 		err(errno, "nvmm_vcpu_create");
-	nvmm_machine_configure(&mach, NVMM_MACH_CONF_CALLBACKS, &callbacks);
+	nvmm_vcpu_configure(&mach, &vcpu, NVMM_VCPU_CONF_CALLBACKS, &callbacks);
 	map_pages64(&mach);
 
 	for (i = 0; tests64[i].name != NULL; i++) {
@@ -443,7 +443,7 @@ test_vm16(void)
 		err(errno, "nvmm_machine_create");
 	if (nvmm_vcpu_create(&mach, 0, &vcpu) == -1)
 		err(errno, "nvmm_vcpu_create");
-	nvmm_machine_configure(&mach, NVMM_MACH_CONF_CALLBACKS, &callbacks);
+	nvmm_vcpu_configure(&mach, &vcpu, NVMM_VCPU_CONF_CALLBACKS, &callbacks);
 	map_pages16(&mach);
 
 	for (i = 0; tests16[i].name != NULL; i++) {

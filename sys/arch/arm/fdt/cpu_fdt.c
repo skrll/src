@@ -1,4 +1,4 @@
-/* $NetBSD: cpu_fdt.c,v 1.26 2019/10/15 17:25:02 bad Exp $ */
+/* $NetBSD: cpu_fdt.c,v 1.28 2019/10/19 18:04:26 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "psci_fdt.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.26 2019/10/15 17:25:02 bad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.28 2019/10/19 18:04:26 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -308,8 +308,7 @@ arm_fdt_cpu_mpstart(void)
 
 		/* Wait for AP to start */
 		for (i = 0x10000000; i > 0; i--) {
-			membar_consumer();
-			if (arm_cpu_hatched & __BIT(cpuindex))
+			if (cpu_hatched_p(cpuindex))
 				break;
 		}
 
@@ -348,7 +347,6 @@ cpu_enable_psci(int phandle)
 
 	fdtbus_get_reg64(phandle, 0, &mpidr, NULL);
 
-	cpu_dcache_wbinv_all();
 	ret = psci_cpu_on(mpidr, cpu_fdt_mpstart_pa(), 0);
 	if (ret != PSCI_SUCCESS)
 		return EIO;
