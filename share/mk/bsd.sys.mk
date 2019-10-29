@@ -169,7 +169,9 @@ LINTFLAGS+=	${DESTDIR:D-d ${DESTDIR}/usr/include}
 CPPFLAGS+=	-D_FORTIFY_SOURCE=2
 .   endif
 .   if !defined(COVERITY_TOP_CONFIG)
+.if ${MACHINE} != "hppa64"
 COPTS+=	-fstack-protector -Wstack-protector
+.endif
 
 # GCC 4.8 on m68k erroneously does not protect functions with
 # variables needing special alignement, see

@@ -14715,6 +14715,7 @@ do
     hppa_elf32_nbsd_vec)	 tb="$tb elf32-hppa.lo elf32.lo $elf" ;;
     hppa_elf64_vec)		 tb="$tb elf64-hppa.lo elf64.lo $elf"; target_size=64 ;;
     hppa_elf64_linux_vec)	 tb="$tb elf64-hppa.lo elf64.lo $elf"; target_size=64 ;;
+    hppa_elf64_nbsd_vec)	 tb="$tb elf64-hppa.lo elf64.lo $elf"; target_size=64 ;;
     hppa_som_vec)		 tb="$tb som.lo" ;;
     i386_aout_vec)		 tb="$tb i386aout.lo aout32.lo" ;;
     i386_aout_bsd_vec)		 tb="$tb i386bsd.lo aout32.lo" ;;

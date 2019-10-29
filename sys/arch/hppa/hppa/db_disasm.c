@@ -59,7 +59,6 @@ __KERNEL_RCSID(0, "$NetBSD: db_disasm.c,v 1.17 2018/02/21 10:42:16 skrll Exp $")
  *   32-bit (or > 32-bit) signed quantity.
  */
 
-
 /* Spectrum Architecturally Defined Datatypes */
 struct doubleword {
 	int	wd0;
@@ -528,20 +527,29 @@ DeclBitfR(31,1,_b311)
 #define	STWM	0x1b, 0x00, 0, 0	/* STORE WORD and MODIFY */
 #define	STH	0x19, 0x00, 0, 0	/* STORE HALFWORD */
 #define	STB	0x18, 0x00, 0, 0	/* STORE BYTE */
+#define	LDDX	0x03, 0x03, 19, 7	/* LOAD DOUBLEWORD INDEXED */
 #define	LDWX	0x03, 0x02, 19, 7	/* LOAD WORD INDEXED */
 #define	LDHX	0x03, 0x01, 19, 7	/* LOAD HALFWORD INDEXED */
 #define	LDBX	0x03, 0x00, 19, 7	/* LOAD BYTE INDEXED */
+#define	LDDAX	0x03, 0x04, 19, 7	/* LOAD DOUBLEWORD ABSOLUTE INDEXED */
+#define	LDCDX	0x03, 0x05, 19, 7	/* LOAD and CLEAR DOUBLEWORD INDEXED */
 #define	LDWAX	0x03, 0x06, 19, 7	/* LOAD WORD ABSOLUTE INDEXED */
 #define	LDCWX	0x03, 0x07, 19, 7	/* LOAD and CLEAR WORD INDEXED */
+#define LDDS	0x03, 0x43, 19, 7	/* LOAD DOUBLEWORD SHORT DISP */
 #define LDWS	0x03, 0x42, 19, 7	/* LOAD WORD SHORT DISP */
 #define LDHS	0x03, 0x41, 19, 7	/* LOAD HALFWORD SHORT DISP */
 #define LDBS	0x03, 0x40, 19, 7	/* LOAD BYTE SHORT DISP */
+#define LDDAS	0x03, 0x44, 19, 7	/* LOAD DOUBLEWORD ABSOLUTE SHORT DISP */
+#define LDCDS	0x03, 0x45, 19, 7	/* LOAD and CLEAR DOUBDLEWORD ABSOLUTE SHORT DISP */
 #define LDWAS	0x03, 0x46, 19, 7	/* LOAD WORD ABSOLUTE SHORT DISP */
 #define LDCWS	0x03, 0x47, 19, 7	/* LOAD and CLEAR WORD SHORT DISP */
+#define	STDS	0x03, 0x4b, 19, 7	/* STORE DOUBLEWORD SHORT DISP */
 #define	STWS	0x03, 0x4a, 19, 7	/* STORE WORD SHORT DISP */
 #define	STHS	0x03, 0x49, 19, 7	/* STORE HALFWORD SHORT DISP */
 #define	STBS	0x03, 0x48, 19, 7	/* STORE BYTE SHORT DISP */
+#define	STDAS	0x03, 0x4f, 19, 7	/* STORE DOUBLEWORD ABSOLUTE SHORT DISP */
 #define	STWAS	0x03, 0x4e, 19, 7	/* STORE WORD ABSOLUTE SHORT DISP */
+#define	STDBYS	0x03, 0x4d, 19, 7	/* STORE DOUBLEWORD BYTES SHORT DISP */
 #define	STBYS	0x03, 0x4c, 19, 7	/* STORE BYTES SHORT DISP */
 #define	LDIL	0x08, 0x00, 0, 0	/* LOAD IMMED LEFT */
 #define	ADDIL	0x0a, 0x00, 0, 0	/* ADD IMMED LEFT */
@@ -601,12 +609,14 @@ DeclBitfR(31,1,_b311)
 #define	SUBI	0x25, 0x00, 20, 1	/* SUBTRACT from IMMED  */
 #define	SUBIO	0x25, 0x01, 20, 1	/* SUBTRACT from IMMED and TRAP on OVFLO */
 #define	COMICLR	0x24, 0x00, 0, 0	/* COMPARE IMMED and CLEAR */
+
 #define	VSHD	0x34, 0x00, 19, 3	/* VARIABLE SHIFT DOUBLE */
 #define	SHD	0x34, 0x02, 19, 3	/* SHIFT DOUBLE */
 #define	VEXTRU	0x34, 0x04, 19, 3	/* VARIABLE EXTRACT RIGHT UNSIGNED */
 #define	VEXTRS	0x34, 0x05, 19, 3	/* VARIABLE EXTRACT RIGHT SIGNED */
 #define	EXTRU	0x34, 0x06, 19, 3	/* EXTRACT RIGHT UNSIGNED  */
 #define	EXTRS	0x34, 0x07, 19, 3	/* EXTRACT RIGHT SIGNED */
+
 #define	VDEP	0x35, 0x01, 19, 3	/* VARIABLE DEPOSIT */
 #define	DEP	0x35, 0x03, 19, 3	/* DEPOSIT */
 #define	VDEPI	0x35, 0x05, 19, 3	/* VARIABLE DEPOSIT IMMED */
@@ -670,6 +680,8 @@ DeclBitfR(31,1,_b311)
 #define	FIC	0x01, 0x0a, 19, 7	/* FLUSH INSTRUCTION CACHE */
 #define	FDCE	0x01, 0x4b, 19, 7	/* FLUSH DATA CACHE ENTRY */
 #define	FICE	0x01, 0x0b, 19, 7	/* FLUSH DATA CACHE ENTRY */
+
+#define	LASTOP	0, 0, 0, 0
 
 /*
  *  Header: /n/schirf/u/baford/CVS/mach4-parisc/kernel_unused/parisc/kdb/unasm.c,v 1.5 1994/07/21 22:32:05 mike Exp
@@ -1007,20 +1019,29 @@ static const struct inst instrs[] = {
 	{ STH,    0, "sth",     stDasm },
 	{ STB,    0, "stb",     stDasm },
 	{ STWM,   0, "stwm",    stDasm },
+	{ LDDX,   0, "ldd",	ldxDasm },
 	{ LDWX,   0, "ldw",	ldxDasm },
 	{ LDHX,   0, "ldh",	ldxDasm },
 	{ LDBX,   0, "ldb",	ldxDasm },
+	{ LDDAX,  0, "ldda",	ldxDasm },
+	{ LDCDX,  0, "ldcd",	ldxDasm },
 	{ LDCWX,  0, "ldcw",	ldxDasm },
 	{ LDWAX,  0, "ldwa",	ldxDasm },
+	{ LDDS,   0, "ldd",	ldxDasm },
 	{ LDWS,   0, "ldw",	ldxDasm },
 	{ LDHS,   0, "ldh",	ldxDasm },
 	{ LDBS,   0, "ldb",	ldxDasm },
+	{ LDDAS,  0, "ldda",	ldxDasm },
 	{ LDCWS,  0, "ldcw",	ldxDasm },
+	{ LDCDS,  0, "ldcd",	ldxDasm },
 	{ LDWAS,  0, "ldwa",	ldxDasm },
+	{ STDS,   0, "stds",	stsDasm },	/* XXXNH stXs vs ldX */
 	{ STWS,   0, "stws",    stsDasm },
 	{ STHS,   0, "sths",    stsDasm },
 	{ STBS,   0, "stbs",    stsDasm },
+	{ STDAS,  0, "stdas",   stsDasm },
 	{ STWAS,  0, "stwas",   stsDasm },
+	{ STDBYS, 0, "stdbys",  stbysDasm },
 	{ STBYS,  0, "stbys",   stbysDasm },
 	{ LDIL,   0, "ldil",    limmDasm },
 	{ ADDIL,  0, "addil",   limmDasm },

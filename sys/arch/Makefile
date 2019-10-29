@@ -9,6 +9,9 @@
 
 ARCHSUBDIR= ${MACHINE_CPU}
 
+.if ${ARCHSUBDIR} == "hppa64"
+ARCHSUBDIR= hppa
+.endif
 .if ${ARCHSUBDIR} == "mips64"
 ARCHSUBDIR= mips
 .endif
@@ -18,6 +21,8 @@ ARCHSUBDIR= powerpc
 
 .if ${MACHINE_CPU} == "arm"
 SUBDIR= acorn32 cats epoc32 evbarm hpcarm iyonix netwinder shark zaurus
+.elif ${MACHINE_CPU} == "hppa"
+SUBDIR=
 .else
 SUBDIR=	${MACHINE}
 .endif
@@ -61,7 +66,10 @@ SUBDIR+= xen
 #	x68k x86_64 xen \
 #	zaurus
 
-.if ${MACHINE_CPU} == aarch64 || ${MACHINE_CPU} == "arm"
+.if \
+    ${MACHINE_CPU} == aarch64 || \
+    ${MACHINE_CPU} == "arm" || \
+    ${MACHINE_CPU} == "hppa"
 INCSYMLINKS= ${MACHINE_CPU} /usr/include/machine
 .else
 INCSYMLINKS= ${MACHINE} /usr/include/machine

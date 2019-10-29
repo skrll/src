@@ -1359,6 +1359,14 @@ hppa*-*-openbsd*)
 	gas=yes
 	gnu_ld=yes
 	;;
+hppa*64*-*-netbsd*)
+	target_cpu_default="MASK_PA_11|MASK_PA_20"
+	tm_file="pa/pa64-start.h ${tm_file} dbxelf.h elfos.h ${nbsd_tm_file} \
+		 pa/pa-netbsd.h pa/pa64-regs.h pa/pa-64.h"
+	#tmake_file="${tmake_file} pa/t-netbsd64"
+	extra_options="${extra_options} netbsd.opt netbsd-elf.opt"
+	gas=yes gnu_ld=yes
+	;;
 hppa*-*-netbsd* | parisc*-*-netbsd*)
 	target_cpu_default="MASK_PA_11|MASK_NO_SPACE_REGS"
 	tm_file="${tm_file} dbxelf.h elfos.h ${nbsd_tm_file} \

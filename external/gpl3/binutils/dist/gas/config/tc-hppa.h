@@ -47,8 +47,10 @@
 #ifdef OBJ_ELF
 #if TARGET_ARCH_SIZE == 64
 #include "bfd/elf64-hppa.h"
-#if defined (TE_LINUX) || defined (TE_NetBSD)
+#if defined (TE_LINUX)
 #define TARGET_FORMAT "elf64-hppa-linux"
+#elif defined (TE_NetBSD)
+#define TARGET_FORMAT "elf64-hppa-netbsd"
 #else
 #define TARGET_FORMAT "elf64-hppa"
 #endif
