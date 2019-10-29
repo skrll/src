@@ -29,7 +29,6 @@ SRCS+=	kvm_${MACHINE_CPU}.c
 .else
 .BEGIN:
 	@echo no kvm_xx.c for ${MACHINE_ARCH} nor ${MACHINE_CPU}
-	@false
 .endif
 
 .if ${MACHINE_ARCH} == "i386"
