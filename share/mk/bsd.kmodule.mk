@@ -46,6 +46,9 @@ CFLAGS+=	-fno-strict-aliasing -Wno-pointer-sign
 CFLAGS+=	-fno-common -fno-unwind-tables
 .elif ${MACHINE_CPU} == "hppa"
 CFLAGS+=	-mlong-calls
+.elif ${MACHINE_CPU} == "hppa"
+#-mlong-calls
+CFLAGS+=	 -mpa-risc-1-1 -msoft-float -mdisable-fpregs -mno-space-regs -mfast-indirect-calls -mportable-runtime 
 .elif ${MACHINE_CPU} == "powerpc"
 CFLAGS+=	${${ACTIVE_CC} == "gcc":? -mlongcall :}
 .elif ${MACHINE_CPU} == "vax"
@@ -107,6 +110,14 @@ KMODSCRIPT=	${KMODSCRIPTSRC}
 
 PROG?=		${KMOD}.kmod
 
+.if ${MKDEBUG} != "no"
+KMODDEBUG=	mv ${PROG} ${PROG}.gdb && \
+		${STRIP} --strip-debug -o ${PROG} ${PROG}.gdb
+CLEANFILES+=	${PROG}.gdb
+.else
+KMODDEBUG=	true
+.endif
+
 ##### Build rules
 realall:	${PROG}
 
@@ -162,6 +173,7 @@ ${PROG}: ${OBJS} ${DPADD} ${KMODSCRIPT}
 	${CC} ${LDFLAGS} -nostdlib -r -Wl,-T,${KMODSCRIPT},-d \
 		-Wl,-Map=${.TARGET}.map \
 		-o ${.TARGET} ${OBJS}
+	${KMODDEBUG}
 .endif
 .if defined(CTFMERGE)
 	${CTFMERGE} ${CTFMFLAGS} -o ${.TARGET} ${OBJS}
@@ -198,7 +210,7 @@ ${_PROG}:	.MADE					# no build at install
 	done
 	${INSTALL_DIR} ${KMODULEDIR}
 	${INSTALL_FILE} -o ${KMODULEOWN} -g ${KMODULEGRP} -m ${KMODULEMODE} \
-		${.ALLSRC} ${.TARGET}
+		${STRIPFLAG} ${.ALLSRC} ${.TARGET}
 
 kmodinstall::	${_PROG}
 .PHONY:		kmodinstall

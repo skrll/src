@@ -65,8 +65,9 @@ options 	USERCONF	# userconf(4) support
 options 	BUFQ_PRIOCSCAN
 
 # Diagnostic/debugging support options
-#options 	DIAGNOSTIC	# expensive kernel consistency checks
-#options 	DEBUG		# expensive debugging checks/support
+options 	DIAGNOSTIC	# expensive kernel consistency checks
+options 	STIDEBUG
+options 	DEBUG		# expensive debugging checks/support
 options 	DDB		# in-kernel debugger
 options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #options 	KGDB		# remote debugger

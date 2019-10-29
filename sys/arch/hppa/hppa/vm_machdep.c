@@ -183,22 +183,24 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 void
 cpu_lwp_free(struct lwp *l, int proc)
 {
+
+	// Can't sleep here so we need to pool_put in cpu_lwp_free2
 	struct pcb *pcb = lwp_getpcb(l);
 
 	/*
 	 * If this thread was using the FPU, disable the FPU and record
 	 * that it's unused.
 	 */
-
 	hppa_fpu_flush(l);
-	pool_put(&hppa_fppl, pcb->pcb_fpregs);
 }
 
 void
 cpu_lwp_free2(struct lwp *l)
 {
+	struct pcb *pcb = lwp_getpcb(l);
 
-	(void)l;
+	pool_put(&hppa_fppl, pcb->pcb_fpregs);
+	pcb->pcb_fpregs = NULL;
 }
 
 /*
@@ -274,3 +276,127 @@ cpu_lwp_setprivate(lwp_t *l, void *addr)
 	return 0;
 }
 
+#ifdef __HAVE_CPU_UAREA_ROUTINES
+void *
+cpu_uarea_alloc(bool system)
+{
+#ifdef PMAP_MAP_POOLPAGE
+	struct pglist pglist;
+	int error;
+
+	/*
+	 * Allocate a new physically contiguous uarea which can be
+	 * direct-mapped.
+	 */
+	error = uvm_pglistalloc(USPACE, 0, ptoa(physmem), 0, 0, &pglist, 1, 1);
+	if (error) {
+		if (!system)
+			return NULL;
+		panic("%s: uvm_pglistalloc failed: %d", __func__, error);
+	}
+
+	/*
+	 * Get the physical address from the first page.
+	 */
+	const struct vm_page * const pg = TAILQ_FIRST(&pglist);
+	KASSERT(pg != NULL);
+	const paddr_t pa = VM_PAGE_TO_PHYS(pg);
+
+	/*
+	 * We need to return a direct-mapped VA for the pa.
+	 */
+
+	return (void *)PMAP_MAP_POOLPAGE(pa);
+#else
+	return NULL;
+#endif
+}
+
+/*
+ * Return true if we freed it, false if we didn't.
+ */
+bool
+cpu_uarea_free(void *vva)
+{
+#ifdef PMAP_UNMAP_POOLPAGE
+	vaddr_t va = (vaddr_t) vva;
+	if (va >= VM_MIN_KERNEL_ADDRESS && va < VM_MAX_KERNEL_ADDRESS)
+		return false;
+
+	/*
+	 * Since the pages are physically contiguous, the vm_page structure
+	 * will be as well.
+	 */
+	struct vm_page *pg = PHYS_TO_VM_PAGE(PMAP_UNMAP_POOLPAGE(va));
+	KASSERT(pg != NULL);
+	for (size_t i = 0; i < UPAGES; i++, pg++) {
+		uvm_pagefree(pg);
+	}
+	return true;
+#else
+	return false;
+#endif
+}
+#endif /* __HAVE_CPU_UAREA_ROUTINES */
+#ifdef __HAVE_CPU_UAREA_ROUTINES
+void *
+cpu_uarea_alloc(bool system)
+{
+#ifdef PMAP_MAP_POOLPAGE
+	struct pglist pglist;
+	int error;
+
+	/*
+	 * Allocate a new physically contiguous uarea which can be
+	 * direct-mapped.
+	 */
+	error = uvm_pglistalloc(USPACE, 0, ptoa(physmem), 0, 0, &pglist, 1, 1);
+	if (error) {
+		if (!system)
+			return NULL;
+		panic("%s: uvm_pglistalloc failed: %d", __func__, error);
+	}
+
+	/*
+	 * Get the physical address from the first page.
+	 */
+	const struct vm_page * const pg = TAILQ_FIRST(&pglist);
+	KASSERT(pg != NULL);
+	const paddr_t pa = VM_PAGE_TO_PHYS(pg);
+
+	/*
+	 * We need to return a direct-mapped VA for the pa.
+	 */
+
+	return (void *)PMAP_MAP_POOLPAGE(pa);
+#else
+	return NULL;
+#endif
+}
+
+/*
+ * Return true if we freed it, false if we didn't.
+ */
+bool
+cpu_uarea_free(void *vva)
+{
+#ifdef PMAP_UNMAP_POOLPAGE
+	vaddr_t va = (vaddr_t) vva;
+	if (va >= VM_MIN_KERNEL_ADDRESS && va < VM_MAX_KERNEL_ADDRESS)
+		return false;
+
+	/*
+	 * Since the pages are physically contiguous, the vm_page structure
+	 * will be as well.
+	 */
+	struct vm_page *pg = PHYS_TO_VM_PAGE(PMAP_UNMAP_POOLPAGE(va));
+	KASSERT(pg != NULL);
+	for (size_t i = 0; i < UPAGES; i++, pg++) {
+		uvm_pagefree(pg);
+	}
+	return true;
+#else
+	return false;
+#endif
+}
+#endif /* __HAVE_CPU_UAREA_ROUTINES */

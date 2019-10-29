@@ -11,6 +11,9 @@ WARNS=		1
 .if ${MACHINE_ARCH} != "m68000"
 DBG+=		-Os
 .endif
+.if ${MACHINE_ARCH} == "hppa"
+DBG+=		-ffunction-sections
+.endif
 
 CRUNCHGEN_FLAGS=-d "${DBG}"
 
