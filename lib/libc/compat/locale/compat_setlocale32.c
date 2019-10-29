@@ -46,9 +46,9 @@ __warn_references(__setlocale_mb_len_max_32,
  * MB_LEN_MAX used to be a MD macro.  it was 32 for most ports but 6 for hppa.
  * hppa uses arch/hppa/locale/compat_setlocale32.c instead of this file.
  */
-#if defined(__hppa__)
+#if defined(__hppa__) && !defined(_LP64)
 #error using wrong variant of compat_setlocale32.c
-#endif /* defined(__hppa__) */
+#endif /* defined(__hppa__) && !defined(_LP64) */
 
 char *
 __setlocale_mb_len_max_32(int category, const char *locale)
