@@ -447,7 +447,7 @@ _rtld_obj_free(Obj_Entry *obj)
 	xfree(obj->path);
 	while (obj->needed != NULL) {
 		Needed_Entry *needed = obj->needed;
-		obj->needed = needed->next;
+		obj->needed = needed->n_next;
 		xfree(needed);
 	}
 	while ((entry = SIMPLEQ_FIRST(&obj->names)) != NULL) {

@@ -833,9 +833,9 @@ _rtld_initlist_visit(Objlist* list, Obj_Entry *obj, int rev)
 		return;
 	obj->init_done = 1;
 
-	for (elm = obj->needed; elm != NULL; elm = elm->next) {
-		if (elm->obj != NULL) {
-			_rtld_initlist_visit(list, elm->obj, rev);
+	for (elm = obj->needed; elm != NULL; elm = elm->n_next) {
+		if (elm->n_obj != NULL) {
+			_rtld_initlist_visit(list, elm->n_obj, rev);
 		}
 	}
 
@@ -886,10 +886,11 @@ _rtld_init_dag1(Obj_Entry *root, Obj_Entry *obj)
 		_rtld_objlist_push_tail(&obj->dldags, root);
 		_rtld_objlist_push_tail(&root->dagmembers, obj);
 	}
-	for (needed = obj->needed; needed != NULL; needed = needed->next)
-		if (needed->obj != NULL)
-			_rtld_init_dag1(root, needed->obj);
+	for (needed = obj->needed; needed != NULL; needed = needed->n_next)
+		if (needed->n_obj != NULL)
+			_rtld_init_dag1(root, needed->n_obj);
 }
+
 
 /*
  * Note, this is called only for objects loaded by dlopen().
@@ -950,9 +951,9 @@ _rtld_ref_dag(Obj_Entry *root)
 	dbg(("incremented reference on \"%s\" (%d)", root->path,
 	    root->refcount));
 	for (needed = root->needed; needed != NULL;
-	     needed = needed->next) {
-		if (needed->obj != NULL)
-			_rtld_ref_dag(needed->obj);
+	     needed = needed->n_next) {
+		if (needed->n_obj != NULL)
+			_rtld_ref_dag(needed->n_obj);
 	}
 }
 
@@ -971,9 +972,9 @@ _rtld_unref_dag(Obj_Entry *root)
 		const Needed_Entry *needed;
 
 		for (needed = root->needed; needed != NULL;
-		     needed = needed->next) {
-			if (needed->obj != NULL)
-				_rtld_unref_dag(needed->obj);
+		     needed = needed->n_next) {
+			if (needed->n_obj != NULL)
+				_rtld_unref_dag(needed->n_obj);
 		}
 	}
 }
@@ -1229,9 +1230,9 @@ do_dlsym(void *handle, const char *name, const Ver_Entry *ventry, void *retaddr)
 			DoneList depth;
 
 			/* Search the object and all the libraries loaded by it. */
-			fake.next = NULL;
-			fake.obj = __UNCONST(obj);
-			fake.name = 0;
+			fake.n_next = NULL;
+			fake.n_obj = __UNCONST(obj);
+			fake.n_name = 0;
 
 			_rtld_donelist_init(&depth);
 			def = _rtld_symlook_needed(name, hash, &fake, &defobj,

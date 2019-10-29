@@ -152,8 +152,8 @@ _rtld_symlook_needed(const char *name, unsigned long hash,
 
 	def = def_w = NULL;
 	defobj = NULL;
-	for (n = needed; n != NULL; n = n->next) {
-		if ((obj = n->obj) == NULL)
+	for (n = needed; n != NULL; n = n->n_next) {
+		if ((obj = n->n_obj) == NULL)
 			continue;
 		if (_rtld_donelist_check(breadth, obj))
 			continue;
@@ -171,8 +171,8 @@ _rtld_symlook_needed(const char *name, unsigned long hash,
 	 * Either the symbol definition has not been found in directly needed
 	 * objects, or the found symbol is weak.
 	 */
-	for (n = needed; n != NULL; n = n->next) {
-		if ((obj = n->obj) == NULL)
+	for (n = needed; n != NULL; n = n->n_next) {
+		if ((obj = n->n_obj) == NULL)
 			continue;
 		if (_rtld_donelist_check(depth, obj))
 			continue;
@@ -468,7 +468,7 @@ _rtld_symlook_default(const char *name, unsigned long hash,
 	SIMPLEQ_FOREACH(elm, &refobj->dldags, link) {
 		if (def != NULL && ELF_ST_BIND(def->st_info) != STB_WEAK)
 			break;
-		rdbg(("search DAG with root %p (%s) for %s", elm->obj,
+		dbg(("search DAG with root %p (%s) for %s", elm->obj,
 		    elm->obj->path, name));
 		symp = _rtld_symlook_list(name, hash, &elm->obj->dagmembers,
 		    &obj, flags, ventry, &donelist);

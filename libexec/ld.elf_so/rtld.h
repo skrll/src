@@ -97,9 +97,9 @@ typedef struct Struct_Name_Entry {
 } Name_Entry;
 
 typedef struct Struct_Needed_Entry {
-	struct Struct_Needed_Entry *next;
-	struct Struct_Obj_Entry *obj;
-	unsigned long   name;	/* Offset of name in string table */
+	struct Struct_Needed_Entry *n_next;
+	struct Struct_Obj_Entry *n_obj;
+	unsigned long   n_name;	/* Offset of name in string table */
 } Needed_Entry;
 
 typedef struct _rtld_search_path_t {

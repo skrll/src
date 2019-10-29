@@ -193,12 +193,12 @@ _rtld_digest_dynamic(const char *execname, Obj_Entry *obj)
 			{
 				Needed_Entry *nep = NEW(Needed_Entry);
 
-				nep->name = dynp->d_un.d_val;
-				nep->obj = NULL;
-				nep->next = NULL;
+				nep->n_name = dynp->d_un.d_val;
+				nep->n_obj = NULL;
+				nep->n_next = NULL;
 
 				*needed_tail = nep;
-				needed_tail = &nep->next;
+				needed_tail = &nep->n_next;
 			}
 			break;
 

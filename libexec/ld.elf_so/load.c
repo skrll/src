@@ -223,7 +223,7 @@ _rtld_load_by_name(const char *name, Obj_Entry *obj, Needed_Entry **needed,
 	for (o = _rtld_objlist->next; o != NULL; o = o->next)
 		if (_rtld_object_match_name(o, name)) {
 			++o->refcount;
-			(*needed)->obj = o;
+			(*needed)->n_obj = o;
 			return true;
 		}
 
@@ -233,8 +233,8 @@ _rtld_load_by_name(const char *name, Obj_Entry *obj, Needed_Entry **needed,
 
 		j = sizeof(val);
 		if ((i = _rtld_sysctl(x->ctlname, &val, &j)) == -1) {
-			xwarnx(_PATH_LD_HINTS ": invalid/unknown sysctl for %s (%d)",
-			    name, errno);
+			xwarnx(_PATH_LD_HINTS ": invalid/unknown sysctl for %s "
+			    "(%d)", name, errno);
 			break;
 		}
 
@@ -278,14 +278,14 @@ _rtld_load_by_name(const char *name, Obj_Entry *obj, Needed_Entry **needed,
 			}
 			got = true;
 			if (j == 0)
-				(*needed)->obj = o;
+				(*needed)->n_obj = o;
 			else {
 				/* make a new one and put it in the chain */
 				Needed_Entry *ne = xmalloc(sizeof(*ne));
-				ne->name = (*needed)->name;
-				ne->obj = o;
-				ne->next = (*needed)->next;
-				(*needed)->next = ne;
+				ne->n_name = (*needed)->n_name;
+				ne->n_obj = o;
+				ne->n_next = (*needed)->n_next;
+				(*needed)->n_next = ne;
 				*needed = ne;
 			}
 
@@ -296,7 +296,7 @@ _rtld_load_by_name(const char *name, Obj_Entry *obj, Needed_Entry **needed,
 	if (got)
 		return true;
 
-	return ((*needed)->obj = _rtld_load_library(name, obj, flags)) != NULL;
+	return ((*needed)->n_obj = _rtld_load_library(name, obj, flags)) != NULL;
 }
 
 
@@ -315,8 +315,8 @@ _rtld_load_needed_objects(Obj_Entry *first, int flags)
 		Needed_Entry *needed;
 
 		for (needed = obj->needed; needed != NULL;
-		    needed = needed->next) {
-			const char *name = obj->strtab + needed->name;
+		    needed = needed->n_next) {
+			const char *name = obj->strtab + needed->n_name;
 #ifdef RTLD_LOADER
 			Obj_Entry *nobj;
 #endif
@@ -330,7 +330,7 @@ _rtld_load_needed_objects(Obj_Entry *first, int flags)
 			if (flags & _RTLD_MAIN)
 				continue;
 
-			nobj = needed->obj;
+			nobj = needed->n_obj;
 			if (nobj->z_nodelete && !obj->ref_nodel) {
 				dbg(("obj %s nodelete", nobj->path));
 				_rtld_ref_dag(nobj);

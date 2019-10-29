@@ -148,7 +148,7 @@ ELFNAME(ldd)(int fd, char *path, const char *fmt1, const char *fmt2)
 		}
 		while (obj->needed != NULL) {
 			const Needed_Entry *needed = obj->needed;
-			obj->needed = needed->next;
+			obj->needed = needed->n_next;
 			xfree(__UNCONST(needed));
 		}
 		(void) munmap(obj->mapbase, obj->mapsize);
@@ -253,17 +253,17 @@ print_needed(Obj_Entry *obj, const char *fmt1, const char *fmt2)
 {
 	const Needed_Entry *needed;
 
-	for (needed = obj->needed; needed != NULL; needed = needed->next) {
-		const char *libname = obj->strtab + needed->name;
+	for (needed = obj->needed; needed != NULL; needed = needed->n_next) {
+		const char *libname = obj->strtab + needed->n_name;
 
-		if (needed->obj != NULL) {
-			if (!needed->obj->printed) {
-				fmtprint(libname, needed->obj, fmt1, fmt2);
-				needed->obj->printed = 1;
-				print_needed(needed->obj, fmt1, fmt2);
+		if (needed->n_obj != NULL) {
+			if (!needed->n_obj->printed) {
+				fmtprint(libname, needed->n_obj, fmt1, fmt2);
+				needed->n_obj->printed = 1;
+				print_needed(needed->n_obj, fmt1, fmt2);
 			}
 		} else {
-			fmtprint(libname, needed->obj, fmt1, fmt2);
+			fmtprint(libname, needed->n_obj, fmt1, fmt2);
 		}
 	}
 }

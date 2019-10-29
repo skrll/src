@@ -108,11 +108,11 @@ locate_dependency(const Obj_Entry *obj, const char *name)
 			return entry->obj;
 	}
 
-	for (needed = obj->needed; needed != NULL; needed = needed->next) {
+	for (needed = obj->needed; needed != NULL; needed = needed->n_next) {
 		dbg(("needed: name: %s, str: %s", name,
 		    &obj->strtab[needed->name]));
-		if (strcmp(name, &obj->strtab[needed->name]) == 0 ||
-		    (needed->obj != NULL && _rtld_object_match_name(needed->obj, name))) {
+		if (strcmp(name, &obj->strtab[needed->n_name]) == 0 ||
+		    (needed->n_obj != NULL && _rtld_object_match_name(needed->n_obj, name))) {
 			/*
 			 * If there is DT_NEEDED for the name we are looking
 			 * for, we are all set.  Note that object might not be
@@ -120,7 +120,7 @@ locate_dependency(const Obj_Entry *obj, const char *name)
 			 * function can return NULL here.  This is expected
 			 * and handled properly by the caller.
 			 */
-			return needed->obj;
+			return needed->n_obj;
 		}
 	}
 
