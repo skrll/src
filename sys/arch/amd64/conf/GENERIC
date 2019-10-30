@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.538 2019/10/08 18:50:44 maxv Exp $
+# $NetBSD: GENERIC,v 1.542 2019/10/28 03:01:11 ozaki-r Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.538 $"
+#ident		"GENERIC-$Revision: 1.542 $"
 
 maxusers	64		# estimated number of users
 
@@ -577,6 +577,9 @@ gpio*		at gpiobus?
 gpioow* 	at gpio?
 onewire*	at gpioow?
 
+# 1-Wire devices
+owtemp* 	at onewire?			# Temperature sensors
+
 # I2C support
 #gpioiic*	at gpio?
 #iic*		at gpioiic?
@@ -589,6 +592,9 @@ onewire*	at gpioow?
 
 # Soekris 6501 GPIO/LED driver (provides gpiobus, needs gpio)
 #soekrisgpio0	at isa? port 0x680
+
+# Nuvoton NCT5104D SuperIO providing GPIO
+nct0		at isa? port ?
 
 # SCSI Controllers and Devices
 
@@ -1066,6 +1072,7 @@ ld*	at virtio?			# Virtio disk device
 vioif*	at virtio?			# Virtio network device
 viornd* at virtio?			# Virtio entropy device
 vioscsi* at virtio?			# Virtio SCSI device
+#vio9p*	at virtio?			# Virtio 9P device
 
 # Hyper-V devices
 vmbus*		at acpi?		# Hyper-V VMBus

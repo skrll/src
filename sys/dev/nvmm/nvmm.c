@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm.c,v 1.23 2019/10/23 07:01:11 maxv Exp $	*/
+/*	$NetBSD: nvmm.c,v 1.25 2019/10/28 09:00:08 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.23 2019/10/23 07:01:11 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.25 2019/10/28 09:00:08 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -889,7 +889,7 @@ out:
 /* -------------------------------------------------------------------------- */
 
 static int
-nvmm_ctl_mach_info(struct nvmm_ioc_ctl *args)
+nvmm_ctl_mach_info(struct nvmm_owner *owner, struct nvmm_ioc_ctl *args)
 {
 	struct nvmm_ctl_mach_info ctl;
 	struct nvmm_machine *mach;
@@ -903,7 +903,7 @@ nvmm_ctl_mach_info(struct nvmm_ioc_ctl *args)
 	if (error)
 		return error;
 
-	error = nvmm_machine_get(&root_owner, ctl.machid, &mach, true);
+	error = nvmm_machine_get(owner, ctl.machid, &mach, true);
 	if (error)
 		return error;
 
@@ -915,6 +915,14 @@ nvmm_ctl_mach_info(struct nvmm_ioc_ctl *args)
 		ctl.nvcpus++;
 		nvmm_vcpu_put(vcpu);
 	}
+
+	ctl.nram = 0;
+	for (i = 0; i < NVMM_MAX_HMAPPINGS; i++) {
+		if (!mach->hmap[i].present)
+			continue;
+		ctl.nram += mach->hmap[i].size;
+	}
+
 	ctl.pid = mach->owner->pid;
 	ctl.time = mach->time;
 
@@ -930,16 +938,9 @@ nvmm_ctl_mach_info(struct nvmm_ioc_ctl *args)
 static int
 nvmm_ctl(struct nvmm_owner *owner, struct nvmm_ioc_ctl *args)
 {
-	int error;
-
-	error = kauth_authorize_device(curlwp->l_cred, KAUTH_DEVICE_NVMM_CTL,
-	    NULL, NULL, NULL, NULL);
-	if (error)
-		return error;
-
 	switch (args->op) {
 	case NVMM_CTL_MACH_INFO:
-		return nvmm_ctl_mach_info(args);
+		return nvmm_ctl_mach_info(owner, args);
 	default:
 		return EINVAL;
 	}
@@ -1047,8 +1048,12 @@ nvmm_open(dev_t dev, int flags, int type, struct lwp *l)
 	if (error)
 		return error;
 
-	owner = kmem_alloc(sizeof(*owner), KM_SLEEP);
-	owner->pid = l->l_proc->p_pid;
+	if (OFLAGS(flags) & O_WRONLY) {
+		owner = &root_owner;
+	} else {
+		owner = kmem_alloc(sizeof(*owner), KM_SLEEP);
+		owner->pid = l->l_proc->p_pid;
+	}
 
 	return fd_clone(fp, fd, flags, &nvmm_fileops, owner);
 }
@@ -1060,7 +1065,9 @@ nvmm_close(file_t *fp)
 
 	KASSERT(owner != NULL);
 	nvmm_kill_machines(owner);
-	kmem_free(owner, sizeof(*owner));
+	if (owner != &root_owner) {
+		kmem_free(owner, sizeof(*owner));
+	}
 	fp->f_data = NULL;
 
    	return 0;

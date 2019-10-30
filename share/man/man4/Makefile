@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.684 2019/10/07 11:53:40 msaitoh Exp $
+#	$NetBSD: Makefile,v 1.686 2019/10/28 02:56:40 ozaki-r Exp $
 #	@(#)Makefile	8.1 (Berkeley) 6/18/93
 
 MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
@@ -66,9 +66,9 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	trm.4 tsllux.4 tty.4 tun.4 tqphy.4 twa.4 twe.4 txp.4 \
 	uark.4 ubsec.4 udp.4 uep.4 ug.4 uha.4 uk.4 ukphy.4 umb.4 \
 	unix.4 userconf.4 \
-	vald.4 valz.4 veriexec.4 vga.4 vge.4 viaide.4 video.4 vioif.4 viomb.4 \
-	viornd.4 vioscsi.4 virt.4 \
-	virtio.4 vlan.4 vmmon.4 vmnet.4 vnd.4 voodoofb.4 vr.4 vte.4 \
+	vald.4 valz.4 veriexec.4 vga.4 vge.4 viaide.4 video.4 \
+	vio9p.4 vioif.4 viomb.4 viornd.4 vioscsi.4 virt.4 virtio.4 \
+	vlan.4 vmmon.4 vmnet.4 vnd.4 voodoofb.4 vr.4 vte.4 \
 	wapbl.4 wb.4 wbsio.4 wd.4 wdc.4 wi.4 wm.4 wpi.4 \
 	wsbell.4 wscons.4 wsdisplay.4 wsfont.4 wskbd.4 wsmouse.4 wsmux.4 \
 	xbox.4 xge.4 \
@@ -112,7 +112,7 @@ MAN+=	cz.4 epic.4 viaenv.4
 # machine-independent ISA devices
 MAN+=	aha.4 ai.4 aic.4 ast.4 ate.4 boca.4 cs.4 cy.4 ec.4 ef.4 \
 	eg.4 el.4 esp.4 ess.4 ex.4 fmv.4 gus.4 guspnp.4 ix.4 iy.4 \
-	le.4 lm.4 mcd.4 nca.4 rtfps.4 sb.4 sea.4 smsc.4 tcom.4 \
+	le.4 lm.4 mcd.4 nca.4 nct.4 rtfps.4 sb.4 sea.4 smsc.4 tcom.4 \
 	wds.4 we.4 wss.4 wt.4
 
 # machine-independent PCMCIA devices
