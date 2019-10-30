@@ -1,4 +1,4 @@
-/* $NetBSD: fdtvar.h,v 1.54 2019/10/01 23:32:52 jmcneill Exp $ */
+/* $NetBSD: fdtvar.h,v 1.56 2019/10/28 21:15:34 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -251,6 +251,21 @@ static const struct fdt_console_info __CONCAT(_name,_consinfo) = {	\
 };									\
 _FDT_CONSOLE_REGISTER(_name)
 
+struct fdt_opp_info {
+	const char *	opp_compat;
+	bool		(*opp_supported)(const int, const int);
+};
+
+#define	_FDT_OPP_REGISTER(name)		\
+	__link_set_add_rodata(fdt_opps, __CONCAT(name,_oppinfo));
+
+#define	FDT_OPP(_name, _compat, _suppfn)				\
+static const struct fdt_opp_info __CONCAT(_name,_oppinfo) = {		\
+	.opp_compat = (_compat),					\
+	.opp_supported = (_suppfn)					\
+};									\
+_FDT_OPP_REGISTER(_name)
+
 TAILQ_HEAD(fdt_conslist, fdt_console_info);
 
 int		fdtbus_register_interrupt_controller(device_t, int,
@@ -351,6 +366,7 @@ struct clk *	fdtbus_clock_get(int, const char *);
 struct clk *	fdtbus_clock_get_index(int, u_int);
 struct clk *	fdtbus_clock_byname(const char *);
 void		fdtbus_clock_assign(int);
+u_int		fdtbus_clock_count(int, const char *);
 
 struct fdtbus_reset *fdtbus_reset_get(int, const char *);
 struct fdtbus_reset *fdtbus_reset_get_index(int, u_int);
