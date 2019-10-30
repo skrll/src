@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_x86_svm.c,v 1.51 2019/10/23 07:01:11 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86_svm.c,v 1.53 2019/10/28 08:30:49 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.51 2019/10/23 07:01:11 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.53 2019/10/28 08:30:49 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -509,7 +509,9 @@ struct svm_machdata {
 
 static const size_t svm_vcpu_conf_sizes[NVMM_X86_VCPU_NCONF] = {
 	[NVMM_VCPU_CONF_MD(NVMM_VCPU_CONF_CPUID)] =
-	    sizeof(struct nvmm_vcpu_conf_cpuid)
+	    sizeof(struct nvmm_vcpu_conf_cpuid),
+	[NVMM_VCPU_CONF_MD(NVMM_VCPU_CONF_TPR)] =
+	    sizeof(struct nvmm_vcpu_conf_tpr)
 };
 
 struct svm_cpudata {
@@ -1450,18 +1452,13 @@ svm_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 	kpreempt_enable();
 
-	exit->exitstate[NVMM_X64_EXITSTATE_CR8] = __SHIFTOUT(vmcb->ctrl.v,
-	    VMCB_CTRL_V_TPR);
-	exit->exitstate[NVMM_X64_EXITSTATE_RFLAGS] = vmcb->state.rflags;
-
-	exit->exitstate[NVMM_X64_EXITSTATE_INT_SHADOW] =
+	exit->exitstate.rflags = vmcb->state.rflags;
+	exit->exitstate.cr8 = __SHIFTOUT(vmcb->ctrl.v, VMCB_CTRL_V_TPR);
+	exit->exitstate.int_shadow =
 	    ((vmcb->ctrl.intr & VMCB_CTRL_INTR_SHADOW) != 0);
-	exit->exitstate[NVMM_X64_EXITSTATE_INT_WINDOW_EXIT] =
-	    cpudata->int_window_exit;
-	exit->exitstate[NVMM_X64_EXITSTATE_NMI_WINDOW_EXIT] =
-	    cpudata->nmi_window_exit;
-	exit->exitstate[NVMM_X64_EXITSTATE_EVT_PENDING] =
-	    cpudata->evt_pending;
+	exit->exitstate.int_window_exiting = cpudata->int_window_exit;
+	exit->exitstate.nmi_window_exiting = cpudata->nmi_window_exit;
+	exit->exitstate.evt_pending = cpudata->evt_pending;
 
 	return 0;
 }
@@ -2128,17 +2125,13 @@ svm_vcpu_destroy(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	    roundup(sizeof(*cpudata), PAGE_SIZE), UVM_KMF_WIRED);
 }
 
-static int
-svm_vcpu_configure(struct nvmm_cpu *vcpu, uint64_t op, void *data)
-{
-	struct svm_cpudata *cpudata = vcpu->cpudata;
-	struct nvmm_vcpu_conf_cpuid *cpuid;
-	size_t i;
+/* -------------------------------------------------------------------------- */
 
-	if (__predict_false(op != NVMM_VCPU_CONF_MD(NVMM_VCPU_CONF_CPUID))) {
-		return EINVAL;
-	}
-	cpuid = data;
+static int
+svm_vcpu_configure_cpuid(struct svm_cpudata *cpudata, void *data)
+{
+	struct nvmm_vcpu_conf_cpuid *cpuid = data;
+	size_t i;
 
 	if (__predict_false(cpuid->mask && cpuid->exit)) {
 		return EINVAL;
@@ -2187,6 +2180,19 @@ svm_vcpu_configure(struct nvmm_cpu *vcpu, uint64_t op, void *data)
 	}
 
 	return ENOBUFS;
+}
+
+static int
+svm_vcpu_configure(struct nvmm_cpu *vcpu, uint64_t op, void *data)
+{
+	struct svm_cpudata *cpudata = vcpu->cpudata;
+
+	switch (op) {
+	case NVMM_VCPU_CONF_MD(NVMM_VCPU_CONF_CPUID):
+		return svm_vcpu_configure_cpuid(cpudata, data);
+	default:
+		return EINVAL;
+	}
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2387,6 +2393,9 @@ svm_fini(void)
 static void
 svm_capability(struct nvmm_capability *cap)
 {
+	cap->arch.mach_conf_support = 0;
+	cap->arch.vcpu_conf_support =
+	    NVMM_CAP_ARCH_VCPU_CONF_CPUID;
 	cap->arch.xcr0_mask = svm_xcr0_mask;
 	cap->arch.mxcsr_mask = x86_fpu_mxcsr_mask;
 	cap->arch.conf_cpuid_maxops = SVM_NCPUIDS;

@@ -1,4 +1,4 @@
-/*	$NetBSD: sdmmcvar.h,v 1.32 2019/10/23 05:20:52 hkenken Exp $	*/
+/*	$NetBSD: sdmmcvar.h,v 1.34 2019/10/28 06:20:01 mlelstv Exp $	*/
 /*	$OpenBSD: sdmmcvar.h,v 1.13 2009/01/09 10:55:22 jsg Exp $	*/
 
 /*
@@ -359,8 +359,7 @@ void	sdmmc_dump_data(const char *, void *, size_t);
 int	sdmmc_io_enable(struct sdmmc_softc *);
 void	sdmmc_io_scan(struct sdmmc_softc *);
 int	sdmmc_io_init(struct sdmmc_softc *, struct sdmmc_function *);
-int	sdmmc_io_set_blocklen(struct sdmmc_softc *, struct sdmmc_function *,
-	    int);
+int	sdmmc_io_set_blocklen(struct sdmmc_function *, int);
 uint8_t sdmmc_io_read_1(struct sdmmc_function *, int);
 uint16_t sdmmc_io_read_2(struct sdmmc_function *, int);
 uint32_t sdmmc_io_read_4(struct sdmmc_function *, int);
@@ -373,6 +372,7 @@ int	sdmmc_io_write_multi_1(struct sdmmc_function *, int, u_char *, int);
 int	sdmmc_io_write_region_1(struct sdmmc_function *, int, u_char *, int);
 int	sdmmc_io_function_enable(struct sdmmc_function *);
 void	sdmmc_io_function_disable(struct sdmmc_function *);
+int	sdmmc_io_function_abort(struct sdmmc_function *);
 
 int	sdmmc_read_cis(struct sdmmc_function *, struct sdmmc_cis *);
 void	sdmmc_print_cis(struct sdmmc_function *);
@@ -391,5 +391,7 @@ int	sdmmc_mem_write_block(struct sdmmc_function *, uint32_t, u_char *,
 	    size_t);
 int	sdmmc_mem_discard(struct sdmmc_function *, uint32_t, uint32_t);
 int	sdmmc_mem_flush_cache(struct sdmmc_function *, bool);
+
+void	sdmmc_pause(u_int, kmutex_t *);
 
 #endif	/* _SDMMCVAR_H_ */

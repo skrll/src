@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.6 2019/04/06 03:06:25 thorpej Exp $	*/
+/*	$NetBSD: machdep.c,v 1.8 2019/10/27 11:21:52 martin Exp $	*/
 
 /*
  * Copyright (c) 1992 OMRON Corporation.
