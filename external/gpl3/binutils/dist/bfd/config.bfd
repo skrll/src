@@ -527,6 +527,11 @@ case "${targ}" in
     targ_selvecs=hppa_elf64_vec
     want64=true
     ;;
+  hppa*64*-*-netbsd*)
+    targ_defvec=hppa_elf64_netbsd_vec
+    targ_selvecs=hppa_elf64_vec
+    want64=true
+    ;;
   hppa*64*-*-hpux11*)
     targ_defvec=hppa_elf64_vec
     targ_selvecs=hppa_elf64_linux_vec

@@ -339,6 +339,14 @@ elf64_hppa_object_p (bfd *abfd)
 	  i_ehdrp->e_ident[EI_OSABI] != ELFOSABI_NONE) /* aka SYSV */
 	return FALSE;
     }
+  else if (strcmp (bfd_get_target (abfd), "elf64-hppa-netbsd") == 0)
+    {
+      /* GCC on hppa-netbsd produces binaries with OSABI=NetBSD,
+	 but the kernel produces corefiles with OSABI=SysV.  */
+      if (i_ehdrp->e_ident[EI_OSABI] != ELFOSABI_NETBSD
+	  && i_ehdrp->e_ident[EI_OSABI] != ELFOSABI_NONE) /* aka SYSV */
+	return FALSE;
+    }
   else
     {
       /* HPUX produces binaries with OSABI=HPUX,
@@ -3987,13 +3995,8 @@ elf64_hppa_relocate_section (bfd *output_bfd,
 
 static const struct bfd_elf_special_section elf64_hppa_special_sections[] =
 {
-#if 0
-// XXXNH why doesn't hppa-linux64 have executable .fini/.init
-// https://sourceware.org/git/gitweb.cgi?p=binutils-gdb.git;a=commitdiff;h=2f89ff8d8ead0e6eb034d7c26470be4eac7c3185
-// says it was for non-linux
   { STRING_COMMA_LEN (".fini"),	 0, SHT_PROGBITS, SHF_ALLOC + SHF_WRITE },
   { STRING_COMMA_LEN (".init"),	 0, SHT_PROGBITS, SHF_ALLOC + SHF_WRITE },
-#endif
   { STRING_COMMA_LEN (".plt"),	 0, SHT_PROGBITS, SHF_ALLOC + SHF_WRITE + SHF_PARISC_SHORT },
   { STRING_COMMA_LEN (".dlt"),	 0, SHT_PROGBITS, SHF_ALLOC + SHF_WRITE + SHF_PARISC_SHORT },
   { STRING_COMMA_LEN (".sdata"), 0, SHT_PROGBITS, SHF_ALLOC + SHF_WRITE + SHF_PARISC_SHORT },
@@ -4137,5 +4140,6 @@ const struct elf_size_info hppa64_elf_size_info =
 #define ELF_OSABI			ELFOSABI_NETBSD
 #undef elf64_bed
 #define elf64_bed			elf64_hppa_netbsd_bed
+#undef elf_backend_special_sections
 
 #include "elf64-target.h"
