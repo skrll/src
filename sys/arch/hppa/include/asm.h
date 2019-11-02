@@ -148,6 +148,12 @@
 #endif /* __STDC__ */
 
 #define	BSS(n,s)	.comm n, s
+
+
+#ifdef _LP64
+#define	SZREG	8
+#else
 #define	SZREG	4
+#endif
 
 #endif /* _HPPA_ASM_H_ */
