@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1657 2019/10/15 18:33:57 christos Exp $
+# $NetBSD: mi,v 1.1660 2019/10/28 13:04:18 maxv Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -1493,6 +1493,7 @@
 ./usr/share/man/cat4/nadb.0			man-sys-catman		.cat
 ./usr/share/man/cat4/nca.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ncr.0			man-obsolete		obsolete
+./usr/share/man/cat4/nct.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ne.0			man-sys-catman		.cat
 ./usr/share/man/cat4/nele.0			man-sys-catman		.cat
 ./usr/share/man/cat4/neo.0			man-sys-catman		.cat
@@ -1989,6 +1990,7 @@
 ./usr/share/man/cat4/viapm.0			man-obsolete		obsolete
 ./usr/share/man/cat4/video.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vinum.0			man-obsolete		obsolete
+./usr/share/man/cat4/vio9p.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vioif.0			man-sys-catman		.cat
 ./usr/share/man/cat4/viomb.0			man-sys-catman		.cat
 ./usr/share/man/cat4/viornd.0			man-sys-catman		.cat
@@ -2871,6 +2873,7 @@
 ./usr/share/man/cat8/ntptime.0			man-ntp-catman		.cat
 ./usr/share/man/cat8/ntptrace.0			man-ntp-catman		.cat
 ./usr/share/man/cat8/nvmectl.0			man-sysutil-catman	.cat
+./usr/share/man/cat8/nvmmctl.0			man-sysutil-catman	.cat
 ./usr/share/man/cat8/ofctl.0			man-sysutil-catman	.cat
 ./usr/share/man/cat8/ofppc/MAKEDEV.0		man-obsolete		obsolete
 ./usr/share/man/cat8/ofppc/makedev.0		man-obsolete		obsolete
@@ -4626,6 +4629,7 @@
 ./usr/share/man/html4/mvsata.html		man-sys-htmlman		html
 ./usr/share/man/html4/nadb.html			man-sys-htmlman		html
 ./usr/share/man/html4/nca.html			man-sys-htmlman		html
+./usr/share/man/html4/nct.html			man-sys-htmlman		html
 ./usr/share/man/html4/ne.html			man-sys-htmlman		html
 ./usr/share/man/html4/nele.html			man-sys-htmlman		html
 ./usr/share/man/html4/neo.html			man-sys-htmlman		html
@@ -5083,6 +5087,7 @@
 ./usr/share/man/html4/viaenv.html		man-sys-htmlman		html
 ./usr/share/man/html4/viaide.html		man-sys-htmlman		html
 ./usr/share/man/html4/video.html		man-sys-htmlman		html
+./usr/share/man/html4/vio9p.html		man-sys-htmlman		html
 ./usr/share/man/html4/vioif.html		man-sys-htmlman		html
 ./usr/share/man/html4/viomb.html		man-sys-htmlman		html
 ./usr/share/man/html4/viornd.html		man-sys-htmlman		html
@@ -5819,6 +5824,7 @@
 ./usr/share/man/html8/ntptime.html		man-ntp-htmlman		html
 ./usr/share/man/html8/ntptrace.html		man-ntp-htmlman		html
 ./usr/share/man/html8/nvmectl.html		man-sysutil-htmlman	html
+./usr/share/man/html8/nvmmctl.html		man-sysutil-htmlman	html
 ./usr/share/man/html8/ofctl.html		man-sysutil-htmlman	html
 ./usr/share/man/html8/oqmgr.html		man-postfix-htmlman	postfix,html
 ./usr/share/man/html8/pac.html			man-sysutil-htmlman	html
@@ -7613,6 +7619,7 @@
 ./usr/share/man/man4/nadb.4			man-sys-man		.man
 ./usr/share/man/man4/nca.4			man-sys-man		.man
 ./usr/share/man/man4/ncr.4			man-obsolete		obsolete
+./usr/share/man/man4/nct.4			man-sys-man		.man
 ./usr/share/man/man4/ne.4			man-sys-man		.man
 ./usr/share/man/man4/nele.4			man-sys-man		.man
 ./usr/share/man/man4/neo.4			man-sys-man		.man
@@ -8109,6 +8116,7 @@
 ./usr/share/man/man4/viapm.4			man-obsolete		obsolete
 ./usr/share/man/man4/video.4			man-sys-man		.man
 ./usr/share/man/man4/vinum.4			man-obsolete		obsolete
+./usr/share/man/man4/vio9p.4			man-sys-man		.man
 ./usr/share/man/man4/vioif.4			man-sys-man		.man
 ./usr/share/man/man4/viomb.4			man-sys-man		.man
 ./usr/share/man/man4/viornd.4			man-sys-man		.man
@@ -8991,6 +8999,7 @@
 ./usr/share/man/man8/ntptime.8			man-ntp-man		.man
 ./usr/share/man/man8/ntptrace.8			man-ntp-man		.man
 ./usr/share/man/man8/nvmectl.8			man-sysutil-man		.man
+./usr/share/man/man8/nvmmctl.8			man-sysutil-man		.man
 ./usr/share/man/man8/ofctl.8			man-sysutil-man		.man
 ./usr/share/man/man8/ofppc/MAKEDEV.8		man-obsolete		obsolete
 ./usr/share/man/man8/ofppc/makedev.8		man-obsolete		obsolete
