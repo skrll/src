@@ -31,6 +31,12 @@ _ARCH_INCS+=	ews4800mips/include/pdinfo.h ews4800mips/include/vtoc.h
 _ARCH_INCS+=	${sh3mach}/include/endian_machdep.h
 .endfor
 
+_MACHINE?=	${MACHINE}
+
+.if ${MACHINE} == "hppa64"
+_MACHINE=	hppa
+.endif
+
 _INCS=		disktab.h
 _SYSINCS=	bootblock.h \
 		disklabel.h disklabel_acorn.h disklabel_gpt.h disklabel_rdb.h \
@@ -53,4 +59,4 @@ beforedepend:
 	cd ${_UFSDIR} && \
 	    ${TOOL_PAX} -rw ${_UFS_INCS} ${TOOLDIR}/include/nbinclude/ufs
 	cd ${TOOLDIR}/include/nbinclude && rm -f machine && \
-	    ${HOST_INSTALL_SYMLINK} ${MACHINE} machine
+	    ${HOST_INSTALL_SYMLINK} ${_MACHINE} machine
