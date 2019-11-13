@@ -1,4 +1,4 @@
-#	$NetBSD: files.ti,v 1.16 2019/10/29 22:19:13 jmcneill Exp $
+#	$NetBSD: files.ti,v 1.20 2019/11/03 22:59:06 jmcneill Exp $
 #
 
 file	arch/arm/ti/ti_cpufreq.c	soc_ti
@@ -88,6 +88,17 @@ device	tiotg { } : fdt
 attach	tiotg at fdt with ti_otg
 file	arch/arm/ti/ti_otg.c		ti_otg
 
+device	tiusb { } : fdt
+attach	tiusb at fdt with ti_usb
+file	arch/arm/ti/ti_usb.c		ti_usb
+
+device	tiusbtll
+attach	tiusbtll at fdt with ti_usbtll
+file	arch/arm/ti/ti_usbtll.c		ti_usbtll
+
+attach	ehci at fdt with ti_ehci
+file	arch/arm/ti/ti_ehci.c		ti_ehci
+
 attach	motg at fdt with ti_motg
 file	arch/arm/ti/ti_motg.c		ti_motg
 
@@ -95,6 +106,30 @@ file	arch/arm/ti/ti_motg.c		ti_motg
 device	tirng
 attach	tirng at fdt with ti_rng
 file	arch/arm/ti/ti_rng.c		ti_rng
+
+# Display adapter
+device	omapfb: rasops16, rasops8, wsemuldisplaydev, vcons, edid
+attach	omapfb at fdt with omap3_dss
+file	arch/arm/ti/omap3_dss.c		omap3_dss
+
+define	tilcdcfbbus { }
+device	tilcdc: drmkms, tilcdcfbbus
+attach	tilcdc at fdt with ti_lcdc
+file	arch/arm/ti/ti_lcdc.c		ti_lcdc
+
+device	tifb: tilcdcfbbus, drmfb, wsemuldisplaydev
+attach	tifb at tilcdcfbbus with ti_fb
+file	arch/arm/ti/ti_fb.c		ti_fb
+
+# Memory controller
+device	tigpmc { } : fdt
+attach	tigpmc at fdt with ti_gpmc
+file	arch/arm/ti/ti_gpmc.c		ti_gpmc
+
+# NAND flash controller
+device	omapnand: nandbus
+attach	omapnand at fdt
+file	arch/arm/ti/omap2_nand.c	omapnand
 
 # SOC parameters
 defflag	opt_soc.h			SOC_TI

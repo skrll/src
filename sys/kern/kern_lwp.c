@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_lwp.c,v 1.205 2019/10/06 15:11:17 uwe Exp $	*/
+/*	$NetBSD: kern_lwp.c,v 1.207 2019/11/10 23:39:03 joerg Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2006, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -211,7 +211,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_lwp.c,v 1.205 2019/10/06 15:11:17 uwe Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_lwp.c,v 1.207 2019/11/10 23:39:03 joerg Exp $");
 
 #include "opt_ddb.h"
 #include "opt_lockdebug.h"
@@ -902,6 +902,13 @@ lwp_create(lwp_t *l1, proc_t *p2, vaddr_t uaddr, int flags,
 	if ((flags & LWP_PIDLID) != 0) {
 		lid = proc_alloc_pid(p2);
 		l2->l_pflag |= LP_PIDLID;
+	} else if (p2->p_nlwps == 0) {
+		lid = l1->l_lid;
+		/*
+		 * Update next LWP ID, too. If this overflows to LID_SCAN,
+		 * the slow path of scanning will be used for the next LWP.
+		 */
+		p2->p_nlwpid = lid + 1;
 	} else {
 		lid = 0;
 	}
