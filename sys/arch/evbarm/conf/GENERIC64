@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.111 2019/11/10 09:55:29 mrg Exp $
+#	$NetBSD: GENERIC64,v 1.115 2019/11/17 19:51:35 jmcneill Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -407,6 +407,7 @@ ld*		at nvme? nsid ?
 # SPI controllers
 bcmspi*		at fdt?			# Broadcom BCM283x SPI
 rkspi*		at fdt?			# Rockchip SPI
+sun6ispi*	at fdt?			# Allwinner SPI
 spi*		at spibus?
 m25p*		at spi?
 spiflash*	at spiflashbus?
@@ -419,6 +420,8 @@ options 	HDAUDIOVERBOSE
 options 	HDAUDIO_ENABLE_HDMI
 options 	HDAUDIO_ENABLE_DISPLAYPORT
 ausoc*		at fdt?			# Simple SoC audio card
+spdiftx*	at fdt?			# SPDIF transmitter
+rki2s*		at fdt?			# Rockchip I2S/PCM
 sunxicodec*	at fdt?			# Allwinner audio codec
 sun8icodec*	at fdt?			# Allwinner audio codec (sun8i/sun50i)
 h3codec*	at fdt?			# Allwinner H3 audio codec (analog part)
@@ -436,9 +439,9 @@ hdmicec*	at hdmicecbus?
 anxedp*		at iic?			# Analogix eDP TX
 dispcon*	at fdt?			# Display connector devices
 dwhdmi* 	at fdt?			# Designware HDMI TX
-#rkdrm*		at fdt? pass 5		# Rockchip DRM master
-#rkfb*		at rkdrm?		# Rockchip DRM framebuffer
-#rkvop*		at fdt?			# Rockchip Visual Output Processor
+rkdrm*		at fdt? pass 5		# Rockchip DRM master
+rkfb*		at rkdrm?		# Rockchip DRM framebuffer
+rkvop*		at fdt?			# Rockchip Visual Output Processor
 sunxide2bus*	at fdt? pass 4		# Allwinner DE2 bus
 sunxidrm*	at fdt?	pass 5		# Allwinner Display Pipeline
 sunxifb*	at sunxidrm?		# Allwinner DRM framebuffer

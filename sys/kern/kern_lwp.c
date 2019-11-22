@@ -1,7 +1,7 @@
-/*	$NetBSD: kern_lwp.c,v 1.207 2019/11/10 23:39:03 joerg Exp $	*/
+/*	$NetBSD: kern_lwp.c,v 1.211 2019/11/21 19:47:21 ad Exp $	*/
 
 /*-
- * Copyright (c) 2001, 2006, 2007, 2008, 2009 The NetBSD Foundation, Inc.
+ * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -211,7 +211,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_lwp.c,v 1.207 2019/11/10 23:39:03 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_lwp.c,v 1.211 2019/11/21 19:47:21 ad Exp $");
 
 #include "opt_ddb.h"
 #include "opt_lockdebug.h"
@@ -244,6 +244,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_lwp.c,v 1.207 2019/11/10 23:39:03 joerg Exp $")
 #include <sys/uidinfo.h>
 #include <sys/sysctl.h>
 #include <sys/psref.h>
+#include <sys/msan.h>
 
 #include <uvm/uvm_extern.h>
 #include <uvm/uvm_object.h>
@@ -844,6 +845,7 @@ lwp_create(lwp_t *l1, proc_t *p2, vaddr_t uaddr, int flags,
 	l2->l_pflag = LP_MPSAFE;
 	TAILQ_INIT(&l2->l_ld_locks);
 	l2->l_psrefs = 0;
+	kmsan_lwp_alloc(l2);
 
 	/*
 	 * For vfork, borrow parent's lwpctl context if it exists.
@@ -950,26 +952,18 @@ lwp_create(lwp_t *l1, proc_t *p2, vaddr_t uaddr, int flags,
 
 	KASSERT(l2->l_affinity == NULL);
 
-	if ((p2->p_flag & PK_SYSTEM) == 0) {
-		/* Inherit the affinity mask. */
+	/* Inherit the affinity mask. */
+	if (l1->l_affinity) {
+		/*
+		 * Note that we hold the state lock while inheriting
+		 * the affinity to avoid race with sched_setaffinity().
+		 */
+		lwp_lock(l1);
 		if (l1->l_affinity) {
-			/*
-			 * Note that we hold the state lock while inheriting
-			 * the affinity to avoid race with sched_setaffinity().
-			 */
-			lwp_lock(l1);
-			if (l1->l_affinity) {
-				kcpuset_use(l1->l_affinity);
-				l2->l_affinity = l1->l_affinity;
-			}
-			lwp_unlock(l1);
+			kcpuset_use(l1->l_affinity);
+			l2->l_affinity = l1->l_affinity;
 		}
-		lwp_lock(l2);
-		/* Inherit a processor-set */
-		l2->l_psid = l1->l_psid;
-		/* Look for a CPU to start */
-		l2->l_cpu = sched_takecpu(l2);
-		lwp_unlock_to(l2, l2->l_cpu->ci_schedstate.spc_mutex);
+		lwp_unlock(l1);
 	}
 	mutex_exit(p2->p_lock);
 
@@ -977,6 +971,8 @@ lwp_create(lwp_t *l1, proc_t *p2, vaddr_t uaddr, int flags,
 
 	mutex_enter(proc_lock);
 	LIST_INSERT_HEAD(&alllwp, l2, l_list);
+	/* Inherit a processor-set */
+	l2->l_psid = l1->l_psid;
 	mutex_exit(proc_lock);
 
 	SYSCALL_TIME_LWP_INIT(l2);
@@ -1145,7 +1141,7 @@ lwp_exit(struct lwp *l)
 	    firstsig(&p->p_sigpend.sp_set) != 0) {
 		LIST_FOREACH(l2, &p->p_lwps, l_sibling) {
 			lwp_lock(l2);
-			l2->l_flag |= LW_PENDSIG;
+			signotify(l2);
 			lwp_unlock(l2);
 		}
 	}
@@ -1298,6 +1294,7 @@ lwp_free(struct lwp *l, bool recycle, bool last)
 	if (l->l_name != NULL)
 		kmem_free(l->l_name, MAXCOMLEN);
 
+	kmsan_lwp_free(l);
 	cpu_lwp_free2(l);
 	uvm_lwp_exit(l);
 
@@ -1478,14 +1475,16 @@ lwp_locked(struct lwp *l, kmutex_t *mtx)
 /*
  * Lend a new mutex to an LWP.  The old mutex must be held.
  */
-void
+kmutex_t *
 lwp_setlock(struct lwp *l, kmutex_t *mtx)
 {
+	kmutex_t *oldmtx = l->l_mutex;
 
-	KASSERT(mutex_owned(l->l_mutex));
+	KASSERT(mutex_owned(oldmtx));
 
 	membar_exit();
 	l->l_mutex = mtx;
+	return oldmtx;
 }
 
 /*
@@ -1520,11 +1519,11 @@ lwp_trylock(struct lwp *l)
 }
 
 void
-lwp_unsleep(lwp_t *l, bool cleanup)
+lwp_unsleep(lwp_t *l, bool unlock)
 {
 
 	KASSERT(mutex_owned(l->l_mutex));
-	(*l->l_syncobj->sobj_unsleep)(l, cleanup);
+	(*l->l_syncobj->sobj_unsleep)(l, unlock);
 }
 
 /*
@@ -1613,15 +1612,26 @@ lwp_userret(struct lwp *l)
 void
 lwp_need_userret(struct lwp *l)
 {
+
+	KASSERT(!cpu_intr_p());
 	KASSERT(lwp_locked(l, NULL));
 
 	/*
-	 * Since the tests in lwp_userret() are done unlocked, make sure
-	 * that the condition will be seen before forcing the LWP to enter
-	 * kernel mode.
+	 * If the LWP is in any state other than LSONPROC, we know that it
+	 * is executing in-kernel and will hit userret() on the way out. 
+	 *
+	 * If the LWP is curlwp, then we know we'll be back out to userspace
+	 * soon (can't be called from a hardware interrupt here).
+	 *
+	 * Otherwise, we can't be sure what the LWP is doing, so first make
+	 * sure the update to l_flag will be globally visible, and then
+	 * force the LWP to take a trip through trap() where it will do
+	 * userret().
 	 */
-	membar_producer();
-	cpu_signotify(l);
+	if (l->l_stat == LSONPROC && l != curlwp) {
+		membar_producer();
+		cpu_signotify(l);
+	}
 }
 
 /*

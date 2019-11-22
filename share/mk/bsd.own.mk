@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1159 2019/10/31 06:43:19 martin Exp $
+#	$NetBSD: bsd.own.mk,v 1.1166 2019/11/21 07:56:58 mrg Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -64,7 +64,14 @@ TOOLCHAIN_MISSING?=	no
 # What GCC is used?
 #
 .if ${MACHINE} == "amd64" || \
-    ${MACHINE_CPU} == "aarch64"
+    ${MACHINE} == "i386" || \
+    ${MACHINE} == "ia64" || \
+    ${MACHINE} == "powerpc64" || \
+    ${MACHINE} == "sparc" || \
+    ${MACHINE} == "sparc64" || \
+    ${MACHINE_CPU} == "aarch64" || \
+    ${MACHINE_CPU} == "arm" || \
+    ${MACHINE_CPU} == "riscv"
 HAVE_GCC?=	8
 .else
 HAVE_GCC?=	7
@@ -1073,7 +1080,6 @@ MKSTATICPIE?=	no
 _MKVARS.yes= \
 	MKATF \
 	MKBINUTILS \
-	MKBSDTAR \
 	MKCOMPLEX MKCVS MKCXX \
 	MKDOC MKDTC \
 	MKDYNAMICROOT \
@@ -1197,6 +1203,7 @@ _MKVARS.no= \
 	MKARGON2 \
 	MKARZERO \
 	MKBSDGREP \
+	MKBSDTAR \
 	MKCATPAGES MKCOMPATTESTS MKCOMPATX11 MKCTF \
 	MKDEBUG MKDEBUGLIB MKDTRACE \
 	MKEXTSRC \

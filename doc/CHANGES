@@ -1,4 +1,4 @@
-# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2610 $>
+# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2615 $>
 #
 #
 # [Note: This file does not mention every change made to the NetBSD source tree.
@@ -39,7 +39,7 @@ Changes from NetBSD 9.0 to NetBSD 10.0:
 	kernel: Add vHCI, a driver that allows to send and receive USB
 		packets from userland. [maxv 20190914]
 	mos(4): Ported driver for MosChip MCS7730/7830/7832 USB ethernet.
-		[mrg 20190814]
+		[mrg 20190920]
 	libpcap: Import 1.9.1. [christos 20191001]
 	tcpdump(8): Import 4.9.3. [christos 20191001]
 	rescue(8): Moved into a separate, rescue-only set. [maya 20191001]
@@ -74,3 +74,11 @@ Changes from NetBSD 9.0 to NetBSD 10.0:
 	micphy(4): Add support for Microchip KSZ80[0456]1, KSZ8721, KSZ9[01]31,
 		KS8731 and KSZ9477.
 		[msaitoh 20191107]
+	tmux(1): Imported 2.9a. [christos 20191112]
+	dhcpcd(8): Import 8.1.2. [roy 20191113]
+	amd64: Add support for kMSan - Kernel Memory Sanitizer.
+		[maxv 20191114]
+	qat(4): Add opencrypto driver for Intel QuickAssist.
+		Atom C2XXX, C3XXX, Xeon D-21XX and D-15XX, C62X chipsets and
+		QuickAssist Adapter 8960/8970.
+		[hikaru 20191120]

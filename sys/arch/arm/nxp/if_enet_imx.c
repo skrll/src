@@ -1,4 +1,4 @@
-/*	$NetBSD: if_enet_imx.c,v 1.5 2019/11/12 05:09:29 hkenken Exp $	*/
+/*	$NetBSD: if_enet_imx.c,v 1.8 2019/11/14 06:00:16 hkenken Exp $	*/
 
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_enet_imx.c,v 1.5 2019/11/12 05:09:29 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_enet_imx.c,v 1.8 2019/11/14 06:00:16 hkenken Exp $");
 
 #include "opt_fdt.h"
 
@@ -91,7 +91,7 @@ enet_attach(device_t parent, device_t self, void *aux)
 	}
 
 	sc->sc_clk_ipg = fdtbus_clock_get(phandle, "ipg");
-	if (sc->sc_clk_enet == NULL) {
+	if (sc->sc_clk_ipg == NULL) {
 		aprint_error(": couldn't get clock ipg\n");
 		goto failure;
 	}
@@ -195,19 +195,23 @@ enet_init_clocks(struct enet_softc *sc)
 static void
 enet_phy_reset(struct enet_fdt_softc *sc, const int phandle)
 {
-	int error;
+	u_int msec;
 
 	sc->sc_pin_reset = fdtbus_gpio_acquire(phandle, "phy-reset-gpios", GPIO_PIN_OUTPUT);
 	if (sc->sc_pin_reset == NULL)
 		return;
 
-	u_int msec;
-	error = of_getprop_uint32(phandle, "phy-reset-duration", &msec);
-	if (error)
+	if (of_getprop_uint32(phandle, "phy-reset-duration", &msec))
 		msec = 1;
 
 	/* Reset */
 	fdtbus_gpio_write(sc->sc_pin_reset, 1);
 	delay(msec * 1000);
 	fdtbus_gpio_write(sc->sc_pin_reset, 0);
+
+	/* Post delay */
+	if (of_getprop_uint32(phandle, "phy-reset-post-delay", &msec))
+		msec = 0;
+
+	delay(msec * 1000);
 }

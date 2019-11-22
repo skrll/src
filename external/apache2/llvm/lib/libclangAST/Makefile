@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.1 2019/11/11 22:45:14 joerg Exp $
+#	$NetBSD: Makefile,v 1.3 2019/11/18 19:54:23 joerg Exp $
 
 LIB=	clangAST
 

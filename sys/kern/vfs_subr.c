@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_subr.c,v 1.472 2019/09/22 22:59:39 christos Exp $	*/
+/*	$NetBSD: vfs_subr.c,v 1.474 2019/11/16 10:05:44 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 2004, 2005, 2007, 2008 The NetBSD Foundation, Inc.
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.472 2019/09/22 22:59:39 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.474 2019/11/16 10:05:44 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -758,6 +758,7 @@ sched_sync(void *arg)
 {
 	mount_iterator_t *iter;
 	synclist_t *slp;
+	struct vnode_impl *vi;
 	struct vnode *vp;
 	struct mount *mp;
 	time_t starttime;
@@ -790,14 +791,16 @@ sched_sync(void *arg)
 		if (syncer_delayno >= syncer_last)
 			syncer_delayno = 0;
 
-		while ((vp = VIMPL_TO_VNODE(TAILQ_FIRST(slp))) != NULL) {
+		while ((vi = TAILQ_FIRST(slp)) != NULL) {
+			vp = VIMPL_TO_VNODE(vi);
 			synced = lazy_sync_vnode(vp);
 
 			/*
 			 * XXX The vnode may have been recycled, in which
 			 * case it may have a new identity.
 			 */
-			if (VIMPL_TO_VNODE(TAILQ_FIRST(slp)) == vp) {
+			vi = TAILQ_FIRST(slp);
+			if (vi != NULL && VIMPL_TO_VNODE(vi) == vp) {
 				/*
 				 * Put us back on the worklist.  The worklist
 				 * routine will remove us from our current

@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.37 2019/11/11 22:45:26 joerg Exp $
+# $NetBSD: Makefile,v 1.40 2019/11/20 06:23:31 martin Exp $
 
 # Link the gallium mega driver.
 
@@ -22,6 +22,10 @@ CFLAGS+=	-std=gnu11
 CPPFLAGS+=	-I${DESTDIR}${X11INCDIR}/libdrm \
 		-I${NETBSDSRCDIR}/external/apache2/llvm/dist/llvm/include \
 		-I${LLVM_INCLUDE_OBJDIR} -I${NETBSDSRCDIR}/external/apache2/llvm/config
+
+CFLAGS+=	-pthread
+LDFLAGS+=	-pthread
+LIBDPLIBS+=	pthread		${.CURDIR}/../../../../../lib/libpthread
 
 GALLIUM_SUBDIRS= \
 	auxiliary \
@@ -1049,12 +1053,16 @@ LLVMRT_LIBS+=	\
 		SelectionDAG \
 		AsmPrinter \
 		CodeGen \
+		TransformsCFGuard \
 		Target \
 		InstCombine \
 		ScalarOpts \
 		DebugInfoCodeView \
+		DebugInfoDWARF \
 		Object \
 		BitReader \
+		TextAPI \
+		MIRParser \
 		MCParser \
 		MC \
 		ipo \
@@ -1066,16 +1074,22 @@ LLVMRT_LIBS+=	\
 		ProfileData \
 		Analysis \
 		IR \
+		Remarks \
+		BitstreamReader \
 		Linker \
 		BinaryFormat \
 		TransformsUtils \
-		Support
+		Support \
+		Demangle
 
 .include "${NETBSDSRCDIR}/external/apache2/llvm/link.mk"
 
 .endif  # ${BUILD_LLVM_PIPE} == 1 || ${BUILD_RADEON} == 1
 
 LDFLAGS+=	-Wl,--version-script=${X11SRCDIR.Mesa}/src/gallium/targets/dri/dri.sym
+.if ${MACHINE_ARCH} == "i386" || ${MACHINE_ARCH} == "x86_64" || ${MACHINE_CPU} == "aarch64"
+LDFLAGS+=	-Wl,-z,defs
+.endif
 
 ##  build mesagallium parts
 MESA_SRC_MODULES=  main math vbo state_tracker program asm_s

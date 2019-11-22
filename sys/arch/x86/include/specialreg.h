@@ -1,4 +1,4 @@
-/*	$NetBSD: specialreg.h,v 1.156 2019/10/30 05:35:36 msaitoh Exp $	*/
+/*	$NetBSD: specialreg.h,v 1.158 2019/11/17 15:31:05 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2014-2019 The NetBSD Foundation, Inc.
@@ -447,6 +447,7 @@
 #define CPUID_SEF_OSPKE		__BIT(4)  /* OS has set CR4.PKE to ena. protec. keys */
 #define CPUID_SEF_WAITPKG	__BIT(5)  /* TPAUSE,UMONITOR,UMWAIT */
 #define CPUID_SEF_AVX512_VBMI2	__BIT(6)  /* AVX-512 Vector Byte Manipulation 2 */
+#define CPUID_SEF_CET_SS	__BIT(7)  /* CET shadow stack */
 #define CPUID_SEF_GFNI		__BIT(8)
 #define CPUID_SEF_VAES		__BIT(9)
 #define CPUID_SEF_VPCLMULQDQ	__BIT(10)
@@ -462,7 +463,7 @@
 
 #define CPUID_SEF_FLAGS1	"\177\20" \
 	"b\0PREFETCHWT1\0" "b\1AVX512_VBMI\0" "b\2UMIP\0" "b\3PKU\0"	\
-	"b\4OSPKE\0"	"b\5WAITPKG\0"	"b\6AVX512_VBMI2\0"		      \
+	"b\4OSPKE\0"	"b\5WAITPKG\0"	"b\6AVX512_VBMI2\0" "b\7CET_SS\0" \
 	"b\10GFNI\0"	"b\11VAES\0"	"b\12VPCLMULQDQ\0" "b\13AVX512_VNNI\0"\
 	"b\14AVX512_BITALG\0"		"b\16AVX512_VPOPCNTDQ\0"	\
 	"f\21\5MAWAU\0"							\
@@ -473,8 +474,11 @@
 /* %edx */
 #define CPUID_SEF_AVX512_4VNNIW	__BIT(2)
 #define CPUID_SEF_AVX512_4FMAPS	__BIT(3)
+#define CPUID_SEF_FSREP_MOV	__BIT(4)  /* Fast Short REP MOV */
 #define CPUID_SEF_MD_CLEAR	__BIT(10)
 #define CPUID_SEF_TSX_FORCE_ABORT __BIT(13) /* MSR_TSX_FORCE_ABORT bit 0 */
+#define CPUID_SEF_HYBRID	__BIT(15) /* Hybrid part */
+#define CPUID_SEF_CET_IBT	__BIT(20) /* CET Indirect Branch Tracking */
 #define CPUID_SEF_IBRS		__BIT(26) /* IBRS / IBPB Speculation Control */
 #define CPUID_SEF_STIBP		__BIT(27) /* STIBP Speculation Control */
 #define CPUID_SEF_L1D_FLUSH	__BIT(28) /* IA32_FLUSH_CMD MSR */
@@ -484,8 +488,10 @@
 
 #define CPUID_SEF_FLAGS2	"\20" \
 				"\3" "AVX512_4VNNIW" "\4" "AVX512_4FMAPS" \
+	"\5" "FSREP_MOV"						\
 				"\13" "MD_CLEAR"			\
-			"\16" "TSX_FORCE_ABORT"				\
+			"\16" "TSX_FORCE_ABORT"		"\20" "HYBRID"	\
+	"\25" "CET_IBT"							\
 	"\33" "IBRS"	"\34" "STIBP"					\
 	"\35" "L1D_FLUSH" "\36" "ARCH_CAP" "\37CORE_CAP"	"\40" "SSBD"
 
@@ -853,9 +859,14 @@
 #define 	IA32_ARCH_SKIP_L1DFL_VMENTRY 0x08
 #define 	IA32_ARCH_SSB_NO	0x10
 #define 	IA32_ARCH_MDS_NO	0x20
+#define 	IA32_ARCH_TSX_CTRL	0x80
+#define 	IA32_ARCH_TAA_NO	0x100
 #define MSR_IA32_FLUSH_CMD	0x10b
 #define 	IA32_FLUSH_CMD_L1D_FLUSH 0x01
 #define MSR_TSX_FORCE_ABORT	0x10f
+#define MSR_IA32_TSX_CTRL	0x122
+#define 	IA32_TSX_CTRL_RTM_DISABLE	__BIT(0)
+#define 	IA32_TSX_CTRL_TSX_CPUID_CLEAR	__BIT(1)
 #define MSR_SYSENTER_CS		0x174	/* PII+ only */
 #define MSR_SYSENTER_ESP	0x175	/* PII+ only */
 #define MSR_SYSENTER_EIP	0x176	/* PII+ only */
