@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.189 2019/10/12 06:31:03 maxv Exp $	*/
+/*	$NetBSD: locore.S,v 1.192 2019/11/22 23:36:25 ad Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -1235,6 +1235,7 @@ ENTRY(cpu_switchto)
 
 .Lswitch_return:
 	/* Return to the new LWP, returning 'oldlwp' in %rax. */
+	KMSAN_INIT_RET(8)
 	movq	%r13,%rax
 	popq	%r15
 	popq	%r14
@@ -1321,6 +1322,7 @@ ENTRY(handle_syscall)
 	STI(si)
 	/* Pushed T_ASTFLT into tf_trapno on entry. */
 	movq	%rsp,%rdi
+	KMSAN_INIT_ARG(8)
 	call	_C_LABEL(trap)
 	jmp	.Lsyscall_checkast	/* re-check ASTs */
 END(handle_syscall)
@@ -1336,8 +1338,10 @@ ENTRY(lwp_trampoline)
 	movq	%rbp,%r14	/* for .Lsyscall_checkast */
 	movq	%rax,%rdi
 	xorq	%rbp,%rbp
+	KMSAN_INIT_ARG(16)
 	call	_C_LABEL(lwp_startup)
 	movq	%r13,%rdi
+	KMSAN_INIT_ARG(8)
 	call	*%r12
 	jmp	.Lsyscall_checkast
 END(lwp_trampoline)
@@ -1410,6 +1414,7 @@ IDTVEC(\name)
 	.if	\is_svs
 		SVS_ENTER
 	.endif
+	KMSAN_ENTER
 	jmp	handle_syscall
 IDTVEC_END(\name)
 .endm
@@ -1453,6 +1458,7 @@ IDTVEC_END(osyscall)
 	TEXT_USER_BEGIN
 	_ALIGN_TEXT
 LABEL(syscall_sysret)
+	KMSAN_LEAVE
 	MDS_LEAVE
 	SVS_LEAVE
 	IBRS_LEAVE
@@ -1485,7 +1491,7 @@ ENTRY(sse2_idlezero_page)
 	xorq	%rax, %rax
 	.align	16
 1:
-	testl	$RESCHED_KPREEMPT, CPUVAR(RESCHED)
+	cmpl	$0, CPUVAR(RESCHED)
 	jnz	2f
 	movnti	%rax, 0(%rdi)
 	movnti	%rax, 8(%rdi)
@@ -1501,34 +1507,28 @@ ENTRY(sse2_idlezero_page)
 	sfence
 	incl	%eax
 	popq	%rbp
+	KMSAN_INIT_RET(1)
 	ret
 2:
 	sfence
 	popq	%rbp
+	KMSAN_INIT_RET(1)
 	ret
 END(sse2_idlezero_page)
 
 /*
  * void pagezero(vaddr_t va)
  *
- * Zero a page without polluting the cache.
+ * Zero a page.
  */
 ENTRY(pagezero)
-	movq	$-PAGE_SIZE,%rdx
-	subq	%rdx,%rdi
+	pushq	%rbp
+	movq	%rsp,%rbp
+	movq	$(PAGE_SIZE / 8),%rcx
 	xorq	%rax,%rax
-1:
-	movnti	%rax,(%rdi,%rdx)
-	movnti	%rax,8(%rdi,%rdx)
-	movnti	%rax,16(%rdi,%rdx)
-	movnti	%rax,24(%rdi,%rdx)
-	movnti	%rax,32(%rdi,%rdx)
-	movnti	%rax,40(%rdi,%rdx)
-	movnti	%rax,48(%rdi,%rdx)
-	movnti	%rax,56(%rdi,%rdx)
-	addq	$64,%rdx
-	jne	1b
-	sfence
+	rep
+	stosq
+	leave
 	ret
 END(pagezero)
 
@@ -1546,6 +1546,7 @@ END(pagezero)
 	.type intrfastexit,@function
 LABEL(intrfastexit)
 	NOT_XEN(cli;)
+	KMSAN_LEAVE
 
 	testb	$SEL_UPL,TF_CS(%rsp)
 	jz	.Lkexit

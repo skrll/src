@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.336 2019/10/05 07:19:49 maxv Exp $	*/
+/*	$NetBSD: pmap.c,v 1.341 2019/11/16 10:19:29 maxv Exp $	*/
 
 /*
  * Copyright (c) 2008, 2010, 2016, 2017 The NetBSD Foundation, Inc.
@@ -130,14 +130,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.336 2019/10/05 07:19:49 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.341 2019/11/16 10:19:29 maxv Exp $");
 
 #include "opt_user_ldt.h"
 #include "opt_lockdebug.h"
 #include "opt_multiprocessor.h"
 #include "opt_xen.h"
 #include "opt_svs.h"
-#include "opt_kasan.h"
 #include "opt_kaslr.h"
 
 #include <sys/param.h>
@@ -151,6 +150,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.336 2019/10/05 07:19:49 maxv Exp $");
 #include <sys/xcall.h>
 #include <sys/kcore.h>
 #include <sys/asan.h>
+#include <sys/msan.h>
 
 #include <uvm/uvm.h>
 #include <uvm/pmap/pmap_pvt.h>
@@ -541,6 +541,8 @@ static inline struct pv_pte *
 pve_to_pvpte(struct pv_entry *pve)
 {
 
+	if (pve == NULL)
+		return NULL;
 	KASSERT((void *)&pve->pve_pte == (void *)pve);
 	return &pve->pve_pte;
 }
@@ -747,7 +749,7 @@ pmap_exec_account(struct pmap *pm, vaddr_t va, pt_entry_t opte, pt_entry_t npte)
 	    pm != vm_map_pmap(&curproc->p_vmspace->vm_map))
 		return;
 
-	if ((opte ^ npte) & PG_X)
+	if ((opte ^ npte) & PTE_X)
 		pmap_update_pg(va);
 
 	/*
@@ -757,7 +759,7 @@ pmap_exec_account(struct pmap *pm, vaddr_t va, pt_entry_t opte, pt_entry_t npte)
 	 * We can't do that because of locking constraints on the vm map.
 	 */
 
-	if ((opte & PG_X) && (npte & PG_X) == 0 && va == pm->pm_hiexec) {
+	if ((opte & PTE_X) && (npte & PTE_X) == 0 && va == pm->pm_hiexec) {
 		struct trapframe *tf = curlwp->l_md.md_regs;
 
 		tf->tf_cs = GSEL(GUCODE_SEL, SEL_UPL);
@@ -1068,13 +1070,13 @@ pmap_bootstrap(vaddr_t kva_start)
 	 * into a x86 PTE.
 	 */
 	protection_codes[VM_PROT_NONE] = pmap_pg_nx;
-	protection_codes[VM_PROT_EXECUTE] = PG_X;
+	protection_codes[VM_PROT_EXECUTE] = PTE_X;
 	protection_codes[VM_PROT_READ] = pmap_pg_nx;
-	protection_codes[VM_PROT_READ|VM_PROT_EXECUTE] = PG_X;
+	protection_codes[VM_PROT_READ|VM_PROT_EXECUTE] = PTE_X;
 	protection_codes[VM_PROT_WRITE] = PTE_W | pmap_pg_nx;
-	protection_codes[VM_PROT_WRITE|VM_PROT_EXECUTE] = PTE_W | PG_X;
+	protection_codes[VM_PROT_WRITE|VM_PROT_EXECUTE] = PTE_W | PTE_X;
 	protection_codes[VM_PROT_WRITE|VM_PROT_READ] = PTE_W | pmap_pg_nx;
-	protection_codes[VM_PROT_ALL] = PTE_W | PG_X;
+	protection_codes[VM_PROT_ALL] = PTE_W | PTE_X;
 
 	/*
 	 * Now we init the kernel's pmap.
@@ -1299,7 +1301,7 @@ pmap_pagetree_nentries_range(vaddr_t startva, vaddr_t endva, size_t pgsz)
 }
 #endif
 
-#if defined(__HAVE_DIRECT_MAP) || defined(KASAN)
+#if defined(__HAVE_DIRECT_MAP) || defined(KASAN) || defined(KMSAN)
 static inline void
 slotspace_copy(int type, pd_entry_t *dst, pd_entry_t *src)
 {
@@ -2282,6 +2284,9 @@ pmap_pdp_ctor(void *arg, void *v, int flags)
 #endif
 #ifdef KASAN
 	slotspace_copy(SLAREA_ASAN, pdir, PDP_BASE);
+#endif
+#ifdef KMSAN
+	slotspace_copy(SLAREA_MSAN, pdir, PDP_BASE);
 #endif
 #endif /* XENPV  && __x86_64__*/
 
@@ -3434,9 +3439,9 @@ pmap_pte_to_pp_attrs(pt_entry_t pte)
 {
 	uint8_t ret = 0;
 	if (pte & PTE_D)
-		ret |= PP_ATTRS_M;
+		ret |= PP_ATTRS_D;
 	if (pte & PTE_A)
-		ret |= PP_ATTRS_U;
+		ret |= PP_ATTRS_A;
 	if (pte & PTE_W)
 		ret |= PP_ATTRS_W;
 	return ret;
@@ -3446,9 +3451,9 @@ static inline pt_entry_t
 pmap_pp_attrs_to_pte(uint8_t attrs)
 {
 	pt_entry_t pte = 0;
-	if (attrs & PP_ATTRS_M)
+	if (attrs & PP_ATTRS_D)
 		pte |= PTE_D;
-	if (attrs & PP_ATTRS_U)
+	if (attrs & PP_ATTRS_A)
 		pte |= PTE_A;
 	if (attrs & PP_ATTRS_W)
 		pte |= PTE_W;
@@ -3674,7 +3679,7 @@ pmap_sync_pv(struct pv_pte *pvpte, paddr_t pa, int clearbits, uint8_t *oattrs,
 	expect = pmap_pa2pte(pa) | PTE_P;
 
 	if (clearbits != ~0) {
-		KASSERT((clearbits & ~(PP_ATTRS_M|PP_ATTRS_U|PP_ATTRS_W)) == 0);
+		KASSERT((clearbits & ~(PP_ATTRS_D|PP_ATTRS_A|PP_ATTRS_W)) == 0);
 		clearbits = pmap_pp_attrs_to_pte(clearbits);
 	}
 
@@ -4569,10 +4574,10 @@ pmap_growkernel(vaddr_t maxkvaddr)
 	}
 #endif
 
-#ifdef KASAN
 	kasan_shadow_map((void *)pmap_maxkvaddr,
 	    (size_t)(maxkvaddr - pmap_maxkvaddr));
-#endif
+	kmsan_shadow_map((void *)pmap_maxkvaddr,
+	    (size_t)(maxkvaddr - pmap_maxkvaddr));
 
 	pmap_alloc_level(cpm, pmap_maxkvaddr, needed_kptp);
 
@@ -4938,11 +4943,11 @@ pmap_ept_to_pp_attrs(pt_entry_t ept)
 	uint8_t ret = 0;
 	if (pmap_ept_has_ad) {
 		if (ept & EPT_D)
-			ret |= PP_ATTRS_M;
+			ret |= PP_ATTRS_D;
 		if (ept & EPT_A)
-			ret |= PP_ATTRS_U;
+			ret |= PP_ATTRS_A;
 	} else {
-		ret |= (PP_ATTRS_M|PP_ATTRS_U);
+		ret |= (PP_ATTRS_D|PP_ATTRS_A);
 	}
 	if (ept & EPT_W)
 		ret |= PP_ATTRS_W;
@@ -4953,9 +4958,9 @@ static inline pt_entry_t
 pmap_pp_attrs_to_ept(uint8_t attrs)
 {
 	pt_entry_t ept = 0;
-	if (attrs & PP_ATTRS_M)
+	if (attrs & PP_ATTRS_D)
 		ept |= EPT_D;
-	if (attrs & PP_ATTRS_U)
+	if (attrs & PP_ATTRS_A)
 		ept |= EPT_A;
 	if (attrs & PP_ATTRS_W)
 		ept |= EPT_W;
@@ -5531,7 +5536,7 @@ pmap_ept_sync_pv(struct vm_page *ptp, vaddr_t va, paddr_t pa, int clearbits,
 	pmap = ptp_to_pmap(ptp);
 
 	if (clearbits != ~0) {
-		KASSERT((clearbits & ~(PP_ATTRS_M|PP_ATTRS_U|PP_ATTRS_W)) == 0);
+		KASSERT((clearbits & ~(PP_ATTRS_D|PP_ATTRS_A|PP_ATTRS_W)) == 0);
 		clearbits = pmap_pp_attrs_to_ept(clearbits);
 	}
 

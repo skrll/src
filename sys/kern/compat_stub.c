@@ -1,4 +1,4 @@
-/* $NetBSD: compat_stub.c,v 1.15 2019/07/20 18:23:05 christos Exp $	*/
+/* $NetBSD: compat_stub.c,v 1.19 2019/11/20 19:37:53 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -117,13 +117,6 @@ struct raidframe_netbsd32_ioctl_hook_t raidframe_netbsd32_ioctl_hook;
 
 struct puffs_out_50_hook_t puffs_out_50_hook;
 struct puffs_in_50_hook_t puffs_in_50_hook;
-
-/* XXX
-int (*puffs50_compat_outgoing)(struct puffs_req *, struct puffs_req **,
-    ssize_t *) = (void *)enosys;
-void (*puffs50_compat_incoming)(struct puffs_req *, struct puffs_req *) =
-    (void *)voidop;
-   XXX */
 
 /*
  * wsevents compatability
@@ -274,3 +267,20 @@ struct ifmedia_80_post_hook_t ifmedia_80_post_hook;
  */
 struct netbsd32_machine32_hook_t netbsd32_machine32_hook;
 struct netbsd32_reg_validate_hook_t netbsd32_reg_validate_hook;
+
+/*
+ * Hook for sendsig_sigcontext_16
+ */
+struct sendsig_sigcontext_16_hook_t sendsig_sigcontext_16_hook;
+
+/*
+ * Hooks for coredumps
+ */
+struct coredump_hook_t coredump_hook;
+struct coredump_offset_hook_t coredump_offset_hook;
+struct coredump_write_hook_t coredump_write_hook;
+struct coredump_netbsd_hook_t coredump_netbsd_hook;
+struct uvm_coredump_walkmap_hook_t uvm_coredump_walkmap_hook;
+struct uvm_coredump_count_segs_hook_t uvm_coredump_count_segs_hook;
+
+

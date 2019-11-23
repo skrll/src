@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32.h,v 1.127 2019/10/03 22:16:53 kamil Exp $	*/
+/*	$NetBSD: netbsd32.h,v 1.131 2019/11/18 12:06:26 rin Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001, 2008, 2015 Matthew R. Green
@@ -161,6 +161,10 @@ netbsd32_ptr32_incr(netbsd32_pointer_t *p32, uint32_t incr)
 typedef int64_t netbsd32_int64 NETBSD32_INT64_ALIGN;
 typedef uint64_t netbsd32_uint64 NETBSD32_INT64_ALIGN;
 #undef NETBSD32_INT64_ALIGN
+
+/* Type used in siginfo, avoids circular dependencies between headers. */
+CTASSERT(sizeof(netbsd32_uint64) == sizeof(netbsd32_siginfo_uint64));
+CTASSERT(__alignof__(netbsd32_uint64) == __alignof__(netbsd32_siginfo_uint64));
 
 /*
  * all pointers are netbsd32_pointer_t (defined in <machine/netbsd32_machdep.h>)
@@ -902,7 +906,7 @@ struct netbsd32_statvfs {
 	netbsd32_u_long	f_fsid;		/* Posix compatible fsid */
 	netbsd32_u_long	f_namemax;	/* maximum filename length */
 	uid_t		f_owner;	/* user that mounted the file system */
-	uint64_t	f_spare[4];	/* spare space */
+	netbsd32_uint64	f_spare[4];	/* spare space */
 	char	f_fstypename[_VFS_NAMELEN]; /* fs type name */
 	char	f_mntonname[_VFS_MNAMELEN];  /* directory on which mounted */
 	char	f_mntfromname[_VFS_MNAMELEN];  /* mounted file system */

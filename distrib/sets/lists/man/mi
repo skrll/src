@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1660 2019/10/28 13:04:18 maxv Exp $
+# $NetBSD: mi,v 1.1663 2019/11/20 09:37:44 hikaru Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -1379,6 +1379,7 @@
 ./usr/share/man/cat4/iy.0			man-sys-catman		.cat
 ./usr/share/man/cat4/jme.0			man-sys-catman		.cat
 ./usr/share/man/cat4/jmide.0			man-sys-catman		.cat
+./usr/share/man/cat4/jmphy.0			man-sys-catman		.cat
 ./usr/share/man/cat4/joy.0			man-sys-catman		.cat
 ./usr/share/man/cat4/kame_ipsec.0		man-obsolete		obsolete
 ./usr/share/man/cat4/kcov.0			man-sys-catman		.cat
@@ -1612,6 +1613,7 @@
 ./usr/share/man/cat4/pxagpio.0			man-sys-catman		.cat
 ./usr/share/man/cat4/pxaip.0			man-sys-catman		.cat
 ./usr/share/man/cat4/pxg.0			man-sys-catman		.cat
+./usr/share/man/cat4/qat.0			man-sys-catman		.cat
 ./usr/share/man/cat4/qe.0			man-sys-catman		.cat
 ./usr/share/man/cat4/qec.0			man-sys-catman		.cat
 ./usr/share/man/cat4/qemufwcfg.0		man-sys-catman		.cat
@@ -1711,6 +1713,7 @@
 ./usr/share/man/cat4/slip.0			man-sys-catman		.cat
 ./usr/share/man/cat4/sm.0			man-sys-catman		.cat
 ./usr/share/man/cat4/smsc.0			man-sys-catman		.cat
+./usr/share/man/cat4/smscphy.0			man-sys-catman		.cat
 ./usr/share/man/cat4/smscmon.0			man-sys-catman		.cat
 ./usr/share/man/cat4/smsh.0			man-sys-catman		.cat
 ./usr/share/man/cat4/sn.0			man-sys-catman		.cat
@@ -4522,6 +4525,7 @@
 ./usr/share/man/html4/iy.html			man-sys-htmlman		html
 ./usr/share/man/html4/jme.html			man-sys-htmlman		html
 ./usr/share/man/html4/jmide.html		man-sys-htmlman		html
+./usr/share/man/html4/jmphy.html		man-sys-htmlman		html
 ./usr/share/man/html4/joy.html			man-sys-htmlman		html
 ./usr/share/man/html4/kame_ipsec.html		man-obsolete		obsolete
 ./usr/share/man/html4/kcov.html		man-sys-htmlman		html
@@ -4724,6 +4728,7 @@
 ./usr/share/man/html4/pxagpio.html		man-sys-htmlman		html
 ./usr/share/man/html4/pxaip.html		man-sys-htmlman		html
 ./usr/share/man/html4/pxg.html			man-sys-htmlman		html
+./usr/share/man/html4/qat.html			man-sys-htmlman		html
 ./usr/share/man/html4/qe.html			man-sys-htmlman		html
 ./usr/share/man/html4/qec.html			man-sys-htmlman		html
 ./usr/share/man/html4/qemufwcfg.html		man-sys-htmlman		html
@@ -4821,6 +4826,7 @@
 ./usr/share/man/html4/slip.html			man-sys-htmlman		html
 ./usr/share/man/html4/sm.html			man-sys-htmlman		html
 ./usr/share/man/html4/smsc.html			man-sys-htmlman		html
+./usr/share/man/html4/smscphy.html		man-sys-htmlman		html
 ./usr/share/man/html4/smscmon.html		man-sys-htmlman		html
 ./usr/share/man/html4/smsh.html			man-sys-htmlman		html
 ./usr/share/man/html4/sn.html			man-sys-htmlman		html
@@ -7505,6 +7511,7 @@
 ./usr/share/man/man4/iy.4			man-sys-man		.man
 ./usr/share/man/man4/jme.4			man-sys-man		.man
 ./usr/share/man/man4/jmide.4			man-sys-man		.man
+./usr/share/man/man4/jmphy.4			man-sys-man		.man
 ./usr/share/man/man4/joy.4			man-sys-man		.man
 ./usr/share/man/man4/kame_ipsec.4		man-obsolete		obsolete
 ./usr/share/man/man4/kcov.4			man-sys-man		.man
@@ -7738,6 +7745,7 @@
 ./usr/share/man/man4/pxagpio.4			man-sys-man		.man
 ./usr/share/man/man4/pxaip.4			man-sys-man		.man
 ./usr/share/man/man4/pxg.4			man-sys-man		.man
+./usr/share/man/man4/qat.4			man-sys-man		.man
 ./usr/share/man/man4/qe.4			man-sys-man		.man
 ./usr/share/man/man4/qec.4			man-sys-man		.man
 ./usr/share/man/man4/qemufwcfg.4		man-sys-man		.man
@@ -7838,6 +7846,7 @@
 ./usr/share/man/man4/sm.4			man-sys-man		.man
 ./usr/share/man/man4/smsc.4			man-sys-man		.man
 ./usr/share/man/man4/smscmon.4			man-sys-man		.man
+./usr/share/man/man4/smscphy.4			man-sys-man		.man
 ./usr/share/man/man4/smsh.4			man-sys-man		.man
 ./usr/share/man/man4/sn.4			man-sys-man		.man
 ./usr/share/man/man4/sony.4			man-sys-man		.man

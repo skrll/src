@@ -1,4 +1,4 @@
-/*$NetBSD: ixv.c,v 1.139 2019/10/01 10:04:11 msaitoh Exp $*/
+/*$NetBSD: ixv.c,v 1.141 2019/11/18 03:17:51 msaitoh Exp $*/
 
 /******************************************************************************
 
@@ -1610,6 +1610,8 @@ ixv_setup_interface(device_t dev, struct adapter *adapter)
 	}
 	adapter->ipq = if_percpuq_create(&adapter->osdep.ec.ec_if);
 	ether_ifattach(ifp, adapter->hw.mac.addr);
+	aprint_normal_dev(dev, "Ethernet address %s\n",
+	    ether_sprintf(adapter->hw.mac.addr));
 	/*
 	 * We use per TX queue softint, so if_deferred_start_init() isn't
 	 * used.
@@ -1920,7 +1922,8 @@ ixv_initialize_receive_units(struct adapter *adapter)
 			    adapter->num_rx_desc - 1);
 	}
 
-	ixv_initialize_rss_mapping(adapter);
+	if (adapter->hw.mac.type >= ixgbe_mac_X550_vf)
+		ixv_initialize_rss_mapping(adapter);
 } /* ixv_initialize_receive_units */
 
 /************************************************************************

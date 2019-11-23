@@ -1,4 +1,4 @@
-/*	$NetBSD: md.c,v 1.21 2019/08/14 12:55:36 martin Exp $ */
+/*	$NetBSD: md.c,v 1.26 2019/11/18 16:05:55 martin Exp $ */
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -256,11 +256,12 @@ md_post_newfs_bios(struct install_partition_desc *install)
 		 * Too hard to double check, so just 'know' the device numbers.
 		 */
 		len = sizeof condev;
-		if (sysctl(conmib, __arraycount(conmib), &condev, &len, NULL, 0) != -1
-		    && (condev & ~3) == 0x800) {
+		if (sysctl(conmib, __arraycount(conmib), &condev, &len, NULL,
+		    0) != -1 && (condev & ~3) == 0x800) {
 			/* Motherboard serial port */
 			boottype.bp_consdev = (condev & 3) + 1;
-			/* Defaulting the baud rate to that of stdin should suffice */
+			/* Defaulting the baud rate to that of stdin should
+			   suffice */
 			if (tcgetattr(0, &t) != -1)
 				boottype.bp_conspeed = t.c_ispeed;
 		}
@@ -383,6 +384,15 @@ md_post_newfs(struct install_partition_desc *install)
 int
 md_post_extract(struct install_partition_desc *install)
 {
+#if defined(__amd64__)
+	if (get_kernel_set() == SET_KERNEL_2) {
+		int ret;
+
+		ret = cp_within_target("/usr/mdec/prekern", "/prekern", 0);
+		if (ret)
+			return ret;
+	}
+#endif
 	return 0;
 }
 
@@ -895,7 +905,7 @@ x86_md_part_defaults(struct pm_devs *cur_pm, struct part_usage_info **partsp,
 		if (info.nat_type->generic_ptype != boot->type)
 			continue;
 		boot->flags &= ~PUIFLAG_ADD_OUTER;
-		boot->flags |= PUIFLG_IS_OUTER|PUIFLAG_ADD_INNER;
+		boot->flags |= PUIFLG_IS_OUTER|PUIFLG_ADD_INNER;
 		boot->size = info.size;
 		boot->cur_start = info.start;
 		boot->cur_flags = info.flags;
@@ -910,5 +920,3 @@ x86_md_need_bootblock(struct install_partition_desc *install)
 
 	return !uefi_boot;
 }
-
-

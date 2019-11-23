@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.214 2019/10/16 04:07:42 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.216 2019/11/18 03:17:51 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -894,12 +894,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 
 	/* Allocate multicast array memory. */
 	adapter->mta = malloc(sizeof(*adapter->mta) *
-	    MAX_NUM_MULTICAST_ADDRESSES, M_DEVBUF, M_NOWAIT);
-	if (adapter->mta == NULL) {
-		aprint_error_dev(dev, "Cannot allocate multicast setup array\n");
-		error = ENOMEM;
-		goto err_out;
-	}
+	    MAX_NUM_MULTICAST_ADDRESSES, M_DEVBUF, M_WAITOK);
 
 	/* Enable WoL (if supported) */
 	ixgbe_check_wol_support(adapter);
@@ -1338,6 +1333,8 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 	}
 	adapter->ipq = if_percpuq_create(&adapter->osdep.ec.ec_if);
 	ether_ifattach(ifp, adapter->hw.mac.addr);
+	aprint_normal_dev(dev, "Ethernet address %s\n",
+	    ether_sprintf(adapter->hw.mac.addr));
 	/*
 	 * We use per TX queue softint, so if_deferred_start_init() isn't
 	 * used.

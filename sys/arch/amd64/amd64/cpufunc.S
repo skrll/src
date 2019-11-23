@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.S,v 1.45 2019/09/07 18:56:01 maxv Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.49 2019/11/21 19:23:58 ad Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2008 The NetBSD Foundation, Inc.
@@ -153,6 +153,7 @@ END(setusergs)
 ENTRY(x86_read_flags)
 	pushfq
 	popq	%rax
+	KMSAN_INIT_RET(8)
 	ret
 END(x86_read_flags)
 
@@ -174,6 +175,7 @@ ENTRY(tsc_get_timecount)
 	addl	CPUVAR(CC_SKEW), %eax
 	cmpq	%rdi, L_NCSW(%rcx)
 	jne	2f
+	KMSAN_INIT_RET(4)
 	ret
 2:
 	jmp	1b
@@ -194,6 +196,13 @@ ENTRY(rdmsr_safe)
 
 	xorq	%rax, %rax
 	movq	%rax, PCB_ONFAULT(%r8)
+#ifdef KMSAN
+	movq	%rsi,%rdi
+	movq	$8,%rsi
+	xorq	%rdx,%rdx
+	callq	_C_LABEL(kmsan_mark)
+#endif
+	KMSAN_INIT_RET(4)
 	ret
 END(rdmsr_safe)
 
@@ -211,12 +220,14 @@ ENTRY(cpu_counter)
 	shlq	$32, %rdx
 	orq	%rdx, %rax
 	addq	CPUVAR(CC_SKEW), %rax
+	KMSAN_INIT_RET(8)
 	ret
 END(cpu_counter)
 
 ENTRY(cpu_counter32)
 	rdtsc
 	addl	CPUVAR(CC_SKEW), %eax
+	KMSAN_INIT_RET(4)
 	ret
 END(cpu_counter32)
 
@@ -230,28 +241,27 @@ END(breakpoint)
 
 ENTRY(x86_curcpu)
 	movq	%gs:(CPU_INFO_SELF), %rax
+	KMSAN_INIT_RET(8)
 	ret
 END(x86_curcpu)
 
 ENTRY(x86_curlwp)
 	movq	%gs:(CPU_INFO_CURLWP), %rax
+	KMSAN_INIT_RET(8)
 	ret
 END(x86_curlwp)
-
-ENTRY(cpu_set_curpri)
-	movl	%edi, %gs:(CPU_INFO_CURPRIORITY)
-	ret
-END(cpu_set_curpri)
 
 ENTRY(__byte_swap_u32_variable)
 	movl	%edi, %eax
 	bswapl	%eax
+	KMSAN_INIT_RET(4)
 	ret
 END(__byte_swap_u32_variable)
 
 ENTRY(__byte_swap_u16_variable)
 	movl	%edi, %eax
 	xchgb	%al, %ah
+	KMSAN_INIT_RET(2)
 	ret
 END(__byte_swap_u16_variable)
 
@@ -313,16 +323,6 @@ ENTRY(x86_mwait)
 	ret
 END(x86_mwait)
 
-ENTRY(fnsave)
-	fnsave	(%rdi)
-	ret
-END(fnsave)
-
-ENTRY(frstor)
-	frstor	(%rdi)
-	ret
-END(frstor)
-
 ENTRY(stts)
 	movq	%cr0, %rax
 	orq	$CR0_TS, %rax
@@ -330,93 +330,35 @@ ENTRY(stts)
 	ret
 END(stts)
 
-ENTRY(fxsave)
-	fxsave	(%rdi)
-	ret
-END(fxsave)
-
-ENTRY(fxrstor)
-	fxrstor	(%rdi)
-	ret
-END(fxrstor)
-
 ENTRY(fldummy)
 	ffree	%st(7)
 	fldz
 	ret
 END(fldummy)
 
-ENTRY(xsave)
-	movq	%rsi, %rax
-	movq	%rsi, %rdx
-	shrq	$32, %rdx
-	xsave	(%rdi)
-	ret
-END(xsave)
-
-ENTRY(xsaveopt)
-	movq	%rsi, %rax
-	movq	%rsi, %rdx
-	shrq	$32, %rdx
-	xsaveopt	(%rdi)
-	ret
-END(xsaveopt)
-
-ENTRY(xrstor)
-	movq	%rsi, %rax
-	movq	%rsi, %rdx
-	shrq	$32, %rdx
-	xrstor	(%rdi)
-	ret
-END(xrstor)
-
 ENTRY(inb)
 	movq	%rdi, %rdx
 	xorq	%rax, %rax
 	inb	%dx, %al
+	KMSAN_INIT_RET(1)
 	ret
 END(inb)
-
-ENTRY(insb)
-	movl	%edx, %ecx
-	movl	%edi, %edx
-	movq	%rsi, %rdi
-	rep
-	insb
-	ret
-END(insb)
 
 ENTRY(inw)
 	movq	%rdi, %rdx
 	xorq	%rax, %rax
 	inw	%dx, %ax
+	KMSAN_INIT_RET(2)
 	ret
 END(inw)
-
-ENTRY(insw)
-	movl	%edx, %ecx
-	movl	%edi, %edx
-	movq	%rsi, %rdi
-	rep
-	insw
-	ret
-END(insw)
 
 ENTRY(inl)
 	movq	%rdi, %rdx
 	xorq	%rax, %rax
 	inl	%dx, %eax
+	KMSAN_INIT_RET(4)
 	ret
 END(inl)
-
-ENTRY(insl)
-	movl	%edx, %ecx
-	movl	%edi, %edx
-	movq	%rsi, %rdi
-	rep
-	insl
-	ret
-END(insl)
 
 ENTRY(outb)
 	movq	%rdi, %rdx
@@ -425,14 +367,6 @@ ENTRY(outb)
 	ret
 END(outb)
 
-ENTRY(outsb)
-	movl	%edx, %ecx
-	movl	%edi, %edx
-	rep
-	outsb
-	ret
-END(outsb)
-
 ENTRY(outw)
 	movq	%rdi, %rdx
 	movq	%rsi, %rax
@@ -440,25 +374,9 @@ ENTRY(outw)
 	ret
 END(outw)
 
-ENTRY(outsw)
-	movl	%edx, %ecx
-	movl	%edi, %edx
-	rep
-	outsw
-	ret
-END(outsw)
-
 ENTRY(outl)
 	movq	%rdi, %rdx
 	movq	%rsi, %rax
 	outl	%eax, %dx
 	ret
 END(outl)
-
-ENTRY(outsl)
-	movl	%edx, %ecx
-	movl	%edi, %edx
-	rep
-	outsl
-	ret
-END(outsl)

@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1240 2019/09/22 22:59:38 christos Exp $
+#	$NetBSD: files,v 1.1244 2019/11/14 16:23:52 maxv Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -31,6 +31,10 @@ defflag opt_diagnostic.h	_DIAGNOSTIC
 defflag				GPROF
 defflag				KASAN
 defflag opt_kasan.h		KASAN_PANIC
+defflag				KCSAN
+defflag opt_kcsan.h		KCSAN_PANIC
+defflag				KMSAN
+defflag opt_kmsan.h		KMSAN_PANIC
 defflag				KLEAK
 defflag				KCOV
 defflag opt_pool.h		POOL_QUARANTINE
@@ -1027,17 +1031,6 @@ file	dev/ic/wdc.c			(ata_dma | ata_udma | ata_piobm | atabus) & atabus & wdc_com
 device	njata: ata, ata_piobm, wdc_common
 file	dev/ic/ninjaata32.c		njata
 
-# CHIPS and Technologies 82C7[12][01] Universal Peripheral Controller
-#
-device	upc { [offset = -1] }
-attach	wdc at upc with wdc_upc
-attach	com at upc with com_upc
-attach	lpt at upc with lpt_upc
-file	dev/ic/upc.c			upc
-file	dev/ic/wdc_upc.c		wdc_upc
-file	dev/ic/com_upc.c		com_upc
-file	dev/ic/lpt_upc.c		lpt_upc
-
 # AHCI-compatible SATA controllers
 define ahcisata_core
 file dev/ic/ahcisata_core.c ahcisata_core
@@ -1495,6 +1488,7 @@ attach	ipmi at ipmibus
 # Designware HDMI TX
 device	dwhdmi: edid, videomode, drmkms, drmkms_i2c
 file	dev/ic/dw_hdmi.c		dwhdmi
+file	dev/ic/dw_hdmi_phy.c		dwhdmi
 
 #
 # File systems

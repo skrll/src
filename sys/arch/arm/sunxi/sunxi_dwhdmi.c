@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_dwhdmi.c,v 1.3 2019/02/02 17:35:16 jmcneill Exp $ */
+/* $NetBSD: sunxi_dwhdmi.c,v 1.5 2019/11/22 19:48:58 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_dwhdmi.c,v 1.3 2019/02/02 17:35:16 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_dwhdmi.c,v 1.5 2019/11/22 19:48:58 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -197,6 +197,21 @@ sunxi_dwhdmi_mode_set(struct dwhdmi_softc *dsc, struct drm_display_mode *mode,
 	sc->sc_curmode = *adjusted_mode;
 }
 
+static audio_dai_tag_t
+sunxi_dwhdmi_dai_get_tag(device_t dev, const void *data, size_t len)
+{
+	struct sunxi_dwhdmi_softc * const sc = device_private(dev);
+
+	if (len != 4)
+		return NULL;
+
+	return &sc->sc_base.sc_dai;
+}
+
+static struct fdtbus_dai_controller_func sunxi_dwhdmi_dai_funcs = {
+	.get_tag = sunxi_dwhdmi_dai_get_tag
+};
+
 static int
 sunxi_dwhdmi_match(device_t parent, cfdata_t cf, void *aux)
 {
@@ -211,7 +226,7 @@ sunxi_dwhdmi_attach(device_t parent, device_t self, void *aux)
 	struct sunxi_dwhdmi_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
-	struct clk *clk_iahb, *clk_isfr;
+	struct clk *clk_iahb, *clk_isfr, *clk_tmds;
 	struct fdtbus_reset *rst;
 	bus_addr_t addr;
 	bus_size_t size;
@@ -239,6 +254,12 @@ sunxi_dwhdmi_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
+	clk_tmds = fdtbus_clock_get(phandle, "tmds");
+	if (clk_tmds == NULL || clk_enable(clk_tmds) != 0) {
+		aprint_error(": couldn't enable tmds clock\n");
+		return;
+	}
+
 	sc->sc_base.sc_dev = self;
 	sc->sc_base.sc_reg_width = 1;
 	sc->sc_base.sc_bst = faa->faa_bst;
@@ -263,6 +284,8 @@ sunxi_dwhdmi_attach(device_t parent, device_t self, void *aux)
 	sc->sc_ports.dp_ep_activate = sunxi_dwhdmi_ep_activate;
 	sc->sc_ports.dp_ep_get_data = sunxi_dwhdmi_ep_get_data;
 	fdt_ports_register(&sc->sc_ports, self, phandle, EP_DRM_BRIDGE);
+
+	fdtbus_register_dai_controller(self, phandle, &sunxi_dwhdmi_dai_funcs);
 }
 
 CFATTACH_DECL_NEW(sunxi_dwhdmi, sizeof(struct sunxi_dwhdmi_softc),

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.686 2019/10/28 02:56:40 ozaki-r Exp $
+#	$NetBSD: Makefile,v 1.689 2019/11/20 09:37:45 hikaru Exp $
 #	@(#)Makefile	8.1 (Berkeley) 6/18/93
 
 MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
@@ -35,7 +35,7 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	ioasic.4 ioat.4 iop.4 iophy.4 iopsp.4 ip.4 ipgphy.4 ipmi.4 ipw.4 \
 	irmce.4 isp.4 ismt.4 isv.4 itesio.4 iteide.4 iwi.4 iwm.4 iwn.4 ixg.4 \
 	ixpide.4 ixv.4 \
-	jme.4 jmide.4 joy.4 \
+	jme.4 jmide.4 jmphy.4 joy.4 \
 	kcov.4 kloader.4 kse.4 ksyms.4 kttcp.4 \
 	l2tp.4 lc.4 ld.4 lii.4 lo.4 lua.4 lxtphy.4 \
 	mainbus.4 makphy.4 malo.4 mbe.4 mca.4 mcclock.4 mcx.4 md.4 mfb.4 \
@@ -51,14 +51,15 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	piixpm.4 pim.4 plip.4 pm3fb.4 pms.4 pmu.4 pnaphy.4 ppbus.4 ppp.4 \
 	pppoe.4 \
 	pseye.4 ptcd.4 ptm.4 pty.4 puc.4 pud.4 puffs.4 pwdog.4 px.4 pxagpio.4 \
-	pxaip.4 pxg.4 qe.4 qec.4 qemufwcfg.4 qsphy.4 \
+	pxaip.4 pxg.4 qat.4 qe.4 qec.4 qemufwcfg.4 qsphy.4 \
 	raid.4 ral.4 ray.4 rcons.4 rdcphy.4 re.4 rgephy.4 rlphy.4 \
 	rnd.4 route.4 rs5c372rtc.4 rtk.4 rtsx.4 rtw.4 rtwn.4 rum.4 run.4 \
 	s390rtc.4 satalink.4 sbus.4 schide.4 \
 	scsi.4 sctp.4 sd.4 se.4 seeprom.4 sem.4 \
 	ses.4 sf.4 sfb.4 sgsmix.4 shb.4 shmif.4 shpcic.4 si70xxtemp.4 \
 	siisata.4 siop.4 sip.4 siside.4 sk.4 sl.4 slide.4 \
-	sm.4 smsh.4 sn.4 sony.4 spc.4 speaker.4 spif.4 sqphy.4 srt.4 ss.4 \
+	sm.4 smscphy.4 smsh.4 sn.4 sony.4 spc.4 speaker.4 spif.4 sqphy.4 \
+	srt.4 ss.4 \
 	ssdfb.4 st.4 ste.4 stge.4 sti.4 stpcide.4 sv.4 strip.4 \
 	svwsata.4 swsensor.4 swwdog.4 sysmon.4 \
 	tap.4 tc.4 tcds.4 tcp.4 tcu.4 tdvfb.4 tea5767radio.4 termios.4 tfb.4 \

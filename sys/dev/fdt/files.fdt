@@ -1,4 +1,4 @@
-# $NetBSD: files.fdt,v 1.46 2019/10/27 15:31:15 jmcneill Exp $
+# $NetBSD: files.fdt,v 1.48 2019/11/17 19:30:42 jmcneill Exp $
 
 include	"external/bsd/libfdt/conf/files.libfdt"
 
@@ -98,6 +98,10 @@ device	ausoc: audiobus
 attach	ausoc at fdt
 file	dev/fdt/ausoc.c				ausoc
 
+device	spdiftx
+attach	spdiftx at fdt
+file	dev/fdt/spdif_tx.c			spdiftx
+
 define	fdt_display_timing
 file	dev/fdt/display_timing.c		fdt_display_timing
 
@@ -153,3 +157,8 @@ file	dev/fdt/amdccp_fdt.c			amdccp_fdt
 # Arasan SDHCI controller
 attach	sdhc at fdt with arasan_sdhc_fdt
 file	dev/fdt/arasan_sdhc_fdt.c		arasan_sdhc_fdt
+
+# Generic USB PHY
+device	usbnopphy
+attach	usbnopphy at fdt
+file	dev/fdt/usbnopphy.c			usbnopphy

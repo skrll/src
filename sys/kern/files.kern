@@ -1,4 +1,4 @@
-#	$NetBSD: files.kern,v 1.35 2019/08/15 12:24:08 maxv Exp $
+#	$NetBSD: files.kern,v 1.38 2019/11/20 19:37:53 pgoyette Exp $
 
 #
 # kernel sources
@@ -16,7 +16,7 @@ file	kern/bufq_readprio.c		bufq_readprio | new_bufq_strategy
 file	kern/compat_stub.c		kern
 file	kern/core_elf32.c		exec_elf32
 file	kern/core_elf64.c		exec_elf64
-file	kern/core_netbsd.c		exec_aout | exec_coff | exec_ecoff
+file	kern/core_netbsd.c		coredump
 file	kern/cnmagic.c			kern
 file	kern/exec_aout.c		exec_aout
 file	kern/exec_ecoff.c		exec_ecoff
@@ -105,6 +105,7 @@ file	kern/subr_callback.c		kern
 file	kern/subr_cprng.c		kern
 file	kern/subr_cpufreq.c		kern
 file	kern/subr_copy.c		kern
+file	kern/subr_csan.c		kcsan
 file	kern/subr_debug.c		debug
 file	kern/subr_device.c		kern
 file	kern/subr_devsw.c		kern
@@ -131,6 +132,7 @@ file	kern/subr_localcount.c		kern
 file	kern/subr_lockdebug.c		kern
 file	kern/subr_log.c			kern
 file	kern/subr_lwp_specificdata.c	kern
+file	kern/subr_msan.c		kmsan
 file	kern/subr_once.c		kern
 file	kern/subr_optstr.c		kern
 file	kern/subr_pcq.c			kern

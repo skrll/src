@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_machdep.c,v 1.128 2019/09/26 01:39:22 christos Exp $	*/
+/*	$NetBSD: netbsd32_machdep.c,v 1.131 2019/11/20 19:37:51 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -36,12 +36,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.128 2019/09/26 01:39:22 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.131 2019/11/20 19:37:51 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
 #include "opt_compat_netbsd32.h"
-#include "opt_coredump.h"
 #include "opt_execfmt.h"
 #include "opt_user_ldt.h"
 #include "opt_mtrr.h"
@@ -283,7 +282,6 @@ netbsd32_sendsig(const ksiginfo_t *ksi, const sigset_t *mask)
 	    netbsd32_sendsig_siginfo(ksi, mask));
 }
 
-#ifdef COREDUMP
 /*
  * Dump the machine specific segment at the start of a core dump.
  */
@@ -323,15 +321,16 @@ cpu_coredump32(struct lwp *l, struct coredump_iostate *iocookie,
 	cseg.c_addr = 0;
 	cseg.c_size = chdr->c_cpusize;
 
-	error = coredump_write(iocookie, UIO_SYSSPACE, &cseg,
-	    chdr->c_seghdrsize);
+	MODULE_HOOK_CALL(coredump_write_hook, (iocookie, UIO_SYSSPACE, &cseg,
+	    chdr->c_seghdrsize), ENOSYS, error);
 	if (error)
 		return error;
 
-	return coredump_write(iocookie, UIO_SYSSPACE, &md_core,
-	    sizeof(md_core));
+	MODULE_HOOK_CALL(coredump_write_hook, (iocookie, UIO_SYSSPACE, &md_core,
+	    sizeof(md_core)), ENOSYS, error);
+
+	return error;
 }
-#endif
 
 int
 netbsd32_ptrace_translate_request(int req)
@@ -487,13 +486,15 @@ netbsd32_process_write_dbregs(struct lwp *l, const struct dbreg32 *regs,
 		return EINVAL;
 	}
 
-	regs64.dr[0] = regs->dr[0];
-	regs64.dr[1] = regs->dr[1];
-	regs64.dr[2] = regs->dr[2];
-	regs64.dr[3] = regs->dr[3];
+	memset(&regs64, 0, sizeof(regs64));
 
-	regs64.dr[6] = regs->dr[6];
-	regs64.dr[7] = regs->dr[7];
+	regs64.dr[0] = (u_int)regs->dr[0];
+	regs64.dr[1] = (u_int)regs->dr[1];
+	regs64.dr[2] = (u_int)regs->dr[2];
+	regs64.dr[3] = (u_int)regs->dr[3];
+
+	regs64.dr[6] = (u_int)regs->dr[6];
+	regs64.dr[7] = (u_int)regs->dr[7];
 
 	x86_dbregs_write(l, &regs64);
 	return 0;
@@ -554,10 +555,7 @@ x86_64_set_ldt32(struct lwp *l, void *args, register_t *retval)
 	if (ua.num < 0 || ua.num > 8192)
 		return EINVAL;
 
-	descv = malloc(sizeof(*descv) * ua.num, M_TEMP, M_NOWAIT);
-	if (descv == NULL)
-		return ENOMEM;
-
+	descv = malloc(sizeof(*descv) * ua.num, M_TEMP, M_WAITOK);
 	error = copyin((void *)(uintptr_t)ua32.desc, descv,
 	    sizeof(*descv) * ua.num);
 	if (error == 0)
@@ -586,9 +584,6 @@ x86_64_get_ldt32(struct lwp *l, void *args, register_t *retval)
 		return EINVAL;
 
 	cp = malloc(ua.num * sizeof(union descriptor), M_TEMP, M_WAITOK);
-	if (cp == NULL)
-		return ENOMEM;
-
 	error = x86_get_ldt1(l, &ua, cp);
 	*retval = ua.num;
 	if (error == 0)

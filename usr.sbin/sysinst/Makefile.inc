@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.27 2019/10/13 07:28:21 mrg Exp $
+#	$NetBSD: Makefile.inc,v 1.30 2019/11/14 13:58:22 martin Exp $
 #
 # Makefile for sysinst
 
@@ -43,6 +43,9 @@ CPPFLAGS.gpt.c+=	-I${GPT_DIR}
 CPPFLAGS+=	-DHAVE_MBR
 SRCS+=	mbr.c
 .endif
+.if ${NO_CLONES:Uno} == "yes"
+CPPFLAGS+=	-DNO_CLONES
+.endif
 
 MSG_MD?=	msg.md.${SYSINSTLANG}
 MENUS_MD?=	menus.md.${SYSINSTLANG}
@@ -65,6 +68,10 @@ MSG_CMP_SH=	${.CURDIR}/../../msg_cmp.sh
 
 SETS_TAR_SUFF=${"${USE_XZ_SETS:Uno}"!="no":?"tar.xz":"tgz"}
 
+.if ${MKBSDTAR:Uno} == "no"
+CPPFLAGS+=	-DUSING_PAXASTAR
+.endif
+
 CATALOGDIR=	/usr/share/sysinst/catalog
 CPPFLAGS+=	-I. -I${.CURDIR}/../.. -I${.CURDIR} \
 		-I${.CURDIR}/../../../../sbin/fsck \
@@ -74,10 +81,8 @@ CPPFLAGS+=	-I. -I${.CURDIR}/../.. -I${.CURDIR} \
 		${NODISKLABEL:D-DNO_DISKLABEL} \
 		${NOPARTMAN:D-DNO_PARTMAN}
 
-.if ${MACHINE} == "evbarm" \
-    || ${MACHINE} == "evbmips" \
-    || ${MACHINE} == "evbsh3"
-CPPFLAGS+=	-DARCH_SUBDIR="\"${MACHINE}-${MACHINE_ARCH}\""
+.if ${RELEASEMACHINEDIR} != ${MACHINE}
+CPPFLAGS+=	-DARCH_SUBDIR="\"${RELEASEMACHINEDIR}\""
 CPPFLAGS+=	-DPKG_ARCH_SUBDIR="\"${MACHINE_ARCH}\""
 .endif
 

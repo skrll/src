@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci_pci.c,v 1.21 2019/01/23 06:56:19 msaitoh Exp $	*/
+/*	$NetBSD: xhci_pci.c,v 1.23 2019/11/14 09:15:12 msaitoh Exp $	*/
 /*	OpenBSD: xhci_pci.c,v 1.4 2014/07/12 17:38:51 yuo Exp	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci_pci.c,v 1.21 2019/01/23 06:56:19 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci_pci.c,v 1.23 2019/11/14 09:15:12 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_xhci_pci.h"

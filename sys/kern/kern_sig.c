@@ -1,7 +1,7 @@
-/*	$NetBSD: kern_sig.c,v 1.376 2019/10/21 17:07:00 mgorny Exp $	*/
+/*	$NetBSD: kern_sig.c,v 1.380 2019/11/21 18:17:36 ad Exp $	*/
 
 /*-
- * Copyright (c) 2006, 2007, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 2006, 2007, 2008, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_sig.c,v 1.376 2019/10/21 17:07:00 mgorny Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_sig.c,v 1.380 2019/11/21 18:17:36 ad Exp $");
 
 #include "opt_ptrace.h"
 #include "opt_dtrace.h"
@@ -100,6 +100,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_sig.c,v 1.376 2019/10/21 17:07:00 mgorny Exp $"
 #include <sys/cpu.h>
 #include <sys/module.h>
 #include <sys/sdt.h>
+#include <sys/compat_stub.h>
 
 #ifdef PAX_SEGVGUARD
 #include <sys/pax.h>
@@ -130,10 +131,6 @@ static void	sigswitch_unlock_and_switch_away(struct lwp *);
 
 static void	sigacts_poolpage_free(struct pool *, void *);
 static void	*sigacts_poolpage_alloc(struct pool *, int);
-
-void (*sendsig_sigcontext_vec)(const struct ksiginfo *, const sigset_t *);
-int (*coredump_vec)(struct lwp *, const char *) =
-    __FPTRCAST(int (*)(struct lwp *, const char *), enosys);
 
 /*
  * DTrace SDT provider definitions
@@ -713,6 +710,9 @@ sigclearall(struct proc *p, const sigset_t *mask, ksiginfoq_t *kq)
  *	current LWP.  May be called unlocked provided that LW_PENDSIG is set,
  *	and that the signal has been posted to the appopriate queue before
  *	LW_PENDSIG is set.
+ *
+ *	This should only ever be called with (l == curlwp), unless the
+ *	result does not matter (procfs, sysctl).
  */ 
 int
 sigispending(struct lwp *l, int signo)
@@ -1136,7 +1136,7 @@ sigpost(struct lwp *l, sig_t action, int prop, int sig)
 	 * Have the LWP check for signals.  This ensures that even if no LWP
 	 * is found to take the signal immediately, it should be taken soon.
 	 */
-	l->l_flag |= LW_PENDSIG;
+	signotify(l);
 
 	/*
 	 * SIGCONT can be masked, but if LWP is stopped, it needs restart.
@@ -1170,7 +1170,6 @@ sigpost(struct lwp *l, sig_t action, int prop, int sig)
 	switch (l->l_stat) {
 	case LSRUN:
 	case LSONPROC:
-		lwp_need_userret(l);
 		rv = 1;
 		break;
 
@@ -2147,10 +2146,8 @@ sendsig(const struct ksiginfo *ksi, const sigset_t *mask)
 	case 0:
 	case 1:
 		/* Compat for 1.6 and earlier. */
-		if (sendsig_sigcontext_vec == NULL) {
-			break;
-		}
-		(*sendsig_sigcontext_vec)(ksi, mask);
+		MODULE_HOOK_CALL_VOID(sendsig_sigcontext_16_hook, (ksi, mask),
+		    break);
 		return;
 	case 2:
 	case 3:
@@ -2291,7 +2288,7 @@ sigexit(struct lwp *l, int signo)
 
 	if (docore) {
 		mutex_exit(p->p_lock);
-		error = (*coredump_vec)(l, NULL);
+		MODULE_HOOK_CALL(coredump_hook, (l, NULL), enosys(), error);
 
 		if (kern_logsigexit) {
 			int uid = l->l_cred ?
@@ -2319,6 +2316,22 @@ sigexit(struct lwp *l, int signo)
 
 	exit1(l, 0, exitsig);
 	/* NOTREACHED */
+}
+
+/*
+ * Many emulations have a common coredump_netbsd() established as their
+ * dump routine.  Since the "real" code may (or may not) be present in
+ * loadable module, we provide a routine here which calls the module
+ * hook.
+ */
+
+int
+coredump_netbsd(struct lwp *l, struct coredump_iostate *iocookie)
+{
+	int retval;
+
+	MODULE_HOOK_CALL(coredump_netbsd_hook, (l, iocookie), ENOSYS, retval);
+	return retval;
 }
 
 /*

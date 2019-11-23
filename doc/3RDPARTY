@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1666 2019/10/17 16:48:12 christos Exp $
+#	$NetBSD: 3RDPARTY,v 1.1670 2019/11/13 10:52:40 roy Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -195,12 +195,12 @@ Todo[4]: Re-entrant functions of net/*
 Todo[5]: Reconcile the doc directory.
 
 Package:	bsd-family-tree
-Version:	349295
-Current Vers:	349295
+Version:	354417
+Current Vers:	354417
 Maintainer:	The FreeBSD Project
 Archive Site:	https://svnweb.freebsd.org/base/head/share/misc/bsd-family-tree
 Home Page:	https://svnweb.freebsd.org/base/head/share/misc/bsd-family-tree
-Date:		2019-10-09
+Date:		2019-11-06
 Mailing List:
 Responsible:
 License:	BSD (2-clause) (see http://www.freebsd.org/cgi/cvsweb.cgi/src/COPYRIGHT)
@@ -327,12 +327,12 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	8.1.1
-Current Vers:	8.1.1
+Version:	8.1.2
+Current Vers:	8.1.2
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
-Date:		2019-10-16
+Date:		2019-11-13
 Mailing List: 	dhcpcd-discuss@marples.name
 License:	BSD (2-clause)
 Location:	external/bsd/dhcpcd/dist
@@ -729,14 +729,14 @@ Notes:
   .so'ing only. Copy the rest to man.
 
 Package:	llvm
-Version:	7.0.0svn (r337282)
+Version:	10.0.0git (01f3a59fb3e2542fce74c768718f594d0debd0da)
 Current Vers.:	9.0.0
 Maintainer:	llvm-dev@lists.llvm.org
 Home Page:	https://llvm.org
 Date:		2019-10-09
 Responsible:	joerg
-License:	BSD/MIT
-Location:	external/bsd/llvm/dist
+License:	Apache2 with runtime exceptions
+Location:	external/apache2/llvm/dist
 Notes:
 A CVS ACL is in place for the location to prevent unintentioned commits.
 All changes should come via import from upstream SVN.
@@ -1346,12 +1346,12 @@ perhaps this implementation should be kept anyway for historical
 purposes.
 
 Package:	tmux
-Version:	2.8
+Version:	2.9a
 Current Vers:	2.9a
 Maintainer:	Nicholas Marriott <nicholas.marriott@gmail.com>
 Archive site:	https://github.com/tmux/tmux
 Home page:	http://tmux.github.io
-Date: 		2019-10-09
+Date: 		2019-11-12
 Mailing List:	tmux-users@googlegroups.com
 Responsible:	christos
 License:	BSD

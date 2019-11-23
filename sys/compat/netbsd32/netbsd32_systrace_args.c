@@ -1,4 +1,4 @@
-/* $NetBSD: netbsd32_systrace_args.c,v 1.34 2019/10/13 22:31:32 christos Exp $ */
+/* $NetBSD: netbsd32_systrace_args.c,v 1.36 2019/11/04 11:33:01 rin Exp $ */
 
 /*
  * System call argument to DTrace register array converstion.
@@ -3355,7 +3355,7 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		iarg[0] = SCARG(p, fd); /* int */
 		uarg[1] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
 		uarg[2] = (intptr_t) SCARG(p, buf).i32; /* netbsd32_charp */
-		uarg[3] = SCARG(p, bufsize); /* size_t */
+		iarg[3] = SCARG(p, bufsize); /* netbsd32_size_t */
 		*n_args = 4;
 		break;
 	}
@@ -3496,7 +3496,7 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 	case 483: {
 		const struct netbsd32___getvfsstat90_args *p = params;
 		uarg[0] = (intptr_t) SCARG(p, buf).i32; /* netbsd32_statvfsp_t */
-		uarg[1] = SCARG(p, bufsize); /* size_t */
+		iarg[1] = SCARG(p, bufsize); /* netbsd32_size_t */
 		iarg[2] = SCARG(p, flags); /* int */
 		*n_args = 3;
 		break;
@@ -3523,7 +3523,7 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 	case 486: {
 		const struct netbsd32___fhstatvfs190_args *p = params;
 		uarg[0] = (intptr_t) SCARG(p, fhp).i32; /* netbsd32_voidp */
-		uarg[1] = SCARG(p, fh_size); /* size_t */
+		iarg[1] = SCARG(p, fh_size); /* netbsd32_size_t */
 		uarg[2] = (intptr_t) SCARG(p, buf).i32; /* netbsd32_statvfsp_t */
 		iarg[3] = SCARG(p, flags); /* int */
 		*n_args = 4;
@@ -9207,7 +9207,7 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			p = "netbsd32_charp";
 			break;
 		case 3:
-			p = "size_t";
+			p = "netbsd32_size_t";
 			break;
 		default:
 			break;
@@ -9470,7 +9470,7 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			p = "netbsd32_statvfsp_t";
 			break;
 		case 1:
-			p = "size_t";
+			p = "netbsd32_size_t";
 			break;
 		case 2:
 			p = "int";
@@ -9518,7 +9518,7 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			p = "netbsd32_voidp";
 			break;
 		case 1:
-			p = "size_t";
+			p = "netbsd32_size_t";
 			break;
 		case 2:
 			p = "netbsd32_statvfsp_t";

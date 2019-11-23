@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC,v 1.62 2019/10/29 22:21:53 jmcneill Exp $
+#	$NetBSD: GENERIC,v 1.67 2019/11/03 22:59:24 jmcneill Exp $
 #
 #	GENERIC ARM (aarch32) kernel
 #
@@ -422,6 +422,7 @@ arml2cc* 	at l2cc?
 
 # Memory controller
 tegramc* 	at fdt?	pass 4		# NVIDIA Tegra MC
+tigpmc*		at fdt? pass 4		# TI OMAP2 GPMC
 
 # Firmware devices
 bcmmbox* 	at fdt?			# Broadcom VideoCore IV mailbox
@@ -559,9 +560,11 @@ seeprom* 	at iic?			# AT24Cxx Serial EEPROM
 sy8106a* 	at iic?			# Silergy SY81061 regulator
 tcakp* 		at iic?			# TI TCA8418 Keypad Scan IC
 tcagpio* 	at iic?
+tdahdmi*	at iic? 		# NXP TDA19988 HDMI encoder
 titemp* 	at iic?
 tps65217pmic*	at iic?			# TI TPS65217 Power Management IC
 tps65217reg*	at tps65217pmic?
+twl*		at iic?			# TI TWL4030 Power Management IC
 wskbd* 		at tcakp? console ?
 
 # CAN bus
@@ -632,7 +635,8 @@ ld3 		at sdmmc3
 ld* 		at sdmmc?
 
 # NAND Flash
-sunxinand* 	at fdt?			# NAND flash controller
+sunxinand* 	at fdt?			# Allwinner NAND flash controller
+omapnand*	at fdt?			# TI OMAP2 flash controller
 nand* 		at nandbus?
 flash* 		at nand? dynamic 1
 
@@ -661,6 +665,7 @@ hdmicec* 	at hdmicecbus?
 #tegrafb* 	at tegrafbbus?
 genfb* 		at fdt?			# Simple Framebuffer
 mesonfb* 	at fdt?			# Amlogic Meson Framebuffer
+omapfb*		at fdt?			# TI OMAP3 Framebuffer
 wsdisplay* 	at wsemuldisplaydev?
 sunxidebe* 	at fdt? pass 4		# Display Backend
 genfb* 		at sunxidebe?
@@ -670,6 +675,8 @@ connector* 	at fdt? pass 4
 panel* 		at fdt? pass 4
 #sunxidep must be after display pipeline elements but before genfb@fdt
 sunxidep* 	at fdt? pass 5		# Display Engine Pipeline
+tilcdc*		at fdt?			# TI OMAP4 LCDC
+tifb*		at tilcdc?
 
 options 	VCONS_DRAW_INTR
 options 	WSEMUL_VT100
@@ -714,7 +721,10 @@ sun9iusbphy* 	at fdt? pass 9		# Allwinner A80 USB PHY
 sunxiusbphy* 	at fdt? pass 9		# Allwinner USB PHY
 sunxiusb3phy* 	at fdt? pass 9		# Allwinner USB3 PHY
 tegrausbphy* 	at fdt?			# NVIDIA Tegra USB PHY
+usbnopphy*	at fdt? pass 9		# Generic USB PHY
 tiotg*		at fdt?			# TI dual port OTG
+tiusb*		at fdt? pass 9		# TI HS USB host
+tiusbtll*	at fdt? pass 8		# TI HS USB host TLL
 dwctwo* 	at fdt?			# Designware USB DRD
 ehci* 		at fdt?			# EHCI
 motg* 		at fdt?			# Mentor Graphics USB OTG
