@@ -1,7 +1,8 @@
-/*	$NetBSD: sched.h,v 1.76 2016/07/03 14:24:59 christos Exp $	*/
+/*	$NetBSD: sched.h,v 1.79 2019/12/03 22:28:41 ad Exp $	*/
 
 /*-
- * Copyright (c) 1999, 2000, 2001, 2002, 2007, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 1999, 2000, 2001, 2002, 2007, 2008, 2019
+ *    The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -143,6 +144,7 @@ __END_DECLS
 
 #include <sys/mutex.h>
 #include <sys/time.h>
+#include <sys/evcnt.h>
 
 /*
  * Per-CPU scheduler state.  Field markings and the corresponding locks: 
@@ -153,23 +155,29 @@ __END_DECLS
  * c:	cpu_lock
  */
 struct schedstate_percpu {
-	/* First set of data is likely to be accessed by other CPUs. */
 	kmutex_t	*spc_mutex;	/* (: lock on below, runnable LWPs */
 	kmutex_t	*spc_lwplock;	/* (: general purpose lock for LWPs */
 	struct lwp	*spc_migrating;	/* (: migrating LWP */
-	pri_t		spc_curpriority;/* m: usrpri of curlwp */
-	pri_t		spc_maxpriority;/* m: highest priority queued */
 	psetid_t	spc_psid;	/* c: processor-set ID */
 	time_t		spc_lastmod;	/* c: time of last cpu state change */
-
-	/* For the most part, this set of data is CPU-private. */
-	void		*spc_sched_info;/* (: scheduler-specific structure */
 	volatile int	spc_flags;	/* s: flags; see below */
 	u_int		spc_schedticks;	/* s: ticks for schedclock() */
 	uint64_t	spc_cp_time[CPUSTATES];/* s: CPU state statistics */
 	int		spc_ticks;	/* s: ticks until sched_tick() */
 	int		spc_pscnt;	/* s: prof/stat counter */
 	int		spc_psdiv;	/* s: prof/stat divisor */
+	/* Run queue */
+	volatile pri_t	spc_curpriority;/* s: usrpri of curlwp */
+	pri_t		spc_maxpriority;/* m: highest priority queued */
+	u_int		spc_count;	/* m: count of the threads */
+	u_int		spc_avgcount;	/* m: average count of threads (* 256) */
+	u_int		spc_mcount;	/* m: count of migratable threads */
+	uint32_t	spc_bitmap[8];	/* m: bitmap of active queues */
+	TAILQ_HEAD(,lwp) *spc_queue;	/* m: queue for each priority */
+	struct evcnt	spc_ev_pull;	/* m: event counters */
+	struct evcnt	spc_ev_push;
+	struct evcnt	spc_ev_stay;
+	struct evcnt	spc_ev_localize;
 };
 
 /* spc_flags */
@@ -228,7 +236,9 @@ void		sched_pstats_hook(struct lwp *, int);
 /* Runqueue-related functions */
 bool		sched_curcpu_runnable_p(void);
 void		sched_dequeue(struct lwp *);
-void		sched_enqueue(struct lwp *, bool);
+void		sched_enqueue(struct lwp *);
+void		sched_resched_cpu(struct cpu_info *, pri_t, bool);
+void		sched_resched_lwp(struct lwp *, bool);
 struct lwp *	sched_nextlwp(void);
 void		sched_oncpu(struct lwp *);
 void		sched_newts(struct lwp *);

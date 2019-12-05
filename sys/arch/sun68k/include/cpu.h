@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.24 2018/08/23 04:04:34 msaitoh Exp $	*/
+/*	$NetBSD: cpu.h,v 1.26 2019/11/24 15:53:47 ad Exp $	*/
 
 /*
  * Copyright (c) 1982, 1990 The Regents of the University of California.
@@ -132,9 +132,8 @@ extern int astpending;	 /* need to trap before returning to user mode */
  * Preempt the current process if in interrupt from user mode,
  * or after the current trap/syscall if in system mode.
  */
-#define	cpu_need_resched(ci,flags)	do {	\
+#define	cpu_need_resched(ci,l,flags)	do {	\
 	__USE(flags); 				\
-	ci->ci_want_resched = 1;		\
 	aston();				\
 } while (/*CONSTCOND*/0)
 

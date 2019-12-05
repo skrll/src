@@ -1,4 +1,4 @@
-/*	$NetBSD: gem.c,v 1.121 2019/09/13 07:55:06 msaitoh Exp $ */
+/*	$NetBSD: gem.c,v 1.123 2019/12/04 08:21:43 msaitoh Exp $ */
 
 /*
  *
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.121 2019/09/13 07:55:06 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.123 2019/12/04 08:21:43 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -246,7 +246,7 @@ gem_attach(struct gem_softc *sc, const uint8_t *enaddr)
 	struct mii_data *mii = &sc->sc_mii;
 	bus_space_tag_t t = sc->sc_bustag;
 	bus_space_handle_t h = sc->sc_h1;
-	struct ifmedia_entry *ifm;
+	struct ifmedia_entry *ife;
 	int i, error, phyaddr;
 	uint32_t v;
 	char *nullbuf;
@@ -559,11 +559,11 @@ gem_attach(struct gem_softc *sc, const uint8_t *enaddr)
 	 * If we support GigE media, we support jumbo frames too.
 	 * Unless we are Apple.
 	 */
-	TAILQ_FOREACH(ifm, &mii->mii_media.ifm_list, ifm_list) {
-		if (IFM_SUBTYPE(ifm->ifm_media) == IFM_1000_T ||
-		    IFM_SUBTYPE(ifm->ifm_media) == IFM_1000_SX ||
-		    IFM_SUBTYPE(ifm->ifm_media) == IFM_1000_LX ||
-		    IFM_SUBTYPE(ifm->ifm_media) == IFM_1000_CX) {
+	TAILQ_FOREACH(ife, &mii->mii_media.ifm_list, ifm_list) {
+		if (IFM_SUBTYPE(ife->ifm_media) == IFM_1000_T ||
+		    IFM_SUBTYPE(ife->ifm_media) == IFM_1000_SX ||
+		    IFM_SUBTYPE(ife->ifm_media) == IFM_1000_LX ||
+		    IFM_SUBTYPE(ife->ifm_media) == IFM_1000_CX) {
 			if (!GEM_IS_APPLE(sc))
 				sc->sc_ethercom.ec_capabilities
 				    |= ETHERCAP_JUMBO_MTU;
@@ -770,7 +770,7 @@ gem_reset_rx(struct gem_softc *sc)
 	bus_space_barrier(t, h, GEM_RX_CONFIG, 4, BUS_SPACE_BARRIER_WRITE);
 	/* Wait till it finishes */
 	if (!gem_bitwait(sc, h, GEM_RX_CONFIG, 1, 0))
-		aprint_error_dev(sc->sc_dev, "cannot disable read dma\n");
+		aprint_error_dev(sc->sc_dev, "cannot disable rx dma\n");
 	/* Wait 5ms extra. */
 	delay(5000);
 
@@ -878,7 +878,7 @@ gem_reset_tx(struct gem_softc *sc)
 	bus_space_barrier(t, h, GEM_TX_CONFIG, 4, BUS_SPACE_BARRIER_WRITE);
 	/* Wait till it finishes */
 	if (!gem_bitwait(sc, h, GEM_TX_CONFIG, 1, 0))
-		aprint_error_dev(sc->sc_dev, "cannot disable read dma\n");
+		aprint_error_dev(sc->sc_dev, "cannot disable tx dma\n"); /* OpenBSD 1.34 */
 	/* Wait 5ms extra. */
 	delay(5000);
 
@@ -887,7 +887,7 @@ gem_reset_tx(struct gem_softc *sc)
 	bus_space_barrier(t, h, GEM_RESET, 4, BUS_SPACE_BARRIER_WRITE);
 	/* Wait till it finishes */
 	if (!gem_bitwait(sc, h2, GEM_RESET, GEM_RESET_TX, 0)) {
-		aprint_error_dev(sc->sc_dev, "cannot reset receiver\n");
+		aprint_error_dev(sc->sc_dev, "cannot reset transmitter\n"); /* OpenBSD 1.34 */
 		return (1);
 	}
 	return (0);
@@ -1212,7 +1212,6 @@ gem_init(struct ifnet *ifp)
 	/* Call MI initialization function if any */
 	if (sc->sc_hwinit)
 		(*sc->sc_hwinit)(sc);
-
 
 	/* step 15.  Give the receiver a swift kick */
 	bus_space_write_4(t, h, GEM_RX_KICK, GEM_NRXDESC-4);

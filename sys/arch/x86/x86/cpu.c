@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.175 2019/11/22 23:36:25 ad Exp $	*/
+/*	$NetBSD: cpu.c,v 1.177 2019/11/27 06:24:33 maxv Exp $	*/
 
 /*
  * Copyright (c) 2000-2012 NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.175 2019/11/22 23:36:25 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.177 2019/11/27 06:24:33 maxv Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */
@@ -376,6 +376,7 @@ cpu_attach(device_t parent, device_t self, void *aux)
 	ci->ci_acpiid = caa->cpu_id;
 	ci->ci_cpuid = caa->cpu_number;
 	ci->ci_func = caa->cpu_func;
+	ci->ci_kfpu_spl = -1;
 	aprint_normal("\n");
 
 	/* Must be before mi_cpu_attach(). */
@@ -1348,11 +1349,12 @@ cpu_broadcast_halt(void)
 }
 
 /*
- * Send a dummy ipi to a cpu to force it to run splraise()/spllower()
+ * Send a dummy ipi to a cpu to force it to run splraise()/spllower(),
+ * and trigger an AST on the running LWP.
  */
 
 void
 cpu_kick(struct cpu_info *ci)
 {
-	x86_send_ipi(ci, 0);
+	x86_send_ipi(ci, X86_IPI_AST);
 }

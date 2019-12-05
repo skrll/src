@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.5 2019/04/16 12:25:17 skrll Exp $	*/
+/*	$NetBSD: cpu.h,v 1.8 2019/12/05 03:59:39 riastradh Exp $	*/
 
 /*	$OpenBSD: cpu.h,v 1.55 2008/07/23 17:39:35 kettenis Exp $	*/
 
@@ -47,7 +47,7 @@
  * CSL requests users of this software to return to csl-dist@cs.utah.edu any
  * improvements that they make and grant CSL redistribution rights.
  *
- * 	Utah $Hdr: cpu.h 1.19 94/12/16$
+ * 	Utah $Hdr$
  */
 
 #ifndef	_MACHINE_CPU_H_
@@ -288,6 +288,7 @@ struct cpu_info {
 	struct hppa_interrupt_register	ci_ir;
 	struct hppa_interrupt_bit	ci_ib[HPPA_INTERRUPT_BITS];
 
+	struct lwp	*ci_onproc;	/* current user LWP / kthread */
 #if defined(MULTIPROCESSOR)
 	struct lwp	*ci_curlwp;	/* CPU owner */
 	paddr_t		ci_stack;	/* stack for spin up */

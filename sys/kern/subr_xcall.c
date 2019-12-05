@@ -1,7 +1,7 @@
-/*	$NetBSD: subr_xcall.c,v 1.28 2019/11/11 09:50:11 maxv Exp $	*/
+/*	$NetBSD: subr_xcall.c,v 1.32 2019/12/01 20:56:39 riastradh Exp $	*/
 
 /*-
- * Copyright (c) 2007-2010 The NetBSD Foundation, Inc.
+ * Copyright (c) 2007-2010, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -74,7 +74,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_xcall.c,v 1.28 2019/11/11 09:50:11 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_xcall.c,v 1.32 2019/12/01 20:56:39 riastradh Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -84,6 +84,7 @@ __KERNEL_RCSID(0, "$NetBSD: subr_xcall.c,v 1.28 2019/11/11 09:50:11 maxv Exp $")
 #include <sys/evcnt.h>
 #include <sys/kthread.h>
 #include <sys/cpu.h>
+#include <sys/atomic.h>
 
 #ifdef _RUMPKERNEL
 #include "rump_private.h"
@@ -259,6 +260,11 @@ xc_broadcast(unsigned int flags, xcfunc_t func, void *arg1, void *arg2)
 	KASSERT(!cpu_intr_p() && !cpu_softintr_p());
 	ASSERT_SLEEPABLE();
 
+	if (__predict_false(!mp_online)) {
+		(*func)(arg1, arg2);
+		return 0;
+	}
+
 	if ((flags & XC_HIGHPRI) != 0) {
 		int ipl = xc_extract_ipl(flags);
 		return xc_highpri(func, arg1, arg2, NULL, ipl);
@@ -300,10 +306,19 @@ uint64_t
 xc_unicast(unsigned int flags, xcfunc_t func, void *arg1, void *arg2,
 	   struct cpu_info *ci)
 {
+	int s;
 
 	KASSERT(ci != NULL);
 	KASSERT(!cpu_intr_p() && !cpu_softintr_p());
 	ASSERT_SLEEPABLE();
+
+	if (__predict_false(!mp_online)) {
+		KASSERT(ci == curcpu());
+		s = splsoftserial();
+		(*func)(arg1, arg2);
+		splx(s);
+		return 0;
+	}
 
 	if ((flags & XC_HIGHPRI) != 0) {
 		int ipl = xc_extract_ipl(flags);
@@ -326,6 +341,10 @@ xc_wait(uint64_t where)
 	KASSERT(!cpu_intr_p() && !cpu_softintr_p());
 	ASSERT_SLEEPABLE();
 
+	if (__predict_false(!mp_online)) {
+		return;
+	}
+
 	/* Determine whether it is high or low priority cross-call. */
 	if ((where & XC_PRI_BIT) != 0) {
 		xc = &xc_high_pri;
@@ -334,7 +353,14 @@ xc_wait(uint64_t where)
 		xc = &xc_low_pri;
 	}
 
-	/* Block until awoken. */
+#ifdef __HAVE_ATOMIC64_LOADSTORE
+	/* Fast path, if already done. */
+	if (atomic_load_acquire(&xc->xc_donep) >= where) {
+		return;
+	}
+#endif
+
+	/* Slow path: block until awoken. */
 	mutex_enter(&xc->xc_lock);
 	while (xc->xc_donep < where) {
 		cv_wait(&xc->xc_busy, &xc->xc_lock);
@@ -417,7 +443,11 @@ xc_thread(void *cookie)
 		(*func)(arg1, arg2);
 
 		mutex_enter(&xc->xc_lock);
+#ifdef __HAVE_ATOMIC64_LOADSTORE
+		atomic_store_release(&xc->xc_donep, xc->xc_donep + 1);
+#else
 		xc->xc_donep++;
+#endif
 	}
 	/* NOTREACHED */
 }
@@ -470,7 +500,12 @@ xc__highpri_intr(void *dummy)
 	 */
 	mutex_enter(&xc->xc_lock);
 	KASSERT(xc->xc_donep < xc->xc_headp);
-	if (++xc->xc_donep == xc->xc_headp) {
+#ifdef __HAVE_ATOMIC64_LOADSTORE
+	atomic_store_release(&xc->xc_donep, xc->xc_donep + 1);
+#else
+	xc->xc_donep++;
+#endif
+	if (xc->xc_donep == xc->xc_headp) {
 		cv_broadcast(&xc->xc_busy);
 	}
 	mutex_exit(&xc->xc_lock);

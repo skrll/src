@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1670 2019/11/13 10:52:40 roy Exp $
+#	$NetBSD: 3RDPARTY,v 1.1673 2019/12/02 14:15:22 wiz Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -120,8 +120,8 @@ Notes:
 bc includes dc, both of which are in the NetBSD tree.
 
 Package:	bind [named and utils]
-Version:	9.14.7/MPL
-Current Vers:	9.14.7/MPL
+Version:	9.14.8/MPL
+Current Vers:	9.14.8/MPL
 Maintainer:	ISC
 Archive Site:	ftp://ftp.isc.org/isc/bind9/
 Home Page:	http://www.isc.org/software/bind/
@@ -1197,7 +1197,7 @@ now to do a new import.
 
 Package:	Postfix
 Version:	3.1.4
-Current Vers:	3.1.14/3.2.11/3.3.6/3.4.7
+Current Vers:	3.1.14/3.2.11/3.3.6/3.4.8
 Maintainer:	Wietse Venema <wietse@porcupine.org>
 Archive Site:
 Home Page:	http://www.postfix.org/
@@ -2177,3 +2177,18 @@ Responsible:
 License:	BSD-like (2 and 3-clause)
 Location:	sys/external/bsd/ena-com
 Notes:
+
+Package:	terminfo
+Version:	20190609
+
+Current Vers:	20190609
+Maintainer:	Thomas Dickey (ncurses)
+Archive Site:	ftp://ftp.invisible-island.net/ncurses/current
+Home Page:	https://invisible-island.net/ncurses/
+Date:		2019-11-27
+Mailing List:	bug-ncurses@gnu.org
+Responsible:
+License:	none
+Location:	sys/external/bsd/ena-com
+Notes:
+Use the import script in /usr/src/share/terminfo

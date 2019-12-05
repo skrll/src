@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_km.c,v 1.147 2019/11/14 16:23:53 maxv Exp $	*/
+/*	$NetBSD: uvm_km.c,v 1.150 2019/12/01 23:14:47 uwe Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -152,7 +152,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_km.c,v 1.147 2019/11/14 16:23:53 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_km.c,v 1.150 2019/12/01 23:14:47 uwe Exp $");
 
 #include "opt_uvmhist.h"
 
@@ -177,6 +177,7 @@ __KERNEL_RCSID(0, "$NetBSD: uvm_km.c,v 1.147 2019/11/14 16:23:53 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/atomic.h>
 #include <sys/proc.h>
 #include <sys/pool.h>
 #include <sys/vmem.h>
@@ -481,10 +482,8 @@ uvm_km_pgremove(vaddr_t startva, vaddr_t endva)
 	mutex_exit(uobj->vmobjlock);
 
 	if (swpgonlydelta > 0) {
-		mutex_enter(&uvm_swap_data_lock);
 		KASSERT(uvmexp.swpgonly >= swpgonlydelta);
-		uvmexp.swpgonly -= swpgonlydelta;
-		mutex_exit(&uvm_swap_data_lock);
+		atomic_add_int(&uvmexp.swpgonly, -swpgonlydelta);
 	}
 }
 

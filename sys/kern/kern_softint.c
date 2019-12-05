@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_softint.c,v 1.49 2019/11/21 17:50:49 ad Exp $	*/
+/*	$NetBSD: kern_softint.c,v 1.53 2019/12/03 05:07:48 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008, 2019 The NetBSD Foundation, Inc.
@@ -170,7 +170,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_softint.c,v 1.49 2019/11/21 17:50:49 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_softint.c,v 1.53 2019/12/03 05:07:48 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -182,7 +182,6 @@ __KERNEL_RCSID(0, "$NetBSD: kern_softint.c,v 1.49 2019/11/21 17:50:49 ad Exp $")
 #include <sys/evcnt.h>
 #include <sys/cpu.h>
 #include <sys/xcall.h>
-#include <sys/pserialize.h>
 
 #include <net/netisr.h>
 
@@ -661,19 +660,20 @@ schednetisr(int isr)
 void
 softint_init_md(lwp_t *l, u_int level, uintptr_t *machdep)
 {
+	struct proc *p;
 	softint_t *si;
 
 	*machdep = (1 << level);
 	si = l->l_private;
+	p = l->l_proc;
 
-	lwp_lock(l);
-	lwp_unlock_to(l, l->l_cpu->ci_schedstate.spc_mutex);
+	mutex_enter(p->p_lock);
 	lwp_lock(l);
 	/* Cheat and make the KASSERT in softint_thread() happy. */
 	si->si_active = 1;
-	l->l_stat = LSRUN;
-	sched_enqueue(l, false);
-	lwp_unlock(l);
+	setrunnable(l);
+	/* LWP now unlocked */
+	mutex_exit(p->p_lock);
 }
 
 /*
@@ -688,11 +688,11 @@ softint_trigger(uintptr_t machdep)
 	struct cpu_info *ci;
 	lwp_t *l;
 
-	l = curlwp;
-	ci = l->l_cpu;
+	ci = curcpu();
 	ci->ci_data.cpu_softints |= machdep;
+	l = ci->ci_onproc;
 	if (l == ci->ci_data.cpu_idlelwp) {
-		cpu_need_resched(ci, 0);
+		atomic_or_uint(&ci->ci_want_resched, RESCHED_UPREEMPT);
 	} else {
 		/* MI equivalent of aston() */
 		cpu_signotify(l);
@@ -882,9 +882,6 @@ softint_dispatch(lwp_t *pinned, int s)
 		updatertime(l, &now);
 		l->l_pflag &= ~LP_TIMEINTR;
 	}
-
-	/* Indicate a soft-interrupt switch. */
-	pserialize_switchpoint();
 
 	/*
 	 * If we blocked while handling the interrupt, the pinned LWP is

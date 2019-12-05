@@ -1,7 +1,7 @@
-/*	$NetBSD: lwp.h,v 1.189 2019/11/21 19:47:21 ad Exp $	*/
+/*	$NetBSD: lwp.h,v 1.192 2019/12/01 15:34:47 ad Exp $	*/
 
 /*
- * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2010
+ * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2010, 2019
  *    The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -112,8 +112,8 @@ struct lwp {
 	pri_t		l_auxprio;	/* l: max(inherit,protect) priority */
 	int		l_protectdepth;	/* l: for PTHREAD_PRIO_PROTECT */
 	SLIST_HEAD(, turnstile) l_pi_lenders; /* l: ts lending us priority */
-	uint64_t	l_ncsw;		/* l: total context switches */
-	uint64_t	l_nivcsw;	/* l: involuntary context switches */
+	volatile uint64_t l_ncsw;	/* l: total context switches */
+	volatile uint64_t l_nivcsw;	/* l: involuntary context switches */
 	u_int		l_cpticks;	/* (: Ticks of CPU time */
 	fixpt_t		l_pctcpu;	/* p: %cpu during l_swtime */
 	fixpt_t		l_estcpu;	/* l: cpu time for SCHED_4BSD */
@@ -344,6 +344,7 @@ void	lwp_exit(lwp_t *);
 void	lwp_exit_switchaway(lwp_t *) __dead;
 int	lwp_suspend(lwp_t *, lwp_t *);
 int	lwp_create1(lwp_t *, const void *, size_t, u_long, lwpid_t *);
+void	lwp_start(lwp_t *, int);
 void	lwp_update_creds(lwp_t *);
 void	lwp_migrate(lwp_t *, struct cpu_info *);
 lwp_t *	lwp_find2(pid_t, lwpid_t);
@@ -499,7 +500,7 @@ static __inline bool
 CURCPU_IDLE_P(void)
 {
 	struct cpu_info *ci = curcpu();
-	return ci->ci_data.cpu_onproc == ci->ci_data.cpu_idlelwp;
+	return ci->ci_onproc == ci->ci_data.cpu_idlelwp;
 }
 
 /*

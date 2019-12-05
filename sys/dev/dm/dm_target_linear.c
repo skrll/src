@@ -1,4 +1,4 @@
-/*        $NetBSD: dm_target_linear.c,v 1.18 2019/10/15 00:13:53 chs Exp $      */
+/*        $NetBSD: dm_target_linear.c,v 1.21 2019/12/03 15:47:38 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_target_linear.c,v 1.18 2019/10/15 00:13:53 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_target_linear.c,v 1.21 2019/12/03 15:47:38 tkusumi Exp $");
 
 /*
  * This file implements initial version of device-mapper dklinear target.
@@ -40,7 +40,6 @@ __KERNEL_RCSID(0, "$NetBSD: dm_target_linear.c,v 1.18 2019/10/15 00:13:53 chs Ex
 
 #include <sys/buf.h>
 #include <sys/kmem.h>
-#include <sys/vnode.h>
 #include <sys/lwp.h>
 
 #include <machine/int_fmtio.h>
@@ -85,14 +84,9 @@ dm_target_linear_init(dm_dev_t * dmv, void **target_config, char *params)
 
 	tlc = kmem_alloc(sizeof(dm_target_linear_config_t), KM_SLEEP);
 	tlc->pdev = dmp;
-	tlc->offset = 0;	/* default settings */
-
-	/* Check user input if it is not leave offset as 0. */
 	tlc->offset = atoi(argv[1]);
 
 	*target_config = tlc;
-
-	dmv->dev_type = DM_LINEAR_DEV;
 
 	return 0;
 }

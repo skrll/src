@@ -1,4 +1,4 @@
-/* $NetBSD: dm_ioctl.c,v 1.33 2018/11/11 10:21:11 mlelstv Exp $      */
+/* $NetBSD: dm_ioctl.c,v 1.37 2019/12/04 15:31:12 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_ioctl.c,v 1.33 2018/11/11 10:21:11 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_ioctl.c,v 1.37 2019/12/04 15:31:12 tkusumi Exp $");
 
 /*
  * Locking is used to synchronise between ioctl calls and between dm_table's
@@ -88,7 +88,6 @@ __KERNEL_RCSID(0, "$NetBSD: dm_ioctl.c,v 1.33 2018/11/11 10:21:11 mlelstv Exp $"
 #include <sys/disklabel.h>
 #include <sys/kmem.h>
 #include <sys/malloc.h>
-#include <sys/vnode.h>
 
 #include <machine/int_fmtio.h>
 
@@ -246,7 +245,6 @@ dm_dev_create_ioctl(prop_dictionary_t dm_dict)
 	dmv->flags = 0;		/* device flags are set when needed */
 	dmv->ref_cnt = 0;
 	dmv->event_nr = 0;
-	dmv->dev_type = 0;
 	dmv->devt = devt;
 
 	dm_table_head_init(&dmv->table_head);
@@ -299,7 +297,6 @@ int
 dm_dev_list_ioctl(prop_dictionary_t dm_dict)
 {
 	prop_array_t dev_list;
-
 	uint32_t flags;
 
 	flags = 0;
@@ -454,9 +451,9 @@ dm_dev_status_ioctl(prop_dictionary_t dm_dict)
 	 * Add status flags for tables I have to check both active and
 	 * inactive tables.
 	 */
-	if ((j = dm_table_get_target_count(&dmv->table_head, DM_TABLE_ACTIVE))) {
+	if ((j = dm_table_get_target_count(&dmv->table_head, DM_TABLE_ACTIVE)))
 		DM_ADD_FLAG(flags, DM_ACTIVE_PRESENT_FLAG);
-	} else
+	else
 		DM_REMOVE_FLAG(flags, DM_ACTIVE_PRESENT_FLAG);
 
 	prop_dictionary_set_uint32(dm_dict, DM_IOCTL_TARGET_COUNT, j);
@@ -667,7 +664,7 @@ dm_table_deps_ioctl(prop_dictionary_t dm_dict)
 	tbl = dm_table_get_entry(&dmv->table_head, table_type);
 
 	SLIST_FOREACH(table_en, tbl, next)
-	    table_en->target->deps(table_en, cmd_array);
+		table_en->target->deps(table_en, cmd_array);
 
 	dm_table_release(&dmv->table_head, table_type);
 	dm_dev_unbusy(dmv);
@@ -701,9 +698,7 @@ dm_table_load_ioctl(prop_dictionary_t dm_dict)
 	prop_dictionary_t target_dict;
 
 	const char *name, *uuid, *type;
-
 	uint32_t flags, ret, minor;
-
 	char *str;
 
 	ret = 0;
@@ -751,7 +746,6 @@ dm_table_load_ioctl(prop_dictionary_t dm_dict)
 	prop_dictionary_set_uint32(dm_dict, DM_IOCTL_MINOR, dmv->minor);
 
 	while ((target_dict = prop_object_iterator_next(iter)) != NULL) {
-
 		prop_dictionary_get_cstring_nocopy(target_dict,
 		    DM_TABLE_TYPE, &type);
 		/*
@@ -799,7 +793,6 @@ dm_table_load_ioctl(prop_dictionary_t dm_dict)
 
 		if ((ret = target->init(dmv, &table_en->target_config,
 			    str)) != 0) {
-
 			dm_table_release(&dmv->table_head, DM_TABLE_INACTIVE);
 			dm_table_destroy(&dmv->table_head, DM_TABLE_INACTIVE);
 			free(str, M_TEMP);
@@ -887,16 +880,15 @@ dm_table_status_ioctl(prop_dictionary_t dm_dict)
 	else
 		table_type = DM_TABLE_ACTIVE;
 
-	if (dm_table_get_target_count(&dmv->table_head, DM_TABLE_ACTIVE))
+	if (dm_table_get_target_count(&dmv->table_head, DM_TABLE_ACTIVE)) {
 		DM_ADD_FLAG(flags, DM_ACTIVE_PRESENT_FLAG);
-	else {
+	} else {
 		DM_REMOVE_FLAG(flags, DM_ACTIVE_PRESENT_FLAG);
 
 		if (dm_table_get_target_count(&dmv->table_head, DM_TABLE_INACTIVE))
 			DM_ADD_FLAG(flags, DM_INACTIVE_PRESENT_FLAG);
-		else {
+		else
 			DM_REMOVE_FLAG(flags, DM_INACTIVE_PRESENT_FLAG);
-		}
 	}
 
 	if (dmv->flags & DM_SUSPEND_FLAG)
@@ -926,6 +918,12 @@ dm_table_status_ioctl(prop_dictionary_t dm_dict)
 		/* dm_table_get_cur_actv.table ?? */
 		prop_dictionary_set_int32(target_dict, DM_TABLE_STAT,
 		    dmv->table_head.cur_active_table);
+
+		/*
+		 * Explicitly clear DM_TABLE_PARAMS to prevent dmsetup(8) from
+		 * printing junk when DM_TABLE_PARAMS was never initialized.
+		 */
+		prop_dictionary_set_cstring(target_dict, DM_TABLE_PARAMS, "");
 
 		if (flags & DM_STATUS_TABLE_FLAG) {
 			params = table_en->target->status

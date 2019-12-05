@@ -1,7 +1,7 @@
-/*	$NetBSD: bcm2835_intr.c,v 1.24 2019/09/25 16:57:10 skrll Exp $	*/
+/*	$NetBSD: bcm2835_intr.c,v 1.27 2019/11/29 17:44:27 thorpej Exp $	*/
 
 /*-
- * Copyright (c) 2012, 2015 The NetBSD Foundation, Inc.
+ * Copyright (c) 2012, 2015, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_intr.c,v 1.24 2019/09/25 16:57:10 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_intr.c,v 1.27 2019/11/29 17:44:27 thorpej Exp $");
 
 #define _INTR_PRIVATE
 
@@ -86,6 +86,8 @@ static void *bcm2835_icu_fdt_establish(device_t, u_int *, int, int,
     int (*)(void *), void *);
 static void bcm2835_icu_fdt_disestablish(device_t, void *);
 static bool bcm2835_icu_fdt_intrstr(device_t, u_int *, char *, size_t);
+
+static int bcm2835_icu_intr(void *);
 
 static int bcm2836mp_icu_fdt_decode_irq(u_int *);
 static void *bcm2836mp_icu_fdt_establish(device_t, u_int *, int, int,
@@ -162,10 +164,34 @@ struct bcm2836mp_interrupt {
 static TAILQ_HEAD(, bcm2836mp_interrupt) bcm2836mp_interrupts =
     TAILQ_HEAD_INITIALIZER(bcm2836mp_interrupts);
 
+struct bcm2835icu_irqhandler;
+struct bcm2835icu_irq;
+struct bcm2835icu_softc;
+
+struct bcm2835icu_irqhandler {
+	struct bcm2835icu_irq	*ih_irq;
+	int			(*ih_fn)(void *);
+	void			*ih_arg;
+	TAILQ_ENTRY(bcm2835icu_irqhandler) ih_next;
+};
+
+struct bcm2835icu_irq {
+	struct bcm2835icu_softc	*intr_sc;
+	void			*intr_ih;
+	void			*intr_arg;
+	int			intr_refcnt;
+	int			intr_ipl;
+	int			intr_irq;
+	int			intr_mpsafe;
+	TAILQ_HEAD(, bcm2835icu_irqhandler) intr_handlers;
+};
+
 struct bcm2835icu_softc {
 	device_t		sc_dev;
 	bus_space_tag_t		sc_iot;
 	bus_space_handle_t	sc_ioh;
+
+	struct bcm2835icu_irq	*sc_irq[BCM2835_NIRQ];
 
 	int sc_phandle;
 };
@@ -437,20 +463,126 @@ static void *
 bcm2835_icu_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
     int (*func)(void *), void *arg)
 {
+	struct bcm2835icu_softc * const sc = device_private(dev);
+	struct bcm2835icu_irq *firq;
+	struct bcm2835icu_irqhandler *firqh;
 	int iflags = (flags & FDT_INTR_MPSAFE) ? IST_MPSAFE : 0;
-	int irq;
+	int irq, irqidx;
 
 	irq = bcm2835_icu_fdt_decode_irq(specifier);
 	if (irq == -1)
 		return NULL;
+	irqidx = irq - BCM2835_INT_BASE;
 
-	return intr_establish(irq, ipl, IST_LEVEL | iflags, func, arg);
+	KASSERT(irqidx < BCM2835_NIRQ);
+
+	firq = sc->sc_irq[irqidx];
+	if (firq == NULL) {
+		firq = kmem_alloc(sizeof(*firq), KM_SLEEP);
+		firq->intr_sc = sc;
+		firq->intr_refcnt = 0;
+		firq->intr_arg = arg;
+		firq->intr_ipl = ipl;
+		firq->intr_mpsafe = iflags;
+		firq->intr_irq = irq;
+		TAILQ_INIT(&firq->intr_handlers);
+		if (arg == NULL) {
+			firq->intr_ih = intr_establish(irq, ipl,
+			    IST_LEVEL | iflags, func, NULL);
+		} else {
+			firq->intr_ih = intr_establish(irq, ipl,
+			    IST_LEVEL | iflags, bcm2835_icu_intr, firq);
+		}
+		if (firq->intr_ih == NULL) {
+			kmem_free(firq, sizeof(*firq));
+			return NULL;
+		}
+		sc->sc_irq[irqidx] = firq;
+	} else {
+		if (firq->intr_arg == NULL || arg == NULL) {
+			device_printf(dev,
+			    "cannot share irq with NULL-arg handler\n");
+			return NULL;
+		}
+		if (firq->intr_ipl != ipl) {
+			device_printf(dev,
+			    "cannot share irq with different ipl\n");
+			return NULL;
+		}
+		if (firq->intr_mpsafe != iflags) {
+			device_printf(dev,
+			    "cannot share irq between mpsafe/non-mpsafe\n");
+			return NULL;
+		}
+	}
+
+	firqh = kmem_alloc(sizeof(*firqh), KM_SLEEP);
+	firqh->ih_irq = firq;
+	firqh->ih_fn = func;
+	firqh->ih_arg = arg;
+
+	firq->intr_refcnt++;
+	TAILQ_INSERT_TAIL(&firq->intr_handlers, firqh, ih_next);
+
+	/*
+	 * XXX interrupt_distribute(9) assumes that any interrupt
+	 * handle can be used as an input to the MD interrupt_distribute
+	 * implementationm, so we are forced to return the handle
+	 * we got back from intr_establish().  Upshot is that the
+	 * input to bcm2835_icu_fdt_disestablish() is ambiguous for
+	 * shared IRQs, rendering them un-disestablishable.
+	 */
+
+	return firq->intr_ih;
 }
 
 static void
 bcm2835_icu_fdt_disestablish(device_t dev, void *ih)
 {
-	intr_disestablish(ih);
+	struct bcm2835icu_softc * const sc = device_private(dev);
+	struct bcm2835icu_irqhandler *firqh;
+	struct bcm2835icu_irq *firq;
+	u_int n;
+
+	for (n = 0; n < BCM2835_NIRQ; n++) {
+		firq = sc->sc_irq[n];
+		if (firq == NULL || firq->intr_ih != ih)
+			continue;
+
+		KASSERT(firq->intr_refcnt > 0);
+		KASSERT(n == (firq->intr_irq - BCM2835_INT_BASE));
+
+		/* XXX see above */
+		if (firq->intr_refcnt > 1)
+			panic("%s: cannot disestablish shared irq", __func__);
+
+		intr_disestablish(firq->intr_ih);
+
+		firqh = TAILQ_FIRST(&firq->intr_handlers);
+		TAILQ_REMOVE(&firq->intr_handlers, firqh, ih_next);
+		kmem_free(firqh, sizeof(*firqh));
+
+		sc->sc_irq[n] = NULL;
+		kmem_free(firq, sizeof(*firq));
+
+		return;
+	}
+
+	panic("%s: interrupt not established", __func__);
+}
+
+static int
+bcm2835_icu_intr(void *priv)
+{
+	struct bcm2835icu_irq *firq = priv;
+	struct bcm2835icu_irqhandler *firqh;
+	int handled = 0;
+
+	TAILQ_FOREACH(firqh, &firq->intr_handlers, ih_next) {
+		handled |= firqh->ih_fn(firqh->ih_arg);
+	}
+
+	return handled;
 }
 
 static bool

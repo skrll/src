@@ -1,7 +1,7 @@
-/*	$NetBSD: kern_cpu.c,v 1.77 2019/11/13 01:31:47 mrg Exp $	*/
+/*	$NetBSD: kern_cpu.c,v 1.81 2019/12/04 09:34:13 wiz Exp $	*/
 
 /*-
- * Copyright (c) 2007, 2008, 2009, 2010, 2012 The NetBSD Foundation, Inc.
+ * Copyright (c) 2007, 2008, 2009, 2010, 2012, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -56,7 +56,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_cpu.c,v 1.77 2019/11/13 01:31:47 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_cpu.c,v 1.81 2019/12/04 09:34:13 wiz Exp $");
 
 #include "opt_cpu_ucode.h"
 
@@ -119,6 +119,7 @@ kmutex_t	cpu_lock		__cacheline_aligned;
 int		ncpu			__read_mostly;
 int		ncpuonline		__read_mostly;
 bool		mp_online		__read_mostly;
+static bool	cpu_topology_present	__read_mostly;
 
 /* An array of CPUs.  There are ncpu entries. */
 struct cpu_info **cpu_infos		__read_mostly;
@@ -185,9 +186,9 @@ mi_cpu_attach(struct cpu_info *ci)
 	}
 
 	if (ci == curcpu())
-		ci->ci_data.cpu_onproc = curlwp;
+		ci->ci_onproc = curlwp;
 	else
-		ci->ci_data.cpu_onproc = ci->ci_data.cpu_idlelwp;
+		ci->ci_onproc = ci->ci_data.cpu_idlelwp;
 
 	percpu_init_cpu(ci);
 	softint_init(ci);
@@ -585,6 +586,199 @@ cpu_softintr_p(void)
 {
 
 	return (curlwp->l_pflag & LP_INTR) != 0;
+}
+
+/*
+ * Collect CPU topology information as each CPU is attached.  This can be
+ * called early during boot, so we need to be careful what we do.
+ */
+void
+cpu_topology_set(struct cpu_info *ci, int package_id, int core_id, int smt_id)
+{
+	enum cpu_rel rel;
+
+	cpu_topology_present = true;
+	ci->ci_package_id = package_id;
+	ci->ci_core_id = core_id;
+	ci->ci_smt_id = smt_id;
+	for (rel = 0; rel < __arraycount(ci->ci_sibling); rel++) {
+		ci->ci_sibling[rel] = ci;
+		ci->ci_nsibling[rel] = 1;
+	}
+}
+
+/*
+ * Link a CPU into the given circular list.
+ */
+static void
+cpu_topology_link(struct cpu_info *ci, struct cpu_info *ci2, enum cpu_rel rel)
+{
+	struct cpu_info *ci3;
+
+	/* Walk to the end of the existing circular list and append. */
+	for (ci3 = ci2;; ci3 = ci3->ci_sibling[rel]) {
+		ci3->ci_nsibling[rel]++;
+		if (ci3->ci_sibling[rel] == ci2) {
+			break;
+		}
+	}
+	ci->ci_sibling[rel] = ci2;
+	ci3->ci_sibling[rel] = ci;
+	ci->ci_nsibling[rel] = ci3->ci_nsibling[rel];
+}
+
+/*
+ * Find peer CPUs in other packages.
+ */
+static void
+cpu_topology_peers(void)
+{
+	CPU_INFO_ITERATOR cii, cii2;
+	struct cpu_info *ci, *ci2;
+
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		if (ci->ci_nsibling[CPUREL_PEER] > 1) {
+			/* Already linked. */
+			continue;
+		}
+		for (CPU_INFO_FOREACH(cii2, ci2)) {
+			if (ci != ci2 &&
+			    ci->ci_package_id != ci2->ci_package_id &&
+			    ci->ci_core_id == ci2->ci_core_id &&
+			    ci->ci_smt_id == ci2->ci_smt_id) {
+				cpu_topology_link(ci, ci2, CPUREL_PEER);
+				break;
+			}
+		}
+	}
+}
+
+/*
+ * Print out the topology lists.
+ */
+static void
+cpu_topology_print(void)
+{
+#ifdef DEBUG
+	CPU_INFO_ITERATOR cii;
+	struct cpu_info *ci, *ci2;
+	const char *names[] = { "core", "package", "peer" };
+	enum cpu_rel rel;
+	int i;
+
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		for (rel = 0; rel < __arraycount(ci->ci_sibling); rel++) {
+			printf("%s has %dx %s siblings: ", cpu_name(ci),
+			    ci->ci_nsibling[rel], names[rel]);
+			ci2 = ci->ci_sibling[rel];
+			i = 0;
+			do {
+				printf(" %s", cpu_name(ci2));
+				ci2 = ci2->ci_sibling[rel];
+			} while (++i < 64 && ci2 != ci->ci_sibling[rel]);
+			if (i == 64) {
+				printf(" GAVE UP");
+			}
+			printf("\n");
+		}
+	}
+#endif	/* DEBUG */
+}
+
+/*
+ * Fake up topology info if we have none, or if what we got was bogus.
+ * Don't override ci_package_id, etc, if cpu_topology_present is set.
+ * MD code also uses these.
+ */
+static void
+cpu_topology_fake(void)
+{
+	CPU_INFO_ITERATOR cii;
+	struct cpu_info *ci;
+	enum cpu_rel rel;
+
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		for (rel = 0; rel < __arraycount(ci->ci_sibling); rel++) {
+			ci->ci_sibling[rel] = ci;
+			ci->ci_nsibling[rel] = 1;
+		}
+		if (!cpu_topology_present) {
+			ci->ci_package_id = cpu_index(ci);
+		}
+	}
+	cpu_topology_print();
+}
+
+/*
+ * Fix up basic CPU topology info.  Right now that means attach each CPU to
+ * circular lists of its siblings in the same core, and in the same package. 
+ */
+void
+cpu_topology_init(void)
+{
+	CPU_INFO_ITERATOR cii, cii2;
+	struct cpu_info *ci, *ci2;
+	int ncore, npackage, npeer;
+	bool symmetric;
+
+	if (!cpu_topology_present) {
+		cpu_topology_fake();
+		return;
+	}
+
+	/* Find siblings in same core and package. */
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		for (CPU_INFO_FOREACH(cii2, ci2)) {
+			/* Avoid bad things happening. */
+			if (ci2->ci_package_id == ci->ci_package_id &&
+			    ci2->ci_core_id == ci->ci_core_id &&
+			    ci2->ci_smt_id == ci->ci_smt_id &&
+			    ci2 != ci) {
+			    	printf("cpu_topology_init: info bogus, "
+			    	    "faking it\n");
+			    	cpu_topology_fake();
+			    	return;
+			}
+			if (ci2 == ci ||
+			    ci2->ci_package_id != ci->ci_package_id) {
+				continue;
+			}
+			/* Find CPUs in the same core. */
+			if (ci->ci_nsibling[CPUREL_CORE] == 1 &&
+			    ci->ci_core_id == ci2->ci_core_id) {
+			    	cpu_topology_link(ci, ci2, CPUREL_CORE);
+			}
+			/* Find CPUs in the same package. */
+			if (ci->ci_nsibling[CPUREL_PACKAGE] == 1) {
+			    	cpu_topology_link(ci, ci2, CPUREL_PACKAGE);
+			}
+			if (ci->ci_nsibling[CPUREL_CORE] > 1 &&
+			    ci->ci_nsibling[CPUREL_PACKAGE] > 1) {
+				break;
+			}
+		}
+	}
+
+	/* Find peers in other packages. */
+	cpu_topology_peers();
+
+	/* Determine whether the topology is bogus/symmetric. */
+	npackage = curcpu()->ci_nsibling[CPUREL_PACKAGE];
+	ncore = curcpu()->ci_nsibling[CPUREL_CORE];
+	npeer = curcpu()->ci_nsibling[CPUREL_PEER];
+	symmetric = true;
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		if (npackage != ci->ci_nsibling[CPUREL_PACKAGE] ||
+		    ncore != ci->ci_nsibling[CPUREL_CORE] ||
+		    npeer != ci->ci_nsibling[CPUREL_PEER]) {
+			symmetric = false;
+		}
+	}
+	cpu_topology_print();
+	if (symmetric == false) {
+		printf("cpu_topology_init: not symmetric, faking it\n");
+		cpu_topology_fake();
+	}
 }
 
 #ifdef CPU_UCODE

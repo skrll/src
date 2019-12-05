@@ -1,4 +1,4 @@
-.\"	$NetBSD: main,v 1.553 2019/11/21 19:23:17 martin Exp $
+.\"	$NetBSD: main,v 1.560 2019/12/04 13:04:09 uwe Exp $
 .\"
 .\" Copyright (c) 1999-2012 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -30,16 +30,38 @@
 	and type "make".  This will create
 	src/distrib/notes/<arch>/INSTALL.*.
 
-	The notes that describe the improvements over the last release
-	aren't appropriate for a snapshot, so these are conditional on
-	FOR_RELEASE. 0 == snapshot; 1 == release
+	We keep most of the notes the same on HEAD and release branches,
+	but some of this are not appropriate for HEAD/current. Also
+	some locations differ for actual release, so we distinguish
+	between:
+
+	RELEASE_BRANCH == 1
+		this is on a release branch (not -current)
+	RELEASE_BRANCH == 0
+		this is current, not yet branched
+	FOR_RELEASE == 1
+		this is an official release (will be signed and placed
+		on ftp/cdn)
+	FOR_RELEASE == 0
+		this is a local build or a "daily" build on the build
+		cluster
 ..
 .
 .tm Processing INSTALL
 .
 .\"	--------------------  CONFIGURATION  --------------------
 .
-.nr FOR_RELEASE 1
+.nr oldvers ( \n[major] - 1 )
+.ie \n[FOR_RELEASE] \{\
+.ds RELEASE_URL https://cdn.NetBSD.org/pub/NetBSD/NetBSD-\*V
+.\}
+.el \{\
+.ie \n[RELEASE_BRANCH] \{\
+.ds ftppath netbsd-\n[major]
+.\} \" \n[RELEASE_BRANCH]
+.el .ds ftppath HEAD
+.ds RELEASE_URL https://nycdn.NetBSD.org/pub/NetBSD-daily/\*[ftppath]/latest
+.\} \" !\n[FOR_RELEASE]
 .nr DOC_XR 1
 .ds MACHINE_LIST acorn32 algor alpha amd64 amiga amigappc arc atari
 .as MACHINE_LIST " bebox cats cesfic cobalt dreamcast emips evbarm evbmips
@@ -50,7 +72,7 @@
 .as MACHINE_LIST " sgimips shark sparc sparc64 sun2 sun3 vax x68k zaurus .
 .so \*[.CURDIR]/../common/macros
 .
-.Dd May 9, 2015
+.Dd \*[cur_date]
 .Dt INSTALL 8
 .Os NetBSD
 .Sh NAME
@@ -123,8 +145,7 @@ on an FTP site near you, usually located in the
 directory.
 Check the list of
 .Nx
-mirrors at
-.Lk https://www.NetBSD.org/mirrors
+.Lk https://www.NetBSD.org/mirrors mirrors
 for details.
 .Pp
 Option 2: bootable CD-ROM images from
@@ -253,12 +274,10 @@ replacing
 .Pa /dev/rsd0d
 with the appropriate device for your system:
 .Dl # Ic "dd if=NetBSD-\*V-\*M-install.img of=/dev/rsd0d bs=32k"
-On Windows, you will need to use a program such as Win32 Disk Imager,
-which can be found at
-.Lk http://sourceforge.net/projects/win32diskimager/
+On Windows, you will need to use a program such as
+.Lk http://sourceforge.net/projects/win32diskimager/ "Win32 Disk Imager" ,
 or
-Rawrite32 which can be found at
-.Lk https://www.NetBSD.org/~martin/rawrite32 .
+.Lk https://www.NetBSD.org/~martin/rawrite32 Rawrite32 .
 .if \n[amd64]:\n[i386] \{\
 If you have problems writing a raw image to a floppy,
 the
@@ -308,8 +327,7 @@ kernel, which contains all the tools required to install
 .It
 Determine your machine's model, quirks, and Open Firmware version from the
 .Nx*M
-Model Support webpage.
-.Lk https://www.NetBSD.org/ports/macppc/models.html
+.Lk https://www.NetBSD.org/ports/macppc/models.html "Model Support webpage" .
 .Pp
 At present,
 .Nx*M
@@ -473,9 +491,8 @@ system architectures, with preliminary support for the others included in
 source form.
 Please see the
 .Nx
-website at
-.Lk https://www.NetBSD.org/
-for information on them.)
+.Lk https://www.NetBSD.org/ website
+for information on them.
 .Pp
 .Nx
 is a completely integrated system.
@@ -495,8 +512,10 @@ possible,
 .Nx
 would not exist.
 .
-.if \n[FOR_RELEASE] \{\
-.Ss Changes Between The NetBSD 9.0 and \*V Releases
+.ie \n[RELEASE_BRANCH] .Ss Changes Between The NetBSD \n[oldvers] \
+and \n[major] Releases
+.el .Ss Changes Between The NetBSD \n[oldvers] and \
+\n[major] Releases, and newer
 .Pp
 The
 .Nx
@@ -507,21 +526,46 @@ numerous userland enhancements.
 The result of these improvements is a stable operating system fit for
 production use that rivals most commercially available systems.
 .Pp
+.if !\n[RELEASE_BRANCH] \{ \
+Please note that this build is a development snapshot, not a formal release.
+You are testing the bleeding edge of
+.Nx
+development, and no formal or informal testing may have been done for
+this snapshot (yet).
+.Pp
+.\} \" !\n[RELEASE_BRANCH] \{
 It is impossible to completely summarize the massive development that
 went into the
 .Nx
 \*V release.
-The complete list of changes can be found in the
-CHANGES:
-.Lk https://cdn.NetBSD.org/pub/NetBSD/NetBSD-9.0_RC1/CHANGES
-and
-CHANGES-9.0:
-.Lk https://cdn.NetBSD.org/pub/NetBSD/NetBSD-9.0_RC1/CHANGES-9.0
-files in the top level directory of the NetBSD 9.0 release tree.
+.ie \n[RELEASE_BRANCH] \{\
+The complete list of changes can be found in the following files:
+.br
+.Lk "\*[RELEASE_URL]/CHANGES" CHANGES
+.de showdotchanges
+.  nr ominor (\\$1-1)
+.  if \\n[ominor] .showdotchanges \\n[ominor]
+.  nr ominor (\\$1-1)
+.  br
+.  Lk "\*[RELEASE_URL]/CHANGES-\n[major].\\$1" "CHANGES-\\n[major].\\$1"
+..
+.showdotchanges \n[minor]
+.if (\n[nextminor] > \n[minor]) \{\
+.  br
+.  Lk "\*[RELEASE_URL]/CHANGES-\n[major].\n[nextminor]" "CHANGES-\\n[major].\n[nextminor]"
+.\}
+.br
+files in the top level directory of the NetBSD \n[major].\n[minor] release tree.
 .Pp
-.\" fill in with changes.mdoc
 .
-.\} \" \n[FOR_RELEASE]
+.\} \" \n[RELEASE_BRANCH]
+.el \{\
+The complete list of changes can be found in the following files:
+.br
+.Lk \*[RELEASE_URL]/CHANGES CHANGES
+.br
+.Lk \*[RELEASE_URL]/CHANGES.prev CHANGES.prev
+.\} \" !\n[RELEASE_BRANCH]
 .
 .Ss "Features to be removed in a later release"
 The following features are to be removed from
@@ -560,7 +604,7 @@ Foundation, its composition, aims, and work can be found at:
 .Pp
 .
 Refer to
-.Lk https://www.NetBSD.org/mirrors/
+.Lk https://www.NetBSD.org/mirrors/ mirrors
 .br_ne 10P
 .
 .Ss "NetBSD \*V Release Contents
@@ -569,20 +613,37 @@ Refer to
 The root directory of the
 .Nx
 \*V release is organized as follows:
-.ie \n[FOR_RELEASE] \{\
 .Pp
 .Pa .../NetBSD-\*V/
 .(tag README.files
 .It Li CHANGES
-Changes between the 8.0 and 9.0 releases.
-.It Li CHANGES-9.0
-Changes between the initial 9.0 branch and final release of 9.0.
+.ie \n[RELEASE_BRANCH] Changes between the \n[oldvers].0 and \
+\n[major].0 releases.
+.el Changes after the netbsd-\n[major] branch.
+.if \n[RELEASE_BRANCH] \{\
+.It Li CHANGES-\\n[major].0
+Changes between the initial \n[major].0 branch and final release of \n[major].0.
+.de showdotchanges
+.  nr ominor (\\$1-1)
+.  if \\n[ominor] .showdotchanges \\n[ominor]
+.  nr ominor (\\$1-1)
+.  It Li CHANGES-\\n[major].\\$1
+Changes between the \n[major].\\n[ominor] and the \n[major].\\$1 release.
+..
+.if \n[minor] .showdotchanges \n[minor]
+.if (\n[nextminor] > \n[minor]) \{\
+.It Li CHANGES-\\n[major].\n[nextminor]
+Changes after the release of \n[major].\n[minor].
+.\} \" \n[nextminor] > \n[minor]
+.\} \" \n[RELEASE_BRANCH]
 .It Li CHANGES.prev
 Changes in previous
 .Nx
 releases.
+.ie \n[FOR_RELEASE] \{\
 .It Li LAST_MINUTE
 Last minute changes and notes about the release.
+.\} \" \n[FOR_RELEASE]
 .It Li README.files
 README describing the distribution's contents.
 .It Pa images/
@@ -663,24 +724,6 @@ digests in the format produced by the command:
 .Pp
 The SHA512 digest is safer, but MD5 checksums are provided so that a wider
 range of operating systems can check the integrity of the release files.
-.\}
-.el \{\
-.Pp
-.Pa \&.../NetBSD-current/tar_files/
-.(item -compact -offset indent
-.Pa pkgsrc.tar.gz
-.It
-.Pa src/*.tar.gz
-.It
-.Pa xsrc/*.tar.gz
-.item)
-.Pp
-Other directories provide unpacked source trees e.g. for distribution via
-the software update protocol (SUP) or the
-concurrent version system (CVS). For more information see:
-.Lk https://www.NetBSD.org/mirrors/
-.\}
-.
 .
 .so contents -----------------------------------------------
 .
@@ -772,7 +815,7 @@ However, new binaries can not be mixed with old libraries, and shared
 libraries are incompatible.
 .Pp
 .Ic sysinst
-does not provide an automatic mechanism to partlially upgrade an old
+does not provide an automatic mechanism to partially upgrade an old
 installation.
 There are two ways to handle the transition:
 .(enum
@@ -803,20 +846,6 @@ again.
 .enum)
 .
 .\}
-.Ss2 Issues affecting an upgrade from NetBSD 6.x releases
-.Pp
-The following user needs to be created:
-.(bullet -compact -offset indent
-_rtadvd
-.bullet)
-.Pp
-The following groups need to be created:
-.(bullet -compact -offset indent
-_gpio
-.It
-_rtadvd
-.bullet)
-.
 .Ss "Using online NetBSD documentation"
 .Pp
 Documentation is available if you installed the manual

@@ -1,4 +1,4 @@
-/*        $NetBSD: dm_pdev.c,v 1.10 2018/01/05 14:22:26 christos Exp $      */
+/*        $NetBSD: dm_pdev.c,v 1.15 2019/12/04 16:55:30 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_pdev.c,v 1.10 2018/01/05 14:22:26 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_pdev.c,v 1.15 2019/12/04 16:55:30 tkusumi Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -38,15 +38,14 @@ __KERNEL_RCSID(0, "$NetBSD: dm_pdev.c,v 1.10 2018/01/05 14:22:26 christos Exp $"
 #include <sys/fcntl.h>
 #include <sys/kmem.h>
 #include <sys/namei.h>
-#include <sys/vnode.h>
 
 #include <dev/dkvar.h>
 
 #include "dm.h"
 
-SLIST_HEAD(dm_pdevs, dm_pdev) dm_pdev_list;
+static SLIST_HEAD(dm_pdevs, dm_pdev) dm_pdev_list;
 
-kmutex_t dm_pdev_mutex;
+static kmutex_t dm_pdev_mutex;
 
 static dm_pdev_t *dm_pdev_alloc(const char *);
 static int dm_pdev_rem(dm_pdev_t *);
@@ -103,15 +102,17 @@ dm_pdev_insert(const char *dev_name)
 		mutex_exit(&dm_pdev_mutex);
 		return dmp;
 	}
-	mutex_exit(&dm_pdev_mutex);
 
-	if ((dmp = dm_pdev_alloc(dev_name)) == NULL)
+	if ((dmp = dm_pdev_alloc(dev_name)) == NULL) {
+		mutex_exit(&dm_pdev_mutex);
 		return NULL;
+	}
 
 	dev_pb = pathbuf_create(dev_name);
 	if (dev_pb == NULL) {
 		aprint_debug("%s: pathbuf_create on device: %s failed!\n",
 		    __func__, dev_name);
+		mutex_exit(&dm_pdev_mutex);
 		kmem_free(dmp, sizeof(dm_pdev_t));
 		return NULL;
 	}
@@ -120,13 +121,13 @@ dm_pdev_insert(const char *dev_name)
 	if (error) {
 		aprint_debug("%s: dk_lookup on device: %s (error %d)\n",
 		    __func__, dev_name, error);
+		mutex_exit(&dm_pdev_mutex);
 		kmem_free(dmp, sizeof(dm_pdev_t));
 		return NULL;
 	}
 	getdisksize(dmp->pdev_vnode, &dmp->pdev_numsec, &dmp->pdev_secsize);
 	dmp->ref_cnt = 1;
 
-	mutex_enter(&dm_pdev_mutex);
 	SLIST_INSERT_HEAD(&dm_pdev_list, dmp, next_pdev);
 	mutex_exit(&dm_pdev_mutex);
 
@@ -191,7 +192,6 @@ dm_pdev_destroy(void)
 
 	mutex_enter(&dm_pdev_mutex);
 	while (!SLIST_EMPTY(&dm_pdev_list)) {	/* List Deletion. */
-
 		dm_pdev = SLIST_FIRST(&dm_pdev_list);
 
 		SLIST_REMOVE_HEAD(&dm_pdev_list, next_pdev);

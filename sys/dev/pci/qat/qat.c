@@ -1,4 +1,4 @@
-/*	$NetBSD: qat.c,v 1.1 2019/11/20 09:37:46 hikaru Exp $	*/
+/*	$NetBSD: qat.c,v 1.3 2019/12/04 01:06:28 hikaru Exp $	*/
 
 /*
  * Copyright (c) 2019 Internet Initiative Japan, Inc.
@@ -57,7 +57,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: qat.c,v 1.1 2019/11/20 09:37:46 hikaru Exp $");
+__KERNEL_RCSID(0, "$NetBSD: qat.c,v 1.3 2019/12/04 01:06:28 hikaru Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -468,7 +468,7 @@ qat_attach(struct device *parent, struct device *self, void *aux)
 		    msixoff + PCI_MSIX_TBLOFFSET);
 		msixtbl_offset = msixtbl & PCI_MSIX_TBLOFFSET_MASK;
 		msixtbl_bar = PCI_MAPREG_START +
-		    ((msixtbl & PCI_MSIX_PBABIR_MASK) << 2);
+		    ((msixtbl & PCI_MSIX_TBLBIR_MASK) << 2);
 	}
 
 	i = 0;
@@ -2126,7 +2126,7 @@ qat_dump_raw(int flag, const char *label, void *d, size_t len)
 
 	printf("dumping %s at %p len %zu\n", label, d, len);
 
-	pc = __RETURN_ADDRESS;
+	pc = (uintptr_t)__builtin_return_address(0);
 	printf("\tcallpc ");
 	qat_print_sym(pc);
 	printf("\n");

@@ -1,4 +1,4 @@
-/*        $NetBSD: device-mapper.c,v 1.40 2018/10/06 14:59:11 mlelstv Exp $ */
+/*        $NetBSD: device-mapper.c,v 1.44 2019/12/04 16:55:30 tkusumi Exp $ */
 
 /*
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -114,6 +114,13 @@ CFATTACH_DECL3_NEW(dm, 0,
 extern uint32_t dm_dev_counter;
 
 /*
+ * This structure is used to translate command sent to kernel driver in
+ * <key>command</key>
+ * <value></value>
+ * to function which I can call, and if the command is allowed for
+ * non-superusers.
+ */
+/*
  * This array is used to translate cmd to function pointer.
  *
  * Interface between libdevmapper and lvm2tools uses different
@@ -122,7 +129,11 @@ extern uint32_t dm_dev_counter;
  * ioctl to kernel but will do another things in userspace.
  *
  */
-static const struct cmd_function cmd_fn[] = {
+static const struct cmd_function {
+	const char *cmd;
+	int  (*fn)(prop_dictionary_t);
+	int  allowed;
+} cmd_fn[] = {
 	{ .cmd = "version", .fn = dm_get_version_ioctl,	  .allowed = 1 },
 	{ .cmd = "targets", .fn = dm_list_versions_ioctl, .allowed = 1 },
 	{ .cmd = "create",  .fn = dm_dev_create_ioctl,    .allowed = 0 },
@@ -138,7 +149,7 @@ static const struct cmd_function cmd_fn[] = {
 	{ .cmd = "reload",  .fn = dm_table_load_ioctl,    .allowed = 0 },
 	{ .cmd = "status",  .fn = dm_table_status_ioctl,  .allowed = 1 },
 	{ .cmd = "table",   .fn = dm_table_status_ioctl,  .allowed = 1 },
-	{ .cmd = NULL, 	    .fn = NULL,			  .allowed = 0 }
+	{ .cmd = NULL,      .fn = NULL,			  .allowed = 0 }
 };
 
 #ifdef _MODULE
@@ -183,11 +194,8 @@ dm_modcmd(modcmd_t cmd, void *arg)
 			config_cfdriver_detach(&dm_cd);
 			break;
 		}
-
 		dm_doinit();
-
 		break;
-
 	case MODULE_CMD_FINI:
 		/*
 		 * Disable unloading of dm module if there are any devices
@@ -197,6 +205,7 @@ dm_modcmd(modcmd_t cmd, void *arg)
 		 */
 		if (dm_dev_counter > 0)
 			return EBUSY;
+		/* race window here */
 
 		error = dmdestroy();
 		if (error)
@@ -208,7 +217,6 @@ dm_modcmd(modcmd_t cmd, void *arg)
 		break;
 	case MODULE_CMD_STAT:
 		return ENOTTY;
-
 	default:
 		return ENOTTY;
 	}
@@ -352,7 +360,7 @@ dmioctl(dev_t dev, const u_long cmd, void *data, int flag, struct lwp *l)
 	aprint_debug("dmioctl called\n");
 	KASSERT(data != NULL);
 
-	if (( r = disk_ioctl_switch(dev, cmd, data)) == ENOTTY) {
+	if ((r = disk_ioctl_switch(dev, cmd, data)) == ENOTTY) {
 		struct plistref *pref = (struct plistref *) data;
 
 		/* Check if we were called with NETBSD_DM_IOCTL ioctl
@@ -417,7 +425,6 @@ dm_ioctl_switch(u_long cmd)
 {
 
 	switch(cmd) {
-
 	case NETBSD_DM_IOCTL:
 		aprint_debug("dm NetBSD_DM_IOCTL called\n");
 		break;
@@ -499,8 +506,7 @@ disk_ioctl_switch(dev_t dev, u_long cmd, void *data)
 		 * Call sync target routine for all table entries. Target sync
 		 * routine basically call DIOCCACHESYNC on underlying devices.
 		 */
-		SLIST_FOREACH(table_en, tbl, next)
-		{
+		SLIST_FOREACH(table_en, tbl, next) {
 			(void)table_en->target->sync(table_en);
 		}
 		dm_table_release(&dmv->table_head, DM_TABLE_ACTIVE);
@@ -543,7 +549,6 @@ disk_ioctl_switch(dev_t dev, u_long cmd, void *data)
 		dm_dev_unbusy(dmv);
 		break;
 	}
-
 
 	default:
 		aprint_debug("unknown disk_ioctl called\n");
@@ -610,15 +615,14 @@ dmstrategy(struct buf *bp)
 	/*
 	 * Find out what tables I want to select.
 	 */
-	SLIST_FOREACH(table_en, tbl, next)
-	{
-		/* I need need number of bytes not blocks. */
+	SLIST_FOREACH(table_en, tbl, next) {
+		/* I need number of bytes not blocks. */
 		table_start = table_en->start * DEV_BSIZE;
 		/*
 		 * I have to sub 1 from table_en->length to prevent
 		 * off by one error
 		 */
-		table_end = table_start + (table_en->length)* DEV_BSIZE;
+		table_end = table_start + table_en->length * DEV_BSIZE;
 
 		start = MAX(table_start, buf_start);
 
@@ -660,8 +664,6 @@ dmstrategy(struct buf *bp)
 
 	dm_table_release(&dmv->table_head, DM_TABLE_ACTIVE);
 	dm_dev_unbusy(dmv);
-
-	return;
 }
 
 
@@ -685,15 +687,13 @@ dmsize(dev_t dev)
 	dm_dev_t *dmv;
 	uint64_t size;
 
-	size = 0;
-
 	if ((dmv = dm_dev_lookup(NULL, NULL, minor(dev))) == NULL)
-			return -ENOENT;
+		return -ENOENT;
 
 	size = dm_table_size(&dmv->table_head);
 	dm_dev_unbusy(dmv);
 
-  	return size;
+	return size;
 }
 
 static void

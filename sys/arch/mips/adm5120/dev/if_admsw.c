@@ -1,4 +1,4 @@
-/* $NetBSD: if_admsw.c,v 1.24 2019/05/28 07:41:47 msaitoh Exp $ */
+/* $NetBSD: if_admsw.c,v 1.26 2019/12/05 03:15:20 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 2007 Ruslan Ermilov and Vsevolod Lobko.
@@ -76,7 +76,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_admsw.c,v 1.24 2019/05/28 07:41:47 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_admsw.c,v 1.26 2019/12/05 03:15:20 msaitoh Exp $");
 
 
 #include <sys/param.h>
@@ -454,6 +454,7 @@ admsw_attach(device_t parent, device_t self, void *aux)
 	admsw_reset(sc);
 
 	for (i = 0; i < SW_DEVS; i++) {
+		sc->sc_ethercom[i].ec_ifmedia = &sc->sc_ifmedia[i];
 		ifmedia_init(&sc->sc_ifmedia[i], 0, admsw_mediachange, admsw_mediastatus);
 		ifmedia_add(&sc->sc_ifmedia[i], IFM_ETHER|IFM_10_T, 0, NULL);
 		ifmedia_add(&sc->sc_ifmedia[i], IFM_ETHER|IFM_10_T|IFM_FDX, 0, NULL);
@@ -740,6 +741,10 @@ admsw_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	struct ifdrv *ifd;
 	int s, error, port;
 
+	port = (struct ethercom *)ifp - sc->sc_ethercom; /* XXX */
+	if (port >= SW_DEVS)
+		return EOPNOTSUPP;
+
 	s = splnet();
 
 	switch (cmd) {
@@ -747,16 +752,6 @@ admsw_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		if ((error = ether_ioctl(ifp, cmd, data)) == ENETRESET)
 			error = 0;
 		break;
-	case SIOCSIFMEDIA:
-	case SIOCGIFMEDIA:
-		port = (struct ethercom *)ifp - sc->sc_ethercom; /* XXX */
-		if (port >= SW_DEVS)
-			error = EOPNOTSUPP;
-		else
-			error = ifmedia_ioctl(ifp, (struct ifreq *)data,
-			    &sc->sc_ifmedia[port], cmd);
-		break;
-
 	case SIOCGDRVSPEC:
 	case SIOCSDRVSPEC:
 		ifd = (struct ifdrv *) data;
@@ -1242,21 +1237,21 @@ admsw_mediachange(struct ifnet *ifp)
 {
 	struct admsw_softc *sc = ifp->if_softc;
 	int port = (struct ethercom *)ifp - sc->sc_ethercom;	/* XXX */
-	struct ifmedia *ifm = &sc->sc_ifmedia[port];
+	struct ifmedia_entry *ife = sc->sc_ifmedia[port].ifm_cur;
 	int old, new, val;
 
-	if (IFM_TYPE(ifm->ifm_media) != IFM_ETHER)
+	if (IFM_TYPE(ife->ifm_media) != IFM_ETHER)
 		return EINVAL;
 
-	if (IFM_SUBTYPE(ifm->ifm_media) == IFM_AUTO) {
+	if (IFM_SUBTYPE(ife->ifm_media) == IFM_AUTO) {
 		val = PHY_CNTL2_AUTONEG | PHY_CNTL2_100M | PHY_CNTL2_FDX;
-	} else if (IFM_SUBTYPE(ifm->ifm_media) == IFM_100_TX) {
-		if ((ifm->ifm_media & IFM_FDX) != 0)
+	} else if (IFM_SUBTYPE(ife->ifm_media) == IFM_100_TX) {
+		if ((ife->ifm_media & IFM_FDX) != 0)
 			val = PHY_CNTL2_100M | PHY_CNTL2_FDX;
 		else
 			val = PHY_CNTL2_100M;
-	} else if (IFM_SUBTYPE(ifm->ifm_media) == IFM_10_T) {
-		if ((ifm->ifm_media & IFM_FDX) != 0)
+	} else if (IFM_SUBTYPE(ife->ifm_media) == IFM_10_T) {
+		if ((ife->ifm_media & IFM_FDX) != 0)
 			val = PHY_CNTL2_FDX;
 		else
 			val = 0;

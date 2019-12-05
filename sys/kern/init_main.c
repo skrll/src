@@ -1,7 +1,7 @@
-/*	$NetBSD: init_main.c,v 1.506 2019/10/03 22:29:17 kamil Exp $	*/
+/*	$NetBSD: init_main.c,v 1.508 2019/12/02 23:22:43 ad Exp $	*/
 
 /*-
- * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
+ * Copyright (c) 2008, 2009, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -97,7 +97,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.506 2019/10/03 22:29:17 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.508 2019/12/02 23:22:43 ad Exp $");
 
 #include "opt_ddb.h"
 #include "opt_inet.h"
@@ -788,6 +788,9 @@ configure2(void)
 	struct cpu_info *ci;
 	int s;
 
+	/* Fix up CPU topology info, which has all been collected by now. */
+	cpu_topology_init();
+
 	/*
 	 * Now that we've found all the hardware, start the real time
 	 * and statistics clocks.
@@ -799,6 +802,10 @@ configure2(void)
 	curcpu()->ci_schedstate.spc_flags |= SPCF_RUNNING;
 	splx(s);
 
+	/* Setup the runqueues and scheduler. */
+	runq_init();
+	synch_init();
+
 	/* Boot the secondary processors. */
 	for (CPU_INFO_FOREACH(cii, ci)) {
 		uvm_cpu_attach(ci);
@@ -807,10 +814,6 @@ configure2(void)
 #if defined(MULTIPROCESSOR)
 	cpu_boot_secondary_processors();
 #endif
-
-	/* Setup the runqueues and scheduler. */
-	runq_init();
-	synch_init();
 
 	/*
 	 * Bus scans can make it appear as if the system has paused, so
