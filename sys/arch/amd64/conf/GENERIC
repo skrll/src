@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.548 2019/12/05 22:05:05 sevan Exp $
+# $NetBSD: GENERIC,v 1.550 2019/12/10 12:08:52 yamaguchi Exp $
 #
 # GENERIC machine description file
 #
@@ -22,9 +22,11 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.548 $"
+#ident		"GENERIC-$Revision: 1.550 $"
 
 maxusers	64		# estimated number of users
+
+options		MULTIBOOT	# Multiboot support (see multiboot(8)) 
 
 # delay between "rebooting ..." message and hardware reset, in milliseconds
 #options 	CPURESET_DELAY=2000
@@ -802,6 +804,7 @@ iwi*	at pci? dev ? function ?	# Intel PRO/Wireless 2200BG
 iwm*	at pci? dev ? function ?	# Intel Centrino 7260
 iwn*	at pci? dev ? function ?	# Intel PRO/Wireless 4965AGN
 ixg*	at pci? dev ? function ?	# Intel 8259x 10 gigabit
+ixl*	at pci? dev ? function ?	# Intel Ethernet 700 Series
 ixv*	at pci? dev ? function ?	# Intel 8259x 10G virtual function
 jme*	at pci? dev ? function ?	# JMicron JMC2[56]0 ethernet
 hme*	at pci? dev ? function ?	# Sun Microelectronics STP2002-STQ

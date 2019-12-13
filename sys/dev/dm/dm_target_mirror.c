@@ -1,4 +1,4 @@
-/*$NetBSD: dm_target_mirror.c,v 1.12 2019/12/05 16:59:43 tkusumi Exp $*/
+/*$NetBSD: dm_target_mirror.c,v 1.18 2019/12/12 16:28:24 tkusumi Exp $*/
 
 /*
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_target_mirror.c,v 1.12 2019/12/05 16:59:43 tkusumi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_target_mirror.c,v 1.18 2019/12/12 16:28:24 tkusumi Exp $");
 
 /*
  * This file implements initial version of device-mapper mirror target.
@@ -42,13 +42,25 @@ __KERNEL_RCSID(0, "$NetBSD: dm_target_mirror.c,v 1.12 2019/12/05 16:59:43 tkusum
 #include "dm.h"
 
 /* dm_target_mirror.c */
-int dm_target_mirror_init(dm_dev_t *, void**, char *);
-char * dm_target_mirror_status(void *);
+int dm_target_mirror_init(dm_table_entry_t *, int, char **);
+char *dm_target_mirror_status(void *);
 int dm_target_mirror_strategy(dm_table_entry_t *, struct buf *);
 int dm_target_mirror_sync(dm_table_entry_t *);
 int dm_target_mirror_deps(dm_table_entry_t *, prop_array_t);
 int dm_target_mirror_destroy(dm_table_entry_t *);
 int dm_target_mirror_upcall(dm_table_entry_t *, struct buf *);
+
+typedef struct target_mirror_config {
+#define MAX_MIRROR_COPIES 4
+	dm_pdev_t *orig;
+	dm_pdev_t *copies[MAX_MIRROR_COPIES];
+
+	/* copied blocks bitmaps administration etc*/
+	dm_pdev_t *log_pdev;	/* for administration */
+	uint64_t log_regionsize;	/* blocksize of mirror */
+
+	/* list of parts that still need copied etc.; run length encoded? */
+} dm_target_mirror_config_t;
 
 #ifdef DM_TARGET_MODULE
 /*
@@ -81,7 +93,6 @@ dm_target_mirror_modcmd(modcmd_t cmd, void *arg)
 		dmt->version[0] = 1;
 		dmt->version[1] = 0;
 		dmt->version[2] = 0;
-		strlcpy(dmt->name, "mirror", DM_MAX_TYPE_NAME);
 		dmt->init = &dm_target_mirror_init;
 		dmt->status = &dm_target_mirror_status;
 		dmt->strategy = &dm_target_mirror_strategy;
@@ -89,6 +100,7 @@ dm_target_mirror_modcmd(modcmd_t cmd, void *arg)
 		dmt->deps = &dm_target_mirror_deps;
 		dmt->destroy = &dm_target_mirror_destroy;
 		dmt->upcall = &dm_target_mirror_upcall;
+		dmt->secsize = dm_target_dummy_secsize;
 
 		r = dm_target_insert(dmt);
 
@@ -115,12 +127,12 @@ dm_target_mirror_modcmd(modcmd_t cmd, void *arg)
  * 0 52428800 mirror clustered_disk 4 253:2 1024 UUID block_on_error 3 253:3 0 253:4 0 253:5 0
  */
 int
-dm_target_mirror_init(dm_dev_t * dmv, void **target_config, char *argv)
+dm_target_mirror_init(dm_table_entry_t *table_en, int argc, char **argv)
 {
 
 	printf("Mirror target init function called!!\n");
 
-	*target_config = NULL;
+	table_en->target_config = NULL;
 
 	return ENOSYS;
 }
@@ -134,7 +146,7 @@ dm_target_mirror_status(void *target_config)
 
 /* Strategy routine called from dm_strategy. */
 int
-dm_target_mirror_strategy(dm_table_entry_t * table_en, struct buf * bp)
+dm_target_mirror_strategy(dm_table_entry_t *table_en, struct buf *bp)
 {
 
 	printf("Mirror target read function called!!\n");
@@ -149,7 +161,7 @@ dm_target_mirror_strategy(dm_table_entry_t * table_en, struct buf * bp)
 
 /* Sync underlying disk caches. */
 int
-dm_target_mirror_sync(dm_table_entry_t * table_en)
+dm_target_mirror_sync(dm_table_entry_t *table_en)
 {
 
 	return 0;
@@ -157,7 +169,7 @@ dm_target_mirror_sync(dm_table_entry_t * table_en)
 
 /* Doesn't do anything here. */
 int
-dm_target_mirror_destroy(dm_table_entry_t * table_en)
+dm_target_mirror_destroy(dm_table_entry_t *table_en)
 {
 	/* Unbusy target so we can unload it */
 	dm_target_unbusy(table_en->target);
@@ -167,14 +179,14 @@ dm_target_mirror_destroy(dm_table_entry_t * table_en)
 
 /* Doesn't not need to do anything here. */
 int
-dm_target_mirror_deps(dm_table_entry_t * table_en, prop_array_t prop_array)
+dm_target_mirror_deps(dm_table_entry_t *table_en, prop_array_t prop_array)
 {
 	return 0;
 }
 
 /* Unsupported for this target. */
 int
-dm_target_mirror_upcall(dm_table_entry_t * table_en, struct buf * bp)
+dm_target_mirror_upcall(dm_table_entry_t *table_en, struct buf *bp)
 {
 	return 0;
 }

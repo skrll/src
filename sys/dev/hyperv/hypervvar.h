@@ -1,4 +1,4 @@
-/*	$NetBSD: hypervvar.h,v 1.2 2019/05/24 14:28:48 nonaka Exp $	*/
+/*	$NetBSD: hypervvar.h,v 1.4 2019/12/10 12:20:20 nonaka Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
@@ -65,6 +65,7 @@ int	hyperv_synic_supported(void);
 int	hyperv_is_gen1(void);
 void	hyperv_send_eom(void);
 void	hyperv_intr(void);
+uint32_t hyperv_get_vcpuid(cpuid_t);
 
 struct vmbus_softc;
 void	vmbus_init_interrupts_md(struct vmbus_softc *);
@@ -107,8 +108,10 @@ hyperv_dma_get_paddr(struct hyperv_dma *dma)
 	return dma->map->dm_segs[0].ds_addr;
 }
 
+#define HYPERV_DMA_SLEEPOK	0
+#define HYPERV_DMA_NOSLEEP	__BIT(0)
 void *hyperv_dma_alloc(bus_dma_tag_t, struct hyperv_dma *, bus_size_t,
-    bus_size_t, bus_size_t, int);
+    bus_size_t, bus_size_t, int, int);
 void hyperv_dma_free(bus_dma_tag_t, struct hyperv_dma *);
 
 #endif	/* _KERNEL */

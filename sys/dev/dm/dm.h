@@ -1,4 +1,4 @@
-/*        $NetBSD: dm.h,v 1.33 2019/12/05 15:52:39 tkusumi Exp $      */
+/*        $NetBSD: dm.h,v 1.39 2019/12/12 16:28:24 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -170,50 +170,11 @@ TAILQ_HEAD(target_linear_devs, target_linear_config);
 
 typedef struct target_linear_devs dm_target_linear_devs_t;
 
-/* for stripe : */
-typedef struct target_stripe_config {
-#define DM_STRIPE_DEV_OFFSET 2
-	struct target_linear_devs stripe_devs;
-	uint8_t stripe_num;
-	uint64_t stripe_chunksize;
-	size_t params_len;
-} dm_target_stripe_config_t;
-
-/* for mirror : */
-typedef struct target_mirror_config {
-#define MAX_MIRROR_COPIES 4
-	dm_pdev_t *orig;
-	dm_pdev_t *copies[MAX_MIRROR_COPIES];
-
-	/* copied blocks bitmaps administration etc*/
-	dm_pdev_t *log_pdev;	/* for administration */
-	uint64_t log_regionsize;	/* blocksize of mirror */
-
-	/* list of parts that still need copied etc.; run length encoded? */
-} dm_target_mirror_config_t;
-
-
-/* for snapshot : */
-typedef struct target_snapshot_config {
-	dm_pdev_t *tsc_snap_dev;
-	/* cow dev is set only for persistent snapshot devices */
-	dm_pdev_t *tsc_cow_dev;
-
-	uint64_t tsc_chunk_size;
-	uint32_t tsc_persistent_dev;
-} dm_target_snapshot_config_t;
-
-/* for snapshot-origin devices */
-typedef struct target_snapshot_origin_config {
-	dm_pdev_t *tsoc_real_dev;
-	/* list of snapshots ? */
-} dm_target_snapshot_origin_config_t;
-
 /* constant dm_target structures for error, zero, linear, stripes etc. */
 typedef struct dm_target {
 	char name[DM_MAX_TYPE_NAME];
 	/* Initialize target_config area */
-	int (*init)(dm_dev_t *, void **, char *);
+	int (*init)(dm_table_entry_t *, int, char **);
 
 	/* Destroy target_config area */
 	int (*destroy)(dm_table_entry_t *);
@@ -232,6 +193,7 @@ typedef struct dm_target {
 
 	uint32_t version[3];
 	uint32_t ref_cnt;
+	int max_argc;
 
 	TAILQ_ENTRY(dm_target) dm_target_next;
 } dm_target_t;
@@ -265,7 +227,7 @@ int dm_target_destroy(void);
 int dm_target_insert(dm_target_t *);
 prop_array_t dm_target_prop_list(void);
 dm_target_t* dm_target_lookup(const char *);
-int dm_target_rem(char *);
+int dm_target_rem(const char *);
 void dm_target_unbusy(dm_target_t *);
 void dm_target_busy(dm_target_t *);
 
@@ -275,8 +237,8 @@ int dm_target_init(void);
 #define DM_MAX_PARAMS_SIZE 1024
 
 /* dm_target_linear.c */
-int dm_target_linear_init(dm_dev_t *, void**, char *);
-char * dm_target_linear_status(void *);
+int dm_target_linear_init(dm_table_entry_t *, int, char **);
+char *dm_target_linear_status(void *);
 int dm_target_linear_strategy(dm_table_entry_t *, struct buf *);
 int dm_target_linear_sync(dm_table_entry_t *);
 int dm_target_linear_deps(dm_table_entry_t *, prop_array_t);
@@ -288,8 +250,8 @@ int dm_target_linear_secsize(dm_table_entry_t *, unsigned *);
 uint64_t atoi(const char *);
 
 /* dm_target_stripe.c */
-int dm_target_stripe_init(dm_dev_t *, void**, char *);
-char * dm_target_stripe_status(void *);
+int dm_target_stripe_init(dm_table_entry_t *, int, char **);
+char *dm_target_stripe_status(void *);
 int dm_target_stripe_strategy(dm_table_entry_t *, struct buf *);
 int dm_target_stripe_sync(dm_table_entry_t *);
 int dm_target_stripe_deps(dm_table_entry_t *, prop_array_t);
@@ -305,7 +267,7 @@ int dm_table_destroy(dm_table_head_t *, uint8_t);
 uint64_t dm_table_size(dm_table_head_t *);
 uint64_t dm_inactive_table_size(dm_table_head_t *);
 void dm_table_disksize(dm_table_head_t *, uint64_t *, unsigned *);
-dm_table_t * dm_table_get_entry(dm_table_head_t *, uint8_t);
+dm_table_t *dm_table_get_entry(dm_table_head_t *, uint8_t);
 int dm_table_get_target_count(dm_table_head_t *, uint8_t);
 void dm_table_release(dm_table_head_t *, uint8_t s);
 void dm_table_switch_tables(dm_table_head_t *);
@@ -331,6 +293,13 @@ int dm_pdev_decr(dm_pdev_t *);
 int dm_pdev_destroy(void);
 int dm_pdev_init(void);
 dm_pdev_t* dm_pdev_insert(const char *);
+
+/* XXX dummy */
+static __inline int
+dm_target_dummy_secsize(dm_table_entry_t *table_en, unsigned *secsizep)
+{
+	return 0;
+}
 
 #endif /*_KERNEL*/
 

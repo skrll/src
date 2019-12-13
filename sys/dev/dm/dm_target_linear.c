@@ -1,4 +1,4 @@
-/*        $NetBSD: dm_target_linear.c,v 1.22 2019/12/05 16:59:43 tkusumi Exp $      */
+/*        $NetBSD: dm_target_linear.c,v 1.27 2019/12/12 16:28:24 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_target_linear.c,v 1.22 2019/12/05 16:59:43 tkusumi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_target_linear.c,v 1.27 2019/12/12 16:28:24 tkusumi Exp $");
 
 /*
  * This file implements initial version of device-mapper dklinear target.
@@ -55,25 +55,17 @@ __KERNEL_RCSID(0, "$NetBSD: dm_target_linear.c,v 1.22 2019/12/05 16:59:43 tkusum
  * @argv[1] is physical data offset.
  */
 int
-dm_target_linear_init(dm_dev_t * dmv, void **target_config, char *params)
+dm_target_linear_init(dm_table_entry_t *table_en, int argc, char **argv)
 {
 	dm_target_linear_config_t *tlc;
 	dm_pdev_t *dmp;
 
-	char **ap, *argv[3];
-
-	if (params == NULL)
-		return EINVAL;
-
 	/*
-	 * Parse a string, containing tokens delimited by white space,
-	 * into an argument vector
-	 */
-	for (ap = argv; ap < &argv[2] &&
-	    (*ap = strsep(&params, " \t")) != NULL;) {
-		if (**ap != '\0')
-			ap++;
+	if (argc != 2) {
+		printf("Linear target takes 2 args\n");
+		return EINVAL;
 	}
+	*/
 
 	aprint_debug("Linear target init function called %s--%s!!\n",
 	    argv[0], argv[1]);
@@ -86,7 +78,7 @@ dm_target_linear_init(dm_dev_t * dmv, void **target_config, char *params)
 	tlc->pdev = dmp;
 	tlc->offset = atoi(argv[1]);
 
-	*target_config = tlc;
+	table_en->target_config = tlc;
 
 	return 0;
 }
@@ -106,7 +98,6 @@ dm_target_linear_status(void *target_config)
 	aprint_debug("Linear target status function called\n");
 
 	params = kmem_alloc(DM_MAX_PARAMS_SIZE, KM_SLEEP);
-	aprint_normal("%s %" PRIu64, tlc->pdev->name, tlc->offset);
 	snprintf(params, DM_MAX_PARAMS_SIZE, "%s %" PRIu64,
 	    tlc->pdev->name, tlc->offset);
 
@@ -117,7 +108,7 @@ dm_target_linear_status(void *target_config)
  * Do IO operation, called from dmstrategy routine.
  */
 int
-dm_target_linear_strategy(dm_table_entry_t * table_en, struct buf * bp)
+dm_target_linear_strategy(dm_table_entry_t *table_en, struct buf *bp)
 {
 	dm_target_linear_config_t *tlc;
 
@@ -138,7 +129,7 @@ dm_target_linear_strategy(dm_table_entry_t * table_en, struct buf * bp)
  * Sync underlying disk caches.
  */
 int
-dm_target_linear_sync(dm_table_entry_t * table_en)
+dm_target_linear_sync(dm_table_entry_t *table_en)
 {
 	int cmd;
 	dm_target_linear_config_t *tlc;
@@ -146,16 +137,16 @@ dm_target_linear_sync(dm_table_entry_t * table_en)
 	tlc = table_en->target_config;
 
 	cmd = 1;
-	
+
 	return VOP_IOCTL(tlc->pdev->pdev_vnode,  DIOCCACHESYNC, &cmd,
-	    FREAD|FWRITE, kauth_cred_get());	
+	    FREAD|FWRITE, kauth_cred_get());
 }
 
 /*
  * Destroy target specific data. Decrement table pdevs.
  */
 int
-dm_target_linear_destroy(dm_table_entry_t * table_en)
+dm_target_linear_destroy(dm_table_entry_t *table_en)
 {
 
 	/*
@@ -180,7 +171,7 @@ out:
 
 /* Add this target pdev dependencies to prop_array_t */
 int
-dm_target_linear_deps(dm_table_entry_t * table_en, prop_array_t prop_array)
+dm_target_linear_deps(dm_table_entry_t *table_en, prop_array_t prop_array)
 {
 	dm_target_linear_config_t *tlc;
 
@@ -201,7 +192,7 @@ dm_target_linear_deps(dm_table_entry_t * table_en, prop_array_t prop_array)
  * mirror, snapshot, multipath, stripe will use this functionality.
  */
 int
-dm_target_linear_upcall(dm_table_entry_t * table_en, struct buf * bp)
+dm_target_linear_upcall(dm_table_entry_t *table_en, struct buf *bp)
 {
 	return 0;
 }
@@ -211,7 +202,7 @@ dm_target_linear_upcall(dm_table_entry_t * table_en, struct buf * bp)
  * For a linear target this is just the sector size of the underlying device
  */
 int
-dm_target_linear_secsize(dm_table_entry_t * table_en, unsigned *secsizep)
+dm_target_linear_secsize(dm_table_entry_t *table_en, unsigned *secsizep)
 {
 	dm_target_linear_config_t *tlc;
 	unsigned secsize;

@@ -1,4 +1,4 @@
-/*        $NetBSD: dm_target.c,v 1.22 2019/12/04 15:31:12 tkusumi Exp $      */
+/*        $NetBSD: dm_target.c,v 1.26 2019/12/08 10:35:53 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_target.c,v 1.22 2019/12/04 15:31:12 tkusumi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_target.c,v 1.26 2019/12/08 10:35:53 tkusumi Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -54,7 +54,7 @@ static kmutex_t dm_target_mutex;
  * Called indirectly from dm_table_load_ioctl to mark target as used.
  */
 void
-dm_target_busy(dm_target_t * target)
+dm_target_busy(dm_target_t *target)
 {
 	atomic_inc_32(&target->ref_cnt);
 }
@@ -63,7 +63,7 @@ dm_target_busy(dm_target_t * target)
  * Release reference counter on target.
  */
 void
-dm_target_unbusy(dm_target_t * target)
+dm_target_unbusy(dm_target_t *target)
 {
 	KASSERT(target->ref_cnt > 0);
 	atomic_dec_32(&target->ref_cnt);
@@ -151,7 +151,7 @@ dm_target_lookup_name(const char *dm_target_name)
  *   contains name, version, function pointer to specifif target functions.
  */
 int
-dm_target_insert(dm_target_t * dm_target)
+dm_target_insert(dm_target_t *dm_target)
 {
 	dm_target_t *dmt;
 
@@ -183,7 +183,7 @@ dm_target_insert(dm_target_t * dm_target)
  * Remove target from TAIL, target is selected with its name.
  */
 int
-dm_target_rem(char *dm_target_name)
+dm_target_rem(const char *dm_target_name)
 {
 	dm_target_t *dmt;
 
@@ -220,14 +220,13 @@ dm_target_destroy(void)
 	dm_target_t *dm_target;
 
 	mutex_enter(&dm_target_mutex);
-	while (TAILQ_FIRST(&dm_target_list) != NULL) {
-		dm_target = TAILQ_FIRST(&dm_target_list);
 
-		TAILQ_REMOVE(&dm_target_list, TAILQ_FIRST(&dm_target_list),
-		    dm_target_next);
-
+	while ((dm_target = TAILQ_FIRST(&dm_target_list)) != NULL) {
+		TAILQ_REMOVE(&dm_target_list, dm_target, dm_target_next);
 		(void)kmem_free(dm_target, sizeof(dm_target_t));
 	}
+	KASSERT(TAILQ_EMPTY(&dm_target_list));
+
 	mutex_exit(&dm_target_mutex);
 
 	mutex_destroy(&dm_target_mutex);
@@ -241,7 +240,16 @@ dm_target_destroy(void)
 dm_target_t *
 dm_target_alloc(const char *name)
 {
-	return kmem_zalloc(sizeof(dm_target_t), KM_SLEEP);
+	dm_target_t *dmt;
+
+	dmt = kmem_zalloc(sizeof(dm_target_t), KM_SLEEP);
+	if (dmt == NULL)
+		return NULL;
+
+	if (name)
+		strlcpy(dmt->name, name, sizeof(dmt->name));
+
+	return dmt;
 }
 
 /*
@@ -298,7 +306,6 @@ dm_target_init(void)
 	dmt->version[0] = 1;
 	dmt->version[1] = 0;
 	dmt->version[2] = 2;
-	strlcpy(dmt->name, "linear", DM_MAX_TYPE_NAME);
 	dmt->init = &dm_target_linear_init;
 	dmt->status = &dm_target_linear_status;
 	dmt->strategy = &dm_target_linear_strategy;
@@ -313,7 +320,6 @@ dm_target_init(void)
 	dmt3->version[0] = 1;
 	dmt3->version[1] = 0;
 	dmt3->version[2] = 3;
-	strlcpy(dmt3->name, "striped", DM_MAX_TYPE_NAME);
 	dmt3->init = &dm_target_stripe_init;
 	dmt3->status = &dm_target_stripe_status;
 	dmt3->strategy = &dm_target_stripe_strategy;

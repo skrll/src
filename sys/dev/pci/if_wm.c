@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.650 2019/12/04 09:03:45 msaitoh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.658 2019/12/13 02:03:46 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.650 2019/12/04 09:03:45 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.658 2019/12/13 02:03:46 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -156,7 +156,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.650 2019/12/04 09:03:45 msaitoh Exp $");
 #define	WM_DEBUG_LOCK		__BIT(7)
 int	wm_debug = WM_DEBUG_TX | WM_DEBUG_RX | WM_DEBUG_LINK | WM_DEBUG_GMII
     | WM_DEBUG_MANAGE | WM_DEBUG_NVM | WM_DEBUG_INIT | WM_DEBUG_LOCK;
-
 #define	DPRINTF(x, y)	do { if (wm_debug & (x)) printf y; } while (0)
 #else
 #define	DPRINTF(x, y)	__nothing
@@ -467,6 +466,7 @@ struct wm_phyop {
 	int (*readreg_locked)(device_t, int, int, uint16_t *);
 	int (*writereg_locked)(device_t, int, int, uint16_t);
 	int reset_delay_us;
+	bool no_errprint;
 };
 
 struct wm_nvmop {
@@ -507,6 +507,7 @@ struct wm_softc {
 	wm_chip_type sc_type;		/* MAC type */
 	int sc_rev;			/* MAC revision */
 	wm_phy_type sc_phytype;		/* PHY type */
+	uint8_t sc_sfptype;		/* SFP type */
 	uint32_t sc_mediatype;		/* Media type (Copper, Fiber, SERDES)*/
 #define	WM_MEDIATYPE_UNKNOWN		0x00
 #define	WM_MEDIATYPE_FIBER		0x01
@@ -1184,23 +1185,23 @@ static const struct wm_product {
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_82571GB_QUAD_COPPER,
 	  "Intel PRO/1000 PT Quad Port Server Adapter",
-	  WM_T_82571,		WMP_F_COPPER, },
+	  WM_T_82571,		WMP_F_COPPER },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_82571PT_QUAD_COPPER,
 	  "Intel Gigabit PT Quad Port Server ExpressModule",
-	  WM_T_82571,		WMP_F_COPPER, },
+	  WM_T_82571,		WMP_F_COPPER },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_82571EB_DUAL_SERDES,
 	  "Intel 82571EB Dual Gigabit Ethernet (SERDES)",
-	  WM_T_82571,		WMP_F_SERDES, },
+	  WM_T_82571,		WMP_F_SERDES },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_82571EB_QUAD_SERDES,
 	  "Intel 82571EB Quad Gigabit Ethernet (SERDES)",
-	  WM_T_82571,		WMP_F_SERDES, },
+	  WM_T_82571,		WMP_F_SERDES },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_82571EB_QUAD_FIBER,
 	  "Intel 82571EB Quad 1000baseX Ethernet",
-	  WM_T_82571,		WMP_F_FIBER, },
+	  WM_T_82571,		WMP_F_FIBER },
 
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_82572EI_COPPER,
 	  "Intel i82572EI 1000baseT Ethernet",
@@ -2604,11 +2605,22 @@ alloc_retry:
 		break;
 	}
 
-	if ((sc->sc_type == WM_T_82575) || (sc->sc_type == WM_T_82576)) {
-		/* Check NVM for autonegotiation */
+	if (sc->sc_type >= WM_T_82575) {
 		if (wm_nvm_read(sc, NVM_OFF_COMPAT, 1, &nvmword) == 0) {
-			if ((nvmword & NVM_COMPAT_SERDES_FORCE_MODE) != 0)
-				sc->sc_flags |= WM_F_PCS_DIS_AUTONEGO;
+			aprint_debug_dev(sc->sc_dev, "COMPAT = %hx\n",
+			    nvmword);
+			if ((sc->sc_type == WM_T_82575) ||
+			    (sc->sc_type == WM_T_82576)) {
+				/* Check NVM for autonegotiation */
+				if ((nvmword & NVM_COMPAT_SERDES_FORCE_MODE)
+				    != 0)
+					sc->sc_flags |= WM_F_PCS_DIS_AUTONEGO;
+			}
+			if ((sc->sc_type == WM_T_82575) ||
+			    (sc->sc_type == WM_T_I350)) {
+				if (nvmword & NVM_COMPAT_MAS_EN(sc->sc_funcid))
+					sc->sc_flags |= WM_F_MAS;
+			}
 		}
 	}
 
@@ -2656,10 +2668,11 @@ alloc_retry:
 		}
 	}
 
-	/* XXX For other than 82580? */
-	if (sc->sc_type == WM_T_82580) {
-		wm_nvm_read(sc, NVM_OFF_CFG3_PORTA, 1, &nvmword);
-		if (nvmword & __BIT(13))
+	if ((sc->sc_type >= WM_T_82580) && (sc->sc_type <= WM_T_I211)) {
+		wm_nvm_read(sc,
+		    NVM_OFF_LAN_FUNC_82580(sc->sc_funcid) + NVM_OFF_CFG3_PORTA,
+		    1, &nvmword);
+		if (nvmword & NVM_CFG3_ILOS)
 			sc->sc_ctrl |= CTRL_ILOS;
 	}
 
@@ -2715,12 +2728,12 @@ alloc_retry:
 		link_mode = reg & CTRL_EXT_LINK_MODE_MASK;
 		switch (link_mode) {
 		case CTRL_EXT_LINK_MODE_1000KX:
-			aprint_verbose_dev(sc->sc_dev, "1000KX\n");
+			aprint_normal_dev(sc->sc_dev, "1000KX\n");
 			sc->sc_mediatype = WM_MEDIATYPE_SERDES;
 			break;
 		case CTRL_EXT_LINK_MODE_SGMII:
 			if (wm_sgmii_uses_mdio(sc)) {
-				aprint_verbose_dev(sc->sc_dev,
+				aprint_normal_dev(sc->sc_dev,
 				    "SGMII(MDIO)\n");
 				sc->sc_flags |= WM_F_SGMII;
 				sc->sc_mediatype = WM_MEDIATYPE_COPPER;
@@ -2735,6 +2748,8 @@ alloc_retry:
 				    == CTRL_EXT_LINK_MODE_SGMII) {
 					sc->sc_mediatype = WM_MEDIATYPE_COPPER;
 					sc->sc_flags |= WM_F_SGMII;
+					aprint_verbose_dev(sc->sc_dev,
+					    "SGMII\n");
 				} else {
 					sc->sc_mediatype = WM_MEDIATYPE_SERDES;
 					aprint_verbose_dev(sc->sc_dev,
@@ -2743,25 +2758,26 @@ alloc_retry:
 				break;
 			}
 			if (sc->sc_mediatype == WM_MEDIATYPE_SERDES)
-				aprint_verbose_dev(sc->sc_dev, "SERDES\n");
+				aprint_normal_dev(sc->sc_dev, "SERDES(SFP)\n");
+			else if (sc->sc_mediatype == WM_MEDIATYPE_COPPER) {
+				aprint_normal_dev(sc->sc_dev, "SGMII(SFP)\n");
+				sc->sc_flags |= WM_F_SGMII;
+			}
+			/* Do not change link mode for 100BaseFX */
+			if (sc->sc_sfptype == SFF_SFP_ETH_FLAGS_100FX)
+				break;
 
 			/* Change current link mode setting */
 			reg &= ~CTRL_EXT_LINK_MODE_MASK;
-			switch (sc->sc_mediatype) {
-			case WM_MEDIATYPE_COPPER:
+			if (sc->sc_mediatype == WM_MEDIATYPE_COPPER)
 				reg |= CTRL_EXT_LINK_MODE_SGMII;
-				break;
-			case WM_MEDIATYPE_SERDES:
+			else
 				reg |= CTRL_EXT_LINK_MODE_PCIE_SERDES;
-				break;
-			default:
-				break;
-			}
 			CSR_WRITE(sc, WMREG_CTRL_EXT, reg);
 			break;
 		case CTRL_EXT_LINK_MODE_GMII:
 		default:
-			aprint_verbose_dev(sc->sc_dev, "Copper\n");
+			aprint_normal_dev(sc->sc_dev, "Copper\n");
 			sc->sc_mediatype = WM_MEDIATYPE_COPPER;
 			break;
 		}
@@ -2772,6 +2788,10 @@ alloc_retry:
 		else
 			reg &= ~CTRL_EXT_I2C_ENA;
 		CSR_WRITE(sc, WMREG_CTRL_EXT, reg);
+		if ((sc->sc_flags & WM_F_SGMII) != 0) {
+			wm_gmii_setup_phytype(sc, 0, 0);
+			wm_reset_mdicnfg_82580(sc);
+		}
 	} else if (sc->sc_type < WM_T_82543 ||
 	    (CSR_READ(sc, WMREG_STATUS) & STATUS_TBIMODE) != 0) {
 		if (sc->sc_mediatype == WM_MEDIATYPE_COPPER) {
@@ -5694,7 +5714,7 @@ wm_init_locked(struct ifnet *ifp)
 	struct wm_softc *sc = ifp->if_softc;
 	struct ethercom *ec = &sc->sc_ethercom;
 	int i, j, trynum, error = 0;
-	uint32_t reg;
+	uint32_t reg, sfp_mask = 0;
 
 	DPRINTF(WM_DEBUG_INIT, ("%s: %s called\n",
 		device_xname(sc->sc_dev), __func__));
@@ -5812,6 +5832,11 @@ wm_init_locked(struct ifnet *ifp)
 	error = wm_init_txrx_queues(sc);
 	if (error)
 		goto out;
+
+	if (((sc->sc_flags & WM_F_SGMII) == 0) &&
+	    (sc->sc_mediatype == WM_MEDIATYPE_SERDES) &&
+	    (sc->sc_type >= WM_T_82575))
+		wm_serdes_power_up_link_82575(sc);
 
 	/* Clear out the VLAN table -- we don't use it (yet). */
 	CSR_WRITE(sc, WMREG_VET, 0);
@@ -6045,8 +6070,14 @@ wm_init_locked(struct ifnet *ifp)
 
 	/* Set up the interrupt registers. */
 	CSR_WRITE(sc, WMREG_IMC, 0xffffffffU);
-	sc->sc_icr = ICR_TXDW | ICR_LSC | ICR_RXSEQ | ICR_RXDMT0 |
-	    ICR_RXO | ICR_RXT0;
+
+	/* Enable SFP module insertion interrupt if it's required */
+	if ((sc->sc_flags & WM_F_SFP) != 0) {
+		sc->sc_ctrl |= CTRL_EXTLINK_EN;
+		CSR_WRITE(sc, WMREG_CTRL, sc->sc_ctrl);
+		sfp_mask = ICR_GPI(0);
+	}
+
 	if (wm_is_using_msix(sc)) {
 		uint32_t mask;
 		struct wm_queue *wmq;
@@ -6083,11 +6114,16 @@ wm_init_locked(struct ifnet *ifp)
 			CSR_WRITE(sc, WMREG_EIAC, mask);
 			CSR_WRITE(sc, WMREG_EIAM, mask);
 			CSR_WRITE(sc, WMREG_EIMS, mask);
-			CSR_WRITE(sc, WMREG_IMS, ICR_LSC);
+
+			/* For other interrupts */
+			CSR_WRITE(sc, WMREG_IMS, ICR_LSC | sfp_mask);
 			break;
 		}
-	} else
+	} else {
+		sc->sc_icr = ICR_TXDW | ICR_LSC | ICR_RXSEQ | ICR_RXDMT0 |
+		    ICR_RXO | ICR_RXT0 | sfp_mask;
 		CSR_WRITE(sc, WMREG_IMS, sc->sc_icr);
+	}
 
 	/* Set up the inter-packet gap. */
 	CSR_WRITE(sc, WMREG_TIPG, sc->sc_tipg);
@@ -8288,7 +8324,7 @@ retry:
 			    htole64(dmamap->dm_segs[0].ds_addr);
 			KASSERT((dmamap->dm_segs[0].ds_len & cmdlen) == 0);
 			txq->txq_nq_descs[nexttx].nqtx_data.nqtxd_cmdlen =
-			    htole32(dmamap->dm_segs[0].ds_len | cmdlen );
+			    htole32(dmamap->dm_segs[0].ds_len | cmdlen);
 			txq->txq_nq_descs[nexttx].nqtx_data.nqtxd_fields =
 			    htole32(fields);
 			DPRINTF(WM_DEBUG_TX,
@@ -9453,6 +9489,8 @@ wm_intr_legacy(void *arg)
 			WM_EVCNT_INCR(&sc->sc_ev_linkintr);
 			wm_linkintr(sc, icr);
 		}
+		if ((icr & ICR_GPI(0)) != 0)
+			device_printf(sc->sc_dev, "got module interrupt\n");
 
 		WM_CORE_UNLOCK(sc);
 
@@ -9627,11 +9665,12 @@ wm_linkintr_msix(void *arg)
 	uint32_t reg;
 	bool has_rxo;
 
-	DPRINTF(WM_DEBUG_LINK,
-	    ("%s: LINK: got link intr\n", device_xname(sc->sc_dev)));
-
 	reg = CSR_READ(sc, WMREG_ICR);
 	WM_CORE_LOCK(sc);
+	DPRINTF(WM_DEBUG_LINK,
+	    ("%s: LINK: got link intr. ICR = %08x\n",
+		device_xname(sc->sc_dev), reg));
+
 	if (sc->sc_core_stopping)
 		goto out;
 
@@ -9639,6 +9678,8 @@ wm_linkintr_msix(void *arg)
 		WM_EVCNT_INCR(&sc->sc_ev_linkintr);
 		wm_linkintr(sc, ICR_LSC);
 	}
+	if ((reg & ICR_GPI(0)) != 0)
+		device_printf(sc->sc_dev, "got module interrupt\n");
 
 	/*
 	 * XXX 82574 MSI-X mode workaround
@@ -9910,9 +9951,17 @@ wm_gmii_setup_phytype(struct wm_softc *sc, uint32_t phy_oui,
 	uint16_t doubt_phytype = WMPHY_UNKNOWN;
 	mii_readreg_t new_readreg;
 	mii_writereg_t new_writereg;
+	bool dodiag = true;
 
 	DPRINTF(WM_DEBUG_INIT, ("%s: %s called\n",
 		device_xname(sc->sc_dev), __func__));
+
+	/*
+	 * 1000BASE-T SFP uses SGMII and the first asumed PHY type is always
+	 * incorrect. So don't print diag output when it's 2nd call.
+	 */
+	if ((sc->sc_sfptype != 0) && (phy_oui == 0) && (phy_model == 0))
+		dodiag = false;
 
 	if (mii->mii_readreg == NULL) {
 		/*
@@ -10030,16 +10079,20 @@ wm_gmii_setup_phytype(struct wm_softc *sc, uint32_t phy_oui,
 		default:
 			break;
 		}
-		if (new_phytype == WMPHY_UNKNOWN)
-			aprint_verbose_dev(dev,
-			    "%s: unknown PHY model. OUI=%06x, model=%04x\n",
-			    __func__, phy_oui, phy_model);
 
-		if ((sc->sc_phytype != WMPHY_UNKNOWN)
-		    && (sc->sc_phytype != new_phytype )) {
-			aprint_error_dev(dev, "Previously assumed PHY type(%u)"
-			    "was incorrect. PHY type from PHY ID = %u\n",
-			    sc->sc_phytype, new_phytype);
+		if (dodiag) {
+			if (new_phytype == WMPHY_UNKNOWN)
+				aprint_verbose_dev(dev,
+				    "%s: Unknown PHY model. OUI=%06x, "
+				    "model=%04x\n", __func__, phy_oui,
+				    phy_model);
+
+			if ((sc->sc_phytype != WMPHY_UNKNOWN)
+			    && (sc->sc_phytype != new_phytype)) {
+				aprint_error_dev(dev, "Previously assumed PHY "
+				    "type(%u) was incorrect. PHY type from PHY"
+				    "ID = %u\n", sc->sc_phytype, new_phytype);
+			}
 		}
 	}
 
@@ -10108,22 +10161,26 @@ wm_gmii_setup_phytype(struct wm_softc *sc, uint32_t phy_oui,
 	}
 
 	/* Diag output */
-	if (doubt_phytype != WMPHY_UNKNOWN)
-		aprint_error_dev(dev, "Assumed new PHY type was "
-		    "incorrect. old = %u, new = %u\n", sc->sc_phytype,
-		    new_phytype);
-	else if ((sc->sc_phytype != WMPHY_UNKNOWN)
-	    && (sc->sc_phytype != new_phytype ))
-		aprint_error_dev(dev, "Previously assumed PHY type(%u)"
-		    "was incorrect. New PHY type = %u\n",
-		    sc->sc_phytype, new_phytype);
+	if (dodiag) {
+		if (doubt_phytype != WMPHY_UNKNOWN)
+			aprint_error_dev(dev, "Assumed new PHY type was "
+			    "incorrect. old = %u, new = %u\n", sc->sc_phytype,
+			    new_phytype);
+		else if ((sc->sc_phytype != WMPHY_UNKNOWN)
+		    && (sc->sc_phytype != new_phytype))
+			aprint_error_dev(dev, "Previously assumed PHY type(%u)"
+			    "was incorrect. New PHY type = %u\n",
+			    sc->sc_phytype, new_phytype);
 
-	if ((mii->mii_readreg != NULL) && (new_phytype == WMPHY_UNKNOWN))
-		aprint_error_dev(dev, "PHY type is still unknown.\n");
+		if ((mii->mii_readreg != NULL) &&
+		    (new_phytype == WMPHY_UNKNOWN))
+			aprint_error_dev(dev, "PHY type is still unknown.\n");
 
-	if ((mii->mii_readreg != NULL) && (mii->mii_readreg != new_readreg))
-		aprint_error_dev(dev, "Previously assumed PHY read/write "
-		    "function was incorrect.\n");
+		if ((mii->mii_readreg != NULL) &&
+		    (mii->mii_readreg != new_readreg))
+			aprint_error_dev(dev, "Previously assumed PHY "
+			    "read/write function was incorrect.\n");
+	}
 
 	/* Update now */
 	sc->sc_phytype = new_phytype;
@@ -10191,7 +10248,6 @@ wm_gmii_mediainit(struct wm_softc *sc, pci_product_id_t prodid)
 	device_t dev = sc->sc_dev;
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 	struct mii_data *mii = &sc->sc_mii;
-	uint32_t reg;
 
 	DPRINTF(WM_DEBUG_GMII, ("%s: %s called\n",
 		device_xname(sc->sc_dev), __func__));
@@ -10203,15 +10259,6 @@ wm_gmii_mediainit(struct wm_softc *sc, pci_product_id_t prodid)
 		sc->sc_tipg =  TIPG_1000T_80003_DFLT;
 	else
 		sc->sc_tipg = TIPG_1000T_DFLT;
-
-	/* XXX Not for I354? FreeBSD's e1000_82575.c doesn't include it */
-	if ((sc->sc_type == WM_T_82580)
-	    || (sc->sc_type == WM_T_I350) || (sc->sc_type == WM_T_I210)
-	    || (sc->sc_type == WM_T_I211)) {
-		reg = CSR_READ(sc, WMREG_PHPM);
-		reg &= ~PHPM_GO_LINK_D;
-		CSR_WRITE(sc, WMREG_PHPM, reg);
-	}
 
 	/*
 	 * Let the chip set speed/duplex on its own based on
@@ -10265,11 +10312,19 @@ wm_gmii_mediainit(struct wm_softc *sc, pci_product_id_t prodid)
 				CSR_WRITE_FLUSH(sc);
 				delay(300*1000); /* XXX too long */
 
-				/* From 1 to 8 */
+				/*
+				 * From 1 to 8.
+				 *
+				 * I2C access fails with I2C register's ERROR
+				 * bit set, so prevent error message while
+				 * scanning.
+				 */
+				sc->phy.no_errprint = true;
 				for (i = 1; i < 8; i++)
 					mii_attach(sc->sc_dev, &sc->sc_mii,
 					    0xffffffff, i, MII_OFFSET_ANY,
 					    MIIF_DOPAUSE);
+				sc->phy.no_errprint = false;
 
 				/* Restore previous sfp cage power state */
 				CSR_WRITE(sc, WMREG_CTRL_EXT, ctrl_ext);
@@ -10338,12 +10393,22 @@ wm_gmii_mediachange(struct ifnet *ifp)
 {
 	struct wm_softc *sc = ifp->if_softc;
 	struct ifmedia_entry *ife = sc->sc_mii.mii_media.ifm_cur;
+	uint32_t reg;
 	int rc;
 
 	DPRINTF(WM_DEBUG_GMII, ("%s: %s called\n",
 		device_xname(sc->sc_dev), __func__));
 	if ((ifp->if_flags & IFF_UP) == 0)
 		return 0;
+
+	/* XXX Not for I354? FreeBSD's e1000_82575.c doesn't include it */
+	if ((sc->sc_type == WM_T_82580)
+	    || (sc->sc_type == WM_T_I350) || (sc->sc_type == WM_T_I210)
+	    || (sc->sc_type == WM_T_I211)) {
+		reg = CSR_READ(sc, WMREG_PHPM);
+		reg &= ~PHPM_GO_LINK_D;
+		CSR_WRITE(sc, WMREG_PHPM, reg);
+	}
 
 	/* Disable D0 LPLU. */
 	wm_lplu_d0_disable(sc);
@@ -10378,8 +10443,18 @@ wm_gmii_mediachange(struct ifnet *ifp)
 	}
 	CSR_WRITE(sc, WMREG_CTRL, sc->sc_ctrl);
 	CSR_WRITE_FLUSH(sc);
+
+	if ((sc->sc_type >= WM_T_82575) && (sc->sc_type <= WM_T_I211))
+		wm_serdes_mediachange(ifp);
+
 	if (sc->sc_type <= WM_T_82543)
 		wm_gmii_reset(sc);
+	else if ((sc->sc_type >= WM_T_82575) && (sc->sc_type <= WM_T_I211)
+	    && ((sc->sc_flags & WM_F_SGMII) != 0)) {
+		/* allow time for SFP cage time to power up phy */
+		delay(300 * 1000);
+		wm_gmii_reset(sc);
+	}
 
 	if ((rc = mii_mediachg(&sc->sc_mii)) == ENXIO)
 		return 0;
@@ -11626,7 +11701,7 @@ wm_sgmii_readreg_locked(device_t dev, int phy, int reg, uint16_t *val)
 {
 	struct wm_softc *sc = device_private(dev);
 	uint32_t i2ccmd;
-	int i, rv;
+	int i, rv = 0;
 
 	i2ccmd = (reg << I2CCMD_REG_ADDR_SHIFT)
 	    | (phy << I2CCMD_PHY_ADDR_SHIFT) | I2CCMD_OPCODE_READ;
@@ -11644,7 +11719,8 @@ wm_sgmii_readreg_locked(device_t dev, int phy, int reg, uint16_t *val)
 		rv = ETIMEDOUT;
 	}
 	if ((i2ccmd & I2CCMD_ERROR) != 0) {
-		device_printf(dev, "I2CCMD Error bit set\n");
+		if (!sc->phy.no_errprint)
+			device_printf(dev, "I2CCMD Error bit set\n");
 		rv = EIO;
 	}
 
@@ -11800,6 +11876,31 @@ do {									\
 		/* Only 82545 is LX (XXX except SFP) */
 		ADD("1000baseLX", IFM_1000_LX, ANAR_X_HD);
 		ADD("1000baseLX-FDX", IFM_1000_LX | IFM_FDX, ANAR_X_FD);
+	} else if (sc->sc_sfptype != 0) {
+		/* XXX wm(4) fiber/serdes don't use ifm_data */
+		switch (sc->sc_sfptype) {
+		default:
+		case SFF_SFP_ETH_FLAGS_1000SX:
+			ADD("1000baseSX", IFM_1000_SX, ANAR_X_HD);
+			ADD("1000baseSX-FDX", IFM_1000_SX | IFM_FDX, ANAR_X_FD);
+			break;
+		case SFF_SFP_ETH_FLAGS_1000LX:
+			ADD("1000baseLX", IFM_1000_LX, ANAR_X_HD);
+			ADD("1000baseLX-FDX", IFM_1000_LX | IFM_FDX, ANAR_X_FD);
+			break;
+		case SFF_SFP_ETH_FLAGS_1000CX:
+			ADD("1000baseCX", IFM_1000_CX, ANAR_X_HD);
+			ADD("1000baseCX-FDX", IFM_1000_CX | IFM_FDX, ANAR_X_FD);
+			break;
+		case SFF_SFP_ETH_FLAGS_1000T:
+			ADD("1000baseT", IFM_1000_T, 0);
+			ADD("1000baseT-FDX", IFM_1000_T | IFM_FDX, 0);
+			break;
+		case SFF_SFP_ETH_FLAGS_100FX:
+			ADD("100baseFX", IFM_100_FX, ANAR_TX);
+			ADD("100baseFX-FDX", IFM_100_FX | IFM_FDX, ANAR_TX_FD);
+			break;
+		}
 	} else {
 		ADD("1000baseSX", IFM_1000_SX, ANAR_X_HD);
 		ADD("1000baseSX-FDX", IFM_1000_SX | IFM_FDX, ANAR_X_FD);
@@ -12083,7 +12184,8 @@ wm_tbi_tick(struct wm_softc *sc)
 		if ((IFM_SUBTYPE(ife->ifm_media) == IFM_AUTO)
 		    && (++sc->sc_tbi_serdes_ticks
 			>= sc->sc_tbi_serdes_anegticks)) {
-			DPRINTF(WM_DEBUG_LINK, ("EXPIRE\n"));
+			DPRINTF(WM_DEBUG_LINK, ("%s: %s: EXPIRE\n",
+				device_xname(sc->sc_dev), __func__));
 			sc->sc_tbi_serdes_ticks = 0;
 			/*
 			 * Reset the link, and let autonegotiation do
@@ -12117,14 +12219,19 @@ wm_serdes_power_up_link_82575(struct wm_softc *sc)
 	    && ((sc->sc_flags & WM_F_SGMII) == 0))
 		return;
 
+	/* Enable PCS to turn on link */
 	reg = CSR_READ(sc, WMREG_PCS_CFG);
 	reg |= PCS_CFG_PCS_EN;
 	CSR_WRITE(sc, WMREG_PCS_CFG, reg);
 
+	/* Power up the laser */
 	reg = CSR_READ(sc, WMREG_CTRL_EXT);
 	reg &= ~CTRL_EXT_SWDPIN(3);
 	CSR_WRITE(sc, WMREG_CTRL_EXT, reg);
+
+	/* Flush the write to verify completion */
 	CSR_WRITE_FLUSH(sc);
+	delay(1000);
 }
 
 static int
@@ -12134,23 +12241,32 @@ wm_serdes_mediachange(struct ifnet *ifp)
 	bool pcs_autoneg = true; /* XXX */
 	uint32_t ctrl_ext, pcs_lctl, reg;
 
+	if ((sc->sc_mediatype != WM_MEDIATYPE_SERDES)
+	    && ((sc->sc_flags & WM_F_SGMII) == 0))
+		return 0;
+
 	/* XXX Currently, this function is not called on 8257[12] */
 	if ((sc->sc_type == WM_T_82571) || (sc->sc_type == WM_T_82572)
 	    || (sc->sc_type >= WM_T_82575))
 		CSR_WRITE(sc, WMREG_SCTL, SCTL_DISABLE_SERDES_LOOPBACK);
 
-	wm_serdes_power_up_link_82575(sc);
+	/* Power on the sfp cage if present */
+	ctrl_ext = CSR_READ(sc, WMREG_CTRL_EXT);
+	ctrl_ext &= ~CTRL_EXT_SWDPIN(3);
+	ctrl_ext |= CTRL_EXT_I2C_ENA;
+	CSR_WRITE(sc, WMREG_CTRL_EXT, ctrl_ext);
 
 	sc->sc_ctrl |= CTRL_SLU;
 
 	if ((sc->sc_type == WM_T_82575) || (sc->sc_type == WM_T_82576))
 		sc->sc_ctrl |= CTRL_SWDPIN(0) | CTRL_SWDPIN(1);
 
-	ctrl_ext = CSR_READ(sc, WMREG_CTRL_EXT);
 	pcs_lctl = CSR_READ(sc, WMREG_PCS_LCTL);
 	switch (ctrl_ext & CTRL_EXT_LINK_MODE_MASK) {
 	case CTRL_EXT_LINK_MODE_SGMII:
+		/* SGMII mode lets the phy handle forcing speed/duplex */
 		pcs_autoneg = true;
+		/* Autoneg time out should be disabled for SGMII mode */
 		pcs_lctl &= ~PCS_LCTL_AN_TIMEOUT;
 		break;
 	case CTRL_EXT_LINK_MODE_1000KX:
@@ -12164,14 +12280,23 @@ wm_serdes_mediachange(struct ifnet *ifp)
 		}
 		sc->sc_ctrl |= CTRL_SPEED_1000 | CTRL_FRCSPD | CTRL_FD
 		    | CTRL_FRCFDX;
+
+		/* Set speed of 1000/Full if speed/duplex is forced */
 		pcs_lctl |= PCS_LCTL_FSV_1000 | PCS_LCTL_FDV_FULL;
 	}
 	CSR_WRITE(sc, WMREG_CTRL, sc->sc_ctrl);
 
+	pcs_lctl &= ~(PCS_LCTL_AN_ENABLE | PCS_LCTL_FLV_LINK_UP |
+	    PCS_LCTL_FSD | PCS_LCTL_FORCE_LINK);
+
 	if (pcs_autoneg) {
+		/* Set PCS register for autoneg */
 		pcs_lctl |= PCS_LCTL_AN_ENABLE | PCS_LCTL_AN_RESTART;
+
+		/* Disable force flow control for autoneg */
 		pcs_lctl &= ~PCS_LCTL_FORCE_FC;
 
+		/* Configure flow control advertisement for autoneg */
 		reg = CSR_READ(sc, WMREG_PCS_ANADV);
 		reg &= ~(TXCW_ASYM_PAUSE | TXCW_SYM_PAUSE);
 		reg |= TXCW_ASYM_PAUSE | TXCW_SYM_PAUSE;
@@ -12180,7 +12305,6 @@ wm_serdes_mediachange(struct ifnet *ifp)
 		pcs_lctl |= PCS_LCTL_FSD | PCS_LCTL_FORCE_FC;
 
 	CSR_WRITE(sc, WMREG_PCS_LCTL, pcs_lctl);
-
 
 	return 0;
 }
@@ -12308,7 +12432,8 @@ wm_serdes_tick(struct wm_softc *sc)
 		if ((IFM_SUBTYPE(ife->ifm_media) == IFM_AUTO)
 		    && (++sc->sc_tbi_serdes_ticks
 			>= sc->sc_tbi_serdes_anegticks)) {
-			DPRINTF(WM_DEBUG_LINK, ("EXPIRE\n"));
+			DPRINTF(WM_DEBUG_LINK, ("%s: %s: EXPIRE\n",
+				device_xname(sc->sc_dev), __func__));
 			sc->sc_tbi_serdes_ticks = 0;
 			/* XXX */
 			wm_serdes_mediachange(ifp);
@@ -12370,13 +12495,14 @@ wm_sfp_get_media_type(struct wm_softc *sc)
 	}
 	if (rv != 0)
 		goto out;
+
 	switch (val) {
 	case SFF_SFP_ID_SFF:
 		aprint_normal_dev(sc->sc_dev,
 		    "Module/Connector soldered to board\n");
 		break;
 	case SFF_SFP_ID_SFP:
-		aprint_normal_dev(sc->sc_dev, "SFP\n");
+		sc->sc_flags |= WM_F_SFP;
 		break;
 	case SFF_SFP_ID_UNKNOWN:
 		goto out;
@@ -12385,10 +12511,10 @@ wm_sfp_get_media_type(struct wm_softc *sc)
 	}
 
 	rv = wm_sfp_read_data_byte(sc, SFF_SFP_ETH_FLAGS_OFF, &val);
-	if (rv != 0) {
+	if (rv != 0)
 		goto out;
-	}
 
+	sc->sc_sfptype = val;
 	if ((val & (SFF_SFP_ETH_FLAGS_1000SX | SFF_SFP_ETH_FLAGS_1000LX)) != 0)
 		mediatype = WM_MEDIATYPE_SERDES;
 	else if ((val & SFF_SFP_ETH_FLAGS_1000T) != 0) {
@@ -12397,6 +12523,10 @@ wm_sfp_get_media_type(struct wm_softc *sc)
 	} else if ((val & SFF_SFP_ETH_FLAGS_100FX) != 0) {
 		sc->sc_flags |= WM_F_SGMII;
 		mediatype = WM_MEDIATYPE_SERDES;
+	} else {
+		device_printf(sc->sc_dev, "%s: unknown media type? (0x%hhx)\n",
+		    __func__, sc->sc_sfptype);
+		sc->sc_sfptype = 0; /* XXX unknown */
 	}
 
 out:

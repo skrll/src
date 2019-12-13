@@ -1,4 +1,4 @@
-/*        $NetBSD: dm_pdev.c,v 1.15 2019/12/04 16:55:30 tkusumi Exp $      */
+/*        $NetBSD: dm_pdev.c,v 1.19 2019/12/08 12:14:40 mlelstv Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_pdev.c,v 1.15 2019/12/04 16:55:30 tkusumi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_pdev.c,v 1.19 2019/12/08 12:14:40 mlelstv Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -116,10 +116,10 @@ dm_pdev_insert(const char *dev_name)
 		kmem_free(dmp, sizeof(dm_pdev_t));
 		return NULL;
 	}
-	error = dk_lookup(dev_pb, curlwp, &dmp->pdev_vnode);
+	error = vn_bdev_openpath(dev_pb, &dmp->pdev_vnode, curlwp);
 	pathbuf_destroy(dev_pb);
 	if (error) {
-		aprint_debug("%s: dk_lookup on device: %s (error %d)\n",
+		aprint_debug("%s: lookup on device: %s (error %d)\n",
 		    __func__, dev_name, error);
 		mutex_exit(&dm_pdev_mutex);
 		kmem_free(dmp, sizeof(dm_pdev_t));
@@ -167,7 +167,7 @@ dm_pdev_alloc(const char *name)
  * Destroy allocated dm_pdev.
  */
 static int
-dm_pdev_rem(dm_pdev_t * dmp)
+dm_pdev_rem(dm_pdev_t *dmp)
 {
 
 	KASSERT(dmp != NULL);
@@ -188,16 +188,16 @@ dm_pdev_rem(dm_pdev_t * dmp)
 int
 dm_pdev_destroy(void)
 {
-	dm_pdev_t *dm_pdev;
+	dm_pdev_t *dmp;
 
 	mutex_enter(&dm_pdev_mutex);
-	while (!SLIST_EMPTY(&dm_pdev_list)) {	/* List Deletion. */
-		dm_pdev = SLIST_FIRST(&dm_pdev_list);
 
-		SLIST_REMOVE_HEAD(&dm_pdev_list, next_pdev);
-
-		dm_pdev_rem(dm_pdev);
+	while ((dmp = SLIST_FIRST(&dm_pdev_list)) != NULL) {
+		SLIST_REMOVE(&dm_pdev_list, dmp, dm_pdev, next_pdev);
+		dm_pdev_rem(dmp);
 	}
+	KASSERT(SLIST_EMPTY(&dm_pdev_list));
+
 	mutex_exit(&dm_pdev_mutex);
 
 	mutex_destroy(&dm_pdev_mutex);
@@ -216,7 +216,7 @@ dm_pdev_destroy(void)
  * Decrement pdev reference counter if 0 remove it.
  */
 int
-dm_pdev_decr(dm_pdev_t * dmp)
+dm_pdev_decr(dm_pdev_t *dmp)
 {
 	KASSERT(dmp != NULL);
 	/*
@@ -240,15 +240,14 @@ static int
 dm_pdev_dump_list(void)
 {
 	dm_pdev_t *dmp;
-	
+
 	aprint_verbose("Dumping dm_pdev_list\n");
-	
+
 	SLIST_FOREACH(dmp, &dm_pdev_list, next_pdev) {
 		aprint_verbose("dm_pdev_name %s ref_cnt %d list_rf_cnt %d\n",
 		dmp->name, dmp->ref_cnt, dmp->list_ref_cnt);
 	}
-	
+
 	return 0;
-	
 }
 #endif

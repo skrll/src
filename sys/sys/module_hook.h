@@ -1,4 +1,4 @@
-/* $NetBSD: module_hook.h,v 1.4 2019/12/03 13:48:25 pgoyette Exp $	*/
+/* $NetBSD: module_hook.h,v 1.6 2019/12/12 22:55:20 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -33,11 +33,14 @@
 #define _SYS_MODULE_HOOK_H
 
 #include <sys/param.h>	/* for COHERENCY_UNIT, for __cacheline_aligned */
-#include <sys/mutex.h>
 #include <sys/localcount.h>
-#include <sys/condvar.h>
-#include <sys/pserialize.h>
-#include <sys/atomic.h>
+#include <sys/stdbool.h>
+
+void module_hook_init(void);
+void module_hook_set(bool *, struct localcount *);
+void module_hook_unset(bool *, struct localcount *);
+bool module_hook_tryenter(bool *, struct localcount *);
+void module_hook_exit(struct localcount *); 
 
 /*
  * Macros for creating MP-safe vectored function calls, where
@@ -47,12 +50,9 @@
 
 #define MODULE_HOOK(hook, type, args)				\
 extern struct hook ## _t {					\
-	kmutex_t		mtx;				\
-	kcondvar_t		cv;				\
 	struct localcount	lc;				\
-	pserialize_t		psz;				\
-        bool			hooked;				\
 	type			(*f)args;			\
+	bool			hooked;				\
 } hook __cacheline_aligned;
 
 /*
@@ -66,91 +66,34 @@ extern struct hook ## _t {					\
  * work without any other memory barriers.
  */
 
-#define MODULE_HOOK_SET(hook, waitchan, func)			\
+#define MODULE_HOOK_SET(hook, func)				\
 do {								\
-								\
-	KASSERT(!hook.hooked);					\
-								\
-	hook.psz = pserialize_create();				\
-	mutex_init(&hook.mtx, MUTEX_DEFAULT, IPL_NONE);		\
-	cv_init(&hook.cv, waitchan);				\
-	localcount_init(&hook.lc);				\
-	hook.f = func;						\
-								\
-	/* Make sure it's initialized before anyone uses it */	\
-	pserialize_perform(hook.psz);				\
-								\
-	/* Let them use it */					\
-	atomic_store_relaxed(&hook.hooked, true);		\
+	(hook).f = func;					\
+	module_hook_set(&(hook).hooked, &(hook).lc);		\
 } while /* CONSTCOND */ (0)
 
 #define MODULE_HOOK_UNSET(hook)					\
 do {								\
-								\
-	KASSERT(kernconfig_is_held());				\
-	KASSERT(hook.hooked);					\
-	KASSERT(hook.f);					\
-								\
-	/* Grab the mutex */					\
-	mutex_enter(&hook.mtx);					\
-								\
-	/* Prevent new localcount_acquire calls.  */		\
-	atomic_store_relaxed(&hook.hooked, false);		\
-								\
-	/*							\
-	 * Wait for localcount_acquire calls already under way	\
-	 * to finish.						\
-	 */							\
-	pserialize_perform(hook.psz);				\
-								\
-	/* Wait for existing localcount references to drain.  */\
-	localcount_drain(&hook.lc, &hook.cv, &hook.mtx);	\
-								\
-	/* Release the mutex and clean up all resources */	\
-	mutex_exit(&hook.mtx);					\
-	localcount_fini(&hook.lc);				\
-	cv_destroy(&hook.cv);					\
-	mutex_destroy(&hook.mtx);				\
-	pserialize_destroy(hook.psz);				\
+	KASSERT((hook).f);					\
+	module_hook_unset(&(hook).hooked, &(hook).lc);		\
+	(hook).f = NULL;	/* paranoia */			\
 } while /* CONSTCOND */ (0)
 
 #define MODULE_HOOK_CALL(hook, args, default, retval)		\
 do {								\
-	bool __hooked;						\
-	int __hook_s;						\
-								\
-	__hook_s = pserialize_read_enter();			\
-	__hooked = atomic_load_relaxed(&hook.hooked);		\
-	if (__hooked) {						\
-		localcount_acquire(&hook.lc);			\
-	}							\
-	pserialize_read_exit(__hook_s);				\
-								\
-	if (__hooked) {						\
-		retval = (*hook.f)args;				\
-		localcount_release(&hook.lc, &hook.cv,		\
-		    &hook.mtx);					\
+	if (module_hook_tryenter(&(hook).hooked, &(hook).lc)) {	\
+		(retval) = (*(hook).f)args;			\
+		module_hook_exit(&(hook).lc);			\
 	} else {						\
-		retval = default;				\
+		(retval) = (default);				\
 	}							\
 } while /* CONSTCOND */ (0)
 
 #define MODULE_HOOK_CALL_VOID(hook, args, default)		\
 do {								\
-	bool __hooked;						\
-	int __hook_s;						\
-								\
-	__hook_s = pserialize_read_enter();			\
-	__hooked = atomic_load_relaxed(&hook.hooked);		\
-	if (__hooked) {						\
-		localcount_acquire(&hook.lc);			\
-	}							\
-	pserialize_read_exit(__hook_s);				\
-								\
-	if (__hooked) {						\
-		(*hook.f)args;					\
-		localcount_release(&hook.lc, &hook.cv,		\
-		    &hook.mtx);					\
+	if (module_hook_tryenter(&(hook).hooked, &(hook).lc)) {	\
+		(*(hook).f)args;				\
+		module_hook_exit(&(hook).lc);			\
 	} else {						\
 		default;					\
 	}							\

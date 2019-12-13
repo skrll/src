@@ -1,4 +1,4 @@
-/*	$NetBSD: disklabel.c,v 1.15 2019/11/12 16:33:14 martin Exp $	*/
+/*	$NetBSD: disklabel.c,v 1.21 2019/12/12 20:14:21 martin Exp $	*/
 
 /*
  * Copyright 2018 The NetBSD Foundation, Inc.
@@ -170,10 +170,17 @@ disklabel_parts_read(const char *disk, daddr_t start, daddr_t len,
 	int fd;
 	char diskpath[MAXPATHLEN];
 	uint flags;
+#ifndef DISKLABEL_NO_ONDISK_VERIFY
+	bool only_dl = only_have_disklabel();
+	bool have_raw_label = false;
 
+	/*
+	 * Verify we really have a disklabel.
+	 */
 	if (run_program(RUN_SILENT | RUN_ERROR_OK,
-	    "disklabel -r %s", disk) != 0)
-		return NULL;
+	    "disklabel -r %s", disk) == 0)
+		have_raw_label = true;
+#endif
 
 	/* read partitions */
 
@@ -259,7 +266,50 @@ disklabel_parts_read(const char *disk, daddr_t start, daddr_t len,
 	}
 	close(fd);
 
+#ifndef DISKLABEL_NO_ONDISK_VERIFY
+	if (!have_raw_label && !only_dl) {
+		bool found_real_part = false;
+
+		/*
+		 * Check if kernel translation gave us "something" besides
+		 * the raw or the whole-disk partition.
+		 * If not: report missing disklabel.
+		 */
+		for (int part = 0; part < parts->l.d_npartitions; part++) {
+			if (parts->l.d_partitions[part].p_fstype == FS_UNUSED)
+				continue;
+			if (part == RAW_PART)
+				continue;
+			found_real_part = true;
+			break;
+		}
+		if (!found_real_part) {
+			/* no partion there yet */
+			free(parts);
+			return NULL;
+		}
+	}
+#endif
+
 	return &parts->dp;
+}
+
+/*
+ * Escape a string for usage as a tag name in a capfile(5),
+ * we really know there is enough space in the destination buffer...
+ */
+static void
+escape_capfile(char *dest, const char *src, size_t len)
+{
+	while (*src && len > 0) {
+		if (*src == ':')
+			*dest++ = ' ';
+		else
+			*dest++ = *src;
+		src++;
+		len--;
+	}
+	*dest = 0;
 }
 
 static bool
@@ -268,7 +318,8 @@ disklabel_write_to_disk(struct disk_partitions *arg)
 	struct disklabel_disk_partitions *parts =
 	    (struct disklabel_disk_partitions*)arg;
 	FILE *f;
-	char fname[PATH_MAX], packname[sizeof(parts->l.d_packname)+1];
+	char fname[PATH_MAX], packname[sizeof(parts->l.d_packname)+1],
+	    disktype[sizeof(parts->l.d_typename)+1];
 	int i, rv = 0;
 	const char *disk = parts->dp.disk, *s;
 	const struct partition *lp;
@@ -281,13 +332,10 @@ disklabel_write_to_disk(struct disk_partitions *arg)
 	assert(parts->l.d_ncylinders != 0);
 	assert(parts->l.d_secpercyl != 0);
 
-	sprintf(fname, "/tmp/disklabel.%u", getpid());
-	f = fopen(fname, "w");
-	if (f == NULL)
-		return false;
-
 	/* make sure we have a 0 terminated packname */
 	strlcpy(packname, parts->l.d_packname, sizeof packname);
+	if (packname[0] == 0)
+		strcpy(packname, "fictious");
 
 	/* fill typename with disk name prefix, if not already set */
 	if (strlen(parts->l.d_typename) == 0) {
@@ -298,18 +346,24 @@ disklabel_write_to_disk(struct disk_partitions *arg)
 			*d = *s;
 		}
 	}
-	parts->l.d_typename[sizeof(parts->l.d_typename)-1] = 0;
 
 	/* we need a valid disk type name, so enforce an arbitrary if
 	 * above did not yield a usable one */
 	if (strlen(parts->l.d_typename) == 0)
 		strncpy(parts->l.d_typename, "SCSI",
 		    sizeof(parts->l.d_typename));
+	escape_capfile(disktype, parts->l.d_typename,
+	    sizeof(parts->l.d_typename));
+
+	sprintf(fname, "/tmp/disklabel.%u", getpid());
+	f = fopen(fname, "w");
+	if (f == NULL)
+		return false;
 
 	lp = parts->l.d_partitions;
 	scripting_fprintf(NULL, "cat <<EOF >%s\n", fname);
 	scripting_fprintf(f, "%s|NetBSD installation generated:\\\n",
-	    parts->l.d_typename);
+	    disktype);
 	scripting_fprintf(f, "\t:nc#%d:nt#%d:ns#%d:\\\n",
 	    parts->l.d_ncylinders, parts->l.d_ntracks, parts->l.d_nsectors);
 	scripting_fprintf(f, "\t:sc#%d:su#%" PRIu32 ":\\\n",
@@ -351,8 +405,8 @@ disklabel_write_to_disk(struct disk_partitions *arg)
 	 */
 #ifdef DISKLABEL_CMD
 	/* disklabel the disk */
-	rv = run_program(RUN_DISPLAY, "%s -f %s %s %s %s",
-	    DISKLABEL_CMD, fname, disk, parts->l.d_typename, packname);
+	rv = run_program(RUN_DISPLAY, "%s -f %s %s '%s' '%s'",
+	    DISKLABEL_CMD, fname, disk, disktype, packname);
 #endif
 
 	unlink(fname);
