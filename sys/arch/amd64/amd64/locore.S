@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.193 2019/12/10 02:06:07 manu Exp $	*/
+/*	$NetBSD: locore.S,v 1.195 2019/12/15 02:58:21 manu Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -432,7 +432,7 @@ END(farjmp64)
 	.space	512
 tmpstk:
 
-.section multiboot,"ax",@progbits
+.section multiboot,"a"
 #if defined(MULTIBOOT)
 	.align	8
 	.globl	Multiboot2_Header
@@ -544,7 +544,7 @@ next:	pop	%r8
 	mov	$(KERNTEXTOFF - KERNBASE), %rdi			/* dest */
 	mov	%r8, %rsi		
 	sub	$(start - kernel_text), %rsi			/* src */
-	mov	$(__kernel_end - kernel_text), %rcx		/* size *.
+	mov	$(__kernel_end - kernel_text), %rcx		/* size */
 	mov	%rcx, %r12		
 	movq	%rdi, %r11		/* for misaligned check */
 

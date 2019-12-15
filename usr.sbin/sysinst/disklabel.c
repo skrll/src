@@ -1,4 +1,4 @@
-/*	$NetBSD: disklabel.c,v 1.21 2019/12/12 20:14:21 martin Exp $	*/
+/*	$NetBSD: disklabel.c,v 1.25 2019/12/14 20:41:58 martin Exp $	*/
 
 /*
  * Copyright 2018 The NetBSD Foundation, Inc.
@@ -226,7 +226,7 @@ disklabel_parts_read(const char *disk, daddr_t start, daddr_t len,
 	parts->dp.disk = strdup(disk);
 	parts->dp.disk_start = start;
 	parts->dp.disk_size = parts->dp.free_space = len;
-	disklabel_init_default_alignment(parts, 0);
+	disklabel_init_default_alignment(parts, parts->l.d_secpercyl);
 
 	for (int part = 0; part < parts->l.d_npartitions; part++) {
 		if (parts->l.d_partitions[part].p_fstype == FS_UNUSED
@@ -270,6 +270,10 @@ disklabel_parts_read(const char *disk, daddr_t start, daddr_t len,
 	if (!have_raw_label && !only_dl) {
 		bool found_real_part = false;
 
+		if (parts->l.d_npartitions <= RAW_PART ||
+		    parts->l.d_partitions[RAW_PART].p_size == 0)
+			goto no_valid_label;
+
 		/*
 		 * Check if kernel translation gave us "something" besides
 		 * the raw or the whole-disk partition.
@@ -278,6 +282,12 @@ disklabel_parts_read(const char *disk, daddr_t start, daddr_t len,
 		for (int part = 0; part < parts->l.d_npartitions; part++) {
 			if (parts->l.d_partitions[part].p_fstype == FS_UNUSED)
 				continue;
+			if (part == 0 &&
+			    parts->l.d_partitions[part].p_offset ==
+			     parts->l.d_partitions[RAW_PART].p_offset &&
+			    parts->l.d_partitions[part].p_size ==
+			     parts->l.d_partitions[RAW_PART].p_size)
+				continue;
 			if (part == RAW_PART)
 				continue;
 			found_real_part = true;
@@ -285,6 +295,7 @@ disklabel_parts_read(const char *disk, daddr_t start, daddr_t len,
 		}
 		if (!found_real_part) {
 			/* no partion there yet */
+no_valid_label:
 			free(parts);
 			return NULL;
 		}
@@ -630,7 +641,7 @@ disklabel_create_custom_part_type(const char *custom, const char **err_msg)
 }
 
 static const struct part_type_desc *
-disklabel_get_fs_part_type(unsigned fstype, unsigned subtype)
+disklabel_get_fs_part_type(enum part_type pt, unsigned fstype, unsigned subtype)
 {
 	return disklabel_find_type(fstype, false);
 }

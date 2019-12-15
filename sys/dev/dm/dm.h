@@ -1,4 +1,4 @@
-/*        $NetBSD: dm.h,v 1.39 2019/12/12 16:28:24 tkusumi Exp $      */
+/*        $NetBSD: dm.h,v 1.42 2019/12/15 05:56:02 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -64,6 +64,9 @@
 #define DM_VERSION_PATCHLEVEL	0
 
 /*** Internal device-mapper structures ***/
+
+extern const struct dkdriver dmdkdriver;
+extern uint32_t dm_dev_counter;
 
 /*
  * A device mapper table is a list of physical ranges plus the mapping target
@@ -181,11 +184,12 @@ typedef struct dm_target {
 
 	int (*deps) (dm_table_entry_t *, prop_array_t);
 	/*
-	 * Status routine is called to get params string, which is target
+	 * Info/table routine are called to get params string, which is target
 	 * specific. When dm_table_status_ioctl is called with flag
 	 * DM_STATUS_TABLE_FLAG I have to sent params string back.
 	 */
-	char * (*status)(void *);
+	char *(*info)(void *);
+	char *(*table)(void *);
 	int (*strategy)(dm_table_entry_t *, struct buf *);
 	int (*sync)(dm_table_entry_t *);
 	int (*upcall)(dm_table_entry_t *, struct buf *);
@@ -238,7 +242,7 @@ int dm_target_init(void);
 
 /* dm_target_linear.c */
 int dm_target_linear_init(dm_table_entry_t *, int, char **);
-char *dm_target_linear_status(void *);
+char *dm_target_linear_table(void *);
 int dm_target_linear_strategy(dm_table_entry_t *, struct buf *);
 int dm_target_linear_sync(dm_table_entry_t *);
 int dm_target_linear_deps(dm_table_entry_t *, prop_array_t);
@@ -251,7 +255,7 @@ uint64_t atoi(const char *);
 
 /* dm_target_stripe.c */
 int dm_target_stripe_init(dm_table_entry_t *, int, char **);
-char *dm_target_stripe_status(void *);
+char *dm_target_stripe_table(void *);
 int dm_target_stripe_strategy(dm_table_entry_t *, struct buf *);
 int dm_target_stripe_sync(dm_table_entry_t *);
 int dm_target_stripe_deps(dm_table_entry_t *, prop_array_t);

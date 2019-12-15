@@ -1,4 +1,4 @@
-/*        $NetBSD: device-mapper.c,v 1.49 2019/12/11 14:03:37 tkusumi Exp $ */
+/*        $NetBSD: device-mapper.c,v 1.51 2019/12/14 11:20:51 tkusumi Exp $ */
 
 /*
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -110,8 +110,6 @@ const struct dkdriver dmdkdriver = {
 CFATTACH_DECL3_NEW(dm, 0,
      dm_match, dm_attach, dm_detach, NULL, NULL, NULL,
      DVF_DETACH_SHUTDOWN);
-
-extern uint32_t dm_dev_counter;
 
 /*
  * This structure is used to translate command sent to kernel driver in
@@ -282,7 +280,7 @@ dm_detach(device_t self, int flags)
 	disk_destroy(dmv->diskp);
 
 	/* Destroy device */
-	(void)dm_dev_free(dmv);
+	dm_dev_free(dmv);
 
 	/* Decrement device counter After removing device */
 	atomic_dec_32(&dm_dev_counter);
@@ -505,9 +503,8 @@ disk_ioctl_switch(dev_t dev, u_long cmd, void *data)
 		 * Call sync target routine for all table entries. Target sync
 		 * routine basically call DIOCCACHESYNC on underlying devices.
 		 */
-		SLIST_FOREACH(table_en, tbl, next) {
-			(void)table_en->target->sync(table_en);
-		}
+		SLIST_FOREACH(table_en, tbl, next)
+			table_en->target->sync(table_en);
 		dm_table_release(&dmv->table_head, DM_TABLE_ACTIVE);
 		dm_dev_unbusy(dmv);
 		break;

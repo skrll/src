@@ -1,4 +1,4 @@
-/* $NetBSD: dm_ioctl.c,v 1.41 2019/12/12 16:28:24 tkusumi Exp $      */
+/* $NetBSD: dm_ioctl.c,v 1.45 2019/12/15 05:56:02 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_ioctl.c,v 1.41 2019/12/12 16:28:24 tkusumi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_ioctl.c,v 1.45 2019/12/15 05:56:02 tkusumi Exp $");
 
 /*
  * Locking is used to synchronise between ioctl calls and between dm_table's
@@ -95,7 +95,6 @@ __KERNEL_RCSID(0, "$NetBSD: dm_ioctl.c,v 1.41 2019/12/12 16:28:24 tkusumi Exp $"
 #include "dm.h"
 
 static uint32_t sc_minor_num;
-extern const struct dkdriver dmdkdriver;
 uint32_t dm_dev_counter;
 
 /* Generic cf_data for device-mapper driver */
@@ -117,14 +116,14 @@ static struct cfdata dm_cfdata = {
 		prop_dictionary_set_uint32(dm_dict,DM_IOCTL_FLAGS,flag); \
 } while (/*CONSTCOND*/0)
 
-static int dm_dbg_print_flags(int);
+static int dm_dbg_print_flags(uint32_t);
 static int dm_table_init(dm_target_t *, dm_table_entry_t *, char *);
 
 /*
  * Print flags sent to the kernel from libevmapper.
  */
 static int
-dm_dbg_print_flags(int flags)
+dm_dbg_print_flags(uint32_t flags)
 {
 	aprint_debug("dbg_print --- %d\n", flags);
 
@@ -943,17 +942,21 @@ dm_table_status_ioctl(prop_dictionary_t dm_dict)
 		 */
 		prop_dictionary_set_cstring(target_dict, DM_TABLE_PARAMS, "");
 
-		if (flags & DM_STATUS_TABLE_FLAG) {
-			params = table_en->target->status
-			    (table_en->target_config);
+		if (flags & DM_STATUS_TABLE_FLAG)
+			params = table_en->target->table(
+			    table_en->target_config);
+		else if (table_en->target->info)
+			params = table_en->target->info(
+			    table_en->target_config);
+		else
+			params = NULL;
 
-			if (params != NULL) {
-				prop_dictionary_set_cstring(target_dict,
-				    DM_TABLE_PARAMS, params);
-
-				kmem_free(params, DM_MAX_PARAMS_SIZE);
-			}
+		if (params != NULL) {
+			prop_dictionary_set_cstring(target_dict,
+			    DM_TABLE_PARAMS, params);
+			kmem_free(params, DM_MAX_PARAMS_SIZE);
 		}
+
 		prop_array_add(cmd_array, target_dict);
 		prop_object_release(target_dict);
 	}

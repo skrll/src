@@ -1,4 +1,4 @@
-/*        $NetBSD: dm_target.c,v 1.26 2019/12/08 10:35:53 tkusumi Exp $      */
+/*        $NetBSD: dm_target.c,v 1.29 2019/12/15 05:56:02 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_target.c,v 1.26 2019/12/08 10:35:53 tkusumi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_target.c,v 1.29 2019/12/15 05:56:02 tkusumi Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -87,7 +87,7 @@ dm_target_autoload(const char *dm_target_name)
 		gen = module_gen;
 
 		/* Try to autoload target module */
-		(void)module_autoload(name, MODULE_CLASS_MISC);
+		module_autoload(name, MODULE_CLASS_MISC);
 	} while (gen != module_gen);
 
 	mutex_enter(&dm_target_mutex);
@@ -156,14 +156,38 @@ dm_target_insert(dm_target_t *dm_target)
 	dm_target_t *dmt;
 
 	/* Sanity check for any missing function */
-	KASSERT(dm_target->init != NULL);
-	KASSERT(dm_target->status != NULL);
-	KASSERT(dm_target->strategy != NULL);
-	KASSERT(dm_target->deps != NULL);
-	KASSERT(dm_target->destroy != NULL);
-	KASSERT(dm_target->upcall != NULL);
-	KASSERT(dm_target->sync != NULL);
-	KASSERT(dm_target->secsize != NULL);
+	if (dm_target->init == NULL) {
+		printf("%s missing init\n", dm_target->name);
+		return EINVAL;
+	}
+	if (dm_target->table == NULL) {
+		printf("%s missing table\n", dm_target->name);
+		return EINVAL;
+	}
+	if (dm_target->strategy == NULL) {
+		printf("%s missing strategy\n", dm_target->name);
+		return EINVAL;
+	}
+	if (dm_target->deps == NULL) {
+		printf("%s missing deps\n", dm_target->name);
+		return EINVAL;
+	}
+	if (dm_target->destroy == NULL) {
+		printf("%s missing destroy\n", dm_target->name);
+		return EINVAL;
+	}
+	if (dm_target->upcall == NULL) {
+		printf("%s missing upcall\n", dm_target->name);
+		return EINVAL;
+	}
+	if (dm_target->sync == NULL) {
+		printf("%s missing sync\n", dm_target->name);
+		return EINVAL;
+	}
+	if (dm_target->secsize == NULL) {
+		printf("%s missing secsize\n", dm_target->name);
+		return EINVAL;
+	}
 
 	mutex_enter(&dm_target_mutex);
 
@@ -204,7 +228,7 @@ dm_target_rem(const char *dm_target_name)
 
 	mutex_exit(&dm_target_mutex);
 
-	(void)kmem_free(dmt, sizeof(dm_target_t));
+	kmem_free(dmt, sizeof(dm_target_t));
 
 	return 0;
 }
@@ -223,7 +247,7 @@ dm_target_destroy(void)
 
 	while ((dm_target = TAILQ_FIRST(&dm_target_list)) != NULL) {
 		TAILQ_REMOVE(&dm_target_list, dm_target, dm_target_next);
-		(void)kmem_free(dm_target, sizeof(dm_target_t));
+		kmem_free(dm_target, sizeof(dm_target_t));
 	}
 	KASSERT(TAILQ_EMPTY(&dm_target_list));
 
@@ -307,7 +331,7 @@ dm_target_init(void)
 	dmt->version[1] = 0;
 	dmt->version[2] = 2;
 	dmt->init = &dm_target_linear_init;
-	dmt->status = &dm_target_linear_status;
+	dmt->table = &dm_target_linear_table;
 	dmt->strategy = &dm_target_linear_strategy;
 	dmt->sync = &dm_target_linear_sync;
 	dmt->deps = &dm_target_linear_deps;
@@ -321,7 +345,7 @@ dm_target_init(void)
 	dmt3->version[1] = 0;
 	dmt3->version[2] = 3;
 	dmt3->init = &dm_target_stripe_init;
-	dmt3->status = &dm_target_stripe_status;
+	dmt3->table = &dm_target_stripe_table;
 	dmt3->strategy = &dm_target_stripe_strategy;
 	dmt3->sync = &dm_target_stripe_sync;
 	dmt3->deps = &dm_target_stripe_deps;

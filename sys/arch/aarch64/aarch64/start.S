@@ -1,4 +1,4 @@
-/*	$NetBSD: start.S,v 1.3 2019/12/04 11:24:31 jmcneill Exp $	*/
+/*	$NetBSD: start.S,v 1.5 2019/12/14 17:24:30 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -32,7 +32,7 @@
 
 #include <aarch64/asm.h>
 
-RCSID("$NetBSD: start.S,v 1.3 2019/12/04 11:24:31 jmcneill Exp $")
+RCSID("$NetBSD: start.S,v 1.5 2019/12/14 17:24:30 skrll Exp $")
 
 /* load far effective address (pc relative) */
 .macro	ADDR, reg, addr
