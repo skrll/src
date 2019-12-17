@@ -1,4 +1,4 @@
-/*        $NetBSD: dm.h,v 1.42 2019/12/15 05:56:02 tkusumi Exp $      */
+/*        $NetBSD: dm.h,v 1.48 2019/12/16 15:59:04 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,14 +29,12 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _DM_DEV_H_
-#define _DM_DEV_H_
-
+#ifndef _DM_H_
+#define _DM_H_
 
 #ifdef _KERNEL
 
 #include <sys/errno.h>
-
 #include <sys/atomic.h>
 #include <sys/fcntl.h>
 #include <sys/condvar.h>
@@ -45,7 +43,6 @@
 #include <sys/rwlock.h>
 #include <sys/queue.h>
 #include <sys/vnode.h>
-
 #include <sys/device.h>
 #include <sys/disk.h>
 #include <sys/disklabel.h>
@@ -72,7 +69,6 @@ extern uint32_t dm_dev_counter;
  * A device mapper table is a list of physical ranges plus the mapping target
  * applied to them.
  */
-
 typedef struct dm_table_entry {
 	struct dm_dev *dm_dev;		/* backlink */
 	uint64_t start;
@@ -90,10 +86,10 @@ typedef struct dm_table dm_table_t;
 typedef struct dm_table_head {
 	/* Current active table is selected with this. */
 	int cur_active_table;
-	struct dm_table tables[2];
+	dm_table_t tables[2];
 
 	kmutex_t   table_mtx;
-	kcondvar_t table_cv; /*IO waiting cv */
+	kcondvar_t table_cv; /* I/O waiting cv */
 
 	uint32_t io_cnt;
 } dm_table_head_t;
@@ -105,13 +101,12 @@ typedef struct dm_table_head {
  * I need this because devices can be opened only once, but I can
  * have more than one device on one partition.
  */
-
 typedef struct dm_pdev {
 	char name[MAX_DEV_NAME];
 
 	struct vnode *pdev_vnode;
 	uint64_t pdev_numsec;
-	unsigned pdev_secsize;
+	unsigned int pdev_secsize;
 	int ref_cnt; /* reference counter for users ofthis pdev */
 
 	SLIST_ENTRY(dm_pdev) next_pdev;
@@ -150,13 +145,7 @@ typedef struct dm_dev {
 	TAILQ_ENTRY(dm_dev) next_devlist; /* Major device list. */
 } dm_dev_t;
 
-/* for zero, error : dm_target->target_config == NULL */
-
-/*
- * Target config is initiated with target_init function.
- */
-
-/* for linear : */
+/* For linear target. */
 typedef struct target_linear_config {
 	dm_pdev_t *pdev;
 	uint64_t offset;
@@ -182,7 +171,7 @@ typedef struct dm_target {
 	/* Destroy target_config area */
 	int (*destroy)(dm_table_entry_t *);
 
-	int (*deps) (dm_table_entry_t *, prop_array_t);
+	int (*deps)(dm_table_entry_t *, prop_array_t);
 	/*
 	 * Info/table routine are called to get params string, which is target
 	 * specific. When dm_table_status_ioctl is called with flag
@@ -191,9 +180,12 @@ typedef struct dm_target {
 	char *(*info)(void *);
 	char *(*table)(void *);
 	int (*strategy)(dm_table_entry_t *, struct buf *);
-	int (*sync)(dm_table_entry_t *);
 	int (*upcall)(dm_table_entry_t *, struct buf *);
-	int (*secsize)(dm_table_entry_t *, unsigned *);
+	/*
+	 * Optional routines.
+	 */
+	int (*sync)(dm_table_entry_t *);
+	int (*secsize)(dm_table_entry_t *, unsigned int *);
 
 	uint32_t version[3];
 	uint32_t ref_cnt;
@@ -202,10 +194,11 @@ typedef struct dm_target {
 	TAILQ_ENTRY(dm_target) dm_target_next;
 } dm_target_t;
 
-/* Interface structures */
-
 /* device-mapper */
 void dmgetproperties(struct disk *, dm_table_head_t *);
+
+/* Generic function used to convert char to string */
+uint64_t atoi64(const char *);
 
 /* dm_ioctl.c */
 int dm_dev_create_ioctl(prop_dictionary_t);
@@ -234,8 +227,6 @@ dm_target_t* dm_target_lookup(const char *);
 int dm_target_rem(const char *);
 void dm_target_unbusy(dm_target_t *);
 void dm_target_busy(dm_target_t *);
-
-/* XXX temporally add */
 int dm_target_init(void);
 
 #define DM_MAX_PARAMS_SIZE 1024
@@ -248,10 +239,7 @@ int dm_target_linear_sync(dm_table_entry_t *);
 int dm_target_linear_deps(dm_table_entry_t *, prop_array_t);
 int dm_target_linear_destroy(dm_table_entry_t *);
 int dm_target_linear_upcall(dm_table_entry_t *, struct buf *);
-int dm_target_linear_secsize(dm_table_entry_t *, unsigned *);
-
-/* Generic function used to convert char to string */
-uint64_t atoi(const char *);
+int dm_target_linear_secsize(dm_table_entry_t *, unsigned int *);
 
 /* dm_target_stripe.c */
 int dm_target_stripe_init(dm_table_entry_t *, int, char **);
@@ -261,7 +249,23 @@ int dm_target_stripe_sync(dm_table_entry_t *);
 int dm_target_stripe_deps(dm_table_entry_t *, prop_array_t);
 int dm_target_stripe_destroy(dm_table_entry_t *);
 int dm_target_stripe_upcall(dm_table_entry_t *, struct buf *);
-int dm_target_stripe_secsize(dm_table_entry_t *, unsigned *);
+int dm_target_stripe_secsize(dm_table_entry_t *, unsigned int *);
+
+/* dm_target_error.c */
+int dm_target_error_init(dm_table_entry_t*, int, char **);
+char *dm_target_error_table(void *);
+int dm_target_error_strategy(dm_table_entry_t *, struct buf *);
+int dm_target_error_deps(dm_table_entry_t *, prop_array_t);
+int dm_target_error_destroy(dm_table_entry_t *);
+int dm_target_error_upcall(dm_table_entry_t *, struct buf *);
+
+/* dm_target_zero.c */
+int dm_target_zero_init(dm_table_entry_t *, int, char **);
+char *dm_target_zero_table(void *);
+int dm_target_zero_strategy(dm_table_entry_t *, struct buf *);
+int dm_target_zero_destroy(dm_table_entry_t *);
+int dm_target_zero_deps(dm_table_entry_t *, prop_array_t);
+int dm_target_zero_upcall(dm_table_entry_t *, struct buf *);
 
 /* dm_table.c  */
 #define DM_TABLE_ACTIVE 0
@@ -270,7 +274,7 @@ int dm_target_stripe_secsize(dm_table_entry_t *, unsigned *);
 int dm_table_destroy(dm_table_head_t *, uint8_t);
 uint64_t dm_table_size(dm_table_head_t *);
 uint64_t dm_inactive_table_size(dm_table_head_t *);
-void dm_table_disksize(dm_table_head_t *, uint64_t *, unsigned *);
+void dm_table_disksize(dm_table_head_t *, uint64_t *, unsigned int *);
 dm_table_t *dm_table_get_entry(dm_table_head_t *, uint8_t);
 int dm_table_get_target_count(dm_table_head_t *, uint8_t);
 void dm_table_release(dm_table_head_t *, uint8_t s);
@@ -298,13 +302,6 @@ int dm_pdev_destroy(void);
 int dm_pdev_init(void);
 dm_pdev_t* dm_pdev_insert(const char *);
 
-/* XXX dummy */
-static __inline int
-dm_target_dummy_secsize(dm_table_entry_t *table_en, unsigned *secsizep)
-{
-	return 0;
-}
-
 #endif /*_KERNEL*/
 
-#endif /*_DM_DEV_H_*/
+#endif /*_DM_H_*/

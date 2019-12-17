@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_page.c,v 1.202 2019/12/14 17:28:58 ad Exp $	*/
+/*	$NetBSD: uvm_page.c,v 1.205 2019/12/16 22:47:55 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.202 2019/12/14 17:28:58 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.205 2019/12/16 22:47:55 ad Exp $");
 
 #include "opt_ddb.h"
 #include "opt_uvm.h"
@@ -167,15 +167,12 @@ static void uvm_pageremove(struct uvm_object *, struct vm_page *);
  */
 
 static inline void
-uvm_pageinsert_list(struct uvm_object *uobj, struct vm_page *pg,
-    struct vm_page *where)
+uvm_pageinsert_object(struct uvm_object *uobj, struct vm_page *pg)
 {
 
 	KASSERT(uobj == pg->uobject);
 	KASSERT(mutex_owned(uobj->vmobjlock));
 	KASSERT((pg->flags & PG_TABLED) == 0);
-	KASSERT(where == NULL || (where->flags & PG_TABLED));
-	KASSERT(where == NULL || (where->uobject == uobj));
 
 	if (UVM_OBJ_IS_VNODE(uobj)) {
 		if (uobj->uo_npages == 0) {
@@ -184,18 +181,13 @@ uvm_pageinsert_list(struct uvm_object *uobj, struct vm_page *pg,
 			vholdl(vp);
 		}
 		if (UVM_OBJ_IS_VTEXT(uobj)) {
-			atomic_inc_uint(&uvmexp.execpages);
+			cpu_count(CPU_COUNT_EXECPAGES, 1);
 		} else {
-			atomic_inc_uint(&uvmexp.filepages);
+			cpu_count(CPU_COUNT_FILEPAGES, 1);
 		}
 	} else if (UVM_OBJ_IS_AOBJ(uobj)) {
-		atomic_inc_uint(&uvmexp.anonpages);
+		cpu_count(CPU_COUNT_ANONPAGES, 1);
 	}
-
-	if (where)
-		TAILQ_INSERT_AFTER(&uobj->memq, where, pg, listq.queue);
-	else
-		TAILQ_INSERT_TAIL(&uobj->memq, pg, listq.queue);
 	pg->flags |= PG_TABLED;
 	uobj->uo_npages++;
 }
@@ -225,7 +217,7 @@ uvm_pageinsert(struct uvm_object *uobj, struct vm_page *pg)
 		KASSERT(error == ENOMEM);
 		return error;
 	}
-	uvm_pageinsert_list(uobj, pg, NULL);
+	uvm_pageinsert_object(uobj, pg);
 	return error;
 }
 
@@ -236,7 +228,7 @@ uvm_pageinsert(struct uvm_object *uobj, struct vm_page *pg)
  */
 
 static inline void
-uvm_pageremove_list(struct uvm_object *uobj, struct vm_page *pg)
+uvm_pageremove_object(struct uvm_object *uobj, struct vm_page *pg)
 {
 
 	KASSERT(uobj == pg->uobject);
@@ -250,17 +242,16 @@ uvm_pageremove_list(struct uvm_object *uobj, struct vm_page *pg)
 			holdrelel(vp);
 		}
 		if (UVM_OBJ_IS_VTEXT(uobj)) {
-			atomic_dec_uint(&uvmexp.execpages);
+			cpu_count(CPU_COUNT_EXECPAGES, -1);
 		} else {
-			atomic_dec_uint(&uvmexp.filepages);
+			cpu_count(CPU_COUNT_FILEPAGES, -1);
 		}
 	} else if (UVM_OBJ_IS_AOBJ(uobj)) {
-		atomic_dec_uint(&uvmexp.anonpages);
+		cpu_count(CPU_COUNT_ANONPAGES, -1);
 	}
 
 	/* object should be locked */
 	uobj->uo_npages--;
-	TAILQ_REMOVE(&uobj->memq, pg, listq.queue);
 	pg->flags &= ~PG_TABLED;
 	pg->uobject = NULL;
 }
@@ -280,7 +271,7 @@ uvm_pageremove(struct uvm_object *uobj, struct vm_page *pg)
 
 	KDASSERT(uobj != NULL);
 	KASSERT(uobj == pg->uobject);
-	uvm_pageremove_list(uobj, pg);
+	uvm_pageremove_object(uobj, pg);
 	uvm_pageremove_tree(uobj, pg);
 }
 
@@ -814,7 +805,7 @@ uvm_pagealloc_pgfl(struct uvm_cpu *ucpu, int flist, int try1, int try2,
 			KASSERT(try1 == PGFL_UNKNOWN || (pg->flags & PG_ZERO));
 			KASSERT(ucpu == VM_FREE_PAGE_TO_CPU(pg));
 			VM_FREE_PAGE_TO_CPU(pg)->pages[try1]--;
-		    	uvmexp.cpuhit++;
+		    	CPU_COUNT(CPU_COUNT_CPUHIT, 1);
 			goto gotit;
 		}
 		/* global, try1 */
@@ -825,7 +816,7 @@ uvm_pagealloc_pgfl(struct uvm_cpu *ucpu, int flist, int try1, int try2,
 			KASSERT(try1 == PGFL_UNKNOWN || (pg->flags & PG_ZERO));
 			KASSERT(ucpu != VM_FREE_PAGE_TO_CPU(pg));
 			VM_FREE_PAGE_TO_CPU(pg)->pages[try1]--;
-		    	uvmexp.cpumiss++;
+		    	CPU_COUNT(CPU_COUNT_CPUMISS, 1);
 			goto gotit;
 		}
 		/* cpu, try2 */
@@ -836,7 +827,7 @@ uvm_pagealloc_pgfl(struct uvm_cpu *ucpu, int flist, int try1, int try2,
 			KASSERT(try2 == PGFL_UNKNOWN || (pg->flags & PG_ZERO));
 			KASSERT(ucpu == VM_FREE_PAGE_TO_CPU(pg));
 			VM_FREE_PAGE_TO_CPU(pg)->pages[try2]--;
-		    	uvmexp.cpuhit++;
+		    	CPU_COUNT(CPU_COUNT_CPUHIT, 1);
 			goto gotit;
 		}
 		/* global, try2 */
@@ -847,7 +838,7 @@ uvm_pagealloc_pgfl(struct uvm_cpu *ucpu, int flist, int try1, int try2,
 			KASSERT(try2 == PGFL_UNKNOWN || (pg->flags & PG_ZERO));
 			KASSERT(ucpu != VM_FREE_PAGE_TO_CPU(pg));
 			VM_FREE_PAGE_TO_CPU(pg)->pages[try2]--;
-		    	uvmexp.cpumiss++;
+		    	CPU_COUNT(CPU_COUNT_CPUMISS, 1);
 			goto gotit;
 		}
 		color = (color + 1) & uvmexp.colormask;
@@ -862,12 +853,12 @@ uvm_pagealloc_pgfl(struct uvm_cpu *ucpu, int flist, int try1, int try2,
 
 	/* update zero'd page count */
 	if (pg->flags & PG_ZERO)
-		uvmexp.zeropages--;
+	    	CPU_COUNT(CPU_COUNT_ZEROPAGES, -1);
 
 	if (color == trycolor)
-		uvmexp.colorhit++;
+	    	CPU_COUNT(CPU_COUNT_COLORHIT, 1);
 	else {
-		uvmexp.colormiss++;
+	    	CPU_COUNT(CPU_COUNT_COLORMISS, 1);
 		*trycolorp = color;
 	}
 
@@ -1018,10 +1009,10 @@ uvm_pagealloc_strat(struct uvm_object *obj, voff_t off, struct vm_anon *anon,
 
 	if (flags & UVM_PGA_ZERO) {
 		if (pg->flags & PG_ZERO) {
-			uvmexp.pga_zerohit++;
+		    	CPU_COUNT(CPU_COUNT_PGA_ZEROHIT, 1);
 			zeroit = 0;
 		} else {
-			uvmexp.pga_zeromiss++;
+		    	CPU_COUNT(CPU_COUNT_PGA_ZEROMISS, 1);
 			zeroit = 1;
 		}
 		if (ucpu->pages[PGFL_ZEROS] < ucpu->pages[PGFL_UNKNOWN]) {
@@ -1050,7 +1041,7 @@ uvm_pagealloc_strat(struct uvm_object *obj, voff_t off, struct vm_anon *anon,
 	if (anon) {
 		anon->an_page = pg;
 		pg->flags |= PG_ANON;
-		atomic_inc_uint(&uvmexp.anonpages);
+		cpu_count(CPU_COUNT_ANONPAGES, 1);
 	} else if (obj) {
 		error = uvm_pageinsert(obj, pg);
 		if (error != 0) {
@@ -1105,8 +1096,8 @@ uvm_pagereplace(struct vm_page *oldpg, struct vm_page *newpg)
 
 	uvm_pageremove_tree(uobj, oldpg);
 	uvm_pageinsert_tree(uobj, newpg);
-	uvm_pageinsert_list(uobj, newpg, oldpg);
-	uvm_pageremove_list(uobj, oldpg);
+	uvm_pageinsert_object(uobj, newpg);
+	uvm_pageremove_object(uobj, oldpg);
 }
 
 /*
@@ -1132,9 +1123,10 @@ uvm_pagerealloc(struct vm_page *pg, struct uvm_object *newobj, voff_t newoff)
 	 */
 
 	if (newobj) {
-		pg->uobject = newobj;
-		pg->offset = newoff;
-		uvm_pageinsert(newobj, pg);
+		/*
+		 * XXX we have no in-tree users of this functionality
+		 */
+		panic("uvm_pagerealloc: no impl");
 	}
 }
 
@@ -1232,7 +1224,7 @@ uvm_pagefree(struct vm_page *pg)
 				pg->loan_count--;
 			} else {
 				pg->flags &= ~PG_ANON;
- 				atomic_dec_uint(&uvmexp.anonpages);
+				cpu_count(CPU_COUNT_ANONPAGES, -1);
 			}
 			pg->uanon->an_page = NULL;
 			pg->uanon = NULL;
@@ -1268,7 +1260,7 @@ uvm_pagefree(struct vm_page *pg)
 	} else if (pg->uanon != NULL) {
 		pg->uanon->an_page = NULL;
 		pg->uanon = NULL;
-		atomic_dec_uint(&uvmexp.anonpages);
+		cpu_count(CPU_COUNT_ANONPAGES, -1);
 	}
 
 	/*
@@ -1316,7 +1308,7 @@ uvm_pagefree(struct vm_page *pg)
 	LIST_INSERT_HEAD(pgfl, pg, pageq.list);
 	uvmexp.free++;
 	if (iszero) {
-		uvmexp.zeropages++;
+	    	CPU_COUNT(CPU_COUNT_ZEROPAGES, 1);
 	}
 
 	/* per-cpu list */
@@ -1496,7 +1488,7 @@ uvm_pageidlezero(void)
 					    PGFL_UNKNOWN], pg, listq.list);
 					ucpu->pages[PGFL_UNKNOWN]++;
 					uvmexp.free++;
-					uvmexp.zeroaborts++;
+				    	CPU_COUNT(CPU_COUNT_ZEROABORTS, 1);
 					goto quit;
 				}
 #else
@@ -1517,7 +1509,7 @@ uvm_pageidlezero(void)
 				    pg, listq.list);
 				ucpu->pages[PGFL_ZEROS]++;
 				uvmexp.free++;
-				uvmexp.zeropages++;
+			    	CPU_COUNT(CPU_COUNT_ZEROPAGES, 1);
 			}
 		}
 		if (ucpu->pages[PGFL_UNKNOWN] < uvmexp.ncolors) {
@@ -1542,7 +1534,7 @@ uvm_pagelookup(struct uvm_object *obj, voff_t off)
 {
 	struct vm_page *pg;
 
-	KASSERT(mutex_owned(obj->vmobjlock));
+	/* No - used from DDB. KASSERT(mutex_owned(obj->vmobjlock)); */
 
 	pg = radix_tree_lookup_node(&obj->uo_pages, off >> PAGE_SHIFT);
 
@@ -1841,11 +1833,7 @@ uvm_page_printit(struct vm_page *pg, bool full,
 			uobj = pg->uobject;
 			if (uobj) {
 				(*pr)("  checking object list\n");
-				TAILQ_FOREACH(tpg, &uobj->memq, listq.queue) {
-					if (tpg == pg) {
-						break;
-					}
-				}
+				tpg = uvm_pagelookup(uobj, pg->offset);
 				if (tpg)
 					(*pr)("  page found on object list\n");
 				else

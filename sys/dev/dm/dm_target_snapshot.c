@@ -1,4 +1,4 @@
-/*        $NetBSD: dm_target_snapshot.c,v 1.32 2019/12/15 05:56:02 tkusumi Exp $      */
+/*        $NetBSD: dm_target_snapshot.c,v 1.36 2019/12/15 16:14:27 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_target_snapshot.c,v 1.32 2019/12/15 05:56:02 tkusumi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_target_snapshot.c,v 1.36 2019/12/15 16:14:27 tkusumi Exp $");
 
 /*
  * 1. Suspend my_data to temporarily stop any I/O while the snapshot is being
@@ -80,7 +80,6 @@ __KERNEL_RCSID(0, "$NetBSD: dm_target_snapshot.c,v 1.32 2019/12/15 05:56:02 tkus
  */
 #include <sys/types.h>
 #include <sys/param.h>
-
 #include <sys/buf.h>
 #include <sys/kmem.h>
 
@@ -137,9 +136,6 @@ dm_target_snapshot_modcmd(modcmd_t cmd, void *arg)
 	dm_target_t *dmt, *dmt1;
 	int r;
 
-	dmt = NULL;
-	dmt1 = NULL;
-
 	switch (cmd) {
 	case MODULE_CMD_INIT:
 		if (((dmt = dm_target_lookup("snapshot")) != NULL)) {
@@ -163,7 +159,6 @@ dm_target_snapshot_modcmd(modcmd_t cmd, void *arg)
 		dmt->deps = &dm_target_snapshot_deps;
 		dmt->destroy = &dm_target_snapshot_destroy;
 		dmt->upcall = &dm_target_snapshot_upcall;
-		dmt->secsize = dm_target_dummy_secsize;
 
 		r = dm_target_insert(dmt);
 
@@ -177,7 +172,6 @@ dm_target_snapshot_modcmd(modcmd_t cmd, void *arg)
 		dmt1->deps = &dm_target_snapshot_orig_deps;
 		dmt1->destroy = &dm_target_snapshot_orig_destroy;
 		dmt1->upcall = &dm_target_snapshot_orig_upcall;
-		dmt1->secsize = dm_target_dummy_secsize;
 
 		r = dm_target_insert(dmt1);
 		break;
@@ -238,7 +232,7 @@ dm_target_snapshot_init(dm_table_entry_t *table_en, int argc, char **argv)
 			return ENOENT;
 		}
 	}
-	tsc->tsc_chunk_size = atoi(argv[3]);
+	tsc->tsc_chunk_size = atoi64(argv[3]);
 
 	tsc->tsc_snap_dev = dmp_snap;
 	tsc->tsc_cow_dev = dmp_cow;
@@ -308,10 +302,10 @@ dm_target_snapshot_strategy(dm_table_entry_t *table_en, struct buf *bp)
 	return 0;
 }
 
-/* XXX dummy */
 int
 dm_target_snapshot_sync(dm_table_entry_t *table_en)
 {
+
 	return 0;
 }
 
@@ -370,6 +364,7 @@ dm_target_snapshot_deps(dm_table_entry_t *table_en, prop_array_t prop_array)
 int
 dm_target_snapshot_upcall(dm_table_entry_t *table_en, struct buf *bp)
 {
+
 	printf("dm_target_snapshot_upcall called\n");
 
 	printf("upcall buf flags %s %s\n",
@@ -536,5 +531,6 @@ dm_target_snapshot_orig_deps(dm_table_entry_t *table_en,
 int
 dm_target_snapshot_orig_upcall(dm_table_entry_t *table_en, struct buf *bp)
 {
+
 	return 0;
 }
