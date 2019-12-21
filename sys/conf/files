@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1245 2019/12/05 03:22:02 riastradh Exp $
+#	$NetBSD: files,v 1.1247 2019/12/19 00:23:57 jakllsch Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -1489,6 +1489,10 @@ device	dwhdmi: edid, videomode, drmkms, drmkms_i2c
 file	dev/ic/dw_hdmi.c		dwhdmi
 file	dev/ic/dw_hdmi_phy.c		dwhdmi
 
+# Analogix DisplayPort
+device	anxdp: edid, videomode, drmkms, drmkms_i2c
+file	dev/ic/anx_dp.c			anxdp
+
 #
 # File systems
 #
@@ -1539,12 +1543,6 @@ include "net/files.net"
 # Game adapter (joystick)
 device	joy
 file	dev/ic/joy.c			joy needs-flag
-
-# process monitor for make(1)
-# normally built as module
-defpseudo filemon
-file	dev/filemon/filemon.c		filemon
-file	dev/filemon/filemon_wrapper.c	filemon
 
 #
 # General Purpose Input/Output framework

@@ -1,4 +1,4 @@
-/*        $NetBSD: device-mapper.c,v 1.55 2019/12/15 16:14:27 tkusumi Exp $ */
+/*        $NetBSD: device-mapper.c,v 1.57 2019/12/19 15:57:46 tkusumi Exp $ */
 
 /*
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -66,8 +66,7 @@ static int dmdestroy(void);
 static void dm_doinit(void);
 
 static int dm_cmd_to_fun(prop_dictionary_t);
-static int disk_ioctl_switch(dev_t, u_long, void *);
-static int dm_ioctl_switch(u_long);
+static int disk_ioctl_switch(dev_t, unsigned long, void *);
 static void dmminphys(struct buf *);
 
 /* CF attach/detach functions used for power management */
@@ -356,10 +355,15 @@ dmioctl(dev_t dev, const u_long cmd, void *data, int flag, struct lwp *l)
 	if ((r = disk_ioctl_switch(dev, cmd, data)) == ENOTTY) {
 		struct plistref *pref = (struct plistref *)data;
 
-		/* Check if we were called with NETBSD_DM_IOCTL ioctl
-		   otherwise quit. */
-		if ((r = dm_ioctl_switch(cmd)) != 0)
-			return r;
+		switch(cmd) {
+		case NETBSD_DM_IOCTL:
+			aprint_debug("dm NETBSD_DM_IOCTL called\n");
+			break;
+		default:
+			aprint_debug("dm unknown ioctl called\n");
+			return ENOTTY;
+			break; /* NOT REACHED */
+		}
 
 		if ((r = prop_dictionary_copyin_ioctl(pref, cmd, &dm_dict_in))
 		    != 0)
@@ -411,29 +415,11 @@ dm_cmd_to_fun(prop_dictionary_t dm_dict)
 	return cmd_fn[i].fn(dm_dict);
 }
 
-/* Call apropriate ioctl handler function. */
-static int
-dm_ioctl_switch(u_long cmd)
-{
-
-	switch(cmd) {
-	case NETBSD_DM_IOCTL:
-		aprint_debug("dm NETBSD_DM_IOCTL called\n");
-		break;
-	default:
-		aprint_debug("dm unknown ioctl called\n");
-		return ENOTTY;
-		break; /* NOT REACHED */
-	}
-
-	return 0;
-}
-
 /*
  * Check for disk specific ioctls.
  */
 static int
-disk_ioctl_switch(dev_t dev, u_long cmd, void *data)
+disk_ioctl_switch(dev_t dev, unsigned long cmd, void *data)
 {
 	dm_dev_t *dmv;
 
@@ -504,9 +490,8 @@ disk_ioctl_switch(dev_t dev, u_long cmd, void *data)
 	}
 	case DIOCGSECTORSIZE:
 	{
-		u_int *valp = data;
 		uint64_t numsec;
-		unsigned int secsize;
+		unsigned int secsize, *valp = data;
 
 		if ((dmv = dm_dev_lookup(NULL, NULL, minor(dev))) == NULL)
 			return ENODEV;

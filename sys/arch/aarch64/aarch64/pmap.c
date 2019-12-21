@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.53 2019/12/14 13:48:09 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.56 2019/12/19 07:44:56 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.53 2019/12/14 13:48:09 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.56 2019/12/19 07:44:56 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
@@ -194,9 +194,6 @@ struct pv_entry {
 
 #define L3INDEXMASK	(L3_SIZE * Ln_ENTRIES - 1)
 #define PDPSWEEP_TRIGGER	512
-
-void atomic_add_16(volatile uint16_t *, int16_t);
-uint16_t atomic_add_16_nv(volatile uint16_t *, int16_t);
 
 static pt_entry_t *_pmap_pte_lookup_l3(struct pmap *, vaddr_t);
 static pt_entry_t *_pmap_pte_lookup_bs(struct pmap *, vaddr_t, vsize_t *);
@@ -699,8 +696,8 @@ pmap_growkernel(vaddr_t maxkvaddr)
 	UVMHIST_LOG(pmaphist, "maxkvaddr=%llx, pmap_maxkvaddr=%llx",
 	    maxkvaddr, pmap_maxkvaddr, 0, 0);
 
-        kasan_shadow_map((void *)pmap_maxkvaddr,
-          (size_t)(maxkvaddr - pmap_maxkvaddr));
+	kasan_shadow_map((void *)pmap_maxkvaddr,
+	    (size_t)(maxkvaddr - pmap_maxkvaddr));
 
 	pmap_maxkvaddr = maxkvaddr;
 
@@ -1683,10 +1680,6 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 
 	opte = atomic_swap_64(ptep, 0);
 	need_sync_icache = (prot & VM_PROT_EXECUTE);
-
-	if (!user) {
-		kasan_shadow_map((void *)va, PAGE_SIZE);
-	}
 
 	/* for lock ordering for pg and opg */
 	pgs[0] = pg;

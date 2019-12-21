@@ -1,4 +1,4 @@
-/* $NetBSD: dm_ioctl.c,v 1.46 2019/12/15 14:39:42 tkusumi Exp $      */
+/* $NetBSD: dm_ioctl.c,v 1.48 2019/12/21 11:59:03 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_ioctl.c,v 1.46 2019/12/15 14:39:42 tkusumi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_ioctl.c,v 1.48 2019/12/21 11:59:03 tkusumi Exp $");
 
 /*
  * Locking is used to synchronise between ioctl calls and between dm_table's
@@ -103,23 +103,24 @@ static struct cfdata dm_cfdata = {
 	.cf_fstate = FSTATE_STAR,
 	.cf_unit = 0
 };
+
 #define DM_REMOVE_FLAG(flag, name) do {					\
-		prop_dictionary_get_uint32(dm_dict,DM_IOCTL_FLAGS,&flag); \
-		flag &= ~name;						\
-		prop_dictionary_set_uint32(dm_dict,DM_IOCTL_FLAGS,flag); \
+	prop_dictionary_get_uint32(dm_dict,DM_IOCTL_FLAGS,&flag);	\
+	flag &= ~name;							\
+	prop_dictionary_set_uint32(dm_dict,DM_IOCTL_FLAGS,flag);	\
 } while (/*CONSTCOND*/0)
 
 #define DM_ADD_FLAG(flag, name) do {					\
-		prop_dictionary_get_uint32(dm_dict,DM_IOCTL_FLAGS,&flag); \
-		flag |= name;						\
-		prop_dictionary_set_uint32(dm_dict,DM_IOCTL_FLAGS,flag); \
+	prop_dictionary_get_uint32(dm_dict,DM_IOCTL_FLAGS,&flag);	\
+	flag |= name;							\
+	prop_dictionary_set_uint32(dm_dict,DM_IOCTL_FLAGS,flag);	\
 } while (/*CONSTCOND*/0)
 
-static int dm_dbg_print_flags(uint32_t);
+static int dm_table_deps(dm_table_entry_t *, prop_array_t);
 static int dm_table_init(dm_target_t *, dm_table_entry_t *, char *);
 
 /*
- * Print flags sent to the kernel from libevmapper.
+ * Print flags sent to the kernel from libdevmapper.
  */
 static int
 dm_dbg_print_flags(uint32_t flags)
@@ -644,13 +645,43 @@ dm_table_deps_ioctl(prop_dictionary_t dm_dict)
 	tbl = dm_table_get_entry(&dmv->table_head, table_type);
 
 	SLIST_FOREACH(table_en, tbl, next)
-		table_en->target->deps(table_en, cmd_array);
+		dm_table_deps(table_en, cmd_array);
 
 	dm_table_release(&dmv->table_head, table_type);
 	dm_dev_unbusy(dmv);
 
 	prop_dictionary_set(dm_dict, DM_IOCTL_CMD_DATA, cmd_array);
 	prop_object_release(cmd_array);
+
+	return 0;
+}
+
+static int
+dm_table_deps(dm_table_entry_t *table_en, prop_array_t array)
+{
+	dm_mapping_t *map;
+	int i, size;
+	uint64_t rdev, tmp;
+
+	size = prop_array_count(array);
+
+	TAILQ_FOREACH(map, &table_en->pdev_maps, next) {
+		rdev = map->data.pdev->pdev_vnode->v_rdev;
+		for (i = 0; i < size; i++) {
+			if (prop_array_get_uint64(array, i, &tmp) == true)
+				if (rdev == tmp)
+					break; /* exists */
+		}
+		/*
+		 * Ignore if the device has already been added by
+		 * other tables.
+		 */
+		if (i == size) {
+			prop_array_add_uint64(array, rdev);
+			aprint_debug("%s: %d:%d\n", __func__, major(rdev),
+			    minor(rdev));
+		}
+	}
 
 	return 0;
 }
@@ -663,7 +694,6 @@ dm_table_deps_ioctl(prop_dictionary_t dm_dict)
  *
  * Load table to inactive slot table are switched in dm_device_resume_ioctl.
  * This simulates Linux behaviour better there should not be any difference.
- *
  */
 int
 dm_table_load_ioctl(prop_dictionary_t dm_dict)
@@ -747,6 +777,7 @@ dm_table_load_ioctl(prop_dictionary_t dm_dict)
 		table_en->target = target;
 		table_en->dm_dev = dmv;
 		table_en->target_config = NULL;
+		TAILQ_INIT(&table_en->pdev_maps);
 
 		/*
 		 * There is a parameter string after dm_target_spec
@@ -967,7 +998,7 @@ dm_table_status_ioctl(prop_dictionary_t dm_dict)
 int
 dm_check_version(prop_dictionary_t dm_dict)
 {
-	size_t i;
+	int i;
 	uint32_t dm_version[3];
 	prop_array_t ver;
 

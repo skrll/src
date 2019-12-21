@@ -1,4 +1,4 @@
-/*	$NetBSD: identcpu.c,v 1.98 2019/10/29 12:39:46 maxv Exp $	*/
+/*	$NetBSD: identcpu.c,v 1.100 2019/12/21 12:53:54 ad Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.98 2019/10/29 12:39:46 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.100 2019/12/21 12:53:54 ad Exp $");
 
 #include "opt_xen.h"
 
@@ -1002,8 +1002,8 @@ cpu_identify(struct cpu_info *ci)
 	if (ci->ci_signature != 0)
 		aprint_normal(", id 0x%x", ci->ci_signature);
 	aprint_normal("\n");
-	aprint_normal_dev(ci->ci_dev, "package %lu, core %lu, smt %lu\n",
-	    ci->ci_package_id, ci->ci_core_id, ci->ci_smt_id);
+	aprint_normal_dev(ci->ci_dev, "node %u, package %u, core %u, smt %u\n",
+	    ci->ci_numa_id, ci->ci_package_id, ci->ci_core_id, ci->ci_smt_id);
 	if (cpu_brand_string[0] == '\0') {
 		strlcpy(cpu_brand_string, cpu_getmodel(),
 		    sizeof(cpu_brand_string));
