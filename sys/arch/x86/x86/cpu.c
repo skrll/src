@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.173 2019/10/12 06:31:04 maxv Exp $	*/
+/*	$NetBSD: cpu.c,v 1.179 2019/12/20 21:05:34 ad Exp $	*/
 
 /*
  * Copyright (c) 2000-2012 NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.173 2019/10/12 06:31:04 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.179 2019/12/20 21:05:34 ad Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */
@@ -72,6 +72,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.173 2019/10/12 06:31:04 maxv Exp $");
 
 #include "lapic.h"
 #include "ioapic.h"
+#include "acpica.h"
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -82,6 +83,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.173 2019/10/12 06:31:04 maxv Exp $");
 #include <sys/idle.h>
 #include <sys/atomic.h>
 #include <sys/reboot.h>
+#include <sys/csan.h>
 
 #include <uvm/uvm.h>
 
@@ -105,6 +107,10 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.173 2019/10/12 06:31:04 maxv Exp $");
 
 #include <x86/fpu.h>
 
+#if NACPICA > 0
+#include <dev/acpi/acpi_srat.h>
+#endif
+
 #if NLAPIC > 0
 #include <machine/apicvar.h>
 #include <machine/i82489reg.h>
@@ -116,6 +122,13 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.173 2019/10/12 06:31:04 maxv Exp $");
 #include <dev/isa/isareg.h>
 
 #include "tsc.h"
+
+#ifndef XEN
+#include "hyperv.h"
+#if NHYPERV > 0
+#include <x86/x86/hypervvar.h>
+#endif
+#endif
 
 static int	cpu_match(device_t, cfdata_t, void *);
 static void	cpu_attach(device_t, device_t, void *);
@@ -375,6 +388,7 @@ cpu_attach(device_t parent, device_t self, void *aux)
 	ci->ci_acpiid = caa->cpu_id;
 	ci->ci_cpuid = caa->cpu_number;
 	ci->ci_func = caa->cpu_func;
+	ci->ci_kfpu_spl = -1;
 	aprint_normal("\n");
 
 	/* Must be before mi_cpu_attach(). */
@@ -395,6 +409,10 @@ cpu_attach(device_t parent, device_t self, void *aux)
 		cpu_init_tss(ci);
 	} else {
 		KASSERT(ci->ci_data.cpu_idlelwp != NULL);
+#if NACPICA > 0
+		/* Parse out NUMA info for cpu_identify(). */
+		acpisrat_init();
+#endif
 	}
 
 #ifdef SVS
@@ -429,6 +447,7 @@ cpu_attach(device_t parent, device_t self, void *aux)
 #endif
 		/* Make sure DELAY() is initialized. */
 		DELAY(1);
+		kcsan_cpu_init(ci);
 		again = true;
 	}
 
@@ -696,6 +715,11 @@ cpu_boot_secondary_processors(void)
 	x86_patch(false);
 #endif
 
+#if NACPICA > 0
+	/* Finished with NUMA info for now. */
+	acpisrat_exit();
+#endif
+
 	kcpuset_create(&cpus, true);
 	kcpuset_set(cpus, cpu_index(curcpu()));
 	for (i = 0; i < maxcpus; i++) {
@@ -721,7 +745,7 @@ cpu_boot_secondary_processors(void)
 	tsc_tc_init();
 
 	/* Enable zeroing of pages in the idle loop if we have SSE2. */
-	vm_page_zero_enable = ((cpu_feature[0] & CPUID_SSE2) != 0);
+	vm_page_zero_enable = false; /* ((cpu_feature[0] & CPUID_SSE2) != 0); */
 }
 #endif
 
@@ -860,6 +884,9 @@ cpu_hatch(void *v)
 	cpu_init_msrs(ci, true);
 	cpu_probe(ci);
 	cpu_speculation_init(ci);
+#if NHYPERV > 0
+	hyperv_init_cpu(ci);
+#endif
 
 	ci->ci_data.cpu_cc_freq = cpu_info_primary.ci_data.cpu_cc_freq;
 	/* cpu_get_tsc_freq(ci); */
@@ -960,6 +987,8 @@ cpu_hatch(void *v)
 	x86_errata();
 
 	aprint_debug_dev(ci->ci_dev, "running\n");
+
+	kcsan_cpu_init(ci);
 
 	idle_loop(NULL);
 	KASSERT(false);
@@ -1344,11 +1373,12 @@ cpu_broadcast_halt(void)
 }
 
 /*
- * Send a dummy ipi to a cpu to force it to run splraise()/spllower()
+ * Send a dummy ipi to a cpu to force it to run splraise()/spllower(),
+ * and trigger an AST on the running LWP.
  */
 
 void
 cpu_kick(struct cpu_info *ci)
 {
-	x86_send_ipi(ci, 0);
+	x86_send_ipi(ci, X86_IPI_AST);
 }

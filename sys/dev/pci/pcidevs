@@ -1,4 +1,4 @@
-$NetBSD: pcidevs,v 1.1389 2019/10/29 16:31:48 msaitoh Exp $
+$NetBSD: pcidevs,v 1.1393 2019/12/18 01:13:55 msaitoh Exp $
 
 /*
  * Copyright (c) 1995, 1996 Christopher G. Demetriou
@@ -1030,6 +1030,11 @@ product AMD F17_7X_IOMMU	0x1481	Family17h/7xh IOMMU
 product AMD F17_7X_RESV_SPP	0x1485	Family17h/7xh Reserved SPP
 product AMD F17_7X_USB3		0x149c	Family17h/7xh USB 3.0 Host Controller
 product AMD F14_RC		0x1510	Family14h Root Complex
+product AMD F14_PCIE_1		0x1512	Family14h PCIe
+product AMD F14_PCIE_2		0x1513	Family14h PCIe
+product AMD F14_PCIE_3		0x1514	Family14h PCIe
+product AMD F14_PCIE_4		0x1515	Family14h PCIe
+product AMD F14_PCIE_5		0x1516	Family14h PCIe
 product AMD F16_HT		0x1530	Family16h HyperTransport Configuration
 product AMD F16_ADDR		0x1531	Family16h Address Map Configuration
 product AMD F16_DRAM		0x1532	Family16h DRAM Configuration
@@ -1711,7 +1716,7 @@ product ATI RADEON_RS300_7834	0x7834	Radeon 9100 PRO IGP
 product ATI RADEON_RS300_7835	0x7835	Radeon 9200 IGP
 product ATI RS690_HB_7910	0x7910	RS690 Host Bridge
 product ATI RS690_HB_7911	0x7911	RS740 Host Bridge
-product ATI RS690_PPB_7912	0x7912	RS690 GFX Bridge
+product ATI RS690_PPB_7912	0x7912	RS690 GFX Bridge 
 product ATI RS690_PPB_7913	0x7913	RS690 PCI Express Bridge GFX
 product ATI RS690_PPB_7914	0x7914	RS690 PCI Express Bridge GPP Port A
 product ATI RS690_PPB_7915	0x7915	RS690 PCI Express Bridge GPP Port B
@@ -2513,6 +2518,7 @@ product DLINK DL4000		0x4000	DL-4000 Gigabit Ethernet
 product DLINK DGE550SX		0x4001	DGE-550SX
 product DLINK DFE520TX		0x4200	DFE-520TX 10/100 Ethernet
 product DLINK DGE528T		0x4300	DGE-528T Gigabit Ethernet
+product DLINK DGE530T_C1	0x4302	DGE-530T C1
 product DLINK DGE560T		0x4b00	DGE-560T Gigabit Ethernet
 product DLINK DGE560T_2		0x4b01	DGE-560T_2 Gigabit Ethernet
 product DLINK DGE560SX		0x4b02	DGE-560SX
@@ -2798,9 +2804,9 @@ product MARVELL MV64460		0x6480	MV6446x System Controller
 product MARVELL MV6707		0x6707	MV6707 SoC Armada 370
 product MARVELL MV6710		0x6710	MV6710 SoC Armada 370
 product MARVELL MV6W11		0x6711	MV6W11 SoC Armada 370
-product MARVELL 88F6810         0x6810  88F6810 SoC Armada 38x
-product MARVELL 88F6820         0x6820  88F6820 SoC Armada 38x
-product MARVELL 88F6828         0x6828  88F6828 SoC Armada 38x
+product MARVELL 88F6810         0x6810  88F6810 SoC Armada 38x 
+product MARVELL 88F6820         0x6820  88F6820 SoC Armada 38x 
+product MARVELL 88F6828         0x6828  88F6828 SoC Armada 38x 
 product MARVELL 88SX7042	0x7042	88SX7042 SATA IIe
 product MARVELL MV78100		0x7810	MV78100 SoC Discovery Innovation
 product MARVELL MV78130		0x7813	MV78130 SoC Armada XP
@@ -3117,7 +3123,7 @@ product INTEL X1000_HS_UART	0x0936	Quark X1000 HS-UART
 product INTEL X1000_MAC		0x0937	Quark X1000 10/100 Ethernet MAC
 product INTEL X1000_EHCI	0x0939	Quark X1000 EHCI
 product INTEL X1000_OHCI	0x093a	Quark X1000 OHCI
-product INTEL PCIE_NVME_SSD	0x0953	PCIe NVMe SSD
+product INTEL PCIE_NVME_SSD	0x0953	750 or DC P3[567]00 SSD
 product INTEL X1000_HB		0x0958	Quark X1000 Host Bridge
 product INTEL WIFI_LINK_7265_1	0x095a	Dual Band Wireless AC 7265
 product INTEL WIFI_LINK_7265_2	0x095b	Dual Band Wireless AC 7265
@@ -3142,6 +3148,8 @@ product INTEL CORE4G_S_ULT_GT3	0x0a2a	HD Graphics
 product INTEL CORE4G_R_ULT_GT3_1 0x0a2b	HD Graphics
 product INTEL CORE4G_R_ULT_GT3_2 0x0a2e	Iris Graphics 5100
 product INTEL DC_P3520_SSD	0x0a53	SSD DC P3520
+product INTEL DC_P4500_SSD	0x0a54	SSD DC P4500
+product INTEL DC_P4600_SSD	0x0a55	SSD DC P4600
 product INTEL HASWELL_HOST_DRAM	0x0c00	Haswell Host Bridge, DRAM
 product INTEL HASWELL_PCIE16	0x0c01	Haswell PCI-E x16 Controller
 product INTEL HASWELL_PCIE8	0x0c05	Haswell PCI-E x8 Controller
@@ -4425,7 +4433,7 @@ product INTEL XE5_V3_QDT_CH1	0x2f21	Xeon E5 v3 QDT DMA Channel 1
 product INTEL XE5_V3_QDT_CH2	0x2f22	Xeon E5 v3 QDT DMA Channel 2
 product INTEL XE5_V3_QDT_CH3	0x2f23	Xeon E5 v3 QDT DMA Channel 3
 product INTEL XE5_V3_QDT_CH4	0x2f24	Xeon E5 v3 QDT DMA Channel 4
-product INTEL XE5_V3_QDT_CH5	0x2f25	Xeon E5 v3 QDT DMA Channel 5
+product INTEL XE5_V3_QDT_CH5	0x2f25	Xeon E5 v3 QDT DMA Channel 5 
 product INTEL XE5_V3_QDT_CH6	0x2f26	Xeon E5 v3 QDT DMA Channel 6
 product INTEL XE5_V3_QDT_CH7	0x2f27	Xeon E5 v3 QDT DMA Channel 7
 product INTEL XE5_V3_IIO_AM	0x2f28	Xeon E5 v3 Address Map, VTd, SMM
@@ -4944,6 +4952,9 @@ product INTEL APL_P2SB		0x5a92	Apollo Lake Primary to SideBand Bridge
 product INTEL APL_PMC		0x5a94	Apollo Lake PMC
 product INTEL APL_FASTSPI	0x5a96	Apollo Lake Fast SPI
 product INTEL APL_HDA		0x5a98	Apollo Lake HD Audio
+product INTEL APL_TXE_HECI_1	0x5a9a	Apollo Lake TXE HECI1
+product INTEL APL_TXE_HECI_2	0x5a9c	Apollo Lake TXE HECI2
+product INTEL APL_TXE_HECI_3	0x5a9e	Apollo Lake TXE HECI3
 product INTEL APL_ISH		0x5aa2	Apollo Lake Integrated Sensor Hub
 product INTEL APL_XHCI		0x5aa8	Apollo Lake USB Host (xHCI)
 product INTEL APL_XDCI		0x5aaa	Apollo Lake USB Device (xDCI)
@@ -4989,6 +5000,7 @@ product INTEL XEOND_PCIE_9	0x6f0a	Core i7-6xxxK/Xeon-D PCIe Root Port (x16, x8 o
 product INTEL XEOND_PCIE_10	0x6f0b	Core i7-6xxxK/Xeon-D PCIe Root Port (x16, x8 or x4 max)
 product INTEL XEOND_PCIE_NTBNTB	0x6f0d	Xeon-D PCIe Root Port NTB-NTB
 product INTEL XEOND_PCIE_NTBRP	0x6f0e	Xeon-D PCIe Root Port NTB-RP
+product INTEL XEOND_PCIE_NTB2ND	0x6f0f	Xeon-D PCIe Root Port NTB-secondary
 product INTEL XEOND_IIO_DEBUG_0	0x6f10	Xeon-D IIO Debug
 product INTEL XEOND_IIO_DEBUG_1	0x6f11	Xeon-D IIO Debug
 product INTEL XEOND_IIO_DEBUG_2	0x6f12	Xeon-D IIO Debug
@@ -5005,7 +5017,15 @@ product INTEL XEOND_IIO_DEBUG_12 0x6f1c	Xeon-D IIO Debug
 product INTEL XEOND_R2_0	0x6f1d	Xeon-D R2 PCIe Agent
 product INTEL XEOND_UBOX_0	0x6f1e	Core i7-6xxxK/Xeon-D Ubox
 product INTEL XEOND_UBOX_1	0x6f1f	Core i7-6xxxK/Xeon-D Ubox
-product INTEL XEOND_ADDRMAP	0x6f28	Core i7-6xxxK/Xeon-D IIO Address Map, VTD_Misc, System Management
+product INTEL XEONDNS_QD_0	0x6f20	Xeon-D NS QuickData DMA Channel 0
+product INTEL XEONDNS_QD_1	0x6f21	Xeon-D NS QuickData DMA Channel 1
+product INTEL XEONDNS_QD_2	0x6f22	Xeon-D NS QuickData DMA Channel 2
+product INTEL XEONDNS_QD_3	0x6f23	Xeon-D NS QuickData DMA Channel 3
+product INTEL XEONDNS_QD_4	0x6f24	Xeon-D NS QuickData DMA Channel 4
+product INTEL XEONDNS_QD_5	0x6f25	Xeon-D NS QuickData DMA Channel 5
+product INTEL XEONDNS_QD_6	0x6f26	Xeon-D NS QuickData DMA Channel 6
+product INTEL XEONDNS_QD_7	0x6f27	Xeon-D NS QuickData DMA Channel 7
+product INTEL XEONDNS_ADDRMAP	0x6f28	Core i7-6xxxK/Xeon-D IIO Address Map, VTD_Misc, System Management
 product INTEL XEOND_HOTPLUG	0x6f29	Xeon-D IIO Hot Plug
 product INTEL XEOND_RAS		0x6f2a	Core i7-6xxxK/Xeon-D IIO RAS, Control Status, Global Errors
 product INTEL XEOND_IOAPIC_2	0x6f2c	Core i7-6xxxK/Xeon-D I/O APIC
@@ -5960,6 +5980,9 @@ product MYRICOM MYRINET	0x8043	Myrinet
 /* Myson-Century Technology products */
 product MYSON MTD803	0x0803	MTD803 3-in-1 Fast Ethernet Controller
 
+/* Ncube products */
+product NCUBE TG3648	0x8168	TP-Link TG-3468 v2 Gigabit Ethernet
+
 /* National Datacomm products */
 product NDC NCP130		0x0130 NCP130 Wireless NIC
 product NDC NCP130A2		0x0131 NCP130 rev A2 Wireless NIC
@@ -6134,7 +6157,7 @@ product	SYMBIOS	SAS3324_9		0x00c8	SAS3324
 product	SYMBIOS	SAS3324_10		0x00c9	SAS3324
 product SYMBIOS MEGARAID_320X		0x0407	LSI Megaraid SCSI 320-X
 product SYMBIOS MEGARAID_320E		0x0408	LSI Megaraid SCSI 320-E
-product SYMBIOS MEGARAID_300X		0x0409	LSI Megaraid SATA (300-6X/300-8X)
+product SYMBIOS MEGARAID_300X		0x0409	LSI Megaraid SATA (300-6X/300-8X) 
 product SYMBIOS MEGARAID_SAS		0x0411	MegaRAID SAS
 product SYMBIOS MEGARAID_VERDE_ZCR	0x0413	MegaRAID Verde ZCR
 product SYMBIOS FC909			0x0620	FC909
@@ -7002,7 +7025,7 @@ product RALINK	RT5390_2	0x5392	RT5390
 product RALINK	RT5390_3	0x539a	RT5390
 product RALINK	RT5390_4	0x539b	RT5390
 product RALINK	RT5390_5	0x539f	RT5390
-
+	
 /* RATOC Systems products */
 product RATOC	REXPCI31	0x0853	REX PCI-31/33 SCSI
 
@@ -7091,7 +7114,7 @@ product RNS FDDI	0x2200	2200 FDDI
 
 /* Rockchip products */
 product ROCKCHIP RK3399_RC	0x0100	RK3399 Root Complex
-
+ 
 /* S2io products */
 product S2IO XFRAME	0x5831	Xframe 10 Gigabit Ethernet Adapter
 product S2IO XFRAME2	0x5832	Xframe2 10 Gigabit Ethernet Adapter
@@ -7480,7 +7503,7 @@ product TI	PCI72111FW	0x8032	PCI7x21/7x11 IEEE 1394 Host Controller
 product TI	PCI72111FM	0x8033	PCI7x21/7x11 Integrated FlashMedia Controller
 product TI	PCI72111SD	0x8034	PCI7x21/7x11 SD Card Controller
 product TI	PCI72111SM	0x8035	PCI7x21/7x11 SM Card Controller
-product TI	PCI6515A	0x8036	PCI6515A Cardbus Controller
+product TI	PCI6515A	0x8036	PCI6515A Cardbus Controller 
 product TI	PCI6515ASM	0x8038	PCI6515A Cardbus Controller (Smart Card mode)
 product TI	PCIXX12CB	0x8039	PCIXX12 Cardbus Controller
 product TI	PCIXX12FW	0x803a	PCIXX12 IEEE 1394 Host Controller
@@ -7776,7 +7799,7 @@ product VIATECH VT8377CEAGP	0xb198	VT8377CE CPU-AGP Bridge
 product VIATECH VT3237_PPB	0xb999	K8T890 North / VT8237 South PCI-PCI Bridge
 product VIATECH K8T890_PPB_C238	0xc238	K8T890 PCI-PCI Bridge
 product VIATECH P4M900_PPB_2	0xc364	CN896/P4M900 PCI-PCI Bridge
-product VIATECH K8T890_PPB_D238	0xd238	K8T890 PCI-PCI Bridge
+product VIATECH K8T890_PPB_D238	0xd238	K8T890 PCI-PCI Bridge 
 product VIATECH K8T890_PPB_E238	0xe238	K8T890 PCI-PCI Bridge
 product VIATECH K8T890_PPB_F238	0xf238	K8T890 PCI-PCI Bridge
 

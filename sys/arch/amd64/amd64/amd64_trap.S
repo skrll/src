@@ -1,4 +1,4 @@
-/*	$NetBSD: amd64_trap.S,v 1.49 2019/10/12 06:31:03 maxv Exp $	*/
+/*	$NetBSD: amd64_trap.S,v 1.51 2019/12/07 10:19:35 maxv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2008, 2017 The NetBSD Foundation, Inc.
@@ -224,6 +224,7 @@ IDTVEC(trap01)
 	cld
 	SMAP_ENABLE
 	IBRS_ENTER
+	KMSAN_ENTER
 	movw	%gs,TF_GS(%rsp)
 	movw	%fs,TF_FS(%rsp)
 	movw	%es,TF_ES(%rsp)
@@ -267,6 +268,7 @@ IDTVEC(trap02)
 	movw	%ds,TF_DS(%rsp)
 
 	SVS_ENTER_NMI
+	KMSAN_ENTER
 
 	movl	$MSR_GSBASE,%ecx
 	rdmsr
@@ -292,6 +294,7 @@ IDTVEC(trap02)
 	IBRS_LEAVE
 1:
 
+	KMSAN_LEAVE
 	SVS_LEAVE_NMI
 	INTR_RESTORE_GPRS
 	addq	$TF_REGSIZE+16,%rsp
@@ -668,6 +671,7 @@ calltrap:
 	movl	$T_ASTFLT,TF_TRAPNO(%rsp)
 	movq	%rsp,%rdi
 	incq	CPUVAR(NTRAP)
+	KMSAN_INIT_ARG(8)
 	call	_C_LABEL(trap)
 	jmp	.Lalltraps_checkast	/* re-check ASTs */
 3:	CHECK_DEFERRED_SWITCH
@@ -690,13 +694,8 @@ calltrap:
 	STI(si)
 	movabsq	$4f,%rdi
 	movl	CPUVAR(ILEVEL),%esi
-	movl	%ebx,%edx
-	xorq	%rax,%rax
-	call	_C_LABEL(printf)
-	movl	%ebx,%edi
-	call	_C_LABEL(spllower)
-	jmp	.Lalltraps_checkast
-4:	.asciz	"WARNING: SPL NOT LOWERED ON TRAP EXIT %x %x\n"
+	call	_C_LABEL(panic)
+4:	.asciz	"spl not lowered on trap exit, ilevel=%x"
 #endif
 END(alltraps)
 

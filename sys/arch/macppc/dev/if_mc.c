@@ -1,4 +1,4 @@
-/*	$NetBSD: if_mc.c,v 1.24 2019/04/25 10:08:45 msaitoh Exp $	*/
+/*	$NetBSD: if_mc.c,v 1.26 2019/12/05 06:28:20 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1997 David Huang <khym@bga.com>
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mc.c,v 1.24 2019/04/25 10:08:45 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mc.c,v 1.26 2019/12/05 06:28:20 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>

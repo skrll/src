@@ -1,4 +1,4 @@
-/*	$NetBSD: compat_stub.h,v 1.19 2019/09/27 00:32:03 pgoyette Exp $	*/
+/*	$NetBSD: compat_stub.h,v 1.22 2019/11/20 19:37:54 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -35,6 +35,7 @@
 #include <sys/module_hook.h>
 #include <sys/param.h>
 #include <sys/socket.h>
+#include <sys/sigtypes.h>
 
 /*
  * NOTE: If you make changes here, please remember to update the
@@ -357,4 +358,27 @@ struct reg;
 MODULE_HOOK(netbsd32_machine32_hook, const char *, (void));
 MODULE_HOOK(netbsd32_reg_validate_hook, int,
     (struct lwp *, const struct reg *));
+
+/*
+ * Hook for compat_16 sendsig_sigcontext
+ */
+struct ksiginfo;
+MODULE_HOOK(sendsig_sigcontext_16_hook, void,
+    (const struct ksiginfo *, const sigset_t *));
+
+/*
+ * Hooks for coredumps
+ */
+
+struct uvm_coredump_state;
+MODULE_HOOK(coredump_hook, int, (struct lwp *, const char *));
+MODULE_HOOK(coredump_offset_hook, off_t, (struct coredump_iostate *));
+MODULE_HOOK(coredump_write_hook, int,
+    (struct coredump_iostate *, enum uio_seg, const void *, size_t));
+MODULE_HOOK(coredump_netbsd_hook, int,
+    (struct lwp *, struct coredump_iostate *));
+MODULE_HOOK(uvm_coredump_walkmap_hook, int,
+    (struct proc *, int (*)(struct uvm_coredump_state *), void *));
+MODULE_HOOK(uvm_coredump_count_segs_hook, int, (struct proc *));
+
 #endif	/* _SYS_COMPAT_STUB_H */

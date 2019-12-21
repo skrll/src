@@ -1,7 +1,7 @@
-/*	$NetBSD: kern_softint.c,v 1.48 2019/10/06 15:11:17 uwe Exp $	*/
+/*	$NetBSD: kern_softint.c,v 1.56 2019/12/16 22:47:54 ad Exp $	*/
 
 /*-
- * Copyright (c) 2007, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 2007, 2008, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -170,7 +170,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_softint.c,v 1.48 2019/10/06 15:11:17 uwe Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_softint.c,v 1.56 2019/12/16 22:47:54 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -182,7 +182,6 @@ __KERNEL_RCSID(0, "$NetBSD: kern_softint.c,v 1.48 2019/10/06 15:11:17 uwe Exp $"
 #include <sys/evcnt.h>
 #include <sys/cpu.h>
 #include <sys/xcall.h>
-#include <sys/pserialize.h>
 
 #include <net/netisr.h>
 
@@ -608,11 +607,7 @@ softint_execute(softint_t *si, lwp_t *l, int s)
 		KERNEL_UNLOCK_ONE(l);
 	}
 
-	/*
-	 * Unlocked, but only for statistics.
-	 * Should be per-CPU to prevent cache ping-pong.
-	 */
-	curcpu()->ci_data.cpu_nsoft++;
+	CPU_COUNT(CPU_COUNT_NSOFT, 1);
 
 	KASSERT(si->si_cpu == curcpu());
 	KASSERT(si->si_lwp->l_wchan == NULL);
@@ -661,19 +656,20 @@ schednetisr(int isr)
 void
 softint_init_md(lwp_t *l, u_int level, uintptr_t *machdep)
 {
+	struct proc *p;
 	softint_t *si;
 
 	*machdep = (1 << level);
 	si = l->l_private;
+	p = l->l_proc;
 
-	lwp_lock(l);
-	lwp_unlock_to(l, l->l_cpu->ci_schedstate.spc_mutex);
+	mutex_enter(p->p_lock);
 	lwp_lock(l);
 	/* Cheat and make the KASSERT in softint_thread() happy. */
 	si->si_active = 1;
-	l->l_stat = LSRUN;
-	sched_enqueue(l, false);
-	lwp_unlock(l);
+	setrunnable(l);
+	/* LWP now unlocked */
+	mutex_exit(p->p_lock);
 }
 
 /*
@@ -688,11 +684,12 @@ softint_trigger(uintptr_t machdep)
 	struct cpu_info *ci;
 	lwp_t *l;
 
-	l = curlwp;
-	ci = l->l_cpu;
+	ci = curcpu();
 	ci->ci_data.cpu_softints |= machdep;
+	l = ci->ci_onproc;
 	if (l == ci->ci_data.cpu_idlelwp) {
-		cpu_need_resched(ci, 0);
+		atomic_or_uint(&ci->ci_want_resched,
+		    RESCHED_IDLE | RESCHED_UPREEMPT);
 	} else {
 		/* MI equivalent of aston() */
 		cpu_signotify(l);
@@ -728,6 +725,7 @@ softint_thread(void *cookie)
 
 		lwp_lock(l);
 		l->l_stat = LSIDL;
+		spc_lock(l->l_cpu);
 		mi_switch(l);
 	}
 }
@@ -866,23 +864,22 @@ softint_dispatch(lwp_t *pinned, int s)
 	timing = (softint_timing ? LP_TIMEINTR : 0);
 	l->l_switchto = pinned;
 	l->l_stat = LSONPROC;
-	l->l_pflag |= (LP_RUNNING | timing);
 
 	/*
 	 * Dispatch the interrupt.  If softints are being timed, charge
 	 * for it.
 	 */
-	if (timing)
+	if (timing) {
 		binuptime(&l->l_stime);
+		membar_producer();	/* for calcru */
+	}
+	l->l_pflag |= (LP_RUNNING | timing);
 	softint_execute(si, l, s);
 	if (timing) {
 		binuptime(&now);
 		updatertime(l, &now);
 		l->l_pflag &= ~LP_TIMEINTR;
 	}
-
-	/* Indicate a soft-interrupt switch. */
-	pserialize_switchpoint();
 
 	/*
 	 * If we blocked while handling the interrupt, the pinned LWP is

@@ -1,4 +1,4 @@
-/*	$NetBSD: intr.c,v 1.121 2019/03/01 02:33:55 macallan Exp $ */
+/*	$NetBSD: intr.c,v 1.123 2019/12/03 15:20:59 riastradh Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.121 2019/03/01 02:33:55 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.123 2019/12/03 15:20:59 riastradh Exp $");
 
 #include "opt_multiprocessor.h"
 #include "opt_sparc_arch.h"
@@ -889,11 +889,17 @@ intr_biglock_wrapper(void *vp)
 bool
 cpu_intr_p(void)
 {
+	uint64_t ncsw;
 	int idepth;
+	lwp_t *l;
 
-	kpreempt_disable();
-	idepth = curcpu()->ci_idepth;
-	kpreempt_enable();
+	l = curlwp;
+	do {
+		ncsw = l->l_ncsw;
+		__insn_barrier();
+		idepth = l->l_cpu->ci_idepth;
+		__insn_barrier();
+	} while (__predict_false(ncsw != l->l_ncsw));
 
 	return idepth != 0;
 }

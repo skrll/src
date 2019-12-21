@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.c,v 1.7 2019/10/01 18:00:07 chs Exp $	*/
+/*	$NetBSD: cpufunc.c,v 1.12 2019/12/20 21:05:33 ad Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -29,13 +29,13 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.7 2019/10/01 18:00:07 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.12 2019/12/20 21:05:33 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/kmem.h>
+#include <sys/cpu.h>
 
-#include <aarch64/cpu.h>
 #include <aarch64/cpufunc.h>
 
 u_int cputype;			/* compat arm */
@@ -49,6 +49,7 @@ u_int aarch64_cache_prefer_mask;
 /* cache info per cluster. the same cluster has the same cache configuration? */
 #define MAXCPUPACKAGES	MAXCPUS		/* maximum of ci->ci_package_id */
 static struct aarch64_cache_info *aarch64_cacheinfo[MAXCPUPACKAGES];
+static struct aarch64_cache_info aarch64_cacheinfo0[MAX_CACHE_LEVEL];
 
 
 static void
@@ -88,27 +89,51 @@ extract_cacheunit(int level, bool insn, int cachetype,
 }
 
 void
-aarch64_getcacheinfo(void)
+aarch64_gettopology(struct cpu_info * const ci, uint64_t mpidr)
 {
+
+	if (mpidr & MPIDR_MT) {
+		cpu_topology_set(ci,
+		    __SHIFTOUT(mpidr, MPIDR_AFF2),
+		    __SHIFTOUT(mpidr, MPIDR_AFF1),
+		    __SHIFTOUT(mpidr, MPIDR_AFF0),
+		    0);
+	} else {
+		cpu_topology_set(ci,
+		    __SHIFTOUT(mpidr, MPIDR_AFF1),
+		    __SHIFTOUT(mpidr, MPIDR_AFF0),
+		    0,
+		    0);
+	}
+}
+
+void
+aarch64_getcacheinfo(int unit)
+{
+	struct cpu_info * const ci = curcpu();
 	uint32_t clidr, ctr;
 	int level, cachetype;
-	struct aarch64_cache_info *cinfo;
+	struct aarch64_cache_info *cinfo = NULL;
 
 	if (cputype == 0)
 		cputype = aarch64_cpuid();
 
 	/* already extract about this cluster? */
-	KASSERT(curcpu()->ci_package_id < MAXCPUPACKAGES);
-	cinfo = aarch64_cacheinfo[curcpu()->ci_package_id];
+	KASSERT(ci->ci_package_id < MAXCPUPACKAGES);
+	cinfo = aarch64_cacheinfo[ci->ci_package_id];
 	if (cinfo != NULL) {
-		curcpu()->ci_cacheinfo = cinfo;
+		ci->ci_cacheinfo = cinfo;
 		return;
 	}
 
-	cinfo = aarch64_cacheinfo[curcpu()->ci_package_id] =
-	    kmem_zalloc(sizeof(struct aarch64_cache_info) * MAX_CACHE_LEVEL,
-	    KM_SLEEP);
-	curcpu()->ci_cacheinfo = cinfo;
+	/* Need static buffer for the boot CPU */
+	if (unit == 0)
+		cinfo = aarch64_cacheinfo0;
+	else
+		cinfo = kmem_zalloc(sizeof(struct aarch64_cache_info)
+		    * MAX_CACHE_LEVEL, KM_SLEEP);
+	aarch64_cacheinfo[ci->ci_package_id] = cinfo;
+	ci->ci_cacheinfo = cinfo;
 
 
 	/*

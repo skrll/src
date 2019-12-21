@@ -1,4 +1,4 @@
-/*	$NetBSD: biosdisk.c,v 1.52 2019/09/13 02:19:46 manu Exp $	*/
+/*	$NetBSD: biosdisk.c,v 1.54 2019/12/17 01:37:53 manu Exp $	*/
 
 /*
  * Copyright (c) 1996, 1998
@@ -908,7 +908,8 @@ biosdisk_probe(void)
 				first = 0;
 			}
 #ifndef NO_GPT
-			if (d->part[part].part_name != NULL)
+			if (d->part[part].part_name &&
+			    d->part[part].part_name[0])
 				printf(" NAME=%s(", d->part[part].part_name);
 			else
 #endif
@@ -987,7 +988,8 @@ next_disk:
 				first = 0;
 			}
 #ifndef NO_GPT
-			if (d->part[part].part_name != NULL)
+			if (d->part[part].part_name &&
+			    d->part[part].part_name[0])
 				printf(" NAME=%s(", d->part[part].part_name);
 			else
 #endif
@@ -1095,7 +1097,9 @@ biosdisk_findpartition(int biosdev, daddr_t sector,
 
 		*partition = boot_part;
 #ifndef NO_GPT
-		if (part_name && d->part[boot_part].part_name) {
+		if (part_name &&
+		    d->part[boot_part].part_name &&
+		    d->part[boot_part].part_name[0]) {
 			strlcpy(namebuf, d->part[boot_part].part_name,
 				BIOSDISK_PART_NAME_LEN);
 			*part_name = namebuf;
@@ -1401,9 +1405,9 @@ next_disk:
 				continue;
 			if (d->part[part].fstype == FS_UNUSED)
 				continue;
-			if (d->part[part].part_name == NULL)
-				continue;
-			if (strcmp(d->part[part].part_name, name) == 0) {
+
+			if (d->part[part].part_name != NULL &&
+			    strcmp(d->part[part].part_name, name) == 0) {
 				*biosdev = raidframe[i].biosdev;
 				*offset = raidframe[i].offset
 					+ RF_PROTECTED_SECTORS

@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_cache.c,v 1.123 2019/09/15 17:37:25 maya Exp $	*/
+/*	$NetBSD: vfs_cache.c,v 1.125 2019/12/01 18:31:19 ad Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_cache.c,v 1.123 2019/09/15 17:37:25 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_cache.c,v 1.125 2019/12/01 18:31:19 ad Exp $");
 
 #define __NAMECACHE_PRIVATE
 #ifdef _KERNEL_OPT

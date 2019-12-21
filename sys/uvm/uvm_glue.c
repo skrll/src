@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_glue.c,v 1.168 2019/05/08 16:00:01 chs Exp $	*/
+/*	$NetBSD: uvm_glue.c,v 1.171 2019/12/16 22:47:55 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -62,12 +62,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_glue.c,v 1.168 2019/05/08 16:00:01 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_glue.c,v 1.171 2019/12/16 22:47:55 ad Exp $");
 
 #include "opt_kgdb.h"
 #include "opt_kstack.h"
 #include "opt_uvmhist.h"
-#include "opt_kasan.h"
 
 /*
  * uvm_glue.c: glue functions
@@ -497,11 +496,13 @@ uvm_scheduler(void)
 	lwp_t *l = curlwp;
 
 	lwp_lock(l);
-	l->l_priority = PRI_VM;
 	l->l_class = SCHED_FIFO;
+	lwp_changepri(l, PRI_VM);
 	lwp_unlock(l);
 
 	for (;;) {
+		/* Update legacy stats for post-mortem debugging. */
+		uvm_update_uvmexp();
 		sched_pstats();
 		(void)kpause("uvm", false, hz, NULL);
 	}

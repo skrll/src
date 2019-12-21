@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_x86_svm.c,v 1.53 2019/10/28 08:30:49 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86_svm.c,v 1.55 2019/12/10 18:06:50 ad Exp $	*/
 
 /*
  * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.53 2019/10/28 08:30:49 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.55 2019/12/10 18:06:50 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -826,7 +826,18 @@ svm_inkernel_handle_cpuid(struct nvmm_cpu *vcpu, uint64_t eax, uint64_t ecx)
 			cpudata->gprs[NVMM_X64_GPR_RDX] = svm_xcr0_mask >> 32;
 			break;
 		case 1:
-			cpudata->vmcb->state.rax &= ~CPUID_PES1_XSAVES;
+			cpudata->vmcb->state.rax &=
+			    (CPUID_PES1_XSAVEOPT | CPUID_PES1_XSAVEC |
+			     CPUID_PES1_XGETBV);
+			cpudata->gprs[NVMM_X64_GPR_RBX] = 0;
+			cpudata->gprs[NVMM_X64_GPR_RCX] = 0;
+			cpudata->gprs[NVMM_X64_GPR_RDX] = 0;
+			break;
+		default:
+			cpudata->vmcb->state.rax = 0;
+			cpudata->gprs[NVMM_X64_GPR_RBX] = 0;
+			cpudata->gprs[NVMM_X64_GPR_RCX] = 0;
+			cpudata->gprs[NVMM_X64_GPR_RDX] = 0;
 			break;
 		}
 		break;
@@ -1478,7 +1489,7 @@ svm_memalloc(paddr_t *pa, vaddr_t *va, size_t npages)
 	    &pglist, 1, 0);
 	if (ret != 0)
 		return ENOMEM;
-	_pa = TAILQ_FIRST(&pglist)->phys_addr;
+	_pa = VM_PAGE_TO_PHYS(TAILQ_FIRST(&pglist));
 	_va = uvm_km_alloc(kernel_map, npages * PAGE_SIZE, 0,
 	    UVM_KMF_VAONLY | UVM_KMF_NOWAIT);
 	if (_va == 0)

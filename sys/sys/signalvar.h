@@ -1,4 +1,4 @@
-/*	$NetBSD: signalvar.h,v 1.97 2019/10/12 19:57:09 kamil Exp $	*/
+/*	$NetBSD: signalvar.h,v 1.100 2019/11/20 19:37:54 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 1991, 1993
@@ -137,6 +137,7 @@ struct coredump_iostate;
  * Machine-independent functions:
  */
 int	coredump_netbsd(struct lwp *, struct coredump_iostate *);
+int	real_coredump_netbsd(struct lwp *, struct coredump_iostate *);
 void	execsigs(struct proc *);
 int	issignal(struct lwp *);
 void	pgsignal(struct pgrp *, int, int);
@@ -200,13 +201,6 @@ void	sendsig_sigcontext(const struct ksiginfo *, const sigset_t *);
 void	sendsig_siginfo(const struct ksiginfo *, const sigset_t *);
 
 extern	struct pool ksiginfo_pool;
-
-/*
- * Modularity / compatibility.
- */
-extern void	(*sendsig_sigcontext_vec)(const struct ksiginfo *,
-					  const sigset_t *);
-extern int	(*coredump_vec)(struct lwp *, const char *);
 
 /*
  * firstsig:

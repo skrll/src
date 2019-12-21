@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_ptrace_common.c,v 1.69 2019/10/16 18:29:49 christos Exp $	*/
+/*	$NetBSD: sys_ptrace_common.c,v 1.73 2019/11/22 05:01:44 rin Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -118,7 +118,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.69 2019/10/16 18:29:49 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.73 2019/11/22 05:01:44 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ptrace.h"
@@ -148,6 +148,7 @@ __KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.69 2019/10/16 18:29:49 chris
 #include <sys/module.h>
 #include <sys/condvar.h>
 #include <sys/mutex.h>
+#include <sys/compat_stub.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -830,8 +831,11 @@ ptrace_regs(struct lwp *l, struct lwp **lt, int rq, struct ptrace_methods *ptm,
     void *addr, size_t data)
 {
 	int error;
-	struct proc *t = (*lt)->l_proc;
+	struct proc *p, *t;
 	struct vmspace *vm;
+
+	p = l->l_proc;		/* tracer */
+	t = (*lt)->l_proc;	/* traced */
 
 	if ((error = ptrace_update_lwp(t, lt, data)) != 0)
 		return error;
@@ -848,7 +852,7 @@ ptrace_regs(struct lwp *l, struct lwp **lt, int rq, struct ptrace_methods *ptm,
 	case_PT_SETREGS
 		if (!process_validregs(*lt))
 			return EINVAL;
-		size = PROC_REGSZ(t);
+		size = PROC_REGSZ(p);
 		func = ptm->ptm_doregs;
 		break;
 #endif
@@ -857,7 +861,7 @@ ptrace_regs(struct lwp *l, struct lwp **lt, int rq, struct ptrace_methods *ptm,
 	case_PT_SETFPREGS
 		if (!process_validfpregs(*lt))
 			return EINVAL;
-		size = PROC_FPREGSZ(t);
+		size = PROC_FPREGSZ(p);
 		func = ptm->ptm_dofpregs;
 		break;
 #endif
@@ -866,7 +870,7 @@ ptrace_regs(struct lwp *l, struct lwp **lt, int rq, struct ptrace_methods *ptm,
 	case_PT_SETDBREGS
 		if (!process_validdbregs(*lt))
 			return EINVAL;
-		size = PROC_DBREGSZ(t);
+		size = PROC_DBREGSZ(p);
 		func = ptm->ptm_dodbregs;
 		break;
 #endif
@@ -958,7 +962,7 @@ ptrace_dumpcore(struct lwp *lt, char *path, size_t len)
 		path[len] = '\0';
 	}
 	DPRINTF(("%s: lwp=%d\n", __func__, lt->l_lid));
-	error = (*coredump_vec)(lt, path);
+	MODULE_HOOK_CALL(coredump_hook, (lt, path), 0, error);
 out:
 	if (path)
 		kmem_free(path, len + 1);
@@ -1634,7 +1638,15 @@ process_auxv_offset(struct proc *p, struct uio *uio)
 	if (pss.ps_envstr == NULL)
 		return EIO;
 
-	uio->uio_offset += (off_t)(vaddr_t)(pss.ps_envstr + pss.ps_nenvstr + 1);
+#ifdef COMPAT_NETBSD32
+	if (p->p_flag & PK_32)
+		uio->uio_offset += (off_t)((vaddr_t)pss.ps_envstr +
+		    sizeof(uint32_t) * (pss.ps_nenvstr + 1));
+	else
+#endif
+		uio->uio_offset += (off_t)(vaddr_t)(pss.ps_envstr +
+		    pss.ps_nenvstr + 1);
+
 #ifdef __MACHINE_STACK_GROWS_UP
 	if (uio->uio_offset < off)
 		return EIO;

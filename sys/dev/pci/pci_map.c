@@ -1,4 +1,4 @@
-/*	$NetBSD: pci_map.c,v 1.37 2019/03/01 05:41:56 msaitoh Exp $	*/
+/*	$NetBSD: pci_map.c,v 1.39 2019/12/02 17:13:13 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci_map.c,v 1.37 2019/03/01 05:41:56 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_map.c,v 1.39 2019/12/02 17:13:13 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -328,7 +328,7 @@ pci_mapreg_submap(const struct pci_attach_args *pa, int reg, pcireg_t type,
 	if (realmaxsize < (offset + reqsize))
 		return 1;
 
-	if (bus_space_map(tag, base, reqsize, busflags | flags, &handle))
+	if (bus_space_map(tag, base, reqsize, busflags, &handle))
 		return 1;
 
 	if (pci_mapreg_map_enable_decode) {

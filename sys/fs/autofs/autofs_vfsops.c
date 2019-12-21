@@ -33,7 +33,7 @@
  *
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autofs_vfsops.c,v 1.4 2018/01/14 22:43:18 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autofs_vfsops.c,v 1.8 2019/11/26 16:17:31 tkusumi Exp $");
 
 
 #include "autofs.h"
@@ -74,6 +74,7 @@ autofs_init(void)
 static void
 autofs_done(void)
 {
+
 	KASSERT(autofs_softc);
 	KASSERT(!autofs_softc->sc_dev_opened);
 
@@ -232,14 +233,14 @@ autofs_unmount(struct mount *mp, int mntflags)
 	mutex_enter(&amp->am_lock);
 	while (!RB_EMPTY(&amp->am_root->an_children)) {
 		struct autofs_node *anp;
+		/*
+		 * Force delete all nodes when more than one level of
+		 * directories are created via indirect map. Autofs doesn't
+		 * support rmdir(2), thus this is the only way to get out.
+		 */
 		anp = RB_MIN(autofs_node_tree, &amp->am_root->an_children);
-		if (!RB_EMPTY(&anp->an_children)) {
-			AUTOFS_DEBUG("%s: %s has children", __func__,
-			    anp->an_name);
-			mutex_exit(&amp->am_lock);
-			return EBUSY;
-		}
-			
+		while (!RB_EMPTY(&anp->an_children))
+			anp = RB_MIN(autofs_node_tree, &anp->an_children);
 		autofs_node_delete(anp);
 	}
 	autofs_node_delete(amp->am_root);
@@ -272,7 +273,7 @@ autofs_root(struct mount *mp, struct vnode **vpp)
 	error = vn_lock(*vpp, LK_EXCLUSIVE);
 	if (error) {
 		vrele(*vpp);
-		*vpp = NULL;
+		*vpp = NULLVP;
 		return error;
 	}
 

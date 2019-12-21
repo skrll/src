@@ -1,3 +1,4 @@
+/*	$NetBSD: ipgphy.c,v 1.8 2019/11/27 10:19:20 msaitoh Exp $ */
 /*	$OpenBSD: ipgphy.c,v 1.19 2015/07/19 06:28:12 yuo Exp $	*/
 
 /*-
@@ -32,7 +33,7 @@
  * Driver for the IC Plus IP1000A/IP1001 10/100/1000 PHY.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ipgphy.c,v 1.1 2019/10/07 11:53:40 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ipgphy.c,v 1.8 2019/11/27 10:19:20 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -60,7 +61,7 @@ CFATTACH_DECL_NEW(ipgphy, sizeof(struct mii_softc),
 
 static int	ipgphy_service(struct mii_softc *, struct mii_data *, int);
 static void	ipgphy_status(struct mii_softc *);
-static int	ipgphy_mii_phy_auto(struct mii_softc *);
+static int	ipgphy_mii_phy_auto(struct mii_softc *, u_int);
 static void	ipgphy_load_dspcode(struct mii_softc *);
 static void	ipgphy_reset(struct mii_softc *);
 
@@ -79,9 +80,9 @@ ipgphy_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct mii_attach_args *ma = aux;
 
-	if (mii_phy_match(ma, ipgphys) != NULL) {
+	if (mii_phy_match(ma, ipgphys) != NULL)
 		return 10;
-	}
+
 	return 0;
 }
 
@@ -108,7 +109,6 @@ ipgphy_attach(device_t parent, device_t self, void *aux)
 	sc->mii_flags = ma->mii_flags;
 
 	sc->mii_flags |= MIIF_NOISOLATE;
-	sc->mii_anegticks = MII_ANEGTICKS_GIGE;
 
 	PHY_RESET(sc);
 
@@ -117,22 +117,19 @@ ipgphy_attach(device_t parent, device_t self, void *aux)
 	//sc->mii_capabilities &= ~BMSR_ANEG;
 	if (sc->mii_capabilities & BMSR_EXTSTAT)
 		PHY_READ(sc, MII_EXTSR, &sc->mii_extcapabilities);
- 
+
 	mii_phy_add_media(sc);
-	aprint_normal("\n");
 }
 
 static int
 ipgphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
-	uint16_t gig, reg, speed;
+	uint16_t reg, speed;
 
 	switch (cmd) {
 	case MII_POLLSTAT:
-		/*
-		 * If we're not polling our PHY instance, just return.
-		 */
+		/* If we're not polling our PHY instance, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
 			return 0;
 		break;
@@ -148,9 +145,7 @@ ipgphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 			return 0;
 		}
 
-		/*
-		 * If the interface is not up, don't do anything.
-		 */
+		/* If the interface is not up, don't do anything. */
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			break;
 
@@ -158,16 +153,13 @@ ipgphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 
 		switch (IFM_SUBTYPE(ife->ifm_media)) {
 		case IFM_AUTO:
-			(void)ipgphy_mii_phy_auto(sc);
-			goto done;
-			break;
-
 		case IFM_1000_T:
 			/*
-			 * XXX
-			 * Manual 1000baseT setting doesn't seem to work.
+			 * This device is required to do auto negotiation
+			 * on 1000BASE-T.
 			 */
-			speed = BMCR_S1000;
+			(void)ipgphy_mii_phy_auto(sc, ife->ifm_media);
+			goto done;
 			break;
 
 		case IFM_100_TX:
@@ -182,46 +174,26 @@ ipgphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 			return EINVAL;
 		}
 
-		if (((ife->ifm_media & IFM_GMASK) & IFM_FDX) != 0) {
+		if ((ife->ifm_media & IFM_FDX) != 0)
 			speed |= BMCR_FDX;
-			gig = GTCR_ADV_1000TFDX;
-		} else
-			gig = GTCR_ADV_1000THDX;
 
 		PHY_WRITE(sc, MII_100T2CR, 0);
 		PHY_WRITE(sc, MII_BMCR, speed);
-
-		if (IFM_SUBTYPE(ife->ifm_media) != IFM_1000_T)
-			break;
-
-		PHY_WRITE(sc, MII_100T2CR, gig);
-		PHY_WRITE(sc, MII_BMCR, speed);
-
-		if (mii->mii_media.ifm_media & IFM_ETH_MASTER)
-			gig |= GTCR_MAN_MS | GTCR_ADV_MS;
-
-		PHY_WRITE(sc, MII_100T2CR, gig);
-
 done:
 		break;
 
 	case MII_TICK:
-		/*
-		 * If we're not currently selected, just return.
-		 */
+		/* If we're not currently selected, just return. */
 		if (IFM_INST(ife->ifm_media) != sc->mii_inst)
 			return 0;
 
-		/*
-		 * Is the interface even up?
-		 */
+		/* Is the interface even up? */
 		if ((mii->mii_ifp->if_flags & IFF_UP) == 0)
 			return 0;
 
-		/*
-		 * Only used for autonegotiation.
-		 */
-		if (IFM_SUBTYPE(ife->ifm_media) != IFM_AUTO) {
+		/* Only used for autonegotiation. */
+		if ((IFM_SUBTYPE(ife->ifm_media) != IFM_AUTO) &&
+		    (IFM_SUBTYPE(ife->ifm_media) != IFM_1000_T)) {
 			sc->mii_ticks = 0;
 			break;
 		}
@@ -247,14 +219,12 @@ done:
 		if (sc->mii_ticks++ == 0)
 			break;
 
-		/*
-		 * Only retry autonegotiation every mii_anegticks seconds.
-		 */
+		/* Only retry autonegotiation every mii_anegticks seconds. */
 		if (sc->mii_ticks <= sc->mii_anegticks)
 			break;
 
 		sc->mii_ticks = 0;
-		ipgphy_mii_phy_auto(sc);
+		ipgphy_mii_phy_auto(sc, ife->ifm_media);
 		break;
 	}
 
@@ -273,12 +243,18 @@ ipgphy_status(struct mii_softc *sc)
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t bmsr, bmcr, stat, gtsr;
 
+	/* For IP1000A, use generic way */
+	if (sc->mii_mpd_model == MII_MODEL_xxICPLUS_IP1000A) {
+		ukphy_status(sc);
+		return;
+	}
+
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
 
 	PHY_READ(sc, MII_BMSR, &bmsr);
 	PHY_READ(sc, MII_BMSR, &bmsr);
-	if (bmsr & BMSR_LINK) 
+	if (bmsr & BMSR_LINK)
 		mii->mii_media_status |= IFM_ACTIVE;
 
 	PHY_READ(sc, MII_BMCR, &bmcr);
@@ -292,52 +268,26 @@ ipgphy_status(struct mii_softc *sc)
 			return;
 		}
 
-		if (sc->mii_mpd_model == MII_MODEL_xxICPLUS_IP1001) {
-			PHY_READ(sc, IPGPHY_LSR, &stat);
-			switch (stat & IPGPHY_LSR_SPEED_MASK) {
-			case IPGPHY_LSR_SPEED_10:
-				mii->mii_media_active |= IFM_10_T;
-				break;
-			case IPGPHY_LSR_SPEED_100:
-				mii->mii_media_active |= IFM_100_TX;
-				break;
-			case IPGPHY_LSR_SPEED_1000:
-				mii->mii_media_active |= IFM_1000_T;
-				break;
-			default:
-				mii->mii_media_active |= IFM_NONE;
-				return;
-			}
-
-			if (stat & IPGPHY_LSR_FULL_DUPLEX)
-				mii->mii_media_active |= IFM_FDX;
-			else
-				mii->mii_media_active |= IFM_HDX;
-		} else {
-			PHY_READ(sc, STGE_PhyCtrl, &stat);
-			switch (PC_LinkSpeed(stat)) {
-			case PC_LinkSpeed_Down:
-				mii->mii_media_active |= IFM_NONE;
-				return;
-			case PC_LinkSpeed_10:
-				mii->mii_media_active |= IFM_10_T;
-				break;
-			case PC_LinkSpeed_100:
-				mii->mii_media_active |= IFM_100_TX;
-				break;
-			case PC_LinkSpeed_1000:
-				mii->mii_media_active |= IFM_1000_T;
-				break;
-			default:
-				mii->mii_media_active |= IFM_NONE;
-				return;
-			}
-
-			if (stat & PC_PhyDuplexStatus)
-				mii->mii_media_active |= IFM_FDX;
-			else
-				mii->mii_media_active |= IFM_HDX;
+		PHY_READ(sc, IPGPHY_LSR, &stat);
+		switch (stat & IPGPHY_LSR_SPEED_MASK) {
+		case IPGPHY_LSR_SPEED_10:
+			mii->mii_media_active |= IFM_10_T;
+			break;
+		case IPGPHY_LSR_SPEED_100:
+			mii->mii_media_active |= IFM_100_TX;
+			break;
+		case IPGPHY_LSR_SPEED_1000:
+			mii->mii_media_active |= IFM_1000_T;
+			break;
+		default:
+			mii->mii_media_active |= IFM_NONE;
+			return;
 		}
+
+		if (stat & IPGPHY_LSR_FULL_DUPLEX)
+			mii->mii_media_active |= IFM_FDX;
+		else
+			mii->mii_media_active |= IFM_HDX;
 
 		if (mii->mii_media_active & IFM_FDX)
 			mii->mii_media_active |= mii_phy_flowstatus(sc);
@@ -352,26 +302,36 @@ ipgphy_status(struct mii_softc *sc)
 }
 
 static int
-ipgphy_mii_phy_auto(struct mii_softc *sc)
+ipgphy_mii_phy_auto(struct mii_softc *sc, u_int media)
 {
 	uint16_t reg = 0;
+	u_int subtype = IFM_SUBTYPE(media);
 
+	/* XXX Is it requreid ? */
 	if (sc->mii_mpd_model == MII_MODEL_xxICPLUS_IP1001) {
 		PHY_READ(sc, MII_ANAR, &reg);
 		reg &= ~(ANAR_PAUSE_SYM | ANAR_PAUSE_ASYM);
 		reg |= ANAR_NP;
 	}
 
-	reg |= ANAR_10 | ANAR_10_FD | ANAR_TX | ANAR_TX_FD;
+	if (subtype == IFM_AUTO)
+		reg |= ANAR_10 | ANAR_10_FD | ANAR_TX | ANAR_TX_FD;
 
 	if (sc->mii_flags & MIIF_DOPAUSE)
 		reg |= ANAR_PAUSE_SYM | ANAR_PAUSE_ASYM;
 
 	PHY_WRITE(sc, MII_ANAR, reg | ANAR_CSMA);
 
-	reg = GTCR_ADV_1000TFDX | GTCR_ADV_1000THDX;
-	if (sc->mii_mpd_model != MII_MODEL_xxICPLUS_IP1001)
-		reg |= GTCR_ADV_MS;
+	if (subtype == IFM_AUTO)
+		reg = GTCR_ADV_1000TFDX | GTCR_ADV_1000THDX;
+	else if (subtype == IFM_1000_T) {
+		if ((media & IFM_FDX) != 0)
+			reg = GTCR_ADV_1000TFDX;
+		else
+			reg = GTCR_ADV_1000THDX;
+	} else
+		reg = 0;
+
 	PHY_WRITE(sc, MII_100T2CR, reg);
 
 	PHY_WRITE(sc, MII_BMCR, BMCR_FDX | BMCR_AUTOEN | BMCR_STARTNEG);
@@ -401,7 +361,7 @@ ipgphy_reset(struct mii_softc *sc)
 
 	mii_phy_reset(sc);
 
-	/* clear autoneg/full-duplex as we don't want it after reset */
+	/* Clear autoneg/full-duplex as we don't want it after reset */
 	PHY_READ(sc, MII_BMCR, &reg);
 	reg &= ~(BMCR_AUTOEN | BMCR_FDX);
 	PHY_WRITE(sc, MII_BMCR, reg);

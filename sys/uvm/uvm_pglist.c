@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_pglist.c,v 1.72 2018/11/13 10:31:01 mrg Exp $	*/
+/*	$NetBSD: uvm_pglist.c,v 1.74 2019/12/16 22:47:55 ad Exp $	*/
 
 /*-
  * Copyright (c) 1997 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_pglist.c,v 1.72 2018/11/13 10:31:01 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_pglist.c,v 1.74 2019/12/16 22:47:55 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -105,10 +105,9 @@ uvm_pglist_add(struct vm_page *pg, struct pglist *rlist)
 	LIST_REMOVE(pg, listq.list);	/* cpu */
 	uvmexp.free--;
 	if (pg->flags & PG_ZERO)
-		uvmexp.zeropages--;
+		CPU_COUNT(CPU_COUNT_ZEROPAGES, -1);
 	VM_FREE_PAGE_TO_CPU(pg)->pages[pgflidx]--;
 	pg->flags = PG_CLEAN;
-	pg->pqflags = 0;
 	pg->uobject = NULL;
 	pg->uanon = NULL;
 	TAILQ_INSERT_TAIL(rlist, pg, pageq.queue);
@@ -574,7 +573,7 @@ uvm_pglistfree(struct pglist *list)
 		KASSERT(!uvmpdpol_pageisqueued_p(pg));
 		TAILQ_REMOVE(list, pg, pageq.queue);
 		iszero = (pg->flags & PG_ZERO);
-		pg->pqflags = PQ_FREE;
+		pg->flags = (pg->flags & PG_ZERO) | PG_FREE;
 #ifdef DEBUG
 		pg->uobject = (void *)0xdeadbeef;
 		pg->uanon = (void *)0xdeadbeef;
@@ -593,7 +592,7 @@ uvm_pglistfree(struct pglist *list)
 		    pgfl_queues[queue], pg, listq.list);
 		uvmexp.free++;
 		if (iszero)
-			uvmexp.zeropages++;
+			CPU_COUNT(CPU_COUNT_ZEROPAGES, 1);
 		ucpu->pages[queue]++;
 		STAT_DECR(uvm_pglistalloc_npages);
 	}

@@ -1,4 +1,4 @@
-/*	$NetBSD: pthread_int.h,v 1.95 2019/03/05 01:35:52 christos Exp $	*/
+/*	$NetBSD: pthread_int.h,v 1.97 2019/12/18 15:11:57 joerg Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002, 2003, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
 #define	PTHREAD_HIDE	/* nothing */
 #endif
 
-#define	PTHREAD__UNPARK_MAX	32
+#define	PTHREAD__UNPARK_MAX	128
 
 /*
  * The size of this structure needs to be no larger than struct
@@ -324,8 +324,5 @@ int	pthread__add_specific(pthread_t, pthread_key_t, const void *) PTHREAD_HIDE;
 #define	RW_READ_COUNT_SHIFT	4
 #define	RW_READ_INCR		(1 << RW_READ_COUNT_SHIFT)
 #define	RW_THREAD		((uintptr_t)-RW_READ_INCR)
-#define	RW_OWNER(rw)		((rw)->rw_owner & RW_THREAD)
-#define	RW_COUNT(rw)		((rw)->rw_owner & RW_THREAD)
-#define	RW_FLAGS(rw)		((rw)->rw_owner & ~RW_THREAD)
 
 #endif /* _LIB_PTHREAD_INT_H */

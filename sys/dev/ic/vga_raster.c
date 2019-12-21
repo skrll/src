@@ -1,4 +1,4 @@
-/*	$NetBSD: vga_raster.c,v 1.44 2015/03/01 07:05:59 mlelstv Exp $	*/
+/*	$NetBSD: vga_raster.c,v 1.46 2019/12/01 14:18:51 ad Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002 Bang Jun-Young
@@ -56,7 +56,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vga_raster.c,v 1.44 2015/03/01 07:05:59 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vga_raster.c,v 1.46 2019/12/01 14:18:51 ad Exp $");
 
 #include "opt_vga.h"
 #include "opt_wsmsgattrs.h" /* for WSDISPLAY_CUSTOM_OUTPUT */
@@ -395,8 +395,10 @@ vga_raster_init(struct vga_config *vc, bus_space_tag_t iot,
 	    &vh->vh_ioh_6845))
 		panic("vga_raster_init: couldn't map 6845 io");
 
-	if (bus_space_map(vh->vh_memt, 0xa0000, 0x20000, 0, &vh->vh_allmemh))
-		panic("vga_raster_init: couldn't map memory");
+	if (bus_space_map(vh->vh_memt, 0xa0000, 0x20000,
+	    BUS_SPACE_MAP_CACHEABLE | BUS_SPACE_MAP_PREFETCHABLE,
+	    &vh->vh_allmemh))
+		panic("vga_init: couldn't map memory");
 
 	if (bus_space_subregion(vh->vh_memt, vh->vh_allmemh, 0, 0x10000,
 	    &vh->vh_memh))
@@ -867,12 +869,7 @@ vga_raster_setup_font(struct vga_config *vc, struct vgascreen *scr)
 	if (wsfont_lock(cookie, &wf))
 		return;
 
-	vf = malloc(sizeof(struct vga_raster_font), M_DEVBUF, M_NOWAIT);
-	if (!vf) {
-		wsfont_unlock(cookie);
-		return;
-	}
-
+	vf = malloc(sizeof(struct vga_raster_font), M_DEVBUF, M_WAITOK);
 	vf->font = wf;
 	scr->encoding = vf->font->encoding;
 	LIST_INSERT_HEAD(&scr->fontset, vf, next);

@@ -1,4 +1,4 @@
-/*	$NetBSD: ptrace.h,v 1.16 2019/06/26 12:30:12 mgorny Exp $	*/
+/*	$NetBSD: ptrace.h,v 1.20 2019/12/02 19:17:27 kamil Exp $	*/
 
 /*
  * Copyright (c) 1993 Christopher G. Demetriou
@@ -34,7 +34,7 @@
 
 #ifdef __x86_64__
 /*
- * i386-dependent ptrace definitions
+ * amd64-dependent ptrace definitions
  */
 #define	PT_STEP			(PT_FIRSTMACH + 0)
 #define	PT_GETREGS		(PT_FIRSTMACH + 1)
@@ -47,6 +47,13 @@
 #define	PT_CLEARSTEP		(PT_FIRSTMACH + 8)
 #define	PT_GETXSTATE		(PT_FIRSTMACH + 9)
 #define	PT_SETXSTATE		(PT_FIRSTMACH + 10)
+#ifdef _KERNEL
+/*
+ * Only used internally for COMPAT_NETBSD32
+ */
+#define	PT_GETXMMREGS		(PT_FIRSTMACH + 11)
+#define	PT_SETXMMREGS		(PT_FIRSTMACH + 12)
+#endif
 
 /* We have machine-dependent process tracing needs. */
 #define	__HAVE_PTRACE_MACHDEP
@@ -62,7 +69,9 @@
 	"PT_SETSTEP", \
 	"PT_CLEARSTEP", \
 	"PT_GETXSTATE", \
-	"PT_SETXSTATE"
+	"PT_SETXSTATE", \
+	"PT_GETXMMREGS", \
+	"PT_SETXMMREGS"
 
 #include <machine/reg.h>
 #define PTRACE_REG_PC(r)	(r)->regs[_REG_RIP]
@@ -85,10 +94,16 @@
  */
 #define	PTRACE_MACHDEP_REQUEST_CASES					\
 	case PT_GETXSTATE:						\
-	case PT_SETXSTATE:
+	case PT_SETXSTATE:						\
+	case PT_GETXMMREGS:						\
+	case PT_SETXMMREGS:
 
 int process_machdep_doxstate(struct lwp *, struct lwp *, struct uio *);
-int process_machdep_validxstate(struct proc *);
+int process_machdep_validfpu(struct proc *);
+
+#include <sys/module_hook.h>
+MODULE_HOOK(netbsd32_process_doxmmregs_hook, int,
+    (struct lwp *, struct lwp *, void *, bool));
 
 #endif /* _KERNEL */
 

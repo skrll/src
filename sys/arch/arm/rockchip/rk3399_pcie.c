@@ -1,4 +1,4 @@
-/* $NetBSD: rk3399_pcie.c,v 1.6 2019/06/23 16:15:43 jmcneill Exp $ */
+/* $NetBSD: rk3399_pcie.c,v 1.8 2019/12/07 16:00:36 jmcneill Exp $ */
 /*
  * Copyright (c) 2018 Mark Kettenis <kettenis@openbsd.org>
  *
@@ -17,7 +17,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: rk3399_pcie.c,v 1.6 2019/06/23 16:15:43 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: rk3399_pcie.c,v 1.8 2019/12/07 16:00:36 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -121,10 +121,10 @@ __KERNEL_RCSID(1, "$NetBSD: rk3399_pcie.c,v 1.6 2019/06/23 16:15:43 jmcneill Exp
 	bus_space_read_4((sc)->sc_iot, (sc)->sc_ioh, (reg))
 #define HWRITE4(sc, reg, val)						\
 	bus_space_write_4((sc)->sc_iot, (sc)->sc_ioh, (reg), (val))
-#define AXIREAD4(sc, reg)						\
-	bus_space_read_4((sc)->sc_iot, (sc)->sc_axi_ioh, (reg))
-#define AXIWRITE4(sc, reg, val)						\
-	bus_space_write_4((sc)->sc_iot, (sc)->sc_axi_ioh, (reg), (val))
+#define AXIPEEK4(sc, reg, valp)						\
+	bus_space_peek_4((sc)->sc_iot, (sc)->sc_axi_ioh, (reg), (valp))
+#define AXIPOKE4(sc, reg, val)						\
+	bus_space_poke_4((sc)->sc_iot, (sc)->sc_axi_ioh, (reg), (val))
 
 struct rkpcie_softc {
 	struct pcihost_softc	sc_phsc;
@@ -241,8 +241,10 @@ rkpcie_attach(device_t parent, device_t self, void *aux)
 
 	struct fdtbus_regulator *regulator;
 	regulator = fdtbus_regulator_acquire(phandle, "vpcie3v3-supply");
-	fdtbus_regulator_enable(regulator);
-	fdtbus_regulator_release(regulator);
+	if (regulator != NULL) {
+		fdtbus_regulator_enable(regulator);
+		fdtbus_regulator_release(regulator);
+	}
 		
 	fdtbus_clock_assign(phandle);
 	clock_enable_all(phandle);
@@ -538,8 +540,12 @@ rkpcie_conf_read(void *v, pcitag_t tag, int offset)
 
 	if (bus == phsc->sc_bus_min)
 		return HREAD4(sc, PCIE_RC_NORMAL_BASE + reg);
-	else
-		return AXIREAD4(sc, reg);
+	else {
+		uint32_t val;
+		if (AXIPEEK4(sc, reg, &val) != 0)
+			return 0xffffffff;
+		return val;
+	}
 }
 
 void
@@ -561,7 +567,7 @@ rkpcie_conf_write(void *v, pcitag_t tag, int offset, pcireg_t data)
 	if (bus == phsc->sc_bus_min)
 		HWRITE4(sc, PCIE_RC_NORMAL_BASE + reg, data);
 	else
-		AXIWRITE4(sc, reg, data);
+		AXIPOKE4(sc, reg, data);
 }
 
 static int

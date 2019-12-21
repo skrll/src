@@ -1,7 +1,7 @@
-/*	$NetBSD: uvm_object.c,v 1.15 2015/10/26 09:02:49 mrg Exp $	*/
+/*	$NetBSD: uvm_object.c,v 1.18 2019/12/15 21:11:35 ad Exp $	*/
 
 /*
- * Copyright (c) 2006, 2010 The NetBSD Foundation, Inc.
+ * Copyright (c) 2006, 2010, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_object.c,v 1.15 2015/10/26 09:02:49 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_object.c,v 1.18 2019/12/15 21:11:35 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -46,10 +46,10 @@ __KERNEL_RCSID(0, "$NetBSD: uvm_object.c,v 1.15 2015/10/26 09:02:49 mrg Exp $");
 #include <sys/param.h>
 #include <sys/mutex.h>
 #include <sys/queue.h>
-#include <sys/rbtree.h>
 
 #include <uvm/uvm.h>
 #include <uvm/uvm_ddb.h>
+#include <uvm/uvm_page_array.h>
 
 /* Page count to fetch per single step. */
 #define	FETCH_PAGECOUNT			16
@@ -73,11 +73,10 @@ uvm_obj_init(struct uvm_object *uo, const struct uvm_pagerops *ops,
 		uo->vmobjlock = NULL;
 	}
 	uo->pgops = ops;
-	TAILQ_INIT(&uo->memq);
 	LIST_INIT(&uo->uo_ubc);
 	uo->uo_npages = 0;
 	uo->uo_refs = refs;
-	rb_tree_init(&uo->rb_tree, &uvm_page_tree_ops);
+	radix_tree_init_tree(&uo->uo_pages);
 }
 
 /*
@@ -87,7 +86,7 @@ void
 uvm_obj_destroy(struct uvm_object *uo, bool dlock)
 {
 
-	KASSERT(rb_tree_iterate(&uo->rb_tree, NULL, RB_DIR_LEFT) == NULL);
+	KASSERT(radix_tree_empty_tree_p(&uo->uo_pages));
 
 	/* Purge any UBC entries associated with this object. */
 	ubc_purge(uo);
@@ -96,6 +95,7 @@ uvm_obj_destroy(struct uvm_object *uo, bool dlock)
 	if (dlock) {
 		mutex_obj_free(uo->vmobjlock);
 	}
+	radix_tree_fini_tree(&uo->uo_pages);
 }
 
 /*
@@ -173,20 +173,18 @@ uvm_obj_wirepages(struct uvm_object *uobj, off_t start, off_t end,
 				pgs[i] = pg;
 			}
 
-			if (pgs[i]->pqflags & PQ_AOBJ) {
+			if (pgs[i]->flags & PG_AOBJ) {
 				pgs[i]->flags &= ~(PG_CLEAN);
 				uao_dropswap(uobj, i);
 			}
 		}
 
 		/* Wire the pages */
-		mutex_enter(&uvm_pageqlock);
 		for (i = 0; i < npages; i++) {
 			uvm_pagewire(pgs[i]);
 			if (list != NULL)
 				TAILQ_INSERT_TAIL(list, pgs[i], pageq.queue);
 		}
-		mutex_exit(&uvm_pageqlock);
 
 		/* Unbusy the pages */
 		uvm_page_unbusy(pgs, npages);
@@ -219,7 +217,6 @@ uvm_obj_unwirepages(struct uvm_object *uobj, off_t start, off_t end)
 	off_t offset;
 
 	mutex_enter(uobj->vmobjlock);
-	mutex_enter(&uvm_pageqlock);
 	for (offset = start; offset < end; offset += PAGE_SIZE) {
 		pg = uvm_pagelookup(uobj, offset);
 
@@ -228,7 +225,6 @@ uvm_obj_unwirepages(struct uvm_object *uobj, off_t start, off_t end)
 
 		uvm_pageunwire(pg);
 	}
-	mutex_exit(&uvm_pageqlock);
 	mutex_exit(uobj->vmobjlock);
 }
 
@@ -241,8 +237,10 @@ void
 uvm_object_printit(struct uvm_object *uobj, bool full,
     void (*pr)(const char *, ...))
 {
+	struct uvm_page_array a;
 	struct vm_page *pg;
 	int cnt = 0;
+	voff_t off;
 
 	(*pr)("OBJECT %p: locked=%d, pgops=%p, npages=%d, ",
 	    uobj, mutex_owned(uobj->vmobjlock), uobj->pgops, uobj->uo_npages);
@@ -255,16 +253,22 @@ uvm_object_printit(struct uvm_object *uobj, bool full,
 		return;
 	}
 	(*pr)("  PAGES <pg,offset>:\n  ");
-	TAILQ_FOREACH(pg, &uobj->memq, listq.queue) {
+	uvm_page_array_init(&a);
+	off = 0;
+	while ((pg = uvm_page_array_fill_and_peek(&a, uobj, off, 0, 0))
+	    != NULL) {
 		cnt++;
 		(*pr)("<%p,0x%llx> ", pg, (long long)pg->offset);
 		if ((cnt % 3) == 0) {
 			(*pr)("\n  ");
 		}
+		off = pg->offset + PAGE_SIZE;
+		uvm_page_array_advance(&a);
 	}
 	if ((cnt % 3) != 0) {
 		(*pr)("\n");
 	}
+	uvm_page_array_fini(&a);
 }
 
 #endif /* DDB || DEBUGPRINT */

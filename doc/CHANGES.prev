@@ -1,4 +1,4 @@
-LIST OF CHANGES FROM PREVIOUS RELEASES:			<$Revision: 1.148 $>
+LIST OF CHANGES FROM PREVIOUS RELEASES:			<$Revision: 1.152 $>
 
 
 Changes from 386bsd 0.1 + patchkit 0.2.2 to NetBSD 0.8:
@@ -12520,6 +12520,8 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 	wpa: Import wpa_supplicant and hostapd 2.7. [christos 20190104]
 	acpi(4): Updated ACPICA to 20181213. [christos 20190104]
 	tmux(1): Imported 2.8. [christos 20190104]
+	macppc: Update install media and documentation for powerpc 601
+		machines. [scole 20190107]
 	TrouSerS: Import trousers-0.3.14. [christos 20190107]
 	tpm-tools: Import tpm-tools-1.3.9.1. [christos 20190107]
 	compiler-rt: Import compiler-rt r350590 LLVM sanitizers.
@@ -12594,6 +12596,7 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 		SIGTRAP and si_code TRAP_SCE/TRAP_SCX. [kamil 20190506]
 	installboot(8): Add support for NetBSD/evbarm boards that use
 		u-boot for bootstrap. [thorpej 20190506]
+	moscom(4): Obsoleted by umcs(4).  [mrg 20190507]
 	ifmedia(4): Extend Ethernet's ifmedia word's subword up to 255.
 		[msaitoh 20190517]
 	mount_9p(8): Initial support for 9P2000.u. [ozaki-r 20190517]
@@ -12641,3 +12644,12 @@ Changes from NetBSD 8.0 to NetBSD 9.0:
 		[jmcneill 20190921]
 	evbarm: Add support for Amazon Graviton "a1.metal" instances.
 		[jmcneill 20191015]
+	ipgphy(4): Add support for IC Plus IP1000* PHY. [msaitoh 20191017]
+	alc(4): Add support for Killer E2400 and E2500. [msaitoh 20191017]
+	jmphy(4): Add support for JMicron JMP202 and JMP211 PHY.
+		[msaitoh 20191030]
+	smscphy(4): Add support for SMSC LAN87xx 10/100 Ethernet PHY.
+		[msaitoh 20191101]
+	micphy(4): Add support for Microchip KSZ80[0456]1, KSZ8721, KSZ9[01]31,
+		KS8731 and KSZ9477.
+		[msaitoh 20191107]

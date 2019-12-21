@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.S,v 1.35 2019/09/07 18:33:16 maxv Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.38 2019/11/21 19:24:00 ad Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2007 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
 #include <sys/errno.h>
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.35 2019/09/07 18:33:16 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.38 2019/11/21 19:24:00 ad Exp $");
 
 #include "opt_xen.h"
 
@@ -156,12 +156,6 @@ ENTRY(x86_curlwp)
 	ret
 END(x86_curlwp)
 
-ENTRY(cpu_set_curpri)
-	movl	4(%esp), %eax
-	movl	%eax, %fs:(CPU_INFO_CURPRIORITY)
-	ret
-END(cpu_set_curpri)
-
 ENTRY(__byte_swap_u32_variable)
 	movl	4(%esp), %eax
 	bswapl	%eax
@@ -224,18 +218,6 @@ ENTRY(x86_mwait)
 	ret
 END(x86_mwait)  
 
-ENTRY(fnsave)
-	movl	4(%esp), %eax
-	fnsave	(%eax)
-	ret
-END(fnsave)
-
-ENTRY(frstor)
-	movl	4(%esp), %eax
-	frstor	(%eax)
-	ret
-END(frstor)
-
 ENTRY(stts)
 	movl	%cr0, %eax
 	testl	$CR0_TS, %eax
@@ -245,42 +227,6 @@ ENTRY(stts)
 1:
 	ret
 END(stts)
-
-ENTRY(fxsave)
-	movl	4(%esp), %eax
-	fxsave	(%eax)
-	ret
-END(fxsave)
-
-ENTRY(fxrstor)
-	movl	4(%esp), %eax
-	fxrstor	(%eax)
-	ret
-END(fxrstor)
-
-ENTRY(xsave)
-	movl	4(%esp), %ecx
-	movl	8(%esp), %eax	/* feature mask bits */
-	movl	12(%esp), %edx
-	xsave	(%ecx)
-	ret
-END(xsave)
-
-ENTRY(xsaveopt)
-	movl	4(%esp), %ecx
-	movl	8(%esp), %eax	/* feature mask bits */
-	movl	12(%esp), %edx
-	xsaveopt	(%ecx)
-	ret
-END(xsaveopt)
-
-ENTRY(xrstor)
-	movl	4(%esp), %ecx
-	movl	8(%esp), %eax	/* feature mask bits */
-	movl	12(%esp), %edx
-	xrstor	(%ecx)
-	ret
-END(xrstor)
 
 ENTRY(fldummy)
 	ffree	%st(7)
@@ -295,17 +241,6 @@ ENTRY(inb)
 	ret
 END(inb)
 
-ENTRY(insb)
-	pushl	%edi
-	movl	8(%esp), %edx
-	movl	12(%esp), %edi
-	movl	16(%esp), %ecx
-	rep
-	insb
-	popl	%edi
-	ret
-END(insb)
-
 ENTRY(inw)
 	movl	4(%esp), %edx
 	xorl	%eax, %eax
@@ -313,33 +248,11 @@ ENTRY(inw)
 	ret
 END(inw)
 
-ENTRY(insw)
-	pushl	%edi
-	movl	8(%esp), %edx
-	movl	12(%esp), %edi
-	movl	16(%esp), %ecx
-	rep
-	insw
-	popl	%edi
-	ret
-END(insw)
-
 ENTRY(inl)
 	movl	4(%esp), %edx
 	inl	%dx, %eax
 	ret
 END(inl)
-
-ENTRY(insl)
-	pushl	%edi
-	movl	8(%esp), %edx
-	movl	12(%esp), %edi
-	movl	16(%esp), %ecx
-	rep
-	insl
-	popl	%edi
-	ret
-END(insl)
 
 ENTRY(outb)
 	movl	4(%esp), %edx
@@ -348,17 +261,6 @@ ENTRY(outb)
 	ret
 END(outb)
 
-ENTRY(outsb)
-	pushl	%esi
-	movl	8(%esp), %edx
-	movl	12(%esp), %esi
-	movl	16(%esp), %ecx
-	rep
-	outsb
-	popl	%esi
-	ret
-END(outsb)
-
 ENTRY(outw)
 	movl	4(%esp), %edx
 	movl	8(%esp), %eax
@@ -366,31 +268,9 @@ ENTRY(outw)
 	ret
 END(outw)
 
-ENTRY(outsw)
-	pushl	%esi
-	movl	8(%esp), %edx
-	movl	12(%esp), %esi
-	movl	16(%esp), %ecx
-	rep
-	outsw
-	popl	%esi
-	ret
-END(outsw)
-
 ENTRY(outl)
 	movl	4(%esp), %edx
 	movl	8(%esp), %eax
 	outl	%eax, %dx
 	ret
 END(outl)
-
-ENTRY(outsl)
-	pushl	%esi
-	movl	8(%esp), %edx
-	movl	12(%esp), %esi
-	movl	16(%esp), %ecx
-	rep
-	outsl
-	popl	%esi
-	ret
-END(outsl)

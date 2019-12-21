@@ -1,5 +1,5 @@
-/*	$Id: at91dbgu.c,v 1.15 2015/09/21 13:31:30 skrll Exp $	*/
-/*	$NetBSD: at91dbgu.c,v 1.15 2015/09/21 13:31:30 skrll Exp $ */
+/*	$Id: at91dbgu.c,v 1.17 2019/12/15 16:48:25 tsutsui Exp $	*/
+/*	$NetBSD: at91dbgu.c,v 1.17 2019/12/15 16:48:25 tsutsui Exp $ */
 
 /*
  *
@@ -26,13 +26,6 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *        This product includes software developed by the NetBSD
- *        Foundation, Inc. and its contributors.
- * 4. Neither the name of The NetBSD Foundation nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -83,7 +76,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at91dbgu.c,v 1.15 2015/09/21 13:31:30 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at91dbgu.c,v 1.17 2019/12/15 16:48:25 tsutsui Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -256,14 +249,9 @@ at91dbgu_attach(device_t parent, device_t self, void *aux)
 	tp->t_hwiflow = at91dbgu_hwiflow;
 
 	sc->sc_tty = tp;
-	sc->sc_rbuf = malloc(AT91DBGU_RING_SIZE << 1, M_DEVBUF, M_NOWAIT);
+	sc->sc_rbuf = malloc(AT91DBGU_RING_SIZE << 1, M_DEVBUF, M_WAITOK);
 	sc->sc_rbput = sc->sc_rbget = sc->sc_rbuf;
 	sc->sc_rbavail = AT91DBGU_RING_SIZE;
-	if (sc->sc_rbuf == NULL) {
-		printf("%s: unable to allocate ring buffer\n",
-		    device_xname(sc->sc_dev));
-		return;
-	}
 	sc->sc_ebuf = sc->sc_rbuf + (AT91DBGU_RING_SIZE << 1);
 	sc->sc_tbc = 0;
 

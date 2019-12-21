@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.17 2019/06/22 20:46:07 christos Exp $	*/
+/*	$NetBSD: main.c,v 1.19 2019/12/11 15:08:45 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -164,9 +164,6 @@ init_lang(void)
 	multname = msg_string(MSG_secname);
 }
 
-__weakref_visible void prelim_menu(void)
-    __weak_reference(md_prelim_menu);
-
 int
 main(int argc, char **argv)
 {
@@ -264,12 +261,6 @@ main(int argc, char **argv)
 	get_kb_encoding();
 	init_lang();
 
-#ifdef __weak_reference
-	/* if md wants to ask anything before we start, do it now */
-	if (prelim_menu != 0)
-		prelim_menu();
-#endif
-
 	/* Menu processing */
 	if (partman_go)
 		partman();
@@ -280,6 +271,8 @@ main(int argc, char **argv)
 	/* clean up internal storage */
 	pm_destroy_all();
 #endif
+
+	partitions_cleanup();
 
 	exit_cleanly = 1;
 	return 0;

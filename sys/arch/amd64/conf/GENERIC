@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.542 2019/10/28 03:01:11 ozaki-r Exp $
+# $NetBSD: GENERIC,v 1.551 2019/12/14 07:45:20 maxv Exp $
 #
 # GENERIC machine description file
 #
@@ -22,9 +22,11 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.542 $"
+#ident		"GENERIC-$Revision: 1.551 $"
 
 maxusers	64		# estimated number of users
+
+#options 	MULTIBOOT	# Multiboot support (see multiboot(8)) 
 
 # delay between "rebooting ..." message and hardware reset, in milliseconds
 #options 	CPURESET_DELAY=2000
@@ -128,6 +130,22 @@ options 	KDTRACE_HOOKS	# kernel DTrace hooks
 #options 	POOL_QUARANTINE	# optional
 #options 	KASAN_PANIC	# optional
 
+# Kernel Concurrency Sanitizer (kCSan).
+#makeoptions 	KCSAN=1		# mandatory
+#options 	KCSAN		# mandatory
+#options 	KCSAN_PANIC	# optional
+
+# Kernel Memory Sanitizer (kMSan). You need to disable SVS and kernel modules
+# to use it. The quarantine is optional and can help KMSAN find uninitialized
+# memory in pool caches. Note that KMSAN requires at least 4GB of RAM.
+#makeoptions 	KMSAN=1		# mandatory
+#options 	KMSAN		# mandatory
+#no options	SVS		# mandatory
+#no options 	MODULAR		# mandatory
+#no options 	MODULAR_DEFAULT_AUTOLOAD	# mandatory
+#options	POOL_QUARANTINE	# optional
+#options 	KMSAN_PANIC	# optional
+
 # Kernel Info Leak Detector.
 #makeoptions 	KLEAK=1
 #options 	KLEAK
@@ -218,7 +236,7 @@ options 	PPP_FILTER	# Active filter support for PPP (requires bpf)
 # Warning, these may compile large string tables into the kernel!
 #options 	ACPIVERBOSE	# verbose ACPI configuration messages
 #options 	MIIVERBOSE	# verbose PHY autoconfig messages
-#options 	PCIVERBOSE	# verbose PCI device autoconfig messages
+options 	PCIVERBOSE	# verbose PCI device autoconfig messages
 #options 	PCI_CONFIG_DUMP	# verbosely dump PCI config space
 #options 	PCMCIAVERBOSE	# verbose PCMCIA configuration messages
 options 	SCSIVERBOSE	# human readable SCSI error messages
@@ -433,6 +451,7 @@ nouveaufb*	at nouveaufbbus?
 
 # PCI cryptographic devices
 hifn*	at pci? dev ? function ?	# Hifn 7755/7811/795x
+#qat*	at pci? dev ? function ?	# Intel QuickAssist
 ubsec*	at pci? dev ? function ?	# Broadcom 5501/5601/580x/582x
 
 # Trusted Platform Module
@@ -785,6 +804,7 @@ iwi*	at pci? dev ? function ?	# Intel PRO/Wireless 2200BG
 iwm*	at pci? dev ? function ?	# Intel Centrino 7260
 iwn*	at pci? dev ? function ?	# Intel PRO/Wireless 4965AGN
 ixg*	at pci? dev ? function ?	# Intel 8259x 10 gigabit
+ixl*	at pci? dev ? function ?	# Intel Ethernet 700 Series
 ixv*	at pci? dev ? function ?	# Intel 8259x 10G virtual function
 jme*	at pci? dev ? function ?	# JMicron JMC2[56]0 ethernet
 hme*	at pci? dev ? function ?	# Sun Microelectronics STP2002-STQ
@@ -877,6 +897,7 @@ ikphy*	at mii? phy ?			# Intel 82563 PHYs
 inphy*	at mii? phy ?			# Intel 82555 PHYs
 iophy*	at mii? phy ?			# Intel 82553 PHYs
 ipgphy* at mii? phy ?			# IC PLUS IP1000A/IP1001 PHYs
+jmphy*	at mii? phy ?			# Jmicron JMP202/211 PHYs
 lxtphy* at mii? phy ?			# Level One LXT-970 PHYs
 makphy* at mii? phy ?			# Marvell Semiconductor 88E1000 PHYs
 nsphy*	at mii? phy ?			# NS83840 PHYs
@@ -885,6 +906,7 @@ pnaphy* at mii? phy ?			# generic HomePNA PHYs
 qsphy*	at mii? phy ?			# Quality Semiconductor QS6612 PHYs
 rgephy* at mii? phy ?			# Realtek 8169S/8110 internal PHYs
 rlphy*	at mii? phy ?			# Realtek 8139/8201L PHYs
+smscphy* at mii? phy ?			# SMSC LAN87xx PHYs
 sqphy*	at mii? phy ?			# Seeq 80220/80221/80223 PHYs
 tlphy*	at mii? phy ?			# ThunderLAN PHYs
 tqphy*	at mii? phy ?			# TDK Semiconductor PHYs

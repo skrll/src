@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.272 2019/08/23 08:17:26 mrg Exp $
+#	$NetBSD: Makefile,v 1.274 2019/12/18 02:46:21 christos Exp $
 #	from: @(#)Makefile	5.25.1.1 (Berkeley) 5/7/91
 
 .include <bsd.own.mk>
@@ -142,7 +142,6 @@ SUBDIR+=	libnpf		# depends on libnv
 .endif
 
 SUBDIR+=	../crypto/external/bsd/${EXTERNAL_OPENSSL_SUBDIR}/lib # depends on libcrypt
-SUBDIR+=	../external/bsd/file/lib	# depends on libz
 
 .if (${MKISCSI} != "no")
 SUBDIR+=	../external/bsd/iscsi/lib	# depends on libpthread
@@ -171,7 +170,7 @@ SUBDIR+=	../external/gpl3/${EXTERNAL_GCC_SUBDIR}/lib/libsupc++
 .endif
 
 .if (${MKLLVMRT} != "no" && (!defined(MLIBDIR) || ${MKCOMPATX11} != "no"))
-SUBDIR+=	../external/bsd/llvm/include
+SUBDIR+=	../external/apache2/llvm/include
 .endif
 
 #==================== 2nd library dependency barrier ====================
@@ -186,10 +185,12 @@ SUBDIR+= ../external/gpl3/${EXTERNAL_GCC_SUBDIR}/lib/lib${sanitizer}
 .endif
 
 .if (${MKLLVMRT} != "no" && (!defined(MLIBDIR) || ${MKCOMPATX11} != "no"))
-SUBDIR+=	../external/bsd/llvm/librt
+SUBDIR+=	../external/apache2/llvm/librt
 .endif
 
 SUBDIR+=	../external/bsd/libarchive/lib	# depends on libxz
+
+SUBDIR+=	../external/bsd/file/lib	# depends on libz, libbz2, libxz
 
 .if (${MKNPF} != "no")
 SUBDIR+=	npf		# depends on libnpf

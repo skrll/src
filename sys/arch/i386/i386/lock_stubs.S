@@ -1,4 +1,4 @@
-/*	$NetBSD: lock_stubs.S,v 1.30 2019/02/11 14:59:32 cherry Exp $	*/
+/*	$NetBSD: lock_stubs.S,v 1.32 2019/12/08 20:00:56 ad Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: lock_stubs.S,v 1.30 2019/02/11 14:59:32 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lock_stubs.S,v 1.32 2019/12/08 20:00:56 ad Exp $");
 
 #include "opt_lockdebug.h"
 

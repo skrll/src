@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_machdep.c,v 1.128 2019/09/26 01:39:22 christos Exp $	*/
+/*	$NetBSD: netbsd32_machdep.c,v 1.133 2019/12/12 02:15:42 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -36,12 +36,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.128 2019/09/26 01:39:22 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.133 2019/12/12 02:15:42 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
 #include "opt_compat_netbsd32.h"
-#include "opt_coredump.h"
 #include "opt_execfmt.h"
 #include "opt_user_ldt.h"
 #include "opt_mtrr.h"
@@ -86,6 +85,9 @@ __KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.128 2019/09/26 01:39:22 chris
 /* Provide a the name of the architecture we're emulating */
 const char machine32[] = "i386";
 const char machine_arch32[] = "i386";
+
+static int netbsd32_process_doxmmregs(struct lwp *, struct lwp *, void *, bool);
+static int netbsd32_process_xmmregio(struct lwp *, struct lwp *, struct uio *);
 
 #ifdef USER_LDT
 static int x86_64_get_ldt32(struct lwp *, void *, register_t *);
@@ -283,7 +285,6 @@ netbsd32_sendsig(const ksiginfo_t *ksi, const sigset_t *mask)
 	    netbsd32_sendsig_siginfo(ksi, mask));
 }
 
-#ifdef COREDUMP
 /*
  * Dump the machine specific segment at the start of a core dump.
  */
@@ -323,15 +324,16 @@ cpu_coredump32(struct lwp *l, struct coredump_iostate *iocookie,
 	cseg.c_addr = 0;
 	cseg.c_size = chdr->c_cpusize;
 
-	error = coredump_write(iocookie, UIO_SYSSPACE, &cseg,
-	    chdr->c_seghdrsize);
+	MODULE_HOOK_CALL(coredump_write_hook, (iocookie, UIO_SYSSPACE, &cseg,
+	    chdr->c_seghdrsize), ENOSYS, error);
 	if (error)
 		return error;
 
-	return coredump_write(iocookie, UIO_SYSSPACE, &md_core,
-	    sizeof(md_core));
+	MODULE_HOOK_CALL(coredump_write_hook, (iocookie, UIO_SYSSPACE, &md_core,
+	    sizeof(md_core)), ENOSYS, error);
+
+	return error;
 }
-#endif
 
 int
 netbsd32_ptrace_translate_request(int req)
@@ -345,8 +347,8 @@ netbsd32_ptrace_translate_request(int req)
 	case PT32_SETREGS:		return PT_SETREGS;
 	case PT32_GETFPREGS:		return PT_GETFPREGS;
 	case PT32_SETFPREGS:		return PT_SETFPREGS;
-	case PT32_GETXMMREGS:		return -1;
-	case PT32_SETXMMREGS:		return -1;
+	case PT32_GETXMMREGS:		return PT_GETXMMREGS;
+	case PT32_SETXMMREGS:		return PT_SETXMMREGS;
 	case PT32_GETDBREGS:		return PT_GETDBREGS;
 	case PT32_SETDBREGS:		return PT_SETDBREGS;
 	case PT32_SETSTEP:		return PT_SETSTEP;
@@ -487,16 +489,89 @@ netbsd32_process_write_dbregs(struct lwp *l, const struct dbreg32 *regs,
 		return EINVAL;
 	}
 
-	regs64.dr[0] = regs->dr[0];
-	regs64.dr[1] = regs->dr[1];
-	regs64.dr[2] = regs->dr[2];
-	regs64.dr[3] = regs->dr[3];
+	memset(&regs64, 0, sizeof(regs64));
 
-	regs64.dr[6] = regs->dr[6];
-	regs64.dr[7] = regs->dr[7];
+	regs64.dr[0] = (u_int)regs->dr[0];
+	regs64.dr[1] = (u_int)regs->dr[1];
+	regs64.dr[2] = (u_int)regs->dr[2];
+	regs64.dr[3] = (u_int)regs->dr[3];
+
+	regs64.dr[6] = (u_int)regs->dr[6];
+	regs64.dr[7] = (u_int)regs->dr[7];
 
 	x86_dbregs_write(l, &regs64);
 	return 0;
+}
+
+static int
+netbsd32_process_doxmmregs(struct lwp *curl, struct lwp *l, void *addr,
+    bool write)
+	/* curl:		 tracer */
+	/* l:			 traced */
+{
+	struct uio uio;
+	struct iovec iov;
+	struct vmspace *vm;
+	int error;
+
+	if ((curl->l_proc->p_flag & PK_32) == 0 ||
+	    (l->l_proc->p_flag & PK_32) == 0)
+		return EINVAL;
+
+	if (!process_machdep_validfpu(l->l_proc))
+		return EINVAL;
+
+	error = proc_vmspace_getref(curl->l_proc, &vm);
+	if (error)
+		return error;
+
+	iov.iov_base = addr;
+	iov.iov_len = sizeof(struct xmmregs32);
+	uio.uio_iov = &iov;
+	uio.uio_iovcnt = 1;
+	uio.uio_offset = 0;
+	uio.uio_resid = sizeof(struct xmmregs32);
+	uio.uio_rw = write ? UIO_WRITE : UIO_READ;
+	uio.uio_vmspace = vm;
+
+	error = netbsd32_process_xmmregio(curl, l, &uio);
+	uvmspace_free(vm);
+	return error;
+}
+
+static int
+netbsd32_process_xmmregio(struct lwp *curl, struct lwp *l, struct uio *uio)
+	/* curl:		 tracer */
+	/* l:			 traced */
+{
+	struct xmmregs32 regs;
+	int error;
+	char *kv;
+	size_t kl;
+
+	kl = sizeof(regs);
+	kv = (char *)&regs;
+
+	if (uio->uio_offset < 0 || uio->uio_offset > (off_t)kl)
+		return EINVAL;
+
+	kv += uio->uio_offset;
+	kl -= uio->uio_offset;
+
+	if (kl > uio->uio_resid)
+		kl = uio->uio_resid;
+
+	process_read_fpregs_xmm(l, &regs.fxstate);
+	error = uiomove(kv, kl, uio);
+	if (error == 0 && uio->uio_rw == UIO_WRITE) {
+		if (l->l_proc->p_stat != SSTOP)
+			error = EBUSY;
+		else
+			process_write_fpregs_xmm(l, &regs.fxstate);
+	}
+
+	uio->uio_offset = 0;
+	return error;
 }
 
 int
@@ -554,10 +629,7 @@ x86_64_set_ldt32(struct lwp *l, void *args, register_t *retval)
 	if (ua.num < 0 || ua.num > 8192)
 		return EINVAL;
 
-	descv = malloc(sizeof(*descv) * ua.num, M_TEMP, M_NOWAIT);
-	if (descv == NULL)
-		return ENOMEM;
-
+	descv = malloc(sizeof(*descv) * ua.num, M_TEMP, M_WAITOK);
 	error = copyin((void *)(uintptr_t)ua32.desc, descv,
 	    sizeof(*descv) * ua.num);
 	if (error == 0)
@@ -586,9 +658,6 @@ x86_64_get_ldt32(struct lwp *l, void *args, register_t *retval)
 		return EINVAL;
 
 	cp = malloc(ua.num * sizeof(union descriptor), M_TEMP, M_WAITOK);
-	if (cp == NULL)
-		return ENOMEM;
-
 	error = x86_get_ldt1(l, &ua, cp);
 	*retval = ua.num;
 	if (error == 0)
@@ -961,9 +1030,11 @@ void
 netbsd32_machdep_md_init(void)
 {
 
-	MODULE_HOOK_SET(netbsd32_machine32_hook, "mach32", netbsd32_machine32);
+	MODULE_HOOK_SET(netbsd32_machine32_hook, netbsd32_machine32);
 	MODULE_HOOK_SET(netbsd32_reg_validate_hook,
-	    "mcontext32from64_validate", cpu_mcontext32from64_validate);
+	    cpu_mcontext32from64_validate);
+	MODULE_HOOK_SET(netbsd32_process_doxmmregs_hook,
+	    netbsd32_process_doxmmregs);
 }
 
 void
@@ -972,4 +1043,5 @@ netbsd32_machdep_md_fini(void)
 
 	MODULE_HOOK_UNSET(netbsd32_machine32_hook);
 	MODULE_HOOK_UNSET(netbsd32_reg_validate_hook);
+	MODULE_HOOK_UNSET(netbsd32_process_doxmmregs_hook);
 }

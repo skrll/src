@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_vnops.c,v 1.201 2019/09/15 20:24:25 christos Exp $	*/
+/*	$NetBSD: vfs_vnops.c,v 1.204 2019/12/16 22:47:54 ad Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.201 2019/09/15 20:24:25 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.204 2019/12/16 22:47:54 ad Exp $");
 
 #include "veriexec.h"
 
@@ -341,8 +341,8 @@ vn_markexec(struct vnode *vp)
 
 	mutex_enter(vp->v_interlock);
 	if ((vp->v_iflag & VI_EXECMAP) == 0) {
-		atomic_add_int(&uvmexp.filepages, -vp->v_uobj.uo_npages);
-		atomic_add_int(&uvmexp.execpages, vp->v_uobj.uo_npages);
+		cpu_count(CPU_COUNT_FILEPAGES, -vp->v_uobj.uo_npages);
+		cpu_count(CPU_COUNT_EXECPAGES, vp->v_uobj.uo_npages);
 		vp->v_iflag |= VI_EXECMAP;
 	}
 	mutex_exit(vp->v_interlock);
@@ -368,8 +368,8 @@ vn_marktext(struct vnode *vp)
 		return (ETXTBSY);
 	}
 	if ((vp->v_iflag & VI_EXECMAP) == 0) {
-		atomic_add_int(&uvmexp.filepages, -vp->v_uobj.uo_npages);
-		atomic_add_int(&uvmexp.execpages, vp->v_uobj.uo_npages);
+		cpu_count(CPU_COUNT_FILEPAGES, -vp->v_uobj.uo_npages);
+		cpu_count(CPU_COUNT_EXECPAGES, vp->v_uobj.uo_npages);
 	}
 	vp->v_iflag |= (VI_TEXT | VI_EXECMAP);
 	mutex_exit(vp->v_interlock);
@@ -1035,8 +1035,9 @@ vn_lock(struct vnode *vp, int flags)
 #if 0
 	KASSERT(vp->v_usecount > 0 || (vp->v_iflag & VI_ONWORKLST) != 0);
 #endif
-	KASSERT((flags & ~(LK_SHARED|LK_EXCLUSIVE|LK_NOWAIT|LK_RETRY)) == 0);
-	KASSERT(!mutex_owned(vp->v_interlock));
+	KASSERT((flags & ~(LK_SHARED|LK_EXCLUSIVE|LK_NOWAIT|LK_RETRY|
+	    LK_UPGRADE|LK_DOWNGRADE)) == 0);
+	KASSERT((flags & LK_NOWAIT) != 0 || !mutex_owned(vp->v_interlock));
 
 #ifdef DIAGNOSTIC
 	if (wapbl_vphaswapbl(vp))
@@ -1188,4 +1189,57 @@ vn_fifo_bypass(void *v)
 	struct vop_generic_args *ap = v;
 
 	return VOCALL(fifo_vnodeop_p, ap->a_desc->vdesc_offset, v);
+}
+
+/*
+ * Open block device by device number
+ */
+int
+vn_bdev_open(dev_t dev, struct vnode **vpp, struct lwp *l)
+{
+	int     error;
+
+	if ((error = bdevvp(dev, vpp)) != 0)
+		return error;
+
+	if ((error = VOP_OPEN(*vpp, FREAD | FWRITE, l->l_cred)) != 0) {
+		vrele(*vpp);
+		return error;
+	}
+	mutex_enter((*vpp)->v_interlock);
+	(*vpp)->v_writecount++;
+	mutex_exit((*vpp)->v_interlock);
+
+	return 0;
+}
+
+/*
+ * Lookup the provided name in the filesystem.  If the file exists,
+ * is a valid block device, and isn't being used by anyone else,
+ * set *vpp to the file's vnode.
+ */
+int
+vn_bdev_openpath(struct pathbuf *pb, struct vnode **vpp, struct lwp *l)
+{
+	struct nameidata nd;
+	struct vnode *vp;
+	dev_t dev;
+	enum vtype vt;
+	int     error;
+
+	NDINIT(&nd, LOOKUP, FOLLOW, pb);
+	if ((error = vn_open(&nd, FREAD | FWRITE, 0)) != 0)
+		return error;
+
+	vp = nd.ni_vp;
+	dev = vp->v_rdev;
+	vt = vp->v_type;
+
+	VOP_UNLOCK(vp);
+	(void) vn_close(vp, FREAD | FWRITE, l->l_cred);
+
+	if (vt != VBLK)
+		return ENOTBLK;
+
+	return vn_bdev_open(dev, vpp, l);
 }

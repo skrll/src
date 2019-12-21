@@ -1,4 +1,4 @@
-#       $NetBSD: Makefile,v 1.441 2019/10/02 08:21:08 rin Exp $
+#       $NetBSD: Makefile,v 1.444 2019/11/29 22:38:28 riastradh Exp $
 
 #	Makefile for section 9 (kernel function and variable) manual pages.
 
@@ -34,7 +34,7 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	kprintf.9 kthread.9 linedisc.9 lock.9 locking.9 log.9 ltsleep.9 \
 	localcount.9 LWP_CACHE_CREDS.9 \
 	makeiplcookie.9 \
-	malloc.9 mb.9 mbuf.9 mca.9 memcmp.9 memcpy.9 memoryallocators.9 \
+	malloc.9 mbuf.9 mca.9 memcmp.9 memcpy.9 memoryallocators.9 \
 	memmove.9 memset.9 \
 	microseq.9 microtime.9 microuptime.9 mi_switch.9 module.9 \
 	mstohz.9 mutex.9 m_tag.9 namecache.9 \
@@ -66,6 +66,13 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	wapbl.9 wdc.9 workqueue.9 \
 	wsbell.9 wscons.9 wsdisplay.9 wsfont.9 wskbd.9 wsmouse.9 \
 	xcall.9
+
+MAN+=	atomic_loadstore.9
+MLINKS+=atomic_loadstore.9 atomic_load_acquire.9 \
+	atomic_loadstore.9 atomic_load_consume.9 \
+	atomic_loadstore.9 atomic_load_relaxed.9 \
+	atomic_loadstore.9 atomic_store_relaxed.9 \
+	atomic_loadstore.9 atomic_store_release.9
 
 MAN+=	boothowto.9
 MLINKS+=boothowto.9 BOOT_FLAG.9
@@ -487,7 +494,6 @@ MLINKS+=malloc.9 malloc_type_attach.9
 MLINKS+=malloc.9 malloc_type_detach.9
 MLINKS+=malloc.9 MALLOC_DEFINE.9
 MLINKS+=malloc.9 MALLOC_DECLARE.9
-MLINKS+=mb.9 mb_memory.9 mb.9 mb_read.9 mb.9 mb_write.9
 MLINKS+=mbuf.9 m_get.9 mbuf.9 m_gethdr.9 mbuf.9 m_devget.9 \
 	mbuf.9 m_copym.9 mbuf.9 m_copypacket.9 mbuf.9 m_copydata.9 \
 	mbuf.9 m_copyback.9 mbuf.9 m_cat.9 mbuf.9 m_dup.9 mbuf.9 m_prepend.9 \
