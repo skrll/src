@@ -1,4 +1,4 @@
-/*$NetBSD: ixv.c,v 1.139 2019/10/01 10:04:11 msaitoh Exp $*/
+/*$NetBSD: ixv.c,v 1.143 2019/12/17 05:49:01 msaitoh Exp $*/
 
 /******************************************************************************
 
@@ -765,19 +765,6 @@ ixv_init_locked(struct adapter *adapter)
 
 	/* Configure RX settings */
 	ixv_initialize_receive_units(adapter);
-
-#if 0 /* XXX isn't it required? -- msaitoh  */
-	/* Set the various hardware offload abilities */
-	ifp->if_hwassist = 0;
-	if (ifp->if_capenable & IFCAP_TSO4)
-		ifp->if_hwassist |= CSUM_TSO;
-	if (ifp->if_capenable & IFCAP_TXCSUM) {
-		ifp->if_hwassist |= (CSUM_TCP | CSUM_UDP);
-#if __FreeBSD_version >= 800000
-		ifp->if_hwassist |= CSUM_SCTP;
-#endif
-	}
-#endif
 
 	/* Set up VLAN offload and filter */
 	ixv_setup_vlan_support(adapter);
@@ -1610,6 +1597,8 @@ ixv_setup_interface(device_t dev, struct adapter *adapter)
 	}
 	adapter->ipq = if_percpuq_create(&adapter->osdep.ec.ec_if);
 	ether_ifattach(ifp, adapter->hw.mac.addr);
+	aprint_normal_dev(dev, "Ethernet address %s\n",
+	    ether_sprintf(adapter->hw.mac.addr));
 	/*
 	 * We use per TX queue softint, so if_deferred_start_init() isn't
 	 * used.
@@ -1855,7 +1844,7 @@ ixv_initialize_receive_units(struct adapter *adapter)
 			else
 				break;
 		}
-		wmb();
+		IXGBE_WRITE_BARRIER(hw);
 		/* Setup the Base and Length of the Rx Descriptor Ring */
 		IXGBE_WRITE_REG(hw, IXGBE_VFRDBAL(j),
 		    (rdba & 0x00000000ffffffffULL));
@@ -1887,7 +1876,7 @@ ixv_initialize_receive_units(struct adapter *adapter)
 				break;
 			msec_delay(1);
 		}
-		wmb();
+		IXGBE_WRITE_BARRIER(hw);
 
 		/* Set the Tail Pointer */
 #ifdef DEV_NETMAP
@@ -1920,7 +1909,8 @@ ixv_initialize_receive_units(struct adapter *adapter)
 			    adapter->num_rx_desc - 1);
 	}
 
-	ixv_initialize_rss_mapping(adapter);
+	if (adapter->hw.mac.type >= ixgbe_mac_X550_vf)
+		ixv_initialize_rss_mapping(adapter);
 } /* ixv_initialize_receive_units */
 
 /************************************************************************
@@ -2098,7 +2088,7 @@ ixv_setup_vlan_support(struct adapter *adapter)
 		adapter->shadow_vfta[idx] |= (u32)1 << (vlanidp->vid % 32);
 	}
 	ETHER_UNLOCK(ec);
-	
+
 	/*
 	 * A soft reset zero's out the VFTA, so
 	 * we need to repopulate it now.
@@ -2117,7 +2107,7 @@ ixv_setup_vlan_support(struct adapter *adapter)
 			if ((vfta & ((u32)1 << j)) == 0)
 				continue;
 			vid = (i * 32) + j;
-			
+
 			/* Call the shared code mailbox routine */
 			while ((rv = hw->mac.ops.set_vfta(hw, vid, 0, TRUE,
 			    FALSE)) != 0) {
@@ -2206,7 +2196,7 @@ ixv_unregister_vlan(struct adapter *adapter, u16 vtag)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
 	u16		index, bit;
-	int 		error;
+	int		error;
 
 	if ((vtag == 0) || (vtag > 4095))  /* Invalid */
 		return EINVAL;

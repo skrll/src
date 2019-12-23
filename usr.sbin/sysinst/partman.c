@@ -1,4 +1,4 @@
-/*	$NetBSD: partman.c,v 1.43 2019/10/06 00:05:10 mrg Exp $ */
+/*	$NetBSD: partman.c,v 1.45 2019/12/13 22:12:41 martin Exp $ */
 
 /*
  * Copyright 2012 Eugene Lozovoy
@@ -387,8 +387,9 @@ pm_dev_list(int type)
 		}
 
 	menu_no = new_menu(MSG_avdisks,
-		menu_entries, num_devs, -1, -1, (num_devs+1<3)?3:num_devs+1, 13,
-		MC_SCROLL | MC_NOCLEAR, NULL, NULL, NULL, NULL, NULL);
+		menu_entries, num_devs, -1, -1,
+		(num_devs+1<3)?3:num_devs+1, 13,
+		MC_SCROLL | MC_NOCLEAR, NULL, NULL, NULL, NULL, MSG_cancel);
 	if (menu_no == -1)
 		return (struct part_entry) { .retvalue = -1, };
 	process_menu(menu_no, &dev_num);
@@ -589,7 +590,7 @@ pm_raid_set_value(menudesc *m, void *arg)
 		menu_disk_adddel = new_menu(NULL, menuent_disk_adddel, 
 			__arraycount(menuent_disk_adddel),
 			-1, -1, 0, 10, MC_NOCLEAR, NULL, NULL, NULL, NULL,
-			NULL);
+			MSG_cancel);
 	}
 	
 	switch (m->cursel) {
@@ -762,8 +763,9 @@ pm_raid_disk_del(menudesc *m, void *arg)
 	}
 
 	menu_no = new_menu(MSG_raid_disks,
-		menu_entries, num_devs, -1, -1, (num_devs+1<3)?3:num_devs+1, 13,
-		MC_SCROLL | MC_NOCLEAR, NULL, NULL, NULL, NULL, NULL);
+		menu_entries, num_devs, -1, -1,
+		(num_devs+1<3)?3:num_devs+1, 13,
+		MC_SCROLL | MC_NOCLEAR, NULL, NULL, NULL, NULL, MSG_cancel);
 	if (menu_no == -1)
 		return -1;
 	process_menu(menu_no, &retvalue);
@@ -1493,8 +1495,9 @@ pm_lvm_disk_del(menudesc *m, void *arg)
 	}
 
 	menu_no = new_menu(MSG_lvm_disks,
-		menu_entries, num_devs, -1, -1, (num_devs+1<3)?3:num_devs+1, 13,
-		MC_SCROLL | MC_NOCLEAR, NULL, NULL, NULL, NULL, NULL);
+		menu_entries, num_devs, -1, -1,
+		(num_devs+1<3)?3:num_devs+1, 13,
+		MC_SCROLL | MC_NOCLEAR, NULL, NULL, NULL, NULL, MSG_cancel);
 	if (menu_no == -1)
 		return -1;
 	process_menu(menu_no, &retvalue);
@@ -1607,7 +1610,7 @@ pm_lvm_set_value(menudesc *m, void *arg)
 		menu_disk_adddel = new_menu(NULL, menuent_disk_adddel,
 			__arraycount(menuent_disk_adddel),
 			-1, -1, 0, 10, MC_NOCLEAR, NULL, NULL, NULL, NULL,
-			NULL);
+			MSG_cancel);
 	}
 
 	switch (m->cursel) {
@@ -2188,7 +2191,8 @@ pm_setfstype(struct pm_devs *pm_cur, part_id id, int fstype, int fs_subtype)
 	if (!pm_cur->parts->pscheme->get_part_info(pm_cur->parts, id, &info))
 		return;
 
-	info.nat_type = pm_cur->parts->pscheme->get_fs_part_type(fstype, fs_subtype);
+	info.nat_type = pm_cur->parts->pscheme->get_fs_part_type(PT_root,
+	    fstype, fs_subtype);
 	if (info.nat_type == NULL)
 		return;
 	info.fs_type = fstype;

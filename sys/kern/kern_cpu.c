@@ -1,7 +1,7 @@
-/*	$NetBSD: kern_cpu.c,v 1.76 2019/10/06 02:04:26 uwe Exp $	*/
+/*	$NetBSD: kern_cpu.c,v 1.89 2019/12/21 11:35:25 ad Exp $	*/
 
 /*-
- * Copyright (c) 2007, 2008, 2009, 2010, 2012 The NetBSD Foundation, Inc.
+ * Copyright (c) 2007, 2008, 2009, 2010, 2012, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -55,10 +55,16 @@
  * SUCH DAMAGE.
  */
 
-#include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_cpu.c,v 1.76 2019/10/06 02:04:26 uwe Exp $");
+/*
+ * CPU related routines not shared with rump.
+ */
 
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: kern_cpu.c,v 1.89 2019/12/21 11:35:25 ad Exp $");
+
+#ifdef _KERNEL_OPT
 #include "opt_cpu_ucode.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -95,6 +101,8 @@ CTASSERT(offsetof(struct cpu_info, ci_data) == 0);
 CTASSERT(offsetof(struct cpu_info, ci_data) != 0);
 #endif
 
+int (*compat_cpuctl_ioctl)(struct lwp *, u_long, void *) = (void *)enosys;
+
 static void	cpu_xc_online(struct cpu_info *, void *);
 static void	cpu_xc_offline(struct cpu_info *, void *);
 
@@ -114,38 +122,6 @@ const struct cdevsw cpuctl_cdevsw = {
 	.d_discard = nodiscard,
 	.d_flag = D_OTHER | D_MPSAFE
 };
-
-kmutex_t	cpu_lock		__cacheline_aligned;
-int		ncpu			__read_mostly;
-int		ncpuonline		__read_mostly;
-bool		mp_online		__read_mostly;
-
-/* An array of CPUs.  There are ncpu entries. */
-struct cpu_info **cpu_infos		__read_mostly;
-
-/* Note: set on mi_cpu_attach() and idle_loop(). */
-kcpuset_t *	kcpuset_attached	__read_mostly	= NULL;
-kcpuset_t *	kcpuset_running		__read_mostly	= NULL;
-
-int (*compat_cpuctl_ioctl)(struct lwp *, u_long, void *) = (void *)enosys;
-
-static char cpu_model[128];
-
-/*
- * mi_cpu_init: early initialisation of MI CPU related structures.
- *
- * Note: may not block and memory allocator is not yet available.
- */
-void
-mi_cpu_init(void)
-{
-
-	mutex_init(&cpu_lock, MUTEX_DEFAULT, IPL_NONE);
-
-	kcpuset_create(&kcpuset_attached, true);
-	kcpuset_create(&kcpuset_running, true);
-	kcpuset_set(kcpuset_running, 0);
-}
 
 int
 mi_cpu_attach(struct cpu_info *ci)
@@ -185,9 +161,9 @@ mi_cpu_attach(struct cpu_info *ci)
 	}
 
 	if (ci == curcpu())
-		ci->ci_data.cpu_onproc = curlwp;
+		ci->ci_onproc = curlwp;
 	else
-		ci->ci_data.cpu_onproc = ci->ci_data.cpu_idlelwp;
+		ci->ci_onproc = ci->ci_data.cpu_idlelwp;
 
 	percpu_init_cpu(ci);
 	softint_init(ci);
@@ -469,25 +445,7 @@ cpu_setstate(struct cpu_info *ci, bool online)
 	return 0;
 }
 
-int
-cpu_setmodel(const char *fmt, ...)
-{
-	int len;
-	va_list ap;
-
-	va_start(ap, fmt);
-	len = vsnprintf(cpu_model, sizeof(cpu_model), fmt, ap);
-	va_end(ap);
-	return len;
-}
-
-const char *
-cpu_getmodel(void)
-{
-	return cpu_model;
-}
-
-#ifdef __HAVE_INTR_CONTROL
+#if defined(__HAVE_INTR_CONTROL)
 static void
 cpu_xc_intr(struct cpu_info *ci, void *unused)
 {
@@ -580,13 +538,6 @@ cpu_intr_count(struct cpu_info *ci)
 }
 #endif	/* __HAVE_INTR_CONTROL */
 
-bool
-cpu_softintr_p(void)
-{
-
-	return (curlwp->l_pflag & LP_INTR) != 0;
-}
-
 #ifdef CPU_UCODE
 int
 cpu_ucode_load(struct cpu_ucode_softc *sc, const char *fwname)
@@ -602,7 +553,9 @@ cpu_ucode_load(struct cpu_ucode_softc *sc, const char *fwname)
 
 	error = cpu_ucode_md_open(&fwh, sc->loader_version, fwname);
 	if (error != 0) {
-		aprint_error("ucode: firmware_open failed: %i\n", error);
+#ifdef DEBUG
+		printf("ucode: firmware_open(%s) failed: %i\n", fwname, error);
+#endif
 		goto err0;
 	}
 

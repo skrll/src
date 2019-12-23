@@ -1,4 +1,4 @@
-/*	$NetBSD: ustir.c,v 1.42 2019/09/22 07:28:35 dsainty Exp $	*/
+/*	$NetBSD: ustir.c,v 1.44 2019/12/01 12:47:10 maxv Exp $	*/
 
 /*
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ustir.c,v 1.42 2019/09/22 07:28:35 dsainty Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ustir.c,v 1.44 2019/12/01 12:47:10 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -146,7 +146,6 @@ struct ustir_softc {
 
 #define USTIR_WR_TIMEOUT 200
 
-Static int ustir_activate(device_t, enum devact);
 Static int ustir_open(void *, int, int, struct lwp *);
 Static int ustir_close(void *, int, int, struct lwp *);
 Static int ustir_read(void *, struct uio *, int);
@@ -215,16 +214,16 @@ ustir_dumpdata(uint8_t const *data, size_t dlen, char const *desc)
 }
 #endif
 
-int ustir_match(device_t, cfdata_t, void *);
-void ustir_attach(device_t, device_t, void *);
-void ustir_childdet(device_t, device_t);
-int ustir_detach(device_t, int);
-int ustir_activate(device_t, enum devact);
+static int ustir_match(device_t, cfdata_t, void *);
+static void ustir_attach(device_t, device_t, void *);
+static void ustir_childdet(device_t, device_t);
+static int ustir_detach(device_t, int);
+static int ustir_activate(device_t, enum devact);
 
 CFATTACH_DECL2_NEW(ustir, sizeof(struct ustir_softc), ustir_match,
     ustir_attach, ustir_detach, ustir_activate, NULL, ustir_childdet);
 
-int
+static int
 ustir_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct usb_attach_arg *uaa = aux;
@@ -238,7 +237,7 @@ ustir_match(device_t parent, cfdata_t match, void *aux)
 	return UMATCH_NONE;
 }
 
-void
+static void
 ustir_attach(device_t parent, device_t self, void *aux)
 {
 	struct ustir_softc *sc = device_private(self);
@@ -312,7 +311,7 @@ ustir_attach(device_t parent, device_t self, void *aux)
 	return;
 }
 
-void
+static void
 ustir_childdet(device_t self, device_t child)
 {
 	struct ustir_softc *sc = device_private(self);
@@ -321,7 +320,7 @@ ustir_childdet(device_t self, device_t child)
 	sc->sc_child = NULL;
 }
 
-int
+static int
 ustir_detach(device_t self, int flags)
 {
 	struct ustir_softc *sc = device_private(self);

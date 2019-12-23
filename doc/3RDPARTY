@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1666 2019/10/17 16:48:12 christos Exp $
+#	$NetBSD: 3RDPARTY,v 1.1680 2019/12/20 22:26:16 roy Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -41,12 +41,12 @@
 #
 
 Package:	acpica
-Version:	20190816
-Current Vers:	20190816
+Version:	20191213
+Current Vers:	20191213
 Maintainer:	Intel
 Archive Site:	http://www.acpica.org/downloads/
 Home Page:	http://www.acpica.org/
-Date:		2019-10-09
+Date:		2019-12-14
 Mailing List:	devel@acpica.org
 License:	BSD-like
 Responsible:	jruoho
@@ -120,8 +120,8 @@ Notes:
 bc includes dc, both of which are in the NetBSD tree.
 
 Package:	bind [named and utils]
-Version:	9.14.7/MPL
-Current Vers:	9.14.7/MPL
+Version:	9.14.8/MPL
+Current Vers:	9.14.8/MPL
 Maintainer:	ISC
 Archive Site:	ftp://ftp.isc.org/isc/bind9/
 Home Page:	http://www.isc.org/software/bind/
@@ -139,12 +139,12 @@ Then binclude4netbsd script to import into src/external/bsd/bind/include.
 The libc and include parts of the resolver are now part of libbind.
 
 Package:	unbound
-Version:	1.9.1
-Current Vers:	1.9.4
+Version:	1.9.6
+Current Vers:	1.9.6
 Maintainer:	Nlnetlabs
 Archive Site:	https://www.unbound.net/downloads/unbound-latest.tar.gz
 Home Page:	https://www.unbound.net/
-Date:		2019-10-09
+Date:		2019-12-15
 Mailing List:	https://unbound.nlnetlabs.nl/mailman/listinfo/unbound-users
 Responsible:	christos
 License:	BSD-like
@@ -154,12 +154,12 @@ Use cleantags to import
 run configure and update config files in include
 
 Package:	nsd
-Version:	4.1.27
-Current Vers:	4.2.2
+Version:	4.2.4
+Current Vers:	4.2.4
 Maintainer:	Nlnetlabs
 Archive Site:	https://www.nlnetlabs.nl/svn/nsd/
 Home Page:	https://www.nlnetlabs.nl/projects/nsd/
-Date:		2019-10-09
+Date:		2019-12-15
 Mailing List:	https://open.nlnetlabs.nl/mailman/listinfo/nsd-users/
 Responsible:	christos
 License:	BSD-like
@@ -195,12 +195,12 @@ Todo[4]: Re-entrant functions of net/*
 Todo[5]: Reconcile the doc directory.
 
 Package:	bsd-family-tree
-Version:	349295
-Current Vers:	349295
+Version:	354417
+Current Vers:	354417
 Maintainer:	The FreeBSD Project
 Archive Site:	https://svnweb.freebsd.org/base/head/share/misc/bsd-family-tree
 Home Page:	https://svnweb.freebsd.org/base/head/share/misc/bsd-family-tree
-Date:		2019-10-09
+Date:		2019-11-06
 Mailing List:
 Responsible:
 License:	BSD (2-clause) (see http://www.freebsd.org/cgi/cvsweb.cgi/src/COPYRIGHT)
@@ -327,12 +327,12 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	8.1.1
-Current Vers:	8.1.1
+Version:	8.1.4
+Current Vers:	8.1.4
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
-Date:		2019-10-16
+Date:		2019-12-20
 Mailing List: 	dhcpcd-discuss@marples.name
 License:	BSD (2-clause)
 Location:	external/bsd/dhcpcd/dist
@@ -396,12 +396,12 @@ Notes:
 Please use "expat" as the vendor tag for CVS imports.
 
 Package:	file
-Version:	5.37
-Current Vers:	5.37
+Version:	5.38
+Current Vers:	5.38
 Maintainer:	Christos Zoulas <christos@zoulas.com>
 Archive Site:	ftp://ftp.astron.com/pub/file/
 Home Page:	http://www.darwinsys.com/file/
-Date:		2019-05-22
+Date:		2019-12-16
 Mailing List:	file@astron.com
 Responsible:	christos, pooka
 License:	BSD (2-clause)
@@ -517,10 +517,10 @@ Only double-precision addressed at this time.
 
 
 Package:	heimdal
-Version:	7.1.0 (HEAD-2017-01-28)
-Current Vers:	7.5.0
+Version:	7.7.0
+Current Vers:	7.7.0
 Maintainer:	Heimdal <heimdal@h5l.org>
-Archive Site:	ftp://ftp.h5l.org/pub/heimdal/src/
+Archive Site:	https://github.com/heimdal/heimdal/releases/download/
 Home Page:	http://www.h5l.org/
 Date:		2019-01-09
 Mailing List:	heimdal-discuss@sics.se
@@ -729,14 +729,14 @@ Notes:
   .so'ing only. Copy the rest to man.
 
 Package:	llvm
-Version:	7.0.0svn (r337282)
+Version:	10.0.0git (01f3a59fb3e2542fce74c768718f594d0debd0da)
 Current Vers.:	9.0.0
 Maintainer:	llvm-dev@lists.llvm.org
 Home Page:	https://llvm.org
 Date:		2019-10-09
 Responsible:	joerg
-License:	BSD/MIT
-Location:	external/bsd/llvm/dist
+License:	Apache2 with runtime exceptions
+Location:	external/apache2/llvm/dist
 Notes:
 A CVS ACL is in place for the location to prevent unintentioned commits.
 All changes should come via import from upstream SVN.
@@ -1004,12 +1004,12 @@ Location:	external/bsd/openldap/dist
 Notes:
 
 Package:	OpenPAM
-Version:	20170430 (Resedacea)
+Version:	20190224 (Tabebuia)
 Current Vers:	20190224 (Tabebuia)
 Maintainer:	Dag-Erling Smørgrav <des@FreeBSD.org>
 Archive Site:	http://www.openpam.org/
 Home Page:	http://www.openpam.org/
-Date:		2019-10-09
+Date:		2019-12-15
 Mailing List:
 Responsible:	christos
 License:	BSD (3-clause)
@@ -1197,7 +1197,7 @@ now to do a new import.
 
 Package:	Postfix
 Version:	3.1.4
-Current Vers:	3.1.14/3.2.11/3.3.6/3.4.7
+Current Vers:	3.1.14/3.2.11/3.3.6/3.4.8
 Maintainer:	Wietse Venema <wietse@porcupine.org>
 Archive Site:
 Home Page:	http://www.postfix.org/
@@ -1346,12 +1346,12 @@ perhaps this implementation should be kept anyway for historical
 purposes.
 
 Package:	tmux
-Version:	2.8
+Version:	2.9a
 Current Vers:	2.9a
 Maintainer:	Nicholas Marriott <nicholas.marriott@gmail.com>
 Archive site:	https://github.com/tmux/tmux
 Home page:	http://tmux.github.io
-Date: 		2019-10-09
+Date: 		2019-11-12
 Mailing List:	tmux-users@googlegroups.com
 Responsible:	christos
 License:	BSD
@@ -2177,3 +2177,18 @@ Responsible:
 License:	BSD-like (2 and 3-clause)
 Location:	sys/external/bsd/ena-com
 Notes:
+
+Package:	terminfo
+Version:	20190609
+
+Current Vers:	20190609
+Maintainer:	Thomas Dickey (ncurses)
+Archive Site:	ftp://ftp.invisible-island.net/ncurses/current
+Home Page:	https://invisible-island.net/ncurses/
+Date:		2019-11-27
+Mailing List:	bug-ncurses@gnu.org
+Responsible:
+License:	none
+Location:	sys/external/bsd/ena-com
+Notes:
+Use the import script in /usr/src/share/terminfo

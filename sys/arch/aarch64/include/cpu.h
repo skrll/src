@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.14 2019/10/19 18:04:26 jmcneill Exp $ */
+/* $NetBSD: cpu.h,v 1.16 2019/12/02 18:35:07 ad Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -73,6 +73,7 @@ struct cpu_info {
 	device_t ci_dev;
 	cpuid_t ci_cpuid;
 	struct lwp *ci_curlwp;
+	struct lwp *ci_onproc;
 	struct lwp *ci_softlwps[SOFTINT_COUNT];
 
 	uint64_t ci_lastintr;
@@ -118,7 +119,6 @@ curcpu(void)
 #define setsoftast(ci)		atomic_or_uint(&(ci)->ci_astpending, __BIT(0))
 #define cpu_signotify(l)	setsoftast((l)->l_cpu)
 
-void cpu_set_curpri(int);
 void cpu_proc_fork(struct proc *, struct proc *);
 void cpu_need_proftick(struct lwp *l);
 void cpu_boot_secondary_processors(void);

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.63 2019/10/13 07:28:15 mrg Exp $
+#	$NetBSD: Makefile,v 1.65 2019/12/19 07:14:07 maxv Exp $
 #	@(#)Makefile	5.2 (Berkeley) 12/28/90
 
 PROG=	make

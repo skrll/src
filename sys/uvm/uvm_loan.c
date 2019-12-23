@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_loan.c,v 1.87 2018/05/25 20:11:03 jdolecek Exp $	*/
+/*	$NetBSD: uvm_loan.c,v 1.92 2019/12/18 20:38:14 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_loan.c,v 1.87 2018/05/25 20:11:03 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_loan.c,v 1.92 2019/12/18 20:38:14 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -59,7 +59,7 @@ UVMHIST_DEFINE(loanhist);
  * at the same time.
  *
  * loans are tracked by pg->loan_count.  an O->A page will have both
- * a uvm_object and a vm_anon, but PQ_ANON will not be set.   this sort
+ * a uvm_object and a vm_anon, but PG_ANON will not be set.   this sort
  * of page is considered "owned" by the uvm_object (not the anon).
  *
  * each loan of a page to the kernel bumps the pg->wire_count.  the
@@ -77,15 +77,15 @@ UVMHIST_DEFINE(loanhist);
  * pages should be freed when the last loan is dropped.   in some cases
  * an anon may "adopt" an orphaned page.
  *
- * locking: to read pg->loan_count either the owner or the page queues
+ * locking: to read pg->loan_count either the owner or pg->interlock
  * must be locked.   to modify pg->loan_count, both the owner of the page
- * and the PQs must be locked.   pg->flags is (as always) locked by
+ * and pg->interlock must be locked.   pg->flags is (as always) locked by
  * the owner of the page.
  *
  * note that locking from the "loaned" side is tricky since the object
  * getting the loaned page has no reference to the page's owner and thus
  * the owner could "die" at any time.   in order to prevent the owner
- * from dying the page queues should be locked.   this forces us to sometimes
+ * from dying pg->interlock should be locked.   this forces us to sometimes
  * use "try" locking.
  *
  * loans are typically broken by the following events:
@@ -357,7 +357,7 @@ uvm_loananon(struct uvm_faultinfo *ufi, void ***output, int flags,
 	if (flags & UVM_LOAN_TOANON) {
 		KASSERT(mutex_owned(anon->an_lock));
 		pg = anon->an_page;
-		if (pg && (pg->pqflags & PQ_ANON) != 0 && anon->an_ref == 1) {
+		if (pg && (pg->flags & PG_ANON) != 0 && anon->an_ref == 1) {
 			if (pg->wire_count > 0) {
 				UVMHIST_LOG(loanhist, "->A wired %#jx",
 				    (uintptr_t)pg, 0, 0, 0);
@@ -412,9 +412,7 @@ uvm_loananon(struct uvm_faultinfo *ufi, void ***output, int flags,
 	 */
 
 	pg = anon->an_page;
-	mutex_enter(&uvm_pageqlock);
 	if (pg->wire_count > 0) {
-		mutex_exit(&uvm_pageqlock);
 		UVMHIST_LOG(loanhist, "->K wired %#jx", (uintptr_t)pg, 0, 0, 0);
 		KASSERT(pg->uobject == NULL);
 		uvmfault_unlockall(ufi, ufi->entry->aref.ar_amap, NULL);
@@ -423,10 +421,11 @@ uvm_loananon(struct uvm_faultinfo *ufi, void ***output, int flags,
 	if (pg->loan_count == 0) {
 		pmap_page_protect(pg, VM_PROT_READ);
 	}
+	mutex_enter(&pg->interlock);
 	pg->loan_count++;
 	KASSERT(pg->loan_count > 0);	/* detect wrap-around */
+	mutex_exit(&pg->interlock);
 	uvm_pageactivate(pg);
-	mutex_exit(&uvm_pageqlock);
 	**output = pg;
 	(*output)++;
 
@@ -463,9 +462,7 @@ uvm_loanpage(struct vm_page **pgpp, int npages)
 		KASSERT(mutex_owned(pg->uobject->vmobjlock));
 		KASSERT(pg->flags & PG_BUSY);
 
-		mutex_enter(&uvm_pageqlock);
 		if (pg->wire_count > 0) {
-			mutex_exit(&uvm_pageqlock);
 			UVMHIST_LOG(loanhist, "wired %#jx", (uintptr_t)pg,
 			    0, 0, 0);
 			error = EBUSY;
@@ -474,10 +471,11 @@ uvm_loanpage(struct vm_page **pgpp, int npages)
 		if (pg->loan_count == 0) {
 			pmap_page_protect(pg, VM_PROT_READ);
 		}
+		mutex_enter(&pg->interlock);
 		pg->loan_count++;
 		KASSERT(pg->loan_count > 0);	/* detect wrap-around */
+		mutex_exit(&pg->interlock);
 		uvm_pageactivate(pg);
-		mutex_exit(&uvm_pageqlock);
 	}
 
 	uvm_page_unbusy(pgpp, npages);
@@ -576,9 +574,7 @@ reget:
 					slock = pg->uobject->vmobjlock;
 
 					mutex_enter(slock);
-					mutex_enter(&uvm_pageqlock);
 					uvm_page_unbusy(&pg, 1);
-					mutex_exit(&uvm_pageqlock);
 					mutex_exit(slock);
 				}
 				goto reget;
@@ -713,15 +709,11 @@ uvm_loanuobj(struct uvm_faultinfo *ufi, void ***output, int flags, vaddr_t va)
 				wakeup(pg);
 			}
 			if (pg->flags & PG_RELEASED) {
-				mutex_enter(&uvm_pageqlock);
 				uvm_pagefree(pg);
-				mutex_exit(&uvm_pageqlock);
 				mutex_exit(uobj->vmobjlock);
 				return (0);
 			}
-			mutex_enter(&uvm_pageqlock);
 			uvm_pageactivate(pg);
-			mutex_exit(&uvm_pageqlock);
 			pg->flags &= ~(PG_BUSY|PG_WANTED);
 			UVM_PAGE_OWN(pg, NULL);
 			mutex_exit(uobj->vmobjlock);
@@ -779,22 +771,21 @@ uvm_loanuobj(struct uvm_faultinfo *ufi, void ***output, int flags, vaddr_t va)
 	if (anon == NULL) {
 		goto fail;
 	}
-	mutex_enter(&uvm_pageqlock);
 	if (pg->wire_count > 0) {
-		mutex_exit(&uvm_pageqlock);
 		UVMHIST_LOG(loanhist, "wired %#jx", (uintptr_t)pg, 0, 0, 0);
 		goto fail;
 	}
 	if (pg->loan_count == 0) {
 		pmap_page_protect(pg, VM_PROT_READ);
 	}
+	mutex_enter(&pg->interlock);
 	pg->loan_count++;
 	KASSERT(pg->loan_count > 0);	/* detect wrap-around */
 	pg->uanon = anon;
 	anon->an_page = pg;
 	anon->an_lock = /* TODO: share amap lock */
+	mutex_exit(&pg->interlock);
 	uvm_pageactivate(pg);
-	mutex_exit(&uvm_pageqlock);
 	if (pg->flags & PG_WANTED) {
 		wakeup(pg);
 	}
@@ -837,7 +828,7 @@ fail:
  */
 
 static struct uvm_object uvm_loanzero_object;
-static kmutex_t uvm_loanzero_lock;
+static kmutex_t uvm_loanzero_lock __cacheline_aligned;
 
 static int
 uvm_loanzero(struct uvm_faultinfo *ufi, void ***output, int flags)
@@ -853,8 +844,8 @@ again:
 	 * first, get ahold of our single zero page.
 	 */
 
-	if (__predict_false((pg =
-			     TAILQ_FIRST(&uvm_loanzero_object.memq)) == NULL)) {
+	pg = uvm_pagelookup(&uvm_loanzero_object, 0);
+	if (__predict_false(pg == NULL)) {
 		while ((pg = uvm_pagealloc(&uvm_loanzero_object, 0, NULL,
 					   UVM_PGA_ZERO)) == NULL) {
 			mutex_exit(uvm_loanzero_object.vmobjlock);
@@ -872,17 +863,15 @@ again:
 		/* got a zero'd page. */
 		pg->flags &= ~(PG_WANTED|PG_BUSY|PG_FAKE);
 		pg->flags |= PG_RDONLY;
-		mutex_enter(&uvm_pageqlock);
 		uvm_pageactivate(pg);
-		mutex_exit(&uvm_pageqlock);
 		UVM_PAGE_OWN(pg, NULL);
 	}
 
 	if ((flags & UVM_LOAN_TOANON) == 0) {	/* loaning to kernel-page */
-		mutex_enter(&uvm_pageqlock);
+		mutex_enter(&pg->interlock);
 		pg->loan_count++;
 		KASSERT(pg->loan_count > 0);	/* detect wrap-around */
-		mutex_exit(&uvm_pageqlock);
+		mutex_exit(&pg->interlock);
 		mutex_exit(uvm_loanzero_object.vmobjlock);
 		**output = pg;
 		(*output)++;
@@ -920,11 +909,11 @@ again:
 	}
 	anon->an_page = pg;
 	pg->uanon = anon;
-	mutex_enter(&uvm_pageqlock);
+	mutex_enter(&pg->interlock);
 	pg->loan_count++;
 	KASSERT(pg->loan_count > 0);	/* detect wrap-around */
+	mutex_exit(&pg->interlock);
 	uvm_pageactivate(pg);
-	mutex_exit(&uvm_pageqlock);
 	mutex_exit(&anon->an_lock);
 	mutex_exit(uvm_loanzero_object.vmobjlock);
 	**output = anon;
@@ -973,7 +962,6 @@ uvm_unloanpage(struct vm_page **ploans, int npages)
 	struct vm_page *pg;
 	kmutex_t *slock;
 
-	mutex_enter(&uvm_pageqlock);
 	while (npages-- > 0) {
 		pg = *ploans++;
 
@@ -983,6 +971,7 @@ uvm_unloanpage(struct vm_page **ploans, int npages)
 		 * so we have to do a try-lock here.
 		 */
 
+		mutex_enter(&pg->interlock);
 		slock = NULL;
 		while (pg->uobject != NULL || pg->uanon != NULL) {
 			if (pg->uobject != NULL) {
@@ -994,16 +983,16 @@ uvm_unloanpage(struct vm_page **ploans, int npages)
 				break;
 			}
 			/* XXX Better than yielding but inadequate. */
-			kpause("livelock", false, 1, &uvm_pageqlock);
+			kpause("livelock", false, 1, &pg->interlock);
 			slock = NULL;
 		}
 
 		/*
 		 * drop our loan.  if page is owned by an anon but
-		 * PQ_ANON is not set, the page was loaned to the anon
+		 * PG_ANON is not set, the page was loaned to the anon
 		 * from an object which dropped ownership, so resolve
 		 * this by turning the anon's loan into real ownership
-		 * (ie. decrement loan_count again and set PQ_ANON).
+		 * (ie. decrement loan_count again and set PG_ANON).
 		 * after all this, if there are no loans left, put the
 		 * page back a paging queue (if the page is owned by
 		 * an anon) or free it (if the page is now unowned).
@@ -1012,11 +1001,12 @@ uvm_unloanpage(struct vm_page **ploans, int npages)
 		KASSERT(pg->loan_count > 0);
 		pg->loan_count--;
 		if (pg->uobject == NULL && pg->uanon != NULL &&
-		    (pg->pqflags & PQ_ANON) == 0) {
+		    (pg->flags & PG_ANON) == 0) {
 			KASSERT(pg->loan_count > 0);
 			pg->loan_count--;
-			pg->pqflags |= PQ_ANON;
+			pg->flags |= PG_ANON;
 		}
+		mutex_exit(&pg->interlock);
 		if (pg->loan_count == 0 && pg->uobject == NULL &&
 		    pg->uanon == NULL) {
 			KASSERT((pg->flags & PG_BUSY) == 0);
@@ -1026,7 +1016,6 @@ uvm_unloanpage(struct vm_page **ploans, int npages)
 			mutex_exit(slock);
 		}
 	}
-	mutex_exit(&uvm_pageqlock);
 }
 
 /*
@@ -1071,16 +1060,14 @@ ulz_put(struct uvm_object *uobj, voff_t start, voff_t stop, int flags)
 	 * just reactivate or dequeue it.
 	 */
 
-	pg = TAILQ_FIRST(&uobj->memq);
+	pg = uvm_pagelookup(uobj, 0);
 	KASSERT(pg != NULL);
-	KASSERT(TAILQ_NEXT(pg, listq.queue) == NULL);
 
-	mutex_enter(&uvm_pageqlock);
-	if (pg->uanon)
+	if (pg->uanon) {
 		uvm_pageactivate(pg);
-	else
+	} else {
 		uvm_pagedequeue(pg);
-	mutex_exit(&uvm_pageqlock);
+	}
 
 	mutex_exit(uobj->vmobjlock);
 	return 0;
@@ -1134,7 +1121,7 @@ uvm_loanbreak(struct vm_page *uobjpage)
 	 * force a reload of the old page by clearing it from all
 	 * pmaps.
 	 * transfer dirtiness of the old page to the new page.
-	 * then lock the page queues to rename the pages.
+	 * then rename the pages.
 	 */
 
 	uvm_pagecopy(uobjpage, pg);	/* old -> new */
@@ -1155,14 +1142,6 @@ uvm_loanbreak(struct vm_page *uobjpage)
 	uobjpage->flags &= ~(PG_WANTED|PG_BUSY);
 	UVM_PAGE_OWN(uobjpage, NULL);
 
-	mutex_enter(&uvm_pageqlock);
-
-	/*
-	 * replace uobjpage with new page.
-	 */
-
-	uvm_pagereplace(uobjpage, pg);
-
 	/*
 	 * if the page is no longer referenced by
 	 * an anon (i.e. we are breaking an O->K
@@ -1172,13 +1151,17 @@ uvm_loanbreak(struct vm_page *uobjpage)
 		uvm_pagedequeue(uobjpage);
 
 	/*
+	 * replace uobjpage with new page.
+	 */
+
+	uvm_pagereplace(uobjpage, pg);
+
+	/*
 	 * at this point we have absolutely no
 	 * control over uobjpage
 	 */
 
-	/* install new page */
 	uvm_pageactivate(pg);
-	mutex_exit(&uvm_pageqlock);
 
 	/*
 	 * done!  loan is broken and "pg" is
@@ -1191,53 +1174,62 @@ uvm_loanbreak(struct vm_page *uobjpage)
 int
 uvm_loanbreak_anon(struct vm_anon *anon, struct uvm_object *uobj)
 {
-	struct vm_page *pg;
+	struct vm_page *newpg, *oldpg;
 
 	KASSERT(mutex_owned(anon->an_lock));
 	KASSERT(uobj == NULL || mutex_owned(uobj->vmobjlock));
 
 	/* get new un-owned replacement page */
-	pg = uvm_pagealloc(NULL, 0, NULL, 0);
-	if (pg == NULL) {
+	newpg = uvm_pagealloc(NULL, 0, NULL, 0);
+	if (newpg == NULL) {
 		return ENOMEM;
 	}
 
-	/* copy old -> new */
-	uvm_pagecopy(anon->an_page, pg);
-
-	/* force reload */
-	pmap_page_protect(anon->an_page, VM_PROT_NONE);
-	mutex_enter(&uvm_pageqlock);	  /* KILL loan */
-
-	anon->an_page->uanon = NULL;
-	/* in case we owned */
-	anon->an_page->pqflags &= ~PQ_ANON;
-
-	if (uobj) {
-		/* if we were receiver of loan */
-		anon->an_page->loan_count--;
-	} else {
+	oldpg = anon->an_page;
+	if (uobj == NULL) {
 		/*
 		 * we were the lender (A->K); need to remove the page from
 		 * pageq's.
 		 */
-		uvm_pagedequeue(anon->an_page);
+		uvm_pagedequeue(oldpg);
 	}
+
+	/* copy old -> new */
+	uvm_pagecopy(oldpg, newpg);
+
+	/* force reload */
+	pmap_page_protect(oldpg, VM_PROT_NONE);
+	if (newpg < oldpg) {
+		mutex_enter(&newpg->interlock);
+		mutex_enter(&oldpg->interlock);
+	} else {
+		mutex_enter(&oldpg->interlock);
+		mutex_enter(&newpg->interlock);
+	}
+	oldpg->uanon = NULL;
+	/* in case we owned */
+	oldpg->flags &= ~PG_ANON;
+
+	if (uobj) {
+		/* if we were receiver of loan */
+		oldpg->loan_count--;
+	}
+
+	/* install new page in anon */
+	anon->an_page = newpg;
+	newpg->uanon = anon;
+	newpg->flags |= PG_ANON;
+
+	mutex_exit(&newpg->interlock);
+	mutex_exit(&oldpg->interlock);
+	uvm_pageactivate(newpg);
+
+	newpg->flags &= ~(PG_BUSY|PG_FAKE);
+	UVM_PAGE_OWN(newpg, NULL);
 
 	if (uobj) {
 		mutex_exit(uobj->vmobjlock);
 	}
-
-	/* install new page in anon */
-	anon->an_page = pg;
-	pg->uanon = anon;
-	pg->pqflags |= PQ_ANON;
-
-	uvm_pageactivate(pg);
-	mutex_exit(&uvm_pageqlock);
-
-	pg->flags &= ~(PG_BUSY|PG_FAKE);
-	UVM_PAGE_OWN(pg, NULL);
 
 	/* done! */
 

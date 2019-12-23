@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_physio.c,v 1.95 2019/04/04 12:26:45 mlelstv Exp $	*/
+/*	$NetBSD: kern_physio.c,v 1.97 2019/12/08 19:52:37 ad Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1990, 1993
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_physio.c,v 1.95 2019/04/04 12:26:45 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_physio.c,v 1.97 2019/12/08 19:52:37 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_subr.c,v 1.472 2019/09/22 22:59:39 christos Exp $	*/
+/*	$NetBSD: vfs_subr.c,v 1.477 2019/12/15 20:30:03 joerg Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 2004, 2005, 2007, 2008 The NetBSD Foundation, Inc.
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.472 2019/09/22 22:59:39 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.477 2019/12/15 20:30:03 joerg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -758,6 +758,7 @@ sched_sync(void *arg)
 {
 	mount_iterator_t *iter;
 	synclist_t *slp;
+	struct vnode_impl *vi;
 	struct vnode *vp;
 	struct mount *mp;
 	time_t starttime;
@@ -790,14 +791,16 @@ sched_sync(void *arg)
 		if (syncer_delayno >= syncer_last)
 			syncer_delayno = 0;
 
-		while ((vp = VIMPL_TO_VNODE(TAILQ_FIRST(slp))) != NULL) {
+		while ((vi = TAILQ_FIRST(slp)) != NULL) {
+			vp = VIMPL_TO_VNODE(vi);
 			synced = lazy_sync_vnode(vp);
 
 			/*
 			 * XXX The vnode may have been recycled, in which
 			 * case it may have a new identity.
 			 */
-			if (VIMPL_TO_VNODE(TAILQ_FIRST(slp)) == vp) {
+			vi = TAILQ_FIRST(slp);
+			if (vi != NULL && VIMPL_TO_VNODE(vi) == vp) {
 				/*
 				 * Put us back on the worklist.  The worklist
 				 * routine will remove us from our current
@@ -1107,7 +1110,7 @@ vprint_common(struct vnode *vp, const char *prefix,
 	    vp->v_usecount, vp->v_writecount, vp->v_holdcnt);
 	(*pr)("%ssize %" PRIx64 " writesize %" PRIx64 " numoutput %d\n",
 	    prefix, vp->v_size, vp->v_writesize, vp->v_numoutput);
-	(*pr)("%sdata %p lock %p\n", prefix, vp->v_data, &vip->vi_lock);
+	(*pr)("%sdata %p lock %p\n", prefix, vp->v_data, vip->vi_lock);
 
 	(*pr)("%sstate %s key(%p %zd)", prefix, vstate_name(vip->vi_state),
 	    vip->vi_key.vk_mount, vip->vi_key.vk_key_len);
@@ -1540,11 +1543,19 @@ vfs_vnode_lock_print(void *vlock, int full, void (*pr)(const char *, ...))
 
 	for (mp = _mountlist_next(NULL); mp; mp = _mountlist_next(mp)) {
 		TAILQ_FOREACH(vip, &mp->mnt_vnodelist, vi_mntvnodes) {
-			if (&vip->vi_lock != vlock)
-				continue;
-			vfs_vnode_print(VIMPL_TO_VNODE(vip), full, pr);
+			if (vip->vi_lock == vlock ||
+			    VIMPL_TO_VNODE(vip)->v_interlock == vlock)
+				vfs_vnode_print(VIMPL_TO_VNODE(vip), full, pr);
 		}
 	}
+}
+
+void
+vfs_mount_print_all(int full, void (*pr)(const char *, ...))
+{
+	struct mount *mp;
+	for (mp = _mountlist_next(NULL); mp; mp = _mountlist_next(mp))
+		vfs_mount_print(mp, full, pr);
 }
 
 void

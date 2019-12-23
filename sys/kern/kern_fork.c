@@ -1,7 +1,8 @@
-/*	$NetBSD: kern_fork.c,v 1.215 2019/10/12 10:55:23 kamil Exp $	*/
+/*	$NetBSD: kern_fork.c,v 1.217 2019/12/16 22:47:54 ad Exp $	*/
 
 /*-
- * Copyright (c) 1999, 2001, 2004, 2006, 2007, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 1999, 2001, 2004, 2006, 2007, 2008, 2019
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -67,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_fork.c,v 1.215 2019/10/12 10:55:23 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_fork.c,v 1.217 2019/12/16 22:47:54 ad Exp $");
 
 #include "opt_ktrace.h"
 #include "opt_dtrace.h"
@@ -94,8 +95,6 @@ __KERNEL_RCSID(0, "$NetBSD: kern_fork.c,v 1.215 2019/10/12 10:55:23 kamil Exp $"
 #include <sys/uidinfo.h>
 #include <sys/sdt.h>
 #include <sys/ptrace.h>
-
-#include <uvm/uvm_extern.h>
 
 /*
  * DTrace SDT provider definitions
@@ -524,11 +523,13 @@ fork1(struct lwp *l1, int flags, int exitsig, void *stack, size_t stacksize,
 	/*
 	 * Update stats now that we know the fork was successful.
 	 */
-	uvmexp.forks++;
+	KPREEMPT_DISABLE(l1);
+	CPU_COUNT(CPU_COUNT_FORKS, 1);
 	if (flags & FORK_PPWAIT)
-		uvmexp.forks_ppwait++;
+		CPU_COUNT(CPU_COUNT_FORKS_PPWAIT, 1);
 	if (flags & FORK_SHAREVM)
-		uvmexp.forks_sharevm++;
+		CPU_COUNT(CPU_COUNT_FORKS_SHAREVM, 1);
+	KPREEMPT_ENABLE(l1);
 
 	if (ktrpoint(KTR_EMUL))
 		p2->p_traceflag |= KTRFAC_TRC_EMUL;
@@ -561,21 +562,20 @@ fork1(struct lwp *l1, int flags, int exitsig, void *stack, size_t stacksize,
 	p2->p_acflag = AFORK;
 	lwp_lock(l2);
 	KASSERT(p2->p_nrlwps == 1);
+	KASSERT(l2->l_stat == LSIDL);
 	if (p2->p_sflag & PS_STOPFORK) {
-		struct schedstate_percpu *spc = &l2->l_cpu->ci_schedstate;
 		p2->p_nrlwps = 0;
 		p2->p_stat = SSTOP;
 		p2->p_waited = 0;
 		p1->p_nstopchild++;
 		l2->l_stat = LSSTOP;
 		KASSERT(l2->l_wchan == NULL);
-		lwp_unlock_to(l2, spc->spc_lwplock);
+		lwp_unlock(l2);
 	} else {
 		p2->p_nrlwps = 1;
 		p2->p_stat = SACTIVE;
-		l2->l_stat = LSRUN;
-		sched_enqueue(l2, false);
-		lwp_unlock(l2);
+		setrunnable(l2);
+		/* LWP now unlocked */
 	}
 
 	/*

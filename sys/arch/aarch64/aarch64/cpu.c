@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.25 2019/10/20 14:03:51 jmcneill Exp $ */
+/* $NetBSD: cpu.c,v 1.28 2019/12/21 12:53:54 ad Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.25 2019/10/20 14:03:51 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.28 2019/12/21 12:53:54 ad Exp $");
 
 #include "locators.h"
 #include "opt_arm_debug.h"
@@ -101,8 +101,6 @@ void
 cpu_attach(device_t dv, cpuid_t id)
 {
 	const int unit = device_unit(dv);
-	struct cpu_info *ci;
-	uint64_t mpidr;
 
 	if (unit == 0) {
 		ci = curcpu();
@@ -142,18 +140,10 @@ cpu_attach(device_t dv, cpuid_t id)
 #endif /* MULTIPROCESSOR */
 	}
 
-	mpidr = ci->ci_id.ac_mpidr;
-	if (mpidr & MPIDR_MT) {
-		ci->ci_smt_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
-		ci->ci_core_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
-		ci->ci_package_id = __SHIFTOUT(mpidr, MPIDR_AFF2);
-	} else {
-		ci->ci_core_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
-		ci->ci_package_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
-	}
-
 	ci->ci_dev = dv;
 	dv->dv_private = ci;
+
+	aarch64_gettopology(ci, ci->ci_id.ac_mpidr);
 
 	cpu_identify(ci->ci_dev, ci);
 #ifdef MULTIPROCESSOR
@@ -167,7 +157,10 @@ cpu_attach(device_t dv, cpuid_t id)
 	fpu_attach(ci);
 
 	cpu_identify1(dv, ci);
-	aarch64_getcacheinfo();
+#if 0
+	/* already done in locore */
+	aarch64_getcacheinfo(unit); 
+#endif
 	aarch64_printcacheinfo(dv);
 	cpu_identify2(dv, ci);
 
@@ -236,7 +229,7 @@ cpu_identify(device_t self, struct cpu_info *ci)
 
 	aprint_naive("\n");
 	aprint_normal(": %s\n", model);
-	aprint_normal_dev(ci->ci_dev, "package %lu, core %lu, smt %lu\n",
+	aprint_normal_dev(ci->ci_dev, "package %u, core %u, smt %u\n",
 	    ci->ci_package_id, ci->ci_core_id, ci->ci_smt_id);
 }
 
@@ -539,7 +532,7 @@ cpu_hatch(struct cpu_info *ci)
 	fpu_attach(ci);
 
 	cpu_identify1(ci->ci_dev, ci);
-	aarch64_getcacheinfo();
+	aarch64_getcacheinfo(device_unit(ci->ci_dev));
 	aarch64_printcacheinfo(ci->ci_dev);
 	cpu_identify2(ci->ci_dev, ci);
 

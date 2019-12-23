@@ -1,8 +1,11 @@
-/*	$NetBSD: kern_exec.c,v 1.483 2019/10/12 10:55:23 kamil Exp $	*/
+/*	$NetBSD: kern_exec.c,v 1.485 2019/12/06 21:36:10 ad Exp $	*/
 
 /*-
- * Copyright (c) 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 2008, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
+ *
+ * This code is derived from software contributed to The NetBSD Foundation
+ * by Andrew Doran.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -59,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.483 2019/10/12 10:55:23 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.485 2019/12/06 21:36:10 ad Exp $");
 
 #include "opt_exec.h"
 #include "opt_execfmt.h"
@@ -1360,6 +1363,7 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 		mutex_exit(p->p_lock);
 		mutex_exit(proc_lock);
 		lwp_lock(l);
+		spc_lock(l->l_cpu);
 		mi_switch(l);
 		ksiginfo_queue_drain(&kq);
 		KERNEL_LOCK(l->l_biglocks, l);
@@ -2650,11 +2654,11 @@ do_posix_spawn(struct lwp *l1, pid_t *pid_res, bool *child_ok, const char *path,
 
 	lwp_lock(l2);
 	KASSERT(p2->p_nrlwps == 1);
+	KASSERT(l2->l_stat == LSIDL);
 	p2->p_nrlwps = 1;
 	p2->p_stat = SACTIVE;
-	l2->l_stat = LSRUN;
-	sched_enqueue(l2, false);
-	lwp_unlock(l2);
+	setrunnable(l2);
+	/* LWP now unlocked */
 
 	mutex_exit(p2->p_lock);
 	mutex_exit(proc_lock);

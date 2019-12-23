@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1158 2019/10/24 18:46:20 christos Exp $
+#	$NetBSD: bsd.own.mk,v 1.1169 2019/12/14 10:59:25 mrg Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -19,7 +19,12 @@ MACHINE_CPU=	${MACHINE_ARCH:C/mipse[bl]/mips/:C/mips64e[bl]/mips/:C/sh3e[bl]/sh3
 #
 # Subdirectory used below ${RELEASEDIR} when building a release
 #
+.if !empty(MACHINE:Mevbarm) || !empty(MACHINE:Mevbmips) \
+	|| !empty(MACHINE:Mevbsh3)
+RELEASEMACHINEDIR?=	${MACHINE}-${MACHINE_ARCH}
+.else
 RELEASEMACHINEDIR?=	${MACHINE}
+.endif
 
 #
 # Subdirectory or path component used for the following paths:
@@ -59,7 +64,15 @@ TOOLCHAIN_MISSING?=	no
 # What GCC is used?
 #
 .if ${MACHINE} == "amd64" || \
-    ${MACHINE_CPU} == "aarch64"
+    ${MACHINE} == "i386" || \
+    ${MACHINE} == "ia64" || \
+    ${MACHINE} == "sparc" || \
+    ${MACHINE} == "sparc64" || \
+    ${MACHINE_CPU} == "aarch64" || \
+    ${MACHINE_CPU} == "arm" || \
+    ${MACHINE_CPU} == "powerpc" || \
+    ${MACHINE_CPU} == "powerpc64" || \
+    ${MACHINE_CPU} == "riscv"
 HAVE_GCC?=	8
 .else
 HAVE_GCC?=	7
@@ -1013,9 +1026,9 @@ SOFTFLOAT_BITS=	32
 .endif
 
 #
-# We want to build zfs only for amd64 by default for now.
+# We want to build zfs only for amd64 and aarch64 by default for now.
 #
-.if ${MACHINE} == "amd64"
+.if ${MACHINE} == "amd64" || ${MACHINE_ARCH} == "aarch64"
 MKZFS?=		yes
 .endif
 
@@ -1024,6 +1037,7 @@ MKZFS?=		yes
 #
 .if ${MACHINE_ARCH} == "i386" || \
     ${MACHINE_ARCH} == "x86_64" || \
+    ${MACHINE_ARCH} == "aarch64" || \
     !empty(MACHINE_ARCH:Mearm*)
 MKDTRACE?=	yes
 MKCTF?=		yes
@@ -1068,7 +1082,6 @@ MKSTATICPIE?=	no
 _MKVARS.yes= \
 	MKATF \
 	MKBINUTILS \
-	MKBSDTAR \
 	MKCOMPLEX MKCVS MKCXX \
 	MKDOC MKDTC \
 	MKDYNAMICROOT \
@@ -1192,6 +1205,7 @@ _MKVARS.no= \
 	MKARGON2 \
 	MKARZERO \
 	MKBSDGREP \
+	MKBSDTAR \
 	MKCATPAGES MKCOMPATTESTS MKCOMPATX11 MKCTF \
 	MKDEBUG MKDEBUGLIB MKDTRACE \
 	MKEXTSRC \

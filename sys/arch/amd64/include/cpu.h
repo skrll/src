@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.64 2019/02/11 14:59:32 cherry Exp $	*/
+/*	$NetBSD: cpu.h,v 1.67 2019/12/08 11:53:54 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -44,10 +44,11 @@
 #ifdef _KERNEL
 
 #if defined(__GNUC__) && !defined(_MODULE)
+
 static struct cpu_info *x86_curcpu(void);
 static lwp_t *x86_curlwp(void);
 
-__inline static struct cpu_info * __unused
+__inline static struct cpu_info * __unused __nomsan
 x86_curcpu(void)
 {
 	struct cpu_info *ci;
@@ -59,7 +60,7 @@ x86_curcpu(void)
 	return ci;
 }
 
-__inline static lwp_t * __unused __attribute__ ((const))
+__inline static lwp_t * __unused __nomsan __attribute__ ((const))
 x86_curlwp(void)
 {
 	lwp_t *l;
@@ -71,16 +72,6 @@ x86_curlwp(void)
 	return l;
 }
 
-__inline static void __unused
-cpu_set_curpri(int pri)
-{
-
-	__asm volatile(
-	    "movl %1, %%gs:%0" :
-	    "=m" (*(struct cpu_info *)offsetof(struct cpu_info, ci_schedstate.spc_curpriority)) :
-	    "r" (pri)
-	);
-}
 #endif	/* __GNUC__ && !_MODULE */
 
 #ifdef XENPV

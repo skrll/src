@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.230 2019/10/28 16:03:55 pgoyette Exp $
+#	$NetBSD: Makefile,v 1.232 2019/12/18 07:37:18 maxv Exp $
 
 .include <bsd.own.mk>
 
@@ -54,7 +54,6 @@ SUBDIR+=	exec_script
 SUBDIR+=	fdesc
 SUBDIR+=	ffs
 SUBDIR+=	filecore
-SUBDIR+=	filemon
 SUBDIR+=	flash
 SUBDIR+=	fss
 SUBDIR+=	gpio
@@ -439,6 +438,7 @@ SUBDIR+=	ataraid
 SUBDIR+=	cac
 SUBDIR+=	cac_eisa
 SUBDIR+=	cac_pci
+SUBDIR+=	if_ixl
 SUBDIR+=	if_vioif
 SUBDIR+=	ld
 SUBDIR+=	ld_aac

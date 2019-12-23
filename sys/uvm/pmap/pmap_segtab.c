@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_segtab.c,v 1.11 2019/10/20 07:22:51 skrll Exp $	*/
+/*	$NetBSD: pmap_segtab.c,v 1.13 2019/12/18 11:27:56 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.11 2019/10/20 07:22:51 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.13 2019/12/18 11:27:56 skrll Exp $");
 
 /*
  *	Manages physical address maps.
@@ -100,10 +100,11 @@ __KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.11 2019/10/20 07:22:51 skrll Exp $
 #include "opt_multiprocessor.h"
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/proc.h>
-#include <sys/mutex.h>
+
 #include <sys/atomic.h>
+#include <sys/mutex.h>
+#include <sys/proc.h>
+#include <sys/systm.h>
 
 #include <uvm/uvm.h>
 
@@ -247,7 +248,7 @@ pmap_segtab_release(pmap_t pmap, pmap_segtab_t **stp_p, bool free_stp,
 		struct vm_page *pg = PHYS_TO_VM_PAGE(pa);
 #ifdef PMAP_PTP_CACHE
 		mutex_spin_enter(&pmap_segtab_lock);
-		LIST_INSERT_HEAD(&pmap_segtab_info.ptp_pgflist, pg, listq.list);
+		LIST_INSERT_HEAD(&pmap_segtab_info.ptp_pgflist, pg, pageq.list);
 		mutex_spin_exit(&pmap_segtab_lock);
 #else
 		uvm_pagefree(pg);
@@ -457,7 +458,7 @@ pmap_pte_reserve(pmap_t pmap, vaddr_t va, int flags)
 #ifdef PMAP_PTP_CACHE
 		mutex_spin_enter(&pmap_segtab_lock);
 		if ((pg = LIST_FIRST(&pmap_segtab_info.ptp_pgflist)) != NULL) {
-			LIST_REMOVE(pg, listq.list);
+			LIST_REMOVE(pg, pageq.list);
 			KASSERT(LIST_FIRST(&pmap_segtab_info.ptp_pgflist) != pg);
 		}
 		mutex_spin_exit(&pmap_segtab_lock);
@@ -485,7 +486,7 @@ pmap_pte_reserve(pmap_t pmap, vaddr_t va, int flags)
 #ifdef PMAP_PTP_CACHE
 			mutex_spin_enter(&pmap_segtab_lock);
 			LIST_INSERT_HEAD(&pmap_segtab_info.ptp_pgflist,
-			    pg, listq.list);
+			    pg, pageq.list);
 			mutex_spin_exit(&pmap_segtab_lock);
 #else
 			PMAP_UNMAP_POOLPAGE((vaddr_t)pte);

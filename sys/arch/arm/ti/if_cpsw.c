@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cpsw.c,v 1.7 2019/10/27 23:25:38 jmcneill Exp $	*/
+/*	$NetBSD: if_cpsw.c,v 1.9 2019/11/24 09:37:05 skrll Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -53,7 +53,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: if_cpsw.c,v 1.7 2019/10/27 23:25:38 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: if_cpsw.c,v 1.9 2019/11/24 09:37:05 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -73,14 +73,11 @@ __KERNEL_RCSID(1, "$NetBSD: if_cpsw.c,v 1.7 2019/10/27 23:25:38 jmcneill Exp $")
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
 
-#if 0
-#include <arch/arm/omap/omap2_obiovar.h>
-#else
 #include <dev/fdt/fdtvar.h>
-#endif
-#include <arch/arm/omap/if_cpswreg.h>
-#include <arch/arm/omap/sitara_cmreg.h>
-#include <arch/arm/omap/sitara_cm.h>
+
+#include <arm/ti/if_cpswreg.h>
+
+#define FDT_INTR_FLAGS	0
 
 #define CPSW_TXFRAGS	16
 
@@ -177,19 +174,14 @@ static int cpsw_ale_update_addresses(struct cpsw_softc *, int purge);
 CFATTACH_DECL_NEW(cpsw, sizeof(struct cpsw_softc),
     cpsw_match, cpsw_attach, cpsw_detach, NULL);
 
-#undef KERNHIST
 #include <sys/kernhist.h>
 KERNHIST_DEFINE(cpswhist);
 
-#ifdef KERNHIST
-#define KERNHIST_CALLED_5(NAME, i, j, k, l) \
-do { \
-	_kernhist_call = atomic_inc_uint_nv(&_kernhist_cnt); \
-	KERNHIST_LOG(NAME, "called! %x %x %x %x", i, j, k, l); \
-} while (/*CONSTCOND*/ 0)
-#else
-#define KERNHIST_CALLED_5(NAME, i, j, k, l)
-#endif
+#define CPSWHIST_CALLARGS(A,B,C,D)	do {					\
+	    KERNHIST_CALLARGS(cpswhist, "%jx %jx %jx %jx",			\
+		(uintptr_t)(A), (uintptr_t)(B), (uintptr_t)(C), (uintptr_t)(D));\
+	} while (0)
+
 
 static inline u_int
 cpsw_txdesc_adjust(u_int x, int y)
@@ -222,7 +214,7 @@ cpsw_set_txdesc_next(struct cpsw_softc * const sc, const u_int i, uint32_t n)
 	const bus_size_t o = sizeof(struct cpsw_cpdma_bd) * i + 0;
 
 	KERNHIST_FUNC(__func__);
-	KERNHIST_CALLED_5(cpswhist, sc, i, n, 0);
+	CPSWHIST_CALLARGS(sc, i, n, 0);
 
 	bus_space_write_4(sc->sc_bst, sc->sc_bsh_txdescs, o, n);
 }
@@ -233,7 +225,7 @@ cpsw_set_rxdesc_next(struct cpsw_softc * const sc, const u_int i, uint32_t n)
 	const bus_size_t o = sizeof(struct cpsw_cpdma_bd) * i + 0;
 
 	KERNHIST_FUNC(__func__);
-	KERNHIST_CALLED_5(cpswhist, sc, i, n, 0);
+	CPSWHIST_CALLARGS(sc, i, n, 0);
 
 	bus_space_write_4(sc->sc_bst, sc->sc_bsh_rxdescs, o, n);
 }
@@ -247,7 +239,7 @@ cpsw_get_txdesc(struct cpsw_softc * const sc, const u_int i,
 	const bus_size_t c = __arraycount(bdp->word);
 
 	KERNHIST_FUNC(__func__);
-	KERNHIST_CALLED_5(cpswhist, sc, i, bdp, 0);
+	CPSWHIST_CALLARGS(sc, i, bdp, 0);
 
 	bus_space_read_region_4(sc->sc_bst, sc->sc_bsh_txdescs, o, dp, c);
 	KERNHIST_LOG(cpswhist, "%08x %08x %08x %08x\n",
@@ -263,7 +255,7 @@ cpsw_set_txdesc(struct cpsw_softc * const sc, const u_int i,
 	const bus_size_t c = __arraycount(bdp->word);
 
 	KERNHIST_FUNC(__func__);
-	KERNHIST_CALLED_5(cpswhist, sc, i, bdp, 0);
+	CPSWHIST_CALLARGS(sc, i, bdp, 0);
 	KERNHIST_LOG(cpswhist, "%08x %08x %08x %08x\n",
 	    dp[0], dp[1], dp[2], dp[3]);
 
@@ -279,7 +271,7 @@ cpsw_get_rxdesc(struct cpsw_softc * const sc, const u_int i,
 	const bus_size_t c = __arraycount(bdp->word);
 
 	KERNHIST_FUNC(__func__);
-	KERNHIST_CALLED_5(cpswhist, sc, i, bdp, 0);
+	CPSWHIST_CALLARGS(sc, i, bdp, 0);
 
 	bus_space_read_region_4(sc->sc_bst, sc->sc_bsh_rxdescs, o, dp, c);
 
@@ -296,7 +288,7 @@ cpsw_set_rxdesc(struct cpsw_softc * const sc, const u_int i,
 	const bus_size_t c = __arraycount(bdp->word);
 
 	KERNHIST_FUNC(__func__);
-	KERNHIST_CALLED_5(cpswhist, sc, i, bdp, 0);
+	CPSWHIST_CALLARGS(sc, i, bdp, 0);
 	KERNHIST_LOG(cpswhist, "%08x %08x %08x %08x\n",
 	    dp[0], dp[1], dp[2], dp[3]);
 
@@ -470,22 +462,10 @@ cpsw_attach(device_t parent, device_t self, void *aux)
 		memcpy(sc->sc_enaddr, macaddr, ETHER_ADDR_LEN);
 	}
 
-#if 0
-	sc->sc_rxthih = intr_establish(oa->obio_intrbase + CPSW_INTROFF_RXTH,
-	    IPL_VM, IST_LEVEL, cpsw_rxthintr, sc);
-	sc->sc_rxih = intr_establish(oa->obio_intrbase + CPSW_INTROFF_RX,
-	    IPL_VM, IST_LEVEL, cpsw_rxintr, sc);
-	sc->sc_txih = intr_establish(oa->obio_intrbase + CPSW_INTROFF_TX,
-	    IPL_VM, IST_LEVEL, cpsw_txintr, sc);
-	sc->sc_miscih = intr_establish(oa->obio_intrbase + CPSW_INTROFF_MISC,
-	    IPL_VM, IST_LEVEL, cpsw_miscintr, sc);
-#else
-#define FDT_INTR_FLAGS 0
 	sc->sc_rxthih = fdtbus_intr_establish(phandle, CPSW_INTROFF_RXTH, IPL_VM, FDT_INTR_FLAGS, cpsw_rxthintr, sc);
 	sc->sc_rxih = fdtbus_intr_establish(phandle, CPSW_INTROFF_RX, IPL_VM, FDT_INTR_FLAGS, cpsw_rxintr, sc);
 	sc->sc_txih = fdtbus_intr_establish(phandle, CPSW_INTROFF_TX, IPL_VM, FDT_INTR_FLAGS, cpsw_txintr, sc);
 	sc->sc_miscih = fdtbus_intr_establish(phandle, CPSW_INTROFF_MISC, IPL_VM, FDT_INTR_FLAGS, cpsw_miscintr, sc);
-#endif
 
 	sc->sc_bst = faa->faa_bst;
 	sc->sc_bss = size;
@@ -590,19 +570,6 @@ cpsw_attach(device_t parent, device_t self, void *aux)
 		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_MANUAL);
 	} else {
 		sc->sc_phy_has_1000t = cpsw_phy_has_1000t(sc);
-		if (sc->sc_phy_has_1000t) {
-#if 0
-			aprint_normal_dev(sc->sc_dev, "1000baseT PHY found. "
-			    "Setting RGMII Mode\n");
-			/*
-			 * Select the Interface RGMII Mode in the Control
-			 * Module
-			 */
-			sitara_cm_reg_write_4(CPSW_GMII_SEL,
-			    GMIISEL_GMII2_SEL(RGMII_MODE) |
-			    GMIISEL_GMII1_SEL(RGMII_MODE));
-#endif
-		}
 
 		ifmedia_set(&mii->mii_media, IFM_ETHER | IFM_AUTO);
 	}
@@ -635,7 +602,7 @@ cpsw_start(struct ifnet *ifp)
 	u_int mlen;
 
 	KERNHIST_FUNC(__func__);
-	KERNHIST_CALLED_5(cpswhist, sc, 0, 0, 0);
+	CPSWHIST_CALLARGS(sc, 0, 0, 0);
 
 	if (__predict_false((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) !=
 	    IFF_RUNNING)) {
@@ -1168,7 +1135,7 @@ cpsw_rxintr(void *arg)
 	u_int len, off;
 
 	KERNHIST_FUNC(__func__);
-	KERNHIST_CALLED_5(cpswhist, sc, 0, 0, 0);
+	CPSWHIST_CALLARGS(sc, 0, 0, 0);
 
 	for (;;) {
 		KASSERT(sc->sc_rxhead < CPSW_NRXDESCS);
@@ -1253,7 +1220,7 @@ cpsw_txintr(void *arg)
 	u_int cpi;
 
 	KERNHIST_FUNC(__func__);
-	KERNHIST_CALLED_5(cpswhist, sc, 0, 0, 0);
+	CPSWHIST_CALLARGS(sc, 0, 0, 0);
 
 	KASSERT(sc->sc_txrun);
 

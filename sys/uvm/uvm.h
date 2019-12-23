@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm.h,v 1.68 2017/01/02 20:08:32 cherry Exp $	*/
+/*	$NetBSD: uvm.h,v 1.70 2019/12/13 20:10:22 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -123,10 +123,8 @@ extern struct uvm_object *uvm_kernel_object;
  * locks (made globals for lockstat).
  */
 
-extern kmutex_t uvm_pageqlock;		/* lock for active/inactive page q */
 extern kmutex_t uvm_fpageqlock;		/* lock for free page q */
 extern kmutex_t uvm_kentry_lock;
-extern kmutex_t uvm_swap_data_lock;
 
 #endif /* _KERNEL */
 

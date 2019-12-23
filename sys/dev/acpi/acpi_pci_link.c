@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi_pci_link.c,v 1.22 2014/09/14 19:54:05 mrg Exp $	*/
+/*	$NetBSD: acpi_pci_link.c,v 1.24 2019/12/06 07:27:06 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2002 Mitsuru IWASAKI <iwasaki@jp.freebsd.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_pci_link.c,v 1.22 2014/09/14 19:54:05 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_pci_link.c,v 1.24 2019/12/06 07:27:06 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/malloc.h>
@@ -116,8 +116,8 @@ struct link {
 	int	l_references;
 	int	l_dev_count;
 	pcitag_t *l_devices;
-	int	l_routed:1;
-	int	l_isa_irq:1;
+	u_int	l_routed:1;
+	u_int	l_isa_irq:1;
 	ACPI_RESOURCE l_prs_template;
 };
 
@@ -1150,10 +1150,7 @@ acpi_pci_link_devbyhandle(ACPI_HANDLE handle)
 			return sc;
 	}
 
-	sc = malloc(sizeof (*sc), M_ACPI, M_NOWAIT | M_ZERO);
-	if (sc == NULL)
-		return NULL;
-
+	sc = malloc(sizeof (*sc), M_ACPI, M_WAITOK | M_ZERO);
 	sc->pl_handle = handle;
 
 	acpi_pci_link_init(sc);

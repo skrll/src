@@ -1,4 +1,4 @@
-/*	$NetBSD: vnode.h,v 1.282 2019/09/26 20:57:19 christos Exp $	*/
+/*	$NetBSD: vnode.h,v 1.285 2019/12/15 21:56:13 ad Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -206,10 +206,13 @@ typedef struct vnode vnode_t;
 /*
  * vnode lock flags
  */
+#define	LK_NONE		0x00000000	/* no lock - for VOP_ISLOCKED() */
 #define	LK_SHARED	0x00000001	/* shared lock */
 #define	LK_EXCLUSIVE	0x00000002	/* exclusive lock */
-#define	LK_NOWAIT	0x00000010	/* do not sleep to await lock */
-#define	LK_RETRY	0x00020000	/* vn_lock: retry until locked */
+#define	LK_UPGRADE	0x00000010	/* upgrade shared -> exclusive */
+#define	LK_DOWNGRADE	0x00000020	/* downgrade exclusive -> shared */
+#define	LK_NOWAIT	0x00000100	/* do not sleep to await lock */
+#define	LK_RETRY	0x00000200	/* vn_lock: retry until locked */
 
 /*
  * Vnode attributes.  A field value of VNOVAL represents a field whose value
@@ -490,6 +493,7 @@ struct vop_generic_args {
 struct file;
 struct filedesc;
 struct nameidata;
+struct pathbuf;
 struct proc;
 struct stat;
 struct uio;
@@ -550,6 +554,9 @@ int	vn_extattr_set(struct vnode *, int, int, const char *, size_t,
 int	vn_extattr_rm(struct vnode *, int, int, const char *, struct lwp *);
 void	vn_ra_allocctx(struct vnode *);
 int	vn_fifo_bypass(void *);
+int	vn_bdev_open(dev_t, struct vnode **, struct lwp *);
+int	vn_bdev_openpath(struct pathbuf *pb, struct vnode **, struct lwp *);
+
 
 #ifdef DIAGNOSTIC
 static __inline bool
@@ -588,6 +595,8 @@ void	vfs_vnode_print(struct vnode *, int, void (*)(const char *, ...)
 void	vfs_vnode_lock_print(void *, int, void (*)(const char *, ...)
     __printflike(1, 2));
 void	vfs_mount_print(struct mount *, int, void (*)(const char *, ...)
+    __printflike(1, 2));
+void	vfs_mount_print_all(int, void (*)(const char *, ...)
     __printflike(1, 2));
 #endif /* DDB */
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: msipic.c,v 1.18 2019/10/03 18:53:08 tnn Exp $	*/
+/*	$NetBSD: msipic.c,v 1.20 2019/12/02 03:06:51 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2015 Internet Initiative Japan Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: msipic.c,v 1.18 2019/10/03 18:53:08 tnn Exp $");
+__KERNEL_RCSID(0, "$NetBSD: msipic.c,v 1.20 2019/12/02 03:06:51 msaitoh Exp $");
 
 #include "opt_intrdebug.h"
 
@@ -548,6 +548,11 @@ msix_addroute(struct pic *pic, struct cpu_info *ci,
 	err = pci_get_capability(pc, tag, PCI_CAP_MSIX, &off, NULL);
 	KASSERT(err != 0);
 
+	/* Disable MSI-X before writing MSI-X table */
+	ctl = pci_conf_read(pc, tag, off + PCI_MSIX_CTL);
+	ctl &= ~PCI_MSIX_CTL_ENABLE;
+	pci_conf_write(pc, tag, off + PCI_MSIX_CTL, ctl);
+
 	entry_base = PCI_MSIX_TABLE_ENTRY_SIZE * msix_vec;
 
 	/*
@@ -654,7 +659,7 @@ msipic_construct_msix_pic(const struct pci_attach_args *pa)
 
 	tbl = pci_conf_read(pc, tag, off + PCI_MSIX_TBLOFFSET);
 	table_offset = tbl & PCI_MSIX_TBLOFFSET_MASK;
-	bir = tbl & PCI_MSIX_PBABIR_MASK;
+	bir = tbl & PCI_MSIX_TBLBIR_MASK;
 	switch (bir) {
 	case 0:
 		bar = PCI_BAR0;

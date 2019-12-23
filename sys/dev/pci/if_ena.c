@@ -31,7 +31,7 @@
 #if 0
 __FBSDID("$FreeBSD: head/sys/dev/ena/ena.c 333456 2018-05-10 09:37:54Z mw $");
 #endif
-__KERNEL_RCSID(0, "$NetBSD: if_ena.c,v 1.17 2019/10/18 04:09:02 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ena.c,v 1.19 2019/12/02 03:06:51 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -314,7 +314,7 @@ ena_allocate_pci_resources(struct pci_attach_args *pa,
 		msixtbl = pci_conf_read(pa->pa_pc, pa->pa_tag,
 		    msixoff + PCI_MSIX_TBLOFFSET);
 		table_offset = msixtbl & PCI_MSIX_TBLOFFSET_MASK;
-		bir = msixtbl & PCI_MSIX_PBABIR_MASK;
+		bir = msixtbl & PCI_MSIX_TBLBIR_MASK;
 		if (bir == PCI_MAPREG_NUM(ENA_REG_BAR))
 			mapsize = table_offset;
 	}
@@ -641,15 +641,10 @@ ena_setup_tx_resources(struct ena_adapter *adapter, int qid)
 #endif
 
 	size = sizeof(struct ena_tx_buffer) * tx_ring->ring_size;
-
-	tx_ring->tx_buffer_info = malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (unlikely(tx_ring->tx_buffer_info == NULL))
-		return (ENOMEM);
+	tx_ring->tx_buffer_info = malloc(size, M_DEVBUF, M_WAITOK | M_ZERO);
 
 	size = sizeof(uint16_t) * tx_ring->ring_size;
-	tx_ring->free_tx_ids = malloc(size, M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (unlikely(tx_ring->free_tx_ids == NULL))
-		goto err_buf_info_free;
+	tx_ring->free_tx_ids = malloc(size, M_DEVBUF, M_WAITOK | M_ZERO);
 
 	/* Req id stack for TX OOO completions */
 	for (i = 0; i < tx_ring->ring_size; i++)
@@ -712,7 +707,6 @@ err_buf_info_unmap:
 	}
 	free(tx_ring->free_tx_ids, M_DEVBUF);
 	tx_ring->free_tx_ids = NULL;
-err_buf_info_free:
 	free(tx_ring->tx_buffer_info, M_DEVBUF);
 	tx_ring->tx_buffer_info = NULL;
 

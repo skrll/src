@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.sys.mk,v 1.294 2019/10/15 15:05:00 christos Exp $
+#	$NetBSD: bsd.sys.mk,v 1.298 2019/12/20 04:04:25 christos Exp $
 #
 # Build definitions used for NetBSD source tree builds.
 
@@ -248,7 +248,9 @@ CFLAGS+=	${KLEAKFLAGS.${.IMPSRC:T}:U${KLEAKFLAGS}}
 
 .if ${KCOV:U0} > 0
 KCOVFLAGS=	-fsanitize-coverage=trace-pc
-.for f in subr_kcov.c subr_lwp_specificdata.c subr_specificdata.c subr_asan.c
+.for f in subr_kcov.c subr_lwp_specificdata.c subr_specificdata.c subr_asan.c \
+	subr_csan.c subr_msan.c x86_machdep.c
+# TODO Adapt the file list for !x86 or implement __nocov (missing in GCC 8)
 KCOVFLAGS.${f}=		# empty
 .endfor
 CFLAGS+=	${KCOVFLAGS.${.IMPSRC:T}:U${KCOVFLAGS}}
@@ -270,7 +272,6 @@ OBJCOPY?=	objcopy
 OBJDUMP?=	objdump
 PAXCTL?=	paxctl
 STRIP?=		strip
-MV?=		mv -f
 
 .SUFFIXES:	.o .ln .lo .c .cc .cpp .cxx .C .m ${YHEADER:D.h}
 

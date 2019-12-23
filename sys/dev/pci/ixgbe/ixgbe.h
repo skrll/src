@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.h,v 1.58 2019/09/13 07:55:07 msaitoh Exp $ */
+/* $NetBSD: ixgbe.h,v 1.60 2019/12/16 02:50:54 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -134,9 +134,9 @@
  * RxDescriptors Valid Range: 64-4096 Default Value: 256 This value is the
  * number of receive descriptors allocated for each RX queue. Increasing this
  * value allows the driver to buffer more incoming packets. Each descriptor
- * is 16 bytes.  A receive buffer is also allocated for each descriptor. 
- * 
- * Note: with 8 rings and a dual port card, it is possible to bump up 
+ * is 16 bytes.  A receive buffer is also allocated for each descriptor.
+ *
+ * Note: with 8 rings and a dual port card, it is possible to bump up
  *	against the system mbuf pool limit, you can tune nmbclusters
  *	to adjust for this.
  */
@@ -645,7 +645,6 @@ struct adapter {
 
 /* Stats macros */
 #if __FreeBSD_version >= 1100036
-#define IXGBE_SET_IPACKETS(sc, count)    (sc)->ipackets = (count)
 #define IXGBE_SET_IERRORS(sc, count)     (sc)->ierrors = (count)
 #define IXGBE_SET_OPACKETS(sc, count)    (sc)->opackets = (count)
 #define IXGBE_SET_OERRORS(sc, count)     (sc)->oerrors = (count)
@@ -656,7 +655,6 @@ struct adapter {
 #define IXGBE_SET_OMCASTS(sc, count)     (sc)->omcasts = (count)
 #define IXGBE_SET_IQDROPS(sc, count)     (sc)->iqdrops = (count)
 #else
-#define IXGBE_SET_IPACKETS(sc, count)    (sc)->ifp->if_ipackets = (count)
 #define IXGBE_SET_IERRORS(sc, count)     (sc)->ifp->if_ierrors = (count)
 #define IXGBE_SET_OPACKETS(sc, count)    (sc)->ifp->if_opackets = (count)
 #define IXGBE_SET_OERRORS(sc, count)     (sc)->ifp->if_oerrors = (count)

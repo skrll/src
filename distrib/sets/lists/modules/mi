@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.127 2019/10/28 13:19:50 maya Exp $
+# $NetBSD: mi,v 1.129 2019/12/10 12:08:52 yamaguchi Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -148,8 +148,6 @@
 ./@MODULEDIR@/dtrace_sdt/dtrace_sdt.kmod		base-kernel-modules	kmod,dtrace
 ./@MODULEDIR@/dtrace_syscall				base-kernel-modules	kmod,dtrace
 ./@MODULEDIR@/dtrace_syscall/dtrace_syscall.kmod	base-kernel-modules	kmod,dtrace
-./@MODULEDIR@/dtrace_syscall_linux			base-kernel-modules	kmod,dtrace
-./@MODULEDIR@/dtrace_syscall_linux/dtrace_syscall_linux.kmod	base-kernel-modules	kmod,dtrace
 ./@MODULEDIR@/dtv				base-kernel-modules	kmod
 ./@MODULEDIR@/dtv/dtv.kmod			base-kernel-modules	kmod
 ./@MODULEDIR@/dtv_math				base-kernel-modules	kmod
@@ -214,6 +212,8 @@
 ./@MODULEDIR@/if_gre/if_gre.kmod		base-kernel-modules	kmod
 ./@MODULEDIR@/if_kue				base-kernel-modules	kmod
 ./@MODULEDIR@/if_kue/if_kue.kmod		base-kernel-modules	kmod
+./@MODULEDIR@/if_ixl				base-obsolete		obsolete
+./@MODULEDIR@/if_ixl/if_ixl.kmod		base-obsolete		obsolete
 ./@MODULEDIR@/if_l2tp				base-kernel-modules	kmod
 ./@MODULEDIR@/if_l2tp/if_l2tp.kmod		base-kernel-modules	kmod
 ./@MODULEDIR@/if_loop				base-kernel-modules	kmod

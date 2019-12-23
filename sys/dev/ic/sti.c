@@ -1,4 +1,4 @@
-/*	$NetBSD: sti.c,v 1.19 2017/06/13 19:13:55 spz Exp $	*/
+/*	$NetBSD: sti.c,v 1.20 2019/11/10 21:16:35 chs Exp $	*/
 
 /*	$OpenBSD: sti.c,v 1.76 2015/04/05 23:25:57 miod Exp $	*/
 
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sti.c,v 1.19 2017/06/13 19:13:55 spz Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sti.c,v 1.20 2019/11/10 21:16:35 chs Exp $");
 
 #include "wsdisplay.h"
 
@@ -171,12 +171,7 @@ sti_attach_common(struct sti_softc *sc, bus_space_tag_t iot,
 	int rc;
 
 	rom = (struct sti_rom *)malloc(sizeof(*rom), M_DEVBUF,
-	    M_NOWAIT | M_ZERO);
-	if (rom == NULL) {
-		aprint_error("cannot allocate rom data\n");
-		return ENOMEM;
-	}
-
+	    M_WAITOK | M_ZERO);
 	rom->rom_softc = sc;
 	rc = sti_rom_setup(rom, iot, memt, romh, sc->bases, codebase);
 	if (rc != 0) {
@@ -203,12 +198,7 @@ sti_attach_screen(struct sti_softc *sc, int flags)
 	int rc;
 
 	scr = (struct sti_screen *)malloc(sizeof(*scr), M_DEVBUF,
-	    M_NOWAIT | M_ZERO);
-	if (scr == NULL) {
-		aprint_error("cannot allocate screen data\n");
-		return NULL;
-	}
-
+	    M_WAITOK | M_ZERO);
 	scr->scr_rom = sc->sc_rom;
 	rc = sti_screen_setup(scr, flags);
 	if (rc != 0) {
@@ -534,12 +524,7 @@ sti_screen_setup(struct sti_screen *scr, int flags)
 
 	if (dd->dd_stimemreq) {
 		scr->scr_ecfg.addr =
-		    malloc(dd->dd_stimemreq, M_DEVBUF, M_NOWAIT);
-		if (!scr->scr_ecfg.addr) {
-			aprint_error("cannot allocate %d bytes for STI\n",
-			    dd->dd_stimemreq);
-			return ENOMEM;
-		}
+		    malloc(dd->dd_stimemreq, M_DEVBUF, M_WAITOK);
 	}
 
 	sti_region_setup(scr);
@@ -873,9 +858,7 @@ rescan:
 			    (fp->last - fp->first + 1) * fp->bpc;
 			if (rom->rom_devtype == STI_DEVTYPE1)
 				size *= 4;
-			scr->scr_romfont = malloc(size, M_DEVBUF, M_NOWAIT);
-			if (scr->scr_romfont == NULL)
-				return ENOMEM;
+			scr->scr_romfont = malloc(size, M_DEVBUF, M_WAITOK);
 
 			bus_space_read_region_stream_4(memt, romh, addr,
 			    (uint32_t *)scr->scr_romfont, size / 4);

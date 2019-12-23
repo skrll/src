@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_ioctl.h,v 1.68 2019/08/20 09:32:21 christos Exp $	*/
+/*	$NetBSD: netbsd32_ioctl.h,v 1.70 2019/11/18 04:17:08 rin Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Matthew R. Green

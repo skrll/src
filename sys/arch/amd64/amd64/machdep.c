@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.337 2019/10/12 06:31:03 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.344 2019/12/13 20:14:25 ad Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
@@ -110,9 +110,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.337 2019/10/12 06:31:03 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.344 2019/12/13 20:14:25 ad Exp $");
 
 #include "opt_modular.h"
+#include "opt_multiboot.h"
 #include "opt_user_ldt.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -122,7 +123,6 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.337 2019/10/12 06:31:03 maxv Exp $");
 #include "opt_xen.h"
 #include "opt_svs.h"
 #include "opt_kaslr.h"
-#include "opt_kasan.h"
 #ifndef XENPV
 #include "opt_physmem.h"
 #endif
@@ -152,6 +152,8 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.337 2019/10/12 06:31:03 maxv Exp $");
 #include <sys/lwp.h>
 #include <sys/proc.h>
 #include <sys/asan.h>
+#include <sys/csan.h>
+#include <sys/msan.h>
 
 #ifdef KGDB
 #include <sys/kgdb.h>
@@ -182,6 +184,8 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.337 2019/10/12 06:31:03 maxv Exp $");
 #include <x86/cputypes.h>
 #include <x86/cpuvar.h>
 #include <x86/machdep.h>
+
+#include <arch/i386/include/multiboot.h>
 
 #include <x86/x86/tsc.h>
 
@@ -369,6 +373,10 @@ cpu_startup(void)
 	pmap_update(pmap_kernel());
 
 	initmsgbuf((void *)msgbuf_vaddr, round_page(sz));
+
+#ifdef MULTIBOOT
+	multiboot2_print_info();
+#endif
 
 	minaddr = 0;
 
@@ -857,7 +865,7 @@ sparse_dump_mark(void)
 		     pfn++) {
 			pg = PHYS_TO_VM_PAGE(ptoa(pfn));
 
-			if (pg->uanon || (pg->pqflags & PQ_FREE) ||
+			if (pg->uanon || (pg->flags & PG_FREE) ||
 			    (pg->uobject && pg->uobject->pgops)) {
 				p = VM_PAGE_TO_PHYS(pg) / PAGE_SIZE;
 				clrbit(sparse_dump_physmap, p);
@@ -911,25 +919,25 @@ dump_seg_iter(int (*callback)(paddr_t, paddr_t))
 		 * dump will always be smaller than a full one.
 		 */
 		if (sparse_dump && sparse_dump_physmap) {
-			paddr_t p, start, end;
+			paddr_t p, sp_start, sp_end;
 			int lastset;
 
-			start = mem_clusters[i].start;
-			end = start + mem_clusters[i].size;
-			start = rounddown(start, PAGE_SIZE); /* unnecessary? */
+			sp_start = mem_clusters[i].start;
+			sp_end = sp_start + mem_clusters[i].size;
+			sp_start = rounddown(sp_start, PAGE_SIZE); /* unnecessary? */
 			lastset = 0;
-			for (p = start; p < end; p += PAGE_SIZE) {
+			for (p = sp_start; p < sp_end; p += PAGE_SIZE) {
 				int thisset = isset(sparse_dump_physmap,
 				    p/PAGE_SIZE);
 
 				if (!lastset && thisset)
-					start = p;
+					sp_start = p;
 				if (lastset && !thisset)
-					CALLBACK(start, p - start);
+					CALLBACK(sp_start, p - sp_start);
 				lastset = thisset;
 			}
 			if (lastset)
-				CALLBACK(start, p - start);
+				CALLBACK(sp_start, p - sp_start);
 		} else
 #endif
 			CALLBACK(mem_clusters[i].start, mem_clusters[i].size);
@@ -1503,6 +1511,11 @@ init_x86_64_ksyms(void)
 	db_machine_init();
 #endif
 
+#if defined(MULTIBOOT)
+	if (multiboot2_ksyms_addsyms_elf())
+		return;
+#endif
+
 #ifndef XENPV
 	symtab = lookup_bootinfo(BTINFO_SYMTAB);
 	if (symtab) {
@@ -1636,6 +1649,13 @@ init_slotspace(void)
 	slotspace.area[SLAREA_ASAN].active = true;
 #endif
 
+#ifdef KMSAN
+	/* MSAN. */
+	slotspace.area[SLAREA_MSAN].sslot = L4_SLOT_KMSAN;
+	slotspace.area[SLAREA_MSAN].nslot = NL4_SLOT_KMSAN;
+	slotspace.area[SLAREA_MSAN].active = true;
+#endif
+
 	/* Kernel. */
 	slotspace.area[SLAREA_KERN].sslot = L4_SLOT_KERNBASE;
 	slotspace.area[SLAREA_KERN].nslot = 1;
@@ -1676,9 +1696,7 @@ init_x86_64(paddr_t first_avail)
 
 	init_pte();
 
-#ifdef KASAN
 	kasan_early_init((void *)lwp0uarea);
-#endif
 
 	uvm_lwp_setuarea(&lwp0, lwp0uarea);
 
@@ -1758,9 +1776,9 @@ init_x86_64(paddr_t first_avail)
 
 	init_x86_msgbuf();
 
-#ifdef KASAN
 	kasan_init();
-#endif
+	kcsan_init();
+	kmsan_init((void *)lwp0uarea);
 
 	pmap_growkernel(VM_MIN_KERNEL_ADDRESS + 32 * 1024 * 1024);
 

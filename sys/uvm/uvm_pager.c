@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_pager.c,v 1.111 2017/10/28 00:37:13 pgoyette Exp $	*/
+/*	$NetBSD: uvm_pager.c,v 1.116 2019/12/14 21:36:00 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_pager.c,v 1.111 2017/10/28 00:37:13 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_pager.c,v 1.116 2019/12/14 21:36:00 ad Exp $");
 
 #include "opt_uvmhist.h"
 #include "opt_readahead.h"
@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: uvm_pager.c,v 1.111 2017/10/28 00:37:13 pgoyette Exp
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/atomic.h>
 #include <sys/vnode.h>
 #include <sys/buf.h>
 
@@ -77,7 +78,7 @@ const struct uvm_pagerops * const uvmpagerops[] = {
  */
 
 struct vm_map *pager_map;		/* XXX */
-kmutex_t pager_map_wanted_lock;
+kmutex_t pager_map_wanted_lock __cacheline_aligned;
 bool pager_map_wanted;	/* locked by pager map */
 static vaddr_t emergva;
 static int emerg_ncolors;
@@ -317,12 +318,11 @@ uvm_aio_aiodone_pages(struct vm_page **pgs, int npages, bool write, int error)
 	uobj = NULL;
 	pg = pgs[0];
 	swap = (pg->uanon != NULL && pg->uobject == NULL) ||
-		(pg->pqflags & PQ_AOBJ) != 0;
+		(pg->flags & PG_AOBJ) != 0;
 	if (!swap) {
 		uobj = pg->uobject;
 		slock = uobj->vmobjlock;
 		mutex_enter(slock);
-		mutex_enter(&uvm_pageqlock);
 	} else {
 #if defined(VMSWAP)
 		if (error) {
@@ -361,7 +361,6 @@ uvm_aio_aiodone_pages(struct vm_page **pgs, int npages, bool write, int error)
 				slock = pg->uanon->an_lock;
 			}
 			mutex_enter(slock);
-			mutex_enter(&uvm_pageqlock);
 			anon_disposed = (pg->flags & PG_RELEASED) != 0;
 			KASSERT(!anon_disposed || pg->uobject != NULL ||
 			    pg->uanon->an_ref == 0);
@@ -420,7 +419,7 @@ uvm_aio_aiodone_pages(struct vm_page **pgs, int npages, bool write, int error)
 			KASSERT(!write);
 			pg->flags &= ~PG_FAKE;
 #if defined(READAHEAD_STATS)
-			pg->pqflags |= PQ_READAHEAD;
+			pg->flags |= PG_READAHEAD;
 			uvm_ra_total.ev_count++;
 #endif /* defined(READAHEAD_STATS) */
 			KASSERT((pg->flags & PG_CLEAN) != 0);
@@ -436,7 +435,7 @@ uvm_aio_aiodone_pages(struct vm_page **pgs, int npages, bool write, int error)
 		if (pg->flags & PG_PAGEOUT) {
 			pg->flags &= ~PG_PAGEOUT;
 			pageout_done++;
-			uvmexp.pdfreed++;
+			atomic_inc_uint(&uvmexp.pdfreed);
 			pg->flags |= PG_RELEASED;
 		}
 
@@ -447,11 +446,9 @@ uvm_aio_aiodone_pages(struct vm_page **pgs, int npages, bool write, int error)
 
 		if (swap) {
 			if (pg->uobject == NULL && anon_disposed) {
-				mutex_exit(&uvm_pageqlock);
 				uvm_anon_release(pg->uanon);
 			} else {
 				uvm_page_unbusy(&pg, 1);
-				mutex_exit(&uvm_pageqlock);
 				mutex_exit(slock);
 			}
 		}
@@ -460,26 +457,23 @@ uvm_aio_aiodone_pages(struct vm_page **pgs, int npages, bool write, int error)
 	uvm_pageout_done(pageout_done);
 	if (!swap) {
 		uvm_page_unbusy(pgs, npages);
-		mutex_exit(&uvm_pageqlock);
 		mutex_exit(slock);
 	} else {
 #if defined(VMSWAP)
 		KASSERT(write);
 
 		/* these pages are now only in swap. */
-		mutex_enter(&uvm_swap_data_lock);
 		if (error != ENOMEM) {
 			KASSERT(uvmexp.swpgonly + npages <= uvmexp.swpginuse);
-			uvmexp.swpgonly += npages;
+			atomic_add_int(&uvmexp.swpgonly, npages);
 		}
-		mutex_exit(&uvm_swap_data_lock);
 		if (error) {
 			if (error != ENOMEM)
 				uvm_swap_markbad(swslot, npages);
 			else
 				uvm_swap_free(swslot, npages);
 		}
-		uvmexp.pdpending--;
+		atomic_dec_uint(&uvmexp.pdpending);
 #endif /* defined(VMSWAP) */
 	}
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: cdefs.h,v 1.147 2019/10/16 18:29:49 christos Exp $	*/
+/*	$NetBSD: cdefs.h,v 1.150 2019/12/08 11:48:15 maxv Exp $	*/
 
 /* * Copyright (c) 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -39,6 +39,8 @@
 #ifdef _KERNEL_OPT
 #include "opt_diagnostic.h"
 #include "opt_kasan.h"
+#include "opt_kcsan.h"
+#include "opt_kmsan.h"
 #endif
 
 /*
@@ -339,6 +341,18 @@
 #define	__noasan	__attribute__((no_sanitize_address))
 #else
 #define	__noasan	/* nothing */
+#endif
+
+#if __GNUC_PREREQ__(4, 9) && defined(KCSAN)
+#define	__nocsan	__attribute__((no_sanitize_thread))
+#else
+#define	__nocsan	/* nothing */
+#endif
+
+#if defined(__clang__) && defined(KMSAN)
+#define	__nomsan	__attribute__((no_sanitize("kernel-memory")))
+#else
+#define	__nomsan	/* nothing */
 #endif
 
 #if defined(__clang__)

@@ -1,4 +1,4 @@
-/*	$NetBSD: atphy.c,v 1.24 2019/10/18 12:53:08 hkenken Exp $ */
+/*	$NetBSD: atphy.c,v 1.27 2019/12/13 08:30:26 msaitoh Exp $ */
 /*	$OpenBSD: atphy.c,v 1.1 2008/09/25 20:47:16 brad Exp $	*/
 
 /*-
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atphy.c,v 1.24 2019/10/18 12:53:08 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atphy.c,v 1.27 2019/12/13 08:30:26 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -99,7 +99,7 @@ CFATTACH_DECL_NEW(atphy, sizeof(struct atphy_softc),
 	atphy_match, atphy_attach, mii_phy_detach, mii_phy_activate);
 
 const struct mii_phy_funcs atphy_funcs = {
-        atphy_service, atphy_status, atphy_reset,
+	atphy_service, atphy_status, atphy_reset,
 };
 
 static const struct mii_phydesc atphys[] = {
@@ -190,15 +190,12 @@ atphy_attach(device_t parent, device_t self, void *aux)
 	sc->mii_funcs = &atphy_funcs;
 	sc->mii_pdata = mii;
 	sc->mii_flags = ma->mii_flags;
-	if (atphy_is_gige(mpd))
-		sc->mii_anegticks = MII_ANEGTICKS_GIGE;
-	else
-		sc->mii_anegticks = MII_ANEGTICKS;
-
 	sc->mii_flags |= MIIF_NOLOOP;
 
-	prop_dictionary_get_bool(parent_prop, "tx_internal_delay", &asc->rgmii_tx_internal_delay);
-	prop_dictionary_get_bool(parent_prop, "rx_internal_delay", &asc->rgmii_rx_internal_delay);
+	prop_dictionary_get_bool(parent_prop, "tx_internal_delay",
+	    &asc->rgmii_tx_internal_delay);
+	prop_dictionary_get_bool(parent_prop, "rx_internal_delay",
+	    &asc->rgmii_rx_internal_delay);
 
 	prop_dictionary_get_uint32(prop, "clk_25m", &asc->mii_clk_25m);
 	if (asc->mii_clk_25m != 0)
@@ -212,9 +209,7 @@ atphy_attach(device_t parent, device_t self, void *aux)
 	if (atphy_is_gige(mpd) && (sc->mii_capabilities & BMSR_EXTSTAT))
 		PHY_READ(sc, MII_EXTSR, &sc->mii_extcapabilities);
 
-	aprint_normal_dev(self, "");
 	mii_phy_add_media(sc);
-	aprint_normal("\n");
 }
 
 int
@@ -273,7 +268,7 @@ atphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 			return EINVAL;
 		}
 
-		anar = mii_anar(IFM_SUBTYPE(ife->ifm_media));
+		anar = mii_anar(ife);
 		if ((ife->ifm_media & IFM_FDX) != 0) {
 			bmcr |= BMCR_FDX;
 			/* Enable pause. */

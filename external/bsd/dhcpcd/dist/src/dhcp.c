@@ -41,6 +41,10 @@
 #include <netinet/udp.h>
 #undef __FAVOR_BSD
 
+#ifdef AF_LINK
+#  include <net/if_dl.h>
+#endif
+
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
@@ -132,9 +136,7 @@ static void dhcp_arp_found(struct arp_state *, const struct arp_msg *);
 #endif
 static void dhcp_handledhcp(struct interface *, struct bootp *, size_t,
     const struct in_addr *);
-#ifdef IP_PKTINFO
 static void dhcp_handleifudp(void *);
-#endif
 static int dhcp_initstate(struct interface *);
 
 void
@@ -173,6 +175,11 @@ get_option(struct dhcpcd_ctx *ctx,
 	uint8_t l, o, ol, overl, *bp;
 	const uint8_t *op;
 	size_t bl;
+
+	if (bootp == NULL || bootp_len < DHCP_MIN_LEN) {
+		errno = EINVAL;
+		return NULL;
+	}
 
 	/* Check we have the magic cookie */
 	if (!IS_DHCP(bootp)) {
@@ -482,7 +489,7 @@ print_rfc3361(FILE *fp, const uint8_t *data, size_t dl)
 			return -1;
 		break;
 	case 1:
-		if (dl == 0 || dl % 4 != 0) {
+		if (dl % 4 != 0) {
 			errno = EINVAL;
 			break;
 		}
@@ -1177,7 +1184,7 @@ read_lease(struct interface *ifp, struct bootp **bootp)
 	 * (it should be more, and our read packet enforces this so this
 	 * code should not be needed, but of course people could
 	 * scribble whatever in the stored lease file. */
-	if (bytes < offsetof(struct bootp, vend) + 4) {
+	if (bytes < DHCP_MIN_LEN) {
 		free(lease);
 		logerrx("%s: %s: truncated lease", ifp->name, __func__);
 		return 0;
@@ -1538,7 +1545,7 @@ dhcp_close(struct interface *ifp)
 }
 
 static int
-dhcp_openudp(struct interface *ifp)
+dhcp_openudp(struct in_addr *ia)
 {
 	int s;
 	struct sockaddr_in sin;
@@ -1549,26 +1556,25 @@ dhcp_openudp(struct interface *ifp)
 
 	n = 1;
 	if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &n, sizeof(n)) == -1)
-		goto eexit;
-#ifdef IP_RECVPKTINFO
+		goto errexit;
+#ifdef IP_RECVIF
+	if (setsockopt(s, IPPROTO_IP, IP_RECVIF, &n, sizeof(n)) == -1)
+		goto errexit;
+#else
 	if (setsockopt(s, IPPROTO_IP, IP_RECVPKTINFO, &n, sizeof(n)) == -1)
-		goto eexit;
+		goto errexit;
 #endif
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(BOOTPC);
-	if (ifp) {
-		const struct dhcp_state *state = D_CSTATE(ifp);
-
-		if (state->addr)
-			sin.sin_addr.s_addr = state->addr->addr.s_addr;
-	}
+	if (ia != NULL)
+		sin.sin_addr = *ia;
 	if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) == -1)
-		goto eexit;
+		goto errexit;
 
 	return s;
 
-eexit:
+errexit:
 	close(s);
 	return -1;
 }
@@ -1647,39 +1653,36 @@ dhcp_makeudppacket(size_t *sz, const uint8_t *data, size_t length,
 static ssize_t
 dhcp_sendudp(struct interface *ifp, struct in_addr *to, void *data, size_t len)
 {
-	int s;
-	struct msghdr msg;
-	struct sockaddr_in sin;
-	struct iovec iov[1];
+	struct sockaddr_in sin = {
+		.sin_family = AF_INET,
+		.sin_addr = *to,
+		.sin_port = htons(BOOTPS),
+#ifdef HAVE_SA_LEN
+		.sin_len = sizeof(sin),
+#endif
+	};
+	struct iovec iov[] = {
+		{ .iov_base = data, .iov_len = len }
+	};
+	struct msghdr msg = {
+		.msg_name = (void *)&sin,
+		.msg_namelen = sizeof(sin),
+		.msg_iov = iov,
+		.msg_iovlen = 1,
+	};
 	struct dhcp_state *state = D_STATE(ifp);
 	ssize_t r;
+	int fd;
 
-	iov[0].iov_base = data;
-	iov[0].iov_len = len;
-
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_family = AF_INET;
-	sin.sin_addr = *to;
-	sin.sin_port = htons(BOOTPS);
-#ifdef HAVE_SA_LEN
-	sin.sin_len = sizeof(sin);
-#endif
-
-	memset(&msg, 0, sizeof(msg));
-	msg.msg_name = (void *)&sin;
-	msg.msg_namelen = sizeof(sin);
-	msg.msg_iov = iov;
-	msg.msg_iovlen = 1;
-
-	s = state->udp_fd;
-	if (s == -1) {
-		s = dhcp_openudp(ifp);
-		if (s == -1)
+	fd = state->udp_fd;
+	if (fd == -1) {
+		fd = dhcp_openudp(state->addr != NULL ?&state->addr->addr:NULL);
+		if (fd == -1)
 			return -1;
 	}
-	r = sendmsg(s, &msg, 0);
+	r = sendmsg(fd, &msg, 0);
 	if (state->udp_fd == -1)
-		close(s);
+		close(fd);
 	return r;
 }
 
@@ -1732,7 +1735,9 @@ send_message(struct interface *ifp, uint8_t type,
 		goto fail;
 	len = (size_t)r;
 
-	if (ipv4_iffindaddr(ifp, &state->lease.addr, NULL) != NULL)
+	if (!(state->added & STATE_FAKE) &&
+	    state->addr != NULL &&
+	    ipv4_iffindaddr(ifp, &state->lease.addr, NULL) != NULL)
 		from.s_addr = state->lease.addr.s_addr;
 	else
 		from.s_addr = INADDR_ANY;
@@ -1749,7 +1754,7 @@ send_message(struct interface *ifp, uint8_t type,
 	 * even if they are setup to send them.
 	 * Broadcasting from UDP is only an optimisation for rebinding
 	 * and on BSD, at least, is reliant on the subnet route being
-	 * correctly configured to recieve the unicast reply.
+	 * correctly configured to receive the unicast reply.
 	 * As such, we always broadcast and receive the reply to it via BPF.
 	 * This also guarantees we have a DHCP server attached to the
 	 * interface we want to configure because we can't dictate the
@@ -1780,7 +1785,7 @@ send_message(struct interface *ifp, uint8_t type,
 	 * As such we remove it from consideration without actually
 	 * stopping the interface. */
 	if (r == -1) {
-		logerr("%s: if_sendraw", ifp->name);
+		logerr("%s: bpf_send", ifp->name);
 		switch(errno) {
 		case ENETDOWN:
 		case ENETRESET:
@@ -2257,30 +2262,28 @@ dhcp_bind(struct interface *ifp)
 
 	ipv4_applyaddr(ifp);
 
-#ifdef IP_PKTINFO
 	/* Close the BPF filter as we can now receive DHCP messages
 	 * on a UDP socket. */
-	if (state->udp_fd == -1 ||
-	    (state->old != NULL && state->old->yiaddr != state->new->yiaddr))
-	{
-		dhcp_close(ifp);
-		/* If not in master mode, open an address specific socket. */
-		if (ctx->udp_fd == -1) {
-			state->udp_fd = dhcp_openudp(ifp);
-			if (state->udp_fd == -1) {
-				logerr(__func__);
-				/* Address sharing without master mode is
-				 * not supported. It's also possible another
-				 * DHCP client could be running which is
-				 * even worse.
-				 * We still need to work, so re-open BPF. */
-				dhcp_openbpf(ifp);
-			} else
-				eloop_event_add(ctx->eloop,
-				    state->udp_fd, dhcp_handleifudp, ifp);
-		}
+	if (!(state->udp_fd == -1 ||
+	    (state->old != NULL && state->old->yiaddr != state->new->yiaddr)))
+		return;
+	dhcp_close(ifp);
+
+
+	/* If not in master mode, open an address specific socket. */
+	if (ctx->udp_fd != -1)
+		return;
+	state->udp_fd = dhcp_openudp(&state->addr->addr);
+	if (state->udp_fd == -1) {
+		logerr(__func__);
+		/* Address sharing without master mode is not supported.
+		 * It's also possible another DHCP client could be running,
+		 * which is even worse.
+		 * We still need to work, so re-open BPF. */
+		dhcp_openbpf(ifp);
+		return;
 	}
-#endif
+	eloop_event_add(ctx->eloop, state->udp_fd, dhcp_handleifudp, ifp);
 }
 
 static void
@@ -2353,6 +2356,7 @@ dhcp_arp_new(struct interface *ifp, struct in_addr *addr)
 #ifdef KERNEL_RFC5227
 	astate->announced_cb = dhcp_arp_announced;
 #else
+	astate->announced_cb = NULL;
 	astate->defend_failed_cb = dhcp_arp_defend_failed;
 #endif
 	return astate;
@@ -2502,7 +2506,7 @@ dhcp_inform(struct interface *ifp)
 			state->offer_len = dhcp_message_new(&state->offer,
 			    &ifo->req_addr, &ifo->req_mask);
 #ifdef ARP
-			if (dhcp_arp_address(ifp) == 0)
+			if (dhcp_arp_address(ifp) != 1)
 				return;
 #endif
 			ia = ipv4_iffindaddr(ifp,
@@ -2609,6 +2613,11 @@ dhcp_reboot(struct interface *ifp)
 	    ifp->name, inet_ntoa(state->lease.addr));
 
 #ifdef ARP
+#ifndef KERNEL_RFC5227
+	/* Create the DHCP ARP state so we can defend it. */
+	(void)dhcp_arp_new(ifp, &state->lease.addr);
+#endif
+
 	/* If the address exists on the interface and no other interface
 	 * is currently using it then announce it to ensure this
 	 * interface gets the reply. */
@@ -3315,7 +3324,7 @@ checksums_valid(void *packet,
 	struct ip *ip = packet;
 	union pip {
 		struct ip ip;
-		uint16_t w[sizeof(struct ip)];
+		uint16_t w[sizeof(struct ip) / 2];
 	} pip = {
 		.ip.ip_p = IPPROTO_UDP,
 		.ip.ip_src = ip->ip_src,
@@ -3350,7 +3359,7 @@ checksums_valid(void *packet,
 	uh_sump = udpp + offsetof(struct udphdr, uh_sum);
 	memset(uh_sump, 0, sizeof(udp.uh_sum));
 
-	/* Checksum psuedo header and then UDP + payload. */
+	/* Checksum pseudo header and then UDP + payload. */
 	in_cksum(pip.w, sizeof(pip.w), &csum);
 	csum = in_cksum(udpp, ntohs(udp.uh_ulen), &csum);
 
@@ -3386,7 +3395,7 @@ dhcp_handlebootp(struct interface *ifp, struct bootp *bootp, size_t len,
 }
 
 static void
-dhcp_handlebpf(struct interface *ifp, uint8_t *data, size_t len)
+dhcp_packet(struct interface *ifp, uint8_t *data, size_t len)
 {
 	struct bootp *bootp;
 	struct in_addr from;
@@ -3441,13 +3450,42 @@ dhcp_readbpf(void *arg)
 			}
 			break;
 		}
-		dhcp_handlebpf(ifp, buf, (size_t)bytes);
+		dhcp_packet(ifp, buf, (size_t)bytes);
 		/* Check we still have a state after processing. */
 		if ((state = D_STATE(ifp)) == NULL)
 			break;
 	}
 	if (state != NULL)
 		state->bpf_flags &= ~BPF_READING;
+}
+
+static void
+dhcp_recvmsg(struct dhcpcd_ctx *ctx, struct msghdr *msg)
+{
+	struct sockaddr_in *from = (struct sockaddr_in *)msg->msg_name;
+	struct iovec *iov = &msg->msg_iov[0];
+	struct interface *ifp;
+	const struct dhcp_state *state;
+
+	ifp = if_findifpfromcmsg(ctx, msg, NULL);
+	if (ifp == NULL) {
+		logerr(__func__);
+		return;
+	}
+	state = D_CSTATE(ifp);
+	if (state == NULL) {
+		logdebugx("%s: received BOOTP for inactive interface",
+		    ifp->name);
+		return;
+	}
+
+	if (state->bpf_fd != -1) {
+		/* Avoid a duplicate read if BPF is open for the interface. */
+		return;
+	}
+
+	dhcp_handlebootp(ifp, (struct bootp *)iov->iov_base, iov->iov_len,
+	    &from->sin_addr);
 }
 
 static void
@@ -3460,16 +3498,15 @@ dhcp_readudp(struct dhcpcd_ctx *ctx, struct interface *ifp)
 		.iov_base = buf,
 		.iov_len = sizeof(buf),
 	};
-#ifdef IP_PKTINFO
+#ifdef IP_RECVIF
+	unsigned char ctl[CMSG_SPACE(sizeof(struct sockaddr_dl))] = { 0 };
+#else
 	unsigned char ctl[CMSG_SPACE(sizeof(struct in_pktinfo))] = { 0 };
-	char sfrom[INET_ADDRSTRLEN];
 #endif
 	struct msghdr msg = {
 	    .msg_name = &from, .msg_namelen = sizeof(from),
 	    .msg_iov = &iov, .msg_iovlen = 1,
-#ifdef IP_PKTINFO
 	    .msg_control = ctl, .msg_controllen = sizeof(ctl),
-#endif
 	};
 	int s;
 	ssize_t bytes;
@@ -3486,31 +3523,8 @@ dhcp_readudp(struct dhcpcd_ctx *ctx, struct interface *ifp)
 		return;
 	}
 
-#ifdef IP_PKTINFO
-	inet_ntop(AF_INET, &from.sin_addr, sfrom, sizeof(sfrom));
-
-	if (ifp == NULL) {
-		ifp = if_findifpfromcmsg(ctx, &msg, NULL);
-		if (ifp == NULL) {
-			logerr(__func__);
-			return;
-		}
-		state = D_CSTATE(ifp);
-		if (state == NULL) {
-			logdebugx("%s: received BOOTP for inactive interface",
-			    ifp->name);
-			return;
-		}
-	}
-
-	if (state->bpf_fd != -1) {
-		/* Avoid a duplicate read if BPF is open for the interface. */
-		return;
-	}
-
-	dhcp_handlebootp(ifp, (struct bootp *)(void *)buf, (size_t)bytes,
-	    &from.sin_addr);
-#endif
+	iov.iov_len = (size_t)bytes;
+	dhcp_recvmsg(ctx, &msg);
 }
 
 static void
@@ -3521,16 +3535,24 @@ dhcp_handleudp(void *arg)
 	dhcp_readudp(ctx, NULL);
 }
 
-#ifdef IP_PKTINFO
 static void
 dhcp_handleifudp(void *arg)
 {
 	struct interface *ifp = arg;
 
 	dhcp_readudp(ifp->ctx, ifp);
-
 }
-#endif
+
+static int
+dhcp_open(struct dhcpcd_ctx *ctx)
+{
+
+	if (ctx->udp_fd != -1 || (ctx->udp_fd = dhcp_openudp(NULL)) == -1)
+		return ctx->udp_fd;
+
+	eloop_event_add(ctx->eloop, ctx->udp_fd, dhcp_handleudp, ctx);
+	return ctx->udp_fd;
+}
 
 static int
 dhcp_openbpf(struct interface *ifp)
@@ -3740,16 +3762,13 @@ dhcp_start1(void *arg)
 	 * ICMP port unreachable message back to the DHCP server.
 	 * Only do this in master mode so we don't swallow messages
 	 * for dhcpcd running on another interface. */
-	if (ctx->udp_fd == -1 && ctx->options & DHCPCD_MASTER) {
-		ctx->udp_fd = dhcp_openudp(NULL);
-		if (ctx->udp_fd == -1) {
+	if (ctx->options & DHCPCD_MASTER) {
+		if (dhcp_open(ctx) == -1) {
 			/* Don't log an error if some other process
 			 * is handling this. */
 			if (errno != EADDRINUSE)
-				logerr("%s: dhcp_openudp", __func__);
-		} else
-			eloop_event_add(ctx->eloop,
-			    ctx->udp_fd, dhcp_handleudp, ctx);
+				logerr("%s: dhcp_open", __func__);
+		}
 	}
 
 	if (dhcp_init(ifp) == -1) {
@@ -4008,7 +4027,7 @@ dhcp_handleifa(int cmd, struct ipv4_addr *ia, pid_t pid)
 			 * to drop the lease. */
 			dhcp_drop(ifp, "EXPIRE");
 			dhcp_start1(ifp);
-			return NULL;
+			return ia;
 		}
 	}
 

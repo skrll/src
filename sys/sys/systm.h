@@ -1,4 +1,4 @@
-/*	$NetBSD: systm.h,v 1.287 2019/10/10 13:45:14 maxv Exp $	*/
+/*	$NetBSD: systm.h,v 1.291 2019/11/15 12:18:46 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1988, 1991, 1993
@@ -44,7 +44,9 @@
 #include "opt_multiprocessor.h"
 #include "opt_gprof.h"
 #include "opt_kasan.h"
+#include "opt_kcsan.h"
 #include "opt_kleak.h"
+#include "opt_kmsan.h"
 #include "opt_wsdisplay_compat.h"
 #endif
 #if !defined(_KERNEL) && !defined(_STANDALONE)
@@ -267,6 +269,12 @@ void	tablefull(const char *, const char *);
 #if defined(_KERNEL) && defined(KASAN)
 int	kasan_kcopy(const void *, void *, size_t);
 #define kcopy		kasan_kcopy
+#elif defined(_KERNEL) && defined(KCSAN)
+int	kcsan_kcopy(const void *, void *, size_t);
+#define kcopy		kcsan_kcopy
+#elif defined(_KERNEL) && defined(KMSAN)
+int	kmsan_kcopy(const void *, void *, size_t);
+#define kcopy		kmsan_kcopy
 #else
 int	kcopy(const void *, void *, size_t);
 #endif
@@ -282,17 +290,40 @@ int	kasan_copystr(const void *, void *, size_t, size_t *);
 int	kasan_copyinstr(const void *, void *, size_t, size_t *);
 int	kasan_copyoutstr(const void *, void *, size_t, size_t *);
 int	kasan_copyin(const void *, void *, size_t);
+int	copyout(const void *, void *, size_t);
 #define copystr		kasan_copystr
 #define copyinstr	kasan_copyinstr
 #define copyoutstr	kasan_copyoutstr
 #define copyin		kasan_copyin
+#elif defined(_KERNEL) && defined(KCSAN)
+int	kcsan_copystr(const void *, void *, size_t, size_t *);
+int	kcsan_copyinstr(const void *, void *, size_t, size_t *);
+int	kcsan_copyoutstr(const void *, void *, size_t, size_t *);
+int	kcsan_copyin(const void *, void *, size_t);
+int	kcsan_copyout(const void *, void *, size_t);
+#define copystr		kcsan_copystr
+#define copyinstr	kcsan_copyinstr
+#define copyoutstr	kcsan_copyoutstr
+#define copyin		kcsan_copyin
+#define copyout		kcsan_copyout
+#elif defined(_KERNEL) && defined(KMSAN)
+int	kmsan_copystr(const void *, void *, size_t, size_t *);
+int	kmsan_copyinstr(const void *, void *, size_t, size_t *);
+int	kmsan_copyoutstr(const void *, void *, size_t, size_t *);
+int	kmsan_copyin(const void *, void *, size_t);
+int	kmsan_copyout(const void *, void *, size_t);
+#define copystr		kmsan_copystr
+#define copyinstr	kmsan_copyinstr
+#define copyoutstr	kmsan_copyoutstr
+#define copyin		kmsan_copyin
+#define copyout		kmsan_copyout
 #else
 int	copystr(const void *, void *, size_t, size_t *);
 int	copyinstr(const void *, void *, size_t, size_t *);
 int	copyoutstr(const void *, void *, size_t, size_t *);
 int	copyin(const void *, void *, size_t);
-#endif
 int	copyout(const void *, void *, size_t);
+#endif
 
 #ifdef KLEAK
 #define copyout		kleak_copyout
@@ -367,6 +398,21 @@ int	kasan__ucas_64_mp(volatile uint64_t *, uint64_t, uint64_t, uint64_t *);
 #define _ucas_32_mp	kasan__ucas_32_mp
 #define _ucas_64	kasan__ucas_64
 #define _ucas_64_mp	kasan__ucas_64_mp
+#elif defined(KMSAN)
+int	kmsan__ucas_32(volatile uint32_t *, uint32_t, uint32_t, uint32_t *);
+#ifdef __HAVE_UCAS_MP
+int	kmsan__ucas_32_mp(volatile uint32_t *, uint32_t, uint32_t, uint32_t *);
+#endif /* __HAVE_UCAS_MP */
+#ifdef _LP64
+int	kmsan__ucas_64(volatile uint64_t *, uint64_t, uint64_t, uint64_t *);
+#ifdef __HAVE_UCAS_MP
+int	kmsan__ucas_64_mp(volatile uint64_t *, uint64_t, uint64_t, uint64_t *);
+#endif /* __HAVE_UCAS_MP */
+#endif /* _LP64 */
+#define _ucas_32	kmsan__ucas_32
+#define _ucas_32_mp	kmsan__ucas_32_mp
+#define _ucas_64	kmsan__ucas_64
+#define _ucas_64_mp	kmsan__ucas_64_mp
 #else
 int	_ucas_32(volatile uint32_t *, uint32_t, uint32_t, uint32_t *);
 #ifdef __HAVE_UCAS_MP
@@ -401,6 +447,27 @@ int	_ustore_64(uint64_t *, uint64_t);
 #define _ufetch_16	kasan__ufetch_16
 #define _ufetch_32	kasan__ufetch_32
 #define _ufetch_64	kasan__ufetch_64
+#elif defined(KMSAN)
+int	kmsan__ufetch_8(const uint8_t *, uint8_t *);
+int	kmsan__ufetch_16(const uint16_t *, uint16_t *);
+int	kmsan__ufetch_32(const uint32_t *, uint32_t *);
+#ifdef _LP64
+int	kmsan__ufetch_64(const uint64_t *, uint64_t *);
+#endif
+int	kmsan__ustore_8(uint8_t *, uint8_t);
+int	kmsan__ustore_16(uint16_t *, uint16_t);
+int	kmsan__ustore_32(uint32_t *, uint32_t);
+#ifdef _LP64
+int	kmsan__ustore_64(uint64_t *, uint64_t);
+#endif
+#define _ufetch_8	kmsan__ufetch_8
+#define _ufetch_16	kmsan__ufetch_16
+#define _ufetch_32	kmsan__ufetch_32
+#define _ufetch_64	kmsan__ufetch_64
+#define _ustore_8	kmsan__ustore_8
+#define _ustore_16	kmsan__ustore_16
+#define _ustore_32	kmsan__ustore_32
+#define _ustore_64	kmsan__ustore_64
 #else
 int	_ufetch_8(const uint8_t *, uint8_t *);
 int	_ufetch_16(const uint16_t *, uint16_t *);

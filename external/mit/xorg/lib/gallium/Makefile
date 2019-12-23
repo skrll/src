@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.36 2019/10/28 18:38:54 christos Exp $
+# $NetBSD: Makefile,v 1.40 2019/11/20 06:23:31 martin Exp $
 
 # Link the gallium mega driver.
 
@@ -13,15 +13,19 @@ LIB=		gallium_dri
 DRIDIR=		${X11USRLIBDIR}/modules/dri
 DRIDEBUGDIR=	${DEBUGDIR}${X11USRLIBDIR}/modules/dri
 
-LLVM_INCLUDE_OBJDIR!=	cd ${NETBSDSRCDIR}/external/bsd/llvm/include && ${PRINTOBJDIR}
+LLVM_INCLUDE_OBJDIR!=	cd ${NETBSDSRCDIR}/external/apache2/llvm/include && ${PRINTOBJDIR}
 
-CWARNFLAGS.clang += -Wno-atomic-alignment -Wno-unknown-warning-option
+CWARNFLAGS.clang += -Wno-atomic-alignment -Wno-unknown-warning-option -Wno-implicit-int-float-conversion
 
-CXXFLAGS+=	-std=c++11
+CXXFLAGS+=	-std=c++14
 CFLAGS+=	-std=gnu11
 CPPFLAGS+=	-I${DESTDIR}${X11INCDIR}/libdrm \
-		-I${NETBSDSRCDIR}/external/bsd/llvm/dist/llvm/include \
-		-I${LLVM_INCLUDE_OBJDIR} -I${NETBSDSRCDIR}/external/bsd/llvm/config
+		-I${NETBSDSRCDIR}/external/apache2/llvm/dist/llvm/include \
+		-I${LLVM_INCLUDE_OBJDIR} -I${NETBSDSRCDIR}/external/apache2/llvm/config
+
+CFLAGS+=	-pthread
+LDFLAGS+=	-pthread
+LIBDPLIBS+=	pthread		${.CURDIR}/../../../../../lib/libpthread
 
 GALLIUM_SUBDIRS= \
 	auxiliary \
@@ -988,7 +992,6 @@ LLVMRT_LIBS=	\
 LLVMRT_LIBS+=	\
 		AMDGPUCodeGen \
 		AMDGPUMCTargetDesc \
-		AMDGPUAsmPrinter \
 		AMDGPUTargetInfo \
 		AMDGPUAsmParser \
 		AMDGPUUtils
@@ -1002,7 +1005,6 @@ LLVMRT_LIBS+=	\
 		X86MCTargetDesc \
 		X86Disassembler \
 		X86MCTargetDesc \
-		X86AsmPrinter \
 		X86TargetInfo \
 		X86Utils
 .endif
@@ -1013,7 +1015,6 @@ LLVMRT_LIBS+=	\
 		AArch64CodeGen \
 		AArch64MCTargetDesc \
 		AArch64Utils \
-		AArch64AsmPrinter \
 		AArch64Disassembler \
 		AArch64TargetInfo
 .endif
@@ -1025,7 +1026,6 @@ LLVMRT_LIBS+=	\
 		ARMTargetInfo \
 		ARMMCTargetDesc \
 		ARMAsmParser \
-		ARMAsmPrinter \
 		ARMUtils
 .endif
 
@@ -1035,7 +1035,6 @@ LLVMRT_LIBS+=	\
 		MipsDisassembler \
 		MipsAsmParser \
 		MipsMCTargetDesc \
-		MipsAsmPrinter \
 		MipsTargetInfo
 .endif
 
@@ -1045,8 +1044,7 @@ LLVMRT_LIBS+=	\
 		PowerPCDisassembler \
 		PowerPCTargetInfo \
 		PowerPCMCTargetDesc \
-		PowerPCAsmParser \
-		PowerPCAsmPrinter
+		PowerPCAsmParser
 .endif
 
 LLVMRT_LIBS+=	\
@@ -1055,12 +1053,16 @@ LLVMRT_LIBS+=	\
 		SelectionDAG \
 		AsmPrinter \
 		CodeGen \
+		TransformsCFGuard \
 		Target \
 		InstCombine \
 		ScalarOpts \
 		DebugInfoCodeView \
+		DebugInfoDWARF \
 		Object \
 		BitReader \
+		TextAPI \
+		MIRParser \
 		MCParser \
 		MC \
 		ipo \
@@ -1072,16 +1074,22 @@ LLVMRT_LIBS+=	\
 		ProfileData \
 		Analysis \
 		IR \
+		Remarks \
+		BitstreamReader \
 		Linker \
 		BinaryFormat \
 		TransformsUtils \
-		Support
+		Support \
+		Demangle
 
-.include "${NETBSDSRCDIR}/external/bsd/llvm/link.mk"
+.include "${NETBSDSRCDIR}/external/apache2/llvm/link.mk"
 
 .endif  # ${BUILD_LLVM_PIPE} == 1 || ${BUILD_RADEON} == 1
 
 LDFLAGS+=	-Wl,--version-script=${X11SRCDIR.Mesa}/src/gallium/targets/dri/dri.sym
+.if ${MACHINE_ARCH} == "i386" || ${MACHINE_ARCH} == "x86_64" || ${MACHINE_CPU} == "aarch64"
+LDFLAGS+=	-Wl,-z,defs
+.endif
 
 ##  build mesagallium parts
 MESA_SRC_MODULES=  main math vbo state_tracker program asm_s

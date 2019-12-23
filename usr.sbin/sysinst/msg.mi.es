@@ -1,4 +1,4 @@
-/*	$NetBSD: msg.mi.es,v 1.17 2019/10/02 11:16:04 maya Exp $	*/
+/*	$NetBSD: msg.mi.es,v 1.20 2019/12/11 19:23:37 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -1284,6 +1284,7 @@ message dl_type_invalid	{Invalid file system type code (0 .. 255)}
 message	cancel		{Cancel}
 
 message	out_of_range	{Invalid value}
+message	invalid_guid	{Invalid GUID}
 
 message	reedit_partitions	{Re-edit}
 message abort_installation	{Abort installation}
@@ -1325,6 +1326,7 @@ message free_space_line {Espacio en $0..$1 $3 (tamaño $2 $3)\n}
 
 message	fs_type_ffsv2	{FFSv2}
 message	fs_type_ffs	{FFS}
+message fs_type_ext2old	{Linux Ext2 (old)}
 message	other_fs_type	{Other type}
 
 message	editpack	{Edit name of the disk}
@@ -1446,6 +1448,9 @@ message newfs_flag	{N}
 message ptn_install	{instalar}
 message ptn_instflag_desc	{(I)nstalar, }
 
+message clone_flag	{C}
+message clone_flag_desc	{, (C)lone}
+
 message parttype_gpt {Guid Partition Table (GPT)}
 message parttype_gpt_short {GPT}
 
@@ -1470,4 +1475,18 @@ message	gpt_flag_desc	{, (B)ootable}
 message size_ptn_not_mounted		{(Other: $0)}
 
 message running_system			{current system}
+
+message clone_from_elsewhere		{Clone external partition(s)}
+message select_foreign_part
+{Please select an external source partition:}
+message select_source_hdr
+{Your currently selected source partitions are:}
+message clone_with_data			{Clone with data}
+message	select_source_add		{Add another partition}
+message clone_target_end		{Add at end}
+message clone_target_hdr
+{Insert cloned partitions before:}
+message clone_target_disp		{cloned partition(s)}
+message clone_src_done
+{Source selection OK, proceed to target selection}
 

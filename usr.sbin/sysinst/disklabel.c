@@ -1,4 +1,4 @@
-/*	$NetBSD: disklabel.c,v 1.14 2019/10/21 16:09:59 martin Exp $	*/
+/*	$NetBSD: disklabel.c,v 1.27 2019/12/15 12:09:55 martin Exp $	*/
 
 /*
  * Copyright 2018 The NetBSD Foundation, Inc.
@@ -140,7 +140,7 @@ disklabel_parts_new(const char *dev, daddr_t start, daddr_t len,
 	parts->l.d_secpercyl = geo.dg_nsectors * geo.dg_ntracks;
 
 	parts->dp.pscheme = &disklabel_parts;
-	parts->dp.disk = dev;
+	parts->dp.disk = strdup(dev);
 	parts->dp.disk_start = start;
 	parts->dp.disk_size = parts->dp.free_space = len;
 	disklabel_init_default_alignment(parts, parts->l.d_secpercyl);
@@ -170,10 +170,16 @@ disklabel_parts_read(const char *disk, daddr_t start, daddr_t len,
 	int fd;
 	char diskpath[MAXPATHLEN];
 	uint flags;
+#ifndef DISKLABEL_NO_ONDISK_VERIFY
+	bool have_raw_label = false;
 
+	/*
+	 * Verify we really have a disklabel.
+	 */
 	if (run_program(RUN_SILENT | RUN_ERROR_OK,
-	    "disklabel -r %s", disk) != 0)
-		return NULL;
+	    "disklabel -r %s", disk) == 0)
+		have_raw_label = true;
+#endif
 
 	/* read partitions */
 
@@ -216,10 +222,10 @@ disklabel_parts_read(const char *disk, daddr_t start, daddr_t len,
 	if (len > disklabel_parts.size_limit)
 		len = disklabel_parts.size_limit;
 	parts->dp.pscheme = scheme;
-	parts->dp.disk = disk;
+	parts->dp.disk = strdup(disk);
 	parts->dp.disk_start = start;
 	parts->dp.disk_size = parts->dp.free_space = len;
-	disklabel_init_default_alignment(parts, 0);
+	disklabel_init_default_alignment(parts, parts->l.d_secpercyl);
 
 	for (int part = 0; part < parts->l.d_npartitions; part++) {
 		if (parts->l.d_partitions[part].p_fstype == FS_UNUSED
@@ -259,7 +265,61 @@ disklabel_parts_read(const char *disk, daddr_t start, daddr_t len,
 	}
 	close(fd);
 
+#ifndef DISKLABEL_NO_ONDISK_VERIFY
+	if (!have_raw_label) {
+		bool found_real_part = false;
+
+		if (parts->l.d_npartitions <= RAW_PART ||
+		    parts->l.d_partitions[RAW_PART].p_size == 0)
+			goto no_valid_label;
+
+		/*
+		 * Check if kernel translation gave us "something" besides
+		 * the raw or the whole-disk partition.
+		 * If not: report missing disklabel.
+		 */
+		for (int part = 0; part < parts->l.d_npartitions; part++) {
+			if (parts->l.d_partitions[part].p_fstype == FS_UNUSED)
+				continue;
+			if (part == 0 &&
+			    parts->l.d_partitions[part].p_offset ==
+			     parts->l.d_partitions[RAW_PART].p_offset &&
+			    parts->l.d_partitions[part].p_size ==
+			     parts->l.d_partitions[RAW_PART].p_size)
+				continue;
+			if (part == RAW_PART)
+				continue;
+			found_real_part = true;
+			break;
+		}
+		if (!found_real_part) {
+			/* no partion there yet */
+no_valid_label:
+			free(parts);
+			return NULL;
+		}
+	}
+#endif
+
 	return &parts->dp;
+}
+
+/*
+ * Escape a string for usage as a tag name in a capfile(5),
+ * we really know there is enough space in the destination buffer...
+ */
+static void
+escape_capfile(char *dest, const char *src, size_t len)
+{
+	while (*src && len > 0) {
+		if (*src == ':')
+			*dest++ = ' ';
+		else
+			*dest++ = *src;
+		src++;
+		len--;
+	}
+	*dest = 0;
 }
 
 static bool
@@ -268,7 +328,8 @@ disklabel_write_to_disk(struct disk_partitions *arg)
 	struct disklabel_disk_partitions *parts =
 	    (struct disklabel_disk_partitions*)arg;
 	FILE *f;
-	char fname[PATH_MAX], packname[sizeof(parts->l.d_packname)+1];
+	char fname[PATH_MAX], packname[sizeof(parts->l.d_packname)+1],
+	    disktype[sizeof(parts->l.d_typename)+1];
 	int i, rv = 0;
 	const char *disk = parts->dp.disk, *s;
 	const struct partition *lp;
@@ -281,13 +342,10 @@ disklabel_write_to_disk(struct disk_partitions *arg)
 	assert(parts->l.d_ncylinders != 0);
 	assert(parts->l.d_secpercyl != 0);
 
-	sprintf(fname, "/tmp/disklabel.%u", getpid());
-	f = fopen(fname, "w");
-	if (f == NULL)
-		return false;
-
 	/* make sure we have a 0 terminated packname */
 	strlcpy(packname, parts->l.d_packname, sizeof packname);
+	if (packname[0] == 0)
+		strcpy(packname, "fictious");
 
 	/* fill typename with disk name prefix, if not already set */
 	if (strlen(parts->l.d_typename) == 0) {
@@ -298,18 +356,24 @@ disklabel_write_to_disk(struct disk_partitions *arg)
 			*d = *s;
 		}
 	}
-	parts->l.d_typename[sizeof(parts->l.d_typename)-1] = 0;
 
 	/* we need a valid disk type name, so enforce an arbitrary if
 	 * above did not yield a usable one */
 	if (strlen(parts->l.d_typename) == 0)
 		strncpy(parts->l.d_typename, "SCSI",
 		    sizeof(parts->l.d_typename));
+	escape_capfile(disktype, parts->l.d_typename,
+	    sizeof(parts->l.d_typename));
+
+	sprintf(fname, "/tmp/disklabel.%u", getpid());
+	f = fopen(fname, "w");
+	if (f == NULL)
+		return false;
 
 	lp = parts->l.d_partitions;
 	scripting_fprintf(NULL, "cat <<EOF >%s\n", fname);
 	scripting_fprintf(f, "%s|NetBSD installation generated:\\\n",
-	    parts->l.d_typename);
+	    disktype);
 	scripting_fprintf(f, "\t:nc#%d:nt#%d:ns#%d:\\\n",
 	    parts->l.d_ncylinders, parts->l.d_ntracks, parts->l.d_nsectors);
 	scripting_fprintf(f, "\t:sc#%d:su#%" PRIu32 ":\\\n",
@@ -351,8 +415,8 @@ disklabel_write_to_disk(struct disk_partitions *arg)
 	 */
 #ifdef DISKLABEL_CMD
 	/* disklabel the disk */
-	rv = run_program(RUN_DISPLAY, "%s -f %s %s %s %s",
-	    DISKLABEL_CMD, fname, disk, parts->l.d_typename, packname);
+	rv = run_program(0, "%s -f %s %s '%s' '%s'",
+	    DISKLABEL_CMD, fname, disk, disktype, packname);
 #endif
 
 	unlink(fname);
@@ -576,9 +640,15 @@ disklabel_create_custom_part_type(const char *custom, const char **err_msg)
 }
 
 static const struct part_type_desc *
-disklabel_get_fs_part_type(unsigned fstype, unsigned subtype)
+disklabel_get_fs_part_type(enum part_type pt, unsigned fstype, unsigned subtype)
 {
 	return disklabel_find_type(fstype, false);
+}
+
+static const struct part_type_desc *
+disklabel_create_unknown_part_type(void)
+{
+	return disklabel_find_type(FS_OTHER, false);
 }
 
 static const struct part_type_desc *
@@ -1076,6 +1146,7 @@ disklabel_free(struct disk_partitions *arg)
 {
 
 	assert(arg != NULL);
+	free(__UNCONST(arg->disk));
 	free(arg);
 }
 
@@ -1100,7 +1171,9 @@ disklabel_parts = {
 	.get_generic_part_type = disklabel_get_generic_type,
 	.get_fs_part_type = disklabel_get_fs_part_type,
 	.create_custom_part_type = disklabel_create_custom_part_type,
+	.create_unknown_part_type = disklabel_create_unknown_part_type,
 	.get_part_alignment = disklabel_get_alignment,
+	.adapt_foreign_part_info = generic_adapt_foreign_part_info,
 	.get_part_info = disklabel_get_part_info,
 	.can_add_partition = disklabel_can_add_partition,
 	.set_part_info = disklabel_set_part_info,
