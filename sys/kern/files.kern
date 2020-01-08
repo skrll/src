@@ -1,4 +1,4 @@
-#	$NetBSD: files.kern,v 1.40 2019/12/20 21:20:09 ad Exp $
+#	$NetBSD: files.kern,v 1.42 2020/01/04 03:46:19 kamil Exp $
 
 #
 # kernel sources
@@ -161,6 +161,7 @@ file	kern/sys_mqueue.c		mqueue
 file	kern/sys_lwp.c			kern
 file	kern/sys_pipe.c			!pipe_socketpair
 file	kern/sys_process.c		ptrace_hooks | ktrace
+file	kern/sys_process_lwpstatus.c	kern
 file	kern/sys_ptrace.c		ptrace
 file	kern/sys_ptrace_common.c	ptrace
 file	kern/sys_pset.c			kern

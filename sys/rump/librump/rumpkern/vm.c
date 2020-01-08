@@ -1,4 +1,4 @@
-/*	$NetBSD: vm.c,v 1.176 2019/12/15 21:11:35 ad Exp $	*/
+/*	$NetBSD: vm.c,v 1.182 2020/01/05 15:57:15 para Exp $	*/
 
 /*
  * Copyright (c) 2007-2011 Antti Kantee.  All Rights Reserved.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vm.c,v 1.176 2019/12/15 21:11:35 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vm.c,v 1.182 2020/01/05 15:57:15 para Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -167,6 +167,7 @@ uvm_pagealloc_strat(struct uvm_object *uobj, voff_t off, struct vm_anon *anon,
 	if (__predict_false(pg == NULL)) {
 		return NULL;
 	}
+	mutex_init(&pg->interlock, MUTEX_DEFAULT, IPL_NONE);
 
 	pg->offset = off;
 	pg->uobject = uobj;
@@ -226,6 +227,7 @@ uvm_pagefree(struct vm_page *pg)
 		atomic_dec_uint(&vmpage_onqueue);
 	}
 
+	mutex_destroy(&pg->interlock);
 	pool_cache_put(&pagecache, pg);
 }
 
@@ -238,12 +240,12 @@ uvm_pagezero(struct vm_page *pg)
 }
 
 /*
- * uvm_page_locked_p: return true if object associated with page is
+ * uvm_page_owner_locked_p: return true if object associated with page is
  * locked.  this is a weak check for runtime assertions only.
  */
 
 bool
-uvm_page_locked_p(struct vm_page *pg)
+uvm_page_owner_locked_p(struct vm_page *pg)
 {
 
 	return mutex_owned(pg->uobject->vmobjlock);
@@ -407,6 +409,48 @@ uvm_pageunwire(struct vm_page *pg)
 {
 
 	/* nada */
+}
+
+int
+uvm_availmem(void)
+{
+
+	return uvmexp.free;
+}
+
+void
+uvm_pagelock(struct vm_page *pg)
+{
+
+	mutex_enter(&pg->interlock);
+}
+
+void
+uvm_pagelock2(struct vm_page *pg1, struct vm_page *pg2)
+{
+
+	if (pg1 < pg2) {
+		mutex_enter(&pg1->interlock);
+		mutex_enter(&pg2->interlock);
+	} else {
+		mutex_enter(&pg2->interlock);
+		mutex_enter(&pg1->interlock);
+	}
+}
+
+void
+uvm_pageunlock(struct vm_page *pg)
+{
+
+	mutex_exit(&pg->interlock);
+}
+
+void
+uvm_pageunlock2(struct vm_page *pg1, struct vm_page *pg2)
+{
+
+	mutex_exit(&pg1->interlock);
+	mutex_exit(&pg2->interlock);
 }
 
 /* where's your schmonz now? */
@@ -638,16 +682,6 @@ uvm_estimatepageable(int *active, int *inactive)
 	/* XXX: guessing game */
 	*active = 1024;
 	*inactive = 1024;
-}
-
-bool
-vm_map_starved_p(struct vm_map *map)
-{
-
-	if (map->flags & VM_MAP_WANTVA)
-		return true;
-
-	return false;
 }
 
 int

@@ -1,7 +1,7 @@
-/* $NetBSD: vmstat.c,v 1.228 2019/09/13 13:56:05 christos Exp $ */
+/* $NetBSD: vmstat.c,v 1.233 2020/01/06 11:24:30 ad Exp $ */
 
 /*-
- * Copyright (c) 1998, 2000, 2001, 2007 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2000, 2001, 2007, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation by:
@@ -70,7 +70,7 @@ __COPYRIGHT("@(#) Copyright (c) 1980, 1986, 1991, 1993\
 #if 0
 static char sccsid[] = "@(#)vmstat.c	8.2 (Berkeley) 3/1/95";
 #else
-__RCSID("$NetBSD: vmstat.c,v 1.228 2019/09/13 13:56:05 christos Exp $");
+__RCSID("$NetBSD: vmstat.c,v 1.233 2020/01/06 11:24:30 ad Exp $");
 #endif
 #endif /* not lint */
 
@@ -96,6 +96,8 @@ __RCSID("$NetBSD: vmstat.c,v 1.228 2019/09/13 13:56:05 christos Exp $");
 #include <sys/time.h>
 #include <sys/queue.h>
 #include <sys/kernhist.h>
+#include <sys/vnode.h>
+#include <sys/vnode_impl.h>
 
 #include <uvm/uvm_extern.h>
 #include <uvm/uvm_stat.h>
@@ -148,27 +150,36 @@ struct cpu_info {
  */
 struct nlist namelist[] =
 {
-#define	X_BOOTTIME	0
-	{ .n_name = "_boottime" },
-#define	X_HZ		1
+#define	X_HZ		0
 	{ .n_name = "_hz" },
-#define	X_STATHZ	2
+#define	X_STATHZ	1
 	{ .n_name = "_stathz" },
-#define	X_NCHSTATS	3
+#define	X_NCHSTATS	2
 	{ .n_name = "_nchstats" },
-#define	X_ALLEVENTS	4
+#define	X_ALLEVENTS	3
 	{ .n_name = "_allevents" },
-#define	X_POOLHEAD	5
+#define	X_POOLHEAD	4
 	{ .n_name = "_pool_head" },
-#define	X_UVMEXP	6
+#define	X_UVMEXP	5
 	{ .n_name = "_uvmexp" },
-#define	X_TIME_SECOND	7
-	{ .n_name = "_time_second" },
-#define X_TIME		8
-	{ .n_name = "_time" },
-#define X_CPU_INFOS	9
+#define X_CPU_INFOS	6
 	{ .n_name = "_cpu_infos" },
-#define	X_NL_SIZE	10
+#define	X_NL_SIZE	7
+	{ .n_name = NULL },
+};
+
+/*
+ * Namelist for time data.
+ */
+struct nlist timenl[] =
+{
+#define	X_TIMEBASEBIN	0
+	{ .n_name = "_timebasebin" },
+#define	X_TIME_SECOND	1
+	{ .n_name = "_time_second" },
+#define X_TIME		2
+	{ .n_name = "_time" },
+#define	X_TIMENL_SIZE	3
 	{ .n_name = NULL },
 };
 
@@ -219,10 +230,10 @@ struct nlist hashnl[] =
 	{ .n_name = "_nchash" },
 #define	X_NCHASHTBL	11
 	{ .n_name = "_nchashtbl" },
-#define	X_NCVHASH	12
-	{ .n_name = "_ncvhash" },
-#define	X_NCVHASHTBL	13
-	{ .n_name = "_ncvhashtbl" },
+#define	X_NCVCACHEHASH	12
+	{ .n_name = "_vcache_hashmask" },
+#define	X_NCVCACHETBL	13
+	{ .n_name = "_vcache_hashtab" },
 #define X_HASHNL_SIZE	14	/* must be last */
 	{ .n_name = NULL },
 };
@@ -553,9 +564,7 @@ getnlist(int todo)
 				errx(1, "kvm_nlist: %s %s",
 				    "namelist", kvm_geterr(kd));
 			for (i = 0; i < __arraycount(namelist)-1; i++)
-				if (namelist[i].n_type == 0 &&
-				    i != X_TIME_SECOND &&
-				    i != X_TIME) {
+				if (namelist[i].n_type == 0) {
 					if (doexit++ == 0)
 						(void)fprintf(stderr,
 						    "%s: undefined symbols:",
@@ -568,6 +577,11 @@ getnlist(int todo)
 				exit(1);
 			}
 		}
+	}
+	if ((todo & (VMSTAT|INTRSTAT)) && !(done & (VMSTAT))) {
+		done |= VMSTAT;
+		if ((c = kvm_nlist(kd, timenl)) == -1 || c == X_TIMENL_SIZE)
+			errx(1, "kvm_nlist: %s %s", "timenl", kvm_geterr(kd));
 	}
 	if ((todo & (SUMSTAT|INTRSTAT)) && !(done & (SUMSTAT|INTRSTAT))) {
 		done |= SUMSTAT|INTRSTAT;
@@ -636,10 +650,13 @@ getuptime(void)
 		}
 		clock_gettime(CLOCK_REALTIME, &now);
 	} else {
-		if (boottime.tv_sec == 0)
-			kread(namelist, X_BOOTTIME, &boottime,
-			    sizeof(boottime));
-		if (kreadc(namelist, X_TIME_SECOND, &nowsec, sizeof(nowsec))) {
+		if (boottime.tv_sec == 0) {
+			struct bintime bt;
+
+			kread(timenl, X_TIMEBASEBIN, &bt, sizeof(bt));
+			bintime2timespec(&bt, &boottime);
+		}
+		if (kreadc(timenl, X_TIME_SECOND, &nowsec, sizeof(nowsec))) {
 			/*
 			 * XXX this assignment dance can be removed once
 			 * timeval tv_sec is SUS mandated time_t
@@ -647,7 +664,7 @@ getuptime(void)
 			now.tv_sec = nowsec;
 			now.tv_nsec = 0;
 		} else {
-			kread(namelist, X_TIME, &now, sizeof(now));
+			kread(timenl, X_TIME, &now, sizeof(now));
 		}
 	}
 	uptime = now.tv_sec - boottime.tv_sec;
@@ -1096,6 +1113,7 @@ dosum(void)
 	(void)printf("%9" PRIu64 " too long\n", nch_stats.ncs_long);
 	(void)printf("%9" PRIu64 " pass2 hits\n", nch_stats.ncs_pass2);
 	(void)printf("%9" PRIu64 " 2passes\n", nch_stats.ncs_2passes);
+	(void)printf("%9" PRIu64 " reverse hits\n", nch_stats.ncs_revhits);
 	(void)printf(
 	    "%9s cache hits (%d%% pos + %d%% neg) system %d%% per-process\n",
 	    "", PCT(nch_stats.ncs_goodhits, nchtotal),
@@ -1842,7 +1860,9 @@ dopoolcache(int verbose)
 
 enum hashtype {			/* from <sys/systm.h> */
 	HASH_LIST,
-	HASH_TAILQ
+	HASH_SLIST,
+	HASH_TAILQ,
+	HASH_PSLIST
 };
 
 struct uidinfo {		/* XXX: no kernel header file */
@@ -1872,13 +1892,13 @@ struct kernel_hash {
 		X_NCHASH, X_NCHASHTBL,
 		HASH_LIST, offsetof(struct namecache, nc_hash),
 	}, {
-		"name cache directory hash",
-		X_NCVHASH, X_NCVHASHTBL,
-		HASH_LIST, offsetof(struct namecache, nc_vhash),
-	}, {
 		"user info (uid -> used processes) hash",
 		X_UIHASH, X_UIHASHTBL,
 		HASH_LIST, offsetof(struct uidinfo, ui_hash),
+	}, {
+		"vnode cache hash",
+		X_NCVCACHEHASH, X_NCVCACHETBL,
+		HASH_SLIST, offsetof(struct vnode_impl, vi_hash),
 	}, {
 		NULL, -1, -1, 0, 0,
 	}
@@ -1888,6 +1908,7 @@ void
 dohashstat(int verbose, int todo, const char *hashname)
 {
 	LIST_HEAD(, generic)	*hashtbl_list;
+	SLIST_HEAD(, generic)	*hashtbl_slist;
 	TAILQ_HEAD(, generic)	*hashtbl_tailq;
 	struct kernel_hash	*curhash;
 	void	*hashaddr, *hashbuf, *nhashbuf, *nextaddr;
@@ -1969,14 +1990,22 @@ dohashstat(int verbose, int todo, const char *hashname)
 		items = maxchain = 0;
 		if (curhash->type == HASH_LIST) {
 			hashtbl_list = hashbuf;
+			hashtbl_slist = NULL;
+			hashtbl_tailq = NULL;
+		} else if (curhash->type == HASH_SLIST) {
+			hashtbl_list = NULL;
+			hashtbl_slist = hashbuf;
 			hashtbl_tailq = NULL;
 		} else {
 			hashtbl_list = NULL;
+			hashtbl_slist = NULL;
 			hashtbl_tailq = hashbuf;
 		}
 		for (i = 0; i < hashsize; i++) {
 			if (curhash->type == HASH_LIST)
 				nextaddr = LIST_FIRST(&hashtbl_list[i]);
+			else if (curhash->type == HASH_SLIST)
+				nextaddr = SLIST_FIRST(&hashtbl_slist[i]);
 			else
 				nextaddr = TAILQ_FIRST(&hashtbl_tailq[i]);
 			if (nextaddr == NULL)
@@ -2008,7 +2037,7 @@ dohashstat(int verbose, int todo, const char *hashname)
 }
 
 /*
- * kreadc like kread but returns 1 if sucessful, 0 otherwise
+ * kreadc like kread but returns 1 if successful, 0 otherwise
  */
 int
 kreadc(struct nlist *nl, int nlx, void *addr, size_t size)

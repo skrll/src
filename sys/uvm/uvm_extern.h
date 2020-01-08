@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_extern.h,v 1.214 2019/12/16 22:47:55 ad Exp $	*/
+/*	$NetBSD: uvm_extern.h,v 1.218 2019/12/31 22:42:51 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -210,6 +210,7 @@ b\32UNMAP\0\
 #define	UVM_PGA_STRAT_NORMAL	0	/* priority (low id to high) walk */
 #define	UVM_PGA_STRAT_ONLY	1	/* only specified free list */
 #define	UVM_PGA_STRAT_FALLBACK	2	/* ONLY falls back on NORMAL */
+#define	UVM_PGA_STRAT_NUMA	3	/* strongly prefer ideal bucket */
 
 /*
  * flags for uvm_pagealloc_strat()
@@ -638,6 +639,7 @@ int			uvm_coredump_walkmap(struct proc *,
 int			uvm_coredump_count_segs(struct proc *);
 void			uvm_proc_exit(struct proc *);
 void			uvm_lwp_exit(struct lwp *);
+void			uvm_idle(void);
 void			uvm_init_limits(struct proc *);
 bool			uvm_kernacc(void *, size_t, vm_prot_t);
 __dead void		uvm_scheduler(void);
@@ -735,6 +737,8 @@ int			uvm_obj_wirepages(struct uvm_object *, off_t, off_t,
 void			uvm_obj_unwirepages(struct uvm_object *, off_t, off_t);
 
 /* uvm_page.c */
+int			uvm_availmem(void);
+void			uvm_page_numa_load(paddr_t, paddr_t, u_int);
 struct vm_page		*uvm_pagealloc_strat(struct uvm_object *,
 			    voff_t, struct vm_anon *, int, int, int);
 #define	uvm_pagealloc(obj, off, anon, flags) \

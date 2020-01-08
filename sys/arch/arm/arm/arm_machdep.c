@@ -1,4 +1,4 @@
-/*	$NetBSD: arm_machdep.c,v 1.58 2019/12/03 15:20:59 riastradh Exp $	*/
+/*	$NetBSD: arm_machdep.c,v 1.60 2020/01/07 09:57:10 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -80,17 +80,17 @@
 
 #include <sys/param.h>
 
-__KERNEL_RCSID(0, "$NetBSD: arm_machdep.c,v 1.58 2019/12/03 15:20:59 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm_machdep.c,v 1.60 2020/01/07 09:57:10 skrll Exp $");
 
+#include <sys/atomic.h>
+#include <sys/cpu.h>
+#include <sys/evcnt.h>
 #include <sys/exec.h>
+#include <sys/kcpuset.h>
+#include <sys/kmem.h>
 #include <sys/proc.h>
 #include <sys/systm.h>
-#include <sys/kmem.h>
 #include <sys/ucontext.h>
-#include <sys/evcnt.h>
-#include <sys/cpu.h>
-#include <sys/atomic.h>
-#include <sys/kcpuset.h>
 
 #ifdef EXEC_AOUT
 #include <sys/exec_aout.h>
@@ -273,7 +273,7 @@ cpu_intr_p(void)
 		__insn_barrier();
 		idepth = l->l_cpu->ci_intr_depth;
 #ifdef __HAVE_PIC_FAST_SOFTINTS
-		cpl = ci->ci_cpl;
+		cpl = l->l_cpu->ci_cpl;
 #endif
 		__insn_barrier();
 	} while (__predict_false(ncsw != l->l_ncsw));

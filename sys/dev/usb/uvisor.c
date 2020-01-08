@@ -1,4 +1,4 @@
-/*	$NetBSD: uvisor.c,v 1.52 2019/09/14 15:19:52 maxv Exp $	*/
+/*	$NetBSD: uvisor.c,v 1.54 2020/01/07 06:42:26 maxv Exp $	*/
 
 /*
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvisor.c,v 1.52 2019/09/14 15:19:52 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvisor.c,v 1.54 2020/01/07 06:42:26 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -71,7 +71,7 @@ int uvisordebug = 0;
 /* From the Linux driver */
 /*
  * UVISOR_REQUEST_BYTES_AVAILABLE asks the visor for the number of bytes that
- * are available to be transfered to the host for the specified endpoint.
+ * are available to be transferred to the host for the specified endpoint.
  * Currently this is not used, and always returns 0x0001
  */
 #define UVISOR_REQUEST_BYTES_AVAILABLE		0x01
@@ -152,7 +152,7 @@ static usbd_status uvisor_init(struct uvisor_softc *,
 static int uvisor_open(void *, int);
 static void uvisor_close(void *, int);
 
-struct ucom_methods uvisor_methods = {
+static const struct ucom_methods uvisor_methods = {
 	.ucom_open = uvisor_open,
 	.ucom_close = uvisor_close,
 };

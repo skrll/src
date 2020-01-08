@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_amap.c,v 1.111 2019/12/13 20:10:22 ad Exp $	*/
+/*	$NetBSD: uvm_amap.c,v 1.114 2020/01/02 02:00:35 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_amap.c,v 1.111 2019/12/13 20:10:22 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_amap.c,v 1.114 2020/01/02 02:00:35 ad Exp $");
 
 #include "opt_uvmhist.h"
 
@@ -62,24 +62,6 @@ static LIST_HEAD(, vm_amap) amap_list;
 /*
  * local functions
  */
-
-static inline void
-amap_list_insert(struct vm_amap *amap)
-{
-
-	mutex_enter(&amap_list_lock);
-	LIST_INSERT_HEAD(&amap_list, amap, am_list);
-	mutex_exit(&amap_list_lock);
-}
-
-static inline void
-amap_list_remove(struct vm_amap *amap)
-{
-
-	mutex_enter(&amap_list_lock);
-	LIST_REMOVE(amap, am_list);
-	mutex_exit(&amap_list_lock);
-}
 
 static int
 amap_roundup_slots(int slots)
@@ -170,14 +152,29 @@ amap_alloc1(int slots, int padslots, int flags)
 	const bool nowait = (flags & UVM_FLAG_NOWAIT) != 0;
 	const km_flag_t kmflags = nowait ? KM_NOSLEEP : KM_SLEEP;
 	struct vm_amap *amap;
+	kmutex_t *newlock, *oldlock;
 	int totalslots;
 
 	amap = pool_cache_get(&uvm_amap_cache, nowait ? PR_NOWAIT : PR_WAITOK);
 	if (amap == NULL) {
 		return NULL;
 	}
+	KASSERT(amap->am_lock != NULL);
+	KASSERT(amap->am_nused == 0);
+
+	/* Try to privatize the lock if currently shared. */
+	if (mutex_obj_refcnt(amap->am_lock) > 1) {
+		newlock = mutex_obj_tryalloc(MUTEX_DEFAULT, IPL_NONE);
+		if (newlock != NULL) {
+		    	oldlock = amap->am_lock;
+		    	mutex_enter(&amap_list_lock);
+		    	amap->am_lock = newlock;
+		    	mutex_exit(&amap_list_lock);
+		    	mutex_obj_free(oldlock);
+		}
+	}
+
 	totalslots = amap_roundup_slots(slots + padslots);
-	amap->am_lock = NULL;
 	amap->am_ref = 1;
 	amap->am_flags = 0;
 #ifdef UVM_AMAP_PPREF
@@ -185,7 +182,6 @@ amap_alloc1(int slots, int padslots, int flags)
 #endif
 	amap->am_maxslot = totalslots;
 	amap->am_nslot = slots;
-	amap->am_nused = 0;
 
 	/*
 	 * Note: since allocations are likely big, we expect to reduce the
@@ -248,13 +244,56 @@ amap_alloc(vaddr_t sz, vaddr_t padsz, int waitf)
 	if (amap) {
 		memset(amap->am_anon, 0,
 		    amap->am_maxslot * sizeof(struct vm_anon *));
-		amap->am_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
-		amap_list_insert(amap);
 	}
 
 	UVMHIST_LOG(maphist,"<- done, amap = 0x%#jx, sz=%jd", (uintptr_t)amap,
 	    sz, 0, 0);
 	return(amap);
+}
+
+/*
+ * amap_ctor: pool_cache constructor for new amaps
+ *
+ * => carefully synchronize with amap_swap_off()
+ */
+static int
+amap_ctor(void *arg, void *obj, int flags)
+{
+	struct vm_amap *amap = obj;
+
+	if ((flags & PR_NOWAIT) != 0) {
+		amap->am_lock = mutex_obj_tryalloc(MUTEX_DEFAULT, IPL_NONE);
+		if (amap->am_lock == NULL) {
+			return ENOMEM;
+		}
+	} else {
+		amap->am_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
+	}
+	amap->am_nused = 0;
+	amap->am_flags = 0;
+
+	mutex_enter(&amap_list_lock);
+	LIST_INSERT_HEAD(&amap_list, amap, am_list);
+	mutex_exit(&amap_list_lock);
+	return 0;
+}
+
+/*
+ * amap_ctor: pool_cache destructor for amaps
+ *
+ * => carefully synchronize with amap_swap_off()
+ */
+static void
+amap_dtor(void *arg, void *obj)
+{
+	struct vm_amap *amap = obj;
+
+	KASSERT(amap->am_nused == 0);
+
+	mutex_enter(&amap_list_lock);
+	LIST_REMOVE(amap, am_list);
+	mutex_exit(&amap_list_lock);
+	mutex_obj_free(amap->am_lock);
 }
 
 /*
@@ -267,7 +306,7 @@ uvm_amap_init(void)
 	mutex_init(&amap_list_lock, MUTEX_DEFAULT, IPL_NONE);
 
 	pool_cache_bootstrap(&uvm_amap_cache, sizeof(struct vm_amap), 0, 0, 0,
-	    "amappl", NULL, IPL_NONE, NULL, NULL, NULL);
+	    "amappl", NULL, IPL_NONE, amap_ctor, amap_dtor, NULL);
 }
 
 /*
@@ -285,10 +324,6 @@ amap_free(struct vm_amap *amap)
 
 	KASSERT(amap->am_ref == 0 && amap->am_nused == 0);
 	KASSERT((amap->am_flags & AMAP_SWAPOFF) == 0);
-	if (amap->am_lock != NULL) {
-		KASSERT(!mutex_owned(amap->am_lock));
-		mutex_obj_free(amap->am_lock);
-	}
 	slots = amap->am_maxslot;
 	kmem_free(amap->am_slots, slots * sizeof(*amap->am_slots));
 	kmem_free(amap->am_bckptr, slots * sizeof(*amap->am_bckptr));
@@ -346,8 +381,7 @@ amap_extend(struct vm_map_entry *entry, vsize_t addsize, int flags)
 		slotneed = slotoff + slotmapped + slotadd;
 		slotadj = 0;
 		slotarea = 0;
-	}
-	else {
+	} else {
 		slotneed = slotadd + slotmapped;
 		slotadj = slotadd - slotoff;
 		slotarea = amap->am_maxslot - slotmapped;
@@ -709,7 +743,6 @@ amap_wipeout(struct vm_amap *amap)
 		amap_unlock(amap);
 		return;
 	}
-	amap_list_remove(amap);
 
 	for (lcv = 0 ; lcv < amap->am_nused ; lcv++) {
 		struct vm_anon *anon;
@@ -768,6 +801,7 @@ amap_copy(struct vm_map *map, struct vm_map_entry *entry, int flags,
 	struct vm_amap *amap, *srcamap;
 	struct vm_anon *tofree;
 	u_int slots, lcv;
+	kmutex_t *oldlock;
 	vsize_t len;
 
 	UVMHIST_FUNC("amap_copy"); UVMHIST_CALLED(maphist);
@@ -852,7 +886,7 @@ amap_copy(struct vm_map *map, struct vm_map_entry *entry, int flags,
 	    (uintptr_t)srcamap, srcamap->am_ref, 0, 0);
 
 	/*
-	 * Allocate a new amap (note: not initialised, no lock set, etc).
+	 * Allocate a new amap (note: not initialised, etc).
 	 */
 
 	AMAP_B2SLOT(slots, len);
@@ -861,6 +895,19 @@ amap_copy(struct vm_map *map, struct vm_map_entry *entry, int flags,
 		UVMHIST_LOG(maphist, "  amap_alloc1 failed", 0,0,0,0);
 		return;
 	}
+
+	/*
+	 * Make the new amap share the source amap's lock, and then lock
+	 * both.  We must do this before we set am_nused != 0, otherwise
+	 * amap_swap_off() can become interested in the amap.
+	 */
+
+	oldlock = amap->am_lock;
+	mutex_enter(&amap_list_lock);
+	amap->am_lock = srcamap->am_lock;
+	mutex_exit(&amap_list_lock);
+	mutex_obj_hold(amap->am_lock);
+	mutex_obj_free(oldlock);
 
 	amap_lock(srcamap);
 
@@ -920,22 +967,7 @@ amap_copy(struct vm_map *map, struct vm_map_entry *entry, int flags,
 	}
 #endif
 
-	/*
-	 * If we referenced any anons, then share the source amap's lock.
-	 * Otherwise, we have nothing in common, so allocate a new one.
-	 */
-
-	KASSERT(amap->am_lock == NULL);
-	if (amap->am_nused != 0) {
-		amap->am_lock = srcamap->am_lock;
-		mutex_obj_hold(amap->am_lock);
-	}
 	uvm_anon_freelst(srcamap, tofree);
-
-	if (amap->am_lock == NULL) {
-		amap->am_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
-	}
-	amap_list_insert(amap);
 
 	/*
 	 * Install new amap.
@@ -1069,7 +1101,9 @@ ReStart:
 		 * Drop PG_BUSY on new page.  Since its owner was locked all
 		 * this time - it cannot be PG_RELEASED or PG_WANTED.
 		 */
+		uvm_pagelock(npg);
 		uvm_pageactivate(npg);
+		uvm_pageunlock(npg);
 		npg->flags &= ~(PG_BUSY|PG_FAKE);
 		UVM_PAGE_OWN(npg, NULL);
 	}
@@ -1319,10 +1353,9 @@ amap_swap_off(int startslot, int endslot)
 		LIST_INSERT_BEFORE(am, &marker_prev, am_list);
 		LIST_INSERT_AFTER(am, &marker_next, am_list);
 
+		/* amap_list_lock prevents the lock pointer from changing. */
 		if (!amap_lock_try(am)) {
-			mutex_exit(&amap_list_lock);
-			preempt();
-			mutex_enter(&amap_list_lock);
+			(void)kpause("amapswpo", false, 1, &amap_list_lock);
 			am_next = LIST_NEXT(&marker_prev, am_list);
 			if (am_next == &marker_next) {
 				am_next = LIST_NEXT(am_next, am_list);
@@ -1337,11 +1370,7 @@ amap_swap_off(int startslot, int endslot)
 
 		mutex_exit(&amap_list_lock);
 
-		if (am->am_nused <= 0) {
-			amap_unlock(am);
-			goto next;
-		}
-
+		/* If am_nused == 0, the amap could be free - careful. */
 		for (i = 0; i < am->am_nused; i++) {
 			int slot;
 			int swslot;
@@ -1377,7 +1406,6 @@ amap_swap_off(int startslot, int endslot)
 			amap_unlock(am);
 		}
 		
-next:
 		mutex_enter(&amap_list_lock);
 		KASSERT(LIST_NEXT(&marker_prev, am_list) == &marker_next ||
 		    LIST_NEXT(LIST_NEXT(&marker_prev, am_list), am_list) ==

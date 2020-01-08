@@ -1,4 +1,4 @@
-/* $NetBSD: ihidev.c,v 1.9 2019/10/01 18:00:08 chs Exp $ */
+/* $NetBSD: ihidev.c,v 1.11 2019/12/25 01:19:56 thorpej Exp $ */
 /* $OpenBSD ihidev.c,v 1.13 2017/04/08 02:57:23 deraadt Exp $ */
 
 /*-
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ihidev.c,v 1.9 2019/10/01 18:00:08 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ihidev.c,v 1.11 2019/12/25 01:19:56 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

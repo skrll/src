@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cue.c,v 1.86 2019/08/20 06:37:06 mrg Exp $	*/
+/*	$NetBSD: if_cue.c,v 1.88 2020/01/07 06:42:26 maxv Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998, 1999, 2000
@@ -48,7 +48,7 @@
  * RX filter uses a 512-bit multicast hash table, single perfect entry
  * for the station address, and promiscuous mode. Unlike the ADMtek
  * and KLSI chips, the CATC ASIC supports read and write combining
- * mode where multiple packets can be transfered using a single bulk
+ * mode where multiple packets can be transferred using a single bulk
  * transaction, which helps performance a great deal.
  */
 
@@ -57,7 +57,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_cue.c,v 1.86 2019/08/20 06:37:06 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cue.c,v 1.88 2020/01/07 06:42:26 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -124,7 +124,7 @@ struct cue_softc {
 /*
  * Various supported device vendors/products.
  */
-static struct usb_devno cue_devs[] = {
+static const struct usb_devno cue_devs[] = {
 	{ USB_VENDOR_CATC, USB_PRODUCT_CATC_NETMATE },
 	{ USB_VENDOR_CATC, USB_PRODUCT_CATC_NETMATE2 },
 	{ USB_VENDOR_SMARTBRIDGES, USB_PRODUCT_SMARTBRIDGES_SMARTLINK },
@@ -132,8 +132,8 @@ static struct usb_devno cue_devs[] = {
 };
 #define cue_lookup(v, p) (usb_lookup(cue_devs, v, p))
 
-int cue_match(device_t, cfdata_t, void *);
-void cue_attach(device_t, device_t, void *);
+static int cue_match(device_t, cfdata_t, void *);
+static void cue_attach(device_t, device_t, void *);
 
 CFATTACH_DECL_NEW(cue, sizeof(struct cue_softc), cue_match, cue_attach,
     usbnet_detach, usbnet_activate);
@@ -146,7 +146,7 @@ static void cue_stop_cb(struct ifnet *, int);
 static int cue_init(struct ifnet *);
 static void cue_tick(struct usbnet *);
 
-static struct usbnet_ops cue_ops = {
+static const struct usbnet_ops cue_ops = {
 	.uno_stop = cue_stop_cb,
 	.uno_ioctl = cue_ioctl_cb,
 	.uno_tx_prepare = cue_tx_prepare,
@@ -443,7 +443,7 @@ cue_reset(struct usbnet *un)
 /*
  * Probe for a CATC chip.
  */
-int
+static int
 cue_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct usb_attach_arg *uaa = aux;
@@ -456,7 +456,7 @@ cue_match(device_t parent, cfdata_t match, void *aux)
  * Attach the interface. Allocate softc structures, do ifmedia
  * setup and ethernet/BPF attach.
  */
-void
+static void
 cue_attach(device_t parent, device_t self, void *aux)
 {
 	struct cue_softc *sc = device_private(self);

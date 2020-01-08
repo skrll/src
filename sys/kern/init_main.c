@@ -1,4 +1,4 @@
-/*	$NetBSD: init_main.c,v 1.510 2019/12/14 15:30:37 ad Exp $	*/
+/*	$NetBSD: init_main.c,v 1.517 2020/01/02 15:42:27 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009, 2019 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.510 2019/12/14 15:30:37 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.517 2020/01/02 15:42:27 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_inet.h"
@@ -204,6 +204,8 @@ extern void *_binary_splash_image_end;
 
 #include <sys/pax.h>
 
+#include <dev/clock_subr.h>
+
 #include <secmodel/secmodel.h>
 
 #include <ufs/ufs/quota.h>
@@ -239,7 +241,7 @@ struct	proc *initproc;
 struct	vnode *rootvp, *swapdev_vp;
 int	boothowto;
 int	cold __read_mostly = 1;		/* still working on startup */
-struct timespec boottime;	        /* time at system startup - will only follow settime deltas */
+int	shutting_down __read_mostly;	/* system is shutting down */
 
 int	start_init_exec;		/* semaphore for start_init() */
 
@@ -298,6 +300,7 @@ main(void)
 
 	kernel_lock_init();
 	once_init();
+	todr_init();
 
 	mi_cpu_init();
 	kernconfig_lock_init();
@@ -684,16 +687,6 @@ main(void)
 	 * munched in mi_switch() after the time got set.
 	 */
 	getnanotime(&time);
-	{
-		struct timespec ut;
-		/*
-		 * was:
-		 *	boottime = time;
-		 * but we can do better
-		 */
-		nanouptime(&ut);
-		timespecsub(&time, &ut, &boottime);
-	}
 
 	mutex_enter(proc_lock);
 	LIST_FOREACH(p, &allproc, p_list) {
@@ -814,6 +807,10 @@ configure2(void)
 	for (CPU_INFO_FOREACH(cii, ci)) {
 		uvm_cpu_attach(ci);
 	}
+
+	/* Decide how to partition free memory. */
+	uvm_page_rebucket();
+
 	mp_online = true;
 #if defined(MULTIPROCESSOR)
 	cpu_boot_secondary_processors();
@@ -1008,9 +1005,9 @@ start_init(void *arg)
 			printf(": ");
 			len = cngetsn(ipath, sizeof(ipath)-1);
 			if (len == 4 && strcmp(ipath, "halt") == 0) {
-				cpu_reboot(RB_HALT, NULL);
+				kern_reboot(RB_HALT, NULL);
 			} else if (len == 6 && strcmp(ipath, "reboot") == 0) {
-				cpu_reboot(0, NULL);
+				kern_reboot(0, NULL);
 #if defined(DDB)
 			} else if (len == 3 && strcmp(ipath, "ddb") == 0) {
 				console_debugger();
@@ -1174,6 +1171,6 @@ banner(void)
 	(*pr)("%s%s", copyright, version);
 	format_bytes(pbuf, MEM_PBUFSIZE, ctob((uint64_t)physmem));
 	(*pr)("total memory = %s\n", pbuf);
-	format_bytes(pbuf, MEM_PBUFSIZE, ctob((uint64_t)uvmexp.free));
+	format_bytes(pbuf, MEM_PBUFSIZE, ctob((uint64_t)uvm_availmem()));
 	(*pr)("avail memory = %s\n", pbuf);
 }

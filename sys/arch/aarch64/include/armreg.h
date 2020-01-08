@@ -1,4 +1,4 @@
-/* $NetBSD: armreg.h,v 1.28 2019/09/15 15:16:30 tnn Exp $ */
+/* $NetBSD: armreg.h,v 1.30 2019/12/28 00:22:08 rjs Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -523,6 +523,7 @@ AARCH64REG_WRITE_INLINE(mair_el1)
 #define	MAIR_ATTR6		 __BITS(55,48)
 #define	MAIR_ATTR7		 __BITS(63,56)
 #define	MAIR_DEVICE_nGnRnE	 0x00	// NoGathering,NoReordering,NoEarlyWriteAck.
+#define	MAIR_DEVICE_nGnRE	 0x04	// NoGathering,NoReordering,EarlyWriteAck.
 #define	MAIR_NORMAL_NC		 0x44
 #define	MAIR_NORMAL_WT		 0xbb
 #define	MAIR_NORMAL_WB		 0xff
@@ -1296,9 +1297,9 @@ struct aarch64_sysctl_cpu_id {
 	uint64_t ac_aa64isar0;	/* A64 Instruction Set Attribute Register 0 */
 	uint64_t ac_aa64isar1;	/* A64 Instruction Set Attribute Register 1 */
 
-	uint64_t ac_aa64mmfr0;	/* A64 Memroy Model Feature Register 0 */
-	uint64_t ac_aa64mmfr1;	/* A64 Memroy Model Feature Register 1 */
-	uint64_t ac_aa64mmfr2;	/* A64 Memroy Model Feature Register 2 */
+	uint64_t ac_aa64mmfr0;	/* A64 Memory Model Feature Register 0 */
+	uint64_t ac_aa64mmfr1;	/* A64 Memory Model Feature Register 1 */
+	uint64_t ac_aa64mmfr2;	/* A64 Memory Model Feature Register 2 */
 
 	uint64_t ac_aa64pfr0;	/* A64 Processor Feature Register 0 */
 	uint64_t ac_aa64pfr1;	/* A64 Processor Feature Register 1 */

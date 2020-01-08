@@ -1,4 +1,4 @@
-/* $NetBSD: ihidev.h,v 1.1 2017/12/10 17:05:54 bouyer Exp $ */
+/* $NetBSD: ihidev.h,v 1.3 2019/12/25 01:19:56 thorpej Exp $ */
 /* $OpenBSD ihidev.h,v 1.4 2016/01/31 18:24:35 jcs Exp $ */
 
 /*-

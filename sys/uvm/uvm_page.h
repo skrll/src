@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_page.h,v 1.87 2019/12/15 21:11:35 ad Exp $	*/
+/*	$NetBSD: uvm_page.h,v 1.93 2019/12/31 22:42:51 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -112,14 +112,13 @@
  * c:	cpu private
  * s:	stable, does not change
  *
- * UVM and pmap(9) may use uvm_page_locked_p() to assert whether the
+ * UVM and pmap(9) may use uvm_page_owner_locked_p() to assert whether the
  * page owner's lock is acquired.
  *
  * A page can have one of four identities:
  *
  * o free
  *   => pageq.list is entry on global free page queue
- *   => listq.list is entry on per-CPU free page queue
  *   => uanon is unused (or (void *)0xdeadbeef for DEBUG)
  *   => uobject is unused (or (void *)0xdeadbeef for DEBUG)
  *   => PG_FREE is set in flags
@@ -129,13 +128,11 @@
  *   => uobject is owner
  * o owned by a vm_anon
  *   => pageq is unused (XXX correct?)
- *   => listq is unused (XXX correct?)
  *   => uanon is owner
  *   => uobject is NULL
  *   => PG_ANON is set in flags
  * o allocated by uvm_pglistalloc
  *   => pageq.queue is entry on resulting pglist, owned by caller
- *   => listq is unused (XXX correct?)
  *   => uanon is unused
  *   => uobject is unused
  *
@@ -145,6 +142,13 @@
  * - uvm_pagefree: owned by a uvm_object/vm_anon -> free
  * - uvm_pglistalloc: free -> allocated by uvm_pglistalloc
  * - uvm_pglistfree: allocated by uvm_pglistalloc -> free
+ *
+ * On the ordering of fields:
+ *
+ * The fields most heavily used by the page allocator and uvmpdpol are
+ * clustered together at the start of the structure, so that while under
+ * global lock it's more likely that only one cache line for each page need
+ * be touched.
  */
 
 struct vm_page {
@@ -153,21 +157,17 @@ struct vm_page {
 						 * or uvm_pglistalloc output */
 		LIST_ENTRY(vm_page) list;	/* f: global free page queue */
 	} pageq;
-
-	union {
-		LIST_ENTRY(vm_page) list;	/* f: CPU free page queue */
-	} listq;
-
+	TAILQ_ENTRY(vm_page)	pdqueue;	/* p: pagedaemon queue */
+	kmutex_t		interlock;	/* s: lock on identity */
+	uint32_t		pqflags;	/* i: pagedaemon flags */
+	uint16_t		flags;		/* o: object flags */
+	uint16_t		spare;		/*  : spare for now */
+	paddr_t			phys_addr;	/* o: physical address of pg */
+	uint32_t		loan_count;	/* o,i: num. active loans */
+	uint32_t		wire_count;	/* o,i: wired down map refs */
 	struct vm_anon		*uanon;		/* o,i: anon */
 	struct uvm_object	*uobject;	/* o,i: object */
 	voff_t			offset;		/* o: offset into object */
-	uint16_t		flags;		/* o: object flags */
-	uint16_t		spare;		/*  : spare for now */
-	uint32_t		pqflags;	/* p: pdpolicy queue flags */
-	uint32_t		loan_count;	/* o,i: num. active loans */
-	uint32_t		wire_count;	/* o,i: wired down map refs */
-	paddr_t			phys_addr;	/* o: physical address of pg */
-	kmutex_t		interlock;	/* s: lock on identity */
 
 #ifdef __HAVE_VM_PAGE_MD
 	struct vm_page_md	mdpage;		/* ?: pmap-specific data */
@@ -266,6 +266,24 @@ struct vm_page {
 	"\11AOBJ\12AOBJ\13READAHEAD\14FREE\15MARKER\16PAGER1\17ZERO"
 
 /*
+ * uvmpdpol state flags.
+ *
+ * => may only be changed with pg->interlock held.
+ * => changing them is the responsibility of uvmpdpol ..
+ * => .. but uvm_page needs to know about them in order to purge updates.
+ * => PQ_PRIVATE is private to the individual uvmpdpol implementation.
+ */
+
+#define	PQ_INTENT_A		0x00000000	/* intend activation */
+#define	PQ_INTENT_I		0x00000001	/* intend deactivation */
+#define	PQ_INTENT_E		0x00000002	/* intend enqueue */
+#define	PQ_INTENT_D		0x00000003	/* intend dequeue */
+#define	PQ_INTENT_MASK		0x00000003	/* mask of intended state */
+#define	PQ_INTENT_SET		0x00000004	/* not realized yet */
+#define	PQ_INTENT_QUEUED	0x00000008	/* queued for processing */
+#define	PQ_PRIVATE		0xfffffff0
+
+/*
  * physical memory layout structure
  *
  * MD vmparam.h must #define:
@@ -302,6 +320,7 @@ void uvm_page_own(struct vm_page *, const char *);
 bool uvm_page_physget(paddr_t *);
 #endif
 void uvm_page_recolor(int);
+void uvm_page_rebucket(void);
 void uvm_pageidlezero(void);
 
 void uvm_pageactivate(struct vm_page *);
@@ -311,13 +330,19 @@ void uvm_pagedeactivate(struct vm_page *);
 void uvm_pagedequeue(struct vm_page *);
 void uvm_pageenqueue(struct vm_page *);
 void uvm_pagefree(struct vm_page *);
+void uvm_pagelock(struct vm_page *);
+void uvm_pagelock2(struct vm_page *, struct vm_page *);
+void uvm_pageunlock(struct vm_page *);
+void uvm_pageunlock2(struct vm_page *, struct vm_page *);
 void uvm_page_unbusy(struct vm_page **, int);
 struct vm_page *uvm_pagelookup(struct uvm_object *, voff_t);
 void uvm_pageunwire(struct vm_page *);
 void uvm_pagewire(struct vm_page *);
 void uvm_pagezero(struct vm_page *);
 bool uvm_pageismanaged(paddr_t);
-bool uvm_page_locked_p(struct vm_page *);
+bool uvm_page_owner_locked_p(struct vm_page *);
+void uvm_pgfl_lock(void);
+void uvm_pgfl_unlock(void);
 
 int uvm_page_lookup_freelist(struct vm_page *);
 
@@ -343,15 +368,62 @@ int uvm_direct_process(struct vm_page **, u_int, voff_t, vsize_t,
 #endif
 
 /*
- * Compute the page color bucket for a given page.
+ * Compute the page color for a given page.
  */
-#define	VM_PGCOLOR_BUCKET(pg) \
+#define	VM_PGCOLOR(pg) \
 	(atop(VM_PAGE_TO_PHYS((pg))) & uvmexp.colormask)
-
 #define	PHYS_TO_VM_PAGE(pa)	uvm_phys_to_vm_page(pa)
 
+/*
+ * VM_PAGE_IS_FREE() can't tell if the page is on global free list, or a
+ * per-CPU cache.  If you need to be certain, pause caching.
+ */
 #define VM_PAGE_IS_FREE(entry)  ((entry)->flags & PG_FREE)
-#define	VM_FREE_PAGE_TO_CPU(pg)	((struct uvm_cpu *)((uintptr_t)pg->offset))
+
+/*
+ * Use the lower 10 bits of pg->phys_addr to cache some some locators for
+ * the page.  This implies that the smallest possible page size is 1kB, and
+ * that nobody should use pg->phys_addr directly (use VM_PAGE_TO_PHYS()).
+ * 
+ * - 5 bits for the freelist index, because uvm_page_lookup_freelist()
+ *   traverses an rbtree and therefore features prominently in traces
+ *   captured during performance test.  It would probably be more useful to
+ *   cache physseg index here because freelist can be inferred from physseg,
+ *   but it requires changes to allocation for UVM_HOTPLUG, so for now we'll
+ *   go with freelist.
+ *
+ * - 5 bits for "bucket", a way for us to categorise pages further as
+ *   needed (e.g. NUMA node).
+ *
+ * None of this is set in stone; it can be adjusted as needed.
+ */
+static inline unsigned
+uvm_page_get_freelist(struct vm_page *pg)
+{
+	unsigned fl = pg->phys_addr & 0x1f;
+	KASSERT(fl == (unsigned)uvm_page_lookup_freelist(pg));
+	return fl;
+}
+
+static inline unsigned
+uvm_page_get_bucket(struct vm_page *pg)
+{
+	return (pg->phys_addr & 0x3e0) >> 5;
+}
+
+static inline void
+uvm_page_set_freelist(struct vm_page *pg, unsigned fl)
+{
+	KASSERT(fl < 32);
+	pg->phys_addr = (pg->phys_addr & ~0x1f) | fl;
+}
+
+static inline void
+uvm_page_set_bucket(struct vm_page *pg, unsigned b)
+{
+	KASSERT(b < 32);
+	pg->phys_addr = (pg->phys_addr & ~0x3e0) | (b << 5);
+}
 
 #ifdef DEBUG
 void uvm_pagezerocheck(struct vm_page *);

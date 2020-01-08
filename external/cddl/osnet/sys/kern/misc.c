@@ -1,4 +1,4 @@
-/*	$NetBSD: misc.c,v 1.5 2018/05/28 21:05:09 chs Exp $	*/
+/*	$NetBSD: misc.c,v 1.7 2019/12/31 14:51:29 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -130,7 +130,7 @@ kmem_reap(void)
 	int bufcnt;
 	struct pool *pp;
 	
-	bufcnt = uvmexp.freetarg - uvmexp.free;
+	bufcnt = uvmexp.freetarg - uvm_availmem();
 	if (bufcnt < 0)
 		bufcnt = 0;
 

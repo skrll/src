@@ -1,4 +1,4 @@
-#	$NetBSD: files.i2c,v 1.104 2019/11/03 22:57:52 jmcneill Exp $
+#	$NetBSD: files.i2c,v 1.107 2020/01/03 18:00:05 jmcneill Exp $
 
 obsolete defflag	opt_i2cbus.h		I2C_SCAN
 define	i2cbus { }
@@ -70,8 +70,6 @@ file	dev/i2c/m41t00.c			m41trtc
 device	strtc
 attach	strtc at iic
 file	dev/i2c/m41st84.c			strtc
-defflag	opt_strtc.h				STRTC_NO_USERRAM
-						STRTC_NO_WATCHDOG
 
 # MAX6900 Real Time Clock
 device	maxrtc
@@ -378,3 +376,13 @@ file	dev/i2c/twl4030.c			twl
 device	tdahdmi: edid, videomode, drmkms, drmkms_i2c
 attach	tdahdmi at iic
 file	dev/i2c/tda19988.c			tdahdmi
+
+# Everest Semi ES8316 Low Power Audio CODEC
+device	es8316ac
+attach	es8316ac at iic
+file	dev/i2c/es8316ac.c			es8316ac
+
+# CellWise CW2015 Fuel Gauge IC
+device	cwfg: sysmon_envsys
+attach	cwfg at iic
+file	dev/i2c/cwfg.c				cwfg

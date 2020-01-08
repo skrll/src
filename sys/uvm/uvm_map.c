@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_map.c,v 1.367 2019/12/13 20:10:22 ad Exp $	*/
+/*	$NetBSD: uvm_map.c,v 1.370 2020/01/05 15:57:15 para Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.367 2019/12/13 20:10:22 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.370 2020/01/05 15:57:15 para Exp $");
 
 #include "opt_ddb.h"
 #include "opt_pax.h"
@@ -3949,7 +3949,9 @@ uvm_map_clean(struct vm_map *map, vaddr_t start, vaddr_t end, int flags)
 					continue;
 				}
 				KASSERT(pg->uanon == anon);
+				uvm_pagelock(pg);
 				uvm_pagedeactivate(pg);
+				uvm_pageunlock(pg);
 				continue;
 
 			case PGO_FREE:
@@ -4246,7 +4248,7 @@ uvmspace_exec(struct lwp *l, vaddr_t start, vaddr_t end, bool topdown)
 }
 
 /*
- * uvmspace_addref: add a referece to a vmspace.
+ * uvmspace_addref: add a reference to a vmspace.
  */
 
 void
@@ -4784,20 +4786,6 @@ uvm_map_reference(struct vm_map *map)
 	mutex_enter(&map->misc_lock);
 	map->ref_count++;
 	mutex_exit(&map->misc_lock);
-}
-
-bool
-vm_map_starved_p(struct vm_map *map)
-{
-
-	if ((map->flags & VM_MAP_WANTVA) != 0) {
-		return true;
-	}
-	/* XXX */
-	if ((vm_map_max(map) - vm_map_min(map)) / 16 * 15 < map->size) {
-		return true;
-	}
-	return false;
 }
 
 void

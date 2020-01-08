@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_mutex.c,v 1.86 2019/12/11 20:46:06 ad Exp $	*/
+/*	$NetBSD: kern_mutex.c,v 1.88 2020/01/07 13:44:23 ad Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007, 2008, 2019 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
 #define	__MUTEX_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_mutex.c,v 1.86 2019/12/11 20:46:06 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_mutex.c,v 1.88 2020/01/07 13:44:23 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -209,10 +209,10 @@ do {									\
 	(mtx)->mtx_owner = MUTEX_THREAD;				\
 } while (/* CONSTCOND */ 0)
 
-#define	MUTEX_SPIN_P(mtx)		\
-    (((mtx)->mtx_owner & MUTEX_BIT_SPIN) != 0)
-#define	MUTEX_ADAPTIVE_P(mtx)		\
-    (((mtx)->mtx_owner & MUTEX_BIT_SPIN) == 0)
+#define	MUTEX_SPIN_P(owner)		\
+    (((owner) & MUTEX_BIT_SPIN) != 0)
+#define	MUTEX_ADAPTIVE_P(owner)		\
+    (((owner) & MUTEX_BIT_SPIN) == 0)
 
 #define	MUTEX_DEBUG_P(mtx)	(((mtx)->mtx_owner & MUTEX_BIT_NODEBUG) == 0)
 #if defined(LOCKDEBUG)
@@ -310,10 +310,11 @@ static void
 mutex_dump(const volatile void *cookie, lockop_printer_t pr)
 {
 	const volatile kmutex_t *mtx = cookie;
+	uintptr_t owner = mtx->mtx_owner;
 
 	pr("owner field  : %#018lx wait/spin: %16d/%d\n",
-	    (long)MUTEX_OWNER(mtx->mtx_owner), MUTEX_HAS_WAITERS(mtx),
-	    MUTEX_SPIN_P(mtx));
+	    (long)MUTEX_OWNER(owner), MUTEX_HAS_WAITERS(mtx),
+	    MUTEX_SPIN_P(owner));
 }
 
 /*
@@ -327,7 +328,7 @@ static void __noinline
 mutex_abort(const char *func, size_t line, const kmutex_t *mtx, const char *msg)
 {
 
-	LOCKDEBUG_ABORT(func, line, mtx, (MUTEX_SPIN_P(mtx) ?
+	LOCKDEBUG_ABORT(func, line, mtx, (MUTEX_SPIN_P(mtx->mtx_owner) ?
 	    &mutex_spin_lockops : &mutex_adaptive_lockops), msg);
 }
 
@@ -380,9 +381,10 @@ mutex_init(kmutex_t *mtx, kmutex_type_t type, int ipl)
 void
 mutex_destroy(kmutex_t *mtx)
 {
+	uintptr_t owner = mtx->mtx_owner;
 
-	if (MUTEX_ADAPTIVE_P(mtx)) {
-		MUTEX_ASSERT(mtx, !MUTEX_OWNED(mtx->mtx_owner) &&
+	if (MUTEX_ADAPTIVE_P(owner)) {
+		MUTEX_ASSERT(mtx, !MUTEX_OWNED(owner) &&
 		    !MUTEX_HAS_WAITERS(mtx));
 	} else {
 		MUTEX_ASSERT(mtx, !MUTEX_SPINBIT_LOCKED_P(mtx));
@@ -454,7 +456,8 @@ mutex_vector_enter(kmutex_t *mtx)
 	/*
 	 * Handle spin mutexes.
 	 */
-	if (MUTEX_SPIN_P(mtx)) {
+	owner = mtx->mtx_owner;
+	if (MUTEX_SPIN_P(owner)) {
 #if defined(LOCKDEBUG) && defined(MULTIPROCESSOR)
 		u_int spins = 0;
 #endif
@@ -501,7 +504,7 @@ mutex_vector_enter(kmutex_t *mtx)
 
 	curthread = (uintptr_t)curlwp;
 
-	MUTEX_DASSERT(mtx, MUTEX_ADAPTIVE_P(mtx));
+	MUTEX_DASSERT(mtx, MUTEX_ADAPTIVE_P(owner));
 	MUTEX_ASSERT(mtx, curthread != 0);
 	MUTEX_ASSERT(mtx, !cpu_intr_p());
 	MUTEX_WANTLOCK(mtx);
@@ -519,7 +522,7 @@ mutex_vector_enter(kmutex_t *mtx)
 	 * then we stop spinning, and sleep instead.
 	 */
 	KPREEMPT_DISABLE(curlwp);
-	for (owner = mtx->mtx_owner;;) {
+	for (;;) {
 		if (!MUTEX_OWNED(owner)) {
 			/*
 			 * Mutex owner clear could mean two things:
@@ -667,8 +670,14 @@ mutex_vector_enter(kmutex_t *mtx)
 		 * If the waiters bit is not set it's unsafe to go asleep,
 		 * as we might never be awoken.
 		 */
-		if ((membar_consumer(), mutex_oncpu(owner)) ||
-		    (membar_consumer(), !MUTEX_HAS_WAITERS(mtx))) {
+		membar_consumer();
+		if (mutex_oncpu(owner)) {
+			turnstile_exit(mtx);
+			owner = mtx->mtx_owner;
+			continue;
+		}
+		membar_consumer();
+		if (!MUTEX_HAS_WAITERS(mtx)) {
 			turnstile_exit(mtx);
 			owner = mtx->mtx_owner;
 			continue;
@@ -707,7 +716,7 @@ mutex_vector_exit(kmutex_t *mtx)
 	turnstile_t *ts;
 	uintptr_t curthread;
 
-	if (MUTEX_SPIN_P(mtx)) {
+	if (MUTEX_SPIN_P(mtx->mtx_owner)) {
 #ifdef FULL
 		if (__predict_false(!MUTEX_SPINBIT_LOCKED_P(mtx))) {
 			MUTEX_ABORT(mtx, "exiting unheld spin mutex");
@@ -810,7 +819,7 @@ mutex_owned(const kmutex_t *mtx)
 
 	if (mtx == NULL)
 		return 0;
-	if (MUTEX_ADAPTIVE_P(mtx))
+	if (MUTEX_ADAPTIVE_P(mtx->mtx_owner))
 		return MUTEX_OWNER(mtx->mtx_owner) == (uintptr_t)curlwp;
 #ifdef FULL
 	return MUTEX_SPINBIT_LOCKED_P(mtx);
@@ -829,7 +838,7 @@ lwp_t *
 mutex_owner(const kmutex_t *mtx)
 {
 
-	MUTEX_ASSERT(mtx, MUTEX_ADAPTIVE_P(mtx));
+	MUTEX_ASSERT(mtx, MUTEX_ADAPTIVE_P(mtx->mtx_owner));
 	return (struct lwp *)MUTEX_OWNER(mtx->mtx_owner);
 }
 
@@ -846,7 +855,7 @@ mutex_owner_running(const kmutex_t *mtx)
 	uintptr_t owner;
 	bool rv;
 
-	MUTEX_ASSERT(mtx, MUTEX_ADAPTIVE_P(mtx));
+	MUTEX_ASSERT(mtx, MUTEX_ADAPTIVE_P(mtx->mtx_owner));
 	kpreempt_disable();
 	owner = mtx->mtx_owner;
 	rv = !MUTEX_OWNED(owner) || mutex_oncpu(MUTEX_OWNER(owner));
@@ -887,7 +896,7 @@ mutex_tryenter(kmutex_t *mtx)
 	/*
 	 * Handle spin mutexes.
 	 */
-	if (MUTEX_SPIN_P(mtx)) {
+	if (MUTEX_SPIN_P(mtx->mtx_owner)) {
 		MUTEX_SPIN_SPLRAISE(mtx);
 #ifdef FULL
 		if (MUTEX_SPINBIT_LOCK_TRY(mtx)) {

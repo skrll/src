@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_pvt.c,v 1.6 2019/12/18 11:27:56 skrll Exp $	*/
+/*	$NetBSD: pmap_pvt.c,v 1.8 2020/01/01 16:50:41 martin Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: pmap_pvt.c,v 1.6 2019/12/18 11:27:56 skrll Exp $");
+__RCSID("$NetBSD: pmap_pvt.c,v 1.8 2020/01/01 16:50:41 martin Exp $");
 
 #include <sys/atomic.h>
 #include <sys/kmem.h>

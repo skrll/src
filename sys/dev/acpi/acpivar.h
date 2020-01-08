@@ -1,4 +1,4 @@
-/*	$NetBSD: acpivar.h,v 1.77 2018/10/25 10:38:57 jmcneill Exp $	*/
+/*	$NetBSD: acpivar.h,v 1.81 2019/12/31 17:26:04 jmcneill Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -131,6 +131,8 @@ struct acpi_devnode {
 	uint32_t		 ad_flags;	/* Device flags */
 	uint32_t		 ad_type;	/* Device type */
 	int			 ad_state;	/* Device power state */
+	bus_dma_tag_t		 ad_dmat;	/* Bus DMA tag for device */
+	bus_dma_tag_t		 ad_dmat64;	/* Bus DMA tag for device (64-bit) */
 
 	SIMPLEQ_ENTRY(acpi_devnode)	ad_list;
 	SIMPLEQ_ENTRY(acpi_devnode)	ad_child_list;
@@ -224,6 +226,7 @@ struct acpi_mem {
 	int		ar_index;
 	bus_addr_t	ar_base;
 	bus_size_t	ar_length;
+	bus_addr_t	ar_xbase;	/* translated base address */
 };
 
 struct acpi_memrange {
@@ -282,7 +285,7 @@ struct acpi_resource_parse_ops {
 	void	(*iorange)(device_t, void *, uint32_t, uint32_t,
 		    uint32_t, uint32_t);
 
-	void	(*memory)(device_t, void *, uint64_t, uint64_t);
+	void	(*memory)(device_t, void *, uint64_t, uint64_t, uint64_t);
 	void	(*memrange)(device_t, void *, uint64_t, uint64_t,
 		    uint64_t, uint64_t);
 
@@ -383,6 +386,9 @@ int	acpi_quirks_osi_del(const char *);
 #ifdef ACPI_DEBUG
 void	acpi_debug_init(void);
 #endif
+
+bus_dma_tag_t	acpi_get_dma_tag(struct acpi_softc *, struct acpi_devnode *);
+bus_dma_tag_t	acpi_get_dma64_tag(struct acpi_softc *, struct acpi_devnode *);
 
 /*
  * Misc routines with vectors updated by acpiverbose module.

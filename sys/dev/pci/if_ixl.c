@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ixl.c,v 1.12 2019/12/20 02:19:27 yamaguchi Exp $	*/
+/*	$NetBSD: if_ixl.c,v 1.16 2020/01/08 09:12:11 yamaguchi Exp $	*/
 
 /*
  * Copyright (c) 2013-2015, Intel Corporation
@@ -592,13 +592,22 @@ struct ixl_softc {
 #define IXL_TX_INTR_PROCESS_LIMIT	256
 #define IXL_RX_INTR_PROCESS_LIMIT	0U
 
+#define IXL_IFCAP_RXCSUM	(IFCAP_CSUM_IPv4_Rx|	\
+				 IFCAP_CSUM_TCPv4_Rx|	\
+				 IFCAP_CSUM_UDPv4_Rx|	\
+				 IFCAP_CSUM_TCPv6_Rx|	\
+				 IFCAP_CSUM_UDPv6_Rx)
+
 #define delaymsec(_x)	DELAY(1000 * (_x))
 #ifdef IXL_DEBUG
-#define DDPRINTF(sc, fmt, args...)	\
-do {					\
-	if (sc != NULL)				\
-		device_printf(sc->sc_dev, "");	\
-	printf("%s:\t" fmt, __func__, ##args);	\
+#define DDPRINTF(sc, fmt, args...)			\
+do {							\
+	if ((sc) != NULL) {				\
+		device_printf(				\
+		    ((struct ixl_softc *)(sc))->sc_dev,	\
+		    "");				\
+	}						\
+	printf("%s:\t" fmt, __func__, ##args);		\
 } while (0)
 #else
 #define DDPRINTF(sc, fmt, args...)	__nothing
@@ -1192,10 +1201,9 @@ ixl_attach(device_t parent, device_t self, void *aux)
 	ifp->if_stop = ixl_stop;
 	IFQ_SET_MAXLEN(&ifp->if_snd, sc->sc_tx_ring_ndescs);
 	IFQ_SET_READY(&ifp->if_snd);
+	ifp->if_capabilities |= IXL_IFCAP_RXCSUM;
 #if 0
-	ifp->if_capabilities |= IFCAP_CSUM_IPv4_Rx |
-	    IFCAP_CSUM_TCPv4_Tx | IFCAP_CSUM_TCPv4_Rx |
-	    IFCAP_CSUM_UDPv4_Tx | IFCAP_CSUM_UDPv4_Rx;
+	ifp->if_capabilities |= IFCAP_CSUM_TCPv4_Tx | IFCAP_CSUM_UDPv4_Tx;
 #endif
 	ether_set_vlan_cb(&sc->sc_ec, ixl_vlan_cb);
 	sc->sc_ec.ec_capabilities |= ETHERCAP_VLAN_MTU;
@@ -1343,6 +1351,7 @@ ixl_detach(device_t self, int flags)
 
 	ixl_teardown_interrupts(sc);
 	ixl_teardown_stats(sc);
+	ixl_teardown_sysctls(sc);
 
 	ixl_queue_pairs_free(sc);
 
@@ -2835,6 +2844,53 @@ ixl_rxr_free(struct ixl_softc *sc, struct ixl_rx_ring *rxr)
 	kmem_free(rxr, sizeof(*rxr));
 }
 
+static inline void
+ixl_rx_csum(struct mbuf *m, uint64_t qword)
+{
+	int flags_mask;
+
+	if (!ISSET(qword, IXL_RX_DESC_L3L4P)) {
+		/* No L3 or L4 checksum was calculated */
+		return;
+	}
+
+	switch (__SHIFTOUT(qword, IXL_RX_DESC_PTYPE_MASK)) {
+	case IXL_RX_DESC_PTYPE_IPV4FRAG:
+	case IXL_RX_DESC_PTYPE_IPV4:
+	case IXL_RX_DESC_PTYPE_SCTPV4:
+	case IXL_RX_DESC_PTYPE_ICMPV4:
+		flags_mask = M_CSUM_IPv4 | M_CSUM_IPv4_BAD;
+		break;
+	case IXL_RX_DESC_PTYPE_TCPV4:
+		flags_mask = M_CSUM_IPv4 | M_CSUM_IPv4_BAD;
+		flags_mask |= M_CSUM_TCPv4 | M_CSUM_TCP_UDP_BAD;
+		break;
+	case IXL_RX_DESC_PTYPE_UDPV4:
+		flags_mask = M_CSUM_IPv4 | M_CSUM_IPv4_BAD;
+		flags_mask |= M_CSUM_UDPv4 | M_CSUM_TCP_UDP_BAD;
+		break;
+	case IXL_RX_DESC_PTYPE_TCPV6:
+		flags_mask = M_CSUM_TCPv6 | M_CSUM_TCP_UDP_BAD;
+		break;
+	case IXL_RX_DESC_PTYPE_UDPV6:
+		flags_mask = M_CSUM_UDPv6 | M_CSUM_TCP_UDP_BAD;
+		break;
+	default:
+		flags_mask = 0;
+	}
+
+	m->m_pkthdr.csum_flags |= (flags_mask & (M_CSUM_IPv4 |
+	    M_CSUM_TCPv4 | M_CSUM_TCPv6 | M_CSUM_UDPv4 | M_CSUM_UDPv6));
+
+	if (ISSET(qword, IXL_RX_DESC_IPE)) {
+		m->m_pkthdr.csum_flags |= (flags_mask & M_CSUM_IPv4_BAD);
+	}
+
+	if (ISSET(qword, IXL_RX_DESC_L4E)) {
+		m->m_pkthdr.csum_flags |= (flags_mask & M_CSUM_TCP_UDP_BAD);
+	}
+}
+
 static int
 ixl_rxeof(struct ixl_softc *sc, struct ixl_rx_ring *rxr, u_int rxlimit)
 {
@@ -2910,6 +2966,9 @@ ixl_rxeof(struct ixl_softc *sc, struct ixl_rx_ring *rxr, u_int rxlimit)
 				vlan_set_tag(m,
 				    __SHIFTOUT(word0, IXL_RX_DESC_L2TAG1_MASK));
 			}
+
+			if ((ifp->if_capenable & IXL_IFCAP_RXCSUM) != 0)
+				ixl_rx_csum(m, word);
 
 			if (!ISSET(word,
 			    IXL_RX_DESC_RXE | IXL_RX_DESC_OVERSIZE)) {
@@ -3278,6 +3337,8 @@ ixl_link_state_update(struct ixl_softc *sc, const struct ixl_aq_desc *iaq)
 	struct ifnet *ifp = &sc->sc_ec.ec_if;
 	int link_state;
 
+	KASSERT(kpreempt_disabled());
+
 	link_state = ixl_set_link_status(sc, iaq);
 
 	if (ifp->if_link_state != link_state)
@@ -3346,7 +3407,9 @@ ixl_arq(void *xsc)
 
 		switch (iaq->iaq_opcode) {
 		case htole16(IXL_AQ_OP_PHY_LINK_STATUS):
+			kpreempt_disable();
 			ixl_link_state_update(sc, iaq);
+			kpreempt_enable();
 			break;
 		}
 
@@ -5606,9 +5669,7 @@ ixl_workq_work(struct work *wk, void *context)
 	work = container_of(wk, struct ixl_work, ixw_cookie);
 
 	atomic_swap_uint(&work->ixw_added, 0);
-	kpreempt_disable();
 	work->ixw_func(work->ixw_arg);
-	kpreempt_enable();
 }
 
 static int

@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_glue.c,v 1.171 2019/12/16 22:47:55 ad Exp $	*/
+/*	$NetBSD: uvm_glue.c,v 1.175 2019/12/31 22:42:51 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_glue.c,v 1.171 2019/12/16 22:47:55 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_glue.c,v 1.175 2019/12/31 22:42:51 ad Exp $");
 
 #include "opt_kgdb.h"
 #include "opt_kstack.h"
@@ -86,6 +86,8 @@ __KERNEL_RCSID(0, "$NetBSD: uvm_glue.c,v 1.171 2019/12/16 22:47:55 ad Exp $");
 #include <sys/asan.h>
 
 #include <uvm/uvm.h>
+#include <uvm/uvm_pdpolicy.h>
+#include <uvm/uvm_pgflcache.h>
 
 /*
  * uvm_kernacc: test if kernel can access a memory region.
@@ -480,8 +482,8 @@ uvm_init_limits(struct proc *p)
 	p->p_rlimit[RLIMIT_DATA].rlim_max = maxdmap;
 	p->p_rlimit[RLIMIT_AS].rlim_cur = RLIM_INFINITY;
 	p->p_rlimit[RLIMIT_AS].rlim_max = RLIM_INFINITY;
-	p->p_rlimit[RLIMIT_RSS].rlim_cur = MIN(
-	    VM_MAXUSER_ADDRESS, ctob((rlim_t)uvmexp.free));
+	p->p_rlimit[RLIMIT_RSS].rlim_cur = MIN(VM_MAXUSER_ADDRESS,
+	    ctob((rlim_t)uvm_availmem()));
 }
 
 /*
@@ -500,10 +502,37 @@ uvm_scheduler(void)
 	lwp_changepri(l, PRI_VM);
 	lwp_unlock(l);
 
+	/* Start the freelist cache. */
+	uvm_pgflcache_start();
+
 	for (;;) {
 		/* Update legacy stats for post-mortem debugging. */
 		uvm_update_uvmexp();
+
+		/* See if the pagedaemon needs to generate some free pages. */
+		uvm_kick_pdaemon();
+
+		/* Calculate process statistics. */
 		sched_pstats();
 		(void)kpause("uvm", false, hz, NULL);
 	}
+}
+
+/*
+ * uvm_idle: called from the idle loop.
+ */
+
+void
+uvm_idle(void)
+{
+	struct cpu_info *ci = curcpu();
+	struct uvm_cpu *ucpu = ci->ci_data.cpu_uvm;
+
+	KASSERT(kpreempt_disabled());
+
+	if (!ci->ci_want_resched)
+		uvmpdpol_idle(ucpu);
+	if (!ci->ci_want_resched)
+		uvm_pageidlezero();
+
 }

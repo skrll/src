@@ -1,4 +1,4 @@
-/*        $NetBSD: dm_target.c,v 1.35 2019/12/21 11:59:03 tkusumi Exp $      */
+/*        $NetBSD: dm_target.c,v 1.39 2020/01/05 08:08:26 tkusumi Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_target.c,v 1.35 2019/12/21 11:59:03 tkusumi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_target.c,v 1.39 2020/01/05 08:08:26 tkusumi Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -160,10 +160,6 @@ dm_target_insert(dm_target_t *dm_target)
 		printf("%s missing init\n", dm_target->name);
 		return EINVAL;
 	}
-	if (dm_target->table == NULL) {
-		printf("%s missing table\n", dm_target->name);
-		return EINVAL;
-	}
 	if (dm_target->strategy == NULL) {
 		printf("%s missing strategy\n", dm_target->name);
 		return EINVAL;
@@ -242,7 +238,10 @@ dm_target_destroy(void)
 	mutex_exit(&dm_target_mutex);
 
 	mutex_destroy(&dm_target_mutex);
-
+#if 0
+	/* Target specific module destroy routine. */
+	dm_target_delay_pool_destroy();
+#endif
 	return 0;
 }
 
@@ -331,6 +330,7 @@ dm_target_init(void)
 	dmt->version[1] = 0;
 	dmt->version[2] = 3;
 	dmt->init = &dm_target_stripe_init;
+	dmt->info = &dm_target_stripe_info;
 	dmt->table = &dm_target_stripe_table;
 	dmt->strategy = &dm_target_stripe_strategy;
 	dmt->sync = &dm_target_stripe_sync;
@@ -345,7 +345,6 @@ dm_target_init(void)
 	dmt->version[1] = 0;
 	dmt->version[2] = 0;
 	dmt->init = &dm_target_error_init;
-	dmt->table = &dm_target_error_table;
 	dmt->strategy = &dm_target_error_strategy;
 	dmt->destroy = &dm_target_error_destroy;
 	dmt->upcall = &dm_target_error_upcall;
@@ -357,12 +356,41 @@ dm_target_init(void)
 	dmt->version[1] = 0;
 	dmt->version[2] = 0;
 	dmt->init = &dm_target_zero_init;
-	dmt->table = &dm_target_zero_table;
 	dmt->strategy = &dm_target_zero_strategy;
 	dmt->destroy = &dm_target_zero_destroy;
 	dmt->upcall = &dm_target_zero_upcall;
 	if (dm_target_insert(dmt))
 		printf("Failed to insert zero\n");
+#if 0
+	dmt = dm_target_alloc("delay");
+	dmt->version[0] = 1;
+	dmt->version[1] = 0;
+	dmt->version[2] = 0;
+	dmt->init = &dm_target_delay_init;
+	dmt->info = &dm_target_delay_info;
+	dmt->table = &dm_target_delay_table;
+	dmt->strategy = &dm_target_delay_strategy;
+	dmt->sync = &dm_target_delay_sync;
+	dmt->destroy = &dm_target_delay_destroy;
+	dmt->upcall = &dm_target_delay_upcall;
+	dmt->secsize = &dm_target_delay_secsize;
+	if (dm_target_insert(dmt))
+		printf("Failed to insert delay\n");
+	dm_target_delay_pool_create();
 
+	dmt = dm_target_alloc("flakey");
+	dmt->version[0] = 1;
+	dmt->version[1] = 0;
+	dmt->version[2] = 0;
+	dmt->init = &dm_target_flakey_init;
+	dmt->table = &dm_target_flakey_table;
+	dmt->strategy = &dm_target_flakey_strategy;
+	dmt->sync = &dm_target_flakey_sync;
+	dmt->destroy = &dm_target_flakey_destroy;
+	dmt->upcall = &dm_target_flakey_upcall;
+	dmt->secsize = &dm_target_flakey_secsize;
+	if (dm_target_insert(dmt))
+		printf("Failed to insert flakey\n");
+#endif
 	return 0;
 }
