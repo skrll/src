@@ -109,20 +109,6 @@ cpu_attach(device_t dv, cpuid_t id)
 #ifdef MULTIPROCESSOR
 		uint32_t mpidr = armreg_mpidr_read();
 		ci->ci_mpidr = mpidr;
-
-		if (mpidr & MPIDR_MT) {
-			cpu_topology_set(ci,
-			    __SHIFTOUT(mpidr, MPIDR_AFF2),
-			    __SHIFTOUT(mpidr, MPIDR_AFF1),
-			    __SHIFTOUT(mpidr, MPIDR_AFF0),
-			    0);
-		} else {
-			cpu_topology_set(ci,
-			    __SHIFTOUT(mpidr, MPIDR_AFF1),
-			    __SHIFTOUT(mpidr, MPIDR_AFF0),
-			    0,
-			    0);
-		}
 #endif
 	} else {
 #ifdef MULTIPROCESSOR
@@ -151,6 +137,20 @@ cpu_attach(device_t dv, cpuid_t id)
 
 	ci->ci_dev = dv;
 	dv->dv_private = ci;
+
+	if (id & MPIDR_MT) {
+		cpu_topology_set(ci,
+		    __SHIFTOUT(id, MPIDR_AFF2),
+		    __SHIFTOUT(id, MPIDR_AFF1),
+		    __SHIFTOUT(id, MPIDR_AFF0),
+		    0);
+	} else {
+		cpu_topology_set(ci,
+		    __SHIFTOUT(id, MPIDR_AFF1),
+		    __SHIFTOUT(id, MPIDR_AFF0),
+		    0,
+		    0);
+	}
 
 	evcnt_attach_dynamic(&ci->ci_arm700bugcount, EVCNT_TYPE_MISC,
 	    NULL, xname, "arm700swibug");
