@@ -160,7 +160,7 @@ cpu_attach(device_t dv, cpuid_t id)
 	cpu_identify1(dv, ci);
 #if 0
 	/* already done in locore */
-	aarch64_getcacheinfo(unit); 
+	aarch64_getcacheinfo(unit);
 #endif
 	aarch64_printcacheinfo(dv);
 	cpu_identify2(dv, ci);
