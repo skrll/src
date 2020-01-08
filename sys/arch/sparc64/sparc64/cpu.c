@@ -131,9 +131,9 @@ cpuid_from_node(u_int cpu_node)
 	 *  cpuid
 	 *  reg (sun4v only)
 	 */
-	
+
 	int id;
-	 
+
 	id = prom_getpropint(cpu_node, "upa-portid", -1);
 	if (id == -1)
 		id = prom_getpropint(cpu_node, "portid", -1);
@@ -152,7 +152,7 @@ cpuid_from_node(u_int cpu_node)
 	}
 	if (id == -1)
 		panic("failed to determine cpuid");
-	
+
 	return id;
 }
 
@@ -190,7 +190,7 @@ cpu_icache_size(int node)
 {
 	if (CPU_ISSUN4V)
 		return cpu_cache_info_sun4v("instn", 1, "size");
-	else 
+	else
 		return prom_getpropint(node, "icache-size", 0);
 }
 

@@ -113,7 +113,7 @@ cpu_mainbus_match(device_t parent, cfdata_t cf, void *aux)
  *
  * Attach the main cpu
  */
-  
+
 static void
 cpu_mainbus_attach(device_t parent, device_t self, void *aux)
 {
