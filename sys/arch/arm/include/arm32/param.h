@@ -46,11 +46,7 @@
  * this file. */
 
 #ifndef PGSHIFT
-#if defined(_ARM_ARCH_6)
-#define	PGSHIFT		13		/* LOG2(NBPG) */
-#else
 #define	PGSHIFT		12		/* LOG2(NBPG) */
-#endif
 #endif
 #define	NBPG		(1 << PGSHIFT)	/* bytes/page */
 #define	PGOFSET		(NBPG - 1)	/* byte offset into page */

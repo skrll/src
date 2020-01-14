@@ -141,6 +141,8 @@ typedef uint32_t	pt_entry_t;	/* L2 table entry */
 #define	L1_TABLE_SIZE_REAL	0x4000	/* 16K */
 #define	L2_TABLE_SIZE_REAL	0x400	/* 1K */
 
+#define L1TT_SIZE		0x2000	/* 8K */
+
 /*
  * ARM L1 Descriptors
  */

@@ -383,6 +383,10 @@ bool	pmap_extract(pmap_t, vaddr_t, paddr_t *);
 void	pmap_prefer(vaddr_t, vaddr_t *, int);
 #endif
 
+#ifdef _ARM_ARCH_6
+int	pmap_maxproc_set(int);
+#endif
+
 void	pmap_icache_sync_range(pmap_t, vaddr_t, vaddr_t);
 
 /* Functions we use internally. */

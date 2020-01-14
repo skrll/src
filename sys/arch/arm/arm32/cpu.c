@@ -899,3 +899,12 @@ identify_features(device_t dv)
 	    "pfr: [0]=%#x [1]=%#x\n",
 	    cpu_processor_features[0], cpu_processor_features[1]);
 }
+
+#ifdef _ARM_ARCH_6
+int
+cpu_maxproc_hook(int nmaxproc)
+{
+
+	return pmap_maxproc_set(nmaxproc);
+}
+#endif

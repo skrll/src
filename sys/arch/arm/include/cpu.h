@@ -327,6 +327,10 @@ vaddr_t cpu_uarea_alloc_idlelwp(struct cpu_info *);
  */
 void	cpu_attach(device_t, cpuid_t);
 
+#ifdef _ARM_ARCH_6
+int	cpu_maxproc_hook(int);
+#endif
+
 #endif /* !_LOCORE */
 
 #endif /* _KERNEL */
