@@ -1,4 +1,4 @@
-/*	$NetBSD: mbr.c,v 1.23 2019/12/13 22:12:41 martin Exp $ */
+/*	$NetBSD: mbr.c,v 1.26 2020/01/14 19:28:31 martin Exp $ */
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -148,6 +148,13 @@ const struct disk_partitioning_scheme disklabel_parts;
 
 static void convert_mbr_chs(int, int, int, uint8_t *, uint8_t *,
 				 uint8_t *, uint32_t);
+
+static part_id mbr_add_part(struct disk_partitions *arg,
+    const struct disk_part_info *info, const char **errmsg);
+
+static size_t mbr_get_free_spaces(const struct disk_partitions *arg,
+    struct disk_part_free_space *result, size_t max_num_result,
+    daddr_t min_size, daddr_t align, daddr_t lower_bound, daddr_t ignore);
 
 /*
  * Notes on the extended partition editor.
@@ -827,7 +834,7 @@ mbr_init_default_alignments(struct mbr_disk_partitions *parts, uint track)
 
 static struct disk_partitions *
 mbr_create_new(const char *disk, daddr_t start, daddr_t len, daddr_t total,
-    bool is_boot_drive)
+    bool is_boot_drive, struct disk_partitions *parent)
 {
 	struct mbr_disk_partitions *parts;
 
@@ -975,9 +982,16 @@ mbr_change_disk_geom(struct disk_partitions *arg, int ncyl, int nhead,
 		if (!(ptn_0_limit & 2047)) {
 			/* Partition ends on a 1MB boundary, align to 1MB */
 			parts->ptn_alignment = 2048;
-			if (ptn_0_base <= 2048
-			    && !(ptn_0_base & (ptn_0_base - 1))) {
-				/* ptn_base is a power of 2, use it */
+			if ((ptn_0_base <= 2048
+			    && !(ptn_0_base & (ptn_0_base - 1)))
+			    || (ptn_0_base < parts->ptn_0_offset)) {
+				/*
+				 * If ptn_base is a power of 2, use it.
+				 * Also use it if the first partition
+				 * already is close to the begining
+				 * of the disk and we can't enforce
+				 * better alignment.
+				 */
 				parts->ptn_0_offset = ptn_0_base;
 			}
 		}
@@ -1708,36 +1722,54 @@ mbr_read_disklabel(struct disk_partitions *arg, daddr_t start, bool force_empty)
 	struct mbr_disk_partitions *myparts =
 	    (struct mbr_disk_partitions*)arg;
 	struct disk_part_info part;
+	struct disk_part_free_space space;
 
 	if (force_empty && myparts->dlabel) 
-		myparts->dlabel->pscheme->delete_all_partitions(myparts->dlabel);
+		myparts->dlabel->pscheme->delete_all_partitions(
+		    myparts->dlabel);
 
 	if (myparts->dlabel == NULL) {
 		/*
 		 * Find the NetBSD MBR partition
 		 */
-		if (!mbr_find_netbsd(&myparts->mbr, start, &part))
-			return NULL;
+		if (!mbr_find_netbsd(&myparts->mbr, start, &part)) {
+			if (!force_empty)
+				return NULL;
 
-		if (!force_empty)
+			/* add a "whole disk" NetBSD partition */
+			memset(&part, 0, sizeof part);
+			part.start = min(myparts->ptn_0_offset,start);
+			if (!mbr_get_free_spaces(arg, &space, 1,
+			    part.start, myparts->ptn_alignment, -1, -1))
+				return NULL;
+			part.start = space.start;
+			part.size = space.size;
+			part.nat_type = &mbr_gen_type_desc[MBR_PTYPE_NETBSD].gen;
+			mbr_add_part(arg, &part, NULL);
+			if (!mbr_find_netbsd(&myparts->mbr, start, &part))
+				return NULL;
+		}
+
+		if (!force_empty) {
 			myparts->dlabel = disklabel_parts.read_from_disk(
 			    myparts->dp.disk, part.start, part.size,
 			    &disklabel_parts);
+			if (myparts->dlabel != NULL)
+				myparts->dlabel->parent = &myparts->dp;
+		}
 
 		if (myparts->dlabel == NULL && part.size > 0) {
 			/* we just created the outer partitions? */
 			myparts->dlabel = 
 			    disklabel_parts.create_new_for_disk(
 			    myparts->dp.disk, part.start, part.size,
-			    myparts->dp.disk_size, false);
+			    myparts->dp.disk_size, false, &myparts->dp);
 		}
 
-		if (myparts->dlabel != NULL) {
-			myparts->dlabel->parent = arg;
+		if (myparts->dlabel != NULL)
 			myparts->dlabel->pscheme->change_disk_geom(
 			    myparts->dlabel, myparts->geo_cyl,
 			    myparts->geo_head, myparts->geo_sec);
-		}
 	}
 	return myparts->dlabel;
 }
@@ -2808,7 +2840,7 @@ add_wedge(const char *disk, daddr_t start, daddr_t size,
 	dkw.dkw_offset = start;
 	dkw.dkw_size = size;
 	snprintf((char*)dkw.dkw_wname, sizeof dkw.dkw_wname,
-	    "%s_%" PRIi64 "@%" PRIi64, (const char*)disk, size, start);
+	    "%s_%" PRIi64 "@%" PRIi64, disk, size, start);
 
 	*wname = 0;
 
@@ -2827,7 +2859,7 @@ add_wedge(const char *disk, daddr_t start, daddr_t size,
 static bool
 mbr_get_part_device(const struct disk_partitions *arg,
     part_id ptn, char *devname, size_t max_devname_len, int *part,
-    enum dev_name_usage usage, bool with_path)
+    enum dev_name_usage usage, bool with_path, bool life)
 {
 	const struct mbr_disk_partitions *parts =
 	    (const struct mbr_disk_partitions*)arg;
@@ -2857,7 +2889,7 @@ mbr_get_part_device(const struct disk_partitions *arg,
 				return parts->dlabel->pscheme->get_part_device(
 				    parts->dlabel, dptn, devname,
 				     max_devname_len,
-				    part, usage, with_path);
+				    part, usage, with_path, life);
 			}
 		}
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.174 2019/11/21 19:27:54 ad Exp $	*/
+/*	$NetBSD: locore.S,v 1.176 2020/01/13 12:03:41 ad Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -128,7 +128,7 @@
  */
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.174 2019/11/21 19:27:54 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.176 2020/01/13 12:03:41 ad Exp $");
 
 #include "opt_copy_symtab.h"
 #include "opt_ddb.h"

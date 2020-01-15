@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_data.h,v 1.46 2019/12/21 14:33:18 ad Exp $	*/
+/*	$NetBSD: cpu_data.h,v 1.48 2020/01/12 13:29:24 ad Exp $	*/
 
 /*-
  * Copyright (c) 2004, 2006, 2007, 2008, 2019 The NetBSD Foundation, Inc.
@@ -105,10 +105,28 @@ enum cpu_count {
 struct lockdebug;
 
 enum cpu_rel {
-	CPUREL_CORE,	/* CPUs in the same core */
-	CPUREL_PACKAGE,	/* CPUs in the same package */
-	CPUREL_PEER,	/* peer CPUs in other packages */
-	CPUREL_SMT,	/* peer SMTs in same package */
+	/*
+	 * This is a circular list of peer CPUs in the same core (SMT /
+	 * Hyperthreading).  It always includes the CPU it is referenced
+	 * from as the last entry.
+	 */
+	CPUREL_CORE,
+
+	/*
+	 * This is a circular list of peer CPUs in the same physical
+	 * package.  It always includes the CPU it is referenced from as
+	 * the last entry.
+	 */
+	CPUREL_PACKAGE,
+
+	/*
+	 * This is a circular list of the first CPUs in each physical
+	 * package.  It may or may not include the CPU it is referenced
+	 * from.
+	 */
+	CPUREL_PACKAGE1ST,
+
+	/* Terminator. */
 	CPUREL_COUNT
 };
 
@@ -130,9 +148,10 @@ struct cpu_data {
 	u_int		cpu_core_id;
 	u_int		cpu_smt_id;
 	u_int		cpu_numa_id;
+	bool		cpu_is_slow;
 	u_int		cpu_nsibling[CPUREL_COUNT];
 	struct cpu_info	*cpu_sibling[CPUREL_COUNT];
-	struct cpu_info	*cpu_smt_primary;
+	struct cpu_info *cpu_package1st;	/* 1st CPU in our package */
 
 	/*
 	 * This section is mostly CPU-private.
@@ -182,9 +201,10 @@ struct cpu_data {
 #define	ci_core_id		ci_data.cpu_core_id
 #define	ci_smt_id		ci_data.cpu_smt_id
 #define	ci_numa_id		ci_data.cpu_numa_id
+#define	ci_is_slow		ci_data.cpu_is_slow
 #define	ci_nsibling		ci_data.cpu_nsibling
 #define	ci_sibling		ci_data.cpu_sibling
-#define	ci_smt_primary		ci_data.cpu_smt_primary
+#define	ci_package1st		ci_data.cpu_package1st
 #define	ci_faultrng		ci_data.cpu_faultrng
 #define	ci_counts		ci_data.cpu_counts
 

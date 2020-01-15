@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_page.c,v 1.221 2020/01/05 22:01:09 ad Exp $	*/
+/*	$NetBSD: uvm_page.c,v 1.223 2020/01/11 19:51:01 ad Exp $	*/
 
 /*-
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -95,7 +95,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.221 2020/01/05 22:01:09 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.223 2020/01/11 19:51:01 ad Exp $");
 
 #include "opt_ddb.h"
 #include "opt_uvm.h"
@@ -181,6 +181,7 @@ static struct uvm_page_numa_region {
 } *uvm_page_numa_region;
 
 #ifdef DEBUG
+kmutex_t uvm_zerochecklock __cacheline_aligned;
 vaddr_t uvm_zerocheckkva;
 #endif /* DEBUG */
 
@@ -439,6 +440,7 @@ uvm_page_init(vaddr_t *kvm_startp, vaddr_t *kvm_endp)
 	 */
 	uvm_zerocheckkva = *kvm_startp;
 	*kvm_startp += PAGE_SIZE;
+	mutex_init(&uvm_zerochecklock, MUTEX_DEFAULT, IPL_VM);
 #endif /* DEBUG */
 
 	/*
@@ -921,13 +923,7 @@ uvm_page_rebucket(void)
 	 * packages evenly.  uvm_pagefree() will reassign pages to the
 	 * freeing CPU's preferred bucket on free.
 	 */
-	npackage = 0;
-	ci = curcpu();
-	ci2 = ci;
-	do {
-		npackage++;
-		ci2 = ci2->ci_sibling[CPUREL_PEER];
-	} while (ci2 != ci);
+	npackage = curcpu()->ci_nsibling[CPUREL_PACKAGE1ST];
 	
 	/*
 	 * Figure out how to arrange the packages & buckets, and the total
@@ -944,7 +940,7 @@ uvm_page_rebucket(void)
  	 */
  	npackage = 0;
 	ci = curcpu();
-	ci2 = ci;
+	ci2 = ci->ci_sibling[CPUREL_PACKAGE1ST];
 	do {
 		/*
 		 * In the inner loop, scroll through all CPUs in the package
@@ -956,8 +952,8 @@ uvm_page_rebucket(void)
 			ci3 = ci3->ci_sibling[CPUREL_PACKAGE];
 		} while (ci3 != ci2);
 		npackage++;
-		ci2 = ci2->ci_sibling[CPUREL_PEER];
-	} while (ci2 != ci);
+		ci2 = ci2->ci_sibling[CPUREL_PACKAGE1ST];
+	} while (ci2 != ci->ci_sibling[CPUREL_PACKAGE1ST]);
 
 	aprint_debug("UVM: using package allocation scheme, "
 	    "%d package(s) per bucket\n", 1 << shift);
@@ -1425,6 +1421,7 @@ uvm_pagezerocheck(struct vm_page *pg)
 	 *
 	 * it might be better to have "CPU-local temporary map" pmap interface.
 	 */
+	mutex_spin_enter(&uvm_zerochecklock);
 	pmap_kenter_pa(uvm_zerocheckkva, VM_PAGE_TO_PHYS(pg), VM_PROT_READ, 0);
 	p = (int *)uvm_zerocheckkva;
 	ep = (int *)((char *)p + PAGE_SIZE);
@@ -1435,6 +1432,7 @@ uvm_pagezerocheck(struct vm_page *pg)
 		p++;
 	}
 	pmap_kremove(uvm_zerocheckkva, PAGE_SIZE);
+	mutex_spin_exit(&uvm_zerochecklock);
 	/*
 	 * pmap_update() is not necessary here because no one except us
 	 * uses this VA.
@@ -1580,6 +1578,9 @@ uvm_pagefree(struct vm_page *pg)
 
 	/* Try to send the page to the per-CPU cache. */
 	s = splvm();
+	if (pg->flags & PG_ZERO) {
+	    	CPU_COUNT(CPU_COUNT_ZEROPAGES, 1);
+	}
 	ucpu = curcpu()->ci_data.cpu_uvm;
 	bucket = uvm_page_get_bucket(pg);
 	if (bucket == ucpu->pgflbucket && uvm_pgflcache_free(ucpu, pg)) {
