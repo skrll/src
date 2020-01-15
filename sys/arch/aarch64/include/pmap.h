@@ -1,4 +1,4 @@
-/* $NetBSD: pmap.h,v 1.26 2019/10/29 20:01:22 maya Exp $ */
+/* $NetBSD: pmap.h,v 1.30 2020/01/06 08:29:08 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -114,6 +114,7 @@ struct vm_page_md {
 #define LX_BLKPAG_ATTR_NORMAL_NC	__SHIFTIN(1, LX_BLKPAG_ATTR_INDX)
 #define LX_BLKPAG_ATTR_NORMAL_WT	__SHIFTIN(2, LX_BLKPAG_ATTR_INDX)
 #define LX_BLKPAG_ATTR_DEVICE_MEM	__SHIFTIN(3, LX_BLKPAG_ATTR_INDX)
+#define LX_BLKPAG_ATTR_DEVICE_MEM_SO	__SHIFTIN(4, LX_BLKPAG_ATTR_INDX)
 #define LX_BLKPAG_ATTR_MASK		LX_BLKPAG_ATTR_INDX
 
 #define lxpde_pa(pde)		((paddr_t)((pde) & LX_TBL_PA))
@@ -197,16 +198,17 @@ paddr_t pmap_alloc_pdp(struct pmap *, struct vm_page **, int, bool);
 #define L1_ROUND_BLOCK(x)	L1_TRUNC_BLOCK((x) + L1_SIZE - 1)
 #define L2_TRUNC_BLOCK(x)	((x) & L2_FRAME)
 #define L2_ROUND_BLOCK(x)	L2_TRUNC_BLOCK((x) + L2_SIZE - 1)
+#define L3_TRUNC_BLOCK(x)	((x) & L3_FRAME)
+#define L3_ROUND_BLOCK(x)	L3_TRUNC_BLOCK((x) + L3_SIZE - 1)
 
-/* devmap use L2 blocks. (2Mbyte) */
-#define DEVMAP_TRUNC_ADDR(x)	L2_TRUNC_BLOCK((x))
-#define DEVMAP_ROUND_SIZE(x)	L2_ROUND_BLOCK((x))
+#define DEVMAP_ALIGN(x)		L3_TRUNC_BLOCK((x))
+#define DEVMAP_SIZE(x)		L3_ROUND_BLOCK((x))
 
 #define	DEVMAP_ENTRY(va, pa, sz)			\
 	{						\
-		.pd_va = DEVMAP_TRUNC_ADDR(va),		\
-		.pd_pa = DEVMAP_TRUNC_ADDR(pa),		\
-		.pd_size = DEVMAP_ROUND_SIZE(sz),	\
+		.pd_va = DEVMAP_ALIGN(va),		\
+		.pd_pa = DEVMAP_ALIGN(pa),		\
+		.pd_size = DEVMAP_SIZE(sz),			\
 		.pd_prot = VM_PROT_READ|VM_PROT_WRITE,	\
 		.pd_flags = PMAP_DEV			\
 	}
@@ -228,6 +230,8 @@ paddr_t pmap_alloc_pdp(struct pmap *, struct vm_page **, int, bool);
 
 #define	PMAP_PTE			0x10000000 /* kenter_pa */
 #define	PMAP_DEV			0x20000000 /* kenter_pa */
+#define	PMAP_DEV_SO			0x40000000 /* kenter_pa */
+#define	PMAP_DEV_MASK			(PMAP_DEV | PMAP_DEV_SO)
 
 static inline u_int
 aarch64_mmap_flags(paddr_t mdpgno)
@@ -235,11 +239,12 @@ aarch64_mmap_flags(paddr_t mdpgno)
 	u_int nflag, pflag;
 
 	/*
-	 * aarch64 arch has 4 memory attribute:
+	 * aarch64 arch has 5 memory attribute:
 	 *
 	 *  WriteBack      - write back cache
 	 *  WriteThru      - wite through cache
 	 *  NoCache        - no cache
+	 *  Device(nGnRE)  - no Gathering, no Reordering, Early write ack
 	 *  Device(nGnRnE) - no Gathering, no Reordering, no Early write ack
 	 *
 	 * but pmap has PMAP_{NOCACHE,WRITE_COMBINE,WRITE_BACK} flags.

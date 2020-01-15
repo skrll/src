@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_amap.h,v 1.37 2011/06/12 03:36:02 rmind Exp $	*/
+/*	$NetBSD: uvm_amap.h,v 1.39 2020/01/02 02:00:35 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.

@@ -1,4 +1,4 @@
-/*	$NetBSD: mvxpsec.c,v 1.3 2019/10/15 00:13:53 chs Exp $	*/
+/*	$NetBSD: mvxpsec.c,v 1.5 2019/12/27 09:41:51 msaitoh Exp $	*/
 /*
  * Copyright (c) 2015 Internet Initiative Japan Inc.
  * All rights reserved.
@@ -207,7 +207,7 @@ STATIC int mvxpsec_header_finalize(struct mvxpsec_packet *);
 INLINE void mvxpsec_drop(struct mvxpsec_softc *, struct cryptop *, struct mvxpsec_packet *, int);
 STATIC int mvxpsec_dispatch_queue(struct mvxpsec_softc *);
 
-/* opencrypto opration */
+/* opencrypto operation */
 INLINE int mvxpsec_parse_crd(struct mvxpsec_packet *, struct cryptodesc *);
 INLINE int mvxpsec_parse_crp(struct mvxpsec_packet *);
 
@@ -1310,7 +1310,7 @@ mvxpsec_intr_cnt(struct mvxpsec_softc *sc, int cause)
  * the header contains descriptor of security accelerator,
  * key material of chiphers, iv of ciphers and macs, ...
  *
- * the header is transfered to MVXPSEC Internal SRAM by TDMA,
+ * the header is transferred to MVXPSEC Internal SRAM by TDMA,
  * and parsed by MVXPSEC H/W.
  */
 STATIC int

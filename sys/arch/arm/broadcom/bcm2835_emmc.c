@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_emmc.c,v 1.33 2018/08/19 09:18:48 rin Exp $	*/
+/*	$NetBSD: bcm2835_emmc.c,v 1.35 2019/12/30 16:41:38 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_emmc.c,v 1.33 2018/08/19 09:18:48 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_emmc.c,v 1.35 2019/12/30 16:41:38 skrll Exp $");
 
 #include "bcmdmac.h"
 

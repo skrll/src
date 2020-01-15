@@ -1,4 +1,4 @@
-/*	$NetBSD: vector.S,v 1.83 2019/02/15 08:54:01 nonaka Exp $	*/
+/*	$NetBSD: vector.S,v 1.85 2019/12/30 23:32:29 thorpej Exp $	*/
 
 /*
  * Copyright 2002 (c) Wasabi Systems, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: vector.S,v 1.83 2019/02/15 08:54:01 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vector.S,v 1.85 2019/12/30 23:32:29 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -408,6 +408,8 @@ IDTVEC(intr_ ## name ## num)						;\
 	IDEPTH_INCR							;\
 	sti								;\
 	movl	IS_HANDLERS(%ebp),%ebx					;\
+	cmpl	$0,IS_MASK_COUNT(%ebp)	/* source currently masked? */	;\
+	jne	12f			/* yes, hold it */		;\
 6:									\
 	movl	IH_LEVEL(%ebx),%edi					;\
 	cmpl	%esi,%edi						;\
@@ -420,6 +422,8 @@ IDTVEC(intr_ ## name ## num)						;\
 	addl	$4,%esp			/* toss the arg */		;\
 	testl	%ebx,%ebx						;\
 	jnz	6b							;\
+	cmpl	$0,IS_MASK_COUNT(%ebp)	/* source now masked? */	;\
+	jne	12f			/* yes, deal */			;\
 	cli								;\
 	unmask(num)			/* unmask it in hardware */	;\
 	late_ack(num)							;\
@@ -427,9 +431,14 @@ IDTVEC(intr_ ## name ## num)						;\
 7:									\
 	cli								;\
 	orl	$(1 << num),CPUVAR(IPENDING)				;\
-	level_mask(num)							;\
+8:	level_mask(num)							;\
 	late_ack(num)							;\
 	jmp	_C_LABEL(Xdoreti)	/* lower spl and do ASTs */	;\
+12:									\
+	cli								;\
+	orl	$(1 << num),CPUVAR(IMASKED)				;\
+	btrl	$(num),CPUVAR(IPENDING)					;\
+	jmp	8b							;\
 10:									\
 	orl	$(1 << num),CPUVAR(IPENDING)				;\
 	level_mask(num)							;\

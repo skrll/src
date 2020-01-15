@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.zaurus.inc,v 1.10 2019/10/26 09:49:13 tsutsui Exp $
+#	$NetBSD: Makefile.zaurus.inc,v 1.12 2020/01/12 06:41:02 tsutsui Exp $
 
 MACHINE_ARCH?=		arm
 CPPFLAGS+=		-D${MACHINE}

@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_subr.c,v 1.41 2019/12/20 21:05:33 ad Exp $	*/
+/*	$NetBSD: cpu_subr.c,v 1.45 2020/01/09 16:35:03 ad Exp $	*/
 
 /*-
  * Copyright (c) 2010, 2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.41 2019/12/20 21:05:33 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.45 2020/01/09 16:35:03 ad Exp $");
 
 #include "opt_cputype.h"
 #include "opt_ddb.h"
@@ -189,7 +189,7 @@ cpu_info_alloc(struct pmap_tlb_info *ti, cpuid_t cpu_id, cpuid_t cpu_package_id,
 	ci->ci_divisor_recip = cpu_info_store.ci_divisor_recip;
 	ci->ci_cpuwatch_count = cpu_info_store.ci_cpuwatch_count;
 
-	cpu_topology_set(ci, cpu_package_id, cpu_core_id, cpu_smt_id, 0);
+	cpu_topology_set(ci, cpu_package_id, cpu_core_id, cpu_smt_id, 0, false);
 
 	pmap_md_alloc_ephemeral_address_space(ci);
 
@@ -337,7 +337,7 @@ cpu_startup_common(void)
 	 * map those pages.)
 	 */
 
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem()));
 	printf("avail memory = %s\n", pbuf);
 
 #if defined(__mips_n32)
@@ -962,7 +962,7 @@ cpu_boot_secondary_processors(void)
 		KASSERT(ci->ci_data.cpu_idlelwp);
 
 		/*
-		 * Skip this CPU if it didn't sucessfully hatch.
+		 * Skip this CPU if it didn't successfully hatch.
 		 */
 		if (!kcpuset_isset(cpus_hatched, cpu_index(ci)))
 			continue;

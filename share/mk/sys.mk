@@ -1,4 +1,4 @@
-#	$NetBSD: sys.mk,v 1.140 2019/12/20 04:04:25 christos Exp $
+#	$NetBSD: sys.mk,v 1.142 2020/01/08 22:04:24 christos Exp $
 #	@(#)sys.mk	8.2 (Berkeley) 3/21/94
 #
 # This file contains the basic rules for make(1) and is read first

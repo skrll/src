@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.16 2019/12/02 18:35:07 ad Exp $ */
+/* $NetBSD: cpu.h,v 1.18 2020/01/12 09:29:18 mrg Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -93,6 +93,9 @@ struct cpu_info {
 	struct evcnt ci_vfp_save;
 	struct evcnt ci_vfp_release;
 
+	/* FDT or similar supplied "cpu capacity" */
+	uint32_t ci_capacity_dmips_mhz;
+
 	/* interrupt controller */
 	u_int ci_gic_redist;	/* GICv3 redistributor index */
 	uint64_t ci_gic_sgir;	/* GICv3 SGIR target */
@@ -155,16 +158,6 @@ cpu_dosoftints(void)
 	if (ci->ci_intr_depth == 0 && (ci->ci_softints >> ci->ci_cpl) > 0)
 		dosoftints();
 #endif
-}
-
-static inline bool
-cpu_intr_p(void)
-{
-#ifdef __HAVE_PIC_FAST_SOFTINTS
-	if (ci->ci_cpl < IPL_VM)
-		return false;
-#endif
-	return curcpu()->ci_intr_depth > 0;
 }
 
 void	cpu_attach(device_t, cpuid_t);

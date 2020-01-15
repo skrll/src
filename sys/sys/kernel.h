@@ -1,4 +1,4 @@
-/*	$NetBSD: kernel.h,v 1.30 2018/06/02 22:25:30 christos Exp $	*/
+/*	$NetBSD: kernel.h,v 1.32 2020/01/02 15:42:27 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
@@ -50,11 +50,10 @@ extern int hostnamelen;
 extern char domainname[MAXHOSTNAMELEN];
 extern int domainnamelen;
 
-extern struct timespec boottime;
-
 extern int rtc_offset;		/* offset of rtc from UTC in minutes */
 
 extern int cold;		/* still working on startup */
+extern int shutting_down;	/* system is shutting down */
 extern int tick;		/* usec per tick (1000000 / hz) */
 extern int tickadj;		/* "standard" clock skew, us./tick */
 extern int hardclock_ticks;	/* # of hardclock ticks */

@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci.c,v 1.114 2019/09/08 18:58:38 mrg Exp $	*/
+/*	$NetBSD: xhci.c,v 1.115 2019/12/29 09:17:51 skrll Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.114 2019/09/08 18:58:38 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.115 2019/12/29 09:17:51 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -3897,19 +3897,24 @@ xhci_device_ctrl_start(struct usbd_xfer *xfer)
 	    XHCI_TRB_3_TYPE_SET(XHCI_TRB_TYPE_STATUS_STAGE) |
 	    XHCI_TRB_3_IOC_BIT;
 	xhci_soft_trb_put(&xx->xx_trb[i++], parameter, status, control);
-	xfer->ux_status = USBD_IN_PROGRESS;
 
-	if (xfer->ux_timeout && !xhci_polling_p(sc)) {
-		callout_reset(&xfer->ux_callout, mstohz(xfer->ux_timeout),
-		    xhci_timeout, xfer);
-	}
 	if (!polling)
 		mutex_enter(&tr->xr_lock);
 	xhci_ring_put(sc, tr, xfer, xx->xx_trb, i);
 	if (!polling)
 		mutex_exit(&tr->xr_lock);
 
+	if (!polling)
+		mutex_enter(&sc->sc_lock);
+	xfer->ux_status = USBD_IN_PROGRESS;
 	xhci_db_write_4(sc, XHCI_DOORBELL(xs->xs_idx), dci);
+
+	if (xfer->ux_timeout && !xhci_polling_p(sc)) {
+		callout_reset(&xfer->ux_callout, mstohz(xfer->ux_timeout),
+		    xhci_timeout, xfer);
+	}
+	if (!polling)
+		mutex_exit(&sc->sc_lock);
 
 	return USBD_IN_PROGRESS;
 }
@@ -4016,19 +4021,24 @@ xhci_device_bulk_start(struct usbd_xfer *xfer)
 	    (usbd_xfer_isread(xfer) ? XHCI_TRB_3_ISP_BIT : 0) |
 	    XHCI_TRB_3_IOC_BIT;
 	xhci_soft_trb_put(&xx->xx_trb[i++], parameter, status, control);
-	xfer->ux_status = USBD_IN_PROGRESS;
 
-	if (xfer->ux_timeout && !xhci_polling_p(sc)) {
-		callout_reset(&xfer->ux_callout, mstohz(xfer->ux_timeout),
-		    xhci_timeout, xfer);
-	}
 	if (!polling)
 		mutex_enter(&tr->xr_lock);
 	xhci_ring_put(sc, tr, xfer, xx->xx_trb, i);
 	if (!polling)
 		mutex_exit(&tr->xr_lock);
 
+	if (!polling)
+		mutex_enter(&sc->sc_lock);
+	xfer->ux_status = USBD_IN_PROGRESS;
 	xhci_db_write_4(sc, XHCI_DOORBELL(xs->xs_idx), dci);
+
+	if (xfer->ux_timeout && !xhci_polling_p(sc)) {
+		callout_reset(&xfer->ux_callout, mstohz(xfer->ux_timeout),
+		    xhci_timeout, xfer);
+	}
+	if (!polling)
+		mutex_exit(&sc->sc_lock);
 
 	return USBD_IN_PROGRESS;
 }
@@ -4125,7 +4135,6 @@ xhci_device_intr_start(struct usbd_xfer *xfer)
 	    (usbd_xfer_isread(xfer) ? XHCI_TRB_3_ISP_BIT : 0) |
 	    XHCI_TRB_3_IOC_BIT;
 	xhci_soft_trb_put(&xx->xx_trb[i++], parameter, status, control);
-	xfer->ux_status = USBD_IN_PROGRESS;
 
 	if (!polling)
 		mutex_enter(&tr->xr_lock);
@@ -4133,12 +4142,17 @@ xhci_device_intr_start(struct usbd_xfer *xfer)
 	if (!polling)
 		mutex_exit(&tr->xr_lock);
 
+	if (!polling)
+		mutex_enter(&sc->sc_lock);
+	xfer->ux_status = USBD_IN_PROGRESS;
 	xhci_db_write_4(sc, XHCI_DOORBELL(xs->xs_idx), dci);
 
 	if (xfer->ux_timeout && !polling) {
 		callout_reset(&xfer->ux_callout, mstohz(xfer->ux_timeout),
 		    xhci_timeout, xfer);
 	}
+	if (!polling)
+		mutex_exit(&sc->sc_lock);
 
 	return USBD_IN_PROGRESS;
 }

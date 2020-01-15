@@ -1,4 +1,4 @@
-# $NetBSD: genassym.cf,v 1.15 2019/11/24 11:23:16 skrll Exp $
+# $NetBSD: genassym.cf,v 1.18 2020/01/08 17:38:41 ad Exp $
 #-
 # Copyright (c) 2014 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -148,7 +148,6 @@ define	L_PRIORITY		offsetof(struct lwp, l_priority)
 define	L_WCHAN			offsetof(struct lwp, l_wchan)
 define	L_STAT			offsetof(struct lwp, l_stat)
 define	L_PROC			offsetof(struct lwp, l_proc)
-define	L_CTXSWTCH		offsetof(struct lwp, l_ctxswtch)
 define	L_PRIVATE		offsetof(struct lwp, l_private)
 define	L_MD_FLAGS		offsetof(struct lwp, l_md.md_flags)
 define	L_MD_UTF		offsetof(struct lwp, l_md.md_utf)
@@ -335,7 +334,9 @@ define	MAIR_ATTR0		MAIR_ATTR0
 define	MAIR_ATTR1		MAIR_ATTR1
 define	MAIR_ATTR2		MAIR_ATTR2
 define	MAIR_ATTR3		MAIR_ATTR3
+define	MAIR_ATTR4		MAIR_ATTR4
 define	MAIR_DEVICE_nGnRnE	MAIR_DEVICE_nGnRnE
+define	MAIR_DEVICE_nGnRE	MAIR_DEVICE_nGnRE
 define	MAIR_NORMAL_NC		MAIR_NORMAL_NC
 define	MAIR_NORMAL_WT		MAIR_NORMAL_WT
 define	MAIR_NORMAL_WB		MAIR_NORMAL_WB

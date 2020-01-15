@@ -1,4 +1,4 @@
-/*	$NetBSD: disklabel.c,v 1.27 2019/12/15 12:09:55 martin Exp $	*/
+/*	$NetBSD: disklabel.c,v 1.29 2020/01/10 10:47:35 martin Exp $	*/
 
 /*
  * Copyright 2018 The NetBSD Foundation, Inc.
@@ -116,7 +116,7 @@ disklabel_change_geom(struct disk_partitions *arg, int ncyl, int nhead,
 
 static struct disk_partitions *
 disklabel_parts_new(const char *dev, daddr_t start, daddr_t len,
-    daddr_t total_size, bool is_boot_drive)
+    daddr_t total_size, bool is_boot_drive, struct disk_partitions *parent)
 {
 	struct disklabel_disk_partitions *parts;
 	struct disk_geom geo;
@@ -144,14 +144,17 @@ disklabel_parts_new(const char *dev, daddr_t start, daddr_t len,
 	parts->dp.disk_start = start;
 	parts->dp.disk_size = parts->dp.free_space = len;
 	disklabel_init_default_alignment(parts, parts->l.d_secpercyl);
+	parts->dp.parent = parent;
 
 	strncpy(parts->l.d_packname, "fictious", sizeof parts->l.d_packname);
 
 #if RAW_PART > 2
-	parts->l.d_partitions[RAW_PART-1].p_fstype = FS_UNUSED;
-	parts->l.d_partitions[RAW_PART-1].p_offset = start;
-	parts->l.d_partitions[RAW_PART-1].p_size = len;
-	parts->dp.num_part++;
+	if (parts->dp.parent != NULL) {
+		parts->l.d_partitions[RAW_PART-1].p_fstype = FS_UNUSED;
+		parts->l.d_partitions[RAW_PART-1].p_offset = start;
+		parts->l.d_partitions[RAW_PART-1].p_size = len;
+		parts->dp.num_part++;
+	}
 #endif
 	parts->l.d_partitions[RAW_PART].p_fstype = FS_UNUSED;
 	parts->l.d_partitions[RAW_PART].p_offset = 0;
@@ -435,10 +438,13 @@ disklabel_delete_all(struct disk_partitions *arg)
 	parts->dp.num_part = 0;
 
 #if RAW_PART > 2
-	parts->l.d_partitions[RAW_PART-1].p_fstype = FS_UNUSED;
-	parts->l.d_partitions[RAW_PART-1].p_offset = parts->dp.disk_start;
-	parts->l.d_partitions[RAW_PART-1].p_size = parts->dp.disk_size;
-	parts->dp.num_part++;
+	if (parts->dp.parent != NULL) {
+		parts->l.d_partitions[RAW_PART-1].p_fstype = FS_UNUSED;
+		parts->l.d_partitions[RAW_PART-1].p_offset =
+		    parts->dp.disk_start;
+		parts->l.d_partitions[RAW_PART-1].p_size = parts->dp.disk_size;
+		parts->dp.num_part++;
+	}
 #endif
 	parts->l.d_partitions[RAW_PART].p_fstype = FS_UNUSED;
 	parts->l.d_partitions[RAW_PART].p_offset = 0;
@@ -466,7 +472,8 @@ disklabel_delete(struct disk_partitions *arg, part_id id,
 		if (ndx == id) {
 			if (part == RAW_PART
 #if RAW_PART > 2
-				|| part == RAW_PART-1
+				|| (part == RAW_PART-1 &&
+				    parts->dp.parent != NULL)
 #endif
 						) {
 				if (err_msg)
@@ -507,7 +514,8 @@ disklabel_delete_range(struct disk_partitions *arg, daddr_t r_start,
 		daddr_t end = start + parts->l.d_partitions[part].p_size;
 
 #if RAW_PART > 2
-		if (part == RAW_PART - 1 && start == r_start &&
+		if (parts->dp.parent != NULL &&
+		    part == RAW_PART - 1 && start == r_start &&
 		    r_start + r_size == end)
 			continue;
 #endif
@@ -537,7 +545,11 @@ dl_init_types(void)
 		enum part_type pt;
 		switch (i) {
 		case FS_UNUSED:	pt = PT_undef; break;
-		case FS_BSDFFS:	pt = PT_root; break;
+		case FS_BSDFFS:
+		case FS_RAID:
+		case FS_BSDLFS:
+		case FS_CGD:
+				pt = PT_root; break;
 		case FS_SWAP:	pt = PT_swap; break;
 		case FS_MSDOS:	pt = PT_FAT; break;
 		default:	pt = PT_unknown; break;
@@ -672,6 +684,21 @@ disklabel_get_generic_type(enum part_type pt)
 }
 
 static bool
+disklabel_get_default_fstype(const struct part_type_desc *nat_type,
+    unsigned *fstype, unsigned *fs_sub_type)
+{
+
+	*fstype = dl_part_type_from_generic(nat_type);
+#ifdef DEFAULT_UFS2
+        if (*fstype == FS_BSDFFS)
+                *fs_sub_type = 2;
+        else
+#endif
+                *fs_sub_type = 0;
+        return true;
+}
+
+static bool
 disklabel_get_part_info(const struct disk_partitions *arg, part_id id,
     struct disk_part_info *info)
 {
@@ -703,7 +730,7 @@ disklabel_get_part_info(const struct disk_partitions *arg, part_id id,
 				info->flags |=
 				    PTI_PSCHEME_INTERNAL|PTI_RAW_PART;
 #if RAW_PART > 2
-			if (part == (RAW_PART-1) &&
+			if (part == (RAW_PART-1) && parts->dp.parent != NULL &&
 			    parts->l.d_partitions[part].p_fstype == FS_UNUSED)
 				info->flags |=
 				    PTI_PSCHEME_INTERNAL|PTI_WHOLE_DISK;
@@ -850,7 +877,7 @@ disklabel_can_add_partition(const struct disk_partitions *arg)
 		if (i == RAW_PART)
 			continue;
 #if RAW_PART > 2
-		if (i == RAW_PART-1)
+		if (i == RAW_PART-1 && parts->dp.parent != NULL)
 			continue;
 #endif
 		if (parts->l.d_partitions[i].p_fstype == FS_UNUSED)
@@ -884,7 +911,7 @@ disklabel_set_disk_pack_name(struct disk_partitions *arg, const char *pack)
 static bool
 disklabel_get_part_device(const struct disk_partitions *arg,
     part_id ptn, char *devname, size_t max_devname_len, int *part,
-    enum dev_name_usage which_name, bool with_path)
+    enum dev_name_usage which_name, bool with_path, bool life)
 {
 	const struct disklabel_disk_partitions *parts =
 	    (const struct disklabel_disk_partitions*)arg;
@@ -938,6 +965,24 @@ disklabel_get_part_device(const struct disk_partitions *arg,
 	return false;
 }
 
+/*
+ * If the requested partition file system type internally skips
+ * the disk label sector, we can allow it to start at the beginning
+ * of the disk. In most cases though we have to move the partition
+ * to start past the label sector.
+ */
+static bool
+need_to_skip_past_label(const struct disk_part_info *info)
+{
+	switch (info->fs_type) {
+	case FS_BSDFFS:
+	case FS_RAID:
+		return false;
+	}
+
+	return true;
+}
+
 static part_id
 disklabel_add_partition(struct disk_partitions *arg,
     const struct disk_part_info *info, const char **err_msg)
@@ -954,6 +999,14 @@ disklabel_add_partition(struct disk_partitions *arg,
 		if (err_msg)
 			*err_msg = msg_string(MSG_No_free_space);
 		return NO_PART;
+	}
+	if (space.start <= (parts->dp.disk_start + LABELSECTOR) &&
+	    need_to_skip_past_label(info)) {
+		daddr_t new_start = roundup(parts->dp.disk_start + LABELSECTOR,
+		    parts->ptn_alignment);
+		daddr_t off = new_start - space.start;
+		space.start += off;
+		space.size -= off;
 	}
 	if (data.size > space.size)
 		data.size = space.size;
@@ -979,7 +1032,7 @@ disklabel_add_partition(struct disk_partitions *arg,
 		if (i == RAW_PART)
 			continue;
 #if RAW_PART > 2
-		if (i == RAW_PART-1)
+		if (i == RAW_PART-1 && parts->dp.parent != NULL)
 			continue;
 #endif
 		if (parts->l.d_partitions[i].p_size > 0)
@@ -1042,7 +1095,7 @@ disklabel_add_outer_partition(struct disk_partitions *arg,
 		if (i == RAW_PART)
 			continue;
 #if RAW_PART > 2
-		if (i == RAW_PART-1)
+		if (i == RAW_PART-1 && parts->dp.parent != NULL)
 			continue;
 #endif
 		if (parts->l.d_partitions[i].p_size > 0)
@@ -1170,6 +1223,7 @@ disklabel_parts = {
 	.get_part_type = disklabel_get_type,
 	.get_generic_part_type = disklabel_get_generic_type,
 	.get_fs_part_type = disklabel_get_fs_part_type,
+	.get_default_fstype = disklabel_get_default_fstype,
 	.create_custom_part_type = disklabel_create_custom_part_type,
 	.create_unknown_part_type = disklabel_create_unknown_part_type,
 	.get_part_alignment = disklabel_get_alignment,

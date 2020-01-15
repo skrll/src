@@ -1,11 +1,11 @@
-/*	$NetBSD: namei.h,v 1.102 2019/12/01 18:32:07 ad Exp $	*/
+/*	$NetBSD: namei.h,v 1.104 2020/01/08 12:06:10 ad Exp $	*/
 
 
 /*
  * WARNING: GENERATED FILE.  DO NOT EDIT
  * (edit namei.src and run make namei in src/sys/sys)
  *   by:   NetBSD: gennameih.awk,v 1.5 2009/12/23 14:17:19 pooka Exp 
- *   from: NetBSD: namei.src,v 1.46 2019/12/01 18:31:19 ad Exp 
+ *   from: NetBSD: namei.src,v 1.48 2020/01/08 12:04:56 ad Exp 
  */
 
 /*
@@ -218,10 +218,9 @@ struct nameidata {
  */
 struct namecache {
 	LIST_ENTRY(namecache) nc_hash;	/* L/C hash chain */
-	LIST_ENTRY(namecache) nc_vhash;	/* L directory hash chain */
 	TAILQ_ENTRY(namecache) nc_lru;	/* L pseudo-lru chain */
 	LIST_ENTRY(namecache) nc_dvlist;/* L dvp's list of cache entries */
-	LIST_ENTRY(namecache) nc_vlist; /* L vp's list of cache entries */
+	TAILQ_ENTRY(namecache) nc_vlist;/* L vp's list of cache entries */
 	struct	vnode *nc_dvp;		/* N vnode of parent of name */
 	struct	vnode *nc_vp;		/* N vnode the name refers to */
 	void	*nc_gcqueue;		/* N queue for garbage collection */

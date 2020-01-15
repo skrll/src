@@ -1,4 +1,4 @@
-/* $NetBSD: rkpmic.c,v 1.5 2019/09/18 15:12:37 tnn Exp $ */
+/* $NetBSD: rkpmic.c,v 1.8 2020/01/03 01:17:29 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rkpmic.c,v 1.5 2019/09/18 15:12:37 tnn Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rkpmic.c,v 1.8 2020/01/03 01:17:29 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -40,6 +40,8 @@ __KERNEL_RCSID(0, "$NetBSD: rkpmic.c,v 1.5 2019/09/18 15:12:37 tnn Exp $");
 #include <dev/clock_subr.h>
 
 #include <dev/i2c/i2cvar.h>
+
+#include <dev/clk/clk_backend.h>
 
 #include <dev/fdt/fdtvar.h>
 
@@ -67,6 +69,12 @@ __KERNEL_RCSID(0, "$NetBSD: rkpmic.c,v 1.5 2019/09/18 15:12:37 tnn Exp $");
 #define	CHIP_NAME_REG		0x17
 #define	CHIP_VER_REG		0x18
 
+#define	CLK32OUT_REG		0x20
+#define	CLK32OUT_CLKOUT2_EN	__BIT(0)
+
+#define	DEVCTRL_REG		0x4b
+#define	DEVCTRL_DEV_OFF_RST	__BIT(3)
+
 struct rkpmic_ctrl {
 	const char *	name;
 	uint8_t		enable_reg;
@@ -83,6 +91,9 @@ struct rkpmic_config {
 	const char *	name;
 	const struct rkpmic_ctrl *ctrl;
 	u_int		nctrl;
+
+	u_int		poweroff_reg;
+	u_int		poweroff_mask;
 };
 
 static const struct rkpmic_ctrl rk805_ctrls[] = {
@@ -185,6 +196,14 @@ static const struct rkpmic_config rk808_config = {
 	.name = "RK808",
 	.ctrl = rk808_ctrls,
 	.nctrl = __arraycount(rk808_ctrls),
+	.poweroff_reg = DEVCTRL_REG,
+	.poweroff_mask = DEVCTRL_DEV_OFF_RST,
+};
+
+struct rkpmic_softc;
+
+struct rkpmic_clk {
+	struct clk	base;
 };
 
 struct rkpmic_softc {
@@ -194,6 +213,8 @@ struct rkpmic_softc {
 	int		sc_phandle;
 	struct todr_chip_handle sc_todr;
 	struct rkpmic_config *sc_conf;
+	struct clk_domain sc_clkdom;
+	struct rkpmic_clk sc_clk[2];
 };
 
 struct rkreg_softc {
@@ -236,24 +257,27 @@ rkpmic_write(struct rkpmic_softc *sc, uint8_t reg, uint8_t val, int flags)
 		device_printf(sc->sc_dev, "error writing reg %#x: %d\n", reg, error);
 }
 
-#define	I2C_READ(sc, reg)	rkpmic_read((sc), (reg), I2C_F_POLL)
-#define	I2C_WRITE(sc, reg, val)	rkpmic_write((sc), (reg), (val), I2C_F_POLL)
-#define	I2C_LOCK(sc)		iic_acquire_bus((sc)->sc_i2c, I2C_F_POLL)
-#define	I2C_UNLOCK(sc)		iic_release_bus((sc)->sc_i2c, I2C_F_POLL)
+#define	I2C_READ(sc, reg)	rkpmic_read((sc), (reg), 0)
+#define	I2C_WRITE(sc, reg, val)	rkpmic_write((sc), (reg), (val), 0)
+#define	I2C_LOCK(sc)		iic_acquire_bus((sc)->sc_i2c, 0)
+#define	I2C_UNLOCK(sc)		iic_release_bus((sc)->sc_i2c, 0)
 
 static int
 rkpmic_todr_settime(todr_chip_handle_t ch, struct clock_ymdhms *dt)
 {
 	struct rkpmic_softc * const sc = ch->cookie;
 	uint8_t val;
+	int error;
 
 	if (dt->dt_year < 2000 || dt->dt_year >= 2100) {
 		device_printf(sc->sc_dev, "year out of range\n");
 		return EINVAL;
 	}
 
-	if (I2C_LOCK(sc))
-		return EBUSY;
+	if ((error = I2C_LOCK(sc)) != 0)
+		return error;
+
+	/* XXX Fix error reporting. */
 
 	val = I2C_READ(sc, RTC_CTRL_REG);
 	I2C_WRITE(sc, RTC_CTRL_REG, val | RTC_CTRL_STOP_RTC);
@@ -275,9 +299,12 @@ rkpmic_todr_gettime(todr_chip_handle_t ch, struct clock_ymdhms *dt)
 {
 	struct rkpmic_softc * const sc = ch->cookie;
 	uint8_t val;
+	int error;
 
-	if (I2C_LOCK(sc))
-		return EBUSY;
+	if ((error = I2C_LOCK(sc)) != 0)
+		return error;
+
+	/* XXX Fix error reporting. */
 
 	val = I2C_READ(sc, RTC_CTRL_REG);
 	I2C_WRITE(sc, RTC_CTRL_REG, val | RTC_CTRL_GET_TIME | RTC_CTRL_READSEL);
@@ -316,6 +343,106 @@ rkpmic_todr_gettime(todr_chip_handle_t ch, struct clock_ymdhms *dt)
 	return 0;
 }
 
+static struct clk *
+rkpmic_clk_decode(device_t dev, int cc_phandle, const void *data, size_t len)
+{
+	struct rkpmic_softc * const sc = device_private(dev);
+
+	if (len != 4)
+		return NULL;
+
+	const u_int id = be32dec(data);
+	if (id >= __arraycount(sc->sc_clk))
+		return NULL;
+
+	return &sc->sc_clk[id].base;
+}
+
+static const struct fdtbus_clock_controller_func rkpmic_clk_fdt_funcs = {
+	.decode = rkpmic_clk_decode
+};
+
+static struct clk *
+rkpmic_clk_get(void *priv, const char *name)
+{
+	struct rkpmic_softc * const sc = priv;
+	u_int n;
+
+	for (n = 0; n < __arraycount(sc->sc_clk); n++) {
+		if (strcmp(name, sc->sc_clk[n].base.name) == 0)
+			return &sc->sc_clk[n].base;
+	}
+
+	return NULL;
+}
+
+static u_int
+rkpmic_clk_get_rate(void *priv, struct clk *clk)
+{
+	return 32768;
+}
+
+static int
+rkpmic_clk_enable(void *priv, struct clk *clk)
+{
+	struct rkpmic_softc * const sc = priv;
+	uint8_t val;
+
+	if (clk != &sc->sc_clk[1].base)
+		return 0;
+
+	I2C_LOCK(sc);
+	val = I2C_READ(sc, CLK32OUT_REG);
+	val |= CLK32OUT_CLKOUT2_EN;
+	I2C_WRITE(sc, CLK32OUT_REG, val);
+	I2C_UNLOCK(sc);
+
+	return 0;
+}
+
+static int
+rkpmic_clk_disable(void *priv, struct clk *clk)
+{
+	struct rkpmic_softc * const sc = priv;
+	uint8_t val;
+
+	if (clk != &sc->sc_clk[1].base)
+		return EIO;
+
+	I2C_LOCK(sc);
+	val = I2C_READ(sc, CLK32OUT_REG);
+	val &= ~CLK32OUT_CLKOUT2_EN;
+	I2C_WRITE(sc, CLK32OUT_REG, val);
+	I2C_UNLOCK(sc);
+
+	return 0;
+}
+
+static const struct clk_funcs rkpmic_clk_funcs = {
+	.get = rkpmic_clk_get,
+	.get_rate = rkpmic_clk_get_rate,
+	.enable = rkpmic_clk_enable,
+	.disable = rkpmic_clk_disable,
+};
+
+static void
+rkpmic_power_poweroff(device_t dev)
+{
+	struct rkpmic_softc * const sc = device_private(dev);
+	uint8_t val;
+
+	delay(1000000);
+
+	I2C_LOCK(sc);
+	val = I2C_READ(sc, sc->sc_conf->poweroff_reg);
+	val |= sc->sc_conf->poweroff_mask;
+	I2C_WRITE(sc, sc->sc_conf->poweroff_reg, val);
+	I2C_UNLOCK(sc);
+}
+
+static struct fdtbus_power_controller_func rkpmic_power_funcs = {
+	.poweroff = rkpmic_power_poweroff,
+};
 
 static int
 rkpmic_match(device_t parent, cfdata_t match, void *aux)
@@ -366,6 +493,26 @@ rkpmic_attach(device_t parent, device_t self, void *aux)
 	I2C_UNLOCK(sc);
 
 	fdtbus_todr_attach(self, sc->sc_phandle, &sc->sc_todr);
+
+	sc->sc_clkdom.name = device_xname(self);
+	sc->sc_clkdom.funcs = &rkpmic_clk_funcs;
+	sc->sc_clkdom.priv = sc;
+
+	sc->sc_clk[0].base.domain = &sc->sc_clkdom;
+	sc->sc_clk[0].base.name = "xin32k";
+	clk_attach(&sc->sc_clk[0].base);
+
+	sc->sc_clk[1].base.domain = &sc->sc_clkdom;
+	sc->sc_clk[1].base.name = "clkout2";
+	clk_attach(&sc->sc_clk[1].base);
+
+	fdtbus_register_clock_controller(self, sc->sc_phandle,
+	    &rkpmic_clk_fdt_funcs);
+
+	if (of_hasprop(sc->sc_phandle, "rockchip,system-power-controller") &&
+	    sc->sc_conf->poweroff_mask != 0)
+		fdtbus_register_power_controller(self, sc->sc_phandle,
+		    &rkpmic_power_funcs);
 
 	regulators = of_find_firstchild_byname(sc->sc_phandle, "regulators");
 	if (regulators < 0)

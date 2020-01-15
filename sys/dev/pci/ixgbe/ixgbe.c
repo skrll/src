@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.217 2019/12/17 05:49:01 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.220 2020/01/03 12:59:46 pgoyette Exp $ */
 
 /******************************************************************************
 
@@ -353,7 +353,7 @@ SYSCTL_INT(_hw_ix, OID_AUTO, enable_msix, CTLFLAG_RDTUN, &ixgbe_enable_msix, 0,
  * Number of Queues, can be set to 0,
  * it then autoconfigures based on the
  * number of cpus with a max of 8. This
- * can be overriden manually here.
+ * can be overridden manually here.
  */
 static int ixgbe_num_queues = 0;
 SYSCTL_INT(_hw_ix, OID_AUTO, num_queues, CTLFLAG_RDTUN, &ixgbe_num_queues, 0,
@@ -776,6 +776,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	pcireg_t	id, subid;
 	const ixgbe_vendor_info_t *ent;
 	struct pci_attach_args *pa = aux;
+	bool unsupported_sfp = false;
 	const char *str;
 	char buf[256];
 
@@ -954,8 +955,8 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		error = IXGBE_SUCCESS;
 	} else if (error == IXGBE_ERR_SFP_NOT_SUPPORTED) {
 		aprint_error_dev(dev, "Unsupported SFP+ module detected!\n");
-		error = EIO;
-		goto err_late;
+		unsupported_sfp = true;
+		error = IXGBE_SUCCESS;
 	} else if (error) {
 		aprint_error_dev(dev, "Hardware initialization failed\n");
 		error = EIO;
@@ -1126,13 +1127,6 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		    "please contact your Intel or hardware representative "
 		    "who provided you with this hardware.\n");
 		break;
-	case IXGBE_ERR_SFP_NOT_SUPPORTED:
-		aprint_error_dev(dev, "Unsupported SFP+ Module\n");
-		error = EIO;
-		goto err_late;
-	case IXGBE_ERR_SFP_NOT_PRESENT:
-		aprint_error_dev(dev, "No SFP+ Module found\n");
-		/* falls thru */
 	default:
 		break;
 	}
@@ -1165,16 +1159,22 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 			    oui, model, rev);
 	}
 
-	/* Enable the optics for 82599 SFP+ fiber */
-	ixgbe_enable_tx_laser(hw);
-
 	/* Enable EEE power saving */
 	if (adapter->feat_cap & IXGBE_FEATURE_EEE)
 		hw->mac.ops.setup_eee(hw,
 		    adapter->feat_en & IXGBE_FEATURE_EEE);
 
 	/* Enable power to the phy. */
-	ixgbe_set_phy_power(hw, TRUE);
+	if (!unsupported_sfp) {
+		/* Enable the optics for 82599 SFP+ fiber */
+		ixgbe_enable_tx_laser(hw);
+
+		/*
+		 * XXX Currently, ixgbe_set_phy_power() supports only copper
+		 * PHY, so it's not required to test with !unsupported_sfp.
+		 */
+		ixgbe_set_phy_power(hw, TRUE);
+	}
 
 	/* Initialize statistics */
 	ixgbe_update_stats_counters(adapter);
@@ -3901,6 +3901,7 @@ ixgbe_init_locked(struct adapter *adapter)
 	u32		txdctl, mhadd;
 	u32		rxdctl, rxctrl;
 	u32		ctrl_ext;
+	bool		unsupported_sfp = false;
 	int		i, j, err;
 
 	/* XXX check IFF_UP and IFF_RUNNING, power-saving state! */
@@ -3908,6 +3909,7 @@ ixgbe_init_locked(struct adapter *adapter)
 	KASSERT(mutex_owned(&adapter->core_mtx));
 	INIT_DEBUGOUT("ixgbe_init_locked: begin");
 
+	hw->need_unsupported_sfp_recovery = false;
 	hw->adapter_stopped = FALSE;
 	ixgbe_stop_adapter(hw);
 	callout_stop(&adapter->timer);
@@ -4081,12 +4083,14 @@ ixgbe_init_locked(struct adapter *adapter)
 	 */
 	if (hw->phy.type == ixgbe_phy_none) {
 		err = hw->phy.ops.identify(hw);
-		if (err == IXGBE_ERR_SFP_NOT_SUPPORTED) {
-			device_printf(dev,
-			    "Unsupported SFP+ module type was detected.\n");
-			return;
-		}
-	}
+		if (err == IXGBE_ERR_SFP_NOT_SUPPORTED)
+			unsupported_sfp = true;
+	} else if (hw->phy.type == ixgbe_phy_sfp_unsupported)
+		unsupported_sfp = true;
+
+	if (unsupported_sfp)
+		device_printf(dev,
+		    "Unsupported SFP+ module type was detected.\n");
 
 	/* Set moderation on the Link interrupt */
 	ixgbe_eitr_write(adapter, adapter->vector, IXGBE_LINK_ITR);
@@ -4097,10 +4101,12 @@ ixgbe_init_locked(struct adapter *adapter)
 		    adapter->feat_en & IXGBE_FEATURE_EEE);
 
 	/* Enable power to the phy. */
-	ixgbe_set_phy_power(hw, TRUE);
+	if (!unsupported_sfp) {
+		ixgbe_set_phy_power(hw, TRUE);
 
-	/* Config/Enable Link */
-	ixgbe_config_link(adapter);
+		/* Config/Enable Link */
+		ixgbe_config_link(adapter);
+	}
 
 	/* Hardware Packet Buffer & Flow Control setup */
 	ixgbe_config_delay_values(adapter);
@@ -4608,6 +4614,7 @@ ixgbe_handle_mod(void *context)
 	device_t	dev = adapter->dev;
 	u32		err, cage_full = 0;
 
+	IXGBE_CORE_LOCK(adapter);
 	++adapter->mod_sicount.ev_count;
 	if (adapter->hw.need_crosstalk_fix) {
 		switch (hw->mac.type) {
@@ -4625,27 +4632,42 @@ ixgbe_handle_mod(void *context)
 		}
 
 		if (!cage_full)
-			return;
+			goto out;
 	}
 
 	err = hw->phy.ops.identify_sfp(hw);
 	if (err == IXGBE_ERR_SFP_NOT_SUPPORTED) {
 		device_printf(dev,
 		    "Unsupported SFP+ module type was detected.\n");
-		return;
+		goto out;
 	}
 
-	if (hw->mac.type == ixgbe_mac_82598EB)
-		err = hw->phy.ops.reset(hw);
-	else
-		err = hw->mac.ops.setup_sfp(hw);
-
-	if (err == IXGBE_ERR_SFP_NOT_SUPPORTED) {
-		device_printf(dev,
-		    "Setup failure - unsupported SFP+ module type.\n");
-		return;
+	if (hw->need_unsupported_sfp_recovery) {
+		device_printf(dev, "Recovering from unsupported SFP\n");
+		/*
+		 *  We could recover the status by calling setup_sfp(),
+		 * setup_link() and some others. It's complex and might not
+		 * work correctly on some unknown cases. To avoid such type of
+		 * problem, call ixgbe_init_locked(). It's simple and safe
+		 * approach.
+		 */
+		ixgbe_init_locked(adapter);
+	} else {
+		if (hw->mac.type == ixgbe_mac_82598EB)
+			err = hw->phy.ops.reset(hw);
+		else {
+			err = hw->mac.ops.setup_sfp(hw);
+			hw->phy.sfp_setup_needed = FALSE;
+		}
+		if (err == IXGBE_ERR_SFP_NOT_SUPPORTED) {
+			device_printf(dev,
+			    "Setup failure - unsupported SFP+ module type.\n");
+			goto out;
+		}
 	}
 	softint_schedule(adapter->msf_si);
+out:
+	IXGBE_CORE_UNLOCK(adapter);
 } /* ixgbe_handle_mod */
 
 

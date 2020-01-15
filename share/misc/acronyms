@@ -1,4 +1,4 @@
-$NetBSD: acronyms,v 1.290 2019/11/11 04:11:53 pgoyette Exp $
+$NetBSD: acronyms,v 1.292 2020/01/10 16:18:21 leot Exp $
 10Q	thank you
 10X	thanks
 1337	elite ("leet")
@@ -44,6 +44,7 @@ ATEOTD	at the end of the day
 ATM	at the moment
 ATM	{automated,automatic} teller machine
 ATW	around the world
+AVB	alcohol by volume
 AVI	automatic vehicle identification
 AWK	Aho, Weinberger, [and] Kernighan
 AWOL	absent without official leave
@@ -600,6 +601,7 @@ WIBNI	wouldn't it be nice if
 WIP	work in progress
 WMNC	watch me not care
 WOMBAT	waste of money, brain, and time
+WP	well played
 WRR	weighted round robin
 WRT	with respect to
 WTB	{waiting,want,willing} to buy

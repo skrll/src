@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1247 2019/12/19 00:23:57 jakllsch Exp $
+#	$NetBSD: files,v 1.1249 2020/01/08 12:04:56 ad Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -89,8 +89,6 @@ defflag	opt_ntp.h		PPS_SYNC PPS_DEBUG NTP
 defflag	opt_ptm.h		NO_DEV_PTM COMPAT_BSDPTY
 
 defparam opt_kmempages.h	NKMEMPAGES NKMEMPAGES_MIN NKMEMPAGES_MAX
-
-defflag	opt_revcache.h		NAMECACHE_ENTER_REVERSE
 
 defflag	opt_exec.h		DEBUG_EXEC
 
@@ -1543,6 +1541,12 @@ include "net/files.net"
 # Game adapter (joystick)
 device	joy
 file	dev/ic/joy.c			joy needs-flag
+
+# process monitor for make(1)
+# normally built as module
+defpseudo filemon
+file	dev/filemon/filemon.c		filemon
+file	dev/filemon/filemon_wrapper.c	filemon
 
 #
 # General Purpose Input/Output framework

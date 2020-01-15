@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2298 2019/12/18 07:37:17 maxv Exp $
+#	$NetBSD: mi,v 1.2300 2020/01/13 08:25:02 kamil Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -411,7 +411,7 @@
 ./usr/include/dev/eisa/eisadevs_data.h		comp-obsolete		obsolete
 ./usr/include/dev/eisa/eisareg.h		comp-obsolete		obsolete
 ./usr/include/dev/eisa/eisavar.h		comp-obsolete		obsolete
-./usr/include/dev/filemon/filemon.h		comp-obsolete		obsolete
+./usr/include/dev/filemon/filemon.h		comp-c-include
 ./usr/include/dev/fssvar.h			comp-c-include
 ./usr/include/dev/hdaudio/hdaudioio.h		comp-c-include
 ./usr/include/dev/hdaudio/hdaudioreg.h		comp-c-include
@@ -6472,6 +6472,7 @@
 ./usr/share/man/cat3/dlctl.0			comp-c-catman		.cat
 ./usr/share/man/cat3/dlerror.0			comp-c-catman		.cat
 ./usr/share/man/cat3/dlfcn.0			comp-c-catman		.cat
+./usr/share/man/cat3/dlinfo.0			comp-c-catman		.cat
 ./usr/share/man/cat3/dlopen.0			comp-c-catman		.cat
 ./usr/share/man/cat3/dlsym.0			comp-c-catman		.cat
 ./usr/share/man/cat3/dlvsym.0			comp-c-catman		.cat
@@ -14502,6 +14503,7 @@
 ./usr/share/man/html3/dlctl.html		comp-c-htmlman		html
 ./usr/share/man/html3/dlerror.html		comp-c-htmlman		html
 ./usr/share/man/html3/dlfcn.html		comp-c-htmlman		html
+./usr/share/man/html3/dlinfo.html		comp-c-htmlman		html
 ./usr/share/man/html3/dlopen.html		comp-c-htmlman		html
 ./usr/share/man/html3/dlsym.html		comp-c-htmlman		html
 ./usr/share/man/html3/dlvsym.html		comp-c-htmlman		html
@@ -22466,6 +22468,7 @@
 ./usr/share/man/man3/dlctl.3			comp-c-man		.man
 ./usr/share/man/man3/dlerror.3			comp-c-man		.man
 ./usr/share/man/man3/dlfcn.3			comp-c-man		.man
+./usr/share/man/man3/dlinfo.3			comp-c-man		.man
 ./usr/share/man/man3/dlopen.3			comp-c-man		.man
 ./usr/share/man/man3/dlsym.3			comp-c-man		.man
 ./usr/share/man/man3/dlvsym.3			comp-c-man		.man

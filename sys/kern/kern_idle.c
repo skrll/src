@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_idle.c,v 1.28 2019/12/06 21:36:10 ad Exp $	*/
+/*	$NetBSD: kern_idle.c,v 1.30 2020/01/08 17:38:42 ad Exp $	*/
 
 /*-
  * Copyright (c)2002, 2006, 2007 YAMAMOTO Takashi,
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: kern_idle.c,v 1.28 2019/12/06 21:36:10 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_idle.c,v 1.30 2020/01/08 17:38:42 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -39,7 +39,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_idle.c,v 1.28 2019/12/06 21:36:10 ad Exp $");
 #include <sys/proc.h>
 #include <sys/atomic.h>
 
-#include <uvm/uvm.h>	/* uvm_pageidlezero */
+#include <uvm/uvm.h>	/* uvm_idle */
 #include <uvm/uvm_extern.h>
 
 void
@@ -59,7 +59,7 @@ idle_loop(void *dummy)
 	binuptime(&l->l_stime);
 	spc->spc_flags |= SPCF_RUNNING;
 	l->l_stat = LSONPROC;
-	l->l_pflag |= LP_RUNNING;
+	l->l_flag |= LW_RUNNING;
 	lwp_unlock(l);
 
 	/*
@@ -81,7 +81,7 @@ idle_loop(void *dummy)
 		sched_idle();
 		if (!sched_curcpu_runnable_p()) {
 			if ((spc->spc_flags & SPCF_OFFLINE) == 0) {
-				uvm_pageidlezero();
+				uvm_idle();
 			}
 			if (!sched_curcpu_runnable_p()) {
 				cpu_idle();

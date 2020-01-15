@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_hdmi.c,v 1.7 2019/07/19 10:54:26 bouyer Exp $ */
+/* $NetBSD: sunxi_hdmi.c,v 1.10 2019/12/23 18:20:02 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2014 Jared D. McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #include "opt_ddb.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_hdmi.c,v 1.7 2019/07/19 10:54:26 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_hdmi.c,v 1.10 2019/12/23 18:20:02 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -73,7 +73,7 @@ struct sunxi_hdmi_softc {
 	lwp_t *sc_thread;
 
 	struct i2c_controller sc_ic;
-	kmutex_t sc_ic_lock;
+	kmutex_t sc_exec_lock;
 
 	bool sc_display_connected;
 	char sc_display_vendor[16];
@@ -114,8 +114,6 @@ static const struct of_compat_data compat_data[] = {
 static int	sunxi_hdmi_match(device_t, cfdata_t, void *);
 static void	sunxi_hdmi_attach(device_t, device_t, void *);
 static void	sunxi_hdmi_i2c_init(struct sunxi_hdmi_softc *);
-static int	sunxi_hdmi_i2c_acquire_bus(void *, int);
-static void	sunxi_hdmi_i2c_release_bus(void *, int);
 static int	sunxi_hdmi_i2c_exec(void *, i2c_op_t, i2c_addr_t, const void *,
 				   size_t, void *, size_t, int);
 static int	sunxi_hdmi_i2c_xfer(void *, i2c_addr_t, uint8_t, uint8_t,
@@ -263,35 +261,11 @@ sunxi_hdmi_i2c_init(struct sunxi_hdmi_softc *sc)
 {
 	struct i2c_controller *ic = &sc->sc_ic;
 
-	mutex_init(&sc->sc_ic_lock, MUTEX_DEFAULT, IPL_NONE);
+	mutex_init(&sc->sc_exec_lock, MUTEX_DEFAULT, IPL_NONE);
 
+	iic_tag_init(ic);
 	ic->ic_cookie = sc;
-	ic->ic_acquire_bus = sunxi_hdmi_i2c_acquire_bus;
-	ic->ic_release_bus = sunxi_hdmi_i2c_release_bus;
 	ic->ic_exec = sunxi_hdmi_i2c_exec;
-}
-
-static int
-sunxi_hdmi_i2c_acquire_bus(void *priv, int flags)
-{
-	struct sunxi_hdmi_softc *sc = priv;
-
-	if (flags & I2C_F_POLL) {
-		if (!mutex_tryenter(&sc->sc_ic_lock))
-			return EBUSY;
-	} else {
-		mutex_enter(&sc->sc_ic_lock);
-	}
-
-	return 0;
-}
-
-static void
-sunxi_hdmi_i2c_release_bus(void *priv, int flags)
-{
-	struct sunxi_hdmi_softc *sc = priv;
-
-	mutex_exit(&sc->sc_ic_lock);
 }
 
 static int
@@ -305,7 +279,8 @@ sunxi_hdmi_i2c_exec(void *priv, i2c_op_t op, i2c_addr_t addr,
 	off_t off;
 	int err;
 
-	KASSERT(mutex_owned(&sc->sc_ic_lock));
+	mutex_enter(&sc->sc_exec_lock);
+
 	KASSERT(op == I2C_OP_READ_WITH_STOP);
 	KASSERT(addr == DDC_ADDR);
 	KASSERT(cmdlen > 0);
@@ -349,6 +324,7 @@ sunxi_hdmi_i2c_exec(void *priv, i2c_op_t op, i2c_addr_t addr,
 	}
 
 done:
+	mutex_exit(&sc->sc_exec_lock);
 	return err;
 }
 
@@ -432,10 +408,10 @@ sunxi_hdmi_i2c_xfer_1_4(void *priv, i2c_addr_t addr, uint8_t block, uint8_t reg,
 		val = HDMI_READ(sc, SUNXI_A31_HDMI_DDC_CTRL_REG);
 		if ((val & SUNXI_A31_HDMI_DDC_CTRL_ACCESS_CMD_START) == 0)
 			break;
-		if (cold)
+		if (flags & I2C_F_POLL)
 			delay(1000);
 		else
-			kpause("hdmiddc", false, mstohz(10), &sc->sc_ic_lock);
+			kpause("hdmiddc", false, mstohz(10), &sc->sc_exec_lock);
 	}
 	if (retry == 0)
 		return ETIMEDOUT;
@@ -661,14 +637,14 @@ sunxi_hdmi_read_edid_block(struct sunxi_hdmi_softc *sc, uint8_t *data,
 	uint8_t wbuf[2];
 	int error;
 
-	if ((error = iic_acquire_bus(tag, I2C_F_POLL)) != 0)
+	if ((error = iic_acquire_bus(tag, 0)) != 0)
 		return error;
 
 	wbuf[0] = block;	/* start address */
 
 	error = iic_exec(tag, I2C_OP_READ_WITH_STOP, DDC_ADDR, wbuf, 1,
-	    data, EDID_BLOCK_SIZE, I2C_F_POLL);
-	iic_release_bus(tag, I2C_F_POLL);
+	    data, EDID_BLOCK_SIZE, 0);
+	iic_release_bus(tag, 0);
 	return error;
 }
 

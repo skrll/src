@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_data.h,v 1.45 2019/12/20 21:05:34 ad Exp $	*/
+/*	$NetBSD: cpu_data.h,v 1.48 2020/01/12 13:29:24 ad Exp $	*/
 
 /*-
  * Copyright (c) 2004, 2006, 2007, 2008, 2019 The NetBSD Foundation, Inc.
@@ -47,55 +47,47 @@ struct lwp;
 
 /* Per-CPU counters.  New elements must be added in blocks of 8. */
 enum cpu_count {
-	CPU_COUNT_NFAULT,		/* 0 */
-	CPU_COUNT_NSWTCH,
+	CPU_COUNT_NSWTCH,		/* 0 */
 	CPU_COUNT_NSYSCALL,
 	CPU_COUNT_NTRAP,
 	CPU_COUNT_NINTR,
 	CPU_COUNT_NSOFT,
 	CPU_COUNT_FORKS,
 	CPU_COUNT_FORKS_PPWAIT,
-	CPU_COUNT_FORKS_SHAREVM,	/* 8 */
-	CPU_COUNT_ANONPAGES,
+	CPU_COUNT_FORKS_SHAREVM,
+	CPU_COUNT_ANONPAGES,		/* 8 */
 	CPU_COUNT_COLORHIT,
 	CPU_COUNT_COLORMISS,
 	CPU_COUNT_CPUHIT,
 	CPU_COUNT_CPUMISS,
-	CPU_COUNT_BUCKETMISS,
 	CPU_COUNT_EXECPAGES,
-	CPU_COUNT_FILEPAGES,		/* 16 */
+	CPU_COUNT_FILEPAGES,
 	CPU_COUNT_PGA_ZEROHIT,
-	CPU_COUNT_PGA_ZEROMISS,
+	CPU_COUNT_PGA_ZEROMISS,		/* 16 */
 	CPU_COUNT_ZEROPAGES,
-	CPU_COUNT_ZEROABORTS,
-	CPU_COUNT_FREE,
+	CPU_COUNT_PAGEINS,
 	CPU_COUNT_SYNC_ONE,
 	CPU_COUNT_SYNC_ALL,
-	CPU_COUNT_FLT_ACOW,		/* 24 */
+	CPU_COUNT_FLTPGWAIT,
+	CPU_COUNT_FLTRELCK,
+	CPU_COUNT_FLTRELCKOK,
+	CPU_COUNT_NFAULT,		/* 24 */
+	CPU_COUNT_FLT_ACOW,
 	CPU_COUNT_FLT_ANON,
 	CPU_COUNT_FLT_OBJ,
 	CPU_COUNT_FLT_PRCOPY,
 	CPU_COUNT_FLT_PRZERO,
 	CPU_COUNT_FLTAMCOPY,
 	CPU_COUNT_FLTANGET,
-	CPU_COUNT_FLTANRETRY,
-	CPU_COUNT_FLTGET,		/* 32 */
+	CPU_COUNT_FLTANRETRY,		/* 32 */
+	CPU_COUNT_FLTGET,
 	CPU_COUNT_FLTLGET,
 	CPU_COUNT_FLTNAMAP,
 	CPU_COUNT_FLTNOMAP,
 	CPU_COUNT_FLTNOANON,
 	CPU_COUNT_FLTNORAM,
 	CPU_COUNT_FLTPGRELE,
-	CPU_COUNT_FLTPGWAIT,
-	CPU_COUNT_FLTRELCK,		/* 40 */
-	CPU_COUNT_FLTRELCKOK,
-	CPU_COUNT_PAGEINS,
-	CPU_COUNT__SPARE1,
-	CPU_COUNT__SPARE2,
-	CPU_COUNT__SPARE3,
-	CPU_COUNT__SPARE4,
-	CPU_COUNT__SPARE5,
-	CPU_COUNT_MAX			/* 48 */
+	CPU_COUNT_MAX			/* 40 */
 };
 
 /*
@@ -113,10 +105,28 @@ enum cpu_count {
 struct lockdebug;
 
 enum cpu_rel {
-	CPUREL_CORE,	/* CPUs in the same core */
-	CPUREL_PACKAGE,	/* CPUs in the same package */
-	CPUREL_PEER,	/* peer CPUs in other packages */
-	CPUREL_SMT,	/* peer SMTs in same package */
+	/*
+	 * This is a circular list of peer CPUs in the same core (SMT /
+	 * Hyperthreading).  It always includes the CPU it is referenced
+	 * from as the last entry.
+	 */
+	CPUREL_CORE,
+
+	/*
+	 * This is a circular list of peer CPUs in the same physical
+	 * package.  It always includes the CPU it is referenced from as
+	 * the last entry.
+	 */
+	CPUREL_PACKAGE,
+
+	/*
+	 * This is a circular list of the first CPUs in each physical
+	 * package.  It may or may not include the CPU it is referenced
+	 * from.
+	 */
+	CPUREL_PACKAGE1ST,
+
+	/* Terminator. */
 	CPUREL_COUNT
 };
 
@@ -138,9 +148,10 @@ struct cpu_data {
 	u_int		cpu_core_id;
 	u_int		cpu_smt_id;
 	u_int		cpu_numa_id;
+	bool		cpu_is_slow;
 	u_int		cpu_nsibling[CPUREL_COUNT];
 	struct cpu_info	*cpu_sibling[CPUREL_COUNT];
-	struct cpu_info	*cpu_smt_primary;
+	struct cpu_info *cpu_package1st;	/* 1st CPU in our package */
 
 	/*
 	 * This section is mostly CPU-private.
@@ -190,9 +201,10 @@ struct cpu_data {
 #define	ci_core_id		ci_data.cpu_core_id
 #define	ci_smt_id		ci_data.cpu_smt_id
 #define	ci_numa_id		ci_data.cpu_numa_id
+#define	ci_is_slow		ci_data.cpu_is_slow
 #define	ci_nsibling		ci_data.cpu_nsibling
 #define	ci_sibling		ci_data.cpu_sibling
-#define	ci_smt_primary		ci_data.cpu_smt_primary
+#define	ci_package1st		ci_data.cpu_package1st
 #define	ci_faultrng		ci_data.cpu_faultrng
 #define	ci_counts		ci_data.cpu_counts
 

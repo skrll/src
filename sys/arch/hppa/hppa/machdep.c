@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.10 2019/04/06 03:06:25 thorpej Exp $	*/
+/*	$NetBSD: machdep.c,v 1.12 2019/12/31 13:07:10 ad Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.10 2019/04/06 03:06:25 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.12 2019/12/31 13:07:10 ad Exp $");
 
 #include "opt_cputype.h"
 #include "opt_ddb.h"
@@ -943,7 +943,7 @@ cpu_startup(void)
 #ifdef PMAPDEBUG
 	pmapdebug = opmapdebug;
 #endif
-	format_bytes(pbuf[0], sizeof(pbuf[0]), ptoa(uvmexp.free));
+	format_bytes(pbuf[0], sizeof(pbuf[0]), ptoa(uvm_availmem()));
 	printf("avail mem = %s\n", pbuf[0]);
 }
 
