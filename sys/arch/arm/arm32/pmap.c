@@ -6397,16 +6397,6 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	pool_init(&pmap_pv_pool, sizeof(struct pv_entry), 0, 0, 0, "pvepl",
 	    &pmap_bootstrap_pv_allocator, IPL_NONE);
 
-#if defined(ARM_MMU_EXTENDED)
-	/*
-	 * Initialise the L1 pool and cache.
-	 */
-
-	pool_cache_bootstrap(&pmap_l1tt_cache, L1TT_SIZE, L1TT_SIZE,
-	    0, 0, "l1ttpl", &pmap_l1tt_allocator, IPL_NONE, pmap_l1tt_ctor,
-	     NULL, NULL);
-#endif
-
 	/*
 	 * Initialize the L2 dtable pool and cache.
 	 */
@@ -6521,6 +6511,17 @@ pmap_init(void)
 	pool_setlowat(&pmap_pv_pool, (PAGE_SIZE / sizeof(struct pv_entry)) * 2);
 
 #ifdef ARM_MMU_EXTENDED
+	/*
+	 * Initialise the L1 pool and cache.
+	 */
+
+	pool_cache_bootstrap(&pmap_l1tt_cache, L1TT_SIZE, L1TT_SIZE,
+	    0, 0, "l1ttpl", &pmap_l1tt_allocator, IPL_NONE, pmap_l1tt_ctor,
+	     NULL, NULL);
+
+	int error __diagused = pmap_maxproc_set(maxproc);
+	KASSERT(error == 0);
+
 	pmap_tlb_info_evcnt_attach(&pmap_tlb0_info);
 #endif
 
@@ -6666,11 +6667,6 @@ pmap_postinit(void)
 	pool_cache_setlowat(&pmap_l2ptp_cache, (PAGE_SIZE / L2_TABLE_SIZE_REAL) * 4);
 	pool_cache_setlowat(&pmap_l2dtable_cache,
 	    (PAGE_SIZE / sizeof(struct l2_dtable)) * 2);
-
-#if defined(ARM_MMU_EXTENDED)
-	int error __diagused = pmap_maxproc_set(maxproc);
-	KASSERT(error == 0);
-#endif
 
 #ifndef ARM_MMU_EXTENDED
 	needed = (maxproc / PMAP_DOMAINS) + ((maxproc % PMAP_DOMAINS) ? 1 : 0);
