@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ixl.c,v 1.19 2020/01/09 08:54:05 yamaguchi Exp $	*/
+/*	$NetBSD: if_ixl.c,v 1.26 2020/01/17 09:42:05 yamaguchi Exp $	*/
 
 /*
  * Copyright (c) 2013-2015, Intel Corporation
@@ -77,6 +77,7 @@
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
+#include "opt_if_ixl.h"
 #endif
 
 #include <sys/param.h>
@@ -196,6 +197,8 @@ struct ixl_softc; /* defined */
 #define IXL_HMC_PDVALID			1ULL
 
 #define IXL_ATQ_EXEC_TIMEOUT		(10 * hz)
+
+#define IXL_SRRD_SRCTL_ATTEMPTS		100000
 
 struct ixl_aq_regs {
 	bus_size_t		atq_tail;
@@ -605,7 +608,6 @@ struct ixl_softc {
 	struct ethercom		 sc_ec;
 	bool			 sc_attached;
 	bool			 sc_dead;
-	bool			 sc_rxctl_atq;
 	uint32_t		 sc_port;
 	struct sysctllog	*sc_sysctllog;
 	struct workqueue	*sc_workq;
@@ -653,9 +655,14 @@ struct ixl_softc {
 	unsigned int		 sc_msix_vector_queue;
 
 	struct ixl_dmamem	 sc_scratch;
+	struct ixl_dmamem	 sc_aqbuf;
 
 	const struct ixl_aq_regs *
 				 sc_aq_regs;
+	uint32_t		 sc_aq_flags;
+#define IXL_SC_AQ_FLAG_RXCTL	__BIT(0)
+#define IXL_SC_AQ_FLAG_NVMLOCK	__BIT(1)
+#define IXL_SC_AQ_FLAG_NVMREAD	__BIT(2)
 
 	kmutex_t		 sc_atq_lock;
 	kcondvar_t		 sc_atq_cv;
@@ -751,6 +758,7 @@ static int	ixl_atq_post_locked(struct ixl_softc *, struct ixl_atq *);
 static void	ixl_atq_done(struct ixl_softc *);
 static int	ixl_atq_exec(struct ixl_softc *, struct ixl_atq *);
 static int	ixl_get_version(struct ixl_softc *);
+static int	ixl_get_nvm_version(struct ixl_softc *);
 static int	ixl_get_hw_capabilities(struct ixl_softc *);
 static int	ixl_pxe_clear(struct ixl_softc *);
 static int	ixl_lldp_shut(struct ixl_softc *);
@@ -778,6 +786,7 @@ static void	ixl_hmc_pack(void *, const void *,
 		    const struct ixl_hmc_pack *, unsigned int);
 static uint32_t	ixl_rd_rx_csr(struct ixl_softc *, uint32_t);
 static void	ixl_wr_rx_csr(struct ixl_softc *, uint32_t, uint32_t);
+static int	ixl_rd16_nvm(struct ixl_softc *, uint16_t, uint16_t *);
 
 static int	ixl_match(device_t, cfdata_t, void *);
 static void	ixl_attach(device_t, device_t, void *);
@@ -806,7 +815,6 @@ static int	ixl_ifflags_cb(struct ethercom *);
 static int	ixl_setup_interrupts(struct ixl_softc *);
 static int	ixl_establish_intx(struct ixl_softc *);
 static int	ixl_establish_msix(struct ixl_softc *);
-static void	ixl_set_affinity_msix(struct ixl_softc *);
 static void	ixl_enable_queue_intr(struct ixl_softc *,
 		    struct ixl_queue_pair *);
 static void	ixl_disable_queue_intr(struct ixl_softc *,
@@ -1050,7 +1058,7 @@ ixl_attach(device_t parent, device_t self, void *aux)
 	struct ixl_softc *sc;
 	struct pci_attach_args *pa = aux;
 	struct ifnet *ifp;
-	pcireg_t memtype, reg;
+	pcireg_t memtype;
 	uint32_t firstq, port, ari, func;
 	uint64_t phy_types = 0;
 	char xnamebuf[32];
@@ -1065,8 +1073,7 @@ ixl_attach(device_t parent, device_t self, void *aux)
 	    pa->pa_dmat64 : pa->pa_dmat;
 	sc->sc_aq_regs = &ixl_pf_aq_regs;
 
-	reg = pci_conf_read(pa->pa_pc, pa->pa_tag, PCI_SUBSYS_ID_REG);
-	sc->sc_mac_type = ixl_mactype(PCI_PRODUCT(reg));
+	sc->sc_mac_type = ixl_mactype(PCI_PRODUCT(pa->pa_id));
 
 	memtype = pci_mapreg_type(pa->pa_pc, pa->pa_tag, IXL_PCIREG);
 	if (pci_mapreg_map(pa, IXL_PCIREG, memtype, 0,
@@ -1176,6 +1183,13 @@ ixl_attach(device_t parent, device_t self, void *aux)
 
 	ixl_wr(sc, sc->sc_aq_regs->arq_tail, sc->sc_arq_prod);
 
+	if (ixl_dmamem_alloc(sc, &sc->sc_aqbuf, IXL_AQ_BUFLEN, 0) != 0) {
+		aprint_error_dev(self, ", unable to allocate nvm buffer\n");
+		goto shutdown;
+	}
+
+	ixl_get_nvm_version(sc);
+
 	if (sc->sc_mac_type == I40E_MAC_X722)
 		sc->sc_nqueue_pairs_device = 128;
 	else
@@ -1185,7 +1199,7 @@ ixl_attach(device_t parent, device_t self, void *aux)
 	if (rv != 0) {
 		aprint_error(", GET HW CAPABILITIES %s\n",
 		    rv == ETIMEDOUT ? "timeout" : "error");
-		goto shutdown;
+		goto free_aqbuf;
 	}
 
 	sc->sc_nqueue_pairs_max = MIN((int)sc->sc_nqueue_pairs_device, ncpu);
@@ -1203,7 +1217,7 @@ ixl_attach(device_t parent, device_t self, void *aux)
 
 	if (ixl_get_mac(sc) != 0) {
 		/* error printed by ixl_get_mac */
-		goto shutdown;
+		goto free_aqbuf;
 	}
 
 	aprint_normal("\n");
@@ -1222,7 +1236,7 @@ ixl_attach(device_t parent, device_t self, void *aux)
 
 	if (ixl_hmc(sc) != 0) {
 		/* error printed by ixl_hmc */
-		goto shutdown;
+		goto free_aqbuf;
 	}
 
 	if (ixl_lldp_shut(sc) != 0) {
@@ -1408,6 +1422,8 @@ free_scratch:
 	ixl_dmamem_free(sc, &sc->sc_scratch);
 free_hmc:
 	ixl_hmc_free(sc);
+free_aqbuf:
+	ixl_dmamem_free(sc, &sc->sc_aqbuf);
 shutdown:
 	ixl_wr(sc, sc->sc_aq_regs->atq_head, 0);
 	ixl_wr(sc, sc->sc_aq_regs->arq_head, 0);
@@ -1514,6 +1530,7 @@ ixl_detach(device_t self, int flags)
 
 	ixl_dmamem_free(sc, &sc->sc_arq);
 	ixl_dmamem_free(sc, &sc->sc_atq);
+	ixl_dmamem_free(sc, &sc->sc_aqbuf);
 
 	cv_destroy(&sc->sc_atq_cv);
 	mutex_destroy(&sc->sc_atq_lock);
@@ -1787,11 +1804,11 @@ ixl_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 
 			mutex_enter(&txr->txr_lock);
 			ifp->if_opackets += txr->txr_opackets;
-			ifp->if_obytes += txr->txr_opackets;
+			ifp->if_obytes += txr->txr_obytes;
 			ifp->if_omcasts += txr->txr_omcasts;
 			if (cmd == SIOCZIFDATA) {
 				txr->txr_opackets = 0;
-				txr->txr_opackets = 0;
+				txr->txr_obytes = 0;
 				txr->txr_omcasts = 0;
 			}
 			mutex_exit(&txr->txr_lock);
@@ -3789,12 +3806,50 @@ ixl_get_version(struct ixl_softc *sc)
 	aprint_normal(", FW %hu.%hu.%05u API %hu.%hu", (uint16_t)fwver,
 	    (uint16_t)(fwver >> 16), fwbuild, api_maj_ver, api_min_ver);
 
-	sc->sc_rxctl_atq = true;
 	if (sc->sc_mac_type == I40E_MAC_X722) {
-		if (api_maj_ver == 1 && api_min_ver < 5) {
-			sc->sc_rxctl_atq = false;
-		}
+		SET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_NVMLOCK |
+		    IXL_SC_AQ_FLAG_NVMREAD);
 	}
+
+#define IXL_API_VER(maj, min)	(((uint32_t)(maj) << 16) | (min))
+	if (IXL_API_VER(api_maj_ver, api_min_ver) >= IXL_API_VER(1, 5)) {
+		if (sc->sc_mac_type == I40E_MAC_X722) {
+			SET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_RXCTL);
+		}
+		SET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_NVMLOCK);
+	}
+#undef IXL_API_VER
+
+	return 0;
+}
+
+static int
+ixl_get_nvm_version(struct ixl_softc *sc)
+{
+	uint16_t nvmver, cfg_ptr, eetrack_hi, eetrack_lo, oem_hi, oem_lo;
+	uint32_t eetrack, oem;
+	uint16_t nvm_maj_ver, nvm_min_ver, oem_build;
+	uint8_t oem_ver, oem_patch;
+
+	nvmver = cfg_ptr = eetrack_hi = eetrack_lo = oem_hi = oem_lo = 0;
+	ixl_rd16_nvm(sc, I40E_SR_NVM_DEV_STARTER_VERSION, &nvmver);
+	ixl_rd16_nvm(sc, I40E_SR_NVM_EETRACK_HI, &eetrack_hi);
+	ixl_rd16_nvm(sc, I40E_SR_NVM_EETRACK_LO, &eetrack_lo);
+	ixl_rd16_nvm(sc, I40E_SR_BOOT_CONFIG_PTR, &cfg_ptr);
+	ixl_rd16_nvm(sc, cfg_ptr + I40E_NVM_OEM_VER_OFF, &oem_hi);
+	ixl_rd16_nvm(sc, cfg_ptr + I40E_NVM_OEM_VER_OFF + 1, &oem_lo);
+
+	nvm_maj_ver = (uint16_t)__SHIFTOUT(nvmver, IXL_NVM_VERSION_HI_MASK);
+	nvm_min_ver = (uint16_t)__SHIFTOUT(nvmver, IXL_NVM_VERSION_LO_MASK);
+	eetrack = ((uint32_t)eetrack_hi << 16) | eetrack_lo;
+	oem = ((uint32_t)oem_hi << 16) | oem_lo;
+	oem_ver = __SHIFTOUT(oem, IXL_NVM_OEMVERSION_MASK);
+	oem_build = __SHIFTOUT(oem, IXL_NVM_OEMBUILD_MASK);
+	oem_patch = __SHIFTOUT(oem, IXL_NVM_OEMPATCH_MASK);
+
+	aprint_normal(" nvm %x.%02x etid %08x oem %d.%d.%d",
+	    nvm_maj_ver, nvm_min_ver, eetrack,
+	    oem_ver, oem_build, oem_patch);
 
 	return 0;
 }
@@ -5296,11 +5351,15 @@ static int
 ixl_establish_msix(struct ixl_softc *sc)
 {
 	pci_chipset_tag_t pc = sc->sc_pa.pa_pc;
+	kcpuset_t *affinity;
 	unsigned int vector = 0;
 	unsigned int i;
+	int affinity_to, r;
 	char xnamebuf[32];
 	char intrbuf[PCI_INTRSTR_LEN];
 	char const *intrstr;
+
+	kcpuset_create(&affinity, false);
 
 	/* the "other" intr is mapped to vector 0 */
 	vector = 0;
@@ -5316,10 +5375,23 @@ ixl_establish_msix(struct ixl_softc *sc)
 		    "unable to establish interrupt at %s\n", intrstr);
 		goto fail;
 	}
+
+	aprint_normal_dev(sc->sc_dev, "other interrupt at %s", intrstr);
+
+	affinity_to = ncpu > (int)sc->sc_nqueue_pairs_max ? 1 : 0;
+	affinity_to = (affinity_to + sc->sc_nqueue_pairs_max) % ncpu;
+
+	kcpuset_zero(affinity);
+	kcpuset_set(affinity, affinity_to);
+	r = interrupt_distribute(sc->sc_ihs[vector], affinity, NULL);
+	if (r == 0) {
+		aprint_normal(", affinity to %u", affinity_to);
+	}
+	aprint_normal("\n");
 	vector++;
-	aprint_normal_dev(sc->sc_dev, "interrupt at %s\n", intrstr);
 
 	sc->sc_msix_vector_queue = vector;
+	affinity_to = ncpu > (int)sc->sc_nqueue_pairs_max ? 1 : 0;
 
 	for (i = 0; i < sc->sc_nqueue_pairs_max; i++) {
 		intrstr = pci_intr_string(pc, sc->sc_ihp[vector],
@@ -5336,10 +5408,22 @@ ixl_establish_msix(struct ixl_softc *sc)
 			    "unable to establish interrupt at %s\n", intrstr);
 			goto fail;
 		}
-		vector++;
+
 		aprint_normal_dev(sc->sc_dev,
-		    "interrupt at %s\n", intrstr);
+		    "for TXRX%d interrupt at %s",i , intrstr);
+
+		kcpuset_zero(affinity);
+		kcpuset_set(affinity, affinity_to);
+		r = interrupt_distribute(sc->sc_ihs[vector], affinity, NULL);
+		if (r == 0) {
+			aprint_normal(", affinity to %u", affinity_to);
+			affinity_to = (affinity_to + 1) % ncpu;
+		}
+		aprint_normal("\n");
+		vector++;
 	}
+
+	kcpuset_destroy(affinity);
 
 	return 0;
 fail:
@@ -5349,64 +5433,9 @@ fail:
 
 	sc->sc_msix_vector_queue = 0;
 	sc->sc_msix_vector_queue = 0;
+	kcpuset_destroy(affinity);
 
 	return -1;
-}
-
-static void
-ixl_set_affinity_msix(struct ixl_softc *sc)
-{
-	kcpuset_t *affinity;
-	pci_chipset_tag_t pc = sc->sc_pa.pa_pc;
-	int affinity_to, r;
-	unsigned int i, vector;
-	char intrbuf[PCI_INTRSTR_LEN];
-	char const *intrstr;
-
-	affinity_to = 0;
-	kcpuset_create(&affinity, false);
-
-	vector = sc->sc_msix_vector_queue;
-
-	for (i = 0; i < sc->sc_nqueue_pairs_max; i++) {
-		affinity_to = i % ncpu;
-
-		kcpuset_zero(affinity);
-		kcpuset_set(affinity, affinity_to);
-
-		intrstr = pci_intr_string(pc, sc->sc_ihp[vector + i],
-		    intrbuf, sizeof(intrbuf));
-		r = interrupt_distribute(sc->sc_ihs[vector + i],
-		    affinity, NULL);
-		if (r == 0) {
-			aprint_normal_dev(sc->sc_dev,
-			    "for TXRX%u interrupting at %s affinity to %u\n",
-			    i, intrstr, affinity_to);
-		} else {
-			aprint_normal_dev(sc->sc_dev,
-			    "for TXRX%u interrupting at %s\n",
-			    i, intrstr);
-		}
-	}
-
-	vector = 0; /* vector 0 means "other" interrupt */
-	affinity_to = (affinity_to + 1) % ncpu;
-	kcpuset_zero(affinity);
-	kcpuset_set(affinity, affinity_to);
-
-	intrstr = pci_intr_string(pc, sc->sc_ihp[vector],
-	    intrbuf, sizeof(intrbuf));
-	r = interrupt_distribute(sc->sc_ihs[vector], affinity, NULL);
-	if (r == 0) {
-		aprint_normal_dev(sc->sc_dev,
-		    "for other interrupting at %s affinity to %u\n",
-		    intrstr, affinity_to);
-	} else {
-		aprint_normal_dev(sc->sc_dev,
-		    "for other interrupting at %s", intrstr);
-	}
-
-	kcpuset_destroy(affinity);
 }
 
 static void
@@ -5537,8 +5566,6 @@ ixl_setup_interrupts(struct ixl_softc *sc)
 			if (error) {
 				counts[PCI_INTR_TYPE_MSIX] = 0;
 				retry = true;
-			} else {
-				ixl_set_affinity_msix(sc);
 			}
 		} else if (intr_type == PCI_INTR_TYPE_INTX) {
 			error = ixl_establish_intx(sc);
@@ -6298,7 +6325,11 @@ ixl_rd_rx_csr(struct ixl_softc *sc, uint32_t reg)
 	uint32_t val;
 	int rv, retry, retry_limit;
 
-	retry_limit = sc->sc_rxctl_atq ? 5 : 0;
+	if (ISSET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_RXCTL)) {
+		retry_limit = 5;
+	} else {
+		retry_limit = 0;
+	}
 
 	for (retry = 0; retry < retry_limit; retry++) {
 		rv = ixl_rx_ctl_read(sc, reg, &val);
@@ -6348,7 +6379,11 @@ ixl_wr_rx_csr(struct ixl_softc *sc, uint32_t reg, uint32_t value)
 {
 	int rv, retry, retry_limit;
 
-	retry_limit = sc->sc_rxctl_atq ? 5 : 0;
+	if (ISSET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_RXCTL)) {
+		retry_limit = 5;
+	} else {
+		retry_limit = 0;
+	}
 
 	for (retry = 0; retry < retry_limit; retry++) {
 		rv = ixl_rx_ctl_write(sc, reg, value);
@@ -6361,6 +6396,208 @@ ixl_wr_rx_csr(struct ixl_softc *sc, uint32_t reg, uint32_t value)
 	}
 
 	ixl_wr(sc, reg, value);
+}
+
+static int
+ixl_nvm_lock(struct ixl_softc *sc, char rw)
+{
+	struct ixl_aq_desc iaq;
+	struct ixl_aq_req_resource_param *param;
+	int rv;
+
+	if (!ISSET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_NVMLOCK))
+		return 0;
+
+	memset(&iaq, 0, sizeof(iaq));
+	iaq.iaq_opcode = htole16(IXL_AQ_OP_REQUEST_RESOURCE);
+
+	param = (struct ixl_aq_req_resource_param *)&iaq.iaq_param;
+	param->resource_id = htole16(IXL_AQ_RESOURCE_ID_NVM);
+	if (rw == 'R') {
+		param->access_type = htole16(IXL_AQ_RESOURCE_ACCES_READ);
+	} else {
+		param->access_type = htole16(IXL_AQ_RESOURCE_ACCES_WRITE);
+	}
+
+	rv = ixl_atq_poll(sc, &iaq, 250);
+
+	if (rv != 0)
+		return ETIMEDOUT;
+
+	switch (le16toh(iaq.iaq_retval)) {
+	case IXL_AQ_RC_OK:
+		break;
+	case IXL_AQ_RC_EACCES:
+		return EACCES;
+	case IXL_AQ_RC_EBUSY:
+		return EBUSY;
+	case IXL_AQ_RC_EPERM:
+		return EPERM;
+	}
+
+	return 0;
+}
+
+static int
+ixl_nvm_unlock(struct ixl_softc *sc)
+{
+	struct ixl_aq_desc iaq;
+	struct ixl_aq_rel_resource_param *param;
+	int rv;
+
+	if (!ISSET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_NVMLOCK))
+		return 0;
+
+	memset(&iaq, 0, sizeof(iaq));
+	iaq.iaq_opcode = htole16(IXL_AQ_OP_RELEASE_RESOURCE);
+
+	param = (struct ixl_aq_rel_resource_param *)&iaq.iaq_param;
+	param->resource_id = htole16(IXL_AQ_RESOURCE_ID_NVM);
+
+	rv = ixl_atq_poll(sc, &iaq, 250);
+
+	if (rv != 0)
+		return ETIMEDOUT;
+
+	switch (le16toh(iaq.iaq_retval)) {
+	case IXL_AQ_RC_OK:
+		break;
+	default:
+		return EIO;
+	}
+	return 0;
+}
+
+static int
+ixl_srdone_poll(struct ixl_softc *sc)
+{
+	int wait_count;
+	uint32_t reg;
+
+	for (wait_count = 0; wait_count < IXL_SRRD_SRCTL_ATTEMPTS;
+	    wait_count++) {
+		reg = ixl_rd(sc, I40E_GLNVM_SRCTL);
+		if (ISSET(reg, I40E_GLNVM_SRCTL_DONE_MASK))
+			break;
+
+		delaymsec(5);
+	}
+
+	if (wait_count == IXL_SRRD_SRCTL_ATTEMPTS)
+		return -1;
+
+	return 0;
+}
+
+static int
+ixl_nvm_read_srctl(struct ixl_softc *sc, uint16_t offset, uint16_t *data)
+{
+	uint32_t reg;
+
+	if (ixl_srdone_poll(sc) != 0)
+		return ETIMEDOUT;
+
+	reg = ((uint32_t)offset << I40E_GLNVM_SRCTL_ADDR_SHIFT) |
+	    __BIT(I40E_GLNVM_SRCTL_START_SHIFT);
+	ixl_wr(sc, I40E_GLNVM_SRCTL, reg);
+
+	if (ixl_srdone_poll(sc) != 0) {
+		aprint_debug("NVM read error: couldn't access "
+		    "Shadow RAM address: 0x%x\n", offset);
+		return ETIMEDOUT;
+	}
+
+	reg = ixl_rd(sc, I40E_GLNVM_SRDATA);
+	*data = (uint16_t)__SHIFTOUT(reg, I40E_GLNVM_SRDATA_RDDATA_MASK);
+
+	return 0;
+}
+
+static int
+ixl_nvm_read_aq(struct ixl_softc *sc, uint16_t offset_word,
+    void *data, size_t len)
+{
+	struct ixl_dmamem *idm;
+	struct ixl_aq_desc iaq;
+	struct ixl_aq_nvm_param *param;
+	uint32_t offset_bytes;
+	int rv;
+
+	idm = &sc->sc_aqbuf;
+	if (len > IXL_DMA_LEN(idm))
+		return ENOMEM;
+
+	memset(IXL_DMA_KVA(idm), 0, IXL_DMA_LEN(idm));
+	memset(&iaq, 0, sizeof(iaq));
+	iaq.iaq_opcode = htole16(IXL_AQ_OP_NVM_READ);
+	iaq.iaq_flags = htole16(IXL_AQ_BUF |
+	    ((len > I40E_AQ_LARGE_BUF) ? IXL_AQ_LB : 0));
+	iaq.iaq_datalen = htole16(len);
+	ixl_aq_dva(&iaq, IXL_DMA_DVA(idm));
+
+	param = (struct ixl_aq_nvm_param *)iaq.iaq_param;
+	param->command_flags = IXL_AQ_NVM_LAST_CMD;
+	param->module_pointer = 0;
+	param->length = htole16(len);
+	offset_bytes = (uint32_t)offset_word * 2;
+	offset_bytes &= 0x00FFFFFF;
+	param->offset = htole32(offset_bytes);
+
+	bus_dmamap_sync(sc->sc_dmat, IXL_DMA_MAP(idm), 0, IXL_DMA_LEN(idm),
+	    BUS_DMASYNC_PREREAD);
+
+	rv = ixl_atq_poll(sc, &iaq, 250);
+
+	bus_dmamap_sync(sc->sc_dmat, IXL_DMA_MAP(idm), 0, IXL_DMA_LEN(idm),
+	    BUS_DMASYNC_POSTREAD);
+
+	if (rv != 0) {
+		return ETIMEDOUT;
+	}
+
+	switch (le16toh(iaq.iaq_retval)) {
+	case IXL_AQ_RC_OK:
+		break;
+	case IXL_AQ_RC_EPERM:
+		return EPERM;
+	case IXL_AQ_RC_EINVAL:
+		return EINVAL;
+	case IXL_AQ_RC_EBUSY:
+		return EBUSY;
+	case IXL_AQ_RC_EIO:
+	default:
+		return EIO;
+	}
+
+	memcpy(data, IXL_DMA_KVA(idm), len);
+
+	return 0;
+}
+
+static int
+ixl_rd16_nvm(struct ixl_softc *sc, uint16_t offset, uint16_t *data)
+{
+	int error;
+	uint16_t buf;
+
+	error = ixl_nvm_lock(sc, 'R');
+	if (error)
+		return error;
+
+	if (ISSET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_NVMREAD)) {
+		error = ixl_nvm_read_aq(sc, offset,
+		    &buf, sizeof(buf));
+		if (error == 0)
+			*data = le16toh(buf);
+	} else {
+		error = ixl_nvm_read_srctl(sc, offset, &buf);
+		if (error == 0)
+			*data = buf;
+	}
+
+	ixl_nvm_unlock(sc);
+
+	return error;
 }
 
 MODULE(MODULE_CLASS_DRIVER, if_ixl, "pci");
@@ -6390,7 +6627,7 @@ ixl_parse_modprop(prop_dictionary_t dict)
 		val = prop_number_integer_value((prop_number_t)obj);
 
 		/* the range has no reason */
-		if (100 < val || val < 180000) {
+		if (100 < val && val < 180000) {
 			ixl_param_stats_interval = val;
 		}
 	}
