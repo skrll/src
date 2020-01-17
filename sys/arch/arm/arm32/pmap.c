@@ -5817,6 +5817,9 @@ pmap_grow_map(vaddr_t va, paddr_t *pap)
 #else
 		if (uvm_page_physget(&pa) == false)
 			return (1);
+
+		pmap_kenter_pa(va, pa,
+		    VM_PROT_READ|VM_PROT_WRITE, PMAP_KMPAGE|PMAP_PTE);
 #endif	/* PMAP_STEAL_MEMORY */
 	} else {
 		struct vm_page *pg;
