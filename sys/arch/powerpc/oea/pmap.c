@@ -282,7 +282,7 @@ const struct pmap_ops PMAPNAME(ops) = {
 #endif /* !PMAPNAME */
 
 /*
- * The following structure is aligned to 32 bytes 
+ * The following structure is aligned to 32 bytes
  */
 struct pvo_entry {
 	LIST_ENTRY(pvo_entry) pvo_vlink;	/* Link to common virt page */
@@ -391,7 +391,7 @@ static int pmap_pvo_enter(pmap_t, struct pool *, struct pvo_head *,
 static void pmap_pvo_remove(struct pvo_entry *, int, struct pvo_head *);
 static void pmap_pvo_free(struct pvo_entry *);
 static void pmap_pvo_free_list(struct pvo_head *);
-static struct pvo_entry *pmap_pvo_find_va(pmap_t, vaddr_t, int *); 
+static struct pvo_entry *pmap_pvo_find_va(pmap_t, vaddr_t, int *);
 static volatile struct pte *pmap_pvo_to_pte(const struct pvo_entry *, int);
 static struct pvo_entry *pmap_pvo_reclaim(struct pmap *);
 static void pvo_set_exec(struct pvo_entry *);
@@ -558,7 +558,7 @@ void
 tlbia(void)
 {
 	char *i;
-	
+
 	SYNC();
 #if defined(PMAP_OEA)
 	/*
@@ -616,7 +616,7 @@ va_to_vsid(const struct pmap *pm, vaddr_t addr)
 		   (addr & ~(ADDR_POFF|ADDR_PIDX)) == (ste->ste_hi & STE_ESID))
 			return addr;
 	}
-		
+
 	return NULL;
 #else
 	/*
@@ -859,7 +859,7 @@ pmap_pte_insert(int ptegidx, struct pte *pvo_pt)
 {
 	volatile struct pte *pt;
 	int i;
-	
+
 #if defined(DEBUG)
 	DPRINTFN(PTE, "pmap_pte_insert: idx %#x, pte %#" _PRIxpte " %#" _PRIxpte "\n",
 		ptegidx, pvo_pt->pte_hi, pvo_pt->pte_lo);
@@ -978,7 +978,7 @@ pmap_pte_spill(struct pmap *pm, vaddr_t addr, bool exec)
 				/*
 				 * If we don't have to move (either we were the
 				 * last entry or the next entry was valid),
-				 * don't change our position.  Otherwise 
+				 * don't change our position.  Otherwise
 				 * move ourselves to the tail of the queue.
 				 */
 				if (next_pvo != NULL &&
@@ -1097,7 +1097,7 @@ void
 pmap_real_memory(paddr_t *start, psize_t *size)
 {
 	struct mem_region *mp;
-	
+
 	for (mp = mem; mp->size; mp++) {
 		if (*start + *size > mp->start
 		    && *start < mp->start + mp->size) {
@@ -1156,7 +1156,7 @@ pmap_create(void)
 	KASSERT((vaddr_t)pm < VM_MIN_KERNEL_ADDRESS);
 	memset((void *)pm, 0, sizeof *pm);
 	pmap_pinit(pm);
-	
+
 	DPRINTFN(CREATE, "pmap_create: pm %p:\n"
 	    "\t%#" _PRIsr " %#" _PRIsr " %#" _PRIsr " %#" _PRIsr
 	    "    %#" _PRIsr " %#" _PRIsr " %#" _PRIsr " %#" _PRIsr "\n"
@@ -1164,11 +1164,11 @@ pmap_create(void)
 	    "    %#" _PRIsr " %#" _PRIsr " %#" _PRIsr " %#" _PRIsr "\n",
 	    pm,
 	    pm->pm_sr[0], pm->pm_sr[1],
-	    pm->pm_sr[2], pm->pm_sr[3], 
+	    pm->pm_sr[2], pm->pm_sr[3],
 	    pm->pm_sr[4], pm->pm_sr[5],
 	    pm->pm_sr[6], pm->pm_sr[7],
 	    pm->pm_sr[8], pm->pm_sr[9],
-	    pm->pm_sr[10], pm->pm_sr[11], 
+	    pm->pm_sr[10], pm->pm_sr[11],
 	    pm->pm_sr[12], pm->pm_sr[13],
 	    pm->pm_sr[14], pm->pm_sr[15]);
 	return pm;
@@ -1268,7 +1268,7 @@ pmap_release(pmap_t pm)
 
 	KASSERT(pm->pm_stats.resident_count == 0);
 	KASSERT(pm->pm_stats.wired_count == 0);
-	
+
 	PMAP_LOCK();
 	if (pm->pm_sr[0] == 0)
 		panic("pmap_release");
@@ -1669,7 +1669,7 @@ pmap_pvo_enter(pmap_t pm, struct pool *pl, struct pvo_head *pvo_head,
 	if (flags & PMAP_WIRED)
 		pvo->pvo_vaddr |= PVO_WIRED;
 	if (pvo_head != &pmap_pvo_kunmanaged) {
-		pvo->pvo_vaddr |= PVO_MANAGED; 
+		pvo->pvo_vaddr |= PVO_MANAGED;
 		PMAPCOUNT(mappings);
 	} else {
 		PMAPCOUNT(kernel_mappings);
@@ -1747,7 +1747,7 @@ pmap_pvo_remove(struct pvo_entry *pvo, int pteidx, struct pvo_head *pvol)
 	}
 	PMAP_PVO_CHECK(pvo);		/* sanity check */
 
-	/* 
+	/*
 	 * If there is an active pte entry, we need to deactivate it
 	 * (and save the ref & chg bits).
 	 */
@@ -1982,7 +1982,7 @@ pmap_enter(pmap_t pm, vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 	 */
 	error = pmap_pvo_enter(pm, pl, pvo_head, va, pa, pte_lo, flags);
 
-	/* 
+	/*
 	 * Flush the real page from the instruction cache if this page is
 	 * mapped executable and cacheable and has not been flushed since
 	 * the last time it was modified.
@@ -2003,7 +2003,7 @@ pmap_enter(pmap_t pm, vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 			else if (pmapdebug & PMAPDEBUG_EXEC)
 				printf("[pmap_enter: %#" _PRIxpa ": marked-as-exec]\n",
 				    VM_PAGE_TO_PHYS(pg));
-				
+
 #endif
 		}
 	}
@@ -2177,7 +2177,7 @@ pmap_extract(pmap_t pm, vaddr_t va, paddr_t *pap)
 #error PPC_OEA64 not supported
 #endif /* PPC_OEA */
 	}
-	
+
 	msr = pmap_interrupts_off();
 	pvo = pmap_pvo_find_va(pm, va & ~ADDR_POFF, NULL);
 	if (pvo != NULL) {
@@ -2329,7 +2329,7 @@ pmap_page_protect(struct vm_page *pg, vm_prot_t prot)
 		if ((prot & VM_PROT_READ) == 0) {
 			pmap_pvo_remove(pvo, -1, &pvol);
 			continue;
-		} 
+		}
 
 		/*
 		 * If EXEC permission is being revoked, just clear the
@@ -2488,7 +2488,7 @@ pmap_clear_bit(struct vm_page *pg, int ptebit)
 	/*
 	 * Sync so any pending REF/CHG bits are flushed to the PTEs (so we
 	 * can reset the right ones).  Note that since the pvo entries and
-	 * list heads are accessed via BAT0 and are never placed in the 
+	 * list heads are accessed via BAT0 and are never placed in the
 	 * page table, we don't have to worry about further accesses setting
 	 * the REF/CHG bits.
 	 */
@@ -2665,7 +2665,7 @@ pmap_print_mmuregs(void)
 	struct bat soft_dbat[4];
 #endif
 	paddr_t sdr1;
-	
+
 #if defined (PMAP_OEA) || defined (PMAP_OEA_BRIDGE)
 	cpuvers = MFPVR() >> 16;
 #endif
@@ -2943,7 +2943,7 @@ pmap_steal_memory(vsize_t vsize, vaddr_t *vstartp, vaddr_t *vendp)
 		freelist = uvm_physseg_get_free_list(bank);
 		start = uvm_physseg_get_start(bank);
 		end = uvm_physseg_get_end(bank);
-		
+
 		if (freelist == VM_FREELIST_FIRST256 &&
 		    (end - start) >= npgs) {
 			pa = ptoa(start);
@@ -2999,7 +2999,7 @@ pmap_boot_find_memory(psize_t size, psize_t alignment, int at_end)
 		if (alignment != PAGE_SIZE)
 			panic("pmap_boot_find_memory: invalid ending "
 			    "alignment %#" _PRIxpa, alignment);
-		
+
 		for (mp = &avail[avail_cnt-1]; mp >= avail; mp--) {
 			s = mp->start + mp->size - size;
 			if (s >= mp->start && mp->size >= size) {
@@ -3018,7 +3018,7 @@ pmap_boot_find_memory(psize_t size, psize_t alignment, int at_end)
 		}
 		panic("pmap_boot_find_memory: no available memory");
 	}
-			
+
 	for (mp = avail, i = 0; i < avail_cnt; i++, mp++) {
 		s = (mp->start + alignment - 1) & ~(alignment-1);
 		e = s + size;
@@ -3310,7 +3310,7 @@ pmap_bootstrap(paddr_t kernelstart, paddr_t kernelend)
 #else /* PTEGCOUNT */
 
 	pmap_pteg_cnt = 0x1000;
-	
+
 	while (pmap_pteg_cnt < physmem)
 		pmap_pteg_cnt <<= 1;
 
