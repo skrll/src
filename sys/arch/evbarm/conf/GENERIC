@@ -58,27 +58,159 @@ makeoptions	DTS="
 	exynos5422-odroidxu3.dts
 	exynos5422-odroidxu4.dts
 
+	imx6dl-apf6dev.dts
+	imx6dl-aristainetos2_4.dts
+	imx6dl-aristainetos2_7.dts
+	imx6dl-aristainetos_4.dts
+	imx6dl-aristainetos_7.dts
+	imx6dl-colibri-eval-v3.dts
+	imx6dl-cubox-i-emmc-som-v15.dts
+	imx6dl-cubox-i-som-v15.dts
 	imx6dl-cubox-i.dts
+	imx6dl-dfi-fs700-m60.dts
+	imx6dl-eckelmann-ci4x10.dts
+	imx6dl-emcon-avari.dts
+	imx6dl-gw51xx.dts
+	imx6dl-gw52xx.dts
+	imx6dl-gw53xx.dts
+	imx6dl-gw54xx.dts
+	imx6dl-gw551x.dts
+	imx6dl-gw552x.dts
+	imx6dl-gw553x.dts
+	imx6dl-gw560x.dts
+	imx6dl-gw5903.dts
+	imx6dl-gw5904.dts
 	imx6dl-hummingboard-emmc-som-v15.dts
 	imx6dl-hummingboard-som-v15.dts
 	imx6dl-hummingboard.dts
 	imx6dl-hummingboard2-emmc-som-v15.dts
 	imx6dl-hummingboard2-som-v15.dts
 	imx6dl-hummingboard2.dts
+	imx6dl-icore-mipi.dts
+	imx6dl-icore-rqs.dts
+	imx6dl-icore.dts
+	imx6dl-mamoj.dts
+	imx6dl-nit6xlite.dts
 	imx6dl-nitrogen6x.dts
+	imx6dl-phytec-mira-rdk-nand.dts
+	imx6dl-phytec-pbab01.dts
+	imx6dl-rex-basic.dts
+	imx6dl-riotboard.dts
+	imx6dl-sabreauto.dts
+	imx6dl-sabrelite.dts
+	imx6dl-sabresd.dts
+	imx6dl-savageboard.dts
+	imx6dl-ts4900.dts
+	imx6dl-ts7970.dts
+	imx6dl-tx6dl-comtft.dts
+	imx6dl-tx6s-8034-mb7.dts
+	imx6dl-tx6s-8034.dts
+	imx6dl-tx6s-8035-mb7.dts
+	imx6dl-tx6s-8035.dts
+	imx6dl-tx6u-801x.dts
+	imx6dl-tx6u-8033-mb7.dts
+	imx6dl-tx6u-8033.dts
+	imx6dl-tx6u-80xx-mb7.dts
+	imx6dl-tx6u-811x.dts
+	imx6dl-tx6u-81xx-mb7.dts
+	imx6dl-udoo.dts
+	imx6dl-wandboard-revb1.dts
+	imx6dl-wandboard-revd1.dts
+	imx6dl-wandboard.dts
+	imx6dl-yapp4-draco.dts
+	imx6dl-yapp4-hydra.dts
+	imx6dl-yapp4-ursa.dts
+	imx6q-apalis-eval.dts
+	imx6q-apalis-ixora-v1.1.dts
+	imx6q-apalis-ixora.dts
+	imx6q-apf6dev.dts
+	imx6q-arm2.dts
+	imx6q-b450v3.dts
+	imx6q-b650v3.dts
+	imx6q-b850v3.dts
+	imx6q-cm-fx6.dts
+	imx6q-cubox-i-emmc-som-v15.dts
+	imx6q-cubox-i-som-v15.dts
 	imx6q-cubox-i.dts
+	imx6q-dfi-fs700-m60.dts
+	imx6q-dhcom-pdk2.dts
+	imx6q-display5-tianma-tm070-1280x768.dts
+	imx6q-dmo-edmqmx6.dts
+	imx6q-dms-ba16.dts
+	imx6q-emcon-avari.dts
+	imx6q-evi.dts
+	imx6q-gk802.dts
+	imx6q-gw51xx.dts
+	imx6q-gw52xx.dts
+	imx6q-gw53xx.dts
+	imx6q-gw5400-a.dts
+	imx6q-gw54xx.dts
+	imx6q-gw551x.dts
+	imx6q-gw552x.dts
+	imx6q-gw553x.dts
+	imx6q-gw560x.dts
+	imx6q-gw5903.dts
+	imx6q-gw5904.dts
+	imx6q-h100.dts
 	imx6q-hummingboard-emmc-som-v15.dts
 	imx6q-hummingboard-som-v15.dts
 	imx6q-hummingboard.dts
 	imx6q-hummingboard2-emmc-som-v15.dts
 	imx6q-hummingboard2-som-v15.dts
 	imx6q-hummingboard2.dts
+	imx6q-icore-mipi.dts
+	imx6q-icore-ofcap10.dts
+	imx6q-icore-ofcap12.dts
+	imx6q-icore-rqs.dts
+	imx6q-icore.dts
+	imx6q-kp-tpc.dts
+	imx6q-logicpd.dts
+	imx6q-marsboard.dts
+	imx6q-mccmon6.dts
 	imx6q-nitrogen6_max.dts
 	imx6q-nitrogen6_som2.dts
 	imx6q-nitrogen6x.dts
+	imx6q-novena.dts
+	imx6q-phytec-mira-rdk-emmc.dts
+	imx6q-phytec-mira-rdk-nand.dts
+	imx6q-phytec-pbab01.dts
+	imx6q-pistachio.dts
+	imx6q-rex-pro.dts
+	imx6q-sabreauto.dts
+	imx6q-sabrelite.dts
+	imx6q-sabresd.dts
+	imx6q-savageboard.dts
+	imx6q-sbc6x.dts
+	imx6q-tbs2910.dts
+	imx6q-ts4900.dts
+	imx6q-ts7970.dts
+	imx6q-tx6q-1010-comtft.dts
+	imx6q-tx6q-1010.dts
+	imx6q-tx6q-1020-comtft.dts
+	imx6q-tx6q-1020.dts
+	imx6q-tx6q-1036-mb7.dts
+	imx6q-tx6q-1036.dts
+	imx6q-tx6q-10x0-mb7.dts
+	imx6q-tx6q-1110.dts
+	imx6q-tx6q-11x0-mb7.dts
+	imx6q-udoo.dts
+	imx6q-utilite-pro.dts
+	imx6q-var-dt6customboard.dts
+	imx6q-wandboard-revb1.dts
+	imx6q-wandboard-revd1.dts
+	imx6q-wandboard.dts
+	imx6q-zii-rdu2.dts
 	imx6qp-nitrogen6_max.dts
 	imx6qp-nitrogen6_som2.dts
-	imx6sx-nitrogen6sx.dts
+	imx6qp-phytec-mira-rdk-nand.dts
+	imx6qp-sabreauto.dts
+	imx6qp-sabresd.dts
+	imx6qp-tx6qp-8037-mb7.dts
+	imx6qp-tx6qp-8037.dts
+	imx6qp-tx6qp-8137-mb7.dts
+	imx6qp-tx6qp-8137.dts
+	imx6qp-wandboard-revd1.dts
+	imx6qp-zii-rdu2.dts
 
 	meson8b-ec100.dts
 	meson8b-mxq.dts
