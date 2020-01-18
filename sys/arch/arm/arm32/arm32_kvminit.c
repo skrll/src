@@ -138,6 +138,7 @@ __KERNEL_RCSID(0, "$NetBSD: arm32_kvminit.c,v 1.55 2019/05/08 13:18:47 skrll Exp
 #include <dev/cons.h>
 
 #include <uvm/uvm_extern.h>
+#include <uvm/uvm_page.h>
 
 #include <arm/locore.h>
 #include <arm/db_machdep.h>
@@ -173,9 +174,6 @@ extern char etext[];
 extern char __data_start[], _edata[];
 extern char __bss_start[], __bss_end__[];
 extern char _end[];
-
-/* Page tables for mapping kernel VM */
-#define KERNEL_L2PT_VMDATA_NUM	8	/* start with 32MB of KVM */
 
 u_long kern_vtopdiff __attribute__((__section__(".data")));
 
@@ -454,6 +452,16 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 #endif /* __HAVE_MM_MD_DIRECT_MAPPED_PHYS */
 
 	/*
+	 * Allocate enough KVM to handle the per page structures.  Use an
+	 * estimate of the number of free pages and guess a fudge factor of
+	 * double the size of a struct vm_page to get beyond uvm_init
+	 */
+	const size_t freepages = atop(physical_end - physical_start);
+	const size_t perpage_memory = freepages * sizeof(struct vm_page) * 2;
+	const size_t KERNEL_L2PT_VMDATA_NUM =
+	    howmany(perpage_memory, L2_S_SEGSIZE);
+
+	/*
 	 * Calculate the number of L2 pages needed for mapping the
 	 * kernel + data + stuff.  Assume 2 L2 pages for kernel, 1 for vectors,
 	 * and 1 for IO
@@ -672,7 +680,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 		    kernel_l2pt[idx].pv_pa, kernel_base + idx * L2_S_SEGSIZE);
 	}
 
-	VPRINTF("%s: kernel_vm_base %lx KERNEL_L2PT_VMDATA_NUM %d\n", __func__,
+	VPRINTF("%s: kernel_vm_base %lx KERNEL_L2PT_VMDATA_NUM %zu\n", __func__,
 	    kernel_vm_base, KERNEL_L2PT_VMDATA_NUM);
 
 	for (size_t idx = 0; idx < KERNEL_L2PT_VMDATA_NUM; idx++) {
