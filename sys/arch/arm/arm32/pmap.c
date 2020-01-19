@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.378 2020/01/17 16:59:07 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.380 2020/01/18 14:40:04 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -221,7 +221,7 @@
 #include <arm/db_machdep.h>
 #endif
 
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.378 2020/01/17 16:59:07 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.380 2020/01/18 14:40:04 skrll Exp $");
 
 //#define PMAP_DEBUG
 #ifdef PMAP_DEBUG
