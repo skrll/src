@@ -6581,16 +6581,15 @@ pmap_bootstrap_pv_page_free(struct pool *pp, void *v)
 static void *
 pmap_l1tt_alloc(struct pool *pp, int flags)
 {
-	// physical_{start,end} needed?
-	extern paddr_t physical_start, physical_end;
 	struct pglist plist;
 	vaddr_t va;
 
-	/* XXX WAITOK? */
-	int error = uvm_pglistalloc(L1TT_SIZE, physical_start,
-	    physical_end, L1TT_SIZE, 0, &plist, 1, true);
+	const int waitok = flags & PR_WAITOK;
+
+	int error = uvm_pglistalloc(L1TT_SIZE, 0, -1, L1TT_SIZE, 0, &plist, 1,
+	    waitok);
 	if (error)
-		panic("Cannot allocate L1TT physical pages");
+		panic("Cannot allocate L1TT physical pages, %d", error);
 
 	struct vm_page *pg = TAILQ_FIRST(&plist);
 #if !defined( __HAVE_MM_MD_DIRECT_MAPPED_PHYS)
