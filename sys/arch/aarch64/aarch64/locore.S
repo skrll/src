@@ -447,12 +447,12 @@ mp_vstart:
 	mrs	x1, mpidr_el1
 	str	x1, [x0, #CI_MPIDR]	/* curcpu()->ci_mpidr = mpidr_el1 */
 
-	/* x28 = &arm_cpu_hatched[cpuindex / (sizeof(unsigned long) * NBBY)] */
+	/* x28 = &arm_cpu_hatched[cpuindex / (sizeof(u_long) * NBBY)] */
 	adrl	x0, _C_LABEL(arm_cpu_hatched)
 	mov	x1, x27, lsr #6
 	add	x28, x0, x1, lsl #3
 
-	/* x29 = __BIT(cpuindex % (sizeof(unsigned long) * NBBY)) */
+	/* x29 = __BIT(cpuindex % (sizeof(u_long) * NBBY)) */
 	mov	x0, #1
 	and	x2, x27, #63
 	lsl	x29, x0, x2
@@ -468,9 +468,10 @@ mp_vstart:
 	dsb	sy
 	sev
 
+	/* x28 = &arm_cpu_mbox[cpuindex / (sizeof(u_long) * NBBY)] */
 	adrl	x0, _C_LABEL(arm_cpu_mbox)
 	mov	x1, x27, lsr #6
-	add	x28, x0, x1, lsl #3	/* x28 = &arm_cpu_mbox[cpuindex / (sizeof(u_long) * NBBY)] */
+	add	x28, x0, x1, lsl #3
 
 	/* wait for the mailbox start bit to become true */
 1:
