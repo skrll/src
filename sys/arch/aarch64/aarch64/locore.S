@@ -178,11 +178,13 @@ vstart:
 	msr	tpidr_el1, x0		/* curcpu is cpu_info[0] */
 	DPRINTREG("curcpu           = ", x0);
 
-	/* get cache configuration */
+	/* set topology information */
 	mrs	x0, tpidr_el1		/* curcpu */
 	mrs     x1, mpidr_el1
 	mov	x2, #0
 	bl	arm_cpu_topology_set
+
+	/* get cache configuration */
 	mov	x0, xzr
 	bl	aarch64_getcacheinfo
 
@@ -446,6 +448,10 @@ mp_vstart:
 	str	x1, [x0, #CI_MIDR]	/* curcpu()->ci_cpuid = midr_el1 */
 	mrs	x1, mpidr_el1
 	str	x1, [x0, #CI_MPIDR]	/* curcpu()->ci_mpidr = mpidr_el1 */
+
+	/* set topology information */
+	mov	x2, #0
+	bl	arm_cpu_topology_set
 
 	/* x28 = &arm_cpu_hatched[cpuindex / (sizeof(u_long) * NBBY)] */
 	adrl	x0, _C_LABEL(arm_cpu_hatched)

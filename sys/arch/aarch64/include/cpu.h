@@ -135,6 +135,7 @@ void	cpu_clr_mbox(int);
 void	cpu_set_hatched(int);
 
 extern struct cpu_info *cpu_info[];
+extern struct cpu_info cpu_info_store[];
 extern uint64_t cpu_mpidr[];		/* MULTIPROCESSOR */
 bool cpu_hatched_p(u_int);		/* MULTIPROCESSOR */
 

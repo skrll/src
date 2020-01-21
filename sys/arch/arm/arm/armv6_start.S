@@ -178,14 +178,6 @@ arm_bad_vtopdiff:
 1:	b	 1b
 ASEND(generic_start)
 
-generic_vstart:
-	VPRINTF("go\n\r")
-
-	/*
-	 * Jump to start in locore.S, which in turn will call initarm and main.
-	 */
-	b	start
-
 /*
  * Save the u-boot arguments (including FDT address) and the virtual to physical
  * offset.
@@ -464,9 +456,31 @@ generic_startv7:
 	sub	r0, R_VTOPDIFF
 
 	// Return to virtual addess after the call to armv7_mmuinit
-	movw	lr, #:lower16:generic_vstart
-	movt	lr, #:upper16:generic_vstart
+	movw	lr, #:lower16:generic_vstartv7
+	movt	lr, #:upper16:generic_vstartv7
 	b	armv7_mmuinit
+
+generic_vstartv7:
+
+	/* r0 = &cpu_info_store[0] */
+	movw	r0, #:lower16:cpu_info_store
+	movt	r0, #:upper16:cpu_info_store
+
+	mrc	p15, 0, r1, c0, c0, 0	// MIDR get
+	str	r1, [r0, #CI_MIDR]
+	mrc	p15, 0, r1, c0, c0, 5	// MPIDR get
+	str	r1, [r0, #CI_MPIDR]
+
+	mov	r2, #0
+	bl	arm_cpu_topology_set
+
+	VPRINTF("go\n\r")
+
+	/*
+	 * Jump to start in locore.S, which in turn will call initarm and main.
+	 */
+	b	start
+
 
 	/* NOTREACHED */
 	.ltorg
@@ -491,8 +505,16 @@ generic_startv6:
 	ldr	r0, =TEMP_L1_TABLE
 	sub	r0, R_VTOPDIFF
 
-	ldr	lr, =generic_vstart
+	ldr	lr, =generic_vstartv6
 	b	armv6_mmuinit
+
+generic_vstartv6:
+	VPRINTF("go\n\r")
+
+	/*
+	 * Jump to start in locore.S, which in turn will call initarm and main.
+	 */
+	b	start
 
 	/* NOTREACHED */
 	.ltorg
@@ -855,22 +877,24 @@ armv7_mpcontinuation:
 	mov	r0, R_INDEX
 	bl	cpu_init_secondary_processor
 
-	/* r6 = &arm_cpu_mbox[0] */
-	movw	r6, #:lower16:cpu_info_store
-	movt	r6, #:upper16:cpu_info_store
+	/* r0 = &cpu_info_store[0] */
+	movw	r0, #:lower16:cpu_info_store
+	movt	r0, #:upper16:cpu_info_store
 
-	mov	r0, #CPU_INFO_SIZE
-	mul	r0, r0, R_INDEX
-	add	r6, r0
+	mov	r4, #CPU_INFO_SIZE
+	mul	r5, r4, R_INDEX
+	add	r0, r5
 
-	mrc	p15, 0, r4, c0, c0, 0	// MIDR get
-	str	r4, [r6, #CI_MIDR]
-	mrc	p15, 0, r4, c0, c0, 5	// MPIDR get
-	str	r4, [r6, #CI_MPIDR]
+	mrc	p15, 0, r1, c0, c0, 0	// MIDR get
+	str	r1, [r0, #CI_MIDR]
+	mrc	p15, 0, r1, c0, c0, 5	// MPIDR get
+	str	r1, [r0, #CI_MPIDR]
+
+	mov	r2, #0
+	bl	arm_cpu_topology_set
 
 	/*
-	 * Wait for cpu_boot_secondary_processors when cpu_info has
-	 * been allocated, etc
+	 * Wait for cpu_boot_secondary_processors
 	 */
 
 	/* r6 = &arm_cpu_mbox[0] */

@@ -57,8 +57,6 @@ __KERNEL_RCSID(0, "$NetBSD: cpu_acpi.c,v 1.7 2019/10/19 18:04:26 jmcneill Exp $"
 #include <dev/tprof/tprof_armv8.h>
 #endif
 
-extern struct cpu_info cpu_info_store[];
-
 static int	cpu_acpi_match(device_t, cfdata_t, void *);
 static void	cpu_acpi_attach(device_t, device_t, void *);
 

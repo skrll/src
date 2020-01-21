@@ -91,10 +91,6 @@ struct cpu_info cpu_info_store[NCPUINFO] = {
 	}
 };
 
-struct cpu_info *cpu_info[NCPUINFO] __read_mostly = {
-	[0] = &cpu_info_store[0]
-};
-
 void
 cpu_attach(device_t dv, cpuid_t id)
 {
