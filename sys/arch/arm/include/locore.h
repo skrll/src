@@ -167,10 +167,6 @@ extern int cpu_media_and_vfp_features[2];
 
 extern bool arm_has_tlbiasid_p;
 extern bool arm_has_mpext_p;
-#ifdef MULTIPROCESSOR
-extern u_int arm_cpu_max;
-extern volatile u_int arm_cpu_hatched;
-#endif
 
 #if !defined(CPU_ARMV7)
 #define	CPU_IS_ARMV7_P()		false

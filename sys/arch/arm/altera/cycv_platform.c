@@ -117,7 +117,7 @@ cycv_mpstart(void)
 	int i;
 	for (i = 0x10000000; i > 0; i--) {
 		membar_consumer();
-		if (arm_cpu_hatched == (1 << 1))
+		if (cpu_hatched_p(1))
 			break;
 	}
 	if (i == 0) {

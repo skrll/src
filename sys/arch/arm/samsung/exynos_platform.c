@@ -168,7 +168,7 @@ exynos5800_mpstart(void)
 		/* Wait for AP to start */
 		for (n = 0x100000; n > 0; n--) {
 			membar_consumer();
-			if (arm_cpu_hatched & __BIT(cpuindex))
+			if (cpu_hatched_p(cpuindex))
 				break;
 		}
 		if (n == 0) {

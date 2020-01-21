@@ -49,9 +49,9 @@ extern struct bootmem_info bootmem_info;
 
 extern char *booted_kernel;
 
-extern volatile uint32_t arm_cpu_hatched;
-extern volatile uint32_t arm_cpu_mbox;
-extern u_int arm_cpu_max;
+//extern volatile u_long arm_cpu_hatched[];
+//extern volatile u_long arm_cpu_mbox[];
+//extern u_int arm_cpu_max;
 extern u_long kern_vtopdiff;
 
 

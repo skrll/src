@@ -781,23 +781,9 @@ cpu_init_secondary_processor(int cpuindex)
 	VPRINTX(arm_cpu_hatched | __BIT(cpuindex));
 	VPRINTS("\n\r");
 
-	atomic_or_uint(&arm_cpu_hatched, __BIT(cpuindex));
+	cpu_set_hatched(cpuindex);
 
 	/* return to assembly to wait for cpu_boot_secondary_processors */
-}
-
-void
-cpu_boot_secondary_processors(void)
-{
-	VPRINTF("%s: writing mbox with %#x\n", __func__, arm_cpu_hatched);
-	arm_cpu_mbox = arm_cpu_hatched;
-	membar_producer();
-#ifdef _ARM_ARCH_7
-	__asm __volatile("sev; sev; sev");
-#endif
-	while (membar_consumer(), arm_cpu_mbox) {
-		__asm __volatile("wfe" ::: "memory");
-	}
 }
 
 void

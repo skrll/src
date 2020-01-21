@@ -310,7 +310,8 @@ arm_fdt_cpu_mpstart(void)
 
 		error = arm_fdt_cpu_enable(child, acm);
 		if (error != 0) {
-			aprint_error("%s: failed to enable CPU %#" PRIx64 "\n", __func__, mpidr);
+			aprint_error("%s: failed to enable CPU %#" PRIx64 "\n",
+			    __func__, mpidr);
 			continue;
 		}
 

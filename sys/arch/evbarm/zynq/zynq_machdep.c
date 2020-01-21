@@ -234,7 +234,7 @@ zynq_mpstart(void)
 				break;
 	}
 	for (size_t i = 1; i < arm_cpu_max; i++) {
-		if ((arm_cpu_hatched & __BIT(i)) == 0) {
+		if (cpu_hatched_p(i)) {
 			ret++;
 			printf("%s: warning: cpu%zu failed to hatch\n",
 			    __func__, i);

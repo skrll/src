@@ -158,10 +158,6 @@ __KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.36 2020/01/08 18:47:43 jmcneill Exp
 #define VPRINTF(...)	__nothing
 #endif
 
-#ifdef MULTIPROCESSOR
-static kmutex_t cpu_hatch_lock;
-#endif
-
 vaddr_t
 initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	const struct boot_physmem *bp, size_t nbp)
@@ -323,8 +319,6 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 #endif
 
 #ifdef MULTIPROCESSOR
-	mutex_init(&cpu_hatch_lock, MUTEX_DEFAULT, IPL_NONE);
-
 	/*
 	 * Ensure BP cache is flushed to memory so that APs start cache
 	 * coherency with correct view.
@@ -424,9 +418,6 @@ cpu_hatch(struct cpu_info *ci, u_int cpuindex, void (*md_cpu_init)(struct cpu_in
 
 	VPRINTF(" done!\n");
 
-	/* Notify cpu_boot_secondary_processors that we're done */
-	atomic_and_32(&arm_cpu_mbox, ~__BIT(cpuindex));
-	membar_producer();
-	__asm __volatile("sev; sev; sev");
+	cpu_clr_mbox(cpuindex);
 }
 #endif /* MULTIPROCESSOR */

@@ -69,10 +69,6 @@ uint32_t cpu_mpidr[MAXCPUS] = {
 	[0 ... MAXCPUS - 1] = ~0,
 };
 
-volatile u_int arm_cpu_hatched __cacheline_aligned = 0;
-volatile uint32_t arm_cpu_mbox __cacheline_aligned = 0;
-u_int arm_cpu_max = 1;
-
 #ifdef MPDEBUG
 uint32_t arm_cpu_marker[2] __cacheline_aligned = { 0, 0 };
 #endif
@@ -232,15 +228,6 @@ cpu_attach(device_t dv, cpuid_t id)
 
 	vfp_attach(ci);		/* XXX SMP */
 }
-
-#ifdef MULTIPROCESSOR
-bool
-cpu_hatched_p(u_int cpuindex)
-{
-	membar_consumer();
-	return (arm_cpu_hatched & __BIT(cpuindex)) != 0;
-}
-#endif
 
 enum cpu_class {
 	CPU_CLASS_NONE,

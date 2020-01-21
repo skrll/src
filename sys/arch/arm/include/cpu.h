@@ -262,6 +262,12 @@ bool cpu_hatched_p(u_int);
 void cpu_mpstart(void);
 void cpu_init_secondary_processor(int);
 void cpu_boot_secondary_processors(void);
+
+void cpu_clr_mbox(int);
+void cpu_set_hatched(int);
+
+extern kmutex_t cpu_hatch_lock;
+extern u_int arm_cpu_max;
 #endif
 
 #define	LWP0_CPU_INFO	(&cpu_info_store)
