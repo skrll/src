@@ -48,12 +48,7 @@ struct bootmem_info {
 extern struct bootmem_info bootmem_info;
 
 extern char *booted_kernel;
-
-//extern volatile u_long arm_cpu_hatched[];
-//extern volatile u_long arm_cpu_mbox[];
-//extern u_int arm_cpu_max;
 extern u_long kern_vtopdiff;
-
 
 /* misc prototypes used by the many arm machdeps */
 void cortex_pmc_ccnt_init(void);
