@@ -859,6 +859,7 @@ armv7_mpcontinuation:
 	 * been allocated, etc
 	 */
 
+	/* r6 = &arm_cpu_mbox[0] */
 	movw	r6, #:lower16:arm_cpu_mbox
 	movt	r6, #:upper16:arm_cpu_mbox
 
@@ -872,7 +873,7 @@ armv7_mpcontinuation:
 	beq	1b				//    no, and try again
 
 	movw	r0, #:lower16:cpu_info
-	movt	r0, #:upper16:cpu_info		// get pointer to cpu_infos
+	movt	r0, #:upper16:cpu_info		// get pointer to cpu_info
 	ldr	r5, [r0, R_INDEX, lsl #2]	// load our cpu_info
 	ldr	r6, [r5, #CI_IDLELWP]		// get the idlelwp
 	ldr	r7, [r6, #L_PCB]		// now get its pcb
