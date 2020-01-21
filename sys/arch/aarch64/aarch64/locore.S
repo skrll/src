@@ -452,13 +452,14 @@ mp_vstart:
 	mov	x1, x27, lsr #6
 	add	x28, x0, x1, lsl #3
 
+	/* x29 = __BIT(cpuindex % (sizeof(unsigned long) * NBBY)) */
 	mov	x0, #1
 	and	x2, x27, #63
-	lsl	x29, x0, x2		/* x29 = 1 << (cpuindex & 63) */
+	lsl	x29, x0, x2
 
 	/*
-	 * atomic_or_ulong(&arm_cpu_hatched[cpuindex / sizeof(u_long)],
-	 *    1UL << cpuindex & (sizeof(u_long) - 1))
+	 * atomic_or_ulong(&arm_cpu_hatched[cpuindex / (sizeof(u_long)  * NBBY)],
+	 *   _BIT(cpuindex % ((sizeof(u_long) * NBBY)
 	 * to inform the boot processor.
 	 */
 	mov	x0, x28
