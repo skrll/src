@@ -54,6 +54,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.141 2020/01/18 14:40:04 skrll Exp $");
 #include <sys/device.h>
 #include <sys/kmem.h>
 #include <sys/proc.h>
+#include <sys/reboot.h>
 #include <sys/systm.h>
 
 #include <uvm/uvm_extern.h>
@@ -109,13 +110,21 @@ cpu_attach(device_t dv, cpuid_t id)
 #endif
 	} else {
 #ifdef MULTIPROCESSOR
+		if ((boothowto & RB_MD1) != 0) {
+			aprint_naive("\n");
+			aprint_normal(": multiprocessor boot disabled\n");
+			return;
+		}
+
+		KASSERT(unit < MAXCPUS);
+		ci = &cpu_info_store[unit];
+
 		KASSERT(cpu_info[unit] == NULL);
-		ci = kmem_zalloc(sizeof(*ci), KM_SLEEP);
 		ci->ci_cpl = IPL_HIGH;
 		ci->ci_cpuid = id;
-		ci->ci_data.cpu_cc_freq = cpu_info_store.ci_data.cpu_cc_freq;
+		ci->ci_data.cpu_cc_freq = cpu_info_store[0].ci_data.cpu_cc_freq;
 
-		ci->ci_undefsave[2] = cpu_info_store.ci_undefsave[2];
+		ci->ci_undefsave[2] = cpu_info_store[0].ci_undefsave[2];
 
 		cpu_info[unit] = ci;
 		if (cpu_hatched_p(unit) == false) {

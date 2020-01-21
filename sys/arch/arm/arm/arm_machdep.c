@@ -106,24 +106,22 @@ char	machine_arch[] = MACHINE_ARCH;	/* from <machine/param.h> */
 
 extern const uint32_t undefinedinstruction_bounce[];
 
-/* Our exported CPU info; we can have only one. */
-struct cpu_info cpu_info_store = {
-	.ci_cpl = IPL_HIGH,
-	.ci_curlwp = &lwp0,
-	.ci_undefsave[2] = (register_t) undefinedinstruction_bounce,
-#if defined(ARM_MMU_EXTENDED) && KERNEL_PID != 0
-	.ci_pmap_asid_cur = KERNEL_PID,
-#endif
-};
-
 #ifdef MULTIPROCESSOR
 #define	NCPUINFO	MAXCPUS
 #else
 #define	NCPUINFO	1
 #endif
 
-struct cpu_info *cpu_info[NCPUINFO] = {
-	[0] = &cpu_info_store
+/* Our exported CPU info; we can have only one. */
+struct cpu_info cpu_info_store[NCPUINFO] = {
+	[0] = {
+		.ci_cpl = IPL_HIGH,
+		.ci_curlwp = &lwp0,
+		.ci_undefsave[2] = (register_t) undefinedinstruction_bounce,
+#if defined(ARM_MMU_EXTENDED) && KERNEL_PID != 0
+		.ci_pmap_asid_cur = KERNEL_PID,
+#endif
+	}
 };
 
 const pcu_ops_t * const pcu_ops_md_defs[PCU_UNIT_COUNT] = {

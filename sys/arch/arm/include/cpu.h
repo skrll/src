@@ -189,7 +189,7 @@ struct cpu_info {
 #endif
 };
 
-extern struct cpu_info cpu_info_store;
+extern struct cpu_info cpu_info_store[];
 
 struct lwp *arm_curlwp(void);
 struct cpu_info *arm_curcpu(void);
@@ -270,7 +270,7 @@ extern kmutex_t cpu_hatch_lock;
 extern u_int arm_cpu_max;
 #endif
 
-#define	LWP0_CPU_INFO	(&cpu_info_store)
+#define	LWP0_CPU_INFO	(&cpu_info_store[0])
 
 static inline int
 curcpl(void)

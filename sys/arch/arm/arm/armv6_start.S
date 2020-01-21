@@ -851,8 +851,22 @@ armv7_mpcontinuation:
 
 	VPRINTF("go\n\r")
 
-	mov	r0, R_INDEX			// index into cpu_mpidr[] or cpu_number if not found
+	// index into cpu_mpidr[] or cpu_number if not found
+	mov	r0, R_INDEX
 	bl	cpu_init_secondary_processor
+
+	/* r6 = &arm_cpu_mbox[0] */
+	movw	r6, #:lower16:cpu_info_store
+	movt	r6, #:upper16:cpu_info_store
+
+	mov	r0, #CPU_INFO_SIZE
+	mul	r0, r0, R_INDEX
+	add	r6, r0
+
+	mrc	p15, 0, r4, c0, c0, 0	// MIDR get
+	str	r4, [r6, #CI_MIDR]
+	mrc	p15, 0, r4, c0, c0, 5	// MPIDR get
+	str	r4, [r6, #CI_MPIDR]
 
 	/*
 	 * Wait for cpu_boot_secondary_processors when cpu_info has

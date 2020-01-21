@@ -19,6 +19,16 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #endif
 
 #ifdef MULTIPROCESSOR
+#define NCPUINFO	MAXCPUS
+#else
+#define NCPUINFO	1
+#endif /* MULTIPROCESSOR */
+
+struct cpu_info *cpu_info[NCPUINFO] __read_mostly = {
+	[0] = &cpu_info_store[0]
+};
+
+#ifdef MULTIPROCESSOR
 
 #define	CPUINDEX_DIVISOR	(sizeof(u_long) * NBBY)
 

@@ -472,7 +472,7 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READONLY,
 		       CTLTYPE_INT, "fpu_id", NULL,
-		       NULL, 0, &cpu_info_store.ci_vfp_id, 0,
+		       NULL, 0, &cpu_info_store[0].ci_vfp_id, 0,
 		       CTL_MACHDEP, CTL_CREATE, CTL_EOL);
 #endif
 	sysctl_createv(clog, 0, NULL, NULL,
@@ -735,7 +735,6 @@ void
 cpu_init_secondary_processor(int cpuindex)
 {
 	// pmap_kernel has been successfully built and we can switch to it
-
 	cpu_domains(DOMAIN_DEFAULT);
 	cpu_idcache_wbinv_all();
 
@@ -777,8 +776,8 @@ cpu_init_secondary_processor(int cpuindex)
 	VPRINTS(")");
 #endif
 
-	VPRINTS(" hatched=");
-	VPRINTX(arm_cpu_hatched | __BIT(cpuindex));
+	VPRINTS(" hatched|=");
+	VPRINTX(__BIT(cpuindex));
 	VPRINTS("\n\r");
 
 	cpu_set_hatched(cpuindex);

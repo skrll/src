@@ -348,9 +348,8 @@ cpu_hatch(struct cpu_info *ci, u_int cpuindex, void (*md_cpu_init)(struct cpu_in
 	splhigh();
 
 	VPRINTF("%s(%s): ", __func__, cpu_name(ci));
+	/* mpidr/midr filled in by armv7_mpcontinuation */
 	ci->ci_ctrl = armreg_sctlr_read();
-	uint32_t mpidr = armreg_mpidr_read();
-	ci->ci_mpidr = mpidr;
 	ci->ci_arm_cpuid = cpu_idnum();
 	ci->ci_arm_cputype = ci->ci_arm_cpuid & CPU_ID_CPU_MASK;
 	ci->ci_arm_cpurev = ci->ci_arm_cpuid & CPU_ID_REVISION_MASK;
