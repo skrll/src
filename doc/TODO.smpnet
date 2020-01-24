@@ -1,4 +1,4 @@
-$NetBSD: TODO.smpnet,v 1.32 2020/01/19 16:58:22 thorpej Exp $
+$NetBSD: TODO.smpnet,v 1.34 2020/01/20 18:40:06 thorpej Exp $
 
 MP-safe components
 ==================
@@ -62,10 +62,8 @@ Unprotected ones
  - Layer 2
    - ARCNET (if_arcsubr.c)
    - BRIDGE_IPF
-   - FDDI (if_fddisubr.c)
    - IEEE 1394 (if_ieee1394subr.c)
    - IEEE 802.11 (ieee80211(4))
-   - Token ring (if_tokensubr.c)
  - Layer 3
    - IPSELSRC
    - MROUTING

@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.360 2020/01/10 06:26:34 macallan Exp $
+# $NetBSD: GENERIC,v 1.362 2020/01/22 22:29:28 macallan Exp $
 #
 # GENERIC machine description file
 # 
@@ -22,7 +22,7 @@ include		"arch/macppc/conf/std.macppc"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.360 $"
+#ident 		"GENERIC-$Revision: 1.362 $"
 
 maxusers	32
 
@@ -203,7 +203,6 @@ bwi*	at pci? dev ? function ?	# Broadcom / Apple Airport Extreme
 ep*	at pci? dev ? function ?	# 3Com 3c59x
 epic*	at pci? dev ? function ?	# SMC EPIC/100 Ethernet
 ex*	at pci? dev ? function ?	# 3Com 90x[BC]
-fpa*	at pci? dev ? function ?	# DEC PCI FDDI (DEFPA) Controller
 fxp*	at pci? dev ? function ?	# Intel EtherExpress PRO 10+/100B
 gem*	at pci? dev ? function ?	# gmac ethernet
 #gm*	at pci? dev ? function ?	# gmac ethernet (old)
@@ -330,6 +329,9 @@ mc*	at obio?			# MACE ethernet
 esp*	at obio? flags 0x00ff		# 53c9x SCSI
 mesh*	at obio? flags 0xffff		# MESH SCSI
 nvram*	at obio?			# nvram
+options OBIO_SPEED_CONTROL		# CPU speed / voltage control via GPIOs
+					# and/or DFS, found on most *Book G4
+
 
 # the traditional ADB subsystem
 

@@ -56,7 +56,7 @@ changes in bozohttpd 20151028:
 	o  fixed few memory leaks
 	o  bunch of minor tweaks
 	o  removed -r support
-	o  smarter redirects
+	o  smarter redirects 
 
 changes in bozohttpd 20150320:
 	o  fix redirection handling
@@ -286,7 +286,7 @@ changes in bozohttpd 5.11 (20020730):
 	o  use a valid Server: header
 
 changes in bozohttpd 5.10 (20020710):
-	- add freebsd support
+	- add freebsd support 
 	- fix a couple of header typos
 	- many cgi-bin fixes from lukem@netbsd.org
 	- add -T chrootdir and -U user, plus several minor other cleanups
@@ -296,7 +296,7 @@ changes in bozohttpd 5.10 (20020710):
 
 changes in bozohttpd 5.09 (20010922):
 	- add a daemon mode
-	- document how to use bozohttpd in netbsd inetd with more than 40
+	- document how to use bozohttpd in netbsd inetd with more than 40 
 	connections per minute and also with cgibin
 	- man page fixes from wiz@netbsd.org
 
@@ -306,7 +306,7 @@ changes in bozohttpd 5.08 (20010812):
 	- make server software version configurable (RFC)
 
 changes in bozohttpd 5.07 (20010610):
-	- add .png support
+	- add .png support 
 	- new "-x index.html" flag to change default file
 	- new "-p public_html" flag to change default ~user directory
 	- fixes cgi-bin support and more from chuck@research.att.com
@@ -323,11 +323,11 @@ changes in bozohttpd 5.04 (20000427):
 	- fix virtual host support; URI takes precedence over Host:
 
 changes in bozohttpd 5.03 (20000427):
-	- fix a bug with chdir()
+	- fix a bug with chdir() 
 
 changes in bozohttpd 5.02 (20000426):
 	- .pac spport from simonb
 
 changes in bozohttpd 5.01 (20000421):
-	- .swf support
-	- virtual hosting support
+	- .swf support 
+	- virtual hosting support 

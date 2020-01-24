@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.556 2020/01/19 06:55:22 thorpej Exp $
+# $NetBSD: GENERIC,v 1.558 2020/01/20 18:38:19 thorpej Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.556 $"
+#ident		"GENERIC-$Revision: 1.558 $"
 
 maxusers	64		# estimated number of users
 
@@ -794,7 +794,6 @@ ep*	at pci? dev ? function ?	# 3Com 3c59x
 epic*	at pci? dev ? function ?	# SMC EPIC/100 Ethernet
 et*	at pci? dev ? function ?	# Agere/LSI ET1310/ET1301 Gigabit
 ex*	at pci? dev ? function ?	# 3Com 90x[BC]
-fpa*	at pci? dev ? function ?	# DEC DEFPA FDDI
 fxp*	at pci? dev ? function ?	# Intel EtherExpress PRO 10+/100B
 gem*	at pci? dev ? function ?	# Apple GMAC and Sun ERI gigabit enet
 gsip*	at pci? dev ? function ?	# NS83820 Gigabit Ethernet
@@ -852,8 +851,6 @@ mbe*	at pcmcia? function ?		# MB8696x based Ethernet
 ne*	at pcmcia? function ?		# NE2000-compatible Ethernet
 ray*	at pcmcia? function ?		# Raytheon Raylink (802.11)
 sm*	at pcmcia? function ?		# Megahertz Ethernet
-# tr at pcmcia has problems with Cardbus bridges
-#tr*	at pcmcia? function ?		# TROPIC based Token-Ring
 wi*	at pcmcia? function ?		# Lucent/Intersil WaveLan IEEE (802.11)
 xirc*	at pcmcia? function ?		# Xircom CreditCard Ethernet
 com*	at xirc?

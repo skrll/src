@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.235 2020/01/19 01:25:08 thorpej Exp $
+#	$NetBSD: Makefile,v 1.237 2020/01/21 02:37:16 pgoyette Exp $
 
 .include <bsd.own.mk>
 
@@ -13,6 +13,8 @@ SUBDIR+=	compat_16   compat_20   compat_30   compat_40   compat_50
 SUBDIR+=	compat_60   compat_70   compat_80   compat_90
 
 SUBDIR+=	compat_sysv_10 compat_sysv_14 compat_sysv_50
+
+SUBDIR+=	compat_50_quota
 
 SUBDIR+=	compat_raid_50
 SUBDIR+=	compat_raid_80
@@ -54,7 +56,6 @@ SUBDIR+=	exec_script
 SUBDIR+=	fdesc
 SUBDIR+=	ffs
 SUBDIR+=	filecore
-SUBDIR+=	filemon
 SUBDIR+=	flash
 SUBDIR+=	fss
 SUBDIR+=	gpio

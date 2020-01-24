@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.141 2020/01/18 14:40:04 skrll Exp $	*/
+/*	$NetBSD: cpu.c,v 1.143 2020/01/22 12:23:12 skrll Exp $	*/
 
 /*
  * Copyright (c) 1995 Mark Brinicombe.
@@ -46,7 +46,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.141 2020/01/18 14:40:04 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.143 2020/01/22 12:23:12 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -888,6 +888,10 @@ int
 cpu_maxproc_hook(int nmaxproc)
 {
 
+#ifdef ARM_MMU_EXTENDED
 	return pmap_maxproc_set(nmaxproc);
+#else
+	return 0;
+#endif
 }
 #endif

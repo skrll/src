@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1672 2020/01/19 17:53:15 thorpej Exp $
+# $NetBSD: mi,v 1.1677 2020/01/22 14:01:50 thorpej Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -1073,7 +1073,7 @@
 ./usr/share/man/cat4/ep.0			man-sys-catman		.cat
 ./usr/share/man/cat4/epic.0			man-sys-catman		.cat
 ./usr/share/man/cat4/esa.0			man-sys-catman		.cat
-./usr/share/man/cat4/esh.0			man-sys-catman		.cat
+./usr/share/man/cat4/esh.0			man-obsolete		obsolete
 ./usr/share/man/cat4/esiop.0			man-sys-catman		.cat
 ./usr/share/man/cat4/esis.0			man-obsolete		obsolete
 ./usr/share/man/cat4/esl.0			man-obsolete		obsolete
@@ -1104,16 +1104,16 @@
 ./usr/share/man/cat4/faith.0			man-sys-catman		.cat
 ./usr/share/man/cat4/fast_ipsec.0		man-obsolete		obsolete
 ./usr/share/man/cat4/fd.0			man-sys-catman		.cat
-./usr/share/man/cat4/fea.0			man-sys-catman		.cat
-./usr/share/man/cat4/filemon.0			man-sys-catman		.cat
+./usr/share/man/cat4/fea.0			man-obsolete		obsolete
+./usr/share/man/cat4/filemon.0			man-obsolete		obsolete
 ./usr/share/man/cat4/finsio.0			man-sys-catman		.cat
 ./usr/share/man/cat4/flash.0			man-sys-catman		.cat
 ./usr/share/man/cat4/fms.0			man-sys-catman		.cat
 ./usr/share/man/cat4/fmv.0			man-sys-catman		.cat
-./usr/share/man/cat4/fpa.0			man-sys-catman		.cat
+./usr/share/man/cat4/fpa.0			man-obsolete		obsolete
 ./usr/share/man/cat4/fss.0			man-sys-catman		.cat
 ./usr/share/man/cat4/fssbs.0			man-obsolete		obsolete
-./usr/share/man/cat4/fta.0			man-sys-catman		.cat
+./usr/share/man/cat4/fta.0			man-obsolete		obsolete
 ./usr/share/man/cat4/fujbp.0			man-sys-catman		.cat
 ./usr/share/man/cat4/fujhk.0			man-sys-catman		.cat
 ./usr/share/man/cat4/fujitsu.0			man-obsolete		obsolete
@@ -1845,7 +1845,7 @@
 ./usr/share/man/cat4/tprof.0			man-sys-catman		.cat
 ./usr/share/man/cat4/tps65217pmic.0		man-sys-catman		.cat
 ./usr/share/man/cat4/tqphy.0			man-sys-catman		.cat
-./usr/share/man/cat4/tr.0			man-sys-catman		.cat
+./usr/share/man/cat4/tr.0			man-obsolete		obsolete
 ./usr/share/man/cat4/tra.0			man-sys-catman		.cat
 ./usr/share/man/cat4/trm.0			man-sys-catman		.cat
 ./usr/share/man/cat4/tsllux.0			man-sys-catman		.cat
@@ -1928,6 +1928,7 @@
 ./usr/share/man/cat4/uvisor.0			man-sys-catman		.cat
 ./usr/share/man/cat4/uvscom.0			man-sys-catman		.cat
 ./usr/share/man/cat4/uyap.0			man-sys-catman		.cat
+./usr/share/man/cat4/uyurex.0			man-obsolete		obsolete
 ./usr/share/man/cat4/vald.0			man-sys-catman		.cat
 ./usr/share/man/cat4/valz.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vax/acc.0			man-sys-catman		.cat
@@ -4257,7 +4258,7 @@
 ./usr/share/man/html4/ep.html			man-sys-htmlman		html
 ./usr/share/man/html4/epic.html			man-sys-htmlman		html
 ./usr/share/man/html4/esa.html			man-sys-htmlman		html
-./usr/share/man/html4/esh.html			man-sys-htmlman		html
+./usr/share/man/html4/esh.html			man-obsolete		obsolete
 ./usr/share/man/html4/esiop.html		man-sys-htmlman		html
 ./usr/share/man/html4/esis.html			man-obsolete		obsolete
 ./usr/share/man/html4/esl.html			man-obsolete		obsolete
@@ -4288,16 +4289,16 @@
 ./usr/share/man/html4/faith.html		man-sys-htmlman		html
 ./usr/share/man/html4/fast_ipsec.html		man-obsolete		obsolete
 ./usr/share/man/html4/fd.html			man-sys-htmlman		html
-./usr/share/man/html4/fea.html			man-sys-htmlman		html
-./usr/share/man/html4/filemon.html		man-sys-htmlman		html
+./usr/share/man/html4/fea.html			man-obsolete		obsolete
+./usr/share/man/html4/filemon.html		man-obsolete		obsolete
 ./usr/share/man/html4/finsio.html		man-sys-htmlman		html
 ./usr/share/man/html4/flash.html		man-sys-htmlman		html
 ./usr/share/man/html4/fms.html			man-sys-htmlman		html
 ./usr/share/man/html4/fmv.html			man-sys-htmlman		html
-./usr/share/man/html4/fpa.html			man-sys-htmlman		html
+./usr/share/man/html4/fpa.html			man-obsolete		obsolete
 ./usr/share/man/html4/fss.html			man-sys-htmlman		html
 ./usr/share/man/html4/fssbs.html		man-obsolete		obsolete
-./usr/share/man/html4/fta.html			man-sys-htmlman		html
+./usr/share/man/html4/fta.html			man-obsolete		obsolete
 ./usr/share/man/html4/fujbp.html		man-sys-htmlman		html
 ./usr/share/man/html4/fujhk.html		man-sys-htmlman		html
 ./usr/share/man/html4/fujitsu.html		man-obsolete		obsolete
@@ -4955,7 +4956,7 @@
 ./usr/share/man/html4/tprof.html		man-sys-htmlman		html
 ./usr/share/man/html4/tps65217pmic.html		man-sys-htmlman		html
 ./usr/share/man/html4/tqphy.html		man-sys-htmlman		html
-./usr/share/man/html4/tr.html			man-sys-htmlman		html
+./usr/share/man/html4/tr.html			man-obsolete		obsolete
 ./usr/share/man/html4/tra.html			man-sys-htmlman		html
 ./usr/share/man/html4/trm.html			man-sys-htmlman		html
 ./usr/share/man/html4/tsllux.html		man-sys-htmlman		html
@@ -5036,6 +5037,7 @@
 ./usr/share/man/html4/uvisor.html		man-sys-htmlman		html
 ./usr/share/man/html4/uvscom.html		man-sys-htmlman		html
 ./usr/share/man/html4/uyap.html			man-sys-htmlman		html
+./usr/share/man/html4/uyurex.html		man-obsolete		obsolete
 ./usr/share/man/html4/vald.html			man-sys-htmlman		html
 ./usr/share/man/html4/valz.html			man-sys-htmlman		html
 ./usr/share/man/html4/vax/acc.html		man-sys-htmlman		html
@@ -7213,7 +7215,7 @@
 ./usr/share/man/man4/ep.4			man-sys-man		.man
 ./usr/share/man/man4/epic.4			man-sys-man		.man
 ./usr/share/man/man4/esa.4			man-sys-man		.man
-./usr/share/man/man4/esh.4			man-sys-man		.man
+./usr/share/man/man4/esh.4			man-obsolete		obsolete
 ./usr/share/man/man4/esiop.4			man-sys-man		.man
 ./usr/share/man/man4/esis.4			man-obsolete		obsolete
 ./usr/share/man/man4/esl.4			man-obsolete		obsolete
@@ -7244,16 +7246,16 @@
 ./usr/share/man/man4/faith.4			man-sys-man		.man
 ./usr/share/man/man4/fast_ipsec.4		man-obsolete		obsolete
 ./usr/share/man/man4/fd.4			man-sys-man		.man
-./usr/share/man/man4/fea.4			man-sys-man		.man
-./usr/share/man/man4/filemon.4			man-sys-man		.man
+./usr/share/man/man4/fea.4			man-obsolete		obsolete
+./usr/share/man/man4/filemon.4			man-obsolete		obsolete
 ./usr/share/man/man4/finsio.4			man-sys-man		.man
 ./usr/share/man/man4/flash.4			man-sys-man		.man
 ./usr/share/man/man4/fms.4			man-sys-man		.man
 ./usr/share/man/man4/fmv.4			man-sys-man		.man
-./usr/share/man/man4/fpa.4			man-sys-man		.man
+./usr/share/man/man4/fpa.4			man-obsolete		obsolete
 ./usr/share/man/man4/fss.4			man-sys-man		.man
 ./usr/share/man/man4/fssbs.4			man-obsolete		obsolete
-./usr/share/man/man4/fta.4			man-sys-man		.man
+./usr/share/man/man4/fta.4			man-obsolete		obsolete
 ./usr/share/man/man4/fujbp.4			man-sys-man		.man
 ./usr/share/man/man4/fujhk.4			man-sys-man		.man
 ./usr/share/man/man4/fujitsu.4			man-obsolete		obsolete
@@ -7985,7 +7987,7 @@
 ./usr/share/man/man4/tprof.4			man-sys-man		.man
 ./usr/share/man/man4/tps65217pmic.4		man-sys-man		.man
 ./usr/share/man/man4/tqphy.4			man-sys-man		.man
-./usr/share/man/man4/tr.4			man-sys-man		.man
+./usr/share/man/man4/tr.4			man-obsolete		obsolete
 ./usr/share/man/man4/tra.4			man-sys-man		.man
 ./usr/share/man/man4/trm.4			man-sys-man		.man
 ./usr/share/man/man4/tsllux.4			man-sys-man		.man
@@ -8068,6 +8070,7 @@
 ./usr/share/man/man4/uvisor.4			man-sys-man		.man
 ./usr/share/man/man4/uvscom.4			man-sys-man		.man
 ./usr/share/man/man4/uyap.4			man-sys-man		.man
+./usr/share/man/man4/uyurex.4			man-obsolete		obsolete
 ./usr/share/man/man4/vald.4			man-sys-man		.man
 ./usr/share/man/man4/valz.4			man-sys-man		.man
 ./usr/share/man/man4/vax/acc.4			man-sys-man		.man
