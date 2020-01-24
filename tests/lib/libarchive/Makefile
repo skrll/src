@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.1 2020/01/17 16:24:03 christos Exp $
+# $NetBSD: Makefile,v 1.4 2020/01/19 17:36:57 christos Exp $
 
 NOMAN=
 
@@ -16,9 +16,9 @@ CPPFLAGS+=-I${LIBARCHIVE}/libarchive/test -I${LIBARCHIVE}/../include
 
 .PATH: ${LIBARCHIVE}/libarchive/test ${LIBARCHIVE}/test_utils
 
-LDADD+=-larchive
-DPADD+=${LIBARCHIVE}
-
+DPADD+=	${LIBARCHIVE} ${LIBEXPAT} ${LIBBZ2} ${LIBLZMA} ${LIBZ} \
+	${LIBCRYPTO} ${LIBPTHREAD}
+LDADD+=	-larchive -lexpat -lbz2 -llzma -lz -lcrypto -lpthread
 
 SRCS.h_libarchive= \
 test_main.c \
@@ -596,7 +596,7 @@ test_write_disk_no_hfs_compression.tgz.uu
 
 .include <bsd.test.mk>
 
-test_main.o: list.h
+test_main.o test_main.d: list.h
 
 CLEANFILES+=list.h
 

@@ -2080,7 +2080,7 @@ motg_device_intr_tx(struct motg_softc *sc, int epnumber)
 complete:
 	DPRINTFN(MD_BULK, "xfer %#jx complete, status %jd", (uintptr_t)xfer,
 	    (xfer != NULL) ? xfer->ux_status : 0, 0, 0);
-	KASSERTMSG(xfer && xfer->ux_status == USBD_IN_PROGRESS &&
+	KASSERTMSG(xfer && xfer->ux_status == USBD_IN_PROGRESS && 
 	    ep->phase == DATA_OUT, "xfer %p status %d phase %d",
 	    xfer, xfer->ux_status, ep->phase);
 	ep->phase = IDLE;

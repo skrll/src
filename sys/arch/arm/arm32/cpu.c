@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.140 2020/01/15 08:34:04 mrg Exp $	*/
+/*	$NetBSD: cpu.c,v 1.143 2020/01/22 12:23:12 skrll Exp $	*/
 
 /*
  * Copyright (c) 1995 Mark Brinicombe.
@@ -46,7 +46,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.140 2020/01/15 08:34:04 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.143 2020/01/22 12:23:12 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -886,3 +886,16 @@ identify_features(device_t dv)
 	    "pfr: [0]=%#x [1]=%#x\n",
 	    cpu_processor_features[0], cpu_processor_features[1]);
 }
+
+#ifdef _ARM_ARCH_6
+int
+cpu_maxproc_hook(int nmaxproc)
+{
+
+#ifdef ARM_MMU_EXTENDED
+	return pmap_maxproc_set(nmaxproc);
+#else
+	return 0;
+#endif
+}
+#endif

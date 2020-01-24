@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_carp.c,v 1.105 2020/01/16 12:56:40 kardel Exp $	*/
+/*	$NetBSD: ip_carp.c,v 1.107 2020/01/20 18:38:22 thorpej Exp $	*/
 /*	$OpenBSD: ip_carp.c,v 1.113 2005/11/04 08:11:54 mcbride Exp $	*/
 
 /*
@@ -33,7 +33,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_carp.c,v 1.105 2020/01/16 12:56:40 kardel Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_carp.c,v 1.107 2020/01/20 18:38:22 thorpej Exp $");
 
 /*
  * TODO:
@@ -73,13 +73,6 @@ __KERNEL_RCSID(0, "$NetBSD: ip_carp.c,v 1.105 2020/01/16 12:56:40 kardel Exp $")
 #include <net/net_stats.h>
 #include <netinet/if_inarp.h>
 #include <netinet/wqinput.h>
-
-#if NFDDI > 0
-#include <net/if_fddi.h>
-#endif
-#if NTOKEN > 0
-#include <net/if_token.h>
-#endif
 
 #ifdef INET
 #include <netinet/in.h>

@@ -378,7 +378,7 @@ mue_read_eeprom(struct usbnet *un, uint8_t *dest, int off, int cnt)
 	uint8_t byte;
 	int i, err = 0;
 
-	/*
+	/* 
 	 * EEPROM pins are muxed with the LED function on LAN7800 device.
 	 */
 	if (un->un_flags & LAN7800) {

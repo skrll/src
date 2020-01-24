@@ -1,4 +1,4 @@
-/*	$NetBSD: mbr.c,v 1.27 2020/01/15 19:36:30 martin Exp $ */
+/*	$NetBSD: mbr.c,v 1.29 2020/01/20 21:26:35 martin Exp $ */
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -260,8 +260,8 @@ set_bios_geom_with_mbr_guess(struct disk_partitions *parts)
 {
 	int cyl, head, sec;
 
-	msg_fmt_display(MSG_nobiosgeom, "%d%d%d", pm->dlcyl, pm->dlhead,
-	    pm->dlsec);
+	msg_fmt_display(MSG_nobiosgeom, "%d%d%d",
+	    pm->dlcyl, pm->dlsec, pm->dlhead);
 	if (guess_biosgeom_from_parts(parts, &cyl, &head, &sec) >= 0)
 		msg_fmt_display_add(MSG_biosguess, "%d%d%d", cyl, head, sec);
 	set_bios_geom(parts, &cyl, &head, &sec);
@@ -1017,6 +1017,10 @@ mbr_map_part_type(unsigned int t)
 	switch (t) {
 	case MBR_PTYPE_FAT32:
 	case MBR_PTYPE_FAT32L:
+	case MBR_PTYPE_FAT16S:
+	case MBR_PTYPE_FAT16B:
+	case MBR_PTYPE_FAT16L:
+	case MBR_PTYPE_FAT12:
 	case MBR_PTYPE_FT_FAT32:
 	case MBR_PTYPE_FT_FAT32_EXT:
 		return PT_FAT;
