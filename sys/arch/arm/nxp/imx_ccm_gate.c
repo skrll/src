@@ -34,7 +34,7 @@ __KERNEL_RCSID(0, "$NetBSD: imx_ccm_gate.c,v 1.1 2020/01/15 01:09:57 jmcneill Ex
 
 #include <dev/clk/clk_backend.h>
 
-#include <arm/imx/fdt/imx_ccm.h>
+#include <arm/nxp/imx_ccm.h>
 
 int
 imx_ccm_gate_enable(struct imx_ccm_softc *sc, struct imx_ccm_clk *clk,

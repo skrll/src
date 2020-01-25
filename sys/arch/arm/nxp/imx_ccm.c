@@ -38,7 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: imx_ccm.c,v 1.1 2020/01/15 01:09:56 jmcneill Exp $")
 
 #include <dev/clk/clk_backend.h>
 
-#include <arm/imx/fdt/imx_ccm.h>
+#include <arm/nxp/imx_ccm.h>
 
 static struct clk *
 imx_ccm_clock_decode(device_t dev, int cc_phandle, const void *data, size_t len)

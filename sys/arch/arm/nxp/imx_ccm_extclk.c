@@ -34,7 +34,7 @@ __KERNEL_RCSID(0, "$NetBSD: imx_ccm_extclk.c,v 1.1 2020/01/15 01:09:56 jmcneill 
 
 #include <dev/clk/clk_backend.h>
 
-#include <arm/imx/fdt/imx_ccm.h>
+#include <arm/nxp/imx_ccm.h>
 
 #include <dev/fdt/fdtvar.h>
 

@@ -37,8 +37,8 @@ __KERNEL_RCSID(0, "$NetBSD: imx8mq_ccm.c,v 1.2 2020/01/15 11:36:34 jmcneill Exp 
 
 #include <dev/fdt/fdtvar.h>
 
-#include <arm/imx/fdt/imx_ccm.h>
-#include <arm/imx/fdt/imx8mq_ccm.h>
+#include <arm/nxp/imx_ccm.h>
+#include <arm/nxp/imx8mq_ccm.h>
 
 static int imx8mq_ccm_match(device_t, cfdata_t, void *);
 static void imx8mq_ccm_attach(device_t, device_t, void *);
