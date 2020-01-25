@@ -158,19 +158,19 @@ imx6_pcie_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_clk_pcie = fdtbus_clock_get(phandle, "pcie_axi");
+	sc->sc_clk_pcie = fdtbus_clock_get(phandle, "pcie");
 	if (sc->sc_clk_pcie == NULL) {
-		aprint_error(": couldn't get clock pcie\n");
+		aprint_error(": couldn't get clock pcie_axi\n");
 		return;
 	}
-	sc->sc_clk_pcie_bus = fdtbus_clock_get(phandle, "lvds1_gate");
+	sc->sc_clk_pcie_bus = fdtbus_clock_get(phandle, "pcie_bus");
 	if (sc->sc_clk_pcie_bus == NULL) {
-		aprint_error(": couldn't get clock pcie_bus\n");
+		aprint_error(": couldn't get clock lvds1_gate\n");
 		return;
 	}
-	sc->sc_clk_pcie_phy = fdtbus_clock_get(phandle, "pcie_ref_125m");
+	sc->sc_clk_pcie_phy = fdtbus_clock_get(phandle, "pcie_phy");
 	if (sc->sc_clk_pcie_phy == NULL) {
-		aprint_error(": couldn't get clock pcie_phy\n");
+		aprint_error(": couldn't get clock pcie_ref\n");
 		return;
 	}
 
