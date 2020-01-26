@@ -1,4 +1,4 @@
-/*	$NetBSD: pthread_mutex.c,v 1.66 2020/01/13 18:22:56 ad Exp $	*/
+/*	$NetBSD: pthread_mutex.c,v 1.68 2020/01/25 18:30:41 ad Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2003, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -47,7 +47,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: pthread_mutex.c,v 1.66 2020/01/13 18:22:56 ad Exp $");
+__RCSID("$NetBSD: pthread_mutex.c,v 1.68 2020/01/25 18:30:41 ad Exp $");
 
 #include <sys/types.h>
 #include <sys/lwpctl.h>
@@ -466,7 +466,7 @@ NOINLINE static int
 pthread__mutex_unlock_slow(pthread_mutex_t *ptm)
 {
 	pthread_t self, owner, new;
-	int weown, error, deferred;
+	int weown, error;
 
 	pthread__error(EINVAL, "Invalid mutex",
 	    ptm->ptm_magic == _PT_MUTEX_MAGIC);
@@ -474,7 +474,6 @@ pthread__mutex_unlock_slow(pthread_mutex_t *ptm)
 	self = pthread__self();
 	owner = ptm->ptm_owner;
 	weown = (MUTEX_OWNER(owner) == (uintptr_t)self);
-	deferred = (int)((uintptr_t)owner & MUTEX_DEFERRED_BIT);
 	error = 0;
 
 	if (__SIMPLELOCK_LOCKED_P(&ptm->ptm_errorcheck)) {
@@ -516,14 +515,8 @@ pthread__mutex_unlock_slow(pthread_mutex_t *ptm)
 			pthread__mutex_wakeup(self, ptm);
 			return 0;
 		}
+		error = 0;
 	}
-
-	/*
-	 * There were no waiters, but we may have deferred waking
-	 * other threads until mutex unlock - we must wake them now.
-	 */
-	if (!deferred)
-		return error;
 
 	if (self->pt_nwaiters == 1) {
 		/*
@@ -536,7 +529,7 @@ pthread__mutex_unlock_slow(pthread_mutex_t *ptm)
 			(void)_lwp_unpark(self->pt_waiters[0],
 			    __UNVOLATILE(&ptm->ptm_waiters));
 		}
-	} else {
+	} else if (self->pt_nwaiters > 0) {
 		(void)_lwp_unpark_all(self->pt_waiters, self->pt_nwaiters,
 		    __UNVOLATILE(&ptm->ptm_waiters));
 	}
