@@ -1,7 +1,8 @@
-/*	$NetBSD: pthread.c,v 1.154 2020/01/13 18:22:56 ad Exp $	*/
+/*	$NetBSD: pthread.c,v 1.156 2020/01/25 18:01:28 ad Exp $	*/
 
 /*-
- * Copyright (c) 2001, 2002, 2003, 2006, 2007, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 2001, 2002, 2003, 2006, 2007, 2008, 2020
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -30,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: pthread.c,v 1.154 2020/01/13 18:22:56 ad Exp $");
+__RCSID("$NetBSD: pthread.c,v 1.156 2020/01/25 18:01:28 ad Exp $");
 
 #define	__EXPOSE_STACK	1
 
@@ -571,10 +572,6 @@ pthread__create_tramp(void *cookie)
 	 * thrash.  May help for SMT processors.  XXX We should not
 	 * be allocating stacks on fixed 2MB boundaries.  Needs a
 	 * thread register or decent thread local storage.
-	 *
-	 * Note that we may race with the kernel in _lwp_create(),
-	 * and so pt_lid can be unset at this point, but we don't
-	 * care.
 	 */
 	(void)alloca(((unsigned)self->pt_lid & 7) << 8);
 
@@ -624,6 +621,23 @@ pthread_resume_np(pthread_t thread)
 	return errno;
 }
 
+/*
+ * In case the thread is exiting at an inopportune time leaving waiters not
+ * awoken (because cancelled, for instance) make sure we have no waiters
+ * left.
+ */
+static void
+pthread__clear_waiters(pthread_t self)
+{
+
+	if (self->pt_nwaiters != 0) {
+		(void)_lwp_unpark_all(self->pt_waiters, self->pt_nwaiters,
+		    NULL);
+		self->pt_nwaiters = 0;
+	}
+	self->pt_willpark = 0;
+}
+
 void
 pthread_exit(void *retval)
 {
@@ -661,7 +675,10 @@ pthread_exit(void *retval)
 	/* Perform cleanup of thread-specific data */
 	pthread__destroy_tsd(self);
 
-	/* Signal our exit. */
+	/*
+	 * Signal our exit.  Our stack and pthread_t won't be reused until
+	 * pthread_create() can see from kernel info that this LWP is gone.
+	 */
 	self->pt_exitval = retval;
 	if (self->pt_flags & PT_FLAG_DETACHED) {
 		self->pt_state = PT_STATE_DEAD;
@@ -673,11 +690,13 @@ pthread_exit(void *retval)
 		pthread_mutex_lock(&pthread__deadqueue_lock);
 		PTQ_INSERT_TAIL(&pthread__deadqueue, self, pt_deadq);
 		pthread_mutex_unlock(&pthread__deadqueue_lock);
+		pthread__clear_waiters(self);
 		_lwp_exit();
 	} else {
 		self->pt_state = PT_STATE_ZOMBIE;
 		pthread_cond_broadcast(&self->pt_joiners);
 		pthread_mutex_unlock(&self->pt_lock);
+		pthread__clear_waiters(self);
 		/* Note: name will be freed by the joiner. */
 		_lwp_exit();
 	}
