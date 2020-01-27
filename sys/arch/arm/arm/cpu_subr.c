@@ -79,6 +79,7 @@ cpu_hatched_p(u_int cpuindex)
 {
 	const u_int off = cpuindex / CPUINDEX_DIVISOR;
 	const u_int bit = cpuindex % CPUINDEX_DIVISOR;
+
 	membar_consumer();
 	return (arm_cpu_hatched[off] & __BIT(bit)) != 0;
 }
@@ -89,7 +90,6 @@ cpu_set_hatched(int cpuindex)
 
 	const size_t off = cpuindex / CPUINDEX_DIVISOR;
 	const u_long bit = __BIT(cpuindex % CPUINDEX_DIVISOR);
-
 
 	atomic_or_ulong(&arm_cpu_hatched[off], bit);
 }
