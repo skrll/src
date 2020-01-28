@@ -481,7 +481,6 @@ generic_vstartv7:
 	 */
 	b	start
 
-
 	/* NOTREACHED */
 	.ltorg
 #elif defined(_ARM_ARCH_6)
