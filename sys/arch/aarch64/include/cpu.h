@@ -125,8 +125,6 @@ curcpu(void)
 #define setsoftast(ci)		atomic_or_uint(&(ci)->ci_astpending, __BIT(0))
 #define cpu_signotify(l)	setsoftast((l)->l_cpu)
 
-void	cpu_attach(device_t, cpuid_t);
-void	cpu_proc_fork(struct proc *, struct proc *);
 void	cpu_need_proftick(struct lwp *l);
 
 void	cpu_hatch(struct cpu_info *);

@@ -51,7 +51,7 @@
 typedef unsigned long mpidr_t;
 
 #ifdef MULTIPROCESSOR
-
+extern u_int arm_cpu_max;
 extern mpidr_t cpu_mpidr[];
 extern kmutex_t cpu_hatch_lock;
 
@@ -61,7 +61,14 @@ bool cpu_hatched_p(u_int);
 
 void cpu_clr_mbox(int);
 void cpu_set_hatched(int);
+
+/*
+ * cpu device glue (belongs in cpuvar.h)
+ */
+void	cpu_attach(device_t, cpuid_t);
 #endif
+
+void	cpu_proc_fork(struct proc *, struct proc *);
 
 #ifdef __arm__
 
@@ -271,8 +278,6 @@ extern struct cpu_info *cpu_info[];
 
 #if defined(MULTIPROCESSOR)
 void cpu_init_secondary_processor(int);
-
-extern u_int arm_cpu_max;
 #endif
 
 #define	LWP0_CPU_INFO	(&cpu_info_store[0])
@@ -301,8 +306,6 @@ cpu_dosoftints(void)
 #endif
 #endif
 }
-
-void	cpu_proc_fork(struct proc *, struct proc *);
 
 /*
  * Scheduling glue
@@ -334,11 +337,6 @@ void	cpu_proc_fork(struct proc *, struct proc *);
  * This hook allows to return them.
  */
 vaddr_t cpu_uarea_alloc_idlelwp(struct cpu_info *);
-
-/*
- * cpu device glue (belongs in cpuvar.h)
- */
-void	cpu_attach(device_t, cpuid_t);
 
 #ifdef _ARM_ARCH_6
 int	cpu_maxproc_hook(int);
