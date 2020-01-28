@@ -24,6 +24,10 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define NCPUINFO	1
 #endif /* MULTIPROCESSOR */
 
+mpidr_t cpu_mpidr[NCPUINFO] = {
+	[0 ... NCPUINFO - 1] = ~0,
+};
+
 struct cpu_info *cpu_info[NCPUINFO] __read_mostly = {
 	[0] = &cpu_info_store[0]
 };

@@ -68,13 +68,6 @@ static void cpu_setup_id(struct cpu_info *);
 static void cpu_setup_sysctl(device_t, struct cpu_info *);
 
 #ifdef MULTIPROCESSOR
-uint64_t cpu_mpidr[MAXCPUS] = {
-	[0 ... MAXCPUS - 1] = ~0,
-};
-
-#endif /* MULTIPROCESSOR */
-
-#ifdef MULTIPROCESSOR
 #define NCPUINFO	MAXCPUS
 #else
 #define NCPUINFO	1

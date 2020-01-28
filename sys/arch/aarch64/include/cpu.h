@@ -32,6 +32,8 @@
 #ifndef _AARCH64_CPU_H_
 #define _AARCH64_CPU_H_
 
+#include <arm/cpu.h>
+
 #ifdef __aarch64__
 
 #ifdef _KERNEL_OPT
@@ -127,19 +129,10 @@ void	cpu_attach(device_t, cpuid_t);
 void	cpu_proc_fork(struct proc *, struct proc *);
 void	cpu_need_proftick(struct lwp *l);
 
-void	cpu_boot_secondary_processors(void);
-void	cpu_mpstart(void);
 void	cpu_hatch(struct cpu_info *);
-
-void	cpu_clr_mbox(int);
-void	cpu_set_hatched(int);
 
 extern struct cpu_info *cpu_info[];
 extern struct cpu_info cpu_info_store[];
-extern uint64_t cpu_mpidr[];		/* MULTIPROCESSOR */
-bool cpu_hatched_p(u_int);		/* MULTIPROCESSOR */
-
-extern kmutex_t cpu_hatch_lock;
 
 #define CPU_INFO_ITERATOR	cpuid_t
 #ifdef MULTIPROCESSOR
@@ -170,10 +163,6 @@ cpu_dosoftints(void)
 }
 
 #endif /* _KERNEL || _KMEMUSER */
-
-#elif defined(__arm__)
-
-#include <arm/cpu.h>
 
 #endif
 

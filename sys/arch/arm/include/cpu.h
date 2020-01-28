@@ -48,6 +48,21 @@
 #ifndef _ARM_CPU_H_
 #define _ARM_CPU_H_
 
+typedef unsigned long mpidr_t;
+
+#ifdef MULTIPROCESSOR
+
+extern mpidr_t cpu_mpidr[];
+extern kmutex_t cpu_hatch_lock;
+
+void cpu_boot_secondary_processors(void);
+void cpu_mpstart(void);
+bool cpu_hatched_p(u_int);
+
+void cpu_clr_mbox(int);
+void cpu_set_hatched(int);
+#endif
+
 #ifdef __arm__
 
 /*
@@ -228,7 +243,7 @@ curcpu(void)
 	return (struct cpu_info *) armreg_tpidrprw_read();
 }
 #elif !defined(MULTIPROCESSOR)
-#define	curcpu()	(&cpu_info_store)
+#define	curcpu()	(&cpu_info_store[0])
 #elif !defined(__HAVE_PREEMPTION)
 #error MULTIPROCESSOR && !__HAVE_PREEMPTION requires TPIDRPRW_IS_CURCPU or TPIDRPRW_IS_CURLWP
 #else
@@ -255,18 +270,8 @@ extern struct cpu_info *cpu_info[];
 #endif
 
 #if defined(MULTIPROCESSOR)
-
-extern uint32_t cpu_mpidr[];
-bool cpu_hatched_p(u_int);
-
-void cpu_mpstart(void);
 void cpu_init_secondary_processor(int);
-void cpu_boot_secondary_processors(void);
 
-void cpu_clr_mbox(int);
-void cpu_set_hatched(int);
-
-extern kmutex_t cpu_hatch_lock;
 extern u_int arm_cpu_max;
 #endif
 

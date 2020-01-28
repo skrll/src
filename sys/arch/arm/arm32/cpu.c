@@ -66,10 +66,6 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.143 2020/01/22 12:23:12 skrll Exp $");
 extern const char *cpu_arch;
 
 #ifdef MULTIPROCESSOR
-uint32_t cpu_mpidr[MAXCPUS] = {
-	[0 ... MAXCPUS - 1] = ~0,
-};
-
 #ifdef MPDEBUG
 uint32_t arm_cpu_marker[2] __cacheline_aligned = { 0, 0 };
 #endif
@@ -104,10 +100,6 @@ cpu_attach(device_t dv, cpuid_t id)
 		ci->ci_arm_cpuid = cpu_idnum();
 		ci->ci_arm_cputype = ci->ci_arm_cpuid & CPU_ID_CPU_MASK;
 		ci->ci_arm_cpurev = ci->ci_arm_cpuid & CPU_ID_REVISION_MASK;
-#ifdef MULTIPROCESSOR
-		uint32_t mpidr = armreg_mpidr_read();
-		ci->ci_mpidr = mpidr;
-#endif
 	} else {
 #ifdef MULTIPROCESSOR
 		if ((boothowto & RB_MD1) != 0) {

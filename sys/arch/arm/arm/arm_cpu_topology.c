@@ -47,7 +47,7 @@ __KERNEL_RCSID(0, "$NetBSD: arm_cpu_topology.c,v 1.2 2020/01/16 06:34:24 mrg Exp
 #include <prop/proplib.h>
 
 void
-arm_cpu_topology_set(struct cpu_info * const ci, uint64_t mpidr, bool slow)
+arm_cpu_topology_set(struct cpu_info * const ci, mpidr_t mpidr, bool slow)
 {
 #ifdef MULTIPROCESSOR
 	uint pkgid, coreid, smtid, numaid = 0;

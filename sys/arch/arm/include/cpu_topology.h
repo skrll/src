@@ -54,6 +54,6 @@
 #include <sys/cpu.h>
 
 void arm_cpu_do_topology(struct cpu_info * const);
-void arm_cpu_topology_set(struct cpu_info * const, uint64_t, bool);
+void arm_cpu_topology_set(struct cpu_info * const, mpidr_t, bool);
 
 #endif /* _ARM_CPU_TOPOLOGY_H_ */
