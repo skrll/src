@@ -1,11 +1,11 @@
-/*	$NetBSD: bcmp.S,v 1.4 2020/01/15 10:56:49 ad Exp $	*/
+/*	$NetBSD: compat_crypto_50.c,v 1.2 2020/01/27 17:11:27 pgoyette Exp $ */
 
 /*-
- * Copyright (c) 2020 The NetBSD Foundation, Inc.
+ * Copyright (c) 2008 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Andrew Doran.
+ * by Coyote Point Systems, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,39 +29,48 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <machine/asm.h>
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: compat_crypto_50.c,v 1.2 2020/01/27 17:11:27 pgoyette Exp $");
 
-#if defined(LIBC_SCCS)
-	RCSID("$NetBSD: bcmp.S,v 1.4 2020/01/15 10:56:49 ad Exp $")
-#endif
+#include <sys/param.h>
+#include <sys/systm.h>
+#include <sys/compat_stub.h> 
+#include <sys/module.h>
 
-ENTRY(bcmp)
-	movq	%rdx, %rcx	/* compare by longs, equality only */
-	shrq	$3, %rcx
-	jz	2f
-1:
-	movq	(%rdi), %rax
-	cmpq	%rax, (%rsi)
-	jne	5f
-	decq	%rcx
-	leaq	8(%rdi), %rdi
-	leaq	8(%rsi), %rsi
-	jnz	1b
-2:
-	andl	$7, %edx
-	jz	4f
-3:
-	movb	(%rdi), %al	/* compare by chars, equality only */
-	cmpb	%al, (%rsi)
-	jne	5f
-	decl	%edx
-	leaq	1(%rdi), %rdi
-	leaq	1(%rsi), %rsi
-	jnz	3b
-4:
-	xorl	%eax, %eax
-	ret
-5:
-	movl	$1, %eax
-	ret
-END(bcmp)
+#include <opencrypto/cryptodev.h>
+#include <opencrypto/ocryptodev.h>
+
+/* Module glue for compat ioctl's */
+
+static void
+crypto_50_init(void)
+{
+
+	MODULE_HOOK_SET(ocryptof_50_hook, ocryptof_ioctl);
+}
+
+static void
+crypto_50_fini(void)
+{
+
+	MODULE_HOOK_UNSET(ocryptof_50_hook);
+}
+
+MODULE(MODULE_CLASS_EXEC, compat_crypto_50, "crypto,compat_50");
+ 
+static int
+compat_crypto_50_modcmd(modcmd_t cmd, void *arg)
+{
+ 
+	switch (cmd) {
+	case MODULE_CMD_INIT:
+		crypto_50_init();
+		return 0;
+	case MODULE_CMD_FINI:
+		crypto_50_fini();
+		return 0;
+	default: 
+		return ENOTTY;
+	}
+}
+

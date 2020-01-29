@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1687 2020/01/26 02:55:47 taca Exp $
+#	$NetBSD: 3RDPARTY,v 1.1689 2020/01/27 21:14:17 roy Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -327,12 +327,12 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	8.1.5
-Current Vers:	8.1.5
+Version:	8.1.6
+Current Vers:	8.1.6
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
-Date:		2020-01-03
+Date:		2020-01-27
 Mailing List: 	dhcpcd-discuss@marples.name
 License:	BSD (2-clause)
 Location:	external/bsd/dhcpcd/dist
@@ -1017,12 +1017,12 @@ Location:	external/bsd/openpam/dist
 Notes:
 
 Package:	openresolv
-Version:	3.9.2
-Current Vers:	3.9.2
+Version:	3.10.0
+Current Vers:	3.10.0
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/openresolv/
 Home Page:	http://roy.marples.name/projects/openresolv/
-Date:		2019-09-08
+Date:		2020-01-27
 Mailing List: 	openresolv-discuss@marples.name
 License:	BSD (2-clause)
 Location:	external/bsd/openresolv/dist
