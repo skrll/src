@@ -307,7 +307,7 @@ cpu_kpreempt_enter(uintptr_t where, int s)
 void
 cpu_kpreempt_exit(uintptr_t where)
 {
-	atomic_and_uint(&curcpu()->ci_astpending, ~__BIT(1));
+	atomic_and_uint(&curcpu()->ci_astpending, (unsigned int)~__BIT(1));
 }
 
 bool
