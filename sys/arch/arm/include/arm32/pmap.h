@@ -662,6 +662,9 @@ void	pmap_pte_init_arm11(void);
 #if defined(CPU_ARM11MPCORE)	/* ARM_MMU_V6 */
 void	pmap_pte_init_arm11mpcore(void);
 #endif
+#if ARM_MMU_V6 == 1
+void	pmap_pte_init_armv6(void);
+#endif /* ARM_MMU_V7 */
 #if ARM_MMU_V7 == 1
 void	pmap_pte_init_armv7(void);
 #endif /* ARM_MMU_V7 */
@@ -683,14 +686,13 @@ void	xscale_setup_minidata(vaddr_t, vaddr_t, paddr_t);
 void	pmap_uarea(vaddr_t);
 #endif /* ARM_MMU_XSCALE == 1 */
 
+extern pt_entry_t		pte_l1_s_nocache_mode;
+extern pt_entry_t		pte_l2_l_nocache_mode;
+extern pt_entry_t		pte_l2_s_nocache_mode;
+
 extern pt_entry_t		pte_l1_s_cache_mode;
-extern pt_entry_t		pte_l1_s_cache_mask;
-
 extern pt_entry_t		pte_l2_l_cache_mode;
-extern pt_entry_t		pte_l2_l_cache_mask;
-
 extern pt_entry_t		pte_l2_s_cache_mode;
-extern pt_entry_t		pte_l2_s_cache_mask;
 
 extern pt_entry_t		pte_l1_s_cache_mode_pt;
 extern pt_entry_t		pte_l2_l_cache_mode_pt;
@@ -699,6 +701,10 @@ extern pt_entry_t		pte_l2_s_cache_mode_pt;
 extern pt_entry_t		pte_l1_s_wc_mode;
 extern pt_entry_t		pte_l2_l_wc_mode;
 extern pt_entry_t		pte_l2_s_wc_mode;
+
+extern pt_entry_t		pte_l1_s_cache_mask;
+extern pt_entry_t		pte_l2_l_cache_mask;
+extern pt_entry_t		pte_l2_s_cache_mask;
 
 extern pt_entry_t		pte_l1_s_prot_u;
 extern pt_entry_t		pte_l1_s_prot_w;

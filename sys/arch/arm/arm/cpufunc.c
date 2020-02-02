@@ -1776,7 +1776,7 @@ set_cpufuncs(void)
 #ifdef ARM11_CACHE_WRITE_THROUGH
 		pmap_pte_init_arm11();
 #else
-		pmap_pte_init_generic();
+		pmap_pte_init_armv6();
 #endif
 		if (arm_cache_prefer_mask)
 			uvmexp.ncolors = (arm_cache_prefer_mask >> PGSHIFT) + 1;
