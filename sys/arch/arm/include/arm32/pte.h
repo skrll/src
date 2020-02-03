@@ -233,6 +233,10 @@ typedef uint32_t	pt_entry_t;	/* L2 table entry */
 #define	L2_XS_L_XN	0x00008000	/* ARMv6 eXecute Never */
 
 
+//L2_XS_T ???
+// isn't it large and small pages, where we use small pages
+
+
 /*
  * Access Permissions for L1 and L2 Descriptors.
  */

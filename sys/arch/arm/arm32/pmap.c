@@ -3768,7 +3768,9 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 		if (!(flags & PMAP_NOCACHE))
 			npte |= pte_l2_s_cache_mode_pt;
 	} else {
-		switch (flags & PMAP_CACHE_MASK) {
+		switch (flags & (PMAP_CACHE_MASK | PMAP_DEV_MASK)) {
+		case PMAP_DEV ... PMAP_DEV | PMAP_CACHE_MASK:
+			break;
 		case PMAP_NOCACHE:
 			npte |= pte_l2_s_nocache_mode;
 			break;
@@ -6762,10 +6764,10 @@ pmap_map_section(vaddr_t l1pt, vaddr_t va, paddr_t pa, int prot, int cache)
 	case PTE_NOCACHE:
 		fl = pte_l1_s_nocache_mode;
 		break;
+
 	case PTE_CACHE:
 		fl = pte_l1_s_cache_mode;
 		break;
-
 	case PTE_PAGETABLE:
 		fl = pte_l1_s_cache_mode_pt;
 		break;
@@ -6883,7 +6885,6 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 		f2l = pte_l2_l_nocache_mode;
 		f2s = pte_l2_s_nocache_mode;
 		break;
-
 	case PTE_CACHE:
 		f1 = pte_l1_s_cache_mode;
 		f2l = pte_l2_l_cache_mode;
@@ -7647,9 +7648,36 @@ pmap_pte_init_armv6(void)
 	 */
 	pmap_pte_init_generic();
 
+	pte_l1_s_nocache_mode = L1_S_XS_TEX(1);
+	pte_l2_l_nocache_mode = L2_XS_L_TEX(1);
+	pte_l2_s_nocache_mode = L2_XS_T_TEX(1);
+
 	pte_l1_s_cache_mask = L1_S_CACHE_MASK_armv6;
 	pte_l2_l_cache_mask = L2_L_CACHE_MASK_armv6;
 	pte_l2_s_cache_mask = L2_S_CACHE_MASK_armv6;
+
+#ifdef ARM11_COMPAT_MMU
+	/* with AP[0..3] */
+	pte_l2_l_prot_u = L2_L_PROT_U_generic;
+	pte_l2_l_prot_w = L2_L_PROT_W_generic;
+	pte_l2_l_prot_ro = L2_L_PROT_RO_generic;
+	pte_l2_l_prot_mask = L2_L_PROT_MASK_generic;
+
+	pte_l1_ss_proto = L1_SS_PROTO_armv6;
+	pte_l1_s_proto = L1_S_PROTO_armv6;
+	pte_l1_c_proto = L1_C_PROTO_armv6;
+	pte_l2_s_proto = L2_S_PROTO_armv6c;
+#else
+	pte_l2_l_prot_u = L2_L_PROT_U_armv6n;
+	pte_l2_l_prot_w = L2_L_PROT_W_armv6n;
+	pte_l2_l_prot_ro = L2_L_PROT_RO_armv6n;
+	pte_l2_l_prot_mask = L2_L_PROT_MASK_armv6n;
+
+	pte_l1_ss_proto = L1_SS_PROTO_armv6;
+	pte_l1_s_proto = L1_S_PROTO_armv6;
+	pte_l1_c_proto = L1_C_PROTO_armv6;
+	pte_l2_s_proto = L2_S_PROTO_armv6n;
+#endif
 
 	pte_l1_s_prot_u = L1_S_PROT_U_armv6;
 	pte_l1_s_prot_w = L1_S_PROT_W_armv6;
@@ -7662,17 +7690,16 @@ pmap_pte_init_armv6(void)
 	pte_l2_s_prot_mask = L2_S_PROT_MASK_armv6;
 
 	pte_l2_l_prot_u = L2_L_PROT_U_armv6;
-	pte_l2_l_prot_w = L2_L_PROT_W_armv7;
-	pte_l2_l_prot_ro = L2_L_PROT_RO_armv7;
-	pte_l2_l_prot_mask = L2_L_PROT_MASK_armv7;
+	pte_l2_l_prot_w = L2_L_PROT_W_armv6;
+	pte_l2_l_prot_ro = L2_L_PROT_RO_armv6;
+	pte_l2_l_prot_mask = L2_L_PROT_MASK_armv6;
 
-	pte_l1_ss_proto = L1_SS_PROTO_armv7;
-	pte_l1_s_proto = L1_S_PROTO_armv7;
-	pte_l1_c_proto = L1_C_PROTO_armv7;
-	pte_l2_s_proto = L2_S_PROTO_armv7;
-
+	pte_l1_ss_proto = L1_SS_PROTO_armv6;
+	pte_l1_s_proto = L1_S_PROTO_armv6;
+	pte_l1_c_proto = L1_C_PROTO_armv6;
+	pte_l2_s_proto = L2_S_PROTO_armv6;
 }
-#endif /* ARM_MMU_V7 */
+#endif /* ARM_MMU_V6 */
 
 #if ARM_MMU_V7 == 1
 void

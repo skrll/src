@@ -221,7 +221,7 @@ struct pmap_devmap {
 		.pd_pa = DEVMAP_ALIGN(pa),		\
 		.pd_size = DEVMAP_SIZE(sz),		\
 		.pd_prot = VM_PROT_READ|VM_PROT_WRITE,	\
-		.pd_cache = PTE_NOCACHE			\
+		.pd_cache = PMAP_DEV			\
 	}
 #define	DEVMAP_ENTRY_END	{ 0 }
 
@@ -366,6 +366,9 @@ u_int arm32_mmap_flags(paddr_t);
 #define pmap_mmap_flags(ppn)		arm32_mmap_flags(ppn)
 
 #define	PMAP_PTE			0x10000000 /* kenter_pa */
+#define	PMAP_DEV			0x20000000 /* kenter_pa */
+#define	PMAP_DEV_SO			0x40000000 /* kenter_pa */
+#define	PMAP_DEV_MASK			(PMAP_DEV | PMAP_DEV_SO)
 
 /*
  * Functions that we need to export
