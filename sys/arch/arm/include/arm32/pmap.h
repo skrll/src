@@ -221,7 +221,7 @@ struct pmap_devmap {
 		.pd_pa = DEVMAP_ALIGN(pa),		\
 		.pd_size = DEVMAP_SIZE(sz),		\
 		.pd_prot = VM_PROT_READ|VM_PROT_WRITE,	\
-		.pd_cache = PMAP_DEV			\
+		.pd_cache = PTE_DEV			\
 	}
 #define	DEVMAP_ENTRY_END	{ 0 }
 
@@ -302,6 +302,7 @@ extern bool arm_has_tlbiasid_p;	/* also in <arm/locore.h> */
 #define	PTE_NOCACHE	0
 #define	PTE_CACHE	1
 #define	PTE_PAGETABLE	2
+#define	PTE_DEV		3
 
 /*
  * Flags that indicate attributes of pages or mappings of pages.

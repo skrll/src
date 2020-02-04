@@ -197,7 +197,7 @@ static const struct pmap_devmap devmap[] = {
 		.pd_pa = _A(MARVELL_INTERREGS_PBASE),
 		.pd_size = _S(MVSOC_INTERREGS_SIZE),
 		.pd_prot = VM_PROT_READ|VM_PROT_WRITE,
-		.pd_cache = PTE_NOCACHE
+		.pd_cache = PTE_DEV
 	},
 	{0, 0, 0, 0, 0}
 };

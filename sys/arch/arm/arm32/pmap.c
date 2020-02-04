@@ -6768,9 +6768,12 @@ pmap_map_section(vaddr_t l1pt, vaddr_t va, paddr_t pa, int prot, int cache)
 	case PTE_CACHE:
 		fl = pte_l1_s_cache_mode;
 		break;
+
 	case PTE_PAGETABLE:
 		fl = pte_l1_s_cache_mode_pt;
 		break;
+
+	case PTE_DEV:
 	default:
 		fl = 0;
 		break;
@@ -6885,6 +6888,7 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 		f2l = pte_l2_l_nocache_mode;
 		f2s = pte_l2_s_nocache_mode;
 		break;
+
 	case PTE_CACHE:
 		f1 = pte_l1_s_cache_mode;
 		f2l = pte_l2_l_cache_mode;
@@ -6897,6 +6901,7 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 		f2s = pte_l2_s_cache_mode_pt;
 		break;
 
+	case PTE_DEV:
 	default:
 		f1 = 0;
 		f2l = 0;
@@ -7870,21 +7875,27 @@ pmap_dump(pmap_t pm)
 					ch = '.';
 				} else {
 					occ--;
-					switch (pte & 0x0c) {
+					switch (pte & 0x4c) {
 					case 0x00:
-						ch = 'D'; /* No cache No buff */
+						ch = 'N'; /* No cache No buff */
 						break;
 					case 0x04:
 						ch = 'B'; /* No cache buff */
 						break;
 					case 0x08:
-						if (pte & 0x40)
-							ch = 'm';
-						else
-						   ch = 'C'; /* Cache No buff */
+						ch = 'C'; /* Cache No buff */
 						break;
 					case 0x0c:
 						ch = 'F'; /* Cache Buff */
+						break;
+					case 0x40:
+						ch = 'D';
+						break;
+					case 0x48:
+						ch = 'm'; /* Xscale mini-data */
+						break;
+					default:
+						ch = '?';
 						break;
 					}
 
