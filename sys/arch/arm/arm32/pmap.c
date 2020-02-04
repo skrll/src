@@ -7663,11 +7663,6 @@ pmap_pte_init_armv6(void)
 
 #ifdef ARM11_COMPAT_MMU
 	/* with AP[0..3] */
-	pte_l2_l_prot_u = L2_L_PROT_U_generic;
-	pte_l2_l_prot_w = L2_L_PROT_W_generic;
-	pte_l2_l_prot_ro = L2_L_PROT_RO_generic;
-	pte_l2_l_prot_mask = L2_L_PROT_MASK_generic;
-
 	pte_l1_ss_proto = L1_SS_PROTO_armv6;
 	pte_l1_s_proto = L1_S_PROTO_armv6;
 	pte_l1_c_proto = L1_C_PROTO_armv6;
