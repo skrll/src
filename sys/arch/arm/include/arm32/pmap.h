@@ -667,7 +667,7 @@ void	pmap_pte_init_arm11mpcore(void);
 #endif
 #if ARM_MMU_V6 == 1
 void	pmap_pte_init_armv6(void);
-#endif /* ARM_MMU_V7 */
+#endif /* ARM_MMU_V6 */
 #if ARM_MMU_V7 == 1
 void	pmap_pte_init_armv7(void);
 #endif /* ARM_MMU_V7 */
