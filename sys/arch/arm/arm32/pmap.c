@@ -7657,47 +7657,35 @@ pmap_pte_init_armv6(void)
 	pte_l2_l_nocache_mode = L2_XS_L_TEX(1);
 	pte_l2_s_nocache_mode = L2_XS_T_TEX(1);
 
-	pte_l1_s_cache_mask = L1_S_CACHE_MASK_armv6;
-	pte_l2_l_cache_mask = L2_L_CACHE_MASK_armv6;
-	pte_l2_s_cache_mask = L2_S_CACHE_MASK_armv6;
-
 #ifdef ARM11_COMPAT_MMU
 	/* with AP[0..3] */
 	pte_l1_ss_proto = L1_SS_PROTO_armv6;
-	pte_l1_s_proto = L1_S_PROTO_armv6;
-	pte_l1_c_proto = L1_C_PROTO_armv6;
-	pte_l2_s_proto = L2_S_PROTO_armv6c;
 #else
-	pte_l2_l_prot_u = L2_L_PROT_U_armv6n;
-	pte_l2_l_prot_w = L2_L_PROT_W_armv6n;
-	pte_l2_l_prot_ro = L2_L_PROT_RO_armv6n;
-	pte_l2_l_prot_mask = L2_L_PROT_MASK_armv6n;
+	pte_l1_s_cache_mask = L1_S_CACHE_MASK_armv6n;
+	pte_l2_l_cache_mask = L2_L_CACHE_MASK_armv6n;
+	pte_l2_s_cache_mask = L2_S_CACHE_MASK_armv6n;
 
 	pte_l1_ss_proto = L1_SS_PROTO_armv6;
 	pte_l1_s_proto = L1_S_PROTO_armv6;
 	pte_l1_c_proto = L1_C_PROTO_armv6;
 	pte_l2_s_proto = L2_S_PROTO_armv6n;
-#endif
 
 	pte_l1_s_prot_u = L1_S_PROT_U_armv6;
 	pte_l1_s_prot_w = L1_S_PROT_W_armv6;
 	pte_l1_s_prot_ro = L1_S_PROT_RO_armv6;
 	pte_l1_s_prot_mask = L1_S_PROT_MASK_armv6;
 
-	pte_l2_s_prot_u = L2_S_PROT_U_armv6;
-	pte_l2_s_prot_w = L2_S_PROT_W_armv6;
-	pte_l2_s_prot_ro = L2_S_PROT_RO_armv6;
-	pte_l2_s_prot_mask = L2_S_PROT_MASK_armv6;
+	pte_l2_l_prot_u = L2_L_PROT_U_armv6n;
+	pte_l2_l_prot_w = L2_L_PROT_W_armv6n;
+	pte_l2_l_prot_ro = L2_L_PROT_RO_armv6n;
+	pte_l2_l_prot_mask = L2_L_PROT_MASK_armv6n;
 
-	pte_l2_l_prot_u = L2_L_PROT_U_armv6;
-	pte_l2_l_prot_w = L2_L_PROT_W_armv6;
-	pte_l2_l_prot_ro = L2_L_PROT_RO_armv6;
-	pte_l2_l_prot_mask = L2_L_PROT_MASK_armv6;
+	pte_l2_s_prot_u = L2_S_PROT_U_armv6n;
+	pte_l2_s_prot_w = L2_S_PROT_W_armv6n;
+	pte_l2_s_prot_ro = L2_S_PROT_RO_armv6n;
+	pte_l2_s_prot_mask = L2_S_PROT_MASK_armv6n;
 
-	pte_l1_ss_proto = L1_SS_PROTO_armv6;
-	pte_l1_s_proto = L1_S_PROTO_armv6;
-	pte_l1_c_proto = L1_C_PROTO_armv6;
-	pte_l2_s_proto = L2_S_PROTO_armv6;
+#endif
 }
 #endif /* ARM_MMU_V6 */
 
