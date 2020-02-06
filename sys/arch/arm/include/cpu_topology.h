@@ -36,7 +36,7 @@
  *
  * arm_cpu_do_topology(cpuinfo)
  *
- * Call arm_cpu_do_topology() in cpu_attach() after making sure that
+ * Call arm_cpu_do_topology() in cpu_hatch() after making sure that
  * arm_cpu_mpidr() will work for this CPU, and it will split up
  * package/core/smt IDs.
  *

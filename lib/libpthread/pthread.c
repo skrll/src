@@ -1,4 +1,4 @@
-/*	$NetBSD: pthread.c,v 1.160 2020/01/29 15:31:14 kamil Exp $	*/
+/*	$NetBSD: pthread.c,v 1.163 2020/02/05 14:56:04 ryoon Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002, 2003, 2006, 2007, 2008, 2020
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: pthread.c,v 1.160 2020/01/29 15:31:14 kamil Exp $");
+__RCSID("$NetBSD: pthread.c,v 1.163 2020/02/05 14:56:04 ryoon Exp $");
 
 #define	__EXPOSE_STACK	1
 
@@ -111,7 +111,7 @@ int pthread__nspins;
 int pthread__unpark_max = PTHREAD__UNPARK_MAX;
 int pthread__dbg;	/* set by libpthread_dbg if active */
 
-/* 
+/*
  * We have to initialize the pthread_stack* variables here because
  * mutexes are used before pthread_init() and thus pthread__initmain()
  * are called.  Since mutexes only save the stack pointer and not a
@@ -176,9 +176,9 @@ pthread__init(void)
 
 	/*
 	 * Allocate pthread_keys descriptors before
-	 * reseting __uselibcstub because otherwise 
+	 * reseting __uselibcstub because otherwise
 	 * malloc() will call pthread_keys_create()
-	 * while pthread_keys descriptors are not 
+	 * while pthread_keys descriptors are not
 	 * yet allocated.
 	 */
 	pthread__main = pthread_tsd_init(&__pthread_st_size);
@@ -298,7 +298,7 @@ pthread__start(void)
 	/*
 	 * Per-process timers are cleared by fork(); despite the
 	 * various restrictions on fork() and threads, it's legal to
-	 * fork() before creating any threads. 
+	 * fork() before creating any threads.
 	 */
 	pthread_atfork(NULL, NULL, pthread__child_callback);
 }
@@ -597,6 +597,9 @@ pthread_suspend_np(pthread_t thread)
 {
 	pthread_t self;
 
+	pthread__error(EINVAL, "Invalid thread",
+	    thread->pt_magic == PT_MAGIC);
+
 	self = pthread__self();
 	if (self == thread) {
 		return EDEADLK;
@@ -611,7 +614,10 @@ pthread_suspend_np(pthread_t thread)
 int
 pthread_resume_np(pthread_t thread)
 {
- 
+
+	pthread__error(EINVAL, "Invalid thread",
+	    thread->pt_magic == PT_MAGIC);
+
 	if (pthread__find(thread) != 0)
 		return ESRCH;
 	if (_lwp_continue(thread->pt_lid) == 0)
@@ -702,20 +708,16 @@ pthread_join(pthread_t thread, void **valptr)
 {
 	pthread_t self;
 
+	pthread__error(EINVAL, "Invalid thread",
+	    thread->pt_magic == PT_MAGIC);
+
 	self = pthread__self();
 
 	if (pthread__find(thread) != 0)
 		return ESRCH;
 
-	if (thread->pt_magic != PT_MAGIC)
-		return EINVAL;
-
 	if (thread == self)
 		return EDEADLK;
-
-	/* XXX temporary - kernel should handle. */
-	if ((thread->pt_flags & PT_FLAG_DETACHED) != 0)
-		return EINVAL;
 
 	/* IEEE Std 1003.1 says pthread_join() never returns EINTR. */
 	for (;;) {
@@ -764,8 +766,15 @@ pthread__reap(pthread_t thread)
 int
 pthread_equal(pthread_t t1, pthread_t t2)
 {
+
 	if (__predict_false(__uselibcstub))
 		return __libc_thr_equal_stub(t1, t2);
+
+	pthread__error(EINVAL, "Invalid thread",
+	    t1->pt_magic == PT_MAGIC);
+
+	pthread__error(EINVAL, "Invalid thread",
+	    t2->pt_magic == PT_MAGIC);
 
 	/* Nothing special here. */
 	return (t1 == t2);
@@ -777,11 +786,11 @@ pthread_detach(pthread_t thread)
 {
 	int error;
 
+	pthread__error(EINVAL, "Invalid thread",
+	    thread->pt_magic == PT_MAGIC);
+
 	if (pthread__find(thread) != 0)
 		return ESRCH;
-
-	if (thread->pt_magic != PT_MAGIC)
-		return EINVAL;
 
 	pthread_mutex_lock(&thread->pt_lock);
 	if ((thread->pt_flags & PT_FLAG_DETACHED) != 0) {
@@ -806,11 +815,11 @@ int
 pthread_getname_np(pthread_t thread, char *name, size_t len)
 {
 
+	pthread__error(EINVAL, "Invalid thread",
+	    thread->pt_magic == PT_MAGIC);
+
 	if (pthread__find(thread) != 0)
 		return ESRCH;
-
-	if (thread->pt_magic != PT_MAGIC)
-		return EINVAL;
 
 	pthread_mutex_lock(&thread->pt_lock);
 	if (thread->pt_name == NULL)
@@ -829,11 +838,11 @@ pthread_setname_np(pthread_t thread, const char *name, void *arg)
 	char *oldname, *cp, newname[PTHREAD_MAX_NAMELEN_NP];
 	int namelen;
 
+	pthread__error(EINVAL, "Invalid thread",
+	    thread->pt_magic == PT_MAGIC);
+
 	if (pthread__find(thread) != 0)
 		return ESRCH;
-
-	if (thread->pt_magic != PT_MAGIC)
-		return EINVAL;
 
 	namelen = snprintf(newname, sizeof(newname), name, arg);
 	if (namelen >= PTHREAD_MAX_NAMELEN_NP)
@@ -869,6 +878,9 @@ pthread_self(void)
 int
 pthread_cancel(pthread_t thread)
 {
+
+	pthread__error(EINVAL, "Invalid thread",
+	    thread->pt_magic == PT_MAGIC);
 
 	if (pthread__find(thread) != 0)
 		return ESRCH;
@@ -1077,7 +1089,7 @@ pthread__assertfunc(const char *file, int line, const char *function,
 	 * snprintf should not acquire any locks, or we could
 	 * end up deadlocked if the assert caller held locks.
 	 */
-	len = snprintf(buf, 1024, 
+	len = snprintf(buf, 1024,
 	    "assertion \"%s\" failed: file \"%s\", line %d%s%s%s\n",
 	    expr, file, line,
 	    function ? ", function \"" : "",
@@ -1085,8 +1097,7 @@ pthread__assertfunc(const char *file, int line, const char *function,
 	    function ? "\"" : "");
 
 	_sys_write(STDERR_FILENO, buf, (size_t)len);
-	(void)kill(getpid(), SIGABRT);
-
+	(void)_lwp_kill(_lwp_self(), SIGABRT);
 	_exit(1);
 }
 
@@ -1097,7 +1108,7 @@ pthread__errorfunc(const char *file, int line, const char *function,
 {
 	char buf[1024];
 	size_t len;
-	
+
 	if (pthread__diagassert == 0)
 		return;
 
@@ -1105,7 +1116,7 @@ pthread__errorfunc(const char *file, int line, const char *function,
 	 * snprintf should not acquire any locks, or we could
 	 * end up deadlocked if the assert caller held locks.
 	 */
-	len = snprintf(buf, 1024, 
+	len = snprintf(buf, 1024,
 	    "%s: Error detected by libpthread: %s.\n"
 	    "Detected by file \"%s\", line %d%s%s%s.\n"
 	    "See pthread(3) for information.\n",
@@ -1121,7 +1132,7 @@ pthread__errorfunc(const char *file, int line, const char *function,
 		syslog(LOG_DEBUG | LOG_USER, "%s", buf);
 
 	if (pthread__diagassert & DIAGASSERT_ABORT) {
-		(void)kill(getpid(), SIGABRT);
+		(void)_lwp_kill(_lwp_self(), SIGABRT);
 		_exit(1);
 	}
 }

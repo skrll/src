@@ -1,4 +1,4 @@
-/*	$NetBSD: gem.c,v 1.125 2020/01/29 14:47:08 thorpej Exp $ */
+/*	$NetBSD: gem.c,v 1.127 2020/02/04 05:25:39 thorpej Exp $ */
 
 /*
  *
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.125 2020/01/29 14:47:08 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.127 2020/02/04 05:25:39 thorpej Exp $");
 
 #include "opt_inet.h"
 
@@ -175,7 +175,7 @@ gem_detach(struct gem_softc *sc, int flags)
 		rnd_detach_source(&sc->rnd_source);
 		ether_ifdetach(ifp);
 		if_detach(ifp);
-		ifmedia_delete_instance(&sc->sc_mii.mii_media, IFM_INST_ANY);
+		ifmedia_fini(&sc->sc_mii.mii_media);
 
 		callout_destroy(&sc->sc_tick_ch);
 		callout_destroy(&sc->sc_rx_watchdog);
@@ -1388,7 +1388,9 @@ gem_start(struct ifnet *ifp)
 	 * until we drain the queue, or use up all available transmit
 	 * descriptors.
 	 */
+#ifdef INET
 next:
+#endif
 	while ((txs = SIMPLEQ_FIRST(&sc->sc_txfreeq)) != NULL &&
 	    sc->sc_txfree != 0) {
 		/*

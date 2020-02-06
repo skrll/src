@@ -1,12 +1,8 @@
-/*	$NetBSD: urio.h,v 1.5 2016/04/23 10:15:32 skrll Exp $	*/
+/*	$NetBSD: cmd_ping.c,v 1.1 2020/02/05 13:23:42 kamil Exp $	*/
 
-/*
- * Copyright (c) 2000 The NetBSD Foundation, Inc.
+/*-
+ * Copyright (c) 2015 The NetBSD Foundation, Inc.
  * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Lennart Augustsson (lennart@augustsson.net) at
- * Carlstedt Research & Technology.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,29 +26,36 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/ioccom.h>
+#include <sys/cdefs.h>
+__RCSID("$NetBSD: cmd_ping.c,v 1.1 2020/02/05 13:23:42 kamil Exp $");
 
-struct urio_command
+#include <err.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+
+#include "ping.h"
+
+#define _PATH_DEV_PING "/dev/ping"
+
+int main(int argc, char **argv)
 {
-	unsigned short	length;
-	int		request;
-	int		requesttype;
-	int		value;
-	int		index;
-	void		*buffer;
-	int		timeout;
-};
+	int devfd;
 
-#define URIO_SEND_COMMAND	_IOWR('U', 200, struct urio_command)
-#define URIO_RECV_COMMAND	_IOWR('U', 201, struct urio_command)
+	setprogname(argv[0]);
 
-#define URIO_DIR_OUT		0x0
-#define URIO_DIR_IN		0x1
+	if ((devfd = open(_PATH_DEV_PING, O_RDWR)) == -1)
+		err(EXIT_FAILURE, "Cannot open %s", _PATH_DEV_PING);
 
-#ifndef __KERNEL__
-#define RIO_DIR_OUT URIO_DIR_OUT
-#define RIO_DIR_IN URIO_DIR_IN
-#define RIO_SEND_COMMAND URIO_SEND_COMMAND
-#define RIO_RECV_COMMAND URIO_RECV_COMMAND
-#define RioCommand urio_command
-#endif
+	if (ioctl(devfd, CMD_PING) == -1)
+		err(EXIT_FAILURE, "ping failed");
+
+	printf("%s: ping sent successfully\n", getprogname());
+    
+	if (close(devfd) == -1)
+		err(EXIT_FAILURE, "Cannot close %s", _PATH_DEV_PING);
+
+	return EXIT_SUCCESS;
+}

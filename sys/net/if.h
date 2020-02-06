@@ -1,4 +1,4 @@
-/*	$NetBSD: if.h,v 1.278 2020/01/29 03:16:28 thorpej Exp $	*/
+/*	$NetBSD: if.h,v 1.280 2020/02/01 21:59:39 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -62,6 +62,12 @@
 
 #ifndef _NET_IF_H_
 #define _NET_IF_H_
+
+/*
+ * Temporary, to allow for a quick disable if problems are discovered
+ * during a transition period.
+ */
+#define	__IF_STATS_PERCPU
 
 #if !defined(_KERNEL) && !defined(_STANDALONE)
 #include <stdbool.h>
@@ -285,7 +291,11 @@ typedef struct ifnet {
 	uint64_t	if_metric;	/* :? routing metric (external only) */
 	uint64_t	if_baudrate;	/* :? linespeed */
 	struct timespec	if_lastchange;	/* :? last operational state change */
+#ifdef _KERNEL
 	percpu_t	*if_stats;	/* :: statistics */
+#else
+	void		*if_stats;	/* opaque to user-space */
+#endif /* _KERNEL */
 #else /* ! __IF_STATS_PERCPU */
 	struct if_data	if_data;	/* ?: statistics and other data */
 #endif /* __IF_STATS_PERCPU */

@@ -1,4 +1,4 @@
-/*	$NetBSD: pthread_atfork.c,v 1.10 2015/01/20 18:31:25 christos Exp $	*/
+/*	$NetBSD: pthread_atfork.c,v 1.12 2020/02/01 18:14:16 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: pthread_atfork.c,v 1.10 2015/01/20 18:31:25 christos Exp $");
+__RCSID("$NetBSD: pthread_atfork.c,v 1.12 2020/02/01 18:14:16 kamil Exp $");
 #endif /* LIBC_SCCS and not lint */
 
 #include "namespace.h"
