@@ -1,11 +1,8 @@
-/*	$NetBSD: if_levar.h,v 1.9 2008/04/28 20:23:55 martin Exp $	*/
+/*	$NetBSD: cmd_ping.c,v 1.1 2020/02/05 13:23:42 kamil Exp $	*/
 
 /*-
- * Copyright (c) 1998 The NetBSD Foundation, Inc.
+ * Copyright (c) 2015 The NetBSD Foundation, Inc.
  * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Charles M. Hannum.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,25 +26,36 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define	PCNET_PCI_RDP	0x10
-#define	PCNET_PCI_RAP	0x12
-#define	PCNET_PCI_BDP	0x16
+#include <sys/cdefs.h>
+__RCSID("$NetBSD: cmd_ping.c,v 1.1 2020/02/05 13:23:42 kamil Exp $");
 
-/*
- * Ethernet software status per interface.
- *
- * Each interface is referenced by a network interface structure,
- * ethercom.ec_if, which the routing code uses to locate the interface.
- * This structure contains the output queue for the interface, its address, ...
- */
-struct le_softc {
-	struct	am79900_softc sc_am79900;	/* glue to MI code */
+#include <err.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
-	void	*sc_ih;
-	bus_space_tag_t sc_iot;		/* space cookie */
-	bus_space_handle_t sc_ioh;	/* bus space handle */
-	bus_dma_tag_t	sc_dmat;	/* bus dma tag */
-	bus_dmamap_t	sc_dmam;	/* bus dma map */
-	int	sc_rap, sc_rdp;		/* offsets to LANCE registers */
-	int	sc_currentmedia;	/* currently used media type */
-};
+#include "ping.h"
+
+#define _PATH_DEV_PING "/dev/ping"
+
+int main(int argc, char **argv)
+{
+	int devfd;
+
+	setprogname(argv[0]);
+
+	if ((devfd = open(_PATH_DEV_PING, O_RDWR)) == -1)
+		err(EXIT_FAILURE, "Cannot open %s", _PATH_DEV_PING);
+
+	if (ioctl(devfd, CMD_PING) == -1)
+		err(EXIT_FAILURE, "ping failed");
+
+	printf("%s: ping sent successfully\n", getprogname());
+    
+	if (close(devfd) == -1)
+		err(EXIT_FAILURE, "Cannot close %s", _PATH_DEV_PING);
+
+	return EXIT_SUCCESS;
+}

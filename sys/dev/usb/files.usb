@@ -1,4 +1,4 @@
-#	$NetBSD: files.usb,v 1.169 2020/01/17 15:00:20 maya Exp $
+#	$NetBSD: files.usb,v 1.171 2020/02/03 19:37:42 maya Exp $
 #
 # Config file and device description for machine-independent USB code.
 # Included by ports that need it.  Ports that use it must provide
@@ -68,7 +68,6 @@ defflag opt_usb.h	UPGT_DEBUG: USB_DEBUG
 defflag opt_usb.h	UPLCOM_DEBUG: USB_DEBUG
 defflag opt_usb.h	UPL_DEBUG: USB_DEBUG
 defflag opt_usb.h	URAL_DEBUG: USB_DEBUG
-defflag opt_usb.h	URIO_DEBUG: USB_DEBUG
 defflag opt_usb.h	URL_DEBUG: USB_DEBUG
 defflag opt_usb.h	URNDIS_DEBUG: USB_DEBUG
 defflag opt_usb.h	URTWN_DEBUG: USB_DEBUG
@@ -281,11 +280,6 @@ file	dev/usb/emdtv_ir.c		emdtv
 device	umodeswitch
 attach	umodeswitch at usbdevif
 file	dev/usb/umodeswitch.c		umodeswitch
-
-# Diamond Multimedia Rio 500
-device	urio
-attach	urio at usbdevif
-file	dev/usb/urio.c			urio			needs-flag
 
 # Apple iPad
 device	uipad

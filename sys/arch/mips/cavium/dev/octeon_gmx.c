@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_gmx.c,v 1.6 2019/11/10 21:16:30 chs Exp $	*/
+/*	$NetBSD: octeon_gmx.c,v 1.8 2020/01/29 05:30:14 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: octeon_gmx.c,v 1.6 2019/11/10 21:16:30 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: octeon_gmx.c,v 1.8 2020/01/29 05:30:14 thorpej Exp $");
 
 #include "opt_octeon.h"
 
@@ -1071,32 +1071,24 @@ octeon_gmx_stats(struct octeon_gmx_port_softc *sc)
          *  receive error of work queue entry.
          *  this is not add to input packet errors of interface.
          */
-	ifp->if_iqdrops +=
-	    (uint32_t)_GMX_PORT_RD8(sc, GMX0_RX0_STATS_PKTS_DRP);
-	ifp->if_opackets +=
-	    (uint32_t)_GMX_PORT_RD8(sc, GMX0_TX0_STAT3);
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+	if_statadd_ref(nsr, if_iqdrops,
+	    (uint32_t)_GMX_PORT_RD8(sc, GMX0_RX0_STATS_PKTS_DRP));
+	if_statadd_ref(nsr, if_opackets,
+	    (uint32_t)_GMX_PORT_RD8(sc, GMX0_TX0_STAT3));
 
 	tmp = _GMX_PORT_RD8(sc, GMX0_TX0_STAT0);
-	ifp->if_oerrors +=
-	    (uint32_t)tmp + ((uint32_t)(tmp >> 32) * 16);
-	ifp->if_collisions += (uint32_t)tmp;
-#if IFETHER_DOT3STATS
-	/* dot3StatsExcessiveCollisions */
-	ifp->if_data.ifi_dot3stats.if_oexsvcols += (uint32_t)tmp;
-#endif
+	if_statadd_ref(nsr, if_oerrors,
+	    (uint32_t)tmp + ((uint32_t)(tmp >> 32) * 16));
+	if_statadd_ref(nsr, if_collisions, (uint32_t)tmp);
 
 	tmp = _GMX_PORT_RD8(sc, GMX0_TX0_STAT1);
-	ifp->if_collisions +=
-	    (uint32_t)tmp + (uint32_t)(tmp >> 32);
-#if IFETHER_DOT3STATS
-	/* dot3StatsSingleCollisionFrames */
-	ifp->if_data.ifi_dot3stats.if_oscols += (uint32_t)(tmp >> 32);
-	/* dot3StatsMultipleCollisionFrames */
-	ifp->if_data.ifi_dot3stats.if_omcols += (uint32_t)tmp;
-#endif
+	if_statadd_ref(nsr, if_collisions,
+	    (uint32_t)tmp + (uint32_t)(tmp >> 32));
 
 	tmp = _GMX_PORT_RD8(sc, GMX0_TX0_STAT9);
-	ifp->if_oerrors += (uint32_t)(tmp >> 32);
+	if_statadd_ref(nsr, if_oerrors, (uint32_t)(tmp >> 32));
+	IF_STAT_PUTREF(ifp);
 }
 
 /* ---- DMAC filter */

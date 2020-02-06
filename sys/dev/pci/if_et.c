@@ -1,4 +1,4 @@
-/*	$NetBSD: if_et.c,v 1.28 2019/11/28 17:09:10 maxv Exp $	*/
+/*	$NetBSD: if_et.c,v 1.30 2020/02/04 05:44:14 thorpej Exp $	*/
 /*	$OpenBSD: if_et.c,v 1.12 2008/07/11 09:29:02 kevlo $	*/
 /*
  * Copyright (c) 2007 The DragonFly Project.  All rights reserved.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_et.c,v 1.28 2019/11/28 17:09:10 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_et.c,v 1.30 2020/02/04 05:44:14 thorpej Exp $");
 
 #include "opt_inet.h"
 #include "vlan.h"
@@ -332,12 +332,12 @@ et_detach(device_t self, int flags)
 
 	mii_detach(&sc->sc_miibus, MII_PHY_ANY, MII_OFFSET_ANY);
 
-	/* Delete all remaining media. */
-	ifmedia_delete_instance(&sc->sc_miibus.mii_media, IFM_INST_ANY);
-
 	ether_ifdetach(ifp);
 	if_detach(ifp);
 	et_dma_free(sc);
+
+	/* Delete all remaining media. */
+	ifmedia_fini(&sc->sc_miibus.mii_media);
 
 	if (sc->sc_irq_handle != NULL) {
 		pci_intr_disestablish(sc->sc_pct, sc->sc_irq_handle);
@@ -1197,7 +1197,7 @@ et_start(struct ifnet *ifp)
 		}
 
 		if (et_encap(sc, &m)) {
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			ifp->if_flags |= IFF_OACTIVE;
 			break;
 		}
@@ -1796,13 +1796,13 @@ et_rxeof(struct et_softc *sc)
 		CSR_WRITE_4(sc, ET_RXSTAT_POS, rxstat_pos);
 
 		if (ring_idx >= ET_RX_NRING) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			aprint_error_dev(sc->sc_dev, "invalid ring index %d\n",
 			    ring_idx);
 			continue;
 		}
 		if (buf_idx >= ET_RX_NDESC) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			aprint_error_dev(sc->sc_dev, "invalid buf index %d\n",
 			    buf_idx);
 			continue;
@@ -1817,7 +1817,7 @@ et_rxeof(struct et_softc *sc)
 		if (rbd->rbd_newbuf(rbd, buf_idx, 0) == 0) {
 			if (buflen < ETHER_CRC_LEN) {
 				m_freem(m);
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 			} else {
 				m->m_pkthdr.len = m->m_len = buflen -
 				    ETHER_CRC_LEN;
@@ -1826,7 +1826,7 @@ et_rxeof(struct et_softc *sc)
 				if_percpuq_enqueue(ifp->if_percpuq, m);
 			}
 		} else {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 		}
 
 		rx_ring = &sc->sc_rx_ring[ring_idx];
@@ -2018,7 +2018,7 @@ et_txeof(struct et_softc *sc)
 			bus_dmamap_unload(sc->sc_dmat, tb->tb_dmap);
 			m_freem(tb->tb_mbuf);
 			tb->tb_mbuf = NULL;
-			ifp->if_opackets++;
+			if_statinc(ifp, if_opackets);
 		}
 
 		if (++tbd->tbd_start_index == ET_TX_NDESC) {

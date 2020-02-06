@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ptrace_wait.c,v 1.148 2020/01/23 06:17:21 martin Exp $	*/
+/*	$NetBSD: t_ptrace_wait.c,v 1.153 2020/02/05 23:43:18 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2016, 2017, 2018, 2019 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: t_ptrace_wait.c,v 1.148 2020/01/23 06:17:21 martin Exp $");
+__RCSID("$NetBSD: t_ptrace_wait.c,v 1.153 2020/02/05 23:43:18 kamil Exp $");
 
 #define __LEGACY_PT_LWPINFO
 
@@ -3312,6 +3312,374 @@ FORK_TEST(posix_spawn16, "spawn", true, true, true, true)
 
 #if defined(TWAIT_HAVE_PID)
 static void
+unrelated_tracer_fork_body(const char *fn, bool trackspawn, bool trackfork,
+    bool trackvfork, bool trackvforkdone)
+{
+	const int sigval = SIGSTOP;
+	struct msg_fds parent_tracee, parent_tracer;
+	const int exitval = 10;
+	const int exitval2 = 0; /* This matched exit status from /bin/echo */
+	pid_t tracee, tracer, wpid;
+	pid_t tracee2 = 0;
+	uint8_t msg = 0xde; /* dummy message for IPC based on pipe(2) */
+#if defined(TWAIT_HAVE_STATUS)
+	int status;
+#endif
+
+	struct ptrace_siginfo info;
+	ptrace_state_t state;
+	const int slen = sizeof(state);
+	ptrace_event_t event;
+	const int elen = sizeof(event);
+
+	char * const arg[] = { __UNCONST("/bin/echo"), NULL };
+
+	DPRINTF("Spawn tracee\n");
+	SYSCALL_REQUIRE(msg_open(&parent_tracee) == 0);
+	tracee = atf_utils_fork();
+	if (tracee == 0) {
+		// Wait for parent to let us crash
+		CHILD_FROM_PARENT("exit tracee", parent_tracee, msg);
+
+		DPRINTF("Before raising %s from child\n", strsignal(sigval));
+		FORKEE_ASSERT(raise(sigval) == 0);
+
+		if (strcmp(fn, "spawn") == 0) {
+			FORKEE_ASSERT_EQ(posix_spawn(&tracee2,
+			    arg[0], NULL, NULL, arg, NULL), 0);
+		} else {
+			if (strcmp(fn, "fork") == 0) {
+				FORKEE_ASSERT((tracee2 = fork()) != -1);
+			} else if (strcmp(fn, "vfork") == 0) {
+				FORKEE_ASSERT((tracee2 = vfork()) != -1);
+			}
+
+			if (tracee2 == 0)
+				_exit(exitval2);
+		}
+		FORKEE_REQUIRE_SUCCESS
+		    (wpid = TWAIT_GENERIC(tracee2, &status, 0), tracee2);
+
+		forkee_status_exited(status, exitval2);
+
+		DPRINTF("Before exiting of the child process\n");
+		_exit(exitval);
+	}
+
+	DPRINTF("Spawn debugger\n");
+	SYSCALL_REQUIRE(msg_open(&parent_tracer) == 0);
+	tracer = atf_utils_fork();
+	if (tracer == 0) {
+		/* Fork again and drop parent to reattach to PID 1 */
+		tracer = atf_utils_fork();
+		if (tracer != 0)
+			_exit(exitval);
+
+		DPRINTF("Before calling PT_ATTACH from tracee %d\n", getpid());
+		FORKEE_ASSERT(ptrace(PT_ATTACH, tracee, NULL, 0) != -1);
+
+		/* Wait for tracee and assert that it was stopped w/ SIGSTOP */
+		FORKEE_REQUIRE_SUCCESS(
+		    wpid = TWAIT_GENERIC(tracee, &status, 0), tracee);
+
+		forkee_status_stopped(status, SIGSTOP);
+
+		DPRINTF("Before calling ptrace(2) with PT_GET_SIGINFO for the "
+		    "traced process\n");
+		SYSCALL_REQUIRE(
+		    ptrace(PT_GET_SIGINFO, tracee, &info, sizeof(info)) != -1);
+
+		DPRINTF("Signal traced to lwpid=%d\n", info.psi_lwpid);
+		DPRINTF("Signal properties: si_signo=%#x si_code=%#x "
+		    "si_errno=%#x\n", info.psi_siginfo.si_signo,
+		    info.psi_siginfo.si_code, info.psi_siginfo.si_errno);
+
+		FORKEE_ASSERT_EQ(info.psi_siginfo.si_signo, SIGSTOP);
+		FORKEE_ASSERT_EQ(info.psi_siginfo.si_code, SI_USER);
+
+		/* Resume tracee with PT_CONTINUE */
+		FORKEE_ASSERT(ptrace(PT_CONTINUE, tracee, (void *)1, 0) != -1);
+
+		/* Inform parent that tracer has attached to tracee */
+		CHILD_TO_PARENT("tracer ready", parent_tracer, msg);
+
+		/* Wait for parent to tell use that tracee should have exited */
+		CHILD_FROM_PARENT("wait for tracee exit", parent_tracer, msg);
+
+		/* Wait for tracee and assert that it exited */
+		FORKEE_REQUIRE_SUCCESS(
+		    wpid = TWAIT_GENERIC(tracee, &status, 0), tracee);
+
+		forkee_status_stopped(status, sigval);
+
+		DPRINTF("Before calling ptrace(2) with PT_GET_SIGINFO for the "
+		    "traced process\n");
+		SYSCALL_REQUIRE(
+		    ptrace(PT_GET_SIGINFO, tracee, &info, sizeof(info)) != -1);
+
+		DPRINTF("Signal traced to lwpid=%d\n", info.psi_lwpid);
+		DPRINTF("Signal properties: si_signo=%#x si_code=%#x "
+		    "si_errno=%#x\n", info.psi_siginfo.si_signo,
+		    info.psi_siginfo.si_code, info.psi_siginfo.si_errno);
+
+		FORKEE_ASSERT_EQ(info.psi_siginfo.si_signo, sigval);
+		FORKEE_ASSERT_EQ(info.psi_siginfo.si_code, SI_LWP);
+
+		DPRINTF("Set 0%s%s%s%s in EVENT_MASK for the child %d\n",
+		    trackspawn ? "|PTRACE_POSIX_SPAWN" : "",
+		    trackfork ? "|PTRACE_FORK" : "",
+		    trackvfork ? "|PTRACE_VFORK" : "",
+		    trackvforkdone ? "|PTRACE_VFORK_DONE" : "", tracee);
+		event.pe_set_event = 0;
+		if (trackspawn)
+			event.pe_set_event |= PTRACE_POSIX_SPAWN;
+		if (trackfork)
+			event.pe_set_event |= PTRACE_FORK;
+		if (trackvfork)
+			event.pe_set_event |= PTRACE_VFORK;
+		if (trackvforkdone)
+			event.pe_set_event |= PTRACE_VFORK_DONE;
+		SYSCALL_REQUIRE(ptrace(PT_SET_EVENT_MASK, tracee, &event, elen)
+		    != -1);
+
+		DPRINTF("Before resuming the child process where it left off "
+		    "and without signal to be sent\n");
+		SYSCALL_REQUIRE(ptrace(PT_CONTINUE, tracee, (void *)1, 0) != -1);
+
+		if ((trackspawn && strcmp(fn, "spawn") == 0) ||
+		    (trackfork && strcmp(fn, "fork") == 0) ||
+		    (trackvfork && strcmp(fn, "vfork") == 0)) {
+			DPRINTF("Before calling %s() for the tracee %d\n", TWAIT_FNAME,
+			    tracee);
+			TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(tracee, &status, 0),
+			    tracee);
+
+			validate_status_stopped(status, SIGTRAP);
+
+			SYSCALL_REQUIRE(
+			    ptrace(PT_GET_PROCESS_STATE, tracee, &state, slen) != -1);
+			if (trackspawn && strcmp(fn, "spawn") == 0) {
+				ATF_REQUIRE_EQ(
+				    state.pe_report_event & PTRACE_POSIX_SPAWN,
+				       PTRACE_POSIX_SPAWN);
+			}
+			if (trackfork && strcmp(fn, "fork") == 0) {
+				ATF_REQUIRE_EQ(state.pe_report_event & PTRACE_FORK,
+				       PTRACE_FORK);
+			}
+			if (trackvfork && strcmp(fn, "vfork") == 0) {
+				ATF_REQUIRE_EQ(state.pe_report_event & PTRACE_VFORK,
+				       PTRACE_VFORK);
+			}
+
+			tracee2 = state.pe_other_pid;
+			DPRINTF("Reported ptrace event with forkee %d\n", tracee2);
+
+			DPRINTF("Before calling %s() for the forkee %d of the tracee "
+			    "%d\n", TWAIT_FNAME, tracee2, tracee);
+			TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(tracee2, &status, 0),
+			    tracee2);
+
+			validate_status_stopped(status, SIGTRAP);
+
+			SYSCALL_REQUIRE(
+			    ptrace(PT_GET_PROCESS_STATE, tracee2, &state, slen) != -1);
+			if (trackspawn && strcmp(fn, "spawn") == 0) {
+				ATF_REQUIRE_EQ(
+				    state.pe_report_event & PTRACE_POSIX_SPAWN,
+				       PTRACE_POSIX_SPAWN);
+			}
+			if (trackfork && strcmp(fn, "fork") == 0) {
+				ATF_REQUIRE_EQ(state.pe_report_event & PTRACE_FORK,
+				       PTRACE_FORK);
+			}
+			if (trackvfork && strcmp(fn, "vfork") == 0) {
+				ATF_REQUIRE_EQ(state.pe_report_event & PTRACE_VFORK,
+				       PTRACE_VFORK);
+			}
+
+			ATF_REQUIRE_EQ(state.pe_other_pid, tracee);
+
+			DPRINTF("Before resuming the forkee process where it left off "
+			    "and without signal to be sent\n");
+			SYSCALL_REQUIRE(
+			    ptrace(PT_CONTINUE, tracee2, (void *)1, 0) != -1);
+		
+			DPRINTF("Before resuming the tracee process where it left off "
+			    "and without signal to be sent\n");
+			SYSCALL_REQUIRE(ptrace(PT_CONTINUE, tracee, (void *)1, 0) != -1);
+		}
+
+		if (trackvforkdone && strcmp(fn, "vfork") == 0) {
+			DPRINTF("Before calling %s() for the tracee %d\n", TWAIT_FNAME,
+			    tracee);
+			TWAIT_REQUIRE_SUCCESS(
+			    wpid = TWAIT_GENERIC(tracee, &status, 0), tracee);
+
+			validate_status_stopped(status, SIGTRAP);
+
+			SYSCALL_REQUIRE(
+			    ptrace(PT_GET_PROCESS_STATE, tracee, &state, slen) != -1);
+			ATF_REQUIRE_EQ(state.pe_report_event, PTRACE_VFORK_DONE);
+
+			tracee2 = state.pe_other_pid;
+			DPRINTF("Reported PTRACE_VFORK_DONE event with forkee %d\n",
+			    tracee2);
+
+			DPRINTF("Before resuming the tracee process where it left off "
+			    "and without signal to be sent\n");
+			SYSCALL_REQUIRE(ptrace(PT_CONTINUE, tracee, (void *)1, 0) != -1);
+		}
+
+
+		if ((trackspawn && strcmp(fn, "spawn") == 0) ||
+		    (trackfork && strcmp(fn, "fork") == 0) ||
+		    (trackvfork && strcmp(fn, "vfork") == 0)) {
+			DPRINTF("Before calling %s() for the forkee - expected exited"
+			    "\n", TWAIT_FNAME);
+			TWAIT_REQUIRE_SUCCESS(
+			    wpid = TWAIT_GENERIC(tracee2, &status, 0), tracee2);
+
+			validate_status_exited(status, exitval2);
+
+			DPRINTF("Before calling %s() for the forkee - expected no "
+			    "process\n", TWAIT_FNAME);
+			TWAIT_REQUIRE_FAILURE(ECHILD,
+			    wpid = TWAIT_GENERIC(tracee2, &status, 0));
+		}
+
+		DPRINTF("Before calling %s() for the tracee - expected stopped "
+		    "SIGCHLD\n", TWAIT_FNAME);
+		TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(tracee, &status, 0), tracee);
+
+		validate_status_stopped(status, SIGCHLD);
+
+		DPRINTF("Before resuming the tracee process where it left off and "
+		    "without signal to be sent\n");
+		SYSCALL_REQUIRE(ptrace(PT_CONTINUE, tracee, (void *)1, 0) != -1);
+
+		DPRINTF("Before calling %s() for the tracee - expected exited\n",
+		    TWAIT_FNAME);
+		TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(tracee, &status, 0), tracee);
+
+		validate_status_exited(status, exitval);
+
+		/* Inform parent that tracer is exiting normally */
+		CHILD_TO_PARENT("tracer done", parent_tracer, msg);
+
+		DPRINTF("Before exiting of the tracer process\n");
+		_exit(0 /* collect by initproc */);
+	}
+
+	DPRINTF("Wait for the tracer process (direct child) to exit "
+	    "calling %s()\n", TWAIT_FNAME);
+	TWAIT_REQUIRE_SUCCESS(
+	    wpid = TWAIT_GENERIC(tracer, &status, 0), tracer);
+
+	validate_status_exited(status, exitval);
+
+	DPRINTF("Wait for the non-exited tracee process with %s()\n",
+	    TWAIT_FNAME);
+	TWAIT_REQUIRE_SUCCESS(
+	    wpid = TWAIT_GENERIC(tracee, NULL, WNOHANG), 0);
+
+	DPRINTF("Wait for the tracer to attach to the tracee\n");
+	PARENT_FROM_CHILD("tracer ready", parent_tracer, msg);
+
+	DPRINTF("Resume the tracee and let it crash\n");
+	PARENT_TO_CHILD("exit tracee", parent_tracee,  msg);
+
+	DPRINTF("Resume the tracer and let it detect crashed tracee\n");
+	PARENT_TO_CHILD("Message 2", parent_tracer, msg);
+
+	DPRINTF("Wait for tracee to finish its job and exit - calling %s()\n",
+	    TWAIT_FNAME);
+	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(tracee, &status, 0), tracee);
+
+	validate_status_exited(status, exitval);
+
+	DPRINTF("Await normal exit of tracer\n");
+	PARENT_FROM_CHILD("tracer done", parent_tracer, msg);
+
+	msg_close(&parent_tracer);
+	msg_close(&parent_tracee);
+}
+
+#define UNRELATED_TRACER_FORK_TEST(name,fun,tspawn,tfork,tvfork,tvforkdone)\
+ATF_TC(name);								\
+ATF_TC_HEAD(name, tc)							\
+{									\
+	atf_tc_set_md_var(tc, "descr", "Verify " fun "() "		\
+	    "called with 0%s%s%s%s in EVENT_MASK",			\
+	    tspawn ? "|PTRACE_POSIX_SPAWN" : "",			\
+	    tfork ? "|PTRACE_FORK" : "",				\
+	    tvfork ? "|PTRACE_VFORK" : "",				\
+	    tvforkdone ? "|PTRACE_VFORK_DONE" : "");			\
+}									\
+									\
+ATF_TC_BODY(name, tc)							\
+{									\
+									\
+	unrelated_tracer_fork_body(fun, tspawn, tfork, tvfork,		\
+	    tvforkdone);						\
+}
+
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork1, "fork", false, false, false, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork2, "fork", false, true, false, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork3, "fork", false, false, true, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork4, "fork", false, true, true, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork5, "fork", false, false, false, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork6, "fork", false, true, false, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork7, "fork", false, false, true, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork8, "fork", false, true, true, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork9, "fork", true, false, false, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork10, "fork", true, true, false, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork11, "fork", true, false, true, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork12, "fork", true, true, true, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork13, "fork", true, false, false, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork14, "fork", true, true, false, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork15, "fork", true, false, true, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_fork16, "fork", true, true, true, true)
+
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork1, "vfork", false, false, false, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork2, "vfork", false, true, false, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork3, "vfork", false, false, true, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork4, "vfork", false, true, true, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork5, "vfork", false, false, false, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork6, "vfork", false, true, false, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork7, "vfork", false, false, true, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork8, "vfork", false, true, true, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork9, "vfork", true, false, false, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork10, "vfork", true, true, false, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork11, "vfork", true, false, true, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork12, "vfork", true, true, true, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork13, "vfork", true, false, false, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork14, "vfork", true, true, false, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork15, "vfork", true, false, true, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_vfork16, "vfork", true, true, true, true)
+
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn1, "spawn", false, false, false, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn2, "spawn", false, true, false, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn3, "spawn", false, false, true, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn4, "spawn", false, true, true, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn5, "spawn", false, false, false, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn6, "spawn", false, true, false, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn7, "spawn", false, false, true, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn8, "spawn", false, true, true, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn9, "spawn", true, false, false, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn10, "spawn", true, true, false, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn11, "spawn", true, false, true, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn12, "spawn", true, true, true, false)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn13, "spawn", true, false, false, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn14, "spawn", true, true, false, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn15, "spawn", true, false, true, true)
+UNRELATED_TRACER_FORK_TEST(unrelated_tracer_posix_spawn16, "spawn", true, true, true, true)
+#endif
+
+/// ----------------------------------------------------------------------------
+
+#if defined(TWAIT_HAVE_PID)
+static void
 fork_detach_forker_body(const char *fn, bool kill_process)
 {
 	const int exitval = 5;
@@ -3497,6 +3865,292 @@ FORK_DETACH_FORKER(posix_spawn_kill_spawner, "spawn", true)
 FORK_DETACH_FORKER(fork_kill_forker, "fork", true)
 FORK_DETACH_FORKER(vfork_kill_vforker, "vfork", true)
 FORK_DETACH_FORKER(vfork_kill_vforkerdone, "vforkdone", true)
+#endif
+
+/// ----------------------------------------------------------------------------
+
+#if defined(TWAIT_HAVE_PID)
+static void
+unrelated_tracer_fork_detach_forker_body(const char *fn, bool kill_process)
+{
+	const int sigval = SIGSTOP;
+	struct msg_fds parent_tracee, parent_tracer;
+	const int exitval = 10;
+	const int exitval2 = 0; /* This matched exit status from /bin/echo */
+	pid_t tracee, tracer, wpid;
+	pid_t tracee2 = 0;
+	uint8_t msg = 0xde; /* dummy message for IPC based on pipe(2) */
+#if defined(TWAIT_HAVE_STATUS)
+	int status;
+#endif
+	int op;
+
+	struct ptrace_siginfo info;
+	ptrace_state_t state;
+	const int slen = sizeof(state);
+	ptrace_event_t event;
+	const int elen = sizeof(event);
+
+	char * const arg[] = { __UNCONST("/bin/echo"), NULL };
+
+	DPRINTF("Spawn tracee\n");
+	SYSCALL_REQUIRE(msg_open(&parent_tracee) == 0);
+	tracee = atf_utils_fork();
+	if (tracee == 0) {
+		// Wait for parent to let us crash
+		CHILD_FROM_PARENT("exit tracee", parent_tracee, msg);
+
+		DPRINTF("Before raising %s from child\n", strsignal(sigval));
+		FORKEE_ASSERT(raise(sigval) == 0);
+
+		if (strcmp(fn, "spawn") == 0) {
+			FORKEE_ASSERT_EQ(posix_spawn(&tracee2,
+			    arg[0], NULL, NULL, arg, NULL), 0);
+		} else  {
+			if (strcmp(fn, "fork") == 0) {
+				FORKEE_ASSERT((tracee2 = fork()) != -1);
+			} else {
+				FORKEE_ASSERT((tracee2 = vfork()) != -1);
+			}
+
+			if (tracee2 == 0)
+				_exit(exitval2);
+		}
+
+		FORKEE_REQUIRE_SUCCESS
+		    (wpid = TWAIT_GENERIC(tracee2, &status, 0), tracee2);
+
+		forkee_status_exited(status, exitval2);
+
+		DPRINTF("Before exiting of the child process\n");
+		_exit(exitval);
+	}
+
+	DPRINTF("Spawn debugger\n");
+	SYSCALL_REQUIRE(msg_open(&parent_tracer) == 0);
+	tracer = atf_utils_fork();
+	if (tracer == 0) {
+		/* Fork again and drop parent to reattach to PID 1 */
+		tracer = atf_utils_fork();
+		if (tracer != 0)
+			_exit(exitval);
+
+		DPRINTF("Before calling PT_ATTACH from tracee %d\n", getpid());
+		FORKEE_ASSERT(ptrace(PT_ATTACH, tracee, NULL, 0) != -1);
+
+		/* Wait for tracee and assert that it was stopped w/ SIGSTOP */
+		FORKEE_REQUIRE_SUCCESS(
+		    wpid = TWAIT_GENERIC(tracee, &status, 0), tracee);
+
+		forkee_status_stopped(status, SIGSTOP);
+
+		DPRINTF("Before calling ptrace(2) with PT_GET_SIGINFO for the "
+		    "traced process\n");
+		SYSCALL_REQUIRE(
+		    ptrace(PT_GET_SIGINFO, tracee, &info, sizeof(info)) != -1);
+
+		DPRINTF("Signal traced to lwpid=%d\n", info.psi_lwpid);
+		DPRINTF("Signal properties: si_signo=%#x si_code=%#x "
+		    "si_errno=%#x\n", info.psi_siginfo.si_signo,
+		    info.psi_siginfo.si_code, info.psi_siginfo.si_errno);
+
+		FORKEE_ASSERT_EQ(info.psi_siginfo.si_signo, SIGSTOP);
+		FORKEE_ASSERT_EQ(info.psi_siginfo.si_code, SI_USER);
+
+		/* Resume tracee with PT_CONTINUE */
+		FORKEE_ASSERT(ptrace(PT_CONTINUE, tracee, (void *)1, 0) != -1);
+
+		/* Inform parent that tracer has attached to tracee */
+		CHILD_TO_PARENT("tracer ready", parent_tracer, msg);
+
+		/* Wait for parent to tell use that tracee should have exited */
+		CHILD_FROM_PARENT("wait for tracee exit", parent_tracer, msg);
+
+		/* Wait for tracee and assert that it exited */
+		FORKEE_REQUIRE_SUCCESS(
+		    wpid = TWAIT_GENERIC(tracee, &status, 0), tracee);
+
+		forkee_status_stopped(status, sigval);
+
+		DPRINTF("Before calling ptrace(2) with PT_GET_SIGINFO for the "
+		    "traced process\n");
+		SYSCALL_REQUIRE(
+		    ptrace(PT_GET_SIGINFO, tracee, &info, sizeof(info)) != -1);
+
+		DPRINTF("Signal traced to lwpid=%d\n", info.psi_lwpid);
+		DPRINTF("Signal properties: si_signo=%#x si_code=%#x "
+		    "si_errno=%#x\n", info.psi_siginfo.si_signo,
+		    info.psi_siginfo.si_code, info.psi_siginfo.si_errno);
+
+		FORKEE_ASSERT_EQ(info.psi_siginfo.si_signo, sigval);
+		FORKEE_ASSERT_EQ(info.psi_siginfo.si_code, SI_LWP);
+
+		DPRINTF("Set EVENT_MASK for the child %d\n", tracee);
+		event.pe_set_event = PTRACE_POSIX_SPAWN | PTRACE_FORK | PTRACE_VFORK
+			| PTRACE_VFORK_DONE;
+		SYSCALL_REQUIRE(ptrace(PT_SET_EVENT_MASK, tracee, &event, elen) != -1);
+
+		DPRINTF("Before resuming the child process where it left off and "
+		    "without signal to be sent\n");
+		SYSCALL_REQUIRE(ptrace(PT_CONTINUE, tracee, (void *)1, 0) != -1);
+
+		DPRINTF("Before calling %s() for the child %d\n", TWAIT_FNAME, tracee);
+		TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(tracee, &status, 0), tracee);
+
+		validate_status_stopped(status, SIGTRAP);
+
+		SYSCALL_REQUIRE(
+		    ptrace(PT_GET_PROCESS_STATE, tracee, &state, slen) != -1);
+
+		if (strcmp(fn, "spawn") == 0)
+			op = PTRACE_POSIX_SPAWN;
+		else if (strcmp(fn, "fork") == 0)
+			op = PTRACE_FORK;
+		else
+			op = PTRACE_VFORK;
+
+		ATF_REQUIRE_EQ(state.pe_report_event & op, op);
+
+		tracee2 = state.pe_other_pid;
+		DPRINTF("Reported ptrace event with forkee %d\n", tracee2);
+		if (strcmp(fn, "spawn") == 0 || strcmp(fn, "fork") == 0 ||
+		    strcmp(fn, "vfork") == 0)
+			op = kill_process ? PT_KILL : PT_DETACH;
+		else
+			op = PT_CONTINUE;
+		SYSCALL_REQUIRE(ptrace(op, tracee, (void *)1, 0) != -1);
+
+		DPRINTF("Before calling %s() for the forkee %d of the tracee %d\n",
+		    TWAIT_FNAME, tracee2, tracee);
+		TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(tracee2, &status, 0), tracee2);
+
+		validate_status_stopped(status, SIGTRAP);
+
+		SYSCALL_REQUIRE(
+		    ptrace(PT_GET_PROCESS_STATE, tracee2, &state, slen) != -1);
+		if (strcmp(fn, "spawn") == 0)
+			op = PTRACE_POSIX_SPAWN;
+		else if (strcmp(fn, "fork") == 0)
+			op = PTRACE_FORK;
+		else
+			op = PTRACE_VFORK;
+
+		ATF_REQUIRE_EQ(state.pe_report_event & op, op);
+		ATF_REQUIRE_EQ(state.pe_other_pid, tracee);
+
+		DPRINTF("Before resuming the forkee process where it left off "
+		    "and without signal to be sent\n");
+		SYSCALL_REQUIRE(
+		    ptrace(PT_CONTINUE, tracee2, (void *)1, 0) != -1);
+
+		if (strcmp(fn, "vforkdone") == 0) {
+			DPRINTF("Before calling %s() for the child %d\n", TWAIT_FNAME,
+			    tracee);
+			TWAIT_REQUIRE_SUCCESS(
+			    wpid = TWAIT_GENERIC(tracee, &status, 0), tracee);
+
+			validate_status_stopped(status, SIGTRAP);
+
+			SYSCALL_REQUIRE(
+			    ptrace(PT_GET_PROCESS_STATE, tracee, &state, slen) != -1);
+			ATF_REQUIRE_EQ(state.pe_report_event, PTRACE_VFORK_DONE);
+
+			tracee2 = state.pe_other_pid;
+			DPRINTF("Reported PTRACE_VFORK_DONE event with forkee %d\n",
+			    tracee2);
+
+			op = kill_process ? PT_KILL : PT_DETACH;
+			DPRINTF("Before resuming the child process where it left off "
+			    "and without signal to be sent\n");
+			SYSCALL_REQUIRE(ptrace(op, tracee, (void *)1, 0) != -1);
+		}
+
+		DPRINTF("Before calling %s() for the forkee - expected exited\n",
+		    TWAIT_FNAME);
+		TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(tracee2, &status, 0), tracee2);
+
+		validate_status_exited(status, exitval2);
+
+		DPRINTF("Before calling %s() for the forkee - expected no process\n",
+		    TWAIT_FNAME);
+		TWAIT_REQUIRE_FAILURE(ECHILD, wpid = TWAIT_GENERIC(tracee2, &status, 0));
+
+		if (kill_process) {
+			DPRINTF("Before calling %s() for the forkee - expected signaled\n",
+			    TWAIT_FNAME);
+			TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(tracee, &status, 0), tracee);
+
+			validate_status_signaled(status, SIGKILL, 0);
+		}
+
+		/* Inform parent that tracer is exiting normally */
+		CHILD_TO_PARENT("tracer done", parent_tracer, msg);
+
+		DPRINTF("Before exiting of the tracer process\n");
+		_exit(0 /* collect by initproc */);
+	}
+
+	DPRINTF("Wait for the tracer process (direct child) to exit "
+	    "calling %s()\n", TWAIT_FNAME);
+	TWAIT_REQUIRE_SUCCESS(
+	    wpid = TWAIT_GENERIC(tracer, &status, 0), tracer);
+
+	validate_status_exited(status, exitval);
+
+	DPRINTF("Wait for the non-exited tracee process with %s()\n",
+	    TWAIT_FNAME);
+	TWAIT_REQUIRE_SUCCESS(
+	    wpid = TWAIT_GENERIC(tracee, NULL, WNOHANG), 0);
+
+	DPRINTF("Wait for the tracer to attach to the tracee\n");
+	PARENT_FROM_CHILD("tracer ready", parent_tracer, msg);
+
+	DPRINTF("Resume the tracee and let it crash\n");
+	PARENT_TO_CHILD("exit tracee", parent_tracee,  msg);
+
+	DPRINTF("Resume the tracer and let it detect crashed tracee\n");
+	PARENT_TO_CHILD("Message 2", parent_tracer, msg);
+
+	DPRINTF("Wait for tracee to finish its job and exit - calling %s()\n",
+	    TWAIT_FNAME);
+	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(tracee, &status, 0), tracee);
+
+	if (kill_process) {
+		validate_status_signaled(status, SIGKILL, 0);
+	} else {
+		validate_status_exited(status, exitval);
+	}
+
+	DPRINTF("Await normal exit of tracer\n");
+	PARENT_FROM_CHILD("tracer done", parent_tracer, msg);
+
+	msg_close(&parent_tracer);
+	msg_close(&parent_tracee);
+}
+
+#define UNRELATED_TRACER_FORK_DETACH_FORKER(name,event,kprocess)	\
+ATF_TC(name);								\
+ATF_TC_HEAD(name, tc)							\
+{									\
+	atf_tc_set_md_var(tc, "descr", "Verify %s " event,		\
+	    kprocess ? "killed" : "detached");				\
+}									\
+									\
+ATF_TC_BODY(name, tc)							\
+{									\
+									\
+	unrelated_tracer_fork_detach_forker_body(event, kprocess);	\
+}
+
+UNRELATED_TRACER_FORK_DETACH_FORKER(unrelated_tracer_posix_spawn_detach_spawner, "spawn", false)
+UNRELATED_TRACER_FORK_DETACH_FORKER(unrelated_tracer_fork_detach_forker, "fork", false)
+UNRELATED_TRACER_FORK_DETACH_FORKER(unrelated_tracer_vfork_detach_vforker, "vfork", false)
+UNRELATED_TRACER_FORK_DETACH_FORKER(unrelated_tracer_vfork_detach_vforkerdone, "vforkdone", false)
+
+UNRELATED_TRACER_FORK_DETACH_FORKER(unrelated_tracer_posix_spawn_kill_spawner, "spawn", true)
+UNRELATED_TRACER_FORK_DETACH_FORKER(unrelated_tracer_fork_kill_forker, "fork", true)
+UNRELATED_TRACER_FORK_DETACH_FORKER(unrelated_tracer_vfork_kill_vforker, "vfork", true)
+UNRELATED_TRACER_FORK_DETACH_FORKER(unrelated_tracer_vfork_kill_vforkerdone, "vforkdone", true)
 #endif
 
 /// ----------------------------------------------------------------------------
@@ -5741,7 +6395,7 @@ trace_threads_cb(void *arg __unused)
 }
 
 static void
-trace_threads(bool trace_create, bool trace_exit)
+trace_threads(bool trace_create, bool trace_exit, bool masked)
 {
 	const int sigval = SIGSTOP;
 	pid_t child, wpid;
@@ -5753,6 +6407,8 @@ trace_threads(bool trace_create, bool trace_exit)
 	ptrace_event_t event;
 	const int elen = sizeof(event);
 	struct ptrace_siginfo info;
+
+	sigset_t intmask;
 
 	pthread_t t[TRACE_THREADS_NUM];
 	int rv;
@@ -5767,6 +6423,12 @@ trace_threads(bool trace_create, bool trace_exit)
 	if (child == 0) {
 		DPRINTF("Before calling PT_TRACE_ME from child %d\n", getpid());
 		FORKEE_ASSERT(ptrace(PT_TRACE_ME, 0, NULL, 0) != -1);
+
+		if (masked) {
+			sigemptyset(&intmask);
+			sigaddset(&intmask, SIGTRAP);
+			sigprocmask(SIG_BLOCK, &intmask, NULL);
+		}
 
 		DPRINTF("Before raising %s from child\n", strsignal(sigval));
 		FORKEE_ASSERT(raise(sigval) == 0);
@@ -5916,7 +6578,7 @@ trace_threads(bool trace_create, bool trace_exit)
 	TWAIT_REQUIRE_FAILURE(ECHILD, wpid = TWAIT_GENERIC(child, &status, 0));
 }
 
-#define TRACE_THREADS(test, trace_create, trace_exit)			\
+#define TRACE_THREADS(test, trace_create, trace_exit, mask)		\
 ATF_TC(test);								\
 ATF_TC_HEAD(test, tc)							\
 {									\
@@ -5929,13 +6591,17 @@ ATF_TC_HEAD(test, tc)							\
 ATF_TC_BODY(test, tc)							\
 {									\
 									\
-        trace_threads(trace_create, trace_exit);			\
+        trace_threads(trace_create, trace_exit, mask);			\
 }
 
-TRACE_THREADS(trace_thread_nolwpevents, false, false)
-TRACE_THREADS(trace_thread_lwpexit, false, true)
-TRACE_THREADS(trace_thread_lwpcreate, true, false)
-TRACE_THREADS(trace_thread_lwpcreate_and_exit, true, true)
+TRACE_THREADS(trace_thread_nolwpevents, false, false, false)
+TRACE_THREADS(trace_thread_lwpexit, false, true, false)
+TRACE_THREADS(trace_thread_lwpcreate, true, false, false)
+TRACE_THREADS(trace_thread_lwpcreate_and_exit, true, true, false)
+
+TRACE_THREADS(trace_thread_lwpexit_masked_sigtrap, false, true, true)
+TRACE_THREADS(trace_thread_lwpcreate_masked_sigtrap, true, false, true)
+TRACE_THREADS(trace_thread_lwpcreate_and_exit_masked_sigtrap, true, true, true)
 
 /// ----------------------------------------------------------------------------
 
@@ -6394,41 +7060,31 @@ FORK2_TEST(vforkdone_singalignored, "vforkdone", false, true)
 
 /// ----------------------------------------------------------------------------
 
-volatile lwpid_t the_lwp_id = 0;
+static void *
+thread_and_exec_thread_cb(void *arg __unused)
+{
+
+	execlp("/bin/echo", "/bin/echo", NULL);
+
+	abort();
+}
 
 static void
-lwp_main_func(void *arg)
+threads_and_exec(void)
 {
-	the_lwp_id = _lwp_self();
-	_lwp_exit();
-}
-
-ATF_TC(signal9);
-ATF_TC_HEAD(signal9, tc)
-{
-	atf_tc_set_md_var(tc, "descr",
-	    "Verify that masking SIGTRAP in tracee does not stop tracer from "
-	    "catching PTRACE_LWP_CREATE breakpoint");
-}
-
-ATF_TC_BODY(signal9, tc)
-{
-	const int exitval = 5;
 	const int sigval = SIGSTOP;
-	const int sigmasked = SIGTRAP;
 	pid_t child, wpid;
 #if defined(TWAIT_HAVE_STATUS)
 	int status;
 #endif
-	sigset_t intmask;
 	ptrace_state_t state;
 	const int slen = sizeof(state);
 	ptrace_event_t event;
 	const int elen = sizeof(event);
-	ucontext_t uc;
+	struct ptrace_siginfo info;
+
+	pthread_t t;
 	lwpid_t lid;
-	static const size_t ssize = 16*1024;
-	void *stack;
 
 	DPRINTF("Before forking process PID=%d\n", getpid());
 	SYSCALL_REQUIRE((child = fork()) != -1);
@@ -6436,31 +7092,16 @@ ATF_TC_BODY(signal9, tc)
 		DPRINTF("Before calling PT_TRACE_ME from child %d\n", getpid());
 		FORKEE_ASSERT(ptrace(PT_TRACE_ME, 0, NULL, 0) != -1);
 
-		sigemptyset(&intmask);
-		sigaddset(&intmask, sigmasked);
-		sigprocmask(SIG_BLOCK, &intmask, NULL);
-
 		DPRINTF("Before raising %s from child\n", strsignal(sigval));
 		FORKEE_ASSERT(raise(sigval) == 0);
 
-		DPRINTF("Before allocating memory for stack in child\n");
-		FORKEE_ASSERT((stack = malloc(ssize)) != NULL);
+		FORKEE_ASSERT(pthread_create(&t, NULL,
+		    thread_and_exec_thread_cb, NULL) == 0);
 
-		DPRINTF("Before making context for new lwp in child\n");
-		_lwp_makecontext(&uc, lwp_main_func, NULL, NULL, stack, ssize);
+		for (;;)
+			continue;
 
-		DPRINTF("Before creating new in child\n");
-		FORKEE_ASSERT(_lwp_create(&uc, 0, &lid) == 0);
-
-		DPRINTF("Before waiting for lwp %d to exit\n", lid);
-		FORKEE_ASSERT(_lwp_wait(lid, NULL) == 0);
-
-		DPRINTF("Before verifying that reported %d and running lid %d "
-		    "are the same\n", lid, the_lwp_id);
-		FORKEE_ASSERT_EQ(lid, the_lwp_id);
-
-		DPRINTF("Before exiting of the child process\n");
-		_exit(exitval);
+		FORKEE_ASSERT(0 && "Not reached");
 	}
 	DPRINTF("Parent process PID=%d, child's PID=%d\n", getpid(), child);
 
@@ -6469,8 +7110,21 @@ ATF_TC_BODY(signal9, tc)
 
 	validate_status_stopped(status, sigval);
 
-	DPRINTF("Set empty EVENT_MASK for the child %d\n", child);
-	event.pe_set_event = PTRACE_LWP_CREATE;
+	DPRINTF("Before calling ptrace(2) with PT_GET_SIGINFO for child\n");
+	SYSCALL_REQUIRE(
+	    ptrace(PT_GET_SIGINFO, child, &info, sizeof(info)) != -1);
+
+	DPRINTF("Signal traced to lwpid=%d\n", info.psi_lwpid);
+	DPRINTF("Signal properties: si_signo=%#x si_code=%#x si_errno=%#x\n",
+	    info.psi_siginfo.si_signo, info.psi_siginfo.si_code,
+	    info.psi_siginfo.si_errno);
+
+	ATF_REQUIRE_EQ(info.psi_siginfo.si_signo, sigval);
+	ATF_REQUIRE_EQ(info.psi_siginfo.si_code, SI_LWP);
+
+	DPRINTF("Set LWP event mask for the child %d\n", child);
+	memset(&event, 0, sizeof(event));
+	event.pe_set_event |= PTRACE_LWP_CREATE | PTRACE_LWP_EXIT;
 	SYSCALL_REQUIRE(ptrace(PT_SET_EVENT_MASK, child, &event, elen) != -1);
 
 	DPRINTF("Before resuming the child process where it left off and "
@@ -6479,133 +7133,123 @@ ATF_TC_BODY(signal9, tc)
 
 	DPRINTF("Before calling %s() for the child - expected stopped "
 	    "SIGTRAP\n", TWAIT_FNAME);
-	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0), child);
+	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0),
+	    child);
 
-	validate_status_stopped(status, sigmasked);
+	validate_status_stopped(status, SIGTRAP);
 
-	SYSCALL_REQUIRE(ptrace(PT_GET_PROCESS_STATE, child, &state, slen) != -1);
+	DPRINTF("Before calling ptrace(2) with PT_GET_SIGINFO for "
+	    "child\n");
+	SYSCALL_REQUIRE(
+	    ptrace(PT_GET_SIGINFO, child, &info, sizeof(info)) != -1);
 
-	ATF_REQUIRE_EQ(state.pe_report_event, PTRACE_LWP_CREATE);
+	DPRINTF("Signal traced to lwpid=%d\n", info.psi_lwpid);
+	DPRINTF("Signal properties: si_signo=%#x si_code=%#x "
+	    "si_errno=%#x\n",
+	    info.psi_siginfo.si_signo, info.psi_siginfo.si_code,
+	    info.psi_siginfo.si_errno);
+
+	ATF_REQUIRE_EQ(info.psi_siginfo.si_signo, SIGTRAP);
+	ATF_REQUIRE_EQ(info.psi_siginfo.si_code, TRAP_LWP);
+
+	SYSCALL_REQUIRE(
+	    ptrace(PT_GET_PROCESS_STATE, child, &state, slen) != -1);
+
+	ATF_REQUIRE_EQ_MSG(state.pe_report_event, PTRACE_LWP_CREATE,
+	    "%d != %d", state.pe_report_event, PTRACE_LWP_CREATE);
 
 	lid = state.pe_lwp;
 	DPRINTF("Reported PTRACE_LWP_CREATE event with lid %d\n", lid);
 
-	DPRINTF("Before resuming the child process where it left off and "
-	    "without signal to be sent\n");
-	SYSCALL_REQUIRE(ptrace(PT_CONTINUE, child, (void *)1, 0) != -1);
-
-	DPRINTF("Before calling %s() for the child - expected exited\n",
-	    TWAIT_FNAME);
-	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0), child);
-
-	validate_status_exited(status, exitval);
-
-	DPRINTF("Before calling %s() for the child - expected no process\n",
-	    TWAIT_FNAME);
-	TWAIT_REQUIRE_FAILURE(ECHILD, wpid = TWAIT_GENERIC(child, &status, 0));
-}
-
-ATF_TC(signal10);
-ATF_TC_HEAD(signal10, tc)
-{
-	atf_tc_set_md_var(tc, "descr",
-	    "Verify that masking SIGTRAP in tracee does not stop tracer from "
-	    "catching PTRACE_LWP_EXIT breakpoint");
-}
-
-ATF_TC_BODY(signal10, tc)
-{
-	const int exitval = 5;
-	const int sigval = SIGSTOP;
-	const int sigmasked = SIGTRAP;
-	pid_t child, wpid;
-#if defined(TWAIT_HAVE_STATUS)
-	int status;
-#endif
-	sigset_t intmask;
-	ptrace_state_t state;
-	const int slen = sizeof(state);
-	ptrace_event_t event;
-	const int elen = sizeof(event);
-	ucontext_t uc;
-	lwpid_t lid;
-	static const size_t ssize = 16*1024;
-	void *stack;
-
-	DPRINTF("Before forking process PID=%d\n", getpid());
-	SYSCALL_REQUIRE((child = fork()) != -1);
-	if (child == 0) {
-		DPRINTF("Before calling PT_TRACE_ME from child %d\n", getpid());
-		FORKEE_ASSERT(ptrace(PT_TRACE_ME, 0, NULL, 0) != -1);
-
-		sigemptyset(&intmask);
-		sigaddset(&intmask, sigmasked);
-		sigprocmask(SIG_BLOCK, &intmask, NULL);
-
-		DPRINTF("Before raising %s from child\n", strsignal(sigval));
-		FORKEE_ASSERT(raise(sigval) == 0);
-
-		DPRINTF("Before allocating memory for stack in child\n");
-		FORKEE_ASSERT((stack = malloc(ssize)) != NULL);
-
-		DPRINTF("Before making context for new lwp in child\n");
-		_lwp_makecontext(&uc, lwp_main_func, NULL, NULL, stack, ssize);
-
-		DPRINTF("Before creating new in child\n");
-		FORKEE_ASSERT(_lwp_create(&uc, 0, &lid) == 0);
-
-		DPRINTF("Before waiting for lwp %d to exit\n", lid);
-		FORKEE_ASSERT(_lwp_wait(lid, NULL) == 0);
-
-		DPRINTF("Before verifying that reported %d and running lid %d "
-		    "are the same\n", lid, the_lwp_id);
-		FORKEE_ASSERT_EQ(lid, the_lwp_id);
-
-		DPRINTF("Before exiting of the child process\n");
-		_exit(exitval);
-	}
-	DPRINTF("Parent process PID=%d, child's PID=%d\n", getpid(), child);
-
-	DPRINTF("Before calling %s() for the child\n", TWAIT_FNAME);
-	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0), child);
-
-	validate_status_stopped(status, sigval);
-
-	DPRINTF("Set empty EVENT_MASK for the child %d\n", child);
-	event.pe_set_event = PTRACE_LWP_EXIT;
-	SYSCALL_REQUIRE(ptrace(PT_SET_EVENT_MASK, child, &event, elen) != -1);
-
-	DPRINTF("Before resuming the child process where it left off and "
-	    "without signal to be sent\n");
+	DPRINTF("Before resuming the child process where it left off "
+	    "and without signal to be sent\n");
 	SYSCALL_REQUIRE(ptrace(PT_CONTINUE, child, (void *)1, 0) != -1);
 
 	DPRINTF("Before calling %s() for the child - expected stopped "
 	    "SIGTRAP\n", TWAIT_FNAME);
-	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0), child);
+	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0),
+	    child);
 
-	validate_status_stopped(status, sigmasked);
+	validate_status_stopped(status, SIGTRAP);
 
-	SYSCALL_REQUIRE(ptrace(PT_GET_PROCESS_STATE, child, &state, slen) != -1);
+	DPRINTF("Before calling ptrace(2) with PT_GET_SIGINFO for "
+	    "child\n");
+	SYSCALL_REQUIRE(
+	    ptrace(PT_GET_SIGINFO, child, &info, sizeof(info)) != -1);
 
-	ATF_REQUIRE_EQ(state.pe_report_event, PTRACE_LWP_EXIT);
+	DPRINTF("Signal traced to lwpid=%d\n", info.psi_lwpid);
+	DPRINTF("Signal properties: si_signo=%#x si_code=%#x "
+	    "si_errno=%#x\n",
+	    info.psi_siginfo.si_signo, info.psi_siginfo.si_code,
+	    info.psi_siginfo.si_errno);
+
+	ATF_REQUIRE_EQ(info.psi_siginfo.si_signo, SIGTRAP);
+	ATF_REQUIRE_EQ(info.psi_siginfo.si_code, TRAP_LWP);
+
+	SYSCALL_REQUIRE(
+	    ptrace(PT_GET_PROCESS_STATE, child, &state, slen) != -1);
+
+	ATF_REQUIRE_EQ_MSG(state.pe_report_event, PTRACE_LWP_EXIT,
+	    "%d != %d", state.pe_report_event, PTRACE_LWP_EXIT);
 
 	lid = state.pe_lwp;
 	DPRINTF("Reported PTRACE_LWP_EXIT event with lid %d\n", lid);
 
-	DPRINTF("Before resuming the child process where it left off and "
-	    "without signal to be sent\n");
+	DPRINTF("Before resuming the child process where it left off "
+	    "and without signal to be sent\n");
 	SYSCALL_REQUIRE(ptrace(PT_CONTINUE, child, (void *)1, 0) != -1);
+
+	DPRINTF("Before calling %s() for the child - expected stopped "
+	    "SIGTRAP\n", TWAIT_FNAME);
+	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0),
+	    child);
+
+	validate_status_stopped(status, SIGTRAP);
+
+	DPRINTF("Before calling ptrace(2) with PT_GET_SIGINFO for "
+	    "child\n");
+	SYSCALL_REQUIRE(
+	    ptrace(PT_GET_SIGINFO, child, &info, sizeof(info)) != -1);
+
+	DPRINTF("Signal traced to lwpid=%d\n", info.psi_lwpid);
+	DPRINTF("Signal properties: si_signo=%#x si_code=%#x "
+	    "si_errno=%#x\n",
+	    info.psi_siginfo.si_signo, info.psi_siginfo.si_code,
+	    info.psi_siginfo.si_errno);
+
+	ATF_REQUIRE_EQ(info.psi_siginfo.si_signo, SIGTRAP);
+	ATF_REQUIRE_EQ(info.psi_siginfo.si_code, TRAP_EXEC);
+
+	SYSCALL_REQUIRE(ptrace(PT_KILL, child, NULL, 0) != -1);
 
 	DPRINTF("Before calling %s() for the child - expected exited\n",
 	    TWAIT_FNAME);
 	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0), child);
 
-	validate_status_exited(status, exitval);
+	validate_status_signaled(status, SIGKILL, 0);
 
 	DPRINTF("Before calling %s() for the child - expected no process\n",
 	    TWAIT_FNAME);
 	TWAIT_REQUIRE_FAILURE(ECHILD, wpid = TWAIT_GENERIC(child, &status, 0));
 }
+
+ATF_TC(threads_and_exec);
+ATF_TC_HEAD(threads_and_exec, tc)
+{
+        atf_tc_set_md_var(tc, "descr",
+            "Verify that multithreaded application on exec() will report "
+	    "LWP_EXIT events");
+}
+
+ATF_TC_BODY(threads_and_exec, tc)
+{
+
+        threads_and_exec();
+}
+
+/// ----------------------------------------------------------------------------
+
+volatile lwpid_t the_lwp_id = 0;
 
 static void
 lwp_main_stop(void *arg)
@@ -8355,6 +8999,57 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC_HAVE_PID(tp, posix_spawn15);
 	ATF_TP_ADD_TC_HAVE_PID(tp, posix_spawn16);
 
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork1);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork2);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork3);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork4);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork5);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork6);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork7);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork8);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork9);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork10);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork11);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork12);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork13);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork14);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork15);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork16);
+
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork1);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork2);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork3);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork4);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork5);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork6);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork7);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork8);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork9);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork10);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork11);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork12);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork13);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork14);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork15);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork16);
+
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn1);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn2);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn3);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn4);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn5);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn6);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn7);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn8);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn9);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn10);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn11);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn12);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn13);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn14);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn15);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn16);
+
 	ATF_TP_ADD_TC_HAVE_PID(tp, posix_spawn_detach_spawner);
 	ATF_TP_ADD_TC_HAVE_PID(tp, fork_detach_forker);
 	ATF_TP_ADD_TC_HAVE_PID(tp, vfork_detach_vforker);
@@ -8364,6 +9059,16 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC_HAVE_PID(tp, fork_kill_forker);
 	ATF_TP_ADD_TC_HAVE_PID(tp, vfork_kill_vforker);
 	ATF_TP_ADD_TC_HAVE_PID(tp, vfork_kill_vforkerdone);
+
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn_detach_spawner);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork_detach_forker);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork_detach_vforker);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork_detach_vforkerdone);
+
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_posix_spawn_kill_spawner);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_fork_kill_forker);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork_kill_vforker);
+	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork_kill_vforkerdone);
 
 	ATF_TP_ADD_TC(tp, traceme_vfork_fork);
 	ATF_TP_ADD_TC(tp, traceme_vfork_vfork);
@@ -8535,6 +9240,10 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, trace_thread_lwpcreate);
 	ATF_TP_ADD_TC(tp, trace_thread_lwpcreate_and_exit);
 
+	ATF_TP_ADD_TC(tp, trace_thread_lwpexit_masked_sigtrap);
+	ATF_TP_ADD_TC(tp, trace_thread_lwpcreate_masked_sigtrap);
+	ATF_TP_ADD_TC(tp, trace_thread_lwpcreate_and_exit_masked_sigtrap);
+
 	ATF_TP_ADD_TC(tp, signal_mask_unrelated);
 
 	ATF_TP_ADD_TC_HAVE_PID(tp, posix_spawn_singalmasked);
@@ -8546,8 +9255,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC_HAVE_PID(tp, vforkdone_singalmasked);
 	ATF_TP_ADD_TC_HAVE_PID(tp, vforkdone_singalignored);
 
-	ATF_TP_ADD_TC(tp, signal9);
-	ATF_TP_ADD_TC(tp, signal10);
+	ATF_TP_ADD_TC(tp, threads_and_exec);
 
 	ATF_TP_ADD_TC(tp, suspend2);
 

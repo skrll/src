@@ -1,4 +1,4 @@
-/*	$NetBSD: md.c,v 1.13 2020/01/20 21:26:35 martin Exp $ */
+/*	$NetBSD: md.c,v 1.15 2020/01/29 19:04:40 martin Exp $ */
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -107,7 +107,7 @@ md_get_info(struct install_partition_desc *install)
 
 		struct disk_partitions *parts =
 		   (*ps->create_new_for_disk)(pm->diskdev,
-		   0, pm->dlsize, pm->dlsize, true, NULL);
+		   0, pm->dlsize, true, NULL);
 		if (!parts)
 			return false;
 
@@ -352,7 +352,7 @@ evbarm_part_defaults(struct pm_devs *my_pm, struct part_usage_info *infos,
 
 	for (i = 0; i < num_usage_infos; i++) {
 		if (infos[i].fs_type == PART_BOOT_TYPE &&
-		    infos[i].mount != NULL &&
+		    infos[i].mount[0] != 0 &&
 		    strcmp(infos[i].mount, PART_BOOT_MOUNT) == 0) {
 			infos[i].size = PART_BOOT_LARGE;
 			return;

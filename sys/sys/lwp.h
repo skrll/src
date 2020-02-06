@@ -1,7 +1,7 @@
-/*	$NetBSD: lwp.h,v 1.197 2020/01/21 20:31:57 ad Exp $	*/
+/*	$NetBSD: lwp.h,v 1.200 2020/01/29 15:47:52 ad Exp $	*/
 
 /*
- * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2010, 2019
+ * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2010, 2019, 2020
  *    The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -103,7 +103,7 @@ struct lwp {
 	int		l_biglocks;	/* l: biglock count before sleep */
 	short		l_stat;		/* l: overall LWP status */
 	short		l_class;	/* l: scheduling class */
-	short		l_kpriority;	/* !: has kernel priority boost */
+	int		l_kpriority;	/* !: has kernel priority boost */
 	pri_t		l_kpribase;	/* !: kernel priority base level */
 	pri_t		l_priority;	/* l: scheduler priority */
 	pri_t		l_inheritedprio;/* l: inherited priority */
@@ -186,8 +186,8 @@ struct lwp {
 	u_short		l_exlocks;	/* !: lockdebug: excl. locks held */
 	u_short		l_psrefs;	/* !: count of psref held */
 	u_short		l_blcnt;	/* !: count of kernel_lock held */
-	int		l_nopreempt;	/* !: don't preempt me! */
-	u_int		l_dopreempt;	/* s: kernel preemption pending */
+	volatile int	l_nopreempt;	/* !: don't preempt me! */
+	volatile u_int	l_dopreempt;	/* s: kernel preemption pending */
 	int		l_pflag;	/* !: LWP private flags */
 	int		l_dupfd;	/* !: side return from cloning devs XXX */
 	const struct sysent * volatile l_sysent;/* !: currently active syscall */
@@ -319,7 +319,6 @@ do {									\
 
 void	lwpinit(void);
 void	lwp0_init(void);
-void	lwp_sys_init(void);
 
 void	lwp_startup(lwp_t *, lwp_t *);
 void	startlwp(void *);
@@ -352,7 +351,7 @@ void	lwp_need_userret(lwp_t *);
 void	lwp_free(lwp_t *, bool, bool);
 uint64_t lwp_pctr(void);
 int	lwp_setprivate(lwp_t *, void *);
-int	do_lwp_create(lwp_t *, void *, u_long, lwpid_t *, const sigset_t *,
+int	do_lwp_create(lwp_t *, void *, u_long, lwp_t **, const sigset_t *,
     const stack_t *);
 
 void	lwpinit_specificdata(void);
@@ -368,8 +367,8 @@ void	lwp_setspecific(specificdata_key_t, void *);
 void	lwp_setspecific_by_lwp(lwp_t *, specificdata_key_t, void *);
 
 /* Syscalls. */
-int	lwp_park(clockid_t, int, struct timespec *, const void *);
-int	lwp_unpark(lwpid_t, const void *);
+int	lwp_park(clockid_t, int, struct timespec *);
+int	lwp_unpark(const lwpid_t *, const u_int);
 
 /* DDB. */
 void	lwp_whatis(uintptr_t, void (*)(const char *, ...) __printflike(1, 2));

@@ -1,4 +1,4 @@
-/*	$NetBSD: rtl8169.c,v 1.161 2019/12/17 10:42:06 msaitoh Exp $	*/
+/*	$NetBSD: rtl8169.c,v 1.163 2020/02/04 05:25:39 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998-2003
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rtl8169.c,v 1.161 2019/12/17 10:42:06 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rtl8169.c,v 1.163 2020/02/04 05:25:39 thorpej Exp $");
 /* $FreeBSD: /repoman/r/ncvs/src/sys/dev/re/if_re.c,v 1.20 2004/04/11 20:34:08 ru Exp $ */
 
 /*
@@ -984,12 +984,12 @@ re_detach(struct rtk_softc *sc)
 	/* Detach all PHYs. */
 	mii_detach(&sc->mii, MII_PHY_ANY, MII_OFFSET_ANY);
 
-	/* Delete all remaining media. */
-	ifmedia_delete_instance(&sc->mii.mii_media, IFM_INST_ANY);
-
 	rnd_detach_source(&sc->rnd_source);
 	ether_ifdetach(ifp);
 	if_detach(ifp);
+
+	/* Delete all remaining media. */
+	ifmedia_fini(&sc->mii.mii_media);
 
 	/* Destroy DMA maps for RX buffers. */
 	for (i = 0; i < RE_RX_DESC_CNT; i++)
@@ -1263,7 +1263,7 @@ re_rxeof(struct rtk_softc *sc)
 				printf(", CRC error");
 			printf("\n");
 #endif
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			/*
 			 * If this is part of a multi-fragment packet,
 			 * discard all the pieces.
@@ -1282,7 +1282,7 @@ re_rxeof(struct rtk_softc *sc)
 		 */
 
 		if (__predict_false(re_newbuf(sc, i, NULL) != 0)) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			if (sc->re_head != NULL) {
 				m_freem(sc->re_head);
 				sc->re_head = sc->re_tail = NULL;
@@ -1418,12 +1418,14 @@ re_txeof(struct rtk_softc *sc)
 		m_freem(txq->txq_mbuf);
 		txq->txq_mbuf = NULL;
 
+		net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
 		if (txstat & (RE_TDESC_STAT_EXCESSCOL | RE_TDESC_STAT_COLCNT))
-			ifp->if_collisions++;
+			if_statinc_ref(nsr, if_collisions);
 		if (txstat & RE_TDESC_STAT_TXERRSUM)
-			ifp->if_oerrors++;
+			if_statinc_ref(nsr, if_oerrors);
 		else
-			ifp->if_opackets++;
+			if_statinc_ref(nsr, if_opackets);
+		IF_STAT_PUTREF(ifp);
 	}
 
 	sc->re_ldata.re_txq_considx = idx;
@@ -1631,7 +1633,7 @@ re_start(struct ifnet *ifp)
 
 			IFQ_DEQUEUE(&ifp->if_snd, m);
 			m_freem(m);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2097,7 +2099,7 @@ re_watchdog(struct ifnet *ifp)
 	sc = ifp->if_softc;
 	s = splnet();
 	printf("%s: watchdog timeout\n", device_xname(sc->sc_dev));
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 
 	re_txeof(sc);
 	re_rxeof(sc);
