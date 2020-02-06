@@ -1,4 +1,4 @@
-/*	$NetBSD: pthread_mutex.c,v 1.69 2020/01/29 10:55:23 kamil Exp $	*/
+/*	$NetBSD: pthread_mutex.c,v 1.74 2020/02/01 18:14:16 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2003, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -47,7 +47,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: pthread_mutex.c,v 1.69 2020/01/29 10:55:23 kamil Exp $");
+__RCSID("$NetBSD: pthread_mutex.c,v 1.74 2020/02/01 18:14:16 kamil Exp $");
 
 #include <sys/types.h>
 #include <sys/lwpctl.h>
@@ -131,6 +131,9 @@ pthread_mutex_init(pthread_mutex_t *ptm, const pthread_mutexattr_t *attr)
 		return __libc_mutex_init_stub(ptm, attr);
 #endif
 
+	pthread__error(EINVAL, "Invalid mutes attribute",
+	    attr == NULL || attr->ptma_magic == _PT_MUTEXATTR_MAGIC);
+
 	if (attr == NULL) {
 		type = PTHREAD_MUTEX_NORMAL;
 		proto = PTHREAD_PRIO_NONE;
@@ -197,6 +200,9 @@ pthread_mutex_lock(pthread_mutex_t *ptm)
 	if (__predict_false(__uselibcstub))
 		return __libc_mutex_lock_stub(ptm);
 
+	pthread__error(EINVAL, "Invalid mutex",
+	    ptm->ptm_magic == _PT_MUTEX_MAGIC);
+
 	self = pthread__self();
 	val = atomic_cas_ptr(&ptm->ptm_owner, NULL, self);
 	if (__predict_true(val == NULL)) {
@@ -213,6 +219,9 @@ pthread_mutex_timedlock(pthread_mutex_t* ptm, const struct timespec *ts)
 {
 	pthread_t self;
 	void *val;
+
+	pthread__error(EINVAL, "Invalid mutex",
+	    ptm->ptm_magic == _PT_MUTEX_MAGIC);
 
 	self = pthread__self();
 	val = atomic_cas_ptr(&ptm->ptm_owner, NULL, self);
@@ -297,9 +306,6 @@ pthread__mutex_lock_slow(pthread_mutex_t *ptm, const struct timespec *ts)
 	pthread_t self;
 	int serrno;
 	int error;
-
-	pthread__error(EINVAL, "Invalid mutex",
-	    ptm->ptm_magic == _PT_MUTEX_MAGIC);
 
 	owner = ptm->ptm_owner;
 	self = pthread__self();
@@ -410,6 +416,9 @@ pthread_mutex_trylock(pthread_mutex_t *ptm)
 	if (__predict_false(__uselibcstub))
 		return __libc_mutex_trylock_stub(ptm);
 
+	pthread__error(EINVAL, "Invalid mutex",
+	    ptm->ptm_magic == _PT_MUTEX_MAGIC);
+
 	self = pthread__self();
 	val = atomic_cas_ptr(&ptm->ptm_owner, NULL, self);
 	if (__predict_true(val == NULL)) {
@@ -450,6 +459,9 @@ pthread_mutex_unlock(pthread_mutex_t *ptm)
 	if (__predict_false(__uselibcstub))
 		return __libc_mutex_unlock_stub(ptm);
 
+	pthread__error(EINVAL, "Invalid mutex",
+	    ptm->ptm_magic == _PT_MUTEX_MAGIC);
+
 #ifndef PTHREAD__ATOMIC_IS_MEMBAR
 	membar_exit();
 #endif
@@ -467,9 +479,6 @@ pthread__mutex_unlock_slow(pthread_mutex_t *ptm)
 {
 	pthread_t self, owner, new;
 	int weown, error;
-
-	pthread__error(EINVAL, "Invalid mutex",
-	    ptm->ptm_magic == _PT_MUTEX_MAGIC);
 
 	self = pthread__self();
 	owner = ptm->ptm_owner;
@@ -610,8 +619,10 @@ pthread__mutex_wakeup(pthread_t self, pthread_mutex_t *ptm)
 int
 pthread_mutexattr_init(pthread_mutexattr_t *attr)
 {
+#if 0
 	if (__predict_false(__uselibcstub))
 		return __libc_mutexattr_init_stub(attr);
+#endif
 
 	attr->ptma_magic = _PT_MUTEXATTR_MAGIC;
 	attr->ptma_private = (void *)PTHREAD_MUTEX_DEFAULT;
@@ -725,6 +736,9 @@ pthread_mutexattr_getpshared(const pthread_mutexattr_t * __restrict attr,
     int * __restrict pshared)
 {
 
+	pthread__error(EINVAL, "Invalid mutex attribute",
+		attr->ptma_magic == _PT_MUTEXATTR_MAGIC);
+
 	*pshared = PTHREAD_PROCESS_PRIVATE;
 	return 0;
 }
@@ -732,6 +746,9 @@ pthread_mutexattr_getpshared(const pthread_mutexattr_t * __restrict attr,
 int
 pthread_mutexattr_setpshared(pthread_mutexattr_t *attr, int pshared)
 {
+
+	pthread__error(EINVAL, "Invalid mutex attribute",
+		attr->ptma_magic == _PT_MUTEXATTR_MAGIC);
 
 	switch(pshared) {
 	case PTHREAD_PROCESS_PRIVATE:
@@ -772,6 +789,10 @@ pthread__mutex_deferwake(pthread_t self, pthread_mutex_t *ptm)
 int
 pthread_mutex_getprioceiling(const pthread_mutex_t *ptm, int *ceil) 
 {
+
+	pthread__error(EINVAL, "Invalid mutex",
+	    ptm->ptm_magic == _PT_MUTEX_MAGIC);
+
 	*ceil = ptm->ptm_ceiling;
 	return 0;
 }
@@ -780,6 +801,9 @@ int
 pthread_mutex_setprioceiling(pthread_mutex_t *ptm, int ceil, int *old_ceil) 
 {
 	int error;
+
+	pthread__error(EINVAL, "Invalid mutex",
+	    ptm->ptm_magic == _PT_MUTEX_MAGIC);
 
 	error = pthread_mutex_lock(ptm);
 	if (error == 0) {

@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.221 2020/01/21 14:55:55 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.225 2020/02/05 07:45:46 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -267,9 +267,10 @@ static int	ixgbe_msix_link(void *);
 /* Software interrupts for deferred work */
 static void	ixgbe_handle_que(void *);
 static void	ixgbe_handle_link(void *);
-static void	ixgbe_handle_msf(void *);
 static void	ixgbe_handle_mod(void *);
 static void	ixgbe_handle_phy(void *);
+
+static void	ixgbe_handle_msf(struct work *, void *);
 
 /* Workqueue handler for deferred work */
 static void	ixgbe_handle_que_work(struct work *, void *);
@@ -410,10 +411,12 @@ static int (*ixgbe_ring_empty)(struct ifnet *, pcq_t *);
 #define IXGBE_CALLOUT_FLAGS	CALLOUT_MPSAFE
 #define IXGBE_SOFTINFT_FLAGS	SOFTINT_MPSAFE
 #define IXGBE_WORKQUEUE_FLAGS	WQ_PERCPU | WQ_MPSAFE
+#define IXGBE_TASKLET_WQ_FLAGS	WQ_MPSAFE
 #else
 #define IXGBE_CALLOUT_FLAGS	0
 #define IXGBE_SOFTINFT_FLAGS	0
 #define IXGBE_WORKQUEUE_FLAGS	WQ_PERCPU
+#define IXGBE_TASKLET_WQ_FLAGS	0
 #endif
 #define IXGBE_WORKQUEUE_PRI PRI_SOFTNET
 
@@ -673,6 +676,8 @@ ixgbe_initialize_transmit_units(struct adapter *adapter)
 	struct tx_ring	*txr = adapter->tx_rings;
 	struct ixgbe_hw	*hw = &adapter->hw;
 	int i;
+
+	INIT_DEBUGOUT("ixgbe_initialize_transmit_units");
 
 	/* Setup the Base and Length of the Tx Descriptor Ring */
 	for (i = 0; i < adapter->num_queues; i++, txr++) {
@@ -1099,8 +1104,6 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	    ixgbe_handle_link, adapter);
 	adapter->mod_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 	    ixgbe_handle_mod, adapter);
-	adapter->msf_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
-	    ixgbe_handle_msf, adapter);
 	adapter->phy_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 	    ixgbe_handle_phy, adapter);
 	if (adapter->feat_en & IXGBE_FEATURE_FDIR)
@@ -1108,11 +1111,21 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		    softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 			ixgbe_reinit_fdir, adapter);
 	if ((adapter->link_si == NULL) || (adapter->mod_si == NULL)
-	    || (adapter->msf_si == NULL) || (adapter->phy_si == NULL)
+	    || (adapter->phy_si == NULL)
 	    || ((adapter->feat_en & IXGBE_FEATURE_FDIR)
 		&& (adapter->fdir_si == NULL))) {
 		aprint_error_dev(dev,
 		    "could not establish software interrupts ()\n");
+		goto err_out;
+	}
+	char wqname[MAXCOMLEN];
+	snprintf(wqname, sizeof(wqname), "%s-msf", device_xname(dev));
+	error = workqueue_create(&adapter->msf_wq, wqname,
+	    ixgbe_handle_msf, adapter, IXGBE_WORKQUEUE_PRI, IPL_NET,
+	    IXGBE_TASKLET_WQ_FLAGS);
+	if (error) {
+		aprint_error_dev(dev,
+		    "could not create MSF workqueue (%d)\n", error);
 		goto err_out;
 	}
 
@@ -1510,7 +1523,9 @@ ixgbe_config_link(struct adapter *adapter)
 		if (hw->phy.multispeed_fiber) {
 			ixgbe_enable_tx_laser(hw);
 			kpreempt_disable();
-			softint_schedule(adapter->msf_si);
+			if (adapter->schedule_wqs_ok)
+				workqueue_enqueue(adapter->msf_wq,
+				    &adapter->msf_wc, NULL);
 			kpreempt_enable();
 		}
 		kpreempt_disable();
@@ -1695,17 +1710,15 @@ ixgbe_update_stats_counters(struct adapter *adapter)
 		stats->fcoedwtc.ev_count += IXGBE_READ_REG(hw, IXGBE_FCOEDWTC);
 	}
 
-	/* Fill out the OS statistics structure */
 	/*
-	 * NetBSD: Don't override if_{i|o}{packets|bytes|mcasts} with
-	 * adapter->stats counters. It's required to make ifconfig -z
-	 * (SOICZIFDATA) work.
+	 * Fill out the OS statistics structure. Only RX errors are required
+	 * here because all TX counters are incremented in the TX path and
+	 * normal RX counters are prepared in ether_input().
 	 */
-	ifp->if_collisions = 0;
-
-	/* Rx Errors */
-	ifp->if_iqdrops += total_missed_rx;
-	ifp->if_ierrors += crcerrs + rlec;
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+	if_statadd_ref(nsr, if_iqdrops, total_missed_rx);
+	if_statadd_ref(nsr, if_ierrors, crcerrs + rlec);
+	IF_STAT_PUTREF(ifp);
 } /* ixgbe_update_stats_counters */
 
 /************************************************************************
@@ -3086,7 +3099,9 @@ ixgbe_msix_link(void *arg)
 		    (eicr & IXGBE_EICR_GPI_SDP1_BY_MAC(hw))) {
 			IXGBE_WRITE_REG(hw, IXGBE_EICR,
 			    IXGBE_EICR_GPI_SDP1_BY_MAC(hw));
-			softint_schedule(adapter->msf_si);
+			if (adapter->schedule_wqs_ok)
+				workqueue_enqueue(adapter->msf_wq,
+				    &adapter->msf_wc, NULL);
 		}
 	}
 
@@ -3498,9 +3513,9 @@ ixgbe_free_softint(struct adapter *adapter)
 		softint_disestablish(adapter->mod_si);
 		adapter->mod_si = NULL;
 	}
-	if (adapter->msf_si != NULL) {
-		softint_disestablish(adapter->msf_si);
-		adapter->msf_si = NULL;
+	if (adapter->msf_wq != NULL) {
+		workqueue_destroy(adapter->msf_wq);
+		adapter->msf_wq = NULL;
 	}
 	if (adapter->phy_si != NULL) {
 		softint_disestablish(adapter->phy_si);
@@ -3591,6 +3606,7 @@ ixgbe_detach(device_t dev, int flags)
 	bus_generic_detach(dev);
 #endif
 	if_detach(adapter->ifp);
+	ifmedia_fini(&adapter->media);
 	if_percpuq_destroy(adapter->ipq);
 
 	sysctl_teardown(&adapter->sysctllog);
@@ -4127,6 +4143,9 @@ ixgbe_init_locked(struct adapter *adapter)
 	/* Now inform the stack we're ready */
 	ifp->if_flags |= IFF_RUNNING;
 
+	/* OK to schedule workqueues. */
+	adapter->schedule_wqs_ok = true;
+
 	return;
 } /* ixgbe_init_locked */
 
@@ -4655,7 +4674,8 @@ ixgbe_handle_mod(void *context)
 			goto out;
 		}
 	}
-	softint_schedule(adapter->msf_si);
+	if (adapter->schedule_wqs_ok)
+		workqueue_enqueue(adapter->msf_wq, &adapter->msf_wc, NULL);
 out:
 	IXGBE_CORE_UNLOCK(adapter);
 } /* ixgbe_handle_mod */
@@ -4665,12 +4685,22 @@ out:
  * ixgbe_handle_msf - Tasklet for MSF (multispeed fiber) interrupts
  ************************************************************************/
 static void
-ixgbe_handle_msf(void *context)
+ixgbe_handle_msf(struct work *wk, void *context)
 {
 	struct adapter	*adapter = context;
+	struct ifnet	*ifp = adapter->ifp;
 	struct ixgbe_hw *hw = &adapter->hw;
 	u32		autoneg;
 	bool		negotiate;
+
+	/*
+	 * Hold the IFNET_LOCK across this entire call.  This will
+	 * prevent additional changes to adapter->phy_layer and
+	 * and serialize calls to this tasklet.  We cannot hold the
+	 * CORE_LOCK while calling into the ifmedia functions as
+	 * they may block while allocating memory.
+	 */
+	IFNET_LOCK(ifp);
 
 	IXGBE_CORE_LOCK(adapter);
 	++adapter->msf_sicount.ev_count;
@@ -4684,12 +4714,13 @@ ixgbe_handle_msf(void *context)
 		negotiate = 0;
 	if (hw->mac.ops.setup_link)
 		hw->mac.ops.setup_link(hw, autoneg, TRUE);
+	IXGBE_CORE_UNLOCK(adapter);
 
 	/* Adjust media types shown in ifconfig */
 	ifmedia_removeall(&adapter->media);
 	ixgbe_add_media_types(adapter);
 	ifmedia_set(&adapter->media, IFM_ETHER | IFM_AUTO);
-	IXGBE_CORE_UNLOCK(adapter);
+	IFNET_UNLOCK(ifp);
 } /* ixgbe_handle_msf */
 
 /************************************************************************
@@ -4721,6 +4752,8 @@ ixgbe_ifstop(struct ifnet *ifp, int disable)
 	IXGBE_CORE_LOCK(adapter);
 	ixgbe_stop(adapter);
 	IXGBE_CORE_UNLOCK(adapter);
+
+	workqueue_wait(adapter->msf_wq, &adapter->msf_wc);
 }
 
 /************************************************************************
@@ -4743,6 +4776,9 @@ ixgbe_stop(void *arg)
 	INIT_DEBUGOUT("ixgbe_stop: begin\n");
 	ixgbe_disable_intr(adapter);
 	callout_stop(&adapter->timer);
+
+	/* Don't schedule workqueues. */
+	adapter->schedule_wqs_ok = false;
 
 	/* Let the stack know...*/
 	ifp->if_flags &= ~IFF_RUNNING;
@@ -5086,7 +5122,9 @@ ixgbe_legacy_irq(void *arg)
 		    (eicr & IXGBE_EICR_GPI_SDP1_BY_MAC(hw))) {
 			IXGBE_WRITE_REG(hw, IXGBE_EICR,
 			    IXGBE_EICR_GPI_SDP1_BY_MAC(hw));
-			softint_schedule(adapter->msf_si);
+			if (adapter->schedule_wqs_ok)
+				workqueue_enqueue(adapter->msf_wq,
+				    &adapter->msf_wc, NULL);
 		}
 	}
 

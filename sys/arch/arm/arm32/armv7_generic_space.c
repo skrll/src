@@ -1,4 +1,4 @@
-/*	$NetBSD: armv7_generic_space.c,v 1.10 2018/11/19 10:45:47 jmcneill Exp $	*/
+/*	$NetBSD: armv7_generic_space.c,v 1.11 2020/02/05 07:37:35 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: armv7_generic_space.c,v 1.10 2018/11/19 10:45:47 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: armv7_generic_space.c,v 1.11 2020/02/05 07:37:35 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
