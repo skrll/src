@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_pci.c,v 1.7 2020/01/18 02:59:42 jmcneill Exp $	*/
+/*	$NetBSD: linux_pci.c,v 1.9 2020/02/07 18:13:33 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_pci.c,v 1.7 2020/01/18 02:59:42 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_pci.c,v 1.9 2020/02/07 18:13:33 jmcneill Exp $");
 
 #include <linux/pci.h>
 

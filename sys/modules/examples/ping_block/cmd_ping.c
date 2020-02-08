@@ -1,11 +1,8 @@
-/*	$NetBSD: bcmp.S,v 1.4 2020/01/15 10:56:49 ad Exp $	*/
+/*	$NetBSD: cmd_ping.c,v 1.1 2020/02/05 13:23:42 kamil Exp $	*/
 
 /*-
- * Copyright (c) 2020 The NetBSD Foundation, Inc.
+ * Copyright (c) 2015 The NetBSD Foundation, Inc.
  * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Andrew Doran.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,39 +26,36 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <machine/asm.h>
+#include <sys/cdefs.h>
+__RCSID("$NetBSD: cmd_ping.c,v 1.1 2020/02/05 13:23:42 kamil Exp $");
 
-#if defined(LIBC_SCCS)
-	RCSID("$NetBSD: bcmp.S,v 1.4 2020/01/15 10:56:49 ad Exp $")
-#endif
+#include <err.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
-ENTRY(bcmp)
-	movq	%rdx, %rcx	/* compare by longs, equality only */
-	shrq	$3, %rcx
-	jz	2f
-1:
-	movq	(%rdi), %rax
-	cmpq	%rax, (%rsi)
-	jne	5f
-	decq	%rcx
-	leaq	8(%rdi), %rdi
-	leaq	8(%rsi), %rsi
-	jnz	1b
-2:
-	andl	$7, %edx
-	jz	4f
-3:
-	movb	(%rdi), %al	/* compare by chars, equality only */
-	cmpb	%al, (%rsi)
-	jne	5f
-	decl	%edx
-	leaq	1(%rdi), %rdi
-	leaq	1(%rsi), %rsi
-	jnz	3b
-4:
-	xorl	%eax, %eax
-	ret
-5:
-	movl	$1, %eax
-	ret
-END(bcmp)
+#include "ping.h"
+
+#define _PATH_DEV_PING "/dev/ping"
+
+int main(int argc, char **argv)
+{
+	int devfd;
+
+	setprogname(argv[0]);
+
+	if ((devfd = open(_PATH_DEV_PING, O_RDWR)) == -1)
+		err(EXIT_FAILURE, "Cannot open %s", _PATH_DEV_PING);
+
+	if (ioctl(devfd, CMD_PING) == -1)
+		err(EXIT_FAILURE, "ping failed");
+
+	printf("%s: ping sent successfully\n", getprogname());
+    
+	if (close(devfd) == -1)
+		err(EXIT_FAILURE, "Cannot close %s", _PATH_DEV_PING);
+
+	return EXIT_SUCCESS;
+}

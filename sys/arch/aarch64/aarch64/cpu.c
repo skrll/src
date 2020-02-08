@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.36 2020/01/25 18:18:31 skrll Exp $ */
+/* $NetBSD: cpu.c,v 1.39 2020/01/28 17:47:50 maxv Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.36 2020/01/25 18:18:31 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.39 2020/01/28 17:47:50 maxv Exp $");
 
 #include "locators.h"
 #include "opt_arm_debug.h"
@@ -190,6 +190,7 @@ const struct cpuidtab cpuids[] = {
 	{ CPU_ID_CORTEXA76R3 & CPU_PARTMASK, "Cortex-A76", "Cortex", "V8.2-A+" },
 	{ CPU_ID_CORTEXA76AER1 & CPU_PARTMASK, "Cortex-A76AE", "Cortex", "V8.2-A+" },
 	{ CPU_ID_CORTEXA77R0 & CPU_PARTMASK, "Cortex-A77", "Cortex", "V8.2-A+" },
+	{ CPU_ID_NVIDIADENVER2 & CPU_PARTMASK, "NVIDIA", "Denver2", "V8-A" },
 	{ CPU_ID_EMAG8180 & CPU_PARTMASK, "Ampere eMAG", "Skylark", "V8-A" },
 	{ CPU_ID_NEOVERSEE1R1 & CPU_PARTMASK, "Neoverse E1", "Neoverse", "V8.2-A+" },
 	{ CPU_ID_NEOVERSEN1R3 & CPU_PARTMASK, "Neoverse N1", "Neoverse", "V8.2-A+" },
@@ -459,8 +460,7 @@ cpu_setup_id(struct cpu_info *ci)
 
 	id->ac_aa64mmfr0 = reg_id_aa64mmfr0_el1_read();
 	id->ac_aa64mmfr1 = reg_id_aa64mmfr1_el1_read();
-	/* Only in ARMv8.2. */
-	id->ac_aa64mmfr2 = 0 /* reg_id_aa64mmfr2_el1_read() */;
+	id->ac_aa64mmfr2 = reg_id_aa64mmfr2_el1_read();
 
 	id->ac_mvfr0     = reg_mvfr0_el1_read();
 	id->ac_mvfr1     = reg_mvfr1_el1_read();

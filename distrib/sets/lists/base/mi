@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1226 2020/01/19 20:41:17 riastradh Exp $
+# $NetBSD: mi,v 1.1228 2020/02/07 18:48:58 kamil Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -923,6 +923,7 @@
 ./usr/bin/rcsmerge				base-rcs-bin
 ./usr/bin/rdist					base-netutil-bin
 ./usr/bin/readlink				base-util-bin
+./usr/bin/realpath				base-util-bin
 ./usr/bin/renice				base-util-bin
 ./usr/bin/reset					base-util-bin
 ./usr/bin/rev					base-util-bin
@@ -1289,13 +1290,20 @@
 ./usr/include/vm				base-obsolete		obsolete
 ./usr/lib					base-sys-usr		compatdir
 ./usr/lib/clang					base-sys-usr
-./usr/lib/clang/7.0.0				base-sys-usr
-./usr/lib/clang/7.0.0/include			base-sys-usr
-./usr/lib/clang/7.0.0/include/sanitizer		base-sys-usr
-./usr/lib/clang/7.0.0/include/xray		base-sys-usr
-./usr/lib/clang/7.0.0/lib			base-sys-usr
-./usr/lib/clang/7.0.0/lib/netbsd		base-sys-usr
-./usr/lib/clang/7.0.0/share			base-sys-usr
+./usr/lib/clang/7.0.0				base-obsolete	obsolete
+./usr/lib/clang/7.0.0/include			base-obsolete	obsolete
+./usr/lib/clang/7.0.0/include/sanitizer		base-obsolete	obsolete
+./usr/lib/clang/7.0.0/include/xray		base-obsolete	obsolete
+./usr/lib/clang/7.0.0/lib			base-obsolete	obsolete
+./usr/lib/clang/7.0.0/lib/netbsd		base-obsolete	obsolete
+./usr/lib/clang/7.0.0/share			base-obsolete	obsolete
+./usr/lib/clang/9.0.0				base-sys-usr
+./usr/lib/clang/9.0.0/include			base-sys-usr
+./usr/lib/clang/9.0.0/include/sanitizer		base-sys-usr
+./usr/lib/clang/9.0.0/include/xray		base-sys-usr
+./usr/lib/clang/9.0.0/lib			base-sys-usr
+./usr/lib/clang/9.0.0/lib/netbsd		base-sys-usr
+./usr/lib/clang/9.0.0/share			base-sys-usr
 ./usr/lib/dtrace				base-sys-usr		dtrace
 ./usr/lib/dtrace/errno.d			base-sys-usr		dtrace
 ./usr/lib/dtrace/psinfo.d			base-sys-usr		dtrace

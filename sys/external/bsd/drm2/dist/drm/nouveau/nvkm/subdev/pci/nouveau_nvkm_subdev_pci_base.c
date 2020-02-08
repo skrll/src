@@ -1,4 +1,4 @@
-/*	$NetBSD: nouveau_nvkm_subdev_pci_base.c,v 1.4 2018/12/19 09:20:56 maya Exp $	*/
+/*	$NetBSD: nouveau_nvkm_subdev_pci_base.c,v 1.6 2020/02/07 18:13:33 jmcneill Exp $	*/
 
 /*
  * Copyright 2015 Red Hat Inc.
@@ -24,7 +24,7 @@
  * Authors: Ben Skeggs <bskeggs@redhat.com>
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nouveau_nvkm_subdev_pci_base.c,v 1.4 2018/12/19 09:20:56 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nouveau_nvkm_subdev_pci_base.c,v 1.6 2020/02/07 18:13:33 jmcneill Exp $");
 
 #include "priv.h"
 #include "agp.h"

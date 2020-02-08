@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1677 2020/01/22 14:01:50 thorpej Exp $
+# $NetBSD: mi,v 1.1679 2020/02/02 21:49:44 kamil Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -480,6 +480,7 @@
 ./usr/share/man/cat1/rcsmerge.0			man-rcs-catman		.cat
 ./usr/share/man/cat1/rdist.0			man-netutil-catman	.cat
 ./usr/share/man/cat1/readlink.0			man-util-catman		.cat
+./usr/share/man/cat1/realpath.0			man-util-catman		.cat
 ./usr/share/man/cat1/rehash.0			man-util-catman		.cat
 ./usr/share/man/cat1/repeat.0			man-util-catman		.cat
 ./usr/share/man/cat1/reset.0			man-util-catman		.cat
@@ -1906,7 +1907,7 @@
 ./usr/share/man/cat4/uplcom.0			man-sys-catman		.cat
 ./usr/share/man/cat4/urandom.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ure.0			man-sys-catman		.cat
-./usr/share/man/cat4/urio.0			man-sys-catman		.cat
+./usr/share/man/cat4/urio.0			man-obsolete		obsolete
 ./usr/share/man/cat4/url.0			man-sys-catman		.cat
 ./usr/share/man/cat4/urlphy.0			man-sys-catman		.cat
 ./usr/share/man/cat4/urndis.0			man-sys-catman		.cat
@@ -3726,6 +3727,7 @@
 ./usr/share/man/html1/rcsmerge.html		man-rcs-htmlman		html
 ./usr/share/man/html1/rdist.html		man-netutil-htmlman	html
 ./usr/share/man/html1/readlink.html		man-util-htmlman	html
+./usr/share/man/html1/realpath.html		man-util-htmlman	html
 ./usr/share/man/html1/rehash.html		man-util-htmlman	html
 ./usr/share/man/html1/repeat.html		man-util-htmlman	html
 ./usr/share/man/html1/reset.html		man-util-htmlman	html
@@ -5015,7 +5017,7 @@
 ./usr/share/man/html4/uplcom.html		man-sys-htmlman		html
 ./usr/share/man/html4/urandom.html		man-sys-htmlman		html
 ./usr/share/man/html4/ure.html			man-sys-htmlman		html
-./usr/share/man/html4/urio.html			man-sys-htmlman		html
+./usr/share/man/html4/urio.html			man-obsolete		obsolete
 ./usr/share/man/html4/url.html			man-sys-htmlman		html
 ./usr/share/man/html4/urlphy.html		man-sys-htmlman		html
 ./usr/share/man/html4/urndis.html		man-sys-htmlman		html
@@ -6622,6 +6624,7 @@
 ./usr/share/man/man1/rcsmerge.1			man-rcs-man		.man
 ./usr/share/man/man1/rdist.1			man-netutil-man		.man
 ./usr/share/man/man1/readlink.1			man-util-man		.man
+./usr/share/man/man1/realpath.1			man-util-man		.man
 ./usr/share/man/man1/rehash.1			man-util-man		.man
 ./usr/share/man/man1/repeat.1			man-util-man		.man
 ./usr/share/man/man1/reset.1			man-util-man		.man
@@ -8048,7 +8051,7 @@
 ./usr/share/man/man4/uplcom.4			man-sys-man		.man
 ./usr/share/man/man4/urandom.4			man-sys-man		.man
 ./usr/share/man/man4/ure.4			man-sys-man		.man
-./usr/share/man/man4/urio.4			man-sys-man		.man
+./usr/share/man/man4/urio.4			man-obsolete		obsolete
 ./usr/share/man/man4/url.4			man-sys-man		.man
 ./usr/share/man/man4/urlphy.4			man-sys-man		.man
 ./usr/share/man/man4/urndis.4			man-sys-man		.man

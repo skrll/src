@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.134 2020/01/25 12:26:58 jmcneill Exp $
+#	$NetBSD: GENERIC64,v 1.136 2020/02/06 01:37:46 mrg Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -432,6 +432,7 @@ ld1		at sdmmc1
 ld2		at sdmmc2
 ld3		at sdmmc3
 ld*		at sdmmc?
+bwfm*		at sdmmc?		# Broadcom BCM43xxx WiFi Interface
 
 # SATA
 ahcisata*	at fdt?			# AHCI SATA
@@ -554,6 +555,7 @@ usb*		at usbus?
 
 include "dev/usb/usbdevices.config"
 midi*		at midibus?
+pseudo-device	sequencer			# MIDI sequencer
 
 # Virtio devices
 virtio*		at fdt?			# Virtio MMIO device

@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.41 2020/01/19 00:58:14 jmcneill Exp $
+# $NetBSD: Makefile,v 1.43 2020/01/31 21:13:40 jmcneill Exp $
 
 # Link the gallium mega driver.
 
@@ -118,7 +118,7 @@ BUILD_LLVMPIPE=1
 
 DRIVERS=		kms_swrast swrast
 .if ${BUILD_RADEON} == 1
-DRIVERS+=		r600 r300
+DRIVERS+=		r600 r300 radeonsi
 GALLIUM_SUBDIRS+=	${GALLIUM_SUBDIRS_ATI}
 .endif
 .if ${BUILD_NOUVEAU} == 1
@@ -1113,8 +1113,8 @@ CPPFLAGS.streaming-load-memcpy.c+= -msse4.1
 CPPFLAGS.i386+= -march=i586
 CPPFLAGS+=	${CPPFLAGS.${XORG_MACHINE_ARCH:U${MACHINE_ARCH}}}
 
-CPPFLAGS.r600_pipe_common.c+=	-DMESA_LLVM_VERSION_STRING=\"7.0.0\"
-CPPFLAGS.si_get.c+=	-DMESA_LLVM_VERSION_STRING=\"7.0.0\"
+CPPFLAGS.r600_pipe_common.c+=	-DMESA_LLVM_VERSION_STRING=\"9.0.0\"
+CPPFLAGS.si_get.c+=	-DMESA_LLVM_VERSION_STRING=\"9.0.0\"
 
 .include "../driver.mk"
 

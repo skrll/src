@@ -1,12 +1,11 @@
-/*	$NetBSD: urio.h,v 1.5 2016/04/23 10:15:32 skrll Exp $	*/
+/*	$NetBSD: compat_crypto_50.c,v 1.2 2020/01/27 17:11:27 pgoyette Exp $ */
 
-/*
- * Copyright (c) 2000 The NetBSD Foundation, Inc.
+/*-
+ * Copyright (c) 2008 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Lennart Augustsson (lennart@augustsson.net) at
- * Carlstedt Research & Technology.
+ * by Coyote Point Systems, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,29 +29,48 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/ioccom.h>
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: compat_crypto_50.c,v 1.2 2020/01/27 17:11:27 pgoyette Exp $");
 
-struct urio_command
+#include <sys/param.h>
+#include <sys/systm.h>
+#include <sys/compat_stub.h> 
+#include <sys/module.h>
+
+#include <opencrypto/cryptodev.h>
+#include <opencrypto/ocryptodev.h>
+
+/* Module glue for compat ioctl's */
+
+static void
+crypto_50_init(void)
 {
-	unsigned short	length;
-	int		request;
-	int		requesttype;
-	int		value;
-	int		index;
-	void		*buffer;
-	int		timeout;
-};
 
-#define URIO_SEND_COMMAND	_IOWR('U', 200, struct urio_command)
-#define URIO_RECV_COMMAND	_IOWR('U', 201, struct urio_command)
+	MODULE_HOOK_SET(ocryptof_50_hook, ocryptof_ioctl);
+}
 
-#define URIO_DIR_OUT		0x0
-#define URIO_DIR_IN		0x1
+static void
+crypto_50_fini(void)
+{
 
-#ifndef __KERNEL__
-#define RIO_DIR_OUT URIO_DIR_OUT
-#define RIO_DIR_IN URIO_DIR_IN
-#define RIO_SEND_COMMAND URIO_SEND_COMMAND
-#define RIO_RECV_COMMAND URIO_RECV_COMMAND
-#define RioCommand urio_command
-#endif
+	MODULE_HOOK_UNSET(ocryptof_50_hook);
+}
+
+MODULE(MODULE_CLASS_EXEC, compat_crypto_50, "crypto,compat_50");
+ 
+static int
+compat_crypto_50_modcmd(modcmd_t cmd, void *arg)
+{
+ 
+	switch (cmd) {
+	case MODULE_CMD_INIT:
+		crypto_50_init();
+		return 0;
+	case MODULE_CMD_FINI:
+		crypto_50_fini();
+		return 0;
+	default: 
+		return ENOTTY;
+	}
+}
+
