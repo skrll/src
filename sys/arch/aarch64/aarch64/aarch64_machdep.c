@@ -42,6 +42,7 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.56 2020/12/12 09:27:31 skrll E
 
 #include <sys/param.h>
 #include <sys/types.h>
+#include <sys/asan.h>
 #include <sys/bus.h>
 #include <sys/core.h>
 #include <sys/conf.h>
