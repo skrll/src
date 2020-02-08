@@ -240,7 +240,7 @@ cpu_identify(device_t self, struct cpu_info *ci)
 		if (m == NULL || *m == 0)
 			cpu_setmodel("%s", model);
 
-		if (CPU_ID_ERRATA_CAVIUM_THUNDERX_1_1_P(ci->ci_midr))
+		if (CPU_ID_ERRATA_CAVIUM_THUNDERX_1_1_P(ci->ci_id.ac_midr))
 			aprint_normal("WARNING: ThunderX Pass 1.1 detected.\n"
 			    "This has known hardware bugs that may cause the "
 			    "incorrect operation of atomic operations.\n");

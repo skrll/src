@@ -178,6 +178,10 @@ options 	KASAN_PANIC	# optional
 options 	KERNHIST
 options 	UVMHIST
 
+# KERNHIST
+options 	KERNHIST
+options 	UVMHIST
+
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
 
