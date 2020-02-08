@@ -146,6 +146,7 @@
 #ifndef __HIDE_DELAY
 void delay(unsigned int);
 #define	DELAY(x)	delay(x)
+#endif
 
 /*
  * Compatibility /dev/zero mapping.
