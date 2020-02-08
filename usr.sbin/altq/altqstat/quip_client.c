@@ -1,4 +1,4 @@
-/*	$NetBSD: quip_client.c,v 1.12 2016/02/17 19:51:29 christos Exp $	*/
+/*	$NetBSD: quip_client.c,v 1.14 2020/02/07 21:53:20 fox Exp $	*/
 /*	$KAME: quip_client.c,v 1.9 2003/05/17 05:59:00 itojun Exp $	*/
 /*
  * Copyright (C) 1999-2000
