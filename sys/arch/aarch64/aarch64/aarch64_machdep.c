@@ -34,13 +34,13 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.38 2020/01/22 17:15:53 skrll E
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
-#include "opt_kasan.h"
 #include "opt_kernhist.h"
 #include "opt_modular.h"
 #include "opt_fdt.h"
 
 #include <sys/param.h>
 #include <sys/types.h>
+#include <sys/asan.h>
 #include <sys/bus.h>
 #include <sys/core.h>
 #include <sys/conf.h>
