@@ -227,7 +227,6 @@ static void
 cpu_identify(device_t self, struct cpu_info *ci)
 {
 	char model[128];
-	const char *m;
 
 	identify_aarch64_model(ci->ci_id.ac_midr, model, sizeof(model));
 
@@ -237,7 +236,7 @@ cpu_identify(device_t self, struct cpu_info *ci)
 	    ci->ci_package_id, ci->ci_core_id, ci->ci_smt_id);
 
 	if (ci->ci_index == 0) {
-		m = cpu_getmodel();
+		const char *m = cpu_getmodel();
 		if (m == NULL || *m == 0)
 			cpu_setmodel("%s", model);
 
