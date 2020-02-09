@@ -903,6 +903,7 @@ armv7_mpcontinuation:
 	mov	r5, #1				// bitmask...
 	lsl	r5, R_INDEX			// ... for our cpu
 
+	/* wait for the mailbox start bit to become true */
 1:	dmb					// data memory barrier
 	ldr	r2, [r6]			// load mbox
 	tst	r2, r5				// is our bit set?
