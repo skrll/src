@@ -189,7 +189,7 @@ cpu_info_alloc(struct pmap_tlb_info *ti, cpuid_t cpu_id, cpuid_t cpu_package_id,
 	ci->ci_divisor_recip = cpu_info_store.ci_divisor_recip;
 	ci->ci_cpuwatch_count = cpu_info_store.ci_cpuwatch_count;
 
-	cpu_topology_set(ci, cpu_package_id, cpu_core_id, cpu_smt_id, 0, false);
+	cpu_topology_set(ci, cpu_package_id, cpu_core_id, cpu_smt_id, 0);
 
 	pmap_md_alloc_ephemeral_address_space(ci);
 

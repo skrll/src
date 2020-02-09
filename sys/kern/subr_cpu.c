@@ -142,21 +142,31 @@ cpu_softintr_p(void)
  */
 void
 cpu_topology_set(struct cpu_info *ci, u_int package_id, u_int core_id,
-    u_int smt_id, u_int numa_id, bool slow)
+    u_int smt_id, u_int numa_id)
 {
 	enum cpu_rel rel;
 
 	cpu_topology_present = true;
-	cpu_topology_haveslow |= slow;
 	ci->ci_package_id = package_id;
 	ci->ci_core_id = core_id;
 	ci->ci_smt_id = smt_id;
 	ci->ci_numa_id = numa_id;
-	ci->ci_is_slow = slow;
+	ci->ci_is_slow = false;
 	for (rel = 0; rel < __arraycount(ci->ci_sibling); rel++) {
 		ci->ci_sibling[rel] = ci;
 		ci->ci_nsibling[rel] = 1;
 	}
+}
+
+/*
+ * Collect CPU relative speed
+ */
+void
+cpu_topology_setspeed(struct cpu_info *ci, bool slow)
+{
+
+	cpu_topology_haveslow |= slow;
+	ci->ci_is_slow = slow;
 }
 
 /*

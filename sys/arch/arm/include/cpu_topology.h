@@ -36,24 +36,23 @@
  *
  * arm_cpu_do_topology(cpuinfo)
  *
- * Call arm_cpu_do_topology() in cpu_hatch() after making sure that
- * arm_cpu_mpidr() will work for this CPU, and it will split up
- * package/core/smt IDs.
+ * Call arm_cpu_do_topology() in cpu_attach(). It will update the topology
+ * view of relative speed.
  *
- * The CPU frontend can set the "capacity_dmips_mhz" property for
- * this CPU device, and arm_cpu_set_topology() will calculate the
- * best way to call cpu_topology_set() for the known system.
+ * The CPU frontend can set the "capacity_dmips_mhz" property for this CPU,
+ * and arm_cpu_do_topology() will update the system view of this and other
+ * CPUs relative speeds
  *
- * arm_cpu_topology_set(cpuinfo, mpidr, slow)
+ * arm_cpu_topology_set(cpuinfo, mpidr)
  *
  * arm_cpu_topology_set() is provided for locore and the boot CPU,
- * and only works for the current CPU.
+ * and application CPUs.  It updates data for the current CPU.
  */
 
 #include <sys/param.h>
 #include <sys/cpu.h>
 
 void arm_cpu_do_topology(struct cpu_info * const);
-void arm_cpu_topology_set(struct cpu_info * const, mpidr_t, bool);
+void arm_cpu_topology_set(struct cpu_info * const, mpidr_t);
 
 #endif /* _ARM_CPU_TOPOLOGY_H_ */

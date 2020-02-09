@@ -175,7 +175,7 @@ cpuattach(device_t parent, device_t self, void *aux)
 		core = package & 1;
 		package >>= 1;
 	}
-	cpu_topology_set(ci, package, core, 0, 0, false);
+	cpu_topology_set(ci, package, core, 0, 0);
 
 	if (ci->ci_khz == 0) {
 		cpu_OFgetspeed(self, ci);

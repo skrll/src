@@ -95,14 +95,14 @@ x86_cpu_topology(struct cpu_info *ci)
 	case CPUVENDOR_INTEL:
 		if (cpu_family < 6) {
 			cpu_topology_set(ci, package_id, core_id, smt_id,
-			    numa_id, false);
+			    numa_id);
 			return;
 		}
 		break;
 	case CPUVENDOR_AMD:
 		if (cpu_family < 0xf) {
 			cpu_topology_set(ci, package_id, core_id, smt_id,
-			    numa_id, false);
+			    numa_id);
 			return;
 		}
 		break;
@@ -211,5 +211,5 @@ x86_cpu_topology(struct cpu_info *ci)
 		smt_id = __SHIFTOUT(apic_id, smt_mask);
 	}
 
-	cpu_topology_set(ci, package_id, core_id, smt_id, numa_id, false);
+	cpu_topology_set(ci, package_id, core_id, smt_id, numa_id);
 }
