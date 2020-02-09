@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.70 2020/01/09 16:35:03 ad Exp $	*/
+/*	$NetBSD: cpu.c,v 1.71 2020/02/09 09:30:37 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2001 Tsubai Masanari.
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.70 2020/01/09 16:35:03 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.71 2020/02/09 09:30:37 skrll Exp $");
 
 #include "opt_ppcparam.h"
 #include "opt_multiprocessor.h"

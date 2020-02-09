@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.48 2020/01/09 16:35:03 ad Exp $	*/
+/*	$NetBSD: cpu.h,v 1.49 2020/02/09 09:29:50 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2007 YAMAMOTO Takashi,
