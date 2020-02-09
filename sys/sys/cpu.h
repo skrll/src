@@ -57,7 +57,7 @@ void cpu_need_resched(struct cpu_info *, struct lwp *, int);
 /*
  * CPU_INFO_ITERATOR() may be supplied by machine dependent code as it
  * controls how the cpu_info structures are allocated.
- * 
+ *
  * This macro must always iterate just the boot-CPU when the system has
  * not attached any cpus via mi_cpu_attach() yet, and the "ncpu" variable
  * is zero.

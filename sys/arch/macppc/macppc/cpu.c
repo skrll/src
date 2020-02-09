@@ -170,7 +170,7 @@ cpuattach(device_t parent, device_t self, void *aux)
 	core = 0;
 
 	vers = (mfpvr() >> 16) & 0xffff;
-	
+
 	if (vers == IBM970MP) {
 		core = package & 1;
 		package >>= 1;
@@ -348,7 +348,7 @@ md_setup_interrupts(void)
 	if (openpic_base) {
 		openpic_set_priority(cpu_number(), 0);
 	} else if (have_u3_ht()) {
-		__u3_ht_set_priority(cpu_number(), 0);		
+		__u3_ht_set_priority(cpu_number(), 0);
 	} else
 #endif /* OPENPIC */
 		out32(HH_INTR_SECONDARY, ~0);	/* Reset interrupt. */
