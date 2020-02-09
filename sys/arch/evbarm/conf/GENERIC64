@@ -74,13 +74,14 @@ options 	MULTIPROCESSOR
 
 pseudo-device 	openfirm	# /dev/openfirm
 
-options 	DIAGNOSTIC	# internal consistency checks
+#options 	DIAGNOSTIC	# internal consistency checks
 options 	DEBUG
 options 	XHCI_DEBUG
-#options 	LOCKDEBUG
+options 	LOCKDEBUG
+#options 	PMAP_DEBUG	# Enable pmap_debug_level code
 #options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 options 	INCLUDE_CONFIG_FILE
-#options 	UVMHIST
+options 	UVMHIST
 #options 	UVMHIST_PRINT,KERNHIST_DELAY=0
 #options 	PCI_CONFIG_DUMP	# verbosely dump PCI config space
 
@@ -144,7 +145,7 @@ options 	EXEC_ELF32
 options 	EFI_RUNTIME
 
 
-#options 	PCI_CONFIG_DUMP
+options 	PCI_CONFIG_DUMP
 
 # Device tree support
 armfdt0		at root
