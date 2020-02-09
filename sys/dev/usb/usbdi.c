@@ -1,4 +1,4 @@
-/*	$NetBSD: usbdi.c,v 1.186 2019/08/28 01:44:39 mrg Exp $	*/
+/*	$NetBSD: usbdi.c,v 1.189 2020/02/08 07:57:16 maxv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2012, 2015 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.186 2019/08/28 01:44:39 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.189 2020/02/08 07:57:16 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -677,7 +677,6 @@ usbd_status
 usbd_clear_endpoint_stall(struct usbd_pipe *pipe)
 {
 	struct usbd_device *dev = pipe->up_dev;
-	usb_device_request_t req;
 	usbd_status err;
 
 	USBHIST_FUNC(); USBHIST_CALLED(usbdebug);
@@ -688,12 +687,8 @@ usbd_clear_endpoint_stall(struct usbd_pipe *pipe)
 	 */
 	pipe->up_methods->upm_cleartoggle(pipe);
 
-	req.bmRequestType = UT_WRITE_ENDPOINT;
-	req.bRequest = UR_CLEAR_FEATURE;
-	USETW(req.wValue, UF_ENDPOINT_HALT);
-	USETW(req.wIndex, pipe->up_endpoint->ue_edesc->bEndpointAddress);
-	USETW(req.wLength, 0);
-	err = usbd_do_request(dev, &req, 0);
+	err = usbd_clear_endpoint_feature(dev,
+	    pipe->up_endpoint->ue_edesc->bEndpointAddress, UF_ENDPOINT_HALT);
 #if 0
 XXX should we do this?
 	if (!err) {
@@ -709,16 +704,11 @@ usbd_clear_endpoint_stall_task(void *arg)
 {
 	struct usbd_pipe *pipe = arg;
 	struct usbd_device *dev = pipe->up_dev;
-	usb_device_request_t req;
 
 	pipe->up_methods->upm_cleartoggle(pipe);
 
-	req.bmRequestType = UT_WRITE_ENDPOINT;
-	req.bRequest = UR_CLEAR_FEATURE;
-	USETW(req.wValue, UF_ENDPOINT_HALT);
-	USETW(req.wIndex, pipe->up_endpoint->ue_edesc->bEndpointAddress);
-	USETW(req.wLength, 0);
-	(void)usbd_do_request(dev, &req, 0);
+	(void)usbd_clear_endpoint_feature(dev,
+	    pipe->up_endpoint->ue_edesc->bEndpointAddress, UF_ENDPOINT_HALT);
 }
 
 void
@@ -1282,26 +1272,67 @@ usb_desc_iter_init(struct usbd_device *dev, usbd_desc_iter_t *iter)
 }
 
 const usb_descriptor_t *
-usb_desc_iter_next(usbd_desc_iter_t *iter)
+usb_desc_iter_peek(usbd_desc_iter_t *iter)
 {
 	const usb_descriptor_t *desc;
 
 	if (iter->cur + sizeof(usb_descriptor_t) >= iter->end) {
 		if (iter->cur != iter->end)
-			printf("usb_desc_iter_next: bad descriptor\n");
+			printf("%s: bad descriptor\n", __func__);
 		return NULL;
 	}
 	desc = (const usb_descriptor_t *)iter->cur;
 	if (desc->bLength == 0) {
-		printf("usb_desc_iter_next: descriptor length = 0\n");
+		printf("%s: descriptor length = 0\n", __func__);
 		return NULL;
 	}
-	iter->cur += desc->bLength;
-	if (iter->cur > iter->end) {
-		printf("usb_desc_iter_next: descriptor length too large\n");
+	if (iter->cur + desc->bLength > iter->end) {
+		printf("%s: descriptor length too large\n", __func__);
 		return NULL;
 	}
 	return desc;
+}
+
+const usb_descriptor_t *
+usb_desc_iter_next(usbd_desc_iter_t *iter)
+{
+	const usb_descriptor_t *desc = usb_desc_iter_peek(iter);
+	if (desc == NULL)
+		return NULL;
+	iter->cur += desc->bLength;
+	return desc;
+}
+
+/* Return the next interface descriptor, skipping over any other
+ * descriptors.  Returns NULL at the end or on error. */
+const usb_interface_descriptor_t *
+usb_desc_iter_next_interface(usbd_desc_iter_t *iter)
+{
+	const usb_descriptor_t *desc;
+
+	while ((desc = usb_desc_iter_peek(iter)) != NULL &&
+	       desc->bDescriptorType != UDESC_INTERFACE)
+	{
+		usb_desc_iter_next(iter);
+	}
+
+	return (const usb_interface_descriptor_t *)usb_desc_iter_next(iter);
+}
+
+/* Returns the next non-interface descriptor, returning NULL when the
+ * next descriptor would be an interface descriptor. */
+const usb_descriptor_t *
+usb_desc_iter_next_non_interface(usbd_desc_iter_t *iter)
+{
+	const usb_descriptor_t *desc;
+
+	if ((desc = usb_desc_iter_peek(iter)) != NULL &&
+	    desc->bDescriptorType != UDESC_INTERFACE)
+	{
+		return usb_desc_iter_next(iter);
+	} else {
+		return NULL;
+	}
 }
 
 usbd_status
