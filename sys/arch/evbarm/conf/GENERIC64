@@ -139,20 +139,19 @@ options 	SOC_SUN50I_A64
 options 	SOC_SUN50I_H5
 options 	SOC_SUN50I_H6
 options 	SOC_TEGRA210
-options 	SOC_THUNDERX
 options 	SOC_VIRT
 options 	MULTIPROCESSOR
 
 pseudo-device 	openfirm	# /dev/openfirm
 
-options 	DIAGNOSTIC	# internal consistency checks
+#options 	DIAGNOSTIC	# internal consistency checks
 options 	DEBUG
 options 	XHCI_DEBUG
-#options 	LOCKDEBUG
+options 	LOCKDEBUG
 #options 	PMAP_DEBUG	# Enable pmap_debug_level code
 #options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 options 	INCLUDE_CONFIG_FILE
-#options 	UVMHIST
+options 	UVMHIST
 #options 	UVMHIST_PRINT,KERNHIST_DELAY=0
 
 # EARLYCONS is required for early init messages from VERBOSE_INIT_ARM.
@@ -174,27 +173,19 @@ options 	KASAN		# mandatory
 options 	POOL_QUARANTINE	# optional
 options 	KASAN_PANIC	# optional
 
-# KERNHIST
-options 	KERNHIST
-options 	UVMHIST
-
-# KERNHIST
-options 	KERNHIST
-options 	UVMHIST
-
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
 
 config		netbsd		root on ? type ?
 
-options 	COMPAT_NETBSD32
+#options 	COMPAT_NETBSD32
 options 	EXEC_ELF32
 
 # EFI runtime support
 options 	EFI_RUNTIME
 
 
-#options 	PCI_CONFIG_DUMP
+options 	PCI_CONFIG_DUMP
 
 # Device tree support
 armfdt0		at root
