@@ -106,7 +106,6 @@ struct cpu_info {
 	uint64_t ci_acpiid;	/* ACPI Processor Unique ID */
 
 	struct aarch64_sysctl_cpu_id ci_id;
-#define arm_cpu_mpidr(ci)	((ci)->ci_id.ac_mpidr)
 
 	struct aarch64_cache_info *ci_cacheinfo;
 	struct aarch64_cpufuncs ci_cpufuncs;

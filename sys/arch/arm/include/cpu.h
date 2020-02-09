@@ -200,7 +200,6 @@ struct cpu_info {
 
 	uint32_t	ci_midr;
 	uint32_t	ci_mpidr;
-#define arm_cpu_mpidr(ci)	((ci)->ci_mpidr)
 	uint32_t	ci_capacity_dmips_mhz;
 
 	struct arm_cache_info *
