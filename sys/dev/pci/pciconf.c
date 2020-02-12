@@ -464,11 +464,11 @@ pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
 	bhlc = pci_conf_read(pb->pc, tag, PCI_BHLC_REG);
 
 	if (pci_get_capability(pb->pc, tag, PCI_CAP_EA, &pd->ea_cap_ptr,
-			       NULL)) {
+	    NULL)) {
 		/* XXX Skip devices with EA for now. */
 		print_tag(pb->pc, tag);
 		printf("skipping devices with Enhanced Allocations\n");
-		return -1;
+		return 0;
 	}
 
 	if (PCI_CLASS(classreg) != PCI_CLASS_BRIDGE
