@@ -603,7 +603,8 @@ pci_mapreg_submap(const struct pci_attach_args *pa, int reg, pcireg_t type,
 		}
 	}
 
-	/* If we're called with maxsize/offset of 0, behave like
+	/*
+	 * If we're called with maxsize/offset of 0, behave like
 	 * pci_mapreg_map.
 	 */
 
