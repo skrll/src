@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.19 2020/01/15 08:34:04 mrg Exp $ */
+/* $NetBSD: cpu.h,v 1.20 2020/02/12 06:05:46 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -132,7 +132,7 @@ extern struct cpu_info *cpu_info[];
 extern struct cpu_info cpu_info_store[];
 
 #define CPU_INFO_ITERATOR	cpuid_t
-#ifdef MULTIPROCESSOR
+#if defined(MULTIPROCESSOR) || defined(_MODULE)
 #define cpu_number()		(curcpu()->ci_index)
 #define CPU_IS_PRIMARY(ci)	((ci)->ci_index == 0)
 #define CPU_INFO_FOREACH(cii, ci)					\

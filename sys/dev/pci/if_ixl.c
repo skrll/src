@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ixl.c,v 1.37 2020/02/07 09:38:29 yamaguchi Exp $	*/
+/*	$NetBSD: if_ixl.c,v 1.42 2020/02/12 06:41:44 yamaguchi Exp $	*/
 
 /*
  * Copyright (c) 2013-2015, Intel Corporation
@@ -656,7 +656,7 @@ struct ixl_softc {
 	uint8_t			 sc_pf_id;
 	uint16_t		 sc_uplink_seid;	/* le */
 	uint16_t		 sc_downlink_seid;	/* le */
-	uint16_t		 sc_vsi_number;		/* le */
+	uint16_t		 sc_vsi_number;
 	uint16_t		 sc_vsi_stat_counter_idx;
 	uint16_t		 sc_seid;
 	unsigned int		 sc_base_queue;
@@ -673,6 +673,7 @@ struct ixl_softc {
 #define IXL_SC_AQ_FLAG_RXCTL	__BIT(0)
 #define IXL_SC_AQ_FLAG_NVMLOCK	__BIT(1)
 #define IXL_SC_AQ_FLAG_NVMREAD	__BIT(2)
+#define IXL_SC_AQ_FLAG_RSS	__BIT(3)
 
 	kmutex_t		 sc_atq_lock;
 	kcondvar_t		 sc_atq_cv;
@@ -1280,15 +1281,20 @@ ixl_attach(device_t parent, device_t self, void *aux)
 		goto free_hmc;
 	}
 
-	if (ixl_get_phy_info(sc) != 0) {
-		/* error printed by ixl_get_phy_info */
-		goto free_hmc;
-	}
-
 	rv = ixl_get_link_status_poll(sc, NULL);
 	if (rv != 0) {
 		aprint_error_dev(self, "GET LINK STATUS %s\n",
 		    rv == ETIMEDOUT ? "timeout" : "error");
+		goto free_hmc;
+	}
+
+	/*
+	 * The FW often returns EIO in "Get PHY Abilities" command
+	 * if there is no delay
+	 */
+	DELAY(500);
+	if (ixl_get_phy_info(sc) != 0) {
+		/* error printed by ixl_get_phy_info */
 		goto free_hmc;
 	}
 
@@ -3393,9 +3399,6 @@ ixl_handle_queue_common(struct ixl_softc *sc, struct ixl_queue_pair *qp,
 	int txmore, rxmore;
 	int rv;
 
-	KASSERT(!mutex_owned(&txr->txr_lock));
-	KASSERT(!mutex_owned(&rxr->rxr_lock));
-
 	mutex_enter(&txr->txr_lock);
 	txevcnt->ev_count++;
 	txmore = ixl_txeof(sc, txr, txlimit);
@@ -3960,13 +3963,13 @@ ixl_get_version(struct ixl_softc *sc)
 	if (sc->sc_mac_type == I40E_MAC_X722) {
 		SET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_NVMLOCK |
 		    IXL_SC_AQ_FLAG_NVMREAD);
+		SET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_RXCTL);
+		SET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_RSS);
 	}
 
 #define IXL_API_VER(maj, min)	(((uint32_t)(maj) << 16) | (min))
 	if (IXL_API_VER(api_maj_ver, api_min_ver) >= IXL_API_VER(1, 5)) {
-		if (sc->sc_mac_type == I40E_MAC_X722) {
-			SET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_RXCTL);
-		}
+		SET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_RXCTL);
 		SET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_NVMLOCK);
 	}
 #undef IXL_API_VER
@@ -4343,7 +4346,7 @@ ixl_get_phy_info(struct ixl_softc *sc)
 
 	if (ixl_dmamem_alloc(sc, &idm, IXL_AQ_BUFLEN, 0) != 0) {
 		aprint_error_dev(sc->sc_dev,
-		    "unable to allocate switch config buffer\n");
+		    "unable to allocate phy abilities buffer\n");
 		return -1;
 	}
 
@@ -4511,7 +4514,7 @@ ixl_get_vsi(struct ixl_softc *sc)
 	}
 
 	reply = (struct ixl_aq_vsi_reply *)iaq.iaq_param;
-	sc->sc_vsi_number = reply->vsi_number;
+	sc->sc_vsi_number = le16toh(reply->vsi_number);
 	data = IXL_DMA_KVA(vsi);
 	sc->sc_vsi_stat_counter_idx = le16toh(data->stat_counter_idx);
 
@@ -4620,21 +4623,148 @@ ixl_get_default_rss_key(uint32_t *buf, size_t len)
 	memcpy(buf, rss_seed, cplen);
 }
 
-static void
-ixl_set_rss_key(struct ixl_softc *sc)
+static int
+ixl_set_rss_key(struct ixl_softc *sc, uint8_t *key, size_t keylen)
+{
+	struct ixl_dmamem *idm;
+	struct ixl_atq iatq;
+	struct ixl_aq_desc *iaq;
+	struct ixl_aq_rss_key_param *param;
+	struct ixl_aq_rss_key_data *data;
+	size_t len, datalen, stdlen, extlen;
+	uint16_t vsi_id;
+	int rv;
+
+	memset(&iatq, 0, sizeof(iatq));
+	iaq = &iatq.iatq_desc;
+	idm = &sc->sc_aqbuf;
+
+	datalen = sizeof(*data);
+
+	/*XXX The buf size has to be less than the size of the register */
+	datalen = MIN(IXL_RSS_KEY_SIZE_REG * sizeof(uint32_t), datalen);
+
+	iaq->iaq_flags = htole16(IXL_AQ_BUF | IXL_AQ_RD |
+	    (datalen > I40E_AQ_LARGE_BUF ? IXL_AQ_LB : 0));
+	iaq->iaq_opcode = htole16(IXL_AQ_OP_RSS_SET_KEY);
+	iaq->iaq_datalen = htole16(datalen);
+
+	param = (struct ixl_aq_rss_key_param *)iaq->iaq_param;
+	vsi_id = (sc->sc_vsi_number << IXL_AQ_RSSKEY_VSI_ID_SHIFT) |
+	    IXL_AQ_RSSKEY_VSI_VALID;
+	param->vsi_id = htole16(vsi_id);
+
+	memset(IXL_DMA_KVA(idm), 0, IXL_DMA_LEN(idm));
+	data = IXL_DMA_KVA(idm);
+
+	len = MIN(keylen, datalen);
+	stdlen = MIN(sizeof(data->standard_rss_key), len);
+	memcpy(data->standard_rss_key, key, stdlen);
+	len = (len > stdlen) ? (len - stdlen) : 0;
+
+	extlen = MIN(sizeof(data->extended_hash_key), len);
+	extlen = (stdlen < keylen) ? 0 : keylen - stdlen;
+	memcpy(data->extended_hash_key, key + stdlen, extlen);
+
+	ixl_aq_dva(iaq, IXL_DMA_DVA(idm));
+
+	bus_dmamap_sync(sc->sc_dmat, IXL_DMA_MAP(idm), 0,
+	    IXL_DMA_LEN(idm), BUS_DMASYNC_PREWRITE);
+
+	rv = ixl_atq_exec(sc, &iatq);
+
+	bus_dmamap_sync(sc->sc_dmat, IXL_DMA_MAP(idm), 0,
+	    IXL_DMA_LEN(idm), BUS_DMASYNC_POSTWRITE);
+
+	if (rv != 0) {
+		return ETIMEDOUT;
+	}
+
+	if (iaq->iaq_retval != htole16(IXL_AQ_RC_OK)) {
+		return EIO;
+	}
+
+	return 0;
+}
+
+static int
+ixl_set_rss_lut(struct ixl_softc *sc, uint8_t *lut, size_t lutlen)
+{
+	struct ixl_dmamem *idm;
+	struct ixl_atq iatq;
+	struct ixl_aq_desc *iaq;
+	struct ixl_aq_rss_lut_param *param;
+	uint16_t vsi_id;
+	uint8_t *data;
+	size_t dmalen;
+	int rv;
+
+	memset(&iatq, 0, sizeof(iatq));
+	iaq = &iatq.iatq_desc;
+	idm = &sc->sc_aqbuf;
+
+	dmalen = MIN(lutlen, IXL_DMA_LEN(idm));
+
+	iaq->iaq_flags = htole16(IXL_AQ_BUF | IXL_AQ_RD |
+	    (dmalen > I40E_AQ_LARGE_BUF ? IXL_AQ_LB : 0));
+	iaq->iaq_opcode = htole16(IXL_AQ_OP_RSS_SET_LUT);
+	iaq->iaq_datalen = htole16(dmalen);
+
+	memset(IXL_DMA_KVA(idm), 0, IXL_DMA_LEN(idm));
+	data = IXL_DMA_KVA(idm);
+	memcpy(data, lut, dmalen);
+	ixl_aq_dva(iaq, IXL_DMA_DVA(idm));
+
+	param = (struct ixl_aq_rss_lut_param *)iaq->iaq_param;
+	vsi_id = (sc->sc_vsi_number << IXL_AQ_RSSLUT_VSI_ID_SHIFT) |
+	    IXL_AQ_RSSLUT_VSI_VALID;
+	param->vsi_id = htole16(vsi_id);
+	param->flags = htole16(IXL_AQ_RSSLUT_TABLE_TYPE_PF <<
+	    IXL_AQ_RSSLUT_TABLE_TYPE_SHIFT);
+
+	bus_dmamap_sync(sc->sc_dmat, IXL_DMA_MAP(idm), 0,
+	    IXL_DMA_LEN(idm), BUS_DMASYNC_PREWRITE);
+
+	rv = ixl_atq_exec(sc, &iatq);
+
+	bus_dmamap_sync(sc->sc_dmat, IXL_DMA_MAP(idm), 0,
+	    IXL_DMA_LEN(idm), BUS_DMASYNC_POSTWRITE);
+
+	if (rv != 0) {
+		return ETIMEDOUT;
+	}
+
+	if (iaq->iaq_retval != htole16(IXL_AQ_RC_OK)) {
+		return EIO;
+	}
+
+	return 0;
+}
+
+static int
+ixl_register_rss_key(struct ixl_softc *sc)
 {
 	uint32_t rss_seed[IXL_RSS_KEY_SIZE_REG];
+	int rv;
 	size_t i;
 
 	ixl_get_default_rss_key(rss_seed, sizeof(rss_seed));
 
-	for (i = 0; i < IXL_RSS_KEY_SIZE_REG; i++) {
-		ixl_wr_rx_csr(sc, I40E_PFQF_HKEY(i), rss_seed[i]);
+	if (ISSET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_RSS)){
+		rv = ixl_set_rss_key(sc, (uint8_t*)rss_seed,
+		    sizeof(rss_seed));
+	} else {
+		rv = 0;
+		for (i = 0; i < IXL_RSS_KEY_SIZE_REG; i++) {
+			ixl_wr_rx_csr(sc, I40E_PFQF_HKEY(i), rss_seed[i]);
+		}
 	}
+
+	return rv;
 }
 
 static void
-ixl_set_rss_pctype(struct ixl_softc *sc)
+ixl_register_rss_pctype(struct ixl_softc *sc)
 {
 	uint64_t set_hena = 0;
 	uint32_t hena0, hena1;
@@ -4654,13 +4784,14 @@ ixl_set_rss_pctype(struct ixl_softc *sc)
 	ixl_wr_rx_csr(sc, I40E_PFQF_HENA(1), hena1);
 }
 
-static void
-ixl_set_rss_hlut(struct ixl_softc *sc)
+static int
+ixl_register_rss_hlut(struct ixl_softc *sc)
 {
 	unsigned int qid;
 	uint8_t hlut_buf[512], lut_mask;
 	uint32_t *hluts;
 	size_t i, hluts_num;
+	int rv;
 
 	lut_mask = (0x01 << sc->sc_rss_table_entry_width) - 1;
 
@@ -4669,12 +4800,19 @@ ixl_set_rss_hlut(struct ixl_softc *sc)
 		hlut_buf[i] = qid & lut_mask;
 	}
 
-	hluts = (uint32_t *)hlut_buf;
-	hluts_num = sc->sc_rss_table_size >> 2;
-	for (i = 0; i < hluts_num; i++) {
-		ixl_wr(sc, I40E_PFQF_HLUT(i), hluts[i]);
+	if (ISSET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_RSS)) {
+		rv = ixl_set_rss_lut(sc, hlut_buf, sizeof(hlut_buf));
+	} else {
+		rv = 0;
+		hluts = (uint32_t *)hlut_buf;
+		hluts_num = sc->sc_rss_table_size >> 2;
+		for (i = 0; i < hluts_num; i++) {
+			ixl_wr(sc, I40E_PFQF_HLUT(i), hluts[i]);
+		}
+		ixl_flush(sc);
 	}
-	ixl_flush(sc);
+
+	return rv;
 }
 
 static void
@@ -4683,9 +4821,9 @@ ixl_config_rss(struct ixl_softc *sc)
 
 	KASSERT(mutex_owned(&sc->sc_cfg_lock));
 
-	ixl_set_rss_key(sc);
-	ixl_set_rss_pctype(sc);
-	ixl_set_rss_hlut(sc);
+	ixl_register_rss_key(sc);
+	ixl_register_rss_pctype(sc);
+	ixl_register_rss_hlut(sc);
 }
 
 static const struct ixl_phy_type *
