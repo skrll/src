@@ -234,8 +234,8 @@ vmapbuf(struct buf *bp, vsize_t len)
 	 */
 	while (len) {
 		(void) pmap_extract(pm, faddr, &fpa);
-		pmap_enter(pmap_kernel(), taddr, fpa, VM_PROT_READ|VM_PROT_WRITE,
-		    VM_PROT_READ|VM_PROT_WRITE|PMAP_WIRED);
+		pmap_kenter_pa(taddr, fpa, VM_PROT_READ|VM_PROT_WRITE,
+		    PMAP_WIRED);
 		faddr += PAGE_SIZE;
 		taddr += PAGE_SIZE;
 		len -= PAGE_SIZE;
@@ -270,7 +270,7 @@ vunmapbuf(struct buf *bp, vsize_t len)
 	off = (vaddr_t)bp->b_data - addr;
 	len = round_page(off + len);
 
-	pmap_remove(pmap_kernel(), addr, addr + len);
+	pmap_kremove(addr, len);
 	pmap_update(pmap_kernel());
 	uvm_km_free(phys_map, addr, len, UVM_KMF_VAONLY);
 	bp->b_data = bp->b_saveaddr;
