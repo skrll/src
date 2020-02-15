@@ -1,7 +1,7 @@
-/*	$NetBSD: kern_softint.c,v 1.57 2020/01/08 17:38:42 ad Exp $	*/
+/*	$NetBSD: kern_softint.c,v 1.59 2020/01/26 18:52:55 ad Exp $	*/
 
 /*-
- * Copyright (c) 2007, 2008, 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2007, 2008, 2019, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -170,7 +170,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_softint.c,v 1.57 2020/01/08 17:38:42 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_softint.c,v 1.59 2020/01/26 18:52:55 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -544,7 +544,6 @@ static inline void
 softint_execute(softint_t *si, lwp_t *l, int s)
 {
 	softhand_t *sh;
-	bool havelock;
 
 #ifdef __HAVE_FAST_SOFTINTS
 	KASSERT(si->si_lwp == curlwp);
@@ -554,8 +553,6 @@ softint_execute(softint_t *si, lwp_t *l, int s)
 	KASSERT(si->si_cpu == curcpu());
 	KASSERT(si->si_lwp->l_wchan == NULL);
 	KASSERT(si->si_active);
-
-	havelock = false;
 
 	/*
 	 * Note: due to priority inheritance we may have interrupted a
@@ -577,17 +574,14 @@ softint_execute(softint_t *si, lwp_t *l, int s)
 		splx(s);
 
 		/* Run the handler. */
-		if (sh->sh_flags & SOFTINT_MPSAFE) {
-			if (havelock) {
-				KERNEL_UNLOCK_ONE(l);
-				havelock = false;
-			}
-		} else if (!havelock) {
+		if (__predict_true((sh->sh_flags & SOFTINT_MPSAFE) != 0)) {
+			(*sh->sh_func)(sh->sh_arg);
+		} else {
 			KERNEL_LOCK(1, l);
-			havelock = true;
+			(*sh->sh_func)(sh->sh_arg);
+			KERNEL_UNLOCK_ONE(l);
 		}
-		(*sh->sh_func)(sh->sh_arg);
-
+		
 		/* Diagnostic: check that spin-locks have not leaked. */
 		KASSERTMSG(curcpu()->ci_mtx_count == 0,
 		    "%s: ci_mtx_count (%d) != 0, sh_func %p\n",
@@ -602,10 +596,6 @@ softint_execute(softint_t *si, lwp_t *l, int s)
 	}
 
 	PSREF_DEBUG_BARRIER();
-
-	if (havelock) {
-		KERNEL_UNLOCK_ONE(l);
-	}
 
 	CPU_COUNT(CPU_COUNT_NSOFT, 1);
 
@@ -851,7 +841,24 @@ softint_dispatch(lwp_t *pinned, int s)
 	u_int timing;
 	lwp_t *l;
 
-	KASSERT((pinned->l_flag & LW_RUNNING) != 0);
+#ifdef DIAGNOSTIC
+	if ((pinned->l_flag & LW_RUNNING) == 0 || curlwp->l_stat != LSIDL) {
+		struct lwp *onproc = curcpu()->ci_onproc;
+		int s2 = splhigh();
+		printf("curcpu=%d, spl=%d curspl=%d\n"
+			"onproc=%p => l_stat=%d l_flag=%08x l_cpu=%d\n"
+			"curlwp=%p => l_stat=%d l_flag=%08x l_cpu=%d\n"
+			"pinned=%p => l_stat=%d l_flag=%08x l_cpu=%d\n",
+			cpu_index(curcpu()), s, s2, onproc, onproc->l_stat,
+			onproc->l_flag, cpu_index(onproc->l_cpu), curlwp,
+			curlwp->l_stat, curlwp->l_flag,
+			cpu_index(curlwp->l_cpu), pinned, pinned->l_stat,
+			pinned->l_flag, cpu_index(pinned->l_cpu));
+		splx(s2);
+		panic("softint screwup");
+	}
+#endif
+
 	l = curlwp;
 	si = l->l_private;
 

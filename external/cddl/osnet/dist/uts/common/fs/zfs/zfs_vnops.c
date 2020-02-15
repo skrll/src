@@ -746,7 +746,8 @@ mappedread(vnode_t *vp, int nbytes, uio_t *uio)
 		pp = NULL;
 		npages = 1;
 		mutex_enter(mtx);
-		found = uvn_findpages(uobj, start, &npages, &pp, UFP_NOALLOC);
+		found = uvn_findpages(uobj, start, &npages, &pp, NULL,
+		    UFP_NOALLOC);
 		mutex_exit(mtx);
 
 		/* XXXNETBSD shouldn't access userspace with the page busy */
@@ -778,7 +779,7 @@ update_pages(vnode_t *vp, int64_t start, int len, objset_t *os, uint64_t oid,
 	struct uvm_object *uobj = &vp->v_uobj;
 	kmutex_t *mtx = uobj->vmobjlock;
 	caddr_t va;
-	int off;
+	int off, status;
 
 	ASSERT(vp->v_mount != NULL);
 
@@ -792,8 +793,29 @@ update_pages(vnode_t *vp, int64_t start, int len, objset_t *os, uint64_t oid,
 
 		pp = NULL;
 		npages = 1;
-		found = uvn_findpages(uobj, start, &npages, &pp, UFP_NOALLOC);
+		found = uvn_findpages(uobj, start, &npages, &pp, NULL,
+		    UFP_NOALLOC);
 		if (found) {
+			/*
+			 * We're about to zap the page's contents and don't
+			 * care about any existing modifications.  We must
+			 * keep track of any new modifications past this
+			 * point.  Clear the modified bit in the pmap, and
+			 * if the page is marked dirty revert to tracking
+			 * the modified bit.
+			 */
+			switch (uvm_pagegetdirty(pp)) {
+			case UVM_PAGE_STATUS_DIRTY:
+				/* Does pmap_clear_modify(). */
+				uvm_pagemarkdirty(pp, UVM_PAGE_STATUS_UNKNOWN);
+				break;
+			case UVM_PAGE_STATUS_UNKNOWN:
+				pmap_clear_modify(pp);
+				break;
+			case UVM_PAGE_STATUS_CLEAN:
+				/* Nothing to do. */
+				break;
+			}
 			mutex_exit(mtx);
 
 			va = zfs_map_page(pp, S_WRITE);
@@ -5976,7 +5998,7 @@ zfs_netbsd_getpages(void *v)
 	}
 	npages = 1;
 	pg = NULL;
-	uvn_findpages(uobj, offset, &npages, &pg, UFP_ALL);
+	uvn_findpages(uobj, offset, &npages, &pg, NULL, UFP_ALL);
 
 	if (pg->flags & PG_FAKE) {
 		mutex_exit(mtx);
@@ -5988,10 +6010,13 @@ zfs_netbsd_getpages(void *v)
 
 		mutex_enter(mtx);
 		pg->flags &= ~(PG_FAKE);
-		pmap_clear_modify(pg);
 	}
 
 	if (memwrite) {
+		if (uvm_pagegetdirty(pg) == UVM_PAGE_STATUS_CLEAN) {
+			/* For write faults, start dirtiness tracking. */
+			uvm_pagemarkdirty(pg, UVM_PAGE_STATUS_UNKNOWN);
+		}
 		if ((vp->v_iflag & VI_ONWORKLST) == 0) {
 			vn_syncer_add_to_worklist(vp, filedelay);
 		}
@@ -6224,7 +6249,7 @@ zfs_netbsd_setsize(vnode_t *vp, off_t size)
 	mutex_enter(mtx);
 	count = 1;
 	pg = NULL;
-	if (uvn_findpages(uobj, tsize, &count, &pg, UFP_NOALLOC)) {
+	if (uvn_findpages(uobj, tsize, &count, &pg, NULL, UFP_NOALLOC)) {
 		va = zfs_map_page(pg, S_WRITE);
 		pgoff = size - tsize;
 		memset(va + pgoff, 0, PAGESIZE - pgoff);

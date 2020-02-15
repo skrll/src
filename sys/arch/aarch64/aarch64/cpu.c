@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.33 2020/01/12 09:29:18 mrg Exp $ */
+/* $NetBSD: cpu.c,v 1.39 2020/01/28 17:47:50 maxv Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.33 2020/01/12 09:29:18 mrg Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.39 2020/01/28 17:47:50 maxv Exp $");
 
 #include "locators.h"
 #include "opt_arm_debug.h"
@@ -35,19 +35,20 @@ __KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.33 2020/01/12 09:29:18 mrg Exp $");
 #include "opt_multiprocessor.h"
 
 #include <sys/param.h>
-#include <sys/systm.h>
 #include <sys/atomic.h>
-#include <sys/device.h>
 #include <sys/cpu.h>
+#include <sys/device.h>
 #include <sys/kmem.h>
 #include <sys/reboot.h>
 #include <sys/sysctl.h>
+#include <sys/systm.h>
 
 #include <aarch64/armreg.h>
 #include <aarch64/cpu.h>
 #include <aarch64/cpufunc.h>
 #include <aarch64/machdep.h>
 
+#include <arm/cpu_topology.h>
 #ifdef FDT
 #include <arm/fdt/arm_fdtvar.h>
 #endif
@@ -65,7 +66,6 @@ static void cpu_identify1(device_t self, struct cpu_info *);
 static void cpu_identify2(device_t self, struct cpu_info *);
 static void cpu_setup_id(struct cpu_info *);
 static void cpu_setup_sysctl(device_t, struct cpu_info *);
-static void cpu_do_topology(struct cpu_info *);
 
 #ifdef MULTIPROCESSOR
 uint64_t cpu_mpidr[MAXCPUS];
@@ -145,7 +145,7 @@ cpu_attach(device_t dv, cpuid_t id)
 	ci->ci_dev = dv;
 	dv->dv_private = ci;
 
-	cpu_do_topology(ci);
+	arm_cpu_do_topology(ci);
 	cpu_identify(ci->ci_dev, ci);
 
 #ifdef MULTIPROCESSOR
@@ -161,7 +161,7 @@ cpu_attach(device_t dv, cpuid_t id)
 	cpu_identify1(dv, ci);
 #if 0
 	/* already done in locore */
-	aarch64_getcacheinfo(unit); 
+	aarch64_getcacheinfo(unit);
 #endif
 	aarch64_printcacheinfo(dv);
 	cpu_identify2(dv, ci);
@@ -190,6 +190,7 @@ const struct cpuidtab cpuids[] = {
 	{ CPU_ID_CORTEXA76R3 & CPU_PARTMASK, "Cortex-A76", "Cortex", "V8.2-A+" },
 	{ CPU_ID_CORTEXA76AER1 & CPU_PARTMASK, "Cortex-A76AE", "Cortex", "V8.2-A+" },
 	{ CPU_ID_CORTEXA77R0 & CPU_PARTMASK, "Cortex-A77", "Cortex", "V8.2-A+" },
+	{ CPU_ID_NVIDIADENVER2 & CPU_PARTMASK, "NVIDIA", "Denver2", "V8-A" },
 	{ CPU_ID_EMAG8180 & CPU_PARTMASK, "Ampere eMAG", "Skylark", "V8-A" },
 	{ CPU_ID_NEOVERSEE1R1 & CPU_PARTMASK, "Neoverse E1", "Neoverse", "V8.2-A+" },
 	{ CPU_ID_NEOVERSEN1R3 & CPU_PARTMASK, "Neoverse N1", "Neoverse", "V8.2-A+" },
@@ -229,7 +230,7 @@ cpu_identify(device_t self, struct cpu_info *ci)
 	const char *m;
 
 	identify_aarch64_model(ci->ci_id.ac_midr, model, sizeof(model));
-	if (ci->ci_index == 0) { 
+	if (ci->ci_index == 0) {
 		m = cpu_getmodel();
 		if (m == NULL || *m == 0)
 			cpu_setmodel("%s", model);
@@ -459,8 +460,7 @@ cpu_setup_id(struct cpu_info *ci)
 
 	id->ac_aa64mmfr0 = reg_id_aa64mmfr0_el1_read();
 	id->ac_aa64mmfr1 = reg_id_aa64mmfr1_el1_read();
-	/* Only in ARMv8.2. */
-	id->ac_aa64mmfr2 = 0 /* reg_id_aa64mmfr2_el1_read() */;
+	id->ac_aa64mmfr2 = reg_id_aa64mmfr2_el1_read();
 
 	id->ac_mvfr0     = reg_mvfr0_el1_read();
 	id->ac_mvfr1     = reg_mvfr1_el1_read();
@@ -496,43 +496,6 @@ cpu_setup_sysctl(device_t dv, struct cpu_info *ci)
 		       CTLTYPE_STRUCT, "cpu_id", NULL,
 		       NULL, 0, &ci->ci_id, sizeof(ci->ci_id),
 		       CTL_CREATE, CTL_EOL);
-}
-
-static void
-cpu_do_topology(struct cpu_info *newci)
-{
-	struct cpu_info *ci;
-	CPU_INFO_ITERATOR cii;
-	prop_dictionary_t dict;
-	uint32_t capacity_dmips_mhz;
-	static uint32_t best_cap = 0;
-
-	dict = device_properties(newci->ci_dev);
-	if (prop_dictionary_get_uint32(dict, "capacity_dmips_mhz",
-	    &capacity_dmips_mhz)) {
-		newci->ci_capacity_dmips_mhz = capacity_dmips_mhz;
-	} else {
-		newci->ci_capacity_dmips_mhz = 0;
-	}
-
-	if (newci->ci_capacity_dmips_mhz > best_cap)
-		best_cap = newci->ci_capacity_dmips_mhz;
-
-	/*
-	 * CPU_INFO_FOREACH() doesn't work for this CPU until mi_cpu_attach()
-	 * is called and ncpu is bumped, so call it directly here.
-	 */
-	aarch64_set_topology(newci, newci->ci_id.ac_mpidr,
-	    newci->ci_capacity_dmips_mhz < best_cap);
-
-	/*
-	 * Using saved largest capacity, refresh previous topology info.
-	 * It's supposed to be OK to re-set topology.
-	 */
-	for (CPU_INFO_FOREACH(cii, ci)) {
-		aarch64_set_topology(ci, ci->ci_id.ac_mpidr,
-		    ci->ci_capacity_dmips_mhz < best_cap);
-	}
 }
 
 #ifdef MULTIPROCESSOR

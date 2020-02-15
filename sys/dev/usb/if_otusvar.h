@@ -1,4 +1,4 @@
-/*	$NetBSD: if_otusvar.h,v 1.10 2019/10/05 23:27:20 mrg Exp $	*/
+/*	$NetBSD: if_otusvar.h,v 1.11 2020/01/15 08:20:13 skrll Exp $	*/
 /*	$OpenBSD: if_otusreg.h,v 1.6 2009/04/06 18:17:01 damien Exp $	*/
 
 /*-

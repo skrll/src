@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.132 2020/01/15 01:09:57 jmcneill Exp $
+#	$NetBSD: GENERIC64,v 1.136 2020/02/06 01:37:46 mrg Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -381,6 +381,7 @@ options 	I2C_MAX_ADDR=0xfff
 bsciic*		at fdt?			# Broadcom BCM283x Serial Control
 dwiic*		at fdt?			# Designware I2C
 dwiic*		at acpi?
+imxi2c*		at fdt? pass 4		# IMX I2C
 rkiic*		at fdt? pass 4		# Rockchip I2C
 sunxirsb*	at fdt?	pass 4		# Allwinner RSB
 sunxitwi*	at fdt?			# Allwinner TWI
@@ -431,6 +432,7 @@ ld1		at sdmmc1
 ld2		at sdmmc2
 ld3		at sdmmc3
 ld*		at sdmmc?
+bwfm*		at sdmmc?		# Broadcom BCM43xxx WiFi Interface
 
 # SATA
 ahcisata*	at fdt?			# AHCI SATA
@@ -470,6 +472,7 @@ h3codec*	at fdt?			# Allwinner H3 audio codec (analog part)
 a64acodec*	at fdt?			# Allwinner A64 audio codec (analog part)
 sunxii2s*	at fdt?			# Allwinner I2S/PCM
 audio*		at audiobus?
+options 	AUDIO_BLK_MS=4
 
 spkr*		at audio?		# PC speaker (synthesized)
 
@@ -552,6 +555,7 @@ usb*		at usbus?
 
 include "dev/usb/usbdevices.config"
 midi*		at midibus?
+pseudo-device	sequencer			# MIDI sequencer
 
 # Virtio devices
 virtio*		at fdt?			# Virtio MMIO device

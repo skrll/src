@@ -1,4 +1,4 @@
-/*	$NetBSD: disks.c,v 1.59 2020/01/09 13:22:30 martin Exp $ */
+/*	$NetBSD: disks.c,v 1.62 2020/01/27 21:21:22 martin Exp $ */
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -758,7 +758,7 @@ convert_scheme(struct pm_devs *p, bool is_boot_drive, const char **err_msg)
 		return false;
 
 	new_parts = new_scheme->create_new_for_disk(p->diskdev,
-	    0, p->dlsize, p->dlsize, is_boot_drive, NULL);
+	    0, p->dlsize, is_boot_drive, NULL);
 	if (new_parts == NULL)
 		return false;
 
@@ -904,6 +904,7 @@ find_disks(const char *doingwhat, bool allow_cur_system)
 						    partitions_read_disk(
 						    pm_i->diskdev,
 						    disk->dd_totsec,
+						    disk->dd_secsize,
 						    disk->dd_no_mbr);
 					}
 				}
@@ -928,11 +929,11 @@ find_disks(const char *doingwhat, bool allow_cur_system)
 		pm->dlsec = disk->dd_sec;
 		pm->dlsize = disk->dd_totsec;
 		if (pm->dlsize == 0)
-			pm->dlsize = disk->dd_cyl * disk->dd_head
-			    * disk->dd_sec;
+			pm->dlsize =
+			    disk->dd_cyl * disk->dd_head * disk->dd_sec;
 
 		pm->parts = partitions_read_disk(pm->diskdev,
-		    disk->dd_totsec, disk->dd_no_mbr);
+		    pm->dlsize, disk->dd_secsize, disk->dd_no_mbr);
 
 again:
 
@@ -960,8 +961,8 @@ again:
 			pm->dlsec = disk->dd_sec;
 			pm->dlsize = disk->dd_totsec;
 			if (pm->dlsize == 0)
-				pm->dlsize = disk->dd_cyl * disk->dd_head
-				    * disk->dd_sec;
+				pm->dlsize =
+				    disk->dd_cyl * disk->dd_head * disk->dd_sec;
 
 			if (pm->parts && pm->parts->pscheme->size_limit != 0
 			    && pm->dlsize > pm->parts->pscheme->size_limit
@@ -970,7 +971,7 @@ again:
 				char size[5], limit[5];
 
 				humanize_number(size, sizeof(size),
-				    (uint64_t)pm->dlsize * 512U,
+				    (uint64_t)pm->dlsize * pm->sectorsize,
 				    "", HN_AUTOSCALE, HN_B | HN_NOSPACE
 				    | HN_DECIMAL);
 
@@ -1299,7 +1300,11 @@ make_fstab(struct install_partition_desc *install)
 		if (ptn->size == 0)
 			continue;
 
-		if (ptn->type != PT_swap &&
+		bool is_tmpfs = ptn->type == PT_root &&
+		    ptn->fs_type == FS_TMPFS &&
+		    (ptn->flags & PUIFLG_JUST_MOUNTPOINT);
+
+		if (!is_tmpfs && ptn->type != PT_swap &&
 		    (ptn->instflags & PUIINST_MOUNT) == 0)
 			continue;
 
@@ -1350,6 +1355,29 @@ make_fstab(struct install_partition_desc *install)
 			scripting_fprintf(f, "%s\t\tnone\tswap\tsw%s\t\t 0 0\n",
 				dev, dump_dev);
 			continue;
+#ifdef HAVE_TMPFS
+		case FS_TMPFS:
+			if (ptn->size < 0)
+				scripting_fprintf(f,
+				    "tmpfs\t\t/tmp\ttmpfs\trw,-m=1777,"
+				    "-s=ram%%%" PRIu64 "\n", -ptn->size);
+			else
+				scripting_fprintf(f,
+				    "tmpfs\t\t/tmp\ttmpfs\trw,-m=1777,"
+				    "-s=%" PRIu64 "M\n", ptn->size);
+			continue;
+#else
+		case FS_MFS:
+			if (swap_dev[0] != 0)
+				scripting_fprintf(f,
+				    "%s\t\t/tmp\tmfs\trw,-s=%"
+				    PRIu64 "\n", swap_dev, ptn->size);
+			else
+				scripting_fprintf(f,
+				    "swap\t\t/tmp\tmfs\trw,-s=%"
+				    PRIu64 "\n", ptn->size);
+			continue;
+#endif
 		case FS_SYSVBFS:
 			fstype = "sysvbfs";
 			make_target_dir("/stand");
@@ -1379,21 +1407,6 @@ make_fstab(struct install_partition_desc *install)
 	}
 
 done_with_disks:
-	if (tmp_ramdisk_size > 0) {
-#ifdef HAVE_TMPFS
-		scripting_fprintf(f, "tmpfs\t\t/tmp\ttmpfs\trw,-m=1777,-s=%"
-		    PRIu64 "\n",
-		    tmp_ramdisk_size * 512);
-#else
-		if (swap_dev[0] != 0)
-			scripting_fprintf(f, "%s\t\t/tmp\tmfs\trw,-s=%"
-			    PRIu64 "\n", swap_dev, tmp_ramdisk_size);
-		else
-			scripting_fprintf(f, "swap\t\t/tmp\tmfs\trw,-s=%"
-			    PRIu64 "\n", tmp_ramdisk_size);
-#endif
-	}
-
 	if (cdrom_dev[0] == 0)
 		get_default_cdrom(cdrom_dev, sizeof(cdrom_dev));
 
@@ -1449,7 +1462,9 @@ find_part_by_name(const char *name, struct disk_partitions **parts,
 			if (strcmp(disks[n].dd_name, pm->diskdev) == 0)
 				continue;
 			ps = partitions_read_disk(disks[n].dd_name,
-			    disks[n].dd_totsec, disks[n].dd_no_mbr);
+			    disks[n].dd_totsec,
+			    disks[n].dd_secsize,
+			    disks[n].dd_no_mbr);
 			if (ps == NULL)
 				continue;
 			if (ps->pscheme->find_by_name == NULL)
@@ -1877,7 +1892,7 @@ mount_disks(struct install_partition_desc *install)
 int
 set_swap_if_low_ram(struct install_partition_desc *install)
 {
-	if (get_ramsize() <= 32)
+	if (get_ramsize() <= TINY_RAM_SIZE)
 		return set_swap(install);
 	return 0;
 }
@@ -2379,7 +2394,9 @@ select_partitions(struct selected_partitions *res,
 				continue;
 
 			ps = partitions_read_disk(disks[n].dd_name,
-			    disks[n].dd_totsec, disks[n].dd_no_mbr);
+			    disks[n].dd_totsec,
+			    disks[n].dd_secsize,
+			    disks[n].dd_no_mbr);
 			if (ps == NULL)
 				continue;
 			data.all_parts[data.all_cnt++] = ps;

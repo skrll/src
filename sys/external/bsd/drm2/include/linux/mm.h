@@ -1,4 +1,4 @@
-/*	$NetBSD: mm.h,v 1.9 2018/08/27 13:44:54 riastradh Exp $	*/
+/*	$NetBSD: mm.h,v 1.12 2020/01/19 15:31:56 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -35,6 +35,7 @@
 #include <sys/malloc.h>
 
 #include <uvm/uvm_extern.h>
+#include <uvm/uvm_object.h>
 
 #include <asm/page.h>
 #include <linux/shrinker.h>
@@ -95,8 +96,16 @@ kvfree(void *ptr)
 static inline void
 set_page_dirty(struct page *page)
 {
+	struct vm_page *pg = &page->p_vmp;
 
-	page->p_vmp.flags &= ~PG_CLEAN;
+	/* XXX */
+	if (pg->uobject != NULL) {
+		mutex_enter(pg->uobject->vmobjlock);
+		uvm_pagemarkdirty(pg, UVM_PAGE_STATUS_DIRTY);
+		mutex_exit(pg->uobject->vmobjlock);
+	} else {
+		uvm_pagemarkdirty(pg, UVM_PAGE_STATUS_DIRTY);
+	}
 }
 
 #endif  /* _LINUX_MM_H_ */

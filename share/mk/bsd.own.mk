@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1171 2020/01/14 16:48:18 christos Exp $
+#	$NetBSD: bsd.own.mk,v 1.1175 2020/01/22 21:46:06 uwe Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -1082,6 +1082,7 @@ MKSTATICPIE?=	no
 _MKVARS.yes= \
 	MKATF \
 	MKBINUTILS \
+	MKBSDTAR \
 	MKCOMPLEX MKCVS MKCXX \
 	MKDOC MKDTC \
 	MKDYNAMICROOT \
@@ -1173,8 +1174,10 @@ MKFIRMWARE.sparc64=		yes
 # Only install the nouveau and radeon firmwares on DRM-happy systems.
 MKNOUVEAUFIRMWARE.x86_64=	yes
 MKNOUVEAUFIRMWARE.i386=		yes
+MKNOUVEAUFIRMWARE.aarch64=	yes
 MKRADEONFIRMWARE.x86_64=	yes
 MKRADEONFIRMWARE.i386=		yes
+MKRADEONFIRMWARE.aarch64=	yes
 
 # Only install the tegra firmware on evbarm.
 MKTEGRAFIRMWARE.evbarm=		yes
@@ -1205,7 +1208,6 @@ _MKVARS.no= \
 	MKARGON2 \
 	MKARZERO \
 	MKBSDGREP \
-	MKBSDTAR \
 	MKCATPAGES MKCOMPATTESTS MKCOMPATX11 MKCTF \
 	MKDEBUG MKDEBUGLIB MKDTRACE \
 	MKEXTSRC \

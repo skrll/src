@@ -1,4 +1,4 @@
-#	$NetBSD: files.pci,v 1.419 2020/01/01 10:11:21 ryo Exp $
+#	$NetBSD: files.pci,v 1.425 2020/01/25 18:59:43 thorpej Exp $
 #
 # Config file and device description for machine-independent PCI code.
 # Included by ports that need it.  Requires that the SCSI files be
@@ -168,15 +168,10 @@ attach	mpii at pci
 file	dev/pci/mpii.c			mpii
 
 # Aquantia/Atlantic 10-Gigabit Ethernet
-device	aq: ether, ifnet, arp
+device	aq: ether, ifnet, arp, sysmon_envsys
 attach	aq at pci
 file	dev/pci/if_aq.c			aq
 defflag opt_if_aq.h	AQ_EVENT_COUNTERS
-
-# Ethernet driver for DC21040-based boards
-device	de: ether, ifnet, arp
-attach	de at pci
-file	dev/pci/if_de.c			de
 
 # 3Com 3c590 and 3c595 Ethernet controllers
 # device declaration in sys/conf/files
@@ -188,18 +183,7 @@ file	dev/pci/if_ep_pci.c		ep_pci
 attach	ex at pci with ex_pci
 file	dev/pci/if_ex_pci.c		ex_pci
 
-# Digital DEFPA PCI FDDI Controller
-device	fpa: pdq, fddi, ifnet, arp
-attach	fpa at pci
-file	dev/pci/if_fpa.c		fpa
-
-# AMD am7990 (LANCE) -based Ethernet controllers
-# device declaration in sys/conf/files
-attach	le at pci with le_pci: le32
-file	dev/pci/if_le_pci.c		le_pci
-
 # AMD PCnet-PCI Ethernet controller family
-# Supersedes if_le_pci.c
 device	pcn: ether, ifnet, arp, mii
 attach	pcn at pci
 file	dev/pci/if_pcn.c		pcn
@@ -431,11 +415,6 @@ file	dev/pci/if_tl.c			tl
 # device declaration in sys/conf/files
 attach	ntwoc at pci with ntwoc_pci
 file	dev/pci/if_ntwoc_pci.c		ntwoc_pci
-
-# Essential Communications HIPPI interface
-# device declaration in sys/conf/files
-attach	esh at pci with esh_pci
-file	dev/pci/if_esh_pci.c		esh_pci
 
 # generic PCI VGA
 defflag	opt_vga.h	VGA_POST:	X86EMU
@@ -1185,3 +1164,6 @@ file	dev/pci/qat/qat_d15xx.c		qat
 device	ixl: ether, ifnet, arp
 attach	ixl at pci
 file	dev/pci/if_ixl.c	ixl
+defflag	opt_if_ixl.h	IXL_DEBUG
+defparam opt_if_ixl.h	IXL_STATS_INTERVAL_MSEC
+			IXL_QUEUE_NUM

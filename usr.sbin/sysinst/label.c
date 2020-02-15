@@ -1,4 +1,4 @@
-/*	$NetBSD: label.c,v 1.18 2020/01/09 13:22:30 martin Exp $	*/
+/*	$NetBSD: label.c,v 1.20 2020/01/27 21:21:22 martin Exp $	*/
 
 /*
  * Copyright 1997 Jonathan Stone
@@ -36,7 +36,7 @@
 
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: label.c,v 1.18 2020/01/09 13:22:30 martin Exp $");
+__RCSID("$NetBSD: label.c,v 1.20 2020/01/27 21:21:22 martin Exp $");
 #endif
 
 #include <sys/types.h>
@@ -1142,10 +1142,10 @@ fmt_fspart_header(menudesc *menu, void *arg)
 		if (pset->infos[ptn].flags & PUIFLG_CLONE_PARTS)
 			with_clone = true;
 	humanize_number(total, sizeof total,
-	    pset->parts->disk_size * 512,
+	    pset->parts->disk_size * pset->parts->bytes_per_sector,
 	    "", HN_AUTOSCALE, HN_B | HN_NOSPACE | HN_DECIMAL);
 	humanize_number(free_space, sizeof free_space,
-	    pset->cur_free_space * 512,
+	    pset->cur_free_space * pset->parts->bytes_per_sector,
 	    "", HN_AUTOSCALE, HN_B | HN_NOSPACE | HN_DECIMAL);
 
 	if (with_clone)
@@ -1983,14 +1983,17 @@ getpartoff(struct disk_partitions *parts, daddr_t defpartstart)
 			i = min;
 			localsizemult = 1;
 		} else {
-			i = parse_disk_pos(isize, &localsizemult, pm->dlcylsize, NULL);
+			i = parse_disk_pos(isize, &localsizemult,
+			    parts->bytes_per_sector,
+			    parts->pscheme->get_cylinder_size(parts), NULL);
 			if (i < 0) {
 				errmsg = msg_string(MSG_invalid_sector_number);
 				continue;
 			}
 		}
 		/* round to cylinder size if localsizemult != 1 */
-		i = NUMSEC(i, localsizemult, pm->dlcylsize);
+		int cylsize = parts->pscheme->get_cylinder_size(parts);
+		i = NUMSEC(i, localsizemult, cylsize);
 		/* Adjust to start of slice if needed */
 		if ((i < min && (min - i) < localsizemult) ||
 		    (i > min && (i - min) < localsizemult)) {
@@ -2014,10 +2017,11 @@ getpartsize(struct disk_partitions *parts, daddr_t partstart, daddr_t dflt)
 	char dsize[24], isize[24], max_size[24], maxpartc, valid_parts[4],
 	    *label_msg, *prompt, *head, *hint, *tail;
 	const char *errmsg = NULL;
-	daddr_t i, partend, localsizemult, max, max_r, dflt_r;
+	daddr_t i, partend, diskend, localsizemult, max, max_r, dflt_r;
 	struct disk_part_info info;
 	part_id partn;
 
+	diskend = parts->disk_start + parts->disk_size;
 	max = parts->pscheme->max_free_space_at(parts, partstart);
 
 	/* We need to keep both the unrounded and rounded (_r) max and dflt */
@@ -2092,7 +2096,8 @@ getpartsize(struct disk_partitions *parts, daddr_t partstart, daddr_t dflt)
 			max_r = max;
 		} else {
 			i = parse_disk_pos(isize, &localsizemult,
-			    pm->dlcylsize, NULL);
+			    parts->bytes_per_sector,
+			    parts->pscheme->get_cylinder_size(parts), NULL);
 			if (localsizemult != sizemult)
 				max_r = max;
 		}
@@ -2107,18 +2112,19 @@ getpartsize(struct disk_partitions *parts, daddr_t partstart, daddr_t dflt)
 		 * partend is aligned to a cylinder if localsizemult
 		 * is not 1 sector
 		 */
+		int cylsize = parts->pscheme->get_cylinder_size(parts);
 		partend = NUMSEC((partstart + i*localsizemult) / localsizemult,
-		    localsizemult, pm->dlcylsize);
+		    localsizemult, cylsize);
 		/* Align to end-of-disk or end-of-slice if close enough */
-		if (partend > (pm->dlsize - sizemult)
-		    && partend < (pm->dlsize + sizemult))
-			partend = pm->dlsize;
+		if (partend > (diskend - sizemult)
+		    && partend < (diskend + sizemult))
+			partend = diskend;
 		if (partend > (partstart + max - sizemult)
 		    && partend < (partstart + max + sizemult))
 			partend = partstart + max;
 		/* sanity checks */
-		if (partend > (partstart + pm->dlsize)) {
-			partend = pm->dlsize;
+		if (partend > diskend) {
+			partend = diskend;
 			errmsg = msg_string(MSG_endoutsidedisk);
 			continue;
 		}
@@ -2143,6 +2149,7 @@ daddr_t
 parse_disk_pos(
 	const char *str,
 	daddr_t *localsizemult,
+	daddr_t bps,
 	daddr_t cyl_size,
 	bool *extend_this)
 {
@@ -2161,19 +2168,19 @@ parse_disk_pos(
 		if (*cp == 'G' || *cp == 'g') {
 			if (mult_found)
 				return -1;
-			*localsizemult = GIG / pm->sectorsize;
+			*localsizemult = GIG / bps;
 			goto next;
 		}
 		if (*cp == 'M' || *cp == 'm') {
 			if (mult_found)
 				return -1;
-			*localsizemult = MEG / pm->sectorsize;
+			*localsizemult = MEG / bps;
 			goto next;
 		}
 		if (*cp == 'c' || *cp == 'C') {
 			if (mult_found)
 				return -1;
-			*localsizemult = pm->dlcylsize;
+			*localsizemult = cyl_size;
 			goto next;
 		}
 		if (*cp == 's' || *cp == 'S') {

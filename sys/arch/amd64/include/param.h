@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.33 2019/11/14 16:23:52 maxv Exp $	*/
+/*	$NetBSD: param.h,v 1.35 2020/01/22 16:52:46 ad Exp $	*/
 
 #ifdef __x86_64__
 

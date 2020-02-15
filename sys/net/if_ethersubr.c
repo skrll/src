@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ethersubr.c,v 1.280 2019/10/16 18:29:49 christos Exp $	*/
+/*	$NetBSD: if_ethersubr.c,v 1.282 2020/01/29 04:11:35 thorpej Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.280 2019/10/16 18:29:49 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.282 2020/01/29 04:11:35 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -243,7 +243,7 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 		} else if (m->m_flags & M_MCAST) {
 			ETHER_MAP_IP_MULTICAST(&satocsin(dst)->sin_addr, edst);
 		} else {
-			error = arpresolve(ifp, rt, m, dst, edst, sizeof(edst));
+			error = arpresolve(ifp0, rt, m, dst, edst, sizeof(edst));
 			if (error)
 				return (error == EWOULDBLOCK) ? 0 : error;
 		}
@@ -292,7 +292,7 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 			ETHER_MAP_IPV6_MULTICAST(&satocsin6(dst)->sin6_addr,
 			    edst);
 		} else {
-			error = nd6_resolve(ifp, rt, m, dst, edst,
+			error = nd6_resolve(ifp0, rt, m, dst, edst,
 			    sizeof(edst));
 			if (error)
 				return (error == EWOULDBLOCK) ? 0 : error;
@@ -438,7 +438,7 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 
 #if NCARP > 0
 	if (ifp != ifp0)
-		ifp0->if_obytes += m->m_pkthdr.len + ETHER_HDR_LEN;
+		if_statadd(ifp0, if_obytes, m->m_pkthdr.len + ETHER_HDR_LEN);
 #endif
 
 #ifdef ALTQ
@@ -623,7 +623,7 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 		}
 		mutex_exit(&bigpktpps_lock);
 #endif
-		ifp->if_iqdrops++;
+		if_statinc(ifp, if_iqdrops);
 		m_freem(m);
 		return;
 	}
@@ -645,7 +645,7 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 			m->m_flags |= M_BCAST;
 		else
 			m->m_flags |= M_MCAST;
-		ifp->if_imcasts++;
+		if_statinc(ifp, if_imcasts);
 	}
 
 	/* If the CRC is still on the packet, trim it off. */
@@ -654,7 +654,7 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 		m->m_flags &= ~M_HASFCS;
 	}
 
-	ifp->if_ibytes += m->m_pkthdr.len;
+	if_statadd(ifp, if_ibytes, m->m_pkthdr.len);
 
 #if NCARP > 0
 	if (__predict_false(ifp->if_carp && ifp->if_type != IFT_CARP)) {

@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.63 2019/04/26 21:40:30 sevan Exp $
+# $NetBSD: GENERIC,v 1.65 2020/01/29 18:39:02 maya Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/landisk/conf/std.landisk"
 
 options         INCLUDE_CONFIG_FILE     # embed config file in kernel binary
 
-#ident          "GENERIC-$Revision: 1.63 $"
+#ident          "GENERIC-$Revision: 1.65 $"
 
 maxusers	16		# estimated number of users
 
@@ -352,9 +352,6 @@ ucom*	at uplcom? portno ?
 uvscom* at uhub? port ? 	# SUNTAC Slipper U VS-10U serial adapter
 ucom*	at uvscom? portno ?
 
-# Diamond Multimedia Rio 500
-urio*	at uhub? port ?
-
 # USB Handspring Visor
 uvisor*	at uhub? port ?
 ucom*	at uvisor?
@@ -437,7 +434,6 @@ pseudo-device	loop			# network loopback
 pseudo-device	ppp			# Point-to-Point Protocol
 pseudo-device	pppoe			# PPP over Ethernet (RFC 2516)
 pseudo-device	sl			# Serial Line IP
-pseudo-device	strip			# Starmode Radio IP (Metricom)
 pseudo-device	irframetty		# IrDA frame line discipline
 pseudo-device	tap			# virtual Ethernet
 pseudo-device	tun			# network tunneling over tty

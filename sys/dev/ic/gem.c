@@ -1,4 +1,4 @@
-/*	$NetBSD: gem.c,v 1.124 2019/12/24 05:00:19 msaitoh Exp $ */
+/*	$NetBSD: gem.c,v 1.127 2020/02/04 05:25:39 thorpej Exp $ */
 
 /*
  *
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.124 2019/12/24 05:00:19 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.127 2020/02/04 05:25:39 thorpej Exp $");
 
 #include "opt_inet.h"
 
@@ -175,7 +175,7 @@ gem_detach(struct gem_softc *sc, int flags)
 		rnd_detach_source(&sc->rnd_source);
 		ether_ifdetach(ifp);
 		if_detach(ifp);
-		ifmedia_delete_instance(&sc->sc_mii.mii_media, IFM_INST_ANY);
+		ifmedia_fini(&sc->sc_mii.mii_media);
 
 		callout_destroy(&sc->sc_tick_ch);
 		callout_destroy(&sc->sc_rx_watchdog);
@@ -1388,7 +1388,9 @@ gem_start(struct ifnet *ifp)
 	 * until we drain the queue, or use up all available transmit
 	 * descriptors.
 	 */
+#ifdef INET
 next:
+#endif
 	while ((txs = SIMPLEQ_FIRST(&sc->sc_txfreeq)) != NULL &&
 	    sc->sc_txfree != 0) {
 		/*
@@ -1642,15 +1644,17 @@ gem_tint(struct gem_softc *sc)
 	int progress = 0;
 	uint32_t v;
 
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+
 	DPRINTF(sc, ("%s: gem_tint\n", device_xname(sc->sc_dev)));
 
 	/* Unload collision counters ... */
 	v = bus_space_read_4(t, mac, GEM_MAC_EXCESS_COLL_CNT) +
 	    bus_space_read_4(t, mac, GEM_MAC_LATE_COLL_CNT);
-	ifp->if_collisions += v +
+	if_statadd_ref(nsr, if_collisions, v +
 	    bus_space_read_4(t, mac, GEM_MAC_NORM_COLL_CNT) +
-	    bus_space_read_4(t, mac, GEM_MAC_FIRST_COLL_CNT);
-	ifp->if_oerrors += v;
+	    bus_space_read_4(t, mac, GEM_MAC_FIRST_COLL_CNT));
+	if_statadd_ref(nsr, if_oerrors, v);
 
 	/* ... then clear the hardware counters. */
 	bus_space_write_4(t, mac, GEM_MAC_NORM_COLL_CNT, 0);
@@ -1720,9 +1724,11 @@ gem_tint(struct gem_softc *sc)
 
 		SIMPLEQ_INSERT_TAIL(&sc->sc_txfreeq, txs, txs_q);
 
-		ifp->if_opackets++;
+		if_statinc_ref(nsr, if_opackets);
 		progress = 1;
 	}
+
+	IF_STAT_PUTREF(ifp);
 
 #if 0
 	DPRINTF(sc, ("gem_tint: GEM_TX_STATE_MACHINE %x "
@@ -1810,7 +1816,7 @@ gem_rint(struct gem_softc *sc)
 		progress++;
 
 		if (rxstat & GEM_RD_BAD_CRC) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			aprint_error_dev(sc->sc_dev,
 			    "receive error: CRC error\n");
 			GEM_INIT_RXDESC(sc, i);
@@ -1840,7 +1846,7 @@ gem_rint(struct gem_softc *sc)
 		m = rxs->rxs_mbuf;
 		if (gem_add_rxbuf(sc, i) != 0) {
 			GEM_COUNTER_INCR(sc, sc_ev_rxnobuf);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			aprint_error_dev(sc->sc_dev,
 			    "receive error: RX no buffer space\n");
 			GEM_INIT_RXDESC(sc, i);
@@ -1979,11 +1985,11 @@ swcsum:
 		sc->sc_rxptr, bus_space_read_4(t, h, GEM_RX_COMPLETION)));
 
 	/* Read error counters ... */
-	ifp->if_ierrors +=
+	if_statadd(ifp, if_ierrors,
 	    bus_space_read_4(t, h, GEM_MAC_RX_LEN_ERR_CNT) +
 	    bus_space_read_4(t, h, GEM_MAC_RX_ALIGN_ERR) +
 	    bus_space_read_4(t, h, GEM_MAC_RX_CRC_ERR_CNT) +
-	    bus_space_read_4(t, h, GEM_MAC_RX_CODE_VIOL);
+	    bus_space_read_4(t, h, GEM_MAC_RX_CODE_VIOL));
 
 	/* ... then clear the hardware counters. */
 	bus_space_write_4(t, h, GEM_MAC_RX_LEN_ERR_CNT, 0);
@@ -2222,7 +2228,7 @@ gem_intr(void *v)
 		 * RX FIFO write and read pointers.
 		 */
 		if (rxstat & GEM_MAC_RX_OVERFLOW) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			aprint_error_dev(sc->sc_dev,
 			    "receive error: RX overflow sc->rxptr %d, complete %d\n", sc->sc_rxptr, bus_space_read_4(t, h, GEM_RX_COMPLETION));
 			sc->sc_rx_fifo_wr_ptr =
@@ -2324,7 +2330,7 @@ gem_watchdog(struct ifnet *ifp)
 		bus_space_read_4(sc->sc_bustag, sc->sc_h1, GEM_MAC_RX_CONFIG)));
 
 	log(LOG_ERR, "%s: device timeout\n", device_xname(sc->sc_dev));
-	++ifp->if_oerrors;
+	if_statinc(ifp, if_oerrors);
 
 	/* Try to get more packets going. */
 	gem_init(ifp);

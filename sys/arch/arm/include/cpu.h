@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.103 2019/12/01 15:34:44 ad Exp $	*/
+/*	$NetBSD: cpu.h,v 1.107 2020/01/22 12:23:12 skrll Exp $	*/
 
 /*
  * Copyright (c) 1994-1996 Mark Brinicombe.
@@ -178,6 +178,8 @@ struct cpu_info {
 
 	uint32_t	ci_midr;
 	uint32_t	ci_mpidr;
+#define arm_cpu_mpidr(ci)	((ci)->ci_mpidr)
+	uint32_t	ci_capacity_dmips_mhz;
 
 	struct arm_cache_info *
 			ci_cacheinfo;
@@ -326,6 +328,10 @@ vaddr_t cpu_uarea_alloc_idlelwp(struct cpu_info *);
  * cpu device glue (belongs in cpuvar.h)
  */
 void	cpu_attach(device_t, cpuid_t);
+
+#ifdef _ARM_ARCH_6
+int	cpu_maxproc_hook(int);
+#endif
 
 #endif /* !_LOCORE */
 

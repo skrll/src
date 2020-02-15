@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.65 2019/12/19 07:14:07 maxv Exp $
+#	$NetBSD: Makefile,v 1.69 2020/02/06 01:13:19 sjg Exp $
 #	@(#)Makefile	5.2 (Berkeley) 12/28/90
 
 PROG=	make
@@ -15,13 +15,27 @@ SRCS += lstPrev.c
 
 USE_META ?= yes
 .if ${USE_META:tl} != "no"
+
 SRCS+=	meta.c
 CPPFLAGS+= -DUSE_META
-FILEMON_H ?= ${.CURDIR:H:H}/sys/dev/filemon/filemon.h
+
+USE_FILEMON ?= ktrace
+.if ${USE_FILEMON:tl} != "no"
+
+.PATH:	${.CURDIR}/filemon
+SRCS+=	filemon_${USE_FILEMON}.c
+CPPFLAGS+= -DUSE_FILEMON -DUSE_FILEMON_${USE_FILEMON:tu}
+
+.if ${USE_FILEMON} == "dev"
+FILEMON_H ?= /usr/include/dev/filemon/filemon.h
 .if exists(${FILEMON_H}) && ${FILEMON_H:T} == "filemon.h"
-COPTS.meta.c += -DHAVE_FILEMON_H -I${FILEMON_H:H}
+COPTS.filemon_dev.c += -DHAVE_FILEMON_H -I${FILEMON_H:H}
 .endif
-.endif
+.endif				# USE_FILEMON == dev
+
+.endif				# USE_FILEMON
+
+.endif				# USE_META
 
 .PATH:	${.CURDIR}/lst.lib
 SUBDIR.roff+=	PSD.doc
@@ -53,5 +67,5 @@ COPTS.meta.c+=	${GCC_NO_FORMAT_TRUNCATION}
 COPTS.parse.c+=	${GCC_NO_FORMAT_TRUNCATION}
 
 # A simple unit-test driver to help catch regressions
-accept test:
+accept test: .MAKE
 	cd ${.CURDIR}/unit-tests && MAKEFLAGS= ${.MAKE} -r -m / TEST_MAKE=${TEST_MAKE:U${.OBJDIR}/${PROG:T}} ${.TARGET}

@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.139 2020/01/09 16:35:03 ad Exp $	*/
+/*	$NetBSD: cpu.c,v 1.143 2020/01/22 12:23:12 skrll Exp $	*/
 
 /*
  * Copyright (c) 1995 Mark Brinicombe.
@@ -46,7 +46,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.139 2020/01/09 16:35:03 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.143 2020/01/22 12:23:12 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -60,6 +60,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.139 2020/01/09 16:35:03 ad Exp $");
 
 #include <arm/locore.h>
 #include <arm/undefined.h>
+#include <arm/cpu_topology.h>
 
 extern const char *cpu_arch;
 
@@ -138,21 +139,7 @@ cpu_attach(device_t dv, cpuid_t id)
 	ci->ci_dev = dv;
 	dv->dv_private = ci;
 
-	if (id & MPIDR_MT) {
-		cpu_topology_set(ci,
-		    __SHIFTOUT(id, MPIDR_AFF2),
-		    __SHIFTOUT(id, MPIDR_AFF1),
-		    __SHIFTOUT(id, MPIDR_AFF0),
-		    0,
-		    false);
-	} else {
-		cpu_topology_set(ci,
-		    __SHIFTOUT(id, MPIDR_AFF1),
-		    __SHIFTOUT(id, MPIDR_AFF0),
-		    0,
-		    0,
-		    false);
-	}
+	arm_cpu_do_topology(ci);
 
 	evcnt_attach_dynamic(&ci->ci_arm700bugcount, EVCNT_TYPE_MISC,
 	    NULL, xname, "arm700swibug");
@@ -899,3 +886,16 @@ identify_features(device_t dv)
 	    "pfr: [0]=%#x [1]=%#x\n",
 	    cpu_processor_features[0], cpu_processor_features[1]);
 }
+
+#ifdef _ARM_ARCH_6
+int
+cpu_maxproc_hook(int nmaxproc)
+{
+
+#ifdef ARM_MMU_EXTENDED
+	return pmap_maxproc_set(nmaxproc);
+#else
+	return 0;
+#endif
+}
+#endif

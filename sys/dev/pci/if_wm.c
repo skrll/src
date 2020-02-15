@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.658 2019/12/13 02:03:46 msaitoh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.666 2020/01/31 12:09:13 knakahara Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.658 2019/12/13 02:03:46 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.666 2020/01/31 12:09:13 knakahara Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -105,6 +105,8 @@ __KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.658 2019/12/13 02:03:46 msaitoh Exp $");
 #include <sys/interrupt.h>
 #include <sys/cpu.h>
 #include <sys/pcq.h>
+#include <sys/sysctl.h>
+#include <sys/workqueue.h>
 
 #include <sys/rndsource.h>
 
@@ -164,9 +166,13 @@ int	wm_debug = WM_DEBUG_TX | WM_DEBUG_RX | WM_DEBUG_LINK | WM_DEBUG_GMII
 #ifdef NET_MPSAFE
 #define WM_MPSAFE	1
 #define CALLOUT_FLAGS	CALLOUT_MPSAFE
+#define WM_WORKQUEUE_FLAGS	WQ_PERCPU | WQ_MPSAFE
 #else
 #define CALLOUT_FLAGS	0
+#define WM_WORKQUEUE_FLAGS	WQ_PERCPU
 #endif
+
+#define WM_WORKQUEUE_PRI PRI_SOFTNET
 
 /*
  * This device driver's max interrupt numbers.
@@ -456,6 +462,8 @@ struct wm_queue {
 	struct wm_txqueue wmq_txq;
 	struct wm_rxqueue wmq_rxq;
 
+	bool wmq_txrx_use_workqueue;
+	struct work wmq_cookie;
 	void *wmq_si;
 	krndsource_t rnd_source;	/* random source */
 };
@@ -552,6 +560,8 @@ struct wm_softc {
 	u_int sc_tx_intr_process_limit;	/* Tx proc. repeat limit in H/W intr */
 	u_int sc_rx_process_limit;	/* Rx proc. repeat limit in softint */
 	u_int sc_rx_intr_process_limit;	/* Rx proc. repeat limit in H/W intr */
+	struct workqueue *sc_queue_wq;
+	bool sc_txrx_use_workqueue;
 
 	int sc_affinity_offset;
 
@@ -566,6 +576,8 @@ struct wm_softc {
 	struct evcnt sc_ev_rx_xon;	/* Rx PAUSE(0) frames */
 	struct evcnt sc_ev_rx_macctl;	/* Rx Unsupported */
 #endif /* WM_EVENT_COUNTERS */
+
+	struct sysctllog *sc_sysctllog;
 
 	/* This variable are used only on the 82547. */
 	callout_t sc_txfifo_ch;		/* Tx FIFO stall work-around timer */
@@ -743,6 +755,7 @@ static int	wm_setup_legacy(struct wm_softc *);
 static int	wm_setup_msix(struct wm_softc *);
 static int	wm_init(struct ifnet *);
 static int	wm_init_locked(struct ifnet *);
+static void	wm_init_sysctls(struct wm_softc *);
 static void	wm_unset_stopping_flags(struct wm_softc *);
 static void	wm_set_stopping_flags(struct wm_softc *);
 static void	wm_stop(struct ifnet *, int);
@@ -794,6 +807,7 @@ static void	wm_nq_send_common_locked(struct ifnet *, struct wm_txqueue *,
     bool);
 static void	wm_deferred_start_locked(struct wm_txqueue *);
 static void	wm_handle_queue(void *);
+static void	wm_handle_queue_work(struct work *, void *);
 /* Interrupt */
 static bool	wm_txeof(struct wm_txqueue *, u_int);
 static bool	wm_rxeof(struct wm_rxqueue *, u_int);
@@ -1555,6 +1569,24 @@ static const struct wm_product {
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM9,
 	  "I219 LM Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM10,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM11,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM12,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_SPT,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM13,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM14,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM15,
+	  "I219 LM Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V,
 	  "I219 V Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
@@ -1577,6 +1609,21 @@ static const struct wm_product {
 	  "I219 V Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V9,
+	  "I219 V Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V10,
+	  "I219 V Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V11,
+	  "I219 V Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V12,
+	  "I219 V Ethernet Connection",
+	  WM_T_PCH_SPT,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V13,
+	  "I219 V Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V14,
 	  "I219 V Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ 0,			0,
@@ -1775,6 +1822,7 @@ wm_attach(device_t parent, device_t self, void *aux)
 	prop_number_t pn;
 	uint8_t enaddr[ETHER_ADDR_LEN];
 	char buf[256];
+	char wqname[MAXCOMLEN];
 	uint16_t cfg1, cfg2, swdpin, nvmword;
 	pcireg_t preg, memtype;
 	uint16_t eeprom_data, apme_mask;
@@ -2006,6 +2054,16 @@ alloc_retry:
 			    counts[PCI_INTR_TYPE_INTX]);
 			return;
 		}
+	}
+
+	snprintf(wqname, sizeof(wqname), "%sTxRx", device_xname(sc->sc_dev));
+	error = workqueue_create(&sc->sc_queue_wq, wqname,
+	    wm_handle_queue_work, sc, WM_WORKQUEUE_PRI, IPL_NET,
+	    WM_WORKQUEUE_FLAGS);
+	if (error) {
+		aprint_error_dev(sc->sc_dev,
+		    "unable to create workqueue\n");
+		goto out;
 	}
 
 	/*
@@ -2993,6 +3051,10 @@ alloc_retry:
 	    NULL, xname, "rx_macctl");
 #endif /* WM_EVENT_COUNTERS */
 
+	sc->sc_txrx_use_workqueue = false;
+
+	wm_init_sysctls(sc);
+
 	if (pmf_device_register(self, wm_suspend, wm_resume))
 		pmf_class_network_register(self, ifp);
 	else
@@ -3018,6 +3080,8 @@ wm_detach(device_t self, int flags __unused)
 	wm_stop(ifp, 1);
 
 	pmf_device_deregister(self);
+
+	sysctl_teardown(&sc->sc_sysctllog);
 
 #ifdef WM_EVENT_COUNTERS
 	evcnt_detach(&sc->sc_ev_linkintr);
@@ -3062,6 +3126,12 @@ wm_detach(device_t self, int flags __unused)
 		}
 	}
 	pci_intr_release(sc->sc_pc, sc->sc_intrs, sc->sc_nintrs);
+
+	/* wm_stop() ensure workqueue is stopped. */
+	workqueue_destroy(sc->sc_queue_wq);
+
+	for (i = 0; i < sc->sc_nqueues; i++)
+		softint_disestablish(sc->sc_queue[i].wmq_si);
 
 	wm_free_txrx_queues(sc);
 
@@ -3210,7 +3280,7 @@ wm_watchdog_txq_locked(struct ifnet *ifp, struct wm_txqueue *txq,
 		    "%s: device timeout (txfree %d txsfree %d txnext %d)\n",
 		    device_xname(sc->sc_dev), txq->txq_free, txq->txq_sfree,
 		    txq->txq_next);
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 #ifdef WM_DEBUG
 		for (i = txq->txq_sdirty; i != txq->txq_snext;
 		    i = WM_NEXTTXS(txq, i)) {
@@ -3275,15 +3345,16 @@ wm_tick(void *arg)
 		WM_EVCNT_ADD(&sc->sc_ev_rx_macctl, CSR_READ(sc, WMREG_FCRUC));
 	}
 
-	ifp->if_collisions += CSR_READ(sc, WMREG_COLC);
-	ifp->if_ierrors += 0ULL /* ensure quad_t */
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+	if_statadd_ref(nsr, if_collisions, CSR_READ(sc, WMREG_COLC));
+	if_statadd_ref(nsr, if_ierrors, 0ULL /* ensure quad_t */
 	    + CSR_READ(sc, WMREG_CRCERRS)
 	    + CSR_READ(sc, WMREG_ALGNERRC)
 	    + CSR_READ(sc, WMREG_SYMERRC)
 	    + CSR_READ(sc, WMREG_RXERRC)
 	    + CSR_READ(sc, WMREG_SEC)
 	    + CSR_READ(sc, WMREG_CEXTERR)
-	    + CSR_READ(sc, WMREG_RLEC);
+	    + CSR_READ(sc, WMREG_RLEC));
 	/*
 	 * WMREG_RNBC is incremented when there is no available buffers in host
 	 * memory. It does not mean the number of dropped packet. Because
@@ -3293,7 +3364,8 @@ wm_tick(void *arg)
 	 * If you want to know the nubmer of WMREG_RMBC, you should use such as
 	 * own EVCNT instead of if_iqdrops.
 	 */
-	ifp->if_iqdrops += CSR_READ(sc, WMREG_MPC);
+	if_statadd_ref(nsr, if_iqdrops, CSR_READ(sc, WMREG_MPC));
+	IF_STAT_PUTREF(ifp);
 
 	if (sc->sc_flags & WM_F_HAS_MII)
 		mii_tick(&sc->sc_mii);
@@ -3398,13 +3470,7 @@ wm_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			sc->sc_flowflags = ifr->ifr_media & IFM_ETH_FMASK;
 		}
 		WM_CORE_UNLOCK(sc);
-#ifdef WM_MPSAFE
-		s = splnet();
-#endif
 		error = ifmedia_ioctl(ifp, ifr, &sc->sc_mii.mii_media, cmd);
-#ifdef WM_MPSAFE
-		splx(s);
-#endif
 		break;
 	case SIOCINITIFADDR:
 		WM_CORE_LOCK(sc);
@@ -5257,8 +5323,11 @@ wm_init_rss(struct wm_softc *sc)
 	 */
 	mrqc |= (MRQC_RSS_FIELD_IPV4 | MRQC_RSS_FIELD_IPV4_TCP);
 	mrqc |= (MRQC_RSS_FIELD_IPV6 | MRQC_RSS_FIELD_IPV6_TCP);
+#if 0
 	mrqc |= (MRQC_RSS_FIELD_IPV4_UDP | MRQC_RSS_FIELD_IPV6_UDP);
-	mrqc |= (MRQC_RSS_FIELD_IPV6_UDP_EX | MRQC_RSS_FIELD_IPV6_TCP_EX);
+	mrqc |= MRQC_RSS_FIELD_IPV6_UDP_EX;
+#endif
+	mrqc |= MRQC_RSS_FIELD_IPV6_TCP_EX;
 
 	CSR_WRITE(sc, WMREG_MRQC, mrqc);
 }
@@ -5366,6 +5435,7 @@ static int
 wm_softint_establish(struct wm_softc *sc, int qidx, int intr_idx)
 {
 	struct wm_queue *wmq = &sc->sc_queue[qidx];
+
 	wmq->wmq_id = qidx;
 	wmq->wmq_intr_idx = intr_idx;
 	wmq->wmq_si = softint_establish(SOFTINT_NET
@@ -5378,7 +5448,6 @@ wm_softint_establish(struct wm_softc *sc, int qidx, int intr_idx)
 
 	aprint_error_dev(sc->sc_dev, "unable to establish queue[%d] handler\n",
 	    wmq->wmq_id);
-
 	pci_intr_disestablish(sc->sc_pc, sc->sc_ihs[wmq->wmq_intr_idx]);
 	sc->sc_ihs[wmq->wmq_intr_idx] = NULL;
 	return ENOMEM;
@@ -5690,6 +5759,40 @@ out:
 #endif
 }
 
+static void
+wm_init_sysctls(struct wm_softc *sc)
+{
+	struct sysctllog **log;
+	const struct sysctlnode *rnode, *cnode;
+	int rv;
+	const char *dvname;
+
+	log = &sc->sc_sysctllog;
+	dvname = device_xname(sc->sc_dev);
+
+	rv = sysctl_createv(log, 0, NULL, &rnode,
+	    0, CTLTYPE_NODE, dvname,
+	    SYSCTL_DESCR("wm information and settings"),
+	    NULL, 0, NULL, 0, CTL_HW, CTL_CREATE, CTL_EOL);
+	if (rv != 0)
+		goto err;
+
+	rv = sysctl_createv(log, 0, &rnode, &cnode, CTLFLAG_READWRITE,
+	    CTLTYPE_BOOL, "txrx_workqueue", SYSCTL_DESCR("Use workqueue for packet processing"),
+	    NULL, 0, &sc->sc_txrx_use_workqueue, 0, CTL_CREATE, CTL_EOL);
+	if (rv != 0)
+		goto teardown;
+
+	return;
+
+teardown:
+	sysctl_teardown(log);
+err:
+	sc->sc_sysctllog = NULL;
+	device_printf(sc->sc_dev, "%s: sysctl_createv failed, rv = %d\n",
+	    __func__, rv);
+}
+
 /*
  * wm_init:		[ifnet interface function]
  *
@@ -5744,8 +5847,8 @@ wm_init_locked(struct ifnet *ifp)
 	wm_stop_locked(ifp, 0);
 
 	/* Update statistics before reset */
-	ifp->if_collisions += CSR_READ(sc, WMREG_COLC);
-	ifp->if_ierrors += CSR_READ(sc, WMREG_RXERRC);
+	if_statadd2(ifp, if_collisions, CSR_READ(sc, WMREG_COLC),
+	    if_ierrors, CSR_READ(sc, WMREG_RXERRC));
 
 	/* PCH_SPT hardware workaround */
 	if (sc->sc_type == WM_T_PCH_SPT)
@@ -6304,6 +6407,16 @@ wm_stop(struct ifnet *ifp, int disable)
 	WM_CORE_LOCK(sc);
 	wm_stop_locked(ifp, disable);
 	WM_CORE_UNLOCK(sc);
+
+	/*
+	 * After wm_set_stopping_flags(), it is guaranteed
+	 * wm_handle_queue_work() does not call workqueue_enqueue().
+	 * However, workqueue_wait() cannot call in wm_stop_locked()
+	 * because it can sleep...
+	 * so, call workqueue_wait() here.
+	 */
+	for (int i = 0; i < sc->sc_nqueues; i++)
+		workqueue_wait(sc->sc_queue_wq, &sc->sc_queue[i].wmq_cookie);
 }
 
 static void
@@ -7459,7 +7572,7 @@ wm_start(struct ifnet *ifp)
 	KASSERT(if_is_mpsafe(ifp));
 #endif
 	/*
-	 * ifp->if_obytes and ifp->if_omcasts are added in if_transmit()@if.c.
+	 * if_obytes and if_omcasts are added in if_transmit()@if.c.
 	 */
 
 	mutex_enter(txq->txq_lock);
@@ -7493,10 +7606,11 @@ wm_transmit(struct ifnet *ifp, struct mbuf *m)
 		return ENOBUFS;
 	}
 
-	/* XXX NOMPSAFE: ifp->if_data should be percpu. */
-	ifp->if_obytes += m->m_pkthdr.len;
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+	if_statadd_ref(nsr, if_obytes, m->m_pkthdr.len);
 	if (m->m_flags & M_MCAST)
-		ifp->if_omcasts++;
+		if_statinc_ref(nsr, if_omcasts);
+	IF_STAT_PUTREF(ifp);
 
 	if (mutex_tryenter(txq->txq_lock)) {
 		if (!txq->txq_stopping)
@@ -8064,7 +8178,7 @@ wm_nq_start(struct ifnet *ifp)
 	KASSERT(if_is_mpsafe(ifp));
 #endif
 	/*
-	 * ifp->if_obytes and ifp->if_omcasts are added in if_transmit()@if.c.
+	 * if_obytes and if_omcasts are added in if_transmit()@if.c.
 	 */
 
 	mutex_enter(txq->txq_lock);
@@ -8098,10 +8212,11 @@ wm_nq_transmit(struct ifnet *ifp, struct mbuf *m)
 		return ENOBUFS;
 	}
 
-	/* XXX NOMPSAFE: ifp->if_data should be percpu. */
-	ifp->if_obytes += m->m_pkthdr.len;
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+	if_statadd_ref(nsr, if_obytes, m->m_pkthdr.len);
 	if (m->m_flags & M_MCAST)
-		ifp->if_omcasts++;
+		if_statinc_ref(nsr, if_omcasts);
+	IF_STAT_PUTREF(ifp);
 
 	/*
 	 * The situations which this mutex_tryenter() fails at running time
@@ -8546,18 +8661,18 @@ wm_txeof(struct wm_txqueue *txq, u_int limit)
 		if (((status & (WTX_ST_EC | WTX_ST_LC)) != 0)
 		    && ((sc->sc_type < WM_T_82574)
 			|| (sc->sc_type == WM_T_80003))) {
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			if (status & WTX_ST_LC)
 				log(LOG_WARNING, "%s: late collision\n",
 				    device_xname(sc->sc_dev));
 			else if (status & WTX_ST_EC) {
-				ifp->if_collisions +=
-				    TX_COLLISION_THRESHOLD + 1;
+				if_statadd(ifp, if_collisions, 
+				    TX_COLLISION_THRESHOLD + 1);
 				log(LOG_WARNING, "%s: excessive collisions\n",
 				    device_xname(sc->sc_dev));
 			}
 		} else
-			ifp->if_opackets++;
+			if_statinc(ifp, if_opackets);
 
 		txq->txq_packets++;
 		txq->txq_bytes += txs->txs_mbuf->m_pkthdr.len;
@@ -8879,7 +8994,7 @@ wm_rxeof(struct wm_rxqueue *rxq, u_int limit)
 			 * Failed, throw away what we've done so
 			 * far, and discard the rest of the packet.
 			 */
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			bus_dmamap_sync(sc->sc_dmat, rxs->rxs_dmamap, 0,
 			    rxs->rxs_dmamap->dm_mapsize, BUS_DMASYNC_PREREAD);
 			wm_init_rxdesc(rxq, i);
@@ -9405,6 +9520,17 @@ wm_linkintr(struct wm_softc *sc, uint32_t icr)
 		wm_linkintr_tbi(sc, icr);
 }
 
+
+static inline void
+wm_sched_handle_queue(struct wm_softc *sc, struct wm_queue *wmq)
+{
+
+	if (wmq->wmq_txrx_use_workqueue)
+		workqueue_enqueue(sc->sc_queue_wq, &wmq->wmq_cookie, curcpu());
+	else
+		softint_schedule(wmq->wmq_si);
+}
+
 /*
  * wm_intr_legacy:
  *
@@ -9506,7 +9632,8 @@ wm_intr_legacy(void *arg)
 
 	if (handled) {
 		/* Try to get more packets going. */
-		softint_schedule(wmq->wmq_si);
+		wmq->wmq_txrx_use_workqueue = sc->sc_txrx_use_workqueue;
+		wm_sched_handle_queue(sc, wmq);
 	}
 
 	return handled;
@@ -9609,9 +9736,10 @@ wm_txrxintr_msix(void *arg)
 	if (rndval != 0)
 		rnd_add_uint32(&sc->sc_queue[wmq->wmq_id].rnd_source, rndval);
 
-	if (txmore || rxmore)
-		softint_schedule(wmq->wmq_si);
-	else
+	if (txmore || rxmore) {
+		wmq->wmq_txrx_use_workqueue = sc->sc_txrx_use_workqueue;
+		wm_sched_handle_queue(sc, wmq);
+	} else
 		wm_txrxintr_enable(wmq);
 
 	return 1;
@@ -9647,10 +9775,22 @@ wm_handle_queue(void *arg)
 	rxmore = wm_rxeof(rxq, rxlimit);
 	mutex_exit(rxq->rxq_lock);
 
-	if (txmore || rxmore)
-		softint_schedule(wmq->wmq_si);
-	else
+	if (txmore || rxmore) {
+		wmq->wmq_txrx_use_workqueue = sc->sc_txrx_use_workqueue;
+		wm_sched_handle_queue(sc, wmq);
+	} else
 		wm_txrxintr_enable(wmq);
+}
+
+static void
+wm_handle_queue_work(struct work *wk, void *context)
+{
+	struct wm_queue *wmq = container_of(wk, struct wm_queue, wmq_cookie);
+
+	/*
+	 * "enqueued flag" is not required here.
+	 */
+	wm_handle_queue(wmq);
 }
 
 /*

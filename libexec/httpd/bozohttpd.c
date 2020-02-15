@@ -1166,7 +1166,7 @@ esccmp(const char *s_plain, const char *s_esc, size_t len)
 		if (*s_plain == 0 || *s_esc == 0 || *s_plain != *s_esc)
 			return *s_esc - *s_plain;
 		s_esc++;
-		s_plain++;
+		s_plain++; 
 		len--;
 	}
 	return 0;
@@ -1251,7 +1251,7 @@ check_remap(bozo_httpreq_t *request)
 		 * reqlen > len: make sure there is a path separator at 'len'
 		 * avail < 2: we are at eof, missing right hand side
 		 */
-		if (avail < 2 || reqlen < len ||
+		if (avail < 2 || reqlen < len || 
 		    (reqlen == len && esccmp(file, replace, len) != 0) ||
 		    (reqlen > len && (file[len] != '/' ||
 					esccmp(file, replace, len) != 0))) {
@@ -1362,7 +1362,7 @@ check_virtual(bozo_httpreq_t *request)
 		}
 		goto use_slashdir;
 	}
-
+	
 	/*
 	 * ok, we have a virtual host, use opendir(3) to find a case
 	 * insensitive match for the virtual host we are asked for.
@@ -1649,7 +1649,7 @@ transform_request(bozo_httpreq_t *request, int *isindex)
 
 		if (!bozo_user_transform(request))
 			return 0;
-
+		
 		file = request->hr_file;
 		len = strlen(file);
 	}
@@ -1696,9 +1696,9 @@ transform_request(bozo_httpreq_t *request, int *isindex)
 	 * XXX true security only comes from our parent using chroot(2)
 	 * before execve(2)'ing us.  or our own built in chroot(2) support.
 	 */
-
+	
 	debug((httpd, DEBUG_FAT, "newfile: %s", newfile));
-
+	
 	if (*newfile == '/' || strcmp(newfile, "..") == 0 ||
 	    strstr(newfile, "/..") || strstr(newfile, "../")) {
 		bozo_http_error(httpd, 403, request, "illegal request");
@@ -2206,7 +2206,7 @@ bozo_http_error(bozohttpd_t *httpd, int code, bozo_httpreq_t *request,
 
 		/* bozo_escape_html() failure here is just too bad. */
 		file = bozo_escape_html(NULL, request->hr_file);
-		if (file == NULL)
+		if (file == NULL) 
 			file = request->hr_file;
 		else
 			file_alloc = 1;
@@ -2393,7 +2393,7 @@ bozorealloc(bozohttpd_t *httpd, void *ptr, size_t size)
 	p = realloc(ptr, size);
 	if (p)
 		return p;
-
+	
 	bozo_http_error(httpd, 500, NULL, "memory allocation failure");
 	exit(EXIT_FAILURE);
 }

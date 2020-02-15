@@ -1,4 +1,4 @@
-/*$NetBSD: ixv.c,v 1.143 2019/12/17 05:49:01 msaitoh Exp $*/
+/*$NetBSD: ixv.c,v 1.146 2020/02/05 10:07:47 msaitoh Exp $*/
 
 /******************************************************************************
 
@@ -547,9 +547,7 @@ ixv_attach(device_t parent, device_t dev, void *aux)
 	return;
 
 err_late:
-	ixgbe_free_transmit_structures(adapter);
-	ixgbe_free_receive_structures(adapter);
-	free(adapter->queues, M_DEVBUF);
+	ixgbe_free_queues(adapter);
 err_out:
 	ixv_free_pci_resources(adapter);
 	IXGBE_CORE_LOCK_DESTROY(adapter);
@@ -621,6 +619,7 @@ ixv_detach(device_t dev, int flags)
 	bus_generic_detach(dev);
 #endif
 	if_detach(adapter->ifp);
+	ifmedia_fini(&adapter->media);
 	if_percpuq_destroy(adapter->ipq);
 
 	sysctl_teardown(&adapter->sysctllog);
@@ -674,13 +673,7 @@ ixv_detach(device_t dev, int flags)
 	evcnt_detach(&hw->mbx.stats.reqs);
 	evcnt_detach(&hw->mbx.stats.rsts);
 
-	ixgbe_free_transmit_structures(adapter);
-	ixgbe_free_receive_structures(adapter);
-	for (int i = 0; i < adapter->num_queues; i++) {
-		struct ix_queue *lque = &adapter->queues[i];
-		mutex_destroy(&lque->dc_mtx);
-	}
-	free(adapter->queues, M_DEVBUF);
+	ixgbe_free_queues(adapter);
 
 	IXGBE_CORE_LOCK_DESTROY(adapter);
 
@@ -2408,12 +2401,8 @@ ixv_update_stats(struct adapter *adapter)
 	    stats->vfgotc);
 	UPDATE_STAT_32(IXGBE_VFMPRC, stats->last_vfmprc, stats->vfmprc);
 
-	/* Fill out the OS statistics structure */
-	/*
-	 * NetBSD: Don't override if_{i|o}{packets|bytes|mcasts} with
-	 * adapter->stats counters. It's required to make ifconfig -z
-	 * (SOICZIFDATA) work.
-	 */
+	/* VF doesn't count errors by hardware */
+
 } /* ixv_update_stats */
 
 /************************************************************************

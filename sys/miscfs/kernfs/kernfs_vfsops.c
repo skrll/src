@@ -1,4 +1,4 @@
-/*	$NetBSD: kernfs_vfsops.c,v 1.96 2017/02/17 08:31:25 hannken Exp $	*/
+/*	$NetBSD: kernfs_vfsops.c,v 1.98 2020/02/04 04:19:24 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993, 1995
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kernfs_vfsops.c,v 1.96 2017/02/17 08:31:25 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kernfs_vfsops.c,v 1.98 2020/02/04 04:19:24 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -189,7 +189,7 @@ kernfs_unmount(struct mount *mp, int mntflags)
 }
 
 int
-kernfs_root(struct mount *mp, struct vnode **vpp)
+kernfs_root(struct mount *mp, int lktype, struct vnode **vpp)
 {
 	const struct kern_target *root_target = &kern_targets[0];
 	int error;
@@ -198,7 +198,7 @@ kernfs_root(struct mount *mp, struct vnode **vpp)
 	error = vcache_get(mp, &root_target, sizeof(root_target), vpp);
 	if (error)
 		return error;
-	error = vn_lock(*vpp, LK_EXCLUSIVE);
+	error = vn_lock(*vpp, lktype);
 	if (error) {
 		vrele(*vpp);
 		*vpp = NULL;
@@ -221,7 +221,7 @@ kernfs_sync(struct mount *mp, int waitfor,
  * Currently unsupported.
  */
 int
-kernfs_vget(struct mount *mp, ino_t ino,
+kernfs_vget(struct mount *mp, ino_t ino, int lktype,
     struct vnode **vpp)
 {
 
@@ -283,6 +283,7 @@ again:
 		vp->v_vflag = VV_ROOT;
 
 	if (kt->kt_tag == KFSdevice) {
+		vp->v_op = kernfs_specop_p;
 		spec_node_init(vp, *(dev_t *)kt->kt_data);
 	}
 
@@ -293,9 +294,11 @@ again:
 }
 
 extern const struct vnodeopv_desc kernfs_vnodeop_opv_desc;
+extern const struct vnodeopv_desc kernfs_specop_opv_desc;
 
 const struct vnodeopv_desc * const kernfs_vnodeopv_descs[] = {
 	&kernfs_vnodeop_opv_desc,
+	&kernfs_specop_opv_desc,
 	NULL,
 };
 
