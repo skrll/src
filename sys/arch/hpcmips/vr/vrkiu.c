@@ -39,6 +39,7 @@
 __KERNEL_RCSID(0, "$NetBSD: vrkiu.c,v 1.39 2012/10/27 17:17:56 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/tty.h>
 #include <sys/systm.h>
 #include <sys/device.h>
@@ -48,7 +49,6 @@ __KERNEL_RCSID(0, "$NetBSD: vrkiu.c,v 1.39 2012/10/27 17:17:56 chs Exp $");
 
 #include <machine/intr.h>
 #include <machine/cpu.h>
-#include <machine/bus.h>
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
 
@@ -162,7 +162,7 @@ vrkiuattach(device_t parent, device_t self, void *aux)
 	}
 	sc->sc_chip->kc_sc = sc;
 
-	if (!(sc->sc_handler = 
+	if (!(sc->sc_handler =
 	    vrip_intr_establish(va->va_vc, va->va_unit, 0, IPL_TTY,
 		vrkiu_intr, sc))) {
 		printf (": can't map interrupt line.\n");
@@ -349,7 +349,7 @@ vrkiu_input_establish(void *ic, struct hpckbd_if *kbdif)
 
 	/* save hpckbd interface */
 	kc->kc_hpckbd = kbdif;
-	
+
 	kc->kc_enabled = 1;
 
 	return (0);

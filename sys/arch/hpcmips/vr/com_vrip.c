@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: com_vrip.c,v 1.23 2018/12/08 17:46:11 thorpej Exp $"
 #include "opt_kgdb.h"
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/reboot.h>
@@ -47,7 +48,6 @@ __KERNEL_RCSID(0, "$NetBSD: com_vrip.c,v 1.23 2018/12/08 17:46:11 thorpej Exp $"
 #include <sys/termios.h>
 
 #include <machine/intr.h>
-#include <machine/bus.h>
 
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
@@ -132,7 +132,7 @@ com_vrip_probe(device_t parent, cfdata_t cf, void *aux)
 	struct vrip_attach_args *va = aux;
 	bus_space_tag_t iot = va->va_iot;
 	int rv;
-	
+
 	DPRINTF(("==com_vrip_probe"));
 
 	if (va->va_addr == VRIPIFCF_ADDR_DEFAULT ||

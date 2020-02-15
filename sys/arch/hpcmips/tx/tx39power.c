@@ -35,10 +35,10 @@ __KERNEL_RCSID(0, "$NetBSD: tx39power.c,v 1.21 2012/10/27 17:17:54 chs Exp $");
 #include "opt_tx39power_debug.h"
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
-#include <machine/bus.h>
 #include <machine/intr.h>
 #include <machine/config_hook.h>
 
@@ -99,7 +99,7 @@ tx39power_attach(device_t parent, device_t self, void *aux)
 	struct tx39power_softc *sc = device_private(self);
 	tx_chipset_tag_t tc;
 	txreg_t reg;
-	
+
 	sc->sc_dev = self;
 	tc = sc->sc_tc = ta->ta_tc;
 	tx_conf_register_power(tc, self);
@@ -111,7 +111,7 @@ tx39power_attach(device_t parent, device_t self, void *aux)
 	reg = tx_conf_read(tc, TX39_POWERCTRL_REG);
 	reg |= TX39_POWERCTRL_DBNCONBUTN;
 	tx_conf_write(tc, TX39_POWERCTRL_REG, reg);
-	
+
 	/* enable stop timer */
 	reg = tx_conf_read(tc, TX39_POWERCTRL_REG);
 	reg &= ~(TX39_POWERCTRL_STPTIMERVAL_MASK <<
@@ -124,24 +124,24 @@ tx39power_attach(device_t parent, device_t self, void *aux)
 	/* install power event handler */
 	/* low priority */
 	tx_intr_establish(tc, MAKEINTR(5, TX39_INTRSTATUS5_POSPWRINT),
-	    IST_EDGE, IPL_CLOCK, 
+	    IST_EDGE, IPL_CLOCK,
 	    tx39power_intr_p, sc);
 	tx_intr_establish(tc, MAKEINTR(5, TX39_INTRSTATUS5_NEGPWRINT),
-	    IST_EDGE, IPL_CLOCK,			    
+	    IST_EDGE, IPL_CLOCK,
 	    tx39power_intr_n, sc);
 	/* high priority */
 	tx_intr_establish(tc, MAKEINTR(5, TX39_INTRSTATUS5_POSPWROKINT),
-	    IST_EDGE, IPL_CLOCK, 
+	    IST_EDGE, IPL_CLOCK,
 	    tx39power_ok_intr_p, sc);
 	tx_intr_establish(tc, MAKEINTR(5, TX39_INTRSTATUS5_NEGPWROKINT),
-	    IST_EDGE, IPL_CLOCK,			    
+	    IST_EDGE, IPL_CLOCK,
 	    tx39power_ok_intr_n, sc);
 	/* user driven event */
 	tx_intr_establish(tc, MAKEINTR(5, TX39_INTRSTATUS5_POSONBUTNINT),
 	    IST_EDGE, IPL_CLOCK,
 	    tx39power_button_intr_p, sc);
 	tx_intr_establish(tc, MAKEINTR(5, TX39_INTRSTATUS5_NEGONBUTNINT),
-	    IST_EDGE, IPL_CLOCK,			    
+	    IST_EDGE, IPL_CLOCK,
 	    tx39power_button_intr_n, sc);
 }
 
@@ -295,18 +295,18 @@ __tx39power_dump (struct tx39power_softc *sc)
 #endif /* TX391X */
 	ISSETPRINT(reg, ENSTPTIMER);
 	ISSETPRINT(reg, ENFORCESHUTDWN);
-	ISSETPRINT(reg, FORCESHUTDWN); 
+	ISSETPRINT(reg, FORCESHUTDWN);
 	ISSETPRINT(reg, FORCESHUTDWNOCC);
 	ISSETPRINT(reg, SELC2MS);
 #ifdef TX392X
 	ISSETPRINT(reg, WARMSTART);
 #endif /* TX392X */
-	ISSETPRINT(reg, BPDBVCC3);        
-	ISSETPRINT(reg, STOPCPU);       
+	ISSETPRINT(reg, BPDBVCC3);
+	ISSETPRINT(reg, STOPCPU);
 	ISSETPRINT(reg, DBNCONBUTN);
-	ISSETPRINT(reg, COLDSTART);     
-	ISSETPRINT(reg, PWRCS);      
-	ISSETPRINT(reg, VCCON);          
+	ISSETPRINT(reg, COLDSTART);
+	ISSETPRINT(reg, PWRCS);
+	ISSETPRINT(reg, VCCON);
 #ifdef TX391X
 	printf("VIDRF=%d ", TX39_POWERCTRL_VIDRF(reg));
 #endif /* TX391X */

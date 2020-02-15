@@ -33,12 +33,11 @@
 __KERNEL_RCSID(0, "$NetBSD: vrc4172pci.c,v 1.18 2015/10/02 05:22:51 msaitoh Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
-#include <machine/bus.h>
 #include <machine/bus_space_hpcmips.h>
-#include <machine/bus_dma_hpcmips.h>
 #include <machine/config_hook.h>
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
@@ -85,7 +84,7 @@ static int	vrc4172pci_bus_devorder(pci_chipset_tag_t, int, uint8_t *, int);
 static pcitag_t	vrc4172pci_make_tag(pci_chipset_tag_t, int, int, int);
 static void	vrc4172pci_decompose_tag(pci_chipset_tag_t, pcitag_t, int *,
 		    int *, int *);
-static pcireg_t	vrc4172pci_conf_read(pci_chipset_tag_t, pcitag_t, int); 
+static pcireg_t	vrc4172pci_conf_read(pci_chipset_tag_t, pcitag_t, int);
 static void	vrc4172pci_conf_write(pci_chipset_tag_t, pcitag_t, int,
 		    pcireg_t);
 static int	vrc4172pci_intr_map(const struct pci_attach_args *,
@@ -198,7 +197,7 @@ vrc4172pci_attach(device_t parent, device_t self, void *aux)
 	memset(&pba, 0, sizeof(pba));
 	pba.pba_iot = sc->sc_iot;
 	pba.pba_memt = sc->sc_iot;
-	pba.pba_dmat = &hpcmips_default_bus_dma_tag.bdt;
+	pba.pba_dmat = &hpcmips_default_bus_dma_tag;
 	pba.pba_dmat64 = NULL;
 	pba.pba_bus = 0;
 	pba.pba_bridgetag = NULL;

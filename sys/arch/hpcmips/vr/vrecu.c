@@ -33,12 +33,12 @@
 __KERNEL_RCSID(0, "$NetBSD: vrecu.c,v 1.10 2012/10/27 17:17:56 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
 #include <sys/queue.h>
 #include <sys/systm.h>
 
-#include <machine/bus.h>
 #include <machine/intr.h>
 
 #include <hpcmips/vr/vrcpudef.h>
@@ -147,7 +147,7 @@ pcic_vrip_attach(device_t parent, device_t self, void *aux)
 
 	sc->iobase = VR_ISA_PORT_BASE + 0x400;
 	sc->iosize = 0xbff;
-#else 
+#else
 	if (bus_space_map(va->va_iot, VR_ISA_MEM_BASE, 0x70000, 0, &memh))
 		panic("pcic_pci_attach: can't map mem space");
 
@@ -228,7 +228,7 @@ pcic_vrip_chip_intr_establish(pcmcia_chipset_handle_t pch,
 	return ih;
 }
 
-static void 
+static void
 pcic_vrip_chip_intr_disestablish(pcmcia_chipset_handle_t pch, void *arg)
 {
 	struct pcic_handle	*h;

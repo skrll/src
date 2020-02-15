@@ -38,12 +38,11 @@
 __KERNEL_RCSID(0, "$NetBSD: vr4181giu.c,v 1.5 2019/11/10 21:16:28 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
 #include <sys/queue.h>
 #include <sys/systm.h>
-
-#include <machine/bus.h>
 
 #include <hpcmips/vr/vripif.h>
 #include <hpcmips/vr/vr4181giureg.h>
@@ -144,7 +143,7 @@ vr4181giu_attach(device_t parent, device_t self, void *aux)
 
 	printf("\n");
 
-	/* 
+	/*
 	 *  hpcio I/F
 	 */
 	sc->sc_haa.haa_busname = HPCIO_BUSNAME;
@@ -206,7 +205,7 @@ vr4181giu_port_write(hpcio_chip_t hc, int port, int onoff)
 {
 	struct vr4181giu_softc	*sc = hc->hc_sc;
 	u_int16_t		r;
-	
+
 	if (port < 16) {
 		r = bus_space_read_2(sc->sc_iot, sc->sc_ioh,
 				     VR4181GIU_PIOD_L_REG_W);
@@ -312,7 +311,7 @@ vr4181giu_intr_establish(
 	raw_intr_type = intr_mode_trans[mode];
 	if (raw_intr_type == VR4181GIU_INTTYP_INVALID)
 		panic("vr4181giu_intr_establish: invalid interrupt mode.");
-	
+
 	if (port < 0 || MAX_GIU4181INTR <= port)
 		panic("vr4181giu_intr_establish: invalid interrupt line.");
 	if (!TAILQ_EMPTY(&sc->sc_intr_head[port])
@@ -357,7 +356,7 @@ vr4181giu_intr_establish(
 	r |= raw_intr_type << bitoff;
 	bus_space_write_2(sc->sc_iot, sc->sc_ioh,
 			  VR4181GIU_INTTYP_REG + reghl, r);
-	
+
 	/* clear status */
 	bus_space_write_2(sc->sc_iot, sc->sc_ioh,
 			  VR4181GIU_INTSTAT_REG_W, mask);

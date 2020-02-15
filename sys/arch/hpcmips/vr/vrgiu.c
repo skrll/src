@@ -37,6 +37,7 @@
 __KERNEL_RCSID(0, "$NetBSD: vrgiu.c,v 1.43 2019/11/10 21:16:28 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
@@ -44,7 +45,6 @@ __KERNEL_RCSID(0, "$NetBSD: vrgiu.c,v 1.43 2019/11/10 21:16:28 chs Exp $");
 #include <sys/reboot.h>
 
 #include <mips/cpuregs.h>
-#include <machine/bus.h>
 #include <machine/config_hook.h>
 #include <machine/debug.h>
 
@@ -120,7 +120,7 @@ struct vrgiu_softc {
 	void *sc_ih;
 	u_int32_t sc_intr_mask;
 	u_int32_t sc_intr_mode[MAX_GPIO_INOUT];
-	TAILQ_HEAD(, vrgiu_intr_entry) sc_intr_head[MAX_GPIO_INOUT]; 
+	TAILQ_HEAD(, vrgiu_intr_entry) sc_intr_head[MAX_GPIO_INOUT];
 	struct hpcio_chip sc_iochip;
 #ifndef SINGLE_VRIP_BASE
 	int sc_useupdn_reg, sc_termupdn_reg;
@@ -209,7 +209,7 @@ vrgiu_attach(device_t parent, device_t self, void *aux)
 		sc->sc_useupdn_reg = VR4122_GIUUSEUPDN_REG_W;
 		sc->sc_termupdn_reg = VR4122_GIUTERMUPDN_REG_W;
 	} else {
-		panic("%s: unknown base address 0x%lx",
+		panic("%s: unknown base address 0x%"PRIxBUSADDR,
 		    device_xname(sc->sc_dev), va->va_addr);
 	}
 #endif /* SINGLE_VRIP_BASE */
@@ -236,7 +236,7 @@ vrgiu_attach(device_t parent, device_t self, void *aux)
 	VPRINTF(DEBUG_IO, ("\n"));
 	vrgiu_regwrite_4(sc, GIUINTEN_REG, sc->sc_intr_mask);
 #endif
-    
+
 	for (i = 0; i < MAX_GPIO_INOUT; i++)
 		TAILQ_INIT(&sc->sc_intr_head[i]);
 	if (!(sc->sc_ih = vrip_intr_establish(va->va_vc, va->va_unit, 0,
@@ -261,7 +261,7 @@ vrgiu_attach(device_t parent, device_t self, void *aux)
 	VPRINTF(DEBUG_IO, ("       data:"));
 	VDUMP_IO(DEBUG_IO, sc);
 
-	/* 
+	/*
 	 *  hpcio I/F
 	 */
 	haa.haa_busname = HPCIO_BUSNAME;
@@ -447,7 +447,7 @@ vrgiu_regwrite(struct vrgiu_softc *sc, bus_addr_t off, u_int16_t data)
 }
 
 /*
- * PORT 
+ * PORT
  */
 int
 vrgiu_port_read(hpcio_chip_t hc, int port)
@@ -465,7 +465,7 @@ vrgiu_port_read(hpcio_chip_t hc, int port)
 
 	return (on ? 1 : 0);
 }
-    
+
 void
 vrgiu_port_write(hpcio_chip_t hc, int port, int onoff)
 {
@@ -509,7 +509,7 @@ vrgiu_getchip(void* scx, int chipid)
 }
 
 /*
- * Interrupt staff 
+ * Interrupt staff
  */
 void *
 vrgiu_intr_establish(
@@ -711,7 +711,7 @@ vrgiu_intr(void *arg)
 		}
 	}
 
-	if (vrgiu_intr_led) 
+	if (vrgiu_intr_led)
 		config_hook_call(CONFIG_HOOK_SET, CONFIG_HOOK_LED,
 		    (void *)&ledvalue);
 	return (0);

@@ -33,10 +33,10 @@
 __KERNEL_RCSID(0, "$NetBSD: txioman.c,v 1.10 2011/06/06 17:13:06 matt Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
-#include <machine/bus.h>
 #include <hpcmips/tx/tx39var.h>
 
 #include <dev/hpc/hpciovar.h>

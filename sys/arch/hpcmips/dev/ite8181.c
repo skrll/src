@@ -32,6 +32,7 @@ __KERNEL_RCSID(0, "$NetBSD: ite8181.c,v 1.28 2012/10/27 17:17:52 chs Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
+#include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/systm.h>
 #include <sys/boot_flag.h>
@@ -42,7 +43,6 @@ __KERNEL_RCSID(0, "$NetBSD: ite8181.c,v 1.28 2012/10/27 17:17:52 chs Exp $");
 #include <dev/wscons/wsconsio.h>
 
 #include <machine/bootinfo.h>
-#include <machine/bus.h>
 #include <machine/autoconf.h>
 #include <machine/config_hook.h>
 #include <machine/platid.h>

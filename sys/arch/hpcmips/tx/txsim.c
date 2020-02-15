@@ -39,10 +39,10 @@ __KERNEL_RCSID(0, "$NetBSD: txsim.c,v 1.17 2012/10/27 17:17:54 chs Exp $");
  */
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
-#include <machine/bus.h>
 #include <machine/autoconf.h>
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
@@ -85,8 +85,8 @@ txsim_attach(device_t parent, device_t self, void *aux)
 	printf("\n");
 
 	tx_sound_init(tx_conf_get_tag());
-	/* 
-	 * interrupt, clock module is used by other system module. 
+	/*
+	 * interrupt, clock module is used by other system module.
 	 * so attach first.
 	 */
 	sc->sc_pri = ATTACH_FIRST;
@@ -97,7 +97,7 @@ txsim_attach(device_t parent, device_t self, void *aux)
 	 */
 	sc->sc_pri = ATTACH_NORMAL;
 	config_search_ia(txsim_search, self, "txsim", txsim_print);
-	/* 
+	/*
 	 * UART module uses platform dependent config_hooks.
 	 */
 	sc->sc_pri = ATTACH_LAST;
@@ -115,9 +115,9 @@ txsim_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 {
 	struct txsim_softc *sc = device_private(parent);
 	struct txsim_attach_args ta;
-	
+
 	ta.ta_tc = tx_conf_get_tag();
-	
+
 	if (config_match(parent, cf, &ta) == sc->sc_pri)
 		config_attach(parent, cf, &ta, txsim_print);
 

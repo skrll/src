@@ -33,9 +33,8 @@
 __KERNEL_RCSID(0, "$NetBSD: plumisa_machdep.c,v 1.12 2012/10/27 17:17:54 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
-
-#include <machine/bus.h>
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/isareg.h>
@@ -69,12 +68,12 @@ plumisabmatch(device_t parent, cfdata_t match, void *aux)
 {
 	struct plumiobus_attach_args *pba = aux;
 	platid_mask_t mask;
-    
+
 	if (strcmp(pba->pba_busname, match->cf_name)) {
 		return (0);
 	}
 
-	if (match->cf_loc[PLUMIOBUSIFCF_PLATFORM] == 
+	if (match->cf_loc[PLUMIOBUSIFCF_PLATFORM] ==
 	    PLUMIOBUSIFCF_PLATFORM_DEFAULT) {
 		return (1);
 	}
@@ -93,7 +92,7 @@ plumisabattach(device_t parent, device_t self, void *aux)
 	struct plumiobus_attach_args *pba = aux;
 	struct plumisab_softc *sc = device_private(self);
 	struct isabus_attach_args iba;
-    
+
 	printf("\n");
 	sc->sc_pc = pba->pba_pc;
 	sc->sc_iot = pba->pba_iot;
@@ -148,7 +147,7 @@ isa_intr_establish(isa_chipset_tag_t ic, int irq, int type, int level,
     int (*ih_fun)(void *), void *ih_arg)
 {
 	struct plumisab_softc *sc = (void*)ic;
-	
+
 	sc->sc_ih = plum_intr_establish(sc->sc_pc, sc->sc_irq, type, level,
 					ih_fun, ih_arg);
 	return (sc->sc_ih);
@@ -166,8 +165,8 @@ int
 isa_intr_alloc(isa_chipset_tag_t ic, int mask, int type, int *irq)
 {
 	struct plumisab_softc *sc = (void*)ic;
-	
+
 	*irq = sc->sc_irq;
-	
+
 	return (0);
 }

@@ -29,13 +29,13 @@
 __KERNEL_RCSID(0, "$NetBSD: vraiu.c,v 1.18 2019/06/08 08:02:37 isaki Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/bswap.h>
 
 #include <machine/cpu.h>
 #include <machine/intr.h>
-#include <machine/bus.h>
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
 #include <machine/config_hook.h>

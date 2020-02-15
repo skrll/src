@@ -38,6 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: tx39.c,v 1.45 2014/03/26 17:53:36 christos Exp $");
 #include "tc5165buf.h"
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/intr.h>
 
@@ -51,8 +52,6 @@ __KERNEL_RCSID(0, "$NetBSD: tx39.c,v 1.45 2014/03/26 17:53:36 christos Exp $");
 
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
-
-#include <machine/bus.h>
 
 #include <hpcmips/tx/tx39biureg.h>
 #include <hpcmips/tx/tx39reg.h>
@@ -102,7 +101,7 @@ tx_init(void)
 	tx_chipset_tag_t tc;
 	int model, rev;
 	int cpuclock;
-	
+
 	tc = tx_conf_get_tag();
 	/*
 	 * Platform Specific Function Hooks
@@ -134,7 +133,7 @@ tx_init(void)
 		rev = tx_conf_read(tc, TX3922_REVISION_REG);
 
 		cpuname_printf("TOSHIBA TMPR3922 rev. %x.%x "
-		    "%d.%02d MHz", (rev >> 4) & 0xf, rev & 0xf, 
+		    "%d.%02d MHz", (rev >> 4) & 0xf, rev & 0xf,
 		    cpuclock / 1000000, (cpuclock % 1000000) / 10000);
 		tc->tc_chipset = __TX392X;
 		break;
@@ -147,15 +146,15 @@ tx_fb_init(void **kernend)
 #ifdef TX391X
 	paddr_t fb_end;
 
-	fb_end = MIPS_KSEG0_TO_PHYS(mem_clusters[0].start + 
+	fb_end = MIPS_KSEG0_TO_PHYS(mem_clusters[0].start +
 	    mem_clusters[0].size - 1);
 	tx3912video_init(MIPS_KSEG0_TO_PHYS(*kernend), &fb_end);
-			 
+
 	/* Skip V-RAM area */
 	*kernend = (void *)MIPS_PHYS_TO_KSEG0(fb_end);
 #endif /* TX391X */
-#ifdef TX392X 
-	/* 
+#ifdef TX392X
+	/*
 	 *  Plum V-RAM isn't accessible until pmap_bootstrap,
 	 * at this time, frame buffer device is disabled.
 	 */
@@ -172,7 +171,7 @@ tx_mem_init(paddr_t kernend)
 	mem_cluster_cnt = 1;
 	/* search DRAM bank 0 */
 	tx_find_dram(kernend, 0x02000000);
-	
+
 	/* search DRAM bank 1 */
 	tx_find_dram(0x02000000, 0x04000000);
 }
@@ -254,7 +253,7 @@ tx_cons_init(void)
 	slot = TX39_UARTA;
 #endif
 	if (bootinfo->bi_cnuse & BI_CNUSE_SERIAL) {
-		if(txcom_cnattach(slot, CONSPEED, 
+		if(txcom_cnattach(slot, CONSPEED,
 		    (TTYDEF_CFLAG & ~(CSIZE | PARENB)) | CS8)) {
 			panic("tx_cons_init: can't attach serial console.");
 		}
@@ -275,14 +274,14 @@ tx_cons_init(void)
 		    tc5165buf_cnattach(TX39_SYSADDR_CS1)) {
 			goto panic;
 		}
-		
+
 		if(CONSPLATIDMATCH(SHARP_MOBILON) &&
 		    tc5165buf_cnattach(TX39_SYSADDR_MCS0)) {
 			goto panic;
 		}
 #endif
 	}
-	
+
 	return;
 #if (NM38813C > 0) || (NTC5165BUF > 0)
  panic:

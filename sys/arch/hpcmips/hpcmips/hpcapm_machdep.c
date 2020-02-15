@@ -32,13 +32,13 @@
 __KERNEL_RCSID(0, "$NetBSD: hpcapm_machdep.c,v 1.5 2011/03/16 13:23:41 tsutsui Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
 #include <sys/systm.h>
 
 #include <dev/hpc/apm/apmvar.h>
 
-#include <machine/bus.h>
 #include <machine/autoconf.h>
 #include <machine/config_hook.h>
 #include <machine/platid.h>

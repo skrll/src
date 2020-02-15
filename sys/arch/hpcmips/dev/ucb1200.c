@@ -37,10 +37,10 @@
 __KERNEL_RCSID(0, "$NetBSD: ucb1200.c,v 1.19 2012/10/27 17:17:53 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
-#include <machine/bus.h>
 #include <machine/intr.h>
 
 #include <hpcmips/tx/tx39var.h>
@@ -64,7 +64,7 @@ struct ucbchild_state {
 struct ucb1200_softc {
 	device_t	sc_parent; /* parent (TX39 SIB module) */
 	tx_chipset_tag_t sc_tc;
-	
+
 	int		sc_snd_rate; /* passed down from SIB module */
 	int		sc_tel_rate;
 
@@ -101,11 +101,11 @@ ucb1200_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct txsib_attach_args *sa = aux;
 	u_int16_t reg;
-	
+
 	if (sa->sa_slot != 0) /* UCB1200 must be subframe 0 */
 		return (0);
 	reg = txsibsf0_reg_read(sa->sa_tc, UCB1200_ID_REG);
-	
+
 	return (ucb1200_check_id(reg, 0));
 }
 
@@ -125,7 +125,7 @@ ucb1200_attach(device_t parent, device_t self, void *aux)
 	tx39sib_enable1(sc->sc_parent);
 	tx39sib_enable2(sc->sc_parent);
 
-#ifdef UCB1200_DEBUG	
+#ifdef UCB1200_DEBUG
 	if (ucb1200_debug)
 		ucb1200_dump(sc);
 #endif
@@ -141,13 +141,13 @@ ucb1200_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 {
 	struct ucb1200_softc *sc = device_private(parent);
 	struct ucb1200_attach_args ucba;
-	
+
 	ucba.ucba_tc = sc->sc_tc;
 	ucba.ucba_snd_rate = sc->sc_snd_rate;
 	ucba.ucba_tel_rate = sc->sc_tel_rate;
 	ucba.ucba_sib	   = sc->sc_parent;
 	ucba.ucba_ucb	   = parent;
-	
+
 	if (config_match(parent, cf, &ucba))
 		config_attach(parent, cf, &ucba, ucb1200_print);
 
@@ -171,11 +171,11 @@ ucb1200_check_id(u_int16_t idreg, int print)
 			if (print) {
 				printf("%s", ucb_id[i].product);
 			}
-			
+
 			return (1);
 		}
 	}
-	
+
 	return (0);
 }
 
@@ -184,7 +184,7 @@ ucb1200_state_install(device_t dev, int (*sfun)(void *), void *sarg,
     int sid)
 {
 	struct ucb1200_softc *sc = device_private(dev);
-	
+
 	sc->sc_child[sid].cs_busy = sfun;
 	sc->sc_child[sid].cs_arg = sarg;
 }
@@ -201,7 +201,7 @@ ucb1200_state_idle(device_t dev)
 		if (cs->cs_busy)
 			if ((*cs->cs_busy)(cs->cs_arg))
 				return (0);
-		
+
 	return (1); /* idle state */
 }
 

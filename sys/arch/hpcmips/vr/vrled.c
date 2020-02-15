@@ -29,11 +29,11 @@
 __KERNEL_RCSID(0, "$NetBSD: vrled.c,v 1.9 2012/10/27 17:17:56 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/reboot.h>
 
-#include <machine/bus.h>
 #include <machine/config_hook.h>
 
 #include <hpcmips/vr/vripif.h>
@@ -111,7 +111,7 @@ vrledattach(device_t parent, device_t self, void *aux)
 	sc->sc_iot = iot;
 	sc->sc_ioh = ioh;
 
-	if (!(sc->sc_handler = 
+	if (!(sc->sc_handler =
 	    vrip_intr_establish(va->va_vc, va->va_unit, 0, IPL_TTY,
 		vrled_intr, sc))) {
 		printf (": can't map interrupt line.\n");
@@ -125,7 +125,7 @@ vrledattach(device_t parent, device_t self, void *aux)
 	/* basic setup */
 	sc->sc_state_cnt = 1;
 	vrled_write(sc, LEDASTC_REG_W, 1); /* 1time */
-	vrled_write(sc, LEDCNT_REG_W, LEDCNT_AUTOSTOP);	
+	vrled_write(sc, LEDCNT_REG_W, LEDCNT_AUTOSTOP);
 	vrled_stop(sc);
 
 	sc->sc_hook = config_hook(CONFIG_HOOK_SET,
@@ -164,7 +164,7 @@ vrled_stop(struct vrled_softc *sc)
 	vrled_write(sc, LEDHTS_REG_W, LEDHTS_DIV16SEC);
 	vrled_write(sc, LEDLTS_REG_W, LEDLTS_4SEC);
 	vrled_write(sc, LEDASTC_REG_W, 2); /* 2time */
-	vrled_write(sc, LEDCNT_REG_W, LEDCNT_AUTOSTOP);	
+	vrled_write(sc, LEDCNT_REG_W, LEDCNT_AUTOSTOP);
 
 	sc->sc_state = LEDOFF;
 	sc->sc_next = LEDOFF;
@@ -180,7 +180,7 @@ vrled_on(struct vrled_softc *sc)
 	vrled_write(sc, LEDHTS_REG_W, LEDHTS_SEC);
 	vrled_write(sc, LEDLTS_REG_W, LEDLTS_DIV16SEC);
 	vrled_write(sc, LEDASTC_REG_W, 2); /* 2time */
-	vrled_write(sc, LEDCNT_REG_W, LEDCNT_AUTOSTOP|LEDCNT_BLINK);	
+	vrled_write(sc, LEDCNT_REG_W, LEDCNT_AUTOSTOP|LEDCNT_BLINK);
 
 	sc->sc_state = LEDON;
 	sc->sc_next = LEDON;
@@ -201,7 +201,7 @@ vrled_blink(struct vrled_softc *sc)
 		ledhts = LEDHTS_DIV2SEC;
 		ledlts = LEDLTS_DIV2SEC;
 		break;
-	case LED2SB: 
+	case LED2SB:
 		ledhts = LEDHTS_SEC;
 		ledlts = LEDLTS_SEC;
 		break;
@@ -213,8 +213,8 @@ vrled_blink(struct vrled_softc *sc)
 	vrled_write(sc, LEDHTS_REG_W, ledhts);
 	vrled_write(sc, LEDLTS_REG_W, ledlts);
 	vrled_write(sc, LEDASTC_REG_W, 2); /* 2time */
-	vrled_write(sc, LEDCNT_REG_W, LEDCNT_AUTOSTOP);	
-	vrled_write(sc, LEDCNT_REG_W, LEDCNT_AUTOSTOP|LEDCNT_BLINK);	
+	vrled_write(sc, LEDCNT_REG_W, LEDCNT_AUTOSTOP);
+	vrled_write(sc, LEDCNT_REG_W, LEDCNT_AUTOSTOP|LEDCNT_BLINK);
 
 	sc->sc_state = sc->sc_next;
 }
@@ -254,7 +254,7 @@ vrled_flash(struct vrled_softc *sc)
 	vrled_write(sc, LEDHTS_REG_W, ledhts);
 	vrled_write(sc, LEDLTS_REG_W, ledlts);
 	vrled_write(sc, LEDASTC_REG_W, 2); /* 2time */
-	vrled_write(sc, LEDCNT_REG_W, LEDCNT_AUTOSTOP|LEDCNT_BLINK);	
+	vrled_write(sc, LEDCNT_REG_W, LEDCNT_AUTOSTOP|LEDCNT_BLINK);
 
 	sc->sc_state = sc->sc_next;
 	sc->sc_next = LEDOFF;
@@ -277,7 +277,7 @@ vrled_change_state(struct vrled_softc *sc)
 		vrled_on(sc);
 		break;
 	case LED1SB:
-	case LED2SB: 
+	case LED2SB:
 		vrled_blink(sc);
 		break;
 	case LED8DIVF:
@@ -328,7 +328,7 @@ vrled_set_state(struct vrled_softc *sc, vrled_status state)
 			}
 			break;
 		case LED1SB:
-		case LED2SB: 
+		case LED2SB:
 			switch (state) {
 			case LEDOFF:
 			case LEDON:
@@ -351,7 +351,7 @@ vrled_set_state(struct vrled_softc *sc, vrled_status state)
 }
 
 /*
- * LED config hook events 
+ * LED config hook events
  *
  */
 int
@@ -360,12 +360,12 @@ vrled_event(void *ctx, int type, long id, void *msg)
 	struct vrled_softc *sc = (struct vrled_softc *)ctx;
         int why =*(int *)msg;
 
-	if (type != CONFIG_HOOK_SET 
+	if (type != CONFIG_HOOK_SET
 	    || id != CONFIG_HOOK_LED)
 		return (1);
 	if (msg == NULL)
-		return (1); 
-		
+		return (1);
+
         switch (why) {
         case CONFIG_HOOK_LED_OFF:
 		vrled_set_state(sc, LEDOFF);

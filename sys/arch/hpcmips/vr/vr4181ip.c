@@ -36,10 +36,9 @@ __KERNEL_RCSID(0, "$NetBSD: vr4181ip.c,v 1.4 2012/10/27 17:17:55 chs Exp $");
 #include "opt_vr41xx.h"
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/systm.h>
-
-#include <machine/bus.h>
 
 #include <hpcmips/vr/vrcpudef.h>
 #include <hpcmips/vr/vripunit.h>
@@ -154,7 +153,7 @@ vr4181ip_comintr_establish(vrip_chipset_tag_t vc, int unit, int line,
 			   int level, int (*ih_fun)(void *), void *ih_arg)
 {
 	int	i;
-	
+
 	if (!registered) {
 		if (!vrip_intr_establish(vc, unit, 0, IPL_TTY,
 					 vr4181ip_comintr, intrhands)) {

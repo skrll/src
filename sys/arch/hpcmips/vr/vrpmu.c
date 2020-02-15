@@ -31,10 +31,10 @@
 __KERNEL_RCSID(0, "$NetBSD: vrpmu.c,v 1.20 2014/03/26 17:53:36 christos Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
-#include <machine/bus.h>
 #include <machine/config_hook.h>
 #include <machine/debug.h>
 
@@ -123,7 +123,7 @@ vrpmuattach(device_t parent, device_t self, void *aux)
 	sc->sc_iot = iot;
 	sc->sc_ioh = ioh;
 
-	if (!(sc->sc_handler = 
+	if (!(sc->sc_handler =
 	    vrip_intr_establish(va->va_vc, va->va_unit, 0, IPL_TTY,
 		vrpmu_intr, sc))) {
 		printf (": can't map interrupt line.\n");

@@ -3,7 +3,7 @@
 INCSDIR= /usr/include/hpcmips
 
 INCS=	ansi.h apmvar.h asm.h autoconf.h \
-	bootinfo.h bswap.h bus.h \
+	bootinfo.h bswap.h \
 	cdefs.h cpu.h \
 	disklabel.h \
 	ecoff_machdep.h elf_machdep.h endian.h endian_machdep.h \

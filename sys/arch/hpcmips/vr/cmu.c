@@ -39,12 +39,12 @@
 __KERNEL_RCSID(0, "$NetBSD: cmu.c,v 1.14 2012/10/27 17:17:55 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
 #include <mips/cpuregs.h>
 
-#include <machine/bus.h>
 #include <machine/debug.h>
 
 #include "opt_vr41xx.h"

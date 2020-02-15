@@ -32,12 +32,12 @@
 __KERNEL_RCSID(0, "$NetBSD: vrc4172gpio.c,v 1.14 2019/11/10 21:16:28 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
 #include <sys/queue.h>
 #include <sys/reboot.h>
-#include <machine/bus.h>
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
 
@@ -91,7 +91,7 @@ struct vrc4172gpio_softc {
 	u_int32_t sc_intr_mask;
 	u_int32_t sc_data;
 	u_int32_t sc_intr_mode[VRC2_EXGP_NPORTS];
-	TAILQ_HEAD(, vrc4172gpio_intr_entry) sc_intr_head[VRC2_EXGP_NPORTS]; 
+	TAILQ_HEAD(, vrc4172gpio_intr_entry) sc_intr_head[VRC2_EXGP_NPORTS];
 	struct hpcio_chip sc_iochip;
 	struct hpcio_attach_args sc_haa;
 };
@@ -296,7 +296,7 @@ vrc4172gpio_attach(device_t parent, device_t self, void *aux)
 	 */
 	port = loc[HPCIOIFCF_PORT];
 	mode = HPCIO_INTR_LEVEL | HPCIO_INTR_HIGH;
-	sc->sc_intr_handle = 
+	sc->sc_intr_handle =
 	    hpcio_intr_establish(sc->sc_hc, port, mode, vrc4172gpio_intr, sc);
 	if (sc->sc_intr_handle == NULL) {
 		printf("%s: can't establish interrupt\n", device_xname(self));
@@ -313,7 +313,7 @@ vrc4172gpio_attach(device_t parent, device_t self, void *aux)
 	/* Register functions to upper interface */
 	hpcio_register_iochip(sc->sc_hc, &sc->sc_iochip);
 
-	/* 
+	/*
 	 *  hpcio I/F
 	 */
 	sc->sc_haa.haa_busname = HPCIO_BUSNAME;
@@ -349,7 +349,7 @@ vrc4172gpio_print(void *aux, const char *pnp)
 }
 
 /*
- * PORT 
+ * PORT
  */
 int
 vrc4172gpio_port_read(hpcio_chip_t hc, int port)
@@ -364,7 +364,7 @@ vrc4172gpio_port_read(hpcio_chip_t hc, int port)
 
 	return (on ? 1 : 0);
 }
-    
+
 void
 vrc4172gpio_port_write(hpcio_chip_t hc, int port, int onoff)
 {
@@ -449,7 +449,7 @@ dumpbits(u_int32_t *data, int ndata, int start, int end, const char *sym)
 		for (j = 0; j < ndata; j++)
 			d = (d << 1) | ((data[j] & (1 << i)) ? 1 : 0);
 		printf("%c", sym[(1 << ndata) - d - 1]);
-		
+
 	}
 	if (sym[1<<ndata])
 		printf("%c", sym[1<<ndata]);
@@ -469,7 +469,7 @@ vrc4172gpio_getchip(void* scx, int chipid)
 }
 
 /*
- * Interrupt staff 
+ * Interrupt staff
  */
 void *
 vrc4172gpio_intr_establish(

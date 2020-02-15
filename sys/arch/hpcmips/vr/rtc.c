@@ -41,13 +41,13 @@ __KERNEL_RCSID(0, "$NetBSD: rtc.c,v 1.35 2015/07/11 10:32:45 kamil Exp $");
 #include "opt_vr41xx.h"
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/timetc.h>
 #include <sys/device.h>
 #include <sys/cpu.h>
 
 #include <machine/sysconf.h>
-#include <machine/bus.h>
 
 #include <dev/clock_subr.h>
 
@@ -148,7 +148,7 @@ vrrtc_attach(device_t parent, device_t self, void *aux)
 		sc->sc_tclk_cnt_h_reg = RTC_NO_REG_W;
 		sc->sc_tclk_cnt_l_reg = RTC_NO_REG_W;
 	} else {
-		panic("%s: unknown base address 0x%lx",
+		panic("%s: unknown base address 0x%"PRIxBUSADDR,
 		    device_xname(self), va->va_addr);
 	}
 #endif /* SINGLE_VRIP_BASE */
@@ -161,7 +161,7 @@ vrrtc_attach(device_t parent, device_t self, void *aux)
 	}
 	/* RTC interrupt handler is directly dispatched from CPU intr */
 	vr_intr_establish(VR_INTR1, vrrtc_intr, sc);
-	/* But need to set level 1 interrupt mask register, 
+	/* But need to set level 1 interrupt mask register,
 	 * so register fake interrurpt handler
 	 */
 	if (!(sc->sc_ih = vrip_intr_establish(va->va_vc, va->va_unit, 0,
@@ -337,13 +337,13 @@ vrrtc_dump_regs(struct vrrtc_softc *sc)
 
 	timeh = bus_space_read_2(sc->sc_iot, sc->sc_ioh, ETIME_H_REG_W);
 	timel = bus_space_read_2(sc->sc_iot, sc->sc_ioh, ETIME_M_REG_W);
-	timel = (timel << 16) 
+	timel = (timel << 16)
 	    | bus_space_read_2(sc->sc_iot, sc->sc_ioh, ETIME_L_REG_W);
 	printf("clock_init()  Elapse Time %04x%04x\n", timeh, timel);
 
 	timeh = bus_space_read_2(sc->sc_iot, sc->sc_ioh, ECMP_H_REG_W);
 	timel = bus_space_read_2(sc->sc_iot, sc->sc_ioh, ECMP_M_REG_W);
-	timel = (timel << 16) 
+	timel = (timel << 16)
 	    | bus_space_read_2(sc->sc_iot, sc->sc_ioh, ECMP_L_REG_W);
 	printf("clock_init()  Elapse Compare %04x%04x\n", timeh, timel);
 

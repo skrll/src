@@ -32,8 +32,8 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: bus_space_through.c,v 1.4 2005/12/11 12:17:33 christos Exp $");
 
+#include <sys/bus.h>
 #include <sys/systm.h>
-#include <machine/bus.h>
 
 bus_space_protos(bs_through);
 /*

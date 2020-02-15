@@ -39,10 +39,10 @@ __KERNEL_RCSID(0, "$NetBSD: tx39sib.c,v 1.21 2012/10/27 17:17:54 chs Exp $");
 #undef TX39SIBDEBUG
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
-#include <machine/bus.h>
 #include <machine/intr.h>
 
 #include <hpcmips/tx/tx39var.h>
@@ -148,7 +148,7 @@ tx39sib_attach(device_t parent, device_t self, void *aux)
 	struct txsim_attach_args *ta = aux;
 	struct tx39sib_softc *sc = device_private(self);
 	tx_chipset_tag_t tc;
-	
+
 	sc->sc_tc = tc = ta->ta_tc;
 
 	/* set default param */
@@ -161,12 +161,12 @@ tx39sib_attach(device_t parent, device_t self, void *aux)
 
 #define MHZ(a) ((a) / 1000000), (((a) % 1000000) / 1000)
 	printf(": %d.%03d MHz", MHZ(tx39sib_clock(self)));
-	
+
 	printf("\n");
 #ifdef TX39SIBDEBUG
 	if (tx39sibdebug)
 		tx39sib_dump(sc);
-#endif	
+#endif
 	/* enable subframe0 */
 	tx39sib_enable1(self);
 	/* enable SIB */
@@ -175,7 +175,7 @@ tx39sib_attach(device_t parent, device_t self, void *aux)
 #ifdef TX39SIBDEBUG
 	if (tx39sibdebug)
 		tx39sib_dump(sc);
-#endif	
+#endif
 
 	config_search_ia(tx39sib_search, self, "txsibif", tx39sib_print);
 }
@@ -213,7 +213,7 @@ tx39sib_enable1(device_t dev)
 	    TX39_SIBDMACTRL_ENDMATXTEL);
 	tx_conf_write(tc, TX39_SIBDMACTRL_REG, reg);
 
-	/* 
+	/*
 	 * Enable subframe0 (BETTY)
 	 */
 	reg = tx_conf_read(tc, TX39_SIBCTRL_REG);
@@ -227,7 +227,7 @@ tx39sib_enable2(device_t dev)
 	struct tx39sib_softc *sc = device_private(dev);
 	tx_chipset_tag_t tc = sc->sc_tc;
 	txreg_t reg;
-	
+
 	reg = tx_conf_read(tc, TX39_SIBCTRL_REG);
 	reg |= TX39_SIBCTRL_ENSIB;
 	tx_conf_write(tc, TX39_SIBCTRL_REG, reg);
@@ -247,18 +247,18 @@ tx39sib_disable(device_t dev)
 	reg &= ~(TX39_SIBCTRL_ENTEL | TX39_SIBCTRL_ENSND);
 	tx_conf_write(tc, TX39_SIBCTRL_REG, reg);
 
-	/* 
+	/*
 	 * Disable subframe0/1 (BETTY/external codec)
 	 */
 	reg = tx_conf_read(tc, TX39_SIBCTRL_REG);
 	reg &= ~TX39_SIBCTRL_ENSF0;
-	reg &= ~(TX39_SIBCTRL_ENSF1 | TX39_SIBCTRL_SELTELSF1 | 
+	reg &= ~(TX39_SIBCTRL_ENSF1 | TX39_SIBCTRL_SELTELSF1 |
 	    TX39_SIBCTRL_SELSNDSF1);
 	tx_conf_write(tc, TX39_SIBCTRL_REG, reg);
 
 	/* disable TX39SIB module */
 	reg &= ~TX39_SIBCTRL_ENSIB;
-	tx_conf_write(tc, TX39_SIBCTRL_REG, reg);	
+	tx_conf_write(tc, TX39_SIBCTRL_REG, reg);
 }
 
 int
@@ -274,7 +274,7 @@ tx39sib_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 {
 	struct tx39sib_softc *sc = device_private(parent);
 	struct txsib_attach_args sa;
-	
+
 	sa.sa_tc	= sc->sc_tc;
 	sa.sa_slot	= cf->cf_loc[TXSIBIFCF_SLOT];
 	sa.sa_snd_rate	= sc->sc_param.sp_snd_rate;
@@ -284,7 +284,7 @@ tx39sib_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 		printf("tx39sib_search: wildcarded slot, skipping\n");
 		return (0);
 	}
-	
+
 	if (!(sc->sc_attached & (1 << sa.sa_slot)) &&/* not attached slot */
 	    config_match(parent, cf, &sa)) {
 		config_attach(parent, cf, &sa, tx39sib_print);
@@ -312,9 +312,9 @@ inline int
 __txsibsf0_ready(tx_chipset_tag_t tc)
 {
 	int i;
-	
+
 	tx_conf_write(tc, TX39_INTRSTATUS1_REG, TX39_INTRSTATUS1_SIBSF0INT);
-	for (i = 0; (!(tx_conf_read(tc, TX39_INTRSTATUS1_REG) & 
+	for (i = 0; (!(tx_conf_read(tc, TX39_INTRSTATUS1_REG) &
 	    TX39_INTRSTATUS1_SIBSF0INT)) && i < 1000; i++) {
 		if (i > 100 && !(i % 100)) {
 			printf("sf0 busy loop: retry count %d\n", i);
@@ -354,18 +354,18 @@ txsibsf0_read(tx_chipset_tag_t tc, int addr)
 {
 	txreg_t reg;
 	int retry = 3;
-	
+
 	do {
 		reg = TX39_SIBSF0_REGADDR_SET(0, addr);
 		__txsibsf0_ready(tc);
 		tx_conf_write(tc, TX39_SIBSF0CTRL_REG, reg);
-		
-		__txsibsf0_ready(tc);	
+
+		__txsibsf0_ready(tc);
 		reg = tx_conf_read(tc, TX39_SIBSF0STAT_REG);
-		
+
 	} while ((TX39_SIBSF0_REGADDR(reg) != addr) && --retry > 0);
-	
-	if (retry <= 0) 
+
+	if (retry <= 0)
 		printf("txsibsf0_read: command failed\n");
 
 	return (reg);

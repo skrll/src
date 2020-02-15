@@ -3,3 +3,4 @@
 #include <mips/types.h>
 
 #define	__HAVE_OLD_DISKLABEL
+#define	__HAVE_NEW_STYLE_BUS_H

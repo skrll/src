@@ -29,7 +29,7 @@
  *
  */
 
-#include <machine/bus.h>
+#include <sys/bus.h>
 #include <machine/config_hook.h>
 
 #include <dev/wscons/wsdisplayvar.h>

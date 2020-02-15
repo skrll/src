@@ -38,6 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: plumvideo.c,v 1.41 2012/10/27 17:17:53 chs Exp $");
 #include "bivideo.h"
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
@@ -49,7 +50,6 @@ __KERNEL_RCSID(0, "$NetBSD: plumvideo.c,v 1.41 2012/10/27 17:17:53 chs Exp $");
 
 #include <mips/cache.h>
 
-#include <machine/bus.h>
 #include <machine/intr.h>
 #include <machine/config_hook.h>
 
@@ -172,7 +172,7 @@ plumvideo_attach(device_t parent, device_t self, void *aux)
 	printf(": ");
 
 	/* map register area */
-	if (bus_space_map(sc->sc_regt, PLUM_VIDEO_REGBASE, 
+	if (bus_space_map(sc->sc_regt, PLUM_VIDEO_REGBASE,
 	    PLUM_VIDEO_REGSIZE, 0, &sc->sc_regh)) {
 		printf("register map failed\n");
 		return;
@@ -191,8 +191,8 @@ plumvideo_attach(device_t parent, device_t self, void *aux)
 	    plumvideo_power, sc);
 	if (sc->sc_powerhook == 0)
 		printf("WARNING unable to establish hard power hook");
-	
-	/* 
+
+	/*
 	 *  Initialize LCD controller
 	 *	map V-RAM area.
 	 *	reinstall bootinfo structure.
@@ -244,9 +244,9 @@ plumvideo_hpcfbinit(struct plumvideo_softc *sc, int reverse_flag)
 	int height = chip->vc_fbheight;
 	int width = chip->vc_fbwidth;
 	int depth = chip->vc_fbdepth;
-	
+
 	memset(fb, 0, sizeof(struct hpcfb_fbconf));
-	
+
 	fb->hf_conf_index	= 0;	/* configuration index		*/
 	fb->hf_nconfs		= 1;   	/* how many configurations	*/
 	strncpy(fb->hf_name, "PLUM built-in video", HPCFB_MAXNAMELEN);
@@ -322,16 +322,16 @@ plumvideo_init(struct plumvideo_softc *sc, int *reverse)
 	/* map BitBlt area */
 	if (bus_space_map(sc->sc_bitbltt,
 	    PLUM_VIDEO_BITBLT_IOBASE,
-	    PLUM_VIDEO_BITBLT_IOSIZE, 0, 
+	    PLUM_VIDEO_BITBLT_IOSIZE, 0,
 	    &sc->sc_bitblth)) {
 		printf(": BitBlt map failed\n");
 		return (1);
 	}
 #endif
 	reg = plum_conf_read(regt, regh, PLUM_VIDEO_PLGMD_REG);
-	
+
 	switch (reg & PLUM_VIDEO_PLGMD_GMODE_MASK) {
-	case PLUM_VIDEO_PLGMD_16BPP:		
+	case PLUM_VIDEO_PLGMD_16BPP:
 #if NPLUMOHCI > 0 /* reserve V-RAM area for USB OHCI */
 		/* FALLTHROUGH */
 #else
@@ -358,9 +358,9 @@ plumvideo_init(struct plumvideo_softc *sc, int *reverse)
 	/*
 	 * Get display size from WindowsCE setted.
 	 */
-	chip->vc_fbwidth = width = bootinfo->fb_width = 
+	chip->vc_fbwidth = width = bootinfo->fb_width =
 	    plum_conf_read(regt, regh, PLUM_VIDEO_PLHPX_REG) + 1;
-	chip->vc_fbheight = height = bootinfo->fb_height = 
+	chip->vc_fbheight = height = bootinfo->fb_height =
 	    plum_conf_read(regt, regh, PLUM_VIDEO_PLVT_REG) -
 	    plum_conf_read(regt, regh, PLUM_VIDEO_PLVDS_REG);
 
@@ -372,7 +372,7 @@ plumvideo_init(struct plumvideo_softc *sc, int *reverse)
 	plum_conf_write(regt, regh, PLUM_VIDEO_PLPIT2_REG,
 	    vram_pitch & PLUM_VIDEO_PLPIT2_MASK);
 	plum_conf_write(regt, regh, PLUM_VIDEO_PLOFS_REG, vram_pitch);
-	
+
 	/*
 	 * boot messages and map CLUT(if any).
 	 */
@@ -386,7 +386,7 @@ plumvideo_init(struct plumvideo_softc *sc, int *reverse)
 		/* map CLUT area */
 		if (bus_space_map(sc->sc_clutiot,
 		    PLUM_VIDEO_CLUT_LCD_IOBASE,
-		    PLUM_VIDEO_CLUT_LCD_IOSIZE, 0, 
+		    PLUM_VIDEO_CLUT_LCD_IOSIZE, 0,
 		    &sc->sc_clutioh)) {
 			printf(": CLUT map failed\n");
 			return (1);
@@ -398,7 +398,7 @@ plumvideo_init(struct plumvideo_softc *sc, int *reverse)
 		printf("16bpp ");
 		break;
 	}
-	
+
 	/*
 	 * calcurate frame buffer size.
 	 */
@@ -466,7 +466,7 @@ plumvideo_ioctl(void *v, u_long cmd, void *data, int flag, struct lwp *l)
 out:
 		cmap_work_free(r, g, b, rgb);
 		return error;
-		
+
 	case WSDISPLAYIO_PUTCMAP:
 		cmap = (struct wsdisplay_cmap *)data;
 		cnt = cmap->count;
@@ -611,7 +611,7 @@ plumvideo_mmap(void *ctx, off_t offset, int prot)
 	    sc->sc_fbconf.hf_offset) <  offset) {
 		return (-1);
 	}
-	
+
 	return (mips_btop(PLUM_VIDEO_VRAM_IOBASE_PHYSICAL + offset));
 }
 
@@ -621,7 +621,7 @@ static void __plumvideo_clut_get(bus_space_tag_t iot, bus_space_handle_t ioh,
     u_int32_t *rgb, int beg, int cnt)
 {
 	int i;
-	
+
 	for (i = 0, beg *= 4; i < cnt; i++, beg += 4) {
 		*rgb++ = bus_space_read_4(iot, ioh, beg) &
 		    0x00ffffff;
@@ -644,7 +644,7 @@ static void __plumvideo_clut_set(bus_space_tag_t iot, bus_space_handle_t ioh,
     u_int32_t *rgb, int beg, int cnt)
 {
 	int i;
-	
+
 	for (i = 0, beg *= 4; i < cnt; i++, beg +=4) {
 		bus_space_write_4(iot, ioh, beg,
 		    *rgb++ & 0x00ffffff);
@@ -788,7 +788,7 @@ plumvideo_init_backlight(struct plumvideo_softc *sc)
 	int val;
 
 	val = -1;
-	if (config_hook_call(CONFIG_HOOK_GET, 
+	if (config_hook_call(CONFIG_HOOK_GET,
 	    CONFIG_HOOK_POWER_LCDLIGHT, &val) != -1) {
 		/* we can get real backlight state */
 		sc->sc_backlight = val;
@@ -801,7 +801,7 @@ plumvideo_init_backlight(struct plumvideo_softc *sc)
 		sc->sc_max_brightness = val;
 
 		val = -1;
-		if (config_hook_call(CONFIG_HOOK_GET, 
+		if (config_hook_call(CONFIG_HOOK_GET,
 		    CONFIG_HOOK_BRIGHTNESS, &val) != -1) {
 			/* we can get real brightness */
 			sc->sc_brightness = val;

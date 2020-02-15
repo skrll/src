@@ -30,10 +30,9 @@
 __KERNEL_RCSID(0, "$NetBSD: vrc4173bcu.c,v 1.24 2017/03/31 08:38:13 msaitoh Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-
-#include <machine/bus.h>
 
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
@@ -237,7 +236,7 @@ vrc4173bcu_match(device_t parent, cfdata_t match, void *aux)
 	if (PCI_VENDOR(pa->pa_id) == PCI_VENDOR_NEC &&
 	    PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_NEC_VRC4173_BCU)
 		return (1);
- 
+
 	return (0);
 }
 
@@ -435,14 +434,14 @@ vrc4173bcu_print(void *aux, const char *hoge)
 	struct vrip_attach_args *va = (struct vrip_attach_args*)aux;
 
 	if (va->va_addr != VRIPIFCF_ADDR_DEFAULT)
-		aprint_normal(" addr 0x%04lx", va->va_addr);
+		aprint_normal(" addr 0x%04"PRIxBUSADDR, va->va_addr);
 	if (va->va_size != VRIPIFCF_SIZE_DEFAULT)
-		aprint_normal("-%04lx",
+		aprint_normal("-%04"PRIxBUSADDR,
 		    (va->va_addr + va->va_size - 1) & 0xffff);
 	if (va->va_addr2 != VRIPIFCF_ADDR2_DEFAULT)
-		aprint_normal(", 0x%04lx", va->va_addr2);
+		aprint_normal(", 0x%04"PRIxBUSADDR, va->va_addr2);
 	if (va->va_size2 != VRIPIFCF_SIZE2_DEFAULT)
-		aprint_normal("-%04lx",
+		aprint_normal("-%04"PRIxBUSADDR,
 		    (va->va_addr2 + va->va_size2 - 1) & 0xffff);
 
 	return (UNCONF);
@@ -519,7 +518,7 @@ vrc4173bcu_dump_level2mask(vrip_chipset_tag_t vc, vrip_intr_handle_t handle)
 	struct vrc4173bcu_intrhand *ih = handle;
 	const struct vrc4173bcu_unit *vu = ih->ih_unit;
 	u_int32_t reg;
-    
+
 	if (vu->vu_mlreg) {
 		DPRINTF(("level1[%d] level2 mask:", vu->vu_intr[0]));
 		reg = bus_space_read_2(sc->sc_iot, sc->sc_icuh, vu->vu_mlreg);
@@ -545,7 +544,7 @@ __vrc4173bcu_power(vrip_chipset_tag_t vc, int unit, int onoff)
 		return (0);
 	vu = &sc->sc_units[unit];
 
-	return (*sc->sc_chipset.vc_cc->cc_clock)(sc->sc_chipset.vc_cc, 
+	return (*sc->sc_chipset.vc_cc->cc_clock)(sc->sc_chipset.vc_cc,
 	    vu->vu_clkmask, onoff);
 }
 
@@ -566,7 +565,7 @@ __vrc4173bcu_intr_establish(vrip_chipset_tag_t vc, int unit, int line,
 	ih->ih_fun = ih_fun;
 	ih->ih_arg = ih_arg;
 	ih->ih_unit = vu;
-    
+
 	/* Mask level 2 interrupt mask register. (disable interrupt) */
 	vrip_intr_setmask2(vc, ih, ~0, 0);
 	/* Unmask  Level 1 interrupt mask register (enable interrupt) */
@@ -602,14 +601,14 @@ __vrc4173bcu_intr_setmask1(vrip_chipset_tag_t vc, vrip_intr_handle_t handle,
 	if (enable)
 		sc->sc_intrmask |= (1 << level1);
 	else
-		sc->sc_intrmask &= ~(1 << level1);	
+		sc->sc_intrmask &= ~(1 << level1);
 	bus_space_write_2 (sc->sc_iot, sc->sc_icuh, VRC4173ICU_MSYSINT1,
 	    sc->sc_intrmask);
 #ifdef VRC4173BCU_DEBUG
 	if (vrc4173bcu_debug)
 		dbg_bit_print(sc->sc_intrmask);
 #endif
-    
+
 	return;
 }
 

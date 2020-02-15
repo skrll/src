@@ -42,6 +42,7 @@ __KERNEL_RCSID(0, "$NetBSD: tx39icu.c,v 1.36 2019/11/10 21:16:28 chs Exp $");
 #define	__INTR_PRIVATE
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
@@ -51,7 +52,6 @@ __KERNEL_RCSID(0, "$NetBSD: tx39icu.c,v 1.36 2019/11/10 21:16:28 chs Exp $");
 #include <uvm/uvm_extern.h>
 
 #include <mips/cpuregs.h>
-#include <machine/bus.h>
 #include <machine/intr.h>
 
 #include <hpcmips/tx/tx39var.h>
@@ -174,7 +174,7 @@ struct txpoll_entry{
 	int	p_desc;
 	int	(*p_fun)(void *);
 	void	*p_arg;
-	TAILQ_ENTRY(txpoll_entry) p_link;	
+	TAILQ_ENTRY(txpoll_entry) p_link;
 };
 int	tx39_poll_intr(void *);
 #endif /* USE_POLL */
@@ -203,7 +203,7 @@ void	tx39icu_attach(device_t, device_t, void *);
 void	tx39_intr_dump(struct tx39icu_softc *);
 void	tx39_intr_decode(int, int *, int *);
 void	tx39_irqhigh_disestablish(tx_chipset_tag_t, int, int, int);
-void	tx39_irqhigh_establish(tx_chipset_tag_t, int, int, int, 
+void	tx39_irqhigh_establish(tx_chipset_tag_t, int, int, int,
 	    int (*)(void *), void *);
 void	tx39_irqhigh_intr(uint32_t, vaddr_t, uint32_t);
 int	tx39_irqhigh(int, int);
@@ -250,43 +250,43 @@ tx39icu_attach(device_t parent, device_t self, void *aux)
 #warning WINCE_DEFAULT_SETTING
 #else /* WINCE_DEFAULT_SETTING */
 	/* Disable IRQLOW */
-	tx_conf_write(tc, TX39_INTRENABLE1_REG, 0); 
-	tx_conf_write(tc, TX39_INTRENABLE2_REG, 0); 
-	tx_conf_write(tc, TX39_INTRENABLE3_REG, 0); 
-	tx_conf_write(tc, TX39_INTRENABLE4_REG, 0); 
-	tx_conf_write(tc, TX39_INTRENABLE5_REG, 0); 
+	tx_conf_write(tc, TX39_INTRENABLE1_REG, 0);
+	tx_conf_write(tc, TX39_INTRENABLE2_REG, 0);
+	tx_conf_write(tc, TX39_INTRENABLE3_REG, 0);
+	tx_conf_write(tc, TX39_INTRENABLE4_REG, 0);
+	tx_conf_write(tc, TX39_INTRENABLE5_REG, 0);
 #ifdef TX392X
-	tx_conf_write(tc, TX39_INTRENABLE7_REG, 0); 	
-	tx_conf_write(tc, TX39_INTRENABLE8_REG, 0); 
+	tx_conf_write(tc, TX39_INTRENABLE7_REG, 0);
+	tx_conf_write(tc, TX39_INTRENABLE8_REG, 0);
 #endif /* TX392X */
-	
+
 	/* Disable IRQHIGH */
 	reg = tx_conf_read(tc, TX39_INTRENABLE6_REG);
 	reg &= ~TX39_INTRENABLE6_PRIORITYMASK_MASK;
-	tx_conf_write(tc, TX39_INTRENABLE6_REG, reg); 
+	tx_conf_write(tc, TX39_INTRENABLE6_REG, reg);
 #endif /* WINCE_DEFAULT_SETTING */
 
 	/* Clear all pending interrupts */
-	tx_conf_write(tc, TX39_INTRCLEAR1_REG, 
+	tx_conf_write(tc, TX39_INTRCLEAR1_REG,
 	    tx_conf_read(tc, TX39_INTRSTATUS1_REG));
-	tx_conf_write(tc, TX39_INTRCLEAR2_REG, 
+	tx_conf_write(tc, TX39_INTRCLEAR2_REG,
 	    tx_conf_read(tc, TX39_INTRSTATUS2_REG));
-	tx_conf_write(tc, TX39_INTRCLEAR3_REG, 
+	tx_conf_write(tc, TX39_INTRCLEAR3_REG,
 	    tx_conf_read(tc, TX39_INTRSTATUS3_REG));
-	tx_conf_write(tc, TX39_INTRCLEAR4_REG, 
+	tx_conf_write(tc, TX39_INTRCLEAR4_REG,
 	    tx_conf_read(tc, TX39_INTRSTATUS4_REG));
-	tx_conf_write(tc, TX39_INTRCLEAR5_REG, 
+	tx_conf_write(tc, TX39_INTRCLEAR5_REG,
 	    tx_conf_read(tc, TX39_INTRSTATUS5_REG));
 #ifdef TX392X
-	tx_conf_write(tc, TX39_INTRCLEAR7_REG, 
+	tx_conf_write(tc, TX39_INTRCLEAR7_REG,
 	    tx_conf_read(tc, TX39_INTRSTATUS7_REG));
-	tx_conf_write(tc, TX39_INTRCLEAR8_REG, 
+	tx_conf_write(tc, TX39_INTRCLEAR8_REG,
 	    tx_conf_read(tc, TX39_INTRSTATUS8_REG));
 #endif /* TX392X */
 
 	/* Enable global interrupts */
 	reg = tx_conf_read(tc, TX39_INTRENABLE6_REG);
-	reg |= TX39_INTRENABLE6_GLOBALEN;	
+	reg |= TX39_INTRENABLE6_GLOBALEN;
 	tx_conf_write(tc, TX39_INTRENABLE6_REG, reg);
 
 	/* Initialize IRQHIGH interrupt handler holder*/
@@ -297,7 +297,7 @@ tx39icu_attach(device_t parent, device_t self, void *aux)
 	/* Initialize polling handler holder */
 	TAILQ_INIT(&sc->sc_p_head);
 #endif /* USE_POLL */
-	
+
 	/* Register interrupt module myself */
 	tx_conf_register_intr(tc, self);
 }
@@ -447,7 +447,7 @@ tx39_irqhigh_intr(uint32_t ipending, vaddr_t pc, uint32_t status)
 	pri = TX39_INTRSTATUS6_INTVECT(sc->sc_regs[0]);
 
 	if (pri == TX39_INTRPRI13_TIMER_PERIODIC) {
-		tx_conf_write(tc, TX39_INTRCLEAR5_REG, 
+		tx_conf_write(tc, TX39_INTRCLEAR5_REG,
 		    TX39_INTRSTATUS5_PERINT);
 		cf.pc = pc;
 		cf.sr = status;
@@ -468,9 +468,9 @@ tx39_irqhigh_intr(uint32_t ipending, vaddr_t pc, uint32_t status)
 				tx_conf_write(tc, ofs, he_mask);
 #ifdef TX39ICU_DEBUG
 				if (tx39icu_debug > 1) {
-					tx39intrvec = (set << 16) | 
+					tx39intrvec = (set << 16) |
 					    (ffs(he_mask) - 1);
-					DPRINTF("IRQHIGH: %d:%d\n", 
+					DPRINTF("IRQHIGH: %d:%d\n",
 					    set, ffs(he_mask) - 1);
 				}
 #endif /* TX39ICU_DEBUG */
@@ -518,7 +518,7 @@ tx39_irqhigh_establish(tx_chipset_tag_t tc, int set, int bit, int pri,
 	 */
 	reg = tx_conf_read(tc, TX39_INTRENABLE6_REG);
 	reg = TX39_INTRENABLE6_PRIORITYMASK_SET(reg, (1 << pri));
-	tx_conf_write(tc, TX39_INTRENABLE6_REG, reg);		
+	tx_conf_write(tc, TX39_INTRENABLE6_REG, reg);
 }
 
 void
@@ -536,11 +536,11 @@ tx39_irqhigh_disestablish(tx_chipset_tag_t tc, int set, int bit, int pri)
 			break;
 		}
 	}
-	
+
 	if (TAILQ_EMPTY(&sc->sc_he_head[pri])) {
 		reg = tx_conf_read(tc, TX39_INTRENABLE6_REG);
 		reg &= ~(1 << pri);
-		tx_conf_write(tc, TX39_INTRENABLE6_REG, reg);		
+		tx_conf_write(tc, TX39_INTRENABLE6_REG, reg);
 	}
 }
 
@@ -562,7 +562,7 @@ tx_intr_establish(tx_chipset_tag_t tc, int line, int mode, int level,
 	DPRINTF("tx_intr_establish: %d:%d", set, bit);
 
 	if ((highpri = tx39_irqhigh(set, bit))) {
-		tx39_irqhigh_establish(tc, set, bit, highpri, 
+		tx39_irqhigh_establish(tc, set, bit, highpri,
 		    ih_fun, ih_arg);
 		DPRINTF("(high)\n");
 	} else {
@@ -575,7 +575,7 @@ tx_intr_establish(tx_chipset_tag_t tc, int line, int mode, int level,
 		tx_conf_write(tc, ofs, reg);
 		DPRINTF("(low)\n");
 	}
-	
+
 	return ((void *)line);
 }
 
@@ -610,10 +610,10 @@ uint32_t
 tx_intr_status(tx_chipset_tag_t tc, int r)
 {
 	struct tx39icu_softc *sc = tc->tc_intrt;
-	
+
 	if (r < 0 || r >= TX39_INTRSET_MAX + 1)
 		panic("tx_intr_status: invalid index %d", r);
-	
+
 	return (uint32_t)(sc->sc_regs[r]);
 }
 
@@ -626,7 +626,7 @@ tx39_poll_establish(tx_chipset_tag_t tc, int interval, int level,
 	struct txpoll_entry *p;
 	int s;
 	void *ret;
-	
+
 	p = malloc(sizeof(*p), M_DEVBUF, M_WAITOK | M_ZERO);
 	p->p_fun = ih_fun;
 	p->p_arg = ih_arg;
@@ -637,7 +637,7 @@ tx39_poll_establish(tx_chipset_tag_t tc, int interval, int level,
 
 	if (!sc->sc_polling) {
 		tx39clock_alarm_set(tc, 33); /* 33 msec */
-		
+
 		if (!(sc->sc_poll_ih = tx_intr_establish(
 		    tc, MAKEINTR(5, TX39_INTRSTATUS5_ALARMINT),
 		    IST_EDGE, level, tx39_poll_intr, sc)))  {
@@ -653,7 +653,7 @@ tx39_poll_establish(tx_chipset_tag_t tc, int interval, int level,
 	p->p_desc = sc->sc_polling;
 	TAILQ_INSERT_TAIL(&sc->sc_p_head, p, p_link);
 	ret = (void *)p->p_desc;
-	
+
 	splx(s);
 	return (ret);
 }
@@ -681,7 +681,7 @@ tx39_poll_disestablish(tx_chipset_tag_t tc, void *arg)
 		sc->sc_polling = 0;
 		tx_intr_disestablish(tc, sc->sc_poll_ih);
 	}
-	
+
 	splx(s);
 	return;
 }
@@ -728,7 +728,7 @@ tx39_intr_dump(struct tx39icu_softc *sc)
 	char msg[16];
 
 	for (i = 1; i <= TX39_INTRSET_MAX; i++) {
-#ifdef TX392X		
+#ifdef TX392X
 		if (i == 6)
 			continue;
 #endif /* TX392X */

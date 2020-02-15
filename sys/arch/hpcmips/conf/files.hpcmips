@@ -58,7 +58,7 @@ file	arch/hpcmips/vr/vr_idle.S	vr41xx
 file	arch/hpcmips/tx/tx39.c		tx39xx	# TOSHIBA TX3900 series
 
 file	arch/hpcmips/hpcmips/autoconf.c
-file	arch/hpcmips/hpcmips/bus_dma.c
+file	arch/hpcmips/hpcmips/bus.c
 file	arch/hpcmips/hpcmips/bus_space.c
 file	arch/hpcmips/hpcmips/bus_space_notimpl.c
 file	arch/hpcmips/hpcmips/bus_space_through.c
@@ -67,6 +67,7 @@ file	arch/hpcmips/hpcmips/machdep.c
 file	arch/hpcmips/hpcmips/mainbus.c
 
 file	dev/bus_dma/bus_dmamem_common.c
+file	arch/mips/mips/bus_dma.c
 
 file	dev/kloader.c				kloader
 file	arch/hpcmips/hpcmips/kloader_machdep.c	kloader

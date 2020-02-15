@@ -33,6 +33,7 @@
 __KERNEL_RCSID(0, "$NetBSD: vr4181aiu.c,v 1.11 2018/09/03 16:29:24 riastradh Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/conf.h>
 #include <sys/device.h>
 #include <sys/errno.h>
@@ -41,8 +42,6 @@ __KERNEL_RCSID(0, "$NetBSD: vr4181aiu.c,v 1.11 2018/09/03 16:29:24 riastradh Exp
 #include <sys/systm.h>
 
 #include <mips/cpuregs.h>
-
-#include <machine/bus.h>
 
 #include <hpcmips/vr/vripif.h>
 #include <hpcmips/vr/vr4181aiureg.h>
@@ -177,7 +176,7 @@ vr4181aiu_attach(device_t parent, device_t self, void *aux)
 	vr4181aiu_init_inbuf(sc);
 	memset(sc->sc_inbuf1, 0x55, INBUFLEN * 2);
 	memset(sc->sc_inbuf2, 0xaa, INBUFLEN * 2);
-	
+
 	sc->sc_status = 0;
 	sc->sc_iot = va->va_iot;
 
@@ -250,7 +249,7 @@ vr4181aiuopen(dev_t dev, int flag, int mode, struct lwp *l)
 
 	if (sc->sc_status & ST_BUSY)
 		return EBUSY;
-	
+
 	sc->sc_inbuf_head = sc->sc_inbuf_tail
 		= sc->sc_inbuf_which = sc->sc_inbuf1;
 	sc->sc_status &= ~ST_OVERRUN;
@@ -337,7 +336,7 @@ vr4181aiuread(dev_t dev, struct uio *uio, int flag)
 		/* now sc_inbuf_head points alternate buffer */
 	}
 	splx(s);
-	
+
 	fence = sc->sc_inbuf_which == sc->sc_inbuf1
 		? &sc->sc_inbuf1[INPUTLEN]
 		: &sc->sc_inbuf2[INPUTLEN];
@@ -405,6 +404,6 @@ vr4181aiu_intr(void *arg)
 		 sc->sc_inbuf1[0], sc->sc_inbuf2[0]));
 
 	wakeup(sc);
-	
+
 	return 0;
 }

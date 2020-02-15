@@ -36,12 +36,12 @@ __KERNEL_RCSID(0, "$NetBSD: com_hpcio.c,v 1.12 2018/12/08 17:46:11 thorpej Exp $
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/reboot.h>
 #include <sys/termios.h>
 
 #include <machine/intr.h>
-#include <machine/bus.h>
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
 

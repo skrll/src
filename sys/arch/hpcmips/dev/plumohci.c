@@ -37,7 +37,10 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: plumohci.c,v 1.15 2016/04/23 10:15:29 skrll Exp $");
 
+#define _MIPS_BUS_DMA_PRIVATE
+
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
@@ -47,9 +50,6 @@ __KERNEL_RCSID(0, "$NetBSD: plumohci.c,v 1.15 2016/04/23 10:15:29 skrll Exp $");
 /* busdma */
 #include <sys/mbuf.h>
 #include <uvm/uvm_extern.h>
-
-#include <machine/bus.h>
-#include <machine/bus_dma_hpcmips.h>
 
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
@@ -78,26 +78,25 @@ int __plumohci_dmamem_map(bus_dma_tag_t, bus_dma_segment_t *,
     int, size_t, void **, int);
 void __plumohci_dmamem_unmap(bus_dma_tag_t, void *, size_t);
 
-struct bus_dma_tag_hpcmips plumohci_bus_dma_tag = {
-	{
-		NULL,
-		{
-			_hpcmips_bd_map_create,
-			_hpcmips_bd_map_destroy,
-			_hpcmips_bd_map_load,
-			_hpcmips_bd_map_load_mbuf,
-			_hpcmips_bd_map_load_uio,
-			_hpcmips_bd_map_load_raw,
-			_hpcmips_bd_map_unload,
-			__plumohci_dmamap_sync,
-			__plumohci_dmamem_alloc,
-			__plumohci_dmamem_free,
-			__plumohci_dmamem_map,
-			__plumohci_dmamem_unmap,
-			_hpcmips_bd_mem_mmap,
-		},
+struct mips_bus_dma_tag plumohci_bus_dma_tag = {
+	._dmamap_ops = {
+		.dmamap_create		= _bus_dmamap_create,
+		.dmamap_destroy		= _bus_dmamap_destroy,
+		.dmamap_load		= _bus_dmamap_load,
+		.dmamap_load_mbuf	= _bus_dmamap_load_mbuf,
+		.dmamap_load_uio	= _bus_dmamap_load_uio,
+		.dmamap_load_raw	= _bus_dmamap_load_raw,
+		.dmamap_unload		= _bus_dmamap_unload,
+		.dmamap_sync		= __plumohci_dmamap_sync,
 	},
-	NULL,
+	._dmamem_ops = {
+		.dmamem_alloc		= __plumohci_dmamem_alloc,
+		.dmamem_free		= __plumohci_dmamem_free,
+		.dmamem_map		= __plumohci_dmamem_map,
+		.dmamem_unmap		= __plumohci_dmamem_unmap,
+		.dmamem_mmap		= _bus_dmamem_mmap,
+	},
+	._dmatag_ops = _BUS_DMATAG_OPS_INITIALIZER,
 };
 
 struct plumohci_shm {
@@ -137,8 +136,8 @@ plumohci_attach(device_t parent, device_t self, void *aux)
 	sc->sc.sc_bus.ub_hcpriv = sc;
 
 	sc->sc.iot = pa->pa_iot;
-	sc->sc.sc_bus.ub_dmatag = &plumohci_bus_dma_tag.bdt;
-	plumohci_bus_dma_tag._dmamap_chipset_v = sc;
+	sc->sc.sc_bus.ub_dmatag = &plumohci_bus_dma_tag;
+	plumohci_bus_dma_tag._cookie = sc;
 
 	/* Map I/O space */
 	if (bus_space_map(sc->sc.iot, PLUM_OHCI_REGBASE, OHCI_PAGE_SIZE,
@@ -210,8 +209,7 @@ void
 __plumohci_dmamap_sync(bus_dma_tag_t tx, bus_dmamap_t map, bus_addr_t offset,
     bus_size_t len, int ops)
 {
-	struct bus_dma_tag_hpcmips *t = (struct bus_dma_tag_hpcmips *)tx;
-	struct plumohci_softc *sc = t->_dmamap_chipset_v;
+	struct plumohci_softc *sc = tx->_cookie;
 
 	/*
 	 * Flush the write buffer allocated on the V-RAM.
@@ -225,8 +223,7 @@ __plumohci_dmamem_alloc(bus_dma_tag_t tx, bus_size_t size,
     bus_size_t alignment, bus_size_t boundary, bus_dma_segment_t *segs,
     int nsegs, int *rsegs, int flags)
 {
-	struct bus_dma_tag_hpcmips *t = (struct bus_dma_tag_hpcmips *)tx;
-	struct plumohci_softc *sc = t->_dmamap_chipset_v;
+	struct plumohci_softc *sc = tx->_cookie;
 	struct plumohci_shm *ps;
 	bus_space_handle_t bsh;
 	paddr_t paddr;
@@ -266,8 +263,7 @@ __plumohci_dmamem_alloc(bus_dma_tag_t tx, bus_size_t size,
 void
 __plumohci_dmamem_free(bus_dma_tag_t tx, bus_dma_segment_t *segs, int nsegs)
 {
-	struct bus_dma_tag_hpcmips *t = (struct bus_dma_tag_hpcmips *)tx;
-	struct plumohci_softc *sc = t->_dmamap_chipset_v;
+	struct plumohci_softc *sc = tx->_cookie;
 	struct plumohci_shm *ps;
 
 	for (ps = LIST_FIRST(&sc->sc_shm_head); ps;
@@ -290,8 +286,7 @@ int
 __plumohci_dmamem_map(bus_dma_tag_t tx, bus_dma_segment_t *segs, int nsegs,
     size_t size, void **kvap, int flags)
 {
-	struct bus_dma_tag_hpcmips *t = (struct bus_dma_tag_hpcmips *)tx;
-	struct plumohci_softc *sc = t->_dmamap_chipset_v;
+	struct plumohci_softc *sc = tx->_cookie;
 	struct plumohci_shm *ps;
 
 	for (ps = LIST_FIRST(&sc->sc_shm_head); ps;

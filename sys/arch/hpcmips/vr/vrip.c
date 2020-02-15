@@ -37,12 +37,12 @@ __KERNEL_RCSID(0, "$NetBSD: vrip.c,v 1.37 2012/10/27 17:17:56 chs Exp $");
 #include "opt_tx39xx.h"
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/reboot.h>
 
 #include <machine/cpu.h>
-#include <machine/bus.h>
 #include <machine/autoconf.h>
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
@@ -189,7 +189,7 @@ int
 vripmatch(device_t parent, cfdata_t match, void *aux)
 {
 	struct mainbus_attach_args *ma = aux;
-   
+
 #if defined(SINGLE_VRIP_BASE) && defined(TX39XX)
 	if (!platid_match(&platid, &platid_mask_CPU_MIPS_VR_41XX))
 		return (0);
@@ -227,7 +227,7 @@ vripattach_common(device_t parent, device_t self, void *aux)
 		printf("vripattach: can't map ICU register.\n");
 		return;
 	}
-	
+
 	/*
 	 *  Disable all Level 1 interrupts.
 	 */
@@ -258,16 +258,16 @@ vrip_print(void *aux, const char *hoge)
 	bus_addr_t endaddr, mask;
 
 	if (va->va_addr != VRIPIFCF_ADDR_DEFAULT)
-		aprint_normal(" addr 0x%08lx", va->va_addr);
+		aprint_normal(" addr 0x%08"PRIxBUSADDR, va->va_addr);
 	if (va->va_size != VRIPIFCF_SIZE_DEFAULT) {
 		endaddr = (va->va_addr + va->va_size - 1);
 		mask = ((va->va_addr ^ endaddr) & 0xff0000) ? 0xffffff:0xffff;
-		aprint_normal("-%04lx", endaddr & mask);
+		aprint_normal("-%04"PRIxBUSADDR, endaddr & mask);
 	}
 	if (va->va_addr2 != VRIPIFCF_ADDR2_DEFAULT)
-		aprint_normal(", 0x%08lx", va->va_addr2);
+		aprint_normal(", 0x%08"PRIxBUSADDR, va->va_addr2);
 	if (va->va_size2 != VRIPIFCF_SIZE2_DEFAULT)
-		aprint_normal("-%04lx",
+		aprint_normal("-%04"PRIxBUSADDR,
 		    (va->va_addr2 + va->va_size2 - 1) & 0xffff);
 
 	return (UNCONF);
@@ -282,7 +282,7 @@ vrip_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 
 	if (cf->cf_loc[VRIPIFCF_PLATFORM] != VRIPIFCF_PLATFORM_DEFAULT) {
 		mask = PLATID_DEREF(cf->cf_loc[VRIPIFCF_PLATFORM]);
-		if (platid_match(&platid, &mask) == 0)	
+		if (platid_match(&platid, &mask) == 0)
 			return (0);
 	}
 
@@ -316,7 +316,7 @@ __vrip_power(vrip_chipset_tag_t vc, int unit, int onoff)
 		return (0);
 	vu = &sc->sc_units[unit];
 
-	return (*sc->sc_chipset.vc_cc->cc_clock)(sc->sc_chipset.vc_cc, 
+	return (*sc->sc_chipset.vc_cc->cc_clock)(sc->sc_chipset.vc_cc,
 	    vu->vu_clkmask, onoff);
 }
 
@@ -337,7 +337,7 @@ __vrip_intr_establish(vrip_chipset_tag_t vc, int unit, int line, int level,
 	ih->ih_fun = ih_fun;
 	ih->ih_arg = ih_arg;
 	ih->ih_unit = vu;
-    
+
 	/* Mask level 2 interrupt mask register. (disable interrupt) */
 	vrip_intr_setmask2(vc, ih, ~0, 0);
 	/* Unmask  Level 1 interrupt mask register (enable interrupt) */
@@ -401,13 +401,13 @@ __vrip_intr_setmask1(vrip_chipset_tag_t vc, vrip_intr_handle_t handle,
 	if (enable)
 		reg |= (1 << level1);
 	else {
-		reg &= ~(1 << level1);	
+		reg &= ~(1 << level1);
 	}
 	sc->sc_intrmask = reg;
 	bus_space_write_2 (iot, ioh, MSYSINT1_REG_W, reg & 0xffff);
 	bus_space_write_2 (iot, ioh, sc->sc_msysint2, (reg >> 16) & 0xffff);
 	DBG_BIT_PRINT(reg);
-    
+
 	return;
 }
 
@@ -418,7 +418,7 @@ __vrip_dump_level2mask(vrip_chipset_tag_t vc, vrip_intr_handle_t handle)
 	struct intrhand *ih = handle;
 	const struct vrip_unit *vu = ih->ih_unit;
 	u_int32_t reg;
-    
+
 	if (vu->vu_mlreg) {
 		DPRINTF(("level1[%d] level2 mask:", vu->vu_intr[0]));
 		reg = bus_space_read_2(sc->sc_iot, sc->sc_ioh, vu->vu_mlreg);
@@ -441,9 +441,9 @@ __vrip_intr_getstatus2(vrip_chipset_tag_t vc, vrip_intr_handle_t handle,
 	const struct vrip_unit *vu = ih->ih_unit;
 	u_int32_t reg;
 
-	reg = bus_space_read_2(sc->sc_iot, sc->sc_ioh, 
+	reg = bus_space_read_2(sc->sc_iot, sc->sc_ioh,
 	    vu->vu_lreg);
-	reg |= ((bus_space_read_2(sc->sc_iot, sc->sc_ioh, 
+	reg |= ((bus_space_read_2(sc->sc_iot, sc->sc_ioh,
 	    vu->vu_hreg) << 16)&0xffff0000);
 /*    dbg_bit_print(reg);*/
 	*mask = reg;

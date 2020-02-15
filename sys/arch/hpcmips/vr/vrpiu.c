@@ -36,6 +36,7 @@
 __KERNEL_RCSID(0, "$NetBSD: vrpiu.c,v 1.42 2012/10/27 17:17:56 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
@@ -45,7 +46,6 @@ __KERNEL_RCSID(0, "$NetBSD: vrpiu.c,v 1.42 2012/10/27 17:17:56 chs Exp $");
 #include <dev/wscons/wsconsio.h>
 #include <dev/wscons/wsmousevar.h>
 
-#include <machine/bus.h>
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
 #include <machine/config_hook.h>
@@ -122,7 +122,7 @@ int		vrpiu_ad_enable(void *);
 void		vrpiu_ad_disable(void *);
 static void	vrpiu_start_powerstate(void *);
 static void	vrpiu_calc_powerstate(struct vrpiu_softc *);
-static void	vrpiu_send_battery_event(struct vrpiu_softc *);
+//static void	vrpiu_send_battery_event(struct vrpiu_softc *);
 static void	vrpiu_power(int, void *);
 static u_int	scan_interval(u_int data);
 
@@ -811,6 +811,7 @@ vrpiu_start_powerstate(void *v)
 void
 vrpiu_calc_powerstate(struct vrpiu_softc *sc)
 {
+#if 0
 	extern void vrgiu_diff_io(void);
 	vrpiu_ad_disable(sc);
 	VPRINTF(("vrpiu:AD: %d, %d, %d\n",
@@ -827,6 +828,7 @@ vrpiu_calc_powerstate(struct vrpiu_softc *sc)
 		    vrpiu_start_powerstate, sc);
 	if (bootverbose)
 		vrgiu_diff_io();
+#endif
 
 }
 
@@ -846,6 +848,7 @@ vrpiu_power(int why, void *arg)
 	}
 }
 
+#if 0
 static void
 vrpiu_send_battery_event(struct vrpiu_softc *sc)
 {
@@ -912,6 +915,7 @@ vrpiu_send_battery_event(struct vrpiu_softc *sc)
 	    (void *)&sc->sc_battery);
 #endif /* VRPIU_ADHOC_BATTERY_EVENT */
 }
+#endif
 
 #ifdef DEBUG
 void

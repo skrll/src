@@ -34,11 +34,11 @@
 __KERNEL_RCSID(0, "$NetBSD: plumpcmcia.c,v 1.28 2016/06/30 08:51:06 skrll Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/kthread.h>
 
-#include <machine/bus.h>
 #include <machine/config_hook.h>
 #include <machine/bus_space_hpcmips.h>
 
@@ -220,7 +220,7 @@ plumpcmcia_attach(device_t parent, device_t self, void *aux)
 	sc->sc_regt	= pa->pa_regt;
 
 	/* map register area */
-	if (bus_space_map(sc->sc_regt, PLUM_PCMCIA_REGBASE, 
+	if (bus_space_map(sc->sc_regt, PLUM_PCMCIA_REGBASE,
 	    PLUM_PCMCIA_REGSIZE, 0, &sc->sc_regh)) {
 		printf(": register map failed\n");
 	}
@@ -254,7 +254,7 @@ plumpcmcia_attach(device_t parent, device_t self, void *aux)
 	ph->ph_iobase	= PLUM_PCMCIA_IOBASE1;
 	ph->ph_iosize	= PLUM_PCMCIA_IOSIZE1;
 	ph->ph_regt = sc->sc_regt;
-	bus_space_subregion(sc->sc_regt, sc->sc_regh, 
+	bus_space_subregion(sc->sc_regt, sc->sc_regh,
 	    PLUM_PCMCIA_REGSPACE_SLOT0,
 	    PLUM_PCMCIA_REGSPACE_SIZE,
 	    &ph->ph_regh);
@@ -276,7 +276,7 @@ plumpcmcia_attach(device_t parent, device_t self, void *aux)
 	ph->ph_iobase	= PLUM_PCMCIA_IOBASE2;
 	ph->ph_iosize	= PLUM_PCMCIA_IOSIZE2;
 	ph->ph_regt = sc->sc_regt;
-	bus_space_subregion(sc->sc_regt, sc->sc_regh, 
+	bus_space_subregion(sc->sc_regt, sc->sc_regh,
 	    PLUM_PCMCIA_REGSPACE_SLOT1,
 	    PLUM_PCMCIA_REGSPACE_SIZE,
 	    &ph->ph_regh);
@@ -320,7 +320,7 @@ plumpcmcia_attach_socket(struct plumpcmcia_handle *ph)
 		    PLUM_PCMCIA_FUNCCTRL,
 		    PLUM_PCMCIA_FUNCCTRL_VSSEN |
 		    PLUM_PCMCIA_FUNCCTRL_3VSUPPORT);
-		pcmcia_card_attach(ph->ph_pcmcia);		
+		pcmcia_card_attach(ph->ph_pcmcia);
 	}
 }
 
@@ -332,7 +332,7 @@ plumpcmcia_chip_intr_establish(pcmcia_chipset_handle_t pch,
 	struct plumpcmcia_handle *ph = (void *)pch;
 	struct plumpcmcia_softc *sc = device_private(ph->ph_parent);
 
-	if (!(ph->ph_card_ih = 
+	if (!(ph->ph_card_ih =
 	    plum_intr_establish(sc->sc_pc, ph->ph_plum_irq,
 		IST_EDGE, IPL_BIO, ih_fun, ih_arg))) {
 		printf("plumpcmcia_chip_intr_establish: can't establish\n");
@@ -342,7 +342,7 @@ plumpcmcia_chip_intr_establish(pcmcia_chipset_handle_t pch,
 	return (ph->ph_card_ih);
 }
 
-static void 
+static void
 plumpcmcia_chip_intr_disestablish(pcmcia_chipset_handle_t pch, void *ih)
 {
 	struct plumpcmcia_handle *ph = pch;
@@ -359,24 +359,24 @@ plumpcmcia_chip_mem_alloc(pcmcia_chipset_handle_t pch, bus_size_t size,
 	bus_size_t realsize;
 
 	/* convert size to PCIC pages */
-	realsize = ((size + (PLUM_PCMCIA_MEM_PAGESIZE - 1)) / 
+	realsize = ((size + (PLUM_PCMCIA_MEM_PAGESIZE - 1)) /
 	    PLUM_PCMCIA_MEM_PAGESIZE) * PLUM_PCMCIA_MEM_PAGESIZE;
 
 	if (bus_space_alloc(ph->ph_memt, ph->ph_membase,
-	    ph->ph_membase + ph->ph_memsize, 
-	    realsize, PLUM_PCMCIA_MEM_PAGESIZE, 
+	    ph->ph_membase + ph->ph_memsize,
+	    realsize, PLUM_PCMCIA_MEM_PAGESIZE,
 	    0, 0, 0, &pcmhp->memh)) {
 		return (1);
 	}
 
 	pcmhp->memt = ph->ph_memt;
 	/* Address offset from MEM area base */
-	pcmhp->addr = pcmhp->memh - ph->ph_membase - 
+	pcmhp->addr = pcmhp->memh - ph->ph_membase -
 	    ((struct bus_space_tag_hpcmips*)ph->ph_memt)->base;
 	pcmhp->size = size;
 	pcmhp->realsize = realsize;
 
-	DPRINTF(("plumpcmcia_chip_mem_alloc: size %#x->%#x addr %#x->%#x\n", 
+	DPRINTF(("plumpcmcia_chip_mem_alloc: size %#x->%#x addr %#x->%#x\n",
 	    (unsigned)size, (unsigned)realsize, (unsigned)pcmhp->addr,
 	    (unsigned)pcmhp->memh));
 
@@ -444,7 +444,7 @@ plumpcmcia_chip_do_mem_map(struct plumpcmcia_handle *ph, int win)
 	bus_space_tag_t regt = ph->ph_regt;
 	bus_space_handle_t regh = ph->ph_regh;
 	plumreg_t reg, addr, offset, size;
-	
+
 	if (win < 0 || win > 4) {
 		panic("plumpcmcia_chip_do_mem_map: bogus window %d", win);
 	}
@@ -452,7 +452,7 @@ plumpcmcia_chip_do_mem_map(struct plumpcmcia_handle *ph, int win)
 	addr = (ph->ph_mem[win].pm_addr) >> PLUM_PCMCIA_MEM_SHIFT;
 	size = (ph->ph_mem[win].pm_size) >> PLUM_PCMCIA_MEM_SHIFT;
 	offset = (ph->ph_mem[win].pm_offset) >> PLUM_PCMCIA_MEM_SHIFT;
-	
+
 	/* Attribute memory or not */
 	reg = ph->ph_mem[win].pm_kind == PCMCIA_MEM_ATTR ?
 	    PLUM_PCMCIA_MEMWINCTRL_REGACTIVE : 0;
@@ -468,9 +468,9 @@ plumpcmcia_chip_do_mem_map(struct plumpcmcia_handle *ph, int win)
 	/* Map Host <-> PC-Card address */
 
 	/* host-side */
-	plum_conf_write(regt, regh, PLUM_PCMCIA_MEMWINSTARTADDR(win), 
+	plum_conf_write(regt, regh, PLUM_PCMCIA_MEMWINSTARTADDR(win),
 	    addr);
-	plum_conf_write(regt, regh, PLUM_PCMCIA_MEMWINSTOPADDR(win), 
+	plum_conf_write(regt, regh, PLUM_PCMCIA_MEMWINSTOPADDR(win),
 	    addr + size);
 
 	/* card-side */
@@ -480,7 +480,7 @@ plumpcmcia_chip_do_mem_map(struct plumpcmcia_handle *ph, int win)
 	reg = plum_conf_read(regt, regh, PLUM_PCMCIA_WINEN);
 	reg |= PLUM_PCMCIA_WINEN_MEM(win);
 	plum_conf_write(regt, regh, PLUM_PCMCIA_WINEN, reg);
-	
+
 	DPRINTF(("plumpcmcia_chip_do_mem_map: window:%d %#x(%#x)+%#x\n",
 	    win, offset, addr, size));
 
@@ -494,7 +494,7 @@ plumpcmcia_chip_mem_unmap(pcmcia_chipset_handle_t pch, int window)
 	bus_space_tag_t regt = ph->ph_regt;
 	bus_space_handle_t regh = ph->ph_regh;
 	plumreg_t reg;
-	
+
 	reg = plum_conf_read(regt, regh, PLUM_PCMCIA_WINEN);
 	reg &= ~PLUM_PCMCIA_WINEN_MEM(window);
 	plum_conf_write(regt, regh, PLUM_PCMCIA_WINEN, reg);
@@ -512,7 +512,7 @@ plumpcmcia_chip_io_alloc(pcmcia_chipset_handle_t pch, bus_addr_t start,
 	DPRINTF(("plumpcmcia_chip_io_alloc: start=%#x size=%#x ",
 	    (unsigned)start, (unsigned)size));
 	if (start) {
-		if (bus_space_map(ph->ph_iot, ph->ph_iobase + start, 
+		if (bus_space_map(ph->ph_iot, ph->ph_iobase + start,
 		    size, 0, &pcihp->ioh)) {
 			DPRINTF(("bus_space_map failed\n"));
 			return (1);
@@ -523,22 +523,22 @@ plumpcmcia_chip_io_alloc(pcmcia_chipset_handle_t pch, bus_addr_t start,
 		    (unsigned)size));
 	} else {
 		if (bus_space_alloc(ph->ph_iot, ph->ph_iobase,
-		    ph->ph_iobase + ph->ph_iosize, size, 
+		    ph->ph_iobase + ph->ph_iosize, size,
 		    align, 0, 0, 0, &pcihp->ioh)) {
 			DPRINTF(("bus_space_alloc failed\n"));
 			return 1;
 		}
 		/* Address offset from IO area base */
-		pcihp->addr = pcihp->ioh - ph->ph_iobase - 
+		pcihp->addr = pcihp->ioh - ph->ph_iobase -
 		    ((struct bus_space_tag_hpcmips*)ph->ph_iot)->base;
 		pcihp->flags = PCMCIA_IO_ALLOCATED;
 		DPRINTF(("(allocated) %#x+%#x\n", (unsigned)pcihp->addr,
 		    (unsigned)size));
 	}
-	
+
 	pcihp->iot = ph->ph_iot;
 	pcihp->size = size;
-	
+
 	return (0);
 }
 
@@ -557,8 +557,8 @@ plumpcmcia_chip_io_map(pcmcia_chipset_handle_t pch, int width,
 	winofs = pcihp->addr + offset;
 
 	if (winofs > 0x3ff) {
-		printf("plumpcmcia_chip_io_map: WARNING port %#lx > 0x3ff\n",
-		    winofs);
+		printf("plumpcmcia_chip_io_map: WARNING port %#"PRIxBUSADDR
+		    " > 0x3ff\n", winofs);
 	}
 
 	for (win = -1, i = 0; i < PLUM_PCMCIA_IO_WINS; i++) {
@@ -580,7 +580,7 @@ plumpcmcia_chip_io_map(pcmcia_chipset_handle_t pch, int width,
 
 	plumpcmcia_chip_do_io_map(ph, win);
 
-	DPRINTF(("plumpcmcia_chip_io_map: %#x(kv:%#x)+%#x %s\n", 
+	DPRINTF(("plumpcmcia_chip_io_map: %#x(kv:%#x)+%#x %s\n",
 	    (unsigned)offset, (unsigned)pcihp->ioh, (unsigned)size,
 	    width_names[width]));
 
@@ -601,7 +601,7 @@ plumpcmcia_chip_do_io_map(struct plumpcmcia_handle *ph, int win)
 		0,
 		PLUM_PCMCIA_IOWINCTRL_DATASIZE16
 	};
-	
+
 	if (win < 0 || win > 1) {
 		panic("plumpcmcia_chip_do_io_map: bogus window %d", win);
 	}
@@ -610,24 +610,24 @@ plumpcmcia_chip_do_io_map(struct plumpcmcia_handle *ph, int win)
 	size = ph->ph_io[win].pi_size;
 
 	/* Notify I/O area to select for PCMCIA controller */
-	plum_conf_write(regt, regh, PLUM_PCMCIA_IOWINADDRCTRL(win), 
+	plum_conf_write(regt, regh, PLUM_PCMCIA_IOWINADDRCTRL(win),
 	    ph->ph_ioarea);
 
 	/* Start/Stop addr */
 	plum_conf_write(regt, regh, PLUM_PCMCIA_IOWINSTARTADDR(win), addr);
-	plum_conf_write(regt, regh, PLUM_PCMCIA_IOWINSTOPADDR(win), 
+	plum_conf_write(regt, regh, PLUM_PCMCIA_IOWINSTOPADDR(win),
 	    addr + size - 1);
-	
+
 	/* Set bus width */
 	reg = plum_conf_read(regt, regh, PLUM_PCMCIA_IOWINCTRL);
 	shift = win == 0 ? PLUM_PCMCIA_IOWINCTRL_WIN0SHIFT :
 	    PLUM_PCMCIA_IOWINCTRL_WIN1SHIFT;
-	
+
 	reg &= ~(PLUM_PCMCIA_IOWINCTRL_WINMASK << shift);
 	reg |= ((ioctlbits[ph->ph_io[win].pi_width] |
 	    PLUM_PCMCIA_IOWINCTRL_ZEROWAIT) << shift);
 	plum_conf_write(regt, regh, PLUM_PCMCIA_IOWINCTRL, reg);
-	
+
 	/* Enable window */
 	reg = plum_conf_read(regt, regh, PLUM_PCMCIA_WINEN);
 	reg |= (win == 0 ? PLUM_PCMCIA_WINEN_IO0 :
@@ -647,7 +647,7 @@ plumpcmcia_chip_io_free(pcmcia_chipset_handle_t pch,
 		bus_space_unmap(pcihp->iot, pcihp->ioh, pcihp->size);
 	}
 
-	DPRINTF(("plumpcmcia_chip_io_free %#x+%#x\n", pcihp->ioh, 
+	DPRINTF(("plumpcmcia_chip_io_free %#x+%#x\n", pcihp->ioh,
 	    (unsigned)pcihp->size));
 }
 
@@ -658,7 +658,7 @@ plumpcmcia_chip_io_unmap(pcmcia_chipset_handle_t pch, int window)
 	bus_space_tag_t regt = ph->ph_regt;
 	bus_space_handle_t regh = ph->ph_regh;
 	plumreg_t reg;
-	
+
 	reg = plum_conf_read(regt, regh, PLUM_PCMCIA_WINEN);
 	switch (window) {
 	default:
@@ -682,7 +682,7 @@ plumpcmcia_wait_ready(struct plumpcmcia_handle *ph)
 	int i;
 
 	for (i = 0; i < 10000; i++) {
-		if ((plum_conf_read(regt, regh, PLUM_PCMCIA_STATUS) & 
+		if ((plum_conf_read(regt, regh, PLUM_PCMCIA_STATUS) &
 		    PLUM_PCMCIA_STATUS_READY) &&
 		    (plum_conf_read(regt, regh, PLUM_PCMCIA_STATUS) &
 			PLUM_PCMCIA_STATUS_PWROK)) {
@@ -719,29 +719,29 @@ plumpcmcia_chip_socket_enable(pcmcia_chipset_handle_t pch)
 	/* power down the socket to reset it, clear the card reset pin */
 	plum_conf_write(regt, regh, PLUM_PCMCIA_PWRCTRL, 0);
 
-	/* 
+	/*
 	 * wait 300ms until power fails (Tpf).  Then, wait 100ms since
 	 * we are changing Vcc (Toff).
 	 */
 	delay((300 + 100) * 1000);
 
-	/* 
-	 *  power up the socket 
+	/*
+	 *  power up the socket
 	 */
 	/* detect voltage */
 	reg = plum_conf_read(regt, regh, PLUM_PCMCIA_GENCTRL2);
-	if ((reg & PLUM_PCMCIA_GENCTRL2_VCC5V) == 
+	if ((reg & PLUM_PCMCIA_GENCTRL2_VCC5V) ==
 	    PLUM_PCMCIA_GENCTRL2_VCC5V) {
 		power = PLUM_PCMCIA_PWRCTRL_VCC_CTRLBIT1; /* 5V */
 	} else {
 		power = PLUM_PCMCIA_PWRCTRL_VCC_CTRLBIT0; /* 3.3V */
 	}
 
-	plum_conf_write(regt, regh, PLUM_PCMCIA_PWRCTRL, 
+	plum_conf_write(regt, regh, PLUM_PCMCIA_PWRCTRL,
 	    PLUM_PCMCIA_PWRCTRL_DISABLE_RESETDRV |
 	    power |
 	    PLUM_PCMCIA_PWRCTRL_PWR_ENABLE);
-	
+
 	/*
 	 * wait 100ms until power raise (Tpr) and 20ms to become
 	 * stable (Tsu(Vcc)).
@@ -751,7 +751,7 @@ plumpcmcia_chip_socket_enable(pcmcia_chipset_handle_t pch)
 	 */
 	delay((100 + 20 + 300) * 1000);
 
-	plum_conf_write(regt, regh, PLUM_PCMCIA_PWRCTRL, 
+	plum_conf_write(regt, regh, PLUM_PCMCIA_PWRCTRL,
 	    PLUM_PCMCIA_PWRCTRL_DISABLE_RESETDRV |
 	    power |
 	    PLUM_PCMCIA_PWRCTRL_OE |
@@ -806,7 +806,7 @@ plumpcmcia_chip_socket_settype(pcmcia_chipset_handle_t pch, int type)
 		reg |= PLUM_PCMCIA_GENCTRL_CARDTYPE_MEM;
 
 	DPRINTF(("%s: plumpcmcia_chip_socket_enable type %s %02x\n",
-	    device_xname(ph->ph_parent), 
+	    device_xname(ph->ph_parent),
 	    ((cardtype == PCMCIA_IFTYPE_IO) ? "io" : "mem"), reg));
 
 	plum_conf_write(regt, regh, PLUM_PCMCIA_GENCTRL, reg);
@@ -845,7 +845,7 @@ plum_csc_intr_setup(struct plumpcmcia_softc *sc, struct plumpcmcia_handle *ph,
 	bus_space_handle_t regh = ph->ph_regh;
 	plumreg_t reg;
 	void *ih __diagused;
-	
+
 	/* enable CARD DETECT ENABLE only */
 	plum_conf_write(regt, regh, PLUM_PCMCIA_CSCINT,
 	    PLUM_PCMCIA_CSCINT_CARD_DETECT);
@@ -854,7 +854,7 @@ plum_csc_intr_setup(struct plumpcmcia_softc *sc, struct plumpcmcia_handle *ph,
 	reg = plum_conf_read(regt, regh, PLUM_PCMCIA_GLOBALCTRL);
 	reg &= ~PLUM_PCMCIA_GLOBALCTRL_EXPLICIT_WB_CSC_INT;
 	plum_conf_write(regt, regh, PLUM_PCMCIA_GLOBALCTRL, reg);
-	
+
 	/* install interrupt handler (don't fail) */
 	ih = plum_intr_establish(sc->sc_pc, irq, IST_EDGE, IPL_TTY,
 	    plum_csc_intr, ph);
@@ -935,7 +935,7 @@ plumpcmcia_event_thread(void *arg)
 	struct plumpcmcia_softc *sc = arg;
 	struct plumpcmcia_event *pe;
 	int s;
-	
+
 	while (/*CONSTCOND*/1) { /* XXX shutdown. -uch */
 		tsleep(sc, PWAIT, "CSC wait", 0);
 		s = spltty();
@@ -1024,7 +1024,7 @@ __memareadump(plumreg_t reg)
 		printf("MEM Area4\n");
 		break;
 	}
-}	
+}
 
 static void
 plumpcmcia_dump(struct plumpcmcia_softc *sc)
@@ -1034,7 +1034,7 @@ plumpcmcia_dump(struct plumpcmcia_softc *sc)
 	plumreg_t reg;
 
 	int i, j;
-	
+
 	__memareadump(plum_conf_read(regt, regh, PLUM_PCMCIA_MEMWIN0CTRL));
 	__memareadump(plum_conf_read(regt, regh, PLUM_PCMCIA_MEMWIN1CTRL));
 	__memareadump(plum_conf_read(regt, regh, PLUM_PCMCIA_MEMWIN2CTRL));

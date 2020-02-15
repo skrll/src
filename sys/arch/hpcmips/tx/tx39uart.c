@@ -35,10 +35,10 @@ __KERNEL_RCSID(0, "$NetBSD: tx39uart.c,v 1.15 2012/10/27 17:17:54 chs Exp $");
 #include "opt_tx39uart_debug.h"
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
-#include <machine/bus.h>
 #include <machine/intr.h>
 
 #include <hpcmips/tx/tx39var.h>
@@ -83,7 +83,7 @@ tx39uart_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 {
 	struct tx39uart_softc *sc = device_private(parent);
 	struct tx39uart_attach_args ua;
-	
+
 	ua.ua_tc	= sc->sc_tc;
 	ua.ua_slot	= cf->cf_loc[TXCOMIFCF_SLOT];
 
@@ -91,7 +91,7 @@ tx39uart_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 		printf("tx39uart_search: wildcarded slot, skipping\n");
 		return 0;
 	}
-	
+
 	if (!(sc->sc_enabled & (1 << ua.ua_slot)) && /* not attached slot */
 	    config_match(parent, cf, &ua)) {
 		config_attach(parent, cf, &ua, tx39uart_print);
@@ -105,7 +105,7 @@ int
 tx39uart_print(void *aux, const char *pnp)
 {
 	struct tx39uart_attach_args *ua = aux;
-	
+
 	aprint_normal(" slot %d", ua->ua_slot);
 
 	return QUIET;

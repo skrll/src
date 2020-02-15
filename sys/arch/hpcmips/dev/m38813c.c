@@ -39,10 +39,10 @@ __KERNEL_RCSID(0, "$NetBSD: m38813c.c,v 1.13 2012/10/27 17:17:52 chs Exp $");
 #include "opt_use_poll.h"
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
-#include <machine/bus.h>
 #include <machine/intr.h>
 
 #include <dev/hpc/hpckbdvar.h>
@@ -99,7 +99,7 @@ m38813c_attach(device_t parent, device_t self, void *aux)
 	sc->sc_chip = &m38813c_chip;
 	sc->sc_chip->scc_cst = ca->ca_csio.cstag;
 
-	if (bus_space_map(sc->sc_chip->scc_cst, ca->ca_csio.csbase, 
+	if (bus_space_map(sc->sc_chip->scc_cst, ca->ca_csio.csbase,
 	    ca->ca_csio.cssize, 0, &sc->sc_chip->scc_csh)) {
 		printf(": can't map i/o space\n");
 	}
@@ -137,7 +137,7 @@ int
 m38813c_cnattach(paddr_t addr)
 {
 	struct m38813c_chip *scc = &m38813c_chip;
-	
+
 	scc->scc_csh = MIPS_PHYS_TO_KSEG1(addr);
 
 	m38813c_ifsetup(scc);
@@ -184,7 +184,7 @@ m38813c_poll(void *arg)
 	}
 
 	datain= bus_space_read_1(t, h, 0);
-	
+
 	hpckbd_input_hook(scc->scc_hpckbd);
 
 	if (datain == KBR_EXTENDED0) {

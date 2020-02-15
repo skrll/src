@@ -29,11 +29,11 @@
 __KERNEL_RCSID(0, "$NetBSD: vrc4172pwm.c,v 1.22 2012/10/27 17:17:55 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/reboot.h>
 
-#include <machine/bus.h>
 #include <machine/config_hook.h>
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
@@ -159,13 +159,13 @@ vrc4172pwmprobe(device_t parent, cfdata_t cf, void *aux)
 
 	if (va->va_addr == VRIPIFCF_ADDR_DEFAULT)
 		return (0);
- 
+
 	if (cf->cf_loc[VRIPIFCF_PLATFORM] == 0)
 		return (0);
 	if (cf->cf_loc[VRIPIFCF_PLATFORM] != -1) { /* if specify */
 		mask = PLATID_DEREF(cf->cf_loc[VRIPIFCF_PLATFORM]);
 		VPRINTF(("vrc4172pwmprobe: check platid\n"));
-		if (platid_match(&platid, &mask) == 0)	
+		if (platid_match(&platid, &mask) == 0)
 			return (0);
 		param = vrc4172pwm_getparam();
 		if (param != NULL && param->brokenprobe)
@@ -243,7 +243,7 @@ vrc4172pwmattach(device_t parent, device_t self, void *aux)
 	this_pwm = sc;
 }
 
-/* 
+/*
  * get platform related brightness paramerters
  */
 struct vrc4172pwm_param *
@@ -378,7 +378,7 @@ vrc4172pwm_brightness2rawduty(struct vrc4172pwm_softc *sc)
 
 
 /*
- * PWM config hook events 
+ * PWM config hook events
  *
  */
 int
@@ -387,7 +387,7 @@ vrc4172pwm_event(void *ctx, int type, long id, void *msg)
 	struct vrc4172pwm_softc *sc = (struct vrc4172pwm_softc *)ctx;
         int why =(int)msg;
 
-	if (type == CONFIG_HOOK_POWERCONTROL 
+	if (type == CONFIG_HOOK_POWERCONTROL
 	    && id == CONFIG_HOOK_POWERCONTROL_LCDLIGHT) {
 		DPRINTF(("vrc4172pwm:POWERCONTROL_LCDLIGHT: %d\n", why));
 		vrc4172pwm_light(sc, why);
@@ -415,12 +415,12 @@ vrc4172pwm_event(void *ctx, int type, long id, void *msg)
 		    type, id));
 		return (1);
 	}
-	
+
         return (0);
 }
 
 /*
- * PWM config hook events 
+ * PWM config hook events
  *
  */
 int
@@ -431,7 +431,7 @@ vrc4172pwm_pmevent(void *ctx, int type, long id, void *msg)
 
 	if (type != CONFIG_HOOK_PMEVENT)
 		return (1);
-		
+
         switch (why) {
 	case PWR_STANDBY:
 	case PWR_SUSPEND:

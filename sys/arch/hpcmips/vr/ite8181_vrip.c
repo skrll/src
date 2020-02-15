@@ -33,10 +33,9 @@
 __KERNEL_RCSID(0, "$NetBSD: ite8181_vrip.c,v 1.10 2012/10/27 17:17:55 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-
-#include <machine/bus.h>
 
 #include "opt_vr41xx.h"
 #include <hpcmips/vr/vrcpudef.h>
@@ -44,7 +43,7 @@ __KERNEL_RCSID(0, "$NetBSD: ite8181_vrip.c,v 1.10 2012/10/27 17:17:55 chs Exp $"
 #include <hpcmips/dev/ite8181var.h>
 #include "bivideo.h"
 #if NBIVIDEO > 0
-#include <dev/hpc/bivideovar.h>     
+#include <dev/hpc/bivideovar.h>
 #endif
 
 #include "locators.h"

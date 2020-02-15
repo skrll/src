@@ -35,11 +35,11 @@ __KERNEL_RCSID(0, "$NetBSD: plumpower.c,v 1.13 2012/10/27 17:17:53 chs Exp $");
 #undef PLUMPOWERDEBUG
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
 
-#include <machine/bus.h>
 #include <machine/intr.h>
 
 #include <hpcmips/tx/tx39var.h>
@@ -88,7 +88,7 @@ plumpower_attach(device_t parent, device_t self, void *aux)
 	sc->sc_pc	= pa->pa_pc;
 	sc->sc_regt	= pa->pa_regt;
 
-	if (bus_space_map(sc->sc_regt, PLUM_POWER_REGBASE, 
+	if (bus_space_map(sc->sc_regt, PLUM_POWER_REGBASE,
 	    PLUM_POWER_REGSIZE, 0, &sc->sc_regh)) {
 		printf(": register map failed\n");
 		return;
@@ -98,9 +98,9 @@ plumpower_attach(device_t parent, device_t self, void *aux)
 	plumpower_dump(sc);
 #endif
 	/* disable all power/clock */
-	plum_conf_write(sc->sc_regt, sc->sc_regh, 
+	plum_conf_write(sc->sc_regt, sc->sc_regh,
 	    PLUM_POWER_PWRCONT_REG, 0);
-	plum_conf_write(sc->sc_regt, sc->sc_regh, 
+	plum_conf_write(sc->sc_regt, sc->sc_regh,
 	    PLUM_POWER_CLKCONT_REG, 0);
 
 	/* enable MCS interface from TX3922 */
@@ -111,10 +111,10 @@ plumpower_attach(device_t parent, device_t self, void *aux)
 void
 plum_power_ioreset(plum_chipset_tag_t pc)
 {
-	struct plumpower_softc *sc = pc->pc_powert;	
+	struct plumpower_softc *sc = pc->pc_powert;
 	bus_space_tag_t regt = sc->sc_regt;
 	bus_space_handle_t regh = sc->sc_regh;
-	
+
 	plum_conf_write(regt, regh, PLUM_POWER_RESETC_REG,
 	    PLUM_POWER_RESETC_IO5CL1 |
 	    PLUM_POWER_RESETC_IO5CL1);
@@ -131,7 +131,7 @@ plum_power_establish(plum_chipset_tag_t pc, int src)
 
 	pwrreg = plum_conf_read(regt, regh, PLUM_POWER_PWRCONT_REG);
 	clkreg = plum_conf_read(regt, regh, PLUM_POWER_CLKCONT_REG);
-	
+
 	switch(src) {
 	default:
 		panic("plum_power_establish: unknown power source");
@@ -171,11 +171,11 @@ plum_power_establish(plum_chipset_tag_t pc, int src)
 		pwrreg |= PLUM_POWER_PWRCONT_USBEN;
 		/* supply clock to the USB host controller */
 		clkreg |= PLUM_POWER_CLKCONT_USBCLK1;
-		/* 
-		 * clock supply is adaptively controlled by hardware 
+		/*
+		 * clock supply is adaptively controlled by hardware
 		 * (recommended)
 		 */
-		clkreg &= ~PLUM_POWER_CLKCONT_USBCLK2; 
+		clkreg &= ~PLUM_POWER_CLKCONT_USBCLK2;
 		break;
 	case PLUM_PWR_SM:
 		clkreg |= PLUM_POWER_CLKCONT_SMCLK;
@@ -207,7 +207,7 @@ plum_power_disestablish(plum_chipset_tag_t pc, int ph)
 
 	pwrreg = plum_conf_read(regt, regh, PLUM_POWER_PWRCONT_REG);
 	clkreg = plum_conf_read(regt, regh, PLUM_POWER_CLKCONT_REG);
-	
+
 	switch(src) {
 	default:
 		panic("plum_power_disestablish: unknown power source");

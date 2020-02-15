@@ -33,10 +33,9 @@
 __KERNEL_RCSID(0, "$NetBSD: tx39io.c,v 1.23 2012/10/27 17:17:54 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-
-#include <machine/bus.h>
 
 #include <hpcmips/tx/tx39var.h>
 #include <hpcmips/tx/tx39icureg.h>

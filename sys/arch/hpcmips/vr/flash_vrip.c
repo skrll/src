@@ -37,14 +37,13 @@
 __KERNEL_RCSID(0, "$NetBSD: flash_vrip.c,v 1.12 2019/11/10 21:16:28 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/conf.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
 #include <sys/malloc.h>
 #include <sys/proc.h>
 #include <sys/systm.h>
-
-#include <machine/bus.h>
 
 #include <hpcmips/vr/vripif.h>
 #include <hpcmips/vr/cfireg.h>
@@ -221,7 +220,7 @@ flash_attach(device_t parent, device_t self, void *aux)
 		printf(": can't map i/o space\n");
                 return;
   	}
-	
+
 	sc->sc_iot = iot;
 	sc->sc_ioh = ioh;
 	sc->sc_size = va->va_size;
@@ -261,7 +260,7 @@ flash_attach(device_t parent, device_t self, void *aux)
 		if (sc->sc_block_size < block_size)
 			sc->sc_block_size = block_size;
 	}
-	
+
 	sc->sc_buf = malloc(sc->sc_block_size, M_DEVBUF, M_WAITOK);
 
 	sc->sc_write_buffer_size
@@ -437,7 +436,7 @@ i28f128_probe(bus_space_tag_t iot, bus_space_handle_t ioh)
 		return 1;
 	if (bus_space_read_2(iot, ioh, 0x02) != vendor_code[1])
 		return 1;
-	
+
 	bus_space_write_2(iot, ioh, 0, I28F128_RESET);
 	return 0;
 }
@@ -481,7 +480,7 @@ mbm29160_probe(bus_space_tag_t iot, bus_space_handle_t ioh)
 		return 1;
 	if (bus_space_read_2(iot, ioh, 0x02) != vendor_code[1])
 		return 1;
-	
+
 	bus_space_write_2(iot, ioh, 0, 0xff);
 	return 0;
 }
@@ -520,8 +519,8 @@ intel_erase(struct flash_softc *sc, bus_size_t offset)
 		    & I28F128_S_READY)
 			break;
 	}
-	if (i == 0) 
-		status |= FLASH_TIMEOUT; 
+	if (i == 0)
+		status |= FLASH_TIMEOUT;
 
 	bus_space_write_2(iot, ioh, offset, I28F128_CLEAR_STATUS);
 	bus_space_write_2(iot, ioh, offset, I28F128_RESET);

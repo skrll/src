@@ -34,9 +34,10 @@
 __KERNEL_RCSID(0, "$NetBSD: optpoint.c,v 1.7 2012/10/27 17:17:52 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <machine/bus.h>
+
 #include <machine/config_hook.h>
 #include <dev/hpc/hpciovar.h>
 #include <dev/wscons/wsconsio.h>
@@ -251,7 +252,7 @@ optpoint_ioctl(void *cookie, u_long cmd, void *data, int flag, struct lwp *l)
 	case WSMOUSEIO_GTYPE:
 		*(u_int *)data = WSMOUSE_TYPE_PS2;
 		break;
-		
+
 	default:
 		return (EPASSTHROUGH);
 	}

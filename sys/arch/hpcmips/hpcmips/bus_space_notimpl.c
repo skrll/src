@@ -33,8 +33,8 @@
 __KERNEL_RCSID(0, "$NetBSD: bus_space_notimpl.c,v 1.8 2007/12/15 00:39:18 perry Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
-#include <machine/bus.h>
 
 bus_space_protos(bs_notimpl);
 

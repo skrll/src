@@ -35,6 +35,7 @@ __KERNEL_RCSID(0, "$NetBSD: isa_machdep.c,v 1.39 2012/10/27 17:17:54 chs Exp $")
 #include "opt_vr41xx.h"
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/reboot.h>
 #include <sys/device.h>
@@ -44,7 +45,6 @@ __KERNEL_RCSID(0, "$NetBSD: isa_machdep.c,v 1.39 2012/10/27 17:17:54 chs Exp $")
 
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
-#include <machine/bus.h>
 #include <machine/bus_space_hpcmips.h>
 #include <machine/debug.h>
 
@@ -121,7 +121,7 @@ vrisabmatch(device_t parent, cfdata_t match, void *aux)
 	if (strcmp(haa->haa_busname, match->cf_name))
 		return (0);
 
-	if (match->cf_loc[HPCIOIFCF_PLATFORM] == HPCIOIFCF_PLATFORM_DEFAULT) 
+	if (match->cf_loc[HPCIOIFCF_PLATFORM] == HPCIOIFCF_PLATFORM_DEFAULT)
 		return (1);
 
 	mask = PLATID_DEREF(match->cf_loc[HPCIOIFCF_PLATFORM]);
@@ -140,7 +140,7 @@ vrisabattach(device_t parent, device_t self, void *aux)
 	struct bus_space_tag_hpcmips *iot, *memt;
 	bus_addr_t offset;
 	int i;
-    
+
 	sc->sc_hc = (*haa->haa_getchip)(haa->haa_sc, VRIP_IOCHIP_VRGIU);
 	sc->sc_isa_ic.ic_sc = sc;
 
@@ -240,7 +240,7 @@ isa_intr_establish(isa_chipset_tag_t ic, int intr, int type, int level,
 		"edge hold",
 	};
 #endif /* VRISADEBUG */
-	/* 
+	/*
 	 * ISA IRQ <-> GPIO port mapping
 	 */
 	irq = INTR_IRQ(intr);
@@ -289,7 +289,7 @@ __find_pcic(void)
 	int i, j, step, found;
 	u_int32_t addr;
 	u_int8_t reg;
-	int __read_revid (u_int32_t port) 
+	int __read_revid (u_int32_t port)
 	    {
 		    addr = MIPS_PHYS_TO_KSEG1(i + port);
 		    printf("%#x\r", i);
@@ -310,7 +310,7 @@ __find_pcic(void)
 		    }
 	    }
 	step = 0x1000000;
-	printf("\nFinding PCIC. Trying ISA port %#x-%#x step %#x\n", 
+	printf("\nFinding PCIC. Trying ISA port %#x-%#x step %#x\n",
 	    VR_ISA_PORT_BASE, VR_ISA_PORT_BASE + VR_ISA_PORT_SIZE, step);
 	for (i = VR_ISA_PORT_BASE; i < VR_ISA_PORT_BASE+VR_ISA_PORT_SIZE;
 	    i+= step) {

@@ -26,15 +26,16 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: vrdcu.c,v 1.8 2015/06/11 08:22:09 matt Exp $");
 
+#define _MIPS_BUS_DMA_PRIVATE
+
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
 #include <uvm/uvm_extern.h>
 
 #include <machine/cpu.h>
-#include <machine/bus.h>
-#include <machine/bus_dma_hpcmips.h>
 
 #include <hpcmips/vr/vripif.h>
 #include <hpcmips/vr/dcureg.h>
@@ -67,23 +68,18 @@ void vrdcu_fir_direction(vrdcu_chipset_tag_t, int);
 int _vrdcu_dmamem_alloc(bus_dma_tag_t, bus_size_t, bus_size_t,
 			bus_size_t, bus_dma_segment_t *, int, int *, int);
 
-struct bus_dma_tag vrdcu_bus_dma_tag = {
-	NULL,
-	{
-		_hpcmips_bd_map_create,
-		_hpcmips_bd_map_destroy,
-		_hpcmips_bd_map_load,
-		_hpcmips_bd_map_load_mbuf,
-		_hpcmips_bd_map_load_uio,
-		_hpcmips_bd_map_load_raw,
-		_hpcmips_bd_map_unload,
-		_hpcmips_bd_map_sync,
-		_vrdcu_dmamem_alloc,
-		_hpcmips_bd_mem_free,
-		_hpcmips_bd_mem_map,
-		_hpcmips_bd_mem_unmap,
-		_hpcmips_bd_mem_mmap,
+
+
+struct mips_bus_dma_tag vrdcu_bus_dma_tag = {
+	._dmamap_ops = _BUS_DMAMAP_OPS_INITIALIZER,
+	._dmamem_ops = {
+		.dmamem_alloc = 	_vrdcu_dmamem_alloc,
+		.dmamem_free =		_bus_dmamem_free,
+		.dmamem_map =		_bus_dmamem_map,
+		.dmamem_unmap =		_bus_dmamem_unmap,
+		.dmamem_mmap =		_bus_dmamem_mmap,
 	},
+	._dmatag_ops = _BUS_DMATAG_OPS_INITIALIZER,
 };
 
 int
@@ -227,7 +223,7 @@ _vrdcu_dmamem_alloc(bus_dma_tag_t t, bus_size_t size, bus_size_t alignment,
 	alignment = alignment > VRDMAAU_ALIGNMENT ?
 		    alignment : VRDMAAU_ALIGNMENT;
 
-	return _hpcmips_bd_mem_alloc_range(t, size, alignment, boundary,
+	return _bus_dmamem_alloc_range(t, size, alignment, boundary,
 					   segs, nsegs, rsegs, flags,
 					   pmap_limits.avail_start, high);
 }

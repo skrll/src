@@ -39,10 +39,10 @@ __KERNEL_RCSID(0, "$NetBSD: tx39ir.c,v 1.10 2012/10/27 17:17:54 chs Exp $");
 #undef TX39IRDEBUG
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
-#include <machine/bus.h>
 #include <machine/intr.h>
 
 #include <hpcmips/tx/tx39var.h>
@@ -120,7 +120,7 @@ tx39ir_attach(device_t parent, device_t self, void *aux)
 
 #ifdef TX39IRDEBUG
 	tx39ir_dump(sc);
-#endif	
+#endif
 }
 
 #ifdef TX39IRDEBUG

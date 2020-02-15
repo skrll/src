@@ -33,10 +33,10 @@
 __KERNEL_RCSID(0, "$NetBSD: plumicu.c,v 1.12 2012/10/27 17:17:52 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
-#include <machine/bus.h>
 #include <machine/intr.h>
 
 #include <hpcmips/tx/tx39var.h>
@@ -63,23 +63,23 @@ const struct plum_intr_ctrl {
 	plumreg_t	ic_ienpat;	int	ic_ienreg;
 	plumreg_t	ic_senpat;	int	ic_senreg;
 } pi_ctrl[PLUM_INTR_MAX] = {
-	[PLUM_INT_C1IO]	= {PLUM_INT_INTSTA_PCCINT,	
+	[PLUM_INT_C1IO]	= {PLUM_INT_INTSTA_PCCINT,
 			   PLUM_INT_PCCINTS_C1IO,	PLUM_INT_PCCINTS_REG,
 			   PLUM_INT_PCCIEN_IENC1IO,	PLUM_INT_PCCIEN_REG,
 			   PLUM_INT_PCCIEN_SENC1IO,	PLUM_INT_PCCIEN_REG
 	},
-	[PLUM_INT_C1RI] = {PLUM_INT_INTSTA_PCCINT,	
+	[PLUM_INT_C1RI] = {PLUM_INT_INTSTA_PCCINT,
 			   PLUM_INT_PCCINTS_C1RI,	PLUM_INT_PCCINTS_REG,
 			   PLUM_INT_PCCIEN_IENC1RI,	PLUM_INT_PCCIEN_REG,
 			   PLUM_INT_PCCIEN_SENC1RI,	PLUM_INT_PCCIEN_REG
 	},
 	[PLUM_INT_C1SC] = {PLUM_INT_INTSTA_C1SCINT,	0, 0, 0, 0, 0, 0},
-	[PLUM_INT_C2IO] = {PLUM_INT_INTSTA_PCCINT,	
+	[PLUM_INT_C2IO] = {PLUM_INT_INTSTA_PCCINT,
 			   PLUM_INT_PCCINTS_C2IO,	PLUM_INT_PCCINTS_REG,
 			   PLUM_INT_PCCIEN_IENC2IO,	PLUM_INT_PCCIEN_REG,
 			   PLUM_INT_PCCIEN_SENC2IO,	PLUM_INT_PCCIEN_REG
 	},
-	[PLUM_INT_C2RI] = {PLUM_INT_INTSTA_PCCINT,	
+	[PLUM_INT_C2RI] = {PLUM_INT_INTSTA_PCCINT,
 			   PLUM_INT_PCCINTS_C2RI,	PLUM_INT_PCCINTS_REG,
 			   PLUM_INT_PCCIEN_IENC2RI,	PLUM_INT_PCCIEN_REG,
 			   PLUM_INT_PCCIEN_SENC2RI,	PLUM_INT_PCCIEN_REG
@@ -101,7 +101,7 @@ const struct plum_intr_ctrl {
 			   PLUM_INT_SMIEN,		PLUM_INT_SMIEN_REG,
 			   0, 0
 	},
-	[PLUM_INT_EXT5IO0] = {PLUM_INT_INTSTA_EXTINT,	
+	[PLUM_INT_EXT5IO0] = {PLUM_INT_INTSTA_EXTINT,
 			   PLUM_INT_EXTINTS_IO5INT0,	PLUM_INT_EXTINTS_REG,
 			   PLUM_INT_EXTIEN_IENIO5INT0,	PLUM_INT_EXTIEN_REG,
 			   PLUM_INT_EXTIEN_SENIO5INT0,	PLUM_INT_EXTIEN_REG,
@@ -177,9 +177,9 @@ plumicu_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_pc	= pa->pa_pc;
 	sc->sc_regt	= pa->pa_regt;
-	
+
 	/* map plum2 interrupt controller register space */
-	if (bus_space_map(sc->sc_regt, PLUM_INT_REGBASE, 
+	if (bus_space_map(sc->sc_regt, PLUM_INT_REGBASE,
 			  PLUM_INT_REGSIZE, 0, &sc->sc_regh)) {
 		printf(":interrupt register map failed\n");
 		return;
@@ -203,10 +203,10 @@ plumicu_attach(device_t parent, device_t self, void *aux)
 			plum_conf_write(regt, regh, pic->ic_senreg, reg);
 		}
 	}
-	
+
 	/* register handle to plum_chipset_tag */
 	plum_conf_register_intr(sc->sc_pc, (void*)sc);
-	
+
 	/* disable interrupt redirect to TX39 core */
 	plum_di(sc->sc_pc);
 
@@ -254,9 +254,9 @@ plum_intr_establish(plum_chipset_tag_t pc, int line, int mode, int level,
 	pi->pi_fun  = ih_fun;
 	pi->pi_arg  = ih_arg;
 	pi->pi_ctrl = &pi_ctrl[line];
-	
+
 	/* Enable interrupt */
-	
+
 	/* status enable */
 	if (pi->pi_ctrl->ic_senreg) {
 		reg = plum_conf_read(regt, regh, pi->pi_ctrl->ic_senreg);
@@ -291,7 +291,7 @@ plum_intr_disestablish(plum_chipset_tag_t pc, void *arg)
 	plumreg_t reg;
 	struct plum_intr_entry *pi;
 	int i;
-	
+
 	sc = pc->pc_intrt;
 
 	for (i = 0; i < PLUM_INTR_MAX; i++) {
@@ -317,7 +317,7 @@ plum_intr_disestablish(plum_chipset_tag_t pc, void *arg)
 		reg &= ~(pi->pi_ctrl->ic_senpat);
 		plum_conf_write(regt, regh, pi->pi_ctrl->ic_senreg, reg);
 	}
-	
+
 	/* Disable/Enable interrupt redirect to TX39 core */
 	if (--sc->sc_enable_count == 0)
 		plum_di(pc);
@@ -331,7 +331,7 @@ plumicu_intr(void *arg)
 	bus_space_handle_t regh = sc->sc_regh;
 	plumreg_t reg1, reg2, reg_ext, reg_pccard;
 	int i;
-	
+
 	plum_di(sc->sc_pc);
 	/* read level 1 status */
 	reg1 = plum_conf_read(regt, regh, PLUM_INT_INTSTA_REG);
@@ -358,10 +358,10 @@ plumicu_intr(void *arg)
 			(*pi->pi_fun)(pi->pi_arg);
 			continue;
 		}
-			
+
 		reg2 = pic->ic_ackreg2 == PLUM_INT_PCCINTS_REG
 			? reg_pccard : reg_ext;
-		
+
 		if (pic->ic_ackpat2 & reg2)
 			(*pi->pi_fun)(pi->pi_arg);
 	}
@@ -377,7 +377,7 @@ plumicu_dump(struct plumicu_softc *sc)
 	bus_space_tag_t regt = sc->sc_regt;
 	bus_space_handle_t regh = sc->sc_regh;
 	plumreg_t reg;
-	
+
 	printf("status:");
 	reg = plum_conf_read(regt, regh, PLUM_INT_INTSTA_REG);
 	dbg_bit_print(reg);

@@ -35,13 +35,13 @@
 __KERNEL_RCSID(0, "$NetBSD: vrdsiu_mouse.c,v 1.12 2012/10/27 17:17:56 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
 #include <dev/wscons/wsconsio.h>
 #include <dev/wscons/wsmousevar.h>
 
-#include <machine/bus.h>
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
 
@@ -260,7 +260,7 @@ vrdsiu_mouse_intr(struct vrdsiu_softc *sc)
 {
 	u_int intrReason;
 	unsigned char b;
-	
+
 	static int dx;
 	static int dy;
 	static u_char buttons;
@@ -268,7 +268,7 @@ vrdsiu_mouse_intr(struct vrdsiu_softc *sc)
 
 	/* What caused the interrupt? */
 	intrReason = vrdsiu_read(sc, DSIUINTR0_REG_W);
-		
+
 	/*
 	 * TODO: Check for error conditions; specifically need to handle
 	 *       overruns (which currently mess up the mouse).
@@ -338,7 +338,7 @@ vrdsiu_mouse_intr(struct vrdsiu_softc *sc)
 		dx = (signed char)b;
 		if (dx == -128)
 			dx = -127;
-		
+
 		ps2_state = VRDSIU_PS2_INPUT_STATE_BYTE2;
 		break;
 

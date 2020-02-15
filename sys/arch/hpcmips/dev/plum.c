@@ -33,11 +33,11 @@
 __KERNEL_RCSID(0, "$NetBSD: plum.c,v 1.17 2019/11/10 21:16:28 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
 
-#include <machine/bus.h>
 #include <machine/intr.h>
 
 #include <hpcmips/tx/tx39var.h>
@@ -106,15 +106,15 @@ plum_attach(device_t parent, device_t self, void *aux)
 	sc->sc_pc = malloc(sizeof(struct plum_chipset_tag),
 	    M_DEVBUF, M_WAITOK | M_ZERO);
 	sc->sc_pc->pc_tc = ca->ca_tc;
-	
+
 	/* Attach Plum devices */
-	/* 
+	/*
 	 * interrupt, power/clock module is used by other plum module.
 	 * attach first.
 	 */
 	sc->sc_pri = 2;
 	config_search_ia(plum_search, self, "plumif", plum_print);
-	/* 
+	/*
 	 * Other plum module.
 	 */
 	sc->sc_pri = 1;
@@ -127,14 +127,14 @@ plum_idcheck(bus_space_tag_t regt)
 	bus_space_handle_t regh;
 	plumreg_t reg;
 
-	if (bus_space_map(regt, PLUM_ID_REGBASE, 
+	if (bus_space_map(regt, PLUM_ID_REGBASE,
 	    PLUM_ID_REGSIZE, 0, &regh)) {
 		printf("ID register map failed\n");
 		return (0);
 	}
 	reg = plum_conf_read(regt, regh, PLUM_ID_REG);
 	bus_space_unmap(regt, regh, PLUM_ID_REGSIZE);
-	
+
 	return (reg);
 }
 
@@ -150,7 +150,7 @@ plum_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 {
 	struct plum_softc *sc = device_private(parent);
 	struct plum_attach_args pa;
-	
+
 	pa.pa_pc	= sc->sc_pc;
 	pa.pa_regt	= sc->sc_csregt;
 	pa.pa_iot	= sc->sc_csiot;

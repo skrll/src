@@ -35,10 +35,10 @@ __KERNEL_RCSID(0, "$NetBSD: teliosio.c,v 1.4 2012/10/27 17:17:53 chs Exp $");
 #include "apmdev.h"
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
-#include <machine/bus.h>
 #include <machine/config_hook.h>
 
 #include <hpcmips/tx/tx39var.h>

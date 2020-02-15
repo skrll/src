@@ -34,4 +34,4 @@ struct vrdcu_chipset_tag {
 	void	(*dc_fir_direction)(vrdcu_chipset_tag_t, int);
 };
 
-extern struct bus_dma_tag vrdcu_bus_dma_tag;
+extern struct mips_bus_dma_tag vrdcu_bus_dma_tag;

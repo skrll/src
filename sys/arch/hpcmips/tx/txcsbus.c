@@ -33,11 +33,11 @@
 __KERNEL_RCSID(0, "$NetBSD: txcsbus.c,v 1.22 2012/10/27 17:17:54 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
 #include <machine/intr.h>
-#include <machine/bus.h>
 #include <machine/bus_space_hpcmips.h>
 
 #include <machine/platid.h>
@@ -107,7 +107,7 @@ struct txcsbus_softc {
 CFATTACH_DECL_NEW(txcsbus, sizeof(struct txcsbus_softc),
     txcsbus_match, txcsbus_attach, NULL, NULL);
 
-static bus_space_tag_t __txcsbus_alloc_cstag(struct txcsbus_softc *, 
+static bus_space_tag_t __txcsbus_alloc_cstag(struct txcsbus_softc *,
     struct cs_handle *);
 
 int
@@ -154,9 +154,9 @@ txcsbus_print(void *aux, const char *pnp)
 {
 #define PRINTIRQ(i) i, (i) / 32, (i) % 32
 	struct cs_attach_args *ca = aux;
-	
+
 	if (ca->ca_csreg.cs != TXCSBUSCF_REGCS_DEFAULT) {
-		aprint_normal(" regcs %s %dbit %#x+%#x", 
+		aprint_normal(" regcs %s %dbit %#x+%#x",
 		    __csmap[ca->ca_csreg.cs].cs_name,
 		    ca->ca_csreg.cswidth,
 		    ca->ca_csreg.csbase,
@@ -164,7 +164,7 @@ txcsbus_print(void *aux, const char *pnp)
 	}
 
 	if (ca->ca_csio.cs != TXCSBUSCF_IOCS_DEFAULT) {
-		aprint_normal(" iocs %s %dbit %#x+%#x", 
+		aprint_normal(" iocs %s %dbit %#x+%#x",
 		    __csmap[ca->ca_csio.cs].cs_name,
 		    ca->ca_csio.cswidth,
 		    ca->ca_csio.csbase,
@@ -172,13 +172,13 @@ txcsbus_print(void *aux, const char *pnp)
 	}
 
 	if (ca->ca_csmem.cs != TXCSBUSCF_MEMCS_DEFAULT) {
-		aprint_normal(" memcs %s %dbit %#x+%#x", 
+		aprint_normal(" memcs %s %dbit %#x+%#x",
 		    __csmap[ca->ca_csmem.cs].cs_name,
 		    ca->ca_csmem.cswidth,
 		    ca->ca_csmem.csbase,
 		    ca->ca_csmem.cssize);
 	}
-	
+
 	if (ca->ca_irq1 != TXCSBUSCF_IRQ1_DEFAULT) {
 		aprint_normal(" irq1 %d(%d:%d)", PRINTIRQ(ca->ca_irq1));
 	}
@@ -199,7 +199,7 @@ txcsbus_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 {
 	struct txcsbus_softc *sc = device_private(parent);
 	struct cs_attach_args ca;
-	
+
 	ca.ca_tc		= sc->sc_tc;
 
 	ca.ca_csreg.cs		= cf->cf_loc[TXCSBUSCF_REGCS];
@@ -232,7 +232,7 @@ txcsbus_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	ca.ca_irq1		= cf->cf_loc[TXCSBUSCF_IRQ1];
 	ca.ca_irq2		= cf->cf_loc[TXCSBUSCF_IRQ2];
 	ca.ca_irq3		= cf->cf_loc[TXCSBUSCF_IRQ3];
-	
+
 	if (config_match(parent, cf, &ca) == sc->sc_pri) {
 		config_attach(parent, cf, &ca, txcsbus_print);
 	}
@@ -281,7 +281,7 @@ __txcsbus_alloc_cstag(struct txcsbus_softc *sc, struct cs_handle *csh)
 #endif /* TX391X */
 #ifdef TX392X
 			reg = tx_conf_read(tc, TX39_MEMCONFIG1_REG);
-			reg |= ((cs == TX39_MCS0) ? 
+			reg |= ((cs == TX39_MCS0) ?
 			    TX39_MEMCONFIG1_MCS0_32 :
 			    TX39_MEMCONFIG1_MCS1_32);
 			tx_conf_write(tc, TX39_MEMCONFIG1_REG, reg);
@@ -298,7 +298,7 @@ __txcsbus_alloc_cstag(struct txcsbus_softc *sc, struct cs_handle *csh)
 			/* TX391X always 16bit port */
 #ifdef TX392X
 			reg = tx_conf_read(tc, TX39_MEMCONFIG1_REG);
-			reg &= ~((cs == TX39_MCS0) ? 
+			reg &= ~((cs == TX39_MCS0) ?
 			    TX39_MEMCONFIG1_MCS0_32 :
 			    TX39_MEMCONFIG1_MCS1_32);
 			tx_conf_write(tc, TX39_MEMCONFIG1_REG, reg);

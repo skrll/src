@@ -38,11 +38,11 @@
 __KERNEL_RCSID(0, "$NetBSD: bcu_vrip.c,v 1.30 2012/10/27 17:17:54 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/reboot.h>
 
-#include <machine/bus.h>
 #include <machine/debug.h>
 #include <machine/platid.h>
 #include <machine/platid_mask.h>
@@ -157,7 +157,7 @@ vrbcu_dump_regs(void)
 
 	cpuid = vrbcu_vrip_getcpuid();
 #if !defined(ONLY_VR4181) && !defined(ONLY_VR4102)
-	if (cpuid != BCUREVID_FIXRID_4181 
+	if (cpuid != BCUREVID_FIXRID_4181
 	    && cpuid <= BCUREVID_RID_4131
 	    && cpuid >= BCUREVID_RID_4111) {
 		spdreg = vrbcu_read(sc, BCUCLKSPEED_REG_W);
@@ -205,11 +205,11 @@ vrbcu_dump_regs(void)
 		break;
 #if defined VR4111
 	case BCUREVID_RID_4111:
-		if ((spdreg&BCUCLKSPEED_DIVT2B) == 0) 
+		if ((spdreg&BCUCLKSPEED_DIVT2B) == 0)
 			vtclock = tclock = cpuclock/2;
-		else if ((spdreg&BCUCLKSPEED_DIVT3B) == 0) 
+		else if ((spdreg&BCUCLKSPEED_DIVT3B) == 0)
 			vtclock = tclock = cpuclock/3;
-		else if ((spdreg&BCUCLKSPEED_DIVT4B) == 0) 
+		else if ((spdreg&BCUCLKSPEED_DIVT4B) == 0)
 			vtclock = tclock = cpuclock/4;
 		else
 			vtclock = tclock = 0; /* XXX */
@@ -272,7 +272,7 @@ vrbcu_dump_regs(void)
 	printf("vrbcu: CNT1 %x: ",  reg);
 	dbg_bit_print(reg);
 #if !defined(ONLY_VR4181)
-	if (cpuid != BCUREVID_FIXRID_4181 
+	if (cpuid != BCUREVID_FIXRID_4181
 	    && cpuid <= BCUREVID_RID_4121
 	    && cpuid >= BCUREVID_RID_4102) {
 		reg = vrbcu_read(sc, BCUCNT2_REG_W);
@@ -297,7 +297,7 @@ vrbcu_dump_regs(void)
 	}
 #endif /* !defined(ONLY_VR4181) || !defined(ONLY_VR4122_4131) */
 #if !defined(ONLY_VR4181)
-	if (cpuid != BCUREVID_FIXRID_4181 
+	if (cpuid != BCUREVID_FIXRID_4181
 	    && cpuid <= BCUREVID_RID_4131
 	    && cpuid >= BCUREVID_RID_4111)
 	{
@@ -336,7 +336,7 @@ vrbcu_vrip_getcpuid(void)
 	volatile u_int16_t *revreg;
 
 	if (vr_cpuid != -1)
-		return (vr_cpuid); 
+		return (vr_cpuid);
 
 	if (vr_cpuid == -1) {
 		if (vrbcu_addr() == VR4181_BCU_ADDR)
@@ -348,17 +348,17 @@ vrbcu_vrip_getcpuid(void)
 
 		vr_cpuid = *revreg;
 		vr_cpuid = (vr_cpuid&BCUREVID_RIDMASK)>>BCUREVID_RIDSHFT;
-		if (vrbcu_addr() == VR4181_BCU_ADDR 
+		if (vrbcu_addr() == VR4181_BCU_ADDR
 		    && vr_cpuid == BCUREVID_RID_4181) /* conflict vr4101 */
 			vr_cpuid = BCUREVID_FIXRID_4181;
 	}
 	return (vr_cpuid);
-}	
+}
 
 const char *
 vrbcu_vrip_getcpuname(void)
 {
-	int cpuid;	
+	int cpuid;
 
 	if (vr_cpuname != NULL)
 		return (vr_cpuname);
@@ -367,7 +367,7 @@ vrbcu_vrip_getcpuname(void)
 	vr_cpuname = cpuname[cpuid];
 
 	return (vr_cpuname);
-}	
+}
 
 
 int
@@ -385,7 +385,7 @@ vrbcu_vrip_getcpumajor(void)
 	vr_major = (vr_major&BCUREVID_MJREVMASK)>>BCUREVID_MJREVSHFT;
 
 	return (vr_major);
-}	
+}
 
 int
 vrbcu_vrip_getcpuminor(void)
@@ -402,7 +402,7 @@ vrbcu_vrip_getcpuminor(void)
 	vr_minor = (vr_minor&BCUREVID_MNREVMASK)>>BCUREVID_MNREVSHFT;
 
 	return (vr_minor);
-}	
+}
 
 #define CLKX	18432000	/* CLKX1,CLKX2: 18.432MHz */
 #define MHZ	1000000

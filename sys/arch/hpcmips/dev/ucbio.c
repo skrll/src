@@ -38,10 +38,10 @@
 __KERNEL_RCSID(0, "$NetBSD: ucbio.c,v 1.12 2012/10/27 17:17:53 chs Exp $");
 
 #include <sys/param.h>
+#include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 
-#include <machine/bus.h>
 #include <machine/intr.h>
 
 #include <hpcmips/tx/tx39var.h>
@@ -123,7 +123,7 @@ static void
 betty_out(hpcio_chip_t hc, int port, int onoff)
 {
 	struct ucbio_softc *sc = hc->hc_sc;
-	tx_chipset_tag_t tc = sc->sc_tc;	
+	tx_chipset_tag_t tc = sc->sc_tc;
 	txreg_t reg, pos;
 
 	pos = 1 << port;
@@ -139,7 +139,7 @@ static int
 betty_in(hpcio_chip_t hc, int port)
 {
 	struct ucbio_softc *sc = hc->hc_sc;
-	tx_chipset_tag_t tc = sc->sc_tc;	
+	tx_chipset_tag_t tc = sc->sc_tc;
 	txreg_t reg = txsibsf0_reg_read(tc, UCB1200_IO_DATA_REG);
 
 	return (reg & (1 << port));
@@ -172,10 +172,10 @@ static void
 betty_update(hpcio_chip_t hc)
 {
 	struct ucbio_softc *sc = hc->hc_sc;
-	tx_chipset_tag_t tc = sc->sc_tc;	
+	tx_chipset_tag_t tc = sc->sc_tc;
 	struct betty_port_status *stat = &sc->sc_stat;
 	u_int16_t dir, data;
-	
+
 	sc->sc_ostat = *stat; /* save old status */
 	dir = stat->dir = txsibsf0_reg_read(tc, UCB1200_IO_DIR_REG);
 	data = txsibsf0_reg_read(tc, UCB1200_IO_DATA_REG);
