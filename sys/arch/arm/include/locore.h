@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.h,v 1.31 2019/04/06 03:06:25 thorpej Exp $	*/
+/*	$NetBSD: locore.h,v 1.32 2020/02/15 08:16:11 skrll Exp $	*/
 
 /*
  * Copyright (c) 1994-1996 Mark Brinicombe.

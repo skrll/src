@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_topology.c,v 1.18 2020/01/20 06:50:34 mlelstv Exp $	*/
+/*	$NetBSD: cpu_topology.c,v 1.19 2020/02/15 07:20:41 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2009 Mindaugas Rasiukevicius <rmind at NetBSD org>,
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_topology.c,v 1.18 2020/01/20 06:50:34 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_topology.c,v 1.19 2020/02/15 07:20:41 skrll Exp $");
 
 #include "acpica.h"
 

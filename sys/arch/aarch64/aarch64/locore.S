@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.55 2020/02/09 08:09:58 skrll Exp $	*/
+/*	$NetBSD: locore.S,v 1.56 2020/02/15 08:16:10 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -38,7 +38,7 @@
 #include <aarch64/hypervisor.h>
 #include "assym.h"
 
-RCSID("$NetBSD: locore.S,v 1.55 2020/02/09 08:09:58 skrll Exp $")
+RCSID("$NetBSD: locore.S,v 1.56 2020/02/15 08:16:10 skrll Exp $")
 
 #ifdef AARCH64_DEVICE_MEM_STRONGLY_ORDERED
 #define	MAIR_DEVICE_MEM		MAIR_DEVICE_nGnRnE

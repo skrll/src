@@ -1,4 +1,4 @@
-/*	$NetBSD: gumstix_machdep.c,v 1.64 2020/01/20 22:25:07 skrll Exp $ */
+/*	$NetBSD: gumstix_machdep.c,v 1.65 2020/02/15 08:16:12 skrll Exp $ */
 /*
  * Copyright (C) 2005, 2006, 2007  WIDE Project and SOUM Corporation.
  * All rights reserved.

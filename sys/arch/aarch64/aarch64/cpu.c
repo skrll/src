@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.40 2020/02/09 08:14:55 skrll Exp $ */
+/* $NetBSD: cpu.c,v 1.41 2020/02/15 08:16:10 skrll Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.40 2020/02/09 08:14:55 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.41 2020/02/15 08:16:10 skrll Exp $");
 
 #include "locators.h"
 #include "opt_arm_debug.h"

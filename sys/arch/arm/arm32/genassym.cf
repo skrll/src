@@ -1,4 +1,4 @@
-#	$NetBSD: genassym.cf,v 1.86 2020/02/14 07:23:24 skrll Exp $
+#	$NetBSD: genassym.cf,v 1.87 2020/02/15 08:16:11 skrll Exp $
 
 # Copyright (c) 1982, 1990 The Regents of the University of California.
 # All rights reserved.

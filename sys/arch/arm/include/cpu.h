@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.107 2020/01/22 12:23:12 skrll Exp $	*/
+/*	$NetBSD: cpu.h,v 1.108 2020/02/15 08:16:11 skrll Exp $	*/
 
 /*
  * Copyright (c) 1994-1996 Mark Brinicombe.
@@ -48,6 +48,9 @@
 #ifndef _ARM_CPU_H_
 #define _ARM_CPU_H_
 
+#ifdef _KERNEL
+#ifndef _LOCORE
+
 typedef unsigned long mpidr_t;
 
 #ifdef MULTIPROCESSOR
@@ -69,6 +72,9 @@ void	cpu_attach(device_t, cpuid_t);
 #endif
 
 void	cpu_proc_fork(struct proc *, struct proc *);
+
+#endif	/* !_LOCORE */
+#endif	/* _KERNEL */
 
 #ifdef __arm__
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: armv6_start.S,v 1.14 2019/06/12 06:53:21 skrll Exp $	*/
+/*	$NetBSD: armv6_start.S,v 1.15 2020/02/15 08:16:10 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2017, 2018 The NetBSD Foundation, Inc.

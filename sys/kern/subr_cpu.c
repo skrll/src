@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_cpu.c,v 1.12 2020/02/09 09:30:22 skrll Exp $	*/
+/*	$NetBSD: subr_cpu.c,v 1.13 2020/02/15 07:20:40 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008, 2009, 2010, 2012, 2019, 2020
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_cpu.c,v 1.12 2020/02/09 09:30:22 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_cpu.c,v 1.13 2020/02/15 07:20:40 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

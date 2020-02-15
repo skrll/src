@@ -1,4 +1,4 @@
-/* $NetBSD: soc_tegra124.c,v 1.21 2019/01/31 13:19:19 skrll Exp $ */
+/* $NetBSD: soc_tegra124.c,v 1.22 2020/02/15 08:16:11 skrll Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: soc_tegra124.c,v 1.21 2019/01/31 13:19:19 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: soc_tegra124.c,v 1.22 2020/02/15 08:16:11 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
