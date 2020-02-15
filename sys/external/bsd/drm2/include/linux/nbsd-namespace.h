@@ -1,11 +1,8 @@
-/*	$NetBSD: div64.h,v 1.1 2014/07/16 20:56:25 riastradh Exp $	*/
+/*	$NetBSD: nbsd-namespace.h,v 1.2 2020/02/14 04:38:48 riastradh Exp $	*/
 
 /*-
- * Copyright (c) 2014 The NetBSD Foundation, Inc.
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Taylor R. Campbell.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,21 +26,21 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _ASM_DIV64_H_
-#define _ASM_DIV64_H_
+#ifndef _LINUX_NBSD_NAMESPACE_H_
+#define _LINUX_NBSD_NAMESPACE_H_
 
-#include <sys/types.h>
+/*
+ * WARNING: You MUST NOT include any other header files after you
+ * include this one.  DO NOT include this in a header file -- .c files
+ * only.
+ */
 
-#define	do_div(n_q, d)	_do_div(&(n_q), (d))
+#undef	ALIGN
+#undef	LIST_HEAD
 
-static inline uint32_t
-_do_div(uint64_t *n_q, uint32_t d)
-{
-	const uint32_t r = *n_q % d;
-	const uint32_t q = *n_q / d;
+#define	ALIGN		round_up
+#define	LIST_HEAD	LINUX_LIST_HEAD
+#define	mutex_destroy	linux_mutex_destroy
+#define	mutex_init	linux_mutex_init
 
-	*n_q = q;
-	return r;
-}
-
-#endif  /* _ASM_DIV64_H_ */
+#endif  /* _LINUX_NBSD_NAMESPACE_H_ */

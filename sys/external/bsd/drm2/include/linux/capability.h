@@ -1,11 +1,8 @@
-/*	$NetBSD: drm_os_netbsd.h,v 1.17 2020/02/14 04:36:56 riastradh Exp $	*/
+/*	$NetBSD: capability.h,v 1.2 2020/02/14 16:02:41 tnn Exp $	*/
 
 /*-
- * Copyright (c) 2013 The NetBSD Foundation, Inc.
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Taylor R. Campbell.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,56 +26,23 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _DRM_DRM_OS_NETBSD_H_
-#define _DRM_DRM_OS_NETBSD_H_
+#ifndef _LINUX_CAPABILITY_H_
+#define _LINUX_CAPABILITY_H_
 
-#if defined(_KERNEL_OPT)
-#include "opt_drmkms.h"
-#endif
+#include <sys/kauth.h>
 
-#if defined(__i386__) || defined(__x86_64__)
-#define	CONFIG_X86	1
-#define	CONFIG_X86_PAT	1
-#endif
+enum linux_capability {
+	LINUX_CAP_SYS_ADMIN,
+#define	CAP_SYS_ADMIN	LINUX_CAP_SYS_ADMIN
+};
 
-#if defined(__arm__)
-#define CONFIG_ARM	1
-#endif
+static inline bool
+capable(enum linux_capability cap)
+{
 
-#if defined(__aarch64__)
-#define CONFIG_ARM64	1
-#endif
+	KASSERT(cap == CAP_SYS_ADMIN);
+	return kauth_authorize_generic(kauth_cred_get(), KAUTH_GENERIC_ISSUSER,
+	    NULL) == 0;
+}
 
-/*
- * Nothing meaningfully depends on this; defining this avoids patching
- * away some conditionalization in drmP.h.
- */
-#define	CONFIG_PCI	1
-
-#ifdef notyet
-#if defined(__i386__)
-#include "pnpbios.h"
-#endif
-
-#if NPNPBIOS > 0
-#define CONFIG_PNP
-#endif
-#endif
-
-#if defined(__i386__) || defined(__x86_64__)
-#if defined(_KERNEL_OPT)
-#include "opt_mtrr.h"
-#endif
-#endif
-
-#ifdef MTRR
-#define	CONFIG_MTRR	1
-#endif
-
-#include <drm/drm_agp_netbsd.h>
-#include <drm/drm_irq_netbsd.h>
-#include <drm/drm_wait_netbsd.h>
-
-#include <sys/vmem.h>
-
-#endif  /* _DRM_DRM_OS_NETBSD_H_ */
+#endif  /* _LINUX_CAPABILITY_H_ */

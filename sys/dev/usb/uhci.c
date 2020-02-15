@@ -1,4 +1,4 @@
-/*	$NetBSD: uhci.c,v 1.290 2020/02/12 16:02:01 riastradh Exp $	*/
+/*	$NetBSD: uhci.c,v 1.293 2020/02/15 01:21:56 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2011, 2012 The NetBSD Foundation, Inc.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.290 2020/02/12 16:02:01 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.293 2020/02/15 01:21:56 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -1013,6 +1013,7 @@ uhci_poll_hub(void *addr)
 	xfer = sc->sc_intr_xfer;
 	if (xfer == NULL)
 		goto out;
+	KASSERT(xfer->ux_status == USBD_IN_PROGRESS);
 
 	/*
 	 * If the intr xfer for which we were scheduled is done, and
@@ -1056,11 +1057,12 @@ uhci_poll_hub(void *addr)
 	/*
 	 * Interrupt completed, and the xfer has not been completed or
 	 * synchronously aborted.  Complete the xfer now.
-	 *
-	 * XXX Set ux_isdone if DIAGNOSTIC?
 	 */
 	xfer->ux_actlen = 1;
 	xfer->ux_status = USBD_NORMAL_COMPLETION;
+#ifdef DIAGNOSTIC
+	UHCI_XFER2UXFER(xfer)->ux_isdone = true;
+#endif
 	usb_transfer_complete(xfer);
 
 out:	mutex_exit(&sc->sc_lock);
@@ -3850,6 +3852,7 @@ uhci_root_intr_abort(struct usbd_xfer *xfer)
 		return;
 
 	KASSERT(sc->sc_intr_xfer == xfer);
+	KASSERT(xfer->ux_status == USBD_IN_PROGRESS);
 	xfer->ux_status = USBD_CANCELLED;
 #ifdef DIAGNOSTIC
 	UHCI_XFER2UXFER(xfer)->ux_isdone = true;
@@ -3903,6 +3906,7 @@ uhci_root_intr_start(struct usbd_xfer *xfer)
 	sc->sc_ival = mstohz(ival);
 	callout_schedule(&sc->sc_poll_handle, sc->sc_ival);
 	sc->sc_intr_xfer = xfer;
+	xfer->ux_status = USBD_IN_PROGRESS;
 
 	if (!polling)
 		mutex_exit(&sc->sc_lock);

@@ -1,7 +1,7 @@
-/*	$NetBSD: drm_os_netbsd.h,v 1.17 2020/02/14 04:36:56 riastradh Exp $	*/
+/*	$NetBSD: div64.h,v 1.1 2020/02/14 09:38:51 riastradh Exp $	*/
 
 /*-
- * Copyright (c) 2013 The NetBSD Foundation, Inc.
+ * Copyright (c) 2014 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -29,56 +29,21 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _DRM_DRM_OS_NETBSD_H_
-#define _DRM_DRM_OS_NETBSD_H_
+#ifndef _ASM_DIV64_H_
+#define _ASM_DIV64_H_
 
-#if defined(_KERNEL_OPT)
-#include "opt_drmkms.h"
-#endif
+#include <sys/types.h>
 
-#if defined(__i386__) || defined(__x86_64__)
-#define	CONFIG_X86	1
-#define	CONFIG_X86_PAT	1
-#endif
+#define	do_div(n_q, d)	_do_div(&(n_q), (d))
 
-#if defined(__arm__)
-#define CONFIG_ARM	1
-#endif
+static inline uint32_t
+_do_div(uint64_t *n_q, uint32_t d)
+{
+	const uint32_t r = *n_q % d;
+	const uint32_t q = *n_q / d;
 
-#if defined(__aarch64__)
-#define CONFIG_ARM64	1
-#endif
+	*n_q = q;
+	return r;
+}
 
-/*
- * Nothing meaningfully depends on this; defining this avoids patching
- * away some conditionalization in drmP.h.
- */
-#define	CONFIG_PCI	1
-
-#ifdef notyet
-#if defined(__i386__)
-#include "pnpbios.h"
-#endif
-
-#if NPNPBIOS > 0
-#define CONFIG_PNP
-#endif
-#endif
-
-#if defined(__i386__) || defined(__x86_64__)
-#if defined(_KERNEL_OPT)
-#include "opt_mtrr.h"
-#endif
-#endif
-
-#ifdef MTRR
-#define	CONFIG_MTRR	1
-#endif
-
-#include <drm/drm_agp_netbsd.h>
-#include <drm/drm_irq_netbsd.h>
-#include <drm/drm_wait_netbsd.h>
-
-#include <sys/vmem.h>
-
-#endif  /* _DRM_DRM_OS_NETBSD_H_ */
+#endif  /* _ASM_DIV64_H_ */
