@@ -64,11 +64,6 @@ bool cpu_hatched_p(u_int);
 
 void cpu_clr_mbox(int);
 void cpu_set_hatched(int);
-
-/*
- * cpu device glue (belongs in cpuvar.h)
- */
-void	cpu_attach(device_t, cpuid_t);
 #endif
 
 void	cpu_proc_fork(struct proc *, struct proc *);
