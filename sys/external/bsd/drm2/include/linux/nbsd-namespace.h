@@ -1,11 +1,8 @@
-/*	$NetBSD: drm_auth_netbsd.h,v 1.2 2014/03/18 18:20:43 riastradh Exp $	*/
+/*	$NetBSD: nbsd-namespace.h,v 1.2 2020/02/14 04:38:48 riastradh Exp $	*/
 
 /*-
- * Copyright (c) 2013 The NetBSD Foundation, Inc.
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Taylor R. Campbell.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,16 +26,21 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _DRM_DRM_AUTH_NETBSD_H_
-#define _DRM_DRM_AUTH_NETBSD_H_
+#ifndef _LINUX_NBSD_NAMESPACE_H_
+#define _LINUX_NBSD_NAMESPACE_H_
 
-#include <sys/kauth.h>
+/*
+ * WARNING: You MUST NOT include any other header files after you
+ * include this one.  DO NOT include this in a header file -- .c files
+ * only.
+ */
 
-static inline bool
-DRM_SUSER(void)
-{
-	return kauth_authorize_generic(kauth_cred_get(), KAUTH_GENERIC_ISSUSER,
-	    NULL) == 0;
-}
+#undef	ALIGN
+#undef	LIST_HEAD
 
-#endif  /* _DRM_DRM_AUTH_NETBSD_H_ */
+#define	ALIGN		round_up
+#define	LIST_HEAD	LINUX_LIST_HEAD
+#define	mutex_destroy	linux_mutex_destroy
+#define	mutex_init	linux_mutex_init
+
+#endif  /* _LINUX_NBSD_NAMESPACE_H_ */

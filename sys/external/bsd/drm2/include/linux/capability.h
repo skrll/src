@@ -1,11 +1,8 @@
-/*	$NetBSD: div64.h,v 1.1 2014/07/16 20:56:25 riastradh Exp $	*/
+/*	$NetBSD: capability.h,v 1.2 2020/02/14 16:02:41 tnn Exp $	*/
 
 /*-
- * Copyright (c) 2014 The NetBSD Foundation, Inc.
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Taylor R. Campbell.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,21 +26,23 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _ASM_DIV64_H_
-#define _ASM_DIV64_H_
+#ifndef _LINUX_CAPABILITY_H_
+#define _LINUX_CAPABILITY_H_
 
-#include <sys/types.h>
+#include <sys/kauth.h>
 
-#define	do_div(n_q, d)	_do_div(&(n_q), (d))
+enum linux_capability {
+	LINUX_CAP_SYS_ADMIN,
+#define	CAP_SYS_ADMIN	LINUX_CAP_SYS_ADMIN
+};
 
-static inline uint32_t
-_do_div(uint64_t *n_q, uint32_t d)
+static inline bool
+capable(enum linux_capability cap)
 {
-	const uint32_t r = *n_q % d;
-	const uint32_t q = *n_q / d;
 
-	*n_q = q;
-	return r;
+	KASSERT(cap == CAP_SYS_ADMIN);
+	return kauth_authorize_generic(kauth_cred_get(), KAUTH_GENERIC_ISSUSER,
+	    NULL) == 0;
 }
 
-#endif  /* _ASM_DIV64_H_ */
+#endif  /* _LINUX_CAPABILITY_H_ */

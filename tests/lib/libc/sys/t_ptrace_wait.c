@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ptrace_wait.c,v 1.155 2020/02/11 00:41:37 kamil Exp $	*/
+/*	$NetBSD: t_ptrace_wait.c,v 1.162 2020/02/13 15:27:41 mgorny Exp $	*/
 
 /*-
  * Copyright (c) 2016, 2017, 2018, 2019 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: t_ptrace_wait.c,v 1.155 2020/02/11 00:41:37 kamil Exp $");
+__RCSID("$NetBSD: t_ptrace_wait.c,v 1.162 2020/02/13 15:27:41 mgorny Exp $");
 
 #define __LEGACY_PT_LWPINFO
 
@@ -8620,13 +8620,9 @@ ATF_TC_BODY(core_dump_procinfo, tc)
 
 #if defined(TWAIT_HAVE_STATUS)
 
-ATF_TC(thread_concurrent_signals);
-ATF_TC_HEAD(thread_concurrent_signals, tc)
-{
-	atf_tc_set_md_var(tc, "descr",
-	    "Verify that concurrent signals issued to a single thread "
-	    "are reported correctly");
-}
+#define THREAD_CONCURRENT_BREAKPOINT_NUM 50
+#define THREAD_CONCURRENT_SIGNALS_NUM 50
+#define THREAD_CONCURRENT_WATCHPOINT_NUM 50
 
 /* List of signals to use for the test */
 const int thread_concurrent_signals_list[] = {
@@ -8641,23 +8637,83 @@ const int thread_concurrent_signals_list[] = {
 	SIGUSR2
 };
 
-pthread_barrier_t thread_concurrent_signals_barrier;
+enum thread_concurrent_signal_handling {
+	/* the signal is discarded by debugger */
+	TCSH_DISCARD,
+	/* the handler is set to SIG_IGN */
+	TCSH_SIG_IGN,
+	/* an actual handler is used */
+	TCSH_HANDLER
+};
+
+static pthread_barrier_t thread_concurrent_barrier;
+static pthread_key_t thread_concurrent_key;
+static uint32_t thread_concurrent_watchpoint_var = 0;
+
+static void *
+thread_concurrent_breakpoint_thread(void *arg)
+{
+	static volatile int watchme = 1;
+	pthread_barrier_wait(&thread_concurrent_barrier);
+	DPRINTF("Before entering breakpoint func from LWP %d\n", _lwp_self());
+	check_happy(watchme);
+	return NULL;
+}
+
+static void
+thread_concurrent_sig_handler(int sig)
+{
+	void *tls_val = pthread_getspecific(thread_concurrent_key);
+	DPRINTF("Before increment, LWP %d tls_val=%p\n", _lwp_self(), tls_val);
+	FORKEE_ASSERT(pthread_setspecific(thread_concurrent_key,
+	    (void*)((uintptr_t)tls_val + 1)) == 0);
+}
 
 static void *
 thread_concurrent_signals_thread(void *arg)
 {
 	int sigval = thread_concurrent_signals_list[
 	    _lwp_self() % __arraycount(thread_concurrent_signals_list)];
-	pthread_barrier_wait(&thread_concurrent_signals_barrier);
+	enum thread_concurrent_signal_handling *signal_handle = arg;
+	void *tls_val;
+
+	pthread_barrier_wait(&thread_concurrent_barrier);
 	DPRINTF("Before raising %s from LWP %d\n", strsignal(sigval),
 		_lwp_self());
 	pthread_kill(pthread_self(), sigval);
+	if (*signal_handle == TCSH_HANDLER) {
+	    tls_val = pthread_getspecific(thread_concurrent_key);
+	    DPRINTF("After raising, LWP %d tls_val=%p\n", _lwp_self(), tls_val);
+	    FORKEE_ASSERT(tls_val == (void*)1);
+	}
 	return NULL;
 }
 
-#define THREAD_CONCURRENT_SIGNALS_NUM 50
+static void *
+thread_concurrent_watchpoint_thread(void *arg)
+{
+	pthread_barrier_wait(&thread_concurrent_barrier);
+	DPRINTF("Before modifying var from LWP %d\n", _lwp_self());
+	thread_concurrent_watchpoint_var = 1;
+	return NULL;
+}
 
-ATF_TC_BODY(thread_concurrent_signals, tc)
+#if defined(__i386__) || defined(__x86_64__)
+enum thread_concurrent_sigtrap_event {
+	TCSE_UNKNOWN,
+	TCSE_BREAKPOINT,
+	TCSE_WATCHPOINT
+};
+
+static void
+thread_concurrent_lwp_setup(pid_t child, lwpid_t lwpid);
+static enum thread_concurrent_sigtrap_event
+thread_concurrent_handle_sigtrap(pid_t child, ptrace_siginfo_t *info);
+#endif
+
+static void
+thread_concurrent_test(enum thread_concurrent_signal_handling signal_handle,
+    int breakpoint_threads, int signal_threads, int watchpoint_threads)
 {
 	const int exitval = 5;
 	const int sigval = SIGSTOP;
@@ -8665,12 +8721,29 @@ ATF_TC_BODY(thread_concurrent_signals, tc)
 	int status;
 	struct lwp_event_count signal_counts[THREAD_CONCURRENT_SIGNALS_NUM]
 	    = {{0, 0}};
-	unsigned int i;
+	struct lwp_event_count bp_counts[THREAD_CONCURRENT_BREAKPOINT_NUM]
+	    = {{0, 0}};
+	struct lwp_event_count wp_counts[THREAD_CONCURRENT_BREAKPOINT_NUM]
+	    = {{0, 0}};
+	ptrace_event_t event;
+	int i;
+
+	if (signal_handle == TCSH_SIG_IGN)
+		atf_tc_expect_fail("PR kern/54960");
+	else if (signal_handle == TCSH_HANDLER)
+		atf_tc_skip("PR kern/54960");
+
+	/* Protect against out-of-bounds array access. */
+	ATF_REQUIRE(breakpoint_threads <= THREAD_CONCURRENT_BREAKPOINT_NUM);
+	ATF_REQUIRE(signal_threads <= THREAD_CONCURRENT_SIGNALS_NUM);
+	ATF_REQUIRE(watchpoint_threads <= THREAD_CONCURRENT_WATCHPOINT_NUM);
 
 	DPRINTF("Before forking process PID=%d\n", getpid());
 	SYSCALL_REQUIRE((child = fork()) != -1);
 	if (child == 0) {
-		pthread_t threads[THREAD_CONCURRENT_SIGNALS_NUM];
+		pthread_t bp_threads[THREAD_CONCURRENT_BREAKPOINT_NUM];
+		pthread_t sig_threads[THREAD_CONCURRENT_SIGNALS_NUM];
+		pthread_t wp_threads[THREAD_CONCURRENT_WATCHPOINT_NUM];
 
 		DPRINTF("Before calling PT_TRACE_ME from child %d\n", getpid());
 		FORKEE_ASSERT(ptrace(PT_TRACE_ME, 0, NULL, 0) != -1);
@@ -8678,23 +8751,61 @@ ATF_TC_BODY(thread_concurrent_signals, tc)
 		DPRINTF("Before raising %s from child\n", strsignal(sigval));
 		FORKEE_ASSERT(raise(sigval) == 0);
 
+		if (signal_handle != TCSH_DISCARD) {
+			struct sigaction sa;
+			unsigned int j;
+
+			memset(&sa, 0, sizeof(sa));
+			if (signal_handle == TCSH_SIG_IGN)
+				sa.sa_handler = SIG_IGN;
+			else
+				sa.sa_handler = thread_concurrent_sig_handler;
+			sigemptyset(&sa.sa_mask);
+
+			for (j = 0;
+			    j < __arraycount(thread_concurrent_signals_list);
+			    j++)
+				FORKEE_ASSERT(sigaction(
+				    thread_concurrent_signals_list[j], &sa, NULL)
+				    != -1);
+		}
+
 		DPRINTF("Before starting threads from the child\n");
 		FORKEE_ASSERT(pthread_barrier_init(
-		    &thread_concurrent_signals_barrier, NULL,
-		    __arraycount(threads)) == 0);
+		    &thread_concurrent_barrier, NULL,
+		    breakpoint_threads + signal_threads + watchpoint_threads)
+		    == 0);
+		FORKEE_ASSERT(pthread_key_create(&thread_concurrent_key, NULL)
+		    == 0);
 
-		for (i = 0; i < __arraycount(threads); i++) {
-			FORKEE_ASSERT(pthread_create(&threads[i], NULL,
-			    thread_concurrent_signals_thread, NULL) == 0);
+		for (i = 0; i < signal_threads; i++) {
+			FORKEE_ASSERT(pthread_create(&sig_threads[i], NULL,
+			    thread_concurrent_signals_thread,
+			    &signal_handle) == 0);
+		}
+		for (i = 0; i < breakpoint_threads; i++) {
+			FORKEE_ASSERT(pthread_create(&bp_threads[i], NULL,
+			    thread_concurrent_breakpoint_thread, NULL) == 0);
+		}
+		for (i = 0; i < watchpoint_threads; i++) {
+			FORKEE_ASSERT(pthread_create(&wp_threads[i], NULL,
+			    thread_concurrent_watchpoint_thread, NULL) == 0);
 		}
 
 		DPRINTF("Before joining threads from the child\n");
-		for (i = 0; i < __arraycount(threads); i++) {
-			FORKEE_ASSERT(pthread_join(threads[i], NULL) == 0);
+		for (i = 0; i < watchpoint_threads; i++) {
+			FORKEE_ASSERT(pthread_join(wp_threads[i], NULL) == 0);
+		}
+		for (i = 0; i < breakpoint_threads; i++) {
+			FORKEE_ASSERT(pthread_join(bp_threads[i], NULL) == 0);
+		}
+		for (i = 0; i < signal_threads; i++) {
+			FORKEE_ASSERT(pthread_join(sig_threads[i], NULL) == 0);
 		}
 
+		FORKEE_ASSERT(pthread_key_delete(thread_concurrent_key) == 0);
 		FORKEE_ASSERT(pthread_barrier_destroy(
-		    &thread_concurrent_signals_barrier) == 0);
+		    &thread_concurrent_barrier) == 0);
 
 		DPRINTF("Before exiting of the child process\n");
 		_exit(exitval);
@@ -8706,13 +8817,18 @@ ATF_TC_BODY(thread_concurrent_signals, tc)
 
 	validate_status_stopped(status, sigval);
 
+	DPRINTF("Set LWP event mask for the child process\n");
+	memset(&event, 0, sizeof(event));
+	event.pe_set_event |= PTRACE_LWP_CREATE;
+	SYSCALL_REQUIRE(ptrace(PT_SET_EVENT_MASK, child, &event, sizeof(event))
+	    != -1);
+
 	DPRINTF("Before resuming the child process where it left off\n");
 	SYSCALL_REQUIRE(ptrace(PT_CONTINUE, child, (void *)1, 0) != -1);
 
 	DPRINTF("Before entering signal collection loop\n");
 	while (1) {
 		ptrace_siginfo_t info;
-		int expected_sig;
 
 		DPRINTF("Before calling %s() for the child\n", TWAIT_FNAME);
 		TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0),
@@ -8733,28 +8849,155 @@ ATF_TC_BODY(thread_concurrent_signals, tc)
 		    info.psi_siginfo.si_signo, info.psi_lwpid,
 		    WSTOPSIG(status));
 
-		expected_sig = thread_concurrent_signals_list[info.psi_lwpid %
-		    __arraycount(thread_concurrent_signals_list)];
-		ATF_CHECK_EQ_MSG(info.psi_siginfo.si_signo, expected_sig,
-		    "lwp=%d, expected %d, got %d", info.psi_lwpid,
-		    expected_sig, info.psi_siginfo.si_signo);
-		ATF_CHECK_EQ_MSG(WSTOPSIG(status), expected_sig,
-		    "lwp=%d, expected %d, got %d", info.psi_lwpid,
-		    expected_sig, WSTOPSIG(status));
+		ATF_CHECK_EQ_MSG(info.psi_siginfo.si_signo, WSTOPSIG(status),
+		    "lwp=%d, WSTOPSIG=%d, psi_siginfo=%d", info.psi_lwpid,
+		    WSTOPSIG(status), info.psi_siginfo.si_signo);
 
-		*FIND_EVENT_COUNT(signal_counts, info.psi_lwpid) += 1;
+		if (WSTOPSIG(status) != SIGTRAP) {
+			int expected_sig =
+			    thread_concurrent_signals_list[info.psi_lwpid %
+			    __arraycount(thread_concurrent_signals_list)];
+			ATF_CHECK_EQ_MSG(WSTOPSIG(status), expected_sig,
+				"lwp=%d, expected %d, got %d", info.psi_lwpid,
+				expected_sig, WSTOPSIG(status));
+
+			*FIND_EVENT_COUNT(signal_counts, info.psi_lwpid) += 1;
+		} else if (info.psi_siginfo.si_code == TRAP_LWP) {
+#if defined(__i386__) || defined(__x86_64__)
+			thread_concurrent_lwp_setup(child, info.psi_lwpid);
+#endif
+		} else {
+#if defined(__i386__) || defined(__x86_64__)
+			switch (thread_concurrent_handle_sigtrap(child, &info)) {
+				case TCSE_UNKNOWN:
+					/* already reported inside the function */
+					break;
+				case TCSE_BREAKPOINT:
+					*FIND_EVENT_COUNT(bp_counts,
+					    info.psi_lwpid) += 1;
+					break;
+				case TCSE_WATCHPOINT:
+					*FIND_EVENT_COUNT(wp_counts,
+					    info.psi_lwpid) += 1;
+					break;
+			}
+#else
+			ATF_CHECK_MSG(0, "Unexpected SIGTRAP, si_code=%d\n",
+			    info.psi_siginfo.si_code);
+#endif
+		}
 
 		DPRINTF("Before resuming the child process\n");
-		SYSCALL_REQUIRE(ptrace(PT_CONTINUE, child, (void *)1, 0) != -1);
+		SYSCALL_REQUIRE(ptrace(PT_CONTINUE, child, (void *)1,
+		     signal_handle != TCSH_DISCARD && WSTOPSIG(status) != SIGTRAP
+		     ? WSTOPSIG(status) : 0) != -1);
 	}
 
-	for (i = 0; i < __arraycount(signal_counts); i++)
+	for (i = 0; i < signal_threads; i++)
 		ATF_CHECK_EQ_MSG(signal_counts[i].lec_count, 1,
 		    "signal_counts[%d].lec_count=%d; lec_lwp=%d",
 		    i, signal_counts[i].lec_count, signal_counts[i].lec_lwp);
+	for (i = signal_threads; i < THREAD_CONCURRENT_SIGNALS_NUM; i++)
+		ATF_CHECK_EQ_MSG(signal_counts[i].lec_count, 0,
+		    "extraneous signal_counts[%d].lec_count=%d; lec_lwp=%d",
+		    i, signal_counts[i].lec_count, signal_counts[i].lec_lwp);
+
+	for (i = 0; i < breakpoint_threads; i++)
+		ATF_CHECK_EQ_MSG(bp_counts[i].lec_count, 1,
+		    "bp_counts[%d].lec_count=%d; lec_lwp=%d",
+		    i, bp_counts[i].lec_count, bp_counts[i].lec_lwp);
+	for (i = breakpoint_threads; i < THREAD_CONCURRENT_BREAKPOINT_NUM; i++)
+		ATF_CHECK_EQ_MSG(bp_counts[i].lec_count, 0,
+		    "extraneous bp_counts[%d].lec_count=%d; lec_lwp=%d",
+		    i, bp_counts[i].lec_count, bp_counts[i].lec_lwp);
+
+	for (i = 0; i < watchpoint_threads; i++)
+		ATF_CHECK_EQ_MSG(wp_counts[i].lec_count, 1,
+		    "wp_counts[%d].lec_count=%d; lec_lwp=%d",
+		    i, wp_counts[i].lec_count, wp_counts[i].lec_lwp);
+	for (i = watchpoint_threads; i < THREAD_CONCURRENT_WATCHPOINT_NUM; i++)
+		ATF_CHECK_EQ_MSG(wp_counts[i].lec_count, 0,
+		    "extraneous wp_counts[%d].lec_count=%d; lec_lwp=%d",
+		    i, wp_counts[i].lec_count, wp_counts[i].lec_lwp);
 
 	validate_status_exited(status, exitval);
 }
+
+#define THREAD_CONCURRENT_TEST(test, sig_hdl, bps, sigs, wps, descr)	\
+ATF_TC(test);								\
+ATF_TC_HEAD(test, tc)							\
+{									\
+	atf_tc_set_md_var(tc, "descr", descr);				\
+}									\
+									\
+ATF_TC_BODY(test, tc)							\
+{									\
+	thread_concurrent_test(sig_hdl, bps, sigs, wps);		\
+}
+
+THREAD_CONCURRENT_TEST(thread_concurrent_signals, TCSH_DISCARD,
+    0, THREAD_CONCURRENT_SIGNALS_NUM, 0,
+    "Verify that concurrent signals issued to a single thread are reported "
+    "correctly");
+THREAD_CONCURRENT_TEST(thread_concurrent_signals_sig_ign, TCSH_SIG_IGN,
+    0, THREAD_CONCURRENT_SIGNALS_NUM, 0,
+    "Verify that concurrent signals issued to a single thread are reported "
+    "correctly and passed back to SIG_IGN handler");
+THREAD_CONCURRENT_TEST(thread_concurrent_signals_handler, TCSH_HANDLER,
+    0, THREAD_CONCURRENT_SIGNALS_NUM, 0,
+    "Verify that concurrent signals issued to a single thread are reported "
+    "correctly and passed back to a handler function");
+
+THREAD_CONCURRENT_TEST(thread_concurrent_breakpoints, TCSH_DISCARD,
+    THREAD_CONCURRENT_BREAKPOINT_NUM, 0, 0,
+    "Verify that concurrent breakpoints are reported correctly");
+THREAD_CONCURRENT_TEST(thread_concurrent_watchpoints, TCSH_DISCARD,
+    0, 0, THREAD_CONCURRENT_WATCHPOINT_NUM,
+    "Verify that concurrent breakpoints are reported correctly");
+THREAD_CONCURRENT_TEST(thread_concurrent_bp_wp, TCSH_DISCARD,
+    THREAD_CONCURRENT_BREAKPOINT_NUM, 0, THREAD_CONCURRENT_WATCHPOINT_NUM,
+    "Verify that concurrent breakpoints and watchpoints are reported "
+    "correctly");
+
+THREAD_CONCURRENT_TEST(thread_concurrent_bp_sig, TCSH_DISCARD,
+    THREAD_CONCURRENT_BREAKPOINT_NUM, THREAD_CONCURRENT_SIGNALS_NUM, 0,
+    "Verify that concurrent breakpoints and signals are reported correctly");
+THREAD_CONCURRENT_TEST(thread_concurrent_bp_sig_sig_ign, TCSH_SIG_IGN,
+    THREAD_CONCURRENT_BREAKPOINT_NUM, THREAD_CONCURRENT_SIGNALS_NUM, 0,
+    "Verify that concurrent breakpoints and signals are reported correctly "
+    "and passed back to SIG_IGN handler");
+THREAD_CONCURRENT_TEST(thread_concurrent_bp_sig_handler, TCSH_HANDLER,
+    THREAD_CONCURRENT_BREAKPOINT_NUM, THREAD_CONCURRENT_SIGNALS_NUM, 0,
+    "Verify that concurrent breakpoints and signals are reported correctly "
+    "and passed back to a handler function");
+
+THREAD_CONCURRENT_TEST(thread_concurrent_wp_sig, TCSH_DISCARD,
+    0, THREAD_CONCURRENT_SIGNALS_NUM, THREAD_CONCURRENT_WATCHPOINT_NUM,
+    "Verify that concurrent watchpoints and signals are reported correctly");
+THREAD_CONCURRENT_TEST(thread_concurrent_wp_sig_sig_ign, TCSH_SIG_IGN,
+    0, THREAD_CONCURRENT_SIGNALS_NUM, THREAD_CONCURRENT_WATCHPOINT_NUM,
+    "Verify that concurrent watchpoints and signals are reported correctly "
+    "and passed back to SIG_IGN handler");
+THREAD_CONCURRENT_TEST(thread_concurrent_wp_sig_handler, TCSH_HANDLER,
+    0, THREAD_CONCURRENT_SIGNALS_NUM, THREAD_CONCURRENT_WATCHPOINT_NUM,
+    "Verify that concurrent watchpoints and signals are reported correctly "
+    "and passed back to a handler function");
+
+THREAD_CONCURRENT_TEST(thread_concurrent_bp_wp_sig, TCSH_DISCARD,
+    THREAD_CONCURRENT_BREAKPOINT_NUM, THREAD_CONCURRENT_SIGNALS_NUM,
+    THREAD_CONCURRENT_WATCHPOINT_NUM,
+    "Verify that concurrent breakpoints, watchpoints and signals are reported "
+    "correctly");
+THREAD_CONCURRENT_TEST(thread_concurrent_bp_wp_sig_sig_ign, TCSH_SIG_IGN,
+    THREAD_CONCURRENT_BREAKPOINT_NUM, THREAD_CONCURRENT_SIGNALS_NUM,
+    THREAD_CONCURRENT_WATCHPOINT_NUM,
+    "Verify that concurrent breakpoints, watchpoints and signals are reported "
+    "correctly and passed back to SIG_IGN handler");
+THREAD_CONCURRENT_TEST(thread_concurrent_bp_wp_sig_handler, TCSH_HANDLER,
+    THREAD_CONCURRENT_BREAKPOINT_NUM, THREAD_CONCURRENT_SIGNALS_NUM,
+    THREAD_CONCURRENT_WATCHPOINT_NUM,
+    "Verify that concurrent breakpoints, watchpoints and signals are reported "
+    "correctly and passed back to a handler function");
 
 #endif /*defined(TWAIT_HAVE_STATUS)*/
 
@@ -9346,6 +9589,22 @@ ATF_TP_ADD_TCS(tp)
 
 #if defined(TWAIT_HAVE_STATUS)
 	ATF_TP_ADD_TC(tp, thread_concurrent_signals);
+	ATF_TP_ADD_TC(tp, thread_concurrent_signals_sig_ign);
+	ATF_TP_ADD_TC(tp, thread_concurrent_signals_handler);
+#if defined(__i386__) || defined(__x86_64__)
+	ATF_TP_ADD_TC(tp, thread_concurrent_breakpoints);
+	ATF_TP_ADD_TC(tp, thread_concurrent_watchpoints);
+	ATF_TP_ADD_TC(tp, thread_concurrent_bp_wp);
+	ATF_TP_ADD_TC(tp, thread_concurrent_bp_sig);
+	ATF_TP_ADD_TC(tp, thread_concurrent_bp_sig_sig_ign);
+	ATF_TP_ADD_TC(tp, thread_concurrent_bp_sig_handler);
+	ATF_TP_ADD_TC(tp, thread_concurrent_wp_sig);
+	ATF_TP_ADD_TC(tp, thread_concurrent_wp_sig_sig_ign);
+	ATF_TP_ADD_TC(tp, thread_concurrent_wp_sig_handler);
+	ATF_TP_ADD_TC(tp, thread_concurrent_bp_wp_sig);
+	ATF_TP_ADD_TC(tp, thread_concurrent_bp_wp_sig_sig_ign);
+	ATF_TP_ADD_TC(tp, thread_concurrent_bp_wp_sig_handler);
+#endif
 #endif
 
 	ATF_TP_ADD_TCS_PTRACE_WAIT_AMD64();
