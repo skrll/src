@@ -1,4 +1,4 @@
-/* $NetBSD: xlint.c,v 1.47 2019/04/13 15:08:49 christos Exp $ */
+/* $NetBSD: xlint.c,v 1.49 2020/02/10 04:54:01 christos Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: xlint.c,v 1.47 2019/04/13 15:08:49 christos Exp $");
+__RCSID("$NetBSD: xlint.c,v 1.49 2020/02/10 04:54:01 christos Exp $");
 #endif
 
 #include <sys/param.h>
@@ -648,13 +648,10 @@ fname(const char *name)
 			warnx("-i not supported without -o for standard input");
 			return;
 		}
-		ofn = xmalloc(strlen(bn) + (bn == suff ? 4 : 2));
 		len = bn == suff ? strlen(bn) : (size_t)((suff - 1) - bn);
-		(void)sprintf(ofn, "%.*s", (int)len, bn);
-		(void)strcat(ofn, ".ln");
+		xasprintf(&ofn, "%.*s.ln", (int)len, bn);
 	} else {
-		ofn = xmalloc(strlen(tmpdir) + sizeof ("lint1.XXXXXX"));
-		(void)sprintf(ofn, "%slint1.XXXXXX", tmpdir);
+		xasprintf(&ofn, "%slint1.XXXXXX", tmpdir);
 		fd = mkstemp(ofn);
 		if (fd == -1) {
 			warn("can't make temp");
