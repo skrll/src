@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.388 2020/02/05 07:37:35 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.392 2020/02/12 17:36:41 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -198,7 +198,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.388 2020/02/05 07:37:35 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.392 2020/02/12 17:36:41 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -5842,14 +5842,15 @@ pmap_grow_map(vaddr_t va, paddr_t *pap)
 		*pap = pa;
 
 	PMAPCOUNT(pt_mappings);
-#ifdef DEBUG
-	struct l2_bucket * const l2b = pmap_get_l2_bucket(pmap_kernel(), va);
-	KDASSERT(l2b != NULL);
 
-	pt_entry_t * const ptep = &l2b->l2b_kva[l2pte_index(va)];
-	const pt_entry_t opte = *ptep;
-	KDASSERT((opte & L2_S_CACHE_MASK) == pte_l2_s_cache_mode_pt);
-#endif
+	struct l2_bucket * const l2b __diagused =
+	    pmap_get_l2_bucket(pmap_kernel(), va);
+	KASSERT(l2b != NULL);
+
+	pt_entry_t * const ptep __diagused = &l2b->l2b_kva[l2pte_index(va)];
+	const pt_entry_t opte __diagused = *ptep;
+	KASSERT((opte & L2_S_CACHE_MASK) == pte_l2_s_cache_mode_pt);
+
 	memset((void *)va, 0, PAGE_SIZE);
 	return 0;
 }
@@ -5861,13 +5862,11 @@ pmap_grow_map(vaddr_t va, paddr_t *pap)
 static inline struct l2_bucket *
 pmap_grow_l2_bucket(pmap_t pm, vaddr_t va)
 {
+	const size_t l1slot = l1pte_index(va);
 	struct l2_dtable *l2;
-	struct l2_bucket *l2b;
-	u_short l1slot;
 	vaddr_t nva;
 
-	l1slot = l1pte_index(va);
-
+	CTASSERT((PAGE_SIZE % L2_TABLE_SIZE_REAL) == 0);
 	if ((l2 = pm->pm_l2[L2_IDX(l1slot)]) == NULL) {
 		/*
 		 * No mapping at this address, as there is
@@ -5903,7 +5902,7 @@ pmap_grow_l2_bucket(pmap_t pm, vaddr_t va)
 		pm->pm_l2[L2_IDX(l1slot)] = l2;
 	}
 
-	l2b = &l2->l2_bucket[L2_BUCKET(l1slot)];
+	struct l2_bucket * const l2b = &l2->l2_bucket[L2_BUCKET(l1slot)];
 
 	/*
 	 * Fetch pointer to the L2 page table associated with the address.
@@ -5981,6 +5980,7 @@ pmap_growkernel(vaddr_t maxkvaddr)
 		const pd_entry_t npde = L1_C_PROTO | l2b->l2b_pa
 		    | L1_C_DOM(PMAP_DOMAIN_KERNEL);
 #ifdef ARM_MMU_EXTENDED
+		KASSERT(*pdep == 0);
 		l1pte_setone(pdep, npde);
 #else
 		/* Distribute new L1 entry to all other L1s */

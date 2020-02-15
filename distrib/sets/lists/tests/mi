@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.828 2020/01/18 17:18:41 kre Exp $
+# $NetBSD: mi,v 1.830 2020/02/11 07:03:16 isaki Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -1391,7 +1391,9 @@
 ./usr/tests/dev/audio				tests-fs-tests		compattestfile,atf
 ./usr/tests/dev/audio/Atffile			tests-fs-tests		atf,rump
 ./usr/tests/dev/audio/Kyuafile			tests-fs-tests		atf,rump,kyua
+./usr/tests/dev/audio/audiotest		tests-fs-tests		atf,rump
 ./usr/tests/dev/audio/h_pad			tests-fs-tests		atf,rump
+./usr/tests/dev/audio/t_audio		tests-fs-tests		atf,rump
 ./usr/tests/dev/audio/t_pad			tests-fs-tests		atf,rump
 ./usr/tests/dev/audio/t_pad_output.bz2.uue	tests-obsolete		obsolete
 ./usr/tests/dev/cgd				tests-fs-tests		compattestfile,atf
@@ -2142,6 +2144,7 @@
 ./usr/tests/kernel/arch/i386/t_ptrace_waitpid	tests-obsolete		obsolete
 ./usr/tests/kernel/arch/x86			tests-obsolete		obsolete
 ./usr/tests/kernel/h_fexecve			tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/h_fpufork			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/h_getprocpath		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/h_interpreter		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/h_ps_strings1		tests-kernel-tests	compattestfile,atf
@@ -2185,6 +2188,7 @@
 ./usr/tests/kernel/t_fcntl			tests-kernel-tests	atf
 ./usr/tests/kernel/t_fexecve			tests-kernel-tests	atf
 ./usr/tests/kernel/t_filedesc			tests-kernel-tests	atf,rump
+./usr/tests/kernel/t_fpufork			tests-kernel-tests	atf
 ./usr/tests/kernel/t_interp			tests-kernel-tests	atf
 ./usr/tests/kernel/t_kauth_pr_47598		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_ksem			tests-kernel-tests	atf

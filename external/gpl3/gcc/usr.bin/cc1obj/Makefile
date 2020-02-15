@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.12 2019/02/06 16:57:30 christos Exp $
+#	$NetBSD: Makefile,v 1.14 2020/02/12 00:36:37 fox Exp $
 
 MYOBJS=		${G_OBJC_OBJS} ${G_C_AND_OBJC_OBJS} 
 PROG=		cc1obj
@@ -45,6 +45,9 @@ COPTS.c-typeck.c+=			-Wno-stack-protector
 COPTS.objc-act.c+=			-Wno-stack-protector
 COPTS.objc-gnu-runtime-abi-01.c+=	-Wno-stack-protector
 COPTS.objc-next-runtime-abi-01.c+=	-Wno-stack-protector
+
+COPTS.c-cppbuiltin.c+=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} == 8:? -Wno-error=format-overflow :}
+COPTS.c-typeck.c+=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} == 8:? -Wno-error=format-overflow :}
 
 .if ${MACHINE_ARCH} == "vax"
 COPTS.c-decl.c+=-O0

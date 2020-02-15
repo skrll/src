@@ -1,4 +1,4 @@
-/*	$NetBSD: if_jme.c,v 1.47 2020/01/30 05:42:00 thorpej Exp $	*/
+/*	$NetBSD: if_jme.c,v 1.49 2020/02/08 07:20:41 maxv Exp $	*/
 
 /*
  * Copyright (c) 2008 Manuel Bouyer.  All rights reserved.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_jme.c,v 1.47 2020/01/30 05:42:00 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_jme.c,v 1.49 2020/02/08 07:20:41 maxv Exp $");
 
 
 #include <sys/param.h>
@@ -200,9 +200,9 @@ static void jme_ticks(void *);
 static void jme_mac_config(jme_softc_t *);
 static void jme_set_filter(jme_softc_t *);
 
-int jme_mii_read(device_t, int, int, uint16_t *);
-int jme_mii_write(device_t, int, int, uint16_t);
-void jme_statchg(struct ifnet *);
+static int jme_mii_read(device_t, int, int, uint16_t *);
+static int jme_mii_write(device_t, int, int, uint16_t);
+static void jme_statchg(struct ifnet *);
 
 static int jme_eeprom_read_byte(struct jme_softc *, uint8_t, uint8_t *);
 static int jme_eeprom_macaddr(struct jme_softc *);
@@ -280,6 +280,7 @@ jme_pci_attach(device_t parent, device_t self, void *aux)
 	sc->jme_dev = self;
 	aprint_normal("\n");
 	callout_init(&sc->jme_tick_ch, 0);
+	callout_setfunc(&sc->jme_tick_ch, jme_ticks, sc);
 
 	jp = jme_lookup_product(pa->pa_id);
 	if (jp == NULL)
@@ -962,15 +963,14 @@ jme_init(struct ifnet *ifp, int do_ifinit)
 	    sc->jme_txcsr | TXCSR_TX_ENB);
 
 	/* start ticks calls */
-	callout_reset(&sc->jme_tick_ch, hz, jme_ticks, sc);
+	callout_schedule(&sc->jme_tick_ch, hz);
 	sc->jme_if.if_flags |= IFF_RUNNING;
 	sc->jme_if.if_flags &= ~IFF_OACTIVE;
 	splx(s);
 	return 0;
 }
 
-
-int
+static int
 jme_mii_read(device_t self, int phy, int reg, uint16_t *val)
 {
 	struct jme_softc *sc = device_private(self);
@@ -1004,7 +1004,7 @@ jme_mii_read(device_t self, int phy, int reg, uint16_t *val)
 	return 0;
 }
 
-int
+static int
 jme_mii_write(device_t self, int phy, int reg, uint16_t val)
 {
 	struct jme_softc *sc = device_private(self);
@@ -1038,7 +1038,7 @@ jme_mii_write(device_t self, int phy, int reg, uint16_t val)
 	return 0;
 }
 
-void
+static void
 jme_statchg(struct ifnet *ifp)
 {
 	if ((ifp->if_flags & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING))
@@ -1756,7 +1756,7 @@ jme_ticks(void *v)
 	mii_tick(&sc->jme_mii);
 
 	/* every seconds */
-	callout_reset(&sc->jme_tick_ch, hz, jme_ticks, sc);
+	callout_schedule(&sc->jme_tick_ch, hz);
 	splx(s);
 }
 

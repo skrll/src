@@ -1,11 +1,11 @@
-/*	$NetBSD: kleak.h,v 1.1 2018/12/02 21:00:13 maxv Exp $	*/
+/*	$NetBSD: div64.h,v 1.1 2020/02/14 09:38:51 riastradh Exp $	*/
 
-/*
- * Copyright (c) 2018 The NetBSD Foundation, Inc.
+/*-
+ * Copyright (c) 2014 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Maxime Villard.
+ * by Taylor R. Campbell.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,73 +29,21 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/ksyms.h>
+#ifndef _ASM_DIV64_H_
+#define _ASM_DIV64_H_
 
-#include <amd64/pmap.h>
-#include <amd64/vmparam.h>
+#include <sys/types.h>
 
-static void
-kleak_md_init(uintptr_t *sva, uintptr_t *eva)
+#define	do_div(n_q, d)	_do_div(&(n_q), (d))
+
+static inline uint32_t
+_do_div(uint64_t *n_q, uint32_t d)
 {
-	extern char __rodata_start;
-	*sva = (uintptr_t)KERNTEXTOFF;
-	*eva = (uintptr_t)&__rodata_start;
+	const uint32_t r = *n_q % d;
+	const uint32_t q = *n_q / d;
+
+	*n_q = q;
+	return r;
 }
 
-static inline bool
-__md_unwind_end(const char *name)
-{
-	if (!strcmp(name, "syscall") ||
-	    !strcmp(name, "handle_syscall") ||
-	    !strncmp(name, "Xintr", 5) ||
-	    !strncmp(name, "Xhandle", 7) ||
-	    !strncmp(name, "Xresume", 7) ||
-	    !strncmp(name, "Xstray", 6) ||
-	    !strncmp(name, "Xhold", 5) ||
-	    !strncmp(name, "Xrecurse", 8) ||
-	    !strcmp(name, "Xdoreti") ||
-	    !strncmp(name, "Xsoft", 5)) {
-		return true;
-	}
-
-	return false;
-}
-
-static void
-kleak_md_unwind(struct kleak_hit *hit)
-{
-	uint64_t *rbp, rip;
-	const char *mod;
-	const char *sym;
-	int error;
-
-	rbp = (uint64_t *)__builtin_frame_address(0);
-
-	hit->npc = 0;
-
-	while (1) {
-		/* 8(%rbp) contains the saved %rip. */
-		rip = *(rbp + 1);
-
-		if (rip < KERNBASE) {
-			break;
-		}
-		error = ksyms_getname(&mod, &sym, (vaddr_t)rip, KSYMS_PROC);
-		if (error) {
-			break;
-		}
-		hit->pc[hit->npc++] = rip;
-		if (__md_unwind_end(sym)) {
-			break;
-		}
-
-		rbp = (uint64_t *)*(rbp);
-		if (rbp == 0) {
-			break;
-		}
-
-		if (hit->npc >= KLEAK_HIT_MAXPC) {
-			break;
-		}
-	}
-}
+#endif  /* _ASM_DIV64_H_ */

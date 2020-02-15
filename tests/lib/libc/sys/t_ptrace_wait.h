@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ptrace_wait.h,v 1.18 2019/11/12 18:18:04 kamil Exp $	*/
+/*	$NetBSD: t_ptrace_wait.h,v 1.21 2020/02/13 13:38:44 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2016, 2017, 2018, 2019 The NetBSD Foundation, Inc.
@@ -73,18 +73,21 @@
 #	define TWAIT_GENERIC(a,b,c)		waitpid((a),(b),(c))
 #	define TWAIT_HAVE_PID			1
 #	define TWAIT_HAVE_STATUS		1
+#	define TWAIT_HAVE_OPTIONS		1
 #elif defined(TWAIT_WAITID)
 #	define TWAIT_FNAME			"waitid"
 #	define TWAIT_GENERIC(a,b,c)		\
 		waitid(P_PID,(a),NULL,(c)|WEXITED|WTRAPPED)
 #	define TWAIT_WAIT6TYPE(a,b,c,d,e,f)	waitid((a),(b),(f),(d))
 #	define TWAIT_HAVE_PID			1
+#	define TWAIT_HAVE_OPTIONS		1
 #elif defined(TWAIT_WAIT3)
 #	define TWAIT_FNAME			"wait3"
 #	define TWAIT_WAIT4TYPE(a,b,c,d)		wait3((b),(c),(d))
 #	define TWAIT_GENERIC(a,b,c)		wait3((b),(c),NULL)
 #	define TWAIT_HAVE_STATUS		1
 #	define TWAIT_HAVE_RUSAGE		1
+#	define TWAIT_HAVE_OPTIONS		1
 #elif defined(TWAIT_WAIT4)
 #	define TWAIT_FNAME			"wait4"
 #	define TWAIT_WAIT4TYPE(a,b,c,d)		wait4((a),(b),(c),(d))
@@ -92,6 +95,7 @@
 #	define TWAIT_HAVE_PID			1
 #	define TWAIT_HAVE_STATUS		1
 #	define TWAIT_HAVE_RUSAGE		1
+#	define TWAIT_HAVE_OPTIONS		1
 #elif defined(TWAIT_WAIT6)
 #	define TWAIT_FNAME			"wait6"
 #	define TWAIT_WAIT6TYPE(a,b,c,d,e,f)	wait6((a),(b),(c),(d),(e),(f))
@@ -99,6 +103,7 @@
 		wait6(P_PID,(a),(b),(c)|WEXITED|WTRAPPED,NULL,NULL)
 #	define TWAIT_HAVE_PID			1
 #	define TWAIT_HAVE_STATUS		1
+#	define TWAIT_HAVE_OPTIONS		1
 #endif
 
 /*
@@ -601,6 +606,11 @@ trigger_trap(void)
 #endif
 }
 
+#if defined(__clang__)
+__attribute__((no_sanitize("undefined")))
+#else
+__attribute__((no_sanitize_undefined))
+#endif
 static void __used
 trigger_segv(void)
 {
@@ -637,6 +647,11 @@ are_fpu_exceptions_supported(void)
 	return true;
 }
 
+#if defined(__clang__)
+__attribute__((no_sanitize("undefined")))
+#else
+__attribute__((no_sanitize_undefined))
+#endif
 static void __used
 trigger_fpe(void)
 {
