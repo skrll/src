@@ -303,14 +303,8 @@ cpu_enable_psci(int phandle)
 
 	fdtbus_get_reg64(phandle, 0, &mpidr, NULL);
 
-#if !defined(AARCH64)
-	/*
-	 * not necessary on AARCH64. beside there it hangs the system
-	 * because cache ops are only functional after cpu_attach()
-	 * was called.
-	 */
 	cpu_dcache_wbinv_all();
-#endif
+
 	ret = psci_cpu_on(mpidr, cpu_fdt_mpstart_pa(), 0);
 	if (ret != PSCI_SUCCESS)
 		return EIO;
