@@ -1,4 +1,4 @@
-/*	$NetBSD: intel_opregion.c,v 1.15 2020/02/10 21:54:26 maya Exp $	*/
+/*	$NetBSD: intel_opregion.c,v 1.17 2020/02/14 14:34:58 maya Exp $	*/
 
 /*
  * Copyright 2008 Intel Corporation <hong.liu@intel.com>
@@ -28,12 +28,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intel_opregion.c,v 1.15 2020/02/10 21:54:26 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intel_opregion.c,v 1.17 2020/02/14 14:34:58 maya Exp $");
 
-#include <linux/printk.h>
 #include <linux/acpi.h>
 #include <acpi/video.h>
-#include <asm/io.h>
 
 #include <drm/drmP.h>
 #include <drm/i915_drm.h>
@@ -1017,24 +1015,24 @@ int intel_opregion_setup(struct drm_device *dev)
 		goto err_out;
 	}
 	opregion->header = base;
-	opregion->vbt = (char *)base + OPREGION_VBT_OFFSET;
+	opregion->vbt = base + OPREGION_VBT_OFFSET;
 
-	opregion->lid_state = (void *)((char *)base + ACPI_CLID);
+	opregion->lid_state = base + ACPI_CLID;
 
 	mboxes = opregion->header->mboxes;
 	if (mboxes & MBOX_ACPI) {
 		DRM_DEBUG_DRIVER("Public ACPI methods supported\n");
-		opregion->acpi = (void *)((char *)base + OPREGION_ACPI_OFFSET);
+		opregion->acpi = base + OPREGION_ACPI_OFFSET;
 	}
 
 	if (mboxes & MBOX_SWSCI) {
 		DRM_DEBUG_DRIVER("SWSCI supported\n");
-		opregion->swsci = (void *)((char *)base + OPREGION_SWSCI_OFFSET);
+		opregion->swsci = base + OPREGION_SWSCI_OFFSET;
 		swsci_setup(dev);
 	}
 	if (mboxes & MBOX_ASLE) {
 		DRM_DEBUG_DRIVER("ASLE supported\n");
-		opregion->asle = (void *)((char *)base + OPREGION_ASLE_OFFSET);
+		opregion->asle = base + OPREGION_ASLE_OFFSET;
 
 		opregion->asle->ardy = ASLE_ARDY_NOT_READY;
 	}

@@ -1,4 +1,4 @@
-/*	$NetBSD: pthread_int.h,v 1.101 2020/02/05 11:05:10 kamil Exp $	*/
+/*	$NetBSD: pthread_int.h,v 1.103 2020/02/16 17:45:11 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002, 2003, 2006, 2007, 2008, 2020

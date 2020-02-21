@@ -1,4 +1,4 @@
-/*	$NetBSD: pthread_tsd.c,v 1.18 2019/12/25 00:44:45 joerg Exp $	*/
+/*	$NetBSD: pthread_tsd.c,v 1.20 2020/02/16 17:45:11 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2007 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: pthread_tsd.c,v 1.18 2019/12/25 00:44:45 joerg Exp $");
+__RCSID("$NetBSD: pthread_tsd.c,v 1.20 2020/02/16 17:45:11 kamil Exp $");
 
 /* Functions and structures dealing with thread-specific data */
 #include <errno.h>

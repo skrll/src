@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.70 2019/04/07 05:25:55 thorpej Exp $	*/
+/*	$NetBSD: trap.c,v 1.74 2020/02/20 06:36:04 rin Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.70 2019/04/07 05:25:55 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.74 2020/02/20 06:36:04 rin Exp $");
 
 #include "opt_altivec.h"
 #include "opt_ddb.h"
@@ -76,13 +76,12 @@ __KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.70 2019/04/07 05:25:55 thorpej Exp $");
 #define	__UFETCHSTORE_PRIVATE
 
 #include <sys/param.h>
+#include <sys/cpu.h>
+#include <sys/kauth.h>
 #include <sys/proc.h>
 #include <sys/reboot.h>
 #include <sys/syscall.h>
 #include <sys/systm.h>
-#include <sys/userret.h>
-#include <sys/kauth.h>
-#include <sys/cpu.h>
 
 #if defined(KGDB)
 #include <sys/kgdb.h>
@@ -100,10 +99,11 @@ __KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.70 2019/04/07 05:25:55 thorpej Exp $");
 
 #include <powerpc/db_machdep.h>
 #include <powerpc/spr.h>
-#include <powerpc/ibm4xx/spr.h>
+#include <powerpc/userret.h>
 
 #include <powerpc/ibm4xx/cpu.h>
 #include <powerpc/ibm4xx/pmap.h>
+#include <powerpc/ibm4xx/spr.h>
 #include <powerpc/ibm4xx/tlb.h>
 
 #include <powerpc/fpu/fpu_extern.h>
@@ -348,8 +348,8 @@ brain_damage:
 		panic("trap");
 	}
 
-	/* Invoke MI userret code */
-	mi_userret(l);
+	/* Invoke powerpc userret code */
+	userret(l, tf);
 }
 
 int
