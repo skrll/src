@@ -360,16 +360,14 @@ armgic_irq_handler(void *tf)
 		KASSERT(is != &armgic_dummy_source);
 
 		/*
-		 * GIC has asserted IPL for us so we can just update ci_cpl.
+		 * GIC normally asserts IPL for us via PMR so we can just update
+		 * ci_cpl.
 		 *
 		 * But it's not that simple.  We may have already bumped ci_cpl
-		 * due to a high priority interrupt and now we are about to
-		 * dispatch one lower than the previous.  It's possible for
-		 * that previous interrupt to have deferred some interrupts
-		 * so we need deal with those when lowering to the current
-		 * interrupt's ipl.
-		 *
-		 * However, if are just raising ipl, we can just update ci_cpl.
+		 * while dispatching an interrupt, but when we write to EOIR
+		 * we deactivate the interrupt AND drop the priority on the
+		 * GIC CPU interface allowing any active interrupts to be
+		 * delivered.  The priority drop presents a problem.
 		 */
 		const int ipl = is->is_ipl;
 		if (__predict_true(ipl > ci->ci_cpl)) {
@@ -391,7 +389,8 @@ armgic_irq_handler(void *tf)
 	}
 
 	/*
-	 * Now handle any pending ints.
+	 * Now handle any pending interrupts.  As gic doesn't mark anything
+	 * pending itself this will be just for child pics,
 	 */
 	pic_do_pending_ints(I32_bit, old_ipl, tf);
 	KASSERTMSG(ci->ci_cpl == old_ipl, "ci_cpl %d old_ipl %d", ci->ci_cpl, old_ipl);
