@@ -471,6 +471,37 @@ armgic_establish_irq(struct pic_softc *pic, struct intrsource *is)
 	gicd_write(sc, priority_reg, priority);
 }
 
+static void
+armgic_dist_init(struct armgic_softc *sc)
+{
+
+	/* Distributer should be disabled */
+	KASSERT(!(gicd_read(sc, GICD_CTRL) & GICD_CTRL_Enable));
+
+	for (size_t i = 32; i < sc->sc_pic.pic_maxsources; i += 4) {
+		/*  Target all SPIs towards no CPUs. */
+		if ((i % 4) == 0)
+			gicd_write(sc, GICD_ITARGETSRn(i / 4), 0);
+		/* Set all SPIs to level triggered, active low */
+		if ((i % 16) == 0)
+			gicd_write(sc, GICD_ICFGRn(i / 16), 0);
+		/* Clear pending for all SPIs */
+		if ((i % 32) == 0) {
+			//gicd_write(sc, GICD_ICENABLERn(i / 32, 0xffffffff);
+			gicd_write(sc, GICD_ICPENDRn(i / 32), ~0);
+		}
+	}
+	/*
+	 * Force the GICD to IPL_HIGH and then enable interrupts.
+	 */
+	struct cpu_info * const ci = curcpu();
+	KASSERTMSG(ci->ci_cpl == IPL_HIGH, "ipl %d not IPL_HIGH", ci->ci_cpl);
+	armgic_set_priority(&sc->sc_pic, ci->ci_cpl);	// set PMR
+	gicd_write(sc, GICD_CTRL, GICD_CTRL_Enable);	// enable Distributer
+	gicc_write(sc, GICC_CTRL, GICC_CTRL_V1_Enable);	// enable CPU interrupts
+	cpsie(I32_bit);					// allow interrupt exceptions
+}
+
 #ifdef MULTIPROCESSOR
 static void
 armgic_cpu_init_priorities(struct armgic_softc *sc)
@@ -662,15 +693,7 @@ armgic_attach(device_t parent, device_t self, void *aux)
 #endif
 	pic_add(&sc->sc_pic, 0);
 
-	/*
-	 * Force the GICD to IPL_HIGH and then enable interrupts.
-	 */
-	struct cpu_info * const ci = curcpu();
-	KASSERTMSG(ci->ci_cpl == IPL_HIGH, "ipl %d not IPL_HIGH", ci->ci_cpl);
-	armgic_set_priority(&sc->sc_pic, ci->ci_cpl);	// set PMR
-	gicd_write(sc, GICD_CTRL, GICD_CTRL_Enable);	// enable Distributer
-	gicc_write(sc, GICC_CTRL, GICC_CTRL_V1_Enable);	// enable CPU interrupts
-	cpsie(I32_bit);					// allow interrupt exceptions
+	armgic_dist_init(sc);
 
 	/*
 	 * For each line that isn't valid, we set the intrsource for it to
