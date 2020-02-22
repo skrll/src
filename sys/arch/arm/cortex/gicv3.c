@@ -212,9 +212,28 @@ static void
 gicv3_set_priority(struct pic_softc *pic, int ipl)
 {
 	struct gicv3_softc * const sc = PICTOSOFTC(pic);
+	struct cpu_info * const ci = curcpu();
+	const uint32_t newpri = IPL_TO_PMR(sc, ipl);
+	const uint32_t curpri = icc_pmr_read();
 
-	icc_pmr_write(IPL_TO_PMR(sc, ipl));
-	arm_isb();
+        /*
+         * If an interrupt occurs between the PMR read and raising the PMR
+         * there is no matter as it'll return it to the same value
+         *
+         * GIC priorities with lower values block higher priority interrupts
+         */
+
+	if (newpri < curpri) {
+		/* raising ipl */
+		icc_pmr_write(newpri);
+		ci->ci_cpl = ipl;
+		arm_isb();
+	} else {
+		/* lowering ipl */
+		ci->ci_cpl = ipl;
+		icc_pmr_write(newpri);
+		arm_isb();
+	}
 }
 
 static void
@@ -394,6 +413,7 @@ gicv3_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 	while (gicr_read_4(sc, ci->ci_gic_redist, GICR_WAKER) & GICR_WAKER_ChildrenAsleep)
 		;
 
+	KASSERT(ci->ci_cpl == IPL_HIGH);
 	/* Set initial priority mask */
 	gicv3_set_priority(pic, IPL_HIGH);
 
@@ -740,7 +760,6 @@ gicv3_irq_handler(void *frame)
 			pic_do_pending_ints(I32_bit, ipl, frame);
 		} else {
 			gicv3_set_priority(pic, ipl);
-			ci->ci_cpl = ipl;
 		}
 
 		if (early_eoi) {
