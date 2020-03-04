@@ -45,14 +45,14 @@ __KERNEL_RCSID(0, "$NetBSD: usb_mem.c,v 1.72 2019/08/28 07:11:19 mrg Exp $");
 #endif
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/kernel.h>
-#include <sys/kmem.h>
-#include <sys/queue.h>
-#include <sys/device.h>		/* for usbdivar.h */
 #include <sys/bus.h>
 #include <sys/cpu.h>
+#include <sys/device.h>		/* for usbdivar.h */
+#include <sys/kernel.h>
+#include <sys/kmem.h>
 #include <sys/once.h>
+#include <sys/queue.h>
+#include <sys/systm.h>
 
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
