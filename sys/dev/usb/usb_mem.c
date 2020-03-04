@@ -200,12 +200,9 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 void
 usb_block_real_freemem(usb_dma_block_t *b)
 {
-#ifdef DIAGNOSTIC
-	if (cpu_softintr_p() || cpu_intr_p()) {
-		printf("usb_block_real_freemem: in interrupt context\n");
-		return;
-	}
-#endif
+	KASSERT(!cpu_intr_p());
+	KASSERT(!cpu_softintr_p());
+
 	bus_dmamap_unload(b->tag, b->map);
 	bus_dmamap_destroy(b->tag, b->map);
 	bus_dmamem_unmap(b->tag, b->kaddr, b->size);
