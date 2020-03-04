@@ -54,10 +54,6 @@ __KERNEL_RCSID(0, "$NetBSD: usb_mem.c,v 1.72 2019/08/28 07:11:19 mrg Exp $");
 #include <sys/cpu.h>
 #include <sys/once.h>
 
-#ifdef DIAGNOSTIC
-#include <sys/proc.h>
-#endif
-
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
 #include <dev/usb/usbdivar.h>	/* just for usb_dma_t */
