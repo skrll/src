@@ -2391,10 +2391,10 @@ int dwc2_hcd_init(struct dwc2_hsotg *hsotg)
 	 */
 	hsotg->status_buf = NULL;
 	if (hsotg->core_params->dma_enable > 0) {
-		retval = usb_allocmem(&hsotg->hsotg_sc->sc_bus,
+		int error = usb_allocmem(&hsotg->hsotg_sc->sc_bus,
 				      DWC2_HCD_STATUS_BUF_SIZE, 0,
 				      &hsotg->status_buf_usbdma);
-		if (!retval) {
+		if (!error) {
 			hsotg->status_buf = KERNADDR(&hsotg->status_buf_usbdma, 0);
 			hsotg->status_buf_dma = DMAADDR(&hsotg->status_buf_usbdma, 0);
 		}

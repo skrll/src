@@ -2002,7 +2002,7 @@ ehci_open(struct usbd_pipe *pipe)
 	switch (xfertype) {
 	case UE_CONTROL:
 		err = usb_allocmem(&sc->sc_bus, sizeof(usb_device_request_t),
-				   0, &epipe->ctrl.reqdma);
+		    0, &epipe->ctrl.reqdma);
 #ifdef EHCI_DEBUG
 		if (err)
 			printf("ehci_open: usb_allocmem()=%d\n", err);
@@ -2802,7 +2802,7 @@ ehci_alloc_sqh(ehci_softc_t *sc)
 		mutex_exit(&sc->sc_lock);
 
 		err = usb_allocmem(&sc->sc_bus, EHCI_SQH_SIZE * EHCI_SQH_CHUNK,
-			  EHCI_PAGE_SIZE, &dma);
+		    EHCI_PAGE_SIZE, &dma);
 #ifdef EHCI_DEBUG
 		if (err)
 			printf("ehci_alloc_sqh: usb_allocmem()=%d\n", err);
@@ -2843,7 +2843,6 @@ Static ehci_soft_qtd_t *
 ehci_alloc_sqtd(ehci_softc_t *sc)
 {
 	ehci_soft_qtd_t *sqtd = NULL;
-	usbd_status err;
 	int i, offs;
 	usb_dma_t dma;
 
@@ -2854,8 +2853,9 @@ ehci_alloc_sqtd(ehci_softc_t *sc)
 		DPRINTF("allocating chunk", 0, 0, 0, 0);
 		mutex_exit(&sc->sc_lock);
 
-		err = usb_allocmem(&sc->sc_bus, EHCI_SQTD_SIZE*EHCI_SQTD_CHUNK,
-			  EHCI_PAGE_SIZE, &dma);
+		int err = usb_allocmem(&sc->sc_bus,
+		    EHCI_SQTD_SIZE * EHCI_SQTD_CHUNK,
+		    EHCI_PAGE_SIZE, &dma);
 #ifdef EHCI_DEBUG
 		if (err)
 			printf("ehci_alloc_sqtd: usb_allocmem()=%d\n", err);
@@ -3101,7 +3101,6 @@ Static ehci_soft_itd_t *
 ehci_alloc_itd(ehci_softc_t *sc)
 {
 	struct ehci_soft_itd *itd, *freeitd;
-	usbd_status err;
 	usb_dma_t dma;
 
 	EHCIHIST_FUNC(); EHCIHIST_CALLED();
@@ -3112,8 +3111,8 @@ ehci_alloc_itd(ehci_softc_t *sc)
 	if (freeitd == NULL) {
 		DPRINTF("allocating chunk", 0, 0, 0, 0);
 		mutex_exit(&sc->sc_lock);
-		err = usb_allocmem(&sc->sc_bus, EHCI_ITD_SIZE * EHCI_ITD_CHUNK,
-				EHCI_PAGE_SIZE, &dma);
+		int err = usb_allocmem(&sc->sc_bus, EHCI_ITD_SIZE * EHCI_ITD_CHUNK,
+		    EHCI_PAGE_SIZE, &dma);
 
 		if (err) {
 			DPRINTF("alloc returned %jd", err, 0, 0, 0);
@@ -3149,7 +3148,6 @@ Static ehci_soft_sitd_t *
 ehci_alloc_sitd(ehci_softc_t *sc)
 {
 	struct ehci_soft_sitd *sitd, *freesitd;
-	usbd_status err;
 	int i, offs;
 	usb_dma_t dma;
 
@@ -3160,8 +3158,8 @@ ehci_alloc_sitd(ehci_softc_t *sc)
 	if (freesitd == NULL) {
 		DPRINTF("allocating chunk", 0, 0, 0, 0);
 		mutex_exit(&sc->sc_lock);
-		err = usb_allocmem(&sc->sc_bus, EHCI_SITD_SIZE * EHCI_SITD_CHUNK,
-				EHCI_PAGE_SIZE, &dma);
+		int err = usb_allocmem(&sc->sc_bus, EHCI_SITD_SIZE * EHCI_SITD_CHUNK,
+		    EHCI_PAGE_SIZE, &dma);
 
 		if (err) {
 			DPRINTF("alloc returned %jd", err, 0, 0,

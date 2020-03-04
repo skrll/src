@@ -1061,8 +1061,7 @@ xhci_init(struct xhci_softc *sc)
 	    (uint32_t)sc->sc_maxslots);
 	aprint_debug_dev(sc->sc_dev, "sc_maxports %d\n", sc->sc_maxports);
 
-	usbd_status err;
-
+	int err;
 	sc->sc_maxspbuf = XHCI_HCS2_MAXSPBUF(hcs2);
 	aprint_debug_dev(sc->sc_dev, "sc_maxspbuf %d\n", sc->sc_maxspbuf);
 	if (sc->sc_maxspbuf != 0) {
@@ -2489,16 +2488,15 @@ static usbd_status
 xhci_ring_init(struct xhci_softc * const sc, struct xhci_ring * const xr,
     size_t ntrb, size_t align)
 {
-	usbd_status err;
 	size_t size = ntrb * XHCI_TRB_SIZE;
 
 	XHCIHIST_FUNC();
 	XHCIHIST_CALLARGS("xr %#jx ntrb %#jx align %#jx",
 	    (uintptr_t)xr, ntrb, align, 0);
 
-	err = usb_allocmem(&sc->sc_bus, size, align, &xr->xr_dma);
+	int err = usb_allocmem(&sc->sc_bus, size, align, &xr->xr_dma);
 	if (err)
-		return err;
+		return USBD_NOMEM;
 	mutex_init(&xr->xr_lock, MUTEX_DEFAULT, IPL_SOFTUSB);
 	xr->xr_cookies = kmem_zalloc(sizeof(*xr->xr_cookies) * ntrb, KM_SLEEP);
 	xr->xr_trb = xhci_ring_trbv(xr, 0);
@@ -2909,6 +2907,7 @@ xhci_init_slot(struct usbd_device *dev, uint32_t slot)
 	struct xhci_slot *xs;
 	usbd_status err;
 	u_int dci;
+	int error;
 
 	XHCIHIST_FUNC();
 	XHCIHIST_CALLARGS("slot %ju", slot, 0, 0, 0);
@@ -2916,16 +2915,18 @@ xhci_init_slot(struct usbd_device *dev, uint32_t slot)
 	xs = &sc->sc_slots[slot];
 
 	/* allocate contexts */
-	err = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
+	error = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
 	    &xs->xs_dc_dma);
-	if (err)
-		return err;
+	if (error)
+		return USBD_NOMEM;
 	memset(KERNADDR(&xs->xs_dc_dma, 0), 0, sc->sc_pgsz);
 
-	err = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
+	error = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
 	    &xs->xs_ic_dma);
-	if (err)
+	if (error) {
+		err = USBD_NOMEM;
 		goto bad1;
+	}
 	memset(KERNADDR(&xs->xs_ic_dma, 0), 0, sc->sc_pgsz);
 
 	for (dci = 0; dci < 32; dci++) {
@@ -2941,14 +2942,12 @@ xhci_init_slot(struct usbd_device *dev, uint32_t slot)
 		}
 	}
 
- bad2:
-	if (err == USBD_NORMAL_COMPLETION) {
-		xs->xs_idx = slot;
-	} else {
-		xhci_free_slot(sc, xs, XHCI_DCI_SLOT + 1, dci);
-	}
+	xs->xs_idx = slot;
 
-	return err;
+	return 0;
+ bad2:
+
+	xhci_free_slot(sc, xs, XHCI_DCI_SLOT + 1, dci);
 
  bad1:
 	usb_freemem(&sc->sc_bus, &xs->xs_dc_dma);

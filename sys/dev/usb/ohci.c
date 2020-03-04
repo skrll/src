@@ -397,7 +397,6 @@ ohci_soft_ed_t *
 ohci_alloc_sed(ohci_softc_t *sc)
 {
 	ohci_soft_ed_t *sed;
-	usbd_status err;
 	int i, offs;
 	usb_dma_t dma;
 
@@ -408,8 +407,8 @@ ohci_alloc_sed(ohci_softc_t *sc)
 		DPRINTFN(2, "allocating chunk", 0, 0, 0, 0);
 		mutex_exit(&sc->sc_lock);
 
-		err = usb_allocmem(&sc->sc_bus, OHCI_SED_SIZE * OHCI_SED_CHUNK,
-			  OHCI_ED_ALIGN, &dma);
+		int err = usb_allocmem(&sc->sc_bus, OHCI_SED_SIZE * OHCI_SED_CHUNK,
+		    OHCI_ED_ALIGN, &dma);
 		if (err)
 			return 0;
 
@@ -456,7 +455,6 @@ ohci_soft_td_t *
 ohci_alloc_std(ohci_softc_t *sc)
 {
 	ohci_soft_td_t *std;
-	usbd_status err;
 	int i, offs;
 	usb_dma_t dma;
 
@@ -467,8 +465,8 @@ ohci_alloc_std(ohci_softc_t *sc)
 		DPRINTFN(2, "allocating chunk", 0, 0, 0, 0);
 		mutex_exit(&sc->sc_lock);
 
-		err = usb_allocmem(&sc->sc_bus, OHCI_STD_SIZE * OHCI_STD_CHUNK,
-			  OHCI_TD_ALIGN, &dma);
+		int err = usb_allocmem(&sc->sc_bus, OHCI_STD_SIZE * OHCI_STD_CHUNK,
+		   OHCI_TD_ALIGN, &dma);
 		if (err)
 			return NULL;
 
@@ -700,7 +698,6 @@ ohci_soft_itd_t *
 ohci_alloc_sitd(ohci_softc_t *sc)
 {
 	ohci_soft_itd_t *sitd;
-	usbd_status err;
 	int i, offs;
 	usb_dma_t dma;
 
@@ -711,8 +708,8 @@ ohci_alloc_sitd(ohci_softc_t *sc)
 		DPRINTFN(2, "allocating chunk", 0, 0, 0, 0);
 		mutex_exit(&sc->sc_lock);
 
-		err = usb_allocmem(&sc->sc_bus, OHCI_SITD_SIZE * OHCI_SITD_CHUNK,
-			  OHCI_ITD_ALIGN, &dma);
+		int err = usb_allocmem(&sc->sc_bus, OHCI_SITD_SIZE * OHCI_SITD_CHUNK,
+		    OHCI_ITD_ALIGN, &dma);
 		if (err)
 			return NULL;
 		mutex_enter(&sc->sc_lock);
@@ -2080,10 +2077,10 @@ ohci_open(struct usbd_pipe *pipe)
 		switch (xfertype) {
 		case UE_CONTROL:
 			pipe->up_methods = &ohci_device_ctrl_methods;
-			err = usb_allocmem(&sc->sc_bus,
-				  sizeof(usb_device_request_t),
-				  0, &opipe->ctrl.reqdma);
-			if (err)
+			int error = usb_allocmem(&sc->sc_bus,
+			    sizeof(usb_device_request_t),
+			    0, &opipe->ctrl.reqdma);
+			if (error)
 				goto bad;
 			mutex_enter(&sc->sc_lock);
 			ohci_add_ed(sc, sed, sc->sc_ctrl_head);

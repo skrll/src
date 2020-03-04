@@ -74,9 +74,9 @@ struct usb_frag_dma {
 	LIST_ENTRY(usb_frag_dma) ufd_next;
 };
 
-Static usbd_status	usb_block_allocmem(bus_dma_tag_t, size_t, size_t,
-			    usb_dma_block_t **);
-Static void		usb_block_freemem(usb_dma_block_t *);
+Static int	usb_block_allocmem(bus_dma_tag_t, size_t, size_t,
+		    usb_dma_block_t **);
+Static void	usb_block_freemem(usb_dma_block_t *);
 
 LIST_HEAD(usb_dma_block_qh, usb_dma_block);
 Static struct usb_dma_block_qh usb_blk_freelist =
@@ -104,7 +104,7 @@ usb_mem_init(void)
 	return 0;
 }
 
-Static usbd_status
+Static int
 usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
     usb_dma_block_t **dmap)
 {
@@ -125,7 +125,7 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 			usb_blk_nfree--;
 			*dmap = b;
 			DPRINTFN(6, "free list size=%ju", b->size, 0, 0, 0);
-			return USBD_NORMAL_COMPLETION;
+			return 0;
 		}
 	}
 
@@ -165,7 +165,7 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 #endif
 	mutex_enter(&usb_blk_lock);
 
-	return USBD_NORMAL_COMPLETION;
+	return 0;
 
  destroy:
 	bus_dmamap_destroy(tag, b->map);
@@ -178,7 +178,7 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 	kmem_free(b, sizeof(*b));
 	mutex_enter(&usb_blk_lock);
 
-	return USBD_NOMEM;
+	return error;
 }
 
 #if 0
@@ -230,7 +230,7 @@ usb_block_freemem(usb_dma_block_t *b)
 	usb_blk_nfree++;
 }
 
-usbd_status
+int
 usb_allocmem(struct usbd_bus *bus, size_t size, size_t align, usb_dma_t *p)
 {
 	bus_dma_tag_t tag = bus->ub_dmatag;
@@ -303,7 +303,7 @@ usb_allocmem(struct usbd_bus *bus, size_t size, size_t align, usb_dma_t *p)
 	mutex_exit(&usb_blk_lock);
 	DPRINTFN(5, "use frag=%#jx size=%jd", (uintptr_t)f, size, 0, 0);
 
-	return USBD_NORMAL_COMPLETION;
+	return 0;
 }
 
 void
