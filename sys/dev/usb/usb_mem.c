@@ -75,7 +75,7 @@ struct usb_frag_dma {
 };
 
 Static usbd_status	usb_block_allocmem(bus_dma_tag_t, size_t, size_t,
-					   usb_dma_block_t **, bool);
+			    usb_dma_block_t **, bool);
 Static void		usb_block_freemem(usb_dma_block_t *);
 
 LIST_HEAD(usb_dma_block_qh, usb_dma_block);
@@ -249,7 +249,7 @@ usb_allocmem(struct usbd_bus *bus, size_t size, size_t align, usb_dma_t *p)
 
 usbd_status
 usb_allocmem_flags(struct usbd_bus *bus, size_t size, size_t align, usb_dma_t *p,
-		   int flags)
+    int flags)
 {
 	bus_dma_tag_t tag = bus->ub_dmatag;
 	usbd_status err;
