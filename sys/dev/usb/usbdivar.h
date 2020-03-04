@@ -162,7 +162,6 @@ struct usbd_bus {
 			       *ub_methods;
 	uint32_t		ub_pipesize;	/* size of a pipe struct */
 	bool			ub_usedma;	/* Does this HC support DMA */
-	int			ub_dmaflags;
 	bus_dma_tag_t		ub_dmatag;	/* DMA tag */
 
 	/* Filled by usb driver */

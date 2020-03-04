@@ -486,7 +486,6 @@ ehci_init(ehci_softc_t *sc)
 
 	sc->sc_bus.ub_revision = USBREV_2_0;
 	sc->sc_bus.ub_usedma = true;
-	sc->sc_bus.ub_dmaflags = USBMALLOC_MULTISEG;
 
 	/* Reset the controller */
 	DPRINTF("resetting", 0, 0, 0, 0);

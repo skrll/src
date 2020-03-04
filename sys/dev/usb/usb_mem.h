@@ -37,7 +37,6 @@ typedef struct usb_dma_block {
 	void *kaddr;
 	bus_dma_segment_t *segs;
 	int nsegs;
-	int nsegs_alloc;
 	size_t size;
 	size_t align;
 	int flags;
@@ -48,8 +47,6 @@ typedef struct usb_dma_block {
 #define USBMALLOC_MULTISEG	1
 
 usbd_status	usb_allocmem(struct usbd_bus *, size_t, size_t, usb_dma_t *);
-usbd_status	usb_allocmem_flags(struct usbd_bus *, size_t, size_t, usb_dma_t *,
-			int);
 void		usb_freemem(struct usbd_bus *, usb_dma_t *);
 void		usb_syncmem(usb_dma_t *, bus_addr_t, bus_size_t, int);
 
