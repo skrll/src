@@ -148,7 +148,7 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 		/* Caller wants one segment */
 		b->nsegs = 1;
 	else
-		b->nsegs = (size + (PAGE_SIZE-1)) / PAGE_SIZE;
+		b->nsegs = howmany(size, PAGE_SIZE);
 
 	b->segs = kmem_alloc(b->nsegs * sizeof(*b->segs), KM_SLEEP);
 	b->nsegs_alloc = b->nsegs;
