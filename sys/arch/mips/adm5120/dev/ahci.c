@@ -877,9 +877,9 @@ ahci_device_ctrl_start(struct usbd_xfer *xfer)
 		td1 = (struct admhcd_td *)KSEG1ADDR(&td_v[1]);
 		td2 = (struct admhcd_td *)KSEG1ADDR(&td_v[2]);
 		td3 = (struct admhcd_td *)KSEG1ADDR(&td_v[3]);
-		err = usb_allocmem(&sc->sc_bus,
-			sizeof(usb_device_request_t),
-			0, &reqdma);
+
+		err = usb_allocmem(&sc->sc_bus, sizeof(usb_device_request_t),
+		    0, &reqdma);
 		if (err)
 			return USBD_NOMEM;
 
@@ -889,7 +889,7 @@ ahci_device_ctrl_start(struct usbd_xfer *xfer)
 	ep->control =  pipe->up_dev->ud_addr | \
 		((pipe->up_dev->ud_speed==USB_SPEED_FULL)?ADMHCD_ED_SPEED:0) | \
 		((UGETW(pipe->up_endpoint->ue_edesc->wMaxPacketSize))<<ADMHCD_ED_MAXSHIFT);
-	memcpy(KERNADDR(&reqdma, 0), req, sizeof *req);
+	memcpy(KERNADDR(&reqdma, 0), req, sizeof(*req));
 /* 	printf("status: %x\n",REG_READ(ADMHCD_REG_PORTSTATUS0));
 	printf("ep_control: %x\n",ep->control);
 	printf("speed: %x\n",pipe->up_dev->ud_speed);
@@ -1236,16 +1236,16 @@ ahci_device_bulk_start(struct usbd_xfer *xfer)
 
 	i = 0;
 	offset = 0;
-	while ((len>0) || (i==0)) {
+	while (len > 0) || i == 0) {
 		tlen = uimin(len,4096);
-		td[i]->buffer = DMAADDR(&xfer->ux_dmabuf,offset) | 0xa0000000;
-		td[i]->buflen=tlen;
-		td[i]->control=(isread?ADMHCD_TD_IN:ADMHCD_TD_OUT) | toggle | ADMHCD_TD_OWN | short_ok;
-		td[i]->len=tlen;
+		td[i]->buffer = DMAADDR(&xfer->ux_dmabuf, offset) | 0xa0000000;
+		td[i]->buflen = tlen;
+		td[i]->control = (isread ? ADMHCD_TD_IN:ADMHCD_TD_OUT) | toggle | ADMHCD_TD_OWN | short_ok;
+		td[i]->len = tlen;
 		toggle = ADMHCD_TD_TOGGLE;
 		len -= tlen;
 		offset += tlen;
-		td[i]->next = td[i+1];
+		td[i]->next = td[i + 1];
 		i++;
 	};
 
