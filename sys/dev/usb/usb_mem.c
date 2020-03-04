@@ -106,7 +106,7 @@ usb_mem_init(void)
 
 Static usbd_status
 usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
-		   usb_dma_block_t **dmap, bool multiseg)
+    usb_dma_block_t **dmap, bool multiseg)
 {
 	usb_dma_block_t *b;
 	int error;
@@ -149,24 +149,23 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 	b->segs = kmem_alloc(b->nsegs * sizeof(*b->segs), KM_SLEEP);
 	b->nsegs_alloc = b->nsegs;
 
-	error = bus_dmamem_alloc(tag, b->size, align, 0,
-				 b->segs, b->nsegs,
-				 &b->nsegs, BUS_DMA_WAITOK);
+	error = bus_dmamem_alloc(tag, b->size, align, 0, b->segs, b->nsegs,
+	    &b->nsegs, BUS_DMA_WAITOK);
 	if (error)
 		goto free0;
 
-	error = bus_dmamem_map(tag, b->segs, b->nsegs, b->size,
-			       &b->kaddr, BUS_DMA_WAITOK|BUS_DMA_COHERENT);
+	error = bus_dmamem_map(tag, b->segs, b->nsegs, b->size, &b->kaddr,
+	    BUS_DMA_WAITOK|BUS_DMA_COHERENT);
 	if (error)
 		goto free1;
 
-	error = bus_dmamap_create(tag, b->size, b->nsegs, b->size,
-				  0, BUS_DMA_WAITOK, &b->map);
+	error = bus_dmamap_create(tag, b->size, b->nsegs, b->size, 0,
+	    BUS_DMA_WAITOK, &b->map);
 	if (error)
 		goto unmap;
 
 	error = bus_dmamap_load(tag, b->map, b->kaddr, b->size, NULL,
-				BUS_DMA_WAITOK);
+	    BUS_DMA_WAITOK);
 	if (error)
 		goto destroy;
 
@@ -297,7 +296,7 @@ usb_allocmem_flags(struct usbd_bus *bus, size_t size, size_t align, usb_dma_t *p
 	if (f == NULL) {
 		DPRINTFN(1, "adding fragments", 0, 0, 0, 0);
 		err = usb_block_allocmem(tag, USB_MEM_BLOCK, USB_MEM_SMALL, &b,
-					 false);
+		    false);
 		if (err) {
 			mutex_exit(&usb_blk_lock);
 			return err;
