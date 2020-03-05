@@ -105,6 +105,7 @@ static int dwc2_desc_list_alloc(struct dwc2_hsotg *hsotg, struct dwc2_qh *qh,
 	qh->desc_list_sz = sizeof(struct dwc2_hcd_dma_desc) *
 						dwc2_max_desc_num(qh);
 
+	// XXXNH use bus_dma?
 	err = usb_allocmem(&hsotg->hsotg_sc->sc_bus, qh->desc_list_sz, 0,
 	    &qh->desc_list_usbdma);
 
@@ -726,7 +727,8 @@ static void dwc2_fill_host_dma_desc(struct dwc2_hsotg *hsotg,
 	if (len > chan->xfer_len) {
 		chan->xfer_len = 0;
 	} else {
-		chan->xfer_dma += len;		/* XXXNH safe */
+		/* XXXNH not safe */
+		chan->xfer_dma += len;
 		chan->xfer_len -= len;
 	}
 }

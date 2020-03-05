@@ -1077,6 +1077,8 @@ xhci_init(struct xhci_softc *sc)
 		sc->sc_spbuf_dma = kmem_zalloc(sizeof(*sc->sc_spbuf_dma) *
 		    sc->sc_maxspbuf, KM_SLEEP);
 		uint64_t *spbufarray = KERNADDR(&sc->sc_spbufarray_dma, 0);
+
+		//XXXNH use bus_dma direct?
 		for (i = 0; i < sc->sc_maxspbuf; i++) {
 			usb_dma_t * const dma = &sc->sc_spbuf_dma[i];
 			/* allocate contexts */
@@ -1124,6 +1126,7 @@ xhci_init(struct xhci_softc *sc)
 	size_t size;
 	size_t align;
 
+	//XXXNH bus_dma direct?
 	dma = &sc->sc_eventst_dma;
 	size = roundup2(XHCI_EVENT_RING_SEGMENTS * XHCI_ERSTE_SIZE,
 	    XHCI_EVENT_RING_SEGMENT_TABLE_ALIGN);
@@ -1144,6 +1147,7 @@ xhci_init(struct xhci_softc *sc)
 	    KERNADDR(&sc->sc_eventst_dma, 0),
 	    sc->sc_eventst_dma.udma_block->size);
 
+	//XXXNH bus_dma direct?
 	dma = &sc->sc_dcbaa_dma;
 	size = (1 + sc->sc_maxslots) * sizeof(uint64_t);
 	KASSERTMSG(size <= 2048, "dcbaa size %zu too large", size);
@@ -2915,12 +2919,14 @@ xhci_init_slot(struct usbd_device *dev, uint32_t slot)
 	xs = &sc->sc_slots[slot];
 
 	/* allocate contexts */
+	//XXXNH bus_dma direct?
 	error = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
 	    &xs->xs_dc_dma);
 	if (error)
 		return USBD_NOMEM;
 	memset(KERNADDR(&xs->xs_dc_dma, 0), 0, sc->sc_pgsz);
 
+	//XXXNH bus_dma direct?
 	error = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
 	    &xs->xs_ic_dma);
 	if (error) {

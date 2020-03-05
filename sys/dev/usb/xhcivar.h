@@ -41,6 +41,7 @@ struct xhci_soft_trb {
 
 struct xhci_xfer {
 	struct usbd_xfer xx_xfer;
+	//XXNH pointer to kmem_alloc?
 	struct xhci_soft_trb xx_trb[XHCI_XFER_NTRB];
 };
 

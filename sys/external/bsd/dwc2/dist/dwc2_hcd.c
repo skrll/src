@@ -724,6 +724,9 @@ static int dwc2_hc_setup_align_buf(struct dwc2_hsotg *hsotg, struct dwc2_qh *qh,
 	if (!qh->dw_align_buf) {
 		int err;
 
+//XXXNH
+// .max_transfer_size              = 524287,
+// !!!
 		if (chan->ep_type != USB_ENDPOINT_XFER_ISOC)
 			buf_size = hsotg->core_params->max_transfer_size;
 		else
