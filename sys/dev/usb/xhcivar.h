@@ -112,7 +112,6 @@ struct xhci_softc {
 	int sc_rhportcount[2];
 	struct usbd_xfer *sc_intrxfer[2];
 
-
 	struct xhci_slot * sc_slots;
 
 	struct xhci_ring sc_cr;		/* command ring */
