@@ -529,7 +529,7 @@ ohci_alloc_std_chain(ohci_softc_t *sc, struct usbd_xfer *xfer, int length, int r
 	KASSERT(length != 0 || (!rd && (flags & USBD_FORCE_SHORT_XFER)));
 
 	size_t nstd = (!rd && (flags & USBD_FORCE_SHORT_XFER)) ? 1 : 0;
-	nstd += ((length + OHCI_PAGE_SIZE - 1) / OHCI_PAGE_SIZE);
+	nstd += howmany(length, OHCI_PAGE_SIZE);
 	ox->ox_stds = kmem_zalloc(sizeof(ohci_soft_td_t *) * nstd,
 	    KM_SLEEP);
 	ox->ox_nstd = nstd;
@@ -3355,8 +3355,7 @@ ohci_device_isoc_init(struct usbd_xfer *xfer)
 	DPRINTFN(1, "xfer %#jx len %jd flags %jd", (uintptr_t)xfer,
 	    xfer->ux_length, xfer->ux_flags, 0);
 
-	const size_t nfsitd =
-	    (xfer->ux_nframes + OHCI_ITD_NOFFSET - 1) / OHCI_ITD_NOFFSET;
+	const size_t nfsitd = howmany(xfer->ux_nframes, OHCI_ITD_NOFFSET);
 	const size_t nbsitd = xfer->ux_bufsize / OHCI_PAGE_SIZE;
 	const size_t nsitd = MAX(nfsitd, nbsitd) + 1;
 
