@@ -4714,7 +4714,7 @@ ehci_device_isoc_transfer(struct usbd_xfer *xfer)
 	}
 
 	ufrperframe = uimax(1, USB_UFRAMES_PER_FRAME / (1 << (i - 1)));
-	frames = (xfer->ux_nframes + (ufrperframe - 1)) / ufrperframe;
+	frames = howmany(xfer->ux_nframes, ufrperframe);
 	uframes = USB_UFRAMES_PER_FRAME / ufrperframe;
 
 	if (frames == 0) {
