@@ -459,8 +459,10 @@ uhci_init(uhci_softc_t *sc)
 	if (err)
 		return err;
 	sc->sc_pframes = KERNADDR(&sc->sc_dma, 0);
-	UWRITE2(sc, UHCI_FRNUM, 0);		/* set frame number to 0 */
-	UWRITE4(sc, UHCI_FLBASEADDR, DMAADDR(&sc->sc_dma, 0)); /* set frame list*/
+	/* set frame number to 0 */
+	UWRITE2(sc, UHCI_FRNUM, 0);
+	/* set frame list */
+	UWRITE4(sc, UHCI_FLBASEADDR, DMAADDR(&sc->sc_dma, 0));
 
 	/* Initialise mutex early for uhci_alloc_* */
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_SOFTUSB);
@@ -2097,11 +2099,14 @@ uhci_reset_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer,
 	usb_syncmem(dma, 0, len,
 	    isread ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
 	std = prev = NULL;
-	for (i = 0; len != 0 && i < uxfer->ux_nstd; i++, prev = std) {
+	for (offs = i = 0; len != 0 && i < uxfer->ux_nstd; i++, prev = std) {
 		int l = len;
 		std = uxfer->ux_stds[i];
 		if (l > maxp)
 			l = maxp;
+
+		if (DMAADDR(dma, offs) != DMAADDR(dma, offs + l))
+			l = PAGE_SIZE - DMAADDR(dma, offs)
 
 		if (prev) {
 			prev->link.std = std;
@@ -2124,7 +2129,7 @@ uhci_reset_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer,
 		    UHCI_TD_SET_DT(tog) |
 		    UHCI_TD_SET_MAXLEN(l)
 		    );
-		std->td.td_buffer = htole32(DMAADDR(dma, i * maxp));
+		std->td.td_buffer = htole32(DMAADDR(dma, offs));
 
 		std->link.std = NULL;
 
@@ -2132,6 +2137,7 @@ uhci_reset_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer,
 		    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
 		tog ^= 1;
 
+		offs += l;
 		len -= l;
 	}
 	KASSERTMSG(len == 0, "xfer %p alen %d len %d mps %d ux_nqtd %zu i %zu",
@@ -2925,17 +2931,20 @@ uhci_device_isoc_transfer(struct usbd_xfer *xfer)
 	xfer->ux_status = USBD_IN_PROGRESS;
 	ux->ux_curframe = next;
 
-	buf = DMAADDR(&xfer->ux_dmabuf, 0);
 	offs = 0;
 	status = UHCI_TD_ZERO_ACTLEN(UHCI_TD_SET_ERRCNT(0) |
 				     UHCI_TD_ACTIVE |
 				     UHCI_TD_IOS);
 	nframes = xfer->ux_nframes;
 	for (i = 0; i < nframes; i++) {
+		buf = DMAADDR(&xfer->ux_dmabuf, offs);
 		std = isoc->stds[next];
 		if (++next >= UHCI_VFRAMELIST_COUNT)
 			next = 0;
 		len = xfer->ux_frlengths[i];
+
+		KASSERTMSG(len <= __SHIFTOUT_MASK(UHCI_TD_MAXLEN_MASK),
+		    "len %d", len);
 		std->td.td_buffer = htole32(buf);
 		usb_syncmem(&xfer->ux_dmabuf, offs, len,
 		    rd ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
@@ -2954,8 +2963,8 @@ uhci_device_isoc_transfer(struct usbd_xfer *xfer)
 			DPRINTF("--- dump end ---", 0, 0, 0, 0);
 		}
 #endif
-		buf += len;
 		offs += len;
+		KASSERT(atop(buf) == atop(DMAADDR(&xfer->ux_dmabuf, offs)));
 	}
 	isoc->next = next;
 	isoc->inuse += xfer->ux_nframes;
