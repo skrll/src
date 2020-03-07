@@ -616,19 +616,25 @@ ohci_reset_std_chain(ohci_softc_t *sc, struct usbd_xfer *xfer,
 			next = ox->ox_stds[j++];
 		KASSERT(next != cur);
 
-		curlen = 0;
-		const ohci_physaddr_t sdataphys = DMAADDR(dma, curoffs);
-		ohci_physaddr_t edataphys = DMAADDR(dma, curoffs + len - 1);
-
-		const ohci_physaddr_t sphyspg = OHCI_PAGE(sdataphys);
-		ohci_physaddr_t ephyspg = OHCI_PAGE(edataphys);
-		/*
-		 * The OHCI hardware can handle at most one page
-		 * crossing per TD
-		 */
 		curlen = len;
-		if (sphyspg != ephyspg &&
-		    sphyspg + OHCI_PAGE_SIZE != ephyspg) {
+		/*
+		 * The OHCI hardware can handle at most one page crossing per
+		 * TD.  Limit the length in this TD accordingly to ensure
+		 * any pages between start and end aren't missed by the logic
+		 * below.
+		 *
+		 * The two pages (start and end) do not need to be contiguous
+		 */
+		if (curlen > 2 * OHCI_PAGE_SIZE)
+			curlen = 2 * OHCI_PAGE_SIZE;
+
+		const ohci_physaddr_t sdataphys = DMAADDR(dma, curoffs);
+		ohci_physaddr_t edataphys = DMAADDR(dma, curoffs + curlen - 1);
+
+		const ohci_physaddr_t sppg = OHCI_PAGE(sdataphys);
+		ohci_physaddr_t eppg = OHCI_PAGE(edataphys);
+
+		if (sppg != eppg && sppg + OHCI_PAGE_SIZE != eppg) {
 			/* must use multiple TDs, fill as much as possible. */
 			curlen = 2 * OHCI_PAGE_SIZE -
 			    OHCI_PAGE_OFFSET(sdataphys);
@@ -3439,8 +3445,9 @@ ohci_device_isoc_enter(struct usbd_xfer *xfer)
 	ohci_softc_t *sc = OHCI_XFER2SC(xfer);
 	ohci_soft_ed_t *sed = opipe->sed;
 	ohci_soft_itd_t *sitd, *nsitd, *tail;
-	ohci_physaddr_t buf, offs, noffs, bp0;
+	ohci_physaddr_t buf, offs, bp0;
 	int i, ncur, nframes;
+	size_t boff, frlen;
 
 	OHCIHIST_FUNC(); OHCIHIST_CALLED();
 	DPRINTFN(5, "xfer=%#jx", (uintptr_t)xfer, 0, 0, 0);
@@ -3467,16 +3474,34 @@ ohci_device_isoc_enter(struct usbd_xfer *xfer)
 	opipe->tail.itd = ox->ox_sitds[0];
 	ox->ox_sitds[0] = sitd;
 
-	buf = DMAADDR(&xfer->ux_dmabuf, 0);
+	boff = 0;
+	buf = DMAADDR(&xfer->ux_dmabuf, boff);
 	bp0 = OHCI_PAGE(buf);
 	offs = OHCI_PAGE_OFFSET(buf);
+
+	ohci_physaddr_t bend = bp0;
+	ohci_physaddr_t nend;
+
 	nframes = xfer->ux_nframes;
 	xfer->ux_hcpriv = sitd;
 	size_t j = 1;
 	for (i = ncur = 0; i < nframes; i++, ncur++) {
-		noffs = offs + xfer->ux_frlengths[i];
+		frlen = xfer->ux_frlengths[i];
+		DPRINTFN(1, "frame=%jd ux_frlengths[frame]=%jd", i,
+		    xfer->ux_frlengths[i], 0 ,0);
+		/*
+		 * The loop assumes this is never true, because incrementing
+		 * i assumes all the ux_frlengths[i] is covered.
+		 */
+		if (frlen > 2 * OHCI_PAGE_SIZE - offs)
+			frlen = 2 * OHCI_PAGE_SIZE - offs;
+
+		nend = DMAADDR(&xfer->ux_dmabuf, boff + frlen - 1);
 		if (ncur == OHCI_ITD_NOFFSET ||	/* all offsets used */
-		    OHCI_PAGE(buf + noffs) > bp0 + OHCI_PAGE_SIZE) { /* too many page crossings */
+		    (nend != bp0 && nend != bend)) { /* too many page crossings */
+
+			KASSERT(ncur != 0);
+			DPRINTFN(1, "new", 0, 0, 0, 0);
 
 			/* Allocate next ITD */
 			nsitd = ox->ox_sitds[j++];
@@ -3491,7 +3516,7 @@ ohci_device_isoc_enter(struct usbd_xfer *xfer)
 				OHCI_ITD_SET_FC(ncur));
 			sitd->itd.itd_bp0 = HTOO32(bp0);
 			sitd->itd.itd_nextitd = HTOO32(nsitd->physaddr);
-			sitd->itd.itd_be = HTOO32(bp0 + offs - 1);
+			sitd->itd.itd_be = HTOO32(bend - 1);
 			sitd->nextitd = nsitd;
 			sitd->xfer = xfer;
 			sitd->flags = 0;
@@ -3504,12 +3529,16 @@ ohci_device_isoc_enter(struct usbd_xfer *xfer)
 
 			sitd = nsitd;
 			isoc->next = isoc->next + ncur;
-			bp0 = OHCI_PAGE(buf + offs);
+			bp0 = OHCI_PAGE(nend);
 			ncur = 0;
 		}
+		DPRINTFN(1, "ncur=%jd bp0=%#jx bend=%#jx nend=%#jx",
+		    ncur, bp0, bend, nend);
 		sitd->itd.itd_offset[ncur] = HTOO16(OHCI_ITD_MK_OFFS(offs));
-		/* XXX Sync */
-		offs = noffs;
+
+		bend = nend;
+		boff += frlen;
+		offs += frlen;
 	}
 	KASSERT(j <= ox->ox_nsitd);
 
@@ -3529,7 +3558,7 @@ ohci_device_isoc_enter(struct usbd_xfer *xfer)
 		OHCI_ITD_SET_FC(ncur));
 	sitd->itd.itd_bp0 = HTOO32(bp0);
 	sitd->itd.itd_nextitd = HTOO32(tail->physaddr);
-	sitd->itd.itd_be = HTOO32(bp0 + offs - 1);
+	sitd->itd.itd_be = HTOO32(bend - 1);
 	sitd->nextitd = tail;
 	sitd->xfer = xfer;
 	sitd->flags = OHCI_CALL_DONE;
