@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_exit.c,v 1.283 2020/02/15 18:12:15 ad Exp $	*/
+/*	$NetBSD: kern_exit.c,v 1.285 2020/03/08 15:05:18 ad Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exit.c,v 1.283 2020/02/15 18:12:15 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exit.c,v 1.285 2020/03/08 15:05:18 ad Exp $");
 
 #include "opt_ktrace.h"
 #include "opt_dtrace.h"
@@ -206,12 +206,12 @@ exit1(struct lwp *l, int exitcode, int signo)
 
 	p = l->l_proc;
 
-	/* XXX Temporary. */
-	kernel_lock_plug_leak();
-
 	/* Verify that we hold no locks other than p->p_lock. */
 	LOCKDEBUG_BARRIER(p->p_lock, 0);
-	KASSERTMSG(curcpu()->ci_biglock_count == 0, "kernel_lock leaked");
+
+	/* XXX Temporary: something is leaking kernel_lock. */
+	KERNEL_UNLOCK_ALL(l, NULL);
+
 	KASSERT(mutex_owned(p->p_lock));
 	KASSERT(p->p_vmspace != NULL);
 
@@ -551,6 +551,11 @@ exit1(struct lwp *l, int exitcode, int signo)
 	pcu_discard_all(l);
 
 	mutex_enter(p->p_lock);
+	/* Don't bother with p_treelock as no other LWPs remain. */
+	l2 = radix_tree_remove_node(&p->p_lwptree, (uint64_t)(l->l_lid - 1));
+	KASSERT(l2 == l);
+	KASSERT(radix_tree_empty_tree_p(&p->p_lwptree));
+	radix_tree_fini_tree(&p->p_lwptree);
 	/* Free the linux lwp id */
 	if ((l->l_pflag & LP_PIDLID) != 0 && l->l_lid != p->p_pid)
 		proc_free_pid(l->l_lid);
@@ -566,11 +571,6 @@ exit1(struct lwp *l, int exitcode, int signo)
 	p->p_nrlwps--;
 	p->p_nzlwps++;
 	p->p_ndlwps = 0;
-	/* Don't bother with p_treelock as no other LWPs remain. */
-	l2 = radix_tree_remove_node(&p->p_lwptree, (uint64_t)(l->l_lid - 1));
-	KASSERT(l2 == l);
-	KASSERT(radix_tree_empty_tree_p(&p->p_lwptree));
-	radix_tree_fini_tree(&p->p_lwptree);
 	mutex_exit(p->p_lock);
 
 	/*

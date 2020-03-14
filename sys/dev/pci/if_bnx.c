@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bnx.c,v 1.92 2020/02/07 00:04:28 thorpej Exp $	*/
+/*	$NetBSD: if_bnx.c,v 1.94 2020/02/28 14:57:55 msaitoh Exp $	*/
 /*	$OpenBSD: if_bnx.c,v 1.101 2013/03/28 17:21:44 brad Exp $	*/
 
 /*-
@@ -35,7 +35,7 @@
 #if 0
 __FBSDID("$FreeBSD: src/sys/dev/bce/if_bce.c,v 1.3 2006/04/13 14:12:26 ru Exp $");
 #endif
-__KERNEL_RCSID(0, "$NetBSD: if_bnx.c,v 1.92 2020/02/07 00:04:28 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bnx.c,v 1.94 2020/02/28 14:57:55 msaitoh Exp $");
 
 /*
  * The following controllers are supported by this driver:
@@ -5061,7 +5061,7 @@ bnx_init(struct ifnet *ifp)
 	/* Enable host interrupts. */
 	bnx_enable_intr(sc);
 
-	bnx_ifmedia_upd(ifp);
+	mii_ifmedia_change(&sc->bnx_mii);
 
 	SET(ifp->if_flags, IFF_RUNNING);
 	CLR(ifp->if_flags, IFF_OACTIVE);
@@ -5100,7 +5100,7 @@ bnx_mgmt_init(struct bnx_softc *sc)
 	REG_RD(sc, BNX_MISC_ENABLE_SET_BITS);
 	DELAY(20);
 
-	bnx_ifmedia_upd(ifp);
+	mii_ifmedia_change(&sc->bnx_mii);
 
 bnx_mgmt_init_exit:
 	DBPRINT(sc, BNX_VERBOSE_RESET, "Exiting %s()\n", __func__);

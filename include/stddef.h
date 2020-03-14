@@ -1,4 +1,4 @@
-/*	$NetBSD: stddef.h,v 1.20 2016/03/20 16:26:06 christos Exp $	*/
+/*	$NetBSD: stddef.h,v 1.23 2020/03/01 22:08:17 kamil Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993

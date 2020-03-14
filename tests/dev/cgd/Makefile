@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.8 2017/05/21 15:28:42 riastradh Exp $
+#	$NetBSD: Makefile,v 1.10 2020/03/01 18:08:12 christos Exp $
 #
 
 .include <bsd.own.mk>
@@ -14,11 +14,8 @@ TESTS_C=	t_cgd_3des t_cgd_aes t_cgd_blowfish
 
 WARNS=	4
 CPPFLAGS+=	-D_KERNTYPES
-LDADD+=	-lrumpdev -lrumpdev_disk -lrumpdev_cgd -lrumpkern_crypto -lrumpvfs
-LDADD+=	-lrump
-LDADD+=	-lrumpuser
-LDADD+=	-lrump -lutil
-LDADD+=	-lpthread
+LDADD+=	-lrumpdev -lrumpdev_disk -lrumpdev_cgd -lrumpkern_crypto ${LIBRUMPBASE}
+LDADD+=	-lutil
 .endif
 
 .include <bsd.test.mk>

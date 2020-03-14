@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1691 2020/02/18 21:14:16 christos Exp $
+#	$NetBSD: 3RDPARTY,v 1.1696 2020/03/11 10:11:53 mrg Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -195,12 +195,12 @@ Todo[4]: Re-entrant functions of net/*
 Todo[5]: Reconcile the doc directory.
 
 Package:	bsd-family-tree
-Version:	355063
-Current Vers:	355063
+Version:	358264
+Current Vers:	358264
 Maintainer:	The FreeBSD Project
 Archive Site:	https://svnweb.freebsd.org/base/head/share/misc/bsd-family-tree
 Home Page:	https://svnweb.freebsd.org/base/head/share/misc/bsd-family-tree
-Date:		2019-12-23
+Date:		2020-02-23
 Mailing List:
 Responsible:
 License:	BSD (2-clause) (see http://www.freebsd.org/cgi/cvsweb.cgi/src/COPYRIGHT)
@@ -424,12 +424,12 @@ Notes:
 There is a flex2netbsd script to help newer imports.
 
 Package:	gcc
-Version:	7.4.0
-Current Vers:	6.5/7.4/8.3/9.2
+Version:	7.4.0/8.4.0
+Current Vers:	7.5.0/8.4.0/9.2.0
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gcc/
 Home Page:	http://www.gnu.org/software/gcc/
-Date:		2019-10-09
+Date:		2020-03-11
 Mailing List:	gcc-bugs@gnu.org
 Responsible:	mrg, christos, skrll
 License:	GPLv3, LGPLv3.1
@@ -1044,12 +1044,12 @@ Notes:
 Patch applied after OpenSSH import.
 
 Package:	OpenSSH
-Version:	8.1
-Current Vers:	8.1 / portable 8.1p1
+Version:	8.2
+Current Vers:	8.2 / portable 8.2p1
 Maintainer:	OpenSSH
 Archive Site:	http://www.openssh.com/ftp.html
 Home Page:	http://www.openssh.com/portable.html
-Date:		2019-10-09
+Date:		2020-02-26
 Mailing List:	openssh-unix-announce@mindrot.org
 Responsible:	thorpej, christos, elric
 License:	BSD. See src/crypto/external/bsd/openssh/dist/LICENSE
@@ -2180,7 +2180,6 @@ Notes:
 
 Package:	terminfo
 Version:	20190609
-
 Current Vers:	20190609
 Maintainer:	Thomas Dickey (ncurses)
 Archive Site:	ftp://ftp.invisible-island.net/ncurses/current
@@ -2192,3 +2191,42 @@ License:	none
 Location:	sys/external/bsd/ena-com
 Notes:
 Use the import script in /usr/src/share/terminfo
+
+Package:	libcbor
+Version:	20200302
+Current Vers:	20200302
+Maintainer:	Pavel Kalvoda
+Archive Site:	https://github.com/PJK/libcbor.git
+Home Page:	
+Date:		2020-03-02
+Mailing List:	christos
+Responsible:
+License:	mit
+Location:	sys/external/mit/libcbor
+Notes:
+
+Package:	pam-u2f
+Version:	1.0.8
+Current Vers:	1.0.8
+Maintainer:	Yubico
+Archive Site:	https://github.com/Yubico/pam-u2f.git
+Home Page:	https://developers.yubico.com/pam-u2f/
+Date:		2020-03-02
+Mailing List:	christos
+Responsible:
+License:	bsd
+Location:	sys/external/bsd/pam-u2f
+Notes:
+
+Package:	libfido2
+Version:	0.5.0
+Current Vers:	0.5.0
+Maintainer:	Yubico
+Archive Site:	https://github.com/Yubico/libfido2.git
+Home Page:	https://developers.yubico.com/libfido2/Manuals/
+Date:		2020-03-02
+Mailing List:	christos
+Responsible:
+License:	bsd
+Location:	sys/external/bsd/libfido2
+Notes:
