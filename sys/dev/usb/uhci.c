@@ -2006,6 +2006,13 @@ uhci_alloc_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer, int len,
 		return EINVAL;
 	}
 	size_t ntd = howmany(len, maxp);
+	/*
+	 * if our transfer is bigger than PAGE_SIZE and maxp not a factor of
+	 * PAGE_SIZE then we will need another TD per page.
+	 */
+	if (len > PAGE_SIZE && (PAGE_SIZE % maxp) != 0) {
+		ntd += howmany(len, PAGE_SIZE);
+	}
 	if (!rd && (flags & USBD_FORCE_SHORT_XFER)) {
 		ntd++;
 	}
