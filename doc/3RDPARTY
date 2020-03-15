@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1689 2020/01/27 21:14:17 roy Exp $
+#	$NetBSD: 3RDPARTY,v 1.1691 2020/02/18 21:14:16 christos Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -456,7 +456,7 @@ Before importing a new version of external/gpl3/gcc:
 
 Package:	gdb
 Version:	8.3
-Current Vers:	8.3.1
+Current Vers:	9.1
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gdb/
 Home Page:	http://www.gnu.org/software/gdb/
@@ -473,7 +473,7 @@ When updating GDB, it is imperative to test that:
 
 Package:	binutils
 Version:	2.31.1
-Current Vers:	2.32
+Current Vers:	2.34
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/binutils/
 Home Page:	http://www.gnu.org/software/binutils/
@@ -932,12 +932,12 @@ Notes:
 Delete the otherOS directory before importing.
 
 Package:	nawk
-Version:	2012-12-20
-Current Vers:	2018-08-27
+Version:	2020-02-18
+Current Vers:	2020-02-18
 Maintainer:	Brian Kernighan <bwk@princeton.edu>
 Archive Site:	https://github.com/onetrueawk/awk
 Home Page:	http://www.cs.princeton.edu/~bwk/btl.mirror/
-Date:		2019-08-13
+Date:		2020-02-18
 Mailing List:
 Responsible:	jdolecek
 License:	BSD-like

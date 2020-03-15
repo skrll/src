@@ -1,4 +1,4 @@
-#	$NetBSD: net_common.sh,v 1.37 2019/08/26 04:50:32 ozaki-r Exp $
+#	$NetBSD: net_common.sh,v 1.39 2020/02/20 08:02:26 ozaki-r Exp $
 #
 # Copyright (c) 2016 Internet Initiative Japan Inc.
 # All rights reserved.
@@ -183,6 +183,7 @@ CRYPTO_NPF_LIBS="$CRYPTO_LIBS -lrumpvfs -lrumpdev_bpf -lrumpnet_npf"
 _rump_server_socks=./.__socks
 _rump_server_ifaces=./.__ifaces
 _rump_server_buses=./.__buses
+_rump_server_macaddrs=./.__macaddrs
 
 DEBUG_SYSCTL_ENTRIES="net.inet.arp.debug net.inet6.icmp6.nd6_debug \
     net.inet.ipsec.debug"
@@ -318,13 +319,20 @@ rump_server_add_iface()
 	local ifname=$2
 	local bus=$3
 	local backup=$RUMP_SERVER
+	local macaddr=
 
 	export RUMP_SERVER=$sock
 	atf_check -s exit:0 rump.ifconfig $ifname create
 	if [ -n "$bus" ]; then
 		atf_check -s exit:0 rump.ifconfig $ifname linkstr $bus
 	fi
+	macaddr=$(get_macaddr $sock $ifname)
 	export RUMP_SERVER=$backup
+
+	if [ -f $_rump_server_macaddrs ]; then
+		atf_check -s not-exit:0 grep -q $macaddr $_rump_server_macaddrs
+	fi
+	echo $macaddr >> $_rump_server_macaddrs
 
 	echo $sock $ifname >> $_rump_server_ifaces
 	$DEBUG && cat $_rump_server_ifaces
@@ -398,6 +406,9 @@ rump_server_destroy_ifaces()
 	while read sock ifname; do
 		export RUMP_SERVER=$sock
 		if rump.ifconfig -l |grep -q $ifname; then
+			if $DEBUG; then
+				rump.ifconfig -v $ifname
+			fi
 			atf_check -s exit:0 rump.ifconfig $ifname destroy
 		fi
 		atf_check -s exit:0 -o ignore rump.ifconfig

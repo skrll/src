@@ -1,4 +1,4 @@
-/*	$NetBSD: audiotest.c,v 1.2 2020/02/12 07:02:21 martin Exp $	*/
+/*	$NetBSD: audiotest.c,v 1.5 2020/02/18 12:11:26 isaki Exp $	*/
 
 /*
  * Copyright (C) 2019 Tetsuya Isaki. All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: audiotest.c,v 1.2 2020/02/12 07:02:21 martin Exp $");
+__RCSID("$NetBSD: audiotest.c,v 1.5 2020/02/18 12:11:26 isaki Exp $");
 
 #include <errno.h>
 #include <fcntl.h>
@@ -1381,8 +1381,8 @@ void test_open_audio(int);
 void test_open_sound(int);
 void test_open_audioctl(int);
 void test_open_simul(int, int);
-void try_open_multiuser(int);
-void test_open_multiuser(int);
+void try_open_multiuser(bool);
+void test_open_multiuser(bool);
 void test_rdwr_fallback(int, bool, bool);
 void test_rdwr_two(int, int);
 void test_mmap_mode(int, int);
@@ -1400,8 +1400,8 @@ void getenc_check_encodings(int, int[][5]);
 void test_AUDIO_ERROR(int);
 void test_audioctl_open_1(int, int);
 void test_audioctl_open_2(int, int);
-void try_audioctl_open_multiuser(int, const char *, const char *);
-void test_audioctl_open_multiuser(int, const char *, const char *);
+void try_audioctl_open_multiuser(const char *, const char *);
+void test_audioctl_open_multiuser(bool, const char *, const char *);
 void test_audioctl_rw(int);
 
 #define DEF(name) \
@@ -2219,7 +2219,7 @@ DEF(open_simul_RDWR_RDWR)	{ test_open_simul(O_RDWR, O_RDWR);	}
  * /dev/audio can be opened by other user who opens /dev/audio.
  */
 void
-try_open_multiuser(int multiuser)
+try_open_multiuser(bool multiuser)
 {
 	int fd0;
 	int fd1;
@@ -2295,10 +2295,9 @@ try_open_multiuser(int multiuser)
  * XXX XP_* macros are not compatible with on-error-goto, we need try-catch...
  */
 void
-test_open_multiuser(int multiuser)
+test_open_multiuser(bool multiuser)
 {
 	char mibname[32];
-	bool newval;
 	bool oldval;
 	size_t oldlen;
 	int r;
@@ -2327,8 +2326,8 @@ test_open_multiuser(int multiuser)
 
 	/* Change if necessary */
 	if (oldval != multiuser) {
-		newval = multiuser;
-		r = SYSCTLBYNAME(mibname, NULL, NULL, &newval, sizeof(newval));
+		r = SYSCTLBYNAME(mibname, NULL, NULL, &multiuser,
+		    sizeof(multiuser));
 		REQUIRED_SYS_EQ(0, r);
 		DPRINTF("  > new multiuser=%d\n", multiuser);
 	}
@@ -2337,14 +2336,14 @@ test_open_multiuser(int multiuser)
 	try_open_multiuser(multiuser);
 
 	/* Restore multiuser mode */
-	if (oldval != newval) {
+	if (oldval != multiuser) {
 		DPRINTF("  > restore multiuser to %d\n", oldval);
 		r = SYSCTLBYNAME(mibname, NULL, NULL, &oldval, sizeof(oldval));
 		REQUIRED_SYS_EQ(0, r);
 	}
 }
-DEF(open_multiuser_0)	{ test_open_multiuser(0); }
-DEF(open_multiuser_1)	{ test_open_multiuser(1); }
+DEF(open_multiuser_0)	{ test_open_multiuser(false); }
+DEF(open_multiuser_1)	{ test_open_multiuser(true); }
 
 /*
  * Normal playback (with PLAY_ALL).
@@ -5406,6 +5405,176 @@ DEF(AUDIO_SETINFO_params_simul)
 }
 
 /*
+ * AUDIO_SETINFO(encoding/precision) is tested in AUDIO_GETENC_range below.
+ */
+
+/*
+ * Check whether the number of channels can be set.
+ */
+DEF(AUDIO_SETINFO_channels)
+{
+	struct audio_info ai;
+	int mode;
+	int r;
+	int fd;
+	int i;
+	struct {
+		int ch;
+		bool expected;
+	} table[] = {
+		{  0,	false },
+		{  1,	true },	/* monaural */
+		{  2,	true },	/* stereo */
+		{  3,	true },	/* multi channels */
+		{ 12,	true },	/* upper limit */
+		{ 13,	false },
+	};
+
+	TEST("AUDIO_SETINFO_channels");
+	if (netbsd < 8) {
+		/*
+		 * On NetBSD7, the result depends the hardware and there is
+		 * no way to know it.
+		 */
+		XP_SKIP("The test doesn't make sense on NetBSD7");
+		return;
+	}
+
+	mode = openable_mode();
+	fd = OPEN(devaudio, mode);
+	REQUIRED_SYS_OK(fd);
+
+	for (i = 0; i < (int)__arraycount(table); i++) {
+		int ch = table[i].ch;
+		bool expected = table[i].expected;
+
+		AUDIO_INITINFO(&ai);
+		if (mode != O_RDONLY)
+			ai.play.channels = ch;
+		if (mode != O_WRONLY)
+			ai.record.channels = ch;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "channels=%d", ch);
+		if (expected) {
+			/* Expects to succeed */
+			XP_SYS_EQ(0, r);
+
+			r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+			XP_SYS_EQ(0, r);
+			if (mode != O_RDONLY)
+				XP_EQ(ch, ai.play.channels);
+			if (mode != O_WRONLY)
+				XP_EQ(ch, ai.record.channels);
+		} else {
+			/* Expects to fail */
+			XP_SYS_NG(EINVAL, r);
+		}
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+/*
+ * Check whether the sample rate can be set.
+ */
+DEF(AUDIO_SETINFO_sample_rate)
+{
+	struct audio_info ai;
+	int mode;
+	int r;
+	int fd;
+	int i;
+	struct {
+		int freq;
+		bool expected;
+	} table[] = {
+		{    999,	false },
+		{   1000,	true },	/* lower limit */
+		{  48000,	true },
+		{ 192000,	true },	/* upper limit */
+		{ 192001,	false },
+	};
+
+	TEST("AUDIO_SETINFO_sample_rate");
+	if (netbsd < 8) {
+		/*
+		 * On NetBSD7, the result depends the hardware and there is
+		 * no way to know it.
+		 */
+		XP_SKIP("The test doesn't make sense on NetBSD7");
+		return;
+	}
+
+	mode = openable_mode();
+	fd = OPEN(devaudio, mode);
+	REQUIRED_SYS_OK(fd);
+
+	for (i = 0; i < (int)__arraycount(table); i++) {
+		int freq = table[i].freq;
+		bool expected = table[i].expected;
+
+		AUDIO_INITINFO(&ai);
+		if (mode != O_RDONLY)
+			ai.play.sample_rate = freq;
+		if (mode != O_WRONLY)
+			ai.record.sample_rate = freq;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "sample_rate=%d", freq);
+		if (expected) {
+			/* Expects to succeed */
+			XP_SYS_EQ(0, r);
+
+			r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+			XP_SYS_EQ(0, r);
+			if (mode != O_RDONLY)
+				XP_EQ(freq, ai.play.sample_rate);
+			if (mode != O_WRONLY)
+				XP_EQ(freq, ai.record.sample_rate);
+		} else {
+			/* Expects to fail */
+			XP_SYS_NG(EINVAL, r);
+		}
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+/*
+ * SETINFO(sample_rate = 0) should fail correctly.
+ */
+DEF(AUDIO_SETINFO_sample_rate_0)
+{
+	struct audio_info ai;
+	int mode;
+	int r;
+	int fd;
+
+	TEST("AUDIO_SETINFO_sample_rate_0");
+	if (netbsd < 9) {
+		/*
+		 * On NetBSD7,8 this will block system call and you will not
+		 * even be able to shutdown...
+		 */
+		XP_SKIP("This will cause an infinate loop in the kernel");
+		return;
+	}
+
+	mode = openable_mode();
+	fd = OPEN(devaudio, mode);
+	REQUIRED_SYS_OK(fd);
+
+	AUDIO_INITINFO(&ai);
+	ai.play.sample_rate = 0;
+	ai.record.sample_rate = 0;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "sample_rate=0");
+	/* Expects to fail */
+	XP_SYS_NG(EINVAL, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+/*
  * Check whether the pause/unpause works.
  */
 void
@@ -6032,12 +6201,13 @@ DEF(audioctl_open_simul)
 }
 
 /*
- * /dev/audioctl can be opened by other user who opens /dev/audioctl.
- * /dev/audioctl can be opened by other user who opens /dev/audio.
- * /dev/audio    can be opened by other user who opens /dev/audioct.
+ * /dev/audioctl can be opened by other user who opens /dev/audioctl,
+ * /dev/audioctl can be opened by other user who opens /dev/audio,
+ * /dev/audio    can be opened by other user who opens /dev/audioctl,
+ * regardless of multiuser mode.
  */
 void
-try_audioctl_open_multiuser(int multiuser, const char *dev1, const char *dev2)
+try_audioctl_open_multiuser(const char *dev1, const char *dev2)
 {
 	int fd1;
 	int fd2;
@@ -6074,10 +6244,10 @@ try_audioctl_open_multiuser(int multiuser, const char *dev1, const char *dev2)
  * XXX XP_* macros are not compatible with on-error-goto, we need try-catch...
  */
 void
-test_audioctl_open_multiuser(int multiuser, const char *dev1, const char *dev2)
+test_audioctl_open_multiuser(bool multiuser,
+	const char *dev1, const char *dev2)
 {
 	char mibname[32];
-	bool newval;
 	bool oldval;
 	size_t oldlen;
 	int r;
@@ -6105,17 +6275,17 @@ test_audioctl_open_multiuser(int multiuser, const char *dev1, const char *dev2)
 
 	/* Change if necessary */
 	if (oldval != multiuser) {
-		newval = multiuser;
-		r = SYSCTLBYNAME(mibname, NULL, NULL, &newval, sizeof(newval));
+		r = SYSCTLBYNAME(mibname, NULL, NULL, &multiuser,
+		    sizeof(multiuser));
 		REQUIRED_SYS_EQ(0, r);
 		DPRINTF("  > new multiuser=%d\n", multiuser);
 	}
 
 	/* Do test */
-	try_audioctl_open_multiuser(multiuser, dev1, dev2);
+	try_audioctl_open_multiuser(dev1, dev2);
 
 	/* Restore multiuser mode */
-	if (oldval != newval) {
+	if (oldval != multiuser) {
 		DPRINTF("  > restore multiuser to %d\n", oldval);
 		r = SYSCTLBYNAME(mibname, NULL, NULL, &oldval, sizeof(oldval));
 		XP_SYS_EQ(0, r);
@@ -6123,27 +6293,27 @@ test_audioctl_open_multiuser(int multiuser, const char *dev1, const char *dev2)
 }
 DEF(audioctl_open_multiuser0_audio1) {
 	TEST("audioctl_open_multiuser0_audio1");
-	test_audioctl_open_multiuser(0, devaudio, devaudioctl);
+	test_audioctl_open_multiuser(false, devaudio, devaudioctl);
 }
 DEF(audioctl_open_multiuser1_audio1) {
 	TEST("audioctl_open_multiuser1_audio1");
-	test_audioctl_open_multiuser(1, devaudio, devaudioctl);
+	test_audioctl_open_multiuser(true, devaudio, devaudioctl);
 }
 DEF(audioctl_open_multiuser0_audio2) {
 	TEST("audioctl_open_multiuser0_audio2");
-	test_audioctl_open_multiuser(0, devaudioctl, devaudio);
+	test_audioctl_open_multiuser(false, devaudioctl, devaudio);
 }
 DEF(audioctl_open_multiuser1_audio2) {
 	TEST("audioctl_open_multiuser1_audio2");
-	test_audioctl_open_multiuser(1, devaudioctl, devaudio);
+	test_audioctl_open_multiuser(true, devaudioctl, devaudio);
 }
 DEF(audioctl_open_multiuser0_audioctl) {
 	TEST("audioctl_open_multiuser0_audioctl");
-	test_audioctl_open_multiuser(0, devaudioctl, devaudioctl);
+	test_audioctl_open_multiuser(false, devaudioctl, devaudioctl);
 }
 DEF(audioctl_open_multiuser1_audioctl) {
 	TEST("audioctl_open_multiuser1_audioctl");
-	test_audioctl_open_multiuser(1, devaudioctl, devaudioctl);
+	test_audioctl_open_multiuser(true, devaudioctl, devaudioctl);
 }
 
 /*
@@ -6385,6 +6555,9 @@ struct testentry testtable[] = {
 	ENT(AUDIO_SETINFO_params_set_RDWR_2),
 	ENT(AUDIO_SETINFO_params_set_RDWR_3),
 	ENT(AUDIO_SETINFO_params_simul),
+	ENT(AUDIO_SETINFO_channels),
+	ENT(AUDIO_SETINFO_sample_rate),
+	ENT(AUDIO_SETINFO_sample_rate_0),
 	ENT(AUDIO_SETINFO_pause_RDONLY_0),
 	ENT(AUDIO_SETINFO_pause_RDONLY_1),
 	ENT(AUDIO_SETINFO_pause_WRONLY_0),

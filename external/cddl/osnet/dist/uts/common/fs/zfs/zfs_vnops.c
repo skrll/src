@@ -5575,6 +5575,9 @@ zfs_netbsd_setattr(void *v)
 
 	zflags = VTOZ(vp)->z_pflags;
 
+	/* Ignore size changes on device nodes. */
+	if (vp->v_type == VBLK || vp->v_type == VCHR)
+		xvap.xva_vattr.va_mask &= ~AT_SIZE;
 	if (vap->va_flags != VNOVAL) {
 		int error;
 
@@ -6306,6 +6309,7 @@ const struct vnodeopv_entry_desc zfs_vnodeop_entries[] = {
 	{ &vop_ioctl_desc,		zfs_netbsd_ioctl },
 	{ &vop_poll_desc,		genfs_poll },
 	{ &vop_kqfilter_desc,		genfs_kqfilter },
+	{ &vop_revoke_desc,		genfs_revoke },
 	{ &vop_fsync_desc,		zfs_netbsd_fsync },
 	{ &vop_remove_desc,		zfs_netbsd_remove },
 	{ &vop_link_desc,		zfs_netbsd_link },
@@ -6350,6 +6354,7 @@ const struct vnodeopv_entry_desc zfs_specop_entries[] = {
 	{ &vop_ioctl_desc,		spec_ioctl },
 	{ &vop_poll_desc,		spec_poll },
 	{ &vop_kqfilter_desc,		spec_kqfilter },
+	{ &vop_revoke_desc,		spec_revoke },
 	{ &vop_fsync_desc,		zfs_netbsd_fsync },
 	{ &vop_remove_desc,		spec_remove },
 	{ &vop_link_desc,		spec_link },
@@ -6370,6 +6375,7 @@ const struct vnodeopv_entry_desc zfs_specop_entries[] = {
 	{ &vop_mmap_desc,		spec_mmap },
 	{ &vop_islocked_desc,		zfs_netbsd_islocked },
 	{ &vop_advlock_desc,		spec_advlock },
+	{ &vop_strategy_desc,		spec_strategy },
 	{ &vop_print_desc,		zfs_netbsd_print },
 	{ &vop_fcntl_desc,		zfs_netbsd_fcntl },
 	{ NULL, NULL }
@@ -6394,6 +6400,7 @@ const struct vnodeopv_entry_desc zfs_fifoop_entries[] = {
 	{ &vop_ioctl_desc,		vn_fifo_bypass },
 	{ &vop_poll_desc,		vn_fifo_bypass },
 	{ &vop_kqfilter_desc,		vn_fifo_bypass },
+	{ &vop_revoke_desc,		vn_fifo_bypass },
 	{ &vop_fsync_desc,		zfs_netbsd_fsync },
 	{ &vop_remove_desc,		vn_fifo_bypass },
 	{ &vop_link_desc,		vn_fifo_bypass },

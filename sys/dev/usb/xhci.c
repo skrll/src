@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci.c,v 1.117 2020/02/12 16:02:01 riastradh Exp $	*/
+/*	$NetBSD: xhci.c,v 1.119 2020/02/15 09:26:07 skrll Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.117 2020/02/12 16:02:01 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.119 2020/02/15 09:26:07 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -1879,6 +1879,7 @@ xhci_rhpsc(struct xhci_softc * const sc, u_int ctlrport)
 
 	if (xfer == NULL)
 		return;
+	KASSERT(xfer->ux_status == USBD_IN_PROGRESS);
 
 	uint8_t *p = xfer->ux_buf;
 	memset(p, 0, xfer->ux_length);
@@ -3174,9 +3175,9 @@ xhci_setup_route(struct usbd_pipe *pipe, uint32_t *cp)
 		;
 	if (hub) {
 		int p;
-		for (p = 0; p < hub->ud_hub->uh_hubdesc.bNbrPorts; p++) {
-			if (hub->ud_hub->uh_ports[p].up_dev == adev) {
-				dev->ud_myhsport = &hub->ud_hub->uh_ports[p];
+		for (p = 1; p <= hub->ud_hub->uh_hubdesc.bNbrPorts; p++) {
+			if (hub->ud_hub->uh_ports[p - 1].up_dev == adev) {
+				dev->ud_myhsport = &hub->ud_hub->uh_ports[p - 1];
 				goto found;
 			}
 		}
@@ -3717,6 +3718,7 @@ xhci_root_intr_start(struct usbd_xfer *xfer)
 		mutex_enter(&sc->sc_lock);
 	KASSERT(sc->sc_intrxfer[bn] == NULL);
 	sc->sc_intrxfer[bn] = xfer;
+	xfer->ux_status = USBD_IN_PROGRESS;
 	if (!polling)
 		mutex_exit(&sc->sc_lock);
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ptrace_x86_wait.h,v 1.19 2020/02/13 02:53:46 christos Exp $	*/
+/*	$NetBSD: t_ptrace_x86_wait.h,v 1.24 2020/02/20 23:57:16 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2016, 2017, 2018, 2019 The NetBSD Foundation, Inc.
@@ -1617,13 +1617,11 @@ ATF_TC_BODY(dbregs_dr3_trap_code, tc)
 }
 #endif
 
-volatile lwpid_t x86_the_lwp_id = 0;
-
-static void __used
-x86_lwp_main_func(void *arg)
+static void * __used
+x86_main_func(void *arg)
 {
-	x86_the_lwp_id = _lwp_self();
-	_lwp_exit();
+
+	return arg;
 }
 
 static void
@@ -1639,10 +1637,8 @@ dbregs_dont_inherit_lwp(int reg)
 	const int slen = sizeof(state);
 	ptrace_event_t event;
 	const int elen = sizeof(event);
-	ucontext_t uc;
+	pthread_t t;
 	lwpid_t lid;
-	static const size_t ssize = 16*1024;
-	void *stack;
 	size_t i;
 	struct dbreg r1;
 	struct dbreg r2;
@@ -1661,22 +1657,10 @@ dbregs_dont_inherit_lwp(int reg)
 		DPRINTF("Before raising %s from child\n", strsignal(sigval));
 		FORKEE_ASSERT(raise(sigval) == 0);
 
-		DPRINTF("Before allocating memory for stack in child\n");
-		FORKEE_ASSERT((stack = malloc(ssize)) != NULL);
+		FORKEE_ASSERT(!pthread_create(&t, NULL, x86_main_func, NULL));
 
-		DPRINTF("Before making context for new lwp in child\n");
-		_lwp_makecontext(&uc, x86_lwp_main_func, NULL, NULL, stack,
-		    ssize);
-
-		DPRINTF("Before creating new in child\n");
-		FORKEE_ASSERT(_lwp_create(&uc, 0, &lid) == 0);
-
-		DPRINTF("Before waiting for lwp %d to exit\n", lid);
-		FORKEE_ASSERT(_lwp_wait(lid, NULL) == 0);
-
-		DPRINTF("Before verifying that reported %d and running lid %d "
-		    "are the same\n", lid, x86_the_lwp_id);
-		FORKEE_ASSERT_EQ(lid, x86_the_lwp_id);
+		DPRINTF("Before waiting for thread to exit\n");
+		FORKEE_ASSERT(!pthread_join(t, NULL));
 
 		DPRINTF("Before exiting of the child process\n");
 		_exit(exitval);
@@ -1971,7 +1955,7 @@ ATF_TC_HEAD(x86_cve_2018_8897, tc)
 
 #define X86_CVE_2018_8897_PAGE 0x5000 /* page addressable by 32-bit registers */
 
-static __attribute__((__optimize__("O0"))) void
+static void
 x86_cve_2018_8897_trigger(void)
 {
 	/*
@@ -2072,13 +2056,13 @@ x86_cve_2018_8897_trigger(void)
 		);
 #else /* !__PIE__ */
 	__asm__ __volatile__(
-		"       movq $farjmp32, %%rax\n\t"
+		"       movq $farjmp32%=, %%rax\n\t"
 		"       ljmp *(%%rax)\n\t"
-		"farjmp32:\n\t"
-		"       .long trigger32\n\t"
+		"farjmp32%=:\n\t"
+		"       .long trigger32%=\n\t"
 		"       .word 0x73\n\t"
 		"       .code32\n\t"
-		"trigger32:\n\t"
+		"trigger32%=:\n\t"
 		"       movl $0x5000, %%esp\n\t"
 		"       pop %%ss\n\t"
 		"       int $4\n\t"
@@ -3548,6 +3532,94 @@ X86_REGISTER_TEST(x86_xstate_ymm_write, TEST_XSTATE, FPREGS_YMM, TEST_SETREGS,
     "via PT_SETXSTATE.");
 X86_REGISTER_TEST(x86_xstate_ymm_core, TEST_XSTATE, FPREGS_YMM, TEST_COREDUMP,
     "Test reading ymm0..ymm15 (..ymm7 on i386) from coredump via XSTATE note.");
+
+/// ----------------------------------------------------------------------------
+
+#if defined(TWAIT_HAVE_STATUS)
+
+static void
+thread_concurrent_lwp_setup(pid_t child, lwpid_t lwpid)
+{
+	struct dbreg r;
+	union u dr7;
+
+	/* We need to set debug registers for every child */
+	DPRINTF("Call GETDBREGS for LWP %d\n", lwpid);
+	SYSCALL_REQUIRE(ptrace(PT_GETDBREGS, child, &r, lwpid) != -1);
+
+	dr7.raw = 0;
+	/* should be set to 1 according to Intel manual, 17.2 */
+	dr7.bits.reserved_10 = 1;
+	dr7.bits.local_exact_breakpt = 1;
+	dr7.bits.global_exact_breakpt = 1;
+	/* use DR0 for breakpoints */
+	dr7.bits.global_dr0_breakpoint = 1;
+	dr7.bits.condition_dr0 = 0; /* exec */
+	dr7.bits.len_dr0 = 0;
+	/* use DR1 for watchpoints */
+	dr7.bits.global_dr1_breakpoint = 1;
+	dr7.bits.condition_dr1 = 1; /* write */
+	dr7.bits.len_dr1 = 3; /* 4 bytes */
+	r.dr[7] = dr7.raw;
+	r.dr[0] = (long)(intptr_t)check_happy;
+	r.dr[1] = (long)(intptr_t)&thread_concurrent_watchpoint_var;
+	DPRINTF("dr0=%" PRIxREGISTER "\n", r.dr[0]);
+	DPRINTF("dr1=%" PRIxREGISTER "\n", r.dr[1]);
+	DPRINTF("dr7=%" PRIxREGISTER "\n", r.dr[7]);
+
+	DPRINTF("Call SETDBREGS for LWP %d\n", lwpid);
+	SYSCALL_REQUIRE(ptrace(PT_SETDBREGS, child, &r, lwpid) != -1);
+}
+
+static enum thread_concurrent_sigtrap_event
+thread_concurrent_handle_sigtrap(pid_t child, ptrace_siginfo_t *info)
+{
+	enum thread_concurrent_sigtrap_event ret = TCSE_UNKNOWN;
+	struct dbreg r;
+	union u dr7;
+
+	ATF_CHECK_EQ_MSG(info->psi_siginfo.si_code, TRAP_DBREG,
+	    "lwp=%d, expected TRAP_DBREG (%d), got %d", info->psi_lwpid,
+	    TRAP_DBREG, info->psi_siginfo.si_code);
+
+	DPRINTF("Call GETDBREGS for LWP %d\n", info->psi_lwpid);
+	SYSCALL_REQUIRE(ptrace(PT_GETDBREGS, child, &r, info->psi_lwpid) != -1);
+	DPRINTF("dr6=%" PRIxREGISTER ", dr7=%" PRIxREGISTER "\n",
+	    r.dr[6], r.dr[7]);
+
+	ATF_CHECK_MSG(r.dr[6] & 3, "lwp=%d, got DR6=%" PRIxREGISTER,
+	    info->psi_lwpid, r.dr[6]);
+
+	/* Handle only one event at a time, we should get
+	 * a separate SIGTRAP for the other one.
+	 */
+	if (r.dr[6] & 1) {
+		r.dr[6] &= ~1;
+
+		/* We need to disable the breakpoint to move
+		 * past it.
+		 *
+		 * TODO: single-step and reenable it?
+		 */
+		dr7.raw = r.dr[7];
+		dr7.bits.global_dr0_breakpoint = 0;
+		r.dr[7] = dr7.raw;
+
+		ret = TCSE_BREAKPOINT;
+	} else if (r.dr[6] & 2) {
+		r.dr[6] &= ~2;
+		ret = TCSE_WATCHPOINT;
+	}
+
+	DPRINTF("Call SETDBREGS for LWP %d\n", info->psi_lwpid);
+	DPRINTF("dr6=%" PRIxREGISTER ", dr7=%" PRIxREGISTER "\n",
+		r.dr[6], r.dr[7]);
+	SYSCALL_REQUIRE(ptrace(PT_SETDBREGS, child, &r, info->psi_lwpid) != -1);
+
+	return ret;
+}
+
+#endif /*defined(TWAIT_HAVE_STATUS)*/
 
 /// ----------------------------------------------------------------------------
 
