@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.137 2020/02/20 01:36:37 jmcneill Exp $
+#	$NetBSD: GENERIC64,v 1.140 2020/02/22 18:57:50 jmcneill Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -331,6 +331,8 @@ emac*		at fdt?				# Allwinner Gigabit Ethernet (EMAC)
 enet*		at fdt?				# IMX FEC
 aq*		at pci? dev ? function ?	# Aquantia AQC 10 gigabit
 ena*		at pci? dev ? function ?	# Amazon.com Elastic Network Adapter
+genet*		at acpi?			# Broadcom GENET v5
+genet*		at fdt?
 mcx*		at pci? dev ? function ?	# Mellanox 5th generation Ethernet
 mskc*		at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 msk*		at mskc?
@@ -339,6 +341,7 @@ wm*		at pci? dev ? function ?	# Intel Gigabit Ethernet
 
 # MII/PHY support
 atphy*		at mii? phy ?		# Attansic/Atheros PHYs
+brgphy*		at mii? phy ?		# Broadcom BCM5400-family PHYs
 exphy* 		at mii? phy ?		# 3Com internal PHYs
 gentbi* 	at mii? phy ?		# Generic Ten-Bit 1000BASE-[CLS]X PHYs
 glxtphy*	at mii? phy ?		# Level One LXT-1000 PHYs

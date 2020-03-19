@@ -1,4 +1,4 @@
-/*	$NetBSD: if_nfe.c,v 1.74 2020/02/04 05:44:14 thorpej Exp $	*/
+/*	$NetBSD: if_nfe.c,v 1.78 2020/03/13 05:10:39 msaitoh Exp $	*/
 /*	$OpenBSD: if_nfe.c,v 1.77 2008/02/05 16:52:50 brad Exp $	*/
 
 /*-
@@ -21,7 +21,7 @@
 /* Driver for NVIDIA nForce MCP Fast Ethernet and Gigabit Ethernet */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_nfe.c,v 1.74 2020/02/04 05:44:14 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_nfe.c,v 1.78 2020/03/13 05:10:39 msaitoh Exp $");
 
 #include "opt_inet.h"
 #include "vlan.h"
@@ -144,10 +144,6 @@ int nfedebug = 0;
 	PCI_PRODUCT_NVIDIA_NFORCE430_LAN1
 #define	PCI_PRODUCT_NVIDIA_MCP51_LAN2 \
 	PCI_PRODUCT_NVIDIA_NFORCE430_LAN2
-
-#ifdef	_LP64
-#define	__LP64__ 1
-#endif
 
 const struct nfe_product {
 	pci_vendor_id_t		vendor;
@@ -325,9 +321,18 @@ nfe_attach(device_t parent, device_t self, void *aux)
 		break;
 	}
 
-	if (pci_dma64_available(pa) && (sc->sc_flags & NFE_40BIT_ADDR) != 0)
-		sc->sc_dmat = pa->pa_dmat64;
-	else
+	if (pci_dma64_available(pa) && (sc->sc_flags & NFE_40BIT_ADDR) != 0) {
+		if (bus_dmatag_subregion(pa->pa_dmat64,
+					 0,
+					 (bus_addr_t)(1ULL << 40),
+					 &sc->sc_dmat,
+					 BUS_DMA_WAITOK) != 0) {
+			aprint_error_dev(self,
+			    "unable to create 40-bit DMA tag\n");
+			sc->sc_dmat = pa->pa_dmat64;
+		} else
+			sc->sc_dmat_needs_free = true;
+	} else
 		sc->sc_dmat = pa->pa_dmat;
 
 	nfe_poweron(self);
@@ -458,6 +463,9 @@ nfe_detach(device_t self, int flags)
 	mutex_destroy(&sc->rxq.mtx);
 	nfe_free_tx_ring(sc, &sc->txq);
 
+	if (sc->sc_dmat_needs_free)
+		bus_dmatag_destroy(sc->sc_dmat);
+
 	if (sc->sc_ih != NULL) {
 		pci_intr_disestablish(sc->sc_pc, sc->sc_ih);
 		sc->sc_ih = NULL;
@@ -547,20 +555,19 @@ nfe_miibus_readreg(device_t dev, int phy, int reg, uint16_t *val)
 			break;
 	}
 	if (ntries == 1000) {
-		DPRINTFN(2, ("%s: timeout waiting for PHY\n",
-		    device_xname(sc->sc_dev)));
+		DPRINTFN(2, ("%s: timeout waiting for PHY read (%d, %d)\n",
+		    device_xname(sc->sc_dev), phy, reg));
 		return ETIMEDOUT;
 	}
 
 	if (NFE_READ(sc, NFE_PHY_STATUS) & NFE_PHY_ERROR) {
-		DPRINTFN(2, ("%s: could not read PHY\n",
-		    device_xname(sc->sc_dev)));
+		DPRINTFN(2, ("%s: could not read PHY (%d, %d)\n",
+		    device_xname(sc->sc_dev), phy, reg));
 		return -1;
 	}
 
 	data = NFE_READ(sc, NFE_PHY_DATA);
-	if (data != 0xffffffff && data != 0)
-		sc->mii_phyaddr = phy;
+	sc->mii_phyaddr = phy;
 
 	DPRINTFN(2, ("%s: mii read phy %d reg 0x%x data 0x%x\n",
 	    device_xname(sc->sc_dev), phy, reg, data));
@@ -595,9 +602,15 @@ nfe_miibus_writereg(device_t dev, int phy, int reg, uint16_t val)
 	if (ntries == 1000) {
 #ifdef NFE_DEBUG
 		if (nfedebug >= 2)
-			printf("could not write to PHY\n");
+			printf("timeout waiting for PHY write (%d, %d)\n",
+			    phy, reg);
 #endif
 		return ETIMEDOUT;
+	}
+	if (NFE_READ(sc, NFE_PHY_STATUS) & NFE_PHY_ERROR) {
+		DPRINTFN(2, ("%s: could not write PHY (%d, %d)\n",
+		    device_xname(sc->sc_dev), phy, reg));
+		return -1;
 	}
 	return 0;
 }
@@ -958,9 +971,8 @@ mbufcopied:
 skip1:
 		/* update mapping address in h/w descriptor */
 		if (sc->sc_flags & NFE_40BIT_ADDR) {
-#if defined(__LP64__)
-			desc64->physaddr[0] = htole32(physaddr >> 32);
-#endif
+			desc64->physaddr[0] =
+			    htole32(((uint64_t)physaddr) >> 32);
 			desc64->physaddr[1] = htole32(physaddr & 0xffffffff);
 		} else {
 			desc32->physaddr = htole32(physaddr);
@@ -1123,10 +1135,8 @@ nfe_encap(struct nfe_softc *sc, struct mbuf *m0)
 
 		if (sc->sc_flags & NFE_40BIT_ADDR) {
 			desc64 = &sc->txq.desc64[sc->txq.cur];
-#if defined(__LP64__)
 			desc64->physaddr[0] =
-			    htole32(map->dm_segs[i].ds_addr >> 32);
-#endif
+			    htole32(((uint64_t)map->dm_segs[i].ds_addr) >> 32);
 			desc64->physaddr[1] =
 			    htole32(map->dm_segs[i].ds_addr & 0xffffffff);
 			desc64->length = htole16(map->dm_segs[i].ds_len - 1);
@@ -1291,13 +1301,9 @@ nfe_init(struct ifnet *ifp)
 	nfe_set_macaddr(sc, sc->sc_enaddr);
 
 	/* tell MAC where rings are in memory */
-#ifdef __LP64__
-	NFE_WRITE(sc, NFE_RX_RING_ADDR_HI, sc->rxq.physaddr >> 32);
-#endif
+	NFE_WRITE(sc, NFE_RX_RING_ADDR_HI, ((uint64_t)sc->rxq.physaddr) >> 32);
 	NFE_WRITE(sc, NFE_RX_RING_ADDR_LO, sc->rxq.physaddr & 0xffffffff);
-#ifdef __LP64__
-	NFE_WRITE(sc, NFE_TX_RING_ADDR_HI, sc->txq.physaddr >> 32);
-#endif
+	NFE_WRITE(sc, NFE_TX_RING_ADDR_HI, ((uint64_t)sc->txq.physaddr) >> 32);
 	NFE_WRITE(sc, NFE_TX_RING_ADDR_LO, sc->txq.physaddr & 0xffffffff);
 
 	NFE_WRITE(sc, NFE_RING_SIZE,
@@ -1516,9 +1522,8 @@ nfe_alloc_rx_ring(struct nfe_softc *sc, struct nfe_rx_ring *ring)
 
 		if (sc->sc_flags & NFE_40BIT_ADDR) {
 			desc64 = &sc->rxq.desc64[i];
-#if defined(__LP64__)
-			desc64->physaddr[0] = htole32(physaddr >> 32);
-#endif
+			desc64->physaddr[0] =
+			    htole32(((uint64_t)physaddr) >> 32);
 			desc64->physaddr[1] = htole32(physaddr & 0xffffffff);
 			desc64->length = htole16(sc->rxq.bufsz);
 			desc64->flags = htole16(NFE_RX_READY);
@@ -1924,11 +1929,11 @@ done:
 	addr[0] |= 0x01;	/* make sure multicast bit is set */
 
 	NFE_WRITE(sc, NFE_MULTIADDR_HI,
-	    addr[3] << 24 | addr[2] << 16 | addr[1] << 8 | addr[0]);
+	    (uint32_t)addr[3] << 24 | addr[2] << 16 | addr[1] << 8 | addr[0]);
 	NFE_WRITE(sc, NFE_MULTIADDR_LO,
 	    addr[5] <<  8 | addr[4]);
 	NFE_WRITE(sc, NFE_MULTIMASK_HI,
-	    mask[3] << 24 | mask[2] << 16 | mask[1] << 8 | mask[0]);
+	    (uint32_t)mask[3] << 24 | mask[2] << 16 | mask[1] << 8 | mask[0]);
 	NFE_WRITE(sc, NFE_MULTIMASK_LO,
 	    mask[5] <<  8 | mask[4]);
 
@@ -1971,7 +1976,7 @@ nfe_set_macaddr(struct nfe_softc *sc, const uint8_t *addr)
 	NFE_WRITE(sc, NFE_MACADDR_LO,
 	    addr[5] <<  8 | addr[4]);
 	NFE_WRITE(sc, NFE_MACADDR_HI,
-	    addr[3] << 24 | addr[2] << 16 | addr[1] << 8 | addr[0]);
+	    (uint32_t)addr[3] << 24 | addr[2] << 16 | addr[1] << 8 | addr[0]);
 }
 
 void

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_stge.c,v 1.79 2020/02/07 00:04:28 thorpej Exp $	*/
+/*	$NetBSD: if_stge.c,v 1.85 2020/03/13 03:45:58 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_stge.c,v 1.79 2020/02/07 00:04:28 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_stge.c,v 1.85 2020/03/13 03:45:58 thorpej Exp $");
 
 
 #include <sys/param.h>
@@ -442,7 +442,25 @@ stge_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_dmat = pa->pa_dmat;
+	/*
+	 * We have a 40-bit limit on our DMA addresses.  This isn't an
+	 * issue if we're only using a 32-bit DMA tag, but we have to
+	 * account for it if the 64-bit DMA tag is available.
+	 */
+	if (pci_dma64_available(pa)) {
+		if (bus_dmatag_subregion(pa->pa_dmat64,
+					 0,
+					 (bus_addr_t)(FRAG_ADDR_MASK + 1ULL),
+					 &sc->sc_dmat,
+					 BUS_DMA_WAITOK) != 0) {
+			aprint_error_dev(self,
+			    "WARNING: failed to restrict dma range,"
+			    " falling back to parent bus dma range\n");
+			sc->sc_dmat = pa->pa_dmat64;
+		}
+	} else {
+		sc->sc_dmat = pa->pa_dmat;
+	}
 
 	/* Enable bus mastering. */
 	pci_conf_write(pc, pa->pa_tag, PCI_COMMAND_STATUS_REG,
@@ -1336,6 +1354,7 @@ stge_rxintr(struct stge_softc *sc)
 				m_freem(m);
 				continue;
 			}
+			MCLAIM(m, &sc->sc_ethercom.ec_rx_mowner);
 			nm->m_data += 2;
 			nm->m_pkthdr.len = nm->m_len = len;
 			m_copydata(m, 0, len, mtod(nm, void *));
@@ -1576,11 +1595,13 @@ stge_init(struct ifnet *ifp)
 	/*
 	 * Give the transmit and receive ring to the chip.
 	 */
-	CSR_WRITE_4(sc, STGE_TFDListPtrHi, 0); /* NOTE: 32-bit DMA */
+	CSR_WRITE_4(sc, STGE_TFDListPtrHi,
+	    ((uint64_t)STGE_CDTXADDR(sc, sc->sc_txdirty)) >> 32);
 	CSR_WRITE_4(sc, STGE_TFDListPtrLo,
 	    STGE_CDTXADDR(sc, sc->sc_txdirty));
 
-	CSR_WRITE_4(sc, STGE_RFDListPtrHi, 0); /* NOTE: 32-bit DMA */
+	CSR_WRITE_4(sc, STGE_RFDListPtrHi,
+	    ((uint64_t)STGE_CDRXADDR(sc, sc->sc_rxptr)) >> 32);
 	CSR_WRITE_4(sc, STGE_RFDListPtrLo,
 	    STGE_CDRXADDR(sc, sc->sc_rxptr));
 
@@ -1833,6 +1854,7 @@ stge_add_rxbuf(struct stge_softc *sc, int idx)
 	if (m == NULL)
 		return (ENOBUFS);
 
+	MCLAIM(m, &sc->sc_ethercom.ec_rx_mowner);
 	MCLGET(m, M_DONTWAIT);
 	if ((m->m_flags & M_EXT) == 0) {
 		m_freem(m);

@@ -1,4 +1,4 @@
-/*	$NetBSD: lfs_segment.c,v 1.282 2020/02/18 20:23:17 chs Exp $	*/
+/*	$NetBSD: lfs_segment.c,v 1.286 2020/02/23 15:46:42 ad Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2002, 2003 The NetBSD Foundation, Inc.
@@ -60,7 +60,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lfs_segment.c,v 1.282 2020/02/18 20:23:17 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lfs_segment.c,v 1.286 2020/02/23 15:46:42 ad Exp $");
 
 #ifdef DEBUG
 # define vndebug(vp, str) do {						\
@@ -396,7 +396,7 @@ lfs_vflush(struct vnode *vp)
 					 * still not done with this vnode.
 					 * XXX we can do better than this.
 					 */
-					KDASSERT(ip->i_number != LFS_IFILE_INUM);
+					KASSERT(ip->i_number != LFS_IFILE_INUM);
 					lfs_writeinode(fs, sp, ip);
 					mutex_enter(&lfs_lock);
 					LFS_SET_UINO(ip, IN_MODIFIED);
@@ -621,6 +621,15 @@ lfs_segwrite(struct mount *mp, int flags)
 	 */
 	do_ckp = LFS_SHOULD_CHECKPOINT(fs, flags);
 
+	/*
+	 * If we know we're gonna need the writer lock, take it now to
+	 * preserve the lock order lfs_writer -> lfs_seglock.
+	 */
+	if (do_ckp) {
+		lfs_writer_enter(fs, "ckpwriter");
+		writer_set = 1;
+	}
+
 	/* We can't do a partial write and checkpoint at the same time. */
 	if (do_ckp)
 		flags &= ~SEGM_SINGLE;
@@ -650,11 +659,10 @@ lfs_segwrite(struct mount *mp, int flags)
 				break;
 			}
 
-			if (do_ckp || fs->lfs_dirops == 0) {
-				if (!writer_set) {
-					lfs_writer_enter(fs, "lfs writer");
-					writer_set = 1;
-				}
+			if (do_ckp ||
+			    (writer_set = lfs_writer_tryenter(fs)) != 0) {
+				KASSERT(writer_set);
+				KASSERT(fs->lfs_writer);
 				error = lfs_writevnodes(fs, mp, sp, VN_DIROP);
 				if (um_error == 0)
 					um_error = error;
@@ -881,7 +889,7 @@ lfs_writefile(struct lfs *fs, struct segment *sp, struct vnode *vp)
 		 * everything we've got.
 		 */
 		if (!IS_FLUSHING(fs, vp)) {
-			mutex_enter(vp->v_interlock);
+			rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 			error = VOP_PUTPAGES(vp, 0, 0,
 				PGO_CLEANIT | PGO_ALLPAGES | PGO_LOCKED);
 		}
@@ -2513,7 +2521,7 @@ lfs_free_aiodone(struct buf *bp)
 	fs = bp->b_private;
 	ASSERT_NO_SEGLOCK(fs);
 	lfs_freebuf(fs, bp);
-	KERNEL_UNLOCK_LAST(curlwp);
+	KERNEL_UNLOCK_ONE(curlwp);
 }
 
 static void
@@ -2531,7 +2539,7 @@ lfs_super_aiodone(struct buf *bp)
 	wakeup(&fs->lfs_sbactive);
 	mutex_exit(&lfs_lock);
 	lfs_freebuf(fs, bp);
-	KERNEL_UNLOCK_LAST(curlwp);
+	KERNEL_UNLOCK_ONE(curlwp);
 }
 
 static void
@@ -2664,7 +2672,7 @@ lfs_cluster_aiodone(struct buf *bp)
 		wakeup(&fs->lfs_iocount);
 	mutex_exit(&lfs_lock);
 
-	KERNEL_UNLOCK_LAST(curlwp);
+	KERNEL_UNLOCK_ONE(curlwp);
 
 	pool_put(&fs->lfs_bpppool, cl->bpp);
 	cl->bpp = NULL;

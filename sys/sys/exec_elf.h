@@ -1,4 +1,4 @@
-/*	$NetBSD: exec_elf.h,v 1.164 2020/01/02 05:18:07 kamil Exp $	*/
+/*	$NetBSD: exec_elf.h,v 1.166 2020/02/29 22:09:29 kamil Exp $	*/
 
 /*-
  * Copyright (c) 1994 The NetBSD Foundation, Inc.
@@ -549,6 +549,7 @@ typedef struct {
 #define	SHT_MIPS_REGINFO     0x70000006
 #define	SHT_MIPS_OPTIONS     0x7000000d
 #define	SHT_MIPS_DWARF	     0x7000001e	/* MIPS gcc uses MIPS_DWARF */
+#define	SHT_MIPS_XHASH	     0x7000002b	/* MIPS version of GNU_HASH */
 #define SHT_HIPROC	     0x7fffffff
 #define SHT_LOUSER	     0x80000000 /* Application-specific range */
 #define SHT_HIUSER	     0xffffffff
@@ -797,6 +798,7 @@ typedef struct {
 #define DT_NUM		34
 
 #define DT_LOOS		0x60000000	/* Operating system specific range */
+#define DT_GNU_HASH	0x6ffffef5	/* GNU-style hash table */
 #define DT_VERSYM	0x6ffffff0	/* Symbol versions */
 #define DT_FLAGS_1	0x6ffffffb	/* ELF dynamic flags */
 #define DT_VERDEF	0x6ffffffc	/* Versions defined by file */
@@ -805,6 +807,7 @@ typedef struct {
 #define DT_VERNEEDNUM	0x6fffffff	/* Number of versions needed by file */
 #define DT_HIOS		0x6fffffff
 #define DT_LOPROC	0x70000000	/* Processor-specific range */
+#define DT_MIPS_XHASH	0x70000036	/* MIPS version of GNU_HASH */
 #define DT_HIPROC	0x7fffffff
 
 /* Flag values for DT_FLAGS */
