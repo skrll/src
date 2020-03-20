@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.inc,v 1.32 2019/07/28 10:27:57 martin Exp $
+# $NetBSD: Makefile.inc,v 1.34 2020/03/02 16:01:52 roy Exp $
 #
 # Include this fragment to build libhack.o
 # It is .o and not .a to make sure these are the
@@ -20,6 +20,7 @@
 
 CPPFLAGS+=	-DSMALL
 CPPFLAGS+=	-DLIBHACK
+
 HACKOBJS+=	getcap.o getgrent.o getnet.o getnetgr.o getpwent.o jemalloc.o \
 		localeconv.o multibyte.o perror.o runetable.o setlocale.o \
 		nl_langinfo.o strcasecmp.o \

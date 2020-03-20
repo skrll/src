@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.109 2020/01/12 13:01:11 ad Exp $	*/
+/*	$NetBSD: pmap.h,v 1.111 2020/03/10 22:38:41 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -67,8 +67,6 @@
 #ifndef _X86_PMAP_H_
 #define	_X86_PMAP_H_
 
-#include <sys/radixtree.h>
-
 /*
  * pl*_pi: index in the ptp page for a pde mapping a VA.
  * (pl*_i below is the index in the virtual array of all pdes per level)
@@ -113,6 +111,7 @@
 
 #if defined(_KERNEL)
 #include <sys/kcpuset.h>
+#include <sys/rwlock.h>
 #include <x86/pmap_pv.h>
 #include <uvm/pmap/pmap_pvt.h>
 
@@ -256,7 +255,6 @@ struct pmap {
 	paddr_t pm_pdirpa[PDP_SIZE];	/* PA of PDs (read-only after create) */
 	struct vm_page *pm_ptphint[PTP_LEVELS-1];
 					/* pointer to a PTP in our pmap */
-	struct radix_tree pm_pvtree;	/* tree of non-embedded pv entries */
 	struct pmap_statistics pm_stats;  /* pmap stats */
 
 #if !defined(__x86_64__)
@@ -291,6 +289,7 @@ struct pmap {
 
 	kmutex_t pm_lock		/* locks for pm_objs */
 	    __aligned(64);		/* give lock own cache line */
+	krwlock_t pm_dummy_lock;	/* ugly hack for abusing uvm_object */
 };
 
 /* macro to access pm_pdirpa slots */

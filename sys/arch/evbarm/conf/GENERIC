@@ -735,9 +735,11 @@ tiusb*		at fdt? pass 9		# TI HS USB host
 tiusbtll*	at fdt? pass 8		# TI HS USB host TLL
 dwctwo* 	at fdt?			# Designware USB DRD
 ehci* 		at fdt?			# EHCI
+ehci* 		at pci?			# EHCI
 motg* 		at fdt?			# Mentor Graphics USB OTG
 ohci* 		at fdt?			# OHCI
-ehci* 		at fdt?			# EHCI
+ohci* 		at pci?			# OHCI
+uhci* 		at pci?			# UHCI
 xhci* 		at fdt?			# XHCI
 usb* 		at usbus?
 

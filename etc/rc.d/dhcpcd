@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# $NetBSD: dhcpcd,v 1.5 2016/01/07 22:03:00 roy Exp $
+# $NetBSD: dhcpcd,v 1.7 2020/02/22 11:55:43 roy Exp $
 
 # PROVIDE: dhcpcd
 # REQUIRE: network mountcritlocal

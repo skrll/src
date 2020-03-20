@@ -1,4 +1,4 @@
-# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2651 $>
+# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2656 $>
 #
 #
 # [Note: This file does not mention every change made to the NetBSD source tree.
@@ -144,3 +144,11 @@ Changes from NetBSD 9.0 to NetBSD 10.0:
 	realpath(1): Ported from FreeBSD. [kamil 20200202]
 	kernel: Remove azalia(4). [jmcneill 20200209]
 	awk(1): Import 20200218 [christos 20200218]
+	genet(4): Add support for Broadcom GENETv5 ethernet controllers, found
+		in the Raspberry Pi 4. [jmcneill 20200222]
+	OpenSSH: Import 8.2. [christos 20200226]
+	ld.elf_so(1): Implement DT_GNU_HASH [kamil 20200229]
+	amiga: Fix word accesses on Gayle (A1200) pcmcia. [is 20200302]
+	libcbor: Import for libfido2 support [christos 20200302]
+	libfido2: Import for pam-u2f support [christos 20200302]
+	pam-u2f: Import token authenticator [christos 20200302]

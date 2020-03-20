@@ -1,4 +1,4 @@
-/*	$NetBSD: ehci.c,v 1.274 2020/02/21 12:41:29 skrll Exp $ */
+/*	$NetBSD: ehci.c,v 1.275 2020/03/05 08:35:16 skrll Exp $ */
 
 /*
  * Copyright (c) 2004-2012 The NetBSD Foundation, Inc.
@@ -53,7 +53,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.274 2020/02/21 12:41:29 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.275 2020/03/05 08:35:16 skrll Exp $");
 
 #include "ohci.h"
 #include "uhci.h"

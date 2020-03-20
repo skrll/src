@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.1 2009/06/07 22:38:46 christos Exp $
+#	$NetBSD: Makefile,v 1.3 2020/03/01 20:59:53 christos Exp $
 
 BINOWN=	root
 BINMODE=4555

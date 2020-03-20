@@ -2084,7 +2084,7 @@ uhci_reset_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer,
 	int tog = *toggle;
 	int maxp;
 	uint32_t status;
-	size_t i;
+	size_t i, offs;
 
 	UHCIHIST_FUNC(); UHCIHIST_CALLED();
 	DPRINTFN(8, "xfer=%#jx len %jd isread %jd toggle %jd", (uintptr_t)xfer,
@@ -2113,7 +2113,7 @@ uhci_reset_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer,
 			l = maxp;
 
 		if (DMAADDR(dma, offs) != DMAADDR(dma, offs + l))
-			l = PAGE_SIZE - DMAADDR(dma, offs)
+			l = PAGE_SIZE - DMAADDR(dma, offs);
 
 		if (prev) {
 			prev->link.std = std;
