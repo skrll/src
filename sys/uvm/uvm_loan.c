@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_loan.c,v 1.96 2020/02/24 21:06:11 ad Exp $	*/
+/*	$NetBSD: uvm_loan.c,v 1.99 2020/03/20 19:08:54 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_loan.c,v 1.96 2020/02/24 21:06:11 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_loan.c,v 1.99 2020/03/20 19:08:54 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -705,9 +705,6 @@ uvm_loanuobj(struct uvm_faultinfo *ufi, void ***output, int flags, vaddr_t va)
 		 */
 
 		if (locked == false) {
-			if (pg->flags & PG_WANTED) {
-				wakeup(pg);
-			}
 			if (pg->flags & PG_RELEASED) {
 				uvm_pagefree(pg);
 				rw_exit(uobj->vmobjlock);
@@ -715,8 +712,9 @@ uvm_loanuobj(struct uvm_faultinfo *ufi, void ***output, int flags, vaddr_t va)
 			}
 			uvm_pagelock(pg);
 			uvm_pageactivate(pg);
+			uvm_pagewakeup(pg);
 			uvm_pageunlock(pg);
-			pg->flags &= ~(PG_BUSY|PG_WANTED);
+			pg->flags &= ~PG_BUSY;
 			UVM_PAGE_OWN(pg, NULL);
 			rw_exit(uobj->vmobjlock);
 			return (0);
@@ -754,10 +752,10 @@ uvm_loanuobj(struct uvm_faultinfo *ufi, void ***output, int flags, vaddr_t va)
 		/* XXX: locking */
 		anon = pg->uanon;
 		anon->an_ref++;
-		if (pg->flags & PG_WANTED) {
-			wakeup(pg);
-		}
-		pg->flags &= ~(PG_WANTED|PG_BUSY);
+		uvm_pagelock(pg);
+		uvm_pagewakeup(pg);
+		uvm_pageunlock(pg);
+		pg->flags &= ~PG_BUSY;
 		UVM_PAGE_OWN(pg, NULL);
 		rw_exit(uobj->vmobjlock);
 		**output = anon;
@@ -787,11 +785,9 @@ uvm_loanuobj(struct uvm_faultinfo *ufi, void ***output, int flags, vaddr_t va)
 	anon->an_page = pg;
 	anon->an_lock = /* TODO: share amap lock */
 	uvm_pageactivate(pg);
+	uvm_pagewakeup(pg);
 	uvm_pageunlock(pg);
-	if (pg->flags & PG_WANTED) {
-		wakeup(pg);
-	}
-	pg->flags &= ~(PG_WANTED|PG_BUSY);
+	pg->flags &= ~PG_BUSY;
 	UVM_PAGE_OWN(pg, NULL);
 	rw_exit(uobj->vmobjlock);
 	rw_exit(&anon->an_lock);
@@ -804,15 +800,15 @@ fail:
 	/*
 	 * unlock everything and bail out.
 	 */
-	if (pg->flags & PG_WANTED) {
-		wakeup(pg);
-	}
-	pg->flags &= ~(PG_WANTED|PG_BUSY);
+	uvm_pagelock(pg);
+	uvm_pagewakeup(pg);
+	uvm_pageunlock(pg);
+	pg->flags &= ~PG_BUSY;
 	UVM_PAGE_OWN(pg, NULL);
 	uvmfault_unlockall(ufi, amap, uobj, NULL);
 	if (anon) {
 		anon->an_ref--;
-		uvm_anon_free(anon);
+		uvm_anfree(anon);
 	}
 #endif	/* notdef */
 	return (-1);
@@ -863,10 +859,11 @@ again:
 		}
 
 		/* got a zero'd page. */
-		pg->flags &= ~(PG_WANTED|PG_BUSY|PG_FAKE);
+		pg->flags &= ~(PG_BUSY|PG_FAKE);
 		pg->flags |= PG_RDONLY;
 		uvm_pagelock(pg);
 		uvm_pageactivate(pg);
+		uvm_pagewakeup(pg);
 		uvm_pageunlock(pg);
 		UVM_PAGE_OWN(pg, NULL);
 	}
@@ -946,11 +943,10 @@ uvm_unloananon(struct vm_anon **aloans, int nanons)
 	while (nanons-- > 0) {
 		anon = *aloans++;
 		if (--anon->an_ref == 0) {
-			anon->an_link = to_free;
-			to_free = anon;
+			uvm_anfree(anon);
 		}
 	}
-	uvm_anon_freelst(amap, to_free);
+	amap_unlock(amap);
 #endif	/* notdef */
 }
 
@@ -1133,10 +1129,8 @@ uvm_loanbreak(struct vm_page *uobjpage)
 	pg->flags &= ~PG_FAKE;
 	KASSERT(uvm_pagegetdirty(pg) == UVM_PAGE_STATUS_DIRTY);
 	pmap_page_protect(uobjpage, VM_PROT_NONE);
-	if (uobjpage->flags & PG_WANTED)
-		wakeup(uobjpage);
 	/* uobj still locked */
-	uobjpage->flags &= ~(PG_WANTED|PG_BUSY);
+	uobjpage->flags &= ~PG_BUSY;
 	UVM_PAGE_OWN(uobjpage, NULL);
 
 	/*
@@ -1146,6 +1140,7 @@ uvm_loanbreak(struct vm_page *uobjpage)
 	 */
 
 	uvm_pagelock2(uobjpage, pg);
+	uvm_pagewakeup(uobjpage);
 	if (uobjpage->uanon == NULL)
 		uvm_pagedequeue(uobjpage);
 

@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.140 2020/02/22 18:57:50 jmcneill Exp $
+#	$NetBSD: GENERIC64,v 1.146 2020/03/18 10:56:38 jmcneill Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -325,10 +325,12 @@ pci*		at ppb?
 awge*		at fdt?				# DesignWare Gigabit Ethernet
 emac*		at fdt?				# Allwinner Gigabit Ethernet (EMAC)
 enet*		at fdt?				# IMX FEC
-aq*		at pci? dev ? function ?	# Aquantia AQC 10 gigabit
-ena*		at pci? dev ? function ?	# Amazon.com Elastic Network Adapter
 genet*		at acpi?			# Broadcom GENET v5
 genet*		at fdt?
+#scx*		at acpi?			# Socionext Gigabit Ethernet
+#scx*		at fdt?	
+aq*		at pci? dev ? function ?	# Aquantia AQC 10 gigabit
+ena*		at pci? dev ? function ?	# Amazon.com Elastic Network Adapter
 mcx*		at pci? dev ? function ?	# Mellanox 5th generation Ethernet
 mskc*		at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 msk*		at mskc?
@@ -389,6 +391,8 @@ rkiic*		at fdt? pass 4		# Rockchip I2C
 sunxirsb*	at fdt?	pass 4		# Allwinner RSB
 sunxitwi*	at fdt?			# Allwinner TWI
 tegrai2c*	at fdt? pass 4		# NVIDIA Tegra I2C
+#sniiic*	at fdt?			# Socionext SC2A11 I2C
+#sniiic*	at acpi?
 iic*		at i2cbus?
 
 # I2C devices
@@ -429,6 +433,8 @@ rkemmcphy*	at fdt?			# Rockchip eMMC PHY
 sdhc*		at fdt?			# SD Host Controller Interface
 sdhc*		at acpi?
 sunximmc*	at fdt?			# Allwinner SD/MMC
+#sniemmc*	at fdt?			# Socionext SC2A11 eMMC
+#sniemmc*	at acpi?
 sdmmc*		at sdmmcbus?
 ld0		at sdmmc0
 ld1		at sdmmc1
@@ -522,6 +528,9 @@ options 	FONT_BOLD16x32
 
 # GPU
 #nouveau*	at fdt?			# NVIDIA GPU
+#nouveau*	at pci?
+radeon*		at pci? dev ? function ? # AMD Radeon
+radeondrmkmsfb*	at radeonfbbus?
 
 # Backlight
 pwmbacklight*	at fdt?			# PWM Backlight controls

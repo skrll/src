@@ -1,4 +1,4 @@
-/*	$NetBSD: ehci.c,v 1.275 2020/03/05 08:35:16 skrll Exp $ */
+/*	$NetBSD: ehci.c,v 1.277 2020/03/14 02:35:33 christos Exp $ */
 
 /*
  * Copyright (c) 2004-2012 The NetBSD Foundation, Inc.
@@ -53,7 +53,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.275 2020/03/05 08:35:16 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.277 2020/03/14 02:35:33 christos Exp $");
 
 #include "ohci.h"
 #include "uhci.h"
@@ -749,7 +749,7 @@ ehci_intr1(ehci_softc_t *sc)
 		/* Block unprocessed interrupts. */
 		sc->sc_eintrs &= ~eintrs;
 		EOWRITE4(sc, EHCI_USBINTR, sc->sc_eintrs);
-		printf("%s: blocking intrs 0x%x\n",
+		printf("%s: blocking intrs %#x\n",
 		       device_xname(sc->sc_dev), eintrs);
 	}
 

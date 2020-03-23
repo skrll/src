@@ -1,4 +1,4 @@
-/*	$NetBSD: fdesc_vfsops.c,v 1.93 2020/01/17 20:08:09 ad Exp $	*/
+/*	$NetBSD: fdesc_vfsops.c,v 1.95 2020/03/21 16:30:39 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993, 1995
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdesc_vfsops.c,v 1.93 2020/01/17 20:08:09 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdesc_vfsops.c,v 1.95 2020/03/21 16:30:39 pgoyette Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -67,8 +67,6 @@ __KERNEL_RCSID(0, "$NetBSD: fdesc_vfsops.c,v 1.93 2020/01/17 20:08:09 ad Exp $")
 MODULE(MODULE_CLASS_VFS, fdesc, NULL);
 
 VFS_PROTOS(fdesc);
-
-static struct sysctllog *fdesc_sysctl_log;
 
 /*
  * Mount the per-process file descriptors (/dev/fd)
@@ -263,17 +261,10 @@ struct vfsops fdesc_vfsops = {
 	.vfs_opv_descs = fdesc_vnodeopv_descs
 };
 
-static int
-fdesc_modcmd(modcmd_t cmd, void *arg)
+SYSCTL_SETUP(fdesc_sysctl_setup, "fdesc sysctl")
 {
-	int error;
 
-	switch (cmd) {
-	case MODULE_CMD_INIT:
-		error = vfs_attach(&fdesc_vfsops);
-		if (error != 0)
-			break;
-		sysctl_createv(&fdesc_sysctl_log, 0, NULL, NULL,
+		sysctl_createv(clog, 0, NULL, NULL,
 			       CTLFLAG_PERMANENT,
 			       CTLTYPE_NODE, "fdesc",
 			       SYSCTL_DESCR("File-descriptor file system"),
@@ -284,12 +275,23 @@ fdesc_modcmd(modcmd_t cmd, void *arg)
 		 * more instance of the "number to vfs" mapping problem, but
 		 * "7" is the order as taken from sys/mount.h
 		 */
+}
+
+static int
+fdesc_modcmd(modcmd_t cmd, void *arg)
+{
+	int error;
+
+	switch (cmd) {
+	case MODULE_CMD_INIT:
+		error = vfs_attach(&fdesc_vfsops);
+		if (error != 0)
+			break;
 		break;
 	case MODULE_CMD_FINI:
 		error = vfs_detach(&fdesc_vfsops);
 		if (error != 0)
 			break;
-		sysctl_teardown(&fdesc_sysctl_log);
 		break;
 	default:
 		error = ENOTTY;

@@ -1,4 +1,4 @@
-/*	$NetBSD: usb_mem.c,v 1.72 2019/08/28 07:11:19 mrg Exp $	*/
+/*	$NetBSD: usb_mem.c,v 1.75 2020/03/15 14:19:04 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb_mem.c,v 1.72 2019/08/28 07:11:19 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb_mem.c,v 1.75 2020/03/15 14:19:04 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -57,8 +57,8 @@ __KERNEL_RCSID(0, "$NetBSD: usb_mem.c,v 1.72 2019/08/28 07:11:19 mrg Exp $");
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
 #include <dev/usb/usbdivar.h>	/* just for usb_dma_t */
-#include <dev/usb/usb_mem.h>
 #include <dev/usb/usbhist.h>
+#include <dev/usb/usb_mem.h>
 
 #define	DPRINTF(FMT,A,B,C,D)	USBHIST_LOG(usbdebug,FMT,A,B,C,D)
 #define	DPRINTFN(N,FMT,A,B,C,D)	USBHIST_LOGN(usbdebug,N,FMT,A,B,C,D)

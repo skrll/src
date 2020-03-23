@@ -1,4 +1,4 @@
-/*	$NetBSD: uhci.c,v 1.294 2020/02/21 12:41:29 skrll Exp $	*/
+/*	$NetBSD: uhci.c,v 1.299 2020/03/15 15:00:14 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2011, 2012 The NetBSD Foundation, Inc.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.294 2020/02/21 12:41:29 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.299 2020/03/15 15:00:14 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -1716,7 +1716,7 @@ uhci_idone(struct uhci_xfer *ux, ux_completeq_t *cqp)
 		upipe->nexttoggle = UHCI_TD_GET_DT(le32toh(std->td.td_token));
 
 	status &= UHCI_TD_ERROR;
-	DPRINTFN(10, "actlen=%jd, status=0x%jx", actlen, status, 0, 0);
+	DPRINTFN(10, "actlen=%jd, status=%#jx", actlen, status, 0, 0);
 	xfer->ux_actlen = actlen;
 	if (status != 0) {
 
@@ -1807,7 +1807,7 @@ uhci_run(uhci_softc_t *sc, int run, int locked)
 		if (run == running) {
 			if (!locked)
 				mutex_spin_exit(&sc->sc_intr_lock);
-			DPRINTF("done cmd=0x%jx sts=0x%jx",
+			DPRINTF("done cmd=%#jx sts=%#jx",
 			    UREAD2(sc, UHCI_CMD), UREAD2(sc, UHCI_STS), 0, 0);
 			return USBD_NORMAL_COMPLETION;
 		}

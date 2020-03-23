@@ -1,4 +1,4 @@
-/*	$NetBSD: ehcivar.h,v 1.47 2020/03/04 16:17:23 skrll Exp $ */
+/*	$NetBSD: ehcivar.h,v 1.48 2020/03/15 07:56:19 skrll Exp $ */
 
 /*
  * Copyright (c) 2001 The NetBSD Foundation, Inc.

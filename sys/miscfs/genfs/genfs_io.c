@@ -1,4 +1,4 @@
-/*	$NetBSD: genfs_io.c,v 1.88 2020/02/27 22:12:54 ad Exp $	*/
+/*	$NetBSD: genfs_io.c,v 1.94 2020/03/17 18:31:38 ad Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: genfs_io.c,v 1.88 2020/02/27 22:12:54 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: genfs_io.c,v 1.94 2020/03/17 18:31:38 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -61,7 +61,6 @@ static int genfs_getpages_read(struct vnode *, struct vm_page **, int, off_t,
 static int genfs_do_io(struct vnode *, off_t, vaddr_t, size_t, int, enum uio_rw,
     void (*)(struct buf *));
 static void genfs_rel_pages(struct vm_page **, unsigned int);
-static void genfs_markdirty(struct vnode *);
 
 int genfs_maxdio = MAXPHYS;
 
@@ -81,22 +80,6 @@ genfs_rel_pages(struct vm_page **pgs, unsigned int npages)
 		}
 	}
 	uvm_page_unbusy(pgs, npages);
-}
-
-static void
-genfs_markdirty(struct vnode *vp)
-{
-
-	KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
-
-	mutex_enter(vp->v_interlock);
-	if ((vp->v_iflag & VI_ONWORKLST) == 0) {
-		vn_syncer_add_to_worklist(vp, filedelay);
-	}
-	if ((vp->v_iflag & (VI_WRMAP|VI_WRMAPDIRTY)) == VI_WRMAP) {
-		vp->v_iflag |= VI_WRMAPDIRTY;
-	}
-	mutex_exit(vp->v_interlock);
 }
 
 /*
@@ -278,7 +261,6 @@ startover:
 					    UVM_PAGE_STATUS_UNKNOWN);
 				}
 			}
-			genfs_markdirty(vp);
 		}
 		goto out_err;
 	}
@@ -524,9 +506,6 @@ out:
 		if (i < ridx || i >= ridx + orignmempages || async) {
 			UVMHIST_LOG(ubchist, "unbusy pg %#jx offset 0x%jx",
 			    (uintptr_t)pg, pg->offset,0,0);
-			if (pg->flags & PG_WANTED) {
-				wakeup(pg);
-			}
 			if (pg->flags & PG_FAKE) {
 				KASSERT(overwrite);
 				uvm_pagezero(pg);
@@ -537,8 +516,9 @@ out:
 			}
 			uvm_pagelock(pg);
 			uvm_pageenqueue(pg);
+			uvm_pagewakeup(pg);
 			uvm_pageunlock(pg);
-			pg->flags &= ~(PG_WANTED|PG_BUSY|PG_FAKE);
+			pg->flags &= ~(PG_BUSY|PG_FAKE);
 			UVM_PAGE_OWN(pg, NULL);
 		} else if (memwrite && !overwrite &&
 		    uvm_pagegetdirty(pg) == UVM_PAGE_STATUS_CLEAN) {
@@ -548,9 +528,6 @@ out:
 			 */
 			uvm_pagemarkdirty(pg, UVM_PAGE_STATUS_UNKNOWN);
 		}
-	}
-	if (memwrite) {
-		genfs_markdirty(vp);
 	}
 	rw_exit(uobj->vmobjlock);
 	if (ap->a_m != NULL) {
@@ -615,7 +592,7 @@ genfs_getpages_read(struct vnode *vp, struct vm_page **pgs, int npages,
 	mbp->b_bufsize = totalbytes;
 	mbp->b_data = (void *)kva;
 	mbp->b_resid = mbp->b_bcount = bytes;
-	mbp->b_cflags = BC_BUSY;
+	mbp->b_cflags |= BC_BUSY;
 	if (async) {
 		mbp->b_flags = B_READ | B_ASYNC;
 		mbp->b_iodone = uvm_aio_aiodone;
@@ -884,7 +861,6 @@ genfs_do_putpages(struct vnode *vp, off_t startoff, off_t endoff,
 	bool wasclean, needs_clean;
 	bool async = (origflags & PGO_SYNCIO) == 0;
 	bool pagedaemon = curlwp == uvm.pagedaemon_lwp;
-	struct lwp * const l = curlwp ? curlwp : &lwp0;
 	struct mount *trans_mp;
 	int flags;
 	bool modified;		/* if we write out any pages */
@@ -915,8 +891,6 @@ genfs_do_putpages(struct vnode *vp, off_t startoff, off_t endoff,
 retry:
 	modified = false;
 	flags = origflags;
-	KASSERT((vp->v_iflag & VI_ONWORKLST) != 0 ||
-	    (vp->v_iflag & VI_WRMAPDIRTY) == 0);
 
 	/*
 	 * shortcut if we have no pages to process.
@@ -924,10 +898,14 @@ retry:
 
 	nodirty = radix_tree_empty_tagged_tree_p(&uobj->uo_pages,
             UVM_PAGE_DIRTY_TAG);
+#ifdef DIAGNOSTIC
+	mutex_enter(vp->v_interlock);
+	KASSERT((vp->v_iflag & VI_ONWORKLST) != 0 || nodirty);
+	mutex_exit(vp->v_interlock);
+#endif
 	if (uobj->uo_npages == 0 || (dirtyonly && nodirty)) {
 		mutex_enter(vp->v_interlock);
 		if (vp->v_iflag & VI_ONWORKLST) {
-			vp->v_iflag &= ~VI_WRMAPDIRTY;
 			if (LIST_FIRST(&vp->v_dirtyblkhd) == NULL)
 				vn_syncer_remove_from_worklist(vp);
 		}
@@ -1047,8 +1025,7 @@ retry:
 		 * a preempt point.
 		 */
 
-		if ((l->l_cpu->ci_schedstate.spc_flags & SPCF_SHOULDYIELD)
-		    != 0) {
+		if (preempt_needed()) {
 			nextoff = pg->offset; /* visit this page again */
 			rw_exit(slock);
 			preempt();
@@ -1095,8 +1072,7 @@ retry:
 				continue;
 			}
 			nextoff = pg->offset; /* visit this page again */
-			pg->flags |= PG_WANTED;
-			UVM_UNLOCK_AND_WAIT_RW(pg, slock, 0, "genput", 0);
+			uvm_pagewait(pg, slock, "genput");
 			/*
 			 * as we dropped the object lock, our cached pages can
 			 * be stale.
@@ -1155,7 +1131,6 @@ retry:
 		 */
 
 		if (needs_clean) {
-			KDASSERT((vp->v_iflag & VI_ONWORKLST));
 			wasclean = false;
 			memset(pgs, 0, sizeof(pgs));
 			pg->flags |= PG_BUSY;
@@ -1325,7 +1300,7 @@ retry:
 	 */
 
 	mutex_enter(vp->v_interlock);
-	if (modified && (vp->v_iflag & VI_WRMAPDIRTY) != 0 &&
+	if (modified && (vp->v_iflag & VI_WRMAP) != 0 &&
 	    (vp->v_type != VBLK ||
 	    (vp->v_mount->mnt_flag & MNT_NODEVMTIME) == 0)) {
 		GOP_MARKUPDATE(vp, GOP_UPDATE_MODIFIED);
@@ -1339,7 +1314,6 @@ retry:
 	if ((vp->v_iflag & VI_ONWORKLST) != 0 &&
 	    radix_tree_empty_tagged_tree_p(&uobj->uo_pages,
 	    UVM_PAGE_DIRTY_TAG)) {
-		vp->v_iflag &= ~VI_WRMAPDIRTY;
 		if (LIST_FIRST(&vp->v_dirtyblkhd) == NULL)
 			vn_syncer_remove_from_worklist(vp);
 	}
@@ -1497,7 +1471,7 @@ genfs_do_io(struct vnode *vp, off_t off, vaddr_t kva, size_t len, int flags,
 	mbp->b_bufsize = len;
 	mbp->b_data = (void *)kva;
 	mbp->b_resid = mbp->b_bcount = bytes;
-	mbp->b_cflags = BC_BUSY | BC_AGE;
+	mbp->b_cflags |= BC_BUSY | BC_AGE;
 	if (async) {
 		mbp->b_flags = brw | B_ASYNC;
 		mbp->b_iodone = iodone;
@@ -1640,9 +1614,6 @@ genfs_compat_getpages(void *v)
 		    UFP_NOWAIT|UFP_NOALLOC| (memwrite ? UFP_NORDONLY : 0));
 
 		error = ap->a_m[ap->a_centeridx] == NULL ? EBUSY : 0;
-		if (error == 0 && memwrite) {
-			genfs_markdirty(vp);
-		}
 		return error;
 	}
 	if (origoffset + (ap->a_centeridx << PAGE_SHIFT) >= vp->v_size) {
@@ -1696,9 +1667,6 @@ genfs_compat_getpages(void *v)
 	if (error) {
 		uvm_page_unbusy(pgs, npages);
 	}
-	if (error == 0 && memwrite) {
-		genfs_markdirty(vp);
-	}
 	rw_exit(uobj->vmobjlock);
 	return error;
 }
@@ -1735,7 +1703,7 @@ genfs_compat_gop_write(struct vnode *vp, struct vm_page **pgs, int npages,
 	mutex_exit(vp->v_interlock);
 
 	bp = getiobuf(vp, true);
-	bp->b_cflags = BC_BUSY | BC_AGE;
+	bp->b_cflags |= BC_BUSY | BC_AGE;
 	bp->b_lblkno = offset >> vp->v_mount->mnt_fs_bshift;
 	bp->b_data = (char *)kva;
 	bp->b_bcount = npages << PAGE_SHIFT;
