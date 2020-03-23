@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_page.c,v 1.230 2020/03/03 08:13:44 skrll Exp $	*/
+/*	$NetBSD: uvm_page.c,v 1.234 2020/03/17 18:31:39 ad Exp $	*/
 
 /*-
  * Copyright (c) 2019, 2020 The NetBSD Foundation, Inc.
@@ -95,7 +95,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.230 2020/03/03 08:13:44 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.234 2020/03/17 18:31:39 ad Exp $");
 
 #include "opt_ddb.h"
 #include "opt_uvm.h"
@@ -1572,10 +1572,11 @@ uvm_pagefree(struct vm_page *pg)
 			pg->uanon->an_page = NULL;
 			pg->uanon = NULL;
 		}
-		if (pg->flags & PG_WANTED) {
+		if (pg->pqflags & PQ_WANTED) {
 			wakeup(pg);
 		}
-		pg->flags &= ~(PG_WANTED|PG_BUSY|PG_RELEASED|PG_PAGER1);
+		pg->pqflags &= ~PQ_WANTED;
+		pg->flags &= ~(PG_BUSY|PG_RELEASED|PG_PAGER1);
 #ifdef UVM_PAGE_TRKOWN
 		pg->owner_tag = NULL;
 #endif
@@ -1620,6 +1621,14 @@ uvm_pagefree(struct vm_page *pg)
 		atomic_dec_uint(&uvmexp.wired);
 	}
 	if (locked) {
+		/*
+		 * wake anyone waiting on the page.
+		 */
+		if ((pg->pqflags & PQ_WANTED) != 0) {
+			pg->pqflags &= ~PQ_WANTED;
+			wakeup(pg);
+		}
+
 		/*
 		 * now remove the page from the queues.
 		 */
@@ -1691,10 +1700,6 @@ uvm_page_unbusy(struct vm_page **pgs, int npgs)
 		KASSERT(uvm_page_owner_locked_p(pg, true));
 		KASSERT(pg->flags & PG_BUSY);
 		KASSERT((pg->flags & PG_PAGEOUT) == 0);
-		if (pg->flags & PG_WANTED) {
-			/* XXXAD thundering herd problem. */
-			wakeup(pg);
-		}
 		if (pg->flags & PG_RELEASED) {
 			UVMHIST_LOG(ubchist, "releasing pg %#jx",
 			    (uintptr_t)pg, 0, 0, 0);
@@ -1706,9 +1711,55 @@ uvm_page_unbusy(struct vm_page **pgs, int npgs)
 			UVMHIST_LOG(ubchist, "unbusying pg %#jx",
 			    (uintptr_t)pg, 0, 0, 0);
 			KASSERT((pg->flags & PG_FAKE) == 0);
-			pg->flags &= ~(PG_WANTED|PG_BUSY);
+			pg->flags &= ~PG_BUSY;
+			uvm_pagelock(pg);
+			uvm_pagewakeup(pg);
+			uvm_pageunlock(pg);
 			UVM_PAGE_OWN(pg, NULL);
 		}
+	}
+}
+
+/*
+ * uvm_pagewait: wait for a busy page
+ *
+ * => page must be known PG_BUSY
+ * => object must be read or write locked
+ * => object will be unlocked on return
+ */
+
+void
+uvm_pagewait(struct vm_page *pg, krwlock_t *lock, const char *wmesg)
+{
+
+	KASSERT(rw_lock_held(lock));
+	KASSERT((pg->flags & PG_BUSY) != 0);
+	KASSERT(uvm_page_owner_locked_p(pg, false));
+
+	mutex_enter(&pg->interlock);
+	rw_exit(lock);
+	pg->pqflags |= PQ_WANTED;
+	UVM_UNLOCK_AND_WAIT(pg, &pg->interlock, false, wmesg, 0);
+}
+
+/*
+ * uvm_pagewakeup: wake anyone waiting on a page
+ *
+ * => page interlock must be held
+ */
+
+void
+uvm_pagewakeup(struct vm_page *pg)
+{
+	UVMHIST_FUNC("uvm_pagewakeup"); UVMHIST_CALLED(ubchist);
+
+	KASSERT(mutex_owned(&pg->interlock));
+
+	UVMHIST_LOG(ubchist, "waking pg %#jx", (uintptr_t)pg, 0, 0, 0);
+
+	if ((pg->pqflags & PQ_WANTED) != 0) {
+		wakeup(pg);
+		pg->pqflags &= ~PQ_WANTED;
 	}
 }
 
@@ -1727,7 +1778,6 @@ uvm_page_own(struct vm_page *pg, const char *tag)
 {
 
 	KASSERT((pg->flags & (PG_PAGEOUT|PG_RELEASED)) == 0);
-	KASSERT((pg->flags & PG_WANTED) == 0);
 	KASSERT(uvm_page_owner_locked_p(pg, true));
 
 	/* gain ownership? */
@@ -1857,7 +1907,7 @@ void
 uvm_pagedeactivate(struct vm_page *pg)
 {
 
-	KASSERT(uvm_page_owner_locked_p(pg, true));
+	KASSERT(uvm_page_owner_locked_p(pg, false));
 	KASSERT(mutex_owned(&pg->interlock));
 	if (pg->wire_count == 0) {
 		KASSERT(uvmpdpol_pageisqueued_p(pg));
@@ -1876,7 +1926,7 @@ void
 uvm_pageactivate(struct vm_page *pg)
 {
 
-	KASSERT(uvm_page_owner_locked_p(pg, true));
+	KASSERT(uvm_page_owner_locked_p(pg, false));
 	KASSERT(mutex_owned(&pg->interlock));
 #if defined(READAHEAD_STATS)
 	if ((pg->flags & PG_READAHEAD) != 0) {
@@ -1917,7 +1967,7 @@ void
 uvm_pageenqueue(struct vm_page *pg)
 {
 
-	KASSERT(uvm_page_owner_locked_p(pg, true));
+	KASSERT(uvm_page_owner_locked_p(pg, false));
 	KASSERT(mutex_owned(&pg->interlock));
 	if (pg->wire_count == 0 && !uvmpdpol_pageisqueued_p(pg)) {
 		uvmpdpol_pageenqueue(pg);

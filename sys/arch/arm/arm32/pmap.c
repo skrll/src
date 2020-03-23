@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.394 2020/02/24 20:31:56 ad Exp $	*/
+/*	$NetBSD: pmap.c,v 1.399 2020/03/14 14:05:42 ad Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -47,7 +47,7 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  * 3. The name of the company nor the name of the author may be used to
- *    endorse or promote products derived from this software without specific
+ *   endorse or promote products derived from this software without specific
  *    prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
@@ -198,7 +198,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.394 2020/02/24 20:31:56 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.399 2020/03/14 14:05:42 ad Exp $");
 
 #include <sys/atomic.h>
 #include <sys/param.h>
@@ -5180,7 +5180,7 @@ pmap_update(pmap_t pm)
 	UVMHIST_LOG(maphist, "  <-- done", 0, 0, 0, 0);
 }
 
-void
+bool
 pmap_remove_all(pmap_t pm)
 {
 
@@ -5208,6 +5208,7 @@ pmap_remove_all(pmap_t pm)
 	pmap_tlb_asid_release_all(pm);
 #endif
 	pm->pm_remove_all = true;
+	return false;
 }
 
 /*
@@ -5820,30 +5821,34 @@ pmap_grow_map(vaddr_t va, paddr_t *pap)
 			return 1;
 		pa = VM_PAGE_TO_PHYS(pg);
 		/*
-		 * This new page must not have any mappings.  Enter it via
-		 * pmap_kenter_pa and let that routine do the hard work.
+		 * This new page must not have any mappings.
 		 */
 		struct vm_page_md *md __diagused = VM_PAGE_TO_MD(pg);
 		KASSERT(SLIST_EMPTY(&md->pvh_list));
 	}
 
-	pmap_kenter_pa(va, pa,
-	    VM_PROT_READ|VM_PROT_WRITE, PMAP_KMPAGE|PMAP_PTE);
+	/*
+	 * Enter it via pmap_kenter_pa and let that routine do the hard work.
+	 */
+	pmap_kenter_pa(va, pa, VM_PROT_READ | VM_PROT_WRITE,
+	    PMAP_KMPAGE | PMAP_PTE);
 
 	if (pap)
 		*pap = pa;
 
 	PMAPCOUNT(pt_mappings);
 
-	struct l2_bucket * const l2b __diagused =
-	    pmap_get_l2_bucket(pmap_kernel(), va);
+	const pmap_t kpm __diagused = pmap_kernel();
+	struct l2_bucket * const l2b __diagused = pmap_get_l2_bucket(kpm, va);
 	KASSERT(l2b != NULL);
 
 	pt_entry_t * const ptep __diagused = &l2b->l2b_kva[l2pte_index(va)];
-	const pt_entry_t opte __diagused = *ptep;
-	KASSERT((opte & L2_S_CACHE_MASK) == pte_l2_s_cache_mode_pt);
+	const pt_entry_t pte __diagused = *ptep;
+	KASSERT(l2pte_valid_p(pte));
+	KASSERT((pte & L2_S_CACHE_MASK) == pte_l2_s_cache_mode_pt);
 
 	memset((void *)va, 0, PAGE_SIZE);
+
 	return 0;
 }
 

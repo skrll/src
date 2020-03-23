@@ -1,4 +1,4 @@
-/*      $NetBSD: ukbd.c,v 1.143 2020/01/08 23:28:56 macallan Exp $        */
+/*      $NetBSD: ukbd.c,v 1.145 2020/03/14 02:35:33 christos Exp $        */
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ukbd.c,v 1.143 2020/01/08 23:28:56 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ukbd.c,v 1.145 2020/03/14 02:35:33 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -1028,7 +1028,7 @@ ukbd_parse_desc(struct ukbd_softc *sc)
 	sc->sc_nkeycode = 0;
 	d = hid_start_parse(desc, size, hid_input);
 	while (hid_get_item(d, &h)) {
-		/*printf("ukbd: id=%d kind=%d usage=0x%x flags=0x%x pos=%d size=%d cnt=%d\n",
+		/*printf("ukbd: id=%d kind=%d usage=%#x flags=%#x pos=%d size=%d cnt=%d\n",
 		  h.report_ID, h.kind, h.usage, h.flags, h.loc.pos, h.loc.size, h.loc.count);*/
 
 		/* Check for special Apple notebook FN key */
@@ -1043,7 +1043,7 @@ ukbd_parse_desc(struct ukbd_softc *sc)
 		    HID_GET_USAGE_PAGE(h.usage) != HUP_KEYBOARD ||
 		    h.report_ID != sc->sc_hdev.sc_report_id)
 			continue;
-		DPRINTF(("%s: ikey=%d usage=0x%x flags=0x%x pos=%d size=%d "
+		DPRINTF(("%s: ikey=%d usage=%#x flags=%#x pos=%d size=%d "
 		    "cnt=%d\n", __func__, ikey, h.usage, h.flags, h.loc.pos,
 		    h.loc.size, h.loc.count));
 		if (h.flags & HIO_VARIABLE) {

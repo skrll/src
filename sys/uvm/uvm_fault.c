@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_fault.c,v 1.217 2020/02/24 12:38:57 rin Exp $	*/
+/*	$NetBSD: uvm_fault.c,v 1.221 2020/03/20 19:08:54 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_fault.c,v 1.217 2020/02/24 12:38:57 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_fault.c,v 1.221 2020/03/20 19:08:54 ad Exp $");
 
 #include "opt_uvmhist.h"
 
@@ -329,7 +329,6 @@ uvmfault_anonget(struct uvm_faultinfo *ufi, struct vm_amap *amap,
 				UVMHIST_LOG(maphist, "<- OK",0,0,0,0);
 				return 0;
 			}
-			pg->flags |= PG_WANTED;
 			cpu_count(CPU_COUNT_FLTPGWAIT, 1);
 
 			/*
@@ -342,16 +341,13 @@ uvmfault_anonget(struct uvm_faultinfo *ufi, struct vm_amap *amap,
 				uvmfault_unlockall(ufi, amap, NULL);
 				UVMHIST_LOG(maphist, " unlock+wait on uobj",0,
 				    0,0,0);
-				UVM_UNLOCK_AND_WAIT_RW(pg,
-				    pg->uobject->vmobjlock,
-				    false, "anonget1", 0);
+				uvm_pagewait(pg, pg->uobject->vmobjlock, "anonget1");
 			} else {
 				/* Owner of page is anon. */
 				uvmfault_unlockall(ufi, NULL, NULL);
 				UVMHIST_LOG(maphist, " unlock+wait on anon",0,
 				    0,0,0);
-				UVM_UNLOCK_AND_WAIT_RW(pg, anon->an_lock,
-				    false, "anonget2", 0);
+				uvm_pagewait(pg, anon->an_lock, "anonget2");
 			}
 		} else {
 #if defined(VMSWAP)
@@ -420,9 +416,6 @@ uvmfault_anonget(struct uvm_faultinfo *ufi, struct vm_amap *amap,
 
 		if (we_own) {
 #if defined(VMSWAP)
-			if (pg->flags & PG_WANTED) {
-				wakeup(pg);
-			}
 			if (error) {
 
 				/*
@@ -486,8 +479,9 @@ released:
 
 			uvm_pagelock(pg);
 			uvm_pageactivate(pg);
+			uvm_pagewakeup(pg);
 			uvm_pageunlock(pg);
-			pg->flags &= ~(PG_WANTED|PG_BUSY|PG_FAKE);
+			pg->flags &= ~(PG_BUSY|PG_FAKE);
 			uvm_pagemarkdirty(pg, UVM_PAGE_STATUS_UNKNOWN);
 			UVM_PAGE_OWN(pg, NULL);
 #else
@@ -916,7 +910,7 @@ uvm_fault_internal(struct vm_map *orig_map, vaddr_t vaddr,
 		flt.anon_spare->an_ref--;
 		KASSERT(flt.anon_spare->an_ref == 0);
 		KASSERT(flt.anon_spare->an_lock == NULL);
-		uvm_anon_free(flt.anon_spare);
+		uvm_anfree(flt.anon_spare);
 	}
 	return error;
 }
@@ -1172,6 +1166,7 @@ uvm_fault_upper_lookup(
 	int lcv;
 	vaddr_t currva;
 	bool shadowed __unused;
+	bool entered;
 	UVMHIST_FUNC("uvm_fault_upper_lookup"); UVMHIST_CALLED(maphist);
 
 	/* locked: maps(read), amap(if there) */
@@ -1185,17 +1180,8 @@ uvm_fault_upper_lookup(
 
 	currva = flt->startva;
 	shadowed = false;
+	entered = false;
 	for (lcv = 0; lcv < flt->npages; lcv++, currva += PAGE_SIZE) {
-		/*
-		 * don't play with VAs that are already mapped
-		 * (except for center)
-		 */
-		if (lcv != flt->centeridx &&
-		    pmap_extract(ufi->orig_map->pmap, currva, NULL)) {
-			pages[lcv] = PGO_DONTCARE;
-			continue;
-		}
-
 		/*
 		 * unmapped or center page.   check if any anon at this level.
 		 */
@@ -1219,11 +1205,20 @@ uvm_fault_upper_lookup(
 
 		KASSERT(anon->an_lock == amap->am_lock);
 
-		/* Ignore loaned and busy pages. */
-		if (pg && pg->loan_count == 0 && (pg->flags & PG_BUSY) == 0) {
+		/*
+		 * ignore loaned and busy pages.
+		 * don't play with VAs that are already mapped.
+		 */
+
+		if (pg && pg->loan_count == 0 && (pg->flags & PG_BUSY) == 0 &&
+		    !pmap_extract(ufi->orig_map->pmap, currva, NULL)) {
 			uvm_fault_upper_neighbor(ufi, flt, currva,
 			    pg, anon->an_ref > 1);
+			entered = true;
 		}
+	}
+	if (entered) {
+		pmap_update(ufi->orig_map->pmap);
 	}
 
 	/* locked: maps(read), amap(if there) */
@@ -1282,8 +1277,6 @@ uvm_fault_upper_neighbor(
 	    readonly ? (flt->enter_prot & ~VM_PROT_WRITE) :
 	    flt->enter_prot,
 	    PMAP_CANFAIL | (flt->wire_mapping ? PMAP_WIRED : 0));
-
-	pmap_update(ufi->orig_map->pmap);
 }
 
 /*
@@ -1745,7 +1738,7 @@ uvm_fault_lower(
 	 *  - at this point uobjpage can not be NULL
 	 *  - at this point uobjpage can not be PG_RELEASED (since we checked
 	 *  for it above)
-	 *  - at this point uobjpage could be PG_WANTED (handle later)
+	 *  - at this point uobjpage could be waited on (handle later)
 	 */
 
 	KASSERT(uobjpage != NULL);
@@ -1858,12 +1851,11 @@ uvm_fault_lower_neighbor(
 	 * Since this page isn't the page that's actually faulting,
 	 * ignore pmap_enter() failures; it's not critical that we
 	 * enter these right now.
-	 * NOTE: page can't be PG_WANTED or PG_RELEASED because we've
+	 * NOTE: page can't be waited on or PG_RELEASED because we've
 	 * held the lock the whole time we've had the handle.
 	 */
 	KASSERT((pg->flags & PG_PAGEOUT) == 0);
 	KASSERT((pg->flags & PG_RELEASED) == 0);
-	KASSERT((pg->flags & PG_WANTED) == 0);
 	KASSERT(!UVM_OBJ_IS_CLEAN(pg->uobject) ||
 	    uvm_pagegetdirty(pg) == UVM_PAGE_STATUS_CLEAN);
 	pg->flags &= ~(PG_BUSY);
@@ -1995,11 +1987,11 @@ uvm_fault_lower_io(
 		UVMHIST_LOG(maphist,
 		    "  wasn't able to relock after fault: retry",
 		    0,0,0,0);
-		if (pg->flags & PG_WANTED) {
-			wakeup(pg);
-		}
 		if ((pg->flags & PG_RELEASED) == 0) {
-			pg->flags &= ~(PG_BUSY | PG_WANTED);
+			pg->flags &= ~PG_BUSY;
+			uvm_pagelock(pg);
+			uvm_pagewakeup(pg);
+			uvm_pageunlock(pg);
 			UVM_PAGE_OWN(pg, NULL);
 		} else {
 			cpu_count(CPU_COUNT_FLTPGRELE, 1);
@@ -2100,9 +2092,10 @@ uvm_fault_lower_direct_loan(
 			 * drop ownership of page, it can't be released
 			 */
 
-			if (uobjpage->flags & PG_WANTED)
-				wakeup(uobjpage);
-			uobjpage->flags &= ~(PG_BUSY|PG_WANTED);
+			uvm_pagelock(uobjpage);
+			uvm_pagewakeup(uobjpage);
+			uvm_pageunlock(uobjpage);
+			uobjpage->flags &= ~PG_BUSY;
 			UVM_PAGE_OWN(uobjpage, NULL);
 
 			uvmfault_unlockall(ufi, amap, uobj);
@@ -2182,11 +2175,10 @@ uvm_fault_lower_promote(
 		 * since we still hold the object lock.
 		 */
 
-		if (uobjpage->flags & PG_WANTED) {
-			/* still have the obj lock */
-			wakeup(uobjpage);
-		}
-		uobjpage->flags &= ~(PG_BUSY|PG_WANTED);
+		uobjpage->flags &= ~PG_BUSY;
+		uvm_pagelock(uobjpage);
+		uvm_pagewakeup(uobjpage);
+		uvm_pageunlock(uobjpage);
 		UVM_PAGE_OWN(uobjpage, NULL);
 
 		UVMHIST_LOG(maphist,
@@ -2274,18 +2266,15 @@ uvm_fault_lower_enter(
 
 		uvm_pagelock(pg);
 		uvm_pageenqueue(pg);
+		uvm_pagewakeup(pg);
 		uvm_pageunlock(pg);
-
-		if (pg->flags & PG_WANTED)
-			wakeup(pg);
 
 		/*
 		 * note that pg can't be PG_RELEASED since we did not drop
 		 * the object lock since the last time we checked.
 		 */
 		KASSERT((pg->flags & PG_RELEASED) == 0);
-
-		pg->flags &= ~(PG_BUSY|PG_FAKE|PG_WANTED);
+		pg->flags &= ~(PG_BUSY|PG_FAKE);
 		UVM_PAGE_OWN(pg, NULL);
 
 		uvmfault_unlockall(ufi, amap, uobj);
@@ -2308,9 +2297,10 @@ uvm_fault_lower_enter(
 	 * lock since the last time we checked.
 	 */
 	KASSERT((pg->flags & PG_RELEASED) == 0);
-	if (pg->flags & PG_WANTED)
-		wakeup(pg);
-	pg->flags &= ~(PG_BUSY|PG_FAKE|PG_WANTED);
+	uvm_pagelock(pg);
+	uvm_pagewakeup(pg);
+	uvm_pageunlock(pg);
+	pg->flags &= ~(PG_BUSY|PG_FAKE);
 	UVM_PAGE_OWN(pg, NULL);
 
 	pmap_update(ufi->orig_map->pmap);

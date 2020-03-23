@@ -1,4 +1,4 @@
-/*	$NetBSD: vhci.c,v 1.6 2020/02/15 01:21:56 riastradh Exp $ */
+/*	$NetBSD: vhci.c,v 1.8 2020/03/14 02:35:34 christos Exp $ */
 
 /*
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vhci.c,v 1.6 2020/02/15 01:21:56 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vhci.c,v 1.8 2020/03/14 02:35:34 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

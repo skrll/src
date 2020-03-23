@@ -1,4 +1,4 @@
-/*	$NetBSD: ohci.c,v 1.298 2020/03/05 08:30:58 skrll Exp $	*/
+/*	$NetBSD: ohci.c,v 1.300 2020/03/14 02:35:33 christos Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2005, 2012 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.298 2020/03/05 08:30:58 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.300 2020/03/14 02:35:33 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -1343,7 +1343,7 @@ ohci_intr1(ohci_softc_t *sc)
 		/* Block unprocessed interrupts. */
 		OWRITE4(sc, OHCI_INTERRUPT_DISABLE, eintrs);
 		sc->sc_eintrs &= ~eintrs;
-		DPRINTF("sc %#jx blocking intrs 0x%jx", (uintptr_t)sc,
+		DPRINTF("sc %#jx blocking intrs %#jx", (uintptr_t)sc,
 		    eintrs, 0, 0);
 	}
 
@@ -1479,7 +1479,7 @@ ohci_softintr(void *v)
 		if (std->td.td_cbp != 0)
 			len -= O32TOH(std->td.td_be) -
 			       O32TOH(std->td.td_cbp) + 1;
-		DPRINTFN(10, "len=%jd, flags=0x%jx", len, std->flags, 0, 0);
+		DPRINTFN(10, "len=%jd, flags=%#jx", len, std->flags, 0, 0);
 		if (std->flags & OHCI_ADD_LEN)
 			xfer->ux_actlen += len;
 
@@ -2142,8 +2142,8 @@ ohci_close_pipe(struct usbd_pipe *pipe, ohci_soft_ed_t *head)
 	    (O32TOH(sed->ed.ed_headp) & OHCI_HEADMASK)) {
 		ohci_soft_td_t *std;
 		std = ohci_hash_find_td(sc, O32TOH(sed->ed.ed_headp));
-		printf("ohci_close_pipe: pipe not empty sed=%p hd=0x%x "
-		       "tl=0x%x pipe=%p, std=%p\n", sed,
+		printf("ohci_close_pipe: pipe not empty sed=%p hd=%#x "
+		       "tl=%#x pipe=%p, std=%p\n", sed,
 		       (int)O32TOH(sed->ed.ed_headp),
 		       (int)O32TOH(sed->ed.ed_tailp),
 		       pipe, std);

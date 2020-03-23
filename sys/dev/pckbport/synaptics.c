@@ -1,4 +1,4 @@
-/*	$NetBSD: synaptics.c,v 1.54 2020/02/25 21:41:38 ryoon Exp $	*/
+/*	$NetBSD: synaptics.c,v 1.62 2020/03/16 11:13:19 nia Exp $	*/
 
 /*
  * Copyright (c) 2005, Steve C. Woodford
@@ -48,7 +48,7 @@
 #include "opt_pms.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: synaptics.c,v 1.54 2020/02/25 21:41:38 ryoon Exp $");
+__KERNEL_RCSID(0, "$NetBSD: synaptics.c,v 1.62 2020/03/16 11:13:19 nia Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -98,7 +98,7 @@ static void pms_sysctl_synaptics(struct sysctllog **);
 static int pms_sysctl_synaptics_verify(SYSCTLFN_ARGS);
 
 /* Controlled by sysctl. */
-static int synaptics_up_down_emul = 2;
+static int synaptics_up_down_emul = 3;
 static int synaptics_up_down_motion_delta = 1;
 static int synaptics_gesture_move = 200;
 static int synaptics_gesture_length = 20;
@@ -115,10 +115,10 @@ static int synaptics_button3 = SYNAPTICS_EDGE_LEFT + 2 * (SYNAPTICS_EDGE_RIGHT -
 static int synaptics_two_fingers_emul = 0;
 static int synaptics_scale_x = 16;
 static int synaptics_scale_y = 16;
-static int synaptics_scale_z = 32;
+static int synaptics_scale_z = 64;
 static int synaptics_max_speed_x = 32;
 static int synaptics_max_speed_y = 32;
-static int synaptics_max_speed_z = 2;
+static int synaptics_max_speed_z = 1;
 static int synaptics_movement_threshold = 4;
 static int synaptics_fscroll_min = 13;
 static int synaptics_fscroll_max = 14;
@@ -852,14 +852,20 @@ pms_sysctl_synaptics_verify(SYSCTLFN_ARGS)
 		return error;
 
 	/* Sanity check the params. */
-	if (node.sysctl_num == synaptics_up_down_emul_nodenum ||
-	    node.sysctl_num == synaptics_two_fingers_emul_nodenum) {
+	if (node.sysctl_num == synaptics_up_down_emul_nodenum) {
+		if (t < 0 || t > 3)
+			return (EINVAL);
+	} else
+	if (node.sysctl_num == synaptics_two_fingers_emul_nodenum) {
 		if (t < 0 || t > 2)
 			return (EINVAL);
 	} else
 	if (node.sysctl_num == synaptics_gesture_length_nodenum ||
 	    node.sysctl_num == synaptics_edge_motion_delta_nodenum ||
-	    node.sysctl_num == synaptics_up_down_motion_delta_nodenum) {
+	    node.sysctl_num == synaptics_up_down_motion_delta_nodenum ||
+	    node.sysctl_num == synaptics_max_speed_x_nodenum ||
+	    node.sysctl_num == synaptics_max_speed_y_nodenum ||
+	    node.sysctl_num == synaptics_max_speed_z_nodenum) {
 		if (t < 0)
 			return (EINVAL);
 	} else
@@ -1092,13 +1098,29 @@ pms_synaptics_parse(struct pms_softc *psc)
 			/* Old style Middle Button. */
 			sp.sp_middle = (psc->packet[0] & PMS_LBUTMASK) ^
 		    	    (psc->packet[3] & PMS_LBUTMASK);
-		} else if (synaptics_up_down_emul == 1) {
+		} else if (synaptics_up_down_emul != 1) {
+			sp.sp_middle = 0;
+		}
+
+		switch (synaptics_up_down_emul) {
+		case 1:
 			/* Do middle button emulation using up/down buttons */
 			sp.sp_middle = sp.sp_up | sp.sp_down;
 			sp.sp_up = sp.sp_down = 0;
-		} else
-			sp.sp_middle = 0;
-
+			break;
+		case 3:
+			/* Do left/right button emulation using up/down buttons */
+			sp.sp_left = sp.sp_up;
+			sp.sp_right = sp.sp_down;
+			sp.sp_up = sp.sp_down = 0;
+			break;
+		default:
+			/*
+			 * Don't do any remapping...
+			 * Z-axis emulation is handled in pms_synaptics_process_packet
+			 */
+			break;
+		}
 	}
 
 	pms_synaptics_process_packet(psc, &sp);
@@ -1263,13 +1285,7 @@ synaptics_finger_detect(struct synaptics_softc *sc, struct synaptics_packet *sp,
 		return (0);
 	}
 
-	/*
-	 * Detect 2 and 3 fingers if supported, but only if multiple
-	 * fingers appear within the tap gesture time period.
-	 */
-	if (sc->flags & SYN_FLAG_HAS_MULTI_FINGER &&
-	    SYN_TIME(sc, sc->gesture_start_packet,
-	    sp->sp_finger) < synaptics_gesture_length) {
+	if (sc->flags & SYN_FLAG_HAS_MULTI_FINGER) {
 		switch (sp->sp_w) {
 		case SYNAPTICS_WIDTH_TWO_FINGERS:
 			fingers = 2;
@@ -1279,19 +1295,12 @@ synaptics_finger_detect(struct synaptics_softc *sc, struct synaptics_packet *sp,
 			fingers = 3;
 			break;
 
-		case SYNAPTICS_WIDTH_PEN:
-			fingers = 1;
-			break;
-
 		default:
 			/*
 			 * The width value can report spurious single-finger
 			 * events after a multi-finger event.
 			 */
-			if (sc->prev_fingers > 1)
-				fingers = sc->prev_fingers;
-			else
-				fingers = 1;
+			fingers = sc->prev_fingers <= 1 ? 1 : sc->prev_fingers;
 			break;
 		}
 	}
@@ -1723,6 +1732,14 @@ pms_synaptics_process_packet(struct pms_softc *psc, struct synaptics_packet *sp)
 
 			synaptics_movement(sc, sp, sp->sp_finger,
 				z_emul, &dx, &dy, &dz);
+		} else if (fingers > 1) {
+			/*
+			 * Multiple finger movement. Interpret it as scrolling.
+			 */
+			synaptics_movement(sc, sp, sp->sp_finger, 1,
+				&dx, &dy, &dz);
+			sc->rem_x[0] = sc->rem_y[0] = 0;
+			dx = dy = 0;
 		} else {
 			/*
 			 * No valid finger. Therefore no movement.
