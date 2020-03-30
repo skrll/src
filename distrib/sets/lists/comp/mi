@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2312 2020/03/03 00:38:12 christos Exp $
+#	$NetBSD: mi,v 1.2316 2020/03/25 18:45:42 kre Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -3216,6 +3216,7 @@
 ./usr/include/sys/vmmeter.h			comp-c-include
 ./usr/include/sys/vnode.h			comp-c-include
 ./usr/include/sys/vnode_if.h			comp-c-include
+./usr/include/sys/vnode_impl.h			comp-c-include
 ./usr/include/sys/vsio.h			comp-obsolete		obsolete
 ./usr/include/sys/wait.h			comp-c-include
 ./usr/include/sys/wapbl.h			comp-c-include
@@ -6401,6 +6402,7 @@
 ./usr/share/man/cat3/curses_insertln.0		comp-c-catman		.cat
 ./usr/share/man/cat3/curses_keyname.0		comp-c-catman		.cat
 ./usr/share/man/cat3/curses_line.0		comp-c-catman		.cat
+./usr/share/man/cat3/curses_mouse.0		comp-c-catman		.cat
 ./usr/share/man/cat3/curses_pad.0		comp-c-catman		.cat
 ./usr/share/man/cat3/curses_print.0		comp-c-catman		.cat
 ./usr/share/man/cat3/curses_refresh.0		comp-c-catman		.cat
@@ -7307,6 +7309,7 @@
 ./usr/share/man/cat3/getmntopts.0		comp-c-catman		.cat
 ./usr/share/man/cat3/getmntoptstr.0		comp-c-catman		.cat
 ./usr/share/man/cat3/getmode.0			comp-c-catman		.cat
+./usr/share/man/cat3/getmouse.0			comp-c-catman		.cat
 ./usr/share/man/cat3/getnameinfo.0		comp-c-catman		.cat
 ./usr/share/man/cat3/getnetbyaddr.0		comp-c-catman		.cat
 ./usr/share/man/cat3/getnetbyname.0		comp-c-catman		.cat
@@ -7427,6 +7430,7 @@
 ./usr/share/man/cat3/has_ic.0			comp-c-catman		.cat
 ./usr/share/man/cat3/has_il.0			comp-c-catman		.cat
 ./usr/share/man/cat3/has_key.0			comp-c-catman		.cat
+./usr/share/man/cat3/has_mouse.0		comp-c-catman		.cat
 ./usr/share/man/cat3/hash.0			comp-c-catman		.cat
 ./usr/share/man/cat3/hcreate.0			comp-c-catman		.cat
 ./usr/share/man/cat3/hcreate_r.0		comp-c-catman		.cat
@@ -8541,6 +8545,8 @@
 ./usr/share/man/cat3/modfl.0			comp-c-catman		.cat
 ./usr/share/man/cat3/moncontrol.0		comp-c-catman		.cat
 ./usr/share/man/cat3/monstartup.0		comp-c-catman		.cat
+./usr/share/man/cat3/mouse_trafo.0		comp-c-catman		.cat
+./usr/share/man/cat3/mouseinterval.0		comp-c-catman		.cat
 ./usr/share/man/cat3/move.0			comp-c-catman		.cat
 ./usr/share/man/cat3/move_field.0		comp-c-catman		.cat
 ./usr/share/man/cat3/move_panel.0		comp-c-catman		.cat
@@ -9261,6 +9267,7 @@
 ./usr/share/man/cat3/pw_copyx.0			comp-c-catman		.cat
 ./usr/share/man/cat3/pw_edit.0			comp-c-catman		.cat
 ./usr/share/man/cat3/pw_error.0			comp-c-catman		.cat
+./usr/share/man/cat3/pw_gensalt.0		comp-c-catman		.cat
 ./usr/share/man/cat3/pw_getconf.0		comp-c-catman		.cat
 ./usr/share/man/cat3/pw_getprefix.0		comp-c-catman		.cat
 ./usr/share/man/cat3/pw_getpwconf.0		comp-c-catman		.cat
@@ -9982,6 +9989,7 @@
 ./usr/share/man/cat3/strcspn.0			comp-c-catman		.cat
 ./usr/share/man/cat3/strdup.0			comp-c-catman		.cat
 ./usr/share/man/cat3/strerror.0			comp-c-catman		.cat
+./usr/share/man/cat3/strerror_l.0		comp-c-catman		.cat
 ./usr/share/man/cat3/strerror_r.0		comp-c-catman		.cat
 ./usr/share/man/cat3/stresep.0			comp-c-catman		.cat
 ./usr/share/man/cat3/strfmon.0			comp-c-catman		.cat
@@ -10276,6 +10284,7 @@
 ./usr/share/man/cat3/underscore.0		comp-c-catman		.cat
 ./usr/share/man/cat3/ungetc.0			comp-c-catman		.cat
 ./usr/share/man/cat3/ungetch.0			comp-c-catman		.cat
+./usr/share/man/cat3/ungetmouse.0		comp-c-catman		.cat
 ./usr/share/man/cat3/ungetwc.0			comp-c-catman		.cat
 ./usr/share/man/cat3/unistd.0			comp-c-catman		.cat
 ./usr/share/man/cat3/unlockpt.0			comp-c-catman		.cat
@@ -10423,6 +10432,7 @@
 ./usr/share/man/cat3/wdelch.0			comp-c-catman		.cat
 ./usr/share/man/cat3/wdeleteln.0		comp-c-catman		.cat
 ./usr/share/man/cat3/wechochar.0		comp-c-catman		.cat
+./usr/share/man/cat3/wenclose.0			comp-c-catman		.cat
 ./usr/share/man/cat3/werase.0			comp-c-catman		.cat
 ./usr/share/man/cat3/wgetch.0			comp-c-catman		.cat
 ./usr/share/man/cat3/wgetnstr.0			comp-c-catman		.cat
@@ -10441,6 +10451,7 @@
 ./usr/share/man/cat3/wmemcpy.0			comp-c-catman		.cat
 ./usr/share/man/cat3/wmemmove.0			comp-c-catman		.cat
 ./usr/share/man/cat3/wmemset.0			comp-c-catman		.cat
+./usr/share/man/cat3/wmouse_trafo.0		comp-c-catman		.cat
 ./usr/share/man/cat3/wmove.0			comp-c-catman		.cat
 ./usr/share/man/cat3/wnoutrefresh.0		comp-c-catman		.cat
 ./usr/share/man/cat3/wordexp.0			comp-c-catman		.cat
@@ -14425,6 +14436,7 @@
 ./usr/share/man/html3/curses_insertln.html	comp-c-htmlman		html
 ./usr/share/man/html3/curses_keyname.html	comp-c-htmlman		html
 ./usr/share/man/html3/curses_line.html		comp-c-htmlman		html
+./usr/share/man/html3/curses_mouse.html		comp-c-htmlman		html
 ./usr/share/man/html3/curses_pad.html		comp-c-htmlman		html
 ./usr/share/man/html3/curses_print.html		comp-c-htmlman		html
 ./usr/share/man/html3/curses_refresh.html	comp-c-htmlman		html
@@ -15338,6 +15350,7 @@
 ./usr/share/man/html3/getmntopts.html		comp-c-htmlman		html
 ./usr/share/man/html3/getmntoptstr.html		comp-c-htmlman		html
 ./usr/share/man/html3/getmode.html		comp-c-htmlman		html
+./usr/share/man/html3/getmouse.html		comp-c-htmlman		html
 ./usr/share/man/html3/getnameinfo.html		comp-c-htmlman		html
 ./usr/share/man/html3/getnetbyaddr.html		comp-c-htmlman		html
 ./usr/share/man/html3/getnetbyname.html		comp-c-htmlman		html
@@ -15457,6 +15470,7 @@
 ./usr/share/man/html3/has_ic.html		comp-c-htmlman		html
 ./usr/share/man/html3/has_il.html		comp-c-htmlman		html
 ./usr/share/man/html3/has_key.html		comp-c-htmlman		html
+./usr/share/man/html3/has_mouse.html		comp-c-htmlman		html
 ./usr/share/man/html3/hash.html			comp-c-htmlman		html
 ./usr/share/man/html3/hcreate.html		comp-c-htmlman		html
 ./usr/share/man/html3/hcreate_r.html		comp-c-htmlman		html
@@ -16539,6 +16553,8 @@
 ./usr/share/man/html3/modfl.html		comp-c-htmlman		html
 ./usr/share/man/html3/moncontrol.html		comp-c-htmlman		html
 ./usr/share/man/html3/monstartup.html		comp-c-htmlman		html
+./usr/share/man/html3/mouse_trafo.html		comp-c-htmlman		html
+./usr/share/man/html3/mouseinterval.html	comp-c-htmlman		html
 ./usr/share/man/html3/move.html			comp-c-htmlman		html
 ./usr/share/man/html3/move_field.html		comp-c-htmlman		html
 ./usr/share/man/html3/move_panel.html		comp-c-htmlman		html
@@ -17277,6 +17293,7 @@
 ./usr/share/man/html3/pw_copyx.html		comp-c-htmlman		html
 ./usr/share/man/html3/pw_edit.html		comp-c-htmlman		html
 ./usr/share/man/html3/pw_error.html		comp-c-htmlman		html
+./usr/share/man/html3/pw_gensalt.html		comp-c-htmlman		html
 ./usr/share/man/html3/pw_getconf.html		comp-c-htmlman		html
 ./usr/share/man/html3/pw_getprefix.html		comp-c-htmlman		html
 ./usr/share/man/html3/pw_getpwconf.html		comp-c-htmlman		html
@@ -17977,6 +17994,7 @@
 ./usr/share/man/html3/strcspn.html		comp-c-htmlman		html
 ./usr/share/man/html3/strdup.html		comp-c-htmlman		html
 ./usr/share/man/html3/strerror.html		comp-c-htmlman		html
+./usr/share/man/html3/strerror_l.html		comp-c-htmlman		html
 ./usr/share/man/html3/strerror_r.html		comp-c-htmlman		html
 ./usr/share/man/html3/stresep.html		comp-c-htmlman		html
 ./usr/share/man/html3/strfmon.html		comp-c-htmlman		html
@@ -18256,6 +18274,7 @@
 ./usr/share/man/html3/underscore.html		comp-c-htmlman		html
 ./usr/share/man/html3/ungetc.html		comp-c-htmlman		html
 ./usr/share/man/html3/ungetch.html		comp-c-htmlman		html
+./usr/share/man/html3/ungetmouse.html		comp-c-htmlman		html
 ./usr/share/man/html3/ungetwc.html		comp-c-htmlman		html
 ./usr/share/man/html3/unistd.html		comp-c-htmlman		html
 ./usr/share/man/html3/unlockpt.html		comp-c-htmlman		html
@@ -18399,6 +18418,7 @@
 ./usr/share/man/html3/wdelch.html		comp-c-htmlman		html
 ./usr/share/man/html3/wdeleteln.html		comp-c-htmlman		html
 ./usr/share/man/html3/wechochar.html		comp-c-htmlman		html
+./usr/share/man/html3/wenclose.html		comp-c-htmlman		html
 ./usr/share/man/html3/werase.html		comp-c-htmlman		html
 ./usr/share/man/html3/wgetch.html		comp-c-htmlman		html
 ./usr/share/man/html3/wgetnstr.html		comp-c-htmlman		html
@@ -18417,6 +18437,7 @@
 ./usr/share/man/html3/wmemcpy.html		comp-c-htmlman		html
 ./usr/share/man/html3/wmemmove.html		comp-c-htmlman		html
 ./usr/share/man/html3/wmemset.html		comp-c-htmlman		html
+./usr/share/man/html3/wmouse_trafo.html		comp-c-htmlman		html
 ./usr/share/man/html3/wmove.html		comp-c-htmlman		html
 ./usr/share/man/html3/wnoutrefresh.html		comp-c-htmlman		html
 ./usr/share/man/html3/wordexp.html		comp-c-htmlman		html
@@ -22392,6 +22413,7 @@
 ./usr/share/man/man3/curses_insertln.3		comp-c-man		.man
 ./usr/share/man/man3/curses_keyname.3		comp-c-man		.man
 ./usr/share/man/man3/curses_line.3		comp-c-man		.man
+./usr/share/man/man3/curses_mouse.3		comp-c-man		.man
 ./usr/share/man/man3/curses_pad.3		comp-c-man		.man
 ./usr/share/man/man3/curses_print.3		comp-c-man		.man
 ./usr/share/man/man3/curses_refresh.3		comp-c-man		.man
@@ -23309,6 +23331,7 @@
 ./usr/share/man/man3/getmntopts.3		comp-c-man		.man
 ./usr/share/man/man3/getmntoptstr.3		comp-c-man		.man
 ./usr/share/man/man3/getmode.3			comp-c-man		.man
+./usr/share/man/man3/getmouse.3			comp-c-man		.man
 ./usr/share/man/man3/getnameinfo.3		comp-c-man		.man
 ./usr/share/man/man3/getnetbyaddr.3		comp-c-man		.man
 ./usr/share/man/man3/getnetbyname.3		comp-c-man		.man
@@ -23429,6 +23452,7 @@
 ./usr/share/man/man3/has_ic.3			comp-c-man		.man
 ./usr/share/man/man3/has_il.3			comp-c-man		.man
 ./usr/share/man/man3/has_key.3			comp-c-man		.man
+./usr/share/man/man3/has_mouse.3		comp-c-man		.man
 ./usr/share/man/man3/hash.3			comp-c-man		.man
 ./usr/share/man/man3/hcreate.3			comp-c-man		.man
 ./usr/share/man/man3/hcreate_r.3		comp-c-man		.man
@@ -24544,6 +24568,8 @@
 ./usr/share/man/man3/modfl.3			comp-c-man		.man
 ./usr/share/man/man3/moncontrol.3		comp-c-man		.man
 ./usr/share/man/man3/monstartup.3		comp-c-man		.man
+./usr/share/man/man3/mouse_trafo.3		comp-c-man		.man
+./usr/share/man/man3/mouseinterval.3		comp-c-man		.man
 ./usr/share/man/man3/move.3			comp-c-man		.man
 ./usr/share/man/man3/move_field.3		comp-c-man		.man
 ./usr/share/man/man3/move_panel.3		comp-c-man		.man
@@ -25287,6 +25313,7 @@
 ./usr/share/man/man3/pw_copyx.3			comp-c-man		.man
 ./usr/share/man/man3/pw_edit.3			comp-c-man		.man
 ./usr/share/man/man3/pw_error.3			comp-c-man		.man
+./usr/share/man/man3/pw_gensalt.3		comp-c-man		.man
 ./usr/share/man/man3/pw_getconf.3		comp-c-man		.man
 ./usr/share/man/man3/pw_getprefix.3		comp-c-man		.man
 ./usr/share/man/man3/pw_getpwconf.3		comp-c-man		.man
@@ -26004,6 +26031,7 @@
 ./usr/share/man/man3/strcspn.3			comp-c-man		.man
 ./usr/share/man/man3/strdup.3			comp-c-man		.man
 ./usr/share/man/man3/strerror.3			comp-c-man		.man
+./usr/share/man/man3/strerror_l.3		comp-c-man		.man
 ./usr/share/man/man3/strerror_r.3		comp-c-man		.man
 ./usr/share/man/man3/stresep.3			comp-c-man		.man
 ./usr/share/man/man3/strfmon.3			comp-c-man		.man
@@ -26298,6 +26326,7 @@
 ./usr/share/man/man3/underscore.3		comp-c-man		.man
 ./usr/share/man/man3/ungetc.3			comp-c-man		.man
 ./usr/share/man/man3/ungetch.3			comp-c-man		.man
+./usr/share/man/man3/ungetmouse.3		comp-c-man		.man
 ./usr/share/man/man3/ungetwc.3			comp-c-man		.man
 ./usr/share/man/man3/unistd.3			comp-c-man		.man
 ./usr/share/man/man3/unlockpt.3			comp-c-man		.man
@@ -26446,6 +26475,7 @@
 ./usr/share/man/man3/wdeleteln.3		comp-c-man		.man
 ./usr/share/man/man3/wechochar.3		comp-c-man		.man
 ./usr/share/man/man3/werase.3			comp-c-man		.man
+./usr/share/man/man3/wenclose.3			comp-c-man		.man
 ./usr/share/man/man3/wgetch.3			comp-c-man		.man
 ./usr/share/man/man3/wgetnstr.3			comp-c-man		.man
 ./usr/share/man/man3/wgetstr.3			comp-c-man		.man
@@ -26463,6 +26493,7 @@
 ./usr/share/man/man3/wmemcpy.3			comp-c-man		.man
 ./usr/share/man/man3/wmemmove.3			comp-c-man		.man
 ./usr/share/man/man3/wmemset.3			comp-c-man		.man
+./usr/share/man/man3/wmouse_trafo.3		comp-c-man		.man
 ./usr/share/man/man3/wmove.3			comp-c-man		.man
 ./usr/share/man/man3/wnoutrefresh.3		comp-c-man		.man
 ./usr/share/man/man3/wordexp.3			comp-c-man		.man
