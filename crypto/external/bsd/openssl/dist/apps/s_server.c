@@ -1809,6 +1809,7 @@ int s_server_main(int argc, char *argv[])
         goto end;
     if (max_version != 0
         && SSL_CTX_set_max_proto_version(ctx, max_version) == 0)
+        goto end;
 
     if (session_id_prefix) {
         if (strlen(session_id_prefix) >= 32)
@@ -2423,7 +2424,7 @@ static int sv_body(int s, int stype, int prot, unsigned char *context)
             }
             FD_ZERO(&readfds);
 #if !defined(OPENSSL_SYS_WINDOWS) && !defined(OPENSSL_SYS_MSDOS)
-            openssl_fdset(fileno_stdin(), &readfds);
+            openssl_fdset(fdin, &readfds);
 #endif
             openssl_fdset(s, &readfds);
             /*

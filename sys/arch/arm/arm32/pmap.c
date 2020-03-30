@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.399 2020/03/14 14:05:42 ad Exp $	*/
+/*	$NetBSD: pmap.c,v 1.402 2020/03/29 09:20:43 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -198,7 +198,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.399 2020/03/14 14:05:42 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.402 2020/03/29 09:20:43 skrll Exp $");
 
 #include <sys/atomic.h>
 #include <sys/param.h>
@@ -2722,9 +2722,10 @@ pmap_syncicache_page(struct vm_page_md *md, paddr_t pa)
 		 * Unmap the page(s).
 		 */
 		l2pte_reset(ptep + j);
+		PTE_SYNC(ptep + j);
+
 		pmap_tlb_flush_SE(kpm, dstp + i, PVF_REF | PVF_EXEC);
 	}
-	PTE_SYNC_RANGE(ptep, way_size / L2_S_SIZE);
 
 	md->pvh_attrs |= PVF_EXEC;
 	PMAPCOUNT(exec_synced);
@@ -3398,9 +3399,7 @@ pmap_enter(pmap_t pm, vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 				}
 			}
 		}
-#endif /* !ARM_MMU_EXTENDED */
 
-#ifndef ARM_MMU_EXTENDED
 		UVMHIST_LOG(maphist, "  is_cached %jd cs 0x%08jx",
 		    is_cached, pm->pm_cstate.cs_all, 0, 0);
 
@@ -3467,6 +3466,12 @@ pmap_remove(pmap_t pm, vaddr_t sva, vaddr_t eva)
 	UVMHIST_FUNC(__func__); UVMHIST_CALLED(maphist);
 	UVMHIST_LOG(maphist, " (pm=%#jx, sva=%#jx, eva=%#jx)",
 	    (uintptr_t)pm, sva, eva, 0);
+
+#ifdef PMAP_FAULTINFO
+	curpcb->pcb_faultinfo.pfi_faultaddr = 0;
+	curpcb->pcb_faultinfo.pfi_repeats = 0;
+	curpcb->pcb_faultinfo.pfi_faultptep = NULL;
+#endif
 
 	SLIST_INIT(&opv_list);
 	/*
