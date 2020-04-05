@@ -120,8 +120,7 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 
 	bool multiseg = (flags & USBMALLOC_MULTISEG) != 0;
 	bool coherent = (flags & USBMALLOC_COHERENT) != 0;
-
-	u_int dmaflags = (flags & USBMALLOC_COHERENT) ? USB_DMA_COHERENT : 0;
+	u_int dmaflags = coherent ? USB_DMA_COHERENT : 0;
 
 	/* First check the free list. */
 	LIST_FOREACH(b, &usb_blk_freelist, next) {
@@ -165,7 +164,7 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 		goto free0;
 
 	error = bus_dmamem_map(tag, b->segs, b->nsegs, b->size, &b->kaddr,
-	    BUS_DMA_WAITOK | (coherent ? 0 :BUS_DMA_COHERENT));
+	    BUS_DMA_WAITOK | (coherent ? BUS_DMA_COHERENT : 0));
 	if (error)
 		goto free1;
 
@@ -269,8 +268,6 @@ usb_allocmem(struct usbd_bus *bus, size_t size, size_t align, u_int flags,
 	ASSERT_SLEEPABLE();
 
 	RUN_ONCE(&init_control, usb_mem_init);
-
-//	bool coherent = (flags & USBMALLOC_COHERENT) != 0;
 
 	u_int dmaflags = (flags & USBMALLOC_COHERENT) ? USB_DMA_COHERENT : 0;
 
