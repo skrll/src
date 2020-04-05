@@ -456,7 +456,7 @@ uhci_init(uhci_softc_t *sc)
 	/* Allocate and initialize real frame array. */
 	err = usb_allocmem(&sc->sc_bus,
 	    UHCI_FRAMELIST_COUNT * sizeof(uhci_physaddr_t),
-	    UHCI_FRAMELIST_ALIGN, &sc->sc_dma);
+	    UHCI_FRAMELIST_ALIGN, USBMALLOC_COHERENT, &sc->sc_dma);
 	if (err)
 		return err;
 	sc->sc_pframes = KERNADDR(&sc->sc_dma, 0);
@@ -1847,7 +1847,7 @@ uhci_alloc_std(uhci_softc_t *sc)
 		mutex_exit(&sc->sc_lock);
 
 		err = usb_allocmem(&sc->sc_bus, UHCI_STD_SIZE * UHCI_STD_CHUNK,
-			  UHCI_TD_ALIGN, &dma);
+		    UHCI_TD_ALIGN, USBMALLOC_COHERENT, &dma);
 		if (err)
 			return NULL;
 
@@ -1914,7 +1914,7 @@ uhci_alloc_sqh(uhci_softc_t *sc)
 		mutex_exit(&sc->sc_lock);
 
 		err = usb_allocmem(&sc->sc_bus, UHCI_SQH_SIZE * UHCI_SQH_CHUNK,
-			  UHCI_QH_ALIGN, &dma);
+		    UHCI_QH_ALIGN, USBMALLOC_COHERENT, &dma);
 		if (err)
 			return NULL;
 
@@ -2919,6 +2919,9 @@ uhci_device_isoc_transfer(struct usbd_xfer *xfer)
 
 	KASSERT(xfer->ux_nframes != 0);
 
+	usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
+	    isread ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
+
 	mutex_enter(&sc->sc_lock);
 	next = isoc->next;
 	if (next == -1) {
@@ -3482,8 +3485,8 @@ uhci_open(struct usbd_pipe *pipe)
 				goto bad;
 			}
 			err = usb_allocmem(&sc->sc_bus,
-				  sizeof(usb_device_request_t),
-				  0, &upipe->ctrl.reqdma);
+			    sizeof(usb_device_request_t), 0,
+			    USBMALLOC_COHERENT, &upipe->ctrl.reqdma);
 			if (err) {
 				uhci_free_sqh(sc, upipe->ctrl.sqh);
 				uhci_free_std(sc, upipe->ctrl.setup);

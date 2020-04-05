@@ -478,7 +478,8 @@ usbd_alloc_buffer(struct usbd_xfer *xfer, uint32_t size)
 	if (bus->ub_usedma) {
 		usb_dma_t *dmap = &xfer->ux_dmabuf;
 
-		int err = usb_allocmem_flags(bus, size, 0, dmap, bus->ub_dmaflags);
+		KASSERT((bus->ub_dmaflags & USBMALLOC_COHERENT) == 0);
+		int err = usb_allocmem(bus, size, 0, bus->ub_dmaflags, dmap);
 		if (err) {
 			return NULL;
 		}

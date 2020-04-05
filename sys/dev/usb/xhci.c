@@ -1068,7 +1068,7 @@ xhci_init(struct xhci_softc *sc)
 	if (sc->sc_maxspbuf != 0) {
 		err = usb_allocmem(&sc->sc_bus,
 		    sizeof(uint64_t) * sc->sc_maxspbuf, sizeof(uint64_t),
-		    &sc->sc_spbufarray_dma);
+		    USBMALLOC_COHERENT, &sc->sc_spbufarray_dma);
 		if (err) {
 			aprint_error_dev(sc->sc_dev,
 			    "spbufarray init fail, err %d\n", err);
@@ -1082,7 +1082,7 @@ xhci_init(struct xhci_softc *sc)
 			usb_dma_t * const dma = &sc->sc_spbuf_dma[i];
 			/* allocate contexts */
 			err = usb_allocmem(&sc->sc_bus, sc->sc_pgsz,
-			    sc->sc_pgsz, dma);
+			    sc->sc_pgsz, USBMALLOC_COHERENT, dma);
 			if (err) {
 				aprint_error_dev(sc->sc_dev,
 				    "spbufarray_dma init fail, err %d\n", err);
@@ -1130,7 +1130,7 @@ xhci_init(struct xhci_softc *sc)
 	    XHCI_EVENT_RING_SEGMENT_TABLE_ALIGN);
 	KASSERTMSG(size <= (512 * 1024), "eventst size %zu too large", size);
 	align = XHCI_EVENT_RING_SEGMENT_TABLE_ALIGN;
-	err = usb_allocmem(&sc->sc_bus, size, align, dma);
+	err = usb_allocmem(&sc->sc_bus, size, align, USBMALLOC_COHERENT, dma);
 	if (err) {
 		aprint_error_dev(sc->sc_dev, "eventst init fail, err %d\n",
 		    err);
@@ -1149,7 +1149,7 @@ xhci_init(struct xhci_softc *sc)
 	size = (1 + sc->sc_maxslots) * sizeof(uint64_t);
 	KASSERTMSG(size <= 2048, "dcbaa size %zu too large", size);
 	align = XHCI_DEVICE_CONTEXT_BASE_ADDRESS_ARRAY_ALIGN;
-	err = usb_allocmem(&sc->sc_bus, size, align, dma);
+	err = usb_allocmem(&sc->sc_bus, size, align, USBMALLOC_COHERENT, dma);
 	if (err) {
 		aprint_error_dev(sc->sc_dev, "dcbaa init fail, err %d\n", err);
 		rv = ENOMEM;
@@ -2496,7 +2496,7 @@ xhci_ring_init(struct xhci_softc * const sc, struct xhci_ring * const xr,
 	XHCIHIST_CALLARGS("xr %#jx ntrb %#jx align %#jx",
 	    (uintptr_t)xr, ntrb, align, 0);
 
-	err = usb_allocmem(&sc->sc_bus, size, align, &xr->xr_dma);
+	err = usb_allocmem(&sc->sc_bus, size, align, USBMALLOC_COHERENT, &xr->xr_dma);
 	if (err)
 		return err;
 	mutex_init(&xr->xr_lock, MUTEX_DEFAULT, IPL_SOFTUSB);
@@ -2917,13 +2917,13 @@ xhci_init_slot(struct usbd_device *dev, uint32_t slot)
 
 	/* allocate contexts */
 	err = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
-	    &xs->xs_dc_dma);
+	    USBMALLOC_COHERENT, &xs->xs_dc_dma);
 	if (err)
 		return err;
 	memset(KERNADDR(&xs->xs_dc_dma, 0), 0, sc->sc_pgsz);
 
 	err = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
-	    &xs->xs_ic_dma);
+	    USBMALLOC_COHERENT, &xs->xs_ic_dma);
 	if (err)
 		goto bad1;
 	memset(KERNADDR(&xs->xs_ic_dma, 0), 0, sc->sc_pgsz);
@@ -3814,7 +3814,7 @@ xhci_device_ctrl_start(struct usbd_xfer *xfer)
 	struct xhci_ring * const tr = &xs->xs_ep[dci].xe_tr;
 	struct xhci_xfer * const xx = XHCI_XFER2XXFER(xfer);
 	usb_device_request_t * const req = &xfer->ux_request;
-	const int isread = usbd_xfer_isread(xfer);
+	const bool isread = usbd_xfer_isread(xfer);
 	const uint32_t len = UGETW(req->wLength);
 	usb_dma_t * const dma = &xfer->ux_dmabuf;
 	uint64_t parameter;
@@ -3855,9 +3855,12 @@ xhci_device_ctrl_start(struct usbd_xfer *xfer)
 		    XHCI_TRB_2_BYTES_SET(len);
 		control = (isread ? XHCI_TRB_3_DIR_IN : 0) |
 		    XHCI_TRB_3_TYPE_SET(XHCI_TRB_TYPE_DATA_STAGE) |
-		    (usbd_xfer_isread(xfer) ? XHCI_TRB_3_ISP_BIT : 0) |
+		    (isread ? XHCI_TRB_3_ISP_BIT : 0) |
 		    XHCI_TRB_3_IOC_BIT;
 		xhci_soft_trb_put(&xx->xx_trb[i++], parameter, status, control);
+
+		usb_syncmem(dma, 0, len,
+		    isread ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
 	}
 
 	parameter = 0;
@@ -3968,6 +3971,11 @@ xhci_device_bulk_start(struct usbd_xfer *xfer)
 	KASSERT((xfer->ux_rqflags & URQ_REQUEST) == 0);
 
 	parameter = DMAADDR(dma, 0);
+	const bool isread = usbd_xfer_isread(xfer);
+	if (len)
+		usb_syncmem(dma, 0, len,
+		    isread ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
+
 	/*
 	 * XXX: (dsl) The physical buffer must not cross a 64k boundary.
 	 * If the user supplied buffer crosses such a boundary then 2
@@ -3984,7 +3992,7 @@ xhci_device_bulk_start(struct usbd_xfer *xfer)
 	    XHCI_TRB_2_TDSZ_SET(0) |
 	    XHCI_TRB_2_BYTES_SET(len);
 	control = XHCI_TRB_3_TYPE_SET(XHCI_TRB_TYPE_NORMAL) |
-	    (usbd_xfer_isread(xfer) ? XHCI_TRB_3_ISP_BIT : 0) |
+	    (isread ? XHCI_TRB_3_ISP_BIT : 0) |
 	    XHCI_TRB_3_IOC_BIT;
 	xhci_soft_trb_put(&xx->xx_trb[i++], parameter, status, control);
 
@@ -4012,7 +4020,7 @@ xhci_device_bulk_done(struct usbd_xfer *xfer)
 	struct xhci_slot * const xs = xfer->ux_pipe->up_dev->ud_hcpriv;
 	const u_int dci = xhci_ep_get_dci(xfer->ux_pipe->up_endpoint->ue_edesc);
 #endif
-	const int isread = usbd_xfer_isread(xfer);
+	const bool isread = usbd_xfer_isread(xfer);
 
 	XHCIHIST_FUNC();
 	XHCIHIST_CALLARGS("%#jx slot %ju dci %ju",
@@ -4088,14 +4096,18 @@ xhci_device_intr_start(struct usbd_xfer *xfer)
 
 	KASSERT((xfer->ux_rqflags & URQ_REQUEST) == 0);
 
+	const bool isread = usbd_xfer_isread(xfer);
+	if (len)
+		usb_syncmem(dma, 0, len,
+		    isread ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
+
 	parameter = DMAADDR(dma, 0);
 	KASSERTMSG(len <= 0x10000, "len %d", len);
 	status = XHCI_TRB_2_IRQ_SET(0) |
 	    XHCI_TRB_2_TDSZ_SET(0) |
 	    XHCI_TRB_2_BYTES_SET(len);
 	control = XHCI_TRB_3_TYPE_SET(XHCI_TRB_TYPE_NORMAL) |
-	    (usbd_xfer_isread(xfer) ? XHCI_TRB_3_ISP_BIT : 0) |
-	    XHCI_TRB_3_IOC_BIT;
+	    (isread ? XHCI_TRB_3_ISP_BIT : 0) | XHCI_TRB_3_IOC_BIT;
 	xhci_soft_trb_put(&xx->xx_trb[i++], parameter, status, control);
 
 	if (!polling)
@@ -4123,7 +4135,7 @@ xhci_device_intr_done(struct usbd_xfer *xfer)
 	struct xhci_slot * const xs = xfer->ux_pipe->up_dev->ud_hcpriv;
 	const u_int dci = xhci_ep_get_dci(xfer->ux_pipe->up_endpoint->ue_edesc);
 #endif
-	const int isread = usbd_xfer_isread(xfer);
+	const bool isread = usbd_xfer_isread(xfer);
 
 	XHCIHIST_FUNC();
 	XHCIHIST_CALLARGS("%#jx slot %ju dci %ju",

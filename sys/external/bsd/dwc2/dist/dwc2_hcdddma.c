@@ -106,7 +106,7 @@ static int dwc2_desc_list_alloc(struct dwc2_hsotg *hsotg, struct dwc2_qh *qh,
 						dwc2_max_desc_num(qh);
 
 	err = usb_allocmem(&hsotg->hsotg_sc->sc_bus, qh->desc_list_sz, 0,
-	    &qh->desc_list_usbdma);
+	    USBMALLOC_COHERENT, &qh->desc_list_usbdma);
 
 	if (err)
 		return -ENOMEM;
@@ -147,7 +147,7 @@ static int dwc2_frame_list_alloc(struct dwc2_hsotg *hsotg, gfp_t mem_flags)
 	hsotg->frame_list_sz = 4 * FRLISTEN_64_SIZE;
 	hsotg->frame_list = NULL;
 	err = usb_allocmem(&hsotg->hsotg_sc->sc_bus, hsotg->frame_list_sz,
-	    0, &hsotg->frame_list_usbdma);
+	    0, USBMALLOC_COHERENT, &hsotg->frame_list_usbdma);
 
 	if (!err) {
 		hsotg->frame_list = KERNADDR(&hsotg->frame_list_usbdma, 0);

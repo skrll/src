@@ -41,15 +41,16 @@ typedef struct usb_dma_block {
 	size_t size;
 	size_t align;
 	int flags;
-#define USB_DMA_FULLBLOCK	0x0001
+#define USB_DMA_FULLBLOCK	__BIT(0)
+#define USB_DMA_COHERENT	__BIT(1)
+
 	LIST_ENTRY(usb_dma_block) next;
 } usb_dma_block_t;
 
-#define USBMALLOC_MULTISEG	1
+#define USBMALLOC_MULTISEG	__BIT(0)
+#define USBMALLOC_COHERENT	__BIT(1)
 
-usbd_status	usb_allocmem(struct usbd_bus *, size_t, size_t, usb_dma_t *);
-usbd_status	usb_allocmem_flags(struct usbd_bus *, size_t, size_t, usb_dma_t *,
-			int);
+usbd_status	usb_allocmem(struct usbd_bus *, size_t, size_t, u_int, usb_dma_t *);
 void		usb_freemem(struct usbd_bus *, usb_dma_t *);
 void		usb_syncmem(usb_dma_t *, bus_addr_t, bus_size_t, int);
 

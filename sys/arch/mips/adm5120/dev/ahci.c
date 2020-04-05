@@ -879,7 +879,7 @@ ahci_device_ctrl_start(struct usbd_xfer *xfer)
 		td3 = (struct admhcd_td *)KSEG1ADDR(&td_v[3]);
 		err = usb_allocmem(&sc->sc_bus,
 			sizeof(usb_device_request_t),
-			0, &reqdma);
+			0, USBMALLOC_COHERNET, &reqdma);
 		if (err)
 			return USBD_NOMEM;
 

@@ -405,7 +405,7 @@ dwc2_open(struct usbd_pipe *pipe)
 	case UE_CONTROL:
 		pipe->up_methods = &dwc2_device_ctrl_methods;
 		err = usb_allocmem(&sc->sc_bus, sizeof(usb_device_request_t),
-		    0, &dpipe->req_dma);
+		    0, USBMALLOC_COHERENT, &dpipe->req_dma);
 		if (err)
 			return err;
 		break;
