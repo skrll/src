@@ -3635,6 +3635,7 @@ void
 ohci_device_isoc_done(struct usbd_xfer *xfer)
 {
 	OHCIHIST_FUNC(); OHCIHIST_CALLED();
+	DPRINTFN(1, "xfer=%#jx", (uintptr_t)xfer, 0, 0, 0);
 
 	int isread =
 	    (UE_GET_DIR(xfer->ux_pipe->up_endpoint->ue_edesc->bEndpointAddress) == UE_DIR_IN);
