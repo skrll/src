@@ -1259,6 +1259,10 @@ ahci_device_bulk_start(struct usbd_xfer *xfer)
 	segs = i;
 	len = 0;
 
+	if (xfer->ux_length)
+		usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
+		    isread ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
+
 /*	printf("segs: %d\n",segs);
 	printf("ep: %p\n",ep);
 	printf("ep->control: %x\n",ep->control);
@@ -1316,6 +1320,10 @@ ahci_device_bulk_start(struct usbd_xfer *xfer)
 
 	level--;
 /*	printf("bulk_start<<<\n"); */
+
+	if (xfer->ux_length)
+		usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
+		    isread ? BUS_DMASYNC_POSTREAD : BUS_DMASYNC_POSTWRITE);
 
 	usb_transfer_complete(xfer);
 	mutex_exit(&sc->sc_lock);
