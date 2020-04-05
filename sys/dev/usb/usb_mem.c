@@ -75,7 +75,7 @@ struct usb_frag_dma {
 };
 
 Static usbd_status	usb_block_allocmem(bus_dma_tag_t, size_t, size_t,
-			    usb_dma_block_t **, u_int);
+			    u_int, usb_dma_block_t **);
 Static void		usb_block_freemem(usb_dma_block_t *);
 
 LIST_HEAD(usb_dma_block_qh, usb_dma_block);
@@ -106,7 +106,7 @@ usb_mem_init(void)
 
 Static usbd_status
 usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
-    usb_dma_block_t **dmap, u_int flags)
+    u_int flags, usb_dma_block_t **dmap)
 {
 	usb_dma_block_t *b;
 	int error;
@@ -276,8 +276,8 @@ usb_allocmem(struct usbd_bus *bus, size_t size, size_t align, u_int flags,
 		DPRINTFN(1, "large alloc %jd", size, 0, 0, 0);
 		size = (size + USB_MEM_BLOCK - 1) & ~(USB_MEM_BLOCK - 1);
 		mutex_enter(&usb_blk_lock);
-		err = usb_block_allocmem(tag, size, align, &p->udma_block,
-		    flags);
+		err = usb_block_allocmem(tag, size, align, flags,
+		    &p->udma_block);
 		if (!err) {
 #ifdef DEBUG
 			LIST_INSERT_HEAD(&usb_blk_fulllist, p->udma_block, next);
@@ -301,8 +301,9 @@ usb_allocmem(struct usbd_bus *bus, size_t size, size_t align, u_int flags,
 	}
 	if (f == NULL) {
 		DPRINTFN(1, "adding fragments", 0, 0, 0, 0);
-		err = usb_block_allocmem(tag, USB_MEM_BLOCK, USB_MEM_SMALL, &b,
-		    flags);
+
+		err = usb_block_allocmem(tag, USB_MEM_BLOCK, USB_MEM_SMALL,
+		    flags, &b);
 		if (err) {
 			mutex_exit(&usb_blk_lock);
 			return err;
