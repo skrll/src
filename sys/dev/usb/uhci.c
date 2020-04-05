@@ -2201,7 +2201,6 @@ uhci_device_bulk_init(struct usbd_xfer *xfer)
 	int len = xfer->ux_bufsize;
 	int err = 0;
 
-
 	UHCIHIST_FUNC(); UHCIHIST_CALLED();
 	DPRINTFN(3, "xfer=%#jx len=%jd flags=%jd", (uintptr_t)xfer, len,
 	    xfer->ux_flags, 0);
@@ -2920,7 +2919,7 @@ uhci_device_isoc_transfer(struct usbd_xfer *xfer)
 	KASSERT(xfer->ux_nframes != 0);
 
 	usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
-	    isread ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
+	    rd ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
 
 	mutex_enter(&sc->sc_lock);
 	next = isoc->next;
