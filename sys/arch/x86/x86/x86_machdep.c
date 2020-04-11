@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_machdep.c,v 1.135 2020/01/29 01:54:34 manu Exp $	*/
+/*	$NetBSD: x86_machdep.c,v 1.137 2020/04/04 19:50:54 christos Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007 YAMAMOTO Takashi,
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.135 2020/01/29 01:54:34 manu Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.137 2020/04/04 19:50:54 christos Exp $");
 
 #include "opt_modular.h"
 #include "opt_physmem.h"
@@ -458,8 +458,7 @@ x86_cpu_idle_init(void)
 {
 
 #ifndef XENPV
-	if ((cpu_feature[1] & CPUID2_MONITOR) == 0 ||
-	    cpu_vendor == CPUVENDOR_AMD)
+	if ((cpu_feature[1] & CPUID2_MONITOR) == 0)
 		x86_cpu_idle_set(x86_cpu_idle_halt, "halt", true);
 	else
 		x86_cpu_idle_set(x86_cpu_idle_mwait, "mwait", false);
@@ -1159,6 +1158,13 @@ x86_startup(void)
 #if !defined(XENPV)
 	nmi_init();
 #endif
+}
+
+const char *
+get_booted_kernel(void)
+{
+	const struct btinfo_bootpath *bibp = lookup_bootinfo(BTINFO_BOOTPATH);
+	return bibp ? bibp->bootpath : NULL;
 }
 
 /* 

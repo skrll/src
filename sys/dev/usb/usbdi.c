@@ -1,4 +1,4 @@
-/*	$NetBSD: usbdi.c,v 1.198 2020/03/14 02:35:33 christos Exp $	*/
+/*	$NetBSD: usbdi.c,v 1.200 2020/04/05 20:59:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2012, 2015 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.198 2020/03/14 02:35:33 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.200 2020/04/05 20:59:38 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -478,7 +478,8 @@ usbd_alloc_buffer(struct usbd_xfer *xfer, uint32_t size)
 	if (bus->ub_usedma) {
 		usb_dma_t *dmap = &xfer->ux_dmabuf;
 
-		int err = usb_allocmem_flags(bus, size, 0, dmap, bus->ub_dmaflags);
+		KASSERT((bus->ub_dmaflags & USBMALLOC_COHERENT) == 0);
+		int err = usb_allocmem(bus, size, 0, bus->ub_dmaflags, dmap);
 		if (err) {
 			return NULL;
 		}
@@ -593,6 +594,11 @@ usbd_create_xfer(struct usbd_pipe *pipe, size_t len, unsigned int flags,
 	if (xfer == NULL)
 		return ENOMEM;
 
+	xfer->ux_pipe = pipe;
+	xfer->ux_flags = flags;
+	xfer->ux_nframes = nframes;
+	xfer->ux_methods = pipe->up_methods;
+
 	if (len) {
 		buf = usbd_alloc_buffer(xfer, len);
 		if (!buf) {
@@ -600,16 +606,10 @@ usbd_create_xfer(struct usbd_pipe *pipe, size_t len, unsigned int flags,
 			return ENOMEM;
 		}
 	}
-	xfer->ux_pipe = pipe;
-	xfer->ux_flags = flags;
-	xfer->ux_nframes = nframes;
-	xfer->ux_methods = pipe->up_methods;
 
 	if (xfer->ux_methods->upm_init) {
 		int err = xfer->ux_methods->upm_init(xfer);
 		if (err) {
-			if (buf)
-				usbd_free_buffer(xfer);
 			usbd_free_xfer(xfer);
 			return err;
 		}

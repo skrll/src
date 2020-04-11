@@ -1,4 +1,4 @@
-/*	$NetBSD: identcpu.c,v 1.100 2019/12/21 12:53:54 ad Exp $	*/
+/*	$NetBSD: identcpu.c,v 1.105 2020/04/09 02:07:01 christos Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.100 2019/12/21 12:53:54 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.105 2020/04/09 02:07:01 christos Exp $");
 
 #include "opt_xen.h"
 
@@ -362,19 +362,17 @@ cpu_probe_amd_cache(struct cpu_info *ci)
 }
 
 static void
-cpu_probe_amd(struct cpu_info *ci)
+cpu_probe_amd_errata(struct cpu_info *ci)
 {
+	u_int model;
 	uint64_t val;
 	int flag;
 
-	if (cpu_vendor != CPUVENDOR_AMD)
-		return;
-	if (CPUID_TO_FAMILY(ci->ci_signature) < 5)
-		return;
+	model = CPUID_TO_MODEL(ci->ci_signature);
 
 	switch (CPUID_TO_FAMILY(ci->ci_signature)) {
 	case 0x05: /* K5 */
-		if (CPUID_TO_MODEL(ci->ci_signature) == 0) {
+		if (model == 0) {
 			/*
 			 * According to the AMD Processor Recognition App Note,
 			 * the AMD-K5 Model 0 uses the wrong bit to indicate
@@ -402,9 +400,34 @@ cpu_probe_amd(struct cpu_info *ci)
 			wrmsr(MSR_BU_CFG2, val);
 		}
 		break;
+
+	case 0x17:
+		/*
+		 * "Revision Guide for AMD Family 17h Models 00h-0Fh
+		 * Processors" revision 1.12:
+		 *
+		 * 1057 MWAIT or MWAITX Instructions May Fail to Correctly
+		 * Exit From the Monitor Event Pending State
+		 *
+		 * 1109 MWAIT Instruction May Hang a Thread
+		 */
+		if (model == 0x01) {
+			cpu_feature[1] &= ~CPUID2_MONITOR;
+			ci->ci_feat_val[1] &= ~CPUID2_MONITOR;
+		}
+		break;
 	}
+}
+
+static void
+cpu_probe_amd(struct cpu_info *ci)
+{
+
+	if (cpu_vendor != CPUVENDOR_AMD)
+		return;
 
 	cpu_probe_amd_cache(ci);
+	cpu_probe_amd_errata(ci);
 }
 
 static inline uint8_t
@@ -704,7 +727,7 @@ cpu_probe_vortex86(struct cpu_info *ci)
 #define PCI_MODE1_DATA_REG	0x0cfc
 #define PCI_MODE1_ENABLE	0x80000000UL
 
-	uint32_t reg;
+	uint32_t reg, idx;
 
 	if (cpu_vendor != CPUVENDOR_VORTEX86)
 		return;
@@ -718,17 +741,18 @@ cpu_probe_vortex86(struct cpu_info *ci)
 	outl(PCI_MODE1_ADDRESS_REG, PCI_MODE1_ENABLE | 0x90);
 	reg = inl(PCI_MODE1_DATA_REG);
 
-	if ((reg & 0xf8ffffff) != 0x30504d44) {
-		reg = 0;
+	if ((reg & 0xf0ffffff) != 0x30504d44) {
+		idx = 0;
 	} else {
-		reg = (reg >> 24) & 7;
+		idx = (reg >> 24) & 0xf;
 	}
 
 	static const char *cpu_vortex86_flavor[] = {
-	    "??", "SX", "DX", "MX", "DX2", "MX+", "DX3", "EX",
+	    "??", "SX", "DX", "MX", "DX2", "MX+", "DX3", "EX", "EX2",
 	};
+	idx = idx < __arraycount(cpu_vortex86_flavor) ? idx : 0;
 	snprintf(cpu_brand_string, sizeof(cpu_brand_string), "Vortex86%s",
-	    cpu_vortex86_flavor[reg]);
+	    cpu_vortex86_flavor[idx]);
 
 #undef PCI_MODE1_ENABLE
 #undef PCI_MODE1_ADDRESS_REG
@@ -950,7 +974,9 @@ cpu_probe(struct cpu_info *ci)
 		cpu_probe_fpu(ci);
 	}
 
+#ifndef XEN
 	x86_cpu_topology(ci);
+#endif
 
 	if (cpu_vendor != CPUVENDOR_AMD && (ci->ci_feat_val[0] & CPUID_TM) &&
 	    (rdmsr(MSR_MISC_ENABLE) & (1 << 3)) == 0) {

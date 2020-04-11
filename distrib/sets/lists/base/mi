@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1235 2020/03/29 17:13:46 christos Exp $
+# $NetBSD: mi,v 1.1239 2020/04/04 19:50:53 christos Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -579,7 +579,7 @@
 ./sbin/mount_ptyfs				base-miscfs-root
 ./sbin/mount_puffs				base-sysutil-root
 ./sbin/mount_qemufwcfg				base-sysutil-root
-./sbin/mount_smbfs				base-smbfs-root
+./sbin/mount_smbfs				base-obsolete		obsolete
 ./sbin/mount_sysvbfs				base-sysutil-root
 ./sbin/mount_tmpfs				base-miscfs-root
 ./sbin/mount_udf				base-sysutil-root
@@ -660,6 +660,7 @@
 ./sbin/zfs					base-zfs-bin            zfs
 ./sbin/zpool					base-zfs-bin            zfs
 ./stand						base-sys-root
+./netbsd					base-sys-root		kernel_dir
 ./tmp						base-sys-root
 ./usr						base-sys-root
 ./usr/bin					base-sys-usr
@@ -797,6 +798,7 @@
 ./usr/bin/install				base-util-bin
 ./usr/bin/install-info				base-texinfo-bin
 ./usr/bin/install-sid				base-gnats-bin
+./usr/bin/ioctlprint				base-debug-bin
 ./usr/bin/ipcrm					base-util-bin
 ./usr/bin/ipcs					base-util-bin
 ./usr/bin/join					base-util-bin
@@ -983,7 +985,7 @@
 ./usr/bin/skeyinfo				base-util-bin		skey
 ./usr/bin/skeyinit				base-util-bin		skey
 ./usr/bin/slogin				base-secsh-bin
-./usr/bin/smbutil				base-util-bin
+./usr/bin/smbutil				base-obsolete		obsolete
 ./usr/bin/sockstat				base-util-bin
 ./usr/bin/sort					base-util-bin
 ./usr/bin/spell					base-util-bin
@@ -1173,7 +1175,7 @@
 ./usr/include/fs/nilfs				base-c-usr
 ./usr/include/fs/ptyfs				base-c-usr
 ./usr/include/fs/puffs				base-puffs-usr
-./usr/include/fs/smbfs				base-c-usr
+./usr/include/fs/smbfs				base-obsolete		obsolete
 ./usr/include/fs/sysvbfs			base-c-usr
 ./usr/include/fs/tmpfs				base-c-usr
 ./usr/include/fs/udf				base-c-usr
@@ -1271,7 +1273,7 @@
 ./usr/include/netnatm				base-obsolete		obsolete
 ./usr/include/netns				base-obsolete		obsolete
 ./usr/include/netpgp				base-c-usr
-./usr/include/netsmb				base-c-usr
+./usr/include/netsmb				base-obsolete		obsolete
 ./usr/include/nfs				base-c-usr
 ./usr/include/ntfs				base-c-usr
 ./usr/include/objc				base-objc-usr
@@ -1994,7 +1996,7 @@
 ./usr/sbin/rump_msdos				base-puffs-bin	rump
 ./usr/sbin/rump_nfs				base-puffs-bin	rump
 ./usr/sbin/rump_ntfs				base-puffs-bin	rump
-./usr/sbin/rump_smbfs				base-puffs-bin	rump
+./usr/sbin/rump_smbfs				base-obsolete		obsolete
 ./usr/sbin/rump_syspuffs			base-puffs-bin	rump
 ./usr/sbin/rump_sysvbfs				base-puffs-bin	rump
 ./usr/sbin/rump_tmpfs				base-puffs-bin	rump
@@ -2318,7 +2320,7 @@
 ./usr/share/examples/rpcapd			base-netutil-examples
 ./usr/share/examples/rtadvd			base-router-examples
 ./usr/share/examples/slip			base-slip-examples
-./usr/share/examples/smbfs			base-sysutil-examples
+./usr/share/examples/smbfs			base-obsolete	obsolete
 ./usr/share/examples/supfiles			base-obsolete	obsolete
 ./usr/share/examples/syslogd			base-sysutil-examples
 ./usr/share/examples/unbound			base-netutil-examples   share
@@ -6039,6 +6041,12 @@
 ./var/at/spool					base-cron-root
 ./var/backups					base-sys-root
 ./var/chroot					base-sys-root
+./var/chroot/dhcpcd				base-dhcpcd-root
+./var/chroot/dhcpcd/etc				base-dhcpcd-root
+./var/chroot/dhcpcd/var				base-dhcpcd-root
+./var/chroot/dhcpcd/var/run			base-dhcpcd-root
+./var/chroot/dhcpcd/var/db			base-dhcpcd-root
+./var/chroot/dhcpcd/var/db/dhcpcd		base-dhcpcd-root
 ./var/chroot/ftp-proxy				base-sys-root
 ./var/chroot/named				base-bind-root
 ./var/chroot/named/dev				base-bind-root
@@ -6088,7 +6096,6 @@
 ./var/cron					base-cron-root
 ./var/cron/tabs					base-cron-root
 ./var/db					base-sys-root
-./var/db/dhcpcd					base-dhcpcd-root
 ./var/db/ns					base-sys-root
 ./var/db/obsolete				base-sys-root
 ./var/db/obsolete/base				base-sys-root
