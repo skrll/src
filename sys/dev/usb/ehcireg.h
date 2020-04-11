@@ -248,7 +248,10 @@ typedef struct {
 #define EHCI_ITD_SET_MULTI(x)	__SHIFTIN((x), EHCI_ITD_MULTI_MASK)
 	volatile ehci_isoc_bufr_ptr_t	itd_bufr_hi[EHCI_ITD_NBUFFERS];
 } ehci_itd_t;
-#define EHCI_ITD_ALIGN 32
+#define EHCI_ITD_ALIGN		32
+#define EHCI_ITD_ALLOC_ALIGN	MAX(EHCI_ITD_ALIGN, CACHE_LINE_SIZE)
+#define EHCI_ITD_SIZE		(roundup(sizeof(ehci_itd_t), EHCI_ITD_ALLOC_ALIGN))
+#define EHCI_ITD_CHUNK		(EHCI_PAGE_SIZE / EHCI_ITD_SIZE)
 
 /* Split Transaction Isochronous Transfer Descriptor */
 typedef struct {
@@ -339,7 +342,11 @@ typedef struct {
 	volatile ehci_physaddr_t qtd_buffer[EHCI_QTD_NBUFFERS];
 	volatile ehci_physaddr_t qtd_buffer_hi[EHCI_QTD_NBUFFERS];
 } ehci_qtd_t;
-#define EHCI_QTD_ALIGN 32
+#define EHCI_QTD_ALIGN		32
+#define EHCI_QTD_ALLOC_ALIGN	MAX(EHCI_QTD_ALIGN, CACHE_LINE_SIZE)
+#define EHCI_QTD_SIZE		(roundup(sizeof(ehci_qtd_t), EHCI_QTD_ALLOC_ALIGN))
+#define EHCI_QTD_CHUNK		(EHCI_PAGE_SIZE / EHCI_QTD_SIZE)
+
 
 /* Queue Head */
 typedef struct {
@@ -391,6 +398,9 @@ typedef struct {
 	ehci_qtd_t		qh_qtd;
 } ehci_qh_t;
 #define EHCI_QH_ALIGN 32
+#define EHCI_QH_ALLOC_ALIGN	MAX(EHCI_QH_ALIGN, CACHE_LINE_SIZE)
+#define EHCI_QH_SIZE		(roundup(sizeof(ehci_qh_t), EHCI_QH_ALLOC_ALIGN))
+#define EHCI_QH_CHUNK		(EHCI_PAGE_SIZE / EHCI_QH_SIZE)
 
 /* Periodic Frame Span Traversal Node */
 typedef struct {

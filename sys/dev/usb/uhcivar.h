@@ -100,26 +100,18 @@ struct uhci_xfer {
  * Extra information that we need for a TD.
  */
 struct uhci_soft_td {
-	uhci_td_t td;			/* The real TD, must be first */
+	uhci_td_t *td;			/* The real TD */
 	uhci_soft_td_qh_t link; 	/* soft version of the td_link field */
 	uhci_physaddr_t physaddr;	/* TD's physical address. */
 	usb_dma_t dma;			/* TD's DMA infos */
 	int offs;			/* TD's offset in usb_dma_t */
 };
-/*
- * Make the size such that it is a multiple of UHCI_TD_ALIGN.  This way
- * we can pack a number of soft TD together and have the real TD well
- * aligned.
- * NOTE: Minimum size is 32 bytes.
- */
-#define UHCI_STD_SIZE (roundup(sizeof(struct uhci_soft_td), UHCI_TD_ALIGN))
-#define UHCI_STD_CHUNK 128 /*(PAGE_SIZE / UHCI_TD_SIZE)*/
 
 /*
  * Extra information that we need for a QH.
  */
 struct uhci_soft_qh {
-	uhci_qh_t qh;			/* The real QH, must be first */
+	uhci_qh_t *qh;			/* The real QH */
 	uhci_soft_qh_t *hlink;		/* soft version of qh_hlink */
 	uhci_soft_td_t *elink;		/* soft version of qh_elink */
 	uhci_physaddr_t physaddr;	/* QH's physical address. */
@@ -127,9 +119,6 @@ struct uhci_soft_qh {
 	usb_dma_t dma;			/* QH's DMA infos */
 	int offs;			/* QH's offset in usb_dma_t */
 };
-/* See comment about UHCI_STD_SIZE. */
-#define UHCI_SQH_SIZE (roundup(sizeof(struct uhci_soft_qh), UHCI_QH_ALIGN))
-#define UHCI_SQH_CHUNK 128 /*(PAGE_SIZE / UHCI_QH_SIZE)*/
 
 /*
  * Information about an entry in the virtual frame list.
