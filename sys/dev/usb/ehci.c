@@ -1,4 +1,4 @@
-/*	$NetBSD: ehci.c,v 1.277 2020/03/14 02:35:33 christos Exp $ */
+/*	$NetBSD: ehci.c,v 1.278 2020/04/05 20:59:38 skrll Exp $ */
 
 /*
  * Copyright (c) 2004-2012 The NetBSD Foundation, Inc.
@@ -53,7 +53,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.277 2020/03/14 02:35:33 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.278 2020/04/05 20:59:38 skrll Exp $");
 
 #include "ohci.h"
 #include "uhci.h"
@@ -2863,7 +2863,7 @@ ehci_alloc_sqtd(ehci_softc_t *sc)
 		mutex_exit(&sc->sc_lock);
 
 		err = usb_allocmem(&sc->sc_bus, EHCI_QTD_SIZE * EHCI_QTD_CHUNK,
-		    EHCI_PAGE_SIZE, USBMALLOC_COHERENT, &dma);
+		    EHCI_PAGE_SIZE, 0 /*!USBMALLOC_COHERENT*/, &dma);
 #ifdef EHCI_DEBUG
 		if (err)
 			printf("ehci_alloc_sqtd: usb_allocmem()=%d\n", err);

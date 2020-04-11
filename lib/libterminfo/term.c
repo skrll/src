@@ -1,4 +1,4 @@
-/* $NetBSD: term.c,v 1.32 2020/03/27 17:39:53 christos Exp $ */
+/* $NetBSD: term.c,v 1.34 2020/04/05 14:53:39 martin Exp $ */
 
 /*
  * Copyright (c) 2009, 2010, 2011, 2020 The NetBSD Foundation, Inc.
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: term.c,v 1.32 2020/03/27 17:39:53 christos Exp $");
+__RCSID("$NetBSD: term.c,v 1.34 2020/04/05 14:53:39 martin Exp $");
 
 #include <sys/stat.h>
 
@@ -50,7 +50,9 @@ __RCSID("$NetBSD: term.c,v 1.32 2020/03/27 17:39:53 christos Exp $");
  */
 #define _PATH_TERMINFO	"/usr/share/misc/terminfo"
 
+#ifdef TERMINFO_DB
 static char __ti_database[PATH_MAX];
+#endif
 const char *_ti_database;
 
 /* Include a generated list of pre-compiled terminfo descriptions. */
@@ -227,6 +229,7 @@ out:
 	return -1;
 }
 
+#if defined(TERMINFO_DB) || defined(TERMINFO_COMPILE)
 static int
 _ti_checkname(const char *name, const char *termname, const char *termalias)
 {
@@ -259,7 +262,9 @@ _ti_checkname(const char *name, const char *termname, const char *termalias)
 	/* No match. */
 	return 0;
 }
+#endif
 
+#ifdef TERMINFO_DB
 static int
 _ti_dbgetterm(TERMINAL *term, const char *path, const char *name, int flags)
 {
@@ -339,10 +344,16 @@ _ti_dbgettermp(TERMINAL *term, const char *path, const char *name, int flags)
 	} while (*path++ == ':');
 	return e;
 }
+#endif
 
 static int
 _ti_findterm(TERMINAL *term, const char *name, int flags)
 {
+#ifndef TERMINFO_DB
+	_ti_database = NULL;
+
+	return 0;
+#else
 	int r;
 	char *c, *e;
 
@@ -352,12 +363,12 @@ _ti_findterm(TERMINAL *term, const char *name, int flags)
 	_ti_database = NULL;
 	r = 0;
 
-	if ((e = getenv("TERMINFO")) != NULL && *e != '\0') {
-		if (e[0] == '/')
-			return _ti_dbgetterm(term, e, name, flags);
-	}
+	e = getenv("TERMINFO");
+	if (e != NULL && *e == '/')
+		return _ti_dbgetterm(term, e, name, flags);
 
 	c = NULL;
+#ifdef TERMINFO_COMPILE
 	if (e == NULL && (c = getenv("TERMCAP")) != NULL) {
 		if (*c != '\0' && *c != '/') {
 			c = strdup(c);
@@ -414,8 +425,10 @@ _ti_findterm(TERMINAL *term, const char *name, int flags)
 	}
 	if (r != 1)
 		r = _ti_dbgettermp(term, _PATH_TERMINFO, name, flags);
+#endif
 
 	return r;
+#endif
 }
 
 int
@@ -424,6 +437,7 @@ _ti_getterm(TERMINAL *term, const char *name, int flags)
 	int r;
 	size_t i;
 	const struct compiled_term *t;
+#ifdef TERMINFO_COMPAT
 	char *namev3;
 
 	namev3 = _ti_getname(TERMINFO_RTYPE, name);
@@ -433,6 +447,7 @@ _ti_getterm(TERMINAL *term, const char *name, int flags)
 		if (r == 1)
 			return r;
 	}
+#endif
 
 	r = _ti_findterm(term, name, flags);
 	if (r == 1)

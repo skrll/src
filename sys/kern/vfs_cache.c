@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_cache.c,v 1.135 2020/03/27 00:14:25 ad Exp $	*/
+/*	$NetBSD: vfs_cache.c,v 1.138 2020/04/10 16:55:40 ad Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2019, 2020 The NetBSD Foundation, Inc.
@@ -172,7 +172,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_cache.c,v 1.135 2020/03/27 00:14:25 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_cache.c,v 1.138 2020/04/10 16:55:40 ad Exp $");
 
 #define __NAMECACHE_PRIVATE
 #ifdef _KERNEL_OPT
@@ -241,7 +241,7 @@ struct nchcpu {
 static callout_t cache_stat_callout;
 static kmutex_t cache_stat_lock __cacheline_aligned;
 
-#define	COUNT(f)	do { \
+#define	COUNT(f) do { \
 	lwp_t *l = curlwp; \
 	KPREEMPT_DISABLE(l); \
 	((struct nchstats_percpu *)curcpu()->ci_data.cpu_nch)->f++; \
@@ -417,10 +417,10 @@ cache_lookup_entry(struct vnode *dvp, const char *name, size_t namelen,
 		if (__predict_false(RB_SENTINEL_P(node))) {
 			return NULL;
 		}
-		KASSERT((void *)&ncp->nc_tree == (void *)ncp);
 		ncp = (struct namecache *)node;
+		KASSERT((void *)&ncp->nc_tree == (void *)ncp);
 		KASSERT(ncp->nc_dvp == dvp);
-		if (__predict_false(ncp->nc_key == key)) {
+		if (ncp->nc_key == key) {
 			KASSERT(ncp->nc_nlen == namelen);
 			diff = memcmp(ncp->nc_name, name, namelen);
 			if (__predict_true(diff == 0)) {
@@ -554,6 +554,14 @@ cache_lookup(struct vnode *dvp, const char *name, size_t namelen,
 		return false;
 	}
 	if (ncp->nc_vp == NULL) {
+		if (iswht_ret != NULL) {
+			/*
+			 * Restore the ISWHITEOUT flag saved earlier.
+			 */
+			*iswht_ret = ncp->nc_whiteout;
+		} else {
+			KASSERT(!ncp->nc_whiteout);
+		}
 		if (nameiop == CREATE && (cnflags & ISLASTCN) != 0) {
 			/*
 			 * Last component and we are preparing to create
@@ -569,14 +577,6 @@ cache_lookup(struct vnode *dvp, const char *name, size_t namelen,
 			    namelen, 0, 0);
 			/* found neg entry; vn is already null from above */
 			hit = true;
-		}
-		if (iswht_ret != NULL) {
-			/*
-			 * Restore the ISWHITEOUT flag saved earlier.
-			 */
-			*iswht_ret = ncp->nc_whiteout;
-		} else {
-			KASSERT(!ncp->nc_whiteout);
 		}
 		rw_exit(&dvi->vi_nc_lock);
 		return hit;
@@ -624,7 +624,6 @@ cache_lookup_raw(struct vnode *dvp, const char *name, size_t namelen,
  * names in the cache.  The node locks are chained along the way: a parent's
  * lock is not dropped until the child's is acquired.
  */
-#ifdef notyet
 bool
 cache_lookup_linked(struct vnode *dvp, const char *name, size_t namelen,
 		    struct vnode **vn_ret, krwlock_t **plock,
@@ -721,7 +720,6 @@ cache_lookup_linked(struct vnode *dvp, const char *name, size_t namelen,
 	*vn_ret = ncp->nc_vp;
 	return true;
 }
-#endif	/* notyet */
 
 /*
  * Scan cache looking for name of directory entry pointing at vp.
@@ -967,7 +965,6 @@ cache_enter_id(struct vnode *vp, mode_t mode, uid_t uid, gid_t gid)
  * information, missing some updates, so always check the mount flag
  * instead of looking for !VNOVAL.
  */
-#ifdef notyet
 bool
 cache_have_id(struct vnode *vp)
 {
@@ -982,7 +979,6 @@ cache_have_id(struct vnode *vp)
 		return false;
 	}
 }
-#endif	/* notyet */
 
 /*
  * Name cache initialization, from vfs_init() when the system is booting.

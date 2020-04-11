@@ -1,4 +1,4 @@
-# $NetBSD: ad.arm,v 1.99 2019/11/11 22:44:56 joerg Exp $
+# $NetBSD: ad.arm,v 1.101 2020/04/05 05:19:24 mlelstv Exp $
 ./usr/bin/elf2aout				comp-sysutil-bin
 ./usr/include/acorn26				comp-obsolete		obsolete
 ./usr/include/acorn26/ansi.h			comp-obsolete		obsolete

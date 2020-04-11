@@ -1,4 +1,4 @@
-/*	$NetBSD: ahci.c,v 1.21 2020/02/21 12:41:29 skrll Exp $	*/
+/*	$NetBSD: ahci.c,v 1.22 2020/04/05 20:59:38 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2007 Ruslan Ermilov and Vsevolod Lobko.
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ahci.c,v 1.21 2020/02/21 12:41:29 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ahci.c,v 1.22 2020/04/05 20:59:38 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

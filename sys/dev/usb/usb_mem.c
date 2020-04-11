@@ -1,4 +1,4 @@
-/*	$NetBSD: usb_mem.c,v 1.75 2020/03/15 14:19:04 skrll Exp $	*/
+/*	$NetBSD: usb_mem.c,v 1.76 2020/04/05 20:59:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb_mem.c,v 1.75 2020/03/15 14:19:04 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb_mem.c,v 1.76 2020/04/05 20:59:38 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

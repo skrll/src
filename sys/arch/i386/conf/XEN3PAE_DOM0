@@ -1,8 +1,8 @@
-#	$NetBSD: XEN3PAE_DOM0,v 1.21 2020/03/25 17:06:19 jdolecek Exp $
+#	$NetBSD: XEN3PAE_DOM0,v 1.23 2020/04/10 20:56:56 jdolecek Exp $
 #
 #	XEN3_0: Xen 3.0 domain0 kernel
 
-include 	"arch/xen/conf/std.xen"
+include 	"arch/i386/conf/std.xen"
 
 options		XENPV		# PV dom0 support
 #options 	MULTIPROCESSOR	# (not yet - dom0 stuff is not MP-safe)
@@ -18,7 +18,6 @@ maxusers	32		# estimated number of users
 #
 options 	XEN
 options 	PAE
-#options 	__XEN_INTERFACE_VERSION__=0x00030205 # Xen 3.1 interface
 
 # boot messages with MPBIOS, acpi and ioapic can be quite large
 options 	MSGBUFSIZE=24576
