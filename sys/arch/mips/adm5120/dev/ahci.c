@@ -1,4 +1,4 @@
-/*	$NetBSD: ahci.c,v 1.21 2020/02/21 12:41:29 skrll Exp $	*/
+/*	$NetBSD: ahci.c,v 1.22 2020/04/05 20:59:38 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2007 Ruslan Ermilov and Vsevolod Lobko.
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ahci.c,v 1.21 2020/02/21 12:41:29 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ahci.c,v 1.22 2020/04/05 20:59:38 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1259,6 +1259,10 @@ ahci_device_bulk_start(struct usbd_xfer *xfer)
 	segs = i;
 	len = 0;
 
+	if (xfer->ux_length)
+		usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
+		    isread ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
+
 /*	printf("segs: %d\n",segs);
 	printf("ep: %p\n",ep);
 	printf("ep->control: %x\n",ep->control);
@@ -1316,6 +1320,10 @@ ahci_device_bulk_start(struct usbd_xfer *xfer)
 
 	level--;
 /*	printf("bulk_start<<<\n"); */
+
+	if (xfer->ux_length)
+		usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
+		    isread ? BUS_DMASYNC_POSTREAD : BUS_DMASYNC_POSTWRITE);
 
 	usb_transfer_complete(xfer);
 	mutex_exit(&sc->sc_lock);

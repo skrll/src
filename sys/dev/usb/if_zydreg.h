@@ -1191,6 +1191,7 @@ struct zyd_softc {
 	enum ieee80211_state		sc_state;
 	int				sc_arg;
 	int				attached;
+	bool				sc_dying;
 
 	struct callout			sc_scan_ch;
 	struct callout			sc_amrr_ch;

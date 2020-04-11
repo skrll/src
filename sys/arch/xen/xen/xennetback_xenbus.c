@@ -1,4 +1,4 @@
-/*      $NetBSD: xennetback_xenbus.c,v 1.88 2020/03/29 15:38:29 jdolecek Exp $      */
+/*      $NetBSD: xennetback_xenbus.c,v 1.95 2020/04/09 10:57:02 jdolecek Exp $      */
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -25,14 +25,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xennetback_xenbus.c,v 1.88 2020/03/29 15:38:29 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xennetback_xenbus.c,v 1.95 2020/04/09 10:57:02 jdolecek Exp $");
 
 #include "opt_xen.h"
 
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
 #include <sys/kmem.h>
 #include <sys/queue.h>
 #include <sys/kernel.h>
@@ -96,7 +95,6 @@ struct xnetback_instance {
 	domid_t xni_domid;		/* attached to this domain */
 	uint32_t xni_handle;	/* domain-specific handle */
 	xnetback_state_t xni_status;
-	bool xni_rx_copy;
 
 	/* network interface stuff */
 	struct ethercom xni_ec;
@@ -119,7 +117,6 @@ struct xnetback_instance {
        void xvifattach(int);
 static int  xennetback_ifioctl(struct ifnet *, u_long, void *);
 static void xennetback_ifstart(struct ifnet *);
-static void xennetback_ifsoftstart_transfer(struct xnetback_instance *);
 static void xennetback_ifsoftstart_copy(struct xnetback_instance *);
 static void xennetback_ifwatchdog(struct ifnet *);
 static int  xennetback_ifinit(struct ifnet *);
@@ -150,62 +147,20 @@ static struct xenbus_backend_driver xvif_backend_driver = {
  */
 #define NB_XMIT_PAGES_BATCH 64
 
-/*
- * We will transfer a mapped page to the remote domain, and remap another
- * page in place immediately. For this we keep a list of pages available.
- * When the list is empty, we ask the hypervisor to give us
- * NB_XMIT_PAGES_BATCH pages back.
- */
-static unsigned long mcl_pages[NB_XMIT_PAGES_BATCH]; /* our physical pages */
-int mcl_pages_alloc; /* current index in mcl_pages */
-static int  xennetback_get_mcl_page(paddr_t *);
-static void xennetback_get_new_mcl_pages(void);
-
-/*
- * If we can't transfer the mbuf directly, we have to copy it to a page which
- * will be transferred to the remote domain. We use a pool_cache for this.
- */
-pool_cache_t xmit_pages_cache;
-
 /* arrays used in xennetback_ifstart(), too large to allocate on stack */
 /* XXXSMP */
-static mmu_update_t xstart_mmu[NB_XMIT_PAGES_BATCH];
-static multicall_entry_t xstart_mcl[NB_XMIT_PAGES_BATCH + 1];
-static gnttab_transfer_t xstart_gop_transfer[NB_XMIT_PAGES_BATCH];
 static gnttab_copy_t     xstart_gop_copy[NB_XMIT_PAGES_BATCH];
 static struct mbuf *mbufs_sent[NB_XMIT_PAGES_BATCH];
-static struct _pages_pool_free {
-	vaddr_t va;
-	paddr_t pa;
-} pages_pool_free[NB_XMIT_PAGES_BATCH];
+static struct _req_info {
+	int id;
+	int flags;
+} xstart_req[NB_XMIT_PAGES_BATCH];
 
 
 void
 xvifattach(int n)
 {
-	int i;
-	struct pglist mlist;
-	struct vm_page *pg;
-
 	XENPRINTF(("xennetback_init\n"));
-
-	/*
-	 * steal some non-managed pages to the VM system, to replace
-	 * mbuf cluster or xmit_pages_pool pages given to foreign domains.
-	 */
-	if (uvm_pglistalloc(PAGE_SIZE * NB_XMIT_PAGES_BATCH, 0, 0xffffffff,
-	    0, 0, &mlist, NB_XMIT_PAGES_BATCH, 0) != 0)
-		panic("xennetback_init: uvm_pglistalloc");
-	for (i = 0, pg = mlist.tqh_first; pg != NULL;
-	    pg = pg->pageq.queue.tqe_next, i++)
-		mcl_pages[i] = xpmap_ptom(VM_PAGE_TO_PHYS(pg)) >> PAGE_SHIFT;
-	if (i != NB_XMIT_PAGES_BATCH)
-		panic("xennetback_init: %d mcl pages", i);
-	mcl_pages_alloc = NB_XMIT_PAGES_BATCH - 1;
-
-	/* initialise pools */
-	xmit_pages_cache = pool_cache_init(PAGE_SIZE, 0, 0, 0, "xnbxm", NULL,
-	    IPL_VM, NULL, NULL, NULL);
 
 	SLIST_INIT(&xnetback_instances);
 	mutex_init(&xnetback_lock, MUTEX_DEFAULT, IPL_NONE);
@@ -220,7 +175,8 @@ xennetback_xenbus_create(struct xenbus_device *xbusd)
 	long domid, handle;
 	struct ifnet *ifp;
 	extern int ifqmaxlen; /* XXX */
-	char *val, *e, *p;
+	char *e, *p;
+	char mac[32];
 	int i, err;
 	struct xenbus_transaction *xbt;
 
@@ -255,23 +211,22 @@ xennetback_xenbus_create(struct xenbus_device *xbusd)
 	    (int)domid, (int)handle);
 
 	/* read mac address */
-	if ((err = xenbus_read(NULL, xbusd->xbusd_path, "mac", NULL, &val))) {
+	err = xenbus_read(NULL, xbusd->xbusd_path, "mac", mac, sizeof(mac));
+	if (err) {
 		aprint_error_ifnet(ifp, "can't read %s/mac: %d\n",
 		    xbusd->xbusd_path, err);
 		goto fail;
 	}
-	for (i = 0, p = val; i < 6; i++) {
+	for (i = 0, p = mac; i < ETHER_ADDR_LEN; i++) {
 		xneti->xni_enaddr[i] = strtoul(p, &e, 16);
 		if ((e[0] == '\0' && i != 5) && e[0] != ':') {
 			aprint_error_ifnet(ifp,
-			    "%s is not a valid mac address\n", val);
-			free(val, M_DEVBUF);
+			    "%s is not a valid mac address\n", mac);
 			err = EINVAL;
 			goto fail;
 		}
 		p = &e[1];
 	}
-	free(val, M_DEVBUF);
 
 	/* we can't use the same MAC addr as our guest */
 	xneti->xni_enaddr[3]++;
@@ -283,11 +238,11 @@ xennetback_xenbus_create(struct xenbus_device *xbusd)
 	ifp->if_snd.ifq_maxlen =
 	    uimax(ifqmaxlen, NET_TX_RING_SIZE * 2);
 	ifp->if_capabilities =
-		IFCAP_CSUM_IPv4_Tx
-		| IFCAP_CSUM_UDPv4_Tx
-		| IFCAP_CSUM_TCPv4_Tx
-		| IFCAP_CSUM_UDPv6_Tx
-		| IFCAP_CSUM_TCPv6_Tx;
+		IFCAP_CSUM_IPv4_Rx | IFCAP_CSUM_IPv4_Tx
+		| IFCAP_CSUM_UDPv4_Rx | IFCAP_CSUM_UDPv4_Tx
+		| IFCAP_CSUM_TCPv4_Rx | IFCAP_CSUM_TCPv4_Tx
+		| IFCAP_CSUM_UDPv6_Rx | IFCAP_CSUM_UDPv6_Tx
+		| IFCAP_CSUM_TCPv6_Rx | IFCAP_CSUM_TCPv6_Tx;
 #define XN_M_CSUM_SUPPORTED	(				\
 		M_CSUM_TCPv4 | M_CSUM_UDPv4 | M_CSUM_IPv4	\
 		| M_CSUM_TCPv6 | M_CSUM_UDPv6			\
@@ -334,10 +289,10 @@ xennetback_xenbus_create(struct xenbus_device *xbusd)
 			goto abort_xbt;
 		}
 		err = xenbus_printf(xbt, xbusd->xbusd_path,
-		    "feature-rx-flip", "%d", 1);
+		    "feature-ipv6-csum-offload", "%d", 1);
 		if (err) {
 			aprint_error_ifnet(ifp,
-			    "failed to write %s/feature-rx-flip: %d\n",
+			    "failed to write %s/feature-ipv6-csum-offload: %d\n",
 			    xbusd->xbusd_path, err);
 			goto abort_xbt;
 		}
@@ -458,14 +413,16 @@ xennetback_connect(struct xnetback_instance *xneti)
 	}
 	err = xenbus_read_ul(NULL, xbusd->xbusd_otherend,
 	    "request-rx-copy", &rx_copy, 10);
-	if (err == ENOENT)
-		rx_copy = 0;
-	else if (err) {
+	if (err == ENOENT || !rx_copy) {
+		xenbus_dev_fatal(xbusd, err,
+		    "%s/request-rx-copy not supported by frontend",
+		    xbusd->xbusd_otherend);
+		return -1;
+	} else if (err) {
 		xenbus_dev_fatal(xbusd, err, "reading %s/request-rx-copy",
 		    xbusd->xbusd_otherend);
 		return -1;
 	}
-	xneti->xni_rx_copy = (rx_copy != 0);
 
 	/* allocate VA space and map rings */
 	xneti->xni_tx_ring_va = uvm_km_alloc(kernel_map, PAGE_SIZE, 0,
@@ -596,7 +553,7 @@ xennetback_frontend_changed(void *arg, XenbusState new_state)
 
 	case XenbusStateClosing:
 		xneti->xni_status = DISCONNECTING;
-		xneti->xni_if.if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
+		xneti->xni_if.if_flags &= ~IFF_RUNNING;
 		xneti->xni_if.if_timer = 0;
 		xenbus_switch_state(xbusd, NULL, XenbusStateClosing);
 		break;
@@ -632,48 +589,6 @@ xnetif_lookup(domid_t dom , uint32_t handle)
 	mutex_exit(&xnetback_lock);
 
 	return found;
-}
-
-/* get a page to replace a mbuf cluster page given to a domain */
-static int
-xennetback_get_mcl_page(paddr_t *map)
-{
-	if (mcl_pages_alloc < 0) {
-		/*
-		 * we exhausted our allocation. We can't allocate new ones yet
-		 * because the current pages may not have been loaned to
-		 * the remote domain yet. We have to let the caller do this.
-		 */
-		return -1;
-	}
-
-	*map = ((paddr_t)mcl_pages[mcl_pages_alloc]) << PAGE_SHIFT;
-	mcl_pages_alloc--;
-	return 0;
-}
-
-static void
-xennetback_get_new_mcl_pages(void)
-{
-	int nb_pages;
-	struct xen_memory_reservation res;
-
-	/* get some new pages. */
-	set_xen_guest_handle(res.extent_start, mcl_pages);
-	res.nr_extents = NB_XMIT_PAGES_BATCH;
-	res.extent_order = 0;
-	res.address_bits = 0;
-	res.domid = DOMID_SELF;
-
-	nb_pages = HYPERVISOR_memory_op(XENMEM_increase_reservation, &res);
-	if (nb_pages <= 0) {
-		printf("xennetback: can't get new mcl pages (%d)\n", nb_pages);
-		return;
-	}
-	if (nb_pages != NB_XMIT_PAGES_BATCH)
-		printf("xennetback: got only %d new mcl pages\n", nb_pages);
-
-	mcl_pages_alloc = nb_pages - 1;
 }
 
 static inline void
@@ -718,6 +633,60 @@ xennetback_tx_check_packet(const netif_tx_request_t *txreq, int vlan)
 	return NULL;
 }
 
+static void
+xennetback_tx_copy_process(struct ifnet *ifp, struct xnetback_instance *xneti,
+	int queued)
+{
+	int i = 0;
+	gnttab_copy_t *gop;
+	struct mbuf *m;
+	struct _req_info *req;
+
+	/*
+	 * Copy the data and ack it. Delaying it until the mbuf is
+	 * freed will stall transmit.
+	 */
+	if (HYPERVISOR_grant_table_op(GNTTABOP_copy, xstart_gop_copy, queued)
+	    != 0) {
+		printf("%s: GNTTABOP_copy failed", ifp->if_xname);
+		goto abort;
+	}
+
+	for (; i < queued; i++) {
+		gop = &xstart_gop_copy[i];
+		m = mbufs_sent[i];
+		req = &xstart_req[i];
+
+		if (gop->status != GNTST_okay) {
+			printf("%s GNTTABOP_copy[%d] %d\n",
+			    ifp->if_xname, i, gop->status);
+			goto abort;
+		}
+
+		xennetback_tx_response(xneti, req->id, NETIF_RSP_OKAY);
+
+		if (req->flags & NETTXF_csum_blank)
+			xennet_checksum_fill(ifp, m);
+		else if (req->flags & NETTXF_data_validated)
+			m->m_pkthdr.csum_flags = XN_M_CSUM_SUPPORTED;
+		m_set_rcvif(m, ifp);
+
+		if_percpuq_enqueue(ifp->if_percpuq, m);
+	}
+
+	return;
+
+abort:
+	for (; i < queued; i++) {
+		m = mbufs_sent[i];
+		req = &xstart_req[i];
+
+		m_freem(m);
+		xennetback_tx_response(xneti, req->id, NETIF_RSP_ERROR);
+		if_statinc(ifp, if_ierrors);
+	}
+}
+
 static int
 xennetback_evthandler(void *arg)
 {
@@ -727,9 +696,9 @@ xennetback_evthandler(void *arg)
 	struct mbuf *m;
 	int receive_pending;
 	RING_IDX req_cons;
-	gnttab_copy_t gop;
+	gnttab_copy_t *gop;
 	paddr_t pa;
-	int offset;
+	int offset, queued = 0;
 
 	XENPRINTF(("xennetback_evthandler "));
 	req_cons = xneti->xni_txring.req_cons;
@@ -796,68 +765,38 @@ xennetback_evthandler(void *arg)
 		    xneti->xni_if.if_xname, txreq.offset,
 		    txreq.size, txreq.id, MASK_NETIF_TX_IDX(req_cons)));
 
-		/*
-		 * Copy the data and ack it. Delaying it until the mbuf is
-		 * freed will stall transmit.
-		 */
 		xennetback_mbuf_addr(m, &pa, &offset);
-		memset(&gop, 0, sizeof(gop));
-		gop.flags = GNTCOPY_source_gref;
-		gop.len = txreq.size;
 
-		gop.source.u.ref = txreq.gref;
-		gop.source.offset = txreq.offset;
-		gop.source.domid = xneti->xni_domid;
+		/* Queue for the copy */
+		gop = &xstart_gop_copy[queued];
+		memset(gop, 0, sizeof(*gop));
+		gop->flags = GNTCOPY_source_gref;
+		gop->len = txreq.size;
 
-		gop.dest.offset = offset;
-		gop.dest.domid = DOMID_SELF;
-		gop.dest.u.gmfn = xpmap_ptom(pa) >> PAGE_SHIFT;
+		gop->source.u.ref = txreq.gref;
+		gop->source.offset = txreq.offset;
+		gop->source.domid = xneti->xni_domid;
 
-		if (HYPERVISOR_grant_table_op(GNTTABOP_copy,
-		    &gop, 1) != 0) {
-			printf("%s: GNTTABOP_copy failed",
-			    ifp->if_xname);
-			m_freem(m);
-			xennetback_tx_response(xneti, txreq.id,
-			    NETIF_RSP_ERROR);
-			if_statinc(ifp, if_ierrors);
-			continue;
-		}
-		if (gop.status != GNTST_okay) {
-			printf("%s GNTTABOP_copy %d\n",
-			    ifp->if_xname, gop.status);
-			m_freem(m);
-			xennetback_tx_response(xneti, txreq.id,
-			    NETIF_RSP_ERROR);
-			if_statinc(ifp, if_ierrors);
-			continue;
-		}
-
-		if ((ifp->if_flags & IFF_PROMISC) == 0) {
-			struct ether_header *eh =
-			    mtod(m, struct ether_header *);
-			if (ETHER_IS_MULTICAST(eh->ether_dhost) == 0 &&
-			    memcmp(CLLADDR(ifp->if_sadl), eh->ether_dhost,
-			    ETHER_ADDR_LEN) != 0) {
-				m_freem(m);
-				xennetback_tx_response(xneti, txreq.id,
-				    NETIF_RSP_OKAY);
-				continue; /* packet is not for us */
-			}
-		}
+		gop->dest.offset = offset;
+		gop->dest.domid = DOMID_SELF;
+		gop->dest.u.gmfn = xpmap_ptom(pa) >> PAGE_SHIFT;
 
 		m->m_len = m->m_pkthdr.len = txreq.size;
-		xennetback_tx_response(xneti, txreq.id,
-		    NETIF_RSP_OKAY);
+		mbufs_sent[queued] = m;
 
-		if (txreq.flags & NETTXF_csum_blank)
-			xennet_checksum_fill(ifp, m);
-		else if (txreq.flags & NETTXF_data_validated)
-			m->m_pkthdr.csum_flags = XN_M_CSUM_SUPPORTED;
-		m_set_rcvif(m, ifp);
+		xstart_req[queued].id = txreq.id;
+		xstart_req[queued].flags = txreq.flags;
 
-		if_percpuq_enqueue(ifp->if_percpuq, m);
+		queued++;
+
+		KASSERT(queued <= NB_XMIT_PAGES_BATCH);
+		if (queued == NB_XMIT_PAGES_BATCH) {
+			xennetback_tx_copy_process(ifp, xneti, queued);
+			queued = 0;
+		}
 	}
+	if (queued > 0)
+		xennetback_tx_copy_process(ifp, xneti, queued);
 	xen_rmb(); /* be sure to read the request before updating pointer */
 	xneti->xni_txring.req_cons = req_cons;
 	xen_wmb();
@@ -894,258 +833,7 @@ xennetback_ifstart(struct ifnet *ifp)
 	 * stack will enqueue all pending mbufs in the interface's send queue
 	 * before it is processed by the soft interrupt handler.
 	 */
-	if (__predict_true(xneti->xni_rx_copy))
-		xennetback_ifsoftstart_copy(xneti);
-	else
-		xennetback_ifsoftstart_transfer(xneti);
-}
-
-static void
-xennetback_ifsoftstart_transfer(struct xnetback_instance *xneti)
-{
-	struct ifnet *ifp = &xneti->xni_if;
-	struct mbuf *m;
-	vaddr_t xmit_va;
-	paddr_t xmit_pa;
-	paddr_t xmit_ma;
-	paddr_t newp_ma = 0; /* XXX gcc */
-	int i, j, nppitems;
-	mmu_update_t *mmup;
-	multicall_entry_t *mclp;
-	netif_rx_response_t *rxresp;
-	netif_rx_request_t rxreq;
-	RING_IDX req_prod, resp_prod;
-	int do_event = 0;
-	gnttab_transfer_t *gop;
-	int id, offset;
-
-	XENPRINTF(("xennetback_ifsoftstart_transfer "));
-	int s = splnet();
-	if (__predict_false(
-	    (ifp->if_flags & (IFF_RUNNING|IFF_OACTIVE)) != IFF_RUNNING)) {
-		splx(s);
-		return;
-	}
-
-	while (!IFQ_IS_EMPTY(&ifp->if_snd)) {
-		XENPRINTF(("pkt\n"));
-		req_prod = xneti->xni_rxring.sring->req_prod;
-		resp_prod = xneti->xni_rxring.rsp_prod_pvt;
-		xen_rmb();
-
-		mmup = xstart_mmu;
-		mclp = xstart_mcl;
-		gop = xstart_gop_transfer;
-		for (nppitems = 0, i = 0; !IFQ_IS_EMPTY(&ifp->if_snd);) {
-			XENPRINTF(("have a packet\n"));
-			IFQ_POLL(&ifp->if_snd, m);
-			if (__predict_false(m == NULL))
-				panic("xennetback_ifstart: IFQ_POLL");
-			if (__predict_false(
-			    req_prod == xneti->xni_rxring.req_cons ||
-			    xneti->xni_rxring.req_cons - resp_prod ==
-			    NET_RX_RING_SIZE)) {
-				/* out of ring space */
-				XENPRINTF(("xennetback_ifstart: ring full "
-				    "req_prod 0x%x req_cons 0x%x resp_prod "
-				    "0x%x\n",
-				    req_prod, xneti->xni_rxring.req_cons,
-				    resp_prod));
-				ifp->if_timer = 1;
-				break;
-			}
-			if (__predict_false(i == NB_XMIT_PAGES_BATCH))
-				break; /* we filled the array */
-			if (__predict_false(
-			    xennetback_get_mcl_page(&newp_ma) != 0))
-				break; /* out of memory */
-			if ((m->m_flags & M_EXT_CLUSTER) != 0 &&
-			    !M_READONLY(m) && MCLBYTES == PAGE_SIZE) {
-				/* we can give this page away */
-				xmit_pa = m->m_ext.ext_paddr;
-				xmit_ma = xpmap_ptom(xmit_pa);
-				xmit_va = (vaddr_t)m->m_ext.ext_buf;
-				KASSERT(xmit_pa != M_PADDR_INVALID);
-				KASSERT((xmit_va & PAGE_MASK) == 0);
-				offset = m->m_data - m->m_ext.ext_buf;
-			} else {
-				/* we have to copy the packet */
-				xmit_va = (vaddr_t)pool_cache_get_paddr(
-				    xmit_pages_cache, PR_NOWAIT, &xmit_pa);
-				if (__predict_false(xmit_va == 0))
-					break; /* out of memory */
-
-				KASSERT(xmit_pa != POOL_PADDR_INVALID);
-				xmit_ma = xpmap_ptom(xmit_pa);
-				XENPRINTF(("xennetback_get_xmit_page: got va "
-				    "0x%x ma 0x%x\n", (u_int)xmit_va,
-				    (u_int)xmit_ma));
-				m_copydata(m, 0, m->m_pkthdr.len,
-				    (char *)xmit_va + LINUX_REQUESTED_OFFSET);
-				offset = LINUX_REQUESTED_OFFSET;
-				pages_pool_free[nppitems].va = xmit_va;
-				pages_pool_free[nppitems].pa = xmit_pa;
-				nppitems++;
-			}
-			/* start filling ring */
-			RING_COPY_REQUEST(&xneti->xni_rxring,
-			    xneti->xni_rxring.req_cons, &rxreq);
-			gop->ref = rxreq.gref;
-			id = rxreq.id;
-			xen_rmb();
-			xneti->xni_rxring.req_cons++;
-			rxresp = RING_GET_RESPONSE(&xneti->xni_rxring,
-			    resp_prod);
-			rxresp->id = id;
-			rxresp->offset = offset;
-			rxresp->status = m->m_pkthdr.len;
-			if ((m->m_pkthdr.csum_flags &
-			    XN_M_CSUM_SUPPORTED) != 0) {
-				rxresp->flags = NETRXF_csum_blank;
-			} else {
-				rxresp->flags = NETRXF_data_validated;
-			}
-			/*
-			 * transfers the page containing the packet to the
-			 * remote domain, and map newp in place.
-			 */
-			xpmap_ptom_map(xmit_pa, newp_ma);
-			MULTI_update_va_mapping(mclp, xmit_va,
-			    newp_ma | PTE_P | PTE_W | PTE_A | PTE_D | xpmap_pg_nx, 0);
-			mclp++;
-			gop->mfn = xmit_ma >> PAGE_SHIFT;
-			gop->domid = xneti->xni_domid;
-			gop++;
-
-			mmup->ptr = newp_ma | MMU_MACHPHYS_UPDATE;
-			mmup->val = xmit_pa >> PAGE_SHIFT;
-			mmup++;
-
-			/* done with this packet */
-			IFQ_DEQUEUE(&ifp->if_snd, m);
-			mbufs_sent[i] = m;
-			resp_prod++;
-			i++; /* this packet has been queued */
-			if_statinc(ifp, if_opackets);
-			bpf_mtap(ifp, m, BPF_D_OUT);
-		}
-		if (i != 0) {
-			/*
-			 * We may have allocated buffers which have entries
-			 * outstanding in the page update queue -- make sure
-			 * we flush those first!
-			 */
-			int svm = splvm();
-			xpq_flush_queue();
-			splx(svm);
-			mclp[-1].args[MULTI_UVMFLAGS_INDEX] =
-			    UVMF_TLB_FLUSH|UVMF_ALL;
-			mclp->op = __HYPERVISOR_mmu_update;
-			mclp->args[0] = (unsigned long)xstart_mmu;
-			mclp->args[1] = i;
-			mclp->args[2] = 0;
-			mclp->args[3] = DOMID_SELF;
-			mclp++;
-			/* update the MMU */
-			if (HYPERVISOR_multicall(xstart_mcl, i + 1) != 0) {
-				panic("%s: HYPERVISOR_multicall failed",
-				    ifp->if_xname);
-			}
-			for (j = 0; j < i + 1; j++) {
-				if (xstart_mcl[j].result != 0) {
-					printf("%s: xstart_mcl[%d] "
-					    "failed (%lu)\n", ifp->if_xname,
-					    j, xstart_mcl[j].result);
-					printf("%s: req_prod %u req_cons "
-					    "%u rsp_prod %u rsp_prod_pvt %u "
-					    "i %u\n",
-					    ifp->if_xname,
-					    xneti->xni_rxring.sring->req_prod,
-					    xneti->xni_rxring.req_cons,
-					    xneti->xni_rxring.sring->rsp_prod,
-					    xneti->xni_rxring.rsp_prod_pvt,
-					    i);
-				}
-			}
-			if (HYPERVISOR_grant_table_op(GNTTABOP_transfer,
-			    xstart_gop_transfer, i) != 0) {
-				panic("%s: GNTTABOP_transfer failed",
-				    ifp->if_xname);
-			}
-
-			for (j = 0; j < i; j++) {
-				if (xstart_gop_transfer[j].status != GNTST_okay) {
-					printf("%s GNTTABOP_transfer[%d] %d\n",
-					    ifp->if_xname,
-					    j, xstart_gop_transfer[j].status);
-					printf("%s: req_prod %u req_cons "
-					    "%u rsp_prod %u rsp_prod_pvt %u "
-					    "i %d\n",
-					    ifp->if_xname,
-					    xneti->xni_rxring.sring->req_prod,
-					    xneti->xni_rxring.req_cons,
-					    xneti->xni_rxring.sring->rsp_prod,
-					    xneti->xni_rxring.rsp_prod_pvt,
-					    i);
-					rxresp = RING_GET_RESPONSE(
-					    &xneti->xni_rxring,
-					    xneti->xni_rxring.rsp_prod_pvt + j);
-					rxresp->status = NETIF_RSP_ERROR;
-				}
-			}
-
-			/* update pointer */
-			KASSERT(
-			    xneti->xni_rxring.rsp_prod_pvt + i == resp_prod);
-			xneti->xni_rxring.rsp_prod_pvt = resp_prod;
-			RING_PUSH_RESPONSES_AND_CHECK_NOTIFY(
-			    &xneti->xni_rxring, j);
-			if (j)
-				do_event = 1;
-			/* now we can free the mbufs */
-			for (j = 0; j < i; j++) {
-				m_freem(mbufs_sent[j]);
-			}
-			for (j = 0; j < nppitems; j++) {
-				pool_cache_put_paddr(xmit_pages_cache,
-				    (void *)pages_pool_free[j].va,
-				    pages_pool_free[j].pa);
-			}
-		}
-		/* send event */
-		if (do_event) {
-			xen_rmb();
-			XENPRINTF(("%s receive event\n",
-			    xneti->xni_if.if_xname));
-			hypervisor_notify_via_evtchn(xneti->xni_evtchn);
-			do_event = 0;
-		}
-		/* check if we need to get back some pages */
-		if (mcl_pages_alloc < 0) {
-			xennetback_get_new_mcl_pages();
-			if (mcl_pages_alloc < 0) {
-				/*
-				 * setup the watchdog to try again, because
-				 * xennetback_ifstart() will never be called
-				 * again if queue is full.
-				 */
-				printf("xennetback_ifstart: no mcl_pages\n");
-				ifp->if_timer = 1;
-				break;
-			}
-		}
-		/*
-		 * note that we don't use RING_FINAL_CHECK_FOR_REQUESTS()
-		 * here, as the frontend doesn't notify when adding
-		 * requests anyway
-		 */
-		if (__predict_false(
-		    !RING_HAS_UNCONSUMED_REQUESTS(&xneti->xni_rxring))) {
-			/* ring full */
-			break;
-		}
-	}
-	splx(s);
+	xennetback_ifsoftstart_copy(xneti);
 }
 
 /*
@@ -1231,8 +919,7 @@ xennetback_ifsoftstart_copy(struct xnetback_instance *xneti)
 
 	XENPRINTF(("xennetback_ifsoftstart_copy "));
 	int s = splnet();
-	if (__predict_false(
-	    (ifp->if_flags & (IFF_RUNNING|IFF_OACTIVE)) != IFF_RUNNING)) {
+	if (__predict_false((ifp->if_flags & IFF_RUNNING) == 0)) {
 		splx(s);
 		return;
 	}
@@ -1428,7 +1115,7 @@ xennetback_ifstop(struct ifnet *ifp, int disable)
 	struct xnetback_instance *xneti = ifp->if_softc;
 	int s = splnet();
 
-	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
+	ifp->if_flags &= ~IFF_RUNNING;
 	ifp->if_timer = 0;
 	if (xneti->xni_status == CONNECTED) {
 		XENPRINTF(("%s: req_prod 0x%x resp_prod 0x%x req_cons 0x%x "

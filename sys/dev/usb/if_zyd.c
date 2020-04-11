@@ -469,6 +469,7 @@ zyd_detach(device_t self, int flags)
 		return 0;
 
 	mutex_enter(&sc->sc_lock);
+	sc->sc_dying = true;
 
 	zyd_stop(ifp, 1);
 	callout_halt(&sc->sc_scan_ch, NULL);
@@ -2550,15 +2551,16 @@ zyd_stop(struct ifnet *ifp, int disable)
 	ifp->if_timer = 0;
 	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
 
-	/* switch radio transmitter OFF */
-	(void)zyd_switch_radio(sc, 0);
+	if (!sc->sc_dying) {
+		/* switch radio transmitter OFF */
+		(void)zyd_switch_radio(sc, 0);
 
-	/* disable Rx */
-	(void)zyd_write32(sc, ZYD_MAC_RXFILTER, 0);
+		/* disable Rx */
+		(void)zyd_write32(sc, ZYD_MAC_RXFILTER, 0);
 
-	/* disable interrupts */
-	(void)zyd_write32(sc, ZYD_CR_INTERRUPT, 0);
-
+		/* disable interrupts */
+		(void)zyd_write32(sc, ZYD_CR_INTERRUPT, 0);
+	}
 	usbd_abort_pipe(sc->zyd_ep[ZYD_ENDPT_BIN]);
 	usbd_abort_pipe(sc->zyd_ep[ZYD_ENDPT_BOUT]);
 

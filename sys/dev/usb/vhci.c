@@ -1,4 +1,4 @@
-/*	$NetBSD: vhci.c,v 1.13 2020/03/29 09:46:14 maxv Exp $ */
+/*	$NetBSD: vhci.c,v 1.16 2020/03/31 16:34:25 maxv Exp $ */
 
 /*
  * Copyright (c) 2019-2020 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vhci.c,v 1.13 2020/03/29 09:46:14 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vhci.c,v 1.16 2020/03/31 16:34:25 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -61,6 +61,7 @@ __KERNEL_RCSID(0, "$NetBSD: vhci.c,v 1.13 2020/03/29 09:46:14 maxv Exp $");
 #include <dev/usb/usbdivar.h>
 
 #include <dev/usb/usbroothub.h>
+#include <dev/usb/vhci.h>
 
 #ifdef VHCI_DEBUG
 #define DPRINTF(fmt, ...)	printf(fmt, __VA_ARGS__)
@@ -173,15 +174,6 @@ static const struct usbd_pipe_methods vhci_root_intr_methods = {
  *             +------------------------------------------------+
  */
 
-typedef struct {
-	int type;
-#define VHCI_REQ_CTRL	0
-
-	union {
-		usb_device_request_t ctrl;
-	} u;
-} vhci_request_t;
-
 struct vhci_xfer;
 
 typedef struct vhci_packet {
@@ -191,6 +183,13 @@ typedef struct vhci_packet {
 	struct vhci_xfer *vxfer;
 	bool utoh;
 	uint8_t addr;
+
+	/* Type. */
+	struct {
+		bool req:1;
+		bool res:1;
+		bool dat:1;
+	} type;
 
 	/* Exposed for FD operations. */
 	uint8_t *buf;
@@ -229,6 +228,7 @@ typedef struct vhci_xfer {
 
 	/* Header storage. */
 	vhci_request_t reqbuf;
+	vhci_response_t resbuf;
 
 	/* Used for G/C. */
 	TAILQ_ENTRY(vhci_xfer) freelist;
@@ -276,8 +276,8 @@ vhci_pkt_ctrl_create(vhci_port_t *port, struct usbd_xfer *xfer, bool utoh,
     uint8_t addr)
 {
 	vhci_xfer_t *vxfer = (vhci_xfer_t *)xfer;
-	vhci_packet_list_t *reqlist, *datlist;
-	vhci_packet_t *req, *dat = NULL;
+	vhci_packet_list_t *reqlist, *reslist, *datlist = NULL;
+	vhci_packet_t *req, *res = NULL, *dat = NULL;
 	size_t npkts = 0;
 
 	/* Request packet. */
@@ -286,6 +286,7 @@ vhci_pkt_ctrl_create(vhci_port_t *port, struct usbd_xfer *xfer, bool utoh,
 	req->vxfer = vxfer;
 	req->utoh = false;
 	req->addr = addr;
+	req->type.req = true;
 	req->buf = (uint8_t *)&vxfer->reqbuf;
 	req->size = sizeof(vxfer->reqbuf);
 	req->cursor = 0;
@@ -296,6 +297,20 @@ vhci_pkt_ctrl_create(vhci_port_t *port, struct usbd_xfer *xfer, bool utoh,
 	vxfer->reqbuf.type = VHCI_REQ_CTRL;
 	memcpy(&vxfer->reqbuf.u.ctrl, &xfer->ux_request,
 	    sizeof(xfer->ux_request));
+
+	/* Response packet. */
+	if (utoh && (xfer->ux_length > 0)) {
+		reslist = &port->endpoints[addr].usb_to_host;
+		res = kmem_zalloc(sizeof(*res), KM_SLEEP);
+		res->vxfer = vxfer;
+		res->utoh = true;
+		res->addr = addr;
+		res->type.res = true;
+		res->buf = (uint8_t *)&vxfer->resbuf;
+		res->size = sizeof(vxfer->resbuf);
+		res->cursor = 0;
+		npkts++;
+	}
 
 	/* Data packet. */
 	if (xfer->ux_length > 0) {
@@ -308,6 +323,7 @@ vhci_pkt_ctrl_create(vhci_port_t *port, struct usbd_xfer *xfer, bool utoh,
 		dat->vxfer = vxfer;
 		dat->utoh = utoh;
 		dat->addr = addr;
+		dat->type.dat = true;
 		dat->buf = xfer->ux_buf;
 		dat->size = xfer->ux_length;
 		dat->cursor = 0;
@@ -319,12 +335,16 @@ vhci_pkt_ctrl_create(vhci_port_t *port, struct usbd_xfer *xfer, bool utoh,
 	vxfer->npkts = npkts;
 	TAILQ_INIT(&vxfer->pkts);
 	TAILQ_INSERT_TAIL(&vxfer->pkts, req, xferlist);
+	if (res != NULL)
+		TAILQ_INSERT_TAIL(&vxfer->pkts, res, xferlist);
 	if (dat != NULL)
 		TAILQ_INSERT_TAIL(&vxfer->pkts, dat, xferlist);
 
 	/* Insert in the port. */
 	KASSERT(mutex_owned(&port->lock));
 	TAILQ_INSERT_TAIL(reqlist, req, portlist);
+	if (res != NULL)
+		TAILQ_INSERT_TAIL(reslist, res, portlist);
 	if (dat != NULL)
 		TAILQ_INSERT_TAIL(datlist, dat, portlist);
 }
@@ -784,32 +804,6 @@ vhci_root_intr_done(struct usbd_xfer *xfer)
 
 /* -------------------------------------------------------------------------- */
 
-struct vhci_ioc_get_info {
-	/* General. */
-	size_t nports;
-
-	/* Current port. */
-	u_int port;
-	int status;
-
-	/* Current addr. */
-	uint8_t addr;
-};
-
-struct vhci_ioc_set_port {
-	u_int port;
-};
-
-struct vhci_ioc_set_addr {
-	uint8_t addr;
-};
-
-#define VHCI_IOC_GET_INFO	_IOR('V', 0, struct vhci_ioc_get_info)
-#define VHCI_IOC_SET_PORT	_IOW('V', 1, struct vhci_ioc_set_port)
-#define VHCI_IOC_SET_ADDR	_IOW('V', 2, struct vhci_ioc_set_addr)
-#define VHCI_IOC_USB_ATTACH	_IO ('V', 10)
-#define VHCI_IOC_USB_DETACH	_IO ('V', 11)
-
 static int
 vhci_usb_attach(vhci_fd_t *vfd)
 {
@@ -1084,6 +1078,7 @@ vhci_fd_read(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	TAILQ_FOREACH_SAFE(pkt, pktlist, portlist, nxt) {
 		vxfer = pkt->vxfer;
 		buf = pkt->buf + pkt->cursor;
+
 		KASSERT(pkt->size >= pkt->cursor);
 		size = uimin(uio->uio_resid, pkt->size - pkt->cursor);
 
@@ -1138,7 +1133,7 @@ vhci_fd_write(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	vhci_port_t *port;
 	int error = 0;
 	uint8_t *buf;
-	size_t size;
+	size_t pktsize, size;
 
 	if (uio->uio_resid == 0)
 		return 0;
@@ -1157,8 +1152,13 @@ vhci_fd_write(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	TAILQ_FOREACH_SAFE(pkt, pktlist, portlist, nxt) {
 		vxfer = pkt->vxfer;
 		buf = pkt->buf + pkt->cursor;
-		KASSERT(pkt->size >= pkt->cursor);
-		size = uimin(uio->uio_resid, pkt->size - pkt->cursor);
+
+		pktsize = pkt->size;
+		if (pkt->type.dat)
+			pktsize = ulmin(vxfer->resbuf.size, pktsize);
+
+		KASSERT(pktsize >= pkt->cursor);
+		size = uimin(uio->uio_resid, pktsize - pkt->cursor);
 
 		KASSERT(vxfer->xfer.ux_status == USBD_IN_PROGRESS);
 
@@ -1170,7 +1170,7 @@ vhci_fd_write(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 
 		pkt->cursor += size;
 
-		if (pkt->cursor == pkt->size) {
+		if (pkt->cursor == pktsize) {
 			vhci_pkt_destroy(sc, pkt);
 			if (vxfer->npkts == 0) {
 				TAILQ_INSERT_TAIL(&vxferlist, vxfer, freelist);
@@ -1189,7 +1189,7 @@ out:
 		TAILQ_REMOVE(&vxferlist, vxfer, freelist);
 
 		mutex_enter(&sc->sc_lock);
-		xfer->ux_actlen = xfer->ux_length;
+		xfer->ux_actlen = ulmin(vxfer->resbuf.size, xfer->ux_length);
 		xfer->ux_status = USBD_NORMAL_COMPLETION;
 		usb_transfer_complete(xfer);
 		mutex_exit(&sc->sc_lock);

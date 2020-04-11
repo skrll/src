@@ -1346,9 +1346,9 @@ usbnet_empty_eaddr(struct usbnet * const un)
  * the un_eaddr[] is fully zero.
  */
 
+/* detach cv name */
 void
-usbnet_attach(struct usbnet *un,
-	      const char *detname)	/* detach cv name */
+usbnet_attach(struct usbnet *un, const char *detname)
 {
 	USBNETHIST_FUNC(); USBNETHIST_CALLED();
 

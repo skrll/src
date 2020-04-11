@@ -1,4 +1,4 @@
-/*	$NetBSD: xen_intr.c,v 1.18 2019/12/23 13:35:37 thorpej Exp $	*/
+/*	$NetBSD: xen_intr.c,v 1.21 2020/04/06 19:26:00 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001 The NetBSD Foundation, Inc.
@@ -30,13 +30,15 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xen_intr.c,v 1.18 2019/12/23 13:35:37 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xen_intr.c,v 1.21 2020/04/06 19:26:00 jdolecek Exp $");
+
+#include "opt_multiprocessor.h"
 
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/kmem.h>
-
 #include <sys/cpu.h>
+#include <sys/device.h>
 
 #include <xen/evtchn.h>
 #include <xen/xenfunc.h>
@@ -65,6 +67,10 @@ __KERNEL_RCSID(0, "$NetBSD: xen_intr.c,v 1.18 2019/12/23 13:35:37 thorpej Exp $"
 
 #if NPCI > 0
 #include <dev/pci/ppbreg.h>
+#endif
+
+#if defined(MULTIPROCESSOR)
+static const char *xen_ipi_names[XEN_NIPIS] = XEN_IPI_NAMES;
 #endif
 
 /*
@@ -160,17 +166,11 @@ xen_intr_establish_xname(int legacy_irq, struct pic *pic, int pin,
 	if (pic->pic_type == PIC_XEN) {
 		struct intrhand *rih;
 
-		/*
-		 * event_set_handler interprets `level != IPL_VM' to
-		 * mean MP-safe, so we require the caller to match that
-		 * for the moment.
-		 */
-		KASSERT(known_mpsafe == (level != IPL_VM));
-
 		intrstr = intr_create_intrid(legacy_irq, pic, pin, intrstr_buf,
 		    sizeof(intrstr_buf));
 
-		event_set_handler(pin, handler, arg, level, intrstr, xname);
+		event_set_handler(pin, handler, arg, level, intrstr, xname,
+		    known_mpsafe);
 
 		rih = kmem_zalloc(sizeof(*rih), cold ? KM_NOSLEEP : KM_SLEEP);
 		if (rih == NULL) {
@@ -231,7 +231,7 @@ xen_intr_establish_xname(int legacy_irq, struct pic *pic, int pin,
 	}
 
 	pih = pirq_establish(gsi, evtchn, handler, arg, level,
-			     intrstr, xname);
+			     intrstr, xname, known_mpsafe);
 	pih->pic_type = pic->pic_type;
 	return pih;
 #endif /* NPCI > 0 || NISA > 0 */
@@ -367,6 +367,12 @@ xen_cpu_intr_init(struct cpu_info *ci)
 	 */
 	ci->ci_intrstack = (char *)istack + redzone_const_or_zero(PAGE_SIZE) +
 	    INTRSTACKSIZE - 33 * sizeof(register_t);
+#endif
+
+#ifdef MULTIPROCESSOR
+	for (i = 0; i < XEN_NIPIS; i++)
+		evcnt_attach_dynamic(&ci->ci_ipi_events[i], EVCNT_TYPE_MISC,
+		    NULL, device_xname(ci->ci_dev), xen_ipi_names[i]);
 #endif
 
 	ci->ci_idepth = -1;

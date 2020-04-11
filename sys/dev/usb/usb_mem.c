@@ -1,4 +1,4 @@
-/*	$NetBSD: usb_mem.c,v 1.75 2020/03/15 14:19:04 skrll Exp $	*/
+/*	$NetBSD: usb_mem.c,v 1.76 2020/04/05 20:59:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb_mem.c,v 1.75 2020/03/15 14:19:04 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb_mem.c,v 1.76 2020/04/05 20:59:38 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -75,7 +75,7 @@ struct usb_frag_dma {
 };
 
 Static int	usb_block_allocmem(bus_dma_tag_t, size_t, size_t,
-		    usb_dma_block_t **);
+		    u_int, usb_dma_block_t **);
 Static void	usb_block_freemem(usb_dma_block_t *);
 
 LIST_HEAD(usb_dma_block_qh, usb_dma_block);
@@ -106,21 +106,27 @@ usb_mem_init(void)
 
 Static int
 usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
-    usb_dma_block_t **dmap)
+    u_int flags, usb_dma_block_t **dmap)
 {
 	usb_dma_block_t *b;
 	int error;
 
 	USBHIST_FUNC();
-	USBHIST_CALLARGS(usbdebug, "size=%ju align=%ju", size, align, 0, 0);
+	USBHIST_CALLARGS(usbdebug, "size=%ju align=%ju flags=%#jx", size, align, flags, 0);
 
 	ASSERT_SLEEPABLE();
 	KASSERT(size != 0);
 	KASSERT(mutex_owned(&usb_blk_lock));
 
+	bool coherent = (flags & USBMALLOC_COHERENT) != 0;
+	u_int dmaflags = coherent ? USB_DMA_COHERENT : 0;
+
 	/* First check the free list. */
 	LIST_FOREACH(b, &usb_blk_freelist, next) {
-		if (b->tag == tag && b->size >= size && b->align >= align) {
+		if (b->tag == tag &&
+		    b->size >= size &&
+		    b->align >= align &&
+		    (b->flags & USB_DMA_COHERENT) == dmaflags) {
 			LIST_REMOVE(b, next);
 			usb_blk_nfree--;
 			*dmap = b;
@@ -137,6 +143,7 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 	b->size = size;
 	b->align = align;
 	b->nsegs = howmany(size, PAGE_SIZE);
+	b->flags = dmaflags;
 	b->segs = kmem_alloc(b->nsegs * sizeof(*b->segs), KM_SLEEP);
 
 	error = bus_dmamem_alloc(tag, b->size, align, 0, b->segs, b->nsegs,
@@ -145,7 +152,7 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 		goto free0;
 
 	error = bus_dmamem_map(tag, b->segs, b->nsegs, b->size, &b->kaddr,
-	    BUS_DMA_WAITOK|BUS_DMA_COHERENT);
+	    BUS_DMA_WAITOK | (coherent ? BUS_DMA_COHERENT : 0));
 	if (error)
 		goto free1;
 
@@ -231,7 +238,8 @@ usb_block_freemem(usb_dma_block_t *b)
 }
 
 int
-usb_allocmem(struct usbd_bus *bus, size_t size, size_t align, usb_dma_t *p)
+usb_allocmem(struct usbd_bus *bus, size_t size, size_t align, u_int flags,
+    usb_dma_t *p)
 {
 	bus_dma_tag_t tag = bus->ub_dmatag;
 	usbd_status err;
@@ -246,17 +254,20 @@ usb_allocmem(struct usbd_bus *bus, size_t size, size_t align, usb_dma_t *p)
 
 	RUN_ONCE(&init_control, usb_mem_init);
 
+	u_int dmaflags = (flags & USBMALLOC_COHERENT) ? USB_DMA_COHERENT : 0;
+
 	/* If the request is large then just use a full block. */
 	if (size > USB_MEM_SMALL || align > USB_MEM_SMALL) {
 		DPRINTFN(1, "large alloc %jd", size, 0, 0, 0);
 		size = (size + USB_MEM_BLOCK - 1) & ~(USB_MEM_BLOCK - 1);
 		mutex_enter(&usb_blk_lock);
-		err = usb_block_allocmem(tag, size, align, &p->udma_block);
+		err = usb_block_allocmem(tag, size, align, flags,
+		    &p->udma_block);
 		if (!err) {
 #ifdef DEBUG
 			LIST_INSERT_HEAD(&usb_blk_fulllist, p->udma_block, next);
 #endif
-			p->udma_block->flags = USB_DMA_FULLBLOCK;
+			p->udma_block->flags = USB_DMA_FULLBLOCK | dmaflags;
 			p->udma_offs = 0;
 		}
 		mutex_exit(&usb_blk_lock);
@@ -269,12 +280,15 @@ usb_allocmem(struct usbd_bus *bus, size_t size, size_t align, usb_dma_t *p)
 		KDASSERTMSG(usb_valid_block_p(f->ufd_block, &usb_blk_fraglist),
 		    "%s: usb frag %p: unknown block pointer %p",
 		    __func__, f, f->ufd_block);
-		if (f->ufd_block->tag == tag)
+		if (f->ufd_block->tag == tag &&
+		    (f->ufd_block->flags & USB_DMA_COHERENT) == dmaflags)
 			break;
 	}
 	if (f == NULL) {
 		DPRINTFN(1, "adding fragments", 0, 0, 0, 0);
-		err = usb_block_allocmem(tag, USB_MEM_BLOCK, USB_MEM_SMALL, &b);
+
+		err = usb_block_allocmem(tag, USB_MEM_BLOCK, USB_MEM_SMALL,
+		    flags, &b);
 		if (err) {
 			mutex_exit(&usb_blk_lock);
 			return err;
@@ -380,6 +394,6 @@ void
 usb_syncmem(usb_dma_t *p, bus_addr_t offset, bus_size_t len, int ops)
 {
 
-	bus_dmamap_sync(p->udma_block->tag, p->udma_block->map, p->udma_offs + offset,
-	    len, ops);
+	bus_dmamap_sync(p->udma_block->tag, p->udma_block->map,
+	    p->udma_offs + offset, len, ops);
 }

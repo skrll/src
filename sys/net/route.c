@@ -1,4 +1,4 @@
-/*	$NetBSD: route.c,v 1.227 2020/02/01 12:54:50 riastradh Exp $	*/
+/*	$NetBSD: route.c,v 1.229 2020/04/08 03:37:14 knakahara Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.227 2020/02/01 12:54:50 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.229 2020/04/08 03:37:14 knakahara Exp $");
 
 #include <sys/param.h>
 #ifdef RTFLUSH_DEBUG
@@ -179,13 +179,13 @@ static void	rt_timer_timer(void *);
  *     - Make rtcache per-CPU and allow only accesses from softint
  *       (e.g., ipforward_rt_percpu)
  * - References to a rtentry is managed by reference counting and psref
- *   - Reference couting is used for temporal reference when a rtentry
+ *   - Reference counting is used for temporal reference when a rtentry
  *     is fetched from the routing table
  *   - psref is used for temporal reference when a rtentry is fetched
  *     from a rtcache
  *     - struct route (rtcache) has struct psref, so we cannot obtain
  *       a reference twice on the same struct route
- *   - Befere destroying or updating a rtentry, we have to wait for
+ *   - Before destroying or updating a rtentry, we have to wait for
  *     all references left (see below for details)
  *   - APIs
  *     - An obtained rtentry via rtalloc1 or rtrequest* must be

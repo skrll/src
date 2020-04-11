@@ -1,4 +1,4 @@
-/*	$NetBSD: ehci.c,v 1.277 2020/03/14 02:35:33 christos Exp $ */
+/*	$NetBSD: ehci.c,v 1.278 2020/04/05 20:59:38 skrll Exp $ */
 
 /*
  * Copyright (c) 2004-2012 The NetBSD Foundation, Inc.
@@ -53,7 +53,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.277 2020/03/14 02:35:33 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.278 2020/04/05 20:59:38 skrll Exp $");
 
 #include "ohci.h"
 #include "uhci.h"
@@ -516,7 +516,7 @@ ehci_init(ehci_softc_t *sc)
 	case 3: return EIO;
 	}
 	err = usb_allocmem(&sc->sc_bus, sc->sc_flsize * sizeof(ehci_link_t),
-	    EHCI_FLALIGN_ALIGN, &sc->sc_fldma);
+	    EHCI_FLALIGN_ALIGN, USBMALLOC_COHERENT, &sc->sc_fldma);
 	if (err)
 		return err;
 	DPRINTF("flsize=%jd", sc->sc_flsize, 0, 0, 0);
@@ -2002,7 +2002,7 @@ ehci_open(struct usbd_pipe *pipe)
 	switch (xfertype) {
 	case UE_CONTROL:
 		err = usb_allocmem(&sc->sc_bus, sizeof(usb_device_request_t),
-		    0, &epipe->ctrl.reqdma);
+		    0, USBMALLOC_COHERENT, &epipe->ctrl.reqdma);
 #ifdef EHCI_DEBUG
 		if (err)
 			printf("ehci_open: usb_allocmem()=%d\n", err);
@@ -2802,7 +2802,7 @@ ehci_alloc_sqh(ehci_softc_t *sc)
 		mutex_exit(&sc->sc_lock);
 
 		err = usb_allocmem(&sc->sc_bus, EHCI_SQH_SIZE * EHCI_SQH_CHUNK,
-		    EHCI_PAGE_SIZE, &dma);
+		    EHCI_PAGE_SIZE, USBMALLOC_COHERENT, &dma);
 #ifdef EHCI_DEBUG
 		if (err)
 			printf("ehci_alloc_sqh: usb_allocmem()=%d\n", err);
@@ -2854,8 +2854,9 @@ ehci_alloc_sqtd(ehci_softc_t *sc)
 		mutex_exit(&sc->sc_lock);
 
 		int err = usb_allocmem(&sc->sc_bus,
-		    EHCI_SQTD_SIZE * EHCI_SQTD_CHUNK,
-		    EHCI_PAGE_SIZE, &dma);
+		    EHCI_SQTD_SIZE*EHCI_SQTD_CHUNK,
+		    EHCI_PAGE_SIZE, USBMALLOC_COHERENT,
+		    &dma);
 #ifdef EHCI_DEBUG
 		if (err)
 			printf("ehci_alloc_sqtd: usb_allocmem()=%d\n", err);
@@ -3112,7 +3113,7 @@ ehci_alloc_itd(ehci_softc_t *sc)
 		DPRINTF("allocating chunk", 0, 0, 0, 0);
 		mutex_exit(&sc->sc_lock);
 		int err = usb_allocmem(&sc->sc_bus, EHCI_ITD_SIZE * EHCI_ITD_CHUNK,
-		    EHCI_PAGE_SIZE, &dma);
+		    EHCI_PAGE_SIZE, USBMALLOC_COHERENT, &dma);
 
 		if (err) {
 			DPRINTF("alloc returned %jd", err, 0, 0, 0);
@@ -3159,7 +3160,7 @@ ehci_alloc_sitd(ehci_softc_t *sc)
 		DPRINTF("allocating chunk", 0, 0, 0, 0);
 		mutex_exit(&sc->sc_lock);
 		int err = usb_allocmem(&sc->sc_bus, EHCI_SITD_SIZE * EHCI_SITD_CHUNK,
-		    EHCI_PAGE_SIZE, &dma);
+		    EHCI_PAGE_SIZE, USBMALLOC_COHERENT, &dma);
 
 		if (err) {
 			DPRINTF("alloc returned %jd", err, 0, 0,
