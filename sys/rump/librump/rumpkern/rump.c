@@ -1,4 +1,4 @@
-/*	$NetBSD: rump.c,v 1.340 2020/02/10 03:23:29 riastradh Exp $	*/
+/*	$NetBSD: rump.c,v 1.342 2020/02/22 21:45:34 ad Exp $	*/
 
 /*
  * Copyright (c) 2007-2011 Antti Kantee.  All Rights Reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rump.c,v 1.340 2020/02/10 03:23:29 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rump.c,v 1.342 2020/02/22 21:45:34 ad Exp $");
 
 #include <sys/systm.h>
 #define ELFSIZE ARCH_ELFSIZE
@@ -115,15 +115,6 @@ static  char rump_msgbuf[16*1024] __aligned(256);
 bool rump_ttycomponent = false;
 
 pool_cache_t pnbuf_cache;
-
-static void
-rump_aiodone_worker(struct work *wk, void *dummy)
-{
-	struct buf *bp = (struct buf *)wk;
-
-	KASSERT(&bp->b_work == wk);
-	bp->b_iodone(bp);
-}
 
 static int rump_inited;
 
@@ -420,6 +411,7 @@ rump_init(void)
 	procinit_sysctl();
 	time_init();
 	time_init2();
+	config_init();
 
 	/* start page baroness */
 	if (rump_threads) {
@@ -459,13 +451,6 @@ rump_init(void)
 		mutex_init(&tty_lock, MUTEX_DEFAULT, IPL_VM);
 
 	cold = 0;
-
-	/* aieeeedondest */
-	if (rump_threads) {
-		if (workqueue_create(&uvm.aiodone_queue, "aiodoned",
-		    rump_aiodone_worker, NULL, 0, 0, WQ_MPSAFE))
-			panic("aiodoned");
-	}
 
 	sysctl_finalize();
 

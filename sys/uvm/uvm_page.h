@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_page.h,v 1.97 2020/01/21 20:37:06 ad Exp $	*/
+/*	$NetBSD: uvm_page.h,v 1.99 2020/03/06 02:46:17 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -63,6 +63,10 @@
 
 #ifndef _UVM_UVM_PAGE_H_
 #define _UVM_UVM_PAGE_H_
+
+#ifdef _KERNEL_OPT
+#include "opt_uvm_page_trkown.h"
+#endif
 
 #include <uvm/uvm_extern.h>
 #include <uvm/uvm_pglist.h>
@@ -351,7 +355,7 @@ void uvm_pageunwire(struct vm_page *);
 void uvm_pagewire(struct vm_page *);
 void uvm_pagezero(struct vm_page *);
 bool uvm_pageismanaged(paddr_t);
-bool uvm_page_owner_locked_p(struct vm_page *);
+bool uvm_page_owner_locked_p(struct vm_page *, bool);
 void uvm_pgfl_lock(void);
 void uvm_pgfl_unlock(void);
 unsigned int uvm_pagegetdirty(struct vm_page *);

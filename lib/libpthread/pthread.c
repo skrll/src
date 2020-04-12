@@ -1,4 +1,4 @@
-/*	$NetBSD: pthread.c,v 1.164 2020/02/08 17:06:03 kamil Exp $	*/
+/*	$NetBSD: pthread.c,v 1.167 2020/02/16 17:45:11 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002, 2003, 2006, 2007, 2008, 2020
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: pthread.c,v 1.164 2020/02/08 17:06:03 kamil Exp $");
+__RCSID("$NetBSD: pthread.c,v 1.167 2020/02/16 17:45:11 kamil Exp $");
 
 #define	__EXPOSE_STACK	1
 

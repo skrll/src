@@ -1,4 +1,4 @@
-/*	$NetBSD: ehci.c,v 1.273 2020/02/15 01:21:56 riastradh Exp $ */
+/*	$NetBSD: ehci.c,v 1.275 2020/03/05 08:35:16 skrll Exp $ */
 
 /*
  * Copyright (c) 2004-2012 The NetBSD Foundation, Inc.
@@ -53,7 +53,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.273 2020/02/15 01:21:56 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.275 2020/03/05 08:35:16 skrll Exp $");
 
 #include "ohci.h"
 #include "uhci.h"
@@ -2913,7 +2913,7 @@ ehci_alloc_sqtd_chain(ehci_softc_t *sc, struct usbd_xfer *xfer,
 	KASSERT(alen != 0 || (!rd && (flags & USBD_FORCE_SHORT_XFER)));
 
 	size_t nsqtd = (!rd && (flags & USBD_FORCE_SHORT_XFER)) ? 1 : 0;
-	nsqtd += ((alen + EHCI_PAGE_SIZE - 1) / EHCI_PAGE_SIZE);
+	nsqtd += howmany(alen, EHCI_PAGE_SIZE);
 	exfer->ex_sqtds = kmem_zalloc(sizeof(ehci_soft_qtd_t *) * nsqtd,
 	    KM_SLEEP);
 	exfer->ex_nsqtd = nsqtd;
@@ -3061,7 +3061,7 @@ ehci_reset_sqtd_chain(ehci_softc_t *sc, struct usbd_xfer *xfer,
 
 		ehci_append_sqtd(sqtd, prev);
 
-		if (((curlen + mps - 1) / mps) & 1) {
+		if (howmany(curlen, mps) & 1) {
 			tog ^= 1;
 		}
 
@@ -3748,7 +3748,7 @@ Static void
 ehci_device_ctrl_close(struct usbd_pipe *pipe)
 {
 	ehci_softc_t *sc = EHCI_PIPE2SC(pipe);
-	/*struct ehci_pipe *epipe = EHCI_PIPE2EPIPE(pipe);*/
+	struct ehci_pipe * const epipe = EHCI_PIPE2EPIPE(pipe);
 
 	EHCIHIST_FUNC(); EHCIHIST_CALLED();
 
@@ -3757,6 +3757,8 @@ ehci_device_ctrl_close(struct usbd_pipe *pipe)
 	DPRINTF("pipe=%#jx", (uintptr_t)pipe, 0, 0, 0);
 
 	ehci_close_pipe(pipe, sc->sc_async_head);
+
+	usb_freemem(&sc->sc_bus, &epipe->ctrl.reqdma);
 }
 
 /*
@@ -4580,7 +4582,7 @@ ehci_device_isoc_init(struct usbd_xfer *xfer)
 	}
 
 	ufrperframe = uimax(1, USB_UFRAMES_PER_FRAME / (1 << (i - 1)));
-	frames = (xfer->ux_nframes + (ufrperframe - 1)) / ufrperframe;
+	frames = howmany(xfer->ux_nframes, ufrperframe);
 
 	for (i = 0, prev = NULL; i < frames; i++, prev = itd) {
 		itd = ehci_alloc_itd(sc);
@@ -4715,7 +4717,7 @@ ehci_device_isoc_transfer(struct usbd_xfer *xfer)
 	}
 
 	ufrperframe = uimax(1, USB_UFRAMES_PER_FRAME / (1 << (i - 1)));
-	frames = (xfer->ux_nframes + (ufrperframe - 1)) / ufrperframe;
+	frames = howmany(xfer->ux_nframes, ufrperframe);
 	uframes = USB_UFRAMES_PER_FRAME / ufrperframe;
 
 	if (frames == 0) {

@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.161 2020/02/05 07:37:36 skrll Exp $	*/
+/*	$NetBSD: pmap.h,v 1.163 2020/02/24 20:31:56 ad Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003 Wasabi Systems, Inc.
@@ -229,9 +229,8 @@ struct pmap_devmap {
  * The pmap structure itself
  */
 struct pmap {
-	struct uvm_object	pm_obj;
-	kmutex_t		pm_obj_lock;
-#define	pm_lock pm_obj.vmobjlock
+	kmutex_t		pm_lock;
+	u_int			pm_refs;
 #ifndef ARM_HAS_VBAR
 	pd_entry_t		*pm_pl1vec;
 	pd_entry_t		pm_l1vec;
@@ -557,8 +556,6 @@ pmap_ptesync(pt_entry_t *ptep, size_t cnt)
 #define l1pte_fpage_p(pde)	(((pde) & L1_TYPE_MASK) == L1_TYPE_F)
 #define l1pte_pa(pde)		((pde) & L1_C_ADDR_MASK)
 #define l1pte_index(v)		((vaddr_t)(v) >> L1_S_SHIFT)
-#define l1pte_pgindex(v)	l1pte_index((v) & L1_ADDR_BITS \
-		& ~(PAGE_SIZE * PAGE_SIZE / sizeof(pt_entry_t) - 1))
 
 static inline void
 l1pte_setone(pt_entry_t *pdep, pt_entry_t pde)

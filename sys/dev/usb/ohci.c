@@ -1,4 +1,4 @@
-/*	$NetBSD: ohci.c,v 1.295 2020/02/15 01:21:56 riastradh Exp $	*/
+/*	$NetBSD: ohci.c,v 1.298 2020/03/05 08:30:58 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2005, 2012 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.295 2020/02/15 01:21:56 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.298 2020/03/05 08:30:58 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -531,7 +531,7 @@ ohci_alloc_std_chain(ohci_softc_t *sc, struct usbd_xfer *xfer, int length, int r
 	KASSERT(length != 0 || (!rd && (flags & USBD_FORCE_SHORT_XFER)));
 
 	size_t nstd = (!rd && (flags & USBD_FORCE_SHORT_XFER)) ? 1 : 0;
-	nstd += ((length + OHCI_PAGE_SIZE - 1) / OHCI_PAGE_SIZE);
+	nstd += howmany(length, OHCI_PAGE_SIZE);
 	ox->ox_stds = kmem_zalloc(sizeof(ohci_soft_td_t *) * nstd,
 	    KM_SLEEP);
 	ox->ox_nstd = nstd;
@@ -2841,6 +2841,8 @@ ohci_device_ctrl_close(struct usbd_pipe *pipe)
 	DPRINTF("pipe=%#jx", (uintptr_t)pipe, 0, 0, 0);
 	ohci_close_pipe(pipe, sc->sc_ctrl_head);
 	ohci_free_std_locked(sc, opipe->tail.td);
+
+	usb_freemem(&sc->sc_bus, &opipe->ctrl.reqdma);
 }
 
 /************************/
@@ -3356,8 +3358,7 @@ ohci_device_isoc_init(struct usbd_xfer *xfer)
 	DPRINTFN(1, "xfer %#jx len %jd flags %jd", (uintptr_t)xfer,
 	    xfer->ux_length, xfer->ux_flags, 0);
 
-	const size_t nfsitd =
-	    (xfer->ux_nframes + OHCI_ITD_NOFFSET - 1) / OHCI_ITD_NOFFSET;
+	const size_t nfsitd = howmany(xfer->ux_nframes, OHCI_ITD_NOFFSET);
 	const size_t nbsitd = xfer->ux_bufsize / OHCI_PAGE_SIZE;
 	const size_t nsitd = MAX(nfsitd, nbsitd) + 1;
 
@@ -3510,7 +3511,6 @@ ohci_device_isoc_enter(struct usbd_xfer *xfer)
 			ncur = 0;
 		}
 		sitd->itd.itd_offset[ncur] = HTOO16(OHCI_ITD_MK_OFFS(offs));
-		/* XXX Sync */
 		offs = noffs;
 	}
 	KASSERT(j <= ox->ox_nsitd);

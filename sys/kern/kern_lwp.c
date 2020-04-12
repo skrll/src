@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_lwp.c,v 1.225 2020/02/11 06:09:48 dogcow Exp $	*/
+/*	$NetBSD: kern_lwp.c,v 1.229 2020/03/08 17:04:45 ad Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2019, 2020
@@ -80,7 +80,7 @@
  *	LWP.  The LWP may in fact be executing on a processor, may be
  *	sleeping or idle. It is expected to take the necessary action to
  *	stop executing or become "running" again within a short timeframe.
- *	The LW_RUNNING flag in lwp::l_flag indicates that an LWP is running.
+ *	The LP_RUNNING flag in lwp::l_pflag indicates that an LWP is running.
  *	Importantly, it indicates that its state is tied to a CPU.
  *
  *	LSZOMB:
@@ -211,7 +211,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_lwp.c,v 1.225 2020/02/11 06:09:48 dogcow Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_lwp.c,v 1.229 2020/03/08 17:04:45 ad Exp $");
 
 #include "opt_ddb.h"
 #include "opt_lockdebug.h"
@@ -677,12 +677,13 @@ lwp_wait(struct lwp *l, lwpid_t lid, lwpid_t *departed, bool exiting)
 		}
 
 		/*
-		 * If all other LWPs are waiting for exits or suspends
-		 * and the supply of zombies and potential zombies is
-		 * exhausted, then we are about to deadlock.
+		 * Break out if the process is exiting, or if all LWPs are
+		 * in _lwp_wait().  There are other ways to hang the process
+		 * with _lwp_wait(), but the sleep is interruptable so
+		 * little point checking for them.
 		 */
 		if ((p->p_sflag & PS_WEXIT) != 0 ||
-		    p->p_nrlwps + p->p_nzlwps - p->p_ndlwps <= p->p_nlwpwait) {
+		    p->p_nlwpwait == p->p_nlwps) {
 			error = EDEADLK;
 			break;
 		}
@@ -1044,16 +1045,26 @@ lwp_start(lwp_t *l, int flags)
 void
 lwp_startup(struct lwp *prev, struct lwp *new_lwp)
 {
+	kmutex_t *lock;
 
 	KASSERTMSG(new_lwp == curlwp, "l %p curlwp %p prevlwp %p", new_lwp, curlwp, prev);
 	KASSERT(kpreempt_disabled());
 	KASSERT(prev != NULL);
-	KASSERT((prev->l_flag & LW_RUNNING) != 0);
+	KASSERT((prev->l_pflag & LP_RUNNING) != 0);
 	KASSERT(curcpu()->ci_mtx_count == -2);
 
-	/* Immediately mark previous LWP as no longer running, and unlock. */
-	prev->l_flag &= ~LW_RUNNING;
-	lwp_unlock(prev);
+	/*
+	 * Immediately mark the previous LWP as no longer running and unlock
+	 * (to keep lock wait times short as possible).  If a zombie, don't
+	 * touch after clearing LP_RUNNING as it could be reaped by another
+	 * CPU.  Issue a memory barrier to ensure this.
+	 */
+	lock = prev->l_mutex;
+	if (__predict_false(prev->l_stat == LSZOMB)) {
+		membar_sync();
+	}
+	prev->l_pflag &= ~LP_RUNNING;
+	mutex_spin_exit(lock);
 
 	/* Correct spin mutex count after mi_switch(). */
 	curcpu()->ci_mtx_count = 0;
@@ -1224,8 +1235,6 @@ lwp_exit(struct lwp *l)
 	cpu_lwp_free(l, 0);
 
 	if (current) {
-		/* For the LW_RUNNING check in lwp_free(). */
-		membar_exit();
 		/* Switch away into oblivion. */
 		lwp_lock(l);
 		spc_lock(l->l_cpu);
@@ -1297,18 +1306,14 @@ lwp_free(struct lwp *l, bool recycle, bool last)
 		mutex_exit(p->p_lock);
 	}
 
-#ifdef MULTIPROCESSOR
 	/*
 	 * In the unlikely event that the LWP is still on the CPU,
-	 * then spin until it has switched away.  We need to release
-	 * all locks to avoid deadlock against interrupt handlers on
-	 * the target CPU.
+	 * then spin until it has switched away.
 	 */
-	membar_enter();
-	while (__predict_false((l->l_flag & LW_RUNNING) != 0)) {
+	membar_consumer();
+	while (__predict_false((l->l_pflag & LP_RUNNING) != 0)) {
 		SPINLOCK_BACKOFF_HOOK;
 	}
-#endif
 
 	/*
 	 * Destroy the LWP's remaining signal information.
@@ -1371,7 +1376,7 @@ lwp_migrate(lwp_t *l, struct cpu_info *tci)
 	KASSERT(tci != NULL);
 
 	/* If LWP is still on the CPU, it must be handled like LSONPROC */
-	if ((l->l_flag & LW_RUNNING) != 0) {
+	if ((l->l_pflag & LP_RUNNING) != 0) {
 		lstat = LSONPROC;
 	}
 
@@ -2023,6 +2028,40 @@ lwp_setprivate(struct lwp *l, void *ptr)
 	error = cpu_lwp_setprivate(l, ptr);
 #endif
 	return error;
+}
+
+/*
+ * Renumber the first and only LWP in a process on exec() or fork().
+ * Don't bother with p_treelock here as this is the only live LWP in
+ * the proc right now.
+ */
+void
+lwp_renumber(lwp_t *l, lwpid_t lid)
+{
+	lwp_t *l2 __diagused;
+	proc_t *p = l->l_proc;
+	int error;
+
+	KASSERT(p->p_nlwps == 1);
+
+	while (l->l_lid != lid) {
+		mutex_enter(p->p_lock);
+		error = radix_tree_insert_node(&p->p_lwptree, lid - 1, l);
+		if (error == 0) {
+			l2 = radix_tree_remove_node(&p->p_lwptree,
+			    (uint64_t)(l->l_lid - 1));
+			KASSERT(l2 == l);
+			p->p_nlwpid = lid + 1;
+			l->l_lid = lid;
+		}
+		mutex_exit(p->p_lock);
+
+		if (error == 0)
+			break;
+
+		KASSERT(error == ENOMEM);
+		radix_tree_await_memory();
+	}
 }
 
 #if defined(DDB)

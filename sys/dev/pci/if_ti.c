@@ -1,4 +1,4 @@
-/* $NetBSD: if_ti.c,v 1.114 2020/02/01 06:38:58 thorpej Exp $ */
+/* $NetBSD: if_ti.c,v 1.120 2020/03/05 15:45:48 msaitoh Exp $ */
 
 /*
  * Copyright (c) 1997, 1998, 1999
@@ -81,7 +81,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ti.c,v 1.114 2020/02/01 06:38:58 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ti.c,v 1.120 2020/03/05 15:45:48 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -123,6 +123,16 @@ __KERNEL_RCSID(0, "$NetBSD: if_ti.c,v 1.114 2020/02/01 06:38:58 thorpej Exp $");
 #include <dev/microcode/tigon/ti_fw.h>
 #include <dev/microcode/tigon/ti_fw2.h>
 
+#define	TI_HOSTADDR(x, y)						\
+	do {								\
+		(x).ti_addr_lo = (uint32_t)(y);				\
+		if (sizeof(bus_addr_t) == 8)				\
+			(x).ti_addr_hi =				\
+			    (uint32_t)(((uint64_t)(y) >> 32));		\
+		else							\
+			(x).ti_addr_hi = 0;				\
+	} while (/*CONSTCOND*/0)
+
 /*
  * Various supported device vendors/types and their names.
  */
@@ -140,6 +150,8 @@ static const struct ti_type ti_devs[] = {
 		"Netgear GA620 1000BASE-T Ethernet" },
 	{ PCI_VENDOR_SGI, PCI_PRODUCT_SGI_TIGON,
 		"Silicon Graphics Gigabit Ethernet" },
+	{ PCI_VENDOR_DEC, PCI_PRODUCT_DEC_PN9000SX,
+		"Farallon PN9000SX Gigabit Ethernet" },
 	{ 0, 0, NULL }
 };
 
@@ -216,7 +228,7 @@ ti_eeprom_putbyte(struct ti_softc *sc, int byte)
 	TI_SETBIT(sc, TI_MISC_LOCAL_CTL, TI_MLC_EE_TXEN);
 
 	/*
-	 * Feed in each bit and stobe the clock.
+	 * Feed in each bit and strobe the clock.
 	 */
 	for (i = 0x80; i; i >>= 1) {
 		if (byte & i) {
@@ -740,7 +752,7 @@ ti_newbuf_std(struct ti_softc *sc, int i, struct mbuf *m, bus_dmamap_t dmamap)
 
 	sc->ti_cdata.ti_rx_std_chain[i] = m_new;
 	r = &sc->ti_rdata->ti_rx_std_ring[i];
-	TI_HOSTADDR(r->ti_addr) = dmamap->dm_segs[0].ds_addr;
+	TI_HOSTADDR(r->ti_addr, dmamap->dm_segs[0].ds_addr);
 	r->ti_type = TI_BDTYPE_RECV_BD;
 	r->ti_flags = 0;
 	if (sc->ethercom.ec_if.if_capenable & IFCAP_CSUM_IPv4_Rx)
@@ -755,7 +767,7 @@ ti_newbuf_std(struct ti_softc *sc, int i, struct mbuf *m, bus_dmamap_t dmamap)
 }
 
 /*
- * Intialize a mini receive ring descriptor. This only applies to
+ * Initialize a mini receive ring descriptor. This only applies to
  * the Tigon 2.
  */
 static int
@@ -807,7 +819,7 @@ ti_newbuf_mini(struct ti_softc *sc, int i, struct mbuf *m, bus_dmamap_t dmamap)
 
 	r = &sc->ti_rdata->ti_rx_mini_ring[i];
 	sc->ti_cdata.ti_rx_mini_chain[i] = m_new;
-	TI_HOSTADDR(r->ti_addr) = dmamap->dm_segs[0].ds_addr;
+	TI_HOSTADDR(r->ti_addr, dmamap->dm_segs[0].ds_addr);
 	r->ti_type = TI_BDTYPE_RECV_BD;
 	r->ti_flags = TI_BDFLAG_MINI_RING;
 	if (sc->ethercom.ec_if.if_capenable & IFCAP_CSUM_IPv4_Rx)
@@ -866,8 +878,8 @@ ti_newbuf_jumbo(struct ti_softc *sc, int i, struct mbuf *m)
 	/* Set up the descriptor. */
 	r = &sc->ti_rdata->ti_rx_jumbo_ring[i];
 	sc->ti_cdata.ti_rx_jumbo_chain[i] = m_new;
-	TI_HOSTADDR(r->ti_addr) = sc->jumbo_dmaaddr +
-		(mtod(m_new, char *) - (char *)sc->ti_cdata.ti_jumbo_buf);
+	TI_HOSTADDR(r->ti_addr, sc->jumbo_dmaaddr +
+	    (mtod(m_new, char *) - (char *)sc->ti_cdata.ti_jumbo_buf));
 	r->ti_type = TI_BDTYPE_RECV_JUMBO_BD;
 	r->ti_flags = TI_BDFLAG_JUMBO_RING;
 	if (sc->ethercom.ec_if.if_capenable & IFCAP_CSUM_IPv4_Rx)
@@ -896,7 +908,7 @@ ti_init_rx_ring_std(struct ti_softc *sc)
 	for (i = 0; i < TI_SSLOTS; i++) {
 		if (ti_newbuf_std(sc, i, NULL, 0) == ENOBUFS)
 			return (ENOBUFS);
-	};
+	}
 
 	TI_UPDATE_STDPROD(sc, i - 1);
 	sc->ti_std = i - 1;
@@ -934,7 +946,7 @@ ti_init_rx_ring_jumbo(struct ti_softc *sc)
 	for (i = 0; i < TI_JUMBO_RX_RING_CNT; i++) {
 		if (ti_newbuf_jumbo(sc, i, NULL) == ENOBUFS)
 			return (ENOBUFS);
-	};
+	}
 
 	TI_UPDATE_JUMBOPROD(sc, i - 1);
 	sc->ti_jumbo = i - 1;
@@ -967,7 +979,7 @@ ti_init_rx_ring_mini(struct ti_softc *sc)
 	for (i = 0; i < TI_MSLOTS; i++) {
 		if (ti_newbuf_mini(sc, i, NULL, 0) == ENOBUFS)
 			return (ENOBUFS);
-	};
+	}
 
 	TI_UPDATE_MINIPROD(sc, i - 1);
 	sc->ti_mini = i - 1;
@@ -1414,10 +1426,10 @@ ti_gibinit(struct ti_softc *sc)
 	/* Set up the event ring and producer pointer. */
 	rcb = &sc->ti_rdata->ti_info.ti_ev_rcb;
 
-	TI_HOSTADDR(rcb->ti_hostaddr) = TI_CDEVENTADDR(sc, 0);
+	TI_HOSTADDR(rcb->ti_hostaddr, TI_CDEVENTADDR(sc, 0));
 	rcb->ti_flags = 0;
-	TI_HOSTADDR(sc->ti_rdata->ti_info.ti_ev_prodidx_ptr) =
-	    TI_CDEVPRODADDR(sc);
+	TI_HOSTADDR(sc->ti_rdata->ti_info.ti_ev_prodidx_ptr,
+	    TI_CDEVPRODADDR(sc));
 
 	sc->ti_ev_prodidx.ti_idx = 0;
 	CSR_WRITE_4(sc, TI_GCR_EVENTCONS_IDX, 0);
@@ -1426,7 +1438,7 @@ ti_gibinit(struct ti_softc *sc)
 	/* Set up the command ring and producer mailbox. */
 	rcb = &sc->ti_rdata->ti_info.ti_cmd_rcb;
 
-	TI_HOSTADDR(rcb->ti_hostaddr) = TI_GCR_NIC_ADDR(TI_GCR_CMDRING);
+	TI_HOSTADDR(rcb->ti_hostaddr, TI_GCR_NIC_ADDR(TI_GCR_CMDRING));
 	rcb->ti_flags = 0;
 	rcb->ti_max_len = 0;
 	for (i = 0; i < TI_CMD_RING_CNT; i++) {
@@ -1441,12 +1453,12 @@ ti_gibinit(struct ti_softc *sc)
 	 * We re-use the current stats buffer for this to
 	 * conserve memory.
 	 */
-	TI_HOSTADDR(sc->ti_rdata->ti_info.ti_refresh_stats_ptr) =
-	    TI_CDSTATSADDR(sc);
+	TI_HOSTADDR(sc->ti_rdata->ti_info.ti_refresh_stats_ptr,
+	    TI_CDSTATSADDR(sc));
 
 	/* Set up the standard receive ring. */
 	rcb = &sc->ti_rdata->ti_info.ti_std_rx_rcb;
-	TI_HOSTADDR(rcb->ti_hostaddr) = TI_CDRXSTDADDR(sc, 0);
+	TI_HOSTADDR(rcb->ti_hostaddr, TI_CDRXSTDADDR(sc, 0));
 	rcb->ti_max_len = ETHER_MAX_LEN;
 	rcb->ti_flags = 0;
 	if (ifp->if_capenable & IFCAP_CSUM_IPv4_Rx)
@@ -1458,7 +1470,7 @@ ti_gibinit(struct ti_softc *sc)
 
 	/* Set up the jumbo receive ring. */
 	rcb = &sc->ti_rdata->ti_info.ti_jumbo_rx_rcb;
-	TI_HOSTADDR(rcb->ti_hostaddr) = TI_CDRXJUMBOADDR(sc, 0);
+	TI_HOSTADDR(rcb->ti_hostaddr, TI_CDRXJUMBOADDR(sc, 0));
 	rcb->ti_max_len = ETHER_MAX_LEN_JUMBO;
 	rcb->ti_flags = 0;
 	if (ifp->if_capenable & IFCAP_CSUM_IPv4_Rx)
@@ -1474,7 +1486,7 @@ ti_gibinit(struct ti_softc *sc)
 	 * still there on the Tigon 1.
 	 */
 	rcb = &sc->ti_rdata->ti_info.ti_mini_rx_rcb;
-	TI_HOSTADDR(rcb->ti_hostaddr) = TI_CDRXMINIADDR(sc, 0);
+	TI_HOSTADDR(rcb->ti_hostaddr, TI_CDRXMINIADDR(sc, 0));
 	rcb->ti_max_len = MHLEN - ETHER_ALIGN;
 	if (sc->ti_hwrev == TI_HWREV_TIGON)
 		rcb->ti_flags = TI_RCB_FLAG_RING_DISABLED;
@@ -1491,11 +1503,11 @@ ti_gibinit(struct ti_softc *sc)
 	 * Set up the receive return ring.
 	 */
 	rcb = &sc->ti_rdata->ti_info.ti_return_rcb;
-	TI_HOSTADDR(rcb->ti_hostaddr) = TI_CDRXRTNADDR(sc, 0);
+	TI_HOSTADDR(rcb->ti_hostaddr, TI_CDRXRTNADDR(sc, 0));
 	rcb->ti_flags = 0;
 	rcb->ti_max_len = TI_RETURN_RING_CNT;
-	TI_HOSTADDR(sc->ti_rdata->ti_info.ti_return_prodidx_ptr) =
-	    TI_CDRTNPRODADDR(sc);
+	TI_HOSTADDR(sc->ti_rdata->ti_info.ti_return_prodidx_ptr,
+	    TI_CDRTNPRODADDR(sc));
 
 	/*
 	 * Set up the tx ring. Note: for the Tigon 2, we have the option
@@ -1532,11 +1544,11 @@ ti_gibinit(struct ti_softc *sc)
 		rcb->ti_flags |= TI_RCB_FLAG_VLAN_ASSIST;
 	rcb->ti_max_len = TI_TX_RING_CNT;
 	if (sc->ti_hwrev == TI_HWREV_TIGON)
-		TI_HOSTADDR(rcb->ti_hostaddr) = TI_TX_RING_BASE;
+		TI_HOSTADDR(rcb->ti_hostaddr, TI_TX_RING_BASE);
 	else
-		TI_HOSTADDR(rcb->ti_hostaddr) = TI_CDTXADDR(sc, 0);
-	TI_HOSTADDR(sc->ti_rdata->ti_info.ti_tx_considx_ptr) =
-	    TI_CDTXCONSADDR(sc);
+		TI_HOSTADDR(rcb->ti_hostaddr, TI_CDTXADDR(sc, 0));
+	TI_HOSTADDR(sc->ti_rdata->ti_info.ti_tx_considx_ptr,
+	    TI_CDTXCONSADDR(sc));
 
 	/*
 	 * We're done frobbing the General Information Block.  Sync
@@ -1728,7 +1740,10 @@ ti_attach(device_t parent, device_t self, void *aux)
 	 */
 	aprint_normal_dev(self, "Ethernet address %s\n", ether_sprintf(eaddr));
 
-	sc->sc_dmat = pa->pa_dmat;
+	if (pci_dma64_available(pa))
+		sc->sc_dmat = pa->pa_dmat64;
+	else
+		sc->sc_dmat = pa->pa_dmat;
 
 	/* Allocate the general information block and ring buffers. */
 	if ((error = bus_dmamem_alloc(sc->sc_dmat,
@@ -2019,10 +2034,8 @@ ti_rxeof(struct ti_softc *sc)
 			break;
 		}
 
-		if (cur_rx->ti_flags & TI_BDFLAG_VLAN_TAG) {
-			/* ti_vlan_tag also has the priority, trim it */
-			vlan_set_tag(m, cur_rx->ti_vlan_tag & 0x0fff);
-		}
+		if (cur_rx->ti_flags & TI_BDFLAG_VLAN_TAG)
+			vlan_set_tag(m, cur_rx->ti_vlan_tag);
 
 		if_percpuq_enqueue(ifp->if_percpuq, m);
 	}
@@ -2185,7 +2198,7 @@ ti_stats_update(struct ti_softc *sc)
 
 	TI_CDSTATSSYNC(sc, BUS_DMASYNC_POSTREAD);
 
-	uint64_t collisions = 
+	uint64_t collisions =
 	   (sc->ti_rdata->ti_info.ti_stats.dot3StatsSingleCollisionFrames +
 	    sc->ti_rdata->ti_info.ti_stats.dot3StatsMultipleCollisionFrames +
 	    sc->ti_rdata->ti_info.ti_stats.dot3StatsExcessiveCollisions +
@@ -2197,7 +2210,7 @@ ti_stats_update(struct ti_softc *sc)
 }
 
 /*
- * Encapsulate an mbuf chain in the tx ring  by coupling the mbuf data
+ * Encapsulate an mbuf chain in the tx ring by coupling the mbuf data
  * pointers to descriptors.
  */
 static int
@@ -2260,7 +2273,7 @@ ti_encap_tigon1(struct ti_softc *sc, struct mbuf *m_head, uint32_t *txidx)
 		f = &sc->ti_tx_ring_nic[frag % 128];
 		if (sc->ti_cdata.ti_tx_chain[frag] != NULL)
 			break;
-		TI_HOSTADDR(f->ti_addr) = dmamap->dm_segs[i].ds_addr;
+		TI_HOSTADDR(f->ti_addr, dmamap->dm_segs[i].ds_addr);
 		f->ti_len = dmamap->dm_segs[i].ds_len;
 		f->ti_flags = csum_flags;
 		if (vlan_has_tag(m_head)) {
@@ -2351,7 +2364,7 @@ ti_encap_tigon2(struct ti_softc *sc, struct mbuf *m_head, uint32_t *txidx)
 		f = &sc->ti_rdata->ti_tx_ring[frag];
 		if (sc->ti_cdata.ti_tx_chain[frag] != NULL)
 			break;
-		TI_HOSTADDR(f->ti_addr) = dmamap->dm_segs[i].ds_addr;
+		TI_HOSTADDR(f->ti_addr, dmamap->dm_segs[i].ds_addr);
 		f->ti_len = dmamap->dm_segs[i].ds_len;
 		f->ti_flags = csum_flags;
 		if (vlan_has_tag(m_head)) {
@@ -2676,7 +2689,7 @@ ti_ifmedia_sts(struct ifnet *ifp, struct ifmediareq *ifmr)
 static int
 ti_ether_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
-	struct ifaddr *ifa = (struct ifaddr *) data;
+	struct ifaddr *ifa = (struct ifaddr *)data;
 	struct ti_softc *sc = ifp->if_softc;
 
 	if ((ifp->if_flags & IFF_UP) == 0) {
@@ -2709,7 +2722,7 @@ static int
 ti_ioctl(struct ifnet *ifp, u_long command, void *data)
 {
 	struct ti_softc		*sc = ifp->if_softc;
-	struct ifreq		*ifr = (struct ifreq *) data;
+	struct ifreq		*ifr = (struct ifreq *)data;
 	int			s, error = 0;
 	struct ti_cmd_desc	cmd;
 

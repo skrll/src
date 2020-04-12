@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.666 2020/01/31 12:09:13 knakahara Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.668 2020/02/18 04:07:14 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.666 2020/01/31 12:09:13 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.668 2020/02/18 04:07:14 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -8666,7 +8666,7 @@ wm_txeof(struct wm_txqueue *txq, u_int limit)
 				log(LOG_WARNING, "%s: late collision\n",
 				    device_xname(sc->sc_dev));
 			else if (status & WTX_ST_EC) {
-				if_statadd(ifp, if_collisions, 
+				if_statadd(ifp, if_collisions,
 				    TX_COLLISION_THRESHOLD + 1);
 				log(LOG_WARNING, "%s: excessive collisions\n",
 				    device_xname(sc->sc_dev));
@@ -15355,12 +15355,13 @@ wm_enable_wakeup(struct wm_softc *sc)
 pme:
 	/* Request PME */
 	pmode = pci_conf_read(sc->sc_pc, sc->sc_pcitag, pmreg + PCI_PMCSR);
+	pmode |= PCI_PMCSR_PME_STS; /* in case it's already set (W1C) */
 	if ((rv == 0) && (sc->sc_flags & WM_F_WOL) != 0) {
 		/* For WOL */
-		pmode |= PCI_PMCSR_PME_STS | PCI_PMCSR_PME_EN;
+		pmode |= PCI_PMCSR_PME_EN;
 	} else {
 		/* Disable WOL */
-		pmode &= ~(PCI_PMCSR_PME_STS | PCI_PMCSR_PME_EN);
+		pmode &= ~PCI_PMCSR_PME_EN;
 	}
 	pci_conf_write(sc->sc_pc, sc->sc_pcitag, pmreg + PCI_PMCSR, pmode);
 }

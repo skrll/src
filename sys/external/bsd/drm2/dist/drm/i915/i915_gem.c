@@ -1,4 +1,4 @@
-/*	$NetBSD: i915_gem.c,v 1.59 2020/02/14 14:34:58 maya Exp $	*/
+/*	$NetBSD: i915_gem.c,v 1.61 2020/02/23 15:46:40 ad Exp $	*/
 
 /*
  * Copyright © 2008-2015 Intel Corporation
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i915_gem.c,v 1.59 2020/02/14 14:34:58 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i915_gem.c,v 1.61 2020/02/23 15:46:40 ad Exp $");
 
 #ifdef __NetBSD__
 #if 0				/* XXX uvmhist option?  */
@@ -2010,7 +2010,7 @@ i915_gem_fault(struct uvm_faultinfo *ufi, vaddr_t vaddr, struct vm_page **pps,
 	intel_runtime_pm_get(dev_priv);
 
 	/* Thanks, uvm, but we don't need this lock.  */
-	mutex_exit(uobj->vmobjlock);
+	rw_exit(uobj->vmobjlock);
 
 	ret = i915_mutex_lock_interruptible(dev);
 	if (ret)
@@ -2050,10 +2050,8 @@ unpin:
 unlock:
 	mutex_unlock(&dev->struct_mutex);
 out:
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 	uvmfault_unlockall(ufi, ufi->entry->aref.ar_amap, uobj);
-	if (ret == -ERESTART)
-		uvm_wait("i915flt");
 
 	/*
 	 * Remap EINTR to success, so that we return to userland.
@@ -2087,7 +2085,7 @@ i915_udv_fault(struct uvm_faultinfo *ufi, vaddr_t vaddr, struct vm_page **pps,
 	off_t curr_offset;
 	paddr_t paddr;
 	u_int mmapflags;
-	int lcv, retval;
+	int lcv;
 	vm_prot_t mapprot;
 	UVMHIST_FUNC("i915_udv_fault"); UVMHIST_CALLED(maphist);
 	UVMHIST_LOG(maphist,"  flags=%jd", flags,0,0,0);
@@ -2119,7 +2117,6 @@ i915_udv_fault(struct uvm_faultinfo *ufi, vaddr_t vaddr, struct vm_page **pps,
 	 * loop over the page range entering in as needed
 	 */
 
-	retval = 0;
 	for (lcv = 0 ; lcv < npages ; lcv++, curr_offset += PAGE_SIZE,
 	    curr_va += PAGE_SIZE) {
 		if ((flags & PGO_ALLPAGES) == 0 && lcv != centeridx)
@@ -2147,12 +2144,12 @@ i915_udv_fault(struct uvm_faultinfo *ufi, vaddr_t vaddr, struct vm_page **pps,
 			 * XXX case.
 			 */
 			pmap_update(ufi->orig_map->pmap);	/* sync what we have so far */
-			return (ERESTART);
+			return ENOMEM;
 		}
 	}
 
 	pmap_update(ufi->orig_map->pmap);
-	return (retval);
+	return 0;
 }
 #else
 /**
@@ -2552,7 +2549,7 @@ i915_gem_object_truncate(struct drm_i915_gem_object *obj)
 
 		if (uobj != NULL) {
 			/* XXX Calling pgo_put like this is bogus.  */
-			mutex_enter(uobj->vmobjlock);
+			rw_enter(uobj->vmobjlock, RW_WRITER);
 			(*uobj->pgops->pgo_put)(uobj, 0, obj->base.size,
 			    (PGO_ALLPAGES | PGO_FREE));
 		}
@@ -2590,7 +2587,7 @@ i915_gem_object_invalidate(struct drm_i915_gem_object *obj)
 
 #ifdef __NetBSD__
 	uobj = obj->base.filp;
-	mutex_enter(uobj->vmobjlock);
+	rw_enter(uobj->vmobjlock, RW_WRITER);
 	(*uobj->pgops->pgo_put)(uobj, 0, obj->base.size,
 	    PGO_ALLPAGES|PGO_DEACTIVATE|PGO_CLEANIT);
 #else
@@ -2627,12 +2624,12 @@ i915_gem_object_put_pages_gtt(struct drm_i915_gem_object *obj)
 		obj->dirty = 0;
 
 	if (obj->dirty) {
-		mutex_enter(obj->base.filp->vmobjlock);
+		rw_enter(obj->base.filp->vmobjlock, RW_WRITER);
 		TAILQ_FOREACH(page, &obj->pageq, pageq.queue) {
 			uvm_pagemarkdirty(page, UVM_PAGE_STATUS_DIRTY);
 			/* XXX mark page accessed */
 		}
-		mutex_exit(obj->base.filp->vmobjlock);
+		rw_exit(obj->base.filp->vmobjlock);
 	}
 	obj->dirty = 0;
 

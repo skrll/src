@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1255 2020/02/08 07:07:07 maxv Exp $
+#	$NetBSD: files,v 1.1261 2020/03/08 00:18:41 christos Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -164,7 +164,17 @@ defflag				COMPAT_FREEBSD: COMPAT_09, COMPAT_43
 defflag				COMPAT_LINUX: COMPAT_NETBSD, COMPAT_43
 defflag				COMPAT_SUNOS: COMPAT_09, COMPAT_43
 defflag				COMPAT_ULTRIX: COMPAT_50
+
+# mips64 and aarch64 have COMPAT_NETBSD32 but cannot have EXEC_AOUT; all
+# other users of COMPAT_NETBSD32 need EXEC_AOUT
+ifdef mips
 defflag				COMPAT_NETBSD32
+elifdef aarch64
+defflag				COMPAT_NETBSD32
+else
+defflag				COMPAT_NETBSD32	: EXEC_AOUT
+endif
+
 defflag				COMPAT_SYSV
 defflag				SYSV_IPC	: SYSVSHM, SYSVSEM, SYSVMSG
 defflag				COMPAT_NETBSD32_SYSVIPC : SYSV_IPC,
@@ -1469,6 +1479,10 @@ file	dev/ic/dw_hdmi_phy.c		dwhdmi
 # Analogix DisplayPort
 device	anxdp: edid, videomode, drmkms, drmkms_i2c
 file	dev/ic/anx_dp.c			anxdp
+
+# Broadcom GENET v5 ethernet
+device	genet: arp, ether, ifnet, mii
+file	dev/ic/bcmgenet.c		genet
 
 #
 # File systems

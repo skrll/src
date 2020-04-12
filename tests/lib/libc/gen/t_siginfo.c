@@ -1,4 +1,4 @@
-/* $NetBSD: t_siginfo.c,v 1.37 2020/02/11 03:11:42 riastradh Exp $ */
+/* $NetBSD: t_siginfo.c,v 1.39 2020/02/22 19:09:51 kamil Exp $ */
 
 /*-
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -53,6 +53,7 @@
 
 #include "isqemu.h"
 
+#ifdef ENABLE_TESTS
 /* for sigbus */
 volatile char *addr;
 
@@ -496,9 +497,25 @@ ATF_TC_BODY(sigbus_adraln, tc)
 	atf_tc_fail("Test did not fault as expected");
 }
 
+#else
+ATF_TC(dummy);
+ATF_TC_HEAD(dummy, tc)
+{
+	atf_tc_set_md_var(tc, "descr", "A dummy test");
+}
+
+ATF_TC_BODY(dummy, tc)
+{
+
+	// Dummy, skipped
+	// The ATF framework requires at least a single defined test.
+}
+#endif
+
 ATF_TP_ADD_TCS(tp)
 {
 
+#ifdef ENABLE_TESTS
 	ATF_TP_ADD_TC(tp, sigalarm);
 	ATF_TP_ADD_TC(tp, sigchild_normal);
 	ATF_TP_ADD_TC(tp, sigchild_dump);
@@ -507,6 +524,9 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sigfpe_int);
 	ATF_TP_ADD_TC(tp, sigsegv);
 	ATF_TP_ADD_TC(tp, sigbus_adraln);
+#else
+	ATF_TP_ADD_TC(tp, dummy);
+#endif
 
 	return atf_no_error();
 }

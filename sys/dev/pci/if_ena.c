@@ -31,7 +31,7 @@
 #if 0
 __FBSDID("$FreeBSD: head/sys/dev/ena/ena.c 333456 2018-05-10 09:37:54Z mw $");
 #endif
-__KERNEL_RCSID(0, "$NetBSD: if_ena.c,v 1.22 2020/02/07 00:04:28 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ena.c,v 1.24 2020/03/03 21:42:31 jdolecek Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1561,7 +1561,7 @@ ena_rx_mbuf(struct ena_ring *rx_ring, struct ena_com_rx_buf_info *ena_bufs,
 	ena_rx_hash_mbuf(rx_ring, ena_rx_ctx, mbuf);
 #endif
 
-	ena_trace(ENA_DBG | ENA_RXPTH, "rx mbuf 0x%p, flags=0x%x, len: %d",
+	ena_trace(ENA_DBG | ENA_RXPTH, "rx mbuf %p, flags=0x%x, len: %d",
 	    mbuf, mbuf->m_flags, mbuf->m_pkthdr.len);
 
 	/* DMA address is not needed anymore, unmap it */
@@ -2079,9 +2079,7 @@ err:
 	kcpuset_destroy(affinity);
 
 	for (i--; i >= 0; i--) {
-#if defined(DEBUG) || defined(DIAGNOSTIC)
-		int irq_slot = i + irq_off;
-#endif
+		int irq_slot __diagused = i + irq_off;
 		KASSERT(adapter->sc_ihs[irq_slot] != NULL);
 		pci_intr_disestablish(adapter->sc_pa.pa_pc, adapter->sc_ihs[i]);
 		adapter->sc_ihs[i] = NULL;

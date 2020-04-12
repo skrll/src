@@ -1,4 +1,4 @@
-/*	$NetBSD: dm9000var.h,v 1.3 2018/04/19 21:50:08 christos Exp $	*/
+/*	$NetBSD: dm9000var.h,v 1.5 2020/03/05 15:18:55 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2009 Paul Fleischer
