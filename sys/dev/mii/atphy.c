@@ -1,4 +1,4 @@
-/*	$NetBSD: atphy.c,v 1.28 2020/03/13 04:44:34 msaitoh Exp $ */
+/*	$NetBSD: atphy.c,v 1.30 2020/03/15 23:04:50 thorpej Exp $ */
 /*	$OpenBSD: atphy.c,v 1.1 2008/09/25 20:47:16 brad Exp $	*/
 
 /*-
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atphy.c,v 1.28 2020/03/13 04:44:34 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atphy.c,v 1.30 2020/03/15 23:04:50 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -200,6 +200,8 @@ atphy_attach(device_t parent, device_t self, void *aux)
 	if (asc->mii_clk_25m != 0)
 		atphy_clk_25m(asc);
 
+	mii_lock(mii);
+
 	PHY_RESET(sc);
 
 	PHY_READ(sc, MII_BMSR, &bmsr);
@@ -207,6 +209,8 @@ atphy_attach(device_t parent, device_t self, void *aux)
 	sc->mii_capabilities = bmsr & ma->mii_capmask;
 	if (atphy_is_gige(mpd) && (sc->mii_capabilities & BMSR_EXTSTAT))
 		PHY_READ(sc, MII_EXTSR, &sc->mii_extcapabilities);
+
+	mii_unlock(mii);
 
 	mii_phy_add_media(sc);
 }
@@ -216,6 +220,8 @@ atphy_service(struct mii_softc *sc, struct mii_data *mii, int cmd)
 {
 	struct ifmedia_entry *ife = mii->mii_media.ifm_cur;
 	uint16_t anar, bmcr, bmsr;
+
+	KASSERT(mii_locked(mii));
 
 	switch (cmd) {
 	case MII_POLLSTAT:
@@ -338,6 +344,8 @@ atphy_status(struct mii_softc *sc)
 	struct mii_data *mii = sc->mii_pdata;
 	uint16_t bmsr, bmcr, gsr, ssr;
 
+	KASSERT(mii_locked(mii));
+
 	mii->mii_media_status = IFM_AVALID;
 	mii->mii_media_active = IFM_ETHER;
 
@@ -404,10 +412,32 @@ atphy_reset(struct mii_softc *sc)
 	uint16_t reg;
 	int i;
 
-	/* Take PHY out of power down mode. */
+	KASSERT(mii_locked(sc->mii_pdata));
+
+	/*
+	 * Take PHY out of power down mode.
+	 *
+	 * XXX AR8021 document has no description about the power saving
+	 * control register. Shouldn't we write it?
+	 */
 	PHY_WRITE(sc, 29, 0x29);
+	/*
+	 * XXX AR8031 document says the lower 14 bits are reserved and the
+	 * default value is 0x36d0. Shouldn't we clear those bits?
+	 * I have no document neither L1(F1) nor L2(F2).
+	 */
 	PHY_WRITE(sc, 30, 0);
 
+	if ((sc->mii_mpd_model == MII_MODEL_ATTANSIC_L2)
+	    && (sc->mii_mpd_rev == 1)) {
+		/*
+		 * On NVIDIA MCP61 with Attansic L2 rev. 1, changing debug
+		 * port 0x29's value makes the next PHY read fail with error.
+		 * This is observed on ASUS M2N-MX SE Plus. Read any register
+		 * to ignore this problem.
+		 */
+		(void)PHY_READ(sc, ATPHY_SCR, &reg);
+	}
 	PHY_READ(sc, ATPHY_SCR, &reg);
 	/* Enable automatic crossover. */
 	reg |= ATPHY_SCR_AUTO_X_MODE;
@@ -447,6 +477,8 @@ static int
 atphy_mii_phy_auto(struct mii_softc *sc)
 {
 	uint16_t anar;
+
+	KASSERT(mii_locked(sc->mii_pdata));
 
 	sc->mii_ticks = 0;
 	anar = BMSR_MEDIA_TO_ANAR(sc->mii_capabilities) | ANAR_CSMA;

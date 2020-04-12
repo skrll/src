@@ -1,4 +1,4 @@
-/*	$NetBSD: if_sip.c,v 1.180 2020/03/13 00:45:59 thorpej Exp $	*/
+/*	$NetBSD: if_sip.c,v 1.182 2020/03/16 01:54:23 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -73,7 +73,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_sip.c,v 1.180 2020/03/13 00:45:59 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_sip.c,v 1.182 2020/03/16 01:54:23 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -248,7 +248,6 @@ struct sip_softc {
 	/*
 	 * Event counters.
 	 */
-	struct evcnt sc_ev_txsstall;	/* Tx stalled due to no txs */
 	struct evcnt sc_ev_txdstall;	/* Tx stalled due to no txd */
 	struct evcnt sc_ev_txforceintr;	/* Tx interrupts forced */
 	struct evcnt sc_ev_txdintr;	/* Tx descriptor interrupts */
@@ -973,7 +972,6 @@ sipcom_do_detach(device_t self, enum sip_attach_stage stage)
 		 */
 		evcnt_detach(&sc->sc_ev_txforceintr);
 		evcnt_detach(&sc->sc_ev_txdstall);
-		evcnt_detach(&sc->sc_ev_txsstall);
 		evcnt_detach(&sc->sc_ev_hiberr);
 		evcnt_detach(&sc->sc_ev_rxintr);
 		evcnt_detach(&sc->sc_ev_txiintr);
@@ -1432,8 +1430,6 @@ sipcom_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Attach event counters.
 	 */
-	evcnt_attach_dynamic(&sc->sc_ev_txsstall, EVCNT_TYPE_MISC,
-	    NULL, device_xname(sc->sc_dev), "txsstall");
 	evcnt_attach_dynamic(&sc->sc_ev_txdstall, EVCNT_TYPE_MISC,
 	    NULL, device_xname(sc->sc_dev), "txdstall");
 	evcnt_attach_dynamic(&sc->sc_ev_txforceintr, EVCNT_TYPE_INTR,
@@ -1557,9 +1553,9 @@ sipcom_start(struct ifnet *ifp)
 	 * If we've been told to pause, don't transmit any more packets.
 	 */
 	if (!sc->sc_gigabit && sc->sc_paused)
-		ifp->if_flags |= IFF_OACTIVE;
+		return;
 
-	if ((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
+	if ((ifp->if_flags & IFF_RUNNING) != IFF_RUNNING)
 		return;
 
 	/*
@@ -1567,13 +1563,7 @@ sipcom_start(struct ifnet *ifp)
 	 * until we drain the queue, or use up all available transmit
 	 * descriptors.
 	 */
-	for (;;) {
-		/* Get a work queue entry. */
-		if ((txs = SIMPLEQ_FIRST(&sc->sc_txfreeq)) == NULL) {
-			SIP_EVCNT_INCR(&sc->sc_ev_txsstall);
-			break;
-		}
-
+	while ((txs = SIMPLEQ_FIRST(&sc->sc_txfreeq)) != NULL) {
 		/*
 		 * Grab a packet off the queue.
 		 */
@@ -1647,15 +1637,8 @@ sipcom_start(struct ifnet *ifp)
 		if (dmamap->dm_nsegs > (sc->sc_txfree - 1)) {
 			/*
 			 * Not enough free descriptors to transmit this
-			 * packet.  We haven't committed anything yet,
-			 * so just unload the DMA map, put the packet
-			 * back on the queue, and punt.  Notify the upper
-			 * layer that there are not more slots left.
-			 *
-			 * XXX We could allocate an mbuf and copy, but
-			 * XXX is it worth it?
+			 * packet.
 			 */
-			ifp->if_flags |= IFF_OACTIVE;
 			bus_dmamap_unload(sc->sc_dmat, dmamap);
 			if (m != NULL)
 				m_freem(m);
@@ -1745,11 +1728,6 @@ sipcom_start(struct ifnet *ifp)
 
 		/* Pass the packet to any BPF listeners. */
 		bpf_mtap(ifp, m0, BPF_D_OUT);
-	}
-
-	if (txs == NULL || sc->sc_txfree == 0) {
-		/* No more slots left; notify upper layer. */
-		ifp->if_flags |= IFF_OACTIVE;
 	}
 
 	if (sc->sc_txfree != ofree) {
@@ -2008,11 +1986,9 @@ sipcom_intr(void *arg)
 			if (isr & ISR_PAUSE_ST) {
 				sc->sc_paused = 1;
 				SIP_EVCNT_INCR(&sc->sc_ev_rxpause);
-				ifp->if_flags |= IFF_OACTIVE;
 			}
 			if (isr & ISR_PAUSE_END) {
 				sc->sc_paused = 0;
-				ifp->if_flags &= ~IFF_OACTIVE;
 			}
 		}
 
@@ -2067,9 +2043,6 @@ sipcom_txintr(struct sip_softc *sc)
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 	struct sip_txsoft *txs;
 	uint32_t cmdsts;
-
-	if (sc->sc_paused == 0)
-		ifp->if_flags &= ~IFF_OACTIVE;
 
 	/*
 	 * Go through our Tx list and free mbufs for those
@@ -2858,7 +2831,6 @@ sipcom_init(struct ifnet *ifp)
 	 * ...all done!
 	 */
 	ifp->if_flags |= IFF_RUNNING;
-	ifp->if_flags &= ~IFF_OACTIVE;
 	sc->sc_if_flags = ifp->if_flags;
 	sc->sc_prev.ec_capenable = sc->sc_ethercom.ec_capenable;
 	sc->sc_prev.is_vlan = VLAN_ATTACHED(&(sc)->sc_ethercom);
@@ -2956,7 +2928,7 @@ sipcom_stop(struct ifnet *ifp, int disable)
 	/*
 	 * Mark the interface down and cancel the watchdog timer.
 	 */
-	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
+	ifp->if_flags &= ~IFF_RUNNING;
 	ifp->if_timer = 0;
 
 	if (disable)

@@ -1,4 +1,4 @@
-/*	$NetBSD: libkern.h,v 1.137 2019/12/14 17:23:47 riastradh Exp $	*/
+/*	$NetBSD: libkern.h,v 1.139 2020/04/07 08:07:58 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -429,8 +429,18 @@ size_t	 kmsan_strlen(const char *);
 #define	alloca(s)		__builtin_alloca(s)
 #endif
 
+char	*strcat(char *, const char *);
+char	*strchr(const char *, int);
+char	*strrchr(const char *, int);
 /* These exist in GCC 3.x, but we don't bother. */
-#if defined(_KERNEL) && defined(KMSAN)
+#if defined(_KERNEL) && defined(KASAN)
+char	*kasan_strcat(char *, const char *);
+char	*kasan_strchr(const char *, int);
+char	*kasan_strrchr(const char *, int);
+#define	strcat(d, s)		kasan_strcat(d, s)
+#define	strchr(s, c)		kasan_strchr(s, c)
+#define	strrchr(s, c)		kasan_strrchr(s, c)
+#elif defined(_KERNEL) && defined(KMSAN)
 char	*kmsan_strcat(char *, const char *);
 char	*kmsan_strchr(const char *, int);
 char	*kmsan_strrchr(const char *, int);

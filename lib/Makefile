@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.279 2020/03/03 20:01:01 christos Exp $
+#	$NetBSD: Makefile,v 1.282 2020/04/04 17:56:22 christos Exp $
 #	from: @(#)Makefile	5.25.1.1 (Berkeley) 5/7/91
 
 .include <bsd.own.mk>
@@ -260,7 +260,6 @@ SUBDIR+=	librumpvfs	# depends on librump
 SUBDIR+=	../crypto/external/bsd/libsaslc	# depends on heimdal, openssl
 SUBDIR+=	../external/bsd/mdocml/lib
 
-.if (${MKRUMP} != "no")
 #==================== 4th library dependency barrier ====================
 SUBDIR+=	.WAIT
 
@@ -269,7 +268,9 @@ SUBDIR+=	libpam		# depends on heimdal, libssh
 .endif
 
 
+.if (${MKRUMP} != "no")
 SUBDIR+=	libukfs		# depends on librumpvfs, librump
+.endif
 
 .if (${MKTPM} != "no")
 SUBDIR+=	../crypto/external/cpl/trousers/lib
@@ -282,12 +283,15 @@ SUBDIR+=	.WAIT
 SUBDIR+=	../external/bsd/pam-u2f/lib	# depends on libpam
 .endif
 
+.if (${MKRUMP} != "no")
 SUBDIR+=	libp2k		# depends on libukfs, librumpvfs, libpuffs
+.endif
 
 .if (${MKTPM} != "no")
 SUBDIR+=	../crypto/external/cpl/tpm-tools/lib	# depends on trousers
 .endif
 
+.if (${MKRUMP} != "no")
 .if !defined(BSD_MK_COMPAT_FILE)
 SUBDIR+=	../sys/rump/dev/lib
 SUBDIR+=	../sys/rump/fs/lib
@@ -298,9 +302,6 @@ SUBDIR+=	../sys/rump/net/lib
 
 # Lua bindings come last, they might depend on anything
 SUBDIR+=	lua
-
-# Needed by rump and rescue which are outside the smbfs tree
-SUBDIR+=	../external/bsd/smbfs/lib
 
 .include <bsd.buildinstall.mk>
 .include <bsd.subdir.mk>

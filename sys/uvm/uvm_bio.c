@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_bio.c,v 1.104 2020/02/23 15:46:43 ad Exp $	*/
+/*	$NetBSD: uvm_bio.c,v 1.108 2020/04/07 19:12:25 ad Exp $	*/
 
 /*
  * Copyright (c) 1998 Chuck Silvers.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.104 2020/02/23 15:46:43 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.108 2020/04/07 19:12:25 ad Exp $");
 
 #include "opt_uvmhist.h"
 #include "opt_ubc.h"
@@ -236,9 +236,6 @@ ubc_fault_page(const struct uvm_faultinfo *ufi, const struct ubc_map *umap,
 
 	KASSERT(rw_write_held(pg->uobject->vmobjlock));
 
-	if (pg->flags & PG_WANTED) {
-		wakeup(pg);
-	}
 	KASSERT((pg->flags & PG_FAKE) == 0);
 	if (pg->flags & PG_RELEASED) {
 		uvm_pagefree(pg);
@@ -286,8 +283,9 @@ ubc_fault_page(const struct uvm_faultinfo *ufi, const struct ubc_map *umap,
 
 	uvm_pagelock(pg);
 	uvm_pageactivate(pg);
+	uvm_pagewakeup(pg);
 	uvm_pageunlock(pg);
-	pg->flags &= ~(PG_BUSY|PG_WANTED);
+	pg->flags &= ~PG_BUSY;
 	UVM_PAGE_OWN(pg, NULL);
 
 	return error;
@@ -736,8 +734,25 @@ ubc_uiomove(struct uvm_object *uobj, struct uio *uio, vsize_t todo, int advice,
 	    ((flags & UBC_READ) != 0 && uio->uio_rw == UIO_READ));
 
 #ifdef UBC_USE_PMAP_DIRECT
-	if (ubc_direct) {
-		return ubc_uiomove_direct(uobj, uio, todo, advice, flags);
+	if (ubc_direct && UVM_OBJ_IS_VNODE(uobj)) {
+		/*
+		 * during direct access pages need to be held busy to
+		 * prevent them disappearing.  if the LWP reads or writes
+		 * a vnode into a mapped view of same it could deadlock.
+		 * prevent this by disallowing direct access if the vnode
+		 * is visible somewhere via mmap().
+		 *
+		 * the vnode flags are tested here, but at all points UBC is
+		 * called for vnodes, the vnode is locked (thus preventing a
+		 * new mapping via mmap() while busy here).
+		 */
+
+		struct vnode *vp = (struct vnode *)uobj;
+		KASSERT(VOP_ISLOCKED(vp) != LK_NONE);
+		if ((vp->v_vflag & VV_MAPPED) == 0) {
+			return ubc_uiomove_direct(uobj, uio, todo, advice,
+			    flags);
+		}
 	}
 #endif
 
@@ -899,17 +914,12 @@ ubc_direct_release(struct uvm_object *uobj,
 		uvm_pageactivate(pg);
 		uvm_pageunlock(pg);
 
-		/*
-		 * Page was changed, no longer fake and neither clean. 
-		 * There's no managed mapping in the direct case, so 
-		 * mark the page dirty manually.
-		 */
+		/* Page was changed, no longer fake and neither clean. */
 		if (flags & UBC_WRITE) {
 			pg->flags &= ~PG_FAKE;
 			KASSERTMSG(uvm_pagegetdirty(pg) ==
 			    UVM_PAGE_STATUS_DIRTY,
 			    "page %p not dirty", pg);
-			uvm_pagemarkdirty(pg, UVM_PAGE_STATUS_DIRTY);
 		}
 	}
 	uvm_page_unbusy(pgs, npages);

@@ -1,4 +1,4 @@
-/*	$NetBSD: mvsata.c,v 1.53 2020/02/19 16:04:39 riastradh Exp $	*/
+/*	$NetBSD: mvsata.c,v 1.55 2020/04/04 21:36:15 jdolecek Exp $	*/
 /*
  * Copyright (c) 2008 KIYOHARA Takashi
  * All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mvsata.c,v 1.53 2020/02/19 16:04:39 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mvsata.c,v 1.55 2020/04/04 21:36:15 jdolecek Exp $");
 
 #include "opt_mvsata.h"
 
@@ -669,7 +669,8 @@ mvsata_reset_channel(struct ata_channel *chp, int flags)
 		const uint32_t val = SControl_IPM_NONE | SControl_SPD_ANY |
 		    SControl_DET_DISABLE;
 
-		MVSATA_EDMA_WRITE_4(mvport, mvport->port_sata_scontrol, val);
+		bus_space_write_4(mvport->port_iot,
+		    mvport->port_sata_scontrol, 0, val);
 
 		ctrl = MVSATA_EDMA_READ_4(mvport, SATA_SATAICFG);
 		ctrl &= ~(1 << 17);	/* Disable GenII */
@@ -1164,10 +1165,10 @@ do_pio:
 			 * If it's not a polled command, we need the kernel
 			 * thread
 			 */
-			if ((xfer->c_flags & C_POLL) == 0 &&
-			    (chp->ch_flags & ATACH_TH_RUN) == 0) {
+			if ((xfer->c_flags & C_POLL) == 0
+			    && !ata_is_thread_run(chp))
 				return ATASTART_TH;
-			}
+
 			if (mvsata_bio_ready(mvport, ata_bio, xfer->c_drive,
 			    (xfer->c_flags & C_POLL) ? AT_POLL : 0) != 0) {
 				return ATASTART_ABORT;
@@ -2051,10 +2052,10 @@ mvsata_atapi_start(struct ata_channel *chp, struct ata_xfer *xfer)
 	/* Do control operations specially. */
 	if (__predict_false(drvp->state < READY)) {
 		/* If it's not a polled command, we need the kernel thread */
-		if ((sc_xfer->xs_control & XS_CTL_POLL) == 0 &&
-		    (chp->ch_flags & ATACH_TH_RUN) == 0) {
+		if ((sc_xfer->xs_control & XS_CTL_POLL) == 0
+		    && !ata_is_thread_run(chp))
 			return ATASTART_TH;
-		}
+
 		/*
 		 * disable interrupts, all commands here should be quick
 		 * enough to be able to poll, and we don't go here that often

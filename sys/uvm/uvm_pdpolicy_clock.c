@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_pdpolicy_clock.c,v 1.34 2020/03/08 15:01:50 ad Exp $	*/
+/*	$NetBSD: uvm_pdpolicy_clock.c,v 1.36 2020/04/02 16:29:30 maxv Exp $	*/
 /*	NetBSD: uvm_pdaemon.c,v 1.72 2006/01/05 10:47:33 yamt Exp $	*/
 
 /*-
@@ -98,7 +98,7 @@
 #else /* defined(PDSIM) */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_pdpolicy_clock.c,v 1.34 2020/03/08 15:01:50 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_pdpolicy_clock.c,v 1.36 2020/04/02 16:29:30 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -463,7 +463,7 @@ void
 uvmpdpol_pagedeactivate(struct vm_page *pg)
 {
 
-	KASSERT(uvm_page_owner_locked_p(pg, true));
+	KASSERT(uvm_page_owner_locked_p(pg, false));
 	KASSERT(mutex_owned(&pg->interlock));
 
 	/*
@@ -495,7 +495,7 @@ void
 uvmpdpol_pageactivate(struct vm_page *pg)
 {
 
-	KASSERT(uvm_page_owner_locked_p(pg, true));
+	KASSERT(uvm_page_owner_locked_p(pg, false));
 	KASSERT(mutex_owned(&pg->interlock));
 
 	uvmpdpol_set_intent(pg, PQ_INTENT_A);
@@ -536,7 +536,7 @@ void
 uvmpdpol_pageenqueue(struct vm_page *pg)
 {
 
-	KASSERT(uvm_page_owner_locked_p(pg, true));
+	KASSERT(uvm_page_owner_locked_p(pg, false));
 	KASSERT(mutex_owned(&pg->interlock));
 
 	uvmpdpol_set_intent(pg, PQ_INTENT_E);
@@ -771,7 +771,7 @@ uvmpdpol_idle(struct uvm_cpu *ucpu)
 	 * if no pages in the queue, we have nothing to do.
 	 */
 	if (ucpu->pdqhead == ucpu->pdqtail) {
-		ucpu->pdqtime = hardclock_ticks;
+		ucpu->pdqtime = getticks();
 		return;
 	}
 
@@ -779,7 +779,7 @@ uvmpdpol_idle(struct uvm_cpu *ucpu)
 	 * don't do this more than ~8 times a second as it would needlessly
 	 * exert pressure.
 	 */
-	if (hardclock_ticks - ucpu->pdqtime < (hz >> 3)) {
+	if (getticks() - ucpu->pdqtime < (hz >> 3)) {
 		return;
 	}
 
@@ -803,7 +803,7 @@ uvmpdpol_idle(struct uvm_cpu *ucpu)
 			}
 		}
 		if (ucpu->pdqhead == ucpu->pdqtail) {
-			ucpu->pdqtime = hardclock_ticks;
+			ucpu->pdqtime = getticks();
 		}
 		mutex_exit(&s->lock);
 	}

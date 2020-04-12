@@ -1,4 +1,4 @@
-/*	$NetBSD: audiotest.c,v 1.7 2020/03/04 14:20:44 isaki Exp $	*/
+/*	$NetBSD: audiotest.c,v 1.10 2020/03/26 13:43:10 isaki Exp $	*/
 
 /*
  * Copyright (C) 2019 Tetsuya Isaki. All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: audiotest.c,v 1.7 2020/03/04 14:20:44 isaki Exp $");
+__RCSID("$NetBSD: audiotest.c,v 1.10 2020/03/26 13:43:10 isaki Exp $");
 
 #include <errno.h>
 #include <fcntl.h>
@@ -75,6 +75,7 @@ struct testentry {
 void usage(void) __dead;
 void xp_err(int, int, const char *, ...) __printflike(3, 4) __dead;
 void xp_errx(int, int, const char *, ...) __printflike(3, 4) __dead;
+bool match(const char *, const char *);
 void xxx_close_wait(void);
 int mixer_get_outputs_master(int);
 void do_test(int);
@@ -168,6 +169,7 @@ int skipcount;
 int unit;
 bool use_rump;
 bool use_pad;
+bool exact_match;
 int padfd;
 int maxfd;
 pthread_t th;
@@ -186,6 +188,8 @@ usage(void)
 	fprintf(stderr, "\t-A        : make output suitable for ATF\n");
 	fprintf(stderr, "\t-a        : Test all\n");
 	fprintf(stderr, "\t-d        : Increase debug level\n");
+	fprintf(stderr, "\t-e        : Use exact match for testnames "
+	    "(default is forward match)\n");
 	fprintf(stderr, "\t-l        : List all tests\n");
 	fprintf(stderr, "\t-p        : Open pad\n");
 #if !defined(NO_RUMP)
@@ -246,8 +250,9 @@ main(int argc, char *argv[])
 	cmd = CMD_TEST;
 	use_pad = false;
 	padfd = -1;
+	exact_match = false;
 
-	while ((c = getopt(argc, argv, "AadlpRu:")) != -1) {
+	while ((c = getopt(argc, argv, "AadelpRu:")) != -1) {
 		switch (c) {
 		case 'A':
 			opt_atf = true;
@@ -257,6 +262,9 @@ main(int argc, char *argv[])
 			break;
 		case 'd':
 			debug++;
+			break;
+		case 'e':
+			exact_match = true;
 			break;
 		case 'l':
 			cmd = CMD_LIST;
@@ -305,8 +313,7 @@ main(int argc, char *argv[])
 		found = false;
 		for (j = 0; j < argc; j++) {
 			for (i = 0; testtable[i].name != NULL; i++) {
-				if (strncmp(argv[j], testtable[i].name,
-				    strlen(argv[j])) == 0) {
+				if (match(argv[j], testtable[i].name)) {
 					do_test(i);
 					found = true;
 				}
@@ -335,6 +342,21 @@ main(int argc, char *argv[])
 		return 1;
 
 	return 0;
+}
+
+bool
+match(const char *arg, const char *name)
+{
+	if (exact_match) {
+		/* Exact match */
+		if (strcmp(arg, name) == 0)
+			return true;
+	} else {
+		/* Forward match */
+		if (strncmp(arg, name, strlen(arg)) == 0)
+			return true;
+	}
+	return false;
 }
 
 /*
@@ -1361,6 +1383,7 @@ void test_rdwr_fallback(int, bool, bool);
 void test_rdwr_two(int, int);
 void test_mmap_mode(int, int);
 void test_poll_mode(int, int, int);
+void test_poll_in_open(const char *);
 void test_kqueue_mode(int, int, int);
 volatile int sigio_caught;
 void signal_FIOASYNC(int);
@@ -1535,14 +1558,14 @@ test_open(const char *devname, int mode)
 	XP_EQ(0, ai.record.waiting);
 		/* balance */
 	XP_EQ(exp_ropen, ai.record.open);
-	/*
-	 * NetBSD7,8 (may?) be active when opened in recording mode but
-	 * recording has not started yet. (?)
-	 * NetBSD9 is not active at that time.
-	 */
-	if (netbsd < 9) {
-	} else {
+	if (netbsd < 9 && strcmp(devname, "sound") == 0) {
+		/*
+		 * On NetBSD7/8, it doesn't seem to start recording on open
+		 * for /dev/sound.  It should be a bug.
+		 */
 		XP_EQ(0, ai.record.active);
+	} else {
+		XP_EQ(exp_ropen, ai.record.active);
 	}
 	/* Save it */
 	ai0 = ai;
@@ -1623,9 +1646,14 @@ test_open(const char *devname, int mode)
 	XP_EQ(0, ai.record.waiting);
 		/* balance */
 	XP_EQ(exp_ropen, ai.record.open);
-	if (netbsd < 9) {
-	} else {
+	if (netbsd < 9 && strcmp(devname, "sound") == 0) {
+		/*
+		 * On NetBSD7/8, it doesn't seem to start recording on open
+		 * for /dev/sound.  It should be a bug.
+		 */
 		XP_EQ(0, ai.record.active);
+	} else {
+		XP_EQ(exp_ropen, ai.record.active);
 	}
 
 	r = CLOSE(fd);
@@ -2899,6 +2927,9 @@ test_poll_mode(int mode, int events, int expected_revents)
 	fd = OPEN(devaudio, mode);
 	REQUIRED_SYS_OK(fd);
 
+	/* Wait a bit to be recorded. */
+	usleep(100 * 1000);
+
 	memset(&pfd, 0, sizeof(pfd));
 	pfd.fd = fd;
 	pfd.events = events;
@@ -2926,15 +2957,23 @@ test_poll_mode(int mode, int events, int expected_revents)
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
 }
-DEF(poll_mode_RDONLY_IN)	{ test_poll_mode(O_RDONLY, IN,     0); }
+DEF(poll_mode_RDONLY_IN)	{ test_poll_mode(O_RDONLY, IN,     IN); }
 DEF(poll_mode_RDONLY_OUT)	{ test_poll_mode(O_RDONLY, OUT,    0); }
-DEF(poll_mode_RDONLY_INOUT)	{ test_poll_mode(O_RDONLY, IN|OUT, 0); }
+DEF(poll_mode_RDONLY_INOUT)	{ test_poll_mode(O_RDONLY, IN|OUT, IN); }
 DEF(poll_mode_WRONLY_IN)	{ test_poll_mode(O_WRONLY, IN,     0); }
 DEF(poll_mode_WRONLY_OUT)	{ test_poll_mode(O_WRONLY, OUT,	   OUT); }
 DEF(poll_mode_WRONLY_INOUT)	{ test_poll_mode(O_WRONLY, IN|OUT, OUT); }
-DEF(poll_mode_RDWR_IN)		{ test_poll_mode(O_RDWR,   IN,     0); }
+DEF(poll_mode_RDWR_IN)		{
+	/* On half-duplex, O_RDWR is the same as O_WRONLY. */
+	if (hw_fulldup()) test_poll_mode(O_RDWR,   IN,     IN);
+	else		  test_poll_mode(O_RDWR,   IN,     0);
+}
 DEF(poll_mode_RDWR_OUT)		{ test_poll_mode(O_RDWR,   OUT,	   OUT); }
-DEF(poll_mode_RDWR_INOUT)	{ test_poll_mode(O_RDWR,   IN|OUT, OUT); }
+DEF(poll_mode_RDWR_INOUT)	{
+	/* On half-duplex, O_RDWR is the same as O_WRONLY. */
+	if (hw_fulldup()) test_poll_mode(O_RDWR,   IN|OUT, IN|OUT);
+	else		  test_poll_mode(O_RDWR,   IN|OUT,    OUT);
+}
 
 /*
  * Poll(OUT) when buffer is empty.
@@ -3332,6 +3371,81 @@ DEF(poll_out_simul)
 		xxx_close_wait();
 	}
 }
+
+/*
+ * Open with READ mode starts recording immediately.
+ * Of course, audioctl doesn't start.
+ */
+void
+test_poll_in_open(const char *devname)
+{
+	struct audio_info ai;
+	struct pollfd pfd;
+	char buf[4096];
+	char devfile[16];
+	int fd;
+	int r;
+	bool is_audioctl;
+
+	TEST("poll_in_open_%s", devname);
+	if (hw_canrec() == 0) {
+		XP_SKIP("This test is only for recordable device");
+		return;
+	}
+
+	snprintf(devfile, sizeof(devfile), "/dev/%s%d", devname, unit);
+	is_audioctl = (strcmp(devname, "audioctl") == 0);
+
+	fd = OPEN(devfile, O_RDONLY);
+	REQUIRED_SYS_OK(fd);
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+	if (is_audioctl) {
+		/* opening /dev/audioctl doesn't start recording. */
+		XP_EQ(0, ai.record.active);
+	} else {
+		/* opening /dev/{audio,sound} starts recording. */
+		/*
+		 * On NetBSD7/8, opening /dev/sound doesn't start recording.
+		 * It must be a bug.
+		 */
+		XP_EQ(1, ai.record.active);
+	}
+
+	memset(&pfd, 0, sizeof(pfd));
+	pfd.fd = fd;
+	pfd.events = POLLIN;
+	r = POLL(&pfd, 1, 1000);
+	if (is_audioctl) {
+		/*
+		 * poll-ing /dev/audioctl always fails.
+		 * XXX Returning error instead of timeout should be better(?).
+		 */
+		REQUIRED_SYS_EQ(0, r);
+	} else {
+		/*
+		 * poll-ing /dev/{audio,sound} will succeed when recorded
+		 * data is arrived.
+		 */
+		/*
+		 * On NetBSD7/8, opening /dev/sound doesn't start recording.
+		 * It must be a bug.
+		 */
+		REQUIRED_SYS_EQ(1, r);
+
+		/* In this case, read() should succeed. */
+		r = READ(fd, buf, sizeof(buf));
+		XP_SYS_OK(r);
+		XP_NE(0, r);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+DEF(poll_in_open_audio)		{ test_poll_in_open("audio"); }
+DEF(poll_in_open_sound)		{ test_poll_in_open("sound"); }
+DEF(poll_in_open_audioctl)	{ test_poll_in_open("audioctl"); }
 
 /*
  * poll(2) must not be affected by other recording descriptors even if
@@ -6178,6 +6292,9 @@ struct testentry testtable[] = {
 	ENT(poll_out_hiwat),
 /**/	ENT(poll_out_unpause),		// XXX does not seem to work on rump
 /**/	ENT(poll_out_simul),		// XXX does not seem to work on rump
+	ENT(poll_in_open_audio),
+	ENT(poll_in_open_sound),
+	ENT(poll_in_open_audioctl),
 	ENT(poll_in_simul),
 	ENT(kqueue_mode_RDONLY_READ),
 	ENT(kqueue_mode_RDONLY_WRITE),

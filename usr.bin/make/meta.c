@@ -1,4 +1,4 @@
-/*      $NetBSD: meta.c,v 1.79 2020/02/12 16:50:37 sjg Exp $ */
+/*      $NetBSD: meta.c,v 1.81 2020/04/03 03:32:28 sjg Exp $ */
 
 /*
  * Implement 'meta' mode.
@@ -1558,7 +1558,8 @@ meta_oodate(GNode *gn, Boolean oodate)
 			if (buf[x - 1] == '\n')
 			    buf[x - 1] = '\0';
 		    }
-		    if (!hasOODATE &&
+		    if (p &&
+			!hasOODATE &&
 			!(gn->type & OP_NOMETA_CMP) &&
 			strcmp(p, cmd) != 0) {
 			if (DEBUG(META))
@@ -1579,6 +1580,7 @@ meta_oodate(GNode *gn, Boolean oodate)
 			fprintf(debug_file, "%s: %d: there are extra build commands now that weren't in the meta data file\n", fname, lineno);
 		    oodate = TRUE;
 		}
+		CHECK_VALID_META(p);
 		if (strcmp(p, cwd) != 0) {
 		    if (DEBUG(META))
 			fprintf(debug_file, "%s: %d: the current working directory has changed from '%s' to '%s'\n", fname, lineno, p, curdir);

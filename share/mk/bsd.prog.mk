@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.prog.mk,v 1.325 2020/03/03 02:25:03 christos Exp $
+#	$NetBSD: bsd.prog.mk,v 1.328 2020/04/04 13:33:14 christos Exp $
 #	@(#)bsd.prog.mk	8.2 (Berkeley) 4/2/94
 
 .ifndef HOSTPROG
@@ -137,6 +137,7 @@ _LIBLIST=\
 	fido2 \
 	form \
 	gcc \
+	gnuctf \
 	gnumalloc \
 	gssapi \
 	hdb \
@@ -220,19 +221,15 @@ LIB${_lib:tu}=	${DESTDIR}/usr/lib/lib${_lib:S/xx/++/:S/atf_c/atf-c/}.a
 .endfor
 
 .if (${MKKERBEROS} != "no")
-LIBKRB5_LDADD+= -lkrb5
-LIBKRB5_DPADD+= ${LIBKRB5}
-# Kerberos5 applications, if linked statically, need more libraries
-LIBKRB5_STATIC_LDADD+= \
-	-lhx509 -lcrypto -lasn1 -lcom_err -lroken \
-	-lwind -lheimbase -lsqlite3 -lcrypt -lutil
-LIBKRB5_STATIC_DPADD+= \
-	${LIBHX509} ${LIBCRYPTO} ${LIBASN1} ${LIBCOM_ERR} ${LIBROKEN} \
-	${LIBWIND} ${LIBHEIMBASE} ${LIBSQLITE3} ${LIBCRYPT}  ${LIBUTIL}
-. if (${MKPIC} == "no")
-LIBKRB5_LDADD+= ${LIBKRB5_STATIC_LDADD}
-LIBKRB5_DPADD+= ${LIBKRB5_STATIC_DPADD}
-. endif
+# Kerberos5 applications
+LIBKRB5_LDADD+= -lkrb5 -lcom_err \
+	-lhx509 -lcrypto -lasn1 \
+	-lwind -lheimbase -lcom_err -lroken \
+	-lsqlite3 -lcrypt -lutil
+LIBKRB5_DPADD+= ${LIBKRB5} ${LIBCOM_ERR} \
+	${LIBHX509} ${LIBCRYPTO} ${LIBASN1} \
+	${LIBWIND} ${LIBHEIMBASE} ${LIBCOM_ERR} ${LIBROKEN} \
+	${LIBSQLITE3} ${LIBCRYPT}  ${LIBUTIL}
 .endif
 
 # PAM applications, if linked statically, need more libraries

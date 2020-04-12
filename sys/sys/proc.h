@@ -1,4 +1,4 @@
-/*	$NetBSD: proc.h,v 1.359 2020/02/23 15:46:42 ad Exp $	*/
+/*	$NetBSD: proc.h,v 1.362 2020/04/06 08:20:05 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
@@ -252,7 +252,7 @@ struct proc {
 	int		p_exitsig;	/* l: signal to send to parent on exit */
 	int		p_flag;		/* p: PK_* flags */
 	int		p_sflag;	/* p: PS_* flags */
-	int		p_slflag;	/* s, l: PSL_* flags */
+	int		p_slflag;	/* p, l: PSL_* flags */
 	int		p_lflag;	/* l: PL_* flags */
 	int		p_stflag;	/* t: PST_* flags */
 	char		p_stat;		/* p: S* process status. */
@@ -311,6 +311,7 @@ struct proc {
 	sigpend_t	p_sigpend;	/* p: pending signals */
 	struct lcproc	*p_lwpctl;	/* p, a: _lwp_ctl() information */
 	pid_t		p_ppid;		/* :: cached parent pid */
+	pid_t		p_oppid;	/* :: cached original parent pid */
 	char		*p_path;	/* :: full pathname of executable */
 
 /*
@@ -513,7 +514,6 @@ void	fixjobc(struct proc *, struct pgrp *, int);
 
 int	tsleep(wchan_t, pri_t, const char *, int);
 int	mtsleep(wchan_t, pri_t, const char *, int, kmutex_t *);
-int	rwtsleep(wchan_t, pri_t, const char *, int, krwlock_t *);
 void	wakeup(wchan_t);
 int	kpause(const char *, bool, int, kmutex_t *);
 void	exit1(struct lwp *, int, int) __dead;

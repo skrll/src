@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_vnode.c,v 1.113 2020/02/27 22:12:54 ad Exp $	*/
+/*	$NetBSD: vfs_vnode.c,v 1.118 2020/04/04 20:54:42 ad Exp $	*/
 
 /*-
  * Copyright (c) 1997-2011, 2019, 2020 The NetBSD Foundation, Inc.
@@ -155,7 +155,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_vnode.c,v 1.113 2020/02/27 22:12:54 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_vnode.c,v 1.118 2020/04/04 20:54:42 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_pax.h"
@@ -828,9 +828,6 @@ vrelel(vnode_t *vp, int flags, int lktype)
 	if (VSTATE_GET(vp) == VS_RECLAIMED) {
 		VOP_UNLOCK(vp);
 	} else {
-		VSTATE_CHANGE(vp, VS_LOADED, VS_BLOCKED);
-		mutex_exit(vp->v_interlock);
-
 		/*
 		 * The vnode must not gain another reference while being
 		 * deactivated.  If VOP_INACTIVE() indicates that
@@ -839,19 +836,16 @@ vrelel(vnode_t *vp, int flags, int lktype)
 		 *
 		 * Note that VOP_INACTIVE() will not drop the vnode lock.
 		 */
+		mutex_exit(vp->v_interlock);
 		recycle = false;
 		VOP_INACTIVE(vp, &recycle);
-		if (!recycle)
-			VOP_UNLOCK(vp);
 		rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 		mutex_enter(vp->v_interlock);
-		VSTATE_CHANGE(vp, VS_BLOCKED, VS_LOADED);
-		if (!recycle) {
-			if (vtryrele(vp)) {
-				mutex_exit(vp->v_interlock);
-				rw_exit(vp->v_uobj.vmobjlock);
-				return;
-			}
+		if (vtryrele(vp)) {
+			VOP_UNLOCK(vp);
+			mutex_exit(vp->v_interlock);
+			rw_exit(vp->v_uobj.vmobjlock);
+			return;
 		}
 
 		/* Take care of space accounting. */
@@ -872,6 +866,8 @@ vrelel(vnode_t *vp, int flags, int lktype)
 			VSTATE_ASSERT(vp, VS_LOADED);
 			/* vcache_reclaim drops the lock. */
 			vcache_reclaim(vp);
+		} else {
+			VOP_UNLOCK(vp);
 		}
 		KASSERT(vp->v_usecount > 0);
 	}
@@ -1228,12 +1224,9 @@ vcache_alloc(void)
 	rw_init(&vip->vi_lock);
 	vp->v_interlock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 
-	/* SLIST_INIT(&vip->vi_hash); */
-	TAILQ_INIT(&vip->vi_nclist);
-	/* LIST_INIT(&vip->vi_dnclist); */
-
 	uvm_obj_init(&vp->v_uobj, &uvm_vnodeops, true, 1);
 	cv_init(&vp->v_cv, "vnode");
+	cache_vnode_init(vp);
 
 	vp->v_usecount = 1;
 	vp->v_type = VNON;
@@ -1294,6 +1287,7 @@ vcache_free(vnode_impl_t *vip)
 	rw_destroy(&vip->vi_lock);
 	uvm_obj_destroy(&vp->v_uobj, true);
 	cv_destroy(&vp->v_cv);
+	cache_vnode_fini(vp);
 	pool_cache_put(vcache_pool, vip);
 }
 
@@ -1678,8 +1672,16 @@ vcache_reclaim(vnode_t *vp)
 		cpu_count(CPU_COUNT_FILEPAGES, vp->v_uobj.uo_npages);
 	}
 	vp->v_iflag &= ~(VI_TEXT|VI_EXECMAP);
+	vp->v_iflag |= VI_DEADCHECK; /* for genfs_getpages() */
 	mutex_exit(vp->v_interlock);
 	rw_exit(vp->v_uobj.vmobjlock);
+
+	/*
+	 * With vnode state set to reclaiming, purge name cache immediately
+	 * to prevent new handles on vnode, and wait for existing threads
+	 * trying to get a handle to notice VS_RECLAIMED status and abort.
+	 */
+	cache_purge(vp);
 
 	/* Replace the vnode key with a temporary copy. */
 	if (vip->vi_key.vk_key_len > sizeof(temp_buf)) {
@@ -1733,9 +1735,6 @@ vcache_reclaim(vnode_t *vp)
 		uvm_ra_freectx(vp->v_ractx);
 		vp->v_ractx = NULL;
 	}
-
-	/* Purge name cache. */
-	cache_purge(vp);
 
 	if (vip->vi_key.vk_key_len > 0) {
 	/* Remove from vnode cache. */

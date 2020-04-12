@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urtwn.c,v 1.81 2020/01/29 06:39:07 thorpej Exp $	*/
+/*	$NetBSD: if_urtwn.c,v 1.85 2020/04/04 08:46:01 skrll Exp $	*/
 /*	$OpenBSD: if_urtwn.c,v 1.42 2015/02/10 23:25:46 mpi Exp $	*/
 
 /*-
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.81 2020/01/29 06:39:07 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.85 2020/04/04 08:46:01 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -212,6 +212,7 @@ static const struct urtwn_dev {
 	URTWN_RTL8188E_DEV(REALTEK, RTL8188EU),
 	URTWN_RTL8188E_DEV(ABOCOM, RTL8188EU),
 	URTWN_RTL8188E_DEV(TPLINK, RTL8188EU),
+	URTWN_RTL8188E_DEV(DLINK, DWA121B1),
 
 	/* URTWN_RTL8192EU */
 	URTWN_RTL8192EU_DEV(DLINK,	DWA131E),
@@ -519,7 +520,11 @@ urtwn_attach(device_t parent, device_t self, void *aux)
 	/* Override state transition machine. */
 	sc->sc_newstate = ic->ic_newstate;
 	ic->ic_newstate = urtwn_newstate;
-	ieee80211_media_init(ic, urtwn_media_change, ieee80211_media_status);
+
+	/* XXX media locking needs revisiting */
+	mutex_init(&sc->sc_media_mtx, MUTEX_DEFAULT, IPL_SOFTUSB);
+	ieee80211_media_init_with_lock(ic,
+	    urtwn_media_change, ieee80211_media_status, &sc->sc_media_mtx);
 
 	bpf_attach2(ifp, DLT_IEEE802_11_RADIO,
 	    sizeof(struct ieee80211_frame) + IEEE80211_RADIOTAP_HDRLEN,
@@ -1354,11 +1359,11 @@ urtwn_dump_rom(struct urtwn_softc *sc, struct r92c_rom *rp)
 {
 
 	aprint_normal_dev(sc->sc_dev,
-	    "id 0x%04x, dbg_sel 0x%x, vid 0x%x, pid 0x%x\n",
+	    "id 0x%04x, dbg_sel %#x, vid %#x, pid %#x\n",
 	    rp->id, rp->dbg_sel, rp->vid, rp->pid);
 
 	aprint_normal_dev(sc->sc_dev,
-	    "usb_opt 0x%x, ep_setting 0x%x, usb_phy 0x%x\n",
+	    "usb_opt %#x, ep_setting %#x, usb_phy %#x\n",
 	    rp->usb_opt, rp->ep_setting, rp->usb_phy);
 
 	aprint_normal_dev(sc->sc_dev,
@@ -1366,7 +1371,7 @@ urtwn_dump_rom(struct urtwn_softc *sc, struct r92c_rom *rp)
 	    ether_sprintf(rp->macaddr));
 
 	aprint_normal_dev(sc->sc_dev,
-	    "string %s, subcustomer_id 0x%x\n",
+	    "string %s, subcustomer_id %#x\n",
 	    rp->string, rp->subcustomer_id);
 
 	aprint_normal_dev(sc->sc_dev,
@@ -1421,11 +1426,11 @@ urtwn_dump_rom(struct urtwn_softc *sc, struct r92c_rom *rp)
 	    rp->xtal_calib, rp->tssi[0], rp->tssi[1], rp->thermal_meter);
 
 	aprint_normal_dev(sc->sc_dev,
-	    "rf_opt1 0x%x, rf_opt2 0x%x, rf_opt3 0x%x, rf_opt4 0x%x\n",
+	    "rf_opt1 %#x, rf_opt2 %#x, rf_opt3 %#x, rf_opt4 %#x\n",
 	    rp->rf_opt1, rp->rf_opt2, rp->rf_opt3, rp->rf_opt4);
 
 	aprint_normal_dev(sc->sc_dev,
-	    "channnel_plan %d, version %d customer_id 0x%x\n",
+	    "channnel_plan %d, version %d customer_id %#x\n",
 	    rp->channel_plan, rp->version, rp->curstomer_id);
 }
 #endif

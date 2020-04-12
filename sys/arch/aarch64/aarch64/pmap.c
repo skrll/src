@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.67 2020/03/02 08:39:36 ryo Exp $	*/
+/*	$NetBSD: pmap.c,v 1.69 2020/04/08 00:13:40 ryo Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.67 2020/03/02 08:39:36 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.69 2020/04/08 00:13:40 ryo Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
@@ -250,12 +250,6 @@ pm_unlock(struct pmap *pm)
 	mutex_exit(&pm->pm_lock);
 }
 
-static inline void
-_pmap_page_init(struct pmap_page *pp)
-{
-	mutex_init(&pp->pp_pvlock, MUTEX_SPIN, IPL_VM);
-}
-
 static inline struct pmap_page *
 phys_to_pp(paddr_t pa)
 {
@@ -266,13 +260,7 @@ phys_to_pp(paddr_t pa)
 		return VM_PAGE_TO_PP(pg);
 
 #ifdef __HAVE_PMAP_PV_TRACK
-	struct pmap_page *pp = pmap_pv_tracked(pa);
-	if (pp != NULL && (pp->pp_flags & PMAP_PAGE_FLAGS_PV_TRACKED) == 0) {
-		/* XXX: initialize pv_tracked pmap_page. should not init here */
-		_pmap_page_init(pp);
-		pp->pp_flags |= PMAP_PAGE_FLAGS_PV_TRACKED;
-	}
-	return pp;
+	return pmap_pv_tracked(pa);
 #else
 	return NULL;
 #endif /* __HAVE_PMAP_PV_TRACK */
@@ -538,7 +526,7 @@ pmap_init(void)
 		     pfn++) {
 			pg = PHYS_TO_VM_PAGE(ptoa(pfn));
 			md = VM_PAGE_TO_MD(pg);
-			_pmap_page_init(&md->mdpg_pp);
+			PMAP_PAGE_INIT(&md->mdpg_pp);
 		}
 	}
 }
@@ -1948,10 +1936,11 @@ pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 	return _pmap_enter(pm, va, pa, prot, flags, false);
 }
 
-void
+bool
 pmap_remove_all(struct pmap *pm)
 {
 	/* nothing to do */
+	return false;
 }
 
 static void
