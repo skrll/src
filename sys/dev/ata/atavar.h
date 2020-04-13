@@ -358,10 +358,10 @@ struct ata_drive_datas {
  */
 struct ata_bustype {
 	int	bustype_type;	/* symbolic name of type */
-	int	(*ata_bio)(struct ata_drive_datas *, struct ata_xfer *);
+	void	(*ata_bio)(struct ata_drive_datas *, struct ata_xfer *);
 	void	(*ata_reset_drive)(struct ata_drive_datas *, int, uint32_t *);
 	void	(*ata_reset_channel)(struct ata_channel *, int);
-	int	(*ata_exec_command)(struct ata_drive_datas *,
+	void	(*ata_exec_command)(struct ata_drive_datas *,
 				    struct ata_xfer *);
 
 #define	ATACMD_COMPLETE		0x01

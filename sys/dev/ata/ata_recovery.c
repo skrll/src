@@ -103,11 +103,9 @@ ata_read_log_ext_ncq(struct ata_drive_datas *drvp, uint8_t flags,
 	xfer->c_ata_c.data = tb;
 	xfer->c_ata_c.bcount = sizeof(chp->recovery_blk);
 
-	if ((*atac->atac_bustype_ata->ata_exec_command)(drvp,
-						xfer) != ATACMD_COMPLETE) {
-		rv = EAGAIN;
-		goto out;
-	}
+	(*atac->atac_bustype_ata->ata_exec_command)(drvp, xfer);
+	ata_wait_cmd(chp, xfer);
+
 	if (xfer->c_ata_c.flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
 		rv = EINVAL;
 		goto out;
