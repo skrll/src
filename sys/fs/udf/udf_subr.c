@@ -1,4 +1,4 @@
-/* $NetBSD: udf_subr.c,v 1.148 2020/01/17 20:08:08 ad Exp $ */
+/* $NetBSD: udf_subr.c,v 1.150 2020/04/06 14:31:06 hannken Exp $ */
 
 /*
  * Copyright (c) 2006, 2008 Reinoud Zandijk
@@ -29,7 +29,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: udf_subr.c,v 1.148 2020/01/17 20:08:08 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_subr.c,v 1.150 2020/04/06 14:31:06 hannken Exp $");
 #endif /* not lint */
 
 
@@ -5641,7 +5641,7 @@ udf_get_node(struct udf_mount *ump, struct long_ad *node_icb_loc,
 	    sizeof(node_icb_loc->loc), &vp);
 	if (error)
 		return error;
-	error = vn_lock(vp, LK_EXCLUSIVE);
+	error = vn_lock(vp, lktype);
 	if (error) {
 		vrele(vp);
 		return error;
@@ -6448,7 +6448,7 @@ udf_sync_selector(void *cl, struct vnode *vp)
 		return false;
 	if ((udf_node->i_flags & (IN_ACCESSED | IN_UPDATE | IN_MODIFIED)) == 0)
 		return false;
-	if (LIST_EMPTY(&vp->v_dirtyblkhd) && UVM_OBJ_IS_CLEAN(&vp->v_uobj))
+	if (LIST_EMPTY(&vp->v_dirtyblkhd) && (vp->v_iflag & VI_ONWORKLST) == 0)
 		return false;
 
 	return true;

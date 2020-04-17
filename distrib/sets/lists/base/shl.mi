@@ -1,4 +1,4 @@
-# $NetBSD: shl.mi,v 1.876 2019/10/12 18:34:14 christos Exp $
+# $NetBSD: shl.mi,v 1.884 2020/04/04 19:26:51 christos Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -21,7 +21,7 @@
 ./lib/libblacklist.so.0.0			base-sys-shlib		dynamicroot
 ./lib/libc.so					base-sys-shlib		dynamicroot
 ./lib/libc.so.12				base-sys-shlib		dynamicroot
-./lib/libc.so.12.214				base-sys-shlib		dynamicroot
+./lib/libc.so.12.215				base-sys-shlib		dynamicroot
 ./lib/libcrypt.so				base-sys-shlib		dynamicroot
 ./lib/libcrypt.so.1				base-sys-shlib		dynamicroot
 ./lib/libcrypt.so.1.0				base-sys-shlib		dynamicroot
@@ -68,7 +68,7 @@
 ./lib/libnvpair.so.0.0				base-zfs-shlib		dynamicroot,zfs
 ./lib/libpcap.so				base-sys-shlib		dynamicroot
 ./lib/libpcap.so.8				base-sys-shlib		dynamicroot
-./lib/libpcap.so.8.0				base-sys-shlib		dynamicroot
+./lib/libpcap.so.8.1				base-sys-shlib		dynamicroot
 ./lib/libppath.so				base-sys-shlib		dynamicroot
 ./lib/libppath.so.0				base-sys-shlib		dynamicroot
 ./lib/libppath.so.0.0				base-sys-shlib		dynamicroot
@@ -91,8 +91,8 @@
 ./lib/libtermcap.so.0				base-sys-shlib		dynamicroot
 ./lib/libtermcap.so.0.6				base-sys-shlib		dynamicroot
 ./lib/libterminfo.so				base-sys-shlib		dynamicroot
-./lib/libterminfo.so.1				base-sys-shlib		dynamicroot
-./lib/libterminfo.so.1.0			base-sys-shlib		dynamicroot
+./lib/libterminfo.so.2				base-sys-shlib		dynamicroot
+./lib/libterminfo.so.2.0			base-sys-shlib		dynamicroot
 ./lib/libtermlib.so				base-sys-shlib		dynamicroot
 ./lib/libtermlib.so.0				base-sys-shlib		dynamicroot
 ./lib/libtermlib.so.0.6				base-sys-shlib		dynamicroot
@@ -224,6 +224,8 @@
 ./usr/lib/libavl.so.0.0          		base-zfs-shlib		compatfile,zfs
 ./usr/lib/libbfd.so.16				base-sys-shlib		compatfile,binutils=231
 ./usr/lib/libbfd.so.16.0			base-sys-shlib		compatfile,binutils=231
+./usr/lib/libbfd.so.17				base-sys-shlib		compatfile,binutils=234
+./usr/lib/libbfd.so.17.0			base-sys-shlib		compatfile,binutils=234
 ./usr/lib/libbind9.so				base-bind-shlib		compatfile
 ./usr/lib/libbind9.so.13				base-bind-shlib		compatfile
 ./usr/lib/libbind9.so.13.0			base-bind-shlib		compatfile
@@ -247,8 +249,11 @@
 ./usr/lib/libc++.so.1.0				base-sys-shlib		compatfile,libcxx
 ./usr/lib/libc.so				base-sys-shlib		compatfile
 ./usr/lib/libc.so.12				base-sys-shlib		compatfile
-./usr/lib/libc.so.12.214			base-sys-shlib		compatfile
-./usr/lib/libcdk.so				base-obsolete		compatfile,obsolete
+./usr/lib/libc.so.12.215			base-sys-shlib		compatfile
+./usr/lib/libcbor.so				base-sys-shlib		compatfile
+./usr/lib/libcbor.so.0				base-sys-shlib		compatfile
+./usr/lib/libcbor.so.0.5			base-sys-shlib		compatfile
+./usr/usr/lib/libcdk.so				base-obsolete		compatfile,obsolete
 ./usr/lib/libcom_err.so				base-krb5-shlib		compatfile,kerberos
 ./usr/lib/libcom_err.so.8			base-krb5-shlib		compatfile,kerberos
 ./usr/lib/libcom_err.so.8.0			base-krb5-shlib		compatfile,kerberos
@@ -271,8 +276,8 @@
 ./usr/lib/libctf.so.3				base-sys-shlib		compatfile,ctf
 ./usr/lib/libctf.so.3.0				base-sys-shlib		compatfile,ctf
 ./usr/lib/libcurses.so				base-sys-shlib		compatfile
-./usr/lib/libcurses.so.8			base-sys-shlib		compatfile
-./usr/lib/libcurses.so.8.2			base-sys-shlib		compatfile
+./usr/lib/libcurses.so.9			base-sys-shlib		compatfile
+./usr/lib/libcurses.so.9.0			base-sys-shlib		compatfile
 ./usr/lib/libdes.so				base-crypto-shlib	compatfile
 ./usr/lib/libdes.so.12				base-crypto-shlib	compatfile,openssl=10
 ./usr/lib/libdes.so.12.0				base-crypto-shlib	compatfile,openssl=10
@@ -320,9 +325,12 @@
 ./usr/lib/libfetch.so				base-sys-shlib		compatfile
 ./usr/lib/libfetch.so.3				base-sys-shlib		compatfile
 ./usr/lib/libfetch.so.3.0			base-sys-shlib		compatfile
+./usr/lib/libfido2.so				base-sys-shlib		compatfile
+./usr/lib/libfido2.so.2				base-sys-shlib		compatfile
+./usr/lib/libfido2.so.2.0			base-sys-shlib		compatfile
 ./usr/lib/libform.so				base-sys-shlib		compatfile
-./usr/lib/libform.so.7				base-sys-shlib		compatfile
-./usr/lib/libform.so.7.0			base-sys-shlib		compatfile
+./usr/lib/libform.so.8				base-sys-shlib		compatfile
+./usr/lib/libform.so.8.0			base-sys-shlib		compatfile
 ./usr/lib/libgcc_s.so				base-sys-shlib		compatfile,gcc
 ./usr/lib/libgcc_s.so.1				base-sys-shlib		compatfile,gcc
 ./usr/lib/libgcc_s.so.1.0			base-sys-shlib		compatfile,gcc
@@ -444,8 +452,8 @@
 ./usr/lib/libmagic.so.6				base-sys-shlib		compatfile
 ./usr/lib/libmagic.so.6.0			base-sys-shlib		compatfile
 ./usr/lib/libmenu.so				base-sys-shlib		compatfile
-./usr/lib/libmenu.so.7				base-sys-shlib		compatfile
-./usr/lib/libmenu.so.7.0			base-sys-shlib		compatfile
+./usr/lib/libmenu.so.8				base-sys-shlib		compatfile
+./usr/lib/libmenu.so.8.0			base-sys-shlib		compatfile
 ./usr/lib/libmj.so				base-crypto-shlib	compatfile
 ./usr/lib/libmj.so.1				base-crypto-shlib	compatfile
 ./usr/lib/libmj.so.1.0				base-crypto-shlib	compatfile
@@ -480,11 +488,11 @@
 ./usr/lib/libpam.so.4				base-sys-shlib		compatfile,pam
 ./usr/lib/libpam.so.4.1				base-sys-shlib		compatfile,pam
 ./usr/lib/libpanel.so				base-sys-shlib		compatfile
-./usr/lib/libpanel.so.2				base-sys-shlib		compatfile
-./usr/lib/libpanel.so.2.0			base-sys-shlib		compatfile
+./usr/lib/libpanel.so.3				base-sys-shlib		compatfile
+./usr/lib/libpanel.so.3.0			base-sys-shlib		compatfile
 ./usr/lib/libpcap.so				base-net-shlib		compatfile
 ./usr/lib/libpcap.so.8				base-net-shlib		compatfile
-./usr/lib/libpcap.so.8.0			base-net-shlib		compatfile
+./usr/lib/libpcap.so.8.1			base-net-shlib		compatfile
 ./usr/lib/libpci.so				base-sys-shlib		compatfile
 ./usr/lib/libpci.so.2				base-sys-shlib		compatfile
 ./usr/lib/libpci.so.2.2				base-sys-shlib		compatfile
@@ -575,9 +583,9 @@
 ./usr/lib/librumpdev_md.so			base-rump-shlib		rump
 ./usr/lib/librumpdev_md.so.0			base-rump-shlib		rump
 ./usr/lib/librumpdev_md.so.0.0			base-rump-shlib		rump
-./usr/lib/librumpdev_netsmb.so			base-rump-shlib		rump
-./usr/lib/librumpdev_netsmb.so.0		base-rump-shlib		rump
-./usr/lib/librumpdev_netsmb.so.0.0		base-rump-shlib		rump
+./usr/lib/librumpdev_netsmb.so			base-obsolete		obsolete
+./usr/lib/librumpdev_netsmb.so.0		base-obsolete		obsolete
+./usr/lib/librumpdev_netsmb.so.0.0		base-obsolete		obsolete
 ./usr/lib/librumpdev_opencrypto.so		base-rump-shlib		rump
 ./usr/lib/librumpdev_opencrypto.so.0		base-rump-shlib		rump
 ./usr/lib/librumpdev_opencrypto.so.0.0		base-rump-shlib		rump
@@ -683,9 +691,9 @@
 ./usr/lib/librumpfs_ptyfs.so			base-rump-shlib		rump
 ./usr/lib/librumpfs_ptyfs.so.0			base-rump-shlib		rump
 ./usr/lib/librumpfs_ptyfs.so.0.0		base-rump-shlib		rump
-./usr/lib/librumpfs_smbfs.so			base-rump-shlib		rump
-./usr/lib/librumpfs_smbfs.so.0			base-rump-shlib		rump
-./usr/lib/librumpfs_smbfs.so.0.0		base-rump-shlib		rump
+./usr/lib/librumpfs_smbfs.so			base-obsolete		obsolete
+./usr/lib/librumpfs_smbfs.so.0			base-obsolete		obsolete
+./usr/lib/librumpfs_smbfs.so.0.0		base-obsolete		obsolete
 ./usr/lib/librumpfs_syspuffs.so			base-rump-shlib		rump
 ./usr/lib/librumpfs_syspuffs.so.0		base-rump-shlib		rump
 ./usr/lib/librumpfs_syspuffs.so.0.0		base-rump-shlib		rump
@@ -851,8 +859,8 @@
 ./usr/lib/libsqlite3.so.1.4			base-sys-shlib		compatfile
 ./usr/lib/libss.so				base-obsolete		obsolete
 ./usr/lib/libssh.so				base-secsh-shlib	compatfile
-./usr/lib/libssh.so.35				base-secsh-shlib	compatfile
-./usr/lib/libssh.so.35.0			base-secsh-shlib	compatfile
+./usr/lib/libssh.so.36				base-secsh-shlib	compatfile
+./usr/lib/libssh.so.36.0			base-secsh-shlib	compatfile
 ./usr/lib/libssl.so				base-crypto-shlib	compatfile
 ./usr/lib/libssl.so.12				base-crypto-shlib	compatfile,openssl=10
 ./usr/lib/libssl.so.12.0			base-crypto-shlib	compatfile,openssl=10
@@ -868,8 +876,8 @@
 ./usr/lib/libtermcap.so.0			base-sys-shlib		compatfile
 ./usr/lib/libtermcap.so.0.6			base-sys-shlib		compatfile
 ./usr/lib/libterminfo.so			base-sys-shlib		compatfile
-./usr/lib/libterminfo.so.1			base-sys-shlib		compatfile
-./usr/lib/libterminfo.so.1.0			base-sys-shlib		compatfile
+./usr/lib/libterminfo.so.2			base-sys-shlib		compatfile
+./usr/lib/libterminfo.so.2.0			base-sys-shlib		compatfile
 ./usr/lib/libtermlib.so				base-sys-shlib		compatfile
 ./usr/lib/libtermlib.so.0			base-sys-shlib		compatfile
 ./usr/lib/libtermlib.so.0.6			base-sys-shlib		compatfile
@@ -968,5 +976,6 @@
 ./usr/lib/security/pam_self.so.4		base-sys-shlib		compatfile,pam
 ./usr/lib/security/pam_skey.so.4		base-sys-shlib		compatfile,skey,pam
 ./usr/lib/security/pam_ssh.so.4			base-sys-shlib		compatfile,pam
+./usr/lib/security/pam_u2f.so.4			base-sys-shlib		compatfile,pam
 ./usr/lib/security/pam_unix.so.4		base-sys-shlib		compatfile,pam
 ./usr/libexec/ld.elf_so				base-sys-shlib		dynamicroot

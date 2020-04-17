@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_extern.h,v 1.220 2020/02/18 20:23:17 chs Exp $	*/
+/*	$NetBSD: uvm_extern.h,v 1.222 2020/03/22 18:32:42 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -249,6 +249,7 @@ b\32UNMAP\0\
 #define UFP_NORDONLY	0x08
 #define UFP_DIRTYONLY	0x10
 #define UFP_BACKWARD	0x20
+#define UFP_NOBUSY	0x40
 
 /*
  * lockflags that control the locking behavior of various functions.
@@ -506,6 +507,8 @@ struct uvmexp_sysctl {
 	int64_t fileunknown;
 	int64_t fileclean;
 	int64_t filedirty;
+	int64_t fltup;
+	int64_t fltnoup;
 };
 
 #ifdef _KERNEL
@@ -736,7 +739,7 @@ int			uvm_mremap(struct vm_map *, vaddr_t, vsize_t,
 /* uvm_object.c */
 void			uvm_obj_init(struct uvm_object *,
 			    const struct uvm_pagerops *, bool, u_int);
-void			uvm_obj_setlock(struct uvm_object *, kmutex_t *);
+void			uvm_obj_setlock(struct uvm_object *, krwlock_t *);
 void			uvm_obj_destroy(struct uvm_object *, bool);
 int			uvm_obj_wirepages(struct uvm_object *, off_t, off_t,
 			    struct pglist *);

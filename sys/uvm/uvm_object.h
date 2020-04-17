@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_object.h,v 1.36 2020/01/15 17:55:45 ad Exp $	*/
+/*	$NetBSD: uvm_object.h,v 1.38 2020/03/14 20:45:23 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -53,8 +53,9 @@
  * For other objects, it is arbitrary (may use the lock or atomics).
  */
 
+struct krwlock;
 struct uvm_object {
-	kmutex_t *		vmobjlock;	/* lock on object */
+	struct krwlock *	vmobjlock;	/* lock on object */
 	const struct uvm_pagerops *pgops;	/* pager ops */
 	int			uo_npages;	/* # of pages in uo_pages */
 	unsigned		uo_refs;	/* reference count */
@@ -113,7 +114,7 @@ extern const struct uvm_pagerops aobj_pager;
  */
 
 #define	UVM_OBJ_NEEDS_WRITEFAULT(uobj)					\
-	(UVM_OBJ_IS_VNODE(uobj) && uvn_needs_writefault_p(uobj))
+	(UVM_OBJ_IS_VNODE(uobj) && uvn_clean_p(uobj))
 
 #define	UVM_OBJ_IS_AOBJ(uobj)						\
 	((uobj)->pgops == &aobj_pager)

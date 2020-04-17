@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_netbsdkintf.c,v 1.379 2019/11/10 21:16:37 chs Exp $	*/
+/*	$NetBSD: rf_netbsdkintf.c,v 1.381 2020/03/21 06:02:13 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2008-2011 The NetBSD Foundation, Inc.
@@ -101,7 +101,7 @@
  ***********************************************************/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.379 2019/11/10 21:16:37 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.381 2020/03/21 06:02:13 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_raid_autoconfig.h"
@@ -662,7 +662,7 @@ raiddump(dev_t dev, daddr_t blkno, void *va, size_t size)
         */
 	blkno += RF_PROTECTED_SECTORS;
 
-	return dk_dump(dksc, dev, blkno, va, size);
+	return dk_dump(dksc, dev, blkno, va, size, DK_DUMP_RECURSIVE);
 }
 
 static int

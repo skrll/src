@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_msan.c,v 1.7 2020/01/31 08:26:10 maxv Exp $	*/
+/*	$NetBSD: subr_msan.c,v 1.9 2020/04/03 18:26:14 maxv Exp $	*/
 
 /*
  * Copyright (c) 2019-2020 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_msan.c,v 1.7 2020/01/31 08:26:10 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_msan.c,v 1.9 2020/04/03 18:26:14 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -778,7 +778,7 @@ kmsan_strchr(const char *s, int c)
 	char *ret;
 
 	kmsan_check_arg(sizeof(s) + sizeof(c), "strchr():args");
-	kmsan_shadow_check(s, __builtin_strlen(s), "strchr():arg1");
+	kmsan_shadow_check(s, __builtin_strlen(s) + 1, "strchr():arg1");
 	ret = __builtin_strchr(s, c);
 
 	kmsan_init_ret(sizeof(char *));
@@ -791,7 +791,7 @@ kmsan_strrchr(const char *s, int c)
 	char *ret;
 
 	kmsan_check_arg(sizeof(s) + sizeof(c), "strrchr():args");
-	kmsan_shadow_check(s, __builtin_strlen(s), "strrchr():arg1");
+	kmsan_shadow_check(s, __builtin_strlen(s) + 1, "strrchr():arg1");
 	ret = __builtin_strrchr(s, c);
 
 	kmsan_init_ret(sizeof(char *));
@@ -885,7 +885,7 @@ kmsan_copyinstr(const void *uaddr, void *kaddr, size_t len, size_t *done)
 	kmsan_check_arg(sizeof(uaddr) + sizeof(kaddr) +
 	    sizeof(len) + sizeof(done), "copyinstr():args");
 	ret = copyinstr(uaddr, kaddr, len, &_done);
-	if (ret == 0)
+	if (ret == 0 || ret == ENAMETOOLONG)
 		kmsan_shadow_fill(kaddr, KMSAN_STATE_INITED, _done);
 	if (done != NULL) {
 		*done = _done;

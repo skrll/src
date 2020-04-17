@@ -1,4 +1,4 @@
-	$NetBSD: README,v 1.12 2020/02/07 19:22:21 pgoyette Exp $
+	$NetBSD: README,v 1.14 2020/04/04 21:15:04 kamil Exp $
 
                            Kernel Developer's Manual
 
@@ -6,7 +6,9 @@ DESCRIPTION
      The kernel example dynamic modules.
 
      This directory contains the following example modules:
+     * current_time    - prints current date and time in GMT/UTC
      * executor        - basic implementation of callout and RUN_ONCE
+     * fopsmapper      - basic implementation of mmap with fileops fo_mmap
      * hello           - the simplest `hello world' module
      * luahello        - the simplest `hello world' Lua module
      * luareadhappy    - demonstrates calling Lua code from C
@@ -73,6 +75,12 @@ HISTORY
      
      The ping_block module first appeared in NetBSD 10.0 and was authored by
      Nisarg Joshi.
+
+     The fopsmapper module first appeared in NetBSD 10.0 and was authored by
+     Aditya Vardhan Padala.
+
+     The current_time module first appeared in NetBSD 10.0 and was authored by
+     Apurva Nandan.
 
 AUTHORS
      This document was written by Kamil Rytarowski.

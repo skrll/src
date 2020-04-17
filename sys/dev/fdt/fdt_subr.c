@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_subr.c,v 1.34 2020/02/20 01:35:55 jmcneill Exp $ */
+/* $NetBSD: fdt_subr.c,v 1.36 2020/03/08 08:26:54 skrll Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_subr.c,v 1.34 2020/02/20 01:35:55 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_subr.c,v 1.36 2020/03/08 08:26:54 skrll Exp $");
 
 #include "opt_fdt.h"
 
@@ -51,9 +51,6 @@ fdtbus_init(const void *data)
 		return false;
 	}
 	fdt_data = data;
-
-	/* Now that we have a FDT blob, initialize other bits that need it. */
-	fdtbus_intr_init();
 
 	return true;
 }
@@ -243,7 +240,7 @@ fdtbus_decode_range(int phandle, uint64_t paddr)
 		buf += size_cells * 4;
 
 #ifdef FDTBUS_DEBUG
-		printf("%s: %s: cba=0x%#" PRIx64 ", pba=0x%#" PRIx64 ", cl=0x%#" PRIx64 "\n", __func__, fdt_get_name(fdtbus_get_data(), fdtbus_phandle2offset(phandle), NULL), cba, pba, cl);
+		printf("%s: %s: cba=%#" PRIx64 ", pba=%#" PRIx64 ", cl=%#" PRIx64 "\n", __func__, fdt_get_name(fdtbus_get_data(), fdtbus_phandle2offset(phandle), NULL), cba, pba, cl);
 #endif
 
 		if (paddr >= cba && paddr < cba + cl)

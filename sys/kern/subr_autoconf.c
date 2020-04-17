@@ -1,4 +1,4 @@
-/* $NetBSD: subr_autoconf.c,v 1.266 2020/02/20 21:14:23 jdolecek Exp $ */
+/* $NetBSD: subr_autoconf.c,v 1.269 2020/02/27 20:16:38 macallan Exp $ */
 
 /*
  * Copyright (c) 1996, 2000 Christopher G. Demetriou
@@ -77,7 +77,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.266 2020/02/20 21:14:23 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.269 2020/02/27 20:16:38 macallan Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -442,21 +442,23 @@ static void
 config_interrupts_thread(void *cookie)
 {
 	struct deferred_config *dc;
+	device_t dev;
 
 	mutex_enter(&config_misc_lock);
 	while ((dc = TAILQ_FIRST(&interrupt_config_queue)) != NULL) {
 		TAILQ_REMOVE(&interrupt_config_queue, dc, dc_queue);
 		mutex_exit(&config_misc_lock);
 
-		(*dc->dc_func)(dc->dc_dev);
-		if (!device_pmf_is_registered(dc->dc_dev))
-			aprint_debug_dev(dc->dc_dev,
+		dev = dc->dc_dev;
+		(*dc->dc_func)(dev);
+		if (!device_pmf_is_registered(dev))
+			aprint_debug_dev(dev,
 			    "WARNING: power management not supported\n");
-		config_pending_decr(dc->dc_dev);
+		config_pending_decr(dev);
 		kmem_free(dc, sizeof(*dc));
 
 		mutex_enter(&config_misc_lock);
-		dc->dc_dev->dv_flags &= ~DVF_ATTACH_INPROGRESS;
+		dev->dv_flags &= ~DVF_ATTACH_INPROGRESS;
 	}
 	mutex_exit(&config_misc_lock);
 
@@ -547,9 +549,10 @@ no_devmon_insert(const char *name, prop_dictionary_t p)
 static void
 devmon_report_device(device_t dev, bool isattach)
 {
-	prop_dictionary_t ev;
+	prop_dictionary_t ev, dict = device_properties(dev);
 	const char *parent;
 	const char *what;
+	const char *where;
 	device_t pdev = device_parent(dev);
 
 	/* If currently no drvctl device, just return */
@@ -562,6 +565,11 @@ devmon_report_device(device_t dev, bool isattach)
 
 	what = (isattach ? "device-attach" : "device-detach");
 	parent = (pdev == NULL ? "root" : device_xname(pdev));
+	if (prop_dictionary_get_cstring_nocopy(dict, "location", &where)) {
+		prop_dictionary_set_cstring(ev, "location", where);
+		aprint_debug("ev: %s %s at %s in [%s]\n",
+		    what, device_xname(dev), parent, where); 
+	}
 	if (!prop_dictionary_set_cstring(ev, "device", device_xname(dev)) ||
 	    !prop_dictionary_set_cstring(ev, "parent", parent)) {
 		prop_object_release(ev);

@@ -1,4 +1,4 @@
-/*	$NetBSD: ehci.c,v 1.274 2020/02/21 12:41:29 skrll Exp $ */
+/*	$NetBSD: ehci.c,v 1.278 2020/04/05 20:59:38 skrll Exp $ */
 
 /*
  * Copyright (c) 2004-2012 The NetBSD Foundation, Inc.
@@ -53,7 +53,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.274 2020/02/21 12:41:29 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.278 2020/04/05 20:59:38 skrll Exp $");
 
 #include "ohci.h"
 #include "uhci.h"
@@ -517,7 +517,7 @@ ehci_init(ehci_softc_t *sc)
 	case 3: return EIO;
 	}
 	err = usb_allocmem(&sc->sc_bus, sc->sc_flsize * sizeof(ehci_link_t),
-	    EHCI_FLALIGN_ALIGN, &sc->sc_fldma);
+	    EHCI_FLALIGN_ALIGN, USBMALLOC_COHERENT, &sc->sc_fldma);
 	if (err)
 		return err;
 	DPRINTF("flsize=%jd", sc->sc_flsize, 0, 0, 0);
@@ -750,7 +750,7 @@ ehci_intr1(ehci_softc_t *sc)
 		/* Block unprocessed interrupts. */
 		sc->sc_eintrs &= ~eintrs;
 		EOWRITE4(sc, EHCI_USBINTR, sc->sc_eintrs);
-		printf("%s: blocking intrs 0x%x\n",
+		printf("%s: blocking intrs %#x\n",
 		       device_xname(sc->sc_dev), eintrs);
 	}
 
@@ -2003,7 +2003,7 @@ ehci_open(struct usbd_pipe *pipe)
 	switch (xfertype) {
 	case UE_CONTROL:
 		err = usb_allocmem(&sc->sc_bus, sizeof(usb_device_request_t),
-				   0, &epipe->ctrl.reqdma);
+		    0, USBMALLOC_COHERENT, &epipe->ctrl.reqdma);
 #ifdef EHCI_DEBUG
 		if (err)
 			printf("ehci_open: usb_allocmem()=%d\n", err);
@@ -2803,7 +2803,7 @@ ehci_alloc_sqh(ehci_softc_t *sc)
 		mutex_exit(&sc->sc_lock);
 
 		err = usb_allocmem(&sc->sc_bus, EHCI_SQH_SIZE * EHCI_SQH_CHUNK,
-			  EHCI_PAGE_SIZE, &dma);
+		    EHCI_PAGE_SIZE, USBMALLOC_COHERENT, &dma);
 #ifdef EHCI_DEBUG
 		if (err)
 			printf("ehci_alloc_sqh: usb_allocmem()=%d\n", err);
@@ -2856,7 +2856,7 @@ ehci_alloc_sqtd(ehci_softc_t *sc)
 		mutex_exit(&sc->sc_lock);
 
 		err = usb_allocmem(&sc->sc_bus, EHCI_SQTD_SIZE*EHCI_SQTD_CHUNK,
-			  EHCI_PAGE_SIZE, &dma);
+		    EHCI_PAGE_SIZE, USBMALLOC_COHERENT, &dma);
 #ifdef EHCI_DEBUG
 		if (err)
 			printf("ehci_alloc_sqtd: usb_allocmem()=%d\n", err);
@@ -2913,7 +2913,7 @@ ehci_alloc_sqtd_chain(ehci_softc_t *sc, struct usbd_xfer *xfer,
 	KASSERT(alen != 0 || (!rd && (flags & USBD_FORCE_SHORT_XFER)));
 
 	size_t nsqtd = (!rd && (flags & USBD_FORCE_SHORT_XFER)) ? 1 : 0;
-	nsqtd += ((alen + EHCI_PAGE_SIZE - 1) / EHCI_PAGE_SIZE);
+	nsqtd += howmany(alen, EHCI_PAGE_SIZE);
 	exfer->ex_sqtds = kmem_zalloc(sizeof(ehci_soft_qtd_t *) * nsqtd,
 	    KM_SLEEP);
 	exfer->ex_nsqtd = nsqtd;
@@ -3061,7 +3061,7 @@ ehci_reset_sqtd_chain(ehci_softc_t *sc, struct usbd_xfer *xfer,
 
 		ehci_append_sqtd(sqtd, prev);
 
-		if (((curlen + mps - 1) / mps) & 1) {
+		if (howmany(curlen, mps) & 1) {
 			tog ^= 1;
 		}
 
@@ -3113,8 +3113,9 @@ ehci_alloc_itd(ehci_softc_t *sc)
 	if (freeitd == NULL) {
 		DPRINTF("allocating chunk", 0, 0, 0, 0);
 		mutex_exit(&sc->sc_lock);
+
 		err = usb_allocmem(&sc->sc_bus, EHCI_ITD_SIZE * EHCI_ITD_CHUNK,
-				EHCI_PAGE_SIZE, &dma);
+		    EHCI_PAGE_SIZE, USBMALLOC_COHERENT, &dma);
 
 		if (err) {
 			DPRINTF("alloc returned %jd", err, 0, 0, 0);
@@ -3161,8 +3162,9 @@ ehci_alloc_sitd(ehci_softc_t *sc)
 	if (freesitd == NULL) {
 		DPRINTF("allocating chunk", 0, 0, 0, 0);
 		mutex_exit(&sc->sc_lock);
+
 		err = usb_allocmem(&sc->sc_bus, EHCI_SITD_SIZE * EHCI_SITD_CHUNK,
-				EHCI_PAGE_SIZE, &dma);
+		    EHCI_PAGE_SIZE, USBMALLOC_COHERENT, &dma);
 
 		if (err) {
 			DPRINTF("alloc returned %jd", err, 0, 0,
@@ -4582,7 +4584,7 @@ ehci_device_isoc_init(struct usbd_xfer *xfer)
 	}
 
 	ufrperframe = uimax(1, USB_UFRAMES_PER_FRAME / (1 << (i - 1)));
-	frames = (xfer->ux_nframes + (ufrperframe - 1)) / ufrperframe;
+	frames = howmany(xfer->ux_nframes, ufrperframe);
 
 	for (i = 0, prev = NULL; i < frames; i++, prev = itd) {
 		itd = ehci_alloc_itd(sc);
@@ -4717,7 +4719,7 @@ ehci_device_isoc_transfer(struct usbd_xfer *xfer)
 	}
 
 	ufrperframe = uimax(1, USB_UFRAMES_PER_FRAME / (1 << (i - 1)));
-	frames = (xfer->ux_nframes + (ufrperframe - 1)) / ufrperframe;
+	frames = howmany(xfer->ux_nframes, ufrperframe);
 	uframes = USB_UFRAMES_PER_FRAME / ufrperframe;
 
 	if (frames == 0) {

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.274 2019/12/18 02:46:21 christos Exp $
+#	$NetBSD: Makefile,v 1.282 2020/04/04 17:56:22 christos Exp $
 #	from: @(#)Makefile	5.25.1.1 (Berkeley) 5/7/91
 
 .include <bsd.own.mk>
@@ -173,6 +173,7 @@ SUBDIR+=	../external/gpl3/${EXTERNAL_GCC_SUBDIR}/lib/libsupc++
 SUBDIR+=	../external/apache2/llvm/include
 .endif
 
+SUBDIR+=	../external/mit/libcbor/lib
 #==================== 2nd library dependency barrier ====================
 SUBDIR+=	.WAIT
 
@@ -217,7 +218,7 @@ SUBDIR+=	../crypto/external/bsd/heimdal/lib	# depends on libcrypto
 							# libedit, libterminfo,
 .endif
 
-SUBDIR+=	../crypto/external/bsd/openssh/lib # depends on libcrypto, libz
+SUBDIR+=	../external/bsd/libfido2/lib	# depends on libcbor
 SUBDIR+=	../crypto/external/bsd/netpgp/lib  # depends on libcrypto, ...
 SUBDIR+=	../external/bsd/libevent/lib	# depends on libcrypto
 .if ${MKDTRACE} != "no"
@@ -238,6 +239,8 @@ SUBDIR+= 	../libexec/httpd/libbozohttpd 	# depends on libssl & libcrypto
 #==================== 3rd library dependency barrier ====================
 SUBDIR+=	.WAIT
 
+SUBDIR+=	../crypto/external/bsd/openssh/lib # depends on libcrypto, libz,
+						   # libfido2
 SUBDIR+=	../crypto/external/bsd/netpgp/bindings/lua  # depends on netpgp/lib
 SUBDIR+=	../external/mpl/bind/lib	# depends on heimdal, libcrypto
 .if ${MKUNBOUND} != "no"
@@ -254,18 +257,20 @@ SUBDIR+=	librumpnet	# depends on librump
 SUBDIR+=	librumpvfs	# depends on librump
 .endif
 
-.if (${MKPAM} != "no")
-SUBDIR+=	libpam		# depends on heimdal
-.endif
-
 SUBDIR+=	../crypto/external/bsd/libsaslc	# depends on heimdal, openssl
 SUBDIR+=	../external/bsd/mdocml/lib
 
-.if (${MKRUMP} != "no")
 #==================== 4th library dependency barrier ====================
 SUBDIR+=	.WAIT
 
+.if (${MKPAM} != "no")
+SUBDIR+=	libpam		# depends on heimdal, libssh
+.endif
+
+
+.if (${MKRUMP} != "no")
 SUBDIR+=	libukfs		# depends on librumpvfs, librump
+.endif
 
 .if (${MKTPM} != "no")
 SUBDIR+=	../crypto/external/cpl/trousers/lib
@@ -274,12 +279,19 @@ SUBDIR+=	../crypto/external/cpl/trousers/lib
 #==================== 5th library dependency barrier ====================
 SUBDIR+=	.WAIT
 
+.if (${MKPAM} != "no")
+SUBDIR+=	../external/bsd/pam-u2f/lib	# depends on libpam
+.endif
+
+.if (${MKRUMP} != "no")
 SUBDIR+=	libp2k		# depends on libukfs, librumpvfs, libpuffs
+.endif
 
 .if (${MKTPM} != "no")
 SUBDIR+=	../crypto/external/cpl/tpm-tools/lib	# depends on trousers
 .endif
 
+.if (${MKRUMP} != "no")
 .if !defined(BSD_MK_COMPAT_FILE)
 SUBDIR+=	../sys/rump/dev/lib
 SUBDIR+=	../sys/rump/fs/lib
@@ -290,25 +302,6 @@ SUBDIR+=	../sys/rump/net/lib
 
 # Lua bindings come last, they might depend on anything
 SUBDIR+=	lua
-
-# Needed by rump and rescue which are outside the smbfs tree
-SUBDIR+=	../external/bsd/smbfs/lib
-
-.for S in ${SUBDIR}
-.if ${S} != ".WAIT"
-SUBLIB_${S}!=	cd ${S} && ${MAKE} -V LIB
-SUBDEP_${S}!=	cd ${S} && ${MAKE} -V LIBDPLIBS
-.endif
-.endfor
-
-showdeps:
-.for S in ${SUBDIR}
-.if ${S} != ".WAIT"
-.for DL DD in ${SUBDEP_${S}}
-	@echo ${S} ${SUBLIB_${S}} ${DL} ${DD:C,^${.CURDIR}/,,}
-.endfor
-.endif
-.endfor
 
 .include <bsd.buildinstall.mk>
 .include <bsd.subdir.mk>

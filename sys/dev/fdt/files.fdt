@@ -1,4 +1,4 @@
-# $NetBSD: files.fdt,v 1.50 2020/01/02 00:57:10 jmcneill Exp $
+# $NetBSD: files.fdt,v 1.52 2020/03/24 22:09:50 tnn Exp $
 
 include	"external/bsd/libfdt/conf/files.libfdt"
 
@@ -116,6 +116,14 @@ file	dev/fdt/simplefb.c			simplefb
 attach	com at fdt with dw_apb_uart
 file	dev/fdt/dw_apb_uart.c			dw_apb_uart
 
+# EHCI
+attach	ehci at fdt with ehci_fdt
+file	dev/fdt/ehci_fdt.c			ehci_fdt
+
+# OHCI
+attach	ohci at fdt with ohci_fdt
+file	dev/fdt/ohci_fdt.c			ohci_fdt
+
 # Designware USB2 OTG
 attach	dwctwo at fdt with dwc2_fdt
 file	dev/fdt/dwc2_fdt.c			dwc2_fdt
@@ -171,3 +179,6 @@ device	simpleamp
 attach	simpleamp at fdt
 file	dev/fdt/simple_amplifier.c		simpleamp
 
+# Broadcom GENET v5
+attach	genet at fdt with genet_fdt
+file	dev/fdt/genet_fdt.c			genet_fdt

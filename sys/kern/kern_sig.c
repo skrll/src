@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_sig.c,v 1.384 2020/02/01 02:23:23 riastradh Exp $	*/
+/*	$NetBSD: kern_sig.c,v 1.387 2020/04/06 08:20:05 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2019 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_sig.c,v 1.384 2020/02/01 02:23:23 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_sig.c,v 1.387 2020/04/06 08:20:05 kamil Exp $");
 
 #include "opt_ptrace.h"
 #include "opt_dtrace.h"
@@ -1117,7 +1117,7 @@ sigpost(struct lwp *l, sig_t action, int prop, int sig)
 	 * If the LWP is on the way out, sigclear() will be busy draining all
 	 * pending signals.  Don't give it more.
 	 */
-	if (l->l_refcnt == 0)
+	if (l->l_stat == LSZOMB)
 		return 0;
 
 	SDT_PROBE(proc, kernel, , signal__send, l, p, sig, 0, 0);
@@ -1686,6 +1686,19 @@ repeat:
 		else
 			ktrpsig(signo, action, mask, &ksi);
 	}
+}
+
+void
+eventswitchchild(struct proc *p, int code, int pe_report_event)
+{
+	mutex_enter(proc_lock);
+	mutex_enter(p->p_lock);
+	if (!(p->p_slflag & PSL_TRACED)) {
+		mutex_exit(p->p_lock);
+		mutex_exit(proc_lock);
+		return;
+	}
+	eventswitch(code, pe_report_event, p->p_oppid);
 }
 
 /*

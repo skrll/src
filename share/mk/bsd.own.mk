@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1176 2020/02/07 14:08:11 jmcneill Exp $
+#	$NetBSD: bsd.own.mk,v 1.1180 2020/04/04 23:54:06 christos Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -169,11 +169,15 @@ EXTERNAL_GDB_SUBDIR=		/does/not/exist
 #
 # What binutils is used?
 #
+.if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "i386"
+HAVE_BINUTILS?=	234
+.else
 HAVE_BINUTILS?=	231
+.endif
 
-.if ${HAVE_BINUTILS} == 231
+.if ${HAVE_BINUTILS} == 234
 EXTERNAL_BINUTILS_SUBDIR=	binutils
-.elif ${HAVE_BINUTILS} == 227
+.elif ${HAVE_BINUTILS} == 231
 EXTERNAL_BINUTILS_SUBDIR=	binutils.old
 .else
 EXTERNAL_BINUTILS_SUBDIR=	/does/not/exist
@@ -1026,9 +1030,10 @@ SOFTFLOAT_BITS=	32
 .endif
 
 #
-# We want to build zfs only for amd64 and aarch64 by default for now.
+# We want to build zfs only for amd64, aarch64 and sparc64 by default for now.
 #
-.if ${MACHINE} == "amd64" || ${MACHINE_ARCH} == "aarch64"
+.if ${MACHINE} == "amd64" || ${MACHINE_ARCH} == "aarch64" || \
+    ${MACHINE} == "sparc64"
 MKZFS?=		yes
 .endif
 
@@ -1156,6 +1161,11 @@ MKARZERO ?= ${MKREPRO}
 GROFF_FLAGS ?= -dpaper=letter
 ROFF_PAGESIZE ?= -P-pletter
 .endif
+
+#
+# Install the kernel as /netbsd/kernel and the modules in /netbsd/modules
+#
+KERNEL_DIR?=	no
 
 # Only install the general firmware on some systems
 MKFIRMWARE.amd64=		yes

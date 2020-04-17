@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bridge.c,v 1.166 2020/01/29 04:18:34 thorpej Exp $	*/
+/*	$NetBSD: if_bridge.c,v 1.170 2020/03/27 16:47:00 jdolecek Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.166 2020/01/29 04:18:34 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.170 2020/03/27 16:47:00 jdolecek Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_bridge_ipf.h"
@@ -789,9 +789,6 @@ bridge_calc_csum_flags(struct bridge_softc *sc)
 	}
 	sc->sc_csum_flags_tx = flags;
 	BRIDGE_UNLOCK(sc);
-#ifdef DEBUG
-	printf("%s: 0x%x\n", __func__, flags);
-#endif
 }
 
 static int
@@ -1499,11 +1496,7 @@ bridge_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *sa,
 	 * IFEF_MPSAFE here.
 	 */
 
-	if (m->m_len < ETHER_HDR_LEN) {
-		m = m_pullup(m, ETHER_HDR_LEN);
-		if (m == NULL)
-			return 0;
-	}
+	KASSERT(m->m_len >= ETHER_HDR_LEN);
 
 	eh = mtod(m, struct ether_header *);
 	sc = ifp->if_bridge;
@@ -2104,6 +2097,12 @@ bridge_broadcast(struct bridge_softc *sc, struct ifnet *src_if,
 				if_statinc(&sc->sc_if, if_oerrors);
 				goto next;
 			}
+			/*
+			 * Before enqueueing this packet to the destination
+			 * interface, clear any in-bound checksum flags to
+			 * prevent them from being misused as out-bound flags.
+			 */
+			mc->m_pkthdr.csum_flags = 0;
 
 			m_set_rcvif(mc, dst_if);
 			mc->m_flags &= ~M_PROMISC;

@@ -1,4 +1,4 @@
-/*	$NetBSD: cd9660_vfsops.c,v 1.94 2020/01/17 20:08:07 ad Exp $	*/
+/*	$NetBSD: cd9660_vfsops.c,v 1.96 2020/04/04 20:49:30 ad Exp $	*/
 
 /*-
  * Copyright (c) 1994
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cd9660_vfsops.c,v 1.94 2020/01/17 20:08:07 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cd9660_vfsops.c,v 1.96 2020/04/04 20:49:30 ad Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -77,8 +77,6 @@ __KERNEL_RCSID(0, "$NetBSD: cd9660_vfsops.c,v 1.94 2020/01/17 20:08:07 ad Exp $"
 MODULE(MODULE_CLASS_VFS, cd9660, NULL);
 
 MALLOC_JUSTDEFINE(M_ISOFSMNT, "ISOFS mount", "ISOFS mount structure");
-
-static struct sysctllog *cd9660_sysctl_log;
 
 extern const struct vnodeopv_desc cd9660_vnodeop_opv_desc;
 extern const struct vnodeopv_desc cd9660_specop_opv_desc;
@@ -131,22 +129,15 @@ static int iso_makemp(struct iso_mnt *isomp, struct buf *bp, int *ea_len);
 static int iso_mountfs(struct vnode *devvp, struct mount *mp,
 		struct lwp *l, struct iso_args *argp);
 
-static int
-cd9660_modcmd(modcmd_t cmd, void *arg)
+SYSCTL_SETUP(cd9660_sysctl_setup, "cd9660 sysctl")
 {
-	int error;
 
-	switch (cmd) {
-	case MODULE_CMD_INIT:
-		error = vfs_attach(&cd9660_vfsops);
-		if (error != 0)
-			break;
-		sysctl_createv(&cd9660_sysctl_log, 0, NULL, NULL,
+		sysctl_createv(clog, 0, NULL, NULL,
 			       CTLFLAG_PERMANENT, CTLTYPE_NODE, "cd9660",
 			       SYSCTL_DESCR("ISO-9660 file system"),
 			       NULL, 0, NULL, 0,
 			       CTL_VFS, 14, CTL_EOL);
-		sysctl_createv(&cd9660_sysctl_log, 0, NULL, NULL,
+		sysctl_createv(clog, 0, NULL, NULL,
 			       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 			       CTLTYPE_INT, "utf8_joliet",
 			       SYSCTL_DESCR("Encode Joliet filenames to UTF-8"),
@@ -157,12 +148,23 @@ cd9660_modcmd(modcmd_t cmd, void *arg)
 		 * one more instance of the "number to vfs" mapping problem,
 		 * but "14" is the order as taken from sys/mount.h
 		 */
+}
+
+static int
+cd9660_modcmd(modcmd_t cmd, void *arg)
+{
+	int error;
+
+	switch (cmd) {
+	case MODULE_CMD_INIT:
+		error = vfs_attach(&cd9660_vfsops);
+		if (error != 0)
+			break;
 		break;
 	case MODULE_CMD_FINI:
 		error = vfs_detach(&cd9660_vfsops);
 		if (error != 0)
 			break;
-		sysctl_teardown(&cd9660_sysctl_log);
 		break;
 	default:
 		error = ENOTTY;
@@ -444,7 +446,7 @@ iso_mountfs(struct vnode *devvp, struct mount *mp, struct lwp *l,
 	mp->mnt_stat.f_fsid = mp->mnt_stat.f_fsidx.__fsid_val[0];
 	mp->mnt_stat.f_namemax = ISO_MAXNAMLEN;
 	mp->mnt_flag |= MNT_LOCAL;
-	mp->mnt_iflag |= IMNT_MPSAFE;
+	mp->mnt_iflag |= IMNT_MPSAFE | IMNT_SHRLOOKUP;
 	mp->mnt_dev_bshift = iso_bsize;
 	mp->mnt_fs_bshift = isomp->im_bshift;
 	isomp->im_mountp = mp;

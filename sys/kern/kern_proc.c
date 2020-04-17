@@ -1,7 +1,7 @@
-/*	$NetBSD: kern_proc.c,v 1.241 2020/02/21 00:26:22 joerg Exp $	*/
+/*	$NetBSD: kern_proc.c,v 1.243 2020/04/06 08:20:05 kamil Exp $	*/
 
 /*-
- * Copyright (c) 1999, 2006, 2007, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 1999, 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_proc.c,v 1.241 2020/02/21 00:26:22 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_proc.c,v 1.243 2020/04/06 08:20:05 kamil Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_kstack.h"
@@ -106,6 +106,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_proc.c,v 1.241 2020/02/21 00:26:22 joerg Exp $"
 #include <sys/exec.h>
 #include <sys/cpu.h>
 #include <sys/compat_stub.h>
+#include <sys/vnode.h>
 
 #include <uvm/uvm_extern.h>
 #include <uvm/uvm.h>
@@ -476,7 +477,7 @@ proc0_init(void)
 	p->p_cred = cred0;
 
 	/* Create the CWD info. */
-	rw_init(&cwdi0.cwdi_lock);
+	mutex_init(&cwdi0.cwdi_lock, MUTEX_DEFAULT, IPL_NONE);
 
 	/* Create the limits structures. */
 	mutex_init(&limit0.pl_lock, MUTEX_DEFAULT, IPL_NONE);
@@ -2269,6 +2270,7 @@ fill_proc(const struct proc *psrc, struct proc *p, bool allowaddr)
 	COND_SET_VALUE(p->p_sigpend, psrc->p_sigpend, allowaddr);
 	COND_SET_VALUE(p->p_lwpctl, psrc->p_lwpctl, allowaddr);
 	p->p_ppid = psrc->p_ppid;
+	p->p_oppid = psrc->p_oppid;
 	COND_SET_VALUE(p->p_path, psrc->p_path, allowaddr);
 	COND_SET_VALUE(p->p_sigctx, psrc->p_sigctx, allowaddr);
 	p->p_nice = psrc->p_nice;
@@ -2594,7 +2596,7 @@ fill_cwd(struct lwp *l, pid_t pid, void *oldp, size_t *oldlenp)
 	struct proc *p;
 	char *path;
 	char *bp, *bend;
-	struct cwdinfo *cwdi;
+	const struct cwdinfo *cwdi;
 	struct vnode *vp;
 	size_t len, lenused;
 
@@ -2609,11 +2611,12 @@ fill_cwd(struct lwp *l, pid_t pid, void *oldp, size_t *oldlenp)
 	bend = bp;
 	*(--bp) = '\0';
 
-	cwdi = p->p_cwdi;
-	rw_enter(&cwdi->cwdi_lock, RW_READER);
+	cwdi = cwdlock(p);
 	vp = cwdi->cwdi_cdir;
+	vref(vp);
+	cwdunlock(p);
 	error = getcwd_common(vp, NULL, &bp, path, len/2, 0, l);
-	rw_exit(&cwdi->cwdi_lock);
+	vrele(vp);
 
 	if (error)
 		goto out;

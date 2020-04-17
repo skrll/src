@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.392 2020/02/12 17:36:41 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.402 2020/03/29 09:20:43 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -47,7 +47,7 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  * 3. The name of the company nor the name of the author may be used to
- *    endorse or promote products derived from this software without specific
+ *   endorse or promote products derived from this software without specific
  *    prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
@@ -198,8 +198,9 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.392 2020/02/12 17:36:41 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.402 2020/03/29 09:20:43 skrll Exp $");
 
+#include <sys/atomic.h>
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/atomic.h>
@@ -548,7 +549,7 @@ pmap_acquire_pmap_lock(pmap_t pm)
 		return;
 #endif
 
-	mutex_enter(pm->pm_lock);
+	mutex_enter(&pm->pm_lock);
 }
 
 static inline void
@@ -558,7 +559,7 @@ pmap_release_pmap_lock(pmap_t pm)
 	if (__predict_false(db_onproc != NULL))
 		return;
 #endif
-	mutex_exit(pm->pm_lock);
+	mutex_exit(&pm->pm_lock);
 }
 
 static inline void
@@ -2721,9 +2722,10 @@ pmap_syncicache_page(struct vm_page_md *md, paddr_t pa)
 		 * Unmap the page(s).
 		 */
 		l2pte_reset(ptep + j);
+		PTE_SYNC(ptep + j);
+
 		pmap_tlb_flush_SE(kpm, dstp + i, PVF_REF | PVF_EXEC);
 	}
-	PTE_SYNC_RANGE(ptep, way_size / L2_S_SIZE);
 
 	md->pvh_attrs |= PVF_EXEC;
 	PMAPCOUNT(exec_synced);
@@ -3026,10 +3028,9 @@ pmap_create(void)
 
 	pm = pool_cache_get(&pmap_cache, PR_WAITOK);
 
-	mutex_init(&pm->pm_obj_lock, MUTEX_DEFAULT, IPL_NONE);
-	uvm_obj_init(&pm->pm_obj, NULL, false, 1);
-	uvm_obj_setlock(&pm->pm_obj, &pm->pm_obj_lock);
+	mutex_init(&pm->pm_lock, MUTEX_DEFAULT, IPL_NONE);
 
+	pm->pm_refs = 1;
 	pm->pm_stats.wired_count = 0;
 	pm->pm_stats.resident_count = 1;
 #ifdef ARM_MMU_EXTENDED
@@ -3398,9 +3399,7 @@ pmap_enter(pmap_t pm, vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 				}
 			}
 		}
-#endif /* !ARM_MMU_EXTENDED */
 
-#ifndef ARM_MMU_EXTENDED
 		UVMHIST_LOG(maphist, "  is_cached %jd cs 0x%08jx",
 		    is_cached, pm->pm_cstate.cs_all, 0, 0);
 
@@ -3467,6 +3466,12 @@ pmap_remove(pmap_t pm, vaddr_t sva, vaddr_t eva)
 	UVMHIST_FUNC(__func__); UVMHIST_CALLED(maphist);
 	UVMHIST_LOG(maphist, " (pm=%#jx, sva=%#jx, eva=%#jx)",
 	    (uintptr_t)pm, sva, eva, 0);
+
+#ifdef PMAP_FAULTINFO
+	curpcb->pcb_faultinfo.pfi_faultaddr = 0;
+	curpcb->pcb_faultinfo.pfi_repeats = 0;
+	curpcb->pcb_faultinfo.pfi_faultptep = NULL;
+#endif
 
 	SLIST_INIT(&opv_list);
 	/*
@@ -5180,7 +5185,7 @@ pmap_update(pmap_t pm)
 	UVMHIST_LOG(maphist, "  <-- done", 0, 0, 0, 0);
 }
 
-void
+bool
 pmap_remove_all(pmap_t pm)
 {
 
@@ -5208,6 +5213,7 @@ pmap_remove_all(pmap_t pm)
 	pmap_tlb_asid_release_all(pm);
 #endif
 	pm->pm_remove_all = true;
+	return false;
 }
 
 /*
@@ -5218,8 +5224,6 @@ void
 pmap_destroy(pmap_t pm)
 {
 	UVMHIST_FUNC(__func__); UVMHIST_CALLED(maphist);
-
-	u_int count;
 
 	if (pm == NULL)
 		return;
@@ -5239,10 +5243,7 @@ pmap_destroy(pmap_t pm)
 	/*
 	 * Drop reference count
 	 */
-	mutex_enter(pm->pm_lock);
-	count = --pm->pm_obj.uo_refs;
-	mutex_exit(pm->pm_lock);
-	if (count > 0) {
+	if (atomic_dec_uint_nv(&pm->pm_refs) > 0) {
 #ifndef ARM_MMU_EXTENDED
 		if (pmap_is_current(pm)) {
 			if (pm != pmap_kernel())
@@ -5280,8 +5281,7 @@ pmap_destroy(pmap_t pm)
 		ci->ci_pmap_lastuser = NULL;
 #endif
 
-	uvm_obj_destroy(&pm->pm_obj, false);
-	mutex_destroy(&pm->pm_obj_lock);
+	mutex_destroy(&pm->pm_lock);
 	pool_cache_put(&pmap_cache, pm);
 	UVMHIST_LOG(maphist, "  <-- done", 0, 0, 0, 0);
 }
@@ -5303,9 +5303,7 @@ pmap_reference(pmap_t pm)
 	pmap_use_l1(pm);
 #endif
 
-	mutex_enter(pm->pm_lock);
-	pm->pm_obj.uo_refs++;
-	mutex_exit(pm->pm_lock);
+	atomic_inc_uint(&pm->pm_refs);
 }
 
 #if (ARM_MMU_V6 + ARM_MMU_V7) > 0
@@ -5828,30 +5826,34 @@ pmap_grow_map(vaddr_t va, paddr_t *pap)
 			return 1;
 		pa = VM_PAGE_TO_PHYS(pg);
 		/*
-		 * This new page must not have any mappings.  Enter it via
-		 * pmap_kenter_pa and let that routine do the hard work.
+		 * This new page must not have any mappings.
 		 */
 		struct vm_page_md *md __diagused = VM_PAGE_TO_MD(pg);
 		KASSERT(SLIST_EMPTY(&md->pvh_list));
 	}
 
-	pmap_kenter_pa(va, pa,
-	    VM_PROT_READ|VM_PROT_WRITE, PMAP_KMPAGE|PMAP_PTE);
+	/*
+	 * Enter it via pmap_kenter_pa and let that routine do the hard work.
+	 */
+	pmap_kenter_pa(va, pa, VM_PROT_READ | VM_PROT_WRITE,
+	    PMAP_KMPAGE | PMAP_PTE);
 
 	if (pap)
 		*pap = pa;
 
 	PMAPCOUNT(pt_mappings);
 
-	struct l2_bucket * const l2b __diagused =
-	    pmap_get_l2_bucket(pmap_kernel(), va);
+	const pmap_t kpm __diagused = pmap_kernel();
+	struct l2_bucket * const l2b __diagused = pmap_get_l2_bucket(kpm, va);
 	KASSERT(l2b != NULL);
 
 	pt_entry_t * const ptep __diagused = &l2b->l2b_kva[l2pte_index(va)];
-	const pt_entry_t opte __diagused = *ptep;
-	KASSERT((opte & L2_S_CACHE_MASK) == pte_l2_s_cache_mode_pt);
+	const pt_entry_t pte __diagused = *ptep;
+	KASSERT(l2pte_valid_p(pte));
+	KASSERT((pte & L2_S_CACHE_MASK) == pte_l2_s_cache_mode_pt);
 
 	memset((void *)va, 0, PAGE_SIZE);
+
 	return 0;
 }
 
@@ -6209,9 +6211,8 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	 */
 	mutex_init(&pmap_lock, MUTEX_DEFAULT, IPL_VM);
 	mutex_init(&kpm_lock, MUTEX_DEFAULT, IPL_NONE);
-	mutex_init(&pm->pm_obj_lock, MUTEX_DEFAULT, IPL_VM);
-	uvm_obj_init(&pm->pm_obj, NULL, false, 1);
-	uvm_obj_setlock(&pm->pm_obj, &pm->pm_obj_lock);
+	mutex_init(&pm->pm_lock, MUTEX_DEFAULT, IPL_VM);
+	pm->pm_refs = 1;
 
 	VPRINTF("l1pt ");
 	/*
@@ -6730,7 +6731,7 @@ pmap_postinit(void)
  * find them as necessary.
  *
  * Note that the data on this list MUST remain valid after initarm() returns,
- * as pmap_bootstrap() uses it to contruct L2 table metadata.
+ * as pmap_bootstrap() uses it to construct L2 table metadata.
  */
 SLIST_HEAD(, pv_addr) kernel_pt_list = SLIST_HEAD_INITIALIZER(kernel_pt_list);
 

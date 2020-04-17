@@ -1,4 +1,4 @@
-/*	$NetBSD: if_rge.c,v 1.6 2020/02/13 23:05:53 sevan Exp $	*/
+/*	$NetBSD: if_rge.c,v 1.9 2020/02/29 21:27:19 thorpej Exp $	*/
 /*	$OpenBSD: if_rge.c,v 1.2 2020/01/02 09:00:45 kevlo Exp $	*/
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_rge.c,v 1.6 2020/02/13 23:05:53 sevan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_rge.c,v 1.9 2020/02/29 21:27:19 thorpej Exp $");
 
 /* #include "vlan.h" Sevan */
 
@@ -70,6 +70,25 @@ struct mbuf_list {
 	struct mbuf 	*ml_tail;
 	u_int 	ml_len;
 };
+
+static struct mbuf *
+MCLGETI(struct rge_softc *sc __unused, int how,
+    struct ifnet *ifp __unused, u_int size)
+{
+	struct mbuf *m;
+
+	MGETHDR(m, how, MT_DATA);
+	if (m == NULL)
+		return NULL;
+
+	MEXTMALLOC(m, size, how);
+	if ((m->m_flags & M_EXT) == 0) {
+		m_freem(m);
+		return NULL;
+	}
+	return m;
+}
+
 #ifdef NET_MPSAFE
 #define 	RGE_MPSAFE	1
 #define 	CALLOUT_FLAGS	CALLOUT_MPSAFE
@@ -223,7 +242,11 @@ rge_attach(device_t parent, device_t self, void *aux)
 	}
 	printf(": %s", intrstr);
 
-	sc->sc_dmat = pa->pa_dmat;
+	if (pci_dma64_available(pa))
+		sc->sc_dmat = pa->pa_dmat64;
+	else
+		sc->sc_dmat = pa->pa_dmat;
+
 	sc->sc_pc = pa->pa_pc;
 	sc->sc_tag = pa->pa_tag;
 
@@ -949,7 +972,7 @@ rge_allocmem(struct rge_softc *sc)
 	/* Load the map for the TX ring. */
 	error = bus_dmamem_map(sc->sc_dmat, &sc->rge_ldata.rge_tx_listseg,
 	    sc->rge_ldata.rge_tx_listnseg, RGE_TX_LIST_SZ,
-	    &sc->rge_ldata.rge_tx_list,
+	    (void **) &sc->rge_ldata.rge_tx_list,
 	    BUS_DMA_NOWAIT); /* XXX OpenBSD adds BUS_DMA_COHERENT */
 	if (error) {
 		printf("%s: can't map TX dma buffers\n", sc->sc_dev.dv_xname);
@@ -999,7 +1022,7 @@ rge_allocmem(struct rge_softc *sc)
 	/* Load the map for the RX ring. */
 	error = bus_dmamem_map(sc->sc_dmat, &sc->rge_ldata.rge_rx_listseg,
 	    sc->rge_ldata.rge_rx_listnseg, RGE_RX_LIST_SZ,
-	    &sc->rge_ldata.rge_rx_list,
+	    (void **) &sc->rge_ldata.rge_rx_list,
 	    BUS_DMA_NOWAIT);  /* XXX OpenBSD adds BUS_DMA_COHERENT */
 	if (error) {
 		printf("%s: can't map RX dma buffers\n", sc->sc_dev.dv_xname);

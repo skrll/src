@@ -1,7 +1,7 @@
-/*	$NetBSD: vfs_mount.c,v 1.74 2020/01/17 20:08:09 ad Exp $	*/
+/*	$NetBSD: vfs_mount.c,v 1.76 2020/04/10 22:34:36 ad Exp $	*/
 
 /*-
- * Copyright (c) 1997-2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 1997-2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.74 2020/01/17 20:08:09 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.76 2020/04/10 22:34:36 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -90,6 +90,7 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.74 2020/01/17 20:08:09 ad Exp $");
 #include <sys/systm.h>
 #include <sys/vfs_syscalls.h>
 #include <sys/vnode_impl.h>
+#include <sys/xcall.h>
 
 #include <miscfs/genfs/genfs.h>
 #include <miscfs/specfs/specdev.h>
@@ -675,18 +676,23 @@ mount_checkdirs(vnode_t *olddp)
 			rele2 = NULL;
 			atomic_inc_uint(&cwdi->cwdi_refcnt);
 			mutex_exit(proc_lock);
-			rw_enter(&cwdi->cwdi_lock, RW_WRITER);
-			if (cwdi->cwdi_cdir == olddp) {
-				rele1 = cwdi->cwdi_cdir;
-				vref(newdp);
-				cwdi->cwdi_cdir = newdp;
+			mutex_enter(&cwdi->cwdi_lock);
+			if (cwdi->cwdi_cdir == olddp ||
+			    cwdi->cwdi_rdir == olddp) {
+			    	/* XXX belongs in vfs_cwd.c, but rump. */
+			    	xc_barrier(0);
+			    	if (cwdi->cwdi_cdir == olddp) {
+					rele1 = cwdi->cwdi_cdir;
+					vref(newdp);
+					cwdi->cwdi_cdir = newdp;
+				}
+				if (cwdi->cwdi_rdir == olddp) {
+					rele2 = cwdi->cwdi_rdir;
+					vref(newdp);
+					cwdi->cwdi_rdir = newdp;
+				}
 			}
-			if (cwdi->cwdi_rdir == olddp) {
-				rele2 = cwdi->cwdi_rdir;
-				vref(newdp);
-				cwdi->cwdi_rdir = newdp;
-			}
-			rw_exit(&cwdi->cwdi_lock);
+			mutex_exit(&cwdi->cwdi_lock);
 			cwdfree(cwdi);
 			if (rele1 != NULL)
 				vrele(rele1);
@@ -1239,14 +1245,13 @@ done:
 
 		/*
 		 * Get the vnode for '/'.  Set cwdi0.cwdi_cdir to
-		 * reference it.
+		 * reference it, and donate it the reference grabbed
+		 * with VFS_ROOT().
 		 */
-		error = VFS_ROOT(mp, LK_SHARED, &rootvnode);
+		error = VFS_ROOT(mp, LK_NONE, &rootvnode);
 		if (error)
 			panic("cannot find root vnode, error=%d", error);
 		cwdi0.cwdi_cdir = rootvnode;
-		vref(cwdi0.cwdi_cdir);
-		VOP_UNLOCK(rootvnode);
 		cwdi0.cwdi_rdir = NULL;
 
 		/*
