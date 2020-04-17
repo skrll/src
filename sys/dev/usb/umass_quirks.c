@@ -73,32 +73,6 @@ Static void umass_fixup_sony(struct umass_softc *);
  * - mycroft
  */
 Static const struct umass_quirk umass_quirks[] = {
-	/*
-	 * The following 3 In-System Design adapters use a non-standard ATA
-	 * over BBB protocol.  Force this protocol by quirk entries.
-	 */
-	{ { USB_VENDOR_INSYSTEM, USB_PRODUCT_INSYSTEM_ADAPTERV2 },
-	  UMASS_WPROTO_BBB, UMASS_CPROTO_ISD_ATA,
-	  0,
-	  0,
-	  UMATCH_VENDOR_PRODUCT,
-	  NULL, NULL
-	},
-	{ { USB_VENDOR_INSYSTEM, USB_PRODUCT_INSYSTEM_ATAPI },
-	  UMASS_WPROTO_BBB, UMASS_CPROTO_ISD_ATA,
-	  0,
-	  0,
-	  UMATCH_VENDOR_PRODUCT,
-	  NULL, NULL
-	},
-	{ { USB_VENDOR_INSYSTEM, USB_PRODUCT_INSYSTEM_DRIVEV2_5 },
-	  UMASS_WPROTO_BBB, UMASS_CPROTO_ISD_ATA,
-	  0,
-	  0,
-	  UMATCH_VENDOR_PRODUCT,
-	  NULL, NULL
-	},
-
 	{ { USB_VENDOR_INSYSTEM, USB_PRODUCT_INSYSTEM_USBCABLE },
 	  UMASS_WPROTO_CBI, UMASS_CPROTO_ATAPI,
 	  0,
