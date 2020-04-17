@@ -1,4 +1,4 @@
-/*	$NetBSD: ata_wdc.c,v 1.114 2020/04/04 21:36:15 jdolecek Exp $	*/
+/*	$NetBSD: ata_wdc.c,v 1.115 2020/04/13 10:49:34 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001, 2003 Manuel Bouyer.
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ata_wdc.c,v 1.114 2020/04/04 21:36:15 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ata_wdc.c,v 1.115 2020/04/13 10:49:34 jdolecek Exp $");
 
 #include "opt_ata.h"
 #include "opt_wdc.h"

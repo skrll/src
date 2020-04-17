@@ -1,4 +1,4 @@
-#	$NetBSD: files.arm,v 1.153 2020/02/15 08:16:11 skrll Exp $
+#	$NetBSD: files.arm,v 1.156 2020/04/13 07:09:51 maxv Exp $
 
 # temporary define to allow easy moving to ../arch/arm/arm32
 defflag				ARM32
@@ -78,6 +78,10 @@ defflag  opt_arm_debug.h	ARM_LOCK_CAS_DEBUG
 defflag  opt_arm_debug.h	VERBOSE_INIT_ARM
 defparam opt_arm_debug.h	EARLYCONS
 
+# ARMv8-specific options
+defflag  opt_cpuoptions.h	ARMV83_PAC
+defflag  opt_cpuoptions.h	ARMV85_BTI
+
 # Board-specific bus_space(9)/bus_dma(9) definitions
 defflag  opt_arm_bus_space.h	__BUS_SPACE_HAS_STREAM_METHODS
 				__BUS_SPACE_HAS_PROBING_METHODS
@@ -153,6 +157,8 @@ file	arch/arm/arm/disassem.c
 define	bus_space_generic
 file	arch/arm/arm/bus_space_asm_generic.S	bus_space_generic
 file	arch/arm/arm/bus_space_notimpl.S	arm32
+
+file	arch/arm/arm/bus_stubs.c
 
 file	arch/arm/arm/arm_cpu_topology.c
 file	arch/arm/arm/arm_machdep.c

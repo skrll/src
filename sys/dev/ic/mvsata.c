@@ -1,4 +1,4 @@
-/*	$NetBSD: mvsata.c,v 1.55 2020/04/04 21:36:15 jdolecek Exp $	*/
+/*	$NetBSD: mvsata.c,v 1.56 2020/04/13 10:49:34 jdolecek Exp $	*/
 /*
  * Copyright (c) 2008 KIYOHARA Takashi
  * All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mvsata.c,v 1.55 2020/04/04 21:36:15 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mvsata.c,v 1.56 2020/04/13 10:49:34 jdolecek Exp $");
 
 #include "opt_mvsata.h"
 

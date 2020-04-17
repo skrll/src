@@ -1,4 +1,4 @@
-/*	$NetBSD: umass_quirks.c,v 1.100 2017/10/28 00:37:12 pgoyette Exp $	*/
+/*	$NetBSD: umass_quirks.c,v 1.101 2020/04/13 09:26:43 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 2001, 2004 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: umass_quirks.c,v 1.100 2017/10/28 00:37:12 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: umass_quirks.c,v 1.101 2020/04/13 09:26:43 jdolecek Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

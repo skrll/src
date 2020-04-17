@@ -1,4 +1,4 @@
-/*	$NetBSD: ossaudio.c,v 1.78 2019/11/03 11:13:46 isaki Exp $	*/
+/*	$NetBSD: ossaudio.c,v 1.81 2020/04/15 16:39:06 nia Exp $	*/
 
 /*-
  * Copyright (c) 1997, 2008 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ossaudio.c,v 1.78 2019/11/03 11:13:46 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ossaudio.c,v 1.81 2020/04/15 16:39:06 nia Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -68,6 +68,7 @@ static int opaque_to_enum(struct audiodevinfo *di, audio_mixer_name_t *label, in
 static int enum_to_ord(struct audiodevinfo *di, int enm);
 static int enum_to_mask(struct audiodevinfo *di, int enm);
 
+static void setchannels(file_t *, int, int);
 static void setblocksize(file_t *, struct audio_info *);
 
 #ifdef AUDIO_DEBUG
@@ -175,7 +176,7 @@ oss_ioctl_audio(struct lwp *l, const struct oss_sys_ioctl_args *uap, register_t 
 	} */
 	file_t *fp;
 	u_long com;
-	struct audio_info tmpinfo;
+	struct audio_info tmpinfo, hwfmt;
 	struct audio_offset tmpoffs;
 	struct oss_audio_buf_info bufinfo;
 	struct oss_count_info cntinfo;
@@ -230,11 +231,41 @@ oss_ioctl_audio(struct lwp *l, const struct oss_sys_ioctl_args *uap, register_t 
 		tmpinfo.play.sample_rate =
 		tmpinfo.record.sample_rate = idat;
 		DPRINTF(("%s: SNDCTL_DSP_SPEED > %d\n", __func__, idat));
-		error = ioctlf(fp, AUDIO_SETINFO, &tmpinfo);
-		if (error) {
-			DPRINTF(("%s: SNDCTL_DSP_SPEED %d = %d\n",
-			     __func__, idat, error));
-			goto out;
+		/*
+		 * The default NetBSD behavior if an unsupported sample rate
+		 * is set is to return an error code and keep the rate at the
+		 * default of 8000 Hz.
+		 *
+		 * However, the OSS expectation is a sample rate supported by
+		 * the hardware is returned if the exact rate could not be set.
+		 *
+		 * So, if the chosen sample rate is invalid, set and return
+		 * the current hardware rate.
+		 */
+		if (ioctlf(fp, AUDIO_SETINFO, &tmpinfo) != 0) {
+			error = ioctlf(fp, AUDIO_GETFORMAT, &hwfmt);
+			if (error) {
+				DPRINTF(("%s: AUDIO_GETFORMAT %d\n",
+				     __func__, error));
+				goto out;
+			}
+			error = ioctlf(fp, AUDIO_GETINFO, &tmpinfo);
+			if (error) {
+				DPRINTF(("%s: AUDIO_GETINFO %d\n",
+				     __func__, error));
+				goto out;
+			}
+			tmpinfo.play.sample_rate =
+			tmpinfo.record.sample_rate =
+			    (tmpinfo.mode == AUMODE_RECORD) ?
+			    hwfmt.record.sample_rate :
+			    hwfmt.play.sample_rate;
+			error = ioctlf(fp, AUDIO_SETINFO, &tmpinfo);
+			if (error) {
+				DPRINTF(("%s: SNDCTL_DSP_SPEED %d = %d\n",
+				     __func__, idat, error));
+				goto out;
+			}
 		}
 		/* FALLTHROUGH */
 	case OSS_SOUND_PCM_READ_RATE:
@@ -365,10 +396,19 @@ oss_ioctl_audio(struct lwp *l, const struct oss_sys_ioctl_args *uap, register_t 
 			tmpinfo.record.encoding = AUDIO_ENCODING_AC3;
 			break;
 		default:
-			DPRINTF(("%s: SNDCTL_DSP_SETFMT bad fmt %d\n",
-			     __func__, idat));
-			error = EINVAL;
-			goto out;
+			/*
+			 * OSSv4 specifies that if an invalid format is chosen
+			 * by an application then a sensible format supported
+			 * by the hardware is returned.
+			 *
+			 * In this case, we pick S16LE since it's reasonably
+			 * assumed to be supported by applications.
+			 */
+			tmpinfo.play.precision =
+			tmpinfo.record.precision = 16;
+			tmpinfo.play.encoding =
+			tmpinfo.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
+			break;
 		}
 		DPRINTF(("%s: SNDCTL_DSP_SETFMT > 0x%x\n",
 		    __func__, idat));
@@ -448,15 +488,13 @@ oss_ioctl_audio(struct lwp *l, const struct oss_sys_ioctl_args *uap, register_t 
 			     __func__, error));
 			goto out;
 		}
-		tmpinfo.play.channels =
-		tmpinfo.record.channels = idat;
-		DPRINTF(("%s: SNDCTL_DSP_CHANNELS > %d\n", __func__, idat));
-		error = ioctlf(fp, AUDIO_SETINFO, &tmpinfo);
+		error = ioctlf(fp, AUDIO_GETBUFINFO, &tmpinfo);
 		if (error) {
-			DPRINTF(("%s: AUDIO_SETINFO %d\n",
+			DPRINTF(("%s: AUDIO_GETBUFINFO %d\n",
 			     __func__, error));
 			goto out;
 		}
+		setchannels(fp, tmpinfo.mode, idat);
 		/* FALLTHROUGH */
 	case OSS_SOUND_PCM_READ_CHANNELS:
 		error = ioctlf(fp, AUDIO_GETBUFINFO, &tmpinfo);
@@ -1490,6 +1528,54 @@ oss_ioctl_sequencer(struct lwp *l, const struct oss_sys_ioctl_args *uap, registe
  out:
 	fd_putfile(SCARG(uap, fd));
 	return error;
+}
+
+/*
+ * When AUDIO_SETINFO fails to set a channel count, the application's chosen
+ * number is out of range of what the kernel allows.
+ *
+ * When this happens, we use the current hardware settings. This is just in
+ * case an application is abusing SNDCTL_DSP_CHANNELS - OSSv4 always sets and
+ * returns a reasonable value, even if it wasn't what the user requested.
+ *
+ * XXX: If a device is opened for both playback and recording, and supports
+ * fewer channels for recording than playback, applications that do both will
+ * behave very strangely. OSS doesn't allow for reporting separate channel
+ * counts for recording and playback. This could be worked around by always
+ * mixing recorded data up to the same number of channels as is being used
+ * for playback.
+ */
+static void
+setchannels(file_t *fp, int mode, int nchannels)
+{
+	struct audio_info tmpinfo, hwfmt;
+	int (*ioctlf)(file_t *, u_long, void *);
+
+	ioctlf = fp->f_ops->fo_ioctl;
+
+	if (ioctlf(fp, AUDIO_GETFORMAT, &hwfmt) < 0) {
+		hwfmt.record.channels = hwfmt.play.channels = 2;
+	}
+
+	if (mode & AUMODE_PLAY) {
+		AUDIO_INITINFO(&tmpinfo);
+		tmpinfo.play.channels = nchannels;
+		if (ioctlf(fp, AUDIO_SETINFO, &tmpinfo) < 0) {
+			AUDIO_INITINFO(&tmpinfo);
+			tmpinfo.play.channels = hwfmt.play.channels;
+			(void)ioctlf(fp, AUDIO_SETINFO, &tmpinfo);
+		}
+	}
+
+	if (mode & AUMODE_RECORD) {
+		AUDIO_INITINFO(&tmpinfo);
+		tmpinfo.record.channels = nchannels;
+		if (ioctlf(fp, AUDIO_SETINFO, &tmpinfo) < 0) {
+			AUDIO_INITINFO(&tmpinfo);
+			tmpinfo.record.channels = hwfmt.record.channels;
+			(void)ioctlf(fp, AUDIO_SETINFO, &tmpinfo);
+		}
+	}
 }
 
 /*

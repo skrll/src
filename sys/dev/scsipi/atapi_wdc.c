@@ -1,4 +1,4 @@
-/*	$NetBSD: atapi_wdc.c,v 1.137 2020/04/04 21:36:15 jdolecek Exp $	*/
+/*	$NetBSD: atapi_wdc.c,v 1.138 2020/04/13 10:49:34 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atapi_wdc.c,v 1.137 2020/04/04 21:36:15 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atapi_wdc.c,v 1.138 2020/04/13 10:49:34 jdolecek Exp $");
 
 #ifndef ATADEBUG
 #define ATADEBUG

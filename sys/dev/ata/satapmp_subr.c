@@ -1,4 +1,4 @@
-/*	$NetBSD: satapmp_subr.c,v 1.15 2018/10/22 20:13:47 jdolecek Exp $	*/
+/*	$NetBSD: satapmp_subr.c,v 1.16 2020/04/13 10:49:34 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 2012 Manuel Bouyer.  All rights reserved.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: satapmp_subr.c,v 1.15 2018/10/22 20:13:47 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: satapmp_subr.c,v 1.16 2020/04/13 10:49:34 jdolecek Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
