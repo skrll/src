@@ -1,4 +1,4 @@
-/*	$NetBSD: rtld.c,v 1.203 2020/03/04 01:21:17 thorpej Exp $	 */
+/*	$NetBSD: rtld.c,v 1.205 2020/04/19 01:06:15 joerg Exp $	 */
 
 /*
  * Copyright 1996 John D. Polstra.
@@ -40,7 +40,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: rtld.c,v 1.203 2020/03/04 01:21:17 thorpej Exp $");
+__RCSID("$NetBSD: rtld.c,v 1.205 2020/04/19 01:06:15 joerg Exp $");
 #endif /* not lint */
 
 #include <sys/param.h>
@@ -1530,6 +1530,23 @@ __dl_cxa_refcount(void *addr, ssize_t delta)
 	}
 
 	_rtld_exclusive_exit(&mask);
+}
+
+pid_t __fork(void);
+
+__dso_public pid_t
+__locked_fork(int *my_errno)
+{
+	sigset_t mask;
+	pid_t result;
+
+	_rtld_exclusive_enter(&mask);
+	result = __fork();
+	if (result == -1)
+		*my_errno = errno;
+	_rtld_exclusive_exit(&mask);
+
+	return result;
 }
 
 /*
