@@ -1,4 +1,4 @@
-/*	$NetBSD: if_spppsubr.c,v 1.186 2020/02/04 05:46:32 thorpej Exp $	 */
+/*	$NetBSD: if_spppsubr.c,v 1.189 2020/04/04 17:12:33 is Exp $	 */
 
 /*
  * Synchronous PPP/Cisco link level subroutines.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.186 2020/02/04 05:46:32 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.189 2020/04/04 17:12:33 is Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -146,6 +146,13 @@ __KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.186 2020/02/04 05:46:32 thorpej Ex
 #define LCP_OPT_RESERVED	6	/* reserved */
 #define LCP_OPT_PROTO_COMP	7	/* protocol field compression */
 #define LCP_OPT_ADDR_COMP	8	/* address/control field compression */
+#define LCP_OPT_FCS_ALTS	9	/* FCS alternatives */
+#define LCP_OPT_SELF_DESC_PAD	10	/* self-describing padding */
+#define LCP_OPT_CALL_BACK	13	/* callback */
+#define LCP_OPT_COMPOUND_FRMS	15	/* compound frames */
+#define LCP_OPT_MP_MRRU		17	/* multilink MRRU */
+#define LCP_OPT_MP_SSNHF	18	/* multilink short seq. numbers */
+#define LCP_OPT_MP_EID		19	/* multilink endpoint discriminator */
 
 #define IPCP_OPT_ADDRESSES	1	/* both IP addresses; deprecated */
 #define IPCP_OPT_COMPRESSION	2	/* IP compression protocol */
@@ -972,11 +979,10 @@ sppp_mediachange(struct ifnet *ifp)
 static void
 sppp_mediastatus(struct ifnet *ifp, struct ifmediareq *imr)
 {
-	struct sppp *sp = (struct sppp *)ifp;
+	int link_state;
 
-	SPPP_LOCK(sp, RW_WRITER);
-
-	switch (ifp->if_link_state) {
+	link_state = atomic_load_relaxed(&ifp->if_link_state);
+	switch (link_state) {
 	case LINK_STATE_UP:
 		imr->ifm_status = IFM_AVALID | IFM_ACTIVE;
 		break;
@@ -988,8 +994,6 @@ sppp_mediastatus(struct ifnet *ifp, struct ifmediareq *imr)
 		imr->ifm_status = 0;
 		break;
 	}
-
-	SPPP_UNLOCK(sp);
 }
 
 void
@@ -2377,6 +2381,35 @@ sppp_lcp_RCR(struct sppp *sp, struct lcp_header *h, int len)
 			if (debug)
 				addlog(" [invalid]");
 			break;
+		case LCP_OPT_MP_EID:
+			if (len >= l && l >= 3) {
+				switch (p[2]) {
+				case 0: if (l==3+ 0) continue;break;
+				case 2: if (l==3+ 4) continue;break;
+				case 3: if (l==3+ 6) continue;break;
+				case 6: if (l==3+16) continue;break;
+				case 1: /* FALLTHROUGH */
+				case 4: if (l<=3+20) continue;break;
+				case 5: if (l<=3+15) continue;break;
+				/* XXX should it be default: continue;? */
+				}
+			}
+			if (debug)
+				addlog(" [invalid class %d len %d]", p[2], l);
+			break;
+		case LCP_OPT_MP_SSNHF:
+			if (len >= 2 && l == 2) {
+				if (debug)
+					addlog(" [rej]");
+				break;
+			}
+			if (debug)
+				addlog(" [invalid]");
+			break;
+		case LCP_OPT_MP_MRRU:
+			/* Multilink maximum received reconstructed unit */
+			/* should be fall through, both are same length */
+			/* FALLTHROUGH */
 		case LCP_OPT_MRU:
 			/* Maximum receive unit. */
 			if (len >= 4 && l == 4)
@@ -2534,6 +2567,27 @@ sppp_lcp_RCR(struct sppp *sp, struct lcp_header *h, int len)
 				p[4] = CHAP_MD5;
 				break;
 			}
+			continue;
+		case LCP_OPT_MP_EID:
+			/*
+			 * Endpoint identification.
+			 * Always agreeable,
+			 * but ignored by now.
+			 */
+			if (debug) {
+				addlog(" type %d", p[2]);
+				sppp_print_bytes(p+3, p[1]-3);
+			}
+			continue;
+		case LCP_OPT_MP_MRRU:
+			/*
+			 * Maximum received reconstructed unit. 
+			 * Always agreeable,
+			 * but ignored by now.
+			 */
+			sp->lcp.their_mrru = p[2] * 256 + p[3];
+			if (debug)
+				addlog(" %ld", sp->lcp.their_mrru);
 			continue;
 		}
 		if (rlen + l > blen) {
@@ -6019,6 +6073,12 @@ sppp_lcp_opt_name(u_char opt)
 	case LCP_OPT_MAGIC:		return "magic";
 	case LCP_OPT_PROTO_COMP:	return "proto-comp";
 	case LCP_OPT_ADDR_COMP:		return "addr-comp";
+	case LCP_OPT_SELF_DESC_PAD:	return "sdpad";
+	case LCP_OPT_CALL_BACK:		return "callback";
+	case LCP_OPT_COMPOUND_FRMS:	return "cmpd-frms";
+	case LCP_OPT_MP_MRRU:		return "mrru";
+	case LCP_OPT_MP_SSNHF:		return "mp-ssnhf";
+	case LCP_OPT_MP_EID:		return "mp-eid";
 	}
 	snprintf(buf, sizeof(buf), "0x%x", opt);
 	return buf;

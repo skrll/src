@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_sleepq.c,v 1.60 2020/02/01 19:29:27 christos Exp $	*/
+/*	$NetBSD: kern_sleepq.c,v 1.66 2020/04/19 20:35:29 ad Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2009, 2019, 2020 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_sleepq.c,v 1.60 2020/02/01 19:29:27 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_sleepq.c,v 1.66 2020/04/19 20:35:29 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -98,7 +98,7 @@ void
 sleepq_init(sleepq_t *sq)
 {
 
-	TAILQ_INIT(sq);
+	LIST_INIT(sq);
 }
 
 /*
@@ -116,7 +116,7 @@ sleepq_remove(sleepq_t *sq, lwp_t *l)
 
 	if ((l->l_syncobj->sobj_flag & SOBJ_SLEEPQ_NULL) == 0) {
 		KASSERT(sq != NULL);
-		TAILQ_REMOVE(sq, l, l_sleepchain);
+		LIST_REMOVE(l, l_sleepchain);
 	} else {
 		KASSERT(sq == NULL);
 	}
@@ -143,7 +143,7 @@ sleepq_remove(sleepq_t *sq, lwp_t *l)
 	 * If the LWP is still on the CPU, mark it as LSONPROC.  It may be
 	 * about to call mi_switch(), in which case it will yield.
 	 */
-	if ((l->l_flag & LW_RUNNING) != 0) {
+	if ((l->l_pflag & LP_RUNNING) != 0) {
 		l->l_stat = LSONPROC;
 		l->l_slptime = 0;
 		lwp_setlock(l, spc->spc_lwplock);
@@ -151,7 +151,7 @@ sleepq_remove(sleepq_t *sq, lwp_t *l)
 	}
 
 	/* Update sleep time delta, call the wake-up handler of scheduler */
-	l->l_slpticksum += (hardclock_ticks - l->l_slpticks);
+	l->l_slpticksum += (getticks() - l->l_slpticks);
 	sched_wakeup(l);
 
 	/* Look for a CPU to wake up */
@@ -191,18 +191,15 @@ sleepq_insert(sleepq_t *sq, lwp_t *l, syncobj_t *sobj)
 		lwp_t *l2;
 		const pri_t pri = lwp_eprio(l);
 
-		TAILQ_FOREACH(l2, sq, l_sleepchain) {
+		LIST_FOREACH(l2, sq, l_sleepchain) {
 			if (lwp_eprio(l2) < pri) {
-				TAILQ_INSERT_BEFORE(l2, l, l_sleepchain);
+				LIST_INSERT_BEFORE(l2, l, l_sleepchain);
 				return;
 			}
 		}
 	}
 
-	if ((sobj->sobj_flag & SOBJ_SLEEPQ_LIFO) != 0)
-		TAILQ_INSERT_HEAD(sq, l, l_sleepchain);
-	else
-		TAILQ_INSERT_TAIL(sq, l, l_sleepchain);
+	LIST_INSERT_HEAD(sq, l, l_sleepchain);
 }
 
 /*
@@ -213,13 +210,15 @@ sleepq_insert(sleepq_t *sq, lwp_t *l, syncobj_t *sobj)
  *	lock) must have be released (see sleeptab_lookup(), sleepq_enter()).
  */
 void
-sleepq_enqueue(sleepq_t *sq, wchan_t wchan, const char *wmesg, syncobj_t *sobj)
+sleepq_enqueue(sleepq_t *sq, wchan_t wchan, const char *wmesg, syncobj_t *sobj,
+    bool catch_p)
 {
 	lwp_t *l = curlwp;
 
 	KASSERT(lwp_locked(l, NULL));
 	KASSERT(l->l_stat == LSONPROC);
 	KASSERT(l->l_wchan == NULL && l->l_sleepq == NULL);
+	KASSERT((l->l_flag & LW_SINTR) == 0);
 
 	l->l_syncobj = sobj;
 	l->l_wchan = wchan;
@@ -227,11 +226,13 @@ sleepq_enqueue(sleepq_t *sq, wchan_t wchan, const char *wmesg, syncobj_t *sobj)
 	l->l_wmesg = wmesg;
 	l->l_slptime = 0;
 	l->l_stat = LSSLEEP;
+	if (catch_p)
+		l->l_flag |= LW_SINTR;
 
 	sleepq_insert(sq, l, sobj);
 
 	/* Save the time when thread has slept */
-	l->l_slpticks = hardclock_ticks;
+	l->l_slpticks = getticks();
 	sched_slept(l);
 }
 
@@ -260,7 +261,6 @@ sleepq_block(int timo, bool catch_p)
 	 * core dump events.
 	 */
 	if (catch_p) {
-		l->l_flag |= LW_SINTR;
 		if ((l->l_flag & (LW_CANCELLED|LW_WEXIT|LW_WCORE)) != 0) {
 			l->l_flag &= ~LW_CANCELLED;
 			error = EINTR;
@@ -273,7 +273,15 @@ sleepq_block(int timo, bool catch_p)
 		/* lwp_unsleep() will release the lock */
 		lwp_unsleep(l, true);
 	} else {
+		/*
+		 * The LWP may have already been awoken if the caller
+		 * dropped the sleep queue lock between sleepq_enqueue() and
+		 * sleepq_block().  If that happends l_stat will be LSONPROC
+		 * and mi_switch() will treat this as a preemption.  No need
+		 * to do anything special here.
+		 */
 		if (timo) {
+			l->l_flag &= ~LW_STIMO;
 			callout_schedule(&l->l_timeout_ch, timo);
 		}
 		spc_lock(l->l_cpu);
@@ -289,8 +297,8 @@ sleepq_block(int timo, bool catch_p)
 			 * order to keep the callout & its cache lines
 			 * co-located on the CPU with the LWP.
 			 */
-			if (callout_halt(&l->l_timeout_ch, NULL))
-				error = EWOULDBLOCK;
+			(void)callout_halt(&l->l_timeout_ch, NULL);
+			error = (l->l_flag & LW_STIMO) ? EWOULDBLOCK : 0;
 		}
 	}
 
@@ -303,7 +311,7 @@ sleepq_block(int timo, bool catch_p)
 			 * Acquiring p_lock may cause us to recurse
 			 * through the sleep path and back into this
 			 * routine, but is safe because LWPs sleeping
-			 * on locks are non-interruptable.  We will
+			 * on locks are non-interruptable and we will
 			 * not recurse again.
 			 */
 			mutex_enter(p->p_lock);
@@ -334,10 +342,10 @@ sleepq_wake(sleepq_t *sq, wchan_t wchan, u_int expected, kmutex_t *mp)
 
 	KASSERT(mutex_owned(mp));
 
-	for (l = TAILQ_FIRST(sq); l != NULL; l = next) {
+	for (l = LIST_FIRST(sq); l != NULL; l = next) {
 		KASSERT(l->l_sleepq == sq);
 		KASSERT(l->l_mutex == mp);
-		next = TAILQ_NEXT(l, l_sleepchain);
+		next = LIST_NEXT(l, l_sleepchain);
 		if (l->l_wchan != wchan)
 			continue;
 		sleepq_remove(sq, l);
@@ -393,6 +401,7 @@ sleepq_timeout(void *arg)
 		return;
 	}
 
+	l->l_flag |= LW_STIMO;
 	lwp_unsleep(l, true);
 }
 
@@ -463,10 +472,10 @@ sleepq_reinsert(sleepq_t *sq, lwp_t *l)
 	 * sleep queue lock held and need to see a non-empty queue
 	 * head if there are waiters.
 	 */
-	if (TAILQ_FIRST(sq) == l && TAILQ_NEXT(l, l_sleepchain) == NULL) {
+	if (LIST_FIRST(sq) == l && LIST_NEXT(l, l_sleepchain) == NULL) {
 		return;
 	}
-	TAILQ_REMOVE(sq, l, l_sleepchain);
+	LIST_REMOVE(l, l_sleepchain);
 	sleepq_insert(sq, l, l->l_syncobj);
 }
 

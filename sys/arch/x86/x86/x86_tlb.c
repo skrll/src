@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_tlb.c,v 1.15 2020/01/15 13:22:03 ad Exp $	*/
+/*	$NetBSD: x86_tlb.c,v 1.18 2020/03/22 00:16:16 ad Exp $	*/
 
 /*-
  * Copyright (c) 2008-2020 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_tlb.c,v 1.15 2020/01/15 13:22:03 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_tlb.c,v 1.18 2020/03/22 00:16:16 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -90,7 +90,7 @@ typedef struct {
 #define	TP_GET_COUNT(tp)	((tp)->tp_store[TP_COUNT] & PAGE_MASK)
 #define	TP_GET_USERPMAP(tp)	((tp)->tp_store[TP_USERPMAP] & 1)
 #define	TP_GET_GLOBAL(tp)	((tp)->tp_store[TP_GLOBAL] & 1)
-#define	TP_GET_DONE(tp)		((tp)->tp_store[TP_DONE] & 1)
+#define	TP_GET_DONE(tp)		(atomic_load_relaxed(&(tp)->tp_store[TP_DONE]) & 1)
 #define	TP_GET_VA(tp, i)	((tp)->tp_store[(i)] & ~PAGE_MASK)
 
 #define	TP_INC_COUNT(tp)	((tp)->tp_store[TP_COUNT]++)
@@ -99,7 +99,11 @@ typedef struct {
 
 #define	TP_SET_USERPMAP(tp)	((tp)->tp_store[TP_USERPMAP] |= 1)
 #define	TP_SET_GLOBAL(tp)	((tp)->tp_store[TP_GLOBAL] |= 1)
-#define	TP_SET_DONE(tp)		((tp)->tp_store[TP_DONE] |= 1)
+#define	TP_SET_DONE(tp) \
+do { \
+	uintptr_t v = atomic_load_relaxed(&(tp)->tp_store[TP_DONE]); \
+	atomic_store_relaxed(&(tp)->tp_store[TP_DONE], v | 1); \
+} while (/* CONSTCOND */ 0);
 
 #define	TP_CLEAR(tp)		memset(__UNVOLATILE(tp), 0, sizeof(*(tp)));
 
@@ -120,20 +124,17 @@ static struct evcnt		tlbstat_kernel[TLBSHOOT__MAX];
 static struct evcnt		tlbstat_single_req;
 static struct evcnt		tlbstat_single_issue;
 static const char *		tlbstat_name[ ] = {
-	"APTE",
+	"REMOVE_ALL",
 	"KENTER",
 	"KREMOVE",
-	"FREE_PTP1",
-	"FREE_PTP2",
+	"FREE_PTP",
 	"REMOVE_PTE",
-	"REMOVE_PTES",
-	"SYNC_PV1",
-	"SYNC_PV2",
+	"SYNC_PV",
 	"WRITE_PROTECT",
 	"ENTER",
-	"UPDATE",
+	"NVMM",
 	"BUS_DMA",
-	"BUS_SPACE"
+	"BUS_SPACE",
 };
 #endif
 
@@ -409,7 +410,7 @@ pmap_tlb_shootnow(void)
 	KASSERT(TP_GET_DONE(ts) == 0);
 	while (atomic_cas_ptr(&pmap_tlb_packet, NULL,
 	    __UNVOLATILE(ts)) != NULL) {
-		KASSERT(pmap_tlb_packet != ts);
+		KASSERT(atomic_load_relaxed(&pmap_tlb_packet) != ts);
 		/*
 		 * Don't bother with exponentional backoff, as the pointer
 		 * is in a dedicated cache line and only updated twice per
@@ -419,7 +420,7 @@ pmap_tlb_shootnow(void)
 		splx(s);
 		do {
 			x86_pause();
-		} while (pmap_tlb_packet != NULL);
+		} while (atomic_load_relaxed(&pmap_tlb_packet) != NULL);
 		s = splvm();
 
 		/*
@@ -509,7 +510,7 @@ pmap_tlb_intr(void)
 	 * seemingly active.
 	 */
 	if (atomic_dec_uint_nv(&pmap_tlb_pendcount) == 0) {
-		pmap_tlb_packet = NULL;
+		atomic_store_relaxed(&pmap_tlb_packet, NULL);
 		__insn_barrier();
 		TP_SET_DONE(source);
 	}

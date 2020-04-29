@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.108 2020/02/15 08:16:11 skrll Exp $	*/
+/*	$NetBSD: cpu.h,v 1.110 2020/03/29 09:06:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 1994-1996 Mark Brinicombe.
@@ -101,7 +101,7 @@ void	cpu_proc_fork(struct proc *, struct proc *);
 #ifndef _LOCORE
 #if defined(TPIDRPRW_IS_CURLWP) || defined(TPIDRPRW_IS_CURCPU)
 #include <arm/armreg.h>
-#endif
+#endif /* TPIDRPRW_IS_CURLWP || TPIDRPRW_IS_CURCPU */
 
 /* 1 == use cpu_sleep(), 0 == don't */
 extern int cpu_do_powersave;
@@ -217,6 +217,7 @@ extern struct cpu_info cpu_info_store[];
 struct lwp *arm_curlwp(void);
 struct cpu_info *arm_curcpu(void);
 
+#ifdef _KERNEL
 #if defined(_MODULE)
 
 #define	curlwp		arm_curlwp()
@@ -261,6 +262,7 @@ curcpu(void)
 #ifndef curlwp
 #define	curlwp		(curcpu()->ci_curlwp)
 #endif
+#define curpcb		((struct pcb *)lwp_getpcb(curlwp))
 
 #define CPU_INFO_ITERATOR	int
 #if defined(_MODULE) || defined(MULTIPROCESSOR)
@@ -343,9 +345,11 @@ vaddr_t cpu_uarea_alloc_idlelwp(struct cpu_info *);
 int	cpu_maxproc_hook(int);
 #endif
 
+#endif /* _KERNEL */
+
 #endif /* !_LOCORE */
 
-#endif /* _KERNEL */
+#endif /* _KERNEL || _KMEMUSER */
 
 #elif defined(__aarch64__)
 

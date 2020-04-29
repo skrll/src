@@ -1,4 +1,4 @@
-/*      $NetBSD: lwproc.c,v 1.43 2020/01/08 17:38:42 ad Exp $	*/
+/*      $NetBSD: lwproc.c,v 1.45 2020/04/19 20:32:00 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2010, 2011 Antti Kantee.  All Rights Reserved.
@@ -28,7 +28,7 @@
 #define RUMP__CURLWP_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lwproc.c,v 1.43 2020/01/08 17:38:42 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lwproc.c,v 1.45 2020/04/19 20:32:00 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -178,7 +178,8 @@ lwproc_proc_free(struct proc *p)
 
 	LIST_REMOVE(p, p_list);
 	LIST_REMOVE(p, p_sibling);
-	proc_free_pid(p->p_pid); /* decrements nprocs */
+	proc_free_pid(p->p_pid);
+	atomic_dec_uint(&nprocs);
 	proc_leavepgrp(p); /* releases proc_lock */
 
 	cred = p->p_cred;
@@ -476,12 +477,12 @@ rump_lwproc_switch(struct lwp *newlwp)
 
 	KASSERT(!(l->l_flag & LW_WEXIT) || newlwp);
 
-	if (__predict_false(newlwp && (newlwp->l_flag & LW_RUNNING)))
+	if (__predict_false(newlwp && (newlwp->l_pflag & LP_RUNNING)))
 		panic("lwp %p (%d:%d) already running",
 		    newlwp, newlwp->l_proc->p_pid, newlwp->l_lid);
 
 	if (newlwp == NULL) {
-		l->l_flag &= ~LW_RUNNING;
+		l->l_pflag &= ~LP_RUNNING;
 		l->l_flag |= LW_RUMP_CLEAR;
 		return;
 	}
@@ -496,7 +497,7 @@ rump_lwproc_switch(struct lwp *newlwp)
 
 	newlwp->l_cpu = newlwp->l_target_cpu = l->l_cpu;
 	newlwp->l_mutex = l->l_mutex;
-	newlwp->l_flag |= LW_RUNNING;
+	newlwp->l_pflag |= LP_RUNNING;
 
 	lwproc_curlwpop(RUMPUSER_LWP_SET, newlwp);
 	curcpu()->ci_curlwp = newlwp;
@@ -513,7 +514,7 @@ rump_lwproc_switch(struct lwp *newlwp)
 	mutex_exit(newlwp->l_proc->p_lock);
 
 	l->l_mutex = &unruntime_lock;
-	l->l_flag &= ~LW_RUNNING;
+	l->l_pflag &= ~LP_RUNNING;
 	l->l_flag &= ~LW_PENDSIG;
 	l->l_stat = LSRUN;
 

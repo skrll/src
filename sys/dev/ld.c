@@ -1,4 +1,4 @@
-/*	$NetBSD: ld.c,v 1.108 2020/02/10 10:05:55 mlelstv Exp $	*/
+/*	$NetBSD: ld.c,v 1.110 2020/04/13 08:05:02 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ld.c,v 1.108 2020/02/10 10:05:55 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ld.c,v 1.110 2020/04/13 08:05:02 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -110,7 +110,7 @@ const struct cdevsw ld_cdevsw = {
 	.d_flag = D_DISK | D_MPSAFE
 };
 
-static struct	dkdriver lddkdriver = {
+static const struct	dkdriver lddkdriver = {
 	.d_open = ldopen,
 	.d_close = ldclose,
 	.d_strategy = ldstrategy,
@@ -513,7 +513,7 @@ lddump(dev_t dev, daddr_t blkno, void *va, size_t size)
 	if ((sc->sc_flags & LDF_ENABLED) == 0)
 		return (ENODEV);
 
-	return dk_dump(dksc, dev, blkno, va, size);
+	return dk_dump(dksc, dev, blkno, va, size, 0);
 }
 
 static int

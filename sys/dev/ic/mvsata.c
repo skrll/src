@@ -1,4 +1,4 @@
-/*	$NetBSD: mvsata.c,v 1.52 2019/12/27 09:41:50 msaitoh Exp $	*/
+/*	$NetBSD: mvsata.c,v 1.56 2020/04/13 10:49:34 jdolecek Exp $	*/
 /*
  * Copyright (c) 2008 KIYOHARA Takashi
  * All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mvsata.c,v 1.52 2019/12/27 09:41:50 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mvsata.c,v 1.56 2020/04/13 10:49:34 jdolecek Exp $");
 
 #include "opt_mvsata.h"
 
@@ -121,9 +121,9 @@ static void mvsata_probe_drive(struct ata_channel *);
 
 #ifndef MVSATA_WITHOUTDMA
 static void mvsata_reset_channel(struct ata_channel *, int);
-static int mvsata_bio(struct ata_drive_datas *, struct ata_xfer *);
+static void mvsata_bio(struct ata_drive_datas *, struct ata_xfer *);
 static void mvsata_reset_drive(struct ata_drive_datas *, int, uint32_t *);
-static int mvsata_exec_command(struct ata_drive_datas *, struct ata_xfer *);
+static void mvsata_exec_command(struct ata_drive_datas *, struct ata_xfer *);
 static int mvsata_addref(struct ata_drive_datas *);
 static void mvsata_delref(struct ata_drive_datas *);
 static void mvsata_killpending(struct ata_drive_datas *);
@@ -235,12 +235,12 @@ static const struct ata_bustype mvsata_ata_bustype = {
 
 #if NATAPIBUS > 0
 static const struct scsipi_bustype mvsata_atapi_bustype = {
-	SCSIPI_BUSTYPE_ATAPI,
-	atapi_scsipi_cmd,
-	atapi_interpret_sense,
-	atapi_print_addr,
-	mvsata_atapi_kill_pending,
-	NULL,
+	.bustype_type = SCSIPI_BUSTYPE_ATAPI,
+	.bustype_cmd = atapi_scsipi_cmd,
+	.bustype_interpret_sense = atapi_interpret_sense,
+	.bustype_printaddr = atapi_print_addr,
+	.bustype_kill_pending = mvsata_atapi_kill_pending,
+	.bustype_async_event_xfer_mode = NULL,
 };
 #endif /* NATAPIBUS */
 #endif
@@ -669,7 +669,8 @@ mvsata_reset_channel(struct ata_channel *chp, int flags)
 		const uint32_t val = SControl_IPM_NONE | SControl_SPD_ANY |
 		    SControl_DET_DISABLE;
 
-		MVSATA_EDMA_WRITE_4(mvport, mvport->port_sata_scontrol, val);
+		bus_space_write_4(mvport->port_iot,
+		    mvport->port_sata_scontrol, 0, val);
 
 		ctrl = MVSATA_EDMA_READ_4(mvport, SATA_SATAICFG);
 		ctrl &= ~(1 << 17);	/* Disable GenII */
@@ -984,7 +985,7 @@ static const struct ata_xfer_ops mvsata_bio_xfer_ops = {
 	.c_kill_xfer = mvsata_bio_kill_xfer,
 };
 
-static int
+static void
 mvsata_bio(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 {
 	struct ata_channel *chp = drvp->chnl_softc;
@@ -1008,7 +1009,6 @@ mvsata_bio(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 	xfer->c_bcount = ata_bio->bcount;
 	xfer->ops = &mvsata_bio_xfer_ops;
 	ata_exec_xfer(chp, xfer);
-	return (ata_bio->flags & ATA_ITSDONE) ? ATACMD_COMPLETE : ATACMD_QUEUED;
 }
 
 static int
@@ -1164,10 +1164,10 @@ do_pio:
 			 * If it's not a polled command, we need the kernel
 			 * thread
 			 */
-			if ((xfer->c_flags & C_POLL) == 0 &&
-			    (chp->ch_flags & ATACH_TH_RUN) == 0) {
+			if ((xfer->c_flags & C_POLL) == 0
+			    && !ata_is_thread_run(chp))
 				return ATASTART_TH;
-			}
+
 			if (mvsata_bio_ready(mvport, ata_bio, xfer->c_drive,
 			    (xfer->c_flags & C_POLL) ? AT_POLL : 0) != 0) {
 				return ATASTART_ABORT;
@@ -1600,12 +1600,11 @@ static const struct ata_xfer_ops mvsata_wdc_cmd_xfer_ops = {
 	.c_kill_xfer = mvsata_wdc_cmd_kill_xfer,
 };
 
-static int
+static void
 mvsata_exec_command(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 {
 	struct ata_channel *chp = drvp->chnl_softc;
 	struct ata_command *ata_c = &xfer->c_ata_c;
-	int rv, s;
 
 	DPRINTF(DEBUG_FUNCS|DEBUG_XFERS,
 	    ("%s:%d: mvsata_exec_command: drive=%d, bcount=%d,"
@@ -1624,24 +1623,8 @@ mvsata_exec_command(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 	xfer->c_databuf = ata_c->data;
 	xfer->c_bcount = ata_c->bcount;
 	xfer->ops = &mvsata_wdc_cmd_xfer_ops;
-	s = splbio();
+
 	ata_exec_xfer(chp, xfer);
-#ifdef DIAGNOSTIC
-	if ((ata_c->flags & AT_POLL) != 0 &&
-	    (ata_c->flags & AT_DONE) == 0)
-		panic("mvsata_exec_command: polled command not done");
-#endif
-	if (ata_c->flags & AT_DONE)
-		rv = ATACMD_COMPLETE;
-	else {
-		if (ata_c->flags & AT_WAIT) {
-			ata_wait_cmd(chp, xfer);
-			rv = ATACMD_COMPLETE;
-		} else
-			rv = ATACMD_QUEUED;
-	}
-	splx(s);
-	return rv;
 }
 
 static int
@@ -2051,10 +2034,10 @@ mvsata_atapi_start(struct ata_channel *chp, struct ata_xfer *xfer)
 	/* Do control operations specially. */
 	if (__predict_false(drvp->state < READY)) {
 		/* If it's not a polled command, we need the kernel thread */
-		if ((sc_xfer->xs_control & XS_CTL_POLL) == 0 &&
-		    (chp->ch_flags & ATACH_TH_RUN) == 0) {
+		if ((sc_xfer->xs_control & XS_CTL_POLL) == 0
+		    && !ata_is_thread_run(chp))
 			return ATASTART_TH;
-		}
+
 		/*
 		 * disable interrupts, all commands here should be quick
 		 * enough to be able to poll, and we don't go here that often

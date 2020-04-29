@@ -1,4 +1,4 @@
-/*	$NetBSD: lwp.h,v 1.200 2020/01/29 15:47:52 ad Exp $	*/
+/*	$NetBSD: lwp.h,v 1.206 2020/04/10 17:16:21 ad Exp $	*/
 
 /*
  * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2010, 2019, 2020
@@ -54,6 +54,7 @@ struct lwp;
 static __inline struct cpu_info *lwp_getcpu(struct lwp *);
 #include <machine/cpu.h>		/* curcpu() and cpu_info */
 #ifdef _KERNEL_OPT
+#include "opt_kcov.h"
 #include "opt_kmsan.h"
 #endif
 #endif
@@ -125,7 +126,7 @@ struct lwp {
 	/* Synchronisation. */
 	struct turnstile *l_ts;		/* l: current turnstile */
 	struct syncobj	*l_syncobj;	/* l: sync object operations set */
-	TAILQ_ENTRY(lwp) l_sleepchain;	/* l: sleep queue */
+	LIST_ENTRY(lwp) l_sleepchain;	/* l: sleep queue */
 	wchan_t		l_wchan;	/* l: sleep address */
 	const char	*l_wmesg;	/* l: reason for sleep */
 	struct sleepq	*l_sleepq;	/* l: current sleep queue */
@@ -133,6 +134,24 @@ struct lwp {
 	kcondvar_t	l_waitcv;	/* a: vfork() wait */
 	u_int		l_slptime;	/* l: time since last blocked */
 	bool		l_vforkwaiting;	/* a: vfork() waiting */
+
+	/* User-space synchronization. */
+	uintptr_t	l___reserved;	/* reserved for future use */
+	/*
+	 * The global thread ID has special locking and access
+	 * considerations.  Because many LWPs may never need one,
+	 * global thread IDs are allocated lazily in lwp_gettid().
+	 * l___tid is not bean to be accessed directly unless
+	 * the accessor has specific knowledge that doing so
+	 * is safe.  l___tid is only assigned by the LWP itself.
+	 * Once assigned, it is stable until the LWP exits.
+	 * An LWP assigns its own thread ID unlocked before it
+	 * reaches visibility to the rest of the system, and
+	 * can access its own thread ID unlocked.  But once
+	 * published, it must hold the proc's lock to change
+	 * the value.
+	 */
+	lwpid_t		l___tid;	/* p: global thread id */
 
 #if PCU_UNIT_COUNT > 0
 	struct cpu_info	* volatile l_pcu_cpu[PCU_UNIT_COUNT];
@@ -209,6 +228,9 @@ struct lwp {
 #ifdef KMSAN
 	void		*l_kmsan; /* !: KMSAN private data. */
 #endif
+#ifdef KCOV
+	void		*l_kcov; /* !: KCOV private data. */
+#endif
 };
 
 /*
@@ -235,10 +257,13 @@ extern int		maxlwp __read_mostly;	/* max number of lwps */
 
 #endif /* _KERNEL || _KMEMUSER */
 
-/* These flags are kept in l_flag. */
+/*
+ * These flags are kept in l_flag, and they are modified only with the LWP
+ * locked.
+ */
 #define	LW_IDLE		0x00000001 /* Idle lwp. */
 #define	LW_LWPCTL	0x00000002 /* Adjust lwpctl in userret */
-#define	LW_CVLOCKDEBUG	0x00000004 /* Waker does lockdebug */
+#define	LW_STIMO	0x00000040 /* Sleep timed out */
 #define	LW_SINTR	0x00000080 /* Sleep is interruptible. */
 #define	LW_SYSTEM	0x00000200 /* Kernel thread */
 #define	LW_DBGSUSPEND	0x00010000 /* Suspend by debugger */
@@ -250,11 +275,15 @@ extern int		maxlwp __read_mostly;	/* max number of lwps */
 #define	LW_CANCELLED	0x02000000 /* tsleep should not sleep */
 #define	LW_WREBOOT	0x08000000 /* System is rebooting, please suspend */
 #define	LW_UNPARKED	0x10000000 /* Unpark op pending */
-#define	LW_RUNNING	0x20000000 /* Active on a CPU */
 #define	LW_RUMP_CLEAR	0x40000000 /* Clear curlwp in RUMP scheduler */
 #define	LW_RUMP_QEXIT	0x80000000 /* LWP should exit ASAP */
 
-/* The second set of flags is kept in l_pflag. */
+/*
+ * The second set of flags is kept in l_pflag, and they are modified only by
+ * the LWP itself, or modified when it's known the LWP cannot be running. 
+ * LP_RUNNING is typically updated with the LWP locked, but not always in
+ * the case of soft interrupt handlers.
+ */
 #define	LP_KTRACTIVE	0x00000001 /* Executing ktrace operation */
 #define	LP_KTRCSW	0x00000002 /* ktrace context switch marker */
 #define	LP_KTRCSWUSER	0x00000004 /* ktrace context switch marker */
@@ -267,12 +296,17 @@ extern int		maxlwp __read_mostly;	/* max number of lwps */
 #define	LP_SINGLESTEP	0x00000400 /* Single step thread in ptrace(2) */
 #define	LP_TIMEINTR	0x00010000 /* Time this soft interrupt */
 #define	LP_PREEMPTING	0x00020000 /* mi_switch called involuntarily */
+#define	LP_RUNNING	0x20000000 /* Active on a CPU */
 #define	LP_TELEPORT	0x40000000 /* Teleport to new CPU on preempt() */
 #define	LP_BOUND	0x80000000 /* Bound to a CPU */
 
-/* The third set is kept in l_prflag. */
+/*
+ * The third set of flags is kept in l_prflag and they are modified only
+ * with p_lock held.
+ */
 #define	LPR_DETACHED	0x00800000 /* Won't be waited for. */
 #define	LPR_CRMOD	0x00000100 /* Credentials modified */
+#define	LPR_DRAINING	0x80000000 /* Draining references before exiting */
 
 /*
  * Mask indicating that there is "exceptional" work to be done on return to
@@ -330,10 +364,11 @@ int	lwp_trylock(lwp_t *);
 void	lwp_addref(lwp_t *);
 void	lwp_delref(lwp_t *);
 void	lwp_delref2(lwp_t *);
-void	lwp_drainrefs(lwp_t *);
+bool	lwp_drainrefs(lwp_t *);
 bool	lwp_alive(lwp_t *);
 lwp_t	*lwp_find_first(proc_t *);
 
+void	lwp_renumber(lwp_t *, lwpid_t);
 int	lwp_wait(lwp_t *, lwpid_t, lwpid_t *, bool);
 void	lwp_continue(lwp_t *);
 void	lwp_unsleep(lwp_t *, bool);
@@ -353,6 +388,10 @@ uint64_t lwp_pctr(void);
 int	lwp_setprivate(lwp_t *, void *);
 int	do_lwp_create(lwp_t *, void *, u_long, lwp_t **, const sigset_t *,
     const stack_t *);
+
+lwpid_t	lwp_gettid(void);
+lwp_t *	lwp_getref_tid(lwpid_t);
+void	lwp_thread_cleanup(lwp_t *);
 
 void	lwpinit_specificdata(void);
 int	lwp_specific_key_create(specificdata_key_t *, specificdata_dtor_t);

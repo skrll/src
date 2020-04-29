@@ -1,4 +1,4 @@
-/*	$NetBSD: nd6.c,v 1.266 2020/01/20 18:38:22 thorpej Exp $	*/
+/*	$NetBSD: nd6.c,v 1.269 2020/04/12 12:13:52 roy Exp $	*/
 /*	$KAME: nd6.c,v 1.279 2002/06/08 11:16:51 itojun Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nd6.c,v 1.266 2020/01/20 18:38:22 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nd6.c,v 1.269 2020/04/12 12:13:52 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -460,7 +460,9 @@ nd6_llinfo_timer(void *arg)
 	bool send_ns = false;
 	const struct in6_addr *daddr6 = NULL;
 	const struct in6_addr *taddr6 = &ln->r_l3addr.addr6;
-	struct sockaddr_in6 sin6;
+	struct sockaddr_in6 dsin6, tsin6;
+	struct mbuf *m = NULL;
+	bool missed = false;
 
 	SOFTNET_KERNEL_LOCK_UNLESS_NET_MPSAFE();
 
@@ -490,8 +492,13 @@ nd6_llinfo_timer(void *arg)
 			break;
 		}
 
+		missed = true;
+		sockaddr_in6_init(&tsin6, taddr6, 0, 0, 0);
+
 		if (ln->ln_hold) {
-			struct mbuf *m = ln->ln_hold, *m0;
+			struct mbuf *m0;
+
+			m = ln->ln_hold;
 
 			/*
 			 * assuming every packet in ln_hold has
@@ -501,13 +508,7 @@ nd6_llinfo_timer(void *arg)
 			m->m_nextpkt = NULL;
 			ln->ln_hold = m0;
 			clear_llinfo_pqueue(ln);
-
-			icmp6_error2(m, ICMP6_DST_UNREACH,
-			    ICMP6_DST_UNREACH_ADDR, 0, ifp);
 		}
-
-		sockaddr_in6_init(&sin6, taddr6, 0, 0, 0);
-		rt_clonedmsg(RTM_MISS, sin6tosa(&sin6), NULL, ifp);
 
 		/*
 		 * Move to the ND6_LLINFO_WAITDELETE state for another
@@ -578,6 +579,20 @@ out:
 	if (ln != NULL)
 		LLE_FREE_LOCKED(ln);
 	SOFTNET_KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
+	if (missed) {
+		struct in6_addr mdaddr6 = zeroin6_addr;
+		struct sockaddr *sa;
+
+		if (m != NULL)
+			icmp6_error2(m, ICMP6_DST_UNREACH,
+			    ICMP6_DST_UNREACH_ADDR, 0, ifp, &mdaddr6);
+		if (!IN6_IS_ADDR_UNSPECIFIED(&mdaddr6)) {
+			sockaddr_in6_init(&dsin6, &mdaddr6, 0, 0, 0);
+			sa = sin6tosa(&dsin6);
+		} else
+			sa = NULL;
+		rt_clonedmsg(RTM_MISS, sa, sin6tosa(&tsin6), NULL, ifp);
+	}
 }
 
 /*
@@ -1304,7 +1319,7 @@ nd6_free(struct llentry *ln, int gc)
 		sockaddr_in6_init(&sin6, in6, 0, 0, 0);
 		lladdr = ln->la_flags & LLE_VALID ?
 		    (const char *)&ln->ll_addr : NULL;
-		rt_clonedmsg(RTM_DELETE, sin6tosa(&sin6), lladdr, ifp);
+		rt_clonedmsg(RTM_DELETE, NULL, sin6tosa(&sin6), lladdr, ifp);
 	}
 
 	/*
@@ -2245,7 +2260,7 @@ nd6_cache_lladdr(
 
 		sockaddr_in6_init(&sin6, from, 0, 0, 0);
 		rt_clonedmsg(is_newentry ? RTM_ADD : RTM_CHANGE,
-		    sin6tosa(&sin6), lladdr, ifp);
+		    NULL, sin6tosa(&sin6), lladdr, ifp);
 	}
 
 	if (ln != NULL) {

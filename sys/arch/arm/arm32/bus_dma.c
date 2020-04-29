@@ -1,7 +1,7 @@
-/*	$NetBSD: bus_dma.c,v 1.118 2019/11/05 10:21:31 jmcneill Exp $	*/
+/*	$NetBSD: bus_dma.c,v 1.121 2020/03/14 18:08:38 ad Exp $	*/
 
 /*-
- * Copyright (c) 1996, 1997, 1998 The NetBSD Foundation, Inc.
+ * Copyright (c) 1996, 1997, 1998, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -36,7 +36,7 @@
 #include "opt_cputypes.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.118 2019/11/05 10:21:31 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.121 2020/03/14 18:08:38 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -315,6 +315,7 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 {
 	struct arm32_bus_dmamap *map;
 	void *mapstore;
+	int error = 0;
 
 #ifdef DEBUG_DMA
 	printf("dmamap_create: t=%p size=%lx nseg=%x msegsz=%lx boundary=%lx"
@@ -357,7 +358,6 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 	struct arm32_bus_dma_cookie *cookie;
 	int cookieflags;
 	void *cookiestore;
-	int error;
 
 	cookieflags = 0;
 
@@ -404,7 +404,7 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 #ifdef DEBUG_DMA
 	printf("dmamap_create:map=%p\n", map);
 #endif	/* DEBUG_DMA */
-	return 0;
+	return error;
 }
 
 /*
@@ -1790,10 +1790,8 @@ _bus_dma_uiomove(void *buf, struct uio *uio, size_t n, int direction)
 			continue;
 		cnt = MIN(resid, iov->iov_len);
 
-		if (!VMSPACE_IS_KERNEL_P(vm) &&
-		    (curlwp->l_cpu->ci_schedstate.spc_flags & SPCF_SHOULDYIELD)
-		    != 0) {
-			preempt();
+		if (!VMSPACE_IS_KERNEL_P(vm)) {
+			preempt_point();
 		}
 		if (direction == UIO_READ) {
 			error = copyout_vmspace(vm, cp, iov->iov_base, cnt);

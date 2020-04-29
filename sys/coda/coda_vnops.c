@@ -1,4 +1,4 @@
-/*	$NetBSD: coda_vnops.c,v 1.108 2020/01/17 20:08:06 ad Exp $	*/
+/*	$NetBSD: coda_vnops.c,v 1.111 2020/04/13 19:23:17 ad Exp $	*/
 
 /*
  *
@@ -46,7 +46,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: coda_vnops.c,v 1.108 2020/01/17 20:08:06 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: coda_vnops.c,v 1.111 2020/04/13 19:23:17 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -329,7 +329,7 @@ coda_close(void *v)
 	if (cp->c_ovp) {
 #ifdef	CODA_VERBOSE
 	    printf("%s: destroying container %d, ufs vp %p of vp %p/cp %p\n",
-		__func__, vp->v_usecount, cp->c_ovp, vp, cp);
+		__func__, vrefcnt(vp), cp->c_ovp, vp, cp);
 #endif
 #ifdef	hmm
 	    vgone(cp->c_ovp);
@@ -465,7 +465,7 @@ coda_rdwr(vnode_t *vp, struct uio *uiop, enum uio_rw rw, int ioflag,
 
     /* Have UFS handle the call. */
     CODADEBUG(CODA_RDWR, myprintf(("%s: fid = %s, refcnt = %d\n", __func__,
-	coda_f2s(&cp->c_fid), CTOV(cp)->v_usecount)); )
+	coda_f2s(&cp->c_fid), vrefcnt(CTOV(cp)))); )
 
     if (rw == UIO_READ) {
 	error = VOP_READ(cfvp, uiop, ioflag, cred);
@@ -850,8 +850,8 @@ coda_inactive(void *v)
 
 #ifdef CODA_VERBOSE
     /* Sanity checks that perhaps should be panic. */
-    if (vp->v_usecount > 1)
-	printf("%s: %p usecount %d\n", __func__, vp, vp->v_usecount);
+    if (vrefcnt(vp) > 1)
+	printf("%s: %p usecount %d\n", __func__, vp, vrefcnt(vp));
     if (cp->c_ovp != NULL)
 	printf("%s: %p ovp != NULL\n", __func__, vp);
 #endif
@@ -1569,7 +1569,7 @@ coda_readdir(void *v)
 
 	/* Have UFS handle the call. */
 	CODADEBUG(CODA_READDIR, myprintf(("%s: fid = %s, refcnt = %d\n",
-	    __func__, coda_f2s(&cp->c_fid), vp->v_usecount)); )
+	    __func__, coda_f2s(&cp->c_fid), vrefcnt(vp))); )
 	saved_type = vp->v_type;
 	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	vp->v_type = VDIR; /* pretend the container file is a dir */
@@ -1661,7 +1661,7 @@ coda_reclaim(void *v)
 #endif
     } else {
 #ifdef OLD_DIAGNOSTIC
-	if (vp->v_usecount != 0)
+	if (vrefcnt(vp) != 0)
 	    print("%s: pushing active %p\n", __func__, vp);
 	if (VTOC(vp)->c_ovp) {
 	    panic("%s: c_ovp not void", __func__);
@@ -1764,8 +1764,7 @@ coda_grab_vnode(vnode_t *uvp, dev_t dev, ino_t ino, vnode_t **vpp)
 	return(ENOENT);
     }
     /* share the underlying vnode lock with the coda vnode */
-    mutex_obj_hold((*vpp)->v_interlock);
-    uvm_obj_setlock(&uvp->v_uobj, (*vpp)->v_interlock);
+    vshareilock(*vpp, uvp);
     KASSERT(VOP_ISLOCKED(*vpp));
     return(0);
 }
@@ -1890,6 +1889,7 @@ coda_getpages(void *v)
 	int error, cerror;
 	int waslocked;	       /* 1 if vnode lock was held on entry */
 	int didopen = 0;	/* 1 if we opened container file */
+	krw_t op;
 
 	/*
 	 * Handle a case that uvm_fault doesn't quite use yet.
@@ -1899,7 +1899,7 @@ coda_getpages(void *v)
 		return EBUSY;
 	}
 
-	KASSERT(mutex_owned(vp->v_interlock));
+	KASSERT(rw_lock_held(vp->v_uobj.vmobjlock));
 
 	/* Check for control object. */
 	if (IS_CTL_VP(vp)) {
@@ -1918,6 +1918,7 @@ coda_getpages(void *v)
 	 * mechanism.
 	 */
 	/* XXX VOP_ISLOCKED() may not be used for lock decisions. */
+	op = rw_lock_op(vp->v_uobj.vmobjlock);
 	waslocked = VOP_ISLOCKED(vp);
 
 	/* Get container file if not already present. */
@@ -1929,7 +1930,7 @@ coda_getpages(void *v)
 		 * leave it in the same state on exit.
 		 */
 		if (waslocked == 0) {
-			mutex_exit(vp->v_interlock);
+			rw_exit(vp->v_uobj.vmobjlock);
 			cerror = vn_lock(vp, LK_EXCLUSIVE);
 			if (cerror) {
 #ifdef CODA_VERBOSE
@@ -1967,12 +1968,12 @@ coda_getpages(void *v)
 		cvp = cp->c_ovp;
 		didopen = 1;
 		if (waslocked == 0)
-			mutex_enter(vp->v_interlock);
+			rw_enter(vp->v_uobj.vmobjlock, op);
 	}
 	KASSERT(cvp != NULL);
 
 	/* Munge the arg structure to refer to the container vnode. */
-	KASSERT(cvp->v_interlock == vp->v_interlock);
+	KASSERT(cvp->v_uobj.vmobjlock == vp->v_uobj.vmobjlock);
 	ap->a_vp = cp->c_ovp;
 
 	/* Finally, call getpages on it. */
@@ -2016,11 +2017,11 @@ coda_putpages(void *v)
 	struct cnode *cp = VTOC(vp);
 	int error;
 
-	KASSERT(mutex_owned(vp->v_interlock));
+	KASSERT(rw_write_held(vp->v_uobj.vmobjlock));
 
 	/* Check for control object. */
 	if (IS_CTL_VP(vp)) {
-		mutex_exit(vp->v_interlock);
+		rw_exit(vp->v_uobj.vmobjlock);
 #ifdef CODA_VERBOSE
 		printf("%s: control object %p\n", __func__, vp);
 #endif
@@ -2035,12 +2036,12 @@ coda_putpages(void *v)
 	 */
 	cvp = cp->c_ovp;
 	if (cvp == NULL) {
-		mutex_exit(vp->v_interlock);
+		rw_exit(vp->v_uobj.vmobjlock);
 		return 0;
 	}
 
 	/* Munge the arg structure to refer to the container vnode. */
-	KASSERT(cvp->v_interlock == vp->v_interlock);
+	KASSERT(cvp->v_uobj.vmobjlock == vp->v_uobj.vmobjlock);
 	ap->a_vp = cvp;
 
 	/* Finally, call putpages on it. */

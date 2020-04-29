@@ -1,4 +1,4 @@
-/*	$NetBSD: sig_machdep.c,v 1.46 2018/11/27 14:09:54 maxv Exp $	*/
+/*	$NetBSD: sig_machdep.c,v 1.48 2020/04/11 09:15:23 rin Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sig_machdep.c,v 1.46 2018/11/27 14:09:54 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sig_machdep.c,v 1.48 2020/04/11 09:15:23 rin Exp $");
 
 #include "opt_ppcarch.h"
 #include "opt_altivec.h"

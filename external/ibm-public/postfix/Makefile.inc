@@ -1,9 +1,10 @@
-#	$NetBSD: Makefile.inc,v 1.21 2019/11/11 22:45:26 joerg Exp $
+#	$NetBSD: Makefile.inc,v 1.23 2020/04/20 13:04:10 joerg Exp $
 
 .include <bsd.own.mk>
 
 USE_FORT?= yes	# network client and server
-CWARNFLAGS.clang+=	-Wno-empty-body -Wno-format-extra-args -Wno-string-plus-int
+CWARNFLAGS.clang+=	-Wno-empty-body -Wno-format-extra-args \
+			-Wno-string-plus-int -Wno-string-compare
 WARNS?=	0
 
 PFIX_DISTDIR=	${NETBSDSRCDIR}/external/ibm-public/postfix/dist
@@ -24,8 +25,8 @@ CPPFLAGS+= -DDEF_CLIENT_SASL_TYPE=\"saslc\"
 DPADD+= ${LIBSASCL} ${LIBSSL}
 LDADD+= -lsaslc -lssl
 .if (${MKKERBEROS} != "no")
-DPADD+= ${LIBGSSAPI}
-LDADD+= -lgssapi
+DPADD+= ${LIBGSSAPI} ${LIBCRYPTO}
+LDADD+= -lgssapi -lcrypto
 .endif
 
 .if defined(HAVE_PCC)

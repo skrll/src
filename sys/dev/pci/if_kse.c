@@ -1,4 +1,4 @@
-/*	$NetBSD: if_kse.c,v 1.48 2020/02/04 07:37:00 skrll Exp $	*/
+/*	$NetBSD: if_kse.c,v 1.53 2020/04/01 04:00:14 nisimura Exp $	*/
 
 /*-
  * Copyright (c) 2006 The NetBSD Foundation, Inc.
@@ -34,22 +34,19 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_kse.c,v 1.48 2020/02/04 07:37:00 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_kse.c,v 1.53 2020/04/01 04:00:14 nisimura Exp $");
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/callout.h>
-#include <sys/mbuf.h>
-#include <sys/malloc.h>
-#include <sys/kernel.h>
-#include <sys/ioctl.h>
-#include <sys/errno.h>
-#include <sys/device.h>
-#include <sys/queue.h>
-
-#include <machine/endian.h>
 #include <sys/bus.h>
 #include <sys/intr.h>
+#include <sys/device.h>
+#include <sys/callout.h>
+#include <sys/ioctl.h>
+#include <sys/malloc.h>
+#include <sys/mbuf.h>
+#include <sys/errno.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
 
 #include <net/if.h>
 #include <net/if_media.h>
@@ -66,9 +63,9 @@ __KERNEL_RCSID(0, "$NetBSD: if_kse.c,v 1.48 2020/02/04 07:37:00 skrll Exp $");
 #define KSE_LINKDEBUG 0
 
 #define CSR_READ_4(sc, off) \
-	    bus_space_read_4(sc->sc_st, sc->sc_sh, off)
+	    bus_space_read_4((sc)->sc_st, (sc)->sc_sh, (off))
 #define CSR_WRITE_4(sc, off, val) \
-	    bus_space_write_4(sc->sc_st, sc->sc_sh, off, val)
+	    bus_space_write_4((sc)->sc_st, (sc)->sc_sh, (off), (val))
 #define CSR_READ_2(sc, off) \
 	    bus_space_read_2((sc)->sc_st, (sc)->sc_sh, (off))
 #define CSR_WRITE_2(sc, off, val) \
@@ -335,7 +332,7 @@ static void kse_watchdog(struct ifnet *);
 static int kse_init(struct ifnet *);
 static void kse_stop(struct ifnet *, int);
 static void kse_reset(struct kse_softc *);
-static void kse_set_filter(struct kse_softc *);
+static void kse_set_rcvfilt(struct kse_softc *);
 static int add_rxbuf(struct kse_softc *, int);
 static void rxdrain(struct kse_softc *);
 static int kse_intr(void *);
@@ -729,7 +726,7 @@ kse_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			 * Multicast list has changed; set the hardware filter
 			 * accordingly.
 			 */
-			kse_set_filter(sc);
+			kse_set_rcvfilt(sc);
 		}
 		break;
 	}
@@ -833,8 +830,8 @@ kse_init(struct ifnet *ifp)
 		    CSR_READ_2(sc, SGCR3) | CR3_USEFC);
 	}
 
-	/* build multicast hash filter if necessary */
-	kse_set_filter(sc);
+	/* accept multicast frame or run promisc mode */
+	kse_set_rcvfilt(sc);
 
 	/* set current media */
 	if (sc->sc_chip == 0x8841)
@@ -1088,7 +1085,7 @@ kse_start(struct ifnet *ifp)
 }
 
 static void
-kse_set_filter(struct kse_softc *sc)
+kse_set_rcvfilt(struct kse_softc *sc)
 {
 	struct ether_multistep step;
 	struct ether_multi *enm;
@@ -1098,25 +1095,24 @@ kse_set_filter(struct kse_softc *sc)
 	int i;
 
 	sc->sc_rxc &= ~(RXC_MHTE | RXC_RM | RXC_RA);
-	ifp->if_flags &= ~IFF_ALLMULTI;
 
-	if (ifp->if_flags & IFF_PROMISC) {
-		ifp->if_flags |= IFF_ALLMULTI;
-		goto update;
-	}
-
+	/* clear perfect match filter and prepare mcast hash table */
 	for (i = 0; i < 16; i++)
 		 CSR_WRITE_4(sc, MAAH0 + i*8, 0);
 	crc = mchash[0] = mchash[1] = 0;
+
 	ETHER_LOCK(ec);
+	if (ifp->if_flags & IFF_PROMISC) {
+		ec->ec_flags |= ETHER_F_ALLMULTI;
+		ETHER_UNLOCK(ec);
+		/* run promisc. mode */
+		sc->sc_rxc |= RXC_RA;
+		goto update;
+	}
+	ec->ec_flags &= ~ETHER_F_ALLMULTI;
 	ETHER_FIRST_MULTI(step, ec, enm);
 	i = 0;
 	while (enm != NULL) {
-#if KSE_MCASTDEBUG == 1
-		printf("%s: addrs %s %s\n", __func__,
-		   ether_sprintf(enm->enm_addrlo),
-		   ether_sprintf(enm->enm_addrhi));
-#endif
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, ETHER_ADDR_LEN)) {
 			/*
 			 * We must listen to a range of multicast addresses.
@@ -1126,10 +1122,15 @@ kse_set_filter(struct kse_softc *sc)
 			 * ranges is for IP multicast routing, for which the
 			 * range is big enough to require all bits set.)
 			 */
+			ec->ec_flags |= ETHER_F_ALLMULTI;
 			ETHER_UNLOCK(ec);
-			ifp->if_flags |= IFF_ALLMULTI;
+			/* accept all multicast */
+			sc->sc_rxc |= RXC_RM;
 			goto update;
 		}
+#if KSE_MCASTDEBUG == 1
+		printf("[%d] %s\n", i, ether_sprintf(enm->enm_addrlo));
+#endif
 		if (i < 16) {
 			/* use 16 additional MAC addr to accept mcast */
 			uint32_t addr;
@@ -1137,8 +1138,8 @@ kse_set_filter(struct kse_softc *sc)
 			addr = (ep[3] << 24) | (ep[2] << 16)
 			     | (ep[1] << 8)  |  ep[0];
 			CSR_WRITE_4(sc, MAAL0 + i*8, addr);
-			addr = (ep[5] << 8) | ep[4] | (1U<<31);
-			CSR_WRITE_4(sc, MAAH0 + i*8, addr);
+			addr = (ep[5] << 8) | ep[4];
+			CSR_WRITE_4(sc, MAAH0 + i*8, addr | (1U << 31));
 		} else {
 			/* use hash table when too many */
 			crc = ether_crc32_le(enm->enm_addrlo, ETHER_ADDR_LEN);
@@ -1149,19 +1150,12 @@ kse_set_filter(struct kse_softc *sc)
 	}
 	ETHER_UNLOCK(ec);
 
-	if (crc) {
-		CSR_WRITE_4(sc, MTR0, mchash[0]);
-		CSR_WRITE_4(sc, MTR1, mchash[1]);
+	if (crc)
 		sc->sc_rxc |= RXC_MHTE;
-	}
-	return;
-
+	CSR_WRITE_4(sc, MTR0, mchash[0]);
+	CSR_WRITE_4(sc, MTR1, mchash[1]);
  update:
 	/* With RA or RM, MHTE/MTR0/MTR1 are never consulted. */
-	if (ifp->if_flags & IFF_PROMISC)
-		sc->sc_rxc |= RXC_RA;
-	else
-		sc->sc_rxc |= RXC_RM;
 	return;
 }
 

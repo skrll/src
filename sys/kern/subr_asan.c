@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_asan.c,v 1.18 2020/02/08 09:05:08 maxv Exp $	*/
+/*	$NetBSD: subr_asan.c,v 1.21 2020/04/13 07:09:51 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018-2020 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_asan.c,v 1.18 2020/02/08 09:05:08 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_asan.c,v 1.21 2020/04/13 07:09:51 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -53,6 +53,7 @@ __KERNEL_RCSID(0, "$NetBSD: subr_asan.c,v 1.18 2020/02/08 09:05:08 maxv Exp $");
 #define KASAN_SHADOW_SCALE_SHIFT	3
 #define KASAN_SHADOW_SCALE_SIZE		(1UL << KASAN_SHADOW_SCALE_SHIFT)
 #define KASAN_SHADOW_MASK		(KASAN_SHADOW_SCALE_SIZE - 1)
+#define KASAN_ALLOCA_SCALE_SIZE		32
 
 /* The MD code. */
 #include <machine/asan.h>
@@ -504,6 +505,37 @@ kasan_strlen(const char *str)
 	}
 
 	return (s - str);
+}
+
+char *
+kasan_strcat(char *dst, const char *src)
+{
+	size_t ldst, lsrc;
+
+	ldst = __builtin_strlen(dst);
+	lsrc = __builtin_strlen(src);
+	kasan_shadow_check((unsigned long)dst, ldst + lsrc + 1, true,
+	    __RET_ADDR);
+	kasan_shadow_check((unsigned long)src, lsrc + 1, false,
+	    __RET_ADDR);
+
+	return __builtin_strcat(dst, src);
+}
+
+char *
+kasan_strchr(const char *s, int c)
+{
+	kasan_shadow_check((unsigned long)s, __builtin_strlen(s) + 1, false,
+	    __RET_ADDR);
+	return __builtin_strchr(s, c);
+}
+
+char *
+kasan_strrchr(const char *s, int c)
+{
+	kasan_shadow_check((unsigned long)s, __builtin_strlen(s) + 1, false,
+	    __RET_ADDR);
+	return __builtin_strrchr(s, c);
 }
 
 #undef kcopy
@@ -1037,8 +1069,6 @@ ASAN_BUS_WRITE_FUNC(8, 64)
 
 /* -------------------------------------------------------------------------- */
 
-#ifdef __HAVE_KASAN_INSTR_DMA
-
 #include <sys/mbuf.h>
 
 static void
@@ -1129,8 +1159,6 @@ kasan_dma_load(bus_dmamap_t map, void *buf, bus_size_t buflen, int type)
 	map->dm_buflen = buflen;
 	map->dm_buftype = type;
 }
-
-#endif /* __HAVE_KASAN_INSTR_DMA */
 
 /* -------------------------------------------------------------------------- */
 
@@ -1246,4 +1274,35 @@ void
 __asan_unpoison_stack_memory(const void *addr, size_t size)
 {
 	kasan_shadow_Nbyte_markvalid(addr, size);
+}
+
+void __asan_alloca_poison(const void *, size_t);
+void __asan_allocas_unpoison(const void *, const void *);
+
+void __asan_alloca_poison(const void *addr, size_t size)
+{
+	const void *l, *r;
+
+	KASSERT((vaddr_t)addr % KASAN_ALLOCA_SCALE_SIZE == 0);
+
+	l = (const uint8_t *)addr - KASAN_ALLOCA_SCALE_SIZE;
+	r = (const uint8_t *)addr + roundup(size, KASAN_ALLOCA_SCALE_SIZE);
+
+	kasan_shadow_Nbyte_fill(l, KASAN_ALLOCA_SCALE_SIZE, KASAN_STACK_LEFT);
+	kasan_mark(addr, size, roundup(size, KASAN_ALLOCA_SCALE_SIZE),
+	    KASAN_STACK_MID);
+	kasan_shadow_Nbyte_fill(r, KASAN_ALLOCA_SCALE_SIZE, KASAN_STACK_RIGHT);
+}
+
+void __asan_allocas_unpoison(const void *stkbegin, const void *stkend)
+{
+	size_t size;
+
+	if (__predict_false(!stkbegin))
+		return;
+	if (__predict_false((uintptr_t)stkbegin > (uintptr_t)stkend))
+		return;
+	size = (uintptr_t)stkend - (uintptr_t)stkbegin;
+
+	kasan_shadow_Nbyte_fill(stkbegin, size, 0);
 }

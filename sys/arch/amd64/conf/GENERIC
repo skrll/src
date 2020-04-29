@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.562 2020/02/09 16:06:18 jmcneill Exp $
+# $NetBSD: GENERIC,v 1.565 2020/04/15 17:16:22 maxv Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.562 $"
+#ident		"GENERIC-$Revision: 1.565 $"
 
 maxusers	64		# estimated number of users
 
@@ -54,9 +54,6 @@ maxusers	64		# estimated number of users
 # Standard system options
 
 options 	INSECURE	# disable kernel security levels - X needs this
-
-options		AUDIO_BLK_MS=4	# make software with low latency needs performant
-				# no substantial CPU overhead on this platform
 
 options 	RTC_OFFSET=0	# hardware clock is this many mins. west of GMT
 options 	NTP		# NTP phase/frequency locked loop
@@ -137,14 +134,14 @@ options 	KDTRACE_HOOKS	# kernel DTrace hooks
 #options 	KCSAN_PANIC	# optional
 
 # Kernel Memory Sanitizer (kMSan). You need to disable SVS and kernel modules
-# to use it. The quarantine is optional and can help KMSAN find uninitialized
+# to use it. POOL_NOCACHE is optional and can help KMSAN find uninitialized
 # memory in pool caches. Note that KMSAN requires at least 4GB of RAM.
 #makeoptions 	KMSAN=1		# mandatory
 #options 	KMSAN		# mandatory
 #no options	SVS		# mandatory
 #no options 	MODULAR		# mandatory
 #no options 	MODULAR_DEFAULT_AUTOLOAD	# mandatory
-#options	POOL_QUARANTINE	# optional
+#options 	POOL_NOCACHE	# optional
 #options 	KMSAN_PANIC	# optional
 
 # Kernel Code Coverage Driver.
@@ -796,6 +793,7 @@ ex*	at pci? dev ? function ?	# 3Com 90x[BC]
 fxp*	at pci? dev ? function ?	# Intel EtherExpress PRO 10+/100B
 gem*	at pci? dev ? function ?	# Apple GMAC and Sun ERI gigabit enet
 gsip*	at pci? dev ? function ?	# NS83820 Gigabit Ethernet
+hme*	at pci? dev ? function ?	# Sun Microelectronics STP2002-STQ
 ipw*	at pci? dev ? function ?	# Intel PRO/Wireless 2100
 iwi*	at pci? dev ? function ?	# Intel PRO/Wireless 2200BG
 iwm*	at pci? dev ? function ?	# Intel Centrino 7260
@@ -804,7 +802,7 @@ ixg*	at pci? dev ? function ?	# Intel 8259x 10 gigabit
 ixl*	at pci? dev ? function ?	# Intel Ethernet 700 Series
 ixv*	at pci? dev ? function ?	# Intel 8259x 10G virtual function
 jme*	at pci? dev ? function ?	# JMicron JMC2[56]0 ethernet
-hme*	at pci? dev ? function ?	# Sun Microelectronics STP2002-STQ
+kse*	at pci? dev ? function ?	# Micrel KSZ8841/8842 ethernet
 lii*	at pci? dev ? function ?	# Atheros L2 Fast-Ethernet
 malo*	at pci? dev ? function ?	# Marvell Libertas Wireless
 mcx*	at pci? dev ? function ?	# Mellanox 5th generation Ethernet

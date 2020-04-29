@@ -1,4 +1,4 @@
-/*	$NetBSD: dbcool_var.h,v 1.14 2011/08/02 14:06:15 pgoyette Exp $ */
+/*	$NetBSD: dbcool_var.h,v 1.16 2020/04/16 23:29:53 rin Exp $ */
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dbcool_var.h,v 1.14 2011/08/02 14:06:15 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dbcool_var.h,v 1.16 2020/04/16 23:29:53 rin Exp $");
 
 #include <dev/i2c/i2cvar.h>
 

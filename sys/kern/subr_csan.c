@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_csan.c,v 1.6 2019/12/01 08:15:58 maxv Exp $	*/
+/*	$NetBSD: subr_csan.c,v 1.8 2020/04/15 17:28:26 maxv Exp $	*/
 
 /*
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_csan.c,v 1.6 2019/12/01 08:15:58 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_csan.c,v 1.8 2020/04/15 17:28:26 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -609,6 +609,7 @@ CSAN_ATOMIC_FUNC_INC(ptr, void *, void);
 void
 kcsan_atomic_load(const volatile void *p, void *v, int size)
 {
+	kcsan_access((uintptr_t)p, size, false, true, __RET_ADDR);
 	switch (size) {
 	case 1: *(uint8_t *)v = *(const volatile uint8_t *)p; break;
 	case 2: *(uint16_t *)v = *(const volatile uint16_t *)p; break;
@@ -620,6 +621,7 @@ kcsan_atomic_load(const volatile void *p, void *v, int size)
 void
 kcsan_atomic_store(volatile void *p, const void *v, int size)
 {
+	kcsan_access((uintptr_t)p, size, true, true, __RET_ADDR);
 	switch (size) {
 	case 1: *(volatile uint8_t *)p = *(const uint8_t *)v; break;
 	case 2: *(volatile uint16_t *)p = *(const uint16_t *)v; break;

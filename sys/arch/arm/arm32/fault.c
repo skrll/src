@@ -1,4 +1,4 @@
-/*	$NetBSD: fault.c,v 1.109 2019/11/29 17:33:43 ryo Exp $	*/
+/*	$NetBSD: fault.c,v 1.111 2020/03/29 09:10:26 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -81,7 +81,7 @@
 #include "opt_kgdb.h"
 
 #include <sys/types.h>
-__KERNEL_RCSID(0, "$NetBSD: fault.c,v 1.109 2019/11/29 17:33:43 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fault.c,v 1.111 2020/03/29 09:10:26 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -468,6 +468,33 @@ data_abort_handler(trapframe_t *tf)
 		dab_fatal(tf, fsr, far, l, NULL);
 	}
 
+#ifdef PMAP_FAULTINFO
+	struct pcb_faultinfo * const pfi = &pcb->pcb_faultinfo;
+	struct proc * const p = curproc;
+
+	if (p->p_pid == pfi->pfi_lastpid && va == pfi->pfi_faultaddr) {
+		if (++pfi->pfi_repeats > 4) {
+			tlb_asid_t asid = tlb_get_asid();
+			pt_entry_t *ptep = pfi->pfi_faultptep;
+
+			printf("%s: fault #%u (%x/%s) for %#" PRIxVADDR
+			    "(%#x) at pc %#" PRIxREGISTER " curpid=%u/%u "
+			    "ptep@%p=%#" PRIxPTE ")\n", __func__,
+			    pfi->pfi_repeats, fsr & FAULT_TYPE_MASK,
+			    data_aborts[fsr & FAULT_TYPE_MASK].desc, va,
+			    far, tf->tf_pc, map->pmap->pm_pai[0].pai_asid,
+			    asid, ptep, ptep ? *ptep : 0);
+			cpu_Debugger();
+		}
+	} else {
+		pfi->pfi_lastpid = p->p_pid;
+		pfi->pfi_faultaddr = va;
+		pfi->pfi_repeats = 0;
+		pfi->pfi_faultptep = NULL;
+		pfi->pfi_faulttype = fsr & FAULT_TYPE_MASK;
+	}
+#endif /* PMAP_FAULTINFO */
+
 	onfault = pcb->pcb_onfault;
 	pcb->pcb_onfault = NULL;
 	error = uvm_fault(map, va, ftype);
@@ -835,7 +862,7 @@ prefetch_abort_handler(trapframe_t *tf)
 	/* Get fault address */
 	fault_pc = tf->tf_pc;
 	KASSERTMSG(tf == lwp_trapframe(l), "tf %p vs %p", tf, lwp_trapframe(l));
-	UVMHIST_LOG(maphist, " (pc=0x%jx, l=0x%#jx, tf=0x%#jx)",
+	UVMHIST_LOG(maphist, " (pc=%#jx, l=%#jx, tf=%#jx)",
 	    fault_pc, (uintptr_t)l, (uintptr_t)tf, 0);
 
 #ifdef THUMB_CODE

@@ -1,4 +1,4 @@
-# $NetBSD: md.amd64,v 1.84 2020/02/11 11:36:53 uki Exp $
+# $NetBSD: md.amd64,v 1.86 2020/03/12 15:04:13 pgoyette Exp $
 #
 # NOTE that there are two sets of files here:
 # @MODULEDIR@ and amd64-xen
@@ -91,6 +91,10 @@
 ./@MODULEDIR@/compat_netbsd32_ptrace/compat_netbsd32_ptrace.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_raid		modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_raid/compat_netbsd32_raid.kmod	modules-base-kernel	kmod
+./@MODULEDIR@/compat_netbsd32_quota		modules-base-kernel	kmod
+./@MODULEDIR@/compat_netbsd32_quota/compat_netbsd32_quota.kmod	modules-base-kernel	kmod
+./@MODULEDIR@/compat_netbsd32_quota_50		modules-base-kernel	kmod
+./@MODULEDIR@/compat_netbsd32_quota_50/compat_netbsd32_quota_50.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_sysvipc		modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_sysvipc/compat_netbsd32_sysvipc.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_sysvipc_10	modules-base-kernel	kmod
@@ -151,6 +155,8 @@
 ./@MODULEDIR@/hpet/hpet.kmod			modules-base-kernel	kmod
 ./@MODULEDIR@/ichsmb				modules-base-kernel	kmod
 ./@MODULEDIR@/ichsmb/ichsmb.kmod		modules-base-kernel	kmod
+./@MODULEDIR@/if_ixl				modules-base-kernel	kmod
+./@MODULEDIR@/if_ixl/if_ixl.kmod		modules-base-kernel	kmod
 ./@MODULEDIR@/imc				modules-base-kernel	kmod
 ./@MODULEDIR@/imc/imc.kmod			modules-base-kernel	kmod
 ./@MODULEDIR@/imcsmb				modules-base-kernel	kmod

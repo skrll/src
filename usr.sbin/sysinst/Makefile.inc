@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.31 2019/12/16 13:48:44 martin Exp $
+#	$NetBSD: Makefile.inc,v 1.34 2020/02/19 21:49:48 martin Exp $
 #
 # Makefile for sysinst
 
@@ -7,7 +7,7 @@
 .endif
 
 PROG=		sysinst
-NOMAN=		# defined
+MAN=		sysinst.8
 
 WARNS=		4
 
@@ -117,10 +117,10 @@ O0TRACKING=	-fvar-tracking-assignments -fvar-tracking
 .endif
 CPPFLAGS+=-DDEBUG
 DBG +=-g -O0 ${O0TRACKING}
-.endif
-
-.if empty(DBG:M-g)
+.else
+.if defined(SMALLPROG)
 COPTS += -Os
+.endif
 .endif
 
 .if (!defined(SMALLPROG) || defined(SMALLPROG_INET6)) && (${USE_INET6} != "no")
@@ -128,6 +128,7 @@ CPPFLAGS+=-DINET6
 .endif
 
 COPTS+=	${GCC_NO_FORMAT_TRUNCATION}
+COPTS.disklabel.c+= ${GCC_NO_STRINGOP_TRUNCATION}
 
 # Host to ftp from.  Default:
 #	"ftp.NetBSD.org"

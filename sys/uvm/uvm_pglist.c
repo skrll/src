@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_pglist.c,v 1.79 2019/12/31 13:07:14 ad Exp $	*/
+/*	$NetBSD: uvm_pglist.c,v 1.81 2020/03/01 21:43:56 ad Exp $	*/
 
 /*-
  * Copyright (c) 1997, 2019 The NetBSD Foundation, Inc.
@@ -35,10 +35,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_pglist.c,v 1.79 2019/12/31 13:07:14 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_pglist.c,v 1.81 2020/03/01 21:43:56 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/cpu.h>
 
 #include <uvm/uvm.h>
 #include <uvm/uvm_pdpolicy.h>
@@ -118,7 +119,7 @@ uvm_pglistalloc_c_ps(uvm_physseg_t psi, int num, paddr_t low, paddr_t high,
 	paddr_t cidx = 0;	/* XXX: GCC */
 #endif
 #ifdef PGALLOC_VERBOSE
-	printf("pgalloc: contig %d pgs from psi %zd\n", num, ps - vm_physmem);
+	printf("pgalloc: contig %d pgs from psi %d\n", num, psi);
 #endif
 
 	low = atop(low);
@@ -197,8 +198,8 @@ uvm_pglistalloc_c_ps(uvm_physseg_t psi, int num, paddr_t low, paddr_t high,
 		 * Found a suitable starting page.  See if the range is free.
 		 */
 #ifdef PGALLOC_VERBOSE
-		printf("%s: ps=%p candidate=%#x end=%#x skip=%#x, align=%#"PRIxPADDR,
-		    __func__, ps, candidateidx, end, skip, alignment);
+		printf("%s: psi=%d candidate=%#x end=%#x skip=%#x, align=%#"PRIxPADDR,
+		    __func__, psi, candidateidx, end, skip, alignment);
 #endif
 		/*
 		 * We start at the end and work backwards since if we find a
@@ -514,6 +515,8 @@ uvm_pglistalloc(psize_t size, paddr_t low, paddr_t high, paddr_t alignment,
 {
 	int num, res;
 
+	KASSERT(!cpu_intr_p());
+	KASSERT(!cpu_softintr_p());
 	KASSERT((alignment & (alignment - 1)) == 0);
 	KASSERT((boundary & (boundary - 1)) == 0);
 
@@ -561,6 +564,9 @@ uvm_pglistfree(struct pglist *list)
 	struct pgflbucket *pgb;
 	struct vm_page *pg;
 	int c, b;
+
+	KASSERT(!cpu_intr_p());
+	KASSERT(!cpu_softintr_p());
 
 	/*
 	 * Lock the free list and free each page.

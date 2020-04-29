@@ -1,4 +1,4 @@
-/*$NetBSD: ixv.c,v 1.146 2020/02/05 10:07:47 msaitoh Exp $*/
+/*$NetBSD: ixv.c,v 1.148 2020/04/17 02:21:25 msaitoh Exp $*/
 
 /******************************************************************************
 
@@ -989,7 +989,6 @@ ixv_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 	struct adapter *adapter = ifp->if_softc;
 
 	INIT_DEBUGOUT("ixv_media_status: begin");
-	IXGBE_CORE_LOCK(adapter);
 	ixv_update_link_status(adapter);
 
 	ifmr->ifm_status = IFM_AVALID;
@@ -997,7 +996,6 @@ ixv_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 
 	if (adapter->link_active != LINK_STATE_UP) {
 		ifmr->ifm_active |= IFM_NONE;
-		IXGBE_CORE_UNLOCK(adapter);
 		return;
 	}
 
@@ -1025,8 +1023,6 @@ ixv_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 	}
 
 	ifp->if_baudrate = ifmedia_baudrate(ifmr->ifm_active);
-
-	IXGBE_CORE_UNLOCK(adapter);
 } /* ixv_media_status */
 
 /************************************************************************
@@ -1172,7 +1168,7 @@ ixv_set_rxfilter(struct adapter *adapter)
 			ETHER_LOCK(ec);
 			ec->ec_flags |= ETHER_F_ALLMULTI;
 			ETHER_UNLOCK(ec);
-			return rc; /* Promisc might failed */
+			return rc; /* Promisc might have failed */
 		}
 
 		if (rc == 0)
@@ -1631,8 +1627,8 @@ ixv_setup_interface(device_t dev, struct adapter *adapter)
 	 * callbacks to update media and link information
 	 */
 	ec->ec_ifmedia = &adapter->media;
-	ifmedia_init(&adapter->media, IFM_IMASK, ixv_media_change,
-	    ixv_media_status);
+	ifmedia_init_with_lock(&adapter->media, IFM_IMASK, ixv_media_change,
+	    ixv_media_status, &adapter->core_mtx);
 	ifmedia_add(&adapter->media, IFM_ETHER | IFM_AUTO, 0, NULL);
 	ifmedia_set(&adapter->media, IFM_ETHER | IFM_AUTO);
 
@@ -2433,7 +2429,7 @@ ixv_sysctl_interrupt_rate_handler(SYSCTLFN_ARGS)
 	if (rate > 0 && rate < 500000) {
 		if (rate < 1000)
 			rate = 1000;
-		reg |= ((4000000/rate) & 0xff8);
+		reg |= ((4000000 / rate) & 0xff8);
 		/*
 		 * When RSC is used, ITR interval must be larger than
 		 * RSC_DELAY. Currently, we use 2us for RSC_DELAY.

@@ -1,4 +1,4 @@
-/*	$NetBSD: libkern.h,v 1.137 2019/12/14 17:23:47 riastradh Exp $	*/
+/*	$NetBSD: libkern.h,v 1.140 2020/04/17 17:24:46 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -38,6 +38,7 @@
 #include "opt_diagnostic.h"
 #include "opt_kasan.h"
 #include "opt_kcsan.h"
+#include "opt_kmsan.h"
 #endif
 
 #include <sys/types.h>
@@ -360,7 +361,6 @@ tolower(int ch)
 void	*memcpy(void *, const void *, size_t);
 int	 memcmp(const void *, const void *, size_t);
 void	*memset(void *, int, size_t);
-void	*memmem(const void *, size_t, const void *, size_t);
 #if __GNUC_PREREQ__(2, 95) && !defined(_STANDALONE)
 #if defined(_KERNEL) && defined(KASAN)
 void	*kasan_memcpy(void *, const void *, size_t);
@@ -389,12 +389,11 @@ void	*kmsan_memset(void *, int, size_t);
 #define	memset(d, v, l)		__builtin_memset(d, v, l)
 #endif
 #endif
+void	*memmem(const void *, size_t, const void *, size_t);
 
 char	*strcpy(char *, const char *);
 int	 strcmp(const char *, const char *);
 size_t	 strlen(const char *);
-size_t	 strnlen(const char *, size_t);
-char	*strsep(char **, const char *);
 #if __GNUC_PREREQ__(2, 95) && !defined(_STANDALONE)
 #if defined(_KERNEL) && defined(KASAN)
 char	*kasan_strcpy(char *, const char *);
@@ -423,6 +422,8 @@ size_t	 kmsan_strlen(const char *);
 #define	strlen(a)		__builtin_strlen(a)
 #endif
 #endif
+size_t	 strnlen(const char *, size_t);
+char	*strsep(char **, const char *);
 
 /* Functions for which we always use built-ins. */
 #ifdef __GNUC__
@@ -430,17 +431,23 @@ size_t	 kmsan_strlen(const char *);
 #endif
 
 /* These exist in GCC 3.x, but we don't bother. */
-#if defined(_KERNEL) && defined(KMSAN)
+char	*strcat(char *, const char *);
+char	*strchr(const char *, int);
+char	*strrchr(const char *, int);
+#if defined(_KERNEL) && defined(KASAN)
+char	*kasan_strcat(char *, const char *);
+char	*kasan_strchr(const char *, int);
+char	*kasan_strrchr(const char *, int);
+#define	strcat(d, s)		kasan_strcat(d, s)
+#define	strchr(s, c)		kasan_strchr(s, c)
+#define	strrchr(s, c)		kasan_strrchr(s, c)
+#elif defined(_KERNEL) && defined(KMSAN)
 char	*kmsan_strcat(char *, const char *);
 char	*kmsan_strchr(const char *, int);
 char	*kmsan_strrchr(const char *, int);
 #define	strcat(d, s)		kmsan_strcat(d, s)
 #define	strchr(s, c)		kmsan_strchr(s, c)
 #define	strrchr(s, c)		kmsan_strrchr(s, c)
-#else
-char	*strcat(char *, const char *);
-char	*strchr(const char *, int);
-char	*strrchr(const char *, int);
 #endif
 size_t	 strcspn(const char *, const char *);
 char	*strncpy(char *, const char *, size_t);

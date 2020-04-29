@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.702 2020/02/09 16:06:17 jmcneill Exp $
+#	$NetBSD: Makefile,v 1.704 2020/04/12 01:10:54 simonb Exp $
 #	@(#)Makefile	8.1 (Berkeley) 6/18/93
 
 MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
@@ -43,7 +43,7 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	micphy.4 midi.4 mii.4 mk48txx.4 mlx.4 mly.4 mpls.4 mpii.4 mpt.4 \
 	mpu.4 mtd.4 mtio.4 msm6242b.4 multicast.4 mvsata.4 \
 	nadb.4 ne.4 neo.4 netintro.4 nfe.4 nfsmb.4 njata.4 njs.4 \
-	nsclpcsio.4 nside.4 nsphy.4 nsphyter.4 ntwoc.4 null.4 nsmb.4 \
+	nsclpcsio.4 nside.4 nsphy.4 nsphyter.4 ntwoc.4 null.4 \
 	nvme.4 nvmm.4 \
 	oak.4 oosiop.4 opl.4 options.4 optiide.4 osiop.4 otus.4 \
 	pad.4 pas.4 pcdisplay.4 pcf8563rtc.4 pciide.4 pckbc.4 pckbd.4 pcn.4 \
@@ -87,8 +87,8 @@ MAN+=	atu.4 aubtfwl.4 aue.4 axe.4 axen.4 cdce.4 cue.4 ehci.4 kue.4 \
 	ulpt.4 umass.4 umcs.4 umct.4 umidi.4 umodem.4 ums.4 upgt.4 upl.4 \
 	uplcom.4 ure.4 url.4 urndis.4 urtw.4 urtwn.4 \
 	usb.4 usbnet.4 uscanner.4 uslsa.4 usmsc.4 usscanner.4 \
-	ustir.4 uthum.4 utoppy.4 uts.4 uvideo.4 uvisor.4 uvscom.4 uyap.4 \
-	xhci.4 \
+	ustir.4 uthum.4 utoppy.4 uts.4 uvideo.4 uvisor.4 uvscom.4 uxrcom.4 \
+	uyap.4 xhci.4 \
 
 # Ir devices
 MAN+=	irframe.4 cir.4 irframetty.4 oboe.4
@@ -218,7 +218,6 @@ MLINKS+=midi.4 sequencer.4
 MLINKS+=mii.4 phy.4
 MLINKS+=netintro.4 networking.4
 MLINKS+=nfsmb.4 nfsmbc.4
-MLINKS+=nsmb.4 netsmb.4
 MLINKS+=ntwoc.4 ntwo.4
 MLINKS+=pci.4 pchb.4
 MLINKS+=pci.4 ppb.4

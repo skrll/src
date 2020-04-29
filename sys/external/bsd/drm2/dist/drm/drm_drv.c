@@ -1,4 +1,4 @@
-/*	$NetBSD: drm_drv.c,v 1.12 2020/02/14 14:34:57 maya Exp $	*/
+/*	$NetBSD: drm_drv.c,v 1.14 2020/04/19 17:19:13 maya Exp $	*/
 
 /*
  * Created: Fri Jan 19 10:48:35 2001 by faith@acm.org
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: drm_drv.c,v 1.12 2020/02/14 14:34:57 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: drm_drv.c,v 1.14 2020/04/19 17:19:13 maya Exp $");
 
 #include <linux/debugfs.h>
 #include <linux/fs.h>
@@ -540,16 +540,14 @@ EXPORT_SYMBOL(drm_unplug_dev);
 
 #ifdef __NetBSD__
 
-struct inode;
-
-static struct inode *
+static void *
 drm_fs_inode_new(void)
 {
 	return NULL;
 }
 
 static void
-drm_fs_inode_free(struct inode *inode)
+drm_fs_inode_free(void *inode)
 {
 	KASSERT(inode == NULL);
 }
@@ -662,6 +660,14 @@ struct drm_device *drm_dev_alloc(struct drm_driver *driver,
 	kref_init(&dev->ref);
 	dev->dev = parent;
 	dev->driver = driver;
+#ifdef __NetBSD__
+	dev->sc_monitor_hotplug.smpsw_name = PSWITCH_HK_DISPLAY_CYCLE;
+	dev->sc_monitor_hotplug.smpsw_type = PSWITCH_TYPE_HOTKEY;
+
+	ret = sysmon_pswitch_register(&dev->sc_monitor_hotplug);
+	if (ret)
+		goto err_pswitch;
+#endif
 
 	INIT_LIST_HEAD(&dev->filelist);
 	INIT_LIST_HEAD(&dev->ctxlist);
@@ -729,6 +735,10 @@ err_free:
 	mutex_destroy(&dev->master_mutex);
 	mutex_destroy(&dev->ctxlist_mutex);
 	mutex_destroy(&dev->struct_mutex);
+#ifdef __NetBSD__
+err_pswitch:
+	sysmon_pswitch_unregister(&dev->sc_monitor_hotplug);
+#endif
 	kfree(dev);
 	return NULL;
 }
@@ -740,6 +750,10 @@ static void drm_dev_release(struct kref *ref)
 
 	if (drm_core_check_feature(dev, DRIVER_GEM))
 		drm_gem_destroy(dev);
+
+#ifdef __NetBSD__
+	sysmon_pswitch_unregister(&dev->sc_monitor_hotplug);
+#endif
 
 	drm_legacy_ctxbitmap_cleanup(dev);
 	drm_ht_remove(&dev->map_hash);

@@ -1,4 +1,4 @@
-/*	$NetBSD: msdosfs_vnops.c,v 1.99 2019/09/18 17:59:14 christos Exp $	*/
+/*	$NetBSD: msdosfs_vnops.c,v 1.101 2020/04/13 19:23:17 ad Exp $	*/
 
 /*-
  * Copyright (C) 1994, 1995, 1997 Wolfgang Solfrank.
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: msdosfs_vnops.c,v 1.99 2019/09/18 17:59:14 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: msdosfs_vnops.c,v 1.101 2020/04/13 19:23:17 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -173,7 +173,7 @@ msdosfs_close(void *v)
 	struct denode *dep = VTODE(vp);
 
 	mutex_enter(vp->v_interlock);
-	if (vp->v_usecount > 1)
+	if (vrefcnt(vp) > 1)
 		DETIMES(dep, NULL, NULL, NULL, dep->de_pmp->pm_gmtoff);
 	mutex_exit(vp->v_interlock);
 	return (0);
@@ -643,7 +643,7 @@ msdosfs_write(void *v)
 		 */
 
 		if (!async && oldoff >> 16 != uio->uio_offset >> 16) {
-			mutex_enter(vp->v_interlock);
+			rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 			error = VOP_PUTPAGES(vp, (oldoff >> 16) << 16,
 			    (uio->uio_offset >> 16) << 16,
 			    PGO_CLEANIT | PGO_LAZY);
@@ -653,7 +653,7 @@ msdosfs_write(void *v)
 	/* set final size */
 	uvm_vnp_setsize(vp, dep->de_FileSize);
 	if (error == 0 && ioflag & IO_SYNC) {
-		mutex_enter(vp->v_interlock);
+		rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 		error = VOP_PUTPAGES(vp, trunc_page(oldoff),
 		    round_page(oldoff + bytelen), PGO_CLEANIT | PGO_SYNCIO);
 	}
@@ -731,8 +731,8 @@ msdosfs_remove(void *v)
 	else
 		error = removede(ddep, dep);
 #ifdef MSDOSFS_DEBUG
-	printf("msdosfs_remove(), dep %p, v_usecount %d\n",
-		dep, ap->a_vp->v_usecount);
+	printf("msdosfs_remove(), dep %p, usecount %d\n",
+		dep, vrefcnt(ap->a_vp));
 #endif
 	VN_KNOTE(ap->a_vp, NOTE_DELETE);
 	VN_KNOTE(ap->a_dvp, NOTE_WRITE);

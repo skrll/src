@@ -1,4 +1,4 @@
-/* $NetBSD: trap.c,v 1.25 2020/01/31 09:23:58 maxv Exp $ */
+/* $NetBSD: trap.c,v 1.27 2020/04/13 05:40:25 maxv Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.25 2020/01/31 09:23:58 maxv Exp $");
+__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.27 2020/04/13 05:40:25 maxv Exp $");
 
 #include "opt_arm_intr_impl.h"
 #include "opt_compat_netbsd32.h"
@@ -238,6 +238,7 @@ trap_el1h_sync(struct trapframe *tf)
 	case ESR_EC_PC_ALIGNMENT:
 	case ESR_EC_SP_ALIGNMENT:
 	case ESR_EC_ILL_STATE:
+	case ESR_EC_BTE_A64:
 	default:
 		panic("Trap: fatal %s: pc=%016" PRIx64 " sp=%016" PRIx64
 		    " esr=%08x", eclass_trapname(eclass), tf->tf_pc, tf->tf_sp,
@@ -362,30 +363,36 @@ fetch_arm_insn(struct trapframe *tf, uint32_t *insn)
 		uint16_t *pc = (uint16_t *)(tf->tf_pc & ~1UL); /* XXX */
 		uint16_t hi, lo;
 
-		hi = *pc;
+		if (ufetch_16(pc, &hi))
+			return -1;
+
 		if (!THUMB_32BIT(hi)) {
 			/* 16-bit Thumb instruction */
 			*insn = hi;
 			return 2;
 		}
 
-		/*
-		 * 32-bit Thumb instruction:
-		 * We can safely retrieve the lower-half word without
-		 * consideration of a page fault; If present, it must
-		 * have occurred already in the decode stage.
-		 */
-		lo = *(pc + 1);
+		/* 32-bit Thumb instruction */
+		if (ufetch_16(pc + 1, &lo))
+			return -1;
 
 		*insn = ((uint32_t)hi << 16) | lo;
 		return 4;
 	}
 
-	*insn = *(uint32_t *)tf->tf_pc;
+	if (ufetch_32((uint32_t *)tf->tf_pc, insn))
+		return -1;
+
 	return 4;
 }
 
-static int
+enum emul_arm_result {
+	EMUL_ARM_SUCCESS = 0,
+	EMUL_ARM_UNKNOWN,
+	EMUL_ARM_FAULT,
+};
+
+static enum emul_arm_result
 emul_arm_insn(struct trapframe *tf)
 {
 	uint32_t insn;
@@ -432,14 +439,16 @@ emul_arm_insn(struct trapframe *tf)
 			break;
 		}
 		break;
+	default:
+		return EMUL_ARM_FAULT;
 	}
 
 	/* unknown, or unsupported instruction */
-	return 1;
+	return EMUL_ARM_UNKNOWN;
 
  emulated:
 	tf->tf_pc += insn_size;
-	return 0;
+	return EMUL_ARM_SUCCESS;
 }
 #endif /* COMPAT_NETBSD32 */
 
@@ -494,8 +503,16 @@ trap_el0_32sync(struct trapframe *tf)
 		break;
 
 	case ESR_EC_UNKNOWN:
-		if (emul_arm_insn(tf))
+		switch (emul_arm_insn(tf)) {
+		case EMUL_ARM_SUCCESS:
+			break;
+		case EMUL_ARM_UNKNOWN:
 			goto unknown;
+		case EMUL_ARM_FAULT:
+			do_trapsignal(l, SIGSEGV, SEGV_MAPERR,
+			    (void *)tf->tf_pc, esr);
+			break;
+		}
 		userret(l);
 		break;
 

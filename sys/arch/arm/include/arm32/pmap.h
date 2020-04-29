@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.161 2020/02/05 07:37:36 skrll Exp $	*/
+/*	$NetBSD: pmap.h,v 1.167 2020/04/18 11:00:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003 Wasabi Systems, Inc.
@@ -229,9 +229,8 @@ struct pmap_devmap {
  * The pmap structure itself
  */
 struct pmap {
-	struct uvm_object	pm_obj;
-	kmutex_t		pm_obj_lock;
-#define	pm_lock pm_obj.vmobjlock
+	kmutex_t		pm_lock;
+	u_int			pm_refs;
 #ifndef ARM_HAS_VBAR
 	pd_entry_t		*pm_pl1vec;
 	pd_entry_t		pm_l1vec;
@@ -340,7 +339,6 @@ extern bool arm_has_tlbiasid_p;	/* also in <arm/locore.h> */
 /*
  * Commonly referenced structures
  */
-extern int		pmap_debug_level; /* Only exists if PMAP_DEBUG */
 extern int		arm_poolpage_vmfreelist;
 
 /*
@@ -375,7 +373,7 @@ u_int arm32_mmap_flags(paddr_t);
  * Functions that we need to export
  */
 void	pmap_procwr(struct proc *, vaddr_t, int);
-void	pmap_remove_all(pmap_t);
+bool	pmap_remove_all(pmap_t);
 bool	pmap_extract(pmap_t, vaddr_t, paddr_t *);
 
 #define	PMAP_NEED_PROCWR
@@ -408,7 +406,6 @@ bool	pmap_get_pde_pte(pmap_t, vaddr_t, pd_entry_t **, pt_entry_t **);
 bool	pmap_get_pde(pmap_t, vaddr_t, pd_entry_t **);
 bool	pmap_extract_coherency(pmap_t, vaddr_t, paddr_t *, bool *);
 
-void	pmap_debug(int);
 void	pmap_postinit(void);
 
 void	vector_page_setprot(int);
@@ -557,8 +554,6 @@ pmap_ptesync(pt_entry_t *ptep, size_t cnt)
 #define l1pte_fpage_p(pde)	(((pde) & L1_TYPE_MASK) == L1_TYPE_F)
 #define l1pte_pa(pde)		((pde) & L1_C_ADDR_MASK)
 #define l1pte_index(v)		((vaddr_t)(v) >> L1_S_SHIFT)
-#define l1pte_pgindex(v)	l1pte_index((v) & L1_ADDR_BITS \
-		& ~(PAGE_SIZE * PAGE_SIZE / sizeof(pt_entry_t) - 1))
 
 static inline void
 l1pte_setone(pt_entry_t *pdep, pt_entry_t pde)
@@ -1186,6 +1181,12 @@ do {									\
 	(pg)->mdpage.urw_mappings = 0;					\
 	(pg)->mdpage.k_mappings = 0;					\
 } while (/*CONSTCOND*/0)
+
+#ifndef	__BSD_PTENTRY_T__
+#define	__BSD_PTENTRY_T__
+typedef uint32_t pt_entry_t;
+#define PRIxPTE		PRIx32
+#endif
 
 #endif /* !_LOCORE */
 

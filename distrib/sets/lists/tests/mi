@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.830 2020/02/11 07:03:16 isaki Exp $
+# $NetBSD: mi,v 1.836 2020/04/19 13:22:58 maxv Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -107,6 +107,7 @@
 ./usr/libdata/debug/usr/tests/lib/libc/misc				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc/net				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc/net/getaddrinfo			tests-lib-debug		compattestfile,atf
+./usr/libdata/debug/usr/tests/lib/libc/nls				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc/regex				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc/rpc				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libc/setjmp				tests-lib-debug		compattestfile,atf
@@ -125,6 +126,7 @@
 ./usr/libdata/debug/usr/tests/lib/libevent				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libexecinfo				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/liblutok				tests-lutok-debug	compattestfile,atf
+./usr/libdata/debug/usr/tests/lib/libi386				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libm					tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libnvmm				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libobjc				tests-lib-debug		compattestfile,atf
@@ -1459,6 +1461,7 @@
 ./usr/tests/fs/ffs/rump_quotactl			tests-obsolete		obsolete
 ./usr/tests/fs/ffs/rump_repquota			tests-obsolete		obsolete
 ./usr/tests/fs/ffs/t_clearquota				tests-fs-tests		atf,rump
+./usr/tests/fs/ffs/t_extattr				tests-fs-tests		atf,rump
 ./usr/tests/fs/ffs/t_fifos				tests-fs-tests		atf,rump
 ./usr/tests/fs/ffs/t_getquota				tests-fs-tests		atf,rump
 ./usr/tests/fs/ffs/t_miscquota				tests-fs-tests		atf,rump
@@ -2965,6 +2968,10 @@
 ./usr/tests/lib/libc/net/t_nsdispatch		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/net/t_protoent		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/net/t_servent		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/nls			tests-lib-tests	compattestfile,atf
+./usr/tests/lib/libc/nls/Atffile		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/nls/Kyuafile		tests-lib-tests		compattestfile,atf,kyua
+./usr/tests/lib/libc/nls/t_catalog		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/regex			tests-lib-tests	compattestfile,atf
 ./usr/tests/lib/libc/regex/Atffile		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/regex/Kyuafile		tests-lib-tests		compattestfile,atf,kyua
@@ -3149,6 +3156,7 @@
 ./usr/tests/lib/libc/sys/t_posix_fadvise	tests-lib-tests		atf,rump
 ./usr/tests/lib/libc/sys/t_posix_fallocate	tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_ptrace		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/sys/t_ptrace_sigchld	tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_ptrace_wait		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_ptrace_wait3		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_ptrace_wait4		tests-lib-tests		compattestfile,atf
@@ -3460,6 +3468,9 @@
 ./usr/tests/lib/libexecinfo/Atffile		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libexecinfo/Kyuafile		tests-lib-tests		compattestfile,atf,kyua
 ./usr/tests/lib/libexecinfo/t_backtrace		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libi386				tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libi386/Atffile			tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libi386/Kyuafile		tests-lib-tests		compattestfile,atf,kyua
 ./usr/tests/lib/liblutok			tests-lutok-tests	compattestfile,atf
 ./usr/tests/lib/liblutok/Atffile		tests-lutok-tests	compattestfile,atf,kyua
 ./usr/tests/lib/liblutok/Kyuafile		tests-lutok-tests	compattestfile,atf,kyua
@@ -4215,6 +4226,7 @@
 ./usr/tests/usr.bin/config/Kyuafile		tests-usr.bin-tests	compattestfile,atf,kyua
 ./usr/tests/usr.bin/config/Makefile.regress	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/config/d_deffs_redef	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/config/d_ifdef		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/config/d_loop		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/config/d_loop2		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/config/d_min		tests-usr.bin-tests	compattestfile,atf

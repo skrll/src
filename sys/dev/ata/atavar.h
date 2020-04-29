@@ -1,4 +1,4 @@
-/*	$NetBSD: atavar.h,v 1.103 2019/04/05 21:31:44 bouyer Exp $	*/
+/*	$NetBSD: atavar.h,v 1.105 2020/04/13 10:49:34 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.
@@ -358,10 +358,10 @@ struct ata_drive_datas {
  */
 struct ata_bustype {
 	int	bustype_type;	/* symbolic name of type */
-	int	(*ata_bio)(struct ata_drive_datas *, struct ata_xfer *);
+	void	(*ata_bio)(struct ata_drive_datas *, struct ata_xfer *);
 	void	(*ata_reset_drive)(struct ata_drive_datas *, int, uint32_t *);
 	void	(*ata_reset_channel)(struct ata_channel *, int);
-	int	(*ata_exec_command)(struct ata_drive_datas *,
+	void	(*ata_exec_command)(struct ata_drive_datas *,
 				    struct ata_xfer *);
 
 #define	ATACMD_COMPLETE		0x01
@@ -406,7 +406,6 @@ struct ata_channel {
 #define ATACH_DMA_WAIT 0x20	/* controller is waiting for DMA */
 #define ATACH_PIOBM_WAIT 0x40	/* controller is waiting for busmastering PIO */
 #define	ATACH_DISABLED 0x80	/* channel is disabled */
-#define ATACH_TH_RUN   0x100	/* the kernel thread is working */
 #define ATACH_TH_RESET 0x200	/* someone ask the thread to reset */
 #define ATACH_TH_RESCAN 0x400	/* rescan requested */
 #define ATACH_NCQ	0x800	/* channel executing NCQ commands */
@@ -549,6 +548,7 @@ bool	ata_timo_xfer_check(struct ata_xfer *);
 void	ata_kill_pending(struct ata_drive_datas *);
 void	ata_kill_active(struct ata_channel *, int, int);
 void	ata_thread_run(struct ata_channel *, int, int, int);
+bool	ata_is_thread_run(struct ata_channel *);
 void	ata_channel_freeze(struct ata_channel *);
 void	ata_channel_thaw_locked(struct ata_channel *);
 void	ata_channel_lock(struct ata_channel *);

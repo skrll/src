@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_vnops.c,v 1.205 2020/01/12 18:37:10 ad Exp $	*/
+/*	$NetBSD: vfs_vnops.c,v 1.211 2020/04/13 19:23:18 ad Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.205 2020/01/12 18:37:10 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.211 2020/04/13 19:23:18 ad Exp $");
 
 #include "veriexec.h"
 
@@ -339,6 +339,7 @@ vn_markexec(struct vnode *vp)
 		return;
 	}
 
+	rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 	mutex_enter(vp->v_interlock);
 	if ((vp->v_iflag & VI_EXECMAP) == 0) {
 		cpu_count(CPU_COUNT_FILEPAGES, -vp->v_uobj.uo_npages);
@@ -346,6 +347,7 @@ vn_markexec(struct vnode *vp)
 		vp->v_iflag |= VI_EXECMAP;
 	}
 	mutex_exit(vp->v_interlock);
+	rw_exit(vp->v_uobj.vmobjlock);
 }
 
 /*
@@ -361,10 +363,12 @@ vn_marktext(struct vnode *vp)
 		return (0);
 	}
 
+	rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 	mutex_enter(vp->v_interlock);
 	if (vp->v_writecount != 0) {
 		KASSERT((vp->v_iflag & VI_TEXT) == 0);
 		mutex_exit(vp->v_interlock);
+		rw_exit(vp->v_uobj.vmobjlock);
 		return (ETXTBSY);
 	}
 	if ((vp->v_iflag & VI_EXECMAP) == 0) {
@@ -373,6 +377,7 @@ vn_marktext(struct vnode *vp)
 	}
 	vp->v_iflag |= (VI_TEXT | VI_EXECMAP);
 	mutex_exit(vp->v_interlock);
+	rw_exit(vp->v_uobj.vmobjlock);
 	return (0);
 }
 
@@ -979,9 +984,11 @@ vn_mmap(struct file *fp, off_t *offp, size_t size, int prot, int *flagsp,
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 		vp->v_vflag |= VV_MAPPED;
 		if (needwritemap) {
+			rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 			mutex_enter(vp->v_interlock);
 			vp->v_iflag |= VI_WRMAP;
 			mutex_exit(vp->v_interlock);
+			rw_exit(vp->v_uobj.vmobjlock);
 		}
 		VOP_UNLOCK(vp);
 	}
@@ -1034,7 +1041,7 @@ vn_lock(struct vnode *vp, int flags)
 	int error;
 
 #if 0
-	KASSERT(vp->v_usecount > 0 || (vp->v_iflag & VI_ONWORKLST) != 0);
+	KASSERT(vrefcnt(vp) > 0 || (vp->v_iflag & VI_ONWORKLST) != 0);
 #endif
 	KASSERT((flags & ~(LK_SHARED|LK_EXCLUSIVE|LK_NOWAIT|LK_RETRY|
 	    LK_UPGRADE|LK_DOWNGRADE)) == 0);
@@ -1098,7 +1105,8 @@ vn_extattr_get(struct vnode *vp, int ioflg, int attrnamespace,
 	if ((ioflg & IO_NODELOCKED) == 0)
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 
-	error = VOP_GETEXTATTR(vp, attrnamespace, attrname, &auio, NULL, NULL);
+	error = VOP_GETEXTATTR(vp, attrnamespace, attrname, &auio, NULL,
+	    NOCRED);
 
 	if ((ioflg & IO_NODELOCKED) == 0)
 		VOP_UNLOCK(vp);
@@ -1134,7 +1142,7 @@ vn_extattr_set(struct vnode *vp, int ioflg, int attrnamespace,
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	}
 
-	error = VOP_SETEXTATTR(vp, attrnamespace, attrname, &auio, NULL);
+	error = VOP_SETEXTATTR(vp, attrnamespace, attrname, &auio, NOCRED);
 
 	if ((ioflg & IO_NODELOCKED) == 0) {
 		VOP_UNLOCK(vp);
@@ -1153,42 +1161,16 @@ vn_extattr_rm(struct vnode *vp, int ioflg, int attrnamespace,
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	}
 
-	error = VOP_DELETEEXTATTR(vp, attrnamespace, attrname, NULL);
+	error = VOP_DELETEEXTATTR(vp, attrnamespace, attrname, NOCRED);
 	if (error == EOPNOTSUPP)
-		error = VOP_SETEXTATTR(vp, attrnamespace, attrname, NULL, NULL);
+		error = VOP_SETEXTATTR(vp, attrnamespace, attrname, NULL,
+		    NOCRED);
 
 	if ((ioflg & IO_NODELOCKED) == 0) {
 		VOP_UNLOCK(vp);
 	}
 
 	return (error);
-}
-
-void
-vn_ra_allocctx(struct vnode *vp)
-{
-	struct uvm_ractx *ra = NULL;
-
-	KASSERT(mutex_owned(vp->v_interlock));
-
-	if (vp->v_type != VREG) {
-		return;
-	}
-	if (vp->v_ractx != NULL) {
-		return;
-	}
-	if (vp->v_ractx == NULL) {
-		mutex_exit(vp->v_interlock);
-		ra = uvm_ra_allocctx();
-		mutex_enter(vp->v_interlock);
-		if (ra != NULL && vp->v_ractx == NULL) {
-			vp->v_ractx = ra;
-			ra = NULL;
-		}
-	}
-	if (ra != NULL) {
-		uvm_ra_freectx(ra);
-	}
 }
 
 int

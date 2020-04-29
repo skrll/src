@@ -1,4 +1,4 @@
-/*	$NetBSD: msdosfs_vfsops.c,v 1.131 2020/01/17 20:08:07 ad Exp $	*/
+/*	$NetBSD: msdosfs_vfsops.c,v 1.135 2020/04/13 19:23:17 ad Exp $	*/
 
 /*-
  * Copyright (C) 1994, 1995, 1997 Wolfgang Solfrank.
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: msdosfs_vfsops.c,v 1.131 2020/01/17 20:08:07 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: msdosfs_vfsops.c,v 1.135 2020/04/13 19:23:17 ad Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -106,8 +106,6 @@ MALLOC_JUSTDEFINE(M_MSDOSFSMNT, "MSDOSFS mount", "MSDOS FS mount structure");
 MALLOC_JUSTDEFINE(M_MSDOSFSFAT, "MSDOSFS FAT", "MSDOS FS FAT table");
 MALLOC_JUSTDEFINE(M_MSDOSFSTMP, "MSDOSFS temp", "MSDOS FS temp. structures");
 
-static struct sysctllog *msdosfs_sysctl_log;
-
 extern const struct vnodeopv_desc msdosfs_vnodeop_opv_desc;
 
 const struct vnodeopv_desc * const msdosfs_vnodeopv_descs[] = {
@@ -142,6 +140,21 @@ struct vfsops msdosfs_vfsops = {
 	.vfs_opv_descs = msdosfs_vnodeopv_descs
 };
 
+SYSCTL_SETUP(msdosfs_sysctl_setup, "msdosfs sysctl")
+{
+	sysctl_createv(clog, 0, NULL, NULL,
+		       CTLFLAG_PERMANENT,
+		       CTLTYPE_NODE, "msdosfs",
+		       SYSCTL_DESCR("MS-DOS file system"),
+		       NULL, 0, NULL, 0,
+		       CTL_VFS, 4, CTL_EOL);
+	/*
+	 * XXX the "4" above could be dynamic, thereby eliminating one
+	 * more instance of the "number to vfs" mapping problem, but
+	 * "4" is the order as taken from sys/mount.h
+	 */
+}
+
 static int
 msdos_modcmd(modcmd_t cmd, void *arg)
 {
@@ -152,23 +165,11 @@ msdos_modcmd(modcmd_t cmd, void *arg)
 		error = vfs_attach(&msdosfs_vfsops);
 		if (error != 0)
 			break;
-		sysctl_createv(&msdosfs_sysctl_log, 0, NULL, NULL,
-			       CTLFLAG_PERMANENT,
-			       CTLTYPE_NODE, "msdosfs",
-			       SYSCTL_DESCR("MS-DOS file system"),
-			       NULL, 0, NULL, 0,
-			       CTL_VFS, 4, CTL_EOL);
-		/*
-		 * XXX the "4" above could be dynamic, thereby eliminating one
-		 * more instance of the "number to vfs" mapping problem, but
-		 * "4" is the order as taken from sys/mount.h
-		 */
 		break;
 	case MODULE_CMD_FINI:
 		error = vfs_detach(&msdosfs_vfsops);
 		if (error != 0)
 			break;
-		sysctl_teardown(&msdosfs_sysctl_log);
 		break;
 	default:
 		error = ENOTTY;
@@ -867,6 +868,7 @@ msdosfs_mountfs(struct vnode *devvp, struct mount *mp, struct lwp *l, struct msd
 	mp->mnt_stat.f_fsid = mp->mnt_stat.f_fsidx.__fsid_val[0];
 	mp->mnt_stat.f_namemax = MSDOSFS_NAMEMAX(pmp);
 	mp->mnt_flag |= MNT_LOCAL;
+	mp->mnt_iflag |= IMNT_SHRLOOKUP;
 	mp->mnt_dev_bshift = pmp->pm_bnshift;
 	mp->mnt_fs_bshift = pmp->pm_cnshift;
 
@@ -924,7 +926,7 @@ msdosfs_unmount(struct mount *mp, int mntflags)
 
 		printf("msdosfs_umount(): just before calling VOP_CLOSE()\n");
 		printf("flag %08x, usecount %d, writecount %d, holdcnt %d\n",
-		    vp->v_vflag | vp->v_iflag | vp->v_uflag, vp->v_usecount,
+		    vp->v_vflag | vp->v_iflag | vp->v_uflag, vrefcnt(vp),
 		    vp->v_writecount, vp->v_holdcnt);
 		printf("mount %p, op %p\n",
 		    vp->v_mount, vp->v_op);
@@ -1008,7 +1010,7 @@ msdosfs_sync_selector(void *cl, struct vnode *vp)
 	    dep == NULL || (((dep->de_flag &
 	    (DE_ACCESS | DE_CREATE | DE_UPDATE | DE_MODIFIED)) == 0) &&
 	     (LIST_EMPTY(&vp->v_dirtyblkhd) &&
-	      UVM_OBJ_IS_CLEAN(&vp->v_uobj))))
+	      (vp->v_iflag & VI_ONWORKLST) == 0)))
 		return false;
 	return true;
 }

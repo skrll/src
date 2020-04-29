@@ -1,4 +1,4 @@
-/*	$NetBSD: gem.c,v 1.128 2020/02/07 00:56:48 thorpej Exp $ */
+/*	$NetBSD: gem.c,v 1.130 2020/03/15 22:19:00 thorpej Exp $ */
 
 /*
  *
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.128 2020/02/07 00:56:48 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.130 2020/03/15 22:19:00 thorpej Exp $");
 
 #include "opt_inet.h"
 
@@ -745,7 +745,7 @@ gem_stop(struct ifnet *ifp, int disable)
 	/*
 	 * Mark the interface down and cancel the watchdog timer.
 	 */
-	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
+	ifp->if_flags &= ~IFF_RUNNING;
 	sc->sc_if_flags = ifp->if_flags;
 	ifp->if_timer = 0;
 
@@ -815,8 +815,8 @@ gem_reset_rxdma(struct gem_softc *sc)
 	GEM_CDSYNC(sc, BUS_DMASYNC_PREREAD);
 
 	/* Reprogram Descriptor Ring Base Addresses */
-	/* NOTE: we use only 32-bit DMA addresses here. */
-	bus_space_write_4(t, h, GEM_RX_RING_PTR_HI, 0);
+	bus_space_write_4(t, h, GEM_RX_RING_PTR_HI,
+	    ((uint64_t)GEM_CDRXADDR(sc, 0)) >> 32);
 	bus_space_write_4(t, h, GEM_RX_RING_PTR_LO, GEM_CDRXADDR(sc, 0));
 
 	/* Redo ERX Configuration */
@@ -1171,11 +1171,12 @@ gem_init(struct ifnet *ifp)
 	gem_setladrf(sc);
 
 	/* step 6 & 7. Program Descriptor Ring Base Addresses */
-	/* NOTE: we use only 32-bit DMA addresses here. */
-	bus_space_write_4(t, h, GEM_TX_RING_PTR_HI, 0);
+	bus_space_write_4(t, h, GEM_TX_RING_PTR_HI,
+	    ((uint64_t)GEM_CDTXADDR(sc, 0)) >> 32);
 	bus_space_write_4(t, h, GEM_TX_RING_PTR_LO, GEM_CDTXADDR(sc, 0));
 
-	bus_space_write_4(t, h, GEM_RX_RING_PTR_HI, 0);
+	bus_space_write_4(t, h, GEM_RX_RING_PTR_HI,
+	    ((uint64_t)GEM_CDRXADDR(sc, 0)) >> 32);
 	bus_space_write_4(t, h, GEM_RX_RING_PTR_LO, GEM_CDRXADDR(sc, 0));
 
 	/* step 8. Global Configuration & Interrupt Mask */
@@ -1227,7 +1228,6 @@ gem_init(struct ifnet *ifp)
 
 	sc->sc_flags &= ~GEM_LINK;
 	ifp->if_flags |= IFF_RUNNING;
-	ifp->if_flags &= ~IFF_OACTIVE;
 	ifp->if_timer = 0;
 	sc->sc_if_flags = ifp->if_flags;
 out:
@@ -1370,7 +1370,7 @@ gem_start(struct ifnet *ifp)
 #endif
 	uint64_t flags = 0;
 
-	if ((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
+	if ((ifp->if_flags & IFF_RUNNING) != IFF_RUNNING)
 		return;
 
 	/*
@@ -1458,16 +1458,8 @@ next:
 		     (sc->sc_txfree - 1) : sc->sc_txfree)) {
 			/*
 			 * Not enough free descriptors to transmit this
-			 * packet.  We haven't committed to anything yet,
-			 * so just unload the DMA map, put the packet
-			 * back on the queue, and punt.  Notify the upper
-			 * layer that there are no more slots left.
-			 *
-			 * XXX We could allocate an mbuf and copy, but
-			 * XXX it is worth it?
+			 * packet.
 			 */
-			ifp->if_flags |= IFF_OACTIVE;
-			sc->sc_if_flags = ifp->if_flags;
 			bus_dmamap_unload(sc->sc_dmatag, dmamap);
 			if (m != NULL)
 				m_freem(m);
@@ -1607,12 +1599,6 @@ next:
 		bpf_mtap(ifp, m0, BPF_D_OUT);
 	}
 
-	if (txs == NULL || sc->sc_txfree == 0) {
-		/* No more slots left; notify upper layer. */
-		ifp->if_flags |= IFF_OACTIVE;
-		sc->sc_if_flags = ifp->if_flags;
-	}
-
 	if (sc->sc_txfree != ofree) {
 		DPRINTF(sc, ("%s: packets enqueued, IC on %d, OWN on %d\n",
 		    device_xname(sc->sc_dev), lasttx, otxnext));
@@ -1747,9 +1733,6 @@ gem_tint(struct gem_softc *sc)
 		if (sc->sc_txfree == GEM_NTXDESC - 1)
 			sc->sc_txwin = 0;
 
-		/* Freed some descriptors, so reset IFF_OACTIVE and restart. */
-		ifp->if_flags &= ~IFF_OACTIVE;
-		sc->sc_if_flags = ifp->if_flags;
 		ifp->if_timer = SIMPLEQ_EMPTY(&sc->sc_txdirtyq) ? 0 : 5;
 		if_schedule_deferred_start(ifp);
 	}

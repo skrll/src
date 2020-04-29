@@ -1,4 +1,4 @@
-/*	$NetBSD: vm.c,v 1.183 2020/01/15 17:55:44 ad Exp $	*/
+/*	$NetBSD: vm.c,v 1.187 2020/03/17 18:31:38 ad Exp $	*/
 
 /*
  * Copyright (c) 2007-2011 Antti Kantee.  All Rights Reserved.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vm.c,v 1.183 2020/01/15 17:55:44 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vm.c,v 1.187 2020/03/17 18:31:38 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -160,7 +160,7 @@ uvm_pagealloc_strat(struct uvm_object *uobj, voff_t off, struct vm_anon *anon,
 {
 	struct vm_page *pg;
 
-	KASSERT(uobj && mutex_owned(uobj->vmobjlock));
+	KASSERT(uobj && rw_write_held(uobj->vmobjlock));
 	KASSERT(anon == NULL);
 
 	pg = pool_cache_get(&pagecache, PR_NOWAIT);
@@ -172,15 +172,23 @@ uvm_pagealloc_strat(struct uvm_object *uobj, voff_t off, struct vm_anon *anon,
 	pg->offset = off;
 	pg->uobject = uobj;
 
-	pg->flags = PG_CLEAN|PG_BUSY|PG_FAKE;
-	if (flags & UVM_PGA_ZERO) {
-		uvm_pagezero(pg);
+	if (UVM_OBJ_IS_VNODE(uobj) && uobj->uo_npages == 0) {
+		struct vnode *vp = (struct vnode *)uobj;
+		mutex_enter(vp->v_interlock);
+		vp->v_iflag |= VI_PAGES;
+		mutex_exit(vp->v_interlock);
 	}
 
 	if (radix_tree_insert_node(&uobj->uo_pages, off >> PAGE_SHIFT,
 	    pg) != 0) {
 		pool_cache_put(&pagecache, pg);
 		return NULL;
+	}
+	uobj->uo_npages++;
+
+	pg->flags = PG_CLEAN|PG_BUSY|PG_FAKE;
+	if (flags & UVM_PGA_ZERO) {
+		uvm_pagezero(pg);
 	}
 
 	/*
@@ -194,8 +202,6 @@ uvm_pagealloc_strat(struct uvm_object *uobj, voff_t off, struct vm_anon *anon,
 		TAILQ_INSERT_TAIL(&vmpage_lruqueue, pg, pageq.queue);
 		mutex_exit(&vmpage_lruqueue_lock);
 	}
-
-	uobj->uo_npages++;
 
 	return pg;
 }
@@ -211,10 +217,14 @@ uvm_pagefree(struct vm_page *pg)
 	struct uvm_object *uobj = pg->uobject;
 	struct vm_page *pg2 __unused;
 
-	KASSERT(mutex_owned(uobj->vmobjlock));
+	KASSERT(rw_write_held(uobj->vmobjlock));
 
-	if (pg->flags & PG_WANTED)
+	mutex_enter(&pg->interlock);
+	if (pg->pqflags & PQ_WANTED) {
+		pg->pqflags &= ~PQ_WANTED;
 		wakeup(pg);
+	}
+	mutex_exit(&pg->interlock);
 
 	uobj->uo_npages--;
 	pg2 = radix_tree_remove_node(&uobj->uo_pages, pg->offset >> PAGE_SHIFT);
@@ -225,6 +235,13 @@ uvm_pagefree(struct vm_page *pg)
 		TAILQ_REMOVE(&vmpage_lruqueue, pg, pageq.queue);
 		mutex_exit(&vmpage_lruqueue_lock);
 		atomic_dec_uint(&vmpage_onqueue);
+	}
+
+	if (UVM_OBJ_IS_VNODE(uobj) && uobj->uo_npages == 0) {
+		struct vnode *vp = (struct vnode *)uobj;
+		mutex_enter(vp->v_interlock);
+		vp->v_iflag &= ~VI_PAGES;
+		mutex_exit(vp->v_interlock);
 	}
 
 	mutex_destroy(&pg->interlock);
@@ -245,10 +262,13 @@ uvm_pagezero(struct vm_page *pg)
  */
 
 bool
-uvm_page_owner_locked_p(struct vm_page *pg)
+uvm_page_owner_locked_p(struct vm_page *pg, bool exclusive)
 {
 
-	return mutex_owned(pg->uobject->vmobjlock);
+	if (exclusive)
+		return rw_write_held(pg->uobject->vmobjlock);
+	else
+		return rw_lock_held(pg->uobject->vmobjlock);
 }
 
 /*
@@ -658,7 +678,7 @@ uvm_page_unbusy(struct vm_page **pgs, int npgs)
 	int i;
 
 	KASSERT(npgs > 0);
-	KASSERT(mutex_owned(pgs[0]->uobject->vmobjlock));
+	KASSERT(rw_write_held(pgs[0]->uobject->vmobjlock));
 
 	for (i = 0; i < npgs; i++) {
 		pg = pgs[i];
@@ -666,12 +686,39 @@ uvm_page_unbusy(struct vm_page **pgs, int npgs)
 			continue;
 
 		KASSERT(pg->flags & PG_BUSY);
-		if (pg->flags & PG_WANTED)
-			wakeup(pg);
-		if (pg->flags & PG_RELEASED)
+		if (pg->flags & PG_RELEASED) {
 			uvm_pagefree(pg);
-		else
-			pg->flags &= ~(PG_WANTED|PG_BUSY);
+		} else {
+			pg->flags &= ~PG_BUSY;
+			uvm_pagelock(pg);
+			uvm_pagewakeup(pg);
+			uvm_pageunlock(pg);
+		}
+	}
+}
+
+void
+uvm_pagewait(struct vm_page *pg, krwlock_t *lock, const char *wmesg)
+{
+
+	KASSERT(rw_lock_held(lock));
+	KASSERT((pg->flags & PG_BUSY) != 0);
+
+	mutex_enter(&pg->interlock);
+	pg->pqflags |= PQ_WANTED;
+	rw_exit(lock);
+	UVM_UNLOCK_AND_WAIT(pg, &pg->interlock, false, wmesg, 0);
+}
+
+void
+uvm_pagewakeup(struct vm_page *pg)
+{
+
+	KASSERT(mutex_owned(&pg->interlock));
+
+	if ((pg->pqflags & PQ_WANTED) != 0) {
+		pg->pqflags &= ~PQ_WANTED;
+		wakeup(pg);
 	}
 }
 
@@ -1058,33 +1105,21 @@ uvm_pageout_done(int npages)
 }
 
 static bool
-processpage(struct vm_page *pg, bool *lockrunning)
+processpage(struct vm_page *pg)
 {
 	struct uvm_object *uobj;
 
 	uobj = pg->uobject;
-	if (mutex_tryenter(uobj->vmobjlock)) {
+	if (rw_tryenter(uobj->vmobjlock, RW_WRITER)) {
 		if ((pg->flags & PG_BUSY) == 0) {
 			mutex_exit(&vmpage_lruqueue_lock);
 			uobj->pgops->pgo_put(uobj, pg->offset,
 			    pg->offset + PAGE_SIZE,
 			    PGO_CLEANIT|PGO_FREE);
-			KASSERT(!mutex_owned(uobj->vmobjlock));
+			KASSERT(!rw_write_held(uobj->vmobjlock));
 			return true;
 		} else {
-			mutex_exit(uobj->vmobjlock);
-		}
-	} else if (*lockrunning == false && ncpu > 1) {
-		CPU_INFO_ITERATOR cii;
-		struct cpu_info *ci;
-		struct lwp *l;
-
-		l = mutex_owner(uobj->vmobjlock);
-		for (CPU_INFO_FOREACH(cii, ci)) {
-			if (ci->ci_curlwp == l) {
-				*lockrunning = true;
-				break;
-			}
+			rw_exit(uobj->vmobjlock);
 		}
 	}
 
@@ -1103,7 +1138,6 @@ uvm_pageout(void *arg)
 	struct pool *pp, *pp_first;
 	int cleaned, skip, skipped;
 	bool succ;
-	bool lockrunning;
 
 	mutex_enter(&pdaemonmtx);
 	for (;;) {
@@ -1141,7 +1175,6 @@ uvm_pageout(void *arg)
 		 */
 		cleaned = 0;
 		skip = 0;
-		lockrunning = false;
  again:
 		mutex_enter(&vmpage_lruqueue_lock);
 		while (cleaned < PAGEDAEMON_OBJCHUNK) {
@@ -1157,7 +1190,7 @@ uvm_pageout(void *arg)
 				while (skipped++ < skip)
 					continue;
 
-				if (processpage(pg, &lockrunning)) {
+				if (processpage(pg)) {
 					cleaned++;
 					goto again;
 				}
@@ -1171,15 +1204,13 @@ uvm_pageout(void *arg)
 		/*
 		 * Ok, someone is running with an object lock held.
 		 * We want to yield the host CPU to make sure the
-		 * thread is not parked on the host.  Since sched_yield()
-		 * doesn't appear to do anything on NetBSD, nanosleep
+		 * thread is not parked on the host.  nanosleep
 		 * for the smallest possible time and hope we're back in
 		 * the game soon.
 		 */
-		if (cleaned == 0 && lockrunning) {
+		if (cleaned == 0) {
 			rumpuser_clock_sleep(RUMPUSER_CLOCK_RELWALL, 0, 1);
 
-			lockrunning = false;
 			skip = 0;
 
 			/* and here we go again */

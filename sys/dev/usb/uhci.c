@@ -1,4 +1,4 @@
-/*	$NetBSD: uhci.c,v 1.293 2020/02/15 01:21:56 riastradh Exp $	*/
+/*	$NetBSD: uhci.c,v 1.300 2020/04/05 20:59:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2011, 2012 The NetBSD Foundation, Inc.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.293 2020/02/15 01:21:56 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.300 2020/04/05 20:59:38 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -456,12 +456,14 @@ uhci_init(uhci_softc_t *sc)
 	/* Allocate and initialize real frame array. */
 	err = usb_allocmem(&sc->sc_bus,
 	    UHCI_FRAMELIST_COUNT * sizeof(uhci_physaddr_t),
-	    UHCI_FRAMELIST_ALIGN, &sc->sc_dma);
+	    UHCI_FRAMELIST_ALIGN, USBMALLOC_COHERENT, &sc->sc_dma);
 	if (err)
 		return err;
 	sc->sc_pframes = KERNADDR(&sc->sc_dma, 0);
-	UWRITE2(sc, UHCI_FRNUM, 0);		/* set frame number to 0 */
-	UWRITE4(sc, UHCI_FLBASEADDR, DMAADDR(&sc->sc_dma, 0)); /* set frame list*/
+	/* set frame number to 0 */
+	UWRITE2(sc, UHCI_FRNUM, 0);
+	/* set frame list */
+	UWRITE4(sc, UHCI_FLBASEADDR, DMAADDR(&sc->sc_dma, 0));
 
 	/* Initialise mutex early for uhci_alloc_* */
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_SOFTUSB);
@@ -1715,7 +1717,7 @@ uhci_idone(struct uhci_xfer *ux, ux_completeq_t *cqp)
 		upipe->nexttoggle = UHCI_TD_GET_DT(le32toh(std->td.td_token));
 
 	status &= UHCI_TD_ERROR;
-	DPRINTFN(10, "actlen=%jd, status=0x%jx", actlen, status, 0, 0);
+	DPRINTFN(10, "actlen=%jd, status=%#jx", actlen, status, 0, 0);
 	xfer->ux_actlen = actlen;
 	if (status != 0) {
 
@@ -1806,7 +1808,7 @@ uhci_run(uhci_softc_t *sc, int run, int locked)
 		if (run == running) {
 			if (!locked)
 				mutex_spin_exit(&sc->sc_intr_lock);
-			DPRINTF("done cmd=0x%jx sts=0x%jx",
+			DPRINTF("done cmd=%#jx sts=%#jx",
 			    UREAD2(sc, UHCI_CMD), UREAD2(sc, UHCI_STS), 0, 0);
 			return USBD_NORMAL_COMPLETION;
 		}
@@ -1845,7 +1847,7 @@ uhci_alloc_std(uhci_softc_t *sc)
 		mutex_exit(&sc->sc_lock);
 
 		err = usb_allocmem(&sc->sc_bus, UHCI_STD_SIZE * UHCI_STD_CHUNK,
-			  UHCI_TD_ALIGN, &dma);
+		    UHCI_TD_ALIGN, USBMALLOC_COHERENT, &dma);
 		if (err)
 			return NULL;
 
@@ -1912,7 +1914,7 @@ uhci_alloc_sqh(uhci_softc_t *sc)
 		mutex_exit(&sc->sc_lock);
 
 		err = usb_allocmem(&sc->sc_bus, UHCI_SQH_SIZE * UHCI_SQH_CHUNK,
-			  UHCI_QH_ALIGN, &dma);
+		    UHCI_QH_ALIGN, USBMALLOC_COHERENT, &dma);
 		if (err)
 			return NULL;
 
@@ -2006,7 +2008,7 @@ uhci_alloc_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer, int len,
 		printf("%s: maxp=0\n", __func__);
 		return EINVAL;
 	}
-	size_t ntd = (len + maxp - 1) / maxp;
+	size_t ntd = howmany(len, maxp);
 	if (!rd && (flags & USBD_FORCE_SHORT_XFER)) {
 		ntd++;
 	}
@@ -2198,7 +2200,6 @@ uhci_device_bulk_init(struct usbd_xfer *xfer)
 	int isread = UE_GET_DIR(endpt) == UE_DIR_IN;
 	int len = xfer->ux_bufsize;
 	int err = 0;
-
 
 	UHCIHIST_FUNC(); UHCIHIST_CALLED();
 	DPRINTFN(3, "xfer=%#jx len=%jd flags=%jd", (uintptr_t)xfer, len,
@@ -2807,6 +2808,7 @@ uhci_device_ctrl_close(struct usbd_pipe *pipe)
 	uhci_free_std_locked(sc, upipe->ctrl.setup);
 	uhci_free_std_locked(sc, upipe->ctrl.stat);
 
+	usb_freemem(&sc->sc_bus, &upipe->ctrl.reqdma);
 }
 
 /* Abort a device interrupt request. */
@@ -2915,6 +2917,9 @@ uhci_device_isoc_transfer(struct usbd_xfer *xfer)
 #endif
 
 	KASSERT(xfer->ux_nframes != 0);
+
+	usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
+	    rd ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
 
 	mutex_enter(&sc->sc_lock);
 	next = isoc->next;
@@ -3382,7 +3387,7 @@ uhci_device_setintr(uhci_softc_t *sc, struct uhci_pipe *upipe, int ival)
 
 	if (ival > UHCI_VFRAMELIST_COUNT)
 		ival = UHCI_VFRAMELIST_COUNT;
-	npoll = (UHCI_VFRAMELIST_COUNT + ival - 1) / ival;
+	npoll = howmany(UHCI_VFRAMELIST_COUNT, ival);
 	DPRINTF("ival=%jd npoll=%jd", ival, npoll, 0, 0);
 
 	upipe->intr.npoll = npoll;
@@ -3479,8 +3484,8 @@ uhci_open(struct usbd_pipe *pipe)
 				goto bad;
 			}
 			err = usb_allocmem(&sc->sc_bus,
-				  sizeof(usb_device_request_t),
-				  0, &upipe->ctrl.reqdma);
+			    sizeof(usb_device_request_t), 0,
+			    USBMALLOC_COHERENT, &upipe->ctrl.reqdma);
 			if (err) {
 				uhci_free_sqh(sc, upipe->ctrl.sqh);
 				uhci_free_std(sc, upipe->ctrl.setup);

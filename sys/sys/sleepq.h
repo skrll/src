@@ -1,7 +1,8 @@
-/*	$NetBSD: sleepq.h,v 1.27 2019/12/16 19:43:36 ad Exp $	*/
+/*	$NetBSD: sleepq.h,v 1.29 2020/04/19 20:35:29 ad Exp $	*/
 
 /*-
- * Copyright (c) 2002, 2006, 2007, 2008, 2009, 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2002, 2006, 2007, 2008, 2009, 2019, 2020
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -49,7 +50,7 @@
 #define	SLEEPTAB_HASH_MASK	(SLEEPTAB_HASH_SIZE - 1)
 #define	SLEEPTAB_HASH(wchan)	(((uintptr_t)(wchan) >> 8) & SLEEPTAB_HASH_MASK)
 
-TAILQ_HEAD(sleepq, lwp);
+LIST_HEAD(sleepq, lwp);
 
 typedef struct sleepq sleepq_t;
 
@@ -59,7 +60,8 @@ typedef struct sleeptab {
 
 void	sleepq_init(sleepq_t *);
 void	sleepq_remove(sleepq_t *, lwp_t *);
-void	sleepq_enqueue(sleepq_t *, wchan_t, const char *, struct syncobj *);
+void	sleepq_enqueue(sleepq_t *, wchan_t, const char *, struct syncobj *,
+    bool);
 void	sleepq_unsleep(lwp_t *, bool);
 void	sleepq_timeout(void *);
 void	sleepq_wake(sleepq_t *, wchan_t, u_int, kmutex_t *);
@@ -169,7 +171,7 @@ typedef struct tschain tschain_t;
 	((ts)->ts_waiters[TS_READER_Q] +				\
 	 (ts)->ts_waiters[TS_WRITER_Q])
 
-#define	TS_FIRST(ts, q)	(TAILQ_FIRST(&(ts)->ts_sleepq[(q)]))
+#define	TS_FIRST(ts, q)	(LIST_FIRST(&(ts)->ts_sleepq[(q)]))
 
 #ifdef	_KERNEL
 

@@ -1,4 +1,4 @@
-/* $NetBSD: udf_vfsops.c,v 1.77 2020/01/17 20:08:08 ad Exp $ */
+/* $NetBSD: udf_vfsops.c,v 1.80 2020/04/14 12:47:44 reinoud Exp $ */
 
 /*
  * Copyright (c) 2006, 2008 Reinoud Zandijk
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: udf_vfsops.c,v 1.77 2020/01/17 20:08:08 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_vfsops.c,v 1.80 2020/04/14 12:47:44 reinoud Exp $");
 #endif /* not lint */
 
 
@@ -78,8 +78,6 @@ MALLOC_JUSTDEFINE(M_UDFMNT,   "UDF mount",	"UDF mount structures");
 MALLOC_JUSTDEFINE(M_UDFVOLD,  "UDF volspace",	"UDF volume space descriptors");
 MALLOC_JUSTDEFINE(M_UDFTEMP,  "UDF temp",	"UDF scrap space");
 struct pool udf_node_pool;
-
-static struct sysctllog *udf_sysctl_log;
 
 /* internal functions */
 static int udf_mountfs(struct vnode *, struct mount *, struct lwp *, struct udf_args *);
@@ -169,10 +167,34 @@ udf_done(void)
  */
 #define UDF_VERBOSE_SYSCTLOPT        1
 
+/*
+ * XXX the "24" below could be dynamic, thereby eliminating one
+ * more instance of the "number to vfs" mapping problem, but
+ * "24" is the order as taken from sys/mount.h
+ */
+SYSCTL_SETUP(udf_sysctl_setup, "udf sysctl")
+{
+	const struct sysctlnode *node;
+
+	sysctl_createv(clog, 0, NULL, &node,
+		       CTLFLAG_PERMANENT,
+		       CTLTYPE_NODE, "udf",
+		       SYSCTL_DESCR("OSTA Universal File System"),
+		       NULL, 0, NULL, 0,
+		       CTL_VFS, 24, CTL_EOL);
+#ifdef DEBUG
+	sysctl_createv(clog, 0, NULL, &node,
+		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
+		       CTLTYPE_INT, "verbose",
+		       SYSCTL_DESCR("Bitmask for filesystem debugging"),
+		       NULL, 0, &udf_verbose, 0,
+		       CTL_VFS, 24, UDF_VERBOSE_SYSCTLOPT, CTL_EOL);
+#endif
+}
+
 static int
 udf_modcmd(modcmd_t cmd, void *arg)
 {
-	const struct sysctlnode *node;
 	int error;
 
 	switch (cmd) {
@@ -180,31 +202,11 @@ udf_modcmd(modcmd_t cmd, void *arg)
 		error = vfs_attach(&udf_vfsops);
 		if (error != 0)
 			break;
-		/*
-		 * XXX the "24" below could be dynamic, thereby eliminating one
-		 * more instance of the "number to vfs" mapping problem, but
-		 * "24" is the order as taken from sys/mount.h
-		 */
-		sysctl_createv(&udf_sysctl_log, 0, NULL, &node,
-			       CTLFLAG_PERMANENT,
-			       CTLTYPE_NODE, "udf",
-			       SYSCTL_DESCR("OSTA Universal File System"),
-			       NULL, 0, NULL, 0,
-			       CTL_VFS, 24, CTL_EOL);
-#ifdef DEBUG
-		sysctl_createv(&udf_sysctl_log, 0, NULL, &node,
-			       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-			       CTLTYPE_INT, "verbose",
-			       SYSCTL_DESCR("Bitmask for filesystem debugging"),
-			       NULL, 0, &udf_verbose, 0,
-			       CTL_VFS, 24, UDF_VERBOSE_SYSCTLOPT, CTL_EOL);
-#endif
 		break;
 	case MODULE_CMD_FINI:
 		error = vfs_detach(&udf_vfsops);
 		if (error != 0)
 			break;
-		sysctl_teardown(&udf_sysctl_log);
 		break;
 	default:
 		error = ENOTTY;
@@ -443,8 +445,8 @@ udf_sanity_selector(void *cl, struct vnode *vp)
 	if (VOP_ISLOCKED(vp) == LK_EXCLUSIVE) {
 		printf("  is locked\n");
 	}
-	if (vp->v_usecount > 1)
-		printf("  more than one usecount %d\n", vp->v_usecount);
+	if (vrefcnt(vp) > 1)
+		printf("  more than one usecount %d\n", vrefcnt(vp));
 	return false;
 }
 

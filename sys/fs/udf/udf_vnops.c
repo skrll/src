@@ -1,4 +1,4 @@
-/* $NetBSD: udf_vnops.c,v 1.108 2020/01/17 20:08:08 ad Exp $ */
+/* $NetBSD: udf_vnops.c,v 1.111 2020/04/14 11:45:42 reinoud Exp $ */
 
 /*
  * Copyright (c) 2006, 2008 Reinoud Zandijk
@@ -32,7 +32,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: udf_vnops.c,v 1.108 2020/01/17 20:08:08 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_vnops.c,v 1.111 2020/04/14 11:45:42 reinoud Exp $");
 #endif /* not lint */
 
 
@@ -379,7 +379,7 @@ udf_write(void *v)
 		 */
 		if ((vp->v_type != VDIR) &&
 		  (old_offset >> 16 != uio->uio_offset >> 16)) {
-			mutex_enter(vp->v_interlock);
+			rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 			error = VOP_PUTPAGES(vp, (old_offset >> 16) << 16,
 			    (uio->uio_offset >> 16) << 16,
 			    PGO_CLEANIT | PGO_LAZY);
@@ -1379,15 +1379,15 @@ udf_close(void *v)
 	udf_node = udf_node;	/* shut up gcc */
 
 	if (!async && (vp->v_type != VDIR)) {
-		mutex_enter(vp->v_interlock);
+		rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 		error = VOP_PUTPAGES(vp, 0, 0, PGO_CLEANIT);
 		if (error)
 			return error;
 	}
 
 	mutex_enter(vp->v_interlock);
-		if (vp->v_usecount > 1)
-			udf_itimes(udf_node, NULL, NULL, NULL);
+	if (vrefcnt(vp) > 1)
+		udf_itimes(udf_node, NULL, NULL, NULL);
 	mutex_exit(vp->v_interlock);
 
 	return 0;
@@ -1992,7 +1992,7 @@ udf_rmdir(void *v)
 	struct udf_mount *ump = dir_node->ump;
 	int error, isempty;
 
-	DPRINTF(NOTIMPL, ("udf_rmdir '%s' called\n", cnp->cn_nameptr));
+	DPRINTF(CALL, ("udf_rmdir '%s' called\n", cnp->cn_nameptr));
 
 	/* don't allow '.' to be deleted */
 	if (dir_node == udf_node) {

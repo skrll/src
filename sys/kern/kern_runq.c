@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_runq.c,v 1.62 2020/01/25 15:09:54 ad Exp $	*/
+/*	$NetBSD: kern_runq.c,v 1.67 2020/04/13 16:09:21 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2019, 2020 The NetBSD Foundation, Inc.
@@ -56,7 +56,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_runq.c,v 1.62 2020/01/25 15:09:54 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_runq.c,v 1.67 2020/04/13 16:09:21 maxv Exp $");
 
 #include "opt_dtrace.h"
 
@@ -214,8 +214,10 @@ sched_enqueue(struct lwp *l)
 	}
 	spc->spc_flags &= ~SPCF_IDLE;
 	spc->spc_count++;
-	if ((l->l_pflag & LP_BOUND) == 0)
-		spc->spc_mcount++;
+	if ((l->l_pflag & LP_BOUND) == 0) {
+		atomic_store_relaxed(&spc->spc_mcount,
+		    atomic_load_relaxed(&spc->spc_mcount) + 1);
+	}
 
 	/*
 	 * Update the value of highest priority in the runqueue,
@@ -249,8 +251,10 @@ sched_dequeue(struct lwp *l)
 		spc->spc_migrating = NULL;
 
 	spc->spc_count--;
-	if ((l->l_pflag & LP_BOUND) == 0)
-		spc->spc_mcount--;
+	if ((l->l_pflag & LP_BOUND) == 0) {
+		atomic_store_relaxed(&spc->spc_mcount,
+		    atomic_load_relaxed(&spc->spc_mcount) - 1);
+	}
 
 	q_head = sched_getrq(spc, eprio);
 	TAILQ_REMOVE(q_head, l, l_runq);
@@ -340,17 +344,17 @@ sched_resched_cpu(struct cpu_info *ci, pri_t pri, bool unlock)
 	}
 
 	/*
-	 * Things start as soon as we touch ci_want_resched: x86 for example
-	 * has an instruction that monitors the memory cell it's in.  We
-	 * want to drop the schedstate lock in advance, otherwise the remote
-	 * CPU can awaken and immediately block on the lock.
+	 * Things can start as soon as ci_want_resched is touched: x86 has
+	 * an instruction that monitors the memory cell it's in.  Drop the
+	 * schedstate lock in advance, otherwise the remote CPU can awaken
+	 * and immediately block on the lock.
 	 */
 	if (__predict_true(unlock)) {
 		spc_unlock(ci);
 	}
 
 	/*
-	 * The caller will always have a second scheduler lock held: either
+	 * The caller almost always has a second scheduler lock held: either
 	 * the running LWP lock (spc_lwplock), or a sleep queue lock.  That
 	 * keeps preemption disabled, which among other things ensures all
 	 * LWPs involved won't be freed while we're here (see lwp_dtor()).
@@ -361,8 +365,10 @@ sched_resched_cpu(struct cpu_info *ci, pri_t pri, bool unlock)
 		n = atomic_cas_uint(&ci->ci_want_resched, o, o | f);
 		if (__predict_true(o == n)) {
 			/*
-			 * We're the first.  If we're in process context on
-			 * the same CPU, we can avoid the visit to trap().
+			 * We're the first to set a resched on the CPU.  Try
+			 * to avoid causing a needless trip through trap()
+			 * to handle an AST fault, if it's known the LWP
+			 * will either block or go through userret() soon.
 			 */
 			if (l != curlwp || cpu_intr_p()) {
 				cpu_need_resched(ci, l, f);
@@ -415,7 +421,7 @@ lwp_cache_hot(const struct lwp *l)
 	if (__predict_false(l->l_slptime != 0 || l->l_rticks == 0))
 		return false;
 
-	return (hardclock_ticks - l->l_rticks < mstohz(cacheht_time));
+	return (getticks() - l->l_rticks < mstohz(cacheht_time));
 }
 
 /*
@@ -639,7 +645,7 @@ sched_catchlwp(struct cpu_info *ci)
 	gentle = ((curspc->spc_flags & SPCF_1STCLASS) == 0 ||
 	    (spc->spc_flags & SPCF_1STCLASS) != 0);
 
-	if (spc->spc_mcount < (gentle ? min_catch : 1) ||
+	if (atomic_load_relaxed(&spc->spc_mcount) < (gentle ? min_catch : 1) ||
 	    curspc->spc_psid != spc->spc_psid) {
 		spc_unlock(ci);
 		return NULL;
@@ -680,9 +686,10 @@ sched_catchlwp(struct cpu_info *ci)
 }
 
 /*
- * Called from sched_idle() to handle migration.
+ * Called from sched_idle() to handle migration.  Return the CPU that we
+ * pushed the LWP to (may be NULL).
  */
-static void
+static struct cpu_info *
 sched_idle_migrate(void)
 {
 	struct cpu_info *ci = curcpu(), *tci = NULL;
@@ -748,13 +755,14 @@ sched_idle_migrate(void)
 		sched_resched_lwp(l, true);
 		/* tci now unlocked */
 		spc_unlock(ci);
-		return;
+		return tci;
 	}
 	if (dlock == true) {
 		KASSERT(tci != NULL);
 		spc_unlock(tci);
 	}
 	spc_unlock(ci);
+	return NULL;
 }
 
 /*
@@ -768,7 +776,8 @@ sched_steal(struct cpu_info *ci, struct cpu_info *tci)
 
 	spc = &ci->ci_schedstate;
 	tspc = &tci->ci_schedstate;
-	if (tspc->spc_mcount != 0 && spc->spc_psid == tspc->spc_psid) {
+	if (atomic_load_relaxed(&tspc->spc_mcount) != 0 &&
+	    spc->spc_psid == tspc->spc_psid) {
 		spc_dlock(ci, tci);
 		l = sched_catchlwp(tci);
 		spc_unlock(ci);
@@ -785,21 +794,22 @@ sched_steal(struct cpu_info *ci, struct cpu_info *tci)
 void
 sched_idle(void)
 {
-	struct cpu_info *ci = curcpu(), *inner, *outer, *first, *tci = NULL;
+	struct cpu_info *ci, *inner, *outer, *first, *tci, *mci;
 	struct schedstate_percpu *spc, *tspc;
 	struct lwp *l;
 
+	ci = curcpu();
 	spc = &ci->ci_schedstate;
+	tci = NULL;
+	mci = NULL;
 
 	/*
 	 * Handle LWP migrations off this CPU to another.  If there a is
-	 * migration to do then go idle afterwards (we'll wake again soon),
-	 * as we don't want to instantly steal back the LWP we just moved
-	 * out.
+	 * migration to do then remember the CPU the LWP was sent to, and
+	 * don't steal the LWP back from that CPU below.
 	 */
 	if (spc->spc_migrating != NULL) {
-		sched_idle_migrate();
-		return;
+		mci = sched_idle_migrate();
 	}
 
 	/* If this CPU is offline, or we have an LWP to run, we're done. */
@@ -812,7 +822,7 @@ sched_idle(void)
 		/* Try to help our siblings out. */
 		tci = ci->ci_sibling[CPUREL_CORE];
 		while (tci != ci) {
-			if (sched_steal(ci, tci)) {
+			if (tci != mci && sched_steal(ci, tci)) {
 				return;
 			}
 			tci = tci->ci_sibling[CPUREL_CORE];
@@ -835,10 +845,10 @@ sched_idle(void)
 	 * XXX Should probably look at 2nd class CPUs first, but they will
 	 * shed jobs via preempt() anyway.
 	 */
-	if (spc->spc_nextskim > hardclock_ticks) {
+	if (spc->spc_nextskim > getticks()) {
 		return;
 	}
-	spc->spc_nextskim = hardclock_ticks + mstohz(skim_interval);
+	spc->spc_nextskim = getticks() + mstohz(skim_interval);
 
 	/* In the outer loop scroll through all CPU packages, starting here. */
 	first = ci->ci_package1st;
@@ -849,8 +859,9 @@ sched_idle(void)
 		do {
 			/* Don't hit the locks unless needed. */
 			tspc = &inner->ci_schedstate;
-			if (ci == inner || spc->spc_psid != tspc->spc_psid ||
-			    tspc->spc_mcount < min_catch) {
+			if (ci == inner || ci == mci ||
+			    spc->spc_psid != tspc->spc_psid ||
+			    atomic_load_relaxed(&tspc->spc_mcount) < min_catch) {
 				continue;
 			}
 			spc_dlock(ci, inner);
@@ -874,6 +885,7 @@ sched_idle(void)
 void
 sched_preempted(struct lwp *l)
 {
+	const int flags = SPCF_IDLE | SPCF_1STCLASS;
 	struct schedstate_percpu *tspc;
 	struct cpu_info *ci, *tci;
 
@@ -903,11 +915,11 @@ sched_preempted(struct lwp *l)
 	 */
 	tci = ci->ci_sibling[CPUREL_CORE];
 	while (tci != ci) {
-		const int flags = SPCF_IDLE | SPCF_1STCLASS;
 		tspc = &tci->ci_schedstate;
 		if ((tspc->spc_flags & flags) == flags &&
 		    sched_migratable(l, tci)) {
 		    	l->l_target_cpu = tci;
+			l->l_pflag &= ~LP_TELEPORT;
 		    	return;
 		}
 		tci = tci->ci_sibling[CPUREL_CORE];
@@ -927,7 +939,9 @@ sched_preempted(struct lwp *l)
 	} else {
 		/*
 		 * Try to find a better CPU to take it, but don't move to
-		 * another 2nd class CPU; there's not much point.
+		 * another 2nd class CPU, and don't move to a non-idle CPU,
+		 * because that would prevent SMT being used to maximise
+		 * throughput.
 		 *
 		 * Search in the current CPU package in order to try and
 		 * keep L2/L3 cache locality, but expand to include the
@@ -935,7 +949,7 @@ sched_preempted(struct lwp *l)
 		 */
 		tci = sched_bestcpu(l, l->l_cpu);
 		if (tci != ci &&
-		    (tci->ci_schedstate.spc_flags & SPCF_1STCLASS) != 0) {
+		    (tci->ci_schedstate.spc_flags & flags) == flags) {
 			l->l_target_cpu = tci;
 		}
 	}
@@ -1048,7 +1062,7 @@ sched_nextlwp(void)
 
 	/* Update the last run time on switch */
 	l = curlwp;
-	l->l_rticksum += (hardclock_ticks - l->l_rticks);
+	l->l_rticksum += (getticks() - l->l_rticks);
 
 	/* Return to idle LWP if there is a migrating thread */
 	spc = &ci->ci_schedstate;
@@ -1066,7 +1080,7 @@ sched_nextlwp(void)
 	KASSERT(l != NULL);
 
 	sched_oncpu(l);
-	l->l_rticks = hardclock_ticks;
+	l->l_rticks = getticks();
 
 	return l;
 }
@@ -1085,15 +1099,10 @@ sched_curcpu_runnable_p(void)
 	kpreempt_disable();
 	ci = curcpu();
 	spc = &ci->ci_schedstate;
-
+	rv = (spc->spc_count != 0);
 #ifndef __HAVE_FAST_SOFTINTS
-	if (ci->ci_data.cpu_softints) {
-		kpreempt_enable();
-		return true;
-	}
+	rv |= (ci->ci_data.cpu_softints != 0);
 #endif
-
-	rv = (spc->spc_count != 0) ? true : false;
 	kpreempt_enable();
 
 	return rv;
@@ -1200,7 +1209,7 @@ sched_print_runqueue(void (*pr)(const char *, ...))
 			    l->l_flag, l->l_stat == LSRUN ? "RQ" :
 			    (l->l_stat == LSSLEEP ? "SQ" : "-"),
 			    l, ci->ci_index, (tci ? tci->ci_index : -1),
-			    (u_int)(hardclock_ticks - l->l_rticks));
+			    (u_int)(getticks() - l->l_rticks));
 		}
 	}
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: ohci.c,v 1.295 2020/02/15 01:21:56 riastradh Exp $	*/
+/*	$NetBSD: ohci.c,v 1.301 2020/04/05 20:59:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2005, 2012 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.295 2020/02/15 01:21:56 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.301 2020/04/05 20:59:38 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -409,7 +409,7 @@ ohci_alloc_sed(ohci_softc_t *sc)
 		mutex_exit(&sc->sc_lock);
 
 		err = usb_allocmem(&sc->sc_bus, OHCI_SED_SIZE * OHCI_SED_CHUNK,
-			  OHCI_ED_ALIGN, &dma);
+		    OHCI_ED_ALIGN, USBMALLOC_COHERENT, &dma);
 		if (err)
 			return 0;
 
@@ -468,7 +468,7 @@ ohci_alloc_std(ohci_softc_t *sc)
 		mutex_exit(&sc->sc_lock);
 
 		err = usb_allocmem(&sc->sc_bus, OHCI_STD_SIZE * OHCI_STD_CHUNK,
-			  OHCI_TD_ALIGN, &dma);
+		    OHCI_TD_ALIGN, USBMALLOC_COHERENT, &dma);
 		if (err)
 			return NULL;
 
@@ -532,7 +532,7 @@ ohci_alloc_std_chain(ohci_softc_t *sc, struct usbd_xfer *xfer, int length, int r
 	KASSERT(length != 0 || (!rd && (flags & USBD_FORCE_SHORT_XFER)));
 
 	size_t nstd = (!rd && (flags & USBD_FORCE_SHORT_XFER)) ? 1 : 0;
-	nstd += ((length + OHCI_PAGE_SIZE - 1) / OHCI_PAGE_SIZE);
+	nstd += howmany(length, OHCI_PAGE_SIZE);
 	ox->ox_stds = kmem_zalloc(sizeof(ohci_soft_td_t *) * nstd,
 	    KM_SLEEP);
 	ox->ox_nstd = nstd;
@@ -716,7 +716,7 @@ ohci_alloc_sitd(ohci_softc_t *sc)
 		mutex_exit(&sc->sc_lock);
 
 		err = usb_allocmem(&sc->sc_bus, OHCI_SITD_SIZE * OHCI_SITD_CHUNK,
-			  OHCI_ITD_ALIGN, &dma);
+		    OHCI_ITD_ALIGN, USBMALLOC_COHERENT, &dma);
 		if (err)
 			return NULL;
 		mutex_enter(&sc->sc_lock);
@@ -821,7 +821,7 @@ ohci_init(ohci_softc_t *sc)
 	/* XXX determine alignment by R/W */
 	/* Allocate the HCCA area. */
 	err = usb_allocmem(&sc->sc_bus, OHCI_HCCA_SIZE,
-			 OHCI_HCCA_ALIGN, &sc->sc_hccadma);
+	    OHCI_HCCA_ALIGN, USBMALLOC_COHERENT, &sc->sc_hccadma);
 	if (err) {
 		sc->sc_hcca = NULL;
 		return err;
@@ -1363,7 +1363,7 @@ ohci_intr1(ohci_softc_t *sc)
 		/* Block unprocessed interrupts. */
 		OWRITE4(sc, OHCI_INTERRUPT_DISABLE, eintrs);
 		sc->sc_eintrs &= ~eintrs;
-		DPRINTF("sc %#jx blocking intrs 0x%jx", (uintptr_t)sc,
+		DPRINTF("sc %#jx blocking intrs %#jx", (uintptr_t)sc,
 		    eintrs, 0, 0);
 	}
 
@@ -1515,7 +1515,7 @@ ohci_softintr(void *v)
 		if (std->td.td_cbp != 0)
 			len -= O32TOH(std->td.td_be) -
 			       O32TOH(std->td.td_cbp) + 1;
-		DPRINTFN(10, "len=%jd, flags=0x%jx", len, std->flags, 0, 0);
+		DPRINTFN(10, "len=%jd, flags=%#jx", len, std->flags, 0, 0);
 		if (std->flags & OHCI_ADD_LEN)
 			xfer->ux_actlen += len;
 
@@ -2119,8 +2119,8 @@ ohci_open(struct usbd_pipe *pipe)
 		case UE_CONTROL:
 			pipe->up_methods = &ohci_device_ctrl_methods;
 			err = usb_allocmem(&sc->sc_bus,
-				  sizeof(usb_device_request_t),
-				  0, &opipe->ctrl.reqdma);
+			    sizeof(usb_device_request_t), 0,
+			    USBMALLOC_COHERENT, &opipe->ctrl.reqdma);
 			if (err)
 				goto bad;
 			mutex_enter(&sc->sc_lock);
@@ -2180,8 +2180,8 @@ ohci_close_pipe(struct usbd_pipe *pipe, ohci_soft_ed_t *head)
 	    (O32TOH(sed->ed.ed_headp) & OHCI_HEADMASK)) {
 		ohci_soft_td_t *std;
 		std = ohci_hash_find_td(sc, O32TOH(sed->ed.ed_headp));
-		printf("ohci_close_pipe: pipe not empty sed=%p hd=0x%x "
-		       "tl=0x%x pipe=%p, std=%p\n", sed,
+		printf("ohci_close_pipe: pipe not empty sed=%p hd=%#x "
+		       "tl=%#x pipe=%p, std=%p\n", sed,
 		       (int)O32TOH(sed->ed.ed_headp),
 		       (int)O32TOH(sed->ed.ed_tailp),
 		       pipe, std);
@@ -2950,6 +2950,8 @@ ohci_device_ctrl_close(struct usbd_pipe *pipe)
 	DPRINTF("pipe=%#jx", (uintptr_t)pipe, 0, 0, 0);
 	ohci_close_pipe(pipe, sc->sc_ctrl_head);
 	ohci_free_std_locked(sc, opipe->tail.td);
+
+	usb_freemem(&sc->sc_bus, &opipe->ctrl.reqdma);
 }
 
 /************************/
@@ -3477,8 +3479,7 @@ ohci_device_isoc_init(struct usbd_xfer *xfer)
 	DPRINTFN(1, "xfer %#jx len %jd flags %jd", (uintptr_t)xfer,
 	    xfer->ux_length, xfer->ux_flags, 0);
 
-	const size_t nfsitd =
-	    (xfer->ux_nframes + OHCI_ITD_NOFFSET - 1) / OHCI_ITD_NOFFSET;
+	const size_t nfsitd = howmany(xfer->ux_nframes, OHCI_ITD_NOFFSET);
 	const size_t nbsitd = xfer->ux_bufsize / OHCI_PAGE_SIZE;
 	const size_t nsitd = MAX(nfsitd, nbsitd) + 1;
 
@@ -3583,6 +3584,12 @@ ohci_device_isoc_enter(struct usbd_xfer *xfer)
 	DPRINTFN(1, "used=%jd next=%jd xfer=%#jx nframes=%jd",
 	     isoc->inuse, isoc->next, (uintptr_t)xfer, xfer->ux_nframes);
 
+	int isread =
+	    (UE_GET_DIR(xfer->ux_pipe->up_endpoint->ue_edesc->bEndpointAddress) == UE_DIR_IN);
+
+	usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
+	    isread ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
+
 	if (isoc->next == -1) {
 		/* Not in use yet, schedule it a few frames ahead. */
 		isoc->next = O32TOH(sc->sc_hcca->hcca_frame_number) + 5;
@@ -3635,7 +3642,6 @@ ohci_device_isoc_enter(struct usbd_xfer *xfer)
 			ncur = 0;
 		}
 		sitd->itd.itd_offset[ncur] = HTOO16(OHCI_ITD_MK_OFFS(offs));
-		/* XXX Sync */
 		offs = noffs;
 	}
 	KASSERT(j <= ox->ox_nsitd);
@@ -3756,6 +3762,14 @@ ohci_device_isoc_done(struct usbd_xfer *xfer)
 {
 	OHCIHIST_FUNC(); OHCIHIST_CALLED();
 	DPRINTFN(1, "xfer=%#jx", (uintptr_t)xfer, 0, 0, 0);
+
+	int isread =
+	    (UE_GET_DIR(xfer->ux_pipe->up_endpoint->ue_edesc->bEndpointAddress) == UE_DIR_IN);
+
+	DPRINTFN(10, "xfer=%#jx, actlen=%jd", (uintptr_t)xfer, xfer->ux_actlen,
+	    0, 0);
+	usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
+	    isread ? BUS_DMASYNC_POSTREAD : BUS_DMASYNC_POSTWRITE);
 }
 
 usbd_status

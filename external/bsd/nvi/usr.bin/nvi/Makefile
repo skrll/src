@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.20 2019/10/29 21:14:37 christos Exp $
+#	$NetBSD: Makefile,v 1.22 2020/04/20 13:04:10 joerg Exp $
 
 .include <bsd.own.mk>
 
@@ -17,6 +17,7 @@ COPTS.v_increment.c+=	-Wno-format-nonliteral
 CWARNFLAGS.gcc+=	-Wno-unused
 CWARNFLAGS.clang+=	-Wno-unsequenced
 .endif
+CWARNFLAGS.clang+=	-Wno-error=string-compare
 
 CPPFLAGS+=-I${DIST}/include -I${.CURDIR} -I.
 CPPFLAGS+=-DGTAGS -DIMCTRL
@@ -113,10 +114,6 @@ version.h:	../../Makefile.inc
 #ipc_gen.c: vipc.pl ip_read.c
 #	${_MKTARGET_CREATE}
 #	${TOOL_PERL} -n ${.ALLSRC} > ${.TARGET}
-
-.if ${MACHINE_ARCH} == "aarch64"
-COPTS.ex_filter.c+=-O0
-.endif
 
 
 .include "${.CURDIR}/../../Makefile.inc"

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_age.c,v 1.67 2020/02/04 05:44:14 thorpej Exp $ */
+/*	$NetBSD: if_age.c,v 1.69 2020/03/01 02:51:42 thorpej Exp $ */
 /*	$OpenBSD: if_age.c,v 1.1 2009/01/16 05:00:34 kevlo Exp $	*/
 
 /*-
@@ -31,7 +31,7 @@
 /* Driver for Attansic Technology Corp. L1 Gigabit Ethernet. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_age.c,v 1.67 2020/02/04 05:44:14 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_age.c,v 1.69 2020/03/01 02:51:42 thorpej Exp $");
 
 #include "vlan.h"
 
@@ -152,9 +152,13 @@ age_attach(device_t parent, device_t self, void *aux)
 	aprint_normal(": Attansic/Atheros L1 Gigabit Ethernet\n");
 
 	sc->sc_dev = self;
-	sc->sc_dmat = pa->pa_dmat;
 	sc->sc_pct = pa->pa_pc;
 	sc->sc_pcitag = pa->pa_tag;
+
+	if (pci_dma64_available(pa))
+		sc->sc_dmat = pa->pa_dmat64;
+	else
+		sc->sc_dmat = pa->pa_dmat;
 
 	/*
 	 * Allocate IO memory
@@ -698,7 +702,7 @@ age_dma_alloc(struct age_softc *sc)
 
 	/* Allocate DMA'able memory for TX ring */
 	error = bus_dmamem_alloc(sc->sc_dmat, AGE_TX_RING_SZ,
-	    ETHER_ALIGN, 0, &sc->age_rdata.age_tx_ring_seg, 1,
+	    PAGE_SIZE, 0, &sc->age_rdata.age_tx_ring_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for Tx ring, "
@@ -740,7 +744,7 @@ age_dma_alloc(struct age_softc *sc)
 
 	/* Allocate DMA'able memory for RX ring */
 	error = bus_dmamem_alloc(sc->sc_dmat, AGE_RX_RING_SZ,
-	    ETHER_ALIGN, 0, &sc->age_rdata.age_rx_ring_seg, 1,
+	    PAGE_SIZE, 0, &sc->age_rdata.age_rx_ring_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for Rx ring, "
@@ -782,7 +786,7 @@ age_dma_alloc(struct age_softc *sc)
 
 	/* Allocate DMA'able memory for RX return ring */
 	error = bus_dmamem_alloc(sc->sc_dmat, AGE_RR_RING_SZ,
-	    ETHER_ALIGN, 0, &sc->age_rdata.age_rr_ring_seg, 1,
+	    PAGE_SIZE, 0, &sc->age_rdata.age_rr_ring_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for Rx "
@@ -826,7 +830,7 @@ age_dma_alloc(struct age_softc *sc)
 
 	/* Allocate DMA'able memory for CMB block */
 	error = bus_dmamem_alloc(sc->sc_dmat, AGE_CMB_BLOCK_SZ,
-	    ETHER_ALIGN, 0, &sc->age_rdata.age_cmb_block_seg, 1,
+	    PAGE_SIZE, 0, &sc->age_rdata.age_cmb_block_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for "
@@ -870,7 +874,7 @@ age_dma_alloc(struct age_softc *sc)
 
 	/* Allocate DMA'able memory for SMB block */
 	error = bus_dmamem_alloc(sc->sc_dmat, AGE_SMB_BLOCK_SZ,
-	    ETHER_ALIGN, 0, &sc->age_rdata.age_smb_block_seg, 1,
+	    PAGE_SIZE, 0, &sc->age_rdata.age_smb_block_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for "
@@ -900,6 +904,31 @@ age_dma_alloc(struct age_softc *sc)
 
 	sc->age_rdata.age_smb_block_paddr =
 	    sc->age_cdata.age_smb_block_map->dm_segs[0].ds_addr;
+
+	/*
+	 * All of the memory we allocated above needs to be within
+	 * the same 4GB segment.  Make sure this is so.
+	 *
+	 * XXX We don't care WHAT 4GB segment they're in, just that
+	 * XXX they're all in the same one.  Need some bus_dma API
+	 * XXX help to make this easier to enforce when we actually
+	 * XXX perform the allocation.
+	 */
+	if (! (AGE_ADDR_HI(sc->age_rdata.age_tx_ring_paddr) ==
+	       AGE_ADDR_HI(sc->age_rdata.age_rx_ring_paddr)
+
+	    && AGE_ADDR_HI(sc->age_rdata.age_tx_ring_paddr) ==
+	       AGE_ADDR_HI(sc->age_rdata.age_rr_ring_paddr)
+
+	    && AGE_ADDR_HI(sc->age_rdata.age_tx_ring_paddr) ==
+	       AGE_ADDR_HI(sc->age_rdata.age_cmb_block_paddr)
+
+	    && AGE_ADDR_HI(sc->age_rdata.age_tx_ring_paddr) ==
+	       AGE_ADDR_HI(sc->age_rdata.age_smb_block_paddr))) {
+		aprint_error_dev(sc->sc_dev,
+		    "control data allocation constraints failed\n");
+		return ENOBUFS;
+	}
 
 	/* Create DMA maps for Tx buffers. */
 	for (i = 0; i < AGE_TX_RING_CNT; i++) {

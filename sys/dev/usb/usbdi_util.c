@@ -1,4 +1,4 @@
-/*	$NetBSD: usbdi_util.c,v 1.79 2020/02/10 09:15:27 skrll Exp $	*/
+/*	$NetBSD: usbdi_util.c,v 1.82 2020/03/13 18:17:41 christos Exp $	*/
 
 /*
  * Copyright (c) 1998, 2012 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usbdi_util.c,v 1.79 2020/02/10 09:15:27 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usbdi_util.c,v 1.82 2020/03/13 18:17:41 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -102,7 +102,7 @@ usbd_get_config_desc(struct usbd_device *dev, int confidx,
 	if (err)
 		return err;
 	if (d->bDescriptorType != UDESC_CONFIG) {
-		DPRINTFN(1, "confidx=%jd, bad desc len=%d type=%d",
+		DPRINTFN(1, "confidx=%jd, bad desc len=%jd type=%jd",
 		    confidx, d->bLength, d->bDescriptorType, 0);
 		return USBD_INVAL;
 	}
@@ -130,7 +130,7 @@ usbd_get_bos_desc(struct usbd_device *dev, int confidx,
 	if (err)
 		return err;
 	if (d->bDescriptorType != UDESC_BOS) {
-		DPRINTFN(1, "confidx=%jd, bad desc len=%d type=%d",
+		DPRINTFN(1, "confidx=%jd, bad desc len=%jd type=%jd",
 		    confidx, d->bLength, d->bDescriptorType, 0);
 		return USBD_INVAL;
 	}
@@ -665,7 +665,7 @@ usbd_bulk_transfer(struct usbd_xfer *xfer, struct usbd_pipe *pipe,
 	if (err) {
 		usbd_clear_endpoint_stall(pipe);
 	}
-	USBHIST_LOG(usbdebug, "<- done xfer %#jx err %d", (uintptr_t)xfer,
+	USBHIST_LOG(usbdebug, "<- done xfer %#jx err %jd", (uintptr_t)xfer,
 	    err, 0, 0);
 
 	return err;
@@ -715,6 +715,81 @@ usb_detach_wakeupold(device_t dv)
 	USBHIST_CALLARGS(usbdebug, "for dv %#jx", (uintptr_t)dv, 0, 0, 0);
 
 	wakeup(dv); /* XXXSMP ok */
+}
+
+/* -------------------------------------------------------------------------- */
+
+void
+usb_desc_iter_init(struct usbd_device *dev, usbd_desc_iter_t *iter)
+{
+	const usb_config_descriptor_t *cd = usbd_get_config_descriptor(dev);
+
+	iter->cur = (const uByte *)cd;
+	iter->end = (const uByte *)cd + UGETW(cd->wTotalLength);
+}
+
+const usb_descriptor_t *
+usb_desc_iter_peek(usbd_desc_iter_t *iter)
+{
+	const usb_descriptor_t *desc;
+
+	if (iter->cur + sizeof(usb_descriptor_t) >= iter->end) {
+		if (iter->cur != iter->end)
+			printf("%s: bad descriptor\n", __func__);
+		return NULL;
+	}
+	desc = (const usb_descriptor_t *)iter->cur;
+	if (desc->bLength < USB_DESCRIPTOR_SIZE) {
+		printf("%s: descriptor length too small\n", __func__);
+		return NULL;
+	}
+	if (iter->cur + desc->bLength > iter->end) {
+		printf("%s: descriptor length too large\n", __func__);
+		return NULL;
+	}
+	return desc;
+}
+
+const usb_descriptor_t *
+usb_desc_iter_next(usbd_desc_iter_t *iter)
+{
+	const usb_descriptor_t *desc = usb_desc_iter_peek(iter);
+	if (desc == NULL)
+		return NULL;
+	iter->cur += desc->bLength;
+	return desc;
+}
+
+/* Return the next interface descriptor, skipping over any other
+ * descriptors.  Returns NULL at the end or on error. */
+const usb_interface_descriptor_t *
+usb_desc_iter_next_interface(usbd_desc_iter_t *iter)
+{
+	const usb_descriptor_t *desc;
+
+	while ((desc = usb_desc_iter_peek(iter)) != NULL &&
+	       desc->bDescriptorType != UDESC_INTERFACE)
+	{
+		usb_desc_iter_next(iter);
+	}
+
+	return (const usb_interface_descriptor_t *)usb_desc_iter_next(iter);
+}
+
+/* Returns the next non-interface descriptor, returning NULL when the
+ * next descriptor would be an interface descriptor. */
+const usb_descriptor_t *
+usb_desc_iter_next_non_interface(usbd_desc_iter_t *iter)
+{
+	const usb_descriptor_t *desc;
+
+	if ((desc = usb_desc_iter_peek(iter)) != NULL &&
+	    desc->bDescriptorType != UDESC_INTERFACE)
+	{
+		return usb_desc_iter_next(iter);
+	} else {
+		return NULL;
+	}
 }
 
 const usb_cdc_descriptor_t *

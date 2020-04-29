@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.136 2020/02/06 01:37:46 mrg Exp $
+#	$NetBSD: GENERIC64,v 1.154 2020/04/18 11:00:38 skrll Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -147,10 +147,9 @@ pseudo-device 	openfirm	# /dev/openfirm
 #options 	DIAGNOSTIC	# internal consistency checks
 #options 	DEBUG
 #options 	LOCKDEBUG
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
 #options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 options 	INCLUDE_CONFIG_FILE
-#options 	UVMHIST
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	UVMHIST_PRINT,KERNHIST_DELAY=0
 
 # EARLYCONS is required for early init messages from VERBOSE_INIT_ARM.
@@ -163,6 +162,19 @@ options 	INCLUDE_CONFIG_FILE
 #options 	EARLYCONS=tegra, CONSADDR=0x70006000
 #options 	EARLYCONS=thunderx, CONSADDR=0x87e024000000
 #options 	EARLYCONS=virt
+
+# Pointer Authentication (PAC).
+#makeoptions 	ARMV83_PAC=1
+#options 	ARMV83_PAC
+
+# Branch Target Identification (BTI).
+#makeoptions 	ARMV85_BTI=1
+#options 	ARMV85_BTI
+
+# Kernel Undefined Behavior Sanitizer (kUBSan). Use UBSAN_ALWAYS_FATAL
+# if you want panics instead of warnings.
+#options 	KUBSAN			# mandatory
+#options 	UBSAN_ALWAYS_FATAL	# optional
 
 # Kernel Address Sanitizer (kASan). The quarantine is optional and can
 # help KASAN find more use-after-frees. Use KASAN_PANIC if you want panics
@@ -288,7 +300,7 @@ sunxigmacclk*	at fdt? pass 2		# Allwinner GMAC MII/RGMII clock mux
 tegra210car*	at fdt? pass 3		# NVIDIA Tegra CAR (T210)
 
 # GPIO controller
-bcmgpio*	at fdt?			# Broadcom BCM283x GPIO
+bcmgpio*	at fdt? pass 3		# Broadcom BCM283x GPIO
 imxgpio*	at fdt? pass 3		# IMX GPIO
 mesonpinctrl*	at fdt? pass 2		# Amlogic Meson GPIO
 plgpio*		at fdt?			# ARM PrimeCell PL061 GPIO
@@ -325,6 +337,10 @@ pci*		at ppb?
 awge*		at fdt?				# DesignWare Gigabit Ethernet
 emac*		at fdt?				# Allwinner Gigabit Ethernet (EMAC)
 enet*		at fdt?				# IMX FEC
+genet*		at acpi?			# Broadcom GENET v5
+genet*		at fdt?
+#scx*		at acpi?			# Socionext Gigabit Ethernet
+#scx*		at fdt?
 aq*		at pci? dev ? function ?	# Aquantia AQC 10 gigabit
 ena*		at pci? dev ? function ?	# Amazon.com Elastic Network Adapter
 mcx*		at pci? dev ? function ?	# Mellanox 5th generation Ethernet
@@ -335,6 +351,7 @@ wm*		at pci? dev ? function ?	# Intel Gigabit Ethernet
 
 # MII/PHY support
 atphy*		at mii? phy ?		# Attansic/Atheros PHYs
+brgphy*		at mii? phy ?		# Broadcom BCM5400-family PHYs
 exphy* 		at mii? phy ?		# 3Com internal PHYs
 gentbi* 	at mii? phy ?		# Generic Ten-Bit 1000BASE-[CLS]X PHYs
 glxtphy*	at mii? phy ?		# Level One LXT-1000 PHYs
@@ -379,6 +396,7 @@ com*		at puc? port ?
 # I2C controllers
 options 	I2C_MAX_ADDR=0xfff
 bsciic*		at fdt?			# Broadcom BCM283x Serial Control
+bsciic*		at acpi?
 dwiic*		at fdt?			# Designware I2C
 dwiic*		at acpi?
 imxi2c*		at fdt? pass 4		# IMX I2C
@@ -386,6 +404,8 @@ rkiic*		at fdt? pass 4		# Rockchip I2C
 sunxirsb*	at fdt?	pass 4		# Allwinner RSB
 sunxitwi*	at fdt?			# Allwinner TWI
 tegrai2c*	at fdt? pass 4		# NVIDIA Tegra I2C
+#sniiic*	at fdt?			# Socionext SC2A11 I2C
+#sniiic*	at acpi?
 iic*		at i2cbus?
 
 # I2C devices
@@ -414,7 +434,7 @@ sun8icrypto* 	at fdt?			# Allwinner Crypto Engine
 
 # RTC
 plrtc*		at fdt?			# ARM PrimeCell RTC
-sunxirtc*	at fdt?			# Allwinner RTC
+sunxirtc*	at fdt? pass 4		# Allwinner RTC
 tegrartc*	at fdt?			# NVIDIA Tegra RTC
 
 # SDMMC
@@ -426,6 +446,8 @@ rkemmcphy*	at fdt?			# Rockchip eMMC PHY
 sdhc*		at fdt?			# SD Host Controller Interface
 sdhc*		at acpi?
 sunximmc*	at fdt?			# Allwinner SD/MMC
+#sniemmc*	at fdt?			# Socionext SC2A11 eMMC
+#sniemmc*	at acpi?
 sdmmc*		at sdmmcbus?
 ld0		at sdmmc0
 ld1		at sdmmc1
@@ -472,7 +494,6 @@ h3codec*	at fdt?			# Allwinner H3 audio codec (analog part)
 a64acodec*	at fdt?			# Allwinner A64 audio codec (analog part)
 sunxii2s*	at fdt?			# Allwinner I2S/PCM
 audio*		at audiobus?
-options 	AUDIO_BLK_MS=4
 
 spkr*		at audio?		# PC speaker (synthesized)
 
@@ -519,6 +540,9 @@ options 	FONT_BOLD16x32
 
 # GPU
 #nouveau*	at fdt?			# NVIDIA GPU
+#nouveau*	at pci?
+radeon*		at pci? dev ? function ? # AMD Radeon
+radeondrmkmsfb*	at radeonfbbus?
 
 # Backlight
 pwmbacklight*	at fdt?			# PWM Backlight controls

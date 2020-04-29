@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.6 2019/10/13 07:28:05 mrg Exp $
+#	$NetBSD: Makefile,v 1.8 2020/03/01 20:59:53 christos Exp $
 
 BINDIR=	/usr/bin
 

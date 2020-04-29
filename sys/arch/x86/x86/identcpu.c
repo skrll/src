@@ -1,4 +1,4 @@
-/*	$NetBSD: identcpu.c,v 1.100 2019/12/21 12:53:54 ad Exp $	*/
+/*	$NetBSD: identcpu.c,v 1.106 2020/04/20 04:17:51 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.100 2019/12/21 12:53:54 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.106 2020/04/20 04:17:51 msaitoh Exp $");
 
 #include "opt_xen.h"
 
@@ -62,7 +62,7 @@ __KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.100 2019/12/21 12:53:54 ad Exp $");
 
 static const struct x86_cache_info intel_cpuid_cache_info[] = INTEL_CACHE_INFO;
 
-static const struct x86_cache_info amd_cpuid_l2l3cache_assoc_info[] = 
+static const struct x86_cache_info amd_cpuid_l2l3cache_assoc_info[] =
 	AMD_L2L3CACHE_INFO;
 
 int cpu_vendor;
@@ -82,7 +82,7 @@ const int i386_nocpuid_cpus[] = {
 	CPUVENDOR_INTEL, CPUCLASS_386,	/* CPU_386SX */
 	CPUVENDOR_INTEL, CPUCLASS_386,	/* CPU_386   */
 	CPUVENDOR_INTEL, CPUCLASS_486,	/* CPU_486SX */
-	CPUVENDOR_INTEL, CPUCLASS_486, 	/* CPU_486   */
+	CPUVENDOR_INTEL, CPUCLASS_486,	/* CPU_486   */
 	CPUVENDOR_CYRIX, CPUCLASS_486,	/* CPU_486DLC */
 	CPUVENDOR_CYRIX, CPUCLASS_486,	/* CPU_6x86 */
 	CPUVENDOR_NEXGEN, CPUCLASS_386,	/* CPU_NX586 */
@@ -174,7 +174,7 @@ cpu_probe_intel_cache(struct cpu_info *ci)
 	int iterations, i, j;
 	uint8_t desc;
 
-	if (cpuid_level >= 2) { 
+	if (cpuid_level >= 2) {
 		/* Parse the cache info from `cpuid leaf 2', if we have it. */
 		x86_cpuid(2, descs);
 		iterations = descs[0] & 0xff;
@@ -362,19 +362,17 @@ cpu_probe_amd_cache(struct cpu_info *ci)
 }
 
 static void
-cpu_probe_amd(struct cpu_info *ci)
+cpu_probe_amd_errata(struct cpu_info *ci)
 {
+	u_int model;
 	uint64_t val;
 	int flag;
 
-	if (cpu_vendor != CPUVENDOR_AMD)
-		return;
-	if (CPUID_TO_FAMILY(ci->ci_signature) < 5)
-		return;
+	model = CPUID_TO_MODEL(ci->ci_signature);
 
 	switch (CPUID_TO_FAMILY(ci->ci_signature)) {
 	case 0x05: /* K5 */
-		if (CPUID_TO_MODEL(ci->ci_signature) == 0) {
+		if (model == 0) {
 			/*
 			 * According to the AMD Processor Recognition App Note,
 			 * the AMD-K5 Model 0 uses the wrong bit to indicate
@@ -402,9 +400,34 @@ cpu_probe_amd(struct cpu_info *ci)
 			wrmsr(MSR_BU_CFG2, val);
 		}
 		break;
+
+	case 0x17:
+		/*
+		 * "Revision Guide for AMD Family 17h Models 00h-0Fh
+		 * Processors" revision 1.12:
+		 *
+		 * 1057 MWAIT or MWAITX Instructions May Fail to Correctly
+		 * Exit From the Monitor Event Pending State
+		 *
+		 * 1109 MWAIT Instruction May Hang a Thread
+		 */
+		if (model == 0x01) {
+			cpu_feature[1] &= ~CPUID2_MONITOR;
+			ci->ci_feat_val[1] &= ~CPUID2_MONITOR;
+		}
+		break;
 	}
+}
+
+static void
+cpu_probe_amd(struct cpu_info *ci)
+{
+
+	if (cpu_vendor != CPUVENDOR_AMD)
+		return;
 
 	cpu_probe_amd_cache(ci);
+	cpu_probe_amd_errata(ci);
 }
 
 static inline uint8_t
@@ -465,7 +488,7 @@ cpu_probe_cyrix_cmn(struct cpu_info *ci)
 	 */
 	cyrix_write_reg(0xc2, cyrix_read_reg(0xc2) | 0x08);
 
-	/* 
+	/*
 	 * Do not disable the TSC on the Geode GX, it's reported to
 	 * work fine.
 	 */
@@ -502,7 +525,7 @@ cpu_probe_winchip(struct cpu_info *ci)
 
 	if (cpu_vendor != CPUVENDOR_IDT ||
 	    CPUID_TO_FAMILY(ci->ci_signature) != 5)
-	    	return;
+		return;
 
 	/* WinChip C6 */
 	if (CPUID_TO_MODEL(ci->ci_signature) == 4)
@@ -533,7 +556,7 @@ cpu_probe_c3(struct cpu_info *ci)
 		 *
 		 * Quoting from page 3-4 of: "VIA Eden ESP Processor Datasheet"
 		 * http://www.via.com.tw/download/mainboards/6/14/Eden20v115.pdf
-		 * 
+		 *
 		 * 1. The CMPXCHG8B instruction is provided and always enabled,
 		 *    however, it appears disabled in the corresponding CPUID
 		 *    function bit 0 to avoid a bug in an early version of
@@ -623,7 +646,7 @@ cpu_probe_c3(struct cpu_info *ci)
 	if (ci->ci_feat_val[4] & CPUID_VIA_DO_ACE) {
 		msr = rdmsr(MSR_VIA_ACE);
 		wrmsr(MSR_VIA_ACE, msr & ~VIA_ACE_ALTINST);
-	} 
+	}
 
 	/*
 	 * Determine L1 cache/TLB info.
@@ -691,7 +714,7 @@ cpu_probe_geode(struct cpu_info *ci)
 
 	if (memcmp("Geode by NSC", ci->ci_vendor, 12) != 0 ||
 	    CPUID_TO_FAMILY(ci->ci_signature) != 5)
-	    	return;
+		return;
 
 	cpu_probe_cyrix_cmn(ci);
 	cpu_probe_amd_cache(ci);
@@ -704,7 +727,7 @@ cpu_probe_vortex86(struct cpu_info *ci)
 #define PCI_MODE1_DATA_REG	0x0cfc
 #define PCI_MODE1_ENABLE	0x80000000UL
 
-	uint32_t reg;
+	uint32_t reg, idx;
 
 	if (cpu_vendor != CPUVENDOR_VORTEX86)
 		return;
@@ -718,17 +741,18 @@ cpu_probe_vortex86(struct cpu_info *ci)
 	outl(PCI_MODE1_ADDRESS_REG, PCI_MODE1_ENABLE | 0x90);
 	reg = inl(PCI_MODE1_DATA_REG);
 
-	if ((reg & 0xf8ffffff) != 0x30504d44) {
-		reg = 0;
+	if ((reg & 0xf0ffffff) != 0x30504d44) {
+		idx = 0;
 	} else {
-		reg = (reg >> 24) & 7;
+		idx = (reg >> 24) & 0xf;
 	}
 
 	static const char *cpu_vortex86_flavor[] = {
-	    "??", "SX", "DX", "MX", "DX2", "MX+", "DX3", "EX",
+	    "??", "SX", "DX", "MX", "DX2", "MX+", "DX3", "EX", "EX2",
 	};
+	idx = idx < __arraycount(cpu_vortex86_flavor) ? idx : 0;
 	snprintf(cpu_brand_string, sizeof(cpu_brand_string), "Vortex86%s",
-	    cpu_vortex86_flavor[reg]);
+	    cpu_vortex86_flavor[idx]);
 
 #undef PCI_MODE1_ENABLE
 #undef PCI_MODE1_ADDRESS_REG
@@ -950,7 +974,9 @@ cpu_probe(struct cpu_info *ci)
 		cpu_probe_fpu(ci);
 	}
 
+#ifndef XEN
 	x86_cpu_topology(ci);
+#endif
 
 	if (cpu_vendor != CPUVENDOR_AMD && (ci->ci_feat_val[0] & CPUID_TM) &&
 	    (rdmsr(MSR_MISC_ENABLE) & (1 << 3)) == 0) {

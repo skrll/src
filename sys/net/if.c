@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.472 2020/02/07 01:14:55 thorpej Exp $	*/
+/*	$NetBSD: if.c,v 1.474 2020/04/18 15:56:26 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.472 2020/02/07 01:14:55 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.474 2020/04/18 15:56:26 thorpej Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -259,7 +259,7 @@ if_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 	enum kauth_network_req req;
 
 	result = KAUTH_RESULT_DEFER;
-	req = (enum kauth_network_req)arg1;
+	req = (enum kauth_network_req)(uintptr_t)arg1;
 
 	if (action != KAUTH_NETWORK_INTERFACE)
 		return result;
@@ -2519,10 +2519,21 @@ _if_down(struct ifnet *ifp)
 	pserialize_read_exit(s);
 	curlwp_bindx(bound);
 
+	/*
+	 * Modification of if_link_cansched is serialized with the
+	 * ifnet ioctl lock.
+	 *
+	 * The link state change lock is taken to synchronize with the
+	 * read in if_link_state_change_work_schedule().  Once we set
+	 * this to false, our if_link_work won't be scheduled.  But
+	 * we need to wait for our if_link_work to drain in case we
+	 * lost that race.
+	 */
 	IF_LINK_STATE_CHANGE_LOCK(ifp);
 	ifp->if_link_cansched = false;
-	workqueue_wait(ifnet_link_state_wq, &ifp->if_link_work);
 	IF_LINK_STATE_CHANGE_UNLOCK(ifp);
+
+	workqueue_wait(ifnet_link_state_wq, &ifp->if_link_work);
 
 	IFQ_PURGE(&ifp->if_snd);
 #if NCARP > 0

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.amd64,v 1.80 2019/11/14 16:23:52 maxv Exp $
+#	$NetBSD: Makefile.amd64,v 1.83 2020/04/13 09:34:02 maxv Exp $
 
 # Makefile for NetBSD
 #
@@ -49,12 +49,22 @@ CFLAGS+=      -mindirect-branch=thunk-inline
 CFLAGS+=      -mindirect-branch-register
 .endif
 
-.if ${KASAN:U0} > 0 && ${HAVE_GCC:U0} > 0
+.if ${KASAN:U0} > 0
+.if ${HAVE_GCC:U0} > 0
 KASANFLAGS=	-fsanitize=kernel-address \
 		--param asan-globals=1 --param asan-stack=1 \
+		--param asan-instrument-allocas=1 \
 		-fsanitize-address-use-after-scope \
 		-fasan-shadow-offset=0xDFFF900000000000
-.for f in subr_asan.c subr_kcov.c subr_lwp_specificdata.c subr_specificdata.c
+.elif ${HAVE_LLVM:Uno} == "yes"
+KASANFLAGS=	-fsanitize=kernel-address \
+		-mllvm -asan-globals=1 -mllvm -asan-stack=1 \
+		-mllvm -asan-instrument-dynamic-allocas=1 \
+		-mllvm -asan-use-after-scope=1 \
+		-mllvm -asan-instrumentation-with-call-threshold=0 \
+		-mllvm -asan-mapping-offset=0xDFFF900000000000
+.endif
+.for f in subr_asan.c subr_kcov.c
 KASANFLAGS.${f}=	# empty
 .endfor
 CFLAGS+=	${KASANFLAGS.${.IMPSRC:T}:U${KASANFLAGS}}
@@ -62,8 +72,7 @@ CFLAGS+=	${KASANFLAGS.${.IMPSRC:T}:U${KASANFLAGS}}
 
 .if ${KCSAN:U0} > 0 && ${HAVE_GCC:U0} > 0
 KCSANFLAGS=	-fsanitize=thread
-.for f in subr_csan.c clock.c lapic.c subr_kcov.c subr_lwp_specificdata.c \
-	subr_specificdata.c
+.for f in subr_csan.c subr_kcov.c clock.c lapic.c
 KCSANFLAGS.${f}=	# empty
 .endfor
 CFLAGS+=	${KCSANFLAGS.${.IMPSRC:T}:U${KCSANFLAGS}}

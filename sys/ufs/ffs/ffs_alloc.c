@@ -1,4 +1,4 @@
-/*	$NetBSD: ffs_alloc.c,v 1.164 2019/04/14 15:55:24 kardel Exp $	*/
+/*	$NetBSD: ffs_alloc.c,v 1.167 2020/04/18 19:18:34 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ffs_alloc.c,v 1.164 2019/04/14 15:55:24 kardel Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ffs_alloc.c,v 1.167 2020/04/18 19:18:34 christos Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"
@@ -208,12 +208,12 @@ ffs_alloc(struct inode *ip, daddr_t lbn, daddr_t bpref, int size,
 	    ffs_lblktosize(fs, (voff_t)lbn) < round_page(vp->v_size) &&
 	    ((vp->v_vflag & VV_MAPPED) != 0 || (size & PAGE_MASK) != 0 ||
 	     ffs_blkoff(fs, size) != 0)) {
-		struct vm_page *pg;
+		struct vm_page *pg __diagused;
 		struct uvm_object *uobj = &vp->v_uobj;
 		voff_t off = trunc_page(ffs_lblktosize(fs, lbn));
 		voff_t endoff = round_page(ffs_lblktosize(fs, lbn) + size);
 
-		mutex_enter(uobj->vmobjlock);
+		rw_enter(uobj->vmobjlock, RW_WRITER);
 		while (off < endoff) {
 			pg = uvm_pagelookup(uobj, off);
 			KASSERT((pg != NULL && pg->owner_tag != NULL &&
@@ -221,7 +221,7 @@ ffs_alloc(struct inode *ip, daddr_t lbn, daddr_t bpref, int size,
 				 pg->lowner == curlwp->l_lid));
 			off += PAGE_SIZE;
 		}
-		mutex_exit(uobj->vmobjlock);
+		rw_exit(uobj->vmobjlock);
 	}
 #endif
 
@@ -257,7 +257,10 @@ ffs_alloc(struct inode *ip, daddr_t lbn, daddr_t bpref, int size,
 	bno = ffs_hashalloc(ip, cg, bpref, size, 0, flags, ffs_alloccg);
 	if (bno > 0) {
 		DIP_ADD(ip, blocks, btodb(size));
-		ip->i_flag |= IN_CHANGE | IN_UPDATE;
+		if (flags & IO_EXT)
+			ip->i_flag |= IN_CHANGE;
+		else
+			ip->i_flag |= IN_CHANGE | IN_UPDATE;
 		*bnp = bno;
 		return (0);
 	}
@@ -300,14 +303,15 @@ nospace:
  * => return with um_lock released
  */
 int
-ffs_realloccg(struct inode *ip, daddr_t lbprev, daddr_t bpref, int osize,
-    int nsize, kauth_cred_t cred, struct buf **bpp, daddr_t *blknop)
+ffs_realloccg(struct inode *ip, daddr_t lbprev, daddr_t bprev, daddr_t bpref,
+    int osize, int nsize, int flags, kauth_cred_t cred, struct buf **bpp,
+    daddr_t *blknop)
 {
 	struct ufsmount *ump;
 	struct fs *fs;
 	struct buf *bp;
 	int cg, request, error;
-	daddr_t bprev, bno;
+	daddr_t bno;
 
 	fs = ip->i_fs;
 	ump = ip->i_ump;
@@ -328,19 +332,19 @@ ffs_realloccg(struct inode *ip, daddr_t lbprev, daddr_t bpref, int osize,
 	 */
 
 	if (ITOV(ip)->v_type == VREG) {
-		struct vm_page *pg;
+		struct vm_page *pg __diagused;
 		struct uvm_object *uobj = &ITOV(ip)->v_uobj;
 		voff_t off = trunc_page(ffs_lblktosize(fs, lbprev));
 		voff_t endoff = round_page(ffs_lblktosize(fs, lbprev) + osize);
 
-		mutex_enter(uobj->vmobjlock);
+		rw_enter(uobj->vmobjlock, RW_WRITER);
 		while (off < endoff) {
 			pg = uvm_pagelookup(uobj, off);
 			KASSERT(pg->owner == curproc->p_pid &&
 				pg->lowner == curlwp->l_lid);
 			off += PAGE_SIZE;
 		}
-		mutex_exit(uobj->vmobjlock);
+		rw_exit(uobj->vmobjlock);
 	}
 #endif
 
@@ -368,10 +372,6 @@ ffs_realloccg(struct inode *ip, daddr_t lbprev, daddr_t bpref, int osize,
 		mutex_exit(&ump->um_lock);
 		goto nospace;
 	}
-	if (fs->fs_magic == FS_UFS2_MAGIC)
-		bprev = ufs_rw64(ip->i_ffs2_db[lbprev], UFS_FSNEEDSWAP(fs));
-	else
-		bprev = ufs_rw32(ip->i_ffs1_db[lbprev], UFS_FSNEEDSWAP(fs));
 
 	if (bprev == 0) {
 		panic("%s: bad bprev: dev = 0x%llx, bsize = %d, bprev = %"
@@ -403,7 +403,10 @@ ffs_realloccg(struct inode *ip, daddr_t lbprev, daddr_t bpref, int osize,
 	mutex_enter(&ump->um_lock);
 	if ((bno = ffs_fragextend(ip, cg, bprev, osize, nsize)) != 0) {
 		DIP_ADD(ip, blocks, btodb(nsize - osize));
-		ip->i_flag |= IN_CHANGE | IN_UPDATE;
+		if (flags & IO_EXT)
+			ip->i_flag |= IN_CHANGE;
+		else
+			ip->i_flag |= IN_CHANGE | IN_UPDATE;
 
 		if (bpp != NULL) {
 			if (bp->b_blkno != FFS_FSBTODB(fs, bno)) {
@@ -503,7 +506,10 @@ ffs_realloccg(struct inode *ip, daddr_t lbprev, daddr_t bpref, int osize,
 			    ip->i_number);
 		}
 		DIP_ADD(ip, blocks, btodb(nsize - osize));
-		ip->i_flag |= IN_CHANGE | IN_UPDATE;
+		if (flags & IO_EXT)
+			ip->i_flag |= IN_CHANGE;
+		else
+			ip->i_flag |= IN_CHANGE | IN_UPDATE;
 		if (bpp != NULL) {
 			bp->b_blkno = FFS_FSBTODB(fs, bno);
 			allocbuf(bp, nsize, 1);

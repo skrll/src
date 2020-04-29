@@ -1,7 +1,7 @@
-/*	$NetBSD: vnd.c,v 1.273 2020/01/17 19:31:30 ad Exp $	*/
+/*	$NetBSD: vnd.c,v 1.276 2020/04/13 08:05:02 maxv Exp $	*/
 
 /*-
- * Copyright (c) 1996, 1997, 1998, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 1996, 1997, 1998, 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vnd.c,v 1.273 2020/01/17 19:31:30 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vnd.c,v 1.276 2020/04/13 08:05:02 maxv Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_vnd.h"
@@ -121,6 +121,7 @@ __KERNEL_RCSID(0, "$NetBSD: vnd.c,v 1.273 2020/01/17 19:31:30 ad Exp $");
 #include <sys/kauth.h>
 #include <sys/module.h>
 #include <sys/compat_stub.h>
+#include <sys/atomic.h>
 
 #include <net/zlib.h>
 
@@ -234,9 +235,9 @@ CFATTACH_DECL3_NEW(vnd, sizeof(struct vnd_softc),
     vnd_match, vnd_attach, vnd_detach, NULL, NULL, NULL, DVF_DETACH_SHUTDOWN);
 
 static struct vnd_softc	*vnd_spawn(int);
-int	vnd_destroy(device_t);
+static int	vnd_destroy(device_t);
 
-static struct	dkdriver vnddkdriver = {
+static const struct	dkdriver vnddkdriver = {
 	.d_strategy = vndstrategy,
 	.d_minphys = minphys
 };
@@ -307,7 +308,7 @@ vnd_spawn(int unit)
 	return device_private(config_attach_pseudo(cf));
 }
 
-int
+static int
 vnd_destroy(device_t dev)
 {
 	int error;
@@ -794,6 +795,7 @@ handle_with_rdwr(struct vnd_softc *vnd, const struct buf *obp, struct buf *bp)
 	off_t offset;
 	size_t len, resid;
 	struct vnode *vp;
+	int npages;
 
 	doread = bp->b_flags & B_READ;
 	offset = obp->b_rawblkno * vnd->sc_dkdev.dk_label->d_secsize;
@@ -824,12 +826,12 @@ handle_with_rdwr(struct vnd_softc *vnd, const struct buf *obp, struct buf *bp)
 	 * We need some amount of caching to not hinder
 	 * read-ahead and write-behind operations.
 	 */
-	mutex_enter(vp->v_interlock);
-	if (vp->v_uobj.uo_npages > VND_MAXPAGES(vnd))
+	npages = atomic_load_relaxed(&vp->v_uobj.uo_npages);
+	if (npages > VND_MAXPAGES(vnd)) {
+		rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 		(void) VOP_PUTPAGES(vp, 0, 0,
 		    PGO_ALLPAGES | PGO_CLEANIT | PGO_FREE);
-	else
-		mutex_exit(vp->v_interlock);
+	}
 
 	/* We need to increase the number of outputs on the vnode if
 	 * there was any write to it. */
@@ -1214,6 +1216,7 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 #endif
 	case DIOCKLABEL:
 	case DIOCWLABEL:
+	case DIOCCACHESYNC:
 		if ((flag & FWRITE) == 0)
 			return EBADF;
 	}
@@ -1229,6 +1232,8 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 	case DIOCKLABEL:
 	case DIOCWLABEL:
 	case DIOCGDEFLABEL:
+	case DIOCGCACHE:
+	case DIOCGSTRATEGY:
 	case DIOCCACHESYNC:
 #ifdef __HAVE_OLD_DISKLABEL
 	case ODIOCGDINFO:
@@ -1643,6 +1648,23 @@ unlock_and_exit:
 		break;
 #endif
 
+	case DIOCGSTRATEGY:
+	    {
+		struct disk_strategy *dks = (void *)data;
+
+		/* No lock needed, never changed */
+		strlcpy(dks->dks_name,
+		    bufq_getstrategyname(vnd->sc_tab),
+		    sizeof(dks->dks_name));
+		dks->dks_paramlen = 0;
+		break;
+	    }
+	case DIOCGCACHE:
+	    {
+		int *bits = (int *)data;
+		*bits |= DKCACHE_READ | DKCACHE_WRITE;
+		break;
+	    }
 	case DIOCCACHESYNC:
 		vn_lock(vnd->sc_vp, LK_EXCLUSIVE | LK_RETRY);
 		error = VOP_FSYNC(vnd->sc_vp, vnd->sc_cred,

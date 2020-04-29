@@ -1,4 +1,4 @@
-/* $NetBSD: aarch64_machdep.c,v 1.38 2020/01/22 17:15:53 skrll Exp $ */
+/* $NetBSD: aarch64_machdep.c,v 1.42 2020/04/13 05:40:25 maxv Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,9 +30,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.38 2020/01/22 17:15:53 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.42 2020/04/13 05:40:25 maxv Exp $");
 
 #include "opt_arm_debug.h"
+#include "opt_cpuoptions.h"
 #include "opt_ddb.h"
 #include "opt_kernhist.h"
 #include "opt_modular.h"
@@ -50,6 +51,7 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.38 2020/01/22 17:15:53 skrll E
 #include <sys/msgbuf.h>
 #include <sys/reboot.h>
 #include <sys/sysctl.h>
+#include <sys/xcall.h>
 
 #include <dev/mm.h>
 
@@ -111,6 +113,24 @@ uint32_t dumpmag = 0x8fca0101;  /* magic number for savecore */
 int     dumpsize = 0;           /* also for savecore */
 long    dumplo = 0;
 
+int aarch64_bti_enabled __read_mostly;
+
+static void
+bti_init(void)
+{
+#ifdef ARMV85_BTI
+	extern uint64_t pmap_attr_gp;
+	uint64_t reg;
+
+	reg = reg_id_aa64pfr1_el1_read();
+
+	if (reg >= ID_AA64PFR1_EL1_BT_SUPPORTED) {
+		pmap_attr_gp = LX_BLKPAG_GP;
+		aarch64_bti_enabled = 1;
+	}
+#endif
+}
+
 void
 cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused)
 {
@@ -119,6 +139,8 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
 	extern char __data_start[];
 	extern char __rodata_start[];
 	u_int blk;
+
+	bti_init();
 
 	vaddr_t kernstart = trunc_page((vaddr_t)__kernel_text);
 	vaddr_t kernend = round_page((vaddr_t)_end);
@@ -134,77 +156,14 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
 	    LX_BLKPAG_PXN |
 	    LX_BLKPAG_UXN;
 	for (blk = 0; blk < bootconfig.dramblocks; blk++) {
-		uint64_t start, end, left, mapsize, nblocks;
+		uint64_t start, end;
 
 		start = trunc_page(bootconfig.dram[blk].address);
 		end = round_page(bootconfig.dram[blk].address +
 		    (uint64_t)bootconfig.dram[blk].pages * PAGE_SIZE);
-		left = end - start;
-
-		/* align the start address to L2 blocksize */
-		nblocks = ulmin(left / L3_SIZE,
-		    Ln_ENTRIES - __SHIFTOUT(start, L3_ADDR_BITS));
-		if (((start & L3_ADDR_BITS) != 0) && (nblocks > 0)) {
-			mapsize = nblocks * L3_SIZE;
-			VPRINTF("Creating KSEG tables for %016lx-%016lx (L3)\n",
-			    start, start + mapsize - 1);
-			pmapboot_enter(AARCH64_PA_TO_KVA(start), start,
-			    mapsize, L3_SIZE, ksegattr,
-			    PMAPBOOT_ENTER_NOOVERWRITE, bootpage_alloc, NULL);
-
-			start += mapsize;
-			left -= mapsize;
-		}
-
-		/* align the start address to L1 blocksize */
-		nblocks = ulmin(left / L2_SIZE,
-		    Ln_ENTRIES - __SHIFTOUT(start, L2_ADDR_BITS));
-		if (((start & L2_ADDR_BITS) != 0) && (nblocks > 0)) {
-			mapsize = nblocks * L2_SIZE;
-			VPRINTF("Creating KSEG tables for %016lx-%016lx (L2)\n",
-			    start, start + mapsize - 1);
-			pmapboot_enter(AARCH64_PA_TO_KVA(start), start,
-			    mapsize, L2_SIZE, ksegattr,
-			    PMAPBOOT_ENTER_NOOVERWRITE, bootpage_alloc, NULL);
-			start += mapsize;
-			left -= mapsize;
-		}
-
-		nblocks = left / L1_SIZE;
-		if (nblocks > 0) {
-			mapsize = nblocks * L1_SIZE;
-			VPRINTF("Creating KSEG tables for %016lx-%016lx (L1)\n",
-			    start, start + mapsize - 1);
-			pmapboot_enter(AARCH64_PA_TO_KVA(start), start,
-			    mapsize, L1_SIZE, ksegattr,
-			    PMAPBOOT_ENTER_NOOVERWRITE, bootpage_alloc, NULL);
-			start += mapsize;
-			left -= mapsize;
-		}
-
-		if ((left & L2_ADDR_BITS) != 0) {
-			nblocks = left / L2_SIZE;
-			mapsize = nblocks * L2_SIZE;
-			VPRINTF("Creating KSEG tables for %016lx-%016lx (L2)\n",
-			    start, start + mapsize - 1);
-			pmapboot_enter(AARCH64_PA_TO_KVA(start), start,
-			    mapsize, L2_SIZE, ksegattr,
-			    PMAPBOOT_ENTER_NOOVERWRITE, bootpage_alloc, NULL);
-			start += mapsize;
-			left -= mapsize;
-		}
-
-		if ((left & L3_ADDR_BITS) != 0) {
-			nblocks = left / L3_SIZE;
-			mapsize = nblocks * L3_SIZE;
-			VPRINTF("Creating KSEG tables for %016lx-%016lx (L3)\n",
-			    start, start + mapsize - 1);
-			pmapboot_enter(AARCH64_PA_TO_KVA(start), start,
-			    mapsize, L3_SIZE, ksegattr,
-			    PMAPBOOT_ENTER_NOOVERWRITE, bootpage_alloc, NULL);
-			start += mapsize;
-			left -= mapsize;
-		}
+		pmapboot_enter_range(AARCH64_PA_TO_KVA(start), start,
+		    end - start, ksegattr, PMAPBOOT_ENTER_NOOVERWRITE,
+		    bootpage_alloc, printf);
 	}
 	aarch64_dcache_wbinv_all();
 
@@ -458,6 +417,82 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	lwp0.l_md.md_utf = pcb->pcb_tf = tf;
 
 	return (vaddr_t)tf;
+}
+
+/*
+ * machine dependent system variables.
+ */
+static xcfunc_t
+set_user_tagged_address(void *arg1, void *arg2)
+{
+	uint64_t enable = PTRTOUINT64(arg1);
+	uint64_t tcr = reg_tcr_el1_read();
+	if (enable)
+		tcr |= TCR_TBI0;
+	else
+		tcr &= ~TCR_TBI0;
+	reg_tcr_el1_write(tcr);
+
+	return 0;
+}
+
+static int
+sysctl_machdep_tagged_address(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+	int error, cur, val;
+	uint64_t tcr;
+
+	tcr = reg_tcr_el1_read();
+	cur = val = (tcr & TCR_TBI0) ? 1 : 0;
+
+	node = *rnode;
+	node.sysctl_data = &val;
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL)
+		return error;
+	if (val < 0 || val > 1)
+		return EINVAL;
+
+	if (cur != val) {
+		uint64_t where = xc_broadcast(0,
+		    (xcfunc_t)set_user_tagged_address, UINT64TOPTR(val), NULL);
+		xc_wait(where);
+	}
+
+	return 0;
+}
+
+SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
+{
+	sysctl_createv(clog, 0, NULL, NULL,
+	    CTLFLAG_PERMANENT,
+	    CTLTYPE_NODE, "machdep", NULL,
+	    NULL, 0, NULL, 0,
+	    CTL_MACHDEP, CTL_EOL);
+
+	sysctl_createv(clog, 0, NULL, NULL,
+	    CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
+	    CTLTYPE_INT, "tagged_address",
+	    SYSCTL_DESCR("top byte ignored in the address calculation"),
+	    sysctl_machdep_tagged_address, 0, NULL, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+
+	sysctl_createv(clog, 0, NULL, NULL,
+	    CTLFLAG_PERMANENT,
+	    CTLTYPE_INT, "pac",
+	    SYSCTL_DESCR("Whether Pointer Authentication is enabled"),
+	    NULL, 0,
+	    &aarch64_pac_enabled, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+
+	sysctl_createv(clog, 0, NULL, NULL,
+	    CTLFLAG_PERMANENT,
+	    CTLTYPE_INT, "bti",
+	    SYSCTL_DESCR("Whether Branch Target Identification is enabled"),
+	    NULL, 0,
+	    &aarch64_bti_enabled, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
 }
 
 void

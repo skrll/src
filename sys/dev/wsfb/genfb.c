@@ -1,4 +1,4 @@
-/*	$NetBSD: genfb.c,v 1.70 2019/08/09 17:22:02 rin Exp $ */
+/*	$NetBSD: genfb.c,v 1.72 2020/04/13 15:26:57 msaitoh Exp $ */
 
 /*-
  * Copyright (c) 2007 Michael Lorenz
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: genfb.c,v 1.70 2019/08/09 17:22:02 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: genfb.c,v 1.72 2020/04/13 15:26:57 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -39,6 +39,7 @@ __KERNEL_RCSID(0, "$NetBSD: genfb.c,v 1.70 2019/08/09 17:22:02 rin Exp $");
 #include <sys/kernel.h>
 #include <sys/systm.h>
 #include <sys/kmem.h>
+#include <sys/reboot.h>
 
 #include <dev/wscons/wsconsio.h>
 #include <dev/wscons/wsdisplayvar.h>
@@ -53,7 +54,6 @@ __KERNEL_RCSID(0, "$NetBSD: genfb.c,v 1.70 2019/08/09 17:22:02 rin Exp $");
 #include <dev/videomode/edidvar.h>
 
 #ifdef GENFB_DISABLE_TEXT
-#include <sys/reboot.h>
 #define DISABLESPLASH (boothowto & (RB_SINGLE | RB_USERCONF | RB_ASKNAME | \
 		AB_VERBOSE | AB_DEBUG) )
 #endif
@@ -102,7 +102,7 @@ genfb_init(struct genfb_softc *sc)
 {
 	prop_dictionary_t dict;
 	uint64_t cmap_cb, pmf_cb, mode_cb, bl_cb, br_cb, fbaddr;
-	uint32_t fboffset;
+	uint64_t fboffset;
 	bool console;
 
 	dict = device_properties(sc->sc_dev);
@@ -124,13 +124,12 @@ genfb_init(struct genfb_softc *sc)
 		return;
 	}
 
-	/* XXX should be a 64bit value */
-	if (!prop_dictionary_get_uint32(dict, "address", &fboffset)) {
+	if (!prop_dictionary_get_uint64(dict, "address", &fboffset)) {
 		GPRINTF("no address property\n");
 		return;
 	}
 
-	sc->sc_fboffset = fboffset;
+	sc->sc_fboffset = (bus_addr_t)fboffset;
 
 	sc->sc_fbaddr = NULL;
 	if (prop_dictionary_get_uint64(dict, "virtual_address", &fbaddr)) {
@@ -342,7 +341,7 @@ genfb_attach(struct genfb_softc *sc, struct genfb_ops *ops)
 	}
 #else
 	genfb_init_palette(sc);
-	if (console)
+	if (console && (boothowto & (AB_SILENT|AB_QUIET)) == 0)
 		vcons_replay_msgbuf(&sc->sc_console_screen);
 #endif
 

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.238 2020/02/09 16:06:18 jmcneill Exp $
+#	$NetBSD: Makefile,v 1.244 2020/04/04 15:43:21 jdolecek Exp $
 
 .include <bsd.own.mk>
 
@@ -149,7 +149,6 @@ SUBDIR+=	securelevel
 SUBDIR+=	sequencer
 SUBDIR+=	skipjack
 SUBDIR+=	slcompress
-SUBDIR+=	smbfs
 SUBDIR+=	spdmem
 SUBDIR+=	spkr
 SUBDIR+=	sppp_subr
@@ -181,7 +180,6 @@ SUBDIR+=	wsbell
 SUBDIR+=	zlib
 SUBDIR+=	tprof
 .if (defined(NOTYET))
-SUBDIR+=	hifn		# Builds on architectures with PCI bus
 SUBDIR+=	unionfs
 .endif
 .if ${MKBINUTILS} != "no"
@@ -231,9 +229,14 @@ SUBDIR+=	vmt
 SUBDIR+=	nvmm
 .endif
 
-.if ${MACHINE_ARCH} == "i386" || \
-    ${MACHINE_ARCH} == "x86_64"
-SUBDIR+=	ubsec		# Builds on architectures with PCI bus
+# Builds on architectures with PCI bus
+.if \
+     ${MACHINE} == "evbarm" || \
+     ${MACHINE_ARCH} == "i386" || \
+     ${MACHINE_ARCH} == "x86_64"
+#SUBDIR+=	hifn
+SUBDIR+=	if_ixl
+SUBDIR+=	ubsec
 .endif
 
 .if ${MKSLJIT} != "no"
@@ -297,11 +300,13 @@ SUBDIR+=	compat_netbsd32_43
 SUBDIR+=	compat_netbsd32_mqueue
 SUBDIR+=	compat_netbsd32_nfssrv
 SUBDIR+=	compat_netbsd32_ptrace
+SUBDIR+=	compat_netbsd32_quota
+SUBDIR+=	compat_netbsd32_quota_50
+SUBDIR+=	compat_netbsd32_raid
 SUBDIR+=	compat_netbsd32_sysvipc
 SUBDIR+=	compat_netbsd32_sysvipc_10
 SUBDIR+=	compat_netbsd32_sysvipc_14
 SUBDIR+=	compat_netbsd32_sysvipc_50
-SUBDIR+=	compat_netbsd32_raid
 
 .if ${MACHINE_ARCH} == "x86_64"
 SUBDIR+=	compat_linux32
@@ -439,7 +444,6 @@ SUBDIR+=	cac
 SUBDIR+=	cac_eisa
 SUBDIR+=	cac_pci
 SUBDIR+=	if_aq
-SUBDIR+=	if_ixl
 SUBDIR+=	if_vioif
 SUBDIR+=	ld
 SUBDIR+=	ld_aac

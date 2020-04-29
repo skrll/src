@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.57 2019/06/30 21:20:04 mgorny Exp $
+# $NetBSD: Makefile,v 1.62 2020/04/18 17:44:53 christos Exp $
 
 MKMAN=	no
 
@@ -53,6 +53,7 @@ TESTS_C+=		t_pipe2
 TESTS_C+=		t_poll
 TESTS_C+=		t_posix_fallocate
 TESTS_C+=		t_ptrace
+TESTS_C+=		t_ptrace_sigchld
 TESTS_C+=		t_ptrace_wait
 TESTS_C+=		t_ptrace_wait3
 TESTS_C+=		t_ptrace_wait4
@@ -84,9 +85,11 @@ TESTS_C+=		t_wait_noproc
 TESTS_C+=		t_wait_noproc_wnohang
 TESTS_C+=		t_write
 
-SRCS.t_mprotect=	t_mprotect.c ${SRCS_EXEC_PROT}
+SRCS.t_mprotect=	t_mprotect.c ${SRCS_EXEC_PROT} t_mprotect_helper.c
 
 LDADD.t_getpid+=        -lpthread
+
+LDADD.t_ptrace_sigchld+=	-pthread -lm
 
 LDADD.t_ptrace_wait+=		-pthread -lm -lelf
 LDADD.t_ptrace_wait3+=		-pthread -lm -lelf
@@ -98,7 +101,7 @@ LDADD.t_ptrace_waitpid+=	-pthread -lm -lelf
 .if (${MKRUMP} != "no") && !defined(BSD_MK_COMPAT_FILE)
 CPPFLAGS.t_posix_fadvise.c += -D_KERNTYPES
 TESTS_C+=		t_posix_fadvise
-LDADD.t_posix_fadvise+= -lrumpvfs -lrump -lrumpuser -lrump -lpthread
+LDADD.t_posix_fadvise+= ${LIBRUMPBASE}
 .endif
 
 CPPFLAGS.t_lwp_create.c		+= -D_KERNTYPES
@@ -109,6 +112,15 @@ CPPFLAGS.t_ptrace_wait6.c	+= -D_KERNTYPES -D__TEST_FENV
 CPPFLAGS.t_ptrace_waitid.c	+= -D_KERNTYPES -D__TEST_FENV
 CPPFLAGS.t_ptrace_waitpid.c	+= -D_KERNTYPES -D__TEST_FENV
 CPPFLAGS.t_ucontext.c		+= -D_KERNTYPES
+
+.if ${MKSANITIZER:Uno} != "yes" && ${MKLIBCSANITIZER:Uno} != "yes"
+CPPFLAGS.t_ptrace_wait.c	+= -DENABLE_TESTS
+CPPFLAGS.t_ptrace_wait3.c	+= -DENABLE_TESTS
+CPPFLAGS.t_ptrace_wait4.c	+= -DENABLE_TESTS
+CPPFLAGS.t_ptrace_wait6.c	+= -DENABLE_TESTS
+CPPFLAGS.t_ptrace_waitid.c	+= -DENABLE_TESTS
+CPPFLAGS.t_ptrace_waitpid.c	+= -DENABLE_TESTS
+.endif
 
 FILES=		truncate_test.root_owned
 FILESBUILD=	yes

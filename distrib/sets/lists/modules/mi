@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.132 2020/02/11 11:36:53 uki Exp $
+# $NetBSD: mi,v 1.136 2020/04/04 19:50:53 christos Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -214,8 +214,6 @@
 ./@MODULEDIR@/if_gre/if_gre.kmod		modules-base-kernel	kmod
 ./@MODULEDIR@/if_kue				modules-base-kernel	kmod
 ./@MODULEDIR@/if_kue/if_kue.kmod		modules-base-kernel	kmod
-./@MODULEDIR@/if_ixl				base-obsolete		obsolete
-./@MODULEDIR@/if_ixl/if_ixl.kmod		base-obsolete		obsolete
 ./@MODULEDIR@/if_l2tp				modules-base-kernel	kmod
 ./@MODULEDIR@/if_l2tp/if_l2tp.kmod		modules-base-kernel	kmod
 ./@MODULEDIR@/if_loop				modules-base-kernel	kmod
@@ -400,8 +398,8 @@
 ./@MODULEDIR@/skipjack/skipjack.kmod		modules-base-kernel	kmod
 ./@MODULEDIR@/slcompress			modules-base-kernel     kmod
 ./@MODULEDIR@/slcompress/slcompress.kmod	modules-base-kernel     kmod
-./@MODULEDIR@/smbfs				modules-base-kernel	kmod
-./@MODULEDIR@/smbfs/smbfs.kmod			modules-base-kernel	kmod
+./@MODULEDIR@/smbfs				base-obsolete		obsolete
+./@MODULEDIR@/smbfs/smbfs.kmod			base-obsolete		obsolete
 ./@MODULEDIR@/solaris				modules-base-kernel     kmod,solaris
 ./@MODULEDIR@/solaris/solaris.kmod		modules-base-kernel     kmod,solaris
 ./@MODULEDIR@/spdmem				modules-base-kernel	kmod
@@ -483,5 +481,6 @@
 ./@MODULEDIR@/zlib				modules-base-kernel     kmod
 ./@MODULEDIR@/zlib/zlib.kmod			modules-base-kernel     kmod
 ./etc/mtree/set.modules				modules-sys-root	kmod
-./stand/@MACHINE@				modules-base-kernel	kmod
-./stand/@MACHINE@/@OSRELEASE@			modules-base-kernel	kmod
+./stand/@MACHINE@				modules-base-kernel	kmod,!kernel_dir
+./stand/@MACHINE@/@OSRELEASE@			modules-base-kernel	kmod,!kernel_dir
+./netbsd								kmod,kernel_dir

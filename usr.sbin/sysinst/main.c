@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.20 2020/01/16 16:47:19 martin Exp $	*/
+/*	$NetBSD: main.c,v 1.23 2020/03/04 11:15:06 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -87,7 +87,7 @@ struct f_arg {
 };
 
 static const struct f_arg fflagopts[] = {
-	{"release", REL, rel, sizeof rel},
+	{"release", REL, NULL, 0},
 	{"machine", MACH, machine, sizeof machine},
 	{"xfer dir", "/usr/INSTALL", xfer_dir, sizeof xfer_dir},
 	{"ext dir", "", ext_dir_bin, sizeof ext_dir_bin},
@@ -144,6 +144,8 @@ init(void)
 	memset(pm_new, 0, sizeof *pm_new);
 
 	for (arg = fflagopts; arg->name != NULL; arg++) {
+		if (arg->var == NULL)
+			continue;
 		if (arg->var == cdrom_dev)
 			get_default_cdrom(arg->var, arg->size);
 		else
@@ -192,8 +194,7 @@ main(int argc, char **argv)
 			debug = 1;
 			break;
 		case 'r':
-			/* Release name other than compiled in release. */
-			strncpy(rel, optarg, sizeof rel);
+			/* Release name - ignore for compatibility with older versions */
 			break;
 		case 'f':
 			/* Definition file to read. */
@@ -550,6 +551,8 @@ process_f_flag(char *f_name)
 		for (arg = fflagopts; arg->name != NULL; arg++) {
 			len = strlen(arg->name);
 			if (memcmp(cp, arg->name, len) != 0)
+				continue;
+			if (arg->var == NULL || arg->size == 0)
 				continue;
 			cp1 = cp + len;
 			cp1 += strspn(cp1, " \t");

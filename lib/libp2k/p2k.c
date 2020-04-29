@@ -1,4 +1,4 @@
-/*	$NetBSD: p2k.c,v 1.71 2019/09/23 12:00:57 christos Exp $	*/
+/*	$NetBSD: p2k.c,v 1.73 2020/02/23 15:46:38 ad Exp $	*/
 
 /*
  * Copyright (c) 2007, 2008, 2009  Antti Kantee.  All Rights Reserved.
@@ -791,7 +791,7 @@ do_makenode(struct puffs_usermount *pu, struct p2k_node *p2n_dir,
 	struct p2k_node *p2n;
 	struct componentname *cn;
 	struct vattr *va_x;
-	struct vnode *vp;
+	struct vnode *vp = NULL;
 	int rv;
 
 	p2n = malloc(sizeof(*p2n));
@@ -1386,7 +1386,7 @@ p2k_node_inactive(struct puffs_usermount *pu, puffs_cookie_t opc)
 	 * a way to regain the data from "stable storage".
 	 */
 	if (!p2m->p2m_imtmpfsman) {
-		rump_pub_vp_interlock(vp);
+		rump_pub_vp_vmobjlock(vp, 1);
 		RUMP_VOP_PUTPAGES(vp, 0, 0,
 		    PGO_ALLPAGES|PGO_CLEANIT|PGO_FREE);
 	}

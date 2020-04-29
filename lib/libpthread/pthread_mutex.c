@@ -1,4 +1,4 @@
-/*	$NetBSD: pthread_mutex.c,v 1.74 2020/02/01 18:14:16 kamil Exp $	*/
+/*	$NetBSD: pthread_mutex.c,v 1.76 2020/02/16 17:45:11 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2003, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -47,7 +47,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: pthread_mutex.c,v 1.74 2020/02/01 18:14:16 kamil Exp $");
+__RCSID("$NetBSD: pthread_mutex.c,v 1.76 2020/02/16 17:45:11 kamil Exp $");
 
 #include <sys/types.h>
 #include <sys/lwpctl.h>

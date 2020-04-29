@@ -1,4 +1,4 @@
-/*	$NetBSD: if_alc.c,v 1.49 2020/02/08 07:24:46 maxv Exp $	*/
+/*	$NetBSD: if_alc.c,v 1.52 2020/03/01 03:06:08 thorpej Exp $	*/
 /*	$OpenBSD: if_alc.c,v 1.1 2009/08/08 09:31:13 kevlo Exp $	*/
 /*-
  * Copyright (c) 2009, Pyun YongHyeon <yongari@FreeBSD.org>
@@ -1277,9 +1277,13 @@ alc_attach(device_t parent, device_t self, void *aux)
 	aprint_normal(": %s\n", sc->alc_ident->name);
 
 	sc->sc_dev = self;
-	sc->sc_dmat = pa->pa_dmat;
 	sc->sc_pct = pa->pa_pc;
 	sc->sc_pcitag = pa->pa_tag;
+
+	if (pci_dma64_available(pa))
+		sc->sc_dmat = pa->pa_dmat64;
+	else
+		sc->sc_dmat = pa->pa_dmat;
 
 	/*
 	 * Allocate IO memory
@@ -1581,7 +1585,7 @@ alc_dma_alloc(struct alc_softc *sc)
 
 	/* Allocate DMA'able memory for TX ring */
 	error = bus_dmamem_alloc(sc->sc_dmat, ALC_TX_RING_SZ,
-	    ETHER_ALIGN, 0, &sc->alc_rdata.alc_tx_ring_seg, 1,
+	    PAGE_SIZE, 0, &sc->alc_rdata.alc_tx_ring_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for Tx ring.\n",
@@ -1619,7 +1623,7 @@ alc_dma_alloc(struct alc_softc *sc)
 
 	/* Allocate DMA'able memory for RX ring */
 	error = bus_dmamem_alloc(sc->sc_dmat, ALC_RX_RING_SZ,
-	    ETHER_ALIGN, 0, &sc->alc_rdata.alc_rx_ring_seg, 1,
+	    PAGE_SIZE, 0, &sc->alc_rdata.alc_rx_ring_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for Rx ring.\n",
@@ -1657,7 +1661,7 @@ alc_dma_alloc(struct alc_softc *sc)
 
 	/* Allocate DMA'able memory for RX return ring */
 	error = bus_dmamem_alloc(sc->sc_dmat, ALC_RR_RING_SZ,
-	    ETHER_ALIGN, 0, &sc->alc_rdata.alc_rr_ring_seg, 1,
+	    PAGE_SIZE, 0, &sc->alc_rdata.alc_rr_ring_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for Rx "
@@ -1686,6 +1690,23 @@ alc_dma_alloc(struct alc_softc *sc)
 	    sc->alc_cdata.alc_rr_ring_map->dm_segs[0].ds_addr;
 
 	/*
+	 * All of the memory we allocated for the Rx ring / Rx Return
+	 * ring need to be in the same 4GB segment.  Make sure this is
+	 * so.
+	 *
+	 * XXX We don't care WHAT 4GB segment they're in, just that
+	 * XXX they're all in the same one.  Need some bus_dma API
+	 * XXX help to make this easier to enforce when we actually
+	 * XXX perform the allocation.
+	 */
+	if (ALC_ADDR_HI(sc->alc_rdata.alc_rx_ring_paddr) !=
+	    ALC_ADDR_HI(sc->alc_rdata.alc_rr_ring_paddr)) {
+		aprint_error_dev(sc->sc_dev,
+		    "Rx control data allocation constraints failed\n");
+		return ENOBUFS;
+	}
+
+	/*
 	 * Create DMA stuffs for CMB block
 	 */
 	error = bus_dmamap_create(sc->sc_dmat, ALC_CMB_SZ, 1,
@@ -1696,7 +1717,7 @@ alc_dma_alloc(struct alc_softc *sc)
 
 	/* Allocate DMA'able memory for CMB block */
 	error = bus_dmamem_alloc(sc->sc_dmat, ALC_CMB_SZ,
-	    ETHER_ALIGN, 0, &sc->alc_rdata.alc_cmb_seg, 1,
+	    PAGE_SIZE, 0, &sc->alc_rdata.alc_cmb_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for "
@@ -1736,7 +1757,7 @@ alc_dma_alloc(struct alc_softc *sc)
 
 	/* Allocate DMA'able memory for SMB block */
 	error = bus_dmamem_alloc(sc->sc_dmat, ALC_SMB_SZ,
-	    ETHER_ALIGN, 0, &sc->alc_rdata.alc_smb_seg, 1,
+	    PAGE_SIZE, 0, &sc->alc_rdata.alc_smb_seg, 1,
 	    &nsegs, BUS_DMA_NOWAIT);
 	if (error) {
 		printf("%s: could not allocate DMA'able memory for "

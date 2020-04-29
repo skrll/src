@@ -1,7 +1,7 @@
-/*	$NetBSD: kern_ktrace.c,v 1.174 2020/02/05 09:59:50 msaitoh Exp $	*/
+/*	$NetBSD: kern_ktrace.c,v 1.176 2020/03/14 18:08:39 ad Exp $	*/
 
 /*-
- * Copyright (c) 2006, 2007, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_ktrace.c,v 1.174 2020/02/05 09:59:50 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_ktrace.c,v 1.176 2020/03/14 18:08:39 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -225,7 +225,7 @@ ktrace_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 	if (action != KAUTH_PROCESS_KTRACE)
 		return result;
 
-	req = (enum kauth_process_req)(unsigned long)arg1;
+	req = (enum kauth_process_req)(uintptr_t)arg1;
 
 	/* Privileged; secmodel should handle these. */
 	if (req == KAUTH_REQ_PROCESS_KTRACE_PERSISTENT)
@@ -720,7 +720,7 @@ ktr_io(lwp_t *l, int fd, enum uio_rw rw, struct iovec *iov, size_t len)
 	 */
 	ktraddentry(l, kte, KTA_WAITOK | KTA_LARGE);
 	if (resid > 0) {
-		if (curcpu()->ci_schedstate.spc_flags & SPCF_SHOULDYIELD) {
+		if (preempt_needed()) {
 			(void)ktrenter(l);
 			preempt();
 			ktrexit(l);

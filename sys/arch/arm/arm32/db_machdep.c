@@ -1,4 +1,4 @@
-/*	$NetBSD: db_machdep.c,v 1.25 2018/08/15 06:00:02 skrll Exp $	*/
+/*	$NetBSD: db_machdep.c,v 1.30 2020/04/14 08:06:53 skrll Exp $	*/
 
 /*
  * Copyright (c) 1996 Mark Brinicombe
@@ -34,7 +34,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.25 2018/08/15 06:00:02 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.30 2020/04/14 08:06:53 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -58,6 +58,8 @@ __KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.25 2018/08/15 06:00:02 skrll Exp $"
 
 #ifdef _KERNEL
 static long nil;
+
+void db_md_cpuinfo_cmd(db_expr_t, bool, db_expr_t, const char *);
 
 int db_access_und_sp(const struct db_variable *, db_expr_t *, int);
 int db_access_abt_sp(const struct db_variable *, db_expr_t *, int);
@@ -109,31 +111,59 @@ const struct db_variable db_regs[] = {
 const struct db_variable * const db_eregs = db_regs + sizeof(db_regs)/sizeof(db_regs[0]);
 
 const struct db_command db_machine_command_table[] = {
+#ifdef _KERNEL
+#if defined(MULTIPROCESSOR)
+	{ DDB_ADD_CMD("cpu",	db_switch_cpu_cmd,	0,
+			"switch to a different cpu",
+		     	NULL,NULL) },
+#endif /* MULTIPROCESSOR */
+	{ DDB_ADD_CMD("cpuinfo", db_md_cpuinfo_cmd,	0,
+			"Displays the cpuinfo",
+		    NULL, NULL)
+	},
+	{ DDB_ADD_CMD("fault",	db_show_fault_cmd,	0,
+			"Displays the fault registers",
+		     	NULL,NULL) },
+#endif
 	{ DDB_ADD_CMD("frame",	db_show_frame_cmd,	0,
 			"Displays the contents of a trapframe",
 			"[address]",
 			"   address:\taddress of trapfame to display")},
 #ifdef _KERNEL
-	{ DDB_ADD_CMD("fault",	db_show_fault_cmd,	0,
-			"Displays the fault registers",
-		     	NULL,NULL) },
-#endif
-#if defined(_KERNEL) && (defined(CPU_CORTEXA5) || defined(CPU_CORTEXA7))
+#if defined(CPU_CORTEXA5) || defined(CPU_CORTEXA7)
 	{ DDB_ADD_CMD("tlb",	db_show_tlb_cmd,	0,
 			"Displays the TLB",
 		     	NULL,NULL) },
 #endif
-#if defined(_KERNEL) && defined(MULTIPROCESSOR)
-	{ DDB_ADD_CMD("cpu",	db_switch_cpu_cmd,	0,
-			"switch to a different cpu",
-		     	NULL,NULL) },
-#endif
+#endif /* _KERNEL */
 
-#ifdef ARM32_DB_COMMANDS
-	ARM32_DB_COMMANDS,
-#endif
 	{ DDB_ADD_CMD(NULL,     NULL,           0,NULL,NULL,NULL) }
 };
+
+void
+db_show_frame_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *modif)
+{
+	struct trapframe *frame;
+
+	if (!have_addr) {
+		db_printf("frame address must be specified\n");
+		return;
+	}
+
+	frame = (struct trapframe *)addr;
+
+	db_printf("frame address = %08x  ", (u_int)frame);
+	db_printf("spsr=%08x\n", frame->tf_spsr);
+	db_printf("r0 =%08x r1 =%08x r2 =%08x r3 =%08x\n",
+	    frame->tf_r0, frame->tf_r1, frame->tf_r2, frame->tf_r3);
+	db_printf("r4 =%08x r5 =%08x r6 =%08x r7 =%08x\n",
+	    frame->tf_r4, frame->tf_r5, frame->tf_r6, frame->tf_r7);
+	db_printf("r8 =%08x r9 =%08x r10=%08x r11=%08x\n",
+	    frame->tf_r8, frame->tf_r9, frame->tf_r10, frame->tf_r11);
+	db_printf("r12=%08x r13=%08x r14=%08x r15=%08x\n",
+	    frame->tf_r12, frame->tf_usr_sp, frame->tf_usr_lr, frame->tf_pc);
+	db_printf("slr=%08x ssp=%08x\n", frame->tf_svc_lr, frame->tf_svc_sp);
+}
 
 #ifdef _KERNEL
 int
@@ -208,7 +238,7 @@ struct db_tlbinfo {
 	vaddr_t (*dti_decode_vpn)(size_t, uint32_t, uint32_t);
 	void (*dti_print_header)(void);
 	void (*dti_print_entry)(size_t, size_t, uint32_t, uint32_t);
-	u_int dti_index; 
+	u_int dti_index;
 };
 
 #if defined(CPU_CORTEXA5)
@@ -423,35 +453,8 @@ db_show_tlb_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *mod
 	db_printf("%zu TLB valid entries found\n", n);
 }
 #endif /* CPU_CORTEXA5 || CPU_CORTEXA7 */
-#endif /* _KERNEL */
 
-
-void
-db_show_frame_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *modif)
-{
-	struct trapframe *frame;
-
-	if (!have_addr) {
-		db_printf("frame address must be specified\n");
-		return;
-	}
-
-	frame = (struct trapframe *)addr;
-
-	db_printf("frame address = %08x  ", (u_int)frame);
-	db_printf("spsr=%08x\n", frame->tf_spsr);
-	db_printf("r0 =%08x r1 =%08x r2 =%08x r3 =%08x\n",
-	    frame->tf_r0, frame->tf_r1, frame->tf_r2, frame->tf_r3);
-	db_printf("r4 =%08x r5 =%08x r6 =%08x r7 =%08x\n",
-	    frame->tf_r4, frame->tf_r5, frame->tf_r6, frame->tf_r7);
-	db_printf("r8 =%08x r9 =%08x r10=%08x r11=%08x\n",
-	    frame->tf_r8, frame->tf_r9, frame->tf_r10, frame->tf_r11);
-	db_printf("r12=%08x r13=%08x r14=%08x r15=%08x\n",
-	    frame->tf_r12, frame->tf_usr_sp, frame->tf_usr_lr, frame->tf_pc);
-	db_printf("slr=%08x ssp=%08x\n", frame->tf_svc_lr, frame->tf_svc_sp);
-}
-
-#if defined(_KERNEL) && defined(MULTIPROCESSOR)
+#if defined(MULTIPROCESSOR)
 void
 db_switch_cpu_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *modif)
 {
@@ -473,3 +476,68 @@ db_switch_cpu_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *m
 	db_continue_cmd(0, false, 0, "");
 }
 #endif
+
+static void
+show_cpuinfo(struct cpu_info *kci)
+{
+	struct cpu_info cpuinfobuf;
+	cpuid_t cpuid;
+	int i;
+
+	db_read_bytes((db_addr_t)kci, sizeof(cpuinfobuf), (char *)&cpuinfobuf);
+
+	struct cpu_info *ci = &cpuinfobuf;
+	cpuid = ci->ci_cpuid;
+	db_printf("cpu_info=%p, cpu_name=%s\n", kci, ci->ci_cpuname);
+	db_printf("%p cpu[%lu].ci_cpuid        = %lu\n",
+	    &ci->ci_cpuid, cpuid, ci->ci_cpuid);
+	db_printf("%p cpu[%lu].ci_curlwp       = %p\n",
+	    &ci->ci_curlwp, cpuid, ci->ci_curlwp);
+	for (i = 0; i < SOFTINT_COUNT; i++) {
+		db_printf("%p cpu[%lu].ci_softlwps[%d]  = %p\n",
+		    &ci->ci_softlwps[i], cpuid, i, ci->ci_softlwps[i]);
+	}
+	db_printf("%p cpu[%lu].ci_lastintr     = %" PRIu64 "\n",
+	    &ci->ci_lastintr, cpuid, ci->ci_lastintr);
+	db_printf("%p cpu[%lu].ci_want_resched = %d\n",
+	    &ci->ci_want_resched, cpuid, ci->ci_want_resched);
+	db_printf("%p cpu[%lu].ci_cpl          = %d\n",
+	    &ci->ci_cpl, cpuid, ci->ci_cpl);
+	db_printf("%p cpu[%lu].ci_softints     = 0x%08x\n",
+	    &ci->ci_softints, cpuid, ci->ci_softints);
+	db_printf("%p cpu[%lu].ci_astpending   = 0x%08x\n",
+	    &ci->ci_astpending, cpuid, ci->ci_astpending);
+	db_printf("%p cpu[%lu].ci_intr_depth   = %u\n",
+	    &ci->ci_intr_depth, cpuid, ci->ci_intr_depth);
+
+}
+
+void
+db_md_cpuinfo_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
+    const char *modif)
+{
+#ifdef MULTIPROCESSOR
+	CPU_INFO_ITERATOR cii;
+	struct cpu_info *ci;
+	bool showall = false;
+
+	if (modif != NULL) {
+		for (; *modif != '\0'; modif++) {
+			switch (*modif) {
+			case 'a':
+				showall = true;
+				break;
+			}
+		}
+	}
+
+	if (showall) {
+		for (CPU_INFO_FOREACH(cii, ci)) {
+			show_cpuinfo(ci);
+		}
+	} else
+#endif /* MULTIPROCESSOR */
+		show_cpuinfo(curcpu());
+}
+
+#endif /* _KERNEL */
