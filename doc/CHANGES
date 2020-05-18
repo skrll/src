@@ -1,4 +1,4 @@
-# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2669 $>
+# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2689 $>
 #
 #
 # [Note: This file does not mention every change made to the NetBSD source tree.
@@ -85,6 +85,8 @@ Changes from NetBSD 9.0 to NetBSD 10.0:
 	scheduler: Improve performance and interactivity. [ad 20191201]
 	vfs: Reduce false sharing and lock overhead during normal operation.
 		[ad 20191201]
+	evbarm: Added driver for Allwinner Crypto Engine random number
+		generator [riastradh 20191209]
 	ixl(4): Ported driver for Intel Ethernet 700 series
 		[yamaguchi 20191210]
 	acpi(4): Updated ACPICA to 20191213. [christos 20191214]
@@ -169,3 +171,36 @@ Changes from NetBSD 9.0 to NetBSD 10.0:
 	xen: remove legacy rx-flip support from xennet(4) and xvif(4)
 		[jdolecek 20200405]
 	OpenSSL: Imported 1.1.1f. [christos 20200405]
+	xennet(4): Make the driver MP-safe [jdolecek 20200406]
+	aarch64: Add support for Pointer Authentication (PAC).
+		[maxv 20200412]
+	aarch64: Add support for Branch Target Identification (BTI).
+		[maxv 20200413]
+	umass(4): Removed obsolete ISD-ATA support [jdolecek 20200413]
+	dhcpcd(8): Import version 9.0.1 [roy 20200413]
+	xbd(4): Make the driver MP-safe [jdolecek 20200413]
+	xbd(4): Support regular 64KB MAXPHYS [jdolecek 20200415]
+	xbd(4): Support indirect segments [jdolecek 20200416]
+	dhcpcd(8): Import version 9.0.2 [roy 20200421]
+	xbdback(4): Support indirect segments [jdolecek 20200421]
+	xbdback(4): Make the driver MP-safe [jdolecek 20200423]
+	OpenSSL: Imported 1.1.1g. [christos 20200424]
+	tzdata updated to 2020a  [kre 20200425]
+	amd64, i386: Added support for Xen PV drivers under HVM guests.
+		[bouyer 20200425]
+	kernel: Overhauled entropy subsystem [riastradh 20200430]
+	xen: Added support for Xen PVH. [bouyer 20200502]
+	hp300: Add bitmap access ops support for EVRX framebuffer on
+		HP9000/425e. [tsutsui 20200504]
+	xennet(4): add support for feature-sg & jumbo frames [jdolecek 20200430]
+	xvif(4): add support for feature-sg & jumbo frames [jdolecek 20200503]
+	kernel: Added support for swap encryption with sysctl -w
+		vm.swap_encrypt=1 [riastradh 20200509]
+	xen: Support MSI for XenPV [jdolecek 20200504]
+	hppa: Enable modules in GENERIC by default.  [skrll 20200511]
+	aarch64: Added support for ARMv8.5-RNG RNDRRS CPU random number
+		generator instructions [riastradh 20200511]
+	xen: enable MULTIPROCESSOR for Xen dom0. [bouyer 20200513]
+	ptrace(2): Add PT_SET_SIGPASS and PT_GET_SIGPASS. [kamil 20200514]
+	evbarm: Added support for EFI RNG firwmare random number generator
+		[riastradh 20200514]

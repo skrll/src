@@ -1,7 +1,7 @@
-/*	$NetBSD: cpu.c,v 1.183 2020/04/10 14:35:26 bouyer Exp $	*/
+/*	$NetBSD: cpu.c,v 1.191 2020/05/12 06:32:05 msaitoh Exp $	*/
 
 /*
- * Copyright (c) 2000-2012 NetBSD Foundation, Inc.
+ * Copyright (c) 2000-2020 NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.183 2020/04/10 14:35:26 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.191 2020/05/12 06:32:05 msaitoh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */
@@ -73,6 +73,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.183 2020/04/10 14:35:26 bouyer Exp $");
 #include "lapic.h"
 #include "ioapic.h"
 #include "acpica.h"
+#include "hpet.h"
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -89,6 +90,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.183 2020/04/10 14:35:26 bouyer Exp $");
 
 #include "acpica.h"		/* for NACPICA, for mp_verbose */
 
+#include <x86/machdep.h>
 #include <machine/cpufunc.h>
 #include <machine/cpuvar.h>
 #include <machine/pmap.h>
@@ -118,16 +120,21 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.183 2020/04/10 14:35:26 bouyer Exp $");
 #endif
 
 #include <dev/ic/mc146818reg.h>
+#include <dev/ic/hpetvar.h>
 #include <i386/isa/nvram.h>
 #include <dev/isa/isareg.h>
 
 #include "tsc.h"
 
-#ifndef XEN
+#ifndef XENPV
 #include "hyperv.h"
 #if NHYPERV > 0
 #include <x86/x86/hypervvar.h>
 #endif
+#endif
+
+#ifdef XEN
+#include <xen/hypervisor.h>
 #endif
 
 static int	cpu_match(device_t, cfdata_t, void *);
@@ -198,9 +205,9 @@ static vaddr_t cmos_data_mapping;
 struct cpu_info *cpu_starting;
 
 #ifdef MULTIPROCESSOR
-void    	cpu_hatch(void *);
-static void    	cpu_boot_secondary(struct cpu_info *ci);
-static void    	cpu_start_secondary(struct cpu_info *ci);
+void		cpu_hatch(void *);
+static void	cpu_boot_secondary(struct cpu_info *ci);
+static void	cpu_start_secondary(struct cpu_info *ci);
 #if NLAPIC > 0
 static void	cpu_copy_trampoline(paddr_t);
 #endif
@@ -276,7 +283,7 @@ cpu_vm_init(struct cpu_info *ci)
 		cai = &ci->ci_cinfo[i];
 
 		tcolors = atop(cai->cai_totalsize);
-		switch(cai->cai_associativity) {
+		switch (cai->cai_associativity) {
 		case 0xff:
 			tcolors = 1; /* fully associative */
 			break;
@@ -300,7 +307,7 @@ cpu_vm_init(struct cpu_info *ci)
 			}
 			if (picked == 1) {
 				panic("desired number of cache colors %d is "
-			      	" > 1, but not even!", ncolors);
+				" > 1, but not even!", ncolors);
 			}
 			ncolors = picked;
 		}
@@ -428,8 +435,14 @@ cpu_attach(device_t parent, device_t self, void *aux)
 	 * must be done to allow booting other processors.
 	 */
 	if (!again) {
+		/* Make sure DELAY() (likely i8254_delay()) is initialized. */
+		DELAY(1);
+
+		/*
+		 * Basic init.  Compute an approximate frequency for the TSC
+		 * using the i8254.  If there's a HPET we'll redo it later.
+		 */
 		atomic_or_32(&ci->ci_flags, CPUF_PRESENT | CPUF_PRIMARY);
-		/* Basic init. */
 		cpu_intr_init(ci);
 		cpu_get_tsc_freq(ci);
 		cpu_init(ci);
@@ -442,11 +455,10 @@ cpu_attach(device_t parent, device_t self, void *aux)
 			/* Enable lapic. */
 			lapic_enable();
 			lapic_set_lvt();
-			lapic_calibrate_timer(ci);
+			if (!vm_guest_is_xenpvh_or_pvhvm())
+				lapic_calibrate_timer(ci);
 		}
 #endif
-		/* Make sure DELAY() is initialized. */
-		DELAY(1);
 		kcsan_cpu_init(ci);
 		again = true;
 	}
@@ -459,6 +471,10 @@ cpu_attach(device_t parent, device_t self, void *aux)
 		cpu_identify(ci);
 		x86_errata();
 		x86_cpu_idle_init();
+		(*x86_cpu_initclock_func)();
+#ifdef XENPVHVM
+		xen_hvm_init_cpu(ci);
+#endif
 		break;
 
 	case CPU_ROLE_BP:
@@ -466,6 +482,10 @@ cpu_attach(device_t parent, device_t self, void *aux)
 		cpu_identify(ci);
 		x86_errata();
 		x86_cpu_idle_init();
+#ifdef XENPVHVM
+		xen_hvm_init_cpu(ci);
+#endif
+		(*x86_cpu_initclock_func)();
 		break;
 
 #ifdef MULTIPROCESSOR
@@ -704,7 +724,6 @@ cpu_init(struct cpu_info *ci)
 
 	if (ci != &cpu_info_primary) {
 		/* Synchronize TSC */
-		wbinvd();
 		atomic_or_32(&ci->ci_flags, CPUF_RUNNING);
 		tsc_sync_ap(ci);
 	} else {
@@ -720,10 +739,16 @@ cpu_boot_secondary_processors(void)
 	kcpuset_t *cpus;
 	u_long i;
 
-#ifndef XEN
+#if NHPET > 0
+	/* Use HPET delay, and re-calibrate TSC on boot CPU using HPET. */
+	if (hpet_delay_p() && x86_delay == i8254_delay) {
+		delay_func = x86_delay = hpet_delay;
+		cpu_get_tsc_freq(curcpu());
+	}
+#endif
+
 	/* Now that we know the number of CPUs, patch the text segment. */
 	x86_patch(false);
-#endif
 
 #if NACPICA > 0
 	/* Finished with NUMA info for now. */
@@ -812,7 +837,7 @@ cpu_start_secondary(struct cpu_info *ci)
 	KASSERT(cpu_starting == NULL);
 	cpu_starting = ci;
 	for (i = 100000; (!(ci->ci_flags & CPUF_PRESENT)) && i > 0; i--) {
-		x86_delay(10);
+		delay_func(10);
 	}
 
 	if ((ci->ci_flags & CPUF_PRESENT) == 0) {
@@ -830,7 +855,6 @@ cpu_start_secondary(struct cpu_info *ci)
 		 */
 		psl = x86_read_psl();
 		x86_disable_intr();
-		wbinvd();
 		tsc_sync_bp(ci);
 		x86_write_psl(psl);
 	}
@@ -848,7 +872,7 @@ cpu_boot_secondary(struct cpu_info *ci)
 
 	atomic_or_32(&ci->ci_flags, CPUF_GO);
 	for (i = 100000; (!(ci->ci_flags & CPUF_RUNNING)) && i > 0; i--) {
-		x86_delay(10);
+		delay_func(10);
 	}
 	if ((ci->ci_flags & CPUF_RUNNING) == 0) {
 		aprint_error_dev(ci->ci_dev, "failed to start\n");
@@ -861,7 +885,6 @@ cpu_boot_secondary(struct cpu_info *ci)
 		drift = ci->ci_data.cpu_cc_skew;
 		psl = x86_read_psl();
 		x86_disable_intr();
-		wbinvd();
 		tsc_sync_bp(ci);
 		x86_write_psl(psl);
 		drift -= ci->ci_data.cpu_cc_skew;
@@ -907,7 +930,6 @@ cpu_hatch(void *v)
 	 * Synchronize the TSC for the first time. Note that interrupts are
 	 * off at this point.
 	 */
-	wbinvd();
 	atomic_or_32(&ci->ci_flags, CPUF_PRESENT);
 	tsc_sync_ap(ci);
 
@@ -973,7 +995,6 @@ cpu_hatch(void *v)
 #if NLAPIC > 0
 	lapic_enable();
 	lapic_set_lvt();
-	lapic_initclocks();
 #endif
 
 	fpuinit(ci);
@@ -986,6 +1007,10 @@ cpu_hatch(void *v)
 	 * above.
 	 */
 	cpu_init(ci);
+#ifdef XENPVHVM
+	xen_hvm_init_cpu(ci);
+#endif
+	(*x86_cpu_initclock_func)();
 	cpu_get_tsc_freq(ci);
 
 	s = splhigh();
@@ -1018,7 +1043,7 @@ cpu_debug_dump(void)
 {
 	struct cpu_info *ci;
 	CPU_INFO_ITERATOR cii;
-	const char sixtyfour64space[] = 
+	const char sixtyfour64space[] =
 #ifdef _LP64
 			   "        "
 #endif
@@ -1128,7 +1153,7 @@ mp_cpu_start(struct cpu_info *ci, paddr_t target)
 			    __func__);
 			return error;
 		}
-		x86_delay(10000);
+		delay_func(10000);
 
 		error = x86_ipi_startup(ci->ci_cpuid, target / PAGE_SIZE);
 		if (error != 0) {
@@ -1136,7 +1161,7 @@ mp_cpu_start(struct cpu_info *ci, paddr_t target)
 			    __func__);
 			return error;
 		}
-		x86_delay(200);
+		delay_func(200);
 
 		error = x86_ipi_startup(ci->ci_cpuid, target / PAGE_SIZE);
 		if (error != 0) {
@@ -1144,7 +1169,7 @@ mp_cpu_start(struct cpu_info *ci, paddr_t target)
 			    __func__);
 			return error;
 		}
-		x86_delay(200);
+		delay_func(200);
 	}
 
 	return 0;
@@ -1291,17 +1316,62 @@ cpu_shutdown(device_t dv, int how)
 	return cpu_stop(dv);
 }
 
+/* Get the TSC frequency and set it to ci->ci_data.cpu_cc_freq. */
 void
 cpu_get_tsc_freq(struct cpu_info *ci)
 {
-	uint64_t last_tsc;
+	uint64_t freq = 0, freq_from_cpuid, t0, t1;
+	int64_t overhead;
 
-	if (cpu_hascounter()) {
-		last_tsc = cpu_counter_serializing();
-		x86_delay(100000);
-		ci->ci_data.cpu_cc_freq =
-		    (cpu_counter_serializing() - last_tsc) * 10;
+	if ((ci->ci_flags & CPUF_PRIMARY) != 0 && cpu_hascounter()) {
+		/*
+		 * If it's the first call of this function, try to get TSC
+		 * freq from CPUID by calling cpu_tsc_freq_cpuid().
+		 * The function also set lapic_per_second variable if it's
+		 * known. This is required for Intel's Comet Lake and newer
+		 * processors to set LAPIC timer correctly.
+		 */
+		if (ci->ci_data.cpu_cc_freq == 0)
+			freq = freq_from_cpuid = cpu_tsc_freq_cpuid(ci);
+#if NHPET > 0
+		if (freq == 0)
+			freq = hpet_tsc_freq();
+#endif
+		if (freq == 0) {
+			/*
+			 * Work out the approximate overhead involved below. 
+			 * Discard the result of the first go around the
+			 * loop.
+			 */
+			overhead = 0;
+			for (int i = 0; i <= 8; i++) {
+				t0 = cpu_counter();
+				x86_delay(0);
+				t1 = cpu_counter();
+				if (i > 0) {
+					overhead += (t1 - t0);
+				}
+			}
+			overhead >>= 3;
+
+			/* Now do the calibration. */
+			t0 = cpu_counter();
+			x86_delay(100000);
+			t1 = cpu_counter();
+			freq = (t1 - t0 - overhead) * 10;
+		}
+		if (ci->ci_data.cpu_cc_freq != 0) {
+			freq_from_cpuid = cpu_tsc_freq_cpuid(ci);
+			if ((freq_from_cpuid != 0)
+			    && (freq != freq_from_cpuid))
+				aprint_verbose_dev(ci->ci_dev, "TSC freq "
+				    "calibrated %" PRIu64 " Hz\n", freq);
+		}
+	} else {
+		freq = cpu_info_primary.ci_data.cpu_cc_freq;
 	}
+
+	ci->ci_data.cpu_cc_freq = freq;
 }
 
 void

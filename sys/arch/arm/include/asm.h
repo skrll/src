@@ -1,4 +1,4 @@
-/*	$NetBSD: asm.h,v 1.30 2019/01/27 04:52:07 dholland Exp $	*/
+/*	$NetBSD: asm.h,v 1.34 2020/04/23 23:22:41 jakllsch Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -67,6 +67,9 @@
 #define _ARM_ASM_H_
 
 #include <arm/cdefs.h>
+#if defined(_KERNEL_OPT)
+#include "opt_cpuoptions.h"
+#endif
 
 #ifdef __thumb__
 #define THUMB_INSN(n)	n
@@ -142,7 +145,10 @@
 
 #ifdef GPROF
 # define _PROF_PROLOGUE	\
-	mov x9, x30; bl __mcount
+	stp	x29, x30, [sp, #-16]!;	\
+	mov	fp, sp;			\
+	bl	__mcount; 		\
+	ldp	x29, x30, [sp], #16;
 #else
 # define _PROF_PROLOGUE
 #endif
@@ -156,8 +162,16 @@
 #endif
 #endif
 
-#define	ENTRY(y)		_ENTRY(_C_LABEL(y)); _PROF_PROLOGUE
-#define	ENTRY_NP(y)		_ENTRY(_C_LABEL(y))
+#ifdef ARMV85_BTI
+#define	_BTI_PROLOGUE \
+	.byte	0x5F, 0x24, 0x03, 0xD5	/* the "bti c" instruction */
+#else
+#define	_BTI_PROLOGUE		/* nothing */
+#endif
+
+#define	ENTRY(y)		_ENTRY(_C_LABEL(y)); _BTI_PROLOGUE ; _PROF_PROLOGUE
+#define	ENTRY_NP(y)		_ENTRY(_C_LABEL(y)); _BTI_PROLOGUE
+#define	ENTRY_NBTI(y)		_ENTRY(_C_LABEL(y))
 #define	END(y)			_END(_C_LABEL(y))
 #define	ARM_ENTRY(y)		_ARM_ENTRY(_C_LABEL(y)); _PROF_PROLOGUE
 #define	ARM_ENTRY_NP(y)		_ARM_ENTRY(_C_LABEL(y))
@@ -210,7 +224,9 @@
 #define	PIC_SYM(x,y)	x
 #endif	/* __PIC__ */
 
-#define RCSID(x)	.pushsection ".ident"; .asciz x; .popsection
+#define RCSID(x)	.pushsection ".ident","MS",%progbits,1;		\
+			.asciz x;					\
+			.popsection
 
 #define	WEAK_ALIAS(alias,sym)						\
 	.weak alias;							\

@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.835 2020/04/11 01:51:14 christos Exp $
+# $NetBSD: mi,v 1.840 2020/05/10 12:34:01 rillig Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -126,6 +126,7 @@
 ./usr/libdata/debug/usr/tests/lib/libevent				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libexecinfo				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/liblutok				tests-lutok-debug	compattestfile,atf
+./usr/libdata/debug/usr/tests/lib/libi386				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libm					tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libnvmm				tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libobjc				tests-lib-debug		compattestfile,atf
@@ -3119,6 +3120,8 @@
 ./usr/tests/lib/libc/sys/t_dup			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_fork			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_fsync		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/sys/t_futex_ops		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/sys/t_futex_robust		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_getcontext		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_getgroups		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_getitimer		tests-lib-tests		compattestfile,atf
@@ -3170,6 +3173,7 @@
 ./usr/tests/lib/libc/sys/t_setrlimit		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_setuid		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_sigaction		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/sys/t_sigaltstack		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_sigqueue		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_sigtimedwait		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_sigtimedwait_pr_47625	tests-obsolete		obsolete
@@ -3467,6 +3471,9 @@
 ./usr/tests/lib/libexecinfo/Atffile		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libexecinfo/Kyuafile		tests-lib-tests		compattestfile,atf,kyua
 ./usr/tests/lib/libexecinfo/t_backtrace		tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libi386				tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libi386/Atffile			tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libi386/Kyuafile		tests-lib-tests		compattestfile,atf,kyua
 ./usr/tests/lib/liblutok			tests-lutok-tests	compattestfile,atf
 ./usr/tests/lib/liblutok/Atffile		tests-lutok-tests	compattestfile,atf,kyua
 ./usr/tests/lib/liblutok/Kyuafile		tests-lutok-tests	compattestfile,atf,kyua
@@ -4456,10 +4463,14 @@
 ./usr/tests/usr.bin/make/unit-tests/Makefile	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/comment.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/comment.mk	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/cond-late.exp	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/cond-late.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond1.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond1.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond2.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond2.mk	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/dollar.exp	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/dollar.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/doterror.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/doterror.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/dotwait.exp	tests-usr.bin-tests	compattestfile,atf

@@ -1,4 +1,4 @@
-/*	$NetBSD: synaptics.c,v 1.64 2020/03/31 19:08:19 nia Exp $	*/
+/*	$NetBSD: synaptics.c,v 1.67 2020/05/14 18:06:58 nia Exp $	*/
 
 /*
  * Copyright (c) 2005, Steve C. Woodford
@@ -48,7 +48,7 @@
 #include "opt_pms.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: synaptics.c,v 1.64 2020/03/31 19:08:19 nia Exp $");
+__KERNEL_RCSID(0, "$NetBSD: synaptics.c,v 1.67 2020/05/14 18:06:58 nia Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -483,8 +483,6 @@ pms_synaptics_enable(void *vsc)
 	if ((sc->flags & SYN_FLAG_HAS_EXTENDED_WMODE) ||
 	    (sc->flags & SYN_FLAG_HAS_ADV_GESTURE_MODE))
 		synaptics_special_write(psc, SYNAPTICS_WRITE_DELUXE_3, 0x3); 
-
-	synaptics_poll_cmd(psc, PMS_DEV_ENABLE, 0);
 
 	sc->up_down = 0;
 	sc->prev_fingers = 0;
@@ -1010,19 +1008,29 @@ pms_synaptics_parse(struct pms_softc *psc)
 			    psc->packet[3], psc->packet[4], psc->packet[5]);
 
 			if ((psc->packet[4] & SYN_1BUTMASK) != 0)
-				sp.sp_left = PMS_LBUTMASK;
+				sc->ext_left = PMS_LBUTMASK;
+			else
+				sc->ext_left = 0;
 
 			if ((psc->packet[4] & SYN_3BUTMASK) != 0)
-				sp.sp_middle = PMS_MBUTMASK;
+				sc->ext_middle = PMS_MBUTMASK;
+			else
+				sc->ext_middle = 0;
 
 			if ((psc->packet[5] & SYN_2BUTMASK) != 0)
-				sp.sp_right = PMS_RBUTMASK;
+				sc->ext_right = PMS_RBUTMASK;
+			else
+				sc->ext_right = 0;
 
 			if ((psc->packet[5] & SYN_4BUTMASK) != 0)
-				sp.sp_up = 1;
+				sc->ext_up = 1;
+			else
+				sc->ext_up = 0;
 
 			if ((psc->packet[4] & SYN_5BUTMASK) != 0)
-				sp.sp_down = 1;
+				sc->ext_down = 1;
+			else
+				sc->ext_down = 0;
 		} else {
 			/* Left/Right button handling. */
 			sp.sp_left = psc->packet[0] & PMS_LBUTMASK;
@@ -1102,6 +1110,13 @@ pms_synaptics_parse(struct pms_softc *psc)
 			sp.sp_middle = 0;
 		}
 
+		/* Overlay extended button state */
+		sp.sp_left |= sc->ext_left;
+		sp.sp_right |= sc->ext_right;
+		sp.sp_middle |= sc->ext_middle;
+		sp.sp_up |= sc->ext_up;
+		sp.sp_down |= sc->ext_down;
+
 		switch (synaptics_up_down_emul) {
 		case 1:
 			/* Do middle button emulation using up/down buttons */
@@ -1177,7 +1192,7 @@ pms_synaptics_input(void *vsc, int data)
 
 	getmicrouptime(&psc->current);
 
-	if (psc->inputstate != 0) {
+	if (psc->inputstate > 0) {
 		timersub(&psc->current, &psc->last, &diff);
 		if (diff.tv_sec > 0 || diff.tv_usec >= 40000) {
 			aprint_debug_dev(psc->sc_dev,

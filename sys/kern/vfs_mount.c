@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_mount.c,v 1.76 2020/04/10 22:34:36 ad Exp $	*/
+/*	$NetBSD: vfs_mount.c,v 1.82 2020/05/01 08:45:01 hannken Exp $	*/
 
 /*-
  * Copyright (c) 1997-2020 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.76 2020/04/10 22:34:36 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.82 2020/05/01 08:45:01 hannken Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -90,7 +90,6 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.76 2020/04/10 22:34:36 ad Exp $");
 #include <sys/systm.h>
 #include <sys/vfs_syscalls.h>
 #include <sys/vnode_impl.h>
-#include <sys/xcall.h>
 
 #include <miscfs/genfs/genfs.h>
 #include <miscfs/specfs/specdev.h>
@@ -395,7 +394,7 @@ vfs_vnode_iterator_destroy(struct vnode_iterator *vni)
 	kmutex_t *lock;
 
 	KASSERT(vnis_marker(mvp));
-	if (mvp->v_usecount != 0) {
+	if (vrefcnt(mvp) != 0) {
 		lock = mvp->v_mount->mnt_vnodelock;
 		mutex_enter(lock);
 		TAILQ_REMOVE(&mvp->v_mount->mnt_vnodelist, mvip, vi_mntvnodes);
@@ -520,9 +519,9 @@ struct ctldebug debug1 = { "busyprt", &busyprt };
 static vnode_t *
 vflushnext(struct vnode_iterator *marker, int *when)
 {
-	if (hardclock_ticks > *when) {
+	if (getticks() > *when) {
 		yield();
-		*when = hardclock_ticks + hz / 10;
+		*when = getticks() + hz / 10;
 	}
 	return vfs_vnode_iterator_next1(marker, NULL, NULL, true);
 }
@@ -581,7 +580,7 @@ vflush_one(vnode_t *vp, vnode_t *skipvp, int flags)
 	 * kill them.
 	 */
 	if (flags & FORCECLOSE) {
-		if (vp->v_usecount > 1 &&
+		if (vrefcnt(vp) > 1 &&
 		    (vp->v_type == VBLK || vp->v_type == VCHR))
 			vcache_make_anon(vp);
 		else
@@ -651,7 +650,7 @@ mount_checkdirs(vnode_t *olddp)
 	struct proc *p;
 	bool retry;
 
-	if (olddp->v_usecount == 1) {
+	if (vrefcnt(olddp) == 1) {
 		return;
 	}
 	if (VFS_ROOT(olddp->v_mountedhere, LK_EXCLUSIVE, &newdp))
@@ -676,23 +675,18 @@ mount_checkdirs(vnode_t *olddp)
 			rele2 = NULL;
 			atomic_inc_uint(&cwdi->cwdi_refcnt);
 			mutex_exit(proc_lock);
-			mutex_enter(&cwdi->cwdi_lock);
-			if (cwdi->cwdi_cdir == olddp ||
-			    cwdi->cwdi_rdir == olddp) {
-			    	/* XXX belongs in vfs_cwd.c, but rump. */
-			    	xc_barrier(0);
-			    	if (cwdi->cwdi_cdir == olddp) {
-					rele1 = cwdi->cwdi_cdir;
-					vref(newdp);
-					cwdi->cwdi_cdir = newdp;
-				}
-				if (cwdi->cwdi_rdir == olddp) {
-					rele2 = cwdi->cwdi_rdir;
-					vref(newdp);
-					cwdi->cwdi_rdir = newdp;
-				}
+			rw_enter(&cwdi->cwdi_lock, RW_WRITER);
+			if (cwdi->cwdi_cdir == olddp) {
+				rele1 = cwdi->cwdi_cdir;
+				vref(newdp);
+				cwdi->cwdi_cdir = newdp;
 			}
-			mutex_exit(&cwdi->cwdi_lock);
+			if (cwdi->cwdi_rdir == olddp) {
+				rele2 = cwdi->cwdi_rdir;
+				vref(newdp);
+				cwdi->cwdi_rdir = newdp;
+			}
+			rw_exit(&cwdi->cwdi_lock);
 			cwdfree(cwdi);
 			if (rele1 != NULL)
 				vrele(rele1);
@@ -1072,7 +1066,7 @@ vfs_sync_all(struct lwp *l)
 	do_sys_sync(l);
 
 	/* Wait for sync to finish. */
-	if (buf_syncwait() != 0) {
+	if (vfs_syncwait() != 0) {
 #if defined(DDB) && defined(DEBUG_HALT_BUSY)
 		Debugger();
 #endif

@@ -1,4 +1,4 @@
-/*	$NetBSD: init_main.c,v 1.522 2020/02/24 20:47:47 jdolecek Exp $	*/
+/*	$NetBSD: init_main.c,v 1.525 2020/05/11 21:38:54 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009, 2019 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.522 2020/02/24 20:47:47 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.525 2020/05/11 21:38:54 riastradh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_inet.h"
@@ -113,7 +113,6 @@ __KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.522 2020/02/24 20:47:47 jdolecek Exp
 #include "opt_compat_netbsd.h"
 #include "opt_wapbl.h"
 #include "opt_ptrace.h"
-#include "opt_rnd_printf.h"
 #include "opt_splash.h"
 #include "opt_kernhist.h"
 #include "opt_gprof.h"
@@ -180,6 +179,7 @@ extern void *_binary_splash_image_end;
 #include <sys/kprintf.h>
 #include <sys/bufq.h>
 #include <sys/threadpool.h>
+#include <sys/futex.h>
 #ifdef IPSEC
 #include <netipsec/ipsec.h>
 #endif
@@ -244,8 +244,6 @@ int	cold __read_mostly = 1;		/* still working on startup */
 int	shutting_down __read_mostly;	/* system is shutting down */
 
 int	start_init_exec;		/* semaphore for start_init() */
-
-cprng_strong_t	*kern_cprng;
 
 static void check_console(struct lwp *l);
 static void start_init(void *);
@@ -511,10 +509,6 @@ main(void)
 	/* Initialize the disk wedge subsystem. */
 	dkwedge_init();
 
-	/* Initialize the kernel strong PRNG. */
-	kern_cprng = cprng_strong_create("kernel", IPL_VM,
-					 CPRNG_INIT_ANY|CPRNG_REKEY_ANY);
-
 	/* Initialize pfil */
 	pfil_init();
 
@@ -550,6 +544,8 @@ main(void)
 
 	ipi_sysinit();
 
+	futex_sys_init();
+
 	/* Now timer is working.  Enable preemption. */
 	kpreempt_enable();
 
@@ -558,11 +554,6 @@ main(void)
 
 	/* Enable deferred processing of RNG samples */
 	rnd_init_softint();
-
-#ifdef RND_PRINTF
-	/* Enable periodic injection of console output into entropy pool */
-	kprintf_init_callout();
-#endif
 
 	vmem_rehash_start();	/* must be before exec_init */
 

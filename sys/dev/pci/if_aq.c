@@ -1,4 +1,4 @@
-/*	$NetBSD: if_aq.c,v 1.11 2020/02/15 12:20:35 ryo Exp $	*/
+/*	$NetBSD: if_aq.c,v 1.17 2020/05/14 08:34:18 msaitoh Exp $	*/
 
 /**
  * aQuantia Corporation Network Driver
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_aq.c,v 1.11 2020/02/15 12:20:35 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_aq.c,v 1.17 2020/05/14 08:34:18 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_if_aq.h"
@@ -940,7 +940,7 @@ struct aq_softc {
 	bus_space_tag_t sc_iot;
 	bus_space_handle_t sc_ioh;
 	bus_size_t sc_iosize;
-	bus_dma_tag_t sc_dmat;;
+	bus_dma_tag_t sc_dmat;
 
 	void *sc_ihs[AQ_NINTR_MAX];
 	pci_intr_handle_t *sc_intrs;
@@ -1142,6 +1142,10 @@ static const struct aq_product {
 	enum aq_media_type aq_media_type;
 	aq_link_speed_t aq_available_rates;
 } aq_products[] = {
+	{ PCI_VENDOR_AQUANTIA, PCI_PRODUCT_AQUANTIA_AQC100,
+	  "Aquantia AQC100 10 Gigabit Network Adapter",
+	  AQ_MEDIA_TYPE_FIBRE, AQ_LINK_ALL
+	},
 	{ PCI_VENDOR_AQUANTIA, PCI_PRODUCT_AQUANTIA_AQC107,
 	  "Aquantia AQC107 10 Gigabit Network Adapter",
 	  AQ_MEDIA_TYPE_TP, AQ_LINK_ALL
@@ -1162,6 +1166,10 @@ static const struct aq_product {
 	  "Aquantia AQC112 2.5 Gigabit Network Adapter",
 	  AQ_MEDIA_TYPE_TP, AQ_LINK_100M | AQ_LINK_1G | AQ_LINK_2G5
 	},
+	{ PCI_VENDOR_AQUANTIA, PCI_PRODUCT_AQUANTIA_AQC100S,
+	  "Aquantia AQC100S 10 Gigabit Network Adapter",
+	  AQ_MEDIA_TYPE_FIBRE, AQ_LINK_ALL
+	},
 	{ PCI_VENDOR_AQUANTIA, PCI_PRODUCT_AQUANTIA_AQC107S,
 	  "Aquantia AQC107S 10 Gigabit Network Adapter",
 	  AQ_MEDIA_TYPE_TP, AQ_LINK_ALL
@@ -1181,6 +1189,10 @@ static const struct aq_product {
 	{ PCI_VENDOR_AQUANTIA, PCI_PRODUCT_AQUANTIA_AQC112S,
 	  "Aquantia AQC112S 2.5 Gigabit Network Adapter",
 	  AQ_MEDIA_TYPE_TP, AQ_LINK_100M | AQ_LINK_1G | AQ_LINK_2G5
+	},
+	{ PCI_VENDOR_AQUANTIA, PCI_PRODUCT_AQUANTIA_D100,
+	  "Aquantia D100 10 Gigabit Network Adapter",
+	  AQ_MEDIA_TYPE_FIBRE, AQ_LINK_ALL
 	},
 	{ PCI_VENDOR_AQUANTIA, PCI_PRODUCT_AQUANTIA_D107,
 	  "Aquantia D107 10 Gigabit Network Adapter",
@@ -1305,6 +1317,14 @@ aq_attach(device_t parent, device_t self, void *aux)
 		/* giving up using MSI-X */
 		sc->sc_msix = false;
 	}
+
+	/* XXX: on FIBRE, linkstat interrupt does not occur on boot? */
+	if (aqp->aq_media_type == AQ_MEDIA_TYPE_FIBRE)
+		sc->sc_poll_linkstat = true;
+
+#ifdef AQ_FORCE_POLL_LINKSTAT
+	sc->sc_poll_linkstat = true;
+#endif
 
 	aprint_debug_dev(sc->sc_dev,
 	    "ncpu=%d, pci_msix_count=%d."

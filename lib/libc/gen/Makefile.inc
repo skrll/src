@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.200 2017/09/09 18:18:28 kamil Exp $
+#	$NetBSD: Makefile.inc,v 1.203 2020/05/10 19:36:49 maya Exp $
 #	from: @(#)Makefile.inc	8.6 (Berkeley) 5/4/95
 
 # gen sources
@@ -60,7 +60,7 @@ MAN+=	alarm.3 arc4random.3 basename.3 bsd_signal.3 bswap.3 \
 	fmtcheck.3 fmtmsg.3 fnmatch.3 fpclassify.3 fpgetmask.3 \
 	ftok.3 fts.3 ftw.3 \
 	getbsize.3 cgetcap.3 getcwd.3 getdevmajor.3 \
-	getdomainname.3 getdiskbyname.3 getfsent.3 \
+	getdomainname.3 getdiskbyname.3 getentropy.3 getfsent.3 \
 	getgrent.3 getgrouplist.3 gethostname.3 getlastlogx.3 getloadavg.3 \
 	getmntinfo.3 getnetgrent.3 getpagesize.3 getpass.3 \
 	getprogname.3 getpwent.3 getttyent.3 getusershell.3 glob.3 \
@@ -203,3 +203,7 @@ errlist.c: errlist.awk ${NETBSDSRCDIR}/sys/sys/errno.h
 	${TOOL_AWK} -f ${.ALLSRC} > ${.TARGET}
 
 CLEANFILES+= errlist.c
+
+# Ownership of globals from crt0.o is shared with libc for historic reasons.
+# __progname is also necessary as global here for the nbcompat case.
+COPTS.getprogname.c+=	-fcommon

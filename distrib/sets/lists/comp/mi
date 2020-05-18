@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2321 2020/04/04 19:26:51 christos Exp $
+#	$NetBSD: mi,v 1.2326 2020/05/15 23:32:27 christos Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -3059,6 +3059,7 @@
 ./usr/include/sys/float_ieee754.h		comp-c-include
 ./usr/include/sys/fnv_hash.h			comp-obsolete		obsolete
 ./usr/include/sys/fstypes.h			comp-c-include
+./usr/include/sys/futex.h			comp-c-include
 ./usr/include/sys/gcq.h				comp-c-include
 ./usr/include/sys/gmon.h			comp-c-include
 ./usr/include/sys/gpio.h			comp-c-include
@@ -3862,6 +3863,8 @@
 ./usr/lib/librumpvfs_fifofs_p.a			comp-c-proflib		rump,profile
 ./usr/lib/librumpvfs_layerfs.a			comp-c-lib		rump
 ./usr/lib/librumpvfs_layerfs_p.a		comp-c-proflib		rump,profile
+./usr/lib/librumpvfs_nofifofs.a			comp-c-lib		rump
+./usr/lib/librumpvfs_nofifofs_p.a		comp-c-proflib		rump,profile
 ./usr/lib/librumpvfs_p.a			comp-c-proflib		compatfile,rump,profile
 ./usr/lib/libsaslc.a				comp-c-clib		compatfile
 ./usr/lib/libsaslc_p.a				comp-c-proflib		compatfile,profile
@@ -7272,6 +7275,7 @@
 ./usr/share/man/cat3/getdiskrawname.0		comp-c-catman		.cat
 ./usr/share/man/cat3/getdomainname.0		comp-c-catman		.cat
 ./usr/share/man/cat3/getdtablesize.0		comp-c-catman		.cat
+./usr/share/man/cat3/getentropy.0		comp-c-catman		.cat
 ./usr/share/man/cat3/getenv.0			comp-c-catman		.cat
 ./usr/share/man/cat3/getenv_r.0			comp-c-catman		.cat
 ./usr/share/man/cat3/getfsent.0			comp-c-catman		.cat
@@ -11415,6 +11419,7 @@
 ./usr/share/man/cat9/ltsleep.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/lwp_trampoline.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/m_adj.0			comp-sys-catman		.cat
+./usr/share/man/cat9/m_apply.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/m_cat.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/m_copyback.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/m_copyback_cow.0		comp-sys-catman		.cat
@@ -11813,7 +11818,7 @@
 ./usr/share/man/cat9/rnd_attach_source.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/rnd_detach_source.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/rnd_extract_data.0		comp-sys-catman		.cat
-./usr/share/man/cat9/rndsink.0			comp-sys-catman		.cat
+./usr/share/man/cat9/rndsink.0			comp-obsolete		obsolete
 ./usr/share/man/cat9/rootconf.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/round_page.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/rounddown.0		comp-sys-catman		.cat
@@ -15314,6 +15319,7 @@
 ./usr/share/man/html3/getdiskrawname.html	comp-c-htmlman		html
 ./usr/share/man/html3/getdomainname.html	comp-c-htmlman		html
 ./usr/share/man/html3/getdtablesize.html	comp-c-htmlman		html
+./usr/share/man/html3/getentropy.html		comp-c-htmlman		html
 ./usr/share/man/html3/getenv.html		comp-c-htmlman		html
 ./usr/share/man/html3/getenv_r.html		comp-c-htmlman		html
 ./usr/share/man/html3/getfsent.html		comp-c-htmlman		html
@@ -19359,6 +19365,7 @@
 ./usr/share/man/html9/ltsleep.html		comp-sys-htmlman	html
 ./usr/share/man/html9/lwp_trampoline.html	comp-sys-htmlman	html
 ./usr/share/man/html9/m_adj.html		comp-sys-htmlman	html
+./usr/share/man/html9/m_apply.html		comp-sys-htmlman	html
 ./usr/share/man/html9/m_cat.html		comp-sys-htmlman	html
 ./usr/share/man/html9/m_copyback.html		comp-sys-htmlman	html
 ./usr/share/man/html9/m_copyback_cow.html	comp-sys-htmlman	html
@@ -19743,7 +19750,7 @@
 ./usr/share/man/html9/rnd_attach_source.html	comp-sys-htmlman	html
 ./usr/share/man/html9/rnd_detach_source.html	comp-sys-htmlman	html
 ./usr/share/man/html9/rnd_extract_data.html	comp-sys-htmlman	html
-./usr/share/man/html9/rndsink.html		comp-sys-htmlman	html
+./usr/share/man/html9/rndsink.html		comp-obsolete		obsolete
 ./usr/share/man/html9/rootconf.html		comp-sys-htmlman	html
 ./usr/share/man/html9/round_page.html		comp-sys-htmlman	html
 ./usr/share/man/html9/rounddown.html		comp-sys-htmlman	html
@@ -23294,6 +23301,7 @@
 ./usr/share/man/man3/getdiskrawname.3		comp-c-man		.man
 ./usr/share/man/man3/getdomainname.3		comp-c-man		.man
 ./usr/share/man/man3/getdtablesize.3		comp-c-man		.man
+./usr/share/man/man3/getentropy.3		comp-c-man		.man
 ./usr/share/man/man3/getenv.3			comp-c-man		.man
 ./usr/share/man/man3/getenv_r.3			comp-c-man		.man
 ./usr/share/man/man3/getfsent.3			comp-c-man		.man
@@ -27456,6 +27464,7 @@
 ./usr/share/man/man9/ltsleep.9			comp-sys-man		.man
 ./usr/share/man/man9/lwp_trampoline.9		comp-sys-man		.man
 ./usr/share/man/man9/m_adj.9			comp-sys-man		.man
+./usr/share/man/man9/m_apply.9			comp-sys-man		.man
 ./usr/share/man/man9/m_cat.9			comp-sys-man		.man
 ./usr/share/man/man9/m_copyback.9		comp-sys-man		.man
 ./usr/share/man/man9/m_copyback_cow.9		comp-sys-man		.man
@@ -27854,7 +27863,7 @@
 ./usr/share/man/man9/rnd_attach_source.9	comp-sys-man		.man
 ./usr/share/man/man9/rnd_detach_source.9	comp-sys-man		.man
 ./usr/share/man/man9/rnd_extract_data.9		comp-sys-man		.man
-./usr/share/man/man9/rndsink.9			comp-sys-man		.man
+./usr/share/man/man9/rndsink.9			comp-obsolete		obsolete
 ./usr/share/man/man9/rootconf.9			comp-sys-man		.man
 ./usr/share/man/man9/round_page.9		comp-sys-man		.man
 ./usr/share/man/man9/rounddown.9		comp-sys-man		.man

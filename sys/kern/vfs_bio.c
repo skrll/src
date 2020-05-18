@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_bio.c,v 1.291 2020/04/10 17:18:04 ad Exp $	*/
+/*	$NetBSD: vfs_bio.c,v 1.295 2020/04/27 07:51:02 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008, 2009, 2019, 2020 The NetBSD Foundation, Inc.
@@ -123,7 +123,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_bio.c,v 1.291 2020/04/10 17:18:04 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_bio.c,v 1.295 2020/04/27 07:51:02 jdolecek Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_bufcache.h"
@@ -513,7 +513,7 @@ bufinit(void)
 		pa = (size <= PAGE_SIZE && use_std)
 			? &pool_allocator_nointr
 			: &bufmempool_allocator;
-		pool_init(pp, size, 0, 0, 0, name, pa, IPL_NONE);
+		pool_init(pp, size, DEV_BSIZE, 0, 0, name, pa, IPL_NONE);
 		pool_setlowat(pp, 1);
 		pool_sethiwat(pp, 1);
 	}
@@ -1708,57 +1708,6 @@ biointr(void *cookie)
 	splx(s);
 }
 
-/*
- * Wait for all buffers to complete I/O
- * Return the number of "stuck" buffers.
- */
-int
-buf_syncwait(void)
-{
-	buf_t *bp;
-	int iter, nbusy, nbusy_prev = 0, ihash;
-
-	BIOHIST_FUNC(__func__); BIOHIST_CALLED(biohist);
-
-	for (iter = 0; iter < 20;) {
-		mutex_enter(&bufcache_lock);
-		nbusy = 0;
-		for (ihash = 0; ihash < bufhash+1; ihash++) {
-		    LIST_FOREACH(bp, &bufhashtbl[ihash], b_hash) {
-			if ((bp->b_cflags & (BC_BUSY|BC_INVAL)) == BC_BUSY)
-				nbusy += ((bp->b_flags & B_READ) == 0);
-		    }
-		}
-		mutex_exit(&bufcache_lock);
-
-		if (nbusy == 0)
-			break;
-		if (nbusy_prev == 0)
-			nbusy_prev = nbusy;
-		printf("%d ", nbusy);
-		kpause("bflush", false, MAX(1, hz / 25 * iter), NULL);
-		if (nbusy >= nbusy_prev) /* we didn't flush anything */
-			iter++;
-		else
-			nbusy_prev = nbusy;
-	}
-
-	if (nbusy) {
-#if defined(DEBUG) || defined(DEBUG_HALT_BUSY)
-		printf("giving up\nPrinting vnodes for busy buffers\n");
-		for (ihash = 0; ihash < bufhash+1; ihash++) {
-		    LIST_FOREACH(bp, &bufhashtbl[ihash], b_hash) {
-			if ((bp->b_cflags & (BC_BUSY|BC_INVAL)) == BC_BUSY &&
-			    (bp->b_flags & B_READ) == 0)
-				vprint(NULL, bp->b_vp);
-		    }
-		}
-#endif
-	}
-
-	return nbusy;
-}
-
 static void
 sysctl_fillbuf(const buf_t *i, struct buf_sysctl *o)
 {
@@ -2077,7 +2026,7 @@ nestiobuf_iodone(buf_t *bp)
 void
 nestiobuf_setup(buf_t *mbp, buf_t *bp, int offset, size_t size)
 {
-	const int b_pass = mbp->b_flags & (B_READ|B_MEDIA_FLAGS);
+	const int b_pass = mbp->b_flags & (B_READ|B_PHYS|B_RAW|B_MEDIA_FLAGS);
 	struct vnode *vp = mbp->b_vp;
 
 	KASSERT(mbp->b_bcount >= offset + size);

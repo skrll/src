@@ -1,4 +1,4 @@
-/*	$NetBSD: svs.c,v 1.32 2020/01/31 08:55:38 maxv Exp $	*/
+/*	$NetBSD: svs.c,v 1.35 2020/05/02 11:37:17 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: svs.c,v 1.32 2020/01/31 08:55:38 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: svs.c,v 1.35 2020/05/02 11:37:17 maxv Exp $");
 
 #include "opt_svs.h"
 #include "opt_user_ldt.h"
@@ -225,6 +225,88 @@ __KERNEL_RCSID(0, "$NetBSD: svs.c,v 1.32 2020/01/31 08:55:38 maxv Exp $");
  *  o Narrow down the entry points: hide the 'jmp handler' instructions. This
  *    makes sense on GENERIC_KASLR kernels.
  */
+
+/* -------------------------------------------------------------------------- */
+
+/* SVS_ENTER. */
+extern uint8_t svs_enter, svs_enter_end;
+static const struct x86_hotpatch_source hp_svs_enter_source = {
+	.saddr = &svs_enter,
+	.eaddr = &svs_enter_end
+};
+static const struct x86_hotpatch_descriptor hp_svs_enter_desc = {
+	.name = HP_NAME_SVS_ENTER,
+	.nsrc = 1,
+	.srcs = { &hp_svs_enter_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_svs_enter_desc);
+
+/* SVS_ENTER_ALT. */
+extern uint8_t svs_enter_altstack, svs_enter_altstack_end;
+static const struct x86_hotpatch_source hp_svs_enter_altstack_source = {
+	.saddr = &svs_enter_altstack,
+	.eaddr = &svs_enter_altstack_end
+};
+static const struct x86_hotpatch_descriptor hp_svs_enter_altstack_desc = {
+	.name = HP_NAME_SVS_ENTER_ALT,
+	.nsrc = 1,
+	.srcs = { &hp_svs_enter_altstack_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_svs_enter_altstack_desc);
+
+/* SVS_ENTER_NMI. */
+extern uint8_t svs_enter_nmi, svs_enter_nmi_end;
+static const struct x86_hotpatch_source hp_svs_enter_nmi_source = {
+	.saddr = &svs_enter_nmi,
+	.eaddr = &svs_enter_nmi_end
+};
+static const struct x86_hotpatch_descriptor hp_svs_enter_nmi_desc = {
+	.name = HP_NAME_SVS_ENTER_NMI,
+	.nsrc = 1,
+	.srcs = { &hp_svs_enter_nmi_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_svs_enter_nmi_desc);
+
+/* SVS_LEAVE. */
+extern uint8_t svs_leave, svs_leave_end;
+static const struct x86_hotpatch_source hp_svs_leave_source = {
+	.saddr = &svs_leave,
+	.eaddr = &svs_leave_end
+};
+static const struct x86_hotpatch_descriptor hp_svs_leave_desc = {
+	.name = HP_NAME_SVS_LEAVE,
+	.nsrc = 1,
+	.srcs = { &hp_svs_leave_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_svs_leave_desc);
+
+/* SVS_LEAVE_ALT. */
+extern uint8_t svs_leave_altstack, svs_leave_altstack_end;
+static const struct x86_hotpatch_source hp_svs_leave_altstack_source = {
+	.saddr = &svs_leave_altstack,
+	.eaddr = &svs_leave_altstack_end
+};
+static const struct x86_hotpatch_descriptor hp_svs_leave_altstack_desc = {
+	.name = HP_NAME_SVS_LEAVE_ALT,
+	.nsrc = 1,
+	.srcs = { &hp_svs_leave_altstack_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_svs_leave_altstack_desc);
+
+/* SVS_LEAVE_NMI. */
+extern uint8_t svs_leave_nmi, svs_leave_nmi_end;
+static const struct x86_hotpatch_source hp_svs_leave_nmi_source = {
+	.saddr = &svs_leave_nmi,
+	.eaddr = &svs_leave_nmi_end
+};
+static const struct x86_hotpatch_descriptor hp_svs_leave_nmi_desc = {
+	.name = HP_NAME_SVS_LEAVE_NMI,
+	.nsrc = 1,
+	.srcs = { &hp_svs_leave_nmi_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_svs_leave_nmi_desc);
+
+/* -------------------------------------------------------------------------- */
 
 bool svs_enabled __read_mostly = false;
 bool svs_pcid __read_mostly = false;
@@ -474,7 +556,8 @@ cpu_svs_init(struct cpu_info *ci)
 
 #ifdef USER_LDT
 	mutex_enter(&cpu_lock);
-	ci->ci_svs_ldt_sel = ldt_alloc(&pcpuarea->ent[cid].ldt, MAXGDTSIZ);
+	ci->ci_svs_ldt_sel = ldt_alloc(&pcpuarea->ent[cid].ldt,
+	    MAX_USERLDT_SIZE);
 	mutex_exit(&cpu_lock);
 #endif
 }
@@ -512,13 +595,27 @@ void
 svs_ldt_sync(struct pmap *pmap)
 {
 	struct cpu_info *ci = curcpu();
-	int sel = pmap->pm_ldt_sel;
+	void *ldt;
+	int sel;
 
 	KASSERT(kpreempt_disabled());
 
+	/*
+	 * Another LWP could concurrently modify the LDT via x86_set_ldt1().
+	 * The LWP will wait for pmap_ldt_sync() to finish before destroying
+	 * the outdated LDT.
+	 *
+	 * We have preemption disabled here, so it is guaranteed that even
+	 * if the LDT we are syncing is the outdated one, it is still valid.
+	 *
+	 * pmap_ldt_sync() will execute later once we have preemption enabled,
+	 * and will install the new LDT.
+	 */
+	sel = atomic_load_relaxed(&pmap->pm_ldt_sel);
 	if (__predict_false(sel != GSYSSEL(GLDT_SEL, SEL_KPL))) {
-		memcpy(&pcpuarea->ent[cpu_index(ci)].ldt, pmap->pm_ldt,
-		    pmap->pm_ldt_len);
+		ldt = atomic_load_relaxed(&pmap->pm_ldt);
+		memcpy(&pcpuarea->ent[cpu_index(ci)].ldt, ldt,
+		    MAX_USERLDT_SIZE);
 		sel = ci->ci_svs_ldt_sel;
 	}
 
@@ -621,49 +718,15 @@ svs_pdir_switch(struct pmap *pmap)
 static void
 svs_enable(void)
 {
-	extern uint8_t svs_enter, svs_enter_end;
-	extern uint8_t svs_enter_altstack, svs_enter_altstack_end;
-	extern uint8_t svs_enter_nmi, svs_enter_nmi_end;
-	extern uint8_t svs_leave, svs_leave_end;
-	extern uint8_t svs_leave_altstack, svs_leave_altstack_end;
-	extern uint8_t svs_leave_nmi, svs_leave_nmi_end;
-	u_long psl, cr0;
-	uint8_t *bytes;
-	size_t size;
-
 	svs_enabled = true;
 
-	x86_patch_window_open(&psl, &cr0);
+	x86_hotpatch(HP_NAME_SVS_ENTER, 0);
+	x86_hotpatch(HP_NAME_SVS_ENTER_ALT, 0);
+	x86_hotpatch(HP_NAME_SVS_ENTER_NMI, 0);
 
-	bytes = &svs_enter;
-	size = (size_t)&svs_enter_end - (size_t)&svs_enter;
-	x86_hotpatch(HP_NAME_SVS_ENTER, bytes, size);
-
-	bytes = &svs_enter_altstack;
-	size = (size_t)&svs_enter_altstack_end -
-	    (size_t)&svs_enter_altstack;
-	x86_hotpatch(HP_NAME_SVS_ENTER_ALT, bytes, size);
-
-	bytes = &svs_enter_nmi;
-	size = (size_t)&svs_enter_nmi_end -
-	    (size_t)&svs_enter_nmi;
-	x86_hotpatch(HP_NAME_SVS_ENTER_NMI, bytes, size);
-
-	bytes = &svs_leave;
-	size = (size_t)&svs_leave_end - (size_t)&svs_leave;
-	x86_hotpatch(HP_NAME_SVS_LEAVE, bytes, size);
-
-	bytes = &svs_leave_altstack;
-	size = (size_t)&svs_leave_altstack_end -
-	    (size_t)&svs_leave_altstack;
-	x86_hotpatch(HP_NAME_SVS_LEAVE_ALT, bytes, size);
-
-	bytes = &svs_leave_nmi;
-	size = (size_t)&svs_leave_nmi_end -
-	    (size_t)&svs_leave_nmi;
-	x86_hotpatch(HP_NAME_SVS_LEAVE_NMI, bytes, size);
-
-	x86_patch_window_close(psl, cr0);
+	x86_hotpatch(HP_NAME_SVS_LEAVE, 0);
+	x86_hotpatch(HP_NAME_SVS_LEAVE_ALT, 0);
+	x86_hotpatch(HP_NAME_SVS_LEAVE_NMI, 0);
 }
 
 void

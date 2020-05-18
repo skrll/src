@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.825 2020/01/31 08:21:11 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.830 2020/05/08 00:52:29 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2004, 2006, 2008, 2009, 2017
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.825 2020/01/31 08:21:11 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.830 2020/05/08 00:52:29 riastradh Exp $");
 
 #include "opt_beep.h"
 #include "opt_compat_freebsd.h"
@@ -122,6 +122,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.825 2020/01/31 08:21:11 maxv Exp $");
 #include <x86/efi.h>
 
 #include <machine/cpu.h>
+#include <machine/cpu_rng.h>
 #include <machine/cpufunc.h>
 #include <machine/cpuvar.h>
 #include <machine/gdt.h>
@@ -233,14 +234,6 @@ extern paddr_t avail_start, avail_end;
 extern paddr_t pmap_pa_start, pmap_pa_end;
 void hypervisor_callback(void);
 void failsafe_callback(void);
-#endif
-
-#ifdef XENPV
-void (*delay_func)(unsigned int) = xen_delay;
-void (*initclock_func)(void) = xen_initclocks;
-#else
-void (*delay_func)(unsigned int) = i8254_delay;
-void (*initclock_func)(void) = i8254_initclocks;
 #endif
 
 /*
@@ -494,15 +487,14 @@ void
 i386_switch_context(lwp_t *l)
 {
 	struct pcb *pcb;
-	struct physdev_op physop;
 
 	pcb = lwp_getpcb(l);
 
 	HYPERVISOR_stack_switch(GSEL(GDATA_SEL, SEL_KPL), pcb->pcb_esp0);
 
-	physop.cmd = PHYSDEVOP_SET_IOPL;
-	physop.u.set_iopl.iopl = pcb->pcb_iopl;
-	HYPERVISOR_physdev_op(&physop);
+	struct physdev_set_iopl set_iopl;
+	set_iopl.iopl = pcb->pcb_iopl;
+	HYPERVISOR_physdev_op(PHYSDEVOP_set_iopl, &set_iopl);
 }
 
 void
@@ -793,10 +785,12 @@ haltsys:
 #else
 		__USE(s);
 #endif
-#ifdef XENPV
-		HYPERVISOR_shutdown();
-		for (;;);
-#endif
+#ifdef XEN
+		if (vm_guest == VM_GUEST_XENPV ||
+		    vm_guest == VM_GUEST_XENPVH ||
+		    vm_guest == VM_GUEST_XENPVHVM)
+			HYPERVISOR_shutdown();
+#endif /* XEN */
 	}
 
 #ifdef MULTIPROCESSOR
@@ -986,7 +980,7 @@ initgdt(union descriptor *tgdt)
 	    SDT_MEMERA, SEL_UPL, 1, 1);
 	setsegment(&gdtstore[GUDATA_SEL].sd, 0, 0xfffff,
 	    SDT_MEMRWA, SEL_UPL, 1, 1);
-#if NBIOSCALL > 0
+#if NBIOSCALL > 0 && !defined(XENPV)
 	/* bios trampoline GDT entries */
 	setsegment(&gdtstore[GBIOSCODE_SEL].sd, 0, 0xfffff,
 	    SDT_MEMERA, SEL_KPL, 0, 0);
@@ -1050,8 +1044,9 @@ init386_pte0(void)
 	/* make sure it is clean before using */
 	memset((void *)vaddr, 0, PAGE_SIZE);
 }
-#endif /* !XENPV */
+#endif /* !XENPV && NBIOSCALL > 0 */
 
+#ifndef XENPV
 static void
 init386_ksyms(void)
 {
@@ -1081,6 +1076,7 @@ init386_ksyms(void)
 	ksyms_addsyms_elf(symtab->nsym, (int *)symtab->ssym, (int *)symtab->esym);
 #endif
 }
+#endif /* XENPV */
 
 void
 init_bootspace(void)
@@ -1132,11 +1128,11 @@ init386(paddr_t first_avail)
 	extern paddr_t local_apic_pa;
 	union descriptor *tgdt;
 	struct region_descriptor region;
-#endif
 #if NBIOSCALL > 0
 	extern int biostramp_image_size;
 	extern u_char biostramp_image[];
 #endif
+#endif /* !XENPV */
 	struct pcb *pcb;
 
 	KASSERT(first_avail % PAGE_SIZE == 0);
@@ -1146,11 +1142,17 @@ init386(paddr_t first_avail)
 	cpu_info_primary.ci_vcpu = &HYPERVISOR_shared_info->vcpu_info[0];
 #endif
 
+#ifdef XEN
+	if (vm_guest == VM_GUEST_XENPVH)
+		xen_parse_cmdline(XEN_PARSE_BOOTFLAGS, NULL);
+#endif
+
 	uvm_lwp_setuarea(&lwp0, lwp0uarea);
 
 	cpu_probe(&cpu_info_primary);
 	cpu_init_msrs(&cpu_info_primary, true);
-#ifndef XEN
+	cpu_rng_init();
+#ifndef XENPV
 	cpu_speculation_init(&cpu_info_primary);
 #endif
 
@@ -1371,7 +1373,16 @@ init386(paddr_t first_avail)
 	lldt(GSEL(GLDT_SEL, SEL_KPL));
 	cpu_init_idt();
 
-	init386_ksyms();
+#ifdef XENPV
+	xen_init_ksyms();
+#else /* XENPV */
+#ifdef XEN
+	if (vm_guest == VM_GUEST_XENPVH)
+		xen_init_ksyms();
+	else
+#endif /* XEN */
+		init386_ksyms();
+#endif /* XENPV */
 
 #if NMCA > 0
 	/* 
@@ -1381,7 +1392,7 @@ init386(paddr_t first_avail)
 	 * And we do not search for MCA using bioscall() on EFI systems
 	 * that lacks it (they lack MCA too, anyway).
 	 */
-	if (lookup_bootinfo(BTINFO_EFI) == NULL)
+	if (lookup_bootinfo(BTINFO_EFI) == NULL && vm_guest != VM_GUEST_XENPVH)
 		mca_busprobe();
 #endif
 
@@ -1620,13 +1631,6 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 		l->l_sigstk.ss_flags &= ~SS_ONSTACK;
 	mutex_exit(p->p_lock);
 	return (0);
-}
-
-void
-cpu_initclocks(void)
-{
-
-	(*initclock_func)();
 }
 
 #define	DEV_IO 14		/* iopl for compat_10 */

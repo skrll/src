@@ -1,4 +1,4 @@
-/*	$NetBSD: tmpfs_subr.c,v 1.108 2020/04/04 20:49:30 ad Exp $	*/
+/*	$NetBSD: tmpfs_subr.c,v 1.110 2020/05/12 23:17:41 ad Exp $	*/
 
 /*
  * Copyright (c) 2005-2013 The NetBSD Foundation, Inc.
@@ -73,7 +73,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tmpfs_subr.c,v 1.108 2020/04/04 20:49:30 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tmpfs_subr.c,v 1.110 2020/05/12 23:17:41 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/cprng.h>
@@ -148,7 +148,7 @@ tmpfs_init_vnode(struct vnode *vp, tmpfs_node_t *node)
 	node->tn_vnode = vp;
 	uvm_vnp_setsize(vp, node->tn_size);
 	KASSERT(node->tn_mode != VNOVAL);
-	cache_enter_id(vp, node->tn_mode, node->tn_uid, node->tn_gid);
+	cache_enter_id(vp, node->tn_mode, node->tn_uid, node->tn_gid, true);
 }
 
 /*
@@ -929,7 +929,7 @@ tmpfs_reg_resize(struct vnode *vp, off_t newsize)
 		size_t zerolen;
 
 		zerolen = MIN(round_page(newsize), node->tn_size) - newsize;
-		ubc_zerorange(uobj, newsize, zerolen, UBC_UNMAP_FLAG(vp));
+		ubc_zerorange(uobj, newsize, zerolen, UBC_VNODE_FLAGS(vp));
 	}
 
 	node->tn_spec.tn_reg.tn_aobj_pages = newpages;
@@ -1041,7 +1041,7 @@ tmpfs_chmod(vnode_t *vp, mode_t mode, kauth_cred_t cred, lwp_t *l)
 	node->tn_mode = (mode & ALLPERMS);
 	tmpfs_update(vp, TMPFS_UPDATE_CTIME);
 	VN_KNOTE(vp, NOTE_ATTRIB);
-	cache_enter_id(vp, node->tn_mode, node->tn_uid, node->tn_gid);
+	cache_enter_id(vp, node->tn_mode, node->tn_uid, node->tn_gid, true);
 	return 0;
 }
 
@@ -1086,7 +1086,7 @@ tmpfs_chown(vnode_t *vp, uid_t uid, gid_t gid, kauth_cred_t cred, lwp_t *l)
 	node->tn_gid = gid;
 	tmpfs_update(vp, TMPFS_UPDATE_CTIME);
 	VN_KNOTE(vp, NOTE_ATTRIB);
-	cache_enter_id(vp, node->tn_mode, node->tn_uid, node->tn_gid);
+	cache_enter_id(vp, node->tn_mode, node->tn_uid, node->tn_gid, true);
 	return 0;
 }
 

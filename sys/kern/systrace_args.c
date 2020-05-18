@@ -1,4 +1,4 @@
-/* $NetBSD: systrace_args.c,v 1.35 2020/04/04 20:27:27 thorpej Exp $ */
+/* $NetBSD: systrace_args.c,v 1.38 2020/04/26 19:16:36 thorpej Exp $ */
 
 /*
  * System call argument to DTrace register array converstion.
@@ -1191,6 +1191,36 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 2;
 		break;
 	}
+	/* sys___futex */
+	case 166: {
+		const struct sys___futex_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, uaddr); /* int * */
+		iarg[1] = SCARG(p, op); /* int */
+		iarg[2] = SCARG(p, val); /* int */
+		uarg[3] = (intptr_t) SCARG(p, timeout); /* const struct timespec * */
+		uarg[4] = (intptr_t) SCARG(p, uaddr2); /* int * */
+		iarg[5] = SCARG(p, val2); /* int */
+		iarg[6] = SCARG(p, val3); /* int */
+		*n_args = 7;
+		break;
+	}
+	/* sys___futex_set_robust_list */
+	case 167: {
+		const struct sys___futex_set_robust_list_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, head); /* void * */
+		uarg[1] = SCARG(p, len); /* size_t */
+		*n_args = 2;
+		break;
+	}
+	/* sys___futex_get_robust_list */
+	case 168: {
+		const struct sys___futex_get_robust_list_args *p = params;
+		iarg[0] = SCARG(p, lwpid); /* lwpid_t */
+		uarg[1] = (intptr_t) SCARG(p, headp); /* void ** */
+		uarg[2] = (intptr_t) SCARG(p, lenp); /* size_t * */
+		*n_args = 3;
+		break;
+	}
 #if !defined(_LP64)
 	/* sys_semsys */
 	case 169: {
@@ -2372,11 +2402,6 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		iarg[0] = SCARG(p, features); /* int */
 		uarg[1] = (intptr_t) SCARG(p, address); /* struct lwpctl ** */
 		*n_args = 2;
-		break;
-	}
-	/* sys__lwp_gettid */
-	case 326: {
-		*n_args = 0;
 		break;
 	}
 	/* sys_sa_register */
@@ -5618,6 +5643,63 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
+	/* sys___futex */
+	case 166:
+		switch(ndx) {
+		case 0:
+			p = "int *";
+			break;
+		case 1:
+			p = "int";
+			break;
+		case 2:
+			p = "int";
+			break;
+		case 3:
+			p = "const struct timespec *";
+			break;
+		case 4:
+			p = "int *";
+			break;
+		case 5:
+			p = "int";
+			break;
+		case 6:
+			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys___futex_set_robust_list */
+	case 167:
+		switch(ndx) {
+		case 0:
+			p = "void *";
+			break;
+		case 1:
+			p = "size_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys___futex_get_robust_list */
+	case 168:
+		switch(ndx) {
+		case 0:
+			p = "lwpid_t";
+			break;
+		case 1:
+			p = "void **";
+			break;
+		case 2:
+			p = "size_t *";
+			break;
+		default:
+			break;
+		};
+		break;
 #if !defined(_LP64)
 	/* sys_semsys */
 	case 169:
@@ -7596,9 +7678,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		default:
 			break;
 		};
-		break;
-	/* sys__lwp_gettid */
-	case 326:
 		break;
 	/* sys_sa_register */
 	case 330:
@@ -10679,6 +10758,21 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
+	/* sys___futex */
+	case 166:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys___futex_set_robust_list */
+	case 167:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys___futex_get_robust_list */
+	case 168:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
 #if !defined(_LP64)
 	/* sys_semsys */
 	case 169:
@@ -11373,8 +11467,6 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
-	/* sys__lwp_gettid */
-	case 326:
 	/* sys_sa_register */
 	case 330:
 		if (ndx == 0 || ndx == 1)

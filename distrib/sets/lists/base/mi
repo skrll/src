@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1239 2020/04/04 19:50:53 christos Exp $
+# $NetBSD: mi,v 1.1242 2020/05/01 22:25:18 christos Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -476,7 +476,7 @@
 ./libexec/devpubd-run-hooks			base-sysutil-root
 ./libexec/dhcpcd-hooks				base-dhcpcd-root
 ./libexec/dhcpcd-hooks/01-test			base-dhcpcd-root
-./libexec/dhcpcd-hooks/02-dump			base-dhcpcd-root
+./libexec/dhcpcd-hooks/02-dump			base-obsolete      obsolete
 ./libexec/dhcpcd-hooks/10-mtu			base-obsolete      obsolete
 ./libexec/dhcpcd-hooks/10-resolv.conf		base-obsolete      obsolete
 ./libexec/dhcpcd-hooks/14-lookup-hostname	base-obsolete      obsolete
@@ -1370,6 +1370,7 @@
 ./usr/libdata/debug/lib/npf			base-sys-usr		compatfile
 ./usr/libdata/debug/libexec			base-sys-usr
 ./usr/libdata/debug/sbin			base-sys-usr
+./usr/libdata/debug/stand			base-sys-usr
 ./usr/libdata/debug/usr				base-sys-usr
 ./usr/libdata/debug/usr/bin			base-sys-usr
 ./usr/libdata/debug/usr/games			base-sys-usr
@@ -5530,6 +5531,7 @@
 ./usr/share/zoneinfo/America/North_Dakota/Beulah	base-sys-share	share
 ./usr/share/zoneinfo/America/North_Dakota/Center	base-sys-share	share
 ./usr/share/zoneinfo/America/North_Dakota/New_Salem	base-sys-share	share
+./usr/share/zoneinfo/America/Nuuk		base-sys-share		share
 ./usr/share/zoneinfo/America/Ojinaga		base-sys-share		share
 ./usr/share/zoneinfo/America/Panama		base-sys-share		share
 ./usr/share/zoneinfo/America/Pangnirtung	base-sys-share		share
@@ -5669,6 +5671,7 @@
 ./usr/share/zoneinfo/Asia/Riyadh87		base-obsolete		obsolete
 ./usr/share/zoneinfo/Asia/Riyadh88		base-obsolete		obsolete
 ./usr/share/zoneinfo/Asia/Riyadh89		base-obsolete		obsolete
+./usr/share/zoneinfo/Asia/Qostanay		base-sys-share		share
 ./usr/share/zoneinfo/Asia/Saigon		base-sys-share		share
 ./usr/share/zoneinfo/Asia/Sakhalin		base-sys-share		share
 ./usr/share/zoneinfo/Asia/Samarkand		base-sys-share		share

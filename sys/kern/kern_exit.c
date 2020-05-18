@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_exit.c,v 1.287 2020/04/04 20:20:12 thorpej Exp $	*/
+/*	$NetBSD: kern_exit.c,v 1.289 2020/04/24 03:22:06 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exit.c,v 1.287 2020/04/04 20:20:12 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exit.c,v 1.289 2020/04/24 03:22:06 thorpej Exp $");
 
 #include "opt_ktrace.h"
 #include "opt_dtrace.h"
@@ -202,7 +202,6 @@ exit1(struct lwp *l, int exitcode, int signo)
 	ksiginfo_t	ksi;
 	ksiginfoq_t	kq;
 	int		wakeinit;
-	struct lwp	*l2 __diagused;
 
 	p = l->l_proc;
 
@@ -560,14 +559,8 @@ exit1(struct lwp *l, int exitcode, int signo)
 	pcu_discard_all(l);
 
 	mutex_enter(p->p_lock);
-	/* Don't bother with p_treelock as no other LWPs remain. */
-	l2 = radix_tree_remove_node(&p->p_lwptree, (uint64_t)(l->l_lid - 1));
-	KASSERT(l2 == l);
-	KASSERT(radix_tree_empty_tree_p(&p->p_lwptree));
-	radix_tree_fini_tree(&p->p_lwptree);
-	/* Free the linux lwp id */
-	if ((l->l_pflag & LP_PIDLID) != 0 && l->l_lid != p->p_pid)
-		proc_free_pid(l->l_lid);
+	/* Free the LWP ID */
+	proc_free_lwpid(p, l->l_lid);
 	lwp_drainrefs(l);
 	lwp_lock(l);
 	l->l_prflag &= ~LPR_DETACHED;
@@ -1216,6 +1209,7 @@ proc_free(struct proc *p, struct wrusage *wru)
 	 * Let pid be reallocated.
 	 */
 	proc_free_pid(p->p_pid);
+	atomic_dec_uint(&nprocs);
 
 	/*
 	 * Unlink process from its process group.
@@ -1268,7 +1262,6 @@ proc_free(struct proc *p, struct wrusage *wru)
 	cv_destroy(&p->p_waitcv);
 	cv_destroy(&p->p_lwpcv);
 	rw_destroy(&p->p_reflock);
-	rw_destroy(&p->p_treelock);
 
 	proc_free_mem(p);
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: omapfbreg.h,v 1.3 2013/02/12 21:17:17 macallan Exp $ */
+/*	$NetBSD: omapfbreg.h,v 1.5 2020/04/16 23:29:52 rin Exp $ */
 
 /*-
  * Copyright (c) 2010 Michael Lorenz
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: omapfbreg.h,v 1.3 2013/02/12 21:17:17 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: omapfbreg.h,v 1.5 2020/04/16 23:29:52 rin Exp $");
 
 #ifndef OMAPFB_REG_H
 #define OMAPFB_REG_H

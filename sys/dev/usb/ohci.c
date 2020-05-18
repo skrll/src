@@ -1,4 +1,4 @@
-/*	$NetBSD: ohci.c,v 1.301 2020/04/05 20:59:38 skrll Exp $	*/
+/*	$NetBSD: ohci.c,v 1.305 2020/05/15 06:23:54 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2005, 2012 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.301 2020/04/05 20:59:38 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.305 2020/05/15 06:23:54 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -411,7 +411,7 @@ ohci_alloc_sed(ohci_softc_t *sc)
 		err = usb_allocmem(&sc->sc_bus, OHCI_SED_SIZE * OHCI_SED_CHUNK,
 		    OHCI_ED_ALIGN, USBMALLOC_COHERENT, &dma);
 		if (err)
-			return 0;
+			return NULL;
 
 		mutex_enter(&sc->sc_lock);
 		for (i = 0; i < OHCI_SED_CHUNK; i++) {
@@ -3463,8 +3463,9 @@ ohci_device_isoc_enter(struct usbd_xfer *xfer)
 	int isread =
 	    (UE_GET_DIR(xfer->ux_pipe->up_endpoint->ue_edesc->bEndpointAddress) == UE_DIR_IN);
 
-	usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
-	    isread ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
+	if (xfer->ux_length)
+		usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
+		    isread ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
 
 	if (isoc->next == -1) {
 		/* Not in use yet, schedule it a few frames ahead. */
@@ -3642,7 +3643,7 @@ ohci_device_isoc_done(struct usbd_xfer *xfer)
 
 	DPRINTFN(10, "xfer=%#jx, actlen=%jd", (uintptr_t)xfer, xfer->ux_actlen,
 	    0, 0);
-	usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
+	usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_bufsize,
 	    isread ? BUS_DMASYNC_POSTREAD : BUS_DMASYNC_POSTWRITE);
 }
 

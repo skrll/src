@@ -1,4 +1,4 @@
-/*	$NetBSD: eval.c,v 1.178 2020/02/04 16:06:59 kre Exp $	*/
+/*	$NetBSD: eval.c,v 1.180 2020/05/14 08:34:17 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)eval.c	8.9 (Berkeley) 6/8/95";
 #else
-__RCSID("$NetBSD: eval.c,v 1.178 2020/02/04 16:06:59 kre Exp $");
+__RCSID("$NetBSD: eval.c,v 1.180 2020/05/14 08:34:17 msaitoh Exp $");
 #endif
 #endif /* not lint */
 
@@ -771,7 +771,6 @@ evalbackcmd(union node *n, struct backcmd *result)
 			FORCEINTON;
 			close(pip[0]);
 			movefd(pip[1], 1);
-			eflag = 0;
 			evaltree(n, EV_EXIT);
 			/* NOTREACHED */
 		}
@@ -1209,7 +1208,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 				shellparam = saveparam;
 			}
 			if (saved)
-				popredir();;
+				popredir();
 			unreffunc(cmdentry.u.func);
 			poplocalvars();
 			localvars = savelocalvars;

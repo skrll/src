@@ -1,7 +1,7 @@
-/*	$NetBSD: timevar.h,v 1.40 2020/01/02 15:42:27 thorpej Exp $	*/
+/*	$NetBSD: timevar.h,v 1.44 2020/05/11 03:59:33 riastradh Exp $	*/
 
 /*
- *  Copyright (c) 2005, 2008 The NetBSD Foundation.
+ *  Copyright (c) 2005, 2008, The NetBSD Foundation.
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -194,6 +194,12 @@ bool	time_wraps(struct timespec *, struct timespec *);
 
 extern volatile time_t time_second;	/* current second in the epoch */
 extern volatile time_t time_uptime;	/* system uptime in seconds */
+
+#define	DEFAULT_TIMEOUT_EPSILON						      \
+	(&(const struct bintime) {					      \
+		.sec = 0,						      \
+		.frac = ((uint64_t)1 << 32)/hz << 32,			      \
+	})
 
 static __inline time_t time_mono_to_wall(time_t t)
 {

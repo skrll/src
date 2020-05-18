@@ -1,4 +1,4 @@
-/*	$NetBSD: prekern.h,v 1.20 2018/06/20 11:49:37 maxv Exp $	*/
+/*	$NetBSD: prekern.h,v 1.22 2020/05/07 21:05:37 maxv Exp $	*/
 
 /*
  * Copyright (c) 2017 The NetBSD Foundation, Inc. All rights reserved.
@@ -37,7 +37,7 @@
 #include "pdir.h"
 #include "redef.h"
 
-#define ASSERT(a) if (!(a)) fatal("ASSERT");
+#define ASSERT(a) if (!(a)) fatal("ASSERT: " #a);
 typedef uint64_t pte_prot_t;
 #define WHITE_ON_BLACK 0x07
 #define RED_ON_BLACK 0x04
@@ -89,8 +89,9 @@ void print_banner(void);
 /* elf.c */
 size_t elf_get_head_size(vaddr_t);
 void elf_build_head(vaddr_t);
+void elf_fixup_boot(vaddr_t, paddr_t);
 void elf_map_sections(void);
-void elf_build_boot(vaddr_t, paddr_t);
+void elf_build_info(void);
 vaddr_t elf_kernel_reloc(void);
 
 /* locore.S */

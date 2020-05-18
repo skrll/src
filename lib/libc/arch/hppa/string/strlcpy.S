@@ -1,4 +1,4 @@
-/*	$NetBSD: strlcpy.S,v 1.3 2008/04/28 20:22:56 martin Exp $	*/
+/*	$NetBSD: strlcpy.S,v 1.5 2020/05/05 06:20:55 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -30,9 +30,9 @@
  */
 
 #include <machine/asm.h>
- 
-#if defined(LIBC_SCCS) && !defined(lint) 
-        RCSID("$NetBSD: strlcpy.S,v 1.3 2008/04/28 20:22:56 martin Exp $")
+
+#if defined(LIBC_SCCS) && !defined(lint)
+        RCSID("$NetBSD: strlcpy.S,v 1.5 2020/05/05 06:20:55 skrll Exp $")
 #endif /* LIBC_SCCS and not lint */
 
 /*
@@ -51,10 +51,10 @@ LEAF_ENTRY(_strlcpy)
 	 * of the src string.
 	 */
 	comb,=		%r0, %arg2, $strlcpy_dst_done
-	copy		%arg1, %ret0
+	 copy		%arg1, %ret0
 
 	/*
-	 * If our dst buffer is one byte, branch immediately 
+	 * If our dst buffer is one byte, branch immediately
 	 * to the code that NUL-terminates the dst buffer and
 	 * counts the (remaining) length of the src string.
 	 */
@@ -62,14 +62,14 @@ LEAF_ENTRY(_strlcpy)
 
 	/*
 	 * Loop copying bytes.  At the top of this loop,
-	 * %arg2 is always the number of bytes we can still 
+	 * %arg2 is always the number of bytes we can still
 	 * store, and %r1 holds the next byte to store.
 	 */
 $strlcpy_loop:
 	comb,=		%r0, %r1, $strlcpy_exit
-	stbs,ma		%r1, 1(%arg0)
+	 stbs,ma	%r1, 1(%arg0)
 	addib,<>	-1, %arg2, $strlcpy_loop
-	ldbs,ma		1(%arg1), %r1
+	 ldbs,ma	1(%arg1), %r1
 
 $strlcpy_dst_full:
 	stbs,ma		%r0, 1(%arg0)
@@ -77,8 +77,8 @@ $strlcpy_dst_full:
 $strlcpy_dst_done:
 	comb,<>,n	%r0, %r1, $strlcpy_dst_done
 	ldbs,ma		1(%arg1), %r1
-	
+
 $strlcpy_exit:
 	bv		%r0(%rp)
-	sub		%arg1, %ret0, %ret0
+	 sub		%arg1, %ret0, %ret0
 EXIT(strlcpy)

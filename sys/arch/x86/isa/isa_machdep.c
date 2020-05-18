@@ -1,4 +1,4 @@
-/*	$NetBSD: isa_machdep.c,v 1.44 2019/02/11 14:59:33 cherry Exp $	*/
+/*	$NetBSD: isa_machdep.c,v 1.46 2020/05/02 16:44:35 bouyer Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: isa_machdep.c,v 1.44 2019/02/11 14:59:33 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: isa_machdep.c,v 1.46 2020/05/02 16:44:35 bouyer Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -142,11 +142,7 @@ isa_intr_alloc(isa_chipset_tag_t ic, int mask, int type, int *irq)
 	for (i = 0; i < NUM_LEGACY_IRQS; i++) {
 		if (LEGAL_IRQ(i) == 0 || (mask & (1<<i)) == 0)
 			continue;
-#if !defined(XENPV)
 		isp = ci->ci_isources[i];
-#else
-		isp = ci->ci_xsources[i];
-#endif
 		if (isp == NULL) {
 			/* if nothing's using the irq, just return it */
 			*irq = i;
@@ -369,6 +365,9 @@ device_isa_register(device_t dev, void *aux)
 			    	return dev;
 		}
 	}
+	if (vm_guest == VM_GUEST_XENPVH)
+		prop_dictionary_set_bool(device_properties(dev),
+		    "no-legacy-devices", true);
 #if NACPICA > 0
 #if notyet
 	if (device_is_a(dev, "isa") && acpi_active) {

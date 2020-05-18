@@ -1,4 +1,4 @@
-/*	$NetBSD: evtchn.h,v 1.28 2020/04/06 19:26:00 jdolecek Exp $	*/
+/*	$NetBSD: evtchn.h,v 1.32 2020/05/07 19:48:58 bouyer Exp $	*/
 
 /*
  *
@@ -29,8 +29,6 @@
 #ifndef _XEN_EVENTS_H_
 #define _XEN_EVENTS_H_
 
-#define NR_PIRQS	256
-
 extern struct evtsource *evtsource[];
 
 void events_default_setup(void);
@@ -41,13 +39,12 @@ bool events_resume(void);
 unsigned int evtchn_do_event(int, struct intrframe *);
 void call_evtchn_do_event(int, struct intrframe *);
 void call_xenevt_event(int);
-int event_set_handler(int, int (*func)(void *), void *, int, const char *,
-    const char *, bool);
+struct intrhand *event_set_handler(int, int (*func)(void *), void *,
+    int, const char *, const char *, bool, struct cpu_info *);
 int event_remove_handler(int, int (*func)(void *), void *);
 
 struct cpu_info;
 struct intrhand;
-void event_set_iplhandler(struct cpu_info *, struct intrhand *, int);
 
 extern int debug_port;
 extern int xen_debug_handler(void *);
@@ -62,7 +59,8 @@ evtchn_port_t bind_vcpu_to_evtch(cpuid_t);
 
 struct pintrhand {
 	/* See comments in x86/include/intr.h:struct intrhand {} */
-	int pic_type;
+	struct pic *pic;
+	struct intrhand *ih;
 	int pirq;
 	int evtch;
 	int (*func)(void *);

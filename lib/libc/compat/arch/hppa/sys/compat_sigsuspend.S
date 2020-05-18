@@ -1,4 +1,4 @@
-/*	$NetBSD: compat_sigsuspend.S,v 1.2 2008/04/28 20:22:58 martin Exp $	*/
+/*	$NetBSD: compat_sigsuspend.S,v 1.5 2020/05/05 20:43:47 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -32,16 +32,14 @@
 #include <sys/errno.h>
 #include "SYS.h"
 
-	.import __cerror, code
-
 WARN_REFERENCES(sigsuspend, \
     "warning: reference to compatibility sigsuspend(); include <signal.h> for correct reference")
 
 ENTRY(sigsuspend, 0)
 	/*
-	 * AFAICT, since the hppa port came after __sigsuspend14, 
+	 * AFAICT, since the hppa port came after __sigsuspend14,
 	 * we shouldn't have to supply the compatability sigsuspend.
 	 */
-	ldi	EINVAL, %t1
-	b,n	__cerror
+	b	__cerror
+	 ldi	EINVAL, %t1
 EXIT(sigsuspend)

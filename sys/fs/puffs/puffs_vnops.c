@@ -1,4 +1,4 @@
-/*	$NetBSD: puffs_vnops.c,v 1.214 2020/02/23 15:46:40 ad Exp $	*/
+/*	$NetBSD: puffs_vnops.c,v 1.216 2020/05/15 19:28:10 maxv Exp $	*/
 
 /*
  * Copyright (c) 2005, 2006, 2007  Antti Kantee.  All Rights Reserved.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: puffs_vnops.c,v 1.214 2020/02/23 15:46:40 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: puffs_vnops.c,v 1.216 2020/05/15 19:28:10 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/buf.h>
@@ -40,7 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: puffs_vnops.c,v 1.214 2020/02/23 15:46:40 ad Exp $")
 #include <sys/namei.h>
 #include <sys/vnode.h>
 #include <sys/proc.h>
-#include <sys/kernel.h> /* For hz, hardclock_ticks */
+#include <sys/kernel.h> /* For hz, getticks() */
 
 #include <uvm/uvm.h>
 
@@ -473,11 +473,11 @@ puffs_abortbutton(struct puffs_mount *pmp, int what,
  */
 
 #define TTL_TO_TIMEOUT(ts) \
-    (hardclock_ticks + (ts->tv_sec * hz) + (ts->tv_nsec * hz / 1000000000))
+    (getticks() + (ts->tv_sec * hz) + (ts->tv_nsec * hz / 1000000000))
 #define TTL_VALID(ts) \
     ((ts != NULL) && !((ts->tv_sec == 0) && (ts->tv_nsec == 0)))
 #define TIMED_OUT(expire) \
-    ((int)((unsigned int)hardclock_ticks - (unsigned int)expire) > 0)
+    ((int)((unsigned int)getticks() - (unsigned int)expire) > 0)
 int
 puffs_vnop_lookup(void *v)
 {
@@ -661,7 +661,7 @@ puffs_vnop_lookup(void *v)
 		 * lifetime of busiest * nodes - with some limits.
 		 */
 		grace = 10 * puffs_sopreq_expire_timeout;
-		cpn->pn_cn_grace = hardclock_ticks + grace;
+		cpn->pn_cn_grace = getticks() + grace;
 		vp = cvp;
 	}
 
@@ -1158,7 +1158,7 @@ zerofill_lastpage(struct vnode *vp, voff_t off)
 		return;
 
 	vsize_t len = round_page(off) - off;
-	ubc_zerorange(&vp->v_uobj, off, len, UBC_WRITE|UBC_UNMAP_FLAG(vp));
+	ubc_zerorange(&vp->v_uobj, off, len, UBC_WRITE|UBC_VNODE_FLAGS(vp));
 }
 
 static int
@@ -2297,7 +2297,7 @@ puffs_vnop_read(void *v)
 				break;
 
 			error = ubc_uiomove(&vp->v_uobj, uio, bytelen, advice,
-			    UBC_READ | UBC_PARTIALOK | UBC_UNMAP_FLAG(vp));
+			    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 			if (error)
 				break;
 		}
@@ -2407,7 +2407,7 @@ puffs_vnop_write(void *v)
 	if (vp->v_type == VREG && 
 	    PUFFS_USE_PAGECACHE(pmp) &&
 	    !(pn->pn_stat & PNODE_WDIRECT)) {
-		ubcflags = UBC_WRITE | UBC_PARTIALOK | UBC_UNMAP_FLAG(vp);
+		ubcflags = UBC_WRITE | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp);
 
 		while (uio->uio_resid > 0) {
 			oldoff = uio->uio_offset;

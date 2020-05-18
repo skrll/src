@@ -1,4 +1,4 @@
-/*	$NetBSD: rumpfs.c,v 1.155 2020/04/04 19:24:51 kamil Exp $	*/
+/*	$NetBSD: rumpfs.c,v 1.161 2020/05/15 23:32:28 christos Exp $	*/
 
 /*
  * Copyright (c) 2009, 2010, 2011 Antti Kantee.  All Rights Reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rumpfs.c,v 1.155 2020/04/04 19:24:51 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rumpfs.c,v 1.161 2020/05/15 23:32:28 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -49,7 +49,6 @@ __KERNEL_RCSID(0, "$NetBSD: rumpfs.c,v 1.155 2020/04/04 19:24:51 kamil Exp $");
 #include <sys/fstrans.h>
 #include <sys/unistd.h>
 
-#include <miscfs/fifofs/fifo.h>
 #include <miscfs/specfs/specdev.h>
 #include <miscfs/genfs/genfs.h>
 #include <miscfs/genfs/genfs_node.h>
@@ -87,15 +86,6 @@ static int rump_vop_strategy(void *);
 static int rump_vop_advlock(void *);
 static int rump_vop_access(void *);
 static int rump_vop_fcntl(void *);
-
-int (**fifo_vnodeop_p)(void *);
-const struct vnodeopv_entry_desc fifo_vnodeop_entries[] = {
-	{ &vop_default_desc, vn_default_error },
-	{ &vop_putpages_desc, genfs_null_putpages },
-	{ NULL, NULL }
-};
-const struct vnodeopv_desc fifo_vnodeop_opv_desc =
-	{ &fifo_vnodeop_p, fifo_vnodeop_entries };
 
 int (**rump_vnodeop_p)(void *);
 const struct vnodeopv_entry_desc rump_vnodeop_entries[] = {
@@ -1403,7 +1393,7 @@ rump_vop_read(void *v)
 		if (chunk == 0)
 			break;
 		error = ubc_uiomove(&vp->v_uobj, uio, chunk, advice,
-		    UBC_READ | UBC_PARTIALOK | UBC_UNMAP_FLAG(vp));
+		    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 		if (error)
 			break;
 	}
@@ -1505,7 +1495,7 @@ rump_vop_write(void *v)
 		if (chunk == 0)
 			break;
 		error = ubc_uiomove(&vp->v_uobj, uio, chunk, advice,
-		    UBC_WRITE | UBC_PARTIALOK | UBC_UNMAP_FLAG(vp));
+		    UBC_WRITE | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 		if (error)
 			break;
 	}
@@ -1906,7 +1896,7 @@ rumpfs_unmount(struct mount *mp, int mntflags)
 	if (panicstr || mntflags & MNT_FORCE)
 		flags |= FORCECLOSE;
 
-	if (rfsmp->rfsmp_rvp->v_usecount > 1 && (flags & FORCECLOSE) == 0)
+	if (vrefcnt(rfsmp->rfsmp_rvp) > 1 && (flags & FORCECLOSE) == 0)
 		return EBUSY;
 
 	if ((error = vflush(mp, rfsmp->rfsmp_rvp, flags)) != 0)

@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.381 2020/04/05 00:21:11 ad Exp $	*/
+/*	$NetBSD: pmap.c,v 1.392 2020/05/15 22:22:44 ad Exp $	*/
 
 /*
  * Copyright (c) 2008, 2010, 2016, 2017, 2019, 2020 The NetBSD Foundation, Inc.
@@ -130,7 +130,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.381 2020/04/05 00:21:11 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.392 2020/05/15 22:22:44 ad Exp $");
 
 #include "opt_user_ldt.h"
 #include "opt_lockdebug.h"
@@ -153,6 +153,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.381 2020/04/05 00:21:11 ad Exp $");
 #include <sys/kcore.h>
 #include <sys/asan.h>
 #include <sys/msan.h>
+#include <sys/entropy.h>
 
 #include <uvm/uvm.h>
 #include <uvm/pmap/pmap_pvt.h>
@@ -164,7 +165,6 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.381 2020/04/05 00:21:11 ad Exp $");
 #include <machine/isa_machdep.h>
 #include <machine/cpuvar.h>
 #include <machine/cputypes.h>
-#include <machine/cpu_rng.h>
 
 #include <x86/pmap.h>
 #include <x86/pmap_pv.h>
@@ -923,7 +923,6 @@ pat_init(struct cpu_info *ci)
 
 	wrmsr(MSR_CR_PAT, pat);
 	cpu_pat_enabled = true;
-	aprint_debug_dev(ci->ci_dev, "PAT enabled\n");
 }
 
 static pt_entry_t
@@ -983,7 +982,7 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 		pte = vtopte(va);
 	else
 		pte = kvtopte(va);
-#ifdef DOM0OPS
+#if defined(XENPV) && defined(DOM0OPS)
 	if (pa < pmap_pa_start || pa >= pmap_pa_end) {
 #ifdef DEBUG
 		printf_nolog("%s: pa %#" PRIxPADDR " for va %#" PRIxVADDR
@@ -991,7 +990,7 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 #endif /* DEBUG */
 		npte = pa;
 	} else
-#endif /* DOM0OPS */
+#endif /* XENPV && DOM0OPS */
 		npte = pmap_pa2pte(pa);
 	npte |= protection_codes[prot] | PTE_P | pmap_pg_g;
 	npte |= pmap_pat_flags(flags);
@@ -1208,7 +1207,6 @@ pmap_bootstrap(vaddr_t kva_start)
 	kcpuset_create(&kpm->pm_kernel_cpus, true);
 
 	kpm->pm_ldt = NULL;
-	kpm->pm_ldt_len = 0;
 	kpm->pm_ldt_sel = GSYSSEL(GLDT_SEL, SEL_KPL);
 
 	/*
@@ -1337,8 +1335,10 @@ pmap_bootstrap(vaddr_t kva_start)
 	extern volatile struct xencons_interface *xencons_interface; /* XXX */
 	extern struct xenstore_domain_interface *xenstore_interface; /* XXX */
 
-	HYPERVISOR_shared_info = (void *) pmap_bootstrap_valloc(1);
-	HYPERVISOR_shared_info_pa = pmap_bootstrap_palloc(1);
+	if (vm_guest != VM_GUEST_XENPVH) {
+		HYPERVISOR_shared_info = (void *) pmap_bootstrap_valloc(1);
+		HYPERVISOR_shared_info_pa = pmap_bootstrap_palloc(1);
+	}
 	xencons_interface = (void *) pmap_bootstrap_valloc(1);
 	xenstore_interface = (void *) pmap_bootstrap_valloc(1);
 #endif
@@ -1414,8 +1414,9 @@ slotspace_copy(int type, pd_entry_t *dst, pd_entry_t *src)
  * randomly select one hole, and then randomly select an area within that hole.
  * Finally we update the associated entry in the slotspace structure.
  */
-vaddr_t __noasan
-slotspace_rand(int type, size_t sz, size_t align)
+vaddr_t
+slotspace_rand(int type, size_t sz, size_t align, size_t randhole,
+    vaddr_t randva)
 {
 	struct {
 		int start;
@@ -1480,7 +1481,7 @@ slotspace_rand(int type, size_t sz, size_t align)
 	}
 
 	/* Select a hole. */
-	cpu_earlyrng(&hole, sizeof(hole));
+	hole = randhole;
 #ifdef NO_X86_ASLR
 	hole = 0;
 #endif
@@ -1490,7 +1491,7 @@ slotspace_rand(int type, size_t sz, size_t align)
 	startva = VA_SIGN_NEG(startsl * NBPD_L4);
 
 	/* Select an area within the hole. */
-	cpu_earlyrng(&va, sizeof(va));
+	va = randva;
 #ifdef NO_X86_ASLR
 	va = 0;
 #endif
@@ -1619,6 +1620,8 @@ pmap_init_directmap(struct pmap *kpm)
 	pt_entry_t *pte;
 	phys_ram_seg_t *mc;
 	int i;
+	size_t randhole;
+	vaddr_t randva;
 
 	const pd_entry_t pteflags = PTE_P | PTE_W | pmap_pg_nx;
 	const pd_entry_t holepteflags = PTE_P | pmap_pg_nx;
@@ -1642,7 +1645,10 @@ pmap_init_directmap(struct pmap *kpm)
 		panic("pmap_init_directmap: lastpa incorrect");
 	}
 
-	startva = slotspace_rand(SLAREA_DMAP, lastpa, NBPD_L2);
+	entropy_extract(&randhole, sizeof randhole, 0);
+	entropy_extract(&randva, sizeof randva, 0);
+	startva = slotspace_rand(SLAREA_DMAP, lastpa, NBPD_L2,
+	    randhole, randva);
 	endva = startva + lastpa;
 
 	/* We will use this temporary va. */
@@ -2857,7 +2863,6 @@ pmap_create(void)
 
 	/* init the LDT */
 	pmap->pm_ldt = NULL;
-	pmap->pm_ldt_len = 0;
 	pmap->pm_ldt_sel = GSYSSEL(GLDT_SEL, SEL_KPL);
 
 	return (pmap);
@@ -2952,7 +2957,7 @@ pmap_destroy(struct pmap *pmap)
 #ifdef USER_LDT
 	if (pmap->pm_ldt != NULL) {
 		/*
-		 * no need to switch the LDT; this address space is gone,
+		 * No need to switch the LDT; this address space is gone,
 		 * nothing is using it.
 		 *
 		 * No need to lock the pmap for ldt_free (or anything else),
@@ -2963,7 +2968,7 @@ pmap_destroy(struct pmap *pmap)
 		ldt_free(pmap->pm_ldt_sel);
 		mutex_exit(&cpu_lock);
 		uvm_km_free(kernel_map, (vaddr_t)pmap->pm_ldt,
-		    pmap->pm_ldt_len, UVM_KMF_WIRED);
+		    MAX_USERLDT_SIZE, UVM_KMF_WIRED);
 	}
 #endif
 
@@ -3001,7 +3006,7 @@ static void
 pmap_zap_ptp(struct pmap *pmap, struct vm_page *ptp, pt_entry_t *pte,
     vaddr_t startva, vaddr_t blkendva)
 {
-#ifndef XEN
+#ifndef XENPV
 	struct pv_entry *pve;
 	struct vm_page *pg;
 	struct pmap_page *pp;
@@ -3030,10 +3035,17 @@ pmap_zap_ptp(struct pmap *pmap, struct vm_page *ptp, pt_entry_t *pte,
 	pte += ((va - startva) >> PAGE_SHIFT);
 
 	for (cnt = ptp->wire_count; cnt > 1; pte++, va += PAGE_SIZE) {
+		/*
+		 * No need for an atomic to clear the PTE.  Nothing else can
+		 * see the address space any more and speculative access (if
+		 * possible) won't modify.  Therefore there's no need to
+		 * track the accessed/dirty bits.
+		 */
 		opte = *pte;
 		if (!pmap_valid_entry(opte)) {
 			continue;
 		}
+		pmap_pte_set(pte, 0);
 
 		/*
 		 * Count the PTE.  If it's not for a managed mapping
@@ -3111,13 +3123,13 @@ pmap_zap_ptp(struct pmap *pmap, struct vm_page *ptp, pt_entry_t *pte,
 #ifdef DIAGNOSTIC
 	rb_tree_init(tree, &pmap_rbtree_ops);
 #endif
-#else	/* !XEN */
+#else	/* !XENPV */
 	/*
 	 * XXXAD For XEN, it's not clear to me that we can do this, because
 	 * I guess the hypervisor keeps track of PTEs too.
 	 */
 	pmap_remove_ptes(pmap, ptp, (vaddr_t)pte, startva, blkendva);
-#endif	/* !XEN */
+#endif	/* !XENPV */
 }
 
 /*
@@ -3209,7 +3221,6 @@ pmap_fork(struct pmap *pmap1, struct pmap *pmap2)
 {
 #ifdef USER_LDT
 	union descriptor *new_ldt;
-	size_t len;
 	int sel;
 
 	if (__predict_true(pmap1->pm_ldt == NULL)) {
@@ -3219,18 +3230,16 @@ pmap_fork(struct pmap *pmap1, struct pmap *pmap2)
 	/*
 	 * Copy the LDT into the new process.
 	 *
-	 * Read pmap1's ldt pointer and length unlocked; if it changes
-	 * behind our back we'll retry. This will starve if there's a
-	 * stream of LDT changes in another thread but that should not
-	 * happen.
+	 * Read pmap1's ldt pointer unlocked; if it changes behind our back
+	 * we'll retry. This will starve if there's a stream of LDT changes
+	 * in another thread but that should not happen.
 	 */
 
- retry:
+retry:
 	if (pmap1->pm_ldt != NULL) {
-		len = pmap1->pm_ldt_len;
 		/* Allocate space for the new process's LDT */
-		new_ldt = (union descriptor *)uvm_km_alloc(kernel_map, len, 0,
-		    UVM_KMF_WIRED);
+		new_ldt = (union descriptor *)uvm_km_alloc(kernel_map,
+		    MAX_USERLDT_SIZE, 0, UVM_KMF_WIRED);
 		if (new_ldt == NULL) {
 			printf("WARNING: %s: unable to allocate LDT space\n",
 			    __func__);
@@ -3238,51 +3247,48 @@ pmap_fork(struct pmap *pmap1, struct pmap *pmap2)
 		}
 		mutex_enter(&cpu_lock);
 		/* Get a GDT slot for it */
-		sel = ldt_alloc(new_ldt, len);
+		sel = ldt_alloc(new_ldt, MAX_USERLDT_SIZE);
 		if (sel == -1) {
 			mutex_exit(&cpu_lock);
-			uvm_km_free(kernel_map, (vaddr_t)new_ldt, len,
-			    UVM_KMF_WIRED);
+			uvm_km_free(kernel_map, (vaddr_t)new_ldt,
+			    MAX_USERLDT_SIZE, UVM_KMF_WIRED);
 			printf("WARNING: %s: unable to allocate LDT selector\n",
 			    __func__);
 			return;
 		}
 	} else {
 		/* Wasn't anything there after all. */
-		len = -1;
 		new_ldt = NULL;
 		sel = -1;
 		mutex_enter(&cpu_lock);
 	}
 
- 	/* If there's still something there now that we have cpu_lock... */
+ 	/*
+	 * Now that we have cpu_lock, ensure the LDT status is the same.
+	 */
  	if (pmap1->pm_ldt != NULL) {
-		if (len != pmap1->pm_ldt_len) {
-			/* Oops, it changed. Drop what we did and try again */
-			if (len != -1) {
-				ldt_free(sel);
-				uvm_km_free(kernel_map, (vaddr_t)new_ldt,
-				    len, UVM_KMF_WIRED);
-			}
+		if (new_ldt == NULL) {
+			/* A wild LDT just appeared. */
 			mutex_exit(&cpu_lock);
 			goto retry;
 		}
 
 		/* Copy the LDT data and install it in pmap2 */
-		memcpy(new_ldt, pmap1->pm_ldt, len);
+		memcpy(new_ldt, pmap1->pm_ldt, MAX_USERLDT_SIZE);
 		pmap2->pm_ldt = new_ldt;
-		pmap2->pm_ldt_len = pmap1->pm_ldt_len;
 		pmap2->pm_ldt_sel = sel;
-		len = -1;
-	}
-
-	if (len != -1) {
-		/* There wasn't still something there, so mop up */
-		ldt_free(sel);
 		mutex_exit(&cpu_lock);
-		uvm_km_free(kernel_map, (vaddr_t)new_ldt, len,
-		    UVM_KMF_WIRED);
 	} else {
+		if (new_ldt != NULL) {
+			/* The LDT disappeared, drop what we did. */
+			ldt_free(sel);
+			mutex_exit(&cpu_lock);
+			uvm_km_free(kernel_map, (vaddr_t)new_ldt,
+			    MAX_USERLDT_SIZE, UVM_KMF_WIRED);
+			return;
+		}
+
+		/* We're good, just leave. */
 		mutex_exit(&cpu_lock);
 	}
 #endif /* USER_LDT */
@@ -3337,9 +3343,8 @@ void
 pmap_ldt_cleanup(struct lwp *l)
 {
 	pmap_t pmap = l->l_proc->p_vmspace->vm_map.pmap;
-	union descriptor *dp = NULL;
-	size_t len = 0;
-	int sel = -1;
+	union descriptor *ldt;
+	int sel;
 
 	if (__predict_true(pmap->pm_ldt == NULL)) {
 		return;
@@ -3348,14 +3353,13 @@ pmap_ldt_cleanup(struct lwp *l)
 	mutex_enter(&cpu_lock);
 	if (pmap->pm_ldt != NULL) {
 		sel = pmap->pm_ldt_sel;
-		dp = pmap->pm_ldt;
-		len = pmap->pm_ldt_len;
+		ldt = pmap->pm_ldt;
 		pmap->pm_ldt_sel = GSYSSEL(GLDT_SEL, SEL_KPL);
 		pmap->pm_ldt = NULL;
-		pmap->pm_ldt_len = 0;
 		pmap_ldt_sync(pmap);
 		ldt_free(sel);
-		uvm_km_free(kernel_map, (vaddr_t)dp, len, UVM_KMF_WIRED);
+		uvm_km_free(kernel_map, (vaddr_t)ldt, MAX_USERLDT_SIZE,
+		    UVM_KMF_WIRED);
 	}
 	mutex_exit(&cpu_lock);
 }
@@ -4570,7 +4574,19 @@ pmap_clear_attrs(struct vm_page *pg, unsigned clearbits)
 	pp = VM_PAGE_TO_PP(pg);
 	pa = VM_PAGE_TO_PHYS(pg);
 
-	return pmap_pp_clear_attrs(pp, pa, clearbits);
+	/*
+	 * If this is a new page, assert it has no mappings and simply zap
+	 * the stored attributes without taking any locks.
+	 */
+	if ((pg->flags & PG_FAKE) != 0) {
+		KASSERT(atomic_load_relaxed(&pp->pp_pte.pte_va) == 0);
+		KASSERT(atomic_load_relaxed(&pp->pp_pte.pte_ptp) == NULL);
+		KASSERT(atomic_load_relaxed(&pp->pp_pvlist.lh_first) == NULL);
+		atomic_store_relaxed(&pp->pp_attrs, 0);
+		return false;
+	} else {
+		return pmap_pp_clear_attrs(pp, pa, clearbits);
+	}
 }
 
 /*
@@ -5371,6 +5387,7 @@ pmap_update(struct pmap *pmap)
 	struct pv_page *pvp;
 	struct pmap_page *pp;
 	struct vm_page *ptp;
+	uintptr_t sum;
 
 	/*
 	 * Initiate any pending TLB shootdowns.  Wait for them to
@@ -5384,45 +5401,49 @@ pmap_update(struct pmap *pmap)
 	 * Now that shootdowns are complete, process deferred frees.  This
 	 * is an unlocked check, but is safe as we're only interested in
 	 * work done in this LWP - we won't get a false negative.
+	 *
+	 * If pmap_kernel(), this can be called from interrupt context or
+	 * while holding a spinlock so we can't wait on the pmap lock.  No
+	 * big deal as we'll catch up eventually (even for user pmaps, in
+	 * pmap_destroy() when there's never contention on the lock).
 	 */
-	if (__predict_false(!LIST_EMPTY(&pmap->pm_gc_ptp) ||
-	    !LIST_EMPTY(&pmap->pm_pvp_full))) {
-		mutex_enter(&pmap->pm_lock);
-		while ((ptp = LIST_FIRST(&pmap->pm_gc_ptp)) != NULL) {
-			KASSERT(ptp->wire_count == 0);
-			KASSERT(ptp->uanon == NULL);
-			LIST_REMOVE(ptp, mdpage.mp_pp.pp_link);
-			pp = VM_PAGE_TO_PP(ptp);
-			LIST_INIT(&pp->pp_pvlist);
-			pp->pp_attrs = 0;
-			pp->pp_pte.pte_ptp = NULL;
-			pp->pp_pte.pte_va = 0;
-			PMAP_CHECK_PP(VM_PAGE_TO_PP(ptp));
+	sum = (uintptr_t)atomic_load_relaxed(&pmap->pm_gc_ptp.lh_first);
+	sum |= (uintptr_t)atomic_load_relaxed(&pmap->pm_pvp_full.lh_first);
+	if (__predict_true(sum == 0 || cpu_intr_p() ||
+	    !mutex_tryenter(&pmap->pm_lock))) {
+		return;
+	}	
+	while ((ptp = LIST_FIRST(&pmap->pm_gc_ptp)) != NULL) {
+		KASSERT(ptp->wire_count == 0);
+		KASSERT(ptp->uanon == NULL);
+		LIST_REMOVE(ptp, mdpage.mp_pp.pp_link);
+		pp = VM_PAGE_TO_PP(ptp);
+		LIST_INIT(&pp->pp_pvlist);
+		pp->pp_attrs = 0;
+		pp->pp_pte.pte_ptp = NULL;
+		pp->pp_pte.pte_va = 0;
+		PMAP_CHECK_PP(VM_PAGE_TO_PP(ptp));
 
-			/*
-			 * XXX Hack to avoid extra locking, and lock
-			 * assertions in uvm_pagefree().  Despite uobject
-			 * being set, this isn't a managed page.
-			 */
-			PMAP_DUMMY_LOCK(pmap);
-			uvm_pagerealloc(ptp, NULL, 0);
-			PMAP_DUMMY_UNLOCK(pmap);
+		/*
+		 * XXX Hack to avoid extra locking, and lock
+		 * assertions in uvm_pagefree().  Despite uobject
+		 * being set, this isn't a managed page.
+		 */
+		PMAP_DUMMY_LOCK(pmap);
+		uvm_pagerealloc(ptp, NULL, 0);
+		PMAP_DUMMY_UNLOCK(pmap);
 
-			/*
-			 * XXX for PTPs freed by pmap_remove_ptes() but not
-			 * pmap_zap_ptp(), we could mark them PG_ZERO.
-			 */
-			uvm_pagefree(ptp);
-		}
-		while ((pvp = LIST_FIRST(&pmap->pm_pvp_full)) != NULL) {
-			LIST_REMOVE(pvp, pvp_list);
-			KASSERT(pvp->pvp_pmap == pmap);
-			KASSERT(pvp->pvp_nfree == PVE_PER_PVP);
-			pvp->pvp_pmap = NULL;
-			pool_cache_put(&pmap_pvp_cache, pvp);
-		}
-		mutex_exit(&pmap->pm_lock);
+		ptp->flags |= PG_ZERO;
+		uvm_pagefree(ptp);
 	}
+	while ((pvp = LIST_FIRST(&pmap->pm_pvp_full)) != NULL) {
+		LIST_REMOVE(pvp, pvp_list);
+		KASSERT(pvp->pvp_pmap == pmap);
+		KASSERT(pvp->pvp_nfree == PVE_PER_PVP);
+		pvp->pvp_pmap = NULL;
+		pool_cache_put(&pmap_pvp_cache, pvp);
+	}
+	mutex_exit(&pmap->pm_lock);
 }
 
 #if PTP_LEVELS > 4
@@ -5517,7 +5538,7 @@ x86_mmap_flags(paddr_t mdpgno)
 	return pflag;
 }
 
-#if defined(__HAVE_DIRECT_MAP) && defined(__x86_64__) && !defined(XEN)
+#if defined(__HAVE_DIRECT_MAP) && defined(__x86_64__) && !defined(XENPV)
 
 /*
  * -----------------------------------------------------------------------------
@@ -6384,4 +6405,4 @@ pmap_ept_transform(struct pmap *pmap)
 	memset(pmap->pm_pdir, 0, PAGE_SIZE);
 }
 
-#endif /* __HAVE_DIRECT_MAP && __x86_64__ && !XEN */
+#endif /* __HAVE_DIRECT_MAP && __x86_64__ && !XENPV */

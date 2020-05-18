@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.65 2020/03/26 13:32:03 isaki Exp $	*/
+/*	$NetBSD: audio.c,v 1.69 2020/05/01 08:21:27 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -138,7 +138,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.65 2020/03/26 13:32:03 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.69 2020/05/01 08:21:27 isaki Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -450,6 +450,28 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 
 #define SPECIFIED(x)	((x) != ~0)
 #define SPECIFIED_CH(x)	((x) != (u_char)~0)
+
+/*
+ * Default hardware blocksize in msec.
+ *
+ * We use 10 msec for most modern platforms.  This period is good enough to
+ * play audio and video synchronizely.
+ * In contrast, for very old platforms, this is usually too short and too
+ * severe.  Also such platforms usually can not play video confortably, so
+ * it's not so important to make the blocksize shorter.  If the platform
+ * defines its own value as __AUDIO_BLK_MS in its <machine/param.h>, it
+ * uses this instead.
+ *
+ * In either case, you can overwrite AUDIO_BLK_MS by your kernel
+ * configuration file if you wish.
+ */
+#if !defined(AUDIO_BLK_MS)
+# if defined(__AUDIO_BLK_MS)
+#  define AUDIO_BLK_MS __AUDIO_BLK_MS
+# else
+#  define AUDIO_BLK_MS (10)
+# endif
+#endif
 
 /* Device timeout in msec */
 #define AUDIO_TIMEOUT	(3000)
@@ -4788,6 +4810,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	const audio_format2_t *hwfmt, const audio_filter_reg_t *reg)
 {
 	char codecbuf[64];
+	char blkdmsbuf[8];
 	audio_trackmixer_t *mixer;
 	void (*softint_handler)(void *);
 	int len;
@@ -4796,6 +4819,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	size_t bufsize;
 	int hwblks;
 	int blkms;
+	int blkdms;
 	int error;
 
 	KASSERT(hwfmt != NULL);
@@ -4975,13 +4999,20 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		    mixer->hwbuf.fmt.precision);
 	}
 	blkms = mixer->blktime_n * 1000 / mixer->blktime_d;
-	aprint_normal_dev(sc->sc_dev, "%s:%d%s %dch %dHz, blk %dms for %s\n",
+	blkdms = (mixer->blktime_n * 10000 / mixer->blktime_d) % 10;
+	blkdmsbuf[0] = '\0';
+	if (blkdms != 0) {
+		snprintf(blkdmsbuf, sizeof(blkdmsbuf), ".%1d", blkdms);
+	}
+	aprint_normal_dev(sc->sc_dev,
+	    "%s:%d%s %dch %dHz, blk %d bytes (%d%sms) for %s\n",
 	    audio_encoding_name(mixer->track_fmt.encoding),
 	    mixer->track_fmt.precision,
 	    codecbuf,
 	    mixer->track_fmt.channels,
 	    mixer->track_fmt.sample_rate,
-	    blkms,
+	    blksize,
+	    blkms, blkdmsbuf,
 	    (mode == AUMODE_PLAY) ? "playback" : "recording");
 
 	return 0;
@@ -5468,7 +5499,9 @@ audio_pintr(void *arg)
 		return;
 	if (sc->sc_pbusy == false) {
 #if defined(DIAGNOSTIC)
-		device_printf(sc->sc_dev, "stray interrupt\n");
+		device_printf(sc->sc_dev,
+		    "DIAGNOSTIC: %s raised stray interrupt\n",
+		    device_xname(sc->hw_dev));
 #endif
 		return;
 	}
@@ -5737,7 +5770,9 @@ audio_rintr(void *arg)
 		return;
 	if (sc->sc_rbusy == false) {
 #if defined(DIAGNOSTIC)
-		device_printf(sc->sc_dev, "stray interrupt\n");
+		device_printf(sc->sc_dev,
+		    "DIAGNOSTIC: %s raised stray interrupt\n",
+		    device_xname(sc->hw_dev));
 #endif
 		return;
 	}

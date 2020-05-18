@@ -1,4 +1,4 @@
-/*	$NetBSD: tmpfs_vnops.c,v 1.135 2020/03/14 13:39:36 ad Exp $	*/
+/*	$NetBSD: tmpfs_vnops.c,v 1.137 2020/05/15 22:15:43 ad Exp $	*/
 
 /*
  * Copyright (c) 2005, 2006, 2007 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tmpfs_vnops.c,v 1.135 2020/03/14 13:39:36 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tmpfs_vnops.c,v 1.137 2020/05/15 22:15:43 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/dirent.h>
@@ -202,11 +202,11 @@ tmpfs_lookup(void *v)
 		pnode = dnode->tn_spec.tn_dir.tn_parent;
 		if (pnode == NULL) {
 			error = ENOENT;
-			goto out;
+			goto done;
 		}
 
 		error = vcache_get(dvp->v_mount, &pnode, sizeof(pnode), vpp);
-		goto out;
+		goto done;
 	} else if (cnp->cn_namelen == 1 && cnp->cn_nameptr[0] == '.') {
 		/*
 		 * Lookup of "." case.
@@ -546,7 +546,7 @@ tmpfs_read(void *v)
 			break;
 		}
 		error = ubc_uiomove(uobj, uio, len, IO_ADV_DECODE(ioflag),
-		    UBC_READ | UBC_PARTIALOK | UBC_UNMAP_FLAG(vp));
+		    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 	}
 
 	tmpfs_update(vp, TMPFS_UPDATE_ATIME);
@@ -608,7 +608,7 @@ tmpfs_write(void *v)
 			break;
 		}
 		error = ubc_uiomove(uobj, uio, len, IO_ADV_DECODE(ioflag),
-		    UBC_WRITE | UBC_UNMAP_FLAG(vp));
+		    UBC_WRITE | UBC_VNODE_FLAGS(vp));
 	}
 	if (error) {
 		(void)tmpfs_reg_resize(vp, oldsize);

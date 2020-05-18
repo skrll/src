@@ -1,4 +1,4 @@
-/*      $NetBSD: lwproc.c,v 1.44 2020/02/15 18:12:15 ad Exp $	*/
+/*      $NetBSD: lwproc.c,v 1.48 2020/04/25 15:42:15 bouyer Exp $	*/
 
 /*
  * Copyright (c) 2010, 2011 Antti Kantee.  All Rights Reserved.
@@ -28,7 +28,7 @@
 #define RUMP__CURLWP_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lwproc.c,v 1.44 2020/02/15 18:12:15 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lwproc.c,v 1.48 2020/04/25 15:42:15 bouyer Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -52,7 +52,7 @@ __KERNEL_RCSID(0, "$NetBSD: lwproc.c,v 1.44 2020/02/15 18:12:15 ad Exp $");
 #include "rump_curlwp.h"
 
 struct lwp lwp0 = {
-	.l_lid = 1,
+	.l_lid = 0,
 	.l_proc = &proc0,
 	.l_fd = &filedesc0,
 };
@@ -178,7 +178,8 @@ lwproc_proc_free(struct proc *p)
 
 	LIST_REMOVE(p, p_list);
 	LIST_REMOVE(p, p_sibling);
-	proc_free_pid(p->p_pid); /* decrements nprocs */
+	proc_free_pid(p->p_pid);
+	atomic_dec_uint(&nprocs);
 	proc_leavepgrp(p); /* releases proc_lock */
 
 	cred = p->p_cred;
@@ -310,6 +311,7 @@ lwproc_freelwp(struct lwp *l)
 	KASSERT(l->l_refcnt == 0);
 
 	/* ok, zero references, continue with nuke */
+	proc_free_lwpid(p, l->l_lid);
 	LIST_REMOVE(l, l_sibling);
 	KASSERT(p->p_nlwps >= 1);
 	if (--p->p_nlwps == 0) {
@@ -360,7 +362,7 @@ lwproc_makelwp(struct proc *p, struct lwp *l, bool doswitch, bool procmake)
 	l->l_refcnt = 1;
 	l->l_proc = p;
 
-	l->l_lid = p->p_nlwpid++;
+	proc_alloc_lwpid(p, l);
 	LIST_INSERT_HEAD(&p->p_lwps, l, l_sibling);
 
 	l->l_fd = p->p_fd;

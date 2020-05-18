@@ -1,4 +1,4 @@
-	$NetBSD: syscalls.master,v 1.134 2020/04/04 20:20:12 thorpej Exp $
+	$NetBSD: syscalls.master,v 1.137 2020/04/26 19:18:36 thorpej Exp $
 
 ;	from: NetBSD: syscalls.master,v 1.81 1998/07/05 08:49:50 jonathan Exp
 ;	@(#)syscalls.master	8.2 (Berkeley) 1/13/94
@@ -398,9 +398,13 @@
 164	COMPAT_09 MODULAR compat_netbsd32_09	\
 			{ int|netbsd32||uname(netbsd32_outsnamep_t name); }
 165	STD		{ int|netbsd32||sysarch(int op, netbsd32_voidp parms); }
-166	UNIMPL
-167	UNIMPL
-168	UNIMPL
+166	STD		{ int|netbsd32||__futex(netbsd32_intp uaddr, int op, \
+			    int val, const netbsd32_timespecp_t timeout, \
+			    netbsd32_intp uaddr2, int val2, int val3); }
+167	STD		{ int|netbsd32||__futex_set_robust_list( \
+			    netbsd32_voidp head, netbsd32_size_t len); }
+168	STD		{ int|netbsd32||__futex_get_robust_list(lwpid_t lwpid, \
+			    netbsd32_voidp headp, netbsd32_size_tp lenp); }
 169	COMPAT_10 MODULAR compat_netbsd32_sysvipc_10	\
 			{ int|netbsd32||semsys(int which, int a2, int a3, \
 			    int a4, int a5); } osemsys
@@ -747,7 +751,7 @@
 				netbsd32_charp name, netbsd32_size_t len); }
 325	STD 		{ int|netbsd32||_lwp_ctl(int features, \
 				netbsd32_pointer_t address); }
-326	NOARGS 		{ lwptid_t|sys||_lwp_gettid(void); }
+326	UNIMPL
 327	UNIMPL
 328	UNIMPL
 329	UNIMPL

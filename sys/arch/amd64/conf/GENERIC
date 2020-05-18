@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.564 2020/03/28 08:35:36 isaki Exp $
+# $NetBSD: GENERIC,v 1.567 2020/05/02 16:44:35 bouyer Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.564 $"
+#ident		"GENERIC-$Revision: 1.567 $"
 
 maxusers	64		# estimated number of users
 
@@ -89,6 +89,15 @@ hyperv0 	at cpu0		# Microsoft Hyper-V
 powernow0	at cpu0		# AMD PowerNow! and Cool'n'Quiet (non-ACPI)
 vmt0		at cpu0		# VMware Tools
 
+#Xen PV support for HVM guests
+options 	XENPVHVM
+options 	XEN
+hypervisor*	at mainbus?		# Xen hypervisor
+xenbus*	 	at hypervisor?		# Xen virtual bus
+xencons*	at hypervisor?		# Xen virtual console
+xennet*  	at xenbus?		# Xen virtual network interface
+xbd*		at xenbus?		# Xen virtual block device
+
 # Alternate buffer queue strategies for better responsiveness under high
 # disk I/O load.
 #options 	BUFQ_READPRIO
@@ -112,6 +121,7 @@ options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #options 	KGDB		# remote debugger
 #options 	KGDB_DEVNAME="\"com\"",KGDB_DEVADDR=0x3f8,KGDB_DEVRATE=9600
 makeoptions	DEBUG="-g"	# compile full symbol table for CTF
+options DDB_COMMANDONENTER="trace;show registers"
 #options 	KUBSAN		# Kernel Undefined Behavior Sanitizer (kUBSan)
 #options 	UBSAN_ALWAYS_FATAL	# (optional) Panic on all kUBSan reports
 #options 	SYSCALL_STATS	# per syscall counts
@@ -134,14 +144,14 @@ options 	KDTRACE_HOOKS	# kernel DTrace hooks
 #options 	KCSAN_PANIC	# optional
 
 # Kernel Memory Sanitizer (kMSan). You need to disable SVS and kernel modules
-# to use it. The quarantine is optional and can help KMSAN find uninitialized
+# to use it. POOL_NOCACHE is optional and can help KMSAN find uninitialized
 # memory in pool caches. Note that KMSAN requires at least 4GB of RAM.
 #makeoptions 	KMSAN=1		# mandatory
 #options 	KMSAN		# mandatory
 #no options	SVS		# mandatory
 #no options 	MODULAR		# mandatory
 #no options 	MODULAR_DEFAULT_AUTOLOAD	# mandatory
-#options	POOL_QUARANTINE	# optional
+#options 	POOL_NOCACHE	# optional
 #options 	KMSAN_PANIC	# optional
 
 # Kernel Code Coverage Driver.

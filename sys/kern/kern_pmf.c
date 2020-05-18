@@ -1,4 +1,4 @@
-/* $NetBSD: kern_pmf.c,v 1.41 2020/02/23 20:08:35 ad Exp $ */
+/* $NetBSD: kern_pmf.c,v 1.43 2020/05/12 10:02:56 jdolecek Exp $ */
 
 /*-
  * Copyright (c) 2007 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_pmf.c,v 1.41 2020/02/23 20:08:35 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_pmf.c,v 1.43 2020/05/12 10:02:56 jdolecek Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -317,7 +317,7 @@ pmf_system_suspend(const pmf_qual_t *qual)
 	if (doing_shutdown == 0 && panicstr == NULL) {
 		printf("Flushing disk caches: ");
 		do_sys_sync(&lwp0);
-		if (buf_syncwait() != 0)
+		if (vfs_syncwait() != 0)
 			printf("giving up\n");
 		else
 			printf("done\n");
@@ -893,7 +893,9 @@ pmf_class_network_suspend(device_t dev, const pmf_qual_t *qual)
 	int s;
 
 	s = splnet();
+	IFNET_LOCK(ifp);
 	(*ifp->if_stop)(ifp, 0);
+	IFNET_UNLOCK(ifp);
 	splx(s);
 
 	return true;
@@ -904,14 +906,21 @@ pmf_class_network_resume(device_t dev, const pmf_qual_t *qual)
 {
 	struct ifnet *ifp = device_pmf_class_private(dev);
 	int s;
+	bool restart = false;
 
 	s = splnet();
+	IFNET_LOCK(ifp);
 	if (ifp->if_flags & IFF_UP) {
 		ifp->if_flags &= ~IFF_RUNNING;
 		if ((*ifp->if_init)(ifp) != 0)
 			aprint_normal_ifnet(ifp, "resume failed\n");
-		if_start_lock(ifp);
+		restart = true;
 	}
+	IFNET_UNLOCK(ifp);
+
+	if (restart)
+		if_start_lock(ifp);
+
 	splx(s);
 
 	return true;

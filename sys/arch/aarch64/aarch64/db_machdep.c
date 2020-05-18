@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.c,v 1.20 2020/02/29 21:30:19 ryo Exp $ */
+/* $NetBSD: db_machdep.c,v 1.22 2020/05/13 05:37:16 chs Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.20 2020/02/29 21:30:19 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.22 2020/05/13 05:37:16 chs Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd32.h"
@@ -291,6 +291,8 @@ show_cpuinfo(struct cpu_info *ci)
 	    &ci->ci_astpending, cpuid, cpuinfobuf.ci_astpending);
 	db_printf("%p cpu[%lu].ci_intr_depth   = %u\n",
 	    &ci->ci_intr_depth, cpuid, cpuinfobuf.ci_intr_depth);
+	db_printf("%p cpu[%lu].ci_biglock_count = %u\n",
+	    &ci->ci_biglock_count, cpuid, cpuinfobuf.ci_biglock_count);
 }
 
 void
@@ -936,6 +938,7 @@ kdb_trap(int type, struct trapframe *tf)
 	case DB_TRAP_BKPT_INSN:
 	case DB_TRAP_WATCHPOINT:
 	case DB_TRAP_SW_STEP:
+	case -1:	/* from pic_ipi_ddb() */
 		break;
 	default:
 		if (db_recover != 0) {

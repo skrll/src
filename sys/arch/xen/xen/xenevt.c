@@ -1,4 +1,4 @@
-/*      $NetBSD: xenevt.c,v 1.56 2020/04/07 10:19:53 jdolecek Exp $      */
+/*      $NetBSD: xenevt.c,v 1.60 2020/05/07 19:52:50 bouyer Exp $      */
 
 /*
  * Copyright (c) 2005 Manuel Bouyer.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xenevt.c,v 1.56 2020/04/07 10:19:53 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xenevt.c,v 1.60 2020/05/07 19:52:50 bouyer Exp $");
 
 #include "opt_xen.h"
 #include <sys/param.h>
@@ -128,6 +128,9 @@ struct xenevt_d {
 	struct cpu_info *ci; /* prefered CPU for events for this device */
 };
 
+static struct intrhand *xenevt_ih;
+static evtchn_port_t xenevt_ev;
+
 /* event -> user device mapping */
 static struct xenevt_d *devevent[NR_EVENT_CHANNELS];
 
@@ -160,7 +163,6 @@ static evtchn_port_t xenevt_alloc_event(void)
 void
 xenevtattach(int n)
 {
-	struct intrhand *ih __diagused;
 	int level = IPL_HIGH;
 
 	mutex_init(&devevent_lock, MUTEX_DEFAULT, IPL_HIGH);
@@ -174,26 +176,31 @@ xenevtattach(int n)
 
 	/*
 	 * Allocate a loopback event port.
-	 * This helps us massage xenevt_processevt() into the
-	 * callchain at the appropriate level using only
-	 * xen_intr_establish_xname().
+	 * It won't be used by itself, but will help registering IPL
+	 * handlers.
 	 */
-	evtchn_port_t evtchn = xenevt_alloc_event();
+	xenevt_ev = xenevt_alloc_event();
 
-	/* The real objective here is to wiggle into the ih callchain for IPL level */
-	ih = xen_intr_establish_xname(-1, &xen_pic, evtchn,  IST_LEVEL, level,
-	    xenevt_processevt, NULL, true, "xenevt");
+	/*
+	 * The real objective here is to wiggle into the ih callchain for
+	 * IPL level on vCPU 0. (events are bound to vCPU 0 by default).
+	 */
+	xenevt_ih = event_set_handler(xenevt_ev, xenevt_processevt, NULL,
+	    level, NULL, "xenevt", true, &cpu_info_primary);
 
-	KASSERT(ih != NULL);
+	KASSERT(xenevt_ih != NULL);
 }
 
 /* register pending event - always called with interrupt disabled */
 void
 xenevt_setipending(int l1, int l2)
 {
+	KASSERT(curcpu() == xenevt_ih->ih_cpu);
+	KASSERT(xenevt_ih->ih_cpu->ci_ilevel >= IPL_HIGH);
 	atomic_or_ulong(&xenevt_ev1, 1UL << l1);
 	atomic_or_ulong(&xenevt_ev2[l1], 1UL << l2);
-	atomic_or_32(&cpu_info_primary.ci_xpending, 1 << IPL_HIGH);
+	atomic_or_32(&xenevt_ih->ih_cpu->ci_ipending, 1 << SIR_XENIPL_HIGH);
+	evtsource[xenevt_ev]->ev_evcnt.ev_count++;
 }
 
 /* process pending events */
@@ -307,7 +314,7 @@ xenevtopen(dev_t dev, int flags, int mode, struct lwp *l)
 			return error;
 
 		d = kmem_zalloc(sizeof(*d), KM_SLEEP);
-		d->ci = &cpu_info_primary;
+		d->ci = xenevt_ih->ih_cpu;
 		mutex_init(&d->lock, MUTEX_DEFAULT, IPL_HIGH);
 		cv_init(&d->cv, "xenevt");
 		selinit(&d->sel);
@@ -357,8 +364,13 @@ xenevtmmap(dev_t dev, off_t off, int prot)
 		/* only one page, so off is always 0 */
 		if (off != 0)
 			return -1;
+#ifdef XENPV
 		return x86_btop(
 		   xpmap_mtop((paddr_t)xen_start_info.store_mfn << PAGE_SHIFT));
+#else
+		return x86_btop(
+		   (paddr_t)xen_start_info.store_mfn << PAGE_SHIFT);
+#endif
 	}
 	return -1;
 }

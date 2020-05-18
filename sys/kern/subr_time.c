@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_time.c,v 1.21 2019/10/04 14:17:07 kamil Exp $	*/
+/*	$NetBSD: subr_time.c,v 1.24 2020/05/11 03:59:33 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_time.c,v 1.21 2019/10/04 14:17:07 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_time.c,v 1.24 2020/05/11 03:59:33 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>

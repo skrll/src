@@ -1,4 +1,4 @@
-/* $NetBSD: armreg.h,v 1.39 2020/03/30 11:38:29 jmcneill Exp $ */
+/* $NetBSD: armreg.h,v 1.43 2020/05/13 06:08:51 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -35,23 +35,39 @@
 #include <arm/cputypes.h>
 #include <sys/types.h>
 
-#define AARCH64REG_READ_INLINE3(regname, regdesc, fnattrs)	\
-static __inline uint64_t fnattrs				\
+#ifdef __clang__
+#define ATTR_ARCH(arch)			".arch " arch ";"
+#define ATTR_TARGET_ARCH(x)
+#define ASM_ARCH(x)			x
+#else
+#define ATTR_ARCH(arch)			__attribute__((target("arch=" arch)))
+#define ATTR_TARGET_ARCH(x)		x
+#define ASM_ARCH(x)
+#endif
+
+#define AARCH64REG_READ_INLINE3(regname, regdesc, arch)		\
+static __inline uint64_t ATTR_TARGET_ARCH(arch)			\
 reg_##regname##_read(void)					\
 {								\
 	uint64_t __rv;						\
-	__asm __volatile("mrs %0, " #regdesc : "=r"(__rv));	\
+	__asm __volatile(					\
+	    ASM_ARCH(arch)					\
+	    "mrs %0, " #regdesc : "=r"(__rv)			\
+	);							\
 	return __rv;						\
 }
 
 #define AARCH64REG_READ_INLINE2(regname, regdesc)		\
 	AARCH64REG_READ_INLINE3(regname, regdesc, )
 
-#define AARCH64REG_WRITE_INLINE3(regname, regdesc, fnattrs)	\
-static __inline void fnattrs					\
+#define AARCH64REG_WRITE_INLINE3(regname, regdesc, arch)	\
+static __inline void ATTR_TARGET_ARCH(arch)			\
 reg_##regname##_write(uint64_t __val)				\
 {								\
-	__asm __volatile("msr " #regdesc ", %0" :: "r"(__val));	\
+	__asm __volatile(					\
+	    ASM_ARCH(arch)					\
+	    "msr " #regdesc ", %0" :: "r"(__val)		\
+	);							\
 }
 
 #define AARCH64REG_WRITE_INLINE2(regname, regdesc)		\
@@ -229,7 +245,7 @@ AARCH64REG_READ_INLINE(id_aa64dfr1_el1)
 
 AARCH64REG_READ_INLINE(id_aa64isar0_el1)
 
-#define	ID_AA64ISAR0_EL1_RNDR		__BITS(63,30)
+#define	ID_AA64ISAR0_EL1_RNDR		__BITS(63,60)
 #define	 ID_AA64ISAR0_EL1_RNDR_NONE	 0
 #define	 ID_AA64ISAR0_EL1_RNDR_RNDRRS	 1
 #define	ID_AA64ISAR0_EL1_TLB		__BITS(59,56)
@@ -380,7 +396,7 @@ AARCH64REG_READ_INLINE(id_aa64mmfr1_el1)
 #define	 ID_AA64MMFR1_EL1_HAFDBS_AD	 2
 
 AARCH64REG_READ_INLINE3(id_aa64mmfr2_el1, id_aa64mmfr2_el1,
-    __attribute__((target("arch=armv8.2-a"))))
+    ATTR_ARCH("armv8.2-a"))
 
 #define	ID_AA64MMFR2_EL1_E0PD		__BITS(63,60)
 #define	 ID_AA64MMFR2_EL1_E0PD_NONE	 0
@@ -548,6 +564,11 @@ AARCH64REG_READ_INLINE(revidr_el1)
 /*
  * These are read/write registers
  */
+AARCH64REG_READ_INLINE3(APIAKeyLo_EL1, apiakeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APIAKeyLo_EL1, apiakeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_READ_INLINE3(APIAKeyHi_EL1, apiakeyhi_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APIAKeyHi_EL1, apiakeyhi_el1, ATTR_ARCH("armv8.3-a"))
+
 AARCH64REG_READ_INLINE(cpacr_el1)	// Coprocessor Access Control Regiser
 AARCH64REG_WRITE_INLINE(cpacr_el1)
 

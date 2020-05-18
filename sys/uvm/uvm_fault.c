@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_fault.c,v 1.224 2020/03/23 10:35:56 skrll Exp $	*/
+/*	$NetBSD: uvm_fault.c,v 1.226 2020/05/15 22:35:05 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_fault.c,v 1.224 2020/03/23 10:35:56 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_fault.c,v 1.226 2020/05/15 22:35:05 ad Exp $");
 
 #include "opt_uvmhist.h"
 
@@ -1184,10 +1184,15 @@ uvm_fault_check(
 		if (amap)
 			uvmfault_anonflush(*ranons, nback);
 
-		/* flush object? */
+		/*
+		 * flush object?  change lock type to RW_WRITER, to avoid
+		 * excessive competition between read/write locks if many
+		 * threads doing "sequential access".
+		 */
 		if (uobj) {
 			voff_t uoff;
 
+			flt->lower_lock_type = RW_WRITER;
 			uoff = ufi->entry->offset + eoff;
 			rw_enter(uobj->vmobjlock, RW_WRITER);
 			(void) (uobj->pgops->pgo_put)(uobj, uoff, uoff +
@@ -1696,9 +1701,13 @@ uvm_fault_upper_enter(
 		 * but rather that the pmap should be designed such that it
 		 * never needs to fail when the new mapping is replacing an
 		 * existing mapping and the new page has no existing mappings.
+		 *
+		 * XXX This can't be asserted safely any more because many
+		 * LWPs and/or many processes could simultaneously fault on
+		 * the same VA and some might succeed.
 		 */
 
-		KASSERT(!pmap_extract(pmap, va, NULL));
+		/* KASSERT(!pmap_extract(pmap, va, NULL)); */
 
 		/*
 		 * ensure that the page is queued in the case that

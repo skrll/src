@@ -1,4 +1,4 @@
-#	$NetBSD: files.kern,v 1.44 2020/03/02 16:00:54 riastradh Exp $
+#	$NetBSD: files.kern,v 1.47 2020/04/30 03:28:18 riastradh Exp $
 
 #
 # kernel sources
@@ -40,6 +40,7 @@ file	kern/kern_cpu.c			kern
 #file	kern/kern_ctf.c			kdtrace_hooks
 
 file	kern/kern_descrip.c		kern
+file	kern/kern_entropy.c		kern
 file	kern/kern_event.c		kern
 file	kern/kern_exec.c		kern
 file	kern/kern_exit.c		kern
@@ -69,9 +70,6 @@ file	kern/kern_ras.c			kern
 file	kern/kern_rate.c		kern
 file	kern/kern_reboot.c		kern
 file	kern/kern_resource.c		kern
-file	kern/kern_rndpool.c		kern
-file	kern/kern_rndq.c		kern
-file	kern/kern_rndsink.c		kern
 file	kern/kern_runq.c		kern
 file	kern/kern_rwlock.c		kern
 file	kern/kern_rwlock_obj.c		kern
@@ -154,6 +152,7 @@ file	kern/subr_workqueue.c		kern
 file	kern/subr_xcall.c		kern
 file	kern/sys_aio.c			aio
 file	kern/sys_descrip.c		kern
+file	kern/sys_futex.c		kern
 file	kern/sys_generic.c		kern
 file	kern/sys_module.c		kern
 file	kern/sys_mqueue.c		mqueue
@@ -183,7 +182,7 @@ file	kern/tty_tty.c			kern
 file	kern/uipc_accf.c		kern
 file	kern/uipc_domain.c		kern
 file	kern/uipc_mbuf.c		kern
-file	kern/uipc_mbufdebug.c		kern & ether
+file	kern/uipc_mbufdebug.c		kern & ether & ddb
 file	net/link_proto.c		kern	# XXX
 file	kern/uipc_proto.c		kern
 file	kern/uipc_sem.c			kern

@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_map.c,v 1.378 2020/04/10 17:26:46 ad Exp $	*/
+/*	$NetBSD: uvm_map.c,v 1.383 2020/05/09 15:13:19 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.378 2020/04/10 17:26:46 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_map.c,v 1.383 2020/05/09 15:13:19 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_pax.h"
@@ -2613,7 +2613,7 @@ uvm_map_extract(struct vm_map *srcmap, vaddr_t start, vsize_t len,
 
 	if ((flags & UVM_EXTRACT_RESERVED) == 0) {
 		dstaddr = vm_map_min(dstmap);
-		if (!uvm_map_reserve(dstmap, len, start, 
+		if (!uvm_map_reserve(dstmap, len, start,
 		    atop(start) & uvmexp.colormask, &dstaddr,
 		    UVM_FLAG_COLORMATCH))
 			return (ENOMEM);
@@ -4171,7 +4171,7 @@ uvmspace_exec(struct lwp *l, vaddr_t start, vaddr_t end, bool topdown)
 
 		/*
 		 * now unmap the old program.
-		 * 
+		 *
 		 * XXX set VM_MAP_DYING for the duration, so pmap_update()
 		 * is not called until the pmap has been totally cleared out
 		 * after pmap_remove_all(), or it can confuse some pmap
@@ -4779,6 +4779,295 @@ uvm_map_unlock_entry(struct vm_map_entry *entry)
 	if (entry->aref.ar_amap != NULL) {
 		amap_unlock(entry->aref.ar_amap);
 	}
+}
+
+#define	UVM_VOADDR_TYPE_MASK	0x3UL
+#define	UVM_VOADDR_TYPE_UOBJ	0x1UL
+#define	UVM_VOADDR_TYPE_ANON	0x2UL
+#define	UVM_VOADDR_OBJECT_MASK	~UVM_VOADDR_TYPE_MASK
+
+#define	UVM_VOADDR_GET_TYPE(voa)					\
+	((voa)->object & UVM_VOADDR_TYPE_MASK)
+#define	UVM_VOADDR_GET_OBJECT(voa)					\
+	((voa)->object & UVM_VOADDR_OBJECT_MASK)
+#define	UVM_VOADDR_SET_OBJECT(voa, obj, type)				\
+do {									\
+	KASSERT(((uintptr_t)(obj) & UVM_VOADDR_TYPE_MASK) == 0);	\
+	(voa)->object = ((uintptr_t)(obj)) | (type);			\
+} while (/*CONSTCOND*/0)
+
+#define	UVM_VOADDR_GET_UOBJ(voa)					\
+	((struct uvm_object *)UVM_VOADDR_GET_OBJECT(voa))
+#define	UVM_VOADDR_SET_UOBJ(voa, uobj)					\
+	UVM_VOADDR_SET_OBJECT(voa, uobj, UVM_VOADDR_TYPE_UOBJ)
+
+#define	UVM_VOADDR_GET_ANON(voa)					\
+	((struct vm_anon *)UVM_VOADDR_GET_OBJECT(voa))
+#define	UVM_VOADDR_SET_ANON(voa, anon)					\
+	UVM_VOADDR_SET_OBJECT(voa, anon, UVM_VOADDR_TYPE_ANON)
+
+/*
+ * uvm_voaddr_acquire: returns the virtual object address corresponding
+ * to the specified virtual address.
+ *
+ * => resolves COW so the true page identity is tracked.
+ *
+ * => acquires a reference on the page's owner (uvm_object or vm_anon)
+ */
+bool
+uvm_voaddr_acquire(struct vm_map * const map, vaddr_t const va,
+    struct uvm_voaddr * const voaddr)
+{
+	struct vm_map_entry *entry;
+	struct vm_anon *anon = NULL;
+	bool result = false;
+	bool exclusive = false;
+	void (*unlock_fn)(struct vm_map *);
+
+	UVMHIST_FUNC("uvm_voaddr_acquire"); UVMHIST_CALLED(maphist);
+	UVMHIST_LOG(maphist,"(map=%#jx,va=%jx)", (uintptr_t)map, va, 0, 0);
+
+	const vaddr_t start = trunc_page(va);
+	const vaddr_t end = round_page(va+1);
+
+ lookup_again:
+	if (__predict_false(exclusive)) {
+		vm_map_lock(map);
+		unlock_fn = vm_map_unlock;
+	} else {
+		vm_map_lock_read(map);
+		unlock_fn = vm_map_unlock_read;
+	}
+
+	if (__predict_false(!uvm_map_lookup_entry(map, start, &entry))) {
+		unlock_fn(map);
+		UVMHIST_LOG(maphist,"<- done (no entry)",0,0,0,0);
+		return false;
+	}
+
+	if (__predict_false(entry->protection == VM_PROT_NONE)) {
+		unlock_fn(map);
+		UVMHIST_LOG(maphist,"<- done (PROT_NONE)",0,0,0,0);
+		return false;
+	}
+
+	/*
+	 * We have a fast path for the common case of "no COW resolution
+	 * needed" whereby we have taken a read lock on the map and if
+	 * we don't encounter any need to create a vm_anon then great!
+	 * But if we do, we loop around again, instead taking an exclusive
+	 * lock so that we can perform the fault.
+	 *
+	 * In the event that we have to resolve the fault, we do nearly the
+	 * same work as uvm_map_pageable() does:
+	 *
+	 * 1: holding the write lock, we create any anonymous maps that need
+	 *    to be created.  however, we do NOT need to clip the map entries
+	 *    in this case.
+	 *
+	 * 2: we downgrade to a read lock, and call uvm_fault_wire to fault
+	 *    in the page (assuming the entry is not already wired).  this
+	 *    is done because we need the vm_anon to be present.
+	 */
+	if (__predict_true(!VM_MAPENT_ISWIRED(entry))) {
+
+		bool need_fault = false;
+
+		/*
+		 * perform the action of vm_map_lookup that need the
+		 * write lock on the map: create an anonymous map for
+		 * a copy-on-write region, or an anonymous map for
+		 * a zero-fill region.
+		 */
+		if (__predict_false(UVM_ET_ISSUBMAP(entry))) {
+			unlock_fn(map);
+			UVMHIST_LOG(maphist,"<- done (submap)",0,0,0,0);
+			return false;
+		}
+		if (__predict_false(UVM_ET_ISNEEDSCOPY(entry) &&
+		    ((entry->max_protection & VM_PROT_WRITE) ||
+		     (entry->object.uvm_obj == NULL)))) {
+			if (!exclusive) {
+				/* need to take the slow path */
+				KASSERT(unlock_fn == vm_map_unlock_read);
+				vm_map_unlock_read(map);
+				exclusive = true;
+				goto lookup_again;
+			}
+			need_fault = true;
+			amap_copy(map, entry, 0, start, end);
+			/* XXXCDC: wait OK? */
+		}
+
+		/*
+		 * do a quick check to see if the fault has already
+		 * been resolved to the upper layer.
+		 */
+		if (__predict_true(entry->aref.ar_amap != NULL &&
+				   need_fault == false)) {
+			amap_lock(entry->aref.ar_amap, RW_WRITER);
+			anon = amap_lookup(&entry->aref, start - entry->start);
+			if (__predict_true(anon != NULL)) {
+				/* amap unlocked below */
+				goto found_anon;
+			}
+			amap_unlock(entry->aref.ar_amap);
+			need_fault = true;
+		}
+
+		/*
+		 * we predict this test as false because if we reach
+		 * this point, then we are likely dealing with a
+		 * shared memory region backed by a uvm_object, in
+		 * which case a fault to create the vm_anon is not
+		 * necessary.
+		 */
+		if (__predict_false(need_fault)) {
+			if (exclusive) {
+				vm_map_busy(map);
+				vm_map_unlock(map);
+				unlock_fn = vm_map_unbusy;
+			}
+
+			if (uvm_fault_wire(map, start, end,
+					   entry->max_protection, 1)) {
+				/* wiring failed */
+				unlock_fn(map);
+				UVMHIST_LOG(maphist,"<- done (wire failed)",
+					    0,0,0,0);
+				return false;
+			}
+
+			/*
+			 * now that we have resolved the fault, we can unwire
+			 * the page.
+			 */
+			if (exclusive) {
+				vm_map_lock(map);
+				vm_map_unbusy(map);
+				unlock_fn = vm_map_unlock;
+			}
+
+			uvm_fault_unwire_locked(map, start, end);
+		}
+	}
+
+	/* check the upper layer */
+	if (entry->aref.ar_amap) {
+		amap_lock(entry->aref.ar_amap, RW_WRITER);
+		anon = amap_lookup(&entry->aref, start - entry->start);
+		if (anon) {
+ found_anon:		KASSERT(anon->an_lock == entry->aref.ar_amap->am_lock);
+			anon->an_ref++;
+			rw_obj_hold(anon->an_lock);
+			KASSERT(anon->an_ref != 0);
+			UVM_VOADDR_SET_ANON(voaddr, anon);
+			voaddr->offset = va & PAGE_MASK;
+			result = true;
+		}
+		amap_unlock(entry->aref.ar_amap);
+	}
+
+	/* check the lower layer */
+	if (!result && UVM_ET_ISOBJ(entry)) {
+		struct uvm_object *uobj = entry->object.uvm_obj;
+
+		KASSERT(uobj != NULL);
+		(*uobj->pgops->pgo_reference)(uobj);
+		UVM_VOADDR_SET_UOBJ(voaddr, uobj);
+		voaddr->offset = entry->offset + (va - entry->start);
+		result = true;
+	}
+
+	unlock_fn(map);
+
+	if (result) {
+		UVMHIST_LOG(maphist,
+		    "<- done OK (type=%jd,owner=#%jx,offset=%jx)",
+		    UVM_VOADDR_GET_TYPE(voaddr),
+		    UVM_VOADDR_GET_OBJECT(voaddr),
+		    voaddr->offset, 0);
+	} else {
+		UVMHIST_LOG(maphist,"<- done (failed)",0,0,0,0);
+	}
+
+	return result;
+}
+
+/*
+ * uvm_voaddr_release: release the references held by the
+ * vitual object address.
+ */
+void
+uvm_voaddr_release(struct uvm_voaddr * const voaddr)
+{
+
+	switch (UVM_VOADDR_GET_TYPE(voaddr)) {
+	case UVM_VOADDR_TYPE_UOBJ: {
+		struct uvm_object * const uobj = UVM_VOADDR_GET_UOBJ(voaddr);
+
+		KASSERT(uobj != NULL);
+		KASSERT(uobj->pgops->pgo_detach != NULL);
+		(*uobj->pgops->pgo_detach)(uobj);
+		break;
+	    }
+	case UVM_VOADDR_TYPE_ANON: {
+		struct vm_anon * const anon = UVM_VOADDR_GET_ANON(voaddr);
+		krwlock_t *lock;
+
+		KASSERT(anon != NULL);
+		rw_enter((lock = anon->an_lock), RW_WRITER);
+	    	KASSERT(anon->an_ref > 0);
+		if (--anon->an_ref == 0) {
+			uvm_anfree(anon);
+		}
+		rw_exit(lock);
+		rw_obj_free(lock);
+	    	break;
+	    }
+	default:
+		panic("uvm_voaddr_release: bad type");
+	}
+	memset(voaddr, 0, sizeof(*voaddr));
+}
+
+/*
+ * uvm_voaddr_compare: compare two uvm_voaddr objects.
+ *
+ * => memcmp() semantics
+ */
+int
+uvm_voaddr_compare(const struct uvm_voaddr * const voaddr1,
+    const struct uvm_voaddr * const voaddr2)
+{
+	const uintptr_t type1 = UVM_VOADDR_GET_TYPE(voaddr1);
+	const uintptr_t type2 = UVM_VOADDR_GET_TYPE(voaddr2);
+
+	KASSERT(type1 == UVM_VOADDR_TYPE_UOBJ ||
+		type1 == UVM_VOADDR_TYPE_ANON);
+
+	KASSERT(type2 == UVM_VOADDR_TYPE_UOBJ ||
+		type2 == UVM_VOADDR_TYPE_ANON);
+
+	if (type1 < type2)
+		return -1;
+	if (type1 > type2)
+		return 1;
+
+	const uintptr_t addr1 = UVM_VOADDR_GET_OBJECT(voaddr1);
+	const uintptr_t addr2 = UVM_VOADDR_GET_OBJECT(voaddr2);
+
+	if (addr1 < addr2)
+		return -1;
+	if (addr1 > addr2)
+		return 1;
+
+	if (voaddr1->offset < voaddr2->offset)
+		return -1;
+	if (voaddr1->offset > voaddr2->offset)
+		return 1;
+
+	return 0;
 }
 
 #if defined(DDB) || defined(DEBUGPRINT)

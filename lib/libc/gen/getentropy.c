@@ -1,12 +1,11 @@
-/*	$NetBSD: umass_isdata.h,v 1.4 2017/10/07 16:05:33 jdolecek Exp $	*/
+/*	$NetBSD: getentropy.c,v 1.1 2020/05/06 16:17:36 nia Exp $	*/
 
-/*
- * Copyright (c) 2001 The NetBSD Foundation, Inc.
+/*-
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Lennart Augustsson (lennart@augustsson.net) at
- * Carlstedt Research & Technology.
+ * by Nia Alarie.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,5 +29,36 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-int umass_isdata_attach(struct umass_softc *);
-void umass_isdata_detach(struct umass_softc *);
+#include <sys/cdefs.h>
+__RCSID("$NetBSD: getentropy.c,v 1.1 2020/05/06 16:17:36 nia Exp $");
+
+#include "namespace.h"
+
+#include <sys/param.h>
+#include <sys/sysctl.h>
+
+#include <errno.h>
+#include <unistd.h>
+
+#ifdef __weak_alias
+__weak_alias(getentropy,_getentropy)
+#endif
+
+int
+getentropy(void *buf, size_t buflen)
+{
+	size_t len = buflen;
+	int name[2] = { CTL_KERN, KERN_ARND };
+
+	if (buf == NULL && buflen > 0) {
+		errno = EFAULT;
+		return -1;
+	}
+
+	if (buflen > 256) {
+		errno = EIO;
+		return -1;
+	}
+
+	return sysctl(name, 2, buf, &len, NULL, 0);
+}

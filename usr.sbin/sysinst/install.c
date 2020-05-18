@@ -1,4 +1,4 @@
-/*	$NetBSD: install.c,v 1.14 2020/01/16 13:56:24 martin Exp $	*/
+/*	$NetBSD: install.c,v 1.16 2020/05/12 17:04:00 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.

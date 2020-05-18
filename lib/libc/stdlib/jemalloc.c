@@ -1,4 +1,4 @@
-/*	$NetBSD: jemalloc.c,v 1.48 2020/01/13 19:14:37 joerg Exp $	*/
+/*	$NetBSD: jemalloc.c,v 1.53 2020/05/15 14:37:21 joerg Exp $	*/
 
 /*-
  * Copyright (C) 2006,2007 Jason Evans <jasone@FreeBSD.org>.
@@ -100,7 +100,6 @@
 #ifdef __NetBSD__
 #  define xutrace(a, b)		utrace("malloc", (a), (b))
 #  define __DECONST(x, y)	((x)__UNCONST(y))
-#  define NO_TLS
 #else
 #  define xutrace(a, b)		utrace((a), (b))
 #endif	/* __NetBSD__ */
@@ -118,7 +117,7 @@
 
 #include <sys/cdefs.h>
 /* __FBSDID("$FreeBSD: src/lib/libc/stdlib/malloc.c,v 1.147 2007/06/15 22:00:16 jasone Exp $"); */ 
-__RCSID("$NetBSD: jemalloc.c,v 1.48 2020/01/13 19:14:37 joerg Exp $");
+__RCSID("$NetBSD: jemalloc.c,v 1.53 2020/05/15 14:37:21 joerg Exp $");
 
 #ifdef __FreeBSD__
 #include "libc_private.h"
@@ -222,13 +221,11 @@ __RCSID("$NetBSD: jemalloc.c,v 1.48 2020/01/13 19:14:37 joerg Exp $");
 #  define QUANTUM_2POW_MIN	4
 #  define SIZEOF_PTR_2POW	3
 #  define TINY_MIN_2POW		3
-#  define NO_TLS
 #endif
 #ifdef __sparc64__
 #  define QUANTUM_2POW_MIN	4
 #  define SIZEOF_PTR_2POW	3
 #  define TINY_MIN_2POW		3
-#  define NO_TLS
 #endif
 #ifdef __amd64__
 #  define QUANTUM_2POW_MIN	4
@@ -242,7 +239,6 @@ __RCSID("$NetBSD: jemalloc.c,v 1.48 2020/01/13 19:14:37 joerg Exp $");
 #  ifdef __ARM_EABI__
 #    define TINY_MIN_2POW	3
 #  endif
-#  define NO_TLS
 #endif
 #ifdef __powerpc__
 #  define QUANTUM_2POW_MIN	4
@@ -264,6 +260,7 @@ __RCSID("$NetBSD: jemalloc.c,v 1.48 2020/01/13 19:14:37 joerg Exp $");
 #  define QUANTUM_2POW_MIN	4
 #  define SIZEOF_PTR_2POW	2
 #  define USE_BRK
+#  define NO_TLS
 #endif
 #ifdef __sh__
 #  define QUANTUM_2POW_MIN	4
@@ -274,6 +271,9 @@ __RCSID("$NetBSD: jemalloc.c,v 1.48 2020/01/13 19:14:37 joerg Exp $");
 #  define QUANTUM_2POW_MIN	4
 #  define SIZEOF_PTR_2POW	2
 #  define USE_BRK
+#  ifdef __mc68010__
+#    define NO_TLS
+#  endif
 #endif
 #if defined(__mips__) || defined(__riscv__)
 #  ifdef _LP64
@@ -284,6 +284,9 @@ __RCSID("$NetBSD: jemalloc.c,v 1.48 2020/01/13 19:14:37 joerg Exp $");
 #  endif
 #  define QUANTUM_2POW_MIN	4
 #  define USE_BRK
+#  if defined(__mips__)
+#    define NO_TLS
+#  endif
 #endif
 #ifdef __hppa__                                                                                                                                         
 #  define QUANTUM_2POW_MIN	4                                                                                                                        
@@ -771,7 +774,8 @@ static malloc_mutex_t	arenas_mtx; /* Protects arenas initialization. */
  * for allocations.
  */
 #ifndef NO_TLS
-static __thread arena_t	**arenas_map;
+static __attribute__((tls_model("initial-exec")))
+__thread arena_t	**arenas_map;
 #else
 static arena_t	**arenas_map;
 #endif
@@ -779,7 +783,7 @@ static arena_t	**arenas_map;
 #if !defined(NO_TLS) || !defined(_REENTRANT)
 # define	get_arenas_map()	(arenas_map)
 # define	set_arenas_map(x)	(arenas_map = x)
-#else
+#else /* NO_TLS && _REENTRANT */
 
 static thread_key_t arenas_map_key = -1;
 
@@ -809,16 +813,20 @@ set_arenas_map(arena_t **a)
 	}
 
 	if (arenas_map_key == -1) {
+#ifndef NO_TLS
 		(void)thr_keycreate(&arenas_map_key, NULL);
+#endif
 		if (arenas_map != NULL) {
 			_DIAGASSERT(arenas_map == a);
 			arenas_map = NULL;
 		}
 	}
 
+#ifndef NO_TLS
 	thr_setspecific(arenas_map_key, a);
-}
 #endif
+}
+#endif /* NO_TLS && _REENTRANT */
 
 #ifdef MALLOC_STATS
 /* Chunk statistics. */
@@ -4017,6 +4025,26 @@ _malloc_postfork(void)
 	}
 	malloc_mutex_unlock(&arenas_mtx);
 	malloc_mutex_unlock(&init_lock);
+}
+
+void
+_malloc_postfork_child(void)
+{
+	unsigned i;
+
+	/* Release all mutexes, now that fork() has completed. */
+#ifdef USE_BRK
+	malloc_mutex_init(&brk_mtx);
+#endif
+	malloc_mutex_init(&base_mtx);
+	malloc_mutex_init(&chunks_mtx);
+
+	for (i = narenas; i-- > 0; ) {
+		if (arenas[i] != NULL)
+			malloc_mutex_init(&arenas[i]->mtx);
+	}
+	malloc_mutex_init(&arenas_mtx);
+	malloc_mutex_init(&init_lock);
 }
 
 /*

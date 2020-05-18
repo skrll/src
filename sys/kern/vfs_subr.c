@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_subr.c,v 1.484 2020/03/14 20:45:23 ad Exp $	*/
+/*	$NetBSD: vfs_subr.c,v 1.486 2020/04/21 21:42:47 ad Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 2004, 2005, 2007, 2008, 2019, 2020
@@ -69,7 +69,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.484 2020/03/14 20:45:23 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.486 2020/04/21 21:42:47 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -1104,7 +1104,7 @@ vprint_common(struct vnode *vp, const char *prefix,
 	    ARRAY_PRINT(vp->v_type, vnode_types), vp->v_type,
 	    vp->v_mount, vp->v_mountedhere);
 	(*pr)("%susecount %d writecount %d holdcount %d\n", prefix,
-	    vp->v_usecount, vp->v_writecount, vp->v_holdcnt);
+	    vrefcnt(vp), vp->v_writecount, vp->v_holdcnt);
 	(*pr)("%ssize %" PRIx64 " writesize %" PRIx64 " numoutput %d\n",
 	    prefix, vp->v_size, vp->v_writesize, vp->v_numoutput);
 	(*pr)("%sdata %p lock %p\n", prefix, vp->v_data, &vip->vi_lock);
@@ -1211,25 +1211,24 @@ set_statvfs_info(const char *onp, int ukon, const char *fromp, int ukfrom,
 	size_t size;
 	struct statvfs *sfs = &mp->mnt_stat;
 	int (*fun)(const void *, void *, size_t, size_t *);
-	struct vnode *rvp;
 
 	(void)strlcpy(mp->mnt_stat.f_fstypename, vfsname,
 	    sizeof(mp->mnt_stat.f_fstypename));
 
 	if (onp) {
+		struct cwdinfo *cwdi = l->l_proc->p_cwdi;
 		fun = (ukon == UIO_SYSSPACE) ? copystr : copyinstr;
-		KASSERT(l == curlwp);
-		rvp = cwdrdir();
-		if (rvp != NULL) {
+		if (cwdi->cwdi_rdir != NULL) {
 			size_t len;
 			char *bp;
 			char *path = PNBUF_GET();
 
 			bp = path + MAXPATHLEN;
 			*--bp = '\0';
-			error = getcwd_common(rvp, rootvnode, &bp,
+			rw_enter(&cwdi->cwdi_lock, RW_READER);
+			error = getcwd_common(cwdi->cwdi_rdir, rootvnode, &bp,
 			    path, MAXPATHLEN / 2, 0, l);
-			vrele(rvp);
+			rw_exit(&cwdi->cwdi_lock);
 			if (error) {
 				PNBUF_PUT(path);
 				return error;

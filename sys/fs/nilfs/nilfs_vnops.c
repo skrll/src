@@ -1,4 +1,4 @@
-/* $NetBSD: nilfs_vnops.c,v 1.38 2019/12/27 09:41:51 msaitoh Exp $ */
+/*	$NetBSD: nilfs_vnops.c,v 1.40 2020/04/23 21:47:07 ad Exp $	*/
 
 /*
  * Copyright (c) 2008, 2009 Reinoud Zandijk
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: nilfs_vnops.c,v 1.38 2019/12/27 09:41:51 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nilfs_vnops.c,v 1.40 2020/04/23 21:47:07 ad Exp $");
 #endif /* not lint */
 
 
@@ -179,7 +179,7 @@ nilfs_read(void *v)
 
 		/* ubc, here we come, prepare to trap */
 		error = ubc_uiomove(uobj, uio, len, advice,
-		    UBC_READ | UBC_PARTIALOK | UBC_UNMAP_FLAG(vp));
+		    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 		if (error)
 			break;
 	}
@@ -269,7 +269,7 @@ nilfs_write(void *v)
 
 		/* ubc, here we come, prepare to trap */
 		error = ubc_uiomove(uobj, uio, len, advice,
-		    UBC_WRITE | UBC_UNMAP_FLAG(vp));
+		    UBC_WRITE | UBC_VNODE_FLAGS(vp));
 		if (error)
 			break;
 	}
@@ -976,8 +976,8 @@ nilfs_close(void *v)
 	nilfs_node = nilfs_node;	/* shut up gcc */
 
 	mutex_enter(vp->v_interlock);
-		if (vp->v_usecount > 1)
-			nilfs_itimes(nilfs_node, NULL, NULL, NULL);
+	if (vrefcnt(vp) > 1)
+		nilfs_itimes(nilfs_node, NULL, NULL, NULL);
 	mutex_exit(vp->v_interlock);
 
 	return 0;

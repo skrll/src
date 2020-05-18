@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_mutex.c,v 1.90 2020/03/08 00:26:06 chs Exp $	*/
+/*	$NetBSD: kern_mutex.c,v 1.92 2020/05/12 21:56:17 ad Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007, 2008, 2019 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
 #define	__MUTEX_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_mutex.c,v 1.90 2020/03/08 00:26:06 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_mutex.c,v 1.92 2020/05/12 21:56:17 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -456,11 +456,13 @@ mutex_vector_enter(kmutex_t *mtx)
 	/*
 	 * Handle spin mutexes.
 	 */
+	KPREEMPT_DISABLE(curlwp);
 	owner = mtx->mtx_owner;
 	if (MUTEX_SPIN_P(owner)) {
 #if defined(LOCKDEBUG) && defined(MULTIPROCESSOR)
 		u_int spins = 0;
 #endif
+		KPREEMPT_ENABLE(curlwp);
 		MUTEX_SPIN_SPLRAISE(mtx);
 		MUTEX_WANTLOCK(mtx);
 #ifdef FULL
@@ -521,7 +523,6 @@ mutex_vector_enter(kmutex_t *mtx)
 	 * determine that the owner is not running on a processor,
 	 * then we stop spinning, and sleep instead.
 	 */
-	KPREEMPT_DISABLE(curlwp);
 	for (;;) {
 		if (!MUTEX_OWNED(owner)) {
 			/*
