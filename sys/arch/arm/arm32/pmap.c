@@ -5945,11 +5945,13 @@ pmap_growkernel(vaddr_t maxkvaddr)
 	 * whoops!   we need to add kernel PTPs
 	 */
 
+	vaddr_t pmap_maxkvaddr = pmap_curmaxkvaddr;
+
 	s = splvm();	/* to be safe */
 	mutex_enter(&kpm_lock);
 
 	/* Map 1MB at a time */
-	size_t l1slot = l1pte_index(pmap_curmaxkvaddr);
+	size_t l1slot = l1pte_index(pmap_maxkvaddr);
 #ifdef ARM_MMU_EXTENDED
 	pd_entry_t * const spdep = &kpm->pm_l1[l1slot];
 	pd_entry_t *pdep = spdep;
@@ -5993,6 +5995,9 @@ pmap_growkernel(vaddr_t maxkvaddr)
 
 	mutex_exit(&kpm_lock);
 	splx(s);
+
+	kasan_shadow_map((void *)pmap_maxkvaddr,
+	    (size_t)(maxkvaddr - pmap_maxkvaddr));
 
 out:
 	return pmap_curmaxkvaddr;

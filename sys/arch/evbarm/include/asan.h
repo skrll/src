@@ -3,3 +3,7 @@
 #ifdef __aarch64__
 #include <aarch64/asan.h>
 #endif
+
+#ifdef __arm__
+#include <arm/asan.h>
+#endif

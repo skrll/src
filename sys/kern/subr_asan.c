@@ -122,9 +122,9 @@ kasan_shadow_map(void *addr, size_t size)
 static void
 kasan_ctors(void)
 {
-	extern uint64_t __CTOR_LIST__, __CTOR_END__;
+	extern Elf_Addr __CTOR_LIST__, __CTOR_END__;
 	size_t nentries, i;
-	uint64_t *ptr;
+	Elf_Addr *ptr;
 
 	nentries = ((size_t)&__CTOR_END__ - (size_t)&__CTOR_LIST__) /
 	    sizeof(uintptr_t);

@@ -98,4 +98,20 @@
 #define	VM_MIN_KERNEL_ADDRESS	((vaddr_t) KERNEL_BASE)
 #define	VM_MAX_KERNEL_ADDRESS	((vaddr_t) -(PAGE_SIZE+1))
 
+
+// AddressSanitizer dedicates 1/8 of kernel memory to its shadow memory (e.g.
+// 16TB to cover 128TB on x86_64) and uses direct mapping with a scale and offset
+// to translate a memory address to its corresponding shadow address.
+
+/*
+ * kernel virtual space layout
+ *
+ *   0x8000_0000 -  256MB kernel text/data/bss
+ *   0x9000_0000 - 1024MB Kernel VM Space
+ *   0xd000_0000 -  128MB (KASAN SHADOW MAP)
+ *   0xd800_0000 -  384MB (spare)
+ *   0xf000_0000 -  256MB IO
+ */
+
+
 #endif /* _ARM_ARM32_VMPARAM_H_ */
