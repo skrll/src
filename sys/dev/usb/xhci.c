@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci.c,v 1.124 2020/04/05 20:59:38 skrll Exp $	*/
+/*	$NetBSD: xhci.c,v 1.129 2020/05/21 15:28:35 jakllsch Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.124 2020/04/05 20:59:38 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.129 2020/05/21 15:28:35 jakllsch Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -517,12 +517,13 @@ xhci_ring_trbp(struct xhci_ring * const xr, u_int idx)
 }
 
 static inline void
-xhci_soft_trb_put(struct xhci_soft_trb * const trb,
+xhci_xfer_put_trb(struct xhci_xfer * const xx, u_int idx,
     uint64_t parameter, uint32_t status, uint32_t control)
 {
-	trb->trb_0 = parameter;
-	trb->trb_2 = status;
-	trb->trb_3 = control;
+	KASSERTMSG(idx < xx->xx_ntrb, "idx=%u xx_ntrb=%u", idx, xx->xx_ntrb);
+	xx->xx_trb[idx].trb_0 = parameter;
+	xx->xx_trb[idx].trb_2 = status;
+	xx->xx_trb[idx].trb_3 = control;
 }
 
 static inline void
@@ -1991,13 +1992,6 @@ xhci_event_transfer(struct xhci_softc * const sc,
 		return;
 	}
 
-	/*
-	 * Try to claim this xfer for completion.  If it has already
-	 * completed or aborted, drop it on the floor.
-	 */
-	if (!usbd_xfer_trycomplete(xfer))
-		return;
-
 	/* 4.11.5.2 Event Data TRB */
 	if ((trb_3 & XHCI_TRB_3_ED_BIT) != 0) {
 		DPRINTFN(14, "transfer Event Data: 0x%016jx 0x%08jx"
@@ -2053,6 +2047,13 @@ xhci_event_transfer(struct xhci_softc * const sc,
 		DPRINTFN(1, "ERR %ju slot %ju dci %ju", trbcode, slot, dci, 0);
 		xr->is_halted = true;
 		/*
+		 * Try to claim this xfer for completion.  If it has already
+		 * completed or aborted, drop it on the floor.
+		 */
+		if (!usbd_xfer_trycomplete(xfer))
+			return;
+
+		/*
 		 * Stalled endpoints can be recoverd by issuing
 		 * command TRB TYPE_RESET_EP on xHCI instead of
 		 * issuing request CLEAR_FEATURE UF_ENDPOINT_HALT
@@ -2076,6 +2077,13 @@ xhci_event_transfer(struct xhci_softc * const sc,
 		err = USBD_IOERROR;
 		break;
 	}
+
+	/*
+	 * Try to claim this xfer for completion.  If it has already
+	 * completed or aborted, drop it on the floor.
+	 */
+	if (!usbd_xfer_trycomplete(xfer))
+		return;
 
 	/* Set the status.  */
 	xfer->ux_status = err;
@@ -2239,25 +2247,34 @@ static struct usbd_xfer *
 xhci_allocx(struct usbd_bus *bus, unsigned int nframes)
 {
 	struct xhci_softc * const sc = XHCI_BUS2SC(bus);
-	struct usbd_xfer *xfer;
+	struct xhci_xfer *xx;
+	u_int ntrbs;
 
 	XHCIHIST_FUNC(); XHCIHIST_CALLED();
 
-	xfer = pool_cache_get(sc->sc_xferpool, PR_WAITOK);
-	if (xfer != NULL) {
-		memset(xfer, 0, sizeof(struct xhci_xfer));
+	ntrbs = XHCI_XFER_NTRB;
+	const size_t trbsz = sizeof(*xx->xx_trb) * ntrbs;
+
+	xx = pool_cache_get(sc->sc_xferpool, PR_WAITOK);
+	if (xx != NULL) {
+		memset(xx, 0, sizeof(*xx));
+		if (ntrbs > 0) {
+			xx->xx_trb = kmem_alloc(trbsz, KM_SLEEP);
+			xx->xx_ntrb = ntrbs;
+		}
 #ifdef DIAGNOSTIC
-		xfer->ux_state = XFER_BUSY;
+		xx->xx_xfer.ux_state = XFER_BUSY;
 #endif
 	}
 
-	return xfer;
+	return &xx->xx_xfer;
 }
 
 static void
 xhci_freex(struct usbd_bus *bus, struct usbd_xfer *xfer)
 {
 	struct xhci_softc * const sc = XHCI_BUS2SC(bus);
+	struct xhci_xfer * const xx = XHCI_XFER2XXFER(xfer);
 
 	XHCIHIST_FUNC(); XHCIHIST_CALLED();
 
@@ -2269,7 +2286,12 @@ xhci_freex(struct usbd_bus *bus, struct usbd_xfer *xfer)
 	}
 	xfer->ux_state = XFER_FREE;
 #endif
-	pool_cache_put(sc->sc_xferpool, xfer);
+	if (xx->xx_ntrb > 0) {
+		kmem_free(xx->xx_trb, xx->xx_ntrb * sizeof(*xx->xx_trb));
+		xx->xx_trb = NULL;
+		xx->xx_ntrb = 0;
+	}
+	pool_cache_put(sc->sc_xferpool, xx);
 }
 
 static bool
@@ -2576,7 +2598,8 @@ xhci_ring_put(struct xhci_softc * const sc, struct xhci_ring * const xr,
 	XHCIHIST_CALLARGS("%#jx xr_ep %#jx xr_cs %ju",
 	    (uintptr_t)xr, xr->xr_ep, xr->xr_cs, 0);
 
-	KASSERTMSG(ntrbs <= XHCI_XFER_NTRB, "ntrbs %zu", ntrbs);
+	KASSERTMSG(ntrbs < xr->xr_ntrb, "ntrbs %zu, xr->xr_ntrb %u",
+	    ntrbs, xr->xr_ntrb);
 	for (i = 0; i < ntrbs; i++) {
 		DPRINTFN(12, "xr %#jx trbs %#jx num %ju", (uintptr_t)xr,
 		    (uintptr_t)trbs, i, 0);
@@ -2666,6 +2689,14 @@ xhci_ring_put(struct xhci_softc * const sc, struct xhci_ring * const xr,
 
 	DPRINTFN(12, "%#jx xr_ep %#jx xr_cs %ju", (uintptr_t)xr, xr->xr_ep,
 	    xr->xr_cs, 0);
+}
+
+static inline void
+xhci_ring_put_xfer(struct xhci_softc * const sc, struct xhci_ring * const tr,
+    struct xhci_xfer *xx, u_int ntrb)
+{
+	KASSERT(ntrb <= xx->xx_ntrb);
+	xhci_ring_put(sc, tr, xx, xx->xx_trb, ntrb);
 }
 
 /*
@@ -3868,14 +3899,13 @@ xhci_device_ctrl_start(struct usbd_xfer *xfer)
 	i = 0;
 
 	/* setup phase */
-	memcpy(&parameter, req, sizeof(parameter));
+	parameter = le64dec(req); /* to keep USB endian after xhci_trb_put() */
 	status = XHCI_TRB_2_IRQ_SET(0) | XHCI_TRB_2_BYTES_SET(sizeof(*req));
 	control = ((len == 0) ? XHCI_TRB_3_TRT_NONE :
 	     (isread ? XHCI_TRB_3_TRT_IN : XHCI_TRB_3_TRT_OUT)) |
 	    XHCI_TRB_3_TYPE_SET(XHCI_TRB_TYPE_SETUP_STAGE) |
 	    XHCI_TRB_3_IDT_BIT;
-	/* we need parameter un-swapped on big endian, so pre-swap it here */
-	xhci_soft_trb_put(&xx->xx_trb[i++], htole64(parameter), status, control);
+	xhci_xfer_put_trb(xx, i++, parameter, status, control);
 
 	if (len != 0) {
 		/* data phase */
@@ -3888,7 +3918,7 @@ xhci_device_ctrl_start(struct usbd_xfer *xfer)
 		    XHCI_TRB_3_TYPE_SET(XHCI_TRB_TYPE_DATA_STAGE) |
 		    (isread ? XHCI_TRB_3_ISP_BIT : 0) |
 		    XHCI_TRB_3_IOC_BIT;
-		xhci_soft_trb_put(&xx->xx_trb[i++], parameter, status, control);
+		xhci_xfer_put_trb(xx, i++, parameter, status, control);
 
 		usb_syncmem(dma, 0, len,
 		    isread ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
@@ -3900,11 +3930,11 @@ xhci_device_ctrl_start(struct usbd_xfer *xfer)
 	control = ((isread && (len > 0)) ? 0 : XHCI_TRB_3_DIR_IN) |
 	    XHCI_TRB_3_TYPE_SET(XHCI_TRB_TYPE_STATUS_STAGE) |
 	    XHCI_TRB_3_IOC_BIT;
-	xhci_soft_trb_put(&xx->xx_trb[i++], parameter, status, control);
+	xhci_xfer_put_trb(xx, i++, parameter, status, control);
 
 	if (!polling)
 		mutex_enter(&tr->xr_lock);
-	xhci_ring_put(sc, tr, xfer, xx->xx_trb, i);
+	xhci_ring_put_xfer(sc, tr, xx, i);
 	if (!polling)
 		mutex_exit(&tr->xr_lock);
 
@@ -4025,11 +4055,11 @@ xhci_device_bulk_start(struct usbd_xfer *xfer)
 	control = XHCI_TRB_3_TYPE_SET(XHCI_TRB_TYPE_NORMAL) |
 	    (isread ? XHCI_TRB_3_ISP_BIT : 0) |
 	    XHCI_TRB_3_IOC_BIT;
-	xhci_soft_trb_put(&xx->xx_trb[i++], parameter, status, control);
+	xhci_xfer_put_trb(xx, i++, parameter, status, control);
 
 	if (!polling)
 		mutex_enter(&tr->xr_lock);
-	xhci_ring_put(sc, tr, xfer, xx->xx_trb, i);
+	xhci_ring_put_xfer(sc, tr, xx, i);
 	if (!polling)
 		mutex_exit(&tr->xr_lock);
 
@@ -4139,11 +4169,11 @@ xhci_device_intr_start(struct usbd_xfer *xfer)
 	    XHCI_TRB_2_BYTES_SET(len);
 	control = XHCI_TRB_3_TYPE_SET(XHCI_TRB_TYPE_NORMAL) |
 	    (isread ? XHCI_TRB_3_ISP_BIT : 0) | XHCI_TRB_3_IOC_BIT;
-	xhci_soft_trb_put(&xx->xx_trb[i++], parameter, status, control);
+	xhci_xfer_put_trb(xx, i++, parameter, status, control);
 
 	if (!polling)
 		mutex_enter(&tr->xr_lock);
-	xhci_ring_put(sc, tr, xfer, xx->xx_trb, i);
+	xhci_ring_put_xfer(sc, tr, xx, i);
 	if (!polling)
 		mutex_exit(&tr->xr_lock);
 

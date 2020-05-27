@@ -1,4 +1,4 @@
-/*	$NetBSD: procfs_vnops.c,v 1.212 2020/04/29 01:56:54 thorpej Exp $	*/
+/*	$NetBSD: procfs_vnops.c,v 1.214 2020/05/23 23:42:43 ad Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
@@ -105,7 +105,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: procfs_vnops.c,v 1.212 2020/04/29 01:56:54 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: procfs_vnops.c,v 1.214 2020/05/23 23:42:43 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -261,6 +261,7 @@ const struct vnodeopv_entry_desc procfs_vnodeop_entries[] = {
 	{ &vop_open_desc, procfs_open },		/* open */
 	{ &vop_close_desc, procfs_close },		/* close */
 	{ &vop_access_desc, procfs_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, procfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, procfs_setattr },		/* setattr */
 	{ &vop_read_desc, procfs_read },		/* read */
@@ -429,9 +430,9 @@ procfs_inactive(void *v)
 	struct vnode *vp = ap->a_vp;
 	struct pfsnode *pfs = VTOPFS(vp);
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	*ap->a_recycle = (procfs_proc_find(vp->v_mount, pfs->pfs_pid) == NULL);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	return (0);
 }
@@ -969,7 +970,7 @@ procfs_access(void *v)
 {
 	struct vop_access_args /* {
 		struct vnode *a_vp;
-		int a_mode;
+		accmode_t a_accmode;
 		kauth_cred_t a_cred;
 	} */ *ap = v;
 	struct vattr va;
@@ -979,9 +980,9 @@ procfs_access(void *v)
 		return (error);
 
 	return kauth_authorize_vnode(ap->a_cred,
-	    KAUTH_ACCESS_ACTION(ap->a_mode, ap->a_vp->v_type, va.va_mode),
-	    ap->a_vp, NULL, genfs_can_access(va.va_type, va.va_mode,
-	    va.va_uid, va.va_gid, ap->a_mode, ap->a_cred));
+	    KAUTH_ACCESS_ACTION(ap->a_accmode, ap->a_vp->v_type, va.va_mode),
+	    ap->a_vp, NULL, genfs_can_access(ap->a_vp, ap->a_cred,
+	    va.va_uid, va.va_gid, va.va_mode, NULL, ap->a_accmode));
 }
 
 /*
@@ -1260,9 +1261,9 @@ procfs_root_readdir_callback(struct proc *p, void *arg)
 	    UIO_MX - offsetof(struct dirent, d_name), "%ld", (long)p->p_pid);
 	d.d_type = DT_DIR;
 
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 	error = uiomove(&d, UIO_MX, uiop);
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	if (error) {
 		ctxp->error = error;
 		return -1;

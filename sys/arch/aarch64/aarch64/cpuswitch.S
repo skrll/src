@@ -1,4 +1,4 @@
-/* $NetBSD: cpuswitch.S,v 1.19 2020/05/15 09:08:10 ryo Exp $ */
+/* $NetBSD: cpuswitch.S,v 1.21 2020/05/23 18:08:59 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
 #include "opt_ddb.h"
 #include "opt_kasan.h"
 
-RCSID("$NetBSD: cpuswitch.S,v 1.19 2020/05/15 09:08:10 ryo Exp $")
+RCSID("$NetBSD: cpuswitch.S,v 1.21 2020/05/23 18:08:59 ryo Exp $")
 
 	ARMV8_DEFINE_OPTIONS
 
@@ -60,6 +60,10 @@ ENTRY_NP(cpu_switchto)
 	stp	x25, x26, [sp, #TF_X25]
 	stp	x27, x28, [sp, #TF_X27]
 	stp	x29, x30, [sp, #TF_X29]
+#ifdef DDB
+	str	lr, [sp, #TF_PC]		/* for backtrace */
+	str	xzr, [sp, #TF_SP]		/* mark as switchframe */
+#endif
 
 	/*
 	 * Save the current stack pointer and the CPACR and save them in
@@ -76,6 +80,9 @@ ENTRY_NP(cpu_switchto)
 	DISABLE_INTERRUPT
 	ldr	x6, [x1, #L_PCB]	/* x6 = lwp_getpcb(newlwp) */
 	ldr	x4, [x6, #PCB_TF]	/* get trapframe ptr (aka SP) */
+#ifdef DDB
+	str	xzr, [x6, #PCB_TF]	/* clear l->l_addr->pcb_tf */
+#endif
 	ldr	x5, [x1, #L_MD_CPACR]	/* get cpacr_el1 */
 	mov	sp, x4			/* restore stack pointer */
 	msr	cpacr_el1, x5		/* restore cpacr_el1 */
@@ -85,14 +92,27 @@ ENTRY_NP(cpu_switchto)
 	adrl	x4, _C_LABEL(aarch64_pac_enabled)
 	ldr	w4, [x4]
 	cbz	w4, 1f
-#if L_MD_IA_KERN_LO + 8 == L_MD_IA_KERN_HI
-	ldp	x5, x6, [x1, #L_MD_IA_KERN_LO]
-#else
-	ldr	x5, [x1, #L_MD_IA_KERN_LO]
-	ldr	x6, [x1, #L_MD_IA_KERN_HI]
-#endif
+	ldp	x5, x6, [x1, #L_MD_IA_KERN]
 	msr	APIAKeyLo_EL1, x5
 	msr	APIAKeyHi_EL1, x6
+
+	/* Other keys only need to be updated when switching to user process */
+	ldr	w5, [x1, #L_FLAG]
+	and	w5, w5, #LW_SYSTEM	/* (lwp->l_flag & LW_SYSTEM) ? */
+	cbnz	w5, 1f
+
+	ldp	x5, x6, [x1, #L_MD_IB_USER]
+	msr	APIBKeyLo_EL1, x5
+	msr	APIBKeyHi_EL1, x6
+	ldp	x5, x6, [x1, #L_MD_DA_USER]
+	msr	APDAKeyLo_EL1, x5
+	msr	APDAKeyHi_EL1, x6
+	ldp	x5, x6, [x1, #L_MD_DB_USER]
+	msr	APDBKeyLo_EL1, x5
+	msr	APDBKeyHi_EL1, x6
+	ldp	x5, x6, [x1, #L_MD_GA_USER]
+	msr	APGAKeyLo_EL1, x5
+	msr	APGAKeyHi_EL1, x6
 1:
 #endif
 
@@ -156,12 +176,7 @@ ENTRY_NP(cpu_switchto_softint)
 	adrl	x4, _C_LABEL(aarch64_pac_enabled)
 	ldr	w4, [x4]
 	cbz	w4, 1f
-#if L_MD_IA_KERN_LO + 8 == L_MD_IA_KERN_HI
-	ldp	x5, x6, [x0, #L_MD_IA_KERN_LO]
-#else
-	ldr	x5, [x0, #L_MD_IA_KERN_LO]
-	ldr	x6, [x0, #L_MD_IA_KERN_HI]
-#endif
+	ldp	x5, x6, [x0, #L_MD_IA_KERN]
 	msr	APIAKeyLo_EL1, x5
 	msr	APIAKeyHi_EL1, x6
 1:
@@ -190,6 +205,9 @@ ENTRY_NP(cpu_switchto_softint)
 	str	x19, [x3, #CI_CURLWP]	/* curcpu()->ci_curlwp := x19 */
 	ldr	x6, [x19, #L_PCB]	/* x6 = lwp_getpcb(curlwp) */
 	ldr	x4, [x6, #PCB_TF]	/* x4 := pinned_lwp->l_addr->pcb_tf */
+#ifdef DDB
+	str	xzr, [x6, #PCB_TF]	/* clear l->l_addr->pcb_tf */
+#endif
 	ldr	x5, [x19, #L_MD_CPACR]	/* x5 := pinned_lwp->l_md_cpacr */
 	mov	sp, x4			/* restore pinned_lwp sp */
 	msr	cpacr_el1, x5		/* restore pinned_lwp cpacr */
@@ -199,12 +217,7 @@ ENTRY_NP(cpu_switchto_softint)
 	adrl	x4, _C_LABEL(aarch64_pac_enabled)
 	ldr	w4, [x4]
 	cbz	w4, 1f
-#if L_MD_IA_KERN_LO + 8 == L_MD_IA_KERN_HI
-	ldp	x5, x6, [x19, #L_MD_IA_KERN_LO]
-#else
-	ldr	x5, [x19, #L_MD_IA_KERN_LO]
-	ldr	x6, [x19, #L_MD_IA_KERN_HI]
-#endif
+	ldp	x5, x6, [x19, #L_MD_IA_KERN]
 	msr	APIAKeyLo_EL1, x5
 	msr	APIAKeyHi_EL1, x6
 1:
@@ -261,10 +274,10 @@ ENTRY_NP(lwp_trampoline)
 	cbz	w4, 1f
 	mov	x26, x1
 	bl	_C_LABEL(cprng_strong64)
-	str	x0, [x26, #L_MD_IA_KERN_LO]
+	str	x0, [x26, #L_MD_IA_KERN]
 	msr	APIAKeyLo_EL1, x0
 	bl	_C_LABEL(cprng_strong64)
-	str	x0, [x26, #L_MD_IA_KERN_HI]
+	str	x0, [x26, #(L_MD_IA_KERN + 8)]
 	msr	APIAKeyHi_EL1, x0
 1:
 #endif
@@ -385,12 +398,7 @@ ENTRY_NP(el0_trap_exit)
 	adrl	x4, _C_LABEL(aarch64_pac_enabled)
 	ldr	w4, [x4]
 	cbz	w4, 1f
-#if L_MD_IA_USER_LO + 8 == L_MD_IA_USER_HI
-	ldp	x5, x6, [x9, #L_MD_IA_USER_LO]
-#else
-	ldr	x5, [x9, #L_MD_IA_USER_LO]
-	ldr	x6, [x9, #L_MD_IA_USER_HI]
-#endif
+	ldp	x5, x6, [x9, #L_MD_IA_USER]
 	msr	APIAKeyLo_EL1, x5
 	msr	APIAKeyHi_EL1, x6
 1:

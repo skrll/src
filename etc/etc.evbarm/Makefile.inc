@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.114 2019/11/03 12:16:35 jmcneill Exp $
+#	$NetBSD: Makefile.inc,v 1.118 2020/05/23 14:10:47 rin Exp $
 #
 #	etc.evbarm/Makefile.inc -- evbarm-specific etc Makefile targets
 #
@@ -20,10 +20,8 @@ KERNEL_SETS.armv4+=		IXM1200
 EVBARM_BOARDS.xscale+=		ADI_BRH
 KERNEL_SETS.xscale+=		NSLU2
 
-EVBARM_BOARDS.armv7+=		BCM5301X
-EVBARM_BOARDS.armv7hf+=		BCM5301X
-#EVBARM_BOARDS.armv7+=		BCM56340
-#EVBARM_BOARDS.armv7hf+= 	BCM56340
+KERNEL_SETS.armv7+=		GENERIC
+KERNEL_SETS.armv7hf+=		GENERIC
 .else
 IMAGEENDIAN=	le
 # little endian boards
@@ -54,7 +52,7 @@ EVBARM_BOARDS.xscale+=		TWINTAIL
 
 #EVBARM_BOARDS.armv5t+=		DNS323
 #EVBARM_BOARDS.armv5t+=		HPT5325
-#EVBARM_BOARDS.armv5t+=		IMX21_OLINUXINO
+#EVBARM_BOARDS.armv5t+=		IMX23_OLINUXINO
 EVBARM_BOARDS.armv5t+=		KUROBOX_PRO
 #EVBARM_BOARDS.armv5t+=		MARVELL_NAS
 #EVBARM_BOARDS.armv5t+=		MMNET_GENERIC
@@ -74,31 +72,8 @@ EVBARM_BOARDS.armv6+=		TISDP2420
 EVBARM_BOARDS.armv6hf+= 	TISDP2420
 #EVBARM_BOARDS.armv6+=		TISDP2430
 
-EVBARM_BOARDS.armv7+=		ARMADAXP
-EVBARM_BOARDS.armv7hf+=		ARMADAXP
-EVBARM_BOARDS.armv7+=		ARMADILLO-IOT-G3
-EVBARM_BOARDS.armv7hf+=		ARMADILLO-IOT-G3
-EVBARM_BOARDS.armv7+=		BCM5301X
-EVBARM_BOARDS.armv7hf+= 	BCM5301X
-#EVBARM_BOARDS.armv7+=		BCM56340
-#EVBARM_BOARDS.armv7hf+= 	BCM56340
-EVBARM_BOARDS.armv7+=		CUBOX
-EVBARM_BOARDS.armv7hf+= 	CUBOX
-EVBARM_BOARDS.armv7+=		CUBOX-I
-EVBARM_BOARDS.armv7hf+= 	CUBOX-I
-EVBARM_BOARDS.armv7+=		IMX6UL-STARTER
-EVBARM_BOARDS.armv7hf+=		IMX6UL-STARTER
-EVBARM_BOARDS.armv7+=		KOBO
-EVBARM_BOARDS.armv7hf+= 	KOBO
-EVBARM_BOARDS.armv7+=		MIRABOX
-EVBARM_BOARDS.armv7hf+=		MIRABOX
-EVBARM_BOARDS.armv7+=		NETWALKER
-EVBARM_BOARDS.armv7hf+=		NETWALKER
-EVBARM_BOARDS.armv7+=		OMAP5EVM
-EVBARM_BOARDS.armv7hf+=		OMAP5EVM
-EVBARM_BOARDS.armv7+=		PANDABOARD
-EVBARM_BOARDS.armv7hf+= 	PANDABOARD
-
+KERNEL_SETS.armv7+=		GENERIC
+KERNEL_SETS.armv7hf+=		GENERIC
 KERNEL_SETS.arm64+=		GENERIC64
 .endif
 
@@ -120,16 +95,11 @@ __mkimage: .USE
 	HOST_SH=${HOST_SH} \
 	KERNOBJDIR=${KERNOBJDIR} \
 	MACHINE=${MACHINE} \
+	MKDTB=${MKDTB} \
 	${HOST_SH} ${MKIMAGE} -x -h ${.TARGET:S/smp_//} -D ${DESTDIR} \
 	    -S ${NETBSDSRCDIR} -B ${IMAGEENDIAN} ${MKI_OPTS.${.TARGET}} \
 	    ${IMAGE.dir}/${.TARGET:S/smp_//}.img.gz
 
-ARCHES.arm=		armv4 xscale armv5t armv6 armv7
-ARCHES.armeb=		armv4 xscale armv5t armv6
-ARCHES.earm=		armv4 xscale armv5t armv6 armv7
-ARCHES.earmeb=		armv4 xscale armv5t armv6
-ARCHES.earmhf=		armv6hf armv7hf
-ARCHES.earmhfeb=	armv6hf
 ARCHES.earmv4=		armv4
 ARCHES.earmv4eb=	armv4
 ARCHES.earmv5=		xscale armv5t
@@ -150,10 +120,6 @@ BUILD_KERNELS+=		${board}_INSTALL
 .endfor
 KERNEL_SETS+=		${KERNEL_SETS.${arch}}
 .endfor
-
-.if !empty(MACHINE_ARCH:Mearmv7*)
-KERNEL_SETS+=		GENERIC
-.endif
 
 .if !empty(MACHINE_ARCH:Maarch64)
 smp_efibootaa64:

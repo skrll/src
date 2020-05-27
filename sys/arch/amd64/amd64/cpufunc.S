@@ -1,7 +1,7 @@
-/*	$NetBSD: cpufunc.S,v 1.52 2020/05/08 21:58:03 ad Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.56 2020/05/20 18:52:48 maxv Exp $	*/
 
 /*
- * Copyright (c) 1998, 2007, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2007, 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -167,20 +167,6 @@ END(x86_write_flags)
 
 STRONG_ALIAS(x86_write_psl,x86_write_flags)
 
-ENTRY(tsc_get_timecount)
-	movq	CPUVAR(CURLWP), %rcx
-1:
-	movq	L_NCSW(%rcx), %rdi
-	rdtsc
-	addl	CPUVAR(CC_SKEW), %eax
-	cmpq	%rdi, L_NCSW(%rcx)
-	jne	2f
-	KMSAN_INIT_RET(4)
-	ret
-2:
-	jmp	1b
-END(tsc_get_timecount)
-
 /*
  * %rdi = name
  * %rsi = sel
@@ -220,6 +206,39 @@ ENTRY(x86_hotpatch)
 END(x86_hotpatch)
 #endif /* !XENPV */
 
+/* Could be exact same as cpu_counter, but KMSAN needs to have the correct
+ * size of the return value. */
+ENTRY(cpu_counter32)
+	movq	CPUVAR(CURLWP), %rcx
+1:
+	movq	L_NCSW(%rcx), %rdi
+	rdtsc
+	addl	CPUVAR(CC_SKEW), %eax
+	cmpq	%rdi, L_NCSW(%rcx)
+	jne	2f
+	KMSAN_INIT_RET(4)
+	ret
+2:
+	jmp	1b
+END(cpu_counter32)
+STRONG_ALIAS(tsc_get_timecount, cpu_counter32)
+
+ENTRY(cpu_counter)
+	movq	CPUVAR(CURLWP), %rcx
+1:
+	movq	L_NCSW(%rcx), %rdi
+	rdtsc
+	shlq	$32, %rdx
+	orq	%rdx, %rax
+	addq	CPUVAR(CC_SKEW), %rax
+	cmpq	%rdi, L_NCSW(%rcx)
+	jne	2f
+	KMSAN_INIT_RET(8)
+	ret
+2:
+	jmp	1b
+END(cpu_counter)
+
 ENTRY(rdmsr_safe)
 	movq	CPUVAR(CURLWP), %r8
 	movq	L_PCB(%r8), %r8
@@ -251,23 +270,6 @@ ENTRY(msr_onfault)
 	movl	$EFAULT, %eax
 	ret
 END(msr_onfault)
-
-ENTRY(cpu_counter)
-	xorl	%eax, %eax
-	rdtsc
-	shlq	$32, %rdx
-	orq	%rdx, %rax
-	addq	CPUVAR(CC_SKEW), %rax
-	KMSAN_INIT_RET(8)
-	ret
-END(cpu_counter)
-
-ENTRY(cpu_counter32)
-	rdtsc
-	addl	CPUVAR(CC_SKEW), %eax
-	KMSAN_INIT_RET(4)
-	ret
-END(cpu_counter32)
 
 ENTRY(breakpoint)
 	pushq	%rbp

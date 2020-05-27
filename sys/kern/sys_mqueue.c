@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_mqueue.c,v 1.46 2020/03/16 21:20:10 pgoyette Exp $	*/
+/*	$NetBSD: sys_mqueue.c,v 1.48 2020/05/23 23:42:43 ad Exp $	*/
 
 /*
  * Copyright (c) 2007-2011 Mindaugas Rasiukevicius <rmind at NetBSD org>
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_mqueue.c,v 1.46 2020/03/16 21:20:10 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_mqueue.c,v 1.48 2020/05/23 23:42:43 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -393,17 +393,17 @@ mq_close_fop(file_t *fp)
 static int
 mqueue_access(mqueue_t *mq, int access, kauth_cred_t cred)
 {
-	mode_t acc_mode = 0;
+	accmode_t accmode = 0;
 
 	/* Note the difference between VREAD/VWRITE and FREAD/FWRITE. */
 	if (access & FREAD) {
-		acc_mode |= VREAD;
+		accmode |= VREAD;
 	}
 	if (access & FWRITE) {
-		acc_mode |= VWRITE;
+		accmode |= VWRITE;
 	}
-	if (genfs_can_access(VNON, mq->mq_mode, mq->mq_euid,
-	    mq->mq_egid, acc_mode, cred)) {
+	if (genfs_can_access(NULL, cred, mq->mq_euid, mq->mq_egid,
+	    mq->mq_mode, NULL, accmode)) {
 		return EACCES;
 	}
 	return 0;
@@ -898,9 +898,9 @@ error:
 		mqueue_freemsg(msg, size);
 	} else if (notify) {
 		/* Send the notify, if needed */
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		kpsignal(notify, &ksi, NULL);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 	}
 	return error;
 }

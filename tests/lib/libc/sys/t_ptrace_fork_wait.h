@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ptrace_fork_wait.h,v 1.3 2020/05/14 19:21:35 kamil Exp $	*/
+/*	$NetBSD: t_ptrace_fork_wait.h,v 1.6 2020/05/16 23:10:26 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2016, 2017, 2018, 2020 The NetBSD Foundation, Inc.
@@ -337,6 +337,7 @@ unrelated_tracer_fork_body(const char *fn, bool trackspawn, bool trackfork,
 	int status;
 #endif
 
+	sigset_t set;
 	struct ptrace_siginfo info;
 	ptrace_state_t state;
 	const int slen = sizeof(state);
@@ -453,6 +454,21 @@ unrelated_tracer_fork_body(const char *fn, bool trackspawn, bool trackfork,
 		SYSCALL_REQUIRE(ptrace(PT_SET_EVENT_MASK, tracee, &event, elen)
 		    != -1);
 
+		/*
+		 * Ignore interception of the SIGCHLD signals.
+		 *
+		 * SIGCHLD once blocked is discarded by the kernel as it has the
+		 * SA_IGNORE property. During the fork(2) operation all signals
+		 * can be shortly blocked and missed (unless there is a
+		 * registered signal handler in the traced child). This leads to
+		 * a race in this test if there would be an intention to catch
+		 * SIGCHLD.
+		 */
+		sigemptyset(&set);
+		sigaddset(&set, SIGCHLD);
+		SYSCALL_REQUIRE(ptrace(PT_SET_SIGPASS, tracee, &set,
+		    sizeof(set)) != -1);
+
 		DPRINTF("Before resuming the child process where it left off "
 		    "and without signal to be sent\n");
 		SYSCALL_REQUIRE(ptrace(PT_CONTINUE, tracee, (void *)1, 0) != -1);
@@ -558,16 +574,6 @@ unrelated_tracer_fork_body(const char *fn, bool trackspawn, bool trackfork,
 			TWAIT_REQUIRE_FAILURE(ECHILD,
 			    wpid = TWAIT_GENERIC(tracee2, &status, 0));
 		}
-
-		DPRINTF("Before calling %s() for the tracee - expected stopped "
-		    "SIGCHLD\n", TWAIT_FNAME);
-		TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(tracee, &status, 0), tracee);
-
-		validate_status_stopped(status, SIGCHLD);
-
-		DPRINTF("Before resuming the tracee process where it left off and "
-		    "without signal to be sent\n");
-		SYSCALL_REQUIRE(ptrace(PT_CONTINUE, tracee, (void *)1, 0) != -1);
 
 		DPRINTF("Before calling %s() for the tracee - expected exited\n",
 		    TWAIT_FNAME);
@@ -1250,6 +1256,7 @@ fork2_body(const char *fn, bool masked, bool ignored)
 
 	int name[6];
 	const size_t namelen = __arraycount(name);
+	sigset_t set;
 	ki_sigset_t kp_sigmask;
 	ki_sigset_t kp_sigignore;
 
@@ -1340,6 +1347,19 @@ fork2_body(const char *fn, bool masked, bool ignored)
 	if (strcmp(fn, "vforkdone") == 0)
 		event.pe_set_event |= PTRACE_VFORK_DONE;
 	SYSCALL_REQUIRE(ptrace(PT_SET_EVENT_MASK, child, &event, elen) != -1);
+
+	/*
+	 * Ignore interception of the SIGCHLD signals.
+	 *
+	 * SIGCHLD once blocked is discarded by the kernel as it has the
+	 * SA_IGNORE property. During the fork(2) operation all signals can be
+	 * shortly blocked and missed (unless there is a registered signal
+	 * handler in the traced child). This leads to a race in this test if
+	 * there would be an intention to catch SIGCHLD.
+	 */
+	sigemptyset(&set);
+	sigaddset(&set, SIGCHLD);
+	SYSCALL_REQUIRE(ptrace(PT_SET_SIGPASS, child, &set, sizeof(set)) != -1);
 
 	DPRINTF("Before resuming the child process where it left off and "
 	    "without signal to be sent\n");
@@ -1560,16 +1580,6 @@ fork2_body(const char *fn, bool masked, bool ignored)
 		    wpid = TWAIT_GENERIC(child2, &status, 0));
 	}
 
-	DPRINTF("Before calling %s() for the child - expected stopped "
-	    "SIGCHLD\n", TWAIT_FNAME);
-	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0), child);
-
-	validate_status_stopped(status, SIGCHLD);
-
-	DPRINTF("Before resuming the child process where it left off and "
-	    "without signal to be sent\n");
-	SYSCALL_REQUIRE(ptrace(PT_CONTINUE, child, (void *)1, 0) != -1);
-
 	DPRINTF("Before calling %s() for the child - expected exited\n",
 	    TWAIT_FNAME);
 	TWAIT_REQUIRE_SUCCESS(wpid = TWAIT_GENERIC(child, &status, 0), child);
@@ -1596,14 +1606,14 @@ ATF_TC_BODY(name, tc)							\
 	fork2_body(fn, masked, ignored);				\
 }
 
-FORK2_TEST(posix_spawn_singalmasked, "spawn", true, false)
-FORK2_TEST(posix_spawn_singalignored, "spawn", false, true)
-FORK2_TEST(fork_singalmasked, "fork", true, false)
-FORK2_TEST(fork_singalignored, "fork", false, true)
-FORK2_TEST(vfork_singalmasked, "vfork", true, false)
-FORK2_TEST(vfork_singalignored, "vfork", false, true)
-FORK2_TEST(vforkdone_singalmasked, "vforkdone", true, false)
-FORK2_TEST(vforkdone_singalignored, "vforkdone", false, true)
+FORK2_TEST(posix_spawn_signalmasked, "spawn", true, false)
+FORK2_TEST(posix_spawn_signalignored, "spawn", false, true)
+FORK2_TEST(fork_signalmasked, "fork", true, false)
+FORK2_TEST(fork_signalignored, "fork", false, true)
+FORK2_TEST(vfork_signalmasked, "vfork", true, false)
+FORK2_TEST(vfork_signalignored, "vfork", false, true)
+FORK2_TEST(vforkdone_signalmasked, "vforkdone", true, false)
+FORK2_TEST(vforkdone_signalignored, "vforkdone", false, true)
 #endif
 
 #define ATF_TP_ADD_TCS_PTRACE_WAIT_FORK() \
@@ -1721,11 +1731,11 @@ FORK2_TEST(vforkdone_singalignored, "vforkdone", false, true)
 	ATF_TP_ADD_TC_HAVE_PID(tp, unrelated_tracer_vfork_kill_vforkerdone); \
 	ATF_TP_ADD_TC(tp, traceme_vfork_fork); \
 	ATF_TP_ADD_TC(tp, traceme_vfork_vfork); \
-	ATF_TP_ADD_TC_HAVE_PID(tp, posix_spawn_singalmasked); \
-	ATF_TP_ADD_TC_HAVE_PID(tp, posix_spawn_singalignored); \
-	ATF_TP_ADD_TC_HAVE_PID(tp, fork_singalmasked); \
-	ATF_TP_ADD_TC_HAVE_PID(tp, fork_singalignored); \
-	ATF_TP_ADD_TC_HAVE_PID(tp, vfork_singalmasked); \
-	ATF_TP_ADD_TC_HAVE_PID(tp, vfork_singalignored); \
-	ATF_TP_ADD_TC_HAVE_PID(tp, vforkdone_singalmasked); \
-	ATF_TP_ADD_TC_HAVE_PID(tp, vforkdone_singalignored);
+	ATF_TP_ADD_TC_HAVE_PID(tp, posix_spawn_signalmasked); \
+	ATF_TP_ADD_TC_HAVE_PID(tp, posix_spawn_signalignored); \
+	ATF_TP_ADD_TC_HAVE_PID(tp, fork_signalmasked); \
+	ATF_TP_ADD_TC_HAVE_PID(tp, fork_signalignored); \
+	ATF_TP_ADD_TC_HAVE_PID(tp, vfork_signalmasked); \
+	ATF_TP_ADD_TC_HAVE_PID(tp, vfork_signalignored); \
+	ATF_TP_ADD_TC_HAVE_PID(tp, vforkdone_signalmasked); \
+	ATF_TP_ADD_TC_HAVE_PID(tp, vforkdone_signalignored);

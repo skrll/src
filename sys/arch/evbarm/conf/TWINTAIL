@@ -1,4 +1,4 @@
-#	$NetBSD: TWINTAIL,v 1.79 2020/04/18 11:00:38 skrll Exp $
+#	$NetBSD: TWINTAIL,v 1.81 2020/05/19 09:17:45 rin Exp $
 #
 #	TWINTAIL -- Genetec corp. G4255EB-X002 Evaluation Board Kernel
 #
@@ -89,11 +89,11 @@ options 	COMPAT_NETBSD32	# allow running arm (e.g. non-earm) binaries
 
 # Device options
 
-#options 	MEMORY_DISK_HOOKS	# boottime setup of ramdisk
-#options 	MEMORY_DISK_SIZE=3072	# Size in blocks
+#options 	MEMORY_DISK_HOOKS		# boottime setup of ramdisk
+#options 	MEMORY_DISK_ROOT_SIZE=3072	# Size in blocks
 #options 	MEMORY_DISK_DYNAMIC
-#options 	MINIROOTSIZE=1000	# Size in blocks
-#options 	MEMORY_DISK_IS_ROOT	# use memory disk as root
+#options 	MINIROOTSIZE=1000		# Size in blocks
+#options 	MEMORY_DISK_IS_ROOT		# use memory disk as root
 
 # Miscellaneous kernel options
 options 	KTRACE		# system call tracing, a la ktrace(1)
@@ -271,9 +271,6 @@ opio0 	at obio?  intr 2
 
 # USB scanners that use SCSI emulation, e.g., HP5300
 #usscanner* at uhub? port ?
-
-# Y@P firmware loader
-#uyap* at uhub? port ?
 
 # D-Link DSB-R100 USB radio
 #udsbr*	at uhub? port ?

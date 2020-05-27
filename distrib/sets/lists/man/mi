@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1687 2020/04/12 01:10:53 simonb Exp $
+# $NetBSD: mi,v 1.1691 2020/05/19 06:26:37 jdc Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -188,6 +188,7 @@
 ./usr/share/man/cat1/getconf.0			man-util-catman		.cat
 ./usr/share/man/cat1/getent.0			man-util-catman		.cat
 ./usr/share/man/cat1/getextattr.0		man-util-catman		.cat
+./usr/share/man/cat1/getfacl.0			man-util-catman		.cat
 ./usr/share/man/cat1/getopt.0			man-util-catman		.cat
 ./usr/share/man/cat1/gettext.0			man-locale-catman	.cat
 ./usr/share/man/cat1/gkermit.0			man-obsolete		.cat,obsolete
@@ -520,6 +521,7 @@
 ./usr/share/man/cat1/sendmail.0			man-postfix-catman	postfix,.cat
 ./usr/share/man/cat1/seq.0			man-util-catman		.cat
 ./usr/share/man/cat1/setextattr.0		man-util-catman		.cat
+./usr/share/man/cat1/setfacl.0			man-util-catman		.cat
 ./usr/share/man/cat1/sftp.0			man-secsh-catman	.cat
 ./usr/share/man/cat1/sh.0			man-util-catman		.cat
 ./usr/share/man/cat1/sha1.0			man-util-catman		.cat
@@ -671,28 +673,6 @@
 ./usr/share/man/cat3/atari/ahdi_writelabel.0	man-obsolete		obsolete
 ./usr/share/man/cat3/eddsa_pk_new.0			man-util-catman	.cat
 ./usr/share/man/cat3/es256_pk_new.0			man-util-catman	.cat
-./usr/share/man/cat3/fido_assert_allow_cred.0		man-util-catman	.cat
-./usr/share/man/cat3/fido_assert_new.0			man-util-catman	.cat
-./usr/share/man/cat3/fido_assert_set_authdata.0		man-util-catman	.cat
-./usr/share/man/cat3/fido_assert_verify.0		man-util-catman	.cat
-./usr/share/man/cat3/fido_bio_dev_get_info.0		man-util-catman	.cat
-./usr/share/man/cat3/fido_bio_enroll_new.0		man-util-catman	.cat
-./usr/share/man/cat3/fido_bio_info_new.0		man-util-catman	.cat
-./usr/share/man/cat3/fido_bio_template.0		man-util-catman	.cat
-./usr/share/man/cat3/fido_cbor_info_new.0		man-util-catman	.cat
-./usr/share/man/cat3/fido_cred_exclude.0		man-util-catman	.cat
-./usr/share/man/cat3/fido_cred_new.0			man-util-catman	.cat
-./usr/share/man/cat3/fido_cred_set_authdata.0		man-util-catman	.cat
-./usr/share/man/cat3/fido_cred_verify.0			man-util-catman	.cat
-./usr/share/man/cat3/fido_credman_metadata_new.0	man-util-catman	.cat
-./usr/share/man/cat3/fido_dev_get_assert.0		man-util-catman	.cat
-./usr/share/man/cat3/fido_dev_info_manifest.0		man-util-catman	.cat
-./usr/share/man/cat3/fido_dev_make_cred.0		man-util-catman	.cat
-./usr/share/man/cat3/fido_dev_open.0			man-util-catman	.cat
-./usr/share/man/cat3/fido_dev_set_io_functions.0	man-util-catman	.cat
-./usr/share/man/cat3/fido_dev_set_pin.0			man-util-catman	.cat
-./usr/share/man/cat3/fido_init.0			man-util-catman	.cat
-./usr/share/man/cat3/fido_strerr.0			man-util-catman	.cat
 ./usr/share/man/cat3/i386			man-obsolete		obsolete
 ./usr/share/man/cat3/i386/keycap.0		man-obsolete		obsolete
 ./usr/share/man/cat3/libbozohttpd.0		man-sys-catman		.cat
@@ -1795,6 +1775,7 @@
 ./usr/share/man/cat4/sparc64/lom.0		man-sys-catman		.cat
 ./usr/share/man/cat4/sparc64/sab.0		man-sys-catman		.cat
 ./usr/share/man/cat4/sparc64/sabtty.0		man-sys-catman		.cat
+./usr/share/man/cat4/sparc64/tadpmu.0		man-sys-catman		.cat
 ./usr/share/man/cat4/sparc64/tda.0		man-sys-catman		.cat
 ./usr/share/man/cat4/spc.0			man-sys-catman		.cat
 ./usr/share/man/cat4/spdmem.0			man-sys-catman		.cat
@@ -1958,7 +1939,7 @@
 ./usr/share/man/cat4/uvisor.0			man-sys-catman		.cat
 ./usr/share/man/cat4/uvscom.0			man-sys-catman		.cat
 ./usr/share/man/cat4/uxrcom.0			man-sys-catman		.cat
-./usr/share/man/cat4/uyap.0			man-sys-catman		.cat
+./usr/share/man/cat4/uyap.0			man-obsolete		obsolete
 ./usr/share/man/cat4/uyurex.0			man-obsolete		obsolete
 ./usr/share/man/cat4/vald.0			man-sys-catman		.cat
 ./usr/share/man/cat4/valz.0			man-sys-catman		.cat
@@ -3487,6 +3468,7 @@
 ./usr/share/man/html1/getconf.html		man-util-htmlman	html
 ./usr/share/man/html1/getent.html		man-util-htmlman	html
 ./usr/share/man/html1/getextattr.html		man-util-htmlman	html
+./usr/share/man/html1/getfacl.html		man-util-htmlman	html
 ./usr/share/man/html1/getopt.html		man-util-htmlman	html
 ./usr/share/man/html1/gettext.html		man-locale-htmlman	html
 ./usr/share/man/html1/gkermit.html		man-obsolete		html,obsolete
@@ -3801,6 +3783,7 @@
 ./usr/share/man/html1/sendmail.html		man-postfix-htmlman	postfix,html
 ./usr/share/man/html1/seq.html			man-util-htmlman	html
 ./usr/share/man/html1/setextattr.html		man-util-htmlman	html
+./usr/share/man/html1/setfacl.html		man-util-htmlman	html
 ./usr/share/man/html1/sftp.html			man-secsh-htmlman	html
 ./usr/share/man/html1/sh.html			man-util-htmlman	html
 ./usr/share/man/html1/sha1.html			man-util-htmlman	html
@@ -3942,28 +3925,6 @@
 ./usr/share/man/html1/ztest.html		man-zfs-htmlman		zfs,html
 ./usr/share/man/html3/eddsa_pk_new.html			man-util-htmlman	html
 ./usr/share/man/html3/es256_pk_new.html			man-util-htmlman	html
-./usr/share/man/html3/fido_assert_allow_cred.html	man-util-htmlman	html
-./usr/share/man/html3/fido_assert_new.html		man-util-htmlman	html
-./usr/share/man/html3/fido_assert_set_authdata.html	man-util-htmlman	html
-./usr/share/man/html3/fido_assert_verify.html		man-util-htmlman	html
-./usr/share/man/html3/fido_bio_dev_get_info.html	man-util-htmlman	html
-./usr/share/man/html3/fido_bio_enroll_new.html		man-util-htmlman	html
-./usr/share/man/html3/fido_bio_info_new.html		man-util-htmlman	html
-./usr/share/man/html3/fido_bio_template.html		man-util-htmlman	html
-./usr/share/man/html3/fido_cbor_info_new.html		man-util-htmlman	html
-./usr/share/man/html3/fido_cred_exclude.html		man-util-htmlman	html
-./usr/share/man/html3/fido_cred_new.html		man-util-htmlman	html
-./usr/share/man/html3/fido_cred_set_authdata.html	man-util-htmlman	html
-./usr/share/man/html3/fido_cred_verify.html		man-util-htmlman	html
-./usr/share/man/html3/fido_credman_metadata_new.html	man-util-htmlman	html
-./usr/share/man/html3/fido_dev_get_assert.html		man-util-htmlman	html
-./usr/share/man/html3/fido_dev_info_manifest.html	man-util-htmlman	html
-./usr/share/man/html3/fido_dev_make_cred.html		man-util-htmlman	html
-./usr/share/man/html3/fido_dev_open.html		man-util-htmlman	html
-./usr/share/man/html3/fido_dev_set_io_functions.html	man-util-htmlman	html
-./usr/share/man/html3/fido_dev_set_pin.html		man-util-htmlman	html
-./usr/share/man/html3/fido_init.html			man-util-htmlman	html
-./usr/share/man/html3/fido_strerr.html			man-util-htmlman	html
 ./usr/share/man/html3/libbozohttpd.html		man-sys-htmlman		html
 ./usr/share/man/html3/libunbound.html		man-netutil-htmlman	html,unbound
 ./usr/share/man/html3/rs256_pk_new.html			man-util-htmlman	html
@@ -4947,6 +4908,7 @@
 ./usr/share/man/html4/sparc64/lom.html		man-sys-htmlman		html
 ./usr/share/man/html4/sparc64/sab.html		man-sys-htmlman		html
 ./usr/share/man/html4/sparc64/sabtty.html	man-sys-htmlman		html
+./usr/share/man/html4/sparc64/tadpmu.html	man-sys-htmlman		html
 ./usr/share/man/html4/sparc64/tda.html		man-sys-htmlman		html
 ./usr/share/man/html4/spc.html			man-sys-htmlman		html
 ./usr/share/man/html4/spdmem.html		man-sys-htmlman		html
@@ -5103,7 +5065,7 @@
 ./usr/share/man/html4/uvisor.html		man-sys-htmlman		html
 ./usr/share/man/html4/uvscom.html		man-sys-htmlman		html
 ./usr/share/man/html4/uxrcom.html		man-sys-htmlman		html
-./usr/share/man/html4/uyap.html			man-sys-htmlman		html
+./usr/share/man/html4/uyap.html			man-obsolete		obsolete
 ./usr/share/man/html4/uyurex.html		man-obsolete		obsolete
 ./usr/share/man/html4/vald.html			man-sys-htmlman		html
 ./usr/share/man/html4/valz.html			man-sys-htmlman		html
@@ -6402,6 +6364,7 @@
 ./usr/share/man/man1/getconf.1			man-util-man		.man
 ./usr/share/man/man1/getent.1			man-util-man		.man
 ./usr/share/man/man1/getextattr.1		man-util-man		.man
+./usr/share/man/man1/getfacl.1			man-util-man		.man
 ./usr/share/man/man1/getopt.1			man-util-man		.man
 ./usr/share/man/man1/gettext.1			man-locale-man		.man
 ./usr/share/man/man1/gkermit.1			man-obsolete		.man,obsolete
@@ -6734,6 +6697,7 @@
 ./usr/share/man/man1/sendmail.1			man-postfix-man		postfix,.man
 ./usr/share/man/man1/seq.1			man-util-man		.man
 ./usr/share/man/man1/setextattr.1		man-util-man		.man
+./usr/share/man/man1/setfacl.1			man-util-man		.man
 ./usr/share/man/man1/sftp.1			man-secsh-man		.man
 ./usr/share/man/man1/sh.1			man-util-man		.man
 ./usr/share/man/man1/sha1.1			man-util-man		.man
@@ -6885,28 +6849,6 @@
 ./usr/share/man/man3/atari/ahdi_writelabel.3	man-obsolete		obsolete
 ./usr/share/man/man3/eddsa_pk_new.3			man-util-man	.man
 ./usr/share/man/man3/es256_pk_new.3			man-util-man	.man
-./usr/share/man/man3/fido_assert_allow_cred.3		man-util-man	.man
-./usr/share/man/man3/fido_assert_new.3			man-util-man	.man
-./usr/share/man/man3/fido_assert_set_authdata.3		man-util-man	.man
-./usr/share/man/man3/fido_assert_verify.3		man-util-man	.man
-./usr/share/man/man3/fido_bio_dev_get_info.3		man-util-man	.man
-./usr/share/man/man3/fido_bio_enroll_new.3		man-util-man	.man
-./usr/share/man/man3/fido_bio_info_new.3		man-util-man	.man
-./usr/share/man/man3/fido_bio_template.3		man-util-man	.man
-./usr/share/man/man3/fido_cbor_info_new.3		man-util-man	.man
-./usr/share/man/man3/fido_cred_exclude.3		man-util-man	.man
-./usr/share/man/man3/fido_cred_new.3			man-util-man	.man
-./usr/share/man/man3/fido_cred_set_authdata.3		man-util-man	.man
-./usr/share/man/man3/fido_cred_verify.3			man-util-man	.man
-./usr/share/man/man3/fido_credman_metadata_new.3	man-util-man	.man
-./usr/share/man/man3/fido_dev_get_assert.3		man-util-man	.man
-./usr/share/man/man3/fido_dev_info_manifest.3		man-util-man	.man
-./usr/share/man/man3/fido_dev_make_cred.3		man-util-man	.man
-./usr/share/man/man3/fido_dev_open.3			man-util-man	.man
-./usr/share/man/man3/fido_dev_set_io_functions.3	man-util-man	.man
-./usr/share/man/man3/fido_dev_set_pin.3			man-util-man	.man
-./usr/share/man/man3/fido_init.3			man-util-man	.man
-./usr/share/man/man3/fido_strerr.3			man-util-man	.man
 ./usr/share/man/man3/i386			man-obsolete		obsolete
 ./usr/share/man/man3/i386/keycap.3		man-obsolete		obsolete
 ./usr/share/man/man3/libbozohttpd.3		man-sys-man		.man
@@ -8009,6 +7951,7 @@
 ./usr/share/man/man4/sparc64/lom.4		man-sys-man		.man
 ./usr/share/man/man4/sparc64/sab.4		man-sys-man		.man
 ./usr/share/man/man4/sparc64/sabtty.4		man-sys-man		.man
+./usr/share/man/man4/sparc64/tadpmu.4		man-sys-man		.man
 ./usr/share/man/man4/sparc64/tda.4		man-sys-man		.man
 ./usr/share/man/man4/spc.4			man-sys-man		.man
 ./usr/share/man/man4/spdmem.4			man-sys-man		.man
@@ -8172,7 +8115,7 @@
 ./usr/share/man/man4/uvisor.4			man-sys-man		.man
 ./usr/share/man/man4/uvscom.4			man-sys-man		.man
 ./usr/share/man/man4/uxrcom.4			man-sys-man		.man
-./usr/share/man/man4/uyap.4			man-sys-man		.man
+./usr/share/man/man4/uyap.4			man-obsolete		obsolete
 ./usr/share/man/man4/uyurex.4			man-obsolete		obsolete
 ./usr/share/man/man4/vald.4			man-sys-man		.man
 ./usr/share/man/man4/valz.4			man-sys-man		.man
