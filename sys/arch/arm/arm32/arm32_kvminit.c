@@ -988,10 +988,6 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 
 	VPRINTF(" ttb");
 
-extern uint8_t svcstk[];
-#define INIT_ARM_STACK_SIZE	2048
-	kasan_shadow_map((void *)svcstk, INIT_ARM_STACK_SIZE);
-
 #ifdef ARM_MMU_EXTENDED
 	/*
 	 * TTBCR should have been initialized by the MD start code.
@@ -1009,6 +1005,11 @@ extern uint8_t svcstk[];
 #endif
 
 	cpu_tlb_flushID();
+
+extern uint8_t svcstk[];
+//	VPRINTF(" svcstk %p", (void *)svcstk);
+#define INIT_ARM_STACK_SIZE	2048
+	kasan_shadow_map((void *)svcstk, INIT_ARM_STACK_SIZE);
 
 #ifdef ARM_MMU_EXTENDED
 	VPRINTF("\nsctlr=%#x actlr=%#x\n",
