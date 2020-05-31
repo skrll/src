@@ -64,7 +64,7 @@ __KERNEL_RCSID(0, "$NetBSD: virt_platform.c,v 1.9 2018/10/30 16:41:52 skrll Exp 
 
 void virt_platform_early_putchar(char);
 
-void
+void __noasan
 virt_platform_early_putchar(char c)
 {
 	volatile uint32_t *uartaddr = cpu_earlydevice_va_p() ?
@@ -94,7 +94,7 @@ virt_platform_devmap(void)
 	return devmap;
 }
 
-static void
+static void __noasan
 virt_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	extern struct arm32_bus_dma_tag arm_generic_dma_tag;
@@ -106,12 +106,12 @@ virt_platform_init_attach_args(struct fdt_attach_args *faa)
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 
-static void
+static void __noasan
 virt_platform_device_register(device_t self, void *aux)
 {
 }
 
-static u_int
+static u_int __noasan
 virt_platform_uart_freq(void)
 {
 	return 24000000;

@@ -70,8 +70,7 @@ CFLAGS+=	-mapcs-frame
 #
 #Note: -fasan-shadow-offset=
 #	KASAN_SHADOW_START - (CANONICAL_BASE >> 3) =
-#	0xFFFF400000000000 - (0xFFFF000000000000 >> 3) =
-#	0xDFFF600000000000
+#       0xc000_0000 - (0x8000_0000 >> 3) = 0xb000_0000
 #
 
 .if ${KASAN:U0} > 0 && ${HAVE_GCC:U0} > 0
@@ -79,7 +78,7 @@ KASANFLAGS=	-fsanitize=kernel-address \
 		--param asan-globals=1 --param asan-stack=1 \
 		--param asan-instrument-allocas=1 \
 		-fsanitize-address-use-after-scope \
-		-fasan-shadow-offset=0xDFFF6000
+		-fasan-shadow-offset=0xb0000000
 .for f in subr_asan.c
 KASANFLAGS.${f}=	# empty
 .endfor

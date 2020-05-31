@@ -130,6 +130,7 @@
 __KERNEL_RCSID(0, "$NetBSD: arm32_kvminit.c,v 1.58 2020/02/04 10:59:21 skrll Exp $");
 
 #include <sys/param.h>
+#include <sys/asan.h>
 #include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
@@ -421,7 +422,7 @@ valloc_pages(struct bootmem_info *bmi, pv_addr_t *pv, size_t npages,
 		memset((void *)pv->pv_va, 0, nbytes);
 }
 
-void
+void __noasan
 arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	const struct pmap_devmap *devmap, bool mapallmem_p)
 {
@@ -981,7 +982,15 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	cpu_setup(boot_args);
 #endif
 
+// kernelstack.pv_va + (UPAGES * PAGE_SIZE) - 1
+// 	kasan_shadow_map((void *),
+// 	    (size_t)(maxkvaddr - pmap_maxkvaddr));
+
 	VPRINTF(" ttb");
+
+extern uint8_t svcstk[];
+#define INIT_ARM_STACK_SIZE	2048
+	kasan_shadow_map((void *)svcstk, INIT_ARM_STACK_SIZE);
 
 #ifdef ARM_MMU_EXTENDED
 	/*

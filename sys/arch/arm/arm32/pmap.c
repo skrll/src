@@ -194,9 +194,10 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.412 2020/04/21 06:45:16 skrll Exp $");
 
-#include <sys/atomic.h>
 #include <sys/param.h>
 #include <sys/types.h>
+
+#include <sys/asan.h>
 #include <sys/atomic.h>
 #include <sys/bus.h>
 #include <sys/cpu.h>

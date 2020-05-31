@@ -107,9 +107,9 @@
  * kernel virtual space layout
  *
  *   0x8000_0000 -  256MB kernel text/data/bss
- *   0x9000_0000 - 1024MB Kernel VM Space
- *   0xd000_0000 -  128MB (KASAN SHADOW MAP)
- *   0xd800_0000 -  384MB (spare)
+ *   0x9000_0000 -  768MB Kernel VM Space
+ *   0xc000_0000 -  128MB (KASAN SHADOW MAP)
+ *   0xc800_0000 -  640MB (spare)
  *   0xf000_0000 -  256MB IO
  */
 

@@ -33,6 +33,8 @@
 #include <sys/ksyms.h>
 
 #include <arm/vmparam.h>
+#include <arm/arm32/machdep.h>
+#include <arm/arm32/pmap.h>
 #if 0
 #include <aarch64/pmap.h>
 #include <aarch64/cpufunc.h>
@@ -45,14 +47,12 @@
 #define VM_KERNEL_IO_ADDRESS	KERNEL_IO_VBASE
 
 
-#define __MD_VIRTUAL_SHIFT	10
+#define __MD_VIRTUAL_SHIFT	29
 #define __MD_CANONICAL_BASE	0x80000000
 
 #define __MD_SHADOW_SIZE	(1U << (__MD_VIRTUAL_SHIFT - KASAN_SHADOW_SCALE_SHIFT))
-#define KASAN_MD_SHADOW_START	(0xd0000000)
+#define KASAN_MD_SHADOW_START	(0xc0000000)
 #define KASAN_MD_SHADOW_END	(KASAN_MD_SHADOW_START + __MD_SHADOW_SIZE)
-
-static bool __md_early __read_mostly = true;
 
 static inline int8_t *
 kasan_md_addr_to_shad(const void *addr)
@@ -69,82 +69,124 @@ kasan_md_unsupported(vaddr_t addr)
 	    (addr >= VM_KERNEL_IO_ADDRESS);
 }
 
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Early mapping, used to map just the stack at boot time. We rely on the fact
+ * that VA = PA + KERNEL_BASE.
+ */
+
+#define KASAN_NEARLYPAGES	1
+
+static bool __md_early __read_mostly = true;
+static uint8_t __md_earlypages[KASAN_NEARLYPAGES * L1_S_SIZE] __aligned(L1_S_SIZE);
+static size_t __md_earlytaken = 0;
+
+static paddr_t
+__md_early_palloc(void)
+{
+	vaddr_t va;
+
+	KASSERT(__md_earlytaken < KASAN_NEARLYPAGES);
+
+	va = (vaddr_t)(&__md_earlypages[0] + __md_earlytaken * PAGE_SIZE);
+	__md_earlytaken++;
+
+	return KERN_VTOPHYS(va);
+}
+
+static void
+__md_early_shadow_map_page(vaddr_t va)
+{
+	/* L1_TABLE_SIZE (16Kb) aligned */
+	const uint32_t mask = L1_TABLE_SIZE - 1;
+	const paddr_t ttb = (paddr_t)(armreg_ttbr_read() & ~mask);
+	pd_entry_t * const pdep = (pd_entry_t *)KERN_PHYSTOV(ttb);
+	const size_t l1slot = l1pte_index(va);
+
+	if (!l1pte_valid_p(pdep[l1slot])) {
+		const paddr_t pa = __md_early_palloc();
+		const int prot = VM_PROT_READ | VM_PROT_WRITE;
+		const pd_entry_t npde = L1_S_PROTO
+		    | pa
+		    | pte_l1_s_cache_mode
+		    | L1_S_PROT(PTE_KERNEL, prot)
+		    | L1_S_DOM(PMAP_DOMAIN_KERNEL);
+
+		l1pte_set(&pdep[l1slot], npde);
+		PDE_SYNC(&pdep[l1slot]);
+	}
+}
+
+#if 0
+static paddr_t
+__md_palloc(void)
+{
+	/* The page is zeroed. */
+	return pmap_get_physpage();
+}
+#endif
+
+static inline paddr_t
+__md_palloc_large(void)
+{
+	struct pglist pglist;
+	int ret;
+
+	if (!uvm.page_init_done)
+		return 0;
+
+	ret = uvm_pglistalloc(L1_S_SIZE, 0, ~0UL, L1_S_SIZE, 0,
+	    &pglist, 1, 0);
+	if (ret != 0)
+		return 0;
+
+	/* The page may not be zeroed. */
+	return VM_PAGE_TO_PHYS(TAILQ_FIRST(&pglist));
+}
+
+
 static void
 kasan_md_shadow_map_page(vaddr_t va)
 {
-#if 0
-	pd_entry_t *l0, *l1, *l2, *l3;
-	paddr_t l0pa, pa;
-	pd_entry_t pde;
-	size_t idx;
 
-	l0pa = reg_ttbr1_el1_read();
 	if (__predict_false(__md_early)) {
-		l0 = (void *)KERN_PHYSTOV(l0pa);
-	} else {
-		l0 = (void *)AARCH64_PA_TO_KVA(l0pa);
+		__md_early_shadow_map_page(va);
+		return;
 	}
 
-	idx = l0pde_index(va);
-	pde = l0[idx];
-	if (!l0pde_valid(pde)) {
-		pa = __md_palloc();
-		atomic_swap_64(&l0[idx], pa | L0_TABLE);
-	} else {
-		pa = l0pde_pa(pde);
-	}
-	if (__predict_false(__md_early)) {
-		l1 = (void *)KERN_PHYSTOV(pa);
-	} else {
-		l1 = (void *)AARCH64_PA_TO_KVA(pa);
-	}
+	/* 16Kb aligned */
+	const uint32_t mask16k = (16 * 1024) - 1;
+	const paddr_t ttb = (paddr_t)(armreg_ttbr_read() & ~mask16k);
+	pd_entry_t * const pdep = (pd_entry_t *)KERN_PHYSTOV(ttb);
+	const size_t l1slot = l1pte_index(va);
 
-	idx = l1pde_index(va);
-	pde = l1[idx];
-	if (!l1pde_valid(pde)) {
-		pa = __md_palloc();
-		atomic_swap_64(&l1[idx], pa | L1_TABLE);
-	} else {
-		pa = l1pde_pa(pde);
-	}
-	if (__predict_false(__md_early)) {
-		l2 = (void *)KERN_PHYSTOV(pa);
-	} else {
-		l2 = (void *)AARCH64_PA_TO_KVA(pa);
-	}
+	if (!l1pte_valid_p(pdep[l1slot])) {
+		const paddr_t pa = __md_palloc_large();
+		const int prot = VM_PROT_READ | VM_PROT_WRITE;
+		const pd_entry_t npde = L1_S_PROTO
+		    | pa
+		    | pte_l1_s_cache_mode
+		    | L1_S_PROT(PTE_KERNEL, prot)
+		    | L1_S_DOM(PMAP_DOMAIN_KERNEL);
 
-	idx = l2pde_index(va);
-	pde = l2[idx];
-	if (!l2pde_valid(pde)) {
-		pa = __md_palloc();
-		atomic_swap_64(&l2[idx], pa | L2_TABLE);
-	} else {
-		pa = l2pde_pa(pde);
+		l1pte_set(&pdep[l1slot], npde);
+		PDE_SYNC(&pdep[l1slot]);
 	}
-	if (__predict_false(__md_early)) {
-		l3 = (void *)KERN_PHYSTOV(pa);
-	} else {
-		l3 = (void *)AARCH64_PA_TO_KVA(pa);
-	}
-
-	idx = l3pte_index(va);
-	pde = l3[idx];
-	if (!l3pte_valid(pde)) {
-		pa = __md_palloc();
-		atomic_swap_64(&l3[idx], pa | L3_PAGE | LX_BLKPAG_UXN |
-		    LX_BLKPAG_PXN | LX_BLKPAG_AF | LX_BLKPAG_SH_IS |
-		    LX_BLKPAG_AP_RW);
-		aarch64_tlbi_by_va(va);
-	}
-#endif
 }
+
+/*
+ * Map only the current stack. We will map the rest in kasan_init.
+ */
+#define INIT_ARM_STACK_SIZE	2048
 
 static void
 kasan_md_early_init(void *stack)
 {
-	kasan_shadow_map(stack, USPACE);
+	kasan_shadow_map(stack, INIT_ARM_STACK_SIZE);
 	__md_early = false;
 }
+
 
 static void
 kasan_md_init(void)

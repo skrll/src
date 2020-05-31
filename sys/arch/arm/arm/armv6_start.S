@@ -224,7 +224,10 @@ generic_savevars:
 
 	.ltorg
 
-	/* Allocate some memory after the kernel image for stacks and bootstrap L1PT */
+	/*
+	 * Allocate some memory after the kernel image for stacks and
+	 * bootstrap L1PT
+	 */
 	.section "_init_memory", "aw", %nobits
 	.p2align INIT_ARM_STACK_SHIFT
 start_stacks_bottom:

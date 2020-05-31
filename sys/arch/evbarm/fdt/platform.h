@@ -51,7 +51,7 @@ void fdt_add_reserved_memory_range(uint64_t, uint64_t);
 #define KERNEL_VM_BASE		0x90000000
 #endif
 
-#define KERNEL_VM_SIZE		(KERNEL_IO_VBASE - KERNEL_VM_BASE)
+#define KERNEL_VM_SIZE		(/*KERNEL_IO_VBASE*/ 0xc0000000 - KERNEL_VM_BASE)
 
 #endif /* !__aarch64 */
 
