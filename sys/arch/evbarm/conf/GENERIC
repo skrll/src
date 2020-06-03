@@ -260,9 +260,9 @@ tegra210xpad* 	at fdt?			# NVIDIA Tegra XUSB PADCTL (T210)
 tegra210xphy* 	at tegra210xpad?
 
 # PCIE
+imxpcie*	at fdt?			# i.MX PCIE
 pcihost* 	at fdt?			# Generic PCI host controller
 tegrapcie0 	at fdt?			# NVIDIA Tegra PCIE
-imxpcie*	at fdt?			# i.MX PCIE
 pci* 		at pcibus?
 ppb* 		at pci? dev ? function ?
 pci* 		at ppb?

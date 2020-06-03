@@ -7,6 +7,8 @@ file	arch/arm/nxp/imx6_platform.c		soc_imx
 
 # SOC parameters
 defflag	opt_soc.h				SOC_IMX
+defflag	opt_soc.h				SOC_IMX6DL: SOC_IMX
+defflag	opt_soc.h				SOC_IMX6Q: SOC_IMX
 defflag	opt_soc.h				SOC_IMX6QDL: SOC_IMX
 
 defflag opt_imx.h				IMX6
@@ -52,7 +54,7 @@ file	arch/arm/imx/imxgpio.c			imxgpio	needs-flag
 file	arch/arm/nxp/imx_gpio.c			imxgpio
 
 # UART
-device	imxuart { } : bus_space_generic
+device	imxuart: tty
 attach	imxuart at fdt with imx_com
 file	arch/arm/imx/imxuart.c			imxuart	needs-flag
 file	arch/arm/nxp/imx_com.c			imx_com needs-flag
@@ -134,8 +136,8 @@ file	arch/arm/nxp/imxwdog.c			imxwdog
 device	imxpwm: pwm, clk
 attach	imxpwm at fdt with imxpwm_fdt
 file	arch/arm/imx/imxpwm.c			imxpwm
-file	arch/arm/imx/fdt/imx6_pwm.c		imxpwm_fdt
+file	arch/arm/nxp/imx6_pwm.c			imxpwm_fdt
 
 # HDMI TX (Designware based)
 attach	dwhdmi at fdt with imx6_dwhdmi
-file	arch/arm/imx/fdt/imx6_dwhdmi.c		imx6_dwhdmi
+file	arch/arm/nxp/imx6_dwhdmi.c		imx6_dwhdmi

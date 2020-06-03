@@ -1,3 +1,5 @@
+/*	$NetBSD: is_ip_address.c,v 1.2 2020/05/25 20:47:24 christos Exp $	*/
+
 /*
  * is_ip_address
  *

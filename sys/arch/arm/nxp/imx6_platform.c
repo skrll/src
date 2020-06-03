@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_platform.c,v 1.8 2019/10/23 02:34:43 hkenken Exp $	*/
+/*	$NetBSD: imx6_platform.c,v 1.9 2020/05/24 08:47:19 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_platform.c,v 1.8 2019/10/23 02:34:43 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx6_platform.c,v 1.9 2020/05/24 08:47:19 skrll Exp $");
 
 #include "arml2cc.h"
 #include "opt_console.h"

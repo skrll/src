@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_timeout.c,v 1.61 2020/04/19 20:35:29 ad Exp $	*/
+/*	$NetBSD: kern_timeout.c,v 1.65 2020/06/02 02:04:35 rin Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2006, 2007, 2008, 2009, 2019 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_timeout.c,v 1.61 2020/04/19 20:35:29 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_timeout.c,v 1.65 2020/06/02 02:04:35 rin Exp $");
 
 /*
  * Timeouts are kept in a hierarchical timing wheel.  The c_time is the
@@ -182,8 +182,12 @@ struct callout_cpu {
 	char		cc_name2[12];
 };
 
-#ifndef CRASH
+#ifdef DDB
+static struct callout_cpu ccb;
+static struct cpu_info cib;
+#endif
 
+#ifndef CRASH /* _KERNEL */
 static void	callout_softclock(void *);
 static void	callout_wait(callout_impl_t *, void *, kmutex_t *);
 
@@ -798,7 +802,7 @@ callout_softclock(void *v)
 	cc->cc_lwp = NULL;
 	mutex_spin_exit(cc->cc_lock);
 }
-#endif
+#endif /* !CRASH */
 
 #ifdef DDB
 static void
@@ -834,8 +838,8 @@ db_show_callout_bucket(struct callout_cpu *cc, struct callout_circq *kbucket,
 void
 db_show_callout(db_expr_t addr, bool haddr, db_expr_t count, const char *modif)
 {
-	struct callout_cpu *cc, ccb;
-	struct cpu_info *ci, cib;
+	struct callout_cpu *cc;
+	struct cpu_info *ci;
 	int b;
 
 #ifndef CRASH

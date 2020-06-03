@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.70 2020/05/23 23:42:42 ad Exp $	*/
+/*	$NetBSD: audio.c,v 1.75 2020/05/29 03:09:14 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -138,7 +138,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.70 2020/05/23 23:42:42 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.75 2020/05/29 03:09:14 isaki Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -1566,6 +1566,13 @@ audio_track_waitio(struct audio_softc *sc, audio_track_t *track)
 	/* Wait for pending I/O to complete. */
 	error = cv_timedwait_sig(&track->mixer->outcv, sc->sc_lock,
 	    mstohz(AUDIO_TIMEOUT));
+	if (sc->sc_suspending) {
+		/* If it's about to suspend, ignore timeout error. */
+		if (error == EWOULDBLOCK) {
+			TRACET(2, track, "timeout (suspending)");
+			return 0;
+		}
+	}
 	if (sc->sc_dying) {
 		error = EIO;
 	}
@@ -6120,13 +6127,17 @@ static int
 audio_check_params(audio_format2_t *p)
 {
 
-	/* Convert obsoleted AUDIO_ENCODING_PCM* */
-	/* XXX Is this conversion right? */
+	/*
+	 * Convert obsolete AUDIO_ENCODING_PCM encodings.
+	 * 
+	 * AUDIO_ENCODING_PCM16 == AUDIO_ENCODING_LINEAR
+	 * So, it's always signed, as in SunOS.
+	 *
+	 * AUDIO_ENCODING_PCM8 == AUDIO_ENCODING_LINEAR8
+	 * So, it's always unsigned, as in SunOS.
+	 */
 	if (p->encoding == AUDIO_ENCODING_PCM16) {
-		if (p->precision == 8)
-			p->encoding = AUDIO_ENCODING_ULINEAR;
-		else
-			p->encoding = AUDIO_ENCODING_SLINEAR;
+		p->encoding = AUDIO_ENCODING_SLINEAR;
 	} else if (p->encoding == AUDIO_ENCODING_PCM8) {
 		if (p->precision == 8)
 			p->encoding = AUDIO_ENCODING_ULINEAR;
@@ -7750,15 +7761,17 @@ audio_suspend(device_t dv, const pmf_qual_t *qual)
 	error = audio_exlock_mutex_enter(sc);
 	if (error)
 		return error;
+	sc->sc_suspending = true;
 	audio_mixer_capture(sc);
 
-	/* Halts mixers but don't clear busy flag for resume */
 	if (sc->sc_pbusy) {
 		audio_pmixer_halt(sc);
+		/* Reuse this as need-to-restart flag while suspending */
 		sc->sc_pbusy = true;
 	}
 	if (sc->sc_rbusy) {
 		audio_rmixer_halt(sc);
+		/* Reuse this as need-to-restart flag while suspending */
 		sc->sc_rbusy = true;
 	}
 
@@ -7781,15 +7794,28 @@ audio_resume(device_t dv, const pmf_qual_t *qual)
 	if (error)
 		return error;
 
+	sc->sc_suspending = false;
 	audio_mixer_restore(sc);
 	/* XXX ? */
 	AUDIO_INITINFO(&ai);
 	audio_hw_setinfo(sc, &ai, NULL);
 
-	if (sc->sc_pbusy)
+	/*
+	 * During from suspend to resume here, sc_[pr]busy is used as
+	 * need-to-restart flag temporarily.  After this point,
+	 * sc_[pr]busy is returned to its original usage (busy flag).
+	 * And note that sc_[pr]busy must be false to call [pr]mixer_start().
+	 */
+	if (sc->sc_pbusy) {
+		/* pmixer_start() requires pbusy is false */
+		sc->sc_pbusy = false;
 		audio_pmixer_start(sc, true);
-	if (sc->sc_rbusy)
+	}
+	if (sc->sc_rbusy) {
+		/* rmixer_start() requires rbusy is false */
+		sc->sc_rbusy = false;
 		audio_rmixer_start(sc);
+	}
 
 	audio_exlock_mutex_exit(sc);
 

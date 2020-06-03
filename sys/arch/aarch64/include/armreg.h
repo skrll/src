@@ -1,4 +1,4 @@
-/* $NetBSD: armreg.h,v 1.45 2020/05/23 18:08:59 ryo Exp $ */
+/* $NetBSD: armreg.h,v 1.48 2020/05/28 12:41:15 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -108,6 +108,9 @@ reg_##regname##_write(uint64_t __val)				\
  */
 AARCH64REG_READ_INLINE(ctr_el0)		// Cache Type Register
 
+#define	CTR_EL0_TMIN_LINE	__BITS(37,32)	// Tag MIN LINE size
+#define	CTR_EL0_DIC		__BIT(29)	// Instruction cache requirement
+#define	CTR_EL0_IDC		__BIT(28)	// Data Cache clean requirement
 #define	CTR_EL0_CWG_LINE	__BITS(27,24)	// Cacheback Writeback Granule
 #define	CTR_EL0_ERG_LINE	__BITS(23,20)	// Exclusives Reservation Granule
 #define	CTR_EL0_DMIN_LINE	__BITS(19,16)	// Dcache MIN LINE size (log2 - 2)
@@ -189,6 +192,7 @@ AARCH64REG_READ_INLINE2(cbar_el1, s3_1_c15_c3_0)	// Cortex-A57
 
 AARCH64REG_READ_INLINE(ccsidr_el1)
 
+/* 32bit format CCSIDR_EL1 */
 #define	CCSIDR_WT		__BIT(31)	// OBSOLETE: Write-through supported
 #define	CCSIDR_WB		__BIT(30)	// OBSOLETE: Write-back supported
 #define	CCSIDR_RA		__BIT(29)	// OBSOLETE: Read-allocation supported
@@ -196,6 +200,11 @@ AARCH64REG_READ_INLINE(ccsidr_el1)
 #define	CCSIDR_NUMSET		__BITS(27,13)	// (Number of sets in cache) - 1
 #define	CCSIDR_ASSOC		__BITS(12,3)	// (Associativity of cache) - 1
 #define	CCSIDR_LINESIZE 	__BITS(2,0)	// Number of bytes in cache line
+
+/* 64bit format CCSIDR_EL1 (ARMv8.3-CCIDX is implemented) */
+#define	CCSIDR64_NUMSET		__BITS(55,32)	// (Number of sets in cache) - 1
+#define	CCSIDR64_ASSOC		__BITS(23,3)	// (Associativity of cache) - 1
+#define	CCSIDR64_LINESIZE 	__BITS(2,0)	// Number of bytes in cache line
 
 AARCH64REG_READ_INLINE(clidr_el1)
 
@@ -894,6 +903,26 @@ AARCH64REG_WRITE_INLINE(tcr_el1)
 
 
 /* TCR_EL1 - Translation Control Register */
+#define TCR_TCMA1		__BIT(58)		/* ARMv8.5-MemTag control when ADDR[59:55] = 0b11111 */
+#define TCR_TCMA0		__BIT(57)		/* ARMv8.5-MemTag control when ADDR[59:55] = 0b00000 */
+#define TCR_E0PD1		__BIT(56)		/* ARMv8.5-E0PD Faulting control for EL0 by TTBR1 */
+#define TCR_E0PD0		__BIT(55)		/* ARMv8.5-E0PD Faulting control for EL0 by TTBR0 */
+#define TCR_NFD1		__BIT(54)		/* SVE Non-fault translation table walk disable (TTBR1) */
+#define TCR_NFD0		__BIT(53)		/* SVE Non-fault translation table walk disable (TTBR0) */
+#define TCR_TBID1		__BIT(52)		/* ARMv8.3-PAuth TBI for instruction addr (TTBR1) */
+#define TCR_TBID0		__BIT(51)		/* ARMv8.3-PAuth TBI for instruction addr (TTBR0) */
+#define TCR_HWU162		__BIT(50)		/* ARMv8.1-TTPBHA bit[62] of PTE (TTBR1) */
+#define TCR_HWU161		__BIT(49)		/* ARMv8.1-TTPBHA bit[61] of PTE (TTBR1) */
+#define TCR_HWU160		__BIT(48)		/* ARMv8.1-TTPBHA bit[60] of PTE (TTBR1) */
+#define TCR_HWU159		__BIT(47)		/* ARMv8.1-TTPBHA bit[59] of PTE (TTBR1) */
+#define TCR_HWU062		__BIT(46)		/* ARMv8.1-TTPBHA bit[62] of PTE (TTBR0) */
+#define TCR_HWU061		__BIT(45)		/* ARMv8.1-TTPBHA bit[61] of PTE (TTBR0) */
+#define TCR_HWU060		__BIT(44)		/* ARMv8.1-TTPBHA bit[60] of PTE (TTBR0) */
+#define TCR_HWU059		__BIT(43)		/* ARMv8.1-TTPBHA bit[59] of PTE (TTBR0) */
+#define TCR_HPD1		__BIT(42)		/* ARMv8.1-HPD Hierarchical Permission (TTBR1) */
+#define TCR_HPD0		__BIT(41)		/* ARMv8.1-HPD Hierarchical Permission (TTBR0) */
+#define TCR_HD			__BIT(40)		/* ARMv8.1-TTHM Hardware Dirty flag */
+#define TCR_HA			__BIT(39)		/* ARMv8.1-TTHM Hardware Access flag */
 #define TCR_TBI1		__BIT(38)		/* ignore Top Byte TTBR1_EL1 */
 #define TCR_TBI0		__BIT(37)		/* ignore Top Byte TTBR0_EL1 */
 #define TCR_AS64K		__BIT(36)		/* Use 64K ASIDs */

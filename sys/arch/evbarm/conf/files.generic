@@ -20,7 +20,6 @@ file	arch/arm/arm/bus_space_a4x.S
 include "arch/arm/altera/files.altera"
 include "arch/arm/amlogic/files.meson"
 include "arch/arm/broadcom/files.bcm2835"
-include "arch/arm/imx/fdt/files.imx6"
 include "arch/arm/nvidia/files.tegra"
 include "arch/arm/nxp/files.imx6"
 include "arch/arm/samsung/files.exynos"

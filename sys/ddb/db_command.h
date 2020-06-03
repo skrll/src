@@ -1,4 +1,4 @@
-/*	$NetBSD: db_command.h,v 1.36 2020/03/10 15:58:37 christos Exp $	*/
+/*	$NetBSD: db_command.h,v 1.38 2020/05/31 09:51:55 rin Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 1999, 2002 The NetBSD Foundation, Inc.

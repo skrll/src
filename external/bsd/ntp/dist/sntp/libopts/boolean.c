@@ -1,4 +1,4 @@
-/*	$NetBSD: boolean.c,v 1.4 2016/01/08 21:35:41 christos Exp $	*/
+/*	$NetBSD: boolean.c,v 1.6 2020/05/25 20:54:07 christos Exp $	*/
 
 
 /**
@@ -66,8 +66,8 @@ optionBooleanVal(tOptions * opts, tOptDesc * od)
         long  val = strtol(od->optArg.argString, &pz, 0);
         if ((val != 0) || (*pz != NUL))
             break;
-        /* FALLTHROUGH */
     }
+        /*FALLTHROUGH*/
     case 'N':
     case 'n':
     case 'F':

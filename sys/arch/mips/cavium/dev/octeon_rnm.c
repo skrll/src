@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_rnm.c,v 1.6 2020/05/18 16:05:09 riastradh Exp $	*/
+/*	$NetBSD: octeon_rnm.c,v 1.9 2020/05/31 06:27:06 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -99,7 +99,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: octeon_rnm.c,v 1.6 2020/05/18 16:05:09 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: octeon_rnm.c,v 1.9 2020/05/31 06:27:06 simonb Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -115,14 +115,15 @@ __KERNEL_RCSID(0, "$NetBSD: octeon_rnm.c,v 1.6 2020/05/18 16:05:09 riastradh Exp
 
 #include <sys/bus.h>
 
-//#define	OCTEON_RNM_DEBUG
+//#define	OCTRNM_DEBUG
 
 #define	ENT_DELAY_CLOCK 8	/* cycles for each 64-bit RO sample batch */
 #define	RNG_DELAY_CLOCK 81	/* cycles for each SHA-1 output */
 #define	NROGROUPS	16
 #define	RNG_FIFO_WORDS	(512/sizeof(uint64_t))
 
-struct octeon_rnm_softc {
+struct octrnm_softc {
+	uint64_t		sc_sample[RNG_FIFO_WORDS];
 	bus_space_tag_t		sc_bust;
 	bus_space_handle_t	sc_regh;
 	kmutex_t		sc_lock;
@@ -130,22 +131,22 @@ struct octeon_rnm_softc {
 	unsigned		sc_rogroup;
 };
 
-static int octeon_rnm_match(device_t, struct cfdata *, void *);
-static void octeon_rnm_attach(device_t, device_t, void *);
-static void octeon_rnm_rng(size_t, void *);
-static void octeon_rnm_reset(struct octeon_rnm_softc *);
-static void octeon_rnm_conditioned_deterministic(struct octeon_rnm_softc *);
-static void octeon_rnm_conditioned_entropy(struct octeon_rnm_softc *);
-static void octeon_rnm_raw_entropy(struct octeon_rnm_softc *, unsigned);
-static uint64_t octeon_rnm_load(struct octeon_rnm_softc *);
-static void octeon_rnm_iobdma(struct octeon_rnm_softc *, uint64_t *, unsigned);
-static void octeon_rnm_delay(uint32_t);
+static int octrnm_match(device_t, struct cfdata *, void *);
+static void octrnm_attach(device_t, device_t, void *);
+static void octrnm_rng(size_t, void *);
+static void octrnm_reset(struct octrnm_softc *);
+static void octrnm_conditioned_deterministic(struct octrnm_softc *);
+static void octrnm_conditioned_entropy(struct octrnm_softc *);
+static void octrnm_raw_entropy(struct octrnm_softc *, unsigned);
+static uint64_t octrnm_load(struct octrnm_softc *);
+static void octrnm_iobdma(struct octrnm_softc *, uint64_t *, unsigned);
+static void octrnm_delay(uint32_t);
 
-CFATTACH_DECL_NEW(octeon_rnm, sizeof(struct octeon_rnm_softc),
-    octeon_rnm_match, octeon_rnm_attach, NULL, NULL);
+CFATTACH_DECL_NEW(octrnm, sizeof(struct octrnm_softc),
+    octrnm_match, octrnm_attach, NULL, NULL);
 
 static int
-octeon_rnm_match(device_t parent, struct cfdata *cf, void *aux)
+octrnm_match(device_t parent, struct cfdata *cf, void *aux)
 {
 	struct iobus_attach_args *aa = aux;
 
@@ -157,9 +158,9 @@ octeon_rnm_match(device_t parent, struct cfdata *cf, void *aux)
 }
 
 static void
-octeon_rnm_attach(device_t parent, device_t self, void *aux)
+octrnm_attach(device_t parent, device_t self, void *aux)
 {
-	struct octeon_rnm_softc *sc = device_private(self);
+	struct octrnm_softc *sc = device_private(self);
 	struct iobus_attach_args *aa = aux;
 	uint64_t bist_status, sample, expected = UINT64_C(0xd654ff35fadf866b);
 
@@ -193,10 +194,10 @@ octeon_rnm_attach(device_t parent, device_t self, void *aux)
 	 * XXX Verify that the output matches the SHA-1 computation
 	 * described by the data sheet, not just a known answer.
 	 */
-	octeon_rnm_reset(sc);
-	octeon_rnm_conditioned_deterministic(sc);
-	octeon_rnm_delay(RNG_DELAY_CLOCK*1);
-	sample = octeon_rnm_load(sc);
+	octrnm_reset(sc);
+	octrnm_conditioned_deterministic(sc);
+	octrnm_delay(RNG_DELAY_CLOCK*1);
+	sample = octrnm_load(sc);
 	if (sample != expected)
 		aprint_error_dev(self, "self-test: read %016"PRIx64","
 		    " expected %016"PRIx64, sample, expected);
@@ -207,23 +208,23 @@ octeon_rnm_attach(device_t parent, device_t self, void *aux)
 	 * group of ring oscillators; as we gather samples we will
 	 * rotate through the rest of them.
 	 */
-	octeon_rnm_reset(sc);
+	octrnm_reset(sc);
 	sc->sc_rogroup = 0;
-	octeon_rnm_raw_entropy(sc, sc->sc_rogroup);
-	octeon_rnm_delay(ENT_DELAY_CLOCK*RNG_FIFO_WORDS);
+	octrnm_raw_entropy(sc, sc->sc_rogroup);
+	octrnm_delay(ENT_DELAY_CLOCK*RNG_FIFO_WORDS);
 
 	/* Attach the rndsource.  */
-	rndsource_setcb(&sc->sc_rndsrc, octeon_rnm_rng, sc);
+	rndsource_setcb(&sc->sc_rndsrc, octrnm_rng, sc);
 	rnd_attach_source(&sc->sc_rndsrc, device_xname(self), RND_TYPE_RNG,
 	    RND_FLAG_DEFAULT | RND_FLAG_HASCB);
 }
 
 static void
-octeon_rnm_rng(size_t nbytes, void *vsc)
+octrnm_rng(size_t nbytes, void *vsc)
 {
 	const unsigned BPB = 256; /* bits of data per bit of entropy */
-	uint64_t sample[32];
-	struct octeon_rnm_softc *sc = vsc;
+	struct octrnm_softc *sc = vsc;
+	uint64_t *samplepos;
 	size_t needed = NBBY*nbytes;
 	unsigned i;
 
@@ -241,23 +242,24 @@ octeon_rnm_rng(size_t nbytes, void *vsc)
 		 */
 		sc->sc_rogroup++;
 		sc->sc_rogroup %= NROGROUPS;
-		octeon_rnm_raw_entropy(sc, sc->sc_rogroup);
+		octrnm_raw_entropy(sc, sc->sc_rogroup);
 
 		/*
-		 * Gather half the FIFO at a time -- we are limited to
-		 * 256 bytes because of limits on the CVMSEG buffer.
+		 * Gather quarter the FIFO at a time -- we are limited
+		 * to 128 bytes because of limits on the CVMSEG buffer.
 		 */
-		CTASSERT(sizeof sample == 256);
-		CTASSERT(2*__arraycount(sample) == RNG_FIFO_WORDS);
-		for (i = 0; i < 2; i++) {
-			octeon_rnm_iobdma(sc, sample, __arraycount(sample));
-#ifdef OCTEON_RNM_DEBUG
-			hexdump(printf, "rnm", sample, sizeof sample);
-#endif
-			rnd_add_data_sync(&sc->sc_rndsrc, sample,
-			    sizeof sample, NBBY*sizeof(sample)/BPB);
-			needed -= MIN(needed, MAX(1, NBBY*sizeof(sample)/BPB));
+		CTASSERT(sizeof sc->sc_sample == 512);
+		CTASSERT(__arraycount(sc->sc_sample) == RNG_FIFO_WORDS);
+		for (samplepos = sc->sc_sample, i = 0; i < 4; i++) {
+			octrnm_iobdma(sc, samplepos, RNG_FIFO_WORDS / 4);
+			samplepos += RNG_FIFO_WORDS / 4;
 		}
+#ifdef OCTRNM_DEBUG
+		hexdump(printf, "rnm", sc->sc_sample, sizeof sc->sc_sample);
+#endif
+		rnd_add_data_sync(&sc->sc_rndsrc, sc->sc_sample,
+		    sizeof sc->sc_sample, NBBY*sizeof(sc->sc_sample)/BPB);
+		needed -= MIN(needed, MAX(1, NBBY*sizeof(sc->sc_sample)/BPB));
 
 		/* Yield if requested.  */
 		if (__predict_false(curcpu()->ci_schedstate.spc_flags &
@@ -270,16 +272,16 @@ octeon_rnm_rng(size_t nbytes, void *vsc)
 	mutex_exit(&sc->sc_lock);
 
 	/* Zero the sample.  */
-	explicit_memset(sample, 0, sizeof sample);
+	explicit_memset(sc->sc_sample, 0, sizeof sc->sc_sample);
 }
 
 /*
- * octeon_rnm_reset(sc)
+ * octrnm_reset(sc)
  *
  *	Reset the RNM unit, disabling it and clearing the FIFO.
  */
 static void
-octeon_rnm_reset(struct octeon_rnm_softc *sc)
+octrnm_reset(struct octrnm_softc *sc)
 {
 
 	bus_space_write_8(sc->sc_bust, sc->sc_regh, RNM_CTL_STATUS_OFFSET,
@@ -287,13 +289,13 @@ octeon_rnm_reset(struct octeon_rnm_softc *sc)
 }
 
 /*
- * octeon_rnm_conditioned_deterministic(sc)
+ * octrnm_conditioned_deterministic(sc)
  *
  *	Switch the RNM unit into the deterministic LFSR/SHA-1 mode with
  *	no entropy, for the next data loaded into the FIFO.
  */
 static void
-octeon_rnm_conditioned_deterministic(struct octeon_rnm_softc *sc)
+octrnm_conditioned_deterministic(struct octrnm_softc *sc)
 {
 
 	bus_space_write_8(sc->sc_bust, sc->sc_regh, RNM_CTL_STATUS_OFFSET,
@@ -301,14 +303,14 @@ octeon_rnm_conditioned_deterministic(struct octeon_rnm_softc *sc)
 }
 
 /*
- * octeon_rnm_conditioned_entropy(sc)
+ * octrnm_conditioned_entropy(sc)
  *
  *	Switch the RNM unit to generate ring oscillator samples
  *	conditioned with an LFSR/SHA-1, for the next data loaded into
  *	the FIFO.
  */
 static void __unused
-octeon_rnm_conditioned_entropy(struct octeon_rnm_softc *sc)
+octrnm_conditioned_entropy(struct octrnm_softc *sc)
 {
 
 	bus_space_write_8(sc->sc_bust, sc->sc_regh, RNM_CTL_STATUS_OFFSET,
@@ -316,13 +318,13 @@ octeon_rnm_conditioned_entropy(struct octeon_rnm_softc *sc)
 }
 
 /*
- * octeon_rnm_raw_entropy(sc, rogroup)
+ * octrnm_raw_entropy(sc, rogroup)
  *
  *	Switch the RNM unit to generate raw ring oscillator samples
  *	from the specified group of eight ring oscillator.
  */
 static void
-octeon_rnm_raw_entropy(struct octeon_rnm_softc *sc, unsigned rogroup)
+octrnm_raw_entropy(struct octrnm_softc *sc, unsigned rogroup)
 {
 	uint64_t ctl = 0;
 
@@ -336,12 +338,12 @@ octeon_rnm_raw_entropy(struct octeon_rnm_softc *sc, unsigned rogroup)
 }
 
 /*
- * octeon_rnm_load(sc)
+ * octrnm_load(sc)
  *
  *	Load a single 64-bit word out of the FIFO.
  */
 static uint64_t
-octeon_rnm_load(struct octeon_rnm_softc *sc)
+octrnm_load(struct octrnm_softc *sc)
 {
 	uint64_t addr =
 	    RNM_OPERATION_BASE_IO_BIT |
@@ -352,12 +354,12 @@ octeon_rnm_load(struct octeon_rnm_softc *sc)
 }
 
 /*
- * octeon_rnm_iobdma(sc, buf, nwords)
+ * octrnm_iobdma(sc, buf, nwords)
  *
  *	Load nwords, at most 32, out of the FIFO into buf.
  */
 static void
-octeon_rnm_iobdma(struct octeon_rnm_softc *sc, uint64_t *buf, unsigned nwords)
+octrnm_iobdma(struct octrnm_softc *sc, uint64_t *buf, unsigned nwords)
 {
 	size_t scraddr = OCTEON_CVMSEG_OFFSET(csm_rnm);
 	uint64_t iobdma =
@@ -366,7 +368,7 @@ octeon_rnm_iobdma(struct octeon_rnm_softc *sc, uint64_t *buf, unsigned nwords)
 	    __SHIFTIN(RNM_IOBDMA_MAJORDID, IOBDMA_MAJORDID) |
 	    __SHIFTIN(RNM_IOBDMA_SUBDID, IOBDMA_SUBDID);
 
-	KASSERT(nwords < 256);	/* iobdma address restriction */
+	KASSERT(nwords < 128);	/* iobdma address restriction */
 	KASSERT(nwords <= 32);	/* octeon_cvmseg_map limitation */
 
 	octeon_iobdma_write_8(iobdma);
@@ -376,13 +378,13 @@ octeon_rnm_iobdma(struct octeon_rnm_softc *sc, uint64_t *buf, unsigned nwords)
 }
 
 /*
- * octeon_rnm_delay(ncycles)
+ * octrnm_delay(ncycles)
  *
  *	Wait ncycles, at most UINT32_MAX/2 so we behave reasonably even
  *	if the cycle counter rolls over.
  */
 static void
-octeon_rnm_delay(uint32_t ncycles)
+octrnm_delay(uint32_t ncycles)
 {
 	uint32_t deadline = mips3_cp0_count_read() + ncycles;
 

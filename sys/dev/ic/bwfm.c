@@ -1,4 +1,4 @@
-/* $NetBSD: bwfm.c,v 1.22 2020/03/25 04:53:11 thorpej Exp $ */
+/* $NetBSD: bwfm.c,v 1.25 2020/05/30 15:55:47 jdolecek Exp $ */
 /* $OpenBSD: bwfm.c,v 1.5 2017/10/16 22:27:16 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -38,8 +38,8 @@
 
 #include <net80211/ieee80211_var.h>
 
-#include <dev/ic/bwfmvar.h>
 #include <dev/ic/bwfmreg.h>
+#include <dev/ic/bwfmvar.h>
 
 /* #define BWFM_DEBUG */
 #ifdef BWFM_DEBUG
@@ -119,15 +119,15 @@ void	 bwfm_rx_event(struct bwfm_softc *, struct mbuf *);
 void	 bwfm_rx_event_cb(struct bwfm_softc *, struct mbuf *);
 void	 bwfm_scan_node(struct bwfm_softc *, struct bwfm_bss_info *, size_t);
 
-uint8_t bwfm_2ghz_channels[] = {
+static const uint8_t bwfm_2ghz_channels[] = {
 	1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
 };
-uint8_t bwfm_5ghz_channels[] = {
+static const uint8_t bwfm_5ghz_channels[] = {
 	34, 36, 38, 40, 42, 44, 46, 48, 52, 56, 60, 64, 100, 104, 108, 112,
 	116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165,
 };
 
-struct bwfm_proto_ops bwfm_proto_bcdc_ops = {
+const struct bwfm_proto_ops bwfm_proto_bcdc_ops = {
 	.proto_query_dcmd = bwfm_proto_bcdc_query_dcmd,
 	.proto_set_dcmd = bwfm_proto_bcdc_set_dcmd,
 };
@@ -2140,15 +2140,12 @@ bwfm_rx_event_cb(struct bwfm_softc *sc, struct mbuf *m)
 		bss = &res->bss_info[0];
 		for (i = 0; i < le16toh(res->bss_count); i++) {
 			/* Fix alignment of bss_info */
-			union {
-				struct bwfm_bss_info bss_info;
-				uint8_t padding[BWFM_BSS_INFO_BUFLEN];
-			} bss_buf;
-			if (len > sizeof(bss_buf)) {
+			if (len > sizeof(sc->sc_bss_buf)) {
 				printf("%s: bss_info buffer too big\n", DEVNAME(sc));
 			} else {
-				memcpy(&bss_buf, &res->bss_info[i], len);
-				bwfm_scan_node(sc, &bss_buf.bss_info, len);
+				memcpy(&sc->sc_bss_buf, &res->bss_info[i], len);
+				bwfm_scan_node(sc, &sc->sc_bss_buf.bss_info,
+				    len);
 			}
 			len -= sizeof(*bss) + le32toh(bss->length);
 			bss = (void *)(((uintptr_t)bss) + le32toh(bss->length));
