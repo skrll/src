@@ -1,4 +1,4 @@
-/*	$NetBSD: xhcivar.h,v 1.13 2020/04/02 11:52:41 skrll Exp $	*/
+/*	$NetBSD: xhcivar.h,v 1.15 2020/05/21 13:47:10 jakllsch Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -42,7 +42,8 @@ struct xhci_soft_trb {
 
 struct xhci_xfer {
 	struct usbd_xfer xx_xfer;
-	struct xhci_soft_trb xx_trb[XHCI_XFER_NTRB];
+	struct xhci_soft_trb *xx_trb;
+	u_int xx_ntrb;
 };
 
 #define XHCI_BUS2SC(bus)	((bus)->ub_hcpriv)
@@ -62,10 +63,6 @@ struct xhci_ring {
 	u_int xr_ep;			/* enqueue pointer */
 	u_int xr_cs;			/* cycle state */
 	bool is_halted;
-};
-
-struct xhci_endpoint {
-	struct xhci_ring xe_tr;		/* transfer ring */
 };
 
 struct xhci_slot {

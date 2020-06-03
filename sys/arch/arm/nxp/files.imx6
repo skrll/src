@@ -18,7 +18,7 @@ file	arch/arm/nxp/imx6_ccm.c			imx6ccm
 file	arch/arm/nxp/imx6_clk.c			imx6ccm
 
 # Common FDT clock framework
-define	imx_ccm
+define	imx_ccm: clk
 file	arch/arm/nxp/imx_ccm.c			imx_ccm
 file	arch/arm/nxp/imx_ccm_extclk.c		imx_ccm
 file	arch/arm/nxp/imx_ccm_gate.c		imx_ccm
@@ -90,7 +90,7 @@ attach	sdhc at fdt with imx_sdhc
 file	arch/arm/nxp/imx_sdhc.c			imx_sdhc
 
 # PCIe
-device	imxpcie: pcibus
+device	imxpcie: pcibus, clk
 attach	imxpcie at fdt with imxpcie_fdt
 file	arch/arm/nxp/imxpcie.c			imxpcie
 file	arch/arm/nxp/imx6_pcie.c		imxpcie_fdt
@@ -130,3 +130,12 @@ device imxwdog: sysmon_wdog
 attach imxwdog at fdt
 file	arch/arm/nxp/imxwdog.c			imxwdog
 
+# PWM
+device	imxpwm: pwm, clk
+attach	imxpwm at fdt with imxpwm_fdt
+file	arch/arm/imx/imxpwm.c			imxpwm
+file	arch/arm/imx/fdt/imx6_pwm.c		imxpwm_fdt
+
+# HDMI TX (Designware based)
+attach	dwhdmi at fdt with imx6_dwhdmi
+file	arch/arm/imx/fdt/imx6_dwhdmi.c		imx6_dwhdmi

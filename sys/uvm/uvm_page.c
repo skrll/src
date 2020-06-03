@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_page.c,v 1.234 2020/03/17 18:31:39 ad Exp $	*/
+/*	$NetBSD: uvm_page.c,v 1.237 2020/05/19 20:46:39 ad Exp $	*/
 
 /*-
  * Copyright (c) 2019, 2020 The NetBSD Foundation, Inc.
@@ -95,7 +95,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.234 2020/03/17 18:31:39 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.237 2020/05/19 20:46:39 ad Exp $");
 
 #include "opt_ddb.h"
 #include "opt_uvm.h"
@@ -220,10 +220,8 @@ uvm_pageinsert_object(struct uvm_object *uobj, struct vm_page *pg)
 	if ((pg->flags & PG_STAT) != 0) {
 		/* Cannot use uvm_pagegetdirty(): not yet in radix tree. */
 		const unsigned int status = pg->flags & (PG_CLEAN | PG_DIRTY);
-		const bool isaobj = (pg->flags & PG_AOBJ) != 0;
 
-		if (!isaobj) {
-			KASSERT((pg->flags & PG_FILE) != 0);
+		if ((pg->flags & PG_FILE) != 0) {
 			if (uobj->uo_npages == 0) {
 				struct vnode *vp = (struct vnode *)uobj;
 				mutex_enter(vp->v_interlock);
@@ -285,10 +283,8 @@ uvm_pageremove_object(struct uvm_object *uobj, struct vm_page *pg)
 	if ((pg->flags & PG_STAT) != 0) {
 		/* Cannot use uvm_pagegetdirty(): no longer in radix tree. */
 		const unsigned int status = pg->flags & (PG_CLEAN | PG_DIRTY);
-		const bool isaobj = (pg->flags & PG_AOBJ) != 0;
 
-		if (!isaobj) {
-			KASSERT((pg->flags & PG_FILE) != 0);
+		if ((pg->flags & PG_FILE) != 0) {
 			if (uobj->uo_npages == 1) {
 				struct vnode *vp = (struct vnode *)uobj;
 				mutex_enter(vp->v_interlock);
@@ -749,7 +745,6 @@ uvm_page_numa_lookup(struct vm_page *pg)
 	static bool warned;
 	paddr_t pa;
 
-	KASSERT(uvm.numa_alloc);
 	KASSERT(uvm_page_numa_region != NULL);
 
 	pa = VM_PAGE_TO_PHYS(pg);
@@ -852,7 +847,7 @@ uvm_page_redim(int newncolors, int newnbuckets)
 					    uvm_page_get_bucket(pg) == ob);
 					KASSERT(fl ==
 					    uvm_page_get_freelist(pg));
-					if (uvm.numa_alloc) {
+					if (uvm_page_numa_region != NULL) {
 						nb = uvm_page_numa_lookup(pg);
 					} else {
 						nb = atop(VM_PAGE_TO_PHYS(pg))
@@ -919,8 +914,7 @@ uvm_page_rebucket(void)
 	/*
 	 * If we have more than one NUMA node, and the maximum NUMA node ID
 	 * is less than PGFL_MAX_BUCKETS, then we'll use NUMA distribution
-	 * for free pages.  uvm_pagefree() will not reassign pages to a
-	 * different bucket on free.
+	 * for free pages.
 	 */
 	min_numa = (u_int)-1;
 	max_numa = 0;
@@ -933,28 +927,19 @@ uvm_page_rebucket(void)
 		}
 	}
 	if (min_numa != max_numa && max_numa < PGFL_MAX_BUCKETS) {
-#ifdef NUMA
-		/*
-		 * We can do this, and it seems to work well, but until
-		 * further experiments are done we'll stick with the cache
-		 * locality strategy.
-		 */
 		aprint_debug("UVM: using NUMA allocation scheme\n");
 		for (CPU_INFO_FOREACH(cii, ci)) {
 			ci->ci_data.cpu_uvm->pgflbucket = ci->ci_numa_id;
 		}
-		uvm.numa_alloc = true;
 	 	uvm_page_redim(uvmexp.ncolors, max_numa + 1);
 	 	return;
-#endif
 	}
 
 	/*
 	 * Otherwise we'll go with a scheme to maximise L2/L3 cache locality
 	 * and minimise lock contention.  Count the total number of CPU
 	 * packages, and then try to distribute the buckets among CPU
-	 * packages evenly.  uvm_pagefree() will reassign pages to the
-	 * freeing CPU's preferred bucket on free.
+	 * packages evenly.
 	 */
 	npackage = curcpu()->ci_nsibling[CPUREL_PACKAGE1ST];
 
@@ -1220,16 +1205,11 @@ uvm_pagealloc_strat(struct uvm_object *obj, voff_t off, struct vm_anon *anon,
 	 * [3]  only pagedaemon "reserved" pages remain and
 	 *        the requestor isn't the pagedaemon.
 	 * we make kernel reserve pages available if called by a
-	 * kernel thread or a realtime thread.
+	 * kernel thread.
 	 */
 	l = curlwp;
-	if (__predict_true(l != NULL) && lwp_eprio(l) >= PRI_KTHREAD) {
+	if (__predict_true(l != NULL) && (l->l_flag & LW_SYSTEM) != 0) {
 		flags |= UVM_PGA_USERESERVE;
-	}
-
-	/* If the allocator's running in NUMA mode, go with NUMA strategy. */
-	if (uvm.numa_alloc && strat == UVM_PGA_STRAT_NORMAL) {
-		strat = UVM_PGA_STRAT_NUMA;
 	}
 
  again:
@@ -1270,10 +1250,11 @@ uvm_pagealloc_strat(struct uvm_object *obj, voff_t off, struct vm_anon *anon,
 
 	case UVM_PGA_STRAT_NUMA:
 		/*
-		 * NUMA strategy: allocating from the correct bucket is more
-		 * important than observing freelist priority.  Look only to
-		 * the current NUMA node; if that fails, we need to look to
-		 * other NUMA nodes, so retry with the normal strategy.
+		 * NUMA strategy (experimental): allocating from the correct
+		 * bucket is more important than observing freelist
+		 * priority.  Look only to the current NUMA node; if that
+		 * fails, we need to look to other NUMA nodes, so retry with
+		 * the normal strategy.
 		 */
 		for (lcv = 0; lcv < VM_NFREELIST; lcv++) {
 			pg = uvm_pgflcache_alloc(ucpu, lcv, color);
@@ -1351,7 +1332,7 @@ uvm_pagealloc_strat(struct uvm_object *obj, voff_t off, struct vm_anon *anon,
 		 */
 		if (UVM_OBJ_IS_VNODE(obj)) {
 			pg->flags |= PG_FILE;
-		} else {
+		} else if (UVM_OBJ_IS_AOBJ(obj)) {
 			pg->flags |= PG_AOBJ;
 		}
 		uvm_pageinsert_object(obj, pg);
@@ -1785,8 +1766,8 @@ uvm_page_own(struct vm_page *pg, const char *tag)
 		KASSERT((pg->flags & PG_BUSY) != 0);
 		if (pg->owner_tag) {
 			printf("uvm_page_own: page %p already owned "
-			    "by proc %d [%s]\n", pg,
-			    pg->owner, pg->owner_tag);
+			    "by proc %d.%d [%s]\n", pg,
+			    pg->owner, pg->lowner, pg->owner_tag);
 			panic("uvm_page_own");
 		}
 		pg->owner = curproc->p_pid;
@@ -2234,8 +2215,8 @@ uvm_page_printit(struct vm_page *pg, bool full,
 	(*pr)("  pa=0x%lx\n", (long)VM_PAGE_TO_PHYS(pg));
 #if defined(UVM_PAGE_TRKOWN)
 	if (pg->flags & PG_BUSY)
-		(*pr)("  owning process = %d, tag=%s\n",
-		    pg->owner, pg->owner_tag);
+		(*pr)("  owning process = %d.%d, tag=%s\n",
+		    pg->owner, pg->lowner, pg->owner_tag);
 	else
 		(*pr)("  page not busy, no owner\n");
 #else

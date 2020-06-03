@@ -1,4 +1,4 @@
-/* $NetBSD: armreg.h,v 1.43 2020/05/13 06:08:51 ryo Exp $ */
+/* $NetBSD: armreg.h,v 1.45 2020/05/23 18:08:59 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -569,6 +569,26 @@ AARCH64REG_WRITE_INLINE3(APIAKeyLo_EL1, apiakeylo_el1, ATTR_ARCH("armv8.3-a"))
 AARCH64REG_READ_INLINE3(APIAKeyHi_EL1, apiakeyhi_el1, ATTR_ARCH("armv8.3-a"))
 AARCH64REG_WRITE_INLINE3(APIAKeyHi_EL1, apiakeyhi_el1, ATTR_ARCH("armv8.3-a"))
 
+AARCH64REG_READ_INLINE3(APIBKeyLo_EL1, apibkeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APIBKeyLo_EL1, apibkeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_READ_INLINE3(APIBKeyHi_EL1, apibkeyhi_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APIBKeyHi_EL1, apibkeyhi_el1, ATTR_ARCH("armv8.3-a"))
+
+AARCH64REG_READ_INLINE3(APDAKeyLo_EL1, apdakeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APDAKeyLo_EL1, apdakeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_READ_INLINE3(APDAKeyHi_EL1, apdakeyhi_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APDAKeyHi_EL1, apdakeyhi_el1, ATTR_ARCH("armv8.3-a"))
+
+AARCH64REG_READ_INLINE3(APDBKeyLo_EL1, apdbkeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APDBKeyLo_EL1, apdbkeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_READ_INLINE3(APDBKeyHi_EL1, apdbkeyhi_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APDBKeyHi_EL1, apdbkeyhi_el1, ATTR_ARCH("armv8.3-a"))
+
+AARCH64REG_READ_INLINE3(APGAKeyLo_EL1, apgakeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APGAKeyLo_EL1, apgakeylo_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_READ_INLINE3(APGAKeyHi_EL1, apgakeyhi_el1, ATTR_ARCH("armv8.3-a"))
+AARCH64REG_WRITE_INLINE3(APGAKeyHi_EL1, apgakeyhi_el1, ATTR_ARCH("armv8.3-a"))
+
 AARCH64REG_READ_INLINE(cpacr_el1)	// Coprocessor Access Control Regiser
 AARCH64REG_WRITE_INLINE(cpacr_el1)
 
@@ -845,7 +865,7 @@ AARCH64REG_WRITE_INLINE(spsr_el1)
 #define	SPSR_IT4 		__BIT(12)	// A32: IT[4]
 #define	SPSR_IT3 		__BIT(11)	// A32: IT[3]
 #define	SPSR_IT2 		__BIT(10)	// A32: IT[2]
-#define	SPSR_A64_BTYPE 		__BIT(11,10)	// A64: BTYPE
+#define	SPSR_A64_BTYPE 		__BITS(11,10)	// A64: BTYPE
 #define	SPSR_A64_D 		__BIT(9)	// A64: Debug Exception Mask
 #define	SPSR_A32_E 		__BIT(9)	// A32: BE Endian Mode
 #define	SPSR_A	 		__BIT(8)	// Async abort (SError) Mask

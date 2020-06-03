@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_vnode.c,v 1.111 2020/03/22 18:32:42 ad Exp $	*/
+/*	$NetBSD: uvm_vnode.c,v 1.113 2020/05/19 22:22:15 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -45,7 +45,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_vnode.c,v 1.111 2020/03/22 18:32:42 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_vnode.c,v 1.113 2020/05/19 22:22:15 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_uvmhist.h"
@@ -161,8 +161,7 @@ uvn_put(struct uvm_object *uobj, voff_t offlo, voff_t offhi, int flags)
  *
  * => prefer map unlocked (not required)
  * => object must be locked!  we will _unlock_ it before starting any I/O.
- * => flags: PGO_ALLPAGES: get all of the pages
- *           PGO_LOCKED: fault data structures are locked
+ * => flags: PGO_LOCKED: fault data structures are locked
  * => NOTE: offset is the offset of pps[0], _NOT_ pps[centeridx]
  * => NOTE: caller must check for released pages!!
  */
@@ -182,7 +181,7 @@ uvn_get(struct uvm_object *uobj, voff_t offset,
 	    0, 0);
 
 	if (vp->v_type == VREG && (access_type & VM_PROT_WRITE) == 0
-	    && (flags & PGO_LOCKED) == 0) {
+	    && (flags & PGO_LOCKED) == 0 && vp->v_tag != VT_TMPFS) {
 		uvn_alloc_ractx(uobj);
 		uvm_ra_request(vp->v_ractx, advice, uobj, offset,
 		    *npagesp << PAGE_SHIFT);

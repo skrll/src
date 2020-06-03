@@ -1,7 +1,7 @@
-/*	$NetBSD: tmpfs_vnops.c,v 1.137 2020/05/15 22:15:43 ad Exp $	*/
+/*	$NetBSD: tmpfs_vnops.c,v 1.141 2020/05/19 22:22:15 ad Exp $	*/
 
 /*
- * Copyright (c) 2005, 2006, 2007 The NetBSD Foundation, Inc.
+ * Copyright (c) 2005, 2006, 2007, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tmpfs_vnops.c,v 1.137 2020/05/15 22:15:43 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tmpfs_vnops.c,v 1.141 2020/05/19 22:22:15 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/dirent.h>
@@ -70,6 +70,7 @@ const struct vnodeopv_entry_desc tmpfs_vnodeop_entries[] = {
 	{ &vop_open_desc,		tmpfs_open },
 	{ &vop_close_desc,		tmpfs_close },
 	{ &vop_access_desc,		tmpfs_access },
+	{ &vop_accessx_desc,		genfs_accessx },
 	{ &vop_getattr_desc,		tmpfs_getattr },
 	{ &vop_setattr_desc,		tmpfs_setattr },
 	{ &vop_read_desc,		tmpfs_read },
@@ -269,7 +270,7 @@ tmpfs_lookup(void *v)
 		if ((dnode->tn_mode & S_ISTXT) != 0) {
 			error = kauth_authorize_vnode(cnp->cn_cred,
 			    KAUTH_VNODE_DELETE, tnode->tn_vnode,
-			    dnode->tn_vnode, genfs_can_sticky(cnp->cn_cred,
+			    dnode->tn_vnode, genfs_can_sticky(dvp, cnp->cn_cred,
 			    dnode->tn_uid, tnode->tn_uid));
 			if (error) {
 				error = EPERM;
@@ -377,14 +378,14 @@ tmpfs_access(void *v)
 {
 	struct vop_access_args /* {
 		struct vnode	*a_vp;
-		int		a_mode;
+		accmode_t	a_accmode;
 		kauth_cred_t	a_cred;
 	} */ *ap = v;
 	vnode_t *vp = ap->a_vp;
-	mode_t mode = ap->a_mode;
+	accmode_t accmode = ap->a_accmode;
 	kauth_cred_t cred = ap->a_cred;
 	tmpfs_node_t *node = VP_TO_TMPFS_NODE(vp);
-	const bool writing = (mode & VWRITE) != 0;
+	const bool writing = (accmode & VWRITE) != 0;
 
 	KASSERT(VOP_ISLOCKED(vp));
 
@@ -409,9 +410,9 @@ tmpfs_access(void *v)
 		return EPERM;
 	}
 
-	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(mode,
-	    vp->v_type, node->tn_mode), vp, NULL, genfs_can_access(vp->v_type,
-	    node->tn_mode, node->tn_uid, node->tn_gid, mode, cred));
+	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(accmode,
+	    vp->v_type, node->tn_mode), vp, NULL, genfs_can_access(vp, cred,
+	    node->tn_uid, node->tn_gid, node->tn_mode, NULL, accmode));
 }
 
 int
@@ -437,10 +438,6 @@ tmpfs_getattr(void *v)
 	vap->va_fileid = node->tn_id;
 	vap->va_size = node->tn_size;
 	vap->va_blocksize = PAGE_SIZE;
-	vap->va_atime = node->tn_atime;
-	vap->va_mtime = node->tn_mtime;
-	vap->va_ctime = node->tn_ctime;
-	vap->va_birthtime = node->tn_birthtime;
 	vap->va_gen = TMPFS_NODE_GEN(node);
 	vap->va_flags = node->tn_flags;
 	vap->va_rdev = (vp->v_type == VBLK || vp->v_type == VCHR) ?
@@ -449,6 +446,14 @@ tmpfs_getattr(void *v)
 	vap->va_filerev = VNOVAL;
 	vap->va_vaflags = 0;
 	vap->va_spare = VNOVAL; /* XXX */
+
+	mutex_enter(&node->tn_timelock);
+	tmpfs_update_locked(vp, 0);
+	vap->va_atime = node->tn_atime;
+	vap->va_mtime = node->tn_mtime;
+	vap->va_ctime = node->tn_ctime;
+	vap->va_birthtime = node->tn_birthtime;
+	mutex_exit(&node->tn_timelock);
 
 	return 0;
 }
@@ -660,7 +665,7 @@ tmpfs_remove(void *v)
 	vnode_t *dvp = ap->a_dvp, *vp = ap->a_vp;
 	tmpfs_node_t *dnode, *node;
 	tmpfs_dirent_t *de;
-	int error;
+	int error, tflags;
 
 	KASSERT(VOP_ISLOCKED(dvp));
 	KASSERT(VOP_ISLOCKED(vp));
@@ -709,11 +714,12 @@ tmpfs_remove(void *v)
 	else
 		tmpfs_free_dirent(VFS_TO_TMPFS(vp->v_mount), de);
 
+	tflags = TMPFS_UPDATE_MTIME | TMPFS_UPDATE_CTIME;
 	if (node->tn_links > 0) {
 		/* We removed a hard link. */
-		tmpfs_update(vp, TMPFS_UPDATE_CTIME);
+		tflags |= TMPFS_UPDATE_CTIME;
 	}
-	tmpfs_update(dvp, TMPFS_UPDATE_MTIME | TMPFS_UPDATE_CTIME);
+	tmpfs_update(dvp, tflags);
 	error = 0;
 out:
 	/* Drop the reference and unlock the node. */
@@ -1061,6 +1067,7 @@ tmpfs_inactive(void *v)
 		}
 		*ap->a_recycle = true;
 	} else {
+		tmpfs_update(vp, 0);
 		*ap->a_recycle = false;
 	}
 
@@ -1169,7 +1176,7 @@ tmpfs_getpages(void *v)
 	const vm_prot_t access_type = ap->a_access_type;
 	const int advice = ap->a_advice;
 	const int flags = ap->a_flags;
-	int error, npages = *ap->a_count;
+	int error, iflag, npages = *ap->a_count;
 	tmpfs_node_t *node;
 	struct uvm_object *uobj;
 
@@ -1189,18 +1196,30 @@ tmpfs_getpages(void *v)
 		npages = (round_page(vp->v_size) - offset) >> PAGE_SHIFT;
 	}
 
-	if ((flags & PGO_LOCKED) != 0)
-		return EBUSY;
-
-	mutex_enter(vp->v_interlock);
-	error = vdead_check(vp, VDEAD_NOWAIT);
-	mutex_exit(vp->v_interlock);
-	if (error != 0)
-		return ENOENT;
+	/*
+	 * Check for reclaimed vnode.  v_interlock is not held here, but
+	 * VI_DEADCHECK is set with vmobjlock held.
+	 */
+	iflag = atomic_load_relaxed(&vp->v_iflag);
+	if (__predict_false((iflag & VI_DEADCHECK) != 0)) {
+		mutex_enter(vp->v_interlock);
+		error = vdead_check(vp, VDEAD_NOWAIT);
+		mutex_exit(vp->v_interlock);
+		if (error) {
+			if ((flags & PGO_LOCKED) == 0)
+				rw_exit(vp->v_uobj.vmobjlock);
+			return error;
+		}
+	}
 
 	node = VP_TO_TMPFS_NODE(vp);
 	uobj = node->tn_spec.tn_reg.tn_aobj;
 
+	/*
+	 * Update timestamp lazily.  The update will be made real when
+	 * a synchronous update is next made -- or by tmpfs_getattr,
+	 * tmpfs_putpages, and tmpfs_inactive.
+	 */
 	if ((flags & PGO_NOTIMESTAMP) == 0) {
 		u_int tflags = 0;
 
@@ -1212,28 +1231,16 @@ tmpfs_getpages(void *v)
 			if (vp->v_mount->mnt_flag & MNT_RELATIME)
 				tflags |= TMPFS_UPDATE_ATIME;
 		}
-		tmpfs_update(vp, tflags);
+		tmpfs_update_lazily(vp, tflags);
 	}
 
-	/*
-	 * Invoke the pager.
-	 *
-	 * Clean the array of pages before.  XXX: PR/32166
-	 * Note that vnode lock is shared with underlying UVM object.
-	 */
-	if (pgs) {
-		memset(pgs, 0, sizeof(struct vm_pages *) * npages);
-	}
+	/* Invoke the pager.  The vnode vmobjlock is shared with the UAO. */
 	KASSERT(vp->v_uobj.vmobjlock == uobj->vmobjlock);
-
 	error = (*uobj->pgops->pgo_get)(uobj, offset, pgs, &npages, centeridx,
-	    access_type, advice, flags | PGO_ALLPAGES);
-
+	    access_type, advice, flags);
 #if defined(DEBUG)
 	if (!error && pgs) {
-		for (int i = 0; i < npages; i++) {
-			KASSERT(pgs[i] != NULL);
-		}
+		KASSERT(pgs[centeridx] != NULL);
 	}
 #endif
 	return error;
@@ -1271,6 +1278,8 @@ tmpfs_putpages(void *v)
 
 	/* XXX mtime */
 
+	/* Process deferred updates. */
+	tmpfs_update(vp, 0);
 	return error;
 }
 

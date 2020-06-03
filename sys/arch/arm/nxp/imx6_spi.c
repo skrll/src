@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_spi.c,v 1.3 2019/12/03 10:32:53 hkenken Exp $	*/
+/*	$NetBSD: imx6_spi.c,v 1.4 2020/05/20 09:18:25 hkenken Exp $	*/
 
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_spi.c,v 1.3 2019/12/03 10:32:53 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx6_spi.c,v 1.4 2020/05/20 09:18:25 hkenken Exp $");
 
 #include "opt_imxspi.h"
 
@@ -105,11 +105,9 @@ imxspi_attach(device_t parent, device_t self, void *aux)
 	int error;
 
 	u_int nslaves;
-	error = of_getprop_uint32(phandle, "num-cs", &nslaves);
-	if (error) {
-		aprint_error(": couldn't get number of selects\n");
-		return;
-	}
+	error = of_getprop_uint32(phandle, "fsl,spi-num-chipselects", &nslaves);
+	if (error)
+		nslaves = 4;
 
 	ifsc->sc_pin_cs = kmem_alloc(sizeof(struct fdtbus_gpio_pin *) * nslaves, KM_SLEEP);
 

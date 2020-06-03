@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1188 2020/05/05 20:47:38 skrll Exp $
+#	$NetBSD: bsd.own.mk,v 1.1191 2020/05/20 15:43:29 martin Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -165,7 +165,7 @@ EXTERNAL_GDB_SUBDIR=		/does/not/exist
 .if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "i386" || \
     ${MACHINE_ARCH} == "powerpc64" || ${MACHINE_ARCH} == "powerpc" || \
     ${MACHINE_CPU} == "aarch64" || ${MACHINE_CPU} == "arm" || \
-    ${MACHINE_ARCH} == "hppa"
+    ${MACHINE_ARCH} == "hppa" || ${MACHINE_ARCH} == "sparc64" 
 HAVE_BINUTILS?=	234
 .else
 HAVE_BINUTILS?=	231
@@ -762,6 +762,11 @@ DEBUGGRP?=	wheel
 DEBUGOWN?=	root
 DEBUGMODE?=	${NONBINMODE}
 
+DTBDIR?=	/boot/dtb
+DTBGRP?=	wheel
+DTBOWN?=	root
+DTBMODE?=	${NONBINMODE}
+
 MKDIRMODE?=	0755
 MKDIRPERM?=	-m ${MKDIRMODE}
 
@@ -1188,6 +1193,13 @@ MKRADEONFIRMWARE.aarch64=	yes
 # Only install the tegra firmware on evbarm.
 MKTEGRAFIRMWARE.evbarm=		yes
 
+# Only build devicetree (dtb) files on armv7 and aarch64.
+MKDTB.aarch64=			yes
+MKDTB.earmv7=			yes
+MKDTB.earmv7hf=			yes
+MKDTB.earmv7eb=			yes
+MKDTB.earmv7hfeb=		yes
+
 # MesaLib.old and MesaLib7 go together, and MesaLib is alone.
 HAVE_MESA_VER?=	18
 .if ${HAVE_MESA_VER} == "10"
@@ -1215,7 +1227,7 @@ _MKVARS.no= \
 	MKARZERO \
 	MKBSDGREP \
 	MKCATPAGES MKCOMPATTESTS MKCOMPATX11 MKCTF \
-	MKDEBUG MKDEBUGLIB MKDTRACE \
+	MKDEBUG MKDEBUGLIB MKDTB MKDTRACE \
 	MKEXTSRC \
 	MKFIRMWARE \
 	MKGROFFHTMLDOC \
