@@ -1011,6 +1011,9 @@ extern uint8_t svcstk[];
 #define INIT_ARM_STACK_SIZE	2048
 	kasan_shadow_map((void *)svcstk, INIT_ARM_STACK_SIZE);
 
+	kasan_shadow_map((void*)kernel_vm_base,
+	    KERNEL_L2PT_VMDATA_NUM * L2_S_SEGSIZE);
+
 #ifdef ARM_MMU_EXTENDED
 	VPRINTF("\nsctlr=%#x actlr=%#x\n",
 	    armreg_sctlr_read(), armreg_auxctl_read());

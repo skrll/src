@@ -39,10 +39,10 @@ options 	MULTIPROCESSOR
 
 pseudo-device 	openfirm	# /dev/openfirm
 
-#options 	DIAGNOSTIC	# internal consistency checks
-#options 	DEBUG
+options 	DIAGNOSTIC	# internal consistency checks
+options 	DEBUG
 #options 	LOCKDEBUG
-#options 	UVMHIST		# kernhist for uvm/pmap subsystems
+options 	UVMHIST		# kernhist for uvm/pmap subsystems
 
 options 	MSGBUFSIZE=32768
 
