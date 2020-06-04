@@ -1,4 +1,4 @@
-/*	$NetBSD: pthread.c,v 1.172 2020/06/02 00:29:53 joerg Exp $	*/
+/*	$NetBSD: pthread.c,v 1.174 2020/06/04 00:45:32 joerg Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002, 2003, 2006, 2007, 2008, 2020
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: pthread.c,v 1.172 2020/06/02 00:29:53 joerg Exp $");
+__RCSID("$NetBSD: pthread.c,v 1.174 2020/06/04 00:45:32 joerg Exp $");
 
 #define	__EXPOSE_STACK	1
 
@@ -65,6 +65,10 @@ __RCSID("$NetBSD: pthread.c,v 1.172 2020/06/02 00:29:53 joerg Exp $");
 #include "pthread_int.h"
 #include "pthread_makelwp.h"
 #include "reentrant.h"
+
+__BEGIN_DECLS
+void _malloc_thread_cleanup(void) __weak;
+__END_DECLS
 
 pthread_rwlock_t pthread__alltree_lock = PTHREAD_RWLOCK_INITIALIZER;
 static rb_tree_t	pthread__alltree;
@@ -599,9 +603,12 @@ pthread_resume_np(pthread_t thread)
 }
 
 /*
- * In case the thread is exiting at an inopportune time leaving waiters not
- * awoken (because cancelled, for instance) make sure we have no waiters
- * left.
+ * Wake all deferred waiters hanging off self.
+ *
+ * It's possible for threads to have called _lwp_exit() before we wake them,
+ * because of cancellation and timeout, so ESRCH is tolerated here.  If a
+ * thread exits and its LID is reused, and the a thread receives an wakeup
+ * meant for the previous incarnation of the LID, no harm will be done.
  */
 void
 pthread__clear_waiters(pthread_t self)
@@ -620,7 +627,7 @@ pthread__clear_waiters(pthread_t self)
 		rv = _lwp_unpark(self->pt_waiters[0], NULL);
 		self->pt_waiters[0] = 0;
 		self->pt_nwaiters = 0;
-		if (rv != 0) {
+		if (rv != 0 && errno != ESRCH) {
 			pthread__errorfunc(__FILE__, __LINE__, __func__,
 			    "_lwp_unpark failed: %d", errno);
 		}
@@ -629,7 +636,7 @@ pthread__clear_waiters(pthread_t self)
 		rv = _lwp_unpark_all(self->pt_waiters, self->pt_nwaiters, NULL);
 		self->pt_waiters[0] = 0;
 		self->pt_nwaiters = 0;
-		if (rv != 0) {
+		if (rv != 0 && errno != ESRCH) {
 			pthread__errorfunc(__FILE__, __LINE__, __func__,
 			    "_lwp_unpark_all failed: %d", errno);
 		}
@@ -673,6 +680,9 @@ pthread_exit(void *retval)
 
 	/* Perform cleanup of thread-specific data */
 	pthread__destroy_tsd(self);
+
+	if (_malloc_thread_cleanup)
+		_malloc_thread_cleanup();
 
 	/*
 	 * Signal our exit.  Our stack and pthread_t won't be reused until
@@ -1195,6 +1205,7 @@ pthread__park(pthread_t self, pthread_mutex_t *lock,
 			switch (rv = errno) {
 			case EINTR:
 			case EALREADY:
+			case ESRCH:
 				rv = 0;
 				break;
 			case ETIMEDOUT:
