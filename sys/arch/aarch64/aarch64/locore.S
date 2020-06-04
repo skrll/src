@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.60 2020/05/15 04:55:40 ryo Exp $	*/
+/*	$NetBSD: locore.S,v 1.64 2020/05/28 04:51:44 ryo Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -38,7 +38,7 @@
 #include <aarch64/hypervisor.h>
 #include "assym.h"
 
-RCSID("$NetBSD: locore.S,v 1.60 2020/05/15 04:55:40 ryo Exp $")
+RCSID("$NetBSD: locore.S,v 1.64 2020/05/28 04:51:44 ryo Exp $")
 
 #ifdef AARCH64_DEVICE_MEM_STRONGLY_ORDERED
 #define	MAIR_DEVICE_MEM		MAIR_DEVICE_nGnRnE
@@ -183,7 +183,8 @@ vstart:
 	bl	aarch64_pac_init
 	cbnz	w0, 1f			/* if (aarch64_pac_init() == 0) */
 	mrs	x0, sctlr_el1
-	orr	x0, x0, #SCTLR_EnIA	/*  enable PAC */
+	ldr	x1, sctlr_pac
+	orr	x0, x0, x1		/*  enable PAC */
 	msr	sctlr_el1, x0
 1:
 
@@ -436,6 +437,7 @@ ENTRY_NP(cpu_mpstart)
 	br	x20
 
 mp_vstart:
+	hint	0x24		/* bti j */
 	CPU_DPRINTREG("PC               = ", x20)
 
 	/* set exception vector */
@@ -516,7 +518,8 @@ mp_vstart:
 	bl	aarch64_pac_init
 	cbnz	w0, 1f			/* if (aarch64_pac_init() == 0) */
 	mrs	x0, sctlr_el1
-	orr	x0, x0, #SCTLR_EnIA	/*  enable PAC */
+	ldr	x1, sctlr_pac
+	orr	x0, x0, x1		/*  enable PAC */
 	msr	sctlr_el1, x0
 1:
 
@@ -573,7 +576,7 @@ ENTRY_NP(uartputs)
 1:
 	cmp	x0, #'\n'
 	bne	2f
-	mov	x0, #'\r'
+	mov	x0, #0x0d	/* '\r' */
 	bl	uartputc
 	mov	x0, #'\n'
 2:
@@ -679,7 +682,7 @@ tinyprintf_loop:
 	cmp	x0, #'\n'
 	bne	1f
 	/* '\n' -> '\r', '\n' */
-	mov	x0, #'\r'
+	mov	x0, #0x0d	/* '\r' */
 	bl	uartputc
 	mov	x0, #'\n'
 1:
@@ -844,10 +847,10 @@ init_mmutable:
 	cbnz	x0, init_mmutable_error
 
 #ifdef FDT
+	VPRINT("Creating VA=PA tables for FDT\n")
 	adrl	x8, _C_LABEL(fdt_addr_r)
 	ldr	x8, [x8]
 
-	VPRINT("Creating VA=PA tables for FDT\n")
 	mov	x7, x26				/* pr func */
 	adr	x6, bootpage_alloc		/* allocator */
 	mov	x5, xzr				/* flags = 0 */
@@ -955,6 +958,8 @@ mmu_enable:
 	mrs	x0, sctlr_el1
 	ldr	x1, sctlr_clear
 	bic	x0, x0, x1
+	ldr	x1, sctlr_pac	/* disable PAC */
+	bic	x0, x0, x1
 	ldr	x1, sctlr_set
 	orr	x0, x0, x1
 
@@ -1049,6 +1054,13 @@ sctlr_clear:
 	    SCTLR_SA0 |     /* Enable EL0 stack alignment check */ \
 	    SCTLR_SA |      /* Enable SP alignment check */ \
 	    SCTLR_A |       /* Alignment check enable */ \
+	    0)
+sctlr_pac:
+	.quad ( \
+	    SCTLR_EnIA |    /* PACIA (APIAKey_EL1) instruction enable */ \
+	    SCTLR_EnIB |    /* PACIB (APIBKey_EL1) instruction enable */ \
+	    SCTLR_EnDA |    /* PACDA (APDAKey_EL1) instruction enable */ \
+	    SCTLR_EnDB |    /* PACDB (APDBKey_EL1) instruction enable */ \
 	    0)
 
 mdscr_setting:

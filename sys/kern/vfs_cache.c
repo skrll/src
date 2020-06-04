@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_cache.c,v 1.143 2020/05/16 18:31:50 christos Exp $	*/
+/*	$NetBSD: vfs_cache.c,v 1.146 2020/05/30 20:16:14 ad Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2019, 2020 The NetBSD Foundation, Inc.
@@ -172,7 +172,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_cache.c,v 1.143 2020/05/16 18:31:50 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_cache.c,v 1.146 2020/05/30 20:16:14 ad Exp $");
 
 #define __NAMECACHE_PRIVATE
 #ifdef _KERNEL_OPT
@@ -267,6 +267,15 @@ int cache_stat_interval __read_mostly = 300;	/* in seconds */
  * sysctl stuff.
  */
 static struct	sysctllog *cache_sysctllog;
+
+/*
+ * This is a dummy name that cannot usually occur anywhere in the cache nor
+ * file system.  It's used when caching the root vnode of mounted file
+ * systems.  The name is attached to the directory that the file system is
+ * mounted on.
+ */
+static const char cache_mp_name[] = "";
+static const int cache_mp_nlen = sizeof(cache_mp_name) - 1;
 
 /*
  * Red-black tree stuff.
@@ -507,6 +516,8 @@ cache_lookup(struct vnode *dvp, const char *name, size_t namelen,
 	bool hit;
 	krw_t op;
 
+	KASSERT(namelen != cache_mp_nlen || name == cache_mp_name);
+
 	/* Establish default result values */
 	if (iswht_ret != NULL) {
 		*iswht_ret = 0;
@@ -582,13 +593,8 @@ cache_lookup(struct vnode *dvp, const char *name, size_t namelen,
 		return hit;
 	}
 	vp = ncp->nc_vp;
-	mutex_enter(vp->v_interlock);
-	rw_exit(&dvi->vi_nc_lock);
-
-	/*
-	 * Unlocked except for the vnode interlock.  Call vcache_tryvget().
-	 */
 	error = vcache_tryvget(vp);
+	rw_exit(&dvi->vi_nc_lock);
 	if (error) {
 		KASSERT(error == EBUSY);
 		/*
@@ -631,11 +637,11 @@ cache_lookup_linked(struct vnode *dvp, const char *name, size_t namelen,
 {
 	vnode_impl_t *dvi = VNODE_TO_VIMPL(dvp);
 	struct namecache *ncp;
+	krwlock_t *oldlock, *newlock;
 	uint64_t key;
 	int error;
 
-	/* Establish default results. */
-	*vn_ret = NULL;
+	KASSERT(namelen != cache_mp_nlen || name == cache_mp_name);
 
 	/* If disabled, or file system doesn't support this, bail out. */
 	if (__predict_false((dvp->v_mount->mnt_iflag & IMNT_NCLOOKUP) == 0)) {
@@ -668,32 +674,42 @@ cache_lookup_linked(struct vnode *dvp, const char *name, size_t namelen,
 	 * on the lock as child -> parent is the wrong direction.
 	 */
 	if (*plock != &dvi->vi_nc_lock) {
+		oldlock = *plock;
+		newlock = &dvi->vi_nc_lock;
 		if (!rw_tryenter(&dvi->vi_nc_lock, RW_READER)) {
 			return false;
 		}
-		if (*plock != NULL) {
-			rw_exit(*plock);
+	} else {
+		oldlock = NULL;
+		newlock = NULL;
+		if (*plock == NULL) {
+			KASSERT(vrefcnt(dvp) > 0);
 		}
-		*plock = &dvi->vi_nc_lock;
-	} else if (*plock == NULL) {
-		KASSERT(vrefcnt(dvp) > 0);
 	}
 
 	/*
 	 * First up check if the user is allowed to look up files in this
 	 * directory.
 	 */
-	if (dvi->vi_nc_mode == VNOVAL) {
-		return false;
-	}
-	KASSERT(dvi->vi_nc_uid != VNOVAL && dvi->vi_nc_gid != VNOVAL);
-	error = kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(VEXEC,
-	    dvp->v_type, dvi->vi_nc_mode & ALLPERMS), dvp, NULL,
-	    genfs_can_access(dvp, cred, dvi->vi_nc_uid, dvi->vi_nc_gid,
-	    dvi->vi_nc_mode & ALLPERMS, NULL, VEXEC));
-	if (error != 0) {
-		COUNT(ncs_denied);
-		return false;
+	if (cred != FSCRED) {
+		if (dvi->vi_nc_mode == VNOVAL) {
+			if (newlock != NULL) {
+				rw_exit(newlock);
+			}
+			return false;
+		}
+		KASSERT(dvi->vi_nc_uid != VNOVAL && dvi->vi_nc_gid != VNOVAL);
+		error = kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(VEXEC,
+		    dvp->v_type, dvi->vi_nc_mode & ALLPERMS), dvp, NULL,
+		    genfs_can_access(dvp, cred, dvi->vi_nc_uid, dvi->vi_nc_gid,
+		    dvi->vi_nc_mode & ALLPERMS, NULL, VEXEC));
+		if (error != 0) {
+			if (newlock != NULL) {
+				rw_exit(newlock);
+			}
+			COUNT(ncs_denied);
+			return false;
+		}
 	}
 
 	/*
@@ -701,6 +717,9 @@ cache_lookup_linked(struct vnode *dvp, const char *name, size_t namelen,
 	 */
 	ncp = cache_lookup_entry(dvp, name, namelen, key);
 	if (__predict_false(ncp == NULL)) {
+		if (newlock != NULL) {
+			rw_exit(newlock);
+		}
 		COUNT(ncs_miss);
 		SDT_PROBE(vfs, namecache, lookup, miss, dvp,
 		    name, namelen, 0, 0);
@@ -708,12 +727,11 @@ cache_lookup_linked(struct vnode *dvp, const char *name, size_t namelen,
 	}
 	if (ncp->nc_vp == NULL) {
 		/* found negative entry; vn is already null from above */
+		KASSERT(namelen != cache_mp_nlen && name != cache_mp_name);
 		COUNT(ncs_neghits);
-		SDT_PROBE(vfs, namecache, lookup, hit, dvp, name, namelen, 0, 0);
-		return true;
+	} else {
+		COUNT(ncs_goodhits); /* XXX can be "badhits" */
 	}
-
-	COUNT(ncs_goodhits); /* XXX can be "badhits" */
 	SDT_PROBE(vfs, namecache, lookup, hit, dvp, name, namelen, 0, 0);
 
 	/*
@@ -722,6 +740,12 @@ cache_lookup_linked(struct vnode *dvp, const char *name, size_t namelen,
 	 * looking up the next component, or the caller will release it
 	 * manually when finished.
 	 */
+	if (oldlock) {
+		rw_exit(oldlock);
+	}
+	if (newlock) {
+		*plock = newlock;
+	}	
 	*vn_ret = ncp->nc_vp;
 	return true;
 }
@@ -787,6 +811,13 @@ cache_revlookup(struct vnode *vp, struct vnode **dvpp, char **bpp, char *bufp,
 		nlen = ncp->nc_nlen;
 
 		/*
+		 * Ignore mountpoint entries.
+		 */
+		if (ncp->nc_nlen == cache_mp_nlen) {
+			continue;
+		}
+
+		/*
 		 * The queue is partially sorted.  Once we hit dots, nothing
 		 * else remains but dots and dotdots, so bail out.
 		 */
@@ -821,9 +852,8 @@ cache_revlookup(struct vnode *vp, struct vnode **dvpp, char **bpp, char *bufp,
 		}
 
 		dvp = ncp->nc_dvp;
-		mutex_enter(dvp->v_interlock);
-		rw_exit(&vi->vi_nc_listlock);
 		error = vcache_tryvget(dvp);
+		rw_exit(&vi->vi_nc_listlock);
 		if (error) {
 			KASSERT(error == EBUSY);
 			if (bufp)
@@ -856,6 +886,8 @@ cache_enter(struct vnode *dvp, struct vnode *vp,
 	vnode_impl_t *dvi = VNODE_TO_VIMPL(dvp);
 	struct namecache *ncp, *oncp;
 	int total;
+
+	KASSERT(namelen != cache_mp_nlen || name == cache_mp_name);
 
 	/* First, check whether we can/should add a cache entry. */
 	if ((cnflags & MAKEENTRY) == 0 ||
@@ -990,6 +1022,49 @@ cache_have_id(struct vnode *vp)
 	} else {
 		return false;
 	}
+}
+
+/*
+ * Enter a mount point.  cvp is the covered vnode, and rvp is the root of
+ * the mounted file system.
+ */
+void
+cache_enter_mount(struct vnode *cvp, struct vnode *rvp)
+{
+
+	KASSERT(vrefcnt(cvp) > 0);
+	KASSERT(vrefcnt(rvp) > 0);
+	KASSERT(cvp->v_type == VDIR);
+	KASSERT((rvp->v_vflag & VV_ROOT) != 0);
+
+	if (rvp->v_type == VDIR) {
+		cache_enter(cvp, rvp, cache_mp_name, cache_mp_nlen, MAKEENTRY);
+	}
+}
+
+/*
+ * Look up a cached mount point.  Used in the strongly locked path.
+ */
+bool
+cache_lookup_mount(struct vnode *dvp, struct vnode **vn_ret)
+{
+	bool ret;
+
+	ret = cache_lookup(dvp, cache_mp_name, cache_mp_nlen, LOOKUP,
+	    MAKEENTRY, NULL, vn_ret);
+	KASSERT((*vn_ret != NULL) == ret);
+	return ret;
+}
+
+/*
+ * Try to cross a mount point.  For use with cache_lookup_linked().
+ */
+bool
+cache_cross_mount(struct vnode **dvp, krwlock_t **plock)
+{
+
+	return cache_lookup_linked(*dvp, cache_mp_name, cache_mp_nlen,
+	   dvp, plock, FSCRED);
 }
 
 /*

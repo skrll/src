@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.118 2020/05/23 14:10:47 rin Exp $
+#	$NetBSD: Makefile.inc,v 1.120 2020/05/28 10:22:49 jmcneill Exp $
 #
 #	etc.evbarm/Makefile.inc -- evbarm-specific etc Makefile targets
 #
@@ -87,6 +87,7 @@ __mkimage: .USE
 	TOOL_MAKEFS=${TOOL_MAKEFS} \
 	TOOL_DISKLABEL=${TOOL_DISKLABEL} \
 	TOOL_FDISK=${TOOL_FDISK} \
+	TOOL_GPT=${TOOL_GPT} \
 	TOOL_GZIP=${TOOL_GZIP} \
 	TOOL_MKNOD=${TOOL_MKNOD} \
 	TOOL_PAX=${TOOL_PAX} \
@@ -145,6 +146,9 @@ SNAP_MD_POST_DEPS+=	smp_armv7
 smp_arm64: __mkimage
 MKI_OPTS.smp_arm64=	-K ${IMAGE.kern}
 SNAP_MD_POST_DEPS+=	smp_arm64
+smp_arm64mbr: __mkimage
+MKI_OPTS.smp_arm64mbr=	-K ${IMAGE.kern}
+SNAP_MD_POST_DEPS+=	smp_arm64mbr
 .endif
 
 .if !empty(KERNEL_SETS:MRPI)

@@ -1,16 +1,22 @@
-#	$NetBSD: Makefile,v 1.10 2018/12/15 18:03:16 gson Exp $
+#	$NetBSD: Makefile,v 1.12 2020/05/28 15:13:21 jmcneill Exp $
 
 .include <bsd.own.mk>
 
 INSTIMGBASE=	NetBSD-${DISTRIBVER}-amd64-install	# gives ${IMGBASE}.img
 
-INSTIMAGEMB?=	1450			# for all installation binaries
+INSTIMAGEMB?=	1550			# for all installation binaries
 
 PRIMARY_BOOT=		bootxx_ffsv1
 SECONDARY_BOOT=		boot
 SECONDARY_BOOT_ARG=	# unnecessary
+EFIBOOT=		${WORKDIR}/usr/mdec/bootx64.efi
+EFIBOOT+=		${WORKDIR}/usr/mdec/bootia32.efi
+#EFIBOOT=		${.OBJDIR}/../../../sys/arch/i386/stand/efiboot/bootx64/bootx64.efi
+#EFIBOOT+=		${.OBJDIR}/../../../sys/arch/i386/stand/efiboot/bootia32/bootia32.efi
 
 USE_MBR=		yes
+USE_GPT=		yes
+USE_GPTMBR=		yes
 
 CLEANFILES+=	boot.cfg
 
@@ -35,4 +41,4 @@ IMGFILE_EXTRA=								\
 	${SYSINSTDIR}/sysinstmsgs.pl	.				\
 	${SYSINSTDIR}/sysinst		.
 
-.include "${DISTRIBDIR}/common/bootimage/Makefile.installimage"
+.include "${NETBSDSRCDIR}/distrib/common/bootimage//Makefile.installimage"
