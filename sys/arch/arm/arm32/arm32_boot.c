@@ -131,11 +131,13 @@ __KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.37 2020/02/15 08:16:11 skrll Exp $"
 #include "opt_multiprocessor.h"
 
 #include <sys/param.h>
-#include <sys/reboot.h>
-#include <sys/cpu.h>
-#include <sys/intr.h>
+
+#include <sys/asan.h>
 #include <sys/atomic.h>
+#include <sys/cpu.h>
 #include <sys/device.h>
+#include <sys/intr.h>
+#include <sys/reboot.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -294,6 +296,8 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	/* Boot strap pmap telling it where the managed kernel virtual memory is */
 	VPRINTF("pmap ");
 	pmap_bootstrap(kvm_base, kvm_base + kvm_size);
+
+	kasan_init();
 
 #ifdef __HAVE_MEMORY_DISK__
 	md_root_setconf(memory_disk, sizeof memory_disk);
