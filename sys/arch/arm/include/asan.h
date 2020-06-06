@@ -91,7 +91,6 @@ __md_early_l2ttalloc(void)
 	va = (vaddr_t)(&__md_earlyl2tts[0] + __md_nearlyl2tts * L2_TABLE_SIZE_REAL);
 	__md_nearlyl2tts++;
 
-	nhfoo((int)va);
 	return va;
 }
 
