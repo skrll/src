@@ -35,12 +35,6 @@
 #include <arm/vmparam.h>
 #include <arm/arm32/machdep.h>
 #include <arm/arm32/pmap.h>
-#if 0
-#include <aarch64/pmap.h>
-#include <aarch64/cpufunc.h>
-#include <aarch64/armreg.h>
-#include <aarch64/machdep.h>
-#endif
 
 // XXXNH Wrong place
 #define KERNEL_IO_VBASE         0xf0000000
@@ -76,56 +70,78 @@ kasan_md_unsupported(vaddr_t addr)
  * that VA = PA + KERNEL_BASE.
  */
 
+#define KASAN_NEARLYL2TTS	1
 #define KASAN_NEARLYPAGES	1
 
 static bool __md_early __read_mostly = true;
-static uint8_t __md_earlypages[KASAN_NEARLYPAGES * L1_S_SIZE] __aligned(L1_S_SIZE);
-static size_t __md_earlytaken = 0;
+static size_t __md_nearlyl2tts = 0;
+static size_t __md_nearlypages = 0;
+static uint8_t __md_earlypages[KASAN_NEARLYPAGES * PAGE_SIZE]
+    __aligned(PAGE_SIZE);
+static uint8_t __md_earlyl2tts[KASAN_NEARLYL2TTS * L2_TABLE_SIZE_REAL]
+    __aligned(L2_TABLE_SIZE_REAL);
 
-static paddr_t
-__md_early_palloc(void)
+static vaddr_t
+__md_early_l2ttalloc(void)
 {
 	vaddr_t va;
 
-	KASSERT(__md_earlytaken < KASAN_NEARLYPAGES);
+	KASSERT(__md_nearlyl2tts < KASAN_NEARLYL2TTS);
 
-	va = (vaddr_t)(&__md_earlypages[0] + __md_earlytaken * PAGE_SIZE);
-	__md_earlytaken++;
+	va = (vaddr_t)(&__md_earlyl2tts[0] + __md_nearlyl2tts * L2_TABLE_SIZE_REAL);
+	__md_nearlyl2tts++;
 
-	return KERN_VTOPHYS(va);
+	nhfoo((int)va);
+	return va;
+}
+
+static vaddr_t
+__md_early_alloc(void)
+{
+	vaddr_t va;
+
+	KASSERT(__md_nearlypages < KASAN_NEARLYPAGES);
+
+	va = (vaddr_t)(&__md_earlypages[0] + __md_nearlypages * PAGE_SIZE);
+	__md_nearlypages++;
+
+	return va;
 }
 
 static void
 __md_early_shadow_map_page(vaddr_t va)
 {
+
 	/* L1_TABLE_SIZE (16Kb) aligned */
 	const uint32_t mask = L1_TABLE_SIZE - 1;
 	const paddr_t ttb = (paddr_t)(armreg_ttbr_read() & ~mask);
 	pd_entry_t * const pdep = (pd_entry_t *)KERN_PHYSTOV(ttb);
 	const size_t l1slot = l1pte_index(va);
 
-	if (!l1pte_valid_p(pdep[l1slot])) {
-		const paddr_t pa = __md_early_palloc();
-		const int prot = VM_PROT_READ | VM_PROT_WRITE;
-		const pd_entry_t npde = L1_S_PROTO
-		    | pa
-		    | pte_l1_s_cache_mode
-		    | L1_S_PROT(PTE_KERNEL, prot)
-		    | L1_S_DOM(PMAP_DOMAIN_KERNEL);
+	const vaddr_t l2ttva = __md_early_l2ttalloc();
+	const paddr_t l2ttpa = KERN_VTOPHYS(l2ttva);
+	const pd_entry_t npde =
+	    L1_C_PROTO | l2ttpa | L1_C_DOM(PMAP_DOMAIN_KERNEL);
 
-		l1pte_set(&pdep[l1slot], npde);
-		PDE_SYNC(&pdep[l1slot]);
-	}
-}
+	pt_entry_t *l2tt = (pt_entry_t *)l2ttva;
+	pt_entry_t * const ptep = &l2tt[l2pte_index(va)];
 
-#if 0
-static paddr_t
-__md_palloc(void)
-{
-	/* The page is zeroed. */
-	return pmap_get_physpage();
+	KASSERT(!l2pte_valid_p(*ptep));
+
+	const int prot = VM_PROT_READ | VM_PROT_WRITE;
+	const paddr_t pa = KERN_VTOPHYS(__md_early_alloc());
+	pt_entry_t npte =
+	    L2_S_PROTO |
+	    pa |
+	    pte_l2_s_cache_mode_pt |
+	    L2_S_PROT(PTE_KERNEL, prot);
+
+	l2pte_set(ptep, npte, 0);
+	PTE_SYNC(ptep);
+
+	l1pte_setone(pdep + l1slot, npde);
+	PDE_SYNC(pdep);
 }
-#endif
 
 static inline paddr_t
 __md_palloc_large(void)
