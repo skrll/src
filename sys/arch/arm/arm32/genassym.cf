@@ -38,10 +38,11 @@ endif
 
 include <sys/param.h>
 include <sys/systm.h>
+
+include <sys/device.h>
 include <sys/mbuf.h>
 include <sys/proc.h>
 include <sys/resourcevar.h>
-include <sys/device.h>
 include <sys/signal.h>
 include <netinet/in.h>
 include <netinet/in_systm.h>
@@ -51,9 +52,9 @@ include <netinet/ip_var.h>
 
 include <uvm/uvm_extern.h>
 
+include <arm/locore.h>
 include <arm/fiq.h>
 include <arm/vfpreg.h>
-include <arm/locore.h>
 include <arm/undefined.h>
 
 include <arm/arm32/pte.h>
