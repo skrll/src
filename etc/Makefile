@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.443 2020/04/05 00:36:25 christos Exp $
+#	$NetBSD: Makefile,v 1.446 2020/06/01 01:41:40 jmcneill Exp $
 #	from: @(#)Makefile	8.7 (Berkeley) 5/25/95
 
 # Environment variables without default values:
@@ -177,8 +177,6 @@ MOTD_SOURCE=	motd.current
 MOTD_SOURCE=	motd.beta
 .elif !empty(DISTRIBVER:M*RC*)
 MOTD_SOURCE=	motd.rc
-.elif !empty(DISTRIBVER:M*STABLE*)
-MOTD_SOURCE=	motd.stable
 .else
 MOTD_SOURCE=	motd.default
 .endif
@@ -373,6 +371,9 @@ OBSOLETE.dir=		${.OBJDIR}/obsolete.dir
 OBSOLETE.files=		base comp etc games man misc rescue text
 .if ${MKDEBUG} != "no"
 OBSOLETE.files+=	debug
+.endif
+.if ${MKDTB} != "no"
+OBSOLETE.files+=	dtb
 .endif
 .if ${MKKMOD} != "no"
 OBSOLETE.files+=	modules
@@ -627,7 +628,7 @@ kernset-${configfile}: .PHONY build_kernels snap_pre
 		done; \
 		[ $${kern_tgz} -nt "$${newest}" ] || { \
 			echo "echo $${kernels} | $${pax_cmd}"; \
-			if [ ${KERNELDIR} = "yes" ]; then \
+			if [ ${KERNEL_DIR} = "yes" ]; then \
 				tmpdir=kernel$$; \
 				trap "rm -fr $${tmpdir}" 0 1 2 3 15; \
 				mkdir -p $${tmpdir}/netbsd; \
@@ -641,13 +642,6 @@ kernset-${configfile}: .PHONY build_kernels snap_pre
 			if [ ${KERNEL_DIR} = "yes" ]; then \
 				echo "./netbsd type=dir optional"; \
 			fi; \
-			dtblist=$$(${MAKE} -v DTB); \
-			for dtb in $${dtblist}; do \
-				if [ ${KERNEL_DIR} = "yes" ]; then \
-					ln ../$${dtb} ./netbsd/$${dtb}; \
-				fi; \
-				echo "$${d}/$${dtb} type=file"; \
-			done; \
 			for kernel in $${kernels}; do \
 				if [ ${KERNEL_DIR} = "yes" ]; then \
 					newname=$$(echo $${kernel} | \
@@ -681,15 +675,6 @@ releasekern-${configfile}: .PHONY build_kernels snap_pre
 	kernsuffixes="${KERNEL_SUFFIXES:S/^/./}"; \
 	dest="${RELEASEDIR}/${RELEASEMACHINEDIR}/binary/kernel"; \
 	cd $${kerndir} && {	\
-		dtblist=$$(${MAKE} -v DTB); \
-		for dtb in $${dtblist}; do \
-			[ ! -f $${dtb} ] && continue; \
-			dtb_gz="$${dest}/$${dtb}.gz"; \
-			[ $${dtb_gz} -nt $${dtb} ] && continue; \
-			rm -f $${dtb_gz}; \
-			echo "${TOOL_GZIP} ${GZIP_FLAGS} -c < $${kerndir}/$${dtb} > $${dtb_gz}"; \
-			${TOOL_GZIP} ${GZIP_FLAGS} -c < $${dtb} > $${dtb_gz}; \
-		done; \
 		for kernel in $${kernlist}; do \
 			for s in "" $${kernsuffixes}; do \
 				ks="$${kernel}$${s}"; \

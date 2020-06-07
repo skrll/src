@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_machdep.c,v 1.10 2020/01/31 09:08:57 maxv Exp $	*/
+/*	$NetBSD: netbsd32_machdep.c,v 1.13 2020/05/23 18:08:59 ryo Exp $	*/
 
 /*
  * Copyright (c) 2018 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.10 2020/01/31 09:08:57 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.13 2020/05/23 18:08:59 ryo Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -62,6 +62,8 @@ netbsd32_setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 {
 	struct proc * const p = l->l_proc;
 	struct trapframe * const tf = l->l_md.md_utf;
+
+	aarch64_setregs_ptrauth(l, false);
 
 	p->p_flag |= PK_32;
 
@@ -217,7 +219,7 @@ netbsd32_sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	int error;
 
 	const bool onstack_p =
-	    (ss->ss_flags & (SS_DISABLE | SS_ONSTACK)) &&
+	    (ss->ss_flags & (SS_DISABLE | SS_ONSTACK)) == 0 &&
 	    (sa->sa_flags & SA_ONSTACK);
 
 	vaddr_t sp = onstack_p ?
@@ -270,7 +272,7 @@ netbsd32_sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	tf->tf_reg[13] = (uint32_t)(uintptr_t)fp;		/* sp */
 	tf->tf_reg[14] = (uint32_t)(uintptr_t)sdesc->sd_tramp;	/* lr */
 
-	/* Remember if we'ere now on the signal stack */
+	/* Remember if we're now on the signal stack */
 	if (onstack_p)
 		ss->ss_flags |= SS_ONSTACK;
 }

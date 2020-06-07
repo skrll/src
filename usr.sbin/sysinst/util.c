@@ -1,4 +1,4 @@
-/*	$NetBSD: util.c,v 1.42 2020/01/26 14:37:29 martin Exp $	*/
+/*	$NetBSD: util.c,v 1.45 2020/05/18 21:19:36 jmcneill Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -116,6 +116,9 @@ distinfo dist_list[] = {
 
 	{"modules",		SET_MODULES,		false, MSG_set_modules, NULL},
 	{"base",		SET_BASE,		false, MSG_set_base, NULL},
+#ifdef HAVE_DTB
+	{"dtb",			SET_DTB,		false, MSG_set_dtb, NULL},
+#endif
 	{"etc",			SET_ETC,		false, MSG_set_system, NULL},
 	{"comp",		SET_COMPILER,		false, MSG_set_compiler, NULL},
 	{"games",		SET_GAMES,		false, MSG_set_games, NULL},
@@ -1086,6 +1089,7 @@ get_and_unpack_sets(int update, msg setupdone_msg, msg success_msg, msg failure_
 	distinfo *dist;
 	int status;
 	int set, olderror, oldfound;
+	bool entropy_loaded = false;
 
 	/* Ensure mountpoint for distribution files exists in current root. */
 	(void)mkdir("/mnt2", S_IRWXU| S_IRGRP|S_IXGRP | S_IROTH|S_IXOTH);
@@ -1203,7 +1207,8 @@ get_and_unpack_sets(int update, msg setupdone_msg, msg success_msg, msg failure_
 
 		/* Don't discard the system's old entropy if any */
 		run_program(RUN_CHROOT | RUN_SILENT,
-			    "/etc/rc.d/random_seed start");
+		    "/etc/rc.d/random_seed start");
+		entropy_loaded = true;
 	}
 
 	/* Configure the system */
@@ -1245,7 +1250,8 @@ get_and_unpack_sets(int update, msg setupdone_msg, msg success_msg, msg failure_
 	umount_mnt2();
 
 	/* Save entropy -- on some systems it's ~all we'll ever get */
-	run_program(RUN_DISPLAY | RUN_CHROOT | RUN_FATAL | RUN_PROGRESS,
+	if (!update || entropy_loaded)
+		run_program(RUN_SILENT | RUN_CHROOT | RUN_ERROR_OK,
 		    "/etc/rc.d/random_seed stop");
 	/* Install/Upgrade complete ... reboot or exit to script */
 	hit_enter_to_continue(success_msg, NULL);

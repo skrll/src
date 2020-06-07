@@ -1,4 +1,4 @@
-/*	$NetBSD: ffs_inode.c,v 1.127 2020/04/18 19:18:34 christos Exp $	*/
+/*	$NetBSD: ffs_inode.c,v 1.129 2020/05/02 22:11:16 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ffs_inode.c,v 1.127 2020/04/18 19:18:34 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ffs_inode.c,v 1.129 2020/05/02 22:11:16 christos Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"
@@ -364,7 +364,7 @@ ffs_truncate(struct vnode *ovp, off_t length, int ioflag, kauth_cred_t cred)
 		eoz = MIN(MAX(ffs_lblktosize(fs, lbn) + size, round_page(pgoffset)),
 		    osize);
 		ubc_zerorange(&ovp->v_uobj, length, eoz - length,
-		    UBC_UNMAP_FLAG(ovp));
+		    UBC_VNODE_FLAGS(ovp));
 		if (round_page(eoz) > round_page(length)) {
 			rw_enter(ovp->v_uobj.vmobjlock, RW_WRITER);
 			error = VOP_PUTPAGES(ovp, round_page(length),
@@ -376,7 +376,8 @@ ffs_truncate(struct vnode *ovp, off_t length, int ioflag, kauth_cred_t cred)
 		}
 	}
 
-	genfs_node_wrlock(ovp);
+	if (!(ioflag & IO_EXT))
+		genfs_node_wrlock(ovp);
 	oip->i_size = length;
 	DIP_ASSIGN(oip, size, length);
 	uvm_vnp_setsize(ovp, length);
@@ -585,7 +586,8 @@ out:
 	oip->i_size = length;
 	DIP_ASSIGN(oip, size, length);
 	DIP_ADD(oip, blocks, -blocksreleased);
-	genfs_node_unlock(ovp);
+	if (!(ioflag & IO_EXT))
+		genfs_node_unlock(ovp);
 	oip->i_flag |= IN_CHANGE;
 	UFS_WAPBL_UPDATE(ovp, NULL, NULL, 0);
 #if defined(QUOTA) || defined(QUOTA2)

@@ -1,4 +1,4 @@
-/*	$NetBSD: hypervisor_machdep.c,v 1.36 2019/05/09 17:09:51 bouyer Exp $	*/
+/*	$NetBSD: hypervisor_machdep.c,v 1.39 2020/05/02 16:44:36 bouyer Exp $	*/
 
 /*
  *
@@ -54,25 +54,41 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hypervisor_machdep.c,v 1.36 2019/05/09 17:09:51 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hypervisor_machdep.c,v 1.39 2020/05/02 16:44:36 bouyer Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kmem.h>
+#include <sys/cpu.h>
+#include <sys/ksyms.h>
 
 #include <uvm/uvm_extern.h>
 
 #include <machine/vmparam.h>
 #include <machine/pmap.h>
 
+#include <x86/machdep.h>
+#include <x86/cpuvar.h>
+
 #include <xen/xen.h>
+#include <xen/intr.h>
 #include <xen/hypervisor.h>
 #include <xen/evtchn.h>
 #include <xen/xenpmap.h>
 
 #include "opt_xen.h"
+#include "opt_modular.h"
+#include "opt_ddb.h"
 #include "isa.h"
 #include "pci.h"
+#include "ksyms.h"
+
+#ifdef DDB
+#include <machine/db_machdep.h>
+#include <ddb/db_extern.h>
+#include <ddb/db_output.h>
+#include <ddb/db_interface.h>
+#endif
 
 #ifdef XENPV
 /*
@@ -203,14 +219,6 @@ stipending(void)
 		x86_enable_intr();
 	}
 
-#if 0
-	if (ci->ci_xpending & 0x1)
-		printf("stipending events %08lx mask %08lx ilevel %d ipending %08x\n",
-		    HYPERVISOR_shared_info->events,
-		    HYPERVISOR_shared_info->events_mask, ci->ci_ilevel,
-		    ci->ci_xpending);
-#endif
-
 	return (ret);
 }
 
@@ -222,7 +230,9 @@ evt_do_hypervisor_callback(unsigned int port, unsigned int l1i,
 {
 	KASSERT(args != NULL);
 
+#ifdef DOM0OPS
 	struct cpu_info *ci = curcpu();
+#endif
 	struct intrframe *regs = args;
 
 #ifdef PORT_DEBUG
@@ -230,9 +240,8 @@ evt_do_hypervisor_callback(unsigned int port, unsigned int l1i,
 		printf("do_hypervisor_callback event %d\n", port);
 #endif
 	if (evtsource[port]) {
-		ci->ci_idepth++;
+		KASSERT(cpu_intr_p());
 		evtchn_do_event(port, regs);
-		ci->ci_idepth--;
 	}
 #ifdef DOM0OPS
 	else  {
@@ -240,9 +249,8 @@ evt_do_hypervisor_callback(unsigned int port, unsigned int l1i,
 			/* fast path */
 			int oipl = ci->ci_ilevel;
 			ci->ci_ilevel = IPL_HIGH;
-			ci->ci_idepth++;			
+			KASSERT(cpu_intr_p());
 			xenevt_event(port);
-			ci->ci_idepth--;
 			ci->ci_ilevel = oipl;
 		} else {
 			/* set pending event */
@@ -290,10 +298,11 @@ do_hypervisor_callback(struct intrframe *regs)
 	if (level != ci->ci_ilevel)
 		printf("hypervisor done %08x level %d/%d ipending %08x\n",
 		    (uint)vci->evtchn_pending_sel,
-		    level, ci->ci_ilevel, ci->ci_xpending);
+		    level, ci->ci_ilevel, ci->ci_ipending);
 #endif
 }
 
+#if 0
 void
 hypervisor_send_event(struct cpu_info *ci, unsigned int ev)
 {
@@ -321,11 +330,12 @@ hypervisor_send_event(struct cpu_info *ci, unsigned int ev)
 		hypervisor_force_callback();
 	} else {
 		if (__predict_false(xen_send_ipi(ci, XEN_IPI_HVCB))) {
-			panic("xen_send_ipi(cpu%d, XEN_IPI_HVCB) failed\n",
-			    (int) ci->ci_cpuid);
+			panic("xen_send_ipi(cpu%d id %d, XEN_IPI_HVCB) failed\n",
+			    (int) ci->ci_cpuid, ci->ci_vcpuid);
 		}
 	}
 }
+#endif
 
 void
 hypervisor_unmask_event(unsigned int ev)
@@ -378,13 +388,10 @@ evt_enable_event(unsigned int port, unsigned int l1i,
 {
 	KASSERT(args == NULL);
 	hypervisor_unmask_event(port);
-#if NPCI > 0 || NISA > 0
-	hypervisor_ack_pirq_event(port);
-#endif /* NPCI > 0 || NISA > 0 */
 }
 
 void
-hypervisor_enable_ipl(unsigned int ipl)
+hypervisor_enable_sir(unsigned int sir)
 {
 	struct cpu_info *ci = curcpu();
 
@@ -394,44 +401,47 @@ hypervisor_enable_ipl(unsigned int ipl)
 	 * we know that all callback for this event have been processed.
 	 */
 
-	evt_iterate_bits(&ci->ci_xsources[ipl]->ipl_evt_mask1,
-	    ci->ci_xsources[ipl]->ipl_evt_mask2, NULL,
+	evt_iterate_bits(&ci->ci_isources[sir]->ipl_evt_mask1,
+	    ci->ci_isources[sir]->ipl_evt_mask2, NULL,
 	    evt_enable_event, NULL);
 
 }
 
 void
-hypervisor_set_ipending(uint32_t iplmask, int l1, int l2)
+hypervisor_set_ipending(uint32_t imask, int l1, int l2)
 {
 
 	/* This function is not re-entrant */
 	KASSERT(x86_read_psl() != 0);
 
-	int ipl;
+	int sir;
 	struct cpu_info *ci = curcpu();
 
 	/* set pending bit for the appropriate IPLs */	
-	ci->ci_xpending |= iplmask;
+	ci->ci_ipending |= imask;
 
 	/*
 	 * And set event pending bit for the lowest IPL. As IPL are handled
 	 * from high to low, this ensure that all callbacks will have been
 	 * called when we ack the event
 	 */
-	ipl = ffs(iplmask);
-	KASSERT(ipl > 0);
-	ipl--;
-	KASSERT(ipl < NIPL);
-	KASSERT(ci->ci_xsources[ipl] != NULL);
-	ci->ci_xsources[ipl]->ipl_evt_mask1 |= 1UL << l1;
-	ci->ci_xsources[ipl]->ipl_evt_mask2[l1] |= 1UL << l2;
+	sir = ffs(imask);
+	KASSERT(sir > SIR_XENIPL_VM);
+	sir--;
+	KASSERT(sir <= SIR_XENIPL_HIGH);
+	KASSERT(ci->ci_isources[sir] != NULL);
+	ci->ci_isources[sir]->ipl_evt_mask1 |= 1UL << l1;
+	ci->ci_isources[sir]->ipl_evt_mask2[l1] |= 1UL << l2;
+	KASSERT(ci == curcpu());
+#if 0
 	if (__predict_false(ci != curcpu())) {
 		if (xen_send_ipi(ci, XEN_IPI_HVCB)) {
 			panic("hypervisor_set_ipending: "
-			    "xen_send_ipi(cpu%d, XEN_IPI_HVCB) failed\n",
-			    (int) ci->ci_cpuid);
+			    "xen_send_ipi(cpu%d id %d, XEN_IPI_HVCB) failed\n",
+			    (int) ci->ci_cpuid, ci->ci_vcpuid);
 		}
 	}
+#endif
 }
 
 void
@@ -454,6 +464,35 @@ hypervisor_machdep_resume(void)
 	if (!xendomain_is_dom0())
 		update_p2m_frame_list_list();
 #endif
+}
+
+/*
+ * idle_block()
+ *
+ *	Called from the idle loop when we have nothing to do but wait
+ *	for an interrupt.
+ */
+static void
+idle_block(void)
+{
+	KASSERT(curcpu()->ci_ipending == 0);
+	HYPERVISOR_block();
+	KASSERT(curcpu()->ci_ipending == 0);
+}
+
+void
+x86_cpu_idle_xen(void)
+{
+	struct cpu_info *ci = curcpu();
+	
+	KASSERT(ci->ci_ilevel == IPL_NONE);
+
+	x86_disable_intr();
+	if (__predict_false(!ci->ci_want_resched)) {
+		idle_block();
+	} else {
+		x86_enable_intr();
+	}
 }
 
 #ifdef XENPV
@@ -541,3 +580,24 @@ update_p2m_frame_list_list(void)
 
 }
 #endif /* XENPV */
+
+void
+xen_init_ksyms(void)
+{
+#if NKSYMS || defined(DDB) || defined(MODULAR)
+	extern int end;
+	extern int *esym;
+#ifdef DDB
+	db_machine_init();
+#endif
+
+#ifdef XENPV
+	esym = xen_start_info.mod_start ?
+	    (void *)xen_start_info.mod_start :
+	    (void *)xen_start_info.mfn_list;
+#endif /* XENPV */
+	/* for PVH, esym is set in locore.S */
+	ksyms_addsyms_elf(*(int *)(void *)&end,
+	    ((int *)(void *)&end) + 1, esym);
+#endif
+}

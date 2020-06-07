@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_cpu.c,v 1.89 2019/12/21 11:35:25 ad Exp $	*/
+/*	$NetBSD: kern_cpu.c,v 1.91 2020/05/28 20:29:18 ad Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008, 2009, 2010, 2012, 2019 The NetBSD Foundation, Inc.
@@ -60,7 +60,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_cpu.c,v 1.89 2019/12/21 11:35:25 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_cpu.c,v 1.91 2020/05/28 20:29:18 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_cpu_ucode.h"
@@ -130,7 +130,8 @@ mi_cpu_attach(struct cpu_info *ci)
 
 	KASSERT(maxcpus > 0);
 
-	ci->ci_index = ncpu;
+	if ((ci->ci_index = ncpu) >= maxcpus)
+		panic("Too many CPUs.  Increase MAXCPUS?");
 	kcpuset_set(kcpuset_attached, cpu_index(ci));
 
 	/*
@@ -333,7 +334,7 @@ cpu_xc_offline(struct cpu_info *ci, void *unused)
 	 * Migrate all non-bound threads to the other CPU.  Note that this
 	 * runs from the xcall thread, thus handling of LSONPROC is not needed.
 	 */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	LIST_FOREACH(l, &alllwp, l_list) {
 		struct cpu_info *mci;
 
@@ -356,12 +357,12 @@ cpu_xc_offline(struct cpu_info *ci, void *unused)
 		}
 		if (mci == NULL) {
 			lwp_unlock(l);
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			goto fail;
 		}
 		lwp_migrate(l, mci);
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 #if PCU_UNIT_COUNT > 0
 	pcu_save_all_on_cpu();

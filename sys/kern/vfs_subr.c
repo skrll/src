@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_subr.c,v 1.485 2020/04/13 19:23:18 ad Exp $	*/
+/*	$NetBSD: vfs_subr.c,v 1.488 2020/05/26 18:38:37 ad Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 2004, 2005, 2007, 2008, 2019, 2020
@@ -69,7 +69,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.485 2020/04/13 19:23:18 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.488 2020/05/26 18:38:37 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -730,18 +730,15 @@ lazy_sync_vnode(struct vnode *vp)
 	KASSERT(mutex_owned(&syncer_data_lock));
 
 	synced = false;
-	/* We are locking in the wrong direction. */
-	if (mutex_tryenter(vp->v_interlock)) {
+	if (vcache_tryvget(vp) == 0) {
 		mutex_exit(&syncer_data_lock);
-		if (vcache_tryvget(vp) == 0) {
-			if (vn_lock(vp, LK_EXCLUSIVE | LK_NOWAIT) == 0) {
-				synced = true;
-				(void) VOP_FSYNC(vp, curlwp->l_cred,
-				    FSYNC_LAZY, 0, 0);
-				vput(vp);
-			} else
-				vrele(vp);
-		}
+		if (vn_lock(vp, LK_EXCLUSIVE | LK_NOWAIT) == 0) {
+			synced = true;
+			(void) VOP_FSYNC(vp, curlwp->l_cred,
+			    FSYNC_LAZY, 0, 0);
+			vput(vp);
+		} else
+			vrele(vp);
 		mutex_enter(&syncer_data_lock);
 	}
 	return synced;
@@ -1138,21 +1135,6 @@ vprint(const char *label, struct vnode *vp)
 	}
 }
 
-/* Deprecated. Kept for KPI compatibility. */
-int
-vaccess(enum vtype type, mode_t file_mode, uid_t uid, gid_t gid,
-    mode_t acc_mode, kauth_cred_t cred)
-{
-
-#ifdef DIAGNOSTIC
-	printf("vaccess: deprecated interface used.\n");
-#endif /* DIAGNOSTIC */
-
-	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(acc_mode,
-	    type, file_mode), NULL /* This may panic. */, NULL,
-	    genfs_can_access(type, file_mode, uid, gid, acc_mode, cred));
-}
-
 /*
  * Given a file system name, look up the vfsops for that
  * file system, or return NULL if file system isn't present
@@ -1211,25 +1193,24 @@ set_statvfs_info(const char *onp, int ukon, const char *fromp, int ukfrom,
 	size_t size;
 	struct statvfs *sfs = &mp->mnt_stat;
 	int (*fun)(const void *, void *, size_t, size_t *);
-	struct vnode *rvp;
 
 	(void)strlcpy(mp->mnt_stat.f_fstypename, vfsname,
 	    sizeof(mp->mnt_stat.f_fstypename));
 
 	if (onp) {
+		struct cwdinfo *cwdi = l->l_proc->p_cwdi;
 		fun = (ukon == UIO_SYSSPACE) ? copystr : copyinstr;
-		KASSERT(l == curlwp);
-		rvp = cwdrdir();
-		if (rvp != NULL) {
+		if (cwdi->cwdi_rdir != NULL) {
 			size_t len;
 			char *bp;
 			char *path = PNBUF_GET();
 
 			bp = path + MAXPATHLEN;
 			*--bp = '\0';
-			error = getcwd_common(rvp, rootvnode, &bp,
+			rw_enter(&cwdi->cwdi_lock, RW_READER);
+			error = getcwd_common(cwdi->cwdi_rdir, rootvnode, &bp,
 			    path, MAXPATHLEN / 2, 0, l);
-			vrele(rvp);
+			rw_exit(&cwdi->cwdi_lock);
 			if (error) {
 				PNBUF_PUT(path);
 				return error;
@@ -1277,6 +1258,53 @@ vfs_timestamp(struct timespec *ts)
 {
 
 	nanotime(ts);
+}
+
+/*
+ * The purpose of this routine is to remove granularity from accmode_t,
+ * reducing it into standard unix access bits - VEXEC, VREAD, VWRITE,
+ * VADMIN and VAPPEND.
+ *
+ * If it returns 0, the caller is supposed to continue with the usual
+ * access checks using 'accmode' as modified by this routine.  If it
+ * returns nonzero value, the caller is supposed to return that value
+ * as errno.
+ *
+ * Note that after this routine runs, accmode may be zero.
+ */
+int
+vfs_unixify_accmode(accmode_t *accmode)
+{
+	/*
+	 * There is no way to specify explicit "deny" rule using
+	 * file mode or POSIX.1e ACLs.
+	 */
+	if (*accmode & VEXPLICIT_DENY) {
+		*accmode = 0;
+		return (0);
+	}
+
+	/*
+	 * None of these can be translated into usual access bits.
+	 * Also, the common case for NFSv4 ACLs is to not contain
+	 * either of these bits. Caller should check for VWRITE
+	 * on the containing directory instead.
+	 */
+	if (*accmode & (VDELETE_CHILD | VDELETE))
+		return (EPERM);
+
+	if (*accmode & VADMIN_PERMS) {
+		*accmode &= ~VADMIN_PERMS;
+		*accmode |= VADMIN;
+	}
+
+	/*
+	 * There is no way to deny VREAD_ATTRIBUTES, VREAD_ACL
+	 * or VSYNCHRONIZE using file mode or POSIX.1e ACL.
+	 */
+	*accmode &= ~(VSTAT_PERMS | VSYNCHRONIZE);
+
+	return (0);
 }
 
 time_t	rootfstime;			/* recorded root fs time, if known */

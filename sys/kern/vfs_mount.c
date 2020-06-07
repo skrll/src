@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_mount.c,v 1.80 2020/04/20 21:39:05 ad Exp $	*/
+/*	$NetBSD: vfs_mount.c,v 1.83 2020/05/23 23:42:43 ad Exp $	*/
 
 /*-
  * Copyright (c) 1997-2020 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.80 2020/04/20 21:39:05 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.83 2020/05/23 23:42:43 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -90,7 +90,6 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.80 2020/04/20 21:39:05 ad Exp $");
 #include <sys/systm.h>
 #include <sys/vfs_syscalls.h>
 #include <sys/vnode_impl.h>
-#include <sys/xcall.h>
 
 #include <miscfs/genfs/genfs.h>
 #include <miscfs/specfs/specdev.h>
@@ -114,8 +113,6 @@ static struct vnode *vfs_vnode_iterator_next1(struct vnode_iterator *,
 
 /* Root filesystem. */
 vnode_t *			rootvnode;
-
-extern struct mount		*dead_rootmount;
 
 /* Mounted filesystem list. */
 static TAILQ_HEAD(mountlist, mountlist_entry) mountlist;
@@ -661,7 +658,7 @@ mount_checkdirs(vnode_t *olddp)
 
 	do {
 		retry = false;
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		PROCLIST_FOREACH(p, &allproc) {
 			if ((cwdi = p->p_cwdi) == NULL)
 				continue;
@@ -677,33 +674,28 @@ mount_checkdirs(vnode_t *olddp)
 			rele1 = NULL;
 			rele2 = NULL;
 			atomic_inc_uint(&cwdi->cwdi_refcnt);
-			mutex_exit(proc_lock);
-			mutex_enter(&cwdi->cwdi_lock);
-			if (cwdi->cwdi_cdir == olddp ||
-			    cwdi->cwdi_rdir == olddp) {
-			    	/* XXX belongs in vfs_cwd.c, but rump. */
-			    	xc_barrier(0);
-			    	if (cwdi->cwdi_cdir == olddp) {
-					rele1 = cwdi->cwdi_cdir;
-					vref(newdp);
-					cwdi->cwdi_cdir = newdp;
-				}
-				if (cwdi->cwdi_rdir == olddp) {
-					rele2 = cwdi->cwdi_rdir;
-					vref(newdp);
-					cwdi->cwdi_rdir = newdp;
-				}
+			mutex_exit(&proc_lock);
+			rw_enter(&cwdi->cwdi_lock, RW_WRITER);
+			if (cwdi->cwdi_cdir == olddp) {
+				rele1 = cwdi->cwdi_cdir;
+				vref(newdp);
+				cwdi->cwdi_cdir = newdp;
 			}
-			mutex_exit(&cwdi->cwdi_lock);
+			if (cwdi->cwdi_rdir == olddp) {
+				rele2 = cwdi->cwdi_rdir;
+				vref(newdp);
+				cwdi->cwdi_rdir = newdp;
+			}
+			rw_exit(&cwdi->cwdi_lock);
 			cwdfree(cwdi);
 			if (rele1 != NULL)
 				vrele(rele1);
 			if (rele2 != NULL)
 				vrele(rele2);
-			mutex_enter(proc_lock);
+			mutex_enter(&proc_lock);
 			break;
 		}
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 	} while (retry);
 
 	if (rootvnode == olddp) {
@@ -1022,7 +1014,6 @@ bool
 vfs_unmountall1(struct lwp *l, bool force, bool verbose)
 {
 	struct mount *mp;
-	mount_iterator_t *iter;
 	bool any_error = false, progress = false;
 	uint64_t gen;
 	int error;
@@ -1057,24 +1048,6 @@ vfs_unmountall1(struct lwp *l, bool force, bool verbose)
 	if (any_error && verbose) {
 		printf("WARNING: some file systems would not unmount\n");
 	}
-
-	/* If the mountlist is empty destroy anonymous device vnodes. */
-	mountlist_iterator_init(&iter);
-	if (mountlist_iterator_next(iter) == NULL) {
-		struct vnode_iterator *marker;
-		vnode_t *vp;
-
-		vfs_vnode_iterator_init(dead_rootmount, &marker);
-		while ((vp = vfs_vnode_iterator_next(marker, NULL, NULL))) {
-			if (vp->v_type == VCHR || vp->v_type == VBLK)
-				vgone(vp);
-			else
-				vrele(vp);
-		}
-		vfs_vnode_iterator_destroy(marker);
-	}
-	mountlist_iterator_destroy(iter);
-
 	return progress;
 }
 

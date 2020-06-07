@@ -1,4 +1,4 @@
-/*	$NetBSD: __clone.S,v 1.6 2008/04/28 20:22:56 martin Exp $	*/
+/*	$NetBSD: __clone.S,v 1.8 2020/05/05 20:43:47 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -36,8 +36,6 @@
 	WEAK_ALIAS(clone, __clone)
 #endif
 
-	.import	__cerror, code
-
 /*
  * int clone(int (*fn)(void *), void *stack, int flags, void *arg);
  */
@@ -46,11 +44,10 @@ ENTRY(__clone, 0)
 	/*
 	 * Sanity checks: func and stack may not be NULL.
 	 */
-	ldi	EINVAL, %t1
-	comb,=	%r0, %arg0, __cerror
-	nop
-	comb,=	%r0, %arg1, __cerror
-	nop
+	comb,=	%r0, %arg0, 8f
+	 nop
+	comb,=	%r0, %arg1, 8f
+	 nop
 
 	/*
 	 * Put the func and arg arguments into a frame in the child's stack.
@@ -67,6 +64,10 @@ ENTRY(__clone, 0)
 	comb,<>,n %r0, %ret1, 9f
 	bv,n	%r0(%rp)
 
+8:
+	b	__cerror
+	 ldi	EINVAL, %t1
+
 9:	/*
 	 * Child: Reload the function and argument from the new stack.
 	 */
@@ -76,7 +77,7 @@ ENTRY(__clone, 0)
 	/* Call the clone's entry point. */
 	stw	%r19, HPPA_FRAME_ARG(2)(%sp)
 	bl	$$dyncall, %r31
-	copy	%r31, %rp
+	 copy	%r31, %rp
 	ldw	HPPA_FRAME_ARG(2)(%sp), %r19
 
 	/* Pass the return value to _exit(). */

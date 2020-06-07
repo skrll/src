@@ -1,4 +1,4 @@
-/* $NetBSD: hpet.c,v 1.13 2011/10/31 12:47:15 yamt Exp $ */
+/* $NetBSD: hpet.c,v 1.17 2020/05/16 23:06:40 ad Exp $ */
 
 /*
  * Copyright (c) 2006 Nicolas Joly
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hpet.c,v 1.13 2011/10/31 12:47:15 yamt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hpet.c,v 1.17 2020/05/16 23:06:40 ad Exp $");
 
 #include <sys/systm.h>
 #include <sys/device.h>
@@ -43,6 +43,9 @@ __KERNEL_RCSID(0, "$NetBSD: hpet.c,v 1.13 2011/10/31 12:47:15 yamt Exp $");
 #include <sys/timetc.h>
 
 #include <sys/bus.h>
+#include <sys/lock.h>
+
+#include <machine/cpu_counter.h>
 
 #include <dev/ic/hpetreg.h>
 #include <dev/ic/hpetvar.h>
@@ -50,9 +53,14 @@ __KERNEL_RCSID(0, "$NetBSD: hpet.c,v 1.13 2011/10/31 12:47:15 yamt Exp $");
 static u_int	hpet_get_timecount(struct timecounter *);
 static bool	hpet_resume(device_t, const pmf_qual_t *);
 
+static struct hpet_softc *hpet0 __read_mostly;
+static uint32_t hpet_attach_val;
+static uint64_t hpet_attach_tsc;
+
 int
 hpet_detach(device_t dv, int flags)
 {
+#if 0 /* XXX DELAY() is based off this, detaching is not a good idea. */
 	struct hpet_softc *sc = device_private(dv);
 	int rc;
 
@@ -64,6 +72,9 @@ hpet_detach(device_t dv, int flags)
 	bus_space_write_4(sc->sc_memt, sc->sc_memh, HPET_CONFIG, sc->sc_config);
 
 	return 0;
+#else
+	return EBUSY;
+#endif
 }
 
 void
@@ -72,7 +83,7 @@ hpet_attach_subr(device_t dv)
 	struct hpet_softc *sc = device_private(dv);
 	struct timecounter *tc;
 	uint64_t tmp;
-	uint32_t val;
+	uint32_t val, sval, eval;
 	int i;
 
 	tc = &sc->sc_tc;
@@ -84,8 +95,8 @@ hpet_attach_subr(device_t dv)
 	tc->tc_counter_mask = 0xffffffff;
 
 	/* Get frequency */
-	val = bus_space_read_4(sc->sc_memt, sc->sc_memh, HPET_PERIOD);
-	if (val == 0 || val > HPET_PERIOD_MAX) {
+	sc->sc_period = bus_space_read_4(sc->sc_memt, sc->sc_memh, HPET_PERIOD);
+	if (sc->sc_period == 0 || sc->sc_period > HPET_PERIOD_MAX) {
 		aprint_error_dev(dv, "invalid timer period\n");
 		return;
 	}
@@ -104,7 +115,7 @@ hpet_attach_subr(device_t dv)
 		}
 	}
 
-	tmp = (1000000000000000ULL * 2) / val;
+	tmp = (1000000000000000ULL * 2) / sc->sc_period;
 	tc->tc_frequency = (tmp / 2) + (tmp & 1);
 
 	/* Enable timer */
@@ -120,6 +131,30 @@ hpet_attach_subr(device_t dv)
 
 	if (!pmf_device_register(dv, NULL, hpet_resume))
 		aprint_error_dev(dv, "couldn't establish power handler\n");
+
+	if (device_unit(dv) == 0)
+		hpet0 = sc;
+
+	/*
+	 * Determine approximately how long it takes to read the counter
+	 * register once, and compute an ajustment for hpet_delay() based on
+	 * that.
+	 */
+	(void)bus_space_read_4(sc->sc_memt, sc->sc_memh, HPET_MCOUNT_LO);
+	sval = bus_space_read_4(sc->sc_memt, sc->sc_memh, HPET_MCOUNT_LO);
+	for (i = 0; i < 998; i++)
+		(void)bus_space_read_4(sc->sc_memt, sc->sc_memh, HPET_MCOUNT_LO);
+	eval = bus_space_read_4(sc->sc_memt, sc->sc_memh, HPET_MCOUNT_LO);
+	val = eval - sval;
+	sc->sc_adj = (int64_t)val * sc->sc_period / 1000;
+
+	/* Store attach-time values for computing TSC frequency later. */
+	if (cpu_hascounter() && sc == hpet0) {
+		(void)cpu_counter();
+		val = bus_space_read_4(sc->sc_memt, sc->sc_memh, HPET_MCOUNT_LO);
+		hpet_attach_tsc = cpu_counter();
+		hpet_attach_val = val;
+	}
 }
 
 static u_int
@@ -141,6 +176,72 @@ hpet_resume(device_t dv, const pmf_qual_t *qual)
 	bus_space_write_4(sc->sc_memt, sc->sc_memh, HPET_CONFIG, val);
 
 	return true;
+}
+
+bool
+hpet_delay_p(void)
+{
+
+	return hpet0 != NULL;
+}
+
+void
+hpet_delay(unsigned int us)
+{
+	struct hpet_softc *sc;
+	uint32_t ntick, otick;
+	int64_t delta;
+
+	/*
+	 * Read timer before slow division.  Convert microseconds to
+	 * femtoseconds, subtract the cost of 1 counter register access,
+	 * and convert to HPET units.
+	 */
+	sc = hpet0;
+	otick = bus_space_read_4(sc->sc_memt, sc->sc_memh, HPET_MCOUNT_LO);
+	delta = (((int64_t)us * 1000000000) - sc->sc_adj) / sc->sc_period;
+
+	while (delta > 0) {
+		SPINLOCK_BACKOFF_HOOK;
+		ntick = bus_space_read_4(sc->sc_memt, sc->sc_memh,
+		    HPET_MCOUNT_LO);
+		delta -= (uint32_t)(ntick - otick);
+		otick = ntick;
+	}
+}
+
+uint64_t
+hpet_tsc_freq(void)
+{
+	struct hpet_softc *sc;
+	uint64_t td, val, freq;
+	uint32_t hd;
+	int s;
+
+	if (hpet0 == NULL || !cpu_hascounter())
+		return 0;
+
+	/* Slow down if we got here from attach in under 0.1s. */
+	sc = hpet0;
+	hd = bus_space_read_4(sc->sc_memt, sc->sc_memh, HPET_MCOUNT_LO);
+	hd -= hpet_attach_val;
+	if (hd < (uint64_t)100000 * 1000000000 / sc->sc_period)
+		hpet_delay(100000);
+
+	/*
+	 * Determine TSC freq by comparing how far the TSC and HPET have
+	 * advanced since attach time.  Take the cost of reading HPET
+	 * register into account and round result to the nearest 1000.
+	 */
+	s = splhigh();
+	(void)cpu_counter();
+	hd = bus_space_read_4(sc->sc_memt, sc->sc_memh, HPET_MCOUNT_LO);
+	td = cpu_counter();
+	splx(s);
+	hd -= hpet_attach_val;
+	val = ((uint64_t)hd * sc->sc_period - sc->sc_adj) / 100000000;
+	freq = (td - hpet_attach_tsc) * 10000000 / val;
+	return rounddown(freq + 500, 1000);
 }
 
 MODULE(MODULE_CLASS_DRIVER, hpet, NULL);

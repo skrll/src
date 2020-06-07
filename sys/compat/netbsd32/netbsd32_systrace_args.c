@@ -1,4 +1,4 @@
-/* $NetBSD: netbsd32_systrace_args.c,v 1.41 2020/04/04 20:27:27 thorpej Exp $ */
+/* $NetBSD: netbsd32_systrace_args.c,v 1.44 2020/05/16 18:31:48 christos Exp $ */
 
 /*
  * System call argument to DTrace register array converstion.
@@ -1186,6 +1186,36 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 2;
 		break;
 	}
+	/* netbsd32___futex */
+	case 166: {
+		const struct netbsd32___futex_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, uaddr).i32; /* netbsd32_intp */
+		iarg[1] = SCARG(p, op); /* int */
+		iarg[2] = SCARG(p, val); /* int */
+		uarg[3] = (intptr_t) SCARG(p, timeout).i32; /* const netbsd32_timespecp_t */
+		uarg[4] = (intptr_t) SCARG(p, uaddr2).i32; /* netbsd32_intp */
+		iarg[5] = SCARG(p, val2); /* int */
+		iarg[6] = SCARG(p, val3); /* int */
+		*n_args = 7;
+		break;
+	}
+	/* netbsd32___futex_set_robust_list */
+	case 167: {
+		const struct netbsd32___futex_set_robust_list_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, head).i32; /* netbsd32_voidp */
+		iarg[1] = SCARG(p, len); /* netbsd32_size_t */
+		*n_args = 2;
+		break;
+	}
+	/* netbsd32___futex_get_robust_list */
+	case 168: {
+		const struct netbsd32___futex_get_robust_list_args *p = params;
+		iarg[0] = SCARG(p, lwpid); /* lwpid_t */
+		uarg[1] = (intptr_t) SCARG(p, headp).i32; /* netbsd32_voidp */
+		uarg[2] = (intptr_t) SCARG(p, lenp).i32; /* netbsd32_size_tp */
+		*n_args = 3;
+		break;
+	}
 	/* netbsd32_semsys */
 	case 169: {
 		const struct compat_10_netbsd32_semsys_args *p = params;
@@ -2311,11 +2341,6 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		iarg[0] = SCARG(p, features); /* int */
 		uarg[1] = (intptr_t) SCARG(p, address).i32; /* netbsd32_pointer_t */
 		*n_args = 2;
-		break;
-	}
-	/* sys__lwp_gettid */
-	case 326: {
-		*n_args = 0;
 		break;
 	}
 	/* netbsd32___sigaction_sigtramp */
@@ -3521,6 +3546,119 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		uarg[2] = (intptr_t) SCARG(p, buf).i32; /* netbsd32_statvfsp_t */
 		iarg[3] = SCARG(p, flags); /* int */
 		*n_args = 4;
+		break;
+	}
+	/* netbsd32___acl_get_link */
+	case 487: {
+		const struct netbsd32___acl_get_link_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_set_link */
+	case 488: {
+		const struct netbsd32___acl_set_link_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_delete_link */
+	case 489: {
+		const struct netbsd32___acl_delete_link_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		*n_args = 2;
+		break;
+	}
+	/* netbsd32___acl_aclcheck_link */
+	case 490: {
+		const struct netbsd32___acl_aclcheck_link_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_get_file */
+	case 491: {
+		const struct netbsd32___acl_get_file_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_set_file */
+	case 492: {
+		const struct netbsd32___acl_set_file_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_get_fd */
+	case 493: {
+		const struct netbsd32___acl_get_fd_args *p = params;
+		iarg[0] = SCARG(p, filedes); /* int */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_set_fd */
+	case 494: {
+		const struct netbsd32___acl_set_fd_args *p = params;
+		iarg[0] = SCARG(p, filedes); /* int */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_delete_file */
+	case 495: {
+		const struct netbsd32___acl_delete_file_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		*n_args = 2;
+		break;
+	}
+	/* netbsd32___acl_delete_fd */
+	case 496: {
+		const struct netbsd32___acl_delete_fd_args *p = params;
+		iarg[0] = SCARG(p, filedes); /* int */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		*n_args = 2;
+		break;
+	}
+	/* netbsd32___acl_aclcheck_file */
+	case 497: {
+		const struct netbsd32___acl_aclcheck_file_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32___acl_aclcheck_fd */
+	case 498: {
+		const struct netbsd32___acl_aclcheck_fd_args *p = params;
+		iarg[0] = SCARG(p, filedes); /* int */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp).i32; /* netbsd32_aclp_t */
+		*n_args = 3;
+		break;
+	}
+	/* netbsd32_lpathconf */
+	case 499: {
+		const struct netbsd32_lpathconf_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path).i32; /* const netbsd32_charp */
+		iarg[1] = SCARG(p, name); /* int */
+		*n_args = 2;
 		break;
 	}
 	default:
@@ -5432,6 +5570,63 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
+	/* netbsd32___futex */
+	case 166:
+		switch(ndx) {
+		case 0:
+			p = "netbsd32_intp";
+			break;
+		case 1:
+			p = "int";
+			break;
+		case 2:
+			p = "int";
+			break;
+		case 3:
+			p = "const netbsd32_timespecp_t";
+			break;
+		case 4:
+			p = "netbsd32_intp";
+			break;
+		case 5:
+			p = "int";
+			break;
+		case 6:
+			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___futex_set_robust_list */
+	case 167:
+		switch(ndx) {
+		case 0:
+			p = "netbsd32_voidp";
+			break;
+		case 1:
+			p = "netbsd32_size_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___futex_get_robust_list */
+	case 168:
+		switch(ndx) {
+		case 0:
+			p = "lwpid_t";
+			break;
+		case 1:
+			p = "netbsd32_voidp";
+			break;
+		case 2:
+			p = "netbsd32_size_tp";
+			break;
+		default:
+			break;
+		};
+		break;
 	/* netbsd32_semsys */
 	case 169:
 		switch(ndx) {
@@ -7315,9 +7510,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		default:
 			break;
 		};
-		break;
-	/* sys__lwp_gettid */
-	case 326:
 		break;
 	/* netbsd32___sigaction_sigtramp */
 	case 340:
@@ -9518,6 +9710,202 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
+	/* netbsd32___acl_get_link */
+	case 487:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_set_link */
+	case 488:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_delete_link */
+	case 489:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_aclcheck_link */
+	case 490:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_get_file */
+	case 491:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_set_file */
+	case 492:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_get_fd */
+	case 493:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_set_fd */
+	case 494:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_delete_file */
+	case 495:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_delete_fd */
+	case 496:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_aclcheck_file */
+	case 497:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32___acl_aclcheck_fd */
+	case 498:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "netbsd32_aclp_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* netbsd32_lpathconf */
+	case 499:
+		switch(ndx) {
+		case 0:
+			p = "const netbsd32_charp";
+			break;
+		case 1:
+			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
 	default:
 		break;
 	};
@@ -10208,6 +10596,21 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
+	/* netbsd32___futex */
+	case 166:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___futex_set_robust_list */
+	case 167:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___futex_get_robust_list */
+	case 168:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
 	/* netbsd32_semsys */
 	case 169:
 		if (ndx == 0 || ndx == 1)
@@ -10868,8 +11271,6 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;
-	/* sys__lwp_gettid */
-	case 326:
 	/* netbsd32___sigaction_sigtramp */
 	case 340:
 		if (ndx == 0 || ndx == 1)
@@ -11506,6 +11907,71 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	case 486:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
+		break;
+	/* netbsd32___acl_get_link */
+	case 487:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_set_link */
+	case 488:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_delete_link */
+	case 489:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_aclcheck_link */
+	case 490:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_get_file */
+	case 491:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_set_file */
+	case 492:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_get_fd */
+	case 493:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_set_fd */
+	case 494:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_delete_file */
+	case 495:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_delete_fd */
+	case 496:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_aclcheck_file */
+	case 497:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32___acl_aclcheck_fd */
+	case 498:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* netbsd32_lpathconf */
+	case 499:
+		if (ndx == 0 || ndx == 1)
+			p = "long";
 		break;
 	default:
 		break;

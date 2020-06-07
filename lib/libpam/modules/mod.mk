@@ -1,4 +1,4 @@
-#	$NetBSD: mod.mk,v 1.15 2020/02/27 02:56:46 christos Exp $
+#	$NetBSD: mod.mk,v 1.17 2020/05/23 00:43:33 rin Exp $
 
 NOLINT=		# don't build a lint library
 NOPROFILE=	# don't build a profile library

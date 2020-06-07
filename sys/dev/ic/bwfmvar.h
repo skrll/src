@@ -1,4 +1,4 @@
-/* $NetBSD: bwfmvar.h,v 1.8 2020/03/25 04:53:11 thorpej Exp $ */
+/* $NetBSD: bwfmvar.h,v 1.10 2020/05/30 15:55:47 jdolecek Exp $ */
 /* $OpenBSD: bwfmvar.h,v 1.1 2017/10/11 17:19:50 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -156,7 +156,7 @@ struct bwfm_proto_ops {
 	int (*proto_set_dcmd)(struct bwfm_softc *, int, int,
 	    char *, size_t);
 };
-extern struct bwfm_proto_ops bwfm_proto_bcdc_ops;
+extern const struct bwfm_proto_ops bwfm_proto_bcdc_ops;
 
 enum bwfm_task_cmd {
 	BWFM_TASK_NEWSTATE,
@@ -195,9 +195,9 @@ struct bwfm_softc {
 	struct ethercom		 sc_ec;
 #define	sc_if			 sc_ec.ec_if
 
-	struct bwfm_bus_ops	*sc_bus_ops;
-	struct bwfm_buscore_ops	*sc_buscore_ops;
-	struct bwfm_proto_ops	*sc_proto_ops;
+	const struct bwfm_bus_ops	*sc_bus_ops;
+	const struct bwfm_buscore_ops	*sc_buscore_ops;
+	const struct bwfm_proto_ops	*sc_proto_ops;
 	struct bwfm_chip	 sc_chip;
 	uint8_t			 sc_io_type;
 #define		BWFM_IO_TYPE_D11N		1
@@ -214,6 +214,11 @@ struct bwfm_softc {
 				    enum ieee80211_state, int);
 
 	int			 sc_bcdc_reqid;
+
+	union {
+		struct bwfm_bss_info bss_info;
+		uint8_t padding[BWFM_BSS_INFO_BUFLEN];
+	}			sc_bss_buf;
 };
 
 void bwfm_attach(struct bwfm_softc *);

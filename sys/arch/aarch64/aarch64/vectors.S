@@ -1,4 +1,4 @@
-/*	$NetBSD: vectors.S,v 1.15 2020/04/16 08:59:16 skrll Exp $	*/
+/*	$NetBSD: vectors.S,v 1.17 2020/05/23 18:08:59 ryo Exp $	*/
 
 #include <aarch64/asm.h>
 #include "assym.h"
@@ -91,8 +91,7 @@ ENTRY_NBTI(\func)
 	adrl	x4, _C_LABEL(aarch64_pac_enabled)
 	ldr	w4, [x4]
 	cbz	w4, 1f
-	ldr	x5, [x1, #L_MD_IA_KERN_LO]
-	ldr	x6, [x1, #L_MD_IA_KERN_HI]
+	ldp	x5, x6, [x1, #L_MD_IA_KERN]
 	msr	APIAKeyLo_EL1, x5
 	msr	APIAKeyHi_EL1, x6
 1:

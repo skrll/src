@@ -1,4 +1,4 @@
-/*	$NetBSD: cpuregs.h,v 1.96 2017/05/07 04:12:35 skrll Exp $	*/
+/*	$NetBSD: cpuregs.h,v 1.99 2020/05/24 07:15:24 simonb Exp $	*/
 
 /*
  * Copyright (c) 2009 Miodrag Vallat.
@@ -148,6 +148,7 @@
 
 #define	CCA_UNCACHED		2
 #define	CCA_CACHEABLE		3	/* cacheable non-coherent */
+#define	CCA_SB_CACHEABLE_COHERENT 5	/* cacheable coherent (SiByte ext) */
 #define	CCA_ACCEL		7	/* non-cached, write combining */
 
 /* CPU dependent mtc0 hazard hook */
@@ -804,15 +805,27 @@
 #endif
 
 /*
+ * RDHWR register numbers
+ */
+#define	MIPS_HWR_CPUNUM			_(0)
+#define	MIPS_HWR_SYNCI_STEP		_(1)
+#define	MIPS_HWR_CC			_(2)
+#define	MIPS_HWR_CCRES			_(3)
+#define	MIPS_HWR_UL			_(29)	/* Userlocal */
+#define	MIPS_HWR_IMPL30			_(30)
+#define	MIPS_HWR_IMPL31			_(31)
+#define	MIPS_HWR_CPUNUM			_(0)
+
+/*
  * Bits defined for HWREna (CP0 register 7, select 0).
  */
-#define	MIPS_HWRENA_IMPL31		__BIT(31)
-#define	MIPS_HWRENA_IMPL30		__BIT(30)
-#define	MIPS_HWRENA_UL			__BIT(29)	/* Userlocal */
-#define	MIPS_HWRENA_CCRES		__BIT(3)
-#define	MIPS_HWRENA_CC			__BIT(2)
-#define	MIPS_HWRENA_SYNCI_STEP		__BIT(1)
-#define	MIPS_HWRENA_CPUNUM		__BIT(0)
+#define	MIPS_HWRENA_IMPL31		__BIT(MIPS_HWR_IMPL31)
+#define	MIPS_HWRENA_IMPL30		__BIT(MIPS_HWR_IMPL30)
+#define	MIPS_HWRENA_UL			__BIT(MIPS_HWR_UL)
+#define	MIPS_HWRENA_CCRES		__BIT(MIPS_HWR_CCRES)
+#define	MIPS_HWRENA_CC			__BIT(MIPS_HWR_CC)
+#define	MIPS_HWRENA_SYNCI_STEP		__BIT(MIPS_HWR_SYNCI_STEP)
+#define	MIPS_HWRENA_CPUNUM		__BIT(MIPS_HWR_CPUNUM)
 
 /*
  * Bits defined for EBASE (CP0 register 15, select 1).
@@ -964,7 +977,8 @@
 /*
  * CPU processor revision IDs for company ID == 4 (SiByte)
  */
-#define	MIPS_SB1	0x01	/* SiByte SB1	 		ISA 64  */
+#define	MIPS_SB1	0x01	/* SiByte SB1			ISA 64  */
+#define	MIPS_SB1_11	0x11	/* SiByte SB1 (rev 0x11)	ISA 64  */
 
 /*
  * CPU processor revision IDs for company ID == 5 (SandCraft)
@@ -1022,6 +1036,8 @@
 #define	MIPS_CNF71XX	0x94	/* Cavium Octeon CNF71XX	ISA 64  */
 #define	MIPS_CN78XX	0x95	/* Cavium Octeon CN78XX		ISA 64  */
 #define	MIPS_CN70XX	0x96	/* Cavium Octeon CN70XX		ISA 64  */
+#define	MIPS_CN73XX	0x97	/* Cavium Octeon CN73XX		ISA 64  */
+#define	MIPS_CNF75XX	0x98	/* Cavium Octeon CNF75XX	ISA 64  */
 
 /*
  * CPU processor revision IDs for company ID == 7 (Microsoft)

@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.67 2020/04/19 03:52:22 isaki Exp $	*/
+/*	$NetBSD: audio.c,v 1.75 2020/05/29 03:09:14 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -138,7 +138,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.67 2020/04/19 03:52:22 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.75 2020/05/29 03:09:14 isaki Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -450,6 +450,28 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 
 #define SPECIFIED(x)	((x) != ~0)
 #define SPECIFIED_CH(x)	((x) != (u_char)~0)
+
+/*
+ * Default hardware blocksize in msec.
+ *
+ * We use 10 msec for most modern platforms.  This period is good enough to
+ * play audio and video synchronizely.
+ * In contrast, for very old platforms, this is usually too short and too
+ * severe.  Also such platforms usually can not play video confortably, so
+ * it's not so important to make the blocksize shorter.  If the platform
+ * defines its own value as __AUDIO_BLK_MS in its <machine/param.h>, it
+ * uses this instead.
+ *
+ * In either case, you can overwrite AUDIO_BLK_MS by your kernel
+ * configuration file if you wish.
+ */
+#if !defined(AUDIO_BLK_MS)
+# if defined(__AUDIO_BLK_MS)
+#  define AUDIO_BLK_MS __AUDIO_BLK_MS
+# else
+#  define AUDIO_BLK_MS (10)
+# endif
+#endif
 
 /* Device timeout in msec */
 #define AUDIO_TIMEOUT	(3000)
@@ -1544,6 +1566,13 @@ audio_track_waitio(struct audio_softc *sc, audio_track_t *track)
 	/* Wait for pending I/O to complete. */
 	error = cv_timedwait_sig(&track->mixer->outcv, sc->sc_lock,
 	    mstohz(AUDIO_TIMEOUT));
+	if (sc->sc_suspending) {
+		/* If it's about to suspend, ignore timeout error. */
+		if (error == EWOULDBLOCK) {
+			TRACET(2, track, "timeout (suspending)");
+			return 0;
+		}
+	}
 	if (sc->sc_dying) {
 		error = EIO;
 	}
@@ -5966,11 +5995,11 @@ audio_psignal(struct audio_softc *sc, pid_t pid, int signum)
 	 * psignal() must be called without spin lock held.
 	 */
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	p = proc_find(pid);
 	if (p)
 		psignal(p, signum);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 }
 
 /*
@@ -6098,13 +6127,17 @@ static int
 audio_check_params(audio_format2_t *p)
 {
 
-	/* Convert obsoleted AUDIO_ENCODING_PCM* */
-	/* XXX Is this conversion right? */
+	/*
+	 * Convert obsolete AUDIO_ENCODING_PCM encodings.
+	 * 
+	 * AUDIO_ENCODING_PCM16 == AUDIO_ENCODING_LINEAR
+	 * So, it's always signed, as in SunOS.
+	 *
+	 * AUDIO_ENCODING_PCM8 == AUDIO_ENCODING_LINEAR8
+	 * So, it's always unsigned, as in SunOS.
+	 */
 	if (p->encoding == AUDIO_ENCODING_PCM16) {
-		if (p->precision == 8)
-			p->encoding = AUDIO_ENCODING_ULINEAR;
-		else
-			p->encoding = AUDIO_ENCODING_SLINEAR;
+		p->encoding = AUDIO_ENCODING_SLINEAR;
 	} else if (p->encoding == AUDIO_ENCODING_PCM8) {
 		if (p->precision == 8)
 			p->encoding = AUDIO_ENCODING_ULINEAR;
@@ -7728,15 +7761,17 @@ audio_suspend(device_t dv, const pmf_qual_t *qual)
 	error = audio_exlock_mutex_enter(sc);
 	if (error)
 		return error;
+	sc->sc_suspending = true;
 	audio_mixer_capture(sc);
 
-	/* Halts mixers but don't clear busy flag for resume */
 	if (sc->sc_pbusy) {
 		audio_pmixer_halt(sc);
+		/* Reuse this as need-to-restart flag while suspending */
 		sc->sc_pbusy = true;
 	}
 	if (sc->sc_rbusy) {
 		audio_rmixer_halt(sc);
+		/* Reuse this as need-to-restart flag while suspending */
 		sc->sc_rbusy = true;
 	}
 
@@ -7759,15 +7794,28 @@ audio_resume(device_t dv, const pmf_qual_t *qual)
 	if (error)
 		return error;
 
+	sc->sc_suspending = false;
 	audio_mixer_restore(sc);
 	/* XXX ? */
 	AUDIO_INITINFO(&ai);
 	audio_hw_setinfo(sc, &ai, NULL);
 
-	if (sc->sc_pbusy)
+	/*
+	 * During from suspend to resume here, sc_[pr]busy is used as
+	 * need-to-restart flag temporarily.  After this point,
+	 * sc_[pr]busy is returned to its original usage (busy flag).
+	 * And note that sc_[pr]busy must be false to call [pr]mixer_start().
+	 */
+	if (sc->sc_pbusy) {
+		/* pmixer_start() requires pbusy is false */
+		sc->sc_pbusy = false;
 		audio_pmixer_start(sc, true);
-	if (sc->sc_rbusy)
+	}
+	if (sc->sc_rbusy) {
+		/* rmixer_start() requires rbusy is false */
+		sc->sc_rbusy = false;
 		audio_rmixer_start(sc);
+	}
 
 	audio_exlock_mutex_exit(sc);
 
@@ -7971,11 +8019,11 @@ mixer_signal(struct audio_softc *sc)
 	KASSERT(sc->sc_exlock);
 
 	for (i = 0; i < sc->sc_am_used; i++) {
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		p = proc_find(sc->sc_am[i]);
 		if (p)
 			psignal(p, SIGIO);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 	}
 }
 

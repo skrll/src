@@ -1,4 +1,4 @@
-#       $NetBSD: Makefile,v 1.448 2020/02/23 08:57:44 mrg Exp $
+#       $NetBSD: Makefile,v 1.450 2020/05/01 21:43:24 jdolecek Exp $
 
 #	Makefile for section 9 (kernel function and variable) manual pages.
 
@@ -44,7 +44,7 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	percpu.9 pfil.9 physio.9 pmap.9 pmatch.9 pmf.9 pool.9 \
 	pool_cache.9 powerhook_establish.9 ppsratecheck.9 preempt.9 \
 	proc_find.9 pserialize.9 pslist.9 psref.9 putter.9 \
-	radio.9 ras.9 rasops.9 ratecheck.9 resettodr.9 rnd.9 rndsink.9 \
+	radio.9 ras.9 rasops.9 ratecheck.9 resettodr.9 rnd.9 \
 	roundup.9 rssadapt.9 rt_timer.9 rwlock.9 RUN_ONCE.9 STACK.9 \
 	scanc.9 \
 	sched_4bsd.9 sched_m2.9 scsipi.9 \
@@ -499,6 +499,7 @@ MLINKS+=mbuf.9 m_get.9 mbuf.9 m_gethdr.9 mbuf.9 m_devget.9 \
 	mbuf.9 m_makewritable.9 \
 	mbuf.9 m_pulldown.9 mbuf.9 m_pullup.9 mbuf.9 m_copyup.9 \
 	mbuf.9 m_split.9 mbuf.9 m_adj.9 mbuf.9 m_free.9 \
+	mbuf.9 m_apply.9 \
 	mbuf.9 m_freem.9 mbuf.9 mtod.9 mbuf.9 mtocl.9 mbuf.9 cltom.9 \
 	mbuf.9 MGET.9 mbuf.9 MGETHDR.9 mbuf.9 MEXTMALLOC.9 \
 	mbuf.9 MEXTADD.9 mbuf.9 MCLGET.9 \

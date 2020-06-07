@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_sched.c,v 1.47 2020/01/27 22:05:10 ad Exp $	*/
+/*	$NetBSD: sys_sched.c,v 1.49 2020/05/23 23:42:43 ad Exp $	*/
 
 /*
  * Copyright (c) 2008, 2011 Mindaugas Rasiukevicius <rmind at NetBSD org>
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_sched.c,v 1.47 2020/01/27 22:05:10 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_sched.c,v 1.49 2020/05/23 23:42:43 ad Exp $");
 
 #include <sys/param.h>
 
@@ -131,14 +131,14 @@ do_sched_setparam(pid_t pid, lwpid_t lid, int policy,
 
 	if (pid != 0) {
 		/* Find the process */
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		p = proc_find(pid);
 		if (p == NULL) {
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			return ESRCH;
 		}
 		mutex_enter(p->p_lock);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		/* Disallow modification of system processes */
 		if ((p->p_flag & PK_SYSTEM) != 0) {
 			mutex_exit(p->p_lock);
@@ -230,6 +230,9 @@ do_sched_getparam(pid_t pid, lwpid_t lid, int *policy,
 	struct sched_param lparams;
 	struct lwp *t;
 	int error, lpolicy;
+
+	if (pid < 0 || lid < 0)
+		return EINVAL;
 
 	t = lwp_find2(pid, lid); /* acquire p_lock */
 	if (t == NULL)
@@ -398,15 +401,15 @@ sys__sched_setaffinity(struct lwp *l,
 
 	if (SCARG(uap, pid) != 0) {
 		/* Find the process */
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		p = proc_find(SCARG(uap, pid));
 		if (p == NULL) {
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			error = ESRCH;
 			goto out;
 		}
 		mutex_enter(p->p_lock);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		/* Disallow modification of system processes. */
 		if ((p->p_flag & PK_SYSTEM) != 0) {
 			mutex_exit(p->p_lock);
@@ -497,6 +500,9 @@ sys__sched_getaffinity(struct lwp *l,
 	struct lwp *t;
 	kcpuset_t *kcset;
 	int error;
+
+	if (SCARG(uap, pid) < 0 || SCARG(uap, lid) < 0)
+		return EINVAL;
 
 	error = genkcpuset(&kcset, SCARG(uap, cpuset), SCARG(uap, size));
 	if (error)
