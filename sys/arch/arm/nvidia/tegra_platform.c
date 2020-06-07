@@ -69,7 +69,7 @@ __KERNEL_RCSID(0, "$NetBSD: tegra_platform.c,v 1.20 2019/01/03 12:52:40 jmcneill
 
 void tegra_platform_early_putchar(char);
 
-void
+void __noasan
 tegra_platform_early_putchar(char c)
 {
 #ifdef CONSADDR
@@ -109,7 +109,7 @@ tegra_platform_devmap(void)
 }
 
 #if defined(SOC_TEGRA124)
-static void
+static void __noasan
 tegra124_platform_bootstrap(void)
 {
 #ifdef MULTIPROCESSOR
@@ -121,7 +121,7 @@ tegra124_platform_bootstrap(void)
 #endif
 
 #if defined(SOC_TEGRA210)
-static void
+static void __noasan
 tegra210_platform_bootstrap(void)
 {
 
@@ -133,7 +133,7 @@ tegra210_platform_bootstrap(void)
 }
 #endif
 
-static void
+static void __noasan
 tegra_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	extern struct bus_space arm_generic_bs_tag;
@@ -145,7 +145,7 @@ tegra_platform_init_attach_args(struct fdt_attach_args *faa)
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 
-static void
+static void __noasan
 tegra_platform_device_register(device_t self, void *aux)
 {
 	prop_dictionary_t dict = device_properties(self);
@@ -195,19 +195,19 @@ tegra_platform_device_register(device_t self, void *aux)
 	}
 }
 
-static void
+static void __noasan
 tegra_platform_reset(void)
 {
 	tegra_pmc_reset();
 }
 
-static void
+static void __noasan
 tegra_platform_delay(u_int us)
 {
 	tegra_timer_delay(us);
 }
 
-static u_int
+static u_int __noasan
 tegra_platform_uart_freq(void)
 {
 	return PLLP_OUT0_FREQ;
