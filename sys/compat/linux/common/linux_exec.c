@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_exec.c,v 1.121 2020/02/15 17:13:55 ad Exp $	*/
+/*	$NetBSD: linux_exec.c,v 1.124 2020/05/03 01:06:56 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1994, 1995, 1998, 2000, 2007, 2008, 2020
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_exec.c,v 1.121 2020/02/15 17:13:55 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_exec.c,v 1.124 2020/05/03 01:06:56 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -44,6 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: linux_exec.c,v 1.121 2020/02/15 17:13:55 ad Exp $");
 #include <sys/mount.h>
 #include <sys/exec.h>
 #include <sys/exec_elf.h>
+#include <sys/futex.h>
 
 #include <sys/mman.h>
 #include <sys/syscallargs.h>
@@ -60,8 +61,8 @@ __KERNEL_RCSID(0, "$NetBSD: linux_exec.c,v 1.121 2020/02/15 17:13:55 ad Exp $");
 #include <compat/linux/common/linux_util.h>
 #include <compat/linux/common/linux_sched.h>
 #include <compat/linux/common/linux_machdep.h>
+#include <compat/linux/common/linux_misc.h>
 #include <compat/linux/common/linux_exec.h>
-#include <compat/linux/common/linux_futex.h>
 #include <compat/linux/common/linux_ipc.h>
 #include <compat/linux/common/linux_sem.h>
 
@@ -130,8 +131,6 @@ linux_e_proc_exec(struct proc *p, struct exec_package *epp)
 	}
 
 	KASSERT(p->p_nlwps == 1);
-	l = LIST_FIRST(&p->p_lwps);
-	lwp_renumber(l, p->p_pid);
 }
 
 void
@@ -152,7 +151,6 @@ linux_e_proc_fork(struct proc *p2, struct lwp *l1, int flags)
 
 	KASSERT(p2->p_nlwps == 1);
 	l2 = LIST_FIRST(&p2->p_lwps);
-	lwp_renumber(l2, p2->p_pid);
 	led1 = l1->l_emuldata;
 	led2 = l2->l_emuldata;
 	led2->led_child_tidptr = led1->led_child_tidptr;
@@ -171,32 +169,24 @@ void
 linux_e_lwp_exit(struct lwp *l)
 {
 	struct linux_emuldata *led;
-	struct linux_sys_futex_args cup;
 	register_t retval;
 	int error, zero = 0;
 
 	led = l->l_emuldata;
-	if (led->led_clear_tid == NULL) {
-		return;
-	}
 
-	/* Emulate LINUX_CLONE_CHILD_CLEARTID */
-	error = copyout(&zero, led->led_clear_tid, sizeof(zero));
+	if (led->led_clear_tid != NULL) {
+		/* Emulate LINUX_CLONE_CHILD_CLEARTID */
+		error = copyout(&zero, led->led_clear_tid, sizeof(zero));
 #ifdef DEBUG_LINUX
-	if (error != 0)
-		printf("%s: cannot clear TID\n", __func__);
+		if (error != 0)
+			printf("%s: cannot clear TID\n", __func__);
 #endif
 
-	SCARG(&cup, uaddr) = led->led_clear_tid;
-	SCARG(&cup, op) = LINUX_FUTEX_WAKE;
-	SCARG(&cup, val) = 0x7fffffff; /* Awake everyone */
-	SCARG(&cup, timeout) = NULL;
-	SCARG(&cup, uaddr2) = NULL;
-	SCARG(&cup, val3) = 0;
-	if ((error = linux_sys_futex(curlwp, &cup, &retval)) != 0)
-		printf("%s: linux_sys_futex failed\n", __func__);
-
-	release_futexes(l);
+		error = linux_do_futex((int *)led->led_clear_tid, FUTEX_WAKE,
+		    INT_MAX, NULL, NULL, 0, 0, &retval);
+		if (error)
+			printf("%s: linux_sys_futex failed\n", __func__);
+	}
 
 	led = l->l_emuldata;
 	l->l_emuldata = NULL;

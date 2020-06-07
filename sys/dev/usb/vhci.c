@@ -1,4 +1,4 @@
-/*	$NetBSD: vhci.c,v 1.16 2020/03/31 16:34:25 maxv Exp $ */
+/*	$NetBSD: vhci.c,v 1.20 2020/06/05 17:20:56 maxv Exp $ */
 
 /*
  * Copyright (c) 2019-2020 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vhci.c,v 1.16 2020/03/31 16:34:25 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vhci.c,v 1.20 2020/06/05 17:20:56 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -51,6 +51,7 @@ __KERNEL_RCSID(0, "$NetBSD: vhci.c,v 1.16 2020/03/31 16:34:25 maxv Exp $");
 #include <sys/mman.h>
 #include <sys/file.h>
 #include <sys/filedesc.h>
+#include <sys/kcov.h>
 
 #include <machine/endian.h>
 
@@ -237,7 +238,8 @@ typedef struct vhci_xfer {
 typedef TAILQ_HEAD(, vhci_xfer) vhci_xfer_list_t;
 
 #define VHCI_INDEX2PORT(idx)	(idx)
-#define VHCI_NPORTS		4
+#define VHCI_NPORTS		8	/* above 8, update TODO-bitmap */
+#define VHCI_NBUSES		8
 
 typedef struct {
 	device_t sc_dev;
@@ -831,9 +833,13 @@ vhci_usb_attach(vhci_fd_t *vfd)
 	}
 	KASSERT(xfer->ux_status == USBD_IN_PROGRESS);
 
+	/*
+	 * Mark our port has having changed state. Uhub will then fetch
+	 * status/change and see it needs to perform an attach.
+	 */
 	p = xfer->ux_buf;
 	memset(p, 0, xfer->ux_length);
-	p[0] = __BIT(vfd->port);
+	p[0] = __BIT(vfd->port); /* TODO-bitmap */
 	xfer->ux_actlen = xfer->ux_length;
 	xfer->ux_status = USBD_NORMAL_COMPLETION;
 
@@ -916,9 +922,13 @@ vhci_usb_detach(vhci_fd_t *vfd)
 	port->status = 0;
 	port->change = UPS_C_CONNECT_STATUS | UPS_C_PORT_RESET;
 
+	/*
+	 * Mark our port has having changed state. Uhub will then fetch
+	 * status/change and see it needs to perform a detach.
+	 */
 	p = xfer->ux_buf;
 	memset(p, 0, xfer->ux_length);
-	p[0] = __BIT(vfd->port);
+	p[0] = __BIT(vfd->port); /* TODO-bitmap */
 	xfer->ux_actlen = xfer->ux_length;
 	xfer->ux_status = USBD_NORMAL_COMPLETION;
 
@@ -1012,12 +1022,15 @@ const struct fileops vhci_fileops = {
 static int
 vhci_fd_open(dev_t dev, int flags, int type, struct lwp *l)
 {
+	vhci_softc_t *sc;
 	vhci_fd_t *vfd;
 	struct file *fp;
 	int error, fd;
 
-	if (minor(dev) != 0)
+	sc = device_lookup_private(&vhci_cd, minor(dev));
+	if (sc == NULL)
 		return EXDEV;
+
 	error = fd_allocfile(&fp, &fd);
 	if (error)
 		return error;
@@ -1025,7 +1038,7 @@ vhci_fd_open(dev_t dev, int flags, int type, struct lwp *l)
 	vfd = kmem_alloc(sizeof(*vfd), KM_SLEEP);
 	vfd->port = 1;
 	vfd->addr = 0;
-	vfd->softc = device_lookup_private(&vhci_cd, minor(dev));
+	vfd->softc = sc;
 
 	return fd_clone(fp, fd, flags, &vhci_fileops, vfd);
 }
@@ -1233,13 +1246,9 @@ CFATTACH_DECL_NEW(vhci, sizeof(vhci_softc_t), vhci_match, vhci_attach,
 void
 vhciattach(int nunits)
 {
-	static struct cfdata vhci_cfdata = {
-		.cf_name = "vhci",
-		.cf_atname = "vhci",
-		.cf_unit = 0,
-		.cf_fstate = FSTATE_STAR,
-	};
+	struct cfdata *cf;
 	int error;
+	size_t i;
 
 	error = config_cfattach_attach(vhci_cd.cd_name, &vhci_ca);
 	if (error) {
@@ -1249,7 +1258,14 @@ vhciattach(int nunits)
 		return;
 	}
 
-	config_attach_pseudo(&vhci_cfdata);
+	for (i = 0; i < VHCI_NBUSES; i++) {
+		cf = kmem_alloc(sizeof(*cf), KM_SLEEP);
+		cf->cf_name = vhci_cd.cd_name;
+		cf->cf_atname = vhci_cd.cd_name;
+		cf->cf_unit = i;
+		cf->cf_fstate = FSTATE_STAR;
+		config_attach_pseudo(cf);
+	}
 }
 
 static int
@@ -1282,6 +1298,8 @@ vhci_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_dev = self;
 	sc->sc_bus.ub_revision = USBREV_2_0;
+	sc->sc_bus.ub_hctype = USBHCTYPE_VHCI;
+	sc->sc_bus.ub_busnum = self->dv_unit;
 	sc->sc_bus.ub_usedma = false;
 	sc->sc_bus.ub_methods = &vhci_bus_methods;
 	sc->sc_bus.ub_pipesize = sizeof(vhci_pipe_t);
@@ -1297,6 +1315,8 @@ vhci_attach(device_t parent, device_t self, void *aux)
 			TAILQ_INIT(&port->endpoints[addr].usb_to_host);
 			TAILQ_INIT(&port->endpoints[addr].host_to_usb);
 		}
+		kcov_remote_register(KCOV_REMOTE_VHCI,
+		    KCOV_REMOTE_VHCI_ID(sc->sc_bus.ub_busnum, i));
 	}
 
 	sc->sc_child = config_found(self, &sc->sc_bus, usbctlprint);

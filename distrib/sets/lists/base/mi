@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1240 2020/04/14 03:16:26 kre Exp $
+# $NetBSD: mi,v 1.1250 2020/06/04 14:08:16 roy Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -33,6 +33,7 @@
 ./bin/echo					base-util-root
 ./bin/ed					base-util-root
 ./bin/expr					base-util-root
+./bin/getfacl					base-util-root
 ./bin/hostname					base-util-root
 ./bin/kill					base-util-root
 ./bin/ksh					base-util-root
@@ -51,6 +52,7 @@
 ./bin/rmail					base-obsolete		obsolete
 ./bin/rmdir					base-util-root
 ./bin/rump.dd					base-util-root		rump
+./bin/setfacl					base-util-root
 ./bin/sh					base-util-root
 ./bin/sleep					base-util-root
 ./bin/stty					base-util-root
@@ -1301,6 +1303,7 @@
 ./usr/include/ufs/mfs				base-c-usr
 ./usr/include/ufs/ufs				base-c-usr
 ./usr/include/uvm				base-c-usr
+./usr/include/uv				base-obsolete		obsolete
 ./usr/include/vm				base-obsolete		obsolete
 ./usr/lib					base-sys-usr		compatdir
 ./usr/lib/clang					base-sys-usr
@@ -1370,6 +1373,7 @@
 ./usr/libdata/debug/lib/npf			base-sys-usr		compatfile
 ./usr/libdata/debug/libexec			base-sys-usr
 ./usr/libdata/debug/sbin			base-sys-usr
+./usr/libdata/debug/stand			base-sys-usr
 ./usr/libdata/debug/usr				base-sys-usr
 ./usr/libdata/debug/usr/bin			base-sys-usr
 ./usr/libdata/debug/usr/games			base-sys-usr
@@ -4859,6 +4863,7 @@
 ./usr/share/mk/bsd.dep.mk			base-mk-share		share
 ./usr/share/mk/bsd.depall.mk			base-obsolete		obsolete
 ./usr/share/mk/bsd.doc.mk			base-mk-share		share
+./usr/share/mk/bsd.dtb.mk			base-mk-share		share
 ./usr/share/mk/bsd.endian.mk			base-mk-share		share
 ./usr/share/mk/bsd.files.mk			base-mk-share		share
 ./usr/share/mk/bsd.gcc.mk			base-mk-share		share
@@ -5530,6 +5535,7 @@
 ./usr/share/zoneinfo/America/North_Dakota/Beulah	base-sys-share	share
 ./usr/share/zoneinfo/America/North_Dakota/Center	base-sys-share	share
 ./usr/share/zoneinfo/America/North_Dakota/New_Salem	base-sys-share	share
+./usr/share/zoneinfo/America/Nuuk		base-sys-share		share
 ./usr/share/zoneinfo/America/Ojinaga		base-sys-share		share
 ./usr/share/zoneinfo/America/Panama		base-sys-share		share
 ./usr/share/zoneinfo/America/Pangnirtung	base-sys-share		share
@@ -5669,6 +5675,7 @@
 ./usr/share/zoneinfo/Asia/Riyadh87		base-obsolete		obsolete
 ./usr/share/zoneinfo/Asia/Riyadh88		base-obsolete		obsolete
 ./usr/share/zoneinfo/Asia/Riyadh89		base-obsolete		obsolete
+./usr/share/zoneinfo/Asia/Qostanay		base-sys-share		share
 ./usr/share/zoneinfo/Asia/Saigon		base-sys-share		share
 ./usr/share/zoneinfo/Asia/Sakhalin		base-sys-share		share
 ./usr/share/zoneinfo/Asia/Samarkand		base-sys-share		share
@@ -6042,11 +6049,11 @@
 ./var/backups					base-sys-root
 ./var/chroot					base-sys-root
 ./var/chroot/dhcpcd				base-dhcpcd-root
-./var/chroot/dhcpcd/etc				base-dhcpcd-root
-./var/chroot/dhcpcd/var				base-dhcpcd-root
-./var/chroot/dhcpcd/var/run			base-dhcpcd-root
-./var/chroot/dhcpcd/var/db			base-dhcpcd-root
-./var/chroot/dhcpcd/var/db/dhcpcd		base-dhcpcd-root
+./var/chroot/dhcpcd/etc				base-obsolete		obsolete
+./var/chroot/dhcpcd/var				base-obsolete		obsolete
+./var/chroot/dhcpcd/var/run			base-obsolete		obsolete
+./var/chroot/dhcpcd/var/db			base-obsolete		obsolete
+./var/chroot/dhcpcd/var/db/dhcpcd		base-obsolete		obsolete
 ./var/chroot/ftp-proxy				base-sys-root
 ./var/chroot/named				base-bind-root
 ./var/chroot/named/dev				base-bind-root

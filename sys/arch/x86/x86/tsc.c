@@ -1,7 +1,7 @@
-/*	$NetBSD: tsc.c,v 1.41 2020/04/21 02:56:37 msaitoh Exp $	*/
+/*	$NetBSD: tsc.c,v 1.48 2020/05/27 18:46:15 ad Exp $	*/
 
 /*-
- * Copyright (c) 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.41 2020/04/21 02:56:37 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.48 2020/05/27 18:46:15 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -47,12 +47,17 @@ __KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.41 2020/04/21 02:56:37 msaitoh Exp $");
 
 #include "tsc.h"
 
+#define	TSC_SYNC_ROUNDS		1000
+#define	ABS(a)			((a) >= 0 ? (a) : -(a))
+
 u_int	tsc_get_timecount(struct timecounter *);
 
-uint64_t	tsc_freq; /* exported for sysctl */
-static int64_t	tsc_drift_max = 250;	/* max cycles */
+static void	tsc_delay(unsigned int);
+
+static uint64_t	tsc_dummy_cacheline __cacheline_aligned;
+uint64_t	tsc_freq __read_mostly;	/* exported for sysctl */
+static int64_t	tsc_drift_max = 1000;	/* max cycles */
 static int64_t	tsc_drift_observed;
-static bool	tsc_good;
 
 int tsc_user_enabled = 1;
 
@@ -143,9 +148,11 @@ tsc_is_invariant(void)
 }
 
 /*
- * Initialize timecounter(9) of TSC.
- * This function is called after all secondary processors were up and
- * calculated the drift.
+ * Initialize timecounter(9) and DELAY() function of TSC.
+ *
+ * This function is called after all secondary processors were brought up
+ * and drift has been measured, and after any other potential delay funcs
+ * have been installed (e.g. lapic_delay()).
  */
 void
 tsc_tc_init(void)
@@ -158,9 +165,6 @@ tsc_tc_init(void)
 
 	ci = curcpu();
 	tsc_freq = ci->ci_data.cpu_cc_freq;
-	tsc_good = (cpu_feature[0] & CPUID_MSR) != 0 &&
-	    (rdmsr(MSR_TSC) != 0 || rdmsr(MSR_TSC) != 0);
-
 	invariant = tsc_is_invariant();
 	if (!invariant) {
 		aprint_debug("TSC not known invariant on this CPU\n");
@@ -170,6 +174,8 @@ tsc_tc_init(void)
 		    (long long)tsc_drift_observed);
 		tsc_timecounter.tc_quality = -100;
 		invariant = false;
+	} else if (vm_guest == VM_GUEST_NO) {
+		delay_func = tsc_delay;
 	}
 
 	if (tsc_freq != 0) {
@@ -195,7 +201,7 @@ tsc_sync_drift(int64_t drift)
  * Called during startup of APs, by the boot processor.  Interrupts
  * are disabled on entry.
  */
-static void
+static void __noinline
 tsc_read_bp(struct cpu_info *ci, uint64_t *bptscp, uint64_t *aptscp)
 {
 	uint64_t bptsc;
@@ -204,15 +210,17 @@ tsc_read_bp(struct cpu_info *ci, uint64_t *bptscp, uint64_t *aptscp)
 		panic("tsc_sync_bp: 1");
 	}
 
-	/* Flag it and read our TSC. */
-	atomic_or_uint(&ci->ci_flags, CPUF_SYNCTSC);
-	bptsc = (rdtsc() >> 1);
+	/* Prepare a cache miss for the other side. */
+	(void)atomic_swap_uint((void *)&tsc_dummy_cacheline, 0);
 
-	/* Wait for remote to complete, and read ours again. */
+	/* Flag our readiness. */
+	atomic_or_uint(&ci->ci_flags, CPUF_SYNCTSC);
+
+	/* Wait for other side then read our TSC. */
 	while ((ci->ci_flags & CPUF_SYNCTSC) != 0) {
 		__insn_barrier();
 	}
-	bptsc += (rdtsc() >> 1);
+	bptsc = rdtsc();
 
 	/* Wait for the results to come in. */
 	while (tsc_sync_cpu == ci) {
@@ -229,20 +237,28 @@ tsc_read_bp(struct cpu_info *ci, uint64_t *bptscp, uint64_t *aptscp)
 void
 tsc_sync_bp(struct cpu_info *ci)
 {
-	uint64_t bptsc, aptsc;
+	int64_t bptsc, aptsc, val, diff;
 
-	tsc_read_bp(ci, &bptsc, &aptsc); /* discarded - cache effects */
-	tsc_read_bp(ci, &bptsc, &aptsc);
+	if (!cpu_hascounter())
+		return;
 
-	/* Compute final value to adjust for skew. */
-	ci->ci_data.cpu_cc_skew = bptsc - aptsc;
+	val = INT64_MAX;
+	for (int i = 0; i < TSC_SYNC_ROUNDS; i++) {
+		tsc_read_bp(ci, &bptsc, &aptsc);
+		diff = bptsc - aptsc;
+		if (ABS(diff) < ABS(val)) {
+			val = diff;
+		}
+	}
+
+	ci->ci_data.cpu_cc_skew = val;
 }
 
 /*
  * Called during startup of AP, by the AP itself.  Interrupts are
  * disabled on entry.
  */
-static void
+static void __noinline
 tsc_post_ap(struct cpu_info *ci)
 {
 	uint64_t tsc;
@@ -251,11 +267,15 @@ tsc_post_ap(struct cpu_info *ci)
 	while ((ci->ci_flags & CPUF_SYNCTSC) == 0) {
 		__insn_barrier();
 	}
-	tsc = (rdtsc() >> 1);
 
 	/* Instruct primary to read its counter. */
 	atomic_and_uint(&ci->ci_flags, ~CPUF_SYNCTSC);
-	tsc += (rdtsc() >> 1);
+
+	/* Suffer a cache miss, then read TSC. */
+	__insn_barrier();
+	tsc = tsc_dummy_cacheline;
+	__insn_barrier();
+	tsc += rdtsc();
 
 	/* Post result.  Ensure the whole value goes out atomically. */
 	(void)atomic_swap_64(&tsc_sync_val, tsc);
@@ -269,8 +289,12 @@ void
 tsc_sync_ap(struct cpu_info *ci)
 {
 
-	tsc_post_ap(ci);
-	tsc_post_ap(ci);
+	if (!cpu_hascounter())
+		return;
+
+	for (int i = 0; i < TSC_SYNC_ROUNDS; i++) {
+		tsc_post_ap(ci);
+	}
 }
 
 static void
@@ -316,11 +340,15 @@ cpu_hascounter(void)
 	return cpu_feature[0] & CPUID_TSC;
 }
 
-uint64_t
-cpu_counter_serializing(void)
+static void
+tsc_delay(unsigned int us)
 {
-	if (tsc_good)
-		return rdmsr(MSR_TSC);
-	else
-		return cpu_counter();
+	uint64_t start, delta;
+
+	start = cpu_counter();
+	delta = (uint64_t)us * tsc_freq / 1000000;
+
+	while ((cpu_counter() - start) < delta) {
+		x86_pause();
+	}
 }

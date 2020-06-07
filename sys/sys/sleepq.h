@@ -1,4 +1,4 @@
-/*	$NetBSD: sleepq.h,v 1.29 2020/04/19 20:35:29 ad Exp $	*/
+/*	$NetBSD: sleepq.h,v 1.31 2020/05/23 20:45:11 ad Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007, 2008, 2009, 2019, 2020
@@ -61,7 +61,9 @@ typedef struct sleeptab {
 void	sleepq_init(sleepq_t *);
 void	sleepq_remove(sleepq_t *, lwp_t *);
 void	sleepq_enqueue(sleepq_t *, wchan_t, const char *, struct syncobj *,
-    bool);
+	    bool);
+void	sleepq_transfer(lwp_t *, sleepq_t *, sleepq_t *, wchan_t, const char *,
+	    struct syncobj *, kmutex_t *, bool);
 void	sleepq_unsleep(lwp_t *, bool);
 void	sleepq_timeout(void *);
 void	sleepq_wake(sleepq_t *, wchan_t, u_int, kmutex_t *);
@@ -177,6 +179,7 @@ typedef struct tschain tschain_t;
 
 void	turnstile_init(void);
 turnstile_t	*turnstile_lookup(wchan_t);
+void	turnstile_ctor(turnstile_t *);
 void	turnstile_exit(wchan_t);
 void	turnstile_block(turnstile_t *, int, wchan_t, syncobj_t *);
 void	turnstile_wakeup(turnstile_t *, int, int, lwp_t *);
@@ -185,7 +188,7 @@ void	turnstile_print(volatile void *, void (*)(const char *, ...)
 void	turnstile_unsleep(lwp_t *, bool);
 void	turnstile_changepri(lwp_t *, pri_t);
 
-extern pool_cache_t turnstile_cache;
+extern struct pool turnstile_pool;
 extern turnstile_t turnstile0;
 
 #endif	/* _KERNEL */

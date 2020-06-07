@@ -1,4 +1,4 @@
-# $NetBSD: XEN3PAE_DOMU,v 1.11 2020/04/15 10:21:00 jdolecek Exp $
+# $NetBSD: XEN3PAE_DOMU,v 1.13 2020/04/25 16:10:06 bouyer Exp $
 
 include 	"arch/i386/conf/std.xen"
 

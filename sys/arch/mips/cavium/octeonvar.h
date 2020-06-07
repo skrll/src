@@ -1,4 +1,4 @@
-/*	$NetBSD: octeonvar.h,v 1.6 2018/04/19 21:50:06 christos Exp $	*/
+/*	$NetBSD: octeonvar.h,v 1.9 2020/06/05 09:18:35 simonb Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -148,23 +148,18 @@ struct cpu_softc {
 /*
  * CVMSEG (``scratch'') memory map
  */
+
+#define CVMSEG_LM_RNM_SIZE	16	/* limited by CN70XX hardware (why?) */
+#define CVMSEG_LM_ETHER_COUNT	4	/* limits number of cnmac devices */
+
 struct octeon_cvmseg_map {
-	/* 0-3 */
-	uint64_t		csm_xxx_0;
-	uint64_t		csm_xxx_1;
-	uint64_t		csm_xxx_2;
 	uint64_t		csm_pow_intr;
 
-	/* 4-19 */
 	struct octeon_cvmseg_ether_map {
-		uint64_t	csm_ether_fau_req;
 		uint64_t	csm_ether_fau_done;
-		uint64_t	csm_ether_fau_cmdptr;
-		uint64_t	csm_ether_xxx_3;
-	} csm_ether[4/* XXX */];
+	} csm_ether[CVMSEG_LM_ETHER_COUNT];
 
-	/* 20-32 */
-	uint64_t	xxx_20_32[32 - 20];
+	uint64_t	csm_rnm[CVMSEG_LM_RNM_SIZE];
 } __packed;
 #define	OCTEON_CVMSEG_OFFSET(entry) \
 	offsetof(struct octeon_cvmseg_map, entry)
@@ -180,7 +175,7 @@ struct octeon_cvmseg_map {
  * => devices (PKO) can access these registers
  * => CPU can read those values after loading them into CVMSEG
  */
-struct octeon_fau_map {
+struct octfau_map {
 	struct {
 		/* PKO command index */
 		uint64_t	_fau_map_port_pkocmdidx;
@@ -236,7 +231,7 @@ void	octeon_cal_timer(int);
 void	octeon_dma_init(struct octeon_config *);
 void	octeon_intr_init(struct cpu_info *);
 void	octeon_iointr(int, vaddr_t, uint32_t);
-void	octeon_pci_init(pci_chipset_tag_t, struct octeon_config *);
+void	octpci_init(pci_chipset_tag_t, struct octeon_config *);
 void	*octeon_intr_establish(int, int, int (*)(void *), void *);
 void	octeon_intr_disestablish(void *cookie);
 
@@ -411,7 +406,7 @@ octeon_get_cycles(void)
 
 /* ---- event counter */
 
-#if defined(OCTEON_ETH_DEBUG)
+#if defined(CNMAC_DEBUG)
 #define	OCTEON_EVCNT_INC(sc, name) \
 	do { (sc)->sc_ev_##name.ev_count++; } while (0)
 #define	OCTEON_EVCNT_ADD(sc, name, n) \

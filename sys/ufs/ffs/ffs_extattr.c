@@ -1,4 +1,4 @@
-/*	$NetBSD: ffs_extattr.c,v 1.3 2020/04/20 18:10:10 christos Exp $	*/
+/*	$NetBSD: ffs_extattr.c,v 1.6 2020/05/20 13:16:30 christos Exp $	*/
 
 /*-
  * SPDX-License-Identifier: (BSD-2-Clause-FreeBSD AND BSD-3-Clause)
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ffs_extattr.c,v 1.3 2020/04/20 18:10:10 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ffs_extattr.c,v 1.6 2020/05/20 13:16:30 christos Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"
@@ -121,7 +121,6 @@ __KERNEL_RCSID(0, "$NetBSD: ffs_extattr.c,v 1.3 2020/04/20 18:10:10 christos Exp
 #define	lblkno(fs, o)		ffs_lblkno(fs, o)
 #define	blkoff(fs, o)		ffs_blkoff(fs, o)
 #define	sblksize(fs, o, lbn)	ffs_sblksize(fs, o, lbn)
-typedef mode_t accmode_t;	/* so that it breaks soon */
 typedef daddr_t ufs_lbn_t;
 #define msleep(chan, mtx, pri, wmesg, timeo) \
     mtsleep((chan), (pri), (wmesg), (timeo), *(mtx))
@@ -133,34 +132,6 @@ typedef daddr_t ufs_lbn_t;
 #define vfs_bio_clrbuf(bp) 		clrbuf(bp)
 #define vfs_bio_set_flags(bp, ioflag) 	__nothing
 
-/*
- * Credential check based on process requesting service, and per-attribute
- * permissions.
- */
-static int
-ffs_extattr_check_cred(struct vnode *vp, int attrnamespace, kauth_cred_t cred,
-    accmode_t accmode)
-{
-	/*
-	 * Kernel-invoked always succeeds.
-	 */
-	if (cred == NOCRED)
-		return 0;
-
-	/*
-	 * Do not allow privileged processes in jail to directly manipulate
-	 * system attributes.
-	 */
-	switch (attrnamespace) {
-	case EXTATTR_NAMESPACE_SYSTEM:
-		return kauth_authorize_system(cred, KAUTH_SYSTEM_FS_EXTATTR,
-		    0, vp->v_mount, NULL, NULL);
-	case EXTATTR_NAMESPACE_USER:
-		return VOP_ACCESS(vp, accmode, cred);
-	default:
-		return EPERM;
-	}
-}
 /*
  * Extended attribute area reading.
  */
@@ -392,10 +363,8 @@ ffs_extwrite(struct vnode *vp, struct uio *uio, int ioflag, kauth_cred_t ucred)
 	}
 	if (error) {
 		if (ioflag & IO_UNIT) {
-			genfs_node_unlock(vp);	// XXX: need our own lock
 			(void)ffs_truncate(vp, osize,
 			    IO_EXT | (ioflag&IO_SYNC), ucred);
-			genfs_node_wrlock(vp);
 			uio->uio_offset -= resid - uio->uio_resid;
 			uio->uio_resid = resid;
 		}
@@ -561,9 +530,7 @@ ffs_close_ea(struct vnode *vp, int commit, kauth_cred_t cred)
 				ffs_unlock_ea(vp);
 				return error;
 			}
-			genfs_node_unlock(vp);	// XXX: need our own lock
 			error = ffs_truncate(vp, 0, IO_EXT, cred);
-			genfs_node_wrlock(vp);
 			UFS_WAPBL_END(vp->v_mount);
 		}
 		error = ffs_extwrite(vp, &luio, IO_EXT | IO_SYNC, cred);
@@ -687,7 +654,7 @@ ffs_getextattr(void *v)
 	if (ap->a_vp->v_type == VCHR || ap->a_vp->v_type == VBLK)
 		return (EOPNOTSUPP);
 
-	error = ffs_extattr_check_cred(ap->a_vp, ap->a_attrnamespace,
+	error = extattr_check_cred(ap->a_vp, ap->a_attrnamespace,
 	    ap->a_cred, VREAD);
 	if (error)
 		return (error);
@@ -761,7 +728,7 @@ ffs_setextattr(void *v)
 	if (ealen < 0 || ealen > lblktosize(fs, UFS_NXADDR))
 		return (EINVAL);
 
-	error = ffs_extattr_check_cred(ap->a_vp, ap->a_attrnamespace,
+	error = extattr_check_cred(ap->a_vp, ap->a_attrnamespace,
 	    ap->a_cred, VWRITE);
 	if (error) {
 
@@ -866,7 +833,7 @@ ffs_listextattr(void *v)
 	if (ap->a_vp->v_type == VCHR || ap->a_vp->v_type == VBLK)
 		return (EOPNOTSUPP);
 
-	error = ffs_extattr_check_cred(ap->a_vp, ap->a_attrnamespace,
+	error = extattr_check_cred(ap->a_vp, ap->a_attrnamespace,
 	    ap->a_cred, VREAD);
 	if (error)
 		return (error);
@@ -936,7 +903,7 @@ ffs_deleteextattr(void *v)
 	if (ap->a_vp->v_mount->mnt_flag & MNT_RDONLY)
 		return (EROFS);
 
-	error = ffs_extattr_check_cred(ap->a_vp, ap->a_attrnamespace,
+	error = extattr_check_cred(ap->a_vp, ap->a_attrnamespace,
 	    ap->a_cred, VWRITE);
 	if (error) {
 		/*

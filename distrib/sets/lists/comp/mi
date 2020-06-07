@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2321 2020/04/04 19:26:51 christos Exp $
+#	$NetBSD: mi,v 1.2331 2020/05/30 20:47:58 christos Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -844,8 +844,8 @@
 ./usr/include/fcntl.h				comp-c-include
 ./usr/include/fenv.h				comp-c-include
 ./usr/include/fetch.h				comp-c-include
-./usr/include/fido.h				comp-c-include
 ./usr/include/fido				comp-c-include
+./usr/include/fido.h				comp-c-include
 ./usr/include/fido/bio.h			comp-c-include
 ./usr/include/fido/credman.h			comp-c-include
 ./usr/include/fido/eddsa.h			comp-c-include
@@ -2974,6 +2974,7 @@
 ./usr/include/strings.h				comp-c-include
 ./usr/include/struct.h				comp-c-include
 ./usr/include/sys/acct.h			comp-c-include
+./usr/include/sys/acl.h				comp-c-include
 ./usr/include/sys/agpio.h			comp-c-include
 ./usr/include/sys/aio.h				comp-c-include
 ./usr/include/sys/ansi.h			comp-c-include
@@ -3059,6 +3060,7 @@
 ./usr/include/sys/float_ieee754.h		comp-c-include
 ./usr/include/sys/fnv_hash.h			comp-obsolete		obsolete
 ./usr/include/sys/fstypes.h			comp-c-include
+./usr/include/sys/futex.h			comp-c-include
 ./usr/include/sys/gcq.h				comp-c-include
 ./usr/include/sys/gmon.h			comp-c-include
 ./usr/include/sys/gpio.h			comp-c-include
@@ -3300,6 +3302,12 @@
 ./usr/include/utmp.h				comp-c-include
 ./usr/include/utmpx.h				comp-c-include
 ./usr/include/uuid.h				comp-c-include
+./usr/include/uv.h				comp-c-obsolete		obsolete
+./usr/include/uv/bsd.h				comp-c-obsolete		obsolete
+./usr/include/uv/errno.h			comp-c-obsolete		obsolete
+./usr/include/uv/threadpool.h			comp-c-obsolete		obsolete
+./usr/include/uv/unix.h				comp-c-obsolete		obsolete
+./usr/include/uv/version.h			comp-c-obsolete		obsolete
 ./usr/include/uvm/uvm.h				comp-c-include
 ./usr/include/uvm/uvm_amap.h			comp-c-include
 ./usr/include/uvm/uvm_amap_i.h			comp-obsolete		obsolete
@@ -3492,10 +3500,10 @@
 ./usr/lib/libexecinfo_p.a			comp-c-proflib		compatfile,profile
 ./usr/lib/libexpat.a				comp-c-lib		compatfile
 ./usr/lib/libexpat_p.a				comp-c-proflib		compatfile,profile
-./usr/lib/libfido2.a				comp-c-lib		compatfile
-./usr/lib/libfido2_p.a				comp-c-proflib		compatfile,profile
 ./usr/lib/libfetch.a				comp-c-lib		compatfile
 ./usr/lib/libfetch_p.a				comp-c-proflib		compatfile,profile
+./usr/lib/libfido2.a				comp-c-lib		compatfile
+./usr/lib/libfido2_p.a				comp-c-proflib		compatfile,profile
 ./usr/lib/libfl.a				comp-c-lib		compatfile
 ./usr/lib/libfl_p.a				comp-c-proflib		compatfile,profile
 ./usr/lib/libform.a				comp-c-lib		compatfile
@@ -3862,6 +3870,8 @@
 ./usr/lib/librumpvfs_fifofs_p.a			comp-c-proflib		rump,profile
 ./usr/lib/librumpvfs_layerfs.a			comp-c-lib		rump
 ./usr/lib/librumpvfs_layerfs_p.a		comp-c-proflib		rump,profile
+./usr/lib/librumpvfs_nofifofs.a			comp-c-lib		rump
+./usr/lib/librumpvfs_nofifofs_p.a		comp-c-proflib		rump,profile
 ./usr/lib/librumpvfs_p.a			comp-c-proflib		compatfile,rump,profile
 ./usr/lib/libsaslc.a				comp-c-clib		compatfile
 ./usr/lib/libsaslc_p.a				comp-c-proflib		compatfile,profile
@@ -3915,6 +3925,8 @@
 ./usr/lib/libusbhid_p.a				comp-c-proflib		compatfile,profile
 ./usr/lib/libutil.a				comp-c-lib		compatfile
 ./usr/lib/libutil_p.a				comp-c-proflib		compatfile,profile
+./usr/lib/libuv.a				comp-obsolete		compatfile,obsolete
+./usr/lib/libuv_p.a				comp-obsolete		obsolete
 ./usr/lib/libuutil.a				comp-zfs-lib		compatfile,zfs
 ./usr/lib/libuutil_p.a				comp-zfs-proflib	compatfile,zfs,profile
 ./usr/lib/libwind.a				comp-krb5-lib		compatfile,kerberos
@@ -3941,6 +3953,7 @@
 ./usr/lib/pkgconfig/libcrypto.pc		comp-crypto-lib		share
 ./usr/lib/pkgconfig/libfido2.pc			comp-c-lib		share
 ./usr/lib/pkgconfig/libssl.pc			comp-crypto-lib		share
+./usr/lib/pkgconfig/libuv.pc			comp-obsolete		share,obsolete
 ./usr/lib/pkgconfig/lutok.pc			comp-crypto-lib		kyua,share
 ./usr/lib/pkgconfig/openssl.pc			comp-crypto-lib		share
 ./usr/lib/pkgconfig/sqlite3.pc			comp-c-lib
@@ -5558,6 +5571,58 @@
 ./usr/share/man/cat3/a64l.0			comp-c-catman		.cat
 ./usr/share/man/cat3/abort.0			comp-c-catman		.cat
 ./usr/share/man/cat3/abs.0			comp-c-catman		.cat
+./usr/share/man/cat3/acl.0			comp-c-catman		.cat
+./usr/share/man/cat3/acl_add_flag_np.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_add_perm.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_calc_mask.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_clear_flags_np.0	comp-c-catman		.cat
+./usr/share/man/cat3/acl_clear_perms.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_copy_entry.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_create_entry.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_create_entry_np.0	comp-c-catman		.cat
+./usr/share/man/cat3/acl_delete.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_delete_def_file.0	comp-c-catman		.cat
+./usr/share/man/cat3/acl_delete_entry.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_delete_entry_np.0	comp-c-catman		.cat
+./usr/share/man/cat3/acl_delete_fd_np.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_delete_file_np.0	comp-c-catman		.cat
+./usr/share/man/cat3/acl_delete_flag_np.0	comp-c-catman		.cat
+./usr/share/man/cat3/acl_delete_perm.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_dup.0			comp-c-catman		.cat
+./usr/share/man/cat3/acl_free.0			comp-c-catman		.cat
+./usr/share/man/cat3/acl_from_text.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_get.0			comp-c-catman		.cat
+./usr/share/man/cat3/acl_get_brand_np.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_get_entry.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_get_entry_type_np.0	comp-c-catman		.cat
+./usr/share/man/cat3/acl_get_fd.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_get_fd_np.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_get_file.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_get_flag_np.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_get_flagset_np.0	comp-c-catman		.cat
+./usr/share/man/cat3/acl_get_link_np.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_get_perm_np.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_get_permset.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_get_qualifier.0	comp-c-catman		.cat
+./usr/share/man/cat3/acl_get_tag_type.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_init.0			comp-c-catman		.cat
+./usr/share/man/cat3/acl_is_trivial_np.0	comp-c-catman		.cat
+./usr/share/man/cat3/acl_set.0			comp-c-catman		.cat
+./usr/share/man/cat3/acl_set_entry_type_np.0	comp-c-catman		.cat
+./usr/share/man/cat3/acl_set_fd.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_set_fd_np.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_set_file.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_set_flagset_np.0	comp-c-catman		.cat
+./usr/share/man/cat3/acl_set_link_np.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_set_permset.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_set_qualifier.0	comp-c-catman		.cat
+./usr/share/man/cat3/acl_set_tag_type.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_strip_np.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_to_text.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_to_text_np.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_valid.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_valid_fd_np.0		comp-c-catman		.cat
+./usr/share/man/cat3/acl_valid_file_np.0	comp-c-catman		.cat
 ./usr/share/man/cat3/acos.0			comp-c-catman		.cat
 ./usr/share/man/cat3/acosf.0			comp-c-catman		.cat
 ./usr/share/man/cat3/acosh.0			comp-c-catman		.cat
@@ -6995,7 +7060,7 @@
 ./usr/share/man/cat3/explicit_memset.0		comp-c-catman		.cat
 ./usr/share/man/cat3/expm1.0			comp-c-catman		.cat
 ./usr/share/man/cat3/expm1f.0			comp-c-catman		.cat
-./usr/share/man/cat3/extattr.0			comp-obsolete		obsolete
+./usr/share/man/cat3/extattr.0			comp-c-catman		.cat
 ./usr/share/man/cat3/extattr_copy_fd.0		comp-c-catman		.cat
 ./usr/share/man/cat3/extattr_copy_file.0	comp-c-catman		.cat
 ./usr/share/man/cat3/extattr_copy_link.0	comp-c-catman		.cat
@@ -7045,6 +7110,28 @@
 ./usr/share/man/cat3/fgetwc.0			comp-c-catman		.cat
 ./usr/share/man/cat3/fgetwln.0			comp-c-catman		.cat
 ./usr/share/man/cat3/fgetws.0			comp-c-catman		.cat
+./usr/share/man/cat3/fido_assert_allow_cred.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_assert_new.0			man-util-catman	.cat
+./usr/share/man/cat3/fido_assert_set_authdata.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_assert_verify.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_bio_dev_get_info.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_bio_enroll_new.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_bio_info_new.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_bio_template.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_cbor_info_new.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_cred_exclude.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_cred_new.0			man-util-catman	.cat
+./usr/share/man/cat3/fido_cred_set_authdata.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_cred_verify.0			man-util-catman	.cat
+./usr/share/man/cat3/fido_credman_metadata_new.0	man-util-catman	.cat
+./usr/share/man/cat3/fido_dev_get_assert.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_dev_info_manifest.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_dev_make_cred.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_dev_open.0			man-util-catman	.cat
+./usr/share/man/cat3/fido_dev_set_io_functions.0	man-util-catman	.cat
+./usr/share/man/cat3/fido_dev_set_pin.0			man-util-catman	.cat
+./usr/share/man/cat3/fido_init.0			man-util-catman	.cat
+./usr/share/man/cat3/fido_strerr.0			man-util-catman	.cat
 ./usr/share/man/cat3/field_arg.0		comp-c-catman		.cat
 ./usr/share/man/cat3/field_back.0		comp-c-catman		.cat
 ./usr/share/man/cat3/field_buffer.0		comp-c-catman		.cat
@@ -7272,6 +7359,7 @@
 ./usr/share/man/cat3/getdiskrawname.0		comp-c-catman		.cat
 ./usr/share/man/cat3/getdomainname.0		comp-c-catman		.cat
 ./usr/share/man/cat3/getdtablesize.0		comp-c-catman		.cat
+./usr/share/man/cat3/getentropy.0		comp-c-catman		.cat
 ./usr/share/man/cat3/getenv.0			comp-c-catman		.cat
 ./usr/share/man/cat3/getenv_r.0			comp-c-catman		.cat
 ./usr/share/man/cat3/getfsent.0			comp-c-catman		.cat
@@ -8392,6 +8480,7 @@
 ./usr/share/man/cat3/libusb.0			comp-obsolete		obsolete
 ./usr/share/man/cat3/libusbhid.0		comp-c-catman		.cat
 ./usr/share/man/cat3/libutil.0			comp-c-catman		.cat
+./usr/share/man/cat3/libuv.0			comp-obsolete		obsolete
 ./usr/share/man/cat3/limits.0			comp-c-catman		.cat
 ./usr/share/man/cat3/link_addr.0		comp-c-catman		.cat
 ./usr/share/man/cat3/link_field.0		comp-c-catman		.cat
@@ -8868,6 +8957,7 @@
 ./usr/share/man/cat3/popenve.0			comp-c-catman		.cat
 ./usr/share/man/cat3/pos_form_cursor.0		comp-c-catman		.cat
 ./usr/share/man/cat3/pos_menu_cursor.0		comp-c-catman		.cat
+./usr/share/man/cat3/posix1e.0			comp-c-catman		.cat
 ./usr/share/man/cat3/posix2time.0		comp-c-catman		.cat
 ./usr/share/man/cat3/posix2time_z.0		comp-c-catman		.cat
 ./usr/share/man/cat3/posix_memalign.0		comp-c-catman		.cat
@@ -11415,6 +11505,7 @@
 ./usr/share/man/cat9/ltsleep.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/lwp_trampoline.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/m_adj.0			comp-sys-catman		.cat
+./usr/share/man/cat9/m_apply.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/m_cat.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/m_copyback.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/m_copyback_cow.0		comp-sys-catman		.cat
@@ -11813,7 +11904,7 @@
 ./usr/share/man/cat9/rnd_attach_source.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/rnd_detach_source.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/rnd_extract_data.0		comp-sys-catman		.cat
-./usr/share/man/cat9/rndsink.0			comp-sys-catman		.cat
+./usr/share/man/cat9/rndsink.0			comp-obsolete		obsolete
 ./usr/share/man/cat9/rootconf.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/round_page.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/rounddown.0		comp-sys-catman		.cat
@@ -13645,6 +13736,58 @@
 ./usr/share/man/html3/a64l.html			comp-c-htmlman		html
 ./usr/share/man/html3/abort.html		comp-c-htmlman		html
 ./usr/share/man/html3/abs.html			comp-c-htmlman		html
+./usr/share/man/html3/acl.html			comp-c-htmlman		html
+./usr/share/man/html3/acl_add_flag_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_add_perm.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_calc_mask.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_clear_flags_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_clear_perms.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_copy_entry.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_create_entry.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_create_entry_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_delete.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_delete_def_file.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_delete_entry.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_delete_entry_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_delete_fd_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_delete_file_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_delete_flag_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_delete_perm.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_dup.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_free.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_from_text.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_get.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_get_brand_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_get_entry.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_get_entry_type_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_get_fd.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_get_fd_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_get_file.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_get_flag_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_get_flagset_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_get_link_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_get_perm_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_get_permset.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_get_qualifier.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_get_tag_type.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_init.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_is_trivial_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_set.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_set_entry_type_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_set_fd.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_set_fd_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_set_file.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_set_flagset_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_set_link_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_set_permset.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_set_qualifier.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_set_tag_type.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_strip_np.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_to_text.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_to_text_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_valid.html		comp-c-htmlman		html
+./usr/share/man/html3/acl_valid_fd_np.html	comp-c-htmlman		html
+./usr/share/man/html3/acl_valid_file_np.html	comp-c-htmlman		html
 ./usr/share/man/html3/acos.html			comp-c-htmlman		html
 ./usr/share/man/html3/acosf.html		comp-c-htmlman		html
 ./usr/share/man/html3/acosh.html		comp-c-htmlman		html
@@ -15038,7 +15181,7 @@
 ./usr/share/man/html3/explicit_memset.html	comp-c-htmlman		html
 ./usr/share/man/html3/expm1.html		comp-c-htmlman		html
 ./usr/share/man/html3/expm1f.html		comp-c-htmlman		html
-./usr/share/man/html3/extattr.html		comp-obsolete		obsolete
+./usr/share/man/html3/extattr.html		comp-c-htmlman		html
 ./usr/share/man/html3/extattr_copy_fd.html	comp-c-htmlman		html
 ./usr/share/man/html3/extattr_copy_file.html	comp-c-htmlman		html
 ./usr/share/man/html3/extattr_copy_link.html	comp-c-htmlman		html
@@ -15087,6 +15230,28 @@
 ./usr/share/man/html3/fgetwc.html		comp-c-htmlman		html
 ./usr/share/man/html3/fgetwln.html		comp-c-htmlman		html
 ./usr/share/man/html3/fgetws.html		comp-c-htmlman		html
+./usr/share/man/html3/fido_assert_allow_cred.html	man-util-htmlman	html
+./usr/share/man/html3/fido_assert_new.html		man-util-htmlman	html
+./usr/share/man/html3/fido_assert_set_authdata.html	man-util-htmlman	html
+./usr/share/man/html3/fido_assert_verify.html		man-util-htmlman	html
+./usr/share/man/html3/fido_bio_dev_get_info.html	man-util-htmlman	html
+./usr/share/man/html3/fido_bio_enroll_new.html		man-util-htmlman	html
+./usr/share/man/html3/fido_bio_info_new.html		man-util-htmlman	html
+./usr/share/man/html3/fido_bio_template.html		man-util-htmlman	html
+./usr/share/man/html3/fido_cbor_info_new.html		man-util-htmlman	html
+./usr/share/man/html3/fido_cred_exclude.html		man-util-htmlman	html
+./usr/share/man/html3/fido_cred_new.html		man-util-htmlman	html
+./usr/share/man/html3/fido_cred_set_authdata.html	man-util-htmlman	html
+./usr/share/man/html3/fido_cred_verify.html		man-util-htmlman	html
+./usr/share/man/html3/fido_credman_metadata_new.html	man-util-htmlman	html
+./usr/share/man/html3/fido_dev_get_assert.html		man-util-htmlman	html
+./usr/share/man/html3/fido_dev_info_manifest.html	man-util-htmlman	html
+./usr/share/man/html3/fido_dev_make_cred.html		man-util-htmlman	html
+./usr/share/man/html3/fido_dev_open.html		man-util-htmlman	html
+./usr/share/man/html3/fido_dev_set_io_functions.html	man-util-htmlman	html
+./usr/share/man/html3/fido_dev_set_pin.html		man-util-htmlman	html
+./usr/share/man/html3/fido_init.html			man-util-htmlman	html
+./usr/share/man/html3/fido_strerr.html			man-util-htmlman	html
 ./usr/share/man/html3/field_arg.html		comp-c-htmlman		html
 ./usr/share/man/html3/field_back.html		comp-c-htmlman		html
 ./usr/share/man/html3/field_buffer.html		comp-c-htmlman		html
@@ -15314,6 +15479,7 @@
 ./usr/share/man/html3/getdiskrawname.html	comp-c-htmlman		html
 ./usr/share/man/html3/getdomainname.html	comp-c-htmlman		html
 ./usr/share/man/html3/getdtablesize.html	comp-c-htmlman		html
+./usr/share/man/html3/getentropy.html		comp-c-htmlman		html
 ./usr/share/man/html3/getenv.html		comp-c-htmlman		html
 ./usr/share/man/html3/getenv_r.html		comp-c-htmlman		html
 ./usr/share/man/html3/getfsent.html		comp-c-htmlman		html
@@ -16412,6 +16578,7 @@
 ./usr/share/man/html3/libsaslc.html		comp-c-htmlman		html
 ./usr/share/man/html3/libusbhid.html		comp-c-htmlman		html
 ./usr/share/man/html3/libutil.html		comp-c-htmlman		html
+./usr/share/man/html3/libuv.html		comp-obsolete		obsolete
 ./usr/share/man/html3/limits.html		comp-c-htmlman		html
 ./usr/share/man/html3/link_addr.html		comp-c-htmlman		html
 ./usr/share/man/html3/link_field.html		comp-c-htmlman		html
@@ -16896,6 +17063,7 @@
 ./usr/share/man/html3/popenve.html		comp-c-htmlman		html
 ./usr/share/man/html3/pos_form_cursor.html	comp-c-htmlman		html
 ./usr/share/man/html3/pos_menu_cursor.html	comp-c-htmlman		html
+./usr/share/man/html3/posix1e.html		comp-c-htmlman		html
 ./usr/share/man/html3/posix2time.html		comp-c-htmlman		html
 ./usr/share/man/html3/posix2time_z.html		comp-c-htmlman		html
 ./usr/share/man/html3/posix_memalign.html	comp-c-htmlman		html
@@ -19359,6 +19527,7 @@
 ./usr/share/man/html9/ltsleep.html		comp-sys-htmlman	html
 ./usr/share/man/html9/lwp_trampoline.html	comp-sys-htmlman	html
 ./usr/share/man/html9/m_adj.html		comp-sys-htmlman	html
+./usr/share/man/html9/m_apply.html		comp-sys-htmlman	html
 ./usr/share/man/html9/m_cat.html		comp-sys-htmlman	html
 ./usr/share/man/html9/m_copyback.html		comp-sys-htmlman	html
 ./usr/share/man/html9/m_copyback_cow.html	comp-sys-htmlman	html
@@ -19743,7 +19912,7 @@
 ./usr/share/man/html9/rnd_attach_source.html	comp-sys-htmlman	html
 ./usr/share/man/html9/rnd_detach_source.html	comp-sys-htmlman	html
 ./usr/share/man/html9/rnd_extract_data.html	comp-sys-htmlman	html
-./usr/share/man/html9/rndsink.html		comp-sys-htmlman	html
+./usr/share/man/html9/rndsink.html		comp-obsolete		obsolete
 ./usr/share/man/html9/rootconf.html		comp-sys-htmlman	html
 ./usr/share/man/html9/round_page.html		comp-sys-htmlman	html
 ./usr/share/man/html9/rounddown.html		comp-sys-htmlman	html
@@ -21569,6 +21738,58 @@
 ./usr/share/man/man3/a64l.3			comp-c-man		.man
 ./usr/share/man/man3/abort.3			comp-c-man		.man
 ./usr/share/man/man3/abs.3			comp-c-man		.man
+./usr/share/man/man3/acl.3			comp-c-man		.man
+./usr/share/man/man3/acl_add_flag_np.3		comp-c-man		.man
+./usr/share/man/man3/acl_add_perm.3		comp-c-man		.man
+./usr/share/man/man3/acl_calc_mask.3		comp-c-man		.man
+./usr/share/man/man3/acl_clear_flags_np.3	comp-c-man		.man
+./usr/share/man/man3/acl_clear_perms.3		comp-c-man		.man
+./usr/share/man/man3/acl_copy_entry.3		comp-c-man		.man
+./usr/share/man/man3/acl_create_entry.3		comp-c-man		.man
+./usr/share/man/man3/acl_create_entry_np.3	comp-c-man		.man
+./usr/share/man/man3/acl_delete.3		comp-c-man		.man
+./usr/share/man/man3/acl_delete_def_file.3	comp-c-man		.man
+./usr/share/man/man3/acl_delete_entry.3		comp-c-man		.man
+./usr/share/man/man3/acl_delete_entry_np.3	comp-c-man		.man
+./usr/share/man/man3/acl_delete_fd_np.3		comp-c-man		.man
+./usr/share/man/man3/acl_delete_file_np.3	comp-c-man		.man
+./usr/share/man/man3/acl_delete_flag_np.3	comp-c-man		.man
+./usr/share/man/man3/acl_delete_perm.3		comp-c-man		.man
+./usr/share/man/man3/acl_dup.3			comp-c-man		.man
+./usr/share/man/man3/acl_free.3			comp-c-man		.man
+./usr/share/man/man3/acl_from_text.3		comp-c-man		.man
+./usr/share/man/man3/acl_get.3			comp-c-man		.man
+./usr/share/man/man3/acl_get_brand_np.3		comp-c-man		.man
+./usr/share/man/man3/acl_get_entry.3		comp-c-man		.man
+./usr/share/man/man3/acl_get_entry_type_np.3	comp-c-man		.man
+./usr/share/man/man3/acl_get_fd.3		comp-c-man		.man
+./usr/share/man/man3/acl_get_fd_np.3		comp-c-man		.man
+./usr/share/man/man3/acl_get_file.3		comp-c-man		.man
+./usr/share/man/man3/acl_get_flag_np.3		comp-c-man		.man
+./usr/share/man/man3/acl_get_flagset_np.3	comp-c-man		.man
+./usr/share/man/man3/acl_get_link_np.3		comp-c-man		.man
+./usr/share/man/man3/acl_get_perm_np.3		comp-c-man		.man
+./usr/share/man/man3/acl_get_permset.3		comp-c-man		.man
+./usr/share/man/man3/acl_get_qualifier.3	comp-c-man		.man
+./usr/share/man/man3/acl_get_tag_type.3		comp-c-man		.man
+./usr/share/man/man3/acl_init.3			comp-c-man		.man
+./usr/share/man/man3/acl_is_trivial_np.3	comp-c-man		.man
+./usr/share/man/man3/acl_set.3			comp-c-man		.man
+./usr/share/man/man3/acl_set_entry_type_np.3	comp-c-man		.man
+./usr/share/man/man3/acl_set_fd.3		comp-c-man		.man
+./usr/share/man/man3/acl_set_fd_np.3		comp-c-man		.man
+./usr/share/man/man3/acl_set_file.3		comp-c-man		.man
+./usr/share/man/man3/acl_set_flagset_np.3	comp-c-man		.man
+./usr/share/man/man3/acl_set_link_np.3		comp-c-man		.man
+./usr/share/man/man3/acl_set_permset.3		comp-c-man		.man
+./usr/share/man/man3/acl_set_qualifier.3	comp-c-man		.man
+./usr/share/man/man3/acl_set_tag_type.3		comp-c-man		.man
+./usr/share/man/man3/acl_strip_np.3		comp-c-man		.man
+./usr/share/man/man3/acl_to_text.3		comp-c-man		.man
+./usr/share/man/man3/acl_to_text_np.3		comp-c-man		.man
+./usr/share/man/man3/acl_valid.3		comp-c-man		.man
+./usr/share/man/man3/acl_valid_fd_np.3		comp-c-man		.man
+./usr/share/man/man3/acl_valid_file_np.3	comp-c-man		.man
 ./usr/share/man/man3/acos.3			comp-c-man		.man
 ./usr/share/man/man3/acosf.3			comp-c-man		.man
 ./usr/share/man/man3/acosh.3			comp-c-man		.man
@@ -23017,7 +23238,7 @@
 ./usr/share/man/man3/explicit_memset.3		comp-c-man		.man
 ./usr/share/man/man3/expm1.3			comp-c-man		.man
 ./usr/share/man/man3/expm1f.3			comp-c-man		.man
-./usr/share/man/man3/extattr.3			comp-obsolete		obsolete
+./usr/share/man/man3/extattr.3			comp-c-man		.man
 ./usr/share/man/man3/extattr_copy_fd.3		comp-c-man		.man
 ./usr/share/man/man3/extattr_copy_file.3	comp-c-man		.man
 ./usr/share/man/man3/extattr_copy_link.3	comp-c-man		.man
@@ -23067,6 +23288,28 @@
 ./usr/share/man/man3/fgetwc.3			comp-c-man		.man
 ./usr/share/man/man3/fgetwln.3			comp-c-man		.man
 ./usr/share/man/man3/fgetws.3			comp-c-man		.man
+./usr/share/man/man3/fido_assert_allow_cred.3		man-util-man	.man
+./usr/share/man/man3/fido_assert_new.3			man-util-man	.man
+./usr/share/man/man3/fido_assert_set_authdata.3		man-util-man	.man
+./usr/share/man/man3/fido_assert_verify.3		man-util-man	.man
+./usr/share/man/man3/fido_bio_dev_get_info.3		man-util-man	.man
+./usr/share/man/man3/fido_bio_enroll_new.3		man-util-man	.man
+./usr/share/man/man3/fido_bio_info_new.3		man-util-man	.man
+./usr/share/man/man3/fido_bio_template.3		man-util-man	.man
+./usr/share/man/man3/fido_cbor_info_new.3		man-util-man	.man
+./usr/share/man/man3/fido_cred_exclude.3		man-util-man	.man
+./usr/share/man/man3/fido_cred_new.3			man-util-man	.man
+./usr/share/man/man3/fido_cred_set_authdata.3		man-util-man	.man
+./usr/share/man/man3/fido_cred_verify.3			man-util-man	.man
+./usr/share/man/man3/fido_credman_metadata_new.3	man-util-man	.man
+./usr/share/man/man3/fido_dev_get_assert.3		man-util-man	.man
+./usr/share/man/man3/fido_dev_info_manifest.3		man-util-man	.man
+./usr/share/man/man3/fido_dev_make_cred.3		man-util-man	.man
+./usr/share/man/man3/fido_dev_open.3			man-util-man	.man
+./usr/share/man/man3/fido_dev_set_io_functions.3	man-util-man	.man
+./usr/share/man/man3/fido_dev_set_pin.3			man-util-man	.man
+./usr/share/man/man3/fido_init.3			man-util-man	.man
+./usr/share/man/man3/fido_strerr.3			man-util-man	.man
 ./usr/share/man/man3/field_arg.3		comp-c-man		.man
 ./usr/share/man/man3/field_back.3		comp-c-man		.man
 ./usr/share/man/man3/field_buffer.3		comp-c-man		.man
@@ -23294,6 +23537,7 @@
 ./usr/share/man/man3/getdiskrawname.3		comp-c-man		.man
 ./usr/share/man/man3/getdomainname.3		comp-c-man		.man
 ./usr/share/man/man3/getdtablesize.3		comp-c-man		.man
+./usr/share/man/man3/getentropy.3		comp-c-man		.man
 ./usr/share/man/man3/getenv.3			comp-c-man		.man
 ./usr/share/man/man3/getenv_r.3			comp-c-man		.man
 ./usr/share/man/man3/getfsent.3			comp-c-man		.man
@@ -24415,6 +24659,7 @@
 ./usr/share/man/man3/libusb.3			comp-obsolete		obsolete
 ./usr/share/man/man3/libusbhid.3		comp-c-man		.man
 ./usr/share/man/man3/libutil.3			comp-c-man		.man
+./usr/share/man/man3/libuv.3			comp-obsolete		obsolete
 ./usr/share/man/man3/limits.3			comp-c-man		.man
 ./usr/share/man/man3/link_addr.3		comp-c-man		.man
 ./usr/share/man/man3/link_field.3		comp-c-man		.man
@@ -24914,6 +25159,7 @@
 ./usr/share/man/man3/popenve.3			comp-c-man		.man
 ./usr/share/man/man3/pos_form_cursor.3		comp-c-man		.man
 ./usr/share/man/man3/pos_menu_cursor.3		comp-c-man		.man
+./usr/share/man/man3/posix1e.3			comp-c-man		.man
 ./usr/share/man/man3/posix2time.3		comp-c-man		.man
 ./usr/share/man/man3/posix2time_z.3		comp-c-man		.man
 ./usr/share/man/man3/posix_memalign.3		comp-c-man		.man
@@ -26475,8 +26721,8 @@
 ./usr/share/man/man3/wdelch.3			comp-c-man		.man
 ./usr/share/man/man3/wdeleteln.3		comp-c-man		.man
 ./usr/share/man/man3/wechochar.3		comp-c-man		.man
-./usr/share/man/man3/werase.3			comp-c-man		.man
 ./usr/share/man/man3/wenclose.3			comp-c-man		.man
+./usr/share/man/man3/werase.3			comp-c-man		.man
 ./usr/share/man/man3/wgetch.3			comp-c-man		.man
 ./usr/share/man/man3/wgetnstr.3			comp-c-man		.man
 ./usr/share/man/man3/wgetstr.3			comp-c-man		.man
@@ -27456,6 +27702,7 @@
 ./usr/share/man/man9/ltsleep.9			comp-sys-man		.man
 ./usr/share/man/man9/lwp_trampoline.9		comp-sys-man		.man
 ./usr/share/man/man9/m_adj.9			comp-sys-man		.man
+./usr/share/man/man9/m_apply.9			comp-sys-man		.man
 ./usr/share/man/man9/m_cat.9			comp-sys-man		.man
 ./usr/share/man/man9/m_copyback.9		comp-sys-man		.man
 ./usr/share/man/man9/m_copyback_cow.9		comp-sys-man		.man
@@ -27854,7 +28101,7 @@
 ./usr/share/man/man9/rnd_attach_source.9	comp-sys-man		.man
 ./usr/share/man/man9/rnd_detach_source.9	comp-sys-man		.man
 ./usr/share/man/man9/rnd_extract_data.9		comp-sys-man		.man
-./usr/share/man/man9/rndsink.9			comp-sys-man		.man
+./usr/share/man/man9/rndsink.9			comp-obsolete		obsolete
 ./usr/share/man/man9/rootconf.9			comp-sys-man		.man
 ./usr/share/man/man9/round_page.9		comp-sys-man		.man
 ./usr/share/man/man9/rounddown.9		comp-sys-man		.man

@@ -1,4 +1,4 @@
-/*      $NetBSD: procfs_linux.c,v 1.82 2020/04/20 13:30:34 martin Exp $      */
+/*      $NetBSD: procfs_linux.c,v 1.84 2020/05/31 08:38:54 rin Exp $      */
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: procfs_linux.c,v 1.82 2020/04/20 13:30:34 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: procfs_linux.c,v 1.84 2020/05/31 08:38:54 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -381,7 +381,7 @@ procfs_do_pid_statm(struct lwp *curl, struct lwp *l,
 		goto out;
 	}
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	mutex_enter(p->p_lock);
 
 	/* retrieve RSS size */
@@ -389,7 +389,7 @@ procfs_do_pid_statm(struct lwp *curl, struct lwp *l,
 	fill_kproc2(p, &ki, false, false);
 
 	mutex_exit(p->p_lock);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	uvmspace_free(vm);
 
@@ -440,7 +440,7 @@ procfs_do_pid_stat(struct lwp *curl, struct lwp *l,
 
 	get_proc_size_info(p, &vm->vm_map, &stext, &etext, &sstack);
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	mutex_enter(p->p_lock);
 
 	memset(&ki, 0, sizeof(ki));
@@ -507,7 +507,7 @@ procfs_do_pid_stat(struct lwp *curl, struct lwp *l,
 	    ki.p_cpuid);				/* 39 task_cpu */
 
 	mutex_exit(p->p_lock);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	uvmspace_free(vm);
 
@@ -611,18 +611,19 @@ procfs_domounts(struct lwp *curl, struct proc *p,
 	struct mount *mp;
 	int error = 0, root = 0;
 	struct cwdinfo *cwdi = curl->l_proc->p_cwdi;
+	struct statvfs *sfs;
 
 	bf = malloc(LBFSZ, M_TEMP, M_WAITOK);
 
+	sfs = malloc(sizeof(*sfs), M_TEMP, M_WAITOK);
 	mountlist_iterator_init(&iter);
 	while ((mp = mountlist_iterator_next(iter)) != NULL) {
-		struct statvfs sfs;
-
-		if ((error = dostatvfs(mp, &sfs, curl, MNT_WAIT, 0)) == 0)
+		if ((error = dostatvfs(mp, sfs, curl, MNT_WAIT, 0)) == 0)
 			root |= procfs_format_sfs(&mtab, &mtabsz, bf, LBFSZ,
-			    &sfs, curl, 0);
+			    sfs, curl, 0);
 	}
 	mountlist_iterator_destroy(iter);
+	free(sfs, M_TEMP);
 
 	/*
 	 * If we are inside a chroot that is not itself a mount point,

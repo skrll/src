@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_autoconf.c,v 1.79 2019/11/10 21:16:34 chs Exp $	*/
+/*	$NetBSD: x86_autoconf.c,v 1.82 2020/05/02 16:44:36 bouyer Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_autoconf.c,v 1.79 2019/11/10 21:16:34 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_autoconf.c,v 1.82 2020/05/02 16:44:36 bouyer Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -54,11 +54,13 @@ __KERNEL_RCSID(0, "$NetBSD: x86_autoconf.c,v 1.79 2019/11/10 21:16:34 chs Exp $"
 #include <machine/bootinfo.h>
 #include <machine/pio.h>
 
+#include <xen/xen.h>
+
 #include <dev/i2c/i2cvar.h>
 
 #include "acpica.h"
 #include "wsdisplay.h"
-#ifndef XEN
+#ifndef XENPV
 #include "hyperv.h"
 #endif
 
@@ -99,6 +101,7 @@ is_valid_disk(device_t dv)
 		device_is_a(dv, "sd") ||
 		device_is_a(dv, "wd") ||
 		device_is_a(dv, "ld") ||
+		device_is_a(dv, "xbd") ||
 		device_is_a(dv, "ed"));
 }
 
@@ -534,6 +537,12 @@ findroot(void)
 void
 cpu_bootconf(void)
 {
+#ifdef XEN
+	if (vm_guest == VM_GUEST_XENPVH) {
+		xen_bootconf();
+		return;
+	}
+#endif
 	findroot();
 	matchbiosdisks();
 }

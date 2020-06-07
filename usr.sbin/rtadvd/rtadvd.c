@@ -1,4 +1,4 @@
-/*	$NetBSD: rtadvd.c,v 1.75 2020/04/21 12:23:13 wiz Exp $	*/
+/*	$NetBSD: rtadvd.c,v 1.78 2020/05/14 23:42:18 christos Exp $	*/
 /*	$KAME: rtadvd.c,v 1.92 2005/10/17 14:40:02 suz Exp $	*/
 
 /*
@@ -54,6 +54,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <syslog.h>
+#include <signal.h>
 #include <stdarg.h>
 #ifdef __NetBSD__
 #include <util.h>
@@ -87,6 +88,7 @@ static const char *dumpfilename = "/var/run/rtadvd.dump"; /* XXX configurable */
 int sock;
 int rtsock = -1;
 int Cflag = 0, dflag = 0, sflag = 0, Dflag;
+static int after_daemon = 0;
 
 static char **if_argv;
 static int if_argc;
@@ -214,20 +216,19 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 	if (argc == 0) {
-		fprintf(stderr, "Ysage: %s [-CDdfs] [-c conffile]"
+		fprintf(stderr, "Usage: %s [-CDdfs] [-c conffile]"
 		    " [-p pidfile] interface ...\n", getprogname());
 		return EXIT_FAILURE;
 	}
 
 	if ((pid = pidfile_lock(pidfilepath)) != 0) {
-		if (pid == -1)
+		if (pid == -1) {
 			logit(LOG_ERR, "pidfile_lock: %m");
-			/* Continue */
-		else {
+		} else {
 			logit(LOG_ERR, "Another instance of `%s' is running "
 			    "(pid %d); exiting.", getprogname(), pid);
-			return EXIT_FAILURE;
 		}
+		return EXIT_FAILURE;
 	}
 
 	if (prog_init && prog_init() == -1)
@@ -265,6 +266,7 @@ main(int argc, char *argv[])
 
 	if (!fflag) {
 		prog_daemon(1, 0);
+		after_daemon = 1;
 		if (pidfile_lock(pidfilepath) != 0)
 			logit(LOG_ERR, " pidfile_lock: %m");
 	}
@@ -1800,13 +1802,15 @@ logit(int level, const char *fmt, ...)
 	char *buf;
 
 	va_start(ap, fmt);
-	if (!Dflag) {
+	if (!Dflag && after_daemon) {
 		vsyslog(level, fmt, ap);
 		va_end(ap);
 		return;
 	}
+	if (level >= LOG_INFO && !dflag)
+		return;
 
-	vfprintf(stderr, expandm(fmt, "\n", &buf), ap);
+	vwarnx(expandm(fmt, "\n", &buf), ap);
 	free(buf);
 	va_end(ap);
 }

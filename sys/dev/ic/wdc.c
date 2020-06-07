@@ -1,4 +1,4 @@
-/*	$NetBSD: wdc.c,v 1.299 2020/04/13 10:49:34 jdolecek Exp $ */
+/*	$NetBSD: wdc.c,v 1.303 2020/06/03 18:25:26 bouyer Exp $ */
 
 /*
  * Copyright (c) 1998, 2001, 2003 Manuel Bouyer.  All rights reserved.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wdc.c,v 1.299 2020/04/13 10:49:34 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wdc.c,v 1.303 2020/06/03 18:25:26 bouyer Exp $");
 
 #include "opt_ata.h"
 #include "opt_wdc.h"
@@ -70,6 +70,7 @@ __KERNEL_RCSID(0, "$NetBSD: wdc.c,v 1.299 2020/04/13 10:49:34 jdolecek Exp $");
 #include <sys/buf.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/syslog.h>
 #include <sys/proc.h>
 
@@ -489,24 +490,28 @@ int
 wdcprobe_with_reset(struct wdc_regs *wdr,
     void (*do_reset)(struct ata_channel *, int))
 {
-	struct wdc_softc wdc;
-	struct ata_channel ch;
+	struct wdc_softc *wdc;
+	struct ata_channel *ch;
 	int rv;
 
-	memset(&wdc, 0, sizeof(wdc));
-	memset(&ch, 0, sizeof(ch));
-	ata_channel_init(&ch);
-	ch.ch_atac = &wdc.sc_atac;
-	wdc.regs = wdr;
+	wdc = kmem_zalloc(sizeof(*wdc), KM_SLEEP);
+	ch = kmem_zalloc(sizeof(*ch), KM_SLEEP);
+
+	ata_channel_init(ch);
+	ch->ch_atac = &wdc->sc_atac;
+	wdc->regs = wdr;
 
 	/* check the MD reset method */
-	wdc.reset = (do_reset != NULL) ? do_reset : wdc_do_reset;
+	wdc->reset = (do_reset != NULL) ? do_reset : wdc_do_reset;
 
-	ata_channel_lock(&ch);
-	rv = wdcprobe1(&ch, 1);
-	ata_channel_unlock(&ch);
+	ata_channel_lock(ch);
+	rv = wdcprobe1(ch, 1);
+	ata_channel_unlock(ch);
 
-	ata_channel_destroy(&ch);
+	ata_channel_destroy(ch);
+
+	kmem_free(ch, sizeof(*ch));
+	kmem_free(wdc, sizeof(*wdc));
 
 	return rv;
 }
@@ -887,10 +892,8 @@ wdcintr(void *arg)
 		return (0);
 	}
 
-	if ((chp->ch_flags & ATACH_IRQ_WAIT) == 0) {
-		ATADEBUG_PRINT(("wdcintr: irq not expected\n"), DEBUG_INTR);
+	if ((chp->ch_flags & ATACH_IRQ_WAIT) == 0)
 		goto ignore;
-	}
 
 	xfer = ata_queue_get_active_xfer(chp);
 	if (xfer == NULL) {
@@ -1346,6 +1349,11 @@ wdctimeout(void *arg)
 
 	callout_ack(&chp->c_timo_callout);
 
+	if ((chp->ch_flags & ATACH_IRQ_WAIT) == 0) {
+		__wdcerror(chp, "timeout not expected without pending irq");
+		goto out;
+	}
+
 	xfer = ata_queue_get_active_xfer(chp);
 	KASSERT(xfer != NULL);
 
@@ -1370,12 +1378,9 @@ wdctimeout(void *arg)
 	 * Call the interrupt routine. If we just missed an interrupt,
 	 * it will do what's needed. Else, it will take the needed
 	 * action (reset the device).
-	 * Before that we need to reinstall the timeout callback,
-	 * in case it will miss another irq while in this transfer
-	 * We arbitray chose it to be 1s
 	 */
-	callout_reset(&chp->c_timo_callout, hz, wdctimeout, chp);
 	xfer->c_flags |= C_TIMEOU;
+	chp->ch_flags &= ~ATACH_IRQ_WAIT;
 	KASSERT(xfer->ops != NULL && xfer->ops->c_intr != NULL);
 	xfer->ops->c_intr(chp, xfer, 1);
 

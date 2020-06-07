@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_syscalls.c,v 1.546 2020/04/20 21:39:05 ad Exp $	*/
+/*	$NetBSD: vfs_syscalls.c,v 1.548 2020/05/16 18:31:50 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009, 2019, 2020 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_syscalls.c,v 1.546 2020/04/20 21:39:05 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_syscalls.c,v 1.548 2020/05/16 18:31:50 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_fileassoc.h"
@@ -1166,32 +1166,37 @@ int
 dostatvfs(struct mount *mp, struct statvfs *sp, struct lwp *l, int flags,
     int root)
 {
-	struct vnode *rvp;
+	struct cwdinfo *cwdi = l->l_proc->p_cwdi;
+	bool chrooted;
 	int error = 0;
+
+	KASSERT(l == curlwp);
+
+	/*
+	 * This is safe unlocked.  cwdi_rdir never goes non-NULL -> NULL,
+	 * since it would imply chroots can be escaped.  Just make sure this
+	 * routine is self-consistent.
+	 */
+	chrooted = (atomic_load_relaxed(&cwdi->cwdi_rdir) != NULL);
 
 	/*
 	 * If MNT_NOWAIT or MNT_LAZY is specified, do not
 	 * refresh the fsstat cache. MNT_WAIT or MNT_LAZY
 	 * overrides MNT_NOWAIT.
 	 */
-	KASSERT(l == curlwp);
-	rvp = cwdrdir();
 	if (flags == MNT_NOWAIT	|| flags == MNT_LAZY ||
 	    (flags != MNT_WAIT && flags != 0)) {
 		memcpy(sp, &mp->mnt_stat, sizeof(*sp));
 	} else {
 		/* Get the filesystem stats now */
 		memset(sp, 0, sizeof(*sp));
-		if ((error = VFS_STATVFS(mp, sp)) != 0) {
-			if (rvp)
-				vrele(rvp);
+		if ((error = VFS_STATVFS(mp, sp)) != 0)
 			return error;
-		}
-		if (rvp == NULL)
+		if (!chrooted)
 			(void)memcpy(&mp->mnt_stat, sp, sizeof(mp->mnt_stat));
 	}
 
-	if (rvp != NULL) {
+	if (chrooted) {
 		size_t len;
 		char *bp;
 		char c;
@@ -1199,11 +1204,12 @@ dostatvfs(struct mount *mp, struct statvfs *sp, struct lwp *l, int flags,
 
 		bp = path + MAXPATHLEN;
 		*--bp = '\0';
-		error = getcwd_common(rvp, rootvnode, &bp, path,
+		rw_enter(&cwdi->cwdi_lock, RW_READER);
+		error = getcwd_common(cwdi->cwdi_rdir, rootvnode, &bp, path,
 		    MAXPATHLEN / 2, 0, l);
+		rw_exit(&cwdi->cwdi_lock);
 		if (error) {
 			PNBUF_PUT(path);
-			vrele(rvp);
 			return error;
 		}
 		len = strlen(bp);
@@ -1228,7 +1234,6 @@ dostatvfs(struct mount *mp, struct statvfs *sp, struct lwp *l, int flags,
 			}
 		}
 		PNBUF_PUT(path);
-		vrele(rvp);
 	}
 	sp->f_flag = mp->mnt_flag & MNT_VISFLAGMASK;
 	return error;
@@ -1398,6 +1403,7 @@ sys_fchdir(struct lwp *l, const struct sys_fchdir_args *uap, register_t *retval)
 	/* {
 		syscallarg(int) fd;
 	} */
+	struct proc *p = l->l_proc;
 	struct cwdinfo *cwdi;
 	struct vnode *vp, *tdp;
 	struct mount *mp;
@@ -1437,7 +1443,8 @@ sys_fchdir(struct lwp *l, const struct sys_fchdir_args *uap, register_t *retval)
 	 * Disallow changing to a directory not under the process's
 	 * current root directory (if there is one).
 	 */
-	cwdi = cwdenter(RW_WRITER);
+	cwdi = p->p_cwdi;
+	rw_enter(&cwdi->cwdi_lock, RW_WRITER);
 	if (cwdi->cwdi_rdir && !vn_isunder(vp, NULL, l)) {
 		vrele(vp);
 		error = EPERM;	/* operation not permitted */
@@ -1445,7 +1452,7 @@ sys_fchdir(struct lwp *l, const struct sys_fchdir_args *uap, register_t *retval)
 		vrele(cwdi->cwdi_cdir);
 		cwdi->cwdi_cdir = vp;
 	}
-	cwdexit(cwdi);
+	rw_exit(&cwdi->cwdi_lock);
 
  out:
 	fd_putfile(fd);
@@ -1496,19 +1503,19 @@ sys_chdir(struct lwp *l, const struct sys_chdir_args *uap, register_t *retval)
 	/* {
 		syscallarg(const char *) path;
 	} */
+	struct proc *p = l->l_proc;
 	struct cwdinfo *cwdi;
 	int error;
-	struct vnode *vp, *ovp;
+	struct vnode *vp;
 
-	error = chdir_lookup(SCARG(uap, path), UIO_USERSPACE, &vp, l);
-	if (error != 0)
+	if ((error = chdir_lookup(SCARG(uap, path), UIO_USERSPACE,
+				  &vp, l)) != 0)
 		return (error);
-
-	cwdi = cwdenter(RW_WRITER);
-	ovp = cwdi->cwdi_cdir;
+	cwdi = p->p_cwdi;
+	rw_enter(&cwdi->cwdi_lock, RW_WRITER);
+	vrele(cwdi->cwdi_cdir);
 	cwdi->cwdi_cdir = vp;
-	cwdexit(cwdi);
-	vrele(ovp);
+	rw_exit(&cwdi->cwdi_lock);
 	return (0);
 }
 
@@ -1542,14 +1549,14 @@ sys_chroot(struct lwp *l, const struct sys_chroot_args *uap, register_t *retval)
 void
 change_root(struct vnode *vp)
 {
-	struct cwdinfo *cwdi;
 	kauth_cred_t ncred;
 	struct lwp *l = curlwp;
 	struct proc *p = l->l_proc;
+	struct cwdinfo *cwdi = p->p_cwdi;
 
 	ncred = kauth_cred_alloc();
 
-	cwdi = cwdenter(RW_WRITER);
+	rw_enter(&cwdi->cwdi_lock, RW_WRITER);
 	if (cwdi->cwdi_rdir != NULL)
 		vrele(cwdi->cwdi_rdir);
 	cwdi->cwdi_rdir = vp;
@@ -1568,7 +1575,7 @@ change_root(struct vnode *vp)
 		vref(vp);
 		cwdi->cwdi_cdir = vp;
 	}
-	cwdexit(cwdi);
+	rw_exit(&cwdi->cwdi_lock);
 
 	/* Get a write lock on the process credential. */
 	proc_crmod_enter();
@@ -3225,34 +3232,55 @@ sys_fstatat(struct lwp *l, const struct sys_fstatat_args *uap,
 	return copyout(&sb, SCARG(uap, buf), sizeof(sb));
 }
 
+static int
+kern_pathconf(register_t *retval, const char *path, int name, int flag)
+{
+	int error;
+	struct pathbuf *pb;
+	struct nameidata nd;
+
+	error = pathbuf_copyin(path, &pb);
+	if (error) {
+		return error;
+	}
+	NDINIT(&nd, LOOKUP, flag | LOCKLEAF | TRYEMULROOT, pb);
+	if ((error = namei(&nd)) != 0) {
+		pathbuf_destroy(pb);
+		return error;
+	}
+	error = VOP_PATHCONF(nd.ni_vp, name, retval);
+	vput(nd.ni_vp);
+	pathbuf_destroy(pb);
+	return error;
+}
+
 /*
  * Get configurable pathname variables.
  */
 /* ARGSUSED */
 int
-sys_pathconf(struct lwp *l, const struct sys_pathconf_args *uap, register_t *retval)
+sys_pathconf(struct lwp *l, const struct sys_pathconf_args *uap,
+    register_t *retval)
 {
 	/* {
 		syscallarg(const char *) path;
 		syscallarg(int) name;
 	} */
-	int error;
-	struct pathbuf *pb;
-	struct nameidata nd;
+	return kern_pathconf(retval, SCARG(uap, path), SCARG(uap, name), 
+	    FOLLOW);
+}
 
-	error = pathbuf_copyin(SCARG(uap, path), &pb);
-	if (error) {
-		return error;
-	}
-	NDINIT(&nd, LOOKUP, FOLLOW | LOCKLEAF | TRYEMULROOT, pb);
-	if ((error = namei(&nd)) != 0) {
-		pathbuf_destroy(pb);
-		return (error);
-	}
-	error = VOP_PATHCONF(nd.ni_vp, SCARG(uap, name), retval);
-	vput(nd.ni_vp);
-	pathbuf_destroy(pb);
-	return (error);
+/* ARGSUSED */
+int
+sys_lpathconf(struct lwp *l, const struct sys_lpathconf_args *uap,
+    register_t *retval)
+{
+	/* {
+		syscallarg(const char *) path;
+		syscallarg(int) name;
+	} */
+	return kern_pathconf(retval, SCARG(uap, path), SCARG(uap, name), 
+	    NOFOLLOW);
 }
 
 /*
@@ -4386,6 +4414,8 @@ do_sys_renameat(struct lwp *l, int fromfd, const char *from, int tofd,
 	KASSERT(tdvp != NULL);
 	KASSERT((tdvp == tvp) || (VOP_ISLOCKED(tdvp) == LK_EXCLUSIVE));
 
+	if (fvp->v_type == VDIR)
+		tnd.ni_cnd.cn_flags |= WILLBEDIR;
 	/*
 	 * Make sure neither tdvp nor tvp is locked.
 	 */
@@ -4676,6 +4706,7 @@ do_sys_mkdirat(struct lwp *l, int fdat, const char *path, mode_t mode,
 	vattr.va_type = VDIR;
 	/* We will read cwdi->cwdi_cmask unlocked. */
 	vattr.va_mode = (mode & ACCESSPERMS) &~ p->p_cwdi->cwdi_cmask;
+	nd.ni_cnd.cn_flags |= WILLBEDIR;
 	error = VOP_MKDIR(nd.ni_dvp, &nd.ni_vp, &nd.ni_cnd, &vattr);
 	if (!error)
 		vrele(nd.ni_vp);

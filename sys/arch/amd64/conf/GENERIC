@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.565 2020/04/15 17:16:22 maxv Exp $
+# $NetBSD: GENERIC,v 1.568 2020/05/16 18:31:48 christos Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.565 $"
+#ident		"GENERIC-$Revision: 1.568 $"
 
 maxusers	64		# estimated number of users
 
@@ -89,6 +89,15 @@ hyperv0 	at cpu0		# Microsoft Hyper-V
 powernow0	at cpu0		# AMD PowerNow! and Cool'n'Quiet (non-ACPI)
 vmt0		at cpu0		# VMware Tools
 
+#Xen PV support for HVM guests
+options 	XENPVHVM
+options 	XEN
+hypervisor*	at mainbus?		# Xen hypervisor
+xenbus*	 	at hypervisor?		# Xen virtual bus
+xencons*	at hypervisor?		# Xen virtual console
+xennet*  	at xenbus?		# Xen virtual network interface
+xbd*		at xenbus?		# Xen virtual block device
+
 # Alternate buffer queue strategies for better responsiveness under high
 # disk I/O load.
 #options 	BUFQ_READPRIO
@@ -112,6 +121,7 @@ options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #options 	KGDB		# remote debugger
 #options 	KGDB_DEVNAME="\"com\"",KGDB_DEVADDR=0x3f8,KGDB_DEVRATE=9600
 makeoptions	DEBUG="-g"	# compile full symbol table for CTF
+options DDB_COMMANDONENTER="trace;show registers"
 #options 	KUBSAN		# Kernel Undefined Behavior Sanitizer (kUBSan)
 #options 	UBSAN_ALWAYS_FATAL	# (optional) Panic on all kUBSan reports
 #options 	SYSCALL_STATS	# per syscall counts
@@ -187,6 +197,7 @@ options 	WAPBL		# File system journaling support
 # Note that UFS_DIRHASH is suspected of causing kernel memory corruption.
 # It is not recommended for general use.
 #options 	UFS_DIRHASH	# UFS Large Directory Hashing - Experimental
+options		UFS_ACL		# UFS Access Control Lists
 #options 	FFS_NO_SNAPSHOT	# No FFS snapshot support
 options 	UFS_EXTATTR	# Extended attribute support for UFS1
 # ext2fs

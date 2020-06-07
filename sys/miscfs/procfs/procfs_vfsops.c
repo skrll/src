@@ -1,4 +1,4 @@
-/*	$NetBSD: procfs_vfsops.c,v 1.107 2020/04/20 05:22:28 htodd Exp $	*/
+/*	$NetBSD: procfs_vfsops.c,v 1.109 2020/05/23 23:42:43 ad Exp $	*/
 
 /*
  * Copyright (c) 1993
@@ -76,7 +76,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: procfs_vfsops.c,v 1.107 2020/04/20 05:22:28 htodd Exp $");
+__KERNEL_RCSID(0, "$NetBSD: procfs_vfsops.c,v 1.109 2020/05/23 23:42:43 ad Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -321,9 +321,9 @@ procfs_loadvnode(struct mount *mp, struct vnode *vp,
 			vnode_t *vxp;
 			struct proc *p;
 
-			mutex_enter(proc_lock);
-			p = proc_find(pfs->pfs_pid);
-			mutex_exit(proc_lock);
+			mutex_enter(&proc_lock);
+			p = procfs_proc_find(mp, pfs->pfs_pid);
+			mutex_exit(&proc_lock);
 			if (p == NULL) {
 				error = ENOENT;
 				goto bad;

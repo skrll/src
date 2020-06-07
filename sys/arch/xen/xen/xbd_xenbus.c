@@ -1,4 +1,4 @@
-/*      $NetBSD: xbd_xenbus.c,v 1.122 2020/04/21 13:31:08 jdolecek Exp $      */
+/*      $NetBSD: xbd_xenbus.c,v 1.127 2020/05/13 16:17:46 jdolecek Exp $      */
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -50,7 +50,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xbd_xenbus.c,v 1.122 2020/04/21 13:31:08 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xbd_xenbus.c,v 1.127 2020/05/13 16:17:46 jdolecek Exp $");
 
 #include "opt_xen.h"
 
@@ -74,6 +74,7 @@ __KERNEL_RCSID(0, "$NetBSD: xbd_xenbus.c,v 1.122 2020/04/21 13:31:08 jdolecek Ex
 
 #include <uvm/uvm.h>
 
+#include <xen/intr.h>
 #include <xen/hypervisor.h>
 #include <xen/evtchn.h>
 #include <xen/granttables.h>
@@ -213,14 +214,14 @@ CFATTACH_DECL3_NEW(xbd, sizeof(struct xbd_xenbus_softc),
     xbd_xenbus_match, xbd_xenbus_attach, xbd_xenbus_detach, NULL, NULL, NULL,
     DVF_DETACH_SHUTDOWN);
 
-dev_type_open(xbdopen);
-dev_type_close(xbdclose);
-dev_type_read(xbdread);
-dev_type_write(xbdwrite);
-dev_type_ioctl(xbdioctl);
-dev_type_strategy(xbdstrategy);
-dev_type_dump(xbddump);
-dev_type_size(xbdsize);
+static dev_type_open(xbdopen);
+static dev_type_close(xbdclose);
+static dev_type_read(xbdread);
+static dev_type_write(xbdwrite);
+static dev_type_ioctl(xbdioctl);
+static dev_type_strategy(xbdstrategy);
+static dev_type_dump(xbddump);
+static dev_type_size(xbdsize);
 
 const struct bdevsw xbd_bdevsw = {
 	.d_open = xbdopen,
@@ -435,7 +436,10 @@ xbd_xenbus_detach(device_t dev, int flags)
 	}
 
 	hypervisor_mask_event(sc->sc_evtchn);
-	xen_intr_disestablish(sc->sc_ih);
+	if (sc->sc_ih != NULL) {
+		xen_intr_disestablish(sc->sc_ih);
+		sc->sc_ih = NULL;
+	}
 
 	mutex_enter(&sc->sc_lock);
 	while (xengnt_status(sc->sc_ring_gntref))
@@ -487,7 +491,21 @@ xbd_xenbus_suspend(device_t dev, const pmf_qual_t *qual) {
 
 	hypervisor_mask_event(sc->sc_evtchn);
 	sc->sc_backend_status = BLKIF_STATE_SUSPENDED;
-	xen_intr_disestablish(sc->sc_ih);
+
+#ifdef DIAGNOSTIC
+	/* Check that all requests are finished and device ready for resume */
+	int reqcnt = 0;
+	struct xbd_req *req;
+	SLIST_FOREACH(req, &sc->sc_xbdreq_head, req_next)
+		reqcnt++;
+	KASSERT(reqcnt == __arraycount(sc->sc_reqs));
+
+	int incnt = 0;
+	struct xbd_indirect *in;
+	SLIST_FOREACH(in, &sc->sc_indirect_head, in_next)
+		incnt++;
+	KASSERT(incnt == __arraycount(sc->sc_indirect));
+#endif
 
 	mutex_exit(&sc->sc_lock);
 
@@ -509,13 +527,7 @@ xbd_xenbus_resume(device_t dev, const pmf_qual_t *qual)
 
 	sc = device_private(dev);
 
-	if (sc->sc_backend_status == BLKIF_STATE_SUSPENDED) {
-		/*
-		 * Device was suspended, so ensure that access associated to
-		 * the block I/O ring is revoked.
-		 */
-		xengnt_revoke_access(sc->sc_ring_gntref);
-	}
+	/* All grants were removed during suspend */
 	sc->sc_ring_gntref = GRANT_INVALID_REF;
 
 	/* Initialize ring */
@@ -553,6 +565,10 @@ xbd_xenbus_resume(device_t dev, const pmf_qual_t *qual)
 	if (error)
 		goto abort_resume;
 
+	if (sc->sc_ih != NULL) {
+		xen_intr_disestablish(sc->sc_ih);
+		sc->sc_ih = NULL;
+	}
 	aprint_verbose_dev(dev, "using event channel %d\n",
 	    sc->sc_evtchn);
 	sc->sc_ih = xen_intr_establish_xname(-1, &xen_pic, sc->sc_evtchn,
@@ -675,7 +691,8 @@ xbd_backend_changed(void *arg, XenbusState new_state)
 		sc->sc_backend_status = BLKIF_STATE_CONNECTED;
 		hypervisor_unmask_event(sc->sc_evtchn);
 
-		format_bytes(buf, sizeof(buf), sc->sc_sectors * sc->sc_secsize);
+		format_bytes(buf, uimin(9, sizeof(buf)),
+		    sc->sc_sectors * sc->sc_secsize);
 		aprint_normal_dev(sc->sc_dksc.sc_dev,
 				"%s, %d bytes/sect x %" PRIu64 " sectors\n",
 				buf, (int)dg->dg_secsize, sc->sc_xbdsize);
@@ -922,7 +939,7 @@ xbd_iosize(device_t dev, int *maxxfer)
 		*maxxfer = XBD_MAX_XFER;
 }
 
-int
+static int
 xbdopen(dev_t dev, int flags, int fmt, struct lwp *l)
 {
 	struct	xbd_xenbus_softc *sc;
@@ -937,7 +954,7 @@ xbdopen(dev_t dev, int flags, int fmt, struct lwp *l)
 	return dk_open(&sc->sc_dksc, dev, flags, fmt, l);
 }
 
-int
+static int
 xbdclose(dev_t dev, int flags, int fmt, struct lwp *l)
 {
 	struct xbd_xenbus_softc *sc;
@@ -948,7 +965,7 @@ xbdclose(dev_t dev, int flags, int fmt, struct lwp *l)
 	return dk_close(&sc->sc_dksc, dev, flags, fmt, l);
 }
 
-void
+static void
 xbdstrategy(struct buf *bp)
 {
 	struct xbd_xenbus_softc *sc;
@@ -974,7 +991,7 @@ xbdstrategy(struct buf *bp)
 	return;
 }
 
-int
+static int
 xbdsize(dev_t dev)
 {
 	struct	xbd_xenbus_softc *sc;
@@ -987,7 +1004,7 @@ xbdsize(dev_t dev)
 	return dk_size(&sc->sc_dksc, dev);
 }
 
-int
+static int
 xbdread(dev_t dev, struct uio *uio, int flags)
 {
 	struct xbd_xenbus_softc *sc = 
@@ -999,7 +1016,7 @@ xbdread(dev_t dev, struct uio *uio, int flags)
 	return physio(xbdstrategy, NULL, dev, B_READ, xbdminphys, uio);
 }
 
-int
+static int
 xbdwrite(dev_t dev, struct uio *uio, int flags)
 {
 	struct xbd_xenbus_softc *sc =
@@ -1013,7 +1030,7 @@ xbdwrite(dev_t dev, struct uio *uio, int flags)
 	return physio(xbdstrategy, NULL, dev, B_WRITE, xbdminphys, uio);
 }
 
-int
+static int
 xbdioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 {
 	struct xbd_xenbus_softc *sc =
@@ -1085,7 +1102,7 @@ xbdioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 	return error;
 }
 
-int
+static int
 xbddump(dev_t dev, daddr_t blkno, void *va, size_t size)
 {
 	struct xbd_xenbus_softc *sc;

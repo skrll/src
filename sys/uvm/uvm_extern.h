@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_extern.h,v 1.223 2020/04/18 03:27:13 thorpej Exp $	*/
+/*	$NetBSD: uvm_extern.h,v 1.227 2020/05/26 00:50:53 kamil Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -226,6 +226,7 @@ b\32UNMAP\0\
 #define UBC_FAULTBUSY	0x004	/* nobody else is using these pages, so busy
 				 * them at alloc and unbusy at release (e.g.,
 				 * for writes extending a file) */
+#define	UBC_ISMAPPED	0x008	/* object may be mapped by a process */
 
 /*
  * flags for ubc_release()
@@ -549,11 +550,13 @@ extern bool vm_page_zero_enable;
  * helpers for calling ubc_release()
  */
 #ifdef PMAP_CACHE_VIVT
-#define UBC_WANT_UNMAP(vp) (((vp)->v_iflag & VI_TEXT) != 0)
+#define UBC_VNODE_FLAGS(vp) \
+    ((((vp)->v_iflag & VI_TEXT) != 0 ? UBC_UNMAP : 0) | \
+    (((vp)->v_vflag & VV_MAPPED) != 0 ? UBC_ISMAPPED : 0))
 #else
-#define UBC_WANT_UNMAP(vp) false
+#define UBC_VNODE_FLAGS(vp) \
+    (((vp)->v_vflag & VV_MAPPED) != 0 ? UBC_ISMAPPED : 0)
 #endif
-#define UBC_UNMAP_FLAG(vp) (UBC_WANT_UNMAP(vp) ? UBC_UNMAP : 0)
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 /*
@@ -563,8 +566,7 @@ extern bool vm_page_zero_enable;
  */
 struct vmspace {
 	struct	vm_map vm_map;	/* VM address map */
-	int	vm_refcnt;	/* number of references *
-				 * note: protected by vm_map.misc_lock */
+	volatile int vm_refcnt;	/* number of references */
 	void *	vm_shm;		/* SYS5 shared memory private data XXX */
 /* we copy from vm_startcopy to the end of the structure on fork */
 #define vm_startcopy vm_rssize
@@ -610,8 +612,7 @@ extern struct vm_map *phys_map;
  *
  *	This structure encapsulates UVM's unique virtual object address
  *	for an individual byte inside a pageable page. Pageable pages can
- *	be owned by either a uvm_object (UVM_VOADDR_TYPE_OBJECT) or a
- *	vm_anon (UVM_VOADDR_TYPE_ANON).
+ *	be owned by either a uvm_object or a vm_anon.
  *
  *	In each case, the byte offset into the owning object
  *	(uvm_object or vm_anon) is included in the ID, so that
@@ -628,14 +629,7 @@ extern struct vm_map *phys_map;
  *	use.
  */
 struct uvm_voaddr {
-	enum {
-		UVM_VOADDR_TYPE_OBJECT = 1,
-		UVM_VOADDR_TYPE_ANON = 2,
-	} type;
-	union {
-		struct uvm_object *uobj;
-		struct vm_anon *anon;
-	};
+	uintptr_t object;
 	voff_t offset;
 };
 

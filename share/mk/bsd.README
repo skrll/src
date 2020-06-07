@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.README,v 1.401 2020/04/04 23:54:06 christos Exp $
+#	$NetBSD: bsd.README,v 1.406 2020/06/01 14:39:14 christos Exp $
 #	@(#)bsd.README	8.2 (Berkeley) 4/2/94
 
 This is the README file for the make "include" files for the NetBSD
@@ -144,6 +144,9 @@ MKCOMPATX11  	If "yes", build and install the X11 libraries when
 		building and installing src/compat.
 		Default: no
 
+MKCOMPATMODULES	If "no", don't build compat modules (xen, etc.)
+		Default: yes
+
 MKCOMPLEX	If "no", don't build libm support for <complex.h>
 		Default: yes
 
@@ -193,6 +196,9 @@ MKDTRACE	If "no", do not build and install the kernel modules,
 		utilities and libraries used to implement the dtrace(1)
 		facility.
 		Default: no
+
+MKDTB		If "no", disables building of devicetree blobs.
+		Default: yes on aarch64 and armv7, no elsewhere.
 
 MKDYNAMICROOT	If "no", build programs in /bin and /sbin statically,
 		don't install certain libraries in /lib, and don't
@@ -1336,6 +1342,8 @@ LIBISMODULE	If not "no", install as ${LIB}.so (without the "lib" prefix),
 LIBISPRIVATE	If not "no", act as "MKDEBUGLIB=no MKLINT=no MKPIC=no
 		MKPROFILE=no", and don't install the (.a) library.
 		This is useful for "build only" helper libraries.
+		If set to "pic", then a _pic.a library is also produced,
+		so that it can be incorporated into other shared objects.
 		Default: no
 
 LIBISCXX	If not "no", Use ${CXX} instead of ${CC} to link

@@ -1,4 +1,4 @@
-#	$NetBSD: vnode_if.src,v 1.78 2019/10/11 08:04:52 hannken Exp $
+#	$NetBSD: vnode_if.src,v 1.80 2020/05/18 08:29:34 hannken Exp $
 #
 # Copyright (c) 1992, 1993
 #	The Regents of the University of California.  All rights reserved.
@@ -128,7 +128,16 @@ vop_close {
 #
 vop_access {
 	IN LOCKED=YES struct vnode *vp;
-	IN int mode;
+	IN accmode_t accmode;
+	IN kauth_cred_t cred;
+};
+
+#
+#% accessx    vp      L L L
+#
+vop_accessx {
+	IN LOCKED=YES struct vnode *vp;
+	IN accmode_t accmode;
 	IN kauth_cred_t cred;
 };
 
@@ -436,7 +445,7 @@ vop_bmap {
 #% strategy   vp      = = =
 #
 vop_strategy {
-	FSTRANS=LAZY
+	FSTRANS=NO
 	IN struct vnode *vp;
 	IN struct buf *bp;
 };
@@ -514,6 +523,36 @@ vop_putpages {
 	IN voff_t offlo;
 	IN voff_t offhi;
 	IN int flags;
+};
+
+#
+#% getacl	vp L L L
+#
+vop_getacl {
+	IN struct vnode *vp;
+	IN acl_type_t type;
+	OUT struct acl *aclp;
+	IN kauth_cred_t cred;
+};
+
+#
+#% setacl	vp L L L
+#
+vop_setacl {
+	IN struct vnode *vp;
+	IN acl_type_t type;
+	IN struct acl *aclp;
+	IN kauth_cred_t cred;
+};
+
+#
+#% aclcheck	vp = = =
+#
+vop_aclcheck {
+	IN struct vnode *vp;
+	IN acl_type_t type;
+	IN struct acl *aclp;
+	IN kauth_cred_t cred;
 };
 
 #

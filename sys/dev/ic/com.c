@@ -1,4 +1,4 @@
-/* $NetBSD: com.c,v 1.357 2020/02/01 15:24:04 skrll Exp $ */
+/* $NetBSD: com.c,v 1.359 2020/05/26 13:24:52 martin Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2004, 2008 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: com.c,v 1.357 2020/02/01 15:24:04 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: com.c,v 1.359 2020/05/26 13:24:52 martin Exp $");
 
 #include "opt_com.h"
 #include "opt_ddb.h"
@@ -159,7 +159,7 @@ int	com_to_tiocm(struct com_softc *);
 void	com_iflush(struct com_softc *);
 
 int	com_common_getc(dev_t, struct com_regs *);
-static void	com_common_putc(dev_t, struct com_regs *, int);
+static void	com_common_putc(dev_t, struct com_regs *, int, int);
 
 int	cominit(struct com_regs *, int, int, int, tcflag_t);
 
@@ -2399,12 +2399,12 @@ com_common_getc(dev_t dev, struct com_regs *regsp)
 }
 
 static void
-com_common_putc(dev_t dev, struct com_regs *regsp, int c)
+com_common_putc(dev_t dev, struct com_regs *regsp, int c, int with_readahead)
 {
 	int s = splserial();
 	int cin, stat, timo;
 
-	if (com_readaheadcount < MAX_READAHEAD
+	if (with_readahead && com_readaheadcount < MAX_READAHEAD
 	     && ISSET(stat = CSR_READ_1(regsp, COM_REG_LSR), LSR_RXRDY)) {
 		int cn_trapped = 0;
 		cin = CSR_READ_1(regsp, COM_REG_RXDATA);
@@ -2442,11 +2442,11 @@ cominit(struct com_regs *regsp, int rate, int frequency, int type,
 	}
 
 	rate = comspeed(rate, frequency, type);
-	if (__predict_true(rate != -1)) {
+	if (rate != -1) {
 		if (type == COM_TYPE_AU1x00) {
+			/* no EFR on alchemy */
 			CSR_WRITE_2(regsp, COM_REG_DLBL, rate);
 		} else {
-			/* no EFR on alchemy */
 			if ((type != COM_TYPE_16550_NOERS) && 
 			    (type != COM_TYPE_INGENIC)) {
 				CSR_WRITE_1(regsp, COM_REG_LCR, LCR_EERS);
@@ -2572,7 +2572,7 @@ void
 comcnputc(dev_t dev, int c)
 {
 
-	com_common_putc(dev, &comcons_info.regs, c);
+	com_common_putc(dev, &comcons_info.regs, c, cold);
 }
 
 void
@@ -2641,7 +2641,7 @@ void
 com_kgdb_putc(void *arg, int c)
 {
 
-	com_common_putc(NODEV, &comkgdbregs, c);
+	com_common_putc(NODEV, &comkgdbregs, c, 0);
 }
 #endif /* KGDB */
 

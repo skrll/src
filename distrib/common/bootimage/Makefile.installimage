@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.installimage,v 1.6 2019/11/21 22:29:03 joerg Exp $
+#	$NetBSD: Makefile.installimage,v 1.8 2020/05/28 19:20:57 jmcneill Exp $
 #
 # Common Makefile to create a bootable installation image for USB flash etc.
 #
@@ -36,6 +36,8 @@ SETS?=		modules base etc
 
 FSTAB_IN?=	${NETBSDSRCDIR}/distrib/common/bootimage/fstab.install.in
 
+USE_MBR?=	no
+
 .if ${USE_MBR} != "no"
 DISKPROTO_IN?=	${NETBSDSRCDIR}/distrib/common/bootimage/diskproto.noswap.mbr.in
 .else
@@ -47,6 +49,9 @@ IMGDIR_EXTRA=	${RELEASEDIR}/${RELEASEMACHINEDIR}	${RELEASEMACHINEDIR}
 IMGDIR_EXCLUDE= 	-s ',./installation/cdrom.*,,gp'
 IMGDIR_EXCLUDE+=	-s ',./installation/liveimage.*,,gp'
 IMGDIR_EXCLUDE+=	-s ',./installation/installimage.*,,gp'
+.if defined(MD_IMGDIR_EXCLUDE)
+IMGDIR_EXCLUDE+=	${MD_IMGDIR_EXCLUDE}
+.endif
 
 IMGBASE=        ${INSTIMGBASE}
 

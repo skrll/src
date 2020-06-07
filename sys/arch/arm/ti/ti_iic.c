@@ -1,4 +1,4 @@
-/* $NetBSD: ti_iic.c,v 1.4 2019/11/01 09:49:21 jmcneill Exp $ */
+/* $NetBSD: ti_iic.c,v 1.6 2020/06/03 16:00:00 jmcneill Exp $ */
 
 /*
  * Copyright (c) 2013 Manuel Bouyer.  All rights reserved.
@@ -50,7 +50,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ti_iic.c,v 1.4 2019/11/01 09:49:21 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ti_iic.c,v 1.6 2020/06/03 16:00:00 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -292,7 +292,11 @@ ti_iic_attach(device_t parent, device_t self, void *opaque)
 	sc->sc_rxthres = sc->sc_txthres = fifo >> 1;
 
 	aprint_naive("\n");
-	aprint_normal(": I2C controller (%s), %d-bytes FIFO\n", modname, fifo);
+	if (modname != NULL)
+		aprint_normal(": I2C controller (%s), %d-bytes FIFO\n", modname, fifo);
+	else
+		aprint_normal(": I2C controller (i2c@%" PRIxBUSADDR "), %d-bytes FIFO\n",
+		    addr, fifo);
 
 	ti_iic_reset(sc);
 	ti_iic_flush(sc);
@@ -479,7 +483,7 @@ ti_iic_op(struct ti_iic_softc *sc, i2c_addr_t addr, ti_i2cop_t op,
 
 	con = I2C_CON_EN;
 	con |= I2C_CON_MST;
-	con |= I2C_CON_STT;;
+	con |= I2C_CON_STT;
 	if (flags & I2C_F_STOP)
 		con |= I2C_CON_STP;
 	if (addr & ~0x7f)

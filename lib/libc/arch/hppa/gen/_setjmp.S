@@ -1,4 +1,4 @@
-/*	$NetBSD: _setjmp.S,v 1.4 2008/04/28 20:22:56 martin Exp $	*/
+/*	$NetBSD: _setjmp.S,v 1.6 2020/05/05 06:20:55 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -30,13 +30,10 @@
  */
 
 #include <machine/asm.h>
-/* XXX fredette - this is awful */
-#define _LOCORE
 #include <machine/frame.h>
-#undef _LOCORE
 
 #if defined(LIBC_SCCS) && !defined(lint)
-	RCSID("$NetBSD: _setjmp.S,v 1.4 2008/04/28 20:22:56 martin Exp $")
+	RCSID("$NetBSD: _setjmp.S,v 1.6 2020/05/05 06:20:55 skrll Exp $")
 #endif /* LIBC_SCCS and not lint */
 
 /*
@@ -85,7 +82,7 @@ ENTRY(_setjmp,0)
 
 	/* Return 0. */
 	bv	%r0(%rp)
-	copy	%r0, %ret0
+	 copy	%r0, %ret0
 EXIT(_setjmp)
 
 ENTRY(_longjmp,0)
@@ -117,12 +114,12 @@ ENTRY(_longjmp,0)
 	ldw	8(%arg0), %sp
 	ldw	24(%arg0), %rp
 	bv	%r0(%rp)
-	nop
+	 nop
 botch:
 	bl	longjmperror, %rp
-	nop
+	 nop
 	bl	abort, %rp
-	nop
+	 nop
 EXIT(_longjmp)
 
 	.end

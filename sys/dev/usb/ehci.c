@@ -1,13 +1,14 @@
-/*	$NetBSD: ehci.c,v 1.278 2020/04/05 20:59:38 skrll Exp $ */
+/*	$NetBSD: ehci.c,v 1.281 2020/05/17 08:38:37 skrll Exp $ */
 
 /*
- * Copyright (c) 2004-2012 The NetBSD Foundation, Inc.
+ * Copyright (c) 2004-2012,2016,2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
  * by Lennart Augustsson (lennart@augustsson.net), Charles M. Hannum,
  * Jeremy Morse (jeremy.morse@gmail.com), Jared D. McNeill
- * (jmcneill@invisible.ca) and Matthew R. Green (mrg@eterna.com.au).
+ * (jmcneill@invisible.ca). Matthew R. Green (mrg@eterna.com.au), and
+ * Nick Hudson .
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -53,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.278 2020/04/05 20:59:38 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.281 2020/05/17 08:38:37 skrll Exp $");
 
 #include "ohci.h"
 #include "uhci.h"
@@ -1690,7 +1691,7 @@ ehci_dump_sqtd(ehci_soft_qtd_t *sqtd)
 
 	DPRINTFN(10, "QTD(%#jx) at 0x%08jx:", (uintptr_t)sqtd, sqtd->physaddr,
 	    0, 0);
-	ehci_dump_qtd(&sqtd->qtd);
+	ehci_dump_qtd(sqtd->qtd);
 
 	usb_syncmem(&sqtd->dma, sqtd->offs,
 	    sizeof(sqtd->qtd), BUS_DMASYNC_PREREAD);
@@ -1737,7 +1738,7 @@ ehci_dump_qtd(ehci_qtd_t *qtd)
 Static void
 ehci_dump_sqh(ehci_soft_qh_t *sqh)
 {
-	ehci_qh_t *qh = &sqh->qh;
+	ehci_qh_t *qh = sqh->qh;
 	ehci_link_t link;
 	uint32_t endp, endphub;
 	EHCIHIST_FUNC();	EHCIHIST_CALLED();
@@ -1786,7 +1787,7 @@ ehci_dump_itds(ehci_soft_itd_t *itd)
 	uint32_t stop = 0;
 
 	for (i = 0; itd && i < 20 && !stop; itd = itd->xfer_next, i++) {
-		ehci_dump_itd->itd);
+		ehci_dump_itd(itd);
 		usb_syncmem(&itd->dma,
 		    itd->offs + offsetof(ehci_itd_t, itd_next),
 		    sizeof(itd->itd),
@@ -2894,7 +2895,7 @@ ehci_alloc_sqtd(ehci_softc_t *sc)
 	sc->sc_freeqtds = sqtd->nextqtd;
 	mutex_exit(&sc->sc_lock);
 
-	memset(&sqtd->qtd, 0, sizeof(ehci_qtd_t));
+	memset(sqtd->qtd, 0, sizeof(ehci_qtd_t));
 	sqtd->nextqtd = NULL;
 	sqtd->xfer = NULL;
 
@@ -3051,11 +3052,10 @@ ehci_reset_sqtd_chain(ehci_softc_t *sc, struct usbd_xfer *xfer,
 		KASSERT(pages <= EHCI_QTD_NBUFFERS);
 		size_t pageoffs = EHCI_PAGE(curoffs);
 		for (size_t i = 0; i < pages; i++) {
-			paddr_t a = DMAADDR(dma,
-			    pageoffs + i * EHCI_PAGE_SIZE);
-			sqtd->qtd->qtd_buffer[i] = htole32(EHCI_PAGE(a));
-			/* Cast up to avoid compiler warnings */
-			sqtd->qtd->qtd_buffer_hi[i] = htole32((uint64_t)a >> 32);
+			paddr_t a = EHCI_PAGE(DMAADDR(dma,
+			    pageoffs + i * EHCI_PAGE_SIZE));
+			sqtd->qtd->qtd_buffer[i] = htole32(BUS_ADDR_LO32(a));
+			sqtd->qtd->qtd_buffer_hi[i] = htole32(BUS_ADDR_HI32(a));
 			DPRINTF("      buffer[%jd/%jd] 0x%08jx 0x%08jx",
 			    i, pages,
 			    le32toh(sqtd->qtd->qtd_buffer_hi[i]),
@@ -3093,7 +3093,7 @@ ehci_reset_sqtd_chain(ehci_softc_t *sc, struct usbd_xfer *xfer,
 		    exfer->ex_nsqtd);
 		prev = sqtd;
 		sqtd = exfer->ex_sqtds[j++];
-		memset(&sqtd->qtd, 0, sizeof(sqtd->qtd));
+		memset(sqtd->qtd, 0, sizeof(sqtd->qtd));
 		sqtd->qtd->qtd_next = sqtd->qtd->qtd_altnext = EHCI_NULL;
 		sqtd->qtd->qtd_status = htole32(
 		    qtdstatus |
@@ -3520,8 +3520,10 @@ ehci_device_ctrl_init(struct usbd_xfer *xfer)
 	    EHCI_QTD_SET_TOGGLE(0) |
 	    EHCI_QTD_SET_BYTES(sizeof(*req))
 	    );
-	setup->qtd->qtd_buffer[0] = htole32(DMAADDR(&epipe->ctrl.reqdma, 0));
-	setup->qtd->qtd_buffer_hi[0] = 0;
+
+	const bus_addr_t ba = DMAADDR(&epipe->ctrl.reqdma, 0);
+	setup->qtd->qtd_buffer[0] = htole32(BUS_ADDR_LO32(ba));
+	setup->qtd->qtd_buffer_hi[0] = htole32(BUS_ADDR_HI32(ba));
 	setup->qtd->qtd_next = setup->qtd->qtd_altnext = htole32(next->physaddr);
 	setup->nextqtd = next;
 	setup->xfer = xfer;
@@ -3646,8 +3648,10 @@ ehci_device_ctrl_start(struct usbd_xfer *xfer)
 	    EHCI_QTD_SET_TOGGLE(0) |
 	    EHCI_QTD_SET_BYTES(sizeof(*req))
 	    );
-	setup->qtd->qtd_buffer[0] = htole32(DMAADDR(&epipe->ctrl.reqdma, 0));
-	setup->qtd->qtd_buffer_hi[0] = 0;
+
+	const bus_addr_t ba = DMAADDR(&epipe->ctrl.reqdma, 0);
+	setup->qtd->qtd_buffer[0] = htole32(BUS_ADDR_LO32(ba));
+	setup->qtd->qtd_buffer_hi[0] = htole32(BUS_ADDR_HI32(ba));
 
 	next = status;
 	status->qtd->qtd_status &= ~htole32(
@@ -4325,14 +4329,13 @@ ehci_device_fs_isoc_transfer(struct usbd_xfer *xfer)
 	ehci_soft_sitd_t *sitd;
 	usb_dma_t *dma_buf;
 	int i, j, k, frames;
-	int offs, total_length;
+	int offs;
 	int frindex;
 	u_int dir;
 
 	EHCIHIST_FUNC(); EHCIHIST_CALLED();
 
 	sitd = NULL;
-	total_length = 0;
 
 	DPRINTF("xfer %#jx len %jd flags %jd", (uintptr_t)xfer, xfer->ux_length,
 	    xfer->ux_flags, 0);
@@ -4378,7 +4381,6 @@ ehci_device_fs_isoc_transfer(struct usbd_xfer *xfer)
 		/* Set page0 index and offset - TP and T-offset are set below */
 		sitd->sitd->sitd_buffer[0] = htole32(DMAADDR(dma_buf, offs));
 
-		total_length += xfer->ux_frlengths[i];
 		offs += xfer->ux_frlengths[i];
 
 		sitd->sitd->sitd_buffer[1] =
@@ -4456,8 +4458,8 @@ ehci_device_fs_isoc_transfer(struct usbd_xfer *xfer)
 	    sizeof(sitd->sitd->sitd_trans),
 	    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
 
-	if (total_length)
-		usb_syncmem(&exfer->ex_xfer.ux_dmabuf, 0, total_length,
+	if (xfer->ux_length)
+		usb_syncmem(&exfer->ex_xfer.ux_dmabuf, 0, xfer->ux_length,
 		    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 	/*
@@ -4696,7 +4698,7 @@ ehci_device_isoc_transfer(struct usbd_xfer *xfer)
 	usb_dma_t *dma_buf;
 	int i, j;
 	int frames, uframes, ufrperframe;
-	int trans_count, offs, total_length;
+	int trans_count, offs;
 	int frindex;
 
 	EHCIHIST_FUNC(); EHCIHIST_CALLED();
@@ -4704,7 +4706,6 @@ ehci_device_isoc_transfer(struct usbd_xfer *xfer)
 	prev = NULL;
 	itd = NULL;
 	trans_count = 0;
-	total_length = 0;
 
 	DPRINTF("xfer %#jx flags %jd", (uintptr_t)xfer, xfer->ux_flags, 0, 0);
 
@@ -4789,7 +4790,6 @@ ehci_device_isoc_transfer(struct usbd_xfer *xfer)
 			    EHCI_ITD_SET_PG(addr) |
 			    EHCI_ITD_SET_OFFS(EHCI_PAGE_OFFSET(DMAADDR(dma_buf,offs))));
 
-			total_length += xfer->ux_frlengths[trans_count];
 			offs += xfer->ux_frlengths[trans_count];
 			trans_count++;
 
@@ -4844,8 +4844,8 @@ ehci_device_isoc_transfer(struct usbd_xfer *xfer)
 		prev = itd;
 	} /* End of frame */
 
-	if (total_length)
-		usb_syncmem(&exfer->ex_xfer.ux_dmabuf, 0, total_length,
+	if (xfer->ux_length)
+		usb_syncmem(&exfer->ex_xfer.ux_dmabuf, 0, xfer->ux_length,
 		    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 	/*
