@@ -1,4 +1,4 @@
-/*	$NetBSD: condvar.h,v 1.15 2020/03/26 19:46:42 ad Exp $	*/
+/*	$NetBSD: condvar.h,v 1.17 2020/05/11 03:59:33 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
@@ -40,6 +40,7 @@ typedef struct kcondvar {
 
 struct bintime;
 struct kmutex;
+struct timespec;
 
 void	cv_init(kcondvar_t *, const char *);
 void	cv_destroy(kcondvar_t *);

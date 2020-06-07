@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_ptrace_common.c,v 1.78 2020/02/22 09:24:05 maxv Exp $	*/
+/*	$NetBSD: sys_ptrace_common.c,v 1.83 2020/05/30 08:41:22 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -118,7 +118,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.78 2020/02/22 09:24:05 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.83 2020/05/30 08:41:22 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ptrace.h"
@@ -214,6 +214,10 @@ static kcondvar_t ptrace_cv;
 # define PT_REGISTERS
 #endif
 
+#ifndef PTRACE_REGS_ALIGN
+#define PTRACE_REGS_ALIGN /* nothing */
+#endif
+
 static int
 ptrace_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
     void *arg0, void *arg1, void *arg2, void *arg3)
@@ -290,6 +294,8 @@ ptrace_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 	case PT_STOP:
 	case PT_LWPSTATUS:
 	case PT_LWPNEXT:
+	case PT_SET_SIGPASS:
+	case PT_GET_SIGPASS:
 		result = KAUTH_RESULT_ALLOW;
 		break;
 
@@ -500,6 +506,8 @@ ptrace_allowed(struct lwp *l, int req, struct proc *t, struct proc *p,
 	case PT_STOP:
 	case PT_LWPSTATUS:
 	case PT_LWPNEXT:
+	case PT_SET_SIGPASS:
+	case PT_GET_SIGPASS:
 		/*
 		 * You can't do what you want to the process if:
 		 *	(1) It's not being traced at all,
@@ -618,6 +626,47 @@ ptrace_set_siginfo(struct proc *t, struct lwp **lt, struct ptrace_methods *ptm,
 	t->p_sigctx.ps_lwp = psi.psi_lwpid;
 	DPRINTF(("%s: lwp=%d signal=%d\n", __func__, psi.psi_lwpid,
 	    psi.psi_siginfo.si_signo));
+	return 0;
+}
+
+static int
+ptrace_get_sigpass(struct proc *t, void *addr, size_t data)
+{
+	sigset_t set;
+
+	if (data > sizeof(set) || data <= 0) {
+		DPRINTF(("%s: invalid data: %zu < %zu <= 0\n",
+		        __func__, sizeof(set), data));
+		return EINVAL;
+	}
+
+	set = t->p_sigctx.ps_sigpass;
+
+	return copyout(&set, addr, data);
+}
+
+static int
+ptrace_set_sigpass(struct proc *t, void *addr, size_t data)
+{
+	sigset_t set;
+	int error;
+
+	if (data > sizeof(set) || data <= 0) {
+		DPRINTF(("%s: invalid data: %zu < %zu <= 0\n",
+		        __func__, sizeof(set), data));
+		return EINVAL;
+	}
+
+	memset(&set, 0, sizeof(set));
+
+	if ((error = copyin(addr, &set, data)))
+		return error;
+
+	/* We catch SIGSTOP and cannot intercept SIGKILL. */
+	sigminusset(&sigcantmask, &set);
+
+	t->p_sigctx.ps_sigpass = set;
+
 	return 0;
 }
 
@@ -1127,11 +1176,11 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 	 * If attaching or detaching, we need to get a write hold on the
 	 * proclist lock so that we can re-parent the target process.
 	 */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 
 	t = ptrace_find(l, req, pid);
 	if (t == NULL) {
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		return ESRCH;
 	}
 
@@ -1158,7 +1207,7 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 	 */
 	if ((pheld = ptrace_needs_hold(req)) == 0) {
 		mutex_exit(t->p_lock);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 	}
 
 	/* Now do the operation. */
@@ -1376,23 +1425,24 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 		 * the requested thread, and clear it for other threads.
 		 */
 		LIST_FOREACH(lt2, &t->p_lwps, l_sibling) {
-			if (ISSET(lt2->l_pflag, LP_SINGLESTEP)) {
-				lwp_lock(lt2);
-				process_sstep(lt2, 1);
-				lwp_unlock(lt2);
-			} else if (lt != lt2) {
-				lwp_lock(lt2);
-				process_sstep(lt2, 0);
-				lwp_unlock(lt2);
-			}
+			error = process_sstep(lt2,
+			    ISSET(lt2->l_pflag, LP_SINGLESTEP));
+			if (error)
+				break;
 		}
+		if (error)
+			break;
 		error = process_sstep(lt,
 		    ISSET(lt->l_pflag, LP_SINGLESTEP) || req == PT_STEP);
 		if (error)
 			break;
 #endif
 		if (req == PT_DETACH) {
-			CLR(t->p_slflag, PSL_TRACED|PSL_SYSCALL);
+			CLR(t->p_slflag,
+			    PSL_TRACED|PSL_TRACEDCHILD|PSL_SYSCALL);
+
+			/* clear sigpass mask */
+			sigemptyset(&t->p_sigctx.ps_sigpass);
 
 			/* give process back to original parent or init */
 			if (t->p_opptr != t->p_pptr) {
@@ -1498,6 +1548,14 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 		error = ptrace_lwpstatus(t, ptm, &lt, addr, data, true);
 		break;
 
+	case PT_SET_SIGPASS:
+		error = ptrace_set_sigpass(t, addr, data);
+		break;
+
+	case PT_GET_SIGPASS:
+		error = ptrace_get_sigpass(t, addr, data);
+		break;
+
 #ifdef PT_REGISTERS
 	case_PT_SETREGS
 	case_PT_GETREGS
@@ -1519,7 +1577,7 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 out:
 	if (pheld) {
 		mutex_exit(t->p_lock);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 	}
 	if (lt != NULL)
 		lwp_delref(lt);
@@ -1537,7 +1595,7 @@ static int
 proc_regio(struct lwp *l, struct uio *uio, size_t ks, regrfunc_t r,
     regwfunc_t w)
 {
-	char buf[1024];
+	char buf[1024] PTRACE_REGS_ALIGN;
 	int error;
 	char *kv;
 	size_t kl;

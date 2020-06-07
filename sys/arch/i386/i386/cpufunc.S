@@ -1,7 +1,7 @@
-/*	$NetBSD: cpufunc.S,v 1.38 2019/11/21 19:24:00 ad Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.45 2020/05/28 20:03:19 ad Exp $	*/
 
 /*-
- * Copyright (c) 1998, 2007 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2007, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -38,7 +38,7 @@
 #include <sys/errno.h>
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.38 2019/11/21 19:24:00 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.45 2020/05/28 20:03:19 ad Exp $");
 
 #include "opt_xen.h"
 
@@ -71,6 +71,44 @@ ENTRY(lidt)
 	lidt	(%eax)
 	ret
 END(lidt)
+
+ENTRY(x86_hotpatch)
+	/* save EFLAGS, and disable intrs */
+	pushfl
+	cli
+
+	/* save CR0, and disable WP */
+	movl	%cr0,%ecx
+	pushl	%ecx
+	andl	$~CR0_WP,%ecx
+	movl	%ecx,%cr0
+
+	pushl	4*4(%esp) /* arg2 */
+	pushl	4*4(%esp) /* arg1 */
+	call	_C_LABEL(x86_hotpatch_apply)
+	addl	$2*4,%esp
+
+	/* write back and invalidate cache */
+	wbinvd
+
+	/* restore CR0 */
+	popl	%ecx
+	movl	%ecx,%cr0
+
+	/* flush instruction pipeline */
+	pushl	%eax
+	call	x86_flush
+	popl	%eax
+
+	/* clean up */
+	pushl	%eax
+	call	_C_LABEL(x86_hotpatch_cleanup)
+	addl	$4,%esp
+
+	/* restore RFLAGS */
+	popfl
+	ret
+END(x86_hotpatch)
 #endif /* XENPV */
 
 ENTRY(x86_read_flags)
@@ -125,18 +163,24 @@ ENTRY(msr_onfault)
 	ret
 END(msr_onfault)
 
-ENTRY(cpu_counter)
+ENTRY(tsc_get_timecount)
+	pushl	%ebx
+	movl	CPUVAR(CURLWP), %ecx
+1:
+	movl	L_NCSW(%ecx), %ebx
 	rdtsc
 	addl	CPUVAR(CC_SKEW), %eax
 	adcl	CPUVAR(CC_SKEW+4), %edx
+	cmpl	%ebx, L_NCSW(%ecx)
+	jne	2f
+	popl	%ebx
 	ret
-END(cpu_counter)
+2:
+	jmp	1b
+END(tsc_get_timecount)
 
-ENTRY(cpu_counter32)
-	rdtsc
-	addl	CPUVAR(CC_SKEW), %eax
-	ret
-END(cpu_counter32)
+STRONG_ALIAS(cpu_counter, tsc_get_timecount)
+STRONG_ALIAS(cpu_counter32, tsc_get_timecount)
 
 ENTRY(breakpoint)
 	pushl	%ebp
@@ -274,3 +318,35 @@ ENTRY(outl)
 	outl	%eax, %dx
 	ret
 END(outl)
+
+ENTRY(x86_stos)
+	pushl	%ebp
+	movl	%esp,%ebp
+	pushl	%edi
+	pushl	%esi
+	movl	8(%ebp),%edi
+	movl	12(%ebp),%eax
+	movl	16(%ebp),%ecx
+	rep
+	stosl
+	popl	%esi
+	popl	%edi
+	leave
+	ret
+END(x86_stos)
+
+ENTRY(x86_movs)
+	pushl	%ebp
+	movl	%esp,%ebp
+	pushl	%edi
+	pushl	%esi
+	movl	8(%ebp),%edi
+	movl	12(%ebp),%esi
+	movl	16(%ebp),%ecx
+	rep
+	movsl
+	popl	%esi
+	popl	%edi
+	leave
+	ret
+END(x86_movs)

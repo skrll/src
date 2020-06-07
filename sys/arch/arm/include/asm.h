@@ -1,4 +1,4 @@
-/*	$NetBSD: asm.h,v 1.31 2020/04/13 05:40:25 maxv Exp $	*/
+/*	$NetBSD: asm.h,v 1.34 2020/04/23 23:22:41 jakllsch Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -145,7 +145,10 @@
 
 #ifdef GPROF
 # define _PROF_PROLOGUE	\
-	mov x9, x30; bl __mcount
+	stp	x29, x30, [sp, #-16]!;	\
+	mov	fp, sp;			\
+	bl	__mcount; 		\
+	ldp	x29, x30, [sp], #16;
 #else
 # define _PROF_PROLOGUE
 #endif
@@ -221,7 +224,9 @@
 #define	PIC_SYM(x,y)	x
 #endif	/* __PIC__ */
 
-#define RCSID(x)	.pushsection ".ident"; .asciz x; .popsection
+#define RCSID(x)	.pushsection ".ident","MS",%progbits,1;		\
+			.asciz x;					\
+			.popsection
 
 #define	WEAK_ALIAS(alias,sym)						\
 	.weak alias;							\

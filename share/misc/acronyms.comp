@@ -1,4 +1,4 @@
-$NetBSD: acronyms.comp,v 1.300 2020/03/26 18:28:09 leot Exp $
+$NetBSD: acronyms.comp,v 1.306 2020/06/05 19:45:51 sevan Exp $
 3WHS	three-way handshake
 8VSB	8-state vestigial side band modulation
 AA	anti-aliasing
@@ -155,6 +155,8 @@ BLE	Bluetooth low energy
 BLOB	binary large object
 BM	bus master
 BMC	baseboard management controller
+BMP	basic multilingual plane
+BMP	bitmap image file
 BMIC	bus master interface controller
 BN	boundary neutral
 BNF	Backus-Naur form
@@ -394,9 +396,11 @@ DFSAN	Data Flow Sanitizer
 DFT	diagnostic function test
 DFT	discrete Fourier transform
 DGL	data generation language
+DGEMM	double precision general matrix multiply
 DH	Diffie-Hellman
 DHCP	Dynamic Host Configuration Protocol
 DIA	dedicated Internet access
+DIB	device independent bitmap
 DIFS	distributed inter-frame space
 DIMM	dual inline memory module
 DIRT	design in real time
@@ -534,6 +538,7 @@ EPIC	explicitly parallel instruction computing
 EPP	enhanced parallel port
 EPRML	extended partial response, maximum likelihood
 EPROM	erasable programmable read only memory
+EPT	extended page tables
 ERC	error recovery control
 ERD	emergency recovery disk
 ERD	entity relationship diagram
@@ -574,6 +579,7 @@ FFS	Fast File System
 FFS	find first set
 FFT	fast Fourier transform
 FG	floating gate
+FHRP	first hop redundancy protocol
 FHSS	frequency hop spread spectrum
 FID	frequency identifier
 FIFO	first in, first out
@@ -616,12 +622,14 @@ GDT	global descriptor table
 GECOS	general comprehensive operating supervisor
 GEM	graphics environment manager
 GEM	graphics execution manager
+GEMM	general matrix multiply
 GENA	general event notification architecture
 GHC	Glasgow Haskell compiler
 GHES	generic hardware error source
 GIC	generic interrupt controller
 GID	group identifier
 GIF	graphics interchange format
+GLBP	gateway load balancing protocol
 GMCH	graphics and memory controller hub
 GNU	GNU's Not Unix
 GOP	graphics output protocol
@@ -672,6 +680,7 @@ HPD	hot plug detection
 HPET	high precision event timer
 HSM	hardware security module
 HSM	hierarchical storage management 
+HSRP	hot standby router protocol
 HT	hyper-threading
 HTC	hardware thermal control
 HTCC	high temperature co-fired ceramic
@@ -729,6 +738,7 @@ ILM	internal loopback mode
 ILOM	integrated lights-out management
 ILP	instruction level parallelism
 IM	instant messaging
+IME	input method editor
 IMAP	Internet Message Access Protocol
 IMC	integrated memory controller
 IMCR	interrupt mode configuration register
@@ -881,6 +891,7 @@ LSL	load segment limit
 LSM	log structured merge
 LSN	Large Scale NAT
 LSN	log sequence number
+LSO	large send offload
 LSR	label switch router
 LTCC	low temperature co-fired ceramic
 LTO	linear tape-open
@@ -1115,6 +1126,7 @@ OTP	one time password
 OTP	open telecom platform
 OU	organizational unit
 OUI	organizationally unique identifier
+OWASP	Open Web Application Security Project
 OWL	Web Ontology Language
 P2P	PCI to PCI
 P2P	peer to peer
@@ -1402,6 +1414,7 @@ SCCP	skinny call control protocol
 SCCS	Source Code Control System
 SCI	scalable coherent interface
 SCI	system control interrupt
+SCIM	smart common input method
 SCM	software configuration management
 SCM	source code management
 SCM	storage-class memory
@@ -1752,6 +1765,7 @@ WHEA	Windows hardware error architecture
 WIFI	wireless fidelity
 WLAN	wireless local area network
 WM	write miss
+WMF	Windows meta file
 WMI	Windows Management Instrumentation
 WOL	Wake-on-LAN
 WOM	Wake-on-Modem

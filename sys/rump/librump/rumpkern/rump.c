@@ -1,4 +1,4 @@
-/*	$NetBSD: rump.c,v 1.344 2020/03/23 14:49:50 pgoyette Exp $	*/
+/*	$NetBSD: rump.c,v 1.348 2020/05/23 23:42:44 ad Exp $	*/
 
 /*
  * Copyright (c) 2007-2011 Antti Kantee.  All Rights Reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rump.c,v 1.344 2020/03/23 14:49:50 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rump.c,v 1.348 2020/05/23 23:42:44 ad Exp $");
 
 #include <sys/systm.h>
 #define ELFSIZE ARCH_ELFSIZE
@@ -114,7 +114,7 @@ static  char rump_msgbuf[16*1024] __aligned(256);
 
 bool rump_ttycomponent = false;
 
-pool_cache_t pnbuf_cache;
+extern pool_cache_t pnbuf_cache;
 
 static int rump_inited;
 
@@ -321,10 +321,6 @@ rump_init(void)
 #endif /* RUMP_USE_CTOR */
 
 	rnd_init();
-	cprng_init();
-	kern_cprng = cprng_strong_create("kernel", IPL_VM,
-	    CPRNG_INIT_ANY|CPRNG_REKEY_ANY);
-
 	rump_hyperentropy_init();
 
 	procinit();
@@ -392,6 +388,7 @@ rump_init(void)
 	ncpuonline = ncpu;
 
 	/* Once all CPUs are detected, initialize the per-CPU cprng_fast.  */
+	cprng_init();
 	cprng_fast_init();
 
 	mp_online = true;
@@ -473,9 +470,9 @@ rump_init(void)
 	 * (note: must be done after vfsinit to get cwdi)
 	 */
 	initlwp = rump__lwproc_alloclwp(NULL);
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	initproc = proc_find_raw(1);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 	if (initproc == NULL)
 		panic("where in the world is initproc?");
 	strlcpy(initproc->p_comm, "rumplocal", sizeof(initproc->p_comm));

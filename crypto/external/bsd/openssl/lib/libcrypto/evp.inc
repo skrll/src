@@ -1,4 +1,4 @@
-#	$NetBSD: evp.inc,v 1.8 2018/09/23 13:33:04 christos Exp $
+#	$NetBSD: evp.inc,v 1.10 2020/05/09 13:16:41 nia Exp $
 #
 #	@(#) Copyright (c) 1995 Simon J. Gerraty
 #

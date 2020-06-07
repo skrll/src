@@ -1,4 +1,4 @@
-/*	$NetBSD: token.l,v 1.23 2019/07/23 04:30:32 ozaki-r Exp $	*/
+/*	$NetBSD: token.l,v 1.26 2020/05/12 16:17:58 christos Exp $	*/
 /*	$KAME: token.l,v 1.44 2003/10/21 07:20:58 itojun Exp $	*/
 
 /*
@@ -49,6 +49,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <netdb.h>
+#include <err.h>
 
 #include "vchar.h"
 #if defined(__NetBSD__) || defined(__FreeBSD__) || defined(__linux__) || \
@@ -335,23 +336,26 @@ yyfatal(const char *s)
 void
 yyerror(const char *s)
 {
-	printf("line %d: %s at [%s]\n", lineno, s, yytext);
+	if (f_mode == MODE_SCRIPT)
+		warnx("%s,%d: %s at `%s'", filename, lineno, s, yytext);
+	else
+		printf("%s at `%s'", s, yytext);
 }
 
 int
-parse(FILE **fp)
+parse(const char *fname, FILE *fp)
 {
-	yyin = *fp;
-
+	yyin = fp;
+	filename = fname;
 	lineno = 1;
 	parse_init();
 
 	if (yyparse()) {
-		printf("parse failed, line %d.\n", lineno);
-		return(-1);
+		warnx("%s,%d: parse failed", filename, lineno);
+		return -1;
 	}
 
-	return(0);
+	return 0;
 }
 
 int

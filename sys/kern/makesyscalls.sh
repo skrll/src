@@ -1,4 +1,4 @@
-#	$NetBSD: makesyscalls.sh,v 1.176 2019/11/09 22:05:50 jdolecek Exp $
+#	$NetBSD: makesyscalls.sh,v 1.178 2020/06/02 16:45:42 kamil Exp $
 #
 # Copyright (c) 1994, 1996, 2000 Christopher G. Demetriou
 # All rights reserved.
@@ -600,10 +600,12 @@ function parseline() {
 		funcalias=funcname
 		sub(/^([^_]+_)*sys_/, "", funcalias)
 		realname=fbase
+		rumpfname=realname "" fcompat
 	} else {
 		realname=funcalias
+		rumpfname=realname
 	}
-	rumpfname=realname "" fcompat
+
 	f++
 
 	if ($f != "(")
@@ -713,8 +715,8 @@ function printproto(wrap) {
 
 	# accumulate fbases we have seen.  we want the last
 	# occurence for the default __RENAME()
-	seen = funcseen[fbase]
-	funcseen[fbase] = rumpfname
+	seen = funcseen[realname]
+	funcseen[realname] = rumpfname
 	# special case for mknod as type of last argument changed from
 	# uint32_t to dev_t
 	if ((seen && fbase != "mknod") || (!seen && fbase == "mknod"))
@@ -731,7 +733,7 @@ function printproto(wrap) {
 	else
 		printf("%s)", uncompattype(argtype[argc])) > rumpprotos
 
-	printf(" __RENAME(RUMP_SYS_RENAME_%s)", toupper(fbase))> rumpprotos
+	printf(" __RENAME(RUMP_SYS_RENAME_%s)", toupper(realname))> rumpprotos
 	printf(";\n") > rumpprotos
 
 	# generate forward-declares for types, apart from the
@@ -765,7 +767,7 @@ function printrumpsysent(insysent, compatwrap) {
 
 	printf("\t{") > rumpsysent
 	if (argc != 0) {
-		printf("\n\t\tns(struct %ssys_%s_args),", compatwrap_, funcalias) > rumpsysent
+		printf("\n\t\tns(struct %s%s_args),", compatwrap_, funcname) > rumpsysent
 	}
 
 	printf("\n\t\t.sy_call = %s,\n\t},", fn) > rumpsysent

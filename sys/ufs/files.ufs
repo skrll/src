@@ -1,4 +1,4 @@
-#	$NetBSD: files.ufs,v 1.46 2020/04/11 17:43:54 jdolecek Exp $
+#	$NetBSD: files.ufs,v 1.48 2020/05/16 18:31:53 christos Exp $
 
 deffs					FFS
 deffs					EXT2FS
@@ -7,7 +7,7 @@ deffs					LFS
 deffs					CHFS
 
 defflag	opt_ffs.h			FFS_EI FFS_NO_SNAPSHOT APPLE_UFS
-					UFS_DIRHASH UFS_EXTATTR
+					UFS_DIRHASH UFS_EXTATTR UFS_ACL
 
 defflag	opt_lfs.h			LFS_EI LFS_KERNEL_RFW
 					LFS_DIRHASH LFS_EXTATTR
@@ -52,6 +52,7 @@ define	ffs: vfs, ufs
 file	ufs/ffs/ffs_alloc.c		ffs
 file	ufs/ffs/ffs_balloc.c		ffs
 file	ufs/ffs/ffs_bswap.c		(ffs | mfs) & ffs_ei
+file	ufs/ffs/ffs_extattr.c		ffs & ufs_extattr
 file	ufs/ffs/ffs_inode.c		ffs
 file	ufs/ffs/ffs_snapshot.c		ffs
 file	ufs/ffs/ffs_subr.c		ffs
@@ -98,6 +99,7 @@ file	ufs/mfs/mfs_vnops.c		mfs
 file	ufs/mfs/mfs_miniroot.c
 
 define	ufs: vfs
+file	ufs/ufs/ufs_acl.c		ufs & (ffs | mfs | ext2fs | chfs)
 file	ufs/ufs/ufs_bmap.c		ufs & (ffs | mfs | ext2fs | chfs)
 file	ufs/ufs/ufs_dirhash.c		(ffs | mfs | ext2fs | chfs) & ufs_dirhash
 file	ufs/ufs/ufs_extattr.c		(ffs | mfs) & ufs_extattr

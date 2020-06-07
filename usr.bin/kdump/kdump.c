@@ -1,4 +1,4 @@
-/*	$NetBSD: kdump.c,v 1.136 2020/04/03 06:13:07 wiz Exp $	*/
+/*	$NetBSD: kdump.c,v 1.139 2020/04/30 15:12:25 martin Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1993
@@ -39,7 +39,7 @@ __COPYRIGHT("@(#) Copyright (c) 1988, 1993\
 #if 0
 static char sccsid[] = "@(#)kdump.c	8.4 (Berkeley) 4/28/95";
 #else
-__RCSID("$NetBSD: kdump.c,v 1.136 2020/04/03 06:13:07 wiz Exp $");
+__RCSID("$NetBSD: kdump.c,v 1.139 2020/04/30 15:12:25 martin Exp $");
 #endif
 #endif /* not lint */
 
@@ -55,6 +55,7 @@ __RCSID("$NetBSD: kdump.c,v 1.136 2020/04/03 06:13:07 wiz Exp $");
 #include <sys/ioctl.h>
 #include <sys/ptrace.h>
 #include <sys/socket.h>
+#include <sys/futex.h>
 
 #include <ctype.h>
 #include <err.h>
@@ -629,6 +630,59 @@ putprot(int pr)
 	}
 }
 
+static const char *
+futex_op_name(u_long op)
+{
+#define	FUTEXCASE(a)	case a:	return # a
+	switch (op & FUTEX_CMD_MASK) {
+	FUTEXCASE(FUTEX_WAIT);
+	FUTEXCASE(FUTEX_WAKE);
+	FUTEXCASE(FUTEX_FD);
+	FUTEXCASE(FUTEX_REQUEUE);
+	FUTEXCASE(FUTEX_CMP_REQUEUE);
+	FUTEXCASE(FUTEX_WAKE_OP);
+	FUTEXCASE(FUTEX_LOCK_PI);
+	FUTEXCASE(FUTEX_UNLOCK_PI);
+	FUTEXCASE(FUTEX_TRYLOCK_PI);
+	FUTEXCASE(FUTEX_WAIT_BITSET);
+	FUTEXCASE(FUTEX_WAKE_BITSET);
+	FUTEXCASE(FUTEX_WAIT_REQUEUE_PI);
+	FUTEXCASE(FUTEX_CMP_REQUEUE_PI);
+	default:
+		return NULL;
+	}
+#undef FUTEXCASE
+}
+
+static void
+futexput(u_long op)
+{
+	const char *opname = futex_op_name(op);
+	const char *s = "";
+
+	if (opname == NULL) {
+		printf("%#lx", op & (u_long)FUTEX_CMD_MASK);
+	} else {
+		fputs(opname, stdout);
+	}
+	op &= ~FUTEX_CMD_MASK;
+
+	if (op & FUTEX_PRIVATE_FLAG) {
+		fputs("_PRIVATE", stdout);
+		op &= ~FUTEX_PRIVATE_FLAG;
+	}
+
+	if (op & FUTEX_CLOCK_REALTIME) {
+		printf("%sFUTEX_CLOCK_REALTIME", s);
+		op &= ~FUTEX_CLOCK_REALTIME;
+		s = "|";
+	}
+
+	if (op) {
+		printf("%s%#lx", s, op);
+	}
+}
+
 static void
 ktrsyscall(struct ktr_syscall *ktr)
 {
@@ -699,6 +753,25 @@ ktrsyscall(struct ktr_syscall *ktr)
 			ap++;
 			argcount--;
 			c = ',';
+
+			/*
+			 * Linux name is "futex".
+			 * Native name is "__futex".
+			 * Both have the same op argument.
+			 */
+		} else if ((strcmp(sys_name, "futex") == 0 ||
+			    strcmp(sys_name, "__futex") == 0) &&
+			   argcount > 2) {
+			(void)putchar('(');
+			output_long((long)*ap, 1);
+			(void)putchar(',');
+			ap++;
+			argcount--;
+			futexput(*ap);
+			ap++;
+			argcount--;
+			c = ',';
+
 		} else if ((strstr(sys_name, "sigaction") != NULL ||
 		    strstr(sys_name, "sigvec") != NULL) && argcount >= 1) {
 			(void)printf("(SIG%s", signame(ap[0], 1));
@@ -1213,6 +1286,36 @@ ktruser_soname(const char *name, const void *buf, size_t len)
 }
 
 static void
+ktruser_xattr_name(const char *name, const void *buf, size_t len)
+{
+	printf("%.*s: [%*s]\n", KTR_USER_MAXIDLEN, name, (int)len,
+	    (const char *)buf);
+}
+
+static void
+ktruser_xattr_val(const char *name, const void *buf, size_t len)
+{
+	const uint8_t *p = buf;
+	printf("%.*s: ", KTR_USER_MAXIDLEN, name);
+	for (size_t i = 0; i < len; i++)
+		printf("%.2x", *p++);
+	printf("\n");
+}
+
+static void
+ktruser_xattr_list(const char *name, const void *buf, size_t len)
+{
+	const uint8_t *p = buf, *ep = p + len;
+	printf("%.*s:", KTR_USER_MAXIDLEN, name);
+	while (p < ep) {
+		int l = *p++;
+		printf(" %.*s", l, p);
+		p += l;
+	}
+	printf("\n");
+}
+
+static void
 ktruser_control(const char *name, const void *buf, size_t len)
 {
 	struct cmsghdr m;
@@ -1266,6 +1369,9 @@ static struct {
 	{ "mbsoname", ktruser_soname },
 	{ "mbcontrol", ktruser_control },
 	{ "malloc", ktruser_malloc },
+	{ "xattr-name", ktruser_xattr_name },
+	{ "xattr-val", ktruser_xattr_val },
+	{ "xattr-list", ktruser_xattr_list },
 	{ NULL,	ktruser_misc },
 };
 

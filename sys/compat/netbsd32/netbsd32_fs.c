@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_fs.c,v 1.87 2020/02/23 22:14:03 ad Exp $	*/
+/*	$NetBSD: netbsd32_fs.c,v 1.90 2020/05/23 23:42:42 ad Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Matthew R. Green
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_fs.c,v 1.87 2020/02/23 22:14:03 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_fs.c,v 1.90 2020/05/23 23:42:42 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -303,9 +303,9 @@ dofilewritev32(int fd, struct file *fp, struct netbsd32_iovec *iovp, int iovcnt,
 		    error == EINTR || error == EWOULDBLOCK))
 			error = 0;
 		if (error == EPIPE && (fp->f_flag & FNOSIGPIPE) == 0) {
-			mutex_enter(proc_lock);
+			mutex_enter(&proc_lock);
 			psignal(curproc, SIGPIPE);
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 		}
 	}
 	cnt -= auio.uio_resid;
@@ -740,12 +740,13 @@ netbsd32___getcwd(struct lwp *l, const struct netbsd32___getcwd_args *uap, regis
 		syscallarg(char *) bufp;
 		syscallarg(size_t) length;
 	} */
+	struct proc *p = l->l_proc;
 	int     error;
 	char   *path;
 	char   *bp, *bend;
 	int     len = (int)SCARG(uap, length);
 	int	lenused;
-	struct	vnode *dvp;
+	struct	cwdinfo *cwdi;
 
 	if (len > MAXPATHLEN*4)
 		len = MAXPATHLEN*4;
@@ -763,10 +764,11 @@ netbsd32___getcwd(struct lwp *l, const struct netbsd32___getcwd_args *uap, regis
 	 * limit it to N/2 vnodes for an N byte buffer.
 	 */
 #define GETCWD_CHECK_ACCESS 0x0001
-	dvp = cwdcdir();
-	error = getcwd_common (dvp, NULL, &bp, path, len/2,
+	cwdi = p->p_cwdi;
+	rw_enter(&cwdi->cwdi_lock, RW_READER);
+	error = getcwd_common (cwdi->cwdi_cdir, NULL, &bp, path, len/2,
 			       GETCWD_CHECK_ACCESS, l);
-	vrele(dvp);
+	rw_exit(&cwdi->cwdi_lock);
 
 	if (error)
 		goto out;
@@ -827,7 +829,7 @@ netbsd32___mount50(struct lwp *l, const struct netbsd32___mount50_args *uap,
 		return error;
 
 	if (strcmp(mtype, MOUNT_TMPFS) == 0) {
-		if (data_len < sizeof(fs_args32.tmpfs_args))
+		if (data_len != 0 && data_len < sizeof(fs_args32.tmpfs_args))
 			return EINVAL;
 		if ((flags & MNT_GETARGS) == 0) {
 			error = copyin(data, &fs_args32.tmpfs_args, 
@@ -851,7 +853,7 @@ netbsd32___mount50(struct lwp *l, const struct netbsd32___mount50_args *uap,
 		data = &fs_args.tmpfs_args;
 		data_len = sizeof(fs_args.tmpfs_args);
 	} else if (strcmp(mtype, MOUNT_MFS) == 0) {
-		if (data_len < sizeof(fs_args32.mfs_args))
+		if (data_len != 0 && data_len < sizeof(fs_args32.mfs_args))
 			return EINVAL;
 		if ((flags & MNT_GETARGS) == 0) {
 			error = copyin(data, &fs_args32.mfs_args, 
@@ -872,7 +874,7 @@ netbsd32___mount50(struct lwp *l, const struct netbsd32___mount50_args *uap,
 	} else if ((strcmp(mtype, MOUNT_UFS) == 0) ||
 		   (strcmp(mtype, MOUNT_EXT2FS) == 0) ||
 		   (strcmp(mtype, MOUNT_LFS) == 0)) {
-		if (data_len < sizeof(fs_args32.ufs_args))
+		if (data_len != 0 && data_len < sizeof(fs_args32.ufs_args))
 			return EINVAL;
 		if ((flags & MNT_GETARGS) == 0) {
 			error = copyin(data, &fs_args32.ufs_args, 
@@ -886,7 +888,7 @@ netbsd32___mount50(struct lwp *l, const struct netbsd32___mount50_args *uap,
 		data = &fs_args.ufs_args;
 		data_len = sizeof(fs_args.ufs_args);
 	} else if (strcmp(mtype, MOUNT_CD9660) == 0) {
-		if (data_len < sizeof(fs_args32.iso_args))
+		if (data_len != 0 && data_len < sizeof(fs_args32.iso_args))
 			return EINVAL;
 		if ((flags & MNT_GETARGS) == 0) {
 			error = copyin(data, &fs_args32.iso_args, 
@@ -933,7 +935,7 @@ netbsd32___mount50(struct lwp *l, const struct netbsd32___mount50_args *uap,
 		data = &fs_args.msdosfs_args;
 		data_len = sizeof(fs_args.msdosfs_args);
 	} else if (strcmp(mtype, MOUNT_NFS) == 0) {
-		if (data_len < sizeof(fs_args32.nfs_args))
+		if (data_len != 0 && data_len < sizeof(fs_args32.nfs_args))
 			return EINVAL;
 		/* XXX: NFS requires copyin even with MNT_GETARGS */
 		if ((flags & MNT_GETARGS) == 0) {
@@ -961,7 +963,7 @@ netbsd32___mount50(struct lwp *l, const struct netbsd32___mount50_args *uap,
 		data = &fs_args.nfs_args;
 		data_len = sizeof(fs_args.nfs_args);
 	} else if (strcmp(mtype, MOUNT_NULL) == 0) {
-		if (data_len < sizeof(fs_args32.null_args))
+		if (data_len != 0 && data_len < sizeof(fs_args32.null_args))
 			return EINVAL;
 		if ((flags & MNT_GETARGS) == 0) {
 			error = copyin(data, &fs_args32.null_args, 
@@ -986,7 +988,8 @@ netbsd32___mount50(struct lwp *l, const struct netbsd32___mount50_args *uap,
 	if (flags & MNT_GETARGS) {
 		data_len = *retval;
 		if (strcmp(mtype, MOUNT_TMPFS) == 0) {
-			if (data_len != sizeof(fs_args.tmpfs_args))
+			if (data_len != 0 &&
+			    data_len != sizeof(fs_args.tmpfs_args))
 				return EINVAL;
 			fs_args32.tmpfs_args.ta_version =
 			    fs_args.tmpfs_args.ta_version;
@@ -1004,7 +1007,8 @@ netbsd32___mount50(struct lwp *l, const struct netbsd32___mount50_args *uap,
 				    sizeof(fs_args32.tmpfs_args));
 			*retval = sizeof(fs_args32.tmpfs_args);
 		} else if (strcmp(mtype, MOUNT_MFS) == 0) {
-			if (data_len != sizeof(fs_args.mfs_args))
+			if (data_len != 0 &&
+			    data_len != sizeof(fs_args.mfs_args))
 				return EINVAL;
 			NETBSD32PTR32(fs_args32.mfs_args.fspec,
 			    fs_args.mfs_args.fspec);
@@ -1017,7 +1021,8 @@ netbsd32___mount50(struct lwp *l, const struct netbsd32___mount50_args *uap,
 				    sizeof(fs_args32.mfs_args));
 			*retval = sizeof(fs_args32.mfs_args);
 		} else if (strcmp(mtype, MOUNT_UFS) == 0) {
-			if (data_len != sizeof(fs_args.ufs_args))
+			if (data_len != 0 &&
+			    data_len != sizeof(fs_args.ufs_args))
 				return EINVAL;
 			NETBSD32PTR32(fs_args32.ufs_args.fspec,
 			    fs_args.ufs_args.fspec);
@@ -1025,7 +1030,8 @@ netbsd32___mount50(struct lwp *l, const struct netbsd32___mount50_args *uap,
 			    sizeof(fs_args32.ufs_args));
 			*retval = sizeof(fs_args32.ufs_args);
 		} else if (strcmp(mtype, MOUNT_CD9660) == 0) {
-			if (data_len != sizeof(fs_args.iso_args))
+			if (data_len != 0 &&
+			    data_len != sizeof(fs_args.iso_args))
 				return EINVAL;
 			NETBSD32PTR32(fs_args32.iso_args.fspec,
 			    fs_args.iso_args.fspec);
@@ -1036,7 +1042,8 @@ netbsd32___mount50(struct lwp *l, const struct netbsd32___mount50_args *uap,
 				    sizeof(fs_args32.iso_args));
 			*retval = sizeof(fs_args32.iso_args);
 		} else if (strcmp(mtype, MOUNT_NFS) == 0) {
-			if (data_len != sizeof(fs_args.nfs_args))
+			if (data_len != 0 &&
+			    data_len != sizeof(fs_args.nfs_args))
 				return EINVAL;
 			NETBSD32PTR32(fs_args32.nfs_args.addr,
 			    fs_args.nfs_args.addr);
@@ -1056,7 +1063,8 @@ netbsd32___mount50(struct lwp *l, const struct netbsd32___mount50_args *uap,
 			    sizeof(fs_args32.nfs_args));
 			*retval = sizeof(fs_args32.nfs_args);
 		} else if (strcmp(mtype, MOUNT_NULL) == 0) {
-			if (data_len != sizeof(fs_args.null_args))
+			if (data_len != 0 &&
+			    data_len != sizeof(fs_args.null_args))
 				return EINVAL;
 			NETBSD32PTR32(fs_args32.null_args.la.target,
 			    fs_args.null_args.la.target);

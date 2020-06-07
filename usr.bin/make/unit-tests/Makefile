@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.54 2019/11/30 00:38:51 rillig Exp $
+# $NetBSD: Makefile,v 1.58 2020/05/17 12:36:26 rillig Exp $
 #
 # Unit tests for make(1)
 # The main targets are:
@@ -22,17 +22,20 @@ UNIT_TESTS:= ${.PARSEDIR}
 # Keep the list sorted.
 TESTNAMES= \
 	comment \
+	cond-late \
 	cond1 \
 	cond2 \
+	dollar \
+	doterror \
+	dotwait \
 	error \
 	export \
 	export-all \
 	export-env \
-	doterror \
-	dotwait \
 	forloop \
 	forsubst \
 	hash \
+	include-main \
 	misc \
 	moderrs \
 	modmatch \
