@@ -67,7 +67,7 @@
  */
 #define	NKMEMPAGES_MIN_DEFAULT	((8 * 1024 * 1024) >> PAGE_SHIFT)
 
-#if defined(_ARM_ARCH_6)
+#if defined(_ARM_ARCH_6) && !defined(KASAN)
 #define	NKMEMPAGES_MAX_DEFAULT	((768 * 1024 * 1024) >> PAGE_SHIFT)
 #else
 #define	NKMEMPAGES_MAX_DEFAULT	((256 * 1024 * 1024) >> PAGE_SHIFT)
