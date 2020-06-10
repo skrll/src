@@ -1,4 +1,4 @@
-/*	$NetBSD: mips_machdep.c,v 1.282 2020/06/04 15:42:31 simonb Exp $	*/
+/*	$NetBSD: mips_machdep.c,v 1.285 2020/06/10 01:42:17 simonb Exp $	*/
 
 /*
  * Copyright 2002 Wasabi Systems, Inc.
@@ -111,7 +111,7 @@
  */
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
-__KERNEL_RCSID(0, "$NetBSD: mips_machdep.c,v 1.282 2020/06/04 15:42:31 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mips_machdep.c,v 1.285 2020/06/10 01:42:17 simonb Exp $");
 
 #define __INTR_PRIVATE
 #include "opt_cputype.h"
@@ -1441,6 +1441,27 @@ mips3_tlb_probe(void)
 }
 #endif
 
+static const char *
+wayname(int ways)
+{
+	static char buf[sizeof("xxx-way set-associative")];
+
+#ifdef DIAGNOSTIC
+	if (ways > 999)
+		panic("mips cache - too many ways (%d)", ways);
+#endif
+
+	switch (ways) {
+	case 0:
+		return "fully set-associative";
+	case 1:
+		return "direct-mapped";
+	default:
+		snprintf(buf, sizeof(buf), "%d-way set-associative", ways);
+		return buf;
+	}
+}
+
 /*
  * Identify product revision IDs of CPU and FPU.
  */
@@ -1451,21 +1472,6 @@ cpu_identify(device_t dev)
 	const struct mips_cache_info * const mci = &mips_cache_info;
 	const mips_prid_t cpu_id = opts->mips_cpu_id;
 	const mips_prid_t fpu_id = opts->mips_fpu_id;
-	static const char * const waynames[] = {
-		[0] = "fully set-associative",
-		[1] = "direct-mapped",
-		[2] = "2-way set-associative",
-		[3] = NULL,
-		[4] = "4-way set-associative",
-		[5] = "5-way set-associative",
-		[6] = "6-way set-associative",
-		[7] = "7-way set-associative",
-		[8] = "8-way set-associative",
-#ifdef MIPS64_OCTEON
-		[64] = "64-way set-associative",
-#endif
-	};
-#define	nwaynames (sizeof(waynames) / sizeof(waynames[0]))
 	static const char * const wtnames[] = {
 		"write-back",
 		"write-through",
@@ -1489,6 +1495,24 @@ cpu_identify(device_t dev)
 		fpuname = "built-in FPU";
 	if (MIPS_PRID_IMPL(cpu_id) == MIPS_RC64470)	/* FPU PRid is 0x21 */
 		fpuname = "built-in FPU";
+#ifdef MIPSNN
+	if (CPUISMIPSNN) {
+		uint32_t cfg1;
+
+		switch (MIPS_PRID_CID(cpu_id)) {
+		/*
+		 * CPUs from the following companies have a built-in
+		 * FPU if Config1[FP] is set.
+		 */
+		case MIPS_PRID_CID_SIBYTE:
+		case MIPS_PRID_CID_CAVIUM:
+			cfg1 = mipsNN_cp0_config1_read();
+			if (cfg1 & MIPSNN_CFG1_FP)
+				fpuname = "built-in FPU";
+			break;
+		}
+	}
+#endif
 
 	if (opts->mips_cpu->cpu_cid != 0) {
 		if (opts->mips_cpu->cpu_cid <= ncidnames)
@@ -1533,26 +1557,23 @@ cpu_identify(device_t dev)
 		    "dmesg lines.\n", device_xname(dev));
 	}
 
-	KASSERT(mci->mci_picache_ways < nwaynames);
-	KASSERT(mci->mci_pdcache_ways < nwaynames);
-	KASSERT(mci->mci_sicache_ways < nwaynames);
-	KASSERT(mci->mci_sdcache_ways < nwaynames);
-
 	switch (opts->mips_cpu_arch) {
 #if defined(MIPS1)
 	case CPU_ARCH_MIPS1:
 		if (mci->mci_picache_size)
 			aprint_normal_dev(dev, "%dKB/%dB %s Instruction cache, "
 			    "%d TLB entries\n", mci->mci_picache_size / 1024,
-			    mci->mci_picache_line_size, waynames[mci->mci_picache_ways],
+			    mci->mci_picache_line_size,
+			    wayname(mci->mci_picache_ways),
 			    opts->mips_num_tlb_entries);
 		else
 			aprint_normal_dev(dev, "%d TLB entries\n",
 			    opts->mips_num_tlb_entries);
 		if (mci->mci_pdcache_size)
 			aprint_normal_dev(dev, "%dKB/%dB %s %s Data cache\n",
-			    mci->mci_pdcache_size / 1024, mci->mci_pdcache_line_size,
-			    waynames[mci->mci_pdcache_ways],
+			    mci->mci_pdcache_size / 1024,
+			    mci->mci_pdcache_line_size,
+			    wayname(mci->mci_pdcache_ways),
 			    wtnames[mci->mci_pdcache_write_through]);
 		break;
 #endif /* MIPS1 */
@@ -1565,7 +1586,8 @@ cpu_identify(device_t dev)
 	case CPU_ARCH_MIPS64R2: {
 		const char *sufx = "KMGTPE";
 		uint32_t pg_mask;
-		aprint_normal_dev(dev, "%d TLB entries", opts->mips_num_tlb_entries);
+		aprint_normal_dev(dev, "%d TLB entries",
+		    opts->mips_num_tlb_entries);
 #if !defined(__mips_o32)
 		if (CPUIS64BITS) {
 			int64_t pfn_mask;
@@ -1595,20 +1617,23 @@ cpu_identify(device_t dev)
 			aprint_normal_dev(dev,
 			    "%dKB/%dB %s L1 instruction cache\n",
 			    mci->mci_picache_size / 1024,
-			    mci->mci_picache_line_size, waynames[mci->mci_picache_ways]);
+			    mci->mci_picache_line_size,
+			    wayname(mci->mci_picache_ways));
 		if (mci->mci_pdcache_size)
 			aprint_normal_dev(dev,
 			    "%dKB/%dB %s %s %sL1 data cache\n",
-			    mci->mci_pdcache_size / 1024, mci->mci_pdcache_line_size,
-			    waynames[mci->mci_pdcache_ways],
+			    mci->mci_pdcache_size / 1024,
+			    mci->mci_pdcache_line_size,
+			    wayname(mci->mci_pdcache_ways),
 			    wtnames[mci->mci_pdcache_write_through],
 			    ((opts->mips_cpu_flags & CPU_MIPS_D_CACHE_COHERENT)
 				? "coherent " : ""));
 		if (mci->mci_sdcache_line_size)
 			aprint_normal_dev(dev,
 			    "%dKB/%dB %s %s L2 %s cache\n",
-			    mci->mci_sdcache_size / 1024, mci->mci_sdcache_line_size,
-			    waynames[mci->mci_sdcache_ways],
+			    mci->mci_sdcache_size / 1024,
+			    mci->mci_sdcache_line_size,
+			    wayname(mci->mci_sdcache_ways),
 			    wtnames[mci->mci_sdcache_write_through],
 			    mci->mci_scache_unified ? "unified" : "data");
 		break;
@@ -2498,4 +2523,3 @@ cpu_spawn_return(struct lwp *l)
 {
 	userret(l);
 }
-
