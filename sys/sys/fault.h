@@ -1,11 +1,11 @@
-/*	$NetBSD: version.h,v 1.89 2020/06/08 01:33:27 lukem Exp $	*/
+/*	$NetBSD: fault.h,v 1.1 2020/06/07 09:45:19 maxv Exp $	*/
 
-/*-
- * Copyright (c) 1999-2020 The NetBSD Foundation, Inc.
+/*
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Luke Mewburn.
+ * by Maxime Villard.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,10 +29,49 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef FTP_PRODUCT
-#define	FTP_PRODUCT	"NetBSD-ftp"
+#ifndef _SYS_FAULT_H_
+#define _SYS_FAULT_H_
+
+#ifdef _KERNEL_OPT
+#include "opt_fault.h"
 #endif
 
-#ifndef FTP_VERSION
-#define	FTP_VERSION	"20200608"
+#if !defined(_KERNEL) || defined(FAULT)
+
+#define FAULT_SCOPE_GLOBAL	0
+#define FAULT_SCOPE_LWP		1
+
+#define FAULT_MODE_NTH		0
+
+struct fault_ioc_enable {
+	int scope;
+	int mode;
+	union {
+		unsigned long nth;
+	};
+};
+
+struct fault_ioc_disable {
+	int scope;
+};
+
+struct fault_ioc_getinfo {
+	int scope;
+	unsigned long nfaults;
+};
+
+#define FAULT_IOC_ENABLE	_IOW ('F', 1, struct fault_ioc_enable)
+#define FAULT_IOC_DISABLE	_IOW ('F', 2, struct fault_ioc_disable)
+#define FAULT_IOC_GETINFO	_IOWR('F', 3, struct fault_ioc_getinfo)
+
+#endif /* !_KERNEL || FAULT */
+
+#ifdef _KERNEL
+#ifdef FAULT
+bool fault_inject(void);
+#else
+#define fault_inject() false
 #endif
+#endif /* _KERNEL */
+
+#endif /* !_SYS_FAULT_H_ */
