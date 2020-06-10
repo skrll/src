@@ -91,7 +91,7 @@ ASENTRY_NP(start)
 	str	r3, [r8, #CI_ARM_CPUID]
 
 #ifdef KASAN
-	mov	r0, sp
+	ldr	r0, =svcstk
 	bl	_C_LABEL(kasan_early_init)
 #endif
 
