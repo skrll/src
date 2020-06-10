@@ -1,4 +1,4 @@
-/*	$NetBSD: namespace.h,v 1.197 2019/09/22 22:59:38 christos Exp $	*/
+/*	$NetBSD: namespace.h,v 1.199 2020/05/06 16:17:36 nia Exp $	*/
 
 /*-
  * Copyright (c) 1997-2004 The NetBSD Foundation, Inc.
@@ -362,6 +362,7 @@
 #define getdevmajor		_getdevmajor
 #define getdiskbyname		_getdiskbyname
 #define getdomainname		_getdomainname
+#define getentropy		_getentropy
 #define getfsent		_getfsent
 #define getfsfile		_getfsfile
 #define getfsspec		_getfsspec
@@ -723,6 +724,7 @@
 #define sysctlbyname		_sysctlbyname
 #define sysctlgetmibinfo	_sysctlgetmibinfo
 #define sysctlnametomib		_sysctlnametomib
+#define syscall			_syscall
 #define syslog			_syslog
 #define syslog_r		_syslog_r
 #define syslog_ss		_syslog_ss

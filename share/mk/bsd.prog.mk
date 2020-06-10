@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.prog.mk,v 1.328 2020/04/04 13:33:14 christos Exp $
+#	$NetBSD: bsd.prog.mk,v 1.330 2020/05/30 20:47:59 christos Exp $
 #	@(#)bsd.prog.mk	8.2 (Berkeley) 4/2/94
 
 .ifndef HOSTPROG

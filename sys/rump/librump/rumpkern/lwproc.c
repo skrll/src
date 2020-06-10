@@ -1,4 +1,4 @@
-/*      $NetBSD: lwproc.c,v 1.44 2020/02/15 18:12:15 ad Exp $	*/
+/*      $NetBSD: lwproc.c,v 1.51 2020/05/30 19:16:53 ad Exp $	*/
 
 /*
  * Copyright (c) 2010, 2011 Antti Kantee.  All Rights Reserved.
@@ -28,7 +28,7 @@
 #define RUMP__CURLWP_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lwproc.c,v 1.44 2020/02/15 18:12:15 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lwproc.c,v 1.51 2020/05/30 19:16:53 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -52,7 +52,7 @@ __KERNEL_RCSID(0, "$NetBSD: lwproc.c,v 1.44 2020/02/15 18:12:15 ad Exp $");
 #include "rump_curlwp.h"
 
 struct lwp lwp0 = {
-	.l_lid = 1,
+	.l_lid = 0,
 	.l_proc = &proc0,
 	.l_fd = &filedesc0,
 };
@@ -163,7 +163,7 @@ lwproc_proc_free(struct proc *p)
 	}
 #endif
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 
 	/* childranee eunt initus */
 	while ((child = LIST_FIRST(&p->p_children)) != NULL) {
@@ -178,7 +178,8 @@ lwproc_proc_free(struct proc *p)
 
 	LIST_REMOVE(p, p_list);
 	LIST_REMOVE(p, p_sibling);
-	proc_free_pid(p->p_pid); /* decrements nprocs */
+	proc_free_pid(p->p_pid);
+	atomic_dec_uint(&nprocs);
 	proc_leavepgrp(p); /* releases proc_lock */
 
 	cred = p->p_cred;
@@ -289,11 +290,11 @@ lwproc_newproc(struct proc *parent, struct vmspace *vm, int flags)
 	chgproccnt(uid, 1); /* not enforced */
 
 	/* publish proc various proc lists */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	LIST_INSERT_HEAD(&allproc, p, p_list);
 	LIST_INSERT_HEAD(&parent->p_children, p, p_sibling);
 	LIST_INSERT_AFTER(parent, p, p_pglist);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	return p;
 }
@@ -309,7 +310,6 @@ lwproc_freelwp(struct lwp *l)
 	KASSERT(l->l_flag & LW_WEXIT);
 	KASSERT(l->l_refcnt == 0);
 
-	/* ok, zero references, continue with nuke */
 	LIST_REMOVE(l, l_sibling);
 	KASSERT(p->p_nlwps >= 1);
 	if (--p->p_nlwps == 0) {
@@ -320,11 +320,13 @@ lwproc_freelwp(struct lwp *l)
 	}
 	cv_broadcast(&p->p_lwpcv); /* nobody sleeps on this in a rump kernel? */
 	kauth_cred_free(l->l_cred);
+	l->l_stat = LSIDL;
 	mutex_exit(p->p_lock);
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
+	proc_free_lwpid(p, l->l_lid);
 	LIST_REMOVE(l, l_list);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	if (l->l_name)
 		kmem_free(l->l_name, MAXCOMLEN);
@@ -341,12 +343,10 @@ lwproc_freelwp(struct lwp *l)
 
 extern kmutex_t unruntime_lock;
 
-/*
- * called with p_lock held, releases lock before return
- */
-static void
-lwproc_makelwp(struct proc *p, struct lwp *l, bool doswitch, bool procmake)
+static struct lwp *
+lwproc_makelwp(struct proc *p, bool doswitch, bool procmake)
 {
+	struct lwp *l = kmem_zalloc(sizeof(*l), KM_SLEEP);
 
 	/*
 	 * Account the new lwp to the owner of the process.
@@ -359,15 +359,19 @@ lwproc_makelwp(struct proc *p, struct lwp *l, bool doswitch, bool procmake)
 
 	l->l_refcnt = 1;
 	l->l_proc = p;
+	l->l_stat = LSIDL;
+	l->l_mutex = &unruntime_lock;
 
-	l->l_lid = p->p_nlwpid++;
+	proc_alloc_lwpid(p, l);
+
+	mutex_enter(p->p_lock);
+	KASSERT((p->p_sflag & PS_RUMP_LWPEXIT) == 0);
 	LIST_INSERT_HEAD(&p->p_lwps, l, l_sibling);
 
 	l->l_fd = p->p_fd;
 	l->l_cpu = &rump_bootcpu;
 	l->l_target_cpu = &rump_bootcpu; /* Initial target CPU always same */
 	l->l_stat = LSRUN;
-	l->l_mutex = &unruntime_lock;
 	TAILQ_INIT(&l->l_ld_locks);
 	mutex_exit(p->p_lock);
 
@@ -386,15 +390,16 @@ lwproc_makelwp(struct proc *p, struct lwp *l, bool doswitch, bool procmake)
 		fd_hold(l);
 	}
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	LIST_INSERT_HEAD(&alllwp, l, l_list);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
+
+	return l;
 }
 
 struct lwp *
 rump__lwproc_alloclwp(struct proc *p)
 {
-	struct lwp *l;
 	bool newproc = false;
 
 	if (p == NULL) {
@@ -402,13 +407,7 @@ rump__lwproc_alloclwp(struct proc *p)
 		newproc = true;
 	}
 
-	l = kmem_zalloc(sizeof(*l), KM_SLEEP);
-
-	mutex_enter(p->p_lock);
-	KASSERT((p->p_sflag & PS_RUMP_LWPEXIT) == 0);
-	lwproc_makelwp(p, l, false, newproc);
-
-	return l;
+	return lwproc_makelwp(p, false, newproc);
 }
 
 int
@@ -418,22 +417,26 @@ rump_lwproc_newlwp(pid_t pid)
 	struct lwp *l;
 
 	l = kmem_zalloc(sizeof(*l), KM_SLEEP);
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	p = proc_find_raw(pid);
 	if (p == NULL) {
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		kmem_free(l, sizeof(*l));
 		return ESRCH;
 	}
 	mutex_enter(p->p_lock);
 	if (p->p_sflag & PS_RUMP_LWPEXIT) {
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		mutex_exit(p->p_lock);
 		kmem_free(l, sizeof(*l));
 		return EBUSY;
 	}
-	mutex_exit(proc_lock);
-	lwproc_makelwp(p, l, true, false);
+	mutex_exit(p->p_lock);
+	mutex_exit(&proc_lock);
+
+	/* XXX what holds proc? */
+
+	lwproc_makelwp(p, true, false);
 
 	return 0;
 }
@@ -442,17 +445,13 @@ int
 rump_lwproc_rfork_vmspace(struct vmspace *vm, int flags)
 {
 	struct proc *p;
-	struct lwp *l;
 
 	if (flags & ~(RUMP_RFFDG|RUMP_RFCFDG) ||
 	    (~flags & (RUMP_RFFDG|RUMP_RFCFDG)) == 0)
 		return EINVAL;
 
 	p = lwproc_newproc(curproc, vm, flags);
-	l = kmem_zalloc(sizeof(*l), KM_SLEEP);
-	mutex_enter(p->p_lock);
-	KASSERT((p->p_sflag & PS_RUMP_LWPEXIT) == 0);
-	lwproc_makelwp(p, l, true, true);
+	lwproc_makelwp(p, true, true);
 
 	return 0;
 }
@@ -518,6 +517,7 @@ rump_lwproc_switch(struct lwp *newlwp)
 	l->l_stat = LSRUN;
 
 	if (l->l_flag & LW_WEXIT) {
+		l->l_stat = LSIDL;
 		lwproc_freelwp(l);
 	}
 }

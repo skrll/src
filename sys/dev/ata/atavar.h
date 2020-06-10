@@ -1,4 +1,4 @@
-/*	$NetBSD: atavar.h,v 1.104 2020/04/04 21:36:15 jdolecek Exp $	*/
+/*	$NetBSD: atavar.h,v 1.108 2020/05/25 18:29:25 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.
@@ -358,10 +358,10 @@ struct ata_drive_datas {
  */
 struct ata_bustype {
 	int	bustype_type;	/* symbolic name of type */
-	int	(*ata_bio)(struct ata_drive_datas *, struct ata_xfer *);
+	void	(*ata_bio)(struct ata_drive_datas *, struct ata_xfer *);
 	void	(*ata_reset_drive)(struct ata_drive_datas *, int, uint32_t *);
 	void	(*ata_reset_channel)(struct ata_channel *, int);
-	int	(*ata_exec_command)(struct ata_drive_datas *,
+	void	(*ata_exec_command)(struct ata_drive_datas *,
 				    struct ata_xfer *);
 
 #define	ATACMD_COMPLETE		0x01
@@ -559,9 +559,6 @@ int	ata_addref(struct ata_channel *);
 void	ata_delref(struct ata_channel *);
 void	atastart(struct ata_channel *);
 void	ata_print_modes(struct ata_channel *);
-#if NATA_DMA
-int	ata_downgrade_mode(struct ata_drive_datas *, int);
-#endif
 void	ata_probe_caps(struct ata_drive_datas *);
 
 #if NATA_DMA

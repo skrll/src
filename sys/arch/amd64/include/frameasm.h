@@ -1,4 +1,4 @@
-/*	$NetBSD: frameasm.h,v 1.47 2019/11/17 14:07:00 maxv Exp $	*/
+/*	$NetBSD: frameasm.h,v 1.50 2020/06/01 22:58:06 ad Exp $	*/
 
 #ifndef _AMD64_MACHINE_FRAMEASM_H
 #define _AMD64_MACHINE_FRAMEASM_H
@@ -31,11 +31,23 @@
  	movq CPUVAR(VCPU),%r ## temp_reg ;			\
 	movb $0,EVTCHN_UPCALL_MASK(%r ## temp_reg);
 
+#define PUSHF(temp_reg) \
+ 	movq CPUVAR(VCPU),%r ## temp_reg ;			\
+	movzbl EVTCHN_UPCALL_MASK(%r ## temp_reg), %e ## temp_reg; \
+	pushq %r ## temp_reg
+
+#define POPF \
+	popq %rdi; \
+	call _C_LABEL(xen_write_psl)
+	
+
 #else /* XENPV */
 #define	XEN_ONLY2(x,y)
 #define	NOT_XEN(x)	x
 #define CLI(temp_reg) cli
 #define STI(temp_reg) sti
+#define PUSHF(temp_reg) pushf
+#define POPL popl
 #endif	/* XEN */
 
 #define HP_NAME_CLAC		1
@@ -51,6 +63,8 @@
 #define HP_NAME_SVS_ENTER_NMI	11
 #define HP_NAME_SVS_LEAVE_NMI	12
 #define HP_NAME_MDS_LEAVE	13
+#define HP_NAME_SSE2_LFENCE	14
+#define HP_NAME_SSE2_MFENCE	15
 
 #define HOTPATCH(name, size) \
 123:						; \
@@ -208,6 +222,7 @@
 #endif
 
 #ifdef KMSAN
+/* XXX this belongs somewhere else. */
 #define KMSAN_ENTER	\
 	movq	%rsp,%rdi		; \
 	movq	$TF_REGSIZE+16+40,%rsi	; \
@@ -261,11 +276,33 @@
 	popq	%rdx			; \
 	popq	%rcx			; \
 	popq	%rax
+#define KMSAN_REP_STOS(scale)	\
+	pushq	%rax			; \
+	pushq	%rcx			; \
+	pushq	%rdx			; \
+	pushq	%rsi			; \
+	pushq	%rdi			; \
+	pushq	%r8			; \
+	pushq	%r9			; \
+	pushq	%r10			; \
+	pushq	%r11			; \
+	leaq	(,%rcx,scale),%rsi	; \
+	callq	_C_LABEL(__msan_instrument_asm_store); \
+	popq	%r11			; \
+	popq	%r10			; \
+	popq	%r9			; \
+	popq	%r8			; \
+	popq	%rdi			; \
+	popq	%rsi			; \
+	popq	%rdx			; \
+	popq	%rcx			; \
+	popq	%rax
 #else
 #define KMSAN_ENTER		/* nothing */
 #define KMSAN_LEAVE		/* nothing */
 #define KMSAN_INIT_ARG(sz)	/* nothing */
 #define KMSAN_INIT_RET(sz)	/* nothing */
+#define	KMSAN_REP_STOS(scale)	/* nothing */
 #endif
 
 #ifdef KCOV

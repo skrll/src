@@ -1,4 +1,4 @@
-/*      $NetBSD: kcov.h,v 1.7 2020/04/04 06:51:46 maxv Exp $        */
+/*      $NetBSD: kcov.h,v 1.10 2020/06/05 17:20:57 maxv Exp $        */
 
 /*
  * Copyright (c) 2019-2020 The NetBSD Foundation, Inc.
@@ -44,6 +44,18 @@
 #define KCOV_IOC_ENABLE		_IOW('K', 2, int)
 #define KCOV_IOC_DISABLE	_IO('K', 3)
 
+#define KCOV_IOC_REMOTE_ATTACH	_IOW('K', 10, struct kcov_ioc_remote_attach)
+#define KCOV_IOC_REMOTE_DETACH	_IO('K', 11)
+
+struct kcov_ioc_remote_attach {
+	uint64_t subsystem;
+	uint64_t id;
+};
+
+#define KCOV_REMOTE_VHCI	0
+#define KCOV_REMOTE_VHCI_ID(bus, port)	\
+	(((uint64_t)bus << 32ULL) | ((uint64_t)port & 0xFFFFFFFFULL))
+
 #define KCOV_MODE_NONE		0
 #define KCOV_MODE_TRACE_PC	1
 #define KCOV_MODE_TRACE_CMP	2
@@ -53,8 +65,18 @@ typedef volatile uint64_t kcov_int_t;
 
 #ifdef _KERNEL
 #ifdef KCOV
+void kcov_remote_register(uint64_t, uint64_t);
+void kcov_remote_enter(uint64_t, uint64_t);
+void kcov_remote_leave(uint64_t, uint64_t);
+void kcov_silence_enter(void);
+void kcov_silence_leave(void);
 void kcov_lwp_free(struct lwp *);
 #else
+#define kcov_remote_register(s, i)	__nothing
+#define kcov_remote_enter(s, i)		__nothing
+#define kcov_remote_leave(s, i)		__nothing
+#define kcov_silence_enter()		__nothing
+#define kcov_silence_leave()		__nothing
 #define kcov_lwp_free(a) __nothing
 #endif
 #endif

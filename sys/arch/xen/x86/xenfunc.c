@@ -1,4 +1,4 @@
-/*	$NetBSD: xenfunc.c,v 1.26 2019/05/04 11:15:49 kre Exp $	*/
+/*	$NetBSD: xenfunc.c,v 1.28 2020/05/06 19:47:05 bouyer Exp $	*/
 
 /*
  * Copyright (c) 2004 Christian Limpach.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xenfunc.c,v 1.26 2019/05/04 11:15:49 kre Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xenfunc.c,v 1.28 2020/05/06 19:47:05 bouyer Exp $");
 
 #include <sys/param.h>
 
@@ -61,6 +61,9 @@ lidt(struct region_descriptor *rd)
 	 * will be available at the boot stage when this is called.
 	 */
 	static char xen_idt_page[PAGE_SIZE] __attribute__((__aligned__ (PAGE_SIZE)));
+#if defined(__x86_64__)
+	kpreempt_disable();
+#endif
 	memset(xen_idt_page, 0, PAGE_SIZE);
 	
 	struct trap_info *xen_idt = (void * )xen_idt_page;
@@ -95,6 +98,7 @@ lidt(struct region_descriptor *rd)
 #if defined(__x86_64__)
 	/* reset */
 	pmap_changeprot_local((vaddr_t) xen_idt, VM_PROT_READ|VM_PROT_WRITE);
+	kpreempt_enable();
 #endif /* __x86_64 */
 }
 
@@ -140,7 +144,7 @@ rcr0(void)
 void
 lcr3(register_t val)
 {
-	int s = splvm(); /* XXXSMP */
+	int s = splvm();
 	xpq_queue_pt_switch(xpmap_ptom_masked(val));
 	splx(s);
 }
@@ -149,7 +153,7 @@ lcr3(register_t val)
 void
 tlbflush(void)
 {
-	int s = splvm(); /* XXXSMP */
+	int s = splvm();
 	xpq_queue_tlb_flush();
 	splx(s);
 }
@@ -254,6 +258,12 @@ register_t
 rcr2(void)
 {
 	return curcpu()->ci_vcpu->arch.cr2;
+}
+
+void
+lcr2(register_t v)
+{       
+	curcpu()->ci_vcpu->arch.cr2 = v;
 }
 
 #ifdef __x86_64__

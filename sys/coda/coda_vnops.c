@@ -1,4 +1,4 @@
-/*	$NetBSD: coda_vnops.c,v 1.110 2020/02/24 20:53:11 ad Exp $	*/
+/*	$NetBSD: coda_vnops.c,v 1.112 2020/05/16 18:31:48 christos Exp $	*/
 
 /*
  *
@@ -46,7 +46,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: coda_vnops.c,v 1.110 2020/02/24 20:53:11 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: coda_vnops.c,v 1.112 2020/05/16 18:31:48 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -106,6 +106,7 @@ const struct vnodeopv_entry_desc coda_vnodeop_entries[] = {
     { &vop_open_desc, coda_open },		/* open */
     { &vop_close_desc, coda_close },		/* close */
     { &vop_access_desc, coda_access },		/* access */
+    { &vop_accessx_desc, genfs_accessx },	/* access */
     { &vop_getattr_desc, coda_getattr },	/* getattr */
     { &vop_setattr_desc, coda_setattr },	/* setattr */
     { &vop_read_desc, coda_read },		/* read */
@@ -329,7 +330,7 @@ coda_close(void *v)
 	if (cp->c_ovp) {
 #ifdef	CODA_VERBOSE
 	    printf("%s: destroying container %d, ufs vp %p of vp %p/cp %p\n",
-		__func__, vp->v_usecount, cp->c_ovp, vp, cp);
+		__func__, vrefcnt(vp), cp->c_ovp, vp, cp);
 #endif
 #ifdef	hmm
 	    vgone(cp->c_ovp);
@@ -465,7 +466,7 @@ coda_rdwr(vnode_t *vp, struct uio *uiop, enum uio_rw rw, int ioflag,
 
     /* Have UFS handle the call. */
     CODADEBUG(CODA_RDWR, myprintf(("%s: fid = %s, refcnt = %d\n", __func__,
-	coda_f2s(&cp->c_fid), CTOV(cp)->v_usecount)); )
+	coda_f2s(&cp->c_fid), vrefcnt(CTOV(cp)))); )
 
     if (rw == UIO_READ) {
 	error = VOP_READ(cfvp, uiop, ioflag, cred);
@@ -662,19 +663,20 @@ coda_access(void *v)
     struct vop_access_args *ap = v;
     vnode_t *vp = ap->a_vp;
     struct cnode *cp = VTOC(vp);
-    int mode = ap->a_mode;
+    accmode_t accmode = ap->a_accmode;
     kauth_cred_t cred = ap->a_cred;
 /* locals */
     int error;
 
     MARK_ENTRY(CODA_ACCESS_STATS);
 
+    KASSERT((accmode & ~(VEXEC | VWRITE | VREAD | VADMIN | VAPPEND)) == 0);
     /* Check for access of control object.  Only read access is
        allowed on it. */
     if (IS_CTL_VP(vp)) {
 	/* bogus hack - all will be marked as successes */
 	MARK_INT_SAT(CODA_ACCESS_STATS);
-	return(((mode & VREAD) && !(mode & (VWRITE | VEXEC)))
+	return(((accmode & VREAD) && !(accmode & (VWRITE | VEXEC)))
 	       ? 0 : EACCES);
     }
 
@@ -684,7 +686,7 @@ coda_access(void *v)
      * lookup access to it.
      */
     if (coda_access_cache) {
-	if ((vp->v_type == VDIR) && (mode & VEXEC)) {
+	if ((vp->v_type == VDIR) && (accmode & VEXEC)) {
 	    if (coda_nc_lookup(cp, ".", 1, cred)) {
 		MARK_INT_SAT(CODA_ACCESS_STATS);
 		return(0);                     /* it was in the cache */
@@ -692,7 +694,7 @@ coda_access(void *v)
 	}
     }
 
-    error = venus_access(vtomi(vp), &cp->c_fid, mode, cred, curlwp);
+    error = venus_access(vtomi(vp), &cp->c_fid, accmode, cred, curlwp);
 
     return(error);
 }
@@ -850,8 +852,8 @@ coda_inactive(void *v)
 
 #ifdef CODA_VERBOSE
     /* Sanity checks that perhaps should be panic. */
-    if (vp->v_usecount > 1)
-	printf("%s: %p usecount %d\n", __func__, vp, vp->v_usecount);
+    if (vrefcnt(vp) > 1)
+	printf("%s: %p usecount %d\n", __func__, vp, vrefcnt(vp));
     if (cp->c_ovp != NULL)
 	printf("%s: %p ovp != NULL\n", __func__, vp);
 #endif
@@ -1569,7 +1571,7 @@ coda_readdir(void *v)
 
 	/* Have UFS handle the call. */
 	CODADEBUG(CODA_READDIR, myprintf(("%s: fid = %s, refcnt = %d\n",
-	    __func__, coda_f2s(&cp->c_fid), vp->v_usecount)); )
+	    __func__, coda_f2s(&cp->c_fid), vrefcnt(vp))); )
 	saved_type = vp->v_type;
 	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	vp->v_type = VDIR; /* pretend the container file is a dir */
@@ -1661,7 +1663,7 @@ coda_reclaim(void *v)
 #endif
     } else {
 #ifdef OLD_DIAGNOSTIC
-	if (vp->v_usecount != 0)
+	if (vrefcnt(vp) != 0)
 	    print("%s: pushing active %p\n", __func__, vp);
 	if (VTOC(vp)->c_ovp) {
 	    panic("%s: c_ovp not void", __func__);

@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_sched.c,v 1.73 2019/11/23 19:42:52 ad Exp $	*/
+/*	$NetBSD: linux_sched.c,v 1.78 2020/05/23 23:42:41 ad Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2019 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_sched.c,v 1.73 2019/11/23 19:42:52 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_sched.c,v 1.78 2020/05/23 23:42:41 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/mount.h>
@@ -182,7 +182,7 @@ linux_clone_nptl(struct lwp *l, const struct linux_sys_clone_args *uap, register
 	void *parent_tidptr, *tls, *child_tidptr;
 	vaddr_t uaddr;
 	lwpid_t lid;
-	int flags, tnprocs, error;
+	int flags, error;
 
 	p = l->l_proc;
 	flags = SCARG(uap, flags);
@@ -190,26 +190,16 @@ linux_clone_nptl(struct lwp *l, const struct linux_sys_clone_args *uap, register
 	tls = SCARG(uap, tls);
 	child_tidptr = SCARG(uap, child_tidptr);
 
-	tnprocs = atomic_inc_uint_nv(&nprocs);
-	if (__predict_false(tnprocs >= maxproc) ||
-	    kauth_authorize_process(l->l_cred, KAUTH_PROCESS_FORK, p,
-	    KAUTH_ARG(tnprocs), NULL, NULL) != 0) {
-		atomic_dec_uint(&nprocs);
-		return EAGAIN;
-	}
-
 	uaddr = uvm_uarea_alloc();
 	if (__predict_false(uaddr == 0)) {
-		atomic_dec_uint(&nprocs);
 		return ENOMEM;
 	}
 
-	error = lwp_create(l, p, uaddr, LWP_DETACHED | LWP_PIDLID,
+	error = lwp_create(l, p, uaddr, LWP_DETACHED,
 	    SCARG(uap, stack), 0, child_return, NULL, &l2, l->l_class,
 	    &l->l_sigmask, &l->l_sigstk);
 	if (__predict_false(error)) {
 		DPRINTF(("%s: lwp_create error=%d\n", __func__, error));
-		atomic_dec_uint(&nprocs);
 		uvm_uarea_free(uaddr);
 		return error;
 	}
@@ -618,6 +608,7 @@ linux_sys_sched_getaffinity(struct lwp *l, const struct linux_sys_sched_getaffin
 		syscallarg(unsigned int) len;
 		syscallarg(unsigned long *) mask;
 	} */
+	struct proc *p;
 	struct lwp *t;
 	kcpuset_t *kcset;
 	size_t size;
@@ -628,15 +619,23 @@ linux_sys_sched_getaffinity(struct lwp *l, const struct linux_sys_sched_getaffin
 	if (SCARG(uap, len) < size)
 		return EINVAL;
 
-	/* Lock the LWP */
-	t = lwp_find2(SCARG(uap, pid), l->l_lid);
-	if (t == NULL)
-		return ESRCH;
+	if (SCARG(uap, pid) == 0) {
+		p = curproc;
+		mutex_enter(p->p_lock);
+		t = curlwp;
+	} else {
+		t = lwp_find2(-1, SCARG(uap, pid));
+		if (__predict_false(t == NULL)) {
+			return ESRCH;
+		}
+		p = t->l_proc;
+		KASSERT(mutex_owned(p->p_lock));
+	}
 
 	/* Check the permission */
 	if (kauth_authorize_process(l->l_cred,
-	    KAUTH_PROCESS_SCHEDULER_GETAFFINITY, t->l_proc, NULL, NULL, NULL)) {
-		mutex_exit(t->l_proc->p_lock);
+	    KAUTH_PROCESS_SCHEDULER_GETAFFINITY, p, NULL, NULL, NULL)) {
+		mutex_exit(p->p_lock);
 		return EPERM;
 	}
 
@@ -654,7 +653,7 @@ linux_sys_sched_getaffinity(struct lwp *l, const struct linux_sys_sched_getaffin
 			kcpuset_set(kcset, i);
 	}
 	lwp_unlock(t);
-	mutex_exit(t->l_proc->p_lock);
+	mutex_exit(p->p_lock);
 	error = kcpuset_copyout(kcset, (cpuset_t *)SCARG(uap, mask), size);
 	kcpuset_unuse(kcset, NULL);
 	*retval = size;
@@ -671,13 +670,31 @@ linux_sys_sched_setaffinity(struct lwp *l, const struct linux_sys_sched_setaffin
 	} */
 	struct sys__sched_setaffinity_args ssa;
 	size_t size;
+	pid_t pid;
+	lwpid_t lid;
 
 	size = LINUX_CPU_MASK_SIZE;
 	if (SCARG(uap, len) < size)
 		return EINVAL;
 
-	SCARG(&ssa, pid) = SCARG(uap, pid);
-	SCARG(&ssa, lid) = l->l_lid;
+	lid = SCARG(uap, pid);
+	if (lid != 0) {
+		/* Get the canonical PID for the process. */
+		mutex_enter(&proc_lock);
+		struct proc *p = proc_find_lwpid(SCARG(uap, pid));
+		if (p == NULL) {
+			mutex_exit(&proc_lock);
+			return ESRCH;
+		}
+		pid = p->p_pid;
+		mutex_exit(&proc_lock);
+	} else {
+		pid = curproc->p_pid;
+		lid = curlwp->l_lid;
+	}
+
+	SCARG(&ssa, pid) = pid;
+	SCARG(&ssa, lid) = lid;
 	SCARG(&ssa, size) = size;
 	SCARG(&ssa, cpuset) = (cpuset_t *)SCARG(uap, mask);
 

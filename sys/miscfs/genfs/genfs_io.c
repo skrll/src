@@ -1,4 +1,4 @@
-/*	$NetBSD: genfs_io.c,v 1.95 2020/03/22 18:32:41 ad Exp $	*/
+/*	$NetBSD: genfs_io.c,v 1.97 2020/05/25 21:15:10 ad Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: genfs_io.c,v 1.95 2020/03/22 18:32:41 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: genfs_io.c,v 1.97 2020/05/25 21:15:10 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -128,12 +128,12 @@ genfs_getpages(void *v)
 
 	/*
 	 * the object must be locked.  it can only be a read lock when
-	 * processing a read fault with PGO_LOCKED | PGO_NOBUSY.
+	 * processing a read fault with PGO_LOCKED.
 	 */
 
 	KASSERT(rw_lock_held(uobj->vmobjlock));
 	KASSERT(rw_write_held(uobj->vmobjlock) ||
-	   ((~flags & (PGO_LOCKED | PGO_NOBUSY)) == 0 && !memwrite));
+	   ((flags & PGO_LOCKED) != 0 && !memwrite));
 
 #ifdef DIAGNOSTIC
 	if ((flags & PGO_JOURNALLOCKED) && vp->v_mount->mnt_wapbl)
@@ -237,9 +237,8 @@ startover:
 #endif /* defined(DEBUG) */
  		nfound = uvn_findpages(uobj, origoffset, &npages,
 		    ap->a_m, NULL,
-		    UFP_NOWAIT | UFP_NOALLOC |
-		    (memwrite ? UFP_NORDONLY : 0) |
-		    ((flags & PGO_NOBUSY) != 0 ? UFP_NOBUSY : 0));
+		    UFP_NOWAIT | UFP_NOALLOC | UFP_NOBUSY |
+		    (memwrite ? UFP_NORDONLY : 0));
 		KASSERT(npages == *ap->a_count);
 		if (nfound == 0) {
 			error = EBUSY;
@@ -250,10 +249,6 @@ startover:
 		 * the file behind us.
 		 */
 		if (!genfs_node_rdtrylock(vp)) {
-			if ((flags & PGO_NOBUSY) == 0) {
-				genfs_rel_pages(ap->a_m, npages);
-			}
-
 			/*
 			 * restore the array.
 			 */
@@ -1010,7 +1005,8 @@ retry:
 
 	cleanall = true;
 	freeflag = pagedaemon ? PG_PAGEOUT : PG_RELEASED;
-	uvm_page_array_init(&a);
+	uvm_page_array_init(&a, uobj, dirtyonly ? (UVM_PAGE_ARRAY_FILL_DIRTY |
+	    (!async ? UVM_PAGE_ARRAY_FILL_WRITEBACK : 0)) : 0);
 	for (;;) {
 		bool pgprotected;
 
@@ -1022,9 +1018,7 @@ retry:
 		 * wait on pages being written back by other threads as well.
 		 */
 
-		pg = uvm_page_array_fill_and_peek(&a, uobj, nextoff, 0,
-		    dirtyonly ? (UVM_PAGE_ARRAY_FILL_DIRTY |
-		    (!async ? UVM_PAGE_ARRAY_FILL_WRITEBACK : 0)) : 0);
+		pg = uvm_page_array_fill_and_peek(&a, nextoff, 0);
 		if (pg == NULL) {
 			break;
 		}

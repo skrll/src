@@ -1,7 +1,7 @@
-/*	$NetBSD: cpufunc.S,v 1.49 2019/11/21 19:23:58 ad Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.59 2020/06/01 22:58:06 ad Exp $	*/
 
 /*
- * Copyright (c) 1998, 2007, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2007, 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -167,7 +167,48 @@ END(x86_write_flags)
 
 STRONG_ALIAS(x86_write_psl,x86_write_flags)
 
-ENTRY(tsc_get_timecount)
+/*
+ * %rdi = name
+ * %rsi = sel
+ */
+ENTRY(x86_hotpatch)
+	/* save RFLAGS, and disable intrs */
+	pushfq
+	cli
+
+	/* save CR0, and disable WP */
+	movq	%cr0,%rcx
+	pushq	%rcx
+	andq	$~CR0_WP,%rcx
+	movq	%rcx,%cr0
+
+	callq	_C_LABEL(x86_hotpatch_apply)
+
+	/* write back and invalidate cache */
+	wbinvd
+
+	/* restore CR0 */
+	popq	%rcx
+	movq	%rcx,%cr0
+
+	/* flush instruction pipeline */
+	pushq	%rax
+	callq	x86_flush
+	popq	%rax
+
+	/* clean up */
+	movq	%rax,%rdi
+	callq	_C_LABEL(x86_hotpatch_cleanup)
+
+	/* restore RFLAGS */
+	popfq
+	ret
+END(x86_hotpatch)
+#endif /* !XENPV */
+
+/* Could be exact same as cpu_counter, but KMSAN needs to have the correct
+ * size of the return value. */
+ENTRY(cpu_counter32)
 	movq	CPUVAR(CURLWP), %rcx
 1:
 	movq	L_NCSW(%rcx), %rdi
@@ -179,8 +220,24 @@ ENTRY(tsc_get_timecount)
 	ret
 2:
 	jmp	1b
-END(tsc_get_timecount)
-#endif /* !XENPV */
+END(cpu_counter32)
+STRONG_ALIAS(tsc_get_timecount, cpu_counter32)
+
+ENTRY(cpu_counter)
+	movq	CPUVAR(CURLWP), %rcx
+1:
+	movq	L_NCSW(%rcx), %rdi
+	rdtsc
+	shlq	$32, %rdx
+	orq	%rdx, %rax
+	addq	CPUVAR(CC_SKEW), %rax
+	cmpq	%rdi, L_NCSW(%rcx)
+	jne	2f
+	KMSAN_INIT_RET(8)
+	ret
+2:
+	jmp	1b
+END(cpu_counter)
 
 ENTRY(rdmsr_safe)
 	movq	CPUVAR(CURLWP), %r8
@@ -213,23 +270,6 @@ ENTRY(msr_onfault)
 	movl	$EFAULT, %eax
 	ret
 END(msr_onfault)
-
-ENTRY(cpu_counter)
-	xorq	%rax, %rax
-	rdtsc
-	shlq	$32, %rdx
-	orq	%rdx, %rax
-	addq	CPUVAR(CC_SKEW), %rax
-	KMSAN_INIT_RET(8)
-	ret
-END(cpu_counter)
-
-ENTRY(cpu_counter32)
-	rdtsc
-	addl	CPUVAR(CC_SKEW), %eax
-	KMSAN_INIT_RET(4)
-	ret
-END(cpu_counter32)
 
 ENTRY(breakpoint)
 	pushq	%rbp
@@ -380,3 +420,20 @@ ENTRY(outl)
 	outl	%eax, %dx
 	ret
 END(outl)
+
+ENTRY(x86_stos)
+	movq	%rsi,%rax
+	movq	%rdx,%rcx
+	KMSAN_REP_STOS(8)
+	rep
+	stosq
+	ret
+END(x86_stos)
+
+ENTRY(x86_movs)
+	movq	%rdx,%rcx
+	KMSAN_REP_STOS(8)
+	rep
+	movsq
+	ret
+END(x86_movs)

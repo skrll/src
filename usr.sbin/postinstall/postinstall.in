@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# $NetBSD: postinstall.in,v 1.19 2020/04/09 15:24:31 roy Exp $
+# $NetBSD: postinstall.in,v 1.23 2020/06/03 11:47:46 roy Exp $
 #
 # Copyright (c) 2002-2015 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -750,8 +750,8 @@ contents_owner()
 		fi
 	elif [ "${_op}" = "fix" ]; then
 		find "${_dir}" \( \( ! -user "${_user}" \) -o \
-		\( ! -group "${_grp}" \) \) -a -print0 \
-		| xargs -0 chown "${_user}:${_grp}"
+		\( ! -group "${_grp}" \) \) \
+		-exec chown "${_user}:${_grp}" -- {} \;
 	fi
 }
 
@@ -945,57 +945,65 @@ do_dhcpcd()
 	populate_dir "$op" true "${dir}" "${DEST_DIR}/etc" 644 dhcpcd.conf
 	failed=$(( ${failed} + $? ))
 
-	dstdir="${DEST_DIR}/var/chroot/dhcpcd"
-
-	check_dir "${op}" "${dstdir}/var/db/dhcpcd" 755
+	check_dir "${op}" "${DEST_DIR}/var/db/dhcpcd" 755
 	failed=$(( ${failed} + $? ))
 
 	move_file "${op}" \
 		"${DEST_DIR}/etc/dhcpcd.duid" \
-		"${dstdir}/var/db/dhcpcd/duid"
+		"${DEST_DIR}/var/db/dhcpcd/duid"
 	failed=$(( ${failed} + $? ))
 
 	move_file "${op}" \
 		"${DEST_DIR}/etc/dhcpcd.secret" \
-		"${dstdir}/var/db/dhcpcd/secret"
+		"${DEST_DIR}/var/db/dhcpcd/secret"
 	failed=$(( ${failed} + $? ))
 
 	move_file "${op}" \
 		"${DEST_DIR}/var/db/dhcpcd-rdm.monotonic" \
-		"${dstdir}/var/db/dhcpcd/rdm_monotonic"
+		"${DEST_DIR}/var/db/dhcpcd/rdm_monotonic"
 	failed=$(( ${failed} + $? ))
 
 	for lease in "${DEST_DIR}/var/db/dhcpcd-"*.lease*; do
 		[ -f "${lease}" ] || continue
 		new_lease=$(basename "${lease}" | ${SED} -e 's/dhcpcd-//')
-		new_lease="${dstdir}/var/db/dhcpcd/${new_lease}"
+		new_lease="${DEST_DIR}/var/db/dhcpcd/${new_lease}"
 		move_file "${op}" "${lease}" "${new_lease}"
 		failed=$(( ${failed} + $? ))
 	done
 
+	chroot_dir="${DEST_DIR}/var/chroot/dhcpcd"
 	move_file "${op}" \
-		"${DEST_DIR}/var/db/dhcpcd/duid" \
-		"${dstdir}/var/db/dhcpcd/duid"
+		"${chroot_dir}/var/db/dhcpcd/duid" \
+		"${DEST_DIR}/var/db/dhcpcd/duid"
 	failed=$(( ${failed} + $? ))
 
 	move_file "${op}" \
-		"${DEST_DIR}/var/db/dhcpcd/secret" \
-		"${dstdir}/var/db/dhcpcd/secret"
+		"${chroot_dir}/var/db/dhcpcd/secret" \
+		"${DEST_DIR}/var/db/dhcpcd/secret"
 	failed=$(( ${failed} + $? ))
 
 	move_file "${op}" \
-		"${DEST_DIR}/var/db/dhcpcd/rdm_monotonic" \
-		"${dstdir}/var/db/dhcpcd/rdm_monotonic"
+		"${chroot_dir}/var/db/dhcpcd/rdm_monotonic" \
+		"${DEST_DIR}/var/db/dhcpcd/rdm_monotonic"
 	failed=$(( ${failed} + $? ))
 
-	for lease in "${DEST_DIR}/var/db/dhcpcd/"*.lease*; do
+	for lease in "${chroot_dir}/var/db/dhcpcd/"*.lease*; do
 		[ -f "${lease}" ] || continue
-		new_lease="${dstdir}/var/db/dhcpcd/$(basename ${lease})"
+		new_lease="${DEST_DIR}/var/db/dhcpcd/$(basename ${lease})"
 		move_file "${op}" "${lease}" "${new_lease}"
 		failed=$(( ${failed} + $? ))
 	done
 
-	contents_owner "${op}" "${dstdir}/var/db/dhcpcd" _dhcpcd _dhcpcd
+	# Ensure chroot is now empty
+	for dir in \
+		$(find ${chroot_dir} ! -type d) \
+		$(find ${chroot_dir} -type d -mindepth 1 | sort -r)
+	do
+		echo "/var/chroot/dhcpcd${dir##${chroot_dir}}"
+	done | obsolete_paths "${op}"
+	failed=$(( ${failed} + $? ))
+
+	contents_owner "${op}" "${DEST_DIR}/var/db/dhcpcd" root wheel
 	failed=$(( ${failed} + $? ))
 
 	return ${failed}
@@ -2295,25 +2303,40 @@ do_varshm()
 #
 #	obsolete_stand
 #
-adddisableditem obsolete_stand "remove obsolete files from /stand"
-do_obsolete_stand()
+obsolete_stand_internal()
 {
-	[ -n "$1" ] || err 3 "USAGE: do_obsolete_stnd  fix|check"
-	op="$1"
-	failed=0
+	local prefix="$1"
+	shift
+	[ -n "$1" ] || err 3 "USAGE: do_obsolete_stand  fix|check"
+	local op="$1"
+	local failed=0
 
 	for dir in \
-	    /stand/${MACHINE} \
-	    /stand/${MACHINE}-4xx \
-	    /stand/${MACHINE}-booke \
-	    /stand/${MACHINE}-xen \
-	    /stand/${MACHINE}pae-xen
+	    ${prefix}/stand/${MACHINE} \
+	    ${prefix}/stand/${MACHINE}-4xx \
+	    ${prefix}/stand/${MACHINE}-booke \
+	    ${prefix}/stand/${MACHINE}-xen \
+	    ${prefix}/stand/${MACHINE}pae-xen
 	do
 		[ -d "${DESTDIR}${dir}" ] && obsolete_stand "${dir}"
 	done | obsolete_paths "${op}"
 	failed=$(( ${failed} + $? ))
 
 	return ${failed}
+}
+
+adddisableditem obsolete_stand "remove obsolete files from /stand"
+do_obsolete_stand()
+{
+	obsolete_stand_internal "" "$@"
+	return $?
+}
+
+adddisableditem obsolete_stand_debug "remove obsolete files from /usr/libdata/debug/stand"
+do_obsolete_stand_debug()
+{
+	obsolete_stand_internal "/usr/libdata/debug" "$@"
+	return $?
 }
 
 listarchsubdirs() {

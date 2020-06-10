@@ -1,4 +1,4 @@
-/* $NetBSD: vfs_getcwd.c,v 1.57 2020/04/04 20:49:30 ad Exp $ */
+/* $NetBSD: vfs_getcwd.c,v 1.60 2020/05/16 18:31:50 christos Exp $ */
 
 /*-
  * Copyright (c) 1999, 2020 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_getcwd.c,v 1.57 2020/04/04 20:49:30 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_getcwd.c,v 1.60 2020/05/16 18:31:50 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -277,7 +277,7 @@ getcwd_common(struct vnode *lvp, struct vnode *rvp, char **bpp, char *bufp,
 	struct vnode *uvp = NULL;
 	char *bp = NULL;
 	int error;
-	int perms = VEXEC;
+	accmode_t accmode = VEXEC;
 
 	error = 0;
 	if (rvp == NULL) {
@@ -325,7 +325,7 @@ getcwd_common(struct vnode *lvp, struct vnode *rvp, char **bpp, char *bufp,
 		if (lvp->v_vflag & VV_ROOT) {
 			vn_lock(lvp, LK_SHARED | LK_RETRY);
 			if (chkaccess) {
-				error = VOP_ACCESS(lvp, perms, cred);
+				error = VOP_ACCESS(lvp, accmode, cred);
 				if (error) {
 					VOP_UNLOCK(lvp);
 					goto out;
@@ -361,7 +361,7 @@ getcwd_common(struct vnode *lvp, struct vnode *rvp, char **bpp, char *bufp,
 		if (chkaccess && !cache_have_id(lvp)) {
 			/* Need exclusive for UFS VOP_GETATTR (itimes) & VOP_LOOKUP. */
 			vn_lock(lvp, LK_EXCLUSIVE | LK_RETRY);
-			error = VOP_ACCESS(lvp, perms, cred);
+			error = VOP_ACCESS(lvp, accmode, cred);
 			if (error) {
 				VOP_UNLOCK(lvp);
 				goto out;
@@ -375,7 +375,7 @@ getcwd_common(struct vnode *lvp, struct vnode *rvp, char **bpp, char *bufp,
 		 * directory..
 		 */
 		error = cache_revlookup(lvp, &uvp, &bp, bufp, chkaccess,
-		    perms);
+		    accmode);
 		if (error == -1) {
 			if (!locked) {
 				locked = true;
@@ -398,7 +398,7 @@ getcwd_common(struct vnode *lvp, struct vnode *rvp, char **bpp, char *bufp,
 			panic("getcwd: oops, went back too far");
 		}
 #endif
-		perms = VEXEC | VREAD;
+		accmode = VEXEC | VREAD;
 		if (bp)
 			*(--bp) = '/';
 		vrele(lvp);
@@ -479,7 +479,7 @@ sys___getcwd(struct lwp *l, const struct sys___getcwd_args *uap, register_t *ret
 	char   *bp, *bend;
 	int     len = SCARG(uap, length);
 	int	lenused;
-	struct	vnode *dvp;
+	struct	cwdinfo *cwdi;
 
 	if (len > MAXPATHLEN * 4)
 		len = MAXPATHLEN * 4;
@@ -496,10 +496,11 @@ sys___getcwd(struct lwp *l, const struct sys___getcwd_args *uap, register_t *ret
 	 * Since each entry takes up at least 2 bytes in the output buffer,
 	 * limit it to N/2 vnodes for an N byte buffer.
 	 */
-	dvp = cwdcdir();
-	error = getcwd_common(dvp, NULL, &bp, path, 
+	cwdi = l->l_proc->p_cwdi;
+	rw_enter(&cwdi->cwdi_lock, RW_READER);
+	error = getcwd_common(cwdi->cwdi_cdir, NULL, &bp, path, 
 	    len/2, GETCWD_CHECK_ACCESS, l);
-	vrele(dvp);
+	rw_exit(&cwdi->cwdi_lock);
 
 	if (error)
 		goto out;
@@ -527,7 +528,7 @@ vnode_to_path(char *path, size_t len, struct vnode *vp, struct lwp *curl,
 	char *bp, *bend;
 	struct vnode *dvp;
 
-	KASSERT(vp->v_usecount > 0);
+	KASSERT(vrefcnt(vp) > 0);
 
 	bp = bend = &path[len];
 	*(--bp) = '\0';

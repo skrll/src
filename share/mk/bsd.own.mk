@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1180 2020/04/04 23:54:06 christos Exp $
+#	$NetBSD: bsd.own.mk,v 1.1198 2020/06/02 14:26:01 jmcneill Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -63,20 +63,10 @@ TOOLCHAIN_MISSING?=	no
 #
 # What GCC is used?
 #
-.if ${MACHINE} == "amd64" || \
-    ${MACHINE} == "i386" || \
-    ${MACHINE} == "ia64" || \
-    ${MACHINE} == "sparc" || \
-    ${MACHINE} == "sparc64" || \
-    ${MACHINE_CPU} == "aarch64" || \
-    ${MACHINE_CPU} == "arm" || \
-    ${MACHINE_CPU} == "powerpc" || \
-    ${MACHINE_CPU} == "powerpc64" || \
-    ${MACHINE_CPU} == "riscv"
-HAVE_GCC?=	8
-.else
+.if ${MACHINE_CPU} == "m68k"
 HAVE_GCC?=	7
 .endif
+HAVE_GCC?=	8
 
 #
 # Platforms that can't run a modern GCC natively
@@ -169,7 +159,11 @@ EXTERNAL_GDB_SUBDIR=		/does/not/exist
 #
 # What binutils is used?
 #
-.if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "i386"
+.if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "i386" || \
+    ${MACHINE_ARCH} == "powerpc64" || ${MACHINE_ARCH} == "powerpc" || \
+    ${MACHINE_CPU} == "aarch64" || ${MACHINE_CPU} == "arm" || \
+    ${MACHINE_ARCH} == "hppa" || ${MACHINE_ARCH} == "sparc64" || \
+    ${MACHINE} == "sun2" || ${MACHINE} == "alpha"
 HAVE_BINUTILS?=	234
 .else
 HAVE_BINUTILS?=	231
@@ -766,6 +760,11 @@ DEBUGGRP?=	wheel
 DEBUGOWN?=	root
 DEBUGMODE?=	${NONBINMODE}
 
+DTBDIR?=	/boot/dtb
+DTBGRP?=	wheel
+DTBOWN?=	root
+DTBMODE?=	${NONBINMODE}
+
 MKDIRMODE?=	0755
 MKDIRPERM?=	-m ${MKDIRMODE}
 
@@ -867,7 +866,9 @@ GNU_ARCH.earmhfeb=armeb
 GNU_ARCH.earmv4=armv4
 GNU_ARCH.earmv4eb=armv4eb
 GNU_ARCH.earmv5=arm
+GNU_ARCH.earmv5hf=arm
 GNU_ARCH.earmv5eb=armeb
+GNU_ARCH.earmv5hfeb=armeb
 GNU_ARCH.earmv6=armv6
 GNU_ARCH.earmv6hf=armv6
 GNU_ARCH.earmv6eb=armv6eb
@@ -1192,6 +1193,17 @@ MKRADEONFIRMWARE.aarch64=	yes
 # Only install the tegra firmware on evbarm.
 MKTEGRAFIRMWARE.evbarm=		yes
 
+# Only build devicetree (dtb) files on armv6, armv7, and aarch64.
+MKDTB.aarch64=			yes
+MKDTB.earmv6=			yes
+MKDTB.earmv6hf=			yes
+MKDTB.earmv6eb=			yes
+MKDTB.earmv6hfeb=		yes
+MKDTB.earmv7=			yes
+MKDTB.earmv7hf=			yes
+MKDTB.earmv7eb=			yes
+MKDTB.earmv7hfeb=		yes
+
 # MesaLib.old and MesaLib7 go together, and MesaLib is alone.
 HAVE_MESA_VER?=	18
 .if ${HAVE_MESA_VER} == "10"
@@ -1219,7 +1231,7 @@ _MKVARS.no= \
 	MKARZERO \
 	MKBSDGREP \
 	MKCATPAGES MKCOMPATTESTS MKCOMPATX11 MKCTF \
-	MKDEBUG MKDEBUGLIB MKDTRACE \
+	MKDEBUG MKDEBUGLIB MKDTB MKDTRACE \
 	MKEXTSRC \
 	MKFIRMWARE \
 	MKGROFFHTMLDOC \
@@ -1439,7 +1451,8 @@ ${var}?= no
 .if ${USE_PIGZGZIP} == "no" && \
 		(${MACHINE} == "amd64" || \
 		 ${MACHINE} == "sparc64" || \
-		 ${MACHINE} == "alpha")
+		 ${MACHINE} == "alpha" || \
+		 ${MACHINE_ARCH} == "aarch64")
 USE_XZ_SETS?= yes
 .else
 USE_XZ_SETS?= no

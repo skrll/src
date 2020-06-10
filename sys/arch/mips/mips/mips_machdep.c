@@ -1,4 +1,4 @@
-/*	$NetBSD: mips_machdep.c,v 1.279 2019/03/29 05:23:12 simonb Exp $	*/
+/*	$NetBSD: mips_machdep.c,v 1.282 2020/06/04 15:42:31 simonb Exp $	*/
 
 /*
  * Copyright 2002 Wasabi Systems, Inc.
@@ -111,7 +111,7 @@
  */
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
-__KERNEL_RCSID(0, "$NetBSD: mips_machdep.c,v 1.279 2019/03/29 05:23:12 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mips_machdep.c,v 1.282 2020/06/04 15:42:31 simonb Exp $");
 
 #define __INTR_PRIVATE
 #include "opt_cputype.h"
@@ -532,8 +532,14 @@ static const struct pridtab cputab[] = {
 	/* The SB-1 CPU uses a CCA of 5 - "Cacheable Coherent Shareable" */
 	{ MIPS_PRID_CID_SIBYTE, MIPS_SB1, -1,	-1, -1, 0,
 	  MIPS64_FLAGS | CPU_MIPS_D_CACHE_COHERENT |
-	  CPU_MIPS_HAVE_SPECIAL_CCA | (5 << CPU_MIPS_CACHED_CCA_SHIFT), 0, 0,
+	  CPU_MIPS_HAVE_SPECIAL_CCA |
+	  (CCA_SB_CACHEABLE_COHERENT << CPU_MIPS_CACHED_CCA_SHIFT), 0, 0,
 						"SB-1"			},
+	{ MIPS_PRID_CID_SIBYTE, MIPS_SB1_11, -1,	-1, -1, 0,
+	  MIPS64_FLAGS | CPU_MIPS_D_CACHE_COHERENT |
+	  CPU_MIPS_HAVE_SPECIAL_CCA |
+	  (CCA_SB_CACHEABLE_COHERENT << CPU_MIPS_CACHED_CCA_SHIFT), 0, 0,
+						"SB-1 (0x11)"		},
 
 	{ MIPS_PRID_CID_RMI, MIPS_XLR732B, -1,	-1, -1, 0,
 	  MIPS64_FLAGS | CPU_MIPS_D_CACHE_COHERENT | CPU_MIPS_NO_LLADDR |
@@ -657,6 +663,14 @@ static const struct pridtab cputab[] = {
 	  MIPS_CP0FL_CONFIG1 | MIPS_CP0FL_CONFIG2 | MIPS_CP0FL_CONFIG3,
 	  0,
 	  "CN50xx"		},
+
+	{ MIPS_PRID_CID_CAVIUM, MIPS_CN70XX, -1, -1, -1, 0,
+	  MIPS64_FLAGS | CPU_MIPS_D_CACHE_COHERENT | CPU_MIPS_NO_LLADDR,
+	  MIPS_CP0FL_USE |
+	  MIPS_CP0FL_EBASE | MIPS_CP0FL_CONFIG | MIPS_CP0FL_HWRENA |
+	  MIPS_CP0FL_CONFIG1 | MIPS_CP0FL_CONFIG2 | MIPS_CP0FL_CONFIG3,
+	  0,
+	  "CN70xx/CN71xx"	},
 
 	/* Microsoft Research' extensible MIPS */
 	{ MIPS_PRID_CID_MICROSOFT, MIPS_eMIPS, 1, -1, CPU_ARCH_MIPS1, 64,
@@ -2125,6 +2139,17 @@ mips_page_physload(vaddr_t vkernstart, vaddr_t vkernend,
 		 */
 		paddr_t segstart = round_page(segs->start);
 		const paddr_t segfinish = trunc_page(segs->start + segs->size);
+
+		if (segstart >= segfinish) {
+			/*
+			 * This is purely cosmetic, to avoid output like
+			 *    phys segment: 0xffffffffffffe000 @ 0xffb6000
+			 * when a segment starts and finishes in the same page.
+			 */
+			printf("phys segment: %#"PRIxPADDR" @ %#"PRIxPADDR
+			    " (short)\n", (paddr_t)segs->size, segstart);
+			continue;
+		}
 
 		printf("phys segment: %#"PRIxPADDR" @ %#"PRIxPADDR"\n",
 		    segfinish - segstart, segstart);

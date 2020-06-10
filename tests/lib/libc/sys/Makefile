@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.61 2020/03/06 18:32:35 kamil Exp $
+# $NetBSD: Makefile,v 1.64 2020/04/30 11:03:29 ryo Exp $
 
 MKMAN=	no
 
@@ -18,6 +18,8 @@ TESTS_C+=		t_connect
 TESTS_C+=		t_dup
 TESTS_C+=		t_fork
 TESTS_C+=		t_fsync
+TESTS_C+=		t_futex_ops
+TESTS_C+=		t_futex_robust
 TESTS_C+=		t_getcontext
 TESTS_C+=		t_getgroups
 TESTS_C+=		t_getitimer
@@ -68,6 +70,7 @@ TESTS_C+=		t_sendrecv
 TESTS_C+=		t_setrlimit
 TESTS_C+=		t_setuid
 TESTS_C+=		t_sigaction
+TESTS_C+=		t_sigaltstack
 TESTS_C+=		t_sigqueue
 TESTS_C+=		t_sigtimedwait
 TESTS_C+=		t_socketpair
@@ -85,7 +88,7 @@ TESTS_C+=		t_wait_noproc
 TESTS_C+=		t_wait_noproc_wnohang
 TESTS_C+=		t_write
 
-SRCS.t_mprotect=	t_mprotect.c ${SRCS_EXEC_PROT}
+SRCS.t_mprotect=	t_mprotect.c ${SRCS_EXEC_PROT} t_mprotect_helper.c
 
 LDADD.t_getpid+=        -lpthread
 
@@ -103,6 +106,9 @@ CPPFLAGS.t_posix_fadvise.c += -D_KERNTYPES
 TESTS_C+=		t_posix_fadvise
 LDADD.t_posix_fadvise+= ${LIBRUMPBASE}
 .endif
+
+CPPFLAGS.t_futex_ops.c		+= -I${.CURDIR}/../../../../lib
+CPPFLAGS.t_futex_robust.c	+= -I${.CURDIR}/../../../../lib
 
 CPPFLAGS.t_lwp_create.c		+= -D_KERNTYPES
 CPPFLAGS.t_ptrace_wait.c	+= -D_KERNTYPES -D__TEST_FENV

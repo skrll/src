@@ -1,4 +1,4 @@
-/* $NetBSD: cpuswitch.S,v 1.15 2020/01/08 20:59:18 skrll Exp $ */
+/* $NetBSD: cpuswitch.S,v 1.21 2020/05/23 18:08:59 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -34,10 +34,13 @@
 #include "assym.h"
 
 #include "opt_compat_netbsd32.h"
+#include "opt_cpuoptions.h"
 #include "opt_ddb.h"
 #include "opt_kasan.h"
 
-RCSID("$NetBSD: cpuswitch.S,v 1.15 2020/01/08 20:59:18 skrll Exp $")
+RCSID("$NetBSD: cpuswitch.S,v 1.21 2020/05/23 18:08:59 ryo Exp $")
+
+	ARMV8_DEFINE_OPTIONS
 
 /*
  * At IPL_SCHED:
@@ -57,6 +60,10 @@ ENTRY_NP(cpu_switchto)
 	stp	x25, x26, [sp, #TF_X25]
 	stp	x27, x28, [sp, #TF_X27]
 	stp	x29, x30, [sp, #TF_X29]
+#ifdef DDB
+	str	lr, [sp, #TF_PC]		/* for backtrace */
+	str	xzr, [sp, #TF_SP]		/* mark as switchframe */
+#endif
 
 	/*
 	 * Save the current stack pointer and the CPACR and save them in
@@ -73,9 +80,41 @@ ENTRY_NP(cpu_switchto)
 	DISABLE_INTERRUPT
 	ldr	x6, [x1, #L_PCB]	/* x6 = lwp_getpcb(newlwp) */
 	ldr	x4, [x6, #PCB_TF]	/* get trapframe ptr (aka SP) */
+#ifdef DDB
+	str	xzr, [x6, #PCB_TF]	/* clear l->l_addr->pcb_tf */
+#endif
 	ldr	x5, [x1, #L_MD_CPACR]	/* get cpacr_el1 */
 	mov	sp, x4			/* restore stack pointer */
 	msr	cpacr_el1, x5		/* restore cpacr_el1 */
+
+#ifdef ARMV83_PAC
+	/* Switch the PAC key. */
+	adrl	x4, _C_LABEL(aarch64_pac_enabled)
+	ldr	w4, [x4]
+	cbz	w4, 1f
+	ldp	x5, x6, [x1, #L_MD_IA_KERN]
+	msr	APIAKeyLo_EL1, x5
+	msr	APIAKeyHi_EL1, x6
+
+	/* Other keys only need to be updated when switching to user process */
+	ldr	w5, [x1, #L_FLAG]
+	and	w5, w5, #LW_SYSTEM	/* (lwp->l_flag & LW_SYSTEM) ? */
+	cbnz	w5, 1f
+
+	ldp	x5, x6, [x1, #L_MD_IB_USER]
+	msr	APIBKeyLo_EL1, x5
+	msr	APIBKeyHi_EL1, x6
+	ldp	x5, x6, [x1, #L_MD_DA_USER]
+	msr	APDAKeyLo_EL1, x5
+	msr	APDAKeyHi_EL1, x6
+	ldp	x5, x6, [x1, #L_MD_DB_USER]
+	msr	APDBKeyLo_EL1, x5
+	msr	APDBKeyHi_EL1, x6
+	ldp	x5, x6, [x1, #L_MD_GA_USER]
+	msr	APGAKeyLo_EL1, x5
+	msr	APGAKeyHi_EL1, x6
+1:
+#endif
 
 	mrs	x3, tpidr_el1
 	str	x1, [x3, #CI_CURLWP]	/* switch curlwp to new lwp */
@@ -132,6 +171,17 @@ ENTRY_NP(cpu_switchto_softint)
 	str	x5, [x19, #L_MD_CPACR]
 	str	x0, [x3, #CI_CURLWP]	/* curcpu()->ci_curlwp = softlwp; */
 
+#ifdef ARMV83_PAC
+	/* Switch the PAC key. */
+	adrl	x4, _C_LABEL(aarch64_pac_enabled)
+	ldr	w4, [x4]
+	cbz	w4, 1f
+	ldp	x5, x6, [x0, #L_MD_IA_KERN]
+	msr	APIAKeyLo_EL1, x5
+	msr	APIAKeyHi_EL1, x6
+1:
+#endif
+
 #ifdef KASAN
 	/* clear the new stack */
 	stp	x0, x1, [sp, #-16]!
@@ -155,9 +205,23 @@ ENTRY_NP(cpu_switchto_softint)
 	str	x19, [x3, #CI_CURLWP]	/* curcpu()->ci_curlwp := x19 */
 	ldr	x6, [x19, #L_PCB]	/* x6 = lwp_getpcb(curlwp) */
 	ldr	x4, [x6, #PCB_TF]	/* x4 := pinned_lwp->l_addr->pcb_tf */
+#ifdef DDB
+	str	xzr, [x6, #PCB_TF]	/* clear l->l_addr->pcb_tf */
+#endif
 	ldr	x5, [x19, #L_MD_CPACR]	/* x5 := pinned_lwp->l_md_cpacr */
 	mov	sp, x4			/* restore pinned_lwp sp */
 	msr	cpacr_el1, x5		/* restore pinned_lwp cpacr */
+
+#ifdef ARMV83_PAC
+	/* Restore the PAC key. */
+	adrl	x4, _C_LABEL(aarch64_pac_enabled)
+	ldr	w4, [x4]
+	cbz	w4, 1f
+	ldp	x5, x6, [x19, #L_MD_IA_KERN]
+	msr	APIAKeyLo_EL1, x5
+	msr	APIAKeyHi_EL1, x6
+1:
+#endif
 
 	ldp	x19, x20, [sp, #TF_X19]
 	msr	daif, x19		/* restore interrupt mask */
@@ -199,14 +263,32 @@ END(softint_cleanup)
  *	x28 = arg
  */
 ENTRY_NP(lwp_trampoline)
+	stp	x0, x1, [sp, #-16]!	/* save x0, x1 */
 	bl	_C_LABEL(lwp_startup)
+	ldp	x0, x1, [sp], #16	/* restore x0, x1 */
+
+#ifdef ARMV83_PAC
+	/* Generate a new PAC key. */
+	adrl	x4, _C_LABEL(aarch64_pac_enabled)
+	ldr	w4, [x4]
+	cbz	w4, 1f
+	mov	x26, x1
+	bl	_C_LABEL(cprng_strong64)
+	str	x0, [x26, #L_MD_IA_KERN]
+	msr	APIAKeyLo_EL1, x0
+	bl	_C_LABEL(cprng_strong64)
+	str	x0, [x26, #(L_MD_IA_KERN + 8)]
+	msr	APIAKeyHi_EL1, x0
+1:
+#endif
 
 	/*
 	 * When the x27 function returns, it will jump to el0_trap_exit.
 	 */
 	adr	x30, el0_trap_exit	/* tail call via lr */
 	mov	x0, x28			/* mov arg into place */
-	br	x27			/* call function with arg */
+	mov	x16, x27		/* use x16 as jump register, for BTI */
+	br	x16			/* call function with arg */
 END(lwp_trampoline)
 
 	.macro unwind_x0_x2
@@ -309,6 +391,17 @@ ENTRY_NP(el0_trap_exit)
 	msr	tpidr_el0, x0
 #ifdef COMPAT_NETBSD32
 	msr	tpidrro_el0, x0
+#endif
+
+#ifdef ARMV83_PAC
+	/* Switch to the user PAC key. */
+	adrl	x4, _C_LABEL(aarch64_pac_enabled)
+	ldr	w4, [x4]
+	cbz	w4, 1f
+	ldp	x5, x6, [x9, #L_MD_IA_USER]
+	msr	APIAKeyLo_EL1, x5
+	msr	APIAKeyHi_EL1, x6
+1:
 #endif
 
 	unwind_x3_x30

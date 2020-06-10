@@ -1,4 +1,4 @@
-/*	$NetBSD: atomic.S,v 1.18 2019/02/17 07:34:44 isaki Exp $	*/
+/*	$NetBSD: atomic.S,v 1.22 2020/04/26 14:49:17 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -39,11 +39,14 @@
 #endif
 
 #ifdef _HARDKERNEL
-#define	LOCK(n)		.Lpatch ## n:	lock
-#define	ENDLABEL(a)	_ALIGN_TEXT; LABEL(a)
+#include <machine/frameasm.h>
+#define LOCK			HOTPATCH(HP_NAME_NOLOCK, 1); lock
+#define HOTPATCH_SSE2_LFENCE	HOTPATCH(HP_NAME_SSE2_LFENCE, 8);
+#define HOTPATCH_SSE2_MFENCE	HOTPATCH(HP_NAME_SSE2_MFENCE, 8);
 #else
-#define	LOCK(n)		lock
-#define	ENDLABEL(a)	/* nothing */
+#define LOCK			lock
+#define HOTPATCH_SSE2_LFENCE	/* nothing */
+#define HOTPATCH_SSE2_MFENCE	/* nothing */
 #endif
 
 	.text
@@ -51,21 +54,21 @@
 /* 32-bit */
 
 ENTRY(_atomic_add_32)
-	LOCK(1)
+	LOCK
 	addl	%esi, (%rdi)
 	ret
 END(_atomic_add_32)
 
 ENTRY(_atomic_add_32_nv)
 	movl	%esi, %eax
-	LOCK(2)
+	LOCK
 	xaddl	%eax, (%rdi)
 	addl	%esi, %eax
 	ret
 END(_atomic_add_32_nv)
 
 ENTRY(_atomic_and_32)
-	LOCK(3)
+	LOCK
 	andl	%esi, (%rdi)
 	ret
 END(_atomic_and_32)
@@ -75,7 +78,7 @@ ENTRY(_atomic_and_32_nv)
 1:
 	movl	%eax, %ecx
 	andl	%esi, %ecx
-	LOCK(4)
+	LOCK
 	cmpxchgl %ecx, (%rdi)
 	jnz	1b
 	movl	%ecx, %eax
@@ -83,35 +86,35 @@ ENTRY(_atomic_and_32_nv)
 END(_atomic_and_32_nv)
 
 ENTRY(_atomic_dec_32)
-	LOCK(5)
+	LOCK
 	decl	(%rdi)
 	ret
 END(_atomic_dec_32)
 
 ENTRY(_atomic_dec_32_nv)
 	movl	$-1, %eax
-	LOCK(6)
+	LOCK
 	xaddl	%eax, (%rdi)
 	decl	%eax
 	ret
 END(_atomic_dec_32_nv)
 
 ENTRY(_atomic_inc_32)
-	LOCK(7)
+	LOCK
 	incl	(%rdi)
 	ret
 END(_atomic_inc_32)
 
 ENTRY(_atomic_inc_32_nv)
 	movl	$1, %eax
-	LOCK(8)
+	LOCK
 	xaddl	%eax, (%rdi)
 	incl	%eax
 	ret
 END(_atomic_inc_32_nv)
 
 ENTRY(_atomic_or_32)
-	LOCK(9)
+	LOCK
 	orl	%esi, (%rdi)
 	ret
 END(_atomic_or_32)
@@ -121,7 +124,7 @@ ENTRY(_atomic_or_32_nv)
 1:
 	movl	%eax, %ecx
 	orl	%esi, %ecx
-	LOCK(10)
+	LOCK
 	cmpxchgl %ecx, (%rdi)
 	jnz	1b
 	movl	%ecx, %eax
@@ -136,7 +139,7 @@ END(_atomic_swap_32)
 
 ENTRY(_atomic_cas_32)
 	movl	%esi, %eax
-	LOCK(12)
+	LOCK
 	cmpxchgl %edx, (%rdi)
 	/* %eax now contains the old value */
 	ret
@@ -152,21 +155,21 @@ END(_atomic_cas_32_ni)
 /* 64-bit */
 
 ENTRY(_atomic_add_64)
-	LOCK(13)
+	LOCK
 	addq	%rsi, (%rdi)
 	ret
 END(_atomic_add_64)
 
 ENTRY(_atomic_add_64_nv)
 	movq	%rsi, %rax
-	LOCK(14)
+	LOCK
 	xaddq	%rax, (%rdi)
 	addq	%rsi, %rax
 	ret
 END(_atomic_add_64_nv)
 
 ENTRY(_atomic_and_64)
-	LOCK(15)
+	LOCK
 	andq	%rsi, (%rdi)
 	ret
 END(_atomic_and_64)
@@ -176,7 +179,7 @@ ENTRY(_atomic_and_64_nv)
 1:
 	movq	%rax, %rcx
 	andq	%rsi, %rcx
-	LOCK(16)
+	LOCK
 	cmpxchgq %rcx, (%rdi)
 	jnz	1b
 	movq	%rcx, %rax
@@ -184,35 +187,35 @@ ENTRY(_atomic_and_64_nv)
 END(_atomic_and_64_nv)
 
 ENTRY(_atomic_dec_64)
-	LOCK(17)
+	LOCK
 	decq	(%rdi)
 	ret
 END(_atomic_dec_64)
 
 ENTRY(_atomic_dec_64_nv)
 	movq	$-1, %rax
-	LOCK(18)
+	LOCK
 	xaddq	%rax, (%rdi)
 	decq	%rax
 	ret
 END(_atomic_dec_64_nv)
 
 ENTRY(_atomic_inc_64)
-	LOCK(19)
+	LOCK
 	incq	(%rdi)
 	ret
 END(_atomic_inc_64)
 
 ENTRY(_atomic_inc_64_nv)
 	movq	$1, %rax
-	LOCK(20)
+	LOCK
 	xaddq	%rax, (%rdi)
 	incq	%rax
 	ret
 END(_atomic_inc_64_nv)
 
 ENTRY(_atomic_or_64)
-	LOCK(21)
+	LOCK
 	orq	%rsi, (%rdi)
 	ret
 END(_atomic_or_64)
@@ -222,7 +225,7 @@ ENTRY(_atomic_or_64_nv)
 1:
 	movq	%rax, %rcx
 	orq	%rsi, %rcx
-	LOCK(22)
+	LOCK
 	cmpxchgq %rcx, (%rdi)
 	jnz	1b
 	movq	%rcx, %rax
@@ -237,7 +240,7 @@ END(_atomic_swap_64)
 
 ENTRY(_atomic_cas_64)
 	movq	%rsi, %rax
-	LOCK(24)
+	LOCK
 	cmpxchgq %rdx, (%rdi)
 	/* %eax now contains the old value */
 	ret
@@ -253,48 +256,26 @@ END(_atomic_cas_64_ni)
 /* memory barriers */
 
 ENTRY(_membar_consumer)
-	LOCK(25)
+	HOTPATCH_SSE2_LFENCE
+	/* 8 bytes of instructions */
+	LOCK
 	addq	$0, -8(%rsp)
 	ret
 END(_membar_consumer)
-ENDLABEL(membar_consumer_end)
 
 ENTRY(_membar_producer)
 	/* A store is enough */
 	movq	$0, -8(%rsp)
 	ret
 END(_membar_producer)
-ENDLABEL(membar_producer_end)
 
 ENTRY(_membar_sync)
-	LOCK(26)
+	HOTPATCH_SSE2_MFENCE
+	/* 8 bytes of instructions */
+	LOCK
 	addq	$0, -8(%rsp)
 	ret
 END(_membar_sync)
-ENDLABEL(membar_sync_end)
-
-#ifdef _HARDKERNEL
-ENTRY(sse2_lfence)
-	lfence
-	ret
-END(sse2_lfence)
-ENDLABEL(sse2_lfence_end)
-
-ENTRY(sse2_mfence)
-	mfence
-	ret
-END(sse2_mfence)
-ENDLABEL(sse2_mfence_end)
-
-atomic_lockpatch:
-	.globl	atomic_lockpatch
-	.quad	.Lpatch1, .Lpatch2, .Lpatch3, .Lpatch4, .Lpatch5
-	.quad	.Lpatch6, .Lpatch7, .Lpatch8, .Lpatch9, .Lpatch10
-	.quad	.Lpatch12, .Lpatch13, .Lpatch14, .Lpatch15
-	.quad	.Lpatch16, .Lpatch17, .Lpatch18, .Lpatch19, .Lpatch20
-	.quad	.Lpatch21, .Lpatch22, .Lpatch24, .Lpatch25
-	.quad	.Lpatch26, 0
-#endif	/* _HARDKERNEL */
 
 ALIAS(atomic_add_32,_atomic_add_32)
 ALIAS(atomic_add_64,_atomic_add_64)
@@ -434,3 +415,19 @@ STRONG_ALIAS(_atomic_cas_ptr_ni,_atomic_cas_64_ni)
 
 STRONG_ALIAS(_membar_enter,_membar_consumer)
 STRONG_ALIAS(_membar_exit,_membar_producer)
+
+#ifdef _HARDKERNEL
+	.section .rodata
+
+LABEL(sse2_lfence)
+	lfence
+	ret
+	nop; nop; nop; nop;
+LABEL(sse2_lfence_end)
+
+LABEL(sse2_mfence)
+	mfence
+	ret
+	nop; nop; nop; nop;
+LABEL(sse2_mfence_end)
+#endif	/* _HARDKERNEL */

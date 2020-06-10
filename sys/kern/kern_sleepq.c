@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_sleepq.c,v 1.64 2020/04/10 17:16:21 ad Exp $	*/
+/*	$NetBSD: kern_sleepq.c,v 1.68 2020/05/21 00:39:04 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2009, 2019, 2020 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_sleepq.c,v 1.64 2020/04/10 17:16:21 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_sleepq.c,v 1.68 2020/05/21 00:39:04 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -151,7 +151,7 @@ sleepq_remove(sleepq_t *sq, lwp_t *l)
 	}
 
 	/* Update sleep time delta, call the wake-up handler of scheduler */
-	l->l_slpticksum += (hardclock_ticks - l->l_slpticks);
+	l->l_slpticksum += (getticks() - l->l_slpticks);
 	sched_wakeup(l);
 
 	/* Look for a CPU to wake up */
@@ -188,14 +188,22 @@ sleepq_insert(sleepq_t *sq, lwp_t *l, syncobj_t *sobj)
 	KASSERT(sq != NULL);
 
 	if ((sobj->sobj_flag & SOBJ_SLEEPQ_SORTED) != 0) {
-		lwp_t *l2;
+		lwp_t *l2, *l_last = NULL;
 		const pri_t pri = lwp_eprio(l);
 
 		LIST_FOREACH(l2, sq, l_sleepchain) {
+			l_last = l2;
 			if (lwp_eprio(l2) < pri) {
 				LIST_INSERT_BEFORE(l2, l, l_sleepchain);
 				return;
 			}
+		}
+		/*
+		 * Ensure FIFO ordering if no waiters are of lower priority.
+		 */
+		if (l_last != NULL) {
+			LIST_INSERT_AFTER(l_last, l, l_sleepchain);
+			return;
 		}
 	}
 
@@ -210,13 +218,15 @@ sleepq_insert(sleepq_t *sq, lwp_t *l, syncobj_t *sobj)
  *	lock) must have be released (see sleeptab_lookup(), sleepq_enter()).
  */
 void
-sleepq_enqueue(sleepq_t *sq, wchan_t wchan, const char *wmesg, syncobj_t *sobj)
+sleepq_enqueue(sleepq_t *sq, wchan_t wchan, const char *wmesg, syncobj_t *sobj,
+    bool catch_p)
 {
 	lwp_t *l = curlwp;
 
 	KASSERT(lwp_locked(l, NULL));
 	KASSERT(l->l_stat == LSONPROC);
 	KASSERT(l->l_wchan == NULL && l->l_sleepq == NULL);
+	KASSERT((l->l_flag & LW_SINTR) == 0);
 
 	l->l_syncobj = sobj;
 	l->l_wchan = wchan;
@@ -224,12 +234,46 @@ sleepq_enqueue(sleepq_t *sq, wchan_t wchan, const char *wmesg, syncobj_t *sobj)
 	l->l_wmesg = wmesg;
 	l->l_slptime = 0;
 	l->l_stat = LSSLEEP;
+	if (catch_p)
+		l->l_flag |= LW_SINTR;
 
 	sleepq_insert(sq, l, sobj);
 
 	/* Save the time when thread has slept */
-	l->l_slpticks = hardclock_ticks;
+	l->l_slpticks = getticks();
 	sched_slept(l);
+}
+
+/*
+ * sleepq_transfer:
+ *
+ *	Move an LWP from one sleep queue to another.  Both sleep queues
+ *	must already be locked.
+ *
+ *	The LWP will be updated with the new sleepq, wchan, wmesg,
+ *	sobj, and mutex.  The interruptible flag will also be updated.
+ */
+void
+sleepq_transfer(lwp_t *l, sleepq_t *from_sq, sleepq_t *sq, wchan_t wchan,
+    const char *wmesg, syncobj_t *sobj, kmutex_t *mp, bool catch_p)
+{
+
+	KASSERT(l->l_sleepq == from_sq);
+
+	LIST_REMOVE(l, l_sleepchain);
+	l->l_syncobj = sobj;
+	l->l_wchan = wchan;
+	l->l_sleepq = sq;
+	l->l_wmesg = wmesg;
+
+	if (catch_p)
+		l->l_flag |= LW_SINTR;
+	else
+		l->l_flag &= ~LW_SINTR;
+
+	lwp_setlock(l, mp);
+
+	sleepq_insert(sq, l, sobj);
 }
 
 /*
@@ -254,13 +298,9 @@ sleepq_block(int timo, bool catch_p)
 
 	/*
 	 * If sleeping interruptably, check for pending signals, exits or
-	 * core dump events.  XXX The set of LW_SINTR here assumes no unlock
-	 * between sleepq_enqueue() and sleepq_block().  Unlock between
-	 * those only happens with turnstiles, which never set catch_p. 
-	 * Ugly but safe.
+	 * core dump events.
 	 */
 	if (catch_p) {
-		l->l_flag |= LW_SINTR;
 		if ((l->l_flag & (LW_CANCELLED|LW_WEXIT|LW_WCORE)) != 0) {
 			l->l_flag &= ~LW_CANCELLED;
 			error = EINTR;
@@ -273,6 +313,13 @@ sleepq_block(int timo, bool catch_p)
 		/* lwp_unsleep() will release the lock */
 		lwp_unsleep(l, true);
 	} else {
+		/*
+		 * The LWP may have already been awoken if the caller
+		 * dropped the sleep queue lock between sleepq_enqueue() and
+		 * sleepq_block().  If that happends l_stat will be LSONPROC
+		 * and mi_switch() will treat this as a preemption.  No need
+		 * to do anything special here.
+		 */
 		if (timo) {
 			l->l_flag &= ~LW_STIMO;
 			callout_schedule(&l->l_timeout_ch, timo);

@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.h,v 1.37 2019/10/30 17:06:57 maxv Exp $	*/
+/*	$NetBSD: cpufunc.h,v 1.39 2020/05/02 11:37:17 maxv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2019 The NetBSD Foundation, Inc.
@@ -103,10 +103,19 @@ rdtsc(void)
 	return (low | ((uint64_t)high << 32));
 }
 
-#ifndef XEN
-void	x86_hotpatch(uint32_t, const uint8_t *, size_t);
-void	x86_patch_window_open(u_long *, u_long *);
-void	x86_patch_window_close(u_long, u_long);
+#ifndef XENPV
+struct x86_hotpatch_source {
+	uint8_t *saddr;
+	uint8_t *eaddr;
+};
+
+struct x86_hotpatch_descriptor {
+	uint8_t name;
+	uint8_t nsrc;
+	const struct x86_hotpatch_source *srcs[];
+};
+
+void	x86_hotpatch(uint8_t, uint8_t);
 void	x86_patch(bool);
 #endif
 

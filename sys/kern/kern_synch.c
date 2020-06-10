@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_synch.c,v 1.346 2020/04/04 20:21:53 ad Exp $	*/
+/*	$NetBSD: kern_synch.c,v 1.349 2020/05/23 23:42:43 ad Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2004, 2006, 2007, 2008, 2009, 2019, 2020
@@ -69,7 +69,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_synch.c,v 1.346 2020/04/04 20:21:53 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_synch.c,v 1.349 2020/05/23 23:42:43 ad Exp $");
 
 #include "opt_kstack.h"
 #include "opt_dtrace.h"
@@ -173,6 +173,7 @@ tsleep(wchan_t ident, pri_t priority, const char *wmesg, int timo)
 	struct lwp *l = curlwp;
 	sleepq_t *sq;
 	kmutex_t *mp;
+	bool catch_p;
 
 	KASSERT((l->l_pflag & LP_INTR) == 0);
 	KASSERT(ident != &lbolt);
@@ -183,10 +184,11 @@ tsleep(wchan_t ident, pri_t priority, const char *wmesg, int timo)
 	}
 
 	l->l_kpriority = true;
+	catch_p = priority & PCATCH;
 	sq = sleeptab_lookup(&sleeptab, ident, &mp);
 	sleepq_enter(sq, l, mp);
-	sleepq_enqueue(sq, ident, wmesg, &sleep_syncobj);
-	return sleepq_block(timo, priority & PCATCH);
+	sleepq_enqueue(sq, ident, wmesg, &sleep_syncobj, catch_p);
+	return sleepq_block(timo, catch_p);
 }
 
 int
@@ -196,6 +198,7 @@ mtsleep(wchan_t ident, pri_t priority, const char *wmesg, int timo,
 	struct lwp *l = curlwp;
 	sleepq_t *sq;
 	kmutex_t *mp;
+	bool catch_p;
 	int error;
 
 	KASSERT((l->l_pflag & LP_INTR) == 0);
@@ -207,11 +210,12 @@ mtsleep(wchan_t ident, pri_t priority, const char *wmesg, int timo,
 	}
 
 	l->l_kpriority = true;
+	catch_p = priority & PCATCH;
 	sq = sleeptab_lookup(&sleeptab, ident, &mp);
 	sleepq_enter(sq, l, mp);
-	sleepq_enqueue(sq, ident, wmesg, &sleep_syncobj);
+	sleepq_enqueue(sq, ident, wmesg, &sleep_syncobj, catch_p);
 	mutex_exit(mtx);
-	error = sleepq_block(timo, priority & PCATCH);
+	error = sleepq_block(timo, catch_p);
 
 	if ((priority & PNORELOCK) == 0)
 		mutex_enter(mtx);
@@ -238,7 +242,7 @@ kpause(const char *wmesg, bool intr, int timo, kmutex_t *mtx)
 	l->l_kpriority = true;
 	lwp_lock(l);
 	KERNEL_UNLOCK_ALL(NULL, &l->l_biglocks);
-	sleepq_enqueue(NULL, l, wmesg, &kpause_syncobj);
+	sleepq_enqueue(NULL, l, wmesg, &kpause_syncobj, intr);
 	error = sleepq_block(timo, intr);
 	if (mtx != NULL)
 		mutex_enter(mtx);
@@ -330,7 +334,7 @@ preempt_needed(void)
 	needed = l->l_cpu->ci_want_resched;
 	KPREEMPT_ENABLE(l);
 
-	return (bool)needed;
+	return (needed != 0);
 }
 
 /*
@@ -927,7 +931,7 @@ suspendsched(void)
 	/*
 	 * We do this by process in order not to violate the locking rules.
 	 */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	PROCLIST_FOREACH(p, &allproc) {
 		mutex_enter(p->p_lock);
 		if ((p->p_flag & PK_SYSTEM) != 0) {
@@ -970,7 +974,7 @@ suspendsched(void)
 
 		mutex_exit(p->p_lock);
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	/*
 	 * Kick all CPUs to make them preempt any LWPs running in user mode. 
@@ -1108,7 +1112,7 @@ sched_pstats(void)
 		lavg_count = 0;
 		nrun = 0;
 	}
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	PROCLIST_FOREACH(p, &allproc) {
 		struct lwp *l;
 		struct rlimit *rlim;
@@ -1211,5 +1215,5 @@ sched_pstats(void)
 	/* Lightning bolt. */
 	cv_broadcast(&lbolt);
 
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 }

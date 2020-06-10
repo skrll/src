@@ -1,13 +1,13 @@
-/*	$NetBSD: uhci.c,v 1.300 2020/04/05 20:59:38 skrll Exp $	*/
+/*	$NetBSD: uhci.c,v 1.303 2020/05/26 07:03:22 skrll Exp $	*/
 
 /*
- * Copyright (c) 1998, 2004, 2011, 2012 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2004, 2011, 2012, 2016, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
  * by Lennart Augustsson (lennart@augustsson.net) at
- * Carlstedt Research & Technology, Jared D. McNeill (jmcneill@invisible.ca)
- * and Matthew R. Green (mrg@eterna.com.au).
+ * Carlstedt Research & Technology, Jared D. McNeill (jmcneill@invisible.ca),
+ * Matthew R. Green (mrg@eterna.com.au) and Nick Hudson.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.300 2020/04/05 20:59:38 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.303 2020/05/26 07:03:22 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -581,6 +581,7 @@ uhci_init(uhci_softc_t *sc)
 	sc->sc_bus.ub_methods = &uhci_bus_methods;
 	sc->sc_bus.ub_pipesize = sizeof(struct uhci_pipe);
 	sc->sc_bus.ub_usedma = true;
+	sc->sc_bus.ub_dmaflags = USBMALLOC_MULTISEG;
 
 	UHCICMD(sc, UHCI_CMD_MAXP); /* Assume 64 byte packets at frame end */
 
@@ -2013,6 +2014,10 @@ uhci_alloc_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer, int len,
 	if (len > PAGE_SIZE && (PAGE_SIZE % maxp) != 0) {
 		ntd += howmany(len, PAGE_SIZE);
 	}
+
+	/*
+	 * Might need one more TD if we're writing a ZLP
+	 */
 	if (!rd && (flags & USBD_FORCE_SHORT_XFER)) {
 		ntd++;
 	}
@@ -2109,6 +2114,12 @@ uhci_reset_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer,
 	for (offs = i = 0; len != 0 && i < uxfer->ux_nstd; i++, prev = std) {
 		int l = len;
 		std = uxfer->ux_stds[i];
+
+		const bus_addr_t sbp = DMAADDR(dma, offs);
+		const bus_addr_t ebp = DMAADDR(dma, offs + l - 1);
+		if (((sbp ^ ebp) & ~PAGE_MASK) != 0)
+			l = PAGE_SIZE - (DMAADDR(dma, offs) & PAGE_MASK);
+
 		if (l > maxp)
 			l = maxp;
 
@@ -2926,8 +2937,9 @@ uhci_device_isoc_transfer(struct usbd_xfer *xfer)
 
 	KASSERT(xfer->ux_nframes != 0);
 
-	usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
-	    rd ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
+	if (xfer->ux_length)
+		usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
+		    rd ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
 
 	mutex_enter(&sc->sc_lock);
 	next = isoc->next;
@@ -2973,7 +2985,10 @@ uhci_device_isoc_transfer(struct usbd_xfer *xfer)
 		}
 #endif
 		offs += len;
-		KASSERT(atop(buf) == atop(DMAADDR(&xfer->ux_dmabuf, offs)));
+		const bus_addr_t bend __diagused =
+		    DMAADDR(&xfer->ux_dmabuf, offs - 1);
+
+		KASSERT(((buf ^ bend) & ~PAGE_MASK) == 0);
 	}
 	isoc->next = next;
 	isoc->inuse += xfer->ux_nframes;

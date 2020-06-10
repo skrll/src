@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_pdaemon.c,v 1.125 2020/02/23 15:46:43 ad Exp $	*/
+/*	$NetBSD: uvm_pdaemon.c,v 1.127 2020/05/25 19:46:20 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_pdaemon.c,v 1.125 2020/02/23 15:46:43 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_pdaemon.c,v 1.127 2020/05/25 19:46:20 ad Exp $");
 
 #include "opt_uvmhist.h"
 #include "opt_readahead.h"
@@ -355,7 +355,12 @@ void
 uvm_pageout_done(int npages)
 {
 
-	KASSERT(uvmexp.paging >= npages);
+	KASSERT(atomic_load_relaxed(&uvmexp.paging) >= npages);
+
+	if (npages == 0) {
+		return;
+	}
+
 	atomic_add_int(&uvmexp.paging, -npages);
 
 	/*
@@ -998,9 +1003,9 @@ uvmpd_pool_drain_thread(void *arg)
 		 */
 		mutex_enter(&uvmpd_lock);
 		if (!uvmpd_pool_drain_run) {
-			lastslept = hardclock_ticks;
+			lastslept = getticks();
 			cv_wait(&uvmpd_pool_drain_cv, &uvmpd_lock);
-			if (hardclock_ticks != lastslept) {
+			if (getticks() != lastslept) {
 				cycled = false;
 				firstpool = NULL;
 			}

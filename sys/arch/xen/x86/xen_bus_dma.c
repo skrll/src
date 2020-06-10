@@ -1,4 +1,4 @@
-/*	$NetBSD: xen_bus_dma.c,v 1.30 2020/04/10 14:54:33 jdolecek Exp $	*/
+/*	$NetBSD: xen_bus_dma.c,v 1.32 2020/05/06 19:50:26 bouyer Exp $	*/
 /*	NetBSD bus_dma.c,v 1.21 2005/04/16 07:53:35 yamt Exp */
 
 /*-
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xen_bus_dma.c,v 1.30 2020/04/10 14:54:33 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xen_bus_dma.c,v 1.32 2020/05/06 19:50:26 bouyer Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -45,7 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: xen_bus_dma.c,v 1.30 2020/04/10 14:54:33 jdolecek Ex
 
 #include <uvm/uvm.h>
 
-extern paddr_t avail_end;
+#include "opt_xen.h"
 
 /* No special needs */
 struct x86_bus_dma_tag xenbus_bus_dma_tag = {
@@ -55,6 +55,10 @@ struct x86_bus_dma_tag xenbus_bus_dma_tag = {
 	._bounce_alloc_hi	= 0,
 	._may_bounce		= NULL,
 };
+
+#ifdef XENPV
+
+extern paddr_t avail_end;
 
 /* Pure 2^n version of get_order */
 static inline int get_order(unsigned long size)
@@ -142,15 +146,18 @@ _xen_alloc_contig(bus_size_t size, bus_size_t alignment,
 		pa = VM_PAGE_TO_PHYS(pg);
 		xpmap_ptom_map(pa, ptoa(mfn+i));
 		xpq_queue_machphys_update(((paddr_t)(mfn+i)) << PAGE_SHIFT, pa);
-		/* while here, give extra pages back to UVM */
+	}
+	/* Flush updates through and flush the TLB */
+	xpq_queue_tlb_flush();
+	splx(s);
+	/* now that ptom/mtop are valid, give the extra pages back to UVM */
+	for (pg = mlistp->tqh_first, i = 0; pg != NULL; pg = pgnext, i++) {
+		pgnext = pg->pageq.queue.tqe_next;
 		if (i >= npagesreq) {
 			TAILQ_REMOVE(mlistp, pg, pageq.queue);
 			uvm_pagefree(pg);
 		}
 	}
-	/* Flush updates through and flush the TLB */
-	xpq_queue_tlb_flush();
-	splx(s);
 	return 0;
 
 failed:
@@ -186,11 +193,11 @@ failed:
 		pa = VM_PAGE_TO_PHYS(pg);
 		xpmap_ptom_map(pa, ptoa(mfn));
 		xpq_queue_machphys_update(((paddr_t)mfn) << PAGE_SHIFT, pa);
+		/* slow but we don't care */
+		xpq_queue_tlb_flush();
 		TAILQ_REMOVE(mlistp, pg, pageq.queue);
 		uvm_pagefree(pg);
 	}
-	/* Flush updates through and flush the TLB */
-	xpq_queue_tlb_flush();
 	splx(s);
 	return error;
 }
@@ -318,3 +325,4 @@ dorealloc:
 		return error;
 	goto again;
 }
+#endif /* XENPV */
