@@ -37,6 +37,7 @@ typedef struct usb_dma_block {
 	void *kaddr;
 	bus_dma_segment_t *segs;
 	int nsegs;
+	int nsegs_alloc;
 	size_t size;
 	size_t align;
 	int flags;

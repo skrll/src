@@ -118,11 +118,15 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 	KASSERT(size != 0);
 	KASSERT(mutex_owned(&usb_blk_lock));
 
+	bool multiseg = (flags & USBMALLOC_MULTISEG) != 0;
 	bool coherent = (flags & USBMALLOC_COHERENT) != 0;
 	u_int dmaflags = coherent ? USB_DMA_COHERENT : 0;
 
 	/* First check the free list. */
 	LIST_FOREACH(b, &usb_blk_freelist, next) {
+		/* Don't allocate multiple segments to unwilling callers */
+		if (b->nsegs != 1 && !multiseg)
+			continue;
 		if (b->tag == tag &&
 		    b->size >= size &&
 		    b->align >= align &&
@@ -142,7 +146,6 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 	b->tag = tag;
 	b->size = size;
 	b->align = align;
-	b->nsegs = howmany(size, PAGE_SIZE);
 	b->flags = dmaflags;
 
 	if (!multiseg)
@@ -152,9 +155,11 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 		b->nsegs = howmany(size, PAGE_SIZE);
 
 	b->segs = kmem_alloc(b->nsegs * sizeof(*b->segs), KM_SLEEP);
+	b->nsegs_alloc = b->nsegs;
 
-	error = bus_dmamem_alloc(tag, b->size, align, 0, b->segs, b->nsegs,
-	    &b->nsegs, BUS_DMA_WAITOK);
+	error = bus_dmamem_alloc(tag, b->size, align, 0,
+				 b->segs, b->nsegs,
+				 &b->nsegs, BUS_DMA_WAITOK);
 	if (error)
 		goto free0;
 
