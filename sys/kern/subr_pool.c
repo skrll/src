@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_pool.c,v 1.268 2020/04/15 17:16:22 maxv Exp $	*/
+/*	$NetBSD: subr_pool.c,v 1.270 2020/06/07 09:45:19 maxv Exp $	*/
 
 /*
  * Copyright (c) 1997, 1999, 2000, 2002, 2007, 2008, 2010, 2014, 2015, 2018
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.268 2020/04/15 17:16:22 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.270 2020/06/07 09:45:19 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -58,6 +58,7 @@ __KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.268 2020/04/15 17:16:22 maxv Exp $")
 #include <sys/atomic.h>
 #include <sys/asan.h>
 #include <sys/msan.h>
+#include <sys/fault.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -1054,6 +1055,11 @@ pool_get(struct pool *pp, int flags)
 	    __func__, pp->pr_wchan);
 	if (flags & PR_WAITOK) {
 		ASSERT_SLEEPABLE();
+	}
+
+	if (flags & PR_NOWAIT) {
+		if (fault_inject())
+			return NULL;
 	}
 
 	mutex_enter(&pp->pr_lock);
@@ -2533,6 +2539,11 @@ pool_cache_get_paddr(pool_cache_t pc, int flags, paddr_t *pap)
 		ASSERT_SLEEPABLE();
 	}
 
+	if (flags & PR_NOWAIT) {
+		if (fault_inject())
+			return NULL;
+	}
+
 	/* Lock out interrupts and disable preemption. */
 	s = splvm();
 	while (/* CONSTCOND */ true) {
@@ -2574,8 +2585,13 @@ pool_cache_get_paddr(pool_cache_t pc, int flags, paddr_t *pap)
 		 * no more objects are available, it will return false.
 		 * Otherwise, we need to retry.
 		 */
-		if (!pool_cache_get_slow(cc, s, &object, pap, flags))
+		if (!pool_cache_get_slow(cc, s, &object, pap, flags)) {
+			if (object != NULL) {
+				kmsan_orig(object, pc->pc_pool.pr_size,
+				    KMSAN_TYPE_POOL, __RET_ADDR);
+			}
 			break;
+		}
 	}
 
 	/*

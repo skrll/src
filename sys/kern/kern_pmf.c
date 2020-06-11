@@ -1,4 +1,4 @@
-/* $NetBSD: kern_pmf.c,v 1.43 2020/05/12 10:02:56 jdolecek Exp $ */
+/* $NetBSD: kern_pmf.c,v 1.45 2020/06/11 02:30:21 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2007 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_pmf.c,v 1.43 2020/05/12 10:02:56 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_pmf.c,v 1.45 2020/06/11 02:30:21 thorpej Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -393,7 +393,7 @@ pmf_set_platform(const char *key, const char *value)
 	if (pmf_platform == NULL)
 		return false;
 
-	return prop_dictionary_set_cstring(pmf_platform, key, value);
+	return prop_dictionary_set_string(pmf_platform, key, value);
 }
 
 const char *
@@ -404,7 +404,7 @@ pmf_get_platform(const char *key)
 	if (pmf_platform == NULL)
 		return NULL;
 
-	if (!prop_dictionary_get_cstring_nocopy(pmf_platform, key, &value))
+	if (!prop_dictionary_get_string(pmf_platform, key, &value))
 		return NULL;
 
 	return value;
