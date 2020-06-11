@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.676 2020/04/30 03:42:10 riastradh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.678 2020/06/11 09:23:13 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.676 2020/04/30 03:42:10 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.678 2020/06/11 09:23:13 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -165,10 +165,12 @@ int	wm_debug = WM_DEBUG_TX | WM_DEBUG_RX | WM_DEBUG_LINK | WM_DEBUG_GMII
 
 #ifdef NET_MPSAFE
 #define WM_MPSAFE	1
-#define CALLOUT_FLAGS	CALLOUT_MPSAFE
+#define WM_CALLOUT_FLAGS	CALLOUT_MPSAFE
+#define WM_SOFTINT_FLAGS	SOFTINT_MPSAFE
 #define WM_WORKQUEUE_FLAGS	WQ_PERCPU | WQ_MPSAFE
 #else
-#define CALLOUT_FLAGS	0
+#define WM_CALLOUT_FLAGS	0
+#define WM_SOFTINT_FLAGS	0
 #define WM_WORKQUEUE_FLAGS	WQ_PERCPU
 #endif
 
@@ -758,7 +760,7 @@ static void	wm_init_rss(struct wm_softc *);
 static void	wm_adjust_qnum(struct wm_softc *, int);
 static inline bool	wm_is_using_msix(struct wm_softc *);
 static inline bool	wm_is_using_multiqueue(struct wm_softc *);
-static int	wm_softint_establish(struct wm_softc *, int, int);
+static int	wm_softint_establish_queue(struct wm_softc *, int, int);
 static int	wm_setup_legacy(struct wm_softc *);
 static int	wm_setup_msix(struct wm_softc *);
 static int	wm_init(struct ifnet *);
@@ -1839,7 +1841,7 @@ wm_attach(device_t parent, device_t self, void *aux)
 	uint32_t reg;
 
 	sc->sc_dev = self;
-	callout_init(&sc->sc_tick_ch, CALLOUT_FLAGS);
+	callout_init(&sc->sc_tick_ch, WM_CALLOUT_FLAGS);
 	callout_setfunc(&sc->sc_tick_ch, wm_tick, sc);
 	sc->sc_core_stopping = false;
 
@@ -2104,7 +2106,7 @@ alloc_retry:
 		aprint_verbose_dev(sc->sc_dev,
 		    "Communication Streaming Architecture\n");
 		if (sc->sc_type == WM_T_82547) {
-			callout_init(&sc->sc_txfifo_ch, CALLOUT_FLAGS);
+			callout_init(&sc->sc_txfifo_ch, WM_CALLOUT_FLAGS);
 			callout_setfunc(&sc->sc_txfifo_ch,
 			    wm_82547_txfifo_stall, sc);
 			aprint_verbose_dev(sc->sc_dev,
@@ -2560,7 +2562,7 @@ alloc_retry:
 	pn = prop_dictionary_get(dict, "i82543-cfg1");
 	if (pn != NULL) {
 		KASSERT(prop_object_type(pn) == PROP_TYPE_NUMBER);
-		cfg1 = (uint16_t) prop_number_integer_value(pn);
+		cfg1 = (uint16_t) prop_number_signed_value(pn);
 	} else {
 		if (wm_nvm_read(sc, NVM_OFF_CFG1, 1, &cfg1)) {
 			aprint_error_dev(sc->sc_dev, "unable to read CFG1\n");
@@ -2571,7 +2573,7 @@ alloc_retry:
 	pn = prop_dictionary_get(dict, "i82543-cfg2");
 	if (pn != NULL) {
 		KASSERT(prop_object_type(pn) == PROP_TYPE_NUMBER);
-		cfg2 = (uint16_t) prop_number_integer_value(pn);
+		cfg2 = (uint16_t) prop_number_signed_value(pn);
 	} else {
 		if (wm_nvm_read(sc, NVM_OFF_CFG2, 1, &cfg2)) {
 			aprint_error_dev(sc->sc_dev, "unable to read CFG2\n");
@@ -2700,7 +2702,7 @@ alloc_retry:
 		pn = prop_dictionary_get(dict, "i82543-swdpin");
 		if (pn != NULL) {
 			KASSERT(prop_object_type(pn) == PROP_TYPE_NUMBER);
-			swdpin = (uint16_t) prop_number_integer_value(pn);
+			swdpin = (uint16_t) prop_number_signed_value(pn);
 		} else {
 			if (wm_nvm_read(sc, NVM_OFF_SWDPIN, 1, &swdpin)) {
 				aprint_error_dev(sc->sc_dev,
@@ -5445,17 +5447,14 @@ wm_is_using_multiqueue(struct wm_softc *sc)
 }
 
 static int
-wm_softint_establish(struct wm_softc *sc, int qidx, int intr_idx)
+wm_softint_establish_queue(struct wm_softc *sc, int qidx, int intr_idx)
 {
 	struct wm_queue *wmq = &sc->sc_queue[qidx];
 
 	wmq->wmq_id = qidx;
 	wmq->wmq_intr_idx = intr_idx;
-	wmq->wmq_si = softint_establish(SOFTINT_NET
-#ifdef WM_MPSAFE
-	    | SOFTINT_MPSAFE
-#endif
-	    , wm_handle_queue, wmq);
+	wmq->wmq_si = softint_establish(SOFTINT_NET | WM_SOFTINT_FLAGS,
+	    wm_handle_queue, wmq);
 	if (wmq->wmq_si != NULL)
 		return 0;
 
@@ -5500,7 +5499,7 @@ wm_setup_legacy(struct wm_softc *sc)
 	aprint_normal_dev(sc->sc_dev, "interrupting at %s\n", intrstr);
 	sc->sc_nintrs = 1;
 
-	return wm_softint_establish(sc, 0, 0);
+	return wm_softint_establish_queue(sc, 0, 0);
 }
 
 static int
@@ -5578,7 +5577,7 @@ wm_setup_msix(struct wm_softc *sc)
 			    "for TX and RX interrupting at %s\n", intrstr);
 		}
 		sc->sc_ihs[intr_idx] = vih;
-		if (wm_softint_establish(sc, qidx, intr_idx) != 0)
+		if (wm_softint_establish_queue(sc, qidx, intr_idx) != 0)
 			goto fail;
 		txrx_established++;
 		intr_idx++;
@@ -5900,6 +5899,7 @@ wm_init_locked(struct ifnet *ifp)
 			reg &= ~GCR_NO_SNOOP_ALL;
 		CSR_WRITE(sc, WMREG_GCR, reg);
 	}
+
 	if ((sc->sc_type >= WM_T_ICH8)
 	    || (sc->sc_pcidevid == PCI_PRODUCT_INTEL_82546GB_QUAD_COPPER)
 	    || (sc->sc_pcidevid == PCI_PRODUCT_INTEL_82546GB_QUAD_COPPER_KSP3)) {
