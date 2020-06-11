@@ -22,11 +22,19 @@ file	arch/arm/nxp/imx6_clk.c			imx6ccm
 # Common FDT clock framework
 define	imx_ccm: clk
 file	arch/arm/nxp/imx_ccm.c			imx_ccm
-file	arch/arm/nxp/imx_ccm_extclk.c		imx_ccm
-file	arch/arm/nxp/imx_ccm_gate.c		imx_ccm
 file	arch/arm/nxp/imx_ccm_composite.c	imx_ccm
+file	arch/arm/nxp/imx_ccm_div.c		imx_ccm
+file	arch/arm/nxp/imx_ccm_extclk.c		imx_ccm
 file	arch/arm/nxp/imx_ccm_fixed.c		imx_ccm
 file	arch/arm/nxp/imx_ccm_fixed_factor.c	imx_ccm
+file	arch/arm/nxp/imx_ccm_gate.c		imx_ccm
+file	arch/arm/nxp/imx_ccm_mux.c		imx_ccm
+file	arch/arm/nxp/imx_ccm_pll.c		imx_ccm
+
+# CCM (iMX7D)
+device	imx7dccm: imx_ccm
+attach	imx7dccm at fdt with imx7d_ccm
+file	arch/arm/nxp/imx7d_ccm.c		imx7d_ccm
 
 # CCM (iMX8MQ)
 device	imx8mqccm: imx_ccm
@@ -70,7 +78,7 @@ file	arch/arm/nxp/if_enet_imx.c		enet_fdt
 attach	ahcisata at fdt with imx_ahcisata
 file	arch/arm/nxp/imx_ahcisata.c		imx_ahcisata
 
-# USB controller
+# USB Controller
 device	imxusbc { [unit=-1], [irq=-1] } : bus_dma_generic
 attach	imxusbc at fdt with imxusbc_fdt
 file	arch/arm/nxp/imx6_usb.c			imxusbc_fdt
