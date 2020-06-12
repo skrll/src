@@ -10,6 +10,7 @@ defflag	opt_soc.h				SOC_IMX
 defflag	opt_soc.h				SOC_IMX6DL: SOC_IMX
 defflag	opt_soc.h				SOC_IMX6Q: SOC_IMX
 defflag	opt_soc.h				SOC_IMX6QDL: SOC_IMX
+defflag	opt_soc.h				SOC_IMX7D: SOC_IMX
 
 defflag opt_imx.h				IMX6
 
