@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.192 2020/05/21 21:12:30 ad Exp $	*/
+/*	$NetBSD: cpu.c,v 1.194 2020/06/15 09:09:24 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2000-2020 NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.192 2020/05/21 21:12:30 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.194 2020/06/15 09:09:24 msaitoh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */
@@ -444,6 +444,7 @@ cpu_attach(device_t parent, device_t self, void *aux)
 		 */
 		atomic_or_32(&ci->ci_flags, CPUF_PRESENT | CPUF_PRIMARY);
 		cpu_intr_init(ci);
+		tsc_setfunc(ci);
 		cpu_get_tsc_freq(ci);
 		cpu_init(ci);
 #ifdef i386
@@ -768,9 +769,6 @@ cpu_boot_secondary_processors(void)
 
 	/* Now that we know about the TSC, attach the timecounter. */
 	tsc_tc_init();
-
-	/* Enable zeroing of pages in the idle loop if we have SSE2. */
-	vm_page_zero_enable = false; /* ((cpu_feature[0] & CPUID_SSE2) != 0); */
 }
 #endif
 

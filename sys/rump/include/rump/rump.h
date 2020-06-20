@@ -1,4 +1,4 @@
-/*	$NetBSD: rump.h,v 1.70 2017/05/11 18:16:00 christos Exp $	*/
+/*	$NetBSD: rump.h,v 1.72 2020/06/14 23:38:25 kamil Exp $	*/
 
 /*
  * Copyright (c) 2007-2011 Antti Kantee.  All Rights Reserved.
@@ -86,9 +86,8 @@ enum rump_etfs_type {
 	RUMP_ETFS_DIR_SUBDIRS	/* dir + subdirectories (recursive) */
 };
 
-/* um, what's the point ?-) */
-#ifdef _BEGIN_DECLS
-_BEGIN_DECLS
+#if defined(__cplusplus)
+extern "C" {
 #endif
 
 int	rump_getversion(void);
@@ -130,15 +129,8 @@ int	rump_daemonize_done(int);
 #include <rump/rumpnet_if_pub.h>
 #endif
 
-#ifdef _END_DECLS
-_END_DECLS
+#if defined(__cplusplus)
+}
 #endif
-
-/*
- * Include macros prehistorically provided by this header.
- * The inclusion might go away some year.  Include the header directly
- * if you want it to keep working for you.
- */
-#include <rump/rump_syscallshotgun.h>
 
 #endif /* _RUMP_RUMP_H_ */

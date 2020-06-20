@@ -1,4 +1,4 @@
-/*	$NetBSD: tsc.c,v 1.48 2020/05/27 18:46:15 ad Exp $	*/
+/*	$NetBSD: tsc.c,v 1.52 2020/06/15 20:27:30 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2020 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.48 2020/05/27 18:46:15 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.52 2020/06/15 20:27:30 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -38,6 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.48 2020/05/27 18:46:15 ad Exp $");
 #include <sys/kernel.h>
 #include <sys/cpu.h>
 #include <sys/xcall.h>
+#include <sys/lock.h>
 
 #include <machine/cpu_counter.h>
 #include <machine/cpuvar.h>
@@ -50,7 +51,7 @@ __KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.48 2020/05/27 18:46:15 ad Exp $");
 #define	TSC_SYNC_ROUNDS		1000
 #define	ABS(a)			((a) >= 0 ? (a) : -(a))
 
-u_int	tsc_get_timecount(struct timecounter *);
+static u_int	tsc_get_timecount(struct timecounter *);
 
 static void	tsc_delay(unsigned int);
 
@@ -58,6 +59,9 @@ static uint64_t	tsc_dummy_cacheline __cacheline_aligned;
 uint64_t	tsc_freq __read_mostly;	/* exported for sysctl */
 static int64_t	tsc_drift_max = 1000;	/* max cycles */
 static int64_t	tsc_drift_observed;
+uint64_t	(*rdtsc)(void) = rdtsc_cpuid;
+uint64_t	(*cpu_counter)(void) = cpu_counter_cpuid;
+uint32_t	(*cpu_counter32)(void) = cpu_counter32_cpuid;
 
 int tsc_user_enabled = 1;
 
@@ -145,6 +149,50 @@ tsc_is_invariant(void)
 	}
 
 	return invariant;
+}
+
+/* Setup function porniters for rdtsc() and timecounter(9). */
+void
+tsc_setfunc(struct cpu_info *ci)
+{
+	bool use_lfence, use_mfence;
+
+	use_lfence = use_mfence = false;
+
+	/*
+	 * XXX On AMD, we might be able to use lfence for some cases:
+	 *   a) if MSR_DE_CFG exist and the bit 1 is set.
+	 *   b) family == 0x0f or 0x11. Those have no MSR_DE_CFG and
+	 *      lfence is always serializing.
+	 *
+	 * We don't use it because the test result showed mfence was better
+	 * than lfence with MSR_DE_CFG.
+	 */
+	if (cpu_vendor == CPUVENDOR_AMD)
+		use_mfence = true;
+	else if (cpu_vendor == CPUVENDOR_INTEL)
+		use_lfence = true;
+
+	/* LFENCE and MFENCE are applicable if SSE2 is set. */
+	if ((ci->ci_feat_val[0] & CPUID_SSE2) == 0)
+		use_lfence = use_mfence = false;
+
+#define TSC_SETFUNC(fence)						      \
+	do {								      \
+		rdtsc = rdtsc_##fence;					      \
+		cpu_counter = cpu_counter_##fence;			      \
+		cpu_counter32 = cpu_counter32_##fence;			      \
+	} while (/* CONSTCOND */ 0)
+
+	if (use_lfence)
+		TSC_SETFUNC(lfence);
+	else if (use_mfence)
+		TSC_SETFUNC(mfence);
+	else
+		TSC_SETFUNC(cpuid);
+
+	aprint_verbose_dev(ci->ci_dev, "Use %s to serialize rdtsc\n",
+	    use_lfence ? "lfence" : (use_mfence ? "mfence" : "cpuid"));
 }
 
 /*
@@ -351,4 +399,41 @@ tsc_delay(unsigned int us)
 	while ((cpu_counter() - start) < delta) {
 		x86_pause();
 	}
+}
+
+static u_int
+tsc_get_timecount(struct timecounter *tc)
+{
+#ifdef _LP64 /* requires atomic 64-bit store */
+	static __cpu_simple_lock_t lock = __SIMPLELOCK_UNLOCKED;
+	static int lastwarn;
+	uint64_t cur, prev;
+	lwp_t *l = curlwp;
+	int ticks;
+
+	/*
+	 * Previous value must be read before the counter and stored to
+	 * after, because this routine can be called from interrupt context
+	 * and may run over the top of an existing invocation.  Ordering is
+	 * guaranteed by "volatile" on md_tsc.
+	 */
+	prev = l->l_md.md_tsc;
+	cur = cpu_counter();
+	if (__predict_false(cur < prev)) {
+		if ((cur >> 63) == (prev >> 63) &&
+		    __cpu_simple_lock_try(&lock)) {
+			ticks = getticks();
+			if (ticks - lastwarn >= hz) {
+				printf("WARNING: TSC time went backwards "
+				    " by %u\n", (unsigned)(prev - cur));
+				lastwarn = ticks;
+			}
+			__cpu_simple_unlock(&lock);
+		}
+	}
+	l->l_md.md_tsc = cur;
+	return (uint32_t)cur;
+#else
+	return cpu_counter32();
+#endif
 }

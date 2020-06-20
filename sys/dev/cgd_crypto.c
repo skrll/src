@@ -1,4 +1,4 @@
-/* $NetBSD: cgd_crypto.c,v 1.17 2019/12/14 16:58:38 riastradh Exp $ */
+/* $NetBSD: cgd_crypto.c,v 1.23 2020/06/13 22:15:06 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -37,17 +37,17 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cgd_crypto.c,v 1.17 2019/12/14 16:58:38 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cgd_crypto.c,v 1.23 2020/06/13 22:15:06 riastradh Exp $");
 
 #include <sys/param.h>
+#include <sys/kmem.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
 
 #include <dev/cgd_crypto.h>
 
-#include <crypto/rijndael/rijndael-api-fst.h>
-#include <crypto/des/des.h>
 #include <crypto/blowfish/blowfish.h>
+#include <crypto/des/des.h>
+#include <crypto/rijndael/rijndael-api-fst.h>
 
 /*
  * The general framework provides only one generic function.
@@ -59,22 +59,18 @@ __KERNEL_RCSID(0, "$NetBSD: cgd_crypto.c,v 1.17 2019/12/14 16:58:38 riastradh Ex
 static cfunc_init		cgd_cipher_aes_cbc_init;
 static cfunc_destroy		cgd_cipher_aes_cbc_destroy;
 static cfunc_cipher		cgd_cipher_aes_cbc;
-static cfunc_cipher_prep	cgd_cipher_aes_cbc_prep;
 
 static cfunc_init		cgd_cipher_aes_xts_init;
 static cfunc_destroy		cgd_cipher_aes_xts_destroy;
 static cfunc_cipher		cgd_cipher_aes_xts;
-static cfunc_cipher_prep	cgd_cipher_aes_xts_prep;
 
 static cfunc_init		cgd_cipher_3des_init;
 static cfunc_destroy		cgd_cipher_3des_destroy;
 static cfunc_cipher		cgd_cipher_3des_cbc;
-static cfunc_cipher_prep	cgd_cipher_3des_cbc_prep;
 
 static cfunc_init		cgd_cipher_bf_init;
 static cfunc_destroy		cgd_cipher_bf_destroy;
 static cfunc_cipher		cgd_cipher_bf_cbc;
-static cfunc_cipher_prep	cgd_cipher_bf_cbc_prep;
 
 static const struct cryptfuncs cf[] = {
 	{
@@ -82,28 +78,24 @@ static const struct cryptfuncs cf[] = {
 		.cf_init	= cgd_cipher_aes_xts_init,
 		.cf_destroy	= cgd_cipher_aes_xts_destroy,
 		.cf_cipher	= cgd_cipher_aes_xts,
-		.cf_cipher_prep	= cgd_cipher_aes_xts_prep,
 	},
 	{
 		.cf_name	= "aes-cbc",
 		.cf_init	= cgd_cipher_aes_cbc_init,
 		.cf_destroy	= cgd_cipher_aes_cbc_destroy,
 		.cf_cipher	= cgd_cipher_aes_cbc,
-		.cf_cipher_prep	= cgd_cipher_aes_cbc_prep,
 	},
 	{
 		.cf_name	= "3des-cbc",
 		.cf_init	= cgd_cipher_3des_init,
 		.cf_destroy	= cgd_cipher_3des_destroy,
 		.cf_cipher	= cgd_cipher_3des_cbc,
-		.cf_cipher_prep	= cgd_cipher_3des_cbc_prep,
 	},
 	{
 		.cf_name	= "blowfish-cbc",
 		.cf_init	= cgd_cipher_bf_init,
 		.cf_destroy	= cgd_cipher_bf_destroy,
 		.cf_cipher	= cgd_cipher_bf_cbc,
-		.cf_cipher_prep	= cgd_cipher_bf_cbc_prep,
 	},
 };
 const struct cryptfuncs *
@@ -117,83 +109,13 @@ cryptfuncs_find(const char *alg)
 	return NULL;
 }
 
-typedef void	(*cipher_func)(void *, void *, const void *, size_t);
-
-static void
-cgd_cipher_uio(void *privdata, cipher_func cipher,
-	struct uio *dstuio, struct uio *srcuio);
-
-/*
- * cgd_cipher_uio takes a simple cbc or xts cipher and iterates
- * it over two struct uio's.  It presumes that the cipher function
- * that is passed to it keeps the IV state between calls.
- *
- * We assume that the caller has ensured that each segment is evenly
- * divisible by the block size, which for the cgd is a valid assumption.
- * If we were to make this code more generic, we might need to take care
- * of this case, either by issuing an error or copying the data.
- */
-
-static void
-cgd_cipher_uio(void *privdata, cipher_func cipher,
-    struct uio *dstuio, struct uio *srcuio)
-{
-	const struct iovec	*dst;
-	const struct iovec	*src;
-	int		 dstnum;
-	int		 dstoff = 0;
-	int		 srcnum;
-	int		 srcoff = 0;
-
-	dst = dstuio->uio_iov;
-	dstnum = dstuio->uio_iovcnt;
-	src = srcuio->uio_iov;
-	srcnum = srcuio->uio_iovcnt;
-	for (;;) {
-		int	  l = MIN(dst->iov_len - dstoff, src->iov_len - srcoff);
-		u_int8_t *d = (u_int8_t *)dst->iov_base + dstoff;
-		const u_int8_t *s = (const u_int8_t *)src->iov_base + srcoff;
-
-		cipher(privdata, d, s, l);
-
-		dstoff += l;
-		srcoff += l;
-		/*
-		 * We assume that {dst,src} == {dst,src}->iov_len,
-		 * because it should not be possible for it not to be.
-		 */
-		if (dstoff == dst->iov_len) {
-			dstoff = 0;
-			dstnum--;
-			dst++;
-		}
-		if (srcoff == src->iov_len) {
-			srcoff = 0;
-			srcnum--;
-			src++;
-		}
-		if (!srcnum || !dstnum)
-			break;
-	}
-}
-
 /*
  *  AES Framework
- */
-
-/*
- * NOTE: we do not store the blocksize in here, because it is not
- *       variable [yet], we hardcode the blocksize to 16 (128 bits).
  */
 
 struct aes_privdata {
 	keyInstance	ap_enckey;
 	keyInstance	ap_deckey;
-};
-
-struct aes_encdata {
-	keyInstance	*ae_key;	/* key for this direction */
-	u_int8_t	 ae_iv[CGD_AES_BLOCK_SIZE]; /* Initialization Vector */
 };
 
 static void *
@@ -209,9 +131,7 @@ cgd_cipher_aes_cbc_init(size_t keylen, const void *key, size_t *blocksize)
 		*blocksize = 128;
 	if (*blocksize != 128)
 		return NULL;
-	ap = malloc(sizeof(*ap), M_DEVBUF, 0);
-	if (!ap)
-		return NULL;
+	ap = kmem_zalloc(sizeof(*ap), KM_SLEEP);
 	rijndael_makeKey(&ap->ap_enckey, DIR_ENCRYPT, keylen, key);
 	rijndael_makeKey(&ap->ap_deckey, DIR_DECRYPT, keylen, key);
 	return ap;
@@ -223,81 +143,54 @@ cgd_cipher_aes_cbc_destroy(void *data)
 	struct aes_privdata *apd = data;
 
 	explicit_memset(apd, 0, sizeof(*apd));
-	free(apd, M_DEVBUF);
+	kmem_free(apd, sizeof(*apd));
 }
 
 static void
-cgd_cipher_aes_cbc_prep(void *privdata, char *iv,
-    const char *blkno_buf, size_t blocksize, int dir)
+cgd_cipher_aes_cbc(void *privdata, void *dst, const void *src, size_t nbytes,
+    const void *blkno, int dir)
 {
 	struct aes_privdata	*apd = privdata;
+	uint8_t			 iv[CGD_AES_BLOCK_SIZE] = {0};
 	cipherInstance		 cipher;
 	int			 cipher_ok __diagused;
 
-	cipher_ok = rijndael_cipherInit(&cipher, MODE_CBC, NULL);
+	/* Compute the CBC IV as AES_k(blkno).  */
+	cipher_ok = rijndael_cipherInit(&cipher, MODE_ECB, NULL);
 	KASSERT(cipher_ok > 0);
-	rijndael_blockEncrypt(&cipher, &apd->ap_enckey,
-	    blkno_buf, blocksize * 8, iv);
-	if (blocksize > CGD_AES_BLOCK_SIZE) {
-		(void)memmove(iv, iv + blocksize - CGD_AES_BLOCK_SIZE,
-		    CGD_AES_BLOCK_SIZE);
-	}
-}
+	rijndael_blockEncrypt(&cipher, &apd->ap_enckey, blkno, /*nbits*/128,
+	    iv);
 
-static void
-aes_cbc_enc_int(void *privdata, void *dst, const void *src, size_t len)
-{
-	struct aes_encdata	*ae = privdata;
-	cipherInstance		 cipher;
-	int			 cipher_ok __diagused;
-
-	cipher_ok = rijndael_cipherInit(&cipher, MODE_CBC, ae->ae_iv);
+	cipher_ok = rijndael_cipherInit(&cipher, MODE_CBC, iv);
 	KASSERT(cipher_ok > 0);
-	rijndael_blockEncrypt(&cipher, ae->ae_key, src, len * 8, dst);
-	(void)memcpy(ae->ae_iv, (u_int8_t *)dst +
-	    (len - CGD_AES_BLOCK_SIZE), CGD_AES_BLOCK_SIZE);
-}
-
-static void
-aes_cbc_dec_int(void *privdata, void *dst, const void *src, size_t len)
-{
-	struct aes_encdata	*ae = privdata;
-	cipherInstance		 cipher;
-	int			 cipher_ok __diagused;
-
-	cipher_ok = rijndael_cipherInit(&cipher, MODE_CBC, ae->ae_iv);
-	KASSERT(cipher_ok > 0);
-	rijndael_blockDecrypt(&cipher, ae->ae_key, src, len * 8, dst);
-	(void)memcpy(ae->ae_iv, (const u_int8_t *)src +
-	    (len - CGD_AES_BLOCK_SIZE), CGD_AES_BLOCK_SIZE);
-}
-
-static void
-cgd_cipher_aes_cbc(void *privdata, struct uio *dstuio,
-    struct uio *srcuio, const void *iv, int dir)
-{
-	struct aes_privdata	*apd = privdata;
-	struct aes_encdata	 encd;
-
-	(void)memcpy(encd.ae_iv, iv, CGD_AES_BLOCK_SIZE);
 	switch (dir) {
 	case CGD_CIPHER_ENCRYPT:
-		encd.ae_key = &apd->ap_enckey;
-		cgd_cipher_uio(&encd, aes_cbc_enc_int, dstuio, srcuio);
+		rijndael_blockEncrypt(&cipher, &apd->ap_enckey, src,
+		    /*nbits*/nbytes * 8, dst);
 		break;
 	case CGD_CIPHER_DECRYPT:
-		encd.ae_key = &apd->ap_deckey;
-		cgd_cipher_uio(&encd, aes_cbc_dec_int, dstuio, srcuio);
+		rijndael_blockDecrypt(&cipher, &apd->ap_deckey, src,
+		    /*nbits*/nbytes * 8, dst);
 		break;
 	default:
 		panic("%s: unrecognised direction %d", __func__, dir);
 	}
 }
 
+/*
+ * AES-XTS
+ */
+
+struct aesxts {
+	keyInstance	ax_enckey;
+	keyInstance	ax_deckey;
+	keyInstance	ax_tweakkey;
+};
+
 static void *
 cgd_cipher_aes_xts_init(size_t keylen, const void *xtskey, size_t *blocksize)
 {
-	struct aes_privdata *ap;
+	struct aesxts *ax;
 	const char *key, *key2; /* XTS key is made of two AES keys. */
 
 	if (!blocksize)
@@ -308,86 +201,53 @@ cgd_cipher_aes_xts_init(size_t keylen, const void *xtskey, size_t *blocksize)
 		*blocksize = 128;
 	if (*blocksize != 128)
 		return NULL;
-	ap = malloc(2 * sizeof(*ap), M_DEVBUF, 0);
-	if (!ap)
-		return NULL;
 
+	ax = kmem_zalloc(sizeof(*ax), KM_SLEEP);
 	keylen /= 2;
 	key = xtskey;
 	key2 = key + keylen / CHAR_BIT;
 
-	rijndael_makeKey(&ap[0].ap_enckey, DIR_ENCRYPT, keylen, key);
-	rijndael_makeKey(&ap[0].ap_deckey, DIR_DECRYPT, keylen, key);
-	rijndael_makeKey(&ap[1].ap_enckey, DIR_ENCRYPT, keylen, key2);
+	rijndael_makeKey(&ax->ax_enckey, DIR_ENCRYPT, keylen, key);
+	rijndael_makeKey(&ax->ax_deckey, DIR_DECRYPT, keylen, key);
+	rijndael_makeKey(&ax->ax_tweakkey, DIR_ENCRYPT, keylen, key2);
 
-	return ap;
+	return ax;
 }
 
 static void
-cgd_cipher_aes_xts_destroy(void *data)
+cgd_cipher_aes_xts_destroy(void *cookie)
 {
-	struct aes_privdata *apd = data;
+	struct aesxts *ax = cookie;
 
-	explicit_memset(apd, 0, 2 * sizeof(*apd));
-	free(apd, M_DEVBUF);
+	explicit_memset(ax, 0, sizeof(*ax));
+	kmem_free(ax, sizeof(*ax));
 }
 
 static void
-cgd_cipher_aes_xts_prep(void *privdata, char *iv,
-    const char *blkno_buf, size_t blocksize, int dir)
+cgd_cipher_aes_xts(void *cookie, void *dst, const void *src, size_t nbytes,
+    const void *blkno, int dir)
 {
-	struct aes_privdata	*apd = privdata;
-	cipherInstance		 cipher;
-	int			 cipher_ok __diagused;
+	struct aesxts *ax = cookie;
+	uint8_t tweak[CGD_AES_BLOCK_SIZE];
+	cipherInstance cipher;
+	int cipher_ok __diagused;
 
+	/* Compute the initial tweak as AES_k(blkno).  */
 	cipher_ok = rijndael_cipherInit(&cipher, MODE_ECB, NULL);
 	KASSERT(cipher_ok > 0);
-	rijndael_blockEncrypt(&cipher, &apd[1].ap_enckey,
-	    blkno_buf, blocksize * 8, iv);
-}
+	rijndael_blockEncrypt(&cipher, &ax->ax_tweakkey, blkno, /*nbits*/128,
+	    tweak);
 
-static void
-aes_xts_enc_int(void *privdata, void *dst, const void *src, size_t len)
-{
-	struct aes_encdata	*ae = privdata;
-	cipherInstance		 cipher;
-	int			 cipher_ok __diagused;
-
-	cipher_ok = rijndael_cipherInit(&cipher, MODE_XTS, ae->ae_iv);
+	cipher_ok = rijndael_cipherInit(&cipher, MODE_XTS, tweak);
 	KASSERT(cipher_ok > 0);
-	rijndael_blockEncrypt(&cipher, ae->ae_key, src, len * 8, dst);
-	(void)memcpy(ae->ae_iv, cipher.IV, CGD_AES_BLOCK_SIZE);
-}
-
-static void
-aes_xts_dec_int(void *privdata, void *dst, const void *src, size_t len)
-{
-	struct aes_encdata	*ae = privdata;
-	cipherInstance		 cipher;
-	int			 cipher_ok __diagused;
-
-	cipher_ok = rijndael_cipherInit(&cipher, MODE_XTS, ae->ae_iv);
-	KASSERT(cipher_ok > 0);
-	rijndael_blockDecrypt(&cipher, ae->ae_key, src, len * 8, dst);
-	(void)memcpy(ae->ae_iv, cipher.IV, CGD_AES_BLOCK_SIZE);
-}
-
-static void
-cgd_cipher_aes_xts(void *privdata, struct uio *dstuio,
-    struct uio *srcuio, const void *iv, int dir)
-{
-	struct aes_privdata	*apd = privdata;
-	struct aes_encdata	 encd;
-
-	(void)memcpy(encd.ae_iv, iv, CGD_AES_BLOCK_SIZE);
 	switch (dir) {
 	case CGD_CIPHER_ENCRYPT:
-		encd.ae_key = &apd->ap_enckey;
-		cgd_cipher_uio(&encd, aes_xts_enc_int, dstuio, srcuio);
+		rijndael_blockEncrypt(&cipher, &ax->ax_enckey, src,
+		    /*nbits*/nbytes * 8, dst);
 		break;
 	case CGD_CIPHER_DECRYPT:
-		encd.ae_key = &apd->ap_deckey;
-		cgd_cipher_uio(&encd, aes_xts_dec_int, dstuio, srcuio);
+		rijndael_blockDecrypt(&cipher, &ax->ax_deckey, src,
+		    /*nbits*/nbytes * 8, dst);
 		break;
 	default:
 		panic("%s: unrecognised direction %d", __func__, dir);
@@ -404,13 +264,6 @@ struct c3des_privdata {
 	des_key_schedule	cp_key3;
 };
 
-struct c3des_encdata {
-	des_key_schedule	*ce_key1;
-	des_key_schedule	*ce_key2;
-	des_key_schedule	*ce_key3;
-	u_int8_t		ce_iv[CGD_3DES_BLOCK_SIZE];
-};
-
 static void *
 cgd_cipher_3des_init(size_t keylen, const void *key, size_t *blocksize)
 {
@@ -424,16 +277,14 @@ cgd_cipher_3des_init(size_t keylen, const void *key, size_t *blocksize)
 		*blocksize = 64;
 	if (keylen != (DES_KEY_SZ * 3 * 8) || *blocksize != 64)
 		return NULL;
-	cp = malloc(sizeof(*cp), M_DEVBUF, 0);
-	if (!cp)
-		return NULL;
+	cp = kmem_zalloc(sizeof(*cp), KM_SLEEP);
 	block = __UNCONST(key);
 	error  = des_key_sched(block, cp->cp_key1);
 	error |= des_key_sched(block + 1, cp->cp_key2);
 	error |= des_key_sched(block + 2, cp->cp_key3);
 	if (error) {
 		explicit_memset(cp, 0, sizeof(*cp));
-		free(cp, M_DEVBUF);
+		kmem_free(cp, sizeof(*cp));
 		return NULL;
 	}
 	return cp;
@@ -445,64 +296,32 @@ cgd_cipher_3des_destroy(void *data)
 	struct c3des_privdata *cp = data;
 
 	explicit_memset(cp, 0, sizeof(*cp));
-	free(cp, M_DEVBUF);
+	kmem_free(cp, sizeof(*cp));
 }
 
 static void
-cgd_cipher_3des_cbc_prep(void *privdata, char *iv,
-    const char *blkno_buf, size_t blocksize, int dir)
+cgd_cipher_3des_cbc(void *privdata, void *dst, const void *src, size_t nbytes,
+    const void *blkno, int dir)
 {
 	struct	c3des_privdata *cp = privdata;
-	char	zero_iv[CGD_3DES_BLOCK_SIZE];
+	des_cblock zero;
+	uint8_t iv[CGD_3DES_BLOCK_SIZE];
 
-	memset(zero_iv, 0, sizeof(zero_iv));
-	des_ede3_cbc_encrypt(blkno_buf, iv, blocksize,
-	    cp->cp_key1, cp->cp_key2, cp->cp_key3, (des_cblock *)zero_iv, 1);
-	if (blocksize > CGD_3DES_BLOCK_SIZE) {
-		(void)memmove(iv, iv + blocksize - CGD_3DES_BLOCK_SIZE,
-		    CGD_3DES_BLOCK_SIZE);
-	}
-}
+	/* Compute the CBC IV as 3DES_k(blkno) = 3DES-CBC_k(iv=blkno, 0).  */
+	memset(&zero, 0, sizeof(zero));
+	des_ede3_cbc_encrypt(blkno, iv, CGD_3DES_BLOCK_SIZE,
+	    cp->cp_key1, cp->cp_key2, cp->cp_key3, &zero, /*encrypt*/1);
 
-static void
-c3des_cbc_enc_int(void *privdata, void *dst, const void *src, size_t len)
-{
-	struct	c3des_encdata *ce = privdata;
-
-	des_ede3_cbc_encrypt(src, dst, len, *ce->ce_key1, *ce->ce_key2,
-	    *ce->ce_key3, (des_cblock *)ce->ce_iv, 1);
-	(void)memcpy(ce->ce_iv, (const u_int8_t *)dst +
-	    (len - CGD_3DES_BLOCK_SIZE), CGD_3DES_BLOCK_SIZE);
-}
-
-static void
-c3des_cbc_dec_int(void *privdata, void *dst, const void *src, size_t len)
-{
-	struct	c3des_encdata *ce = privdata;
-
-	des_ede3_cbc_encrypt(src, dst, len, *ce->ce_key1, *ce->ce_key2,
-	    *ce->ce_key3, (des_cblock *)ce->ce_iv, 0);
-	(void)memcpy(ce->ce_iv, (const u_int8_t *)src +
-	    (len - CGD_3DES_BLOCK_SIZE), CGD_3DES_BLOCK_SIZE);
-}
-
-static void
-cgd_cipher_3des_cbc(void *privdata, struct uio *dstuio,
-	struct uio *srcuio, const void *iv, int dir)
-{
-	struct	c3des_privdata *cp = privdata;
-	struct	c3des_encdata ce;
-
-	(void)memcpy(ce.ce_iv, iv, CGD_3DES_BLOCK_SIZE);
-	ce.ce_key1 = &cp->cp_key1;
-	ce.ce_key2 = &cp->cp_key2;
-	ce.ce_key3 = &cp->cp_key3;
 	switch (dir) {
 	case CGD_CIPHER_ENCRYPT:
-		cgd_cipher_uio(&ce, c3des_cbc_enc_int, dstuio, srcuio);
+		des_ede3_cbc_encrypt(src, dst, nbytes,
+		    cp->cp_key1, cp->cp_key2, cp->cp_key3,
+		    (des_cblock *)iv, /*encrypt*/1);
 		break;
 	case CGD_CIPHER_DECRYPT:
-		cgd_cipher_uio(&ce, c3des_cbc_dec_int, dstuio, srcuio);
+		des_ede3_cbc_encrypt(src, dst, nbytes,
+		    cp->cp_key1, cp->cp_key2, cp->cp_key3,
+		    (des_cblock *)iv, /*encrypt*/0);
 		break;
 	default:
 		panic("%s: unrecognised direction %d", __func__, dir);
@@ -519,7 +338,7 @@ struct bf_privdata {
 
 struct bf_encdata {
 	BF_KEY		*be_key;
-	u_int8_t	 be_iv[CGD_BF_BLOCK_SIZE];
+	uint8_t		 be_iv[CGD_BF_BLOCK_SIZE];
 };
 
 static void *
@@ -535,7 +354,7 @@ cgd_cipher_bf_init(size_t keylen, const void *key, size_t *blocksize)
 		*blocksize = 64;
 	if (*blocksize != 64)
 		return NULL;
-	bp = malloc(sizeof(*bp), M_DEVBUF, 0);
+	bp = kmem_zalloc(sizeof(*bp), KM_SLEEP);
 	if (!bp)
 		return NULL;
 	BF_set_key(&bp->bp_key, keylen / 8, key);
@@ -548,62 +367,31 @@ cgd_cipher_bf_destroy(void *data)
 	struct	bf_privdata *bp = data;
 
 	explicit_memset(bp, 0, sizeof(*bp));
-	free(bp, M_DEVBUF);
+	kmem_free(bp, sizeof(*bp));
 }
 
 static void
-cgd_cipher_bf_cbc_prep(void *privdata, char *iv,
-    const char *blkno_buf, size_t blocksize, int dir)
+cgd_cipher_bf_cbc(void *privdata, void *dst, const void *src, size_t nbytes,
+    const void *blkno, int dir)
 {
 	struct	bf_privdata *bp = privdata;
-	char	zero_iv[CGD_BF_BLOCK_SIZE];
+	uint8_t zero[CGD_BF_BLOCK_SIZE], iv[CGD_BF_BLOCK_SIZE];
 
-	memset(zero_iv, 0, sizeof(zero_iv));
-	BF_cbc_encrypt(blkno_buf, iv, blocksize, &bp->bp_key, zero_iv, 1);
-	if (blocksize > CGD_BF_BLOCK_SIZE) {
-		(void)memmove(iv, iv + blocksize - CGD_BF_BLOCK_SIZE,
-		    CGD_BF_BLOCK_SIZE);
-	}
-}
+	/* Compute the CBC IV as Blowfish_k(blkno) = BF_CBC_k(blkno, 0).  */
+	memset(zero, 0, sizeof(zero));
+	BF_cbc_encrypt(blkno, iv, CGD_BF_BLOCK_SIZE, &bp->bp_key, zero,
+	    /*encrypt*/1);
 
-static void
-bf_cbc_enc_int(void *privdata, void *dst, const void *src, size_t len)
-{
-	struct	bf_encdata *be = privdata;
-
-	BF_cbc_encrypt(src, dst, len, be->be_key, be->be_iv, 1);
-	(void)memcpy(be->be_iv, (u_int8_t *)dst +
-	    (len - CGD_BF_BLOCK_SIZE), CGD_BF_BLOCK_SIZE);
-}
-
-static void
-bf_cbc_dec_int(void *privdata, void *dst, const void *src, size_t len)
-{
-	struct	bf_encdata *be = privdata;
-
-	BF_cbc_encrypt(src, dst, len, be->be_key, be->be_iv, 0);
-	(void)memcpy(be->be_iv, (const u_int8_t *)src +
-	    (len - CGD_BF_BLOCK_SIZE), CGD_BF_BLOCK_SIZE);
-}
-
-static void
-cgd_cipher_bf_cbc(void *privdata, struct uio *dstuio,
-    struct uio *srcuio, const void *iv, int dir)
-{
-	struct	bf_privdata *bp = privdata;
-	struct	bf_encdata be;
-
-	(void)memcpy(be.be_iv, iv, CGD_BF_BLOCK_SIZE);
-	be.be_key = &bp->bp_key;
 	switch (dir) {
 	case CGD_CIPHER_ENCRYPT:
-		cgd_cipher_uio(&be, bf_cbc_enc_int, dstuio, srcuio);
+		BF_cbc_encrypt(src, dst, nbytes, &bp->bp_key, iv,
+		    /*encrypt*/1);
 		break;
 	case CGD_CIPHER_DECRYPT:
-		cgd_cipher_uio(&be, bf_cbc_dec_int, dstuio, srcuio);
+		BF_cbc_encrypt(src, dst, nbytes, &bp->bp_key, iv,
+		    /*encrypt*/0);
 		break;
 	default:
 		panic("%s: unrecognised direction %d", __func__, dir);
 	}
-
 }

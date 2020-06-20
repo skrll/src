@@ -1,4 +1,4 @@
-$NetBSD: acronyms,v 1.302 2020/06/10 20:26:52 sevan Exp $
+$NetBSD: acronyms,v 1.304 2020/06/13 14:31:49 sevan Exp $
 10Q	thank you
 10X	thanks
 1337	elite ("leet")
@@ -59,6 +59,7 @@ B/W	bandwidth
 B/W	between
 BAI	goodbye
 BAK	back at keyboard
+BAU	business as usual
 BBIAB	be back in a bit
 BBL	[I'll] be back later
 BBR	burnt beyond repair
@@ -469,6 +470,7 @@ PTT	post-telephone-telegraph
 PTV	parental tunnel vision
 QED	quod erat demonstrandum
 QFT	quoted for truth
+QOI	quality of information
 RA	residential advisor
 RAND	reasonable and non-discriminatory
 RCD	residual current device

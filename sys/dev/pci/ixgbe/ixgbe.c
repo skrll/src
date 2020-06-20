@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.229 2020/06/11 09:16:05 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.232 2020/06/18 09:00:11 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -168,9 +168,9 @@ static bool	ixgbe_suspend(device_t, const pmf_qual_t *);
 static bool	ixgbe_resume(device_t, const pmf_qual_t *);
 static int	ixgbe_ifflags_cb(struct ethercom *);
 static int	ixgbe_ioctl(struct ifnet *, u_long, void *);
-static void	ixgbe_ifstop(struct ifnet *, int);
 static int	ixgbe_init(struct ifnet *);
 static void	ixgbe_init_locked(struct adapter *);
+static void	ixgbe_ifstop(struct ifnet *, int);
 static void	ixgbe_stop(void *);
 static void	ixgbe_init_device_features(struct adapter *);
 static void	ixgbe_check_fan_failure(struct adapter *, u32, bool);
@@ -1538,9 +1538,7 @@ ixgbe_config_link(struct adapter *adapter)
 			ixgbe_schedule_msf_tasklet(adapter);
 			kpreempt_enable();
 		}
-		kpreempt_disable();
 		softint_schedule(adapter->mod_si);
-		kpreempt_enable();
 	} else {
 		struct ifmedia	*ifm = &adapter->media;
 
@@ -3595,8 +3593,10 @@ ixgbe_detach(device_t dev, int flags)
 	IXGBE_WRITE_REG(&adapter->hw, IXGBE_CTRL_EXT, ctrl_ext);
 
 	callout_halt(&adapter->timer, NULL);
-	if (adapter->feat_en & IXGBE_FEATURE_RECOVERY_MODE)
+	if (adapter->feat_en & IXGBE_FEATURE_RECOVERY_MODE) {
+		callout_stop(&adapter->recovery_mode_timer);
 		callout_halt(&adapter->recovery_mode_timer, NULL);
+	}
 
 	if (adapter->feat_en & IXGBE_FEATURE_NETMAP)
 		netmap_detach(adapter->ifp);
@@ -3919,6 +3919,8 @@ ixgbe_init_locked(struct adapter *adapter)
 	hw->adapter_stopped = FALSE;
 	ixgbe_stop_adapter(hw);
 	callout_stop(&adapter->timer);
+	if (adapter->feat_en & IXGBE_FEATURE_RECOVERY_MODE)
+		callout_stop(&adapter->recovery_mode_timer);
 	for (i = 0, que = adapter->queues; i < adapter->num_queues; i++, que++)
 		que->disabled_count = 0;
 
@@ -4064,6 +4066,9 @@ ixgbe_init_locked(struct adapter *adapter)
 	ixgbe_enable_rx_dma(hw, rxctrl);
 
 	callout_reset(&adapter->timer, hz, ixgbe_local_timer, adapter);
+	if (adapter->feat_en & IXGBE_FEATURE_RECOVERY_MODE)
+		callout_reset(&adapter->recovery_mode_timer, hz,
+		    ixgbe_recovery_mode_timer, adapter);
 
 	/* Set up MSI/MSI-X routing */
 	if (adapter->feat_en & IXGBE_FEATURE_MSIX) {
@@ -4126,6 +4131,9 @@ ixgbe_init_locked(struct adapter *adapter)
 	/* Setup DMA Coalescing */
 	ixgbe_config_dmac(adapter);
 
+	/* OK to schedule workqueues. */
+	adapter->schedule_wqs_ok = true;
+
 	/* And now turn on interrupts */
 	ixgbe_enable_intr(adapter);
 
@@ -4142,9 +4150,6 @@ ixgbe_init_locked(struct adapter *adapter)
 
 	/* Now inform the stack we're ready */
 	ifp->if_flags |= IFF_RUNNING;
-
-	/* OK to schedule workqueues. */
-	adapter->schedule_wqs_ok = true;
 
 	return;
 } /* ixgbe_init_locked */
@@ -4452,7 +4457,7 @@ ixgbe_local_timer1(void *arg)
 {
 	struct adapter	*adapter = arg;
 	device_t	dev = adapter->dev;
-	struct ix_queue *que = adapter->queues;
+	struct ix_queue	*que = adapter->queues;
 	u64		queues = 0;
 	u64		v0, v1, v2, v3, v4, v5, v6, v7;
 	int		hung = 0;
@@ -4525,7 +4530,7 @@ ixgbe_local_timer1(void *arg)
 		}
 	}
 
-	/* Only truely watchdog if all queues show hung */
+	/* Only truly watchdog if all queues show hung */
 	if (hung == adapter->num_queues)
 		goto watchdog;
 #if 0 /* XXX Avoid unexpectedly disabling interrupt forever (PR#53294) */
@@ -4694,7 +4699,7 @@ ixgbe_handle_msf(struct work *wk, void *context)
 
 	/*
 	 * Hold the IFNET_LOCK across this entire call.  This will
-	 * prevent additional changes to adapter->phy_layer and
+	 * prevent additional changes to adapter->phy_layer
 	 * and serialize calls to this tasklet.  We cannot hold the
 	 * CORE_LOCK while calling into the ifmedia functions as
 	 * they may block while allocating memory.
@@ -6253,7 +6258,7 @@ out:
  *   return 0 on success, positive on failure
  ************************************************************************/
 static int
-ixgbe_ioctl(struct ifnet * ifp, u_long command, void *data)
+ixgbe_ioctl(struct ifnet *ifp, u_long command, void *data)
 {
 	struct adapter	*adapter = ifp->if_softc;
 	struct ixgbe_hw *hw = &adapter->hw;

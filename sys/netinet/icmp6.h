@@ -1,4 +1,4 @@
-/*	$NetBSD: icmp6.h,v 1.53 2020/03/09 21:20:55 roy Exp $	*/
+/*	$NetBSD: icmp6.h,v 1.56 2020/06/15 23:41:35 roy Exp $	*/
 /*	$KAME: icmp6.h,v 1.84 2003/04/23 10:26:51 itojun Exp $	*/
 
 
@@ -233,6 +233,7 @@ struct nd_router_advert {	/* router advertisement */
 #define ND_RA_FLAG_MANAGED	0x80
 #define ND_RA_FLAG_OTHER	0x40
 #define ND_RA_FLAG_HOME_AGENT	0x20
+#define ND_RA_FLAG_PROXY	0x04
 
 /*
  * Router preference values based on RFC4191.
@@ -335,6 +336,7 @@ struct nd_opt_prefix_info {	/* prefix information */
 
 #define ND_OPT_PI_FLAG_ONLINK		0x80
 #define ND_OPT_PI_FLAG_AUTO		0x40
+#define ND_OPT_PI_FLAG_ROUTER		0x20
 
 struct nd_opt_rd_hdr {		/* redirected header */
 	u_int8_t	nd_opt_rh_type;
@@ -633,8 +635,10 @@ struct icmp6_filter {
 #define ICMPV6CTL_MTUDISC_HIWAT	16
 #define ICMPV6CTL_MTUDISC_LOWAT	17
 #define ICMPV6CTL_ND6_DEBUG	18
-#define ICMPV6CTL_ND6_DRLIST	19
-#define ICMPV6CTL_ND6_PRLIST	20
+#ifdef _KERNEL
+#define OICMPV6CTL_ND6_DRLIST	19
+#define OICMPV6CTL_ND6_PRLIST	20
+#endif
 #define	ICMPV6CTL_ND6_MAXQLEN	24
 
 #ifdef _KERNEL

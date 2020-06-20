@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_ipd.c,v 1.3 2020/05/31 06:27:06 simonb Exp $	*/
+/*	$NetBSD: octeon_ipd.c,v 1.5 2020/06/19 02:23:43 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: octeon_ipd.c,v 1.3 2020/05/31 06:27:06 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: octeon_ipd.c,v 1.5 2020/06/19 02:23:43 simonb Exp $");
 
 #include "opt_octeon.h"
 
@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: octeon_ipd.c,v 1.3 2020/05/31 06:27:06 simonb Exp $"
 #include <mips/locore.h>
 #include <mips/cavium/octeonvar.h>
 #include <mips/cavium/dev/octeon_ciureg.h>
+#include <mips/cavium/dev/octeon_fpareg.h>
 #include <mips/cavium/dev/octeon_fpavar.h>
 #include <mips/cavium/dev/octeon_pipreg.h>
 #include <mips/cavium/dev/octeon_ipdreg.h>
@@ -50,7 +51,7 @@ __KERNEL_RCSID(0, "$NetBSD: octeon_ipd.c,v 1.3 2020/05/31 06:27:06 simonb Exp $"
 #include <netinet/ip.h>
 
 #define IP_OFFSET(data, word2) \
-	((uintptr_t)(data) + (uintptr_t)((word2 & PIP_WQE_WORD2_IP_OFFSET) >> PIP_WQE_WORD2_IP_OFFSET_SHIFT))
+	((uintptr_t)(data) + (uintptr_t)__SHIFTOUT(word2, PIP_WQE_WORD2_IP_OFFSET))
 
 #ifdef CNMAC_DEBUG
 void			octipd_intr_evcnt_attach(struct octipd_softc *);
@@ -95,9 +96,8 @@ octipd_init(struct octipd_attach_args *aa, struct octipd_softc **rsc)
 	octipd_int_enable(sc, 1);
 	octipd_intr_evcnt_attach(sc);
 	if (octipd_intr_drop_ih == NULL)
-		octipd_intr_drop_ih = octeon_intr_establish(
-		   ffs64(CIU_INTX_SUM0_IPD_DRP) - 1, IPL_NET,
-		   octipd_intr_drop, NULL);
+		octipd_intr_drop_ih = octeon_intr_establish(CIU_INT_IPD_DRP,
+		    IPL_NET, octipd_intr_drop, NULL);
 	__octipd_softc[sc->sc_port] = sc;
 #endif /* CNMAC_DEBUG */
 }
@@ -163,7 +163,8 @@ octipd_config(struct octipd_softc *sc)
 
 	ctl_status = _IPD_RD8(sc, IPD_CTL_STATUS_OFFSET);
 	CLR(ctl_status, IPD_CTL_STATUS_OPC_MODE);
-	SET(ctl_status, IPD_CTL_STATUS_OPC_MODE_ALL);
+	SET(ctl_status,
+	    __SHIFTIN(IPD_CTL_STATUS_OPC_MODE_ALL, IPD_CTL_STATUS_OPC_MODE));
 	SET(ctl_status, IPD_CTL_STATUS_PBP_EN);
 
 	/*
