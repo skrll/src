@@ -1,4 +1,4 @@
-/* $NetBSD: acpipchb.c,v 1.18 2020/05/08 14:44:23 jmcneill Exp $ */
+/* $NetBSD: acpipchb.c,v 1.20 2020/06/17 06:46:09 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpipchb.c,v 1.18 2020/05/08 14:44:23 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpipchb.c,v 1.20 2020/06/17 06:46:09 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -38,12 +38,10 @@ __KERNEL_RCSID(0, "$NetBSD: acpipchb.c,v 1.18 2020/05/08 14:44:23 jmcneill Exp $
 #include <sys/intr.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/extent.h>
 #include <sys/queue.h>
 #include <sys/mutex.h>
 #include <sys/kmem.h>
-
-#include <machine/cpu.h>
+#include <sys/cpu.h>
 
 #include <arm/cpufunc.h>
 

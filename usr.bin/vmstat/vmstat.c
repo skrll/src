@@ -1,4 +1,4 @@
-/* $NetBSD: vmstat.c,v 1.239 2020/03/23 18:44:17 ad Exp $ */
+/* $NetBSD: vmstat.c,v 1.242 2020/06/14 21:41:42 ad Exp $ */
 
 /*-
  * Copyright (c) 1998, 2000, 2001, 2007, 2019, 2020
@@ -71,7 +71,7 @@ __COPYRIGHT("@(#) Copyright (c) 1980, 1986, 1991, 1993\
 #if 0
 static char sccsid[] = "@(#)vmstat.c	8.2 (Berkeley) 3/1/95";
 #else
-__RCSID("$NetBSD: vmstat.c,v 1.239 2020/03/23 18:44:17 ad Exp $");
+__RCSID("$NetBSD: vmstat.c,v 1.242 2020/06/14 21:41:42 ad Exp $");
 #endif
 #endif /* not lint */
 
@@ -921,7 +921,6 @@ dosum(void)
 		COPY(free);
 		COPY(paging);
 		COPY(wired);
-		COPY(zeropages);
 		COPY(reserve_pagedaemon);
 		COPY(reserve_kernel);
 		COPY(anonpages);
@@ -941,9 +940,6 @@ dosum(void)
 		COPY(forks);
 		COPY(forks_ppwait);
 		COPY(forks_sharevm);
-		COPY(pga_zerohit);
-		COPY(pga_zeromiss);
-		COPY(zeroaborts);
 		COPY(colorhit);
 		COPY(colormiss);
 		COPY(cpuhit);
@@ -1006,7 +1002,6 @@ dosum(void)
 	}
 	(void)printf("%9" PRIu64 " pages paging\n", uvmexp.paging);
 	(void)printf("%9" PRIu64 " pages wired\n", uvmexp.wired);
-	(void)printf("%9" PRIu64 " zero pages\n", uvmexp.zeropages);
 	(void)printf("%9" PRIu64 " reserve pagedaemon pages\n",
 	    uvmexp.reserve_pagedaemon);
 	(void)printf("%9" PRIu64 " reserve kernel pages\n", uvmexp.reserve_kernel);
@@ -1041,12 +1036,6 @@ dosum(void)
 	(void)printf("%9" PRIu64 " forks blocked parent\n", uvmexp.forks_ppwait);
 	(void)printf("%9" PRIu64 " forks shared address space with parent\n",
 	    uvmexp.forks_sharevm);
-	(void)printf("%9" PRIu64 " pagealloc zero wanted and avail\n",
-	    uvmexp.pga_zerohit);
-	(void)printf("%9" PRIu64 " pagealloc zero wanted and not avail\n",
-	    uvmexp.pga_zeromiss);
-	(void)printf("%9" PRIu64 " aborts of idle page zeroing\n",
-	    uvmexp.zeroaborts);
 	(void)printf("%9" PRIu64 " pagealloc desired color avail\n",
 	    uvmexp.colorhit);
 	(void)printf("%9" PRIu64 " pagealloc desired color not avail\n",
@@ -1090,8 +1079,7 @@ dosum(void)
 	(void)printf("%9" PRIu64 " pages found busy by daemon\n", uvmexp.pdbusy);
 	(void)printf("%9" PRIu64 " total pending pageouts\n", uvmexp.pdpending);
 	(void)printf("%9" PRIu64 " pages deactivated\n", uvmexp.pddeact);
-	(void)printf("%9" PRIu64 " per-cpu stats one synced\n", uvmexp.countsyncone);
-	(void)printf("%9" PRIu64 " per-cpu stats all synced\n", uvmexp.countsyncall);
+	(void)printf("%9" PRIu64 " per-cpu stats synced\n", uvmexp.countsyncall);
 	(void)printf("%9" PRIu64 " anon pages possibly dirty\n", uvmexp.anonunknown);
 	(void)printf("%9" PRIu64 " anon pages dirty\n", uvmexp.anondirty);
 	(void)printf("%9" PRIu64 " anon pages clean\n", uvmexp.anonclean);
@@ -1797,7 +1785,8 @@ dopoolcache(int verbose)
 	TAILQ_HEAD(,pool) pool_head;
 	struct pool pool, *pp = &pool;
 	char name[32];
-	uint64_t cpuhit, cpumiss, tot;
+	uint64_t cpuhit, cpumiss, pchit, pcmiss, contended, tot;
+	uint32_t nfull;
 	void *addr;
 	int first, ovflw;
 	size_t i;
@@ -1816,12 +1805,13 @@ dopoolcache(int verbose)
 		deref_kptr(pp->pr_wchan, name, sizeof(name),
 		    "pool wait channel trashed");
 		deref_kptr(pp->pr_cache, pc, sizeof(*pc), "pool cache trashed");
-		if (pc->pc_misses == 0 && !verbose)
-			continue;
 		name[sizeof(name)-1] = '\0';
 
 		cpuhit = 0;
 		cpumiss = 0;
+		pcmiss = 0;
+		contended = 0;
+		nfull = 0;
 		for (i = 0; i < __arraycount(pc->pc_cpus); i++) {
 		    	if ((addr = pc->pc_cpus[i]) == NULL)
 		    		continue;
@@ -1829,7 +1819,14 @@ dopoolcache(int verbose)
 			    "pool cache cpu trashed");
 			cpuhit += cc->cc_hits;
 			cpumiss += cc->cc_misses;
+			pcmiss += cc->cc_pcmisses;
+			nfull += cc->cc_nfull;
+			contended += cc->cc_contended;
 		}
+		pchit = cpumiss - pcmiss;
+
+		if (pcmiss == 0 && !verbose)
+			continue;
 
 		if (first) {
 			(void)printf("Pool cache statistics.\n");
@@ -1850,14 +1847,14 @@ dopoolcache(int verbose)
 
 		ovflw = 0;
 		PRWORD(ovflw, "%-*s", 13, 1, name);
-		PRWORD(ovflw, " %*llu", 6, 1, (long long)pc->pc_contended);
+		PRWORD(ovflw, " %*llu", 6, 1, (long long)contended);
 		PRWORD(ovflw, " %*u", 6, 1, pc->pc_pcgsize);
-		PRWORD(ovflw, " %*u", 5, 1, pc->pc_nfull);
-		PRWORD(ovflw, " %*u", 5, 1, pc->pc_nempty);
-		PRWORD(ovflw, " %*llu", 10, 1, (long long)pc->pc_misses);
+		PRWORD(ovflw, " %*u", 5, 1, nfull);
+		PRWORD(ovflw, " %*u", 5, 1, 0);
+		PRWORD(ovflw, " %*llu", 10, 1, (long long)pcmiss);
 
-		tot = pc->pc_hits + pc->pc_misses;
-		p = pc->pc_hits * 100.0 / (tot);
+		tot = pchit + pcmiss;
+		p = pchit * 100.0 / (tot);
 		PRWORD(ovflw, " %*llu", 11, 1, (long long)tot);
 		PRWORD(ovflw, " %*.1f", 6, 1, p);
 
