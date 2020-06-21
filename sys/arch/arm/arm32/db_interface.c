@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.59 2019/07/21 16:12:59 rin Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.61 2020/06/20 15:45:22 skrll Exp $	*/
 
 /*
  * Copyright (c) 1996 Scott K. Stevens
@@ -35,19 +35,20 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.59 2019/07/21 16:12:59 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.61 2020/06/20 15:45:22 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_multiprocessor.h"
 
 #include <sys/param.h>
+
+#include <sys/atomic.h>
+#include <sys/exec.h>
+#include <sys/intr.h>
 #include <sys/proc.h>
 #include <sys/reboot.h>
 #include <sys/systm.h>	/* just for boothowto */
-#include <sys/exec.h>
-#include <sys/atomic.h>
-#include <sys/intr.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -209,7 +210,7 @@ db_validate_address(vaddr_t addr)
 	else
 		pmap = p->p_vmspace->vm_map.pmap;
 
-	return (pmap_extract(pmap, addr, NULL) == false);
+	return pmap_extract(pmap, addr, NULL) == false;
 }
 
 /*
