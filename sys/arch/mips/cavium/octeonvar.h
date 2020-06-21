@@ -1,4 +1,4 @@
-/*	$NetBSD: octeonvar.h,v 1.9 2020/06/05 09:18:35 simonb Exp $	*/
+/*	$NetBSD: octeonvar.h,v 1.11 2020/06/18 13:52:08 simonb Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -38,6 +38,8 @@
 #include <mips/locore.h>
 #include <dev/pci/pcivar.h>
 
+#include <mips/cavium/octeonreg.h>
+
 /* XXX elsewhere */
 #define	_ASM_PROLOGUE \
 		"	.set push			\n" \
@@ -62,6 +64,14 @@
 #define	__BITS64_SET(name, subbits)	\
 	    (((uint64_t)(subbits) << name##_SHIFT) & name)
 #endif
+
+#ifdef _KERNEL
+extern int	octeon_core_ver;
+#endif /* _KERNEL */
+#define	OCTEON_1		1
+#define	OCTEON_PLUS		10	/* arbitary, keep sequence for others */
+#define	OCTEON_2		2
+#define	OCTEON_3		3
 
 struct octeon_config {
 	struct mips_bus_space mc_iobus_bust;
@@ -221,24 +231,28 @@ struct octfau_map {
 #ifdef _KERNEL
 extern struct octeon_config	octeon_configuration;
 #ifdef MULTIPROCESSOR
-extern kcpuset_t *cpus_booted;
+extern kcpuset_t		*cpus_booted;
 extern struct cpu_softc		octeon_cpu1_softc;
 #endif
 
-void	octeon_bus_io_init(bus_space_tag_t, void *);
-void	octeon_bus_mem_init(bus_space_tag_t, void *);
-void	octeon_cal_timer(int);
-void	octeon_dma_init(struct octeon_config *);
-void	octeon_intr_init(struct cpu_info *);
-void	octeon_iointr(int, vaddr_t, uint32_t);
-void	octpci_init(pci_chipset_tag_t, struct octeon_config *);
-void	*octeon_intr_establish(int, int, int (*)(void *), void *);
-void	octeon_intr_disestablish(void *cookie);
+const char	*octeon_cpu_model(mips_prid_t);
 
-void	octeon_reset_vector(void);
-uint64_t mips_cp0_cvmctl_read(void);
-void	 mips_cp0_cvmctl_write(uint64_t);
+void		octeon_bus_io_init(bus_space_tag_t, void *);
+void		octeon_bus_mem_init(bus_space_tag_t, void *);
+void		octeon_cal_timer(int);
+void		octeon_dma_init(struct octeon_config *);
+void		octeon_intr_init(struct cpu_info *);
+void		octeon_iointr(int, vaddr_t, uint32_t);
+void		octpci_init(pci_chipset_tag_t, struct octeon_config *);
+void		*octeon_intr_establish(int, int, int (*)(void *), void *);
+void		octeon_intr_disestablish(void *cookie);
 
+int		octeon_ioclock_speed(void);
+void		octeon_soft_reset(void);
+
+void		octeon_reset_vector(void);
+uint64_t	mips_cp0_cvmctl_read(void);
+void		mips_cp0_cvmctl_write(uint64_t);
 #endif /* _KERNEL */
 
 #if defined(__mips_n32)
@@ -326,21 +340,20 @@ octeon_xkphys_write_8(paddr_t address, uint64_t value)
 static __inline void
 octeon_iobdma_write_8(uint64_t value)
 {
-	uint64_t addr = UINT64_C(0xffffffffffffa200);
 
-	octeon_xkphys_write_8(addr, value);
+	octeon_xkphys_write_8(OCTEON_IOBDMA_ADDR, value);
 }
 
 static __inline uint64_t
 octeon_cvmseg_read_8(size_t offset)
 {
-	return octeon_xkphys_read_8(UINT64_C(0xffffffffffff8000) + offset);
+	return octeon_xkphys_read_8(OCTEON_CVMSEG_LM + offset);
 }
 
 static __inline void
 octeon_cvmseg_write_8(size_t offset, uint64_t value)
 {
-	octeon_xkphys_write_8(UINT64_C(0xffffffffffff8000) + offset, value);
+	octeon_xkphys_write_8(OCTEON_CVMSEG_LM + offset, value);
 }
 
 /* XXX */

@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_extern.h,v 1.227 2020/05/26 00:50:53 kamil Exp $	*/
+/*	$NetBSD: uvm_extern.h,v 1.230 2020/06/14 22:25:15 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -515,8 +515,6 @@ struct uvmexp_sysctl {
 #ifdef _KERNEL
 /* we need this before including uvm_page.h on some platforms */
 extern struct uvmexp uvmexp;
-/* MD code needs this without including <uvm/uvm.h> */
-extern bool vm_page_zero_enable;
 #endif
 
 /*
@@ -780,7 +778,7 @@ int			uvm_obj_wirepages(struct uvm_object *, off_t, off_t,
 void			uvm_obj_unwirepages(struct uvm_object *, off_t, off_t);
 
 /* uvm_page.c */
-int			uvm_availmem(void);
+int			uvm_availmem(bool);
 void			uvm_page_numa_load(paddr_t, paddr_t, u_int);
 struct vm_page		*uvm_pagealloc_strat(struct uvm_object *,
 			    voff_t, struct vm_anon *, int, int, int);
@@ -789,7 +787,7 @@ struct vm_page		*uvm_pagealloc_strat(struct uvm_object *,
 				UVM_PGA_STRAT_NORMAL, 0)
 void			uvm_pagereplace(struct vm_page *,
 			    struct vm_page *);
-void			uvm_pagerealloc(struct vm_page *,
+int			uvm_pagerealloc(struct vm_page *,
 			    struct uvm_object *, voff_t);
 void			uvm_setpagesize(void);
 

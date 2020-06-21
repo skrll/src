@@ -1,4 +1,4 @@
-/* $NetBSD: cpu_rng.c,v 1.15 2020/06/05 21:48:03 kamil Exp $ */
+/* $NetBSD: cpu_rng.c,v 1.17 2020/06/15 01:24:20 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2015 The NetBSD Foundation, Inc.
@@ -186,6 +186,7 @@ cpu_rng_rdseed_rdrand(uint64_t *out)
 static size_t
 cpu_rng_via(uint64_t *out)
 {
+	u_long psl;
 	uint32_t creg0, rndsts;
 
 	/*
@@ -199,9 +200,9 @@ cpu_rng_via(uint64_t *out)
 	 * even if such a fault is generated.
 	 *
 	 * XXX can this really happen if we don't use "rep xstorrng"?
-	 *
 	 */
 	kpreempt_disable();
+	psl = x86_read_psl();
 	x86_disable_intr();
 	creg0 = rcr0();
 	lcr0(creg0 & ~(CR0_EM|CR0_TS)); /* Permit access to SIMD/FPU path */
@@ -215,7 +216,7 @@ cpu_rng_via(uint64_t *out)
 	    : "=a" (rndsts), "+D" (out) : "d" (0) : "memory");
 	/* Put CR0 back how it was */
 	lcr0(creg0);
-	x86_enable_intr();
+	x86_write_psl(psl);
 	kpreempt_enable();
 
 	/*
@@ -253,7 +254,7 @@ cpu_rng_get(size_t nbytes, void *cookie)
 	uint64_t buf[2*N];
 	unsigned i, nbits = 0;
 
-	for (; nbytes; nbytes -= MIN(nbytes, sizeof buf)) {
+	while (nbytes) {
 		/*
 		 * The fraction of outputs this rejects in correct
 		 * operation is 1/2^256, which is close enough to zero
@@ -268,6 +269,7 @@ cpu_rng_get(size_t nbytes, void *cookie)
 			nbits = 0;
 		}
 		rnd_add_data_sync(&cpu_rng_source, buf, sizeof buf, nbits);
+		nbytes -= MIN(MIN(nbytes, sizeof buf), MAX(1, 8*nbits));
 	}
 #undef N
 }

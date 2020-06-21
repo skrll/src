@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.78 2020/02/21 15:15:48 rin Exp $	*/
+/*	$NetBSD: trap.c,v 1.81 2020/06/19 07:31:59 rin Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.78 2020/02/21 15:15:48 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.81 2020/06/19 07:31:59 rin Exp $");
 
 #include "opt_altivec.h"
 #include "opt_ddb.h"
@@ -221,7 +221,7 @@ out:
 				tf->tf_cr = fb->fb_cr;
 				tf->tf_fixreg[1] = fb->fb_sp;
 				tf->tf_fixreg[2] = fb->fb_r2;
-				tf->tf_fixreg[3] = 1; /* Return TRUE */
+				tf->tf_fixreg[3] = rv;
 				memcpy(&tf->tf_fixreg[13], fb->fb_fixreg,
 				    sizeof(fb->fb_fixreg));
 				return;
@@ -247,16 +247,28 @@ out:
 			break;
 		}
 		KSI_INIT_TRAP(&ksi);
-		ksi.ksi_signo = SIGSEGV;
 		ksi.ksi_trap = EXC_DSI;
 		ksi.ksi_addr = (void *)tf->tf_dear;
-		if (rv == ENOMEM) {
-			printf("UVM: pid %d (%s) lid %d, uid %d killed: "
-			    "out of swap\n",
-			    p->p_pid, p->p_comm, l->l_lid,
-			    l->l_cred ?
-			    kauth_cred_geteuid(l->l_cred) : -1);
+vm_signal:
+		switch (rv) {
+		case EINVAL:
+			ksi.ksi_signo = SIGBUS;
+			ksi.ksi_code = BUS_ADRERR;
+			break;
+		case EACCES:
+			ksi.ksi_signo = SIGSEGV;
+			ksi.ksi_code = SEGV_ACCERR;
+			break;
+		case ENOMEM:
 			ksi.ksi_signo = SIGKILL;
+			printf("UVM: pid %d.%d (%s), uid %d killed: "
+			       "out of swap\n", p->p_pid, l->l_lid, p->p_comm,
+			       l->l_cred ? kauth_cred_geteuid(l->l_cred) : -1);
+			break;
+		default:
+			ksi.ksi_signo = SIGSEGV;
+			ksi.ksi_code = SEGV_MAPERR;
+			break;
 		}
 		trapsignal(l, &ksi);
 		break;
@@ -274,11 +286,9 @@ out:
 			break;
 		}
 		KSI_INIT_TRAP(&ksi);
-		ksi.ksi_signo = SIGSEGV;
 		ksi.ksi_trap = EXC_ISI;
 		ksi.ksi_addr = (void *)tf->tf_srr0;
-		ksi.ksi_code = (rv == EACCES ? SEGV_ACCERR : SEGV_MAPERR);
-		trapsignal(l, &ksi);
+		goto vm_signal;
 		break;
 
 	case EXC_AST|EXC_USER:
@@ -428,21 +438,21 @@ copyin(const void *udaddr, void *kaddr, size_t len)
 		"   mfmsr %[msr];"		/* Save MSR */
 		"   li %[pid],0x20;"
 		"   andc %[pid],%[msr],%[pid]; mtmsr %[pid];" /* Disable IMMU */
+		"   isync;"
 		"   mfpid %[pid];"		/* Save old PID */
-		"   sync; isync;"
 
 		"   srwi. %[count],%[len],0x2;"	/* How many words? */
 		"   beq- 2f;"			/* No words. Go do bytes */
 		"   mtctr %[count];"
-		"1: mtpid %[ctx]; sync;"
+		"1: mtpid %[ctx]; isync;"
 #ifdef PPC_IBM403
 		"   lswi %[tmp],%[udaddr],4;"	/* Load user word */
 #else
 		"   lwz %[tmp],0(%[udaddr]);"
 #endif
 		"   addi %[udaddr],%[udaddr],0x4;" /* next udaddr word */
-		"   sync; isync;"
-		"   mtpid %[pid]; sync;"
+		"   sync;"
+		"   mtpid %[pid]; isync;"
 #ifdef PPC_IBM403
 		"   stswi %[tmp],%[kaddr],4;"	/* Store kernel word */
 #else
@@ -450,24 +460,24 @@ copyin(const void *udaddr, void *kaddr, size_t len)
 #endif
 		"   dcbst 0,%[kaddr];"		/* flush cache */
 		"   addi %[kaddr],%[kaddr],0x4;" /* next udaddr word */
-		"   sync; isync;"
+		"   sync;"
 		"   bdnz 1b;"			/* repeat */
 
 		"2: andi. %[count],%[len],0x3;"	/* How many remaining bytes? */
 		"   addi %[count],%[count],0x1;"
 		"   mtctr %[count];"
 		"3: bdz 10f;"			/* while count */
-		"   mtpid %[ctx]; sync;"
+		"   mtpid %[ctx]; isync;"
 		"   lbz %[tmp],0(%[udaddr]);"	/* Load user byte */
 		"   addi %[udaddr],%[udaddr],0x1;" /* next udaddr byte */
-		"   sync; isync;"
-		"   mtpid %[pid]; sync;"
+		"   sync;"
+		"   mtpid %[pid]; isync;"
 		"   stb %[tmp],0(%[kaddr]);"	/* Store kernel byte */
 		"   dcbst 0,%[kaddr];"		/* flush cache */
 		"   addi %[kaddr],%[kaddr],0x1;"
-		"   sync; isync;"
+		"   sync;"
 		"   b 3b;"
-		"10:mtpid %[pid]; mtmsr %[msr]; sync; isync;"
+		"10:mtpid %[pid]; mtmsr %[msr]; isync;"
 						/* Restore PID and MSR */
 		: [msr] "=&r" (msr), [pid] "=&r" (pid), [tmp] "=&r" (tmp)
 		: [udaddr] "b" (udaddr), [ctx] "b" (ctx), [kaddr] "b" (kaddr),
@@ -535,21 +545,21 @@ copyout(const void *kaddr, void *udaddr, size_t len)
 		"   mfmsr %[msr];"		/* Save MSR */
 		"   li %[pid],0x20;"
 		"   andc %[pid],%[msr],%[pid]; mtmsr %[pid];" /* Disable IMMU */
+		"   isync;"
 		"   mfpid %[pid];"		/* Save old PID */
-		"   sync; isync;"
 
 		"   srwi. %[count],%[len],0x2;"	/* How many words? */
 		"   beq- 2f;"			/* No words. Go do bytes */
 		"   mtctr %[count];"
-		"1: mtpid %[pid]; sync;"
+		"1: mtpid %[pid]; isync;"
 #ifdef PPC_IBM403
 		"   lswi %[tmp],%[kaddr],4;"	/* Load kernel word */
 #else
 		"   lwz %[tmp],0(%[kaddr]);"
 #endif
 		"   addi %[kaddr],%[kaddr],0x4;" /* next kaddr word */
-		"   sync; isync;"
-		"   mtpid %[ctx]; sync;"
+		"   sync;"
+		"   mtpid %[ctx]; isync;"
 #ifdef PPC_IBM403
 		"   stswi %[tmp],%[udaddr],4;"	/* Store user word */
 #else
@@ -557,24 +567,24 @@ copyout(const void *kaddr, void *udaddr, size_t len)
 #endif
 		"   dcbst 0,%[udaddr];"		/* flush cache */
 		"   addi %[udaddr],%[udaddr],0x4;" /* next udaddr word */
-		"   sync; isync;"
+		"   sync;"
 		"   bdnz 1b;"			/* repeat */
 
 		"2: andi. %[count],%[len],0x3;"	/* How many remaining bytes? */
 		"   addi %[count],%[count],0x1;"
 		"   mtctr %[count];"
 		"3: bdz  10f;"			/* while count */
-		"   mtpid %[pid]; sync;"
+		"   mtpid %[pid]; isync;"
 		"   lbz %[tmp],0(%[kaddr]);"	/* Load kernel byte */
 		"   addi %[kaddr],%[kaddr],0x1;" /* next kaddr byte */
-		"   sync; isync;"
-		"   mtpid %[ctx]; sync;"
+		"   sync;"
+		"   mtpid %[ctx]; isync;"
 		"   stb %[tmp],0(%[udaddr]);"	/* Store user byte */
 		"   dcbst 0,%[udaddr];"		/* flush cache */
 		"   addi %[udaddr],%[udaddr],0x1;"
-		"   sync; isync;"
+		"   sync;"
 		"   b 3b;"
-		"10:mtpid %[pid]; mtmsr %[msr]; sync; isync;"
+		"10:mtpid %[pid]; mtmsr %[msr]; isync;"
 						/* Restore PID and MSR */
 		: [msr] "=&r" (msr), [pid] "=&r" (pid), [tmp] "=&r" (tmp)
 		: [udaddr] "b" (udaddr), [ctx] "b" (ctx), [kaddr] "b" (kaddr),

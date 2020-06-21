@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu.c,v 1.62 2020/06/04 19:53:55 riastradh Exp $	*/
+/*	$NetBSD: fpu.c,v 1.65 2020/06/14 16:12:05 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2008, 2019 The NetBSD Foundation, Inc.  All
@@ -96,7 +96,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.62 2020/06/04 19:53:55 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.65 2020/06/14 16:12:05 riastradh Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -267,7 +267,7 @@ fpu_area_save(void *area, uint64_t xsave_features)
 }
 
 void
-fpu_area_restore(void *area, uint64_t xsave_features)
+fpu_area_restore(const void *area, uint64_t xsave_features)
 {
 	clts();
 
@@ -343,6 +343,15 @@ fpu_lwp_abandon(struct lwp *l)
 
 /* -------------------------------------------------------------------------- */
 
+/*
+ * fpu_kern_enter()
+ *
+ *	Begin using the FPU.  Raises to splhigh, disabling all
+ *	interrupts and rendering the thread non-preemptible; caller
+ *	should not use this for long periods of time, and must call
+ *	fpu_kern_leave() afterward.  Non-recursive -- you cannot call
+ *	fpu_kern_enter() again without calling fpu_kern_leave() first.
+ */
 void
 fpu_kern_enter(void)
 {
@@ -375,14 +384,27 @@ fpu_kern_enter(void)
 	clts();
 }
 
+/*
+ * fpu_kern_leave()
+ *
+ *	End using the FPU after fpu_kern_enter().
+ */
 void
 fpu_kern_leave(void)
 {
+	static const union savefpu zero_fpu __aligned(64);
 	struct cpu_info *ci = curcpu();
 	int s;
 
 	KASSERT(ci->ci_ilevel == IPL_HIGH);
 	KASSERT(ci->ci_kfpu_spl != -1);
+
+	/*
+	 * Zero the fpu registers; otherwise we might leak secrets
+	 * through Spectre-class attacks to userland, even if there are
+	 * no bugs in fpu state management.
+	 */
+	fpu_area_restore(&zero_fpu, x86_xsave_features);
 
 	/*
 	 * Set CR0_TS again so that the kernel can't accidentally use

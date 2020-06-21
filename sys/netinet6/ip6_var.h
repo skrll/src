@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_var.h,v 1.82 2019/05/13 07:47:59 ozaki-r Exp $	*/
+/*	$NetBSD: ip6_var.h,v 1.84 2020/06/19 16:08:06 maxv Exp $	*/
 /*	$KAME: ip6_var.h,v 1.33 2000/06/11 14:59:20 jinmei Exp $	*/
 
 /*
@@ -235,13 +235,9 @@ extern int	ip6_defmcasthlim;	/* default multicast hop limit */
 extern int	ip6_forwarding;		/* act as router? */
 extern int	ip6_sendredirect;	/* send ICMPv6 redirect? */
 extern int	ip6_use_deprecated;	/* allow deprecated addr as source */
-extern int	ip6_rr_prune;		/* router renumbering prefix
-					 * walk list every 5 sec.    */
 extern int	ip6_mcast_pmtu;		/* enable pMTU discovery for multicast? */
 extern int	ip6_v6only;
 extern int	ip6_neighborgcthresh;	/* Threshold # of NDP entries for GC */
-extern int	ip6_maxifprefixes; /* Max acceptable prefixes via RA per IF */
-extern int	ip6_maxifdefrouters;	/* Max acceptable def routers via RA */
 extern int	ip6_maxdynroutes; /* Max # of routes created via redirect */
 
 
@@ -249,8 +245,6 @@ extern struct socket *ip6_mrouter; 	/* multicast routing daemon */
 extern int	ip6_sendredirects;	/* send IP redirects when forwarding? */
 extern int	ip6_maxfragpackets; /* Maximum packets in reassembly queue */
 extern int	ip6_maxfrags;	/* Maximum fragments in reassembly queue */
-extern int	ip6_accept_rtadv;	/* Acts as a host not a router */
-extern int	ip6_rtadv_maxroutes;	/* maximum number of routes via rtadv */
 extern int	ip6_keepfaith;		/* Firewall Aided Internet Translator */
 extern int	ip6_log_interval;
 extern time_t	ip6_log_time;
@@ -265,7 +259,6 @@ extern int   ip6_anonportmax;		/* maximum ephemeral port */
 extern int   ip6_lowportmin;		/* minimum reserved port */
 extern int   ip6_lowportmax;		/* maximum reserved port */
 
-extern int	ip6_use_tempaddr; /* whether to use temporary addresses. */
 extern int	ip6_prefer_tempaddr; /* whether to prefer temporary addresses
 					in the source address selection */
 extern int	ip6_use_defzone; /* whether to use the default scope zone
@@ -283,7 +276,6 @@ int	icmp6_ctloutput(int, struct socket *, struct sockopt *);
 
 struct mbuf;
 void	ip6_init(void);
-void	ip6_input(struct mbuf *, struct ifnet *);
 const struct ip6aux *ip6_getdstifaddr(struct mbuf *);
 void	ip6_freepcbopts(struct ip6_pktopts *);
 void	ip6_freemoptions(struct ip6_moptions *);
@@ -292,9 +284,6 @@ int	ip6_get_prevhdr(struct mbuf *, int);
 int	ip6_nexthdr(struct mbuf *, int, int, int *);
 int	ip6_lasthdr(struct mbuf *, int, int, int *);
 
-struct m_tag *ip6_addaux(struct mbuf *);
-struct m_tag *ip6_findaux(struct mbuf *);
-void	ip6_delaux(struct mbuf *);
 struct ip6_hdr;
 int	ip6_mforward(struct ip6_hdr *, struct ifnet *, struct mbuf *);
 int	ip6_hopopts_input(u_int32_t *, u_int32_t *, struct mbuf **, int *);

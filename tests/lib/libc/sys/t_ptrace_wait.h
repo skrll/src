@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ptrace_wait.h,v 1.28 2020/05/05 00:50:39 kamil Exp $	*/
+/*	$NetBSD: t_ptrace_wait.h,v 1.30 2020/06/17 08:42:16 rin Exp $	*/
 
 /*-
  * Copyright (c) 2016, 2017, 2018, 2019 The NetBSD Foundation, Inc.
@@ -654,9 +654,7 @@ trigger_ill(void)
 #endif
 }
 
-#ifdef __HAVE_FENV
 #include <fenv.h>
-#endif
 
 #if (__arm__ && !__SOFTFP__) || __aarch64__
 #include <ieeefp.h> /* only need for ARM Cortex/Neon hack */
@@ -680,15 +678,14 @@ are_fpu_exceptions_supported(void)
 static void __used
 trigger_fpe(void)
 {
-	volatile int a = getpid();
-	volatile int b = atoi("0");
+	volatile double a = getpid();
+	volatile double b = atoi("0");
 
 #ifdef __HAVE_FENV
 	feenableexcept(FE_ALL_EXCEPT);
 #endif
 
-	/* Division by zero causes CPU trap, translated to SIGFPE */
-	usleep(a / b);
+	usleep((int)(a / b));
 }
 
 static void __used

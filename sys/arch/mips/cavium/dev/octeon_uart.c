@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_uart.c,v 1.5 2020/05/31 14:05:21 simonb Exp $	*/
+/*	$NetBSD: octeon_uart.c,v 1.8 2020/06/19 02:23:43 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: octeon_uart.c,v 1.5 2020/05/31 14:05:21 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: octeon_uart.c,v 1.8 2020/06/19 02:23:43 simonb Exp $");
 
 #include "opt_octeon.h"
 
@@ -58,9 +58,6 @@ static int	octuart_iobus_match(device_t, struct cfdata *, void *);
 static void	octuart_iobus_attach(device_t, device_t, void *);
 static int	octuart_com_enable(struct com_softc *);
 static void	octuart_com_disable(struct com_softc *);
-
-
-#define CN30XXUART_BUSYDETECT	0x7
 
 
 /* XXX */
@@ -139,7 +136,7 @@ octuart_iobus_attach(device_t parent, device_t self, void *aux)
 	}
 
 	sc_com->sc_type = COM_TYPE_16550_NOERS;
-	sc_com->sc_frequency = curcpu()->ci_cpu_freq;
+	sc_com->sc_frequency = octeon_ioclock_speed();
 	sc_com->enable = octuart_com_enable;
 	sc_com->disable = octuart_com_disable;
 
@@ -148,8 +145,7 @@ octuart_iobus_attach(device_t parent, device_t self, void *aux)
 
 	com_attach_subr(sc_com);
 
-	/* XXX pass intr mask via _attach_args -- uebayasi */
-	sc->sc_ih = octeon_intr_establish(ffs64(CIU_INTX_SUM0_UART_0) - 1/* XXX */ + device_unit(self),
+	sc->sc_ih = octeon_intr_establish(CIU_INT_UART_0 + device_unit(self),
 	    IPL_SERIAL, comintr, sc_com);
 	if (sc->sc_ih == NULL)
 		panic("%s: can't establish interrupt\n",
@@ -205,7 +201,7 @@ octuart_com_cnattach(bus_space_tag_t bust, int portno, int speed)
 	return comcnattach1(
 		&regs,
 		speed,
-		curcpu()->ci_cpu_freq,
+		octeon_ioclock_speed(),
 		COM_TYPE_16550_NOERS,
 		CONMODE);
 }
