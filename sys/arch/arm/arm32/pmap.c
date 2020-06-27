@@ -6343,12 +6343,12 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	 * for L2 descriptor tables and metadata allocation in
 	 * pmap_growkernel().
 	 */
-	size = ((virtual_end - pmap_curmaxkvaddr) + L1_S_OFFSET) / L1_S_SIZE;
+	size = howmany(virtual_end - pmap_curmaxkvaddr, L1_S_SIZE);
 	pmap_alloc_specials(&virtual_avail,
 	    round_page(size * L2_TABLE_SIZE_REAL) / PAGE_SIZE,
 	    &pmap_kernel_l2ptp_kva, NULL);
 
-	size = (size + (L2_BUCKET_SIZE - 1)) / L2_BUCKET_SIZE;
+	size = howmany(size, L2_BUCKET_SIZE);
 	pmap_alloc_specials(&virtual_avail,
 	    round_page(size * sizeof(struct l2_dtable)) / PAGE_SIZE,
 	    &pmap_kernel_l2dtable_kva, NULL);
