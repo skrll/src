@@ -84,7 +84,7 @@ ipfilter_reload()
 	if [ -f /etc/ipf6.conf ] && ! /sbin/ipf -I -6 -f /etc/ipf6.conf; then
 		err 1 "reload of ipf6.conf failed; not swapping to new ruleset."
 	fi
-		
+
 		# Swap in the new rules
 		#
 	/sbin/ipf -s
