@@ -592,7 +592,7 @@ sunxi_nand_attach_chip(struct sunxi_nand_softc *sc,
 
 	mtdparts = get_bootconf_string(boot_args, "mtdparts");
 	if (mtdparts != NULL) {
-		char mtd_id[strlen("sunxi-nand.X") + 1];
+		char mtd_id[] = "sunxi-nand.XXX";
 		snprintf(mtd_id, sizeof(mtd_id), "sunxi-nand.%u",
 		    device_unit(sc->sc_dev));
 
@@ -688,7 +688,7 @@ sunxi_nand_attach(device_t parent, device_t self, void *aux)
 
 	sunxi_nand_attach_chip(sc, &sc->sc_chip, child);
 }
-	
+
 CFATTACH_DECL_NEW(sunxi_nand, sizeof(struct sunxi_nand_softc),
 	sunxi_nand_match, sunxi_nand_attach, NULL, NULL);
 

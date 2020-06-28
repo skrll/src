@@ -1,11 +1,11 @@
-/* $NetBSD: t_mktemp.c,v 1.1 2013/04/22 21:05:12 christos Exp $ */
+/* $NetBSD: overlay.h,v 1.1 2020/06/26 03:23:04 thorpej Exp $ */
 
 /*-
- * Copyright (c) 2013 The NetBSD Foundation, Inc.
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Christos Zoulas.
+ * by Jason R. Thorpe.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,27 +28,10 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#include <sys/cdefs.h>
-__RCSID("$NetBSD: t_mktemp.c,v 1.1 2013/04/22 21:05:12 christos Exp $");
 
-#include <atf-c.h>
-#include <stdlib.h>
-
-ATF_TC(mktemp_not_exist);
-ATF_TC_HEAD(mktemp_not_exist, tc)
-{
-	atf_tc_set_md_var(tc, "descr", "Test that mktemp does not fail on"
-	    " a path that does not exist");
-}
-
-ATF_TC_BODY(mktemp_not_exist, tc)
-{
-	char template[] = "I will barf/XXXXXX";
-	ATF_REQUIRE(mktemp(template) != NULL);
-}
-
-ATF_TP_ADD_TCS(tp)
-{
-	ATF_TP_ADD_TC(tp, mktemp_not_exist);
-	return atf_no_error();
-}
+/* overlay.c */
+extern int	dtoverlay_enabled;
+void		dtoverlay_foreach(void (*)(const char *));
+void		dtoverlay_add(const char *);
+void		dtoverlay_enable(int);
+void		dtoverlay_remove_all(void);

@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.dep.mk,v 1.84 2019/01/21 21:11:54 christos Exp $
+#	$NetBSD: bsd.dep.mk,v 1.86 2020/06/22 01:04:26 lukem Exp $
 
 ##### Basic targets
 realdepend:	beforedepend .depend afterdepend

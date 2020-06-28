@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.414 2020/05/27 06:43:22 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.415 2020/06/21 07:14:15 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -192,7 +192,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.414 2020/05/27 06:43:22 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.415 2020/06/21 07:14:15 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>

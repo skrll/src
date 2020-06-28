@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_intr.c,v 1.12 2020/06/19 02:23:43 simonb Exp $	*/
+/*	$NetBSD: octeon_intr.c,v 1.14 2020/06/23 05:14:39 simonb Exp $	*/
 /*
  * Copyright 2001, 2002 Wasabi Systems, Inc.
  * All rights reserved.
@@ -38,14 +38,13 @@
  * Platform-specific interrupt support for the MIPS Malta.
  */
 
-#include "opt_octeon.h"
 #include "opt_multiprocessor.h"
 
 #include "cpunode.h"
 #define __INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: octeon_intr.c,v 1.12 2020/06/19 02:23:43 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: octeon_intr.c,v 1.14 2020/06/23 05:14:39 simonb Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -529,7 +528,7 @@ octeon_iointr(int ipl, vaddr_t pc, uint32_t ipending)
 	while (hwpend != 0) {
 		const int irq = ffs64(hwpend) - 1;
 		hwpend &= ~__BIT(irq);
-		
+
 		struct octeon_intrhand * const ih = octciu_intrs[irq];
 		cpu->cpu_intr_evs[irq].ev_count++;
 		if (__predict_true(ih != NULL)) {

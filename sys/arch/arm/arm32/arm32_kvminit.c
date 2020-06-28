@@ -1,4 +1,4 @@
-/*	$NetBSD: arm32_kvminit.c,v 1.58 2020/02/04 10:59:21 skrll Exp $	*/
+/*	$NetBSD: arm32_kvminit.c,v 1.60 2020/06/26 08:42:27 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003, 2005  Genetec Corporation.  All rights reserved.
@@ -127,9 +127,10 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arm32_kvminit.c,v 1.58 2020/02/04 10:59:21 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm32_kvminit.c,v 1.60 2020/06/26 08:42:27 skrll Exp $");
 
 #include <sys/param.h>
+
 #include <sys/asan.h>
 #include <sys/bus.h>
 #include <sys/device.h>
@@ -495,7 +496,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	pv_addr_t msgbuf;
 	pv_addr_t text;
 	pv_addr_t data;
-	pv_addr_t chunks[KERNEL_L2PT_KERNEL_NUM + KERNEL_L2PT_VMDATA_NUM + 11];
+	pv_addr_t chunks[__arraycount(bmi->bmi_l2pts) + 11];
 #if ARM_MMU_XSCALE == 1
 	pv_addr_t minidataclean;
 #endif

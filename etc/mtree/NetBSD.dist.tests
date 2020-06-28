@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.tests,v 1.162 2020/04/19 13:22:58 maxv Exp $
+#	$NetBSD: NetBSD.dist.tests,v 1.169 2020/06/27 05:20:34 jruoho Exp $
 
 ./usr/libdata/debug/usr/tests
 ./usr/libdata/debug/usr/tests/atf
@@ -371,6 +371,7 @@
 ./usr/tests/rump/rumpnet
 ./usr/tests/rump/rumpvfs
 ./usr/tests/sbin
+./usr/tests/sbin/envstat
 ./usr/tests/sbin/fsck_ffs
 ./usr/tests/sbin/gpt
 ./usr/tests/sbin/ifconfig
@@ -378,6 +379,7 @@
 ./usr/tests/sbin/newfs_msdos
 ./usr/tests/sbin/resize_ffs
 ./usr/tests/sbin/route
+./usr/tests/sbin/setkey
 ./usr/tests/sbin/sysctl
 ./usr/tests/share
 ./usr/tests/share/examples
@@ -407,6 +409,7 @@
 ./usr/tests/usr.bin/diff
 ./usr/tests/usr.bin/dirname
 ./usr/tests/usr.bin/find
+./usr/tests/usr.bin/fstat
 ./usr/tests/usr.bin/gdb
 ./usr/tests/usr.bin/grep
 ./usr/tests/usr.bin/gzip
@@ -422,6 +425,7 @@
 ./usr/tests/usr.bin/mkdep
 ./usr/tests/usr.bin/nbperf
 ./usr/tests/usr.bin/netpgpverify
+./usr/tests/usr.bin/patch
 ./usr/tests/usr.bin/pkill
 ./usr/tests/usr.bin/pr
 ./usr/tests/usr.bin/printf
@@ -439,8 +443,12 @@
 ./usr/tests/usr.bin/vmstat
 ./usr/tests/usr.bin/xlint
 ./usr/tests/usr.bin/xlint/lint1
+./usr/tests/usr.bin/ztest
 ./usr/tests/usr.sbin
+./usr/tests/usr.sbin/cpuctl
 ./usr/tests/usr.sbin/mtree
+./usr/tests/usr.sbin/stdethers
+./usr/tests/usr.sbin/stdhosts
 ./usr/tests/usr.sbin/tcpdump
 ./usr/tests/usr.sbin/traceroute
 ./usr/tests/usr.sbin/useradd

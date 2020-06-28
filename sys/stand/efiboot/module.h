@@ -1,7 +1,7 @@
-/* $NetBSD: efienv.h,v 1.2 2019/04/21 22:30:41 thorpej Exp $ */
+/* $NetBSD: module.h,v 1.1 2020/06/21 17:24:26 jmcneill Exp $ */
 
 /*-
- * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
+ * Copyright (c) 2020 Jared McNeill <jmcneill@invisible.ca>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,9 +26,12 @@
  * SUCH DAMAGE.
  */
 
-void efi_env_from_efibootplist(void);
-void efi_env_set(const char *, char *);
-char *efi_env_get(const char *);
-void efi_env_clear(const char *);
-void efi_env_reset(void);
-void efi_env_print(void);
+/* module.c */
+extern int	module_enabled;
+extern char	module_prefix[];
+void		module_init(const char *);
+void		module_foreach(void (*)(const char *));
+void		module_enable(int);
+void		module_add(const char *);
+void		module_remove(const char *);
+void		module_remove_all(void);
