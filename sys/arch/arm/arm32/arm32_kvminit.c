@@ -369,7 +369,7 @@ valloc_pages(struct bootmem_info *bmi, pv_addr_t *pv, size_t npages,
 		VPRINTF(" l1pt");
 
 		valloc_pages(bmi, &kernel_l1pt, L1_TABLE_SIZE / PAGE_SIZE,
-		    VM_PROT_READ|VM_PROT_WRITE, PTE_PAGETABLE, true);
+		    VM_PROT_READ | VM_PROT_WRITE, PTE_PAGETABLE, true);
 		add_pages(bmi, &kernel_l1pt);
 	}
 
@@ -537,7 +537,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 		 */
 		VPRINTF(" vector");
 		valloc_pages(bmi, &bmi->bmi_vector_l2pt, 1,
-		    VM_PROT_READ|VM_PROT_WRITE, PTE_PAGETABLE, true);
+		    VM_PROT_READ | VM_PROT_WRITE, PTE_PAGETABLE, true);
 		add_pages(bmi, &bmi->bmi_vector_l2pt);
 	}
 
@@ -547,7 +547,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	VPRINTF(" kernel");
 	for (size_t idx = 0; idx < KERNEL_L2PT_KERNEL_NUM; ++idx) {
 		valloc_pages(bmi, &kernel_l2pt[idx], 1,
-		    VM_PROT_READ|VM_PROT_WRITE, PTE_PAGETABLE, true);
+		    VM_PROT_READ | VM_PROT_WRITE, PTE_PAGETABLE, true);
 		add_pages(bmi, &kernel_l2pt[idx]);
 	}
 
@@ -557,7 +557,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	VPRINTF(" vm");
 	for (size_t idx = 0; idx < KERNEL_L2PT_VMDATA_NUM; ++idx) {
 		valloc_pages(bmi, &vmdata_l2pt[idx], 1,
-		    VM_PROT_READ|VM_PROT_WRITE, PTE_PAGETABLE, true);
+		    VM_PROT_READ | VM_PROT_WRITE, PTE_PAGETABLE, true);
 		add_pages(bmi, &vmdata_l2pt[idx]);
 	}
 
@@ -567,7 +567,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	if (iovbase) {
 		VPRINTF(" io");
 		valloc_pages(bmi, &bmi->bmi_io_l2pt, 1,
-		    VM_PROT_READ|VM_PROT_WRITE, PTE_PAGETABLE, true);
+		    VM_PROT_READ | VM_PROT_WRITE, PTE_PAGETABLE, true);
 		add_pages(bmi, &bmi->bmi_io_l2pt);
 	}
 
@@ -575,28 +575,28 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 
 	/* Allocate stacks for all modes and CPUs */
 	valloc_pages(bmi, &abtstack, ABT_STACK_SIZE * cpu_num,
-	    VM_PROT_READ|VM_PROT_WRITE, PTE_CACHE, true);
+	    VM_PROT_READ | VM_PROT_WRITE, PTE_CACHE, true);
 	add_pages(bmi, &abtstack);
 	valloc_pages(bmi, &fiqstack, FIQ_STACK_SIZE * cpu_num,
-	    VM_PROT_READ|VM_PROT_WRITE, PTE_CACHE, true);
+	    VM_PROT_READ | VM_PROT_WRITE, PTE_CACHE, true);
 	add_pages(bmi, &fiqstack);
 	valloc_pages(bmi, &irqstack, IRQ_STACK_SIZE * cpu_num,
-	    VM_PROT_READ|VM_PROT_WRITE, PTE_CACHE, true);
+	    VM_PROT_READ | VM_PROT_WRITE, PTE_CACHE, true);
 	add_pages(bmi, &irqstack);
 	valloc_pages(bmi, &undstack, UND_STACK_SIZE * cpu_num,
-	    VM_PROT_READ|VM_PROT_WRITE, PTE_CACHE, true);
+	    VM_PROT_READ | VM_PROT_WRITE, PTE_CACHE, true);
 	add_pages(bmi, &undstack);
 	valloc_pages(bmi, &idlestack, UPAGES * cpu_num,		/* SVC32 */
-	    VM_PROT_READ|VM_PROT_WRITE, PTE_CACHE, true);
+	    VM_PROT_READ | VM_PROT_WRITE, PTE_CACHE, true);
 	add_pages(bmi, &idlestack);
 	valloc_pages(bmi, &kernelstack, UPAGES,			/* SVC32 */
-	    VM_PROT_READ|VM_PROT_WRITE, PTE_CACHE, true);
+	    VM_PROT_READ | VM_PROT_WRITE, PTE_CACHE, true);
 	add_pages(bmi, &kernelstack);
 
 	/* Allocate the message buffer from the end of memory. */
 	const size_t msgbuf_pgs = round_page(MSGBUFSIZE) / PAGE_SIZE;
 	valloc_pages(bmi, &msgbuf, msgbuf_pgs,
-	    VM_PROT_READ|VM_PROT_WRITE, PTE_CACHE, false);
+	    VM_PROT_READ | VM_PROT_WRITE, PTE_CACHE, false);
 	add_pages(bmi, &msgbuf);
 	msgbufphys = msgbuf.pv_pa;
 	msgbufaddr = (void *)msgbuf.pv_va;
@@ -609,7 +609,8 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 		 */
 		VPRINTF(" vector");
 
-		valloc_pages(bmi, &systempage, 1, VM_PROT_READ|VM_PROT_WRITE|VM_PROT_EXECUTE,
+		valloc_pages(bmi, &systempage, 1,
+		    VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
 		    PTE_CACHE, true);
 	}
 	systempage.pv_va = vectors;
@@ -623,7 +624,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	if (xscale_use_minidata)
 #endif
 		valloc_pages(bmi, &minidataclean, 1,
-		    VM_PROT_READ|VM_PROT_WRITE, 0, true);
+		    VM_PROT_READ | VM_PROT_WRITE, 0, true);
 #endif
 
 	/*
@@ -765,7 +766,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 				 * See if we can extend the current pv to emcompass the
 				 * hole, and if so do it and retry the concatenation.
 				 */
-				if (cur_pv.pv_prot == (VM_PROT_READ|VM_PROT_WRITE)
+				if (cur_pv.pv_prot == (VM_PROT_READ | VM_PROT_WRITE)
 				    && cur_pv.pv_cache == PTE_CACHE) {
 					cur_pv.pv_size = pv->pv_pa - cur_pv.pv_va;
 					continue;
@@ -857,7 +858,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	if (map_vectors_p) {
 		/* Map the vector page. */
 		pmap_map_entry(l1pt_va, systempage.pv_va, systempage.pv_pa,
-		    VM_PROT_READ|VM_PROT_WRITE|VM_PROT_EXECUTE, PTE_CACHE);
+		    VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE, PTE_CACHE);
 	}
 
 	/* Map the Mini-Data cache clean area. */
