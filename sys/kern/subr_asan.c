@@ -50,9 +50,6 @@ __KERNEL_RCSID(0, "$NetBSD: subr_asan.c,v 1.21 2020/04/13 07:09:51 maxv Exp $");
 #endif
 
 /* ASAN constants. Part of the compiler ABI. */
-#define KASAN_SHADOW_SCALE_SHIFT	3
-#define KASAN_SHADOW_SCALE_SIZE		(1UL << KASAN_SHADOW_SCALE_SHIFT)
-#define KASAN_SHADOW_MASK		(KASAN_SHADOW_SCALE_SIZE - 1)
 #define KASAN_ALLOCA_SCALE_SIZE		32
 
 /* The MD code. */
@@ -70,6 +67,7 @@ __KERNEL_RCSID(0, "$NetBSD: subr_asan.c,v 1.21 2020/04/13 07:09:51 maxv Exp $");
 #endif
 
 #define __RET_ADDR	(unsigned long)__builtin_return_address(0)
+
 
 /* Global variable descriptor. Part of the compiler ABI.  */
 struct __asan_global_source_location {
