@@ -61,18 +61,10 @@ OPT_DDB=	%DDB%
 CFLAGS+=	-mapcs-frame
 .endif
 
-
-
-#change kernel vm base address to use more than 256GB of memory. (up to 64TB)
-#
-#also enlarge KSEG(direct map) region from 512GB to 64TB.
-#KASAN works ok.
-#
 #Note: -fasan-shadow-offset=
 #	KASAN_SHADOW_START - (CANONICAL_BASE >> 3) =
 #       0xc000_0000 - (0x8000_0000 >> 3) = 0xb000_0000
 #
-
 .if ${KASAN:U0} > 0 && ${HAVE_GCC:U0} > 0
 KASANFLAGS=	-fsanitize=kernel-address \
 		--param asan-globals=1 --param asan-stack=1 \
