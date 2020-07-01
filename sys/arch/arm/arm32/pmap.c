@@ -6323,6 +6323,8 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 #else
 	nptes = PAGE_SIZE / L2_S_SIZE;
 #endif
+	pmap_alloc_specials(&virtual_avail, nptes, &memhook, NULL);
+
 #ifdef MULTIPROCESSOR
 	cnptes = nptes;
 	nptes *= arm_cpu_max;
@@ -6331,7 +6333,6 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	pmap_set_pt_cache_mode(l1pt, (vaddr_t)csrc_pte, nptes);
 	pmap_alloc_specials(&virtual_avail, nptes, &cdstp, &cdst_pte);
 	pmap_set_pt_cache_mode(l1pt, (vaddr_t)cdst_pte, nptes);
-	pmap_alloc_specials(&virtual_avail, nptes, &memhook, NULL);
 	if (msgbufaddr == NULL) {
 		pmap_alloc_specials(&virtual_avail,
 		    round_page(MSGBUFSIZE) / PAGE_SIZE,
