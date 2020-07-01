@@ -992,10 +992,6 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	cpu_setup(boot_args);
 #endif
 
-// kernelstack.pv_va + (UPAGES * PAGE_SIZE) - 1
-// 	kasan_shadow_map((void *),
-// 	    (size_t)(maxkvaddr - pmap_maxkvaddr));
-
 	VPRINTF(" ttb");
 
 #ifdef ARM_MMU_EXTENDED
