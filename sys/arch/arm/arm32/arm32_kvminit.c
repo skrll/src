@@ -349,7 +349,7 @@ add_pages(struct bootmem_info *bmi, pv_addr_t *pv)
 
 static void
 valloc_pages(struct bootmem_info *bmi, pv_addr_t *pv, size_t npages,
-	int prot, int cache, bool zero_p)
+    int prot, int cache, bool zero_p)
 {
 	size_t nbytes = npages * PAGE_SIZE;
 	pv_addr_t *free_pv = bmi->bmi_freeblocks;
