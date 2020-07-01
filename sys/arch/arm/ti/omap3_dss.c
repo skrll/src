@@ -262,7 +262,7 @@ omapfb_attach(device_t parent, device_t self, void *aux)
 
 		sc->sc_edid_size = uimin(prop_data_size(edid_data), 1024);
 		memset(sc->sc_edid_data, 0, sizeof(sc->sc_edid_data));
-		memcpy(sc->sc_edid_data, prop_data_data_nocopy(edid_data),
+		memcpy(sc->sc_edid_data, prop_data_value(edid_data),
 		    sc->sc_edid_size);
 
 		edid_parse(sc->sc_edid_data, &ei);

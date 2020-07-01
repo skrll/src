@@ -210,7 +210,7 @@ cemac_attach_common(device_t self, bus_space_tag_t iot,
 	if (enaddr != NULL) {
 		KASSERT(prop_object_type(enaddr) == PROP_TYPE_DATA);
 		KASSERT(prop_data_size(enaddr) == ETHER_ADDR_LEN);
-		memcpy(sc->sc_enaddr, prop_data_data_nocopy(enaddr),
+		memcpy(sc->sc_enaddr, prop_data_value(enaddr),
 		       ETHER_ADDR_LEN);
 	} else {
 		static const uint8_t hardcoded[ETHER_ADDR_LEN] = {
