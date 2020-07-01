@@ -425,7 +425,7 @@ valloc_pages(struct bootmem_info *bmi, pv_addr_t *pv, size_t npages,
 
 void __noasan
 arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
-	const struct pmap_devmap *devmap, bool mapallmem_p)
+    const struct pmap_devmap *devmap, bool mapallmem_p)
 {
 	struct bootmem_info * const bmi = &bootmem_info;
 #ifdef MULTIPROCESSOR
