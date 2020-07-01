@@ -477,7 +477,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	kernel_size += 0x10000;	/* slop */
 	if (!mapallmem_p) {
 		kernel_size += PAGE_SIZE
-		    * ((kernel_size + L2_S_SEGSIZE - 1) / L2_S_SEGSIZE);
+		    * howmany(kernel_size, L2_S_SEGSIZE);
 	}
 	kernel_size = round_page(kernel_size);
 
@@ -485,7 +485,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	 * Now we know how many L2 pages it will take.
 	 */
 	const size_t KERNEL_L2PT_KERNEL_NUM =
-	    round_page(kernel_size + L2_S_SEGSIZE - 1) / L2_S_SEGSIZE;
+	    howmany(kernel_size, L2_S_SEGSIZE);
 
 	VPRINTF("%s: %zu L2 pages are needed to map %#zx kernel bytes\n",
 	    __func__, KERNEL_L2PT_KERNEL_NUM, kernel_size);
