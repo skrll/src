@@ -78,9 +78,10 @@
  */
 
 #include "opt_armfpe.h"
-#include "opt_multiprocessor.h"
 #include "opt_cpuoptions.h"
 #include "opt_lockdebug.h"
+#include "opt_multiprocessor.h"
+#include "opt_kasan.h"
 
 #include "assym.h"
 #include <arm/asm.h>
@@ -190,6 +191,12 @@ ENTRY(cpu_switchto)
 
 	/* We have a new curlwp now so make a note of it */
 	str	r6, [r5, #(CI_CURLWP)]
+
+#ifdef KASAN
+	mov	r0, r6
+	bl	_C_LABEL(kasan_softint)
+#endif
+
 	/* Get the new pcb */
 	ldr	r7, [r6, #(L_PCB)]
 
