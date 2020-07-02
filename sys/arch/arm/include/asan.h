@@ -72,8 +72,8 @@ kasan_md_unsupported(vaddr_t addr)
 
 #define KASAN_NEARLYPAGES	8
 
-static bool __md_early __read_mostly = true;
-static size_t __md_nearlypages = 0;
+static bool __md_early __read_mostly;
+static size_t __md_nearlypages;
 static uint8_t __md_earlypages[KASAN_NEARLYPAGES * PAGE_SIZE]
     __aligned(PAGE_SIZE);
 
@@ -121,6 +121,7 @@ __md_alloc(void)
 
 		l2pte_reset(ptep);
 		PTE_SYNC(ptep);
+		cpu_tlb_flushD_SE(kasan_zero);
 
 		return pa;
 	}
