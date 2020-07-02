@@ -37,9 +37,9 @@
 #include <arm/arm32/pmap.h>
 
 // XXXNH Wrong place
+#define KERNEL_VM_BASE		0x90000000
 #define KERNEL_IO_VBASE         0xf0000000
 #define VM_KERNEL_IO_ADDRESS	KERNEL_IO_VBASE
-
 
 #define __MD_VIRTUAL_SHIFT	29
 #define __MD_CANONICAL_BASE	0x80000000
@@ -70,123 +70,128 @@ kasan_md_unsupported(vaddr_t addr)
  * that VA = PA + KERNEL_BASE.
  */
 
-#define KASAN_NEARLYL2TTS	1
-#define KASAN_NEARLYPAGES	1
+#define KASAN_NEARLYPAGES	8
 
 static bool __md_early __read_mostly = true;
-static size_t __md_nearlyl2tts = 0;
 static size_t __md_nearlypages = 0;
 static uint8_t __md_earlypages[KASAN_NEARLYPAGES * PAGE_SIZE]
     __aligned(PAGE_SIZE);
-static uint8_t __md_earlyl2tts[KASAN_NEARLYL2TTS * L2_TABLE_SIZE_REAL]
-    __aligned(L2_TABLE_SIZE_REAL);
+
+vaddr_t kasan_zero;
+pt_entry_t *kasan_pte;
 
 static vaddr_t
-__md_early_l2ttalloc(void)
+__md_alloc(void)
 {
-	vaddr_t va;
+	paddr_t pa;
 
-	KASSERT(__md_nearlyl2tts < KASAN_NEARLYL2TTS);
+	if (__predict_false(__md_early)) {
+		KASSERTMSG(__md_nearlypages < KASAN_NEARLYPAGES,
+		    "__md_nearlypages %zu", __md_nearlypages);
 
-	va = (vaddr_t)(&__md_earlyl2tts[0] + __md_nearlyl2tts * L2_TABLE_SIZE_REAL);
-	__md_nearlyl2tts++;
+		vaddr_t va = (vaddr_t)(&__md_earlypages[0] + __md_nearlypages * PAGE_SIZE);
+		__md_nearlypages++;
+		__builtin_memset((void *)va, 0, PAGE_SIZE);
 
-	return va;
+		return KERN_VTOPHYS(va);
+
+	}
+
+	if (!uvm.page_init_done) {
+		if (uvm_page_physget(&pa) == false)
+			panic("KASAN can't get a page");
+
+		const vsize_t off = pa & arm_cache_prefer_mask;
+		pt_entry_t *ptep = kasan_pte + (off >> L2_S_SHIFT);
+
+		KASSERTMSG(!l2pte_valid_p(*ptep), "ptep %p *ptep %x "
+		    "va %" PRIxVADDR, ptep, *ptep, kasan_zero);
+
+		const int prot = VM_PROT_READ | VM_PROT_WRITE;
+		pt_entry_t npte =
+		    L2_S_PROTO |
+		    pa |
+		    pte_l2_s_cache_mode_pt |
+		    L2_S_PROT(PTE_KERNEL, prot);
+
+		l2pte_set(ptep, npte, 0);
+		PTE_SYNC(ptep);
+
+		__builtin_memset((void *)kasan_zero, 0, PAGE_SIZE);
+
+		l2pte_reset(ptep);
+		PTE_SYNC(ptep);
+
+		return pa;
+	}
+
+	struct vm_page *pg;
+retry:
+	pg = uvm_pagealloc(NULL, 0, NULL, UVM_PGA_ZERO);
+	if (pg == NULL) {
+		uvm_wait(__func__);
+		goto retry;
+	}
+	pa = VM_PAGE_TO_PHYS(pg);
+
+	return pa;
 }
-
-static vaddr_t
-__md_early_alloc(void)
-{
-	vaddr_t va;
-
-	KASSERT(__md_nearlypages < KASAN_NEARLYPAGES);
-
-	va = (vaddr_t)(&__md_earlypages[0] + __md_nearlypages * PAGE_SIZE);
-	__md_nearlypages++;
-
-	return va;
-}
-
-static void
-__md_early_shadow_map_page(vaddr_t va)
-{
-
-	/* L1_TABLE_SIZE (16Kb) aligned */
-	const uint32_t mask = L1_TABLE_SIZE - 1;
-	const paddr_t ttb = (paddr_t)(armreg_ttbr_read() & ~mask);
-	pd_entry_t * const pdep = (pd_entry_t *)KERN_PHYSTOV(ttb);
-	const size_t l1slot = l1pte_index(va);
-
-	const vaddr_t l2ttva = __md_early_l2ttalloc();
-	const paddr_t l2ttpa = KERN_VTOPHYS(l2ttva);
-	const pd_entry_t npde =
-	    L1_C_PROTO | l2ttpa | L1_C_DOM(PMAP_DOMAIN_KERNEL);
-
-	pt_entry_t *l2tt = (pt_entry_t *)l2ttva;
-	pt_entry_t * const ptep = &l2tt[l2pte_index(va)];
-
-	KASSERT(!l2pte_valid_p(*ptep));
-
-	const int prot = VM_PROT_READ | VM_PROT_WRITE;
-	const paddr_t pa = KERN_VTOPHYS(__md_early_alloc());
-	pt_entry_t npte =
-	    L2_S_PROTO |
-	    pa |
-	    pte_l2_s_cache_mode_pt |
-	    L2_S_PROT(PTE_KERNEL, prot);
-
-	l2pte_set(ptep, npte, 0);
-	PTE_SYNC(ptep);
-
-	l1pte_setone(pdep + l1slot, npde);
-	PDE_SYNC(pdep);
-}
-
-static inline paddr_t
-__md_palloc_large(void)
-{
-	struct pglist pglist;
-	int ret;
-
-	if (!uvm.page_init_done)
-		return 0;
-
-	ret = uvm_pglistalloc(L1_S_SIZE, 0, ~0UL, L1_S_SIZE, 0,
-	    &pglist, 1, 0);
-	if (ret != 0)
-		return 0;
-
-	/* The page may not be zeroed. */
-	return VM_PAGE_TO_PHYS(TAILQ_FIRST(&pglist));
-}
-
 
 static void
 kasan_md_shadow_map_page(vaddr_t va)
 {
+	const uint32_t mask = L1_TABLE_SIZE - 1;
+	const paddr_t ttb = (paddr_t)(armreg_ttbr_read() & ~mask);
+	pd_entry_t * const pdep = (pd_entry_t *)KERN_PHYSTOV(ttb);
 
-	if (__predict_false(__md_early)) {
-		__md_early_shadow_map_page(va);
-		return;
+	const size_t l1slot = l1pte_index(va);
+	vaddr_t l2ptva;
+
+	KASSERT((va & PAGE_MASK) == 0);
+	KASSERT(__md_early || l1pte_page_p(pdep[l1slot]));
+
+	if (!l1pte_page_p(pdep[l1slot])) {
+		KASSERT(__md_early);
+		const paddr_t l2ptpa = __md_alloc();
+		const vaddr_t segl2va = va & -L2_S_SEGSIZE;
+		const size_t segl1slot = l1pte_index(segl2va);
+
+		const pd_entry_t npde =
+		    L1_C_PROTO | l2ptpa | L1_C_DOM(PMAP_DOMAIN_KERNEL);
+
+		l1pte_set(pdep + segl1slot, npde);
+		PDE_SYNC_RANGE(pdep, PAGE_SIZE / L2_T_SIZE);
+
+		l2ptva = KERN_PHYSTOV(l1pte_pa(pdep[l1slot]));
+	} else {
+		/*
+		 * The shadow map area L2PTs were allocated and mapped
+		 * by arm32_kernel_vm_init.  Use the array of pv_addr_t
+		 * to get the l2ptva.
+		 */
+		extern pv_addr_t kasan_l2pt[];
+		const size_t off = va - KASAN_MD_SHADOW_START;
+		const size_t segoff = off & (L2_S_SEGSIZE - 1);
+		const size_t idx = off / L2_S_SEGSIZE;
+		const vaddr_t segl2ptva = kasan_l2pt[idx].pv_va;
+		l2ptva = segl2ptva + l1pte_index(segoff) * L2_TABLE_SIZE_REAL;
 	}
 
-	/* 16Kb aligned */
-	const uint32_t mask16k = (16 * 1024) - 1;
-	const paddr_t ttb = (paddr_t)(armreg_ttbr_read() & ~mask16k);
-	pd_entry_t * const pdep = (pd_entry_t *)KERN_PHYSTOV(ttb);
-	const size_t l1slot = l1pte_index(va);
+	pt_entry_t * l2pt = (pt_entry_t *)l2ptva;
+	pt_entry_t * const ptep = &l2pt[l2pte_index(va)];
 
-	if (!l1pte_valid_p(pdep[l1slot])) {
-		const paddr_t pa = __md_palloc_large();
+	if (!l2pte_valid_p(*ptep)) {
 		const int prot = VM_PROT_READ | VM_PROT_WRITE;
-		const pd_entry_t npde = L1_S_PROTO
-		    | pa
-		    | pte_l1_s_cache_mode
-		    | L1_S_PROT(PTE_KERNEL, prot)
-		    | L1_S_DOM(PMAP_DOMAIN_KERNEL);
+		const paddr_t pa = __md_alloc();
+		pt_entry_t npte =
+		    L2_S_PROTO |
+		    pa |
+		    pte_l2_s_cache_mode_pt |
+		    L2_S_PROT(PTE_KERNEL, prot);
 
-		l1pte_set(&pdep[l1slot], npde);
-		PDE_SYNC(&pdep[l1slot]);
+		l2pte_set(ptep, npte, 0);
+		PTE_SYNC(ptep);
+
 	}
 }
 
@@ -198,22 +203,26 @@ kasan_md_shadow_map_page(vaddr_t va)
 static void
 kasan_md_early_init(void *stack)
 {
+
+	__md_early = true;
+	__md_nearlypages = 0;
 	kasan_shadow_map(stack, INIT_ARM_STACK_SIZE);
 	__md_early = false;
 }
 
-
 static void
 kasan_md_init(void)
 {
-	vaddr_t eva, dummy;
+	extern vaddr_t kasan_kernelstart;
+	extern vaddr_t kasan_kernelsize;
 
-//	CTASSERT((__MD_SHADOW_SIZE / L0_SIZE) == 64);
+	kasan_shadow_map((void *)kasan_kernelstart, kasan_kernelsize);
 
 	/* The VAs we've created until now. */
-	pmap_virtual_space(&eva, &dummy);
-	kasan_shadow_map((void *)VM_MIN_KERNEL_ADDRESS,
-	    eva - VM_MIN_KERNEL_ADDRESS);
+	vaddr_t eva;
+
+	eva = pmap_growkernel(KERNEL_VM_BASE);
+	kasan_shadow_map((void *)KERNEL_VM_BASE, eva - KERNEL_VM_BASE);
 }
 
 

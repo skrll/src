@@ -124,6 +124,7 @@
 #include "opt_arm_debug.h"
 #include "opt_arm_start.h"
 #include "opt_fdt.h"
+#include "opt_kasan.h"
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
@@ -152,6 +153,14 @@ __KERNEL_RCSID(0, "$NetBSD: arm32_kvminit.c,v 1.60 2020/06/26 08:42:27 skrll Exp
 #include <arm/fdt/arm_fdtvar.h>
 #endif
 
+
+#define __MD_VIRTUAL_SHIFT	29
+#define __MD_CANONICAL_BASE	0x80000000
+
+#define __MD_SHADOW_SIZE	(1U << (__MD_VIRTUAL_SHIFT - KASAN_SHADOW_SCALE_SHIFT))
+#define KASAN_MD_SHADOW_START	(0xc0000000)
+#define KASAN_MD_SHADOW_END	(KASAN_MD_SHADOW_START + __MD_SHADOW_SIZE)
+
 #ifdef MULTIPROCESSOR
 #ifndef __HAVE_CPU_UAREA_ALLOC_IDLELWP
 #error __HAVE_CPU_UAREA_ALLOC_IDLELWP required to not waste pages for idlestack
@@ -178,6 +187,16 @@ extern char _end[];
 
 /* Page tables for mapping kernel VM */
 #define KERNEL_L2PT_VMDATA_NUM	8	/* start with 32MB of KVM */
+
+#ifdef KASAN
+vaddr_t kasan_kernelstart;
+vaddr_t kasan_kernelsize;
+
+#define	KERNEL_L2PT_KASAN_NUM howmany(__MD_SHADOW_SIZE, L2_S_SEGSIZE)
+pv_addr_t kasan_l2pt[KERNEL_L2PT_KASAN_NUM];
+#else
+#define KERNEL_L2PT_KASAN_NUM 0
+#endif
 
 u_long kern_vtopdiff __attribute__((__section__(".data")));
 
@@ -423,6 +442,8 @@ valloc_pages(struct bootmem_info *bmi, pv_addr_t *pv, size_t npages,
 		memset((void *)pv->pv_va, 0, nbytes);
 }
 
+pv_addr_t chunks[__arraycount(bootmem_info.bmi_l2pts) + KERNEL_L2PT_KASAN_NUM + 11];
+
 void __noasan
 arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
     const struct pmap_devmap *devmap, bool mapallmem_p)
@@ -464,6 +485,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	kernel_size -= (bmi->bmi_kernelstart & -L2_S_SEGSIZE);
 	kernel_size += L1_TABLE_SIZE;
 	kernel_size += PAGE_SIZE * KERNEL_L2PT_VMDATA_NUM;
+	kernel_size += PAGE_SIZE * KERNEL_L2PT_KASAN_NUM;
 	if (map_vectors_p) {
 		kernel_size += PAGE_SIZE;	/* L2PT for VECTORS */
 	}
@@ -490,13 +512,17 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	VPRINTF("%s: %zu L2 pages are needed to map %#zx kernel bytes\n",
 	    __func__, KERNEL_L2PT_KERNEL_NUM, kernel_size);
 
-	KASSERT(KERNEL_L2PT_KERNEL_NUM + KERNEL_L2PT_VMDATA_NUM < __arraycount(bmi->bmi_l2pts));
+	const size_t alll2pts __diagused =
+	    KERNEL_L2PT_KERNEL_NUM +
+	    KERNEL_L2PT_VMDATA_NUM +
+	    KERNEL_L2PT_KASAN_NUM;
+
+	KASSERT(alll2pts < __arraycount(bmi->bmi_l2pts));
 	pv_addr_t * const kernel_l2pt = bmi->bmi_l2pts;
 	pv_addr_t * const vmdata_l2pt = kernel_l2pt + KERNEL_L2PT_KERNEL_NUM;
 	pv_addr_t msgbuf;
 	pv_addr_t text;
 	pv_addr_t data;
-	pv_addr_t chunks[__arraycount(bmi->bmi_l2pts) + 11];
 #if ARM_MMU_XSCALE == 1
 	pv_addr_t minidataclean;
 #endif
@@ -561,6 +587,18 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 		add_pages(bmi, &vmdata_l2pt[idx]);
 	}
 
+#ifdef KASAN
+	/*
+	 * Now allocate L2 pages for the KASAN shadow map l2pt VA space.
+	 */
+	VPRINTF(" kasan");
+	for (size_t idx = 0; idx < KERNEL_L2PT_KASAN_NUM; ++idx) {
+		valloc_pages(bmi, &kasan_l2pt[idx], 1,
+		    VM_PROT_READ | VM_PROT_WRITE, PTE_PAGETABLE, true);
+		add_pages(bmi, &kasan_l2pt[idx]);
+	}
+
+#endif
 	/*
 	 * If someone wanted a L2 page for I/O, allocate it now.
 	 */
@@ -600,6 +638,11 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	add_pages(bmi, &msgbuf);
 	msgbufphys = msgbuf.pv_pa;
 	msgbufaddr = (void *)msgbuf.pv_va;
+
+#ifdef KASAN
+	kasan_kernelstart = KERNEL_BASE;
+	kasan_kernelsize = (msgbuf.pv_va + round_page(MSGBUFSIZE)) - KERNEL_BASE;
+#endif
 
 	if (map_vectors_p) {
 		/*
@@ -699,6 +742,20 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 		    __func__, bmi->bmi_io_l2pt.pv_va, bmi->bmi_io_l2pt.pv_pa,
 		    va, "(io)");
 	}
+
+#ifdef KASAN
+	VPRINTF("%s: kasan_shadow_base %x KERNEL_L2PT_KASAN_NUM %d\n", __func__,
+	    KASAN_MD_SHADOW_START, KERNEL_L2PT_KASAN_NUM);
+
+	for (size_t idx = 0; idx < KERNEL_L2PT_KASAN_NUM; idx++) {
+		const vaddr_t va = KASAN_MD_SHADOW_START  + idx * L2_S_SEGSIZE;
+		pmap_link_l2pt(l1pt_va, va, &kasan_l2pt[idx]);
+
+		VPRINTF("%s: adding L2 pt (VA %#lx, PA %#lx) for VA %#lx %s\n",
+		    __func__, kasan_l2pt[idx].pv_va, kasan_l2pt[idx].pv_pa,
+		    va, "(kasan)");
+	}
+#endif
 
 	/* update the top of the kernel VM */
 	pmap_curmaxkvaddr =
@@ -1012,13 +1069,11 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 
 	cpu_tlb_flushID();
 
-extern uint8_t svcstk[];
-//	VPRINTF(" svcstk %p", (void *)svcstk);
-#define INIT_ARM_STACK_SIZE	2048
-	kasan_shadow_map((void *)svcstk, INIT_ARM_STACK_SIZE);
-
-	kasan_shadow_map((void*)kernel_vm_base,
-	    KERNEL_L2PT_VMDATA_NUM * L2_S_SEGSIZE);
+#ifdef KASAN
+	// bah
+	extern uint8_t svcstk[];
+	kasan_early_init((void *)svcstk);
+#endif
 
 #ifdef ARM_MMU_EXTENDED
 	VPRINTF("\nsctlr=%#x actlr=%#x\n",

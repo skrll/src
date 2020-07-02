@@ -5998,7 +5998,7 @@ pmap_growkernel(vaddr_t maxkvaddr)
 	splx(s);
 
 	kasan_shadow_map((void *)pmap_maxkvaddr,
-	    (size_t)(maxkvaddr - pmap_maxkvaddr));
+	    (size_t)(pmap_curmaxkvaddr - pmap_maxkvaddr));
 
 out:
 	return pmap_curmaxkvaddr;
@@ -6209,9 +6209,32 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	 * Scan the L1 translation table created by initarm() and create
 	 * the required metadata for all valid mappings found in it.
 	 */
+
+
+#ifdef KASAN
+/*
+ * XXXNH not sure if this is needed at this point
+ */
+#define __MD_VIRTUAL_SHIFT	29
+#define __MD_CANONICAL_BASE	0x80000000
+
+#define __MD_SHADOW_SIZE	(1U << (__MD_VIRTUAL_SHIFT - KASAN_SHADOW_SCALE_SHIFT))
+#define KASAN_MD_SHADOW_START	(0xc0000000)
+#define KASAN_MD_SHADOW_END	(KASAN_MD_SHADOW_START + __MD_SHADOW_SIZE)
+
+	const size_t kasanl1ss = l1pte_index(KASAN_MD_SHADOW_START);
+	const size_t kasanl1se = l1pte_index(KASAN_MD_SHADOW_END);
+
+#endif
+
 	for (size_t l1slot = 0;
 	     l1slot < L1_TABLE_SIZE / sizeof(pd_entry_t);
 	     l1slot++) {
+
+#ifdef KASAN
+		if (0 && l1slot >= kasanl1ss && l1slot < kasanl1se)
+			continue;
+#endif
 		pd_entry_t pde = l1pt[l1slot];
 
 		/*
@@ -6324,6 +6347,13 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	nptes = PAGE_SIZE / L2_S_SIZE;
 #endif
 	pmap_alloc_specials(&virtual_avail, nptes, &memhook, NULL);
+
+#ifdef KASAN
+	extern vaddr_t kasan_zero;
+	extern pt_entry_t *kasan_pte;
+
+	pmap_alloc_specials(&virtual_avail, nptes, &kasan_zero, &kasan_pte);
+#endif
 
 #ifdef MULTIPROCESSOR
 	cnptes = nptes;

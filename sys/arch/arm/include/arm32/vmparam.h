@@ -89,14 +89,6 @@
  */
 #define	VM_MIN_ADDRESS		((vaddr_t) PAGE_SIZE)
 #ifdef ARM_MMU_EXTENDED
-#define	VM_MAXUSER_ADDRESS	((vaddr_t) 0x80000000 - PAGE_SIZE)
-#else
-#define	VM_MAXUSER_ADDRESS	((vaddr_t) KERNEL_BASE - PAGE_SIZE)
-#endif
-#define	VM_MAX_ADDRESS		VM_MAXUSER_ADDRESS
-
-#define	VM_MIN_KERNEL_ADDRESS	((vaddr_t) KERNEL_BASE)
-#define	VM_MAX_KERNEL_ADDRESS	((vaddr_t) -(PAGE_SIZE+1))
 
 
 // AddressSanitizer dedicates 1/8 of kernel memory to its shadow memory (e.g.
@@ -112,6 +104,15 @@
  *   0xc800_0000 -  640MB (spare)
  *   0xf000_0000 -  256MB IO
  */
+
+#define	VM_MAXUSER_ADDRESS	((vaddr_t) 0x80000000 - PAGE_SIZE)
+#else
+#define	VM_MAXUSER_ADDRESS	((vaddr_t) KERNEL_BASE - PAGE_SIZE)
+#endif
+#define	VM_MAX_ADDRESS		VM_MAXUSER_ADDRESS
+
+#define	VM_MIN_KERNEL_ADDRESS	((vaddr_t) KERNEL_BASE)
+#define	VM_MAX_KERNEL_ADDRESS	((vaddr_t) -(PAGE_SIZE+1))
 
 
 #endif /* _ARM_ARM32_VMPARAM_H_ */
