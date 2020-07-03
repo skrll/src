@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.233 2019/09/26 21:09:55 sjg Exp $	*/
+/*	$NetBSD: parse.c,v 1.236 2020/07/03 08:13:23 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,14 +69,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: parse.c,v 1.233 2019/09/26 21:09:55 sjg Exp $";
+static char rcsid[] = "$NetBSD: parse.c,v 1.236 2020/07/03 08:13:23 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)parse.c	8.3 (Berkeley) 3/19/94";
 #else
-__RCSID("$NetBSD: parse.c,v 1.233 2019/09/26 21:09:55 sjg Exp $");
+__RCSID("$NetBSD: parse.c,v 1.236 2020/07/03 08:13:23 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -642,14 +642,14 @@ ParseFindKeyword(const char *str)
 	diff = strcmp(str, parseKeywords[cur].name);
 
 	if (diff == 0) {
-	    return (cur);
+	    return cur;
 	} else if (diff < 0) {
 	    end = cur - 1;
 	} else {
 	    start = cur + 1;
 	}
     } while (start <= end);
-    return (-1);
+    return -1;
 }
 
 /*-
@@ -874,7 +874,7 @@ ParseLinkSrc(void *pgnp, void *cgnp)
 	Targ_PrintNode(pgn, 0);
 	Targ_PrintNode(cgn, 0);
     }
-    return (0);
+    return 0;
 }
 
 /*-
@@ -911,7 +911,7 @@ ParseDoOp(void *gnp, void *opp)
 	!OP_NOP(gn->type) && !OP_NOP(op))
     {
 	Parse_Error(PARSE_FATAL, "Inconsistent operator for %s", gn->name);
-	return (1);
+	return 1;
     }
 
     if ((op == OP_DOUBLEDEP) && ((gn->type & OP_OPMASK) == OP_DOUBLEDEP)) {
@@ -955,7 +955,7 @@ ParseDoOp(void *gnp, void *opp)
 	gn->type |= op;
     }
 
-    return (0);
+    return 0;
 }
 
 /*-
@@ -1131,7 +1131,7 @@ static int
 ParseAddDir(void *path, void *name)
 {
     (void)Dir_AddDir((Lst) path, (char *)name);
-    return(0);
+    return 0;
 }
 
 /*-
@@ -1590,7 +1590,7 @@ ParseDoDependency(char *line)
 		break;
 #ifdef POSIX
             case Posix:
-                Var_Set("%POSIX", "1003.2", VAR_GLOBAL, 0);
+                Var_Set("%POSIX", "1003.2", VAR_GLOBAL);
                 break;
 #endif
 	    default:
@@ -1965,13 +1965,13 @@ Parse_DoVar(char *line, GNode *ctxt)
 	 * so that it gets substituted!
 	 */
 	if (!Var_Exists(line, ctxt))
-	    Var_Set(line, "", ctxt, 0);
+	    Var_Set(line, "", ctxt);
 
 	cp = Var_Subst(NULL, cp, ctxt, VARF_WANTRES|VARF_ASSIGN);
 	oldVars = oldOldVars;
 	freeCp = TRUE;
 
-	Var_Set(line, cp, ctxt, 0);
+	Var_Set(line, cp, ctxt);
     } else if (type == VAR_SHELL) {
 	char *res;
 	const char *error;
@@ -1987,7 +1987,7 @@ Parse_DoVar(char *line, GNode *ctxt)
 	}
 
 	res = Cmd_Exec(cp, &error);
-	Var_Set(line, res, ctxt, 0);
+	Var_Set(line, res, ctxt);
 	free(res);
 
 	if (error)
@@ -1996,7 +1996,7 @@ Parse_DoVar(char *line, GNode *ctxt)
 	/*
 	 * Normal assignment -- just do it.
 	 */
-	Var_Set(line, cp, ctxt, 0);
+	Var_Set(line, cp, ctxt);
     }
     if (strcmp(line, MAKEOVERRIDES) == 0)
 	Main_ExportMAKEFLAGS(FALSE);	/* re-export MAKEFLAGS */
@@ -2100,7 +2100,7 @@ ParseAddCmd(void *gnp, void *cmd)
 			    gn->name);
 #endif
     }
-    return(0);
+    return 0;
 }
 
 /*-
@@ -2352,9 +2352,9 @@ ParseSetIncludedFile(void)
     char *pd, *dp = NULL;
 
     pf = Var_Value(".PARSEFILE", VAR_GLOBAL, &fp);
-    Var_Set(".INCLUDEDFROMFILE", pf, VAR_GLOBAL, 0);
+    Var_Set(".INCLUDEDFROMFILE", pf, VAR_GLOBAL);
     pd = Var_Value(".PARSEDIR", VAR_GLOBAL, &dp);
-    Var_Set(".INCLUDEDFROMDIR", pd, VAR_GLOBAL, 0);
+    Var_Set(".INCLUDEDFROMDIR", pd, VAR_GLOBAL);
 
     if (DEBUG(PARSE))
 	fprintf(debug_file, "%s: ${.INCLUDEDFROMDIR} = `%s' "
@@ -2386,16 +2386,16 @@ ParseSetParseFile(const char *filename)
 
     slash = strrchr(filename, '/');
     if (slash == NULL) {
-	Var_Set(".PARSEDIR", pd = curdir, VAR_GLOBAL, 0);
-	Var_Set(".PARSEFILE", pf = filename, VAR_GLOBAL, 0);
+	Var_Set(".PARSEDIR", pd = curdir, VAR_GLOBAL);
+	Var_Set(".PARSEFILE", pf = filename, VAR_GLOBAL);
 	dirname= NULL;
     } else {
 	len = slash - filename;
 	dirname = bmake_malloc(len + 1);
 	memcpy(dirname, filename, len);
 	dirname[len] = '\0';
-	Var_Set(".PARSEDIR", pd = dirname, VAR_GLOBAL, 0);
-	Var_Set(".PARSEFILE", pf = slash + 1, VAR_GLOBAL, 0);
+	Var_Set(".PARSEDIR", pd = dirname, VAR_GLOBAL);
+	Var_Set(".PARSEFILE", pf = slash + 1, VAR_GLOBAL);
     }
     if (DEBUG(PARSE))
 	fprintf(debug_file, "%s: ${.PARSEDIR} = `%s' ${.PARSEFILE} = `%s'\n",
@@ -2416,7 +2416,7 @@ ParseTrackInput(const char *name)
     char *ep;
     char *fp = NULL;
     size_t name_len = strlen(name);
-    
+
     old = Var_Value(MAKE_MAKEFILES, VAR_GLOBAL, &fp);
     if (old) {
 	ep = old + strlen(old) - name_len;
@@ -2757,7 +2757,7 @@ ParseEOF(void)
 
     /* Restore the PARSEDIR/PARSEFILE variables */
     ParseSetParseFile(curFile->fname);
-    return (CONTINUE);
+    return CONTINUE;
 }
 
 #define PARSE_RAW 1
@@ -2994,7 +2994,7 @@ ParseReadLine(void)
 	    /* Read next line from for-loop buffer */
 	    continue;
 	}
-	return (line);
+	return line;
     }
 }
 
@@ -3104,7 +3104,7 @@ Parse_File(const char *name, int fd)
 			   strncmp(cp, "warning", 7) == 0) {
 		    if (ParseMessage(cp))
 			continue;
-		}		    
+		}
 	    }
 
 	    if (*line == '\t') {
@@ -3335,7 +3335,7 @@ Parse_MainName(void)
     else
 	(void)Lst_AtEnd(mainList, mainNode);
     Var_Append(".TARGETS", mainNode->name, VAR_GLOBAL);
-    return (mainList);
+    return mainList;
 }
 
 /*-

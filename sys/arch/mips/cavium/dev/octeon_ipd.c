@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_ipd.c,v 1.5 2020/06/19 02:23:43 simonb Exp $	*/
+/*	$NetBSD: octeon_ipd.c,v 1.7 2020/06/23 05:15:33 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -27,11 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: octeon_ipd.c,v 1.5 2020/06/19 02:23:43 simonb Exp $");
-
-#include "opt_octeon.h"
-
-#include "opt_octeon.h"
+__KERNEL_RCSID(0, "$NetBSD: octeon_ipd.c,v 1.7 2020/06/23 05:15:33 simonb Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -52,22 +48,6 @@ __KERNEL_RCSID(0, "$NetBSD: octeon_ipd.c,v 1.5 2020/06/19 02:23:43 simonb Exp $"
 
 #define IP_OFFSET(data, word2) \
 	((uintptr_t)(data) + (uintptr_t)__SHIFTOUT(word2, PIP_WQE_WORD2_IP_OFFSET))
-
-#ifdef CNMAC_DEBUG
-void			octipd_intr_evcnt_attach(struct octipd_softc *);
-void			octipd_intr_rml(void *);
-int			octipd_intr_drop(void *);
-
-void			octipd_dump(void);
-
-static void		*octipd_intr_drop_ih;
-struct evcnt		octipd_intr_drop_evcnt =
-			    EVCNT_INITIALIZER(EVCNT_TYPE_INTR, NULL, "octeon",
-			    "ipd drop intr");
-EVCNT_ATTACH_STATIC(octipd_intr_drop_evcnt);
-
-struct octipd_softc	*__octipd_softc[3/* XXX */];
-#endif
 
 /* XXX */
 void
@@ -91,15 +71,6 @@ octipd_init(struct octipd_attach_args *aa, struct octipd_softc **rsc)
 		panic("can't map %s space", "ipd register");
 
 	*rsc = sc;
-
-#ifdef CNMAC_DEBUG
-	octipd_int_enable(sc, 1);
-	octipd_intr_evcnt_attach(sc);
-	if (octipd_intr_drop_ih == NULL)
-		octipd_intr_drop_ih = octeon_intr_establish(CIU_INT_IPD_DRP,
-		    IPL_NET, octipd_intr_drop, NULL);
-	__octipd_softc[sc->sc_port] = sc;
-#endif /* CNMAC_DEBUG */
 }
 
 #define	_IPD_RD8(sc, off) \
@@ -233,55 +204,6 @@ octipd_offload(uint64_t word2, void *data, int *rcflags)
 	*rcflags = cflags;
 }
 
-int
-octipd_red(struct octipd_softc *sc, uint64_t pass_thr, uint64_t drop_thr)
-{
-#if defined(CNMAC_IPD_RED)
-	/*
-	 * no receive problem workaround.
-	 * if not set IPD RED pramaters,
-	 * may become unable to receive packet
-	 * on media mismatch environment
-	 * of self media 100-half duplex.
-	 */
-	uint64_t red_marks;
-	uint64_t red_param;
-	uint64_t red_port;
-
-        red_marks = drop_thr << 32 /* XXX */ | pass_thr;
-        _IPD_WR8(sc, IPD_QOS0_RED_MARKS_OFFSET, red_marks);
-        _IPD_WR8(sc, IPD_QOS1_RED_MARKS_OFFSET, red_marks);
-        _IPD_WR8(sc, IPD_QOS2_RED_MARKS_OFFSET, red_marks);
-        _IPD_WR8(sc, IPD_QOS3_RED_MARKS_OFFSET, red_marks);
-        _IPD_WR8(sc, IPD_QOS4_RED_MARKS_OFFSET, red_marks);
-        _IPD_WR8(sc, IPD_QOS5_RED_MARKS_OFFSET, red_marks);
-        _IPD_WR8(sc, IPD_QOS6_RED_MARKS_OFFSET, red_marks);
-        _IPD_WR8(sc, IPD_QOS7_RED_MARKS_OFFSET, red_marks);
-        red_param = 
-            ((255ull << 24 /* XXX */) / (pass_thr - drop_thr)) |
-            1ull << 32 /* XXX */ |
-            255ull << 40 /* XXX */ |
-            1ull << 48 /* XXX */;
-        _IPD_WR8(sc, IPD_RED_QUE0_PARAM_OFFSET, red_param);
-        _IPD_WR8(sc, IPD_RED_QUE1_PARAM_OFFSET, red_param);
-        _IPD_WR8(sc, IPD_RED_QUE2_PARAM_OFFSET, red_param);
-        _IPD_WR8(sc, IPD_RED_QUE3_PARAM_OFFSET, red_param);
-        _IPD_WR8(sc, IPD_RED_QUE4_PARAM_OFFSET, red_param);
-        _IPD_WR8(sc, IPD_RED_QUE5_PARAM_OFFSET, red_param);
-        _IPD_WR8(sc, IPD_RED_QUE6_PARAM_OFFSET, red_param);
-        _IPD_WR8(sc, IPD_RED_QUE7_PARAM_OFFSET, red_param);
-
-        _IPD_WR8(sc, IPD_BP_PRT_RED_END_OFFSET, 0);
-
-        red_port = 0xfffffffffull |
-            10000ull << 36 /* XXX */ |
-            10000ull << 50 /* XXX */;
-        _IPD_WR8(sc, IPD_RED_PORT_ENABLE_OFFSET, red_port);
-#endif
-
-	return 0;
-}
-
 void
 octipd_sub_port_fcs(struct octipd_softc *sc, int enable)
 {
@@ -289,170 +211,8 @@ octipd_sub_port_fcs(struct octipd_softc *sc, int enable)
 
 	sub_port_fcs = _IPD_RD8(sc, IPD_SUB_PORT_FCS_OFFSET);
 	if (enable == 0)
-		CLR(sub_port_fcs, 1 << sc->sc_port);
+		CLR(sub_port_fcs, __BIT(sc->sc_port));
 	else
-		SET(sub_port_fcs, 1 << sc->sc_port);
+		SET(sub_port_fcs, __BIT(sc->sc_port));
 	_IPD_WR8(sc, IPD_SUB_PORT_FCS_OFFSET, sub_port_fcs);
 }
-
-#ifdef CNMAC_DEBUG
-int			octipd_intr_rml_verbose;
-struct evcnt		octipd_intr_evcnt;
-
-static const struct octeon_evcnt_entry octipd_intr_evcnt_entries[] = {
-#define	_ENTRY(name, type, parent, descr) \
-	OCTEON_EVCNT_ENTRY(struct octipd_softc, name, type, parent, descr)
-	_ENTRY(ipdbpsub,	MISC, NULL, "ipd backpressure subtract"),
-	_ENTRY(ipdprcpar3,	MISC, NULL, "ipd parity error 127:96"),
-	_ENTRY(ipdprcpar2,	MISC, NULL, "ipd parity error 95:64"),
-	_ENTRY(ipdprcpar1,	MISC, NULL, "ipd parity error 63:32"),
-	_ENTRY(ipdprcpar0,	MISC, NULL, "ipd parity error 31:0"),
-#undef	_ENTRY
-};
-
-void
-octipd_intr_evcnt_attach(struct octipd_softc *sc)
-{
-	OCTEON_EVCNT_ATTACH_EVCNTS(sc, octipd_intr_evcnt_entries, "ipd0");
-}
-
-void
-octipd_intr_rml(void *arg)
-{
-	int i;
-
-	octipd_intr_evcnt.ev_count++;
-	for (i = 0; i < 3/* XXX */; i++) {
-		struct octipd_softc *sc;
-		uint64_t reg;
-
-		sc = __octipd_softc[i];
-		KASSERT(sc != NULL);
-		reg = octipd_int_summary(sc);
-		if (octipd_intr_rml_verbose)
-			printf("%s: IPD_INT_SUM=0x%016" PRIx64 "\n", __func__, reg);
-		if (reg & IPD_INT_SUM_BP_SUB)
-			OCTEON_EVCNT_INC(sc, ipdbpsub);
-		if (reg & IPD_INT_SUM_PRC_PAR3)
-			OCTEON_EVCNT_INC(sc, ipdprcpar3);
-		if (reg & IPD_INT_SUM_PRC_PAR2)
-			OCTEON_EVCNT_INC(sc, ipdprcpar2);
-		if (reg & IPD_INT_SUM_PRC_PAR1)
-			OCTEON_EVCNT_INC(sc, ipdprcpar1);
-		if (reg & IPD_INT_SUM_PRC_PAR0)
-			OCTEON_EVCNT_INC(sc, ipdprcpar0);
-	}
-}
-
-void
-octipd_int_enable(struct octipd_softc *sc, int enable)
-{
-	uint64_t ipd_int_xxx = 0;
-
-	SET(ipd_int_xxx,
-	    IPD_INT_SUM_BP_SUB |
-	    IPD_INT_SUM_PRC_PAR3 |
-	    IPD_INT_SUM_PRC_PAR2 |
-	    IPD_INT_SUM_PRC_PAR1 |
-	    IPD_INT_SUM_PRC_PAR0);
-	_IPD_WR8(sc, IPD_INT_SUM_OFFSET, ipd_int_xxx);
-	_IPD_WR8(sc, IPD_INT_ENB_OFFSET, enable ? ipd_int_xxx : 0);
-}
-
-uint64_t
-octipd_int_summary(struct octipd_softc *sc)
-{
-	uint64_t summary;
-
-	summary = _IPD_RD8(sc, IPD_INT_SUM_OFFSET);
-	_IPD_WR8(sc, IPD_INT_SUM_OFFSET, summary);
-	return summary;
-}
-
-int
-octipd_intr_drop(void *arg)
-{
-	octeon_write_csr(CIU_INT0_SUM0, CIU_INTX_SUM0_IPD_DRP);
-	octipd_intr_drop_evcnt.ev_count++;
-	return (1);
-}
-
-#define	_ENTRY(x)	{ #x, x##_BITS, x##_OFFSET }
-
-struct octipd_dump_reg {
-	const char *name;
-	const char *format;
-	size_t	offset;
-};
-
-static const struct octipd_dump_reg octipd_dump_regs[] = {
-	_ENTRY(IPD_1ST_MBUFF_SKIP),
-	_ENTRY(IPD_NOT_1ST_MBUFF_SKIP),
-	_ENTRY(IPD_PACKET_MBUFF_SIZE),
-	_ENTRY(IPD_CTL_STATUS),
-	_ENTRY(IPD_WQE_FPA_QUEUE),
-	_ENTRY(IPD_PORT0_BP_PAGE_CNT),
-	_ENTRY(IPD_PORT1_BP_PAGE_CNT),
-	_ENTRY(IPD_PORT2_BP_PAGE_CNT),
-	_ENTRY(IPD_PORT32_BP_PAGE_CNT),
-	_ENTRY(IPD_SUB_PORT_BP_PAGE_CNT),
-	_ENTRY(IPD_1ST_NEXT_PTR_BACK),
-	_ENTRY(IPD_2ND_NEXT_PTR_BACK),
-	_ENTRY(IPD_INT_ENB),
-	_ENTRY(IPD_INT_SUM),
-	_ENTRY(IPD_SUB_PORT_FCS),
-	_ENTRY(IPD_QOS0_RED_MARKS),
-	_ENTRY(IPD_QOS1_RED_MARKS),
-	_ENTRY(IPD_QOS2_RED_MARKS),
-	_ENTRY(IPD_QOS3_RED_MARKS),
-	_ENTRY(IPD_QOS4_RED_MARKS),
-	_ENTRY(IPD_QOS5_RED_MARKS),
-	_ENTRY(IPD_QOS6_RED_MARKS),
-	_ENTRY(IPD_QOS7_RED_MARKS),
-	_ENTRY(IPD_PORT_BP_COUNTERS_PAIR0),
-	_ENTRY(IPD_PORT_BP_COUNTERS_PAIR1),
-	_ENTRY(IPD_PORT_BP_COUNTERS_PAIR2),
-	_ENTRY(IPD_PORT_BP_COUNTERS_PAIR32),
-	_ENTRY(IPD_RED_PORT_ENABLE),
-	_ENTRY(IPD_RED_QUE0_PARAM),
-	_ENTRY(IPD_RED_QUE1_PARAM),
-	_ENTRY(IPD_RED_QUE2_PARAM),
-	_ENTRY(IPD_RED_QUE3_PARAM),
-	_ENTRY(IPD_RED_QUE4_PARAM),
-	_ENTRY(IPD_RED_QUE5_PARAM),
-	_ENTRY(IPD_RED_QUE6_PARAM),
-	_ENTRY(IPD_RED_QUE7_PARAM),
-	_ENTRY(IPD_PTR_COUNT),
-	_ENTRY(IPD_BP_PRT_RED_END),
-	_ENTRY(IPD_QUE0_FREE_PAGE_CNT),
-	_ENTRY(IPD_CLK_COUNT),
-	_ENTRY(IPD_PWP_PTR_FIFO_CTL),
-	_ENTRY(IPD_PRC_HOLD_PTR_FIFO_CTL),
-	_ENTRY(IPD_PRC_PORT_PTR_FIFO_CTL),
-	_ENTRY(IPD_PKT_PTR_VALID),
-	_ENTRY(IPD_WQE_PTR_VALID),
-	_ENTRY(IPD_BIST_STATUS),
-};
-
-void
-octipd_dump(void)
-{
-	struct octipd_softc *sc;
-	const struct octipd_dump_reg *reg;
-	uint64_t tmp;
-	char buf[512];
-	int i;
-
-	sc = __octipd_softc[0];
-	for (i = 0; i < (int)__arraycount(octipd_dump_regs); i++) {
-		reg = &octipd_dump_regs[i];
-		tmp = _IPD_RD8(sc, reg->offset);
-		if (reg->format == NULL) {
-			snprintf(buf, sizeof(buf), "%16" PRIx64, tmp);
-		} else {
-			snprintb(buf, sizeof(buf), reg->format, tmp);
-		}
-		printf("%-32s: %s\n", reg->name, buf);
-	}
-}
-#endif /* CNMAC_DEBUG */

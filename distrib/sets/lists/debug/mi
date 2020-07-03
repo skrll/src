@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.317 2020/06/15 23:41:55 christos Exp $
+# $NetBSD: mi,v 1.323 2020/07/01 07:16:38 jruoho Exp $
 ./etc/mtree/set.debug                           comp-sys-root
 ./usr/lib					comp-sys-usr		compatdir
 ./usr/lib/i18n/libBIG5_g.a			comp-c-debuglib		debuglib,compatfile
@@ -1641,6 +1641,7 @@
 ./usr/libdata/debug/usr/tests/dev/audio/h_pad.debug			tests-fs-debug		debug,atf,rump
 ./usr/libdata/debug/usr/tests/dev/cgd/h_img2cgd/h_img2cgd.debug			tests-obsolete	obsolete,compattestfile
 ./usr/libdata/debug/usr/tests/dev/cgd/t_cgd_3des.debug			tests-fs-debug		atf,compattestfile,debug,rump
+./usr/libdata/debug/usr/tests/dev/cgd/t_cgd_adiantum.debug		tests-fs-debug		atf,compattestfile,debug,rump
 ./usr/libdata/debug/usr/tests/dev/cgd/t_cgd_aes.debug			tests-fs-debug		atf,compattestfile,debug,rump
 ./usr/libdata/debug/usr/tests/dev/cgd/t_cgd_blowfish.debug		tests-fs-debug		atf,compattestfile,debug,rump
 ./usr/libdata/debug/usr/tests/dev/clock_subr/t_clock_subr.debug		tests-fs-debug		debug,atf
@@ -2072,7 +2073,7 @@
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_fopen.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_format.debug		tests-obsolete		obsolete,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_fputc.debug		tests-lib-debug		debug,atf,compattestfile
-./usr/libdata/debug/usr/tests/lib/libc/stdio/t_mktemp.debug		tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/stdio/t_mktemp.debug		tests-obsolete		obsolete,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_open_memstream.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_popen.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_printf.debug		tests-lib-debug		debug,atf,compattestfile
@@ -2080,6 +2081,7 @@
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/h_atexit.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/h_getopt.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/h_getopt_long.debug	tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_a64l.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_abs.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_atoi.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_div.debug		tests-lib-debug		debug,atf,compattestfile
@@ -2089,7 +2091,9 @@
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_getenv.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_getenv_thread.debug	tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_hsearch.debug		tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_mbtowc.debug		tests-obsolete		obsolete
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_mi_vector_hash.debug	tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_mktemp.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_posix_memalign.debug	tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_random.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_strtod.debug		tests-lib-debug		debug,atf,compattestfile
@@ -2405,6 +2409,9 @@
 ./usr/libdata/debug/usr/tests/rump/rumpvfs/t_etfs.debug		tests-syscall-debug	debug,atf,rump
 ./usr/libdata/debug/usr/tests/rump/rumpvfs/t_p2kifs.debug		tests-syscall-debug	debug,atf,rump
 ./usr/libdata/debug/usr/tests/sys					tests-sys-debug	debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/sys/crypto				tests-sys-debug	debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/sys/crypto/aes				tests-sys-debug	debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/sys/crypto/aes/t_aes.debug		tests-sys-debug	debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/sys/net					tests-sys-debug	debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/sys/net/t_print.debug			tests-sys-debug	debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/sys/netatalk				tests-sys-debug	debug,atf,compattestfile
