@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_pkovar.h,v 1.4 2020/06/18 13:52:08 simonb Exp $	*/
+/*	$NetBSD: octeon_pkovar.h,v 1.6 2020/06/23 05:15:33 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -61,11 +61,6 @@ struct octpko_softc {
 				*sc_cmdptr;
 	int			sc_cmd_buf_pool;
 	size_t			sc_cmd_buf_size;
-
-#ifdef CNMAC_DEBUG
-	struct evcnt		sc_ev_pkoerrdbell;
-	struct evcnt		sc_ev_pkoerrparity;
-#endif
 };
 
 /* XXX */
@@ -143,7 +138,7 @@ octpko_op_store(uint64_t args, uint64_t value)
 	addr = OCTEON_ADDR_IO_DID(PKO_MAJOR_DID, PKO_SUB_DID) | args;
 	/* XXX */
 	OCTEON_SYNCW;
-	octeon_write_csr(addr, value);
+	octeon_xkphys_write_8(addr, value);
 }
 
 static __inline void

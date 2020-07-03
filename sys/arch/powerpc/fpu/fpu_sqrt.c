@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu_sqrt.c,v 1.5 2014/02/25 14:16:25 martin Exp $ */
+/*	$NetBSD: fpu_sqrt.c,v 1.9 2020/06/27 04:29:27 rin Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -45,15 +45,15 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fpu_sqrt.c,v 1.5 2014/02/25 14:16:25 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fpu_sqrt.c,v 1.9 2020/06/27 04:29:27 rin Exp $");
 
 #include <sys/types.h>
 #if defined(DIAGNOSTIC)||defined(DEBUG)
 #include <sys/systm.h>
 #endif
 
-#include <machine/reg.h>
 #include <machine/fpu.h>
+#include <machine/reg.h>
 
 #include <powerpc/fpu/fpu_arith.h>
 #include <powerpc/fpu/fpu_emu.h>
@@ -211,7 +211,7 @@ fpu_sqrt(struct fpemu *fe)
 	 *
 	 * Then all that remains are numbers with mantissas in [1..2).
 	 */
-	DPRINTF(FPE_REG, ("fpu_sqer:\n"));
+	DPRINTF(FPE_REG, ("fpu_sqrt:\n"));
 	DUMPFPN(FPE_REG, x);
 	DPRINTF(FPE_REG, ("=>\n"));
 	if (ISNAN(x)) {
@@ -226,12 +226,12 @@ fpu_sqrt(struct fpemu *fe)
 		return (x);
 	}
 	if (x->fp_sign) {
+		fe->fe_cx |= FPSCR_VXSQRT;
 		return (fpu_newnan(fe));
 	}
 	if (ISINF(x)) {
-		fe->fe_cx |= FPSCR_VXSQRT;
-		DUMPFPN(FPE_REG, 0);
-		return (0);
+		DUMPFPN(FPE_REG, x);
+		return (x);
 	}
 
 	/*

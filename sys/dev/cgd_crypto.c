@@ -1,4 +1,4 @@
-/* $NetBSD: cgd_crypto.c,v 1.23 2020/06/13 22:15:06 riastradh Exp $ */
+/* $NetBSD: cgd_crypto.c,v 1.26 2020/06/29 23:44:01 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cgd_crypto.c,v 1.23 2020/06/13 22:15:06 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cgd_crypto.c,v 1.26 2020/06/29 23:44:01 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/kmem.h>
@@ -45,9 +45,10 @@ __KERNEL_RCSID(0, "$NetBSD: cgd_crypto.c,v 1.23 2020/06/13 22:15:06 riastradh Ex
 
 #include <dev/cgd_crypto.h>
 
+#include <crypto/adiantum/adiantum.h>
+#include <crypto/aes/aes.h>
 #include <crypto/blowfish/blowfish.h>
 #include <crypto/des/des.h>
-#include <crypto/rijndael/rijndael-api-fst.h>
 
 /*
  * The general framework provides only one generic function.
@@ -71,6 +72,10 @@ static cfunc_cipher		cgd_cipher_3des_cbc;
 static cfunc_init		cgd_cipher_bf_init;
 static cfunc_destroy		cgd_cipher_bf_destroy;
 static cfunc_cipher		cgd_cipher_bf_cbc;
+
+static cfunc_init		cgd_cipher_adiantum_init;
+static cfunc_destroy		cgd_cipher_adiantum_destroy;
+static cfunc_cipher		cgd_cipher_adiantum_crypt;
 
 static const struct cryptfuncs cf[] = {
 	{
@@ -97,6 +102,12 @@ static const struct cryptfuncs cf[] = {
 		.cf_destroy	= cgd_cipher_bf_destroy,
 		.cf_cipher	= cgd_cipher_bf_cbc,
 	},
+	{
+		.cf_name	= "adiantum",
+		.cf_init	= cgd_cipher_adiantum_init,
+		.cf_destroy	= cgd_cipher_adiantum_destroy,
+		.cf_cipher	= cgd_cipher_adiantum_crypt,
+	},
 };
 const struct cryptfuncs *
 cryptfuncs_find(const char *alg)
@@ -114,8 +125,9 @@ cryptfuncs_find(const char *alg)
  */
 
 struct aes_privdata {
-	keyInstance	ap_enckey;
-	keyInstance	ap_deckey;
+	struct aesenc	ap_enckey;
+	struct aesdec	ap_deckey;
+	uint32_t	ap_nrounds;
 };
 
 static void *
@@ -132,8 +144,23 @@ cgd_cipher_aes_cbc_init(size_t keylen, const void *key, size_t *blocksize)
 	if (*blocksize != 128)
 		return NULL;
 	ap = kmem_zalloc(sizeof(*ap), KM_SLEEP);
-	rijndael_makeKey(&ap->ap_enckey, DIR_ENCRYPT, keylen, key);
-	rijndael_makeKey(&ap->ap_deckey, DIR_DECRYPT, keylen, key);
+	switch (keylen) {
+	case 128:
+		aes_setenckey128(&ap->ap_enckey, key);
+		aes_setdeckey128(&ap->ap_deckey, key);
+		ap->ap_nrounds = AES_128_NROUNDS;
+		break;
+	case 192:
+		aes_setenckey192(&ap->ap_enckey, key);
+		aes_setdeckey192(&ap->ap_deckey, key);
+		ap->ap_nrounds = AES_192_NROUNDS;
+		break;
+	case 256:
+		aes_setenckey256(&ap->ap_enckey, key);
+		aes_setdeckey256(&ap->ap_deckey, key);
+		ap->ap_nrounds = AES_256_NROUNDS;
+		break;
+	}
 	return ap;
 }
 
@@ -151,26 +178,19 @@ cgd_cipher_aes_cbc(void *privdata, void *dst, const void *src, size_t nbytes,
     const void *blkno, int dir)
 {
 	struct aes_privdata	*apd = privdata;
-	uint8_t			 iv[CGD_AES_BLOCK_SIZE] = {0};
-	cipherInstance		 cipher;
-	int			 cipher_ok __diagused;
+	uint8_t iv[CGD_AES_BLOCK_SIZE] __aligned(CGD_AES_BLOCK_SIZE) = {0};
 
 	/* Compute the CBC IV as AES_k(blkno).  */
-	cipher_ok = rijndael_cipherInit(&cipher, MODE_ECB, NULL);
-	KASSERT(cipher_ok > 0);
-	rijndael_blockEncrypt(&cipher, &apd->ap_enckey, blkno, /*nbits*/128,
-	    iv);
+	aes_enc(&apd->ap_enckey, blkno, iv, apd->ap_nrounds);
 
-	cipher_ok = rijndael_cipherInit(&cipher, MODE_CBC, iv);
-	KASSERT(cipher_ok > 0);
 	switch (dir) {
 	case CGD_CIPHER_ENCRYPT:
-		rijndael_blockEncrypt(&cipher, &apd->ap_enckey, src,
-		    /*nbits*/nbytes * 8, dst);
+		aes_cbc_enc(&apd->ap_enckey, src, dst, nbytes, iv,
+		    apd->ap_nrounds);
 		break;
 	case CGD_CIPHER_DECRYPT:
-		rijndael_blockDecrypt(&cipher, &apd->ap_deckey, src,
-		    /*nbits*/nbytes * 8, dst);
+		aes_cbc_dec(&apd->ap_deckey, src, dst, nbytes, iv,
+		    apd->ap_nrounds);
 		break;
 	default:
 		panic("%s: unrecognised direction %d", __func__, dir);
@@ -182,9 +202,10 @@ cgd_cipher_aes_cbc(void *privdata, void *dst, const void *src, size_t nbytes,
  */
 
 struct aesxts {
-	keyInstance	ax_enckey;
-	keyInstance	ax_deckey;
-	keyInstance	ax_tweakkey;
+	struct aesenc	ax_enckey;
+	struct aesdec	ax_deckey;
+	struct aesenc	ax_tweakkey;
+	uint32_t	ax_nrounds;
 };
 
 static void *
@@ -207,9 +228,20 @@ cgd_cipher_aes_xts_init(size_t keylen, const void *xtskey, size_t *blocksize)
 	key = xtskey;
 	key2 = key + keylen / CHAR_BIT;
 
-	rijndael_makeKey(&ax->ax_enckey, DIR_ENCRYPT, keylen, key);
-	rijndael_makeKey(&ax->ax_deckey, DIR_DECRYPT, keylen, key);
-	rijndael_makeKey(&ax->ax_tweakkey, DIR_ENCRYPT, keylen, key2);
+	switch (keylen) {
+	case 128:
+		aes_setenckey128(&ax->ax_enckey, key);
+		aes_setdeckey128(&ax->ax_deckey, key);
+		aes_setenckey128(&ax->ax_tweakkey, key2);
+		ax->ax_nrounds = AES_128_NROUNDS;
+		break;
+	case 256:
+		aes_setenckey256(&ax->ax_enckey, key);
+		aes_setdeckey256(&ax->ax_deckey, key);
+		aes_setenckey256(&ax->ax_tweakkey, key2);
+		ax->ax_nrounds = AES_256_NROUNDS;
+		break;
+	}
 
 	return ax;
 }
@@ -229,25 +261,18 @@ cgd_cipher_aes_xts(void *cookie, void *dst, const void *src, size_t nbytes,
 {
 	struct aesxts *ax = cookie;
 	uint8_t tweak[CGD_AES_BLOCK_SIZE];
-	cipherInstance cipher;
-	int cipher_ok __diagused;
 
 	/* Compute the initial tweak as AES_k(blkno).  */
-	cipher_ok = rijndael_cipherInit(&cipher, MODE_ECB, NULL);
-	KASSERT(cipher_ok > 0);
-	rijndael_blockEncrypt(&cipher, &ax->ax_tweakkey, blkno, /*nbits*/128,
-	    tweak);
+	aes_enc(&ax->ax_tweakkey, blkno, tweak, ax->ax_nrounds);
 
-	cipher_ok = rijndael_cipherInit(&cipher, MODE_XTS, tweak);
-	KASSERT(cipher_ok > 0);
 	switch (dir) {
 	case CGD_CIPHER_ENCRYPT:
-		rijndael_blockEncrypt(&cipher, &ax->ax_enckey, src,
-		    /*nbits*/nbytes * 8, dst);
+		aes_xts_enc(&ax->ax_enckey, src, dst, nbytes, tweak,
+		    ax->ax_nrounds);
 		break;
 	case CGD_CIPHER_DECRYPT:
-		rijndael_blockDecrypt(&cipher, &ax->ax_deckey, src,
-		    /*nbits*/nbytes * 8, dst);
+		aes_xts_dec(&ax->ax_deckey, src, dst, nbytes, tweak,
+		    ax->ax_nrounds);
 		break;
 	default:
 		panic("%s: unrecognised direction %d", __func__, dir);
@@ -390,6 +415,64 @@ cgd_cipher_bf_cbc(void *privdata, void *dst, const void *src, size_t nbytes,
 	case CGD_CIPHER_DECRYPT:
 		BF_cbc_encrypt(src, dst, nbytes, &bp->bp_key, iv,
 		    /*encrypt*/0);
+		break;
+	default:
+		panic("%s: unrecognised direction %d", __func__, dir);
+	}
+}
+
+/*
+ * Adiantum
+ */
+
+static void *
+cgd_cipher_adiantum_init(size_t keylen, const void *key, size_t *blocksize)
+{
+	struct adiantum *A;
+
+	if (!blocksize)
+		return NULL;
+	if (keylen != 256)
+		return NULL;
+	if (*blocksize == (size_t)-1)
+		*blocksize = 128;
+	if (*blocksize != 128)
+		return NULL;
+
+	A = kmem_zalloc(sizeof(*A), KM_SLEEP);
+	adiantum_init(A, key);
+
+	return A;
+}
+
+static void
+cgd_cipher_adiantum_destroy(void *cookie)
+{
+	struct adiantum *A = cookie;
+
+	explicit_memset(A, 0, sizeof(*A));
+	kmem_free(A, sizeof(*A));
+}
+
+static void
+cgd_cipher_adiantum_crypt(void *cookie, void *dst, const void *src,
+    size_t nbytes, const void *blkno, int dir)
+{
+	/*
+	 * Treat the block number as a 128-bit block.  This is more
+	 * than twice as big as the largest number of reasonable
+	 * blocks, but it doesn't hurt (it would be rounded up to a
+	 * 128-bit input anyway).
+	 */
+	const unsigned tweaklen = 16;
+	struct adiantum *A = cookie;
+
+	switch (dir) {
+	case CGD_CIPHER_ENCRYPT:
+		adiantum_enc(dst, src, nbytes, blkno, tweaklen, A);
+		break;
+	case CGD_CIPHER_DECRYPT:
+		adiantum_dec(dst, src, nbytes, blkno, tweaklen, A);
 		break;
 	default:
 		panic("%s: unrecognised direction %d", __func__, dir);

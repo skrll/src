@@ -1,4 +1,4 @@
-/*	$NetBSD: cmdide.c,v 1.43 2017/10/22 13:13:55 jdolecek Exp $	*/
+/*	$NetBSD: cmdide.c,v 1.45 2020/07/01 17:57:14 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1999, 2000, 2001 Manuel Bouyer.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cmdide.c,v 1.43 2017/10/22 13:13:55 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cmdide.c,v 1.45 2020/07/01 17:57:14 jdolecek Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
