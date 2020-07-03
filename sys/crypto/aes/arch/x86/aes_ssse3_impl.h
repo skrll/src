@@ -1,7 +1,7 @@
-/*	$NetBSD: t_mbtowc.c,v 1.2 2020/06/27 10:19:43 jruoho Exp $ */
+/*	$NetBSD: aes_ssse3_impl.h,v 1.1 2020/06/29 23:51:35 riastradh Exp $	*/
 
 /*-
- * Copyright (c) 2005 The NetBSD Foundation, Inc.
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,49 +26,17 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* From: Miloslav Trmac <mitr@volny.cz> */
+#ifndef	_CRYPTO_AES_ARCH_X86_AES_SSSE3_IMPL_H
+#define	_CRYPTO_AES_ARCH_X86_AES_SSSE3_IMPL_H
 
-#include <atf-c.h>
-#include <langinfo.h>
-#include <limits.h>
-#include <locale.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <sys/types.h>
 
-ATF_TC(mbtowc_sign);
-ATF_TC_HEAD(mbtowc_sign, tc)
-{
-	atf_tc_set_md_var(tc, "descr", "Test mbtowc(3) sign conversion");
-}
+#include <crypto/aes/aes.h>
+#include <crypto/aes/arch/x86/aes_ssse3.h>
+#include <crypto/aes/arch/x86/immintrin.h>
+#include <crypto/aes/arch/x86/immintrin_ext.h>
 
-ATF_TC_BODY(mbtowc_sign, tc)
-{
-	char back[MB_LEN_MAX];
-	wchar_t wc;
-	size_t i;
-	int ret;
+__m128i aes_ssse3_enc1(const struct aesenc *, __m128i, unsigned);
+__m128i aes_ssse3_dec1(const struct aesdec *, __m128i, unsigned);
 
-	(void)setlocale(LC_ALL, "");
-	(void)printf("Charset: %s\n", nl_langinfo(CODESET));
-	ret = mbtowc(&wc, "\xe4", 1);
-	(void)printf("mbtowc(): %d\n", ret);
-
-	if (ret > 0) {
-		(void)printf("Result: 0x%08lX\n",(unsigned long)wc);
-		ret = wctomb(back, wc);
-		(void)printf("wctomb(): %d\n", ret);
-		for(i = 0; ret > 0 && i < (size_t)ret; i++)
-			printf("%02X ",(unsigned char)back[i]);
-		putchar('\n');
-	}
-
-	ATF_REQUIRE(ret > 0);
-}
-
-ATF_TP_ADD_TCS(tp)
-{
-
-	ATF_TP_ADD_TC(tp, mbtowc_sign);
-
-	return atf_no_error();
-}
+#endif	/* _CRYPTO_AES_ARCH_X86_AES_SSSE3_IMPL_H */

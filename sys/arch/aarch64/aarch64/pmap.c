@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.80 2020/06/27 00:46:37 rin Exp $	*/
+/*	$NetBSD: pmap.c,v 1.82 2020/07/02 13:01:11 rin Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.80 2020/06/27 00:46:37 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.82 2020/07/02 13:01:11 rin Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
@@ -448,10 +448,7 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	UVMHIST_FUNC(__func__);
 	UVMHIST_CALLED(pmaphist);
 
-#if 0
-	/* uvmexp.ncolors = icachesize / icacheways / PAGE_SIZE; */
 	uvmexp.ncolors = aarch64_cache_vindexsize / PAGE_SIZE;
-#endif
 
 	/* devmap already uses last of va? */
 	if (virtual_devmap_addr != 0 && virtual_devmap_addr < vend)
@@ -945,12 +942,26 @@ pmap_icache_sync_range(pmap_t pm, vaddr_t sva, vaddr_t eva)
  *
  */
 void
-pmap_procwr(struct proc *p, vaddr_t va, int len)
+pmap_procwr(struct proc *p, vaddr_t sva, int len)
 {
 
-	/* We only need to do anything if it is the current process. */
-	if (p == curproc)
-		cpu_icache_sync_range(va, len);
+	if (__predict_true(p == curproc))
+		cpu_icache_sync_range(sva, len);
+	else {
+		struct pmap *pm = p->p_vmspace->vm_map.pmap;
+		paddr_t pa;
+		vaddr_t va, eva;
+		int l;
+
+		for (va = sva; len > 0; va = eva, len -= l) {
+			eva = uimin(va + len, trunc_page(va + PAGE_SIZE));
+			l = eva - va;
+			if (!pmap_extract(pm, va, &pa))
+				continue;
+			va = AARCH64_PA_TO_KVA(pa);
+			cpu_icache_sync_range(va, l);
+		}
+	}
 }
 
 static pt_entry_t

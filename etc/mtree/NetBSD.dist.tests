@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.tests,v 1.169 2020/06/27 05:20:34 jruoho Exp $
+#	$NetBSD: NetBSD.dist.tests,v 1.171 2020/06/30 20:32:11 riastradh Exp $
 
 ./usr/libdata/debug/usr/tests
 ./usr/libdata/debug/usr/tests/atf
@@ -162,6 +162,8 @@
 ./usr/libdata/debug/usr/tests/sbin
 ./usr/libdata/debug/usr/tests/sbin/resize_ffs
 ./usr/libdata/debug/usr/tests/sys
+./usr/libdata/debug/usr/tests/sys/crypto
+./usr/libdata/debug/usr/tests/sys/crypto/aes
 ./usr/libdata/debug/usr/tests/sys/net
 ./usr/libdata/debug/usr/tests/sys/netatalk
 ./usr/libdata/debug/usr/tests/sys/netinet
@@ -386,6 +388,8 @@
 ./usr/tests/share/examples/lutok
 ./usr/tests/share/mk
 ./usr/tests/sys
+./usr/tests/sys/crypto
+./usr/tests/sys/crypto/aes
 ./usr/tests/sys/net
 ./usr/tests/sys/netatalk
 ./usr/tests/sys/netinet
@@ -446,7 +450,9 @@
 ./usr/tests/usr.bin/ztest
 ./usr/tests/usr.sbin
 ./usr/tests/usr.sbin/cpuctl
+./usr/tests/usr.sbin/execsnoop
 ./usr/tests/usr.sbin/mtree
+./usr/tests/usr.sbin/opensnoop
 ./usr/tests/usr.sbin/stdethers
 ./usr/tests/usr.sbin/stdhosts
 ./usr/tests/usr.sbin/tcpdump
