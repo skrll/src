@@ -68,7 +68,6 @@ __KERNEL_RCSID(0, "$NetBSD: subr_asan.c,v 1.23 2020/07/03 08:19:20 skrll Exp $")
 
 #define __RET_ADDR	(unsigned long)__builtin_return_address(0)
 
-
 /* Global variable descriptor. Part of the compiler ABI.  */
 struct __asan_global_source_location {
 	const char *filename;
