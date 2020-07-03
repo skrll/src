@@ -1,4 +1,4 @@
-/*	$NetBSD: db_machdep.c,v 1.32 2020/07/02 11:10:48 jmcneill Exp $	*/
+/*	$NetBSD: db_machdep.c,v 1.34 2020/07/03 10:19:18 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 1996 Mark Brinicombe
@@ -34,7 +34,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.32 2020/07/02 11:10:48 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.34 2020/07/03 10:19:18 jmcneill Exp $");
 
 #include <sys/param.h>
 

@@ -1,4 +1,4 @@
-# $NetBSD: t_random_garbage.sh,v 1.3 2020/07/03 07:03:14 jruoho Exp $
+# $NetBSD: t_date.sh,v 1.1 2020/07/03 03:59:18 jruoho Exp $
 #
 # Copyright (c) 2020 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -27,78 +27,30 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 #
-tmp="/tmp/sysctl.out"
-
-getrint() {
-	echo $(od -An -N2 -i /dev/urandom | sed 's/ //')
+atf_test_case overflow
+overflow_head() {
+	atf_set "descr" "Check that date(1) does not overflow (PR lib/46542)"
 }
 
-getrstr() {
-	echo $(cat /dev/urandom | head -n 1 | base64)
-}
+overflow_body() {
 
-atf_test_case random_garbage cleanup
-random_garbage_head() {
-	sysctl -a > $tmp
-	atf_set "require.user" "root"
-	atf_set "descr" "Test writing random garbage " \
-		"to sysctl nodes (PR kern/55451)"
-}
+	atf_expect_fail "PR lib/46542"
 
-random_garbage_body() {
+	years="1 10 100 1000 10000 100000 1000000 10000000 \
+	      100000000 1000000000 10000000000 100000000000"
 
-	atf_skip "The test is not safe (PR kern/55451)"
+	for year in $years; do
 
-	while read line; do
+		y=$(date +%Y)
+		yy=$(expr $y + $year)
+		yyy=$(date -d "$year years" +%Y)
 
-		var=$(echo $line | awk '{print $1}')
-
-		case $var in
-			hw.acpi.sleep.state)
-			echo "Skipping $var"
-			continue
-			;;
-
-			kern.securelevel*)
-			echo "Skipping $var"
-			continue
-			;;
-
-			kern.veriexec.strict)
-			echo "Skipping $var"
-			continue
-			;;
-
-			security*)
-			echo "Skipping $var"
-			continue
-			;;
-		esac
-
-		val=$(getrint)
-		echo "Write $var -> $val"
-		sysctl -w $var=$val
-		val=$(getrstr)
-		echo "Write $var -> $val"
-		sysctl -w $var=$val
-
-	done < $tmp
-}
-
-random_garbage_cleanup() {
-
-	atf_skip "The test is not safe (PR kern/55451)"
-
-	while read line; do
-		var=$(echo $line | awk '{print $1}')
-		val=$(echo $line | awk '{print $3}')
-		echo "Restoring $var -> $val"
-		sysctl -w $var=$val > /dev/null 2>&1
-	done < $tmp
-
-	rm $tmp
+		if [ ! $yy -eq $yyy ]; then
+			atf_fail "$yy vs. $yyy"
+		fi
+	done
 }
 
 atf_init_test_cases() {
-	atf_add_test_case random_garbage
+	atf_add_test_case overflow
 }

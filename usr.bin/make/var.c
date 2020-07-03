@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.233 2020/07/02 16:52:34 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.235 2020/07/03 08:13:23 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,14 +69,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: var.c,v 1.233 2020/07/02 16:52:34 rillig Exp $";
+static char rcsid[] = "$NetBSD: var.c,v 1.235 2020/07/03 08:13:23 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)var.c	8.3 (Berkeley) 3/19/94";
 #else
-__RCSID("$NetBSD: var.c,v 1.233 2020/07/02 16:52:34 rillig Exp $");
+__RCSID("$NetBSD: var.c,v 1.235 2020/07/03 08:13:23 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -1636,7 +1636,7 @@ VarSubstitute(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
 	     * before we add any more. If we didn't add any, just return
 	     * the previous value of addSpace.
 	     */
-	    return ((Buf_Size(buf) != origSize) || addSpace);
+	    return (Buf_Size(buf) != origSize) || addSpace;
 	}
 	return addSpace;
     }
@@ -2462,7 +2462,7 @@ VarStrftime(const char *fmt, int zulu, time_t utc)
     if (!*fmt)
 	fmt = "%c";
     strftime(buf, sizeof(buf), fmt, zulu ? gmtime(&utc) : localtime(&utc));
-    
+
     buf[sizeof(buf) - 1] = '\0';
     return bmake_strdup(buf);
 }
@@ -3561,7 +3561,7 @@ ApplyModifiers(char *nstr, const char *tstr,
 	    cp = tstr + 1;	/* make sure it is set */
 	    if (STRMOD_MATCHX(tstr, "range", 5)) {
 		int n;
-		
+
 		if (tstr[5] == '=') {
 		    n = strtoul(&tstr[6], &ep, 10);
 		    cp = ep;
