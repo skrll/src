@@ -36,12 +36,9 @@
 #include <arm/arm32/machdep.h>
 #include <arm/arm32/pmap.h>
 
-// XXXNH Wrong place
 #define KERNEL_VM_BASE		0x90000000
-#define KERNEL_IO_VBASE         0xf0000000
-#define VM_KERNEL_IO_ADDRESS	KERNEL_IO_VBASE
 
-#define __MD_VIRTUAL_SHIFT	29
+#define __MD_VIRTUAL_SHIFT	30
 #define __MD_CANONICAL_BASE	0x80000000
 
 #define __MD_SHADOW_SIZE	(1U << (__MD_VIRTUAL_SHIFT - KASAN_SHADOW_SCALE_SHIFT))
@@ -60,7 +57,7 @@ static inline bool
 kasan_md_unsupported(vaddr_t addr)
 {
 	return (addr < VM_MIN_KERNEL_ADDRESS) ||
-	    (addr >= VM_KERNEL_IO_ADDRESS);
+	    (addr >= KASAN_MD_SHADOW_START);
 }
 
 /* -------------------------------------------------------------------------- */

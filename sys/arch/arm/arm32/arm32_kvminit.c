@@ -154,7 +154,7 @@ __KERNEL_RCSID(0, "$NetBSD: arm32_kvminit.c,v 1.63 2020/07/03 06:33:39 skrll Exp
 #endif
 
 
-#define __MD_VIRTUAL_SHIFT	29
+#define __MD_VIRTUAL_SHIFT	30
 #define __MD_CANONICAL_BASE	0x80000000
 
 #define __MD_SHADOW_SIZE	(1U << (__MD_VIRTUAL_SHIFT - KASAN_SHADOW_SCALE_SHIFT))
@@ -514,8 +514,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 
 	const size_t alll2pts __diagused =
 	    KERNEL_L2PT_KERNEL_NUM +
-	    KERNEL_L2PT_VMDATA_NUM +
-	    KERNEL_L2PT_KASAN_NUM;
+	    KERNEL_L2PT_VMDATA_NUM;
 
 	KASSERT(alll2pts < __arraycount(bmi->bmi_l2pts));
 	pv_addr_t * const kernel_l2pt = bmi->bmi_l2pts;
