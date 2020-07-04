@@ -153,14 +153,6 @@ __KERNEL_RCSID(0, "$NetBSD: arm32_kvminit.c,v 1.63 2020/07/03 06:33:39 skrll Exp
 #include <arm/fdt/arm_fdtvar.h>
 #endif
 
-
-#define __MD_VIRTUAL_SHIFT	30
-#define __MD_CANONICAL_BASE	0x80000000
-
-#define __MD_SHADOW_SIZE	(1U << (__MD_VIRTUAL_SHIFT - KASAN_SHADOW_SCALE_SHIFT))
-#define KASAN_MD_SHADOW_START	(0xc0000000)
-#define KASAN_MD_SHADOW_END	(KASAN_MD_SHADOW_START + __MD_SHADOW_SIZE)
-
 #ifdef MULTIPROCESSOR
 #ifndef __HAVE_CPU_UAREA_ALLOC_IDLELWP
 #error __HAVE_CPU_UAREA_ALLOC_IDLELWP required to not waste pages for idlestack
@@ -192,7 +184,7 @@ extern char _end[];
 vaddr_t kasan_kernelstart;
 vaddr_t kasan_kernelsize;
 
-#define	KERNEL_L2PT_KASAN_NUM	howmany(__MD_SHADOW_SIZE, L2_S_SEGSIZE)
+#define	KERNEL_L2PT_KASAN_NUM	howmany(KASAN_MD_SHADOW_SIZE, L2_S_SEGSIZE)
 pv_addr_t kasan_l2pt[KERNEL_L2PT_KASAN_NUM];
 #else
 #define KERNEL_L2PT_KASAN_NUM	0
