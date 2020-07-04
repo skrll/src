@@ -67,7 +67,7 @@ kasan_md_unsupported(vaddr_t addr)
  * that VA = PA + KERNEL_BASE.
  */
 
-#define KASAN_NEARLYPAGES	8
+#define KASAN_NEARLYPAGES	2
 
 static bool __md_early __read_mostly;
 static size_t __md_nearlypages;
