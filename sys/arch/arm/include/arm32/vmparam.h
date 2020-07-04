@@ -114,5 +114,4 @@
 #define	VM_MIN_KERNEL_ADDRESS	((vaddr_t) KERNEL_BASE)
 #define	VM_MAX_KERNEL_ADDRESS	((vaddr_t) -(PAGE_SIZE+1))
 
-
 #endif /* _ARM_ARM32_VMPARAM_H_ */
