@@ -6326,7 +6326,6 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 #else
 	nptes = PAGE_SIZE / L2_S_SIZE;
 #endif
-	pmap_alloc_specials(&virtual_avail, nptes, &memhook, NULL);
 
 #ifdef KASAN
 	extern vaddr_t kasan_zero;
