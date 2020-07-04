@@ -43,8 +43,6 @@
 #include <evbarm/rpi/vcpm.h>
 #include <evbarm/rpi/vcprop.h>
 
-#include <evbarm/rpi/rpi.h>
-
 #include <dev/wscons/wsconsio.h>
 
 int
