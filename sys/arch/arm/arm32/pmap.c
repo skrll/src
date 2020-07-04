@@ -6209,7 +6209,6 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	 * Scan the L1 translation table created by initarm() and create
 	 * the required metadata for all valid mappings found in it.
 	 */
-
 	for (size_t l1slot = 0;
 	     l1slot < L1_TABLE_SIZE / sizeof(pd_entry_t);
 	     l1slot++) {
