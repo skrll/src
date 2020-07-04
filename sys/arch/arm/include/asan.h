@@ -259,7 +259,7 @@ kasan_md_unwind(void)
 		 *  fp[-2] saved sp value
 		 *  fp[-3] saved fp value
 		 */
-		lr = fp[1];
+		lr = fp[-1];
 
 		if (lr < VM_MIN_KERNEL_ADDRESS) {
 			break;
