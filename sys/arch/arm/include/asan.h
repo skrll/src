@@ -139,7 +139,7 @@ static void
 kasan_md_shadow_map_page(vaddr_t va)
 {
 	const uint32_t mask = L1_TABLE_SIZE - 1;
-	const paddr_t ttb = (paddr_t)(armreg_ttbr_read() & ~mask);
+	const paddr_t ttb = (paddr_t)(armreg_ttbr1_read() & ~mask);
 	pd_entry_t * const pdep = (pd_entry_t *)KERN_PHYSTOV(ttb);
 
 	const size_t l1slot = l1pte_index(va);
