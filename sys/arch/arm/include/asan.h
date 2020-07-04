@@ -220,33 +220,44 @@ kasan_md_init(void)
 static inline bool
 __md_unwind_end(const char *name)
 {
-#if 0
-	if (!strncmp(name, "el0_trap", 8) ||
-	    !strncmp(name, "el1_trap", 8)) {
-		return true;
+	static const char * const vectors[] = {
+		"undefined_entry",
+		"swi_entry",
+		"prefetch_abort_entry",
+		"data_abort_entry",
+		"address_exception_entry",
+		"irq_entry",
+		"fiqvector"
+	};
+
+	for (size_t i = 0; i < __arraycount(vectors); i++) {
+		if (!strncmp(name, vectors[i], strlen(vectors[i])))
+			return true;
 	}
-#endif
+
 	return false;
 }
 
 static void
 kasan_md_unwind(void)
 {
-#if 0
-	uint64_t lr, *fp;
+
+	uint32_t lr, *fp;
 	const char *mod;
 	const char *sym;
 	size_t nsym;
 	int error;
 
-	fp = (uint64_t *)__builtin_frame_address(0);
+	fp = (uint32_t *)__builtin_frame_address(0);
 	nsym = 0;
 
 	while (1) {
 		/*
-		 * normal stack frame
-		 *  fp[0]  saved fp(x29) value
-		 *  fp[1]  saved lr(x30) value
+		 * normal frame
+		 *  fp[ 0] saved code pointer
+		 *  fp[-1] saved lr value
+		 *  fp[-2] saved sp value
+		 *  fp[-3] saved fp value
 		 */
 		lr = fp[1];
 
@@ -262,7 +273,7 @@ kasan_md_unwind(void)
 			break;
 		}
 
-		fp = (uint64_t *)fp[0];
+		fp = (uint32_t *)fp[-3];
 		if (fp == NULL) {
 			break;
 		}
@@ -272,5 +283,4 @@ kasan_md_unwind(void)
 			break;
 		}
 	}
-#endif
 }
