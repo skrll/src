@@ -92,8 +92,8 @@
 
 
 // AddressSanitizer dedicates 1/8 of kernel memory to its shadow memory (e.g.
-// 16TB to cover 128TB on x86_64) and uses direct mapping with a scale and offset
-// to translate a memory address to its corresponding shadow address.
+// 128MB to cover 1GB for ARM) and uses a special KVA range for the shadow
+// address corresponding to a kernel memory address.
 
 /*
  * kernel virtual space layout
@@ -104,14 +104,21 @@
  *   0xc800_0000 -  640MB (spare)
  *   0xf000_0000 -  256MB IO
  */
-
-#define	VM_MAXUSER_ADDRESS	((vaddr_t) 0x80000000 - PAGE_SIZE)
-#else
-#define	VM_MAXUSER_ADDRESS	((vaddr_t) KERNEL_BASE - PAGE_SIZE)
 #endif
+
+#define	VM_MAXUSER_ADDRESS	((vaddr_t) KERNEL_BASE - PAGE_SIZE)
 #define	VM_MAX_ADDRESS		VM_MAXUSER_ADDRESS
 
 #define	VM_MIN_KERNEL_ADDRESS	((vaddr_t) KERNEL_BASE)
 #define	VM_MAX_KERNEL_ADDRESS	((vaddr_t) -(PAGE_SIZE+1))
+
+#define VM_KERNEL_IO_ADDRESS	0xf0000000
+#define VM_KERNEL_IO_SIZE	(VM_MAX_KERNEL_ADDRESS - VM_KERNEL_IO_ADDRESS)
+
+#ifdef KASAN
+#define VM_KERNEL_END		0xc0000000
+#else
+#define VM_KERNEL_END		VM_KERNEL_IO_ADDRESS
+#endif
 
 #endif /* _ARM_ARM32_VMPARAM_H_ */
