@@ -36,14 +36,7 @@
 #include <arm/arm32/machdep.h>
 #include <arm/arm32/pmap.h>
 
-#define KERNEL_VM_BASE		0x90000000
-
-#define __MD_VIRTUAL_SHIFT	30
-#define __MD_CANONICAL_BASE	0x80000000
-
-#define __MD_SHADOW_SIZE	(1U << (__MD_VIRTUAL_SHIFT - KASAN_SHADOW_SCALE_SHIFT))
-#define KASAN_MD_SHADOW_START	(0xc0000000)
-#define KASAN_MD_SHADOW_END	(KASAN_MD_SHADOW_START + __MD_SHADOW_SIZE)
+#define __MD_CANONICAL_BASE	KERNEL_BASE
 
 static inline int8_t *
 kasan_md_addr_to_shad(const void *addr)

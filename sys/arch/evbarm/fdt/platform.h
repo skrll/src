@@ -45,25 +45,6 @@ void fdt_add_reserved_memory_range(uint64_t, uint64_t);
 
 CTASSERT(KERNEL_BASE == 0x80000000);
 
-#ifdef __HAVE_MM_MD_DIRECT_MAPPED_PHYS
-#ifdef KASAN
-#error KASAN and __HAVE_MM_MD_DIRECT_MAPPED_PHYS is unsupported
-#endif
-#define KERNEL_VM_BASE		0xc0000000
-#else
-#define KERNEL_VM_BASE		0x90000000
-#endif
-
-#ifdef KASAN
-#define KASAN_MD_SHADOW_START	0xc0000000
-#define KASAN_MD_SHADOW_SIZE	(KERNEL_VM_SIZE >> KASAN_SHADOW_SCALE_SHIFT)
-#define KERNEL_VM_END		KASAN_MD_SHADOW_START
-#else
-#define KERNEL_VM_END		VM_KERNEL_IO_ADDRESS
-#endif
-
-#define KERNEL_VM_SIZE		(KERNEL_VM_END - KERNEL_VM_BASE)
-
 #endif /* !__aarch64 */
 
 #endif /* _EVBARM_FDT_PLATFORM_H */
