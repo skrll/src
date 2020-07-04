@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.415 2020/06/21 07:14:15 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.416 2020/07/03 17:14:23 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -192,7 +192,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.415 2020/06/21 07:14:15 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.416 2020/07/03 17:14:23 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -6308,6 +6308,9 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	virtual_end = vend;
 
 	VPRINTF("specials ");
+
+	pmap_alloc_specials(&virtual_avail, 1, &memhook, NULL);
+
 #ifdef PMAP_CACHE_VIPT
 	/*
 	 * If we have a VIPT cache, we need one page/pte per possible alias
