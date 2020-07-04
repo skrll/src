@@ -88,6 +88,13 @@
  * Mach derived constants
  */
 #define	VM_MIN_ADDRESS		((vaddr_t) PAGE_SIZE)
+
+#define	VM_MAXUSER_ADDRESS	((vaddr_t) KERNEL_BASE - PAGE_SIZE)
+#define	VM_MAX_ADDRESS		VM_MAXUSER_ADDRESS
+
+#define	VM_MIN_KERNEL_ADDRESS	((vaddr_t) KERNEL_BASE)
+#define	VM_MAX_KERNEL_ADDRESS	((vaddr_t) -(PAGE_SIZE+1))
+
 #ifdef ARM_MMU_EXTENDED
 
 
@@ -104,13 +111,6 @@
  *   0xc800_0000 -  640MB (spare)
  *   0xf000_0000 -  256MB IO
  */
-#endif
-
-#define	VM_MAXUSER_ADDRESS	((vaddr_t) KERNEL_BASE - PAGE_SIZE)
-#define	VM_MAX_ADDRESS		VM_MAXUSER_ADDRESS
-
-#define	VM_MIN_KERNEL_ADDRESS	((vaddr_t) KERNEL_BASE)
-#define	VM_MAX_KERNEL_ADDRESS	((vaddr_t) -(PAGE_SIZE+1))
 
 #define VM_KERNEL_IO_ADDRESS	0xf0000000
 #define VM_KERNEL_IO_SIZE	(VM_MAX_KERNEL_ADDRESS - VM_KERNEL_IO_ADDRESS)
@@ -134,5 +134,6 @@
 #endif
 
 #define KERNEL_VM_SIZE		(KERNEL_VM_END - KERNEL_VM_BASE)
+#endif
 
 #endif /* _ARM_ARM32_VMPARAM_H_ */
