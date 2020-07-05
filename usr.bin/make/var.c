@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.246 2020/07/03 22:40:55 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.255 2020/07/04 17:41:04 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,14 +69,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: var.c,v 1.246 2020/07/03 22:40:55 rillig Exp $";
+static char rcsid[] = "$NetBSD: var.c,v 1.255 2020/07/04 17:41:04 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)var.c	8.3 (Berkeley) 3/19/94";
 #else
-__RCSID("$NetBSD: var.c,v 1.246 2020/07/03 22:40:55 rillig Exp $");
+__RCSID("$NetBSD: var.c,v 1.255 2020/07/04 17:41:04 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -102,11 +102,9 @@ __RCSID("$NetBSD: var.c,v 1.246 2020/07/03 22:40:55 rillig Exp $");
  *	Var_Value 	    Return the value of a variable in a context or
  *			    NULL if the variable is undefined.
  *
- *	Var_Subst 	    Substitute named variable, or all variables if
- *			    NULL in a string using
- *			    the given context as the top-most one. If the
- *			    third argument is non-zero, Parse_Error is
- *			    called if any variables are undefined.
+ *	Var_Subst 	    Substitute either a single variable or all
+ *			    variables in a string, using the given context as
+ *			    the top-most one.
  *
  *	Var_Parse 	    Parse a variable expansion from a string and
  *			    return the result and the number of characters
@@ -152,14 +150,14 @@ char **savedEnv = NULL;
  * to determine if there was an error in parsing -- easier than returning
  * a flag, as things outside this module don't give a hoot.
  */
-char 	var_Error[] = "";
+char var_Error[] = "";
 
 /*
  * Similar to var_Error, but returned when the 'VARF_UNDEFERR' flag for
  * Var_Parse is not set. Why not just use a constant? Well, gcc likes
  * to condense identical string instances...
  */
-static char	varNoError[] = "";
+static char varNoError[] = "";
 
 /*
  * Traditionally we consume $$ during := like any other expansion.
@@ -280,7 +278,7 @@ typedef struct {
     char	*str;		/* string to expand */
     int		strLen;
     Varf_Flags	flags;
-} VarLoop_t;
+} VarLoop;
 
 #ifndef NO_REGEX
 /* struct passed as 'void *' to VarRESubstitute() for ":C///" */
@@ -298,46 +296,6 @@ typedef struct {
     int		start;		/* first word to select */
     int		end;		/* last word to select */
 } VarSelectWords_t;
-
-static Var *VarFind(const char *, GNode *, int);
-static void VarAdd(const char *, const char *, GNode *);
-static Boolean VarHead(GNode *, Var_Parse_State *,
-			char *, Boolean, Buffer *, void *);
-static Boolean VarTail(GNode *, Var_Parse_State *,
-			char *, Boolean, Buffer *, void *);
-static Boolean VarSuffix(GNode *, Var_Parse_State *,
-			char *, Boolean, Buffer *, void *);
-static Boolean VarRoot(GNode *, Var_Parse_State *,
-			char *, Boolean, Buffer *, void *);
-static Boolean VarMatch(GNode *, Var_Parse_State *,
-			char *, Boolean, Buffer *, void *);
-#ifdef SYSVVARSUB
-static Boolean VarSYSVMatch(GNode *, Var_Parse_State *,
-			char *, Boolean, Buffer *, void *);
-#endif
-static Boolean VarNoMatch(GNode *, Var_Parse_State *,
-			char *, Boolean, Buffer *, void *);
-#ifndef NO_REGEX
-static void VarREError(int, regex_t *, const char *);
-static Boolean VarRESubstitute(GNode *, Var_Parse_State *,
-			char *, Boolean, Buffer *, void *);
-#endif
-static Boolean VarSubstitute(GNode *, Var_Parse_State *,
-			char *, Boolean, Buffer *, void *);
-static Boolean VarLoopExpand(GNode *, Var_Parse_State *,
-			char *, Boolean, Buffer *, void *);
-static char *VarGetPattern(GNode *, Var_Parse_State *,
-			   VarPattern_Flags, const char **, int,
-			   VarPattern_Flags *, int *, VarPattern *);
-static char *VarQuote(char *, Boolean);
-static char *VarHash(char *);
-static char *VarModify(GNode *, Var_Parse_State *,
-    const char *,
-    Boolean (*)(GNode *, Var_Parse_State *, char *, Boolean, Buffer *, void *),
-    void *);
-static char *VarOrder(const char *, const char);
-static char *VarUniq(const char *);
-static int VarWordCompare(const void *, const void *);
 
 #define BROPEN	'{'
 #define BRCLOSE	'}'
@@ -509,9 +467,6 @@ VarFreeEnv(Var *v, Boolean destroy)
  *	val		value to set it to
  *	ctxt		context in which to set it
  *
- * Results:
- *	None
- *
  * Side Effects:
  *	The new variable is placed at the front of the given context
  *	The name and val arguments are duplicated so they may
@@ -545,9 +500,6 @@ VarAdd(const char *name, const char *val, GNode *ctxt)
  *-----------------------------------------------------------------------
  * Var_Delete --
  *	Remove a variable from a context.
- *
- * Results:
- *	None.
  *
  * Side Effects:
  *	The Var structure is removed and freed.
@@ -901,7 +853,7 @@ static void
 Var_Set_with_flags(const char *name, const char *val, GNode *ctxt,
 		   VarSet_Flags flags)
 {
-    Var   *v;
+    Var *v;
     char *expanded_name = NULL;
 
     /*
@@ -1000,9 +952,6 @@ out:
  *	val		value to give to the variable
  *	ctxt		context in which to set it
  *
- * Results:
- *	None.
- *
  * Side Effects:
  *	If the variable doesn't yet exist, a new record is created for it.
  *	Else the old value is freed and the new one stuck in its place
@@ -1035,9 +984,6 @@ Var_Set(const char *name, const char *val, GNode *ctxt)
  *	val		String to append to it
  *	ctxt		Context in which this should occur
  *
- * Results:
- *	None
- *
  * Side Effects:
  *	If the variable doesn't exist, it is created. Else the strings
  *	are concatenated (with a space in between).
@@ -1054,8 +1000,8 @@ Var_Set(const char *name, const char *val, GNode *ctxt)
 void
 Var_Append(const char *name, const char *val, GNode *ctxt)
 {
-    Var		   *v;
-    Hash_Entry	   *h;
+    Var *v;
+    Hash_Entry *h;
     char *expanded_name = NULL;
 
     if (strchr(name, '$') != NULL) {
@@ -1179,14 +1125,14 @@ Var_Value(const char *name, GNode *ctxt, char **frp)
  * It returns the addSpace value for the next call of this callback. Typical
  * return values are the current addSpaces or TRUE. */
 typedef Boolean (*VarModifyCallback)(GNode *ctxt, Var_Parse_State *vpstate,
-    char *word, Boolean addSpace, Buffer *buf, void *data);
+    const char *word, Boolean addSpace, Buffer *buf, void *data);
 
 
 /* Callback function for VarModify to implement the :H modifier.
  * Add the dirname of the given word to the buffer. */
 static Boolean
 VarHead(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
-	char *word, Boolean addSpace, Buffer *buf,
+	const char *word, Boolean addSpace, Buffer *buf,
 	void *dummy MAKE_ATTR_UNUSED)
 {
     const char *slash = strrchr(word, '/');
@@ -1205,7 +1151,7 @@ VarHead(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
  * Add the basename of the given word to the buffer. */
 static Boolean
 VarTail(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
-	char *word, Boolean addSpace, Buffer *buf,
+	const char *word, Boolean addSpace, Buffer *buf,
 	void *dummy MAKE_ATTR_UNUSED)
 {
     const char *slash = strrchr(word, '/');
@@ -1221,7 +1167,7 @@ VarTail(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
  * Add the filename suffix of the given word to the buffer, if it exists. */
 static Boolean
 VarSuffix(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
-	  char *word, Boolean addSpace, Buffer *buf,
+	  const char *word, Boolean addSpace, Buffer *buf,
 	  void *dummy MAKE_ATTR_UNUSED)
 {
     const char *dot = strrchr(word, '.');
@@ -1238,11 +1184,11 @@ VarSuffix(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
  * Add the filename basename of the given word to the buffer. */
 static Boolean
 VarRoot(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
-	char *word, Boolean addSpace, Buffer *buf,
+	const char *word, Boolean addSpace, Buffer *buf,
 	void *dummy MAKE_ATTR_UNUSED)
 {
     char *dot = strrchr(word, '.');
-    size_t len = dot != NULL ? dot - word : strlen(word);
+    size_t len = dot != NULL ? (size_t)(dot - word) : strlen(word);
 
     if (addSpace && vpstate->varSpace)
 	Buf_AddByte(buf, vpstate->varSpace);
@@ -1254,7 +1200,7 @@ VarRoot(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
  * Place the word in the buffer if it matches the given pattern. */
 static Boolean
 VarMatch(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
-	 char *word, Boolean addSpace, Buffer *buf,
+	 const char *word, Boolean addSpace, Buffer *buf,
 	 void *data)
 {
     const char *pattern = data;
@@ -1272,7 +1218,7 @@ VarMatch(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
 /* Callback function for VarModify to implement the :%.from=%.to modifier. */
 static Boolean
 VarSYSVMatch(GNode *ctx, Var_Parse_State *vpstate,
-	     char *word, Boolean addSpace, Buffer *buf,
+	     const char *word, Boolean addSpace, Buffer *buf,
 	     void *data)
 {
     size_t len;
@@ -1299,7 +1245,7 @@ VarSYSVMatch(GNode *ctx, Var_Parse_State *vpstate,
  * Place the word in the buffer if it doesn't match the given pattern. */
 static Boolean
 VarNoMatch(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
-	   char *word, Boolean addSpace, Buffer *buf,
+	   const char *word, Boolean addSpace, Buffer *buf,
 	   void *data)
 {
     const char *pattern = data;
@@ -1315,11 +1261,11 @@ VarNoMatch(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
  * Perform a string substitution on the given word. */
 static Boolean
 VarSubstitute(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
-	      char *word, Boolean addSpace, Buffer *buf,
+	      const char *word, Boolean addSpace, Buffer *buf,
 	      void *data)
 {
     int wordLen = strlen(word);
-    char *cp;			/* General pointer */
+    const char *cp;		/* General pointer */
     VarPattern *pattern = data;
 
     if ((pattern->flags & (VAR_SUB_ONE|VAR_SUB_MATCHED)) !=
@@ -1357,7 +1303,7 @@ VarSubstitute(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
 		/*
 		 * Matches at start but need to copy in trailing characters
 		 */
-		if ((pattern->rightLen + wordLen - pattern->leftLen) != 0){
+		if ((pattern->rightLen + wordLen - pattern->leftLen) != 0) {
 		    if (addSpace && vpstate->varSpace) {
 			Buf_AddByte(buf, vpstate->varSpace);
 		    }
@@ -1424,11 +1370,11 @@ VarSubstitute(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
 	    while (!done) {
 		cp = Str_FindSubstring(word, pattern->lhs);
 		if (cp != NULL) {
-		    if (addSpace && (((cp - word) + pattern->rightLen) != 0)){
+		    if (addSpace && (((cp - word) + pattern->rightLen) != 0)) {
 			Buf_AddByte(buf, vpstate->varSpace);
 			addSpace = FALSE;
 		    }
-		    Buf_AddBytes(buf, cp-word, word);
+		    Buf_AddBytes(buf, cp - word, word);
 		    Buf_AddBytes(buf, pattern->rightLen, pattern->rhs);
 		    wordLen -= (cp - word) + pattern->leftLen;
 		    word = cp + pattern->leftLen;
@@ -1472,9 +1418,6 @@ nosub:
  * VarREError --
  *	Print the error caused by a regcomp or regexec call.
  *
- * Results:
- *	None.
- *
  * Side Effects:
  *	An error gets printed.
  *
@@ -1498,12 +1441,12 @@ VarREError(int reerr, regex_t *pat, const char *str)
 static Boolean
 VarRESubstitute(GNode *ctx MAKE_ATTR_UNUSED,
 		Var_Parse_State *vpstate MAKE_ATTR_UNUSED,
-		char *word, Boolean addSpace, Buffer *buf,
+		const char *word, Boolean addSpace, Buffer *buf,
 		void *data)
 {
     VarREPattern *pat = data;
     int xrv;
-    char *wp = word;
+    const char *wp = word;
     char *rp;
     int added = 0;
     int flags = 0;
@@ -1614,22 +1557,28 @@ VarRESubstitute(GNode *ctx MAKE_ATTR_UNUSED,
 static Boolean
 VarLoopExpand(GNode *ctx MAKE_ATTR_UNUSED,
 	      Var_Parse_State *vpstate MAKE_ATTR_UNUSED,
-	      char *word, Boolean addSpace, Buffer *buf,
+	      const char *word, Boolean addSpace, Buffer *buf,
 	      void *data)
 {
-    VarLoop_t *loop = data;
+    VarLoop *loop = data;
     char *s;
     int slen;
 
     if (*word) {
-        Var_Set_with_flags(loop->tvar, word, loop->ctxt, VAR_NO_EXPORT);
-        s = Var_Subst(NULL, loop->str, loop->ctxt, loop->flags);
-        if (s != NULL && *s != '\0') {
-            if (addSpace && *s != '\n')
-                Buf_AddByte(buf, ' ');
-            Buf_AddBytes(buf, (slen = strlen(s)), s);
-            addSpace = (slen > 0 && s[slen - 1] != '\n');
-        }
+	Var_Set_with_flags(loop->tvar, word, loop->ctxt, VAR_NO_EXPORT);
+	s = Var_Subst(NULL, loop->str, loop->ctxt, loop->flags);
+	if (DEBUG(VAR)) {
+	    fprintf(debug_file,
+		    "VarLoopExpand: in \"%s\", replace \"%s\" with \"%s\" "
+		    "to \"%s\"\n",
+		    word, loop->tvar, loop->str, s ? s : "(null)");
+	}
+	if (s != NULL && *s != '\0') {
+	    if (addSpace && *s != '\n')
+		Buf_AddByte(buf, ' ');
+	    Buf_AddBytes(buf, (slen = strlen(s)), s);
+	    addSpace = (slen > 0 && s[slen - 1] != '\n');
+	}
 	free(s);
     }
     return addSpace;
@@ -1729,7 +1678,7 @@ VarSelectWords(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
  * Replace each word with the result of realpath() if successful. */
 static Boolean
 VarRealpath(GNode *ctx MAKE_ATTR_UNUSED, Var_Parse_State *vpstate,
-	    char *word, Boolean addSpace, Buffer *buf,
+	    const char *word, Boolean addSpace, Buffer *buf,
 	    void *patternp MAKE_ATTR_UNUSED)
 {
     struct stat st;
@@ -1786,6 +1735,11 @@ VarModify(GNode *ctx, Var_Parse_State *vpstate,
 	av[1] = NULL;
     } else {
 	av = brk_string(str, &ac, FALSE, &as);
+    }
+
+    if (DEBUG(VAR)) {
+	fprintf(debug_file, "VarModify: split \"%s\" into %d words\n",
+		str, ac);
     }
 
     for (i = 0; i < ac; i++)
@@ -2045,8 +1999,8 @@ VarGetPattern(GNode *ctxt, Var_Parse_State *vpstate MAKE_ATTR_UNUSED,
 		     * delimiter, assume it's a variable
 		     * substitution and recurse.
 		     */
-		    cp2 = Var_Parse(cp, ctxt, errnum |
-				    (flags & VARF_WANTRES), &len, &freeIt);
+		    cp2 = Var_Parse(cp, ctxt, errnum | (flags & VARF_WANTRES),
+				    &len, &freeIt);
 		    Buf_AddBytes(&buf, strlen(cp2), cp2);
 		    free(freeIt);
 		    cp += len - 1;
@@ -2161,12 +2115,12 @@ VarQuote(char *str, Boolean quoteDollar)
  *-----------------------------------------------------------------------
  */
 static char *
-VarHash(char *str)
+VarHash(const char *str)
 {
     static const char    hexdigits[16] = "0123456789abcdef";
     Buffer         buf;
     size_t         len, len2;
-    unsigned char  *ustr = (unsigned char *)str;
+    const unsigned char *ustr = (const unsigned char *)str;
     uint32_t       h, k, c1, c2;
 
     h  = 0x971e137bU;
@@ -2178,18 +2132,21 @@ VarHash(char *str)
 	k = 0;
 	switch (len) {
 	default:
-	    k = (ustr[3] << 24) | (ustr[2] << 16) | (ustr[1] << 8) | ustr[0];
+	    k = ((uint32_t)ustr[3] << 24) |
+		((uint32_t)ustr[2] << 16) |
+		((uint32_t)ustr[1] << 8) |
+		(uint32_t)ustr[0];
 	    len -= 4;
 	    ustr += 4;
 	    break;
 	case 3:
-	    k |= (ustr[2] << 16);
+	    k |= (uint32_t)ustr[2] << 16;
 	    /* FALLTHROUGH */
 	case 2:
-	    k |= (ustr[1] << 8);
+	    k |= (uint32_t)ustr[1] << 8;
 	    /* FALLTHROUGH */
 	case 1:
-	    k |= ustr[0];
+	    k |= (uint32_t)ustr[0];
 	    len = 0;
 	}
 	c1 = c1 * 5 + 0x7b7d159cU;
@@ -2211,9 +2168,9 @@ VarHash(char *str)
     for (len = 0; len < 8; ++len) {
 	Buf_AddByte(&buf, hexdigits[h & 15]);
 	h >>= 4;
-   }
+    }
 
-   return Buf_Destroy(&buf, FALSE);
+    return Buf_Destroy(&buf, FALSE);
 }
 
 static char *
@@ -2269,7 +2226,7 @@ typedef struct {
 /* :@var@...${var}...@ */
 static Boolean
 ApplyModifier_At(ApplyModifiersState *st) {
-    VarLoop_t loop;
+    VarLoop loop;
     VarPattern_Flags vflags = VAR_NOSUBST;
 
     st->cp = ++(st->tstr);
@@ -3161,7 +3118,7 @@ ApplyModifier_Remember(ApplyModifiersState *st)
 
 	st->cp++;
 	n = strcspn(st->cp, ":)}");
-	np = bmake_strndup(st->cp, n+1);
+	np = bmake_strndup(st->cp, n + 1);
 	np[n] = '\0';
 	st->cp = st->tstr + 2 + n;
 	Var_Set(np, st->nstr, st->ctxt);
@@ -3733,8 +3690,7 @@ Var_Parse(const char *str, GNode *ctxt, Varf_Flags flags,
 	/*
 	 * Skip to the end character or a colon, whichever comes first.
 	 */
-	for (tstr = str + 2; *tstr != '\0'; tstr++)
-	{
+	for (tstr = str + 2; *tstr != '\0'; tstr++) {
 	    /* Track depth so we can spot parse errors. */
 	    if (*tstr == startc)
 		depth++;
@@ -3921,7 +3877,7 @@ Var_Parse(const char *str, GNode *ctxt, Varf_Flags flags,
     *lengthPtr = tstr - start + (*tstr ? 1 : 0);
 
     if (v->flags & VAR_FROM_ENV) {
-	Boolean	  destroy = FALSE;
+	Boolean destroy = FALSE;
 
 	if (nstr != Buf_GetAll(&v->val, NULL)) {
 	    destroy = TRUE;
@@ -3962,7 +3918,7 @@ Var_Parse(const char *str, GNode *ctxt, Varf_Flags flags,
 /*-
  *-----------------------------------------------------------------------
  * Var_Subst  --
- *	Substitute for all variables in the given string in the given context
+ *	Substitute for all variables in the given string in the given context.
  *	If flags & VARF_UNDEFERR, Parse_Error will be called when an undefined
  *	variable is encountered.
  *
@@ -3978,7 +3934,7 @@ Var_Parse(const char *str, GNode *ctxt, Varf_Flags flags,
  *	The resulting string.
  *
  * Side Effects:
- *	None. The old string must be freed by the caller
+ *	None.
  *-----------------------------------------------------------------------
  */
 char *
@@ -4016,7 +3972,7 @@ Var_Subst(const char *var, const char *str, GNode *ctxt, Varf_Flags flags)
 	     * Skip as many characters as possible -- either to the end of
 	     * the string or to the next dollar sign (variable invocation).
 	     */
-	    const char  *cp;
+	    const char *cp;
 
 	    for (cp = str++; *str != '$' && *str != '\0'; str++)
 		continue;
@@ -4063,7 +4019,7 @@ Var_Subst(const char *var, const char *str, GNode *ctxt, Varf_Flags flags)
 			     * Not the variable we want to expand, scan
 			     * until the next variable
 			     */
-			    for (;*p != '$' && *p != '\0'; p++)
+			    for (; *p != '$' && *p != '\0'; p++)
 				continue;
 			    Buf_AddBytes(&buf, p - str, str);
 			    str = p;
@@ -4133,18 +4089,7 @@ Var_Subst(const char *var, const char *str, GNode *ctxt, Varf_Flags flags)
     return Buf_DestroyCompact(&buf);
 }
 
-/*-
- *-----------------------------------------------------------------------
- * Var_Init --
- *	Initialize the module
- *
- * Results:
- *	None
- *
- * Side Effects:
- *	The VAR_CMD and VAR_GLOBAL contexts are created
- *-----------------------------------------------------------------------
- */
+/* Initialize the module. */
 void
 Var_Init(void)
 {

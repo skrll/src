@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# $NetBSD: lvm,v 1.5 2009/04/21 16:08:57 joerg Exp $
+# $NetBSD: lvm,v 1.6 2020/07/04 06:24:53 skrll Exp $
 #
 
 # PROVIDE: lvm
@@ -20,7 +20,7 @@ lvm_start()
 {
 	if [ -x /sbin/dmsetup ]; then
 		/sbin/dmsetup version >/dev/null
-		if [ $? -ne 0 ]; then 
+		if [ $? -ne 0 ]; then
 			warn "Device-mapper not present in kernel"
 			return 1;
 		fi
@@ -43,7 +43,7 @@ lvm_stop()
 {
 	if [ -x /sbin/dmsetup ]; then
 		/sbin/dmsetup version >/dev/null
-		if [ $? -ne 0 ]; then 
+		if [ $? -ne 0 ]; then
 			warn "Device-mapper not present in kernel"
 			return 1;
 		fi
