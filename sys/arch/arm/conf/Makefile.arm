@@ -72,7 +72,6 @@ CFLAGS+=	-mapcs-frame
 KASANFLAGS=	\
 	-fsanitize=kernel-address \
 	--param asan-globals=1 \
-	--param asan-stack=1 \
 	--param asan-instrument-allocas=1 \
 	-fsanitize-address-use-after-scope \
 	-fasan-shadow-offset=0xb0000000
