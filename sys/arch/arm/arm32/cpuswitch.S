@@ -192,11 +192,6 @@ ENTRY(cpu_switchto)
 	/* We have a new curlwp now so make a note of it */
 	str	r6, [r5, #(CI_CURLWP)]
 
-#ifdef KASAN
-	mov	r0, r6
-	bl	_C_LABEL(kasan_softint)
-#endif
-
 	/* Get the new pcb */
 	ldr	r7, [r6, #(L_PCB)]
 
@@ -394,6 +389,11 @@ ENTRY_NP(softint_switch)
 	mcr	p15, 0, r5, c13, c0, 4	/* save new lwp */
 #endif
 	str	r5, [r7, #(CI_CURLWP)]	/* save new lwp */
+
+#ifdef KASAN
+	mov	r0, r5
+	bl	_C_LABEL(kasan_softint)
+#endif
 
 	/*
 	 * Normally, we'd get {r8-r13} but since this is a softint lwp
