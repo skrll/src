@@ -36,14 +36,14 @@
 #include <arm/arm32/machdep.h>
 #include <arm/arm32/pmap.h>
 
-#define __MD_CANONICAL_BASE	KERNEL_BASE
+#define __MD_KERNMEM_BASE	KERNEL_BASE
 
 static inline int8_t *
 kasan_md_addr_to_shad(const void *addr)
 {
 	vaddr_t va = (vaddr_t)addr;
 	return (int8_t *)(KASAN_MD_SHADOW_START +
-	    ((va - __MD_CANONICAL_BASE) >> KASAN_SHADOW_SCALE_SHIFT));
+	    ((va - __MD_KERNMEM_BASE) >> KASAN_SHADOW_SCALE_SHIFT));
 }
 
 static inline bool
