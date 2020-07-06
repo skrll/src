@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.h,v 1.11 2020/05/23 18:08:59 ryo Exp $	*/
+/*	$NetBSD: machdep.h,v 1.13 2020/07/01 08:01:07 ryo Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -89,6 +89,7 @@ void data_abort_handler(struct trapframe *, uint32_t);
 
 /* trap.c */
 void lwp_trampoline(void);
+void configure_cpu_traps(void);
 void cpu_dosoftints(void);
 void cpu_switchto_softint(struct lwp *, int);
 void dosoftints(void);
@@ -142,7 +143,7 @@ void aarch64_setregs_ptrauth(struct lwp *, bool);
 /* fpu.c */
 void fpu_attach(struct cpu_info *);
 struct fpreg;
-void load_fpregs(struct fpreg *);
+void load_fpregs(const struct fpreg *);
 void save_fpregs(struct fpreg *);
 
 #ifdef TRAP_SIGDEBUG

@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.313 2020/05/30 20:47:58 christos Exp $
+# $NetBSD: mi,v 1.323 2020/07/01 07:16:38 jruoho Exp $
 ./etc/mtree/set.debug                           comp-sys-root
 ./usr/lib					comp-sys-usr		compatdir
 ./usr/lib/i18n/libBIG5_g.a			comp-c-debuglib		debuglib,compatfile
@@ -32,7 +32,8 @@
 ./usr/lib/libatf-c_g.a				comp-c-debuglib		debuglib,compatfile,atf
 ./usr/lib/libavl_g.a				comp-c-debuglib		debuglib,compatfile,zfs
 ./usr/lib/libbind9_g.a				comp-c-debuglib		debuglib,compatfile
-./usr/lib/libblacklist_g.a			comp-c-debuglib		debuglib,compatfile
+./usr/lib/libblacklist_g.a			comp-obsolete		obsolete,compatfile
+./usr/lib/libblocklist_g.a			comp-c-debuglib		debuglib,compatfile
 ./usr/lib/libbluetooth_g.a			comp-c-debuglib		debuglib,compatfile
 ./usr/lib/libbozohttpd_g.a			comp-c-debuglib		debuglib,compatfile
 ./usr/lib/libbsdmalloc_g.a			comp-c-debuglib		debuglib,compatfile
@@ -319,8 +320,10 @@
 ./usr/libdata/debug/sbin/atactl.debug		comp-sysutil-debug	debug
 ./usr/libdata/debug/sbin/badsect.debug		comp-sysutil-debug	debug
 ./usr/libdata/debug/sbin/bioctl.debug		comp-sysutil-debug	debug
-./usr/libdata/debug/sbin/blacklistctl.debug	comp-sysutil-debug	debug
-./usr/libdata/debug/sbin/blacklistd.debug	comp-sysutil-debug	debug
+./usr/libdata/debug/sbin/blacklistctl.debug	comp-obsolete		obsolete
+./usr/libdata/debug/sbin/blacklistd.debug	comp-obsolete		obsolete
+./usr/libdata/debug/sbin/blocklistctl.debug	comp-sysutil-debug	debug
+./usr/libdata/debug/sbin/blocklistd.debug	comp-sysutil-debug	debug
 ./usr/libdata/debug/sbin/brconfig.debug		comp-netutil-debug	debug
 ./usr/libdata/debug/sbin/canconfig.debug	comp-netutil-debug	debug
 ./usr/libdata/debug/sbin/ccdconfig.debug	comp-sysutil-debug	debug
@@ -635,6 +638,7 @@
 ./usr/libdata/debug/usr/bin/lex.debug		comp-c-debug		debug
 ./usr/libdata/debug/usr/bin/lint.debug		comp-c-debug		debug
 ./usr/libdata/debug/usr/bin/lkbib.debug		comp-groff-debug	groff,debug
+./usr/libdata/debug/usr/bin/llvm-symbolizer.debug	comp-c-debug		llvm,debug
 ./usr/libdata/debug/usr/bin/llvm-tblgen.debug	comp-c-debug		llvm,debug
 ./usr/libdata/debug/usr/bin/locale.debug	comp-locale-debug	debug
 ./usr/libdata/debug/usr/bin/locate.debug	comp-util-debug		debug
@@ -1637,6 +1641,7 @@
 ./usr/libdata/debug/usr/tests/dev/audio/h_pad.debug			tests-fs-debug		debug,atf,rump
 ./usr/libdata/debug/usr/tests/dev/cgd/h_img2cgd/h_img2cgd.debug			tests-obsolete	obsolete,compattestfile
 ./usr/libdata/debug/usr/tests/dev/cgd/t_cgd_3des.debug			tests-fs-debug		atf,compattestfile,debug,rump
+./usr/libdata/debug/usr/tests/dev/cgd/t_cgd_adiantum.debug		tests-fs-debug		atf,compattestfile,debug,rump
 ./usr/libdata/debug/usr/tests/dev/cgd/t_cgd_aes.debug			tests-fs-debug		atf,compattestfile,debug,rump
 ./usr/libdata/debug/usr/tests/dev/cgd/t_cgd_blowfish.debug		tests-fs-debug		atf,compattestfile,debug,rump
 ./usr/libdata/debug/usr/tests/dev/clock_subr/t_clock_subr.debug		tests-fs-debug		debug,atf
@@ -2068,7 +2073,7 @@
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_fopen.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_format.debug		tests-obsolete		obsolete,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_fputc.debug		tests-lib-debug		debug,atf,compattestfile
-./usr/libdata/debug/usr/tests/lib/libc/stdio/t_mktemp.debug		tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/stdio/t_mktemp.debug		tests-obsolete		obsolete,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_open_memstream.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_popen.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdio/t_printf.debug		tests-lib-debug		debug,atf,compattestfile
@@ -2076,6 +2081,7 @@
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/h_atexit.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/h_getopt.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/h_getopt_long.debug	tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_a64l.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_abs.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_atoi.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_div.debug		tests-lib-debug		debug,atf,compattestfile
@@ -2085,7 +2091,9 @@
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_getenv.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_getenv_thread.debug	tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_hsearch.debug		tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_mbtowc.debug		tests-obsolete		obsolete
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_mi_vector_hash.debug	tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_mktemp.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_posix_memalign.debug	tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_random.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libc/stdlib/t_strtod.debug		tests-lib-debug		debug,atf,compattestfile
@@ -2266,7 +2274,8 @@
 ./usr/libdata/debug/usr/tests/lib/libppath/t_ppath.debug			tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libproc/proc_test.debug		tests-lib-debugq	debug,atf,compattestfile,dtrace
 ./usr/libdata/debug/usr/tests/lib/libproc/target_prog.debug		tests-lib-debugq	debug,atf,compattestfile,dtrace
-./usr/libdata/debug/usr/tests/lib/libprop/t_basic.debug			tests-lib-debug		debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/lib/libprop/t_basic.debug			tests-lib-debug		obsolete
+./usr/libdata/debug/usr/tests/lib/libprop/t_proplib.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libpthread/dlopen/h_pthread_dlopen.so.1.debug	tests-lib-debug	debug,atf,pic,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libpthread/dlopen/t_dlopen.debug	tests-lib-debug	debug,atf,pic,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libpthread/dlopen/t_dso_pthread_create.debug 	tests-lib-debug	debug,atf,pic,compattestfile
@@ -2400,6 +2409,9 @@
 ./usr/libdata/debug/usr/tests/rump/rumpvfs/t_etfs.debug		tests-syscall-debug	debug,atf,rump
 ./usr/libdata/debug/usr/tests/rump/rumpvfs/t_p2kifs.debug		tests-syscall-debug	debug,atf,rump
 ./usr/libdata/debug/usr/tests/sys					tests-sys-debug	debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/sys/crypto				tests-sys-debug	debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/sys/crypto/aes				tests-sys-debug	debug,atf,compattestfile
+./usr/libdata/debug/usr/tests/sys/crypto/aes/t_aes.debug		tests-sys-debug	debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/sys/net					tests-sys-debug	debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/sys/net/t_print.debug			tests-sys-debug	debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/sys/netatalk				tests-sys-debug	debug,atf,compattestfile

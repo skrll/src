@@ -74,14 +74,6 @@ struct psr_ctx {
 };
 
 static void
-ps_root_readerrorsig(__unused int sig, void *arg)
-{
-	struct dhcpcd_ctx *ctx = arg;
-
-	eloop_exit(ctx->ps_eloop, EXIT_FAILURE);
-}
-
-static void
 ps_root_readerrorcb(void *arg)
 {
 	struct psr_ctx *psr_ctx = arg;
@@ -132,7 +124,7 @@ ps_root_readerror(struct dhcpcd_ctx *ctx, void *data, size_t len)
 	return psr_ctx.psr_error.psr_result;
 }
 
-#ifdef HAVE_CAPSICUM
+#ifdef PRIVSEP_GETIFADDRS
 static void
 ps_root_mreaderrorcb(void *arg)
 {
@@ -152,7 +144,9 @@ ps_root_mreaderrorcb(void *arg)
 	else if ((size_t)len < sizeof(*psr_error))
 		PSR_ERROR(EINVAL);
 
-	if (psr_error->psr_datalen != 0) {
+	if (psr_error->psr_datalen > SSIZE_MAX)
+		PSR_ERROR(ENOBUFS);
+	else if (psr_error->psr_datalen != 0) {
 		psr_ctx->psr_data = malloc(psr_error->psr_datalen);
 		if (psr_ctx->psr_data == NULL)
 			PSR_ERROR(errno);
@@ -297,6 +291,10 @@ ps_root_validpath(const struct dhcpcd_ctx *ctx, uint16_t cmd, const char *path)
 		return false;
 
 	if (cmd == PS_READFILE) {
+#ifdef EMBEDDED_CONFIG
+		if (strcmp(ctx->cffile, EMBEDDED_CONFIG) == 0)
+			return true;
+#endif
 		if (strcmp(ctx->cffile, path) == 0)
 			return true;
 	}
@@ -347,7 +345,7 @@ ps_root_monordm(uint64_t *rdm, size_t len)
 }
 #endif
 
-#ifdef HAVE_CAPSICUM
+#ifdef PRIVSEP_GETIFADDRS
 #define	IFA_NADDRS	3
 static ssize_t
 ps_root_dogetifaddrs(void **rdata, size_t *rlen)
@@ -474,7 +472,6 @@ ps_root_recvmsgcb(void *arg, struct ps_msghdr *psm, struct msghdr *msg)
 			shutdown(psp->psp_fd, SHUT_RDWR);
 			close(psp->psp_fd);
 			psp->psp_fd = -1;
-			ps_dostop(ctx, &psp->psp_pid, &psp->psp_fd);
 			ps_freeprocess(psp);
 		}
 		return 0;
@@ -560,7 +557,7 @@ ps_root_recvmsgcb(void *arg, struct ps_msghdr *psm, struct msghdr *msg)
 		}
 		break;
 #endif
-#ifdef HAVE_CAPSICUM
+#ifdef PRIVSEP_GETIFADDRS
 	case PS_GETIFADDRS:
 		err = ps_root_dogetifaddrs(&rdata, &rlen);
 		free_rdata = true;
@@ -653,14 +650,14 @@ ps_root_startcb(void *arg)
 #ifdef INET6
 	if (ctx->options & DHCPCD_IPV6) {
 		ctx->nd_fd = ipv6nd_open(false);
-		if (ctx->udp_wfd == -1)
+		if (ctx->nd_fd == -1)
 			logerr("%s: ipv6nd_open", __func__);
 	}
 #endif
 #ifdef DHCP6
 	if (ctx->options & DHCPCD_IPV6) {
 		ctx->dhcp6_wfd = dhcp6_openraw();
-		if (ctx->udp_wfd == -1)
+		if (ctx->dhcp6_wfd == -1)
 			logerr("%s: dhcp6_openraw", __func__);
 	}
 #endif
@@ -681,24 +678,18 @@ ps_root_signalcb(int sig, void *arg)
 {
 	struct dhcpcd_ctx *ctx = arg;
 
-	/* Ignore SIGINT, respect PS_STOP command or SIGTERM. */
-	if (sig == SIGINT)
-		return;
-
-	/* Reap children */
 	if (sig == SIGCHLD) {
 		while (waitpid(-1, NULL, WNOHANG) > 0)
 			;
 		return;
 	}
 
-	logerrx("process %d unexpectedly terminating on signal %d",
-	    getpid(), sig);
-	if (ctx->ps_root_pid == getpid()) {
-		shutdown(ctx->ps_root_fd, SHUT_RDWR);
-		shutdown(ctx->ps_data_fd, SHUT_RDWR);
-	}
-	eloop_exit(ctx->eloop, sig == SIGTERM ? EXIT_SUCCESS : EXIT_FAILURE);
+	if (sig != SIGTERM)
+		return;
+
+	shutdown(ctx->ps_root_fd, SHUT_RDWR);
+	shutdown(ctx->ps_data_fd, SHUT_RDWR);
+	eloop_exit(ctx->eloop, EXIT_SUCCESS);
 }
 
 int (*handle_interface)(void *, int, const char *);
@@ -773,6 +764,12 @@ ps_root_start(struct dhcpcd_ctx *ctx)
 
 	if (socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CXNB, 0, fd) == -1)
 		return -1;
+	if (ps_setbuf_fdpair(fd) == -1)
+		return -1;
+#ifdef PRIVSEP_RIGHTS
+	if (ps_rights_limit_fdpair(fd) == -1)
+		return -1;
+#endif
 
 	pid = ps_dostart(ctx, &ctx->ps_root_pid, &ctx->ps_root_fd,
 	    ps_root_recvmsg, NULL, ctx,
@@ -796,7 +793,7 @@ ps_root_start(struct dhcpcd_ctx *ctx)
 
 	eloop_signal_set_cb(ctx->ps_eloop,
 	    dhcpcd_signals, dhcpcd_signals_len,
-	    ps_root_readerrorsig, ctx);
+	    ps_root_signalcb, ctx);
 
 	return pid;
 }
@@ -885,7 +882,7 @@ ps_root_filemtime(struct dhcpcd_ctx *ctx, const char *file, time_t *time)
 	return ps_root_readerror(ctx, time, sizeof(*time));
 }
 
-#ifdef HAVE_CAPSICUM
+#ifdef PRIVSEP_GETIFADDRS
 int
 ps_root_getifaddrs(struct dhcpcd_ctx *ctx, struct ifaddrs **ifahead)
 {
@@ -912,7 +909,7 @@ ps_root_getifaddrs(struct dhcpcd_ctx *ctx, struct ifaddrs **ifahead)
 
 	bp = buf;
 	*ifahead = (struct ifaddrs *)(void *)bp;
-	for (ifa = *ifahead; len != 0; ifa = ifa->ifa_next) {
+	for (ifa = *ifahead; ifa != NULL; ifa = ifa->ifa_next) {
 		if (len < ALIGN(sizeof(*ifa)) +
 		    ALIGN(IFNAMSIZ) + ALIGN(sizeof(salen) * IFA_NADDRS))
 			goto err;
@@ -940,9 +937,11 @@ ps_root_getifaddrs(struct dhcpcd_ctx *ctx, struct ifaddrs **ifahead)
 		COPYOUTSA(ifa->ifa_addr);
 		COPYOUTSA(ifa->ifa_netmask);
 		COPYOUTSA(ifa->ifa_broadaddr);
-		ifa->ifa_next = (struct ifaddrs *)(void *)bp;
+		if (len != 0)
+			ifa->ifa_next = (struct ifaddrs *)(void *)bp;
+		else
+			ifa->ifa_next = NULL;
 	}
-	ifa->ifa_next = NULL;
 	return 0;
 
 err:
@@ -971,7 +970,7 @@ ps_root_getauthrdm(struct dhcpcd_ctx *ctx, uint64_t *rdm)
 {
 
 	if (ps_sendcmd(ctx, ctx->ps_root_fd, PS_AUTH_MONORDM, 0,
-	    rdm, sizeof(rdm))== -1)
+	    rdm, sizeof(*rdm))== -1)
 		return -1;
 	return (int)ps_root_readerror(ctx, rdm, sizeof(*rdm));
 }

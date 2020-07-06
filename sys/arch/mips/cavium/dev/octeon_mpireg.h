@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_mpireg.h,v 1.1 2015/04/29 08:32:01 hikaru Exp $	*/
+/*	$NetBSD: octeon_mpireg.h,v 1.3 2020/06/22 03:05:07 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -48,7 +48,6 @@
 
 #define MPI_CFG_XXX_63_29			UINT64_C(0xffffffffe0000000)
 #define MPI_CFG_CLKDIV				UINT64_C(0x000000001fff0000)
-#define  MPI_CFG_CLKDIV_SHIFT			16
 #define MPI_CFG_XXX_15_12			UINT64_C(0x000000000000f000)
 #define MPI_CFG_CSLATE				UINT64_C(0x0000000000000800)
 #define MPI_CFG_TRITX				UINT64_C(0x0000000000000400)
@@ -71,47 +70,11 @@
 #define MPI_TX_LEAVECS				UINT64_C(0x0000000000010000)
 #define MPI_TX_XXX_15_13			UINT64_C(0x000000000000e000)
 #define MPI_TX_TXNUM				UINT64_C(0x0000000000001f00)
-#define  MPI_TX_TXNUM_SHIFT			8
 #define MPI_TX_XXX_7_5				UINT64_C(0x00000000000000e0)
 #define MPI_TX_TOTNUM				UINT64_C(0x000000000000001f)
-#define  MPI_TX_TOTNUM_SHIFT			0
 
 #define MPI_DATX_XXX_63_8			UINT64_C(0xffffffffffffff00)
 #define MPI_DATX_DATA				UINT64_C(0x00000000000000ff)
-
-/* ---- snprintb */
-
-#define	MPI_CFG_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x10\x0d"	"CLKDIV\0" \
-	"b\x0b"		"CSLATE\0" \
-	"b\x0a"		"TRITX\0" \
-	"f\x08\x02"	"IDLECLKS\0" \
-	"b\x07"		"CSHI\0" \
-	"b\x06"		"CSENA\0" \
-	"b\x05"		"INT_ENA\0" \
-	"b\x04"		"LSBFIRST\0" \
-	"b\x03"		"WIREOR\0" \
-	"b\x02"		"CLK_CONT\0" \
-	"b\x01"		"IDLELO\0" \
-	"b\x00"		"ENABLE\0"
-
-#define	MPI_STS_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x08\x05"	"RXNUM\0" \
-	"b\x00"		"BUSY\0"
-
-#define	MPI_TX_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x10"		"LEAVECS\0" \
-	"f\x08\x05"	"TXNUM\0" \
-	"f\x00\x05"	"TOTNUM\0"
 
 /* ---- bus_space */
 
