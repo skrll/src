@@ -740,6 +740,7 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 
 	for (size_t idx = 0; idx < KERNEL_L2PT_KASAN_NUM; idx++) {
 		const vaddr_t va = KASAN_MD_SHADOW_START  + idx * L2_S_SEGSIZE;
+
 		pmap_link_l2pt(l1pt_va, va, &kasan_l2pt[idx]);
 
 		VPRINTF("%s: adding L2 pt (VA %#lx, PA %#lx) for VA %#lx %s\n",
