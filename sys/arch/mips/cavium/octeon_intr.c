@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_intr.c,v 1.11 2020/05/31 06:27:06 simonb Exp $	*/
+/*	$NetBSD: octeon_intr.c,v 1.14 2020/06/23 05:14:39 simonb Exp $	*/
 /*
  * Copyright 2001, 2002 Wasabi Systems, Inc.
  * All rights reserved.
@@ -38,14 +38,13 @@
  * Platform-specific interrupt support for the MIPS Malta.
  */
 
-#include "opt_octeon.h"
 #include "opt_multiprocessor.h"
 
 #include "cpunode.h"
 #define __INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: octeon_intr.c,v 1.11 2020/05/31 06:27:06 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: octeon_intr.c,v 1.14 2020/06/23 05:14:39 simonb Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -163,13 +162,13 @@ struct octeon_intrhand ipi_intrhands[2] = {
 	[0] = {
 		.ih_func = octeon_ipi_intr,
 		.ih_arg = (void *)(uintptr_t)__BITS(15,0),
-		.ih_irq = _CIU_INT_MBOX_15_0_SHIFT,
+		.ih_irq = CIU_INT_MBOX_15_0,
 		.ih_ipl = IPL_SCHED,
 	},
 	[1] = {
 		.ih_func = octeon_ipi_intr,
 		.ih_arg = (void *)(uintptr_t)__BITS(31,16),
-		.ih_irq = _CIU_INT_MBOX_31_16_SHIFT,
+		.ih_irq = CIU_INT_MBOX_31_16,
 		.ih_ipl = IPL_HIGH,
 	},
 };
@@ -177,8 +176,8 @@ struct octeon_intrhand ipi_intrhands[2] = {
 
 struct octeon_intrhand *octciu_intrs[NIRQS] = {
 #ifdef MULTIPROCESSOR
-	[_CIU_INT_MBOX_15_0_SHIFT] = &ipi_intrhands[0],
-	[_CIU_INT_MBOX_31_16_SHIFT] = &ipi_intrhands[1],
+	[CIU_INT_MBOX_15_0] = &ipi_intrhands[0],
+	[CIU_INT_MBOX_31_16] = &ipi_intrhands[1],
 #endif
 };
 
@@ -212,6 +211,7 @@ struct cpu_softc octeon_cpu0_softc = {
 };
 
 #ifdef MULTIPROCESSOR
+/* XXX limit of two CPUs ... */
 struct cpu_softc octeon_cpu1_softc = {
 	.cpu_int0_sum0 = X(CIU_INT2_SUM0),
 	.cpu_int1_sum0 = X(CIU_INT3_SUM0),
@@ -227,7 +227,7 @@ struct cpu_softc octeon_cpu1_softc = {
 
 	.cpu_int32_en = X(CIU_INT32_EN1),
 
-	.cpu_wdog = X(CIU_WDOG1),
+	.cpu_wdog = X(CIU_WDOG(1)),
 	.cpu_pp_poke = X(CIU_PP_POKE1),
 
 	.cpu_mbox_set = X(CIU_MBOX_SET1),
@@ -245,8 +245,8 @@ octeon_mbox_test(void)
 	const uint64_t mbox_set1 = X(CIU_MBOX_SET1);
 	const uint64_t int_sum0 = X(CIU_INT0_SUM0);
 	const uint64_t int_sum1 = X(CIU_INT2_SUM0);
-	const uint64_t sum_mbox_lo = __BIT(_CIU_INT_MBOX_15_0_SHIFT);
-	const uint64_t sum_mbox_hi = __BIT(_CIU_INT_MBOX_31_16_SHIFT);
+	const uint64_t sum_mbox_lo = __BIT(CIU_INT_MBOX_15_0);
+	const uint64_t sum_mbox_hi = __BIT(CIU_INT_MBOX_31_16);
 
 	mips3_sd(mbox_clr0, ~0ULL);
 	mips3_sd(mbox_clr1, ~0ULL);
@@ -328,8 +328,8 @@ octeon_intr_init(struct cpu_info *ci)
 
 #ifdef MULTIPROCESSOR
 	// Enable the IPIs
-	cpu->cpu_int1_enable0 |= __BIT(_CIU_INT_MBOX_15_0_SHIFT);
-	cpu->cpu_int2_enable0 |= __BIT(_CIU_INT_MBOX_31_16_SHIFT);
+	cpu->cpu_int1_enable0 |= __BIT(CIU_INT_MBOX_15_0);
+	cpu->cpu_int2_enable0 |= __BIT(CIU_INT_MBOX_31_16);
 #endif
 
 	if (ci->ci_dev)
@@ -528,7 +528,7 @@ octeon_iointr(int ipl, vaddr_t pc, uint32_t ipending)
 	while (hwpend != 0) {
 		const int irq = ffs64(hwpend) - 1;
 		hwpend &= ~__BIT(irq);
-		
+
 		struct octeon_intrhand * const ih = octciu_intrs[irq];
 		cpu->cpu_intr_evs[irq].ev_count++;
 		if (__predict_true(ih != NULL)) {

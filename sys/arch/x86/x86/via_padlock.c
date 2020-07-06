@@ -1,5 +1,5 @@
 /*	$OpenBSD: via.c,v 1.8 2006/11/17 07:47:56 tom Exp $	*/
-/*	$NetBSD: via_padlock.c,v 1.28 2020/03/07 13:28:45 maya Exp $ */
+/*	$NetBSD: via_padlock.c,v 1.31 2020/06/29 23:58:44 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2003 Jason Wright
@@ -20,7 +20,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: via_padlock.c,v 1.28 2020/03/07 13:28:45 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: via_padlock.c,v 1.31 2020/06/29 23:58:44 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -37,10 +37,11 @@ __KERNEL_RCSID(0, "$NetBSD: via_padlock.c,v 1.28 2020/03/07 13:28:45 maya Exp $"
 #include <machine/cpufunc.h>
 #include <machine/cpuvar.h>
 
+#include <crypto/aes/aes_bear.h>
+
 #include <opencrypto/cryptodev.h>
 #include <opencrypto/cryptosoft.h>
 #include <opencrypto/xform.h>
-#include <crypto/rijndael/rijndael.h>
 
 #include <opencrypto/cryptosoft_xform.c>
 
@@ -174,14 +175,29 @@ via_padlock_crypto_newsession(void *arg, uint32_t *sidp, struct cryptoini *cri)
 	for (c = cri; c != NULL; c = c->cri_next) {
 		switch (c->cri_alg) {
 		case CRYPTO_AES_CBC:
+			memset(ses->ses_ekey, 0, sizeof(ses->ses_ekey));
+			memset(ses->ses_dkey, 0, sizeof(ses->ses_dkey));
+
 			switch (c->cri_klen) {
 			case 128:
+				br_aes_ct_keysched_stdenc(ses->ses_ekey,
+				    c->cri_key, 16);
+				br_aes_ct_keysched_stddec(ses->ses_dkey,
+				    c->cri_key, 16);
 				cw0 = C3_CRYPT_CWLO_KEY128;
 				break;
 			case 192:
+				br_aes_ct_keysched_stdenc(ses->ses_ekey,
+				    c->cri_key, 24);
+				br_aes_ct_keysched_stddec(ses->ses_dkey,
+				    c->cri_key, 24);
 				cw0 = C3_CRYPT_CWLO_KEY192;
 				break;
 			case 256:
+				br_aes_ct_keysched_stdenc(ses->ses_ekey,
+				    c->cri_key, 32);
+				br_aes_ct_keysched_stddec(ses->ses_dkey,
+				    c->cri_key, 32);
 				cw0 = C3_CRYPT_CWLO_KEY256;
 				break;
 			default:
@@ -191,20 +207,14 @@ via_padlock_crypto_newsession(void *arg, uint32_t *sidp, struct cryptoini *cri)
 				C3_CRYPT_CWLO_KEYGEN_SW |
 				C3_CRYPT_CWLO_NORMAL;
 
-			cprng_fast(ses->ses_iv, sizeof(ses->ses_iv));
 			ses->ses_klen = c->cri_klen;
 			ses->ses_cw0 = cw0;
 
-			/* Build expanded keys for both directions */
-			rijndaelKeySetupEnc(ses->ses_ekey, c->cri_key,
-			    c->cri_klen);
-			rijndaelKeySetupDec(ses->ses_dkey, c->cri_key,
-			    c->cri_klen);
-			for (i = 0; i < 4 * (RIJNDAEL_MAXNR + 1); i++) {
+			/* Convert words to host byte order (???) */
+			for (i = 0; i < 4*(AES_256_NROUNDS + 1); i++) {
 				ses->ses_ekey[i] = ntohl(ses->ses_ekey[i]);
 				ses->ses_dkey[i] = ntohl(ses->ses_dkey[i]);
 			}
-
 			break;
 
 		/* Use hashing implementations from the cryptosoft code. */
@@ -341,7 +351,7 @@ via_padlock_cbc(void *cw, void *src, void *dst, void *key, int rep,
 	lcr0(cr0 & ~(CR0_EM|CR0_TS));
 
 	/* Do the deed */
-	__asm __volatile("pushfl; popfl");	/* force key reload */
+	__asm __volatile("pushf; popf");	/* force key reload */
 	__asm __volatile(".byte 0xf3, 0x0f, 0xa7, 0xd0" : /* rep xcrypt-cbc */
 			: "a" (iv), "b" (key), "c" (rep), "d" (cw), "S" (src), "D" (dst)
 			: "memory", "cc");
@@ -384,7 +394,7 @@ via_padlock_crypto_encdec(struct cryptop *crp, struct cryptodesc *crd,
 		if (crd->crd_flags & CRD_F_IV_EXPLICIT)
 			memcpy(sc->op_iv, crd->crd_iv, 16);
 		else
-			memcpy(sc->op_iv, ses->ses_iv, 16);
+			cprng_fast(sc->op_iv, 16);
 
 		if ((crd->crd_flags & CRD_F_IV_PRESENT) == 0) {
 			if (crp->crp_flags & CRYPTO_F_IMBUF)
@@ -438,21 +448,6 @@ via_padlock_crypto_encdec(struct cryptop *crp, struct cryptodesc *crd,
 	else
 		memcpy((char *)crp->crp_buf + crd->crd_skip, sc->op_buf,
 		    crd->crd_len);
-
-	/* copy out last block for use as next session IV */
-	if (crd->crd_flags & CRD_F_ENCRYPT) {
-		if (crp->crp_flags & CRYPTO_F_IMBUF)
-			m_copydata((struct mbuf *)crp->crp_buf,
-			    crd->crd_skip + crd->crd_len - 16, 16,
-			    ses->ses_iv);
-		else if (crp->crp_flags & CRYPTO_F_IOV)
-			cuio_copydata((struct uio *)crp->crp_buf,
-			    crd->crd_skip + crd->crd_len - 16, 16,
-			    ses->ses_iv);
-		else
-			memcpy(ses->ses_iv, (char *)crp->crp_buf +
-			    crd->crd_skip + crd->crd_len - 16, 16);
-	}
 
 	if (sc->op_buf != NULL) {
 		memset(sc->op_buf, 0, crd->crd_len);

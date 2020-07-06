@@ -1,4 +1,4 @@
-# $NetBSD: shl.mi,v 1.890 2020/05/30 20:47:58 christos Exp $
+# $NetBSD: shl.mi,v 1.894 2020/06/15 23:41:55 christos Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -16,9 +16,12 @@
 ./lib/libavl.so					base-zfs-shlib		dynamicroot,zfs
 ./lib/libavl.so.0				base-zfs-shlib		dynamicroot,zfs
 ./lib/libavl.so.0.0          			base-zfs-shlib		dynamicroot,zfs
-./lib/libblacklist.so				base-sys-shlib		dynamicroot
-./lib/libblacklist.so.0				base-sys-shlib		dynamicroot
-./lib/libblacklist.so.0.0			base-sys-shlib		dynamicroot
+./lib/libblacklist.so				base-obsolete		obsolete,compatfile
+./lib/libblacklist.so.0				base-obsolete		obsolete,compatfile
+./lib/libblacklist.so.0.0			base-obsolete		obsolete,compatfile
+./lib/libblocklist.so				base-sys-shlib		dynamicroot
+./lib/libblocklist.so.0				base-sys-shlib		dynamicroot
+./lib/libblocklist.so.0.0			base-sys-shlib		dynamicroot
 ./lib/libc.so					base-sys-shlib		dynamicroot
 ./lib/libc.so.12				base-sys-shlib		dynamicroot
 ./lib/libc.so.12.217				base-sys-shlib		dynamicroot
@@ -74,7 +77,7 @@
 ./lib/libppath.so.0.0				base-sys-shlib		dynamicroot
 ./lib/libprop.so				base-sys-shlib		dynamicroot
 ./lib/libprop.so.1				base-sys-shlib		dynamicroot
-./lib/libprop.so.1.1				base-sys-shlib		dynamicroot
+./lib/libprop.so.1.2				base-sys-shlib		dynamicroot
 ./lib/libpthread.so				base-sys-shlib		dynamicroot
 ./lib/libpthread.so.1				base-sys-shlib		dynamicroot
 ./lib/libpthread.so.1.4				base-sys-shlib		dynamicroot
@@ -229,9 +232,12 @@
 ./usr/lib/libbind9.so				base-bind-shlib		compatfile
 ./usr/lib/libbind9.so.14				base-bind-shlib		compatfile
 ./usr/lib/libbind9.so.14.0			base-bind-shlib		compatfile
-./usr/lib/libblacklist.so			base-sys-shlib		compatfile
-./usr/lib/libblacklist.so.0			base-sys-shlib		compatfile
-./usr/lib/libblacklist.so.0.0			base-sys-shlib		compatfile
+./usr/lib/libblacklist.so			base-obsolete		obsolete,compatfile
+./usr/lib/libblacklist.so.0			base-obsolete		obsolete,compatfile
+./usr/lib/libblacklist.so.0.0			base-obsolete		obsolete,compatfile
+./usr/lib/libblocklist.so			base-sys-shlib		compatfile
+./usr/lib/libblocklist.so.0			base-sys-shlib		compatfile
+./usr/lib/libblocklist.so.0.0			base-sys-shlib		compatfile
 ./usr/lib/libbluetooth.so			base-sys-shlib		compatfile
 ./usr/lib/libbluetooth.so.4			base-sys-shlib		compatfile
 ./usr/lib/libbluetooth.so.4.2			base-sys-shlib		compatfile
@@ -449,8 +455,8 @@
 ./usr/lib/libm.so.0				base-sys-shlib		compatfile
 ./usr/lib/libm.so.0.12				base-sys-shlib		compatfile
 ./usr/lib/libmagic.so				base-sys-shlib		compatfile
-./usr/lib/libmagic.so.6				base-sys-shlib		compatfile
-./usr/lib/libmagic.so.6.0			base-sys-shlib		compatfile
+./usr/lib/libmagic.so.7				base-sys-shlib		compatfile
+./usr/lib/libmagic.so.7.0			base-sys-shlib		compatfile
 ./usr/lib/libmenu.so				base-sys-shlib		compatfile
 ./usr/lib/libmenu.so.8				base-sys-shlib		compatfile
 ./usr/lib/libmenu.so.8.0			base-sys-shlib		compatfile
@@ -510,7 +516,7 @@
 ./usr/lib/libproc.so.1.0			base-sys-shlib		compatfile,dtrace
 ./usr/lib/libprop.so				base-sys-shlib		compatfile
 ./usr/lib/libprop.so.1				base-sys-shlib		compatfile
-./usr/lib/libprop.so.1.1			base-sys-shlib		compatfile
+./usr/lib/libprop.so.1.2			base-sys-shlib		compatfile
 ./usr/lib/libpthread.so				base-sys-shlib		compatfile
 ./usr/lib/libpthread.so.1			base-sys-shlib		compatfile
 ./usr/lib/libpthread.so.1.4			base-sys-shlib		compatfile

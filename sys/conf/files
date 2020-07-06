@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1267 2020/05/20 09:18:25 hkenken Exp $
+#	$NetBSD: files,v 1.1271 2020/06/29 23:44:01 riastradh Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -38,6 +38,7 @@ defflag opt_kmsan.h		KMSAN_PANIC
 defflag				KCOV
 defflag opt_pool.h		POOL_QUARANTINE
 defflag opt_pool.h		POOL_NOCACHE
+defflag				FAULT
 
 defparam opt_copy_symtab.h	makeoptions_COPY_SYMTAB
 
@@ -199,10 +200,11 @@ defflag	opt_machdep.h		MACHDEP
 # use it.
 
 # Individual crypto transforms
+include "crypto/adiantum/files.adiantum"
+include "crypto/aes/files.aes"
 include "crypto/des/files.des"
 include "crypto/blowfish/files.blowfish"
 include "crypto/cast128/files.cast128"
-include "crypto/rijndael/files.rijndael"
 include "crypto/skipjack/files.skipjack"
 include "crypto/camellia/files.camellia"
 # General-purpose crypto processing framework.
@@ -1394,7 +1396,7 @@ file	dev/ic/amdccp.c			amdccp
 defpseudodev vnd:	disk
 defflag opt_vnd.h	VND_COMPRESSION
 defpseudo ccd:		disk
-defpseudodev cgd:	disk, des, blowfish, cast128, rijndael
+defpseudodev cgd:	disk, des, blowfish, cast128, aes, adiantum
 defpseudodev md:	disk
 defpseudodev fss:	disk
 

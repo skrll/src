@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu_emu.c,v 1.19 2016/12/28 10:52:30 rin Exp $ */
+/*	$NetBSD: fpu_emu.c,v 1.22 2020/06/27 04:31:06 rin Exp $ */
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -76,22 +76,22 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fpu_emu.c,v 1.19 2016/12/28 10:52:30 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fpu_emu.c,v 1.22 2020/06/27 04:31:06 rin Exp $");
 
 #include "opt_ddb.h"
 
 #include <sys/param.h>
+#include <sys/systm.h>
+#include <sys/evcnt.h>
 #include <sys/proc.h>
+#include <sys/siginfo.h>
 #include <sys/signal.h>
 #include <sys/signalvar.h>
-#include <sys/siginfo.h>
-#include <sys/systm.h>
 #include <sys/syslog.h>
-#include <sys/evcnt.h>
 
 #include <powerpc/instr.h>
-#include <machine/reg.h>
 #include <machine/fpu.h>
+#include <machine/reg.h>
 #include <machine/trap.h>
 
 #include <powerpc/fpu/fpu_emu.h>
@@ -163,7 +163,9 @@ fpu_dumpfpn(struct fpn *fp)
 		"SNAN", "QNAN", "ZERO", "NUM", "INF"
 	};
 
-	printf("%s %c.%x %x %x %xE%d", class[fp->fp_class + 2],
+	KASSERT(fp != NULL);
+
+	printf("%s %c.%x %x %x %xE%d\n", class[fp->fp_class + 2],
 		fp->fp_sign ? '-' : ' ',
 		fp->fp_mant[0],	fp->fp_mant[1],
 		fp->fp_mant[2], fp->fp_mant[3], 

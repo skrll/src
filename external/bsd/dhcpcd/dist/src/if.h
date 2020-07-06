@@ -38,6 +38,10 @@
 
 #include <ifaddrs.h>
 
+/* If the interface does not support carrier status (ie PPP),
+ * dhcpcd can poll it for the relevant flags periodically */
+#define IF_POLL_UP	100	/* milliseconds */
+
 /* Some systems have in-built IPv4 DAD.
  * However, we need them to do DAD at carrier up as well. */
 #ifdef IN_IFF_TENTATIVE
@@ -156,6 +160,7 @@ int if_domtu(const struct interface *, short int);
 #define if_getmtu(ifp) if_domtu((ifp), 0)
 #define if_setmtu(ifp, mtu) if_domtu((ifp), (mtu))
 int if_carrier(struct interface *);
+int if_pollinit(struct interface *ifp);
 
 #ifdef ALIAS_ADDR
 int if_makealias(char *, size_t, const char *, int);
@@ -182,6 +187,7 @@ int if_nametospec(const char *, struct if_spec *);
 int if_conf(struct interface *);
 int if_init(struct interface *);
 int if_getssid(struct interface *);
+int if_ignoregroup(int, const char *);
 bool if_ignore(struct dhcpcd_ctx *, const char *);
 int if_vimaster(struct dhcpcd_ctx *ctx, const char *);
 unsigned short if_vlanid(const struct interface *);

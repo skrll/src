@@ -1,7 +1,8 @@
-/*	$NetBSD: pool.h,v 1.90 2020/04/13 00:27:17 chs Exp $	*/
+/*	$NetBSD: pool.h,v 1.92 2020/06/18 16:56:31 maxv Exp $	*/
 
 /*-
- * Copyright (c) 1997, 1998, 1999, 2000, 2007 The NetBSD Foundation, Inc.
+ * Copyright (c) 1997, 1998, 1999, 2000, 2007, 2020
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -69,7 +70,7 @@ struct pool_sysctl {
 };
 
 #ifdef _KERNEL
-#define	__POOL_EXPOSE
+#define __POOL_EXPOSE
 #endif
 
 #ifdef __POOL_EXPOSE
@@ -85,7 +86,7 @@ struct pool_sysctl {
 #include "opt_pool.h"
 #endif
 
-#define	POOL_PADDR_INVALID	((paddr_t) -1)
+#define POOL_PADDR_INVALID	((paddr_t) -1)
 
 struct pool;
 
@@ -148,7 +149,7 @@ struct pool {
 	const char	*pr_wchan;	/* tsleep(9) identifier */
 	unsigned int	pr_flags;	/* r/w flags */
 	unsigned int	pr_roflags;	/* r/o flags */
-#define	PR_WAITOK	0x01	/* Note: matches KM_SLEEP */
+#define PR_WAITOK	0x01	/* Note: matches KM_SLEEP */
 #define PR_NOWAIT	0x02	/* Note: matches KM_NOSLEEP */
 #define PR_WANTED	0x04
 #define PR_PHINPAGE	0x40
@@ -157,11 +158,11 @@ struct pool {
 #define PR_RECURSIVE	0x200	/* pool contains pools, for vmstat(8) */
 #define PR_NOTOUCH	0x400	/* don't use free items to keep internal state*/
 #define PR_NOALIGN	0x800	/* don't assume backend alignment */
-#define	PR_LARGECACHE	0x1000	/* use large cache groups */
-#define	PR_GROWING	0x2000	/* pool_grow in progress */
-#define	PR_GROWINGNOWAIT 0x4000	/* pool_grow in progress by PR_NOWAIT alloc */
-#define	PR_ZERO		0x8000	/* zero data before returning */
-#define	PR_USEBMAP	0x10000	/* use a bitmap to manage freed items */
+#define PR_LARGECACHE	0x1000	/* use large cache groups */
+#define PR_GROWING	0x2000	/* pool_grow in progress */
+#define PR_GROWINGNOWAIT 0x4000	/* pool_grow in progress by PR_NOWAIT alloc */
+#define PR_ZERO		0x8000	/* zero data before returning */
+#define PR_USEBMAP	0x10000	/* use a bitmap to manage freed items */
 
 	/*
 	 * `pr_lock' protects the pool's data structures when removing
@@ -216,14 +217,14 @@ struct pool {
 
 /*
  * Cache group sizes, assuming 4-byte paddr_t on !_LP64.
- * All groups will be aligned to CACHE_LINE_SIZE.
+ * All groups will be aligned to COHERENCY_UNIT.
  */
 #ifdef _LP64
-#define	PCG_NOBJECTS_NORMAL	15	/* 256 byte group */
-#define	PCG_NOBJECTS_LARGE	63	/* 1024 byte group */
+#define PCG_NOBJECTS_NORMAL	15	/* 256 byte group */
+#define PCG_NOBJECTS_LARGE	63	/* 1024 byte group */
 #else
-#define	PCG_NOBJECTS_NORMAL	14	/* 124 byte group */
-#define	PCG_NOBJECTS_LARGE	62	/* 508 byte group */
+#define PCG_NOBJECTS_NORMAL	14	/* 124 byte group */
+#define PCG_NOBJECTS_LARGE	62	/* 508 byte group */
 #endif
 
 typedef struct pcgpair {
@@ -239,17 +240,17 @@ typedef struct pool_cache_group {
 	pcgpair_t 		pcg_objects[1];	/* the objects */
 } pcg_t;
 
+/* Pool cache CPU.  Sized to 64 bytes on _LP64. */
 typedef struct pool_cache_cpu {
-	uint64_t		cc_misses;
-	uint64_t		cc_hits;
 	struct pool_cache_group	*cc_current;
 	struct pool_cache_group	*cc_previous;	
-	struct pool_cache	*cc_cache;
-	int			cc_ipl;
-	int			cc_cpuindex;
-#ifdef _KERNEL
-	ipl_cookie_t		cc_iplcookie;
-#endif
+	pcg_t *volatile 	*cc_pcgcache;
+	uint64_t		cc_misses;
+	uint64_t		cc_hits;
+	uint64_t		cc_pcmisses;
+	uint64_t		cc_contended;
+	uint32_t		cc_nfull;
+	uint32_t		cc_npart;
 } pool_cache_cpu_t;
 
 struct pool_cache {
@@ -257,34 +258,30 @@ struct pool_cache {
 	struct pool	pc_pool;
 	
 	/* Cache layer. */
-	kmutex_t	pc_lock;	/* locks cache layer */
 	TAILQ_ENTRY(pool_cache)
 			pc_cachelist;	/* entry on global cache list */
-	pcg_t		*pc_emptygroups;/* list of empty cache groups */
-	pcg_t		*pc_fullgroups;	/* list of full cache groups */
-	pcg_t		*pc_partgroups;	/* groups for reclamation */
 	struct pool	*pc_pcgpool;	/* Pool of cache groups */
+	pcg_t *volatile *pc_pcgcache;	/* list of empty cache groups */
 	int		pc_pcgsize;	/* Use large cache groups? */
 	int		pc_ncpu;	/* number cpus set up */
 	int		(*pc_ctor)(void *, void *, int);
 	void		(*pc_dtor)(void *, void *);
 	void		*pc_arg;	/* for ctor/ctor */
-	uint64_t	pc_hits;	/* cache layer hits */
-	uint64_t	pc_misses;	/* cache layer misses */
-	uint64_t	pc_contended;	/* contention events on cache */
-	unsigned int	pc_nempty;	/* empty groups in cache */
-	unsigned int	pc_nfull;	/* full groups in cache */
-	unsigned int	pc_npart;	/* partial groups in cache */
 	unsigned int	pc_refcnt;	/* ref count for pagedaemon, etc */
+	void		*pc_cpus[MAXCPUS];
 
 	/* Diagnostic aides. */
 	void		*pc_freecheck;
 	bool		pc_redzone;
 	size_t		pc_reqsize;
 
-	/* CPU layer. */
+	/* Hot items. */
+	pcg_t *volatile pc_fullgroups	/* list of full cache groups */
+	    __aligned(CACHE_LINE_SIZE);
+	pcg_t *volatile pc_partgroups;	/* groups for reclamation */
+
+	/* Boot cpu. */
 	pool_cache_cpu_t pc_cpu0 __aligned(CACHE_LINE_SIZE);
-	void		*pc_cpus[MAXCPUS] __aligned(CACHE_LINE_SIZE);
 };
 
 #endif /* __POOL_EXPOSE */
@@ -361,7 +358,7 @@ void		pool_cache_cpu_init(struct cpu_info *);
 #define		pool_cache_put(pc, o) pool_cache_put_paddr((pc), (o), \
 				          POOL_PADDR_INVALID)
 
-void 		pool_whatis(uintptr_t, void (*)(const char *, ...)
+void		pool_whatis(uintptr_t, void (*)(const char *, ...)
     __printflike(1, 2));
 #endif /* _KERNEL */
 

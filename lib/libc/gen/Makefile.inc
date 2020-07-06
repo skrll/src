@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.203 2020/05/10 19:36:49 maya Exp $
+#	$NetBSD: Makefile.inc,v 1.205 2020/07/05 01:09:48 christos Exp $
 #	from: @(#)Makefile.inc	8.6 (Berkeley) 5/4/95
 
 # gen sources

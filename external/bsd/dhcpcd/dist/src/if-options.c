@@ -55,6 +55,10 @@
 #include "logerr.h"
 #include "sa.h"
 
+#define	IN_CONFIG_BLOCK(ifo)	((ifo)->options & DHCPCD_FORKED)
+#define	SET_CONFIG_BLOCK(ifo)	((ifo)->options |= DHCPCD_FORKED)
+#define	CLEAR_CONFIG_BLOCK(ifo)	((ifo)->options &= ~DHCPCD_FORKED)
+
 const struct option cf_options[] = {
 	{"background",      no_argument,       NULL, 'b'},
 	{"script",          required_argument, NULL, 'c'},
@@ -158,6 +162,7 @@ const struct option cf_options[] = {
 	{"inactive",        no_argument,       NULL, O_INACTIVE},
 	{"mudurl",          required_argument, NULL, O_MUDURL},
 	{"link_rcvbuf",     required_argument, NULL, O_LINK_RCVBUF},
+	{"poll",            optional_argument, NULL, O_POLL},
 	{NULL,              0,                 NULL, '\0'}
 };
 
@@ -673,7 +678,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case 'c':
 		ARG_REQUIRED;
-		if (ifname != NULL) {
+		if (IN_CONFIG_BLOCK(ifo)) {
 			logerrx("%s: per interface scripts"
 			    " are no longer supported",
 			    ifname);
@@ -743,7 +748,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		ARG_REQUIRED;
 		/* per interface logging is not supported
 		 * don't want to overide the commandline */
-		if (ifname == NULL && ctx->logfile == NULL) {
+		if (!IN_CONFIG_BLOCK(ifo) && ctx->logfile == NULL) {
 			logclose();
 			ctx->logfile = strdup(arg);
 			logopen(ctx->logfile);
@@ -946,7 +951,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case 'z':
 		ARG_REQUIRED;
-		if (ifname == NULL)
+		if (!IN_CONFIG_BLOCK(ifo))
 			ctx->ifav = splitv(&ctx->ifac, ctx->ifav, arg);
 		break;
 	case 'A':
@@ -1192,7 +1197,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case 'Z':
 		ARG_REQUIRED;
-		if (ifname == NULL)
+		if (!IN_CONFIG_BLOCK(ifo))
 			ctx->ifdv = splitv(&ctx->ifdc, ctx->ifdv, arg);
 		break;
 	case '1':
@@ -1296,7 +1301,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 #endif
 	case O_IAID:
 		ARG_REQUIRED;
-		if (ifname == NULL) {
+		if (!IN_CONFIG_BLOCK(ifo)) {
 			logerrx("IAID must belong in an interface block");
 			return -1;
 		}
@@ -1338,7 +1343,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 			logwarnx("%s: IA_PD not compiled in", ifname);
 			return -1;
 #else
-			if (ifname == NULL) {
+			if (!IN_CONFIG_BLOCK(ifo)) {
 				logerrx("IA PD must belong in an "
 				    "interface block");
 				return -1;
@@ -1346,7 +1351,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 			i = D6_OPTION_IA_PD;
 #endif
 		}
-		if (ifname == NULL && arg) {
+		if (!IN_CONFIG_BLOCK(ifo) && arg) {
 			logerrx("IA with IAID must belong in an "
 			    "interface block");
 			return -1;
@@ -1460,7 +1465,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 				logerrx("%s: interface name too long", arg);
 				goto err_sla;
 			}
-			sla->sla_set = 0;
+			sla->sla_set = false;
 			sla->prefix_len = 0;
 			sla->suffix = 1;
 			p = np;
@@ -1471,7 +1476,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 				if (*p != '\0') {
 					sla->sla = (uint32_t)strtou(p, NULL,
 					    0, 0, UINT32_MAX, &e);
-					sla->sla_set = 1;
+					sla->sla_set = true;
 					if (e) {
 						logerrx("%s: failed to convert "
 						    "sla",
@@ -1530,7 +1535,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 					    sla->ifname);
 					goto err_sla;
 				}
-				if (sla->sla_set == 0 &&
+				if (!sla->sla_set &&
 				    strcmp(slap->ifname, sla->ifname) == 0)
 				{
 					logwarnx("%s: cannot specify the "
@@ -2192,6 +2197,18 @@ invalid_token:
 		}
 #endif
 		break;
+	case O_POLL:
+		if (arg == NULL) {
+			ifo->poll = IF_POLL_UP;
+			break;
+		}
+		ifo->poll = (unsigned long)
+		    strtou(arg, NULL, 0, 0, ULONG_MAX, &e);
+		if (e) {
+			logerrx("failed to convert poll %s", arg);
+			return -1;
+		}
+		break;
 	default:
 		return 0;
 	}
@@ -2322,6 +2339,8 @@ read_config(struct dhcpcd_ctx *ctx,
 	ifo->options |= DHCPCD_DHCP6;
 #endif
 
+	CLEAR_CONFIG_BLOCK(ifo);
+
 	vlen = strlcpy((char *)ifo->vendorclassid + 1, ctx->vendor,
 	    sizeof(ifo->vendorclassid) - 1);
 	ifo->vendorclassid[0] = (uint8_t)(vlen > 255 ? 0 : vlen);
@@ -2366,8 +2385,8 @@ read_config(struct dhcpcd_ctx *ctx,
 			return ifo;
 		}
 		if (buf[buflen - 1] != '\0') {
-			if (buflen < sizeof(buf) - 1)
-				bulen++;
+			if ((size_t)buflen < sizeof(buf) - 1)
+				buflen++;
 			buf[buflen - 1] = '\0';
 		}
 #else
@@ -2474,7 +2493,9 @@ read_config(struct dhcpcd_ctx *ctx,
 			had_block = 1;
 			new_block = 0;
 			ifo->options &= ~DHCPCD_WAITOPTS;
+			SET_CONFIG_BLOCK(ifo);
 		}
+
 		/* Start of an interface block, skip if not ours */
 		if (strcmp(option, "interface") == 0) {
 			char **n;
@@ -2544,6 +2565,7 @@ read_config(struct dhcpcd_ctx *ctx,
 
 	if (!had_block)
 		ifo->options &= ~DHCPCD_WAITOPTS;
+	CLEAR_CONFIG_BLOCK(ifo);
 	finish_config(ifo);
 	return ifo;
 }

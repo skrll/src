@@ -1,4 +1,4 @@
-/*	$NetBSD: i2c.c,v 1.72 2019/12/23 18:27:11 thorpej Exp $	*/
+/*	$NetBSD: i2c.c,v 1.74 2020/06/12 03:32:30 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -40,7 +40,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.72 2019/12/23 18:27:11 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.74 2020/06/12 03:32:30 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -231,7 +231,7 @@ iic_indirect_driver_is_whitelisted(struct iic_softc *sc, cfdata_t cf)
 
 	iter = prop_array_iterator(whitelist);
 	while ((pstr = prop_object_iterator_next(iter)) != NULL) {
-		if (prop_string_equals_cstring(pstr, cf->cf_name)) {
+		if (prop_string_equals_string(pstr, cf->cf_name)) {
 			rv = true;
 			break;
 		}
@@ -265,19 +265,19 @@ iic_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 				   I2C_PROP_INDIRECT_PROBE_STRATEGY);
 	if (pstr == NULL) {
 		/* Use the default. */
-	} else if (prop_string_equals_cstring(pstr,
+	} else if (prop_string_equals_string(pstr,
 					I2C_PROBE_STRATEGY_QUICK_WRITE)) {
 		probe_func = iic_probe_smbus_quick_write;
-	} else if (prop_string_equals_cstring(pstr,
+	} else if (prop_string_equals_string(pstr,
 					I2C_PROBE_STRATEGY_RECEIVE_BYTE)) {
 		probe_func = iic_probe_smbus_receive_byte;
-	} else if (prop_string_equals_cstring(pstr,
+	} else if (prop_string_equals_string(pstr,
 					I2C_PROBE_STRATEGY_NONE)) {
 		probe_func = iic_probe_none;
 	} else {
 		aprint_error_dev(sc->sc_dev,
 			"unknown probe strategy '%s'; defaulting to '%s'\n",
-			prop_string_cstring_nocopy(pstr),
+			prop_string_value(pstr),
 			I2C_PROBE_STRATEGY_QUICK_WRITE);
 
 		/* Use the default. */
@@ -400,7 +400,7 @@ iic_attach(device_t parent, device_t self, void *aux)
 	char *buf;
 	i2c_tag_t ic;
 	int rv;
-	bool indirect_config;
+	bool no_indirect_config = false;
 
 	aprint_naive("\n");
 	aprint_normal(": I2C bus\n");
@@ -424,12 +424,11 @@ iic_attach(device_t parent, device_t self, void *aux)
 
 	if (iba->iba_child_devices) {
 		child_devices = iba->iba_child_devices;
-		indirect_config = false;
+		no_indirect_config = true;
 	} else {
 		props = device_properties(parent);
-		if (!prop_dictionary_get_bool(props, "i2c-indirect-config",
-		    &indirect_config))
-			indirect_config = true;
+		prop_dictionary_get_bool(props, "i2c-no-indirect-config",
+		    &no_indirect_config);
 		child_devices = prop_dictionary_get(props, "i2c-child-devices");
 	}
 
@@ -470,7 +469,7 @@ iic_attach(device_t parent, device_t self, void *aux)
 			cdata = prop_dictionary_get(dev, "compatible");
 			if (cdata)
 				iic_fill_compat(&ia,
-				    prop_data_data_nocopy(cdata),
+				    prop_data_value(cdata),
 				    prop_data_size(cdata), &buf);
 
 			if (name == NULL && cdata == NULL) {
@@ -495,7 +494,7 @@ iic_attach(device_t parent, device_t self, void *aux)
 			if (buf)
 				free(buf, M_TEMP);
 		}
-	} else if (indirect_config) {
+	} else if (!no_indirect_config) {
 		/*
 		 * Attach all i2c devices described in the kernel
 		 * configuration file.

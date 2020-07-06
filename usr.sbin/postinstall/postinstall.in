@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# $NetBSD: postinstall.in,v 1.23 2020/06/03 11:47:46 roy Exp $
+# $NetBSD: postinstall.in,v 1.30 2020/06/29 23:04:57 riastradh Exp $
 #
 # Copyright (c) 2002-2015 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -844,6 +844,55 @@ do_bluetooth()
 	return ${failed}
 }
 
+fixblock() {
+	local op="$1"
+	local target="${DEST_DIR}$2"
+
+	if [ ! -f "${target}" ]; then
+		continue
+	fi
+
+	if ${GREP} '[bB]lack' "${target}" > /dev/null; then
+		if [ "$1" = "check" ]; then
+			msg "Fix old configuration file(s)."
+			return 1
+		else
+			local p=$(${STAT} -f %Lp "${target}")
+			chmod u+w "${target}" || return 1
+			${SED} -i -e 's/\([bB]\)lack/\1lock/g' "${target}"
+			chmod "${p}" "${target}"
+		fi
+	fi
+}
+
+#
+#	blocklist update
+#
+additem blocklist "rename old files to blocklist"
+do_blocklist()
+{
+	[ -n "$1" ] || err 3 "USAGE: do_blocklist  fix|check"
+	local op="$1"
+
+	# if we are actually using blocklistd
+	for i in /var/db/blacklist.db /etc/blacklistd.conf; do
+		local old="${DEST_DIR}${i}"
+		if [ ! -f "${old}" ]; then
+			continue
+		elif [ "$1" = "check" ]; then
+			msg "Rename old file(s)."
+			return 1
+		fi
+		local new=$(echo "${old}" | ${SED} s/black/block/)
+		mv "${old}" "${new}" || return 1
+	done
+
+	for i in /etc/rc.conf /etc/npf.conf /etc/blocklistd.conf \
+	    /etc/defaults/rc.conf; do
+		fixblock "${op}" "${i}" || return 1
+	done
+}
+
 #
 #	ddbonpanic
 #
@@ -1073,7 +1122,7 @@ include_nis
 special_hosts
 special_media
 special_noauto
-special_null 
+special_null
 "
 	op="$1"
 	failed=0
@@ -1586,7 +1635,7 @@ do_rc()
 	fi
 
 	# Directories of external programs that have rc files (in bsd)
-	local rc_external_files="blacklist nsd unbound"
+	local rc_external_files="blocklist nsd unbound"
 
 	# rc* files in /etc/
 	# XXX: at least rc.conf and rc.local shouldn't be updated. PR/54741
@@ -1619,12 +1668,12 @@ do_rc()
 	failed=$(( ${failed} + $? ))
 
 	for i in ${rc_external_files}; do
-	    local rc_file 
+	    local rc_file
 	    case $i in
 	    *d) rc_file=${i};;
 	    *)	rc_file=${i}d;;
 	    esac
-		
+
 	    update_rc "${op}" "${dir}" ${rc_file} /sbin \
 		"${SRC_DIR}/external/bsd/$i/etc/rc.d"
 	    failed=$(( ${failed} + $? ))
@@ -2344,7 +2393,7 @@ listarchsubdirs() {
 		echo "@ARCHSUBDIRS@"
 	else
 		${SED} -n -e '/ARCHDIR_SUBDIR/s/[[:space:]]//gp' \
-		    ${SRC_DIR}/compat/archdirs.mk 
+		    ${SRC_DIR}/compat/archdirs.mk
 	fi
 }
 

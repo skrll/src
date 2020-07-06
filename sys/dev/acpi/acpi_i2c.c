@@ -1,4 +1,4 @@
-/* $NetBSD: acpi_i2c.c,v 1.5 2019/09/28 11:24:10 bouyer Exp $ */
+/* $NetBSD: acpi_i2c.c,v 1.7 2020/06/11 02:39:30 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_i2c.c,v 1.5 2019/09/28 11:24:10 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_i2c.c,v 1.7 2020/06/11 02:39:30 thorpej Exp $");
 
 #include <dev/acpi/acpireg.h>
 #include <dev/acpi/acpivar.h>
@@ -189,7 +189,7 @@ acpi_enter_i2c_device(struct acpi_devnode *ad, prop_array_t array)
 		name = ad->ad_name;
 	else
 		name = ad->ad_devinfo->HardwareId.String;
-	prop_dictionary_set_cstring(dev, "name", name);
+	prop_dictionary_set_string(dev, "name", name);
 	prop_dictionary_set_uint32(dev, "addr", i2cc.i2c_addr);
 	prop_dictionary_set_uint64(dev, "cookie", (uintptr_t)ad->ad_handle);
 	/* first search by name, then by CID */
@@ -203,7 +203,7 @@ acpi_enter_i2c_device(struct acpi_devnode *ad, prop_array_t array)
 	if (i2c_id != NULL) {
 		if (i2c_id->compat != NULL) {
 			prop_data_t data;
-			data = prop_data_create_data(i2c_id->compat,
+			data = prop_data_create_copy(i2c_id->compat,
 			    i2c_id->compatlen);
 			prop_dictionary_set(dev, "compatible", data);
 			prop_object_release(data);

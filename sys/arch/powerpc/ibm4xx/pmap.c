@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.85 2020/03/05 11:44:54 rin Exp $	*/
+/*	$NetBSD: pmap.c,v 1.89 2020/06/29 06:51:32 rin Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.85 2020/03/05 11:44:54 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.89 2020/06/29 06:51:32 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -123,14 +123,11 @@ static int pmap_bootstrap_done = 0;
 /* Event counters */
 struct evcnt tlbmiss_ev = EVCNT_INITIALIZER(EVCNT_TYPE_TRAP,
 	NULL, "cpu", "tlbmiss");
-struct evcnt tlbhit_ev = EVCNT_INITIALIZER(EVCNT_TYPE_TRAP,
-	NULL, "cpu", "tlbhit");
 struct evcnt tlbflush_ev = EVCNT_INITIALIZER(EVCNT_TYPE_TRAP,
 	NULL, "cpu", "tlbflush");
 struct evcnt tlbenter_ev = EVCNT_INITIALIZER(EVCNT_TYPE_TRAP,
 	NULL, "cpu", "tlbenter");
 EVCNT_ATTACH_STATIC(tlbmiss_ev);
-EVCNT_ATTACH_STATIC(tlbhit_ev);
 EVCNT_ATTACH_STATIC(tlbflush_ev);
 EVCNT_ATTACH_STATIC(tlbenter_ev);
 
@@ -1175,25 +1172,26 @@ pmap_procwr(struct proc *p, vaddr_t va, size_t len)
 	}
 	__asm volatile(
 		"mfmsr %0;"
-		"li %1,0x20;"		/* Turn off IMMU */
+		"li %1, %7;"
 		"andc %1,%0,%1;"
-		"ori %1,%1,0x10;"	/* Turn on DMMU for sure */
 		"mtmsr %1;"
-		"sync;isync;"
+		"isync;"
 		"mfpid %1;"
 		"mtpid %2;"
-		"sync; isync;"
+		"isync;"
 		"1:"
 		"dcbst 0,%3;"
 		"icbi 0,%3;"
 		"add %3,%3,%5;"
 		"addc. %4,%4,%6;"
 		"bge 1b;"
+		"sync;"
 		"mtpid %1;"
 		"mtmsr %0;"
-		"sync; isync"
+		"isync;"
 		: "=&r" (msr), "=&r" (opid)
-		: "r" (ctx), "r" (va), "r" (len), "r" (step), "r" (-step));
+		: "r" (ctx), "r" (va), "r" (len), "r" (step), "r" (-step),
+		  "K" (PSL_IR | PSL_DR));
 }
 
 
@@ -1213,13 +1211,14 @@ ppc4xx_tlb_flush(vaddr_t va, int pid)
 		"mfmsr %2;"		/* Save MSR */
 		"li %0,0;"		/* Now clear MSR */
 		"mtmsr %0;"
+		"isync;"
 		"mtpid %4;"		/* Set PID */
-		"sync;"
+		"isync;"
 		"tlbsx. %0,0,%3;"	/* Search TLB */
-		"sync;"
+		"isync;"
 		"mtpid %1;"		/* Restore PID */
 		"mtmsr %2;"		/* Restore MSR */
-		"sync;isync;"
+		"isync;"
 		"li %1,1;"
 		"beq 1f;"
 		"li %1,0;"
@@ -1230,7 +1229,7 @@ ppc4xx_tlb_flush(vaddr_t va, int pid)
 		/* Now flush translation */
 		__asm volatile(
 			"tlbwe %0,%1,0;"
-			"sync;isync;"
+			"isync;"
 			: : "r" (0), "r" (i));
 
 		tlb_info[i].ti_ctx = 0;
@@ -1249,14 +1248,12 @@ ppc4xx_tlb_flush_all(void)
 	for (i = 0; i < NTLB; i++)
 		if (!TLB_LOCKED(i)) {
 			__asm volatile(
-				"tlbwe %0,%1,0;"
-				"sync;isync;"
-				: : "r" (0), "r" (i));
+				"tlbwe %0,%1,0;" : : "r" (0), "r" (i));
 			tlb_info[i].ti_ctx = 0;
 			tlb_info[i].ti_flags = 0;
 		}
 
-	__asm volatile("sync;isync");
+	__asm volatile("isync");
 }
 
 /* Find a TLB entry to evict. */
@@ -1321,14 +1318,15 @@ ppc4xx_tlb_enter(int ctx, vaddr_t va, u_int pte)
 		"mfmsr %0;"			/* Save MSR */
 		"li %1,0;"
 		"mtmsr %1;"			/* Clear MSR */
+		"isync;"
 		"tlbwe %1,%3,0;"		/* Invalidate old entry. */
 		"mfpid %1;"			/* Save old PID */
 		"mtpid %2;"			/* Load translation ctx */
-		"sync; isync;"
+		"isync;"
 		"tlbwe %4,%3,1; tlbwe %5,%3,0;"	/* Set TLB */
-		"sync; isync;"
+		"isync;"
 		"mtpid %1; mtmsr %0;"		/* Restore PID and MSR */
-		"sync; isync;"
+		"isync;"
 	: "=&r" (msr), "=&r" (pid)
 	: "r" (ctx), "r" (idx), "r" (tl), "r" (th));
 }
@@ -1352,7 +1350,7 @@ ppc4xx_tlb_init(void)
 
 	__asm volatile(
 		"mtspr %0,%1;"
-		"sync;"
+		"isync;"
 		::  "K"(SPR_ZPR), "r" (0x1b000000));
 }
 
@@ -1453,7 +1451,6 @@ ppc4xx_tlb_reserve(paddr_t pa, vaddr_t va, size_t size, int flags)
 	__asm volatile(
 	    "	tlbwe %1,%0,1 	\n" 	/* write TLBLO */
 	    "	tlbwe %2,%0,0 	\n" 	/* write TLBHI */
-	    "   sync 		\n"
 	    "	isync 		\n"
 	    : : "r" (tlb_nreserved), "r" (lo), "r" (hi));
 
@@ -1496,7 +1493,6 @@ pmap_tlbmiss(vaddr_t va, int ctx)
 		tte = TTE_PA(va) | TTE_ZONE(ZONE_PRIV) | TTE_SZ_16M | TTE_WR;
 #endif
 	}
-	tlbhit_ev.ev_count++;
 	ppc4xx_tlb_enter(ctx, va, tte);
 
 	return 0;

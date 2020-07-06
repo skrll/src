@@ -1,4 +1,4 @@
-/* $NetBSD: sysmon_envsys_util.c,v 1.5 2007/11/16 08:00:16 xtraeme Exp $ */
+/* $NetBSD: sysmon_envsys_util.c,v 1.7 2020/06/11 02:39:31 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2007 Juan Romero Pardines.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sysmon_envsys_util.c,v 1.5 2007/11/16 08:00:16 xtraeme Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sysmon_envsys_util.c,v 1.7 2020/06/11 02:39:31 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -78,7 +78,7 @@ sme_sensor_upint32(prop_dictionary_t dict, const char *key, int32_t val)
 
 	obj = prop_dictionary_get(dict, key);
 	if (obj) {
-		if (!prop_number_equals_integer(obj, val)) {
+		if (!prop_number_equals_signed(obj, val)) {
 			if (!prop_dictionary_set_int32(dict, key, val)) {
 				DPRINTF(("%s: (up) set_int32 %s:%d\n",
 				    __func__, key, val));
@@ -105,7 +105,7 @@ sme_sensor_upuint32(prop_dictionary_t dict, const char *key, uint32_t val)
 
 	obj = prop_dictionary_get(dict, key);
 	if (obj) {
-		if (!prop_number_equals_unsigned_integer(obj, val)) {
+		if (!prop_number_equals_unsigned(obj, val)) {
 			if (!prop_dictionary_set_uint32(dict, key, val)) {
 				DPRINTF(("%s: (up) set_uint32 %s:%d\n",
 				    __func__, key, val));
@@ -132,14 +132,14 @@ sme_sensor_upstring(prop_dictionary_t dict, const char *key, const char *str)
 
 	obj = prop_dictionary_get(dict, key);
 	if (obj == NULL) {
-		if (!prop_dictionary_set_cstring(dict, key, str)) {
+		if (!prop_dictionary_set_string(dict, key, str)) {
 			DPRINTF(("%s: (up) set_cstring %s:%s\n",
 			    __func__, key, str));
 			return EINVAL;
 		}
 	} else {
-		if (!prop_string_equals_cstring(obj, str)) {
-			if (!prop_dictionary_set_cstring(dict, key, str)) {
+		if (!prop_string_equals_string(obj, str)) {
+			if (!prop_dictionary_set_string(dict, key, str)) {
 				DPRINTF(("%s: (set) set_cstring %s:%s\n",
 				    __func__, key, str));
 				return EINVAL;
