@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ptrace_wait.h,v 1.30 2020/06/17 08:42:16 rin Exp $	*/
+/*	$NetBSD: t_ptrace_wait.h,v 1.32 2020/06/22 12:21:02 rin Exp $	*/
 
 /*-
  * Copyright (c) 2016, 2017, 2018, 2019 The NetBSD Foundation, Inc.
@@ -678,13 +678,27 @@ are_fpu_exceptions_supported(void)
 static void __used
 trigger_fpe(void)
 {
-	volatile double a = getpid();
-	volatile double b = atoi("0");
+#if __i386__ || __x86_64__
+	/*
+	 * XXX
+	 * Hack for QEMU bug #1668041, by which floating-point division by
+	 * zero is not trapped correctly. Also, assertions for si_code in
+	 * ptrace_signal_wait.h are commented out. Clean them up after the
+	 * bug is fixed.
+	 */
+	volatile int a, b;
+#else
+	volatile double a, b;
+#endif
+
+	a = getpid();
+	b = atoi("0");
 
 #ifdef __HAVE_FENV
 	feenableexcept(FE_ALL_EXCEPT);
 #endif
 
+	/* Division by zero causes CPU trap, translated to SIGFPE */
 	usleep((int)(a / b));
 }
 

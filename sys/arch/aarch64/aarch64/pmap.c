@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.78 2020/06/14 21:47:14 ad Exp $	*/
+/*	$NetBSD: pmap.c,v 1.83 2020/07/04 16:58:11 rin Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.78 2020/06/14 21:47:14 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.83 2020/07/04 16:58:11 rin Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
@@ -131,7 +131,7 @@ PMAP_COUNTER(fixup_modified, "page modification emulations");
 PMAP_COUNTER(kern_mappings_bad, "kernel pages mapped (bad color)");
 PMAP_COUNTER(kern_mappings_bad_wired, "kernel pages mapped (wired bad color)");
 PMAP_COUNTER(user_mappings_bad, "user pages mapped (bad color, not wired)");
-PMAP_COUNTER(user_mappings_bad_wired, "user pages mapped (bad colo, wiredr)");
+PMAP_COUNTER(user_mappings_bad_wired, "user pages mapped (bad color, wired)");
 PMAP_COUNTER(kern_mappings, "kernel pages mapped");
 PMAP_COUNTER(user_mappings, "user pages mapped");
 PMAP_COUNTER(user_mappings_changed, "user mapping changed");
@@ -448,10 +448,7 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	UVMHIST_FUNC(__func__);
 	UVMHIST_CALLED(pmaphist);
 
-#if 0
-	/* uvmexp.ncolors = icachesize / icacheways / PAGE_SIZE; */
 	uvmexp.ncolors = aarch64_cache_vindexsize / PAGE_SIZE;
-#endif
 
 	/* devmap already uses last of va? */
 	if (virtual_devmap_addr != 0 && virtual_devmap_addr < vend)
@@ -913,7 +910,7 @@ pmap_icache_sync_range(pmap_t pm, vaddr_t sva, vaddr_t eva)
 		pte = *ptep;
 		if (lxpde_valid(pte)) {
 			vaddr_t eob = (va + blocksize) & ~(blocksize - 1);
-			vsize_t len = ulmin(eva, eob - va);
+			vsize_t len = ulmin(eva, eob) - va;
 
 			if (l3pte_writable(pte)) {
 				cpu_icache_sync_range(va, len);
@@ -945,12 +942,26 @@ pmap_icache_sync_range(pmap_t pm, vaddr_t sva, vaddr_t eva)
  *
  */
 void
-pmap_procwr(struct proc *p, vaddr_t va, int len)
+pmap_procwr(struct proc *p, vaddr_t sva, int len)
 {
 
-	/* We only need to do anything if it is the current process. */
-	if (p == curproc)
-		cpu_icache_sync_range(va, len);
+	if (__predict_true(p == curproc))
+		cpu_icache_sync_range(sva, len);
+	else {
+		struct pmap *pm = p->p_vmspace->vm_map.pmap;
+		paddr_t pa;
+		vaddr_t va, eva;
+		int tlen;
+
+		for (va = sva; len > 0; va = eva, len -= tlen) {
+			eva = uimin(va + len, trunc_page(va + PAGE_SIZE));
+			tlen = eva - va;
+			if (!pmap_extract(pm, va, &pa))
+				continue;
+			va = AARCH64_PA_TO_KVA(pa);
+			cpu_icache_sync_range(va, tlen);
+		}
+	}
 }
 
 static pt_entry_t

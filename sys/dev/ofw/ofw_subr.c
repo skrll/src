@@ -1,4 +1,4 @@
-/*	$NetBSD: ofw_subr.c,v 1.36 2020/06/12 14:52:11 thorpej Exp $	*/
+/*	$NetBSD: ofw_subr.c,v 1.39 2020/06/26 10:14:32 martin Exp $	*/
 
 /*
  * Copyright 1998
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofw_subr.c,v 1.36 2020/06/12 14:52:11 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofw_subr.c,v 1.39 2020/06/26 10:14:32 martin Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -101,18 +101,18 @@ of_compatible(int phandle, const char * const *strings)
 {
 
 	int len, olen, allocated, nstr, cstr, rv;
-	char *buf;
+	char *buf, sbuf[OFW_MAX_STACK_BUF_SIZE];
 	const char *sp, *nsp;
 
 	len = OF_getproplen(phandle, "compatible");
 	if (len <= 0)
 		return (-1);
 
-	if (len > OFW_MAX_STACK_BUF_SIZE) {
+	if (len > sizeof(sbuf)) {
 		buf = malloc(len, M_TEMP, M_WAITOK);
 		allocated = 1;
 	} else {
-		buf = alloca(len);
+		buf = sbuf;
 		allocated = 0;
 	}
 
