@@ -1873,7 +1873,7 @@ uhci_alloc_std(uhci_softc_t *sc)
 	sc->sc_freetds = std->link.std;
 	mutex_exit(&sc->sc_lock);
 
-	memset(&std->td, 0, sizeof(uhci_td_t));
+	memset(std->td, 0, sizeof(*std->td));
 
 	return std;
 }
@@ -1946,7 +1946,7 @@ uhci_alloc_sqh(uhci_softc_t *sc)
 	sc->sc_freeqhs = sqh->hlink;
 	mutex_exit(&sc->sc_lock);
 
-	memset(&sqh->qh, 0, sizeof(uhci_qh_t));
+	memset(sqh->qh, 0, sizeof(*sqh->qh));
 
 	return sqh;
 }

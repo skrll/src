@@ -1527,7 +1527,7 @@ ehci_allocx(struct usbd_bus *bus, unsigned int nframes)
 
 	xfer = pool_cache_get(sc->sc_xferpool, PR_WAITOK);
 	if (xfer != NULL) {
-		memset(xfer, 0, sizeof(struct ehci_xfer));
+		memset(xfer, 0, sizeof(*xfer));
 
 #ifdef DIAGNOSTIC
 		struct ehci_xfer *ex = EHCI_XFER2EXFER(xfer);
@@ -2834,7 +2834,7 @@ ehci_alloc_sqh(ehci_softc_t *sc)
 	sc->sc_freeqhs = sqh->next;
 	mutex_exit(&sc->sc_lock);
 
-	memset(&sqh->qh, 0, sizeof(ehci_qh_t));
+	memset(sqh->qh, 0, sizeof(*sqh->qh));
 	sqh->next = NULL;
 	return sqh;
 }
@@ -2895,7 +2895,7 @@ ehci_alloc_sqtd(ehci_softc_t *sc)
 	sc->sc_freeqtds = sqtd->nextqtd;
 	mutex_exit(&sc->sc_lock);
 
-	memset(sqtd->qtd, 0, sizeof(ehci_qtd_t));
+	memset(sqtd->qtd, 0, sizeof(*sqtd->qtd));
 	sqtd->nextqtd = NULL;
 	sqtd->xfer = NULL;
 
@@ -3093,7 +3093,7 @@ ehci_reset_sqtd_chain(ehci_softc_t *sc, struct usbd_xfer *xfer,
 		    exfer->ex_nsqtd);
 		prev = sqtd;
 		sqtd = exfer->ex_sqtds[j++];
-		memset(sqtd->qtd, 0, sizeof(sqtd->qtd));
+		memset(sqtd->qtd, 0, sizeof(*sqtd->qtd));
 		sqtd->qtd->qtd_next = sqtd->qtd->qtd_altnext = EHCI_NULL;
 		sqtd->qtd->qtd_status = htole32(
 		    qtdstatus |
@@ -3157,7 +3157,7 @@ ehci_alloc_itd(ehci_softc_t *sc)
 	itd = freeitd;
 	LIST_REMOVE(itd, free_list);
 	mutex_exit(&sc->sc_lock);
-	memset(&itd->itd, 0, sizeof(ehci_itd_t));
+	memset(itd->itd, 0, sizeof(*itd->itd));
 
 	itd->frame_list.next = NULL;
 	itd->frame_list.prev = NULL;
@@ -3212,7 +3212,7 @@ ehci_alloc_sitd(ehci_softc_t *sc)
 	LIST_REMOVE(sitd, free_list);
 	mutex_exit(&sc->sc_lock);
 
-	memset(&sitd->sitd, 0, sizeof(ehci_sitd_t));
+	memset(sitd->sitd, 0, sizeof(*sitd->sitd));
 
 	sitd->frame_list.next = NULL;
 	sitd->frame_list.prev = NULL;

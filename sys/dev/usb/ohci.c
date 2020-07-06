@@ -434,7 +434,7 @@ ohci_alloc_sed(ohci_softc_t *sc)
 	sc->sc_freeeds = sed->next;
 	mutex_exit(&sc->sc_lock);
 
-	memset(&sed->ed, 0, sizeof(ohci_ed_t));
+	memset(sed->ed, 0, sizeof(*sed->ed));
 	sed->next = 0;
 	return sed;
 }
@@ -500,7 +500,7 @@ ohci_alloc_std(ohci_softc_t *sc)
 	sc->sc_freetds = std->nexttd;
 	mutex_exit(&sc->sc_lock);
 
-	memset(&std->td, 0, sizeof(ohci_td_t));
+	memset(std->td, 0, sizeof(*std->td));
 	std->nexttd = NULL;
 	std->xfer = NULL;
 
@@ -755,7 +755,7 @@ ohci_alloc_sitd(ohci_softc_t *sc)
 	sc->sc_freeitds = sitd->nextitd;
 	mutex_exit(&sc->sc_lock);
 
-	memset(&sitd->itd, 0, sizeof(ohci_itd_t));
+	memset(sitd->itd, 0, sizeof(*sitd->itd));
 	sitd->nextitd = NULL;
 	sitd->xfer = NULL;
 
@@ -2827,7 +2827,7 @@ ohci_device_ctrl_start(struct usbd_xfer *xfer)
 	usb_syncmem(&stat->dma, stat->offs, sizeof(stat->td),
 	    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
 
-	memset(&tail->td, 0, sizeof(tail->td));
+	memset(tail->td, 0, sizeof(*tail->td));
 	tail->nexttd = NULL;
 	tail->xfer = NULL;
 
@@ -3017,7 +3017,7 @@ ohci_device_bulk_start(struct usbd_xfer *xfer)
 
 	/* point at sentinel */
 	tail = opipe->tail.td;
-	memset(&tail->td, 0, sizeof(tail->td));
+	memset(tail->td, 0, sizeof(*tail->td));
 	tail->nexttd = NULL;
 	tail->xfer = NULL;
 	usb_syncmem(&tail->dma, tail->offs, sizeof(tail->td),
@@ -3216,7 +3216,7 @@ ohci_device_intr_start(struct usbd_xfer *xfer)
 
 	/* point at sentinel */
 	tail = opipe->tail.td;
-	memset(&tail->td, 0, sizeof(tail->td));
+	memset(tail->td, 0, sizeof(*tail->td));
 	tail->nexttd = NULL;
 	tail->xfer = NULL;
 	usb_syncmem(&tail->dma, tail->offs, sizeof(tail->td),
@@ -3604,7 +3604,7 @@ ohci_device_isoc_enter(struct usbd_xfer *xfer)
 
 	/* point at sentinel */
 	tail = opipe->tail.itd;
-	memset(&tail->itd, 0, sizeof(tail->itd));
+	memset(tail->itd, 0, sizeof(*tail->itd));
 	tail->nextitd = NULL;
 	tail->xfer = NULL;
 	usb_syncmem(&tail->dma, tail->offs, sizeof(tail->itd),
