@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_pip.c,v 1.4 2020/05/31 06:27:06 simonb Exp $	*/
+/*	$NetBSD: octeon_pip.c,v 1.8 2020/06/23 05:18:02 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -27,9 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: octeon_pip.c,v 1.4 2020/05/31 06:27:06 simonb Exp $");
-
-#include "opt_octeon.h"
+__KERNEL_RCSID(0, "$NetBSD: octeon_pip.c,v 1.8 2020/06/23 05:18:02 simonb Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -37,82 +35,68 @@ __KERNEL_RCSID(0, "$NetBSD: octeon_pip.c,v 1.4 2020/05/31 06:27:06 simonb Exp $"
 #include <sys/syslog.h>
 #include <sys/time.h>
 #include <net/if.h>
+
 #include <mips/locore.h>
+
 #include <mips/cavium/octeonvar.h>
+#include <mips/cavium/dev/octeon_gmxreg.h>
 #include <mips/cavium/dev/octeon_pipreg.h>
 #include <mips/cavium/dev/octeon_pipvar.h>
+#include <mips/cavium/include/iobusvar.h>
 
-#ifdef CNMAC_DEBUG
-struct octpip_softc *__octpip_softc;
+static int	octpip_match(device_t, struct cfdata *, void *);
+static void	octpip_attach(device_t, device_t, void *);
 
-void			octpip_intr_evcnt_attach(struct octpip_softc *);
-void			octpip_intr_rml(void *);
+CFATTACH_DECL_NEW(octpip, sizeof(struct octpip_softc),
+    octpip_match, octpip_attach, NULL, NULL);
 
-void			octpip_dump(void);
-void			octpip_int_enable(struct octpip_softc *, int);
-#endif
+static int
+octpip_match(device_t parent, struct cfdata *cf, void *aux)
+{
+	struct iobus_attach_args *aa = aux;
 
-/*
- * register definitions (for debug and statics)
- */
-#define	_ENTRY(x)	{ #x, x##_BITS, x##_OFFSET }
-#define	_ENTRY_0_3(x) \
-	_ENTRY(x## 0), _ENTRY(x## 1), _ENTRY(x## 2), _ENTRY(x## 3)
-#define	_ENTRY_0_7(x) \
-	_ENTRY(x## 0), _ENTRY(x## 1), _ENTRY(x## 2), _ENTRY(x## 3), \
-	_ENTRY(x## 4), _ENTRY(x## 5), _ENTRY(x## 6), _ENTRY(x## 7)
-#define	_ENTRY_0_1_2_32(x) \
-	_ENTRY(x## 0), _ENTRY(x## 1), _ENTRY(x## 2), _ENTRY(x##32)
+	if (strcmp(cf->cf_name, aa->aa_name) != 0)
+		return 0;
+	return 1;
+}
 
-struct octpip_dump_reg_ {
-	const char *name;
-	const char *format;
-	size_t	offset;
-};
+static void
+octpip_attach(device_t parent, device_t self, void *aux)
+{
+	struct octpip_softc *sc = device_private(self);
+	struct iobus_attach_args *aa = aux;
+	struct iobus_attach_args gmxaa;
+	struct iobus_unit gmxiu;
+	int i, ndevs;
 
-static const struct octpip_dump_reg_ octpip_dump_stats_[] = {
-/* PIP_QOS_DIFF[0-63] */
-	_ENTRY_0_1_2_32	(PIP_STAT0_PRT),
-	_ENTRY_0_1_2_32	(PIP_STAT1_PRT),
-	_ENTRY_0_1_2_32	(PIP_STAT2_PRT),
-	_ENTRY_0_1_2_32	(PIP_STAT3_PRT),
-	_ENTRY_0_1_2_32	(PIP_STAT4_PRT),
-	_ENTRY_0_1_2_32	(PIP_STAT5_PRT),
-	_ENTRY_0_1_2_32	(PIP_STAT6_PRT),
-	_ENTRY_0_1_2_32	(PIP_STAT7_PRT),
-	_ENTRY_0_1_2_32	(PIP_STAT8_PRT),
-	_ENTRY_0_1_2_32	(PIP_STAT9_PRT),
-/* PIP_TAG_INC[0-63] */
-	_ENTRY_0_1_2_32	(PIP_STAT_INB_PKTS),
-	_ENTRY_0_1_2_32	(PIP_STAT_INB_OCTS),
-	_ENTRY_0_1_2_32	(PIP_STAT_INB_ERRS),
-};
+	sc->sc_dev = self;
 
-#ifdef CNMAC_DEBUG
-static const struct octpip_dump_reg_ octpip_dump_regs_[] = {
-	_ENTRY		(PIP_BIST_STATUS),
-	_ENTRY		(PIP_INT_REG),
-	_ENTRY		(PIP_INT_EN),
-	_ENTRY		(PIP_STAT_CTL),
-	_ENTRY		(PIP_GBL_CTL),
-	_ENTRY		(PIP_GBL_CFG),
-	_ENTRY		(PIP_SOFT_RST),
-	_ENTRY		(PIP_IP_OFFSET),
-	_ENTRY		(PIP_TAG_SECRET),
-	_ENTRY		(PIP_TAG_MASK),
-	_ENTRY_0_3	(PIP_DEC_IPSEC),
-	_ENTRY		(PIP_RAW_WORD),
-	_ENTRY_0_7	(PIP_QOS_VLAN),
-	_ENTRY_0_3	(PIP_QOS_WATCH),
-	_ENTRY_0_1_2_32	(PIP_PRT_CFG),
-	_ENTRY_0_1_2_32	(PIP_PRT_TAG),
-};
-#endif
+	aprint_normal("\n");
 
-#undef	_ENTRY
-#undef	_ENTRY_0_3
-#undef	_ENTRY_0_7
-#undef	_ENTRY_0_1_2_32
+	/*
+	 * XXX: In a non-FDT world, should allow for the configuration
+	 * of multple GMX devices.
+	 */
+	ndevs = 1;
+
+	for (i = 0; i < ndevs; i++) {
+		memcpy(&gmxaa, aa, sizeof(gmxaa));
+		memset(&gmxiu, 0, sizeof(gmxiu));
+
+		gmxaa.aa_name = "octgmx";
+		gmxaa.aa_unitno = i;
+		gmxaa.aa_unit = &gmxiu;
+		gmxaa.aa_bust = aa->aa_bust;
+		gmxaa.aa_dmat = aa->aa_dmat;
+
+		if (MIPS_PRID_IMPL(mips_options.mips_cpu_id) == MIPS_CN68XX)
+			gmxiu.addr = GMX_CN68XX_BASE_PORT(i, 0);
+		else
+			gmxiu.addr = GMX_BASE_PORT(i, 0);
+
+		config_found(self, &gmxaa, NULL);
+	}
+}
 
 /* XXX */
 void
@@ -137,13 +121,6 @@ octpip_init(struct octpip_attach_args *aa, struct octpip_softc **rsc)
 		panic("can't map %s space", "pip register");
 
 	*rsc = sc;
-
-#ifdef CNMAC_DEBUG
-	octpip_int_enable(sc, 1);
-	octpip_intr_evcnt_attach(sc);
-	__octpip_softc = sc;
-	printf("PIP Code initialized.\n");
-#endif
 }
 
 #define	_PIP_RD8(sc, off) \
@@ -169,10 +146,10 @@ octpip_port_config(struct octpip_softc *sc)
 	}
 	/* RAWDRP=0; don't allow raw packet drop */
 	/* TAGINC=0 */
-	SET(prt_cfg, PIP_PRT_CFGN_DYN_RS);
+	/* DYN_RS=0; disable dynamic short buffering */
 	/* INST_HDR=0 */
 	/* GRP_WAT=0 */
-	SET(prt_cfg, (sc->sc_port << 24) & PIP_PRT_CFGN_QOS);
+	SET(prt_cfg, __SHIFTIN(sc->sc_port, PIP_PRT_CFGN_QOS));
 	/* QOS_WAT=0 */
 	/* SPARE=0 */
 	/* QOS_DIFF=0 */
@@ -192,11 +169,11 @@ octpip_port_config(struct octpip_softc *sc)
 	CLR(prt_tag, PIP_PRT_TAGN_IP4_SRC);
 	CLR(prt_tag, PIP_PRT_TAGN_IP6_SRC);
 	CLR(prt_tag, PIP_PRT_TAGN_IP4_DST);
-	SET(prt_tag, PIP_PRT_TAGN_TCP6_TAG_ORDERED);
-	SET(prt_tag, PIP_PRT_TAGN_TCP4_TAG_ORDERED);
-	SET(prt_tag, PIP_PRT_TAGN_IP6_TAG_ORDERED);
-	SET(prt_tag, PIP_PRT_TAGN_IP4_TAG_ORDERED);
-	SET(prt_tag, PIP_PRT_TAGN_NON_TAG_ORDERED);
+	SET(prt_tag, __SHIFTIN(PIP_PRT_TAGN_TCP6_TAG_ORDERED, PIP_PRT_TAGN_TCP6_TAG));
+	SET(prt_tag, __SHIFTIN(PIP_PRT_TAGN_TCP4_TAG_ORDERED, PIP_PRT_TAGN_TCP4_TAG));
+	SET(prt_tag, __SHIFTIN(PIP_PRT_TAGN_IP6_TAG_ORDERED, PIP_PRT_TAGN_IP6_TAG));
+	SET(prt_tag, __SHIFTIN(PIP_PRT_TAGN_IP4_TAG_ORDERED, PIP_PRT_TAGN_IP4_TAG));
+	SET(prt_tag, __SHIFTIN(PIP_PRT_TAGN_NON_TAG_ORDERED, PIP_PRT_TAGN_NON_TAG));
 	SET(prt_tag, sc->sc_receive_group & PIP_PRT_TAGN_GRP);
 
 	ip_offset = 0;
@@ -225,7 +202,6 @@ octpip_prt_cfg_enable(struct octpip_softc *sc, uint64_t prt_cfg, int enable)
 void
 octpip_stats(struct octpip_softc *sc, struct ifnet *ifp, int gmx_port)
 {
-	const struct octpip_dump_reg_ *reg;
 	uint64_t tmp, pkts;
 	uint64_t pip_stat_ctl;
 
@@ -233,166 +209,16 @@ octpip_stats(struct octpip_softc *sc, struct ifnet *ifp, int gmx_port)
 		panic("%s: invalid argument. sc=%p, ifp=%p\n", __func__,
 			sc, ifp);
 
-	if (gmx_port < 0 || gmx_port > 2) {
+	if (gmx_port < 0 || gmx_port > GMX_PORT_NUNITS) {
 		printf("%s: invalid gmx_port %d\n", __func__, gmx_port);
 		return;
 	}
 
 	pip_stat_ctl = _PIP_RD8(sc, PIP_STAT_CTL_OFFSET);
 	_PIP_WR8(sc, PIP_STAT_CTL_OFFSET, pip_stat_ctl | PIP_STAT_CTL_RDCLR);
-	reg = &octpip_dump_stats_[gmx_port];
-	tmp = _PIP_RD8(sc, reg->offset);
-	pkts = (tmp & 0xffffffff00000000ULL) >> 32;
+	tmp = _PIP_RD8(sc, PIP_STAT0_PRT_OFFSET(gmx_port));
+	pkts = __SHIFTOUT(tmp, PIP_STAT0_PRTN_DRP_PKTS);
 	if_statadd(ifp, if_iqdrops, pkts);
 
 	_PIP_WR8(sc, PIP_STAT_CTL_OFFSET, pip_stat_ctl);
 }
-
-
-#ifdef CNMAC_DEBUG
-int			octpip_intr_rml_verbose;
-struct evcnt		octpip_intr_evcnt;
-
-static const struct octeon_evcnt_entry octpip_intr_evcnt_entries[] = {
-#define	_ENTRY(name, type, parent, descr) \
-	OCTEON_EVCNT_ENTRY(struct octpip_softc, name, type, parent, descr)
-	_ENTRY(pipbeperr,	MISC, NULL, "pip parity error backend"),
-	_ENTRY(pipfeperr,	MISC, NULL, "pip parity error frontend"),
-	_ENTRY(pipskprunt,	MISC, NULL, "pip skiper"),
-	_ENTRY(pipbadtag,	MISC, NULL, "pip bad tag"),
-	_ENTRY(pipprtnxa,	MISC, NULL, "pip nonexistent port"),
-	_ENTRY(pippktdrp,	MISC, NULL, "pip qos drop"),
-#undef	_ENTRY
-};
-
-void
-octpip_intr_evcnt_attach(struct octpip_softc *sc)
-{
-	OCTEON_EVCNT_ATTACH_EVCNTS(sc, octpip_intr_evcnt_entries, "pip0");
-}
-
-void
-octpip_intr_rml(void *arg)
-{
-	struct octpip_softc *sc;
-	uint64_t reg;
-
-	octpip_intr_evcnt.ev_count++;
-	sc = __octpip_softc;
-	KASSERT(sc != NULL);
-	reg = octpip_int_summary(sc);
-	if (octpip_intr_rml_verbose)
-		printf("%s: PIP_INT_REG=0x%016" PRIx64 "\n", __func__, reg);
-	if (reg & PIP_INT_REG_BEPERR)
-		OCTEON_EVCNT_INC(sc, pipbeperr);
-	if (reg & PIP_INT_REG_FEPERR)
-		OCTEON_EVCNT_INC(sc, pipfeperr);
-	if (reg & PIP_INT_REG_SKPRUNT)
-		OCTEON_EVCNT_INC(sc, pipskprunt);
-	if (reg & PIP_INT_REG_BADTAG)
-		OCTEON_EVCNT_INC(sc, pipbadtag);
-	if (reg & PIP_INT_REG_PRTNXA)
-		OCTEON_EVCNT_INC(sc, pipprtnxa);
-	if (reg & PIP_INT_REG_PKTDRP)
-		OCTEON_EVCNT_INC(sc, pippktdrp);
-}
-
-void		octpip_dump_regs(void);
-void		octpip_dump_stats(void);
-
-void
-octpip_dump(void)
-{
-	octpip_dump_regs();
-	octpip_dump_stats();
-}
-
-void
-octpip_dump_regs(void)
-{
-	struct octpip_softc *sc = __octpip_softc;
-	const struct octpip_dump_reg_ *reg;
-	uint64_t tmp;
-	char buf[512];
-	int i;
-
-	for (i = 0; i < (int)__arraycount(octpip_dump_regs_); i++) {
-		reg = &octpip_dump_regs_[i];
-		tmp = _PIP_RD8(sc, reg->offset);
-		if (reg->format == NULL) {
-			snprintf(buf, sizeof(buf), "%16" PRIx64, tmp);
-		} else {
-			snprintb(buf, sizeof(buf), reg->format, tmp);
-		}
-		printf("\t%-24s: %s\n", reg->name, buf);
-	}
-}
-
-void
-octpip_dump_stats(void)
-{
-	struct octpip_softc *sc = __octpip_softc;
-	const struct octpip_dump_reg_ *reg;
-	uint64_t tmp;
-	char buf[512];
-	int i;
-	uint64_t pip_stat_ctl;
-
-	pip_stat_ctl = _PIP_RD8(sc, PIP_STAT_CTL_OFFSET);
-	_PIP_WR8(sc, PIP_STAT_CTL_OFFSET, pip_stat_ctl & ~PIP_STAT_CTL_RDCLR);
-	for (i = 0; i < (int)__arraycount(octpip_dump_stats_); i++) {
-		reg = &octpip_dump_stats_[i];
-		tmp = _PIP_RD8(sc, reg->offset);
-		if (reg->format == NULL) {
-			snprintf(buf, sizeof(buf), "%16" PRIx64, tmp);
-		} else {
-			snprintb(buf, sizeof(buf), reg->format, tmp);
-		}
-		printf("\t%-24s: %s\n", reg->name, buf);
-	}
-	printf("\t%-24s:\n", "PIP_QOS_DIFF[0-63]");
-	for (i = 0; i < 64; i++) {
-		tmp = _PIP_RD8(sc, PIP_QOS_DIFF0_OFFSET + sizeof(uint64_t) * i);
-		snprintf(buf, sizeof(buf), "%16" PRIx64, tmp);
-		printf("%s\t%s%s",
-		    ((i % 4) == 0) ? "\t" : "",
-		    buf,
-		    ((i % 4) == 3) ? "\n" : "");
-	}
-	printf("\t%-24s:\n", "PIP_TAG_INC[0-63]");
-	for (i = 0; i < 64; i++) {
-		tmp = _PIP_RD8(sc, PIP_TAG_INC0_OFFSET + sizeof(uint64_t) * i);
-		snprintf(buf, sizeof(buf), "%16" PRIx64, tmp);
-		printf("%s\t%s%s",
-		    ((i % 4) == 0) ? "\t" : "",
-		    buf,
-		    ((i % 4) == 3) ? "\n" : "");
-	}
-	_PIP_WR8(sc, PIP_STAT_CTL_OFFSET, pip_stat_ctl);
-}
-
-void
-octpip_int_enable(struct octpip_softc *sc, int enable)
-{
-	uint64_t pip_int_xxx = 0;
-
-	SET(pip_int_xxx,
-	    PIP_INT_EN_BEPERR |
-	    PIP_INT_EN_FEPERR |
-	    PIP_INT_EN_SKPRUNT |
-	    PIP_INT_EN_BADTAG |
-	    PIP_INT_EN_PRTNXA |
-	    PIP_INT_EN_PKTDRP);
-	_PIP_WR8(sc, PIP_INT_REG_OFFSET, pip_int_xxx);
-	_PIP_WR8(sc, PIP_INT_EN_OFFSET, enable ? pip_int_xxx : 0);
-}
-uint64_t
-octpip_int_summary(struct octpip_softc *sc)
-{
-	uint64_t summary;
-
-	summary = _PIP_RD8(sc, PIP_INT_REG_OFFSET);
-	_PIP_WR8(sc, PIP_INT_REG_OFFSET, summary);
-	return summary;
-}
-#endif /* CNMAC_DEBUG */

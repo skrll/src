@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_pipvar.h,v 1.2 2020/05/31 06:27:06 simonb Exp $	*/
+/*	$NetBSD: octeon_pipvar.h,v 1.5 2020/06/23 05:18:02 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -32,20 +32,13 @@
 
 /* XXX */
 struct octpip_softc {
+	device_t		sc_dev;
 	int			sc_port;
 	bus_space_tag_t		sc_regt;
 	bus_space_handle_t	sc_regh;
 	int			sc_tag_type;
 	int			sc_receive_group;
 	size_t			sc_ip_offset;
-#ifdef CNMAC_DEBUG
-	struct evcnt		sc_ev_pipbeperr;
-	struct evcnt		sc_ev_pipfeperr;
-	struct evcnt		sc_ev_pipskprunt;
-	struct evcnt		sc_ev_pipbadtag;
-	struct evcnt		sc_ev_pipprtnxa;
-	struct evcnt		sc_ev_pippktdrp;
-#endif
 };
 
 /* XXX */
@@ -63,17 +56,5 @@ void		octpip_gbl_ctl_debug(struct octpip_softc *);
 int		octpip_port_config(struct octpip_softc *);
 void		octpip_prt_cfg_enable(struct octpip_softc *, uint64_t, int);
 void		octpip_stats(struct octpip_softc *, struct ifnet *, int);
-#ifdef CNMAC_DEBUG
-void		octpip_int_enable(struct octpip_softc *, int);
-void		octpip_dump(void);
-void		octpip_dump_regs(void);
-void		octpip_dump_stats(void);
-#endif /* CNMAC_DEBUG */
 
-#ifdef CNMAC_DEBUG
-void		octpip_int_enable(struct octpip_softc *, int);
-uint64_t	octpip_int_summary(struct octpip_softc *);
-#endif /* CNMAC_DEBUG */
-
-
-#endif
+#endif /* _OCTEON_PIPVAR_H_ */

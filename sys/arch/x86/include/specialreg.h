@@ -1,7 +1,7 @@
-/*	$NetBSD: specialreg.h,v 1.166 2020/06/01 08:32:39 msaitoh Exp $	*/
+/*	$NetBSD: specialreg.h,v 1.168 2020/06/18 16:27:24 maxv Exp $	*/
 
 /*
- * Copyright (c) 2014-2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2014-2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -294,10 +294,10 @@
 		? 0 : (CPUID_TO_EXTMODEL(cpuid) << 4)))
 
 /* CPUID Fn00000001 %ebx */
-#define	CPUID_BRAND_INDEX	__BITS(7,0)
-#define	CPUID_CLFLUSH_SIZE	__BITS(15,8)
-#define	CPUID_HTT_CORES		__BITS(23,16)
-#define	CPUID_LOCAL_APIC_ID	__BITS(31,24)
+#define CPUID_BRAND_INDEX	__BITS(7,0)
+#define CPUID_CLFLUSH_SIZE	__BITS(15,8)
+#define CPUID_HTT_CORES		__BITS(23,16)
+#define CPUID_LOCAL_APIC_ID	__BITS(31,24)
 
 /*
  * Intel Deterministic Cache Parameter Leaf
@@ -389,7 +389,7 @@
 
 /*
  * Intel/AMD Structured Extended Feature leaf Fn0000_0007
- * %eax == 0: Subleaf 0
+ * %ecx == 0: Subleaf 0
  *	%eax: The Maximum input value for supported subleaf.
  *	%ebx: Feature bits.
  *	%ecx: Feature bits.
@@ -478,6 +478,7 @@
 #define CPUID_SEF_AVX512_4FMAPS	__BIT(3)
 #define CPUID_SEF_FSREP_MOV	__BIT(4)  /* Fast Short REP MOV */
 #define CPUID_SEF_AVX512_VP2INTERSECT __BIT(8)
+#define CPUID_SEF_SRBDS_CTRL	__BIT(9)  /* IA32_MCU_OPT_CTRL */
 #define CPUID_SEF_MD_CLEAR	__BIT(10)
 #define CPUID_SEF_TSX_FORCE_ABORT __BIT(13) /* MSR_TSX_FORCE_ABORT bit 0 */
 #define CPUID_SEF_SERIALIZE	__BIT(14)
@@ -494,7 +495,7 @@
 #define CPUID_SEF_FLAGS2	"\20" \
 				"\3" "AVX512_4VNNIW" "\4" "AVX512_4FMAPS" \
 	"\5" "FSREP_MOV"						\
-	"\11" "VP2INTERSECT"	"\13" "MD_CLEAR"			\
+	"\11VP2INTERSECT" "\12SRBDS_CTRL" "\13MD_CLEAR"			\
 			"\16TSX_FORCE_ABORT" "\17SERIALIZE" "\20HYBRID"	\
 	"\21" "TSXLDTRK"						\
 	"\25" "CET_IBT"							\

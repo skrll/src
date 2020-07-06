@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.S,v 1.59 2020/06/01 22:58:06 ad Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.63 2020/06/24 18:09:37 maxv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2008, 2020 The NetBSD Foundation, Inc.
@@ -206,38 +206,63 @@ ENTRY(x86_hotpatch)
 END(x86_hotpatch)
 #endif /* !XENPV */
 
-/* Could be exact same as cpu_counter, but KMSAN needs to have the correct
- * size of the return value. */
-ENTRY(cpu_counter32)
-	movq	CPUVAR(CURLWP), %rcx
-1:
-	movq	L_NCSW(%rcx), %rdi
-	rdtsc
-	addl	CPUVAR(CC_SKEW), %eax
-	cmpq	%rdi, L_NCSW(%rcx)
-	jne	2f
-	KMSAN_INIT_RET(4)
-	ret
-2:
-	jmp	1b
-END(cpu_counter32)
-STRONG_ALIAS(tsc_get_timecount, cpu_counter32)
+/*
+ * cpu_counter and cpu_counter32 could be exact same, but KMSAN needs to have
+ * the correct size of the return value.
+ */
+#define SERIALIZE_lfence	lfence
+#define SERIALIZE_mfence	mfence
 
-ENTRY(cpu_counter)
-	movq	CPUVAR(CURLWP), %rcx
-1:
-	movq	L_NCSW(%rcx), %rdi
-	rdtsc
-	shlq	$32, %rdx
-	orq	%rdx, %rax
-	addq	CPUVAR(CC_SKEW), %rax
-	cmpq	%rdi, L_NCSW(%rcx)
-	jne	2f
-	KMSAN_INIT_RET(8)
-	ret
-2:
-	jmp	1b
-END(cpu_counter)
+#define ADD_counter32	addl	CPUVAR(CC_SKEW), %eax
+#define ADD_counter	shlq	$32, %rdx		;\
+			orq	%rdx, %rax		;\
+			addq	CPUVAR(CC_SKEW), %rax
+
+#define RSIZE_counter32	4
+#define RSIZE_counter	8
+
+#define CPU_COUNTER_FENCE(counter, fence)	\
+ENTRY(cpu_ ## counter ## _ ## fence)		;\
+	movq	CPUVAR(CURLWP), %rcx		;\
+1:						;\
+	movq	L_NCSW(%rcx), %rdi		;\
+	SERIALIZE_ ## fence			;\
+	rdtsc					;\
+	ADD_ ## counter				;\
+	cmpq	%rdi, L_NCSW(%rcx)		;\
+	jne	2f				;\
+	KMSAN_INIT_RET(RSIZE_ ## counter)	;\
+	ret					;\
+2:						;\
+	jmp	1b				;\
+END(cpu_ ## counter ## _ ## fence)
+
+CPU_COUNTER_FENCE(counter, lfence)
+CPU_COUNTER_FENCE(counter, mfence)
+CPU_COUNTER_FENCE(counter32, lfence)
+CPU_COUNTER_FENCE(counter32, mfence)
+
+#define CPU_COUNTER_CPUID(counter)		\
+ENTRY(cpu_ ## counter ## _cpuid)		;\
+	movq	%rbx, %r9			;\
+	movq	CPUVAR(CURLWP), %r8		;\
+1:						;\
+	movq	L_NCSW(%r8), %rdi		;\
+	xor	%eax, %eax			;\
+	cpuid					;\
+	rdtsc					;\
+	ADD_ ## counter				;\
+	cmpq	%rdi, L_NCSW(%r8)		;\
+	jne	2f				;\
+	movq	%r9, %rbx			;\
+	KMSAN_INIT_RET(RSIZE_ ## counter)	;\
+	ret					;\
+2:						;\
+	jmp	1b				;\
+END(cpu_ ## counter ## _cpuid)
+
+CPU_COUNTER_CPUID(counter)
+CPU_COUNTER_CPUID(counter32)
 
 ENTRY(rdmsr_safe)
 	movq	CPUVAR(CURLWP), %r8
@@ -420,15 +445,6 @@ ENTRY(outl)
 	outl	%eax, %dx
 	ret
 END(outl)
-
-ENTRY(x86_stos)
-	movq	%rsi,%rax
-	movq	%rdx,%rcx
-	KMSAN_REP_STOS(8)
-	rep
-	stosq
-	ret
-END(x86_stos)
 
 ENTRY(x86_movs)
 	movq	%rdx,%rcx

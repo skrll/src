@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.5 2020/05/31 04:56:35 simonb Exp $	*/
+/*	$NetBSD: autoconf.c,v 1.8 2020/06/23 05:19:12 simonb Exp $	*/
 
 /*
  * Copyright 2002 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.5 2020/05/31 04:56:35 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.8 2020/06/23 05:19:12 simonb Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -72,15 +72,17 @@ cpu_configure(void)
 void
 cpu_rootconf(void)
 {
+
+#ifndef MEMORY_DISK_IS_ROOT
 	findroot();
+#endif
 
 	printf("boot device: %s\n",
-		booted_device ? booted_device->dv_xname : "<unknown>");
+		booted_device ? device_xname(booted_device) : "<unknown>");
 
 	rootconf();
 }
 
-extern char	bootstring[];
 extern int	netboot;
 
 static void
@@ -92,7 +94,23 @@ findroot(void)
 	if (booted_device)
 		return;
 
-	if ((booted_device == NULL) && netboot == 0) {
+	if (rootspec && *rootspec) {
+		/* XXX hard coded "cnmac" for network boot */
+		if (strncmp(rootspec, "cnmac", 5) == 0) {
+			rootfstype = "nfs";
+			netboot = 1;
+			return;
+		}
+		/*
+		 * XXX
+		 * Assume that if the root spec is not a cnmac, it'll
+		 * be a sd. handled below.  Should be fixed to handle
+		 * multiple sd devices.
+		 */
+	}
+
+	if (netboot == 0) {
+		/* if no root device specified, default to a "sd" device */
 		for (dv = deviter_first(&di, DEVITER_F_ROOT_FIRST); dv != NULL;
 		     dv = deviter_next(&di)) {
 			if (device_class(dv) == DV_DISK &&
@@ -131,17 +149,21 @@ prop_set_cnmac(device_t dev)
 	enaddr[3] = (mac_lo >> 16) & 0xff;
 	enaddr[4] = (mac_lo >> 8) & 0xff;
 	enaddr[5] = mac_lo & 0xff;
-	pd = prop_data_create_data(enaddr, ETHER_ADDR_LEN);
+	pd = prop_data_create_copy(enaddr, ETHER_ADDR_LEN);
 	KASSERT(pd != NULL);
 	prop_dictionary_set_and_rel(dict, "mac-address", pd);
 
 	/* ethernet phy address */
 	switch (octeon_btinfo.obt_board_type) {
 	case BOARD_TYPE_UBIQUITI_E100:
-		pn = prop_number_create_integer(0x07 - unit);
+	case BOARD_TYPE_UBIQUITI_E120:
+		pn = prop_number_create_signed(7 - unit);
+		break;
+	case BOARD_TYPE_UBIQUITI_E300:
+		pn = prop_number_create_signed(4 + dev->dv_unit);
 		break;
 	default:
-		pn = prop_number_create_integer(-1);
+		pn = prop_number_create_signed(-1);
 		break;
 	}
 	KASSERT(pn != NULL);
@@ -154,26 +176,25 @@ prop_set_octeon_gmx(device_t dev)
 	prop_dictionary_t dict = device_properties(dev);
 	prop_number_t tx, rx;
 
-	/* ethernet rgmii phy dependent timing parameter. */
+	/* ethernet rgmii phy dependent timing parameters. */
+	tx = rx = NULL;
 	switch (octeon_btinfo.obt_board_type) {
 	case BOARD_TYPE_UBIQUITI_E100:
-		tx = prop_number_create_integer(16);
-		rx = prop_number_create_integer(0);
-		break;
-	default:
-		tx = prop_number_create_integer(0);
-		rx = prop_number_create_integer(0);
+	case BOARD_TYPE_UBIQUITI_E120:
+		tx = prop_number_create_signed(16);
+		rx = prop_number_create_signed(0);
 		break;
 	}
-	KASSERT(tx != NULL);
-	KASSERT(rx != NULL);
-	prop_dictionary_set_and_rel(dict, "rgmii-tx", tx);
-	prop_dictionary_set_and_rel(dict, "rgmii-rx", rx);
+	if (tx)
+		prop_dictionary_set_and_rel(dict, "rgmii-tx", tx);
+	if (rx)
+		prop_dictionary_set_and_rel(dict, "rgmii-rx", rx);
 }
 
 void
 device_register(device_t dev, void *aux)
 {
+
 	if ((booted_device == NULL) && (netboot == 1))
 		if (device_class(dev) == DV_IFNET)
 			booted_device = dev;

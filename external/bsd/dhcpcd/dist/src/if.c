@@ -31,6 +31,8 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 
+#include <fcntl.h> /* Needs to be here for old Linux */
+
 #include "config.h"
 
 #include <net/if.h>
@@ -54,7 +56,6 @@
 #include <errno.h>
 #include <ifaddrs.h>
 #include <inttypes.h>
-#include <fcntl.h>
 #include <fnmatch.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -63,7 +64,9 @@
 #include <syslog.h>
 #include <unistd.h>
 
+#define ELOOP_QUEUE	ELOOP_IF
 #include "common.h"
+#include "eloop.h"
 #include "dev.h"
 #include "dhcp.h"
 #include "dhcp6.h"
@@ -107,6 +110,16 @@ if_opensockets(struct dhcpcd_ctx *ctx)
 	if (if_opensockets_os(ctx) == -1)
 		return -1;
 
+#ifdef IFLR_ACTIVE
+	ctx->pf_link_fd = xsocket(PF_LINK, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (ctx->pf_link_fd == -1)
+		return -1;
+#ifdef HAVE_CAPSICUM
+	if (ps_rights_limit_ioctl(ctx->pf_link_fd) == -1)
+		return -1;
+#endif
+#endif
+
 	/* We use this socket for some operations without INET. */
 	ctx->pf_inet_fd = xsocket(PF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	if (ctx->pf_inet_fd == -1)
@@ -121,6 +134,10 @@ if_closesockets(struct dhcpcd_ctx *ctx)
 
 	if (ctx->pf_inet_fd != -1)
 		close(ctx->pf_inet_fd);
+#ifdef PF_LINK
+	if (ctx->pf_link_fd != -1)
+		close(ctx->pf_link_fd);
+#endif
 
 	if (ctx->priv) {
 		if_closesockets_os(ctx);
@@ -327,7 +344,12 @@ if_learnaddrs(struct dhcpcd_ctx *ctx, struct if_head *ifs,
 		}
 	}
 
-	freeifaddrs(*ifaddrs);
+#ifdef PRIVSEP_GETIFADDRS
+	if (IN_PRIVSEP(ctx))
+		free(*ifaddrs);
+	else
+#endif
+		freeifaddrs(*ifaddrs);
 	*ifaddrs = NULL;
 }
 
@@ -364,6 +386,39 @@ if_valid_hwaddr(const uint8_t *hwaddr, size_t hwlen)
 	return false;
 }
 
+#if defined(AF_PACKET) && !defined(AF_LINK)
+static unsigned int
+if_check_arphrd(struct interface *ifp, unsigned int active, bool if_noconf)
+{
+
+	switch(ifp->hwtype) {
+	case ARPHRD_ETHER:	/* FALLTHROUGH */
+	case ARPHRD_IEEE1394:	/* FALLTHROUGH */
+	case ARPHRD_INFINIBAND:	/* FALLTHROUGH */
+	case ARPHRD_NONE:	/* FALLTHROUGH */
+		break;
+	case ARPHRD_LOOPBACK:
+	case ARPHRD_PPP:
+		if (if_noconf) {
+			logdebugx("%s: ignoring due to interface type and"
+			    " no config",
+			    ifp->name);
+			active = IF_INACTIVE;
+		}
+		break;
+	default:
+		if (if_noconf)
+			active = IF_INACTIVE;
+		if (active)
+			logwarnx("%s: unsupported interface type 0x%.2x",
+			    ifp->name, ifp->hwtype);
+		break;
+	}
+
+	return active;
+}
+#endif
+
 struct if_head *
 if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
     int argc, char * const *argv)
@@ -379,7 +434,6 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 	const struct sockaddr_dl *sdl;
 #ifdef IFLR_ACTIVE
 	struct if_laddrreq iflr = { .flags = IFLR_PREFIX };
-	int link_fd;
 #endif
 #elif defined(AF_PACKET)
 	const struct sockaddr_ll *sll;
@@ -394,7 +448,7 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 	}
 	TAILQ_INIT(ifs);
 
-#if defined(PRIVSEP) && defined(HAVE_CAPSICUM)
+#ifdef PRIVSEP_GETIFADDRS
 	if (ctx->options & DHCPCD_PRIVSEP) {
 		if (ps_root_getifaddrs(ctx, ifaddrs) == -1) {
 			logerr("ps_root_getifaddrs");
@@ -408,15 +462,6 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 		free(ifs);
 		return NULL;
 	}
-
-#ifdef IFLR_ACTIVE
-	link_fd = xsocket(PF_LINK, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-	if (link_fd == -1) {
-		logerr(__func__);
-		free(ifs);
-		return NULL;
-	}
-#endif
 
 	for (ifa = *ifaddrs; ifa; ifa = ifa->ifa_next) {
 		if (ifa->ifa_addr != NULL) {
@@ -514,7 +559,7 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 			    MIN(ifa->ifa_addr->sa_len, sizeof(iflr.addr)));
 			iflr.flags = IFLR_PREFIX;
 			iflr.prefixlen = (unsigned int)sdl->sdl_alen * NBBY;
-			if (ioctl(link_fd, SIOCGLIFADDR, &iflr) == -1 ||
+			if (ioctl(ctx->pf_link_fd, SIOCGLIFADDR, &iflr) == -1 ||
 			    !(iflr.flags & IFLR_ACTIVE))
 			{
 				if_free(ifp);
@@ -585,32 +630,27 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 			ifp->hwlen = sll->sll_halen;
 			if (ifp->hwlen != 0)
 				memcpy(ifp->hwaddr, sll->sll_addr, ifp->hwlen);
-
-			switch(ifp->hwtype) {
-			case ARPHRD_ETHER:	/* FALLTHROUGH */
-			case ARPHRD_IEEE1394:	/* FALLTHROUGH */
-			case ARPHRD_INFINIBAND:	/* FALLTHROUGH */
-			case ARPHRD_NONE:	/* FALLTHROUGH */
-				break;
-			case ARPHRD_LOOPBACK:
-			case ARPHRD_PPP:
-				if (if_noconf) {
-					logdebugx("%s: ignoring due to"
-					    " interface type and"
-					    " no config",
-					    ifp->name);
-					active = IF_INACTIVE;
-				}
-				break;
-			default:
-				if (active)
-					logwarnx("%s: unsupported"
-					    " interface type 0x%.2x",
-					    ifp->name, ifp->hwtype);
-				break;
-			}
+			active = if_check_arphrd(ifp, active, if_noconf);
 #endif
 		}
+#ifdef __linux__
+		else {
+			struct ifreq ifr = { .ifr_flags = 0 };
+
+			/* This is a huge bug in getifaddrs(3) as there
+			 * is no reason why this can't be returned in
+			 * ifa_addr. */
+			strlcpy(ifr.ifr_name, ifa->ifa_name,
+			    sizeof(ifr.ifr_name));
+			if (ioctl(ctx->pf_inet_fd, SIOCGIFHWADDR, &ifr) == -1)
+				logerr("%s: SIOCGIFHWADDR", ifa->ifa_name);
+			ifp->hwtype = ifr.ifr_hwaddr.sa_family;
+			if (ioctl(ctx->pf_inet_fd, SIOCGIFINDEX, &ifr) == -1)
+				logerr("%s: SIOCGIFINDEX", ifa->ifa_name);
+			ifp->index = (unsigned int)ifr.ifr_ifindex;
+			if_check_arphrd(ifp, active, if_noconf);
+		}
+#endif
 
 		if (!(ctx->options & (DHCPCD_DUMPLEASE | DHCPCD_TEST))) {
 			/* Handle any platform init for the interface */
@@ -648,10 +688,31 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 		TAILQ_INSERT_TAIL(ifs, ifp, next);
 	}
 
-#ifdef IFLR_ACTIVE
-	close(link_fd);
-#endif
 	return ifs;
+}
+
+static void
+if_poll(void *arg)
+{
+	struct interface *ifp = arg;
+	unsigned int flags = ifp->flags;
+	int carrier;
+
+	carrier = if_carrier(ifp); /* if_carrier will update ifp->flags */
+	if (ifp->carrier != carrier || ifp->flags != flags)
+		dhcpcd_handlecarrier(ifp->ctx, carrier, ifp->flags, ifp->name);
+
+	if (ifp->options->poll != 0 || ifp->carrier != LINK_UP)
+		if_pollinit(ifp);
+}
+
+int
+if_pollinit(struct interface *ifp)
+{
+	unsigned long msec;
+
+	msec = ifp->options->poll != 0 ? ifp->options->poll : IF_POLL_UP;
+	return eloop_timeout_add_msec(ifp->ctx->eloop, msec, if_poll, ifp);
 }
 
 /*

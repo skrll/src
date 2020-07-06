@@ -1,4 +1,4 @@
-/*	$NetBSD: if_se.c,v 1.104 2020/01/29 05:59:50 thorpej Exp $	*/
+/*	$NetBSD: if_se.c,v 1.108 2020/06/29 23:04:57 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1997 Ian W. Dall <ian.dall@dsto.defence.gov.au>
@@ -49,7 +49,7 @@
  * This driver is also a bit unusual. It must look like a network
  * interface and it must also appear to be a scsi device to the scsi
  * system. Hence there are cases where there are two entry points. eg
- * sestart is to be called from the scsi subsytem and se_ifstart from
+ * sedone is to be called from the scsi subsytem and se_ifstart from
  * the network interface subsystem.  In addition, to facilitate scsi
  * commands issued by userland programs, there are open, close and
  * ioctl entry points. This allows a user program to, for example,
@@ -59,10 +59,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_se.c,v 1.104 2020/01/29 05:59:50 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_se.c,v 1.108 2020/06/29 23:04:57 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
+#include "opt_net_mpsafe.h"
 #include "opt_atalk.h"
 #endif
 
@@ -83,6 +84,9 @@ __KERNEL_RCSID(0, "$NetBSD: if_se.c,v 1.104 2020/01/29 05:59:50 thorpej Exp $");
 #include <sys/disk.h>
 #include <sys/proc.h>
 #include <sys/conf.h>
+#include <sys/mutex.h>
+#include <sys/pcq.h>
+#include <sys/workqueue.h>
 
 #include <dev/scsipi/scsipi_all.h>
 #include <dev/scsipi/scsi_ctron_ether.h>
@@ -142,7 +146,9 @@ __KERNEL_RCSID(0, "$NetBSD: if_se.c,v 1.104 2020/01/29 05:59:50 thorpej Exp $");
 #define SE_POLL0 10		/* default in milliseconds */
 int se_poll = 0;		/* Delay in ticks set at attach time */
 int se_poll0 = 0;
+#ifdef SE_DEBUG
 int se_max_received = 0;	/* Instrumentation */
+#endif
 
 #define	PROTOCMD(p, d) \
 	((d) = (p))
@@ -173,8 +179,12 @@ struct se_softc {
 	struct ethercom sc_ethercom;	/* Ethernet common part */
 	struct scsipi_periph *sc_periph;/* contains our targ, lun, etc. */
 
-	struct callout sc_ifstart_ch;
 	struct callout sc_recv_ch;
+	struct kmutex sc_iflock;
+	struct if_percpuq *sc_ipq;
+	struct workqueue *sc_recv_wq, *sc_send_wq;
+	struct work sc_recv_work, sc_send_work;
+	int sc_recv_work_pending, sc_send_work_pending;
 
 	char *sc_tbuf;
 	char *sc_rbuf;
@@ -186,16 +196,16 @@ struct se_softc {
 #define PROTO_AARP	0x10
 	int sc_debug;
 	int sc_flags;
-#define SE_NEED_RECV 0x1
 	int sc_last_timeout;
 	int sc_enabled;
+	int sc_attach_state;
 };
 
 static int	sematch(device_t, cfdata_t, void *);
 static void	seattach(device_t, device_t, void *);
+static int	sedetach(device_t, int);
 
 static void	se_ifstart(struct ifnet *);
-static void	sestart(struct scsipi_periph *);
 
 static void	sedone(struct scsipi_xfer *, int);
 static int	se_ioctl(struct ifnet *, u_long, void *);
@@ -204,10 +214,12 @@ static void	sewatchdog(struct ifnet *);
 #if 0
 static inline uint16_t ether_cmp(void *, void *);
 #endif
-static void	se_recv(void *);
+static void	se_recv_callout(void *);
+static void	se_recv_worker(struct work *wk, void *cookie);
+static void	se_recv(struct se_softc *);
 static struct mbuf *se_get(struct se_softc *, char *, int);
 static int	se_read(struct se_softc *, char *, int);
-static int	se_reset(struct se_softc *);
+static void	se_reset(struct se_softc *);
 static int	se_add_proto(struct se_softc *, int);
 static int	se_get_addr(struct se_softc *, uint8_t *);
 static int	se_set_media(struct se_softc *, int);
@@ -223,14 +235,14 @@ static inline int se_scsipi_cmd(struct scsipi_periph *periph,
 			int cmdlen, u_char *data_addr, int datalen,
 			int retries, int timeout, struct buf *bp,
 			int flags);
-static void	se_delayed_ifstart(void *);
+static void	se_send_worker(struct work *wk, void *cookie);
 static int	se_set_mode(struct se_softc *, int, int);
 
 int	se_enable(struct se_softc *);
 void	se_disable(struct se_softc *);
 
 CFATTACH_DECL_NEW(se, sizeof(struct se_softc),
-    sematch, seattach, NULL, NULL);
+    sematch, seattach, sedetach, NULL);
 
 extern struct cfdriver se_cd;
 
@@ -250,14 +262,14 @@ const struct cdevsw se_cdevsw = {
 	.d_mmap = nommap,
 	.d_kqfilter = nokqfilter,
 	.d_discard = nodiscard,
-	.d_flag = D_OTHER
+	.d_flag = D_OTHER | D_MPSAFE
 };
 
 const struct scsipi_periphsw se_switch = {
 	NULL,			/* Use default error handler */
-	sestart,		/* have a queue, served by this */
+	NULL,			/* have no queue */
 	NULL,			/* have no async handler */
-	sedone,			/* deal with stats at interrupt time */
+	sedone,			/* deal with send/recv completion */
 };
 
 const struct scsipi_inquiry_pattern se_patterns[] = {
@@ -312,6 +324,7 @@ seattach(device_t parent, device_t self, void *aux)
 	struct scsipi_periph *periph = sa->sa_periph;
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 	uint8_t myaddr[ETHER_ADDR_LEN];
+	char wqname[MAXCOMLEN];
 	int rv;
 
 	sc->sc_dev = self;
@@ -319,8 +332,9 @@ seattach(device_t parent, device_t self, void *aux)
 	printf("\n");
 	SC_DEBUG(periph, SCSIPI_DB2, ("seattach: "));
 
-	callout_init(&sc->sc_ifstart_ch, 0);
-	callout_init(&sc->sc_recv_ch, 0);
+	sc->sc_attach_state = 0;
+	callout_init(&sc->sc_recv_ch, CALLOUT_MPSAFE);
+	mutex_init(&sc->sc_iflock, MUTEX_DEFAULT, IPL_SOFTNET);
 
 	/*
 	 * Store information needed to contact our base driver
@@ -329,21 +343,17 @@ seattach(device_t parent, device_t self, void *aux)
 	periph->periph_dev = sc->sc_dev;
 	periph->periph_switch = &se_switch;
 
-	/* XXX increase openings? */
-
 	se_poll = (SE_POLL * hz) / 1000;
 	se_poll = se_poll? se_poll: 1;
 	se_poll0 = (SE_POLL0 * hz) / 1000;
 	se_poll0 = se_poll0? se_poll0: 1;
 
 	/*
-	 * Initialize and attach a buffer
+	 * Initialize and attach send and receive buffers
 	 */
 	sc->sc_tbuf = malloc(ETHERMTU + sizeof(struct ether_header),
 			     M_DEVBUF, M_WAITOK);
-	sc->sc_rbuf = malloc(RBUF_LEN, M_DEVBUF, M_WAITOK);/* A Guess */
-
-	se_get_addr(sc, myaddr);
+	sc->sc_rbuf = malloc(RBUF_LEN, M_DEVBUF, M_WAITOK);
 
 	/* Initialize ifnet structure. */
 	strlcpy(ifp->if_xname, device_xname(sc->sc_dev), sizeof(ifp->if_xname));
@@ -352,21 +362,91 @@ seattach(device_t parent, device_t self, void *aux)
 	ifp->if_ioctl = se_ioctl;
 	ifp->if_watchdog = sewatchdog;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
+	ifp->if_extflags = IFEF_MPSAFE;
 	IFQ_SET_READY(&ifp->if_snd);
+
+	se_get_addr(sc, myaddr);
+	sc->sc_attach_state = 1;
 
 	/* Attach the interface. */
 	rv = if_initialize(ifp);
 	if (rv != 0) {
-		free(sc->sc_tbuf, M_DEVBUF);
-		callout_destroy(&sc->sc_ifstart_ch);
-		callout_destroy(&sc->sc_recv_ch);
+		sedetach(sc->sc_dev, 0);
 		return; /* Error */
 	}
+
+	snprintf(wqname, sizeof(wqname), "%sRx", device_xname(sc->sc_dev));
+	rv = workqueue_create(&sc->sc_recv_wq, wqname, se_recv_worker, sc,
+	    PRI_SOFTNET, IPL_NET, WQ_MPSAFE);
+	if (rv != 0) {
+		aprint_error_dev(sc->sc_dev,
+		    "unable to create recv Rx workqueue\n");
+		sedetach(sc->sc_dev, 0);
+		return; /* Error */
+	}
+	sc->sc_recv_work_pending = false;
+	sc->sc_attach_state = 2;
+
+	snprintf(wqname, sizeof(wqname), "%sTx", device_xname(sc->sc_dev));
+	rv = workqueue_create(&sc->sc_send_wq, wqname, se_send_worker, ifp,
+	    PRI_SOFTNET, IPL_NET, WQ_MPSAFE);
+	if (rv != 0) {
+		aprint_error_dev(sc->sc_dev,
+		    "unable to create send Tx workqueue\n");
+		sedetach(sc->sc_dev, 0);
+		return; /* Error */
+	}
+	sc->sc_send_work_pending = false;
+	sc->sc_attach_state = 3;
+
+	sc->sc_ipq = if_percpuq_create(&sc->sc_ethercom.ec_if);
 	ether_ifattach(ifp, myaddr);
 	if_register(ifp);
+	sc->sc_attach_state = 4;
 }
 
+static int
+sedetach(device_t self, int flags)
+{
+	struct se_softc *sc = device_private(self);
+	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 
+	switch(sc->sc_attach_state) {
+	case 4:
+		se_stop(sc);
+		mutex_enter(&sc->sc_iflock);
+		ifp->if_flags &= ~IFF_RUNNING;
+		se_disable(sc);
+		callout_halt(&sc->sc_recv_ch, NULL);
+		ether_ifdetach(ifp);
+		if_detach(ifp);
+		mutex_exit(&sc->sc_iflock);
+		if_percpuq_destroy(sc->sc_ipq);
+		/*FALLTHROUGH*/
+	case 3:
+		workqueue_destroy(sc->sc_send_wq);
+		/*FALLTHROUGH*/
+	case 2:
+		workqueue_destroy(sc->sc_recv_wq);
+		/*FALLTHROUGH*/
+	case 1:
+		free(sc->sc_rbuf, M_DEVBUF);
+		free(sc->sc_tbuf, M_DEVBUF);
+		callout_destroy(&sc->sc_recv_ch);
+		mutex_destroy(&sc->sc_iflock);
+		break;
+	default:
+		aprint_error_dev(sc->sc_dev, "detach failed (state %d)\n",
+		    sc->sc_attach_state);
+		return 1;
+		break;
+	}
+	return 0;
+}
+
+/*
+ * Send a command to the device
+ */
 static inline int
 se_scsipi_cmd(struct scsipi_periph *periph, struct scsipi_generic *cmd,
     int cmdlen, u_char *data_addr, int datalen, int retries, int timeout,
@@ -379,101 +459,102 @@ se_scsipi_cmd(struct scsipi_periph *periph, struct scsipi_generic *cmd,
 	return (error);
 }
 
-/* Start routine for calling from scsi sub system */
-static void
-sestart(struct scsipi_periph *periph)
-{
-	struct se_softc *sc = device_private(periph->periph_dev);
-	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
-	int s = splnet();
-
-	se_ifstart(ifp);
-	(void) splx(s);
-}
-
-static void
-se_delayed_ifstart(void *v)
-{
-	struct ifnet *ifp = v;
-	struct se_softc *sc = ifp->if_softc;
-	int s;
-
-	s = splnet();
-	if (sc->sc_enabled) {
-		ifp->if_flags &= ~IFF_OACTIVE;
-		se_ifstart(ifp);
-	}
-	splx(s);
-}
-
 /*
- * Start transmission on the interface.
- * Always called at splnet().
+ * Start routine for calling from network sub system
  */
 static void
 se_ifstart(struct ifnet *ifp)
 {
+	struct se_softc *sc = ifp->if_softc;
+	int i = 100;
+
+	mutex_enter(&sc->sc_iflock);
+	while (i && sc->sc_send_work_pending == true) {
+		i--;
+		delay(10);
+	}
+	if (i) {
+		sc->sc_send_work_pending = true;
+		workqueue_enqueue(sc->sc_send_wq, &sc->sc_send_work, NULL);
+	} else
+		if_statinc(ifp, if_oerrors);
+	mutex_exit(&sc->sc_iflock);
+}
+
+/*
+ * Invoke the transmit workqueue and transmission on the interface.
+ */
+static void
+se_send_worker(struct work *wk, void *cookie)
+{
+	struct ifnet *ifp = cookie;
 	struct se_softc *sc = ifp->if_softc;
 	struct scsi_ctron_ether_generic send_cmd;
 	struct mbuf *m, *m0;
 	int len, error;
 	u_char *cp;
 
+	mutex_enter(&sc->sc_iflock);
+	sc->sc_send_work_pending = false;
+	mutex_exit(&sc->sc_iflock);
+
+	KASSERT(if_is_mpsafe(ifp));
+
 	/* Don't transmit if interface is busy or not running */
 	if ((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) != IFF_RUNNING)
 		return;
 
-	IFQ_DEQUEUE(&ifp->if_snd, m0);
-	if (m0 == 0)
-		return;
-	/* If BPF is listening on this interface, let it see the
-	 * packet before we commit it to the wire.
-	 */
-	bpf_mtap(ifp, m0, BPF_D_OUT);
+	while (1) {
+		IFQ_DEQUEUE(&ifp->if_snd, m0);
+		if (m0 == 0)
+			break;
 
-	/* We need to use m->m_pkthdr.len, so require the header */
-	if ((m0->m_flags & M_PKTHDR) == 0)
-		panic("ctscstart: no header mbuf");
-	len = m0->m_pkthdr.len;
+		/* If BPF is listening on this interface, let it see the
+		 * packet before we commit it to the wire.
+		 */
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 
-	/* Mark the interface busy. */
-	ifp->if_flags |= IFF_OACTIVE;
+		/* We need to use m->m_pkthdr.len, so require the header */
+		if ((m0->m_flags & M_PKTHDR) == 0)
+			panic("ctscstart: no header mbuf");
+		len = m0->m_pkthdr.len;
 
-	/* Chain; copy into linear buffer we allocated at attach time. */
-	cp = sc->sc_tbuf;
-	for (m = m0; m != NULL; ) {
-		memcpy(cp, mtod(m, u_char *), m->m_len);
-		cp += m->m_len;
-		m = m0 = m_free(m);
-	}
-	if (len < SEMINSIZE) {
+		/* Mark the interface busy. */
+		ifp->if_flags |= IFF_OACTIVE;
+
+		/* Chain; copy into linear buffer allocated at attach time. */
+		cp = sc->sc_tbuf;
+		for (m = m0; m != NULL; ) {
+			memcpy(cp, mtod(m, u_char *), m->m_len);
+			cp += m->m_len;
+			m = m0 = m_free(m);
+		}
+		if (len < SEMINSIZE) {
 #ifdef SEDEBUG
-		if (sc->sc_debug)
-			printf("se: packet size %d (%zu) < %d\n", len,
-			    cp - (u_char *)sc->sc_tbuf, SEMINSIZE);
+			if (sc->sc_debug)
+				printf("se: packet size %d (%zu) < %d\n", len,
+				    cp - (u_char *)sc->sc_tbuf, SEMINSIZE);
 #endif
-		memset(cp, 0, SEMINSIZE - len);
-		len = SEMINSIZE;
-	}
+			memset(cp, 0, SEMINSIZE - len);
+			len = SEMINSIZE;
+		}
 
-	/* Fill out SCSI command. */
-	PROTOCMD(ctron_ether_send, send_cmd);
-	_lto2b(len, send_cmd.length);
+		/* Fill out SCSI command. */
+		PROTOCMD(ctron_ether_send, send_cmd);
+		_lto2b(len, send_cmd.length);
 
-	/* Send command to device. */
-	error = se_scsipi_cmd(sc->sc_periph,
-	    (void *)&send_cmd, sizeof(send_cmd),
-	    sc->sc_tbuf, len, SERETRIES,
-	    SETIMEOUT, NULL, XS_CTL_NOSLEEP | XS_CTL_ASYNC | XS_CTL_DATA_OUT);
-	if (error) {
-		aprint_error_dev(sc->sc_dev, "not queued, error %d\n", error);
-		if_statinc(ifp, if_oerrors);
-		ifp->if_flags &= ~IFF_OACTIVE;
-	} else
-		if_statinc(ifp, if_opackets);
-	if (sc->sc_flags & SE_NEED_RECV) {
-		sc->sc_flags &= ~SE_NEED_RECV;
-		se_recv((void *) sc);
+		/* Send command to device. */
+		error = se_scsipi_cmd(sc->sc_periph,
+		    (void *)&send_cmd, sizeof(send_cmd),
+		    sc->sc_tbuf, len, SERETRIES,
+		    SETIMEOUT, NULL, XS_CTL_NOSLEEP | XS_CTL_DATA_OUT);
+		if (error) {
+			aprint_error_dev(sc->sc_dev,
+			    "not queued, error %d\n", error);
+			if_statinc(ifp, if_oerrors);
+			ifp->if_flags &= ~IFF_OACTIVE;
+		} else
+			if_statinc(ifp, if_opackets);
 	}
 }
 
@@ -487,20 +568,9 @@ sedone(struct scsipi_xfer *xs, int error)
 	struct se_softc *sc = device_private(xs->xs_periph->periph_dev);
 	struct scsipi_generic *cmd = xs->cmd;
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
-	int s;
 
-	s = splnet();
 	if (IS_SEND(cmd)) {
-		if (xs->error == XS_BUSY) {
-			printf("se: busy, retry txmit\n");
-			callout_reset(&sc->sc_ifstart_ch, hz,
-			    se_delayed_ifstart, ifp);
-		} else {
-			ifp->if_flags &= ~IFF_OACTIVE;
-			/* the generic scsipi_done will call
-			 * sestart (through scsipi_free_xs).
-			 */
-		}
+		ifp->if_flags &= ~IFF_OACTIVE;
 	} else if (IS_RECV(cmd)) {
 		/* RECV complete */
 		/* pass data up. reschedule a recv */
@@ -508,12 +578,14 @@ sedone(struct scsipi_xfer *xs, int error)
 		if (error) {
 			/* Reschedule after a delay */
 			callout_reset(&sc->sc_recv_ch, se_poll,
-			    se_recv, (void *)sc);
+			    se_recv_callout, (void *)sc);
 		} else {
 			int n, ntimeo;
 			n = se_read(sc, xs->data, xs->datalen - xs->resid);
+#ifdef SE_DEBUG
 			if (n > se_max_received)
 				se_max_received = n;
+#endif
 			if (n == 0)
 				ntimeo = se_poll;
 			else if (n >= RDATA_MAX)
@@ -527,39 +599,71 @@ sedone(struct scsipi_xfer *xs, int error)
 					  se_poll: ntimeo);
 			}
 			sc->sc_last_timeout = ntimeo;
-			if (ntimeo == se_poll0	&&
-			    IFQ_IS_EMPTY(&ifp->if_snd) == 0)
-				/* Output is pending. Do next recv
-				 * after the next send. */
-				sc->sc_flags |= SE_NEED_RECV;
-			else {
-				callout_reset(&sc->sc_recv_ch, ntimeo,
-				    se_recv, (void *)sc);
-			}
+			callout_reset(&sc->sc_recv_ch, ntimeo,
+			    se_recv_callout, (void *)sc);
 		}
 	}
-	splx(s);
 }
 
+/*
+ * Setup a receive command by queuing the work.
+ * Usually called from a callout, but also from se_init().
+ */
 static void
-se_recv(void *v)
+se_recv_callout(void *v)
 {
 	/* do a recv command */
 	struct se_softc *sc = (struct se_softc *) v;
-	struct scsi_ctron_ether_recv recv_cmd;
-	int error;
 
 	if (sc->sc_enabled == 0)
 		return;
 
+	mutex_enter(&sc->sc_iflock);
+	if (sc->sc_recv_work_pending == true) {
+		callout_reset(&sc->sc_recv_ch, se_poll,
+		    se_recv_callout, (void *)sc);
+		return;
+	}
+
+	sc->sc_recv_work_pending = true;
+	workqueue_enqueue(sc->sc_recv_wq, &sc->sc_recv_work, NULL);
+	mutex_exit(&sc->sc_iflock);
+}
+
+/*
+ * Invoke the receive workqueue
+ */
+static void
+se_recv_worker(struct work *wk, void *cookie)
+{
+	struct se_softc *sc = (struct se_softc *) cookie;
+
+	mutex_enter(&sc->sc_iflock);
+	sc->sc_recv_work_pending = false;
+	mutex_exit(&sc->sc_iflock);
+	se_recv(sc);
+
+}
+
+/*
+ * Do the actual work of receiving data.
+ */
+static void
+se_recv(struct se_softc *sc)
+{
+	struct scsi_ctron_ether_recv recv_cmd;
+	int error;
+
+	/* do a recv command */
 	PROTOCMD(ctron_ether_recv, recv_cmd);
 
 	error = se_scsipi_cmd(sc->sc_periph,
 	    (void *)&recv_cmd, sizeof(recv_cmd),
 	    sc->sc_rbuf, RBUF_LEN, SERETRIES, SETIMEOUT, NULL,
-	    XS_CTL_NOSLEEP | XS_CTL_ASYNC | XS_CTL_DATA_IN);
+	    XS_CTL_NOSLEEP | XS_CTL_DATA_IN);
 	if (error)
-		callout_reset(&sc->sc_recv_ch, se_poll, se_recv, (void *)sc);
+		callout_reset(&sc->sc_recv_ch, se_poll,
+		    se_recv_callout, (void *)sc);
 }
 
 /*
@@ -667,7 +771,7 @@ se_read(struct se_softc *sc, char *data, int datalen)
 		}
 
 		/* Pass the packet up. */
-		if_input(ifp, m);
+		if_percpuq_enqueue(sc->sc_ipq, m);
 
 	next_packet:
 		data += len;
@@ -689,23 +793,19 @@ sewatchdog(struct ifnet *ifp)
 	se_reset(sc);
 }
 
-static int
+static void
 se_reset(struct se_softc *sc)
 {
-	int error;
-	int s = splnet();
 #if 0
 	/* Maybe we don't *really* want to reset the entire bus
 	 * because the ctron isn't working. We would like to send a
 	 * "BUS DEVICE RESET" message, but don't think the ctron
 	 * understands it.
 	 */
-	error = se_scsipi_cmd(sc->sc_periph, 0, 0, 0, 0, SERETRIES, 2000, NULL,
+	se_scsipi_cmd(sc->sc_periph, 0, 0, 0, 0, SERETRIES, 2000, NULL,
 	    XS_CTL_RESET);
 #endif
-	error = se_init(sc);
-	splx(s);
-	return (error);
+	se_init(sc);
 }
 
 static int
@@ -824,9 +924,14 @@ se_init(struct se_softc *sc)
 
 	if ((ifp->if_flags & (IFF_RUNNING | IFF_UP)) == IFF_UP) {
 		ifp->if_flags |= IFF_RUNNING;
-		se_recv(sc);
+		mutex_enter(&sc->sc_iflock);
+		sc->sc_recv_work_pending = true;
+		workqueue_enqueue(sc->sc_recv_wq, &sc->sc_recv_work, NULL);
+		mutex_exit(&sc->sc_iflock);
 		ifp->if_flags &= ~IFF_OACTIVE;
-		se_ifstart(ifp);
+		mutex_enter(&sc->sc_iflock);
+		workqueue_enqueue(sc->sc_send_wq, &sc->sc_send_work, NULL);
+		mutex_exit(&sc->sc_iflock);
 	}
 	return (error);
 }
@@ -842,13 +947,10 @@ se_set_multi(struct se_softc *sc, uint8_t *addr)
 		    ether_sprintf(addr));
 
 	PROTOCMD(ctron_ether_set_multi, set_multi_cmd);
-	_lto2b(sizeof(addr), set_multi_cmd.length);
-	/* XXX sizeof(addr) is the size of the pointer.  Surely it
-	 * is too small? --dyoung
-	 */
+	_lto2b(ETHER_ADDR_LEN, set_multi_cmd.length);
 	error = se_scsipi_cmd(sc->sc_periph,
 	    (void *)&set_multi_cmd, sizeof(set_multi_cmd),
-	    addr, sizeof(addr), SERETRIES, SETIMEOUT, NULL, XS_CTL_DATA_OUT);
+	    addr, ETHER_ADDR_LEN, SERETRIES, SETIMEOUT, NULL, XS_CTL_DATA_OUT);
 	return (error);
 }
 
@@ -863,13 +965,10 @@ se_remove_multi(struct se_softc *sc, uint8_t *addr)
 		    ether_sprintf(addr));
 
 	PROTOCMD(ctron_ether_remove_multi, remove_multi_cmd);
-	_lto2b(sizeof(addr), remove_multi_cmd.length);
-	/* XXX sizeof(addr) is the size of the pointer.  Surely it
-	 * is too small? --dyoung
-	 */
+	_lto2b(ETHER_ADDR_LEN, remove_multi_cmd.length);
 	error = se_scsipi_cmd(sc->sc_periph,
 	    (void *)&remove_multi_cmd, sizeof(remove_multi_cmd),
-	    addr, sizeof(addr), SERETRIES, SETIMEOUT, NULL, XS_CTL_DATA_OUT);
+	    addr, ETHER_ADDR_LEN, SERETRIES, SETIMEOUT, NULL, XS_CTL_DATA_OUT);
 	return (error);
 }
 
@@ -924,7 +1023,16 @@ se_stop(struct se_softc *sc)
 	/* Don't schedule any reads */
 	callout_stop(&sc->sc_recv_ch);
 
-	/* How can we abort any scsi cmds in progress? */
+	/* Wait for the workqueues to finish */
+	mutex_enter(&sc->sc_iflock);
+	workqueue_wait(sc->sc_recv_wq, &sc->sc_recv_work);
+	workqueue_wait(sc->sc_send_wq, &sc->sc_send_work);
+	mutex_exit(&sc->sc_iflock);
+
+	/* Abort any scsi cmds in progress */
+	mutex_enter(chan_mtx(sc->sc_periph->periph_channel));
+	scsipi_kill_pending(sc->sc_periph);
+	mutex_exit(chan_mtx(sc->sc_periph->periph_channel));
 }
 
 
@@ -938,16 +1046,17 @@ se_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	struct ifaddr *ifa = (struct ifaddr *)data;
 	struct ifreq *ifr = (struct ifreq *)data;
 	struct sockaddr *sa;
-	int s, error = 0;
+	int error = 0;
 
-	s = splnet();
 
 	switch (cmd) {
 
 	case SIOCINITIFADDR:
+		mutex_enter(&sc->sc_iflock);
 		if ((error = se_enable(sc)) != 0)
 			break;
 		ifp->if_flags |= IFF_UP;
+		mutex_exit(&sc->sc_iflock);
 
 		if ((error = se_set_media(sc, CMEDIA_AUTOSENSE)) != 0)
 			break;
@@ -986,15 +1095,20 @@ se_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			 * stop it.
 			 */
 			se_stop(sc);
+			mutex_enter(&sc->sc_iflock);
 			ifp->if_flags &= ~IFF_RUNNING;
 			se_disable(sc);
+			mutex_exit(&sc->sc_iflock);
 			break;
 		case IFF_UP:
 			/*
 			 * If interface is marked up and it is stopped, then
 			 * start it.
 			 */
-			if ((error = se_enable(sc)) != 0)
+			mutex_enter(&sc->sc_iflock);
+			error = se_enable(sc);
+			mutex_exit(&sc->sc_iflock);
+			if (error)
 				break;
 			error = se_init(sc);
 			break;
@@ -1017,7 +1131,9 @@ se_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 
 	case SIOCADDMULTI:
 	case SIOCDELMULTI:
+		mutex_enter(&sc->sc_iflock);
 		sa = sockaddr_dup(ifreq_getaddr(cmd, ifr), M_WAITOK);
+		mutex_exit(&sc->sc_iflock);
 		if ((error = ether_ioctl(ifp, cmd, data)) == ENETRESET) {
 			if (ifp->if_flags & IFF_RUNNING) {
 				error = (cmd == SIOCADDMULTI) ?
@@ -1026,7 +1142,9 @@ se_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			} else
 				error = 0;
 		}
+		mutex_enter(&sc->sc_iflock);
 		sockaddr_free(sa);
+		mutex_exit(&sc->sc_iflock);
 		break;
 
 	default:
@@ -1035,7 +1153,6 @@ se_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		break;
 	}
 
-	splx(s);
 	return (error);
 }
 
@@ -1049,12 +1166,12 @@ se_enable(struct se_softc *sc)
 	struct scsipi_adapter *adapt = periph->periph_channel->chan_adapter;
 	int error = 0;
 
-	if (sc->sc_enabled == 0 &&
-	    (error = scsipi_adapter_addref(adapt)) == 0)
-		sc->sc_enabled = 1;
-	else
-		aprint_error_dev(sc->sc_dev, "device enable failed\n");
-
+	if (sc->sc_enabled == 0) {
+		if ((error = scsipi_adapter_addref(adapt)) == 0)
+			sc->sc_enabled = 1;
+		else
+			aprint_error_dev(sc->sc_dev, "device enable failed\n");
+	}
 	return (error);
 }
 

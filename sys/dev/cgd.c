@@ -1,4 +1,4 @@
-/* $NetBSD: cgd.c,v 1.126 2020/06/04 19:54:53 riastradh Exp $ */
+/* $NetBSD: cgd.c,v 1.137 2020/06/29 23:36:06 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -30,32 +30,33 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cgd.c,v 1.126 2020/06/04 19:54:53 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cgd.c,v 1.137 2020/06/29 23:36:06 riastradh Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/proc.h>
-#include <sys/errno.h>
 #include <sys/buf.h>
 #include <sys/bufq.h>
-#include <sys/kmem.h>
-#include <sys/module.h>
-#include <sys/pool.h>
-#include <sys/ioctl.h>
+#include <sys/conf.h>
+#include <sys/cpu.h>
 #include <sys/device.h>
 #include <sys/disk.h>
 #include <sys/disklabel.h>
+#include <sys/errno.h>
 #include <sys/fcntl.h>
+#include <sys/ioctl.h>
+#include <sys/kmem.h>
+#include <sys/module.h>
 #include <sys/namei.h> /* for pathbuf */
-#include <sys/vnode.h>
-#include <sys/conf.h>
+#include <sys/pool.h>
+#include <sys/proc.h>
 #include <sys/syslog.h>
+#include <sys/systm.h>
+#include <sys/vnode.h>
 #include <sys/workqueue.h>
-#include <sys/cpu.h>
 
-#include <dev/dkvar.h>
+#include <dev/cgd_crypto.h>
 #include <dev/cgdvar.h>
+#include <dev/dkvar.h>
 
 #include <miscfs/specfs/specdev.h> /* for v_rdev */
 
@@ -63,6 +64,7 @@ __KERNEL_RCSID(0, "$NetBSD: cgd.c,v 1.126 2020/06/04 19:54:53 riastradh Exp $");
 
 struct selftest_params {
 	const char *alg;
+	int encblkno8;
 	int blocksize;	/* number of bytes */
 	int secsize;
 	daddr_t blkno;
@@ -291,6 +293,18 @@ static const uint8_t selftest_bf_cbc_ctxt[64] = {
 	0xb8, 0xbf, 0x69, 0x17, 0x20, 0x0a, 0xf7, 0xda,
 };
 
+static const uint8_t selftest_aes_cbc_encblkno8_zero64[64];
+static const uint8_t selftest_aes_cbc_encblkno8_ctxt[64] = {
+	0xa2, 0x06, 0x26, 0x26, 0xac, 0xdc, 0xe7, 0xcf,
+	0x47, 0x68, 0x24, 0x0e, 0xfa, 0x40, 0x44, 0x83,
+	0x07, 0xe1, 0xf4, 0x5d, 0x53, 0x47, 0xa0, 0xfe,
+	0xc0, 0x6e, 0x4e, 0xf8, 0x9d, 0x98, 0x63, 0xb8,
+	0x2c, 0x27, 0xfa, 0x3a, 0xd5, 0x40, 0xda, 0xdb,
+	0xe6, 0xc3, 0xe4, 0xfb, 0x85, 0x53, 0xfb, 0x78,
+	0x5d, 0xbd, 0x8f, 0x4c, 0x1a, 0x04, 0x9c, 0x88,
+	0x85, 0xec, 0x3c, 0x56, 0x46, 0x1a, 0x6e, 0xf5,
+};
+
 const struct selftest_params selftests[] = {
 	{
 		.alg = "aes-xts",
@@ -358,6 +372,18 @@ const struct selftest_params selftests[] = {
 		.ptxt = selftest_bf_cbc_ptxt,
 		.ctxt = selftest_bf_cbc_ctxt,
 	},
+	{
+		.alg = "aes-cbc",
+		.encblkno8 = 1,
+		.blocksize = 16,
+		.secsize = 512,
+		.blkno = 0,
+		.keylen = 128,
+		.txtlen = sizeof(selftest_aes_cbc_encblkno8_zero64),
+		.key = selftest_aes_cbc_encblkno8_zero64,
+		.ptxt = selftest_aes_cbc_encblkno8_zero64,
+		.ctxt = selftest_aes_cbc_encblkno8_ctxt,
+	},
 };
 
 static int cgd_match(device_t, cfdata_t, void *);
@@ -385,8 +411,10 @@ static int	cgd_ioctl_clr(struct cgd_softc *, struct lwp *);
 static int	cgd_ioctl_get(dev_t, void *, struct lwp *);
 static int	cgdinit(struct cgd_softc *, const char *, struct vnode *,
 			struct lwp *);
-static void	cgd_cipher(struct cgd_softc *, void *, void *,
+static void	cgd_cipher(struct cgd_softc *, void *, const void *,
 			   size_t, daddr_t, size_t, int);
+
+static void	cgd_selftest(void);
 
 static const struct dkdriver cgddkdriver = {
         .d_minphys  = minphys,
@@ -533,6 +561,8 @@ cgdattach(int num)
 		aprint_error("%s: unable to register cfattach\n",
 		    cgd_cd.cd_name);
 #endif
+
+	cgd_selftest();
 }
 
 static struct cgd_softc *
@@ -1259,6 +1289,25 @@ cgd_ioctl_set(struct cgd_softc *sc, void *data, struct lwp *l)
 
 	sc->sc_cdata.cf_blocksize = ci->ci_blocksize;
 	sc->sc_cdata.cf_mode = encblkno[i].v;
+
+	/*
+	 * Print a warning if the user selected the legacy encblkno8
+	 * mistake, and reject it altogether for ciphers that it
+	 * doesn't apply to.
+	 */
+	if (encblkno[i].v != CGD_CIPHER_CBC_ENCBLKNO1) {
+		if (strcmp(sc->sc_cfuncs->cf_name, "aes-cbc") &&
+		    strcmp(sc->sc_cfuncs->cf_name, "3des-cbc") &&
+		    strcmp(sc->sc_cfuncs->cf_name, "blowfish-cbc")) {
+			log(LOG_WARNING, "cgd: %s only makes sense for cbc,"
+			    " not for %s; ignoring\n",
+			    encblkno[i].n, sc->sc_cfuncs->cf_name);
+			sc->sc_cdata.cf_mode = CGD_CIPHER_CBC_ENCBLKNO1;
+		} else {
+			log(LOG_WARNING, "cgd: enabling legacy encblkno8\n");
+		}
+	}
+
 	sc->sc_cdata.cf_keylen = ci->ci_keylen;
 	sc->sc_cdata.cf_priv = sc->sc_cfuncs->cf_init(ci->ci_keylen, inbuf,
 	    &sc->sc_cdata.cf_blocksize);
@@ -1530,46 +1579,28 @@ cgd_process(struct work *wk, void *arg)
 }
 
 static void
-cgd_cipher(struct cgd_softc *sc, void *dstv, void *srcv,
+cgd_cipher(struct cgd_softc *sc, void *dstv, const void *srcv,
     size_t len, daddr_t blkno, size_t secsize, int dir)
 {
 	char		*dst = dstv;
-	char		*src = srcv;
-	cfunc_cipher_prep	*ciprep = sc->sc_cfuncs->cf_cipher_prep;
+	const char	*src = srcv;
 	cfunc_cipher	*cipher = sc->sc_cfuncs->cf_cipher;
-	struct uio	dstuio;
-	struct uio	srcuio;
-	struct iovec	dstiov[2];
-	struct iovec	srciov[2];
 	size_t		blocksize = sc->sc_cdata.cf_blocksize;
 	size_t		todo;
-	char		blkno_buf[CGD_MAXBLOCKSIZE], *iv;
+	char		blkno_buf[CGD_MAXBLOCKSIZE] __aligned(CGD_BLOCKALIGN);
 
 	DPRINTF_FOLLOW(("cgd_cipher() dir=%d\n", dir));
 
-	KASSERTMSG(len % blocksize == 0,
-	    "cgd_cipher: len %% blocksize != 0");
+	if (sc->sc_cdata.cf_mode == CGD_CIPHER_CBC_ENCBLKNO8)
+		blocksize /= 8;
 
+	KASSERT(len % blocksize == 0);
 	/* ensure that sizeof(daddr_t) <= blocksize (for encblkno IVing) */
-	KASSERTMSG(sizeof(daddr_t) <= blocksize,
-	    "cgd_cipher: sizeof(daddr_t) > blocksize");
-
-	KASSERTMSG(blocksize <= CGD_MAXBLOCKSIZE,
-	    "cgd_cipher: blocksize > CGD_MAXBLOCKSIZE");
-
-	dstuio.uio_iov = dstiov;
-	dstuio.uio_iovcnt = 1;
-
-	srcuio.uio_iov = srciov;
-	srcuio.uio_iovcnt = 1;
+	KASSERT(sizeof(daddr_t) <= blocksize);
+	KASSERT(blocksize <= CGD_MAXBLOCKSIZE);
 
 	for (; len > 0; len -= todo) {
 		todo = MIN(len, secsize);
-
-		dstiov[0].iov_base = dst;
-		srciov[0].iov_base = src;
-		dstiov[0].iov_len  = todo;
-		srciov[0].iov_len  = todo;
 
 		memset(blkno_buf, 0x0, blocksize);
 		blkno2blkno_buf(blkno_buf, blkno);
@@ -1577,14 +1608,32 @@ cgd_cipher(struct cgd_softc *sc, void *dstv, void *srcv,
 		    blkno_buf, blocksize));
 
 		/*
-		 * Compute an initial IV. All ciphers
-		 * can convert blkno_buf in-place.
+		 * Handle bollocksed up encblkno8 mistake.  We used to
+		 * compute the encryption of a zero block with blkno as
+		 * the CBC IV -- except in an early mistake arising
+		 * from bit/byte confusion, we actually computed the
+		 * encryption of the last of _eight_ zero blocks under
+		 * CBC as the CBC IV.
+		 *
+		 * Encrypting the block number is handled inside the
+		 * cipher dispatch now (even though in practice, both
+		 * CBC and XTS will do the same thing), so we have to
+		 * simulate the block number that would yield the same
+		 * result.  So we encrypt _six_ zero blocks -- the
+		 * first one and the last one are handled inside the
+		 * cipher dispatch.
 		 */
-		iv = blkno_buf;
-		ciprep(sc->sc_cdata.cf_priv, iv, blkno_buf, blocksize, dir);
-		IFDEBUG(CGDB_CRYPTO, hexprint("step 2: iv", iv, blocksize));
+		if (sc->sc_cdata.cf_mode == CGD_CIPHER_CBC_ENCBLKNO8) {
+			static const uint8_t zero[CGD_MAXBLOCKSIZE];
+			uint8_t iv[CGD_MAXBLOCKSIZE];
 
-		cipher(sc->sc_cdata.cf_priv, &dstuio, &srcuio, iv, dir);
+			memcpy(iv, blkno_buf, blocksize);
+			cipher(sc->sc_cdata.cf_priv, blkno_buf, zero,
+			    6*blocksize, iv, CGD_CIPHER_ENCRYPT);
+			memmove(blkno_buf, blkno_buf + 5*blocksize, blocksize);
+		}
+
+		cipher(sc->sc_cdata.cf_priv, dst, src, todo, blkno_buf, dir);
 
 		dst += todo;
 		src += todo;
@@ -1606,20 +1655,20 @@ hexprint(const char *start, void *buf, int len)
 #endif
 
 static void
-selftest(void)
+cgd_selftest(void)
 {
 	struct cgd_softc sc;
 	void *buf;
 
-	printf("running cgd selftest ");
-
 	for (size_t i = 0; i < __arraycount(selftests); i++) {
 		const char *alg = selftests[i].alg;
+		int encblkno8 = selftests[i].encblkno8;
 		const uint8_t *key = selftests[i].key;
 		int keylen = selftests[i].keylen;
 		int txtlen = selftests[i].txtlen;
 
-		printf("%s-%d ", alg, keylen);
+		aprint_verbose("cgd: self-test %s-%d%s\n", alg, keylen,
+		    encblkno8 ? " (encblkno8)" : "");
 
 		memset(&sc, 0, sizeof(sc));
 
@@ -1628,7 +1677,8 @@ selftest(void)
 			panic("%s not implemented", alg);
 
 		sc.sc_cdata.cf_blocksize = 8 * selftests[i].blocksize;
-		sc.sc_cdata.cf_mode = CGD_CIPHER_CBC_ENCBLKNO1;
+		sc.sc_cdata.cf_mode = encblkno8 ? CGD_CIPHER_CBC_ENCBLKNO8 :
+		    CGD_CIPHER_CBC_ENCBLKNO1;
 		sc.sc_cdata.cf_keylen = keylen;
 
 		sc.sc_cdata.cf_priv = sc.sc_cfuncs->cf_init(keylen,
@@ -1638,26 +1688,35 @@ selftest(void)
 		if (sc.sc_cdata.cf_blocksize > CGD_MAXBLOCKSIZE)
 			panic("bad block size %zu", sc.sc_cdata.cf_blocksize);
 
-		sc.sc_cdata.cf_blocksize /= 8;
+		if (!encblkno8)
+			sc.sc_cdata.cf_blocksize /= 8;
 
 		buf = kmem_alloc(txtlen, KM_SLEEP);
 		memcpy(buf, selftests[i].ptxt, txtlen);
 
 		cgd_cipher(&sc, buf, buf, txtlen, selftests[i].blkno,
 				selftests[i].secsize, CGD_CIPHER_ENCRYPT);
-		if (memcmp(buf, selftests[i].ctxt, txtlen) != 0)
-			panic("encryption is broken");
+		if (memcmp(buf, selftests[i].ctxt, txtlen) != 0) {
+			hexdump(printf, "was", buf, txtlen);
+			hexdump(printf, "exp", selftests[i].ctxt, txtlen);
+			panic("cgd %s-%d encryption is broken [%zu]",
+			    selftests[i].alg, keylen, i);
+		}
 
 		cgd_cipher(&sc, buf, buf, txtlen, selftests[i].blkno,
 				selftests[i].secsize, CGD_CIPHER_DECRYPT);
-		if (memcmp(buf, selftests[i].ptxt, txtlen) != 0)
-			panic("decryption is broken");
+		if (memcmp(buf, selftests[i].ptxt, txtlen) != 0) {
+			hexdump(printf, "was", buf, txtlen);
+			hexdump(printf, "exp", selftests[i].ptxt, txtlen);
+			panic("cgd %s-%d decryption is broken [%zu]",
+			    selftests[i].alg, keylen, i);
+		}
 
 		kmem_free(buf, txtlen);
 		sc.sc_cfuncs->cf_destroy(sc.sc_cdata.cf_priv);
 	}
 
-	printf("done\n");
+	aprint_verbose("cgd: self-tests passed\n");
 }
 
 MODULE(MODULE_CLASS_DRIVER, cgd, "blowfish,des,dk_subr,bufq_fcfs");
@@ -1675,7 +1734,6 @@ cgd_modcmd(modcmd_t cmd, void *arg)
 
 	switch (cmd) {
 	case MODULE_CMD_INIT:
-		selftest();
 #ifdef _MODULE
 		mutex_init(&cgd_spawning_mtx, MUTEX_DEFAULT, IPL_NONE);
 		cv_init(&cgd_spawning_cv, "cgspwn");

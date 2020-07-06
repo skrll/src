@@ -1,4 +1,4 @@
-/*	$NetBSD: types.h,v 1.62 2020/04/16 22:11:12 rin Exp $	*/
+/*	$NetBSD: types.h,v 1.64 2020/06/22 05:34:57 rin Exp $	*/
 
 /*-
  * Copyright (C) 1995 Wolfgang Solfrank.
