@@ -434,8 +434,6 @@ valloc_pages(struct bootmem_info *bmi, pv_addr_t *pv, size_t npages,
 		memset((void *)pv->pv_va, 0, nbytes);
 }
 
-pv_addr_t chunks[__arraycount(bootmem_info.bmi_l2pts) + KERNEL_L2PT_KASAN_NUM + 11];
-
 void __noasan
 arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
     const struct pmap_devmap *devmap, bool mapallmem_p)
@@ -504,16 +502,13 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	VPRINTF("%s: %zu L2 pages are needed to map %#zx kernel bytes\n",
 	    __func__, KERNEL_L2PT_KERNEL_NUM, kernel_size);
 
-	const size_t alll2pts __diagused =
-	    KERNEL_L2PT_KERNEL_NUM +
-	    KERNEL_L2PT_VMDATA_NUM;
-
-	KASSERT(alll2pts < __arraycount(bmi->bmi_l2pts));
+	KASSERT(KERNEL_L2PT_KERNEL_NUM + KERNEL_L2PT_VMDATA_NUM < __arraycount(bmi->bmi_l2pts));
 	pv_addr_t * const kernel_l2pt = bmi->bmi_l2pts;
 	pv_addr_t * const vmdata_l2pt = kernel_l2pt + KERNEL_L2PT_KERNEL_NUM;
 	pv_addr_t msgbuf;
 	pv_addr_t text;
 	pv_addr_t data;
+	pv_addr_t chunks[__arraycount(bmi->bmi_l2pts) + 11];
 #if ARM_MMU_XSCALE == 1
 	pv_addr_t minidataclean;
 #endif
