@@ -91,34 +91,12 @@ __md_alloc(void)
 		if (uvm_page_physget(&pa) == false)
 			panic("KASAN can't get a page");
 
-		const vsize_t off = pa & arm_cache_prefer_mask;
-		pt_entry_t *ptep = kasan_pte + (off >> L2_S_SHIFT);
-
-		KASSERTMSG(!l2pte_valid_p(*ptep), "ptep %p *ptep %x "
-		    "va %" PRIxVADDR, ptep, *ptep, kasan_zero);
-
-		const int prot = VM_PROT_READ | VM_PROT_WRITE;
-		pt_entry_t npte =
-		    L2_S_PROTO |
-		    pa |
-		    pte_l2_s_cache_mode_pt |
-		    L2_S_PROT(PTE_KERNEL, prot);
-
-		l2pte_set(ptep, npte, 0);
-		PTE_SYNC(ptep);
-
-		__builtin_memset((void *)kasan_zero, 0, PAGE_SIZE);
-
-		l2pte_reset(ptep);
-		PTE_SYNC(ptep);
-		cpu_tlb_flushD_SE(kasan_zero);
-
 		return pa;
 	}
 
 	struct vm_page *pg;
 retry:
-	pg = uvm_pagealloc(NULL, 0, NULL, UVM_PGA_ZERO);
+	pg = uvm_pagealloc(NULL, 0, NULL, 0);
 	if (pg == NULL) {
 		uvm_wait(__func__);
 		goto retry;
@@ -182,7 +160,7 @@ kasan_md_shadow_map_page(vaddr_t va)
 
 		l2pte_set(ptep, npte, 0);
 		PTE_SYNC(ptep);
-
+		__builtin_memset((void *)va, 0, PAGE_SIZE);
 	}
 }
 

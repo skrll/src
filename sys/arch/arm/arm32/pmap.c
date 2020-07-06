@@ -6327,13 +6327,6 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	nptes = PAGE_SIZE / L2_S_SIZE;
 #endif
 
-#ifdef KASAN
-	extern vaddr_t kasan_zero;
-	extern pt_entry_t *kasan_pte;
-
-	pmap_alloc_specials(&virtual_avail, nptes, &kasan_zero, &kasan_pte);
-#endif
-
 #ifdef MULTIPROCESSOR
 	cnptes = nptes;
 	nptes *= arm_cpu_max;
