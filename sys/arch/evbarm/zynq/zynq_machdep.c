@@ -165,7 +165,7 @@ static const struct pmap_devmap devmap[] = {
 	{ 0, 0, 0, 0, 0 }
 };
 
-void
+void __noasan
 zynq_platform_early_putchar(char c)
 {
 #define CONADDR_VA (CONADDR - ZYNQ7000_IOREG_PBASE + KERNEL_IO_IOREG_VBASE)

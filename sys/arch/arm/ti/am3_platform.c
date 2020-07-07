@@ -22,7 +22,7 @@ extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 
 void am33xx_platform_early_putchar(char);
 
-void
+void __noasan
 am33xx_platform_early_putchar(char c)
 {
 #ifdef CONSADDR

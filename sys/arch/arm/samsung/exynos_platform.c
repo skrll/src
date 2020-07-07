@@ -230,7 +230,7 @@ exynos_platform_init_attach_args(struct fdt_attach_args *faa)
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 
-void
+void __noasan
 exynos_platform_early_putchar(char c)
 {
 #ifdef CONSADDR

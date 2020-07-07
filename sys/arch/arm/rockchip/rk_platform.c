@@ -121,7 +121,7 @@ rk3328_platform_devmap(void)
 
 void rk3328_platform_early_putchar(char);
 
-void
+void __noasan
 rk3328_platform_early_putchar(char c)
 {
 #ifdef CONSADDR

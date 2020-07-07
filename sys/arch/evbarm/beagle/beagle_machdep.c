@@ -532,7 +532,7 @@ beagle_db_trap(int where)
 
 void beagle_platform_early_putchar(char);
 
-void
+void __noasan
 beagle_platform_early_putchar(char c)
 {
 	volatile uint32_t *com0addr = cpu_earlydevice_va_p() ?

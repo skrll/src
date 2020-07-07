@@ -156,7 +156,7 @@ meson_platform_init_attach_args(struct fdt_attach_args *faa)
 
 void meson_platform_early_putchar(char);
 
-void
+void __noasan
 meson_platform_early_putchar(char c)
 {
 #ifdef CONSADDR

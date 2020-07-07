@@ -1330,7 +1330,7 @@ bcm2711_platform_init_attach_args(struct fdt_attach_args *faa)
 #endif
 
 
-static void
+static void __noasan
 bcm283x_platform_early_putchar(vaddr_t va, paddr_t pa, char c)
 {
 	volatile uint32_t *uartaddr =
@@ -1347,7 +1347,7 @@ bcm283x_platform_early_putchar(vaddr_t va, paddr_t pa, char c)
 		continue;
 }
 
-void
+void __noasan
 bcm2835_platform_early_putchar(char c)
 {
 	paddr_t pa = BCM2835_PERIPHERALS_BUS_TO_PHYS(BCM2835_UART0_BASE);
@@ -1356,7 +1356,7 @@ bcm2835_platform_early_putchar(char c)
 	bcm283x_platform_early_putchar(va, pa, c);
 }
 
-void
+void __noasan
 bcm2836_platform_early_putchar(char c)
 {
 	paddr_t pa = BCM2836_PERIPHERALS_BUS_TO_PHYS(BCM2835_UART0_BASE);
@@ -1365,7 +1365,7 @@ bcm2836_platform_early_putchar(char c)
 	bcm283x_platform_early_putchar(va, pa, c);
 }
 
-void
+void __noasan
 bcm2837_platform_early_putchar(char c)
 {
 #define AUCONSADDR_PA	BCM2836_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE)
@@ -1383,7 +1383,7 @@ bcm2837_platform_early_putchar(char c)
 #undef AUCONSADDR_PA
 }
 
-void
+void __noasan
 bcm2711_platform_early_putchar(char c)
 {
 #define AUCONSADDR_PA	BCM2711_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE)

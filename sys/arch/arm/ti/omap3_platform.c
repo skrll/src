@@ -130,7 +130,7 @@ omap3_platform_init_attach_args(struct fdt_attach_args *faa)
 
 void omap3_platform_early_putchar(char);
 
-void
+void __noasan
 omap3_platform_early_putchar(char c)
 {
 #ifdef CONSADDR

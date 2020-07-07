@@ -94,7 +94,7 @@ virt_platform_devmap(void)
 	return devmap;
 }
 
-static void __noasan
+static void
 virt_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	extern struct arm32_bus_dma_tag arm_generic_dma_tag;
@@ -106,12 +106,12 @@ virt_platform_init_attach_args(struct fdt_attach_args *faa)
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 
-static void __noasan
+static void
 virt_platform_device_register(device_t self, void *aux)
 {
 }
 
-static u_int __noasan
+static u_int
 virt_platform_uart_freq(void)
 {
 	return 24000000;

@@ -97,7 +97,7 @@ imx_platform_init_attach_args(struct fdt_attach_args *faa)
 
 void imx_platform_early_putchar(char);
 
-void
+void __noasan
 imx_platform_early_putchar(char c)
 {
 #ifdef CONSADDR

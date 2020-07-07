@@ -34,7 +34,7 @@ __KERNEL_RCSID(0, "$NetBSD: cycv_platform.c,v 1.12 2020/02/15 08:16:10 skrll Exp
 
 void cycv_platform_early_putchar(char);
 
-void
+void __noasan
 cycv_platform_early_putchar(char c) {
 #ifdef CONSADDR
 #define CONSADDR_VA (CONSADDR - CYCV_PERIPHERAL_BASE + CYCV_PERIPHERAL_VBASE)

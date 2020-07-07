@@ -183,7 +183,7 @@ sunxi_platform_init_attach_args(struct fdt_attach_args *faa)
 
 void sunxi_platform_early_putchar(char);
 
-void
+void __noasan
 sunxi_platform_early_putchar(char c)
 {
 #ifdef CONSADDR

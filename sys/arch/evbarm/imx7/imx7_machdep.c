@@ -164,7 +164,7 @@ static struct boot_physmem bp_highgig = {
 };
 #endif
 
-void
+void __noasan
 imx7_platform_early_putchar(char c)
 {
 #define CONADDR_VA (CONADDR - IMX7_IOREG_PBASE + KERNEL_IO_IOREG_VBASE)

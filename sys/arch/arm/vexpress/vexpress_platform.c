@@ -92,7 +92,7 @@ static bus_space_handle_t sysreg_bsh;
 
 void vexpress_platform_early_putchar(char);
 
-void
+void __noasan
 vexpress_platform_early_putchar(char c)
 {
 #ifdef CONSADDR
