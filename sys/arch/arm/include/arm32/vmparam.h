@@ -38,6 +38,7 @@
 #ifndef _ARM_ARM32_VMPARAM_H_
 #define	_ARM_ARM32_VMPARAM_H_
 
+#include "opt_kasan.h"
 
 /*
  * Virtual Memory parameters common to all arm32 platforms.
@@ -134,6 +135,10 @@
 #endif
 
 #define KERNEL_VM_SIZE		(KERNEL_VM_END - KERNEL_BASE)
+#else
+#ifdef KASAN
+#error KASAN is unsupported on pre-ARMv6
 #endif
+#endif	/* ARM_MMU_EXTENDED */
 
 #endif /* _ARM_ARM32_VMPARAM_H_ */
