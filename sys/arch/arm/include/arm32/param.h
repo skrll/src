@@ -55,8 +55,12 @@
 
 #define SSIZE		1		/* initial stack size/NBPG */
 #define SINCR		1		/* increment of stack/NBPG */
-#define USPACE		8192		/* total size of u-area */
-#define UPAGES		(USPACE / NBPG)	/* pages of u-area */
+#ifdef KASAN
+#define UPAGES		4
+#else
+#define UPAGES		2
+#endif
+#define USPACE		(UPAGES * NBPG)	/* total size of u-area */
 
 #ifndef MSGBUFSIZE
 #define MSGBUFSIZE	16384	 	/* default message buffer size */
