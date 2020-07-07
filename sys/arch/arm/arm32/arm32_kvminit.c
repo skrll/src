@@ -184,7 +184,7 @@ extern char _end[];
 vaddr_t kasan_kernelstart;
 vaddr_t kasan_kernelsize;
 
-#define	KERNEL_L2PT_KASAN_NUM	howmany(KASAN_MD_SHADOW_SIZE, L2_S_SEGSIZE)
+#define	KERNEL_L2PT_KASAN_NUM	howmany(VM_KERNEL_KASAN_SIZE, L2_S_SEGSIZE)
 pv_addr_t kasan_l2pt[KERNEL_L2PT_KASAN_NUM];
 #else
 #define KERNEL_L2PT_KASAN_NUM	0
@@ -731,10 +731,10 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 
 #ifdef KASAN
 	VPRINTF("%s: kasan_shadow_base %x KERNEL_L2PT_KASAN_NUM %d\n", __func__,
-	    KASAN_MD_SHADOW_START, KERNEL_L2PT_KASAN_NUM);
+	    VM_KERNEL_KASAN_BASE, KERNEL_L2PT_KASAN_NUM);
 
 	for (size_t idx = 0; idx < KERNEL_L2PT_KASAN_NUM; idx++) {
-		const vaddr_t va = KASAN_MD_SHADOW_START  + idx * L2_S_SEGSIZE;
+		const vaddr_t va = VM_KERNEL_KASAN_BASE  + idx * L2_S_SEGSIZE;
 
 		pmap_link_l2pt(l1pt_va, va, &kasan_l2pt[idx]);
 

@@ -36,6 +36,8 @@
 #include <arm/arm32/machdep.h>
 #include <arm/arm32/pmap.h>
 
+#define KASAN_MD_SHADOW_START	VM_KERNEL_KASAN_BASE
+#define KASAN_MD_SHADOW_END	VM_KERNEL_KASAN_END
 #define __MD_KERNMEM_BASE	KERNEL_BASE
 
 static inline int8_t *
