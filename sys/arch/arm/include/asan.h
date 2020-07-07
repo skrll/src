@@ -67,9 +67,6 @@ static size_t __md_nearlypages;
 static uint8_t __md_earlypages[KASAN_NEARLYPAGES * PAGE_SIZE]
     __aligned(PAGE_SIZE);
 
-vaddr_t kasan_zero;
-pt_entry_t *kasan_pte;
-
 static vaddr_t
 __md_alloc(void)
 {
