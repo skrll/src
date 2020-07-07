@@ -67,7 +67,7 @@ Heavy runtime checks, and ~12.5% increase in memory consumption.
 Shadow memory, compiler instrumentation, special kernel wrappers, and
 light MD infrastructure.
 .Ss Supported architectures
-aarch64 (gcc), amd64 (gcc, llvm).
+aarch64 (gcc), amd64 (gcc, llvm), arm (gcc).
 .Pp
 KASAN is made of six sub-features that perform memory validation:
 .Bd -literal
@@ -79,6 +79,8 @@ KASAN is made of six sub-features that perform memory validation:
 | amd64   | Yes  | Yes   | Yes     | Yes       | Yes     | Yes  |
 +---------+------+-------+---------+-----------+---------+------+
 | aarch64 | Yes  | Yes   | Yes     | No        | Yes     | Yes  |
++---------+------+-------+---------+-----------+---------+------+
+| arm     | Yes  | Yes   | Yes     | No        | Yes     | Yes  |
 +---------+------+-------+---------+-----------+---------+------+
 .Ed
 .Pp
@@ -151,3 +153,5 @@ Support for KUBSAN was developed by
 .An Kamil Rytarowski .
 Support for KASAN, KCSAN and KMSAN was developed by
 .An Maxime Villard .
+Support for KASAN on ARM was developed by
+.An Nick Hudson
