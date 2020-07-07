@@ -36,7 +36,8 @@
 #define	_ARM_ARM32_PARAM_H_
 
 #ifdef _KERNEL_OPT
-# include "opt_arm32_pmap.h"
+#include "opt_arm32_pmap.h"
+#include "opt_kasan.h"
 #endif
 
 /*
