@@ -68,7 +68,7 @@ static uint8_t __md_earlypages[KASAN_NEARLYPAGES * PAGE_SIZE]
     __aligned(PAGE_SIZE);
 
 static vaddr_t
-__md_alloc(void)
+__md_palloc(void)
 {
 	paddr_t pa;
 
@@ -118,7 +118,7 @@ kasan_md_shadow_map_page(vaddr_t va)
 
 	if (!l1pte_page_p(pdep[l1slot])) {
 		KASSERT(__md_early);
-		const paddr_t l2ptpa = __md_alloc();
+		const paddr_t l2ptpa = __md_palloc();
 		const vaddr_t segl2va = va & -L2_S_SEGSIZE;
 		const size_t segl1slot = l1pte_index(segl2va);
 
@@ -148,7 +148,7 @@ kasan_md_shadow_map_page(vaddr_t va)
 
 	if (!l2pte_valid_p(*ptep)) {
 		const int prot = VM_PROT_READ | VM_PROT_WRITE;
-		const paddr_t pa = __md_alloc();
+		const paddr_t pa = __md_palloc();
 		pt_entry_t npte =
 		    L2_S_PROTO |
 		    pa |
