@@ -137,7 +137,6 @@ ASEND(start)
 #ifdef __ARM_EABI__
 	.align	3
 #endif
-	.global svcstk
 svcstk:
 	.space	INIT_ARM_STACK_SIZE
 svcstk_end:
