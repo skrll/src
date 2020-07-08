@@ -1,4 +1,4 @@
-/*	$NetBSD: vmparam.h,v 1.47 2020/01/13 20:36:44 christos Exp $	*/
+/*	$NetBSD: vmparam.h,v 1.49 2020/07/08 09:50:45 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002 Wasabi Systems, Inc.
@@ -104,13 +104,25 @@
 // address corresponding to a kernel memory address.
 
 /*
- * kernel virtual space layout
+ * kernel virtual space layout without direct map (common case)
+ *
+ *   0x8000_0000 -  256MB kernel text/data/bss
+ *   0x9000_0000 - 1536MB Kernel VM Space
+ *   0xf000_0000 -  256MB IO
+ *
+ * kernel virtual space layout with KASAN
  *
  *   0x8000_0000 -  256MB kernel text/data/bss
  *   0x9000_0000 -  768MB Kernel VM Space
  *   0xc000_0000 -  128MB (KASAN SHADOW MAP)
  *   0xc800_0000 -  640MB (spare)
  *   0xf000_0000 -  256MB IO
+ *
+ * kernel virtual space layout with direct map (1GB limited)
+ *   0x8000_0000 - 1024MB kernel text/data/bss and direct map start
+ *   0xc000_0000 -  768MB Kernel VM Space
+ *   0xf000_0000 -  256MB IO
+ *
  */
 
 #define VM_KERNEL_IO_ADDRESS	0xf0000000
@@ -129,6 +141,7 @@
 #ifdef KASAN
 #error KASAN and __HAVE_MM_MD_DIRECT_MAPPED_PHYS is unsupported
 #endif
+
 #define KERNEL_VM_BASE		0xc0000000
 #else
 #define KERNEL_VM_BASE		0x90000000
