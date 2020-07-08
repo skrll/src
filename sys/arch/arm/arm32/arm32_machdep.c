@@ -726,7 +726,7 @@ cpu_uarea_alloc_idlelwp(struct cpu_info *ci)
  * -  kmutex(9) relies on curcpu which isn't setup yet.
  *
  */
-void
+void __noasan
 cpu_init_secondary_processor(int cpuindex)
 {
 	// pmap_kernel has been successfully built and we can switch to it

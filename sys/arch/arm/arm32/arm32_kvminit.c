@@ -1057,9 +1057,8 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	cpu_tlb_flushID();
 
 #ifdef KASAN
-	// bah
-	extern uint8_t svcstk[];
-	kasan_early_init((void *)svcstk);
+	extern uint8_t start_stacks_bottom[];
+	kasan_early_init((void *)start_stacks_bottom);
 #endif
 
 #ifdef ARM_MMU_EXTENDED

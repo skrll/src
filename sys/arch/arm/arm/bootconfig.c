@@ -58,7 +58,7 @@ __KERNEL_RCSID(0, "$NetBSD: bootconfig.c,v 1.11 2017/06/01 02:45:05 chs Exp $");
  * will return ptr of "moo milk=1", *not* "moo"
  */
 
-int
+int __noasan
 get_bootconf_option(char *opts, const char *opt, int type, void *result)
 {
 	char *ptr;

@@ -34,6 +34,7 @@
 #include "opt_cpuoptions.h"
 #include "opt_cputypes.h"
 #include "opt_fdt.h"
+#include "opt_kasan.h"
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
@@ -230,6 +231,8 @@ generic_savevars:
 	 */
 	.section "_init_memory", "aw", %nobits
 	.p2align INIT_ARM_STACK_SHIFT
+	.global start_stacks_bottom
+	.global start_stacks_top
 start_stacks_bottom:
 	.space	INIT_ARM_STACK_SIZE * MAXCPUS
 start_stacks_top:
@@ -464,6 +467,10 @@ generic_startv7:
 	b	armv7_mmuinit
 
 generic_vstartv7:
+#ifdef KASAN
+	ldr	r0, =start_stacks_bottom
+	bl	_C_LABEL(kasan_early_init)
+#endif
 
 	/* r0 = &cpu_info_store[0] */
 	movw	r0, #:lower16:cpu_info_store
@@ -511,6 +518,11 @@ generic_startv6:
 	b	armv6_mmuinit
 
 generic_vstartv6:
+#ifdef KASAN
+	ldr	r0, =start_stacks_bottom
+	bl	_C_LABEL(kasan_early_init)
+#endif
+
 	VPRINTF("go\n\r")
 
 	/*
@@ -522,7 +534,6 @@ generic_vstartv6:
 	.ltorg
 
 #endif
-
 
 
 #if defined(_ARM_ARCH_7)
@@ -643,7 +654,6 @@ armv7_init:
 #define ARMV7_SCTLR_SET	( 	\
     CPU_CONTROL_UNAL_ENABLE |	\
     0)
-
 
 	mrc	p15, 0, r0, c1, c0, 0
 	movw	r1, #:lower16:ARMV7_SCTLR_CLEAR

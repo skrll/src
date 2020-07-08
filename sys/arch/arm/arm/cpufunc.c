@@ -2372,7 +2372,7 @@ struct cpu_option {
 
 static u_int parse_cpu_options(char *, struct cpu_option *, u_int);
 
-static u_int
+static u_int __noasan
 parse_cpu_options(char *args, struct cpu_option *optlist, u_int cpuctrl)
 {
 	int integer;

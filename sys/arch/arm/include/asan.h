@@ -65,9 +65,9 @@ kasan_md_unsupported(vaddr_t addr)
 #define KASAN_NEARLYPAGES	2
 
 static bool __md_early __read_mostly;
-static size_t __md_nearlypages;
+static size_t __md_nearlypages __attribute__((__section__(".data")));
 static uint8_t __md_earlypages[KASAN_NEARLYPAGES * PAGE_SIZE]
-    __aligned(PAGE_SIZE);
+    __aligned(PAGE_SIZE)  __attribute__((__section__(".data")));
 
 static vaddr_t
 __md_palloc(void)
@@ -164,9 +164,10 @@ kasan_md_shadow_map_page(vaddr_t va)
 }
 
 /*
- * Map only the current stack. We will map the rest in kasan_init.
+ * Map the init stacks of the BP and APs. We will map the rest in kasan_init.
  */
-#define INIT_ARM_STACK_SIZE	2048
+#define INIT_ARM_STACK_SHIFT	9
+#define INIT_ARM_STACK_SIZE	(1 << INIT_ARM_STACK_SHIFT)
 
 static void
 kasan_md_early_init(void *stack)
@@ -174,7 +175,7 @@ kasan_md_early_init(void *stack)
 
 	__md_early = true;
 	__md_nearlypages = 0;
-	kasan_shadow_map(stack, INIT_ARM_STACK_SIZE);
+	kasan_shadow_map(stack, INIT_ARM_STACK_SIZE * MAXCPUS);
 	__md_early = false;
 }
 

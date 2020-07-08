@@ -32,7 +32,6 @@
  */
 
 #include "opt_arm_debug.h"
-#include "opt_kasan.h"
 
 #include "assym.h"
 #include <sys/cdefs.h>
@@ -90,11 +89,6 @@ ASENTRY_NP(start)
 	mrc	p15, 0, r3, c0, c0, 0	/* get our cpuid and save it early */
 	str	r3, [r8, #CI_ARM_CPUID]
 
-#ifdef KASAN
-	ldr	r0, =svcstk
-	bl	_C_LABEL(kasan_early_init)
-#endif
-
 	mov	fp, #0x00000000		/* trace back starts here */
 	bl	_C_LABEL(initarm)	/* Off we go */
 
@@ -127,13 +121,18 @@ ASEND(uartputc)
 #else
 	.word	_C_LABEL(cpu_info_store)
 #endif
+#if !defined(__HAVE_GENERIC_START)
 	.word	svcstk_end
+#else
+	.word   start_stacks_top
+#endif
 
 .Lmainreturned:
 	.asciz	"main() returned"
 	.align	0
 ASEND(start)
 
+#if !defined(__HAVE_GENERIC_START)
 	.bss
 #ifdef __ARM_EABI__
 	.align	3
@@ -142,6 +141,7 @@ ASEND(start)
 svcstk:
 	.space	INIT_ARM_STACK_SIZE
 svcstk_end:
+#endif
 
 	.text
 	.align	0
