@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.111 2020/06/27 07:33:51 macallan Exp $	*/
+/*	$NetBSD: cpu.h,v 1.114 2020/07/07 01:39:23 rin Exp $	*/
 
 /*
  * Copyright (C) 1999 Wolfgang Solfrank.
@@ -45,7 +45,6 @@ struct cache_info {
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #if defined(_KERNEL_OPT)
-#include "opt_lockdebug.h"
 #include "opt_modular.h"
 #include "opt_multiprocessor.h"
 #include "opt_ppcarch.h"
@@ -99,10 +98,11 @@ struct cpu_info {
 #define	CI_SAVEMMU	(3*CPUSAVE_LEN)
 #define	CI_SAVEMAX	(4*CPUSAVE_LEN)
 #define	CPUSAVE_LEN	8
-#if !defined(PPC_BOOKE) && !defined(MODULAR) && !defined(_MODULE)
-#define	CPUSAVE_SIZE	(CI_SAVEMAX*CPUSAVE_LEN)
-#else
+#if defined(PPC_BOOKE) && !defined(MODULAR) && !defined(_MODULE)
 #define	CPUSAVE_SIZE	128
+#else
+#define	CPUSAVE_SIZE	(CI_SAVEMAX*CPUSAVE_LEN)
+// XXX CTASSERT(CPUSAVE_SIZE >= 128);
 #endif
 #define	CPUSAVE_R28	0		/* where r28 gets saved */
 #define	CPUSAVE_R29	1		/* where r29 gets saved */
@@ -489,5 +489,6 @@ void	__syncicache(void *, size_t);
 #define	CPU_BOOTED_DEVICE	9	/* string: device we booted from */
 #define	CPU_BOOTED_KERNEL	10	/* string: kernel we booted */
 #define	CPU_EXECPROT		11	/* bool: PROT_EXEC works */
+#define	CPU_FPU			12
 
 #endif	/* _POWERPC_CPU_H_ */

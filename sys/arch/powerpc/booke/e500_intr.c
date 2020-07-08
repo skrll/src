@@ -1,4 +1,4 @@
-/*	$NetBSD: e500_intr.c,v 1.41 2020/07/04 17:20:45 rin Exp $	*/
+/*	$NetBSD: e500_intr.c,v 1.44 2020/07/06 10:11:14 rin Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -34,14 +34,15 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "opt_mpc85xx.h"
-#include "opt_multiprocessor.h"
-#include "opt_ddb.h"
-
 #define __INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: e500_intr.c,v 1.41 2020/07/04 17:20:45 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: e500_intr.c,v 1.44 2020/07/06 10:11:14 rin Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_mpc85xx.h"
+#include "opt_multiprocessor.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -510,7 +511,9 @@ e500_splset(struct cpu_info *ci, int ipl)
 {
 	struct cpu_softc * const cpu = ci->ci_softc;
 
+#ifdef __HAVE_FAST_SOFTINTS /* XXX */
 	KASSERT((curlwp->l_pflag & LP_INTR) == 0 || ipl != IPL_NONE);
+#endif
 	const u_int ctpr = IPL2CTPR(ipl);
 	KASSERT(openpic_read(cpu, OPENPIC_CTPR) == IPL2CTPR(ci->ci_cpl));
 	openpic_write(cpu, OPENPIC_CTPR, ctpr);

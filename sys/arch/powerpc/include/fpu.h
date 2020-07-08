@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu.h,v 1.22 2018/04/19 21:50:07 christos Exp $	*/
+/*	$NetBSD: fpu.h,v 1.24 2020/07/06 10:52:12 rin Exp $	*/
 
 /*-
  * Copyright (C) 1996 Wolfgang Solfrank.
@@ -30,6 +30,7 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 #ifndef	_POWERPC_FPU_H_
 #define	_POWERPC_FPU_H_
 
@@ -68,9 +69,8 @@
 
 #ifdef _KERNEL
 
-#if defined(_KERNEL_OPT)
+#ifdef _KERNEL_OPT
 #include "opt_ppcarch.h"
-#include "opt_multiprocessor.h"
 #endif
 
 #include <sys/pcu.h>
