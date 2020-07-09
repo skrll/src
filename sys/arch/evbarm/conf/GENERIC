@@ -348,6 +348,7 @@ axp20xreg* 	at axp20x?
 axp22x* 	at iic?			# AXP221 Power Management IC
 axppmic* 	at iic?			# X-Powers AXP Power Management IC
 axpreg* 	at axppmic?
+em3027rtc* 	at iic?
 max77620pmic* 	at iic?
 pcf8563rtc* 	at iic?			# PCF8563 RTC
 seeprom* 	at iic?			# AT24Cxx Serial EEPROM

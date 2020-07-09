@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu.c,v 1.65 2020/06/14 16:12:05 riastradh Exp $	*/
+/*	$NetBSD: fpu.c,v 1.67 2020/07/06 18:30:48 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2008, 2019 The NetBSD Foundation, Inc.  All
@@ -96,7 +96,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.65 2020/06/14 16:12:05 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.67 2020/07/06 18:30:48 riastradh Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -125,6 +125,8 @@ __KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.65 2020/06/14 16:12:05 riastradh Exp $");
 #define clts() HYPERVISOR_fpu_taskswitch(0)
 #define stts() HYPERVISOR_fpu_taskswitch(1)
 #endif
+
+static void fpu_area_do_save(void *, uint64_t);
 
 void fpu_handle_deferred(void);
 void fpu_switch(struct lwp *, struct lwp *);
@@ -155,8 +157,24 @@ fpu_save_lwp(struct lwp *l)
 	kpreempt_disable();
 	if (l->l_md.md_flags & MDL_FPU_IN_CPU) {
 		KASSERT((l->l_flag & LW_SYSTEM) == 0);
-		fpu_area_save(area, x86_xsave_features);
+
+		/*
+		 * Order is important, in case we are interrupted and
+		 * the interrupt calls fpu_kern_enter, triggering
+		 * reentry of fpu_save_lwp:
+		 *
+		 * 1. Save FPU state.
+		 * 2. Note FPU state has been saved.
+		 * 3. Disable FPU access so the kernel doesn't
+		 *    accidentally use it.
+		 *
+		 * Steps (1) and (2) are both idempotent until step
+		 * (3), after which point attempting to save the FPU
+		 * state will trigger #NM/fpudna fault.
+		 */
+		fpu_area_do_save(area, x86_xsave_features);
 		l->l_md.md_flags &= ~MDL_FPU_IN_CPU;
+		stts();
 	}
 	kpreempt_enable();
 }
@@ -245,8 +263,8 @@ fpu_errata_amd(void)
 	fldummy();
 }
 
-void
-fpu_area_save(void *area, uint64_t xsave_features)
+static void
+fpu_area_do_save(void *area, uint64_t xsave_features)
 {
 	switch (x86_fpu_save) {
 	case FPU_SAVE_FSAVE:
@@ -262,7 +280,13 @@ fpu_area_save(void *area, uint64_t xsave_features)
 		xsaveopt(area, xsave_features);
 		break;
 	}
+}
 
+void
+fpu_area_save(void *area, uint64_t xsave_features)
+{
+
+	fpu_area_do_save(area, xsave_features);
 	stts();
 }
 
@@ -393,6 +417,9 @@ void
 fpu_kern_leave(void)
 {
 	static const union savefpu zero_fpu __aligned(64);
+	const union savefpu *savefpu;
+	struct lwp *l = curlwp;
+	struct pcb *pcb;
 	struct cpu_info *ci = curcpu();
 	int s;
 
@@ -400,17 +427,18 @@ fpu_kern_leave(void)
 	KASSERT(ci->ci_kfpu_spl != -1);
 
 	/*
-	 * Zero the fpu registers; otherwise we might leak secrets
-	 * through Spectre-class attacks to userland, even if there are
-	 * no bugs in fpu state management.
+	 * Restore the FPU state immediately to avoid leaking any
+	 * kernel secrets, or zero it if this is a kthread.
 	 */
-	fpu_area_restore(&zero_fpu, x86_xsave_features);
-
-	/*
-	 * Set CR0_TS again so that the kernel can't accidentally use
-	 * the FPU.
-	 */
-	stts();
+	if ((l->l_pflag & LP_INTR) && (l->l_switchto != NULL))
+		l = l->l_switchto;
+	if (l->l_flag & LW_SYSTEM) {
+		savefpu = &zero_fpu;
+	} else {
+		pcb = lwp_getpcb(l);
+		savefpu = &pcb->pcb_savefpu;
+	}
+	fpu_area_restore(savefpu, x86_xsave_features);
 
 	s = ci->ci_kfpu_spl;
 	ci->ci_kfpu_spl = -1;

@@ -1,4 +1,4 @@
-/*	$NetBSD: vmparam.h,v 1.47 2020/01/13 20:36:44 christos Exp $	*/
+/*	$NetBSD: vmparam.h,v 1.49 2020/07/08 09:50:45 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002 Wasabi Systems, Inc.
@@ -88,14 +88,37 @@
  * Mach derived constants
  */
 #define	VM_MIN_ADDRESS		((vaddr_t) PAGE_SIZE)
-#ifdef ARM_MMU_EXTENDED
-#define	VM_MAXUSER_ADDRESS	((vaddr_t) 0x80000000 - PAGE_SIZE)
-#else
 #define	VM_MAXUSER_ADDRESS	((vaddr_t) KERNEL_BASE - PAGE_SIZE)
-#endif
 #define	VM_MAX_ADDRESS		VM_MAXUSER_ADDRESS
 
 #define	VM_MIN_KERNEL_ADDRESS	((vaddr_t) KERNEL_BASE)
 #define	VM_MAX_KERNEL_ADDRESS	((vaddr_t) -(PAGE_SIZE+1))
+
+#ifdef ARM_MMU_EXTENDED
+/*
+ * kernel virtual space layout without direct map (common case)
+ *
+ *   0x8000_0000 -  256MB kernel text/data/bss
+ *   0x9000_0000 - 1536MB Kernel VM Space
+ *   0xf000_0000 -  256MB IO
+ *
+ * kernel virtual space layout with direct map (1GB limited)
+ *   0x8000_0000 - 1024MB kernel text/data/bss and direct map start
+ *   0xc000_0000 -  768MB Kernel VM Space
+ *   0xf000_0000 -  256MB IO
+ *
+ */
+#define VM_KERNEL_IO_ADDRESS	0xf0000000
+#define VM_KERNEL_IO_SIZE	(VM_MAX_KERNEL_ADDRESS - VM_KERNEL_IO_ADDRESS)
+
+#ifdef __HAVE_MM_MD_DIRECT_MAPPED_PHYS
+#define KERNEL_VM_BASE		0xc0000000
+#else
+#define KERNEL_VM_BASE		0x90000000
+#endif
+
+#define KERNEL_VM_SIZE		(KERNEL_IO_VBASE - KERNEL_VM_BASE)
+
+#endif
 
 #endif /* _ARM_ARM32_VMPARAM_H_ */

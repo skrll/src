@@ -1,4 +1,4 @@
-/* $NetBSD: ofwoea_machdep.c,v 1.47 2020/02/28 22:14:10 macallan Exp $ */
+/* $NetBSD: ofwoea_machdep.c,v 1.50 2020/07/07 02:33:54 rin Exp $ */
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -30,15 +30,20 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.47 2020/02/28 22:14:10 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.50 2020/07/07 02:33:54 rin Exp $");
 
-#include "opt_ppcarch.h"
-#include "opt_compat_netbsd.h"
+#include "ksyms.h"
+#include "wsdisplay.h"
+
+#ifdef _KERNEL_OPT
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_modular.h"
-
-#include "wsdisplay.h"
+#include "opt_multiprocessor.h"
+#include "opt_oea.h"
+#include "opt_ofwoea.h"
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/buf.h>
@@ -67,10 +72,6 @@ __KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.47 2020/02/28 22:14:10 macallan
 #include <powerpc/spr.h>
 #include <powerpc/pic/picvar.h>
 
-#include "opt_oea.h"
-
-#include "ksyms.h"
-
 #ifdef DDB
 #include <machine/db_machdep.h>
 #include <ddb/db_extern.h>
@@ -79,8 +80,6 @@ __KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.47 2020/02/28 22:14:10 macallan
 #ifdef KGDB
 #include <sys/kgdb.h>
 #endif
-
-#include "opt_ofwoea.h"
 
 #ifdef ofppc
 extern struct model_data modeldata;
@@ -126,6 +125,8 @@ u_int timebase_freq = TIMEBASE_FREQ;
 #else
 u_int timebase_freq = 0;
 #endif
+
+int ofw_quiesce;
 
 extern int ofwmsr;
 extern int chosen;
@@ -177,7 +178,7 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 
 	if (strncmp(model_name, "PowerMac11,2", 12) == 0 ||
 	    strncmp(model_name, "PowerMac12,1", 12) == 0)
-		OF_quiesce();
+		ofw_quiesce = 1;
 
 	/* switch CPUs to full speed */
 	if  (strncmp(model_name, "PowerMac7,", 10) == 0) {
@@ -191,6 +192,9 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 	ofwoea_bus_space_init();
 
 	ofwoea_consinit();
+
+	if (ofw_quiesce)
+		OF_quiesce();
 
 #if defined(MULTIPROCESSOR) && defined(ofppc)
 	for (i=1; i < CPU_MAXNUM; i++) {

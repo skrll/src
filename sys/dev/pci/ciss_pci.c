@@ -1,4 +1,4 @@
-/*	$NetBSD: ciss_pci.c,v 1.15 2018/12/09 11:14:01 jdolecek Exp $	*/
+/*	$NetBSD: ciss_pci.c,v 1.17 2020/07/05 19:28:37 jdolecek Exp $	*/
 /*	$OpenBSD: ciss_pci.c,v 1.9 2005/12/13 15:56:01 brad Exp $	*/
 
 /*
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ciss_pci.c,v 1.15 2018/12/09 11:14:01 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ciss_pci.c,v 1.17 2020/07/05 19:28:37 jdolecek Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
