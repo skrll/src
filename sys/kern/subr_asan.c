@@ -50,6 +50,9 @@ __KERNEL_RCSID(0, "$NetBSD: subr_asan.c,v 1.23 2020/07/03 08:19:20 skrll Exp $")
 #endif
 
 /* ASAN constants. Part of the compiler ABI. */
+#define KASAN_SHADOW_SCALE_SHIFT	3
+#define KASAN_SHADOW_SCALE_SIZE		(1UL << KASAN_SHADOW_SCALE_SHIFT)
+#define KASAN_SHADOW_MASK		(KASAN_SHADOW_SCALE_SIZE - 1)
 #define KASAN_ALLOCA_SCALE_SIZE		32
 
 /* The MD code. */
