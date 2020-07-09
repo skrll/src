@@ -62,7 +62,7 @@ CFLAGS+=	-mapcs-frame
 .endif
 
 # Note: -fasan-shadow-offset=
-#	KASAN_SHADOW_START - (CANONICAL_BASE >> 3) =
+#	KASAN_SHADOW_START - (__MD_KERNMEM_BASE >> KASAN_SHADOW_SCALE_SHIFT) =
 #       0xc000_0000 - (0x8000_0000 >> 3) = 0xb000_0000
 #
 
