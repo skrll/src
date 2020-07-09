@@ -124,7 +124,6 @@
 #include "opt_arm_debug.h"
 #include "opt_arm_start.h"
 #include "opt_fdt.h"
-#include "opt_kasan.h"
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
