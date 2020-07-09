@@ -40,6 +40,9 @@
 #include <sys/types.h>
 #include <sys/bus.h>
 
+/* ASAN constants. Part of the compiler ABI. */
+#define KASAN_SHADOW_SCALE_SHIFT	3
+
 /* Stack redzone values. Part of the compiler ABI. */
 #define KASAN_STACK_LEFT	0xF1
 #define KASAN_STACK_MID		0xF2
