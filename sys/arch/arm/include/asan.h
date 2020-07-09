@@ -83,7 +83,6 @@ __md_palloc(void)
 		__builtin_memset((void *)va, 0, PAGE_SIZE);
 
 		return KERN_VTOPHYS(va);
-
 	}
 
 	if (!uvm.page_init_done) {
@@ -219,7 +218,6 @@ __md_unwind_end(const char *name)
 static void
 kasan_md_unwind(void)
 {
-
 	uint32_t lr, *fp;
 	const char *mod;
 	const char *sym;
