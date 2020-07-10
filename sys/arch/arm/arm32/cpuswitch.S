@@ -1,4 +1,4 @@
-/*	$NetBSD: cpuswitch.S,v 1.100 2020/07/06 07:36:14 skrll Exp $	*/
+/*	$NetBSD: cpuswitch.S,v 1.101 2020/07/10 12:25:09 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -87,7 +87,7 @@
 #include <arm/asm.h>
 #include <arm/locore.h>
 
-	RCSID("$NetBSD: cpuswitch.S,v 1.100 2020/07/06 07:36:14 skrll Exp $")
+	RCSID("$NetBSD: cpuswitch.S,v 1.101 2020/07/10 12:25:09 skrll Exp $")
 
 /* LINTSTUB: include <sys/param.h> */
 

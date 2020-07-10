@@ -1,4 +1,4 @@
-/*	$NetBSD: arm32_kvminit.c,v 1.63 2020/07/03 06:33:39 skrll Exp $	*/
+/*	$NetBSD: arm32_kvminit.c,v 1.64 2020/07/10 12:25:09 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003, 2005  Genetec Corporation.  All rights reserved.
@@ -127,7 +127,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arm32_kvminit.c,v 1.63 2020/07/03 06:33:39 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm32_kvminit.c,v 1.64 2020/07/10 12:25:09 skrll Exp $");
 
 #include <sys/param.h>
 

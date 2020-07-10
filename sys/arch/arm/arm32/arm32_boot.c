@@ -1,4 +1,4 @@
-/*	$NetBSD: arm32_boot.c,v 1.38 2020/06/06 09:03:59 skrll Exp $	*/
+/*	$NetBSD: arm32_boot.c,v 1.39 2020/07/10 12:25:09 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003, 2005  Genetec Corporation.  All rights reserved.
@@ -122,7 +122,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.38 2020/06/06 09:03:59 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.39 2020/07/10 12:25:09 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_cputypes.h"

@@ -1,4 +1,4 @@
-/*	$NetBSD: ldscript.evbarm,v 1.13 2016/02/08 21:08:03 skrll Exp $	*/
+/*	$NetBSD: ldscript.evbarm,v 1.14 2020/07/10 12:25:10 skrll Exp $	*/
 
 ENTRY(KERNEL_BASE_phys)
 SECTIONS

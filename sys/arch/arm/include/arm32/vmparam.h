@@ -1,4 +1,4 @@
-/*	$NetBSD: vmparam.h,v 1.50 2020/07/10 07:31:33 skrll Exp $	*/
+/*	$NetBSD: vmparam.h,v 1.52 2020/07/10 12:45:15 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002 Wasabi Systems, Inc.
@@ -122,9 +122,6 @@
  *
  */
 
-#define VM_KERNEL_IO_ADDRESS	0xf0000000
-#define VM_KERNEL_IO_SIZE	(VM_MAX_KERNEL_ADDRESS - VM_KERNEL_IO_ADDRESS)
-
 #ifdef KASAN
 #define VM_KERNEL_KASAN_BASE	0xc0000000
 #define VM_KERNEL_KASAN_SIZE	(VM_KERNEL_VM_SIZE >> KASAN_SHADOW_SCALE_SHIFT)
@@ -144,5 +141,8 @@
 #endif
 
 #define VM_KERNEL_VM_SIZE	(VM_KERNEL_VM_END - VM_KERNEL_VM_BASE)
+
+#define VM_KERNEL_IO_ADDRESS	0xf0000000
+#define VM_KERNEL_IO_SIZE	(VM_MAX_KERNEL_ADDRESS - VM_KERNEL_IO_ADDRESS)
 
 #endif /* _ARM_ARM32_VMPARAM_H_ */

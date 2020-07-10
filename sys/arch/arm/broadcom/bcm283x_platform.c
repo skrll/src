@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm283x_platform.c,v 1.39 2020/06/26 08:42:01 skrll Exp $	*/
+/*	$NetBSD: bcm283x_platform.c,v 1.40 2020/07/10 12:25:09 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.39 2020/06/26 08:42:01 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.40 2020/07/10 12:25:09 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_bcm283x.h"
