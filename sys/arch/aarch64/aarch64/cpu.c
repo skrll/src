@@ -95,8 +95,8 @@ struct cpu_info cpu_info_store[NCPUINFO] = {
 void
 cpu_attach(device_t dv, cpuid_t id)
 {
-	const int unit = device_unit(dv);
 	struct cpu_info *ci;
+	const int unit = device_unit(dv);
 
 	if (unit == 0) {
 		ci = curcpu();
