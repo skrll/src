@@ -139,10 +139,6 @@
 #else
 #define VM_KERNEL_VM_BASE	0x90000000
 #endif
-#else
-#ifdef KASAN
-#error KASAN is unsupported on pre-ARMv6
-#endif
 
 #define VM_KERNEL_VM_SIZE	(VM_KERNEL_VM_END - VM_KERNEL_VM_BASE)
 
