@@ -1,4 +1,4 @@
-/*	$NetBSD: vmparam.h,v 1.49 2020/07/08 09:50:45 skrll Exp $	*/
+/*	$NetBSD: vmparam.h,v 1.50 2020/07/10 07:31:33 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002 Wasabi Systems, Inc.
@@ -96,9 +96,6 @@
 #define	VM_MIN_KERNEL_ADDRESS	((vaddr_t) KERNEL_BASE)
 #define	VM_MAX_KERNEL_ADDRESS	((vaddr_t) -(PAGE_SIZE+1))
 
-#ifdef ARM_MMU_EXTENDED
-
-
 // AddressSanitizer dedicates 1/8 of kernel memory to its shadow memory (e.g.
 // 128MB to cover 1GB for ARM) and uses a special KVA range for the shadow
 // address corresponding to a kernel memory address.
@@ -132,26 +129,20 @@
 #define VM_KERNEL_KASAN_BASE	0xc0000000
 #define VM_KERNEL_KASAN_SIZE	(KERNEL_VM_SIZE >> KASAN_SHADOW_SCALE_SHIFT)
 #define VM_KERNEL_KASAN_END	(VM_KERNEL_KASAN_BASE + VM_KERNEL_KASAN_SIZE)
-#define KERNEL_VM_END		VM_KERNEL_KASAN_BASE
+#define VM_KERNEL_VM_END	VM_KERNEL_KASAN_BASE
 #else
-#define KERNEL_VM_END		VM_KERNEL_IO_ADDRESS
+#define VM_KERNEL_VM_END	VM_KERNEL_IO_ADDRESS
 #endif
 
 #ifdef __HAVE_MM_MD_DIRECT_MAPPED_PHYS
 #ifdef KASAN
 #error KASAN and __HAVE_MM_MD_DIRECT_MAPPED_PHYS is unsupported
 #endif
-
-#define KERNEL_VM_BASE		0xc0000000
+#define VM_KERNEL_VM_BASE	0xc0000000
 #else
-#define KERNEL_VM_BASE		0x90000000
+#define VM_KERNEL_VM_BASE	0x90000000
 #endif
 
-#define KERNEL_VM_SIZE		(KERNEL_VM_END - KERNEL_BASE)
-#else
-#ifdef KASAN
-#error KASAN is unsupported on pre-ARMv6
-#endif
-#endif	/* ARM_MMU_EXTENDED */
+#define VM_KERNEL_VM_SIZE	(VM_KERNEL_VM_END - VM_KERNEL_VM_BASE)
 
 #endif /* _ARM_ARM32_VMPARAM_H_ */
