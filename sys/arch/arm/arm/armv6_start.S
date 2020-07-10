@@ -1,4 +1,4 @@
-/*	$NetBSD: armv6_start.S,v 1.18 2020/07/08 10:17:59 skrll Exp $	*/
+/*	$NetBSD: armv6_start.S,v 1.19 2020/07/09 11:40:54 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2017, 2018 The NetBSD Foundation, Inc.
@@ -535,7 +535,6 @@ generic_vstartv6:
 
 #endif
 
-
 #if defined(_ARM_ARCH_7)
 
 //
@@ -563,7 +562,6 @@ generic_vstartv6:
 #define CPU_CONTROL_XP_ENABLE_SET	0
 #endif
 
-
 // bits to set in the Control Register
 //
 #define CPU_CONTROL_SET			( 	\
@@ -580,7 +578,6 @@ generic_vstartv6:
 	CPU_CONTROL_AFLT_ENABLE_CLR	|	\
 	CPU_CONTROL_XP_ENABLE_CLR	|	\
 	0)
-
 
 /*
  * Perform the initialization of the an ARMv7 core required by NetBSD.
@@ -748,7 +745,6 @@ armv7_mmuinit:
 	mov	r1, #DOMAIN_DEFAULT
 	mcr	p15, 0, r1, c3, c0, 0	// DACR write
 
-
 #if 0
 
 /*
@@ -874,7 +870,6 @@ ENTRY_NP(cpu_mpstart)
 	movt	lr, #:upper16:armv7_mpcontinuation
 	b	armv7_mmuinit
 ASEND(cpu_mpstart)
-
 
 /*
  * Now running with real kernel VA via bootstrap tables
@@ -1084,7 +1079,6 @@ armv6_mmuinit:
 
 	.ltorg
 
-
 	/* bits to set in the Control Register */
 Lcontrol_set:
 #ifdef ARM_MMU_EXTENDED
@@ -1116,7 +1110,6 @@ Lcontrol_wax:
 		(1 << 17) | \
 	        (1 << 10)
 #endif
-
 
 ENTRY_NP(generic_vprint)
 	push	{r4, lr}
