@@ -1,4 +1,4 @@
-# $NetBSD: t_opensnoop.sh,v 1.2 2020/07/06 10:32:18 jruoho Exp $
+# $NetBSD: t_opensnoop.sh,v 1.4 2020/07/11 09:55:26 jruoho Exp $
 #
 # Copyright (c) 2020 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -33,10 +33,13 @@ atf_test_case basic cleanup
 basic_head() {
 	atf_set "require.user" "root"
 	atf_set "require.progs" "opensnoop"
-	atf_set "descr" "Test that DTrace's opensnoop works (cf. kern/53417)"
+	atf_set "descr" "Test that DTrace's opensnoop works " \
+		"(cf. PR kern/53417 and PR kern/55481)"
 }
 
 basic_body() {
+
+	atf_skip "The test may cause a panic (PR kern/55481)"
 
 	n=10
 	atf_check -s exit:0 -o ignore -e empty -x "opensnoop > $tmp &"
@@ -47,8 +50,9 @@ basic_body() {
 		n=$(expr $n - 1)
 	done
 
-	sleep 3
+	sleep 5
 	pkill -9 opensnoop
+	sleep 1
 
 	if [ ! $(cat $tmp | grep "/etc/spwd.db" | wc -l) -eq 10 ]; then
 		atf_fail "opensnoop does not work"
