@@ -53,7 +53,7 @@ ENTRY(mutex_enter)
 	ret
 2:
 	b	1b
-3:	
+3:
 	b	_C_LABEL(mutex_vector_enter)
 END(mutex_enter)
 
@@ -75,7 +75,7 @@ ENTRY(mutex_exit)
 	ret
 2:
 	b	1b
-3:	
+3:
 	b	_C_LABEL(mutex_vector_exit)
 END(mutex_exit)
 #endif	/* !LOCKDEBUG */
