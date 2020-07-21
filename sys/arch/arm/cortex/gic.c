@@ -360,16 +360,14 @@ armgic_irq_handler(void *tf)
 		KASSERT(is != &armgic_dummy_source);
 
 		/*
-		 * GIC has asserted IPL for us so we can just update ci_cpl.
+		 * GIC normally asserts IPL for us via PMR so we can just update
+		 * ci_cpl.
 		 *
 		 * But it's not that simple.  We may have already bumped ci_cpl
-		 * due to a high priority interrupt and now we are about to
-		 * dispatch one lower than the previous.  It's possible for
-		 * that previous interrupt to have deferred some interrupts
-		 * so we need deal with those when lowering to the current
-		 * interrupt's ipl.
-		 *
-		 * However, if are just raising ipl, we can just update ci_cpl.
+		 * while dispatching an interrupt, but when we write to EOIR
+		 * we deactivate the interrupt AND drop the priority on the
+		 * GIC CPU interface allowing any active interrupts to be
+		 * delivered.  The priority drop presents a problem.
 		 */
 		const int ipl = is->is_ipl;
 		if (__predict_true(ipl > ci->ci_cpl)) {
@@ -391,7 +389,8 @@ armgic_irq_handler(void *tf)
 	}
 
 	/*
-	 * Now handle any pending ints.
+	 * Now handle any pending interrupts.  As gic doesn't mark anything
+	 * pending itself this will be just for child pics,
 	 */
 	pic_do_pending_ints(I32_bit, old_ipl, tf);
 	KASSERTMSG(ci->ci_cpl == old_ipl, "ci_cpl %d old_ipl %d", ci->ci_cpl, old_ipl);
@@ -469,6 +468,37 @@ armgic_establish_irq(struct pic_softc *pic, struct intrsource *is)
 	priority &= ~(0xffU << byte_shift);
 	priority |= armgic_ipl_to_priority(is->is_ipl) << byte_shift;
 	gicd_write(sc, priority_reg, priority);
+}
+
+static void
+armgic_dist_init(struct armgic_softc *sc)
+{
+
+	/* Distributer should be disabled */
+	KASSERT(!(gicd_read(sc, GICD_CTRL) & GICD_CTRL_Enable));
+
+	for (size_t i = 32; i < sc->sc_pic.pic_maxsources; i += 4) {
+		/*  Target all SPIs towards no CPUs. */
+		if ((i % 4) == 0)
+			gicd_write(sc, GICD_ITARGETSRn(i / 4), 0);
+		/* Set all SPIs to level triggered, active low */
+		if ((i % 16) == 0)
+			gicd_write(sc, GICD_ICFGRn(i / 16), 0);
+		/* Clear pending for all SPIs */
+		if ((i % 32) == 0) {
+			//gicd_write(sc, GICD_ICENABLERn(i / 32, 0xffffffff);
+			gicd_write(sc, GICD_ICPENDRn(i / 32), ~0);
+		}
+	}
+	/*
+	 * Force the GICD to IPL_HIGH and then enable interrupts.
+	 */
+	struct cpu_info * const ci = curcpu();
+	KASSERTMSG(ci->ci_cpl == IPL_HIGH, "ipl %d not IPL_HIGH", ci->ci_cpl);
+	armgic_set_priority(&sc->sc_pic, ci->ci_cpl);	// set PMR
+	gicd_write(sc, GICD_CTRL, GICD_CTRL_Enable);	// enable Distributer
+	gicc_write(sc, GICC_CTRL, GICC_CTRL_V1_Enable);	// enable CPU interrupts
+	cpsie(I32_bit);					// allow interrupt exceptions
 }
 
 #ifdef MULTIPROCESSOR
@@ -662,15 +692,7 @@ armgic_attach(device_t parent, device_t self, void *aux)
 #endif
 	pic_add(&sc->sc_pic, 0);
 
-	/*
-	 * Force the GICD to IPL_HIGH and then enable interrupts.
-	 */
-	struct cpu_info * const ci = curcpu();
-	KASSERTMSG(ci->ci_cpl == IPL_HIGH, "ipl %d not IPL_HIGH", ci->ci_cpl);
-	armgic_set_priority(&sc->sc_pic, ci->ci_cpl);	// set PMR
-	gicd_write(sc, GICD_CTRL, GICD_CTRL_Enable);	// enable Distributer
-	gicc_write(sc, GICC_CTRL, GICC_CTRL_V1_Enable);	// enable CPU interrupts
-	cpsie(I32_bit);					// allow interrupt exceptions
+	armgic_dist_init(sc);
 
 	/*
 	 * For each line that isn't valid, we set the intrsource for it to
