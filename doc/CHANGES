@@ -1,4 +1,4 @@
-# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2709 $>
+# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2717 $>
 #
 #
 # [Note: This file does not mention every change made to the NetBSD source tree.
@@ -135,6 +135,7 @@ Changes from NetBSD 9.0 to NetBSD 10.0:
 	de(4): Removed from the tree. [thorpej 20200119]
 	token ring and tr(4): Removed from the tree. [thorpej 20200119]
 	fddi, fpa(4), fta(4), fea(4): Removed from the tree. [thorpej 20200120]
+	wm(4): Add Intel I219 LM10-LM15 and V10-V14. [msaitoh 20200121]
 	OpenSSL: Imported 1.1.1d. [christos 20200122]
 	dhcpcd(8): Import dhcpcd-8.1.6 [roy 20200127]
 	openresolv(8): Import openresolv-3.10.0 [roy 20200127]
@@ -243,3 +244,16 @@ Changes from NetBSD 9.0 to NetBSD 10.0:
 	dhcpcd: Import version 9.1.4 [roy 20200703]
 	x86: Xen kernels now use the same kernel modules as native kernels.
 		[chs 20200704]
+	wskbd(4): Added keyboard layouts for Brazilian Portugese,
+		Canadian French, Estonian, Icelandic, and Latin American
+		Spanish to pckbd(4) and ukbd(4). [nia 20200713]
+	bnx(4): Enable support for MSI/MSI-X [jdolecek 20200714]
+	ciss(4): Add support for PERFORMANT mode, and enable MSI/MSI-X
+		for adapters supporting it [jdolecek 20200714]
+	ciss(4): Match new HP Smart Array adapters [jdolecek 20200714]
+	x86: Introduce per-cpu IDTs [yamaguchi 20200714]
+	evbmips: Renamed kernel config files:
+		ERLITE         -> OCTEON
+		INSTALL_ERLITE -> INSTALL_OCTEON
+		[simonb 20200715]
+	libc: Added ppoll() wrapper around native pollts(2) [kamil 20200717]

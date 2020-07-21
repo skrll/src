@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.126 2020/06/19 16:20:22 maxv Exp $	*/
+/*	$NetBSD: cpu.h,v 1.128 2020/07/19 13:55:09 maxv Exp $	*/
 
 /*
  * Copyright (c) 1990 The Regents of the University of California.
@@ -48,9 +48,6 @@
 #if defined(_KERNEL_OPT)
 #include "opt_xen.h"
 #include "opt_svs.h"
-#ifdef i386
-#include "opt_user_ldt.h"
-#endif
 #endif
 
 /*
@@ -103,6 +100,12 @@ struct clockframe {
 	struct intrframe cf_if;
 };
 
+struct idt_vec {
+	void *iv_idt;
+	void *iv_idt_pentium;
+	char iv_allocmap[NIDT];
+};
+
 /*
  * a bunch of this belongs in cpuvar.h; move it later..
  */
@@ -126,6 +129,7 @@ struct cpu_info {
 	uint64_t ci_scratch;
 	uintptr_t ci_pmap_data[128 / sizeof(uintptr_t)];
 	struct kcpuset *ci_tlb_cpuset;
+	struct idt_vec ci_idtvec;
 
 	int ci_kfpu_spl;
 

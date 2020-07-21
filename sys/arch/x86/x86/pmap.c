@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.399 2020/06/14 21:41:42 ad Exp $	*/
+/*	$NetBSD: pmap.c,v 1.401 2020/07/19 13:58:26 maxv Exp $	*/
 
 /*
  * Copyright (c) 2008, 2010, 2016, 2017, 2019, 2020 The NetBSD Foundation, Inc.
@@ -130,7 +130,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.399 2020/06/14 21:41:42 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.401 2020/07/19 13:58:26 maxv Exp $");
 
 #include "opt_user_ldt.h"
 #include "opt_lockdebug.h"
@@ -1309,11 +1309,7 @@ pmap_bootstrap(vaddr_t kva_start)
 	/*
 	 * Allocate space for the IDT, GDT and LDT.
 	 */
-#ifdef __HAVE_PCPU_AREA
-	idt_vaddr = (vaddr_t)&pcpuarea->idt;
-#else
 	idt_vaddr = pmap_bootstrap_valloc(1);
-#endif
 	idt_paddr = pmap_bootstrap_palloc(1);
 
 	gdt_vaddr = pmap_bootstrap_valloc(1);
@@ -3330,7 +3326,7 @@ pmap_ldt_xcall(void *arg1, void *arg2)
 	kpreempt_disable();
 	pm = arg1;
 	if (curcpu()->ci_pmap == pm) {
-#if defined(SVS) && defined(USER_LDT)
+#if defined(SVS)
 		if (svs_enabled) {
 			svs_ldt_sync(pm);
 		} else

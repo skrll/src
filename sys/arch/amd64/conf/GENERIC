@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.571 2020/06/24 03:38:54 thorpej Exp $
+# $NetBSD: GENERIC,v 1.573 2020/07/19 14:31:31 maxv Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.571 $"
+#ident		"GENERIC-$Revision: 1.573 $"
 
 maxusers	64		# estimated number of users
 
@@ -74,8 +74,9 @@ options 	USERCONF	# userconf(4) support
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
 # CPU-related options
-#options 	USER_LDT	# User-settable LDT, used by Wine
+options 	USER_LDT	# User-settable LDT, used by Wine
 options 	SVS		# Separate Virtual Space
+options 	PCPU_IDT	# Per CPU IDTs
 
 # GCC Spectre variant 2 migitation
 makeoptions	SPECTRE_V2_GCC_MITIGATION=1

@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu.c,v 1.65 2020/06/14 16:12:05 riastradh Exp $	*/
+/*	$NetBSD: fpu.c,v 1.72 2020/07/20 16:43:03 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2008, 2019 The NetBSD Foundation, Inc.  All
@@ -96,7 +96,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.65 2020/06/14 16:12:05 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.72 2020/07/20 16:43:03 riastradh Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -151,14 +151,15 @@ fpu_save_lwp(struct lwp *l)
 {
 	struct pcb *pcb = lwp_getpcb(l);
 	union savefpu *area = &pcb->pcb_savefpu;
+	int s;
 
-	kpreempt_disable();
+	s = splvm();
 	if (l->l_md.md_flags & MDL_FPU_IN_CPU) {
 		KASSERT((l->l_flag & LW_SYSTEM) == 0);
 		fpu_area_save(area, x86_xsave_features);
 		l->l_md.md_flags &= ~MDL_FPU_IN_CPU;
 	}
-	kpreempt_enable();
+	splx(s);
 }
 
 /*
@@ -299,7 +300,11 @@ fpu_handle_deferred(void)
 void
 fpu_switch(struct lwp *oldlwp, struct lwp *newlwp)
 {
+	struct cpu_info *ci __diagused = curcpu();
 	struct pcb *pcb;
+
+	KASSERTMSG(ci->ci_ilevel >= IPL_SCHED, "cpu%d ilevel=%d",
+	    cpu_index(ci), ci->ci_ilevel);
 
 	if (oldlwp->l_md.md_flags & MDL_FPU_IN_CPU) {
 		KASSERT(!(oldlwp->l_flag & LW_SYSTEM));
@@ -334,11 +339,13 @@ fpu_lwp_fork(struct lwp *l1, struct lwp *l2)
 void
 fpu_lwp_abandon(struct lwp *l)
 {
+	int s;
+
 	KASSERT(l == curlwp);
-	kpreempt_disable();
+	s = splvm();
 	l->l_md.md_flags &= ~MDL_FPU_IN_CPU;
 	stts();
-	kpreempt_enable();
+	splx(s);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -346,11 +353,14 @@ fpu_lwp_abandon(struct lwp *l)
 /*
  * fpu_kern_enter()
  *
- *	Begin using the FPU.  Raises to splhigh, disabling all
+ *	Begin using the FPU.  Raises to splvm, disabling most
  *	interrupts and rendering the thread non-preemptible; caller
  *	should not use this for long periods of time, and must call
  *	fpu_kern_leave() afterward.  Non-recursive -- you cannot call
  *	fpu_kern_enter() again without calling fpu_kern_leave() first.
+ *
+ *	Must be used only at IPL_VM or below -- never in IPL_SCHED or
+ *	IPL_HIGH interrupt handlers.
  */
 void
 fpu_kern_enter(void)
@@ -359,9 +369,10 @@ fpu_kern_enter(void)
 	struct cpu_info *ci;
 	int s;
 
-	s = splhigh();
+	s = splvm();
 
 	ci = curcpu();
+	KASSERTMSG(ci->ci_ilevel <= IPL_VM, "ilevel=%d", ci->ci_ilevel);
 	KASSERT(ci->ci_kfpu_spl == -1);
 	ci->ci_kfpu_spl = s;
 
@@ -369,11 +380,9 @@ fpu_kern_enter(void)
 	 * If we are in a softint and have a pinned lwp, the fpu state is that
 	 * of the pinned lwp, so save it there.
 	 */
-	if ((l->l_pflag & LP_INTR) && (l->l_switchto != NULL)) {
-		fpu_save_lwp(l->l_switchto);
-	} else {
-		fpu_save_lwp(l);
-	}
+	while ((l->l_pflag & LP_INTR) && (l->l_switchto != NULL))
+		l = l->l_switchto;
+	fpu_save_lwp(l);
 
 	/*
 	 * Clear CR0_TS, which fpu_save_lwp set if it saved anything --
@@ -396,7 +405,7 @@ fpu_kern_leave(void)
 	struct cpu_info *ci = curcpu();
 	int s;
 
-	KASSERT(ci->ci_ilevel == IPL_HIGH);
+	KASSERT(ci->ci_ilevel == IPL_VM);
 	KASSERT(ci->ci_kfpu_spl != -1);
 
 	/*

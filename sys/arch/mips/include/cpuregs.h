@@ -1,4 +1,4 @@
-/*	$NetBSD: cpuregs.h,v 1.99 2020/05/24 07:15:24 simonb Exp $	*/
+/*	$NetBSD: cpuregs.h,v 1.102 2020/07/20 03:17:44 simonb Exp $	*/
 
 /*
  * Copyright (c) 2009 Miodrag Vallat.
@@ -188,6 +188,9 @@
  */
 #define	MIPS_CR_BR_DELAY	0x80000000
 #define	MIPS_CR_COP_ERR		0x30000000
+#define	 MIPS_CR_COP_ERR_CU1	  1
+#define	 MIPS_CR_COP_ERR_CU2	  2
+#define	 MIPS_CR_COP_ERR_CU3	  3
 #define	MIPS1_CR_EXC_CODE	0x0000003C	/* four bits */
 #define	MIPS3_CR_EXC_CODE	0x0000007C	/* five bits */
 #define	MIPS_CR_IP		0x0000FF00
@@ -830,7 +833,10 @@
 /*
  * Bits defined for EBASE (CP0 register 15, select 1).
  */
+#define	MIPS_EBASE_EXC_BASE_SHIFT	12
+#define	MIPS_EBASE_EXC_BASE		__BITS(29, MIPS_EBASE_EXC_BASE_SHIFT)
 #define	MIPS_EBASE_CPUNUM		__BITS(9, 0)
+#define	MIPS_EBASE_CPUNUM_WIDTH		10	/* used by asm code */
 
 /*
  * Hints for the prefetch instruction
