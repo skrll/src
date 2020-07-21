@@ -1,4 +1,4 @@
-/*	$NetBSD: trap_subr.S,v 1.81 2020/03/01 23:23:36 rin Exp $	*/
+/*	$NetBSD: trap_subr.S,v 1.84 2020/07/12 21:18:01 rin Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -37,7 +37,13 @@
  *
  *	#include <powerpc/powerpc/trap_subr.S>
  */
+
+#ifdef _KERNEL_OPT
 #include "opt_altivec.h"
+#include "opt_ddb.h"
+#include "opt_kgdb.h"
+#include "opt_ppcarch.h"
+#endif
 
 /* LINTSTUB: include <sys/param.h> */
 /* LINTSTUB: include <powerpc/oea/bat.h> */
@@ -315,7 +321,6 @@ dsitrap_fix_dbat7:
 	ldreg	%r30,(CI_DISISAVE+CPUSAVE_R30)(%r1)	/* restore r30 */
 	ldreg	%r31,(CI_DISISAVE+CPUSAVE_R31)(%r1)	/* restore r31 */
 	mfsprg1	%r1
-	IBM405_ERRATA77_SYNC
 	RFI				/* return to trapped code */
 1:
 #endif	/* !PPC_MPC8XX */
@@ -388,7 +393,6 @@ _C_LABEL(dsi601trap):
 	ldreg	%r30,(CI_DISISAVE+CPUSAVE_R30)(%r1)	/* restore r30 */
 	ldreg	%r31,(CI_DISISAVE+CPUSAVE_R31)(%r1)	/* restore r31 */
 	mfsprg1	%r1
-	IBM405_ERRATA77_SYNC
 	RFI				/* return to trapped code */
 1:
 	mflr	%r28			/* save LR */
@@ -505,7 +509,6 @@ _C_LABEL(tlbimiss):
 	srwi	%r1,%r1,8		/* get byte 7 of pte */
 	tlbli	%r0			/* load the itlb */
 	stb	%r1,6(%r2)		/* update page table */
-	IBM405_ERRATA77_SYNC
 	RFI
 
 3:	/* not found in pteg */
@@ -565,7 +568,6 @@ _C_LABEL(tlbdlmiss):
 	srwi	%r1,%r1,8		/* get byte 7 of pte */
 	tlbld	%r0			/* load the dtlb */
 	stb	%r1,6(%r2)		/* update page table */
-	IBM405_ERRATA77_SYNC
 	RFI
 
 3:	/* not found in pteg */
@@ -622,7 +624,6 @@ _C_LABEL(tlbdsmiss):
 	mtcrf	0x80,%r3		/* and restore */
 	mtspr	SPR_RPA,%r1		/* set the pte */
 	tlbld	%r0			/* load the dtlb */
-	IBM405_ERRATA77_SYNC
 	RFI
 
 3:	/* not found in pteg */
@@ -996,7 +997,6 @@ trapleave:
 	FRAME_RESTORE_CALLEE
 intrleave:
 	FRAME_LEAVE(CI_TEMPSAVE)
-	IBM405_ERRATA77_SYNC
 	RFI
 
 /*
@@ -1220,7 +1220,6 @@ ddbtrap:
 	beq	trapagain
 	FRAME_RESTORE_CALLEE
 	FRAME_LEAVE(CI_DDBSAVE)
-	IBM405_ERRATA77_SYNC
 	RFI
 #endif /* DDB || KGDB */
 

@@ -1,11 +1,11 @@
-/*	$NetBSD: platform.h,v 1.1 2016/05/17 06:44:46 ryo Exp $	*/
+/*	$NetBSD: ppoll.c,v 1.1 2020/07/17 15:34:17 kamil Exp $	*/
 
 /*-
- * Copyright (c) 2012 The NetBSD Foundation, Inc.
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Nick Hudson
+ * by Apurva Nandan.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,31 +29,18 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _EVBARM_IMX7_PLATFORM_H
-#define _EVBARM_IMX7_PLATFORM_H
+#include <sys/cdefs.h>
+__RCSID("$NetBSD: ppoll.c,v 1.1 2020/07/17 15:34:17 kamil Exp $");
 
-#include <arm/imx/imx7reg.h>
+#include "namespace.h"
+#include <sys/poll.h>
+#include <sys/time.h>
 
-/*
- * Memory will be mapped starting at 0x80000000 through 0xbfffffff
- * Kernel VM space: KERNEL_VM_BASE to 0xc0000000
- */
-#define	KERNEL_VM_BASE		(KERNEL_BASE + 0x40000000)
-#define	KERNEL_VM_TOP		((0xfff00000 - IMX7_IOREG_SIZE) & -L1_SS_SIZE)
-#define	KERNEL_VM_SIZE		(KERNEL_VM_TOP - KERNEL_VM_BASE)
+int
+ppoll(struct pollfd * restrict fds, nfds_t nfds,
+    const struct timespec * restrict timeout_ts, 
+    const sigset_t * restrict sigmask)
+{	
 
-/*
- * iMX7 ARM Peripherals.  Their physical address would live in the user
- * address space, so we can't map 1:1 VA:PA.  So shove them just after the
- * top of the kernel VM.
- */
-
-#define	KERNEL_IO_VBASE			KERNEL_VM_TOP
-
-#define	KERNEL_IO_IOREG_VBASE		KERNEL_IO_VBASE
-#define	KERNEL_IO_ARMCORE_VBASE		(KERNEL_IO_IOREG_VBASE +	\
-					 IMX7_IOREG_SIZE)
-#define	KERNEL_IO_END_VBASE		(KERNEL_IO_ARMCORE_VBASE +	\
-					 IMX7_ARMCORE_SIZE)
-
-#endif	/* _EVBARM_IMX7_PLATFORM_H */
+	return pollts(fds, nfds, timeout_ts, sigmask);
+}

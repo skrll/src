@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.157 2020/02/25 00:42:12 rin Exp $	*/
+/*	$NetBSD: trap.c,v 1.163 2020/07/15 08:58:52 rin Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -31,15 +31,17 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.157 2020/02/25 00:42:12 rin Exp $");
-
-#include "opt_altivec.h"
-#include "opt_ddb.h"
-#include "opt_multiprocessor.h"
-
 #define	__UFETCHSTORE_PRIVATE
 #define	__UCAS_PRIVATE
+
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.163 2020/07/15 08:58:52 rin Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_altivec.h"
+#include "opt_ddb.h"
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 
@@ -67,7 +69,7 @@ __KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.157 2020/02/25 00:42:12 rin Exp $");
 #include <powerpc/spr.h>
 #include <powerpc/oea/spr.h>
 
-static int emulated_opcode(struct lwp *, struct trapframe *);
+static int emulate_privileged(struct lwp *, struct trapframe *);
 static int fix_unaligned(struct lwp *, struct trapframe *);
 static inline vaddr_t setusr(vaddr_t, size_t *);
 static inline void unsetusr(void);
@@ -158,7 +160,7 @@ trap(struct trapframe *tf)
 					    trunc_page(va), false)) {
 					return;
 				}
-#if defined(DIAGNOSTIC) && !defined(PPC_OEA64) && !defined (PPC_IBM4XX)
+#if defined(DIAGNOSTIC) && !defined(PPC_OEA64)
 			} else if ((va >> ADDR_SR_SHFT) == USER_SR) {
 				printf("trap: kernel %s DSI trap @ %#lx by %#lx"
 				    " (DSISR %#x): USER_SR unset\n",
@@ -433,7 +435,7 @@ vm_signal:
 				ksi.ksi_signo = SIGFPE;
 				ksi.ksi_code = fpu_get_fault_code();
 			} else if (tf->tf_srr1 & 0x40000) {
-				if (emulated_opcode(l, tf)) {
+				if (emulate_privileged(l, tf)) {
 					tf->tf_srr0 += 4;
 					break;
 				}
@@ -484,7 +486,7 @@ vm_signal:
 	default:
 		printf("trap type %x at %lx\n", type, tf->tf_srr0);
 brain_damage2:
-#ifdef DDBX
+#if defined(DDB) && 0 /* XXX */
 		if (kdb_trap(type, tf))
 			return;
 #endif
@@ -1074,8 +1076,8 @@ fix_unaligned(struct lwp *l, struct trapframe *tf)
 	return -1;
 }
 
-int
-emulated_opcode(struct lwp *l, struct trapframe *tf)
+static int
+emulate_privileged(struct lwp *l, struct trapframe *tf)
 {
 	uint32_t opcode;
 
@@ -1087,65 +1089,7 @@ emulated_opcode(struct lwp *l, struct trapframe *tf)
 		return 1;
 	}
 
-	if (OPC_MFMSR_P(opcode)) {
-		struct pcb * const pcb = lwp_getpcb(l);
-		register_t msr = tf->tf_srr1 & PSL_USERSRR1;
-
-		if (fpu_used_p(l))
-			msr |= PSL_FP;
-		msr |= (pcb->pcb_flags & (PCB_FE0|PCB_FE1));
-#ifdef ALTIVEC
-		if (vec_used_p(l))
-			msr |= PSL_VEC;
-#endif
-		tf->tf_fixreg[OPC_MFMSR_REG(opcode)] = msr;
-		return 1;
-	}
-
-#define	OPC_MTMSR_CODE		0x7c000124
-#define	OPC_MTMSR_MASK		0xfc1fffff
-#define	OPC_MTMSR		OPC_MTMSR_CODE
-#define	OPC_MTMSR_REG(o)	(((o) >> 21) & 0x1f)
-#define	OPC_MTMSR_P(o)		(((o) & OPC_MTMSR_MASK) == OPC_MTMSR_CODE)
-
-	if (OPC_MTMSR_P(opcode)) {
-		struct pcb * const pcb = lwp_getpcb(l);
-		register_t msr = tf->tf_fixreg[OPC_MTMSR_REG(opcode)];
-
-		/*
-		 * Ignore the FP enable bit in the requested MSR.
-		 * It might be set in the thread's actual MSR but the
-		 * user code isn't allowed to change it.
-		 */
-		msr &= ~PSL_FP;
-#ifdef ALTIVEC
-		msr &= ~PSL_VEC;
-#endif
-
-		/*
-		 * Don't let the user muck with bits he's not allowed to.
-		 */
-		if (!PSL_USEROK_P(msr))
-			return 0;
-
-		/*
-		 * For now, only update the FP exception mode.
-		 */
-		pcb->pcb_flags &= ~(PSL_FE0|PSL_FE1);
-		pcb->pcb_flags |= msr & (PSL_FE0|PSL_FE1);
-
-		/*
-		 * If we think we have the FPU, update SRR1 too.  If we're
-		 * wrong userret() will take care of it.
-		 */
-		if (tf->tf_srr1 & PSL_FP) {
-			tf->tf_srr1 &= ~(PSL_FE0|PSL_FE1);
-			tf->tf_srr1 |= msr & (PSL_FE0|PSL_FE1);
-		}
-		return 1;
-	}
-
-	return 0;
+	return emulate_mxmsr(l, tf, opcode);
 }
 
 int
