@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.82 2020/07/02 13:01:11 rin Exp $	*/
+/*	$NetBSD: pmap.c,v 1.84 2020/07/16 11:36:35 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.82 2020/07/02 13:01:11 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.84 2020/07/16 11:36:35 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
@@ -322,8 +322,7 @@ pmap_map_chunk(vaddr_t va, paddr_t pa, vsize_t size,
 
 	attr = _pmap_pte_adjust_prot(0, prot, VM_PROT_ALL, false);
 	attr = _pmap_pte_adjust_cacheflags(attr, flags);
-	pmapboot_enter_range(va, pa, resid, attr,
-	    PMAPBOOT_ENTER_NOOVERWRITE, bootpage_alloc, printf);
+	pmapboot_enter_range(va, pa, resid, attr, printf);
 	aarch64_tlbi_all();
 
 	return resid;
@@ -951,15 +950,15 @@ pmap_procwr(struct proc *p, vaddr_t sva, int len)
 		struct pmap *pm = p->p_vmspace->vm_map.pmap;
 		paddr_t pa;
 		vaddr_t va, eva;
-		int l;
+		int tlen;
 
-		for (va = sva; len > 0; va = eva, len -= l) {
+		for (va = sva; len > 0; va = eva, len -= tlen) {
 			eva = uimin(va + len, trunc_page(va + PAGE_SIZE));
-			l = eva - va;
+			tlen = eva - va;
 			if (!pmap_extract(pm, va, &pa))
 				continue;
 			va = AARCH64_PA_TO_KVA(pa);
-			cpu_icache_sync_range(va, l);
+			cpu_icache_sync_range(va, tlen);
 		}
 	}
 }

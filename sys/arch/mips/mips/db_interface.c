@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.83 2020/06/14 06:50:31 simonb Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.85 2020/07/13 12:56:58 simonb Exp $	*/
 
 /*
  * Mach Operating System
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.83 2020/06/14 06:50:31 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.85 2020/07/13 12:56:58 simonb Exp $");
 
 #include "opt_multiprocessor.h"
 #include "opt_cputype.h"	/* which mips CPUs do we support? */
@@ -766,16 +766,21 @@ db_mach_nmi_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 	mips3_sd(MIPS_PHYS_TO_XKPHYS_UNCACHED(CIU_NMI), __BIT(ci->ci_cpuid));
 }
 #endif
+#endif
 
 static void
 db_mach_reset_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 		const char *modif)
 {
-	mips3_sd(MIPS_PHYS_TO_XKPHYS_UNCACHED(CIU_SOFT_RST),
-	     mips3_ld(MIPS_PHYS_TO_XKPHYS_UNCACHED(CIU_FUSE)));
+
+	if (cpu_reset_address == NULL) {
+		db_printf("cpu_reset_address is not set\n");
+		return;
+	}
+
+	cpu_reset_address();
 }
 
-#endif
 const struct db_command db_machine_command_table[] = {
 #ifdef MULTIPROCESSOR
 	{ DDB_ADD_CMD("cpu",	db_mach_cpu_cmd,	0,
@@ -807,16 +812,14 @@ const struct db_command db_machine_command_table[] = {
 		"Set processor control register",
 		NULL, NULL) },
 #endif
-#ifdef MIPS64_OCTEON
-#ifdef MULTIPROCESSOR
+#if defined(MIPS64_OCTEON) && defined(MULTIPROCESSOR)
 	{ DDB_ADD_CMD("nmi", 	db_mach_nmi_cmd,	CS_NOREPEAT,
 		"Send NMI to processor",
 		"cpu#", NULL) },
-#endif
+#endif	/* OCTEON + MP */
 	{ DDB_ADD_CMD("reset", 	db_mach_reset_cmd,	CS_NOREPEAT,
 		"Initiate hardware reset",
 		NULL, NULL) },
-#endif
 	{ DDB_ADD_CMD(NULL,     NULL,               0,  NULL,NULL,NULL) }
 };
 #endif	/* !KGDB */

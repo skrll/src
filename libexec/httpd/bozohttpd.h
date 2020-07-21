@@ -1,4 +1,4 @@
-/*	$NetBSD: bozohttpd.h,v 1.60 2019/03/08 03:12:28 mrg Exp $	*/
+/*	$NetBSD: bozohttpd.h,v 1.62 2020/07/11 08:10:52 jruoho Exp $	*/
 
 /*	$eterna: bozohttpd.h,v 1.39 2011/11/18 09:21:15 mrg Exp $	*/
 
@@ -35,6 +35,7 @@
 #include "netbsd_queue.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <signal.h>
 
 #include <sys/stat.h>
@@ -42,7 +43,11 @@
 #ifndef NO_LUA_SUPPORT
 #include <lua.h>
 #endif
-#include <stdio.h>
+
+#ifndef NO_BLOCKLIST_SUPPORT
+#include <blocklist.h>
+void pfilter_notify(const int, const int);
+#endif
 
 /* QNX provides a lot of NetBSD things in nbutil.h */
 #ifdef HAVE_NBUTIL_H
@@ -117,6 +122,7 @@ typedef struct bozohttpd_t {
 	struct pollfd	*fds;		/* current poll fd set */
 	int		 request_times;	/* # times a request was processed */
 	int		 dir_indexing;	/* handle directories */
+	const char	*dir_readme;	/* include README footer in indexes */
 	int		 hide_dots;	/* hide .* */
 	int		 process_cgi;	/* use the cgi handler */
 	char		*cgibin;	/* cgi-bin directory */

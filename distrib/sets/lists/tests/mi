@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.872 2020/07/03 04:25:28 jruoho Exp $
+# $NetBSD: mi,v 1.874 2020/07/17 15:34:17 kamil Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -3169,8 +3169,10 @@
 ./usr/tests/lib/libc/sys/t_pipe			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_pipe2		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_poll			tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/sys/t_pollts			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_posix_fadvise	tests-lib-tests		atf,rump
 ./usr/tests/lib/libc/sys/t_posix_fallocate	tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libc/sys/t_ppoll			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_ptrace		tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_ptrace_sigchld	tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libc/sys/t_ptrace_wait		tests-lib-tests		compattestfile,atf
@@ -3910,6 +3912,7 @@
 ./usr/tests/net/net/t_ipaddress			tests-net-tests		atf,rump
 ./usr/tests/net/net/t_ipv6_lifetime		tests-net-tests		atf,rump
 ./usr/tests/net/net/t_ipv6address		tests-net-tests		atf,rump
+./usr/tests/net/net/t_mapped			tests-net-tests		atf
 ./usr/tests/net/net/t_mtudisc			tests-net-tests		atf,rump
 ./usr/tests/net/net/t_mtudisc6			tests-net-tests		atf,rump
 ./usr/tests/net/net/t_ping6_opts		tests-net-tests		atf,rump

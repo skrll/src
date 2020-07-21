@@ -1,11 +1,11 @@
-/*	$NetBSD: rpi.h,v 1.5 2017/12/10 21:38:27 skrll Exp $	*/
+/*	$NetBSD: ppoll.c,v 1.1 2020/07/17 15:34:17 kamil Exp $	*/
 
 /*-
- * Copyright (c) 2012 The NetBSD Foundation, Inc.
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Nick Hudson
+ * by Apurva Nandan.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,20 +29,18 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _EVBARM_RPI_RPI_H
-#define _EVBARM_RPI_RPI_H
+#include <sys/cdefs.h>
+__RCSID("$NetBSD: ppoll.c,v 1.1 2020/07/17 15:34:17 kamil Exp $");
 
-#include <arm/broadcom/bcm2835reg.h>
+#include "namespace.h"
+#include <sys/poll.h>
+#include <sys/time.h>
 
-/*
- * Memory may be mapped VA:PA starting at 0x80000000:0x00000000
- * RPI2 has 1GB upto 0xc0000000
- *
- * Kernel VM space: 800MB at KERNEL_VM_BASE
- */
-#define	KERNEL_VM_BASE		0xc0000000
-#define	KERNEL_VM_SIZE		(BCM2835_PERIPHERALS_VBASE - KERNEL_VM_BASE)
+int
+ppoll(struct pollfd * restrict fds, nfds_t nfds,
+    const struct timespec * restrict timeout_ts, 
+    const sigset_t * restrict sigmask)
+{	
 
-#define	RPI_REF_FREQ		19200000
-
-#endif	/* _EVBARM_RPI_RPI_H */
+	return pollts(fds, nfds, timeout_ts, sigmask);
+}

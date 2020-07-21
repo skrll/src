@@ -1,4 +1,4 @@
-/*	$NetBSD: oea_machdep.c,v 1.79 2020/06/11 19:20:44 ad Exp $	*/
+/*	$NetBSD: oea_machdep.c,v 1.81 2020/07/06 10:34:23 rin Exp $	*/
 
 /*
  * Copyright (C) 2002 Matt Thomas
@@ -33,14 +33,15 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: oea_machdep.c,v 1.79 2020/06/11 19:20:44 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: oea_machdep.c,v 1.81 2020/07/06 10:34:23 rin Exp $");
 
-#include "opt_ppcarch.h"
-#include "opt_compat_netbsd.h"
+#ifdef _KERNEL_OPT
+#include "opt_altivec.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_multiprocessor.h"
-#include "opt_altivec.h"
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/buf.h>

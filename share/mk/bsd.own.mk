@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1199 2020/06/06 22:06:42 joerg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1201 2020/07/20 14:24:13 tsutsui Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -1006,8 +1006,7 @@ MKCOMPATTESTS:=	no
 MKCOMPATX11:=	no
 .endif
 
-.if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "i386" \
-    || ${MACHINE_ARCH} == "mips64eb" || ${MACHINE_ARCH} == "mips64el" \
+.if ${MACHINE_ARCH} == "mips64eb" || ${MACHINE_ARCH} == "mips64el" \
     || (${MACHINE} == "evbppc" && ${MACHINE_ARCH} == "powerpc")
 MKCOMPATMODULES?=	yes
 .else
@@ -1518,17 +1517,11 @@ X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
 .if \
     ${MACHINE} == "alpha"	|| \
     ${MACHINE} == "amiga"	|| \
-    ${MACHINE} == "ews4800mips"	|| \
-    ${MACHINE} == "hpcarm"	|| \
-    ${MACHINE} == "hpcmips"	|| \
-    ${MACHINE} == "hpcsh"	|| \
     ${MACHINE} == "mac68k"	|| \
     ${MACHINE} == "netwinder"	|| \
-    ${MACHINE} == "newsmips"	|| \
     ${MACHINE} == "sgimips"	|| \
     ${MACHINE} == "vax"		|| \
-    ${MACHINE} == "x68k"	|| \
-    ${MACHINE} == "zaurus"
+    ${MACHINE} == "x68k"
 HAVE_XORG_SERVER_VER?=110
 .else
 HAVE_XORG_SERVER_VER?=120

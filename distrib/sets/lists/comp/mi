@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2338 2020/06/16 01:29:01 thorpej Exp $
+#	$NetBSD: mi,v 1.2340 2020/07/17 15:34:17 kamil Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -4529,6 +4529,7 @@
 ./usr/share/man/cat2/posix_fadvise.0		comp-c-catman		.cat
 ./usr/share/man/cat2/posix_fallocate.0		comp-c-catman		.cat
 ./usr/share/man/cat2/posix_madvise.0		comp-c-catman		.cat
+./usr/share/man/cat2/ppoll.0			comp-c-catman		.cat
 ./usr/share/man/cat2/pread.0			comp-c-catman		.cat
 ./usr/share/man/cat2/preadv.0			comp-c-catman		.cat
 ./usr/share/man/cat2/profil.0			comp-c-catman		.cat
@@ -11801,6 +11802,9 @@
 ./usr/share/man/cat9/pci_set_powerstate.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/pci_vpd_read.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/pci_vpd_write.0		comp-sys-catman		.cat
+./usr/share/man/cat9/pciconf_resource_add.0	comp-sys-catman		.cat
+./usr/share/man/cat9/pciconf_resource_fini.0	comp-sys-catman		.cat
+./usr/share/man/cat9/pciconf_resource_init.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/pckbport.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/pckbport_attach.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/pckbport_attach_slot.0	comp-sys-catman		.cat
@@ -12819,6 +12823,7 @@
 ./usr/share/man/html2/posix_fadvise.html	comp-c-htmlman		html
 ./usr/share/man/html2/posix_fallocate.html		comp-c-htmlman		html
 ./usr/share/man/html2/posix_madvise.html	comp-c-htmlman		html
+./usr/share/man/html2/ppoll.html		comp-c-htmlman		html
 ./usr/share/man/html2/pread.html		comp-c-htmlman		html
 ./usr/share/man/html2/preadv.html		comp-c-htmlman		html
 ./usr/share/man/html2/profil.html		comp-c-htmlman		html
@@ -19946,6 +19951,9 @@
 ./usr/share/man/html9/pci_set_powerstate.html	comp-sys-htmlman	html
 ./usr/share/man/html9/pci_vpd_read.html		comp-sys-htmlman	html
 ./usr/share/man/html9/pci_vpd_write.html	comp-sys-htmlman	html
+./usr/share/man/html9/pciconf_resource_add.html	comp-sys-htmlman	html
+./usr/share/man/html9/pciconf_resource_fini.html	comp-sys-htmlman	html
+./usr/share/man/html9/pciconf_resource_init.html	comp-sys-htmlman	html
 ./usr/share/man/html9/pckbport.html		comp-sys-htmlman	html
 ./usr/share/man/html9/pckbport_attach.html	comp-sys-htmlman	html
 ./usr/share/man/html9/pckbport_attach_slot.html comp-sys-htmlman	html
@@ -20937,6 +20945,7 @@
 ./usr/share/man/man2/posix_fadvise.2		comp-c-man		.man
 ./usr/share/man/man2/posix_fallocate.2		comp-c-man		.man
 ./usr/share/man/man2/posix_madvise.2		comp-c-man		.man
+./usr/share/man/man2/ppoll.2			comp-c-man		.man
 ./usr/share/man/man2/pread.2			comp-c-man		.man
 ./usr/share/man/man2/preadv.2			comp-c-man		.man
 ./usr/share/man/man2/profil.2			comp-c-man		.man
@@ -28250,6 +28259,9 @@
 ./usr/share/man/man9/pci_set_powerstate.9	comp-sys-man		.man
 ./usr/share/man/man9/pci_vpd_read.9		comp-sys-man		.man
 ./usr/share/man/man9/pci_vpd_write.9		comp-sys-man		.man
+./usr/share/man/man9/pciconf_resource_add.9	comp-sys-man		.man
+./usr/share/man/man9/pciconf_resource_fini.9	comp-sys-man		.man
+./usr/share/man/man9/pciconf_resource_init.9	comp-sys-man		.man
 ./usr/share/man/man9/pckbport.9			comp-sys-man		.man
 ./usr/share/man/man9/pckbport_attach.9		comp-sys-man		.man
 ./usr/share/man/man9/pckbport_attach_slot.9	comp-sys-man		.man

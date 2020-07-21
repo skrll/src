@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bnxvar.h,v 1.12 2020/02/01 07:12:40 thorpej Exp $	*/
+/*	$NetBSD: if_bnxvar.h,v 1.14 2020/07/14 15:37:40 jdolecek Exp $	*/
 /*-
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -124,10 +124,12 @@ struct bnx_softc
 	bus_space_handle_t	bnx_bhandle;		/* Device bus handle */
 	bus_size_t		bnx_size;
 
+	pci_intr_handle_t	*bnx_ih;
 	void			*bnx_intrhand;		/* Interrupt handler */
 
 	/* packet allocation workqueue */
 	struct workqueue	*bnx_wq;
+	struct work		bnx_wk;
 
 	/* ASIC Chip ID. */
 	uint32_t		bnx_chipid;

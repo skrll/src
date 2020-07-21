@@ -1,4 +1,4 @@
-/*	$NetBSD: hash.h,v 1.12 2017/05/31 21:07:03 maya Exp $	*/
+/*	$NetBSD: hash.h,v 1.15 2020/07/20 18:12:48 sjg Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -100,6 +100,7 @@ typedef struct Hash_Table {
     int 	size;		/* Actual size of array. */
     int 	numEntries;	/* Number of entries in the table. */
     int 	mask;		/* Used to select bits for hashing. */
+    int 	maxchain;	/* max length of chain detected */
 } Hash_Table;
 
 /*
@@ -145,5 +146,7 @@ Hash_Entry *Hash_CreateEntry(Hash_Table *, const char *, Boolean *);
 void Hash_DeleteEntry(Hash_Table *, Hash_Entry *);
 Hash_Entry *Hash_EnumFirst(Hash_Table *, Hash_Search *);
 Hash_Entry *Hash_EnumNext(Hash_Search *);
+void Hash_ForEach(Hash_Table *, void (*)(void *, void *), void *);
+void Hash_DebugStats(Hash_Table *, const char *);
 
 #endif /* _HASH_H */

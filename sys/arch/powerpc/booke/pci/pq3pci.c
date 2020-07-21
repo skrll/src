@@ -1,4 +1,4 @@
-/*	$NetBSD: pq3pci.c,v 1.23 2017/06/01 02:45:07 chs Exp $	*/
+/*	$NetBSD: pq3pci.c,v 1.25 2020/07/07 03:38:48 thorpej Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -38,13 +38,15 @@
 #define	GLOBAL_PRIVATE
 #define	__INTR_PRIVATE
 
-#include "opt_mpc85xx.h"
-#include "opt_pci.h"
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: pq3pci.c,v 1.25 2020/07/07 03:38:48 thorpej Exp $");
+
 #include "locators.h"
 
-#include <sys/cdefs.h>
-
-__KERNEL_RCSID(0, "$NetBSD: pq3pci.c,v 1.23 2017/06/01 02:45:07 chs Exp $");
+#ifdef _KERNEL_OPT
+#include "opt_mpc85xx.h"
+#include "opt_pci.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -939,16 +941,17 @@ pq3pci_cpunode_attach(device_t parent, device_t self, void *aux)
 			return;
 		}
 
-		struct extent *ioext = extent_create("pciio", 0, PCI_IOSIZE,
-		     NULL, 0, EX_NOWAIT);
-		struct extent *memext = extent_create("pcimem", membase,
-		     membase + PCI_MEMSIZE, NULL, 0, EX_NOWAIT);
+		struct pciconf_resources *pcires = pciconf_resource_init();
 
-		error = pci_configure_bus(pc, ioext, memext, NULL, 0,
+		pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+		    0, PCI_IOSIZE);
+		pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+		    membase, PCI_MEMSIZE);
+
+		error = pci_configure_bus(pc, pcires, 0,
 		    curcpu()->ci_ci.dcache_line_size);
 
-		extent_destroy(ioext);
-		extent_destroy(memext);
+		pciconf_resource_fini(pcires);
 
 		if (error) {
 			aprint_normal(": configuration failed\n");
