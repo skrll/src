@@ -1,4 +1,4 @@
-# $Id: modmisc.mk,v 1.12 2020/07/04 18:54:18 rillig Exp $
+# $Id: modmisc.mk,v 1.18 2020/07/20 19:03:25 rillig Exp $
 #
 # miscellaneous modifier tests
 
@@ -16,8 +16,12 @@ MOD_OPT=@d@$${exists($$d):?$$d:$${d:S,/usr,/opt,}}@
 MOD_SEP=S,:, ,g
 
 all:	modvar modvarloop modsysv mod-HTE emptyvar undefvar
-all:	mod-S mod-C mod-at-varname mod-at-resolve
+all:	mod-S mod-C mod-at-varname mod-at-resolve mod-at-dollar
 all:	mod-subst-dollar mod-loop-dollar
+all:	mod-C-limits
+all:	mod-assign
+all:	mod-assign-nested
+all:	mod-tu-space
 
 modsysv:
 	@echo "The answer is ${libfoo.a:L:libfoo.a=42}"
@@ -95,6 +99,14 @@ RES3=		3
 mod-at-resolve:
 	@echo $@:${RESOLVE:@v@w${v}w@:Q}:
 
+# As of 2020-07-19, the variable name of the :@ modifier may end with one
+# or two dollar signs, which are silently ignored.  There's no point in
+# allowing a dollar sign in that position.
+mod-at-dollar:
+	@echo $@:${1 2 3:L:@v$@($v)@:Q}.
+	@echo $@:${1 2 3:L:@v$$@($v)@:Q}.
+	@echo $@:${1 2 3:L:@v$$$@($v)@:Q}.
+
 # No matter how many dollar characters there are, they all get merged
 # into a single dollar by the :S modifier.
 mod-subst-dollar:
@@ -125,3 +137,38 @@ mod-loop-dollar:
 	@echo $@:${:U4:@word@$$$${word}$$$$@:Q}:
 	@echo $@:${:U5:@word@$$$$${word}$$$$$@:Q}:
 	@echo $@:${:U6:@word@$$$$$${word}$$$$$$@:Q}:
+
+mod-C-limits:
+	@echo $@:00-ok:${:U1 23 456:C,..,\0\0,:Q}
+	@echo $@:11-missing:${:U1 23 456:C,..,\1\1,:Q}
+	@echo $@:11-ok:${:U1 23 456:C,(.).,\1\1,:Q}
+	@echo $@:22-missing:${:U1 23 456:C,..,\2\2,:Q}
+	@echo $@:22-missing:${:U1 23 456:C,(.).,\2\2,:Q}
+	@echo $@:22-ok:${:U1 23 456:C,(.)(.),\2\2,:Q}
+	# The :C modifier only handles single-digit capturing groups,
+	# which is more than enough for daily use.
+	@echo $@:capture:${:UabcdefghijABCDEFGHIJrest:C,(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.),\9\8\7\6\5\4\3\2\1\0\10\11\12,}
+
+# Just a bit of basic code coverage for the obscure ::= assignment modifiers.
+mod-assign:
+	@echo $@: ${1 2 3:L:@i@${FIRST::?=$i}@} first=${FIRST}.
+	@echo $@: ${1 2 3:L:@i@${LAST::=$i}@} last=${LAST}.
+	@echo $@: ${1 2 3:L:@i@${APPENDED::+=$i}@} appended=${APPENDED}.
+	@echo $@: ${echo.1 echo.2 echo.3:L:@i@${RAN::!=${i:C,.*,&; & 1>\&2,:S,., ,g}}@} ran:${RAN}.
+	# The assignments happen in the global scope and thus are
+	# preserved even after the shell command has been run.
+	@echo $@: global: ${FIRST:Q}, ${LAST:Q}, ${APPENDED:Q}, ${RAN:Q}.
+
+mod-assign-nested:
+	@echo $@: ${1:?${THEN1::=then1${IT1::=t1}}:${ELSE1::=else1${IE1::=e1}}}${THEN1}${ELSE1}${IT1}${IE1}
+	@echo $@: ${0:?${THEN2::=then2${IT2::=t2}}:${ELSE2::=else2${IE2::=e2}}}${THEN2}${ELSE2}${IT2}${IE2}
+	@echo $@: ${SINK3:Q}
+	@echo $@: ${SINK4:Q}
+SINK3:=	${1:?${THEN3::=then3${IT3::=t3}}:${ELSE3::=else3${IE3::=e3}}}${THEN3}${ELSE3}${IT3}${IE3}
+SINK4:=	${0:?${THEN4::=then4${IT4::=t4}}:${ELSE4::=else4${IE4::=e4}}}${THEN4}${ELSE4}${IT4}${IE4}
+
+mod-tu-space:
+	# The :tu and :tl modifiers operate on the variable value
+	# as a single string, not as a list of words. Therefore,
+	# the adjacent spaces are preserved.
+	@echo $@: ${a   b:L:tu:Q}

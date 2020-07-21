@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.83 2020/07/06 10:41:43 rin Exp $	*/
+/*	$NetBSD: trap.c,v 1.85 2020/07/15 09:10:14 rin Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -69,7 +69,7 @@
 #define	__UFETCHSTORE_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.83 2020/07/06 10:41:43 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.85 2020/07/15 09:10:14 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -287,6 +287,7 @@ vm_signal:
 		if (rv == 0) {
 			break;
 		}
+isi:
 		KSI_INIT_TRAP(&ksi);
 		ksi.ksi_trap = EXC_ISI;
 		ksi.ksi_addr = (void *)tf->tf_srr0;
@@ -309,27 +310,52 @@ vm_signal:
 		break;
 
 	case EXC_PGM|EXC_USER:
-		/*
-		 * Illegal insn:
-		 *
-		 * let's try to see if its FPU and can be emulated.
-		 */
 		curcpu()->ci_data.cpu_ntrap++;
-		pcb = lwp_getpcb(l);
 
-		if (__predict_false(!fpu_used_p(l))) {
-			memset(&pcb->pcb_fpu, 0, sizeof(pcb->pcb_fpu));
-			fpu_mark_used(l);
-		}
+		KSI_INIT_TRAP(&ksi);
+		ksi.ksi_trap = EXC_PGM;
+		ksi.ksi_addr = (void *)tf->tf_srr0;
 
-		if (fpu_emulate(tf, &pcb->pcb_fpu, &ksi)) {
-			if (ksi.ksi_signo == 0)	/* was emulated */
+		if (tf->tf_esr & ESR_PTR) {
+sigtrap:
+			if (p->p_raslist != NULL &&
+			    ras_lookup(p, (void *)tf->tf_srr0) != (void *) -1) {
+				tf->tf_srr1 += 4;
 				break;
-		} else {
+			}
+			ksi.ksi_code = TRAP_BRKPT;
+			ksi.ksi_signo = SIGTRAP;
+		} else if (tf->tf_esr & ESR_PPR) {
+			uint32_t opcode;
+
+			rv = copyin((void *)tf->tf_srr0, &opcode,
+			    sizeof(opcode));
+			if (rv)
+				goto isi;
+			if (emulate_mxmsr(l, tf, opcode)) {
+				tf->tf_srr0 += 4;
+				break;
+			}
+
+			ksi.ksi_code = ILL_PRVOPC;
 			ksi.ksi_signo = SIGILL;
-			ksi.ksi_code = ILL_ILLOPC;
-			ksi.ksi_trap = EXC_PGM;
-			ksi.ksi_addr = (void *)tf->tf_srr0;
+		} else {
+			pcb = lwp_getpcb(l);
+
+			if (__predict_false(!fpu_used_p(l))) {
+				memset(&pcb->pcb_fpu, 0, sizeof(pcb->pcb_fpu));
+				fpu_mark_used(l);
+			}
+
+			if (fpu_emulate(tf, &pcb->pcb_fpu, &ksi)) {
+				if (ksi.ksi_signo == 0)	/* was emulated */
+					break;
+				else if (ksi.ksi_signo == SIGTRAP)
+					goto sigtrap;	/* XXX H/W bug? */
+			} else {
+				ksi.ksi_code = ILL_ILLOPC;
+				ksi.ksi_signo = SIGILL;
+			}
 		}
 
 		trapsignal(l, &ksi);

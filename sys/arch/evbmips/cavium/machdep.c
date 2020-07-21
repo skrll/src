@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.16 2020/06/20 02:27:55 simonb Exp $	*/
+/*	$NetBSD: machdep.c,v 1.20 2020/07/19 08:53:24 simonb Exp $	*/
 
 /*
  * Copyright 2001, 2002 Wasabi Systems, Inc.
@@ -114,7 +114,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.16 2020/06/20 02:27:55 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.20 2020/07/19 08:53:24 simonb Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -152,6 +152,9 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.16 2020/06/20 02:27:55 simonb Exp $");
 #include <mips/cavium/dev/octeon_gpioreg.h>
 
 #include <evbmips/cavium/octeon_uboot.h>
+
+#include <dev/fdt/fdtvar.h>
+#include <dev/fdt/fdt_private.h>
 
 static void	mach_init_vector(void);
 static void	mach_init_bus_space(void);
@@ -192,9 +195,12 @@ void
 mach_init(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3)
 {
 	uint64_t btinfo_paddr;
+	void *fdt_data;
 
 	/* clear the BSS segment */
 	memset(edata, 0, end - edata);
+
+	cpu_reset_address = octeon_soft_reset;
 
 	KASSERT(MIPS_XKPHYS_P(arg3));
 	btinfo_paddr = mips3_ld(arg3 + OCTEON_BTINFO_PADDR_OFFSET);
@@ -216,6 +222,13 @@ mach_init(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3)
 
 	cpu_setmodel("Cavium Octeon %s",
 	    octeon_cpu_model(mips_options.mips_cpu_id));
+
+	if (octeon_btinfo.obt_minor_version >= 3 &&
+	    octeon_btinfo.obt_fdt_addr != 0) {
+		fdt_data = (void *)MIPS_PHYS_TO_XKPHYS(CCA_CACHEABLE,
+		    octeon_btinfo.obt_fdt_addr);
+		fdtbus_init(fdt_data);
+	}
 
 	mach_init_vector();
 
@@ -358,8 +371,10 @@ mach_init_memory(void)
 	physmem = btoc(octeon_btinfo.obt_dram_size * 1024 * 1024);
 
 #ifdef MULTIPROCESSOR
-	const u_int cores = mipsNN_cp0_ebase_read() & MIPS_EBASE_CPUNUM;
-	mem_clusters[0].start = cores * 4096;
+	const uint64_t fuse = octeon_xkphys_read_8(CIU_FUSE);
+	const int cores = popcount64(fuse);
+	mem_clusters[0].start += cores * PAGE_SIZE;
+	mem_clusters[0].size  -= cores * PAGE_SIZE;
 #endif
 
 	/*
@@ -447,6 +462,8 @@ cpu_startup(void)
 	 * that memory allocation is now safe.
 	 */
 	octeon_configuration.mc_mallocsafe = 1;
+
+	fdtbus_intr_init();
 }
 
 void
