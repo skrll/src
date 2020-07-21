@@ -37,8 +37,7 @@
 #define	__INTR_NOINLINE
 
 #include <sys/cdefs.h>
-
-__KERNEL_RCSID(0, "$NetBSD: intr_stubs.c,v 1.5 2016/10/19 00:08:42 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intr_stubs.c,v 1.7 2020/07/06 09:34:18 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -137,6 +136,7 @@ splx(int ipl)
 	return (*powerpc_intrsw->intrsw_splx)(ipl);
 }
 
+#ifdef __HAVE_FAST_SOFTINTS
 void softint_init_md(struct lwp *, u_int, uintptr_t *) __stub;
 
 void
@@ -152,6 +152,7 @@ softint_trigger(uintptr_t machdep)
 {
 	(*powerpc_intrsw->intrsw_softint_trigger)(machdep);
 }
+#endif
 
 void intr_cpu_attach(struct cpu_info *) __stub;
 

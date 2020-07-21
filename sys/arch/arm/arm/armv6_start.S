@@ -1,4 +1,4 @@
-/*	$NetBSD: armv6_start.S,v 1.17 2020/07/03 06:15:27 skrll Exp $	*/
+/*	$NetBSD: armv6_start.S,v 1.21 2020/07/19 11:47:47 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2017, 2018 The NetBSD Foundation, Inc.
@@ -34,6 +34,7 @@
 #include "opt_cpuoptions.h"
 #include "opt_cputypes.h"
 #include "opt_fdt.h"
+#include "opt_kasan.h"
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
@@ -42,7 +43,7 @@
 #include <arm/armreg.h>
 #include "assym.h"
 
-#define INIT_ARM_STACK_SHIFT	9
+#define INIT_ARM_STACK_SHIFT	10
 #define INIT_ARM_STACK_SIZE	(1 << INIT_ARM_STACK_SHIFT)
 
 #if defined(CONSADDR) && defined(CONADDR)
@@ -230,6 +231,8 @@ generic_savevars:
 	 */
 	.section "_init_memory", "aw", %nobits
 	.p2align INIT_ARM_STACK_SHIFT
+	.global start_stacks_bottom
+	.global start_stacks_top
 start_stacks_bottom:
 	.space	INIT_ARM_STACK_SIZE * MAXCPUS
 start_stacks_top:
@@ -464,6 +467,10 @@ generic_startv7:
 	b	armv7_mmuinit
 
 generic_vstartv7:
+#ifdef KASAN
+	ldr	r0, =start_stacks_bottom
+	bl	_C_LABEL(kasan_early_init)
+#endif
 
 	/* r0 = &cpu_info_store[0] */
 	movw	r0, #:lower16:cpu_info_store
@@ -511,6 +518,11 @@ generic_startv6:
 	b	armv6_mmuinit
 
 generic_vstartv6:
+#ifdef KASAN
+	ldr	r0, =start_stacks_bottom
+	bl	_C_LABEL(kasan_early_init)
+#endif
+
 	VPRINTF("go\n\r")
 
 	/*
@@ -522,8 +534,6 @@ generic_vstartv6:
 	.ltorg
 
 #endif
-
-
 
 #if defined(_ARM_ARCH_7)
 
@@ -552,7 +562,6 @@ generic_vstartv6:
 #define CPU_CONTROL_XP_ENABLE_SET	0
 #endif
 
-
 // bits to set in the Control Register
 //
 #define CPU_CONTROL_SET			( 	\
@@ -569,7 +578,6 @@ generic_vstartv6:
 	CPU_CONTROL_AFLT_ENABLE_CLR	|	\
 	CPU_CONTROL_XP_ENABLE_CLR	|	\
 	0)
-
 
 /*
  * Perform the initialization of the an ARMv7 core required by NetBSD.
@@ -643,7 +651,6 @@ armv7_init:
 #define ARMV7_SCTLR_SET	( 	\
     CPU_CONTROL_UNAL_ENABLE |	\
     0)
-
 
 	mrc	p15, 0, r0, c1, c0, 0
 	movw	r1, #:lower16:ARMV7_SCTLR_CLEAR
@@ -737,7 +744,6 @@ armv7_mmuinit:
 	XPUTC(#'K')
 	mov	r1, #DOMAIN_DEFAULT
 	mcr	p15, 0, r1, c3, c0, 0	// DACR write
-
 
 #if 0
 
@@ -864,7 +870,6 @@ ENTRY_NP(cpu_mpstart)
 	movt	lr, #:upper16:armv7_mpcontinuation
 	b	armv7_mmuinit
 ASEND(cpu_mpstart)
-
 
 /*
  * Now running with real kernel VA via bootstrap tables
@@ -1074,7 +1079,6 @@ armv6_mmuinit:
 
 	.ltorg
 
-
 	/* bits to set in the Control Register */
 Lcontrol_set:
 #ifdef ARM_MMU_EXTENDED
@@ -1106,7 +1110,6 @@ Lcontrol_wax:
 		(1 << 17) | \
 	        (1 << 10)
 #endif
-
 
 ENTRY_NP(generic_vprint)
 	push	{r4, lr}
