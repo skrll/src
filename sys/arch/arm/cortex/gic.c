@@ -223,9 +223,29 @@ static void
 armgic_set_priority(struct pic_softc *pic, int ipl)
 {
 	struct armgic_softc * const sc = PICTOSOFTC(pic);
+	struct cpu_info * const ci = curcpu();
+	const uint32_t newpri = armgic_ipl_to_priority(ipl);
+	const uint32_t curpri = gicc_read(sc, GICC_PMR);
 
-	const uint32_t priority = armgic_ipl_to_priority(ipl);
-	gicc_write(sc, GICC_PMR, priority);
+	/*
+	 * If an interrupt occurs between the PMR read and raising the PMR
+	 * there is no matter as it'll return it to the same value
+	 *
+	 * GIC priorities with lower values block higher priority interrupts
+	 */
+	if (newpri < curpri) {
+		/* raising ipl */
+		gicc_write(sc, GICC_PMR, newpri);
+		arm_dsb();
+		arm_isb();
+		ci->ci_cpl = ipl;
+	} else if (newpri >= curpri) {
+		/* lowering ipl */
+		ci->ci_cpl = ipl;
+		arm_dsb();
+		arm_isb();
+		gicc_write(sc, GICC_PMR, newpri);
+	}
 }
 
 #ifdef MULTIPROCESSOR
@@ -329,13 +349,7 @@ armgic_irq_handler(void *tf)
 
 		if (irq == GICC_IAR_IRQ_SPURIOUS ||
 		    irq == GICC_IAR_IRQ_SSPURIOUS) {
-			iar = gicc_read(sc, GICC_IAR);
-			irq = __SHIFTOUT(iar, GICC_IAR_IRQ);
-			if (irq == GICC_IAR_IRQ_SPURIOUS)
-				break;
-			if (irq == GICC_IAR_IRQ_SSPURIOUS) {
-				break;
-			}
+			break;
 		}
 
 		KASSERTMSG(old_ipl != IPL_HIGH, "old_ipl %d pmr %#x hppir %#x",
@@ -358,14 +372,11 @@ armgic_irq_handler(void *tf)
 		 * However, if are just raising ipl, we can just update ci_cpl.
 		 */
 		const int ipl = is->is_ipl;
-		if (__predict_false(ipl < ci->ci_cpl)) {
-			pic_do_pending_ints(I32_bit, ipl, tf);
-			KASSERT(ci->ci_cpl == ipl);
-		} else {
-			KASSERTMSG(ipl > ci->ci_cpl, "ipl %d cpl %d hw-ipl %#x",
-			    ipl, ci->ci_cpl,
-			    gicc_read(sc, GICC_PMR));
+		if (__predict_true(ipl > ci->ci_cpl)) {
+			/* raising ipl */
 			gicc_write(sc, GICC_PMR, armgic_ipl_to_priority(ipl));
+			arm_dsb();
+			arm_isb();
 			ci->ci_cpl = ipl;
 		}
 		cpsie(I32_bit);

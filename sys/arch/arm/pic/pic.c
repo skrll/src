@@ -122,12 +122,10 @@ static int pic_init(void);
 void
 pic_set_priority(struct cpu_info *ci, int newipl)
 {
-	register_t psw = cpsid(I32_bit);
-	if (pic_list[0] != NULL)
-		(pic_list[0]->pic_ops->pic_set_priority)(pic_list[0], newipl);
-	ci->ci_cpl = newipl;
-	if ((psw & I32_bit) == 0)
-		cpsie(I32_bit);
+	struct pic_softc *pic = pic_list[0];
+
+	if (pic && pic->pic_ops->pic_set_priority)
+		(pic->pic_ops->pic_set_priority)(pic, newipl);
 }
 #endif
 
