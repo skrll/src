@@ -1,0 +1,41 @@
+An LWP can't change l_cpu itself as it can't be done safely.  The scheduler is
+set up so that these two things are always true:
+
+- An LWP never gets to change its own l_cpu.  It's always changed by some
+  other actor, for example sched_unsleep() or sched_idle_migrate() or
+  whatnot.
+
+- l_cpu is never changed for an LWP that's running on a CPU anywhere in the
+  system.  The only point it's changed is when somebody else puts the LWP
+  onto a run queue somewhere, because of a wakeup or whatever.
+
+Given that those two things are true, if the system is running in the
+context of curlwp then curlwp can safely assume that l_cpu won't change out
+from under it, unless it context switches somehow (preemption, or blocking
+on a lock or sleeping).  If you have an interrupt running on top of curlwp
+on the CPU, this means curlwp can't context switch away, it's pinned there,
+so curlwp->l_cpu is never going to change and will always be curcpu.
+
+Further to that with preemption, you should hever have a preemption
+happening if the spl is raised; interrupts raise the spl so while you're in
+the context of an interrupt handler there's no need to worry about that
+either.
+
+
+For the LWP to deliberately migrate somewhere else of its own accord, it has to
+set l->l_target_cpu and then call preempt().  The idle LWP on the CPU it set up
+to move any LWP with l->l_target_cpu set.  That's the "always another actor
+changes l_cpu" thing in action.
+
+
+You can define curcpu as ..
+
+#define	curcpu()	(curlwp->l_cpu)
+
+.. and it's safe and meets all the requirements we have.  To define it the
+other way around is not safe ..
+
+#define	curlwp		curcpu()->ci_curlwp
+
+.. because you can be preempted in the middle.  UNLESS you have fancy MD
+stuff that makes the whole thing a single instruction like x86:
