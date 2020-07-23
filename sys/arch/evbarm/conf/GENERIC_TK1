@@ -1,0 +1,8 @@
+# $NetBSD$
+
+include "arch/evbarm/conf/GENERIC"
+
+options 	VERBOSE_INIT_ARM
+options 	EARLYCONS=tegra, CONSADDR=0x70006300
+
+#options 	PMAP_FAULTINFO

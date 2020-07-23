@@ -1,0 +1,6 @@
+# $NetBSD$
+
+include "arch/evbarm/conf/GENERIC"
+
+options 	VERBOSE_INIT_ARM
+options 	EARLYCONS=virt, CONSADDR=0x09000000
