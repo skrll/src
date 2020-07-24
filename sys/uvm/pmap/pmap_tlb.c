@@ -979,7 +979,7 @@ pmap_tlb_asid_deactivate(pmap_t pm)
 	 */
 	if (pm != pmap_kernel() && !kcpuset_iszero(pm->pm_onproc)) {
 		struct cpu_info * const ci = curcpu();
-		KASSERT(!cpu_intr_p());
+//		KASSERT(!cpu_intr_p());
 		KASSERTMSG(kcpuset_isset(pm->pm_onproc, cpu_index(ci)),
 		    "%s: pmap %p onproc %p doesn't include cpu %d (%p)",
 		    __func__, pm, pm->pm_onproc, cpu_index(ci), ci);
