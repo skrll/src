@@ -287,12 +287,14 @@ cpu_intr_p(void)
 struct lwp *
 arm_curlwp(void)
 {
+
 	return curlwp;
 }
 
 struct cpu_info *
 arm_curcpu(void)
 {
+
 	return curcpu();
 }
 #endif
@@ -301,18 +303,23 @@ arm_curcpu(void)
 bool
 cpu_kpreempt_enter(uintptr_t where, int s)
 {
+
+	KASSERT(kpreempt_disabled());
+
 	return s == IPL_NONE;
 }
 
 void
 cpu_kpreempt_exit(uintptr_t where)
 {
+
 	atomic_and_uint(&curcpu()->ci_astpending, (unsigned int)~__BIT(1));
 }
 
 bool
 cpu_kpreempt_disabled(void)
 {
+
 	return curcpu()->ci_cpl != IPL_NONE;
 }
 #endif /* __HAVE_PREEMPTION */
