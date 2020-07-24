@@ -1,4 +1,4 @@
-/* $NetBSD: locore.h,v 1.107 2020/06/14 06:50:31 simonb Exp $ */
+/* $NetBSD: locore.h,v 1.109 2020/07/23 19:22:13 skrll Exp $ */
 
 /*
  * This file should not be included by MI code!!!
@@ -28,7 +28,7 @@
 #ifndef _MIPS_LOCORE_H
 #define _MIPS_LOCORE_H
 
-#if !defined(_LKM) && defined(_KERNEL_OPT)
+#if defined(_KERNEL_OPT)
 #include "opt_cputype.h"
 #endif
 
@@ -51,7 +51,7 @@ typedef uint32_t pt_entry_t;
 
 #ifdef _KERNEL
 
-#if defined(_MODULAR) || defined(_LKM) || defined(_STANDALONE)
+#if defined(_MODULAR) || defined(_STANDALONE)
 /* Assume all CPU architectures are valid for LKM's and standlone progs */
 #if !defined(__mips_n32) && !defined(__mips_n64)
 #define	MIPS1		1
@@ -64,7 +64,7 @@ typedef uint32_t pt_entry_t;
 #endif
 #define	MIPS64		1
 #define	MIPS64R2	1
-#endif /* _MODULAR || _LKM || _STANDALONE */
+#endif /* _MODULAR || _STANDALONE */
 
 #if (MIPS1 + MIPS3 + MIPS4 + MIPS32 + MIPS32R2 + MIPS64 + MIPS64R2) == 0
 #error at least one of MIPS1, MIPS3, MIPS4, MIPS32, MIPS32R2, MIPS64, or MIPS64R2 must be specified
@@ -402,7 +402,7 @@ struct mips_jump_fixup_info {
 	uint32_t jfi_stub;
 	uint32_t jfi_real;
 };
- 
+
 void	fixup_splcalls(void);				/* splstubs.c */
 bool	mips_fixup_exceptions(mips_fixup_callback_t, void *);
 bool	mips_fixup_zero_relative(int32_t, uint32_t [2], void *);

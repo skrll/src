@@ -17,16 +17,18 @@ C:
 S:empty
 C:empty
 @:
+mod-S:
 :a b b c:
 :a b b c:
 : b c:
 :a c:
 :x__ 3 x__ 3:
+12345
+mod-C:
 :a b b c:
 :a b b c:
 : b c:
 make: RE substitution error: (details omitted)
-make: Unclosed substitution for  (, missing)
 :C,word,____,:Q}:
 :a c:
 :x__ 3 x__ 3:
@@ -70,6 +72,8 @@ make: No subexpression \2
 mod-C-limits:22-missing:1 6
 mod-C-limits:22-ok:1 33 556
 mod-C-limits:capture:ihgfedcbaabcdefghijABCDEFGHIJa0a1a2rest
+make: RE substitution error: (details omitted)
+mod-C-errors:
 mod-assign: first=1.
 mod-assign: last=3.
 mod-assign: appended=1 2 3.
@@ -83,4 +87,7 @@ mod-assign-nested: else2e2
 mod-assign-nested: then3t3
 mod-assign-nested: else4e4
 mod-tu-space: A   B
+mod-Q: new
+
+line
 exit status 0

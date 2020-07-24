@@ -1,4 +1,4 @@
-# $Id: modmisc.mk,v 1.18 2020/07/20 19:03:25 rillig Exp $
+# $Id: modmisc.mk,v 1.21 2020/07/23 19:46:55 rillig Exp $
 #
 # miscellaneous modifier tests
 
@@ -19,9 +19,11 @@ all:	modvar modvarloop modsysv mod-HTE emptyvar undefvar
 all:	mod-S mod-C mod-at-varname mod-at-resolve mod-at-dollar
 all:	mod-subst-dollar mod-loop-dollar
 all:	mod-C-limits
+all:	mod-C-errors
 all:	mod-assign
 all:	mod-assign-nested
 all:	mod-tu-space
+all:	mod-Q
 
 modsysv:
 	@echo "The answer is ${libfoo.a:L:libfoo.a=42}"
@@ -66,13 +68,16 @@ undefvar:
 	@echo @:${:U:@var@empty@}
 
 mod-S:
+	@echo $@:
 	@echo :${:Ua b b c:S,a b,,:Q}:
 	@echo :${:Ua b b c:S,a b,,1:Q}:
 	@echo :${:Ua b b c:S,a b,,W:Q}:
 	@echo :${:Ua b b c:S,b,,g:Q}:
 	@echo :${:U1 2 3 1 2 3:S,1 2,___,Wg:S,_,x,:Q}:
+	@echo ${:U12345:S,,sep,g:Q}
 
 mod-C:
+	@echo $@:
 	@echo :${:Ua b b c:C,a b,,:Q}:
 	@echo :${:Ua b b c:C,a b,,1:Q}:
 	@echo :${:Ua b b c:C,a b,,W:Q}:
@@ -149,6 +154,9 @@ mod-C-limits:
 	# which is more than enough for daily use.
 	@echo $@:capture:${:UabcdefghijABCDEFGHIJrest:C,(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.),\9\8\7\6\5\4\3\2\1\0\10\11\12,}
 
+mod-C-errors:
+	@echo $@: ${UNDEF:Uvalue:C,[,,}
+
 # Just a bit of basic code coverage for the obscure ::= assignment modifiers.
 mod-assign:
 	@echo $@: ${1 2 3:L:@i@${FIRST::?=$i}@} first=${FIRST}.
@@ -172,3 +180,6 @@ mod-tu-space:
 	# as a single string, not as a list of words. Therefore,
 	# the adjacent spaces are preserved.
 	@echo $@: ${a   b:L:tu:Q}
+
+mod-Q:
+	@echo $@: new${.newline:Q}${.newline:Q}line
