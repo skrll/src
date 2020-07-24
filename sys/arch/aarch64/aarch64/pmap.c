@@ -1996,7 +1996,7 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 	if (pps[0] != NULL)
 		pmap_pv_unlock(pps[0]);
  fail0:
- 	if (!kenter) {
+	if (!kenter) {
 		pm_unlock(pm);
 
 		/* spare pv was not used. discard */
