@@ -1,4 +1,4 @@
-/* $NetBSD: if_bwfm_sdio.c,v 1.19 2020/06/23 10:09:33 martin Exp $ */
+/* $NetBSD: if_bwfm_sdio.c,v 1.23 2020/07/22 17:23:12 riastradh Exp $ */
 /* $OpenBSD: if_bwfm_sdio.c,v 1.1 2017/10/11 17:19:50 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -18,35 +18,36 @@
  */
 
 #include <sys/param.h>
-#include <sys/systm.h>
+#include <sys/types.h>
+
 #include <sys/buf.h>
+#include <sys/device.h>
 #include <sys/endian.h>
 #include <sys/kernel.h>
+#include <sys/kmem.h>
 #include <sys/malloc.h>
-#include <sys/device.h>
+#include <sys/mutex.h>
 #include <sys/queue.h>
 #include <sys/socket.h>
-#include <sys/mutex.h>
+#include <sys/systm.h>
 
 #include <net/bpf.h>
 #include <net/if.h>
 #include <net/if_dl.h>
-#include <net/if_media.h>
 #include <net/if_ether.h>
+#include <net/if_media.h>
 
 #include <netinet/in.h>
 
-#include <dev/ofw/openfirm.h>
-#include <dev/fdt/fdtvar.h>
-
 #include <net80211/ieee80211_var.h>
 
-#include <dev/sdmmc/sdmmcdevs.h>
-#include <dev/sdmmc/sdmmcvar.h>
-
+#include <dev/fdt/fdtvar.h>
 #include <dev/ic/bwfmreg.h>
 #include <dev/ic/bwfmvar.h>
+#include <dev/ofw/openfirm.h>
 #include <dev/sdmmc/if_bwfm_sdio.h>
+#include <dev/sdmmc/sdmmcdevs.h>
+#include <dev/sdmmc/sdmmcvar.h>
 
 #ifdef BWFM_DEBUG
 #define DPRINTF(x)	do { if (bwfm_debug > 0) printf x; } while (0)
@@ -505,9 +506,8 @@ bwfm_sdio_attachhook(device_t self)
 		goto err;
 	}
 
-//	bwfm_sdio_dev_write(sc, SDPCMD_HOSTINTMASK,
-//	    SDPCMD_INTSTATUS_HMB_SW_MASK | SDPCMD_INTSTATUS_CHIPACTIVE);
-	bwfm_sdio_dev_write(sc, SDPCMD_HOSTINTMASK, 0xffffffff);
+	bwfm_sdio_dev_write(sc, SDPCMD_HOSTINTMASK,
+	    SDPCMD_INTSTATUS_HMB_SW_MASK | SDPCMD_INTSTATUS_CHIPACTIVE);
 	bwfm_sdio_write_1(sc, BWFM_SDIO_WATERMARK, 8);
 
 	if (bwfm_chip_sr_capable(bwfm)) {
@@ -1467,7 +1467,6 @@ bwfm_sdio_task1(struct bwfm_sdio_softc *sc)
 
 	intstat = bwfm_sdio_dev_read(sc, BWFM_SDPCMD_INTSTATUS);
 	DPRINTF(("%s: intstat 0x%" PRIx32 "\n", DEVNAME(sc), intstat));
-	intstat &= (SDPCMD_INTSTATUS_HMB_SW_MASK|SDPCMD_INTSTATUS_CHIPACTIVE);
 	if (intstat)
 		bwfm_sdio_dev_write(sc, BWFM_SDPCMD_INTSTATUS, intstat);
 

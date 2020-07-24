@@ -1,4 +1,4 @@
-/*	$NetBSD: mips_param.h,v 1.40 2019/06/19 09:55:27 skrll Exp $	*/
+/*	$NetBSD: mips_param.h,v 1.43 2020/07/23 15:24:37 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -80,9 +80,12 @@
 #define MSGBUFSIZE	NBPG		/* default message buffer size */
 #endif
 
-#ifndef COHERENCY_UNIT
-#define COHERENCY_UNIT	32	/* MIPS cachelines are usually 32 bytes */
-#endif
+/*
+ * Most MIPS have a cache line size of 32 bytes, but Cavium chips
+ * have a line size 128bytes and we need to cover the larger size.
+ */
+#define COHERENCY_UNIT	128
+#define CACHE_LINE_SIZE	128
 
 #ifdef ENABLE_MIPS_16KB_PAGE
 #define	PGSHIFT		14		/* LOG2(NBPG) */

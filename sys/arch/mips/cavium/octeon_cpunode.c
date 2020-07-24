@@ -29,7 +29,7 @@
 #define __INTR_PRIVATE
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: octeon_cpunode.c,v 1.13 2020/06/23 05:14:18 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: octeon_cpunode.c,v 1.17 2020/07/22 15:01:18 jmcneill Exp $");
 
 #include "locators.h"
 #include "cpunode.h"
@@ -37,10 +37,11 @@ __KERNEL_RCSID(0, "$NetBSD: octeon_cpunode.c,v 1.13 2020/06/23 05:14:18 simonb E
 #include "opt_ddb.h"
 
 #include <sys/param.h>
+#include <sys/atomic.h>
+#include <sys/cpu.h>
 #include <sys/device.h>
 #include <sys/lwp.h>
-#include <sys/cpu.h>
-#include <sys/atomic.h>
+#include <sys/reboot.h>
 #include <sys/wdog.h>
 
 #include <uvm/uvm.h>
@@ -50,10 +51,13 @@ __KERNEL_RCSID(0, "$NetBSD: octeon_cpunode.c,v 1.13 2020/06/23 05:14:18 simonb E
 #include <mips/cache.h>
 #include <mips/mips_opcode.h>
 #include <mips/mips3_clock.h>
+#include <mips/mips3_pte.h>
 
 #include <mips/cavium/octeonvar.h>
 #include <mips/cavium/dev/octeon_ciureg.h>
 #include <mips/cavium/dev/octeon_corereg.h>
+
+extern struct cpu_softc octeon_cpu_softc[];
 
 struct cpunode_attach_args {
 	const char *cnaa_name;
@@ -98,7 +102,7 @@ cpunode_mainbus_print(void *aux, const char *pnp)
 int
 cpunode_mainbus_match(device_t parent, cfdata_t cf, void *aux)
 {
-	
+
 	return 1;
 }
 
@@ -201,7 +205,13 @@ octeon_fixup_cpu_info_references(int32_t load_addr, uint32_t new_insns[2],
 static void
 octeon_cpu_init(struct cpu_info *ci)
 {
+	extern const mips_locore_jumpvec_t mips64r2_locore_vec;
 	bool ok __diagused;
+
+	mips3_cp0_pg_mask_write(MIPS3_PG_SIZE_TO_MASK(PAGE_SIZE));
+	mips3_cp0_wired_write(0);
+	(*mips64r2_locore_vec.ljv_tlb_invalidate_all)();
+	mips3_cp0_wired_write(pmap_tlb0_info.ti_wired);
 
 	// First thing is setup the execption vectors for this cpu.
 	mips64r2_vector_init(&mips_splsw);
@@ -221,6 +231,7 @@ octeon_cpu_init(struct cpu_info *ci)
 static void
 octeon_cpu_run(struct cpu_info *ci)
 {
+
 	octeon_intr_init(ci);
 
 	mips3_initclocks();
@@ -291,7 +302,12 @@ cpu_cpunode_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 #ifdef MULTIPROCESSOR
-	KASSERTMSG(cpunum == 1, "cpunum %d", cpunum);
+	if ((boothowto & RB_MD1) != 0) {
+		aprint_naive("\n");
+		aprint_normal(": multiprocessor boot disabled\n");
+		return;
+	}
+
 	if (!kcpuset_isset(cpus_booted, cpunum)) {
 		aprint_naive(" disabled\n");
 		aprint_normal(" disabled (unresponsive)\n");
@@ -299,7 +315,7 @@ cpu_cpunode_attach(device_t parent, device_t self, void *aux)
 	}
 	struct cpu_info * const ci = cpu_info_alloc(NULL, cpunum, 0, cpunum, 0);
 
-	ci->ci_softc = &octeon_cpu1_softc;
+	ci->ci_softc = &octeon_cpu_softc[cpunum];
 	ci->ci_softc->cpu_ci = ci;
 
 	cpu_cpunode_attach_common(self, ci);
@@ -401,12 +417,14 @@ static void
 wdog_cpunode_poke(void *arg)
 {
 	struct cpu_softc *cpu = arg;
+
 	mips3_sd(cpu->cpu_pp_poke, 0);
 }
 
 static int
 wdog_cpunode_tickle(struct sysmon_wdog *smw)
 {
+
 	wdog_cpunode_poke(curcpu()->ci_softc);
 #ifdef MULTIPROCESSOR
 	// We need to send IPIs to the other CPUs to poke their wdog.

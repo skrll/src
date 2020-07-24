@@ -1,4 +1,4 @@
-/*	$NetBSD: specialreg.h,v 1.168 2020/06/18 16:27:24 maxv Exp $	*/
+/*	$NetBSD: specialreg.h,v 1.170 2020/07/20 05:50:55 maxv Exp $	*/
 
 /*
  * Copyright (c) 2014-2020 The NetBSD Foundation, Inc.

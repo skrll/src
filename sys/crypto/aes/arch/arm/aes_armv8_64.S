@@ -1,4 +1,4 @@
-/*	$NetBSD: aes_armv8_64.S,v 1.4 2020/06/30 23:06:02 riastradh Exp $	*/
+/*	$NetBSD: aes_armv8_64.S,v 1.6 2020/07/22 06:15:21 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -238,8 +238,8 @@ ENTRY(aesarmv8_setenckey192)
 	 */
 
 	/* v1.4s := (nrk[0], nrk[1], nrk[1], nrk[1]) */
-	dup	v1.4s, v5.4s[3]
-	mov	v1.4s[0], v5.4s[2]
+	dup	v1.4s, v5.s[3]
+	mov	v1.s[0], v5.s[2]
 
 	/*
 	 * v6.4s := (0, 0, rklo[0], rklo[1])
@@ -257,7 +257,7 @@ ENTRY(aesarmv8_setenckey192)
 	 * and v5.4s = (rk[2], rk[3], xxx, xxx).  Set
 	 * v2.4s := (rk[0], rk[1], rk[2], rk[3])
 	 */
-	mov	v2.2d[1], v5.2d[0]
+	mov	v2.d[1], v5.d[0]
 
 	/* store two round keys */
 	stp	q2, q3, [x0], #0x20
@@ -325,7 +325,7 @@ ENTRY(aesarmv8_setenckey192)
 	ext	v5.16b, v0.16b, v4.16b, #12
 
 	/* v2.4s := (nnrk[3], nnrk[3], xxx, xxx) */
-	dup	v2.4s, v1.4s[3]
+	dup	v2.4s, v1.s[3]
 
 	/*
 	 * v2.4s := (nnnrklo[0] = nnrk[3] ^ nrk[2],
@@ -827,7 +827,7 @@ aesarmv8_xts_mulx:
 	 *     carried into x^128 = x^7 + x^2 + x + 1.
 	 */
 	adrl	x0, xtscarry
-	cmlt	v1.2d, v31.2d, #0 /* v1.2d[i] := -1 if v9.2d[i] < 0, else 0 */
+	cmlt	v1.2d, v31.2d, #0 /* v1.2d[i] := -1 if v31.2d[i] < 0, else 0 */
 	ldr	q0, [x0]		/* q0 := xtscarry */
 	ext	v1.16b, v1.16b, v1.16b, #8 /* swap halves of q1 */
 	shl	v31.2d, v31.2d, #1	/* shift */

@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu_emu.c,v 1.24 2020/07/06 10:31:23 rin Exp $ */
+/*	$NetBSD: fpu_emu.c,v 1.33 2020/07/15 09:42:43 rin Exp $ */
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -76,11 +76,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fpu_emu.c,v 1.24 2020/07/06 10:31:23 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fpu_emu.c,v 1.33 2020/07/15 09:42:43 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
-#include "opt_ppcarch.h"
 #endif
 
 #include <sys/param.h>
@@ -93,6 +92,8 @@ __KERNEL_RCSID(0, "$NetBSD: fpu_emu.c,v 1.24 2020/07/06 10:31:23 rin Exp $");
 #include <sys/syslog.h>
 
 #include <powerpc/instr.h>
+#include <powerpc/psl.h>
+
 #include <machine/fpu.h>
 #include <machine/reg.h>
 #include <machine/trap.h>
@@ -146,7 +147,9 @@ FPU_EMU_EVCNT_DECL(fnmadd);
 			FPSCR_VXZDZ|FPSCR_VXIMZ|FPSCR_VXVC|FPSCR_VXSOFT|\
 			FPSCR_VXSQRT|FPSCR_VXCVI)
 #define	FPSR_EX		(FPSCR_VE|FPSCR_OE|FPSCR_UE|FPSCR_ZE|FPSCR_XE)
-#define	FPSR_EXOP	(FPSR_EX_MSK&(~FPSR_EX))
+#define	FPSR_INV	(FPSCR_VXSNAN|FPSCR_VXISI|FPSCR_VXIDI|		\
+			FPSCR_VXZDZ|FPSCR_VXIMZ|FPSCR_VXVC|FPSCR_VXSOFT|\
+			FPSCR_VXSQRT|FPSCR_VXCVI)
 
 
 int fpe_debug = 0;
@@ -192,6 +195,7 @@ fpu_dumpfpn(struct fpn *fp)
 bool
 fpu_emulate(struct trapframe *tf, struct fpreg *fpf, ksiginfo_t *ksi)
 {
+	struct pcb *pcb;
 	union instr insn;
 	struct fpemu fe;
 
@@ -212,7 +216,6 @@ fpu_emulate(struct trapframe *tf, struct fpreg *fpf, ksiginfo_t *ksi)
 		ksi->ksi_signo = SIGSEGV;
 		ksi->ksi_trap = EXC_ISI;
 		ksi->ksi_code = SEGV_MAPERR;
-		ksi->ksi_addr = (void *)tf->tf_srr0;
 		return true;
 	}
 
@@ -226,20 +229,24 @@ fpu_emulate(struct trapframe *tf, struct fpreg *fpf, ksiginfo_t *ksi)
 		DPRINTF(FPE_EX, ("fpu_emulate: SIGTRAP\n"));
 		ksi->ksi_signo = SIGTRAP;
 		ksi->ksi_trap = EXC_PGM;
-		ksi->ksi_code = TRAP_TRACE;
-		ksi->ksi_addr = (void *)tf->tf_srr0;
+		ksi->ksi_code = TRAP_BRKPT;
 		return true;
 	}
 	switch (fpu_execute(tf, &fe, &insn)) {
 	case 0:
+success:
 		DPRINTF(FPE_EX, ("fpu_emulate: success\n"));
 		tf->tf_srr0 += 4;
 		return true;
 
 	case FPE:
+		pcb = lwp_getpcb(curlwp);
+		if ((pcb->pcb_flags & PSL_FE_PREC) == 0)
+			goto success;
 		DPRINTF(FPE_EX, ("fpu_emulate: SIGFPE\n"));
 		ksi->ksi_signo = SIGFPE;
 		ksi->ksi_trap = EXC_PGM;
+		ksi->ksi_code = fpu_get_fault_code();
 		return true;
 
 	case FAULT:
@@ -260,17 +267,6 @@ fpu_emulate(struct trapframe *tf, struct fpreg *fpf, ksiginfo_t *ksi)
 			opc_disasm((vaddr_t)(tf->tf_srr0), insn.i_int);
 		}
 #endif
-#if defined(PPC_IBM4XX) && defined(DDB) && defined(DEBUG)
-		/*
-		* XXXX retry an illegal insn once due to cache issues.
-		*/
-		static int lastill = 0;
-		if (lastill == tf->tf_srr0) {
-			if (fpe_debug & FPE_EX)
-				Debugger();
-		}
-		lastill = tf->tf_srr0;
-#endif /* PPC_IBM4XX && DDB && DEBUG */
 		return false;
 	}
 }
@@ -293,6 +289,7 @@ fpu_execute(struct trapframe *tf, struct fpemu *fe, union instr *insn)
 	int ra, rb, rc, rt, type, mask, fsr, cx, bf, setcr;
 	unsigned int cond;
 	struct fpreg *fs;
+	int mtfsf = 0;
 
 	/* Setup work. */
 	fp = NULL;
@@ -556,6 +553,7 @@ fpu_execute(struct trapframe *tf, struct fpemu *fe, union instr *insn)
 					sizeof(double));
 				break;
 			case	OPC63_MTFSFI:
+				mtfsf = 1;
 				FPU_EMU_EVCNT_INCR(mtfsfi);
 				DPRINTF(FPE_INSN, ("fpu_execute: MTFSFI\n"));
 				rb >>= 1;
@@ -585,10 +583,13 @@ fpu_execute(struct trapframe *tf, struct fpemu *fe, union instr *insn)
 			case	OPC63_MFFS:
 				FPU_EMU_EVCNT_INCR(mffs);
 				DPRINTF(FPE_INSN, ("fpu_execute: MFFS\n"));
+				/* XXX FEX is not sticky */
+				fs->fpscr &= ~FPSCR_FEX;
 				memcpy(&fs->fpreg[rt], &fs->fpscr,
 					sizeof(fs->fpscr));
 				break;
 			case	OPC63_MTFSF:
+				mtfsf = 1;
 				FPU_EMU_EVCNT_INCR(mtfsf);
 				DPRINTF(FPE_INSN, ("fpu_execute: MTFSF\n"));
 				if ((rt = instr.i_xfl.i_flm) == -1)
@@ -600,10 +601,19 @@ fpu_execute(struct trapframe *tf, struct fpemu *fe, union instr *insn)
 						if (rt & (1<<ra))
 							mask |= (0xf<<(4*ra));
 				}
-				a = (int *)&fs->fpreg[rt];
+				a = (int *)&fs->fpreg[rb];
 				fe->fe_cx = mask & a[1];
 				fe->fe_fpscr = (fe->fe_fpscr&~mask) | 
 					(fe->fe_cx);
+				/*
+				 * XXX
+				 * Forbidden to set FEX and VX, also for
+				 * mcrfs, mtfsfi, and mtfsb[01].
+				 *
+				 * XXX
+				 * Handle invalid operation differently,
+				 * depending on VE.
+				 */
 /* XXX weird stuff about OX, FX, FEX, and VX should be handled */
 				break;
 			case	OPC63_FCTID:
@@ -773,11 +783,10 @@ fpu_execute(struct trapframe *tf, struct fpemu *fe, union instr *insn)
 	if (fp)
 		fpu_implode(fe, fp, type, (u_int *)&fs->fpreg[rt]);
 	cx = fe->fe_cx;
-	fsr = fe->fe_fpscr;
+	fsr = fe->fe_fpscr & ~(FPSCR_FEX|FPSCR_VX);
 	if (cx != 0) {
-		fsr &= ~FPSCR_FX;
-		if ((cx^fsr)&FPSR_EX_MSK)
-			fsr |= FPSCR_FX;
+		if (cx & FPSR_INV)
+			cx |= FPSCR_VX;
 		mask = fsr & FPSR_EX;
 		mask <<= (25-3);
 		if (cx & mask) 
@@ -786,11 +795,13 @@ fpu_execute(struct trapframe *tf, struct fpemu *fe, union instr *insn)
 			/* Need to replace CC */
 			fsr &= ~FPSCR_FPRF;
 		}
-		if (cx & (FPSR_EXOP))
-			fsr |= FPSCR_VX;
 		fsr |= cx;
 		DPRINTF(FPE_INSN, ("fpu_execute: cx %x, fsr %x\n", cx, fsr));
 	}
+	if (fsr & FPSR_INV)
+		fsr |= FPSCR_VX;
+	if (mtfsf == 0 && ((fsr ^ fe->fe_fpscr) & FPSR_EX_MSK))
+		fsr |= FPSCR_FX;
 
 	if (cond) {
 		cond = fsr & 0xf0000000;

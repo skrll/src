@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.78 2020/07/03 07:40:13 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.82 2020/07/20 19:53:40 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -138,8 +138,6 @@ char *str_concat(const char *, const char *, int);
 char **brk_string(const char *, int *, Boolean, char **);
 char *Str_FindSubstring(const char *, const char *);
 Boolean Str_Match(const char *, const char *);
-char *Str_SYSVMatch(const char *, const char *, size_t *, Boolean *);
-void Str_SYSVSubst(Buffer *, char *, char *, size_t, Boolean);
 
 /* suff.c */
 void Suff_ClearSuffixes(void);
@@ -161,6 +159,7 @@ void Suff_PrintAll(void);
 /* targ.c */
 void Targ_Init(void);
 void Targ_End(void);
+void Targ_Stats(void);
 Lst Targ_List(void);
 GNode *Targ_NewGN(const char *);
 GNode *Targ_FindNode(const char *, int);
@@ -180,22 +179,28 @@ void Targ_Propagate_Wait(void);
 /* var.c */
 
 typedef enum {
-	VARF_UNDEFERR = 1,
-	VARF_WANTRES = 2,
-	VARF_ASSIGN = 4
-} Varf_Flags;
+    /* Treat undefined variables as errors. */
+    VARE_UNDEFERR	= 0x01,
+    /* Actually evaluate the text, fully expanding variables.
+     * Without this flag, the text is only parsed but not evaluated. */
+    VARE_WANTRES	= 0x02,
+    VARE_ASSIGN		= 0x04,
+    /* Return the literal text, without expanding variables. */
+    VARE_NOSUBST	= 0x08
+} VarEvalFlags;
 
 void Var_Delete(const char *, GNode *);
 void Var_Set(const char *, const char *, GNode *);
 void Var_Append(const char *, const char *, GNode *);
 Boolean Var_Exists(const char *, GNode *);
 char *Var_Value(const char *, GNode *, char **);
-char *Var_Parse(const char *, GNode *, Varf_Flags, int *, void **);
-char *Var_Subst(const char *, const char *, GNode *, Varf_Flags);
+char *Var_Parse(const char *, GNode *, VarEvalFlags, int *, void **);
+char *Var_Subst(const char *, const char *, GNode *, VarEvalFlags);
 char *Var_GetTail(const char *);
 char *Var_GetHead(const char *);
 void Var_Init(void);
 void Var_End(void);
+void Var_Stats(void);
 void Var_Dump(GNode *);
 void Var_ExportVars(void);
 void Var_Export(char *, int);
