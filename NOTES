@@ -39,3 +39,28 @@ other way around is not safe ..
 
 .. because you can be preempted in the middle.  UNLESS you have fancy MD
 stuff that makes the whole thing a single instruction like x86.
+
+-----
+$ rm *.o netbsd; /usr/bin/time -c sh -c "make -j8 > ~/build.log 2>&1"
+rm: netbsd: No such file or directory
+1256.7u 352.8s 7:27.24 359.8% 163+37k 638+24483io 1879pf+0w
+$ rm *.o netbsd; /usr/bin/time -c sh -c "make -j8 > ~/build.log 2>&1"
+1281.2u 352.1s 7:27.88 364.7% 161+36k 0+24466io 35pf+0w
+$ rm *.o netbsd; /usr/bin/time -c sh -c "make -j8 > ~/build.log 2>&1" 
+1284.7u 352.6s 7:30.00 363.8% 160+36k 0+24470io 68pf+0w
+$ [ 1559.5349892] panic: kernel diagnostic assertion "!cpu_intr_p()" failed: file "/home/nick/netbsd/nick-armprempt/src/sys/kern/kern_descrip.c", line 1833 
+[ 1559.5449919] cpu3: Begin traceback...
+[ 1559.5449919] 0xc3ec7d94: netbsd:db_panic+0x14
+[ 1559.5549916] 0xc3ec7dac: netbsd:vpanic+0xe4
+[ 1559.5549916] 0xc3ec7dc4: netbsd:__aeabi_uldivmod
+[ 1559.5649923] 0xc3ec7e74: netbsd:fownsignal+0xf8
+[ 1559.5649923] 0xc3ec7e9c: netbsd:sowakeup+0xc0
+[ 1559.5649923] 0xc3ec7eec: netbsd:raw_input+0x21c
+[ 1559.5749956] 0xc3ec7f24: netbsd:route_intr+0xac
+[ 1559.5749956] 0xc3ec7fac: netbsd:softint_dispatch+0x130
+[ 1559.5849942] 0xc58e4ac4: netbsd:softint_switch+0x60
+[ 1559.5849942] Bad frame pointer: 0x8067a014
+[ 1559.5949942] cpu3: End traceback...
+Stopped in pid 0.98 (system) at netbsd:cpu_Debugger+0x4:        bx      r14
+db{3}> 
+
