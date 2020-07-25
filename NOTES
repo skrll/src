@@ -38,4 +38,4 @@ other way around is not safe ..
 #define	curlwp		curcpu()->ci_curlwp
 
 .. because you can be preempted in the middle.  UNLESS you have fancy MD
-stuff that makes the whole thing a single instruction like x86:
+stuff that makes the whole thing a single instruction like x86.
