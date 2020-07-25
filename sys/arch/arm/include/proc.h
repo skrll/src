@@ -45,6 +45,7 @@ struct lwp;
 struct mdlwp {
 	struct trapframe *md_tf;
 	int	md_flags;
+	volatile uint32_t md_astpending;
 };
 
 /* Flags setttings for md_flags */

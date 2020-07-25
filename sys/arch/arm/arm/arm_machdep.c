@@ -223,6 +223,7 @@ startlwp(void *arg)
 void
 cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 {
+	KASSERT(kpreempt_disabled());
 
 	if (flags & RESCHED_IDLE) {
 #ifdef MULTIPROCESSOR
@@ -241,17 +242,40 @@ cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 		if (flags & RESCHED_REMOTE) {
 			intr_ipi_send(ci->ci_kcpuset, IPI_KPREEMPT);
 		} else {
-			atomic_or_uint(&ci->ci_astpending, __BIT(1));
+			l->l_md.md_astpending = 1;
 		}
 #endif /* __HAVE_PREEMPTION */
 		return;
 	}
+
+	KASSERT((flags & RESCHED_UPREEMPT) != 0);
 	if (flags & RESCHED_REMOTE) {
 #ifdef MULTIPROCESSOR
+		// XXXNH IPI_AST vs IPI_NOP???
 		intr_ipi_send(ci->ci_kcpuset, IPI_AST);
 #endif /* MULTIPROCESSOR */
 	} else {
-		setsoftast(ci);
+		l->l_md.md_astpending = 1;
+	}
+}
+
+
+/*
+ * Notify the current lwp (l) that it has a signal pending,
+ * process as soon as possible.
+ */
+void
+cpu_signotify(struct lwp *l)
+{
+
+	KASSERT(kpreempt_disabled());
+
+	if (l->l_cpu != curcpu()) {
+#ifdef MULTIPROCESSOR
+		intr_ipi_send(l->l_cpu->ci_kcpuset, IPI_AST);
+#endif
+	} else {
+		l->l_md.md_astpending = 1;
 	}
 }
 
@@ -313,7 +337,7 @@ void
 cpu_kpreempt_exit(uintptr_t where)
 {
 
-	atomic_and_uint(&curcpu()->ci_astpending, (unsigned int)~__BIT(1));
+	/* do nothing */
 }
 
 bool

@@ -521,8 +521,6 @@ show_cpuinfo(struct cpu_info *kci)
 	    &ci->ci_cpl, cpuid, ci->ci_cpl);
 	db_printf("%p cpu[%lu].ci_softints     = 0x%08x\n",
 	    &ci->ci_softints, cpuid, ci->ci_softints);
-	db_printf("%p cpu[%lu].ci_astpending   = 0x%08x\n",
-	    &ci->ci_astpending, cpuid, ci->ci_astpending);
 	db_printf("%p cpu[%lu].ci_intr_depth   = %u\n",
 	    &ci->ci_intr_depth, cpuid, ci->ci_intr_depth);
 

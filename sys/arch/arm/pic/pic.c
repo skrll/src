@@ -174,7 +174,9 @@ pic_ipi_ddb(void *arg)
 int
 pic_ipi_kpreempt(void *arg)
 {
-	atomic_or_uint(&curcpu()->ci_astpending, __BIT(1));
+	struct lwp *l = curlwp;
+
+	l->l_md.md_astpending |= __BIT(1);
 	return 1;
 }
 #endif /* __HAVE_PREEMPTION */
@@ -568,7 +570,8 @@ pic_do_pending_ints(register_t psw, int newipl, void *frame)
 	pic_pending_put(pend);
 #endif /* __HAVE_PIC_PENDING_INTRS */
 #ifdef __HAVE_PREEMPTION
-	if (newipl == IPL_NONE && (ci->ci_astpending & __BIT(1))) {
+	struct lwp *l = curlwp;
+	if (newipl == IPL_NONE && (l->l_md.md_astpending & __BIT(1))) {
 		pic_set_priority(ci, IPL_SCHED);
 		kpreempt(0);
 	}
