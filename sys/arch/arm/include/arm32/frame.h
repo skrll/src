@@ -154,12 +154,21 @@ void validate_trapframe(trapframe_t *, int);
 #define DO_PENDING_AST(lbl)						;\
 1:	ldr	r1, [r5, #L_MD_ASTPENDING] /* Pending AST? */		;\
 	tst	r1, #1							;\
-	beq	lbl			/* Nope. Just bail */		;\
-	mov	r0, #0			 /* clear AST */		;\
+	beq	2f			/* Nope. Check kpreempt */	;\
+	bic	r0, r1, #1		 /* clear AST */		;\
 	str	r0, [r5, #L_MD_ASTPENDING]				;\
 	CPSIE_I(r6, r6)			/* Restore interrupts */	;\
 	mov	r0, sp							;\
 	bl	_C_LABEL(ast)		/* ast(frame) */		;\
+	CPSID_I(r0, r6)			/* Disable interrupts */	;\
+	b	1b			/* test again */		;\
+2:	tst	r1, #2							;\
+	beq	lbl			/* Nope. We're done' */		;\
+	bic	r0, r1, #2		/* clear kpreempt */		;\
+	str	r0, [r5, #L_MD_ASTPENDING]				;\
+	CPSIE_I(r6, r6)			/* Restore interrupts */	;\
+	mov	r0, #0							;\
+	bl	_C_LABEL(kpreempt)	/* kpreempt(0) */		;\
 	CPSID_I(r0, r6)			/* Disable interrupts */	;\
 	b	1b			/* test again */
 

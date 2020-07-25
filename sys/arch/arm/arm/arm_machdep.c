@@ -242,7 +242,7 @@ cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 		if (flags & RESCHED_REMOTE) {
 			intr_ipi_send(ci->ci_kcpuset, IPI_KPREEMPT);
 		} else {
-			l->l_md.md_astpending = 1;
+			l->l_md.md_astpending |= __BIT(1);
 		}
 #endif /* __HAVE_PREEMPTION */
 		return;
@@ -255,7 +255,7 @@ cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 		intr_ipi_send(ci->ci_kcpuset, IPI_AST);
 #endif /* MULTIPROCESSOR */
 	} else {
-		l->l_md.md_astpending = 1;
+		l->l_md.md_astpending |= __BIT(0);
 	}
 }
 
@@ -275,7 +275,7 @@ cpu_signotify(struct lwp *l)
 		intr_ipi_send(l->l_cpu->ci_kcpuset, IPI_AST);
 #endif
 	} else {
-		l->l_md.md_astpending = 1;
+		l->l_md.md_astpending |= __BIT(0);
 	}
 }
 
