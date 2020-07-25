@@ -692,7 +692,7 @@ pic_add(struct pic_softc *pic, int irqbase)
 	KASSERT((pic->pic_cpus != NULL) == (pic->pic_ops->pic_ipi_send != NULL));
 #endif
 	pic_list[slot] = pic;
-	
+
 	return irqbase;
 }
 
