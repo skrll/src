@@ -1,4 +1,4 @@
-# $Id: modmisc.mk,v 1.21 2020/07/23 19:46:55 rillig Exp $
+# $Id: modmisc.mk,v 1.27 2020/07/27 21:54:25 rillig Exp $
 #
 # miscellaneous modifier tests
 
@@ -16,18 +16,24 @@ MOD_OPT=@d@$${exists($$d):?$$d:$${d:S,/usr,/opt,}}@
 MOD_SEP=S,:, ,g
 
 all:	modvar modvarloop modsysv mod-HTE emptyvar undefvar
-all:	mod-S mod-C mod-at-varname mod-at-resolve mod-at-dollar
+all:	mod-subst
+all:	mod-regex
+all:	mod-loop-varname mod-loop-resolve mod-loop-varname-dollar
 all:	mod-subst-dollar mod-loop-dollar
-all:	mod-C-limits
-all:	mod-C-errors
+all:	mod-regex-limits
+all:	mod-regex-errors
 all:	mod-assign
 all:	mod-assign-nested
 all:	mod-tu-space
-all:	mod-Q
+all:	mod-quote
+all:	mod-break-many-words
+all:	mod-remember
 
+# See also sysv.mk.
 modsysv:
 	@echo "The answer is ${libfoo.a:L:libfoo.a=42}"
 
+# Demonstrates modifiers that are given indirectly from a variable.
 modvar:
 	@echo "path='${path}'"
 	@echo "path='${path:${MOD_NODOT}}'"
@@ -67,7 +73,57 @@ undefvar:
 	@echo C:${:U:C,^$,empty,}
 	@echo @:${:U:@var@empty@}
 
-mod-S:
+WORDS=		sequences of letters
+.if ${WORDS:S,,,} != ${WORDS}
+.warning The empty pattern matches something.
+.endif
+.if ${WORDS:S,e,*,1} != "s*quences of letters"
+.warning The :S modifier flag '1' is not applied exactly once.
+.endif
+.if ${WORDS:S,e,*,} != "s*quences of l*tters"
+.warning The :S modifier does not replace every first match per word.
+.endif
+.if ${WORDS:S,e,*,g} != "s*qu*nc*s of l*tt*rs"
+.warning The :S modifier flag 'g' does not replace every occurrence.
+.endif
+.if ${WORDS:S,^sequ,occurr,} != "occurrences of letters"
+.warning The :S modifier fails for a short match anchored at the start.
+.endif
+.if ${WORDS:S,^of,with,} != "sequences with letters"
+.warning The :S modifier fails for an exact match anchored at the start.
+.endif
+.if ${WORDS:S,^office,does not match,} != ${WORDS}
+.warning The :S modifier matches a too long pattern anchored at the start.
+.endif
+.if ${WORDS:S,f$,r,} != "sequences or letters"
+.warning The :S modifier fails for a short match anchored at the end.
+.endif
+.if ${WORDS:S,s$,,} != "sequence of letter"
+.warning The :S modifier fails to replace one occurrence per word.
+.endif
+.if ${WORDS:S,of$,,} != "sequences letters"
+.warning The :S modifier fails for an exact match anchored at the end.
+.endif
+.if ${WORDS:S,eof$,,} != ${WORDS}
+.warning The :S modifier matches a too long pattern anchored at the end.
+.endif
+.if ${WORDS:S,^of$,,} != "sequences letters"
+.warning The :S modifier does not match a word anchored at both ends.
+.endif
+.if ${WORDS:S,^o$,,} != ${WORDS}
+.warning The :S modifier matches a prefix anchored at both ends.
+.endif
+.if ${WORDS:S,^f$,,} != ${WORDS}
+.warning The :S modifier matches a suffix anchored at both ends.
+.endif
+.if ${WORDS:S,^eof$,,} != ${WORDS}
+.warning The :S modifier matches a too long prefix anchored at both ends.
+.endif
+.if ${WORDS:S,^office$,,} != ${WORDS}
+.warning The :S modifier matches a too long suffix anchored at both ends.
+.endif
+
+mod-subst:
 	@echo $@:
 	@echo :${:Ua b b c:S,a b,,:Q}:
 	@echo :${:Ua b b c:S,a b,,1:Q}:
@@ -76,7 +132,7 @@ mod-S:
 	@echo :${:U1 2 3 1 2 3:S,1 2,___,Wg:S,_,x,:Q}:
 	@echo ${:U12345:S,,sep,g:Q}
 
-mod-C:
+mod-regex:
 	@echo $@:
 	@echo :${:Ua b b c:C,a b,,:Q}:
 	@echo :${:Ua b b c:C,a b,,1:Q}:
@@ -88,7 +144,7 @@ mod-C:
 # In the :@ modifier, the name of the loop variable can even be generated
 # dynamically.  There's no practical use-case for this, and hopefully nobody
 # will ever depend on this, but technically it's possible.
-mod-at-varname:
+mod-loop-varname:
 	@echo :${:Uone two three:@${:Ubar:S,b,v,}@+${var}+@:Q}:
 
 # The :@ modifier resolves the variables a little more often than expected.
@@ -101,13 +157,13 @@ RES1=		1d${RES2} 1i$${RES2}
 RES2=		2d${RES3} 2i$${RES3}
 RES3=		3
 
-mod-at-resolve:
+mod-loop-resolve:
 	@echo $@:${RESOLVE:@v@w${v}w@:Q}:
 
-# As of 2020-07-19, the variable name of the :@ modifier may end with one
-# or two dollar signs, which are silently ignored.  There's no point in
-# allowing a dollar sign in that position.
-mod-at-dollar:
+# Until 2020-07-20, the variable name of the :@ modifier could end with one
+# or two dollar signs, which were silently ignored.
+# There's no point in allowing a dollar sign in that position.
+mod-loop-varname-dollar:
 	@echo $@:${1 2 3:L:@v$@($v)@:Q}.
 	@echo $@:${1 2 3:L:@v$$@($v)@:Q}.
 	@echo $@:${1 2 3:L:@v$$$@($v)@:Q}.
@@ -143,7 +199,7 @@ mod-loop-dollar:
 	@echo $@:${:U5:@word@$$$$${word}$$$$$@:Q}:
 	@echo $@:${:U6:@word@$$$$$${word}$$$$$$@:Q}:
 
-mod-C-limits:
+mod-regex-limits:
 	@echo $@:00-ok:${:U1 23 456:C,..,\0\0,:Q}
 	@echo $@:11-missing:${:U1 23 456:C,..,\1\1,:Q}
 	@echo $@:11-ok:${:U1 23 456:C,(.).,\1\1,:Q}
@@ -154,7 +210,7 @@ mod-C-limits:
 	# which is more than enough for daily use.
 	@echo $@:capture:${:UabcdefghijABCDEFGHIJrest:C,(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.),\9\8\7\6\5\4\3\2\1\0\10\11\12,}
 
-mod-C-errors:
+mod-regex-errors:
 	@echo $@: ${UNDEF:Uvalue:C,[,,}
 
 # Just a bit of basic code coverage for the obscure ::= assignment modifiers.
@@ -181,5 +237,17 @@ mod-tu-space:
 	# the adjacent spaces are preserved.
 	@echo $@: ${a   b:L:tu:Q}
 
-mod-Q:
+mod-quote:
 	@echo $@: new${.newline:Q}${.newline:Q}line
+
+# Cover the bmake_realloc in brk_string.
+mod-break-many-words:
+	@echo $@: ${UNDEF:U:range=500:[#]}
+
+# Demonstrate the :_ modifier.
+# In the parameterized form, having the variable name on the right side
+# of the = assignment operator is confusing. Luckily this modifier is
+# only rarely needed.
+mod-remember:
+	@echo $@: ${1 2 3:L:_:@var@${_}@}
+	@echo $@: ${1 2 3:L:@var@${var:_=SAVED:}@}, SAVED=${SAVED}

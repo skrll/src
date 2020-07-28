@@ -13,4 +13,26 @@ VAR:S,V,v,=Thevariable
 Expect: Unclosed substitution for VAR (, missing)
 make: Unclosed substitution for VAR (, missing)
 VAR:S,V,v=
+Expect: 2 errors about missing @ delimiter
+make: Unclosed substitution for UNDEF (@ missing)
+
+make: Unclosed substitution for UNDEF (@ missing)
+
+1 2 3
+modloop-close:
+make: Unclosed variable specification (expecting '}') for "UNDEF" (value "1}... 2}... 3}...") modifier @
+1}... 2}... 3}...
+1}... 2}... 3}...
+Expect: 2 errors about missing ] delimiter
+make: Unclosed substitution for UNDEF (] missing)
+
+make: Unclosed substitution for UNDEF (] missing)
+
+13=
+12345=ok
+Expect: 2 errors about missing ! delimiter
+make: Unclosed substitution for VARNAME (! missing)
+
+make: Unclosed substitution for ! (! missing)
+
 exit status 0

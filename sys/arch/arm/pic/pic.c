@@ -1,4 +1,4 @@
-/*	$NetBSD: pic.c,v 1.56 2020/02/01 12:55:35 riastradh Exp $	*/
+/*	$NetBSD: pic.c,v 1.57 2020/07/27 16:26:51 skrll Exp $	*/
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -33,7 +33,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pic.c,v 1.56 2020/02/01 12:55:35 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pic.c,v 1.57 2020/07/27 16:26:51 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>

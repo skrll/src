@@ -1,4 +1,4 @@
-/*	$NetBSD: buf.h,v 1.19 2017/05/31 22:02:06 maya Exp $	*/
+/*	$NetBSD: buf.h,v 1.21 2020/07/26 15:09:10 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -110,6 +110,9 @@ typedef struct Buffer {
 
 void Buf_Expand_1(Buffer *);
 void Buf_AddBytes(Buffer *, int, const Byte *);
+void Buf_AddBytesBetween(Buffer *, const Byte *, const Byte *);
+void Buf_AddStr(Buffer *, const char *);
+void Buf_AddInt(Buffer *, int);
 Byte *Buf_GetAll(Buffer *, int *);
 void Buf_Empty(Buffer *);
 void Buf_Init(Buffer *, int);

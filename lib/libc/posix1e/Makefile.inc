@@ -25,7 +25,6 @@ SRCS+=	acl_branding.c			\
 	acl_to_text.c			\
 	acl_to_text_nfs4.c              \
 	acl_valid.c			\
-	extattr.c			\
 	subr_acl_nfs4.c
 
 MAN+=	acl.3				\
@@ -64,7 +63,6 @@ MAN+=	acl.3				\
 	acl_strip_np.3			\
 	acl_to_text.3			\
 	acl_valid.3			\
-	extattr.3			\
 	posix1e.3
 
 MLINKS+=acl_create_entry.3 acl_create_entry_np.3 \

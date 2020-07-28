@@ -1,4 +1,4 @@
-/*	$NetBSD: aes_ssse3.h,v 1.1 2020/06/29 23:51:35 riastradh Exp $	*/
+/*	$NetBSD: aes_ssse3.h,v 1.3 2020/07/25 22:31:04 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -29,7 +29,12 @@
 #ifndef	_CRYPTO_AES_ARCH_X86_AES_SSSE3_H
 #define	_CRYPTO_AES_ARCH_X86_AES_SSSE3_H
 
-#include <crypto/aes/aes.h>
+#include <sys/types.h>
+
+#include <crypto/aes/aes_impl.h>
+
+struct aesenc;
+struct aesdec;
 
 /*
  * These functions MUST NOT use any vector registers for parameters or
@@ -54,6 +59,12 @@ void aes_ssse3_xts_enc(const struct aesenc *, const uint8_t[static 16],
     uint8_t[static 16], size_t, uint8_t[static 16], uint32_t);
 void aes_ssse3_xts_dec(const struct aesdec *, const uint8_t[static 16],
     uint8_t[static 16], size_t, uint8_t[static 16], uint32_t);
+void aes_ssse3_cbcmac_update1(const struct aesenc *, const uint8_t[static 16],
+    size_t, uint8_t[static 16], uint32_t);
+void aes_ssse3_ccm_enc1(const struct aesenc *, const uint8_t[static 16],
+    uint8_t[static 16], size_t, uint8_t[static 32], uint32_t);
+void aes_ssse3_ccm_dec1(const struct aesenc *, const uint8_t[static 16],
+    uint8_t[static 16], size_t, uint8_t[static 32], uint32_t);
 
 int aes_ssse3_selftest(void);
 
