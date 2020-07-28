@@ -1,4 +1,4 @@
-.\"	$NetBSD: hardware,v 1.14 2020/07/18 18:11:46 nia Exp $
+.\"	$NetBSD: hardware,v 1.23 2020/07/26 11:00:28 jmcneill Exp $
 .\"
 .\" Copyright (c) 2001-2020 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -24,7 +24,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Ss2 32-bit SoCs supported by GENERIC kernels (ARMv7-A)
+.Ss2 32-bit SoCs supported by GENERIC kernels (Armv7-A)
 .Pp
 .Lk "https://wiki.netbsd.org/ports/evbarm/qemu_arm/" "QEMU"
 is also supported.
@@ -36,15 +36,19 @@ Amlogic S805 (e.g. ODROID-C1)
 .It
 Broadcom BCM2836 (e.g. Raspberry Pi 2)
 .It
+Freescale/NXP i.MX6 Dual/DualLite/Quad, i.MX7 Dual (e.g. Wandboard, UDOO, Hummingboard...)
+.It
 Samsung Exynos 5422 (e.g. ODROID-XU3/XU-4)
 .It
-Texas Instruments OMAP3 (e.g. BeagleBoard, BeagleBone Black...)
+Texas Instruments AM335x and OMAP3 (e.g. BeagleBoard, BeagleBone Black...)
+.It
+Xilinx Zynq (e.g. Zedboard, Parallella...)
 .It
 NVIDIA Tegra K1
 .El
 .Ss2 64-bit SoCs supported by GENERIC64 kernels
 .Pp
-Devices conforming to the Server Base System Architecture specification,
+Devices conforming to the Arm "ServerReady" (SBBR and SBSA) specifications,
 and
 .Lk "https://wiki.netbsd.org/ports/evbarm/qemu_arm/" "QEMU"
 are also supported.
@@ -52,9 +56,11 @@ are also supported.
 .It
 Allwinner H5, H6, A64 (e.g. PINE64, Pinebook, NanoPi A64, OLinuXino...)
 .It
-Amlogic S905 (e.g. ODROID-C2, Le Potato, NanoPi K2...)
+Amlogic S905, S805X, S905D, S905W, S905X (e.g. ODROID-C2, Le Potato, NanoPi K2...)
 .It
-Broadcom BCM2837 (e.g. Raspberry Pi 3)
+Broadcom BCM2837, BCM2711 (e.g. Raspberry Pi 3 and 4)
+.It
+Freescale/NXP i.MX8MQ (e.g. Hummingboard...)
 .It
 Rockchip RK3328, RK3328 (e.g. Pinebook Pro, RockPro64, Firefly...)
 .It

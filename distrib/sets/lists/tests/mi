@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.874 2020/07/17 15:34:17 kamil Exp $
+# $NetBSD: mi,v 1.880 2020/07/27 20:46:18 rillig Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -184,6 +184,7 @@
 ./usr/libdata/debug/usr/tests/sys					tests-sys-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/sys/crypto				tests-sys-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/sys/crypto/aes				tests-sys-debug		compattestfile,atf
+./usr/libdata/debug/usr/tests/sys/crypto/chacha				tests-sys-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/sys/net					tests-sys-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/sys/netatalk				tests-sys-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/sys/netinet				tests-sys-debug		compattestfile,atf
@@ -4085,6 +4086,10 @@
 ./usr/tests/sys/crypto/aes/Atffile		tests-sys-tests	compattestfile,atf
 ./usr/tests/sys/crypto/aes/Kyuafile		tests-sys-tests	compattestfile,atf,kyua
 ./usr/tests/sys/crypto/aes/t_aes		tests-sys-tests	compattestfile,atf
+./usr/tests/sys/crypto/chacha			tests-sys-tests	compattestfile,atf
+./usr/tests/sys/crypto/chacha/Atffile		tests-sys-tests	compattestfile,atf
+./usr/tests/sys/crypto/chacha/Kyuafile		tests-sys-tests	compattestfile,atf,kyua
+./usr/tests/sys/crypto/chacha/t_chacha		tests-sys-tests	compattestfile,atf
 ./usr/tests/sys/net				tests-sys-tests	compattestfile,atf
 ./usr/tests/sys/net/Atffile			tests-sys-tests	compattestfile,atf
 ./usr/tests/sys/net/Kyuafile			tests-sys-tests	compattestfile,atf,kyua
@@ -4517,6 +4522,8 @@
 ./usr/tests/usr.bin/make/t_make			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/Makefile	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/archive.exp	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/archive.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/comment.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/comment.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-late.exp	tests-usr.bin-tests	compattestfile,atf
@@ -4527,12 +4534,16 @@
 ./usr/tests/usr.bin/make/unit-tests/cond1.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond2.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond2.mk	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/directives.exp	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/directives.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/dollar.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/dollar.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/doterror.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/doterror.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/dotwait.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/dotwait.mk	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/envfirst.exp	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/envfirst.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/error.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/error.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/escape.exp	tests-usr.bin-tests	compattestfile,atf
@@ -4593,10 +4604,16 @@
 ./usr/tests/usr.bin/make/unit-tests/unexport.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varcmd.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varcmd.mk	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/vardebug.exp	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/vardebug.mk	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/varfind.exp	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/varfind.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varmisc.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varmisc.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varmod-edge.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varmod-edge.mk	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/varparse-dynamic.exp	tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/varparse-dynamic.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varquote.exp	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varquote.mk	tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varshell.exp	tests-usr.bin-tests	compattestfile,atf
