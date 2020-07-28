@@ -1,4 +1,4 @@
-/*	$NetBSD: arm_neon.h,v 1.3 2020/07/23 11:33:01 ryo Exp $	*/
+/*	$NetBSD: arm_neon.h,v 1.6 2020/07/25 22:43:01 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -88,6 +88,13 @@ typedef struct { uint8x8_t val[2]; } uint8x8x2_t;
 #error Teach me how to neon in your compile!
 
 #endif
+
+_INTRINSATTR
+static __inline uint32x4_t
+vaddq_u32(uint32x4_t __v0, uint32x4_t __v1)
+{
+	return __v0 + __v1;
+}
 
 _INTRINSATTR
 static __inline uint32x4_t
@@ -215,6 +222,30 @@ vgetq_lane_u32(uint32x4_t __v, uint8_t __i)
 #endif
 
 _INTRINSATTR
+static __inline uint32x4_t
+vld1q_u32(const uint32_t *__p32)
+{
+#if defined(__GNUC__) && !defined(__clang__)
+#ifdef __aarch64__
+	const __builtin_aarch64_simd_si *__p =
+	    (const __builtin_aarch64_simd_si *)__p32;
+
+	return (uint32x4_t)__builtin_aarch64_ld1v4si(__p);
+#else
+	const __builtin_neon_si *__p = (const __builtin_neon_si *)__p32;
+
+	return (uint32x4_t)__builtin_neon_vld1v4si(__p);
+#endif
+#elif defined(__clang__)
+	uint32x4_t __v = (uint32x4_t)__builtin_neon_vld1q_v(__p32, 50);
+#ifndef __LITTLE_ENDIAN__
+	__v = __builtin_shufflevector(__v, __v, 3,2,1,0);
+#endif
+	return __v;
+#endif
+}
+
+_INTRINSATTR
 static __inline uint8x16_t
 vld1q_u8(const uint8_t *__p8)
 {
@@ -230,7 +261,12 @@ vld1q_u8(const uint8_t *__p8)
 	return (uint8x16_t)__builtin_neon_vld1v16qi(__p);
 #endif
 #elif defined(__clang__)
-	return (uint8x16_t)__builtin_neon_vld1q_v(__p8, 48);
+	uint8x16_t __v = (uint8x16_t)__builtin_neon_vld1q_v(__p8, 48);
+#ifndef __LITTLE_ENDIAN__
+	__v = __builtin_shufflevector(__v, __v,
+	    15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0);
+#endif
+	return __v;
 #endif
 }
 
@@ -328,6 +364,19 @@ vreinterpretq_u8_u64(uint64x2_t __v)
 	return (uint8x16_t)__v;
 }
 
+_INTRINSATTR
+static __inline uint8x16_t
+vrev32q_u8(uint8x16_t __v)
+{
+#if defined(__GNUC__) && !defined(__clang__)
+	return __builtin_shuffle(__v,
+	    (uint8x16_t) { 3,2,1,0, 7,6,5,4, 11,10,9,8, 15,14,13,12 });
+#elif defined(__clang__)
+	return __builtin_shufflevector(__v,
+	    3,2,1,0, 7,6,5,4, 11,10,9,8, 15,14,13,12);
+#endif
+}
+
 #if defined(__GNUC__) && !defined(__clang__)
 _INTRINSATTR
 static __inline uint32x4_t
@@ -354,6 +403,38 @@ vsetq_lane_u64(uint64_t __x, uint64x2_t __v, uint8_t __i)
 #define	vsetq_lane_u64(__x, __v, __i)					      \
 	(uint64x2_t)__builtin_neon_vsetq_lane_i32((__x), (int64x2_t)(__v),    \
 	    __neon_lane_index(__v, __i));
+#endif
+
+#if defined(__GNUC__) && !defined(__clang__)
+_INTRINSATTR
+static __inline uint32x4_t
+vshlq_n_u32(uint32x4_t __v, uint8_t __bits)
+{
+#ifdef __aarch64__
+	return (uint32x4_t)__builtin_aarch64_ashlv4si((int32x4_t)__v, __bits);
+#else
+	return (uint32x4_t)__builtin_neon_vshl_nv4si((int32x4_t)__v, __bits);
+#endif
+}
+#elif defined(__clang__)
+#define	vshlq_n_u32(__v, __bits)					      \
+	(uint32x4_t)__builtin_neon_vshlq_n_v((int32x4_t)(__v), (__bits), 50)
+#endif
+
+#if defined(__GNUC__) && !defined(__clang__)
+_INTRINSATTR
+static __inline uint32x4_t
+vshrq_n_u32(uint32x4_t __v, uint8_t __bits)
+{
+#ifdef __aarch64__
+	return (uint32x4_t)__builtin_aarch64_lshrv4si((int32x4_t)__v, __bits);
+#else
+	return (uint32x4_t)__builtin_neon_vshru_nv4si((int32x4_t)__v, __bits);
+#endif
+}
+#elif defined(__clang__)
+#define	vshrq_n_u8(__v, __bits)						      \
+	(uint32x4_t)__builtin_neon_vshrq_n_v((int32x4_t)(__v), (__bits), 50)
 #endif
 
 #if defined(__GNUC__) && !defined(__clang__)
@@ -407,6 +488,28 @@ vsliq_n_s32(int32x4_t __vins, int32x4_t __vsh, uint8_t __bits)
 
 _INTRINSATTR
 static __inline void
+vst1q_u32(uint32_t *__p32, uint32x4_t __v)
+{
+#if defined(__GNUC__) && !defined(__clang__)
+#ifdef __aarch64__
+	__builtin_aarch64_simd_si *__p = (__builtin_aarch64_simd_si *)__p32;
+
+	__builtin_aarch64_st1v4si(__p, (int32x4_t)__v);
+#else
+	__builtin_neon_si *__p = (__builtin_neon_si *)__p32;
+
+	__builtin_neon_vst1v4si(__p, (int32x4_t)__v);
+#endif
+#elif defined(__clang__)
+#ifndef __LITTLE_ENDIAN__
+	__v = __builtin_shufflevector(__v, __v, 3,2,1,0);
+#endif
+	__builtin_neon_vst1q_v(__p32, __v, 50);
+#endif
+}
+
+_INTRINSATTR
+static __inline void
 vst1q_u8(uint8_t *__p8, uint8x16_t __v)
 {
 #if defined(__GNUC__) && !defined(__clang__)
@@ -422,7 +525,7 @@ vst1q_u8(uint8_t *__p8, uint8x16_t __v)
 #elif defined(__clang__)
 #ifndef __LITTLE_ENDIAN__
 	__v = __builtin_shufflevector(__v, __v,
-	    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+	    15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0);
 #endif
 	__builtin_neon_vst1q_v(__p8, __v, 48);
 #endif

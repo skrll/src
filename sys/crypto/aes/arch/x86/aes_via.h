@@ -1,4 +1,4 @@
-/*	$NetBSD: aes_via.h,v 1.1 2020/06/29 23:39:30 riastradh Exp $	*/
+/*	$NetBSD: aes_via.h,v 1.2 2020/07/25 22:12:57 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
 #ifndef	_CRYPTO_AES_ARCH_X86_AES_VIA_H
 #define	_CRYPTO_AES_ARCH_X86_AES_VIA_H
 
-#include <crypto/aes/aes.h>
+#include <crypto/aes/aes_impl.h>
 
 extern struct aes_impl aes_via_impl;
 

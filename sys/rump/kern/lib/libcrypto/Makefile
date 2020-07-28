@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.8 2020/06/29 23:44:01 riastradh Exp $
+#	$NetBSD: Makefile,v 1.12 2020/07/26 04:25:49 riastradh Exp $
 #
 
 .PATH:	${.CURDIR}/../../../../crypto/adiantum				\
@@ -6,6 +6,7 @@
 	${.CURDIR}/../../../../crypto/blowfish				\
 	${.CURDIR}/../../../../crypto/camellia				\
 	${.CURDIR}/../../../../crypto/cast128				\
+	${.CURDIR}/../../../../crypto/chacha				\
 	${.CURDIR}/../../../../crypto/des				\
 	${.CURDIR}/../../../../crypto/skipjack
 
@@ -16,6 +17,16 @@ COMMENT=Cryptographic routines
 SRCS+=	adiantum.c
 SRCS+=	adiantum_selftest.c
 
+# AES
+SRCS+=	aes_bear.c
+SRCS+=	aes_ccm.c
+SRCS+=	aes_ccm_mbuf.c
+SRCS+=	aes_ct.c
+SRCS+=	aes_ct_dec.c
+SRCS+=	aes_ct_enc.c
+SRCS+=	aes_impl.c
+SRCS+=	aes_selftest.c
+
 # blowfish
 SRCS+=	bf_ecb.c bf_enc.c bf_cbc.c bf_skey.c bf_module.c
 
@@ -25,17 +36,13 @@ SRCS+=  camellia.c camellia-api.c
 # cast128
 SRCS+=	cast128.c
 
+# ChaCha
+SRCS+=	chacha_impl.c
+SRCS+=	chacha_ref.c
+SRCS+=	chacha_selftest.c
+
 # DES
 SRCS+=	des_ecb.c des_setkey.c des_enc.c des_cbc.c des_module.c
-
-# AES
-SRCS+=	aes_bear.c
-SRCS+=	aes_ct.c
-SRCS+=	aes_ct_dec.c
-SRCS+=	aes_ct_enc.c
-SRCS+=	aes_impl.c
-SRCS+=	aes_rijndael.c
-SRCS+=	aes_selftest.c
 
 # skipjack
 SRCS+=	skipjack.c
