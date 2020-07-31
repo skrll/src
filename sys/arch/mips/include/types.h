@@ -146,7 +146,9 @@ typedef __uint32_t tlb_asid_t;
 #define	__SIMPLELOCK_LOCKED	1
 #define	__SIMPLELOCK_UNLOCKED	0
 
+#if 0
 #define	__HAVE_FAST_SOFTINTS
+#endif
 #define	__HAVE_SYSCALL_INTERN
 #define	__HAVE_CPU_LWP_SETPRIVATE
 #define	__HAVE_CPU_DATA_FIRST

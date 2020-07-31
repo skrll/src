@@ -56,7 +56,7 @@ RCSID("$NetBSD: lock_stubs_llsc.S,v 1.9 2019/04/06 03:06:26 thorpej Exp $")
 #else
 #define	SYNC		/* nothing */
 #define	BDSYNC		nop
-#endif /* MIPS_HAS_LLSC != 0 && defined(MULTIPROCESSOR) */
+#endif /* defined(MULTIPROCESSOR) */
 
 
 /*

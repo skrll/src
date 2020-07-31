@@ -517,6 +517,7 @@ octeon_ipi_intr(void *arg)
 	}
 #endif
 
+	membar_consumer();
 	/* if the request is clear, it was previously processed */
 	if ((ci->ci_request_ipis & ipi_mask) == 0)
 		return 0;
@@ -552,6 +553,7 @@ octeon_send_ipi(struct cpu_info *ci, int req)
 	const uint32_t ipi_mask = __BIT(req);
 
 	atomic_or_64(&ci->ci_request_ipis, ipi_mask);
+	membar_producer();
 
 	mips3_sd(cpu->cpu_mbox_set, ipi_mask);
 

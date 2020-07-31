@@ -200,6 +200,7 @@ cpu_info_alloc(struct pmap_tlb_info *ti, cpuid_t cpu_id, cpuid_t cpu_package_id,
 
 	mi_cpu_attach(ci);
 
+//XXXNH foo
 	pmap_tlb_info_attach(ti, ci);
 
 	return ci;
@@ -291,6 +292,7 @@ cpu_attach_common(device_t self, struct cpu_info *ci)
 	 */
 	ipi_init(ci);
 
+	kcpuset_create(&ci->ci_shootdowncpus, true);
 	kcpuset_create(&ci->ci_multicastcpus, true);
 	kcpuset_create(&ci->ci_watchcpus, true);
 	kcpuset_create(&ci->ci_ddbcpus, true);
