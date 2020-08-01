@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.63 2020/07/09 22:40:14 sjg Exp $
+# $NetBSD: Makefile,v 1.78 2020/07/31 22:07:28 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -24,20 +24,28 @@
 # and it should be added to the TESTS list.
 #
 # Any added files must also be added to src/distrib/sets/lists/tests/mi.
-# Makefiles that are not added to TESTS must be ignored in
-# src/tests/usr.bin/make/t_make.sh (example: include-sub).
+# To do that, just run "make sync-mi" in this directory.
+#
+# A few *.mk files are helper files for other tests (such as include-sub.mk)
+# and are thus not added to TESTS.  Such files must be ignored in
+# src/tests/usr.bin/make/t_make.sh.
 #
 
 # Each test is in a sub-makefile.
 # Keep the list sorted.
+TESTS+=		# archive	# broken on FreeBSD
+TESTS+=		cmdline
 TESTS+=		comment
 TESTS+=		cond-late
 TESTS+=		cond-short
 TESTS+=		cond1
 TESTS+=		cond2
+TESTS+=		dir
+TESTS+=		directives
 TESTS+=		dollar
 TESTS+=		doterror
 TESTS+=		dotwait
+TESTS+=		envfirst
 TESTS+=		error
 TESTS+=		# escape	# broken by reverting POSIX changes
 TESTS+=		export
@@ -67,19 +75,36 @@ TESTS+=		ternary
 TESTS+=		unexport
 TESTS+=		unexport-env
 TESTS+=		varcmd
+TESTS+=		vardebug
+TESTS+=		varfind
 TESTS+=		varmisc
 TESTS+=		varmod-edge
+TESTS+=		varparse-dynamic
 TESTS+=		varquote
 TESTS+=		varshell
 
-# Override make flags for certain tests; default is -k.
+# Override environment variables for some of the tests.
+ENV.envfirst=		FROM_ENV=value-from-env
+ENV.export=		-i PATH=${PATH:Q}
+ENV.varmisc=		FROM_ENV=env
+ENV.varmisc+=		FROM_ENV_BEFORE=env
+ENV.varmisc+=		FROM_ENV_AFTER=env
+
+# Override make flags for some of the tests; default is -k.
 FLAGS.doterror=		# none
+FLAGS.envfirst=		-e
+FLAGS.export=		-r
 FLAGS.order=		-j1
+FLAGS.vardebug=		-k -dv FROM_CMDLINE=
 
 # Some tests need extra post-processing.
+SED_CMDS.moderrs+=	-e 's,\(substitution error:\).*,\1 (details omitted),'
 SED_CMDS.modmisc+=	-e 's,\(substitution error:\).*,\1 (details omitted),'
 SED_CMDS.varshell+=	-e 's,^[a-z]*sh: ,,'
 SED_CMDS.varshell+=	-e '/command/s,No such.*,not found,'
+
+# Some tests need an additional round of postprocessing.
+POSTPROC.vardebug=	${TOOL_SED} -n -e '/:RELEVANT = yes/,/:RELEVANT = no/p'
 
 # End of the configuration section.
 
@@ -114,10 +139,14 @@ LANG=		C
 # the tests are actually done with sub-makes.
 .SUFFIXES: .mk .rawout .out
 .mk.rawout:
-	@echo ${TEST_MAKE} ${FLAGS.${.TARGET:R}:U-k} -f ${.IMPSRC}
-	-@cd ${.OBJDIR} && \
-	{ ${TEST_MAKE} ${FLAGS.${.TARGET:R}:U-k} -f ${.IMPSRC} \
-	  2>&1 ; echo $$? >${.TARGET:R}.status ; } > ${.TARGET}.tmp
+	@echo testing ${.IMPSRC}
+	@set -eu; \
+	cd ${.OBJDIR}; \
+	env ${ENV.${.TARGET:R}} ${TEST_MAKE} -C ${.CURDIR} \
+	  ${FLAGS.${.TARGET:R}:U-k} -f ${.IMPSRC} \
+	  > ${.TARGET}.tmp 2>&1 \
+	&& status=$$? || status=$$?; \
+	echo $$status > ${.TARGET:R}.status
 	@mv ${.TARGET}.tmp ${.TARGET}
 
 # Post-process the test output so that the results can be compared.
@@ -134,9 +163,11 @@ _SED_CMDS+=	-e 's,${UNIT_TESTS:S,.,\\.,g}/,,g'
 .rawout.out:
 	@echo postprocess ${.TARGET}
 	@${TOOL_SED} ${_SED_CMDS} ${SED_CMDS.${.TARGET:R}} \
-	  < ${.IMPSRC} > ${.TARGET}.tmp
-	@echo "exit status `cat ${.TARGET:R}.status`" >> ${.TARGET}.tmp
-	@mv ${.TARGET}.tmp ${.TARGET}
+	  < ${.IMPSRC} > ${.TARGET}.tmp1
+	@${POSTPROC.${.TARGET:R}:Ucat} < ${.TARGET}.tmp1 > ${.TARGET}.tmp2
+	@rm ${.TARGET}.tmp1
+	@echo "exit status `cat ${.TARGET:R}.status`" >> ${.TARGET}.tmp2
+	@mv ${.TARGET}.tmp2 ${.TARGET}
 
 # Compare all output files
 test:	${OUTFILES} .PHONY
@@ -157,6 +188,28 @@ accept:
 	  || { echo "Replacing $${test}.exp" ; \
 	       cp $${test}.out ${UNIT_TESTS}/$${test}.exp ; } \
 	done
+
+SYNC_MI_AWK= \
+	BEGIN {								\
+	  testsdir = "usr.bin/make/unit-tests";				\
+	  linestart = "./usr/tests/" testsdir;				\
+	  fmt = linestart "/%s\ttests-usr.bin-tests\tcompattestfile,atf\\n"; \
+	  cmd = "cd " testsdir " && ls *.exp *.mk | xargs printf '" fmt "'" \
+	}								\
+	function startswith(s, prefix) {				\
+	  return substr(s, 1, length(prefix)) == prefix;		\
+	}								\
+	startswith($$1, linestart) && $$1 ~ /\.(exp|mk)$$/ { next }	\
+	{ print $$0 }							\
+	$$1 == linestart "/Makefile" { system(cmd) }
+
+sync-mi:
+	@set -eu;							\
+	cd "${MAKEFILE:tA:H}/../../..";					\
+	mi="distrib/sets/lists/tests/mi";				\
+	awk ${SYNC_MI_AWK:Q} < "$$mi" > "$$mi.$@";			\
+	mv -f "$$mi.$@" "$$mi";						\
+	cvs diff "$$mi" || true
 
 .if exists(${TEST_MAKE})
 ${TESTS:=.rawout}: ${TEST_MAKE}

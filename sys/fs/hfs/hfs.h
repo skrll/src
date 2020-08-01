@@ -1,4 +1,4 @@
-/*	$NetBSD: hfs.h,v 1.11 2020/07/23 19:26:34 skrll Exp $	*/
+/*	$NetBSD: hfs.h,v 1.12 2020/07/24 05:26:37 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2005, 2007 The NetBSD Foundation, Inc.

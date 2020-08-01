@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.223 2020/07/20 03:23:42 simonb Exp $	*/
+/*	$NetBSD: locore.S,v 1.225 2020/07/31 20:04:18 skrll Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -63,7 +63,7 @@
 #include <mips/trap.h>
 #include <mips/locore.h>
 
-RCSID("$NetBSD: locore.S,v 1.223 2020/07/20 03:23:42 simonb Exp $")
+RCSID("$NetBSD: locore.S,v 1.225 2020/07/31 20:04:18 skrll Exp $")
 
 #include "assym.h"
 

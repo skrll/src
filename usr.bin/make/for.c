@@ -1,4 +1,4 @@
-/*	$NetBSD: for.c,v 1.55 2020/07/19 12:26:17 rillig Exp $	*/
+/*	$NetBSD: for.c,v 1.57 2020/07/28 16:45:56 rillig Exp $	*/
 
 /*
  * Copyright (c) 1992, The Regents of the University of California.
@@ -30,14 +30,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: for.c,v 1.55 2020/07/19 12:26:17 rillig Exp $";
+static char rcsid[] = "$NetBSD: for.c,v 1.57 2020/07/28 16:45:56 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)for.c	8.1 (Berkeley) 6/6/93";
 #else
-__RCSID("$NetBSD: for.c,v 1.55 2020/07/19 12:26:17 rillig Exp $");
+__RCSID("$NetBSD: for.c,v 1.57 2020/07/28 16:45:56 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -88,7 +88,7 @@ static int  	  forLevel = 0;  	/* Nesting level	*/
 /*
  * State of a for loop.
  */
-typedef struct _For {
+typedef struct {
     Buffer	  buf;			/* Body of loop		*/
     strlist_t     vars;			/* Iteration variables	*/
     strlist_t     items;		/* Substitution items */
@@ -216,7 +216,7 @@ For_Eval(char *line)
      * We can't do the escapes here - because we don't know whether
      * we are substuting into ${...} or $(...).
      */
-    sub = Var_Subst(NULL, ptr, VAR_GLOBAL, VARE_WANTRES);
+    sub = Var_Subst(ptr, VAR_GLOBAL, VARE_WANTRES);
 
     /*
      * Split into words allowing for quoted strings.

@@ -1,4 +1,4 @@
-/*	$NetBSD: arch.c,v 1.74 2020/07/19 12:26:17 rillig Exp $	*/
+/*	$NetBSD: arch.c,v 1.78 2020/07/31 16:26:16 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,14 +69,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: arch.c,v 1.74 2020/07/19 12:26:17 rillig Exp $";
+static char rcsid[] = "$NetBSD: arch.c,v 1.78 2020/07/31 16:26:16 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)arch.c	8.2 (Berkeley) 1/2/94";
 #else
-__RCSID("$NetBSD: arch.c,v 1.74 2020/07/19 12:26:17 rillig Exp $");
+__RCSID("$NetBSD: arch.c,v 1.78 2020/07/31 16:26:16 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -168,8 +168,9 @@ static int ArchFindArchive(const void *, const void *);
 #ifdef CLEANUP
 static void ArchFree(void *);
 #endif
-static struct ar_hdr *ArchStatMember(char *, char *, Boolean);
-static FILE *ArchFindMember(char *, char *, struct ar_hdr *, const char *);
+static struct ar_hdr *ArchStatMember(const char *, const char *, Boolean);
+static FILE *ArchFindMember(const char *, const char *,
+			    struct ar_hdr *, const char *);
 #if defined(__svr4__) || defined(__SVR4) || defined(__ELF__)
 #define SVR4ARCHIVES
 static int ArchSVR4Entry(Arch *, char *, size_t, FILE *);
@@ -257,7 +258,7 @@ Arch_ParseArchive(char **linePtr, Lst nodeLst, GNode *ctxt)
 	     */
 	    int 	length;
 	    void	*freeIt;
-	    char	*result;
+	    const char	*result;
 
 	    result = Var_Parse(cp, ctxt, VARE_UNDEFERR|VARE_WANTRES,
 			       &length, &freeIt);
@@ -275,7 +276,7 @@ Arch_ParseArchive(char **linePtr, Lst nodeLst, GNode *ctxt)
 
     *cp++ = '\0';
     if (subLibName) {
-	libName = Var_Subst(NULL, libName, ctxt, VARE_UNDEFERR|VARE_WANTRES);
+	libName = Var_Subst(libName, ctxt, VARE_UNDEFERR|VARE_WANTRES);
     }
 
 
@@ -299,7 +300,7 @@ Arch_ParseArchive(char **linePtr, Lst nodeLst, GNode *ctxt)
 		 */
 		int 	length;
 		void	*freeIt;
-		char	*result;
+		const char *result;
 
 		result = Var_Parse(cp, ctxt, VARE_UNDEFERR|VARE_WANTRES,
 				   &length, &freeIt);
@@ -355,8 +356,7 @@ Arch_ParseArchive(char **linePtr, Lst nodeLst, GNode *ctxt)
 	    char    *oldMemName = memName;
 	    size_t   sz;
 
-	    memName = Var_Subst(NULL, memName, ctxt,
-				VARE_UNDEFERR|VARE_WANTRES);
+	    memName = Var_Subst(memName, ctxt, VARE_UNDEFERR | VARE_WANTRES);
 
 	    /*
 	     * Now form an archive spec and recurse to deal with nested
@@ -523,12 +523,11 @@ ArchFindArchive(const void *ar, const void *archName)
  *-----------------------------------------------------------------------
  */
 static struct ar_hdr *
-ArchStatMember(char *archive, char *member, Boolean hash)
+ArchStatMember(const char *archive, const char *member, Boolean hash)
 {
 #define AR_MAX_NAME_LEN	    (sizeof(arh.ar_name)-1)
     FILE *	  arch;	      /* Stream to archive */
     int		  size;       /* Size of archive member */
-    char	  *cp;	      /* Useful character pointer */
     char	  magic[SARMAG];
     LstNode	  ln;	      /* Lst member containing archive descriptor */
     Arch	  *ar;	      /* Archive descriptor */
@@ -543,9 +542,9 @@ ArchStatMember(char *archive, char *member, Boolean hash)
      * to point 'member' to the final component, if there is one, to make
      * the comparisons easier...
      */
-    cp = strrchr(member, '/');
-    if (cp != NULL) {
-	member = cp + 1;
+    const char *base = strrchr(member, '/');
+    if (base != NULL) {
+	member = base + 1;
     }
 
     ln = Lst_Find(archives, archive, ArchFindArchive);
@@ -563,8 +562,7 @@ ArchStatMember(char *archive, char *member, Boolean hash)
 
 	    if (len > AR_MAX_NAME_LEN) {
 		len = AR_MAX_NAME_LEN;
-		strncpy(copy, member, AR_MAX_NAME_LEN);
-		copy[AR_MAX_NAME_LEN] = '\0';
+		snprintf(copy, sizeof copy, "%s", member);
 	    }
 	    if ((he = Hash_FindEntry(&ar->members, copy)) != NULL)
 		return (struct ar_hdr *)Hash_GetValue(he);
@@ -636,10 +634,11 @@ ArchStatMember(char *archive, char *member, Boolean hash)
 	    size = (int)strtol(arh.ar_size, NULL, 10);
 
 	    memcpy(memName, arh.ar_name, sizeof(arh.ar_name));
-	    for (cp = &memName[AR_MAX_NAME_LEN]; *cp == ' '; cp--) {
-		continue;
+	    char *nameend = memName + AR_MAX_NAME_LEN;
+	    while (*nameend == ' ') {
+		nameend--;
 	    }
-	    cp[1] = '\0';
+	    nameend[1] = '\0';
 
 #ifdef SVR4ARCHIVES
 	    /*
@@ -659,8 +658,8 @@ ArchStatMember(char *archive, char *member, Boolean hash)
 		}
 	    }
 	    else {
-		if (cp[0] == '/')
-		    cp[0] = '\0';
+		if (nameend[0] == '/')
+		    nameend[0] = '\0';
 	    }
 #endif
 
@@ -814,8 +813,7 @@ ArchSVR4Entry(Arch *ar, char *name, size_t size, FILE *arch)
 	fprintf(debug_file, "Replaced %s with %s\n", name, &ar->fnametab[entry]);
     }
 
-    (void)strncpy(name, &ar->fnametab[entry], MAXPATHLEN);
-    name[MAXPATHLEN] = '\0';
+    snprintf(name, MAXPATHLEN + 1, "%s", &ar->fnametab[entry]);
     return 1;
 }
 #endif
@@ -846,12 +844,11 @@ ArchSVR4Entry(Arch *ar, char *name, size_t size, FILE *arch)
  *-----------------------------------------------------------------------
  */
 static FILE *
-ArchFindMember(char *archive, char *member, struct ar_hdr *arhPtr,
+ArchFindMember(const char *archive, const char *member, struct ar_hdr *arhPtr,
     const char *mode)
 {
     FILE *	  arch;	      /* Stream to archive */
     int		  size;       /* Size of archive member */
-    char	  *cp;	      /* Useful character pointer */
     char	  magic[SARMAG];
     size_t	  len, tlen;
 
@@ -876,9 +873,9 @@ ArchFindMember(char *archive, char *member, struct ar_hdr *arhPtr,
      * to point 'member' to the final component, if there is one, to make
      * the comparisons easier...
      */
-    cp = strrchr(member, '/');
-    if (cp != NULL) {
-	member = cp + 1;
+    const char *base = strrchr(member, '/');
+    if (base != NULL) {
+	member = base + 1;
     }
     len = tlen = strlen(member);
     if (len > sizeof(arhPtr->ar_name)) {

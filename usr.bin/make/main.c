@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.283 2020/07/20 18:12:48 sjg Exp $	*/
+/*	$NetBSD: main.c,v 1.285 2020/07/31 20:22:10 sjg Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,7 +69,7 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: main.c,v 1.283 2020/07/20 18:12:48 sjg Exp $";
+static char rcsid[] = "$NetBSD: main.c,v 1.285 2020/07/31 20:22:10 sjg Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
@@ -81,7 +81,7 @@ __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993\
 #if 0
 static char sccsid[] = "@(#)main.c	8.3 (Berkeley) 3/19/94";
 #else
-__RCSID("$NetBSD: main.c,v 1.283 2020/07/20 18:12:48 sjg Exp $");
+__RCSID("$NetBSD: main.c,v 1.285 2020/07/31 20:22:10 sjg Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -244,7 +244,7 @@ parse_debug_options(const char *argvalue)
 	for (modules = argvalue; *modules; ++modules) {
 		switch (*modules) {
 		case 'A':
-			debug = ~0;
+			debug = ~(0|DEBUG_LINT);
 			break;
 		case 'a':
 			debug |= DEBUG_ARCH;
@@ -283,6 +283,9 @@ parse_debug_options(const char *argvalue)
 			break;
 		case 'j':
 			debug |= DEBUG_JOB;
+			break;
+		case 'L':
+			debug |= DEBUG_LINT;
 			break;
 		case 'l':
 			debug |= DEBUG_LOUD;
@@ -772,7 +775,7 @@ Main_SetVarObjdir(const char *var, const char *suffix)
 
 	/* expand variable substitutions */
 	if (strchr(path, '$') != 0)
-		xpath = Var_Subst(NULL, path, VAR_GLOBAL, VARE_WANTRES);
+		xpath = Var_Subst(path, VAR_GLOBAL, VARE_WANTRES);
 	else
 		xpath = path;
 
@@ -838,7 +841,7 @@ MakeMode(const char *mode)
     char *mp = NULL;
 
     if (!mode)
-	mode = mp = Var_Subst(NULL, "${" MAKE_MODE ":tl}",
+	mode = mp = Var_Subst("${" MAKE_MODE ":tl}",
 			      VAR_GLOBAL, VARE_WANTRES);
 
     if (mode && *mode) {
@@ -875,8 +878,7 @@ doPrintVars(void)
 		char *p1;
 
 		if (strchr(var, '$')) {
-			value = p1 = Var_Subst(NULL, var, VAR_GLOBAL,
-			    VARE_WANTRES);
+			value = p1 = Var_Subst(var, VAR_GLOBAL, VARE_WANTRES);
 		} else if (expandVars) {
 			char tmp[128];
 			int len = snprintf(tmp, sizeof(tmp), "${%s}", var);
@@ -884,8 +886,7 @@ doPrintVars(void)
 			if (len >= (int)sizeof(tmp))
 				Fatal("%s: variable name too big: %s",
 				    progname, var);
-			value = p1 = Var_Subst(NULL, tmp, VAR_GLOBAL,
-			    VARE_WANTRES);
+			value = p1 = Var_Subst(tmp, VAR_GLOBAL, VARE_WANTRES);
 		} else {
 			value = Var_Value(var, VAR_GLOBAL, &p1);
 		}
@@ -1348,7 +1349,7 @@ main(int argc, char **argv)
 			Fatal("%s: cannot open %s.", progname,
 			    (char *)Lst_Datum(ln));
 	} else {
-	    p1 = Var_Subst(NULL, "${" MAKEFILE_PREFERENCE "}",
+	    p1 = Var_Subst("${" MAKEFILE_PREFERENCE "}",
 		VAR_CMD, VARE_WANTRES);
 	    if (p1) {
 		(void)str2Lst_Append(makefiles, p1, NULL);
@@ -1359,7 +1360,7 @@ main(int argc, char **argv)
 
 	/* In particular suppress .depend for '-r -V .OBJDIR -f /dev/null' */
 	if (!noBuiltins || !printVars) {
-	    makeDependfile = Var_Subst(NULL, "${.MAKE.DEPENDFILE:T}",
+	    makeDependfile = Var_Subst("${.MAKE.DEPENDFILE:T}",
 		VAR_CMD, VARE_WANTRES);
 	    doing_depend = TRUE;
 	    (void)ReadMakefile(makeDependfile, NULL);
@@ -1379,7 +1380,7 @@ main(int argc, char **argv)
 	    char *value;
 	    int n;
 
-	    value = Var_Subst(NULL, "${.MAKE.JOBS}", VAR_GLOBAL, VARE_WANTRES);
+	    value = Var_Subst("${.MAKE.JOBS}", VAR_GLOBAL, VARE_WANTRES);
 	    n = strtol(value, NULL, 0);
 	    if (n < 1) {
 		(void)fprintf(stderr, "%s: illegal value for .MAKE.JOBS -- must be positive integer!\n",
@@ -1429,7 +1430,7 @@ main(int argc, char **argv)
 		 */
 		static char VPATH[] = "${VPATH}";
 
-		vpath = Var_Subst(NULL, VPATH, VAR_CMD, VARE_WANTRES);
+		vpath = Var_Subst(VPATH, VAR_CMD, VARE_WANTRES);
 		path = vpath;
 		do {
 			/* skip to end of directory */
@@ -2065,7 +2066,7 @@ PrintOnError(GNode *gn, const char *s)
 	Lst_ForEach(gn->commands, addErrorCMD, gn);
     }
     const char *expr = "${MAKE_PRINT_VAR_ON_ERROR:@v@$v='${$v}'\n@}";
-    char *cp = Var_Subst(NULL, expr, VAR_GLOBAL, VARE_WANTRES);
+    char *cp = Var_Subst(expr, VAR_GLOBAL, VARE_WANTRES);
     if (cp) {
 	if (*cp)
 	    printf("%s", cp);
@@ -2093,7 +2094,7 @@ Main_ExportMAKEFLAGS(Boolean first)
     once = 0;
 
     const char *expr = "${.MAKEFLAGS} ${.MAKEOVERRIDES:O:u:@v@$v=${$v:Q}@}";
-    char *s = Var_Subst(NULL, expr, VAR_CMD, VARE_WANTRES);
+    char *s = Var_Subst(expr, VAR_CMD, VARE_WANTRES);
     if (s != NULL && s[0] != '\0') {
 #ifdef POSIX
 	setenv("MAKEFLAGS", s, 1);
@@ -2115,7 +2116,7 @@ getTmpdir(void)
 	 * Honor $TMPDIR but only if it is valid.
 	 * Ensure it ends with /.
 	 */
-	tmpdir = Var_Subst(NULL, "${TMPDIR:tA:U" _PATH_TMP "}/", VAR_GLOBAL,
+	tmpdir = Var_Subst("${TMPDIR:tA:U" _PATH_TMP "}/", VAR_GLOBAL,
 			   VARE_WANTRES);
 	if (stat(tmpdir, &st) < 0 || !S_ISDIR(st.st_mode)) {
 	    free(tmpdir);
@@ -2209,7 +2210,7 @@ getBoolean(const char *name, Boolean bf)
     char *cp;
 
     if (snprintf(tmp, sizeof(tmp), "${%s:U:tl}", name) < (int)(sizeof(tmp))) {
-	cp = Var_Subst(NULL, tmp, VAR_GLOBAL, VARE_WANTRES);
+	cp = Var_Subst(tmp, VAR_GLOBAL, VARE_WANTRES);
 
 	if (cp) {
 	    bf = s2Boolean(cp, bf);
