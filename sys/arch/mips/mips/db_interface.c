@@ -83,9 +83,11 @@ static void db_unwatch_cmd(db_expr_t, bool, db_expr_t, const char *);
 static void db_mach_cpu_cmd(db_expr_t, bool, db_expr_t, const char *);
 #endif
 
+void db_cp0dump_cmd(db_expr_t, bool, db_expr_t, const char *);
+void db_md_cpuinfo_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_tlbdump_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_kvtophys_cmd(db_expr_t, bool, db_expr_t, const char *);
-void db_cp0dump_cmd(db_expr_t, bool, db_expr_t, const char *);
+
 #ifdef MIPS64_XLS
 void db_mfcr_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_mtcr_cmd(db_expr_t, bool, db_expr_t, const char *);
@@ -536,6 +538,75 @@ db_cp0dump_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 	}
 }
 
+
+static void
+show_cpuinfo(struct cpu_info *kci)
+{
+	struct cpu_info cpuinfobuf;
+	cpuid_t cpuid;
+	int i;
+
+	db_read_bytes((db_addr_t)kci, sizeof(cpuinfobuf), (char *)&cpuinfobuf);
+
+	struct cpu_info *ci = &cpuinfobuf;
+	cpuid = ci->ci_cpuid;
+	db_printf("cpu_info=%p, cpu_name=%s\n", kci, ci->ci_cpuname);
+	db_printf("%p cpu[%lu].ci_cpuid        = %lu\n",
+	    &ci->ci_cpuid, cpuid, ci->ci_cpuid);
+	db_printf("%p cpu[%lu].ci_curlwp       = %p\n",
+	    &ci->ci_curlwp, cpuid, ci->ci_curlwp);
+	for (i = 0; i < SOFTINT_COUNT; i++) {
+		db_printf("%p cpu[%lu].ci_softlwps[%d]  = %p\n",
+		    &ci->ci_softlwps[i], cpuid, i, ci->ci_softlwps[i]);
+	}
+#if 0
+	db_printf("%p cpu[%lu].ci_lastintr     = %" PRIu64 "\n",
+	    &ci->ci_lastintr, cpuid, ci->ci_lastintr);
+#endif
+	db_printf("%p cpu[%lu].ci_want_resched = %d\n",
+	    &ci->ci_want_resched, cpuid, ci->ci_want_resched);
+	db_printf("%p cpu[%lu].ci_cpl          = %d\n",
+	    &ci->ci_cpl, cpuid, ci->ci_cpl);
+	db_printf("%p cpu[%lu].ci_softints     = 0x%08x\n",
+	    &ci->ci_softints, cpuid, ci->ci_softints);
+#if 0
+	db_printf("%p cpu[%lu].ci_astpending   = 0x%08x\n",
+	    &ci->ci_astpending, cpuid, ci->ci_astpending);
+#endif
+	db_printf("%p cpu[%lu].ci_idepth       = %u\n",
+	    &ci->ci_idepth, cpuid, ci->ci_idepth);
+
+}
+
+void
+db_md_cpuinfo_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
+    const char *modif)
+{
+#ifdef MULTIPROCESSOR
+	CPU_INFO_ITERATOR cii;
+	struct cpu_info *ci;
+	bool showall = false;
+
+	if (modif != NULL) {
+		for (; *modif != '\0'; modif++) {
+			switch (*modif) {
+			case 'a':
+				showall = true;
+				break;
+			}
+		}
+	}
+
+	if (showall) {
+		for (CPU_INFO_FOREACH(cii, ci)) {
+			show_cpuinfo(ci);
+		}
+	} else
+#endif /* MULTIPROCESSOR */
+		show_cpuinfo(curcpu());
+}
+
+
 #if (MIPS32 + MIPS32R2 + MIPS64 + MIPS64R2) > 0
 static void
 db_watch_cmd(db_expr_t address, bool have_addr, db_expr_t count,
@@ -702,7 +773,7 @@ db_mfcr_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 		"mfcr %0,%1			\n\t"			\
 		".set pop 			\n\t"			\
 	    : "=r"(value) : "r"(addr));
-	
+
 	db_printf("control reg 0x%" DDB_EXPR_FMT "x = 0x%" PRIx64 "\n",
 	    addr, value);
 }
@@ -749,7 +820,7 @@ db_mach_nmi_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 {
 	CPU_INFO_ITERATOR cii;
 	struct cpu_info *ci;
-	
+
 	if (!have_addr) {
 		db_printf("CPU not specific\n");
 		return;
@@ -793,6 +864,10 @@ const struct db_command db_machine_command_table[] = {
 	{ DDB_ADD_CMD("cp0",	db_cp0dump_cmd,	0,
 		"Dump CP0 registers.",
 		NULL, NULL) },
+	{ DDB_ADD_CMD("cpuinfo", db_md_cpuinfo_cmd,	0,
+			"Displays the cpuinfo",
+		    NULL, NULL)
+	},
 #if (MIPS32 + MIPS32R2 + MIPS64 + MIPS64R2) > 0
 	{ DDB_ADD_CMD("watch",	db_watch_cmd,		CS_MORE,
 		"set cp0 watchpoint",
@@ -803,7 +878,7 @@ const struct db_command db_machine_command_table[] = {
 #endif	/* (MIPS32 + MIPS32R2 + MIPS64 + MIPS64R2) > 0 */
 	{ DDB_ADD_CMD("kvtop",	db_kvtophys_cmd,	0,
 		"Print the physical address for a given kernel virtual address",
-		"address", 
+		"address",
 		"   address:\tvirtual address to look up") },
 	{ DDB_ADD_CMD("tlb",	db_tlbdump_cmd,		0,
 		"Print out TLB entries. (only works with options DEBUG)",
@@ -991,7 +1066,7 @@ next_instr_address(db_addr_t pc, bool bd)
 
 	if (bd == false)
 		return (pc + 4);
-	
+
 	if (pc < MIPS_KSEG0_START)
 		ins = mips_ufetch32((void *)pc);
 	else
@@ -1005,15 +1080,15 @@ next_instr_address(db_addr_t pc, bool bd)
 
 #ifdef MULTIPROCESSOR
 
-bool 
+bool
 ddb_running_on_this_cpu_p(void)
-{               
+{
 	return ddb_cpu == cpu_number();
 }
 
-bool 
+bool
 ddb_running_on_any_cpu_p(void)
-{               
+{
 	return ddb_cpu != NOCPU;
 }
 
@@ -1031,7 +1106,7 @@ db_mach_cpu_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *mod
 {
 	CPU_INFO_ITERATOR cii;
 	struct cpu_info *ci;
-	
+
 	if (!have_addr) {
 		cpu_debug_dump();
 		return;
