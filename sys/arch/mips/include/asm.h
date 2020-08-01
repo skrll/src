@@ -54,6 +54,10 @@
 #ifndef _MIPS_ASM_H
 #define	_MIPS_ASM_H
 
+#include "opt_cputype.h"
+#include "opt_lockdebug.h"
+#include "opt_multiprocessor.h"
+
 #include <sys/cdefs.h>		/* for API selection */
 #include <mips/regdef.h>
 
@@ -512,6 +516,23 @@ _C_LABEL(x):
 #else
 #define	NOP_L		/* nothing */
 #endif
+
+#if defined(MULTIPROCESSOR)
+#if defined(MIPS64_OCTEON)
+#define	LLSCSYNC	sync 4; sync 4
+#define	SYNC		sync 4		/* aka syncw */
+#define	BDSYNC		sync 4		/* aka syncw */
+#else
+#define	LLSCSYNC	/* nothing (something?) */
+#define	SYNC		sync
+#define	BDSYNC		sync
+#endif
+#else
+#define	LLSCSYNC	/* nothing */
+#define	SYNC		/* nothing */
+#define	BDSYNC		nop
+#endif /* defined(MULTIPROCESSOR) */
+
 
 /* CPU dependent hook for cp0 load delays */
 #if defined(MIPS1) || defined(MIPS2) || defined(MIPS3)

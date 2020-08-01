@@ -59,7 +59,7 @@ static const char * const op_name[64] = {
 /*24 */ "daddi","daddiu","ldl", "ldr",	"op34", "op35", "op36", "op37",
 /*32 */ "lb",	"lh",	"lwl",	"lw",	"lbu",	"lhu",	"lwr",	"lwu",
 /*40 */ "sb",	"sh",	"swl",	"sw",	"sdl",	"sdr",	"swr",	"cache",
-#ifdef __OCTEON__
+#ifdef MIPS64_OCTEON
 /*48 */ "ll",	"lwc1", "bbit0", "lwc3", "lld",	"ldc1", "bbit032", "ld",
 /*56 */ "sc",	"swc1", "bbit1", "swc3", "scd",	"sdc1", "bbit132", "sd"
 #else
@@ -83,7 +83,7 @@ static const char * const spec2_name[64] = {	/* QED RM4650, R5000, etc. */
 	[OP_MADD] = "madd",
 	[OP_MADDU] = "maddu",
 	[OP_MUL] = "mul",
-#ifdef __OCTEON__
+#ifdef MIPS64_OCTEON
 	[OP_CVM_DMUL] = "baddu",
 #endif
 	[OP_MSUB] = "msub",
@@ -92,7 +92,7 @@ static const char * const spec2_name[64] = {	/* QED RM4650, R5000, etc. */
 	[OP_CLO] = "clo",
 	[OP_DCLZ] = "dclz",
 	[OP_DCLO] = "dclo",
-#ifdef __OCTEON__
+#ifdef MIPS64_OCTEON
 	[OP_CVM_BADDU] = "baddu",
 	[OP_CVM_POP] = "pop",
 	[OP_CVM_DPOP] = "dpop",
@@ -377,7 +377,7 @@ db_disasm_insn(int insn, db_addr_t loc, bool altfmt)
 			break;
 		}
 		if (i.RType.func == OP_MUL
-#ifdef __OCTEON__
+#ifdef MIPS64_OCTEON
 		    || i.RType.func == OP_CVM_DMUL
 		    || i.RType.func == OP_CVM_SEQ
 		    || i.RType.func == OP_CVM_SNE
@@ -390,7 +390,7 @@ db_disasm_insn(int insn, db_addr_t loc, bool altfmt)
 		    		reg_name[i.RType.rt]);
 			break;
 		}
-#ifdef __OCTEON__
+#ifdef MIPS64_OCTEON
 		if (i.RType.func == OP_CVM_CINS
 		    || i.RType.func == OP_CVM_CINS32
 		    || i.RType.func == OP_CVM_EXTS
@@ -423,7 +423,7 @@ db_disasm_insn(int insn, db_addr_t loc, bool altfmt)
 #endif
 		if (i.RType.func == OP_CLO
 		    || i.RType.func == OP_DCLO
-#ifdef __OCTEON__
+#ifdef MIPS64_OCTEON
 		    || i.RType.func == OP_CVM_POP
 		    || i.RType.func == OP_CVM_DPOP
 #endif
@@ -454,7 +454,7 @@ db_disasm_insn(int insn, db_addr_t loc, bool altfmt)
 			int size = i.RType.rd - pos + 1;
 			size += (((i.RType.func & 3) == 1) ? 32 : 0);
 			pos  += (((i.RType.func & 3) == 2) ? 32 : 0);
-			
+
 			db_printf("%s\t%s,%s,%d,%d",
 				spec3_name[i.RType.func],
 				reg_name[i.RType.rt],
@@ -735,7 +735,7 @@ db_disasm_insn(int insn, db_addr_t loc, bool altfmt)
 		bdslot = true;
 		break;
 
-#ifdef __OCTEON__
+#ifdef MIPS64_OCTEON
 	case OP_CVM_BBIT0:
 	case OP_CVM_BBIT032:
 	case OP_CVM_BBIT1:

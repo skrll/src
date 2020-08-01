@@ -12,7 +12,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- *      
+ *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
  * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -49,6 +49,7 @@ LEAF(_atomic_dec_32)
 	li		t0, -1
 	saa		t0, (a0)
 #else
+	LLSCSYNC
 1:	INT_LL		t0, 0(a0)
 	 nop
 	INT_ADDU	t0, -1
@@ -62,6 +63,7 @@ END(_atomic_dec_32)
 ATOMIC_OP_ALIAS(atomic_dec_32, _atomic_dec_32)
 
 LEAF(_atomic_dec_32_nv)
+	LLSCSYNC
 1:	INT_LL		v0, 0(a0)
 	 nop
 	INT_ADDU	v0, -1
@@ -80,6 +82,7 @@ LEAF(_atomic_dec_64)
 	li		t0, -1
 	saad		t0, (a0)
 #else
+	LLSCSYNC
 1:	REG_LL		t0, 0(a0)
 	 nop
 	REG_ADDU	t0, -1
@@ -93,6 +96,7 @@ END(_atomic_dec_64)
 ATOMIC_OP_ALIAS(atomic_dec_64, _atomic_dec_64)
 
 LEAF(_atomic_dec_64_nv)
+	LLSCSYNC
 1:	REG_LL		v0, 0(a0)
 	 nop
 	REG_ADDU	v0, -1

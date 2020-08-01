@@ -12,7 +12,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- *      
+ *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
  * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -46,6 +46,7 @@ RCSID("$NetBSD: atomic_and.S,v 1.4 2012/03/14 16:50:34 christos Exp $")
 
 
 LEAF(_atomic_and_32)
+	LLSCSYNC
 1:	INT_LL		t0, 0(a0)
 	 nop
 	and		t0, a1
@@ -58,6 +59,7 @@ END(_atomic_and_32)
 ATOMIC_OP_ALIAS(atomic_and_32, _atomic_and_32)
 
 LEAF(_atomic_and_32_nv)
+	LLSCSYNC
 1:	INT_LL		v0, 0(a0)
 	 nop
 	and		v0, a1
@@ -72,6 +74,7 @@ ATOMIC_OP_ALIAS(atomic_and_32_nv, _atomic_and_32_nv)
 
 #if !defined(__mips_o32)
 LEAF(_atomic_and_64)
+	LLSCSYNC
 1:	REG_LL		t0, 0(a0)
 	 nop
 	and		t0, a1
@@ -84,6 +87,7 @@ END(_atomic_and_64)
 ATOMIC_OP_ALIAS(atomic_and_64, _atomic_and_64)
 
 LEAF(_atomic_and_64_nv)
+	LLSCSYNC
 1:	REG_LL		v0, 0(a0)
 	 nop
 	and		v0, a1
