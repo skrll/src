@@ -88,7 +88,7 @@ _C_LABEL(kernel_text):
 	mtc0	zero, MIPS_COP_0_CAUSE
 	COP0_SYNC
 
-#if defined(_LP64) 
+#if defined(_LP64)
 	/* Enable 64-bit addressing */
 	mfc0	k0, MIPS_COP_0_STATUS
 	MFC0_HAZARD
@@ -276,6 +276,27 @@ NESTED(cpu_switchto, CALLFRAME_SIZ, ra)
 #endif /* PARANOID_SPL */
 
 	move	s6, a0				# s6 = old lwp
+
+
+
+
+
+
+	/* Disable interrupts */
+#if !defined(__mips_o32)
+	move	t1, t0
+	or	t1, MIPS_SR_INT_IE		#
+	xor	t1, MIPS_SR_INT_IE		# clear interrupt enable bit
+	mtc0	t1, MIPS_COP_0_STATUS		## disable interrupts
+#else
+	mtc0	zero, MIPS_COP_0_STATUS		## disable interrupts
+#endif
+	COP0_SYNC
+
+
+
+
+
 	move	MIPS_CURLWP, a1			# t8 = new lwp
 	PTR_SUBU sp, CALLFRAME_SIZ
 	REG_S	ra, CALLFRAME_RA(sp)
@@ -289,6 +310,18 @@ NESTED(cpu_switchto, CALLFRAME_SIZ, ra)
 	PTR_L	t2, L_CPU(MIPS_CURLWP)
 	nop					# patchable load delay slot
 	PTR_S	MIPS_CURLWP, CPU_INFO_CURLWP(t2)
+
+
+	/* restore interrupts */
+	mtc0	t0, MIPS_COP_0_STATUS		## disable interrupts
+	COP0_SYNC
+
+
+
+
+
+
+
 
 	/* Check for restartable atomic sequences (RAS) */
 	PTR_L	a0, L_PROC(MIPS_CURLWP)		# argument to ras_lookup
@@ -313,7 +346,7 @@ NESTED(cpu_switchto, CALLFRAME_SIZ, ra)
 	teqi	t1, 0
 #elif defined(PARANOID_LOOP)
 	and	t1, t0, MIPS_SR_INT_IE
-2:	beqz	t1, 2b			# status reg should not differ
+2:	beqz	t1, 2b				# status reg should not differ
 	 nop
 #endif /* PARANOID_LOOP */
 	DYNAMIC_STATUS_MASK(t0,ra)
