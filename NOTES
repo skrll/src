@@ -1,0 +1,204 @@
+db{0}> bt
+0x980000041a61d790: cpu_Debugger+4 (980000041feea490,1,1000,ffffffff80600000) ra ffffffff80242478 sz 0
+0x980000041a61d790: cpu_pause+a8 (980000041feea490,1,1000,ffffffff80600000) ra ffffffff802461a0 sz 32
+0x980000041a61d7b0: ipi_process+b0 (980000041feea490,1,1000,ffffffff80600000) ra ffffffff80204c24 sz 32
+0x980000041a61d7d0: octeon_ipi_intr+104 (ffff,1,1000,ffffffff80600000) ra ffffffff802057cc sz 64
+0x980000041a61d810: octeon_iointr+13c (ffff,1,1000,ffffffff80600000) ra ffffffff80201288 sz 128
+0x980000041a61d890: cpu_intr+210 (ffff,1,1000,ffffffff80600000) ra ffffffff8023fba0 sz 144
+0x980000041a61d920: mips64r2_kern_intr+c0 (0,3,1,ffffffff806a8e40) ra ffffffff8042cf0c sz 352
+0x980000041a61da80: mutex_spin_retry+7c (0,3,1,ffffffff806a8e40) ra ffffffff803ee4c4 sz 48
+0x980000041a61dab0: uvm_pgflcache_spill+84 (0,3,1,ffffffff806a8e40) ra ffffffff803eed44 sz 112
+0x980000041a61db20: uvm_pgflcache_free+1b4 (0,3,1,ffffffff806a8e40) ra ffffffff803e7888 sz 64
+0x980000041a61db60: uvm_pagefree+538 (0,3,1,ffffffff806a8e40) ra ffffffff803cc030 sz 48
+0x980000041a61db90: uvm_anfree+98 (0,3,1,ffffffff806a8e40) ra ffffffff803c8e50 sz 32
+0x980000041a61dbb0: amap_wipeout+f0 (0,3,1,ffffffff806a8e40) ra ffffffff803dbb00 sz 80
+0x980000041a61dc00: uvm_unmap_detach+90 (0,3,1,ffffffff806a8e40) ra 0 sz 0
+User-level: pid 4397.4397
+db{0}> mach cpu 1
+kernel: breakpoint trap
+Stopped in pid 4384.4384 (sed) at       netbsd:cpu_Debugger+0x4:        jr      ra
+                bdslot: nop
+db{1}> bt
+0x980000041a4ed620: cpu_Debugger+4 (980000041feea490,2,4,ffffffff80600000) ra ffffffff80242478 sz 0
+0x980000041a4ed620: cpu_pause+a8 (980000041feea490,2,4,ffffffff80600000) ra ffffffff802459ac sz 32
+0x980000041a4ed640: kdb_trap+244 (980000041feea490,2,4,ffffffff80600000) ra ffffffff8024df8c sz 80
+0x980000041a4ed690: trap+29c (980000041feea490,2,4,ffffffff80245ae0) ra ffffffff8023f954 sz 544
+0x980000041a4ed8b0: mips64r2_kern_gen_exception+d8 (800083,40008024,ffffffff807d3a60,ffffffff80245ae0) ra ffffffff8047f464 sz 352
+0x980000041a4eda10: vpanic+17c (800083,40008024,ffffffff807d3a60,ffffffff80245ae0) ra ffffffff8047f52c sz 64
+0x980000041a4eda50: panic+34 (800083,98000000007dc008,ffffffff805ed5e0,bc) ra ffffffff803ee6bc sz 96
+0x980000041a4edab0: uvm_pgflcache_spill+27c (800083,98000000007dc008,ffffffff805ed5e0,bc) ra ffffffff803eed44 sz 112
+0x980000041a4edb20: uvm_pgflcache_free+1b4 (800083,98000000007dc008,ffffffff805ed5e0,bc) ra ffffffff803e7888 sz 64
+0x980000041a4edb60: uvm_pagefree+538 (800083,98000000007dc008,ffffffff805ed5e0,bc) ra ffffffff803cc030 sz 48
+0x980000041a4edb90: uvm_anfree+98 (800083,98000000007dc008,ffffffff805ed5e0,bc) ra ffffffff803c8e50 sz 32
+0x980000041a4edbb0: amap_wipeout+f0 (800083,98000000007dc008,ffffffff805ed5e0,bc) ra ffffffff803dbb00 sz 80
+0x980000041a4edc00: uvm_unmap_detach+90 (800083,98000000007dc008,ffffffff805ed5e0,bc) ra 0 sz 0
+User-level: pid 4384.4384
+db{1}> x/i *panicstr
+netbsd:scratchstr.13897:        cop3    a5,v0,21332
+db{1}> x/s *panicstr
+netbsd:scratchstr.13897:        LIST_INSERT_HEAD 0x98000000007dc008 /home/nick/netbsd/nick-mipsmp/src/sys/uvm/uvm_pgflcache.c:188
+db{1}>
+db{1}> show event
+evcnt type 0: busdma loads = 11
+evcnt type 0: busdma creates = 11
+evcnt type 0: pmap pages copied = 50192
+evcnt type 0: pmap pages zeroed = 51022
+evcnt type 0: pmap page_protects = 91504
+evcnt type 0: pmap protects = 19331
+evcnt type 0: pmap clear_modifies = 430
+evcnt type 0: pmap copies = 489
+evcnt type 0: pmap unwires = 25
+evcnt type 0: pmap shootdown IPIs = 3364
+evcnt type 0: pmap updates = 386442
+evcnt type 0: pmap deactivations = 73385
+evcnt type 0: pmap activations = 73071
+evcnt type 0: pmap destroyed = 2254
+evcnt type 0: pmap references = 5
+evcnt type 0: pmap creates = 2278
+evcnt type 0: pmap exec pages uncached (PR) = 91403
+evcnt type 0: pmap exec pages synced (P) = 7
+evcnt type 0: pmap exec pages synced = 2805
+evcnt type 0: pmap exec pages mapped = 536129
+evcnt type 0: pmap page initial mappings = 126208
+evcnt type 0: pmap pages remapped = 40006
+evcnt type 0: pmap pages mapped = 709127
+evcnt type 0: pmap managed pages mapped = 748942
+evcnt type 0: pmap user mapping changed = 43042
+evcnt type 0: pmap user pages mapped = 743885
+evcnt type 0: pmap kernel pages mapped = 2363
+evcnt type 0: pmap kernel fast unmapped pages = 5544
+evcnt type 0: pmap kernel fast mapped pages = 6152
+evcnt type 0: pmap remove pv search = 645533
+evcnt type 0: pmap remove pv first = 123493
+evcnt type 0: pmap user pages unmapped = 701903
+evcnt type 0: pmap remove user calls = 63762
+evcnt type 0: pmap kernel pages unmapped = 815
+evcnt type 0: pmap remove kernel calls = 623
+evcnt type 0: vmcmd kills = 1130
+evcnt type 0: vmcmd extends = 40
+evcnt type 0: vmcmd calls = 9264
+evcnt type 0: entropy notify = 1
+evcnt type 0: entropy immediate = 1
+evcnt type 0: pserialize exclusive access = 68
+evcnt type 0: vmem static_bt_inuse = 200
+evcnt type 0: vmem static_bt_count = 200
+evcnt type 0: tlb0 icache syncs desired = 1189
+evcnt type 0: tlb0 icache sync asts = 1188
+evcnt type 0: tlb0 icache pages synced = 1188
+evcnt type 0: tlb0 icache dup pages skipped = 4104
+evcnt type 0: tlb0 asid pool reinit = 7
+evcnt type 0: cpu0 cprng_strong reseed = 1
+evcnt type 0: cpu0 cprng_strong reseed = 1
+evcnt type 0: softint net/0 = 693
+evcnt type 0: softint bio/0 = 1
+evcnt type 0: softint clk/0 = 8157
+evcnt type 0: softint ser/0 = 13742
+evcnt type 0: callout late/0 = 4338
+evcnt type 0: crosscall unicast = 6
+evcnt type 1: cpu0 workq 0 = 669
+evcnt type 1: cpu0 mbox 0-15 = 4482
+evcnt type 1: cpu0 uart 0 = 372
+evcnt type 1: cpu0 usb = 19719
+evcnt type 1: cpu0 int 5 (clock) = 69257
+evcnt type 1: cpu0 int 5 (clock) missed = 1
+evcnt type 2: cpu0 tlb misses = 2612479
+evcnt type 0: cpu0 syncicache deferred request = 712
+evcnt type 1: cpu0 ipi ast = 2895
+evcnt type 1: cpu0 ipi shootdown = 1414
+evcnt type 1: cpu0 ipi isync = 1
+evcnt type 1: cpu0 ipi suspend = 1
+evcnt type 1: cpu0 ipi xcall = 160
+evcnt type 1: cpu0 ipi generic = 11
+evcnt type 0: tlb1 icache syncs desired = 584
+evcnt type 0: tlb1 icache sync asts = 583
+evcnt type 0: tlb1 icache pages synced = 583
+evcnt type 0: tlb1 icache dup pages skipped = 4709
+evcnt type 0: tlb1 asid pool reinit = 7
+evcnt type 0: cpu1 cprng_strong reseed = 1
+evcnt type 0: softint net/1 = 9
+evcnt type 0: softint bio/1 = 1
+evcnt type 0: softint clk/1 = 1290
+evcnt type 0: softint ser/1 = 575
+evcnt type 0: callout late/1 = 1
+evcnt type 1: cpu1 int 5 (clock) = 28064
+evcnt type 2: cpu1 tlb misses = 2472499
+evcnt type 0: cpu1 syncicache deferred request = 415
+evcnt type 1: cpu1 ipi ast = 5724
+evcnt type 1: cpu1 ipi shootdown = 1950
+evcnt type 1: cpu1 ipi isync = 2
+evcnt type 1: cpu1 ipi xcall = 193
+evcnt type 1: cpu1 mbox 0-15 = 7868
+evcnt type 1: cpu1 uart 0 = 393
+db{1}>
+
+
+db{1}> x/i llsc_mutex_enter,40
+netbsd:llsc_mutex_enter:        lld     t0,a0,0
+netbsd:llsc_mutex_enter+0x4:    bne     t0,zero,<llsc_mutex_enter+20>   [addr:0xffffffff80240a3c]
+                bdslot: or      t2,t8,zero
+netbsd:llsc_mutex_enter+0xc:    scd     t2,a0,0
+netbsd:llsc_mutex_enter+0x10:   beq     t2,zero,<llsc_mutex_enter+4>    [addr:0xffffffff80240a20]
+                bdslot: lld     t0,a0,0
+netbsd:llsc_mutex_enter+0x18:   jr      ra
+                bdslot: sync    4
+netbsd:llsc_mutex_enter+0x20:   j       mutex_vector_enter      [addr:0xffffffff8042c6c8]
+                bdslot: nop
+netbsd:llsc_mutex_exit: lld     t0,a0,0
+netbsd:llsc_mutex_exit+0x4:     sync    4
+netbsd:llsc_mutex_exit+0x8:     bne     t0,t8,<llsc_mutex_exit+24>      [addr:0xffffffff80240a68]
+                bdslot: or      t2,zero,zero
+netbsd:llsc_mutex_exit+0x10:    scd     t2,a0,0
+netbsd:llsc_mutex_exit+0x14:    beq     t2,zero,<llsc_mutex_exit+8>     [addr:0xffffffff80240a4c]
+                bdslot: lld     t0,a0,0
+netbsd:llsc_mutex_exit+0x1c:    jr      ra
+                bdslot: sync    4
+netbsd:llsc_mutex_exit+0x24:    j       mutex_vector_exit       [addr:0xffffffff8042cb48]
+                bdslot: nop
+netbsd:llsc_mutex_spin_enter:   or      t0,a0,zero
+netbsd:llsc_mutex_spin_enter+0x4:       ld      t2,0(t8)
+netbsd:llsc_mutex_spin_enter+0x8:       lw      a0,8(t0)
+netbsd:llsc_mutex_spin_enter+0xc:       or      t3,ra,zero
+netbsd:llsc_mutex_spin_enter+0x10:      jal     _splsw_splraise [addr:0xffffffff8024103c]
+                bdslot: nop
+netbsd:llsc_mutex_spin_enter+0x18:      or      ra,t3,zero
+netbsd:llsc_mutex_spin_enter+0x1c:      lw      a6,988(t2)
+netbsd:llsc_mutex_spin_enter+0x20:      addiu   a7,a6,-1
+netbsd:llsc_mutex_spin_enter+0x24:      sw      a7,988(t2)
+netbsd:llsc_mutex_spin_enter+0x28:      bltz    a6,<llsc_mutex_spin_enter+34>   [addr:0xffffffff80240aa4]
+                bdslot: nop
+netbsd:llsc_mutex_spin_enter+0x30:      sw      v0,992(t2)
+netbsd:llsc_mutex_spin_enter+0x34:      ll      t3,t0,12
+netbsd:llsc_mutex_spin_enter+0x38:      bne     t3,zero,<llsc_mutex_spin_enter+54>      [addr:0xffffffff80240ac4]
+                bdslot: li      t1,1
+netbsd:llsc_mutex_spin_enter+0x40:      sc      t1,t0,12
+netbsd:llsc_mutex_spin_enter+0x44:      beq     t1,zero,<llsc_mutex_spin_enter+38>      [addr:0xffffffff80240aa8]
+                bdslot: ll      t3,t0,12
+netbsd:llsc_mutex_spin_enter+0x4c:      jr      ra
+                bdslot: sync    4
+netbsd:llsc_mutex_spin_enter+0x54:      j       mutex_spin_retry        [addr:0xffffffff8042ce90]
+                bdslot: or      a0,t0,zero
+netbsd:llsc_mutex_spin_exit:    ld      t2,0(t8)
+netbsd:llsc_mutex_spin_exit+0x4:        lw      t0,12(a0)
+netbsd:llsc_mutex_spin_exit+0x8:        beq     t0,zero,<llsc_mutex_spin_exit+48>       [addr:0xffffffff80240b14]
+                bdslot: nop
+netbsd:llsc_mutex_spin_exit+0x10:       sw      zero,12(a0)
+netbsd:llsc_mutex_spin_exit+0x14:       lw      a0,992(t2)
+netbsd:llsc_mutex_spin_exit+0x18:       lw      t0,988(t2)
+netbsd:llsc_mutex_spin_exit+0x1c:       addiu   t0,t0,1
+netbsd:llsc_mutex_spin_exit+0x20:       sw      t0,988(t2)
+netbsd:llsc_mutex_spin_exit+0x24:       lw      a1,1000(t2)
+netbsd:llsc_mutex_spin_exit+0x28:       beq     a0,a1,<llsc_mutex_spin_exit+40> [addr:0xffffffff80240b0c]
+                bdslot: nop
+netbsd:llsc_mutex_spin_exit+0x30:       bltz    t0,<llsc_mutex_spin_exit+40>    [addr:0xffffffff80240b0c]
+                bdslot: nop
+netbsd:llsc_mutex_spin_exit+0x38:       j       _splsw_splx     [addr:0xffffffff80240f48]
+                bdslot: nop
+netbsd:llsc_mutex_spin_exit+0x40:       jr      ra
+                bdslot: nop
+netbsd:llsc_mutex_spin_exit+0x48:       j       mutex_vector_exit       [addr:0xffffffff8042cb48]
+                bdslot: nop
+netbsd:llsc_mutex_spin_exit+0x50:       nop
+netbsd:llsc_mutex_spin_exit+0x54:       nop
+netbsd:llsc_mutex_spin_exit+0x58:       nop
+netbsd:llsc_mutex_spin_exit+0x5c:       nop
+db{1}>
