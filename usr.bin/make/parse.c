@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.238 2020/07/20 14:50:41 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.243 2020/07/31 20:22:10 sjg Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,14 +69,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: parse.c,v 1.238 2020/07/20 14:50:41 rillig Exp $";
+static char rcsid[] = "$NetBSD: parse.c,v 1.243 2020/07/31 20:22:10 sjg Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)parse.c	8.3 (Berkeley) 3/19/94";
 #else
-__RCSID("$NetBSD: parse.c,v 1.238 2020/07/20 14:50:41 rillig Exp $");
+__RCSID("$NetBSD: parse.c,v 1.243 2020/07/31 20:22:10 sjg Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -393,7 +393,7 @@ loadedfile_create(const char *path)
 	struct loadedfile *lf;
 
 	lf = bmake_malloc(sizeof(*lf));
-	lf->path = (path == NULL ? "(stdin)" : path);
+	lf->path = path == NULL ? "(stdin)" : path;
 	lf->buf = NULL;
 	lf->len = 0;
 	lf->maplen = 0;
@@ -825,7 +825,7 @@ ParseMessage(char *line)
     while (isspace((unsigned char)*line))
 	line++;
 
-    line = Var_Subst(NULL, line, VAR_CMD, VARE_WANTRES);
+    line = Var_Subst(line, VAR_CMD, VARE_WANTRES);
     Parse_Error(mtype, "%s", line);
     free(line);
 
@@ -914,7 +914,7 @@ ParseDoOp(void *gnp, void *opp)
 	return 1;
     }
 
-    if ((op == OP_DOUBLEDEP) && ((gn->type & OP_OPMASK) == OP_DOUBLEDEP)) {
+    if (op == OP_DOUBLEDEP && (gn->type & OP_OPMASK) == OP_DOUBLEDEP) {
 	/*
 	 * If the node was the object of a :: operator, we need to create a
 	 * new instance of it for the children and commands on this dependency
@@ -1105,7 +1105,7 @@ static int
 ParseFindMain(void *gnp, void *dummy MAKE_ATTR_UNUSED)
 {
     GNode   	  *gn = (GNode *)gnp;
-    if ((gn->type & OP_NOTARGET) == 0) {
+    if (!(gn->type & OP_NOTARGET)) {
 	mainNode = gn;
 	Targ_SetMain(gn);
 	return 1;
@@ -1289,9 +1289,17 @@ ParseDoDependency(char *line)
 		(strncmp(line, ">>>>>>", 6) == 0))
 		Parse_Error(PARSE_FATAL,
 		    "Makefile appears to contain unresolved cvs/rcs/??? merge conflicts");
-	    else
-		Parse_Error(PARSE_FATAL, lstart[0] == '.' ? "Unknown directive"
-				     : "Need an operator");
+	    else if (lstart[0] == '.') {
+		const char *dirstart = lstart + 1;
+		while (isspace((unsigned char)*dirstart))
+		    dirstart++;
+		const char *dirend = dirstart;
+		while (isalnum((unsigned char)*dirend) || *dirend == '-')
+		    dirend++;
+		Parse_Error(PARSE_FATAL, "Unknown directive \"%.*s\"",
+			    (int)(dirend - dirstart), dirstart);
+	    } else
+		Parse_Error(PARSE_FATAL, "Need an operator");
 	    goto out;
 	}
 
@@ -1422,7 +1430,7 @@ ParseDoDependency(char *line)
 	 * Have word in line. Get or create its node and stick it at
 	 * the end of the targets list
 	 */
-	if ((specType == Not) && (*line != '\0')) {
+	if (specType == Not && *line != '\0') {
 	    if (Dir_HasWildcards(line)) {
 		/*
 		 * Targets are to be sought only in the current directory,
@@ -1473,7 +1481,7 @@ ParseDoDependency(char *line)
 	    Boolean warning = FALSE;
 
 	    while (*cp && (ParseIsEscaped(lstart, cp) ||
-		((*cp != '!') && (*cp != ':')))) {
+		(*cp != '!' && *cp != ':'))) {
 		if (ParseIsEscaped(lstart, cp) ||
 		    (*cp != ' ' && *cp != '\t')) {
 		    warning = TRUE;
@@ -1490,7 +1498,7 @@ ParseDoDependency(char *line)
 	}
 	line = cp;
     } while (*line && (ParseIsEscaped(lstart, line) ||
-	((*line != '!') && (*line != ':'))));
+	(*line != '!' && *line != ':')));
 
     /*
      * Don't need the list of target names anymore...
@@ -1610,17 +1618,17 @@ ParseDoDependency(char *line)
 	    goto out;
 	}
 	*line = '\0';
-    } else if ((specType == NotParallel) || (specType == SingleShell) ||
-	    (specType == DeleteOnError)) {
+    } else if (specType == NotParallel || specType == SingleShell ||
+	    specType == DeleteOnError) {
 	*line = '\0';
     }
 
     /*
      * NOW GO FOR THE SOURCES
      */
-    if ((specType == Suffixes) || (specType == ExPath) ||
-	(specType == Includes) || (specType == Libs) ||
-	(specType == Null) || (specType == ExObjdir))
+    if (specType == Suffixes || specType == ExPath ||
+	specType == Includes || specType == Libs ||
+	specType == Null || specType == ExObjdir)
     {
 	while (*line) {
 	    /*
@@ -1701,7 +1709,7 @@ ParseDoDependency(char *line)
 	     * and handle them accordingly.
 	     */
 	    for (; *cp && !isspace ((unsigned char)*cp); cp++) {
-		if ((*cp == LPAREN) && (cp > line) && (cp[-1] != '$')) {
+		if (*cp == LPAREN && cp > line && cp[-1] != '$') {
 		    /*
 		     * Only stop for a left parenthesis if it isn't at the
 		     * start of a word (that'll be for variable changes
@@ -1789,8 +1797,8 @@ Parse_IsVar(char *line)
     /*
      * Skip to variable name
      */
-    for (;(*line == ' ') || (*line == '\t'); line++)
-	continue;
+    while (*line == ' ' || *line == '\t')
+	line++;
 
     /* Scan for one of the assignment operators outside a variable expansion */
     while ((ch = *line++) != 0) {
@@ -1867,9 +1875,8 @@ Parse_DoVar(char *line, GNode *ctxt)
     /*
      * Skip to variable name
      */
-    while ((*line == ' ') || (*line == '\t')) {
+    while (*line == ' ' || *line == '\t')
 	line++;
-    }
 
     /*
      * Skip to operator character, nulling out whitespace as we go
@@ -1941,6 +1948,16 @@ Parse_DoVar(char *line, GNode *ctxt)
     while (isspace((unsigned char)*cp))
 	cp++;
 
+    if (DEBUG(LINT)) {
+	if (type != VAR_SUBST && strchr(cp, '$') != NULL) {
+	    /* sanity check now */
+	    char *cp2;
+
+	    cp2 = Var_Subst(cp, ctxt, VARE_WANTRES|VARE_ASSIGN);
+	    free(cp2);
+	}
+    }
+
     if (type == VAR_APPEND) {
 	Var_Append(line, cp, ctxt);
     } else if (type == VAR_SUBST) {
@@ -1966,7 +1983,7 @@ Parse_DoVar(char *line, GNode *ctxt)
 	if (!Var_Exists(line, ctxt))
 	    Var_Set(line, "", ctxt);
 
-	cp = Var_Subst(NULL, cp, ctxt, VARE_WANTRES|VARE_ASSIGN);
+	cp = Var_Subst(cp, ctxt, VARE_WANTRES|VARE_ASSIGN);
 	oldVars = oldOldVars;
 	freeCp = TRUE;
 
@@ -1981,7 +1998,7 @@ Parse_DoVar(char *line, GNode *ctxt)
 	     * expansion on the whole thing. The resulting string will need
 	     * freeing when we're done.
 	     */
-	    cp = Var_Subst(NULL, cp, VAR_CMD, VARE_UNDEFERR|VARE_WANTRES);
+	    cp = Var_Subst(cp, VAR_CMD, VARE_UNDEFERR|VARE_WANTRES);
 	    freeCp = TRUE;
 	}
 
@@ -2282,7 +2299,7 @@ ParseDoInclude(char *line)
 {
     char          endc;	    	/* the character which ends the file spec */
     char          *cp;		/* current position in file spec */
-    int		  silent = (*line != 'i') ? 1 : 0;
+    int		  silent = *line != 'i';
     char	  *file = &line[7 + silent];
 
     /* Skip to delimiter character so we know where to look */
@@ -2322,9 +2339,9 @@ ParseDoInclude(char *line)
      * Substitute for any variables in the file name before trying to
      * find the thing.
      */
-    file = Var_Subst(NULL, file, VAR_CMD, VARE_WANTRES);
+    file = Var_Subst(file, VAR_CMD, VARE_WANTRES);
 
-    Parse_include_file(file, endc == '>', (*line == 'd'), silent);
+    Parse_include_file(file, endc == '>', *line == 'd', silent);
     free(file);
 }
 
@@ -2598,7 +2615,7 @@ ParseTraditionalInclude(char *line)
 {
     char          *cp;		/* current position in file spec */
     int		   done = 0;
-    int		   silent = (line[0] != 'i') ? 1 : 0;
+    int		   silent = line[0] != 'i';
     char	  *file = &line[silent + 7];
     char	  *all_files;
 
@@ -2616,7 +2633,7 @@ ParseTraditionalInclude(char *line)
      * Substitute for any variables in the file name before trying to
      * find the thing.
      */
-    all_files = Var_Subst(NULL, file, VAR_CMD, VARE_WANTRES);
+    all_files = Var_Subst(file, VAR_CMD, VARE_WANTRES);
 
     if (*file == '\0') {
 	Parse_Error(PARSE_FATAL,
@@ -2685,7 +2702,7 @@ ParseGmakeExport(char *line)
     /*
      * Expand the value before putting it in the environment.
      */
-    value = Var_Subst(NULL, value, VAR_CMD, VARE_WANTRES);
+    value = Var_Subst(value, VAR_CMD, VARE_WANTRES);
     setenv(variable, value, 1);
     free(value);
 }
@@ -3054,9 +3071,8 @@ Parse_File(const char *name, int fd)
     inLine = FALSE;
     fatals = 0;
 
-    if (name == NULL) {
-	    name = "(stdin)";
-    }
+    if (name == NULL)
+	name = "(stdin)";
 
     Parse_SetInput(name, 0, -1, loadedfile_nextbuf, lf);
     curFile->lf = lf;
@@ -3085,7 +3101,7 @@ Parse_File(const char *name, int fd)
 		    for (cp += 5; isspace((unsigned char) *cp); cp++)
 			continue;
 		    for (cp2 = cp; !isspace((unsigned char) *cp2) &&
-				   (*cp2 != '\0'); cp2++)
+				   *cp2 != '\0'; cp2++)
 			continue;
 		    *cp2 = '\0';
 		    Var_Delete(cp, VAR_GLOBAL);
@@ -3173,10 +3189,10 @@ Parse_File(const char *name, int fd)
 	     */
 	    cp = line;
 	    if (isspace((unsigned char) line[0])) {
-		while ((*cp != '\0') && isspace((unsigned char) *cp))
+		while (isspace((unsigned char) *cp))
 		    cp++;
 		while (*cp && (ParseIsEscaped(line, cp) ||
-			(*cp != ':') && (*cp != '!'))) {
+			*cp != ':' && *cp != '!')) {
 		    cp++;
 		}
 		if (*cp == '\0') {
@@ -3229,7 +3245,7 @@ Parse_File(const char *name, int fd)
 	     * variables expanded before being parsed. Tell the variable
 	     * module to complain if some variable is undefined...
 	     */
-	    line = Var_Subst(NULL, line, VAR_CMD, VARE_UNDEFERR|VARE_WANTRES);
+	    line = Var_Subst(line, VAR_CMD, VARE_UNDEFERR|VARE_WANTRES);
 
 	    /*
 	     * Need a non-circular list for the target nodes
