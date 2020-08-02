@@ -1080,15 +1080,6 @@ mips_config_cache_modern(uint32_t cpu_id)
 	case MIPSNN_CFG1_DL_NONE:
 		mci->mci_pdcache_line_size = mci->mci_pdcache_way_size =
 		    mci->mci_pdcache_ways = 0;
-#ifdef MIPS64_OCTEON
-		if (MIPS_PRID_CID(cpu_id) == MIPS_PRID_CID_CAVIUM) {
-			/*
-			 * Set the cache line size here, remaining Octeon
-			 * cache configuration will be done below.
-			 */
-			mci->mci_pdcache_line_size = OCTEON_CACHELINE_SIZE;
-		}
-#endif /* MIPS64_OCTEON */
 		break;
 	case MIPSNN_CFG1_DL_RSVD:
 		panic("reserved MIPS32/64 Dcache line size");
@@ -1392,30 +1383,37 @@ mips_config_cache_modern(uint32_t cpu_id)
 		 * describable using the standard MIPS configN definitions.
 		 */
 		switch (MIPS_PRID_IMPL(cpu_id)) {
+			int octeon1_sets = OCTEON_I_DCACHE_SETS;
 		case MIPS_CN38XX:
 		case MIPS_CN31XX:
 		case MIPS_CN30XX:
+			/* OCTEON */
+			goto octeon;
+
 		case MIPS_CN50XX:
 		case MIPS_CN52XX:
 		case MIPS_CN58XX:
 		case MIPS_CN56XX:
-			/* OCTEON and OCTEON Plus */
+			/* OCTEON Plus */
+			octeon1_sets = OCTEON_I_PLUS_DCACHE_SETS;
 
+		octeon:
 			/* Dcache on cnMIPS core doesn't follow spec */
 			mci->mci_pdcache_line_size = OCTEON_CACHELINE_SIZE;
 			mci->mci_pdcache_ways = OCTEON_I_DCACHE_WAYS;
 			mci->mci_pdcache_way_size =
-			    OCTEON_I_DCACHE_SETS * OCTEON_CACHELINE_SIZE;
+			    octeon1_sets * OCTEON_CACHELINE_SIZE;
 			mci->mci_pdcache_write_through = true;
 
 			/* Icache on cnMIPS core does follows MIPS spec */
-
+			KASSERT(mci->mci_picache_vivt);
 			break;
 
-		/* XXX cnMIPS II cores not yet tested */
+		case MIPS_CN61XX:
 		case MIPS_CN63XX:
 		case MIPS_CN66XX:
 		case MIPS_CN68XX:
+		case MIPS_CNF71XX:
 			/* OCTEON II */
 
 			mci->mci_pdcache_line_size = OCTEON_CACHELINE_SIZE;
@@ -1428,10 +1426,12 @@ mips_config_cache_modern(uint32_t cpu_id)
 			mci->mci_picache_ways = OCTEON_II_ICACHE_WAYS;
 			mci->mci_picache_way_size =
 			    OCTEON_II_ICACHE_SETS * OCTEON_CACHELINE_SIZE;
+			KASSERT(mci->mci_picache_vivt);
 			break;
 
 		case MIPS_CN70XX:
 		case MIPS_CN73XX:
+		case MIPS_CNF75XX:
 		case MIPS_CN78XX:
 			/* OCTEON III */
 
@@ -1445,6 +1445,7 @@ mips_config_cache_modern(uint32_t cpu_id)
 			mci->mci_picache_ways = OCTEON_III_ICACHE_WAYS;
 			mci->mci_picache_way_size =
 			    OCTEON_CACHELINE_SIZE * OCTEON_III_ICACHE_SETS;
+			KASSERT(mci->mci_picache_vivt);
 			break;
 
 		default:
