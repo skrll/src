@@ -869,11 +869,8 @@ pmap_deactivate(struct lwp *l)
 	kpreempt_disable();
 	KASSERT(l == curlwp || l->l_cpu == curlwp->l_cpu);
 	pmap_tlb_miss_lock_enter();
-	curcpu()->ci_pmap_user_segtab = PMAP_INVALID_SEGTAB_ADDRESS;
-#ifdef _LP64
-	curcpu()->ci_pmap_user_seg0tab = NULL;
-#endif
 	pmap_tlb_asid_deactivate(pmap);
+	pmap_segtab_deactivate(pmap);
 	pmap_tlb_miss_lock_exit();
 	kpreempt_enable();
 

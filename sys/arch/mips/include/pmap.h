@@ -140,6 +140,24 @@ pmap_md_cache_prefer_mask(void)
 {
 	return MIPS_HAS_R4K_MMU ? mips_cache_info.mci_cache_prefer_mask : 0;
 }
+
+static inline void
+pmap_md_xtab_activate(struct pmap *pm, struct lwp *l)
+{
+	const struct mips_cache_info * const mci = &mips_cache_info;
+
+	if (mci->mci_picache_vivt)
+		mips_icache_sync_all();
+
+}
+
+static inline void
+pmap_md_xtab_deactivate(struct pmap *pm)
+{
+
+	/* nothing */
+}
+
 #endif /* __PMAP_PRIVATE */
 
 struct tlbmask {

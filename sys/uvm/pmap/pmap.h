@@ -114,6 +114,7 @@ pt_entry_t *pmap_pte_reserve(struct pmap *, vaddr_t, int);
 void pmap_pte_process(struct pmap *, vaddr_t, vaddr_t, pte_callback_t,
 	uintptr_t);
 void pmap_segtab_activate(struct pmap *, struct lwp *);
+void pmap_segtab_deactivate(struct pmap *);
 void pmap_segtab_init(struct pmap *);
 void pmap_segtab_destroy(struct pmap *, pte_callback_t, uintptr_t);
 extern kmutex_t pmap_segtab_lock;

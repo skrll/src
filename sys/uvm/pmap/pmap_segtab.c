@@ -370,6 +370,7 @@ pmap_segtab_activate(struct pmap *pm, struct lwp *l)
 {
 	if (l == curlwp) {
 		struct cpu_info * const ci = l->l_cpu;
+		pmap_md_xtab_activate(pm, l);
 		KASSERT(pm == l->l_proc->p_vmspace->vm_map.pmap);
 		if (pm == pmap_kernel()) {
 			ci->ci_pmap_user_segtab = PMAP_INVALID_SEGTAB_ADDRESS;
@@ -383,6 +384,20 @@ pmap_segtab_activate(struct pmap *pm, struct lwp *l)
 #endif
 		}
 	}
+}
+
+
+void
+pmap_segtab_deactivate(pmap_t pm)
+{
+
+	pmap_md_xtab_deactivate(pm);
+
+	curcpu()->ci_pmap_user_segtab = PMAP_INVALID_SEGTAB_ADDRESS;
+#ifdef _LP64
+	curcpu()->ci_pmap_user_seg0tab = NULL;
+#endif
+
 }
 
 /*
