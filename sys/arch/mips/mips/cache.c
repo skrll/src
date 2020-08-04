@@ -1080,6 +1080,15 @@ mips_config_cache_modern(uint32_t cpu_id)
 	case MIPSNN_CFG1_DL_NONE:
 		mci->mci_pdcache_line_size = mci->mci_pdcache_way_size =
 		    mci->mci_pdcache_ways = 0;
+#ifdef MIPS64_OCTEON
+		if (MIPS_PRID_CID(cpu_id) == MIPS_PRID_CID_CAVIUM) {
+			/*
+			 * Set the cache line size here, remaining Octeon
+			 * cache configuration will be done below.
+			 */
+			mci->mci_pdcache_line_size = OCTEON_CACHELINE_SIZE;
+		}
+#endif /* MIPS64_OCTEON */
 		break;
 	case MIPSNN_CFG1_DL_RSVD:
 		panic("reserved MIPS32/64 Dcache line size");
@@ -1383,24 +1392,34 @@ mips_config_cache_modern(uint32_t cpu_id)
 		 * describable using the standard MIPS configN definitions.
 		 */
 		switch (MIPS_PRID_IMPL(cpu_id)) {
-			int octeon1_sets = OCTEON_I_DCACHE_SETS;
 		case MIPS_CN38XX:
 		case MIPS_CN31XX:
 		case MIPS_CN30XX:
 			/* OCTEON */
-			goto octeon;
 
 		case MIPS_CN50XX:
 		case MIPS_CN52XX:
 		case MIPS_CN58XX:
 		case MIPS_CN56XX:
 			/* OCTEON Plus */
-			octeon1_sets = OCTEON_I_PLUS_DCACHE_SETS;
 
-		octeon:
 			/* Dcache on cnMIPS core doesn't follow spec */
 			mci->mci_pdcache_line_size = OCTEON_CACHELINE_SIZE;
 			mci->mci_pdcache_ways = OCTEON_I_DCACHE_WAYS;
+			int octeon1_sets = 0;
+			switch (MIPS_PRID_IMPL(cpu_id)) {
+			case MIPS_CN38XX:
+			case MIPS_CN31XX:
+			case MIPS_CN30XX:
+				octeon1_sets = OCTEON_I_DCACHE_SETS;
+				break;
+			case MIPS_CN50XX:
+			case MIPS_CN52XX:
+			case MIPS_CN58XX:
+			case MIPS_CN56XX:
+				octeon1_sets = OCTEON_I_PLUS_DCACHE_SETS;
+				break;
+			}
 			mci->mci_pdcache_way_size =
 			    octeon1_sets * OCTEON_CACHELINE_SIZE;
 			mci->mci_pdcache_write_through = true;
