@@ -305,7 +305,6 @@ octeon_intr_establish(int irq, int ipl, int (*func)(void *), void *arg)
 {
 	struct octeon_intrhand *ih;
 	struct cpu_softc *cpu;
-	int cpunum;
 
 	if (irq >= NIRQS)
 		panic("octeon_intr_establish: bogus IRQ %d", irq);
@@ -346,24 +345,16 @@ octeon_intr_establish(int irq, int ipl, int (*func)(void *), void *arg)
 		break;
 
 	case IPL_SCHED:
-		for (cpunum = 0; cpunum < OCTEON_NCPU; cpunum++) {
-			cpu = &octeon_cpu_softc[cpunum];
-			if (cpu->cpu_ci == NULL)
-				break;
-			cpu->cpu_ip3_enable[bank] |= irq_mask;
-			mips3_sd(cpu->cpu_ip3_en[bank], cpu->cpu_ip3_enable[bank]);
-		}
+		cpu = &octeon_cpu_softc[0];
+		cpu->cpu_ip3_enable[bank] |= irq_mask;
+		mips3_sd(cpu->cpu_ip3_en[bank], cpu->cpu_ip3_enable[bank]);
 		break;
 
 	case IPL_DDB:
 	case IPL_HIGH:
-		for (cpunum = 0; cpunum < OCTEON_NCPU; cpunum++) {
-			cpu = &octeon_cpu_softc[cpunum];
-			if (cpu->cpu_ci == NULL)
-				break;
-			cpu->cpu_ip4_enable[bank] |= irq_mask;
-			mips3_sd(cpu->cpu_ip4_en[bank], cpu->cpu_ip4_enable[bank]);
-		}
+		cpu = &octeon_cpu_softc[0];
+		cpu->cpu_ip4_enable[bank] |= irq_mask;
+		mips3_sd(cpu->cpu_ip4_en[bank], cpu->cpu_ip4_enable[bank]);
 		break;
 	}
 
