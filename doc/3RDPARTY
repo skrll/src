@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1737 2020/07/29 06:50:33 wiz Exp $
+#	$NetBSD: 3RDPARTY,v 1.1741 2020/08/03 21:12:29 christos Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -41,12 +41,12 @@
 #
 
 Package:	acpica
-Version:	20200430
-Current Vers:	20200528
+Version:	20200717
+Current Vers:	20200717
 Maintainer:	Intel
 Archive Site:	http://www.acpica.org/downloads/
 Home Page:	http://www.acpica.org/
-Date:		2020-06-13
+Date:		2020-08-02
 Mailing List:	devel@acpica.org
 License:	BSD-like
 Responsible:	jruoho
@@ -120,12 +120,12 @@ Notes:
 bc includes dc, both of which are in the NetBSD tree.
 
 Package:	bind [named and utils]
-Version:	9.16.3/MPL
-Current Vers:	9.16.3/MPL
+Version:	9.16.5/MPL
+Current Vers:	9.16.5/MPL 9.17.3/MPL
 Maintainer:	ISC
 Archive Site:	ftp://ftp.isc.org/isc/bind9/
 Home Page:	http://www.isc.org/software/bind/
-Date:		2020-06-13
+Date:		2020-08-02
 Mailing List:	https://lists.isc.org/mailman/listinfo/bind-announce
 Mailing List:	https://lists.isc.org/mailman/listinfo/bind-users
 Responsible:	christos
@@ -145,7 +145,6 @@ Maintainer:	Christos Zoulas <christos@zoulas.com>
 Archive Site:	https://github.com/zoulasc/blocklist
 Home Page:	https://github.com/zoulasc/blocklist
 Date:		2020-06-13
-Mailing List:	bug-bc@gnu.org
 Responsible:	christos
 License:	BSD-like (2-clause) 
 Location:	external/bsd/blocklist
@@ -336,12 +335,12 @@ distribution into the netbsd format.  The script can be found in
 src/lib/libc/db/db2netbsd.
 
 Package:	dhcp
-Version:	4.4.1
+Version:	4.4.2
 Current Vers:	4.4.2
 Maintainer:	mellon
 Archive Site:	ftp://ftp.isc.org/isc/dhcp/
 Home Page:	http://www.isc.org/software/dhcp/
-Date:		2020-06-13
+Date:		2020-08-03
 Mailing List:	dhcp-server@isc.org
 Mailing List:	dhcp-client@isc.org
 Mailing List:	dhcp-announce@isc.org

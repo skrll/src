@@ -1,4 +1,4 @@
-/*      $NetBSD: meta.c,v 1.89 2020/07/28 16:42:22 rillig Exp $ */
+/*      $NetBSD: meta.c,v 1.92 2020/08/03 20:26:09 rillig Exp $ */
 
 /*
  * Implement 'meta' mode.
@@ -314,7 +314,7 @@ meta_name(struct GNode *gn, char *mname, size_t mnamelen,
 static int
 is_submake(void *cmdp, void *gnp)
 {
-    static char *p_make = NULL;
+    static const char *p_make = NULL;
     static int p_len;
     char  *cmd = cmdp;
     GNode *gn = gnp;
@@ -542,7 +542,7 @@ meta_create(BuildMon *pbm, GNode *gn)
     }
  out:
     for (i--; i >= 0; i--) {
-	free(p[i]);
+	bmake_free(p[i]);
     }
 
     return mf.fp;
@@ -649,12 +649,12 @@ meta_mode_init(const char *make_mode)
     cp = NULL;
     if (Var_Value(MAKE_META_IGNORE_PATTERNS, VAR_GLOBAL, &cp)) {
 	metaIgnorePatterns = TRUE;
-	free(cp);
+	bmake_free(cp);
     }
     cp = NULL;
     if (Var_Value(MAKE_META_IGNORE_FILTER, VAR_GLOBAL, &cp)) {
 	metaIgnoreFilter = TRUE;
-	free(cp);
+	bmake_free(cp);
     }
 }
 
@@ -1010,9 +1010,12 @@ meta_ignore(GNode *gn, const char *p)
     }
 
     if (metaIgnorePatterns) {
+        const char *expr;
+        char *pm;
+
 	Var_Set(".p.", p, gn);
-	const char *expr = "${" MAKE_META_IGNORE_PATTERNS ":@m@${.p.:M$m}@}";
-	char *pm = Var_Subst(expr, gn, VARE_WANTRES);
+	expr = "${" MAKE_META_IGNORE_PATTERNS ":@m@${.p.:M$m}@}";
+	pm = Var_Subst(expr, gn, VARE_WANTRES);
 	if (*pm) {
 #ifdef DEBUG_META_MODE
 	    if (DEBUG(META))
@@ -1232,7 +1235,7 @@ meta_oodate(GNode *gn, Boolean oodate)
 		    CHECK_VALID_META(p);
 		    pid = atoi(p);
 		    if (pid > 0 && pid != lastpid) {
-			char *ldir;
+			const char *ldir;
 			char *tp;
 
 			if (lastpid > 0) {
@@ -1246,12 +1249,12 @@ meta_oodate(GNode *gn, Boolean oodate)
 			ldir = Var_Value(ldir_vname, VAR_GLOBAL, &tp);
 			if (ldir) {
 			    strlcpy(latestdir, ldir, sizeof(latestdir));
-			    free(tp);
+			    bmake_free(tp);
 			}
 			ldir = Var_Value(lcwd_vname, VAR_GLOBAL, &tp);
 			if (ldir) {
 			    strlcpy(lcwd, ldir, sizeof(lcwd));
-			    free(tp);
+			    bmake_free(tp);
 			}
 		    }
 		    /* Skip past the pid. */
@@ -1630,12 +1633,12 @@ meta_oodate(GNode *gn, Boolean oodate)
 	 */
 	Var_Delete(OODATE, gn);
 	Var_Set(OODATE, Var_Value(ALLSRC, gn, &cp), gn);
-	free(cp);
+	bmake_free(cp);
     }
 
  oodate_out:
     for (i--; i >= 0; i--) {
-	free(pa[i]);
+	bmake_free(pa[i]);
     }
     return oodate;
 }
