@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu.c,v 1.72 2020/07/20 16:43:03 riastradh Exp $	*/
+/*	$NetBSD: fpu.c,v 1.74 2020/08/02 18:23:33 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2008, 2019 The NetBSD Foundation, Inc.  All
@@ -96,7 +96,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.72 2020/07/20 16:43:03 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.74 2020/08/02 18:23:33 riastradh Exp $");
 
 #include "opt_multiprocessor.h"
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: aes_neon_subr.c,v 1.2 2020/06/30 20:32:11 riastradh Exp $	*/
+/*	$NetBSD: aes_neon_subr.c,v 1.4 2020/07/28 20:11:09 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -27,7 +27,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: aes_neon_subr.c,v 1.2 2020/06/30 20:32:11 riastradh Exp $");
+__KERNEL_RCSID(1, "$NetBSD: aes_neon_subr.c,v 1.4 2020/07/28 20:11:09 riastradh Exp $");
+
+#include <sys/endian.h>
 
 #ifdef _KERNEL
 #include <sys/systm.h>
@@ -109,14 +111,33 @@ aes_neon_cbc_dec(const struct aesdec *dec, const uint8_t in[static 16],
 	cv = loadblock(in + nbytes - 16);
 	storeblock(iv, cv);
 
-	for (;;) {
+	if (nbytes % 32) {
+		KASSERT(nbytes % 32 == 16);
 		b = aes_neon_dec1(dec, cv, nrounds);
 		if ((nbytes -= 16) == 0)
-			break;
+			goto out;
 		cv = loadblock(in + nbytes - 16);
-		storeblock(out + nbytes, b ^ cv);
+		storeblock(out + nbytes, cv ^ b);
 	}
-	storeblock(out, b ^ iv0);
+
+	for (;;) {
+		uint8x16x2_t b2;
+
+		KASSERT(nbytes >= 32);
+
+		b2.val[1] = cv;
+		b2.val[0] = cv = loadblock(in + nbytes - 32);
+		b2 = aes_neon_dec2(dec, b2, nrounds);
+		storeblock(out + nbytes - 16, cv ^ b2.val[1]);
+		if ((nbytes -= 32) == 0) {
+			b = b2.val[0];
+			goto out;
+		}
+		cv = loadblock(in + nbytes - 16);
+		storeblock(out + nbytes, cv ^ b2.val[0]);
+	}
+
+out:	storeblock(out, b ^ iv0);
 }
 
 static inline uint8x16_t
@@ -184,11 +205,28 @@ aes_neon_xts_enc(const struct aesenc *enc, const uint8_t in[static 16],
 	KASSERT(nbytes % 16 == 0);
 
 	t = loadblock(tweak);
-	for (; nbytes; nbytes -= 16, in += 16, out += 16) {
+	if (nbytes % 32) {
+		KASSERT(nbytes % 32 == 16);
 		b = t ^ loadblock(in);
 		b = aes_neon_enc1(enc, b, nrounds);
 		storeblock(out, t ^ b);
 		t = aes_neon_xts_update(t);
+		nbytes -= 16;
+		in += 16;
+		out += 16;
+	}
+	for (; nbytes; nbytes -= 32, in += 32, out += 32) {
+		uint8x16_t t1;
+		uint8x16x2_t b2;
+
+		t1 = aes_neon_xts_update(t);
+		b2.val[0] = t ^ loadblock(in);
+		b2.val[1] = t1 ^ loadblock(in + 16);
+		b2 = aes_neon_enc2(enc, b2, nrounds);
+		storeblock(out, b2.val[0] ^ t);
+		storeblock(out + 16, b2.val[1] ^ t1);
+
+		t = aes_neon_xts_update(t1);
 	}
 	storeblock(tweak, t);
 }
@@ -204,13 +242,133 @@ aes_neon_xts_dec(const struct aesdec *dec, const uint8_t in[static 16],
 	KASSERT(nbytes % 16 == 0);
 
 	t = loadblock(tweak);
-	for (; nbytes; nbytes -= 16, in += 16, out += 16) {
+	if (nbytes % 32) {
+		KASSERT(nbytes % 32 == 16);
 		b = t ^ loadblock(in);
 		b = aes_neon_dec1(dec, b, nrounds);
 		storeblock(out, t ^ b);
 		t = aes_neon_xts_update(t);
+		nbytes -= 16;
+		in += 16;
+		out += 16;
+	}
+	for (; nbytes; nbytes -= 32, in += 32, out += 32) {
+		uint8x16_t t1;
+		uint8x16x2_t b2;
+
+		t1 = aes_neon_xts_update(t);
+		b2.val[0] = t ^ loadblock(in);
+		b2.val[1] = t1 ^ loadblock(in + 16);
+		b2 = aes_neon_dec2(dec, b2, nrounds);
+		storeblock(out, b2.val[0] ^ t);
+		storeblock(out + 16, b2.val[1] ^ t1);
+
+		t = aes_neon_xts_update(t1);
 	}
 	storeblock(tweak, t);
+}
+
+void
+aes_neon_cbcmac_update1(const struct aesenc *enc, const uint8_t in[static 16],
+    size_t nbytes, uint8_t auth0[static 16], uint32_t nrounds)
+{
+	uint8x16_t auth;
+
+	KASSERT(nbytes);
+	KASSERT(nbytes % 16 == 0);
+
+	auth = loadblock(auth0);
+	for (; nbytes; nbytes -= 16, in += 16)
+		auth = aes_neon_enc1(enc, auth ^ loadblock(in), nrounds);
+	storeblock(auth0, auth);
+}
+
+/*
+ * XXX On aarch64, we have enough registers that we should be able to
+ * pipeline two simultaneous vpaes computations in an `aes_neon_enc2'
+ * function, which should substantially improve CCM throughput.
+ */
+
+#if _BYTE_ORDER == _LITTLE_ENDIAN
+#define	vbetoh32q_u8	vrev32q_u8
+#define	vhtobe32q_u8	vrev32q_u8
+#elif _BYTE_ORDER == _BIG_ENDIAN
+#define	vbetoh32q_u8(x)	(x)
+#define	vhtobe32q_u8(x)	(x)
+#else
+#error what kind of endian are you anyway
+#endif
+
+void
+aes_neon_ccm_enc1(const struct aesenc *enc, const uint8_t in[static 16],
+    uint8_t out[static 16], size_t nbytes, uint8_t authctr[static 32],
+    uint32_t nrounds)
+{
+	const uint32x4_t ctr32_inc = {0, 0, 0, 1};
+	uint8x16_t auth, ptxt, ctr_be;
+	uint32x4_t ctr;
+
+	KASSERT(nbytes);
+	KASSERT(nbytes % 16 == 0);
+
+	auth = loadblock(authctr);
+	ctr_be = loadblock(authctr + 16);
+	ctr = vreinterpretq_u32_u8(vbetoh32q_u8(ctr_be));
+	for (; nbytes; nbytes -= 16, in += 16, out += 16) {
+		uint8x16x2_t b2;
+		ptxt = loadblock(in);
+		ctr = vaddq_u32(ctr, ctr32_inc);
+		ctr_be = vhtobe32q_u8(vreinterpretq_u8_u32(ctr));
+
+		b2.val[0] = auth ^ ptxt;
+		b2.val[1] = ctr_be;
+		b2 = aes_neon_enc2(enc, b2, nrounds);
+		auth = b2.val[0];
+		storeblock(out, ptxt ^ b2.val[1]);
+	}
+	storeblock(authctr, auth);
+	storeblock(authctr + 16, ctr_be);
+}
+
+void
+aes_neon_ccm_dec1(const struct aesenc *enc, const uint8_t in[static 16],
+    uint8_t out[static 16], size_t nbytes, uint8_t authctr[static 32],
+    uint32_t nrounds)
+{
+	const uint32x4_t ctr32_inc = {0, 0, 0, 1};
+	uint8x16_t auth, ctr_be, ptxt, pad;
+	uint32x4_t ctr;
+
+	KASSERT(nbytes);
+	KASSERT(nbytes % 16 == 0);
+
+	ctr_be = loadblock(authctr + 16);
+	ctr = vreinterpretq_u32_u8(vbetoh32q_u8(ctr_be));
+	ctr = vaddq_u32(ctr, ctr32_inc);
+	ctr_be = vhtobe32q_u8(vreinterpretq_u8_u32(ctr));
+	pad = aes_neon_enc1(enc, ctr_be, nrounds);
+	auth = loadblock(authctr);
+	for (;; in += 16, out += 16) {
+		uint8x16x2_t b2;
+
+		ptxt = loadblock(in) ^ pad;
+		auth ^= ptxt;
+		storeblock(out, ptxt);
+
+		if ((nbytes -= 16) == 0)
+			break;
+
+		ctr = vaddq_u32(ctr, ctr32_inc);
+		ctr_be = vhtobe32q_u8(vreinterpretq_u8_u32(ctr));
+		b2.val[0] = auth;
+		b2.val[1] = ctr_be;
+		b2 = aes_neon_enc2(enc, b2, nrounds);
+		auth = b2.val[0];
+		pad = b2.val[1];
+	}
+	auth = aes_neon_enc1(enc, auth, nrounds);
+	storeblock(authctr, auth);
+	storeblock(authctr + 16, ctr_be);
 }
 
 int

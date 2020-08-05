@@ -1,4 +1,4 @@
-/*	$NetBSD: immintrin.h,v 1.2 2020/06/29 23:51:35 riastradh Exp $	*/
+/*	$NetBSD: immintrin.h,v 1.5 2020/07/25 22:45:10 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -51,6 +51,7 @@ typedef long long __m128i_u
 typedef long long __v2di __attribute__((__vector_size__(16)));
 typedef unsigned long long __v2du __attribute__((__vector_size__(16)));
 typedef int __v4si __attribute__((__vector_size__(16)));
+typedef unsigned __v4su __attribute__((__vector_size__(16)));
 typedef float __v4sf __attribute__((__vector_size__(16)));
 typedef short __v8hi __attribute__((__vector_size__(16)));
 typedef char __v16qi __attribute__((__vector_size__(16)));
@@ -65,6 +66,7 @@ typedef long long __m128i_u
 typedef long long __v2di __attribute__((__vector_size__(16)));
 typedef unsigned long long __v2du __attribute__((__vector_size__(16)));
 typedef int __v4si __attribute__((__vector_size__(16)));
+typedef unsigned __v4su __attribute__((__vector_size__(16)));
 typedef float __v4sf __attribute__((__vector_size__(16)));
 typedef short __v8hi __attribute__((__vector_size__(16)));
 typedef char __v16qi __attribute__((__vector_size__(16)));
@@ -83,6 +85,13 @@ typedef char __v16qi __attribute__((__vector_size__(16)));
 
 #define	_SSSE3_ATTR	__attribute__((target("ssse3")))
 
+_INTRINSATTR
+static __inline __m128i
+_mm_add_epi32(__m128i __a, __m128i __b)
+{
+	return (__m128i)((__v4su)__a + (__v4su)__b);
+}
+
 #if defined(__GNUC__) && !defined(__clang__)
 #define	_mm_alignr_epi8(hi,lo,bytes)					      \
 	(__m128i)__builtin_ia32_palignr128((__v2di)(__m128i)(hi),	      \
@@ -92,6 +101,20 @@ typedef char __v16qi __attribute__((__vector_size__(16)));
 	(__m128i)__builtin_ia32_palignr128((__v16qi)(__m128i)(hi),	      \
 	    (__v16qi)(__m128i)(lo), (int)(bytes))
 #endif
+
+_INTRINSATTR
+static __inline __m128
+_mm_load1_ps(const float *__p)
+{
+	return __extension__ (__m128)(__v4sf) { *__p, *__p, *__p, *__p };
+}
+
+_INTRINSATTR
+static __inline __m128i
+_mm_loadu_si128(const __m128i_u *__p)
+{
+	return ((const struct { __m128i_u __v; } _PACKALIAS *)__p)->__v;
+}
 
 _INTRINSATTR
 static __inline __m128i
@@ -116,15 +139,25 @@ _mm_load_si128(const __m128i *__p)
 	return *__p;
 }
 
-_INTRINSATTR _SSSE3_ATTR
+_INTRINSATTR
 static __inline __m128
 _mm_movehl_ps(__m128 __v0, __m128 __v1)
 {
 #if defined(__GNUC__) && !defined(__clang__)
 	return (__m128)__builtin_ia32_movhlps((__v4sf)__v0, (__v4sf)__v1);
 #elif defined(__clang__)
-	return __builtin_shufflevector((__v4sf)__v0, (__v4sf)__v1,
-	    6, 7, 2, 3);
+	return __builtin_shufflevector((__v4sf)__v0, (__v4sf)__v1, 6,7,2,3);
+#endif
+}
+
+_INTRINSATTR
+static __inline __m128
+_mm_movelh_ps(__m128 __v0, __m128 __v1)
+{
+#if defined(__GNUC__) && !defined(__clang__)
+	return (__m128)__builtin_ia32_movlhps((__v4sf)__v0, (__v4sf)__v1);
+#elif defined(__clang__)
+	return __builtin_shufflevector((__v4sf)__v0, (__v4sf)__v1, 0,1,4,5);
 #endif
 }
 
@@ -196,6 +229,13 @@ _mm_shuffle_epi8(__m128i __vtbl, __m128i __vidx)
 
 _INTRINSATTR
 static __inline __m128i
+_mm_slli_epi32(__m128i __v, uint8_t __bits)
+{
+	return (__m128i)__builtin_ia32_pslldi128((__v4si)__v, (int)__bits);
+}
+
+_INTRINSATTR
+static __inline __m128i
 _mm_slli_epi64(__m128i __v, uint8_t __bits)
 {
 	return (__m128i)__builtin_ia32_psllqi128((__v2di)__v, (int)__bits);
@@ -236,6 +276,13 @@ _mm_srli_epi64(__m128i __v, uint8_t __bits)
 
 _INTRINSATTR
 static __inline void
+_mm_storeu_si128(__m128i_u *__p, __m128i __v)
+{
+	((struct { __m128i_u __v; } _PACKALIAS *)__p)->__v = __v;
+}
+
+_INTRINSATTR
+static __inline void
 _mm_storeu_si32(void *__p, __m128i __v)
 {
 	((struct { int32_t __v; } _PACKALIAS *)__p)->__v = ((__v4si)__v)[0];
@@ -264,14 +311,40 @@ _mm_sub_epi64(__m128i __x, __m128i __y)
 
 _INTRINSATTR
 static __inline __m128i
+_mm_unpackhi_epi32(__m128i __lo, __m128i __hi)
+{
+#if defined(__GNUC__) && !defined(__clang__)
+	return (__m128i)__builtin_ia32_punpckhdq128((__v4si)__lo,
+	    (__v4si)__hi);
+#elif defined(__clang__)
+	return (__m128i)__builtin_shufflevector((__v4si)__lo, (__v4si)__hi,
+	    2,6,3,7);
+#endif
+}
+
+_INTRINSATTR
+static __inline __m128i
+_mm_unpacklo_epi32(__m128i __lo, __m128i __hi)
+{
+#if defined(__GNUC__) && !defined(__clang__)
+	return (__m128i)__builtin_ia32_punpckldq128((__v4si)__lo,
+	    (__v4si)__hi);
+#elif defined(__clang__)
+	return (__m128i)__builtin_shufflevector((__v4si)__lo, (__v4si)__hi,
+	    0,4,1,5);
+#endif
+}
+
+_INTRINSATTR
+static __inline __m128i
 _mm_unpacklo_epi64(__m128i __lo, __m128i __hi)
 {
 #if defined(__GNUC__) && !defined(__clang__)
 	return (__m128i)__builtin_ia32_punpcklqdq128((__v2di)__lo,
 	    (__v2di)__hi);
 #elif defined(__clang__)
-	return (__m128i)__builtin_shufflevector((__v4si)__lo, (__v4si)__hi,
-	    0, 4, 1, 5);
+	return (__m128i)__builtin_shufflevector((__v2di)__lo, (__v2di)__hi,
+	    0,2);
 #endif
 }
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: cond.c,v 1.81 2020/07/19 12:35:30 rillig Exp $	*/
+/*	$NetBSD: cond.c,v 1.88 2020/08/03 20:26:09 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -70,14 +70,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: cond.c,v 1.81 2020/07/19 12:35:30 rillig Exp $";
+static char rcsid[] = "$NetBSD: cond.c,v 1.88 2020/08/03 20:26:09 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)cond.c	8.2 (Berkeley) 1/2/94";
 #else
-__RCSID("$NetBSD: cond.c,v 1.81 2020/07/19 12:35:30 rillig Exp $");
+__RCSID("$NetBSD: cond.c,v 1.88 2020/08/03 20:26:09 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -153,12 +153,12 @@ static Boolean CondDoMake(int, const char *);
 static Boolean CondDoExists(int, const char *);
 static Boolean CondDoTarget(int, const char *);
 static Boolean CondDoCommands(int, const char *);
-static Boolean CondCvtArg(char *, double *);
+static Boolean CondCvtArg(const char *, double *);
 static Token CondToken(Boolean);
 static Token CondT(Boolean);
 static Token CondF(Boolean);
 static Token CondE(Boolean);
-static int do_Cond_EvalExpression(Boolean *);
+static CondEvalResult do_Cond_EvalExpression(Boolean *);
 
 static const struct If {
     const char	*form;	      /* Form of if */
@@ -238,14 +238,14 @@ static int
 CondGetArg(Boolean doEval, char **linePtr, char **argPtr, const char *func)
 {
     char	  *cp;
-    int	    	  argLen;
     Buffer	  buf;
     int           paren_depth;
     char          ch;
+    size_t	  argLen;
 
     cp = *linePtr;
     if (func != NULL)
-	/* Skip opening '(' - verfied by caller */
+	/* Skip opening '(' - verified by caller */
 	cp++;
 
     if (*cp == '\0') {
@@ -267,7 +267,7 @@ CondGetArg(Boolean doEval, char **linePtr, char **argPtr, const char *func)
      * Create a buffer for the argument and start it out at 16 characters
      * long. Why 16? Why not?
      */
-    Buf_Init(&buf, 16);
+    Buf_InitZ(&buf, 16);
 
     paren_depth = 0;
     for (;;) {
@@ -286,8 +286,8 @@ CondGetArg(Boolean doEval, char **linePtr, char **argPtr, const char *func)
 	    int		len;
 	    void	*freeIt;
 	    VarEvalFlags eflags = VARE_UNDEFERR | (doEval ? VARE_WANTRES : 0);
-	    char *cp2 = Var_Parse(cp, VAR_CMD, eflags, &len, &freeIt);
-	    Buf_AddBytes(&buf, strlen(cp2), cp2);
+	    const char *cp2 = Var_Parse(cp, VAR_CMD, eflags, &len, &freeIt);
+	    Buf_AddStr(&buf, cp2);
 	    free(freeIt);
 	    cp += len;
 	    continue;
@@ -301,7 +301,7 @@ CondGetArg(Boolean doEval, char **linePtr, char **argPtr, const char *func)
 	cp++;
     }
 
-    *argPtr = Buf_GetAll(&buf, &argLen);
+    *argPtr = Buf_GetAllZ(&buf, &argLen);
     Buf_Destroy(&buf, FALSE);
 
     while (*cp == ' ' || *cp == '\t') {
@@ -334,16 +334,9 @@ CondGetArg(Boolean doEval, char **linePtr, char **argPtr, const char *func)
 static Boolean
 CondDoDefined(int argLen MAKE_ATTR_UNUSED, const char *arg)
 {
-    char    *p1;
-    Boolean result;
-
-    if (Var_Value(arg, VAR_CMD, &p1) != NULL) {
-	result = TRUE;
-    } else {
-	result = FALSE;
-    }
-
-    free(p1);
+    char *freeIt;
+    Boolean result = Var_Value(arg, VAR_CMD, &freeIt) != NULL;
+    bmake_free(freeIt);
     return result;
 }
 
@@ -479,7 +472,7 @@ CondDoCommands(int argLen MAKE_ATTR_UNUSED, const char *arg)
  *-----------------------------------------------------------------------
  */
 static Boolean
-CondCvtArg(char *str, double *value)
+CondCvtArg(const char *str, double *value)
 {
     char *eptr, ech;
     unsigned long l_val;
@@ -525,17 +518,17 @@ CondCvtArg(char *str, double *value)
  *-----------------------------------------------------------------------
  */
 /* coverity:[+alloc : arg-*2] */
-static char *
+static const char *
 CondGetString(Boolean doEval, Boolean *quoted, void **freeIt, Boolean strictLHS)
 {
     Buffer buf;
-    char *cp;
-    char *str;
+    const char *cp;
+    const char *str;
     int	len;
     int qt;
     char *start;
 
-    Buf_Init(&buf, 0);
+    Buf_InitZ(&buf, 0);
     str = NULL;
     *freeIt = NULL;
     *quoted = qt = *condExpr == '"' ? 1 : 0;
@@ -626,8 +619,8 @@ CondGetString(Boolean doEval, Boolean *quoted, void **freeIt, Boolean strictLHS)
 	}
     }
  got_str:
-    str = Buf_GetAll(&buf, NULL);
-    *freeIt = str;
+    *freeIt = Buf_GetAllZ(&buf, NULL);
+    str = *freeIt;
  cleanup:
     Buf_Destroy(&buf, FALSE);
     return str;
@@ -650,8 +643,8 @@ static Token
 compare_expression(Boolean doEval)
 {
     Token	t;
-    char	*lhs;
-    char	*rhs;
+    const char	*lhs;
+    const char	*rhs;
     char	*op;
     void	*lhsFree;
     void	*rhsFree;
@@ -821,7 +814,7 @@ get_mpt_arg(Boolean doEval, char **linePtr, char **argPtr, const char *func MAKE
      */
     int	    length;
     void    *freeIt;
-    char    *val;
+    const char *val;
     char    *cp = *linePtr;
 
     /* We do all the work here and return the result as the length */
@@ -840,7 +833,7 @@ get_mpt_arg(Boolean doEval, char **linePtr, char **argPtr, const char *func MAKE
     }
 
     /* A variable is empty when it just contains spaces... 4/15/92, christos */
-    while (isspace(*(unsigned char *)val))
+    while (isspace((unsigned char)val[0]))
 	val++;
 
     /*
@@ -864,7 +857,7 @@ compare_function(Boolean doEval)
     static const struct fn_def {
 	const char  *fn_name;
 	int         fn_name_len;
-        int         (*fn_getarg)(Boolean, char **, char **, const char *);
+	int         (*fn_getarg)(Boolean, char **, char **, const char *);
 	Boolean     (*fn_proc)(int, const char *);
     } fn_defs[] = {
 	{ "defined",   7, CondGetArg, CondDoDefined },
@@ -1154,7 +1147,7 @@ CondE(Boolean doEval)
  *
  *-----------------------------------------------------------------------
  */
-int
+CondEvalResult
 Cond_EvalExpression(const struct If *info, char *line, Boolean *value, int eprint, Boolean strictLHS)
 {
     static const struct If *dflt_info;
@@ -1193,7 +1186,7 @@ Cond_EvalExpression(const struct If *info, char *line, Boolean *value, int eprin
     return rval;
 }
 
-static int
+static CondEvalResult
 do_Cond_EvalExpression(Boolean *value)
 {
 
@@ -1238,16 +1231,12 @@ do_Cond_EvalExpression(Boolean *value)
  *	COND_SKIP	if should skip lines after the conditional
  *	COND_INVALID  	if not a valid conditional.
  *
- * Side Effects:
- *	None.
- *
  * Note that the states IF_ACTIVE and ELSE_ACTIVE are only different in order
- * to detect splurious .else lines (as are SKIP_TO_ELSE and SKIP_TO_ENDIF)
+ * to detect spurious .else lines (as are SKIP_TO_ELSE and SKIP_TO_ENDIF),
  * otherwise .else could be treated as '.elif 1'.
- *
  *-----------------------------------------------------------------------
  */
-int
+CondEvalResult
 Cond_Eval(char *line)
 {
 #define	    MAXIF      128	/* maximum depth of .if'ing */

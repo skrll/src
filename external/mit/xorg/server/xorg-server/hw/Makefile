@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.5 2014/03/01 19:45:29 tsutsui Exp $
+#	$NetBSD: Makefile,v 1.8 2020/07/23 09:13:18 tsutsui Exp $
 
 .include "../Makefile.common"
 
@@ -9,6 +9,12 @@ SUBDIR+= xfree86
 
 .if ${XSERVER_X68K} != "no"
 SUBDIR+=netbsd/x68k
+.endif
+
+.if ${XSERVER_XSUN} != "no" || \
+    ${XSERVER_XSUNMONO} != "no" || \
+    ${XSERVER_XSUN24} != "no"
+SUBDIR+=sun
 .endif
 
 .if 0
@@ -28,32 +34,8 @@ SUBDIR+=netbsd/arm32vidc
 SUBDIR+=netbsd/dec
 .endif
 
-.if ${XSERVER_XDREAMCAST} != "no"
-SUBDIR+=netbsd/dreamcast
-.endif
-
-.if ${XSERVER_XFREE86} != "no"
-SUBDIR+=xfree86
-.endif
-
-.if ${XSERVER_XHPC} != "no"
-SUBDIR+=netbsd/hpc
-.endif
-
 .if ${XSERVER_XMAC68K} != "no"
 SUBDIR+=netbsd/mac68k
-.endif
-
-.if ${XSERVER_XMACPPC} != "no"
-SUBDIR+=netbsd/macppc
-.endif
-
-.if ${XSERVER_XNEWSMIPS} != "no"
-SUBDIR+=netbsd/newsmips
-.endif
-
-.if ${XSERVER_XSUN} != "no"
-SUBDIR+=sun
 .endif
 
 .if ${XSERVER_XVFB} != "no"

@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.82 2020/07/20 19:53:40 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.89 2020/08/01 18:02:37 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -91,8 +91,8 @@ int Compat_Make(void *, void *);
 
 /* cond.c */
 struct If;
-int Cond_EvalExpression(const struct If *, char *, Boolean *, int, Boolean);
-int Cond_Eval(char *);
+CondEvalResult Cond_EvalExpression(const struct If *, char *, Boolean *, int, Boolean);
+CondEvalResult Cond_Eval(char *);
 void Cond_restore_depth(unsigned int);
 unsigned int Cond_save_depth(void);
 
@@ -181,21 +181,18 @@ void Targ_Propagate_Wait(void);
 typedef enum {
     /* Treat undefined variables as errors. */
     VARE_UNDEFERR	= 0x01,
-    /* Actually evaluate the text, fully expanding variables.
-     * Without this flag, the text is only parsed but not evaluated. */
+    /* Expand and evaluate variables during parsing. */
     VARE_WANTRES	= 0x02,
-    VARE_ASSIGN		= 0x04,
-    /* Return the literal text, without expanding variables. */
-    VARE_NOSUBST	= 0x08
+    VARE_ASSIGN		= 0x04
 } VarEvalFlags;
 
 void Var_Delete(const char *, GNode *);
 void Var_Set(const char *, const char *, GNode *);
 void Var_Append(const char *, const char *, GNode *);
 Boolean Var_Exists(const char *, GNode *);
-char *Var_Value(const char *, GNode *, char **);
-char *Var_Parse(const char *, GNode *, VarEvalFlags, int *, void **);
-char *Var_Subst(const char *, const char *, GNode *, VarEvalFlags);
+const char *Var_Value(const char *, GNode *, char **);
+const char *Var_Parse(const char *, GNode *, VarEvalFlags, int *, void **);
+char *Var_Subst(const char *, GNode *, VarEvalFlags);
 char *Var_GetTail(const char *);
 char *Var_GetHead(const char *);
 void Var_Init(void);
