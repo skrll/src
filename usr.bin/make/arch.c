@@ -1,4 +1,4 @@
-/*	$NetBSD: arch.c,v 1.78 2020/07/31 16:26:16 rillig Exp $	*/
+/*	$NetBSD: arch.c,v 1.81 2020/08/03 20:26:09 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,14 +69,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: arch.c,v 1.78 2020/07/31 16:26:16 rillig Exp $";
+static char rcsid[] = "$NetBSD: arch.c,v 1.81 2020/08/03 20:26:09 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)arch.c	8.2 (Berkeley) 1/2/94";
 #else
-__RCSID("$NetBSD: arch.c,v 1.78 2020/07/31 16:26:16 rillig Exp $");
+__RCSID("$NetBSD: arch.c,v 1.81 2020/08/03 20:26:09 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -534,7 +534,7 @@ ArchStatMember(const char *archive, const char *member, Boolean hash)
     Hash_Entry	  *he;	      /* Entry containing member's description */
     struct ar_hdr arh;        /* archive-member header for reading archive */
     char	  memName[MAXPATHLEN+1];
-    	    	    	    /* Current member name while hashing. */
+			    /* Current member name while hashing. */
 
     /*
      * Because of space constraints and similar things, files are archived
@@ -604,7 +604,7 @@ ArchStatMember(const char *archive, const char *member, Boolean hash)
      * can handle...
      */
     if ((fread(magic, SARMAG, 1, arch) != 1) ||
-    	(strncmp(magic, ARMAG, SARMAG) != 0)) {
+	(strncmp(magic, ARMAG, SARMAG) != 0)) {
 	    fclose(arch);
 	    return NULL;
     }
@@ -624,6 +624,8 @@ ArchStatMember(const char *archive, const char *member, Boolean hash)
 	     */
 	    goto badarch;
 	} else {
+	    char *nameend;
+
 	    /*
 	     * We need to advance the stream's pointer to the start of the
 	     * next header. Files are padded with newlines to an even-byte
@@ -634,7 +636,7 @@ ArchStatMember(const char *archive, const char *member, Boolean hash)
 	    size = (int)strtol(arh.ar_size, NULL, 10);
 
 	    memcpy(memName, arh.ar_name, sizeof(arh.ar_name));
-	    char *nameend = memName + AR_MAX_NAME_LEN;
+	    nameend = memName + AR_MAX_NAME_LEN;
 	    while (*nameend == ' ') {
 		nameend--;
 	    }
@@ -786,7 +788,7 @@ ArchSVR4Entry(Arch *ar, char *name, size_t size, FILE *arch)
 	    }
 	if (DEBUG(ARCH)) {
 	    fprintf(debug_file, "Found svr4 archive name table with %lu entries\n",
-	            (unsigned long)entry);
+		    (unsigned long)entry);
 	}
 	return 0;
     }
@@ -851,6 +853,7 @@ ArchFindMember(const char *archive, const char *member, struct ar_hdr *arhPtr,
     int		  size;       /* Size of archive member */
     char	  magic[SARMAG];
     size_t	  len, tlen;
+    const char *  base;
 
     arch = fopen(archive, mode);
     if (arch == NULL) {
@@ -862,7 +865,7 @@ ArchFindMember(const char *archive, const char *member, struct ar_hdr *arhPtr,
      * can handle...
      */
     if ((fread(magic, SARMAG, 1, arch) != 1) ||
-    	(strncmp(magic, ARMAG, SARMAG) != 0)) {
+	(strncmp(magic, ARMAG, SARMAG) != 0)) {
 	    fclose(arch);
 	    return NULL;
     }
@@ -873,7 +876,7 @@ ArchFindMember(const char *archive, const char *member, struct ar_hdr *arhPtr,
      * to point 'member' to the final component, if there is one, to make
      * the comparisons easier...
      */
-    const char *base = strrchr(member, '/');
+    base = strrchr(member, '/');
     if (base != NULL) {
 	member = base + 1;
     }
@@ -1010,8 +1013,8 @@ Arch_Touch(GNode *gn)
 			  Var_Value(MEMBER, gn, &p2),
 			  &arh, "r+");
 
-    free(p1);
-    free(p2);
+    bmake_free(p1);
+    bmake_free(p2);
 
     snprintf(arh.ar_date, sizeof(arh.ar_date), "%-12ld", (long) now);
 
@@ -1092,8 +1095,8 @@ Arch_MTime(GNode *gn)
 			     Var_Value(MEMBER, gn, &p2),
 			     TRUE);
 
-    free(p1);
-    free(p2);
+    bmake_free(p1);
+    bmake_free(p2);
 
     if (arhPtr != NULL) {
 	modTime = (time_t)strtol(arhPtr->ar_date, NULL, 10);

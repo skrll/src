@@ -1,4 +1,4 @@
-/*	$NetBSD: str.c,v 1.53 2020/07/26 16:51:53 rillig Exp $	*/
+/*	$NetBSD: str.c,v 1.55 2020/08/03 20:26:09 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,14 +69,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: str.c,v 1.53 2020/07/26 16:51:53 rillig Exp $";
+static char rcsid[] = "$NetBSD: str.c,v 1.55 2020/08/03 20:26:09 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char     sccsid[] = "@(#)str.c	5.8 (Berkeley) 6/1/90";
 #else
-__RCSID("$NetBSD: str.c,v 1.53 2020/07/26 16:51:53 rillig Exp $");
+__RCSID("$NetBSD: str.c,v 1.55 2020/08/03 20:26:09 rillig Exp $");
 #endif
 #endif				/* not lint */
 #endif
@@ -142,13 +142,15 @@ char **
 brk_string(const char *str, int *out_words_len, Boolean expand,
 	char **out_words_buf)
 {
-	char inquote;
-	const char *str_p;
-	size_t str_len;
+    	size_t str_len;
+    	char *words_buf;
+    	int words_cap;
     	char **words;
-	int words_len;
-	int words_cap = 50;
-	char *words_buf, *word_start, *word_end;
+    	int words_len;
+    	char inquote;
+    	char *word_start;
+    	char *word_end;
+	const char *str_p;
 
 	/* skip leading space chars. */
 	for (; *str == ' ' || *str == '\t'; ++str)
@@ -167,7 +169,8 @@ brk_string(const char *str, int *out_words_len, Boolean expand,
 	 */
 	words_len = 0;
 	inquote = '\0';
-	word_start = word_end = words_buf;
+	word_start = words_buf;
+	word_end = words_buf;
 	for (str_p = str;; ++str_p) {
 		char ch = *str_p;
 		switch(ch) {

@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.243 2020/07/31 20:22:10 sjg Exp $	*/
+/*	$NetBSD: parse.c,v 1.248 2020/08/03 20:43:41 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,14 +69,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: parse.c,v 1.243 2020/07/31 20:22:10 sjg Exp $";
+static char rcsid[] = "$NetBSD: parse.c,v 1.248 2020/08/03 20:43:41 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)parse.c	8.3 (Berkeley) 3/19/94";
 #else
-__RCSID("$NetBSD: parse.c,v 1.243 2020/07/31 20:22:10 sjg Exp $");
+__RCSID("$NetBSD: parse.c,v 1.248 2020/08/03 20:43:41 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -147,8 +147,7 @@ __RCSID("$NetBSD: parse.c,v 1.243 2020/07/31 20:22:10 sjg Exp $");
 #include "buf.h"
 #include "pathnames.h"
 
-////////////////////////////////////////////////////////////
-// types and constants
+/* types and constants */
 
 /*
  * Structure for a file being read ("included file")
@@ -225,8 +224,7 @@ typedef enum {
 #define RPAREN	')'
 
 
-////////////////////////////////////////////////////////////
-// result data
+/* result data */
 
 /*
  * The main target to create. This is the first target on the first
@@ -234,8 +232,7 @@ typedef enum {
  */
 static GNode *mainNode;
 
-////////////////////////////////////////////////////////////
-// eval state
+/* eval state */
 
 /* targets we're working on */
 static Lst targets;
@@ -259,8 +256,7 @@ static ParseSpecial specType;
  */
 static GNode	*predecessor;
 
-////////////////////////////////////////////////////////////
-// parser state
+/* parser state */
 
 /* true if currently in a dependency line or its commands */
 static Boolean inLine;
@@ -283,8 +279,7 @@ Lst parseIncPath;	/* dirs for "..." includes */
 Lst sysIncPath;		/* dirs for <...> includes */
 Lst defIncPath;		/* default for sysIncPath */
 
-////////////////////////////////////////////////////////////
-// parser tables
+/* parser tables */
 
 /*
  * The parseKeywords table is searched using binary search when deciding
@@ -344,8 +339,7 @@ static const struct {
 { ".WAIT",	  Wait, 	0 },
 };
 
-////////////////////////////////////////////////////////////
-// local functions
+/* local functions */
 
 static int ParseIsEscaped(const char *, const char *);
 static void ParseErrorInternal(const char *, size_t, int, const char *, ...)
@@ -373,8 +367,7 @@ static char *ParseReadLine(void);
 static void ParseFinishLine(void);
 static void ParseMark(GNode *);
 
-////////////////////////////////////////////////////////////
-// file loader
+/* file loader */
 
 struct loadedfile {
 	const char *path;		/* name, for error reports */
@@ -585,8 +578,7 @@ done:
 	return lf;
 }
 
-////////////////////////////////////////////////////////////
-// old code
+/* old code */
 
 /*-
  *----------------------------------------------------------------------
@@ -699,8 +691,8 @@ ParseVErrorInternal(FILE *f, const char *cfname, size_t clineno, int type,
 					fname = cfname;
 			}
 			(void)fprintf(f, "%s/%s", dir, fname);
-			free(cp2);
-			free(cp);
+			bmake_free(cp2);
+			bmake_free(cp);
 		} else
 			(void)fprintf(f, "%s", cfname);
 
@@ -1291,9 +1283,10 @@ ParseDoDependency(char *line)
 		    "Makefile appears to contain unresolved cvs/rcs/??? merge conflicts");
 	    else if (lstart[0] == '.') {
 		const char *dirstart = lstart + 1;
+		const char *dirend;
 		while (isspace((unsigned char)*dirstart))
 		    dirstart++;
-		const char *dirend = dirstart;
+		dirend = dirstart;
 		while (isalnum((unsigned char)*dirend) || *dirend == '-')
 		    dirend++;
 		Parse_Error(PARSE_FATAL, "Unknown directive \"%.*s\"",
@@ -1597,9 +1590,9 @@ ParseDoDependency(char *line)
 		Dir_SetPATH();
 		break;
 #ifdef POSIX
-            case Posix:
-                Var_Set("%POSIX", "1003.2", VAR_GLOBAL);
-                break;
+	    case Posix:
+		Var_Set("%POSIX", "1003.2", VAR_GLOBAL);
+		break;
 #endif
 	    default:
 		break;
@@ -2236,7 +2229,7 @@ Parse_include_file(char *file, Boolean isSystem, Boolean depinc, int silent)
 
 	if (fullname == NULL) {
 	    /*
-    	     * Makefile wasn't found in same directory as included makefile.
+	     * Makefile wasn't found in same directory as included makefile.
 	     * Search for it first on the -I search path,
 	     * then on the .PATH search path, if not found in a -I directory.
 	     * If we have a suffix specific path we should use that.
@@ -2364,20 +2357,20 @@ ParseDoInclude(char *line)
 static void
 ParseSetIncludedFile(void)
 {
-    char *pf, *fp = NULL;
-    char *pd, *dp = NULL;
+    const char *pf, *pd;
+    char *pf_freeIt, *pd_freeIt;
 
-    pf = Var_Value(".PARSEFILE", VAR_GLOBAL, &fp);
+    pf = Var_Value(".PARSEFILE", VAR_GLOBAL, &pf_freeIt);
     Var_Set(".INCLUDEDFROMFILE", pf, VAR_GLOBAL);
-    pd = Var_Value(".PARSEDIR", VAR_GLOBAL, &dp);
+    pd = Var_Value(".PARSEDIR", VAR_GLOBAL, &pd_freeIt);
     Var_Set(".INCLUDEDFROMDIR", pd, VAR_GLOBAL);
 
     if (DEBUG(PARSE))
 	fprintf(debug_file, "%s: ${.INCLUDEDFROMDIR} = `%s' "
 	    "${.INCLUDEDFROMFILE} = `%s'\n", __func__, pd, pf);
 
-    free(fp);
-    free(dp);
+    bmake_free(pf_freeIt);
+    bmake_free(pd_freeIt);
 }
 /*-
  *---------------------------------------------------------------------
@@ -2428,14 +2421,12 @@ ParseSetParseFile(const char *filename)
 static void
 ParseTrackInput(const char *name)
 {
-    char *old;
-    char *ep;
     char *fp = NULL;
-    size_t name_len = strlen(name);
 
-    old = Var_Value(MAKE_MAKEFILES, VAR_GLOBAL, &fp);
+    const char *old = Var_Value(MAKE_MAKEFILES, VAR_GLOBAL, &fp);
     if (old) {
-	ep = old + strlen(old) - name_len;
+	size_t name_len = strlen(name);
+	const char *ep = old + strlen(old) - name_len;
 	/* does it contain name? */
 	for (; old != NULL; old = strchr(old, ' ')) {
 	    if (*old == ' ')
@@ -2449,9 +2440,7 @@ ParseTrackInput(const char *name)
     }
     Var_Append (MAKE_MAKEFILES, name, VAR_GLOBAL);
  cleanup:
-    if (fp) {
-	free(fp);
-    }
+    bmake_free(fp);
 }
 
 
@@ -2514,7 +2503,7 @@ Parse_SetInput(const char *name, int line, int fd,
     /* Get first block of input data */
     buf = curFile->nextbuf(curFile->nextbuf_arg, &len);
     if (buf == NULL) {
-        /* Was all a waste of time ... */
+	/* Was all a waste of time ... */
 	if (curFile->fname)
 	    free(curFile->fname);
 	free(curFile);
@@ -2547,13 +2536,13 @@ IsInclude(const char *line, Boolean sysv)
 	static const char inc[] = "include";
 	static const size_t inclen = sizeof(inc) - 1;
 
-	// 'd' is not valid for sysv
+	/* 'd' is not valid for sysv */
 	int o = strchr(&("ds-"[sysv]), *line) != NULL;
 
 	if (strncmp(line + o, inc, inclen) != 0)
 		return FALSE;
 
-	// Space is not mandatory for BSD .include
+	/* Space is not mandatory for BSD .include */
 	return !sysv || isspace((unsigned char)line[inclen + o]);
 }
 
@@ -3342,7 +3331,7 @@ Parse_MainName(void)
 
     if (mainNode == NULL) {
 	Punt("no target to make.");
-    	/*NOTREACHED*/
+	/*NOTREACHED*/
     } else if (mainNode->type & OP_DOUBLEDEP) {
 	(void)Lst_AtEnd(mainList, mainNode);
 	Lst_Concat(mainList, mainNode->cohorts, LST_CONCNEW);
