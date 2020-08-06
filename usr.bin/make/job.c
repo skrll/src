@@ -1,4 +1,4 @@
-/*	$NetBSD: job.c,v 1.202 2020/07/19 12:26:17 rillig Exp $	*/
+/*	$NetBSD: job.c,v 1.205 2020/08/01 14:47:49 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -70,14 +70,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: job.c,v 1.202 2020/07/19 12:26:17 rillig Exp $";
+static char rcsid[] = "$NetBSD: job.c,v 1.205 2020/08/01 14:47:49 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)job.c	8.2 (Berkeley) 3/19/94";
 #else
-__RCSID("$NetBSD: job.c,v 1.202 2020/07/19 12:26:17 rillig Exp $");
+__RCSID("$NetBSD: job.c,v 1.205 2020/08/01 14:47:49 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -298,7 +298,7 @@ static Shell *commandShell = &shells[DEFSHELL_INDEX]; /* this is the shell to
 						   * Job_ParseShell function */
 const char *shellPath = NULL,		  	  /* full pathname of
 						   * executable image */
-           *shellName = NULL;		      	  /* last component of shell */
+	   *shellName = NULL;		      	  /* last component of shell */
 char *shellErrFlag = NULL;
 static const char *shellArgv = NULL;		  /* Custom shell args */
 
@@ -729,7 +729,7 @@ JobPrintCommand(void *cmdp, void *jobp)
 
     numCommands += 1;
 
-    cmdStart = cmd = Var_Subst(NULL, cmd, job->node, VARE_WANTRES);
+    cmdStart = cmd = Var_Subst(cmd, job->node, VARE_WANTRES);
 
     cmdTemplate = "%s\n";
 
@@ -917,7 +917,7 @@ JobPrintCommand(void *cmdp, void *jobp)
 static int
 JobSaveCommand(void *cmd, void *gn)
 {
-    cmd = Var_Subst(NULL, (char *)cmd, (GNode *)gn, VARE_WANTRES);
+    cmd = Var_Subst((char *)cmd, (GNode *)gn, VARE_WANTRES);
     (void)Lst_AtEnd(postCommands->commands, cmd);
     return 0;
 }
@@ -1258,7 +1258,7 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
 	     */
 	    Make_HandleUse(DEFAULT, gn);
 	    Var_Set(IMPSRC, Var_Value(TARGET, gn, &p1), gn);
-	    free(p1);
+	    bmake_free(p1);
 	} else if (Dir_MTime(gn, 0) == 0 && (gn->type & OP_SPECIAL) == 0) {
 	    /*
 	     * The node wasn't the target of an operator we have no .DEFAULT
@@ -1285,7 +1285,7 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
 		(void)fprintf(stdout, "%s%s %s (continuing)\n", progname,
 		    msg, gn->name);
 		(void)fflush(stdout);
-  		return FALSE;
+		return FALSE;
 	    } else {
 		(*abortProc)("%s%s %s. Stop", progname, msg, gn->name);
 		return FALSE;
@@ -1328,7 +1328,7 @@ JobExec(Job *job, char **argv)
 	for (i = 0; argv[i] != NULL; i++) {
 	    (void)fprintf(debug_file, "%s ", argv[i]);
 	}
- 	(void)fprintf(debug_file, "\n");
+	(void)fprintf(debug_file, "\n");
     }
 
     /*
@@ -1700,7 +1700,7 @@ JobStart(GNode *gn, int flags)
 	 * up the graph.
 	 */
 	job->cmdFILE = stdout;
-    	Job_Touch(gn, job->flags&JOB_SILENT);
+	Job_Touch(gn, job->flags&JOB_SILENT);
 	noExec = TRUE;
     }
     /* Just in case it isn't already... */
@@ -2248,7 +2248,7 @@ Job_SetPrefix(void)
 	Var_Set(MAKE_JOB_PREFIX, "---", VAR_GLOBAL);
     }
 
-    targPrefix = Var_Subst(NULL, "${" MAKE_JOB_PREFIX "}",
+    targPrefix = Var_Subst("${" MAKE_JOB_PREFIX "}",
 			   VAR_GLOBAL, VARE_WANTRES);
 }
 
@@ -3106,7 +3106,7 @@ emul_poll(struct pollfd *fd, int nfd, int timeout)
 	usecs = timeout * 1000;
 	tv.tv_sec = usecs / 1000000;
 	tv.tv_usec = usecs % 1000000;
-        tvp = &tv;
+	tvp = &tv;
     }
 
     nselect = select(maxfd + 1, &rfds, &wfds, 0, tvp);

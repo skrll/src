@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.75 2020/07/26 20:04:57 rillig Exp $
+#	$NetBSD: Makefile,v 1.79 2020/08/03 20:26:09 rillig Exp $
 #	@(#)Makefile	5.2 (Berkeley) 12/28/90
 
 PROG=	make
@@ -8,9 +8,15 @@ SRCS+=	str.c strlist.c suff.c targ.c trace.c var.c util.c
 
 USE_COVERAGE?=	no		# works only with gcc; clang9 fails to link
 .if ${USE_COVERAGE} == "yes"
-COPTS=		--coverage -O0 -ggdb
-LDADD=		--coverage
+COPTS+=		--coverage -O0 -ggdb
+LDADD+=		--coverage
 CLEANFILES+=	${SRCS:.c=.gcda} ${SRCS:.c=.gcno} ${SRCS:=.gcov}
+.endif
+
+USE_UBSAN?=	no
+.if ${USE_UBSAN} == "yes"
+COPTS+=		-fsanitize=undefined
+LDADD+=		-fsanitize=undefined
 .endif
 
 USE_META?=	yes
@@ -67,13 +73,23 @@ COPTS.main.c+=	${GCC_NO_FORMAT_TRUNCATION} ${GCC_NO_STRINGOP_TRUNCATION}
 COPTS.meta.c+=	${GCC_NO_FORMAT_TRUNCATION}
 COPTS.parse.c+=	${GCC_NO_FORMAT_TRUNCATION}
 
+COPTS+=		-Wdeclaration-after-statement
+
 # A simple unit-test driver to help catch regressions
 test: .MAKE
 	cd ${.CURDIR}/unit-tests \
 	&& MAKEFLAGS= ${.MAKE} -r -m / TEST_MAKE=${TEST_MAKE:U${.OBJDIR}/${PROG:T}} ${.TARGET}
 .if ${USE_COVERAGE} == yes
 	gcov ${SRCS}
+	sed -i 's,^\([^:]*\): *[0-9]*:,\1: ,' *.gcov
 .endif
 
 accept: .MAKE
 	cd ${.CURDIR}/unit-tests && ${.MAKE} ${.TARGET}
+
+retest:
+	${.MAKE} -C ${.CURDIR}/unit-tests cleandir
+.if ${USE_COVERAGE} == yes
+	rm -f *.gcov *.gcda
+.endif
+	${.MAKE} test

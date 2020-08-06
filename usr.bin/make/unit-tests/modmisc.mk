@@ -1,4 +1,4 @@
-# $Id: modmisc.mk,v 1.27 2020/07/27 21:54:25 rillig Exp $
+# $Id: modmisc.mk,v 1.33 2020/08/03 15:43:32 rillig Exp $
 #
 # miscellaneous modifier tests
 
@@ -17,6 +17,7 @@ MOD_SEP=S,:, ,g
 
 all:	modvar modvarloop modsysv mod-HTE emptyvar undefvar
 all:	mod-subst
+all:	mod-subst-chain
 all:	mod-regex
 all:	mod-loop-varname mod-loop-resolve mod-loop-varname-dollar
 all:	mod-subst-dollar mod-loop-dollar
@@ -28,6 +29,10 @@ all:	mod-tu-space
 all:	mod-quote
 all:	mod-break-many-words
 all:	mod-remember
+all:	mod-gmtime
+all:	mod-localtime
+all:	mod-hash
+all:	mod-range
 
 # See also sysv.mk.
 modsysv:
@@ -132,6 +137,18 @@ mod-subst:
 	@echo :${:U1 2 3 1 2 3:S,1 2,___,Wg:S,_,x,:Q}:
 	@echo ${:U12345:S,,sep,g:Q}
 
+# The :S and :C modifiers can be chained without a separating ':'.
+# This is not documented in the manual page.
+# It works because ApplyModifier_Subst scans for the known modifiers g1W
+# and then just returns to ApplyModifiers.  There, the colon is optionally
+# skipped (see the *st.next == ':' at the end of the loop).
+#
+# Most other modifiers cannot be chained since their parsers skip until
+# the next ':' or '}' or ')'.
+mod-subst-chain:
+	@echo $@:
+	@echo ${:Ua b c:S,a,A,S,b,B,}.
+
 mod-regex:
 	@echo $@:
 	@echo :${:Ua b b c:C,a b,,:Q}:
@@ -144,6 +161,7 @@ mod-regex:
 # In the :@ modifier, the name of the loop variable can even be generated
 # dynamically.  There's no practical use-case for this, and hopefully nobody
 # will ever depend on this, but technically it's possible.
+# Therefore, in -dL mode, this is forbidden, see lint.mk.
 mod-loop-varname:
 	@echo :${:Uone two three:@${:Ubar:S,b,v,}@+${var}+@:Q}:
 
@@ -251,3 +269,57 @@ mod-break-many-words:
 mod-remember:
 	@echo $@: ${1 2 3:L:_:@var@${_}@}
 	@echo $@: ${1 2 3:L:@var@${var:_=SAVED:}@}, SAVED=${SAVED}
+
+mod-gmtime:
+	@echo $@:
+	@echo ${%Y:L:gmtim=1593536400}		# modifier name too short
+	@echo ${%Y:L:gmtime=1593536400}		# 2020-07-01T00:00:00Z
+	@echo ${%Y:L:gmtimer=1593536400}	# modifier name too long
+	@echo ${%Y:L:gm=gm:M*}
+
+mod-localtime:
+	@echo $@:
+	@echo ${%Y:L:localtim=1593536400}	# modifier name too short
+	@echo ${%Y:L:localtime=1593536400}	# 2020-07-01T00:00:00Z
+	@echo ${%Y:L:localtimer=1593536400}	# modifier name too long
+
+mod-hash:
+	@echo $@:
+	@echo ${12345:L:has}			# modifier name too short
+	@echo ${12345:L:hash}			# ok
+	@echo ${12345:L:hash=SHA-256}		# :hash does not accept '='
+	@echo ${12345:L:hasX}			# misspelled
+	@echo ${12345:L:hashed}			# modifier name too long
+
+mod-range:
+	@echo $@:
+	@echo ${a b c:L:rang}			# modifier name too short
+	@echo ${a b c:L:range}			# ok
+	@echo ${a b c:L:rango}			# misspelled
+	@echo ${a b c:L:ranger}			# modifier name too long
+
+# To apply a modifier indirectly via another variable, the whole
+# modifier must be put into a single variable.
+.if ${value:L:${:US}${:U,value,replacement,}} != "S,value,replacement,}"
+.warning unexpected
+.endif
+
+# Adding another level of indirection (the 2 nested :U expressions) helps.
+.if ${value:L:${:U${:US}${:U,value,replacement,}}} != "replacement"
+.warning unexpected
+.endif
+
+# Multiple indirect modifiers can be applied one after another as long as
+# they are separated with colons.
+.if ${value:L:${:US,a,A,}:${:US,e,E,}} != "vAluE"
+.warning unexpected
+.endif
+
+# An indirect variable that evaluates to the empty string is allowed though.
+# This makes it possible to define conditional modifiers, like this:
+#
+# M.little-endian=	S,1234,4321,
+# M.big-endian=		# none
+.if ${value:L:${:Dempty}S,a,A,} != "vAlue"
+.warning unexpected
+.endif

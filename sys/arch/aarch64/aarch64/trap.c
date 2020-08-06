@@ -1,4 +1,4 @@
-/* $NetBSD: trap.c,v 1.34 2020/07/27 07:32:48 ryo Exp $ */
+/* $NetBSD: trap.c,v 1.36 2020/08/02 06:58:16 maxv Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.34 2020/07/27 07:32:48 ryo Exp $");
+__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.36 2020/08/02 06:58:16 maxv Exp $");
 
 #include "opt_arm_intr_impl.h"
 #include "opt_compat_netbsd32.h"
@@ -68,6 +68,7 @@ __KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.34 2020/07/27 07:32:48 ryo Exp $");
 #include <aarch64/machdep.h>
 #include <aarch64/armreg.h>
 #include <aarch64/locore.h>
+#include <aarch64/cpufunc.h>
 
 #ifdef KDB
 #include <machine/db_machdep.h>
@@ -242,6 +243,12 @@ trap_el1h_sync(struct trapframe *tf)
 		break;
 
 	case ESR_EC_FP_ACCESS:
+		if ((curlwp->l_flag & (LW_SYSTEM|LW_SYSTEM_FPU)) ==
+		    (LW_SYSTEM|LW_SYSTEM_FPU)) {
+			fpu_load(curlwp);
+			break;
+		}
+		/*FALLTHROUGH*/
 	case ESR_EC_FP_TRAP_A64:
 	case ESR_EC_PC_ALIGNMENT:
 	case ESR_EC_SP_ALIGNMENT:
@@ -613,6 +620,8 @@ emul_arm_swp(uint32_t insn, struct trapframe *tf)
 
 	/* vaddr will always point to userspace, since it has only 32bit */
 	if ((error = cpu_set_onfault(&fb)) == 0) {
+		if (aarch64_pan_enabled)
+			reg_pan_write(0); /* disable PAN */
 		if (insn & 0x00400000) {
 			/* swpb */
 			val = atomic_swap_8((uint8_t *)vaddr, val);
@@ -625,6 +634,8 @@ emul_arm_swp(uint32_t insn, struct trapframe *tf)
 	} else {
 		tf->tf_far = reg_far_el1_read();
 	}
+	if (aarch64_pan_enabled)
+		reg_pan_write(1); /* enable PAN */
 	return error;
 }
 

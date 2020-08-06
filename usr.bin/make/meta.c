@@ -1,4 +1,4 @@
-/*      $NetBSD: meta.c,v 1.88 2020/07/19 12:35:30 rillig Exp $ */
+/*      $NetBSD: meta.c,v 1.92 2020/08/03 20:26:09 rillig Exp $ */
 
 /*
  * Implement 'meta' mode.
@@ -314,7 +314,7 @@ meta_name(struct GNode *gn, char *mname, size_t mnamelen,
 static int
 is_submake(void *cmdp, void *gnp)
 {
-    static char *p_make = NULL;
+    static const char *p_make = NULL;
     static int p_len;
     char  *cmd = cmdp;
     GNode *gn = gnp;
@@ -329,7 +329,7 @@ is_submake(void *cmdp, void *gnp)
     }
     cp = strchr(cmd, '$');
     if ((cp)) {
-	mp = Var_Subst(NULL, cmd, gn, VARE_WANTRES);
+	mp = Var_Subst(cmd, gn, VARE_WANTRES);
 	cmd = mp;
     }
     cp2 = strstr(cmd, p_make);
@@ -371,7 +371,7 @@ printCMD(void *cmdp, void *mfpp)
     char *cp = NULL;
 
     if (strchr(cmd, '$')) {
-	cmd = cp = Var_Subst(NULL, cmd, mfp->gn, VARE_WANTRES);
+	cmd = cp = Var_Subst(cmd, mfp->gn, VARE_WANTRES);
     }
     fprintf(mfp->fp, "CMD %s\n", cmd);
     free(cp);
@@ -484,7 +484,7 @@ meta_create(BuildMon *pbm, GNode *gn)
 	char *mp;
 
 	/* Describe the target we are building */
-	mp = Var_Subst(NULL, "${" MAKE_META_PREFIX "}", gn, VARE_WANTRES);
+	mp = Var_Subst("${" MAKE_META_PREFIX "}", gn, VARE_WANTRES);
 	if (*mp)
 	    fprintf(stdout, "%s\n", mp);
 	free(mp);
@@ -542,7 +542,7 @@ meta_create(BuildMon *pbm, GNode *gn)
     }
  out:
     for (i--; i >= 0; i--) {
-	free(p[i]);
+	bmake_free(p[i]);
     }
 
     return mf.fp;
@@ -626,7 +626,7 @@ meta_mode_init(const char *make_mode)
      * We consider ourselves master of all within ${.MAKE.META.BAILIWICK}
      */
     metaBailiwick = Lst_Init(FALSE);
-    metaBailiwickStr = Var_Subst(NULL, "${.MAKE.META.BAILIWICK:O:u:tA}",
+    metaBailiwickStr = Var_Subst("${.MAKE.META.BAILIWICK:O:u:tA}",
 	VAR_GLOBAL, VARE_WANTRES);
     if (metaBailiwickStr) {
 	str2Lst_Append(metaBailiwick, metaBailiwickStr, NULL);
@@ -637,9 +637,8 @@ meta_mode_init(const char *make_mode)
     metaIgnorePaths = Lst_Init(FALSE);
     Var_Append(MAKE_META_IGNORE_PATHS,
 	       "/dev /etc /proc /tmp /var/run /var/tmp ${TMPDIR}", VAR_GLOBAL);
-    metaIgnorePathsStr = Var_Subst(NULL,
-		   "${" MAKE_META_IGNORE_PATHS ":O:u:tA}", VAR_GLOBAL,
-		   VARE_WANTRES);
+    metaIgnorePathsStr = Var_Subst("${" MAKE_META_IGNORE_PATHS ":O:u:tA}",
+				   VAR_GLOBAL, VARE_WANTRES);
     if (metaIgnorePathsStr) {
 	str2Lst_Append(metaIgnorePaths, metaIgnorePathsStr, NULL);
     }
@@ -650,12 +649,12 @@ meta_mode_init(const char *make_mode)
     cp = NULL;
     if (Var_Value(MAKE_META_IGNORE_PATTERNS, VAR_GLOBAL, &cp)) {
 	metaIgnorePatterns = TRUE;
-	free(cp);
+	bmake_free(cp);
     }
     cp = NULL;
     if (Var_Value(MAKE_META_IGNORE_FILTER, VAR_GLOBAL, &cp)) {
 	metaIgnoreFilter = TRUE;
-	free(cp);
+	bmake_free(cp);
     }
 }
 
@@ -818,7 +817,7 @@ meta_job_output(Job *job, char *cp, const char *nl)
 	    if (!meta_prefix) {
 		char *cp2;
 
-		meta_prefix = Var_Subst(NULL, "${" MAKE_META_PREFIX "}",
+		meta_prefix = Var_Subst("${" MAKE_META_PREFIX "}",
 					VAR_GLOBAL, VARE_WANTRES);
 		if ((cp2 = strchr(meta_prefix, '$')))
 		    meta_prefix_len = cp2 - meta_prefix;
@@ -1011,9 +1010,12 @@ meta_ignore(GNode *gn, const char *p)
     }
 
     if (metaIgnorePatterns) {
+        const char *expr;
+        char *pm;
+
 	Var_Set(".p.", p, gn);
-	const char *expr = "${" MAKE_META_IGNORE_PATTERNS ":@m@${.p.:M$m}@}";
-	char *pm = Var_Subst(NULL, expr, gn, VARE_WANTRES);
+	expr = "${" MAKE_META_IGNORE_PATTERNS ":@m@${.p.:M$m}@}";
+	pm = Var_Subst(expr, gn, VARE_WANTRES);
 	if (*pm) {
 #ifdef DEBUG_META_MODE
 	    if (DEBUG(META))
@@ -1033,7 +1035,7 @@ meta_ignore(GNode *gn, const char *p)
 	snprintf(fname, sizeof(fname),
 		 "${%s:L:${%s:ts:}}",
 		 p, MAKE_META_IGNORE_FILTER);
-	fm = Var_Subst(NULL, fname, gn, VARE_WANTRES);
+	fm = Var_Subst(fname, gn, VARE_WANTRES);
 	if (*fm == '\0') {
 #ifdef DEBUG_META_MODE
 	    if (DEBUG(META))
@@ -1233,7 +1235,7 @@ meta_oodate(GNode *gn, Boolean oodate)
 		    CHECK_VALID_META(p);
 		    pid = atoi(p);
 		    if (pid > 0 && pid != lastpid) {
-			char *ldir;
+			const char *ldir;
 			char *tp;
 
 			if (lastpid > 0) {
@@ -1247,12 +1249,12 @@ meta_oodate(GNode *gn, Boolean oodate)
 			ldir = Var_Value(ldir_vname, VAR_GLOBAL, &tp);
 			if (ldir) {
 			    strlcpy(latestdir, ldir, sizeof(latestdir));
-			    free(tp);
+			    bmake_free(tp);
 			}
 			ldir = Var_Value(lcwd_vname, VAR_GLOBAL, &tp);
 			if (ldir) {
 			    strlcpy(lcwd, ldir, sizeof(lcwd));
-			    free(tp);
+			    bmake_free(tp);
 			}
 		    }
 		    /* Skip past the pid. */
@@ -1532,7 +1534,7 @@ meta_oodate(GNode *gn, Boolean oodate)
 			if (DEBUG(META))
 			    fprintf(debug_file, "%s: %d: cannot compare command using .OODATE\n", fname, lineno);
 		    }
-		    cmd = Var_Subst(NULL, cmd, gn, VARE_WANTRES|VARE_UNDEFERR);
+		    cmd = Var_Subst(cmd, gn, VARE_WANTRES|VARE_UNDEFERR);
 
 		    if ((cp = strchr(cmd, '\n'))) {
 			int n;
@@ -1631,12 +1633,12 @@ meta_oodate(GNode *gn, Boolean oodate)
 	 */
 	Var_Delete(OODATE, gn);
 	Var_Set(OODATE, Var_Value(ALLSRC, gn, &cp), gn);
-	free(cp);
+	bmake_free(cp);
     }
 
  oodate_out:
     for (i--; i >= 0; i--) {
-	free(pa[i]);
+	bmake_free(pa[i]);
     }
     return oodate;
 }

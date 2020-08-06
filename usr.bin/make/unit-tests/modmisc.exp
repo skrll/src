@@ -1,3 +1,4 @@
+make: Unknown modifier '$'
 path=':/bin:/tmp::/:.:/no/such/dir:.'
 path='/bin:/tmp:/:/no/such/dir'
 path='/bin:/tmp:/:/no/such/dir'
@@ -24,11 +25,13 @@ mod-subst:
 :a c:
 :x__ 3 x__ 3:
 12345
+mod-subst-chain:
+A B c.
 mod-regex:
 :a b b c:
 :a b b c:
 : b c:
-make: RE substitution error: (details omitted)
+make: Regex compilation error: (details omitted)
 :C,word,____,:Q}:
 :a c:
 :x__ 3 x__ 3:
@@ -72,7 +75,7 @@ make: No subexpression \2
 mod-regex-limits:22-missing:1 6
 mod-regex-limits:22-ok:1 33 556
 mod-regex-limits:capture:ihgfedcbaabcdefghijABCDEFGHIJa0a1a2rest
-make: RE substitution error: (details omitted)
+make: Regex compilation error: (details omitted)
 mod-regex-errors:
 mod-assign: first=1.
 mod-assign: last=3.
@@ -93,4 +96,30 @@ line
 mod-break-many-words: 500
 mod-remember: 1 2 3 1 2 3 1 2 3
 mod-remember: 1 2 3, SAVED=3
+mod-gmtime:
+%Y
+2020
+%Y
+%Y
+mod-localtime:
+%Y
+2020
+%Y
+mod-hash:
+make: Unknown modifier 'h'
+
+26bb0f5f
+12345
+make: Unknown modifier 'h'
+
+make: Unknown modifier 'h'
+
+mod-range:
+make: Unknown modifier 'r'
+
+1 2 3
+make: Unknown modifier 'r'
+
+make: Unknown modifier 'r'
+
 exit status 0

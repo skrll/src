@@ -283,7 +283,7 @@ module_init_md(void)
 #endif
 			    bi->len);
 #endif
-			break;	
+			break;
 		default:
 			aprint_debug("Skipping non-ELF module\n");
 			break;
@@ -704,7 +704,7 @@ x86_parse_clusters(struct btinfo_memmap *bim)
 
 		/*
 		 * XXX XXX: Avoid the ISA I/O MEM.
-		 * 
+		 *
 		 * Some laptops (for example, Toshiba Satellite2550X) report
 		 * this area as valid.
 		 */
@@ -1050,7 +1050,7 @@ init_x86_vm(paddr_t pa_kend)
 #endif
 			seg_end = pa_kstart;
 		}
-		
+
 		/* First hunk */
 		if (seg_start != seg_end) {
 			x86_load_region(seg_start, seg_end);
@@ -1074,7 +1074,7 @@ init_x86_msgbuf(void)
 	psize_t sz = round_page(MSGBUFSIZE);
 	psize_t reqsz = sz;
 	uvm_physseg_t x;
-		
+
  search_again:
         for (x = uvm_physseg_get_first();
 	     uvm_physseg_valid_p(x);
@@ -1226,7 +1226,7 @@ get_booted_kernel(void)
 	return bibp ? bibp->bootpath : NULL;
 }
 
-/* 
+/*
  * machine dependent system variables.
  */
 static int

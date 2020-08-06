@@ -1,4 +1,4 @@
-# $Id: moderrs.mk,v 1.5 2020/07/28 00:13:29 rillig Exp $
+# $Id: moderrs.mk,v 1.11 2020/07/31 15:16:05 rillig Exp $
 #
 # various modifier error tests
 
@@ -8,10 +8,20 @@ MOD_UNKN=Z
 MOD_TERM=S,V,v
 MOD_S:= ${MOD_TERM},
 
+FIB=	1 1 2 3 5 8 13 21 34
+
 all:	modunkn modunknV varterm vartermV modtermV modloop
 all:	modloop-close
 all:	modwords
 all:	modexclam
+all:	mod-subst-delimiter
+all:	mod-regex-delimiter
+all:	mod-ts-parse
+all:	mod-t-parse
+all:	mod-ifelse-parse
+all:	mod-assign-parse
+all:	mod-remember-parse
+all:	mod-sysv-parse
 
 modunkn:
 	@echo "Expect: Unknown modifier 'Z'"
@@ -79,3 +89,77 @@ modexclam:
 	# If there were a fallback, the output would be "exclam",
 	# and the above would have produced an "Unknown modifier '!'".
 	@echo ${!:L:!=exclam}
+
+mod-subst-delimiter:
+	@echo $@:
+	@echo ${VAR:S
+	@echo ${VAR:S,
+	@echo ${VAR:S,from
+	@echo ${VAR:S,from,
+	@echo ${VAR:S,from,to
+	@echo ${VAR:S,from,to,
+	@echo ${VAR:S,from,to,}
+	@echo 1: ${VAR:S
+	@echo 2: ${VAR:S,
+	@echo 3: ${VAR:S,from
+	@echo ${VAR:S,from,
+	@echo ${VAR:S,from,to
+	@echo ${VAR:S,from,to,
+	@echo ${VAR:S,from,to,}
+
+mod-regex-delimiter:
+	@echo $@:
+	@echo ${VAR:C
+	@echo ${VAR:C,
+	@echo ${VAR:C,from
+	@echo ${VAR:C,from,
+	@echo ${VAR:C,from,to
+	@echo ${VAR:C,from,to,
+	@echo ${VAR:C,from,to,}
+	@echo 1: ${VAR:C
+	@echo 2: ${VAR:C,
+	@echo 3: ${VAR:C,from
+	@echo ${VAR:C,from,
+	@echo ${VAR:C,from,to
+	@echo ${VAR:C,from,to,
+	@echo ${VAR:C,from,to,}
+
+mod-ts-parse:
+	@echo $@:
+	@echo ${FIB:ts}
+	@echo ${FIB:ts\65}	# octal 065 == U+0035 == '5'
+	@echo ${FIB:ts\65oct}	# bad modifier
+	@echo ${FIB:tsxy}	# modifier too long
+
+mod-t-parse:
+	@echo $@:
+	@echo ${FIB:t
+	@echo ${FIB:txy}
+	@echo ${FIB:t}
+	@echo ${FIB:t:M*}
+
+mod-ifelse-parse:
+	@echo $@:
+	@echo ${FIB:?
+	@echo ${FIB:?then
+	@echo ${FIB:?then:
+	@echo ${FIB:?then:else
+	@echo ${FIB:?then:else}
+
+mod-assign-parse:
+	@echo $@:
+	@echo ${ASSIGN::x}	# 'x' is an unknown assignment operator
+	@echo ${::=value}	# trying to set the empty variable
+	@echo ${ASSIGN::=value	# missing closing brace
+
+mod-remember-parse:
+	@echo $@:
+	@echo ${FIB:_}		# ok
+	@echo ${FIB:__}		# modifier name too long
+
+mod-sysv-parse:
+	@echo $@:
+	@echo ${FIB:3
+	@echo ${FIB:3=
+	@echo ${FIB:3=x3
+	@echo ${FIB:3=x3}	# ok

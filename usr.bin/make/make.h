@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.111 2020/07/21 21:13:24 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.113 2020/08/01 18:02:37 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -337,9 +337,11 @@ typedef struct GNode {
 /*
  * Values returned by Cond_Eval.
  */
-#define COND_PARSE	0   	/* Parse the next lines */
-#define COND_SKIP 	1   	/* Skip the next lines */
-#define COND_INVALID	2   	/* Not a conditional statement */
+typedef enum {
+    COND_PARSE,			/* Parse the next lines */
+    COND_SKIP,			/* Skip the next lines */
+    COND_INVALID		/* Not a conditional statement */
+} CondEvalResult;
 
 /*
  * Definitions for the "local" variables. Used only for clarity.
@@ -473,6 +475,8 @@ extern int debug;
 #define DEBUG_SCRIPT	0x20000
 #define DEBUG_PARSE	0x40000
 #define DEBUG_CWD	0x80000
+
+#define DEBUG_LINT	0x100000
 
 #define CONCAT(a,b)	a##b
 

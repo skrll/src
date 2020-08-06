@@ -74,7 +74,7 @@ MODULE_DEVICE_TABLE(pci, xmm7360_ids);
 #include "opt_gateway.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xmm7360.c,v 1.3 2020/07/27 14:09:00 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xmm7360.c,v 1.6 2020/07/29 13:03:36 jdolecek Exp $");
 #endif
 
 #include <sys/param.h>
@@ -286,9 +286,11 @@ typedef struct kmutex spinlock_t;
 		return -error;				\
 	__ret;						\
 })
-#define xmm7360_os_msleep(msec)				\
-		KASSERT(!cold);				\
-		tsleep(xmm, 0, "wwancsl", msec * hz / 1000)
+#define xmm7360_os_msleep(msec)					\
+	do {							\
+		KASSERT(!cold);					\
+		tsleep(xmm, 0, "wwancsl", msec * hz / 1000);	\
+	} while (0)
 
 static void *dma_alloc_coherent(struct device *, size_t, dma_addr_t *, int);
 static void dma_free_coherent(struct device *, size_t, volatile void *, dma_addr_t);
@@ -692,7 +694,7 @@ static void xmm7360_cmd_ring_free(struct xmm_dev *xmm) {
 static void xmm7360_td_ring_activate(struct xmm_dev *xmm, u8 ring_id)
 {
 	struct td_ring *ring = &xmm->td_ring[ring_id];
-	int ret;
+	int ret __diagused;
 
 	xmm->cp->s_rptr[ring_id] = xmm->cp->s_wptr[ring_id] = 0;
 	ring->last_handled = 0;
@@ -2643,9 +2645,9 @@ wwanctty(dev_t dev)
 static int
 wwancparam(struct tty *tp, struct termios *t)
 {
-	struct wwanc_softc *sc = (struct wwanc_softc *)tp->t_sc;
+	struct wwanc_softc *sc __diagused = (struct wwanc_softc *)tp->t_sc;
 	dev_t dev = tp->t_dev;
-	int func = DEVFUNC(dev);
+	int func __diagused = DEVFUNC(dev);
 
 	KASSERT(DEV_IS_TTY(dev));
 	KASSERT(tp == sc->sc_tty[func]);
@@ -3029,6 +3031,10 @@ wwan_if_input(struct ifnet *ifp, struct mbuf *m, void *cookie)
 		/* NOTREACHED */
 	}
 
+	/* Needed for tcpdump(1) et.al */
+	m->m_pkthdr.ph_rtableid = ifp->if_rdomain;
+	m_adj(m, sizeof(u_int32_t));
+
 	(*input)(ifp, m);
 	return 1;
 }
@@ -3242,7 +3248,12 @@ wwan_attach(struct device *parent, struct device *self, void *aux)
 	if_deferred_start_init(ifp, NULL);
 	if_alloc_sadl(ifp);
 #if NBPFILTER > 0
+#ifdef __OpenBSD__
+	bpfattach(&ifp->if_bpf, ifp, DLT_LOOP, sizeof(u_int32_t));
+#endif
+#ifdef __NetBSD__
 	bpfattach(&ifp->if_bpf, ifp, DLT_RAW, 0);
+#endif
 #endif
 
 	printf("\n");
