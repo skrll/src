@@ -220,18 +220,11 @@ data_abort_handler(struct trapframe *tf, uint32_t eclass)
 		return;
 	}
 
+
  do_fault:
 	/* faultbail path? */
-	fb = l->l_md.md_onfault;
-	if (fb != NULL && fb->fb_idepth == curcpu()->ci_intr_depth) {
-		cpu_unset_onfault();
-#ifdef DEBUG_DUMP_ON_FAULTBAIL
-		printf("fault in failtbail[%p]: "
-		    "fb_sp=%016lx, fb_lr=%016lx, fb_idepth=%u, fb_old=%p\n",
-		    fb, fb->fb_reg[FB_SP], fb->fb_reg[FB_LR],
-		    fb->fb_idepth, fb->fb_old);
-		dump_trapframe(tf, printf);
-#endif
+	fb = cpu_disable_onfault();
+	if (fb != NULL) {
 		cpu_jump_onfault(tf, fb, EFAULT);
 		return;
 	}

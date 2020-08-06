@@ -454,11 +454,13 @@ mp_vstart:
 	msr	tpidr_el0, xzr
 	msr	tpidrro_el0, xzr
 
-	/* set curcpu(), and fill curcpu()->ci_{midr,mpidr} */
+	/* set curlwp(), and fill curcpu()->ci_{midr,mpidr} */
 	mov	x0, #CPU_INFO_SIZE
 	mul	x0, x27, x0
 	adrl	x1, _C_LABEL(cpu_info_store)
 	add	x0, x0, x1		/* x0 = &cpu_info_store[cpuindex] */
+
+	/* temporarily set tpidr_el1 to curcpu until we idle lwp is setup */
 	msr	tpidr_el1, x0		/* tpidr_el1 = curcpu = x0 */
 
 	mrs	x1, midr_el1
@@ -508,7 +510,7 @@ mp_vstart:
 	b	1b
 9:
 
-	/* fill my cpu_info */
+	/* fill my cpu_info and set tpidr_el1 to curlwp / the idle lwp */
 	mrs	x0, tpidr_el1		/* curcpu */
 	ldr	x1, [x0, #CI_IDLELWP]	/* x0 = curcpu()->ci_idlelwp */
 	msr	tpidr_el1, x1		/* tpidr_el1 = curlwp = x1 */

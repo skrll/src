@@ -163,7 +163,7 @@ ENTRY_NP(cpu_switchto_softint)
 	stp	x27, x28, [sp, #TF_X27]
 	stp	x29, x2, [sp, #TF_X29]	/* tf->lr = softint_cleanup; */
 
-	mrs	x19, tpidr_el1		/* x19 := curcpu()->ci_curlwp */
+	mrs	x19, tpidr_el1		/* x19 := curlwp */
 	mov	x4, sp
 
 	mrs	x5, cpacr_el1
@@ -218,7 +218,7 @@ ENTRY_NP(cpu_switchto_softint)
 	DISABLE_INTERRUPT
 	msr	tpidr_el1, x19		/* curlwp = pinned_lwp */
 	ldr	x3, [x19, #L_CPU]	/* x3 = curlwp->l_cpu */
-	str	x19, [x3, #CI_CURLWP]	/* curcpu()->ci_curlwp := x19 */
+	str	x19, [x3, #CI_CURLWP]	/* curlwp->l_cpu->ci_curlwp := x19 */
 	dmb	st			/* see comments in kern_mutex.c */
 
 	mov	sp, x4			/* restore pinned_lwp sp */
@@ -454,11 +454,6 @@ END(cpu_Debugger)
  */
 ENTRY_NP(cpu_set_onfault)
 	mrs	x2, tpidr_el1		/* x2 = curlwp */
-	ldr	x3, [x2, #L_CPU]	/* X3 = curlwp->l_cpu */
-	ldr	x1, [x2, #L_MD_ONFAULT]
-	str	x1, [x0, #FB_OLD]	/* fb->fb_old = curlwp->l_md.md_onfault */
-	ldr	w1, [x3, #CI_INTR_DEPTH]
-	str	w1, [x0, #FB_IDEPTH]	/* fb->fb_idepth = curcpu()->ci_intr_depth */
 	str	x0, [x2, #L_MD_ONFAULT] /* l_md.md_onfault = fb */
 
 	stp	x19, x20, [x0, #FB_REG_X19]
@@ -472,19 +467,6 @@ ENTRY_NP(cpu_set_onfault)
 	mov	x0, #0
 	ret
 END(cpu_set_onfault)
-
-/*
- * void cpu_unset_onfault(void)
- */
-ENTRY_NP(cpu_unset_onfault)
-	mrs	x2, tpidr_el1			/* x2 = curlwp */
-	ldr	x0, [x2, #L_MD_ONFAULT]		/* x0 = curlwp->l_md.md_onfault */
-	cbz	x0, 1f
-	ldr	x0, [x0, #FB_OLD]		/* restore old faultbuf */
-	str	x0, [x2, #L_MD_ONFAULT]
-1:
-	ret
-END(cpu_unset_onfault)
 
 /*
  * setjmp(9)

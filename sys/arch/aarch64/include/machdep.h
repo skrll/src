@@ -113,10 +113,15 @@ void interrupt(struct trapframe *);
 
 /* cpu_onfault */
 int cpu_set_onfault(struct faultbuf *) __returns_twice;
-void cpu_unset_onfault(void);
 void cpu_jump_onfault(struct trapframe *, const struct faultbuf *, int);
 
 #if defined(_KERNEL)
+static inline void
+cpu_unset_onfault(void)
+{
+	curlwp->l_md.md_onfault = NULL;
+}
+
 static inline void
 cpu_enable_onfault(struct faultbuf *fb)
 {

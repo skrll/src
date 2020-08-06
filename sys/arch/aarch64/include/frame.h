@@ -70,8 +70,6 @@ __CTASSERT((sizeof(struct trapframe) & 15) == 0);
 #define FB_MAX	13
 struct faultbuf {
 	register_t fb_reg[FB_MAX];
-	struct faultbuf *fb_old;
-	u_int fb_idepth;
 };
 
 #define	lwp_trapframe(l)		((l)->l_md.md_utf)

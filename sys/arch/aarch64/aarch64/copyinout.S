@@ -79,8 +79,9 @@ RCSID("$NetBSD: copyinout.S,v 1.13 2020/08/03 06:29:59 ryo Exp $");
 	.endm
 
 	.macro exit_cpu_onfault
-	bl	cpu_unset_onfault
-	mov	x8, xzr
+	/* curlwp->l_md.md_onfault = NULL */
+	mrs	x0, tpidr_el1			/* x0 = curlwp */
+	str	xzr, [x0, #L_MD_ONFAULT]	/* lwp->l_md_onfault = NULL */
 9:
 	PAN_ENABLE				/* enable PAN */
 	add	sp, sp, #FB_T_SIZE		/* pop stack */
