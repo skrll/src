@@ -1,4 +1,4 @@
-/* $NetBSD: frame.h,v 1.4 2020/08/03 05:56:50 ryo Exp $ */
+/* $NetBSD: frame.h,v 1.5 2020/08/06 06:49:55 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
