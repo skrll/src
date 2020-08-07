@@ -1,4 +1,4 @@
-/*	$NetBSD: atomic_cas.S,v 1.6 2019/02/20 05:25:12 rin Exp $	*/
+/*	$NetBSD: atomic_cas.S,v 1.7 2020/08/01 09:26:49 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
 #include <machine/asm.h>
 #include "atomic_op_asm.h"
 
-RCSID("$NetBSD: atomic_cas.S,v 1.6 2019/02/20 05:25:12 rin Exp $")
+RCSID("$NetBSD: atomic_cas.S,v 1.7 2020/08/01 09:26:49 skrll Exp $")
 
 	.text
 	.set	noat

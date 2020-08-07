@@ -1,4 +1,4 @@
-/*	$NetBSD: dir.c,v 1.82 2020/07/31 20:57:38 rillig Exp $	*/
+/*	$NetBSD: dir.c,v 1.84 2020/08/03 20:26:09 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -70,14 +70,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: dir.c,v 1.82 2020/07/31 20:57:38 rillig Exp $";
+static char rcsid[] = "$NetBSD: dir.c,v 1.84 2020/08/03 20:26:09 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)dir.c	8.2 (Berkeley) 1/2/94";
 #else
-__RCSID("$NetBSD: dir.c,v 1.82 2020/07/31 20:57:38 rillig Exp $");
+__RCSID("$NetBSD: dir.c,v 1.84 2020/08/03 20:26:09 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -733,6 +733,11 @@ DirExpandCurly(const char *word, const char *brace, Lst path, Lst expansions)
     const char *middle = brace + 1;
     const char *middle_end = closing_brace(middle);
     size_t middle_len = (size_t)(middle_end - middle);
+    const char *prefix;
+    size_t prefix_len;
+    const char *suffix;
+    size_t suffix_len;
+    const char *piece;
 
     if (DEBUG(DIR)) {
 	fprintf(debug_file, "%s: word=\"%s\" middle=\"%.*s\"\n",
@@ -744,14 +749,14 @@ DirExpandCurly(const char *word, const char *brace, Lst path, Lst expansions)
 	return;
     }
 
-    const char *prefix = word;
-    size_t prefix_len = (size_t)(brace - prefix);
-    const char *suffix = middle_end + 1;
-    size_t suffix_len = strlen(suffix);
+    prefix = word;
+    prefix_len = (size_t)(brace - prefix);
+    suffix = middle_end + 1;
+    suffix_len = strlen(suffix);
 
     /* Split the middle into pieces, separated by commas. */
 
-    const char *piece = middle;
+    piece = middle;
     while (piece < middle_end + 1) {
 	const char *piece_end = separator_comma(piece);
 	size_t piece_len = (size_t)(piece_end - piece);
@@ -965,7 +970,7 @@ Dir_Expand(const char *word, Lst path, Lst expansions)
  */
 static char *
 DirLookup(Path *p, const char *name MAKE_ATTR_UNUSED, const char *cp,
-          Boolean hasSlash MAKE_ATTR_UNUSED)
+	  Boolean hasSlash MAKE_ATTR_UNUSED)
 {
     char *file;		/* the current filename to check */
 
@@ -1182,7 +1187,7 @@ Dir_FindFile(const char *name, Lst path)
 	p = (Path *)Lst_Datum(ln);
 	if (p == dotLast) {
 	    hasLastDot = TRUE;
-            if (DEBUG(DIR))
+	    if (DEBUG(DIR))
 		fprintf(debug_file, "[dot last]...");
 	}
     }
@@ -1448,7 +1453,7 @@ Dir_FindHereOrAbove(char *here, char *search_path, char *result, int rlen) {
 
 	struct stat st;
 	char dirbase[MAXPATHLEN + 1], *db_end;
-        char try[MAXPATHLEN + 1], *try_end;
+	char try[MAXPATHLEN + 1], *try_end;
 
 	/* copy out our starting point */
 	snprintf(dirbase, sizeof(dirbase), "%s", here);

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.77 2020/07/31 07:29:21 rillig Exp $
+#	$NetBSD: Makefile,v 1.79 2020/08/03 20:26:09 rillig Exp $
 #	@(#)Makefile	5.2 (Berkeley) 12/28/90
 
 PROG=	make
@@ -73,12 +73,15 @@ COPTS.main.c+=	${GCC_NO_FORMAT_TRUNCATION} ${GCC_NO_STRINGOP_TRUNCATION}
 COPTS.meta.c+=	${GCC_NO_FORMAT_TRUNCATION}
 COPTS.parse.c+=	${GCC_NO_FORMAT_TRUNCATION}
 
+COPTS+=		-Wdeclaration-after-statement
+
 # A simple unit-test driver to help catch regressions
 test: .MAKE
 	cd ${.CURDIR}/unit-tests \
 	&& MAKEFLAGS= ${.MAKE} -r -m / TEST_MAKE=${TEST_MAKE:U${.OBJDIR}/${PROG:T}} ${.TARGET}
 .if ${USE_COVERAGE} == yes
 	gcov ${SRCS}
+	sed -i 's,^\([^:]*\): *[0-9]*:,\1: ,' *.gcov
 .endif
 
 accept: .MAKE

@@ -520,8 +520,8 @@ _C_LABEL(x):
 #if defined(MULTIPROCESSOR)
 #if defined(MIPS64_OCTEON)
 #define	LLSCSYNC	sync 4; sync 4
-#define	SYNC		sync 4		/* aka syncw */
-#define	BDSYNC		sync 4		/* aka syncw */
+#define	SYNC		sync 4		/* sync 4 == syncw - sync all writes */
+#define	BDSYNC		sync 4		/* sync 4 == syncw - sync all writes */
 #else
 #define	LLSCSYNC	/* nothing (something?) */
 #define	SYNC		sync
