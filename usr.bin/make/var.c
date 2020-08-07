@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.413 2020/08/03 21:44:43 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.416 2020/08/06 17:51:21 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,14 +69,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: var.c,v 1.413 2020/08/03 21:44:43 rillig Exp $";
+static char rcsid[] = "$NetBSD: var.c,v 1.416 2020/08/06 17:51:21 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)var.c	8.3 (Berkeley) 3/19/94";
 #else
-__RCSID("$NetBSD: var.c,v 1.413 2020/08/03 21:44:43 rillig Exp $");
+__RCSID("$NetBSD: var.c,v 1.416 2020/08/06 17:51:21 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -216,12 +216,15 @@ typedef enum {
     VAR_REEXPORT	= 0x20,	/* Indicate if var needs re-export.
 				 * This would be true if it contains $'s */
     VAR_FROM_CMD	= 0x40	/* Variable came from command line */
-} Var_Flags;
+} VarFlags;
 
 typedef struct Var {
-    char          *name;	/* the variable's name */
+    char          *name;	/* the variable's name; it is allocated for
+				 * environment variables and aliased to the
+				 * Hash_Entry name for all other variables,
+				 * and thus must not be modified */
     Buffer	  val;		/* its value */
-    Var_Flags	  flags;    	/* miscellaneous status flags */
+    VarFlags	  flags;    	/* miscellaneous status flags */
 }  Var;
 
 /*
@@ -420,16 +423,16 @@ VarAdd(const char *name, const char *val, GNode *ctxt)
     Var *v = bmake_malloc(sizeof(Var));
 
     size_t len = val != NULL ? strlen(val) : 0;
-    Hash_Entry *h;
+    Hash_Entry *he;
 
     Buf_InitZ(&v->val, len + 1);
     Buf_AddBytesZ(&v->val, val, len);
 
     v->flags = 0;
 
-    h = Hash_CreateEntry(&ctxt->context, name, NULL);
-    Hash_SetValue(h, v);
-    v->name = h->name;
+    he = Hash_CreateEntry(&ctxt->context, name, NULL);
+    Hash_SetValue(he, v);
+    v->name = he->name;
     VAR_DEBUG_IF(!(ctxt->flags & INTERNAL),
 		 "%s:%s = %s\n", ctxt->name, name, val);
 }
@@ -439,24 +442,24 @@ void
 Var_Delete(const char *name, GNode *ctxt)
 {
     char *name_freeIt = NULL;
-    Hash_Entry *ln;
+    Hash_Entry *he;
 
     if (strchr(name, '$') != NULL)
 	name = name_freeIt = Var_Subst(name, VAR_GLOBAL, VARE_WANTRES);
-    ln = Hash_FindEntry(&ctxt->context, name);
+    he = Hash_FindEntry(&ctxt->context, name);
     VAR_DEBUG("%s:delete %s%s\n",
-	      ctxt->name, name, ln != NULL ? "" : " (not found)");
+	      ctxt->name, name, he != NULL ? "" : " (not found)");
     free(name_freeIt);
 
-    if (ln != NULL) {
-	Var *v = (Var *)Hash_GetValue(ln);
+    if (he != NULL) {
+	Var *v = (Var *)Hash_GetValue(he);
 	if (v->flags & VAR_EXPORTED)
 	    unsetenv(v->name);
 	if (strcmp(MAKE_EXPORTED, v->name) == 0)
 	    var_exportedVars = VAR_EXPORTED_NONE;
-	if (v->name != ln->name)
+	if (v->name != he->name)
 	    free(v->name);
-	Hash_DeleteEntry(&ctxt->context, ln);
+	Hash_DeleteEntry(&ctxt->context, he);
 	Buf_Destroy(&v->val, TRUE);
 	free(v);
     }
@@ -1996,18 +1999,11 @@ ApplyModifier_Defined(const char **pp, ApplyModifiersState *st)
     Buffer buf;			/* Buffer for patterns */
     const char *p;
 
-    VarEvalFlags neflags;
+    VarEvalFlags eflags = st->eflags & ~VARE_WANTRES;
     if (st->eflags & VARE_WANTRES) {
-	Boolean wantres;
-	if (**pp == 'U')
-	    wantres = (st->v->flags & VAR_JUNK) != 0;
-	else
-	    wantres = (st->v->flags & VAR_JUNK) == 0;
-	neflags = st->eflags & ~VARE_WANTRES;
-	if (wantres)
-	    neflags |= VARE_WANTRES;
-    } else
-	neflags = st->eflags;
+	if ((**pp == 'D') == !(st->v->flags & VAR_JUNK))
+	    eflags |= VARE_WANTRES;
+    }
 
     /*
      * Pass through mod looking for 1) escaped delimiters,
@@ -2032,7 +2028,7 @@ ApplyModifier_Defined(const char **pp, ApplyModifiersState *st)
 	    int	    len;
 	    void    *freeIt;
 
-	    cp2 = Var_Parse(p, st->ctxt, neflags, &len, &freeIt);
+	    cp2 = Var_Parse(p, st->ctxt, eflags, &len, &freeIt);
 	    Buf_AddStr(&buf, cp2);
 	    free(freeIt);
 	    p += len;
@@ -2045,7 +2041,7 @@ ApplyModifier_Defined(const char **pp, ApplyModifiersState *st)
 
     if (st->v->flags & VAR_JUNK)
 	st->v->flags |= VAR_KEEP;
-    if (neflags & VARE_WANTRES) {
+    if (eflags & VARE_WANTRES) {
 	st->newVal = Buf_Destroy(&buf, FALSE);
     } else {
 	st->newVal = st->val;
@@ -2140,7 +2136,7 @@ ApplyModifier_Exclam(const char **pp, ApplyModifiersState *st)
 {
     char delim;
     char *cmd;
-    const char *emsg;
+    const char *errfmt;
 
     (*pp)++;
     delim = '!';
@@ -2151,15 +2147,15 @@ ApplyModifier_Exclam(const char **pp, ApplyModifiersState *st)
 	return AMR_CLEANUP;
     }
 
-    emsg = NULL;
+    errfmt = NULL;
     if (st->eflags & VARE_WANTRES)
-	st->newVal = Cmd_Exec(cmd, &emsg);
+	st->newVal = Cmd_Exec(cmd, &errfmt);
     else
 	st->newVal = varNoError;
     free(cmd);
 
-    if (emsg != NULL)
-	Error(emsg, st->val);	/* XXX: why still return AMR_OK? */
+    if (errfmt != NULL)
+	Error(errfmt, st->val);	/* XXX: why still return AMR_OK? */
 
     if (st->v->flags & VAR_JUNK)
 	st->v->flags |= VAR_KEEP;
@@ -2849,10 +2845,10 @@ ApplyModifier_Assign(const char **pp, ApplyModifiersState *st)
 	    Var_Append(st->v->name, val, v_ctxt);
 	    break;
 	case '!': {
-	    const char *emsg;
-	    char *cmd_output = Cmd_Exec(val, &emsg);
-	    if (emsg)
-		Error(emsg, st->val);
+	    const char *errfmt;
+	    char *cmd_output = Cmd_Exec(val, &errfmt);
+	    if (errfmt)
+		Error(errfmt, st->val);
 	    else
 		Var_Set(st->v->name, cmd_output, v_ctxt);
 	    free(cmd_output);
@@ -3220,10 +3216,10 @@ ApplyModifiers(
 	case 's':
 	    if (p[1] == 'h' && (p[2] == st.endc || p[2] == ':')) {
 		if (st.eflags & VARE_WANTRES) {
-		    const char *emsg;
-		    st.newVal = Cmd_Exec(st.val, &emsg);
-		    if (emsg)
-			Error(emsg, st.val);
+		    const char *errfmt;
+		    st.newVal = Cmd_Exec(st.val, &errfmt);
+		    if (errfmt)
+			Error(errfmt, st.val);
 		} else
 		    st.newVal = varNoError;
 		p += 2;
