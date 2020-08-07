@@ -1,4 +1,4 @@
-/* $NetBSD: cpuswitch.S,v 1.23 2020/08/03 05:56:50 ryo Exp $ */
+/* $NetBSD: cpuswitch.S,v 1.24 2020/08/06 06:49:55 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
 #include "opt_ddb.h"
 #include "opt_kasan.h"
 
-RCSID("$NetBSD: cpuswitch.S,v 1.23 2020/08/03 05:56:50 ryo Exp $")
+RCSID("$NetBSD: cpuswitch.S,v 1.24 2020/08/06 06:49:55 ryo Exp $")
 
 	ARMV8_DEFINE_OPTIONS
 
@@ -447,11 +447,7 @@ END(cpu_Debugger)
  */
 ENTRY_NP(cpu_set_onfault)
 	mrs	x3, tpidr_el1
-	ldr	x2, [x3, #CI_CURLWP]	/* x2 = curcpu()->ci_curlwp */
-	ldr	x1, [x2, #L_MD_ONFAULT]
-	str	x1, [x0, #FB_OLD]	/* fb->fb_old = curlwp->l_md.md_onfault */
-	ldr	w1, [x3, #CI_INTR_DEPTH]
-	str	w1, [x0, #FB_IDEPTH]	/* fb->fb_idepth = curcpu()->ci_intr_depth */
+	ldr	x2, [x3, #CI_CURLWP]	/* curlwp = curcpu()->ci_curlwp */
 	str	x0, [x2, #L_MD_ONFAULT] /* l_md.md_onfault = fb */
 
 	stp	x19, x20, [x0, #FB_REG_X19]
@@ -465,20 +461,6 @@ ENTRY_NP(cpu_set_onfault)
 	mov	x0, #0
 	ret
 END(cpu_set_onfault)
-
-/*
- * void cpu_unset_onfault(void)
- */
-ENTRY_NP(cpu_unset_onfault)
-	mrs	x3, tpidr_el1
-	ldr	x2, [x3, #CI_CURLWP]	/* curlwp = curcpu()->ci_curlwp */
-	ldr	x0, [x2, #L_MD_ONFAULT]	/* x0 = curlwp->l_md.md_onfault */
-	cbz	x0, 1f
-	ldr	x0, [x0, #FB_OLD]	/* restore old faultbuf */
-	str	x0, [x2, #L_MD_ONFAULT]
-1:
-	ret
-END(cpu_unset_onfault)
 
 /*
  * setjmp(9)
