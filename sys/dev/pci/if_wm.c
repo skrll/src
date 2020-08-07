@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.683 2020/08/03 10:52:08 msaitoh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.685 2020/08/05 03:17:18 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.683 2020/08/03 10:52:08 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.685 2020/08/05 03:17:18 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -12019,6 +12019,7 @@ wm_tbi_mediainit(struct wm_softc *sc)
 	sc->sc_mii.mii_ifp = ifp;
 	sc->sc_ethercom.ec_mii = &sc->sc_mii;
 
+	ifp->if_baudrate = IF_Gbps(1);
 	if (((sc->sc_type >= WM_T_82575) && (sc->sc_type <= WM_T_I211))
 	    && (sc->sc_mediatype == WM_MEDIATYPE_SERDES)) {
 		ifmedia_init_with_lock(&sc->sc_mii.mii_media, IFM_IMASK,
@@ -12553,6 +12554,7 @@ wm_serdes_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr)
 			break;
 		}
 	}
+	ifp->if_baudrate = ifmedia_baudrate(ifmr->ifm_active);
 	if ((reg & PCS_LSTS_FDX) != 0)
 		ifmr->ifm_active |= IFM_FDX;
 	else
@@ -13947,7 +13949,8 @@ printver:
 	}
 
 	if (have_uid && (wm_nvm_read(sc, NVM_OFF_IMAGE_UID0, 1, &uid0) == 0))
-		aprint_verbose(", Image Unique ID %08x", (uid1 << 16) | uid0);
+		aprint_verbose(", Image Unique ID %08x",
+		    ((uint32_t)uid1 << 16) | uid0);
 }
 
 /*
