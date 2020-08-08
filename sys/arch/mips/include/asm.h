@@ -1,4 +1,4 @@
-/*	$NetBSD: asm.h,v 1.57 2020/07/26 08:08:41 simonb Exp $	*/
+/*	$NetBSD: asm.h,v 1.58 2020/08/06 10:00:20 skrll Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -519,6 +519,7 @@ _C_LABEL(x):
 
 #if defined(MULTIPROCESSOR)
 #if defined(MIPS64_OCTEON)
+				/* early cnMIPS have erratum which means 2 */
 #define	LLSCSYNC	sync 4; sync 4
 #define	SYNC		sync 4		/* sync 4 == syncw - sync all writes */
 #define	BDSYNC		sync 4		/* sync 4 == syncw - sync all writes */

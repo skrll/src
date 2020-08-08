@@ -1,4 +1,4 @@
-/*	$NetBSD: atomic_and.S,v 1.5 2020/08/01 09:26:49 skrll Exp $	*/
+/*	$NetBSD: atomic_and.S,v 1.6 2020/08/06 10:00:21 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
 #include <machine/asm.h>
 #include "atomic_op_asm.h"
 
-RCSID("$NetBSD: atomic_and.S,v 1.5 2020/08/01 09:26:49 skrll Exp $")
+RCSID("$NetBSD: atomic_and.S,v 1.6 2020/08/06 10:00:21 skrll Exp $")
 
 	.text
 	.set	noreorder

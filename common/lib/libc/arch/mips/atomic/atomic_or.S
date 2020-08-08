@@ -1,4 +1,4 @@
-/*	$NetBSD: atomic_or.S,v 1.5 2020/08/01 09:26:49 skrll Exp $	*/
+/*	$NetBSD: atomic_or.S,v 1.6 2020/08/06 10:00:21 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.

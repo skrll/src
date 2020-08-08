@@ -1,4 +1,4 @@
-# $NetBSD: genassym.cf,v 1.28 2020/08/03 06:29:59 ryo Exp $
+# $NetBSD: genassym.cf,v 1.29 2020/08/06 06:49:55 ryo Exp $
 #-
 # Copyright (c) 2014 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -175,8 +175,6 @@ define	FB_REG_X28		offsetof(struct faultbuf, fb_reg[FB_X28])
 define	FB_REG_X29		offsetof(struct faultbuf, fb_reg[FB_X29])
 define	FB_REG_LR		offsetof(struct faultbuf, fb_reg[FB_LR])
 define	FB_REG_SP		offsetof(struct faultbuf, fb_reg[FB_SP])
-define	FB_OLD			offsetof(struct faultbuf, fb_old)
-define	FB_IDEPTH		offsetof(struct faultbuf, fb_idepth)
 define	FB_T_SIZE		roundup(sizeof(struct faultbuf), 16)
 
 define	LBL_X19			LBL_X19
