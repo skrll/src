@@ -6,6 +6,8 @@ __KERNEL_RCSID(0, "$NetBSD: cache_octeon.c,v 1.4 2020/06/06 14:30:44 simonb Exp 
 #include <sys/param.h>
 #include <sys/systm.h>
 
+#include <sys/xcall.h>
+
 #include <mips/locore.h>
 #include <mips/cache.h>
 #include <mips/cache_octeon.h>
@@ -21,6 +23,7 @@ int octeon_cache_debug = 0;
 #define	ICACHE_DEBUG_PRINTF(x)		/* nothing */
 #endif
 
+void octeon_icache_sync_local(void);
 
 static inline void
 mips_synci(vaddr_t va)
@@ -30,12 +33,21 @@ mips_synci(vaddr_t va)
 }
 
 void
-octeon_icache_sync_all(void)
+octeon_icache_sync_local(void)
 {
-
 	ICACHE_DEBUG_PRINTF(("%s\n", __func__));
 	mips_synci(MIPS_KSEG0_START);
 	SYNC;
+}
+
+void
+octeon_icache_sync_all(void)
+{
+	uint64_t where;
+
+	ICACHE_DEBUG_PRINTF(("%s\n", __func__));
+	where = xc_broadcast(0, (xcfunc_t)octeon_icache_sync_local, NULL, NULL);
+	xc_wait(where);
 }
 void
 octeon_icache_sync_range(register_t va, vsize_t size)
@@ -43,8 +55,7 @@ octeon_icache_sync_range(register_t va, vsize_t size)
 
 	ICACHE_DEBUG_PRINTF(("%s: va=%#"PRIxREGISTER", size=%#"PRIxVSIZE"\n",
 	    __func__, va, size));
-	mips_synci(MIPS_KSEG0_START);
-	SYNC;
+	octeon_icache_sync_all();
 }
 
 void
@@ -53,8 +64,7 @@ octeon_icache_sync_range_index(vaddr_t va, vsize_t size)
 
 	ICACHE_DEBUG_PRINTF(("%s: va=%#"PRIxVADDR", size=%#"PRIxVSIZE"\n",
 	    __func__, va, size));
-	mips_synci(MIPS_KSEG0_START);
-	SYNC;
+	octeon_icache_sync_all();
 }
 
 void
