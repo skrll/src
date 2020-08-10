@@ -450,14 +450,14 @@ ENTRY_NP(cpu_set_onfault)
 	ldr	x2, [x3, #CI_CURLWP]	/* curlwp = curcpu()->ci_curlwp */
 	str	x0, [x2, #L_MD_ONFAULT] /* l_md.md_onfault = fb */
 
-	stp	x19, x20, [x0, #FB_REG_X19]
-	stp	x21, x22, [x0, #FB_REG_X21]
-	stp	x23, x24, [x0, #FB_REG_X23]
-	stp	x25, x26, [x0, #FB_REG_X25]
-	stp	x27, x28, [x0, #FB_REG_X27]
-	stp	x29, x30, [x0, #FB_REG_X29]
+	stp	x19, x20, [x0, #(FB_X19 * 8)]
+	stp	x21, x22, [x0, #(FB_X21 * 8)]
+	stp	x23, x24, [x0, #(FB_X23 * 8)]
+	stp	x25, x26, [x0, #(FB_X25 * 8)]
+	stp	x27, x28, [x0, #(FB_X27 * 8)]
+	stp	x29, x30, [x0, #(FB_X29 * 8)]
 	mov	x1, sp
-	str	x1, [x0, #FB_REG_SP]
+	str	x1, [x0, #(FB_SP * 8)]
 	mov	x0, #0
 	ret
 END(cpu_set_onfault)
