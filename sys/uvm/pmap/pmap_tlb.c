@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_tlb.c,v 1.33 2020/04/14 05:43:57 skrll Exp $	*/
+/*	$NetBSD: pmap_tlb.c,v 1.34 2020/08/09 06:26:49 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap_tlb.c,v 1.33 2020/04/14 05:43:57 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_tlb.c,v 1.34 2020/08/09 06:26:49 skrll Exp $");
 
 /*
  * Manages address spaces in a TLB.

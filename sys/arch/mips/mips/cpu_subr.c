@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_subr.c,v 1.56 2020/07/21 06:01:10 simonb Exp $	*/
+/*	$NetBSD: cpu_subr.c,v 1.57 2020/08/09 06:26:49 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2010, 2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.56 2020/07/21 06:01:10 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.57 2020/08/09 06:26:49 skrll Exp $");
 
 #include "opt_cputype.h"
 #include "opt_ddb.h"
