@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.196 2020/07/28 14:49:55 fcambus Exp $	*/
+/*	$NetBSD: cpu.c,v 1.198 2020/08/09 15:32:44 christos Exp $	*/
 
 /*
  * Copyright (c) 2000-2020 NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.196 2020/07/28 14:49:55 fcambus Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.198 2020/08/09 15:32:44 christos Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */

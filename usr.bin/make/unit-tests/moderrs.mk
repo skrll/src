@@ -1,4 +1,4 @@
-# $Id: moderrs.mk,v 1.11 2020/07/31 15:16:05 rillig Exp $
+# $Id: moderrs.mk,v 1.14 2020/08/09 15:15:29 rillig Exp $
 #
 # various modifier error tests
 
@@ -16,6 +16,7 @@ all:	modwords
 all:	modexclam
 all:	mod-subst-delimiter
 all:	mod-regex-delimiter
+all:	mod-regex-undefined-subexpression
 all:	mod-ts-parse
 all:	mod-t-parse
 all:	mod-ifelse-parse
@@ -40,7 +41,7 @@ vartermV:
 	@echo VAR:${MOD_TERM},=${VAR:${MOD_S}
 
 modtermV:
-	@echo "Expect: Unclosed substitution for VAR (, missing)"
+	@echo "Expect: Unfinished modifier for VAR (',' missing)"
 	-@echo "VAR:${MOD_TERM}=${VAR:${MOD_TERM}}"
 
 modloop:
@@ -123,6 +124,23 @@ mod-regex-delimiter:
 	@echo ${VAR:C,from,to
 	@echo ${VAR:C,from,to,
 	@echo ${VAR:C,from,to,}
+
+# In regular expressions with alternatives, not all capturing groups are
+# always set; some may be missing.  Warn about these.
+#
+# Since there is no way to turn off this warning, the combination of
+# alternative matches and capturing groups is not widely used.
+#
+# A newly added modifier 'U' such as in :C,(a.)|(b.),\1\2,U might be added
+# for treating undefined capturing groups as empty, but that would create a
+# syntactical ambiguity since the :S and :C modifiers are open-ended (see
+# mod-subst-chain).  Luckily the modifier :U does not make sense after :C,
+# therefore this case does not happen in practice.
+# The sub-modifier for the :C modifier would have to be chosen wisely.
+mod-regex-undefined-subexpression:
+	@echo $@:
+	@echo ${FIB:C,1(.*),one\1,}		# all ok
+	@echo ${FIB:C,1(.*)|2(.*),(\1)+(\2),:Q}	# no match for subexpression
 
 mod-ts-parse:
 	@echo $@:

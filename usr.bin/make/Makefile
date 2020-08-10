@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.82 2020/08/07 05:13:04 rillig Exp $
+#	$NetBSD: Makefile,v 1.84 2020/08/09 05:51:04 rillig Exp $
 #	@(#)Makefile	5.2 (Berkeley) 12/28/90
 
 PROG=	make
@@ -7,6 +7,7 @@ SRCS+=  buf.c
 SRCS+=  compat.c
 SRCS+=  cond.c
 SRCS+=  dir.c
+SRCS+=  enum.c
 SRCS+=  for.c
 SRCS+=  hash.c
 SRCS+=  job.c
@@ -26,6 +27,7 @@ SRCS+=  util.c
 HDRS=   buf.h
 HDRS+=  config.h
 HDRS+=  dir.h
+HDRS+=  enum.h
 HDRS+=  hash.h
 HDRS+=  job.h
 HDRS+=  lst.h
@@ -52,6 +54,18 @@ USE_UBSAN?=	no
 .if ${USE_UBSAN} == "yes"
 COPTS+=		-fsanitize=undefined
 LDADD+=		-fsanitize=undefined
+.endif
+
+# Whether to compile with GCC 9 from pkgsrc, during development.
+USE_GCC9?=	no
+.if ${USE_GCC9} == "yes"
+# CC is set further down in this file
+COPTS+=		-Wno-attributes	# for abs and labs
+COPTS.arch.c+=	-Wno-error=format-truncation
+COPTS.dir.c+=	-Wno-error=format-truncation
+COPTS.main.c+=	-Wno-error=format-truncation
+COPTS.meta.c+=	-Wno-error=format-truncation
+COPTS.parse.c+=	-Wno-error=format-truncation
 .endif
 
 USE_META?=	yes
@@ -93,6 +107,10 @@ COPTS.var.c+=	-Wno-cast-qual
 COPTS.job.c+=	-Wno-format-nonliteral
 COPTS.parse.c+=	-Wno-format-nonliteral
 COPTS.var.c+=	-Wno-format-nonliteral
+
+.if ${USE_GCC9} == "yes"
+CC=		/usr/pkg/gcc9/bin/gcc
+.endif
 
 .if defined(TOOLDIR)
 # This is a native NetBSD build, use libutil rather than the local emalloc etc.
