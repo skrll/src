@@ -1,4 +1,4 @@
-/*	$NetBSD: suff.c,v 1.93 2020/08/01 14:47:49 rillig Exp $	*/
+/*	$NetBSD: suff.c,v 1.95 2020/08/10 19:53:19 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,14 +69,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: suff.c,v 1.93 2020/08/01 14:47:49 rillig Exp $";
+static char rcsid[] = "$NetBSD: suff.c,v 1.95 2020/08/10 19:53:19 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)suff.c	8.4 (Berkeley) 3/21/94";
 #else
-__RCSID("$NetBSD: suff.c,v 1.93 2020/08/01 14:47:49 rillig Exp $");
+__RCSID("$NetBSD: suff.c,v 1.95 2020/08/10 19:53:19 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -1222,7 +1222,7 @@ SuffAddSrc(void *sp, void *lsp)
 #endif
     }
     s2 = bmake_malloc(sizeof(Src));
-    s2->file = 	    str_concat(targ->pref, s->name, 0);
+    s2->file = 	    str_concat2(targ->pref, s->name);
     s2->pref =	    targ->pref;
     s2->parent =    targ;
     s2->node = 	    NULL;
@@ -1821,7 +1821,7 @@ SuffApplyTransform(GNode *tGn, GNode *sGn, Suff *t, Suff *s)
     /*
      * Locate the transformation rule itself
      */
-    tname = str_concat(s->name, t->name, 0);
+    tname = str_concat2(s->name, t->name);
     ln = Lst_Find(transforms, tname, SuffGNHasNameP);
     free(tname);
 
