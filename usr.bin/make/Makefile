@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.84 2020/08/09 05:51:04 rillig Exp $
+#	$NetBSD: Makefile,v 1.86 2020/08/10 18:40:24 rillig Exp $
 #	@(#)Makefile	5.2 (Berkeley) 12/28/90
 
 PROG=	make
@@ -46,8 +46,8 @@ USE_COVERAGE?=	no		# works only with gcc; clang9 fails to link
 .if ${USE_COVERAGE} == "yes"
 COPTS+=		--coverage -O0 -ggdb
 LDADD+=		--coverage
-CLEANFILES+=	${SRCS:.c=.gcda} ${SRCS:.c=.gcno} ${SRCS:=.gcov}
 .endif
+CLEANFILES+=	*.gcda *.gcno *.gcov
 
 # Whether to compile using the Undefined Behavior Sanitizer (GCC, Clang).
 USE_UBSAN?=	no
@@ -132,7 +132,7 @@ test: .MAKE
 	cd ${.CURDIR}/unit-tests \
 	&& MAKEFLAGS= ${.MAKE} -r -m / TEST_MAKE=${TEST_MAKE:U${.OBJDIR}/${PROG:T}} ${.TARGET}
 .if ${USE_COVERAGE} == yes
-	gcov ${SRCS}
+	gcov ${GCOV_OPTS} ${SRCS}
 	sed -i 's,^\([^:]*\): *[0-9]*:,\1: ,' *.gcov
 .endif
 
