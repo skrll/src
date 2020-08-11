@@ -1,4 +1,4 @@
-# $NetBSD: vardebug.mk,v 1.1 2020/07/25 21:19:29 rillig Exp $
+# $NetBSD: vardebug.mk,v 1.3 2020/08/08 14:28:46 rillig Exp $
 #
 # Demonstrates the debugging output for var.c.
 
@@ -33,7 +33,25 @@ VAR+=		3
 .if ${VAR:tu:tl:Q}		# ApplyModifiers
 .endif
 
+# ApplyModifiers, "Got ..."
+.if ${:Uvalue:${:UM*e}:Mvalu[e]}
+.endif
+
 .undef ${:UVAR}			# Var_Delete
+
+# When ApplyModifiers results in an error, this appears in the debug log
+# as "is error", without surrounding quotes.
+.if ${:Uvariable:unknown}
+.endif
+
+# XXX: The error message is "Malformed conditional", which is wrong.
+# The condition is syntactically fine, it just contains an undefined variable.
+#
+# There is a specialized error message for "Undefined variable", but as of
+# 2020-08-08, that is not covered by any unit tests.  It might even be
+# unreachable.
+.if ${UNDEFINED}
+.endif
 
 RELEVANT=	no
 

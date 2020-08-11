@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.85 2020/08/06 16:23:52 sjg Exp $
+# $NetBSD: Makefile,v 1.91 2020/08/09 16:32:28 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -52,12 +52,14 @@ TESTS+=		# escape	# broken by reverting POSIX changes
 TESTS+=		export
 TESTS+=		export-all
 TESTS+=		export-env
+TESTS+=		export-variants
 TESTS+=		forloop
 TESTS+=		forsubst
 TESTS+=		hash
-TESTS+=		# impsrc	# broken by reverting POSIX changes
+TESTS+=		impsrc
 TESTS+=		include-main
 TESTS+=		lint
+TESTS+=		make-exported
 TESTS+=		misc
 TESTS+=		moderrs
 TESTS+=		modmatch
@@ -66,17 +68,18 @@ TESTS+=		modorder
 TESTS+=		modts
 TESTS+=		modword
 TESTS+=		order
-TESTS+=		# phony-end	# broken by reverting POSIX changes
+TESTS+=		phony-end
 TESTS+=		posix
 TESTS+=		# posix1	# broken by reverting POSIX changes
 TESTS+=		qequals
 TESTS+=		recursive
-TESTS+=		# suffixes	# broken by reverting POSIX changes
+TESTS+=		# suffixes	# runs into an endless loop (try -dA)
 TESTS+=		sunshcmd
 TESTS+=		sysv
 TESTS+=		ternary
 TESTS+=		unexport
 TESTS+=		unexport-env
+TESTS+=		use-inference
 TESTS+=		varcmd
 TESTS+=		vardebug
 TESTS+=		varfind
@@ -90,7 +93,9 @@ TESTS+=		varshell
 ENV.counter=		-i
 ENV.envfirst=		FROM_ENV=value-from-env
 ENV.export=		-i PATH=${PATH:Q}
+ENV.export-variants=	-i PATH=${PATH:Q}
 ENV.lint=		-i
+ENV.make-exported=	-i PATH=${PATH:Q}
 ENV.recursive=		-i
 ENV.varmisc=		FROM_ENV=env
 ENV.varmisc+=		FROM_ENV_BEFORE=env
@@ -116,6 +121,10 @@ SED_CMDS.varshell+=	-e '/command/s,No such.*,not found,'
 # Some tests need an additional round of postprocessing.
 POSTPROC.counter=	${TOOL_SED} -n -e '/:RELEVANT = yes/,/:RELEVANT = no/p'
 POSTPROC.vardebug=	${TOOL_SED} -n -e '/:RELEVANT = yes/,/:RELEVANT = no/p'
+
+export-all.rawout: export.mk
+unexport.rawout: export.mk
+unexport-env.rawout: export.mk
 
 # End of the configuration section.
 

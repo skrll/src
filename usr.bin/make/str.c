@@ -1,4 +1,4 @@
-/*	$NetBSD: str.c,v 1.55 2020/08/03 20:26:09 rillig Exp $	*/
+/*	$NetBSD: str.c,v 1.59 2020/08/10 19:53:19 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,56 +69,43 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: str.c,v 1.55 2020/08/03 20:26:09 rillig Exp $";
+static char rcsid[] = "$NetBSD: str.c,v 1.59 2020/08/10 19:53:19 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char     sccsid[] = "@(#)str.c	5.8 (Berkeley) 6/1/90";
 #else
-__RCSID("$NetBSD: str.c,v 1.55 2020/08/03 20:26:09 rillig Exp $");
+__RCSID("$NetBSD: str.c,v 1.59 2020/08/10 19:53:19 rillig Exp $");
 #endif
 #endif				/* not lint */
 #endif
 
 #include "make.h"
 
-/*-
- * str_concat --
- *	concatenate the two strings, inserting a space or slash between them,
- *	freeing them if requested.
- *
- * returns --
- *	the resulting string in allocated space.
- */
+/* Return the concatenation of s1 and s2, freshly allocated. */
 char *
-str_concat(const char *s1, const char *s2, int flags)
+str_concat2(const char *s1, const char *s2)
 {
-	int len1, len2;
-	char *result;
-
-	/* get the length of both strings */
-	len1 = strlen(s1);
-	len2 = strlen(s2);
-
-	/* allocate length plus separator plus EOS */
-	result = bmake_malloc((unsigned int)(len1 + len2 + 2));
-
-	/* copy first string into place */
+	size_t len1 = strlen(s1);
+	size_t len2 = strlen(s2);
+	char *result = bmake_malloc(len1 + len2 + 1);
 	memcpy(result, s1, len1);
-
-	/* add separator character */
-	if (flags & STR_ADDSPACE) {
-		result[len1] = ' ';
-		++len1;
-	} else if (flags & STR_ADDSLASH) {
-		result[len1] = '/';
-		++len1;
-	}
-
-	/* copy second string plus EOS into place */
 	memcpy(result + len1, s2, len2 + 1);
+	return result;
+}
 
+/* Return the concatenation of s1, s2 and s3, freshly allocated. */
+char *
+str_concat3(const char *s1, const char *s2, const char *s3)
+{
+	size_t len1 = strlen(s1);
+	size_t len2 = strlen(s2);
+	size_t len3 = strlen(s3);
+	char *result = bmake_malloc(len1 + len2 + len3 + 1);
+	memcpy(result, s1, len1);
+	memcpy(result + len1, s2, len2);
+	memcpy(result + len1 + len2, s3, len3 + 1);
 	return result;
 }
 
@@ -140,16 +127,16 @@ str_concat(const char *s1, const char *s2, int flags)
  */
 char **
 brk_string(const char *str, int *out_words_len, Boolean expand,
-	char **out_words_buf)
+	   char **out_words_buf)
 {
-    	size_t str_len;
-    	char *words_buf;
-    	int words_cap;
-    	char **words;
-    	int words_len;
-    	char inquote;
-    	char *word_start;
-    	char *word_end;
+	size_t str_len;
+	char *words_buf;
+	int words_cap;
+	char **words;
+	int words_len;
+	char inquote;
+	char *word_start;
+	char *word_end;
 	const char *str_p;
 
 	/* skip leading space chars. */
@@ -173,7 +160,7 @@ brk_string(const char *str, int *out_words_len, Boolean expand,
 	word_end = words_buf;
 	for (str_p = str;; ++str_p) {
 		char ch = *str_p;
-		switch(ch) {
+		switch (ch) {
 		case '"':
 		case '\'':
 			if (inquote) {
@@ -181,9 +168,8 @@ brk_string(const char *str, int *out_words_len, Boolean expand,
 					inquote = '\0';
 				else
 					break;
-			}
-			else {
-				inquote = (char) ch;
+			} else {
+				inquote = (char)ch;
 				/* Don't miss "" or '' */
 				if (word_start == NULL && str_p[1] == inquote) {
 					if (!expand) {
@@ -216,13 +202,14 @@ brk_string(const char *str, int *out_words_len, Boolean expand,
 			 * space and save off a pointer.
 			 */
 			if (word_start == NULL)
-			    goto done;
+				goto done;
 
 			*word_end++ = '\0';
 			if (words_len == words_cap) {
+				size_t new_size;
 				words_cap *= 2;		/* ramp up fast */
-				words = (char **)bmake_realloc(words,
-				    (words_cap + 1) * sizeof(char *));
+				new_size = (words_cap + 1) * sizeof(char *);
+				words = bmake_realloc(words, new_size);
 			}
 			words[words_len++] = word_start;
 			word_start = NULL;
@@ -277,7 +264,8 @@ brk_string(const char *str, int *out_words_len, Boolean expand,
 			word_start = word_end;
 		*word_end++ = ch;
 	}
-done:	words[words_len] = NULL;
+done:
+	words[words_len] = NULL;
 	*out_words_len = words_len;
 	*out_words_buf = words_buf;
 	return words;

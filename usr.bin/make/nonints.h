@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.89 2020/08/01 18:02:37 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.93 2020/08/10 19:53:19 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -134,7 +134,8 @@ void Parse_SetInput(const char *, int, int, char *(*)(void *, size_t *), void *)
 Lst Parse_MainName(void);
 
 /* str.c */
-char *str_concat(const char *, const char *, int);
+char *str_concat2(const char *, const char *);
+char *str_concat3(const char *, const char *, const char *);
 char **brk_string(const char *, int *, Boolean, char **);
 char *Str_FindSubstring(const char *, const char *);
 Boolean Str_Match(const char *, const char *);
@@ -200,8 +201,8 @@ void Var_End(void);
 void Var_Stats(void);
 void Var_Dump(GNode *);
 void Var_ExportVars(void);
-void Var_Export(char *, int);
-void Var_UnExport(char *);
+void Var_Export(const char *, Boolean);
+void Var_UnExport(const char *);
 
 /* util.c */
 void (*bmake_signal(int, void (*)(int)))(int);

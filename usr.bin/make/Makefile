@@ -1,24 +1,71 @@
-#	$NetBSD: Makefile,v 1.81 2020/08/06 05:32:26 rillig Exp $
+#	$NetBSD: Makefile,v 1.86 2020/08/10 18:40:24 rillig Exp $
 #	@(#)Makefile	5.2 (Berkeley) 12/28/90
 
 PROG=	make
-SRCS=	arch.c buf.c compat.c cond.c dir.c for.c hash.c job.c lst.c main.c
-SRCS+=	make.c make_malloc.c metachar.c parse.c
-SRCS+=	str.c strlist.c suff.c targ.c trace.c var.c util.c
+SRCS=	arch.c
+SRCS+=  buf.c
+SRCS+=  compat.c
+SRCS+=  cond.c
+SRCS+=  dir.c
+SRCS+=  enum.c
+SRCS+=  for.c
+SRCS+=  hash.c
+SRCS+=  job.c
+SRCS+=  lst.c
+SRCS+=  main.c
+SRCS+=	make.c
+SRCS+=  make_malloc.c
+SRCS+=  metachar.c
+SRCS+=  parse.c
+SRCS+=	str.c
+SRCS+=  strlist.c
+SRCS+=  suff.c
+SRCS+=  targ.c
+SRCS+=  trace.c
+SRCS+=  var.c
+SRCS+=  util.c
+HDRS=   buf.h
+HDRS+=  config.h
+HDRS+=  dir.h
+HDRS+=  enum.h
+HDRS+=  hash.h
+HDRS+=  job.h
+HDRS+=  lst.h
+HDRS+=  make.h
+HDRS+=  make_malloc.h
+HDRS+=  meta.h
+HDRS+=  metachar.h
+HDRS+=  nonints.h
+HDRS+=  pathnames.h
+HDRS+=  sprite.h
+HDRS+=  strlist.h
+HDRS+=  trace.h
 
 # Whether to generate a coverage report after running the tests.
 USE_COVERAGE?=	no		# works only with gcc; clang9 fails to link
 .if ${USE_COVERAGE} == "yes"
 COPTS+=		--coverage -O0 -ggdb
 LDADD+=		--coverage
-CLEANFILES+=	${SRCS:.c=.gcda} ${SRCS:.c=.gcno} ${SRCS:=.gcov}
 .endif
+CLEANFILES+=	*.gcda *.gcno *.gcov
 
 # Whether to compile using the Undefined Behavior Sanitizer (GCC, Clang).
 USE_UBSAN?=	no
 .if ${USE_UBSAN} == "yes"
 COPTS+=		-fsanitize=undefined
 LDADD+=		-fsanitize=undefined
+.endif
+
+# Whether to compile with GCC 9 from pkgsrc, during development.
+USE_GCC9?=	no
+.if ${USE_GCC9} == "yes"
+# CC is set further down in this file
+COPTS+=		-Wno-attributes	# for abs and labs
+COPTS.arch.c+=	-Wno-error=format-truncation
+COPTS.dir.c+=	-Wno-error=format-truncation
+COPTS.main.c+=	-Wno-error=format-truncation
+COPTS.meta.c+=	-Wno-error=format-truncation
+COPTS.parse.c+=	-Wno-error=format-truncation
 .endif
 
 USE_META?=	yes
@@ -50,8 +97,7 @@ SUBDIR.roff+=	PSD.doc
 SUBDIR+=	unit-tests
 .endif
 
-${SRCS:M*.c:.c=.o}: buf.h config.h dir.h hash.h job.h lst.h make.h make_malloc.h
-${SRCS:M*.c:.c=.o}: meta.h metachar.h nonints.h pathnames.h sprite.h strlist.h trace.h
+${SRCS:M*.c:.c=.o}: ${HDRS}
 
 .include <bsd.prog.mk>
 .include <bsd.subdir.mk>
@@ -61,6 +107,10 @@ COPTS.var.c+=	-Wno-cast-qual
 COPTS.job.c+=	-Wno-format-nonliteral
 COPTS.parse.c+=	-Wno-format-nonliteral
 COPTS.var.c+=	-Wno-format-nonliteral
+
+.if ${USE_GCC9} == "yes"
+CC=		/usr/pkg/gcc9/bin/gcc
+.endif
 
 .if defined(TOOLDIR)
 # This is a native NetBSD build, use libutil rather than the local emalloc etc.
@@ -82,7 +132,7 @@ test: .MAKE
 	cd ${.CURDIR}/unit-tests \
 	&& MAKEFLAGS= ${.MAKE} -r -m / TEST_MAKE=${TEST_MAKE:U${.OBJDIR}/${PROG:T}} ${.TARGET}
 .if ${USE_COVERAGE} == yes
-	gcov ${SRCS}
+	gcov ${GCOV_OPTS} ${SRCS}
 	sed -i 's,^\([^:]*\): *[0-9]*:,\1: ,' *.gcov
 .endif
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.296 2020/08/03 20:26:09 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.303 2020/08/10 19:53:19 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,7 +69,7 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: main.c,v 1.296 2020/08/03 20:26:09 rillig Exp $";
+static char rcsid[] = "$NetBSD: main.c,v 1.303 2020/08/10 19:53:19 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
@@ -81,7 +81,7 @@ __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993\
 #if 0
 static char sccsid[] = "@(#)main.c	8.3 (Berkeley) 3/19/94";
 #else
-__RCSID("$NetBSD: main.c,v 1.296 2020/08/03 20:26:09 rillig Exp $");
+__RCSID("$NetBSD: main.c,v 1.303 2020/08/10 19:53:19 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -124,13 +124,13 @@ __RCSID("$NetBSD: main.c,v 1.296 2020/08/03 20:26:09 rillig Exp $");
 #include <sys/utsname.h>
 #include <sys/wait.h>
 
+#include <ctype.h>
 #include <errno.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <ctype.h>
 
 #include "make.h"
 #include "hash.h"
@@ -705,7 +705,7 @@ Main_ParseArgLine(const char *line)
 	if (!*line)
 		return;
 
-	buf = str_concat(argv0, line, STR_ADDSPACE);
+	buf = str_concat3(argv0, " ", line);
 	free(p1);
 
 	argv = brk_string(buf, &argc, TRUE, &args);
@@ -1582,7 +1582,7 @@ found:
 /*-
  * Cmd_Exec --
  *	Execute the command in cmd, and return the output of that command
- *	in a string.
+ *	in a string.  In the output, newlines are replaced with spaces.
  *
  * Results:
  *	A string containing the output of the command, or the empty string.
@@ -1599,12 +1599,13 @@ Cmd_Exec(const char *cmd, const char **errfmt)
     int 	fds[2];	    	/* Pipe streams */
     int 	cpid;	    	/* Child PID */
     int 	pid;	    	/* PID from wait() */
-    char	*res;		/* result */
     int		status;		/* command exit status */
     Buffer	buf;		/* buffer to store the result */
+    ssize_t	bytes_read;
+    char	*res;		/* result */
+    size_t	res_len;
     char	*cp;
     int		savederr;	/* saved errno */
-    ssize_t	cc;		/* bytes read, or -1 */
 
     *errfmt = NULL;
 
@@ -1661,17 +1662,16 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 	(void)close(fds[1]);
 
 	savederr = 0;
-	Buf_InitZ(&buf, 0);
+	Buf_Init(&buf, 0);
 
-	/* XXX: split variable cc into 2 */
 	do {
 	    char   result[BUFSIZ];
-	    cc = read(fds[0], result, sizeof(result));
-	    if (cc > 0)
-		Buf_AddBytesZ(&buf, result, (size_t)cc);
+	    bytes_read = read(fds[0], result, sizeof(result));
+	    if (bytes_read > 0)
+		Buf_AddBytes(&buf, result, (size_t)bytes_read);
 	}
-	while (cc > 0 || (cc == -1 && errno == EINTR));
-	if (cc == -1)
+	while (bytes_read > 0 || (bytes_read == -1 && errno == EINTR));
+	if (bytes_read == -1)
 	    savederr = errno;
 
 	/*
@@ -1686,7 +1686,7 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 	    JobReapChild(pid, status, FALSE);
 	    continue;
 	}
-	cc = (/* XXX */ssize_t)Buf_Size(&buf);
+	res_len = Buf_Size(&buf);
 	res = Buf_Destroy(&buf, FALSE);
 
 	if (savederr != 0)
@@ -1697,25 +1697,12 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 	else if (WEXITSTATUS(status) != 0)
 	    *errfmt = "\"%s\" returned non-zero status";
 
-	/*
-	 * Null-terminate the result, convert newlines to spaces and
-	 * install it in the variable.
-	 */
-	res[cc] = '\0';
-	cp = &res[cc];
-
-	if (cc > 0 && *--cp == '\n') {
-	    /*
-	     * A final newline is just stripped
-	     */
-	    *cp-- = '\0';
-	}
-	while (cp >= res) {
-	    if (*cp == '\n') {
+	/* Convert newlines to spaces.  A final newline is just stripped */
+	if (res_len > 0 && res[res_len - 1] == '\n')
+	    res[res_len - 1] = '\0';
+	for (cp = res; *cp != '\0'; cp++)
+	    if (*cp == '\n')
 		*cp = ' ';
-	    }
-	    cp--;
-	}
 	break;
     }
     return res;
