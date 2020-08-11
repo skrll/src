@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.417 2020/07/10 12:25:09 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.419 2020/08/10 05:40:21 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -192,7 +192,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.417 2020/07/10 12:25:09 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.419 2020/08/10 05:40:21 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -5210,7 +5210,6 @@ pmap_remove_all(pmap_t pm)
 	KASSERT(pm != pmap_kernel());
 
 	kpreempt_disable();
-
 	/*
 	 * The vmspace described by this pmap is about to be torn down.
 	 * Until pmap_update() is called, UVM will only make calls
