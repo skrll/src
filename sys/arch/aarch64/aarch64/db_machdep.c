@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.c,v 1.25 2020/07/02 11:10:48 jmcneill Exp $ */
+/* $NetBSD: db_machdep.c,v 1.26 2020/08/12 13:19:35 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.25 2020/07/02 11:10:48 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.26 2020/08/12 13:19:35 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd32.h"

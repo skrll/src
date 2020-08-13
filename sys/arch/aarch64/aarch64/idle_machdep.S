@@ -1,4 +1,4 @@
-/* $NetBSD: idle_machdep.S,v 1.5 2019/01/27 04:48:09 dholland Exp $ */
+/* $NetBSD: idle_machdep.S,v 1.6 2020/08/12 13:19:35 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 #include "opt_arm_intr_impl.h"
 #include "opt_ddb.h"
 
-RCSID("$NetBSD: idle_machdep.S,v 1.5 2019/01/27 04:48:09 dholland Exp $");
+RCSID("$NetBSD: idle_machdep.S,v 1.6 2020/08/12 13:19:35 skrll Exp $");
 
 #ifdef ARM_INTR_IMPL
 #include ARM_INTR_IMPL

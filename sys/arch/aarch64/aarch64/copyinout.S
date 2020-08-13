@@ -1,4 +1,4 @@
-/* $NetBSD: copyinout.S,v 1.14 2020/08/06 06:49:55 ryo Exp $ */
+/* $NetBSD: copyinout.S,v 1.15 2020/08/12 13:19:35 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -33,7 +33,7 @@
 #include <aarch64/asm.h>
 #include "assym.h"
 
-RCSID("$NetBSD: copyinout.S,v 1.14 2020/08/06 06:49:55 ryo Exp $");
+RCSID("$NetBSD: copyinout.S,v 1.15 2020/08/12 13:19:35 skrll Exp $");
 
 #ifdef ARMV81_PAN
 #define PAN_ENABLE	\

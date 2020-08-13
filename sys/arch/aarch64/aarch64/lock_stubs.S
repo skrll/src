@@ -1,4 +1,4 @@
-/*	$NetBSD$	*/
+/*	$NetBSD: lock_stubs.S,v 1.1 2020/08/12 13:28:46 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2014, 2020 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 
 #include "assym.h"
 
-RCSID("$NetBSD$")
+RCSID("$NetBSD: lock_stubs.S,v 1.1 2020/08/12 13:28:46 skrll Exp $")
 
 #ifndef LOCKDEBUG
 /*

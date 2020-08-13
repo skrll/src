@@ -1,4 +1,4 @@
-/* $NetBSD: atomic_inc_32.S,v 1.1 2014/08/10 05:47:35 matt Exp $ */
+/* $NetBSD: atomic_inc_32.S,v 1.2 2020/08/12 12:59:57 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.

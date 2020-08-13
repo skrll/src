@@ -1,4 +1,4 @@
-/*	$NetBSD: vectors.S,v 1.17 2020/05/23 18:08:59 ryo Exp $	*/
+/*	$NetBSD: vectors.S,v 1.18 2020/08/12 13:19:35 skrll Exp $	*/
 
 #include <aarch64/asm.h>
 #include "assym.h"

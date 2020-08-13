@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.25 2020/07/01 08:01:07 ryo Exp $ */
+/* $NetBSD: cpu.h,v 1.26 2020/08/12 13:19:35 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014, 2020 The NetBSD Foundation, Inc.
