@@ -504,26 +504,6 @@ data_abort_handler(trapframe_t *tf)
 	if (__predict_true(error == 0)) {
 		if (user)
 			uvm_grow(l->l_proc, va); /* Record any stack growth */
-#if 0
-		bool pfail = false;
-
-		x86_disable_intr();
-
-		l->l_nopreempt--;
-		if (l->l_nopreempt > 0 || !l->l_dopreempt ||
-		    pfail) {
-			return;
-		}
-
-		x86_enable_intr();
-
-		/*
-		 * If preemption fails for some reason,
-		 * don't retry it.  The conditions won't
-		 * change under our nose.
-		 */
-		pfail = kpreempt(0);
-#endif
 		UVMHIST_LOG(maphist, " <- uvm", 0, 0, 0, 0);
 		goto out;
 	}
