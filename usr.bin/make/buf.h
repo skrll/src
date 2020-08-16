@@ -1,4 +1,4 @@
-/*	$NetBSD: buf.h,v 1.23 2020/08/08 18:54:04 rillig Exp $	*/
+/*	$NetBSD: buf.h,v 1.25 2020/08/13 04:25:09 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -74,7 +74,7 @@
 
 /*-
  * buf.h --
- *	Header for users of the buf library.
+ *	Automatically growing null-terminated buffer of characters.
  */
 
 #ifndef MAKE_BUF_H
@@ -82,12 +82,10 @@
 
 #include <stddef.h>
 
-typedef char Byte;
-
 typedef struct Buffer {
     size_t size;	/* Current size of the buffer */
     size_t count;	/* Number of bytes in buffer */
-    Byte *buffer;	/* The buffer itself (zero terminated) */
+    char *buffer;	/* The buffer itself (zero terminated) */
 } Buffer;
 
 /* If we aren't on NetBSD, __predict_false() might not be defined. */
@@ -95,30 +93,35 @@ typedef struct Buffer {
 #define __predict_false(x) (x)
 #endif
 
-/* Buf_AddByte adds a single byte to a buffer. */
-#define	Buf_AddByte(bp, byte) do { \
-	size_t _count = ++(bp)->count; \
-	Byte *_ptr; \
-	if (__predict_false(_count >= (bp)->size)) \
-		Buf_Expand_1(bp); \
-	_ptr = (bp)->buffer + _count; \
-	_ptr[-1] = (byte); \
-	_ptr[0] = 0; \
-    } while (0)
-
-#define BUF_ERROR 256
-
-#define Buf_Size(bp) ((bp)->count)
-
 void Buf_Expand_1(Buffer *);
-void Buf_AddBytes(Buffer *, const Byte *, size_t);
-void Buf_AddBytesBetween(Buffer *, const Byte *, const Byte *);
+
+/* Buf_AddByte adds a single byte to a buffer. */
+static inline void
+Buf_AddByte(Buffer *bp, char byte)
+{
+    size_t count = ++bp->count;
+    char *ptr;
+    if (__predict_false(count >= bp->size))
+	Buf_Expand_1(bp);
+    ptr = bp->buffer + count;
+    ptr[-1] = byte;
+    ptr[0] = 0;
+}
+
+static inline size_t
+Buf_Size(const Buffer *bp)
+{
+    return bp->count;
+}
+
+void Buf_AddBytes(Buffer *, const char *, size_t);
+void Buf_AddBytesBetween(Buffer *, const char *, const char *);
 void Buf_AddStr(Buffer *, const char *);
 void Buf_AddInt(Buffer *, int);
-Byte *Buf_GetAll(Buffer *, size_t *);
+char *Buf_GetAll(Buffer *, size_t *);
 void Buf_Empty(Buffer *);
 void Buf_Init(Buffer *, size_t);
-Byte *Buf_Destroy(Buffer *, Boolean);
-Byte *Buf_DestroyCompact(Buffer *);
+char *Buf_Destroy(Buffer *, Boolean);
+char *Buf_DestroyCompact(Buffer *);
 
 #endif /* MAKE_BUF_H */

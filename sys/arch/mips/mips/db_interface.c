@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.87 2020/08/01 09:29:18 skrll Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.89 2020/08/15 07:42:07 mrg Exp $	*/
 
 /*
  * Mach Operating System
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.87 2020/08/01 09:29:18 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.89 2020/08/15 07:42:07 mrg Exp $");
 
 #include "opt_multiprocessor.h"
 #include "opt_cputype.h"	/* which mips CPUs do we support? */
@@ -46,7 +46,6 @@ __KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.87 2020/08/01 09:29:18 skrll Exp 
 
 #include <uvm/uvm_extern.h>
 
-#include <mips/asm.h>
 #include <mips/regnum.h>
 #include <mips/cache.h>
 #include <mips/pcb.h>
@@ -96,18 +95,6 @@ void db_mtcr_cmd(db_expr_t, bool, db_expr_t, const char *);
 paddr_t kvtophys(vaddr_t);
 
 CTASSERT(sizeof(ddb_regs) == sizeof(struct reg));
-
-#ifdef DDB_TRACE
-bool
-kdbpeek(vaddr_t addr, int *valp)
-{
-
-	if (addr == 0 || (addr & 3))
-		return false;
-	*valp = *(int *)addr;
-	return true;
-}
-#endif
 
 #ifndef KGDB
 int

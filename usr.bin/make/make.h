@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.114 2020/08/10 19:30:30 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.116 2020/08/13 03:54:57 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -77,8 +77,8 @@
  *	The global definitions for pmake
  */
 
-#ifndef _MAKE_H_
-#define _MAKE_H_
+#ifndef MAKE_MAKE_H
+#define MAKE_MAKE_H
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -224,7 +224,7 @@ typedef struct GNode {
     Hash_Table      context;	/* The local variables */
     Lst             commands;  	/* Creation commands */
 
-    struct _Suff    *suffix;	/* Suffix for the node (determined by
+    struct Suff     *suffix;	/* Suffix for the node (determined by
 				 * Suff_FindDeps and opaque to everyone
 				 * but the Suff module) */
     const char	    *fname;	/* filename where the GNode got defined */
@@ -524,4 +524,4 @@ int cached_stat(const char *, void *);
 #define KILLPG(pid, sig)	killpg((pid), (sig))
 #endif
 
-#endif /* _MAKE_H_ */
+#endif /* MAKE_MAKE_H */

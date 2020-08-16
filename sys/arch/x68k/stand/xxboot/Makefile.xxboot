@@ -1,10 +1,10 @@
-#	$NetBSD: Makefile.xxboot,v 1.13 2020/08/10 07:00:49 rin Exp $
+#	$NetBSD: Makefile.xxboot,v 1.17 2020/08/14 03:54:46 isaki Exp $
 
 NOMAN=		# defined
 
 .include <bsd.own.mk>
 
-BOOT=	$(DEV)boot_$(FS)
+BOOT=	xxboot_$(FS)
 VERSIONFILE=	${.CURDIR}/../version
 VERSION!=	${TOOL_AWK} -F: '$$1 ~ /^[0-9.]*$$/ { it = $$1; } \
 			END { print it }' ${VERSIONFILE}
@@ -25,7 +25,7 @@ BINMODE=	444
 S=		${.CURDIR}/../../../../..
 M=		$S/arch/x68k
 .PATH:		${.CURDIR}/..
-SRCS=	boot.S bootmain.c conf.c consio1.c $(DEVDRV).c
+SRCS=	boot.S bootmain.c conf.c consio1.c xx.c
 
 .include "${S}/conf/newvers_stand.mk"
 
@@ -40,6 +40,7 @@ CPPFLAGS+= -DHEAP_START=0x00100000
 CPPFLAGS+= -nostdinc -I${.OBJDIR} -I${S}
 CPPFLAGS+= -I$M/stand/libiocs -I$M/stand/libsa -I$M/stand/common
 AFLAGS=	   ${CFLAGS:M-[ID]*}
+AFLAGS+=   -Wa,-l
 LINKFLAGS=   -n -Bstatic -T ${.CURDIR}/../xxboot.ldscript
 LINKFLAGS+=  --defsym=TEXTADDR=$(TEXT)
 LINKFLAGS+=  --defsym=BOOT_TEXTADDR=$(BOOT_TEXT)
@@ -51,8 +52,11 @@ LDLIBS+=  -L${LIBIOCS} -liocs
 
 .PATH: $S/lib/libsa
 CPPFLAGS+= -DLIBSA_SINGLE_FILESYSTEM=$(FS)
-CPPFLAGS+= -DLIBSA_SINGLE_DEVICE=$(DEV)
-CPPFLAGS+= -DLIBSA_NO_TWIDDLE -DLIBSA_NO_FD_CHECKING -DLIBSA_NO_RAW_ACCESS -DLIBSA_NO_FS_WRITE
+CPPFLAGS+= -DLIBSA_SINGLE_DEVICE=xx
+CPPFLAGS+= -DLIBSA_NO_FD_CHECKING
+CPPFLAGS+= -DLIBSA_NO_FS_WRITE
+CPPFLAGS+= -DLIBSA_NO_RAW_ACCESS
+CPPFLAGS+= -DLIBSA_NO_TWIDDLE
 SRCS+=	open.c close.c read.c lseek.c loadfile.c loadfile_aout.c alloc.c
 SRCS+=  $(FS).c
 
@@ -61,10 +65,19 @@ SRCS+=	exec_image.S
 
 .include "${.CURDIR}/../../Makefile.booters"
 
+CLEANFILES+=	${PROG}.map
+
 
 ${PROG}: $(OBJS)
 	${_MKTARGET_LINK}
-	$(LD) $(LINKFLAGS) -o ${PROG} $(OBJS) $(LDLIBS)
+	$(LD) $(LINKFLAGS) -Map=${PROG}.map -o ${PROG} $(OBJS) $(LDLIBS)
+	: Print some addresses for convenience
+	@${TOOL_AWK} '/first_kbyte$$/ { print "\t\t" $$2 "\t" $$1 }' ${PROG}.map
+	@echo "		filesize	"`${TOOL_STAT} -f %z ${PROG}`
+	@if [ `${TOOL_STAT} -f %z ${PROG}` -gt 8192 ]; then \
+	    echo "${PROG} filesize exceeds 8192 bytes"; \
+		exit 1; \
+	fi
 	${TOUCHPROG}
 
 .include <bsd.prog.mk>
