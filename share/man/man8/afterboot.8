@@ -1,4 +1,4 @@
-.\"	$NetBSD: afterboot.8,v 1.62 2019/06/18 23:11:05 nia Exp $
+.\"	$NetBSD: afterboot.8,v 1.69 2020/08/15 14:45:31 nia Exp $
 .\"	$OpenBSD: afterboot.8,v 1.72 2002/02/22 02:02:33 miod Exp $
 .\"
 .\" Originally created by Marshall M. Midden -- 1997-10-20, m4@umn.edu
@@ -59,7 +59,7 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd June 18, 2019
+.Dd August 15, 2020
 .Dt AFTERBOOT 8
 .Os
 .Sh NAME
@@ -109,7 +109,7 @@ and
 .Xr security.conf 5
 for more details.
 .Ss Login
-Login as
+On a fresh install with no other user accounts, login as
 .Dq Ic root .
 You can do so on the console, or over the network using
 .Xr ssh 1 .
@@ -357,6 +357,24 @@ As an alternative, compile a new kernel with the
 .Dq GATEWAY
 option.
 Packets are not forwarded by default, due to RFC requirements.
+.Ss Device nodes
+By default, nodes are created in
+.Pa /dev
+for a fairly typical number of devices.
+.Pp
+However, if this system has a large number of devices connected
+(e.g. for large scale storage), you may want to enable
+.Xr devpubd 8
+to ensure a sufficient number of nodes are available.
+Set
+.Dq Va devpubd=YES
+in
+.Pa /etc/rc.conf
+to create nodes automatically during system runtime.
+You can also run the node creation script by hand:
+.Bd -literal -offset indent
+.Ic cd /dev && sh MAKEDEV
+.Ed
 .Ss Secure Shell (SSH)
 By default, all services are disabled in a fresh
 .Nx
@@ -382,6 +400,16 @@ By default, it will query
 .Pa /etc/hosts
 first, and then the DNS resolver specified in
 .Pa /etc/resolv.conf .
+.Pp
+Multicast DNS and DNS Service Discovery are usually not enabled by
+default on a fresh NetBSD system, and can be enabled by setting
+.Dq mdnsd=YES
+in
+.Pa /etc/rc.conf ,
+and either rebooting or running the following command:
+.Bd -literal -offset indent
+.Ic service mdnsd start
+.Ed
 .Pp
 If your network does not have a usable DNS resolver, e.g. one provided
 by DHCP, you can run a local caching recursive resolver by setting
@@ -414,6 +442,18 @@ To connect to a wireless network using WPA and DHCP:
 .Ic wpa_passphrase networkname password >> /etc/wpa_supplicant.conf
 .Ic service wpa_supplicant onestart
 .Ic service dhcpcd onestart
+.Ed
+.Pp
+To connect to an open wireless network with no password, edit
+.Pa /etc/wpa_supplicant.conf
+instead of using
+.Xr wpa_passphrase 8 :
+.Bd -literal -offset indent
+network={
+	ssid="Public-WiFi"
+	key_mgmt=NONE
+	priority=100
+}
 .Ed
 .Pp
 To automatically connect at boot, add the following to
@@ -864,9 +904,19 @@ The
 .Nx
 packages collection, pkgsrc, includes a large set of third-party software.
 A lot of it is available as binary packages that you can download from
-.Lk https://ftp.netbsd.org/pub/pkgsrc/packages/NetBSD/
-or a mirror, and install using
-.Xr pkg_add 1 .
+.Lk https://cdn.netbsd.org/pub/pkgsrc/packages/NetBSD/
+or a mirror.
+.Pp
+For most users, using pkgin to manage binary packages is recommended.
+.Pp
+To install pkgin, if it was not done by the installer:
+.Bd -literal -offset indent
+.Ic export PKG_PATH=https://cdn.netbsd.org/pub/pkgsrc/packages/NetBSD/$(sysctl -n hw.machine_arch)/$(uname -r | cut -d_ -f1)/All
+.Ic pkg_add pkgin
+.Ic pkgin update
+.Ic pkgin install bash mpg123 fluxbox ...
+.Ed
+.Pp
 See
 .Lk https://www.NetBSD.org/docs/pkgsrc/
 and

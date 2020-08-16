@@ -1,4 +1,4 @@
-/*	$NetBSD: entropy.h,v 1.3 2020/05/08 15:54:11 riastradh Exp $	*/
+/*	$NetBSD: entropy.h,v 1.4 2020/08/14 00:53:16 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -44,12 +44,14 @@ struct knote;
 
 #define	ENTROPY_CAPACITY	ENTPOOL_CAPACITY	/* bytes */
 
-#define	ENTROPY_WAIT	0x01
-#define	ENTROPY_SIG	0x02
+#define	ENTROPY_WAIT		0x01
+#define	ENTROPY_SIG		0x02
+#define	ENTROPY_HARDFAIL	0x04
 
 void	entropy_bootrequest(void);
 void	entropy_consolidate(void);
 unsigned entropy_epoch(void);
+bool	entropy_ready(void);
 int	entropy_extract(void *, size_t, int);
 int	entropy_poll(int);
 int	entropy_kqfilter(struct knote *);

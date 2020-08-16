@@ -1,4 +1,4 @@
-/*	$NetBSD: frame.h,v 1.47 2018/10/28 14:46:59 skrll Exp $	*/
+/*	$NetBSD: frame.h,v 1.48 2020/08/14 16:18:36 skrll Exp $	*/
 
 /*
  * Copyright (c) 1994-1997 Mark Brinicombe.
