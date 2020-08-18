@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.112 2020/08/14 16:18:36 skrll Exp $	*/
+/*	$NetBSD: cpu.h,v 1.114 2020/08/17 01:52:59 mrg Exp $	*/
 
 /*
  * Copyright (c) 1994-1996 Mark Brinicombe.
@@ -154,7 +154,7 @@ static inline void cpu_dosoftints(void);
 #include <sys/cpu_data.h>
 #include <sys/device_if.h>
 #include <sys/evcnt.h>
-#include <sys/param.h>
+#include <machine/param.h>
 
 struct cpu_info {
 	struct cpu_data	ci_data;	/* MI per-cpu data */
@@ -219,10 +219,6 @@ struct cpu_info {
 
 	struct arm_cache_info *
 			ci_cacheinfo;
-
-#if defined(MP_CPU_INFO_MEMBERS)
-	MP_CPU_INFO_MEMBERS
-#endif
 };
 
 extern struct cpu_info cpu_info_store[];

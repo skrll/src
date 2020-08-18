@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.3 2020/07/25 22:33:04 riastradh Exp $
+#	$NetBSD: Makefile,v 1.5 2020/08/17 16:26:02 riastradh Exp $
 
 .include <bsd.own.mk>
 
@@ -34,6 +34,12 @@ SRCS.t_aes+=	aes_neon_impl.c
 SRCS.t_aes+=	aes_neon_subr.c
 .if !empty(MACHINE_ARCH:Mearmv7*)
 SRCS.t_aes+=	aes_neon_32.S
+.endif
+
+.if !empty(MACHINE_ARCH:Mearmv7*) && empty(MACHINE_ARCH:Mearmv7hf*)
+COPTS.aes_neon.c+=	-mfloat-abi=softfp -mfpu=neon
+COPTS.aes_neon_subr.c+=	-mfloat-abi=softfp -mfpu=neon
+AOPTS.aes_neon_32.S+=	-D__SOFTFP__
 .endif
 
 .endif				# earmv7/aarch64
