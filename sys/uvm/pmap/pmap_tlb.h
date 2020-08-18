@@ -104,11 +104,11 @@ struct pmap_asid_info {
 	    - offsetof(struct pmap, pm_pai[tlbinfo_index(ti)])))
 
 enum tlb_invalidate_op {
-	TLBINV_NOBODY=0,
-	TLBINV_ONE=1,
-	TLBINV_ALLUSER=2,
-	TLBINV_ALLKERNEL=3,
-	TLBINV_ALL=4
+	TLBINV_NOBODY = 0,
+	TLBINV_ONE = 1,
+	TLBINV_ALLUSER = 2,
+	TLBINV_ALLKERNEL = 3,
+	TLBINV_ALL = 4
 };
 
 struct pmap_tlb_info {
