@@ -166,7 +166,7 @@ struct octeon_intrhand {
 static int octeon_send_ipi(struct cpu_info *, int);
 static int octeon_ipi_intr(void *);
 
-static struct octeon_intrhand ipi_intrhands[1] = {
+static struct octeon_intrhand ipi_intrhands[2] = {
 	[0] = {
 		.ih_func = octeon_ipi_intr,
 		.ih_arg = (void *)(uintptr_t)__BITS(15,0),
