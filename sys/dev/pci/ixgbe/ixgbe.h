@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.h,v 1.67 2020/06/25 07:53:01 msaitoh Exp $ */
+/* $NetBSD: ixgbe.h,v 1.69 2020/08/17 07:59:06 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -515,9 +515,6 @@ struct adapter {
 
 	bool			schedule_wqs_ok;
 
-	/* Support for pluggable optics */
-	bool			sfp_probe;
-
 	/* Flow Director */
 	int			fdir_reinit;
 
@@ -771,6 +768,7 @@ bool ixgbe_rxeof(struct ix_queue *);
 #define IXGBE_REQUEST_TASK_FDIR		0x08
 #define IXGBE_REQUEST_TASK_PHY		0x10
 #define IXGBE_REQUEST_TASK_LSC		0x20
+#define IXGBE_REQUEST_TASK_NEED_ACKINTR	0x80
 
 /* For NetBSD */
 const struct sysctlnode *ixgbe_sysctl_instance(struct adapter *);
