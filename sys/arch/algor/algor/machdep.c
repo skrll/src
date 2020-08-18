@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.55 2016/12/22 14:47:54 cherry Exp $	*/
+/*	$NetBSD: machdep.c,v 1.57 2020/08/17 07:50:41 simonb Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.55 2016/12/22 14:47:54 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.57 2020/08/17 07:50:41 simonb Exp $");
 
 #include "opt_algor_p4032.h"
 #include "opt_algor_p5064.h" 
@@ -163,6 +163,9 @@ char	algor_ethaddr[ETHER_ADDR_LEN];
 void	mach_init(int, char *[], char *[]);	/* XXX */
 
 int	cpuspeed = 150;		/* XXX XXX XXX */
+
+/* The ALGOR kernels only support little endian */
+CTASSERT(_BYTE_ORDER == _LITTLE_ENDIAN);
 
 void
 mach_init(int argc, char *argv[], char *envp[])
@@ -532,7 +535,6 @@ cpu_startup(void)
 }
 
 int	waittime = -1;
-struct pcb dumppcb;
 
 void
 cpu_reboot(int howto, char *bootstr)

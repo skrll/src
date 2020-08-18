@@ -1,4 +1,4 @@
-/*	$NetBSD: mips_stacktrace.c,v 1.1 2020/08/15 07:42:07 mrg Exp $	*/
+/*	$NetBSD: mips_stacktrace.c,v 1.4 2020/08/17 21:50:14 mrg Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mips_stacktrace.c,v 1.1 2020/08/15 07:42:07 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mips_stacktrace.c,v 1.4 2020/08/17 21:50:14 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -55,9 +55,15 @@ __KERNEL_RCSID(0, "$NetBSD: mips_stacktrace.c,v 1.1 2020/08/15 07:42:07 mrg Exp 
 #include <mips/mips_opcode.h>
 #include <mips/stacktrace.h>
 
+#if defined(_KMEMUSER) && !defined(DDB)
+#define DDB 1
+#endif
+
 #ifdef DDB
 #include <machine/db_machdep.h>
 #include <ddb/db_sym.h>
+#include <ddb/db_user.h>
+#include <ddb/db_access.h>
 #endif
 
 #ifdef KGDB
@@ -122,7 +128,8 @@ int main(void *);	/* XXX */
  * Functions ``special'' enough to print by name
  */
 #define Name(_fn)  { (void*)_fn, # _fn }
-const static struct { void *addr; const char *name;} names[] = {
+static const struct { void *addr; const char *name;} names[] = {
+#ifdef _KERNEL
 	Name(stacktrace),
 	Name(stacktrace_subr),
 	Name(main),
@@ -178,12 +185,13 @@ const static struct { void *addr; const char *name;} names[] = {
 
 	Name(cpu_idle),
 	Name(cpu_switchto),
+#endif /* _KERNEL */
 	{0, 0}
 };
 
 
-bool
-static kdbpeek(vaddr_t addr, int *valp)
+static bool
+kdbpeek(vaddr_t addr, unsigned *valp)
 {
 	if (addr & 3) {
 		printf("kdbpeek: unaligned address %#"PRIxVADDR"\n", addr);
@@ -193,7 +201,11 @@ static kdbpeek(vaddr_t addr, int *valp)
 		printf("kdbpeek: NULL\n");
 		return false;
 	} else {
-		*valp = *(int *)addr;
+#if _KERNEL
+		*valp = *(unsigned *)addr;
+#else
+		db_read_bytes((db_addr_t)addr, sizeof(unsigned), (char *)valp);
+#endif
 		return true;
 	}
 }
@@ -201,7 +213,7 @@ static kdbpeek(vaddr_t addr, int *valp)
 static mips_reg_t
 kdbrpeek(vaddr_t addr, size_t n)
 {
-	mips_reg_t rc;
+	mips_reg_t rc = 0;
 
 	if (addr & (n - 1)) {
 		printf("kdbrpeek: unaligned address %#"PRIxVADDR"\n", addr);
@@ -209,15 +221,21 @@ kdbrpeek(vaddr_t addr, size_t n)
 		/* We might have been called from DDB, so do not go there. */
 		stacktrace();
 #endif
-		rc = -1 ;
+		rc = -1;
 	} else if (addr == 0) {
 		printf("kdbrpeek: NULL\n");
 		rc = 0xdeadfeed;
 	} else {
 		if (sizeof(mips_reg_t) == 8 && n == 8)
-			rc = *(int64_t *)addr;
+#if _KERNEL
+			db_read_bytes((db_addr_t)addr, sizeof(int64_t), (char *)&rc);
 		else
+			db_read_bytes((db_addr_t)addr, sizeof(int32_t), (char *)&rc);
+#else
+			rc = *(int64_t *)addr;
+ 		else
 			rc = *(int32_t *)addr;
+#endif
 	}
 	return rc;
 }
@@ -312,7 +330,7 @@ loop:
 	sym = db_search_symbol(pc, DB_STGY_ANY, &diff);
 	if (sym != DB_SYM_NULL && diff == 0) {
 		/* check func(foo) __attribute__((__noreturn__)) case */
-		if (!kdbpeek(pc - 2 * sizeof(int), &instr))
+		if (!kdbpeek(pc - 2 * sizeof(unsigned), &instr))
 			return;
 		i.word = instr;
 		if (i.JType.op == OP_JAL) {
@@ -494,8 +512,12 @@ done:
 		}
 	} else {
 finish:
+#ifdef _KERNEL
 		(*printfn)("User-level: pid %d.%d\n",
 		    curlwp->l_proc->p_pid, curlwp->l_lid);
+#else
+		(*printfn)("User-level: FIXME\n");
+#endif
 	}
 }
 

@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.235 2020/08/13 08:42:18 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.239 2020/08/17 08:23:30 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -257,7 +257,7 @@ static int	ixgbe_sysctl_wol_enable(SYSCTLFN_PROTO);
 static int	ixgbe_sysctl_wufc(SYSCTLFN_PROTO);
 
 /* Support for pluggable optic modules */
-static bool	ixgbe_sfp_probe(struct adapter *);
+static bool	ixgbe_sfp_cage_full(struct ixgbe_hw *);
 
 /* Legacy (single vector) interrupt handler */
 static int	ixgbe_legacy_irq(void *);
@@ -962,15 +962,9 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	hw->phy.reset_if_overtemp = TRUE;
 	error = ixgbe_reset_hw(hw);
 	hw->phy.reset_if_overtemp = FALSE;
-	if (error == IXGBE_ERR_SFP_NOT_PRESENT) {
-		/*
-		 * No optics in this port, set up
-		 * so the timer routine will probe
-		 * for later insertion.
-		 */
-		adapter->sfp_probe = TRUE;
+	if (error == IXGBE_ERR_SFP_NOT_PRESENT)
 		error = IXGBE_SUCCESS;
-	} else if (error == IXGBE_ERR_SFP_NOT_SUPPORTED) {
+	else if (error == IXGBE_ERR_SFP_NOT_SUPPORTED) {
 		aprint_error_dev(dev, "Unsupported SFP+ module detected!\n");
 		unsupported_sfp = true;
 		error = IXGBE_SUCCESS;
@@ -3179,9 +3173,10 @@ ixgbe_msix_admin(void *arg)
 	}
 
 	if (task_requests != 0) {
+		/* Re-enabling other interrupts is done in the admin task */
+		task_requests |= IXGBE_REQUEST_TASK_NEED_ACKINTR;
 		atomic_or_32(&adapter->task_requests, task_requests);
 		ixgbe_schedule_admin_tasklet(adapter);
-		/* Re-enabling other interrupts is done in the admin task */
 	} else {
 		/* Re-enable other interrupts */
 		IXGBE_WRITE_REG(hw, IXGBE_EIMS, IXGBE_EIMS_OTHER);
@@ -3522,6 +3517,13 @@ ixgbe_free_workqueue(struct adapter *adapter)
 		adapter->timer_wq = NULL;
 	}
 	if (adapter->recovery_mode_timer_wq != NULL) {
+		/*
+		 * ixgbe_ifstop() doesn't call the workqueue_wait() for
+		 * the recovery_mode_timer workqueue, so call it here.
+		 */
+		workqueue_wait(adapter->recovery_mode_timer_wq,
+		    &adapter->recovery_mode_timer_wc);
+		atomic_store_relaxed(&adapter->recovery_mode_timer_pending, 0);
 		workqueue_destroy(adapter->recovery_mode_timer_wq);
 		adapter->recovery_mode_timer_wq = NULL;
 	}
@@ -4456,6 +4458,7 @@ static void
 ixgbe_handle_timer(struct work *wk, void *context)
 {
 	struct adapter	*adapter = context;
+	struct ixgbe_hw *hw = &adapter->hw;
 	device_t	dev = adapter->dev;
 	struct ix_queue	*que = adapter->queues;
 	u64		queues = 0;
@@ -4466,9 +4469,17 @@ ixgbe_handle_timer(struct work *wk, void *context)
 	IXGBE_CORE_LOCK(adapter);
 
 	/* Check for pluggable optics */
-	if (adapter->sfp_probe)
-		if (!ixgbe_sfp_probe(adapter))
-			goto out; /* Nothing to do */
+	if (ixgbe_is_sfp(hw)) {
+		bool was_full = hw->phy.sfp_type != ixgbe_sfp_type_not_present;
+		bool is_full = ixgbe_sfp_cage_full(hw);
+
+		/* do probe if cage state changed */
+		if (was_full ^ is_full) {
+			atomic_or_32(&adapter->task_requests,
+			    IXGBE_REQUEST_TASK_MOD);
+			ixgbe_schedule_admin_tasklet(adapter);
+		}
+	}
 
 	ixgbe_update_link_status(adapter);
 	ixgbe_update_stats_counters(adapter);
@@ -4546,7 +4557,6 @@ ixgbe_handle_timer(struct work *wk, void *context)
 	}
 #endif
 
-out:
 	atomic_store_relaxed(&adapter->timer_pending, 0);
 	IXGBE_CORE_UNLOCK(adapter);
 	callout_reset(&adapter->timer, hz, ixgbe_local_timer, adapter);
@@ -4600,38 +4610,22 @@ ixgbe_handle_recovery_mode_timer(struct work *wk, void *context)
 } /* ixgbe_handle_recovery_mode_timer */
 
 /************************************************************************
- * ixgbe_sfp_probe
+ * ixgbe_sfp_cage_full
  *
  *   Determine if a port had optics inserted.
  ************************************************************************/
 static bool
-ixgbe_sfp_probe(struct adapter *adapter)
+ixgbe_sfp_cage_full(struct ixgbe_hw *hw)
 {
-	struct ixgbe_hw	*hw = &adapter->hw;
-	device_t	dev = adapter->dev;
-	bool		result = FALSE;
+	uint32_t mask;
 
-	if ((hw->phy.type == ixgbe_phy_nl) &&
-	    (hw->phy.sfp_type == ixgbe_sfp_type_not_present)) {
-		s32 ret = hw->phy.ops.identify_sfp(hw);
-		if (ret)
-			goto out;
-		ret = hw->phy.ops.reset(hw);
-		adapter->sfp_probe = FALSE;
-		if (ret == IXGBE_ERR_SFP_NOT_SUPPORTED) {
-			device_printf(dev,"Unsupported SFP+ module detected!");
-			device_printf(dev,
-			    "Reload driver with supported module.\n");
-			goto out;
-		} else
-			device_printf(dev, "SFP+ module detected!\n");
-		/* We now have supported optics */
-		result = TRUE;
-	}
-out:
+	if (hw->mac.type >= ixgbe_mac_X540)
+		mask = IXGBE_ESDP_SDP0;
+	else
+		mask = IXGBE_ESDP_SDP2;
 
-	return (result);
-} /* ixgbe_sfp_probe */
+	return IXGBE_READ_REG(hw, IXGBE_ESDP) & mask;
+} /* ixgbe_sfp_cage_full */
 
 /************************************************************************
  * ixgbe_handle_mod - Tasklet for SFP module interrupts
@@ -4807,11 +4801,13 @@ ixgbe_handle_admin(struct work *wk, void *context)
 #endif
 	}
 	atomic_store_relaxed(&adapter->admin_pending, 0);
-	if ((adapter->feat_en & IXGBE_FEATURE_MSIX) != 0) {
-		/* Re-enable other interrupts */
-		IXGBE_WRITE_REG(hw, IXGBE_EIMS, IXGBE_EIMS_OTHER);
-	} else
-		ixgbe_enable_intr(adapter);
+	if ((req & IXGBE_REQUEST_TASK_NEED_ACKINTR) != 0) {
+		if ((adapter->feat_en & IXGBE_FEATURE_MSIX) != 0) {
+			/* Re-enable other interrupts */
+			IXGBE_WRITE_REG(hw, IXGBE_EIMS, IXGBE_EIMS_OTHER);
+		} else
+			ixgbe_enable_intr(adapter);
+	}
 
 	IXGBE_CORE_UNLOCK(adapter);
 	IFNET_UNLOCK(ifp);
@@ -5215,6 +5211,8 @@ ixgbe_legacy_irq(void *arg)
 		reenable_intr = false;
 	}
 	if (task_requests != 0) {
+		/* Re-enabling other interrupts is done in the admin task */
+		task_requests |= IXGBE_REQUEST_TASK_NEED_ACKINTR;
 		atomic_or_32(&adapter->task_requests, task_requests);
 		ixgbe_schedule_admin_tasklet(adapter);
 		reenable_intr = false;
