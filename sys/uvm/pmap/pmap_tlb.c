@@ -564,7 +564,7 @@ pmap_tlb_shootdown_process(void)
 		 */
 		struct pmap_asid_info * const pai = PMAP_PAI(ti->ti_victim, ti);
 		KASSERT(ti->ti_victim != pmap_kernel());
-		if (!pmap_tlb_intersecting_onproc_p(ti->ti_victim, ti)) {
+		if (pmap_tlb_intersecting_onproc_p(ti->ti_victim, ti)) {
 			/*
 			 * The victim is an active pmap so we will just
 			 * invalidate its TLB entries.
