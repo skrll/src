@@ -67,7 +67,7 @@
 
 #define IST_MPSAFE	0x100	/* interrupt is MPSAFE */
 
-#if defined(MULTIPROCESSOR) && defined(__HAVE_FAST_SOFTINTS)
+#if defined(MULTIPROCESSOR)
 #define __HAVE_PREEMPTION	1
 #endif
 
