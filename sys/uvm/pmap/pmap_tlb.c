@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_tlb.c,v 1.36 2020/08/11 06:54:14 skrll Exp $	*/
+/*	$NetBSD: pmap_tlb.c,v 1.39 2020/08/19 06:11:49 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap_tlb.c,v 1.36 2020/08/11 06:54:14 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_tlb.c,v 1.39 2020/08/19 06:11:49 skrll Exp $");
 
 /*
  * Manages address spaces in a TLB.
@@ -551,8 +551,7 @@ pmap_tlb_shootdown_process(void)
 #endif
 
 	KASSERT(cpu_intr_p());
-	KASSERTMSG(ci->ci_cpl >= IPL_SCHED,
-	    "%s: cpl (%d) < IPL_SCHED (%d)",
+	KASSERTMSG(ci->ci_cpl >= IPL_SCHED, "%s: cpl (%d) < IPL_SCHED (%d)",
 	    __func__, ci->ci_cpl, IPL_SCHED);
 
 	TLBINFO_LOCK(ti);
@@ -564,7 +563,7 @@ pmap_tlb_shootdown_process(void)
 		 */
 		struct pmap_asid_info * const pai = PMAP_PAI(ti->ti_victim, ti);
 		KASSERT(ti->ti_victim != pmap_kernel());
-		if (!pmap_tlb_intersecting_onproc_p(ti->ti_victim, ti)) {
+		if (pmap_tlb_intersecting_onproc_p(ti->ti_victim, ti)) {
 			/*
 			 * The victim is an active pmap so we will just
 			 * invalidate its TLB entries.
@@ -627,11 +626,11 @@ pmap_tlb_shootdown_process(void)
  * can be loaded in a single instruction.
  */
 #define	TLBINV_MAP(op, nobody, one, alluser, allkernel, all)	\
-	((((   (nobody) << 3*TLBINV_NOBODY)			\
-	 | (      (one) << 3*TLBINV_ONE)			\
-	 | (  (alluser) << 3*TLBINV_ALLUSER)			\
-	 | ((allkernel) << 3*TLBINV_ALLKERNEL)			\
-	 | (      (all) << 3*TLBINV_ALL)) >> 3*(op)) & 7)
+	((((   (nobody) << 3 * TLBINV_NOBODY)			\
+	 | (      (one) << 3 * TLBINV_ONE)			\
+	 | (  (alluser) << 3 * TLBINV_ALLUSER)			\
+	 | ((allkernel) << 3 * TLBINV_ALLKERNEL)			\
+	 | (      (all) << 3 * TLBINV_ALL)) >> 3 * (op)) & 7)
 
 #define	TLBINV_USER_MAP(op)	\
 	TLBINV_MAP(op, TLBINV_ONE, TLBINV_ALLUSER, TLBINV_ALLUSER,	\
