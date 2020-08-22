@@ -1,4 +1,4 @@
-/*	$NetBSD: xx.c,v 1.2 2012/11/17 16:02:00 tsutsui Exp $	*/
+/*	$NetBSD: xx.c,v 1.4 2020/08/16 06:43:43 isaki Exp $	*/
 
 /*
  * Copyright (c) 2010 MINOURA Makoto.
@@ -28,7 +28,8 @@
 #include <sys/param.h>
 #include <lib/libsa/stand.h>
 
-extern void RAW_READ(void *buf, uint32_t blkpos, size_t bytelen);
+#include "xxboot.h"
+#include "iocs.h"
 
 int
 xxopen(struct open_file *f, ...)
@@ -49,7 +50,24 @@ xxstrategy(void *arg, int rw, daddr_t dblk, size_t size,
            void *buf, size_t *rsize)
 {
 
-	RAW_READ(buf, (uint32_t)dblk, size);
+	/*
+	 * dblk is (always?) in 512 bytes unit, even if CD (2048 byte/sect).
+	 * size is in byte.
+	 *
+	 * On SCSI HD, the position specified in raw_read() (1st argument)
+	 * counts from the beginning of the disk, not the beginning of the
+	 * partition.  On SCSI CD and floppy, SCSI_PARTTOP is zero.
+	 */
+#if defined(XXBOOT_DEBUG)
+	IOCS_B_PRINT("xxstrategy ");
+	print_hex(dblk, 8);
+	IOCS_B_PRINT(" len=");
+	print_hex(size, 8);
+	IOCS_B_PRINT("\r\n");
+#endif
+	if (size != 0) {
+		raw_read((uint32_t)(SCSI_PARTTOP + dblk), (uint32_t)size, buf);
+	}
 	if (rsize)
 		*rsize = size;
 	return 0;

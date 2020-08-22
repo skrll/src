@@ -1,4 +1,4 @@
-/* $NetBSD: locore.h,v 1.113 2020/07/31 08:54:09 simonb Exp $ */
+/* $NetBSD: locore.h,v 1.115 2020/08/17 03:19:35 mrg Exp $ */
 
 /*
  * This file should not be included by MI code!!!
@@ -95,6 +95,7 @@ typedef uint32_t pt_entry_t;
 
 /* XXX some .S files look for MIPS3_PLUS */
 #ifndef __ASSEMBLER__
+#ifdef _KERNEL
 
 /* XXX simonb
  * Should the following be in a cpu_info type structure?
@@ -667,7 +668,6 @@ int32_t kfetch_32(volatile uint32_t *, uint32_t);
 
 /* trap.c */
 void	netintr(void);
-bool	kdbpeek(vaddr_t, int *);
 
 /* mips_dsp.c */
 void	dsp_init(void);
@@ -754,7 +754,6 @@ void	mips_page_physload(vaddr_t, vaddr_t,
 #define	    MIPS_PRID_CID_INGENIC	0xe1
 #define	MIPS_PRID_COPTS(x)	(((x) >> 24) & 0x00ff)	/* Company Options */
 
-#ifdef _KERNEL
 /*
  * Global variables used to communicate CPU type, and parameters
  * such as cache size, from locore to higher-level code (e.g., pmap).
@@ -918,7 +917,7 @@ struct pridtab {
 # define MIPS_CIDFL_RMI_L2SZ(cidfl)					\
 		((256*1024) << (((cidfl) & MIPS_CIDFL_RMI_L2SZ_MASK)	\
 			>> MIPS_CIDFL_RMI_L2SZ_SHIFT))
-#endif /* !__ASSEMBLER__ */
 #endif	/* _KERNEL */
+#endif /* !__ASSEMBLER__ */
 
 #endif	/* _MIPS_LOCORE_H */
