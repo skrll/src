@@ -1,4 +1,4 @@
-/*	$NetBSD: bozohttpd.c,v 1.117 2020/07/13 09:38:57 jruoho Exp $	*/
+/*	$NetBSD: bozohttpd.c,v 1.120 2020/08/20 07:57:01 mrg Exp $	*/
 
 /*	$eterna: bozohttpd.c,v 1.178 2011/11/18 09:21:15 mrg Exp $	*/
 
@@ -109,7 +109,7 @@
 #define INDEX_HTML		"index.html"
 #endif
 #ifndef SERVER_SOFTWARE
-#define SERVER_SOFTWARE		"bozohttpd/20190228"
+#define SERVER_SOFTWARE		"bozohttpd/20200820"
 #endif
 #ifndef PUBLIC_HTML
 #define PUBLIC_HTML		"public_html"
@@ -914,7 +914,7 @@ mmap_and_write_part(bozohttpd_t *httpd, int fd, off_t first_byte_pos, size_t sz)
 	wroffset = (size_t)(first_byte_pos - mappedoffset);
 
 	addr = mmap(0, mappedsz, PROT_READ, MAP_SHARED, fd, mappedoffset);
-	if (addr == (char *)-1) {
+	if (addr == MAP_FAILED) {
 		bozowarn(httpd, "mmap failed: %s", strerror(errno));
 		return -1;
 	}
@@ -1201,7 +1201,7 @@ check_remap(bozo_httpreq_t *request)
 	}
 
 	fmap = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, mapfile, 0);
-	if (fmap == NULL) {
+	if (fmap == MAP_FAILED) {
 		bozowarn(httpd, "could not mmap " REMAP_FILE ", error %d",
 		    errno);
 		goto out;
@@ -1912,6 +1912,8 @@ bozo_process_request(bozo_httpreq_t *request)
  cleanup:
 	close(fd);
  cleanup_nofd:
+	/* If SSL enabled send close_notify. */
+	bozo_ssl_shutdown(request->hr_httpd);
 	close(STDIN_FILENO);
 	close(STDOUT_FILENO);
 	/*close(STDERR_FILENO);*/
