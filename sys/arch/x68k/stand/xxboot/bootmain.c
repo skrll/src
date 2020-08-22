@@ -1,4 +1,4 @@
-/*	$NetBSD: bootmain.c,v 1.4 2012/11/17 19:10:46 tsutsui Exp $	*/
+/*	$NetBSD: bootmain.c,v 1.7 2020/08/14 03:43:28 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1993, 1994 Takumi Nakamura.
@@ -39,25 +39,12 @@
 #include <lib/libsa/stand.h>
 #include <lib/libsa/loadfile.h>
 
+#include "xxboot.h"
 #include "libx68k.h"
 #include "iocs.h"
 #include "exec_image.h"
 
 #define EXSCSI_BDID	((void *)0x00ea0001)
-#define BINF_ISFD(pbinf)	(*((uint8_t *)(pbinf) + 1) == 0)
-
-/* boot.S */
-extern int badbaddr(volatile void *);
-extern unsigned int ID;		/* target SCSI ID */
-extern unsigned int BOOT_INFO;	/* result of IOCS(__BOOTINF) */
-extern struct {
-	struct fdfmt{
-		uint8_t	N;	/* sector length 0: 128, ..., 3: 1K */
-		uint8_t	C;	/* cylinder # */
-		uint8_t	H;	/* head # */
-		uint8_t	R;	/* sector # */
-	} minsec, maxsec;
-} FDSECMINMAX;			/* FD format type of the first track */
 
 /* for debug */
 unsigned int startregs[16];
@@ -107,8 +94,6 @@ get_scsi_host_adapter(char *devstr)
 	return ha;
 }
 
-extern const char bootprog_name[], bootprog_rev[];
-
 void
 bootmain(void)
 {
@@ -135,7 +120,8 @@ bootmain(void)
 		/* floppy */
 #ifdef XXBOOT_DEBUG
 		*(uint32_t *)bootdevstr =
-		    ('f' << 24 | 'd' << 16 | '@' << 8 | '0' + (BOOT_INFO & 3));
+		    ('f' << 24) | ('d' << 16) | ('@' << 8) |
+		    ('0' + (BOOT_INFO & 3));
 		bootdevstr[4] = '\0';
 #endif
 		/* fdNa for 1024 bytes/sector, fdNc for 512 bytes/sector */
@@ -177,5 +163,5 @@ devopen(struct open_file *f, const char *fname, char **file)
 {
 
 	*file = __UNCONST(fname);
-	return xxopen(f);
+	return DEV_OPEN()(f);
 }

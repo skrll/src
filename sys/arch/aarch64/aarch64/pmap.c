@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.86 2020/08/12 13:36:36 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.87 2020/08/14 08:19:26 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.86 2020/08/12 13:36:36 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.87 2020/08/14 08:19:26 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
