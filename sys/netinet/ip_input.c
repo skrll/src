@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_input.c,v 1.393 2019/11/13 02:51:22 ozaki-r Exp $	*/
+/*	$NetBSD: ip_input.c,v 1.397 2020/08/28 06:31:42 ozaki-r Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_input.c,v 1.393 2019/11/13 02:51:22 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_input.c,v 1.397 2020/08/28 06:31:42 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -243,7 +243,7 @@ struct mowner ip_tx_mowner = MOWNER_INIT("internet", "tx");
 #endif
 
 static void		ipintr(void *);
-static void		ip_input(struct mbuf *);
+static void		ip_input(struct mbuf *, struct ifnet *);
 static void		ip_forward(struct mbuf *, int, struct ifnet *);
 static bool		ip_dooptions(struct mbuf *);
 static struct in_ifaddr *ip_rtaddr(struct in_addr, struct psref *);
@@ -399,7 +399,19 @@ ipintr(void *arg __unused)
 
 	SOFTNET_KERNEL_LOCK_UNLESS_NET_MPSAFE();
 	while ((m = pktq_dequeue(ip_pktq)) != NULL) {
-		ip_input(m);
+		struct ifnet *ifp;
+		struct psref psref;
+
+		ifp = m_get_rcvif_psref(m, &psref);
+		if (__predict_false(ifp == NULL)) {
+			IP_STATINC(IP_STAT_IFDROP);
+			m_freem(m);
+			continue;
+		}
+
+		ip_input(m, ifp);
+
+		m_put_rcvif_psref(ifp, &psref);
 	}
 	SOFTNET_KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 }
@@ -409,15 +421,13 @@ ipintr(void *arg __unused)
  * try to reassemble.  Process options.  Pass to next level.
  */
 static void
-ip_input(struct mbuf *m)
+ip_input(struct mbuf *m, struct ifnet *ifp)
 {
 	struct ip *ip = NULL;
 	struct in_ifaddr *ia = NULL;
 	int hlen = 0, len;
 	int downmatch;
 	int srcrt = 0;
-	ifnet_t *ifp;
-	struct psref psref;
 	int s;
 
 	KASSERTMSG(cpu_softintr_p(), "ip_input: not in the software "
@@ -426,17 +436,16 @@ ip_input(struct mbuf *m)
 	MCLAIM(m, &ip_rx_mowner);
 	KASSERT((m->m_flags & M_PKTHDR) != 0);
 
-	ifp = m_get_rcvif_psref(m, &psref);
-	if (__predict_false(ifp == NULL))
-		goto out;
-
 	/*
 	 * If no IP addresses have been set yet but the interfaces
 	 * are receiving, can't do anything with incoming packets yet.
 	 * Note: we pre-check without locks held.
 	 */
-	if (IN_ADDRLIST_READER_EMPTY())
+	if (IN_ADDRLIST_READER_EMPTY()) {
+		IP_STATINC(IP_STAT_IFDROP);
 		goto out;
+	}
+
 	IP_STATINC(IP_STAT_TOTAL);
 
 	/*
@@ -721,7 +730,6 @@ ip_input(struct mbuf *m)
 	 * Not for us; forward if possible and desirable.
 	 */
 	if (ipforwarding == 0) {
-		m_put_rcvif_psref(ifp, &psref);
 		IP_STATINC(IP_STAT_CANTFORWARD);
 		m_freem(m);
 	} else {
@@ -732,7 +740,6 @@ ip_input(struct mbuf *m)
 		 * forwarding loop till TTL goes to 0.
 		 */
 		if (downmatch) {
-			m_put_rcvif_psref(ifp, &psref);
 			icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_HOST, 0, 0);
 			IP_STATINC(IP_STAT_CANTFORWARD);
 			return;
@@ -740,20 +747,17 @@ ip_input(struct mbuf *m)
 #ifdef IPSEC
 		/* Check the security policy (SP) for the packet */
 		if (ipsec_used) {
-			if (ipsec_ip_input(m, true) != 0) {
+			if (ipsec_ip_input_checkpolicy(m, true) != 0) {
+				IP_STATINC(IP_STAT_IPSECDROP_IN);
 				goto out;
 			}
 		}
 #endif
 		ip_forward(m, srcrt, ifp);
-		m_put_rcvif_psref(ifp, &psref);
 	}
 	return;
 
 ours:
-	m_put_rcvif_psref(ifp, &psref);
-	ifp = NULL;
-
 	/*
 	 * If offset or IP_MF are set, must reassemble.
 	 */
@@ -787,7 +791,8 @@ ours:
 	 */
 	if (ipsec_used &&
 	    (inetsw[ip_protox[ip->ip_p]].pr_flags & PR_LASTHDR) != 0) {
-		if (ipsec_ip_input(m, false) != 0) {
+		if (ipsec_ip_input_checkpolicy(m, false) != 0) {
+			IP_STATINC(IP_STAT_IPSECDROP_IN);
 			goto out;
 		}
 	}
@@ -817,7 +822,6 @@ ours:
 	return;
 
 out:
-	m_put_rcvif_psref(ifp, &psref);
 	if (m != NULL)
 		m_freem(m);
 }
@@ -1363,6 +1367,7 @@ ip_forward(struct mbuf *m, int srcrt, struct ifnet *rcvif)
 	}
 
 	if (ip->ip_ttl <= IPTTLDEC) {
+		IP_STATINC(IP_STAT_TIMXCEED);
 		icmp_error(m, ICMP_TIMXCEED, ICMP_TIMXCEED_INTRANS, dest, 0);
 		return;
 	}
@@ -1373,6 +1378,7 @@ ip_forward(struct mbuf *m, int srcrt, struct ifnet *rcvif)
 	rt = rtcache_lookup(ro, &u.dst);
 	if (rt == NULL) {
 		rtcache_percpu_putref(ipforward_rt_percpu);
+		IP_STATINC(IP_STAT_NOROUTE);
 		icmp_error(m, ICMP_UNREACH, ICMP_UNREACH_NET, dest, 0);
 		return;
 	}

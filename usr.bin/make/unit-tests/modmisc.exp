@@ -8,42 +8,14 @@ path_/usr/xbin=/opt/xbin/
 paths=/bin /tmp / /no/such/dir /opt/xbin
 PATHS=/BIN /TMP / /NO/SUCH/DIR /OPT/XBIN
 The answer is 42
-dirname of 'a/b/c def a.b.c a.b/c a a.a .gitignore a a.a' is 'a/b . . a.b . . . . .'
-basename of 'a/b/c def a.b.c a.b/c a a.a .gitignore a a.a' is 'c def a.b.c c a a.a .gitignore a a.a'
-suffix of 'a/b/c def a.b.c a.b/c a a.a .gitignore a a.a' is 'c b/c a gitignore a'
-root of 'a/b/c def a.b.c a.b/c a a.a .gitignore a a.a' is 'a/b/c def a.b a a a a a'
 S:
 C:
 @:
 S:empty
 C:empty
 @:
-mod-tu-space: A   B
 mod-quote: new
 
 line
 mod-break-many-words: 500
-mod-remember: 1 2 3 1 2 3 1 2 3
-mod-remember: 1 2 3, SAVED=3
-mod-localtime:
-%Y
-2020
-%Y
-mod-hash:
-make: Unknown modifier 'h'
-
-26bb0f5f
-12345
-make: Unknown modifier 'h'
-
-make: Unknown modifier 'h'
-
-mod-range:
-make: Unknown modifier 'r'
-
-1 2 3
-make: Unknown modifier 'r'
-
-make: Unknown modifier 'r'
-
 exit status 0

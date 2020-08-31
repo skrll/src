@@ -1,4 +1,4 @@
-/*	$NetBSD: in.c,v 1.236 2019/12/18 00:49:15 roy Exp $	*/
+/*	$NetBSD: in.c,v 1.238 2020/08/29 17:41:14 christos Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.236 2019/12/18 00:49:15 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.238 2020/08/29 17:41:14 christos Exp $");
 
 #include "arp.h"
 
@@ -145,7 +145,6 @@ __KERNEL_RCSID(0, "$NetBSD: in.c,v 1.236 2019/12/18 00:49:15 roy Exp $");
 #endif
 
 static u_int	in_mask2len(struct in_addr *);
-static void	in_len2mask(struct in_addr *, u_int);
 static int	in_lifaddr_ioctl(struct socket *, u_long, void *,
 	struct ifnet *);
 
@@ -380,7 +379,7 @@ in_mask2len(struct in_addr *mask)
 	return x * NBBY + y;
 }
 
-static void
+void
 in_len2mask(struct in_addr *mask, u_int len)
 {
 	u_int i;

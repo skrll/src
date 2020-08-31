@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_x86_svm.c,v 1.70 2020/08/20 11:09:56 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86_svm.c,v 1.74 2020/08/26 16:33:03 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018-2020 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.70 2020/08/20 11:09:56 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.74 2020/08/26 16:33:03 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -676,8 +676,22 @@ svm_event_waitexit_disable(struct nvmm_cpu *vcpu, bool nmi)
 	svm_vmcb_cache_flush(vmcb, VMCB_CTRL_VMCB_CLEAN_I);
 }
 
+static inline bool
+svm_excp_has_rf(uint8_t vector)
+{
+	switch (vector) {
+	case 1:		/* #DB */
+	case 4:		/* #OF */
+	case 8:		/* #DF */
+	case 18:	/* #MC */
+		return false;
+	default:
+		return true;
+	}
+}
+
 static inline int
-svm_event_has_error(uint8_t vector)
+svm_excp_has_error(uint8_t vector)
 {
 	switch (vector) {
 	case 8:		/* #DF */
@@ -717,7 +731,10 @@ svm_vcpu_inject(struct nvmm_cpu *vcpu)
 			return EINVAL;
 		if (vector == 3 || vector == 0)
 			return EINVAL;
-		err = svm_event_has_error(vector);
+		if (svm_excp_has_rf(vector)) {
+			vmcb->state.rflags |= PSL_RF;
+		}
+		err = svm_excp_has_error(vector);
 		break;
 	case NVMM_VCPU_EVENT_INTR:
 		type = SVM_EVENT_TYPE_HW_INT;
@@ -790,6 +807,7 @@ svm_inkernel_advance(struct vmcb *vmcb)
 	 * debugger.
 	 */
 	vmcb->state.rip = vmcb->ctrl.nrip;
+	vmcb->state.rflags &= ~PSL_RF;
 	vmcb->ctrl.intr &= ~VMCB_CTRL_INTR_SHADOW;
 }
 
@@ -1022,18 +1040,11 @@ svm_exit_cpuid(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	struct svm_cpudata *cpudata = vcpu->cpudata;
 	struct nvmm_vcpu_conf_cpuid *cpuid;
 	uint64_t eax, ecx;
-	u_int descs[4];
 	size_t i;
 
 	eax = cpudata->vmcb->state.rax;
 	ecx = cpudata->gprs[NVMM_X64_GPR_RCX];
-	x86_cpuid2(eax, ecx, descs);
-
-	cpudata->vmcb->state.rax = descs[0];
-	cpudata->gprs[NVMM_X64_GPR_RBX] = descs[1];
-	cpudata->gprs[NVMM_X64_GPR_RCX] = descs[2];
-	cpudata->gprs[NVMM_X64_GPR_RDX] = descs[3];
-
+	svm_inkernel_exec_cpuid(cpudata, eax, ecx);
 	svm_inkernel_handle_cpuid(vcpu, eax, ecx);
 
 	for (i = 0; i < SVM_NCPUIDS; i++) {
@@ -1159,6 +1170,12 @@ svm_inkernel_handle_msr(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	size_t i;
 
 	if (exit->reason == NVMM_VCPU_EXIT_RDMSR) {
+		if (exit->u.rdmsr.msr == MSR_EFER) {
+			val = vmcb->state.efer & ~EFER_SVME;
+			vmcb->state.rax = (val & 0xFFFFFFFF);
+			cpudata->gprs[NVMM_X64_GPR_RDX] = (val >> 32);
+			goto handled;
+		}
 		if (exit->u.rdmsr.msr == MSR_NB_CFG) {
 			val = NB_CFG_INITAPICCPUIDLO;
 			vmcb->state.rax = (val & 0xFFFFFFFF);
@@ -1480,11 +1497,12 @@ svm_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	uint64_t machgen;
 	int hcpu;
 
+	svm_vcpu_state_commit(vcpu);
+	comm->state_cached = 0;
+
 	if (__predict_false(svm_vcpu_event_commit(vcpu) != 0)) {
 		return EINVAL;
 	}
-	svm_vcpu_state_commit(vcpu);
-	comm->state_cached = 0;
 
 	kpreempt_disable();
 	hcpu = cpu_number();
@@ -2125,7 +2143,6 @@ svm_vcpu_init(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	 *  - POPF [popf instruction]
 	 *  - IRET [iret instruction]
 	 *  - INTN [int $n instructions]
-	 *  - INVD [invd instruction]
 	 *  - PAUSE [pause instruction]
 	 *  - INVLPG [invplg instruction]
 	 *  - TASKSW [task switches]
@@ -2139,6 +2156,7 @@ svm_vcpu_init(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	    VMCB_CTRL_INTERCEPT_RDPMC |
 	    VMCB_CTRL_INTERCEPT_CPUID |
 	    VMCB_CTRL_INTERCEPT_RSM |
+	    VMCB_CTRL_INTERCEPT_INVD |
 	    VMCB_CTRL_INTERCEPT_HLT |
 	    VMCB_CTRL_INTERCEPT_INVLPGA |
 	    VMCB_CTRL_INTERCEPT_IOIO_PROT |
@@ -2183,7 +2201,6 @@ svm_vcpu_init(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 
 	/* Allow direct access to certain MSRs. */
 	memset(cpudata->msrbm, 0xFF, MSRBM_SIZE);
-	svm_vcpu_msr_allow(cpudata->msrbm, MSR_EFER, true, false);
 	svm_vcpu_msr_allow(cpudata->msrbm, MSR_STAR, true, true);
 	svm_vcpu_msr_allow(cpudata->msrbm, MSR_LSTAR, true, true);
 	svm_vcpu_msr_allow(cpudata->msrbm, MSR_CSTAR, true, true);

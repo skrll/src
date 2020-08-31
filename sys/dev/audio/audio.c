@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.75 2020/05/29 03:09:14 isaki Exp $	*/
+/*	$NetBSD: audio.c,v 1.78 2020/08/23 04:20:01 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -138,7 +138,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.75 2020/05/29 03:09:14 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.78 2020/08/23 04:20:01 isaki Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -901,13 +901,15 @@ audioattach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	if (has_playback) {
-		if ((hw_if->start_output == NULL && hw_if->trigger_output == NULL) ||
+		if ((hw_if->start_output == NULL &&
+		     hw_if->trigger_output == NULL) ||
 		    hw_if->halt_output == NULL) {
 			aprint_error(": missing playback method\n");
 		}
 	}
 	if (has_capture) {
-		if ((hw_if->start_input == NULL && hw_if->trigger_input == NULL) ||
+		if ((hw_if->start_input == NULL &&
+		     hw_if->trigger_input == NULL) ||
 		    hw_if->halt_input == NULL) {
 			aprint_error(": missing capture method\n");
 		}
@@ -2496,7 +2498,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	if (track->mmapped)
 		return EPERM;
 
-	TRACET(2, track, "resid=%zd", uio->uio_resid);
+	TRACET(2, track, "resid=%zd ioflag=0x%x", uio->uio_resid, ioflag);
 
 #ifdef AUDIO_PM_IDLE
 	error = audio_exlock_mutex_enter(sc);
@@ -4231,8 +4233,9 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 
 /*
  * Set the userland format of this track.
- * usrfmt argument should be parameter verified with audio_check_params().
- * It will release and reallocate all internal conversion buffers.
+ * usrfmt argument should have been previously verified by
+ * audio_track_setinfo_check().
+ * This function may release and reallocate all internal conversion buffers.
  * It returns 0 if successful.  Otherwise it returns errno with clearing all
  * internal buffers.
  * It must be called without sc_intr_lock since uvm_* routines require non
@@ -6079,7 +6082,7 @@ audio_softintr_wr(void *cookie)
 		if (track == NULL)
 			continue;
 
-		TRACET(4, track, "broadcast; trseq=%d out=%d/%d/%d",
+		TRACET(4, track, "broadcast; trkseq=%d out=%d/%d/%d",
 		    (int)track->seq,
 		    track->outbuf.head,
 		    track->outbuf.used,
@@ -6129,7 +6132,7 @@ audio_check_params(audio_format2_t *p)
 
 	/*
 	 * Convert obsolete AUDIO_ENCODING_PCM encodings.
-	 * 
+	 *
 	 * AUDIO_ENCODING_PCM16 == AUDIO_ENCODING_LINEAR
 	 * So, it's always signed, as in SunOS.
 	 *
@@ -6432,7 +6435,7 @@ audio_hw_probe(struct audio_softc *sc, audio_format2_t *cand, int mode)
  * If fmt is included in the result of query_format, returns 0.
  * Otherwise returns EINVAL.
  * Must be called without sc_lock held.
- */ 
+ */
 static int
 audio_hw_validate_format(struct audio_softc *sc, int mode,
 	const audio_format2_t *fmt)
@@ -7293,7 +7296,7 @@ abort:
  * - pfil and rfil must be zero-filled.
  * If successful,
  * - pfil, rfil will be filled with filter information specified by the
- *   hardware driver.
+ *   hardware driver if necessary.
  * and then returns 0.  Otherwise returns errno.
  * Must be called without sc_lock held.
  */
