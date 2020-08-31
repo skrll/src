@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.102 2020/08/19 05:25:26 rillig Exp $
+# $NetBSD: Makefile,v 1.129 2020/08/29 19:35:38 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -36,10 +36,19 @@
 # Any test that is commented out must be ignored in
 # src/tests/usr.bin/make/t_make.sh as well.
 TESTS+=		# archive	# broken on FreeBSD, enabled in t_make.sh
+TESTS+=		archive-suffix
+TESTS+=		cmd-interrupt
 TESTS+=		cmdline
 TESTS+=		comment
 TESTS+=		cond-cmp-numeric
+TESTS+=		cond-cmp-numeric-eq
+TESTS+=		cond-cmp-numeric-ge
+TESTS+=		cond-cmp-numeric-gt
+TESTS+=		cond-cmp-numeric-le
+TESTS+=		cond-cmp-numeric-lt
+TESTS+=		cond-cmp-numeric-ne
 TESTS+=		cond-cmp-string
+TESTS+=		cond-func
 TESTS+=		cond-func-commands
 TESTS+=		cond-func-defined
 TESTS+=		cond-func-empty
@@ -64,6 +73,8 @@ TESTS+=		dep
 TESTS+=		dep-colon
 TESTS+=		dep-double-colon
 TESTS+=		dep-exclam
+TESTS+=		dep-none
+TESTS+=		dep-var
 TESTS+=		dep-wildcards
 TESTS+=		depsrc
 TESTS+=		depsrc-exec
@@ -82,6 +93,7 @@ TESTS+=		depsrc-recursive
 TESTS+=		depsrc-silent
 TESTS+=		depsrc-use
 TESTS+=		depsrc-usebefore
+TESTS+=		depsrc-usebefore-double-colon
 TESTS+=		depsrc-wait
 TESTS+=		deptgt
 TESTS+=		deptgt-begin
@@ -107,6 +119,7 @@ TESTS+=		deptgt-silent
 TESTS+=		deptgt-stale
 TESTS+=		deptgt-suffixes
 TESTS+=		dir
+TESTS+=		dir-expand-path
 TESTS+=		directive
 TESTS+=		directive-elif
 TESTS+=		directive-elifdef
@@ -119,6 +132,7 @@ TESTS+=		directive-error
 TESTS+=		directive-export
 TESTS+=		directive-export-env
 TESTS+=		directive-export-literal
+TESTS+=		directive-for-generating-endif
 TESTS+=		directive-if
 TESTS+=		directive-ifdef
 TESTS+=		directive-ifmake
@@ -157,6 +171,7 @@ TESTS+=		opt
 TESTS+=		opt-backwards
 TESTS+=		opt-chdir
 TESTS+=		opt-debug
+TESTS+=		opt-debug-g1
 TESTS+=		opt-define
 TESTS+=		opt-env
 TESTS+=		opt-file
@@ -185,6 +200,7 @@ TESTS+=		# posix1	# broken by reverting POSIX changes
 TESTS+=		qequals
 TESTS+=		recursive
 TESTS+=		sh
+TESTS+=		sh-dots
 TESTS+=		sh-jobs
 TESTS+=		sh-jobs-error
 TESTS+=		sh-leading-at
@@ -259,8 +275,10 @@ TESTS+=		varname
 TESTS+=		varname-dollar
 TESTS+=		varname-dot-alltargets
 TESTS+=		varname-dot-curdir
+TESTS+=		varname-dot-includes
 TESTS+=		varname-dot-includedfromdir
 TESTS+=		varname-dot-includedfromfile
+TESTS+=		varname-dot-libs
 TESTS+=		varname-dot-make-dependfile
 TESTS+=		varname-dot-make-expand_variables
 TESTS+=		varname-dot-make-exported
@@ -287,7 +305,9 @@ TESTS+=		varname-dot-objdir
 TESTS+=		varname-dot-parsedir
 TESTS+=		varname-dot-parsefile
 TESTS+=		varname-dot-path
+TESTS+=		varname-dot-shell
 TESTS+=		varname-dot-targets
+TESTS+=		varname-empty
 TESTS+=		varname-make
 TESTS+=		varname-make_print_var_on_error
 TESTS+=		varname-makeflags
@@ -305,29 +325,53 @@ ENV.varmisc+=		FROM_ENV_BEFORE=env
 ENV.varmisc+=		FROM_ENV_AFTER=env
 
 # Override make flags for some of the tests; default is -k.
+# If possible, write ".MAKEFLAGS: -dv" in the test .mk file instead of
+# settings FLAGS.test=-dv here, since that is closer to the test code.
+FLAGS.archive=		-dA
 FLAGS.counter=		-dv
+FLAGS.directive-ifmake=	first second
 FLAGS.doterror=		# none
 FLAGS.envfirst=		-e
 FLAGS.export=		# none
 FLAGS.lint=		-dL -k
+FLAGS.opt-debug-g1=	-dg1
+FLAGS.opt-ignore=	-i
+FLAGS.opt-keep-going=	-k
 FLAGS.opt-no-action=	-n
 FLAGS.opt-query=	-q
+FLAGS.opt-var-expanded=	-v VAR -v VALUE
+FLAGS.opt-var-literal=	-V VAR -V VALUE
+FLAGS.opt-warnings-as-errors= -W
 FLAGS.order=		-j1
 FLAGS.recursive=	-dL
+FLAGS.sh-leading-plus=	-n
 FLAGS.vardebug=		-k -dv FROM_CMDLINE=
 FLAGS.varmod-match-escape= -dv
+FLAGS.varname-dot-shell= -dpv
+FLAGS.varname-empty=	-dv '$${:U}=cmdline-u' '=cmline-plain'
 
 # Some tests need extra post-processing.
+SED_CMDS.opt-debug-g1=	-e 's,${.CURDIR},CURDIR,'
+SED_CMDS.opt-debug-g1+=	-e '/Global Variables:/,/Suffixes:/d'
+SED_CMDS.sh-dots=	-e 's,^.*\.\.\.:.*,<normalized: ...: not found>,'
 SED_CMDS.varmod-subst-regex+= \
 			-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
 SED_CMDS.varmod-edge+=	-e 's, line [0-9]*:, line omitted:,'
-SED_CMDS.varshell+=	-e 's,^[a-z]*sh: ,,'
+SED_CMDS.varshell+=	-e 's,^${.SHELL:T}: ,,'
 SED_CMDS.varshell+=	-e '/command/s,No such.*,not found,'
+SED_CMDS.varname-dot-shell=	-e 's, = /.*, = (details omitted),'
+SED_CMDS.varname-dot-shell+=	-e 's,"/[^"]*","(details omitted)",'
+SED_CMDS.varname-dot-shell+=	-e 's,\[/[^]]*\],[(details omitted)],'
 
 # Some tests need an additional round of postprocessing.
 POSTPROC.counter=	${TOOL_SED} -n -e '/:RELEVANT = yes/,/:RELEVANT = no/p'
+POSTPROC.deptgt-suffixes= \
+			${TOOL_SED} -n -e '/^\#\*\*\* Suffixes/,/^\#\*/p'
 POSTPROC.vardebug=	${TOOL_SED} -n -e '/:RELEVANT = yes/,/:RELEVANT = no/p'
 POSTPROC.varmod-match-escape= ${TOOL_SED} -n -e '/^Pattern/p'
+POSTPROC.varname-dot-shell= \
+			awk '/\.SHELL/ || /^ParseReadLine/'
+POSTPROC.varname-empty=	${TOOL_SED} -n -e '/^Var_Set/p' -e '/^out:/p'
 
 # Some tests reuse other tests, which makes them unnecessarily fragile.
 export-all.rawout: export.mk
@@ -431,9 +475,13 @@ SYNC_MI_AWK= \
 	$$1 == linestart "/Makefile" { system(cmd) }
 
 sync-mi:
+	# Obsolete entries in the mi file must be marked as obsolete,
+	# the lines must be preserved instead of just being deleted.
+	@echo "$@: Doesn't work right now." 1>&2; exit 1
 	@set -eu;							\
 	cd "${MAKEFILE:tA:H}/../../..";					\
 	mi="distrib/sets/lists/tests/mi";				\
+	cvs update "$$mi";						\
 	awk ${SYNC_MI_AWK:Q} < "$$mi" > "$$mi.$@";			\
 	mv -f "$$mi.$@" "$$mi";						\
 	cvs diff "$$mi" || true

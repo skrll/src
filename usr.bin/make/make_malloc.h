@@ -1,4 +1,4 @@
-/*	$NetBSD: make_malloc.h,v 1.7 2020/08/20 06:35:14 rillig Exp $	*/
+/*	$NetBSD: make_malloc.h,v 1.10 2020/08/29 16:47:45 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -38,6 +38,7 @@ char *bmake_strldup(const char *, size_t);
 #define bmake_strdup(x)         estrdup(x)
 #define bmake_strldup(x,y)      estrndup(x,y)
 #endif
+char *bmake_strsedup(const char *, const char *);
 
 /* Thin wrapper around free(3) to avoid the extra function call in case
  * p is NULL, which on x86_64 costs about 12 machine instructions.
@@ -45,7 +46,7 @@ char *bmake_strldup(const char *, size_t);
  *
  * The case of a NULL pointer happens especially often after Var_Value,
  * since only environment variables need to be freed, but not others. */
-static inline void
+static inline void MAKE_ATTR_UNUSED
 bmake_free(void *p)
 {
     if (p != NULL)

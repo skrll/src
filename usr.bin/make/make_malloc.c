@@ -1,4 +1,4 @@
-/*	$NetBSD: make_malloc.c,v 1.15 2020/08/20 06:35:14 rillig Exp $	*/
+/*	$NetBSD: make_malloc.c,v 1.17 2020/08/29 16:47:45 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -28,7 +28,7 @@
 
 #ifdef MAKE_NATIVE
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: make_malloc.c,v 1.15 2020/08/20 06:35:14 rillig Exp $");
+__RCSID("$NetBSD: make_malloc.c,v 1.17 2020/08/29 16:47:45 rillig Exp $");
 #endif
 
 #include <stdio.h>
@@ -104,3 +104,10 @@ bmake_realloc(void *ptr, size_t size)
 	return ptr;
 }
 #endif
+
+/* Allocate a string from start up to but excluding end. */
+char *
+bmake_strsedup(const char *start, const char *end)
+{
+    return bmake_strldup(start, (size_t)(end - start));
+}

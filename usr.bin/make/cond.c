@@ -1,4 +1,4 @@
-/*	$NetBSD: cond.c,v 1.95 2020/08/13 20:13:46 rillig Exp $	*/
+/*	$NetBSD: cond.c,v 1.106 2020/08/29 13:38:48 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -70,14 +70,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: cond.c,v 1.95 2020/08/13 20:13:46 rillig Exp $";
+static char rcsid[] = "$NetBSD: cond.c,v 1.106 2020/08/29 13:38:48 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)cond.c	8.2 (Berkeley) 1/2/94";
 #else
-__RCSID("$NetBSD: cond.c,v 1.95 2020/08/13 20:13:46 rillig Exp $");
+__RCSID("$NetBSD: cond.c,v 1.106 2020/08/29 13:38:48 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -91,14 +91,10 @@ __RCSID("$NetBSD: cond.c,v 1.95 2020/08/13 20:13:46 rillig Exp $");
  *
  */
 
-#include    <assert.h>
-#include    <ctype.h>
-#include    <errno.h>
+#include <errno.h>
 
-#include    "make.h"
-#include    "hash.h"
-#include    "dir.h"
-#include    "buf.h"
+#include "make.h"
+#include "dir.h"
 
 /*
  * The parsing of conditional expressions is based on this grammar:
@@ -121,8 +117,7 @@ __RCSID("$NetBSD: cond.c,v 1.95 2020/08/13 20:13:46 rillig Exp $");
  *	T -> ! T
  *	op -> == | != | > | < | >= | <=
  *
- * 'symbol' is some other symbol to which the default function (condDefProc)
- * is applied.
+ * 'symbol' is some other symbol to which the default function is applied.
  *
  * Tokens are scanned from the 'condExpr' string. The scanner (CondToken)
  * will return TOK_AND for '&' and '&&', TOK_OR for '|' and '||',
@@ -141,10 +136,6 @@ typedef enum {
     TOK_LPAREN, TOK_RPAREN, TOK_EOF, TOK_NONE, TOK_ERROR
 } Token;
 
-/*-
- * Structures to handle elegantly the different forms of #if's. The
- * last two fields are stored in condInvert and condDefProc, respectively.
- */
 static Token CondE(Boolean);
 static CondEvalResult do_Cond_EvalExpression(Boolean *);
 
@@ -281,19 +272,18 @@ CondDoDefined(int argLen MAKE_ATTR_UNUSED, const char *arg)
     return result;
 }
 
-/* Wrapper around Str_Match that returns 0 on match and non-zero
- * on mismatch. Callback function for CondDoMake via Lst_Find. */
-static int
+/* Wrapper around Str_Match, to be used by Lst_Find. */
+static Boolean
 CondFindStrMatch(const void *string, const void *pattern)
 {
-    return !Str_Match(string, pattern);
+    return Str_Match(string, pattern);
 }
 
 /* See if the given target is being made. */
 static Boolean
 CondDoMake(int argLen MAKE_ATTR_UNUSED, const char *arg)
 {
-    return Lst_Find(create, arg, CondFindStrMatch) != NULL;
+    return Lst_Find(create, CondFindStrMatch, arg) != NULL;
 }
 
 /* See if the given file exists. */
@@ -397,6 +387,7 @@ CondGetString(Boolean doEval, Boolean *quoted, void **freeIt, Boolean strictLHS)
     int len;
     Boolean qt;
     const char *start;
+    VarEvalFlags eflags;
 
     Buf_Init(&buf, 0);
     str = NULL;
@@ -433,9 +424,9 @@ CondGetString(Boolean doEval, Boolean *quoted, void **freeIt, Boolean strictLHS)
 	    break;
 	case '$':
 	    /* if we are in quotes, then an undefined variable is ok */
-	    str = Var_Parse(condExpr, VAR_CMD,
-			    ((!qt && doEval) ? VARE_UNDEFERR : 0) |
-			    (doEval ? VARE_WANTRES : 0), &len, freeIt);
+	    eflags = ((!qt && doEval) ? VARE_UNDEFERR : 0) |
+		     (doEval ? VARE_WANTRES : 0);
+	    str = Var_Parse(condExpr, VAR_CMD, eflags, &len, freeIt);
 	    if (str == var_Error) {
 		if (*freeIt) {
 		    free(*freeIt);
@@ -496,9 +487,10 @@ cleanup:
     return str;
 }
 
+/* The different forms of #if's. */
 static const struct If {
     const char *form;		/* Form of if */
-    int formlen;		/* Length of form */
+    size_t formlen;		/* Length of form */
     Boolean doNot;		/* TRUE if default function should be negated */
     Boolean (*defProc)(int, const char *); /* Default function to apply */
 } ifs[] = {
@@ -691,7 +683,7 @@ get_mpt_arg(Boolean doEval, const char **linePtr, char **argPtr,
      * TOK_TRUE if the resulting string is empty.
      */
     int length;
-    void *freeIt;
+    void *val_freeIt;
     const char *val;
     const char *cp = *linePtr;
 
@@ -699,7 +691,7 @@ get_mpt_arg(Boolean doEval, const char **linePtr, char **argPtr,
     *argPtr = NULL;
 
     val = Var_Parse(cp - 1, VAR_CMD, doEval ? VARE_WANTRES : 0, &length,
-		    &freeIt);
+		    &val_freeIt);
     /*
      * Advance *linePtr to beyond the closing ). Note that
      * we subtract one because 'length' is calculated from 'cp - 1'.
@@ -707,7 +699,7 @@ get_mpt_arg(Boolean doEval, const char **linePtr, char **argPtr,
     *linePtr = cp - 1 + length;
 
     if (val == var_Error) {
-	free(freeIt);
+	free(val_freeIt);
 	return -1;
     }
 
@@ -720,7 +712,7 @@ get_mpt_arg(Boolean doEval, const char **linePtr, char **argPtr,
      * true/false here.
      */
     length = *val ? 2 : 1;
-    free(freeIt);
+    free(val_freeIt);
     return length;
 }
 
@@ -735,7 +727,7 @@ compare_function(Boolean doEval)
 {
     static const struct fn_def {
 	const char *fn_name;
-	int fn_name_len;
+	size_t fn_name_len;
 	int (*fn_getarg)(Boolean, const char **, char **, const char *);
 	Boolean (*fn_proc)(int, const char *);
     } fn_defs[] = {
