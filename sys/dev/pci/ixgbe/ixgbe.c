@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.239 2020/08/17 08:23:30 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.248 2020/08/27 04:54:43 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -159,6 +159,7 @@ static const char    *ixgbe_strings[] = {
  * Function prototypes
  ************************************************************************/
 static int	ixgbe_probe(device_t, cfdata_t, void *);
+static void	ixgbe_quirks(struct adapter *);
 static void	ixgbe_attach(device_t, device_t, void *);
 static int	ixgbe_detach(device_t, int);
 #if 0
@@ -257,7 +258,7 @@ static int	ixgbe_sysctl_wol_enable(SYSCTLFN_PROTO);
 static int	ixgbe_sysctl_wufc(SYSCTLFN_PROTO);
 
 /* Support for pluggable optic modules */
-static bool	ixgbe_sfp_cage_full(struct ixgbe_hw *);
+static bool	ixgbe_sfp_cage_full(struct adapter *);
 
 /* Legacy (single vector) interrupt handler */
 static int	ixgbe_legacy_irq(void *);
@@ -763,6 +764,33 @@ ixgbe_initialize_transmit_units(struct adapter *adapter)
 	return;
 } /* ixgbe_initialize_transmit_units */
 
+static void
+ixgbe_quirks(struct adapter *adapter)
+{
+	device_t dev = adapter->dev;
+	struct ixgbe_hw *hw = &adapter->hw;
+	const char *vendor, *product;
+
+	if (hw->device_id == IXGBE_DEV_ID_X550EM_A_SFP_N) {
+		/*
+		 * Quirk for inverted logic of SFP+'s MOD_ABS on GIGABYTE
+		 * MA10-ST0.
+		 */
+		vendor = pmf_get_platform("system-vendor");
+		product = pmf_get_platform("system-product");
+
+		if ((vendor == NULL) || (product == NULL))
+			return;
+
+		if ((strcmp(vendor, "GIGABYTE") == 0) &&
+		    (strcmp(product, "MA10-ST0") == 0)) {
+			aprint_verbose_dev(dev,
+			    "Enable SFP+ MOD_ABS inverse quirk\n");
+			adapter->quirks |= IXGBE_QUIRK_MOD_ABS_INVERT;
+		}
+	}
+}
+
 /************************************************************************
  * ixgbe_attach - Device initialization routine
  *
@@ -836,6 +864,9 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	hw->subsystem_vendor_id = PCI_SUBSYS_VENDOR(subid);
 	hw->subsystem_device_id = PCI_SUBSYS_ID(subid);
 
+	/* Set quirk flags */
+	ixgbe_quirks(adapter);
+
 	/*
 	 * Make sure BUSMASTER is set
 	 */
@@ -876,7 +907,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		str = "X550";
 		break;
 	case ixgbe_mac_X550EM_x:
-		str = "X550EM";
+		str = "X550EM X";
 		break;
 	case ixgbe_mac_X550EM_a:
 		str = "X550EM A";
@@ -1507,11 +1538,10 @@ ixgbe_is_sfp(struct ixgbe_hw *hw)
 static void
 ixgbe_schedule_admin_tasklet(struct adapter *adapter)
 {
-	if (adapter->schedule_wqs_ok) {
-		if (atomic_cas_uint(&adapter->admin_pending, 0, 1) == 0)
-			workqueue_enqueue(adapter->admin_wq,
-			    &adapter->admin_wc, NULL);
-	}
+
+	if (atomic_cas_uint(&adapter->admin_pending, 0, 1) == 0)
+		workqueue_enqueue(adapter->admin_wq,
+		    &adapter->admin_wc, NULL);
 }
 
 /************************************************************************
@@ -3558,13 +3588,6 @@ ixgbe_detach(device_t dev, int flags)
 		return (EBUSY);
 	}
 
-	/*
-	 * Stop the interface. ixgbe_setup_low_power_mode() calls ixgbe_stop(),
-	 * so it's not required to call ixgbe_stop() directly.
-	 */
-	IXGBE_CORE_LOCK(adapter);
-	ixgbe_setup_low_power_mode(adapter);
-	IXGBE_CORE_UNLOCK(adapter);
 #if NVLAN > 0
 	/* Make sure VLANs are not using driver */
 	if (!VLAN_ATTACHED(&adapter->osdep.ec))
@@ -3577,6 +3600,25 @@ ixgbe_detach(device_t dev, int flags)
 	}
 #endif
 
+	/*
+	 * Stop the interface. ixgbe_setup_low_power_mode() calls ixgbe_stop(),
+	 * so it's not required to call ixgbe_stop() directly.
+	 */
+	IXGBE_CORE_LOCK(adapter);
+	ixgbe_setup_low_power_mode(adapter);
+	IXGBE_CORE_UNLOCK(adapter);
+
+	callout_halt(&adapter->timer, NULL);
+	if (adapter->feat_en & IXGBE_FEATURE_RECOVERY_MODE) {
+		callout_stop(&adapter->recovery_mode_timer);
+		callout_halt(&adapter->recovery_mode_timer, NULL);
+	}
+
+	workqueue_wait(adapter->admin_wq, &adapter->admin_wc);
+	atomic_store_relaxed(&adapter->admin_pending, 0);
+	workqueue_wait(adapter->timer_wq, &adapter->timer_wc);
+	atomic_store_relaxed(&adapter->timer_pending, 0);
+
 	pmf_device_deregister(dev);
 
 	ether_ifdetach(adapter->ifp);
@@ -3587,12 +3629,6 @@ ixgbe_detach(device_t dev, int flags)
 	ctrl_ext = IXGBE_READ_REG(&adapter->hw, IXGBE_CTRL_EXT);
 	ctrl_ext &= ~IXGBE_CTRL_EXT_DRV_LOAD;
 	IXGBE_WRITE_REG(&adapter->hw, IXGBE_CTRL_EXT, ctrl_ext);
-
-	callout_halt(&adapter->timer, NULL);
-	if (adapter->feat_en & IXGBE_FEATURE_RECOVERY_MODE) {
-		callout_stop(&adapter->recovery_mode_timer);
-		callout_halt(&adapter->recovery_mode_timer, NULL);
-	}
 
 	if (adapter->feat_en & IXGBE_FEATURE_NETMAP)
 		netmap_detach(adapter->ifp);
@@ -4471,7 +4507,7 @@ ixgbe_handle_timer(struct work *wk, void *context)
 	/* Check for pluggable optics */
 	if (ixgbe_is_sfp(hw)) {
 		bool was_full = hw->phy.sfp_type != ixgbe_sfp_type_not_present;
-		bool is_full = ixgbe_sfp_cage_full(hw);
+		bool is_full = ixgbe_sfp_cage_full(adapter);
 
 		/* do probe if cage state changed */
 		if (was_full ^ is_full) {
@@ -4615,16 +4651,27 @@ ixgbe_handle_recovery_mode_timer(struct work *wk, void *context)
  *   Determine if a port had optics inserted.
  ************************************************************************/
 static bool
-ixgbe_sfp_cage_full(struct ixgbe_hw *hw)
+ixgbe_sfp_cage_full(struct adapter *adapter)
 {
+	struct ixgbe_hw *hw = &adapter->hw;
 	uint32_t mask;
+	int rv;
 
 	if (hw->mac.type >= ixgbe_mac_X540)
 		mask = IXGBE_ESDP_SDP0;
 	else
 		mask = IXGBE_ESDP_SDP2;
 
-	return IXGBE_READ_REG(hw, IXGBE_ESDP) & mask;
+	rv = IXGBE_READ_REG(hw, IXGBE_ESDP) & mask;
+	if ((adapter->quirks & IXGBE_QUIRK_MOD_ABS_INVERT) != 0)
+		rv = !rv;
+
+	if (hw->mac.type == ixgbe_mac_X550EM_a) {
+		/* X550EM_a's SDP0 is inverted than others. */
+		return !rv;
+	}
+
+	return rv;
 } /* ixgbe_sfp_cage_full */
 
 /************************************************************************
@@ -4647,6 +4694,10 @@ ixgbe_handle_mod(void *context)
 			break;
 		case ixgbe_mac_X550EM_x:
 		case ixgbe_mac_X550EM_a:
+			/*
+			 * XXX See ixgbe_sfp_cage_full(). It seems the bit is
+			 * inverted on X550EM_a, so I think this is incorrect.
+			 */
 			cage_full = IXGBE_READ_REG(hw, IXGBE_ESDP) &
 			    IXGBE_ESDP_SDP0;
 			break;
@@ -4766,7 +4817,9 @@ ixgbe_handle_admin(struct work *wk, void *context)
 	 */
 	IFNET_LOCK(ifp);
 	IXGBE_CORE_LOCK(adapter);
-	while ((req = adapter->task_requests) != 0) {
+	while ((req =
+		(adapter->task_requests & ~IXGBE_REQUEST_TASK_NEED_ACKINTR))
+	    != 0) {
 		if ((req & IXGBE_REQUEST_TASK_LSC) != 0) {
 			ixgbe_handle_link(adapter);
 			atomic_and_32(&adapter->task_requests,
@@ -4801,7 +4854,9 @@ ixgbe_handle_admin(struct work *wk, void *context)
 #endif
 	}
 	atomic_store_relaxed(&adapter->admin_pending, 0);
-	if ((req & IXGBE_REQUEST_TASK_NEED_ACKINTR) != 0) {
+	if ((adapter->task_requests & IXGBE_REQUEST_TASK_NEED_ACKINTR) != 0) {
+		atomic_and_32(&adapter->task_requests,
+		    ~IXGBE_REQUEST_TASK_NEED_ACKINTR);
 		if ((adapter->feat_en & IXGBE_FEATURE_MSIX) != 0) {
 			/* Re-enable other interrupts */
 			IXGBE_WRITE_REG(hw, IXGBE_EIMS, IXGBE_EIMS_OTHER);
@@ -4822,8 +4877,6 @@ ixgbe_ifstop(struct ifnet *ifp, int disable)
 	ixgbe_stop(adapter);
 	IXGBE_CORE_UNLOCK(adapter);
 
-	workqueue_wait(adapter->admin_wq, &adapter->admin_wc);
-	atomic_store_relaxed(&adapter->admin_pending, 0);
 	workqueue_wait(adapter->timer_wq, &adapter->timer_wc);
 	atomic_store_relaxed(&adapter->timer_pending, 0);
 }

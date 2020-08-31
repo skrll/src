@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.87 2020/08/17 00:57:37 thorpej Exp $ */
+/* $NetBSD: cpu.h,v 1.89 2020/08/29 20:07:00 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -128,11 +128,9 @@ struct cpu_info {
 	struct trapframe *ci_db_regs;	/* registers for debuggers */
 	uint64_t ci_pcc_freq;		/* cpu cycles/second */
 
-#define	CPU_INFO_PMAP_DATA_NQWORDS	16
-
 	struct pmap *ci_pmap;		/* currently-activated pmap */
-					/* data used by pmap module */
-	u_long ci_pmap_data[CPU_INFO_PMAP_DATA_NQWORDS];
+	u_int ci_next_asn;		/* next ASN to assign */
+	u_long ci_asn_gen;		/* current ASN generation */
 
 #if defined(MULTIPROCESSOR)
 	volatile u_long ci_flags;	/* flags; see below */
@@ -210,30 +208,10 @@ struct clockframe {
  */
 #define	LWP_PC(p)		((l)->l_md.md_tf->tf_regs[FRAME_PC])
 
-/*
- * Give a profiling tick to the current process when the user profiling
- * buffer pages are invalid.  On the alpha, request an AST to send us
- * through trap, marking the proc as needing a profiling tick.
- */
-#define	cpu_need_proftick(l)						\
-do {									\
-	(l)->l_pflag |= LP_OWEUPC;					\
-	aston(l);							\
-} while (/*CONSTCOND*/0)
+void	cpu_need_proftick(struct lwp *);
+void	cpu_signotify(struct lwp *);
 
-/*
- * Notify the current process (p) that it has a signal pending,
- * process as soon as possible.
- */
-#define	cpu_signotify(l)	aston(l)
-
-/*
- * XXXSMP
- * Should we send an AST IPI?  Or just let it handle it next time
- * it sees a normal kernel entry?  I guess letting it happen later
- * follows the `asynchronous' part of the name...
- */
-#define	aston(l)	((l)->l_md.md_astpending = 1)
+#define	aston(l)		((l)->l_md.md_astpending = 1)
 #endif /* _KERNEL */
 
 /*

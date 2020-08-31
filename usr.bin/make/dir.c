@@ -1,4 +1,4 @@
-/*	$NetBSD: dir.c,v 1.92 2020/08/13 03:33:56 rillig Exp $	*/
+/*	$NetBSD: dir.c,v 1.127 2020/08/30 14:11:42 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -70,14 +70,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: dir.c,v 1.92 2020/08/13 03:33:56 rillig Exp $";
+static char rcsid[] = "$NetBSD: dir.c,v 1.127 2020/08/30 14:11:42 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)dir.c	8.2 (Berkeley) 1/2/94";
 #else
-__RCSID("$NetBSD: dir.c,v 1.92 2020/08/13 03:33:56 rillig Exp $");
+__RCSID("$NetBSD: dir.c,v 1.127 2020/08/30 14:11:42 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -143,7 +143,6 @@ __RCSID("$NetBSD: dir.c,v 1.92 2020/08/13 03:33:56 rillig Exp $");
 #include <stdio.h>
 
 #include "make.h"
-#include "hash.h"
 #include "dir.h"
 #include "job.h"
 
@@ -257,8 +256,6 @@ static Hash_Table mtimes;
 
 static Hash_Table lmtimes;	/* same as mtimes but for lstat */
 
-static int DirFindName(const void *, const void *);
-static int DirMatchFiles(const char *, Path *, Lst);
 static void DirExpandCurly(const char *, const char *, Lst, Lst);
 static void DirExpandInt(const char *, Lst, Lst);
 static int DirPrintWord(void *, void *);
@@ -351,28 +348,19 @@ cached_lstat(const char *pathname, void *st)
     return cached_stats(&lmtimes, pathname, st, CST_LSTAT);
 }
 
-/*-
- *-----------------------------------------------------------------------
- * Dir_Init --
- *	initialize things for this module
- *
- * Results:
- *	none
- *
- * Side Effects:
- *	some directories may be opened.
- *-----------------------------------------------------------------------
- */
+/* Initialize things for this module. */
 void
-Dir_Init(const char *cdname)
+Dir_Init(void)
 {
-    if (!cdname) {
-	dirSearchPath = Lst_Init(FALSE);
-	openDirectories = Lst_Init(FALSE);
-	Hash_InitTable(&mtimes, 0);
-	Hash_InitTable(&lmtimes, 0);
-	return;
-    }
+    dirSearchPath = Lst_Init();
+    openDirectories = Lst_Init();
+    Hash_InitTable(&mtimes, 0);
+    Hash_InitTable(&lmtimes, 0);
+}
+
+void
+Dir_InitDir(const char *cdname)
+{
     Dir_InitCur(cdname);
 
     dotLast = bmake_malloc(sizeof(Path));
@@ -383,7 +371,7 @@ Dir_Init(const char *cdname)
 }
 
 /*
- * Called by Dir_Init() and whenever .CURDIR is assigned to.
+ * Called by Dir_InitDir and whenever .CURDIR is assigned to.
  */
 void
 Dir_InitCur(const char *cdname)
@@ -409,18 +397,8 @@ Dir_InitCur(const char *cdname)
     }
 }
 
-/*-
- *-----------------------------------------------------------------------
- * Dir_InitDot --
- *	(re)initialize "dot" (current/object directory) path hash
- *
- * Results:
- *	none
- *
- * Side Effects:
- *	some directories may be opened.
- *-----------------------------------------------------------------------
- */
+/* (Re)initialize "dot" (current/object directory) path hash.
+ * Some directories may be opened. */
 void
 Dir_InitDot(void)
 {
@@ -428,8 +406,8 @@ Dir_InitDot(void)
 	LstNode ln;
 
 	/* Remove old entry from openDirectories, but do not destroy. */
-	ln = Lst_Member(openDirectories, dot);
-	(void)Lst_Remove(openDirectories, ln);
+	ln = Lst_FindDatum(openDirectories, dot);
+	Lst_Remove(openDirectories, ln);
     }
 
     dot = Dir_AddDir(NULL, ".");
@@ -447,18 +425,7 @@ Dir_InitDot(void)
     Dir_SetPATH();		/* initialize */
 }
 
-/*-
- *-----------------------------------------------------------------------
- * Dir_End --
- *	cleanup things for this module
- *
- * Results:
- *	none
- *
- * Side Effects:
- *	none
- *-----------------------------------------------------------------------
- */
+/* Clean up things for this module. */
 void
 Dir_End(void)
 {
@@ -472,9 +439,9 @@ Dir_End(void)
     Dir_Destroy(dotLast);
     Dir_Destroy(dot);
     Dir_ClearPath(dirSearchPath);
-    Lst_Destroy(dirSearchPath, NULL);
+    Lst_Free(dirSearchPath);
     Dir_ClearPath(openDirectories);
-    Lst_Destroy(openDirectories, NULL);
+    Lst_Free(openDirectories);
     Hash_DeleteTable(&mtimes);
 #endif
 }
@@ -489,88 +456,65 @@ Dir_SetPATH(void)
 {
     LstNode ln;			/* a list element */
     Path *p;
-    Boolean hasLastDot = FALSE;	/* true we should search dot last */
+    Boolean hasLastDot = FALSE;	/* true if we should search dot last */
 
     Var_Delete(".PATH", VAR_GLOBAL);
 
-    if (Lst_Open(dirSearchPath) == SUCCESS) {
-	if ((ln = Lst_First(dirSearchPath)) != NULL) {
-	    p = (Path *)Lst_Datum(ln);
-	    if (p == dotLast) {
-		hasLastDot = TRUE;
-		Var_Append(".PATH", dotLast->name, VAR_GLOBAL);
-	    }
+    Lst_Open(dirSearchPath);
+    if ((ln = Lst_First(dirSearchPath)) != NULL) {
+	p = LstNode_Datum(ln);
+	if (p == dotLast) {
+	    hasLastDot = TRUE;
+	    Var_Append(".PATH", dotLast->name, VAR_GLOBAL);
 	}
-
-	if (!hasLastDot) {
-	    if (dot)
-		Var_Append(".PATH", dot->name, VAR_GLOBAL);
-	    if (cur)
-		Var_Append(".PATH", cur->name, VAR_GLOBAL);
-	}
-
-	while ((ln = Lst_Next(dirSearchPath)) != NULL) {
-	    p = (Path *)Lst_Datum(ln);
-	    if (p == dotLast)
-		continue;
-	    if (p == dot && hasLastDot)
-		continue;
-	    Var_Append(".PATH", p->name, VAR_GLOBAL);
-	}
-
-	if (hasLastDot) {
-	    if (dot)
-		Var_Append(".PATH", dot->name, VAR_GLOBAL);
-	    if (cur)
-		Var_Append(".PATH", cur->name, VAR_GLOBAL);
-	}
-	Lst_Close(dirSearchPath);
     }
+
+    if (!hasLastDot) {
+	if (dot)
+	    Var_Append(".PATH", dot->name, VAR_GLOBAL);
+	if (cur)
+	    Var_Append(".PATH", cur->name, VAR_GLOBAL);
+    }
+
+    while ((ln = Lst_Next(dirSearchPath)) != NULL) {
+	p = LstNode_Datum(ln);
+	if (p == dotLast)
+	    continue;
+	if (p == dot && hasLastDot)
+	    continue;
+	Var_Append(".PATH", p->name, VAR_GLOBAL);
+    }
+
+    if (hasLastDot) {
+	if (dot)
+	    Var_Append(".PATH", dot->name, VAR_GLOBAL);
+	if (cur)
+	    Var_Append(".PATH", cur->name, VAR_GLOBAL);
+    }
+    Lst_Close(dirSearchPath);
 }
 
-/*-
- *-----------------------------------------------------------------------
- * DirFindName --
- *	See if the Path structure describes the same directory as the
- *	given one by comparing their names. Called from Dir_AddDir via
- *	Lst_Find when searching the list of open directories.
- *
- * Input:
- *	p		Current name
- *	dname		Desired name
- *
- * Results:
- *	0 if it is the same. Non-zero otherwise
- *
- * Side Effects:
- *	None
- *-----------------------------------------------------------------------
- */
-static int
-DirFindName(const void *p, const void *dname)
+/* See if the Path structure describes the same directory as the
+ * given one by comparing their names. Called from Dir_AddDir via
+ * Lst_Find when searching the list of open directories. */
+static Boolean
+DirFindName(const void *p, const void *desiredName)
 {
-    return strcmp(((const Path *)p)->name, dname);
+    return strcmp(((const Path *)p)->name, desiredName) == 0;
 }
 
-/*-
- *-----------------------------------------------------------------------
- * Dir_HasWildcards  --
- *	see if the given name has any wildcard characters in it
- *	be careful not to expand unmatching brackets or braces.
- *	XXX: This code is not 100% correct. ([^]] fails etc.)
- *	I really don't think that make(1) should be expanding
- *	patterns, because then you have to set a mechanism for
- *	escaping the expansion!
+/* See if the given name has any wildcard characters in it. Be careful not to
+ * expand unmatching brackets or braces.
+ *
+ * XXX: This code is not 100% correct ([^]] fails etc.). I really don't think
+ * that make(1) should be expanding patterns, because then you have to set a
+ * mechanism for escaping the expansion!
  *
  * Input:
  *	name		name to check
  *
  * Results:
  *	returns TRUE if the word should be expanded, FALSE otherwise
- *
- * Side Effects:
- *	none
- *-----------------------------------------------------------------------
  */
 Boolean
 Dir_HasWildcards(char *name)
@@ -619,15 +563,12 @@ Dir_HasWildcards(char *name)
  *	p		Directory to search
  *	expansion	Place to store the results
  *
- * Results:
- *	Always returns 0
- *
  * Side Effects:
  *	File names are added to the expansions lst. The directory will be
  *	fully hashed when this is done.
  *-----------------------------------------------------------------------
  */
-static int
+static void
 DirMatchFiles(const char *pattern, Path *p, Lst expansions)
 {
     Hash_Search search;		/* Index into the directory's table */
@@ -650,12 +591,11 @@ DirMatchFiles(const char *pattern, Path *p, Lst expansions)
 	    ((entry->name[0] != '.') ||
 	     (pattern[0] == '.')))
 	{
-	    (void)Lst_AtEnd(expansions,
-			    (isDot ? bmake_strdup(entry->name) :
-			     str_concat3(p->name, "/", entry->name)));
+	    Lst_Append(expansions,
+			(isDot ? bmake_strdup(entry->name) :
+			 str_concat3(p->name, "/", entry->name)));
 	}
     }
-    return 0;
 }
 
 /* Find the next closing brace in the string, taking nested braces into
@@ -665,7 +605,7 @@ closing_brace(const char *p)
 {
     int nest = 0;
     while (*p != '\0') {
-        if (*p == '}' && nest == 0)
+	if (*p == '}' && nest == 0)
 	    break;
 	if (*p == '{')
 	    nest++;
@@ -683,7 +623,7 @@ separator_comma(const char *p)
 {
     int nest = 0;
     while (*p != '\0') {
-        if ((*p == '}' || *p == ',') && nest == 0)
+	if ((*p == '}' || *p == ',') && nest == 0)
 	    break;
 	if (*p == '{')
 	    nest++;
@@ -778,7 +718,7 @@ DirExpandCurly(const char *word, const char *brace, Lst path, Lst expansions)
 	    Dir_Expand(file, path, expansions);
 	    free(file);
 	} else {
-	    (void)Lst_AtEnd(expansions, file);
+	    Lst_Append(expansions, file);
 	}
 
 	piece = piece_end + 1;	/* skip over the comma or closing brace */
@@ -810,15 +750,13 @@ static void
 DirExpandInt(const char *word, Lst path, Lst expansions)
 {
     LstNode ln;			/* Current node */
-    Path *p;			/* Directory in the node */
 
-    if (Lst_Open(path) == SUCCESS) {
-	while ((ln = Lst_Next(path)) != NULL) {
-	    p = (Path *)Lst_Datum(ln);
-	    DirMatchFiles(word, p, expansions);
-	}
-	Lst_Close(path);
+    Lst_Open(path);
+    while ((ln = Lst_Next(path)) != NULL) {
+	Path *p = LstNode_Datum(ln);
+	DirMatchFiles(word, p, expansions);
     }
+    Lst_Close(path);
 }
 
 /* Print a word in the list of expansions.
@@ -856,6 +794,9 @@ void
 Dir_Expand(const char *word, Lst path, Lst expansions)
 {
     const char *cp;
+
+    assert(path != NULL);
+    assert(expansions != NULL);
 
     DIR_DEBUG1("Expanding \"%s\"... ", word);
 
@@ -909,10 +850,10 @@ Dir_Expand(const char *word, Lst path, Lst expansions)
 			char *dp = &dirpath[strlen(dirpath) - 1];
 			if (*dp == '/')
 			    *dp = '\0';
-			path = Lst_Init(FALSE);
+			path = Lst_Init();
 			(void)Dir_AddDir(path, dirpath);
 			DirExpandInt(cp + 1, path, expansions);
-			Lst_Destroy(path, NULL);
+			Lst_Free(path);
 		    }
 		} else {
 		    /*
@@ -1145,14 +1086,15 @@ Dir_FindFile(const char *name, Lst path)
 
     DIR_DEBUG1("Searching for %s ...", name);
 
-    if (Lst_Open(path) == FAILURE) {
+    if (path == NULL) {
 	DIR_DEBUG0("couldn't open path, file not found\n");
 	misses += 1;
 	return NULL;
     }
 
+    Lst_Open(path);
     if ((ln = Lst_First(path)) != NULL) {
-	p = (Path *)Lst_Datum(ln);
+	p = LstNode_Datum(ln);
 	if (p == dotLast) {
 	    hasLastDot = TRUE;
 	    DIR_DEBUG0("[dot last]...");
@@ -1186,7 +1128,7 @@ Dir_FindFile(const char *name, Lst path)
 	}
 
 	while ((ln = Lst_Next(path)) != NULL) {
-	    p = (Path *)Lst_Datum(ln);
+	    p = LstNode_Datum(ln);
 	    if (p == dotLast)
 		continue;
 	    if ((file = DirLookup(p, name, cp, hasSlash)) != NULL) {
@@ -1242,9 +1184,9 @@ Dir_FindFile(const char *name, Lst path)
 		return file;
 	}
 
-	(void)Lst_Open(path);
+	Lst_Open(path);
 	while ((ln = Lst_Next(path)) != NULL) {
-	    p = (Path *)Lst_Datum(ln);
+	    p = LstNode_Datum(ln);
 	    if (p == dotLast)
 		continue;
 	    if (p == dot) {
@@ -1300,9 +1242,9 @@ Dir_FindFile(const char *name, Lst path)
 	    return file;
 	}
 
-	(void)Lst_Open(path);
+	Lst_Open(path);
 	while ((ln = Lst_Next(path)) != NULL) {
-	    p = (Path *)Lst_Datum(ln);
+	    p = LstNode_Datum(ln);
 	    if (p == dotLast)
 		continue;
 	    if ((file = DirLookupAbs(p, name, cp)) != NULL) {
@@ -1357,7 +1299,7 @@ Dir_FindFile(const char *name, Lst path)
     if (ln == NULL) {
 	return NULL;
     } else {
-	p = (Path *)Lst_Datum(ln);
+	p = LstNode_Datum(ln);
     }
 
     if (Hash_FindEntry(&p->files, cp) != NULL) {
@@ -1492,7 +1434,7 @@ Dir_MTime(GNode *gn, Boolean recheck)
 	else {
 	    fullName = Dir_FindFile(gn->name, Suff_FindPath(gn));
 	    if (fullName == NULL && gn->flags & FROM_DEPEND &&
-		!Lst_IsEmpty(gn->iParents)) {
+		!Lst_IsEmpty(gn->implicitParents)) {
 		char *cp;
 
 		cp = strrchr(gn->name, '/');
@@ -1558,6 +1500,8 @@ Dir_MTime(GNode *gn, Boolean recheck)
  * Input:
  *	path		the path to which the directory should be
  *			added
+ *			XXX: Why would this ever be NULL, and what does
+ *			that mean?
  *	name		the name of the directory to add
  *
  * Results:
@@ -1576,69 +1520,65 @@ Dir_AddDir(Lst path, const char *name)
     DIR *d;			/* for reading directory */
     struct dirent *dp;		/* entry in directory */
 
-    if (strcmp(name, ".DOTLAST") == 0) {
-	ln = Lst_Find(path, name, DirFindName);
+    if (path != NULL && strcmp(name, ".DOTLAST") == 0) {
+	ln = Lst_Find(path, DirFindName, name);
 	if (ln != NULL)
-	    return (Path *)Lst_Datum(ln);
-	else {
-	    dotLast->refCount += 1;
-	    (void)Lst_AtFront(path, dotLast);
-	}
+	    return LstNode_Datum(ln);
+
+	dotLast->refCount++;
+	Lst_Prepend(path, dotLast);
     }
 
-    if (path)
-	ln = Lst_Find(openDirectories, name, DirFindName);
+    if (path != NULL)
+	ln = Lst_Find(openDirectories, DirFindName, name);
     if (ln != NULL) {
-	p = (Path *)Lst_Datum(ln);
-	if (path && Lst_Member(path, p) == NULL) {
+	p = LstNode_Datum(ln);
+	if (Lst_FindDatum(path, p) == NULL) {
 	    p->refCount += 1;
-	    (void)Lst_AtEnd(path, p);
+	    Lst_Append(path, p);
 	}
-    } else {
-	DIR_DEBUG1("Caching %s ...", name);
-
-	if ((d = opendir(name)) != NULL) {
-	    p = bmake_malloc(sizeof(Path));
-	    p->name = bmake_strdup(name);
-	    p->hits = 0;
-	    p->refCount = 1;
-	    Hash_InitTable(&p->files, -1);
-
-	    while ((dp = readdir(d)) != NULL) {
-#if defined(sun) && defined(d_ino) /* d_ino is a sunos4 #define for d_fileno */
-		/*
-		 * The sun directory library doesn't check for a 0 inode
-		 * (0-inode slots just take up space), so we have to do
-		 * it ourselves.
-		 */
-		if (dp->d_fileno == 0) {
-		    continue;
-		}
-#endif /* sun && d_ino */
-		(void)Hash_CreateEntry(&p->files, dp->d_name, NULL);
-	    }
-	    (void)closedir(d);
-	    (void)Lst_AtEnd(openDirectories, p);
-	    if (path != NULL)
-		(void)Lst_AtEnd(path, p);
-	}
-	DIR_DEBUG0("done\n");
+	return p;
     }
+
+    DIR_DEBUG1("Caching %s ...", name);
+
+    if ((d = opendir(name)) != NULL) {
+	p = bmake_malloc(sizeof(Path));
+	p->name = bmake_strdup(name);
+	p->hits = 0;
+	p->refCount = 1;
+	Hash_InitTable(&p->files, -1);
+
+	while ((dp = readdir(d)) != NULL) {
+#if defined(sun) && defined(d_ino) /* d_ino is a sunos4 #define for d_fileno */
+	    /*
+	     * The sun directory library doesn't check for a 0 inode
+	     * (0-inode slots just take up space), so we have to do
+	     * it ourselves.
+	     */
+	    if (dp->d_fileno == 0) {
+		continue;
+	    }
+#endif /* sun && d_ino */
+	    (void)Hash_CreateEntry(&p->files, dp->d_name, NULL);
+	}
+	(void)closedir(d);
+	Lst_Append(openDirectories, p);
+	if (path != NULL)
+	    Lst_Append(path, p);
+    }
+    DIR_DEBUG0("done\n");
     return p;
 }
 
 /*-
  *-----------------------------------------------------------------------
  * Dir_CopyDir --
- *	Callback function for duplicating a search path via Lst_Duplicate.
+ *	Callback function for duplicating a search path via Lst_Copy.
  *	Ups the reference count for the directory.
  *
  * Results:
  *	Returns the Path it was given.
- *
- * Side Effects:
- *	The refCount of the path is incremented.
- *
  *-----------------------------------------------------------------------
  */
 void *
@@ -1678,9 +1618,10 @@ Dir_MakeFlags(const char *flag, Lst path)
 
     Buf_Init(&buf, 0);
 
-    if (Lst_Open(path) == SUCCESS) {
+    if (path != NULL) {
+	Lst_Open(path);
 	while ((ln = Lst_Next(path)) != NULL) {
-	    Path *p = (Path *)Lst_Datum(ln);
+	    Path *p = LstNode_Datum(ln);
 	    Buf_AddStr(&buf, " ");
 	    Buf_AddStr(&buf, flag);
 	    Buf_AddStr(&buf, p->name);
@@ -1718,8 +1659,8 @@ Dir_Destroy(void *pp)
     if (p->refCount == 0) {
 	LstNode ln;
 
-	ln = Lst_Member(openDirectories, p);
-	(void)Lst_Remove(openDirectories, ln);
+	ln = Lst_FindDatum(openDirectories, p);
+	Lst_Remove(openDirectories, ln);
 
 	Hash_DeleteTable(&p->files);
 	free(p->name);
@@ -1747,9 +1688,8 @@ Dir_Destroy(void *pp)
 void
 Dir_ClearPath(Lst path)
 {
-    Path *p;
     while (!Lst_IsEmpty(path)) {
-	p = (Path *)Lst_DeQueue(path);
+	Path *p = Lst_Dequeue(path);
 	Dir_Destroy(p);
     }
 }
@@ -1779,13 +1719,19 @@ Dir_Concat(Lst path1, Lst path2)
     LstNode ln;
     Path *p;
 
-    for (ln = Lst_First(path2); ln != NULL; ln = Lst_Succ(ln)) {
-	p = (Path *)Lst_Datum(ln);
-	if (Lst_Member(path1, p) == NULL) {
+    for (ln = Lst_First(path2); ln != NULL; ln = LstNode_Next(ln)) {
+	p = LstNode_Datum(ln);
+	if (Lst_FindDatum(path1, p) == NULL) {
 	    p->refCount += 1;
-	    (void)Lst_AtEnd(path1, p);
+	    Lst_Append(path1, p);
 	}
     }
+}
+
+static int
+percentage(int num, int den)
+{
+    return den != 0 ? num * 100 / den : 0;
 }
 
 /********** DEBUG INFO **********/
@@ -1793,23 +1739,21 @@ void
 Dir_PrintDirectories(void)
 {
     LstNode ln;
-    Path *p;
 
     fprintf(debug_file, "#*** Directory Cache:\n");
     fprintf(debug_file,
 	    "# Stats: %d hits %d misses %d near misses %d losers (%d%%)\n",
 	    hits, misses, nearmisses, bigmisses,
-	    (hits + bigmisses + nearmisses ?
-	     hits * 100 / (hits + bigmisses + nearmisses) : 0));
+	    percentage(hits, hits + bigmisses + nearmisses));
     fprintf(debug_file, "# %-20s referenced\thits\n", "directory");
-    if (Lst_Open(openDirectories) == SUCCESS) {
-	while ((ln = Lst_Next(openDirectories)) != NULL) {
-	    p = (Path *)Lst_Datum(ln);
-	    fprintf(debug_file, "# %-20s %10d\t%4d\n", p->name, p->refCount,
-		    p->hits);
-	}
-	Lst_Close(openDirectories);
+
+    Lst_Open(openDirectories);
+    while ((ln = Lst_Next(openDirectories)) != NULL) {
+	Path *p = LstNode_Datum(ln);
+	fprintf(debug_file, "# %-20s %10d\t%4d\n", p->name, p->refCount,
+		p->hits);
     }
+    Lst_Close(openDirectories);
 }
 
 static int
