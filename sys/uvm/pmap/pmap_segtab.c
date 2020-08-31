@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_segtab.c,v 1.19 2020/08/20 05:54:32 mrg Exp $	*/
+/*	$NetBSD: pmap_segtab.c,v 1.23 2020/08/22 15:34:51 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.19 2020/08/20 05:54:32 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.23 2020/08/22 15:34:51 skrll Exp $");
 
 /*
  *	Manages physical address maps.
@@ -132,7 +132,7 @@ struct pmap_segtab_info {
 kmutex_t pmap_segtab_lock __cacheline_aligned;
 
 /*
- * Check that a seg_tab[] array is empty.  
+ * Check that a seg_tab[] array is empty.
  *
  * This is used when allocating or freeing a pmap_segtab_t.  The stp
  * should be unused -- meaning, none of the seg_tab[] pointers are
@@ -171,20 +171,27 @@ pmap_check_stp(pmap_segtab_t *stp, const char *caller, const char *why)
 static void
 pmap_check_ptes(pt_entry_t *pte, const char *caller)
 {
+	/*
+	 * All pte arrays should be page aligned.
+	 */
+	if (((uintptr_t)pte & PAGE_MASK) != 0) {
+		panic("%s: pte entry at %p not page aligned", caller, pte);
+	}
+
 #ifdef DEBUG
 	for (size_t i = 0; i < NPTEPG; i++)
-		if (!pte_zero_p(pte[i])) {
+		if (pte[i] != 0) {
 #ifdef DEBUG_NOISY
 			UVMHIST_FUNC(__func__);
 			UVMHIST_CALLARGS(pmapsegtabhist, "pte=%#jx",
 			    (uintptr_t)pte, 0, 0, 0);
 			for (size_t j = i + 1; j < NPTEPG; j++)
-				if (!pte_zero_p(pte[j]))
+				if (pte[j] != 0)
 					UVMHIST_LOG(pmapsegtabhist,
 					    "pte[%zu] = %#"PRIxPTE,
-					    j, pte_value(pte[j]), 0, 0); 
+					    j, pte_value(pte[j]), 0, 0);
 #endif
-			panic("%s: pte[%ju] entry at %pu not 0 (%#"PRIxPTE")",
+			panic("%s: pte[%zu] entry at %p not 0 (%#"PRIxPTE")",
 			      caller, i, &pte[i], pte_value(pte[i]));
 		}
 #endif
@@ -281,18 +288,7 @@ pmap_segtab_release(pmap_t pmap, pmap_segtab_t **stp_p, bool free_stp,
 		pt_entry_t *pte = stp->seg_tab[i];
 		if (pte == NULL)
 			continue;
-		pmap_check_ptes(pte, __func__); 
-
-#if defined(__mips_n64) && PAGE_SIZE == 8192
-		/*
-		 * XXX This is evil.  If vinc is 1000000 we are in
-		 * the last level, and this pte should be page aligned.
-		 */
-		if (vinc == 0x1000000 && ((uintptr_t)pte & PAGE_MASK) != 0) {
-			panic("%s: pte entry at %p not page aligned",
-			    __func__, pte);
-		}
-#endif
+		pmap_check_ptes(pte, __func__);
 
 		/*
 		 * If our caller wants a callback, do so.

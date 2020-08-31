@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_forward.c,v 1.99 2020/06/12 11:04:45 roy Exp $	*/
+/*	$NetBSD: ip6_forward.c,v 1.102 2020/08/28 06:32:24 ozaki-r Exp $	*/
 /*	$KAME: ip6_forward.c,v 1.109 2002/09/11 08:10:17 sakane Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip6_forward.c,v 1.99 2020/06/12 11:04:45 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip6_forward.c,v 1.102 2020/08/28 06:32:24 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_gateway.h"
@@ -116,7 +116,7 @@ ip6_cantforward(const struct ip6_hdr *ip6, const struct ifnet *srcifp,
  * protocol deal with that.
  */
 void
-ip6_forward(struct mbuf *m, int srcrt)
+ip6_forward(struct mbuf *m, int srcrt, struct ifnet *rcvif)
 {
 	struct ip6_hdr *ip6 = mtod(m, struct ip6_hdr *);
 	const struct sockaddr_in6 *dst;
@@ -126,8 +126,6 @@ ip6_forward(struct mbuf *m, int srcrt)
 	struct ifnet *origifp;	/* maybe unnecessary */
 	uint32_t inzone, outzone;
 	struct in6_addr src_in6, dst_in6;
-	struct ifnet *rcvif = NULL;
-	struct psref psref;
 	struct route *ro = NULL;
 #ifdef IPSEC
 	int needipsec = 0;
@@ -138,10 +136,6 @@ ip6_forward(struct mbuf *m, int srcrt)
 	 * Clear any in-bound checksum flags for this packet.
 	 */
 	m->m_pkthdr.csum_flags = 0;
-
-	rcvif = m_get_rcvif_psref(m, &psref);
-	if (__predict_false(rcvif == NULL))
-		goto drop;
 
 	/*
 	 * Do not forward packets to multicast destination (should be handled
@@ -192,6 +186,7 @@ ip6_forward(struct mbuf *m, int srcrt)
 			if (error == -EINVAL)
 				error = 0;
 			m_freem(m);
+			IP6_STATINC(IP6_STAT_IPSECDROP_OUT);
 			goto freecopy;
 		}
 	}
@@ -292,6 +287,7 @@ ip6_forward(struct mbuf *m, int srcrt)
 	}
 
 	if (m->m_pkthdr.len > rt->rt_ifp->if_mtu) {
+		IP6_STATINC(IP6_STAT_TOOBIG);
 		in6_ifstat_inc(rt->rt_ifp, ifs6_in_toobig);
 		if (mcopy)
 			icmp6_error(mcopy, ICMP6_PACKET_TOO_BIG, 0,
@@ -468,7 +464,5 @@ out:
 	rtcache_unref(rt, ro);
 	if (ro != NULL)
 		rtcache_percpu_putref(ip6_forward_rt_percpu);
-	if (rcvif != NULL)
-		m_put_rcvif_psref(rcvif, &psref);
 	return;
 }

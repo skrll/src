@@ -1,4 +1,4 @@
-/*	$NetBSD: for.c,v 1.63 2020/08/09 19:51:02 rillig Exp $	*/
+/*	$NetBSD: for.c,v 1.67 2020/08/30 19:56:02 rillig Exp $	*/
 
 /*
  * Copyright (c) 1992, The Regents of the University of California.
@@ -30,14 +30,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: for.c,v 1.63 2020/08/09 19:51:02 rillig Exp $";
+static char rcsid[] = "$NetBSD: for.c,v 1.67 2020/08/30 19:56:02 rillig Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)for.c	8.1 (Berkeley) 6/6/93";
 #else
-__RCSID("$NetBSD: for.c,v 1.63 2020/08/09 19:51:02 rillig Exp $");
+__RCSID("$NetBSD: for.c,v 1.67 2020/08/30 19:56:02 rillig Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -52,13 +52,7 @@ __RCSID("$NetBSD: for.c,v 1.63 2020/08/09 19:51:02 rillig Exp $");
  *
  */
 
-#include    <assert.h>
-#include    <ctype.h>
-
 #include    "make.h"
-#include    "hash.h"
-#include    "dir.h"
-#include    "buf.h"
 #include    "strlist.h"
 
 #define FOR_SUB_ESCAPE_CHAR  1
@@ -100,17 +94,6 @@ typedef struct {
 static For *accumFor;		/* Loop being accumulated */
 
 
-static char *
-make_str(const char *ptr, int len)
-{
-    char *new_ptr;
-
-    new_ptr = bmake_malloc(len + 1);
-    memcpy(new_ptr, ptr, len);
-    new_ptr[len] = 0;
-    return new_ptr;
-}
-
 static void
 For_Free(For *arg)
 {
@@ -147,11 +130,10 @@ For_Eval(char *line)
 {
     For *new_for;
     char *ptr = line, *sub;
-    int len;
+    size_t len;
     int escapes;
     unsigned char ch;
-    char **words, *word_buf;
-    int n, nwords;
+    Words words;
 
     /* Skip the '.' and any following whitespace */
     for (ptr++; *ptr && isspace((unsigned char)*ptr); ptr++)
@@ -195,7 +177,7 @@ For_Eval(char *line)
 	}
 	if (len == 1)
 	    new_for->short_var = 1;
-	strlist_add_str(&new_for->vars, make_str(ptr, len), len);
+	strlist_add_str(&new_for->vars, bmake_strldup(ptr, len), len);
     }
 
     if (strlist_num(&new_for->vars) == 0) {
@@ -220,13 +202,15 @@ For_Eval(char *line)
     /*
      * Split into words allowing for quoted strings.
      */
-    words = brk_string(sub, &nwords, FALSE, &word_buf);
+    words = Str_Words(sub, FALSE);
 
     free(sub);
 
-    if (words != NULL) {
-	for (n = 0; n < nwords; n++) {
-	    ptr = words[n];
+    {
+        size_t n;
+
+	for (n = 0; n < words.len; n++) {
+	    ptr = words.words[n];
 	    if (!*ptr)
 		continue;
 	    escapes = 0;
@@ -249,17 +233,17 @@ For_Eval(char *line)
 	     * We have to dup words[n] to maintain the semantics of
 	     * strlist.
 	     */
-	    strlist_add_str(&new_for->items, bmake_strdup(words[n]), escapes);
+	    strlist_add_str(&new_for->items, bmake_strdup(words.words[n]),
+			    escapes);
 	}
 
-	free(words);
-	free(word_buf);
+	Words_Free(words);
 
 	if ((len = strlist_num(&new_for->items)) > 0 &&
 	    len % (n = strlist_num(&new_for->vars))) {
 	    Parse_Error(PARSE_FATAL,
-			"Wrong number of words (%d) in .for substitution list"
-			" with %d vars", len, n);
+			"Wrong number of words (%zu) in .for substitution list"
+			" with %zu vars", len, n);
 	    /*
 	     * Return 'success' so that the body of the .for loop is
 	     * accumulated.
