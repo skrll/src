@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.92 2020/08/15 01:49:07 rillig Exp $
+# $NetBSD: Makefile,v 1.102 2020/08/19 05:25:26 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -38,12 +38,97 @@
 TESTS+=		# archive	# broken on FreeBSD, enabled in t_make.sh
 TESTS+=		cmdline
 TESTS+=		comment
+TESTS+=		cond-cmp-numeric
+TESTS+=		cond-cmp-string
+TESTS+=		cond-func-commands
+TESTS+=		cond-func-defined
+TESTS+=		cond-func-empty
+TESTS+=		cond-func-exists
+TESTS+=		cond-func-make
+TESTS+=		cond-func-target
 TESTS+=		cond-late
+TESTS+=		cond-op
+TESTS+=		cond-op-and
+TESTS+=		cond-op-not
+TESTS+=		cond-op-or
+TESTS+=		cond-op-parentheses
 TESTS+=		cond-short
+TESTS+=		cond-token-number
+TESTS+=		cond-token-plain
+TESTS+=		cond-token-string
+TESTS+=		cond-token-var
 TESTS+=		cond1
 TESTS+=		cond2
 TESTS+=		counter
+TESTS+=		dep
+TESTS+=		dep-colon
+TESTS+=		dep-double-colon
+TESTS+=		dep-exclam
+TESTS+=		dep-wildcards
+TESTS+=		depsrc
+TESTS+=		depsrc-exec
+TESTS+=		depsrc-ignore
+TESTS+=		depsrc-made
+TESTS+=		depsrc-make
+TESTS+=		depsrc-meta
+TESTS+=		depsrc-nometa
+TESTS+=		depsrc-nometa_cmp
+TESTS+=		depsrc-nopath
+TESTS+=		depsrc-notmain
+TESTS+=		depsrc-optional
+TESTS+=		depsrc-phony
+TESTS+=		depsrc-precious
+TESTS+=		depsrc-recursive
+TESTS+=		depsrc-silent
+TESTS+=		depsrc-use
+TESTS+=		depsrc-usebefore
+TESTS+=		depsrc-wait
+TESTS+=		deptgt
+TESTS+=		deptgt-begin
+TESTS+=		deptgt-default
+TESTS+=		deptgt-delete_on_error
+TESTS+=		deptgt-end
+TESTS+=		deptgt-error
+TESTS+=		deptgt-ignore
+TESTS+=		deptgt-interrupt
+TESTS+=		deptgt-main
+TESTS+=		deptgt-makeflags
+TESTS+=		deptgt-no_parallel
+TESTS+=		deptgt-nopath
+TESTS+=		deptgt-notparallel
+TESTS+=		deptgt-objdir
+TESTS+=		deptgt-order
+TESTS+=		deptgt-path
+TESTS+=		deptgt-path-suffix
+TESTS+=		deptgt-phony
+TESTS+=		deptgt-precious
+TESTS+=		deptgt-shell
+TESTS+=		deptgt-silent
+TESTS+=		deptgt-stale
+TESTS+=		deptgt-suffixes
 TESTS+=		dir
+TESTS+=		directive
+TESTS+=		directive-elif
+TESTS+=		directive-elifdef
+TESTS+=		directive-elifmake
+TESTS+=		directive-elifndef
+TESTS+=		directive-elifnmake
+TESTS+=		directive-else
+TESTS+=		directive-endif
+TESTS+=		directive-error
+TESTS+=		directive-export
+TESTS+=		directive-export-env
+TESTS+=		directive-export-literal
+TESTS+=		directive-if
+TESTS+=		directive-ifdef
+TESTS+=		directive-ifmake
+TESTS+=		directive-ifndef
+TESTS+=		directive-ifnmake
+TESTS+=		directive-info
+TESTS+=		directive-undef
+TESTS+=		directive-unexport
+TESTS+=		directive-unexport-env
+TESTS+=		directive-warning
 TESTS+=		directives
 TESTS+=		dollar
 TESTS+=		doterror
@@ -66,15 +151,48 @@ TESTS+=		misc
 TESTS+=		moderrs
 TESTS+=		modmatch
 TESTS+=		modmisc
-TESTS+=		modorder
 TESTS+=		modts
 TESTS+=		modword
+TESTS+=		opt
+TESTS+=		opt-backwards
+TESTS+=		opt-chdir
+TESTS+=		opt-debug
+TESTS+=		opt-define
+TESTS+=		opt-env
+TESTS+=		opt-file
+TESTS+=		opt-ignore
+TESTS+=		opt-include-dir
+TESTS+=		opt-jobs
+TESTS+=		opt-jobs-internal
+TESTS+=		opt-keep-going
+TESTS+=		opt-m-include-dir
+TESTS+=		opt-no-action
+TESTS+=		opt-no-action-at-all
+TESTS+=		opt-query
+TESTS+=		opt-raw
+TESTS+=		opt-silent
+TESTS+=		opt-touch
+TESTS+=		opt-tracefile
+TESTS+=		opt-var-expanded
+TESTS+=		opt-var-literal
+TESTS+=		opt-warnings-as-errors
+TESTS+=		opt-where-am-i
+TESTS+=		opt-x-reduce-exported
 TESTS+=		order
 TESTS+=		phony-end
 TESTS+=		posix
 TESTS+=		# posix1	# broken by reverting POSIX changes
 TESTS+=		qequals
 TESTS+=		recursive
+TESTS+=		sh
+TESTS+=		sh-jobs
+TESTS+=		sh-jobs-error
+TESTS+=		sh-leading-at
+TESTS+=		sh-leading-hyphen
+TESTS+=		sh-leading-plus
+TESTS+=		sh-meta-chars
+TESTS+=		sh-multi-line
+TESTS+=		sh-single-line
 TESTS+=		# suffixes	# runs into an endless loop (try -dA)
 TESTS+=		sunshcmd
 TESTS+=		sysv
@@ -82,40 +200,126 @@ TESTS+=		ternary
 TESTS+=		unexport
 TESTS+=		unexport-env
 TESTS+=		use-inference
+TESTS+=		var-class
+TESTS+=		var-class-cmdline
+TESTS+=		var-class-env
+TESTS+=		var-class-global
+TESTS+=		var-class-local
+TESTS+=		var-class-local-legacy
+TESTS+=		var-op
+TESTS+=		var-op-append
+TESTS+=		var-op-assign
+TESTS+=		var-op-default
+TESTS+=		var-op-expand
+TESTS+=		var-op-shell
 TESTS+=		varcmd
 TESTS+=		vardebug
 TESTS+=		varfind
 TESTS+=		varmisc
+TESTS+=		varmod
+TESTS+=		varmod-assign
+TESTS+=		varmod-defined
 TESTS+=		varmod-edge
+TESTS+=		varmod-exclam-shell
+TESTS+=		varmod-extension
+TESTS+=		varmod-gmtime
+TESTS+=		varmod-hash
+TESTS+=		varmod-head
+TESTS+=		varmod-ifelse
+TESTS+=		varmod-l-name-to-value
+TESTS+=		varmod-localtime
+TESTS+=		varmod-loop
+TESTS+=		varmod-match
+TESTS+=		varmod-match-escape
+TESTS+=		varmod-no-match
+TESTS+=		varmod-order
+TESTS+=		varmod-order-reverse
+TESTS+=		varmod-order-shuffle
+TESTS+=		varmod-path
+TESTS+=		varmod-quote
+TESTS+=		varmod-quote-dollar
+TESTS+=		varmod-range
+TESTS+=		varmod-remember
+TESTS+=		varmod-root
+TESTS+=		varmod-select-words
+TESTS+=		varmod-shell
+TESTS+=		varmod-subst
+TESTS+=		varmod-subst-regex
+TESTS+=		varmod-sysv
+TESTS+=		varmod-tail
+TESTS+=		varmod-to-abs
+TESTS+=		varmod-to-lower
+TESTS+=		varmod-to-many-words
+TESTS+=		varmod-to-one-word
+TESTS+=		varmod-to-separator
+TESTS+=		varmod-to-upper
+TESTS+=		varmod-undefined
+TESTS+=		varmod-unique
+TESTS+=		varname
+TESTS+=		varname-dollar
+TESTS+=		varname-dot-alltargets
+TESTS+=		varname-dot-curdir
+TESTS+=		varname-dot-includedfromdir
+TESTS+=		varname-dot-includedfromfile
+TESTS+=		varname-dot-make-dependfile
+TESTS+=		varname-dot-make-expand_variables
+TESTS+=		varname-dot-make-exported
+TESTS+=		varname-dot-make-jobs
+TESTS+=		varname-dot-make-jobs-prefix
+TESTS+=		varname-dot-make-level
+TESTS+=		varname-dot-make-makefile_preference
+TESTS+=		varname-dot-make-makefiles
+TESTS+=		varname-dot-make-meta-bailiwick
+TESTS+=		varname-dot-make-meta-created
+TESTS+=		varname-dot-make-meta-files
+TESTS+=		varname-dot-make-meta-ignore_filter
+TESTS+=		varname-dot-make-meta-ignore_paths
+TESTS+=		varname-dot-make-meta-ignore_patterns
+TESTS+=		varname-dot-make-meta-prefix
+TESTS+=		varname-dot-make-mode
+TESTS+=		varname-dot-make-path_filemon
+TESTS+=		varname-dot-make-pid
+TESTS+=		varname-dot-make-ppid
+TESTS+=		varname-dot-make-save_dollars
+TESTS+=		varname-dot-makeoverrides
+TESTS+=		varname-dot-newline
+TESTS+=		varname-dot-objdir
+TESTS+=		varname-dot-parsedir
+TESTS+=		varname-dot-parsefile
+TESTS+=		varname-dot-path
+TESTS+=		varname-dot-targets
+TESTS+=		varname-make
+TESTS+=		varname-make_print_var_on_error
+TESTS+=		varname-makeflags
+TESTS+=		varname-pwd
+TESTS+=		varname-vpath
 TESTS+=		varparse-dynamic
 TESTS+=		varquote
 TESTS+=		varshell
 
-# Override environment variables for some of the tests.
-ENV.counter=		-i
+# Additional environment variables for some of the tests.
+# The base environment is -i PATH="$PATH".
 ENV.envfirst=		FROM_ENV=value-from-env
-ENV.export=		-i PATH=${PATH:Q}
-ENV.export-variants=	-i PATH=${PATH:Q}
-ENV.lint=		-i
-ENV.make-exported=	-i PATH=${PATH:Q}
-ENV.recursive=		-i
 ENV.varmisc=		FROM_ENV=env
 ENV.varmisc+=		FROM_ENV_BEFORE=env
 ENV.varmisc+=		FROM_ENV_AFTER=env
 
 # Override make flags for some of the tests; default is -k.
-FLAGS.counter=		-r -dv
+FLAGS.counter=		-dv
 FLAGS.doterror=		# none
 FLAGS.envfirst=		-e
-FLAGS.export=		-r
+FLAGS.export=		# none
 FLAGS.lint=		-dL -k
+FLAGS.opt-no-action=	-n
+FLAGS.opt-query=	-q
 FLAGS.order=		-j1
-FLAGS.recursive=	-dL -r
+FLAGS.recursive=	-dL
 FLAGS.vardebug=		-k -dv FROM_CMDLINE=
+FLAGS.varmod-match-escape= -dv
 
 # Some tests need extra post-processing.
-SED_CMDS.moderrs+=	-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
-SED_CMDS.modmisc+=	-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
+SED_CMDS.varmod-subst-regex+= \
+			-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
 SED_CMDS.varmod-edge+=	-e 's, line [0-9]*:, line omitted:,'
 SED_CMDS.varshell+=	-e 's,^[a-z]*sh: ,,'
 SED_CMDS.varshell+=	-e '/command/s,No such.*,not found,'
@@ -123,7 +327,9 @@ SED_CMDS.varshell+=	-e '/command/s,No such.*,not found,'
 # Some tests need an additional round of postprocessing.
 POSTPROC.counter=	${TOOL_SED} -n -e '/:RELEVANT = yes/,/:RELEVANT = no/p'
 POSTPROC.vardebug=	${TOOL_SED} -n -e '/:RELEVANT = yes/,/:RELEVANT = no/p'
+POSTPROC.varmod-match-escape= ${TOOL_SED} -n -e '/^Pattern/p'
 
+# Some tests reuse other tests, which makes them unnecessarily fragile.
 export-all.rawout: export.mk
 unexport.rawout: export.mk
 unexport-env.rawout: export.mk
@@ -139,16 +345,14 @@ OUTFILES=	${TESTS:=.out}
 
 all: ${OUTFILES}
 
-CLEANFILES+=		*.rawout *.out *.status *.tmp *.core *.tmp
+CLEANFILES=		*.rawout *.out *.status *.tmp *.core *.tmp
 CLEANFILES+=		obj*.[och] lib*.a	# posix1.mk
 CLEANFILES+=		issue* .[ab]*		# suffixes.mk
-CLEANRECURSIVE+=	dir dummy		# posix1.mk
+CLEANDIRS=		dir dummy		# posix1.mk
 
 clean:
 	rm -f ${CLEANFILES}
-.if !empty(CLEANRECURSIVE)
-	rm -rf ${CLEANRECURSIVE}
-.endif
+	rm -rf ${CLEANDIRS}
 
 TEST_MAKE?=	${.MAKE}
 TOOL_SED?=	sed
@@ -161,12 +365,14 @@ LANG=		C
 # the tests are actually done with sub-makes.
 .SUFFIXES: .mk .rawout .out
 .mk.rawout:
-	@echo testing ${.IMPSRC}
+	@${_MKMSG_TEST:Uecho '#      test '} ${.PREFIX}
 	@set -eu; \
 	cd ${.OBJDIR}; \
-	env ${ENV.${.TARGET:R}} ${TEST_MAKE} -C ${.CURDIR} \
-	  ${FLAGS.${.TARGET:R}:U-k} -f ${.IMPSRC} \
-	  > ${.TARGET}.tmp 2>&1 \
+	env -i PATH="$$PATH" ${ENV.${.TARGET:R}} \
+	  ${TEST_MAKE} \
+	    -r -C ${.CURDIR} -f ${.IMPSRC} \
+	    ${FLAGS.${.TARGET:R}:U-k} \
+	    > ${.TARGET}.tmp 2>&1 \
 	&& status=$$? || status=$$?; \
 	echo $$status > ${.TARGET:R}.status
 	@mv ${.TARGET}.tmp ${.TARGET}
@@ -183,7 +389,6 @@ _SED_CMDS+=	-e 's,${.CURDIR:S,.,\\.,g}/,,g'
 _SED_CMDS+=	-e 's,${UNIT_TESTS:S,.,\\.,g}/,,g'
 
 .rawout.out:
-	@echo postprocess ${.TARGET}
 	@${TOOL_SED} ${_SED_CMDS} ${SED_CMDS.${.TARGET:R}} \
 	  < ${.IMPSRC} > ${.TARGET}.tmp1
 	@${POSTPROC.${.TARGET:R}:Ucat} < ${.TARGET}.tmp1 > ${.TARGET}.tmp2
@@ -234,7 +439,7 @@ sync-mi:
 	cvs diff "$$mi" || true
 
 .if exists(${TEST_MAKE})
-${TESTS:=.rawout}: ${TEST_MAKE}
+${TESTS:=.rawout}: ${TEST_MAKE} ${.PARSEDIR}/Makefile
 .endif
 
 .-include <bsd.obj.mk>

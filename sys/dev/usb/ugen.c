@@ -1,4 +1,4 @@
-/*	$NetBSD: ugen.c,v 1.155 2020/08/16 02:37:19 riastradh Exp $	*/
+/*	$NetBSD: ugen.c,v 1.157 2020/08/18 14:32:34 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ugen.c,v 1.155 2020/08/16 02:37:19 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ugen.c,v 1.157 2020/08/18 14:32:34 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -139,6 +139,7 @@ struct ugen_softc {
 	int sc_refcnt;
 	char sc_buffer[UGEN_BBSIZE];
 	u_char sc_dying;
+	u_char sc_attached;
 };
 
 static struct {
@@ -175,7 +176,7 @@ compare_ugen_key(void *cookie, const void *vsc, const void *vk)
 static const rb_tree_ops_t ugenif_tree_ops = {
 	.rbto_compare_nodes = compare_ugen,
 	.rbto_compare_key = compare_ugen_key,
-	.rbto_node_offset = offsetof(struct ugen_softc, sc_unit),
+	.rbto_node_offset = offsetof(struct ugen_softc, sc_node),
 };
 
 static void
@@ -215,17 +216,18 @@ ugenif_acquire(unsigned unit)
 
 	mutex_enter(&ugenif.lock);
 	sc = rb_tree_find_node(&ugenif.tree, &unit);
-	if (sc) {
-		mutex_enter(&sc->sc_lock);
-		if (sc->sc_dying) {
-			sc = NULL;
-		} else {
-			KASSERT(sc->sc_refcnt < INT_MAX);
-			sc->sc_refcnt++;
-		}
+	if (sc == NULL)
+		goto out;
+	mutex_enter(&sc->sc_lock);
+	if (sc->sc_dying) {
 		mutex_exit(&sc->sc_lock);
+		sc = NULL;
+		goto out;
 	}
-	mutex_exit(&ugenif.lock);
+	KASSERT(sc->sc_refcnt < INT_MAX);
+	sc->sc_refcnt++;
+	mutex_exit(&sc->sc_lock);
+out:	mutex_exit(&ugenif.lock);
 
 	return sc;
 }
@@ -378,6 +380,9 @@ ugenif_attach(device_t parent, device_t self, void *aux)
 		}
 	}
 
+	if (!pmf_device_register(self, NULL, NULL))
+		aprint_error_dev(self, "couldn't establish power handler\n");
+
 	if (uiaa->uiaa_ifaceno < 0) {
 		/*
 		 * If we attach the whole device,
@@ -387,7 +392,6 @@ ugenif_attach(device_t parent, device_t self, void *aux)
 		if (err) {
 			aprint_error_dev(self,
 			    "setting configuration index 0 failed\n");
-			sc->sc_dying = 1;
 			return;
 		}
 	}
@@ -400,16 +404,12 @@ ugenif_attach(device_t parent, device_t self, void *aux)
 	if (err) {
 		aprint_error_dev(self, "setting configuration %d failed\n",
 		    conf);
-		sc->sc_dying = 1;
 		return;
 	}
 
 	ugenif_get_unit(sc);
 	usbd_add_drv_event(USB_EVENT_DRIVER_ATTACH, sc->sc_udev, sc->sc_dev);
-
-	if (!pmf_device_register(self, NULL, NULL))
-		aprint_error_dev(self, "couldn't establish power handler\n");
-
+	sc->sc_attached = 1;
 }
 
 Static void
@@ -608,8 +608,10 @@ ugenopen(dev_t dev, int flag, int mode, struct lwp *l)
 				goto out;
 			}
 			isize = UGETW(edesc->wMaxPacketSize);
-			if (isize == 0)	/* shouldn't happen */
-				return EINVAL;
+			if (isize == 0) {	/* shouldn't happen */
+				error = EINVAL;
+				goto out;
+			}
 			sce->ibuf = kmem_alloc(isize * UGEN_NISOFRAMES,
 				KM_SLEEP);
 			sce->cur = sce->fill = sce->ibuf;
@@ -1140,6 +1142,10 @@ ugen_detach(device_t self, int flags)
 
 	sc->sc_dying = 1;
 	pmf_device_deregister(self);
+
+	if (!sc->sc_attached)
+		goto out;
+
 	/* Abort all pipes.  Causes processes waiting for transfer to wake. */
 	for (i = 0; i < USB_MAX_ENDPOINTS; i++) {
 		for (dir = OUT; dir <= IN; dir++) {
@@ -1170,7 +1176,7 @@ ugen_detach(device_t self, int flags)
 	usbd_add_drv_event(USB_EVENT_DRIVER_DETACH, sc->sc_udev, sc->sc_dev);
 	ugenif_put_unit(sc);
 
-	for (i = 0; i < USB_MAX_ENDPOINTS; i++) {
+out:	for (i = 0; i < USB_MAX_ENDPOINTS; i++) {
 		for (dir = OUT; dir <= IN; dir++) {
 			sce = &sc->sc_endpoints[i][dir];
 			seldestroy(&sce->rsel);
