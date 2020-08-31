@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.94 2020/08/11 18:41:46 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.102 2020/08/30 19:56:02 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -73,7 +73,7 @@
  */
 
 /* arch.c */
-ReturnStatus Arch_ParseArchive(char **, Lst, GNode *);
+Boolean Arch_ParseArchive(char **, Lst, GNode *);
 void Arch_Touch(GNode *);
 void Arch_TouchLib(GNode *);
 time_t Arch_MTime(GNode *);
@@ -82,7 +82,7 @@ void Arch_FindLib(GNode *, Lst);
 Boolean Arch_LibOODate(GNode *);
 void Arch_Init(void);
 void Arch_End(void);
-int Arch_IsLib(GNode *);
+Boolean Arch_IsLib(GNode *);
 
 /* compat.c */
 int CompatRunCommand(void *, void *);
@@ -123,7 +123,6 @@ char *cached_realpath(const char *, char *);
 
 /* parse.c */
 void Parse_Error(int, const char *, ...) MAKE_ATTR_PRINTFLIKE(2, 3);
-Boolean Parse_AnyExport(void);
 Boolean Parse_IsVar(char *);
 void Parse_DoVar(char *, GNode *);
 void Parse_AddIncludeDir(char *);
@@ -134,10 +133,22 @@ void Parse_SetInput(const char *, int, int, char *(*)(void *, size_t *), void *)
 Lst Parse_MainName(void);
 
 /* str.c */
+typedef struct {
+    char **words;
+    size_t len;
+    void *freeIt;
+} Words;
+
+Words Str_Words(const char *, Boolean);
+static inline void MAKE_ATTR_UNUSED
+Words_Free(Words w) {
+    free(w.words);
+    free(w.freeIt);
+}
+
 char *str_concat2(const char *, const char *);
 char *str_concat3(const char *, const char *, const char *);
 char *str_concat4(const char *, const char *, const char *, const char *);
-char **brk_string(const char *, int *, Boolean, char **);
 char *Str_FindSubstring(const char *, const char *);
 Boolean Str_Match(const char *, const char *);
 
@@ -146,11 +157,11 @@ void Suff_ClearSuffixes(void);
 Boolean Suff_IsTransform(char *);
 GNode *Suff_AddTransform(char *);
 int Suff_EndTransform(void *, void *);
-void Suff_AddSuffix(char *, GNode **);
+void Suff_AddSuffix(const char *, GNode **);
 Lst Suff_GetPath(char *);
 void Suff_DoPaths(void);
 void Suff_AddInclude(char *);
-void Suff_AddLib(char *);
+void Suff_AddLib(const char *);
 void Suff_FindDeps(GNode *);
 Lst Suff_FindPath(GNode *);
 void Suff_SetNull(char *);
@@ -176,7 +187,6 @@ char *Targ_FmtTime(time_t);
 void Targ_PrintType(int);
 void Targ_PrintGraph(int);
 void Targ_Propagate(void);
-void Targ_Propagate_Wait(void);
 
 /* var.c */
 
@@ -188,15 +198,22 @@ typedef enum {
     VARE_ASSIGN		= 0x04
 } VarEvalFlags;
 
+typedef enum {
+    VAR_NO_EXPORT	= 0x01,	/* do not export */
+    /* Make the variable read-only. No further modification is possible,
+     * except for another call to Var_Set with the same flag. */
+    VAR_SET_READONLY	= 0x02
+} VarSet_Flags;
+
+
 void Var_Delete(const char *, GNode *);
 void Var_Set(const char *, const char *, GNode *);
+void Var_Set_with_flags(const char *, const char *, GNode *, VarSet_Flags);
 void Var_Append(const char *, const char *, GNode *);
 Boolean Var_Exists(const char *, GNode *);
 const char *Var_Value(const char *, GNode *, char **);
 const char *Var_Parse(const char *, GNode *, VarEvalFlags, int *, void **);
 char *Var_Subst(const char *, GNode *, VarEvalFlags);
-char *Var_GetTail(const char *);
-char *Var_GetHead(const char *);
 void Var_Init(void);
 void Var_End(void);
 void Var_Stats(void);

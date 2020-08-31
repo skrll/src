@@ -1,4 +1,4 @@
-/*      $NetBSD: meta.c,v 1.92 2020/08/03 20:26:09 rillig Exp $ */
+/*      $NetBSD: meta.c,v 1.112 2020/08/30 11:15:05 rillig Exp $ */
 
 /*
  * Implement 'meta' mode.
@@ -368,13 +368,13 @@ printCMD(void *cmdp, void *mfpp)
 {
     meta_file_t *mfp = mfpp;
     char *cmd = cmdp;
-    char *cp = NULL;
+    char *cmd_freeIt = NULL;
 
     if (strchr(cmd, '$')) {
-	cmd = cp = Var_Subst(cmd, mfp->gn, VARE_WANTRES);
+	cmd = cmd_freeIt = Var_Subst(cmd, mfp->gn, VARE_WANTRES);
     }
     fprintf(mfp->fp, "CMD %s\n", cmd);
-    free(cp);
+    free(cmd_freeIt);
     return 0;
 }
 
@@ -625,23 +625,19 @@ meta_mode_init(const char *make_mode)
     /*
      * We consider ourselves master of all within ${.MAKE.META.BAILIWICK}
      */
-    metaBailiwick = Lst_Init(FALSE);
+    metaBailiwick = Lst_Init();
     metaBailiwickStr = Var_Subst("${.MAKE.META.BAILIWICK:O:u:tA}",
 	VAR_GLOBAL, VARE_WANTRES);
-    if (metaBailiwickStr) {
-	str2Lst_Append(metaBailiwick, metaBailiwickStr, NULL);
-    }
+    str2Lst_Append(metaBailiwick, metaBailiwickStr, NULL);
     /*
      * We ignore any paths that start with ${.MAKE.META.IGNORE_PATHS}
      */
-    metaIgnorePaths = Lst_Init(FALSE);
+    metaIgnorePaths = Lst_Init();
     Var_Append(MAKE_META_IGNORE_PATHS,
 	       "/dev /etc /proc /tmp /var/run /var/tmp ${TMPDIR}", VAR_GLOBAL);
     metaIgnorePathsStr = Var_Subst("${" MAKE_META_IGNORE_PATHS ":O:u:tA}",
 				   VAR_GLOBAL, VARE_WANTRES);
-    if (metaIgnorePathsStr) {
-	str2Lst_Append(metaIgnorePaths, metaIgnorePathsStr, NULL);
-    }
+    str2Lst_Append(metaIgnorePaths, metaIgnorePathsStr, NULL);
 
     /*
      * We ignore any paths that match ${.MAKE.META.IGNORE_PATTERNS}
@@ -889,9 +885,11 @@ meta_job_finish(Job *job)
 void
 meta_finish(void)
 {
-    Lst_Destroy(metaBailiwick, NULL);
+    if (metaBailiwick != NULL)
+	Lst_Free(metaBailiwick);
     free(metaBailiwickStr);
-    Lst_Destroy(metaIgnorePaths, NULL);
+    if (metaIgnorePaths != NULL)
+	Lst_Free(metaIgnorePaths);
     free(metaIgnorePathsStr);
 }
 
@@ -953,39 +951,23 @@ prefix_match(void *p, void *q)
     return strncmp(path, prefix, n) == 0;
 }
 
-/*
- * looking for exact or prefix/ match to
- * Lst_Find wants 0 to stop search
- */
-static int
+/* See if the path equals prefix or starts with "prefix/". */
+static Boolean
 path_match(const void *p, const void *q)
 {
-    const char *prefix = q;
     const char *path = p;
+    const char *prefix = q;
     size_t n = strlen(prefix);
-    int rc;
 
-    if ((rc = strncmp(path, prefix, n)) == 0) {
-	switch (path[n]) {
-	case '\0':
-	case '/':
-	    break;
-	default:
-	    rc = 1;
-	    break;
-	}
-    }
-    return rc;
+    if (strncmp(path, prefix, n) != 0)
+        return FALSE;
+    return path[n] == '\0' || path[n] == '/';
 }
 
-/* Lst_Find wants 0 to stop search */
-static int
+static Boolean
 string_match(const void *p, const void *q)
 {
-    const char *p1 = p;
-    const char *p2 = q;
-
-    return strcmp(p1, p2);
+    return strcmp(p, q) == 0;
 }
 
 
@@ -1010,8 +992,8 @@ meta_ignore(GNode *gn, const char *p)
     }
 
     if (metaIgnorePatterns) {
-        const char *expr;
-        char *pm;
+	const char *expr;
+	char *pm;
 
 	Var_Set(".p.", p, gn);
 	expr = "${" MAKE_META_IGNORE_PATTERNS ":@m@${.p.:M$m}@}";
@@ -1117,7 +1099,7 @@ meta_oodate(GNode *gn, Boolean oodate)
 	goto oodate_out;
     dname = fname3;
 
-    missingFiles = Lst_Init(FALSE);
+    missingFiles = Lst_Init();
 
     /*
      * We need to check if the target is out-of-date. This includes
@@ -1332,15 +1314,16 @@ meta_oodate(GNode *gn, Boolean oodate)
 		case 'D':		/* unlink */
 		    if (*p == '/' && !Lst_IsEmpty(missingFiles)) {
 			/* remove any missingFiles entries that match p */
-			if ((ln = Lst_Find(missingFiles, p,
-					   path_match)) != NULL) {
+			ln = Lst_Find(missingFiles, path_match, p);
+			if (ln != NULL) {
 			    LstNode nln;
 			    char *tp;
 
 			    do {
-				nln = Lst_FindFrom(missingFiles, Lst_Succ(ln),
-						   p, path_match);
-				tp = Lst_Datum(ln);
+				nln = Lst_FindFrom(missingFiles,
+						   LstNode_Next(ln),
+						   path_match, p);
+				tp = LstNode_Datum(ln);
 				Lst_Remove(missingFiles, ln);
 				free(tp);
 			    } while ((ln = nln) != NULL);
@@ -1409,8 +1392,8 @@ meta_oodate(GNode *gn, Boolean oodate)
 		    if ((link_src != NULL && cached_lstat(p, &fs) < 0) ||
 			(link_src == NULL && cached_stat(p, &fs) < 0)) {
 			if (!meta_ignore(gn, p)) {
-			    if (Lst_Find(missingFiles, p, string_match) == NULL)
-				Lst_AtEnd(missingFiles, bmake_strdup(p));
+			    if (Lst_Find(missingFiles, string_match, p) == NULL)
+				Lst_Append(missingFiles, bmake_strdup(p));
 			}
 		    }
 		    break;
@@ -1495,8 +1478,8 @@ meta_oodate(GNode *gn, Boolean oodate)
 			     * A referenced file outside of CWD is missing.
 			     * We cannot catch every eventuality here...
 			     */
-			    if (Lst_Find(missingFiles, p, string_match) == NULL)
-				    Lst_AtEnd(missingFiles, bmake_strdup(p));
+			    if (Lst_Find(missingFiles, string_match, p) == NULL)
+				Lst_Append(missingFiles, bmake_strdup(p));
 			}
 		    }
 		    if (buf[0] == 'E') {
@@ -1519,7 +1502,7 @@ meta_oodate(GNode *gn, Boolean oodate)
 			fprintf(debug_file, "%s: %d: there were more build commands in the meta data file than there are now...\n", fname, lineno);
 		    oodate = TRUE;
 		} else {
-		    char *cmd = (char *)Lst_Datum(ln);
+		    char *cmd = LstNode_Datum(ln);
 		    Boolean hasOODATE = FALSE;
 
 		    if (strstr(cmd, "$?"))
@@ -1571,7 +1554,7 @@ meta_oodate(GNode *gn, Boolean oodate)
 			    oodate = TRUE;
 		    }
 		    free(cmd);
-		    ln = Lst_Succ(ln);
+		    ln = LstNode_Next(ln);
 		}
 	    } else if (strcmp(buf, "CWD") == 0) {
 		/*
@@ -1596,7 +1579,7 @@ meta_oodate(GNode *gn, Boolean oodate)
 	if (!Lst_IsEmpty(missingFiles)) {
 	    if (DEBUG(META))
 		fprintf(debug_file, "%s: missing files: %s...\n",
-			fname, (char *)Lst_Datum(Lst_First(missingFiles)));
+			fname, (char *)LstNode_Datum(Lst_First(missingFiles)));
 	    oodate = TRUE;
 	}
 	if (!oodate && !have_filemon && filemonMissing) {
@@ -1623,7 +1606,7 @@ meta_oodate(GNode *gn, Boolean oodate)
 	}
     }
 
-    Lst_Destroy(missingFiles, (FreeProc *)free);
+    Lst_Destroy(missingFiles, free);
 
     if (oodate && needOODATE) {
 	/*

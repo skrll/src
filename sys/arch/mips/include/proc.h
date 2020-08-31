@@ -1,4 +1,4 @@
-/*	$NetBSD: proc.h,v 1.29 2020/07/26 08:08:41 simonb Exp $	*/
+/*	$NetBSD: proc.h,v 1.31 2020/08/26 10:51:45 simonb Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -52,7 +52,7 @@ struct mdlwp {
 	vaddr_t	md_ss_addr;		/* single step address for ptrace */
 	int	md_ss_instr;		/* single step instruction for ptrace */
 	volatile int md_astpending;	/* AST pending on return to userland */
-	int	md_upte[2];		/* ptes for mapping u page */
+	int	md_upte[UPAGES_MAX];	/* ptes for mapping u page */
 };
 
 struct mdproc {

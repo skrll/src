@@ -1,4 +1,4 @@
-/*	$NetBSD: nfsd.c,v 1.69 2020/06/17 00:16:22 kamil Exp $	*/
+/*	$NetBSD: nfsd.c,v 1.72 2020/08/26 13:35:12 gson Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993, 1994
@@ -42,7 +42,7 @@ __COPYRIGHT("@(#) Copyright (c) 1989, 1993, 1994\
 #if 0
 static char sccsid[] = "@(#)nfsd.c	8.9 (Berkeley) 3/29/95";
 #else
-__RCSID("$NetBSD: nfsd.c,v 1.69 2020/06/17 00:16:22 kamil Exp $");
+__RCSID("$NetBSD: nfsd.c,v 1.72 2020/08/26 13:35:12 gson Exp $");
 #endif
 #endif /* not lint */
 
@@ -284,7 +284,7 @@ out:
  * is called to complete the daemonization and signal the parent
  * process to exit.
  *
- * These functions could potentially be moved to a library and 
+ * These functions could potentially be moved to a library and
  * shared by other daemons.
  *
  * The return value from daemon2_fork() is a file descriptor to
@@ -329,7 +329,7 @@ daemon2_fork(void)
 		/* child */
 		(void)close(detach_msg_pipe[0]);
 		(void)write(detach_msg_pipe[1], "", 1);
-		 return detach_msg_pipe[1];
+		return detach_msg_pipe[1];
 	 default:
 		break;
 	}
@@ -548,7 +548,6 @@ main(int argc, char *argv[])
 		setupsock(&cfg[i], &set[i], i);
 		if (set[i].fd != -1)
 			connect_type_cnt++;
-
 	}
 
 	pthread_setname_np(pthread_self(), "master", NULL);

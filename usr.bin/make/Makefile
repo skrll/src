@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.90 2020/08/19 06:30:37 rillig Exp $
+#	$NetBSD: Makefile,v 1.96 2020/08/28 20:57:54 rillig Exp $
 #	@(#)Makefile	5.2 (Berkeley) 12/28/90
 
 PROG=	make
@@ -37,7 +37,6 @@ HDRS+=  meta.h
 HDRS+=  metachar.h
 HDRS+=  nonints.h
 HDRS+=  pathnames.h
-HDRS+=  sprite.h
 HDRS+=  strlist.h
 HDRS+=  trace.h
 
@@ -164,10 +163,16 @@ COPTS.parse.c+=	${GCC_NO_FORMAT_TRUNCATION}
 
 COPTS+=		-Wdeclaration-after-statement
 
+# For -DCLEANUP and similar feature toggles.
+CPPFLAGS+=	${USER_CPPFLAGS}
+# For overriding -std=gnu99 or similar options.
+CFLAGS+=	${USER_CFLAGS}
+
 # A simple unit-test driver to help catch regressions
+TEST_MAKE ?= ${.OBJDIR}/${PROG:T}
 test: .MAKE
 	cd ${.CURDIR}/unit-tests \
-	&& MAKEFLAGS= ${.MAKE} -r -m / TEST_MAKE=${TEST_MAKE:U${.OBJDIR}/${PROG:T}} ${.TARGET}
+	&& MAKEFLAGS= ${TEST_MAKE} -r -m / TEST_MAKE=${TEST_MAKE} ${TESTS:DTESTS=${TESTS:Q}} ${.TARGET}
 .if ${USE_COVERAGE} == yes
 	${GCOV} ${GCOV_OPTS} ${SRCS}
 	sed -i 's,^\([^:]*\): *[0-9]*:,\1: ,' *.gcov
