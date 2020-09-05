@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.681 2020/07/09 06:42:44 msaitoh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.686 2020/08/24 05:34:00 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.681 2020/07/09 06:42:44 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.686 2020/08/24 05:34:00 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -139,6 +139,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.681 2020/07/09 06:42:44 msaitoh Exp $");
 #include <dev/mii/igphyvar.h>
 #include <dev/mii/inbmphyreg.h>
 #include <dev/mii/ihphyreg.h>
+#include <dev/mii/makphyreg.h>
 
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
@@ -887,6 +888,7 @@ static int	wm_read_emi_reg_locked(device_t, int, uint16_t *);
 static int	wm_write_emi_reg_locked(device_t, int, uint16_t);
 /* SGMII */
 static bool	wm_sgmii_uses_mdio(struct wm_softc *);
+static void	wm_sgmii_sfp_preconfig(struct wm_softc *);
 static int	wm_sgmii_readreg(device_t, int, int, uint16_t *);
 static int	wm_sgmii_readreg_locked(device_t, int, int, uint16_t *);
 static int	wm_sgmii_writereg(device_t, int, int, uint16_t);
@@ -4319,7 +4321,7 @@ wm_init_lcd_from_nvm(struct wm_softc *sc)
 		if (wm_nvm_read(sc, (word_addr + i * 2 + 1), 1, &reg_addr) !=0)
 			goto release;
 
-		if (reg_addr == MII_IGPHY_PAGE_SELECT)
+		if (reg_addr == IGPHY_PAGE_SELECT)
 			phy_page = reg_data;
 
 		reg_addr &= IGPHY_MAXREGADDR;
@@ -10390,7 +10392,6 @@ wm_get_phy_id_82575(struct wm_softc *sc)
 	return phyid;
 }
 
-
 /*
  * wm_gmii_mediainit:
  *
@@ -10439,6 +10440,9 @@ wm_gmii_mediainit(struct wm_softc *sc, pci_product_id_t prodid)
 	sc->sc_ethercom.ec_mii = &sc->sc_mii;
 	ifmedia_init_with_lock(&mii->mii_media, IFM_IMASK, wm_gmii_mediachange,
 	    wm_gmii_mediastatus, sc->sc_core_lock);
+
+	/* Setup internal SGMII PHY for SFP */
+	wm_sgmii_sfp_preconfig(sc);
 
 	if ((sc->sc_type == WM_T_82575) || (sc->sc_type == WM_T_82576)
 	    || (sc->sc_type == WM_T_82580)
@@ -10883,7 +10887,7 @@ wm_gmii_i82544_readreg_locked(device_t dev, int phy, int reg, uint16_t *val)
 		case WMPHY_IGP_2:
 		case WMPHY_IGP_3:
 			rv = wm_gmii_mdic_writereg(dev, phy,
-			    MII_IGPHY_PAGE_SELECT, reg);
+			    IGPHY_PAGE_SELECT, reg);
 			if (rv != 0)
 				return rv;
 			break;
@@ -10933,7 +10937,7 @@ wm_gmii_i82544_writereg_locked(device_t dev, int phy, int reg, uint16_t val)
 		case WMPHY_IGP_2:
 		case WMPHY_IGP_3:
 			rv = wm_gmii_mdic_writereg(dev, phy,
-			    MII_IGPHY_PAGE_SELECT, reg);
+			    IGPHY_PAGE_SELECT, reg);
 			if (rv != 0)
 				return rv;
 			break;
@@ -10954,7 +10958,7 @@ wm_gmii_i82544_writereg_locked(device_t dev, int phy, int reg, uint16_t val)
  *
  *	Read a PHY register on the kumeran
  * This could be handled by the PHY layer if we didn't have to lock the
- * ressource ...
+ * resource ...
  */
 static int
 wm_gmii_i80003_readreg(device_t dev, int phy, int reg, uint16_t *val)
@@ -11013,7 +11017,7 @@ out:
  *
  *	Write a PHY register on the kumeran.
  * This could be handled by the PHY layer if we didn't have to lock the
- * ressource ...
+ * resource ...
  */
 static int
 wm_gmii_i80003_writereg(device_t dev, int phy, int reg, uint16_t val)
@@ -11071,7 +11075,7 @@ out:
  *
  *	Read a PHY register on the kumeran
  * This could be handled by the PHY layer if we didn't have to lock the
- * ressource ...
+ * resource ...
  */
 static int
 wm_gmii_bm_readreg(device_t dev, int phy, int reg, uint16_t *val)
@@ -11098,7 +11102,7 @@ wm_gmii_bm_readreg(device_t dev, int phy, int reg, uint16_t *val)
 		if ((phy == 1) && (sc->sc_type != WM_T_82574)
 		    && (sc->sc_type != WM_T_82583))
 			rv = wm_gmii_mdic_writereg(dev, phy,
-			    MII_IGPHY_PAGE_SELECT, page << BME1000_PAGE_SHIFT);
+			    IGPHY_PAGE_SELECT, page << BME1000_PAGE_SHIFT);
 		else
 			rv = wm_gmii_mdic_writereg(dev, phy,
 			    BME1000_PHY_PAGE_SELECT, page);
@@ -11118,7 +11122,7 @@ release:
  *
  *	Write a PHY register on the kumeran.
  * This could be handled by the PHY layer if we didn't have to lock the
- * ressource ...
+ * resource ...
  */
 static int
 wm_gmii_bm_writereg(device_t dev, int phy, int reg, uint16_t val)
@@ -11145,7 +11149,7 @@ wm_gmii_bm_writereg(device_t dev, int phy, int reg, uint16_t val)
 		if ((phy == 1) && (sc->sc_type != WM_T_82574)
 		    && (sc->sc_type != WM_T_82583))
 			rv = wm_gmii_mdic_writereg(dev, phy,
-			    MII_IGPHY_PAGE_SELECT, page << BME1000_PAGE_SHIFT);
+			    IGPHY_PAGE_SELECT, page << BME1000_PAGE_SHIFT);
 		else
 			rv = wm_gmii_mdic_writereg(dev, phy,
 			    BME1000_PHY_PAGE_SELECT, page);
@@ -11183,7 +11187,7 @@ wm_enable_phy_wakeup_reg_access_bm(device_t dev, uint16_t *phy_regp)
 	/* All page select, port ctrl and wakeup registers use phy address 1 */
 
 	/* Select Port Control Registers page */
-	rv = wm_gmii_mdic_writereg(dev, 1, MII_IGPHY_PAGE_SELECT,
+	rv = wm_gmii_mdic_writereg(dev, 1, IGPHY_PAGE_SELECT,
 	    BM_PORT_CTRL_PAGE << IGP3_PAGE_SHIFT);
 	if (rv != 0)
 		return rv;
@@ -11206,7 +11210,7 @@ wm_enable_phy_wakeup_reg_access_bm(device_t dev, uint16_t *phy_regp)
 	/* Select Host Wakeup Registers page - caller now able to write
 	 * registers on the Wakeup registers page
 	 */
-	return wm_gmii_mdic_writereg(dev, 1, MII_IGPHY_PAGE_SELECT,
+	return wm_gmii_mdic_writereg(dev, 1, IGPHY_PAGE_SELECT,
 	    BM_WUC_PAGE << IGP3_PAGE_SHIFT);
 }
 
@@ -11232,7 +11236,7 @@ wm_disable_phy_wakeup_reg_access_bm(device_t dev, uint16_t *phy_regp)
 		return -1;
 
 	/* Select Port Control Registers page */
-	wm_gmii_mdic_writereg(dev, 1, MII_IGPHY_PAGE_SELECT,
+	wm_gmii_mdic_writereg(dev, 1, IGPHY_PAGE_SELECT,
 	    BM_PORT_CTRL_PAGE << IGP3_PAGE_SHIFT);
 
 	/* Restore 769.17 to its original value */
@@ -11329,7 +11333,7 @@ wm_access_phy_wakeup_reg_bm(device_t dev, int offset, int16_t *val, int rd,
  *
  *	Read a PHY register on the kumeran
  * This could be handled by the PHY layer if we didn't have to lock the
- * ressource ...
+ * resource ...
  */
 static int
 wm_gmii_hv_readreg(device_t dev, int phy, int reg, uint16_t *val)
@@ -11379,7 +11383,7 @@ wm_gmii_hv_readreg_locked(device_t dev, int phy, int reg, uint16_t *val)
 		page = 0;
 
 	if (regnum > BME1000_MAX_MULTI_PAGE_REG) {
-		rv = wm_gmii_mdic_writereg(dev, 1, MII_IGPHY_PAGE_SELECT,
+		rv = wm_gmii_mdic_writereg(dev, 1, IGPHY_PAGE_SELECT,
 		    page << BME1000_PAGE_SHIFT);
 		if (rv != 0)
 			return rv;
@@ -11393,7 +11397,7 @@ wm_gmii_hv_readreg_locked(device_t dev, int phy, int reg, uint16_t *val)
  *
  *	Write a PHY register on the kumeran.
  * This could be handled by the PHY layer if we didn't have to lock the
- * ressource ...
+ * resource ...
  */
 static int
 wm_gmii_hv_writereg(device_t dev, int phy, int reg, uint16_t val)
@@ -11465,7 +11469,7 @@ wm_gmii_hv_writereg_locked(device_t dev, int phy, int reg, uint16_t val)
 
 		if (regnum > BME1000_MAX_MULTI_PAGE_REG) {
 			rv = wm_gmii_mdic_writereg(dev, 1,
-			    MII_IGPHY_PAGE_SELECT, page << BME1000_PAGE_SHIFT);
+			    IGPHY_PAGE_SELECT, page << BME1000_PAGE_SHIFT);
 			if (rv != 0)
 				return rv;
 		}
@@ -11479,7 +11483,7 @@ wm_gmii_hv_writereg_locked(device_t dev, int phy, int reg, uint16_t val)
  *
  *	Read a PHY register on the 82580 and I350.
  * This could be handled by the PHY layer if we didn't have to lock the
- * ressource ...
+ * resource ...
  */
 static int
 wm_gmii_82580_readreg(device_t dev, int phy, int reg, uint16_t *val)
@@ -11510,7 +11514,7 @@ wm_gmii_82580_readreg(device_t dev, int phy, int reg, uint16_t *val)
  *
  *	Write a PHY register on the 82580 and I350.
  * This could be handled by the PHY layer if we didn't have to lock the
- * ressource ...
+ * resource ...
  */
 static int
 wm_gmii_82580_writereg(device_t dev, int phy, int reg, uint16_t val)
@@ -11541,7 +11545,7 @@ wm_gmii_82580_writereg(device_t dev, int phy, int reg, uint16_t val)
  *
  *	Read a PHY register on the I2100 and I211.
  * This could be handled by the PHY layer if we didn't have to lock the
- * ressource ...
+ * resource ...
  */
 static int
 wm_gmii_gs40g_readreg(device_t dev, int phy, int reg, uint16_t *val)
@@ -11576,7 +11580,7 @@ release:
  *
  *	Write a PHY register on the I210 and I211.
  * This could be handled by the PHY layer if we didn't have to lock the
- * ressource ...
+ * resource ...
  */
 static int
 wm_gmii_gs40g_writereg(device_t dev, int phy, int reg, uint16_t val)
@@ -11826,12 +11830,44 @@ wm_sgmii_uses_mdio(struct wm_softc *sc)
 	return ismdio;
 }
 
+/* Setup internal SGMII PHY for SFP */
+static void
+wm_sgmii_sfp_preconfig(struct wm_softc *sc)
+{
+	uint16_t id1, id2, phyreg;
+	int i, rv;
+
+	if (((sc->sc_flags & WM_F_SGMII) == 0)
+	    || ((sc->sc_flags & WM_F_SFP) == 0))
+		return;
+
+	for (i = 0; i < MII_NPHY; i++) {
+		sc->phy.no_errprint = true;
+		rv = sc->phy.readreg_locked(sc->sc_dev, i, MII_PHYIDR1, &id1);
+		if (rv != 0)
+			continue;
+		rv = sc->phy.readreg_locked(sc->sc_dev, i, MII_PHYIDR2, &id2);
+		if (rv != 0)
+			continue;
+		if (MII_OUI(id1, id2) != MII_OUI_xxMARVELL)
+			continue;
+		sc->phy.no_errprint = false;
+
+		sc->phy.readreg_locked(sc->sc_dev, i, MAKPHY_ESSR, &phyreg);
+		phyreg &= ~(ESSR_SER_ANEG_BYPASS | ESSR_HWCFG_MODE);
+		phyreg |= ESSR_SGMII_WOC_COPPER;
+		sc->phy.writereg_locked(sc->sc_dev, i, MAKPHY_ESSR, phyreg);
+		break;
+	}
+
+}
+
 /*
  * wm_sgmii_readreg:	[mii interface function]
  *
  *	Read a PHY register on the SGMII
  * This could be handled by the PHY layer if we didn't have to lock the
- * ressource ...
+ * resource ...
  */
 static int
 wm_sgmii_readreg(device_t dev, int phy, int reg, uint16_t *val)
@@ -11888,7 +11924,7 @@ wm_sgmii_readreg_locked(device_t dev, int phy, int reg, uint16_t *val)
  *
  *	Write a PHY register on the SGMII.
  * This could be handled by the PHY layer if we didn't have to lock the
- * ressource ...
+ * resource ...
  */
 static int
 wm_sgmii_writereg(device_t dev, int phy, int reg, uint16_t val)
@@ -11983,6 +12019,7 @@ wm_tbi_mediainit(struct wm_softc *sc)
 	sc->sc_mii.mii_ifp = ifp;
 	sc->sc_ethercom.ec_mii = &sc->sc_mii;
 
+	ifp->if_baudrate = IF_Gbps(1);
 	if (((sc->sc_type >= WM_T_82575) && (sc->sc_type <= WM_T_I211))
 	    && (sc->sc_mediatype == WM_MEDIATYPE_SERDES)) {
 		ifmedia_init_with_lock(&sc->sc_mii.mii_media, IFM_IMASK,
@@ -12414,8 +12451,13 @@ wm_serdes_mediachange(struct ifnet *ifp)
 
 	sc->sc_ctrl |= CTRL_SLU;
 
-	if ((sc->sc_type == WM_T_82575) || (sc->sc_type == WM_T_82576))
+	if ((sc->sc_type == WM_T_82575) || (sc->sc_type == WM_T_82576)) {
 		sc->sc_ctrl |= CTRL_SWDPIN(0) | CTRL_SWDPIN(1);
+
+		reg = CSR_READ(sc, WMREG_CONNSW);
+		reg |= CONNSW_ENRGSRC;
+		CSR_WRITE(sc, WMREG_CONNSW, reg);
+	}
 
 	pcs_lctl = CSR_READ(sc, WMREG_PCS_LCTL);
 	switch (ctrl_ext & CTRL_EXT_LINK_MODE_MASK) {
@@ -12512,6 +12554,7 @@ wm_serdes_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr)
 			break;
 		}
 	}
+	ifp->if_baudrate = ifmedia_baudrate(ifmr->ifm_active);
 	if ((reg & PCS_LSTS_FDX) != 0)
 		ifmr->ifm_active |= IFM_FDX;
 	else
@@ -13906,7 +13949,8 @@ printver:
 	}
 
 	if (have_uid && (wm_nvm_read(sc, NVM_OFF_IMAGE_UID0, 1, &uid0) == 0))
-		aprint_verbose(", Image Unique ID %08x", (uid1 << 16) | uid0);
+		aprint_verbose(", Image Unique ID %08x",
+		    ((uint32_t)uid1 << 16) | uid0);
 }
 
 /*
@@ -15469,9 +15513,9 @@ wm_lplu_d0_disable(struct wm_softc *sc)
 	case WM_T_82573:
 	case WM_T_82575:
 	case WM_T_82576:
-		mii->mii_readreg(sc->sc_dev, 1, MII_IGPHY_POWER_MGMT, &phyval);
+		mii->mii_readreg(sc->sc_dev, 1, IGPHY_POWER_MGMT, &phyval);
 		phyval &= ~PMR_D0_LPLU;
-		mii->mii_writereg(sc->sc_dev, 1, MII_IGPHY_POWER_MGMT, phyval);
+		mii->mii_writereg(sc->sc_dev, 1, IGPHY_POWER_MGMT, phyval);
 		break;
 	case WM_T_82580:
 	case WM_T_I350:
@@ -15797,7 +15841,7 @@ wm_hv_phy_workarounds_ich8lan(struct wm_softc *sc)
 	/* Select page 0 */
 	if ((rv = sc->phy.acquire(sc)) != 0)
 		return rv;
-	rv = wm_gmii_mdic_writereg(dev, 1, MII_IGPHY_PAGE_SELECT, 0);
+	rv = wm_gmii_mdic_writereg(dev, 1, IGPHY_PAGE_SELECT, 0);
 	sc->phy.release(sc);
 	if (rv != 0)
 		return rv;

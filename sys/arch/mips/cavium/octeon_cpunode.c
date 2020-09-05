@@ -29,7 +29,7 @@
 #define __INTR_PRIVATE
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: octeon_cpunode.c,v 1.15 2020/07/19 08:58:35 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: octeon_cpunode.c,v 1.18 2020/07/28 00:35:38 simonb Exp $");
 
 #include "locators.h"
 #include "cpunode.h"
@@ -37,10 +37,11 @@ __KERNEL_RCSID(0, "$NetBSD: octeon_cpunode.c,v 1.15 2020/07/19 08:58:35 simonb E
 #include "opt_ddb.h"
 
 #include <sys/param.h>
+#include <sys/atomic.h>
+#include <sys/cpu.h>
 #include <sys/device.h>
 #include <sys/lwp.h>
-#include <sys/cpu.h>
-#include <sys/atomic.h>
+#include <sys/reboot.h>
 #include <sys/wdog.h>
 
 #include <uvm/uvm.h>
@@ -50,6 +51,7 @@ __KERNEL_RCSID(0, "$NetBSD: octeon_cpunode.c,v 1.15 2020/07/19 08:58:35 simonb E
 #include <mips/cache.h>
 #include <mips/mips_opcode.h>
 #include <mips/mips3_clock.h>
+#include <mips/mips3_pte.h>
 
 #include <mips/cavium/octeonvar.h>
 #include <mips/cavium/dev/octeon_ciureg.h>
@@ -79,7 +81,10 @@ CFATTACH_DECL_NEW(cpunode, sizeof(struct cpunode_softc),
 CFATTACH_DECL_NEW(cpu_cpunode, 0,
     cpu_cpunode_match, cpu_cpunode_attach, NULL, NULL);
 
-kcpuset_t *cpus_booted;
+#ifdef MULTIPROCESSOR
+CTASSERT(MAXCPUS <= sizeof(uint64_t) * NBBY);
+volatile uint64_t cpus_booted = __BIT(0);	/* cpu0 is always booted */
+#endif
 
 static void wdog_cpunode_poke(void *arg);
 
@@ -123,9 +128,7 @@ cpunode_mainbus_attach(device_t parent, device_t self, void *aux)
 	if (cvmctl & CP0_CVMCTL_REPUN)
 		aprint_normal(", unaligned-access ok");
 #ifdef MULTIPROCESSOR
-	uint32_t booted[1];
-	kcpuset_export_u32(cpus_booted, booted, sizeof(booted));
-	aprint_normal(", booted %#" PRIx32, booted[0]);
+	aprint_normal(", booted %#" PRIx64, cpus_booted);
 #endif
 	aprint_normal("\n");
 
@@ -203,7 +206,13 @@ octeon_fixup_cpu_info_references(int32_t load_addr, uint32_t new_insns[2],
 static void
 octeon_cpu_init(struct cpu_info *ci)
 {
+	extern const mips_locore_jumpvec_t mips64r2_locore_vec;
 	bool ok __diagused;
+
+	mips3_cp0_pg_mask_write(MIPS3_PG_SIZE_TO_MASK(PAGE_SIZE));
+	mips3_cp0_wired_write(0);
+	(*mips64r2_locore_vec.ljv_tlb_invalidate_all)();
+	mips3_cp0_wired_write(pmap_tlb0_info.ti_wired);
 
 	// First thing is setup the execption vectors for this cpu.
 	mips64r2_vector_init(&mips_splsw);
@@ -294,7 +303,13 @@ cpu_cpunode_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 #ifdef MULTIPROCESSOR
-	if (!kcpuset_isset(cpus_booted, cpunum)) {
+	if ((boothowto & RB_MD1) != 0) {
+		aprint_naive("\n");
+		aprint_normal(": multiprocessor boot disabled\n");
+		return;
+	}
+
+	if (!(cpus_booted & __BIT(cpunum))) {
 		aprint_naive(" disabled\n");
 		aprint_normal(" disabled (unresponsive)\n");
 		return;

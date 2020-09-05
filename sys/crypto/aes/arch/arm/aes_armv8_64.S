@@ -1,4 +1,4 @@
-/*	$NetBSD: aes_armv8_64.S,v 1.5 2020/07/19 07:32:43 ryo Exp $	*/
+/*	$NetBSD: aes_armv8_64.S,v 1.12 2020/08/08 14:47:01 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -27,6 +27,8 @@
  */
 
 #include <aarch64/asm.h>
+
+RCSID("$NetBSD: aes_armv8_64.S,v 1.12 2020/08/08 14:47:01 riastradh Exp $")
 
 	.arch_extension	aes
 
@@ -437,13 +439,14 @@ END(aesarmv8_setenckey256)
  */
 ENTRY(aesarmv8_enctodec)
 	ldr	q0, [x0, x2, lsl #4]	/* load last round key */
-1:	str	q0, [x1], #0x10	/* store round key */
+	b	2f
+	_ALIGN_TEXT
+1:	aesimc	v0.16b, v0.16b	/* convert encryption to decryption */
+2:	str	q0, [x1], #0x10	/* store round key */
 	subs	x2, x2, #1	/* count down round */
 	ldr	q0, [x0, x2, lsl #4]	/* load previous round key */
-	b.eq	2f		/* stop if this is the last one */
-	aesimc	v0.16b, v0.16b	/* convert encryption to decryption */
-	b	1b
-2:	str	q0, [x1]	/* store first round key verbatim */
+	b.ne	1b		/* repeat if there's more */
+	str	q0, [x1]	/* store first round key verbatim */
 	ret
 END(aesarmv8_enctodec)
 
@@ -501,6 +504,7 @@ ENTRY(aesarmv8_cbc_enc)
 	mov	x9, x0			/* x9 := enckey */
 	mov	x10, x3			/* x10 := nbytes */
 	ldr	q0, [x4]		/* q0 := chaining value */
+	_ALIGN_TEXT
 1:	ldr	q1, [x1], #0x10		/* q1 := plaintext block */
 	eor	v0.16b, v0.16b, v1.16b	/* q0 := cv ^ ptxt */
 	mov	x0, x9			/* x0 := enckey */
@@ -536,17 +540,18 @@ ENTRY(aesarmv8_cbc_dec1)
 	add	x2, x2, x3		/* x2 := pointer past end of out */
 	ldr	q0, [x1, #-0x10]!	/* q0 := last ciphertext block */
 	str	q0, [x4]		/* update iv */
-1:	mov	x0, x9			/* x0 := enckey */
-	mov	x3, x5			/* x3 := nrounds */
-	bl	aesarmv8_dec1		/* q0 := cv ^ ptxt; trash x0/x3/q16 */
-	subs	x10, x10, #0x10		/* count down nbytes */
-	b.eq	2f			/* stop if this is the first block */
-	ldr	q31, [x1, #-0x10]!	/* q31 := chaining value */
+	b	2f
+	_ALIGN_TEXT
+1:	ldr	q31, [x1, #-0x10]!	/* q31 := chaining value */
 	eor	v0.16b, v0.16b, v31.16b	/* q0 := plaintext block */
 	str	q0, [x2, #-0x10]!	/* store plaintext block */
 	mov	v0.16b, v31.16b		/* move cv = ciphertext block */
-	b	1b
-2:	eor	v0.16b, v0.16b, v24.16b	/* q0 := first plaintext block */
+2:	mov	x0, x9			/* x0 := enckey */
+	mov	x3, x5			/* x3 := nrounds */
+	bl	aesarmv8_dec1		/* q0 := cv ^ ptxt; trash x0/x3/q16 */
+	subs	x10, x10, #0x10		/* count down nbytes */
+	b.ne	1b			/* repeat if more blocks */
+	eor	v0.16b, v0.16b, v24.16b	/* q0 := first plaintext block */
 	str	q0, [x2, #-0x10]!	/* store first plaintext block */
 	ldp	fp, lr, [sp], #16	/* pop stack frame */
 	ret
@@ -573,7 +578,12 @@ ENTRY(aesarmv8_cbc_dec8)
 	add	x2, x2, x3		/* x2 := pointer past end of out */
 	ldp	q6, q7, [x1, #-0x20]!	/* q6, q7 := last ciphertext blocks */
 	str	q7, [x4]		/* update iv */
-1:	ldp	q4, q5, [x1, #-0x20]!
+	b	2f
+	_ALIGN_TEXT
+1:	ldp	q6, q7, [x1, #-0x20]!
+	eor	v0.16b, v0.16b, v7.16b	/* q0 := pt0 */
+	stp	q0, q1, [x2, #-0x20]!
+2:	ldp	q4, q5, [x1, #-0x20]!
 	ldp	q2, q3, [x1, #-0x20]!
 	ldp	q0, q1, [x1, #-0x20]!
 	mov	v31.16b, v6.16b		/* q[24+i] := cv[i], 0<i<8 */
@@ -598,12 +608,8 @@ ENTRY(aesarmv8_cbc_dec8)
 	stp	q6, q7, [x2, #-0x20]!	/* store plaintext blocks */
 	stp	q4, q5, [x2, #-0x20]!
 	stp	q2, q3, [x2, #-0x20]!
-	b.eq	2f			/* stop if this is the first block */
-	ldp	q6, q7, [x1, #-0x20]!
-	eor	v0.16b, v0.16b, v7.16b	/* q0 := pt0 */
-	stp	q0, q1, [x2, #-0x20]!
-	b	1b
-2:	eor	v0.16b, v0.16b, v24.16b	/* q0 := pt0 */
+	b.ne	1b			/* repeat if there's more */
+	eor	v0.16b, v0.16b, v24.16b	/* q0 := pt0 */
 	stp	q0, q1, [x2, #-0x20]!	/* store first two plaintext blocks */
 	ldp	fp, lr, [sp], #16	/* pop stack frame */
 	ret
@@ -627,6 +633,7 @@ ENTRY(aesarmv8_xts_enc1)
 	mov	x9, x0			/* x9 := enckey */
 	mov	x10, x3			/* x10 := nbytes */
 	ldr	q31, [x4]		/* q31 := tweak */
+	_ALIGN_TEXT
 1:	ldr	q0, [x1], #0x10		/* q0 := ptxt */
 	mov	x0, x9			/* x0 := enckey */
 	mov	x3, x5			/* x3 := nrounds */
@@ -659,6 +666,7 @@ ENTRY(aesarmv8_xts_enc8)
 	mov	x9, x0			/* x9 := enckey */
 	mov	x10, x3			/* x10 := nbytes */
 	ldr	q31, [x4]		/* q31 := tweak */
+	_ALIGN_TEXT
 1:	mov	v24.16b, v31.16b	/* q24 := tweak[0] */
 	bl	aesarmv8_xts_mulx	/* q31 *= x; trash x0/q0/q1 */
 	mov	v25.16b, v31.16b	/* q25 := tweak[1] */
@@ -727,6 +735,7 @@ ENTRY(aesarmv8_xts_dec1)
 	mov	x9, x0			/* x9 := deckey */
 	mov	x10, x3			/* x10 := nbytes */
 	ldr	q31, [x4]		/* q31 := tweak */
+	_ALIGN_TEXT
 1:	ldr	q0, [x1], #0x10		/* q0 := ctxt */
 	mov	x0, x9			/* x0 := deckey */
 	mov	x3, x5			/* x3 := nrounds */
@@ -759,6 +768,7 @@ ENTRY(aesarmv8_xts_dec8)
 	mov	x9, x0			/* x9 := deckey */
 	mov	x10, x3			/* x10 := nbytes */
 	ldr	q31, [x4]		/* q31 := tweak */
+	_ALIGN_TEXT
 1:	mov	v24.16b, v31.16b	/* q24 := tweak[0] */
 	bl	aesarmv8_xts_mulx	/* q31 *= x; trash x0/q0/q1 */
 	mov	v25.16b, v31.16b	/* q25 := tweak[1] */
@@ -827,7 +837,7 @@ aesarmv8_xts_mulx:
 	 *     carried into x^128 = x^7 + x^2 + x + 1.
 	 */
 	adrl	x0, xtscarry
-	cmlt	v1.2d, v31.2d, #0 /* v1.2d[i] := -1 if v9.2d[i] < 0, else 0 */
+	cmlt	v1.2d, v31.2d, #0 /* v1.2d[i] := -1 if v31.2d[i] < 0, else 0 */
 	ldr	q0, [x0]		/* q0 := xtscarry */
 	ext	v1.16b, v1.16b, v1.16b, #8 /* swap halves of q1 */
 	shl	v31.2d, v31.2d, #1	/* shift */
@@ -861,6 +871,145 @@ ENTRY(aesarmv8_xts_update)
 END(aesarmv8_xts_update)
 
 /*
+ * aesarmv8_cbcmac_update1(const struct aesenc *enckey@x0,
+ *     const uint8_t *in@x1, size_t nbytes@x2, uint8_t auth[16] @x3,
+ *     uint32_t nrounds@x4)
+ *
+ *	Update CBC-MAC.
+ *
+ *	nbytes must be a positive integral multiple of 16.
+ *
+ *	Standard ABI calling convention.
+ */
+ENTRY(aesarmv8_cbcmac_update1)
+	stp	fp, lr, [sp, #-16]!	/* push stack frame */
+	mov	fp, sp
+	ldr	q0, [x3]		/* q0 := initial authenticator */
+	mov	x9, x0			/* x9 := enckey */
+	mov	x5, x3			/* x5 := &auth (enc1 trashes x3) */
+	_ALIGN_TEXT
+1:	ldr	q1, [x1], #0x10		/* q1 := plaintext block */
+	mov	x0, x9			/* x0 := enckey */
+	mov	x3, x4			/* x3 := nrounds */
+	eor	v0.16b, v0.16b, v1.16b	/* q0 := auth ^ ptxt */
+	bl	aesarmv8_enc1		/* q0 := auth'; trash x0/x3/q16 */
+	subs	x2, x2, #0x10		/* count down nbytes */
+	b.ne	1b			/* repeat if x10 is nonzero */
+	str	q0, [x5]		/* store updated authenticator */
+	ldp	fp, lr, [sp], #16	/* pop stack frame */
+	ret
+END(aesarmv8_cbcmac_update1)
+
+/*
+ * aesarmv8_ccm_enc1(const struct aesenc *enckey@x0, const uint8_t *in@x1,
+ *     uint8_t *out@x2, size_t nbytes@x3, uint8_t authctr[32] @x4,
+ *     uint32_t nrounds@x5)
+ *
+ *	Update CCM encryption.
+ *
+ *	nbytes must be a positive integral multiple of 16.
+ *
+ *	Standard ABI calling convention.
+ */
+ENTRY(aesarmv8_ccm_enc1)
+	stp	fp, lr, [sp, #-16]!	/* push stack frame */
+	mov	fp, sp
+	ldp	q0, q2, [x4]		/* q0 := auth, q2 := ctr (be) */
+	adrl	x11, ctr32_inc		/* x11 := &ctr32_inc */
+	ld1	{v5.4s}, [x11]		/* q5 := (0,0,0,1) (host-endian) */
+	mov	x9, x0			/* x9 := enckey */
+	mov	x10, x3			/* x10 := nbytes */
+	rev32	v2.16b, v2.16b		/* q2 := ctr (host-endian) */
+	_ALIGN_TEXT
+1:	ldr	q3, [x1], #0x10		/* q3 := plaintext block */
+	add	v2.4s, v2.4s, v5.4s	/* increment ctr (32-bit) */
+	mov	x0, x9			/* x0 := enckey */
+	mov	x3, x5			/* x3 := nrounds */
+	rev32	v1.16b, v2.16b		/* q1 := ctr (big-endian) */
+	eor	v0.16b, v0.16b, v3.16b	/* q0 := auth ^ ptxt */
+	bl	aesarmv8_enc2		/* q0 := auth', q1 := pad;
+					 * trash x0/x3/q16 */
+	eor	v3.16b, v1.16b, v3.16b	/* q3 := ciphertext block */
+	subs	x10, x10, #0x10		/* count down bytes */
+	str	q3, [x2], #0x10		/* store ciphertext block */
+	b.ne	1b			/* repeat if more blocks */
+	rev32	v2.16b, v2.16b		/* q2 := ctr (big-endian) */
+	stp	q0, q2, [x4]		/* store updated auth/ctr */
+	ldp	fp, lr, [sp], #16	/* pop stack frame */
+	ret
+END(aesarmv8_ccm_enc1)
+
+/*
+ * aesarmv8_ccm_dec1(const struct aesenc *enckey@x0, const uint8_t *in@x1,
+ *     uint8_t *out@x2, size_t nbytes@x3, uint8_t authctr[32] @x4,
+ *     uint32_t nrounds@x5)
+ *
+ *	Update CCM decryption.
+ *
+ *	nbytes must be a positive integral multiple of 16.
+ *
+ *	Standard ABI calling convention.
+ */
+ENTRY(aesarmv8_ccm_dec1)
+	stp	fp, lr, [sp, #-16]!	/* push stack frame */
+	mov	fp, sp
+	ldp	q1, q2, [x4]		/* q1 := auth, q2 := ctr (be) */
+	adrl	x11, ctr32_inc		/* x11 := &ctr32_inc */
+	ld1	{v5.4s}, [x11]		/* q5 := (0,0,0,1) (host-endian) */
+	mov	x9, x0			/* x9 := enckey */
+	mov	x10, x3			/* x10 := nbytes */
+	rev32	v2.16b, v2.16b		/* q2 := ctr (host-endian) */
+
+	/* Decrypt the first block.  */
+	add	v2.4s, v2.4s, v5.4s	/* increment ctr (32-bit) */
+	mov	x3, x5			/* x3 := nrounds */
+	rev32	v0.16b, v2.16b		/* q0 := ctr (big-endian) */
+	ldr	q3, [x1], #0x10		/* q3 := ctxt */
+	bl	aesarmv8_enc1		/* q0 := pad; trash x0/x3/q16 */
+	b	2f
+
+	_ALIGN_TEXT
+1:	/*
+	 * Authenticate the last block and decrypt the next block
+	 * simultaneously.
+	 *
+	 *	q1 = auth ^ ptxt[-1]
+	 *	q2 = ctr[-1] (le)
+	 */
+	add	v2.4s, v2.4s, v5.4s	/* increment ctr (32-bit) */
+	mov	x0, x9			/* x0 := enckey */
+	mov	x3, x5			/* x3 := nrounds */
+	rev32	v0.16b, v2.16b		/* q0 := ctr (big-endian) */
+	ldr	q3, [x1], #0x10		/* q3 := ctxt */
+	bl	aesarmv8_enc2		/* q0 := pad, q1 := auth';
+					 * trash x0/x3/q16 */
+2:	eor	v3.16b, v0.16b, v3.16b	/* q3 := plaintext block */
+	subs	x10, x10, #0x10
+	str	q3, [x2], #0x10		/* store plaintext */
+	eor	v1.16b, v1.16b, v3.16b	/* q1 := auth ^ ptxt */
+	b.ne	1b
+
+	rev32	v2.16b, v2.16b		/* q2 := ctr (big-endian) */
+
+	/* Authenticate the last block.  */
+	mov	x0, x9			/* x0 := enckey */
+	mov	x3, x5			/* x3 := nrounds */
+	mov	v0.16b, v1.16b		/* q0 := auth ^ ptxt */
+	bl	aesarmv8_enc1		/* q0 := auth'; trash x0/x3/q16 */
+
+	stp	q0, q2, [x4]		/* store updated auth/ctr */
+	ldp	fp, lr, [sp], #16	/* pop stack frame */
+	ret
+END(aesarmv8_ccm_dec1)
+
+	.section .rodata
+	.p2align 4
+	.type	ctr32_inc,@object
+ctr32_inc:
+	.int	0, 0, 0, 1
+END(ctr32_inc)
+
+/*
  * aesarmv8_enc1(const struct aesenc *enckey@x0,
  *     uint128_t block@q0, uint32_t nrounds@x3)
  *
@@ -873,17 +1022,54 @@ END(aesarmv8_xts_update)
 	.type	aesarmv8_enc1,@function
 aesarmv8_enc1:
 	ldr	q16, [x0], #0x10	/* load round key */
-1:	subs	x3, x3, #1
+	sub	x3, x3, #1
+	_ALIGN_TEXT
+1:	/* q0 := MixColumns(ShiftRows(SubBytes(AddRoundKey_q16(q0)))) */
+	aese	v0.16b, v16.16b
+	aesmc	v0.16b, v0.16b
+	ldr	q16, [x0], #0x10
+	subs	x3, x3, #1
+	b.ne	1b
 	/* q0 := ShiftRows(SubBytes(AddRoundKey_q16(q0))) */
 	aese	v0.16b, v16.16b
-	ldr	q16, [x0], #0x10		/* load next round key */
-	b.eq	2f
-	/* q0 := MixColumns(q0) */
-	aesmc	v0.16b, v0.16b
-	b	1b
-2:	eor	v0.16b, v0.16b, v16.16b
+	ldr	q16, [x0]		/* load last round key */
+	/* q0 := AddRoundKey_q16(q0) */
+	eor	v0.16b, v0.16b, v16.16b
 	ret
 END(aesarmv8_enc1)
+
+/*
+ * aesarmv8_enc2(const struct aesenc *enckey@x0,
+ *     uint128_t block@q0, uint128_t block@q1, uint32_t nrounds@x3)
+ *
+ *	Encrypt two AES blocks in q0 and q1.
+ *
+ *	Internal ABI.  Uses q16 as temporary.  Destroys x0 and x3.
+ */
+	.text
+	_ALIGN_TEXT
+	.type	aesarmv8_enc2,@function
+aesarmv8_enc2:
+	ldr	q16, [x0], #0x10	/* load round key */
+	sub	x3, x3, #1
+	_ALIGN_TEXT
+1:	/* q[i] := MixColumns(ShiftRows(SubBytes(AddRoundKey_q16(q[i])))) */
+	aese	v0.16b, v16.16b
+	aesmc	v0.16b, v0.16b
+	aese	v1.16b, v16.16b
+	aesmc	v1.16b, v1.16b
+	ldr	q16, [x0], #0x10	/* load next round key */
+	subs	x3, x3, #1
+	b.ne	1b
+	/* q[i] := ShiftRows(SubBytes(AddRoundKey_q16(q[i]))) */
+	aese	v0.16b, v16.16b
+	aese	v1.16b, v16.16b
+	ldr	q16, [x0]		/* load last round key */
+	/* q[i] := AddRoundKey_q16(q[i]) */
+	eor	v0.16b, v0.16b, v16.16b
+	eor	v1.16b, v1.16b, v16.16b
+	ret
+END(aesarmv8_enc2)
 
 /*
  * aesarmv8_enc8(const struct aesenc *enckey@x0,
@@ -899,7 +1085,28 @@ END(aesarmv8_enc1)
 	.type	aesarmv8_enc8,@function
 aesarmv8_enc8:
 	ldr	q16, [x0], #0x10	/* load round key */
-1:	subs	x3, x3, #1
+	sub	x3, x3, #1
+	_ALIGN_TEXT
+1:	/* q[i] := MixColumns(ShiftRows(SubBytes(AddRoundKey_q16(q[i])))) */
+	aese	v0.16b, v16.16b
+	aesmc	v0.16b, v0.16b
+	aese	v1.16b, v16.16b
+	aesmc	v1.16b, v1.16b
+	aese	v2.16b, v16.16b
+	aesmc	v2.16b, v2.16b
+	aese	v3.16b, v16.16b
+	aesmc	v3.16b, v3.16b
+	aese	v4.16b, v16.16b
+	aesmc	v4.16b, v4.16b
+	aese	v5.16b, v16.16b
+	aesmc	v5.16b, v5.16b
+	aese	v6.16b, v16.16b
+	aesmc	v6.16b, v6.16b
+	aese	v7.16b, v16.16b
+	aesmc	v7.16b, v7.16b
+	ldr	q16, [x0], #0x10	/* load next round key */
+	subs	x3, x3, #1
+	b.ne	1b
 	/* q[i] := ShiftRows(SubBytes(AddRoundKey_q16(q[i]))) */
 	aese	v0.16b, v16.16b
 	aese	v1.16b, v16.16b
@@ -909,19 +1116,9 @@ aesarmv8_enc8:
 	aese	v5.16b, v16.16b
 	aese	v6.16b, v16.16b
 	aese	v7.16b, v16.16b
-	ldr	q16, [x0], #0x10	/* load next round key */
-	b.eq	2f
-	/* q[i] := MixColumns(q[i]) */
-	aesmc	v0.16b, v0.16b
-	aesmc	v1.16b, v1.16b
-	aesmc	v2.16b, v2.16b
-	aesmc	v3.16b, v3.16b
-	aesmc	v4.16b, v4.16b
-	aesmc	v5.16b, v5.16b
-	aesmc	v6.16b, v6.16b
-	aesmc	v7.16b, v7.16b
-	b	1b
-2:	eor	v0.16b, v0.16b, v16.16b	/* AddRoundKey */
+	ldr	q16, [x0]		/* load last round key */
+	/* q[i] := AddRoundKey_q16(q[i]) */
+	eor	v0.16b, v0.16b, v16.16b
 	eor	v1.16b, v1.16b, v16.16b
 	eor	v2.16b, v2.16b, v16.16b
 	eor	v3.16b, v3.16b, v16.16b
@@ -945,15 +1142,20 @@ END(aesarmv8_enc8)
 	.type	aesarmv8_dec1,@function
 aesarmv8_dec1:
 	ldr	q16, [x0], #0x10	/* load round key */
-1:	subs	x3, x3, #1
-	/* q0 := InSubBytes(InShiftRows(AddRoundKey_q16(q0))) */
+	sub	x3, x3, #1
+	_ALIGN_TEXT
+1:	/* q0 := InSubBytes(InShiftRows(AddRoundKey_q16(q0))) */
 	aesd	v0.16b, v16.16b
-	ldr	q16, [x0], #0x10	/* load next round key */
-	b.eq	2f
 	/* q0 := InMixColumns(q0) */
 	aesimc	v0.16b, v0.16b
-	b	1b
-2:	eor	v0.16b, v0.16b, v16.16b
+	ldr	q16, [x0], #0x10	/* load next round key */
+	subs	x3, x3, #1
+	b.ne	1b
+	/* q0 := InSubBytes(InShiftRows(AddRoundKey_q16(q0))) */
+	aesd	v0.16b, v16.16b
+	ldr	q16, [x0]		/* load last round key */
+	/* q0 := AddRoundKey_q16(q0) */
+	eor	v0.16b, v0.16b, v16.16b
 	ret
 END(aesarmv8_dec1)
 
@@ -971,7 +1173,29 @@ END(aesarmv8_dec1)
 	.type	aesarmv8_dec8,@function
 aesarmv8_dec8:
 	ldr	q16, [x0], #0x10	/* load round key */
-1:	subs	x3, x3, #1
+	sub	x3, x3, #1
+	_ALIGN_TEXT
+1:	/* q[i] := InSubBytes(InShiftRows(AddRoundKey_q16(q[i]))) */
+	aesd	v0.16b, v16.16b
+	/* q[i] := InMixColumns(q[i]) */
+	aesimc	v0.16b, v0.16b
+	aesd	v1.16b, v16.16b
+	aesimc	v1.16b, v1.16b
+	aesd	v2.16b, v16.16b
+	aesimc	v2.16b, v2.16b
+	aesd	v3.16b, v16.16b
+	aesimc	v3.16b, v3.16b
+	aesd	v4.16b, v16.16b
+	aesimc	v4.16b, v4.16b
+	aesd	v5.16b, v16.16b
+	aesimc	v5.16b, v5.16b
+	aesd	v6.16b, v16.16b
+	aesimc	v6.16b, v6.16b
+	aesd	v7.16b, v16.16b
+	aesimc	v7.16b, v7.16b
+	ldr	q16, [x0], #0x10	/* load next round key */
+	subs	x3, x3, #1
+	b.ne	1b
 	/* q[i] := InSubBytes(InShiftRows(AddRoundKey_q16(q[i]))) */
 	aesd	v0.16b, v16.16b
 	aesd	v1.16b, v16.16b
@@ -981,19 +1205,9 @@ aesarmv8_dec8:
 	aesd	v5.16b, v16.16b
 	aesd	v6.16b, v16.16b
 	aesd	v7.16b, v16.16b
-	ldr	q16, [x0], #0x10	/* load next round key */
-	b.eq	2f
-	/* q[i] := InMixColumns(q[i]) */
-	aesimc	v0.16b, v0.16b
-	aesimc	v1.16b, v1.16b
-	aesimc	v2.16b, v2.16b
-	aesimc	v3.16b, v3.16b
-	aesimc	v4.16b, v4.16b
-	aesimc	v5.16b, v5.16b
-	aesimc	v6.16b, v6.16b
-	aesimc	v7.16b, v7.16b
-	b	1b
-2:	eor	v0.16b, v0.16b, v16.16b	/* AddRoundKey */
+	ldr	q16, [x0]		/* load last round key */
+	/* q[i] := AddRoundKey_q16(q[i]) */
+	eor	v0.16b, v0.16b, v16.16b
 	eor	v1.16b, v1.16b, v16.16b
 	eor	v2.16b, v2.16b, v16.16b
 	eor	v3.16b, v3.16b, v16.16b

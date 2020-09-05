@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.50 2020/07/18 16:12:09 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.55 2020/08/20 05:54:32 mrg Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.50 2020/07/18 16:12:09 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.55 2020/08/20 05:54:32 mrg Exp $");
 
 /*
  *	Manages physical address maps.
@@ -217,8 +217,10 @@ struct pmap_limits pmap_limits = {	/* VA and PA limits */
 #ifdef UVMHIST
 static struct kern_history_ent pmapexechistbuf[10000];
 static struct kern_history_ent pmaphistbuf[10000];
+static struct kern_history_ent pmapsegtabhistbuf[1000];
 UVMHIST_DEFINE(pmapexechist);
 UVMHIST_DEFINE(pmaphist);
+UVMHIST_DEFINE(pmapsegtabhist);
 #endif
 
 /*
@@ -388,6 +390,8 @@ pmap_page_set_attributes(struct vm_page_md *mdpg, u_int set_attributes)
 static void
 pmap_page_syncicache(struct vm_page *pg)
 {
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLED(pmaphist);
 #ifndef MULTIPROCESSOR
 	struct pmap * const curpmap = curlwp->l_proc->p_vmspace->vm_map.pmap;
 #endif
@@ -403,9 +407,14 @@ pmap_page_syncicache(struct vm_page *pg)
 	VM_PAGEMD_PVLIST_READLOCK(mdpg);
 	pmap_pvlist_check(mdpg);
 
+	UVMHIST_LOG(pmaphist, "pv %jx pv_pmap %jx", (uintptr_t)pv,
+	     (uintptr_t)pv->pv_pmap, 0, 0);
+
 	if (pv->pv_pmap != NULL) {
 		for (; pv != NULL; pv = pv->pv_next) {
 #ifdef MULTIPROCESSOR
+			UVMHIST_LOG(pmaphist, "pv %jx pv_pmap %jx",
+			    (uintptr_t)pv, (uintptr_t)pv->pv_pmap, 0, 0);
 			kcpuset_merge(onproc, pv->pv_pmap->pm_onproc);
 			if (kcpuset_match(onproc, kcpuset_running)) {
 				break;
@@ -580,6 +589,7 @@ pmap_init(void)
 {
 	UVMHIST_INIT_STATIC(pmapexechist, pmapexechistbuf);
 	UVMHIST_INIT_STATIC(pmaphist, pmaphistbuf);
+	UVMHIST_INIT_STATIC(pmapsegtabhist, pmapsegtabhistbuf);
 
 	UVMHIST_FUNC(__func__);
 	UVMHIST_CALLED(pmaphist);
@@ -869,11 +879,8 @@ pmap_deactivate(struct lwp *l)
 	kpreempt_disable();
 	KASSERT(l == curlwp || l->l_cpu == curlwp->l_cpu);
 	pmap_tlb_miss_lock_enter();
-	curcpu()->ci_pmap_user_segtab = PMAP_INVALID_SEGTAB_ADDRESS;
-#ifdef _LP64
-	curcpu()->ci_pmap_user_seg0tab = NULL;
-#endif
 	pmap_tlb_asid_deactivate(pmap);
+	pmap_segtab_deactivate(pmap);
 	pmap_tlb_miss_lock_exit();
 	kpreempt_enable();
 
@@ -1312,8 +1319,6 @@ pmap_enter(pmap_t pmap, vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 
 	/*
 	 * Now validate mapping with desired protection/wiring.
-	 * Assume uniform modified and referenced status for all
-	 * MIPS pages in a MACH page.
 	 */
 	if (wired) {
 		pmap->pm_stats.wired_count++;

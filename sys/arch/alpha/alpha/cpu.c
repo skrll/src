@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.97 2019/04/08 00:47:21 thorpej Exp $ */
+/* $NetBSD: cpu.c,v 1.99 2020/08/29 20:06:59 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.97 2019/04/08 00:47:21 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.99 2020/08/29 20:06:59 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -408,7 +408,7 @@ cpu_boot_secondary_processors(void)
 		ci = cpu_info[i];
 		if (ci == NULL || ci->ci_data.cpu_idlelwp == NULL)
 			continue;
-		if (ci->ci_flags & CPUF_PRIMARY)
+		if (CPU_IS_PRIMARY(ci))
 			continue;
 		if ((cpus_booted & (1UL << i)) == 0)
 			continue;
@@ -549,8 +549,8 @@ cpu_hatch(struct cpu_info *ci)
 	u_long cpu_id = cpu_number();
 	u_long cpumask = (1UL << cpu_id);
 
-	/* Mark the kernel pmap active on this processor. */
-	atomic_or_ulong(&pmap_kernel()->pm_cpus, cpumask);
+	/* pmap initialization for this processor. */
+	pmap_init_cpu(ci);
 
 	/* Initialize trap vectors for this processor. */
 	trap_init();

@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.573 2020/07/19 14:31:31 maxv Exp $
+# $NetBSD: GENERIC,v 1.578 2020/08/30 11:16:17 dholland Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.573 $"
+#ident		"GENERIC-$Revision: 1.578 $"
 
 maxusers	64		# estimated number of users
 
@@ -78,7 +78,7 @@ options 	USER_LDT	# User-settable LDT, used by Wine
 options 	SVS		# Separate Virtual Space
 options 	PCPU_IDT	# Per CPU IDTs
 
-# GCC Spectre variant 2 migitation
+# GCC Spectre variant 2 mitigation
 makeoptions	SPECTRE_V2_GCC_MITIGATION=1
 options 	SPECTRE_V2_GCC_MITIGATION
 
@@ -180,8 +180,6 @@ include 	"conf/compat_netbsd15.config"
 
 options 	COMPAT_OSSAUDIO
 options 	COMPAT_NETBSD32
-options 	COMPAT_LINUX
-options 	COMPAT_LINUX32	# req. COMPAT_LINUX and COMPAT_NETBSD32
 options 	EXEC_ELF32
 
 # Wedge support
@@ -1144,8 +1142,8 @@ options 	RAID_AUTOCONFIG		# auto-configuration of RAID components
 pseudo-device	fss			# file system snapshot device
 
 pseudo-device	md			# memory disk device (ramdisk)
-options 	MEMORY_DISK_HOOKS	# enable root ramdisk
-options 	MEMORY_DISK_DYNAMIC	# loaded via kernel module(7)
+options		MEMORY_DISK_HOOKS	# enable md specific hooks
+options 	MEMORY_DISK_DYNAMIC	# enable dynamic resizing
 
 pseudo-device	vnd			# disk-like interface to files
 options 	VND_COMPRESSION		# compressed vnd(4)
@@ -1169,7 +1167,6 @@ pseudo-device	ipsecif			# tunnel interface for routing based ipsec
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	l2tp			# L2TPv3 interface
 pseudo-device	npf			# NPF packet filter

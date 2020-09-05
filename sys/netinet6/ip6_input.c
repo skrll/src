@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_input.c,v 1.217 2020/06/19 16:08:06 maxv Exp $	*/
+/*	$NetBSD: ip6_input.c,v 1.222 2020/08/28 06:32:24 ozaki-r Exp $	*/
 /*	$KAME: ip6_input.c,v 1.188 2001/03/29 05:34:31 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.217 2020/06/19 16:08:06 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.222 2020/08/28 06:32:24 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_gateway.h"
@@ -156,6 +156,20 @@ static void sysctl_net_inet6_ip6_setup(struct sysctllog **);
 #define	SOFTNET_UNLOCK()	KASSERT(mutex_owned(softnet_lock))
 #endif
 
+/* Ensure that non packed structures are the desired size. */
+__CTASSERT(sizeof(struct ip6_hdr) == 40);
+__CTASSERT(sizeof(struct ip6_ext) == 2);
+__CTASSERT(sizeof(struct ip6_hbh) == 2);
+__CTASSERT(sizeof(struct ip6_dest) == 2);
+__CTASSERT(sizeof(struct ip6_opt) == 2);
+__CTASSERT(sizeof(struct ip6_opt_jumbo) == 6);
+__CTASSERT(sizeof(struct ip6_opt_nsap) == 4);
+__CTASSERT(sizeof(struct ip6_opt_tunnel) == 3);
+__CTASSERT(sizeof(struct ip6_opt_router) == 4);
+__CTASSERT(sizeof(struct ip6_rthdr) == 4);
+__CTASSERT(sizeof(struct ip6_rthdr0) == 8);
+__CTASSERT(sizeof(struct ip6_frag) == 8);
+
 /*
  * IP6 initialization: fill in IP6 protocol switch table.
  * All protocols not implemented in kernel go to raw IP6 protocol handler.
@@ -213,6 +227,7 @@ ip6intr(void *arg __unused)
 		struct ifnet *rcvif = m_get_rcvif_psref(m, &psref);
 
 		if (rcvif == NULL) {
+			IP6_STATINC(IP6_STAT_IFDROP);
 			m_freem(m);
 			continue;
 		}
@@ -221,6 +236,7 @@ ip6intr(void *arg __unused)
 		 */
 		if ((ND_IFINFO(rcvif)->flags & ND6_IFF_IFDISABLED)) {
 			m_put_rcvif_psref(rcvif, &psref);
+			IP6_STATINC(IP6_STAT_IFDROP);
 			m_freem(m);
 			continue;
 		}
@@ -382,8 +398,10 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 	 * is not loopback.
 	 */
 	if (__predict_false(
-	    m_makewritable(&m, 0, sizeof(struct ip6_hdr), M_DONTWAIT)))
+	    m_makewritable(&m, 0, sizeof(struct ip6_hdr), M_DONTWAIT))) {
+		IP6_STATINC(IP6_STAT_IDROPPED);
 		goto bad;
+	}
 	ip6 = mtod(m, struct ip6_hdr *);
 	if (in6_clearscope(&ip6->ip6_src) || in6_clearscope(&ip6->ip6_dst)) {
 		IP6_STATINC(IP6_STAT_BADSCOPE);	/* XXX */
@@ -491,6 +509,7 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 			    IN6_PRINT(ip6bufs, &ip6->ip6_src),
 			    IN6_PRINT(ip6bufd, &ip6->ip6_dst));
 
+			IP6_STATINC(IP6_STAT_IDROPPED);
 			goto bad_unref;
 		}
 	}
@@ -648,12 +667,14 @@ hbhcheck:
 				goto bad;
 			}
 		}
-		if (!ours)
+		if (!ours) {
+			IP6_STATINC(IP6_STAT_CANTFORWARD);
 			goto bad_unref;
+		}
 	} else if (!ours) {
 		rtcache_unref(rt, ro);
 		rtcache_percpu_putref(ip6_forward_rt_percpu);
-		ip6_forward(m, srcrt);
+		ip6_forward(m, srcrt, rcvif);
 		return;
 	}
 
@@ -741,9 +762,11 @@ hbhcheck:
 			    & PR_LASTHDR) != 0) {
 				int error;
 
-				error = ipsec_ip_input(m, false);
-				if (error)
+				error = ipsec_ip_input_checkpolicy(m, false);
+				if (error) {
+					IP6_STATINC(IP6_STAT_IPSECDROP_IN);
 					goto bad;
+				}
 			}
 		}
 #endif
@@ -914,7 +937,7 @@ ip6_process_hopopts(struct mbuf *m, u_int8_t *opthead, int hbhlen,
 				goto bad;
 			}
 			if (*(opt + 1) != IP6OPT_RTALERT_LEN - 2) {
-				/* XXX stat */
+				IP6_STATINC(IP6_STAT_BADOPTIONS);
 				icmp6_error(m, ICMP6_PARAM_PROB,
 				    ICMP6_PARAMPROB_HEADER,
 				    erroff + opt + 1 - opthead);
@@ -931,7 +954,7 @@ ip6_process_hopopts(struct mbuf *m, u_int8_t *opthead, int hbhlen,
 				goto bad;
 			}
 			if (*(opt + 1) != IP6OPT_JUMBO_LEN - 2) {
-				/* XXX stat */
+				IP6_STATINC(IP6_STAT_BADOPTIONS);
 				icmp6_error(m, ICMP6_PARAM_PROB,
 				    ICMP6_PARAMPROB_HEADER,
 				    erroff + opt + 1 - opthead);

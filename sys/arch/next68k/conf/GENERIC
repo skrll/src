@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.148 2019/04/26 21:40:31 sevan Exp $
+# $NetBSD: GENERIC,v 1.150 2020/08/10 06:32:58 rin Exp $
 #
 # GENERIC machine description file
 # 
@@ -22,9 +22,11 @@ include 	"arch/next68k/conf/std.next68k"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.148 $"
+#ident 		"GENERIC-$Revision: 1.150 $"
 
-makeoptions	COPTS="-O2 -fno-reorder-blocks"	# see share/mk/sys.mk
+makeoptions	COPTS="-O2 -fno-reorder-blocks -fno-omit-frame-pointer"
+	# See share/mk/sys.mk. -fno-omit-frame-pointer is necessary for
+	# backtraces in DDB.
 
 # Needs to be set per system.  i.e change these as you see fit
 maxusers	16
@@ -231,7 +233,6 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 #pseudo-device	wsmux			# mouse & keyboard multiplexor
 

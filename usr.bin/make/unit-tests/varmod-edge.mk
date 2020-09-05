@@ -1,4 +1,4 @@
-# $NetBSD: varmod-edge.mk,v 1.8 2020/07/19 16:08:24 rillig Exp $
+# $NetBSD: varmod-edge.mk,v 1.12 2020/08/08 13:29:09 rillig Exp $
 #
 # Tests for edge cases in variable modifiers.
 #
@@ -149,14 +149,25 @@ TESTS+=		eq-esc
 INP.eq-esc=	file.c file...
 MOD.eq-esc=	${INP.eq-esc:a\=b}
 EXP.eq-esc=	# empty
-# make: Unclosed substitution for INP.eq-esc (= missing)
+# make: Unfinished modifier for INP.eq-esc ('=' missing)
 
-all:
+TESTS+=		colon
+INP.colon=	value
+MOD.colon=	${INP.colon:}
+EXP.colon=	value
+
+TESTS+=		colons
+INP.colons=	value
+MOD.colons=	${INP.colons::::}
+EXP.colons=	# empty
+
 .for test in ${TESTS}
 .  if ${MOD.${test}} == ${EXP.${test}}
-	@printf 'ok %s\n' ${test:Q}''
+.info ok ${test}
 .  else
-	@printf 'error in %s: expected %s, got %s\n' \
-		${test:Q}'' ${EXP.${test}:Q}'' ${MOD.${test}:Q}''
+.warning error in ${test}: expected "${EXP.${test}}", got "${MOD.${test}}"
 .  endif
 .endfor
+
+all:
+	@echo ok

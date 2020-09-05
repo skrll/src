@@ -1,4 +1,4 @@
-# $NetBSD: ALL,v 1.157 2020/07/19 14:31:31 maxv Exp $
+# $NetBSD: ALL,v 1.162 2020/08/26 16:03:41 riastradh Exp $
 # From NetBSD: GENERIC,v 1.787 2006/10/01 18:37:54 bouyer Exp
 #
 # ALL machine description file
@@ -17,7 +17,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"ALL-$Revision: 1.157 $"
+#ident		"ALL-$Revision: 1.162 $"
 
 maxusers	64		# estimated number of users
 
@@ -831,7 +831,6 @@ amr*	at pci? dev ? function ?	# AMI/LSI Logic MegaRAID
 arcmsr* at pci? dev ? function ?	# Areca SATA RAID controllers
 cac*	at pci? dev ? function ?	# Compaq PCI array controllers
 ciss*	at pci? dev ? function ?	# HP Smart Array controllers
-options CISS_NO_INTERRUPT_HACK
 
 icp*	at pci? dev ? function ?	# ICP-Vortex GDT & Intel RAID
 ips*	at pci? dev ? function ?	# Adaptec/IBM ServeRAID
@@ -1022,6 +1021,8 @@ wi*	at pci? dev ? function ?	# Intersil Prism Mini-PCI (802.11b)
 wm*	at pci? dev ? function ?	# Intel 8254x gigabit
 wpi*	at pci? dev ? function ?	# Intel PRO/Wireless 3945ABG
 xge*	at pci? dev ? function ?	# Neterion (S2io) Xframe-I 10GbE
+wwanc*  at pci? dev ? function ?	# Intel XMM7360 LTE modem
+wwan*   at wwanc?			# Intel XMM7360 LTE modem
 
 # PCMCIA network interfaces
 an*	at pcmcia? function ?		# Aironet PC4500/PC4800 (802.11)
@@ -1631,7 +1632,6 @@ pseudo-device	faith			# IPv[46] tcp relay translation i/f
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	l2tp			# L2TPv3 interface
 #pseudo-device	pf			# PF packet filter
@@ -1641,6 +1641,7 @@ pseudo-device	npf			# NPF packet filter
 pseudo-device	kttcp
 # srt is EXPERIMENTAL
 pseudo-device	srt			# source-address-based routing
+pseudo-device	wg			# VPN tunnel compatible with WireGuard
 
 pseudo-device	canloop			# CAN loopback interface
 

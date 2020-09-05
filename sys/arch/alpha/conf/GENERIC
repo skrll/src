@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.402 2020/05/16 13:46:10 maya Exp $
+# $NetBSD: GENERIC,v 1.405 2020/08/29 16:00:36 thorpej Exp $
 #
 # This machine description file is used to generate the default NetBSD
 # kernel.
@@ -19,7 +19,7 @@ include 	"arch/alpha/conf/std.alpha"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-ident		"GENERIC-$Revision: 1.402 $"
+ident		"GENERIC-$Revision: 1.405 $"
 
 maxusers 32
 
@@ -54,8 +54,9 @@ options 	NTP			# kernel PLL for NTP
 options 	BUFQ_PRIOCSCAN
 
 # Diagnostic/debugging support options
-#options 	DIAGNOSTIC		# Cheap kernel consistency checks
+options 	DIAGNOSTIC		# Cheap kernel consistency checks
 #options 	DEBUG			# Expensive debugging checks/support
+#options 	LOCKDEBUG		# Expensive locking checks/support
 options 	DDB			# kernel debugger
 options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #makeoptions	DEBUG="-g"
@@ -129,9 +130,6 @@ options 	PPP_FILTER	# Active filter support for PPP (requires bpf)
 
 # Binary compatibility with previous versions of NetBSD.
 include 	"conf/compat_netbsd09.config"
-
-# Linux binary compatibility
-options 	COMPAT_LINUX
 
 # System V-like message queues
 options 	SYSVMSG
@@ -734,7 +732,6 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	sequencer		# MIDI sequencer
 #options 	RND_COM			# use "com" randomness too

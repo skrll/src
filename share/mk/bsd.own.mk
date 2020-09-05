@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1201 2020/07/20 14:24:13 tsutsui Exp $
+#	$NetBSD: bsd.own.mk,v 1.1205 2020/08/20 03:08:07 mrg Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -63,9 +63,6 @@ TOOLCHAIN_MISSING?=	no
 #
 # What GCC is used?
 #
-.if ${MACHINE_CPU} == "m68k"
-HAVE_GCC?=	7
-.endif
 HAVE_GCC?=	8
 
 #
@@ -78,12 +75,12 @@ MKGCCCMDS?=	no
 # We import the old gcc as "gcc.old" when upgrading.  EXTERNAL_GCC_SUBDIR is
 # set to the relevant subdirectory in src/external/gpl3 for his HAVE_GCC.
 #
-.if ${HAVE_GCC} == 7
+.if ${HAVE_GCC} == 8
 EXTERNAL_GCC_SUBDIR?=	gcc.old
-.elif ${HAVE_GCC} == 8
+.elif ${HAVE_GCC} == 9
 EXTERNAL_GCC_SUBDIR?=	gcc
 .else
-EXTERNAL_GCC_SUBDIR=?	/does/not/exist
+EXTERNAL_GCC_SUBDIR?=	/does/not/exist
 .endif
 .else
 MKGCCCMDS?=	no
@@ -1520,8 +1517,7 @@ X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
     ${MACHINE} == "mac68k"	|| \
     ${MACHINE} == "netwinder"	|| \
     ${MACHINE} == "sgimips"	|| \
-    ${MACHINE} == "vax"		|| \
-    ${MACHINE} == "x68k"
+    ${MACHINE} == "vax"
 HAVE_XORG_SERVER_VER?=110
 .else
 HAVE_XORG_SERVER_VER?=120

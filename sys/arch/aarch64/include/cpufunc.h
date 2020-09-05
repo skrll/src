@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.h,v 1.16 2020/07/01 07:59:16 ryo Exp $	*/
+/*	$NetBSD: cpufunc.h,v 1.18 2020/08/03 06:30:00 ryo Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -63,8 +63,10 @@ extern u_int aarch64_cache_vindexsize;	/* cachesize/way (VIVT/VIPT) */
 extern u_int aarch64_cache_prefer_mask;
 extern u_int cputype;			/* compat arm */
 
+extern int aarch64_pan_enabled;
 extern int aarch64_pac_enabled;
 
+void aarch64_pan_init(int);
 int aarch64_pac_init(int);
 
 int set_cpufuncs(void);
@@ -165,6 +167,7 @@ cpu_earlydevice_va_p(void)
 #endif /* _KERNEL */
 
 /* definitions of TAG and PAC in pointers */
+#define AARCH64_ADDRTOP_TAG_BIT		55
 #define AARCH64_ADDRTOP_TAG		__BIT(55)	/* ECR_EL1.TBI[01]=1 */
 #define AARCH64_ADDRTOP_MSB		__BIT(63)	/* ECR_EL1.TBI[01]=0 */
 #define AARCH64_ADDRESS_TAG_MASK	__BITS(63,56)	/* if TCR.TBI[01]=1 */

@@ -1,4 +1,4 @@
-#	$NetBSD: GUMSTIX,v 1.104 2020/04/18 11:00:38 skrll Exp $
+#	$NetBSD: GUMSTIX,v 1.106 2020/08/16 10:27:47 jdolecek Exp $
 #
 #	GUMSTIX -- Gumstix. Inc. gumstix platforms kernel
 #
@@ -97,7 +97,6 @@ include 	"conf/compat_netbsd16.config"
 options 	COMPAT_NETBSD32	# allow running arm (e.g. non-earm) binaries
 
 options 	COMPAT_OSSAUDIO	# OSS (Voxware) audio driver compatibility
-options 	COMPAT_LINUX	# binary compatibility with Linux
 
 # Shared memory options
 
@@ -363,7 +362,6 @@ pseudo-device	tap			# virtual Ethernet
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
 
 # miscellaneous pseudo-devices

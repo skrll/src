@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.82 2020/07/20 19:53:40 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.102 2020/08/30 19:56:02 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -73,7 +73,7 @@
  */
 
 /* arch.c */
-ReturnStatus Arch_ParseArchive(char **, Lst, GNode *);
+Boolean Arch_ParseArchive(char **, Lst, GNode *);
 void Arch_Touch(GNode *);
 void Arch_TouchLib(GNode *);
 time_t Arch_MTime(GNode *);
@@ -82,7 +82,7 @@ void Arch_FindLib(GNode *, Lst);
 Boolean Arch_LibOODate(GNode *);
 void Arch_Init(void);
 void Arch_End(void);
-int Arch_IsLib(GNode *);
+Boolean Arch_IsLib(GNode *);
 
 /* compat.c */
 int CompatRunCommand(void *, void *);
@@ -91,8 +91,8 @@ int Compat_Make(void *, void *);
 
 /* cond.c */
 struct If;
-int Cond_EvalExpression(const struct If *, char *, Boolean *, int, Boolean);
-int Cond_Eval(char *);
+CondEvalResult Cond_EvalExpression(const struct If *, char *, Boolean *, int, Boolean);
+CondEvalResult Cond_Eval(char *);
 void Cond_restore_depth(unsigned int);
 unsigned int Cond_save_depth(void);
 
@@ -123,7 +123,6 @@ char *cached_realpath(const char *, char *);
 
 /* parse.c */
 void Parse_Error(int, const char *, ...) MAKE_ATTR_PRINTFLIKE(2, 3);
-Boolean Parse_AnyExport(void);
 Boolean Parse_IsVar(char *);
 void Parse_DoVar(char *, GNode *);
 void Parse_AddIncludeDir(char *);
@@ -134,8 +133,22 @@ void Parse_SetInput(const char *, int, int, char *(*)(void *, size_t *), void *)
 Lst Parse_MainName(void);
 
 /* str.c */
-char *str_concat(const char *, const char *, int);
-char **brk_string(const char *, int *, Boolean, char **);
+typedef struct {
+    char **words;
+    size_t len;
+    void *freeIt;
+} Words;
+
+Words Str_Words(const char *, Boolean);
+static inline void MAKE_ATTR_UNUSED
+Words_Free(Words w) {
+    free(w.words);
+    free(w.freeIt);
+}
+
+char *str_concat2(const char *, const char *);
+char *str_concat3(const char *, const char *, const char *);
+char *str_concat4(const char *, const char *, const char *, const char *);
 char *Str_FindSubstring(const char *, const char *);
 Boolean Str_Match(const char *, const char *);
 
@@ -144,11 +157,11 @@ void Suff_ClearSuffixes(void);
 Boolean Suff_IsTransform(char *);
 GNode *Suff_AddTransform(char *);
 int Suff_EndTransform(void *, void *);
-void Suff_AddSuffix(char *, GNode **);
+void Suff_AddSuffix(const char *, GNode **);
 Lst Suff_GetPath(char *);
 void Suff_DoPaths(void);
 void Suff_AddInclude(char *);
-void Suff_AddLib(char *);
+void Suff_AddLib(const char *);
 void Suff_FindDeps(GNode *);
 Lst Suff_FindPath(GNode *);
 void Suff_SetNull(char *);
@@ -174,37 +187,40 @@ char *Targ_FmtTime(time_t);
 void Targ_PrintType(int);
 void Targ_PrintGraph(int);
 void Targ_Propagate(void);
-void Targ_Propagate_Wait(void);
 
 /* var.c */
 
 typedef enum {
     /* Treat undefined variables as errors. */
     VARE_UNDEFERR	= 0x01,
-    /* Actually evaluate the text, fully expanding variables.
-     * Without this flag, the text is only parsed but not evaluated. */
+    /* Expand and evaluate variables during parsing. */
     VARE_WANTRES	= 0x02,
-    VARE_ASSIGN		= 0x04,
-    /* Return the literal text, without expanding variables. */
-    VARE_NOSUBST	= 0x08
+    VARE_ASSIGN		= 0x04
 } VarEvalFlags;
+
+typedef enum {
+    VAR_NO_EXPORT	= 0x01,	/* do not export */
+    /* Make the variable read-only. No further modification is possible,
+     * except for another call to Var_Set with the same flag. */
+    VAR_SET_READONLY	= 0x02
+} VarSet_Flags;
+
 
 void Var_Delete(const char *, GNode *);
 void Var_Set(const char *, const char *, GNode *);
+void Var_Set_with_flags(const char *, const char *, GNode *, VarSet_Flags);
 void Var_Append(const char *, const char *, GNode *);
 Boolean Var_Exists(const char *, GNode *);
-char *Var_Value(const char *, GNode *, char **);
-char *Var_Parse(const char *, GNode *, VarEvalFlags, int *, void **);
-char *Var_Subst(const char *, const char *, GNode *, VarEvalFlags);
-char *Var_GetTail(const char *);
-char *Var_GetHead(const char *);
+const char *Var_Value(const char *, GNode *, char **);
+const char *Var_Parse(const char *, GNode *, VarEvalFlags, int *, void **);
+char *Var_Subst(const char *, GNode *, VarEvalFlags);
 void Var_Init(void);
 void Var_End(void);
 void Var_Stats(void);
 void Var_Dump(GNode *);
 void Var_ExportVars(void);
-void Var_Export(char *, int);
-void Var_UnExport(char *);
+void Var_Export(const char *, Boolean);
+void Var_UnExport(const char *);
 
 /* util.c */
 void (*bmake_signal(int, void (*)(int)))(int);

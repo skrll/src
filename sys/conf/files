@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1271 2020/06/29 23:44:01 riastradh Exp $
+#	$NetBSD: files,v 1.1275 2020/08/20 21:21:31 riastradh Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -202,6 +202,7 @@ defflag	opt_machdep.h		MACHDEP
 # Individual crypto transforms
 include "crypto/adiantum/files.adiantum"
 include "crypto/aes/files.aes"
+include "crypto/chacha/files.chacha"
 include "crypto/des/files.des"
 include "crypto/blowfish/files.blowfish"
 include "crypto/cast128/files.cast128"
@@ -215,6 +216,12 @@ include "crypto/nist_hash_drbg/files.nist_hash_drbg"
 
 # ChaCha-based fast PRNG
 include "crypto/cprng_fast/files.cprng_fast"
+
+# BLAKE2s, a cryptographic hash function optimized for 8- to 32-bit
+include "crypto/blake2/files.blake2s"
+
+# Various cryptography functions
+include "crypto/sodium/files.sodium"
 
 #
 # Kernel history/tracing. Old UVMHIST depends upon this.
@@ -277,7 +284,6 @@ obsolete defflag		IPX		# obsolete
 obsolete defparam opt_md.h	MEMORY_RBFLAGS	# superseded by
 						# MEMORY_DISK_RBFLAGS
 
-defflag	opt_bridge_ipf.h	BRIDGE_IPF	# bridge(4) use inet_pfil_hooks
 defflag	opt_ppp.h		PPP_DEFLATE PPP_BSDCOMP PPP_FILTER
 						# Include deflate or bsd
 						# compression, enable pppd
@@ -454,7 +460,7 @@ define	arcnet
 define	ether
 define	ieee1394
 define	sppp
-define	wlan: rijndael
+define	wlan: aes
 define	crypto
 
 # TPM
@@ -1427,6 +1433,7 @@ defpseudo carp:		ifnet, ether, arp
 defpseudodev l2tp:	ifnet, ether, arp
 defpseudo canloop:	ifnet
 defpseudo ipsecif:	ifnet		# avoid to confuse ipsec itself option
+defpseudo wg:		ifnet, blake2s, libsodium
 
 defpseudo sequencer
 defpseudo clockctl

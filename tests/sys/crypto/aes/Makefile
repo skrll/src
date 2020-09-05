@@ -1,10 +1,12 @@
-#	$NetBSD: Makefile,v 1.2 2020/07/01 09:58:29 riastradh Exp $
+#	$NetBSD: Makefile,v 1.5 2020/08/17 16:26:02 riastradh Exp $
 
 .include <bsd.own.mk>
 
 TESTSDIR=	${TESTSBASE}/sys/crypto/aes
 
 TESTS_C=	t_aes
+
+AFLAGS+=	-D_LOCORE
 
 .PATH:	${NETBSDSRCDIR}/sys/crypto/aes
 CPPFLAGS+=	-I${NETBSDSRCDIR}/sys
@@ -32,6 +34,12 @@ SRCS.t_aes+=	aes_neon_impl.c
 SRCS.t_aes+=	aes_neon_subr.c
 .if !empty(MACHINE_ARCH:Mearmv7*)
 SRCS.t_aes+=	aes_neon_32.S
+.endif
+
+.if !empty(MACHINE_ARCH:Mearmv7*) && empty(MACHINE_ARCH:Mearmv7hf*)
+COPTS.aes_neon.c+=	-mfloat-abi=softfp -mfpu=neon
+COPTS.aes_neon_subr.c+=	-mfloat-abi=softfp -mfpu=neon
+AOPTS.aes_neon_32.S+=	-D__SOFTFP__
 .endif
 
 .endif				# earmv7/aarch64

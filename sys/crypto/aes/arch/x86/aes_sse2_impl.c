@@ -1,4 +1,4 @@
-/*	$NetBSD: aes_sse2_impl.c,v 1.3 2020/06/30 20:32:11 riastradh Exp $	*/
+/*	$NetBSD: aes_sse2_impl.c,v 1.5 2020/07/25 22:29:56 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -27,12 +27,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: aes_sse2_impl.c,v 1.3 2020/06/30 20:32:11 riastradh Exp $");
+__KERNEL_RCSID(1, "$NetBSD: aes_sse2_impl.c,v 1.5 2020/07/25 22:29:56 riastradh Exp $");
 
 #include <sys/types.h>
 #include <sys/endian.h>
 
 #include <crypto/aes/aes.h>
+#include <crypto/aes/aes_impl.h>
 #include <crypto/aes/arch/x86/aes_sse2.h>
 
 #ifdef _KERNEL
@@ -142,6 +143,39 @@ aes_sse2_xts_dec_impl(const struct aesdec *dec, const uint8_t in[static 16],
 	fpu_kern_leave();
 }
 
+static void
+aes_sse2_cbcmac_update1_impl(const struct aesenc *enc,
+    const uint8_t in[static 16], size_t nbytes, uint8_t auth[static 16],
+    uint32_t nrounds)
+{
+
+	fpu_kern_enter();
+	aes_sse2_cbcmac_update1(enc, in, nbytes, auth, nrounds);
+	fpu_kern_leave();
+}
+
+static void
+aes_sse2_ccm_enc1_impl(const struct aesenc *enc, const uint8_t in[static 16],
+    uint8_t out[static 16], size_t nbytes, uint8_t authctr[static 32],
+    uint32_t nrounds)
+{
+
+	fpu_kern_enter();
+	aes_sse2_ccm_enc1(enc, in, out, nbytes, authctr, nrounds);
+	fpu_kern_leave();
+}
+
+static void
+aes_sse2_ccm_dec1_impl(const struct aesenc *enc, const uint8_t in[static 16],
+    uint8_t out[static 16], size_t nbytes, uint8_t authctr[static 32],
+    uint32_t nrounds)
+{
+
+	fpu_kern_enter();
+	aes_sse2_ccm_dec1(enc, in, out, nbytes, authctr, nrounds);
+	fpu_kern_leave();
+}
+
 static int
 aes_sse2_probe(void)
 {
@@ -181,4 +215,7 @@ struct aes_impl aes_sse2_impl = {
 	.ai_cbc_dec = aes_sse2_cbc_dec_impl,
 	.ai_xts_enc = aes_sse2_xts_enc_impl,
 	.ai_xts_dec = aes_sse2_xts_dec_impl,
+	.ai_cbcmac_update1 = aes_sse2_cbcmac_update1_impl,
+	.ai_ccm_enc1 = aes_sse2_ccm_enc1_impl,
+	.ai_ccm_dec1 = aes_sse2_ccm_dec1_impl,
 };

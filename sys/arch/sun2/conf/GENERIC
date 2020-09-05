@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.105 2020/03/08 06:32:41 rin Exp $
+# $NetBSD: GENERIC,v 1.107 2020/08/10 06:29:49 rin Exp $
 #
 # GENERIC machine description file
 # 
@@ -29,10 +29,13 @@ options 	INSECURE		# allow modload(8) in multiuser mode
 
 #options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.105 $"
+#ident 		"GENERIC-$Revision: 1.107 $"
 
-makeoptions	COPTS="-Os -fno-inline-small-functions"
-					# bootloader has size limit (~2MB)
+# Bootloader has size limit (~2MB). Kernel should be smaller than this
+# hard limit. Otherwise, it freezes before adding swap even with 7MB
+# memory. -fno-omit-frame-pointer is necessary for backtraces in DDB.
+options 	NO_KERNEL_RCSIDS
+makeoptions	COPTS="-Os -fno-inline-small-functions -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-omit-frame-pointer"
 
 # Machines to be supported by this kernel
 #options 	FPU_EMULATE
@@ -260,7 +263,6 @@ pseudo-device	loop			# network loopback
 #pseudo-device	bpfilter		# packet filter
 #pseudo-device	carp			# Common Address Redundancy Protocol
 #pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 #pseudo-device	sl			# CSLIP
 #pseudo-device	ppp			# PPP
 #pseudo-device	pppoe			# PPP over Ethernet (RFC 2516)

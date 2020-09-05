@@ -1,4 +1,4 @@
-/* $NetBSD: bwfm.c,v 1.26 2020/07/13 05:38:52 mrg Exp $ */
+/* $NetBSD: bwfm.c,v 1.29 2020/07/22 17:23:52 riastradh Exp $ */
 /* $OpenBSD: bwfm.c,v 1.5 2017/10/16 22:27:16 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -18,25 +18,29 @@
  */
 
 #include <sys/param.h>
-#include <sys/systm.h>
+#include <sys/types.h>
+
 #include <sys/buf.h>
-#include <sys/kernel.h>
 #include <sys/device.h>
+#include <sys/kernel.h>
+#include <sys/kmem.h>
+#include <sys/pool.h>
 #include <sys/queue.h>
 #include <sys/socket.h>
-#include <sys/kmem.h>
+#include <sys/systm.h>
 #include <sys/workqueue.h>
-#include <sys/pcq.h>
 
 #include <net/bpf.h>
 #include <net/if.h>
 #include <net/if_dl.h>
-#include <net/if_media.h>
 #include <net/if_ether.h>
+#include <net/if_media.h>
 
 #include <netinet/in.h>
 
 #include <net80211/ieee80211_var.h>
+
+#include <dev/firmload.h>
 
 #include <dev/ic/bwfmreg.h>
 #include <dev/ic/bwfmvar.h>
@@ -315,7 +319,6 @@ bwfm_attach(struct bwfm_softc *sc)
 {
 	struct ieee80211com *ic = &sc->sc_ic;
 	struct ifnet *ifp = &sc->sc_if;
-	struct bwfm_task *t;
 	char fw_version[BWFM_DCMD_SMLEN];
 	uint32_t bandlist[3];
 	uint32_t tmp;
@@ -327,12 +330,10 @@ bwfm_attach(struct bwfm_softc *sc)
 		printf("%s: could not create workqueue\n", DEVNAME(sc));
 		return;
 	}
-	sc->sc_freetask = pcq_create(BWFM_TASK_COUNT, KM_SLEEP);
-	for (i = 0; i < BWFM_TASK_COUNT; i++) {
-		t = &sc->sc_task[i];
-		t->t_sc = sc;
-		pcq_put(sc->sc_freetask, t);
-	}
+	sc->sc_freetask = pool_cache_init(sizeof(struct bwfm_task), 0, 0, 0,
+	    "bwfmtask", NULL, IPL_NET /* XXX IPL_SOFTNET? */,
+	    NULL, NULL, NULL);
+	pool_cache_prime(sc->sc_freetask, BWFM_TASK_COUNT);
 
 	/* Stop the device in case it was previously initialized */
 	bwfm_fwvar_cmd_set_int(sc, BWFM_C_DOWN, 1);
@@ -381,7 +382,7 @@ bwfm_attach(struct bwfm_softc *sc)
 	    sizeof(bandlist))) {
 		printf("%s: couldn't get supported band list\n", DEVNAME(sc));
 		return;
-	} 
+	}
 	const u_int nbands = le32toh(bandlist[0]);
 	for (i = 1; i <= MIN(nbands, __arraycount(bandlist) - 1); i++) {
 		switch (le32toh(bandlist[i])) {
@@ -425,12 +426,12 @@ bwfm_attach(struct bwfm_softc *sc)
 	error = if_initialize(ifp);
 	if (error != 0) {
 		printf("%s: if_initialize failed(%d)\n", DEVNAME(sc), error);
-		pcq_destroy(sc->sc_freetask);
+		pool_cache_destroy(sc->sc_freetask);
 		workqueue_destroy(sc->sc_taskq);
 
 		return; /* Error */
 	}
-		
+
 	ieee80211_ifattach(ic);
 	sc->sc_newstate = ic->ic_newstate;
 	ic->ic_newstate = bwfm_newstate;
@@ -465,7 +466,7 @@ bwfm_detach(struct bwfm_softc *sc, int flags)
 	if (sc->sc_taskq)
 		workqueue_destroy(sc->sc_taskq);
 	if (sc->sc_freetask)
-		pcq_destroy(sc->sc_freetask);
+		pool_cache_destroy(sc->sc_freetask);
 
 	return 0;
 }
@@ -579,7 +580,7 @@ bwfm_init(struct ifnet *ifp)
 #ifdef BWFM_DEBUG
 	memset(evmask, 0xff, sizeof(evmask));
 #endif
-	
+
 	if (bwfm_fwvar_var_set_data(sc, "event_msgs", evmask, sizeof(evmask))) {
 		printf("%s: could not set event mask\n", DEVNAME(sc));
 		return EIO;
@@ -776,12 +777,13 @@ bwfm_key_set(struct ieee80211com *ic, const struct ieee80211_key *wk,
 	struct bwfm_softc *sc = ic->ic_ifp->if_softc;
 	struct bwfm_task *t;
 
-	t = pcq_get(sc->sc_freetask);
+	t = pool_cache_get(sc->sc_freetask, PR_NOWAIT);
 	if (t == NULL) {
 		printf("%s: no free tasks\n", DEVNAME(sc));
 		return 0;
 	}
 
+	t->t_sc = sc;
 	t->t_cmd = BWFM_TASK_KEY_SET;
 	t->t_key.key = wk;
 	memcpy(t->t_key.mac, mac, sizeof(t->t_key.mac));
@@ -867,12 +869,13 @@ bwfm_key_delete(struct ieee80211com *ic, const struct ieee80211_key *wk)
 	struct bwfm_softc *sc = ic->ic_ifp->if_softc;
 	struct bwfm_task *t;
 
-	t = pcq_get(sc->sc_freetask);
+	t = pool_cache_get(sc->sc_freetask, PR_NOWAIT);
 	if (t == NULL) {
 		printf("%s: no free tasks\n", DEVNAME(sc));
 		return 0;
 	}
 
+	t->t_sc = sc;
 	t->t_cmd = BWFM_TASK_KEY_DELETE;
 	t->t_key.key = wk;
 	memset(t->t_key.mac, 0, sizeof(t->t_key.mac));
@@ -901,12 +904,13 @@ bwfm_newstate(struct ieee80211com *ic, enum ieee80211_state nstate, int arg)
 	struct bwfm_softc *sc = ic->ic_ifp->if_softc;
 	struct bwfm_task *t;
 
-	t = pcq_get(sc->sc_freetask);
+	t = pool_cache_get(sc->sc_freetask, PR_NOWAIT);
 	if (t == NULL) {
 		printf("%s: no free tasks\n", DEVNAME(sc));
 		return EIO;
 	}
 
+	t->t_sc = sc;
 	t->t_cmd = BWFM_TASK_NEWSTATE;
 	t->t_newstate.state = nstate;
 	t->t_newstate.arg = arg;
@@ -984,7 +988,7 @@ bwfm_task(struct work *wk, void *arg)
 		panic("bwfm: unknown task command %d", t->t_cmd);
 	}
 
-	pcq_put(sc->sc_freetask, t);
+	pool_cache_put(sc->sc_freetask, t);
 }
 
 int
@@ -2082,13 +2086,14 @@ bwfm_rx_event(struct bwfm_softc *sc, struct mbuf *m)
 {
 	struct bwfm_task *t;
 
-	t = pcq_get(sc->sc_freetask);
+	t = pool_cache_get(sc->sc_freetask, PR_NOWAIT);
 	if (t == NULL) {
 		m_freem(m);
 		printf("%s: no free tasks\n", DEVNAME(sc));
 		return;
 	}
 
+	t->t_sc = sc;
 	t->t_cmd = BWFM_TASK_RX_EVENT;
 	t->t_mbuf = m;
 	workqueue_enqueue(sc->sc_taskq, (struct work*)t, NULL);

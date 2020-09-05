@@ -1,4 +1,4 @@
-/*	$NetBSD: locore_octeon.S,v 1.11 2020/07/20 03:24:59 simonb Exp $	*/
+/*	$NetBSD: locore_octeon.S,v 1.13 2020/07/28 00:35:38 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <mips/asm.h>
-RCSID("$NetBSD: locore_octeon.S,v 1.11 2020/07/20 03:24:59 simonb Exp $")
+RCSID("$NetBSD: locore_octeon.S,v 1.13 2020/07/28 00:35:38 simonb Exp $")
 
 #include "cpunode.h"			/* for NWDOG */
 #include "opt_cputype.h"
@@ -37,7 +37,7 @@ RCSID("$NetBSD: locore_octeon.S,v 1.11 2020/07/20 03:24:59 simonb Exp $")
 #include <mips/cpuregs.h>
 #include <arch/mips/cavium/dev/octeon_corereg.h>
 
-RCSID("$NetBSD: locore_octeon.S,v 1.11 2020/07/20 03:24:59 simonb Exp $")
+RCSID("$NetBSD: locore_octeon.S,v 1.13 2020/07/28 00:35:38 simonb Exp $")
 
 #include "assym.h"
 
@@ -58,60 +58,62 @@ RCSID("$NetBSD: locore_octeon.S,v 1.11 2020/07/20 03:24:59 simonb Exp $")
 	.text
 
 LEAF(mips_cp0_cvmctl_read)
-	_CP0_READ64(CP0_CVMCTL)
+	_CP0_READ64(MIPS_COP_0_CVMCTL)
 END(mips_cp0_cvmctl_read)
 
+#ifdef notyet /* the rest of these aren't used (yet) */
 LEAF(mips_cp0_cvmctl_write)
-	_CP0_WRITE64(CP0_CVMCTL)
+	_CP0_WRITE64(MIPS_COP_0_CVMCTL)
 END(mips_cp0_cvmctl_write)
 
 LEAF(mips_cp0_cvmmemctl_read)
-	_CP0_READ64(CP0_CVMMEMCTL)
+	_CP0_READ64(MIPS_COP_0_CVMMEMCTL)
 END(mips_cp0_cvmmemctl_read)
 
 LEAF(mips_cp0_cvmmemctl_write)
-	_CP0_WRITE64(CP0_CVMMEMCTL)
+	_CP0_WRITE64(MIPS_COP_0_CVMMEMCTL)
 END(mips_cp0_cvmmemctl_write)
 
 LEAF(mips_cp0_cvmcnt_read)
-	_CP0_READ64(CP0_CVMCNT)
+	_CP0_READ64(MIPS_COP_0_CVMCNT)
 END(mips_cp0_cvmcnt_read)
 
 LEAF(mips_cp0_cvmcnt_write)
-	_CP0_WRITE64(CP0_CVMCNT)
+	_CP0_WRITE64(MIPS_COP_0_CVMCNT)
 END(mips_cp0_cvmcnt_write)
 
 LEAF(mips_cp0_performance_counter_control0_read)
-	_CP0_READ64(CP0_PCCTL)
+	_CP0_READ64(MIPS_COP_0_PERFCNT0_CTL)
 END(mips_cp0_performance_counter_control0_read)
 
 LEAF(mips_cp0_performance_counter_control0_write)
-	_CP0_WRITE64(CP0_PCCTL)
+	_CP0_WRITE64(MIPS_COP_0_PERFCNT0_CTL)
 END(mips_cp0_performance_counter_control0_write)
 
 LEAF(mips_cp0_performance_counter_control1_read)
-	_CP0_READ64(CP0_PCCTL1)
+	_CP0_READ64(MIPS_COP_0_PERFCNT1_CTL)
 END(mips_cp0_performance_counter_control1_read)
 
 LEAF(mips_cp0_performance_counter_control1_write)
-	_CP0_WRITE64(CP0_PCCTL1)
+	_CP0_WRITE64(MIPS_COP_0_PERFCNT1_CTL)
 END(mips_cp0_performance_counter_control1_write)
 
 LEAF(mips_cp0_performance_counter_counter0_read)
-	_CP0_READ64(CP0_PCCNT)
+	_CP0_READ64(MIPS_COP_0_PERFCNT0_CNT)
 END(mips_cp0_performance_counter_counter0_read)
 
 LEAF(mips_cp0_performance_counter_counter0_write)
-	_CP0_WRITE64(CP0_PCCNT)
+	_CP0_WRITE64(MIPS_COP_0_PERFCNT0_CNT)
 END(mips_cp0_performance_counter_counter0_write)
 
 LEAF(mips_cp0_performance_counter_counter1_read)
-	_CP0_READ64(CP0_PCCNT1)
+	_CP0_READ64(MIPS_COP_0_PERFCNT1_CNT)
 END(mips_cp0_performance_counter_counter1_read)
 
 LEAF(mips_cp0_performance_counter_counter1_write)
-	_CP0_WRITE64(CP0_PCCNT1)
+	_CP0_WRITE64(MIPS_COP_0_PERFCNT1_CNT)
 END(mips_cp0_performance_counter_counter1_write)
+#endif /* notyet */
 
 #ifdef MULTIPROCESSOR
 
@@ -130,13 +132,10 @@ NESTED_NOPROFILE(octeon_cpu_spinup, 0, ra)
 	COP0_SYNC
 
 	// Indicate this CPU was started by u-boot
-	PTR_LA	t0, _C_LABEL(cpus_booted) # get addr for kcpuset
-1:	sync
-	PTR_L	a0, (t0)		# get kcpuset
-	beqz	a0, 1b			# loop until not NULL
-	 nop
-	jal	_C_LABEL(kcpuset_atomic_set)
-	 move	a1, s0			# pass it our cpu number
+	PTR_LA	a0, _C_LABEL(cpus_booted)
+	li	a1, 1
+	jal	_C_LABEL(atomic_or_64)
+	 sllv	a1, a1, s0		# shift cpu number to bit position
 
 	// Wait until cpuid_infos[cpunum] is not NULL.
 	PTR_LA	a1, _C_LABEL(cpuid_infos)

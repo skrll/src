@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_netbsdkintf.c,v 1.385 2020/06/20 18:36:27 riastradh Exp $	*/
+/*	$NetBSD: rf_netbsdkintf.c,v 1.389 2020/08/25 13:50:00 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2008-2011 The NetBSD Foundation, Inc.
@@ -101,7 +101,7 @@
  ***********************************************************/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.385 2020/06/20 18:36:27 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.389 2020/08/25 13:50:00 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_raid_autoconfig.h"
@@ -404,7 +404,7 @@ rf_autoconfig(device_t self)
 	RF_ConfigSet_t *config_sets;
 
 	if (!raidautoconfig || raidautoconfigdone == true)
-		return (0);
+		return 0;
 
 	/* XXX This code can only be run once. */
 	raidautoconfigdone = true;
@@ -787,7 +787,7 @@ raidopen(dev_t dev, int flags, int fmt,
 	if ((rs = raidget(unit, true)) == NULL)
 		return ENXIO;
 	if ((error = raidlock(rs)) != 0)
-		return (error);
+		return error;
 
 	if ((rs->sc_flags & RAIDF_SHUTDOWN) != 0) {
 		error = EBUSY;
@@ -818,7 +818,7 @@ raidopen(dev_t dev, int flags, int fmt,
 bad:
 	raidunlock(rs);
 
-	return (error);
+	return error;
 
 
 }
@@ -858,7 +858,7 @@ raidclose(dev_t dev, int flags, int fmt, struct lwp *l)
 	dksc = &rs->sc_dksc;
 
 	if ((error = raidlock(rs)) != 0)
-		return (error);
+		return error;
 
 	if ((rs->sc_flags & RAIDF_INITED) != 0) {
 		error = dk_close(dksc, dev, flags, fmt, l);
@@ -879,7 +879,7 @@ raidclose(dev_t dev, int flags, int fmt, struct lwp *l)
 		raidput(rs);
 	}
 
-	return (error);
+	return error;
 
 }
 
@@ -974,9 +974,9 @@ raidread(dev_t dev, struct uio *uio, int flags)
 		return ENXIO;
 
 	if ((rs->sc_flags & RAIDF_INITED) == 0)
-		return (ENXIO);
+		return ENXIO;
 
-	return (physio(raidstrategy, NULL, dev, B_READ, minphys, uio));
+	return physio(raidstrategy, NULL, dev, B_READ, minphys, uio);
 
 }
 
@@ -991,9 +991,9 @@ raidwrite(dev_t dev, struct uio *uio, int flags)
 		return ENXIO;
 
 	if ((rs->sc_flags & RAIDF_INITED) == 0)
-		return (ENXIO);
+		return ENXIO;
 
-	return (physio(raidstrategy, NULL, dev, B_WRITE, minphys, uio));
+	return physio(raidstrategy, NULL, dev, B_WRITE, minphys, uio);
 
 }
 
@@ -1742,7 +1742,7 @@ raidioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 	}
 
 	if (!raidPtr->valid)
-		return (EINVAL);
+		return EINVAL;
 
 	/*
 	 * Add support for "regular" device ioctls here.
@@ -1762,7 +1762,7 @@ raidioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 		break;
 	}
 
-	return (retcode);
+	return retcode;
 
 }
 
@@ -1858,7 +1858,7 @@ rf_GetSpareTableFromDaemon(RF_SparetWait_t *req)
 	retcode = req->fcol;
 	RF_Free(req, sizeof(*req));	/* this is not the same req as we
 					 * alloc'd */
-	return (retcode);
+	return retcode;
 }
 #endif
 
@@ -2043,7 +2043,7 @@ rf_DispatchKernelIO(RF_DiskQueue_t *queue, RF_DiskQueueData_t *req)
 	}
 	db1_printf(("Exiting from DispatchKernelIO\n"));
 
-	return (0);
+	return 0;
 }
 /* this is the callback function associated with a I/O invoked from
    kernel code.
@@ -2164,7 +2164,7 @@ raidlock(struct raid_softc *rs)
 	rs->sc_flags |= RAIDF_LOCKED;
 done:
 	mutex_exit(&rs->sc_mutex);
-	return (error);
+	return error;
 }
 /*
  * Unlock and wake up any waiters.
@@ -3577,7 +3577,7 @@ raid_detach(device_t self, int flags)
 		return ENXIO;
 
 	if ((error = raidlock(rs)) != 0)
-		return (error);
+		return error;
 
 	error = raid_detach_unlocked(rs);
 
@@ -3660,43 +3660,43 @@ rf_get_component_caches(RF_Raid_t *raidPtr, int *data)
  * that fails.
  */
 
+static int
+rf_sync_component_cache(RF_Raid_t *raidPtr, int c)
+{
+	int force = 1;
+	int e = 0;
+	for (int i = 0; i < 5; i++) {
+		e = VOP_IOCTL(raidPtr->raid_cinfo[c].ci_vp, DIOCCACHESYNC,
+		    &force, FWRITE, NOCRED);
+		if (!e || e == ENODEV)
+			return e;
+		printf("raid%d: cache flush[%d] to component %s failed (%d)\n",
+		    raidPtr->raidid, i, raidPtr->Disks[c].devname, e);
+	}
+	return e;
+}
+
 int
 rf_sync_component_caches(RF_Raid_t *raidPtr)
 {
-	int c, sparecol;
-	int e,error;
-	int force = 1;
+	int c, error;
 
 	error = 0;
 	for (c = 0; c < raidPtr->numCol; c++) {
 		if (raidPtr->Disks[c].status == rf_ds_optimal) {
-			e = VOP_IOCTL(raidPtr->raid_cinfo[c].ci_vp, DIOCCACHESYNC,
-					  &force, FWRITE, NOCRED);
-			if (e) {
-				if (e != ENODEV)
-					printf("raid%d: cache flush to component %s failed.\n",
-					       raidPtr->raidid, raidPtr->Disks[c].devname);
-				if (error == 0) {
-					error = e;
-				}
-			}
+			int e = rf_sync_component_cache(raidPtr, c);
+			if (e && !error)
+				error = e;
 		}
 	}
 
-	for( c = 0; c < raidPtr->numSpare ; c++) {
-		sparecol = raidPtr->numCol + c;
+	for (c = 0; c < raidPtr->numSpare ; c++) {
+		int sparecol = raidPtr->numCol + c;
 		/* Need to ensure that the reconstruct actually completed! */
 		if (raidPtr->Disks[sparecol].status == rf_ds_used_spare) {
-			e = VOP_IOCTL(raidPtr->raid_cinfo[sparecol].ci_vp,
-					  DIOCCACHESYNC, &force, FWRITE, NOCRED);
-			if (e) {
-				if (e != ENODEV)
-					printf("raid%d: cache flush to component %s failed.\n",
-					       raidPtr->raidid, raidPtr->Disks[sparecol].devname);
-				if (error == 0) {
-					error = e;
-				}
-			}
+			int e = rf_sync_component_cache(raidPtr, sparecol);
+			if (e && !error)
+				error = e;
 		}
 	}
 	return error;
@@ -3755,14 +3755,14 @@ rf_get_info(RF_Raid_t *raidPtr, RF_DeviceConfig_t *config)
 	int	d, i, j;
 
 	if (!raidPtr->valid)
-		return (ENODEV);
+		return ENODEV;
 	config->cols = raidPtr->numCol;
 	config->ndevs = raidPtr->numCol;
 	if (config->ndevs >= RF_MAX_DISKS)
-		return (ENOMEM);
+		return ENOMEM;
 	config->nspares = raidPtr->numSpare;
 	if (config->nspares >= RF_MAX_DISKS)
-		return (ENOMEM);
+		return ENOMEM;
 	config->maxqdepth = raidPtr->maxQueueDepth;
 	d = 0;
 	for (j = 0; j < config->cols; j++) {

@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC3X,v 1.135 2020/06/19 10:35:11 tsutsui Exp $
+# $NetBSD: GENERIC3X,v 1.137 2020/08/10 06:32:58 rin Exp $
 
 # GENERIC Sun3X (3/80, 3/470)
 # Supports root on: ie0, le0, sd*, ...
@@ -7,9 +7,11 @@ include 	"arch/sun3/conf/std.sun3x"
 
 #options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC3X-$Revision: 1.135 $"
+#ident		"GENERIC3X-$Revision: 1.137 $"
 
-makeoptions	COPTS="-Os -fno-unwind-tables"	# bootloader has size limit (~2MB)
+makeoptions	COPTS="-Os -fno-unwind-tables -fno-omit-frame-pointer"
+	# Bootloader has size limit (~2MB). -fno-omit-frame-pointer is
+	# necessary for backtraces in DDB.
 
 # Machines to be supported by this kernel
 #options 	FPU_EMULATE	# XXX - Ever needed?
@@ -252,7 +254,6 @@ pseudo-device	ppp			# PPP
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 
 pseudo-device	pty			# pseudo-terminals
 pseudo-device	vnd			# paging to files

@@ -1,4 +1,4 @@
-/*	$NetBSD: aes_ni_64.S,v 1.2 2020/06/30 21:41:04 riastradh Exp $	*/
+/*	$NetBSD: aes_ni_64.S,v 1.6 2020/07/27 20:57:23 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -27,6 +27,8 @@
  */
 
 #include <machine/asm.h>
+
+RCSID("$NetBSD: aes_ni_64.S,v 1.6 2020/07/27 20:57:23 riastradh Exp $")
 
 /*
  * MOVDQA/MOVDQU are Move Double Quadword (Aligned/Unaligned), defined
@@ -522,14 +524,15 @@ ENTRY(aesni_enctodec)
 	shl	$4,%edx		/* rdx := byte offset of last round key */
 	movdqa	(%rdi,%rdx),%xmm0	/* load last round key */
 	movdqa	%xmm0,(%rsi)	/* store last round key verbatim */
-1:	sub	$0x10,%rdx	/* advance to next round key */
-	lea	0x10(%rsi),%rsi
-	jz	2f		/* stop if this is the last one */
-	movdqa	(%rdi,%rdx),%xmm0	/* load round key */
+	jmp	2f
+	_ALIGN_TEXT
+1:	movdqa	(%rdi,%rdx),%xmm0	/* load round key */
 	aesimc	%xmm0,%xmm0	/* convert encryption to decryption */
 	movdqa	%xmm0,(%rsi)	/* store round key */
-	jmp	1b
-2:	movdqa	(%rdi),%xmm0	/* load first round key */
+2:	sub	$0x10,%rdx	/* advance to next round key */
+	lea	0x10(%rsi),%rsi
+	jnz	1b		/* repeat if more rounds */
+	movdqa	(%rdi),%xmm0	/* load first round key */
 	movdqa	%xmm0,(%rsi)	/* store first round key verbatim */
 	ret
 END(aesni_enctodec)
@@ -580,6 +583,7 @@ ENTRY(aesni_cbc_enc)
 	jz	2f
 	mov	%rcx,%r10		/* r10 := nbytes */
 	movdqu	(%r8),%xmm0		/* xmm0 := chaining value */
+	_ALIGN_TEXT
 1:	movdqu	(%rsi),%xmm1		/* xmm1 := plaintext block */
 	lea	0x10(%rsi),%rsi
 	pxor	%xmm1,%xmm0		/* xmm0 := cv ^ ptxt */
@@ -614,16 +618,17 @@ ENTRY(aesni_cbc_dec1)
 	mov	%rcx,%r10		/* r10 := nbytes */
 	movdqu	-0x10(%rsi,%r10),%xmm0	/* xmm0 := last ciphertext block */
 	movdqu	%xmm0,(%r8)		/* update iv */
-1:	mov	%r9d,%ecx		/* ecx := nrounds */
-	call	aesni_dec1		/* xmm0 := cv ^ ptxt */
-	sub	$0x10,%r10
-	jz	2f			/* first block if r10 is now zero */
-	movdqu	-0x10(%rsi,%r10),%xmm8	/* xmm8 := chaining value */
+	jmp	2f
+	_ALIGN_TEXT
+1:	movdqu	-0x10(%rsi,%r10),%xmm8	/* xmm8 := chaining value */
 	pxor	%xmm8,%xmm0		/* xmm0 := ptxt */
 	movdqu	%xmm0,(%rdx,%r10)	/* store plaintext block */
 	movdqa	%xmm8,%xmm0		/* move cv = ciphertext block */
-	jmp	1b
-2:	pxor	(%rsp),%xmm0		/* xmm0 := ptxt */
+2:	mov	%r9d,%ecx		/* ecx := nrounds */
+	call	aesni_dec1		/* xmm0 := cv ^ ptxt */
+	sub	$0x10,%r10
+	jnz	1b			/* repeat if more blocks */
+	pxor	(%rsp),%xmm0		/* xmm0 := ptxt */
 	movdqu	%xmm0,(%rdx)		/* store first plaintext block */
 	leave
 	ret
@@ -649,7 +654,12 @@ ENTRY(aesni_cbc_dec8)
 	mov	%rcx,%r10		/* r10 := nbytes */
 	movdqu	-0x10(%rsi,%r10),%xmm7	/* xmm7 := ciphertext block[n-1] */
 	movdqu	%xmm7,(%r8)		/* update iv */
-1:	movdqu	-0x20(%rsi,%r10),%xmm6	/* xmm6 := ciphertext block[n-2] */
+	jmp	2f
+	_ALIGN_TEXT
+1:	movdqu	-0x10(%rsi,%r10),%xmm7	/* xmm7 := cv[0] */
+	pxor	%xmm7,%xmm0		/* xmm0 := ptxt[0] */
+	movdqu	%xmm0,(%rdx,%r10)	/* store plaintext block */
+2:	movdqu	-0x20(%rsi,%r10),%xmm6	/* xmm6 := ciphertext block[n-2] */
 	movdqu	-0x30(%rsi,%r10),%xmm5	/* xmm5 := ciphertext block[n-3] */
 	movdqu	-0x40(%rsi,%r10),%xmm4	/* xmm4 := ciphertext block[n-4] */
 	movdqu	-0x50(%rsi,%r10),%xmm3	/* xmm3 := ciphertext block[n-5] */
@@ -680,12 +690,8 @@ ENTRY(aesni_cbc_dec8)
 	movdqu	%xmm2,-0x60(%rdx,%r10)
 	movdqu	%xmm1,-0x70(%rdx,%r10)
 	sub	$0x80,%r10
-	jz	2f			/* first block if r10 is now zero */
-	movdqu	-0x10(%rsi,%r10),%xmm7	/* xmm7 := cv[0] */
-	pxor	%xmm7,%xmm0		/* xmm0 := ptxt[0] */
-	movdqu	%xmm0,(%rdx,%r10)	/* store plaintext block */
-	jmp	1b
-2:	pxor	(%rsp),%xmm0		/* xmm0 := ptxt[0] */
+	jnz	1b			/* repeat if more blocks */
+	pxor	(%rsp),%xmm0		/* xmm0 := ptxt[0] */
 	movdqu	%xmm0,(%rdx)		/* store first plaintext block */
 	leave
 	ret
@@ -706,6 +712,7 @@ END(aesni_cbc_dec8)
 ENTRY(aesni_xts_enc1)
 	mov	%rcx,%r10		/* r10 := nbytes */
 	movdqu	(%r8),%xmm15		/* xmm15 := tweak */
+	_ALIGN_TEXT
 1:	movdqu	(%rsi),%xmm0		/* xmm0 := ptxt */
 	lea	0x10(%rsi),%rsi		/* advance rdi to next block */
 	pxor	%xmm15,%xmm0		/* xmm0 := ptxt ^ tweak */
@@ -738,6 +745,7 @@ ENTRY(aesni_xts_enc8)
 	sub	$0x10,%rsp
 	mov	%rcx,%r10		/* r10 := nbytes */
 	movdqu	(%r8),%xmm15		/* xmm15 := tweak[0] */
+	_ALIGN_TEXT
 1:	movdqa	%xmm15,%xmm8		/* xmm8 := tweak[0] */
 	call	aesni_xts_mulx		/* xmm15 := tweak[1] */
 	movdqa	%xmm15,%xmm9		/* xmm9 := tweak[1] */
@@ -812,6 +820,7 @@ END(aesni_xts_enc8)
 ENTRY(aesni_xts_dec1)
 	mov	%rcx,%r10		/* r10 := nbytes */
 	movdqu	(%r8),%xmm15		/* xmm15 := tweak */
+	_ALIGN_TEXT
 1:	movdqu	(%rsi),%xmm0		/* xmm0 := ctxt */
 	lea	0x10(%rsi),%rsi		/* advance rdi to next block */
 	pxor	%xmm15,%xmm0		/* xmm0 := ctxt ^ tweak */
@@ -844,6 +853,7 @@ ENTRY(aesni_xts_dec8)
 	sub	$0x10,%rsp
 	mov	%rcx,%r10		/* r10 := nbytes */
 	movdqu	(%r8),%xmm15		/* xmm15 := tweak[0] */
+	_ALIGN_TEXT
 1:	movdqa	%xmm15,%xmm8		/* xmm8 := tweak[0] */
 	call	aesni_xts_mulx		/* xmm15 := tweak[1] */
 	movdqa	%xmm15,%xmm9		/* xmm9 := tweak[1] */
@@ -951,6 +961,145 @@ ENTRY(aesni_xts_update)
 END(aesni_xts_update)
 
 /*
+ * aesni_cbcmac_update1(const struct aesenc *enckey@rdi, const uint8_t *in@rsi,
+ *     size_t nbytes@rdx, uint8_t auth[16] @rcx, uint32_t nrounds@r8d)
+ *
+ *	Update CBC-MAC.
+ *
+ *	nbytes must be a positive integral multiple of 16.
+ *
+ *	Standard ABI calling convention.
+ */
+ENTRY(aesni_cbcmac_update1)
+	movdqu	(%rcx),%xmm0		/* xmm0 := auth */
+	mov	%rdx,%r10		/* r10 := nbytes */
+	mov	%rcx,%rdx		/* rdx := &auth */
+	_ALIGN_TEXT
+1:	pxor	(%rsi),%xmm0		/* xmm0 ^= plaintext block */
+	lea	0x10(%rsi),%rsi
+	mov	%r8d,%ecx		/* ecx := nrounds */
+	call	aesni_enc1		/* xmm0 := auth'; trash rax,rcx,xmm8 */
+	sub	$0x10,%r10
+	jnz	1b
+	movdqu	%xmm0,(%rdx)		/* store auth' */
+	ret
+END(aesni_cbcmac_update1)
+
+/*
+ * aesni_ccm_enc1(const struct aesenc *enckey@rdi, const uint8_t *in@rsi,
+ *     uint8_t *out@rdx, size_t nbytes@rcx,
+ *     uint8_t authctr[32] @r8, uint32_t nrounds@r9d)
+ *
+ *	Update CCM encryption.
+ *
+ *	nbytes must be a positive integral multiple of 16.
+ *
+ *	Standard ABI calling convention.
+ */
+ENTRY(aesni_ccm_enc1)
+	mov	%rcx,%r10		/* r10 := nbytes */
+	movdqu	0x10(%r8),%xmm2		/* xmm2 := ctr (be) */
+	movdqa	bswap32(%rip),%xmm4	/* xmm4 := bswap32 table */
+	movdqa	ctr32_inc(%rip),%xmm5	/* xmm5 := (0,0,0,1) (le) */
+	movdqu	(%r8),%xmm0		/* xmm0 := auth */
+	pshufb	%xmm4,%xmm2		/* xmm2 := ctr (le) */
+	_ALIGN_TEXT
+1:	movdqu	(%rsi),%xmm3		/* xmm3 := plaintext block */
+	paddd	%xmm5,%xmm2		/* increment ctr (32-bit) */
+	lea	0x10(%rsi),%rsi
+	movdqa	%xmm2,%xmm1		/* xmm1 := ctr (le) */
+	mov	%r9d,%ecx		/* ecx := nrounds */
+	pshufb	%xmm4,%xmm1		/* xmm1 := ctr (be) */
+	pxor	%xmm3,%xmm0		/* xmm0 := auth ^ ptxt */
+	call	aesni_enc2		/* trash rax/rcx/xmm8 */
+	pxor	%xmm1,%xmm3		/* xmm3 := ciphertext block */
+	sub	$0x10,%r10		/* count down bytes */
+	movdqu	%xmm3,(%rdx)		/* store ciphertext block */
+	lea	0x10(%rdx),%rdx
+	jnz	1b			/* repeat if more blocks */
+	pshufb	%xmm4,%xmm2		/* xmm2 := ctr (be) */
+	movdqu	%xmm0,(%r8)		/* store updated auth */
+	movdqu	%xmm2,0x10(%r8)		/* store updated ctr */
+	ret
+END(aesni_ccm_enc1)
+
+/*
+ * aesni_ccm_dec1(const struct aesenc *enckey@rdi, const uint8_t *in@rsi,
+ *     uint8_t *out@rdx, size_t nbytes@rcx,
+ *     uint8_t authctr[32] @r8, uint32_t nrounds@r9d)
+ *
+ *	Update CCM decryption.
+ *
+ *	nbytes must be a positive integral multiple of 16.
+ *
+ *	Standard ABI calling convention.
+ */
+ENTRY(aesni_ccm_dec1)
+	movdqu	0x10(%r8),%xmm2		/* xmm2 := ctr (be) */
+	movdqa	bswap32(%rip),%xmm4	/* xmm4 := bswap32 table */
+	movdqa	ctr32_inc(%rip),%xmm5	/* xmm5 := (0,0,0,1) (le) */
+	movdqu	(%r8),%xmm1		/* xmm1 := auth */
+	pshufb	%xmm4,%xmm2		/* xmm2 := ctr (le) */
+	mov	%rcx,%r10		/* r10 := nbytes */
+
+	/* Decrypt the first block.  */
+	paddd	%xmm5,%xmm2		/* increment ctr (32-bit) */
+	mov	%r9d,%ecx		/* ecx := nrounds */
+	movdqa	%xmm2,%xmm0		/* xmm0 := ctr (le) */
+	movdqu	(%rsi),%xmm3		/* xmm3 := ctxt */
+	pshufb	%xmm4,%xmm0		/* xmm0 := ctr (be) */
+	lea	0x10(%rsi),%rsi
+	call	aesni_enc1		/* xmm0 := pad; trash rax/rcx/xmm8 */
+	jmp	2f
+
+	_ALIGN_TEXT
+1:	/*
+	 * Authenticate the last block and decrypt the next block
+	 * simultaneously.
+	 *
+	 *	xmm1 = auth ^ ptxt[-1]
+	 *	xmm2 = ctr[-1] (le)
+	 */
+	paddd	%xmm5,%xmm2		/* increment ctr (32-bit) */
+	mov	%r9d,%ecx		/* ecx := nrounds */
+	movdqa	%xmm2,%xmm0		/* xmm0 := ctr (le) */
+	movdqu	(%rsi),%xmm3		/* xmm3 := ctxt */
+	pshufb	%xmm4,%xmm0		/* xmm0 := ctr (be) */
+	lea	0x10(%rsi),%rsi
+	call	aesni_enc2		/* xmm0 := pad, xmm1 := auth';
+					 * trash rax/rcx/xmm8 */
+2:	pxor	%xmm0,%xmm3		/* xmm3 := ptxt */
+	sub	$0x10,%r10
+	movdqu	%xmm3,(%rdx)		/* store plaintext */
+	lea	0x10(%rdx),%rdx
+	pxor	%xmm3,%xmm1		/* xmm1 := auth ^ ptxt */
+	jnz	1b
+
+	/* Authenticate the last block.  */
+	movdqa	%xmm1,%xmm0		/* xmm0 := auth ^ ptxt */
+	mov	%r9d,%ecx		/* ecx := nrounds */
+	call	aesni_enc1		/* xmm0 := auth' */
+	pshufb	%xmm4,%xmm2		/* xmm2 := ctr (be) */
+	movdqu	%xmm0,(%r8)		/* store updated auth */
+	movdqu	%xmm2,0x10(%r8)		/* store updated ctr */
+	ret
+END(aesni_ccm_dec1)
+
+	.section .rodata
+	.p2align 4
+	.type	bswap32,@object
+bswap32:
+	.byte	3,2,1,0, 7,6,5,4, 11,10,9,8, 15,14,13,12
+END(bswap32)
+
+	.section .rodata
+	.p2align 4
+	.type	ctr32_inc,@object
+ctr32_inc:
+	.byte	0,0,0,0, 0,0,0,0, 0,0,0,0, 1,0,0,0
+END(ctr32_inc)
+
+/*
  * aesni_enc1(const struct aesenc *enckey@rdi, uint128_t block@xmm0,
  *     uint32_t nrounds@ecx)
  *
@@ -966,14 +1115,45 @@ aesni_enc1:
 	shl	$4,%ecx		/* ecx := total byte size of round keys */
 	lea	0x10(%rdi,%rcx),%rax	/* rax := end of round key array */
 	neg	%rcx		/* rcx := byte offset of round key from end */
-1:	movdqa	(%rax,%rcx),%xmm8	/* load round key */
+	jmp	2f
+	_ALIGN_TEXT
+1:	aesenc	%xmm8,%xmm0
+2:	movdqa	(%rax,%rcx),%xmm8	/* load round key */
 	add	$0x10,%rcx
-	jz	2f		/* stop if this is the last one */
-	aesenc	%xmm8,%xmm0
-	jmp	1b
-2:	aesenclast %xmm8,%xmm0
+	jnz	1b		/* repeat if more rounds */
+	aesenclast %xmm8,%xmm0
 	ret
 END(aesni_enc1)
+
+/*
+ * aesni_enc2(const struct aesenc *enckey@rdi, uint128_t block0@xmm0,
+ *     uint128_t block1@xmm1, uint32_t nrounds@ecx)
+ *
+ *	Encrypt two AES blocks in %xmm0 and %xmm1.
+ *
+ *	Internal ABI.  Uses %rax and %xmm8 as temporaries.  Destroys %ecx.
+ */
+	.text
+	_ALIGN_TEXT
+	.type	aesni_enc2,@function
+aesni_enc2:
+	movdqa	(%rdi),%xmm8	/* xmm8 := first round key */
+	shl	$4,%ecx		/* ecx := total byte size of round keys */
+	lea	0x10(%rdi,%rcx),%rax	/* rax := end of round key array */
+	neg	%rcx		/* rcx := byte offset of round key from end */
+	pxor	%xmm8,%xmm0	/* xor in first round key */
+	pxor	%xmm8,%xmm1
+	jmp	2f
+	_ALIGN_TEXT
+1:	aesenc	%xmm8,%xmm0
+	aesenc	%xmm8,%xmm1
+2:	movdqa	(%rax,%rcx),%xmm8	/* load round key */
+	add	$0x10,%rcx
+	jnz	1b		/* repeat if there's more */
+	aesenclast %xmm8,%xmm0
+	aesenclast %xmm8,%xmm1
+	ret
+END(aesni_enc2)
 
 /*
  * aesni_enc8(const struct aesenc *enckey@rdi, uint128_t block0@xmm0, ...,
@@ -999,10 +1179,9 @@ aesni_enc8:
 	shl	$4,%ecx		/* ecx := total byte size of round keys */
 	lea	0x10(%rdi,%rcx),%rax	/* rax := end of round key array */
 	neg	%rcx		/* rcx := byte offset of round key from end */
-1:	movdqa	(%rax,%rcx),%xmm8	/* load round key */
-	add	$0x10,%rcx
-	jz	2f		/* stop if this is the last one */
-	aesenc	%xmm8,%xmm0
+	jmp	2f
+	_ALIGN_TEXT
+1:	aesenc	%xmm8,%xmm0
 	aesenc	%xmm8,%xmm1
 	aesenc	%xmm8,%xmm2
 	aesenc	%xmm8,%xmm3
@@ -1010,8 +1189,10 @@ aesni_enc8:
 	aesenc	%xmm8,%xmm5
 	aesenc	%xmm8,%xmm6
 	aesenc	%xmm8,%xmm7
-	jmp	1b
-2:	aesenclast %xmm8,%xmm0
+2:	movdqa	(%rax,%rcx),%xmm8	/* load round key */
+	add	$0x10,%rcx
+	jnz	1b		/* repeat if more rounds */
+	aesenclast %xmm8,%xmm0
 	aesenclast %xmm8,%xmm1
 	aesenclast %xmm8,%xmm2
 	aesenclast %xmm8,%xmm3
@@ -1038,12 +1219,13 @@ aesni_dec1:
 	shl	$4,%ecx		/* ecx := byte offset of round key */
 	lea	0x10(%rdi,%rcx),%rax	/* rax := pointer to round key */
 	neg	%rcx		/* rcx := byte offset of round key from end */
-1:	movdqa	(%rax,%rcx),%xmm8	/* load round key */
+	jmp	2f
+	_ALIGN_TEXT
+1:	aesdec	%xmm8,%xmm0
+2:	movdqa	(%rax,%rcx),%xmm8	/* load round key */
 	add	$0x10,%rcx
-	jz	2f		/* stop if this is the last one */
-	aesdec	%xmm8,%xmm0
-	jmp	1b
-2:	aesdeclast %xmm8,%xmm0
+	jnz	1b		/* repeat if more rounds */
+	aesdeclast %xmm8,%xmm0
 	ret
 END(aesni_dec1)
 
@@ -1071,10 +1253,9 @@ aesni_dec8:
 	shl	$4,%ecx		/* ecx := byte offset of round key */
 	lea	0x10(%rdi,%rcx),%rax	/* rax := pointer to round key */
 	neg	%rcx		/* rcx := byte offset of round key from end */
-1:	movdqa	(%rax,%rcx),%xmm8	/* load round key */
-	add	$0x10,%rcx
-	jz	2f		/* stop if this is the last one */
-	aesdec	%xmm8,%xmm0
+	jmp	2f
+	_ALIGN_TEXT
+1:	aesdec	%xmm8,%xmm0
 	aesdec	%xmm8,%xmm1
 	aesdec	%xmm8,%xmm2
 	aesdec	%xmm8,%xmm3
@@ -1082,8 +1263,10 @@ aesni_dec8:
 	aesdec	%xmm8,%xmm5
 	aesdec	%xmm8,%xmm6
 	aesdec	%xmm8,%xmm7
-	jmp	1b
-2:	aesdeclast %xmm8,%xmm0
+2:	movdqa	(%rax,%rcx),%xmm8	/* load round key */
+	add	$0x10,%rcx
+	jnz	1b		/* repeat if more rounds */
+	aesdeclast %xmm8,%xmm0
 	aesdeclast %xmm8,%xmm1
 	aesdeclast %xmm8,%xmm2
 	aesdeclast %xmm8,%xmm3

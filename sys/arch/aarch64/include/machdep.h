@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.h,v 1.14 2020/07/08 03:45:13 ryo Exp $	*/
+/*	$NetBSD: machdep.h,v 1.16 2020/08/06 06:49:55 ryo Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>

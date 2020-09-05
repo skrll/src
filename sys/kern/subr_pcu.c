@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_pcu.c,v 1.22 2020/06/06 18:13:01 thorpej Exp $	*/
+/*	$NetBSD: subr_pcu.c,v 1.24 2020/08/07 18:46:00 christos Exp $	*/
 
 /*-
  * Copyright (c) 2011, 2014 The NetBSD Foundation, Inc.
@@ -52,7 +52,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_pcu.c,v 1.22 2020/06/06 18:13:01 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_pcu.c,v 1.24 2020/08/07 18:46:00 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -87,6 +87,19 @@ typedef struct {
 
 /* PCU operations structure provided by the MD code. */
 extern const pcu_ops_t * const pcu_ops_md_defs[];
+
+#ifdef DIAGNOSTIC
+/*
+ * pcu_available_p: true if lwp is allowed to use PCU state.
+ */
+static inline bool
+pcu_available_p(struct lwp *l)
+{
+
+	/* XXX Not sure this is safe unless l is locked!  */
+	return (l->l_flag & (LW_SYSTEM|LW_SYSTEM_FPU)) != LW_SYSTEM;
+}
+#endif
 
 /*
  * pcu_switchpoint: release PCU state if the LWP is being run on another CPU.
@@ -135,7 +148,7 @@ pcu_discard_all(lwp_t *l)
 	 * due to an error in the LWP creation path before it ever runs.
 	 */
 	KASSERT(l == curlwp || l->l_stat == LSIDL ||
-		((l->l_flag & LW_SYSTEM) && pcu_valid == 0));
+		(!pcu_available_p(l) && pcu_valid == 0));
 
 	if (__predict_true(pcu_valid == 0)) {
 		/* PCUs are not in use. */
@@ -174,7 +187,7 @@ pcu_save_all(lwp_t *l)
 	 * with a different LWP (forking a system LWP or doing a coredump of
 	 * a process with multiple threads) and we need to deal with that.
 	 */
-	KASSERT(l == curlwp || (((l->l_flag & LW_SYSTEM) ||
+	KASSERT(l == curlwp || ((!pcu_available_p(l) ||
 	    (curlwp->l_proc == l->l_proc && l->l_stat == LSSUSPENDED)) &&
 	    pcu_valid == 0));
 

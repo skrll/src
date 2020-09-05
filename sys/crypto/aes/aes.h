@@ -1,4 +1,4 @@
-/*	$NetBSD: aes.h,v 1.2 2020/06/29 23:47:54 riastradh Exp $	*/
+/*	$NetBSD: aes.h,v 1.4 2020/07/25 22:14:35 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -54,27 +54,6 @@ struct aesdec {
 	union aes	aesd_aes;
 };
 
-struct aes_impl {
-	const char *ai_name;
-	int	(*ai_probe)(void);
-	void	(*ai_setenckey)(struct aesenc *, const uint8_t *, uint32_t);
-	void	(*ai_setdeckey)(struct aesdec *, const uint8_t *, uint32_t);
-	void	(*ai_enc)(const struct aesenc *, const uint8_t[static 16],
-		    uint8_t[static 16], uint32_t);
-	void	(*ai_dec)(const struct aesdec *, const uint8_t[static 16],
-		    uint8_t[static 16], uint32_t);
-	void	(*ai_cbc_enc)(const struct aesenc *, const uint8_t[static 16],
-		    uint8_t[static 16], size_t, uint8_t[static 16], uint32_t);
-	void	(*ai_cbc_dec)(const struct aesdec *, const uint8_t[static 16],
-		    uint8_t[static 16], size_t, uint8_t[static 16], uint32_t);
-	void	(*ai_xts_enc)(const struct aesenc *, const uint8_t[static 16],
-		    uint8_t[static 16], size_t, uint8_t[static 16], uint32_t);
-	void	(*ai_xts_dec)(const struct aesdec *, const uint8_t[static 16],
-		    uint8_t[static 16], size_t, uint8_t[static 16], uint32_t);
-};
-
-int	aes_selftest(const struct aes_impl *);
-
 uint32_t aes_setenckey128(struct aesenc *, const uint8_t[static 16]);
 uint32_t aes_setenckey192(struct aesenc *, const uint8_t[static 24]);
 uint32_t aes_setenckey256(struct aesenc *, const uint8_t[static 32]);
@@ -86,17 +65,5 @@ void	aes_enc(const struct aesenc *, const uint8_t[static 16],
 	    uint8_t[static 16], uint32_t);
 void	aes_dec(const struct aesdec *, const uint8_t[static 16],
 	    uint8_t[static 16], uint32_t);
-
-void	aes_cbc_enc(struct aesenc *, const uint8_t[static 16],
-	    uint8_t[static 16], size_t, uint8_t[static 16], uint32_t);
-void	aes_cbc_dec(struct aesdec *, const uint8_t[static 16],
-	    uint8_t[static 16], size_t, uint8_t[static 16], uint32_t);
-
-void	aes_xts_enc(struct aesenc *, const uint8_t[static 16],
-	    uint8_t[static 16], size_t, uint8_t[static 16], uint32_t);
-void	aes_xts_dec(struct aesdec *, const uint8_t[static 16],
-	    uint8_t[static 16], size_t, uint8_t[static 16], uint32_t);
-
-void	aes_md_init(const struct aes_impl *);
 
 #endif	/* _CRYPTO_AES_AES_H */

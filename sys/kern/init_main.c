@@ -1,4 +1,4 @@
-/*	$NetBSD: init_main.c,v 1.527 2020/06/11 19:20:46 ad Exp $	*/
+/*	$NetBSD: init_main.c,v 1.529 2020/08/27 14:01:36 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009, 2019 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.527 2020/06/11 19:20:46 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.529 2020/08/27 14:01:36 riastradh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_inet.h"

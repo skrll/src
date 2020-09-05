@@ -1,4 +1,4 @@
-/*	$NetBSD: ld_sdmmc.c,v 1.38 2020/05/24 17:26:18 riastradh Exp $	*/
+/*	$NetBSD: ld_sdmmc.c,v 1.41 2020/08/02 01:17:56 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2008 KIYOHARA Takashi
@@ -28,27 +28,29 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ld_sdmmc.c,v 1.38 2020/05/24 17:26:18 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ld_sdmmc.c,v 1.41 2020/08/02 01:17:56 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_sdmmc.h"
 #endif
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/kernel.h>
-#include <sys/device.h>
+#include <sys/types.h>
+
 #include <sys/buf.h>
 #include <sys/bufq.h>
 #include <sys/bus.h>
-#include <sys/endian.h>
-#include <sys/dkio.h>
+#include <sys/device.h>
 #include <sys/disk.h>
 #include <sys/disklabel.h>
+#include <sys/dkio.h>
+#include <sys/endian.h>
+#include <sys/kernel.h>
+#include <sys/kmem.h>
 #include <sys/kthread.h>
-#include <sys/syslog.h>
 #include <sys/module.h>
-#include <sys/pcq.h>
+#include <sys/syslog.h>
+#include <sys/systm.h>
 
 #include <dev/ldvar.h>
 
@@ -342,11 +344,20 @@ ld_sdmmc_detach(device_t dev, int flags)
 	struct ld_sdmmc_softc *sc = device_private(dev);
 	struct ld_softc *ld = &sc->sc_ld;
 	struct ld_sdmmc_task *task;
-	int rv, i;
+	int error, i;
 
 	/*
-	 * Block new xfers, abort all pending tasks, and wait for all
-	 * pending waiters to notice that we're gone.
+	 * Block new xfers, or fail if the disk is still open and the
+	 * detach isn't forced.  After this point, we are committed to
+	 * detaching.
+	 */
+	error = ldbegindetach(ld, flags);
+	if (error)
+		return error;
+
+	/*
+	 * Abort all pending tasks, and wait for all pending waiters to
+	 * notice that we're gone.
 	 */
 	mutex_enter(&sc->sc_lock);
 	sc->sc_dying = true;
@@ -356,14 +367,7 @@ ld_sdmmc_detach(device_t dev, int flags)
 		cv_wait(&sc->sc_cv, &sc->sc_lock);
 	mutex_exit(&sc->sc_lock);
 
-	/* Do the ld detach dance.  */
-	if ((rv = ldbegindetach(ld, flags)) != 0) {
-		/* Detach failed -- back out.  */
-		mutex_enter(&sc->sc_lock);
-		sc->sc_dying = false;
-		mutex_exit(&sc->sc_lock);
-		return rv;
-	}
+	/* Done!  Destroy the disk.  */
 	ldenddetach(ld);
 
 	KASSERT(TAILQ_EMPTY(&sc->sc_xferq));

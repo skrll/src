@@ -1,4 +1,4 @@
-/*	$NetBSD: mips_machdep.c,v 1.295 2020/07/13 05:20:45 simonb Exp $	*/
+/*	$NetBSD: mips_machdep.c,v 1.299 2020/08/17 03:22:13 mrg Exp $	*/
 
 /*
  * Copyright 2002 Wasabi Systems, Inc.
@@ -111,7 +111,7 @@
  */
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
-__KERNEL_RCSID(0, "$NetBSD: mips_machdep.c,v 1.295 2020/07/13 05:20:45 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mips_machdep.c,v 1.299 2020/08/17 03:22:13 mrg Exp $");
 
 #define __INTR_PRIVATE
 #include "opt_cputype.h"
@@ -674,7 +674,8 @@ static const struct pridtab cputab[] = {
 	  MIPS64_FLAGS | CPU_MIPS_D_CACHE_COHERENT | CPU_MIPS_NO_LLADDR,
 	  MIPS_CP0FL_USE |
 	  MIPS_CP0FL_EBASE | MIPS_CP0FL_CONFIG |
-	  MIPS_CP0FL_CONFIG1 | MIPS_CP0FL_CONFIG2 | MIPS_CP0FL_CONFIG3,
+	  MIPS_CP0FL_CONFIG1 | MIPS_CP0FL_CONFIG2 | MIPS_CP0FL_CONFIG3 |
+	  MIPS_CP0FL_CONFIG4 | MIPS_CP0FL_CONFIG6 | MIPS_CP0FL_CONFIG7,
 	  0,
 	  "CN70xx/CN71xx"	},
 
@@ -1177,10 +1178,14 @@ mips_vector_init(const struct splsw *splsw, bool multicpu_p)
 #if (MIPS32 + MIPS32R2 + MIPS64 + MIPS64R2) > 0
 	if (MIPS_PRID_CID(cpu_id) != 0) {
 		/* MIPS32/MIPS64, use coprocessor 0 config registers */
-		uint32_t cfg, cfg1;
+		uint32_t cfg, cfg1, cfg4;
 
 		cfg = mips3_cp0_config_read();
 		cfg1 = mipsNN_cp0_config1_read();
+		if (opts->mips_cpu->cpu_cp0flags & MIPS_CP0FL_CONFIG4)
+			cfg4 = mipsNN_cp0_config4_read();
+		else
+			cfg4 = 0;
 
 		/* pick CPU type */
 		switch (MIPSNN_GET(CFG_AT, cfg)) {
@@ -1223,7 +1228,21 @@ mips_vector_init(const struct splsw *splsw, bool multicpu_p)
 		/* figure out MMU type (and number of TLB entries) */
 		switch (MIPSNN_GET(CFG_MT, cfg)) {
 		case MIPSNN_CFG_MT_TLB:
+			/*
+			 * Config1[MMUSize-1] defines the number of TLB
+			 * entries minus 1, allowing up to 64 TLBs to be
+			 * defined.  For MIPS32R2 and MIPS64R2 and later
+			 * if the Config4[MMUExtDef] field is 1 then the
+			 * Config4[MMUSizeExt] field is an extension of
+			 * Config1[MMUSize-1] field.
+			 */
 			opts->mips_num_tlb_entries = MIPSNN_CFG1_MS(cfg1);
+			if (__SHIFTOUT(cfg4, MIPSNN_CFG4_MMU_EXT_DEF) ==
+			    MIPSNN_CFG4_MMU_EXT_DEF_MMU) {
+				opts->mips_num_tlb_entries +=
+				__SHIFTOUT(cfg4, MIPSNN_CFG4_MMU_SIZE_EXT) <<
+				    popcount(MIPSNN_CFG1_MS_MASK);
+			}
 			break;
 		case MIPSNN_CFG_MT_NONE:
 		case MIPSNN_CFG_MT_BAT:
@@ -1801,9 +1820,7 @@ u_int32_t dumpmag = 0x8fca0101;	/* magic number */
 int	dumpsize = 0;		/* pages */
 long	dumplo = 0;		/* blocks */
 
-#if 0
 struct pcb dumppcb;
-#endif
 
 /*
  * cpu_dumpsize: calculate size of machine-dependent kernel core dump headers.
@@ -1949,10 +1966,8 @@ dumpsys(void)
 	int (*dump)(dev_t, daddr_t, void *, size_t);
 	int error;
 
-#if 0
 	/* Save registers. */
 	savectx(&dumppcb);
-#endif
 
 	if (dumpdev == NODEV)
 		return;

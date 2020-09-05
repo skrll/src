@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_intr.c,v 1.20 2020/07/20 14:05:51 jmcneill Exp $	*/
+/*	$NetBSD: octeon_intr.c,v 1.24 2020/08/18 07:41:41 skrll Exp $	*/
 /*
  * Copyright 2001, 2002 Wasabi Systems, Inc.
  * All rights reserved.
@@ -44,7 +44,7 @@
 #define __INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: octeon_intr.c,v 1.20 2020/07/20 14:05:51 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: octeon_intr.c,v 1.24 2020/08/18 07:41:41 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -61,6 +61,14 @@ __KERNEL_RCSID(0, "$NetBSD: octeon_intr.c,v 1.20 2020/07/20 14:05:51 jmcneill Ex
 
 #include <mips/cavium/dev/octeon_ciureg.h>
 #include <mips/cavium/octeonvar.h>
+
+/*
+ * XXX:
+ * Force all interrupts (except clock intrs and IPIs) to be routed
+ * through cpu0 until MP on MIPS is more stable.
+ */
+#define	OCTEON_CPU0_INTERRUPTS
+
 
 /*
  * This is a mask of bits to clear in the SR when we go to a
@@ -80,7 +88,7 @@ static const struct ipl_sr_map octeon_ipl_sr_map = {
     },
 };
 
-const char * octeon_intrnames[NIRQS] = {
+static const char * octeon_intrnames[NIRQS] = {
 	"workq 0",
 	"workq 1",
 	"workq 2",
@@ -158,23 +166,44 @@ struct octeon_intrhand {
 static int octeon_send_ipi(struct cpu_info *, int);
 static int octeon_ipi_intr(void *);
 
-struct octeon_intrhand ipi_intrhands[1] = {
+static struct octeon_intrhand ipi_intrhands[2] = {
 	[0] = {
 		.ih_func = octeon_ipi_intr,
 		.ih_arg = (void *)(uintptr_t)__BITS(15,0),
 		.ih_irq = CIU_INT_MBOX_15_0,
 		.ih_ipl = IPL_HIGH,
 	},
+	[1] = {
+		.ih_func = octeon_ipi_intr,
+		.ih_arg = (void *)(uintptr_t)__BITS(31,16),
+		.ih_irq = CIU_INT_MBOX_31_16,
+		.ih_ipl = IPL_SCHED,
+	},
 };
+
+static int ipi_prio[NIPIS] = {
+	[IPI_NOP] = IPL_HIGH,
+	[IPI_AST] = IPL_HIGH,
+	[IPI_SHOOTDOWN] = IPL_SCHED,
+	[IPI_SYNCICACHE] = IPL_HIGH,
+	[IPI_KPREEMPT] = IPL_HIGH,
+	[IPI_SUSPEND] = IPL_HIGH,
+	[IPI_HALT] = IPL_HIGH,
+	[IPI_XCALL] = IPL_HIGH,
+	[IPI_GENERIC] = IPL_HIGH,
+	[IPI_WDOG] = IPL_HIGH,
+};
+
 #endif
 
-struct octeon_intrhand *octciu_intrs[NIRQS] = {
+static struct octeon_intrhand *octciu_intrs[NIRQS] = {
 #ifdef MULTIPROCESSOR
 	[CIU_INT_MBOX_15_0] = &ipi_intrhands[0],
+	[CIU_INT_MBOX_31_16] = &ipi_intrhands[1],
 #endif
 };
 
-kmutex_t octeon_intr_lock;
+static kmutex_t octeon_intr_lock;
 
 #if defined(MULTIPROCESSOR)
 #define	OCTEON_NCPU	MAXCPUS
@@ -248,6 +277,7 @@ octeon_intr_init(struct cpu_info *ci)
 #ifdef MULTIPROCESSOR
 	// Enable the IPIs
 	cpu->cpu_ip4_enable[0] |= __BIT(CIU_INT_MBOX_15_0);
+	cpu->cpu_ip3_enable[0] |= __BIT(CIU_INT_MBOX_31_16);
 #endif
 
 	if (ci->ci_dev) {
@@ -305,7 +335,9 @@ octeon_intr_establish(int irq, int ipl, int (*func)(void *), void *arg)
 {
 	struct octeon_intrhand *ih;
 	struct cpu_softc *cpu;
+#ifndef OCTEON_CPU0_INTERRUPTS
 	int cpunum;
+#endif
 
 	if (irq >= NIRQS)
 		panic("octeon_intr_establish: bogus IRQ %d", irq);
@@ -346,6 +378,11 @@ octeon_intr_establish(int irq, int ipl, int (*func)(void *), void *arg)
 		break;
 
 	case IPL_SCHED:
+#ifdef OCTEON_CPU0_INTERRUPTS
+		cpu = &octeon_cpu_softc[0];
+		cpu->cpu_ip3_enable[bank] |= irq_mask;
+		mips3_sd(cpu->cpu_ip3_en[bank], cpu->cpu_ip3_enable[bank]);
+#else	/* OCTEON_CPU0_INTERRUPTS */
 		for (cpunum = 0; cpunum < OCTEON_NCPU; cpunum++) {
 			cpu = &octeon_cpu_softc[cpunum];
 			if (cpu->cpu_ci == NULL)
@@ -353,10 +390,16 @@ octeon_intr_establish(int irq, int ipl, int (*func)(void *), void *arg)
 			cpu->cpu_ip3_enable[bank] |= irq_mask;
 			mips3_sd(cpu->cpu_ip3_en[bank], cpu->cpu_ip3_enable[bank]);
 		}
+#endif	/* OCTEON_CPU0_INTERRUPTS */
 		break;
 
 	case IPL_DDB:
 	case IPL_HIGH:
+#ifdef OCTEON_CPU0_INTERRUPTS
+		cpu = &octeon_cpu_softc[0];
+		cpu->cpu_ip4_enable[bank] |= irq_mask;
+		mips3_sd(cpu->cpu_ip4_en[bank], cpu->cpu_ip4_enable[bank]);
+#else	/* OCTEON_CPU0_INTERRUPTS */
 		for (cpunum = 0; cpunum < OCTEON_NCPU; cpunum++) {
 			cpu = &octeon_cpu_softc[cpunum];
 			if (cpu->cpu_ci == NULL)
@@ -364,6 +407,7 @@ octeon_intr_establish(int irq, int ipl, int (*func)(void *), void *arg)
 			cpu->cpu_ip4_enable[bank] |= irq_mask;
 			mips3_sd(cpu->cpu_ip4_en[bank], cpu->cpu_ip4_enable[bank]);
 		}
+#endif	/* OCTEON_CPU0_INTERRUPTS */
 		break;
 	}
 
@@ -492,10 +536,11 @@ octeon_ipi_intr(void *arg)
 {
 	struct cpu_info * const ci = curcpu();
 	struct cpu_softc * const cpu = ci->ci_softc;
-	uint32_t ipi_mask = (uintptr_t) arg;
+	const uint32_t mbox_mask = (uintptr_t) arg;
+	uint32_t ipi_mask = mbox_mask;
 
-	KASSERTMSG(ci->ci_cpl == IPL_HIGH,
-	    "ipi_mask %#"PRIx32" cpl %d", ipi_mask, ci->ci_cpl);
+	KASSERTMSG((mbox_mask & __BITS(31,16)) == 0 || ci->ci_cpl >= IPL_SCHED,
+	    "mbox_mask %#"PRIx32" cpl %d", mbox_mask, ci->ci_cpl);
 
 	ipi_mask &= mips3_ld(cpu->cpu_mbox_set);
 	if (ipi_mask == 0)
@@ -503,7 +548,7 @@ octeon_ipi_intr(void *arg)
 
 	mips3_sd(cpu->cpu_mbox_clr, ipi_mask);
 
-	KASSERT(ipi_mask < __BIT(NIPIS));
+	KASSERT(__SHIFTOUT(ipi_mask, mbox_mask) < __BIT(NIPIS));
 
 #if NWDOG > 0
 	// Handle WDOG requests ourselves.
@@ -524,7 +569,7 @@ octeon_ipi_intr(void *arg)
 	atomic_or_64(&ci->ci_active_ipis, ipi_mask);
 	atomic_and_64(&ci->ci_request_ipis, ~ipi_mask);
 
-	ipi_process(ci, ipi_mask);
+	ipi_process(ci, __SHIFTOUT(ipi_mask, mbox_mask));
 
 	atomic_and_64(&ci->ci_active_ipis, ~ipi_mask);
 
@@ -549,7 +594,8 @@ octeon_send_ipi(struct cpu_info *ci, int req)
 		return -1;
 
 	struct cpu_softc * const cpu = ci->ci_softc;
-	const uint32_t ipi_mask = __BIT(req);
+	const u_int ipi_shift = ipi_prio[req] == IPL_SCHED ? 16 : 0;
+	const uint32_t ipi_mask = __BIT(req + ipi_shift);
 
 	atomic_or_64(&ci->ci_request_ipis, ipi_mask);
 

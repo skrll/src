@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_x86_svm.c,v 1.65 2020/07/19 06:56:09 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86_svm.c,v 1.74 2020/08/26 16:33:03 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018-2020 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.65 2020/07/19 06:56:09 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.74 2020/08/26 16:33:03 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -232,12 +232,17 @@ svm_stgi(void)
 #define VMCB_EXITCODE_CR13_WRITE_TRAP	0x009D
 #define VMCB_EXITCODE_CR14_WRITE_TRAP	0x009E
 #define VMCB_EXITCODE_CR15_WRITE_TRAP	0x009F
+#define VMCB_EXITCODE_INVLPGB		0x00A0
+#define VMCB_EXITCODE_INVLPGB_ILLEGAL	0x00A1
+#define VMCB_EXITCODE_INVPCID		0x00A2
 #define VMCB_EXITCODE_MCOMMIT		0x00A3
+#define VMCB_EXITCODE_TLBSYNC		0x00A4
 #define VMCB_EXITCODE_NPF		0x0400
 #define VMCB_EXITCODE_AVIC_INCOMP_IPI	0x0401
 #define VMCB_EXITCODE_AVIC_NOACCEL	0x0402
 #define VMCB_EXITCODE_VMGEXIT		0x0403
-#define VMCB_EXITCODE_INVALID		-1
+#define VMCB_EXITCODE_BUSY		-2ULL
+#define VMCB_EXITCODE_INVALID		-1ULL
 
 /* -------------------------------------------------------------------------- */
 
@@ -307,7 +312,11 @@ struct vmcb_ctrl {
 #define VMCB_CTRL_INTERCEPT_WCR_SPEC(x)	__BIT(16 + x)
 
 	uint32_t intercept_misc3;
+#define VMCB_CTRL_INTERCEPT_INVLPGB_ALL	__BIT(0)
+#define VMCB_CTRL_INTERCEPT_INVLPGB_ILL	__BIT(1)
+#define VMCB_CTRL_INTERCEPT_PCID	__BIT(2)
 #define VMCB_CTRL_INTERCEPT_MCOMMIT	__BIT(3)
+#define VMCB_CTRL_INTERCEPT_TLBSYNC	__BIT(4)
 
 	uint8_t  rsvd1[36];
 	uint16_t pause_filt_thresh;
@@ -335,6 +344,7 @@ struct vmcb_ctrl {
 
 	uint64_t intr;
 #define VMCB_CTRL_INTR_SHADOW		__BIT(0)
+#define VMCB_CTRL_INTR_MASK		__BIT(1)
 
 	uint64_t exitcode;
 	uint64_t exitinfo1;
@@ -399,7 +409,7 @@ struct vmcb_ctrl {
 #define VMCB_CTRL_AVIC_PHYS_MAX_INDEX	__BITS(7,0)
 
 	uint64_t rsvd4;
-	uint64_t vmcb_ptr;
+	uint64_t vmsa_ptr;
 
 	uint8_t	pad[752];
 } __packed;
@@ -511,7 +521,7 @@ static uint64_t svm_xcr0_mask __read_mostly;
 #define CR0_TLB_FLUSH \
 	(CR0_PG|CR0_WP|CR0_CD|CR0_NW)
 #define CR4_TLB_FLUSH \
-	(CR4_PGE|CR4_PAE|CR4_PSE)
+	(CR4_PSE|CR4_PAE|CR4_PGE|CR4_PCIDE|CR4_SMEP)
 
 /* -------------------------------------------------------------------------- */
 
@@ -666,8 +676,22 @@ svm_event_waitexit_disable(struct nvmm_cpu *vcpu, bool nmi)
 	svm_vmcb_cache_flush(vmcb, VMCB_CTRL_VMCB_CLEAN_I);
 }
 
+static inline bool
+svm_excp_has_rf(uint8_t vector)
+{
+	switch (vector) {
+	case 1:		/* #DB */
+	case 4:		/* #OF */
+	case 8:		/* #DF */
+	case 18:	/* #MC */
+		return false;
+	default:
+		return true;
+	}
+}
+
 static inline int
-svm_event_has_error(uint8_t vector)
+svm_excp_has_error(uint8_t vector)
 {
 	switch (vector) {
 	case 8:		/* #DF */
@@ -707,7 +731,10 @@ svm_vcpu_inject(struct nvmm_cpu *vcpu)
 			return EINVAL;
 		if (vector == 3 || vector == 0)
 			return EINVAL;
-		err = svm_event_has_error(vector);
+		if (svm_excp_has_rf(vector)) {
+			vmcb->state.rflags |= PSL_RF;
+		}
+		err = svm_excp_has_error(vector);
 		break;
 	case NVMM_VCPU_EVENT_INTR:
 		type = SVM_EVENT_TYPE_HW_INT;
@@ -780,10 +807,27 @@ svm_inkernel_advance(struct vmcb *vmcb)
 	 * debugger.
 	 */
 	vmcb->state.rip = vmcb->ctrl.nrip;
+	vmcb->state.rflags &= ~PSL_RF;
 	vmcb->ctrl.intr &= ~VMCB_CTRL_INTR_SHADOW;
 }
 
+#define SVM_CPUID_MAX_BASIC		0xD
 #define SVM_CPUID_MAX_HYPERVISOR	0x40000000
+#define SVM_CPUID_MAX_EXTENDED		0x8000001F
+static uint32_t svm_cpuid_max_basic __read_mostly;
+static uint32_t svm_cpuid_max_extended __read_mostly;
+
+static void
+svm_inkernel_exec_cpuid(struct svm_cpudata *cpudata, uint64_t eax, uint64_t ecx)
+{
+	u_int descs[4];
+
+	x86_cpuid2(eax, ecx, descs);
+	cpudata->vmcb->state.rax = descs[0];
+	cpudata->gprs[NVMM_X64_GPR_RBX] = descs[1];
+	cpudata->gprs[NVMM_X64_GPR_RCX] = descs[2];
+	cpudata->gprs[NVMM_X64_GPR_RDX] = descs[3];
+}
 
 static void
 svm_inkernel_handle_cpuid(struct nvmm_cpu *vcpu, uint64_t eax, uint64_t ecx)
@@ -791,7 +835,27 @@ svm_inkernel_handle_cpuid(struct nvmm_cpu *vcpu, uint64_t eax, uint64_t ecx)
 	struct svm_cpudata *cpudata = vcpu->cpudata;
 	uint64_t cr4;
 
+	if (eax < 0x40000000) {
+		if (__predict_false(eax > svm_cpuid_max_basic)) {
+			eax = svm_cpuid_max_basic;
+			svm_inkernel_exec_cpuid(cpudata, eax, ecx);
+		}
+	} else if (eax < 0x80000000) {
+		if (__predict_false(eax > SVM_CPUID_MAX_HYPERVISOR)) {
+			eax = svm_cpuid_max_basic;
+			svm_inkernel_exec_cpuid(cpudata, eax, ecx);
+		}
+	} else {
+		if (__predict_false(eax > svm_cpuid_max_extended)) {
+			eax = svm_cpuid_max_basic;
+			svm_inkernel_exec_cpuid(cpudata, eax, ecx);
+		}
+	}
+
 	switch (eax) {
+	case 0x00000000:
+		cpudata->vmcb->state.rax = svm_cpuid_max_basic;
+		break;
 	case 0x00000001:
 		cpudata->vmcb->state.rax &= nvmm_cpuid_00000001.eax;
 
@@ -821,10 +885,20 @@ svm_inkernel_handle_cpuid(struct nvmm_cpu *vcpu, uint64_t eax, uint64_t ecx)
 		cpudata->gprs[NVMM_X64_GPR_RDX] = 0;
 		break;
 	case 0x00000007: /* Structured Extended Features */
-		cpudata->vmcb->state.rax &= nvmm_cpuid_00000007.eax;
-		cpudata->gprs[NVMM_X64_GPR_RBX] &= nvmm_cpuid_00000007.ebx;
-		cpudata->gprs[NVMM_X64_GPR_RCX] &= nvmm_cpuid_00000007.ecx;
-		cpudata->gprs[NVMM_X64_GPR_RDX] &= nvmm_cpuid_00000007.edx;
+		switch (ecx) {
+		case 0:
+			cpudata->vmcb->state.rax = 0;
+			cpudata->gprs[NVMM_X64_GPR_RBX] &= nvmm_cpuid_00000007.ebx;
+			cpudata->gprs[NVMM_X64_GPR_RCX] &= nvmm_cpuid_00000007.ecx;
+			cpudata->gprs[NVMM_X64_GPR_RDX] &= nvmm_cpuid_00000007.edx;
+			break;
+		default:
+			cpudata->vmcb->state.rax = 0;
+			cpudata->gprs[NVMM_X64_GPR_RBX] = 0;
+			cpudata->gprs[NVMM_X64_GPR_RCX] = 0;
+			cpudata->gprs[NVMM_X64_GPR_RDX] = 0;
+			break;
+		}
 		break;
 	case 0x00000008: /* Empty */
 	case 0x00000009: /* Empty */
@@ -879,12 +953,74 @@ svm_inkernel_handle_cpuid(struct nvmm_cpu *vcpu, uint64_t eax, uint64_t ecx)
 		memcpy(&cpudata->gprs[NVMM_X64_GPR_RDX], " ___", 4);
 		break;
 
+	case 0x80000000:
+		cpudata->vmcb->state.rax = svm_cpuid_max_extended;
+		break;
 	case 0x80000001:
 		cpudata->vmcb->state.rax &= nvmm_cpuid_80000001.eax;
 		cpudata->gprs[NVMM_X64_GPR_RBX] &= nvmm_cpuid_80000001.ebx;
 		cpudata->gprs[NVMM_X64_GPR_RCX] &= nvmm_cpuid_80000001.ecx;
 		cpudata->gprs[NVMM_X64_GPR_RDX] &= nvmm_cpuid_80000001.edx;
 		break;
+	case 0x80000002: /* Extended Processor Name String */
+	case 0x80000003: /* Extended Processor Name String */
+	case 0x80000004: /* Extended Processor Name String */
+	case 0x80000005: /* L1 Cache and TLB Information */
+	case 0x80000006: /* L2 Cache and TLB and L3 Cache Information */
+		break;
+	case 0x80000007: /* Processor Power Management and RAS Capabilities */
+		cpudata->vmcb->state.rax &= nvmm_cpuid_80000007.eax;
+		cpudata->gprs[NVMM_X64_GPR_RBX] &= nvmm_cpuid_80000007.ebx;
+		cpudata->gprs[NVMM_X64_GPR_RCX] &= nvmm_cpuid_80000007.ecx;
+		cpudata->gprs[NVMM_X64_GPR_RDX] &= nvmm_cpuid_80000007.edx;
+		break;
+	case 0x80000008: /* Processor Capacity Parameters and Ext Feat Ident */
+		cpudata->vmcb->state.rax &= nvmm_cpuid_80000008.eax;
+		cpudata->gprs[NVMM_X64_GPR_RBX] &= nvmm_cpuid_80000008.ebx;
+		cpudata->gprs[NVMM_X64_GPR_RCX] &= nvmm_cpuid_80000008.ecx;
+		cpudata->gprs[NVMM_X64_GPR_RDX] &= nvmm_cpuid_80000008.edx;
+		break;
+	case 0x80000009: /* Empty */
+	case 0x8000000A: /* SVM Features */
+	case 0x8000000B: /* Empty */
+	case 0x8000000C: /* Empty */
+	case 0x8000000D: /* Empty */
+	case 0x8000000E: /* Empty */
+	case 0x8000000F: /* Empty */
+	case 0x80000010: /* Empty */
+	case 0x80000011: /* Empty */
+	case 0x80000012: /* Empty */
+	case 0x80000013: /* Empty */
+	case 0x80000014: /* Empty */
+	case 0x80000015: /* Empty */
+	case 0x80000016: /* Empty */
+	case 0x80000017: /* Empty */
+	case 0x80000018: /* Empty */
+		cpudata->vmcb->state.rax = 0;
+		cpudata->gprs[NVMM_X64_GPR_RBX] = 0;
+		cpudata->gprs[NVMM_X64_GPR_RCX] = 0;
+		cpudata->gprs[NVMM_X64_GPR_RDX] = 0;
+		break;
+	case 0x80000019: /* TLB Characteristics for 1GB pages */
+	case 0x8000001A: /* Instruction Optimizations */
+		break;
+	case 0x8000001B: /* Instruction-Based Sampling Capabilities */
+	case 0x8000001C: /* Lightweight Profiling Capabilities */
+		cpudata->vmcb->state.rax = 0;
+		cpudata->gprs[NVMM_X64_GPR_RBX] = 0;
+		cpudata->gprs[NVMM_X64_GPR_RCX] = 0;
+		cpudata->gprs[NVMM_X64_GPR_RDX] = 0;
+		break;
+	case 0x8000001D: /* Cache Topology Information */
+	case 0x8000001E: /* Processor Topology Information */
+		break; /* TODO? */
+	case 0x8000001F: /* Encrypted Memory Capabilities */
+		cpudata->vmcb->state.rax = 0;
+		cpudata->gprs[NVMM_X64_GPR_RBX] = 0;
+		cpudata->gprs[NVMM_X64_GPR_RCX] = 0;
+		cpudata->gprs[NVMM_X64_GPR_RDX] = 0;
+		break;
+
 	default:
 		break;
 	}
@@ -904,18 +1040,11 @@ svm_exit_cpuid(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	struct svm_cpudata *cpudata = vcpu->cpudata;
 	struct nvmm_vcpu_conf_cpuid *cpuid;
 	uint64_t eax, ecx;
-	u_int descs[4];
 	size_t i;
 
 	eax = cpudata->vmcb->state.rax;
 	ecx = cpudata->gprs[NVMM_X64_GPR_RCX];
-	x86_cpuid2(eax, ecx, descs);
-
-	cpudata->vmcb->state.rax = descs[0];
-	cpudata->gprs[NVMM_X64_GPR_RBX] = descs[1];
-	cpudata->gprs[NVMM_X64_GPR_RCX] = descs[2];
-	cpudata->gprs[NVMM_X64_GPR_RDX] = descs[3];
-
+	svm_inkernel_exec_cpuid(cpudata, eax, ecx);
 	svm_inkernel_handle_cpuid(vcpu, eax, ecx);
 
 	for (i = 0; i < SVM_NCPUIDS; i++) {
@@ -1041,6 +1170,12 @@ svm_inkernel_handle_msr(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	size_t i;
 
 	if (exit->reason == NVMM_VCPU_EXIT_RDMSR) {
+		if (exit->u.rdmsr.msr == MSR_EFER) {
+			val = vmcb->state.efer & ~EFER_SVME;
+			vmcb->state.rax = (val & 0xFFFFFFFF);
+			cpudata->gprs[NVMM_X64_GPR_RDX] = (val >> 32);
+			goto handled;
+		}
 		if (exit->u.rdmsr.msr == MSR_NB_CFG) {
 			val = NB_CFG_INITAPICCPUIDLO;
 			vmcb->state.rax = (val & 0xFFFFFFFF);
@@ -1362,11 +1497,12 @@ svm_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	uint64_t machgen;
 	int hcpu;
 
+	svm_vcpu_state_commit(vcpu);
+	comm->state_cached = 0;
+
 	if (__predict_false(svm_vcpu_event_commit(vcpu) != 0)) {
 		return EINVAL;
 	}
-	svm_vcpu_state_commit(vcpu);
-	comm->state_cached = 0;
 
 	kpreempt_disable();
 	hcpu = cpu_number();
@@ -1449,6 +1585,11 @@ svm_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		case VMCB_EXITCODE_CLGI:
 		case VMCB_EXITCODE_SKINIT:
 		case VMCB_EXITCODE_RDTSCP:
+		case VMCB_EXITCODE_RDPRU:
+		case VMCB_EXITCODE_INVLPGB:
+		case VMCB_EXITCODE_INVPCID:
+		case VMCB_EXITCODE_MCOMMIT:
+		case VMCB_EXITCODE_TLBSYNC:
 			svm_inject_ud(vcpu);
 			exit->reason = NVMM_VCPU_EXIT_NONE;
 			break;
@@ -2002,7 +2143,6 @@ svm_vcpu_init(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	 *  - POPF [popf instruction]
 	 *  - IRET [iret instruction]
 	 *  - INTN [int $n instructions]
-	 *  - INVD [invd instruction]
 	 *  - PAUSE [pause instruction]
 	 *  - INVLPG [invplg instruction]
 	 *  - TASKSW [task switches]
@@ -2016,6 +2156,7 @@ svm_vcpu_init(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	    VMCB_CTRL_INTERCEPT_RDPMC |
 	    VMCB_CTRL_INTERCEPT_CPUID |
 	    VMCB_CTRL_INTERCEPT_RSM |
+	    VMCB_CTRL_INTERCEPT_INVD |
 	    VMCB_CTRL_INTERCEPT_HLT |
 	    VMCB_CTRL_INTERCEPT_INVLPGA |
 	    VMCB_CTRL_INTERCEPT_IOIO_PROT |
@@ -2042,7 +2183,17 @@ svm_vcpu_init(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	    VMCB_CTRL_INTERCEPT_RDTSCP |
 	    VMCB_CTRL_INTERCEPT_MONITOR |
 	    VMCB_CTRL_INTERCEPT_MWAIT |
-	    VMCB_CTRL_INTERCEPT_XSETBV;
+	    VMCB_CTRL_INTERCEPT_XSETBV |
+	    VMCB_CTRL_INTERCEPT_RDPRU;
+
+	/*
+	 * Intercept everything.
+	 */
+	vmcb->ctrl.intercept_misc3 =
+	    VMCB_CTRL_INTERCEPT_INVLPGB_ALL |
+	    VMCB_CTRL_INTERCEPT_PCID |
+	    VMCB_CTRL_INTERCEPT_MCOMMIT |
+	    VMCB_CTRL_INTERCEPT_TLBSYNC;
 
 	/* Intercept all I/O accesses. */
 	memset(cpudata->iobm, 0xFF, IOBM_SIZE);
@@ -2050,7 +2201,6 @@ svm_vcpu_init(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 
 	/* Allow direct access to certain MSRs. */
 	memset(cpudata->msrbm, 0xFF, MSRBM_SIZE);
-	svm_vcpu_msr_allow(cpudata->msrbm, MSR_EFER, true, false);
 	svm_vcpu_msr_allow(cpudata->msrbm, MSR_STAR, true, true);
 	svm_vcpu_msr_allow(cpudata->msrbm, MSR_LSTAR, true, true);
 	svm_vcpu_msr_allow(cpudata->msrbm, MSR_CSTAR, true, true);
@@ -2392,6 +2542,13 @@ svm_init(void)
 
 	/* Init the XCR0 mask. */
 	svm_xcr0_mask = SVM_XCR0_MASK_DEFAULT & x86_xsave_features;
+
+	/* Init the max basic CPUID leaf. */
+	svm_cpuid_max_basic = uimin(cpuid_level, SVM_CPUID_MAX_BASIC);
+
+	/* Init the max extended CPUID leaf. */
+	x86_cpuid(0x80000000, descs);
+	svm_cpuid_max_extended = uimin(descs[0], SVM_CPUID_MAX_EXTENDED);
 
 	memset(hsave, 0, sizeof(hsave));
 	for (CPU_INFO_FOREACH(cii, ci)) {

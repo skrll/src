@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.223 2020/07/20 03:23:42 simonb Exp $	*/
+/*	$NetBSD: locore.S,v 1.225 2020/07/31 20:04:18 skrll Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -63,7 +63,7 @@
 #include <mips/trap.h>
 #include <mips/locore.h>
 
-RCSID("$NetBSD: locore.S,v 1.223 2020/07/20 03:23:42 simonb Exp $")
+RCSID("$NetBSD: locore.S,v 1.225 2020/07/31 20:04:18 skrll Exp $")
 
 #include "assym.h"
 
@@ -88,7 +88,7 @@ _C_LABEL(kernel_text):
 	mtc0	zero, MIPS_COP_0_CAUSE
 	COP0_SYNC
 
-#if defined(_LP64) 
+#if defined(_LP64)
 	/* Enable 64-bit addressing */
 	mfc0	k0, MIPS_COP_0_STATUS
 	MFC0_HAZARD
@@ -313,7 +313,7 @@ NESTED(cpu_switchto, CALLFRAME_SIZ, ra)
 	teqi	t1, 0
 #elif defined(PARANOID_LOOP)
 	and	t1, t0, MIPS_SR_INT_IE
-2:	beqz	t1, 2b			# status reg should not differ
+2:	beqz	t1, 2b				# status reg should not differ
 	 nop
 #endif /* PARANOID_LOOP */
 	DYNAMIC_STATUS_MASK(t0,ra)

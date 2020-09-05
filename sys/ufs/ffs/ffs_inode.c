@@ -1,4 +1,4 @@
-/*	$NetBSD: ffs_inode.c,v 1.129 2020/05/02 22:11:16 christos Exp $	*/
+/*	$NetBSD: ffs_inode.c,v 1.131 2020/07/31 04:07:30 chs Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ffs_inode.c,v 1.129 2020/05/02 22:11:16 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ffs_inode.c,v 1.131 2020/07/31 04:07:30 chs Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"
@@ -208,6 +208,7 @@ ffs_truncate(struct vnode *ovp, off_t length, int ioflag, kauth_cred_t cred)
 {
 	daddr_t lastblock;
 	struct inode *oip = VTOI(ovp);
+	struct mount *omp = ovp->v_mount;
 	daddr_t bn, lastiblock[UFS_NIADDR], indir_lbn[UFS_NIADDR];
 	daddr_t blks[UFS_NDADDR + UFS_NIADDR], oldblks[UFS_NDADDR + UFS_NIADDR];
 	struct fs *fs;
@@ -220,6 +221,8 @@ ffs_truncate(struct vnode *ovp, off_t length, int ioflag, kauth_cred_t cred)
 	int sync;
 	struct ufsmount *ump = oip->i_ump;
 	void *dcookie;
+	long bsize;
+	bool wapbl = omp->mnt_wapbl != NULL;
 
 	UFS_WAPBL_JLOCK_ASSERT(ump->um_mountp);
 
@@ -231,6 +234,14 @@ ffs_truncate(struct vnode *ovp, off_t length, int ioflag, kauth_cred_t cred)
 
 	if (length < 0)
 		return (EINVAL);
+
+	/*
+	 * Historically clients did not have to specify which data
+	 * they were truncating. So, if not specified, we assume
+	 * traditional behavior, e.g., just the normal data.
+	 */
+	if ((ioflag & (IO_EXT | IO_NORMAL)) == 0)
+		ioflag |= IO_NORMAL;
 
 	fs = oip->i_fs;
 #define i_din2 i_din.ffs2_din
@@ -247,11 +258,11 @@ ffs_truncate(struct vnode *ovp, off_t length, int ioflag, kauth_cred_t cred)
 #ifdef QUOTA
 			(void) chkdq(oip, -extblocks, NOCRED, FORCE);
 #endif
-			vinvalbuf(ovp, 0, cred, curlwp, 0, 0);
 			osize = oip->i_din2->di_extsize;
 			oip->i_din2->di_blocks -= extblocks;
 			oip->i_din2->di_extsize = 0;
 			for (i = 0; i < UFS_NXADDR; i++) {
+				binvalbuf(ovp, -1 - i);
 				oldblks[i] = oip->i_din2->di_extb[i];
 				oip->i_din2->di_extb[i] = 0;
 			}
@@ -261,12 +272,21 @@ ffs_truncate(struct vnode *ovp, off_t length, int ioflag, kauth_cred_t cred)
 			for (i = 0; i < UFS_NXADDR; i++) {
 				if (oldblks[i] == 0)
 					continue;
-				ffs_blkfree(fs, oip->i_devvp, oldblks[i],
-				    ffs_sblksize(fs, osize, i), oip->i_number);
+				bsize = ffs_sblksize(fs, osize, i);
+				if (wapbl) {
+					error = UFS_WAPBL_REGISTER_DEALLOCATION(omp,
+					    FFS_FSBTODB(fs, oldblks[i]), bsize, NULL);
+					if (error)
+						return error;
+				} else 
+					ffs_blkfree(fs, oip->i_devvp, oldblks[i],
+					    bsize, oip->i_number);
 			}
 			extblocks = 0;
 		}
 	}
+	if ((ioflag & IO_NORMAL) == 0)
+		return (0);
 	if (ovp->v_type == VLNK &&
 	    (oip->i_size < ump->um_maxsymlinklen ||
 	     (ump->um_maxsymlinklen == 0 && datablocks == 0))) {
@@ -376,8 +396,7 @@ ffs_truncate(struct vnode *ovp, off_t length, int ioflag, kauth_cred_t cred)
 		}
 	}
 
-	if (!(ioflag & IO_EXT))
-		genfs_node_wrlock(ovp);
+	genfs_node_wrlock(ovp);
 	oip->i_size = length;
 	DIP_ASSIGN(oip, size, length);
 	uvm_vnp_setsize(ovp, length);
@@ -492,8 +511,6 @@ ffs_truncate(struct vnode *ovp, off_t length, int ioflag, kauth_cred_t cred)
 	 * All whole direct blocks or frags.
 	 */
 	for (i = UFS_NDADDR - 1; i > lastblock; i--) {
-		long bsize;
-
 		bn = ffs_getdb(fs, oip, i);
 		if (bn == 0)
 			continue;
@@ -586,8 +603,7 @@ out:
 	oip->i_size = length;
 	DIP_ASSIGN(oip, size, length);
 	DIP_ADD(oip, blocks, -blocksreleased);
-	if (!(ioflag & IO_EXT))
-		genfs_node_unlock(ovp);
+	genfs_node_unlock(ovp);
 	oip->i_flag |= IN_CHANGE;
 	UFS_WAPBL_UPDATE(ovp, NULL, NULL, 0);
 #if defined(QUOTA) || defined(QUOTA2)

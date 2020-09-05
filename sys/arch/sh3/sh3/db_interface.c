@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.61 2011/01/28 21:06:07 uwe Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.65 2020/08/03 21:53:25 uwe Exp $	*/
 
 /*-
  * Copyright (C) 2002 UCHIYAMA Yasushi.  All rights reserved.
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.61 2011/01/28 21:06:07 uwe Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.65 2020/08/03 21:53:25 uwe Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -66,6 +66,13 @@ db_regs_t ddb_regs;		/* register state */
 static void kdb_printtrap(u_int, int);
 
 static void db_tlbdump_cmd(db_expr_t, bool, db_expr_t, const char *);
+#ifdef SH4
+static __noinline void
+__db_get_itlb_sh4(uint32_t, uint32_t *, uint32_t *, uint32_t *);
+static __noinline void
+__db_get_utlb_sh4(uint32_t, uint32_t *, uint32_t *, uint32_t *);
+#endif
+
 static char *__db_procname_by_asid(int);
 static void __db_tlbdump_pfn(uint32_t);
 #ifdef SH4
@@ -74,10 +81,10 @@ static void __db_tlbdump_page_size_sh4(uint32_t);
 
 static void db_cachedump_cmd(db_expr_t, bool, db_expr_t, const char *);
 #ifdef SH3
-static void __db_cachedump_sh3(vaddr_t);
+static __noinline void __db_cachedump_sh3(vaddr_t);
 #endif
 #ifdef SH4
-static void __db_cachedump_sh4(vaddr_t);
+static __noinline void __db_cachedump_sh4(vaddr_t);
 #endif
 
 static void db_frame_cmd(db_expr_t, bool, db_expr_t, const char *);
@@ -320,7 +327,12 @@ db_tlbdump_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 #endif /* SH3 */
 #ifdef SH4
 	if (CPU_IS_SH4) {
+		void (*get_itlb_p2)(uint32_t, uint32_t *, uint32_t *, uint32_t *);
+		void (*get_utlb_p2)(uint32_t, uint32_t *, uint32_t *, uint32_t *);
 		uint32_t aa, da1, da2;
+
+		get_itlb_p2 = SH3_P2SEG_FUNC(__db_get_itlb_sh4);
+		get_utlb_p2 = SH3_P2SEG_FUNC(__db_get_utlb_sh4);
 
 		/* MMU configuration */
 		r = _reg_read_4(SH4_MMUCR);
@@ -338,11 +350,7 @@ db_tlbdump_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 		for (i = 0; i < 4; i++) {
 			e = i << SH4_ITLB_E_SHIFT;
 
-			RUN_P2;
-			aa = _reg_read_4(SH4_ITLB_AA | e);
-			da1 = _reg_read_4(SH4_ITLB_DA1 | e);
-			da2 = _reg_read_4(SH4_ITLB_DA2 | e);
-			RUN_P1;
+			(*get_itlb_p2)(e, &aa, &da1, &da2);
 
 			db_printf("0x%08x   %3d",
 			    aa & SH4_ITLB_AA_VPN_MASK,
@@ -367,11 +375,7 @@ db_tlbdump_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 		for (i = 0; i < 64; i++) {
 			e = i << SH4_UTLB_E_SHIFT;
 
-			RUN_P2;
-			aa = _reg_read_4(SH4_UTLB_AA | e);
-			da1 = _reg_read_4(SH4_UTLB_DA1 | e);
-			da2 = _reg_read_4(SH4_UTLB_DA2 | e);
-			RUN_P1;
+			(*get_utlb_p2)(e, &aa, &da1, &da2);
 
 			db_printf("0x%08x   %3d",
 			    aa & SH4_UTLB_AA_VPN_MASK,
@@ -396,6 +400,29 @@ db_tlbdump_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 	}
 #endif /* SH4 */
 }
+
+
+#ifdef SH4
+static __noinline void
+__db_get_itlb_sh4(uint32_t e, uint32_t *paa, uint32_t *pda1, uint32_t *pda2)
+{
+
+	*paa = _reg_read_4(SH4_ITLB_AA | e);
+	*pda1 = _reg_read_4(SH4_ITLB_DA1 | e);
+	*pda2 = _reg_read_4(SH4_ITLB_DA2 | e);
+}
+
+
+static __noinline void
+__db_get_utlb_sh4(uint32_t e, uint32_t *paa, uint32_t *pda1, uint32_t *pda2)
+{
+
+	*paa = _reg_read_4(SH4_UTLB_AA | e);
+	*pda1 = _reg_read_4(SH4_UTLB_DA1 | e);
+	*pda2 = _reg_read_4(SH4_UTLB_DA2 | e);
+}
+#endif	/* SH4 */
+
 
 static void
 __db_tlbdump_pfn(uint32_t r)
@@ -447,25 +474,27 @@ static void
 db_cachedump_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
     const char *modif)
 {
+	void (*cachedump_p2)(vaddr_t);
+
 #ifdef SH3
 	if (CPU_IS_SH3)
-		__db_cachedump_sh3(have_addr ? addr : 0);
+		cachedump_p2 = SH3_P2SEG_FUNC(__db_cachedump_sh3);
 #endif
 #ifdef SH4
 	if (CPU_IS_SH4)
-		__db_cachedump_sh4(have_addr ? addr : 0);
+		cachedump_p2 = SH3_P2SEG_FUNC(__db_cachedump_sh4);
 #endif
+	(*cachedump_p2)(have_addr ? addr : 0);
 }
 
 #ifdef SH3
-static void
+static __noinline void
 __db_cachedump_sh3(vaddr_t va_start)
 {
 	uint32_t r;
 	vaddr_t va, va_end, cca;
 	int entry, way;
 
-	RUN_P2;
 	/* disable cache */
 	_reg_write_4(SH3_CCR,
 	    _reg_read_4(SH3_CCR) & ~SH3_CCR_CE);
@@ -497,19 +526,15 @@ __db_cachedump_sh3(vaddr_t va_start)
 	/* enable cache */
 	_reg_bset_4(SH3_CCR, SH3_CCR_CE);
 	sh_icache_sync_all();
-
-	RUN_P1;
 }
 #endif /* SH3 */
 
 #ifdef SH4
-static void
+static __noinline void
 __db_cachedump_sh4(vaddr_t va)
 {
 	uint32_t r, e;
 	int i, istart, iend;
-
-	RUN_P2; /* must access from P2 */
 
 	/* disable I/D-cache */
 	_reg_write_4(SH4_CCR,
@@ -548,8 +573,6 @@ __db_cachedump_sh4(vaddr_t va)
 	_reg_write_4(SH4_CCR,
 	    _reg_read_4(SH4_CCR) | SH4_CCR_ICE | SH4_CCR_OCE);
 	sh_icache_sync_all();
-
-	RUN_P1;
 }
 #endif /* SH4 */
 

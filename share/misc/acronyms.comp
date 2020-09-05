@@ -1,4 +1,4 @@
-$NetBSD: acronyms.comp,v 1.308 2020/07/11 13:04:29 nia Exp $
+$NetBSD: acronyms.comp,v 1.311 2020/08/22 07:24:40 nia Exp $
 3WHS	three-way handshake
 8VSB	8-state vestigial side band modulation
 AA	anti-aliasing
@@ -445,6 +445,8 @@ DRM	digital rights management
 DRRS	display refresh rate switching
 DS	debug store
 DS	differentiated services
+DS9000	DeathStation 9000
+DS9K	DeathStation 9000
 DSA	digital signature algorithm
 DSAP	destination service access point
 DSB	double-sideband modulation
@@ -1616,6 +1618,7 @@ TMG	transmogrifier
 TMDS	transition minimized differential signaling
 TMO	timeout
 TOD	time of day
+TOFU	trust on first use
 TOS	terms of service
 TOS	trusted operating system
 TOS	type of service
@@ -1646,6 +1649,7 @@ TSP	Tunnel Setup Protocol
 TSP	time synchronization protocol
 TSP	traveling salesman problem
 TSS	task state segment
+TSV	tab-separated values
 TTL	time to live
 TTL	transistor-transistor logic
 TTM	translation table maps

@@ -1,4 +1,4 @@
-$NetBSD: acronyms,v 1.304 2020/06/13 14:31:49 sevan Exp $
+$NetBSD: acronyms,v 1.306 2020/08/29 18:54:33 christos Exp $
 10Q	thank you
 10X	thanks
 1337	elite ("leet")
@@ -568,6 +568,7 @@ TNF	The NetBSD Foundation
 TOC	table of contents
 TOCTOU	time of check to time of use
 TOEFL	test of english as a foreign language
+TOFU	text over, fullquote under (in email)
 TOH	to other half
 TP	toilet paper
 TPTB	the powers that be
@@ -609,6 +610,7 @@ WDYMBT	what do you mean by that
 WELC	working effectively with legacy code
 WFH	working from home
 WFM	works for me
+WGACA	what goes around comes around
 WIBNI	wouldn't it be nice if
 WIP	work in progress
 WLW	women-loving women
