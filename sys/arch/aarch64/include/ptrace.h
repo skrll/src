@@ -1,4 +1,4 @@
-/* $NetBSD: ptrace.h,v 1.10 2020/07/02 13:04:47 rin Exp $ */
+/* $NetBSD: ptrace.h,v 1.12 2020/09/07 18:29:48 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.

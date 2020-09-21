@@ -1,4 +1,4 @@
-/*	$NetBSD: ufs_vnops.c,v 1.256 2020/08/20 20:28:13 christos Exp $	*/
+/*	$NetBSD: ufs_vnops.c,v 1.259 2020/09/05 16:30:13 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2020 The NetBSD Foundation, Inc.
@@ -66,11 +66,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ufs_vnops.c,v 1.256 2020/08/20 20:28:13 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ufs_vnops.c,v 1.259 2020/09/05 16:30:13 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"
 #include "opt_quota.h"
+#include "opt_uvmhist.h"
 #endif
 
 #include <sys/param.h>
@@ -112,7 +113,11 @@ __KERNEL_RCSID(0, "$NetBSD: ufs_vnops.c,v 1.256 2020/08/20 20:28:13 christos Exp
 #include <ufs/lfs/lfs_extern.h>
 #include <ufs/lfs/lfs.h>
 
+#ifdef UVMHIST
 #include <uvm/uvm.h>
+#endif
+#include <uvm/uvm_extern.h>
+#include <uvm/uvm_stat.h>
 
 __CTASSERT(EXT2FS_MAXNAMLEN == FFS_MAXNAMLEN);
 __CTASSERT(LFS_MAXNAMLEN == FFS_MAXNAMLEN);

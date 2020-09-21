@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.251 2016/12/22 14:47:58 cherry Exp $	*/
+/*	$NetBSD: machdep.c,v 1.253 2020/09/04 06:12:16 skrll Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.251 2016/12/22 14:47:58 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.253 2020/09/04 06:12:16 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_modular.h"
@@ -210,6 +210,11 @@ mach_init(int argc, int32_t *argv32, int code, intptr_t cv, u_int bim, char *bip
 	} else {
 		callv = &callvec;
 	}
+
+#ifdef DDB
+	/* Make DDB "machine reset" call emulate pushing the HALT button. */
+	cpu_reset_address = prom_haltbutton;
+#endif
 
 	/* Use PROM console output until we initialize a console driver. */
 	cn_tab = &promcd;

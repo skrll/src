@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.102 2020/08/30 19:56:02 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.122 2020/09/13 20:38:47 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -85,20 +85,19 @@ void Arch_End(void);
 Boolean Arch_IsLib(GNode *);
 
 /* compat.c */
-int CompatRunCommand(void *, void *);
+int Compat_RunCommand(char *, GNode *);
 void Compat_Run(Lst);
-int Compat_Make(void *, void *);
+int Compat_Make(GNode *, GNode *);
 
 /* cond.c */
-struct If;
-CondEvalResult Cond_EvalExpression(const struct If *, char *, Boolean *, int, Boolean);
-CondEvalResult Cond_Eval(char *);
+CondEvalResult Cond_EvalCondition(const char *, Boolean *);
+CondEvalResult Cond_EvalLine(const char *);
 void Cond_restore_depth(unsigned int);
 unsigned int Cond_save_depth(void);
 
 /* for.c */
-int For_Eval(char *);
-int For_Accum(char *);
+int For_Eval(const char *);
+Boolean For_Accum(const char *);
 void For_Run(int);
 
 /* job.c */
@@ -112,7 +111,6 @@ void Error(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
 void Fatal(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2) MAKE_ATTR_DEAD;
 void Punt(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2) MAKE_ATTR_DEAD;
 void DieHorribly(void) MAKE_ATTR_DEAD;
-int PrintAddr(void *, void *);
 void Finish(int) MAKE_ATTR_DEAD;
 int eunlink(const char *);
 void execError(const char *, const char *);
@@ -123,7 +121,7 @@ char *cached_realpath(const char *, char *);
 
 /* parse.c */
 void Parse_Error(int, const char *, ...) MAKE_ATTR_PRINTFLIKE(2, 3);
-Boolean Parse_IsVar(char *);
+Boolean Parse_IsVar(const char *);
 void Parse_DoVar(char *, GNode *);
 void Parse_AddIncludeDir(char *);
 void Parse_File(const char *, int);
@@ -140,7 +138,7 @@ typedef struct {
 } Words;
 
 Words Str_Words(const char *, Boolean);
-static inline void MAKE_ATTR_UNUSED
+static inline MAKE_ATTR_UNUSED void
 Words_Free(Words w) {
     free(w.words);
     free(w.freeIt);
@@ -156,7 +154,7 @@ Boolean Str_Match(const char *, const char *);
 void Suff_ClearSuffixes(void);
 Boolean Suff_IsTransform(char *);
 GNode *Suff_AddTransform(char *);
-int Suff_EndTransform(void *, void *);
+void Suff_EndTransform(GNode *);
 void Suff_AddSuffix(const char *, GNode **);
 Lst Suff_GetPath(char *);
 void Suff_DoPaths(void);
@@ -181,8 +179,9 @@ Boolean Targ_Ignore(GNode *);
 Boolean Targ_Silent(GNode *);
 Boolean Targ_Precious(GNode *);
 void Targ_SetMain(GNode *);
-int Targ_PrintCmd(void *, void *);
-int Targ_PrintNode(void *, void *);
+void Targ_PrintCmds(GNode *);
+void Targ_PrintNode(GNode *, int);
+void Targ_PrintNodes(Lst, int);
 char *Targ_FmtTime(time_t);
 void Targ_PrintType(int);
 void Targ_PrintGraph(int);
@@ -205,6 +204,62 @@ typedef enum {
     VAR_SET_READONLY	= 0x02
 } VarSet_Flags;
 
+/* The state of error handling returned by Var_Parse.
+ *
+ * As of 2020-09-13, this bitset looks quite bloated,
+ * with all the constants doubled.
+ *
+ * Its purpose is to first document the existing behavior,
+ * and then migrate away from the SILENT constants, step by step,
+ * as these are not suited for reliable, consistent error handling
+ * and reporting. */
+typedef enum {
+
+    /* Both parsing and evaluation succeeded. */
+    VPE_OK		= 0x0000,
+
+    /* Parsing failed.
+     * An error message has already been printed. */
+    VPE_PARSE_MSG	= 0x0001,
+
+    /* Parsing failed.
+     * No error message has been printed yet.
+     *
+     * This should never happen since it is impossible to say where
+     * the parsing error occurred. */
+    VPE_PARSE_SILENT	= 0x0002,
+
+    /* Parsing succeeded.
+     * During evaluation, VARE_UNDEFERR was set and there was an undefined
+     * variable.
+     * An error message has already been printed. */
+    VPE_UNDEF_MSG	= 0x0010,
+
+    /* Parsing succeeded.
+     * During evaluation, VARE_UNDEFERR was set and there was an undefined
+     * variable.
+     * No error message has been printed yet.
+     *
+     * This should never happen since it is impossible to say which of
+     * the variables was undefined. */
+    VPE_UNDEF_SILENT	= 0x0020,
+
+    /* Parsing succeeded.
+     * Evaluation failed.
+     * An error message has already been printed. */
+    VPE_EVAL_MSG	= 0x0100,
+
+    /* Parsing succeeded.
+     * Evaluation failed.
+     * No error message has been printed yet.
+     *
+     * This should never happen since it is impossible to say where
+     * exactly the evaluation error occurred. */
+    VPE_EVAL_SILENT	= 0x0200,
+
+    /* See if a message has already been printed for this error. */
+    VPE_ANY_MSG		= VPE_PARSE_MSG | VPE_UNDEF_MSG | VPE_EVAL_MSG
+} VarParseErrors;
 
 void Var_Delete(const char *, GNode *);
 void Var_Set(const char *, const char *, GNode *);
@@ -212,7 +267,8 @@ void Var_Set_with_flags(const char *, const char *, GNode *, VarSet_Flags);
 void Var_Append(const char *, const char *, GNode *);
 Boolean Var_Exists(const char *, GNode *);
 const char *Var_Value(const char *, GNode *, char **);
-const char *Var_Parse(const char *, GNode *, VarEvalFlags, int *, void **);
+VarParseErrors Var_Parse(const char **, GNode *, VarEvalFlags,
+			 const char **, void **);
 char *Var_Subst(const char *, GNode *, VarEvalFlags);
 void Var_Init(void);
 void Var_End(void);
@@ -223,4 +279,5 @@ void Var_Export(const char *, Boolean);
 void Var_UnExport(const char *);
 
 /* util.c */
-void (*bmake_signal(int, void (*)(int)))(int);
+typedef void (*SignalProc)(int);
+SignalProc bmake_signal(int, SignalProc);

@@ -1,4 +1,4 @@
-/*	$NetBSD: dir.c,v 1.127 2020/08/30 14:11:42 rillig Exp $	*/
+/*	$NetBSD: dir.c,v 1.142 2020/09/13 15:15:51 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -69,19 +69,6 @@
  * SUCH DAMAGE.
  */
 
-#ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: dir.c,v 1.127 2020/08/30 14:11:42 rillig Exp $";
-#else
-#include <sys/cdefs.h>
-#ifndef lint
-#if 0
-static char sccsid[] = "@(#)dir.c	8.2 (Berkeley) 1/2/94";
-#else
-__RCSID("$NetBSD: dir.c,v 1.127 2020/08/30 14:11:42 rillig Exp $");
-#endif
-#endif /* not lint */
-#endif
-
 /*-
  * dir.c --
  *	Directory searching using wildcards and/or normal names...
@@ -146,6 +133,8 @@ __RCSID("$NetBSD: dir.c,v 1.127 2020/08/30 14:11:42 rillig Exp $");
 #include "dir.h"
 #include "job.h"
 
+/*	"@(#)dir.c	8.2 (Berkeley) 1/2/94"	*/
+MAKE_RCSID("$NetBSD: dir.c,v 1.142 2020/09/13 15:15:51 rillig Exp $");
 
 #define DIR_DEBUG0(fmt) \
     if (!DEBUG(DIR)) (void) 0; else fprintf(debug_file, fmt)
@@ -256,7 +245,6 @@ static Hash_Table mtimes;
 
 static Hash_Table lmtimes;	/* same as mtimes but for lstat */
 
-static void DirExpandCurly(const char *, const char *, Lst, Lst);
 static void DirExpandInt(const char *, Lst, Lst);
 static int DirPrintWord(void *, void *);
 static int DirPrintDir(void *, void *);
@@ -282,13 +270,13 @@ typedef enum {
     CST_UPDATE = 0x02		/* ignore existing cached entry */
 } CachedStatsFlags;
 
-/* Returns 0 and the result of stat(2) or lstat(2) in *st, or -1 on error.
- * Only st->st_mode and st->st_mtime are filled. */
+/* Returns 0 and the result of stat(2) or lstat(2) in *mst, or -1 on error. */
 static int
-cached_stats(Hash_Table *htp, const char *pathname, struct stat *st,
+cached_stats(Hash_Table *htp, const char *pathname, struct make_stat *mst,
 	     CachedStatsFlags flags)
 {
     Hash_Entry *entry;
+    struct stat sys_st;
     struct cache_st *cst;
     int rc;
 
@@ -298,52 +286,56 @@ cached_stats(Hash_Table *htp, const char *pathname, struct stat *st,
     entry = Hash_FindEntry(htp, pathname);
 
     if (entry && !(flags & CST_UPDATE)) {
-	cst = entry->clientPtr;
+	cst = Hash_GetValue(entry);
 
-	memset(st, 0, sizeof(*st));
-	st->st_mode = cst->mode;
-	st->st_mtime = (flags & CST_LSTAT) ? cst->lmtime : cst->mtime;
-	if (st->st_mtime) {
+	mst->mst_mode = cst->mode;
+	mst->mst_mtime = (flags & CST_LSTAT) ? cst->lmtime : cst->mtime;
+	if (mst->mst_mtime) {
 	    DIR_DEBUG2("Using cached time %s for %s\n",
-		       Targ_FmtTime(st->st_mtime), pathname);
+		       Targ_FmtTime(mst->mst_mtime), pathname);
 	    return 0;
 	}
     }
 
-    rc = (flags & CST_LSTAT) ? lstat(pathname, st) : stat(pathname, st);
+    rc = (flags & CST_LSTAT)
+	 ? lstat(pathname, &sys_st)
+	 : stat(pathname, &sys_st);
     if (rc == -1)
 	return -1;
 
-    if (st->st_mtime == 0)
-	st->st_mtime = 1;	/* avoid confusion with missing file */
+    if (sys_st.st_mtime == 0)
+	sys_st.st_mtime = 1;	/* avoid confusion with missing file */
 
-    if (!entry)
+    mst->mst_mode = sys_st.st_mode;
+    mst->mst_mtime = sys_st.st_mtime;
+
+    if (entry == NULL)
 	entry = Hash_CreateEntry(htp, pathname, NULL);
-    if (!entry->clientPtr) {
-	entry->clientPtr = bmake_malloc(sizeof(*cst));
-	memset(entry->clientPtr, 0, sizeof(*cst));
+    if (Hash_GetValue(entry) == NULL) {
+	Hash_SetValue(entry, bmake_malloc(sizeof(*cst)));
+	memset(Hash_GetValue(entry), 0, sizeof(*cst));
     }
-    cst = entry->clientPtr;
+    cst = Hash_GetValue(entry);
     if (flags & CST_LSTAT) {
-	cst->lmtime = st->st_mtime;
+	cst->lmtime = sys_st.st_mtime;
     } else {
-	cst->mtime = st->st_mtime;
+	cst->mtime = sys_st.st_mtime;
     }
-    cst->mode = st->st_mode;
+    cst->mode = sys_st.st_mode;
     DIR_DEBUG2("   Caching %s for %s\n",
-	       Targ_FmtTime(st->st_mtime), pathname);
+	       Targ_FmtTime(sys_st.st_mtime), pathname);
 
     return 0;
 }
 
 int
-cached_stat(const char *pathname, void *st)
+cached_stat(const char *pathname, struct make_stat *st)
 {
     return cached_stats(&mtimes, pathname, st, 0);
 }
 
 int
-cached_lstat(const char *pathname, void *st)
+cached_lstat(const char *pathname, struct make_stat *st)
 {
     return cached_stats(&lmtimes, pathname, st, CST_LSTAT);
 }
@@ -354,8 +346,8 @@ Dir_Init(void)
 {
     dirSearchPath = Lst_Init();
     openDirectories = Lst_Init();
-    Hash_InitTable(&mtimes, 0);
-    Hash_InitTable(&lmtimes, 0);
+    Hash_InitTable(&mtimes);
+    Hash_InitTable(&lmtimes);
 }
 
 void
@@ -367,7 +359,7 @@ Dir_InitDir(const char *cdname)
     dotLast->refCount = 1;
     dotLast->hits = 0;
     dotLast->name = bmake_strdup(".DOTLAST");
-    Hash_InitTable(&dotLast->files, -1);
+    Hash_InitTable(&dotLast->files);
 }
 
 /*
@@ -517,36 +509,37 @@ DirFindName(const void *p, const void *desiredName)
  *	returns TRUE if the word should be expanded, FALSE otherwise
  */
 Boolean
-Dir_HasWildcards(char *name)
+Dir_HasWildcards(const char *name)
 {
-    char *cp;
-    int wild = 0, brace = 0, bracket = 0;
+    const char *cp;
+    Boolean wild = FALSE;
+    int braces = 0, brackets = 0;
 
     for (cp = name; *cp; cp++) {
 	switch (*cp) {
 	case '{':
-	    brace++;
-	    wild = 1;
+	    braces++;
+	    wild = TRUE;
 	    break;
 	case '}':
-	    brace--;
+	    braces--;
 	    break;
 	case '[':
-	    bracket++;
-	    wild = 1;
+	    brackets++;
+	    wild = TRUE;
 	    break;
 	case ']':
-	    bracket--;
+	    brackets--;
 	    break;
 	case '?':
 	case '*':
-	    wild = 1;
+	    wild = TRUE;
 	    break;
 	default:
 	    break;
 	}
     }
-    return wild && bracket == 0 && brace == 0;
+    return wild && brackets == 0 && braces == 0;
 }
 
 /*-
@@ -575,7 +568,7 @@ DirMatchFiles(const char *pattern, Path *p, Lst expansions)
     Hash_Entry *entry;		/* Current entry in the table */
     Boolean isDot;		/* TRUE if the directory being searched is . */
 
-    isDot = (*p->name == '.' && p->name[1] == '\0');
+    isDot = (p->name[0] == '.' && p->name[1] == '\0');
 
     for (entry = Hash_EnumFirst(&p->files, &search);
 	 entry != NULL;
@@ -592,8 +585,8 @@ DirMatchFiles(const char *pattern, Path *p, Lst expansions)
 	     (pattern[0] == '.')))
 	{
 	    Lst_Append(expansions,
-			(isDot ? bmake_strdup(entry->name) :
-			 str_concat3(p->name, "/", entry->name)));
+		       (isDot ? bmake_strdup(entry->name) :
+			str_concat3(p->name, "/", entry->name)));
 	}
     }
 }
@@ -934,7 +927,7 @@ DirLookup(Path *p, const char *name MAKE_ATTR_UNUSED, const char *cp,
 static char *
 DirLookupSubdir(Path *p, const char *name)
 {
-    struct stat stb;		/* Buffer for stat, if necessary */
+    struct make_stat mst;
     char *file;			/* the current filename to check */
 
     if (p != dot) {
@@ -948,7 +941,7 @@ DirLookupSubdir(Path *p, const char *name)
 
     DIR_DEBUG1("checking %s ...\n", file);
 
-    if (cached_stat(file, &stb) == 0) {
+    if (cached_stat(file, &mst) == 0) {
 	nearmisses += 1;
 	return file;
     }
@@ -1065,23 +1058,23 @@ Dir_FindFile(const char *name, Lst path)
     LstNode ln;			/* a list element */
     char *file;			/* the current filename to check */
     Path *p;			/* current path member */
-    const char *cp;		/* Terminal name of file */
+    const char *base;		/* Terminal name of file */
     Boolean hasLastDot = FALSE;	/* true we should search dot last */
     Boolean hasSlash;		/* true if 'name' contains a / */
-    struct stat stb;		/* Buffer for stat, if necessary */
+    struct make_stat mst;	/* Buffer for stat, if necessary */
     const char *trailing_dot = ".";
 
     /*
      * Find the final component of the name and note whether it has a
      * slash in it (the name, I mean)
      */
-    cp = strrchr(name, '/');
-    if (cp) {
+    base = strrchr(name, '/');
+    if (base) {
 	hasSlash = TRUE;
-	cp += 1;
+	base += 1;
     } else {
 	hasSlash = FALSE;
-	cp = name;
+	base = name;
     }
 
     DIR_DEBUG1("Searching for %s ...", name);
@@ -1107,7 +1100,7 @@ Dir_FindFile(const char *name, Lst path)
      * directory component is exactly `./', consult the cached contents
      * of each of the directories on the search path.
      */
-    if (!hasSlash || (cp - name == 2 && *name == '.')) {
+    if (!hasSlash || (base - name == 2 && *name == '.')) {
 	/*
 	 * We look through all the directories on the path seeking one which
 	 * contains the final component of the given name.  If such a beast
@@ -1122,7 +1115,7 @@ Dir_FindFile(const char *name, Lst path)
 	 * This is so there are no conflicts between what the user
 	 * specifies (fish.c) and what pmake finds (./fish.c).
 	 */
-	if (!hasLastDot && (file = DirFindDot(hasSlash, name, cp)) != NULL) {
+	if (!hasLastDot && (file = DirFindDot(hasSlash, name, base)) != NULL) {
 	    Lst_Close(path);
 	    return file;
 	}
@@ -1131,13 +1124,13 @@ Dir_FindFile(const char *name, Lst path)
 	    p = LstNode_Datum(ln);
 	    if (p == dotLast)
 		continue;
-	    if ((file = DirLookup(p, name, cp, hasSlash)) != NULL) {
+	    if ((file = DirLookup(p, name, base, hasSlash)) != NULL) {
 		Lst_Close(path);
 		return file;
 	    }
 	}
 
-	if (hasLastDot && (file = DirFindDot(hasSlash, name, cp)) != NULL) {
+	if (hasLastDot && (file = DirFindDot(hasSlash, name, base)) != NULL) {
 	    Lst_Close(path);
 	    return file;
 	}
@@ -1164,9 +1157,9 @@ Dir_FindFile(const char *name, Lst path)
 	return NULL;
     }
 
-    if (*cp == '\0') {
+    if (*base == '\0') {
 	/* we were given a trailing "/" */
-	cp = trailing_dot;
+	base = trailing_dot;
     }
 
     if (name[0] != '/') {
@@ -1234,7 +1227,7 @@ Dir_FindFile(const char *name, Lst path)
 	DIR_DEBUG0("   Trying exact path matches...\n");
 
 	if (!hasLastDot && cur &&
-	    ((file = DirLookupAbs(cur, name, cp)) != NULL)) {
+	    ((file = DirLookupAbs(cur, name, base)) != NULL)) {
 	    if (file[0] == '\0') {
 		free(file);
 		return NULL;
@@ -1247,7 +1240,7 @@ Dir_FindFile(const char *name, Lst path)
 	    p = LstNode_Datum(ln);
 	    if (p == dotLast)
 		continue;
-	    if ((file = DirLookupAbs(p, name, cp)) != NULL) {
+	    if ((file = DirLookupAbs(p, name, base)) != NULL) {
 		Lst_Close(path);
 		if (file[0] == '\0') {
 		    free(file);
@@ -1259,7 +1252,7 @@ Dir_FindFile(const char *name, Lst path)
 	Lst_Close(path);
 
 	if (hasLastDot && cur &&
-	    ((file = DirLookupAbs(cur, name, cp)) != NULL)) {
+	    ((file = DirLookupAbs(cur, name, base)) != NULL)) {
 	    if (file[0] == '\0') {
 		free(file);
 		return NULL;
@@ -1286,13 +1279,13 @@ Dir_FindFile(const char *name, Lst path)
      * b/c we added it here. This is not good...
      */
 #ifdef notdef
-    if (cp == traling_dot) {
-	cp = strrchr(name, '/');
-	cp += 1;
+    if (base == trailing_dot) {
+	base = strrchr(name, '/');
+	base += 1;
     }
-    cp[-1] = '\0';
+    base[-1] = '\0';
     (void)Dir_AddDir(path, name);
-    cp[-1] = '/';
+    base[-1] = '/';
 
     bigmisses += 1;
     ln = Lst_Last(path);
@@ -1302,7 +1295,7 @@ Dir_FindFile(const char *name, Lst path)
 	p = LstNode_Datum(ln);
     }
 
-    if (Hash_FindEntry(&p->files, cp) != NULL) {
+    if (Hash_FindEntry(&p->files, base) != NULL) {
 	return bmake_strdup(name);
     } else {
 	return NULL;
@@ -1311,7 +1304,7 @@ Dir_FindFile(const char *name, Lst path)
     DIR_DEBUG1("   Looking for \"%s\" ...\n", name);
 
     bigmisses += 1;
-    if (cached_stat(name, &stb) == 0) {
+    if (cached_stat(name, &mst) == 0) {
 	return bmake_strdup(name);
     }
 
@@ -1331,7 +1324,7 @@ Dir_FindFile(const char *name, Lst path)
  *	here		starting directory
  *	search_path	the path we are looking for
  *	result		the result of a successful search is placed here
- *	rlen		the length of the result buffer
+ *	result_len	the length of the result buffer
  *			(typically MAXPATHLEN + 1)
  *
  * Results:
@@ -1341,62 +1334,57 @@ Dir_FindFile(const char *name, Lst path)
  * Side Effects:
  *-----------------------------------------------------------------------
  */
-int
-Dir_FindHereOrAbove(char *here, char *search_path, char *result, int rlen)
+Boolean
+Dir_FindHereOrAbove(const char *here, const char *search_path,
+		    char *result, int result_len)
 {
-    struct stat st;
-    char dirbase[MAXPATHLEN + 1], *db_end;
+    struct make_stat mst;
+    char dirbase[MAXPATHLEN + 1], *dirbase_end;
     char try[MAXPATHLEN + 1], *try_end;
 
     /* copy out our starting point */
     snprintf(dirbase, sizeof(dirbase), "%s", here);
-    db_end = dirbase + strlen(dirbase);
+    dirbase_end = dirbase + strlen(dirbase);
 
     /* loop until we determine a result */
-    while (1) {
+    while (TRUE) {
 
 	/* try and stat(2) it ... */
 	snprintf(try, sizeof(try), "%s/%s", dirbase, search_path);
-	if (cached_stat(try, &st) != -1) {
+	if (cached_stat(try, &mst) != -1) {
 	    /*
 	     * success!  if we found a file, chop off
 	     * the filename so we return a directory.
 	     */
-	    if ((st.st_mode & S_IFMT) != S_IFDIR) {
+	    if ((mst.mst_mode & S_IFMT) != S_IFDIR) {
 		try_end = try + strlen(try);
 		while (try_end > try && *try_end != '/')
 		    try_end--;
 		if (try_end > try)
-		    *try_end = 0;	/* chop! */
+		    *try_end = '\0';	/* chop! */
 	    }
 
-	    /*
-	     * done!
-	     */
-	    snprintf(result, rlen, "%s", try);
-	    return 1;
+	    snprintf(result, result_len, "%s", try);
+	    return TRUE;
 	}
 
 	/*
 	 * nope, we didn't find it.  if we used up dirbase we've
 	 * reached the root and failed.
 	 */
-	if (db_end == dirbase)
+	if (dirbase_end == dirbase)
 	    break;		/* failed! */
 
 	/*
 	 * truncate dirbase from the end to move up a dir
 	 */
-	while (db_end > dirbase && *db_end != '/')
-	    db_end--;
-	*db_end = 0;		/* chop! */
+	while (dirbase_end > dirbase && *dirbase_end != '/')
+	    dirbase_end--;
+	*dirbase_end = '\0';	/* chop! */
 
-    } /* while (1) */
+    } /* while (TRUE) */
 
-    /*
-     * we failed...
-     */
-    return 0;
+    return FALSE;
 }
 
 /*-
@@ -1421,7 +1409,7 @@ int
 Dir_MTime(GNode *gn, Boolean recheck)
 {
     char *fullName;		/* the full pathname of name */
-    struct stat stb;		/* buffer for finding the mod time */
+    struct make_stat mst;	/* buffer for finding the mod time */
 
     if (gn->type & OP_ARCHV) {
 	return Arch_MTime(gn);
@@ -1472,13 +1460,13 @@ Dir_MTime(GNode *gn, Boolean recheck)
 	fullName = bmake_strdup(gn->name);
     }
 
-    if (cached_stats(&mtimes, fullName, &stb, recheck ? CST_UPDATE : 0) < 0) {
+    if (cached_stats(&mtimes, fullName, &mst, recheck ? CST_UPDATE : 0) < 0) {
 	if (gn->type & OP_MEMBER) {
 	    if (fullName != gn->path)
 		free(fullName);
 	    return Arch_MemMTime(gn);
 	} else {
-	    stb.st_mtime = 0;
+	    mst.mst_mtime = 0;
 	}
     }
 
@@ -1486,7 +1474,7 @@ Dir_MTime(GNode *gn, Boolean recheck)
 	gn->path = fullName;
     }
 
-    gn->mtime = stb.st_mtime;
+    gn->mtime = mst.mst_mtime;
     return gn->mtime;
 }
 
@@ -1547,7 +1535,7 @@ Dir_AddDir(Lst path, const char *name)
 	p->name = bmake_strdup(name);
 	p->hits = 0;
 	p->refCount = 1;
-	Hash_InitTable(&p->files, -1);
+	Hash_InitTable(&p->files);
 
 	while ((dp = readdir(d)) != NULL) {
 #if defined(sun) && defined(d_ino) /* d_ino is a sunos4 #define for d_fileno */
@@ -1657,10 +1645,11 @@ Dir_Destroy(void *pp)
     p->refCount -= 1;
 
     if (p->refCount == 0) {
-	LstNode ln;
+	LstNode node;
 
-	ln = Lst_FindDatum(openDirectories, p);
-	Lst_Remove(openDirectories, ln);
+	node = Lst_FindDatum(openDirectories, p);
+	if (node != NULL)
+	    Lst_Remove(openDirectories, node);
 
 	Hash_DeleteTable(&p->files);
 	free(p->name);

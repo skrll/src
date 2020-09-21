@@ -1,11 +1,11 @@
-/*	$NetBSD: asan.h,v 1.4 2020/08/28 13:36:52 skrll Exp $	*/
+/*	$NetBSD: asan.h,v 1.6 2020/09/10 14:10:47 maxv Exp $	*/
 
 /*
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
- * by Nick Hudson.
+ * by Nick Hudson, and is part of the KASAN subsystem of the NetBSD kernel.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,6 +31,8 @@
 
 #include <sys/atomic.h>
 #include <sys/ksyms.h>
+
+#include <uvm/uvm.h>
 
 #include <arm/vmparam.h>
 #include <arm/arm32/machdep.h>
