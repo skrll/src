@@ -465,8 +465,6 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	virtual_end = vend;
 	pmap_maxkvaddr = vstart;
 
-	aarch64_tlbi_all();
-
 	l0pa = reg_ttbr1_el1_read();
 	l0 = (void *)AARCH64_PA_TO_KVA(l0pa);
 
