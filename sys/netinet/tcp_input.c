@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_input.c,v 1.418 2020/07/06 18:49:12 christos Exp $	*/
+/*	$NetBSD: tcp_input.c,v 1.423 2020/09/13 11:47:12 roy Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -148,7 +148,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.418 2020/07/06 18:49:12 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.423 2020/09/13 11:47:12 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -186,6 +186,9 @@ __KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.418 2020/07/06 18:49:12 christos Exp
 #include <netinet/ip_var.h>
 #include <netinet/in_offload.h>
 
+#if NARP > 0
+#include <netinet/if_inarp.h>
+#endif
 #ifdef INET6
 #include <netinet/ip6.h>
 #include <netinet6/ip6_var.h>
@@ -253,24 +256,52 @@ static void syn_cache_timer(void *);
 /*
  * Neighbor Discovery, Neighbor Unreachability Detection Upper layer hint.
  */
-#ifdef INET6
-static inline void
-nd6_hint(struct tcpcb *tp)
+static void
+nd_hint(struct tcpcb *tp)
 {
-	struct rtentry *rt = NULL;
+	struct route *ro = NULL;
+	struct rtentry *rt;
 
-	if (tp != NULL && tp->t_in6pcb != NULL && tp->t_family == AF_INET6 &&
-	    (rt = rtcache_validate(&tp->t_in6pcb->in6p_route)) != NULL) {
-		nd6_nud_hint(rt);
-		rtcache_unref(rt, &tp->t_in6pcb->in6p_route);
-	}
-}
-#else
-static inline void
-nd6_hint(struct tcpcb *tp)
-{
-}
+	if (tp == NULL)
+		return;
+
+	switch (tp->t_family) {
+#if NARP > 0
+	case AF_INET:
+		if (tp->t_inpcb != NULL)
+			ro = &tp->t_inpcb->inp_route;
+		break;
 #endif
+#ifdef INET6
+	case AF_INET6:
+		if (tp->t_in6pcb != NULL)
+			ro = &tp->t_in6pcb->in6p_route;
+		break;
+#endif
+	}
+
+	if (ro == NULL)
+		return;
+
+	rt = rtcache_validate(ro);
+	if (rt == NULL)
+		return;
+
+	switch (tp->t_family) {
+#if NARP > 0
+	case AF_INET:
+		arp_nud_hint(rt);
+		break;
+#endif
+#ifdef INET6
+	case AF_INET6:
+		nd6_nud_hint(rt);
+		break;
+#endif
+	}
+
+	rtcache_unref(rt, ro);
+}
 
 /*
  * Compute ACK transmission behavior.  Delay the ACK unless
@@ -769,7 +800,7 @@ present:
 
 	tp->rcv_nxt += q->ipqe_len;
 	pkt_flags = q->ipqe_flags & TH_FIN;
-	nd6_hint(tp);
+	nd_hint(tp);
 
 	TAILQ_REMOVE(&tp->segq, q, ipqe_q);
 	TAILQ_REMOVE(&tp->timeq, q, ipqe_timeq);
@@ -1884,7 +1915,7 @@ after_listen:
 				tcps[TCP_STAT_RCVACKPACK]++;
 				tcps[TCP_STAT_RCVACKBYTE] += acked;
 				TCP_STAT_PUTREF();
-				nd6_hint(tp);
+				nd_hint(tp);
 
 				if (acked > (tp->t_lastoff - tp->t_inoff))
 					tp->t_lastm = NULL;
@@ -1897,6 +1928,19 @@ after_listen:
 				tp->snd_fack = tp->snd_una;
 				if (SEQ_LT(tp->snd_high, tp->snd_una))
 					tp->snd_high = tp->snd_una;
+				/*
+				 * drag snd_wl2 along so only newer
+				 * ACKs can update the window size.
+				 * also avoids the state where snd_wl2
+				 * is eventually larger than th_ack and thus
+				 * blocking the window update mechanism and
+				 * the connection gets stuck for a loooong
+				 * time in the zero sized send window state.
+				 *
+				 * see PR/kern 55567
+				 */
+				tp->snd_wl2 = tp->snd_una;
+
 				m_freem(m);
 
 				/*
@@ -1936,13 +1980,25 @@ after_listen:
 			 * we have enough buffer space to take it.
 			 */
 			tp->rcv_nxt += tlen;
+
+			/*
+			 * Pull rcv_up up to prevent seq wrap relative to
+			 * rcv_nxt.
+			 */
+			tp->rcv_up = tp->rcv_nxt;
+
+			/*
+			 * Pull snd_wl1 up to prevent seq wrap relative to
+			 * th_seq.
+			 */
+			tp->snd_wl1 = th->th_seq;
+
 			tcps = TCP_STAT_GETREF();
 			tcps[TCP_STAT_PREDDAT]++;
 			tcps[TCP_STAT_RCVPACK]++;
 			tcps[TCP_STAT_RCVBYTE] += tlen;
 			TCP_STAT_PUTREF();
-			nd6_hint(tp);
-
+			nd_hint(tp);
 		/*
 		 * Automatic sizing enables the performance of large buffers
 		 * and most of the efficiency of small ones by only allocating
@@ -2570,7 +2626,7 @@ after_listen:
 		 */
 		tp->t_congctl->newack(tp, th);
 
-		nd6_hint(tp);
+		nd_hint(tp);
 		if (acked > so->so_snd.sb_cc) {
 			tp->snd_wnd -= so->so_snd.sb_cc;
 			sbdrop(&so->so_snd, (int)so->so_snd.sb_cc);
@@ -2776,7 +2832,7 @@ dodata:
 			tcps[TCP_STAT_RCVPACK]++;
 			tcps[TCP_STAT_RCVBYTE] += tlen;
 			TCP_STAT_PUTREF();
-			nd6_hint(tp);
+			nd_hint(tp);
 			if (so->so_state & SS_CANTRCVMORE) {
 				m_freem(m);
 			} else {

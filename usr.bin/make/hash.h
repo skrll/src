@@ -1,4 +1,4 @@
-/*	$NetBSD: hash.h,v 1.19 2020/08/29 11:13:43 rillig Exp $	*/
+/*	$NetBSD: hash.h,v 1.23 2020/09/13 15:27:25 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -72,34 +72,27 @@
  *	from: @(#)hash.h	8.1 (Berkeley) 6/6/93
  */
 
-/* hash.h --
- *
- * 	This file contains definitions used by the hash module,
- * 	which maintains hash tables.
- */
+/* Hash tables with strings as keys and arbitrary pointers as values. */
 
 #ifndef	MAKE_HASH_H
 #define	MAKE_HASH_H
 
-/*
- * The following defines one entry in the hash table.
- */
-
+/* A single key-value entry in the hash table. */
 typedef struct Hash_Entry {
-    struct Hash_Entry *next;		/* Used to link together all the
-					 * entries associated with the same
-					 * bucket. */
-    void	      *clientPtr;	/* Arbitrary pointer */
-    unsigned	      namehash;		/* hash value of key */
-    char	      name[1];		/* key string, variable length */
+    struct Hash_Entry *next;	/* Used to link together all the entries
+				 * associated with the same bucket. */
+    void	      *value;
+    unsigned	      namehash;	/* hash value of key */
+    char	      name[1];	/* key string, variable length */
 } Hash_Entry;
 
+/* The hash table containing the entries. */
 typedef struct Hash_Table {
-    struct Hash_Entry **bucketPtr;/* Pointers to Hash_Entry, one
+    Hash_Entry **buckets;	/* Pointers to Hash_Entry, one
 				 * for each bucket in the table. */
-    int 	size;		/* Actual size of array. */
+    int 	bucketsSize;
     int 	numEntries;	/* Number of entries in the table. */
-    int 	mask;		/* Used to select bits for hashing. */
+    int 	bucketsMask;	/* Used to select the bucket for a hash. */
     int 	maxchain;	/* max length of chain detected */
 } Hash_Table;
 
@@ -107,33 +100,25 @@ typedef struct Hash_Table {
  * The following structure is used by the searching routines
  * to record where we are in the search.
  */
-
 typedef struct Hash_Search {
-    Hash_Table  *tablePtr;	/* Table being searched. */
-    int 	nextIndex;	/* Next bucket to check (after current). */
-    Hash_Entry 	*hashEntryPtr;	/* Next entry to check in current bucket. */
+    Hash_Table  *table;		/* Table being searched. */
+    int 	nextBucket;	/* Next bucket to check (after current). */
+    Hash_Entry 	*entry;		/* Next entry to check in current bucket. */
 } Hash_Search;
 
-/*
- * Macros.
- */
+static inline MAKE_ATTR_UNUSED void *
+Hash_GetValue(Hash_Entry *h)
+{
+    return h->value;
+}
 
-/*
- * void * Hash_GetValue(h)
- *     Hash_Entry *h;
- */
+static inline MAKE_ATTR_UNUSED void
+Hash_SetValue(Hash_Entry *h, void *datum)
+{
+    h->value = datum;
+}
 
-#define Hash_GetValue(h) ((h)->clientPtr)
-
-/*
- * Hash_SetValue(h, val);
- *     Hash_Entry *h;
- *     char *val;
- */
-
-#define Hash_SetValue(h, val) ((h)->clientPtr = (val))
-
-void Hash_InitTable(Hash_Table *, int);
+void Hash_InitTable(Hash_Table *);
 void Hash_DeleteTable(Hash_Table *);
 Hash_Entry *Hash_FindEntry(Hash_Table *, const char *);
 Hash_Entry *Hash_CreateEntry(Hash_Table *, const char *, Boolean *);

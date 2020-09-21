@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.331 2020/08/27 15:32:00 riastradh Exp $
+# $NetBSD: mi,v 1.337 2020/09/15 07:00:04 mrg Exp $
 ./etc/mtree/set.debug                           comp-sys-root
 ./usr/lib					comp-sys-usr		compatdir
 ./usr/lib/i18n/libBIG5_g.a			comp-c-debuglib		debuglib,compatfile
@@ -261,6 +261,7 @@
 ./usr/lib/libterminfo_g.a			comp-c-debuglib		debuglib,compatfile
 ./usr/lib/libtpm_unseal_g.a			comp-c-debuglib		debuglib,compatfile,tpm
 ./usr/lib/libtre_g.a				comp-c-debuglib		debuglib,compatfile
+./usr/lib/libtsan_g.a				comp-c-debuglib		debuglib,arch64,cxx,gcc=9,machine=amd64
 ./usr/lib/libtspi_g.a				comp-c-debuglib		debuglib,compatfile,tpm
 ./usr/lib/libubsan_g.a				comp-c-debuglib		debuglib,compatfile,cxx,gcc
 ./usr/lib/libukfs_g.a				comp-c-debuglib		debuglib,compatfile,rump
@@ -593,6 +594,7 @@
 ./usr/libdata/debug/usr/bin/host.debug		comp-netutil-debug	debug
 ./usr/libdata/debug/usr/bin/hpftodit.debug	comp-groff-debug	groff,debug
 ./usr/libdata/debug/usr/bin/hxtool.debug	comp-krb5-debug		kerberos,debug
+./usr/libdata/debug/usr/bin/iasl.debug		comp-util-debug		acpi,debug
 ./usr/libdata/debug/usr/bin/iconv.debug		comp-util-debug		debug
 ./usr/libdata/debug/usr/bin/id.debug		comp-util-debug		debug
 ./usr/libdata/debug/usr/bin/ident.debug		comp-util-debug		debug
@@ -1034,9 +1036,11 @@
 ./usr/libdata/debug/usr/libexec/vfontedpr.debug	comp-groff-debug	debug
 ./usr/libdata/debug/usr/sbin/ac.debug		comp-sysutil-debug	debug
 ./usr/libdata/debug/usr/sbin/accton.debug	comp-sysutil-debug	debug
+./usr/libdata/debug/usr/sbin/acpidump.debug	comp-sysutil-debug	acpi,debug
 ./usr/libdata/debug/usr/sbin/altqd.debug	comp-router-debug	debug
 ./usr/libdata/debug/usr/sbin/altqstat.debug	comp-router-debug	debug
 ./usr/libdata/debug/usr/sbin/amd.debug		comp-amd-debug		debug
+./usr/libdata/debug/usr/sbin/amldb.debug	comp-sysutil-debug	acpi,debug
 ./usr/libdata/debug/usr/sbin/amq.debug		comp-amd-debug		debug
 ./usr/libdata/debug/usr/sbin/arp.debug		comp-netutil-debug	debug
 ./usr/libdata/debug/usr/sbin/audit-packages.debug	comp-obsolete		obsolete
@@ -2384,6 +2388,7 @@
 ./usr/libdata/debug/usr/tests/net/ipsec/natt_terminator.debug	tests-net-debug		debug,atf,rump
 ./usr/libdata/debug/usr/tests/net/mcast/mcast.debug		tests-net-debug		debug,atf,rump
 ./usr/libdata/debug/usr/tests/net/mcast/t_mcast.debug		tests-obsolete		debug,atf,rump,obsolete
+./usr/libdata/debug/usr/tests/net/net/t_bind.debug		tests-net-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/net/net/t_mapped.debug		tests-net-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/net/net/t_pktinfo.debug		tests-net-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/net/net/t_pktinfo_send.debug	tests-net-debug		debug,atf,rump

@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1205 2020/08/20 03:08:07 mrg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1219 2020/09/15 09:32:31 mrg Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -63,7 +63,11 @@ TOOLCHAIN_MISSING?=	no
 #
 # What GCC is used?
 #
+.if ${MACHINE_CPU} == "powerpc" || ${MACHINE_CPU} == "sh3" || \
+    ${MACHINE_CPU} == "m68k" || ${MACHINE} == "vax"
 HAVE_GCC?=	8
+.endif
+HAVE_GCC?=	9
 
 #
 # Platforms that can't run a modern GCC natively
@@ -87,6 +91,32 @@ MKGCCCMDS?=	no
 .endif
 
 #
+# What binutils is used?
+#
+HAVE_BINUTILS?=	234
+
+.if ${HAVE_BINUTILS} == 234
+EXTERNAL_BINUTILS_SUBDIR=	binutils
+.elif ${HAVE_BINUTILS} == 231
+EXTERNAL_BINUTILS_SUBDIR=	binutils.old
+.else
+EXTERNAL_BINUTILS_SUBDIR=	/does/not/exist
+.endif
+
+#
+# What GDB is used?
+#
+HAVE_GDB?=	830
+
+.if ${HAVE_GDB} == 1000
+EXTERNAL_GDB_SUBDIR=		gdb
+.elif ${HAVE_GDB} == 830
+EXTERNAL_GDB_SUBDIR=		gdb.old
+.else
+EXTERNAL_GDB_SUBDIR=		/does/not/exist
+.endif
+
+#
 # What OpenSSL is used?
 # 
 HAVE_OPENSSL?=  11
@@ -98,6 +128,32 @@ EXTERNAL_OPENSSL_SUBDIR=openssl.old
 .else
 EXTERNAL_OPENSSL_SUBDIR=/does/not/exist
 .endif
+
+#
+# Does the platform support ACPI?
+#
+.if ${MACHINE_ARCH} == "i386" || \
+    ${MACHINE_ARCH} == "x86_64" || \
+    ${MACHINE_ARCH} == "ia64" || \
+    !empty(MACHINE_ARCH:Maarch64*)
+HAVE_ACPI=	yes
+.else
+HAVE_ACPI=	no
+.endif
+
+#
+# Does the platform support UEFI?
+#
+.if ${MACHINE_ARCH} == "i386" || \
+    ${MACHINE_ARCH} == "x86_64" || \
+    ${MACHINE_ARCH} == "ia64" || \
+    !empty(MACHINE_ARCH:Mearmv7*) || \
+    !empty(MACHINE_ARCH:Maarch64*)
+HAVE_UEFI=	yes
+.else
+HAVE_UEFI=	no
+.endif
+
 
 .if !empty(MACHINE_ARCH:Mearm*)
 _LIBC_COMPILER_RT.${MACHINE_ARCH}=	yes
@@ -138,40 +194,6 @@ HAVE_SSP?=	yes
 .if !defined(NOFORT) && ${USE_FORT:Uno} != "no"
 USE_SSP?=	yes
 .endif
-.endif
-
-#
-# What GDB is used?
-#
-HAVE_GDB?=	830
-
-.if ${HAVE_GDB} == 830
-EXTERNAL_GDB_SUBDIR=		gdb
-.elif ${HAVE_GDB} == 801
-EXTERNAL_GDB_SUBDIR=		gdb.old
-.else
-EXTERNAL_GDB_SUBDIR=		/does/not/exist
-.endif
-
-#
-# What binutils is used?
-#
-.if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "i386" || \
-    ${MACHINE_ARCH} == "powerpc64" || ${MACHINE_ARCH} == "powerpc" || \
-    ${MACHINE_CPU} == "aarch64" || ${MACHINE_CPU} == "arm" || \
-    ${MACHINE_ARCH} == "hppa" || ${MACHINE_ARCH} == "sparc64" || \
-    ${MACHINE} == "sun2" || ${MACHINE} == "alpha"
-HAVE_BINUTILS?=	234
-.else
-HAVE_BINUTILS?=	231
-.endif
-
-.if ${HAVE_BINUTILS} == 234
-EXTERNAL_BINUTILS_SUBDIR=	binutils
-.elif ${HAVE_BINUTILS} == 231
-EXTERNAL_BINUTILS_SUBDIR=	binutils.old
-.else
-EXTERNAL_BINUTILS_SUBDIR=	/does/not/exist
 .endif
 
 #
@@ -832,9 +854,11 @@ NOPROFILE=	# defined
 # COPTS.foo.c+= ${GCC_NO_STRINGOP_TRUNCATION}.
 #
 GCC_NO_FORMAT_TRUNCATION=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-format-truncation :}
+GCC_NO_FORMAT_OVERFLOW=		${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-format-overflow :}
 GCC_NO_STRINGOP_OVERFLOW=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-stringop-overflow :}
 GCC_NO_STRINGOP_TRUNCATION=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wno-stringop-truncation :}
 GCC_NO_CAST_FUNCTION_TYPE=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wno-cast-function-type :}
+GCC_NO_ADDR_OF_PACKED_MEMBER=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 9:? -Wno-error=address-of-packed-member :}
 
 #
 # The ia64 port is incomplete.
@@ -966,9 +990,9 @@ dependall:	.NOTMAIN realdepend .MAKE
 # including bsd.own.mk.
 #
 .for var in \
-	NOCRYPTO NODOC NOHTML NOINFO NOLIBCSANITIZER NOLINKLIB NOLINT NOMAN \
-	NONLS NOOBJ NOPIC NOPICINSTALL NOPROFILE NOSHARE NOSTATICLIB \
-	NODEBUGLIB NOSANITIZER NORELRO
+	NOCOMPAT NOCRYPTO NODOC NOHTML NOINFO NOLIBCSANITIZER NOLINKLIB \
+	NOLINT NOMAN NONLS NOOBJ NOPIC NOPICINSTALL NOPROFILE NOSHARE \
+	NOSTATICLIB NODEBUGLIB NOSANITIZER NORELRO
 .if defined(${var})
 MK${var:S/^NO//}:=	no
 .endif

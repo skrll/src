@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.133 2020/08/30 14:11:42 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.142 2020/09/13 15:15:51 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -82,6 +82,7 @@
 
 #include <sys/types.h>
 #include <sys/param.h>
+#include <sys/stat.h>
 
 #include <assert.h>
 #include <ctype.h>
@@ -129,8 +130,8 @@
 #endif
 
 /*
- * A boolean type is defined as an integer, not an enum. This allows a
- * boolean argument to be an expression that isn't strictly 0 or 1 valued.
+ * A boolean type is defined as an integer, not an enum, for historic reasons.
+ * The only allowed values are the constants TRUE and FALSE (1 and 0).
  */
 
 #ifdef USE_DOUBLE_BOOLEAN
@@ -142,15 +143,17 @@ typedef double Boolean;
 typedef unsigned char Boolean;
 #define TRUE ((unsigned char)0xFF)
 #define FALSE ((unsigned char)0x00)
+#elif defined(USE_ENUM_BOOLEAN)
+typedef enum { FALSE, TRUE } Boolean;
 #else
 typedef int Boolean;
 #endif
 #ifndef TRUE
 #define TRUE	1
-#endif /* TRUE */
+#endif
 #ifndef FALSE
 #define FALSE	0
-#endif /* FALSE */
+#endif
 
 #include "lst.h"
 #include "enum.h"
@@ -375,7 +378,7 @@ typedef struct GNode {
 #define PARSE_FATAL	1
 
 /*
- * Values returned by Cond_Eval.
+ * Values returned by Cond_EvalLine and Cond_EvalCondition.
  */
 typedef enum {
     COND_PARSE,			/* Parse the next lines */
@@ -536,8 +539,6 @@ void Main_ExportMAKEFLAGS(Boolean);
 Boolean Main_SetObjdir(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
 int mkTempFile(const char *, char **);
 int str2Lst_Append(Lst, char *, const char *);
-int cached_lstat(const char *, void *);
-int cached_stat(const char *, void *);
 void GNode_FprintDetails(FILE *, const char *, const GNode *, const char *);
 
 #ifdef __GNUC__
@@ -552,10 +553,10 @@ void GNode_FprintDetails(FILE *, const char *, const GNode *, const char *);
 #endif
 
 #ifndef MIN
-#define MIN(a, b) ((a < b) ? a : b)
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #endif
 #ifndef MAX
-#define MAX(a, b) ((a > b) ? a : b)
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #endif
 
 /* At least GNU/Hurd systems lack hardcoded MAXPATHLEN/PATH_MAX */
@@ -571,6 +572,30 @@ void GNode_FprintDetails(FILE *, const char *, const GNode *, const char *);
 #define KILLPG(pid, sig)	kill(-(pid), (sig))
 #else
 #define KILLPG(pid, sig)	killpg((pid), (sig))
+#endif
+
+static inline MAKE_ATTR_UNUSED Boolean ch_isalnum(char ch)
+{ return isalnum((unsigned char)ch) != 0; }
+static inline MAKE_ATTR_UNUSED Boolean ch_isalpha(char ch)
+{ return isalpha((unsigned char)ch) != 0; }
+static inline MAKE_ATTR_UNUSED Boolean ch_isdigit(char ch)
+{ return isdigit((unsigned char)ch) != 0; }
+static inline MAKE_ATTR_UNUSED Boolean ch_isspace(char ch)
+{ return isspace((unsigned char)ch) != 0; }
+static inline MAKE_ATTR_UNUSED Boolean ch_isupper(char ch)
+{ return isupper((unsigned char)ch) != 0; }
+static inline MAKE_ATTR_UNUSED char ch_tolower(char ch)
+{ return (char)tolower((unsigned char)ch); }
+static inline MAKE_ATTR_UNUSED char ch_toupper(char ch)
+{ return (char)toupper((unsigned char)ch); }
+
+#ifndef MAKE_NATIVE
+#define MAKE_RCSID(id) static volatile char rcsid[] = id
+#else
+#include <sys/cdefs.h>
+#ifndef lint
+#define MAKE_RCSID(id) __RCSID(id)
+#endif
 #endif
 
 #endif /* MAKE_MAKE_H */
