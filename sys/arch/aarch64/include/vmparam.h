@@ -1,4 +1,4 @@
-/* $NetBSD: vmparam.h,v 1.12 2020/07/08 08:20:05 skrll Exp $ */
+/* $NetBSD: vmparam.h,v 1.14 2020/09/19 16:31:40 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -150,6 +150,9 @@
 #define VM_KERNEL_IO_ADDRESS	0xfffffffff0000000L
 #define VM_KERNEL_IO_SIZE	(VM_MAX_KERNEL_ADDRESS - VM_KERNEL_IO_ADDRESS)
 
+#define VM_KERNEL_VM_BASE	VM_MIN_KERNEL_ADDRESS
+#define VM_KERNEL_VM_SIZE	(VM_MAX_KERNEL_ADDRESS - VM_KERNEL_VM_BASE)
+
 /*
  * Reserved space for EFI runtime services
  */
@@ -173,7 +176,6 @@
 #define AARCH64_KSEG_SIZE	(1UL << 46)	/* 64TB */
 #define AARCH64_KSEG_START	AARCH64_KSEG_MASK
 #define AARCH64_KSEG_END	(AARCH64_KSEG_START + AARCH64_KSEG_SIZE)
-#define AARCH64_KMEMORY_BASE	AARCH64_KSEG_MASK
 #define AARCH64_KVA_P(va)	(((vaddr_t) (va) & AARCH64_KSEG_MASK) != 0)
 #define AARCH64_PA_TO_KVA(pa)	((vaddr_t) ((pa) | AARCH64_KSEG_START))
 #define AARCH64_KVA_TO_PA(va)	((paddr_t) ((va) & ~AARCH64_KSEG_MASK))

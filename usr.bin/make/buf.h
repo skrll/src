@@ -1,4 +1,4 @@
-/*	$NetBSD: buf.h,v 1.26 2020/08/25 17:37:09 rillig Exp $	*/
+/*	$NetBSD: buf.h,v 1.29 2020/09/13 15:27:25 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -72,20 +72,18 @@
  *	from: @(#)buf.h	8.1 (Berkeley) 6/6/93
  */
 
-/*-
- * buf.h --
- *	Automatically growing null-terminated buffer of characters.
- */
+/* Automatically growing null-terminated buffers of characters. */
 
 #ifndef MAKE_BUF_H
 #define MAKE_BUF_H
 
 #include <stddef.h>
 
+/* An automatically growing null-terminated buffer of characters. */
 typedef struct Buffer {
-    size_t size;	/* Current size of the buffer */
-    size_t count;	/* Number of bytes in buffer */
-    char *buffer;	/* The buffer itself (zero terminated) */
+    size_t size;	/* Allocated size of the buffer, including the null */
+    size_t count;	/* Number of bytes in buffer, excluding the null */
+    char *buffer;	/* The buffer itself (always null-terminated) */
 } Buffer;
 
 /* If we aren't on NetBSD, __predict_false() might not be defined. */
@@ -96,7 +94,7 @@ typedef struct Buffer {
 void Buf_Expand_1(Buffer *);
 
 /* Buf_AddByte adds a single byte to a buffer. */
-static inline void MAKE_ATTR_UNUSED
+static inline MAKE_ATTR_UNUSED void
 Buf_AddByte(Buffer *bp, char byte)
 {
     size_t count = ++bp->count;
@@ -108,7 +106,7 @@ Buf_AddByte(Buffer *bp, char byte)
     ptr[0] = 0;
 }
 
-static inline size_t MAKE_ATTR_UNUSED
+static inline MAKE_ATTR_UNUSED size_t
 Buf_Size(const Buffer *bp)
 {
     return bp->count;

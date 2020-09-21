@@ -1,11 +1,10 @@
-/*	$NetBSD: nvmm_x86_svm.c,v 1.74 2020/08/26 16:33:03 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86_svm.c,v 1.81 2020/09/08 17:02:03 maxv Exp $	*/
 
 /*
- * Copyright (c) 2018-2020 The NetBSD Foundation, Inc.
+ * Copyright (c) 2018-2020 Maxime Villard, m00nbsd.net
  * All rights reserved.
  *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Maxime Villard.
+ * This code is part of the NVMM hypervisor.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -16,21 +15,21 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.74 2020/08/26 16:33:03 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.81 2020/09/08 17:02:03 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -40,14 +39,14 @@ __KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.74 2020/08/26 16:33:03 maxv Exp $
 #include <sys/xcall.h>
 #include <sys/mman.h>
 
-#include <uvm/uvm.h>
+#include <uvm/uvm_extern.h>
 #include <uvm/uvm_page.h>
 
 #include <x86/cputypes.h>
 #include <x86/specialreg.h>
-#include <x86/pmap.h>
 #include <x86/dbregs.h>
 #include <x86/cpu_counter.h>
+
 #include <machine/cpuvar.h>
 
 #include <dev/nvmm/nvmm.h>
@@ -788,7 +787,7 @@ svm_inject_gp(struct nvmm_cpu *vcpu)
 	KASSERT(ret == 0);
 }
 
-static inline int 
+static inline int
 svm_vcpu_event_commit(struct nvmm_cpu *vcpu)
 {
 	if (__predict_true(!vcpu->comm->event_commit)) {
@@ -1291,7 +1290,7 @@ svm_exit_npf(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	exit->reason = NVMM_VCPU_EXIT_MEMORY;
 	if (cpudata->vmcb->ctrl.exitinfo1 & PGEX_W)
 		exit->u.mem.prot = PROT_WRITE;
-	else if (cpudata->vmcb->ctrl.exitinfo1 & PGEX_X)
+	else if (cpudata->vmcb->ctrl.exitinfo1 & PGEX_I)
 		exit->u.mem.prot = PROT_EXEC;
 	else
 		exit->u.mem.prot = PROT_READ;
@@ -1329,9 +1328,6 @@ svm_exit_xsetbv(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	}
 
 	cpudata->gxcr0 = val;
-	if (svm_xcr0_mask != 0) {
-		wrxcr(0, cpudata->gxcr0);
-	}
 
 	svm_inkernel_advance(cpudata->vmcb);
 	return;
@@ -1517,7 +1513,6 @@ svm_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 	svm_vcpu_guest_dbregs_enter(vcpu);
 	svm_vcpu_guest_misc_enter(vcpu);
-	svm_vcpu_guest_fpu_enter(vcpu);
 
 	while (1) {
 		if (cpudata->gtlb_want_flush) {
@@ -1531,11 +1526,13 @@ svm_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 			svm_vmcb_cache_flush(vmcb, VMCB_CTRL_VMCB_CLEAN_I);
 		}
 
+		svm_vcpu_guest_fpu_enter(vcpu);
 		svm_clgi();
 		machgen = svm_htlb_flush(machdata, cpudata);
 		svm_vmrun(cpudata->vmcb_pa, cpudata->gprs);
 		svm_htlb_flush_ack(cpudata, machgen);
 		svm_stgi();
+		svm_vcpu_guest_fpu_leave(vcpu);
 
 		svm_vmcb_cache_default(vmcb);
 
@@ -1623,7 +1620,6 @@ svm_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 	cpudata->gtsc = rdtsc() + vmcb->ctrl.tsc_offset;
 
-	svm_vcpu_guest_fpu_leave(vcpu);
 	svm_vcpu_guest_misc_leave(vcpu);
 	svm_vcpu_guest_dbregs_leave(vcpu);
 
@@ -2444,6 +2440,12 @@ svm_ident(void)
 		return false;
 	}
 	x86_cpuid(0x8000000a, descs);
+
+	/* Expect revision 1. */
+	if (__SHIFTOUT(descs[0], CPUID_AMD_SVM_REV) != 1) {
+		printf("NVMM: SVM revision not supported\n");
+		return false;
+	}
 
 	/* Want Nested Paging. */
 	if (!(descs[3] & CPUID_AMD_SVM_NP)) {

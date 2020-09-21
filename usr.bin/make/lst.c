@@ -1,4 +1,4 @@
-/* $NetBSD: lst.c,v 1.59 2020/08/30 21:20:06 rillig Exp $ */
+/* $NetBSD: lst.c,v 1.64 2020/09/14 19:14:19 rillig Exp $ */
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -36,14 +36,7 @@
 
 #include "make.h"
 
-#ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: lst.c,v 1.59 2020/08/30 21:20:06 rillig Exp $";
-#else
-#include <sys/cdefs.h>
-#ifndef lint
-__RCSID("$NetBSD: lst.c,v 1.59 2020/08/30 21:20:06 rillig Exp $");
-#endif /* not lint */
-#endif
+MAKE_RCSID("$NetBSD: lst.c,v 1.64 2020/09/14 19:14:19 rillig Exp $");
 
 struct ListNode {
     struct ListNode *prev;	/* previous element in list */
@@ -542,12 +535,7 @@ void
 Lst_Open(Lst list)
 {
     assert(list != NULL);
-
-    /* XXX: This assertion fails for NetBSD's "build.sh -j1 tools", somewhere
-     * between "dependall ===> compat" and "dependall ===> binstall".
-     * Building without the "-j1" succeeds though. */
-    if (DEBUG(LINT) && list->isOpen)
-	Parse_Error(PARSE_WARNING, "Internal inconsistency: list opened twice");
+    assert(!list->isOpen);
 
     list->isOpen = TRUE;
     list->lastAccess = LstIsEmpty(list) ? Head : Unknown;
@@ -635,4 +623,46 @@ Lst_Dequeue(Lst list)
     Lst_Remove(list, list->first);
     assert(datum != NULL);
     return datum;
+}
+
+void
+Stack_Init(Stack *stack)
+{
+    stack->len = 0;
+    stack->cap = 10;
+    stack->items = bmake_malloc(stack->cap * sizeof stack->items[0]);
+}
+
+Boolean Stack_IsEmpty(Stack *stack)
+{
+    return stack->len == 0;
+}
+
+void Stack_Push(Stack *stack, void *datum)
+{
+    if (stack->len >= stack->cap) {
+	stack->cap *= 2;
+	stack->items = bmake_realloc(stack->items,
+				     stack->cap * sizeof stack->items[0]);
+    }
+    stack->items[stack->len] = datum;
+    stack->len++;
+}
+
+void *Stack_Pop(Stack *stack)
+{
+    void *datum;
+
+    assert(stack->len > 0);
+    stack->len--;
+    datum = stack->items[stack->len];
+#ifdef CLEANUP
+    stack->items[stack->len] = NULL;
+#endif
+    return datum;
+}
+
+void Stack_Done(Stack *stack)
+{
+    free(stack->items);
 }

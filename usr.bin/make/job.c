@@ -1,4 +1,4 @@
-/*	$NetBSD: job.c,v 1.227 2020/08/30 19:56:02 rillig Exp $	*/
+/*	$NetBSD: job.c,v 1.232 2020/09/13 15:15:51 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -69,19 +69,6 @@
  * SUCH DAMAGE.
  */
 
-#ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: job.c,v 1.227 2020/08/30 19:56:02 rillig Exp $";
-#else
-#include <sys/cdefs.h>
-#ifndef lint
-#if 0
-static char sccsid[] = "@(#)job.c	8.2 (Berkeley) 3/19/94";
-#else
-__RCSID("$NetBSD: job.c,v 1.227 2020/08/30 19:56:02 rillig Exp $");
-#endif
-#endif /* not lint */
-#endif
-
 /*-
  * job.c --
  *	handle the creation etc. of our child processes.
@@ -151,6 +138,10 @@ __RCSID("$NetBSD: job.c,v 1.227 2020/08/30 19:56:02 rillig Exp $");
 #include "job.h"
 #include "pathnames.h"
 #include "trace.h"
+
+/*	"@(#)job.c	8.2 (Berkeley) 3/19/94"	*/
+MAKE_RCSID("$NetBSD: job.c,v 1.232 2020/09/13 15:15:51 rillig Exp $");
+
 # define STATIC static
 
 /*
@@ -742,7 +733,7 @@ JobPrintCommand(void *cmdp, void *jobp)
 		 * We're not actually executing anything...
 		 * but this one needs to be - use compat mode just for it.
 		 */
-		CompatRunCommand(cmdp, job->node);
+		Compat_RunCommand(cmdp, job->node);
 		free(cmdStart);
 		return 0;
 	    }
@@ -751,7 +742,7 @@ JobPrintCommand(void *cmdp, void *jobp)
 	cmd++;
     }
 
-    while (isspace((unsigned char) *cmd))
+    while (ch_isspace(*cmd))
 	cmd++;
 
     /*
@@ -804,7 +795,7 @@ JobPrintCommand(void *cmdp, void *jobp)
 			DBPRINTF("%s\n", commandShell->ignErr);
 		}
 	    } else if (commandShell->ignErr &&
-		      (*commandShell->ignErr != '\0'))
+		       commandShell->ignErr[0] != '\0')
 	    {
 		/*
 		 * The shell has no error control, so we need to be
@@ -849,7 +840,7 @@ JobPrintCommand(void *cmdp, void *jobp)
 	 */
 
 	if (!commandShell->hasErrCtl && commandShell->errOut &&
-	    (*commandShell->errOut != '\0')) {
+	    commandShell->errOut[0] != '\0') {
 		if (!(job->flags & JOB_SILENT) && !shutUp) {
 			if (commandShell->hasEchoCtl) {
 				DBPRINTF("%s\n", commandShell->echoOff);
@@ -1255,7 +1246,7 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
 	    bmake_free(p1);
 	} else if (Dir_MTime(gn, 0) == 0 && (gn->type & OP_SPECIAL) == 0) {
 	    /*
-	     * The node wasn't the target of an operator we have no .DEFAULT
+	     * The node wasn't the target of an operator.  We have no .DEFAULT
 	     * rule to go on and the target doesn't already exist. There's
 	     * nothing more we can do for this branch. If the -k flag wasn't
 	     * given, we stop in our tracks, otherwise we just don't update
@@ -1289,22 +1280,10 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
     return TRUE;
 }
 
-/*-
- *-----------------------------------------------------------------------
- * JobExec --
- *	Execute the shell for the given job. Called from JobStart
+/* Execute the shell for the given job. Called from JobStart
  *
- * Input:
- *	job		Job to execute
- *
- * Results:
- *	None.
- *
- * Side Effects:
- *	A shell is executed, outputs is altered and the Job structure added
- *	to the job table.
- *
- *-----------------------------------------------------------------------
+ * A shell is executed, its output is altered and the Job structure added
+ * to the job table.
  */
 static void
 JobExec(Job *job, char **argv)
@@ -1476,18 +1455,7 @@ JobExec(Job *job, char **argv)
     JobSigUnlock(&mask);
 }
 
-/*-
- *-----------------------------------------------------------------------
- * JobMakeArgv --
- *	Create the argv needed to execute the shell for a given job.
- *
- *
- * Results:
- *
- * Side Effects:
- *
- *-----------------------------------------------------------------------
- */
+/* Create the argv needed to execute the shell for a given job. */
 static void
 JobMakeArgv(Job *job, char **argv)
 {
@@ -1497,8 +1465,8 @@ JobMakeArgv(Job *job, char **argv)
     argv[0] = UNCONST(shellName);
     argc = 1;
 
-    if ((commandShell->exit && (*commandShell->exit != '-')) ||
-	(commandShell->echo && (*commandShell->echo != '-')))
+    if ((commandShell->exit && commandShell->exit[0] != '-') ||
+	(commandShell->echo && commandShell->echo[0] != '-'))
     {
 	/*
 	 * At least one of the flags doesn't have a minus before it, so
@@ -2202,7 +2170,7 @@ Shell_Init(void)
     if (commandShell->echo == NULL) {
 	commandShell->echo = "";
     }
-    if (commandShell->hasErrCtl && *commandShell->exit) {
+    if (commandShell->hasErrCtl && commandShell->exit[0] != '\0') {
 	if (shellErrFlag &&
 	    strcmp(commandShell->exit, &shellErrFlag[1]) != 0) {
 	    free(shellErrFlag);
@@ -2423,9 +2391,8 @@ Job_ParseShell(char *line)
     Boolean	fullSpec = FALSE;
     Shell	*sh;
 
-    while (isspace((unsigned char)*line)) {
+    while (ch_isspace(*line))
 	line++;
-    }
 
     free(shellArgv);
 
