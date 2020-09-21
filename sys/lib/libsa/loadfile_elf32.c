@@ -1,4 +1,4 @@
-/* $NetBSD: loadfile_elf32.c,v 1.57 2020/05/07 18:02:48 maxv Exp $ */
+/* $NetBSD: loadfile_elf32.c,v 1.59 2020/09/13 13:31:36 jmcneill Exp $ */
 
 /*
  * Copyright (c) 1997, 2008, 2017 The NetBSD Foundation, Inc.
@@ -174,12 +174,12 @@ internalize_phdr(Elf_Byte bo, Elf_Phdr *phdr)
 	I32(phdr->p_align);
 #elif ELFSIZE == 64
 	I32(phdr->p_type);
-	I32(phdr->p_offset);
+	I64(phdr->p_offset);
 	I64(phdr->p_vaddr);
 	I64(phdr->p_paddr);
 	I64(phdr->p_filesz);
 	I64(phdr->p_memsz);
-	I64(phdr->p_flags);
+	I32(phdr->p_flags);
 	I64(phdr->p_align);
 #else
 #error ELFSIZE is not 32 or 64

@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.129 2020/08/29 19:35:38 rillig Exp $
+# $NetBSD: Makefile,v 1.143 2020/09/15 16:22:04 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -35,7 +35,7 @@
 # Keep the list sorted.
 # Any test that is commented out must be ignored in
 # src/tests/usr.bin/make/t_make.sh as well.
-TESTS+=		# archive	# broken on FreeBSD, enabled in t_make.sh
+TESTS+=		archive
 TESTS+=		archive-suffix
 TESTS+=		cmd-interrupt
 TESTS+=		cmdline
@@ -48,6 +48,7 @@ TESTS+=		cond-cmp-numeric-le
 TESTS+=		cond-cmp-numeric-lt
 TESTS+=		cond-cmp-numeric-ne
 TESTS+=		cond-cmp-string
+TESTS+=		cond-cmp-unary
 TESTS+=		cond-func
 TESTS+=		cond-func-commands
 TESTS+=		cond-func-defined
@@ -66,6 +67,7 @@ TESTS+=		cond-token-number
 TESTS+=		cond-token-plain
 TESTS+=		cond-token-string
 TESTS+=		cond-token-var
+TESTS+=		cond-undef-lint
 TESTS+=		cond1
 TESTS+=		cond2
 TESTS+=		counter
@@ -121,6 +123,7 @@ TESTS+=		deptgt-suffixes
 TESTS+=		dir
 TESTS+=		dir-expand-path
 TESTS+=		directive
+TESTS+=		directive-dinclude
 TESTS+=		directive-elif
 TESTS+=		directive-elifdef
 TESTS+=		directive-elifmake
@@ -132,13 +135,18 @@ TESTS+=		directive-error
 TESTS+=		directive-export
 TESTS+=		directive-export-env
 TESTS+=		directive-export-literal
+TESTS+=		directive-for
 TESTS+=		directive-for-generating-endif
+TESTS+=		directive-hyphen-include
 TESTS+=		directive-if
 TESTS+=		directive-ifdef
 TESTS+=		directive-ifmake
 TESTS+=		directive-ifndef
 TESTS+=		directive-ifnmake
+TESTS+=		directive-include
+TESTS+=		directive-include-fatal
 TESTS+=		directive-info
+TESTS+=		directive-sinclude
 TESTS+=		directive-undef
 TESTS+=		directive-unexport
 TESTS+=		directive-unexport-env
@@ -156,7 +164,6 @@ TESTS+=		export-env
 TESTS+=		export-variants
 TESTS+=		forloop
 TESTS+=		forsubst
-TESTS+=		hash
 TESTS+=		impsrc
 TESTS+=		include-main
 TESTS+=		lint
@@ -171,7 +178,30 @@ TESTS+=		opt
 TESTS+=		opt-backwards
 TESTS+=		opt-chdir
 TESTS+=		opt-debug
-TESTS+=		opt-debug-g1
+TESTS+=		opt-debug-all
+TESTS+=		opt-debug-archive
+TESTS+=		opt-debug-curdir
+TESTS+=		opt-debug-cond
+TESTS+=		opt-debug-dir
+TESTS+=		opt-debug-errors
+TESTS+=		opt-debug-file
+TESTS+=		opt-debug-for
+TESTS+=		opt-debug-graph1
+TESTS+=		opt-debug-graph2
+TESTS+=		opt-debug-graph3
+TESTS+=		opt-debug-hash
+TESTS+=		opt-debug-jobs
+TESTS+=		opt-debug-lint
+TESTS+=		opt-debug-loud
+TESTS+=		opt-debug-meta
+TESTS+=		opt-debug-making
+TESTS+=		opt-debug-no-rm
+TESTS+=		opt-debug-parse
+TESTS+=		opt-debug-suff
+TESTS+=		opt-debug-targets
+TESTS+=		opt-debug-varraw
+TESTS+=		opt-debug-var
+TESTS+=		opt-debug-x-trace
 TESTS+=		opt-define
 TESTS+=		opt-env
 TESTS+=		opt-file
@@ -310,6 +340,7 @@ TESTS+=		varname-dot-targets
 TESTS+=		varname-empty
 TESTS+=		varname-make
 TESTS+=		varname-make_print_var_on_error
+TESTS+=		varname-makefile
 TESTS+=		varname-makeflags
 TESTS+=		varname-pwd
 TESTS+=		varname-vpath
@@ -327,14 +358,11 @@ ENV.varmisc+=		FROM_ENV_AFTER=env
 # Override make flags for some of the tests; default is -k.
 # If possible, write ".MAKEFLAGS: -dv" in the test .mk file instead of
 # settings FLAGS.test=-dv here, since that is closer to the test code.
-FLAGS.archive=		-dA
 FLAGS.counter=		-dv
 FLAGS.directive-ifmake=	first second
 FLAGS.doterror=		# none
 FLAGS.envfirst=		-e
 FLAGS.export=		# none
-FLAGS.lint=		-dL -k
-FLAGS.opt-debug-g1=	-dg1
 FLAGS.opt-ignore=	-i
 FLAGS.opt-keep-going=	-k
 FLAGS.opt-no-action=	-n
@@ -350,9 +378,11 @@ FLAGS.varmod-match-escape= -dv
 FLAGS.varname-dot-shell= -dpv
 FLAGS.varname-empty=	-dv '$${:U}=cmdline-u' '=cmline-plain'
 
-# Some tests need extra post-processing.
-SED_CMDS.opt-debug-g1=	-e 's,${.CURDIR},CURDIR,'
-SED_CMDS.opt-debug-g1+=	-e '/Global Variables:/,/Suffixes:/d'
+# Some tests need extra postprocessing.
+SED_CMDS.opt-debug-graph1= \
+			-e 's,${.CURDIR},CURDIR,'
+SED_CMDS.opt-debug-graph1+= \
+			-e '/Global Variables:/,/Suffixes:/d'
 SED_CMDS.sh-dots=	-e 's,^.*\.\.\.:.*,<normalized: ...: not found>,'
 SED_CMDS.varmod-subst-regex+= \
 			-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
@@ -369,6 +399,7 @@ POSTPROC.deptgt-suffixes= \
 			${TOOL_SED} -n -e '/^\#\*\*\* Suffixes/,/^\#\*/p'
 POSTPROC.vardebug=	${TOOL_SED} -n -e '/:RELEVANT = yes/,/:RELEVANT = no/p'
 POSTPROC.varmod-match-escape= ${TOOL_SED} -n -e '/^Pattern/p'
+POSTPROC.varname=	${TOOL_SED} -n -e '/^MAGIC/p' -e '/^ORDER_/p'
 POSTPROC.varname-dot-shell= \
 			awk '/\.SHELL/ || /^ParseReadLine/'
 POSTPROC.varname-empty=	${TOOL_SED} -n -e '/^Var_Set/p' -e '/^out:/p'
@@ -406,7 +437,9 @@ LC_ALL=		C
 LANG=		C
 .export LANG LC_ALL
 
-# the tests are actually done with sub-makes.
+# Each test is run in a sub-make, to keep the tests for interfering with
+# each other, and because they use different environment variables and
+# command line options.
 .SUFFIXES: .mk .rawout .out
 .mk.rawout:
 	@${_MKMSG_TEST:Uecho '#      test '} ${.PREFIX}
@@ -421,7 +454,7 @@ LANG=		C
 	echo $$status > ${.TARGET:R}.status
 	@mv ${.TARGET}.tmp ${.TARGET}
 
-# Post-process the test output so that the results can be compared.
+# Postprocess the test output so that the results can be compared.
 #
 # always pretend .MAKE was called 'make'
 _SED_CMDS+=	-e 's,^${TEST_MAKE:T:S,.,\\.,g}[][0-9]*:,make:,'
@@ -460,30 +493,17 @@ accept:
 	       cp $${test}.out ${UNIT_TESTS}/$${test}.exp ; } \
 	done
 
-SYNC_MI_AWK= \
-	BEGIN {								\
-	  testsdir = "usr.bin/make/unit-tests";				\
-	  linestart = "./usr/tests/" testsdir;				\
-	  fmt = linestart "/%s\ttests-usr.bin-tests\tcompattestfile,atf\\n"; \
-	  cmd = "cd " testsdir " && ls *.exp *.mk | xargs printf '" fmt "'" \
-	}								\
-	function startswith(s, prefix) {				\
-	  return substr(s, 1, length(prefix)) == prefix;		\
-	}								\
-	startswith($$1, linestart) && $$1 ~ /\.(exp|mk)$$/ { next }	\
-	{ print $$0 }							\
-	$$1 == linestart "/Makefile" { system(cmd) }
-
+# Note: only works for adding tests.
+# To remove a test, the $$mi file must be edited manually.
 sync-mi:
-	# Obsolete entries in the mi file must be marked as obsolete,
-	# the lines must be preserved instead of just being deleted.
-	@echo "$@: Doesn't work right now." 1>&2; exit 1
 	@set -eu;							\
 	cd "${MAKEFILE:tA:H}/../../..";					\
 	mi="distrib/sets/lists/tests/mi";				\
 	cvs update "$$mi";						\
-	awk ${SYNC_MI_AWK:Q} < "$$mi" > "$$mi.$@";			\
-	mv -f "$$mi.$@" "$$mi";						\
+	testsdir="usr.bin/make/unit-tests";				\
+	fmt="./usr/tests/$$testsdir/%s\ttests-usr.bin-tests\tcompattestfile,atf\\n"; \
+	(cd "$$testsdir" && ls *.exp *.mk) | xargs printf "$$fmt" >> "$$mi"; \
+	distrib/sets/fmt-list "$$mi";					\
 	cvs diff "$$mi" || true
 
 .if exists(${TEST_MAKE})

@@ -1,4 +1,4 @@
-/*	$NetBSD: make.c,v 1.133 2020/08/30 14:11:42 rillig Exp $	*/
+/*	$NetBSD: make.c,v 1.136 2020/09/13 15:15:51 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -68,19 +68,6 @@
  * SUCH DAMAGE.
  */
 
-#ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: make.c,v 1.133 2020/08/30 14:11:42 rillig Exp $";
-#else
-#include <sys/cdefs.h>
-#ifndef lint
-#if 0
-static char sccsid[] = "@(#)make.c	8.1 (Berkeley) 6/6/93";
-#else
-__RCSID("$NetBSD: make.c,v 1.133 2020/08/30 14:11:42 rillig Exp $");
-#endif
-#endif /* not lint */
-#endif
-
 /*-
  * make.c --
  *	The functions which perform the examination of targets and
@@ -116,9 +103,11 @@ __RCSID("$NetBSD: make.c,v 1.133 2020/08/30 14:11:42 rillig Exp $");
  */
 
 #include    "make.h"
-#include    "enum.h"
 #include    "dir.h"
 #include    "job.h"
+
+/*	"@(#)make.c	8.1 (Berkeley) 6/6/93"	*/
+MAKE_RCSID("$NetBSD: make.c,v 1.136 2020/09/13 15:15:51 rillig Exp $");
 
 static unsigned int checked = 1;/* Sequence # to detect recursion */
 static Lst     	toBeMade;	/* The current fringe of the graph. These
@@ -142,11 +131,9 @@ static int MakeBuildParent(void *, void *);
 MAKE_ATTR_DEAD static void
 make_abort(GNode *gn, int line)
 {
-    static int two = 2;
-
     fprintf(debug_file, "make_abort from line %d\n", line);
-    Targ_PrintNode(gn, &two);
-    Lst_ForEach(toBeMade, Targ_PrintNode, &two);
+    Targ_PrintNode(gn, 2);
+    Targ_PrintNodes(toBeMade, 2);
     Targ_PrintGraph(3);
     abort();
 }
@@ -822,11 +809,10 @@ Make_Update(GNode *cgn)
 	    continue;
 	}
 	if (DEBUG(MAKE)) {
-	    static int two = 2;
 	    fprintf(debug_file, "- %s%s made, schedule %s%s (made %d)\n",
 		    cgn->name, cgn->cohort_num,
 		    pgn->name, pgn->cohort_num, pgn->made);
-	    Targ_PrintNode(pgn, &two);
+	    Targ_PrintNode(pgn, 2);
 	}
 	/* Ok, we can schedule the parent again */
 	pgn->made = REQUESTED;

@@ -1,4 +1,4 @@
-/*	$NetBSD: in.c,v 1.238 2020/08/29 17:41:14 christos Exp $	*/
+/*	$NetBSD: in.c,v 1.240 2020/09/11 15:22:12 roy Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.238 2020/08/29 17:41:14 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.240 2020/09/11 15:22:12 roy Exp $");
 
 #include "arp.h"
 
@@ -424,6 +424,24 @@ in_control0(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 		if (ifp == NULL)
 			return EINVAL;
 		return ifaddrpref_ioctl(so, cmd, data, ifp);
+#if NARP > 0
+	case SIOCGNBRINFO:
+	{
+		struct in_nbrinfo *nbi = (struct in_nbrinfo *)data;
+		struct llentry *ln;
+		struct in_addr nb_addr = nbi->addr; /* make local for safety */
+
+		ln = arplookup(ifp, &nb_addr, NULL, 0);
+		if (ln == NULL)
+			return EINVAL;
+		nbi->state = ln->ln_state;
+		nbi->asked = ln->ln_asked;
+		nbi->expire = ln->ln_expire ?
+		    time_mono_to_wall(ln->ln_expire) : 0;
+		LLE_RUNLOCK(ln);
+		return 0;
+	}
+#endif
 	}
 
 	bound = curlwp_bind();
@@ -1959,11 +1977,6 @@ in_lltable_new(struct in_addr addr4, u_int flags)
 	if (lle == NULL)		/* NB: caller generates msg */
 		return NULL;
 
-	/*
-	 * For IPv4 this will trigger "arpresolve" to generate
-	 * an ARP request.
-	 */
-	lle->la_expire = time_uptime; /* mark expired */
 	lle->r_l3addr.addr4 = addr4;
 	lle->lle_refcnt = 1;
 	lle->lle_free = in_lltable_destroy_lle;

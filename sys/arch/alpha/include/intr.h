@@ -1,4 +1,4 @@
-/* $NetBSD: intr.h,v 1.73 2020/08/29 20:07:00 thorpej Exp $ */
+/* $NetBSD: intr.h,v 1.78 2020/09/19 01:24:31 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2000, 2001, 2002 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
 #define _ALPHA_INTR_H_
 
 #include <sys/evcnt.h>
-#include <machine/cpu.h>
+#include <machine/alpha_cpu.h>
 
 /*
  * The Alpha System Control Block.  This is 8k long, and you get
@@ -92,33 +92,52 @@ struct scbvec {
 };
 
 /*
- * Alpha interrupts come in at one of 4 levels:
+ * Alpha interrupts come in at one of 3 levels:
  *
- *	software interrupt level
  *	i/o level 1
  *	i/o level 2
  *	clock level
  *
  * However, since we do not have any way to know which hardware
  * level a particular i/o interrupt comes in on, we have to
- * whittle it down to 3.
+ * whittle it down to 2.  In addition, there are 2 software interrupt
+ * levels available to system software.
  */
 
-#define	IPL_NONE	0	/* no interrupt level */
-#define	IPL_SOFTCLOCK	1	/* generic software interrupts */
-#define	IPL_SOFTBIO	1	/* generic software interrupts */
-#define	IPL_SOFTNET	1	/* generic software interrupts */
-#define	IPL_SOFTSERIAL	1	/* generic software interrupts */
-#define	IPL_VM		2	/* interrupts that can alloc mem */
-#define	IPL_SCHED	3	/* clock interrupts */
-#define	IPL_HIGH	4	/* all interrupts */
+#define	IPL_NONE	ALPHA_PSL_IPL_0
+#define	IPL_SOFTCLOCK	ALPHA_PSL_IPL_SOFT_LO
+#define	IPL_SOFTBIO	ALPHA_PSL_IPL_SOFT_LO
+#ifdef __HAVE_FAST_SOFTINTS
+#define	IPL_SOFTNET	ALPHA_PSL_IPL_SOFT_HI
+#define	IPL_SOFTSERIAL	ALPHA_PSL_IPL_SOFT_HI
+#else
+#define	IPL_SOFTNET	ALPHA_PSL_IPL_SOFT_LO
+#define	IPL_SOFTSERIAL	ALPHA_PSL_IPL_SOFT_LO
+#endif /* __HAVE_FAST_SOFTINTS */
+#define	IPL_VM		ALPHA_PSL_IPL_IO_HI
+#define	IPL_SCHED	ALPHA_PSL_IPL_CLOCK
+#define	IPL_HIGH	ALPHA_PSL_IPL_HIGH
+
+#define	SOFTINT_CLOCK_MASK	__BIT(SOFTINT_CLOCK)
+#define	SOFTINT_BIO_MASK	__BIT(SOFTINT_BIO)
+#define	SOFTINT_NET_MASK	__BIT(SOFTINT_NET)
+#define	SOFTINT_SERIAL_MASK	__BIT(SOFTINT_SERIAL)
+
+#define	ALPHA_IPL1_SOFTINTS	(SOFTINT_CLOCK_MASK | SOFTINT_BIO_MASK)
+#define	ALPHA_IPL2_SOFTINTS	(SOFTINT_NET_MASK | SOFTINT_SERIAL_MASK)
+
+#define	ALPHA_ALL_SOFTINTS	(ALPHA_IPL1_SOFTINTS | ALPHA_IPL2_SOFTINTS)
 
 typedef int ipl_t;
 typedef struct {
 	uint8_t _psl;
 } ipl_cookie_t;
 
-ipl_cookie_t makeiplcookie(ipl_t);
+static inline ipl_cookie_t
+makeiplcookie(ipl_t ipl)
+{
+	return (ipl_cookie_t){._psl = (uint8_t)ipl};
+}
 
 #define	IST_UNUSABLE	-1	/* interrupt cannot be used */
 #define	IST_NONE	0	/* none (dummy) */
@@ -128,20 +147,12 @@ ipl_cookie_t makeiplcookie(ipl_t);
 
 #ifdef	_KERNEL
 
-/* Simulated software interrupt register. */
-extern volatile unsigned long ssir;
-
 /* IPL-lowering/restoring macros */
-void	spl0(void);
+void	spllower(int);
 
-static __inline void
-splx(int s)
-{
-	if (s == ALPHA_PSL_IPL_0 && ssir != 0)
-		spl0();
-	else
-		alpha_pal_swpipl(s);
-}
+#define	splx(s)		spllower(s)
+#define	spl0()		spllower(ALPHA_PSL_IPL_0)
+
 /* IPL-raising functions/macros */
 static __inline int
 _splraise(int s)
@@ -153,6 +164,10 @@ _splraise(int s)
 #define	splraiseipl(icookie)	_splraise((icookie)._psl)
 
 #include <sys/spl.h>
+
+/* Fast soft interrupt dispatch. */
+void	alpha_softint_dispatch(int);
+void	alpha_softint_switchto(struct lwp *, int, struct lwp *);
 
 /*
  * Interprocessor interrupts.  In order how we want them processed.
@@ -205,8 +220,6 @@ struct alpha_shared_intr {
 #define	ALPHA_SHARED_INTR_DISABLE(asi, num)				\
 	((asi)[num].intr_maxstrays != 0 &&				\
 	 (asi)[num].intr_nstrays == (asi)[num].intr_maxstrays)
-
-void	softintr_dispatch(void);
 
 struct alpha_shared_intr *alpha_shared_intr_alloc(unsigned int, unsigned int);
 int	alpha_shared_intr_dispatch(struct alpha_shared_intr *,

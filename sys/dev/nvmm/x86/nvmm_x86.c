@@ -1,11 +1,10 @@
-/*	$NetBSD: nvmm_x86.c,v 1.15 2020/08/22 11:00:00 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86.c,v 1.21 2020/09/08 16:58:38 maxv Exp $	*/
 
 /*
- * Copyright (c) 2018-2020 The NetBSD Foundation, Inc.
+ * Copyright (c) 2018-2020 Maxime Villard, m00nbsd.net
  * All rights reserved.
  *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Maxime Villard.
+ * This code is part of the NVMM hypervisor.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -16,33 +15,31 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86.c,v 1.15 2020/08/22 11:00:00 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86.c,v 1.21 2020/09/08 16:58:38 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/cpu.h>
 
-#include <uvm/uvm.h>
-#include <uvm/uvm_page.h>
+#include <uvm/uvm_extern.h>
 
 #include <x86/cputypes.h>
 #include <x86/specialreg.h>
-#include <x86/pmap.h>
 
 #include <dev/nvmm/nvmm.h>
 #include <dev/nvmm/nvmm_internal.h>
@@ -234,20 +231,20 @@ const struct nvmm_x86_cpuid_mask nvmm_cpuid_00000001 = {
 	.ebx = ~0,
 	.ecx =
 	    CPUID2_SSE3 |
-	    CPUID2_PCLMUL |
-	    CPUID2_DTES64 |
+	    CPUID2_PCLMULQDQ |
+	    /* CPUID2_DTES64 excluded */
 	    /* CPUID2_MONITOR excluded */
-	    CPUID2_DS_CPL |
+	    /* CPUID2_DS_CPL excluded */
 	    /* CPUID2_VMX excluded */
 	    /* CPUID2_SMX excluded */
 	    /* CPUID2_EST excluded */
 	    /* CPUID2_TM2 excluded */
 	    CPUID2_SSSE3 |
-	    CPUID2_CID |
-	    CPUID2_SDBG |
+	    /* CPUID2_CNXTID excluded */
+	    /* CPUID2_SDBG excluded */
 	    CPUID2_FMA |
 	    CPUID2_CX16 |
-	    CPUID2_xTPR |
+	    /* CPUID2_XTPR excluded */
 	    /* CPUID2_PDCM excluded */
 	    /* CPUID2_PCID excluded, but re-included in VMX */
 	    /* CPUID2_DCA excluded */
@@ -257,7 +254,7 @@ const struct nvmm_x86_cpuid_mask nvmm_cpuid_00000001 = {
 	    CPUID2_MOVBE |
 	    CPUID2_POPCNT |
 	    /* CPUID2_DEADLINE excluded */
-	    CPUID2_AES |
+	    CPUID2_AESNI |
 	    CPUID2_XSAVE |
 	    CPUID2_OSXSAVE |
 	    /* CPUID2_AVX excluded */
@@ -275,7 +272,6 @@ const struct nvmm_x86_cpuid_mask nvmm_cpuid_00000001 = {
 	    /* CPUID_MCE excluded */
 	    CPUID_CX8 |
 	    CPUID_APIC |
-	    CPUID_B10 |	
 	    CPUID_SEP |
 	    /* CPUID_MTRR excluded */
 	    CPUID_PGE |
@@ -283,9 +279,8 @@ const struct nvmm_x86_cpuid_mask nvmm_cpuid_00000001 = {
 	    CPUID_CMOV |
 	    CPUID_PAT |
 	    CPUID_PSE36 |
-	    CPUID_PN |
-	    CPUID_CFLUSH |
-	    CPUID_B20 |
+	    /* CPUID_PSN excluded */
+	    CPUID_CLFSH |
 	    /* CPUID_DS excluded */
 	    /* CPUID_ACPI excluded */
 	    CPUID_MMX |
@@ -295,8 +290,7 @@ const struct nvmm_x86_cpuid_mask nvmm_cpuid_00000001 = {
 	    CPUID_SS |
 	    CPUID_HTT |
 	    /* CPUID_TM excluded */
-	    CPUID_IA64 |
-	    CPUID_SBF
+	    CPUID_PBE
 };
 
 const struct nvmm_x86_cpuid_mask nvmm_cpuid_00000007 = {
@@ -384,7 +378,7 @@ const struct nvmm_x86_cpuid_mask nvmm_cpuid_80000001 = {
 	    /* CPUID_SVM excluded */
 	    /* CPUID_EAPIC excluded */
 	    CPUID_ALTMOVCR0 |
-	    CPUID_LZCNT |
+	    CPUID_ABM |
 	    CPUID_SSE4A |
 	    CPUID_MISALIGNSSE |
 	    CPUID_3DNOWPF |
@@ -411,10 +405,10 @@ const struct nvmm_x86_cpuid_mask nvmm_cpuid_80000001 = {
 	    CPUID_MPC |
 	    CPUID_XD |
 	    CPUID_MMXX |
-	    CPUID_MMX | 
+	    CPUID_MMX |
 	    CPUID_FXSR |
 	    CPUID_FFXSR |
-	    CPUID_P1GB |
+	    CPUID_PAGE1GB |
 	    /* CPUID_RDTSCP excluded */
 	    CPUID_EM64T |
 	    CPUID_3DNOW2 |

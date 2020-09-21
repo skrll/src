@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.kmodule.mk,v 1.69 2020/07/27 08:26:09 skrll Exp $
+#	$NetBSD: bsd.kmodule.mk,v 1.71 2020/09/10 02:34:13 rin Exp $
 
 # We are not building this with PIE
 MKPIE=no
@@ -32,6 +32,7 @@ CPPFLAGS+=	-isystem ${S}/../common/include
 CPPFLAGS+=	-D_KERNEL -D_MODULE -DSYSCTL_INCLUDE_DESCR
 
 CWARNFLAGS.clang+=	-Wno-error=address-of-packed-member -Wno-error=constant-conversion
+CWARNFLAGS.gcc+=	${GCC_NO_ADDR_OF_PACKED_MEMBER}
 
 # XXX until the kernel is fixed again...
 CFLAGS+=	-fno-strict-aliasing -Wno-pointer-sign
@@ -50,6 +51,7 @@ CFLAGS+=	-fno-common -fno-unwind-tables
 CFLAGS+=	-mlong-calls -mno-space-regs -mfast-indirect-calls
 .elif ${MACHINE_CPU} == "powerpc"
 CFLAGS+=	${${ACTIVE_CC} == "gcc":? -mlongcall :}
+CFLAGS+=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 9:? -mno-pltseq :}
 .elif ${MACHINE_CPU} == "vax"
 CFLAGS+=	-fno-pic
 .elif ${MACHINE_CPU} == "riscv"

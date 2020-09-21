@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.331 2020/08/30 19:56:02 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.337 2020/09/13 15:15:51 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -68,24 +68,6 @@
  * SUCH DAMAGE.
  */
 
-#ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: main.c,v 1.331 2020/08/30 19:56:02 rillig Exp $";
-#else
-#include <sys/cdefs.h>
-#ifndef lint
-__COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993\
- The Regents of the University of California.  All rights reserved.");
-#endif /* not lint */
-
-#ifndef lint
-#if 0
-static char sccsid[] = "@(#)main.c	8.3 (Berkeley) 3/19/94";
-#else
-__RCSID("$NetBSD: main.c,v 1.331 2020/08/30 19:56:02 rillig Exp $");
-#endif
-#endif /* not lint */
-#endif
-
 /*-
  * main.c --
  *	The main file for this entire program. Exit routines etc
@@ -143,9 +125,16 @@ __RCSID("$NetBSD: main.c,v 1.331 2020/08/30 19:56:02 rillig Exp $");
 #include <sys/uio.h>
 #endif
 
+/*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
+MAKE_RCSID("$NetBSD: main.c,v 1.337 2020/09/13 15:15:51 rillig Exp $");
+#if defined(MAKE_NATIVE) && !defined(lint)
+__COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993\
+ The Regents of the University of California.  All rights reserved.");
+#endif
+
 #ifndef	DEFMAXLOCAL
 #define	DEFMAXLOCAL DEFMAXJOBS
-#endif	/* DEFMAXLOCAL */
+#endif
 
 Lst			create;		/* Targets to be made */
 time_t			now;		/* Time at start of make */
@@ -216,7 +205,7 @@ explode(const char *flags)
 	return NULL;
 
     for (f = flags; *f; f++)
-	if (!isalpha((unsigned char)*f))
+	if (!ch_isalpha(*f))
 	    break;
 
     if (*f)
@@ -1703,7 +1692,6 @@ bad:
  * Side Effects:
  *	The message is printed.
  */
-/* VARARGS */
 void
 Error(const char *fmt, ...)
 {
@@ -1727,18 +1715,9 @@ Error(const char *fmt, ...)
 	}
 }
 
-/*-
- * Fatal --
- *	Produce a Fatal error message. If jobs are running, waits for them
- *	to finish.
+/* Produce a Fatal error message, then exit immediately.
  *
- * Results:
- *	None
- *
- * Side Effects:
- *	The program exits
- */
-/* VARARGS */
+ * If jobs are running, waits for them to finish. */
 void
 Fatal(const char *fmt, ...)
 {
@@ -1773,7 +1752,6 @@ Fatal(const char *fmt, ...)
  * Side Effects:
  *	All children are killed indiscriminately and the program Lib_Exits
  */
-/* VARARGS */
 void
 Punt(const char *fmt, ...)
 {
@@ -1966,13 +1944,6 @@ cached_realpath(const char *pathname, char *resolved)
 
     bmake_free(cp);
     return rp ? resolved : NULL;
-}
-
-int
-PrintAddr(void *a, void *b)
-{
-    printf("%lx ", (unsigned long) a);
-    return b ? 0 : 0;
 }
 
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: arch.c,v 1.107 2020/08/30 11:15:05 rillig Exp $	*/
+/*	$NetBSD: arch.c,v 1.115 2020/09/13 18:27:39 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -68,19 +68,6 @@
  * SUCH DAMAGE.
  */
 
-#ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: arch.c,v 1.107 2020/08/30 11:15:05 rillig Exp $";
-#else
-#include <sys/cdefs.h>
-#ifndef lint
-#if 0
-static char sccsid[] = "@(#)arch.c	8.2 (Berkeley) 1/2/94";
-#else
-__RCSID("$NetBSD: arch.c,v 1.107 2020/08/30 11:15:05 rillig Exp $");
-#endif
-#endif /* not lint */
-#endif
-
 /*-
  * arch.c --
  *	Functions to manipulate libraries, archives and their members.
@@ -144,6 +131,9 @@ __RCSID("$NetBSD: arch.c,v 1.107 2020/08/30 11:15:05 rillig Exp $");
 #include    "hash.h"
 #include    "dir.h"
 #include    "config.h"
+
+/*	"@(#)arch.c	8.2 (Berkeley) 1/2/94"	*/
+MAKE_RCSID("$NetBSD: arch.c,v 1.115 2020/09/13 18:27:39 rillig Exp $");
 
 #ifdef TARGET_MACHINE
 #undef MAKE_MACHINE
@@ -227,27 +217,29 @@ Arch_ParseArchive(char **linePtr, Lst nodeLst, GNode *ctxt)
 
     subLibName = FALSE;
 
-    for (cp = libName; *cp != '(' && *cp != '\0'; cp++) {
+    for (cp = libName; *cp != '(' && *cp != '\0';) {
 	if (*cp == '$') {
 	    /*
 	     * Variable spec, so call the Var module to parse the puppy
 	     * so we can safely advance beyond it...
 	     */
-	    int 	length;
-	    void	*result_freeIt;
-	    const char	*result;
+	    const char *nested_p = cp;
+	    void *result_freeIt;
+	    const char *result;
 	    Boolean isError;
 
-	    result = Var_Parse(cp, ctxt, VARE_UNDEFERR|VARE_WANTRES,
-			       &length, &result_freeIt);
+	    (void)Var_Parse(&nested_p, ctxt, VARE_UNDEFERR|VARE_WANTRES,
+			    &result, &result_freeIt);
+	    /* TODO: handle errors */
 	    isError = result == var_Error;
 	    free(result_freeIt);
 	    if (isError)
 		return FALSE;
 
 	    subLibName = TRUE;
-	    cp += length - 1;
-	}
+	    cp += nested_p - cp;
+	} else
+	    cp++;
     }
 
     *cp++ = '\0';
@@ -264,23 +256,24 @@ Arch_ParseArchive(char **linePtr, Lst nodeLst, GNode *ctxt)
 	 */
 	Boolean	doSubst = FALSE; /* TRUE if need to substitute in memName */
 
-	while (*cp != '\0' && *cp != ')' && isspace ((unsigned char)*cp)) {
+	while (*cp != '\0' && *cp != ')' && ch_isspace(*cp)) {
 	    cp++;
 	}
 	memName = cp;
-	while (*cp != '\0' && *cp != ')' && !isspace ((unsigned char)*cp)) {
+	while (*cp != '\0' && *cp != ')' && !ch_isspace(*cp)) {
 	    if (*cp == '$') {
 		/*
 		 * Variable spec, so call the Var module to parse the puppy
 		 * so we can safely advance beyond it...
 		 */
-		int 	length;
 		void	*freeIt;
 		const char *result;
 		Boolean isError;
+		const char *nested_p = cp;
 
-		result = Var_Parse(cp, ctxt, VARE_UNDEFERR|VARE_WANTRES,
-				   &length, &freeIt);
+		(void)Var_Parse(&nested_p, ctxt, VARE_UNDEFERR|VARE_WANTRES,
+				&result, &freeIt);
+		/* TODO: handle errors */
 		isError = result == var_Error;
 		free(freeIt);
 
@@ -288,7 +281,7 @@ Arch_ParseArchive(char **linePtr, Lst nodeLst, GNode *ctxt)
 		    return FALSE;
 
 		doSubst = TRUE;
-		cp += length;
+		cp += nested_p - cp;
 	    } else {
 		cp++;
 	    }
@@ -447,7 +440,7 @@ Arch_ParseArchive(char **linePtr, Lst nodeLst, GNode *ctxt)
      */
     do {
 	cp++;
-    } while (*cp != '\0' && isspace ((unsigned char)*cp));
+    } while (*cp != '\0' && ch_isspace(*cp));
 
     *linePtr = cp;
     return TRUE;
@@ -572,7 +565,7 @@ ArchStatMember(const char *archive, const char *member, Boolean hash)
     ar->name = bmake_strdup(archive);
     ar->fnametab = NULL;
     ar->fnamesize = 0;
-    Hash_InitTable(&ar->members, -1);
+    Hash_InitTable(&ar->members);
     memName[AR_MAX_NAME_LEN] = '\0';
 
     while (fread((char *)&arh, sizeof(struct ar_hdr), 1, arch) == 1) {
@@ -630,7 +623,7 @@ ArchStatMember(const char *archive, const char *member, Boolean hash)
 	     * first <namelen> bytes of the file
 	     */
 	    if (strncmp(memName, AR_EFMT1, sizeof(AR_EFMT1) - 1) == 0 &&
-		isdigit((unsigned char)memName[sizeof(AR_EFMT1) - 1])) {
+		ch_isdigit(memName[sizeof(AR_EFMT1) - 1])) {
 
 		int elen = atoi(&memName[sizeof(AR_EFMT1)-1]);
 
@@ -878,7 +871,7 @@ ArchFindMember(const char *archive, const char *member, struct ar_hdr *arhPtr,
 		 */
 	    if (strncmp(arhPtr->ar_name, AR_EFMT1,
 					sizeof(AR_EFMT1) - 1) == 0 &&
-		isdigit((unsigned char)arhPtr->ar_name[sizeof(AR_EFMT1) - 1])) {
+		ch_isdigit(arhPtr->ar_name[sizeof(AR_EFMT1) - 1])) {
 
 		int elen = atoi(&arhPtr->ar_name[sizeof(AR_EFMT1)-1]);
 		char ename[MAXPATHLEN + 1];
@@ -1111,7 +1104,7 @@ Arch_FindLib(GNode *gn, Lst path)
     Var_Set(TARGET, gn->name, gn);
 #else
     Var_Set(TARGET, gn->path == NULL ? gn->name : gn->path, gn);
-#endif /* LIBRARIES */
+#endif
 }
 
 /* Decide if a node with the OP_LIB attribute is out-of-date. Called from

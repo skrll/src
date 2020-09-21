@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.96 2020/08/28 20:57:54 rillig Exp $
+#	$NetBSD: Makefile,v 1.99 2020/09/01 17:12:30 rillig Exp $
 #	@(#)Makefile	5.2 (Berkeley) 12/28/90
 
 PROG=	make
@@ -89,6 +89,7 @@ COPTS.arch.c+=	-Wno-error=format-truncation
 COPTS.dir.c+=	-Wno-error=format-truncation
 COPTS.main.c+=	-Wno-error=format-truncation
 COPTS.meta.c+=	-Wno-error=format-truncation
+COPTS.parse.c+=	-Wno-error=format-truncation
 .endif
 
 USE_META?=	yes
@@ -121,6 +122,7 @@ SUBDIR+=	unit-tests
 .endif
 
 ${SRCS:M*.c:.c=.o}: ${HDRS}
+CLEANFILES+=	*.o
 
 .include <bsd.prog.mk>
 .include <bsd.subdir.mk>
@@ -131,7 +133,7 @@ COPTS.parse.c+=	-Wno-format-nonliteral
 COPTS.var.c+=	-Wno-format-nonliteral
 
 .if ${USE_GCC10} == "yes"
-GCC9BASE?=	/usr/pkg/gcc10
+GCC10BASE?=	/usr/pkg/gcc10
 CC=		${GCC10BASE}/bin/gcc
 GCOV=		${GCC10BASE}/bin/gcov
 .endif

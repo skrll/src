@@ -1,4 +1,4 @@
-/*	$NetBSD: init_main.c,v 1.529 2020/08/27 14:01:36 riastradh Exp $	*/
+/*	$NetBSD: init_main.c,v 1.531 2020/09/08 16:00:35 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009, 2019 The NetBSD Foundation, Inc.
@@ -97,8 +97,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.529 2020/08/27 14:01:36 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.531 2020/09/08 16:00:35 riastradh Exp $");
 
+#include "opt_cnmagic.h"
 #include "opt_ddb.h"
 #include "opt_inet.h"
 #include "opt_ipsec.h"
@@ -295,6 +296,9 @@ main(void)
 	 * in case of early panic or other messages.
 	 */
 	consinit();
+#ifdef CNMAGIC
+	cn_set_magic(CNMAGIC);
+#endif
 
 	kernel_lock_init();
 	once_init();
@@ -357,6 +361,9 @@ main(void)
 	 * network drivers attach before bpf.
 	 */
 	bpf_setops();
+
+	/* Initialize what we can in ipi(9) before CPUs are detected. */
+	ipi_sysinit();
 
 	/* Start module system. */
 	module_init();
@@ -542,7 +549,8 @@ main(void)
 
 	configure2();
 
-	ipi_sysinit();
+	/* Initialize the rest of ipi(9) after CPUs have been detected. */
+	ipi_percpu_init();
 
 	futex_sys_init();
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_llatbl.c,v 1.31 2019/09/25 09:53:37 ozaki-r Exp $	*/
+/*	$NetBSD: if_llatbl.c,v 1.33 2020/09/11 15:16:00 roy Exp $	*/
 /*
  * Copyright (c) 2004 Luigi Rizzo, Alessandro Cerri. All rights reserved.
  * Copyright (c) 2004-2008 Qing Li. All rights reserved.
@@ -59,11 +59,11 @@
 #include <net/if_llatbl.h>
 #include <net/if.h>
 #include <net/if_dl.h>
+#include <net/nd.h>
 #include <net/route.h>
 #include <netinet/if_inarp.h>
 #include <netinet/in_var.h>
 #include <netinet6/in6_var.h>
-#include <netinet6/nd6.h>
 
 static SLIST_HEAD(, lltable) lltables;
 krwlock_t lltable_rwlock;
@@ -716,13 +716,19 @@ lla_rt_output(const u_char rtm_type, const int rtm_flags, const time_t rtm_expir
 		if ((rtm_flags & RTF_ANNOUNCE))
 			lle->la_flags |= LLE_PUB;
 		lle->la_flags |= LLE_VALID;
-#ifdef INET6
-		/*
-		 * ND6
-		 */
-		if (dst->sa_family == AF_INET6)
-			lle->ln_state = ND6_LLINFO_REACHABLE;
+		switch (dst->sa_family) {
+#ifdef INET
+		case AF_INET:
+			lle->ln_state = ND_LLINFO_REACHABLE;
+			break;
 #endif
+#ifdef INET6
+		case AF_INET6:
+			lle->ln_state = ND_LLINFO_REACHABLE;
+			break;
+#endif
+		}
+
 		/*
 		 * NB: arp and ndp always set (RTF_STATIC | RTF_HOST)
 		 */

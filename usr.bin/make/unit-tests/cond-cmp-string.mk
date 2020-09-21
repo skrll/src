@@ -1,4 +1,4 @@
-# $NetBSD: cond-cmp-string.mk,v 1.3 2020/08/20 18:43:19 rillig Exp $
+# $NetBSD: cond-cmp-string.mk,v 1.5 2020/09/11 15:33:28 rillig Exp $
 #
 # Tests for string comparisons in .if conditions.
 
@@ -37,3 +37,18 @@
 .if "string" != "str""ing"
 .error
 .endif
+
+# There is no = operator for strings.
+.if !("value" = "value")
+.  error
+.else
+.  error
+.endif
+
+# There is no === operator for strings either.
+.if !("value" === "value")
+.  error
+.else
+.  error
+.endif
+
