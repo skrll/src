@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.446 2020/06/01 01:41:40 jmcneill Exp $
+#	$NetBSD: Makefile,v 1.448 2020/09/09 12:06:02 jmcneill Exp $
 #	from: @(#)Makefile	8.7 (Berkeley) 5/25/95
 
 # Environment variables without default values:
@@ -119,7 +119,7 @@ BIN1+=	disktab
 .endif
 
 .if exists(etc.${MACHINE}/ld.so.conf) && \
-    empty(MACHINE_ARCH:M*arm*hf*) && ${MACHINE_ARCH} != "aarch64"
+    empty(MACHINE_ARCH:M*arm*hf*) && empty(MACHINE_ARCH:Maarch64*)
 BIN1+=	etc.${MACHINE}/ld.so.conf
 .endif
 
@@ -582,10 +582,6 @@ GETKERNELAWK=	${TOOL_AWK} '/^config/ {print $$2; found=1} \
 build_kernels: .PHONY
 #	Configure & compile kernels listed in ${ALL_KERNELS}
 #
-# The 'sync' is so that all writes during the build are pushed back
-# to the disk.  Not having it causes problems on some host systems
-# (e.g. Linux) when building on NFS.
-#
 .if !defined(KERNELS_DONE)						# {
 .for configfile in ${ALL_KERNELS:O:u}					# {
 build_kernels: kern-${configfile}
@@ -597,7 +593,6 @@ kern-${configfile}: .PHONY .MAKE
 .endif
 	${MAKE} -C ${KERNOBJDIR}/${configfile:C/.*\///} depend && \
 	${MAKE} -C ${KERNOBJDIR}/${configfile:C/.*\///} 
-	sync
 .endfor	# ALL_KERNELS							# }
 .endif	# KERNELS_DONE							# }
 

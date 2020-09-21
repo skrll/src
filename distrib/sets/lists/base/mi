@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1258 2020/08/27 15:31:59 riastradh Exp $
+# $NetBSD: mi,v 1.1264 2020/09/14 00:40:03 rin Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -258,11 +258,11 @@
 ./libdata/firmware/if_urtwn/rtl8192cfwU.bin	base-firmware-root	firmware
 ./libdata/firmware/if_urtwn/rtl8192eefw.bin	base-firmware-root	firmware
 ./libdata/firmware/if_wpi			base-firmware-root
-./libdata/firmware/if_wpi/LICENSE.ipw3945-ucode	base-obsolete	obsolete	firmware
+./libdata/firmware/if_wpi/LICENSE.ipw3945-ucode	base-obsolete	obsolete,firmware
 ./libdata/firmware/if_wpi/LICENSE.iwlwifi-3945-ucode	base-firmware-root	firmware
-./libdata/firmware/if_wpi/README.ipw3945-ucode	base-obsolete	obsolete	firmware
+./libdata/firmware/if_wpi/README.ipw3945-ucode	base-obsolete	obsolete,firmware
 ./libdata/firmware/if_wpi/README.iwlwifi-3945-ucode	base-firmware-root	firmware
-./libdata/firmware/if_wpi/ipw3945.ucode		base-obsolete	obsolete	firmware
+./libdata/firmware/if_wpi/ipw3945.ucode		base-obsolete	obsolete,firmware
 ./libdata/firmware/if_wpi/iwlwifi-3945.ucode		base-firmware-root	firmware
 ./libdata/firmware/nouveau			base-firmware-usr
 ./libdata/firmware/nouveau/nvidia			base-firmware-usr
@@ -457,8 +457,8 @@
 ./libdata/firmware/rum				base-firmware-root
 ./libdata/firmware/rum/rum-license		base-firmware-root	firmware
 ./libdata/firmware/rum/rum-rt2573		base-firmware-root	firmware
-./libdata/firmware/rum/run-rt2870		base-obsolete	obsolete	firmware
-./libdata/firmware/rum/run-rt3071		base-obsolete	obsolete	firmware
+./libdata/firmware/rum/run-rt2870		base-obsolete	obsolete,firmware
+./libdata/firmware/rum/run-rt3071		base-obsolete	obsolete,firmware
 ./libdata/firmware/run				base-firmware-root
 ./libdata/firmware/run/run-license		base-firmware-root	firmware
 ./libdata/firmware/run/run-rt2870		base-firmware-root	firmware
@@ -796,6 +796,7 @@
 ./usr/bin/host					base-netutil-bin
 ./usr/bin/hoststat				base-mailwrapper-bin
 ./usr/bin/hxtool				base-krb5-bin		kerberos
+./usr/bin/iasl					base-util-bin		acpi
 ./usr/bin/iconv					base-util-bin
 ./usr/bin/id					base-util-bin
 ./usr/bin/ident					base-util-bin
@@ -1223,6 +1224,7 @@
 ./usr/include/g++/parallel			base-cxx-usr
 ./usr/include/g++/profile			base-cxx-usr
 ./usr/include/g++/profile/impl			base-cxx-usr
+./usr/include/g++/pstl				base-cxx-usr
 ./usr/include/g++/std				base-obsolete		obsolete
 ./usr/include/g++/tr1				base-cxx-usr
 ./usr/include/g++/tr1_impl			base-cxx-usr
@@ -1234,10 +1236,12 @@
 ./usr/include/gcc-5/sanitizer			base-obsolete		obsolete
 ./usr/include/gcc-6				base-obsolete		obsolete
 ./usr/include/gcc-6/sanitizer			base-obsolete		obsolete
-./usr/include/gcc-7				base-c-usr
-./usr/include/gcc-7/sanitizer			base-c-usr
+./usr/include/gcc-7				base-obsolete		obsolete
+./usr/include/gcc-7/sanitizer			base-obsolete		obsolete
 ./usr/include/gcc-8				base-c-usr
 ./usr/include/gcc-8/sanitizer			base-c-usr
+./usr/include/gcc-9				base-c-usr
+./usr/include/gcc-9/sanitizer			base-c-usr
 ./usr/include/gssapi				base-c-usr
 ./usr/include/gssapi/rpc			base-obsolete		obsolete
 ./usr/include/isofs				base-c-usr
@@ -1704,9 +1708,11 @@
 ./usr/sbin					base-sys-usr
 ./usr/sbin/ac					base-sysutil-bin
 ./usr/sbin/accton				base-sysutil-bin
+./usr/sbin/acpidump				base-sysutil-bin	acpi
 ./usr/sbin/altqd				base-router-bin
 ./usr/sbin/altqstat				base-router-bin
 ./usr/sbin/amd					base-amd-bin
+./usr/sbin/amldb				base-sysutil-bin	acpi
 ./usr/sbin/amq					base-amd-bin
 ./usr/sbin/arp					base-netutil-bin
 ./usr/sbin/audit-packages			base-pkgutil-bin
