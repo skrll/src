@@ -1,4 +1,4 @@
-/*	$NetBSD: strfile.c,v 1.40 2020/04/30 12:32:26 christos Exp $	*/
+/*	$NetBSD: strfile.c,v 1.42 2020/07/26 15:14:09 nia Exp $	*/
 
 /*-
  * Copyright (c) 1989, 1993
@@ -47,7 +47,7 @@ __COPYRIGHT("@(#) Copyright (c) 1989, 1993\
 #if 0
 static char sccsid[] = "@(#)strfile.c	8.1 (Berkeley) 5/31/93";
 #else
-__RCSID("$NetBSD: strfile.c,v 1.40 2020/04/30 12:32:26 christos Exp $");
+__RCSID("$NetBSD: strfile.c,v 1.42 2020/07/26 15:14:09 nia Exp $");
 #endif
 #endif /* not lint */
 #endif /* __NetBSD__ */

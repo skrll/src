@@ -1,4 +1,4 @@
-/*	$NetBSD: tty.c,v 1.287 2020/05/23 23:42:43 ad Exp $	*/
+/*	$NetBSD: tty.c,v 1.289 2020/08/26 16:36:32 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2020 The NetBSD Foundation, Inc.
@@ -63,7 +63,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tty.c,v 1.287 2020/05/23 23:42:43 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tty.c,v 1.289 2020/08/26 16:36:32 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -226,6 +226,9 @@ int tty_qsize = TTY_MINQSIZE;
 static int
 tty_get_qsize(int *qsize, int newsize)
 {
+	if (newsize == 0)
+		return EINVAL;
+
 	newsize = 1 << ilog2(newsize);	/* Make it a power of two */
 
 	if (newsize < TTY_MINQSIZE || newsize > TTY_MAXQSIZE)
@@ -297,10 +300,8 @@ static void
 sysctl_kern_tty_setup(void)
 {
 	const struct sysctlnode *rnode, *cnode;
-	struct sysctllog *kern_tkstat_sysctllog, *kern_tty_sysctllog;
 
-	kern_tkstat_sysctllog = NULL;
-	sysctl_createv(&kern_tkstat_sysctllog, 0, NULL, NULL,
+	sysctl_createv(NULL, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,
 		       CTLTYPE_NODE, "tkstat",
 		       SYSCTL_DESCR("Number of characters sent and received "
@@ -308,38 +309,37 @@ sysctl_kern_tty_setup(void)
 		       NULL, 0, NULL, 0,
 		       CTL_KERN, KERN_TKSTAT, CTL_EOL);
 
-	sysctl_createv(&kern_tkstat_sysctllog, 0, NULL, NULL,
+	sysctl_createv(NULL, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,
 		       CTLTYPE_QUAD, "nin",
 		       SYSCTL_DESCR("Total number of tty input characters"),
 		       NULL, 0, &tk_nin, 0,
 		       CTL_KERN, KERN_TKSTAT, KERN_TKSTAT_NIN, CTL_EOL);
-	sysctl_createv(&kern_tkstat_sysctllog, 0, NULL, NULL,
+	sysctl_createv(NULL, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,
 		       CTLTYPE_QUAD, "nout",
 		       SYSCTL_DESCR("Total number of tty output characters"),
 		       NULL, 0, &tk_nout, 0,
 		       CTL_KERN, KERN_TKSTAT, KERN_TKSTAT_NOUT, CTL_EOL);
-	sysctl_createv(&kern_tkstat_sysctllog, 0, NULL, NULL,
+	sysctl_createv(NULL, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,
 		       CTLTYPE_QUAD, "cancc",
 		       SYSCTL_DESCR("Number of canonical tty input characters"),
 		       NULL, 0, &tk_cancc, 0,
 		       CTL_KERN, KERN_TKSTAT, KERN_TKSTAT_CANCC, CTL_EOL);
-	sysctl_createv(&kern_tkstat_sysctllog, 0, NULL, NULL,
+	sysctl_createv(NULL, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,
 		       CTLTYPE_QUAD, "rawcc",
 		       SYSCTL_DESCR("Number of raw tty input characters"),
 		       NULL, 0, &tk_rawcc, 0,
 		       CTL_KERN, KERN_TKSTAT, KERN_TKSTAT_RAWCC, CTL_EOL);
 
-	kern_tty_sysctllog = NULL;
-	sysctl_createv(&kern_tty_sysctllog, 0, NULL, &rnode,
+	sysctl_createv(NULL, 0, NULL, &rnode,
 		       CTLFLAG_PERMANENT,
 		       CTLTYPE_NODE, "tty", NULL,
 		       NULL, 0, NULL, 0,
 		       CTL_KERN, CTL_CREATE, CTL_EOL);
-	sysctl_createv(&kern_tty_sysctllog, 0, &rnode, &cnode,
+	sysctl_createv(NULL, 0, &rnode, &cnode,
 		       CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
 		       CTLTYPE_INT, "qsize",
 		       SYSCTL_DESCR("TTY input and output queue size"),

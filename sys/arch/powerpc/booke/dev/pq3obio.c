@@ -1,4 +1,4 @@
-/*	$NetBSD: pq3obio.c,v 1.3 2011/05/28 05:27:20 matt Exp $	*/
+/*	$NetBSD: pq3obio.c,v 1.5 2020/07/06 09:34:16 rin Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -36,11 +36,10 @@
 
 #define	LBC_PRIVATE
 
-#include "locators.h"
-
 #include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: pq3obio.c,v 1.5 2020/07/06 09:34:16 rin Exp $");
 
-__KERNEL_RCSID(0, "$NetBSD: pq3obio.c,v 1.3 2011/05/28 05:27:20 matt Exp $");
+#include "locators.h"
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -52,6 +51,8 @@ __KERNEL_RCSID(0, "$NetBSD: pq3obio.c,v 1.3 2011/05/28 05:27:20 matt Exp $");
 #include <powerpc/booke/e500var.h>
 #include <powerpc/booke/e500reg.h>
 #include <powerpc/booke/obiovar.h>
+
+#define OBIO_PORTS	8
 
 static int pq3obio_match(device_t, cfdata_t, void *);
 static void pq3obio_attach(device_t, device_t, void *);
@@ -189,7 +190,7 @@ pq3obio_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	for (u_int i = 0; i < 8; i++) {
+	for (u_int i = 0; i < OBIO_PORTS; i++) {
 		struct pq3lbc_softc * const lbc = &sc->sc_lbcs[i];
 		uint32_t br = bus_space_read_4(sc->sc_bst, sc->sc_bsh, BRn(i));
 		if (br & BR_V) {
@@ -210,10 +211,10 @@ pq3obio_attach(device_t parent, device_t self, void *aux)
 	t->pbs_limit = 0;
 	t->pbs_flags = _BUS_SPACE_BIG_ENDIAN;
 
-	u_int sorted[found];
+	u_int sorted[OBIO_PORTS];
 	u_int nsorted = 0;
 
-	for (u_int i = 0; i < 8; i++) {
+	for (u_int i = 0; i < OBIO_PORTS; i++) {
 		struct pq3lbc_softc * const lbc = &sc->sc_lbcs[i];
 		if ((lbc->lbc_br & BR_V) == 0)
 			continue;

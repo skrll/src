@@ -1,10 +1,10 @@
 #!/bin/sh
-#	$NetBSD: mknative-gcc.old,v 1.6 2018/09/05 01:20:20 mrg Exp $
+#	$NetBSD: mknative-gcc.old,v 1.9 2020/09/06 02:24:38 mrg Exp $
 #
 # Shell script for generating all the constants needed for a native
 # platform build of gcc.
 #
-# This version is for GCC 6.4
+# This version is for GCC 7.5
 
 # initialise
 
@@ -12,8 +12,9 @@ _TMPDIR=$2
 _TOP=$3
 _SRC=$4
 _PLATFORM=$5
-_DESTDIR=$6
-_TOOLDIR=$7
+_MACHINE_ARCH=$6
+_DESTDIR=$7
+_TOOLDIR=$8
 _VPATH=`grep VPATH ${_TMPDIR}/Makefile | sed 's,^.*=[ 	]*,,'`
 _GNU_DIST=`cd ${_VPATH}; pwd`
 
@@ -24,8 +25,15 @@ fi
 
 . $_TOP/tools/gcc/mknative.common
 
-_OUTDIR="$_TOP/external/gpl3/gcc.old"
-_OUTDIRBASE="external/gpl3/gcc.old"
+case $0 in
+	*mknative-gcc.old)
+		_OUTDIRBASE="external/gpl3/gcc.old"
+		;;
+	*)
+		_OUTDIRBASE="external/gpl3/gcc"
+		;;
+esac
+_OUTDIR="$_TOP/$_OUTDIRBASE"
 
 sanitise_includes () {
 	sed \
@@ -40,10 +48,10 @@ sanitise_includes () {
 ##### lib/libg2c #####
 
 get_libg2c () {
-	mkdir -p $_OUTDIR/lib/libg2c3/arch/$MACHINE_ARCH
+	mkdir -p $_OUTDIR/lib/libg2c3/arch/$_MACHINE_ARCH
 
-	write_c $_OUTDIRBASE/lib/libg2c3/arch/$MACHINE_ARCH/config.h <$_TMPDIR/$_PLATFORM/libf2c/libU77/config.h
-	write_c $_OUTDIRBASE/lib/libg2c3/arch/$MACHINE_ARCH/g2c.h <$_TMPDIR/$_PLATFORM/libf2c/g2c.h
+	write_c $_OUTDIRBASE/lib/libg2c3/arch/$_MACHINE_ARCH/config.h <$_TMPDIR/$_PLATFORM/libf2c/libU77/config.h
+	write_c $_OUTDIRBASE/lib/libg2c3/arch/$_MACHINE_ARCH/g2c.h <$_TMPDIR/$_PLATFORM/libf2c/g2c.h
 
 	{
 		getvars $_PLATFORM/libf2c/Makefile \
@@ -54,7 +62,7 @@ get_libg2c () {
 			ALL_CFLAGS OBJS | sed 's,=,+=,'
 		getvars $_PLATFORM/libf2c/libU77/Makefile \
 			ALL_CFLAGS OBJS | sed 's,=,+=,'
-	} | write_mk $_OUTDIRBASE/lib/libg2c3/arch/$MACHINE_ARCH/defs.mk
+	} | write_mk $_OUTDIRBASE/lib/libg2c3/arch/$_MACHINE_ARCH/defs.mk
 }
 
 ##### lib/libgcc #####
@@ -67,7 +75,7 @@ get_libgcc () {
 	# XXX we should probably grab everything Just In Case for
 	# the future.
 
-	mkdir -p $_OUTDIR/lib/lib$_subdir/arch/$MACHINE_ARCH
+	mkdir -p $_OUTDIR/lib/lib$_subdir/arch/$_MACHINE_ARCH
 	cd $_TMPDIR/$_PLATFORM/libgcc
 	{
 		getvars $_PLATFORM/libgcc/Makefile \
@@ -82,20 +90,28 @@ get_libgcc () {
 			SHLIB_MAPFILES SHLIB_NM_FLAGS
 		getvars gcc/Makefile \
 			NOEXCEPTION_FLAGS EXTRA_HEADERS
-		getlinks config.status libgcc
 	}	| sanitise_includes \
-		| write_mk $_OUTDIRBASE/lib/lib$_subdir/arch/$MACHINE_ARCH/defs.mk
+		| write_mk $_OUTDIRBASE/lib/lib$_subdir/arch/$_MACHINE_ARCH/defs.mk
 
-	if [ "${MACHINE_ARCH}" = "m68000" ]
+	cd $_TMPDIR/$_PLATFORM/libgcc
+	{
+		getvars $_PLATFORM/libgcc/Makefile \
+			enable_execute_stack \
+			unwind_header md_unwind_header \
+			sfp_machine_header thread_header
+	}	| sanitise_includes \
+		| write_mk $_OUTDIRBASE/lib/lib$_subdir/arch/$_MACHINE_ARCH/gthr-defs.mk
+
+	if [ "${_MACHINE_ARCH}" = "m68000" ]
 	then
-		ex <<__EOF__ $_OUTDIR/lib/lib$_subdir/arch/$MACHINE_ARCH/defs.mk
+		ex <<__EOF__ $_OUTDIR/lib/lib$_subdir/arch/$_MACHINE_ARCH/defs.mk
 /G_LIBGCC2_CFLAGS/ s/-fPIC//
 wq
 __EOF__
 	fi
 
 	for f in auto-target.h; do
-		write_c $_OUTDIRBASE/lib/lib$_subdir/arch/$MACHINE_ARCH/$f \
+		write_c $_OUTDIRBASE/lib/lib$_subdir/arch/$_MACHINE_ARCH/$f \
 		    <$_TMPDIR/$_PLATFORM/libgcc/$f
 	done
 }
@@ -106,7 +122,7 @@ get_libgcov () {
 	_subdir="$1"
 	_mf="$2"
 
-	mkdir -p $_OUTDIR/lib/lib$_subdir/libgcov/arch/$MACHINE_ARCH
+	mkdir -p $_OUTDIR/lib/lib$_subdir/libgcov/arch/$_MACHINE_ARCH
 
 	{
 		getvars $_mf \
@@ -114,9 +130,9 @@ get_libgcov () {
 			LIBGCOV_PROFILER \
 			LIBGCOV_INTERFACE \
 			LIBGCOV_DRIVER
-	} | write_mk $_OUTDIRBASE/lib/lib$_subdir/libgcov/arch/$MACHINE_ARCH/defs.mk
+	} | write_mk $_OUTDIRBASE/lib/lib$_subdir/libgcov/arch/$_MACHINE_ARCH/defs.mk
 
-	write_c $_OUTDIRBASE/lib/lib$_subdir/libgcov/arch/$MACHINE_ARCH/gcov-iov.h \
+	write_c $_OUTDIRBASE/lib/lib$_subdir/libgcov/arch/$_MACHINE_ARCH/gcov-iov.h \
 	   <$_TMPDIR/gcc/gcov-iov.h
 
 }
@@ -126,13 +142,13 @@ get_libgcov () {
 get_gcc_libiberty () {
 	_subdir="$1"
 	_libibertydir="lib/libiberty"
-	mkdir -p $_OUTDIR/$_libibertydir/arch/$MACHINE_ARCH
+	mkdir -p $_OUTDIR/$_libibertydir/arch/$_MACHINE_ARCH
 
 	getvars libiberty/Makefile \
 		ALLOCA EXTRA_OFILES LIBOBJS REQUIRED_OFILES \
 		| write_mk $_OUTDIRBASE/$_libibertydir/defs.mk
 
-	write_c $_OUTDIRBASE/$_libibertydir/arch/$MACHINE_ARCH/config.h \
+	write_c $_OUTDIRBASE/$_libibertydir/arch/$_MACHINE_ARCH/config.h \
 		<$_TMPDIR/libiberty/config.h
 }
 
@@ -141,8 +157,8 @@ get_gcc_libiberty () {
 get_libdecnumber () {
 	_subdir="$1"
 
-	mkdir -p $_OUTDIR/usr.bin/$_subdir/arch/$MACHINE_ARCH
-	write_c $_OUTDIRBASE/usr.bin/$_subdir/arch/$MACHINE_ARCH/config.h \
+	mkdir -p $_OUTDIR/usr.bin/$_subdir/arch/$_MACHINE_ARCH
+	write_c $_OUTDIRBASE/usr.bin/$_subdir/arch/$_MACHINE_ARCH/config.h \
 		<$_TMPDIR/libdecnumber/config.h
 }
 
@@ -151,14 +167,19 @@ get_libdecnumber () {
 get_libgomp () {
 	_subdir="$1"
 
-	mkdir -p $_OUTDIR/lib/$_subdir/arch/$MACHINE_ARCH
-	write_c $_OUTDIRBASE/lib/$_subdir/arch/$MACHINE_ARCH/config.h \
+	mkdir -p $_OUTDIR/lib/$_subdir/arch/$_MACHINE_ARCH
+
+	getvars $_PLATFORM/libgomp/Makefile \
+		libgomp_la_SOURCES \
+		| write_mk $_OUTDIRBASE/lib/$_subdir/defs.mk
+
+	write_c $_OUTDIRBASE/lib/$_subdir/arch/$_MACHINE_ARCH/config.h \
 		<$_TMPDIR/$_PLATFORM/libgomp/config.h
-	write_c $_OUTDIRBASE/lib/$_subdir/arch/$MACHINE_ARCH/libgomp_f.h \
+	write_c $_OUTDIRBASE/lib/$_subdir/arch/$_MACHINE_ARCH/libgomp_f.h \
 		<$_TMPDIR/$_PLATFORM/libgomp/libgomp_f.h
-	write_mk $_OUTDIRBASE/lib/$_subdir/arch/$MACHINE_ARCH/libgomp.spec \
+	write_mk $_OUTDIRBASE/lib/$_subdir/arch/$_MACHINE_ARCH/libgomp.spec \
 		<$_TMPDIR/$_PLATFORM/libgomp/libgomp.spec
-	write_c $_OUTDIRBASE/lib/$_subdir/arch/$MACHINE_ARCH/omp.h \
+	write_c $_OUTDIRBASE/lib/$_subdir/arch/$_MACHINE_ARCH/omp.h \
 		<$_TMPDIR/$_PLATFORM/libgomp/omp.h
 }
 
@@ -167,17 +188,17 @@ get_libgomp () {
 get_libbacktrace () {
 	_subdir="$1"
 
-	mkdir -p $_OUTDIR/lib/$_subdir/arch/$MACHINE_ARCH
-	write_c $_OUTDIRBASE/lib/$_subdir/arch/$MACHINE_ARCH/config.h \
-		<$_TMPDIR/$_subdir/config.h
-	write_c $_OUTDIRBASE/lib/$_subdir/arch/$MACHINE_ARCH/backtrace-supported.h \
-		<$_TMPDIR/$_subdir/backtrace-supported.h
+	mkdir -p $_OUTDIR/lib/$_subdir/arch/$_MACHINE_ARCH
+	write_c $_OUTDIRBASE/lib/$_subdir/arch/$_MACHINE_ARCH/config.h \
+		<$_TMPDIR/$_PLATFORM/$_subdir/config.h
+	write_c $_OUTDIRBASE/lib/$_subdir/arch/$_MACHINE_ARCH/backtrace-supported.h \
+		<$_TMPDIR/$_PLATFORM/$_subdir/backtrace-supported.h
 }
 
 ##### lib/libobjc #####
 
 get_libobjc () {
-	_subdir="$1/arch/$MACHINE_ARCH"
+	_subdir="$1/arch/$_MACHINE_ARCH"
 	_options="ALL_OPT_FILES"
 
 	mkdir -p $_OUTDIR/lib/$_subdir
@@ -189,7 +210,6 @@ get_libobjc () {
 		getvars $_PLATFORM/libobjc/Makefile \
 			ALL_CFLAGS INCLUDES OBJC_SOURCE_FILES C_SOURCE_FILES OBJC_H \
 			| sed "s,$_GNU_DIST,\${GNUHOSTDIST},g"
-		getlinks $_TMPDIR/$_PLATFORM/libgcc/config.status libgcc
 	} | sanitise_includes \
 	  | write_mk $_OUTDIRBASE/lib/$_subdir/defs.mk
 
@@ -203,9 +223,9 @@ get_libstdcxx_v3 () {
 	_subdir="$1"
 	_ver="$2"
 
-	mkdir -p $_OUTDIR/lib/$_subdir/arch/$MACHINE_ARCH
+	mkdir -p $_OUTDIR/lib/$_subdir/arch/$_MACHINE_ARCH
 
-	_build_headers="c++config.h cxxabi_tweaks.h gthr-posix.h gthr-single.h gthr.h"
+	_build_headers="c++config.h cxxabi_tweaks.h"
 	_headers1="c_base_headers_extra_install"
 	_headers1="$_headers1 tr1_headers tr2_headers decimal_headers c_compatibility_headers_install"
 	_headers1="$_headers1 debug_headers parallel_headers"
@@ -215,16 +235,21 @@ get_libstdcxx_v3 () {
 
 	# build files
 	for h in $_build_headers; do
-		write_c $_OUTDIRBASE/lib/$_subdir/arch/$MACHINE_ARCH/$h \
+		write_c $_OUTDIRBASE/lib/$_subdir/arch/$_MACHINE_ARCH/$h \
 			<$_TMPDIR/$_PLATFORM/libstdc++-v3/include/$_PLATFORM/bits/$h
 	done
 
-	write_c $_OUTDIRBASE/lib/$_subdir/arch/$MACHINE_ARCH/gstdint.h \
+	write_c $_OUTDIRBASE/lib/$_subdir/arch/$_MACHINE_ARCH/gstdint.h \
 		<$_TMPDIR/$_PLATFORM/libstdc++-v3/include/gstdint.h
+	write_c $_OUTDIRBASE/lib/$_subdir/arch/$_MACHINE_ARCH/symver-config.h \
+		<$_TMPDIR/$_PLATFORM/libstdc++-v3/config.h
 
 	{
 		getvars $_PLATFORM/libstdc++-v3/Makefile \
 			port_specific_symbol_files
+		getvars $_PLATFORM/libstdc++-v3/src/Makefile \
+			cxx11_sources \
+			cxx98_sources
 
 		# libsupc++
 		getvars $_PLATFORM/libstdc++-v3/libsupc++/Makefile \
@@ -247,6 +272,9 @@ get_libstdcxx_v3 () {
 			GLIBCXX_ABI_FLAGS libc__98convenience_la_SOURCES | \
 			sed -e 's/^G_libc__98convenience_la_SOURCES=/G_CPP98_SOURCES=/' \
 			    -e 's/codecvt.cc/c98-codecvt.cc/'
+		getvars $_PLATFORM/libstdc++-v3/src/filesystem/Makefile \
+			libstdc__fs_la_SOURCES | \
+			sed -e 's/^G_libstdc__fs_la_SOURCES=/G_FILESYSTEM_SOURCES=/'
 		getvars $_PLATFORM/libstdc++-v3/Makefile ATOMICITY_SRCDIR \
 			BASIC_FILE_CC CLOCALE_CC CCODECVT_CC CCOLLATE_CC \
 			CCTYPE_CC  CMESSAGES_CC CMONEY_CC CNUMERIC_CC CTIME_CC \
@@ -263,31 +291,31 @@ get_libstdcxx_v3 () {
 			$_pf_headers | sed -e 's#\${GNUHOSTDIST}/libstdc++-v3/include/profile/##g'
 		getvars $_PLATFORM/libstdc++-v3/include/Makefile \
 			BASIC_FILE_H ALLOCATOR_H CSTDIO_H CLOCALE_H CMESSAGES_H CTIME_H
-		getlinks $_TMPDIR/$_PLATFORM/libgcc/config.status libgcc
 	} | sanitise_includes \
-	  | write_mk $_OUTDIRBASE/lib/$_subdir/arch/$MACHINE_ARCH/defs.mk
+	  | write_mk $_OUTDIRBASE/lib/$_subdir/arch/$_MACHINE_ARCH/defs.mk
 }
 
 ##### usr.bin/gcc* #####
 
 get_gcc_bootstrap () {
 	_subdir="$1"
-	mkdir -p $_OUTDIR/usr.bin/$_subdir/arch/$MACHINE_ARCH
+	mkdir -p $_OUTDIR/usr.bin/$_subdir/arch/$_MACHINE_ARCH
 	for f in auto-host tm config; do
-		write_c $_OUTDIRBASE/usr.bin/$_subdir/arch/$MACHINE_ARCH/$f.h <$_TMPDIR/gcc/$f.h
+		write_c $_OUTDIRBASE/usr.bin/$_subdir/arch/$_MACHINE_ARCH/$f.h <$_TMPDIR/gcc/$f.h
 	done
 	# XXXGCC5 don't really want to copy insn-modes as we build
 	# it but libgcc needs to too early yet
 	for f in insn-modes; do
-		write_c $_OUTDIRBASE/usr.bin/$_subdir/arch/$MACHINE_ARCH/$f.h <$_TMPDIR/gcc/$f.h
+		write_c $_OUTDIRBASE/usr.bin/$_subdir/arch/$_MACHINE_ARCH/$f.h <$_TMPDIR/gcc/$f.h
 	done
 }
 
 get_gcc () {
 	_subdir="$1"
-	mkdir -p $_OUTDIR/usr.bin/$_subdir/arch/$MACHINE_ARCH
-	mkdir -p $_OUTDIR/usr.bin/libcpp/arch/$MACHINE_ARCH
+	mkdir -p $_OUTDIR/usr.bin/$_subdir/arch/$_MACHINE_ARCH
+	mkdir -p $_OUTDIR/usr.bin/libcpp/arch/$_MACHINE_ARCH
 	mkdir -p $_OUTDIR/usr.bin/include/arch
+	mkdir -p $_OUTDIR/usr.bin/common-target/arch
 	_buildname="BUILD_"
 	_libcppsubdir=""
 	_extravars="TM_H ALL_OPT_FILES"
@@ -332,19 +360,26 @@ get_gcc () {
 			ENABLE_SHARED
 		echo G_SHLIB_LINK="$CC -shared"
 		echo G_SHLIB_MULTILIB=.
-	} | write_mk $_OUTDIRBASE/usr.bin/$_subdir/arch/$MACHINE_ARCH/defs.mk
+	} | write_mk $_OUTDIRBASE/usr.bin/$_subdir/arch/$_MACHINE_ARCH/defs.mk
 
 	getvars gcc/Makefile \
 		EXTRA_HEADERS \
-			| write_mk $_OUTDIRBASE/usr.bin/include/arch/$MACHINE_ARCH.mk
+			| write_mk $_OUTDIRBASE/usr.bin/include/arch/$_MACHINE_ARCH.mk
 
-	write_c $_OUTDIRBASE/usr.bin/libcpp/arch/$MACHINE_ARCH/config.h <$_TMPDIR/libcpp/config.h
+	getvars gcc/Makefile \
+		OBJS-libcommon \
+			| write_mk $_OUTDIRBASE/usr.bin/common/defs.mk
+	getvars gcc/Makefile \
+		OBJS-libcommon-target \
+			| write_mk $_OUTDIRBASE/usr.bin/common-target/arch/$_MACHINE_ARCH.mk
+
+	write_c $_OUTDIRBASE/usr.bin/libcpp/arch/$_MACHINE_ARCH/config.h <$_TMPDIR/libcpp/config.h
 	hfiles='auto-host configargs config bconfig bversion plugin-version multilib tm'
 	for f in $hfiles; do
-		write_c $_OUTDIRBASE/usr.bin/$_subdir/arch/$MACHINE_ARCH/$f.h <$_TMPDIR/gcc/$f.h
-		if [ "${MACHINE_ARCH}" = "powerpc" -a "${f}" = "configargs" ]
+		write_c $_OUTDIRBASE/usr.bin/$_subdir/arch/$_MACHINE_ARCH/$f.h <$_TMPDIR/gcc/$f.h
+		if [ "${_MACHINE_ARCH}" = "powerpc" -a "${f}" = "configargs" ]
 		then
-			ex <<__EOF__ $_OUTDIR/usr.bin/$_subdir/arch/$MACHINE_ARCH/$f.h
+			ex <<__EOF__ $_OUTDIR/usr.bin/$_subdir/arch/$_MACHINE_ARCH/$f.h
 /configuration_arguments/ s/$//
 ya
 i
@@ -373,27 +408,27 @@ __EOF__
 			_srcquoted=$(echo "$_SRC" | sed 's/\//\\\//g')
 			sed -i -E -e "s,$_srcquoted,/usr/src,g" \
 				  -e 's/--build=[^ ]+ --host=([^ ]+)/--build=\1 --host=\1/' \
-				$_OUTDIR/usr.bin/$_subdir/arch/$MACHINE_ARCH/$f.h
+				$_OUTDIR/usr.bin/$_subdir/arch/$_MACHINE_ARCH/$f.h
 		fi
 	done
 
 	# keep identical
 	for f in all-tree.def; do
-		cp $_TMPDIR/gcc/$f $_OUTDIR/usr.bin/$_subdir/arch/$MACHINE_ARCH/$f
+		cp $_TMPDIR/gcc/$f $_OUTDIR/usr.bin/$_subdir/arch/$_MACHINE_ARCH/$f
 	done
 
 	# special transforms
 	for f in gtyp-input.list; do
-		sed -e "s@^.*$_OUTDIRBASE/dist@SRCDIR@" < $_TMPDIR/gcc/$f > $_OUTDIR/usr.bin/$_subdir/arch/$MACHINE_ARCH/$f
+		sed -e "s@^.*$_OUTDIRBASE/dist@SRCDIR@" < $_TMPDIR/gcc/$f > $_OUTDIR/usr.bin/$_subdir/arch/$_MACHINE_ARCH/$f
 	done
 
 	# special platforms
-	if [ "${MACHINE_ARCH}" = "sh3el" -o "${MACHINE_ARCH}" = "sh3eb" ]; then
-		write_c $_OUTDIRBASE/usr.bin/$_subdir/arch/$MACHINE_ARCH/sysroot-suffix.h <$_TMPDIR/gcc/sysroot-suffix.h
+	if [ "${_MACHINE_ARCH}" = "sh3el" -o "${_MACHINE_ARCH}" = "sh3eb" ]; then
+		write_c $_OUTDIRBASE/usr.bin/$_subdir/arch/$_MACHINE_ARCH/sysroot-suffix.h <$_TMPDIR/gcc/sysroot-suffix.h
 	fi
 
-	if [ "${MACHINE_ARCH}" = "i386" -o "${MACHINE_ARCH}" = "x86_64" ]; then
-		write_c $_OUTDIRBASE/usr.bin/$_subdir/arch/$MACHINE_ARCH/i386-builtin-types.inc <$_TMPDIR/gcc/i386-builtin-types.inc
+	if [ "${_MACHINE_ARCH}" = "i386" -o "${_MACHINE_ARCH}" = "x86_64" ]; then
+		write_c $_OUTDIRBASE/usr.bin/$_subdir/arch/$_MACHINE_ARCH/i386-builtin-types.inc <$_TMPDIR/gcc/i386-builtin-types.inc
 	fi
 }
 

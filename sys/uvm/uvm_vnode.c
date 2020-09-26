@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_vnode.c,v 1.114 2020/05/25 21:15:10 ad Exp $	*/
+/*	$NetBSD: uvm_vnode.c,v 1.117 2020/08/16 00:24:41 chs Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -45,7 +45,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_vnode.c,v 1.114 2020/05/25 21:15:10 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_vnode.c,v 1.117 2020/08/16 00:24:41 chs Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_uvmhist.h"
@@ -175,9 +175,8 @@ uvn_get(struct uvm_object *uobj, voff_t offset,
 	struct vnode *vp = (struct vnode *)uobj;
 	int error;
 
-	UVMHIST_FUNC("uvn_get"); UVMHIST_CALLED(ubchist);
-
-	UVMHIST_LOG(ubchist, "vp %#jx off 0x%jx", (uintptr_t)vp, (int)offset,
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(ubchist, "vp %#jx off 0x%jx", (uintptr_t)vp, offset,
 	    0, 0);
 
 	if (vp->v_type == VREG && (access_type & VM_PROT_WRITE) == 0
@@ -290,8 +289,8 @@ uvn_findpage(struct uvm_object *uobj, voff_t offset, struct vm_page **pgp,
     unsigned int flags, struct uvm_page_array *a, unsigned int nleft)
 {
 	struct vm_page *pg;
-	UVMHIST_FUNC("uvn_findpage"); UVMHIST_CALLED(ubchist);
-	UVMHIST_LOG(ubchist, "vp %#jx off 0x%jx", (uintptr_t)uobj, offset,
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(ubchist, "vp %#jx off 0x%jx", (uintptr_t)uobj, offset,
 	    0, 0);
 
 	/*
@@ -314,13 +313,13 @@ uvn_findpage(struct uvm_object *uobj, voff_t offset, struct vm_page **pgp,
 		 */
 		pg = uvm_page_array_fill_and_peek(a, offset, nleft);
 		if (pg != NULL && pg->offset != offset) {
+			struct vm_page __diagused *tpg;
 			KASSERT(
 			    ((a->ar_flags & UVM_PAGE_ARRAY_FILL_BACKWARD) != 0)
 			    == (pg->offset < offset));
-			KASSERT(uvm_pagelookup(uobj, offset) == NULL
-			    || ((a->ar_flags & UVM_PAGE_ARRAY_FILL_DIRTY) != 0
-			    && radix_tree_get_tag(&uobj->uo_pages,
-			    offset >> PAGE_SHIFT, UVM_PAGE_DIRTY_TAG) == 0));
+			KASSERT((tpg = uvm_pagelookup(uobj, offset)) == NULL ||
+				((a->ar_flags & UVM_PAGE_ARRAY_FILL_DIRTY) != 0 &&
+				 !uvm_obj_page_dirty_p(tpg)));
 			pg = NULL;
 			if ((a->ar_flags & UVM_PAGE_ARRAY_FILL_DENSE) != 0) {
 				UVMHIST_LOG(ubchist, "dense", 0,0,0,0);
@@ -439,7 +438,7 @@ uvm_vnp_setsize(struct vnode *vp, voff_t newsize)
 	struct uvm_object *uobj = &vp->v_uobj;
 	voff_t pgend = round_page(newsize);
 	voff_t oldsize;
-	UVMHIST_FUNC("uvm_vnp_setsize"); UVMHIST_CALLED(ubchist);
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(ubchist);
 
 	rw_enter(uobj->vmobjlock, RW_WRITER);
 	UVMHIST_LOG(ubchist, "vp %#jx old 0x%jx new 0x%jx",
@@ -500,14 +499,6 @@ uvn_text_p(struct uvm_object *uobj)
 	 */
 	iflag = atomic_load_relaxed(&vp->v_iflag);
 	return (iflag & VI_EXECMAP) != 0;
-}
-
-bool
-uvn_clean_p(struct uvm_object *uobj)
-{
-
-	return radix_tree_empty_tagged_tree_p(&uobj->uo_pages,
-            UVM_PAGE_DIRTY_TAG);
 }
 
 static void

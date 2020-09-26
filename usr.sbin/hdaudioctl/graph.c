@@ -1,4 +1,4 @@
-/* $NetBSD: graph.c,v 1.3 2015/03/28 14:09:59 jmcneill Exp $ */
+/* $NetBSD: graph.c,v 1.5 2020/06/15 13:06:39 sborrill Exp $ */
 
 /*
  * Copyright (c) 2009 Precedence Technologies Ltd <support@precedence.co.uk>
@@ -44,13 +44,6 @@
 #include <dev/hdaudio/hdaudioreg.h>
 
 #include "hdaudioctl.h"
-
-static const char *pin_devices[16] = {
-	"Line Out", "Speaker", "HP Out", "CD",
-	"SPDIF Out", "Digital Out", "Modem Line", "Modem Handset",
-	"Line In", "AUX", "Mic In", "Telephony",
-	"SPDIF In", "Digital In", "Reserved", "Other"
-};
 
 int
 hdaudioctl_graph(int fd, int argc, char *argv[])
@@ -165,7 +158,7 @@ hdaudioctl_graph(int fd, int argc, char *argv[])
 		iter = prop_array_iterator(connlist);
 		prop_object_iterator_reset(iter);
 		while ((nnid = prop_object_iterator_next(iter)) != NULL) {
-			nid = prop_number_unsigned_integer_value(nnid);
+			nid = prop_number_unsigned_value(nnid);
 			printf(" widget%02Xh -> %s [sametail=widget%02Xh];\n",
 			    nid, buf, nid);
 		}

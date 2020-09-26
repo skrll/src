@@ -1,4 +1,4 @@
-/*	$NetBSD: bozohttpd.c,v 1.113 2019/02/28 09:16:42 mrg Exp $	*/
+/*	$NetBSD: bozohttpd.c,v 1.121 2020/09/05 13:38:24 mrg Exp $	*/
 
 /*	$eterna: bozohttpd.c,v 1.178 2011/11/18 09:21:15 mrg Exp $	*/
 
@@ -109,7 +109,7 @@
 #define INDEX_HTML		"index.html"
 #endif
 #ifndef SERVER_SOFTWARE
-#define SERVER_SOFTWARE		"bozohttpd/20190228"
+#define SERVER_SOFTWARE		"bozohttpd/20200820"
 #endif
 #ifndef PUBLIC_HTML
 #define PUBLIC_HTML		"public_html"
@@ -317,7 +317,7 @@ parse_request(bozohttpd_t *httpd, char *in, char **method, char **file,
 
 	debug((httpd, DEBUG_FAT,
 		"url: method: \"%s\" file: \"%s\" query: \"%s\" proto: \"%s\"",
-		*method, *file, *query, *proto));
+		*method, *file, *query ? *query : "", *proto ? *proto : ""));
 }
 
 /*
@@ -496,7 +496,7 @@ got_proto_09:
 
 	if (strncasecmp(proto, "HTTP/", 5) != 0)
 		goto bad;
-	strncpy(majorstr, proto + 5, sizeof majorstr);
+	strncpy(majorstr, proto + 5, sizeof(majorstr)-1);
 	majorstr[sizeof(majorstr)-1] = 0;
 	minorstr = strchr(majorstr, '.');
 	if (minorstr == NULL)
@@ -771,7 +771,7 @@ bozo_read_request(bozohttpd_t *httpd)
 
 			val = bozostrnsep(&str, ":", &len);
 			debug((httpd, DEBUG_EXPLODING, "read_req2: after "
-			    "bozostrnsep: str `%s' val `%s'", str, val));
+			    "bozostrnsep: str `%s' val `%s'", str, val ? val : ""));
 			if (val == NULL || len == -1) {
 				bozo_http_error(httpd, 404, request, "no header");
 				goto cleanup;
@@ -914,7 +914,7 @@ mmap_and_write_part(bozohttpd_t *httpd, int fd, off_t first_byte_pos, size_t sz)
 	wroffset = (size_t)(first_byte_pos - mappedoffset);
 
 	addr = mmap(0, mappedsz, PROT_READ, MAP_SHARED, fd, mappedoffset);
-	if (addr == (char *)-1) {
+	if (addr == MAP_FAILED) {
 		bozowarn(httpd, "mmap failed: %s", strerror(errno));
 		return -1;
 	}
@@ -1201,7 +1201,7 @@ check_remap(bozo_httpreq_t *request)
 	}
 
 	fmap = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, mapfile, 0);
-	if (fmap == NULL) {
+	if (fmap == MAP_FAILED) {
 		bozowarn(httpd, "could not mmap " REMAP_FILE ", error %d",
 		    errno);
 		goto out;
@@ -1912,6 +1912,8 @@ bozo_process_request(bozo_httpreq_t *request)
  cleanup:
 	close(fd);
  cleanup_nofd:
+	/* If SSL enabled send close_notify. */
+	bozo_ssl_shutdown(request->hr_httpd);
 	close(STDIN_FILENO);
 	close(STDOUT_FILENO);
 	/*close(STDERR_FILENO);*/
@@ -2133,6 +2135,7 @@ static struct errors_map {
 	const char *shortmsg;		/* short version of message */
 	const char *longmsg;		/* long version of message */
 } errors_map[] = {
+	{ 200,	"200 OK",		"The request was valid", },
 	{ 400,	"400 Bad Request",	"The request was not valid", },
 	{ 401,	"401 Unauthorized",	"No authorization", },
 	{ 403,	"403 Forbidden",	"Access to this item has been denied",},
@@ -2169,6 +2172,23 @@ http_errors_long(int code)
 			return (ep->longmsg);
 	return (help);
 }
+
+#ifndef NO_BLOCKLIST_SUPPORT
+static struct blocklist *blstate;
+
+void
+pfilter_notify(const int what, const int code)
+{
+
+	if (blstate == NULL)
+		blstate = blocklist_open();
+
+	if (blstate == NULL)
+		return;
+
+	(void)blocklist_r(blstate, what, 0, http_errors_short(code));
+}
+#endif /* !NO_BLOCKLIST_SUPPORT */
 
 /* the follow functions and variables are used in handling HTTP errors */
 /* ARGSUSED */
@@ -2271,6 +2291,19 @@ bozo_http_error(bozohttpd_t *httpd, int code, bozo_httpreq_t *request,
 	if (size && request && request->hr_method != HTTP_HEAD)
 		bozo_printf(httpd, "%s", httpd->errorbuf);
 	bozo_flush(httpd, stdout);
+
+#ifndef NO_BLOCKLIST_SUPPORT
+	switch(code) {
+
+	case 401:
+		pfilter_notify(BLOCKLIST_AUTH_FAIL, code);
+		break;
+
+	case 403:
+		pfilter_notify(BLOCKLIST_ABUSIVE_BEHAVIOR, code);
+		break;
+	}
+#endif /* !NO_BLOCKLIST_SUPPORT */
 
 	return code;
 }
@@ -2569,6 +2602,9 @@ bozo_setup(bozohttpd_t *httpd, bozoprefs_t *prefs, const char *vhost,
 	if ((cp = bozo_get_pref(prefs, "directory indexing")) != NULL &&
 	    strcmp(cp, "true") == 0) {
 		httpd->dir_indexing = 1;
+	}
+	if ((cp = bozo_get_pref(prefs, "directory index readme")) != NULL) {
+		httpd->dir_readme = bozostrdup(httpd, NULL, cp);
 	}
 	if ((cp = bozo_get_pref(prefs, "public_html")) != NULL) {
 		httpd->public_html = bozostrdup(httpd, NULL, cp);

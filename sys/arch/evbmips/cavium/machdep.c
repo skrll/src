@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.13 2020/06/05 07:17:38 simonb Exp $	*/
+/*	$NetBSD: machdep.c,v 1.23 2020/08/17 07:50:42 simonb Exp $	*/
 
 /*
  * Copyright 2001, 2002 Wasabi Systems, Inc.
@@ -112,10 +112,9 @@
  */
 
 #include "opt_multiprocessor.h"
-#include "opt_cavium.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.13 2020/06/05 07:17:38 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.23 2020/08/17 07:50:42 simonb Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -148,16 +147,20 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.13 2020/06/05 07:17:38 simonb Exp $");
 #include <mips/cavium/include/iobusvar.h>
 #include <mips/cavium/include/bootbusvar.h>
 
-#include <mips/cavium/dev/octeon_uartreg.h>
+#include <mips/cavium/dev/octeon_uartvar.h>
 #include <mips/cavium/dev/octeon_ciureg.h>
 #include <mips/cavium/dev/octeon_gpioreg.h>
 
 #include <evbmips/cavium/octeon_uboot.h>
 
+#include <dev/fdt/fdtvar.h>
+#include <dev/fdt/fdt_private.h>
+
 static void	mach_init_vector(void);
 static void	mach_init_bus_space(void);
 static void	mach_init_console(void);
 static void	mach_init_memory(void);
+static void	parse_boot_args(void);
 
 #include "com.h"
 #if NCOM > 0
@@ -180,9 +183,13 @@ extern char end[];
 void	mach_init(uint64_t, uint64_t, uint64_t, uint64_t);
 
 struct octeon_config octeon_configuration;
+struct octeon_btdesc octeon_btdesc;
 struct octeon_btinfo octeon_btinfo;
 
 char octeon_nmi_stack[PAGE_SIZE] __section(".data1") __aligned(PAGE_SIZE);
+
+/* Currently the OCTEON kernels only support big endian boards */
+CTASSERT(_BYTE_ORDER == _BIG_ENDIAN);
 
 /*
  * Do all the stuff that locore normally does before calling main().
@@ -191,33 +198,48 @@ void
 mach_init(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3)
 {
 	uint64_t btinfo_paddr;
-	int corefreq;
+	void *fdt_data;
 
 	/* clear the BSS segment */
 	memset(edata, 0, end - edata);
 
+	cpu_reset_address = octeon_soft_reset;
+
+#if 1 || defined(OCTEON_EARLY_CONSOLE)	/* XXX - remove "1 ||" when MP works */
+	/*
+	 * Set up very conservative timer params so we can use delay(9)
+	 * early.  It doesn't matter if we delay too long at this stage.
+	 */
+	octeon_cal_timer(2000 * 1000 * 1000);
+	octuart_early_cnattach(comcnrate);
+#endif /* OCTEON_EARLY_CONSOLE */
+
 	KASSERT(MIPS_XKPHYS_P(arg3));
 	btinfo_paddr = mips3_ld(arg3 + OCTEON_BTINFO_PADDR_OFFSET);
 
-	/* Should be in first 256MB segment */
-	KASSERT(btinfo_paddr < 256 * 1024 * 1024);
-	memcpy(&octeon_btinfo,
-	    (struct octeon_btinfo *)MIPS_PHYS_TO_KSEG0(btinfo_paddr),
-	    sizeof(octeon_btinfo));
+	/* XXX KASSERT these addresses? */
+	memcpy(&octeon_btdesc, (void *)arg3, sizeof(octeon_btdesc));
+	if ((octeon_btdesc.obt_desc_ver == OCTEON_SUPPORTED_DESCRIPTOR_VERSION) &&
+	    (octeon_btdesc.obt_desc_size == sizeof(octeon_btdesc))) {
+		btinfo_paddr = MIPS_PHYS_TO_XKPHYS(CCA_CACHEABLE,
+		    octeon_btdesc.obt_boot_info_addr);
+	} else {
+		panic("unknown boot descriptor size %u",
+		    octeon_btdesc.obt_desc_size);
+	}
+	memcpy(&octeon_btinfo, (void *)btinfo_paddr, sizeof(octeon_btinfo));
+	parse_boot_args();
 
-	corefreq = octeon_btinfo.obt_eclock_hz;
+	octeon_cal_timer(octeon_btinfo.obt_eclock_hz);
 
-	octeon_cal_timer(corefreq);
+	cpu_setmodel("Cavium Octeon %s",
+	    octeon_cpu_model(mips_options.mips_cpu_id));
 
-	switch (MIPS_PRID_IMPL(mips_options.mips_cpu_id)) {
-	case 0: cpu_setmodel("Cavium Octeon CN38XX/CN36XX"); break;
-	case 1: cpu_setmodel("Cavium Octeon CN31XX/CN3020"); break;
-	case 2: cpu_setmodel("Cavium Octeon CN3005/CN3010"); break;
-	case 3: cpu_setmodel("Cavium Octeon CN58XX"); break;
-	case 4: cpu_setmodel("Cavium Octeon CN5[4-7]XX"); break;
-	case 6: cpu_setmodel("Cavium Octeon CN50XX"); break;
-	case 7: cpu_setmodel("Cavium Octeon CN52XX"); break;
-	default: cpu_setmodel("Cavium Octeon"); break;
+	if (octeon_btinfo.obt_minor_version >= 3 &&
+	    octeon_btinfo.obt_fdt_addr != 0) {
+		fdt_data = (void *)MIPS_PHYS_TO_XKPHYS(CCA_CACHEABLE,
+		    octeon_btinfo.obt_fdt_addr);
+		fdtbus_init(fdt_data);
 	}
 
 	mach_init_vector();
@@ -228,15 +250,19 @@ mach_init(uint64_t arg0, uint64_t arg1, uint64_t arg2, uint64_t arg3)
 
 	mach_init_console();
 
+#ifdef DEBUG
+	/* Show a couple of boot desc/info params for positive feedback */
+	printf(">> boot desc eclock    = %d\n", octeon_btdesc.obt_eclock);
+	printf(">> boot desc core mask = %#x\n", octeon_btinfo.obt_core_mask);
+	printf(">> boot info board     = %d\n", octeon_btinfo.obt_board_type);
+#endif /* DEBUG */
+
 	mach_init_memory();
 
 	/*
 	 * Allocate uarea page for lwp0 and set it.
 	 */
 	mips_init_lwp0_uarea();
-
-	boothowto = RB_AUTOBOOT;
-	boothowto |= AB_VERBOSE;
 
 #if 0
 	curcpu()->ci_nmi_stack = octeon_nmi_stack + sizeof(octeon_nmi_stack) - sizeof(struct kernframe);
@@ -358,8 +384,10 @@ mach_init_memory(void)
 	physmem = btoc(octeon_btinfo.obt_dram_size * 1024 * 1024);
 
 #ifdef MULTIPROCESSOR
-	const u_int cores = mipsNN_cp0_ebase_read() & MIPS_EBASE_CPUNUM;
-	mem_clusters[0].start = cores * 4096;
+	const uint64_t fuse = octeon_xkphys_read_8(CIU_FUSE);
+	const int cores = popcount64(fuse);
+	mem_clusters[0].start += cores * PAGE_SIZE;
+	mem_clusters[0].size  -= cores * PAGE_SIZE;
 #endif
 
 	/*
@@ -376,6 +404,49 @@ mach_init_memory(void)
 	pmap_bootstrap();
 }
 
+void
+parse_boot_args(void)
+{
+	int i;
+	char *arg, *p;
+
+	for (i = 0; i < octeon_btdesc.obt_argc; i++) {
+		arg = (char *)MIPS_PHYS_TO_KSEG0(octeon_btdesc.obt_argv[i]);
+		if (*arg == '-') {
+			for (p = arg + 1; *p; p++) {
+				switch (*p) {
+				case '1':
+					boothowto |= RB_MD1;
+					break;
+				case 's':
+					boothowto |= RB_SINGLE;
+					break;
+				case 'd':
+					boothowto |= RB_KDB;
+					break;
+				case 'a':
+					boothowto |= RB_ASKNAME;
+					break;
+				case 'q':
+					boothowto |= AB_QUIET;
+					break;
+				case 'v':
+					boothowto |= AB_VERBOSE;
+					break;
+				case 'x':
+					boothowto |= AB_DEBUG;
+					break;
+				case 'z':
+					boothowto |= AB_SILENT;
+					break;
+				}
+			}
+		}
+		if (strncmp(arg, "root=", 5) == 0)
+			rootspec = strchr(arg, '=') + 1;
+	}
+}
+
 /*
  * cpu_startup
  * cpu_reboot
@@ -389,10 +460,6 @@ int	waittime = -1;
 void
 cpu_startup(void)
 {
-#ifdef MULTIPROCESSOR
-	// Create a kcpuset so we can see on which CPUs the kernel was started.
-	kcpuset_create(&cpus_booted, true);
-#endif
 
 	/*
 	 * Do the common startup items.
@@ -404,6 +471,8 @@ cpu_startup(void)
 	 * that memory allocation is now safe.
 	 */
 	octeon_configuration.mc_mallocsafe = 1;
+
+	fdtbus_intr_init();
 }
 
 void
@@ -459,11 +528,7 @@ haltsys:
 	 */
 	delay(80000);
 
-	/* initiate chip soft-reset */
-	uint64_t fuse = octeon_read_csr(CIU_FUSE);
-	octeon_write_csr(CIU_SOFT_BIST, fuse);
-	octeon_read_csr(CIU_SOFT_RST);
-	octeon_write_csr(CIU_SOFT_RST, fuse);
+	octeon_soft_reset();
 
 	delay(1000000);
 

@@ -103,12 +103,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pintr.c,v 1.17 2020/05/23 14:51:19 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pintr.c,v 1.20 2020/08/01 12:39:40 jdolecek Exp $");
 
 #include "opt_multiprocessor.h"
 #include "opt_xen.h"
 #include "isa.h"
 #include "pci.h"
+#include "opt_pci.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -125,6 +126,8 @@ __KERNEL_RCSID(0, "$NetBSD: pintr.c,v 1.17 2020/05/23 14:51:19 jdolecek Exp $");
 #include <machine/pio.h>
 #include <xen/evtchn.h>
 #include <xen/intr.h>
+
+#include <dev/pci/pcivar.h>
 
 #ifdef __HAVE_PCI_MSI_MSIX
 #include <x86/pci/msipic.h>
@@ -163,6 +166,69 @@ short irq2port[NR_EVENT_CHANNELS] = {0}; /* actually port + 1, so that 0 is inva
 #endif
 
 #if defined(DOM0OPS) || NPCI > 0
+
+#ifdef __HAVE_PCI_MSI_MSIX
+static int
+xen_map_msi_pirq(struct pic *pic, int count, int *gsi)
+{
+	struct physdev_map_pirq map_irq;
+	const struct msipic_pci_info *i = msipic_get_pci_info(pic);
+	int ret;
+
+	if (count == -1)
+		count = i->mp_veccnt;
+	KASSERT(count > 0);
+
+	memset(&map_irq, 0, sizeof(map_irq));
+	map_irq.domid = DOMID_SELF;
+	map_irq.type = MAP_PIRQ_TYPE_MSI_SEG;
+	map_irq.index = -1;
+	map_irq.pirq = -1;
+	map_irq.bus = i->mp_bus;
+ 	map_irq.devfn = (i->mp_dev << 3) | i->mp_fun;
+	map_irq.entry_nr = count;
+	if (pic->pic_type == PIC_MSI && i->mp_veccnt > 1) {
+		map_irq.type = MAP_PIRQ_TYPE_MULTI_MSI;
+	} else if (pic->pic_type == PIC_MSIX) {
+		map_irq.table_base = i->mp_table_base;
+	}
+
+	ret = HYPERVISOR_physdev_op(PHYSDEVOP_map_pirq, &map_irq);
+
+	if (ret == 0) {
+		KASSERT(map_irq.entry_nr == count);
+		*gsi = map_irq.pirq;
+	}
+
+	return ret;
+}
+
+/*
+ * Check if we can map MSI interrupt. The Xen call fails if VT-d is not
+ * available or disabled.
+ */
+int
+xen_pci_msi_probe(struct pic *pic, int count)
+{
+	int pirq, ret;
+
+	ret = xen_map_msi_pirq(pic, count, &pirq);
+
+	if (ret == 0) {
+		struct physdev_unmap_pirq unmap_irq;
+		unmap_irq.domid = DOMID_SELF;
+		unmap_irq.pirq = pirq;
+		
+		(void)HYPERVISOR_physdev_op(PHYSDEVOP_unmap_pirq, &unmap_irq);
+	} else {
+		aprint_debug("PHYSDEVOP_map_pirq() failed %d, MSI disabled\n",
+		    ret);
+	}
+
+	return ret;
+}
+#endif /* __HAVE_PCI_MSI_MSIX */
+
 /*
  * This function doesn't "allocate" anything. It merely translates our
  * understanding of PIC to the XEN 'gsi' namespace. In the case of
@@ -213,32 +279,11 @@ xen_pic_to_gsi(struct pic *pic, int pin)
 	case PIC_MSI:
 	case PIC_MSIX:
 #ifdef __HAVE_PCI_MSI_MSIX
-	    {
-		struct physdev_map_pirq map_irq;
-		const struct msipic_pci_info *i = msipic_get_pci_info(pic);
-
-		memset(&map_irq, 0, sizeof(map_irq));
-		map_irq.domid = DOMID_SELF;
-		map_irq.type = MAP_PIRQ_TYPE_MSI_SEG;
-		map_irq.index = -1;
-		map_irq.pirq = -1;
-		map_irq.bus = i->mp_bus;
-	 	map_irq.devfn = (i->mp_dev << 3) | i->mp_fun;
-		KASSERT(i->mp_veccnt > 0);
-		map_irq.entry_nr = i->mp_veccnt;
-		if (pic->pic_type == PIC_MSI && i->mp_veccnt > 1) {
-			map_irq.type = MAP_PIRQ_TYPE_MULTI_MSI;
-		} else if (pic->pic_type == PIC_MSIX) {
-			map_irq.table_base = i->mp_table_base;
-		}
-		ret = HYPERVISOR_physdev_op(PHYSDEVOP_map_pirq, &map_irq);
+		ret = xen_map_msi_pirq(pic, -1, &gsi);
 		if (ret != 0)
 			panic("physdev_op(PHYSDEVOP_map_pirq) MSI fail %d",
 			    ret);
-		KASSERT(map_irq.entry_nr == i->mp_veccnt);
-		gsi = map_irq.pirq;
 		break;
-	    }
 #endif
 	default:
 		panic("unknown pic_type %d", pic->pic_type);

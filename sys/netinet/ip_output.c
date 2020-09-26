@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_output.c,v 1.315 2019/12/27 10:17:56 msaitoh Exp $	*/
+/*	$NetBSD: ip_output.c,v 1.320 2020/09/08 14:12:57 christos Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_output.c,v 1.315 2019/12/27 10:17:56 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_output.c,v 1.320 2020/09/08 14:12:57 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -202,6 +202,7 @@ ip_if_output(struct ifnet * const ifp, struct mbuf * const m,
 	if (rt != NULL) {
 		error = rt_check_reject_route(rt, ifp);
 		if (error != 0) {
+			IP_STATINC(IP_STAT_RTREJECT);
 			m_freem(m);
 			return error;
 		}
@@ -252,6 +253,7 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 	struct psref psref, psref_ia;
 	int bound;
 	bool bind_need_restore = false;
+	const struct sockaddr *sa;
 
 	len = 0;
 
@@ -311,8 +313,10 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 	    (rt = rtcache_update(ro, 1)) == NULL) {
 		dst = &udst.sin;
 		error = rtcache_setdst(ro, &udst.sa);
-		if (error != 0)
+		if (error != 0) {
+			IP_STATINC(IP_STAT_ODROPPED);
 			goto bad;
+		}
 	}
 
 	/*
@@ -345,6 +349,7 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 		mtu = ifp->if_mtu;
 		ia = in_get_ia_from_ifp_psref(ifp, &psref_ia);
 		if (ia == NULL) {
+			IP_STATINC(IP_STAT_IFNOADDR);
 			error = EADDRNOTAVAIL;
 			goto bad;
 		}
@@ -450,6 +455,7 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 
 			xia = in_get_ia_from_ifp_psref(ifp, &_psref);
 			if (!xia) {
+				IP_STATINC(IP_STAT_IFNOADDR);
 				error = EADDRNOTAVAIL;
 				goto bad;
 			}
@@ -459,6 +465,7 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 				/* FIXME ifa_getifa is NOMPSAFE */
 				xia = ifatoia((*xifa->ifa_getifa)(xifa, rdst));
 				if (xia == NULL) {
+					IP_STATINC(IP_STAT_IFNOADDR);
 					error = EADDRNOTAVAIL;
 					goto bad;
 				}
@@ -510,6 +517,7 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 		 * destination group on the loopback interface.
 		 */
 		if (ip->ip_ttl == 0 || (ifp->if_flags & IFF_LOOPBACK) != 0) {
+			IP_STATINC(IP_STAT_ODROPPED);
 			m_freem(m);
 			goto done;
 		}
@@ -553,15 +561,18 @@ ip_output(struct mbuf *m0, struct mbuf *opt, struct route *ro, int flags,
 	 */
 	if (isbroadcast) {
 		if ((ifp->if_flags & IFF_BROADCAST) == 0) {
+			IP_STATINC(IP_STAT_BCASTDENIED);
 			error = EADDRNOTAVAIL;
 			goto bad;
 		}
 		if ((flags & IP_ALLOWBROADCAST) == 0) {
+			IP_STATINC(IP_STAT_BCASTDENIED);
 			error = EACCES;
 			goto bad;
 		}
 		/* don't allow broadcast messages to be fragmented */
 		if (ntohs(ip->ip_len) > ifp->if_mtu) {
+			IP_STATINC(IP_STAT_BCASTDENIED);
 			error = EMSGSIZE;
 			goto bad;
 		}
@@ -609,10 +620,13 @@ sendit:
 #ifdef IPSEC
 	if (ipsec_used) {
 		bool ipsec_done = false;
+		bool count_drop = false;
 
 		/* Perform IPsec processing, if any. */
 		error = ipsec4_output(m, inp, flags, &mtu, &natt_frag,
-		    &ipsec_done);
+		    &ipsec_done, &count_drop);
+		if (count_drop)
+			IP_STATINC(IP_STAT_IPSECDROP_OUT);
 		if (error || ipsec_done)
 			goto done;
 	}
@@ -676,59 +690,59 @@ sendit:
 	}
 	sw_csum = m->m_pkthdr.csum_flags & ~ifp->if_csum_flags_tx;
 
-	/*
-	 * If small enough for mtu of path, or if using TCP segmentation
-	 * offload, can just send directly.
-	 */
-	if (ntohs(ip->ip_len) <= mtu ||
-	    (m->m_pkthdr.csum_flags & M_CSUM_TSOv4) != 0) {
-		const struct sockaddr *sa;
-
-#if IFA_STATS
-		if (ia)
-			ia->ia_ifa.ifa_data.ifad_outbytes += ntohs(ip->ip_len);
-#endif
-		/*
-		 * Always initialize the sum to 0!  Some HW assisted
-		 * checksumming requires this.
-		 */
-		ip->ip_sum = 0;
-
-		if ((m->m_pkthdr.csum_flags & M_CSUM_TSOv4) == 0) {
-			/*
-			 * Perform any checksums that the hardware can't do
-			 * for us.
-			 *
-			 * XXX Does any hardware require the {th,uh}_sum
-			 * XXX fields to be 0?
-			 */
-			if (sw_csum & M_CSUM_IPv4) {
-				KASSERT(IN_NEED_CHECKSUM(ifp, M_CSUM_IPv4));
-				ip->ip_sum = in_cksum(m, hlen);
-				m->m_pkthdr.csum_flags &= ~M_CSUM_IPv4;
-			}
-			if (sw_csum & (M_CSUM_TCPv4|M_CSUM_UDPv4)) {
-				if (IN_NEED_CHECKSUM(ifp,
-				    sw_csum & (M_CSUM_TCPv4|M_CSUM_UDPv4))) {
-					in_undefer_cksum_tcpudp(m);
-				}
-				m->m_pkthdr.csum_flags &=
-				    ~(M_CSUM_TCPv4|M_CSUM_UDPv4);
-			}
-		}
-
-		sa = (m->m_flags & M_MCAST) ? sintocsa(rdst) : sintocsa(dst);
-		if (__predict_false(sw_csum & M_CSUM_TSOv4)) {
-			/*
-			 * TSO4 is required by a packet, but disabled for
-			 * the interface.
-			 */
-			error = ip_tso_output(ifp, m, sa, rt);
-		} else
-			error = ip_if_output(ifp, m, sa, rt);
-		goto done;
+	/* Need to fragment the packet */
+	if (ntohs(ip->ip_len) > mtu &&
+	    (m->m_pkthdr.csum_flags & M_CSUM_TSOv4) == 0) {
+		goto fragment;
 	}
 
+#if IFA_STATS
+	if (ia)
+		ia->ia_ifa.ifa_data.ifad_outbytes += ntohs(ip->ip_len);
+#endif
+	/*
+	 * Always initialize the sum to 0!  Some HW assisted
+	 * checksumming requires this.
+	 */
+	ip->ip_sum = 0;
+
+	if ((m->m_pkthdr.csum_flags & M_CSUM_TSOv4) == 0) {
+		/*
+		 * Perform any checksums that the hardware can't do
+		 * for us.
+		 *
+		 * XXX Does any hardware require the {th,uh}_sum
+		 * XXX fields to be 0?
+		 */
+		if (sw_csum & M_CSUM_IPv4) {
+			KASSERT(IN_NEED_CHECKSUM(ifp, M_CSUM_IPv4));
+			ip->ip_sum = in_cksum(m, hlen);
+			m->m_pkthdr.csum_flags &= ~M_CSUM_IPv4;
+		}
+		if (sw_csum & (M_CSUM_TCPv4|M_CSUM_UDPv4)) {
+			if (IN_NEED_CHECKSUM(ifp,
+			    sw_csum & (M_CSUM_TCPv4|M_CSUM_UDPv4))) {
+				in_undefer_cksum_tcpudp(m);
+			}
+			m->m_pkthdr.csum_flags &=
+			    ~(M_CSUM_TCPv4|M_CSUM_UDPv4);
+		}
+	}
+
+	sa = (m->m_flags & M_MCAST) ? sintocsa(rdst) : sintocsa(dst);
+
+	/* Send it */
+	if (__predict_false(sw_csum & M_CSUM_TSOv4)) {
+		/*
+		 * TSO4 is required by a packet, but disabled for
+		 * the interface.
+		 */
+		error = ip_tso_output(ifp, m, sa, rt);
+	} else
+		error = ip_if_output(ifp, m, sa, rt);
+	goto done;
+
+fragment:
 	/*
 	 * We can't use HW checksumming if we're about to fragment the packet.
 	 *
@@ -786,8 +800,7 @@ sendit:
 		} else {
 			KASSERT((m->m_pkthdr.csum_flags &
 			    (M_CSUM_UDPv4 | M_CSUM_TCPv4)) == 0);
-			error = ip_if_output(ifp, m,
-			    (m->m_flags & M_MCAST) ?
+			error = ip_if_output(ifp, m, (m->m_flags & M_MCAST) ?
 			    sintocsa(rdst) : sintocsa(dst), rt);
 		}
 	}
@@ -838,6 +851,7 @@ ip_fragment(struct mbuf *m, struct ifnet *ifp, u_long mtu)
 
 	len = (mtu - hlen) &~ 7;
 	if (len < 8) {
+		IP_STATINC(IP_STAT_CANTFRAG);
 		m_freem(m);
 		return EMSGSIZE;
 	}
@@ -1106,6 +1120,7 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 		case IP_RECVIF:
 		case IP_RECVPKTINFO:
 		case IP_RECVTTL:
+		case IP_BINDANY:
 			error = sockopt_getint(sopt, &optval);
 			if (error)
 				break;
@@ -1153,6 +1168,16 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 
 			case IP_RECVTTL:
 				OPTSET(INP_RECVTTL);
+				break;
+
+			case IP_BINDANY:
+				error = kauth_authorize_network(
+				    kauth_cred_get(), KAUTH_NETWORK_BIND,
+				    KAUTH_REQ_NETWORK_BIND_ANYADDR, so,
+				    NULL, NULL);
+				if (error == 0) {
+					OPTSET(INP_BINDANY);
+				}
 				break;
 			}
 			break;
@@ -1280,6 +1305,7 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 		case IP_RECVPKTINFO:
 		case IP_RECVTTL:
 		case IP_ERRORMTU:
+		case IP_BINDANY:
 			switch (sopt->sopt_name) {
 			case IP_TOS:
 				optval = ip->ip_tos;
@@ -1321,6 +1347,10 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 
 			case IP_RECVTTL:
 				optval = OPTBIT(INP_RECVTTL);
+				break;
+
+			case IP_BINDANY:
+				optval = OPTBIT(INP_BINDANY);
 				break;
 			}
 			error = sockopt_setint(sopt, optval);
@@ -1402,8 +1432,8 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 }
 
 static int
-ip_pktinfo_prepare(const struct in_pktinfo *pktinfo, struct ip_pktopts *pktopts,
-    int *flags, kauth_cred_t cred)
+ip_pktinfo_prepare(const struct inpcb *inp, const struct in_pktinfo *pktinfo,
+    struct ip_pktopts *pktopts, int *flags, kauth_cred_t cred)
 {
 	struct ip_moptions *imo;
 	int error = 0;
@@ -1412,7 +1442,7 @@ ip_pktinfo_prepare(const struct in_pktinfo *pktinfo, struct ip_pktopts *pktopts,
 	if (!in_nullhost(pktinfo->ipi_addr)) {
 		pktopts->ippo_laddr.sin_addr = pktinfo->ipi_addr;
 		/* EADDRNOTAVAIL? */
-		error = in_pcbbindableaddr(&pktopts->ippo_laddr, cred);
+		error = in_pcbbindableaddr(inp, &pktopts->ippo_laddr, cred);
 		if (error != 0)
 			return error;
 		addrset = true;
@@ -1505,8 +1535,8 @@ ip_setpktopts(struct mbuf *control, struct ip_pktopts *pktopts, int *flags,
 			if (cm->cmsg_len != CMSG_LEN(sizeof(pktinfo)))
 				return EINVAL;
 			memcpy(&pktinfo, CMSG_DATA(cm), sizeof(pktinfo));
-			error = ip_pktinfo_prepare(&pktinfo, pktopts, flags,
-			    cred);
+			error = ip_pktinfo_prepare(inp, &pktinfo, pktopts,
+			    flags, cred);
 			if (error)
 				return error;
 			break;
@@ -1516,8 +1546,8 @@ ip_setpktopts(struct mbuf *control, struct ip_pktopts *pktopts, int *flags,
 			pktinfo.ipi_ifindex = 0;
 			pktinfo.ipi_addr =
 			    ((struct in_pktinfo *)CMSG_DATA(cm))->ipi_addr;
-			error = ip_pktinfo_prepare(&pktinfo, pktopts, flags,
-			    cred);
+			error = ip_pktinfo_prepare(inp, &pktinfo, pktopts,
+			    flags, cred);
 			if (error)
 				return error;
 			break;

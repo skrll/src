@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.136 2020/05/21 21:12:31 ad Exp $	*/
+/*	$NetBSD: cpu.c,v 1.139 2020/07/14 00:45:53 yamaguchi Exp $	*/
 
 /*-
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.136 2020/05/21 21:12:31 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.139 2020/07/14 00:45:53 yamaguchi Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -232,6 +232,7 @@ cpu_attach(device_t parent, device_t self, void *aux)
 	ci->ci_cpuid = caa->cpu_number;
 	ci->ci_vcpu = NULL;
 	ci->ci_index = nphycpu++;
+	ci->ci_kfpu_spl = -1;
 
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n");
@@ -391,6 +392,7 @@ cpu_attach_common(device_t parent, device_t self, void *aux)
 	ci->ci_dev = self;
 	ci->ci_cpuid = cpunum;
 	ci->ci_vcpuid = cpunum;
+	ci->ci_kfpu_spl = -1;
 
 	KASSERT(HYPERVISOR_shared_info != NULL);
 	KASSERT(cpunum < XEN_LEGACY_MAX_VCPUS);
@@ -474,6 +476,9 @@ cpu_attach_common(device_t parent, device_t self, void *aux)
 #if defined(MULTIPROCESSOR)
 		/* interrupt handler stack */
 		cpu_intr_init(ci);
+
+		/* Setup per-cpu memory for idt */
+		idt_vec_init_cpu_md(&ci->ci_idtvec, cpu_index(ci));
 
 		/* Setup per-cpu memory for gdt */
 		gdt_alloc_cpu(ci);
@@ -698,7 +703,7 @@ cpu_hatch(void *v)
 
 	/* Setup TLS and kernel GS/FS */
 	cpu_init_msrs(ci, true);
-	cpu_init_idt();
+	cpu_init_idt(ci);
 	gdt_init_cpu(ci);
 
 	cpu_probe(ci);
@@ -999,22 +1004,24 @@ int
 mp_cpu_start(struct cpu_info *ci, vaddr_t target)
 {
 	int hyperror;
-	struct vcpu_guest_context vcpuctx;
+	struct vcpu_guest_context *vcpuctx;
 
 	KASSERT(ci != NULL);
 	KASSERT(ci != &cpu_info_primary);
 	KASSERT(ci->ci_flags & CPUF_AP);
 
+	vcpuctx = kmem_alloc(sizeof(*vcpuctx), KM_SLEEP);
+
 #ifdef __x86_64__
-	xen_init_amd64_vcpuctxt(ci, &vcpuctx, (void (*)(struct cpu_info *))target);
+	xen_init_amd64_vcpuctxt(ci, vcpuctx, (void (*)(struct cpu_info *))target);
 #else
-	xen_init_i386_vcpuctxt(ci, &vcpuctx, (void (*)(struct cpu_info *))target);
+	xen_init_i386_vcpuctxt(ci, vcpuctx, (void (*)(struct cpu_info *))target);
 #endif
 
 	/* Initialise the given vcpu to execute cpu_hatch(ci); */
-	if ((hyperror = HYPERVISOR_vcpu_op(VCPUOP_initialise, ci->ci_vcpuid, &vcpuctx))) {
+	if ((hyperror = HYPERVISOR_vcpu_op(VCPUOP_initialise, ci->ci_vcpuid, vcpuctx))) {
 		aprint_error(": context initialisation failed. errno = %d\n", hyperror);
-		return hyperror;
+		goto out;
 	}
 
 	/* Start it up */
@@ -1022,20 +1029,23 @@ mp_cpu_start(struct cpu_info *ci, vaddr_t target)
 	/* First bring it down */
 	if ((hyperror = HYPERVISOR_vcpu_op(VCPUOP_down, ci->ci_vcpuid, NULL))) {
 		aprint_error(": VCPUOP_down hypervisor command failed. errno = %d\n", hyperror);
-		return hyperror;
+		goto out;
 	}
 
 	if ((hyperror = HYPERVISOR_vcpu_op(VCPUOP_up, ci->ci_vcpuid, NULL))) {
 		aprint_error(": VCPUOP_up hypervisor command failed. errno = %d\n", hyperror);
-		return hyperror;
+		goto out;
 	}
 
 	if (!vcpu_is_up(ci)) {
 		aprint_error(": did not come up\n");
-		return -1;
+		hyperror = -1;
+		goto out;
 	}
 
-	return 0;
+out:
+	kmem_free(vcpuctx, sizeof(*vcpuctx));
+	return hyperror;
 }
 
 void

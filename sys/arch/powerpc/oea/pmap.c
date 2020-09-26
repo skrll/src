@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.96 2020/05/31 10:49:39 rin Exp $	*/
+/*	$NetBSD: pmap.c,v 1.98 2020/07/06 09:34:17 rin Exp $	*/
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -63,14 +63,16 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.96 2020/05/31 10:49:39 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.98 2020/07/06 09:34:17 rin Exp $");
 
 #define	PMAP_NOOPNAMES
 
-#include "opt_ppcarch.h"
+#ifdef _KERNEL_OPT
 #include "opt_altivec.h"
 #include "opt_multiprocessor.h"
 #include "opt_pmap.h"
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -2655,20 +2657,20 @@ void
 pmap_print_mmuregs(void)
 {
 	int i;
-#if defined (PMAP_OEA) || defined (PMAP_OEA_BRIDGE)
+#if defined (PMAP_OEA) || defined (PMAP_OEA64_BRIDGE)
 	u_int cpuvers;
 #endif
 #ifndef PMAP_OEA64
 	vaddr_t addr;
 	register_t soft_sr[16];
 #endif
-#if defined (PMAP_OEA) || defined (PMAP_OEA_BRIDGE)
+#if defined (PMAP_OEA) || defined (PMAP_OEA64_BRIDGE)
 	struct bat soft_ibat[4];
 	struct bat soft_dbat[4];
 #endif
 	paddr_t sdr1;
 	
-#if defined (PMAP_OEA) || defined (PMAP_OEA_BRIDGE)
+#if defined (PMAP_OEA) || defined (PMAP_OEA64_BRIDGE)
 	cpuvers = MFPVR() >> 16;
 #endif
 	__asm volatile ("mfsdr1 %0" : "=r"(sdr1));
@@ -2680,7 +2682,7 @@ pmap_print_mmuregs(void)
 	}
 #endif
 
-#if defined (PMAP_OEA) || defined (PMAP_OEA_BRIDGE)
+#if defined (PMAP_OEA) || defined (PMAP_OEA64_BRIDGE)
 	/* read iBAT (601: uBAT) registers */
 	__asm volatile ("mfibatu %0,0" : "=r"(soft_ibat[0].batu));
 	__asm volatile ("mfibatl %0,0" : "=r"(soft_ibat[0].batl));
@@ -2722,7 +2724,7 @@ pmap_print_mmuregs(void)
 	printf("\n");
 #endif
 
-#if defined(PMAP_OEA) || defined(PMAP_OEA_BRIDGE)
+#if defined(PMAP_OEA) || defined(PMAP_OEA64_BRIDGE)
 	printf("%cBAT[]:\t", cpuvers == MPC601 ? 'u' : 'i');
 	for (i = 0; i < 4; i++) {
 		printf("0x%08lx 0x%08lx, ",

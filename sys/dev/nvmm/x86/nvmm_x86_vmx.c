@@ -1,11 +1,10 @@
-/*	$NetBSD: nvmm_x86_vmx.c,v 1.59 2020/05/24 08:08:49 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86_vmx.c,v 1.80 2020/09/08 17:02:03 maxv Exp $	*/
 
 /*
- * Copyright (c) 2018-2020 The NetBSD Foundation, Inc.
+ * Copyright (c) 2018-2020 Maxime Villard, m00nbsd.net
  * All rights reserved.
  *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Maxime Villard.
+ * This code is part of the NVMM hypervisor.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -16,21 +15,21 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_vmx.c,v 1.59 2020/05/24 08:08:49 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_vmx.c,v 1.80 2020/09/08 17:02:03 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -41,14 +40,14 @@ __KERNEL_RCSID(0, "$NetBSD: nvmm_x86_vmx.c,v 1.59 2020/05/24 08:08:49 maxv Exp $
 #include <sys/mman.h>
 #include <sys/bitops.h>
 
-#include <uvm/uvm.h>
+#include <uvm/uvm_extern.h>
 #include <uvm/uvm_page.h>
 
 #include <x86/cputypes.h>
 #include <x86/specialreg.h>
-#include <x86/pmap.h>
 #include <x86/dbregs.h>
 #include <x86/cpu_counter.h>
+
 #include <machine/cpuvar.h>
 
 #include <dev/nvmm/nvmm.h>
@@ -178,6 +177,18 @@ vmx_vmclear(paddr_t *pa)
 	);
 }
 
+static inline void
+vmx_cli(void)
+{
+	asm volatile ("cli" ::: "memory");
+}
+
+static inline void
+vmx_sti(void)
+{
+	asm volatile ("sti" ::: "memory");
+}
+
 #define MSR_IA32_FEATURE_CONTROL	0x003A
 #define		IA32_FEATURE_CONTROL_LOCK	__BIT(0)
 #define		IA32_FEATURE_CONTROL_IN_SMX	__BIT(1)
@@ -211,11 +222,16 @@ vmx_vmclear(paddr_t *pa)
 #define MSR_IA32_VMX_CR4_FIXED1			0x0489
 
 #define MSR_IA32_VMX_EPT_VPID_CAP	0x048C
+#define		IA32_VMX_EPT_VPID_XO			__BIT(0)
 #define		IA32_VMX_EPT_VPID_WALKLENGTH_4		__BIT(6)
 #define		IA32_VMX_EPT_VPID_UC			__BIT(8)
 #define		IA32_VMX_EPT_VPID_WB			__BIT(14)
+#define		IA32_VMX_EPT_VPID_2MB			__BIT(16)
+#define		IA32_VMX_EPT_VPID_1GB			__BIT(17)
 #define		IA32_VMX_EPT_VPID_INVEPT		__BIT(20)
 #define		IA32_VMX_EPT_VPID_FLAGS_AD		__BIT(21)
+#define		IA32_VMX_EPT_VPID_ADVANCED_VMEXIT_INFO	__BIT(22)
+#define		IA32_VMX_EPT_VPID_SHSTK			__BIT(23)
 #define		IA32_VMX_EPT_VPID_INVEPT_CONTEXT	__BIT(25)
 #define		IA32_VMX_EPT_VPID_INVEPT_ALL		__BIT(26)
 #define		IA32_VMX_EPT_VPID_INVVPID		__BIT(32)
@@ -269,6 +285,7 @@ vmx_vmclear(paddr_t *pa)
 #define			EPTP_TYPE_WB		6
 #define		EPTP_WALKLEN			__BITS(5,3)
 #define		EPTP_FLAGS_AD			__BIT(6)
+#define		EPTP_SSS			__BIT(7)
 #define		EPTP_PHYSADDR			__BITS(63,12)
 #define VMCS_EOI_EXIT0				0x0000201C
 #define VMCS_EOI_EXIT1				0x0000201E
@@ -282,6 +299,7 @@ vmx_vmclear(paddr_t *pa)
 #define VMCS_ENCLS_EXIT_BITMAP			0x0000202E
 #define VMCS_SUBPAGE_PERM_TABLE_PTR		0x00002030
 #define VMCS_TSC_MULTIPLIER			0x00002032
+#define VMCS_ENCLV_EXIT_BITMAP			0x00002036
 /* 64-bit read-only fields */
 #define VMCS_GUEST_PHYSICAL_ADDRESS		0x00002400
 /* 64-bit guest-state fields */
@@ -295,10 +313,13 @@ vmx_vmclear(paddr_t *pa)
 #define VMCS_GUEST_PDPTE2			0x0000280E
 #define VMCS_GUEST_PDPTE3			0x00002810
 #define VMCS_GUEST_BNDCFGS			0x00002812
+#define VMCS_GUEST_RTIT_CTL			0x00002814
+#define VMCS_GUEST_PKRS				0x00002818
 /* 64-bit host-state fields */
 #define VMCS_HOST_IA32_PAT			0x00002C00
 #define VMCS_HOST_IA32_EFER			0x00002C02
 #define VMCS_HOST_IA32_PERF_GLOBAL_CTRL		0x00002C04
+#define VMCS_HOST_IA32_PKRS			0x00002C06
 /* 32-bit control fields */
 #define VMCS_PINBASED_CTLS			0x00004000
 #define		PIN_CTLS_INT_EXITING		__BIT(0)
@@ -344,6 +365,9 @@ vmx_vmclear(paddr_t *pa)
 #define		EXIT_CTLS_SAVE_PREEMPT_TIMER	__BIT(22)
 #define		EXIT_CTLS_CLEAR_BNDCFGS		__BIT(23)
 #define		EXIT_CTLS_CONCEAL_PT		__BIT(24)
+#define		EXIT_CTLS_CLEAR_RTIT_CTL	__BIT(25)
+#define		EXIT_CTLS_LOAD_CET		__BIT(28)
+#define		EXIT_CTLS_LOAD_PKRS		__BIT(29)
 #define VMCS_EXIT_MSR_STORE_COUNT		0x0000400E
 #define VMCS_EXIT_MSR_LOAD_COUNT		0x00004010
 #define VMCS_ENTRY_CTLS				0x00004012
@@ -356,6 +380,9 @@ vmx_vmclear(paddr_t *pa)
 #define		ENTRY_CTLS_LOAD_EFER		__BIT(15)
 #define		ENTRY_CTLS_LOAD_BNDCFGS		__BIT(16)
 #define		ENTRY_CTLS_CONCEAL_PT		__BIT(17)
+#define		ENTRY_CTLS_LOAD_RTIT_CTL	__BIT(18)
+#define		ENTRY_CTLS_LOAD_CET		__BIT(20)
+#define		ENTRY_CTLS_LOAD_PKRS		__BIT(22)
 #define VMCS_ENTRY_MSR_LOAD_COUNT		0x00004014
 #define VMCS_ENTRY_INTR_INFO			0x00004016
 #define		INTR_INFO_VECTOR		__BITS(7,0)
@@ -396,7 +423,9 @@ vmx_vmclear(paddr_t *pa)
 #define		PROC_CTLS2_XSAVES_ENABLE	__BIT(20)
 #define		PROC_CTLS2_MODE_BASED_EXEC_EPT	__BIT(22)
 #define		PROC_CTLS2_SUBPAGE_PERMISSIONS	__BIT(23)
+#define		PROC_CTLS2_PT_USES_GPA		__BIT(24)
 #define		PROC_CTLS2_USE_TSC_SCALING	__BIT(25)
+#define		PROC_CTLS2_WAIT_PAUSE_ENABLE	__BIT(26)
 #define		PROC_CTLS2_ENCLV_EXITING	__BIT(28)
 #define VMCS_PLE_GAP				0x00004020
 #define VMCS_PLE_WINDOW				0x00004022
@@ -477,6 +506,9 @@ vmx_vmclear(paddr_t *pa)
 #define VMCS_GUEST_PENDING_DBG_EXCEPTIONS	0x00006822
 #define VMCS_GUEST_IA32_SYSENTER_ESP		0x00006824
 #define VMCS_GUEST_IA32_SYSENTER_EIP		0x00006826
+#define VMCS_GUEST_IA32_S_CET			0x00006828
+#define VMCS_GUEST_SSP				0x0000682A
+#define VMCS_GUEST_IA32_INTR_SSP_TABLE		0x0000682C
 /* Natural-Width host-state fields */
 #define VMCS_HOST_CR0				0x00006C00
 #define VMCS_HOST_CR3				0x00006C02
@@ -489,7 +521,10 @@ vmx_vmclear(paddr_t *pa)
 #define VMCS_HOST_IA32_SYSENTER_ESP		0x00006C10
 #define VMCS_HOST_IA32_SYSENTER_EIP		0x00006C12
 #define VMCS_HOST_RSP				0x00006C14
-#define VMCS_HOST_RIP				0x00006c16
+#define VMCS_HOST_RIP				0x00006C16
+#define VMCS_HOST_IA32_S_CET			0x00006C18
+#define VMCS_HOST_SSP				0x00006C1A
+#define VMCS_HOST_IA32_INTR_SSP_TABLE		0x00006C1C
 
 /* VMX basic exit reasons. */
 #define VMCS_EXITCODE_EXC_NMI			0
@@ -554,6 +589,9 @@ vmx_vmclear(paddr_t *pa)
 #define VMCS_EXITCODE_PAGE_LOG_FULL		62
 #define VMCS_EXITCODE_XSAVES			63
 #define VMCS_EXITCODE_XRSTORS			64
+#define VMCS_EXITCODE_SPP			66
+#define VMCS_EXITCODE_UMWAIT			67
+#define VMCS_EXITCODE_TPAUSE			68
 
 /* -------------------------------------------------------------------------- */
 
@@ -690,12 +728,42 @@ static uint64_t vmx_xcr0_mask __read_mostly;
 #define MSRBM_NPAGES	1
 #define MSRBM_SIZE	(MSRBM_NPAGES * PAGE_SIZE)
 
+#define CR0_STATIC_MASK \
+	(CR0_ET | CR0_NW | CR0_CD)
+
+#define CR4_VALID \
+	(CR4_VME |			\
+	 CR4_PVI |			\
+	 CR4_TSD |			\
+	 CR4_DE |			\
+	 CR4_PSE |			\
+	 CR4_PAE |			\
+	 CR4_MCE |			\
+	 CR4_PGE |			\
+	 CR4_PCE |			\
+	 CR4_OSFXSR |			\
+	 CR4_OSXMMEXCPT |		\
+	 CR4_UMIP |			\
+	 /* CR4_LA57 excluded */	\
+	 /* CR4_VMXE excluded */	\
+	 /* CR4_SMXE excluded */	\
+	 CR4_FSGSBASE |			\
+	 CR4_PCIDE |			\
+	 CR4_OSXSAVE |			\
+	 CR4_SMEP |			\
+	 CR4_SMAP			\
+	 /* CR4_PKE excluded */		\
+	 /* CR4_CET excluded */		\
+	 /* CR4_PKS excluded */)
+#define CR4_INVALID \
+	(0xFFFFFFFFFFFFFFFFULL & ~CR4_VALID)
+
 #define EFER_TLB_FLUSH \
 	(EFER_NXE|EFER_LMA|EFER_LME)
 #define CR0_TLB_FLUSH \
 	(CR0_PG|CR0_WP|CR0_CD|CR0_NW)
 #define CR4_TLB_FLUSH \
-	(CR4_PGE|CR4_PAE|CR4_PSE)
+	(CR4_PSE|CR4_PAE|CR4_PGE|CR4_PCIDE|CR4_SMEP)
 
 /* -------------------------------------------------------------------------- */
 
@@ -871,15 +939,11 @@ vmx_vmcs_enter(struct nvmm_cpu *vcpu)
 {
 	struct vmx_cpudata *cpudata = vcpu->cpudata;
 	struct cpu_info *vmcs_ci;
-	paddr_t oldpa __diagused;
 
 	cpudata->vmcs_refcnt++;
 	if (cpudata->vmcs_refcnt > 1) {
-#ifdef DIAGNOSTIC
 		KASSERT(kpreempt_disabled());
-		oldpa = vmx_vmptrst();
-		KASSERT(oldpa == cpudata->vmcs_pa);
-#endif
+		KASSERT(vmx_vmptrst() == cpudata->vmcs_pa);
 		return;
 	}
 
@@ -909,9 +973,7 @@ vmx_vmcs_leave(struct nvmm_cpu *vcpu)
 	struct vmx_cpudata *cpudata = vcpu->cpudata;
 
 	KASSERT(kpreempt_disabled());
-#ifdef DIAGNOSTIC
 	KASSERT(vmx_vmptrst() == cpudata->vmcs_pa);
-#endif
 	KASSERT(cpudata->vmcs_refcnt > 0);
 	cpudata->vmcs_refcnt--;
 
@@ -929,9 +991,7 @@ vmx_vmcs_destroy(struct nvmm_cpu *vcpu)
 	struct vmx_cpudata *cpudata = vcpu->cpudata;
 
 	KASSERT(kpreempt_disabled());
-#ifdef DIAGNOSTIC
 	KASSERT(vmx_vmptrst() == cpudata->vmcs_pa);
-#endif
 	KASSERT(cpudata->vmcs_refcnt == 1);
 	cpudata->vmcs_refcnt--;
 
@@ -980,8 +1040,22 @@ vmx_event_waitexit_disable(struct nvmm_cpu *vcpu, bool nmi)
 	vmx_vmwrite(VMCS_PROCBASED_CTLS, ctls1);
 }
 
+static inline bool
+vmx_excp_has_rf(uint8_t vector)
+{
+	switch (vector) {
+	case 1:		/* #DB */
+	case 4:		/* #OF */
+	case 8:		/* #DF */
+	case 18:	/* #MC */
+		return false;
+	default:
+		return true;
+	}
+}
+
 static inline int
-vmx_event_has_error(uint8_t vector)
+vmx_excp_has_error(uint8_t vector)
 {
 	switch (vector) {
 	case 8:		/* #DF */
@@ -1004,9 +1078,9 @@ vmx_vcpu_inject(struct nvmm_cpu *vcpu)
 	struct nvmm_comm_page *comm = vcpu->comm;
 	struct vmx_cpudata *cpudata = vcpu->cpudata;
 	int type = 0, err = 0, ret = EINVAL;
+	uint64_t rflags, info, error;
 	u_int evtype;
 	uint8_t vector;
-	uint64_t info, error;
 
 	evtype = comm->event.type;
 	vector = comm->event.vector;
@@ -1021,8 +1095,12 @@ vmx_vcpu_inject(struct nvmm_cpu *vcpu)
 			goto out;
 		if (vector == 3 || vector == 0)
 			goto out;
+		if (vmx_excp_has_rf(vector)) {
+			rflags = vmx_vmread(VMCS_GUEST_RFLAGS);
+			vmx_vmwrite(VMCS_GUEST_RFLAGS, rflags | PSL_RF);
+		}
 		type = INTR_TYPE_HW_EXC;
-		err = vmx_event_has_error(vector);
+		err = vmx_excp_has_error(vector);
 		break;
 	case NVMM_VCPU_EVENT_INTR:
 		type = INTR_TYPE_EXT_INT;
@@ -1093,16 +1171,21 @@ vmx_vcpu_event_commit(struct nvmm_cpu *vcpu)
 static inline void
 vmx_inkernel_advance(void)
 {
-	uint64_t rip, inslen, intstate;
+	uint64_t rip, inslen, intstate, rflags;
 
 	/*
 	 * Maybe we should also apply single-stepping and debug exceptions.
 	 * Matters for guest-ring3, because it can execute 'cpuid' under a
 	 * debugger.
 	 */
+
 	inslen = vmx_vmread(VMCS_EXIT_INSTRUCTION_LENGTH);
 	rip = vmx_vmread(VMCS_GUEST_RIP);
 	vmx_vmwrite(VMCS_GUEST_RIP, rip + inslen);
+
+	rflags = vmx_vmread(VMCS_GUEST_RFLAGS);
+	vmx_vmwrite(VMCS_GUEST_RFLAGS, rflags & ~PSL_RF);
+
 	intstate = vmx_vmread(VMCS_GUEST_INTERRUPTIBILITY);
 	vmx_vmwrite(VMCS_GUEST_INTERRUPTIBILITY,
 	    intstate & ~(INT_STATE_STI|INT_STATE_MOVSS));
@@ -1141,6 +1224,7 @@ error:
 #define VMX_CPUID_MAX_HYPERVISOR	0x40000000
 #define VMX_CPUID_MAX_EXTENDED		0x80000008
 static uint32_t vmx_cpuid_max_basic __read_mostly;
+static uint32_t vmx_cpuid_max_extended __read_mostly;
 
 static void
 vmx_inkernel_exec_cpuid(struct vmx_cpudata *cpudata, uint64_t eax, uint64_t ecx)
@@ -1169,6 +1253,11 @@ vmx_inkernel_handle_cpuid(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		}
 	} else if (eax < 0x80000000) {
 		if (__predict_false(eax > VMX_CPUID_MAX_HYPERVISOR)) {
+			eax = vmx_cpuid_max_basic;
+			vmx_inkernel_exec_cpuid(cpudata, eax, ecx);
+		}
+	} else {
+		if (__predict_false(eax > vmx_cpuid_max_extended)) {
 			eax = vmx_cpuid_max_basic;
 			vmx_inkernel_exec_cpuid(cpudata, eax, ecx);
 		}
@@ -1217,12 +1306,22 @@ vmx_inkernel_handle_cpuid(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		cpudata->gprs[NVMM_X64_GPR_RDX] = 0;
 		break;
 	case 0x00000007: /* Structured Extended Feature Flags Enumeration */
-		cpudata->gprs[NVMM_X64_GPR_RAX] &= nvmm_cpuid_00000007.eax;
-		cpudata->gprs[NVMM_X64_GPR_RBX] &= nvmm_cpuid_00000007.ebx;
-		cpudata->gprs[NVMM_X64_GPR_RCX] &= nvmm_cpuid_00000007.ecx;
-		cpudata->gprs[NVMM_X64_GPR_RDX] &= nvmm_cpuid_00000007.edx;
-		if (vmx_procbased_ctls2 & PROC_CTLS2_INVPCID_ENABLE) {
-			cpudata->gprs[NVMM_X64_GPR_RBX] |= CPUID_SEF_INVPCID;
+		switch (ecx) {
+		case 0:
+			cpudata->gprs[NVMM_X64_GPR_RAX] = 0;
+			cpudata->gprs[NVMM_X64_GPR_RBX] &= nvmm_cpuid_00000007.ebx;
+			cpudata->gprs[NVMM_X64_GPR_RCX] &= nvmm_cpuid_00000007.ecx;
+			cpudata->gprs[NVMM_X64_GPR_RDX] &= nvmm_cpuid_00000007.edx;
+			if (vmx_procbased_ctls2 & PROC_CTLS2_INVPCID_ENABLE) {
+				cpudata->gprs[NVMM_X64_GPR_RBX] |= CPUID_SEF_INVPCID;
+			}
+			break;
+		default:
+			cpudata->gprs[NVMM_X64_GPR_RAX] = 0;
+			cpudata->gprs[NVMM_X64_GPR_RBX] = 0;
+			cpudata->gprs[NVMM_X64_GPR_RCX] = 0;
+			cpudata->gprs[NVMM_X64_GPR_RDX] = 0;
+			break;
 		}
 		break;
 	case 0x00000008: /* Empty */
@@ -1334,6 +1433,9 @@ vmx_inkernel_handle_cpuid(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		memcpy(&cpudata->gprs[NVMM_X64_GPR_RDX], " ___", 4);
 		break;
 
+	case 0x80000000:
+		cpudata->gprs[NVMM_X64_GPR_RAX] = vmx_cpuid_max_extended;
+		break;
 	case 0x80000001:
 		cpudata->gprs[NVMM_X64_GPR_RAX] &= nvmm_cpuid_80000001.eax;
 		cpudata->gprs[NVMM_X64_GPR_RBX] &= nvmm_cpuid_80000001.ebx;
@@ -1345,8 +1447,18 @@ vmx_inkernel_handle_cpuid(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	case 0x80000004: /* Processor Brand String */
 	case 0x80000005: /* Reserved Zero */
 	case 0x80000006: /* Cache Information */
+		break;
 	case 0x80000007: /* TSC Information */
+		cpudata->gprs[NVMM_X64_GPR_RAX] &= nvmm_cpuid_80000007.eax;
+		cpudata->gprs[NVMM_X64_GPR_RBX] &= nvmm_cpuid_80000007.ebx;
+		cpudata->gprs[NVMM_X64_GPR_RCX] &= nvmm_cpuid_80000007.ecx;
+		cpudata->gprs[NVMM_X64_GPR_RDX] &= nvmm_cpuid_80000007.edx;
+		break;
 	case 0x80000008: /* Address Sizes */
+		cpudata->gprs[NVMM_X64_GPR_RAX] &= nvmm_cpuid_80000008.eax;
+		cpudata->gprs[NVMM_X64_GPR_RBX] &= nvmm_cpuid_80000008.ebx;
+		cpudata->gprs[NVMM_X64_GPR_RCX] &= nvmm_cpuid_80000008.ecx;
+		cpudata->gprs[NVMM_X64_GPR_RDX] &= nvmm_cpuid_80000008.edx;
 		break;
 
 	default:
@@ -1460,7 +1572,7 @@ vmx_inkernel_handle_cr0(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     uint64_t qual)
 {
 	struct vmx_cpudata *cpudata = vcpu->cpudata;
-	uint64_t type, gpr, cr0;
+	uint64_t type, gpr, oldcr0, realcr0, fakecr0;
 	uint64_t efer, ctls1;
 
 	type = __SHIFTOUT(qual, VMX_QUAL_CR_TYPE);
@@ -1472,15 +1584,24 @@ vmx_inkernel_handle_cr0(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	KASSERT(gpr < 16);
 
 	if (gpr == NVMM_X64_GPR_RSP) {
-		gpr = vmx_vmread(VMCS_GUEST_RSP);
+		fakecr0 = vmx_vmread(VMCS_GUEST_RSP);
 	} else {
-		gpr = cpudata->gprs[gpr];
+		fakecr0 = cpudata->gprs[gpr];
 	}
 
-	cr0 = gpr | CR0_NE | CR0_ET;
-	cr0 &= ~(CR0_NW|CR0_CD);
+	/*
+	 * fakecr0 is the value the guest believes is in %cr0. realcr0 is the
+	 * actual value in %cr0.
+	 *
+	 * In fakecr0 we must force CR0_ET to 1.
+	 *
+	 * In realcr0 we must force CR0_NW and CR0_CD to 0, and CR0_ET and
+	 * CR0_NE to 1.
+	 */
+	fakecr0 |= CR0_ET;
+	realcr0 = (fakecr0 & ~CR0_STATIC_MASK) | CR0_ET | CR0_NE;
 
-	if (vmx_check_cr(cr0, vmx_cr0_fixed0, vmx_cr0_fixed1) == -1) {
+	if (vmx_check_cr(realcr0, vmx_cr0_fixed0, vmx_cr0_fixed1) == -1) {
 		return -1;
 	}
 
@@ -1489,7 +1610,7 @@ vmx_inkernel_handle_cr0(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	 * from CR3.
 	 */
 
-	if (cr0 & CR0_PG) {
+	if (realcr0 & CR0_PG) {
 		ctls1 = vmx_vmread(VMCS_ENTRY_CTLS);
 		efer = vmx_vmread(VMCS_GUEST_IA32_EFER);
 		if (efer & EFER_LME) {
@@ -1503,7 +1624,14 @@ vmx_inkernel_handle_cr0(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		vmx_vmwrite(VMCS_ENTRY_CTLS, ctls1);
 	}
 
-	vmx_vmwrite(VMCS_GUEST_CR0, cr0);
+	oldcr0 = (vmx_vmread(VMCS_CR0_SHADOW) & CR0_STATIC_MASK) |
+	    (vmx_vmread(VMCS_GUEST_CR0) & ~CR0_STATIC_MASK);
+	if ((oldcr0 ^ fakecr0) & CR0_TLB_FLUSH) {
+		cpudata->gtlb_want_flush = true;
+	}
+
+	vmx_vmwrite(VMCS_CR0_SHADOW, fakecr0);
+	vmx_vmwrite(VMCS_GUEST_CR0, realcr0);
 	vmx_inkernel_advance();
 	return 0;
 }
@@ -1513,7 +1641,7 @@ vmx_inkernel_handle_cr4(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     uint64_t qual)
 {
 	struct vmx_cpudata *cpudata = vcpu->cpudata;
-	uint64_t type, gpr, cr4;
+	uint64_t type, gpr, oldcr4, cr4;
 
 	type = __SHIFTOUT(qual, VMX_QUAL_CR_TYPE);
 	if (type != CR_TYPE_WRITE) {
@@ -1529,10 +1657,17 @@ vmx_inkernel_handle_cr4(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		gpr = cpudata->gprs[gpr];
 	}
 
+	if (gpr & CR4_INVALID) {
+		return -1;
+	}
 	cr4 = gpr | CR4_VMXE;
-
 	if (vmx_check_cr(cr4, vmx_cr4_fixed0, vmx_cr4_fixed1) == -1) {
 		return -1;
+	}
+
+	oldcr4 = vmx_vmread(VMCS_GUEST_CR4);
+	if ((oldcr4 ^ gpr) & CR4_TLB_FLUSH) {
+		cpudata->gtlb_want_flush = true;
 	}
 
 	vmx_vmwrite(VMCS_GUEST_CR4, cr4);
@@ -1703,6 +1838,24 @@ vmx_inkernel_handle_msr(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 			cpudata->gprs[NVMM_X64_GPR_RDX] = (val >> 32);
 			goto handled;
 		}
+		if (exit->u.rdmsr.msr == MSR_IA32_ARCH_CAPABILITIES) {
+			u_int descs[4];
+			if (cpuid_level < 7) {
+				goto error;
+			}
+			x86_cpuid(7, descs);
+			if (!(descs[3] & CPUID_SEF_ARCH_CAP)) {
+				goto error;
+			}
+			val = rdmsr(MSR_IA32_ARCH_CAPABILITIES);
+			val &= (IA32_ARCH_RDCL_NO |
+			    IA32_ARCH_SSB_NO |
+			    IA32_ARCH_MDS_NO |
+			    IA32_ARCH_TAA_NO);
+			cpudata->gprs[NVMM_X64_GPR_RAX] = (val & 0xFFFFFFFF);
+			cpudata->gprs[NVMM_X64_GPR_RDX] = (val >> 32);
+			goto handled;
+		}
 		for (i = 0; i < __arraycount(msr_ignore_list); i++) {
 			if (msr_ignore_list[i] != exit->u.rdmsr.msr)
 				continue;
@@ -1816,9 +1969,6 @@ vmx_exit_xsetbv(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	}
 
 	cpudata->gxcr0 = val;
-	if (vmx_xcr0_mask != 0) {
-		wrxcr(0, cpudata->gxcr0);
-	}
 
 	vmx_inkernel_advance();
 	return;
@@ -1863,7 +2013,7 @@ vmx_vcpu_guest_fpu_enter(struct nvmm_cpu *vcpu)
 {
 	struct vmx_cpudata *cpudata = vcpu->cpudata;
 
-	fpu_save();
+	fpu_kern_enter();
 	fpu_area_restore(&cpudata->gfpu, vmx_xcr0_mask);
 
 	if (vmx_xcr0_mask != 0) {
@@ -1883,6 +2033,7 @@ vmx_vcpu_guest_fpu_leave(struct nvmm_cpu *vcpu)
 	}
 
 	fpu_area_save(&cpudata->gfpu, vmx_xcr0_mask);
+	fpu_kern_leave();
 }
 
 static void
@@ -1921,6 +2072,7 @@ vmx_vcpu_guest_misc_enter(struct nvmm_cpu *vcpu)
 	struct vmx_cpudata *cpudata = vcpu->cpudata;
 
 	/* This gets restored automatically by the CPU. */
+	vmx_vmwrite(VMCS_HOST_IDTR_BASE, (uint64_t)curcpu()->ci_idtvec.iv_idt);
 	vmx_vmwrite(VMCS_HOST_FS_BASE, rdmsr(MSR_FSBASE));
 	vmx_vmwrite(VMCS_HOST_CR3, rcr3());
 	vmx_vmwrite(VMCS_HOST_CR4, rcr4());
@@ -2042,17 +2194,18 @@ vmx_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	uint64_t exitcode;
 	uint64_t intstate;
 	uint64_t machgen;
-	int hcpu, s, ret;
+	int hcpu, ret;
 	bool launched;
 
 	vmx_vmcs_enter(vcpu);
+
+	vmx_vcpu_state_commit(vcpu);
+	comm->state_cached = 0;
 
 	if (__predict_false(vmx_vcpu_event_commit(vcpu) != 0)) {
 		vmx_vmcs_leave(vcpu);
 		return EINVAL;
 	}
-	vmx_vcpu_state_commit(vcpu);
-	comm->state_cached = 0;
 
 	ci = curcpu();
 	hcpu = cpu_number();
@@ -2072,7 +2225,6 @@ vmx_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 	vmx_vcpu_guest_dbregs_enter(vcpu);
 	vmx_vcpu_guest_misc_enter(vcpu);
-	vmx_vcpu_guest_fpu_enter(vcpu);
 
 	while (1) {
 		if (cpudata->gtlb_want_flush) {
@@ -2087,7 +2239,8 @@ vmx_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 			cpudata->gtsc_want_update = false;
 		}
 
-		s = splhigh();
+		vmx_vcpu_guest_fpu_enter(vcpu);
+		vmx_cli();
 		machgen = vmx_htlb_flush(machdata, cpudata);
 		lcr2(cpudata->gcr2);
 		if (launched) {
@@ -2097,7 +2250,8 @@ vmx_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		}
 		cpudata->gcr2 = rcr2();
 		vmx_htlb_flush_ack(cpudata, machgen);
-		splx(s);
+		vmx_sti();
+		vmx_vcpu_guest_fpu_leave(vcpu);
 
 		if (__predict_false(ret != 0)) {
 			vmx_exit_invalid(exit, -1);
@@ -2193,7 +2347,6 @@ vmx_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 	cpudata->gtsc = vmx_vmread(VMCS_TSC_OFFSET) + rdtsc();
 
-	vmx_vcpu_guest_fpu_leave(vcpu);
 	vmx_vcpu_guest_misc_leave(vcpu);
 	vmx_vcpu_guest_dbregs_leave(vcpu);
 
@@ -2427,14 +2580,26 @@ vmx_vcpu_setstate(struct nvmm_cpu *vcpu)
 
 	if (flags & NVMM_X64_STATE_CRS) {
 		/*
-		 * CR0_NE and CR4_VMXE are mandatory.
+		 * CR0_ET must be 1 both in the shadow and the real register.
+		 * CR0_NE must be 1 in the real register.
+		 * CR0_NW and CR0_CD must be 0 in the real register.
 		 */
+		vmx_vmwrite(VMCS_CR0_SHADOW,
+		    (state->crs[NVMM_X64_CR_CR0] & CR0_STATIC_MASK) |
+		    CR0_ET);
 		vmx_vmwrite(VMCS_GUEST_CR0,
-		    state->crs[NVMM_X64_CR_CR0] | CR0_NE);
+		    (state->crs[NVMM_X64_CR_CR0] & ~CR0_STATIC_MASK) |
+		    CR0_ET | CR0_NE);
+
 		cpudata->gcr2 = state->crs[NVMM_X64_CR_CR2];
-		vmx_vmwrite(VMCS_GUEST_CR3, state->crs[NVMM_X64_CR_CR3]); // XXX PDPTE?
+
+		/* XXX We are not handling PDPTE here. */
+		vmx_vmwrite(VMCS_GUEST_CR3, state->crs[NVMM_X64_CR_CR3]);
+
+		/* CR4_VMXE is mandatory. */
 		vmx_vmwrite(VMCS_GUEST_CR4,
-		    state->crs[NVMM_X64_CR_CR4] | CR4_VMXE);
+		    (state->crs[NVMM_X64_CR_CR4] & CR4_VALID) | CR4_VMXE);
+
 		cpudata->gcr8 = state->crs[NVMM_X64_CR_CR8];
 
 		if (vmx_xcr0_mask != 0) {
@@ -2566,7 +2731,9 @@ vmx_vcpu_getstate(struct nvmm_cpu *vcpu)
 	}
 
 	if (flags & NVMM_X64_STATE_CRS) {
-		state->crs[NVMM_X64_CR_CR0] = vmx_vmread(VMCS_GUEST_CR0);
+		state->crs[NVMM_X64_CR_CR0] =
+		    (vmx_vmread(VMCS_CR0_SHADOW) & CR0_STATIC_MASK) |
+		    (vmx_vmread(VMCS_GUEST_CR0) & ~CR0_STATIC_MASK);
 		state->crs[NVMM_X64_CR_CR2] = cpudata->gcr2;
 		state->crs[NVMM_X64_CR_CR3] = vmx_vmread(VMCS_GUEST_CR3);
 		state->crs[NVMM_X64_CR_CR4] = vmx_vmread(VMCS_GUEST_CR4);
@@ -2732,8 +2899,6 @@ vmx_vcpu_init(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	vmx_vcpu_msr_allow(cpudata->msrbm, MSR_FSBASE, true, true);
 	vmx_vcpu_msr_allow(cpudata->msrbm, MSR_GSBASE, true, true);
 	vmx_vcpu_msr_allow(cpudata->msrbm, MSR_TSC, true, false);
-	vmx_vcpu_msr_allow(cpudata->msrbm, MSR_IA32_ARCH_CAPABILITIES,
-	    true, false);
 	vmx_vmwrite(VMCS_MSR_BITMAP, (uint64_t)cpudata->msrbm_pa);
 
 	/*
@@ -2757,12 +2922,12 @@ vmx_vcpu_init(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	vmx_vmwrite(VMCS_ENTRY_MSR_LOAD_COUNT, vmx_msrlist_entry_nmsr);
 	vmx_vmwrite(VMCS_EXIT_MSR_STORE_COUNT, VMX_MSRLIST_EXIT_NMSR);
 
-	/* Force CR0_NW and CR0_CD to zero, CR0_ET to one. */
-	vmx_vmwrite(VMCS_CR0_MASK, CR0_NW|CR0_CD|CR0_ET);
-	vmx_vmwrite(VMCS_CR0_SHADOW, CR0_ET);
+	/* Set the CR0 mask. Any change of these bits causes a VMEXIT. */
+	vmx_vmwrite(VMCS_CR0_MASK, CR0_STATIC_MASK);
 
-	/* Force CR4_VMXE to zero. */
-	vmx_vmwrite(VMCS_CR4_MASK, CR4_VMXE);
+	/* Force unsupported CR4 fields to zero. */
+	vmx_vmwrite(VMCS_CR4_MASK, CR4_INVALID);
+	vmx_vmwrite(VMCS_CR4_SHADOW, 0);
 
 	/* Set the Host state for resuming. */
 	vmx_vmwrite(VMCS_HOST_RIP, (uint64_t)&vmx_resume_rip);
@@ -2775,7 +2940,6 @@ vmx_vcpu_init(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	vmx_vmwrite(VMCS_HOST_IA32_SYSENTER_CS, 0);
 	vmx_vmwrite(VMCS_HOST_IA32_SYSENTER_ESP, 0);
 	vmx_vmwrite(VMCS_HOST_IA32_SYSENTER_EIP, 0);
-	vmx_vmwrite(VMCS_HOST_IDTR_BASE, (uint64_t)idt);
 	vmx_vmwrite(VMCS_HOST_IA32_PAT, rdmsr(MSR_CR_PAT));
 	vmx_vmwrite(VMCS_HOST_IA32_EFER, rdmsr(MSR_EFER));
 	vmx_vmwrite(VMCS_HOST_CR0, rcr0() & ~CR0_TS);
@@ -3115,11 +3279,8 @@ vmx_ident(void)
 	}
 
 	msr = rdmsr(MSR_IA32_FEATURE_CONTROL);
-	if ((msr & IA32_FEATURE_CONTROL_LOCK) == 0) {
-		printf("NVMM: VMX disabled in BIOS\n");
-		return false;
-	}
-	if ((msr & IA32_FEATURE_CONTROL_OUT_SMX) == 0) {
+	if ((msr & IA32_FEATURE_CONTROL_LOCK) != 0 &&
+	    (msr & IA32_FEATURE_CONTROL_OUT_SMX) == 0) {
 		printf("NVMM: VMX disabled in BIOS\n");
 		return false;
 	}
@@ -3245,7 +3406,17 @@ vmx_change_cpu(void *arg1, void *arg2)
 {
 	struct cpu_info *ci = curcpu();
 	bool enable = arg1 != NULL;
-	uint64_t cr4;
+	uint64_t msr, cr4;
+
+	if (enable) {
+		msr = rdmsr(MSR_IA32_FEATURE_CONTROL);
+		if ((msr & IA32_FEATURE_CONTROL_LOCK) == 0) {
+			/* Lock now, with VMX-outside-SMX enabled. */
+			wrmsr(MSR_IA32_FEATURE_CONTROL, msr |
+			    IA32_FEATURE_CONTROL_LOCK |
+			    IA32_FEATURE_CONTROL_OUT_SMX);
+		}
+	}
 
 	if (!enable) {
 		vmx_vmxoff();
@@ -3298,6 +3469,7 @@ vmx_init(void)
 	uint64_t xc, msr;
 	struct vmxon *vmxon;
 	uint32_t revision;
+	u_int descs[4];
 	paddr_t pa;
 	vaddr_t va;
 	int error;
@@ -3308,8 +3480,12 @@ vmx_init(void)
 	/* Init the XCR0 mask. */
 	vmx_xcr0_mask = VMX_XCR0_MASK_DEFAULT & x86_xsave_features;
 
-	/* Init the max CPUID leaves. */
+	/* Init the max basic CPUID leaf. */
 	vmx_cpuid_max_basic = uimin(cpuid_level, VMX_CPUID_MAX_BASIC);
+
+	/* Init the max extended CPUID leaf. */
+	x86_cpuid(0x80000000, descs);
+	vmx_cpuid_max_extended = uimin(descs[0], VMX_CPUID_MAX_EXTENDED);
 
 	/* Init the TLB flush op, the EPT flush op and the EPTP type. */
 	msr = rdmsr(MSR_IA32_VMX_EPT_VPID_CAP);
@@ -3392,6 +3568,7 @@ vmx_capability(struct nvmm_capability *cap)
 }
 
 const struct nvmm_impl nvmm_x86_vmx = {
+	.name = "x86-vmx",
 	.ident = vmx_ident,
 	.init = vmx_init,
 	.fini = vmx_fini,

@@ -1,4 +1,4 @@
-/*      $NetBSD: procfs_linux.c,v 1.84 2020/05/31 08:38:54 rin Exp $      */
+/*      $NetBSD: procfs_linux.c,v 1.87 2020/09/05 16:30:12 riastradh Exp $      */
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: procfs_linux.c,v 1.84 2020/05/31 08:38:54 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: procfs_linux.c,v 1.87 2020/09/05 16:30:12 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -64,8 +64,8 @@ __KERNEL_RCSID(0, "$NetBSD: procfs_linux.c,v 1.84 2020/05/31 08:38:54 rin Exp $"
 #include <compat/linux/common/linux_exec.h>
 #include <compat/linux32/common/linux32_sysctl.h>
 
-#include <uvm/uvm_extern.h>
 #include <uvm/uvm.h>
+#include <uvm/uvm_extern.h>
 
 extern struct devsw_conv *devsw_conv;
 extern int max_devsw_convs;
@@ -142,10 +142,15 @@ procfs_domeminfo(struct lwp *curl, struct proc *p,
 
 	bf = malloc(LBFSZ, M_TEMP, M_WAITOK);
 
-	cpu_count_sync_all();
-	freepg = (long)uvm_availmem();
-	filepg = (long)cpu_count_get(CPU_COUNT_FILEPAGES);
-	anonpg = (long)cpu_count_get(CPU_COUNT_ANONPAGES);
+	/* uvm_availmem() will sync the counters if needed. */
+	freepg = (long)uvm_availmem(true);
+	filepg = (long)(cpu_count_get(CPU_COUNT_FILECLEAN) +
+	    cpu_count_get(CPU_COUNT_FILEDIRTY) + 
+	    cpu_count_get(CPU_COUNT_FILEUNKNOWN) -
+	    cpu_count_get(CPU_COUNT_EXECPAGES));
+	anonpg = (long)(cpu_count_get(CPU_COUNT_ANONCLEAN) +
+	    cpu_count_get(CPU_COUNT_ANONDIRTY) + 
+	    cpu_count_get(CPU_COUNT_ANONUNKNOWN));
 	execpg = (long)cpu_count_get(CPU_COUNT_EXECPAGES);
 
 	len = snprintf(bf, LBFSZ,
@@ -296,7 +301,7 @@ procfs_docpustat(struct lwp *curl, struct proc *p,
 		i += 1;
 	}
 
-	cpu_count_sync_all();
+	cpu_count_sync(true);
 
 	struct timeval btv;
 	getmicroboottime(&btv);

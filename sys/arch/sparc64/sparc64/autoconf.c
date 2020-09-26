@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.217 2020/02/23 05:14:29 macallan Exp $ */
+/*	$NetBSD: autoconf.c,v 1.222 2020/07/23 16:08:02 jdc Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.217 2020/02/23 05:14:29 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.222 2020/07/23 16:08:02 jdc Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -1019,7 +1019,7 @@ device_ofnode(device_t dev)
 	if (obj == NULL)
 		return 0;
 
-	return prop_number_integer_value(obj);
+	return prop_number_signed_value(obj);
 }
 
 /*
@@ -1037,7 +1037,7 @@ device_setofnode(device_t dev, int node)
 	props = device_properties(dev);
 	if (props == NULL)
 		return;
-	obj = prop_number_create_integer(node);
+	obj = prop_number_create_signed(node);
 	if (obj == NULL)
 		return;
 	prop_dictionary_set(props, OFNODEKEY, obj);
@@ -1050,7 +1050,7 @@ static void
 add_gpio_LED(prop_array_t pins, const char *name, int num, int act, int def)
 {
 	prop_dictionary_t pin = prop_dictionary_create();
-	prop_dictionary_set_cstring(pin, "name", name);
+	prop_dictionary_set_string(pin, "name", name);
 	prop_dictionary_set_uint32(pin, "type", 0);	/* 0 for LED, for now */
 	prop_dictionary_set_uint32(pin, "pin", num);
 	prop_dictionary_set_bool(pin, "active_high", act);
@@ -1106,7 +1106,102 @@ add_drivebay_props_v210(device_t dev, int ofnode, void *aux)
 		char name[16];
 
 		snprintf(name, sizeof(name), "bay%d", target);		
-		prop_dictionary_set_cstring(dict, "location", name);
+		prop_dictionary_set_string(dict, "location", name);
+	}
+}
+
+/*
+ * Add SPARCle spdmem devices (0x50 and 0x51) that are not in the OFW tree
+ */
+static void
+add_spdmem_props_sparcle(device_t busdev)
+{
+	prop_dictionary_t props = device_properties(busdev);
+	prop_array_t cfg = prop_array_create();
+	int i;
+
+	DPRINTF(ACDB_PROBE, ("\nAdding spdmem for SPARCle "));
+	for (i = 0x50; i <= 0x51; i++) {
+		prop_dictionary_t spd = prop_dictionary_create();
+		prop_dictionary_set_string(spd, "name", "dimm-spd");
+		prop_dictionary_set_uint32(spd, "addr", i);
+		prop_dictionary_set_uint64(spd, "cookie", 0);
+		prop_array_add(cfg, spd);
+		prop_object_release(spd);
+	}
+	prop_dictionary_set(props, "i2c-child-devices", cfg);
+	prop_object_release(cfg);
+}
+
+/*
+ * Add V210/V240 environmental sensors that are not in the OFW tree.
+ */
+static void
+add_env_sensors_v210(device_t busdev)
+{
+	prop_dictionary_t props = device_properties(busdev);
+	prop_array_t cfg = NULL;
+	prop_dictionary_t sens;
+	prop_data_t data;
+	const char name_lm[] = "i2c-lm75";
+	const char name_adm[] = "i2c-adm1026";
+
+	DPRINTF(ACDB_PROBE, ("\nAdding sensors for %s ", machine_model));
+	cfg = prop_dictionary_get(props, "i2c-child-devices");
+ 	if (!cfg) {
+		cfg = prop_array_create();
+		prop_dictionary_set(props, "i2c-child-devices", cfg);
+		prop_dictionary_set_bool(props, "i2c-indirect-config", false);
+	}
+
+	/* ADM1026 at 0x2e */
+	sens = prop_dictionary_create();
+	prop_dictionary_set_uint32(sens, "addr", 0x2e);
+	prop_dictionary_set_uint64(sens, "cookie", 0);
+	prop_dictionary_set_string(sens, "name", "hardware-monitor");
+	data = prop_data_create_copy(&name_adm[0], sizeof(name_adm));
+	prop_dictionary_set(sens, "compatible", data);
+	prop_object_release(data);
+	prop_array_add(cfg, sens);
+	prop_object_release(sens);
+
+	/* LM75 at 0x4e */
+	sens = prop_dictionary_create();
+	prop_dictionary_set_uint32(sens, "addr", 0x4e);
+	prop_dictionary_set_uint64(sens, "cookie", 0);
+	prop_dictionary_set_string(sens, "name", "temperature-sensor");
+	data = prop_data_create_copy(&name_lm[0], sizeof(name_lm));
+	prop_dictionary_set(sens, "compatible", data);
+	prop_object_release(data);
+	prop_array_add(cfg, sens);
+	prop_object_release(sens);
+}
+
+/* Hardware specific device properties */
+static void
+set_hw_props(device_t dev)
+{
+	device_t busdev = device_parent(dev);
+
+	if ((!strcmp(machine_model, "SUNW,Sun-Fire-V240") ||
+	    !strcmp(machine_model, "SUNW,Sun-Fire-V210"))) {
+		device_t busparent = device_parent(busdev);
+		prop_dictionary_t props = device_properties(dev);
+
+		if (busparent != NULL && device_is_a(busparent, "pcfiic") &&
+		    device_is_a(dev, "adm1026hm") && props != NULL) {
+			prop_dictionary_set_uint8(props, "fan_div2", 0x55);
+			prop_dictionary_set_bool(props, "multi_read", true);
+		}
+	}
+
+	if (!strcmp(machine_model, "SUNW,Sun-Fire-V440")) {
+		device_t busparent = device_parent(busdev);
+		prop_dictionary_t props = device_properties(dev);
+		if (busparent != NULL && device_is_a(busparent, "pcfiic") &&
+		    device_is_a(dev, "adm1026hm") && props != NULL) {
+			prop_dictionary_set_bool(props, "multi_read", true);
+		}
 	}
 }
 
@@ -1155,7 +1250,8 @@ device_register(device_t dev, void *aux)
 
 		ofnode = (int)ia->ia_cookie;
 		if (device_is_a(dev, "pcagpio")) {
-			if (strcmp(machine_model, "SUNW,Sun-Fire-V210") == 0) {
+			if (!strcmp(machine_model, "SUNW,Sun-Fire-V240") ||
+			    !strcmp(machine_model, "SUNW,Sun-Fire-V210")) {
 				add_gpio_props_v210(dev, aux);
 			}
 		} 
@@ -1258,7 +1354,7 @@ device_register(device_t dev, void *aux)
 				if (!prom_get_node_ether(ofnode, eaddr))
 					goto noether;
 			}
-			blob = prop_data_create_data(eaddr, ETHER_ADDR_LEN);
+			blob = prop_data_create_copy(eaddr, ETHER_ADDR_LEN);
 			prop_dictionary_set(dict, "mac-address", blob);
 			prop_object_release(blob);
 			of_to_dataprop(dict, ofnode, "shared-pins",
@@ -1274,7 +1370,7 @@ noether:
 			if (OF_getprop(ofnode, "port-wwn", &pwwn, sizeof(pwwn))
 			    == sizeof(pwwn)) {
 				pwwnd = 
-				    prop_number_create_unsigned_integer(pwwn);
+				    prop_number_create_unsigned(pwwn);
 				prop_dictionary_set(dict, "port-wwn", pwwnd);
 				prop_object_release(pwwnd);
 			}
@@ -1282,7 +1378,7 @@ noether:
 			if (OF_getprop(ofnode, "node-wwn", &nwwn, sizeof(nwwn))
 			    == sizeof(nwwn)) {
 				nwwnd = 
-				    prop_number_create_unsigned_integer(nwwn);
+				    prop_number_create_unsigned(nwwn);
 				prop_dictionary_set(dict, "node-wwn", nwwnd);
 				prop_object_release(nwwnd);
 			}
@@ -1299,7 +1395,7 @@ noether:
 				    sizeof(id)) <= 0)
 					continue;
 
-				idd = prop_number_create_unsigned_integer(id);
+				idd = prop_number_create_unsigned(id);
 				prop_dictionary_set(dict,
 						    "scsi-initiator-id", idd);
 				prop_object_release(idd);
@@ -1344,82 +1440,13 @@ noether:
 			}
 		}
 
-		/*
-		 * Add SPARCle spdmem devices (0x50 and 0x51) that the
-		 * firmware does not know about.
-		 */
-		if (!strcmp(machine_model, "TAD,SPARCLE")) {
-			prop_dictionary_t props = device_properties(busdev);
-			prop_array_t cfg = prop_array_create();
-			int i;
+		if (!strcmp(machine_model, "TAD,SPARCLE"))
+			add_spdmem_props_sparcle(busdev);
 
-			DPRINTF(ACDB_PROBE, ("\nAdding spdmem for SPARCle "));
-			for (i = 0x50; i <= 0x51; i++) {
-				prop_dictionary_t spd =
-				    prop_dictionary_create();
-				prop_dictionary_set_cstring(spd, "name",
-				    "dimm-spd");
-				prop_dictionary_set_uint32(spd, "addr", i);
-				prop_dictionary_set_uint64(spd, "cookie", 0);
-				prop_array_add(cfg, spd);
-				prop_object_release(spd);
-			}
-			prop_dictionary_set(props, "i2c-child-devices", cfg);
-			prop_object_release(cfg);
-			
-		}
-
-		/*
-		 * Add V210/V240 environmental sensors that are not in
-		 * the OFW tree.
-		 */
 		if (device_is_a(busdev, "pcfiic") &&
 		    (!strcmp(machine_model, "SUNW,Sun-Fire-V240") ||
-		    !strcmp(machine_model, "SUNW,Sun-Fire-V210"))) {
-			prop_dictionary_t props = device_properties(busdev);
-			prop_array_t cfg = NULL;
-			prop_dictionary_t sens;
-			prop_data_t data;
-			const char name_lm[] = "i2c-lm75";
-			const char name_adm[] = "i2c-adm1026";
-
-			DPRINTF(ACDB_PROBE, ("\nAdding sensors for %s ",
-			    machine_model));
-			cfg = prop_dictionary_get(props, "i2c-child-devices");
- 			if (!cfg) {
-				cfg = prop_array_create();
-				prop_dictionary_set(props, "i2c-child-devices",
-				    cfg);
-				prop_dictionary_set_bool(props,
-				    "i2c-indirect-config", false);
-			}
-
-			/* ADM1026 at 0x2e */
-			sens = prop_dictionary_create();
-			prop_dictionary_set_uint32(sens, "addr", 0x2e);
-			prop_dictionary_set_uint64(sens, "cookie", 0);
-			prop_dictionary_set_cstring(sens, "name",
-			    "hardware-monitor");
-			data = prop_data_create_data(&name_adm[0],
-			    sizeof(name_adm));
-			prop_dictionary_set(sens, "compatible", data);
-			prop_object_release(data);
-			prop_array_add(cfg, sens);
-			prop_object_release(sens);
-
-			/* LM75 at 0x4e */
-			sens = prop_dictionary_create();
-			prop_dictionary_set_uint32(sens, "addr", 0x4e);
-			prop_dictionary_set_uint64(sens, "cookie", 0);
-			prop_dictionary_set_cstring(sens, "name",
-			    "temperature-sensor");
-			data = prop_data_create_data(&name_lm[0],
-			    sizeof(name_lm));
-			prop_dictionary_set(sens, "compatible", data);
-			prop_object_release(data);
-			prop_array_add(cfg, sens);
-			prop_object_release(sens);
-		}
+		    !strcmp(machine_model, "SUNW,Sun-Fire-V210")))
+			add_env_sensors_v210(busdev);
 	}
 
 	/* set properties for PCI framebuffers */
@@ -1484,26 +1511,7 @@ noether:
 #endif
 	}
 
-	/* Hardware specific device properties */
-	if ((!strcmp(machine_model, "SUNW,Sun-Fire-V240") ||
-	    !strcmp(machine_model, "SUNW,Sun-Fire-V210"))) {
-		device_t busparent = device_parent(busdev);
-		prop_dictionary_t props = device_properties(dev);
-
-		if (busparent != NULL && device_is_a(busparent, "pcfiic") &&
-		    device_is_a(dev, "adm1026hm") && props != NULL) {
-			prop_dictionary_set_uint8(props, "fan_div2", 0x55);
-			prop_dictionary_set_bool(props, "multi_read", true);
-		}
-	}
-	if (!strcmp(machine_model, "SUNW,Sun-Fire-V440")) {
-		device_t busparent = device_parent(busdev);
-		prop_dictionary_t props = device_properties(dev);
-		if (busparent != NULL && device_is_a(busparent, "pcfiic") &&
-		    device_is_a(dev, "adm1026hm") && props != NULL) {
-			prop_dictionary_set_bool(props, "multi_read", true);
-		}
-	}
+	set_hw_props(dev);
 }
 
 /*
@@ -1669,7 +1677,7 @@ copyprops(device_t busdev, int node, prop_dictionary_t dict, int is_console)
 	pos = strstr(output_device, ":r");
 	if (pos == NULL)
 		return;
-	prop_dictionary_set_cstring(dict, "videomode", pos + 2);
+	prop_dictionary_set_string(dict, "videomode", pos + 2);
 }
 
 static void

@@ -1,4 +1,4 @@
-/*	$NetBSD: usbdi.c,v 1.202 2020/05/19 18:32:35 jakllsch Exp $	*/
+/*	$NetBSD: usbdi.c,v 1.204 2020/08/19 02:19:07 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2012, 2015 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.202 2020/05/19 18:32:35 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.204 2020/08/19 02:19:07 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -400,6 +400,9 @@ usbd_transfer(struct usbd_xfer *xfer)
 		    err, 0, 0, 0);
 		usbd_lock_pipe(pipe);
 		SDT_PROBE1(usb, device, xfer, preabort,  xfer);
+#ifdef DIAGNOSTIC
+		xfer->ux_state = XFER_BUSY;
+#endif
 		SIMPLEQ_REMOVE_HEAD(&pipe->up_queue, ux_next);
 		if (pipe->up_serialise)
 			usbd_start_next(pipe);
@@ -965,6 +968,9 @@ usbd_ar_pipe(struct usbd_pipe *pipe)
 		    (uintptr_t)pipe->up_methods, 0);
 		if (xfer->ux_status == USBD_NOT_STARTED) {
 			SDT_PROBE1(usb, device, xfer, preabort,  xfer);
+#ifdef DIAGNOSTIC
+			xfer->ux_state = XFER_BUSY;
+#endif
 			SIMPLEQ_REMOVE_HEAD(&pipe->up_queue, ux_next);
 		} else {
 			/* Make the HC abort it (and invoke the callback). */
@@ -1782,7 +1788,7 @@ usbd_xfer_cancel_timeout_async(struct usbd_xfer *xfer)
 		 * is therefore no longer set -- the next resubmission
 		 * of the xfer must schedule a new timeout.
 		 *
-		 * The callout should not be be pending at this point:
+		 * The callout should not be pending at this point:
 		 * it is scheduled only under the lock, and only when
 		 * xfer->ux_timeout_set is false, or by the callout or
 		 * task itself when xfer->ux_timeout_reset is true.

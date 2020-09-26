@@ -1,4 +1,4 @@
-/*	$NetBSD: radeonfb.c,v 1.106 2020/02/06 13:31:30 macallan Exp $ */
+/*	$NetBSD: radeonfb.c,v 1.109 2020/07/05 09:53:54 martin Exp $ */
 
 /*-
  * Copyright (c) 2006 Itronix Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: radeonfb.c,v 1.106 2020/02/06 13:31:30 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: radeonfb.c,v 1.109 2020/07/05 09:53:54 martin Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -80,6 +80,7 @@ __KERNEL_RCSID(0, "$NetBSD: radeonfb.c,v 1.106 2020/02/06 13:31:30 macallan Exp 
 #include <sys/kernel.h>
 #include <sys/lwp.h>
 #include <sys/kauth.h>
+#include <sys/kmem.h>
 
 #include <dev/wscons/wsdisplayvar.h>
 #include <dev/wscons/wsconsio.h>
@@ -1021,7 +1022,10 @@ radeonfb_attach(device_t parent, device_t dev, void *aux)
 		callout_setfunc(&dp->rd_bl_lvds_co,
 				radeonfb_lvds_callout, dp);
 		dp->rd_bl_on = 1;
-		dp->rd_bl_level = radeonfb_get_backlight(dp);
+		if (sc->sc_flags & RFB_MOB) {
+			dp->rd_bl_level = radeonfb_get_backlight(dp);
+		} else
+			dp->rd_bl_level = 128;
 		radeonfb_set_backlight(dp, dp->rd_bl_level);
 	}
 
@@ -1592,7 +1596,7 @@ radeonfb_getprop_num(struct radeonfb_softc *sc, const char *name,
 		return defval;
 	}
 	KASSERT(prop_object_type(pn) == PROP_TYPE_NUMBER);
-	return (prop_number_integer_value(pn));
+	return prop_number_unsigned_value(pn);
 }
 
 int
@@ -1974,7 +1978,7 @@ nobios:
 		      sc->sc_dev), "EDID")) != NULL) {
 
 			aprint_debug_dev(sc->sc_dev, "using static EDID\n");
-			memcpy(edid, prop_data_data_nocopy(edid_data), 128);
+			memcpy(edid, prop_data_value(edid_data), 128);
 			if (edid_parse(edid, eip) == 0) {
 
 				sc->sc_ports[i].rp_edid_valid = 1;
@@ -3694,12 +3698,12 @@ radeonfb_set_cursor(struct radeonfb_display *dp, struct wsdisplay_cursor *wc)
 	unsigned	index, count;
 	int		i, err;
 	int		pitch, size;
-	struct radeonfb_cursor	nc;
+	struct radeonfb_cursor	*nc = &dp->rd_tempcursor;
 
 	flags = wc->which;
 
 	/* copy old values */
-	nc = dp->rd_cursor;
+	memcpy(nc, &dp->rd_cursor, sizeof(struct radeonfb_cursor));
 
 	if (flags & WSDISPLAY_CURSOR_DOCMAP) {
 		index = wc->cmap.index;
@@ -3719,7 +3723,7 @@ radeonfb_set_cursor(struct radeonfb_display *dp, struct wsdisplay_cursor *wc)
 			return err;
 
 		for (i = index; i < index + count; i++) {
-			nc.rc_cmap[i] =
+			nc->rc_cmap[i] =
 			    (r[i] << 16) + (g[i] << 8) + (b[i] << 0);
 		}
 	}
@@ -3734,46 +3738,46 @@ radeonfb_set_cursor(struct radeonfb_display *dp, struct wsdisplay_cursor *wc)
 		size = pitch * wc->size.y;
 
 		/* clear the old cursor and mask */
-		memset(nc.rc_image, 0, 512);
-		memset(nc.rc_mask, 0, 512);
+		memset(nc->rc_image, 0, 512);
+		memset(nc->rc_mask, 0, 512);
 
-		nc.rc_size = wc->size;
+		nc->rc_size = wc->size;
 
-		if ((err = copyin(wc->image, nc.rc_image, size)) != 0)
+		if ((err = copyin(wc->image, nc->rc_image, size)) != 0)
 			return err;
 
-		if ((err = copyin(wc->mask, nc.rc_mask, size)) != 0)
+		if ((err = copyin(wc->mask, nc->rc_mask, size)) != 0)
 			return err;
 	}
 
 	if (flags & WSDISPLAY_CURSOR_DOHOT) {
-		nc.rc_hot = wc->hot;
-		if (nc.rc_hot.x >= nc.rc_size.x)
-			nc.rc_hot.x = nc.rc_size.x - 1;
-		if (nc.rc_hot.y >= nc.rc_size.y)
-			nc.rc_hot.y = nc.rc_size.y - 1;
+		nc->rc_hot = wc->hot;
+		if (nc->rc_hot.x >= nc->rc_size.x)
+			nc->rc_hot.x = nc->rc_size.x - 1;
+		if (nc->rc_hot.y >= nc->rc_size.y)
+			nc->rc_hot.y = nc->rc_size.y - 1;
 	}
 
 	if (flags & WSDISPLAY_CURSOR_DOPOS) {
-		nc.rc_pos = wc->pos;
-		if (nc.rc_pos.x >= dp->rd_virtx)
-			nc.rc_pos.x = dp->rd_virtx - 1;
+		nc->rc_pos = wc->pos;
+		if (nc->rc_pos.x >= dp->rd_virtx)
+			nc->rc_pos.x = dp->rd_virtx - 1;
 #if 0
-		if (nc.rc_pos.x < 0)
-			nc.rc_pos.x = 0;
+		if (nc->rc_pos.x < 0)
+			nc->rc_pos.x = 0;
 #endif
-		if (nc.rc_pos.y >= dp->rd_virty)
-			nc.rc_pos.y = dp->rd_virty - 1;
+		if (nc->rc_pos.y >= dp->rd_virty)
+			nc->rc_pos.y = dp->rd_virty - 1;
 #if 0
-		if (nc.rc_pos.y < 0)
-			nc.rc_pos.y = 0;
+		if (nc->rc_pos.y < 0)
+			nc->rc_pos.y = 0;
 #endif
 	}
 	if (flags & WSDISPLAY_CURSOR_DOCUR) {
-		nc.rc_visible = wc->enable;
+		nc->rc_visible = wc->enable;
 	}
 
-	dp->rd_cursor = nc;
+	memcpy(&dp->rd_cursor, nc, sizeof(struct radeonfb_cursor));
 	radeonfb_cursor_update(dp, wc->which);
 
 	return 0;
@@ -4174,9 +4178,13 @@ radeonfb_pickres(struct radeonfb_display *dp, uint16_t *x, uint16_t *y,
 		}
 
 	} else {
-		struct videomode	modes[64];
+		struct videomode	*modes;
+		size_t			smodes;
 		int			nmodes = 0;
 		int			valid = 0;
+
+		smodes = sizeof(struct videomode) * 64;
+		modes = kmem_alloc(smodes, KM_SLEEP);
 
 		for (i = 0; i < dp->rd_ncrtcs; i++) {
 			/*
@@ -4246,6 +4254,8 @@ radeonfb_pickres(struct radeonfb_display *dp, uint16_t *x, uint16_t *y,
 				*y = modes[i].vdisplay;
 			}
 		}
+		kmem_free(modes, smodes);
+
 	}
 
 	if ((*x == 0) || (*y == 0)) {

@@ -1,4 +1,4 @@
-/* $NetBSD: hypervisor.c,v 1.86 2020/05/26 10:37:25 bouyer Exp $ */
+/* $NetBSD: hypervisor.c,v 1.89 2020/09/15 10:58:02 bouyer Exp $ */
 
 /*
  * Copyright (c) 2005 Manuel Bouyer.
@@ -53,7 +53,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hypervisor.c,v 1.86 2020/05/26 10:37:25 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hypervisor.c,v 1.89 2020/09/15 10:58:02 bouyer Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -295,6 +295,8 @@ xen_check_hypervisordev(void)
 static int
 xen_hvm_init_late(void)
 {
+	struct idt_vec *iv = &(cpu_info_primary.ci_idtvec);
+
 	if (HYPERVISOR_xen_version(XENVER_version, NULL) < 0) {
 		aprint_error("Xen HVM: hypercall page not working\n");
 		return 0;
@@ -350,8 +352,8 @@ xen_hvm_init_late(void)
 	 * prepare vector.
 	 * We don't really care where it is, as long as it's free
 	 */
-	xen_hvm_vec = idt_vec_alloc(129, 255);
-	idt_vec_set(xen_hvm_vec, &IDTVEC(hypervisor_pvhvm_callback));
+	xen_hvm_vec = idt_vec_alloc(iv, 129, 255);
+	idt_vec_set(iv, xen_hvm_vec, &IDTVEC(hypervisor_pvhvm_callback));
 
 	events_default_setup();
 	return 1;
@@ -411,31 +413,41 @@ xen_hvm_init(void)
 	xen_hvm_param.index = HVM_PARAM_CONSOLE_PFN;
 	
 	if ( HYPERVISOR_hvm_op(HVMOP_get_param, &xen_hvm_param) < 0) {
-		aprint_error(
+		aprint_debug(
 		    "Xen HVM: Unable to obtain xencons page address\n");
-		return 0;
+		xen_start_info.console.domU.mfn = 0;
+		xen_start_info.console.domU.evtchn = -1;
+		xencons_interface = 0;
+	} else {
+		/* Re-use PV field */
+		xen_start_info.console.domU.mfn = xen_hvm_param.value;
+
+		pmap_kenter_pa((vaddr_t) xencons_interface,
+		    ptoa(xen_start_info.console.domU.mfn),
+		    VM_PROT_READ|VM_PROT_WRITE, 0);
+
+		xen_hvm_param.domid = DOMID_SELF;
+		xen_hvm_param.index = HVM_PARAM_CONSOLE_EVTCHN;
+
+		if ( HYPERVISOR_hvm_op(HVMOP_get_param, &xen_hvm_param) < 0) {
+			aprint_error(
+			   "Xen HVM: Unable to obtain xencons event channel\n");
+			return 0;
+		}
+
+		xen_start_info.console.domU.evtchn = xen_hvm_param.value;
 	}
 
-	/* Re-use PV field */
-	xen_start_info.console.domU.mfn = xen_hvm_param.value;
-
-	pmap_kenter_pa((vaddr_t) xencons_interface, ptoa(xen_start_info.console.domU.mfn),
-	    VM_PROT_READ|VM_PROT_WRITE, 0);
-
-	xen_hvm_param.domid = DOMID_SELF;
-	xen_hvm_param.index = HVM_PARAM_CONSOLE_EVTCHN;
-
-	if ( HYPERVISOR_hvm_op(HVMOP_get_param, &xen_hvm_param) < 0) {
-		aprint_error(
-		    "Xen HVM: Unable to obtain xencons event channel\n");
-		return 0;
+	/*
+	 * PR port-amd64/55543
+	 * workround for amazon's Xen 4.2: it looks like the Xen clock is not
+	 * fully funtionnal here. This version also doesn't support
+	 * HVM_PARAM_CONSOLE_PFN. 
+	 */
+	if (xencons_interface != 0) {
+		delay_func = x86_delay = xen_delay;
+		x86_initclock_func = xen_initclocks;
 	}
-
-	xen_start_info.console.domU.evtchn = xen_hvm_param.value;
-
-
-	delay_func = x86_delay = xen_delay;
-	x86_initclock_func = xen_initclocks;
 
 	vm_guest = VM_GUEST_XENPVHVM; /* Be more specific */
 	return 1;
@@ -456,13 +468,14 @@ xen_hvm_init_cpu(struct cpu_info *ci)
 
 	descs[0] = 0;
 	x86_cpuid(XEN_CPUID_LEAF(4), descs);
-	if (!(descs[0] & XEN_HVM_CPUID_VCPU_ID_PRESENT)) {
-		aprint_error_dev(ci->ci_dev, "Xen HVM: can't get VCPU id\n");
-		vm_guest = VM_GUEST_XENHVM;
-		return 0;
+	if (descs[0] & XEN_HVM_CPUID_VCPU_ID_PRESENT) {
+		ci->ci_vcpuid = descs[1];
+	} else {
+		aprint_debug_dev(ci->ci_dev,
+		    "Xen HVM: can't get VCPU id, falling back to ci_acpiid\n");
+		ci->ci_vcpuid = ci->ci_acpiid;
 	}
 
-	ci->ci_vcpuid = descs[1];
 	ci->ci_vcpu = &HYPERVISOR_shared_info->vcpu_info[ci->ci_vcpuid];
 
 	/* Register event callback handler. */
@@ -489,6 +502,7 @@ xen_hvm_init_cpu(struct cpu_info *ci)
 				panic("event upcall vector");
 			aprint_error_dev(ci->ci_dev,
 			    "falling back to global vector\n");
+			xenhvm_use_percpu_callback = 0;
 		} else {
 			/*
 			 * From FreeBSD:
@@ -662,9 +676,11 @@ hypervisor_attach(device_t parent, device_t self, void *aux)
 	config_found_ia(self, "xendevbus", &hac.hac_xenbus, hypervisor_print);
 #endif
 #if NXENCONS > 0
-	memset(&hac, 0, sizeof(hac));
-	hac.hac_xencons.xa_device = "xencons";
-	config_found_ia(self, "xendevbus", &hac.hac_xencons, hypervisor_print);
+	if (xencons_interface != 0 || vm_guest != VM_GUEST_XENPVHVM) {
+		memset(&hac, 0, sizeof(hac));
+		hac.hac_xencons.xa_device = "xencons";
+		config_found_ia(self, "xendevbus", &hac.hac_xencons, hypervisor_print);
+	}
 #endif
 #if defined(XENPV) && defined(DOM0OPS)
 #if NPCI > 0

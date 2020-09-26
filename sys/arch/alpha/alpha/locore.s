@@ -1,4 +1,4 @@
-/* $NetBSD: locore.s,v 1.124 2020/01/08 20:59:18 skrll Exp $ */
+/* $NetBSD: locore.s,v 1.136 2020/09/19 01:32:16 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1999, 2000, 2019 The NetBSD Foundation, Inc.
@@ -67,24 +67,11 @@
 
 #include <machine/asm.h>
 
-__KERNEL_RCSID(0, "$NetBSD: locore.s,v 1.124 2020/01/08 20:59:18 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: locore.s,v 1.136 2020/09/19 01:32:16 thorpej Exp $");
 
 #include "assym.h"
 
 .stabs	__FILE__,132,0,0,kernel_text
-
-/*
- * Perform actions necessary to switch to a new context.  The
- * hwpcb should be in a0.  Clobbers v0, t0, t8..t11, a0.
- */
-#define	SWITCH_CONTEXT							\
-	/* Make a note of the context we're running on. */		\
-	GET_CURPCB						;	\
-	stq	a0, 0(v0)					;	\
-									\
-	/* Swap in the new context. */					\
-	call_pal PAL_OSF1_swpctx
-
 
 	/* don't reorder instructions; paranoia. */
 	.set noreorder
@@ -126,6 +113,7 @@ bootstack:
  *
  * All arguments are passed to alpha_init().
  */
+IMPORT(prom_mapped, 4)
 NESTED_NOPROFILE(locorestart,1,0,ra,0,0)
 	br	pv,1f
 1:	LDGP(pv)
@@ -155,7 +143,11 @@ NESTED_NOPROFILE(locorestart,1,0,ra,0,0)
 	 */
 	lda	a0, lwp0
 	ldq	a0, L_MD_PCBPADDR(a0)		/* phys addr of PCB */
-	SWITCH_CONTEXT
+	call_pal PAL_OSF1_swpctx	/* clobbers a0, t0, t8-t11, a0 */
+
+	/* PROM is no longer mapped. */
+	lda	t0, prom_mapped
+	stl	zero, 0(t0)
 
 	/*
 	 * We've switched to a new page table base, so invalidate the TLB
@@ -167,8 +159,17 @@ NESTED_NOPROFILE(locorestart,1,0,ra,0,0)
 
 	/*
 	 * All ready to go!  Call main()!
+	 *
+	 * We're going to play a little trick there, though.  We are
+	 * going to fake our return address as the kthread backstop.
+	 * Hitting the backstop will trigger a panic, and we want lwp0
+	 * to work like other kthreads in that regard.  We will still
+	 * leep the "main returned" backstop here in case something
+	 * goes horribly wrong.
 	 */
-	CALL(main)
+	lda	ra, alpha_kthread_backstop
+	jsr	s0, main
+	ldgp	gp, 0(s0)
 
 	/* This should never happen. */
 	PANIC("main() returned",Lmain_returned_pmsg)
@@ -247,36 +248,54 @@ XNESTED(esigcode,0)
  * exception_return: return from trap, exception, or syscall
  */
 
-IMPORT(ssir, 8)
-
 LEAF(exception_return, 1)			/* XXX should be NESTED */
 	br	pv, 1f
 1:	LDGP(pv)
 
-	ldq	s1, (FRAME_PS * 8)(sp)		/* get the saved PS */
-	and	s1, ALPHA_PSL_IPL_MASK, t0	/* look at the saved IPL */
-	bne	t0, 5f				/* != 0: can't do AST or SIR */
+	ldq	s1, (FRAME_PS * 8)(sp)		/* s1 = new PSL */
+	and	s1, ALPHA_PSL_IPL_MASK, s3	/* s3 = new ipl */
 
-	/* see if we can do an SIR */
-2:	ldq	t1, ssir			/* SIR pending? */
+	/* --- BEGIN inline spllower() --- */
+
+	cmpult	s3, ALPHA_PSL_IPL_SOFT_HI, t1	/* new IPL < SOFT_HI? */
+	beq	t1, 5f				/* no, can't do AST or SI */
+	/* yes */
+
+	/* GET_CURLWP clobbers v0, t0, t8...t11. */
+	GET_CURLWP
+	mov	v0, s0				/* s0 = curlwp */
+
+2:	/*
+	 * Check to see if a soft interrupt is pending.  We need to only
+	 * check for soft ints eligible to run at the new IPL.  We generate
+	 * the mask of elible soft ints to run by masking the ssir with:
+	 *
+	 *	(ALPHA_ALL_SOFTINTS << ((ipl) << 1))
+	 *
+	 * See alpha_softint_dispatch().
+	 */
+	ldq	t1, L_CPU(s0)			/* t1 = curlwp->l_cpu */
+	ldiq	t2, ALPHA_ALL_SOFTINTS		/* t2 = ALPHA_ALL_SOFTINTS */
+	ldq	t1, CPU_INFO_SSIR(t1)		/* t1 = t1->ci_ssir */
+	sll	s3, 1, t3			/* t3 = ipl << 1 */
+	sll	t2, t3, t2			/* t2 <<= t3 */
+	and	t1, t2, t1			/* t1 &= t2 */
 	bne	t1, 6f				/* yes */
 	/* no */
+
+	/* --- END inline spllower() --- */
 
 	and	s1, ALPHA_PSL_USERMODE, t0	/* are we returning to user? */
 	beq	t0, 5f				/* no: just return */
 	/* yes */
 
-	/* GET_CPUINFO clobbers v0, t0, t8...t11. */
-3:	GET_CPUINFO
-
 	/* check for AST */
-	ldq	t1, CPU_INFO_CURLWP(v0)
-	ldl	t3, L_MD_ASTPENDING(t1)		/* AST pending? */
+3:	ldl	t3, L_MD_ASTPENDING(s0)		/* AST pending? */
 	bne	t3, 7f				/* yes */
 	/* no: headed back to user space */
 
 	/* Enable the FPU based on whether MDLWP_FPACTIVE is set. */
-4:	ldq	t2, L_MD_FLAGS(t1)
+4:	ldq	t2, L_MD_FLAGS(s0)
 	cmplt	t2, zero, a0
 	call_pal PAL_OSF1_wrfen
 
@@ -291,19 +310,20 @@ LEAF(exception_return, 1)			/* XXX should be NESTED */
 	.set at
 	/* NOTREACHED */
 
-	/* We've got a SIR */
-6:	ldiq	a0, ALPHA_PSL_IPL_SOFT
+	/* We've got a softint */
+6:	ldiq	a0, ALPHA_PSL_IPL_HIGH
 	call_pal PAL_OSF1_swpipl
 	mov	v0, s2				/* remember old IPL */
-	CALL(softintr_dispatch)
+	mov	s3, a0				/* pass new ipl */
+	CALL(alpha_softint_dispatch)
 
-	/* SIR handled; restore IPL and check again */
+	/* SI handled; restore IPL and check again */
 	mov	s2, a0
 	call_pal PAL_OSF1_swpipl
 	br	2b
 
 	/* We've got an AST */
-7:	stl	zero, L_MD_ASTPENDING(t1)	/* no AST pending */
+7:	stl	zero, L_MD_ASTPENDING(s0)	/* no AST pending */
 
 	ldiq	a0, ALPHA_PSL_IPL_0		/* drop IPL to zero */
 	call_pal PAL_OSF1_swpipl
@@ -468,7 +488,7 @@ LEAF(exception_restore_regs, 0)
 	/* syscall number, passed in v0, is first arg, frame pointer second */
 	mov	v0,a1
 	GET_CURLWP
-	ldq	a0,0(v0)
+	mov	v0,a0
 	mov	sp,a2			; .loc 1 __LINE__
 	ldq	t11,L_PROC(a0)
 	ldq	t12,P_MD_SYSCALL(t11)
@@ -652,13 +672,122 @@ LEAF(savectx, 1)
 
 /**************************************************************************/
 
+/*
+ * void alpha_softint_switchto(struct lwp *current, int ipl, struct lwp *next)
+ * Switch away from the current LWP to the specified softint LWP, and
+ * dispatch to softint processing.
+ * Aguments:
+ *	a0	'struct lwp *' of the LWP to switch from
+ *	a1	IPL that the softint will run at
+ *	a2	'struct lwp *' of the LWP to switch to
+ *
+ * N.B. We have arranged that a0 and a1 are already set up correctly
+ * for the call to softint_dispatch().
+ */
+NESTED_NOPROFILE(alpha_softint_switchto, 3, 16, ra, IM_RA, 0)
+	LDGP(pv)
+
+	ldq	a3, L_PCB(a0)			/* a3 = from->l_pcb */
+
+	lda	sp, -16(sp)			/* set up stack frame */
+	stq	ra, 0(sp)			/* save ra */
+
+	/*
+	 * Step 1: Save the current LWP's context.  We don't
+	 * save the return address directly; instead, we arrange
+	 * for it to bounce through a trampoline that fixes up
+	 * the state in case the softint LWP blocks.
+	 */
+	stq	sp, PCB_HWPCB_KSP(a3)		/* store sp */
+	stq	s0, PCB_CONTEXT+(0 * 8)(a3)	/* store s0 - s6 */
+	stq	s1, PCB_CONTEXT+(1 * 8)(a3)
+	stq	s2, PCB_CONTEXT+(2 * 8)(a3)
+	stq	s3, PCB_CONTEXT+(3 * 8)(a3)
+	stq	s4, PCB_CONTEXT+(4 * 8)(a3)
+	stq	s5, PCB_CONTEXT+(5 * 8)(a3)
+	stq	s6, PCB_CONTEXT+(6 * 8)(a3)
+
+	/* Set the trampoline address in saved context. */
+	lda	v0, alpha_softint_return
+	stq	v0, PCB_CONTEXT+(7 * 8)(a3)	/* store ra */
+
+	/*
+	 * Step 2: Switch to the softint LWP's stack.
+	 * We always start at the top of the stack (i.e.
+	 * just below the trapframe).
+	 *
+	 * N.B. There is no need to restore any other registers
+	 * from the softint LWP's context; we are starting from
+	 * the root of the call graph.
+	 */
+	ldq	sp, L_MD_TF(a2)
+
+	/*
+	 * Step 3: Update curlwp.
+	 *
+	 * N.B. We save off the from-LWP argument that will be passed
+	 * to softint_dispatch() in s0, which we'll need to restore
+	 * before returning.  If we bounce through the trampoline, the
+	 * context switch will restore it for us.
+	 */
+	mov	a0, s0			/* s0 = from LWP */
+	SET_CURLWP(a2)			/* clobbers a0, v0, t0, t8..t11 */
+
+	/*
+	 * Step 4: Call softint_dispatch().
+	 *
+	 * N.B. a1 already has the IPL argument.
+	 */
+	mov	s0, a0			/* a0 = from LWP */
+	CALL(softint_dispatch)
+
+	/*
+	 * Step 5: Restore everything and return.
+	 */
+	ldq	a3, L_PCB(s0)			/* a3 = from->l_pcb */
+	SET_CURLWP(s0)			/* clobbers a0, v0, t0, t8..t11 */
+	ldq	sp, PCB_HWPCB_KSP(a3)		/* restore sp */
+	ldq	s0, PCB_CONTEXT+(0 * 8)(a3)	/* restore s0 */
+	ldq	ra, 0(sp)			/* restore ra */
+	lda	sp, 16(sp)			/* pop stack frame */
+	RET
+	END(alpha_softint_switchto)
+
+LEAF_NOPROFILE(alpha_softint_return, 0)
+	/*
+	 * Step 1: Go to IPL_HIGH, which is what the alpha_softint_dispatch()
+	 * expects.  We will have arrived here at IPL_SCHED.
+	 */
+	ldiq	a0, ALPHA_PSL_IPL_HIGH
+	call_pal PAL_OSF1_swpipl
+
+	/*
+	 * Step 2: Re-adjust the mutex count after mi_switch().
+	 */
+	GET_CURLWP
+	ldq	v0, L_CPU(v0)
+	ldl	t0, CPU_INFO_MTX_COUNT(v0)
+	addl	t0, 1, t0
+	stl	t0, CPU_INFO_MTX_COUNT(v0)
+
+	/*
+	 * Step 3: Pop alpha_softint_switchto()'s stack frame
+	 * and return.
+	 */
+	ldq	ra, 0(sp)			/* restore ra */
+	lda	sp, 16(sp)			/* pop stack frame */
+	RET
+	END(alpha_softint_return)
 
 /*
- * struct lwp *cpu_switchto(struct lwp *current, struct lwp *next)
+ * struct lwp *cpu_switchto(struct lwp *current, struct lwp *next,
+ *                          bool returning)
  * Switch to the specified next LWP
  * Arguments:
  *	a0	'struct lwp *' of the LWP to switch from
  *	a1	'struct lwp *' of the LWP to switch to
+ *	a2	non-zero if we're returning to an interrupted LWP
+ *		from a soft interrupt
  */
 LEAF(cpu_switchto, 0)
 	LDGP(pv)
@@ -666,25 +795,35 @@ LEAF(cpu_switchto, 0)
 	/*
 	 * do an inline savectx(), to save old context
 	 */
-	ldq	a2, L_PCB(a0)
+	ldq	a3, L_PCB(a0)
 	/* NOTE: ksp is stored by the swpctx */
-	stq	s0, PCB_CONTEXT+(0 * 8)(a2)	/* store s0 - s6 */
-	stq	s1, PCB_CONTEXT+(1 * 8)(a2)
-	stq	s2, PCB_CONTEXT+(2 * 8)(a2)
-	stq	s3, PCB_CONTEXT+(3 * 8)(a2)
-	stq	s4, PCB_CONTEXT+(4 * 8)(a2)
-	stq	s5, PCB_CONTEXT+(5 * 8)(a2)
-	stq	s6, PCB_CONTEXT+(6 * 8)(a2)
-	stq	ra, PCB_CONTEXT+(7 * 8)(a2)	/* store ra */
+	stq	s0, PCB_CONTEXT+(0 * 8)(a3)	/* store s0 - s6 */
+	stq	s1, PCB_CONTEXT+(1 * 8)(a3)
+	stq	s2, PCB_CONTEXT+(2 * 8)(a3)
+	stq	s3, PCB_CONTEXT+(3 * 8)(a3)
+	stq	s4, PCB_CONTEXT+(4 * 8)(a3)
+	stq	s5, PCB_CONTEXT+(5 * 8)(a3)
+	stq	s6, PCB_CONTEXT+(6 * 8)(a3)
+	stq	ra, PCB_CONTEXT+(7 * 8)(a3)	/* store ra */
 
 	mov	a0, s4				/* save old curlwp */
 	mov	a1, s2				/* save new lwp */
-	ldq	a0, L_MD_PCBPADDR(s2)		/* save new pcbpaddr */
 
-	SWITCH_CONTEXT				/* swap the context */
+	/*
+	 * Check to see if we're doing a light-weight switch back to
+	 * an interrupted LWP (referred to as the "pinned" LWP) from
+	 * a softint LWP.  In this case we have been running on the
+	 * pinned LWP's context -- swpctx was not used to get here --
+	 * so we won't be using swpctx to go back, either.
+	 */
+	bne	a2, 3f			/* yes, go handle it */
+	/* no, normal context switch */
 
-	GET_CPUINFO
-	stq	s2, CPU_INFO_CURLWP(v0)		/* curlwp = l */
+	/* Switch to the new PCB. */
+	ldq	a0, L_MD_PCBPADDR(s2)
+	call_pal PAL_OSF1_swpctx	/* clobbers a0, t0, t8-t11, v0 */
+
+1:	SET_CURLWP(s2)			/* curlwp = l */
 
 	/*
 	 * Now running on the new PCB.
@@ -696,15 +835,15 @@ LEAF(cpu_switchto, 0)
 	 */
 	ldq	a0, L_PROC(s2)			/* first ras_lookup() arg */
 	ldq	t0, P_RASLIST(a0)		/* any RAS entries? */
-	beq	t0, 1f				/* no, skip */
+	beq	t0, 2f				/* no, skip */
 	ldq	s1, L_MD_TF(s2)			/* s1 = l->l_md.md_tf */
 	ldq	a1, (FRAME_PC*8)(s1)		/* second ras_lookup() arg */
 	CALL(ras_lookup)			/* ras_lookup(p, PC) */
 	addq	v0, 1, t0			/* -1 means "not in ras" */
-	beq	t0, 1f
+	beq	t0, 2f
 	stq	v0, (FRAME_PC*8)(s1)
 
-1:
+2:
 	mov	s4, v0				/* return the old lwp */
 	/*
 	 * Restore registers and return.
@@ -720,36 +859,50 @@ LEAF(cpu_switchto, 0)
 	ldq	s0, PCB_CONTEXT+(0 * 8)(s0)		/* restore s0 */
 
 	RET
+
+3:	/*
+	 * Registers right now:
+	 *
+	 *	a0	old LWP
+	 *	a1	new LWP
+	 *	a3	old PCB
+	 *
+	 * What we need to do here is swap the stack, since we won't
+	 * be getting that from swpctx.
+	 */
+	ldq	a2, L_PCB(a1)			/* a2 = new PCB */
+	stq	sp, PCB_HWPCB_KSP(a3)		/* save old SP */
+	ldq	sp, PCB_HWPCB_KSP(a2)		/* restore new SP */
+	br	1b				/* finish up */
 	END(cpu_switchto)
 
 /*
  * lwp_trampoline()
  *
- * Arrange for a function to be invoked neatly, after a cpu_lwp_fork().
+ * Arrange for a function to be invoked neatly, after a cpu_lwp_fork(),
+ * which has set up our pcb_context for us.  But we actually *get here*
+ * via cpu_switchto(), which returns the LWP we switched away from in v0.
  *
  * Invokes the function specified by the s0 register with the return
  * address specified by the s1 register and with one argument specified
  * by the s2 register.
  */
 LEAF_NOPROFILE(lwp_trampoline, 0)
-	mov	v0, a0
-	mov	s3, a1
-	CALL(lwp_startup)
-	mov	s0, pv
-	mov	s1, ra
-	mov	s2, a0
-	jmp	zero, (pv)
+	mov	v0, a0		/* a0 = prev_lwp (from cpu_switchto()) */
+	mov	s3, a1		/* a1 = new_lwp (that's us!) */
+	CALL(lwp_startup)	/* lwp_startup(prev_lwp, new_lwp); */
+	mov	s0, pv		/* pv = func */
+	mov	s1, ra		/* ra = (probably exception_return()) */
+	mov	s2, a0		/* a0 = arg */
+	jmp	zero, (pv)	/* func(arg) */
 	END(lwp_trampoline)
 
 /**************************************************************************/
 
 /*
- * Copy a null-terminated string within the kernel's address space.
- * If lenp is not NULL, store the number of chars copied in *lenp
- *
- * int copystr(char *from, char *to, size_t len, size_t *lenp);
+ * XXX XXX XXX: Should be removed?
  */
-LEAF(copystr, 4)
+LEAF(alpha_copystr, 4)
 	LDGP(pv)
 
 	mov	a2, t0			/* t0 = i = len */
@@ -781,7 +934,7 @@ LEAF(copystr, 4)
 
 4:	mov	zero, v0		/* return 0. */
 	RET
-	END(copystr)
+	END(alpha_copystr)
 
 NESTED(copyinstr, 4, 16, ra, IM_RA|IM_S0, 0)
 	LDGP(pv)
@@ -793,19 +946,11 @@ NESTED(copyinstr, 4, 16, ra, IM_RA|IM_S0, 0)
 	beq	t1, copyerr_efault		/* if it's not, error out.   */
 	/* Note: GET_CURLWP clobbers v0, t0, t8...t11. */
 	GET_CURLWP
-	mov	v0, s0
+	ldq	s0, L_PCB(v0)			/* s0 = pcb                  */
 	lda	v0, copyerr			/* set up fault handler.     */
-	.set noat
-	ldq	at_reg, 0(s0)
-	ldq	at_reg, L_PCB(at_reg)
-	stq	v0, PCB_ONFAULT(at_reg)
-	.set at
-	CALL(copystr)				/* do the copy.		     */
-	.set noat
-	ldq	at_reg, 0(s0)			/* kill the fault handler.   */
-	ldq	at_reg, L_PCB(at_reg)
-	stq	zero, PCB_ONFAULT(at_reg)
-	.set at
+	stq	v0, PCB_ONFAULT(s0)
+	CALL(alpha_copystr)			/* do the copy.		     */
+	stq	zero, PCB_ONFAULT(s0)		/* kill the fault handler.   */
 	ldq	ra, (16-8)(sp)			/* restore ra.		     */
 	ldq	s0, (16-16)(sp)			/* restore s0.		     */
 	lda	sp, 16(sp)			/* kill stack frame.	     */
@@ -822,19 +967,11 @@ NESTED(copyoutstr, 4, 16, ra, IM_RA|IM_S0, 0)
 	beq	t1, copyerr_efault		/* if it's not, error out.   */
 	/* Note: GET_CURLWP clobbers v0, t0, t8...t11. */
 	GET_CURLWP
-	mov	v0, s0
+	ldq	s0, L_PCB(v0)			/* s0 = pcb                  */
 	lda	v0, copyerr			/* set up fault handler.     */
-	.set noat
-	ldq	at_reg, 0(s0)
-	ldq	at_reg, L_PCB(at_reg)
-	stq	v0, PCB_ONFAULT(at_reg)
-	.set at
-	CALL(copystr)				/* do the copy.		     */
-	.set noat
-	ldq	at_reg, 0(s0)			/* kill the fault handler.   */
-	ldq	at_reg, L_PCB(at_reg)
-	stq	zero, PCB_ONFAULT(at_reg)
-	.set at
+	stq	v0, PCB_ONFAULT(s0)
+	CALL(alpha_copystr)			/* do the copy.		     */
+	stq	zero, PCB_ONFAULT(s0)		/* kill the fault handler.   */
 	ldq	ra, (16-8)(sp)			/* restore ra.		     */
 	ldq	s0, (16-16)(sp)			/* restore s0.		     */
 	lda	sp, 16(sp)			/* kill stack frame.	     */
@@ -863,18 +1000,12 @@ NESTED(kcopy, 3, 32, ra, IM_RA|IM_S0|IM_S1, 0)
 	mov	v0, a0
 	/* Note: GET_CURLWP clobbers v0, t0, t8...t11. */
 	GET_CURLWP
-	ldq	s1, 0(v0)			/* s1 = curlwp		     */
+	ldq	s1, L_PCB(v0)			/* s1 = pcb                  */
 	lda	v0, kcopyerr			/* set up fault handler.     */
-	.set noat
-	ldq	at_reg, L_PCB(s1)
-	ldq	s0, PCB_ONFAULT(at_reg)	/* save old handler.	     */
-	stq	v0, PCB_ONFAULT(at_reg)
-	.set at
+	ldq	s0, PCB_ONFAULT(s1)		/* save old handler.	     */
+	stq	v0, PCB_ONFAULT(s1)
 	CALL(memcpy)				/* do the copy.		     */
-	.set noat
-	ldq	at_reg, L_PCB(s1)		/* restore the old handler.  */
-	stq	s0, PCB_ONFAULT(at_reg)
-	.set at
+	stq	s0, PCB_ONFAULT(s1)		/* restore the old handler.  */
 	ldq	ra, (32-8)(sp)			/* restore ra.		     */
 	ldq	s0, (32-16)(sp)			/* restore s0.		     */
 	ldq	s1, (32-24)(sp)			/* restore s1.		     */
@@ -910,17 +1041,11 @@ NESTED(copyin, 3, 16, ra, IM_RA|IM_S0, 0)
 	mov	v0, a0
 	/* Note: GET_CURLWP clobbers v0, t0, t8...t11. */
 	GET_CURLWP
-	ldq	s0, 0(v0)			/* s0 = curlwp		     */
+	ldq	s0, L_PCB(v0)			/* s = pcb                   */
 	lda	v0, copyerr			/* set up fault handler.     */
-	.set noat
-	ldq	at_reg, L_PCB(s0)
-	stq	v0, PCB_ONFAULT(at_reg)
-	.set at
+	stq	v0, PCB_ONFAULT(s0)
 	CALL(memcpy)				/* do the copy.		     */
-	.set noat
-	ldq	at_reg, L_PCB(s0)		/* kill the fault handler.   */
-	stq	zero, PCB_ONFAULT(at_reg)
-	.set at
+	stq	zero, PCB_ONFAULT(s0)		/* kill the fault handler.   */
 	ldq	ra, (16-8)(sp)			/* restore ra.		     */
 	ldq	s0, (16-16)(sp)			/* restore s0.		     */
 	lda	sp, 16(sp)			/* kill stack frame.	     */
@@ -942,17 +1067,11 @@ NESTED(copyout, 3, 16, ra, IM_RA|IM_S0, 0)
 	mov	v0, a0
 	/* Note: GET_CURLWP clobbers v0, t0, t8...t11. */
 	GET_CURLWP
-	ldq	s0, 0(v0)			/* s0 = curlwp		     */
+	ldq	s0, L_PCB(v0)			/* s0 = pcb                  */
 	lda	v0, copyerr			/* set up fault handler.     */
-	.set noat
-	ldq	at_reg, L_PCB(s0)
-	stq	v0, PCB_ONFAULT(at_reg)
-	.set at
+	stq	v0, PCB_ONFAULT(s0)
 	CALL(memcpy)				/* do the copy.		     */
-	.set noat
-	ldq	at_reg, L_PCB(s0)		/* kill the fault handler.   */
-	stq	zero, PCB_ONFAULT(at_reg)
-	.set at
+	stq	zero, PCB_ONFAULT(s0)		/* kill the fault handler.   */
 	ldq	ra, (16-8)(sp)			/* restore ra.		     */
 	ldq	s0, (16-16)(sp)			/* restore s0.		     */
 	lda	sp, 16(sp)			/* kill stack frame.	     */

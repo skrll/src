@@ -1,4 +1,4 @@
-/*	$NetBSD: chfs_subr.c,v 1.13 2020/05/16 18:31:53 christos Exp $	*/
+/*	$NetBSD: chfs_subr.c,v 1.15 2020/09/05 16:30:12 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2010 Department of Software Engineering,
@@ -49,7 +49,7 @@
 #include <sys/proc.h>
 #include <sys/atomic.h>
 
-#include <uvm/uvm.h>
+#include <uvm/uvm_extern.h>
 
 #include <miscfs/specfs/specdev.h>
 #include <miscfs/genfs/genfs.h>
@@ -79,7 +79,7 @@ chfs_mem_info(bool total)
 	if (!total) {
 		size -= uvmexp.swpgonly;
 	}
-	size += uvm_availmem();
+	size += uvm_availmem(true);
 	size += uvmexp.filepages;
 	if (size > uvmexp.wired) {
 		size -= uvmexp.wired;

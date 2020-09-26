@@ -1,4 +1,4 @@
-/*	$NetBSD: genfs.h,v 1.34 2020/05/16 18:31:51 christos Exp $	*/
+/*	$NetBSD: genfs.h,v 1.36 2020/08/07 18:14:21 christos Exp $	*/
 
 #ifndef	_MISCFS_GENFS_GENFS_H_
 #define	_MISCFS_GENFS_GENFS_H_
@@ -41,6 +41,7 @@ int	genfs_getpages(void *);
 int	genfs_putpages(void *);
 int	genfs_null_putpages(void *);
 int	genfs_compat_getpages(void *);
+int	genfs_pathconf(void *v);
 
 int	genfs_do_putpages(struct vnode *, off_t, off_t, int, struct vm_page **);
 
@@ -63,7 +64,7 @@ int	genfs_can_chown(struct vnode *, kauth_cred_t, uid_t, gid_t, uid_t,
 int	genfs_can_chtimes(struct vnode *, kauth_cred_t, uid_t, u_int);
 int	genfs_can_chflags(struct vnode *, kauth_cred_t, uid_t, bool);
 int	genfs_can_sticky(struct vnode *, kauth_cred_t, uid_t, uid_t);
-int	genfs_can_extattr(struct vnode *, kauth_cred_t, int, int);
+int	genfs_can_extattr(struct vnode *, kauth_cred_t, accmode_t, int);
 
 /*
  * Rename is complicated.  Sorry.

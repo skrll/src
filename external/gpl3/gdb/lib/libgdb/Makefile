@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.23 2020/05/03 07:10:27 rin Exp $
+#	$NetBSD: Makefile,v 1.27 2020/09/17 16:36:38 christos Exp $
 
 NOCTF=
 HOSTPROG_CXX=   1
@@ -13,17 +13,21 @@ GDBARCHDIR=	${.CURDIR}/arch/${GDB_MACHINE_ARCH}
 
 .include "${GDBARCHDIR}/defs.mk"
 
-SRCS=		${G_LIBGDB_OBS:.o=.c}
+SRCS=		${G_LIBGDB_OBS:.o=.c} dwarf2-frame.c
 GCPPFLAGS=	${G_INTERNAL_CFLAGS}
 CPPFLAGS+=	-I${.CURDIR} \
 		-I${GDBARCHDIR} \
-		-I${DIST}/gdb \
-		-I${DIST}/gdb/config \
-		-I${DIST}/gdb/common \
-		-I${DIST}/gdb/gnulib/import \
-		-I${DIST}/include/opcode \
-		-I${DIST}/libdecnumber \
 		-I${DIST} \
+		-I${DIST}/gdb \
+		-I${DIST}/gdbsupport \
+		-I${DIST}/gdb/config \
+		-I${DIST}/gnulib/import \
+		-I${DIST}/include/opcode \
+		-I${DIST}/readline \
+		-I${DIST}/libdecnumber \
+		-I${.CURDIR}/../libgnulib/arch/${GDB_MACHINE_ARCH} \
+		-I${.CURDIR}/../libgnulib/arch/${GDB_MACHINE_ARCH}/gnulib/import \
+		-I${.CURDIR}/../libgdbsupport/arch/${GDB_MACHINE_ARCH} \
 		-I${.CURDIR}/../libbfd/arch/${GDB_MACHINE_ARCH} \
 		-I${.CURDIR}/../libdecnumber/arch/${GDB_MACHINE_ARCH} \
 		-I${DIST}/bfd \
@@ -48,6 +52,7 @@ CFLAGS:=		${CXXFLAGS} -std=gnu++11 -Wno-error=stack-protector
 .PATH: ${DIST}/gdb ${DIST}/gdb/arch ${DIST}/gdb/mi ${DIST}/gdb/cli  \
     ${DIST}/gdb/tui ${DIST}/gdb/python ${DIST}/gdb/common ${DIST}/gdb/target \
     ${DIST}/gdb/nat ${DIST}/gdb/guile ${DIST}/gdb/compile ${DIST}/gdb/doc \
+    ${DIST}/gdb/dwarf2 ${DIST}/gdb/unittests \
     ${GDBARCHDIR}
 
 #
@@ -74,3 +79,6 @@ CLEANDIRFILES+= \
 	m2-exp.c \
 	p-exp.c \
 	rust-exp.c
+
+# corelow.c
+CWARNFLAGS.gcc+=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 9:? -Wno-error=alloca-larger-than= :}

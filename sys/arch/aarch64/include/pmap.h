@@ -1,4 +1,4 @@
-/* $NetBSD: pmap.h,v 1.39 2020/05/14 07:59:03 skrll Exp $ */
+/* $NetBSD: pmap.h,v 1.43 2020/09/19 13:33:08 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -84,34 +84,38 @@ struct pmap {
 	bool pm_activated;
 };
 
-struct pv_entry;
+/* sized to reduce memory consumption & cache misses (32 bytes) */
+struct pv_entry {
+	struct pv_entry *pv_next;
+	struct pmap *pv_pmap;
+	vaddr_t pv_va;	/* for embedded entry (pp_pv) also includes flags */
+	void *pv_ptep;	/* pointer for fast pte lookup */
+};
 
 struct pmap_page {
 	kmutex_t pp_pvlock;
-	LIST_HEAD(, pv_entry) pp_pvhead;
-
-	/* VM_PROT_READ means referenced, VM_PROT_WRITE means modified */
-	uint32_t pp_flags;
+	struct pv_entry pp_pv;
 };
 
+/* try to keep vm_page at or under 128 bytes to reduce cache misses */
 struct vm_page_md {
-	LIST_ENTRY(vm_page) mdpg_vmlist;	/* L[0123] table vm_page list */
-	pd_entry_t *mdpg_ptep_parent;	/* for page descriptor page only */
-
 	struct pmap_page mdpg_pp;
 };
+/* for page descriptor page only */
+#define	mdpg_ptep_parent	mdpg_pp.pp_pv.pv_ptep
 
 #define VM_MDPAGE_INIT(pg)					\
 	do {							\
-		(pg)->mdpage.mdpg_ptep_parent = NULL;		\
 		PMAP_PAGE_INIT(&(pg)->mdpage.mdpg_pp);		\
 	} while (/*CONSTCOND*/ 0)
 
 #define PMAP_PAGE_INIT(pp)						\
 	do {								\
-		mutex_init(&(pp)->pp_pvlock, MUTEX_NODEBUG, IPL_VM);	\
-		LIST_INIT(&(pp)->pp_pvhead);				\
-		(pp)->pp_flags = 0;					\
+		mutex_init(&(pp)->pp_pvlock, MUTEX_NODEBUG, IPL_NONE);	\
+		(pp)->pp_pv.pv_next = NULL;				\
+		(pp)->pp_pv.pv_pmap = NULL;				\
+		(pp)->pp_pv.pv_va = 0;					\
+		(pp)->pp_pv.pv_ptep = NULL;				\
 	} while (/*CONSTCOND*/ 0)
 
 /* saved permission bit for referenced/modified emulation */
@@ -169,17 +173,12 @@ void pmap_db_ttbrdump(bool, vaddr_t, void (*)(const char *, ...)
 pt_entry_t *kvtopte(vaddr_t);
 pt_entry_t pmap_kvattr(vaddr_t, vm_prot_t);
 
-/* locore.S */
-pd_entry_t *bootpage_alloc(void);
-
-/* pmap_locore.c */
-int pmapboot_enter(vaddr_t, paddr_t, psize_t, psize_t,
-    pt_entry_t, uint64_t, pd_entry_t *(*)(void),
+/* pmapboot.c */
+pd_entry_t *pmapboot_pagealloc(void);
+int pmapboot_enter(vaddr_t, paddr_t, psize_t, psize_t, pt_entry_t,
     void (*pr)(const char *, ...) __printflike(1, 2));
-#define PMAPBOOT_ENTER_NOBLOCK		0x00000001
-#define PMAPBOOT_ENTER_NOOVERWRITE	0x00000002
-int pmapboot_enter_range(vaddr_t, paddr_t, psize_t, pt_entry_t, uint64_t,
-    pd_entry_t *(*)(void), void (*)(const char *, ...) __printflike(1, 2));
+int pmapboot_enter_range(vaddr_t, paddr_t, psize_t, pt_entry_t,
+    void (*)(const char *, ...) __printflike(1, 2));
 int pmapboot_protect(vaddr_t, vaddr_t, vm_prot_t);
 void pmap_db_pte_print(pt_entry_t, int,
     void (*pr)(const char *, ...) __printflike(1, 2));
@@ -205,8 +204,6 @@ const struct pmap_devmap *pmap_devmap_find_pa(paddr_t, psize_t);
 const struct pmap_devmap *pmap_devmap_find_va(vaddr_t, vsize_t);
 vaddr_t pmap_devmap_phystov(paddr_t);
 paddr_t pmap_devmap_vtophys(paddr_t);
-
-paddr_t pmap_alloc_pdp(struct pmap *, struct vm_page **, int, bool);
 
 #define L1_TRUNC_BLOCK(x)	((x) & L1_FRAME)
 #define L1_ROUND_BLOCK(x)	L1_TRUNC_BLOCK((x) + L1_SIZE - 1)

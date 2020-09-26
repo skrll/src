@@ -1,4 +1,4 @@
-/*	$NetBSD: lock_stubs_llsc.S,v 1.9 2019/04/06 03:06:26 thorpej Exp $	*/
+/*	$NetBSD: lock_stubs_llsc.S,v 1.12 2020/08/09 08:33:52 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -31,33 +31,14 @@
 
 #include "opt_cputype.h"
 #include "opt_lockdebug.h"
-#include "opt_multiprocessor.h"
 
 #include <sys/errno.h>
 
 #include <machine/asm.h>
 
-RCSID("$NetBSD: lock_stubs_llsc.S,v 1.9 2019/04/06 03:06:26 thorpej Exp $")
+RCSID("$NetBSD: lock_stubs_llsc.S,v 1.12 2020/08/09 08:33:52 skrll Exp $")
 
 #include "assym.h"
-
-#if defined(DIAGNOSTIC) || defined(MULTIPROCESSOR)
-#define	FULL
-#endif
-
-#if defined(MULTIPROCESSOR)
-#if defined(__OCTEON__)
-#define	SYNC		sync 4
-#define	BDSYNC		sync 4
-#else
-#define	SYNC		sync
-#define	BDSYNC		sync
-#endif
-#else
-#define	SYNC		/* nothing */
-#define	BDSYNC		nop
-#endif /* MIPS_HAS_LLSC != 0 && defined(MULTIPROCESSOR) */
-
 
 /*
  * Set ISA level for the assembler.
@@ -84,6 +65,7 @@ RCSID("$NetBSD: lock_stubs_llsc.S,v 1.9 2019/04/06 03:06:26 thorpej Exp $")
  *     unsigned long old, unsigned long new);
  */
 STATIC_LEAF(llsc_atomic_cas_ulong)
+	LLSCSYNC
 1:
 	LONG_LL	t0, (a0)
 	bne	t0, a1, 2f
@@ -104,6 +86,7 @@ END(llsc_atomic_cas_ulong)
  *    unsigned int old, unsigned int new);
  */
 STATIC_LEAF(llsc_atomic_cas_uint)
+	LLSCSYNC
 1:
 	INT_LL	t0, (a0)
 	bne	t0, a1, 2f
@@ -133,6 +116,7 @@ STATIC_LEAF(llsc_ucas_32)
 	 nop
 	move	v0, zero
 
+	LLSCSYNC
 1:	ll	t0, 0(a0)
 	bne	t0, a1, 2f
 	 move	t1, a2
@@ -161,6 +145,7 @@ STATIC_LEAF(llsc_ucas_64)
 	 nop
 	move	v0, zero
 
+	LLSCSYNC
 1:	lld	t0, 0(a0)
 	bne	t0, a1, 2f
 	 move	t1, a2
@@ -187,6 +172,7 @@ END(llsc_ucaserr)
  * void	mutex_enter(kmutex_t *mtx);
  */
 STATIC_LEAF(llsc_mutex_enter)
+	LLSCSYNC
 	PTR_LL	t0, MTX_OWNER(a0)
 1:
 	bnez	t0, 2f
@@ -205,6 +191,7 @@ END(llsc_mutex_enter)
  * void	mutex_exit(kmutex_t *mtx);
  */
 STATIC_LEAF(llsc_mutex_exit)
+	LLSCSYNC
 	PTR_LL	t0, MTX_OWNER(a0)
 	SYNC
 1:
@@ -267,7 +254,8 @@ STATIC_NESTED(llsc_mutex_spin_enter, CALLFRAME_SIZ, ra)
 12:	bnez	v0, 12b			# loop forever if any are true
 	 nop
 #endif /* PARANOIA */
-#if defined(FULL)
+
+	LLSCSYNC
 	INT_LL	t3, MTX_LOCK(t0)
 3:
 	bnez	t3, 4f
@@ -280,10 +268,6 @@ STATIC_NESTED(llsc_mutex_spin_enter, CALLFRAME_SIZ, ra)
 4:
 	j	_C_LABEL(mutex_spin_retry)
 	 move	a0, t0
-#else
-	j	ra
-	 nop
-#endif /* FULL */
 END(llsc_mutex_spin_enter)
 
 /*

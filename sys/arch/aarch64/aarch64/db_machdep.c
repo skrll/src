@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.c,v 1.24 2020/05/22 19:29:26 ryo Exp $ */
+/* $NetBSD: db_machdep.c,v 1.26 2020/08/12 13:19:35 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.24 2020/05/22 19:29:26 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.26 2020/08/12 13:19:35 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd32.h"
@@ -68,6 +68,7 @@ void db_md_cpuinfo_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_frame_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_lwp_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_pte_cmd(db_expr_t, bool, db_expr_t, const char *);
+void db_md_reset_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_tlbi_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_ttbr_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_sysreg_cmd(db_expr_t, bool, db_expr_t, const char *);
@@ -112,6 +113,12 @@ const struct db_command db_machine_command_table[] = {
 		    "Display information of pte",
 		    "address",
 		    "\taddress:\tvirtual address of page")
+	},
+	{
+		DDB_ADD_CMD(
+		    "reset", db_md_reset_cmd, 0,
+		    "Reset the system",
+		    NULL, NULL)
 	},
 	{
 		DDB_ADD_CMD(
@@ -315,8 +322,6 @@ show_cpuinfo(struct cpu_info *ci)
 	    &ci->ci_cpl, cpuid, cpuinfobuf.ci_cpl);
 	db_printf("%p cpu[%lu].ci_softints     = 0x%08x\n",
 	    &ci->ci_softints, cpuid, cpuinfobuf.ci_softints);
-	db_printf("%p cpu[%lu].ci_astpending   = 0x%08x\n",
-	    &ci->ci_astpending, cpuid, cpuinfobuf.ci_astpending);
 	db_printf("%p cpu[%lu].ci_intr_depth   = %u\n",
 	    &ci->ci_intr_depth, cpuid, cpuinfobuf.ci_intr_depth);
 	db_printf("%p cpu[%lu].ci_biglock_count = %u\n",
@@ -450,6 +455,18 @@ db_md_pte_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 	db_par_print(par, addr);
 
 	pmap_db_pteinfo(addr, db_printf);
+}
+
+void
+db_md_reset_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
+    const char *modif)
+{
+	if (cpu_reset_address == NULL) {
+		db_printf("cpu_reset_address is not set\n");
+		return;
+	}
+
+	cpu_reset_address();
 }
 
 void

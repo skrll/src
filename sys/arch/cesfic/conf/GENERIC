@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.72 2019/04/26 21:40:29 sevan Exp $
+# $NetBSD: GENERIC,v 1.74 2020/08/10 06:32:58 rin Exp $
 #
 # GENERIC machine description file
 # 
@@ -22,7 +22,9 @@ include 	"arch/cesfic/conf/std.cesfic"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-makeoptions	COPTS="-O2 -fno-reorder-blocks"	# see share/mk/sys.mk
+makeoptions	COPTS="-O2 -fno-reorder-blocks -fno-omit-frame-pointer"
+	# See share/mk/sys.mk. -fno-omit-frame-pointer is necessary for
+	# backtraces in DDB.
 
 # Need to set locally
 maxusers	32
@@ -123,7 +125,6 @@ pseudo-device	pty			# pseudo ptys
 #pseudo-device	bpfilter		# Berkeley packet filter
 pseudo-device	carp			# Common Address Redundancy Protocol
 #pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 #pseudo-device	vnd			# vnode pseudo-disks
 #options 	VND_COMPRESSION		# compressed vnd(4)
 #pseudo-device	ccd			# concatenated disk devices

@@ -61,6 +61,16 @@
 /* Debugging Router Solicitations is a lot of spam, so disable it */
 //#define DEBUG_RS
 
+#ifndef ND_RA_FLAG_HOME_AGENT
+#define	ND_RA_FLAG_HOME_AGENT	0x20	/* Home Agent flag in RA */
+#endif
+#ifndef ND_RA_FLAG_PROXY
+#define	ND_RA_FLAG_PROXY	0x04	/* Proxy */
+#endif
+#ifndef ND_OPT_PI_FLAG_ROUTER
+#define	ND_OPT_PI_FLAG_ROUTER	0x20	/* Router flag in PI */
+#endif
+
 #ifndef ND_OPT_RDNSS
 #define ND_OPT_RDNSS			25
 struct nd_opt_rdnss {           /* RDNSS option RFC 6106 */
@@ -534,11 +544,11 @@ ipv6nd_advertise(struct ipv6_addr *ia)
 	na->nd_na_flags_reserved = ND_NA_FLAG_OVERRIDE;
 #if defined(PRIVSEP) && (defined(__linux__) || defined(HAVE_PLEDGE))
 	if (IN_PRIVSEP(ctx)) {
-		if (ps_root_ip6forwarding(ctx, ifp->name) == 1)
+		if (ps_root_ip6forwarding(ctx, ifp->name) != 0)
 			na->nd_na_flags_reserved |= ND_NA_FLAG_ROUTER;
 	} else
 #endif
-	if (ip6_forwarding(ifp->name) == 1)
+	if (ip6_forwarding(ifp->name) != 0)
 		na->nd_na_flags_reserved |= ND_NA_FLAG_ROUTER;
 	na->nd_na_target = ia->addr;
 
@@ -1096,11 +1106,12 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 	uint32_t old_lifetime;
 	int ifmtu;
 	int loglevel;
+	unsigned int flags;
 #ifdef IPV6_MANAGETEMPADDR
 	bool new_ia;
 #endif
 
-	if (ifp == NULL) {
+	if (ifp == NULL || RS_STATE(ifp) == NULL) {
 #ifdef DEBUG_RS
 		logdebugx("RA for unexpected interface from %s", sfrom);
 #endif
@@ -1155,10 +1166,8 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 		if (ifp == rap->iface)
 			break;
 	}
-	if (rap != NULL && rap->willexpire) {
-		logerrx("settng def RA");
+	if (rap != NULL && rap->willexpire)
 		ipv6nd_applyra(ifp);
-	}
 #endif
 
 	TAILQ_FOREACH(rap, ctx->ra_routers, next) {
@@ -1301,13 +1310,15 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 		case ND_OPT_PREFIX_INFORMATION:
 			loglevel = new_data ? LOG_ERR : LOG_DEBUG;
 			if (ndo.nd_opt_len != 4) {
-				logmessage(loglevel, "%s: invalid option len for prefix",
+				logmessage(loglevel,
+				    "%s: invalid option len for prefix",
 				    ifp->name);
 				continue;
 			}
 			memcpy(&pi, p, sizeof(pi));
 			if (pi.nd_opt_pi_prefix_len > 128) {
-				logmessage(loglevel, "%s: invalid prefix len", ifp->name);
+				logmessage(loglevel, "%s: invalid prefix len",
+				    ifp->name);
 				continue;
 			}
 			/* nd_opt_pi_prefix is not aligned. */
@@ -1316,27 +1327,33 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 			if (IN6_IS_ADDR_MULTICAST(&pi_prefix) ||
 			    IN6_IS_ADDR_LINKLOCAL(&pi_prefix))
 			{
-				logmessage(loglevel, "%s: invalid prefix in RA", ifp->name);
+				logmessage(loglevel, "%s: invalid prefix in RA",
+				    ifp->name);
 				continue;
 			}
 			if (ntohl(pi.nd_opt_pi_preferred_time) >
 			    ntohl(pi.nd_opt_pi_valid_time))
 			{
-				logmessage(loglevel, "%s: pltime > vltime", ifp->name);
+				logmessage(loglevel, "%s: pltime > vltime",
+				    ifp->name);
 				continue;
 			}
+
+			flags = IPV6_AF_RAPFX;
+			/* If no flags are set, that means the prefix is
+			 * available via the router. */
+			if (pi.nd_opt_pi_flags_reserved & ND_OPT_PI_FLAG_ONLINK)
+				flags |= IPV6_AF_ONLINK;
+			if (pi.nd_opt_pi_flags_reserved & ND_OPT_PI_FLAG_AUTO &&
+			    rap->iface->options->options &
+			    DHCPCD_IPV6RA_AUTOCONF)
+				flags |= IPV6_AF_AUTOCONF;
+			if (pi.nd_opt_pi_flags_reserved & ND_OPT_PI_FLAG_ROUTER)
+				flags |= IPV6_AF_ROUTER;
+
 			ia = ipv6nd_rapfindprefix(rap,
 			    &pi_prefix, pi.nd_opt_pi_prefix_len);
 			if (ia == NULL) {
-				unsigned int flags;
-
-				flags = IPV6_AF_RAPFX;
-				if (pi.nd_opt_pi_flags_reserved &
-				    ND_OPT_PI_FLAG_AUTO &&
-				    rap->iface->options->options &
-				    DHCPCD_IPV6RA_AUTOCONF)
-					flags |= IPV6_AF_AUTOCONF;
-
 				ia = ipv6_newaddr(rap->iface,
 				    &pi_prefix, pi.nd_opt_pi_prefix_len, flags);
 				if (ia == NULL)
@@ -1365,12 +1382,10 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 #ifdef IPV6_MANAGETEMPADDR
 				new_ia = false;
 #endif
+				ia->flags |= flags;
 				ia->flags &= ~IPV6_AF_STALE;
 				ia->acquired = rap->acquired;
 			}
-			if (pi.nd_opt_pi_flags_reserved &
-			    ND_OPT_PI_FLAG_ONLINK)
-				ia->flags |= IPV6_AF_ONLINK;
 			ia->prefix_vltime =
 			    ntohl(pi.nd_opt_pi_valid_time);
 			ia->prefix_pltime =
@@ -1604,6 +1619,7 @@ ipv6nd_env(FILE *fp, const struct interface *ifp)
 	struct nd_opt_hdr ndo;
 	struct ipv6_addr *ia;
 	struct timespec now;
+	int pref;
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	i = n = 0;
@@ -1619,6 +1635,18 @@ ipv6nd_env(FILE *fp, const struct interface *ifp)
 			return -1;
 		if (efprintf(fp, "%s_now=%lld", ndprefix,
 		    (long long)now.tv_sec) == -1)
+			return -1;
+		if (efprintf(fp, "%s_hoplimit=%u", ndprefix, rap->hoplimit) == -1)
+			return -1;
+		pref = ipv6nd_rtpref(rap);
+		if (efprintf(fp, "%s_flags=%s%s%s%s%s", ndprefix,
+		    rap->flags & ND_RA_FLAG_MANAGED    ? "M" : "",
+		    rap->flags & ND_RA_FLAG_OTHER      ? "O" : "",
+		    rap->flags & ND_RA_FLAG_HOME_AGENT ? "H" : "",
+		    pref == RTPREF_HIGH ? "h" : pref == RTPREF_LOW ? "l" : "",
+		    rap->flags & ND_RA_FLAG_PROXY      ? "P" : "") == -1)
+			return -1;
+		if (efprintf(fp, "%s_lifetime=%u", ndprefix, rap->lifetime) == -1)
 			return -1;
 
 		/* Zero our indexes */

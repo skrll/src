@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.125 2020/05/02 16:44:35 bouyer Exp $	*/
+/*	$NetBSD: cpu.h,v 1.129 2020/08/08 19:08:48 christos Exp $	*/
 
 /*
  * Copyright (c) 1990 The Regents of the University of California.
@@ -48,9 +48,6 @@
 #if defined(_KERNEL_OPT)
 #include "opt_xen.h"
 #include "opt_svs.h"
-#ifdef i386
-#include "opt_user_ldt.h"
-#endif
 #endif
 
 /*
@@ -103,6 +100,12 @@ struct clockframe {
 	struct intrframe cf_if;
 };
 
+struct idt_vec {
+	void *iv_idt;
+	void *iv_idt_pentium;
+	char iv_allocmap[NIDT];
+};
+
 /*
  * a bunch of this belongs in cpuvar.h; move it later..
  */
@@ -126,6 +129,7 @@ struct cpu_info {
 	uint64_t ci_scratch;
 	uintptr_t ci_pmap_data[128 / sizeof(uintptr_t)];
 	struct kcpuset *ci_tlb_cpuset;
+	struct idt_vec ci_idtvec;
 
 	int ci_kfpu_spl;
 
@@ -560,16 +564,11 @@ extern void (*x86_delay)(unsigned int);
 
 /* cpu.c */
 void	cpu_probe_features(struct cpu_info *);
+int	x86_cpu_is_lcall(const void *);
 
 /* vm_machdep.c */
 void	cpu_proc_fork(struct proc *, struct proc *);
 paddr_t	kvtop(void *);
-
-#ifdef USER_LDT
-/* sys_machdep.h */
-int	x86_get_ldt(struct lwp *, void *, register_t *);
-int	x86_set_ldt(struct lwp *, void *, register_t *);
-#endif
 
 /* isa_machdep.c */
 void	isa_defaultirq(void);

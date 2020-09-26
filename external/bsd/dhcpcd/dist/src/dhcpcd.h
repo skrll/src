@@ -66,10 +66,6 @@
 #define IF_DATA_DHCP6	6
 #define IF_DATA_MAX	7
 
-/* If the interface does not support carrier status (ie PPP),
- * dhcpcd can poll it for the relevant flags periodically */
-#define IF_POLL_UP	100	/* milliseconds */
-
 #ifdef __QNX__
 /* QNX carries defines for, but does not actually support PF_LINK */
 #undef IFLR_ACTIVE
@@ -100,7 +96,6 @@ TAILQ_HEAD(if_head, interface);
 
 #include "privsep.h"
 
-#ifdef INET6
 /* dhcpcd requires CMSG_SPACE to evaluate to a compile time constant. */
 #if defined(__QNX) || \
 	(defined(__NetBSD_Version__) && __NetBSD_Version__ < 600000000)
@@ -117,16 +112,13 @@ TAILQ_HEAD(if_head, interface);
 #define	CMSG_SPACE(len)	(ALIGN(sizeof(struct cmsghdr)) + ALIGN(len))
 #endif
 
-#define IP6BUFLEN	(CMSG_SPACE(sizeof(struct in6_pktinfo)) + \
-			CMSG_SPACE(sizeof(int)))
-#endif
-
 struct passwd;
 
 struct dhcpcd_ctx {
 	char pidfile[sizeof(PIDFILE) + IF_NAMESIZE + 1];
 	char vendor[256];
 	int fork_fd;	/* FD for the fork init signal pipe */
+	int stderr_fd;	/* FD for logging to stderr */
 	const char *cffile;
 	unsigned long long options;
 	char *logfile;
@@ -144,6 +136,11 @@ struct dhcpcd_ctx {
 	size_t duid_len;
 	struct if_head *ifaces;
 
+	char *ctl_buf;
+	size_t ctl_buflen;
+	size_t ctl_bufpos;
+	size_t ctl_extra;
+
 	rb_tree_t routes;	/* our routes */
 #ifdef RT_FREE_ROUTE_TABLE
 	rb_tree_t froutes;	/* free routes for re-use */
@@ -151,6 +148,9 @@ struct dhcpcd_ctx {
 	size_t rt_order;	/* route order storage */
 
 	int pf_inet_fd;
+#ifdef PF_LINK
+	int pf_link_fd;
+#endif
 	void *priv;
 	int link_fd;
 #ifndef SMALL
@@ -201,6 +201,11 @@ struct dhcpcd_ctx {
 	struct ps_process_head ps_processes;	/* List of spawned processes */
 	pid_t ps_inet_pid;
 	int ps_inet_fd;		/* Network Proxy commands and data */
+	pid_t ps_control_pid;
+	int ps_control_fd;	/* Control Proxy - generic listener */
+	int ps_control_data_fd;	/* Control Proxy - data query */
+	struct fd_list *ps_control;		/* Queue for the above */
+	struct fd_list *ps_control_client;	/* Queue for the above */
 #endif
 
 #ifdef INET

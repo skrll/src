@@ -1,4 +1,4 @@
-/*	$NetBSD: genfs_vnops.c,v 1.207 2020/05/20 17:06:15 christos Exp $	*/
+/*	$NetBSD: genfs_vnops.c,v 1.210 2020/09/05 16:30:12 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -57,7 +57,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: genfs_vnops.c,v 1.207 2020/05/20 17:06:15 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: genfs_vnops.c,v 1.210 2020/09/05 16:30:12 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -79,9 +79,6 @@ __KERNEL_RCSID(0, "$NetBSD: genfs_vnops.c,v 1.207 2020/05/20 17:06:15 christos E
 #include <miscfs/genfs/genfs.h>
 #include <miscfs/genfs/genfs_node.h>
 #include <miscfs/specfs/specdev.h>
-
-#include <uvm/uvm.h>
-#include <uvm/uvm_pager.h>
 
 static void filt_genfsdetach(struct knote *);
 static int filt_genfsread(struct knote *, long);
@@ -1397,7 +1394,7 @@ genfs_can_sticky(vnode_t *vp, kauth_cred_t cred, uid_t dir_uid, uid_t file_uid)
 }
 
 int
-genfs_can_extattr(vnode_t *vp, kauth_cred_t cred, int accmode,
+genfs_can_extattr(vnode_t *vp, kauth_cred_t cred, accmode_t accmode,
     int attrnamespace)
 {
 	/*
@@ -1442,4 +1439,30 @@ genfs_accessx(void *v)
 		return 0;
 
 	return VOP_ACCESS(ap->a_vp, accmode, ap->a_cred);
+}
+
+/*
+ * genfs_pathconf:
+ *
+ * Standard implementation of POSIX pathconf, to get information about limits
+ * for a filesystem.
+ * Override per filesystem for the case where the filesystem has smaller
+ * limits.
+ */
+int
+genfs_pathconf(void *v)
+{
+	struct vop_pathconf_args *ap = v;
+
+	switch (ap->a_name) {
+	case _PC_PATH_MAX:
+		*ap->a_retval = PATH_MAX;
+		return 0;
+	case _PC_ACL_EXTENDED:
+	case _PC_ACL_NFS4:
+		*ap->a_retval = 0;
+		return 0;
+	default:
+		return EINVAL;
+	}
 }

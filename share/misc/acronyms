@@ -1,4 +1,4 @@
-$NetBSD: acronyms,v 1.300 2020/06/04 14:33:28 nia Exp $
+$NetBSD: acronyms,v 1.306 2020/08/29 18:54:33 christos Exp $
 10Q	thank you
 10X	thanks
 1337	elite ("leet")
@@ -59,6 +59,7 @@ B/W	bandwidth
 B/W	between
 BAI	goodbye
 BAK	back at keyboard
+BAU	business as usual
 BBIAB	be back in a bit
 BBL	[I'll] be back later
 BBR	burnt beyond repair
@@ -168,6 +169,7 @@ FNO	from now on
 FOC	free of charge
 FPS	first person shooter
 FPS	frames per second
+FQA	frequently questioned answer
 FRAND	fair, reasonable, and non-discriminatory
 FSDO	for some definition of
 FSVO	for some value of
@@ -192,6 +194,7 @@ GAC	get a clue
 GAL	get a life
 GBTW	get back to work
 GCD	greatest common divisor
+GCHQ	Government Communications Headquarters (UK)
 GDPR	General Data Protection Regulation
 GF	girlfriend
 GFCI	ground-fault circuit interrupter
@@ -467,6 +470,7 @@ PTT	post-telephone-telegraph
 PTV	parental tunnel vision
 QED	quod erat demonstrandum
 QFT	quoted for truth
+QOI	quality of information
 RA	residential advisor
 RAND	reasonable and non-discriminatory
 RCD	residual current device
@@ -564,6 +568,7 @@ TNF	The NetBSD Foundation
 TOC	table of contents
 TOCTOU	time of check to time of use
 TOEFL	test of english as a foreign language
+TOFU	text over, fullquote under (in email)
 TOH	to other half
 TP	toilet paper
 TPTB	the powers that be
@@ -585,6 +590,7 @@ UGT	universal greeting time
 UPC	Universal Product Code
 UR	your
 UR	{you're, you are}
+URM	underrepresented minority
 UTSL	use the source, Luke
 VCR	video cassette recorder
 VEG	very evil grin
@@ -604,6 +610,7 @@ WDYMBT	what do you mean by that
 WELC	working effectively with legacy code
 WFH	working from home
 WFM	works for me
+WGACA	what goes around comes around
 WIBNI	wouldn't it be nice if
 WIP	work in progress
 WLW	women-loving women

@@ -1,4 +1,4 @@
-# $NetBSD: XEN3_DOM0,v 1.181 2020/05/26 14:03:21 jdolecek Exp $
+# $NetBSD: XEN3_DOM0,v 1.184 2020/08/16 10:27:47 jdolecek Exp $
 
 include 	"arch/amd64/conf/std.xen"
 
@@ -12,7 +12,7 @@ options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 #options 	UVMHIST_PRINT
 #options 	SYSCALL_DEBUG
 
-#ident		"XEN3_DOM0-$Revision: 1.181 $"
+#ident		"XEN3_DOM0-$Revision: 1.184 $"
 
 maxusers	32		# estimated number of users
 
@@ -71,8 +71,6 @@ include 	"conf/compat_netbsd15.config"
 
 options 	COMPAT_OSSAUDIO
 options 	COMPAT_NETBSD32
-options 	COMPAT_LINUX
-options 	COMPAT_LINUX32	# req. COMPAT_LINUX and COMPAT_NETBSD32
 options 	EXEC_ELF32
 
 # Wedge support
@@ -224,7 +222,6 @@ pci*		at hypervisor? bus ?
 pci*		at pchb? bus ?
 ppb*		at pci? dev ? function ?	# PCI-PCI bridges
 pci*		at ppb? bus ?
-options 	NO_PCI_MSI_MSIX
 
 # pci backend devices, used for PCI pass-through. To export a PCI device
 # to a domU, the device has to be attached to the pciback driver in the dom0.
@@ -844,7 +841,6 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 pseudo-device	l2tp			# L2TPv3 interface
 pseudo-device	npf			# NPF packet filter
 

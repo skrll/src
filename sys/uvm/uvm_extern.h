@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_extern.h,v 1.227 2020/05/26 00:50:53 kamil Exp $	*/
+/*	$NetBSD: uvm_extern.h,v 1.231 2020/08/14 09:06:15 chs Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -515,8 +515,6 @@ struct uvmexp_sysctl {
 #ifdef _KERNEL
 /* we need this before including uvm_page.h on some platforms */
 extern struct uvmexp uvmexp;
-/* MD code needs this without including <uvm/uvm.h> */
-extern bool vm_page_zero_enable;
 #endif
 
 /*
@@ -778,9 +776,17 @@ void			uvm_obj_destroy(struct uvm_object *, bool);
 int			uvm_obj_wirepages(struct uvm_object *, off_t, off_t,
 			    struct pglist *);
 void			uvm_obj_unwirepages(struct uvm_object *, off_t, off_t);
+bool			uvm_obj_clean_p(struct uvm_object *);
+bool			uvm_obj_nowriteback_p(struct uvm_object *);
+bool			uvm_obj_page_dirty_p(struct vm_page *);
+void			uvm_obj_page_set_dirty(struct vm_page *);
+void			uvm_obj_page_clear_dirty(struct vm_page *);
+bool			uvm_obj_page_writeback_p(struct vm_page *);
+void			uvm_obj_page_set_writeback(struct vm_page *);
+void			uvm_obj_page_clear_writeback(struct vm_page *);
 
 /* uvm_page.c */
-int			uvm_availmem(void);
+int			uvm_availmem(bool);
 void			uvm_page_numa_load(paddr_t, paddr_t, u_int);
 struct vm_page		*uvm_pagealloc_strat(struct uvm_object *,
 			    voff_t, struct vm_anon *, int, int, int);
@@ -789,7 +795,7 @@ struct vm_page		*uvm_pagealloc_strat(struct uvm_object *,
 				UVM_PGA_STRAT_NORMAL, 0)
 void			uvm_pagereplace(struct vm_page *,
 			    struct vm_page *);
-void			uvm_pagerealloc(struct vm_page *,
+int			uvm_pagerealloc(struct vm_page *,
 			    struct uvm_object *, voff_t);
 void			uvm_setpagesize(void);
 
@@ -828,7 +834,6 @@ int			uvn_findpages(struct uvm_object *, voff_t,
 			    unsigned int *, struct vm_page **,
 			    struct uvm_page_array *, unsigned int);
 bool			uvn_text_p(struct uvm_object *);
-bool			uvn_clean_p(struct uvm_object *);
 bool			uvn_needs_writefault_p(struct uvm_object *);
 
 /* kern_malloc.c */

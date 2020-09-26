@@ -1,4 +1,4 @@
-#	$NetBSD: XEN3PAE_DOM0,v 1.29 2020/05/26 14:03:21 jdolecek Exp $
+#	$NetBSD: XEN3PAE_DOM0,v 1.32 2020/08/16 10:27:47 jdolecek Exp $
 #
 #	XEN3_0: Xen 3.0 domain0 kernel
 
@@ -83,8 +83,6 @@ options 	COMPAT_NOMID	# NetBSD 0.8, 386BSD, and BSDI
 #options 	COMPAT_386BSD_MBRPART # recognize old partition ID
 
 options 	COMPAT_OSSAUDIO	# OSS (Voxware) audio driver compatibility
-options 	COMPAT_LINUX	# binary compatibility with Linux
-#options 	COMPAT_FREEBSD	# binary compatibility with FreeBSD
 
 # Wedge support
 options 	DKWEDGE_AUTODISCOVER	# Automatically add dk(4) instances
@@ -212,7 +210,6 @@ balloon*	at xenbus?		# Xen balloon device
 # PCI bus support
 pci*		at hypervisor? bus ?
 pci*		at pchb? bus ?
-options 	NO_PCI_MSI_MSIX
 
 # PCI bridges
 ichlpcib* at pci? dev ? function ?	# Intel ICH PCI-ISA w/ timecounter,
@@ -819,7 +816,6 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC 1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 pseudo-device	l2tp			# L2TPv3 interface
 pseudo-device	npf			# NPF packet filter
 

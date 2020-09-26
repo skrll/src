@@ -1,4 +1,4 @@
-# $NetBSD: ffs_common.sh,v 1.3 2016/10/08 13:23:53 gson Exp $ 
+# $NetBSD: ffs_common.sh,v 1.5 2020/08/20 07:23:20 gson Exp $ 
 
 create_ffs()
 {
@@ -23,17 +23,6 @@ create_ffs_server()
 		${sarg} ${IMG} ${RUMP_SERVER}
 }
 
-rump_shutdown()
-{
-	for s in ${RUMP_SOCKETS_LIST}; do
-		atf_check -s exit:0 env RUMP_SERVER=unix://${s} rump.halt;
-	done
-# check that the quota inode creation didn't corrupt the filesystem
-	atf_check -s exit:0 -o "match:already clean" \
-		-o "match:Phase 6 - Check Quotas" \
-		fsck_ffs -nf -F ${IMG}
-}
-
 # from tests/ipf/h_common.sh via tests/sbin/resize_ffs
 test_case()
 {
@@ -41,7 +30,7 @@ test_case()
 	local check_function="${1}"; shift
 	local descr="${1}"; shift
 	
-	atf_test_case "${name}" cleanup
+	atf_test_case "${name}"
 
 	eval "${name}_head() { \
 		atf_set "descr" "${descr}"
@@ -52,12 +41,6 @@ test_case()
 		export RUMP_SERVER=unix://\${RUMP_SOCKET}; \
 		${check_function} " "${@}" "; \
 	}"
-	eval "${name}_cleanup() { \
-		for s in \${RUMP_SOCKETS_LIST}; do \
-			export RUMP_SERVER=unix://\${s}; \
-			atf_check -s exit:1 -o ignore -e ignore rump.halt; \
-		done; \
-	}"
 	tests="${tests} ${name}"
 }
 
@@ -67,7 +50,7 @@ test_case_root()
 	local check_function="${1}"; shift
 	local descr="${1}"; shift
 	
-	atf_test_case "${name}" cleanup
+	atf_test_case "${name}"
 
 	eval "${name}_head() { \
 		atf_set "descr" "${descr}"
@@ -78,12 +61,6 @@ test_case_root()
 		RUMP_SOCKETS_LIST=\${RUMP_SOCKET}; \
 		export RUMP_SERVER=unix://\${RUMP_SOCKET}; \
 		${check_function} " "${@}" "; \
-	}"
-	eval "${name}_cleanup() { \
-		for s in \${RUMP_SOCKETS_LIST}; do \
-			export RUMP_SERVER=unix://\${s}; \
-			atf_check -s exit:1 -o ignore -e ignore rump.halt; \
-		done; \
 	}"
 	tests="${tests} ${name}"
 }

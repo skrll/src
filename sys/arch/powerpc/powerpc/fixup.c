@@ -1,4 +1,4 @@
-/*	$NetBSD: fixup.c,v 1.10 2014/08/02 15:58:04 joerg Exp $	*/
+/*	$NetBSD: fixup.c,v 1.12 2020/07/06 10:31:24 rin Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -35,8 +35,11 @@
  */
 
 #include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: fixup.c,v 1.12 2020/07/06 10:31:24 rin Exp $");
 
-__KERNEL_RCSID(0, "$NetBSD: fixup.c,v 1.10 2014/08/02 15:58:04 joerg Exp $");
+#ifdef _KERNEL_OPT
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/types.h>

@@ -1,4 +1,4 @@
-.\"	$NetBSD: contents,v 1.9 2019/11/24 11:15:36 martin Exp $
+.\"	$NetBSD: contents,v 1.12 2020/08/07 00:43:51 snj Exp $
 .\"
 .\" Copyright (c) 1999-2005 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -175,7 +175,7 @@ system call and library manual pages.
 This distribution set contains debug information for
 all base system utilities.
 It is useful when reporting issues with binaries or during
-developement.
+development.
 This set is huge, if the target disk is small, do not install it.
 .
 .It Sy etc
@@ -272,7 +272,7 @@ The extra libraries and include files needed to compile X source code.
 This distribution set contains debug information for
 all X11 binaries.
 It is useful when reporting issues with these binaries or during
-developement.
+development.
 This set is huge, if the target disk is small, do not install it.
 .
 .It Sy xfont
@@ -295,7 +295,9 @@ This includes the modular Xorg and Xvfb servers.
 .\" XXX: should be in notes/common
 .
 .Pp
-The \*M binary distribution sets are distributed as gzipped tar files
+The \*M binary distribution sets are distributed as tar files
+compressed with
+.Sy \*[compressor]
 named with the extension
 .Sy .\*[setsuffix] ,
 e.g.,

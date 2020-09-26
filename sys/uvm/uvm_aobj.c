@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_aobj.c,v 1.147 2020/05/25 22:04:51 ad Exp $	*/
+/*	$NetBSD: uvm_aobj.c,v 1.151 2020/08/19 15:36:41 chs Exp $	*/
 
 /*
  * Copyright (c) 1998 Chuck Silvers, Charles D. Cranor and
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_aobj.c,v 1.147 2020/05/25 22:04:51 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_aobj.c,v 1.151 2020/08/19 15:36:41 chs Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_uvmhist.h"
@@ -290,8 +290,8 @@ uao_set_swslot(struct uvm_object *uobj, int pageidx, int slot)
 	struct uvm_aobj *aobj = (struct uvm_aobj *)uobj;
 	struct uao_swhash_elt *elt;
 	int oldslot;
-	UVMHIST_FUNC("uao_set_swslot"); UVMHIST_CALLED(pdhist);
-	UVMHIST_LOG(pdhist, "aobj %#jx pageidx %jd slot %jd",
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(pdhist, "aobj %#jx pageidx %jd slot %jd",
 	    (uintptr_t)aobj, pageidx, slot, 0);
 
 	KASSERT(rw_write_held(uobj->vmobjlock) || uobj->uo_refs == 0);
@@ -583,7 +583,7 @@ uao_detach(struct uvm_object *uobj)
 	struct uvm_page_array a;
 	struct vm_page *pg;
 
-	UVMHIST_FUNC("uao_detach"); UVMHIST_CALLED(maphist);
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(maphist);
 
 	/*
 	 * Detaching from kernel object is a NOP.
@@ -666,7 +666,7 @@ uao_put(struct uvm_object *uobj, voff_t start, voff_t stop, int flags)
 	struct uvm_page_array a;
 	struct vm_page *pg;
 	voff_t curoff;
-	UVMHIST_FUNC("uao_put"); UVMHIST_CALLED(maphist);
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(maphist);
 
 	KASSERT(UVM_OBJ_IS_AOBJ(uobj));
 	KASSERT(rw_write_held(uobj->vmobjlock));
@@ -801,11 +801,11 @@ uao_get(struct uvm_object *uobj, voff_t offset, struct vm_page **pps,
 	voff_t current_offset;
 	struct vm_page *ptmp;
 	int lcv, gotpages, maxpages, swslot, pageidx;
-	UVMHIST_FUNC("uao_get"); UVMHIST_CALLED(pdhist);
 	bool overwrite = ((flags & PGO_OVERWRITE) != 0);
 	struct uvm_page_array a;
 
-	UVMHIST_LOG(pdhist, "aobj=%#jx offset=%jd, flags=%jd",
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(pdhist, "aobj=%#jx offset=%jd, flags=%jd",
 		    (uintptr_t)uobj, offset, flags,0);
 
 	/*
@@ -957,7 +957,7 @@ uao_get(struct uvm_object *uobj, voff_t offset, struct vm_page **pps,
 		/* out of RAM? */
 		if (ptmp == NULL) {
 			rw_exit(uobj->vmobjlock);
-			UVMHIST_LOG(pdhist, "sleeping, ptmp == NULL\n",0,0,0,0);
+			UVMHIST_LOG(pdhist, "sleeping, ptmp == NULL",0,0,0,0);
 			uvm_wait("uao_getpage");
 			rw_enter(uobj->vmobjlock, RW_WRITER);
 			uvm_page_array_clear(&a);
@@ -965,7 +965,7 @@ uao_get(struct uvm_object *uobj, voff_t offset, struct vm_page **pps,
 		}
 
 		/*
- 		 * if swslot == 0, page hasn't existed before and is zeroed. 
+ 		 * if swslot == 0, page hasn't existed before and is zeroed.
  		 * otherwise we have a "fake/busy/clean" page that we just
  		 * allocated.  do the needed "i/o", reading from swap.
  		 */
@@ -982,6 +982,7 @@ uao_get(struct uvm_object *uobj, voff_t offset, struct vm_page **pps,
 			 * unlock object for i/o, relock when done.
 			 */
 
+			uvm_page_array_clear(&a);
 			rw_exit(uobj->vmobjlock);
 			error = uvm_swap_get(ptmp, swslot, PGO_SYNCIO);
 			rw_enter(uobj->vmobjlock, RW_WRITER);
@@ -1015,6 +1016,7 @@ uao_get(struct uvm_object *uobj, voff_t offset, struct vm_page **pps,
 					uvm_page_unbusy(pps, lcv);
 				}
 				memset(pps, 0, maxpages * sizeof(pps[0]));
+				uvm_page_array_fini(&a);
 				return error;
 			}
 #else /* defined(VMSWAP) */

@@ -1,4 +1,4 @@
-.\"	$NetBSD: condvar.9,v 1.28 2020/05/11 03:59:33 riastradh Exp $
+.\"	$NetBSD: condvar.9,v 1.30 2020/08/27 14:14:00 fcambus Exp $
 .\"
 .\" Copyright (c) 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -118,7 +118,7 @@ to display.
 Release resources used by a CV.
 If there could be waiters, they should be awoken first with
 .Fn cv_broadcast .
-The CV must not be be used afterwards.
+The CV must not be used afterwards.
 .It Fn cv_wait "cv" "mtx"
 .Pp
 Cause the current LWP to wait non-interruptably for access to a resource,
@@ -310,7 +310,7 @@ Consuming a resource:
 	/*
 	 * Wait for the resource to become available.  Timeout after
 	 * five seconds.  If the resource is not available within the
-	 * alloted time, return an error.
+	 * allotted time, return an error.
 	 */
 	struct bintime timeout = { .sec = 5, .frac = 0 };
 	while (res->state == BUSY) {

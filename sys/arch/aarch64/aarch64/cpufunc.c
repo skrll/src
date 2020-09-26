@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.c,v 1.20 2020/05/25 05:13:16 ryo Exp $	*/
+/*	$NetBSD: cpufunc.c,v 1.24 2020/08/02 06:58:16 maxv Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -30,12 +30,15 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.20 2020/05/25 05:13:16 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.24 2020/08/02 06:58:16 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/kmem.h>
 #include <sys/cpu.h>
+
+#include <uvm/uvm.h>
+#include <uvm/uvm_page.h>
 
 #include <aarch64/cpufunc.h>
 
@@ -47,6 +50,7 @@ u_int arm_dcache_maxline;
 u_int aarch64_cache_vindexsize;
 u_int aarch64_cache_prefer_mask;
 
+int aarch64_pan_enabled __read_mostly;
 int aarch64_pac_enabled __read_mostly;
 
 /* cache info per cluster. the same cluster has the same cache configuration? */
@@ -102,6 +106,7 @@ aarch64_getcacheinfo(int unit)
 {
 	struct cpu_info * const ci = curcpu();
 	uint32_t clidr, ctr;
+	u_int vindexsize;
 	int level, cachetype;
 	struct aarch64_cache_info *cinfo = NULL;
 
@@ -215,14 +220,20 @@ aarch64_getcacheinfo(int unit)
 	    ((cinfo[0].cacheable == CACHE_CACHEABLE_ICACHE) ||
 	     (cinfo[0].cacheable == CACHE_CACHEABLE_IDCACHE))) {
 
-		aarch64_cache_vindexsize =
+		vindexsize =
 		    cinfo[0].icache.cache_size /
 		    cinfo[0].icache.cache_ways;
 
-		KASSERT(aarch64_cache_vindexsize != 0);
-		aarch64_cache_prefer_mask = aarch64_cache_vindexsize - 1;
+		KASSERT(vindexsize != 0);
 	} else {
-		aarch64_cache_vindexsize = 0;
+		vindexsize = 0;
+	}
+
+	if (vindexsize > aarch64_cache_vindexsize) {
+		aarch64_cache_vindexsize = vindexsize;
+		aarch64_cache_prefer_mask = vindexsize - 1;
+		if (uvm.page_init_done)
+			uvm_page_recolor(vindexsize / PAGE_SIZE);
 	}
 }
 
@@ -426,13 +437,31 @@ int
 set_cpufuncs(void)
 {
 	struct cpu_info * const ci = curcpu();
+	const uint64_t ctr = reg_ctr_el0_read();
+	const uint64_t clidr = reg_clidr_el1_read();
 	const uint32_t midr __unused = reg_midr_el1_read();
 
 	/* install default functions */
 	ci->ci_cpufuncs.cf_set_ttbr0 = aarch64_set_ttbr0;
+	ci->ci_cpufuncs.cf_icache_sync_range = aarch64_icache_sync_range;
 
+	/*
+	 * install core/cluster specific functions
+	 */
 
-	/* install core/cluster specific functions */
+	/* Icache sync op */
+	if (__SHIFTOUT(ctr, CTR_EL0_DIC) == 1) {
+		/* Icache invalidation to the PoU is not required */
+		ci->ci_cpufuncs.cf_icache_sync_range =
+		    aarch64_icache_barrier_range;
+	} else if (__SHIFTOUT(ctr, CTR_EL0_IDC) == 1 ||
+	    __SHIFTOUT(clidr, CLIDR_LOC) == 0 ||
+	    (__SHIFTOUT(clidr, CLIDR_LOUIS) == 0 && __SHIFTOUT(clidr, CLIDR_LOUU) == 0)) {
+		/* Dcache clean to the PoU is not required for Icache */
+		ci->ci_cpufuncs.cf_icache_sync_range =
+		    aarch64_icache_inv_range;
+	}
+
 #ifdef CPU_THUNDERX
 	/* Cavium erratum 27456 */
 	if ((midr == CPU_ID_THUNDERXP1d0) ||
@@ -444,6 +473,36 @@ set_cpufuncs(void)
 #endif
 
 	return 0;
+}
+
+void
+aarch64_pan_init(int primary)
+{
+#ifdef ARMV81_PAN
+	uint64_t reg, sctlr;
+
+	/* CPU0 does the detection. */
+	if (primary) {
+		reg = reg_id_aa64mmfr1_el1_read();
+		if (__SHIFTOUT(reg, ID_AA64MMFR1_EL1_PAN) !=
+		    ID_AA64MMFR1_EL1_PAN_NONE)
+			aarch64_pan_enabled = 1;
+	}
+
+	if (!aarch64_pan_enabled)
+		return;
+
+	/*
+	 * On an exception to EL1, have the CPU set the PAN bit automatically.
+	 * This ensures PAN is enabled each time the kernel is entered.
+	 */
+	sctlr = reg_sctlr_el1_read();
+	sctlr &= ~SCTLR_SPAN;
+	reg_sctlr_el1_write(sctlr);
+
+	/* Set the PAN bit right now. */
+	reg_pan_write(1);
+#endif
 }
 
 /*

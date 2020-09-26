@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.259 2015/10/04 08:15:46 joerg Exp $ */
+/*	$NetBSD: autoconf.c,v 1.261 2020/08/14 10:34:22 martin Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.259 2015/10/04 08:15:46 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.261 2020/08/14 10:34:22 martin Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -144,7 +144,7 @@ static	void bootpath_build(void);
 static	void bootpath_fake(struct bootpath *, const char *);
 static	void bootpath_print(struct bootpath *);
 static	struct bootpath	*bootpath_store(int, struct bootpath *);
-int	find_cpus(void);
+static	int find_cpus(void);
 char	machine_model[100];
 
 #ifdef DEBUG
@@ -172,7 +172,7 @@ matchbyname(device_t parent, cfdata_t cf, void *aux)
  * Get the number of CPUs in the system and the CPUs' SPARC architecture
  * version. We need this information early in the boot process.
  */
-int
+static int
 find_cpus(void)
 {
 	int n;
@@ -1636,7 +1636,7 @@ set_network_props(device_t dev, void *aux)
 
 	prom_getether(ofnode, eaddr);
 	dict = device_properties(dev);
-	blob = prop_data_create_data(eaddr, ETHER_ADDR_LEN);
+	blob = prop_data_create_copy(eaddr, ETHER_ADDR_LEN);
 	prop_dictionary_set(dict, "mac-address", blob);
 	prop_object_release(blob);
 }

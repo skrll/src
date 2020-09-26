@@ -1,7 +1,13 @@
-/* $NetBSD: machdep.h,v 1.33 2020/03/05 15:18:54 riastradh Exp $ */
+/* $NetBSD: machdep.h,v 1.35 2020/08/28 13:36:52 skrll Exp $ */
 
 #ifndef _ARM32_MACHDEP_H_
 #define _ARM32_MACHDEP_H_
+
+#ifdef _KERNEL
+
+#define INIT_ARM_STACK_SHIFT	12
+#define INIT_ARM_STACK_SIZE	(1 << INIT_ARM_STACK_SHIFT)
+#define INIT_ARM_TOTAL_STACK	(INIT_ARM_STACK_SIZE * MAXCPUS)
 
 /* Define various stack sizes in pages */
 #ifndef IRQ_STACK_SIZE
@@ -103,4 +109,7 @@ void set_spl_masks(void);
 #ifdef DIAGNOSTIC
 void dump_spl_masks(void);
 #endif
-#endif
+
+#endif	/* _KERNEL */
+
+#endif	/* _ARM32_MACHDEP_H_ */

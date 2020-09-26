@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.sys.mk,v 1.301 2020/05/15 19:07:01 maxv Exp $
+#	$NetBSD: bsd.sys.mk,v 1.303 2020/09/05 13:38:43 mrg Exp $
 #
 # Build definitions used for NetBSD source tree builds.
 
@@ -103,7 +103,7 @@ CFLAGS+=	-Wcast-qual -Wwrite-strings
 CFLAGS+=	-Wextra -Wno-unused-parameter
 # Readd -Wno-sign-compare to override -Wextra with clang
 CFLAGS+=	-Wno-sign-compare
-.if "${ACTIVE_CC}" == "gcc" && ${HAVE_GCC} != "8"
+.if "${ACTIVE_CC}" == "gcc" && ${HAVE_GCC} < 8
 #  XXX: Won't warn about anything.  -Wabi warns about differences from
 #  the most up-to-date ABI, which in g++ 8 is used by default.
 CXXFLAGS+=	-Wabi
@@ -237,7 +237,7 @@ CFLAGS+=	${CPUFLAGS}
 AFLAGS+=	${CPUFLAGS}
 
 .if ${KCOV:U0} > 0
-KCOVFLAGS=	-fsanitize-coverage=trace-pc
+KCOVFLAGS=	-fsanitize-coverage=trace-pc,trace-cmp
 .for f in subr_kcov.c subr_asan.c subr_csan.c subr_msan.c ubsan.c
 KCOVFLAGS.${f}=		# empty
 .endfor

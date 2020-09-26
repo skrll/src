@@ -1,12 +1,14 @@
-#	$NetBSD: files.kern,v 1.48 2020/05/16 18:31:50 christos Exp $
+#	$NetBSD: files.kern,v 1.52 2020/09/07 03:50:41 thorpej Exp $
 
 #
 # kernel sources
 #
-define	kern:	machdep, uvm
+define	kern:	cprng_fast, machdep, uvm
 defflag	opt_kern.h			KERN
 defflag	opt_script.h			SETUIDSCRIPTS FDSCRIPTS
 defflag					KASLR
+defparam opt_cnmagic.h			CNMAGIC
+
 file	conf/debugsyms.c		kern
 file	conf/param.c			kern
 file	kern/bufq_disksort.c		bufq_disksort
@@ -118,6 +120,7 @@ file	kern/subr_emul.c		kern
 file	kern/subr_evcnt.c		kern
 file	kern/subr_exec_fd.c		kern
 file	kern/subr_extent.c		kern
+file	kern/subr_fault.c		fault
 file	kern/subr_hash.c		kern
 file	kern/subr_humanize.c		kern
 file	kern/subr_interrupt.c		kern
@@ -156,6 +159,7 @@ file	kern/sys_aio.c			aio
 file	kern/sys_descrip.c		kern
 file	kern/sys_futex.c		kern
 file	kern/sys_generic.c		kern
+file	kern/sys_getrandom.c		kern
 file	kern/sys_module.c		kern
 file	kern/sys_mqueue.c		mqueue
 file	kern/sys_lwp.c			kern

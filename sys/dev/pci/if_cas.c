@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cas.c,v 1.42 2020/03/08 03:16:20 thorpej Exp $	*/
+/*	$NetBSD: if_cas.c,v 1.44 2020/09/15 08:33:40 mrg Exp $	*/
 /*	$OpenBSD: if_cas.c,v 1.29 2009/11/29 16:19:38 kettenis Exp $	*/
 
 /*
@@ -44,7 +44,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_cas.c,v 1.42 2020/03/08 03:16:20 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cas.c,v 1.44 2020/09/15 08:33:40 mrg Exp $");
 
 #ifndef _MODULE
 #include "opt_inet.h"
@@ -441,7 +441,7 @@ cas_attach(device_t parent, device_t self, void *aux)
 
 	if ((data = prop_dictionary_get(device_properties(sc->sc_dev),
 	    "mac-address")) != NULL)
-		memcpy(enaddr, prop_data_data_nocopy(data), ETHER_ADDR_LEN);
+		memcpy(enaddr, prop_data_value(data), ETHER_ADDR_LEN);
 	if (cas_pci_readvpd(sc, pa, (data == NULL) ? enaddr : 0) != 0) {
 		aprint_error_dev(sc->sc_dev, "no Ethernet address found\n");
 		memset(enaddr, 0, sizeof(enaddr));
@@ -765,11 +765,12 @@ cas_detach(device_t self, int flags)
 
 		ether_ifdetach(ifp);
 		if_detach(ifp);
-		ifmedia_fini(&sc->sc_mii.mii_media);
 
 		callout_destroy(&sc->sc_tick_ch);
 
 		mii_detach(&sc->sc_mii, MII_PHY_ANY, MII_OFFSET_ANY);
+
+		ifmedia_fini(&sc->sc_mii.mii_media);
 
 		/*FALLTHROUGH*/
 	case CAS_ATT_MII:

@@ -1,4 +1,4 @@
-# $NetBSD: ALL,v 1.152 2020/05/30 13:35:31 jdolecek Exp $
+# $NetBSD: ALL,v 1.163 2020/09/08 10:05:47 yamaguchi Exp $
 # From NetBSD: GENERIC,v 1.787 2006/10/01 18:37:54 bouyer Exp
 #
 # ALL machine description file
@@ -17,25 +17,26 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"ALL-$Revision: 1.152 $"
+#ident		"ALL-$Revision: 1.163 $"
 
 maxusers	64		# estimated number of users
 
 makeoptions	USE_SSP=yes
 
 # CPU-related options.
-#options 	USER_LDT	# user-settable LDT; used by WINE
+options 	USER_LDT	# User-settable LDT, used by Wine
 options 	X86EMU		# 386 Real Mode emulator
 #options 	PAE		# PAE mode (36 bits physical addressing)
 makeoptions	SPECTRE_V2_GCC_MITIGATION=1	# GCC Spectre variant 2
 						# migitation
+options 	PCPU_IDT	# Per CPU IDT
 
 # CPU features
 acpicpu*	at cpu?		# ACPI CPU (including frequency scaling)
 coretemp*	at cpu?		# Intel on-die thermal sensor
 est0		at cpu0		# Intel Enhanced SpeedStep (non-ACPI)
 odcm0		at cpu0		# On-demand clock modulation
-#padlock0	at cpu0		# VIA PadLock
+padlock0	at cpu0		# VIA PadLock
 powernow0	at cpu0		# AMD PowerNow! and Cool'n'Quiet (non-ACPI)
 viac7temp*	at cpu?		# VIA C7 temperature sensor
 vmt0		at cpu0		# VMware Tools
@@ -136,6 +137,9 @@ options		KASAN
 # Kernel Code Coverage Driver.
 makeoptions	KCOV=1
 options		KCOV
+
+# Fault Injection Driver.
+options 	FAULT
 
 # Compatibility options
 options 	EXEC_AOUT	# required by binaries from before 1.5
@@ -827,7 +831,6 @@ amr*	at pci? dev ? function ?	# AMI/LSI Logic MegaRAID
 arcmsr* at pci? dev ? function ?	# Areca SATA RAID controllers
 cac*	at pci? dev ? function ?	# Compaq PCI array controllers
 ciss*	at pci? dev ? function ?	# HP Smart Array controllers
-options CISS_NO_INTERRUPT_HACK
 
 icp*	at pci? dev ? function ?	# ICP-Vortex GDT & Intel RAID
 ips*	at pci? dev ? function ?	# Adaptec/IBM ServeRAID
@@ -976,6 +979,7 @@ fxp*	at pci? dev ? function ?	# Intel EtherExpress PRO 10+/100B
 gem*	at pci? dev ? function ?	# Apple GMAC and Sun ERI gigabit enet
 gsip*	at pci? dev ? function ?	# NS83820 Gigabit Ethernet
 hme*	at pci? dev ? function ?	# Sun Microelectronics STP2002-STQ
+iavf*	at pci? dev ? function ?	# Intel Adaptive Virtual Function
 ipw*	at pci? dev ? function ?	# Intel PRO/Wireless 2100
 iwi*	at pci? dev ? function ?	# Intel PRO/Wireless 2200BG
 iwm*	at pci? dev ? function ?	# Intel Wireless WiFi Link 7xxx
@@ -1018,6 +1022,8 @@ wi*	at pci? dev ? function ?	# Intersil Prism Mini-PCI (802.11b)
 wm*	at pci? dev ? function ?	# Intel 8254x gigabit
 wpi*	at pci? dev ? function ?	# Intel PRO/Wireless 3945ABG
 xge*	at pci? dev ? function ?	# Neterion (S2io) Xframe-I 10GbE
+wwanc*  at pci? dev ? function ?	# Intel XMM7360 LTE modem
+wwan*   at wwanc?			# Intel XMM7360 LTE modem
 
 # PCMCIA network interfaces
 an*	at pcmcia? function ?		# Aironet PC4500/PC4800 (802.11)
@@ -1536,6 +1542,7 @@ btsco* at bthub?
 # Cryptographic Devices
 
 # PCI cryptographic devices
+amdccp*	at pci? dev ? function ?	# AMD Cryptographic Coprocessor
 hifn*	at pci? dev ? function ?	# Hifn 7755/7811/795x
 qat*	at pci? dev ? function ?	# Intel QuickAssist
 ubsec*	at pci? dev ? function ?	# Broadcom 5501/5601/580x/582x
@@ -1626,7 +1633,6 @@ pseudo-device	faith			# IPv[46] tcp relay translation i/f
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	l2tp			# L2TPv3 interface
 #pseudo-device	pf			# PF packet filter
@@ -1636,6 +1642,7 @@ pseudo-device	npf			# NPF packet filter
 pseudo-device	kttcp
 # srt is EXPERIMENTAL
 pseudo-device	srt			# source-address-based routing
+pseudo-device	wg			# VPN tunnel compatible with WireGuard
 
 pseudo-device	canloop			# CAN loopback interface
 

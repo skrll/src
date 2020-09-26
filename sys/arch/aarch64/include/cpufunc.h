@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.h,v 1.15 2020/05/25 05:13:16 ryo Exp $	*/
+/*	$NetBSD: cpufunc.h,v 1.18 2020/08/03 06:30:00 ryo Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -63,8 +63,10 @@ extern u_int aarch64_cache_vindexsize;	/* cachesize/way (VIVT/VIPT) */
 extern u_int aarch64_cache_prefer_mask;
 extern u_int cputype;			/* compat arm */
 
+extern int aarch64_pan_enabled;
 extern int aarch64_pac_enabled;
 
+void aarch64_pan_init(int);
 int aarch64_pac_init(int);
 
 int set_cpufuncs(void);
@@ -80,6 +82,8 @@ void aarch64_icache_inv_all(void);
 void aarch64_nullop(void);
 uint32_t aarch64_cpuid(void);
 void aarch64_icache_sync_range(vaddr_t, vsize_t);
+void aarch64_icache_inv_range(vaddr_t, vsize_t);
+void aarch64_icache_barrier_range(vaddr_t, vsize_t);
 void aarch64_idcache_wbinv_range(vaddr_t, vsize_t);
 void aarch64_dcache_wbinv_range(vaddr_t, vsize_t);
 void aarch64_dcache_inv_range(vaddr_t, vsize_t);
@@ -117,7 +121,8 @@ void aarch64_tlbi_by_asid_va_ll(int, vaddr_t);	/*  an ASID, a VA, lastlevel */
 #define cpu_dcache_inv_range(v,s)	aarch64_dcache_inv_range((v),(s))
 #define cpu_dcache_wb_range(v,s)	aarch64_dcache_wb_range((v),(s))
 #define cpu_idcache_wbinv_range(v,s)	aarch64_idcache_wbinv_range((v),(s))
-#define cpu_icache_sync_range(v,s)	aarch64_icache_sync_range((v),(s))
+#define cpu_icache_sync_range(v,s)	\
+	curcpu()->ci_cpufuncs.cf_icache_sync_range((v),(s))
 
 #define cpu_sdcache_wbinv_range(v,p,s)	((void)0)
 #define cpu_sdcache_inv_range(v,p,s)	((void)0)
@@ -162,6 +167,7 @@ cpu_earlydevice_va_p(void)
 #endif /* _KERNEL */
 
 /* definitions of TAG and PAC in pointers */
+#define AARCH64_ADDRTOP_TAG_BIT		55
 #define AARCH64_ADDRTOP_TAG		__BIT(55)	/* ECR_EL1.TBI[01]=1 */
 #define AARCH64_ADDRTOP_MSB		__BIT(63)	/* ECR_EL1.TBI[01]=0 */
 #define AARCH64_ADDRESS_TAG_MASK	__BITS(63,56)	/* if TCR.TBI[01]=1 */

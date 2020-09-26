@@ -1,4 +1,4 @@
-/* $NetBSD: armreg.h,v 1.48 2020/05/28 12:41:15 skrll Exp $ */
+/* $NetBSD: armreg.h,v 1.53 2020/09/15 09:28:21 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@ reg_##regname##_write(uint64_t __val)				\
 {								\
 	__asm __volatile(					\
 	    ASM_ARCH(arch)					\
-	    "msr " #regdesc ", %0" :: "r"(__val)		\
+	    "msr " #regdesc ", %0" :: "r"(__val) : "memory"	\
 	);							\
 }
 
@@ -77,7 +77,9 @@ reg_##regname##_write(uint64_t __val)				\
 static __inline void						\
 reg_##regname##_write(uint64_t __val)				\
 {								\
-	__asm __volatile("msr " #regdesc ", %0" :: "n"(__val));	\
+	__asm __volatile(					\
+	    "msr " #regdesc ", %0" :: "n"(__val) : "memory"	\
+	);							\
 }
 
 #define AARCH64REG_READ_INLINE(regname)				\
@@ -97,7 +99,9 @@ reg_##regname##_write(uint64_t __val)				\
 static __inline void						\
 reg_##regname##_write(uint64_t __val)				\
 {								\
-	__asm __volatile("at " #regdesc ", %0" :: "r"(__val));	\
+	__asm __volatile(					\
+	    "at " #regdesc ", %0" :: "r"(__val) : "memory"	\
+	);							\
 }
 
 #define AARCH64REG_ATWRITE_INLINE(regname)			\
@@ -598,6 +602,9 @@ AARCH64REG_WRITE_INLINE3(APGAKeyLo_EL1, apgakeylo_el1, ATTR_ARCH("armv8.3-a"))
 AARCH64REG_READ_INLINE3(APGAKeyHi_EL1, apgakeyhi_el1, ATTR_ARCH("armv8.3-a"))
 AARCH64REG_WRITE_INLINE3(APGAKeyHi_EL1, apgakeyhi_el1, ATTR_ARCH("armv8.3-a"))
 
+AARCH64REG_READ_INLINE3(pan, pan, ATTR_ARCH("armv8.1-a"))
+AARCH64REG_WRITE_INLINE3(pan, pan, ATTR_ARCH("armv8.1-a"))
+
 AARCH64REG_READ_INLINE(cpacr_el1)	// Coprocessor Access Control Regiser
 AARCH64REG_WRITE_INLINE(cpacr_el1)
 
@@ -819,7 +826,7 @@ AARCH64REG_WRITE_INLINE(sctlr_el1)
 #define	SCTLR_IESB		__BIT(21)
 #define	SCTLR_EIS		__BIT(22)
 #define	SCTLR_SPAN		__BIT(23)
-#define	SCTLR_EOE		__BIT(24)
+#define	SCTLR_E0E		__BIT(24)
 #define	SCTLR_EE		__BIT(25)
 #define	SCTLR_UCI		__BIT(26)
 #define	SCTLR_EnDA		__BIT(27)
@@ -864,6 +871,7 @@ AARCH64REG_WRITE_INLINE(spsr_el1)
 #define	SPSR_A32_Q 		__BIT(27)	// A32: Overflow
 #define	SPSR_A32_IT1 		__BIT(26)	// A32: IT[1]
 #define	SPSR_A32_IT0 		__BIT(25)	// A32: IT[0]
+#define	SPSR_PAN	 	__BIT(22)	// Privileged Access Never
 #define	SPSR_SS	 		__BIT(21)	// Software Step
 #define	SPSR_SS_SHIFT		21
 #define	SPSR_IL	 		__BIT(20)	// Instruction Length
@@ -1305,6 +1313,26 @@ AARCH64REG_WRITE_INLINE(cntvct_el0)
 #define	CNTCTL_ENABLE		__BIT(0)	// Timer Enabled
 
 // ID_AA64PFR0_EL1: AArch64 Processor Feature Register 0
+#define	ID_AA64PFR0_EL1_CSV3		__BITS(63,60) // Speculative fault data
+#define	 ID_AA64PFR0_EL1_CSV3_NONE	0
+#define	 ID_AA64PFR0_EL1_CSV3_IMPL	1
+#define	ID_AA64PFR0_EL1_CSV2		__BITS(59,56) // Speculative branches
+#define	 ID_AA64PFR0_EL1_CSV2_NONE	0
+#define	 ID_AA64PFR0_EL1_CSV2_IMPL	1
+// reserved [55:52]
+#define	ID_AA64PFR0_EL1_DIT		__BITS(51,48) // Data-indep. timing
+#define	 ID_AA64PFR0_EL1_DIT_NONE	0
+#define	 ID_AA64PFR0_EL1_DIT_IMPL	1
+#define	ID_AA64PFR0_EL1_AMU		__BITS(47,44) // Activity monitors ext.
+#define	 ID_AA64PFR0_EL1_AMU_NONE	0
+#define	 ID_AA64PFR0_EL1_AMU_IMPLv8_4	1
+#define	 ID_AA64PFR0_EL1_AMU_IMPLv8_6	2
+#define	ID_AA64PFR0_EL1_MPAM		__BITS(43,40) // MPAM Extension
+#define	 ID_AA64PFR0_EL1_MPAM_NONE	0
+#define	 ID_AA64PFR0_EL1_MPAM_IMPL	1
+#define	ID_AA64PFR0_EL1_SEL2		__BITS(43,40) // Secure EL2
+#define	 ID_AA64PFR0_EL1_SEL2_NONE	0
+#define	 ID_AA64PFR0_EL1_SEL2_IMPL	1
 #define	ID_AA64PFR0_EL1_SVE		__BITS(35,32) // Scalable Vector
 #define	 ID_AA64PFR0_EL1_SVE_NONE	 0
 #define	 ID_AA64PFR0_EL1_SVE_IMPL	 1
@@ -1594,6 +1622,10 @@ struct aarch64_sysctl_cpu_id {
 	uint32_t ac_mvfr0;	/* Media and VFP Feature Register 0 */
 	uint32_t ac_mvfr1;	/* Media and VFP Feature Register 1 */
 	uint32_t ac_mvfr2;	/* Media and VFP Feature Register 2 */
+	uint32_t ac_pad;
+
+	uint64_t ac_clidr;	/* Cacle Level ID Register */
+	uint64_t ac_ctr;	/* Cache Type Register */
 };
 
 #endif /* _AARCH64_ARMREG_H_ */

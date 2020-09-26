@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_vnode.c,v 1.123 2020/05/26 18:38:37 ad Exp $	*/
+/*	$NetBSD: vfs_vnode.c,v 1.126 2020/08/04 03:00:10 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1997-2011, 2019, 2020 The NetBSD Foundation, Inc.
@@ -148,7 +148,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_vnode.c,v 1.123 2020/05/26 18:38:37 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_vnode.c,v 1.126 2020/08/04 03:00:10 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_pax.h"
@@ -756,7 +756,8 @@ vput(vnode_t *vp)
 		}
 		lktype = LK_NONE;
 	} else if ((vp->v_vflag & VV_LOCKSWORK) == 0) {
-		lktype = LK_EXCLUSIVE;
+		VOP_UNLOCK(vp);
+		lktype = LK_NONE;
 	} else {
 		lktype = VOP_ISLOCKED(vp);
 		KASSERT(lktype != LK_NONE);
@@ -897,10 +898,8 @@ vrelel(vnode_t *vp, int flags, int lktype)
  		}
 
 		/* Take care of space accounting. */
-		if ((vp->v_iflag & VI_EXECMAP) != 0 &&
-		    vp->v_uobj.uo_npages != 0) {
+		if ((vp->v_iflag & VI_EXECMAP) != 0) {
 			cpu_count(CPU_COUNT_EXECPAGES, -vp->v_uobj.uo_npages);
-			cpu_count(CPU_COUNT_FILEPAGES, vp->v_uobj.uo_npages);
 		}
 		vp->v_iflag &= ~(VI_TEXT|VI_EXECMAP|VI_WRMAP);
 		vp->v_vflag &= ~VV_MAPPED;
@@ -1708,9 +1707,8 @@ vcache_reclaim(vnode_t *vp)
 
 	rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 	mutex_enter(vp->v_interlock);
-	if ((vp->v_iflag & VI_EXECMAP) != 0 && vp->v_uobj.uo_npages != 0) {
+	if ((vp->v_iflag & VI_EXECMAP) != 0) {
 		cpu_count(CPU_COUNT_EXECPAGES, -vp->v_uobj.uo_npages);
-		cpu_count(CPU_COUNT_FILEPAGES, vp->v_uobj.uo_npages);
 	}
 	vp->v_iflag &= ~(VI_TEXT|VI_EXECMAP);
 	vp->v_iflag |= VI_DEADCHECK; /* for genfs_getpages() */

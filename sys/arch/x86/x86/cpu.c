@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.192 2020/05/21 21:12:30 ad Exp $	*/
+/*	$NetBSD: cpu.c,v 1.198 2020/08/09 15:32:44 christos Exp $	*/
 
 /*
  * Copyright (c) 2000-2020 NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.192 2020/05/21 21:12:30 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.198 2020/08/09 15:32:44 christos Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */
@@ -444,6 +444,7 @@ cpu_attach(device_t parent, device_t self, void *aux)
 		 */
 		atomic_or_32(&ci->ci_flags, CPUF_PRESENT | CPUF_PRIMARY);
 		cpu_intr_init(ci);
+		tsc_setfunc(ci);
 		cpu_get_tsc_freq(ci);
 		cpu_init(ci);
 #ifdef i386
@@ -492,6 +493,7 @@ cpu_attach(device_t parent, device_t self, void *aux)
 		 * report on an AP
 		 */
 		cpu_intr_init(ci);
+		idt_vec_init_cpu_md(&ci->ci_idtvec, cpu_index(ci));
 		gdt_alloc_cpu(ci);
 #ifdef i386
 		cpu_set_tss_gates(ci);
@@ -768,9 +770,6 @@ cpu_boot_secondary_processors(void)
 
 	/* Now that we know about the TSC, attach the timecounter. */
 	tsc_tc_init();
-
-	/* Enable zeroing of pages in the idle loop if we have SSE2. */
-	vm_page_zero_enable = false; /* ((cpu_feature[0] & CPUID_SSE2) != 0); */
 }
 #endif
 
@@ -980,7 +979,7 @@ cpu_hatch(void *v)
 	pcb = lwp_getpcb(ci->ci_data.cpu_idlelwp);
 	lcr0(pcb->pcb_cr0);
 
-	cpu_init_idt();
+	cpu_init_idt(ci);
 	gdt_init_cpu(ci);
 #if NLAPIC > 0
 	lapic_enable();
@@ -1225,7 +1224,7 @@ cpu_stop(device_t dv)
 
 	KASSERT((ci->ci_flags & CPUF_PRESENT) != 0);
 
-	if ((ci->ci_flags & CPUF_PRIMARY) != 0)
+	if (CPU_IS_PRIMARY(ci))
 		return true;
 
 	if (ci->ci_data.cpu_idlelwp == NULL)
@@ -1270,7 +1269,7 @@ cpu_resume(device_t dv, const pmf_qual_t *qual)
 	if ((ci->ci_flags & CPUF_PRESENT) == 0)
 		return true;
 
-	if ((ci->ci_flags & CPUF_PRIMARY) != 0)
+	if (CPU_IS_PRIMARY(ci))
 		goto out;
 
 	if (ci->ci_data.cpu_idlelwp == NULL)
@@ -1313,7 +1312,7 @@ cpu_get_tsc_freq(struct cpu_info *ci)
 	uint64_t freq = 0, freq_from_cpuid, t0, t1;
 	int64_t overhead;
 
-	if ((ci->ci_flags & CPUF_PRIMARY) != 0 && cpu_hascounter()) {
+	if (CPU_IS_PRIMARY(ci) && cpu_hascounter()) {
 		/*
 		 * If it's the first call of this function, try to get TSC
 		 * freq from CPUID by calling cpu_tsc_freq_cpuid().

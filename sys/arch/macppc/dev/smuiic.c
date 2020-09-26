@@ -1,3 +1,5 @@
+/*	$NetBSD: smuiic.c,v 1.5 2020/07/02 12:47:19 macallan Exp $ */
+
 /*-
  * Copyright (c) 2013 Phileas Fogg
  * All rights reserved.
@@ -100,8 +102,8 @@ smuiic_attach(device_t parent, device_t self, void *aux)
 			goto skip;
 		addr = (addr & 0xff) >> 1;
 		dev = prop_dictionary_create();
-		prop_dictionary_set_cstring(dev, "name", name);
-		data = prop_data_create_data(compat, strlen(compat)+1);
+		prop_dictionary_set_string(dev, "name", name);
+		data = prop_data_create_copy(compat, strlen(compat)+1);
 		prop_dictionary_set(dev, "compatible", data);
 		prop_object_release(data);
 		prop_dictionary_set_uint32(dev, "addr", addr);

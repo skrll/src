@@ -55,6 +55,12 @@
 #include "logerr.h"
 #include "sa.h"
 
+#define	IN_CONFIG_BLOCK(ifo)	((ifo)->options & DHCPCD_FORKED)
+#define	SET_CONFIG_BLOCK(ifo)	((ifo)->options |= DHCPCD_FORKED)
+#define	CLEAR_CONFIG_BLOCK(ifo)	((ifo)->options &= ~DHCPCD_FORKED)
+
+static unsigned long long default_options;
+
 const struct option cf_options[] = {
 	{"background",      no_argument,       NULL, 'b'},
 	{"script",          required_argument, NULL, 'c'},
@@ -158,6 +164,7 @@ const struct option cf_options[] = {
 	{"inactive",        no_argument,       NULL, O_INACTIVE},
 	{"mudurl",          required_argument, NULL, O_MUDURL},
 	{"link_rcvbuf",     required_argument, NULL, O_LINK_RCVBUF},
+	{"poll",            optional_argument, NULL, O_POLL},
 	{NULL,              0,                 NULL, '\0'}
 };
 
@@ -673,7 +680,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case 'c':
 		ARG_REQUIRED;
-		if (ifname != NULL) {
+		if (IN_CONFIG_BLOCK(ifo)) {
 			logerrx("%s: per interface scripts"
 			    " are no longer supported",
 			    ifname);
@@ -743,7 +750,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		ARG_REQUIRED;
 		/* per interface logging is not supported
 		 * don't want to overide the commandline */
-		if (ifname == NULL && ctx->logfile == NULL) {
+		if (!IN_CONFIG_BLOCK(ifo) && ctx->logfile == NULL) {
 			logclose();
 			ctx->logfile = strdup(arg);
 			logopen(ctx->logfile);
@@ -754,6 +761,10 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case 'l':
 		ARG_REQUIRED;
+		if (strcmp(arg, "-1") == 0) {
+			ifo->leasetime = DHCP_INFINITE_LIFETIME;
+			break;
+		}
 		ifo->leasetime = (uint32_t)strtou(arg, NULL,
 		    0, 0, UINT32_MAX, &e);
 		if (e) {
@@ -946,7 +957,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case 'z':
 		ARG_REQUIRED;
-		if (ifname == NULL)
+		if (!IN_CONFIG_BLOCK(ifo))
 			ctx->ifav = splitv(&ctx->ifac, ctx->ifav, arg);
 		break;
 	case 'A':
@@ -1016,6 +1027,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		}
 		ifo->options |= DHCPCD_CLIENTID;
 		ifo->clientid[0] = (uint8_t)s;
+		ifo->options &= ~DHCPCD_DUID;
 		break;
 	case 'J':
 		ifo->options |= DHCPCD_BROADCAST;
@@ -1192,20 +1204,30 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case 'Z':
 		ARG_REQUIRED;
-		if (ifname == NULL)
+		if (!IN_CONFIG_BLOCK(ifo))
 			ctx->ifdv = splitv(&ctx->ifdc, ctx->ifdv, arg);
 		break;
 	case '1':
 		ifo->options |= DHCPCD_ONESHOT;
 		break;
 	case '4':
+#ifdef INET
 		ifo->options &= ~DHCPCD_IPV6;
 		ifo->options |= DHCPCD_IPV4;
 		break;
+#else
+		logerrx("INET has been compiled out");
+		return -1;
+#endif
 	case '6':
+#ifdef INET6
 		ifo->options &= ~DHCPCD_IPV4;
 		ifo->options |= DHCPCD_IPV6;
 		break;
+#else
+		logerrx("INET6 has been compiled out");
+		return -1;
+#endif
 	case O_IPV4:
 		ifo->options |= DHCPCD_IPV4;
 		break;
@@ -1296,7 +1318,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 #endif
 	case O_IAID:
 		ARG_REQUIRED;
-		if (ifname == NULL) {
+		if (!IN_CONFIG_BLOCK(ifo)) {
 			logerrx("IAID must belong in an interface block");
 			return -1;
 		}
@@ -1338,7 +1360,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 			logwarnx("%s: IA_PD not compiled in", ifname);
 			return -1;
 #else
-			if (ifname == NULL) {
+			if (!IN_CONFIG_BLOCK(ifo)) {
 				logerrx("IA PD must belong in an "
 				    "interface block");
 				return -1;
@@ -1346,7 +1368,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 			i = D6_OPTION_IA_PD;
 #endif
 		}
-		if (ifname == NULL && arg) {
+		if (!IN_CONFIG_BLOCK(ifo) && arg) {
 			logerrx("IA with IAID must belong in an "
 			    "interface block");
 			return -1;
@@ -1460,7 +1482,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 				logerrx("%s: interface name too long", arg);
 				goto err_sla;
 			}
-			sla->sla_set = 0;
+			sla->sla_set = false;
 			sla->prefix_len = 0;
 			sla->suffix = 1;
 			p = np;
@@ -1471,7 +1493,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 				if (*p != '\0') {
 					sla->sla = (uint32_t)strtou(p, NULL,
 					    0, 0, UINT32_MAX, &e);
-					sla->sla_set = 1;
+					sla->sla_set = true;
 					if (e) {
 						logerrx("%s: failed to convert "
 						    "sla",
@@ -1530,7 +1552,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 					    sla->ifname);
 					goto err_sla;
 				}
-				if (sla->sla_set == 0 &&
+				if (!sla->sla_set &&
 				    strcmp(slap->ifname, sla->ifname) == 0)
 				{
 					logwarnx("%s: cannot specify the "
@@ -2085,6 +2107,12 @@ invalid_token:
 		break;
 	case O_CONTROLGRP:
 		ARG_REQUIRED;
+#ifdef PRIVSEP
+		/* Control group is already set by this point.
+		 * We don't need to pledge getpw either with this. */
+		if (IN_PRIVSEP(ctx))
+			break;
+#endif
 #ifdef _REENTRANT
 		l = sysconf(_SC_GETGR_R_SIZE_MAX);
 		if (l == -1)
@@ -2191,6 +2219,18 @@ invalid_token:
 			return -1;
 		}
 #endif
+		break;
+	case O_POLL:
+		if (arg == NULL) {
+			ifo->poll = IF_POLL_UP;
+			break;
+		}
+		ifo->poll = (unsigned long)
+		    strtou(arg, NULL, 0, 0, ULONG_MAX, &e);
+		if (e) {
+			logerrx("failed to convert poll %s", arg);
+			return -1;
+		}
 		break;
 	default:
 		return 0;
@@ -2309,18 +2349,32 @@ read_config(struct dhcpcd_ctx *ctx,
 	/* Seed our default options */
 	if ((ifo = default_config(ctx)) == NULL)
 		return NULL;
-	ifo->options |= DHCPCD_DAEMONISE | DHCPCD_GATEWAY;
-#ifdef PLUGIN_DEV
-	ifo->options |= DHCPCD_DEV;
-#endif
+	if (default_options == 0) {
+		default_options |= DHCPCD_DAEMONISE | DHCPCD_GATEWAY;
 #ifdef INET
-	ifo->options |= DHCPCD_IPV4 | DHCPCD_ARP | DHCPCD_DHCP | DHCPCD_IPV4LL;
+		skip = socket(PF_INET, SOCK_DGRAM, 0);
+		if (skip != -1) {
+			close(skip);
+			default_options |= DHCPCD_IPV4 | DHCPCD_ARP |
+			    DHCPCD_DHCP | DHCPCD_IPV4LL;
+		}
 #endif
 #ifdef INET6
-	ifo->options |= DHCPCD_IPV6 | DHCPCD_IPV6RS;
-	ifo->options |= DHCPCD_IPV6RA_AUTOCONF | DHCPCD_IPV6RA_REQRDNSS;
-	ifo->options |= DHCPCD_DHCP6;
+		skip = socket(PF_INET6, SOCK_DGRAM, 0);
+		if (skip != -1) {
+			close(skip);
+			default_options |= DHCPCD_IPV6 | DHCPCD_IPV6RS |
+			    DHCPCD_IPV6RA_AUTOCONF | DHCPCD_IPV6RA_REQRDNSS |
+			    DHCPCD_DHCP6;
+		}
 #endif
+#ifdef PLUGIN_DEV
+		default_options |= DHCPCD_DEV;
+#endif
+	}
+	ifo->options |= default_options;
+
+	CLEAR_CONFIG_BLOCK(ifo);
 
 	vlen = strlcpy((char *)ifo->vendorclassid + 1, ctx->vendor,
 	    sizeof(ifo->vendorclassid) - 1);
@@ -2366,8 +2420,8 @@ read_config(struct dhcpcd_ctx *ctx,
 			return ifo;
 		}
 		if (buf[buflen - 1] != '\0') {
-			if (buflen < sizeof(buf) - 1)
-				bulen++;
+			if ((size_t)buflen < sizeof(buf) - 1)
+				buflen++;
 			buf[buflen - 1] = '\0';
 		}
 #else
@@ -2474,7 +2528,9 @@ read_config(struct dhcpcd_ctx *ctx,
 			had_block = 1;
 			new_block = 0;
 			ifo->options &= ~DHCPCD_WAITOPTS;
+			SET_CONFIG_BLOCK(ifo);
 		}
+
 		/* Start of an interface block, skip if not ours */
 		if (strcmp(option, "interface") == 0) {
 			char **n;
@@ -2544,6 +2600,7 @@ read_config(struct dhcpcd_ctx *ctx,
 
 	if (!had_block)
 		ifo->options &= ~DHCPCD_WAITOPTS;
+	CLEAR_CONFIG_BLOCK(ifo);
 	finish_config(ifo);
 	return ifo;
 }

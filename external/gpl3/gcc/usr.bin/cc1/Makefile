@@ -1,22 +1,20 @@
-#	$NetBSD: Makefile,v 1.17 2020/04/28 05:45:15 mrg Exp $
+#	$NetBSD: Makefile,v 1.19 2020/09/05 14:24:26 mrg Exp $
 
 PROG=		cc1
-SRCS=		${G_C_OBJS:S,c-family/,,:S,c/,,:Nlibcpp.a:.o=.c} main.c ${PROG}-checksum.c
+SRCS=		${G_C_OBJS:S,c-family/,,:S,c/,,:S,known-headers.o,known-headers.cc,:S,c-spellcheck.o,c-spellcheck.cc,:Nlibcpp.a:.o=.c}
+SRCS+=		main.c ${PROG}-checksum.c
 CPPFLAGS+=	-DPREFIX=\"/usr\"
 
 .include "../Makefile.backend"
 .include "../Makefile.backtrace"
-.include "../Makefile.common"
-.include "../Makefile.common-target"
 .include "../Makefile.libcpp"
 .include "../Makefile.libdecnumber"
-.include "../Makefile.libiberty"
 
 CHECKSUM_OBJS=	${BACKENDOBJ}/libbackend.a \
 		main.o \
 		${LIBBACKTRACEOBJ}/libbacktrace.a \
-		${COMMONOBJ}/libcommon.a \
 		${COMMONTARGETOBJ}/libcommon-target.a \
+		${COMMONOBJ}/libcommon.a \
 		${LIBCPPOBJ}/libcpp.a \
 		${LIBDECNUMBEROBJ}/libdecnumber.a \
 		${LIBIBERTYOBJ}/libiberty.a \

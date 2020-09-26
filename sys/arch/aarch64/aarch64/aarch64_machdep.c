@@ -1,4 +1,4 @@
-/* $NetBSD: aarch64_machdep.c,v 1.42 2020/04/13 05:40:25 maxv Exp $ */
+/* $NetBSD: aarch64_machdep.c,v 1.48 2020/09/16 18:26:15 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.42 2020/04/13 05:40:25 maxv Exp $");
+__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.48 2020/09/16 18:26:15 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_cpuoptions.h"
@@ -161,9 +161,9 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
 		start = trunc_page(bootconfig.dram[blk].address);
 		end = round_page(bootconfig.dram[blk].address +
 		    (uint64_t)bootconfig.dram[blk].pages * PAGE_SIZE);
+
 		pmapboot_enter_range(AARCH64_PA_TO_KVA(start), start,
-		    end - start, ksegattr, PMAPBOOT_ENTER_NOOVERWRITE,
-		    bootpage_alloc, printf);
+		    end - start, ksegattr, printf);
 	}
 	aarch64_dcache_wbinv_all();
 
@@ -205,18 +205,17 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
  *               0xffff_ffff_ffe0_0000  End of KVA
  *                                      = VM_MAX_KERNEL_ADDRESS
  *
- *               0xffff_ffc0_0???_????  End of kernel
+ *               0xffff_c000_0???_????  End of kernel
  *                                      = _end[]
- *               0xffff_ffc0_00??_????  Start of kernel
+ *               0xffff_c000_00??_????  Start of kernel
  *                                      = __kernel_text[]
  *
- *               0xffff_ffc0_0000_0000  Kernel base address & start of KVA
+ *               0xffff_c000_0000_0000  Kernel base address & start of KVA
  *                                      = VM_MIN_KERNEL_ADDRESS
  *
- *               0xffff_ffbf_ffff_ffff  End of direct mapped
+ *               0xffff_bfff_ffff_ffff  End of direct mapped
  *               0xffff_0000_0000_0000  Start of direct mapped
  *                                      = AARCH64_KSEG_START
- *                                      = AARCH64_KMEMORY_BASE
  *
  * Hole:         0xfffe_ffff_ffff_ffff
  *               0x0001_0000_0000_0000
@@ -480,6 +479,14 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 
 	sysctl_createv(clog, 0, NULL, NULL,
 	    CTLFLAG_PERMANENT,
+	    CTLTYPE_INT, "pan",
+	    SYSCTL_DESCR("Whether Privileged Access Never is enabled"),
+	    NULL, 0,
+	    &aarch64_pan_enabled, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+
+	sysctl_createv(clog, 0, NULL, NULL,
+	    CTLFLAG_PERMANENT,
 	    CTLTYPE_INT, "pac",
 	    SYSCTL_DESCR("Whether Pointer Authentication is enabled"),
 	    NULL, 0,
@@ -523,6 +530,8 @@ machdep_init(void)
 {
 	/* clear cpu reset hook for early boot */
 	cpu_reset_address0 = NULL;
+
+	configure_cpu_traps();
 }
 
 #ifdef MODULAR
@@ -530,6 +539,9 @@ machdep_init(void)
 void
 module_init_md(void)
 {
+#ifdef FDT
+	arm_fdt_module_init();
+#endif
 }
 #endif /* MODULAR */
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_machdep.c,v 1.143 2020/05/21 21:12:30 ad Exp $	*/
+/*	$NetBSD: x86_machdep.c,v 1.146 2020/08/09 15:32:44 christos Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007 YAMAMOTO Takashi,
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.143 2020/05/21 21:12:30 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.146 2020/08/09 15:32:44 christos Exp $");
 
 #include "opt_modular.h"
 #include "opt_physmem.h"
@@ -95,14 +95,12 @@ void (*x86_cpu_idle)(void);
 static bool x86_cpu_idle_ipi;
 static char x86_cpu_idle_text[16];
 
+static bool x86_user_ldt_enabled __read_mostly = false;
+
 #ifdef XEN
 
 #include <xen/xen.h>
 #include <xen/hypervisor.h>
-#endif
-#ifdef XENPV
-char module_machine_amd64_xen[] = "amd64-xen";
-char module_machine_i386pae_xen[] = "i386pae-xen";
 #endif
 
 #ifndef XENPV
@@ -223,15 +221,6 @@ module_init_md(void)
 {
 	struct btinfo_modulelist *biml;
 	struct bi_modulelist_entry *bi, *bimax;
-
-	/* setup module path for XEN kernels */
-#ifdef XENPV
-#ifdef __x86_64__
-	module_machine = module_machine_amd64_xen;
-#else
-	module_machine = module_machine_i386pae_xen;
-#endif
-#endif
 
 	biml = lookup_bootinfo(BTINFO_MODULELIST);
 	if (biml == NULL) {
@@ -1191,9 +1180,14 @@ x86_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 
 	switch (action) {
 	case KAUTH_MACHDEP_IOPERM_GET:
+		result = KAUTH_RESULT_ALLOW;
+		break;
+
 	case KAUTH_MACHDEP_LDT_GET:
 	case KAUTH_MACHDEP_LDT_SET:
-		result = KAUTH_RESULT_ALLOW;
+		if (x86_user_ldt_enabled) {
+			result = KAUTH_RESULT_ALLOW;
+		}
 		break;
 
 	default:
@@ -1445,6 +1439,13 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 		       CTL_CREATE, CTL_EOL);
 #endif
 
+	sysctl_createv(clog, 0, NULL, NULL,
+		       CTLFLAG_READWRITE,
+		       CTLTYPE_BOOL, "user_ldt",
+		       SYSCTL_DESCR("Whether USER_LDT is enabled"),
+		       NULL, 0, &x86_user_ldt_enabled, 0,
+		       CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+
 #ifndef XENPV
 	void sysctl_speculation_init(struct sysctllog **);
 	sysctl_speculation_init(clog);
@@ -1506,4 +1507,27 @@ cpu_initclocks(void)
 
 	/* Now start the clocks on this CPU (the boot CPU). */
 	(*x86_initclock_func)();
+}
+
+int
+x86_cpu_is_lcall(const void *ip)
+{
+        static const uint8_t lcall[] = { 0x9a, 0, 0, 0, 0 };
+	int error;
+        const size_t sz = sizeof(lcall) + 2;
+        uint8_t tmp[sizeof(lcall) + 2];
+
+	if ((error = copyin(ip, tmp, sz)) != 0)
+		return error;
+
+	if (memcmp(tmp, lcall, sizeof(lcall)) != 0 || tmp[sz - 1] != 0)
+		return EINVAL;
+
+	switch (tmp[sz - 2]) {
+        case (uint8_t)0x07: /* NetBSD */
+	case (uint8_t)0x87: /* BSD/OS */
+		return 0;
+	default:
+		return EINVAL;
+        }
 }

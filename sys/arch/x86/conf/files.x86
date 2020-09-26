@@ -1,4 +1,4 @@
-#	$NetBSD: files.x86,v 1.111 2020/05/06 19:45:12 bouyer Exp $
+#	$NetBSD: files.x86,v 1.119 2020/08/01 12:15:40 jdolecek Exp $
 
 # options for MP configuration through the MP spec
 defflag opt_mpbios.h MPBIOS MPDEBUG MPBIOS_SCANPCI
@@ -13,6 +13,7 @@ defflag opt_intrdebug.h	INTRDEBUG
 # PCI fixup options
 defflag opt_pcifixup.h	PCI_ADDR_FIXUP PCI_BUS_FIXUP
 			PCI_INTR_FIXUP PCI_INTR_FIXUP_FORCE
+defflag opt_pci.h	NO_PCI_MSI_MSIX
 
 # To be able to test for NetBSD/xen in shared files
 defflag	opt_xen.h		DO_NOT_DEFINE
@@ -21,6 +22,8 @@ defflag	opt_xen.h		DO_NOT_DEFINE
 defflag opt_kaslr.h	NO_X86_ASLR
 
 defflag	SVS
+
+defflag	PCPU_IDT
 
 define  cpubus { [apid = -1] }
 define	cpufeaturebus {}
@@ -59,7 +62,7 @@ device	odcm
 attach	odcm at cpufeaturebus
 file	arch/x86/x86/odcm.c		odcm
 
-device	padlock: opencrypto, rijndael
+device	padlock: opencrypto, aes
 attach	padlock at cpufeaturebus
 file	arch/x86/x86/via_padlock.c	padlock
 
@@ -165,3 +168,18 @@ file	arch/x86/pci/pciide_machdep.c	pciide_common
 
 file	arch/x86/pci/pci_bus_fixup.c	pci_bus_fixup
 file	arch/x86/pci/pci_addr_fixup.c	pci_addr_fixup
+
+# AES-NI
+include "crypto/aes/arch/x86/files.aesni"
+
+# VIA ACE
+include "crypto/aes/arch/x86/files.aesvia"
+
+# Bitsliced AES with SSE2
+include "crypto/aes/arch/x86/files.aessse2"
+
+# Permutation-based AES with PSHUFB
+include "crypto/aes/arch/x86/files.aesssse3"
+
+# ChaCha with SSE2
+include "crypto/chacha/arch/x86/files.chacha_x86"

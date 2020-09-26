@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.11 2006/10/07 01:21:47 tsutsui Exp $	*/
+/*	$NetBSD: locore.S,v 1.15 2020/07/28 21:25:48 uwe Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -76,11 +76,12 @@
 #include "opt_memsize.h"
 #include "assym.h"
 
-#if defined(SH3) && defined(SH4)	
-#error "evbsh3 port don't support SH3,SH4 common kernel."	
+#if defined(SH3) && defined(SH4)
+#error "evbsh3 port don't support SH3,SH4 common kernel."
 #endif
 
 #include <sh3/asm.h>
+#include <sh3/psl.h>
 #include <sh3/exception.h>
 #include <sh3/locore.h>
 #include <sh3/mmu_sh3.h>
@@ -96,10 +97,7 @@ ALTENTRY(kernel_text)
 	/* Set SP to initial position */
 	mov.l	XLtmpstk, r15
 
-	/* Mask all interrupt */
-	__INTR_MASK(r0, r1)
-
-	/* Set Register Bank to Bank 0 */
+	/* Set Status Register */
 	mov.l	SR_init, r0
 	ldc	r0, sr
 
@@ -111,7 +109,7 @@ ALTENTRY(kernel_text)
 	bra	start1
 	nop
 	.align	2
-SR_init:	.long	0x500000F0
+SR_init:	.long	PSL_MD | PSL_BL | PSL_IMASK
 REG_SYMBOL(MMUCR)
 start1:
 
@@ -141,7 +139,7 @@ start1:
 	mov.l	___start, r3
 	sub	r2, r3
 	mov.l	XL_ram_start, r4
-	mov.l	@r4, r4	
+	mov.l	@r4, r4
 	add	r4, r3		/* dest address */
 1:
 	mov.l	@r1+, r4
@@ -158,7 +156,7 @@ start1:
 	.align	2
 LXstart_in_RAM:
 	.long	start_in_RAM
-XL_ram_start:	
+XL_ram_start:
 	.long	_C_LABEL(ram_start)
 #else /* ROMIMAGE */
 #ifndef	DONT_INIT_BSC
@@ -205,7 +203,7 @@ cache_on:
 	nop
 	jmp @r2
 	nop
-	
+
 	.align	2
 main_label:
 #endif /* SH4 */
@@ -223,13 +221,15 @@ ___etext:	.long	_C_LABEL(etext)
 ___end:		.long	_C_LABEL(end)
 XLtmpstk:	.long	INIT_STACK
 _KERNBASE:	.long	0x8c000000
+#ifdef ROMIMAGE
 _ROM_START:	.long	IOM_ROM_BEGIN
+#endif
 XLinitSH3:	.long	_C_LABEL(initSH3)
 XLmain:		.long	_C_LABEL(main)
 XLtoP2:		.long	0x20000000
 REG_SYMBOL(CCR)
-#ifdef SH4
-XL_CCRVAL:	.long	0x0909 /* Operand cache ON */
+#ifdef SH4	/* invalidate and enable instruction and operand caches */
+XL_CCRVAL:	.long	SH4_CCR_ICI | SH4_CCR_ICE | SH4_CCR_OCI | SH4_CCR_OCE
 #endif /* SH4 */
 
 load_and_reset:

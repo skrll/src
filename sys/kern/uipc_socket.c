@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_socket.c,v 1.289 2020/04/26 14:21:14 jakllsch Exp $	*/
+/*	$NetBSD: uipc_socket.c,v 1.291 2020/08/26 22:54:30 christos Exp $	*/
 
 /*
  * Copyright (c) 2002, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.289 2020/04/26 14:21:14 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.291 2020/08/26 22:54:30 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -526,6 +526,7 @@ socreate(int dom, struct socket **aso, int type, int proto, struct lwp *l,
 #endif
 	uid = kauth_cred_geteuid(l->l_cred);
 	so->so_uidinfo = uid_find(uid);
+	so->so_egid = kauth_cred_getegid(l->l_cred);
 	so->so_cpid = l->l_proc->p_pid;
 
 	/*
@@ -2039,13 +2040,15 @@ sogetopt(struct socket *so, struct sockopt *sopt)
 static int
 sockopt_alloc(struct sockopt *sopt, size_t len, km_flag_t kmflag)
 {
+	void *data;
 
 	KASSERT(sopt->sopt_size == 0);
 
 	if (len > sizeof(sopt->sopt_buf)) {
-		sopt->sopt_data = kmem_zalloc(len, kmflag);
-		if (sopt->sopt_data == NULL)
+		data = kmem_zalloc(len, kmflag);
+		if (data == NULL)
 			return ENOMEM;
+		sopt->sopt_data = data;
 	} else
 		sopt->sopt_data = sopt->sopt_buf;
 

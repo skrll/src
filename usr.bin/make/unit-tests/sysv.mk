@@ -1,4 +1,6 @@
-# $Id: sysv.mk,v 1.4 2020/05/06 02:30:10 christos Exp $
+# $Id: sysv.mk,v 1.13 2020/08/23 14:52:06 rillig Exp $
+
+all: foo fun sam bla
 
 FOO ?=
 FOOBAR = ${FOO:=bar}
@@ -11,8 +13,6 @@ FUN = ${B}${S}fun
 SUN = the Sun
 
 # we expect nothing when FOO is empty
-all: foo fun sam bla
-
 foo:
 	@echo FOOBAR = ${FOOBAR}
 .if empty(FOO)

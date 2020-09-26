@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_bio.c,v 1.117 2020/05/25 19:29:08 ad Exp $	*/
+/*	$NetBSD: uvm_bio.c,v 1.121 2020/07/09 09:24:32 rin Exp $	*/
 
 /*
  * Copyright (c) 1998 Chuck Silvers.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.117 2020/05/25 19:29:08 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.121 2020/07/09 09:24:32 rin Exp $");
 
 #include "opt_uvmhist.h"
 #include "opt_ubc.h"
@@ -45,6 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.117 2020/05/25 19:29:08 ad Exp $");
 #include <sys/kernel.h>
 #include <sys/proc.h>
 #include <sys/vnode.h>
+#include <sys/bitops.h>		/* for ilog2() */
 
 #include <uvm/uvm.h>
 #include <uvm/uvm_pdpolicy.h>
@@ -120,9 +121,13 @@ const struct uvm_pagerops ubc_pager = {
 	/* ... rest are NULL */
 };
 
+/* Use value at least as big as maximum page size supported by architecture */
+#define UBC_MAX_WINSHIFT	\
+    ((1 << UBC_WINSHIFT) > MAX_PAGE_SIZE ? UBC_WINSHIFT : ilog2(MAX_PAGE_SIZE))
+
 int ubc_nwins = UBC_NWINS;
-int ubc_winshift __read_mostly = UBC_WINSHIFT;
-int ubc_winsize __read_mostly;
+const int ubc_winshift = UBC_MAX_WINSHIFT;
+const int ubc_winsize = 1 << UBC_MAX_WINSHIFT;
 #if defined(PMAP_PREFER)
 int ubc_nqueues;
 #define UBC_NQUEUES ubc_nqueues
@@ -161,9 +166,7 @@ ubc_init(void)
 	/*
 	 * Make sure ubc_winshift is sane.
 	 */
-	if (ubc_winshift < PAGE_SHIFT)
-		ubc_winshift = PAGE_SHIFT;
-	ubc_winsize = 1 << ubc_winshift;
+	KASSERT(ubc_winshift >= PAGE_SHIFT);
 
 	/*
 	 * init ubc_object.
@@ -304,11 +307,11 @@ ubc_fault(struct uvm_faultinfo *ufi, vaddr_t ign1, struct vm_page **ign2,
 	struct uvm_object *uobj;
 	struct ubc_map *umap;
 	vaddr_t va, eva, ubc_offset, slot_offset;
-	struct vm_page *pgs[ubc_winsize >> PAGE_SHIFT];
+	struct vm_page *pgs[howmany(ubc_winsize, MIN_PAGE_SIZE)];
 	int i, error, npages;
 	vm_prot_t prot;
 
-	UVMHIST_FUNC("ubc_fault"); UVMHIST_CALLED(ubchist);
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(ubchist);
 
 	/*
 	 * no need to try with PGO_LOCKED...
@@ -479,9 +482,8 @@ ubc_alloc(struct uvm_object *uobj, voff_t offset, vsize_t *lenp, int advice,
 	struct ubc_map *umap;
 	voff_t umap_offset;
 	int error;
-	UVMHIST_FUNC("ubc_alloc"); UVMHIST_CALLED(ubchist);
-
-	UVMHIST_LOG(ubchist, "uobj %#jx offset 0x%jx len 0x%jx",
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(ubchist, "uobj %#jx offset 0x%jx len 0x%jx",
 	    (uintptr_t)uobj, offset, *lenp, 0);
 
 	KASSERT(*lenp > 0);
@@ -611,7 +613,8 @@ again_faultbusy:
 				rw_exit(uobj->vmobjlock);
 				pgs[i] = pg;
 			}
-			pmap_kenter_pa(va + slot_offset + (i << PAGE_SHIFT),
+			pmap_kenter_pa(
+			    va + trunc_page(slot_offset) + (i << PAGE_SHIFT),
 			    VM_PAGE_TO_PHYS(pg),
 			    VM_PROT_READ | VM_PROT_WRITE, 0);
 		}
@@ -637,9 +640,9 @@ ubc_release(void *va, int flags, struct vm_page **pgs, int npages)
 	struct uvm_object *uobj;
 	vaddr_t umapva;
 	bool unmapped;
-	UVMHIST_FUNC("ubc_release"); UVMHIST_CALLED(ubchist);
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(ubchist, "va %#jx", (uintptr_t)va, 0, 0, 0);
 
-	UVMHIST_LOG(ubchist, "va %#jx", (uintptr_t)va, 0, 0, 0);
 	umap = &ubc_object.umap[((char *)va - ubc_object.kva) >> ubc_winshift];
 	umapva = UBC_UMAP_ADDR(umap);
 	uobj = umap->uobj;
@@ -732,7 +735,7 @@ ubc_uiomove(struct uvm_object *uobj, struct uio *uio, vsize_t todo, int advice,
     int flags)
 {
 	const bool overwrite = (flags & UBC_FAULTBUSY) != 0;
-	struct vm_page *pgs[ubc_winsize >> PAGE_SHIFT];
+	struct vm_page *pgs[howmany(ubc_winsize, MIN_PAGE_SIZE)];
 	voff_t off;
 	int error, npages;
 
@@ -744,12 +747,12 @@ ubc_uiomove(struct uvm_object *uobj, struct uio *uio, vsize_t todo, int advice,
 	/*
 	 * during direct access pages need to be held busy to prevent them
 	 * changing identity, and therefore if we read or write an object
-	 * into a mapped view of same we could deadlock while faulting. 
+	 * into a mapped view of same we could deadlock while faulting.
 	 *
 	 * avoid the problem by disallowing direct access if the object
 	 * might be visible somewhere via mmap().
 	 *
-	 * XXX concurrent reads cause thundering herd issues with PG_BUSY. 
+	 * XXX concurrent reads cause thundering herd issues with PG_BUSY.
 	 * In the future enable by default for writes or if ncpu<=2, and
 	 * make the toggle override that.
 	 */
@@ -798,7 +801,7 @@ ubc_uiomove(struct uvm_object *uobj, struct uio *uio, vsize_t todo, int advice,
 void
 ubc_zerorange(struct uvm_object *uobj, off_t off, size_t len, int flags)
 {
-	struct vm_page *pgs[ubc_winsize >> PAGE_SHIFT];
+	struct vm_page *pgs[howmany(ubc_winsize, MIN_PAGE_SIZE)];
 	int npages;
 
 #ifdef UBC_USE_PMAP_DIRECT
@@ -841,7 +844,7 @@ ubc_alloc_direct(struct uvm_object *uobj, voff_t offset, vsize_t *lenp,
 	int error;
 	int gpflags = flags | PGO_NOTIMESTAMP | PGO_SYNCIO;
 	int access_type = VM_PROT_READ;
-	UVMHIST_FUNC("ubc_alloc_direct"); UVMHIST_CALLED(ubchist);
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(ubchist);
 
 	if (flags & UBC_WRITE) {
 		if (flags & UBC_FAULTBUSY)
@@ -911,7 +914,7 @@ again:
 		 * dirty.
 		 */
 		if ((flags & UBC_WRITE) != 0) {
-			uvm_pagemarkdirty(pg, UVM_PAGE_STATUS_DIRTY);	
+			uvm_pagemarkdirty(pg, UVM_PAGE_STATUS_DIRTY);
 		}
 	}
 	rw_exit(uobj->vmobjlock);
@@ -975,7 +978,7 @@ ubc_uiomove_direct(struct uvm_object *uobj, struct uio *uio, vsize_t todo, int a
 	const bool overwrite = (flags & UBC_FAULTBUSY) != 0;
 	voff_t off;
 	int error, npages;
-	struct vm_page *pgs[ubc_winsize >> PAGE_SHIFT];
+	struct vm_page *pgs[howmany(ubc_winsize, MIN_PAGE_SIZE)];
 
 	KASSERT(todo <= uio->uio_resid);
 	KASSERT(((flags & UBC_WRITE) != 0 && uio->uio_rw == UIO_WRITE) ||
@@ -1043,7 +1046,7 @@ static void __noinline
 ubc_zerorange_direct(struct uvm_object *uobj, off_t off, size_t todo, int flags)
 {
 	int error, npages;
-	struct vm_page *pgs[ubc_winsize >> PAGE_SHIFT];
+	struct vm_page *pgs[howmany(ubc_winsize, MIN_PAGE_SIZE)];
 
 	flags |= UBC_WRITE;
 

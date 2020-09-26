@@ -34,7 +34,6 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -99,11 +98,6 @@ ps_inet_startcb(void *arg)
 {
 	struct dhcpcd_ctx *ctx = arg;
 	int ret = 0;
-#ifdef HAVE_CAPSICUM
-	cap_rights_t rights;
-
-	cap_rights_init(&rights, CAP_RECV, CAP_EVENT);
-#endif
 
 	if (ctx->options & DHCPCD_MASTER)
 		setproctitle("[network proxy]");
@@ -126,11 +120,9 @@ ps_inet_startcb(void *arg)
 		ctx->udp_rfd = dhcp_openudp(NULL);
 		if (ctx->udp_rfd == -1)
 			logerr("%s: dhcp_open", __func__);
-#ifdef HAVE_CAPSICUM
-		else if (cap_rights_limit(ctx->udp_rfd, &rights) == -1
-		    && errno != ENOSYS)
-		{
-			logerr("%s: cap_rights_limit", __func__);
+#ifdef PRIVSEP_RIGHTS
+		else if (ps_rights_limit_fd_rdonly(ctx->udp_rfd) == -1) {
+			logerr("%s: ps_rights_limit_fd_rdonly", __func__);
 			close(ctx->udp_rfd);
 			ctx->udp_rfd = -1;
 		}
@@ -150,11 +142,9 @@ ps_inet_startcb(void *arg)
 		ctx->nd_fd = ipv6nd_open(true);
 		if (ctx->nd_fd == -1)
 			logerr("%s: ipv6nd_open", __func__);
-#ifdef HAVE_CAPSICUM
-		else if (cap_rights_limit(ctx->nd_fd, &rights) == -1
-		    && errno != ENOSYS)
-		{
-			logerr("%s: cap_rights_limit", __func__);
+#ifdef PRIVSEP_RIGHTS
+		else if (ps_rights_limit_fd_rdonly(ctx->nd_fd) == -1) {
+			logerr("%s: ps_rights_limit_fd_rdonly", __func__);
 			close(ctx->nd_fd);
 			ctx->nd_fd = -1;
 		}
@@ -176,11 +166,9 @@ ps_inet_startcb(void *arg)
 		ctx->dhcp6_rfd = dhcp6_openudp(0, NULL);
 		if (ctx->dhcp6_rfd == -1)
 			logerr("%s: dhcp6_open", __func__);
-#ifdef HAVE_CAPSICUM
-		else if (cap_rights_limit(ctx->dhcp6_rfd, &rights) == -1
-		    && errno != ENOSYS)
-		{
-			logerr("%s: cap_rights_limit", __func__);
+#ifdef PRIVSEP_RIGHTS
+		else if (ps_rights_limit_fd_rdonly(ctx->dhcp6_rfd) == -1) {
+			logerr("%s: ps_rights_limit_fd_rdonly", __func__);
 			close(ctx->dhcp6_rfd);
 			ctx->dhcp6_rfd = -1;
 		}
@@ -302,19 +290,6 @@ ps_inet_recvmsg(void *arg)
 		logerr(__func__);
 }
 
-static void
-ps_inet_signalcb(int sig, void *arg)
-{
-	struct dhcpcd_ctx *ctx = arg;
-
-	/* Ignore SIGINT, respect PS_STOP command or SIGTERM. */
-	if (sig == SIGINT)
-		return;
-
-	shutdown(ctx->ps_inet_fd, SHUT_RDWR);
-	eloop_exit(ctx->eloop, sig == SIGTERM ? EXIT_SUCCESS : EXIT_FAILURE);
-}
-
 ssize_t
 ps_inet_dispatch(void *arg, struct ps_msghdr *psm, struct msghdr *msg)
 {
@@ -359,7 +334,7 @@ ps_inet_start(struct dhcpcd_ctx *ctx)
 
 	pid = ps_dostart(ctx, &ctx->ps_inet_pid, &ctx->ps_inet_fd,
 	    ps_inet_recvmsg, ps_inet_dodispatch, ctx,
-	    ps_inet_startcb, ps_inet_signalcb,
+	    ps_inet_startcb, NULL,
 	    PSF_DROPPRIVS);
 
 #ifdef HAVE_CAPSICUM
@@ -398,11 +373,6 @@ ps_inet_listenin(void *arg)
 	struct ps_process *psp = arg;
 	struct in_addr *ia = &psp->psp_id.psi_addr.psa_in_addr;
 	char buf[INET_ADDRSTRLEN];
-#ifdef HAVE_CAPSICUM
-	cap_rights_t rights;
-
-	cap_rights_init(&rights, CAP_RECV, CAP_EVENT);
-#endif
 
 	inet_ntop(AF_INET, ia, buf, sizeof(buf));
 	setproctitle("[network proxy] %s", buf);
@@ -413,11 +383,9 @@ ps_inet_listenin(void *arg)
 		return -1;
 	}
 
-#ifdef HAVE_CAPSICUM
-	if (cap_rights_limit(psp->psp_work_fd, &rights) == -1 &&
-	    errno != ENOSYS)
-	{
-		logerr("%s: cap_rights_limit", __func__);
+#ifdef PRIVSEP_RIGHTS
+	if (ps_rights_limit_fd_rdonly(psp->psp_work_fd) == -1) {
+		logerr("%s: ps_rights_limit_fd_rdonly", __func__);
 		return -1;
 	}
 #endif
@@ -449,11 +417,6 @@ static int
 ps_inet_listennd(void *arg)
 {
 	struct ps_process *psp = arg;
-#ifdef HAVE_CAPSICUM
-	cap_rights_t rights;
-
-	cap_rights_init(&rights, CAP_RECV, CAP_EVENT);
-#endif
 
 	setproctitle("[ND network proxy]");
 
@@ -463,11 +426,9 @@ ps_inet_listennd(void *arg)
 		return -1;
 	}
 
-#ifdef HAVE_CAPSICUM
-	if (cap_rights_limit(psp->psp_work_fd, &rights) == -1 &&
-	    errno != ENOSYS)
-	{
-		logerr("%s: cap_rights_limit", __func__);
+#ifdef PRIVSEP_RIGHTS
+	if (ps_rights_limit_fd_rdonly(psp->psp_work_fd) == -1) {
+		logerr("%s: ps_rights_limit_fd_rdonly", __func__);
 		return -1;
 	}
 #endif
@@ -501,11 +462,6 @@ ps_inet_listenin6(void *arg)
 	struct ps_process *psp = arg;
 	struct in6_addr *ia = &psp->psp_id.psi_addr.psa_in6_addr;
 	char buf[INET6_ADDRSTRLEN];
-#ifdef HAVE_CAPSICUM
-	cap_rights_t rights;
-
-	cap_rights_init(&rights, CAP_RECV, CAP_EVENT);
-#endif
 
 	inet_ntop(AF_INET6, ia, buf, sizeof(buf));
 	setproctitle("[network proxy] %s", buf);
@@ -516,11 +472,9 @@ ps_inet_listenin6(void *arg)
 		return -1;
 	}
 
-#ifdef HAVE_CAPSICUM
-	if (cap_rights_limit(psp->psp_work_fd, &rights) == -1 &&
-	    errno != ENOSYS)
-	{
-		logerr("%s: cap_rights_limit", __func__);
+#ifdef PRIVSEP_RIGHTS
+	if (ps_rights_limit_fd_rdonly(psp->psp_work_fd) == -1) {
+		logerr("%s: ps_rights_limit_fd_rdonly", __func__);
 		return -1;
 	}
 #endif
@@ -609,7 +563,7 @@ ps_inet_cmd(struct dhcpcd_ctx *ctx, struct ps_msghdr *psm, struct msghdr *msg)
 	start = ps_dostart(ctx,
 	    &psp->psp_pid, &psp->psp_fd,
 	    ps_inet_recvmsgpsp, NULL, psp,
-	    start_func, ps_inet_signalcb,
+	    start_func, NULL,
 	    PSF_DROPPRIVS);
 	switch (start) {
 	case -1:

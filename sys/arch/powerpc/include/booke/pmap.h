@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.21 2020/04/08 10:57:16 skrll Exp $	*/
+/*	$NetBSD: pmap.h,v 1.23 2020/08/07 07:19:45 skrll Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -33,6 +33,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
 #ifndef _POWERPC_BOOKE_PMAP_H_
 #define _POWERPC_BOOKE_PMAP_H_
 
@@ -153,6 +154,21 @@ pmap_md_ok_to_steal_p(const uvm_physseg_t bank, size_t npgs)
 {
 	return true;
 }
+
+static __inline void
+pmap_md_xtab_activate(struct pmap *pm, struct lwp *l)
+{
+
+	/* nothing */
+}
+
+static __inline void
+pmap_md_xtab_deactivate(struct pmap *pm)
+{
+
+	/* nothing */
+}
+
 #endif
 
 #define	POOL_VTOPHYS(va)	((paddr_t)(vaddr_t)(va))

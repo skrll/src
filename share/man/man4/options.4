@@ -1,4 +1,4 @@
-.\"	$NetBSD: options.4,v 1.512 2020/04/24 13:54:56 jdolecek Exp $
+.\"	$NetBSD: options.4,v 1.516 2020/08/28 16:07:49 fcambus Exp $
 .\"
 .\" Copyright (c) 1996
 .\" 	Perry E. Metzger.  All rights reserved.
@@ -30,7 +30,7 @@
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
 .\"
-.Dd April 24, 2020
+.Dd August 25, 2020
 .Dt OPTIONS 4
 .Os
 .Sh NAME
@@ -398,6 +398,12 @@ Enable binary compatibility with
 This provides support for old
 .Xr route 4
 interfaces.
+.It Cd options COMPAT_80
+Enable binary compatibility with
+.Nx 8.0 .
+.It Cd options COMPAT_90
+Enable binary compatibility with
+.Nx 9.0 .
 .It Cd options COMPAT_BSDPTY
 This option is currently on by default and enables the pty multiplexer
 .Xr ptm 4
@@ -893,7 +899,7 @@ for details.
 .Bq Em EXPERIMENTAL
 Includes code for the UDF file system commonly found on CD and DVD
 media but also on USB sticks.
-Currently supports read and write access upto UDF 2.01 and somewhat limited
+Currently supports read and write access up to UDF 2.01 and somewhat limited
 write support for UDF 2.50.
 It is marked experimental since there is no
 .Xr fsck_udf 8 .
@@ -1564,7 +1570,7 @@ Show system call entry points.
 .It Dv SCDEBUG_RETURNS
 Show system call exit points.
 .It Dv SCDEBUG_ALL
-Show all system call requestes, including unimplemented calls.
+Show all system call requests, including unimplemented calls.
 .It Dv SCDEBUG_SHOWARGS
 Show the arguments provided.
 .It Dv SCDEBUG_KERNHIST
@@ -1956,13 +1962,6 @@ This option enables older IP-Filter binaries to work.
 .It Cd options IPFILTER_DEFAULT_BLOCK
 This option sets the default policy of IP-Filter.
 If it is set, IP-Filter will block packets by default.
-.It Cd options BRIDGE_IPF
-This option causes
-.Em bridge
-devices to use the IP and/or IPv6 filtering hooks, forming
-a link-layer filter that uses protocol-layer rules.
-This option assumes the presence of
-.Em pseudo-device ipfilter .
 .It Cd options MBUFTRACE
 This option can help track down mbuf leaks.
 When enabled, mbufs are tagged with the devices and protocols using them.
@@ -2197,27 +2196,6 @@ Note that this sets the value of the
 variable which may be changed at run time \(em see
 .Xr sysctl 8
 for details.
-.It Cd options USE_TOPDOWN_VM
-User space memory allocations (as made by
-.Xr mmap 2 )
-will be arranged in a
-.Dq top down
-fashion instead of the traditional
-.Dq upwards from MAXDSIZ \&+ vm_daddr
-method.
-This includes the placement of
-.Xr ld.so 1 .
-Arranging memory in this manner allows either (or both of) the heap or
-.Xr mmap 2
-allocated space to grow larger than traditionally possible.
-This option is not available on all ports, but is instead expected to be
-offered on a port-by-port basis, after which some ports will commit to
-using it by default.
-See the files
-.Pa /usr/include/uvm/uvm_param.h
-for some implementation details, and
-.Pa /usr/include/machine/vmparam.h
-for port specific details including availability.
 .It Cd options VMSWAP
 Enable paging device/file support.
 This option is on by default.

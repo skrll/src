@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.128 2019/12/01 15:34:44 ad Exp $	*/
+/*	$NetBSD: cpu.h,v 1.131 2020/08/17 03:19:35 mrg Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -35,7 +35,7 @@
  */
 
 #ifndef _CPU_H_
-#define _CPU_H_
+#define	_CPU_H_
 
 /*
  * Exported definitions unique to NetBSD/mips cpu support.
@@ -45,7 +45,7 @@
 #error Use assym.h to get definitions from <mips/cpu.h>
 #endif
 
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(_KMEMUSER)
 
 #if defined(_KERNEL_OPT)
 #include "opt_cputype.h"
@@ -57,6 +57,7 @@
 #include <sys/device_if.h>
 #include <sys/evcnt.h>
 #include <sys/kcpuset.h>
+#include <sys/intr.h>
 
 typedef struct cpu_watchpoint {
 	register_t	cw_addr;
@@ -66,14 +67,14 @@ typedef struct cpu_watchpoint {
 } cpu_watchpoint_t;
 
 /* (abstract) mode bits */
-#define CPUWATCH_WRITE	__BIT(0)
-#define CPUWATCH_READ	__BIT(1)
-#define CPUWATCH_EXEC	__BIT(2)
-#define CPUWATCH_MASK	__BIT(3)
-#define CPUWATCH_ASID	__BIT(4)
-#define CPUWATCH_RWX	(CPUWATCH_EXEC|CPUWATCH_READ|CPUWATCH_WRITE)
+#define	CPUWATCH_WRITE	__BIT(0)
+#define	CPUWATCH_READ	__BIT(1)
+#define	CPUWATCH_EXEC	__BIT(2)
+#define	CPUWATCH_MASK	__BIT(3)
+#define	CPUWATCH_ASID	__BIT(4)
+#define	CPUWATCH_RWX	(CPUWATCH_EXEC|CPUWATCH_READ|CPUWATCH_WRITE)
 
-#define CPUWATCH_MAX	8	/* max possible number of watchpoints */
+#define	CPUWATCH_MAX	8	/* max possible number of watchpoints */
 
 u_int		  cpuwatch_discover(void);
 void		  cpuwatch_free(cpu_watchpoint_t *);
@@ -119,12 +120,12 @@ struct cpu_info {
 	u_int ci_pmap_asid_cur;		/* current ASID */
 	struct pmap_tlb_info *ci_tlb_info; /* tlb information for this cpu */
 	union pmap_segtab *ci_pmap_segtabs[2];
-#define ci_pmap_user_segtab	ci_pmap_segtabs[0]
-#define ci_pmap_kern_segtab	ci_pmap_segtabs[1]
+#define	ci_pmap_user_segtab	ci_pmap_segtabs[0]
+#define	ci_pmap_kern_segtab	ci_pmap_segtabs[1]
 #ifdef _LP64
 	union pmap_segtab *ci_pmap_seg0tabs[2];
-#define ci_pmap_user_seg0tab	ci_pmap_seg0tabs[0]
-#define ci_pmap_kern_seg0tab	ci_pmap_seg0tabs[1]
+#define	ci_pmap_user_seg0tab	ci_pmap_seg0tabs[0]
+#define	ci_pmap_kern_seg0tab	ci_pmap_seg0tabs[1]
 #endif
 	vaddr_t ci_pmap_srcbase;	/* starting VA of ephemeral src space */
 	vaddr_t ci_pmap_dstbase;	/* starting VA of ephemeral dst space */
@@ -151,12 +152,16 @@ struct cpu_info {
 #define	CPUF_RUNNING	0x04		/* CPU is running */
 #define	CPUF_PAUSED	0x08		/* CPU is paused */
 #define	CPUF_USERPMAP	0x20		/* CPU has a user pmap activated */
+	kcpuset_t *ci_shootdowncpus;
 	kcpuset_t *ci_multicastcpus;
 	kcpuset_t *ci_watchcpus;
 	kcpuset_t *ci_ddbcpus;
 #endif
 
 };
+#endif /* _KERNEL || _KMEMUSER */
+
+#ifdef _KERNEL
 
 #ifdef MULTIPROCESSOR
 #define	CPU_INFO_ITERATOR		int
@@ -174,9 +179,9 @@ struct cpu_info {
 
 /* Note: must be kept in sync with -ffixed-?? Makefile.mips. */
 //	MIPS_CURLWP moved to <mips/regdef.h>
-#define MIPS_CURLWP_QUOTED	"$24"
-#define MIPS_CURLWP_LABEL	_L_T8
-#define MIPS_CURLWP_REG		_R_T8
+#define	MIPS_CURLWP_QUOTED	"$24"
+#define	MIPS_CURLWP_LABEL	_L_T8
+#define	MIPS_CURLWP_REG		_R_T8
 
 extern struct cpu_info cpu_info_store;
 #ifdef MULTIPROCESSOR
@@ -279,10 +284,10 @@ void	cpu_vmspace_exec(struct lwp *, vaddr_t, vaddr_t);
 /*
  * CTL_MACHDEP definitions.
  */
-#define CPU_CONSDEV		1	/* dev_t: console terminal device */
-#define CPU_BOOTED_KERNEL	2	/* string: booted kernel name */
-#define CPU_ROOT_DEVICE		3	/* string: root device name */
-#define CPU_LLSC		4	/* OS/CPU supports LL/SC instruction */
-#define CPU_LMMI		5	/* Loongson multimedia instructions */
+#define	CPU_CONSDEV		1	/* dev_t: console terminal device */
+#define	CPU_BOOTED_KERNEL	2	/* string: booted kernel name */
+#define	CPU_ROOT_DEVICE		3	/* string: root device name */
+#define	CPU_LLSC		4	/* OS/CPU supports LL/SC instruction */
+#define	CPU_LMMI		5	/* Loongson multimedia instructions */
 
 #endif /* _CPU_H_ */

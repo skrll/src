@@ -1,4 +1,4 @@
-/*	$NetBSD: nfs_vnops.c,v 1.315 2020/05/16 18:31:52 christos Exp $	*/
+/*	$NetBSD: nfs_vnops.c,v 1.317 2020/09/05 16:30:12 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nfs_vnops.c,v 1.315 2020/05/16 18:31:52 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nfs_vnops.c,v 1.317 2020/09/05 16:30:12 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_nfs.h"
@@ -70,8 +70,11 @@ __KERNEL_RCSID(0, "$NetBSD: nfs_vnops.c,v 1.315 2020/05/16 18:31:52 christos Exp
 #include <sys/kauth.h>
 #include <sys/cprng.h>
 
-#include <uvm/uvm_extern.h>
+#ifdef UVMHIST
 #include <uvm/uvm.h>
+#endif
+#include <uvm/uvm_extern.h>
+#include <uvm/uvm_stat.h>
 
 #include <miscfs/fifofs/fifo.h>
 #include <miscfs/genfs/genfs.h>
@@ -3270,7 +3273,7 @@ nfs_pathconf(void *v)
 		}
 		break;
 	default:
-		error = EINVAL;
+		error = genfs_pathconf(ap);
 		break;
 	}
 

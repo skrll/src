@@ -1,4 +1,4 @@
-/*	$NetBSD: job.c,v 1.197 2020/02/06 01:13:19 sjg Exp $	*/
+/*	$NetBSD: job.c,v 1.232 2020/09/13 15:15:51 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -69,19 +69,6 @@
  * SUCH DAMAGE.
  */
 
-#ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: job.c,v 1.197 2020/02/06 01:13:19 sjg Exp $";
-#else
-#include <sys/cdefs.h>
-#ifndef lint
-#if 0
-static char sccsid[] = "@(#)job.c	8.2 (Berkeley) 3/19/94";
-#else
-__RCSID("$NetBSD: job.c,v 1.197 2020/02/06 01:13:19 sjg Exp $");
-#endif
-#endif /* not lint */
-#endif
-
 /*-
  * job.c --
  *	handle the creation etc. of our child processes.
@@ -112,7 +99,7 @@ __RCSID("$NetBSD: job.c,v 1.197 2020/02/06 01:13:19 sjg Exp $");
  *
  *	Job_ParseShell	    	Given the line following a .SHELL target, parse
  *	    	  	    	the line as a shell specification. Returns
- *	    	  	    	FAILURE if the spec was incorrect.
+ *	    	  	    	FALSE if the spec was incorrect.
  *
  *	Job_Finish	    	Perform any final processing which needs doing.
  *	    	  	    	This includes the execution of any commands
@@ -139,22 +126,22 @@ __RCSID("$NetBSD: job.c,v 1.197 2020/02/06 01:13:19 sjg Exp $");
 #include <sys/time.h>
 #include <sys/wait.h>
 
-#include <assert.h>
 #include <errno.h>
 #ifndef USE_SELECT
 #include <poll.h>
 #endif
 #include <signal.h>
-#include <stdio.h>
-#include <string.h>
 #include <utime.h>
 
 #include "make.h"
-#include "hash.h"
 #include "dir.h"
 #include "job.h"
 #include "pathnames.h"
 #include "trace.h"
+
+/*	"@(#)job.c	8.2 (Berkeley) 3/19/94"	*/
+MAKE_RCSID("$NetBSD: job.c,v 1.232 2020/09/13 15:15:51 rillig Exp $");
+
 # define STATIC static
 
 /*
@@ -171,7 +158,6 @@ static int    	aborting = 0;	    /* why is the make aborting? */
  * this tracks the number of tokens currently "out" to build jobs.
  */
 int jobTokensRunning = 0;
-int not_parallel = 0;		    /* set if .NOT_PARALLEL */
 
 /*
  * XXX: Avoid SunOS bug... FILENO() is fp->_file, and file
@@ -261,7 +247,7 @@ static Shell    shells[] = {
     "",
 },
     /*
-     * KSH description. 
+     * KSH description.
      */
 {
     "ksh",
@@ -298,9 +284,9 @@ static Shell *commandShell = &shells[DEFSHELL_INDEX]; /* this is the shell to
 						   * Job_ParseShell function */
 const char *shellPath = NULL,		  	  /* full pathname of
 						   * executable image */
-           *shellName = NULL;		      	  /* last component of shell */
+	   *shellName = NULL;		      	  /* last component of shell */
 char *shellErrFlag = NULL;
-static const char *shellArgv = NULL;		  /* Custom shell args */
+static char *shellArgv = NULL;	/* Custom shell args */
 
 
 STATIC Job	*job_table;	/* The structures that describe them */
@@ -356,8 +342,6 @@ static void JobTokenAdd(void);
 static void JobSigLock(sigset_t *);
 static void JobSigUnlock(sigset_t *);
 static void JobSigReset(void);
-
-const char *malloc_options="A";
 
 static unsigned
 nfds_per_job(void)
@@ -431,7 +415,7 @@ JobCreatePipe(Job *job, int minfd)
 	   job->jobPipe[i] = fd;
        }
     }
-    
+
     /* Set close-on-exec flag for both */
     if (fcntl(job->jobPipe[0], F_SETFD, FD_CLOEXEC) == -1)
 	Punt("Cannot set close-on-exec: %s", strerror(errno));
@@ -441,7 +425,7 @@ JobCreatePipe(Job *job, int minfd)
     /*
      * We mark the input side of the pipe non-blocking; we poll(2) the
      * pipe when we're waiting for a job token, but we might lose the
-     * race for the token when a new one becomes available, so the read 
+     * race for the token when a new one becomes available, so the read
      * from the pipe should not block.
      */
     flags = fcntl(job->jobPipe[0], F_GETFL, 0);
@@ -707,15 +691,14 @@ JobPrintCommand(void *cmdp, void *jobp)
     char	  *escCmd = NULL;    /* Command with quotes/backticks escaped */
     char     	  *cmd = (char *)cmdp;
     Job           *job = (Job *)jobp;
-    int           i, j;
 
     noSpecials = NoExecute(job->node);
 
     if (strcmp(cmd, "...") == 0) {
 	job->node->type |= OP_SAVE_CMDS;
 	if ((job->flags & JOB_IGNDOTS) == 0) {
-	    job->tailCmds = Lst_Succ(Lst_Member(job->node->commands,
-						cmd));
+	    LstNode dotsNode = Lst_FindDatum(job->node->commands, cmd);
+	    job->tailCmds = dotsNode != NULL ? LstNode_Next(dotsNode) : NULL;
 	    return 1;
 	}
 	return 0;
@@ -729,7 +712,7 @@ JobPrintCommand(void *cmdp, void *jobp)
 
     numCommands += 1;
 
-    cmdStart = cmd = Var_Subst(NULL, cmd, job->node, VARF_WANTRES);
+    cmdStart = cmd = Var_Subst(cmd, job->node, VARE_WANTRES);
 
     cmdTemplate = "%s\n";
 
@@ -750,7 +733,7 @@ JobPrintCommand(void *cmdp, void *jobp)
 		 * We're not actually executing anything...
 		 * but this one needs to be - use compat mode just for it.
 		 */
-		CompatRunCommand(cmdp, job->node);
+		Compat_RunCommand(cmdp, job->node);
 		free(cmdStart);
 		return 0;
 	    }
@@ -759,25 +742,27 @@ JobPrintCommand(void *cmdp, void *jobp)
 	cmd++;
     }
 
-    while (isspace((unsigned char) *cmd))
+    while (ch_isspace(*cmd))
 	cmd++;
 
     /*
      * If the shell doesn't have error control the alternate echo'ing will
-     * be done (to avoid showing additional error checking code) 
+     * be done (to avoid showing additional error checking code)
      * and this will need the characters '$ ` \ "' escaped
      */
 
     if (!commandShell->hasErrCtl) {
+	int i, j;
+
 	/* Worst that could happen is every char needs escaping. */
 	escCmd = bmake_malloc((strlen(cmd) * 2) + 1);
-	for (i = 0, j= 0; cmd[i] != '\0'; i++, j++) {
-		if (cmd[i] == '$' || cmd[i] == '`' || cmd[i] == '\\' || 
-			cmd[i] == '"')
-			escCmd[j++] = '\\';
-		escCmd[j] = cmd[i];	
+	for (i = 0, j = 0; cmd[i] != '\0'; i++, j++) {
+	    if (cmd[i] == '$' || cmd[i] == '`' || cmd[i] == '\\' ||
+		cmd[i] == '"')
+		escCmd[j++] = '\\';
+	    escCmd[j] = cmd[i];
 	}
-	escCmd[j] = 0;
+	escCmd[j] = '\0';
     }
 
     if (shutUp) {
@@ -810,7 +795,7 @@ JobPrintCommand(void *cmdp, void *jobp)
 			DBPRINTF("%s\n", commandShell->ignErr);
 		}
 	    } else if (commandShell->ignErr &&
-		      (*commandShell->ignErr != '\0'))
+		       commandShell->ignErr[0] != '\0')
 	    {
 		/*
 		 * The shell has no error control, so we need to be
@@ -848,14 +833,14 @@ JobPrintCommand(void *cmdp, void *jobp)
 	}
     } else {
 
-	/* 
+	/*
 	 * If errors are being checked and the shell doesn't have error control
 	 * but does supply an errOut template, then setup commands to run
 	 * through it.
 	 */
 
-	if (!commandShell->hasErrCtl && commandShell->errOut && 
-	    (*commandShell->errOut != '\0')) {
+	if (!commandShell->hasErrCtl && commandShell->errOut &&
+	    commandShell->errOut[0] != '\0') {
 		if (!(job->flags & JOB_SILENT) && !shutUp) {
 			if (commandShell->hasEchoCtl) {
 				DBPRINTF("%s\n", commandShell->echoOff);
@@ -878,7 +863,7 @@ JobPrintCommand(void *cmdp, void *jobp)
 	    DBPRINTF("set -%s\n", "x");
 	    job->flags |= JOB_TRACED;
     }
-    
+
     DBPRINTF(cmdTemplate, cmd);
     free(cmdStart);
     free(escCmd);
@@ -910,16 +895,16 @@ JobPrintCommand(void *cmdp, void *jobp)
  *	Always returns 0
  *
  * Side Effects:
- *	The command is tacked onto the end of postCommands's commands list.
+ *	The command is tacked onto the end of postCommands' commands list.
  *
  *-----------------------------------------------------------------------
  */
 static int
 JobSaveCommand(void *cmd, void *gn)
 {
-    cmd = Var_Subst(NULL, (char *)cmd, (GNode *)gn, VARF_WANTRES);
-    (void)Lst_AtEnd(postCommands->commands, cmd);
-    return(0);
+    cmd = Var_Subst((char *)cmd, (GNode *)gn, VARE_WANTRES);
+    Lst_Append(postCommands->commands, cmd);
+    return 0;
 }
 
 
@@ -1042,10 +1027,11 @@ JobFinish(Job *job, int status)
 		    meta_job_error(job, job->node, job->flags, WEXITSTATUS(status));
 		}
 #endif
-		(void)printf("*** [%s] Error code %d%s\n",
-				job->node->name,
-			       WEXITSTATUS(status),
-			       (job->flags & JOB_IGNERR) ? " (ignored)" : "");
+		if (!dieQuietly(job->node, -1))
+		    (void)printf("*** [%s] Error code %d%s\n",
+				 job->node->name,
+				 WEXITSTATUS(status),
+				 (job->flags & JOB_IGNERR) ? " (ignored)" : "");
 		if (job->flags & JOB_IGNERR) {
 		    status = 0;
 		} else {
@@ -1085,7 +1071,7 @@ JobFinish(Job *job, int status)
 	}
     }
 #endif
-    
+
     return_job_token = FALSE;
 
     Trace_Log(JOBEND, job);
@@ -1106,7 +1092,7 @@ JobFinish(Job *job, int status)
 	if (job->tailCmds != NULL) {
 	    Lst_ForEachFrom(job->node->commands, job->tailCmds,
 			     JobSaveCommand,
-			    job->node);
+			     job->node);
 	}
 	job->node->made = MADE;
 	if (!(job->flags & JOB_SPECIAL))
@@ -1256,11 +1242,11 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
 	     * .DEFAULT itself.
 	     */
 	    Make_HandleUse(DEFAULT, gn);
-	    Var_Set(IMPSRC, Var_Value(TARGET, gn, &p1), gn, 0);
-	    free(p1);
+	    Var_Set(IMPSRC, Var_Value(TARGET, gn, &p1), gn);
+	    bmake_free(p1);
 	} else if (Dir_MTime(gn, 0) == 0 && (gn->type & OP_SPECIAL) == 0) {
 	    /*
-	     * The node wasn't the target of an operator we have no .DEFAULT
+	     * The node wasn't the target of an operator.  We have no .DEFAULT
 	     * rule to go on and the target doesn't already exist. There's
 	     * nothing more we can do for this branch. If the -k flag wasn't
 	     * given, we stop in our tracks, otherwise we just don't update
@@ -1284,7 +1270,7 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
 		(void)fprintf(stdout, "%s%s %s (continuing)\n", progname,
 		    msg, gn->name);
 		(void)fflush(stdout);
-  		return FALSE;
+		return FALSE;
 	    } else {
 		(*abortProc)("%s%s %s. Stop", progname, msg, gn->name);
 		return FALSE;
@@ -1294,22 +1280,10 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
     return TRUE;
 }
 
-/*-
- *-----------------------------------------------------------------------
- * JobExec --
- *	Execute the shell for the given job. Called from JobStart
+/* Execute the shell for the given job. Called from JobStart
  *
- * Input:
- *	job		Job to execute
- *
- * Results:
- *	None.
- *
- * Side Effects:
- *	A shell is executed, outputs is altered and the Job structure added
- *	to the job table.
- *
- *-----------------------------------------------------------------------
+ * A shell is executed, its output is altered and the Job structure added
+ * to the job table.
  */
 static void
 JobExec(Job *job, char **argv)
@@ -1327,7 +1301,7 @@ JobExec(Job *job, char **argv)
 	for (i = 0; argv[i] != NULL; i++) {
 	    (void)fprintf(debug_file, "%s ", argv[i]);
 	}
- 	(void)fprintf(debug_file, "\n");
+	(void)fprintf(debug_file, "\n");
     }
 
     /*
@@ -1401,7 +1375,7 @@ JobExec(Job *job, char **argv)
 		    _exit(1);
 		}
 	}
-	
+
 	/*
 	 * Set up the child's output to be routed through the pipe
 	 * we've created for it.
@@ -1481,18 +1455,7 @@ JobExec(Job *job, char **argv)
     JobSigUnlock(&mask);
 }
 
-/*-
- *-----------------------------------------------------------------------
- * JobMakeArgv --
- *	Create the argv needed to execute the shell for a given job.
- *
- *
- * Results:
- *
- * Side Effects:
- *
- *-----------------------------------------------------------------------
- */
+/* Create the argv needed to execute the shell for a given job. */
 static void
 JobMakeArgv(Job *job, char **argv)
 {
@@ -1502,8 +1465,8 @@ JobMakeArgv(Job *job, char **argv)
     argv[0] = UNCONST(shellName);
     argc = 1;
 
-    if ((commandShell->exit && (*commandShell->exit != '-')) ||
-	(commandShell->echo && (*commandShell->echo != '-')))
+    if ((commandShell->exit && commandShell->exit[0] != '-') ||
+	(commandShell->echo && commandShell->echo[0] != '-'))
     {
 	/*
 	 * At least one of the flags doesn't have a minus before it, so
@@ -1699,7 +1662,7 @@ JobStart(GNode *gn, int flags)
 	 * up the graph.
 	 */
 	job->cmdFILE = stdout;
-    	Job_Touch(gn, job->flags&JOB_SILENT);
+	Job_Touch(gn, job->flags&JOB_SILENT);
 	noExec = TRUE;
     }
     /* Just in case it isn't already... */
@@ -1728,8 +1691,8 @@ JobStart(GNode *gn, int flags)
 	if (cmdsOK && aborting == 0) {
 	    if (job->tailCmds != NULL) {
 		Lst_ForEachFrom(job->node->commands, job->tailCmds,
-				JobSaveCommand,
-			       job->node);
+				 JobSaveCommand,
+				 job->node);
 	    }
 	    job->node->made = MADE;
 	    Make_Update(job->node);
@@ -1748,7 +1711,7 @@ JobStart(GNode *gn, int flags)
     JobCreatePipe(job, 3);
 
     JobExec(job, argv);
-    return(JOB_RUNNING);
+    return JOB_RUNNING;
 }
 
 static char *
@@ -1970,8 +1933,8 @@ JobRun(GNode *targ)
      * and .INTERRUPT job in the parallel job module. This has
      * the nice side effect that it avoids a lot of other problems.
      */
-    Lst lst = Lst_Init(FALSE);
-    Lst_AtEnd(lst, targ);
+    Lst lst = Lst_Init();
+    Lst_Append(lst, targ);
     (void)Make_Run(lst);
     Lst_Destroy(lst, NULL);
     JobStart(targ, JOB_SPECIAL);
@@ -2198,15 +2161,16 @@ Shell_Init(void)
 	    shellName++;
 	} else
 #endif
-	shellPath = str_concat(_PATH_DEFSHELLDIR, shellName, STR_ADDSLASH);
+	shellPath = str_concat3(_PATH_DEFSHELLDIR, "/", shellName);
     }
+    Var_Set_with_flags(".SHELL", shellPath, VAR_CMD, VAR_SET_READONLY);
     if (commandShell->exit == NULL) {
 	commandShell->exit = "";
     }
     if (commandShell->echo == NULL) {
 	commandShell->echo = "";
     }
-    if (commandShell->hasErrCtl && *commandShell->exit) {
+    if (commandShell->hasErrCtl && commandShell->exit[0] != '\0') {
 	if (shellErrFlag &&
 	    strcmp(commandShell->exit, &shellErrFlag[1]) != 0) {
 	    free(shellErrFlag);
@@ -2233,38 +2197,23 @@ Shell_Init(void)
 const char *
 Shell_GetNewline(void)
 {
-
     return commandShell->newline;
 }
 
 void
 Job_SetPrefix(void)
 {
-    
     if (targPrefix) {
 	free(targPrefix);
     } else if (!Var_Exists(MAKE_JOB_PREFIX, VAR_GLOBAL)) {
-	Var_Set(MAKE_JOB_PREFIX, "---", VAR_GLOBAL, 0);
+	Var_Set(MAKE_JOB_PREFIX, "---", VAR_GLOBAL);
     }
 
-    targPrefix = Var_Subst(NULL, "${" MAKE_JOB_PREFIX "}",
-			   VAR_GLOBAL, VARF_WANTRES);
+    targPrefix = Var_Subst("${" MAKE_JOB_PREFIX "}",
+			   VAR_GLOBAL, VARE_WANTRES);
 }
 
-/*-
- *-----------------------------------------------------------------------
- * Job_Init --
- *	Initialize the process module
- *
- * Input:
- *
- * Results:
- *	none
- *
- * Side Effects:
- *	lists and counters are initialized
- *-----------------------------------------------------------------------
- */
+/* Initialize the process module. */
 void
 Job_Init(void)
 {
@@ -2370,19 +2319,7 @@ static void JobSigReset(void)
     (void)bmake_signal(SIGCHLD, SIG_DFL);
 }
 
-/*-
- *-----------------------------------------------------------------------
- * JobMatchShell --
- *	Find a shell in 'shells' given its name.
- *
- * Results:
- *	A pointer to the Shell structure.
- *
- * Side Effects:
- *	None.
- *
- *-----------------------------------------------------------------------
- */
+/* Find a shell in 'shells' given its name, or return NULL. */
 static Shell *
 JobMatchShell(const char *name)
 {
@@ -2390,7 +2327,7 @@ JobMatchShell(const char *name)
 
     for (sh = shells; sh->name != NULL; sh++) {
 	if (strcmp(name, sh->name) == 0)
-		return (sh);
+		return sh;
     }
     return NULL;
 }
@@ -2405,7 +2342,7 @@ JobMatchShell(const char *name)
  *	line		The shell spec
  *
  * Results:
- *	FAILURE if the specification was incorrect.
+ *	FALSE if the specification was incorrect.
  *
  * Side Effects:
  *	commandShell points to a Shell structure (either predefined or
@@ -2442,32 +2379,35 @@ JobMatchShell(const char *name)
  *
  *-----------------------------------------------------------------------
  */
-ReturnStatus
+Boolean
 Job_ParseShell(char *line)
 {
+    Words	wordsList;
     char	**words;
     char	**argv;
-    int		argc;
+    size_t	argc;
     char	*path;
     Shell	newShell;
     Boolean	fullSpec = FALSE;
     Shell	*sh;
 
-    while (isspace((unsigned char)*line)) {
+    while (ch_isspace(*line))
 	line++;
-    }
 
-    free(UNCONST(shellArgv));
+    free(shellArgv);
 
     memset(&newShell, 0, sizeof(newShell));
 
     /*
      * Parse the specification by keyword
      */
-    words = brk_string(line, &argc, TRUE, &path);
+    wordsList = Str_Words(line, TRUE);
+    words = wordsList.words;
+    argc = wordsList.len;
+    path = wordsList.freeIt;
     if (words == NULL) {
 	Error("Unterminated quoted string [%s]", line);
-	return FAILURE;
+	return FALSE;
     }
     shellArgv = path;
 
@@ -2506,7 +2446,7 @@ Job_ParseShell(char *line)
 		    Parse_Error(PARSE_FATAL, "Unknown keyword \"%s\"",
 				*argv);
 		    free(words);
-		    return(FAILURE);
+		    return FALSE;
 		}
 		fullSpec = TRUE;
 	    }
@@ -2522,13 +2462,13 @@ Job_ParseShell(char *line)
 	if (newShell.name == NULL) {
 	    Parse_Error(PARSE_FATAL, "Neither path nor name specified");
 	    free(words);
-	    return(FAILURE);
+	    return FALSE;
 	} else {
 	    if ((sh = JobMatchShell(newShell.name)) == NULL) {
 		    Parse_Error(PARSE_WARNING, "%s: No matching shell",
 				newShell.name);
 		    free(words);
-		    return(FAILURE);
+		    return FALSE;
 	    }
 	    commandShell = sh;
 	    shellName = newShell.name;
@@ -2564,7 +2504,7 @@ Job_ParseShell(char *line)
 		    Parse_Error(PARSE_WARNING, "%s: No matching shell",
 				shellName);
 		    free(words);
-		    return(FAILURE);
+		    return FALSE;
 	    }
 	    commandShell = sh;
 	} else {
@@ -2593,7 +2533,7 @@ Job_ParseShell(char *line)
      * shell specification.
      */
     free(words);
-    return SUCCESS;
+    return TRUE;
 }
 
 /*-
@@ -2681,7 +2621,7 @@ Job_Finish(void)
 	    JobRun(postCommands);
 	}
     }
-    return(errors);
+    return errors;
 }
 
 /*-
@@ -2770,7 +2710,6 @@ Job_AbortAll(void)
 	continue;
 }
 
-
 /*-
  *-----------------------------------------------------------------------
  * JobRestartJobs --
@@ -2920,7 +2859,7 @@ Job_ServerStart(int max_tokens, int jp_0, int jp_1)
 {
     int i;
     char jobarg[64];
-    
+
     if (jp_0 >= 0 && jp_1 >= 0) {
 	/* Pipe passed in from parent */
 	tokenWaitJob.inPipe = jp_0;
@@ -2936,12 +2875,12 @@ Job_ServerStart(int max_tokens, int jp_0, int jp_1)
 	    tokenWaitJob.inPipe, tokenWaitJob.outPipe);
 
     Var_Append(MAKEFLAGS, "-J", VAR_GLOBAL);
-    Var_Append(MAKEFLAGS, jobarg, VAR_GLOBAL);			
+    Var_Append(MAKEFLAGS, jobarg, VAR_GLOBAL);
 
     /*
      * Preload the job pipe with one token per job, save the one
      * "extra" token for the primary job.
-     * 
+     *
      * XXX should clip maxJobs against PIPE_BUF -- if max_tokens is
      * larger than the write buffer size of the pipe, we will
      * deadlock here.
@@ -3020,6 +2959,8 @@ Job_TokenWithdraw(void)
 	/* And put the stopper back */
 	while (write(tokenWaitJob.outPipe, &tok, 1) == -1 && errno == EAGAIN)
 	    continue;
+	if (dieQuietly(NULL, 1))
+	    exit(2);
 	Fatal("A failure has been detected in another branch of the parallel make");
     }
 
@@ -3056,7 +2997,7 @@ Job_RunTarget(const char *target, const char *fname) {
 	return FALSE;
 
     if (fname)
-	Var_Set(ALLSRC, fname, gn, 0);
+	Var_Set(ALLSRC, fname, gn);
 
     JobRun(gn);
     if (gn->made == ERROR) {
@@ -3091,9 +3032,9 @@ emul_poll(struct pollfd *fd, int nfd, int timeout)
 	if (fd[i].fd > maxfd)
 	    maxfd = fd[i].fd;
     }
-    
+
     if (maxfd >= FD_SETSIZE) {
-	Punt("Ran out of fd_set slots; " 
+	Punt("Ran out of fd_set slots; "
 	     "recompile with a larger FD_SETSIZE.");
     }
 
@@ -3103,7 +3044,7 @@ emul_poll(struct pollfd *fd, int nfd, int timeout)
 	usecs = timeout * 1000;
 	tv.tv_sec = usecs / 1000000;
 	tv.tv_usec = usecs % 1000000;
-        tvp = &tv;
+	tvp = &tv;
     }
 
     nselect = select(maxfd + 1, &rfds, &wfds, 0, tvp);

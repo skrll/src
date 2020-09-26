@@ -1,4 +1,4 @@
-/* $NetBSD: copyinout.S,v 1.9 2018/09/14 13:47:14 ryo Exp $ */
+/* $NetBSD: copyinout.S,v 1.15 2020/08/12 13:19:35 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -33,7 +33,27 @@
 #include <aarch64/asm.h>
 #include "assym.h"
 
-RCSID("$NetBSD: copyinout.S,v 1.9 2018/09/14 13:47:14 ryo Exp $");
+RCSID("$NetBSD: copyinout.S,v 1.15 2020/08/12 13:19:35 skrll Exp $");
+
+#ifdef ARMV81_PAN
+#define PAN_ENABLE	\
+	adrl	x9, _C_LABEL(aarch64_pan_enabled)	; \
+	ldr	w9, [x9]				; \
+	cbz	w9, 666f				; \
+	msr	pan, #1					; \
+666:
+#define PAN_DISABLE	\
+	adrl	x9, _C_LABEL(aarch64_pan_enabled)	; \
+	ldr	w9, [x9]				; \
+	cbz	w9, 666f				; \
+	msr	pan, #0					; \
+666:
+#else
+#define PAN_ENABLE	/* nothing */
+#define PAN_DISABLE	/* nothing */
+#endif
+
+	ARMV8_DEFINE_OPTIONS
 
 	.macro enter_cpu_onfault
 	stp	fp, lr, [sp, #-16]!	/* save fp, lr */
@@ -55,14 +75,15 @@ RCSID("$NetBSD: copyinout.S,v 1.9 2018/09/14 13:47:14 ryo Exp $");
 	mov	x0, x19			/* x0 = x19 = arg0 */
 	mov	x1, x20			/* x1 = x20 = arg1 */
 
+	PAN_DISABLE			/* disable PAN */
 	.endm
 
 	.macro exit_cpu_onfault
 	/* curlwp->l_md.md_onfault = NULL */
-	mrs	x0, tpidr_el1			/* curcpu */
-	ldr	x0, [x0, #CI_CURLWP]		/* x0 = curlwp */
+	mrs	x0, tpidr_el1			/* x0 = curlwp */
 	str	xzr, [x0, #L_MD_ONFAULT]	/* lwp->l_md_onfault = NULL */
 9:
+	PAN_ENABLE				/* enable PAN */
 	add	sp, sp, #FB_T_SIZE		/* pop stack */
 	ldp	x19, x20, [sp], #16		/* restore x19, x20 */
 	ldp	fp, lr, [sp], #16		/* restore fp, lr */
@@ -314,34 +335,6 @@ copyoutstr_done:
 END(copyoutstr)
 
 
-/* LINTSTUB: int copystr(const void *s, void *d, size_t len, size_t *done); */
-
-ENTRY(copystr)
-	enter_cpu_onfault
-
-	mov	x8, #0			/* error = 0 */
-
-	mov	x4, xzr			/* i = 0 */
-	cbz	x2, copystr_done	/* if (len == 0) goto done */
-copystr_loop:
-	ldrb	w5, [x0], #1		/* ch = src[i] */
-	strb	w5, [x1], #1		/* dst[i] = ch */
-	add	x4, x4, #1		/* i++ */
-	cbz	x5, copystr_done	/* if (ch == '\0') goto done */
-
-	cmp	x4, x2			/* if (i < len) goto loop */
-	bcc	copystr_loop
-	mov	x8, #ENAMETOOLONG	/* error = ENAMETOOLONG */
-
-copystr_done:
-	cbz	x3, 1f			/* if (done != NULL) *done = i */
-	str	x4, [x3]
-1:
-	exit_cpu_onfault
-	ret
-END(copystr)
-
-
 /* LINTSTUB: int kcopy(const void *src, void *dst, size_t len); */
 
 ENTRY(kcopy)
@@ -356,3 +349,50 @@ ENTRY(kcopy)
 	exit_cpu_onfault
 	ret
 END(kcopy)
+
+
+/* LINTSTUB: int _ucas_32(volatile uint32_t *uptr, uint32_t old, uint32_t new, uint32_t *retp); */
+ENTRY(_ucas_32)
+	tbnz	x0, AARCH64_ADDRTOP_TAG_BIT, 3f	/* not userspace */
+	ands	x8, x0, #3
+	cbnz	x8, 3f				/* not aligned */
+
+	enter_cpu_onfault
+
+1:	ldxr	w4, [x0]		/* load old value */
+	cmp	w4, w1			/*   compare? */
+	b.ne	2f			/*     return if different */
+	stxr	w5, w2, [x0]		/* store new value */
+	cbnz	w5, 1b			/*   succeed? nope, try again. */
+2:	str	w4, [x3]
+	mov	x8, #0			/* error = 0 */
+
+	exit_cpu_onfault
+	ret
+3:
+	mov	x0, #EFAULT
+	ret
+END(_ucas_32)
+
+/* LINTSTUB: int _ucas_64(volatile uint64_t *uptr, uint64_t old, uint64_t new, uint64_t *retp); */
+ENTRY(_ucas_64)
+	tbnz	x0, AARCH64_ADDRTOP_TAG_BIT, 3f	/* not userspace */
+	ands	x8, x0, #7
+	cbnz	x8, 3f				/* not aligned */
+
+	enter_cpu_onfault
+
+1:	ldxr	x4, [x0]		/* load old value */
+	cmp	x4, x1			/*   compare? */
+	b.ne	2f			/*     return if different */
+	stxr	w5, x2, [x0]		/* store new value */
+	cbnz	w5, 1b			/*   succeed? nope, try again. */
+2:	str	x4, [x3]
+	mov	x8, #0			/* error = 0 */
+
+	exit_cpu_onfault
+	ret
+3:
+	mov	x0, #EFAULT
+	ret
+END(_ucas_64)

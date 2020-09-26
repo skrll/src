@@ -1,4 +1,4 @@
-.\"	$NetBSD: rc.conf.5,v 1.181 2019/06/03 06:04:20 msaitoh Exp $
+.\"	$NetBSD: rc.conf.5,v 1.187 2020/09/11 12:20:01 wiz Exp $
 .\"
 .\" Copyright (c) 1996 Matthew R. Green
 .\" All rights reserved.
@@ -55,7 +55,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd June 3, 2019
+.Dd September 11, 2020
 .Dt RC.CONF 5
 .Os
 .Sh NAME
@@ -338,6 +338,10 @@ assumes yes as the answer to all operator questions during file system checks.
 This might be important with hosts where the administrator does not have
 access to the console and an unsuccessful shutdown must not make the host
 unbootable even if the file system checks would fail in preen mode.
+.It Sy modules
+Boolean value.
+If true, loads the modules specified in
+.Xr modules.conf 5 .
 .It Sy no_swap
 Boolean value.
 Should be true if you have deliberately configured your system with no swap.
@@ -603,6 +607,18 @@ version string in the
 file to reflect the version of the running kernel.
 See
 .Xr motd 5 .
+.It Sy update_motd_release
+Boolean value.
+If enabled in addition to
+.Sy update_motd ,
+updates a second
+.Nx
+version string in the
+.Pa /etc/motd
+file to reflect the version, architecture, and Build ID of
+the installed userland.
+An optional prefix can be provided for this version string in
+.Sy motd_release_tag .
 .It Sy virecover
 Boolean value.
 Send notification mail to users if any recoverable files exist in
@@ -694,12 +710,14 @@ with the
 .Fl l
 flag and suppresses warnings about interfaces in this list that
 do not have an ifconfig file or variable.
-.It Sy blacklistd
+.It Sy blocklistd
 Boolean value.
 Runs
-.Xr blacklistd 8
+.Xr blocklistd 8
 to dynamically block hosts on a DoS according to configuration set in
-.Xr blacklistd.conf 5
+.Xr blocklistd.conf 5
+Passes
+.Sy blocklistd_flags .
 .It Sy dhcpcd
 Boolean value.
 Set true to configure some or all network interfaces using dhcpcd.
@@ -899,6 +917,8 @@ Boolean value.
 Runs
 .Xr npfd 8 ,
 the NPF packet filter logging and state synchronization daemon.
+Passes
+.Sy npfd_flags .
 .It Sy net_interfaces
 A string.
 The list of network interfaces to be configured at boot time.
@@ -1176,6 +1196,19 @@ only one machine running both should have the
 .Fl M
 flag given to
 .Xr timed 8 .
+.It Sy unbound
+Boolean value.
+Runs
+.Xr unbound 8 .
+.It Sy unbound_chrootdir
+A string.
+If non-blank and
+.Sy unbound
+is true, run
+.Xr unbound 8
+.Xr chroot 2 Ns ed
+to
+.Sy unbound_chrootdir .
 .El
 .Ss Routing daemons
 .Bl -tag -width net_interfaces

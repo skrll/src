@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon1p_iobus.c,v 1.4 2020/05/31 14:05:21 simonb Exp $	*/
+/*	$NetBSD: octeon1p_iobus.c,v 1.6 2020/08/17 21:25:12 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: octeon1p_iobus.c,v 1.4 2020/05/31 14:05:21 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: octeon1p_iobus.c,v 1.6 2020/08/17 21:25:12 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -41,7 +41,6 @@ __KERNEL_RCSID(0, "$NetBSD: octeon1p_iobus.c,v 1.4 2020/05/31 14:05:21 simonb Ex
 #include <mips/cavium/include/iobusvar.h>
 
 /* ---- UART */
-
 #include <mips/cavium/dev/octeon_uartreg.h>
 static const struct iobus_unit iobus_units_octuart[] = {
 	{
@@ -59,7 +58,6 @@ static const struct iobus_dev iobus_dev_octuart = {
 };
 
 /* ---- RNM */
-
 #include <mips/cavium/dev/octeon_rnmreg.h>
 static const struct iobus_unit iobus_units_octrnm[] = {
 	{
@@ -69,12 +67,12 @@ static const struct iobus_unit iobus_units_octrnm[] = {
 
 static const struct iobus_dev iobus_dev_octrnm = {
 	.name = "octrnm",
+	.flags = IOBUS_DEV_FDT,
 	.nunits = RNM_NUNITS,
 	.units = iobus_units_octrnm
 };
 
 /* ---- TWSI */
-
 #include <mips/cavium/dev/octeon_twsireg.h>
 static const struct iobus_unit iobus_units_octtwsi[] = {
 	{
@@ -89,7 +87,6 @@ static const struct iobus_dev iobus_dev_octtwsi = {
 };
 
 /* ---- MPI/SPI */
-
 #include <mips/cavium/dev/octeon_mpireg.h>
 static const struct iobus_unit	iobus_units_octmpi[] = {
 	{
@@ -102,19 +99,33 @@ static const struct iobus_dev iobus_dev_octmpi = {
 	.nunits = MPI_NUNITS,
 	.units = iobus_units_octmpi
 };
-/* ---- GMX */
 
-#include <mips/cavium/dev/octeon_gmxreg.h>
-static const struct iobus_unit	iobus_units_octgmx[] = {
+/* ---- SMI */
+#include <mips/cavium/dev/octeon_smireg.h>
+static const struct iobus_unit	iobus_units_octsmi[] = {
 	{
-		.addr = GMX0_BASE_IF0
+		.addr = SMI_BASE
 	}
 };
 
-static const struct iobus_dev iobus_dev_octgmx = {
-	.name = "octgmx",
-	.nunits = GMX_IF_NUNITS,
-	.units = iobus_units_octgmx
+static const struct iobus_dev iobus_dev_octsmi = {
+	.name = "octsmi",
+	.nunits = SMI_NUNITS,
+	.units = iobus_units_octsmi
+};
+
+/* ---- PIP */
+#include <mips/cavium/dev/octeon_pipreg.h>
+static const struct iobus_unit	iobus_units_octpip[] = {
+	{
+		.addr = PIP_BASE
+	}
+};
+
+static const struct iobus_dev iobus_dev_octpip = {
+	.name = "octpip",
+	.nunits = 1,
+	.units = iobus_units_octpip
 };
 
 
@@ -139,7 +150,8 @@ const struct iobus_dev * const iobus_devs[] = {
 	&iobus_dev_octrnm,
 	&iobus_dev_octtwsi,
 	&iobus_dev_octmpi,
-	&iobus_dev_octgmx,
+	&iobus_dev_octsmi,
+	&iobus_dev_octpip,
 	&iobus_dev_octusbn,
 };
 

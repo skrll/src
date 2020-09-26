@@ -1,4 +1,4 @@
-/*	$NetBSD: proc.h,v 1.28 2015/06/30 04:20:19 matt Exp $	*/
+/*	$NetBSD: proc.h,v 1.32 2020/09/04 08:17:53 mrg Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -35,10 +35,10 @@
  */
 
 #ifndef _MIPS_PROC_H_
-#define _MIPS_PROC_H_
+#define	_MIPS_PROC_H_
 
 #include <sys/param.h>
-#include <mips/vmparam.h>
+#include <machine/vmparam.h>
 
 struct lwp;
 
@@ -52,7 +52,7 @@ struct mdlwp {
 	vaddr_t	md_ss_addr;		/* single step address for ptrace */
 	int	md_ss_instr;		/* single step instruction for ptrace */
 	volatile int md_astpending;	/* AST pending on return to userland */
-	int	md_upte[2];		/* ptes for mapping u page */
+	int	md_upte[UPAGES_MAX];	/* ptes for mapping u page */
 };
 
 struct mdproc {

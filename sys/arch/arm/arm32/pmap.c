@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.414 2020/05/27 06:43:22 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.421 2020/08/12 18:30:46 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -192,11 +192,12 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.414 2020/05/27 06:43:22 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.421 2020/08/12 18:30:46 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
 
+#include <sys/asan.h>
 #include <sys/atomic.h>
 #include <sys/bus.h>
 #include <sys/cpu.h>
@@ -2836,8 +2837,8 @@ pmap_page_remove(struct vm_page_md *md, paddr_t pa)
 	UVMHIST_FUNC(__func__);
 	UVMHIST_CALLARGS(maphist, "md %#jx pa %#jx", (uintptr_t)md, pa, 0, 0);
 
-	struct pv_entry **pvp = &SLIST_FIRST(&md->pvh_list);
 	pmap_acquire_page_lock(md);
+	struct pv_entry **pvp = &SLIST_FIRST(&md->pvh_list);
 	if (*pvp == NULL) {
 #ifdef PMAP_CACHE_VIPT
 		/*
@@ -4839,6 +4840,8 @@ pmap_unwire(pmap_t pm, vaddr_t va)
 	}
 
 	pmap_release_pmap_lock(pm);
+
+	UVMHIST_LOG(maphist, " <-- done", 0, 0, 0, 0);
 }
 
 #ifdef ARM_MMU_EXTENDED
@@ -5174,6 +5177,11 @@ bool
 pmap_remove_all(pmap_t pm)
 {
 
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(maphist, "(pm=%#jx)", (uintptr_t)pm, 0, 0, 0);
+
+	KASSERT(pm != pmap_kernel());
+
 	/*
 	 * The vmspace described by this pmap is about to be torn down.
 	 * Until pmap_update() is called, UVM will only make calls
@@ -5198,6 +5206,8 @@ pmap_remove_all(pmap_t pm)
 	pmap_tlb_asid_release_all(pm);
 #endif
 	pm->pm_remove_all = true;
+
+	UVMHIST_LOG(maphist, " <-- done", 0, 0, 0, 0);
 	return false;
 }
 
@@ -5945,11 +5955,13 @@ pmap_growkernel(vaddr_t maxkvaddr)
 	 * whoops!   we need to add kernel PTPs
 	 */
 
+	vaddr_t pmap_maxkvaddr = pmap_curmaxkvaddr;
+
 	s = splvm();	/* to be safe */
 	mutex_enter(&kpm_lock);
 
 	/* Map 1MB at a time */
-	size_t l1slot = l1pte_index(pmap_curmaxkvaddr);
+	size_t l1slot = l1pte_index(pmap_maxkvaddr);
 #ifdef ARM_MMU_EXTENDED
 	pd_entry_t * const spdep = &kpm->pm_l1[l1slot];
 	pd_entry_t *pdep = spdep;
@@ -5993,6 +6005,9 @@ pmap_growkernel(vaddr_t maxkvaddr)
 
 	mutex_exit(&kpm_lock);
 	splx(s);
+
+	kasan_shadow_map((void *)pmap_maxkvaddr,
+	    (size_t)(pmap_curmaxkvaddr - pmap_maxkvaddr));
 
 out:
 	return pmap_curmaxkvaddr;
@@ -6301,6 +6316,9 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	virtual_end = vend;
 
 	VPRINTF("specials ");
+
+	pmap_alloc_specials(&virtual_avail, 1, &memhook, NULL);
+
 #ifdef PMAP_CACHE_VIPT
 	/*
 	 * If we have a VIPT cache, we need one page/pte per possible alias
@@ -6325,7 +6343,6 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	pmap_set_pt_cache_mode(l1pt, (vaddr_t)csrc_pte, nptes);
 	pmap_alloc_specials(&virtual_avail, nptes, &cdstp, &cdst_pte);
 	pmap_set_pt_cache_mode(l1pt, (vaddr_t)cdst_pte, nptes);
-	pmap_alloc_specials(&virtual_avail, nptes, &memhook, NULL);
 	if (msgbufaddr == NULL) {
 		pmap_alloc_specials(&virtual_avail,
 		    round_page(MSGBUFSIZE) / PAGE_SIZE,
@@ -6337,12 +6354,12 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	 * for L2 descriptor tables and metadata allocation in
 	 * pmap_growkernel().
 	 */
-	size = ((virtual_end - pmap_curmaxkvaddr) + L1_S_OFFSET) / L1_S_SIZE;
+	size = howmany(virtual_end - pmap_curmaxkvaddr, L1_S_SIZE);
 	pmap_alloc_specials(&virtual_avail,
 	    round_page(size * L2_TABLE_SIZE_REAL) / PAGE_SIZE,
 	    &pmap_kernel_l2ptp_kva, NULL);
 
-	size = (size + (L2_BUCKET_SIZE - 1)) / L2_BUCKET_SIZE;
+	size = howmany(size, L2_BUCKET_SIZE);
 	pmap_alloc_specials(&virtual_avail,
 	    round_page(size * sizeof(struct l2_dtable)) / PAGE_SIZE,
 	    &pmap_kernel_l2dtable_kva, NULL);

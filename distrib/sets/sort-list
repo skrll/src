@@ -1,7 +1,14 @@
 #!/bin/sh
+set -eu
 
-for F
-do
-	{ grep '^#' "${F}"; grep -v '^#' "${F}" | LC_ALL=C sort ;} > "${F}".tmp
-	mv "${F}".tmp "${F}"
+die() {
+	echo "$*" 1>&2
+	exit 1
+}
+
+for fname; do
+	{ grep '^#' "$fname" || die "Missing comment line in $fname"
+	  grep -v '^#' "$fname" | LC_ALL=C sort
+	} > "$fname.tmp"
+	mv "$fname.tmp" "$fname"
 done

@@ -1,11 +1,13 @@
-# $NetBSD: Makefile,v 1.23 2020/03/01 18:08:16 christos Exp $
+# $NetBSD: Makefile,v 1.25 2020/09/08 14:13:50 christos Exp $
 #
 
 .include <bsd.own.mk>
 
 TESTSDIR=	${TESTSBASE}/net/net
 
-TESTS_C=	t_unix
+TESTS_C=	t_bind
+TESTS_C+=	t_unix
+TESTS_C+=	t_mapped
 TESTS_C+=	t_tcp
 TESTS_C+=	t_udp
 TESTS_C+=	t_pktinfo
@@ -25,5 +27,7 @@ LDADD.t_pktinfo_send+=	-lrumpnet_shmif -lrumpnet
 LDADD.t_pktinfo_send+=	${LIBRUMPBASE}
 LDADD.t_raw+=	-lrumpnet_local -lrumpnet_netinet -lrumpnet_net
 LDADD.t_raw+=	-lrumpnet ${LIBRUMPBASE}
+
+LDADD.t_mapped+=	-lutil
 
 .include <bsd.test.mk>

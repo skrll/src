@@ -1,4 +1,4 @@
-/*	$NetBSD: armv6_start.S,v 1.16 2020/03/20 19:48:03 skrll Exp $	*/
+/*	$NetBSD: armv6_start.S,v 1.27 2020/08/28 13:36:52 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2017, 2018 The NetBSD Foundation, Inc.
@@ -34,6 +34,7 @@
 #include "opt_cpuoptions.h"
 #include "opt_cputypes.h"
 #include "opt_fdt.h"
+#include "opt_kasan.h"
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
@@ -41,9 +42,6 @@
 #include <arm/asm.h>
 #include <arm/armreg.h>
 #include "assym.h"
-
-#define INIT_ARM_STACK_SHIFT	9
-#define INIT_ARM_STACK_SIZE	(1 << INIT_ARM_STACK_SHIFT)
 
 #if defined(CONSADDR) && defined(CONADDR)
 #error Only one of CONSADDR and CONADDR should be defined
@@ -98,7 +96,7 @@
 ENTRY_NP(generic_start)
 
 	// ARMv7 only?!?
-#ifdef __ARMEB__
+#if defined(__ARMEB__)
 	setend	be			/* force big endian */
 #endif
 
@@ -142,7 +140,7 @@ ENTRY_NP(generic_start)
 	VPRINTX(r6)
 #endif
 
-#ifdef VERBOSE_INIT_ARM
+#if defined(VERBOSE_INIT_ARM)
 	VPRINTF("\n\rmidr  : ")
 	mrc	p15, 0, r0, c0, c0, 0	// MIDR
 	VPRINTX(r0)
@@ -224,11 +222,16 @@ generic_savevars:
 
 	.ltorg
 
-	/* Allocate some memory after the kernel image for stacks and bootstrap L1PT */
+	/*
+	 * Allocate some memory after the kernel image for stacks and
+	 * bootstrap L1PT
+	 */
 	.section "_init_memory", "aw", %nobits
 	.p2align INIT_ARM_STACK_SHIFT
+	.global start_stacks_bottom
+	.global start_stacks_top
 start_stacks_bottom:
-	.space	INIT_ARM_STACK_SIZE * MAXCPUS
+	.space	INIT_ARM_TOTAL_STACK
 start_stacks_top:
 
 	.section "_init_memory", "aw", %nobits
@@ -461,6 +464,17 @@ generic_startv7:
 	b	armv7_mmuinit
 
 generic_vstartv7:
+	// Stack to KVA address
+	add	sp, sp, R_VTOPDIFF
+
+	VPRINTF("virtual\n\r")
+
+#if defined(KASAN)
+	ldr	r0, =start_stacks_bottom
+	bl	_C_LABEL(kasan_early_init)
+
+	VPRINTF("kasan\n\r")
+#endif
 
 	/* r0 = &cpu_info_store[0] */
 	movw	r0, #:lower16:cpu_info_store
@@ -471,7 +485,6 @@ generic_vstartv7:
 	mrc	p15, 0, r1, c0, c0, 5	// MPIDR get
 	str	r1, [r0, #CI_MPIDR]
 
-	mov	r2, #0
 	bl	arm_cpu_topology_set
 
 	VPRINTF("go\n\r")
@@ -490,7 +503,7 @@ generic_startv6:
 	bl	armv6_init
 	bl	generic_savevars
 
-#ifdef ARM_MMU_EXTENDED
+#if defined(ARM_MMU_EXTENDED)
 	mov	R_DEVATTR, #L1_S_V6_XN
 #else
 	mov	R_DEVATTR, #0
@@ -508,6 +521,18 @@ generic_startv6:
 	b	armv6_mmuinit
 
 generic_vstartv6:
+	// Stack to KVA address
+	add	sp, sp, R_VTOPDIFF
+
+	VPRINTF("virtual\n\r")
+
+#if defined(KASAN)
+	ldr	r0, =start_stacks_bottom
+	bl	_C_LABEL(kasan_early_init)
+
+	VPRINTF("kasan\n\r")
+#endif
+
 	VPRINTF("go\n\r")
 
 	/*
@@ -520,20 +545,18 @@ generic_vstartv6:
 
 #endif
 
-
-
 #if defined(_ARM_ARCH_7)
 
 //
 // SCTLR register initialization values
 //
-#ifdef __ARMEL__
+#if defined(__ARMEL__)
 #define CPU_CONTROL_EX_BEND_SET		0
 #else
 #define CPU_CONTROL_EX_BEND_SET		CPU_CONTROL_EX_BEND
 #endif
 
-#ifdef ARM32_DISABLE_ALIGNMENT_FAULTS
+#if defined(ARM32_DISABLE_ALIGNMENT_FAULTS)
 #define CPU_CONTROL_AFLT_ENABLE_CLR	CPU_CONTROL_AFLT_ENABLE
 #define CPU_CONTROL_AFLT_ENABLE_SET	0
 #else
@@ -541,14 +564,13 @@ generic_vstartv6:
 #define CPU_CONTROL_AFLT_ENABLE_SET	CPU_CONTROL_AFLT_ENABLE
 #endif
 
-#ifdef ARM_MMU_EXTENDED
+#if defined(ARM_MMU_EXTENDED)
 #define CPU_CONTROL_XP_ENABLE_CLR	0
 #define CPU_CONTROL_XP_ENABLE_SET	CPU_CONTROL_XP_ENABLE
 #else
 #define CPU_CONTROL_XP_ENABLE_CLR	CPU_CONTROL_XP_ENABLE
 #define CPU_CONTROL_XP_ENABLE_SET	0
 #endif
-
 
 // bits to set in the Control Register
 //
@@ -566,7 +588,6 @@ generic_vstartv6:
 	CPU_CONTROL_AFLT_ENABLE_CLR	|	\
 	CPU_CONTROL_XP_ENABLE_CLR	|	\
 	0)
-
 
 /*
  * Perform the initialization of the an ARMv7 core required by NetBSD.
@@ -641,7 +662,6 @@ armv7_init:
     CPU_CONTROL_UNAL_ENABLE |	\
     0)
 
-
 	mrc	p15, 0, r0, c1, c0, 0
 	movw	r1, #:lower16:ARMV7_SCTLR_CLEAR
 	movt	r1, #:upper16:ARMV7_SCTLR_CLEAR
@@ -661,7 +681,7 @@ armv7_init:
 	dsb
 	isb
 
-#ifdef VERBOSE_INIT_ARM
+#if defined(VERBOSE_INIT_ARM)
 	XPUTC(#'B')
 
 	VPRINTF(" sctlr:")
@@ -735,7 +755,6 @@ armv7_mmuinit:
 	mov	r1, #DOMAIN_DEFAULT
 	mcr	p15, 0, r1, c3, c0, 0	// DACR write
 
-
 #if 0
 
 /*
@@ -794,7 +813,7 @@ ENTRY_NP(cpu_mpstart)
 3:	wfi
 	b	3b
 #else
-#ifdef __ARMEB__
+#if defined(__ARMEB__)
 	setend	be				// switch to BE now
 #endif
 
@@ -832,7 +851,7 @@ ENTRY_NP(cpu_mpstart)
 	lsl	r5, #INIT_ARM_STACK_SHIFT
 	sub	sp, sp, r5
 
-#ifdef VERBOSE_INIT_ARM
+#if defined(VERBOSE_INIT_ARM)
 	VPRINTF("\n\rmidr  : ")
 	mrc	p15, 0, r0, c0, c0, 0		// MIDR
 	VPRINTX(r0)
@@ -862,35 +881,18 @@ ENTRY_NP(cpu_mpstart)
 	b	armv7_mmuinit
 ASEND(cpu_mpstart)
 
-
 /*
  * Now running with real kernel VA via bootstrap tables
  */
 armv7_mpcontinuation:
-	// Adjust stack back to KVA address
+	// Stack to KVA address
 	add	sp, sp, R_VTOPDIFF
 
-	VPRINTF("go\n\r")
+	VPRINTF("virtual\n\r")
 
 	// index into cpu_mpidr[] or cpu_number if not found
 	mov	r0, R_INDEX
 	bl	cpu_init_secondary_processor
-
-	/* r0 = &cpu_info_store[0] */
-	movw	r0, #:lower16:cpu_info_store
-	movt	r0, #:upper16:cpu_info_store
-
-	mov	r4, #CPU_INFO_SIZE
-	mul	r5, r4, R_INDEX
-	add	r0, r5
-
-	mrc	p15, 0, r1, c0, c0, 0	// MIDR get
-	str	r1, [r0, #CI_MIDR]
-	mrc	p15, 0, r1, c0, c0, 5	// MPIDR get
-	str	r1, [r0, #CI_MPIDR]
-
-	mov	r2, #0
-	bl	arm_cpu_topology_set
 
 	/*
 	 * Wait for cpu_boot_secondary_processors
@@ -916,7 +918,7 @@ armv7_mpcontinuation:
 	ldr	r6, [r5, #CI_IDLELWP]		// get the idlelwp
 	ldr	r7, [r6, #L_PCB]		// now get its pcb
 	ldr	sp, [r7, #PCB_KSP]		// finally, we can load our SP
-#ifdef TPIDRPRW_IS_CURCPU
+#if defined(TPIDRPRW_IS_CURCPU)
 	mcr	p15, 0, r5, c13, c0, 4		// squirrel away curcpu()
 #elif defined(TPIDRPRW_IS_CURLWP)
 	mcr	p15, 0, r6, c13, c0, 4		// squirrel away curlwp()
@@ -975,7 +977,7 @@ ENTRY_NP(armv6_init)
 
 	mcr	p15, 0, r0, c7, c10, 4	/* Drain the write buffers. */
 
-#ifdef VERBOSE_INIT_ARM
+#if defined(VERBOSE_INIT_ARM)
 	XPUTC(#'B')
 
 	VPRINTF(" sctlr:")
@@ -1030,7 +1032,7 @@ armv6_mmuinit:
 	 * Enable the MMU, etc.
 	 */
 
-#ifdef VERBOSE_INIT_ARM
+#if defined(VERBOSE_INIT_ARM)
 	VPRINTF(" sctlr:")
 	mrc     p15, 0, r0, c1, c0, 0
 	VPRINTX(r0)
@@ -1071,10 +1073,9 @@ armv6_mmuinit:
 
 	.ltorg
 
-
 	/* bits to set in the Control Register */
 Lcontrol_set:
-#ifdef ARM_MMU_EXTENDED
+#if defined(ARM_MMU_EXTENDED)
 #define	CPU_CONTROL_EXTRA	CPU_CONTROL_XP_ENABLE
 #else
 #define	CPU_CONTROL_EXTRA	CPU_CONTROL_SYST_ENABLE
@@ -1103,7 +1104,6 @@ Lcontrol_wax:
 		(1 << 17) | \
 	        (1 << 10)
 #endif
-
 
 ENTRY_NP(generic_vprint)
 	push	{r4, lr}

@@ -1,4 +1,4 @@
-/* $NetBSD: sgmapvar.h,v 1.16 2011/07/01 19:22:35 dyoung Exp $ */
+/* $NetBSD: sgmapvar.h,v 1.19 2020/09/05 04:11:10 maya Exp $ */
 
 /*-
  * Copyright (c) 1997, 1998, 2001 The NetBSD Foundation, Inc.
@@ -33,8 +33,8 @@
 #ifndef	_ALPHA_COMMON_SGMAPVAR_H
 #define	_ALPHA_COMMON_SGMAPVAR_H
 
-#include <sys/extent.h>
 #include <sys/bus.h>
+#include <sys/vmem.h>
 
 /*
  * Bits n:13 of the DMA address are the index of the PTE into
@@ -44,15 +44,15 @@
 
 /*
  * An Alpha SGMAP's state information.  Nothing in the sgmap requires
- * locking[*], with the exception of the extent map.  Locking of the
- * extent map is handled within the extent manager itself.
+ * locking[*], with the exception of the vmem arena, which takes care
+ * of it on its own.
  *
  * [*] While the page table is a `global' resource, access to it is
- * controlled by the extent map; once a region has been allocated from
- * the map, that region is effectively `locked'.
+ * controlled by the arena; once a region has been allocated from
+ * the arena, that region is effectively `locked'.
  */
 struct alpha_sgmap {
-	struct extent *aps_ex;		/* extent map to manage sgva space */
+	vmem_t	*aps_arena;		/* arena to manage sgva space */
 	void	*aps_pt;		/* page table */
 	bus_addr_t aps_ptpa;		/* page table physical address */
 	bus_addr_t aps_sgvabase;	/* base of the sgva space */

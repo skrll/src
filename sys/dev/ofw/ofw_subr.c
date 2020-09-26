@@ -1,4 +1,4 @@
-/*	$NetBSD: ofw_subr.c,v 1.34 2019/08/06 18:17:52 tnn Exp $	*/
+/*	$NetBSD: ofw_subr.c,v 1.40 2020/07/16 21:32:44 jmcneill Exp $	*/
 
 /*
  * Copyright 1998
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofw_subr.c,v 1.34 2019/08/06 18:17:52 tnn Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofw_subr.c,v 1.40 2020/07/16 21:32:44 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -101,18 +101,18 @@ of_compatible(int phandle, const char * const *strings)
 {
 
 	int len, olen, allocated, nstr, cstr, rv;
-	char *buf;
+	char *buf, sbuf[OFW_MAX_STACK_BUF_SIZE];
 	const char *sp, *nsp;
 
 	len = OF_getproplen(phandle, "compatible");
 	if (len <= 0)
 		return (-1);
 
-	if (len > OFW_MAX_STACK_BUF_SIZE) {
+	if (len > sizeof(sbuf)) {
 		buf = malloc(len, M_TEMP, M_WAITOK);
 		allocated = 1;
 	} else {
-		buf = alloca(len);
+		buf = sbuf;
 		allocated = 0;
 	}
 
@@ -337,6 +337,26 @@ of_find_firstchild_byname(int node, const char *name)
 }
 
 /*
+ * Find a child node that is compatible with str. Recurses, starting at node.
+ */
+int
+of_find_bycompat(int node, const char *str)
+{
+	const char * compatible[] = { str, NULL };
+	int child, ret;
+
+	for (child = OF_child(node); child; child = OF_peer(child)) {
+		if (of_match_compatible(child, compatible) != 0)
+			return child;
+		ret = of_find_bycompat(child, str);
+		if (ret != -1)
+			return ret;
+	}
+
+	return -1;
+}
+
+/*
  * Find a give node by name.  Recurses, and seems to walk upwards too.
  */
 
@@ -393,19 +413,14 @@ boolean_t
 of_to_dataprop(prop_dictionary_t dict, int node, const char *ofname,
     const char *propname)
 {
-	prop_data_t data;
 	int len;
 	uint8_t prop[256];
-	boolean_t res;
 
 	len = OF_getprop(node, ofname, prop, 256);
 	if (len < 1)
 		return FALSE;
 
-	data = prop_data_create_data(prop, len);
-	res = prop_dictionary_set(dict, propname, data);
-	prop_object_release(data);
-	return res;
+	return prop_dictionary_set_data(dict, propname, prop, len);
 }
 
 /*
@@ -489,7 +504,7 @@ of_enter_i2c_devs(prop_dictionary_t props, int ofnode, size_t cell_size,
 			array = prop_array_create();
 
 		dev = prop_dictionary_create();
-		prop_dictionary_set_cstring(dev, "name", name);
+		prop_dictionary_set_string(dev, "name", name);
 		prop_dictionary_set_uint32(dev, "addr", addr);
 		prop_dictionary_set_uint64(dev, "cookie", node);
 		of_to_dataprop(dev, node, "compatible", "compatible");
@@ -543,7 +558,7 @@ of_enter_spi_devs(prop_dictionary_t props, int ofnode, size_t cell_size)
 			array = prop_array_create();
 
 		dev = prop_dictionary_create();
-		prop_dictionary_set_cstring(dev, "name", name);
+		prop_dictionary_set_string(dev, "name", name);
 		prop_dictionary_set_uint32(dev, "slave", slave);
 		prop_dictionary_set_uint32(dev, "mode", mode);
 		if (maxfreq > 0)

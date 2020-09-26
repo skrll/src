@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1691 2020/05/19 06:26:37 jdc Exp $
+# $NetBSD: mi,v 1.1702 2020/09/08 19:06:49 rillig Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -1311,6 +1311,7 @@
 ./usr/share/man/cat4/i4btrc.0			man-obsolete		obsolete
 ./usr/share/man/cat4/i915drm.0			man-sys-catman		.cat
 ./usr/share/man/cat4/iavc.0			man-obsolete		obsolete
+./usr/share/man/cat4/iavf.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ibmcd.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ibmhawk.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ichlpcib.0			man-obsolete		obsolete
@@ -2032,6 +2033,7 @@
 ./usr/share/man/cat4/wds.0			man-sys-catman		.cat
 ./usr/share/man/cat4/we.0			man-sys-catman		.cat
 ./usr/share/man/cat4/wedge.0			man-sys-catman		.cat
+./usr/share/man/cat4/wg.0			man-sys-catman		.cat
 ./usr/share/man/cat4/wi.0			man-sys-catman		.cat
 ./usr/share/man/cat4/wm.0			man-sys-catman		.cat
 ./usr/share/man/cat4/wmidell.0			man-sys-catman		.cat
@@ -2049,6 +2051,8 @@
 ./usr/share/man/cat4/wsmuxctl.0			man-sys-catman		.cat
 ./usr/share/man/cat4/wss.0			man-sys-catman		.cat
 ./usr/share/man/cat4/wt.0			man-sys-catman		.cat
+./usr/share/man/cat4/wwan.0			man-sys-catman		.cat
+./usr/share/man/cat4/wwanc.0			man-sys-catman		.cat
 ./usr/share/man/cat4/x68k/bmd.0			man-sys-catman		.cat
 ./usr/share/man/cat4/x68k/intio.0		man-sys-catman		.cat
 ./usr/share/man/cat4/x68k/intro.0		man-sys-catman		.cat
@@ -2115,7 +2119,8 @@
 ./usr/share/man/cat5/audit-packages.conf.0	man-obsolete		obsolete
 ./usr/share/man/cat5/auto_master.0		man-sysutil-catman	.cat
 ./usr/share/man/cat5/autofs.0			man-sysutil-catman	.cat
-./usr/share/man/cat5/blacklistd.conf.0		man-sysutil-catman	.cat
+./usr/share/man/cat5/blacklistd.conf.0		man-obsolete		obsolete
+./usr/share/man/cat5/blocklistd.conf.0		man-sysutil-catman	.cat
 ./usr/share/man/cat5/bluetooth.conf.0		man-obsolete		obsolete
 ./usr/share/man/cat5/body_checks.0		man-postfix-catman	postfix,.cat
 ./usr/share/man/cat5/boot.cfg.0			man-sys-catman		.cat
@@ -2126,6 +2131,7 @@
 ./usr/share/man/cat5/capfile.0			man-sys-catman		.cat
 ./usr/share/man/cat5/ccd.conf.0			man-sysutil-catman	.cat
 ./usr/share/man/cat5/cdb.0			man-sys-catman		.cat
+./usr/share/man/cat5/changelist.0		man-sys-catman		.cat
 ./usr/share/man/cat5/cidr_table.0		man-postfix-catman	postfix,.cat
 ./usr/share/man/cat5/core.0			man-sys-catman		.cat
 ./usr/share/man/cat5/crontab.0			man-cron-catman		.cat
@@ -2256,6 +2262,7 @@
 ./usr/share/man/cat5/pim6sd.conf.0		man-obsolete		obsolete
 ./usr/share/man/cat5/pkg_install.conf.0		man-pkgutil-catman	.cat
 ./usr/share/man/cat5/pkg_summary.0		man-pkgutil-catman	.cat
+./usr/share/man/cat5/pkgpath.conf.0		man-sys-catman		.cat
 ./usr/share/man/cat5/postconf.0			man-postfix-catman	postfix,.cat
 ./usr/share/man/cat5/postfix-wrapper.0		man-postfix-catman	postfix,.cat
 ./usr/share/man/cat5/primes.0			man-obsolete		obsolete
@@ -2332,6 +2339,7 @@
 ./usr/share/man/cat7/hier.0			man-reference-catman	.cat
 ./usr/share/man/cat7/hostname.0			man-reference-catman	.cat
 ./usr/share/man/cat7/intro.0			man-reference-catman	.cat
+./usr/share/man/cat7/kernel_sanitizers.0	man-reference-catman	.cat
 ./usr/share/man/cat7/kyua-atf-interface.0	man-kyua-catman		kyua,.cat
 ./usr/share/man/cat7/kyua-build-root.0		man-kyua-catman		kyua,.cat
 ./usr/share/man/cat7/kyua-plain-interface.0	man-kyua-catman		kyua,.cat
@@ -2440,8 +2448,10 @@
 ./usr/share/man/cat8/bebox/MAKEDEV.0		man-obsolete		obsolete
 ./usr/share/man/cat8/bebox/makedev.0		man-obsolete		obsolete
 ./usr/share/man/cat8/bioctl.0			man-sysutil-catman	.cat
-./usr/share/man/cat8/blacklistctl.0		man-sysutil-catman	.cat
-./usr/share/man/cat8/blacklistd.0		man-sysutil-catman	.cat
+./usr/share/man/cat8/blacklistctl.0		man-obsolete		obsolete
+./usr/share/man/cat8/blacklistd.0		man-obsolete		obsolete
+./usr/share/man/cat8/blocklistctl.0		man-sysutil-catman	.cat
+./usr/share/man/cat8/blocklistd.0		man-sysutil-catman	.cat
 ./usr/share/man/cat8/boot.0			man-sysutil-catman	.cat
 ./usr/share/man/cat8/bootparamd.0		man-bootserver-catman	.cat
 ./usr/share/man/cat8/bootpd.0			man-bootserver-catman	.cat
@@ -2479,6 +2489,7 @@
 ./usr/share/man/cat8/cobalt/boot.0		man-sys-catman		.cat
 ./usr/share/man/cat8/cobalt/makedev.0		man-obsolete		obsolete
 ./usr/share/man/cat8/compat_30.0		man-sys-catman		.cat
+./usr/share/man/cat8/compat_bsdos.0		man-sys-catman		.cat
 ./usr/share/man/cat8/compat_darwin.0		man-obsolete		obsolete
 ./usr/share/man/cat8/compat_freebsd.0		man-sys-catman		.cat
 ./usr/share/man/cat8/compat_hpux.0		man-obsolete		obsolete
@@ -2589,7 +2600,7 @@
 ./usr/share/man/cat8/fusermount.0		man-refuse-catman	.cat
 ./usr/share/man/cat8/fwctl.0			man-sysutil-catman	.cat
 ./usr/share/man/cat8/genassym.sh.0		man-obsolete		obsolete
-./usr/share/man/cat8/getNAME.0			man-man-catman		!makemandb, .cat
+./usr/share/man/cat8/getNAME.0			man-man-catman		!makemandb,.cat
 ./usr/share/man/cat8/getencstat.0		man-sysutil-catman	.cat
 ./usr/share/man/cat8/gettable.0			man-obsolete		obsolete
 ./usr/share/man/cat8/getty.0			man-sysutil-catman	.cat
@@ -3269,6 +3280,9 @@
 ./usr/share/man/cat8/walnut/MAKEDEV.0		man-obsolete		obsolete
 ./usr/share/man/cat8/walnut/makedev.0		man-obsolete		obsolete
 ./usr/share/man/cat8/wdogctl.0			man-sysutil-catman	.cat
+./usr/share/man/cat8/wg-keygen.0		man-netutil-catman	.cat
+./usr/share/man/cat8/wg-userspace.0		man-netutil-catman	.cat
+./usr/share/man/cat8/wgconfig.0			man-netutil-catman	.cat
 ./usr/share/man/cat8/wiconfig.0			man-netutil-catman	.cat
 ./usr/share/man/cat8/wire-test.0		man-netutil-catman	.cat
 ./usr/share/man/cat8/wizd.0			man-sysutil-catman	.cat
@@ -4483,6 +4497,7 @@
 ./usr/share/man/html4/i386/viac7temp.html	man-sys-htmlman		html
 ./usr/share/man/html4/i915drm.html		man-sys-htmlman		html
 ./usr/share/man/html4/iavc.html			man-obsolete		obsolete
+./usr/share/man/html4/iavf.html			man-sys-htmlman		html
 ./usr/share/man/html4/ibmcd.html		man-sys-htmlman		html
 ./usr/share/man/html4/ibmhawk.html		man-sys-htmlman		html
 ./usr/share/man/html4/ichlpcib.html		man-obsolete		obsolete
@@ -5154,6 +5169,7 @@
 ./usr/share/man/html4/wds.html			man-sys-htmlman		html
 ./usr/share/man/html4/we.html			man-sys-htmlman		html
 ./usr/share/man/html4/wedge.html		man-sys-htmlman		html
+./usr/share/man/html4/wg.html			man-sys-htmlman		html
 ./usr/share/man/html4/wi.html			man-sys-htmlman		html
 ./usr/share/man/html4/wm.html			man-sys-htmlman		html
 ./usr/share/man/html4/wmidell.html		man-sys-htmlman		html
@@ -5171,6 +5187,8 @@
 ./usr/share/man/html4/wsmuxctl.html		man-sys-htmlman		html
 ./usr/share/man/html4/wss.html			man-sys-htmlman		html
 ./usr/share/man/html4/wt.html			man-sys-htmlman		html
+./usr/share/man/html4/wwan.html			man-sys-htmlman		html
+./usr/share/man/html4/wwanc.html		man-sys-htmlman		html
 ./usr/share/man/html4/x68k/bmd.html		man-sys-htmlman		html
 ./usr/share/man/html4/x68k/intio.html		man-sys-htmlman		html
 ./usr/share/man/html4/x68k/intro.html		man-sys-htmlman		html
@@ -5237,7 +5255,8 @@
 ./usr/share/man/html5/audit-packages.conf.html	man-obsolete		obsolete
 ./usr/share/man/html5/auto_master.html		man-sysutil-htmlman	html
 ./usr/share/man/html5/autofs.html		man-sysutil-htmlman	html
-./usr/share/man/html5/blacklistd.conf.html	man-sysutil-htmlman	html
+./usr/share/man/html5/blacklistd.conf.html	man-obsolete		obsolete
+./usr/share/man/html5/blocklistd.conf.html	man-sysutil-htmlman	html
 ./usr/share/man/html5/body_checks.html		man-postfix-htmlman	postfix,html
 ./usr/share/man/html5/boot.cfg.html		man-sys-htmlman		html
 ./usr/share/man/html5/bootparams.html		man-bootserver-htmlman	html
@@ -5247,6 +5266,7 @@
 ./usr/share/man/html5/capfile.html		man-sys-htmlman		html
 ./usr/share/man/html5/ccd.conf.html		man-sysutil-htmlman	html
 ./usr/share/man/html5/cdb.html			man-sys-htmlman		html
+./usr/share/man/html5/changelist.html		man-sys-htmlman		html
 ./usr/share/man/html5/cidr_table.html		man-postfix-htmlman	postfix,html
 ./usr/share/man/html5/core.html			man-sys-htmlman		html
 ./usr/share/man/html5/crontab.html		man-cron-htmlman	html
@@ -5366,6 +5386,7 @@
 ./usr/share/man/html5/phones.html		man-sys-man		html
 ./usr/share/man/html5/pkg_install.conf.html	man-pkgutil-htmlman	html
 ./usr/share/man/html5/pkg_summary.html		man-pkgutil-htmlman	html
+./usr/share/man/html5/pkgpath.conf.html		man-sys-man		html
 ./usr/share/man/html5/postconf.html		man-postfix-htmlman	postfix,html
 ./usr/share/man/html5/postfix-wrapper.html	man-postfix-htmlman	postfix,html
 ./usr/share/man/html5/printcap.html		man-lpr-htmlman		html
@@ -5435,6 +5456,7 @@
 ./usr/share/man/html7/hier.html			man-reference-htmlman	html
 ./usr/share/man/html7/hostname.html		man-reference-htmlman	html
 ./usr/share/man/html7/intro.html		man-reference-htmlman	html
+./usr/share/man/html7/kernel_sanitizers.html	man-reference-htmlman	html
 ./usr/share/man/html7/kyua-atf-interface.html	man-kyua-htmlman	kyua,html
 ./usr/share/man/html7/kyua-build-root.html	man-kyua-htmlman	kyua,html
 ./usr/share/man/html7/kyua-plain-interface.html	man-kyua-htmlman	kyua,html
@@ -5511,8 +5533,10 @@
 ./usr/share/man/html8/bad144.html		man-sysutil-htmlman	html
 ./usr/share/man/html8/badsect.html		man-sysutil-htmlman	html
 ./usr/share/man/html8/bioctl.html		man-sysutil-htmlman	html
-./usr/share/man/html8/blacklistctl.html		man-sysutil-htmlman	html
-./usr/share/man/html8/blacklistd.html		man-sysutil-htmlman	html
+./usr/share/man/html8/blacklistctl.html		man-obsolete		obsolete
+./usr/share/man/html8/blacklistd.html		man-obsolete		obsolete
+./usr/share/man/html8/blocklistctl.html		man-sysutil-htmlman	html
+./usr/share/man/html8/blocklistd.html		man-sysutil-htmlman	html
 ./usr/share/man/html8/boot.html			man-sysutil-htmlman	html
 ./usr/share/man/html8/bootparamd.html		man-bootserver-htmlman	html
 ./usr/share/man/html8/bootpd.html		man-bootserver-htmlman	html
@@ -5541,6 +5565,7 @@
 ./usr/share/man/html8/cnwctl.html		man-sysutil-htmlman	html
 ./usr/share/man/html8/cobalt/boot.html		man-sys-htmlman		html
 ./usr/share/man/html8/compat_30.html		man-sys-htmlman		html
+./usr/share/man/html8/compat_bsdos.html		man-sys-htmlman		html
 ./usr/share/man/html8/compat_darwin.html	man-obsolete		obsolete
 ./usr/share/man/html8/compat_freebsd.html	man-sys-htmlman		html
 ./usr/share/man/html8/compat_ibcs2.html		man-obsolete		obsolete
@@ -6168,6 +6193,9 @@
 ./usr/share/man/html8/wake.html			man-obsolete		obsolete
 ./usr/share/man/html8/wakeonlan.html		man-netutil-htmlman	html
 ./usr/share/man/html8/wdogctl.html		man-sysutil-htmlman	html
+./usr/share/man/html8/wg-keygen.html		man-netutil-htmlman	html
+./usr/share/man/html8/wg-userspace.html		man-netutil-htmlman	html
+./usr/share/man/html8/wgconfig.html		man-netutil-htmlman	html
 ./usr/share/man/html8/wiconfig.html		man-netutil-htmlman	html
 ./usr/share/man/html8/wire-test.html		man-netutil-htmlman	html
 ./usr/share/man/html8/wizd.html			man-sysutil-htmlman	html
@@ -7487,6 +7515,7 @@
 ./usr/share/man/man4/i4btrc.4			man-obsolete		obsolete
 ./usr/share/man/man4/i915drm.4			man-sys-man		.man
 ./usr/share/man/man4/iavc.4			man-obsolete		obsolete
+./usr/share/man/man4/iavf.4			man-sys-man		.man
 ./usr/share/man/man4/ibmcd.4			man-sys-man		.man
 ./usr/share/man/man4/ibmhawk.4			man-sys-man		.man
 ./usr/share/man/man4/ichlpcib.4			man-obsolete		obsolete
@@ -8208,6 +8237,7 @@
 ./usr/share/man/man4/wds.4			man-sys-man		.man
 ./usr/share/man/man4/we.4			man-sys-man		.man
 ./usr/share/man/man4/wedge.4			man-sys-man		.man
+./usr/share/man/man4/wg.4			man-sys-man		.man
 ./usr/share/man/man4/wi.4			man-sys-man		.man
 ./usr/share/man/man4/wm.4			man-sys-man		.man
 ./usr/share/man/man4/wmidell.4			man-sys-man		.man
@@ -8225,6 +8255,8 @@
 ./usr/share/man/man4/wsmuxctl.4			man-sys-man		.man
 ./usr/share/man/man4/wss.4			man-sys-man		.man
 ./usr/share/man/man4/wt.4			man-sys-man		.man
+./usr/share/man/man4/wwan.4			man-sys-man		.man
+./usr/share/man/man4/wwanc.4			man-sys-man		.man
 ./usr/share/man/man4/x68k/bmd.4			man-sys-man		.man
 ./usr/share/man/man4/x68k/intio.4		man-sys-man		.man
 ./usr/share/man/man4/x68k/intro.4		man-sys-man		.man
@@ -8291,7 +8323,8 @@
 ./usr/share/man/man5/audit-packages.conf.5	man-obsolete		obsolete
 ./usr/share/man/man5/auto_master.5		man-sysutil-man		.man
 ./usr/share/man/man5/autofs.5			man-sysutil-man		.man
-./usr/share/man/man5/blacklistd.conf.5		man-sysutil-man		.man
+./usr/share/man/man5/blacklistd.conf.5		man-obsolete		obsolete
+./usr/share/man/man5/blocklistd.conf.5		man-sysutil-man		.man
 ./usr/share/man/man5/bluetooth.conf.5		man-obsolete		obsolete
 ./usr/share/man/man5/body_checks.5		man-postfix-man		postfix,.man
 ./usr/share/man/man5/boot.cfg.5			man-sys-man		.man
@@ -8302,6 +8335,7 @@
 ./usr/share/man/man5/capfile.5			man-sys-man		.man
 ./usr/share/man/man5/ccd.conf.5			man-sysutil-man		.man
 ./usr/share/man/man5/cdb.5			man-sys-man		.man
+./usr/share/man/man5/changelist.5		man-sys-man		.man
 ./usr/share/man/man5/cidr_table.5		man-postfix-man		postfix,.man
 ./usr/share/man/man5/core.5			man-sys-man		.man
 ./usr/share/man/man5/crontab.5			man-cron-man		.man
@@ -8432,6 +8466,7 @@
 ./usr/share/man/man5/pim6sd.conf.5		man-obsolete		obsolete
 ./usr/share/man/man5/pkg_install.conf.5		man-pkgutil-man		.man
 ./usr/share/man/man5/pkg_summary.5		man-pkgutil-man		.man
+./usr/share/man/man5/pkgpath.conf.5		man-sys-man		.man
 ./usr/share/man/man5/postconf.5			man-postfix-man		postfix,.man
 ./usr/share/man/man5/postfix-wrapper.5		man-postfix-man		postfix,.man
 ./usr/share/man/man5/primes.5			man-obsolete		obsolete
@@ -8508,6 +8543,7 @@
 ./usr/share/man/man7/hier.7			man-reference-man	.man
 ./usr/share/man/man7/hostname.7			man-reference-man	.man
 ./usr/share/man/man7/intro.7			man-reference-man	.man
+./usr/share/man/man7/kernel_sanitizers.7	man-reference-man	.man
 ./usr/share/man/man7/kyua-atf-interface.7	man-kyua-man		kyua,.man
 ./usr/share/man/man7/kyua-build-root.7		man-kyua-man		kyua,.man
 ./usr/share/man/man7/kyua-plain-interface.7	man-kyua-man		kyua,.man
@@ -8615,8 +8651,10 @@
 ./usr/share/man/man8/bebox/MAKEDEV.8		man-obsolete		obsolete
 ./usr/share/man/man8/bebox/makedev.8		man-obsolete		obsolete
 ./usr/share/man/man8/bioctl.8			man-sysutil-man		.man
-./usr/share/man/man8/blacklistctl.8		man-sysutil-man		.man
-./usr/share/man/man8/blacklistd.8		man-sysutil-man		.man
+./usr/share/man/man8/blacklistctl.8		man-obsolete		obsolete
+./usr/share/man/man8/blacklistd.8		man-obsolete		obsolete
+./usr/share/man/man8/blocklistctl.8		man-sysutil-man		.man
+./usr/share/man/man8/blocklistd.8		man-sysutil-man		.man
 ./usr/share/man/man8/boot.8			man-sysutil-man		.man
 ./usr/share/man/man8/bootparamd.8		man-bootserver-man	.man
 ./usr/share/man/man8/bootpd.8			man-bootserver-man	.man
@@ -8654,6 +8692,7 @@
 ./usr/share/man/man8/cobalt/boot.8		man-sys-man		.man
 ./usr/share/man/man8/cobalt/makedev.8		man-obsolete		obsolete
 ./usr/share/man/man8/compat_30.8		man-sys-man		.man
+./usr/share/man/man8/compat_bsdos.8		man-sys-man		.man
 ./usr/share/man/man8/compat_darwin.8		man-obsolete		obsolete
 ./usr/share/man/man8/compat_freebsd.8		man-sys-man		.man
 ./usr/share/man/man8/compat_hpux.8		man-obsolete		obsolete
@@ -9442,6 +9481,9 @@
 ./usr/share/man/man8/walnut/MAKEDEV.8		man-obsolete		obsolete
 ./usr/share/man/man8/walnut/makedev.8		man-obsolete		obsolete
 ./usr/share/man/man8/wdogctl.8			man-sysutil-man		.man
+./usr/share/man/man8/wg-keygen.8		man-netutil-man		.man
+./usr/share/man/man8/wg-userspace.8		man-netutil-man		.man
+./usr/share/man/man8/wgconfig.8			man-netutil-man		.man
 ./usr/share/man/man8/wiconfig.8			man-netutil-man		.man
 ./usr/share/man/man8/wire-test.8		man-netutil-man		.man
 ./usr/share/man/man8/wizd.8			man-sysutil-man		.man

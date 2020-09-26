@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_nand.c,v 1.6 2018/09/03 16:29:24 riastradh Exp $ */
+/* $NetBSD: sunxi_nand.c,v 1.8 2020/08/24 07:42:02 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_nand.c,v 1.6 2018/09/03 16:29:24 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_nand.c,v 1.8 2020/08/24 07:42:02 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -592,7 +592,7 @@ sunxi_nand_attach_chip(struct sunxi_nand_softc *sc,
 
 	mtdparts = get_bootconf_string(boot_args, "mtdparts");
 	if (mtdparts != NULL) {
-		char mtd_id[strlen("sunxi-nand.X") + 1];
+		char mtd_id[] = "sunxi-nand.XX";
 		snprintf(mtd_id, sizeof(mtd_id), "sunxi-nand.%u",
 		    device_unit(sc->sc_dev));
 
@@ -688,7 +688,7 @@ sunxi_nand_attach(device_t parent, device_t self, void *aux)
 
 	sunxi_nand_attach_chip(sc, &sc->sc_chip, child);
 }
-	
+
 CFATTACH_DECL_NEW(sunxi_nand, sizeof(struct sunxi_nand_softc),
 	sunxi_nand_match, sunxi_nand_attach, NULL, NULL);
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm283x_platform.c,v 1.37 2020/02/22 00:28:35 jmcneill Exp $	*/
+/*	$NetBSD: bcm283x_platform.c,v 1.40 2020/07/10 12:25:09 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.37 2020/02/22 00:28:35 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.40 2020/07/10 12:25:09 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_bcm283x.h"
@@ -53,6 +53,7 @@ __KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.37 2020/02/22 00:28:35 jmcnei
 #include <sys/bus.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
+#include <sys/kmem.h>
 #include <sys/termios.h>
 
 #include <net/if_ether.h>
@@ -881,11 +882,12 @@ rpi_fb_parse_mode(const char *s, uint32_t *pwidth, uint32_t *pheight)
 	return true;
 }
 
+#define RPI_EDIDSIZE 1024
+
 static bool
 rpi_fb_get_edid_mode(uint32_t *pwidth, uint32_t *pheight)
 {
 	struct edid_info ei;
-	uint8_t edid_data[1024];
 	uint32_t res;
 	int error;
 
@@ -901,7 +903,9 @@ rpi_fb_get_edid_mode(uint32_t *pwidth, uint32_t *pheight)
 	    vb_edid.vbt_edid.status != 0)
 		return false;
 
-	memset(edid_data, 0, sizeof(edid_data));
+	uint8_t *edid_data = kmem_alloc(RPI_EDIDSIZE, KM_SLEEP);
+
+	memset(edid_data, 0, RPI_EDIDSIZE);
 	memcpy(edid_data, vb_edid.vbt_edid.data,
 	    sizeof(vb_edid.vbt_edid.data));
 	edid_parse(edid_data, &ei);
@@ -913,6 +917,8 @@ rpi_fb_get_edid_mode(uint32_t *pwidth, uint32_t *pheight)
 		*pwidth = ei.edid_preferred_mode->hdisplay;
 		*pheight = ei.edid_preferred_mode->vdisplay;
 	}
+
+	kmem_free(edid_data, RPI_EDIDSIZE);
 
 	return true;
 }
@@ -1324,7 +1330,7 @@ bcm2711_platform_init_attach_args(struct fdt_attach_args *faa)
 #endif
 
 
-static void
+static void __noasan
 bcm283x_platform_early_putchar(vaddr_t va, paddr_t pa, char c)
 {
 	volatile uint32_t *uartaddr =
@@ -1341,7 +1347,7 @@ bcm283x_platform_early_putchar(vaddr_t va, paddr_t pa, char c)
 		continue;
 }
 
-void
+void __noasan
 bcm2835_platform_early_putchar(char c)
 {
 	paddr_t pa = BCM2835_PERIPHERALS_BUS_TO_PHYS(BCM2835_UART0_BASE);
@@ -1350,7 +1356,7 @@ bcm2835_platform_early_putchar(char c)
 	bcm283x_platform_early_putchar(va, pa, c);
 }
 
-void
+void __noasan
 bcm2836_platform_early_putchar(char c)
 {
 	paddr_t pa = BCM2836_PERIPHERALS_BUS_TO_PHYS(BCM2835_UART0_BASE);
@@ -1359,7 +1365,7 @@ bcm2836_platform_early_putchar(char c)
 	bcm283x_platform_early_putchar(va, pa, c);
 }
 
-void
+void __noasan
 bcm2837_platform_early_putchar(char c)
 {
 #define AUCONSADDR_PA	BCM2836_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE)
@@ -1377,7 +1383,7 @@ bcm2837_platform_early_putchar(char c)
 #undef AUCONSADDR_PA
 }
 
-void
+void __noasan
 bcm2711_platform_early_putchar(char c)
 {
 #define AUCONSADDR_PA	BCM2711_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE)
@@ -1428,14 +1434,8 @@ bcm283x_platform_device_register(device_t dev, void *aux)
 		     (vb.vbt_macaddr.addr >> 40) & 0xff
 		};
 
-		prop_data_t pd = prop_data_create_data(enaddr, ETHER_ADDR_LEN);
-		KASSERT(pd != NULL);
-		if (prop_dictionary_set(device_properties(dev), "mac-address",
-		    pd) == false) {
-			aprint_error_dev(dev,
-			    "WARNING: Unable to set mac-address property\n");
-		}
-		prop_object_release(pd);
+		prop_dictionary_set_data(dict, "mac-address", enaddr,
+		    ETHER_ADDR_LEN);
 	}
 
 #if NGENFB > 0
