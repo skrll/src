@@ -1,4 +1,4 @@
-# $NetBSD: cond-func.mk,v 1.1 2020/08/20 17:45:47 rillig Exp $
+# $NetBSD: cond-func.mk,v 1.3 2020/09/27 21:35:16 rillig Exp $
 #
 # Tests for those parts of the functions in .if conditions that are common
 # among several functions.
@@ -15,12 +15,12 @@ ${:UVAR{value}}=	variable name with braces
 .error
 .endif
 
-# Horizontal whitespace after the opening parenthesis is ignored.
+# Horizontal whitespace (space tab) after the opening parenthesis is ignored.
 .if !defined( 	DEF)
 .error
 .endif
 
-# Horizontal whitespace before the closing parenthesis is ignored.
+# Horizontal whitespace (space tab) before the closing parenthesis is ignored.
 .if !defined(DEF 	)
 .error
 .endif
@@ -57,6 +57,14 @@ ${:UVAR{value}}=	variable name with braces
 # Braces do not have any special meaning when parsing arguments.
 .if !defined(VAR{value})
 .error
+.endif
+
+# There may be spaces around the operators and parentheses, and even
+# inside the parentheses.  The spaces inside the parentheses are not
+# allowed for the empty() function (see cond-func-empty.mk), therefore
+# they are typically omitted for the other functions as well.
+.if ! defined ( DEF )
+.  error
 .endif
 
 all:

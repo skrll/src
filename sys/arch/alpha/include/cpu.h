@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.96 2020/09/16 04:07:32 thorpej Exp $ */
+/* $NetBSD: cpu.h,v 1.98 2020/09/29 01:33:00 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -139,6 +139,7 @@ struct cpu_info {
 	volatile u_long ci_flags;	/* flags; see below */
 	uint64_t ci_pcc_freq;		/* cpu cycles/second */
 	struct trapframe *ci_db_regs;	/* registers for debuggers */
+	u_int	ci_nintrhand;		/* # of interrupt handlers */
 };
 
 /* Ensure some cpu_info fields are within the signed 16-bit displacement. */
@@ -241,7 +242,11 @@ int	badaddr(void *, size_t);
 void *	cpu_uarea_alloc(bool);
 bool	cpu_uarea_free(void *);
 
-#define	cpu_idle()	/* nothing */
+void	cpu_idle_wtint(void);
+extern	void (*cpu_idle_fn)(void);
+#define	cpu_idle()	(*cpu_idle_fn)()
+
+void	cpu_initclocks_secondary(void);
 
 #endif /* _KERNEL */
 #endif /* _ALPHA_CPU_H_ */
