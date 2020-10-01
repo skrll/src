@@ -1,0 +1,106 @@
+
+
+A clear design principle, is that there will have to be some trampoline code in
+EL2 that retrieves VMEXIT information from the CPU and quickly drops to EL1
+where NVMM will actually reside.
+
+Feel free to share design ideas, actual code or random thoughts, I'm interested
+in seeing how well NVMM adapts to other architectures. Overall I did a rather
+good MI/MD interface. The single exception is nvmmctl which is x86-only, but
+that's just because I was being lazy, and making it MI like tprof shouldn't
+take more than 20 minutes.
+
+
+
+https://binarydebt.wordpress.com/2018/10/14/intel-virtualisation-how-vt-x-kvm-
+and-qemu-work-together/
+
+
+	When a VM attempts to execute an instruction that is prohibited in
+	non-root mode, CPU immediately switches to root mode in a trap-like way.
+	This is called a VM exit.
+
+	... Recall that the software running in root mode is hypervisor.
+	Hypervisor takes action to deal with the reason for VM exit and then
+	executes VMRESUME to re-enter non-root mode for that VM instance, which
+	lets the VM instance resume its operation. This interaction between
+	root and non-root mode is the essence of hardware virtualisation
+	support.
+
+	VMCS stands for Virtual Machine Control Structure. It is basically a
+	4KiB part of physical memory which contains information needed for the
+	above process to work. This information includes reasons for VM exit as
+	well as information unique to each VM instance so that when CPU is in
+	non-root mode, it is the VMCS which determines which instance of VM it
+	is running.
+
+	To read and write a particular VMCS, VMREAD and VMWRITE instructions
+	are used. They effectively require root mode so only hypervisor can
+	modify VMCS. Non-root VM can perform VMWRITE but not to the actual
+	VMCS, but a “shadow” VMCS – something that doesn’t concern us
+	immediately.
+
+http://blog.netbsd.org/tnf/entry/from_zero_to_nvmm
+
+
+	The VM has its own MMU, which translates guest virtual addresses (GVA)
+	to guest physical addresses (GPA). A secondary MMU (which we won't
+	discuss) is set up by the host to translate the GPAs to host physical
+	addresses. To give our single page of memory to our VM, we need to tell
+	the host to create this secondary MMU.
+
+		GVA -> GPA is known as stage 1 in arm
+
+https://m00nbsd.net/4e0798b7f2620c965d0dd9d6a7a2f296.html
+
+
+
+    ...
+
+    For each vCPU there is one VMCS. This means that VMCS stores information on
+    CPU-level granularity and not VM level. To read and write a particular
+    VMCS, VMREAD and VMWRITE instructions are used. They effectively require
+    root mode so only hypervisor can modify VMCS.
+
+    ...
+
+    VMPTRLD is used to load the address of a VMCS and VMPTRST is used to store
+    this address to a specified memory address.
+
+    VMCS basically stores two types of information:
+
+    1. Context info which contains things like CPU register values to save and
+       restore during transitions between root and non-root.
+
+    2. Control info which determines behaviour of the VM inside non-root mode.
+
+    More specifically, VMCS is divided into six parts.
+
+    1. Guest-state stores vCPU state on VM exit. On VMRESUME, vCPU state is
+       restored from here.
+    2. Host-state stores host CPU state on VMLAUNCH and VMRESUME. On VM exit,
+       host CPU state is restored from here.
+    3. VM execution control fields determine the behaviour of VM in non-root
+       mode. For example hypervisor can set a bit in a VM execution control
+       field such that whenever VM attempts to execute RDTSC instruction to
+       read timestamp counter, the VM exits back to hypervisor.
+    4. VM exit control fields determine the behaviour of VM exits. For example,
+       when a bit in VM exit control part is set then debug register DR7 is
+       saved whenever there is a VM exit.
+    5. VM entry control fields determine the behaviour of VM entries. This is
+       counterpart of VM exit control fields. A symmetric example is that
+       setting a bit inside this field will cause the VM to always load DR7
+       debug register on VM entry.
+    6. VM exit information fields tell hypervisor why the exit happened and
+       provide additional information.
+
+
+
+
+    Virtual to physical address conversion inside VM is done using a VT-x
+    feature called Extended Page Tables (EPT). Translation Lookaside Buffer
+    (TLB) is used to cache virtual to physical mappings in order to save page
+    table lookups.
+
+--------
+https://developer.arm.com/docs/100942/0100/hypervisor-software
