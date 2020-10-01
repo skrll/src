@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.924 2020/09/14 06:44:50 rillig Exp $
+# $NetBSD: mi,v 1.934 2020/10/01 02:00:04 pgoyette Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -167,6 +167,8 @@
 ./usr/libdata/debug/usr/tests/net/icmp			tests-net-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/net/if			tests-net-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/net/if_loop		tests-net-debug		compattestfile,atf
+./usr/libdata/debug/usr/tests/net/if_tap		tests-net-debug		compattestfile,atf
+./usr/libdata/debug/usr/tests/net/if_vether		tests-net-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/net/if_vlan		tests-net-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/net/in_cksum		tests-net-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/net/ipsec			tests-net-debug		compattestfile,atf
@@ -3768,6 +3770,7 @@
 ./usr/tests/libexec/ld.elf_so/t_dlinfo			tests-libexec-tests	compattestfile,atf,pic
 ./usr/tests/libexec/ld.elf_so/t_dlvsym			tests-libexec-tests	compattestfile,atf,pic
 ./usr/tests/libexec/ld.elf_so/t_ifunc			tests-libexec-tests	compattestfile,atf,pic
+./usr/tests/libexec/ld.elf_so/t_rtld_r_debug		tests-libexec-tests	compattestfile,atf,pic
 ./usr/tests/libexec/ld.elf_so/t_thread_local_dtor	tests-libexec-tests	compattestfile,atf,pic
 ./usr/tests/modules					tests-sys-tests		compattestfile,atf
 ./usr/tests/net						tests-net-tests		compattestfile,atf
@@ -3856,11 +3859,16 @@
 ./usr/tests/net/if_tap					tests-net-tests		compattestfile,atf
 ./usr/tests/net/if_tap/Atffile				tests-net-tests		atf,rump
 ./usr/tests/net/if_tap/Kyuafile				tests-net-tests		atf,rump,kyua
+./usr/tests/net/if_tap/rump_open_tap			tests-net-tests		atf,rump
 ./usr/tests/net/if_tap/t_tap				tests-net-tests		atf,rump
 ./usr/tests/net/if_tun					tests-net-tests		compattestfile,atf
 ./usr/tests/net/if_tun/Atffile				tests-net-tests		atf,rump
 ./usr/tests/net/if_tun/Kyuafile				tests-net-tests		atf,rump,kyua
 ./usr/tests/net/if_tun/t_tun				tests-net-tests		atf,rump
+./usr/tests/net/if_vether				tests-net-tests		compattestfile,atf
+./usr/tests/net/if_vether/Atffile			tests-net-tests		atf,rump
+./usr/tests/net/if_vether/Kyuafile			tests-net-tests		atf,rump,kyua
+./usr/tests/net/if_vether/t_vether			tests-net-tests		atf,rump
 ./usr/tests/net/if_vlan					tests-net-tests		compattestfile,atf
 ./usr/tests/net/if_vlan/Atffile				tests-net-tests		atf,rump
 ./usr/tests/net/if_vlan/Kyuafile			tests-net-tests		atf,rump,kyua
@@ -4609,8 +4617,12 @@
 ./usr/tests/usr.bin/make/unit-tests/cond1.mk					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond2.exp					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond2.mk					tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/counter-append.exp				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/counter-append.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/counter.exp					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/counter.mk					tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/dep-colon-bug-cross-file.exp		tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/dep-colon-bug-cross-file.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/dep-colon.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/dep-colon.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/dep-double-colon.exp			tests-usr.bin-tests	compattestfile,atf
@@ -4669,6 +4681,8 @@
 ./usr/tests/usr.bin/make/unit-tests/deptgt-default.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-delete_on_error.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-delete_on_error.mk			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/deptgt-end-jobs.exp				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/deptgt-end-jobs.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-end.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-end.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-error.exp				tests-usr.bin-tests	compattestfile,atf
@@ -4805,6 +4819,8 @@
 ./usr/tests/usr.bin/make/unit-tests/include-main.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/include-sub.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/include-subsub.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/job-output-long-lines.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/job-output-long-lines.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/lint.exp					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/lint.mk					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/make-exported.exp				tests-usr.bin-tests	compattestfile,atf
@@ -4955,6 +4971,8 @@
 ./usr/tests/usr.bin/make/unit-tests/sh-single-line.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/sh.exp					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/sh.mk					tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/suff-rebuild.exp				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/suff-rebuild.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/suffixes.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/suffixes.mk					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/sunshcmd.exp				tests-usr.bin-tests	compattestfile,atf
@@ -5167,6 +5185,8 @@
 ./usr/tests/usr.bin/make/unit-tests/varname.mk					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varparse-dynamic.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varparse-dynamic.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/varparse-undef-partial.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/varparse-undef-partial.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varquote.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varquote.mk					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varshell.exp				tests-usr.bin-tests	compattestfile,atf

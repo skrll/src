@@ -1,4 +1,4 @@
-/*	$NetBSD: ifconfig.c,v 1.242 2020/06/07 06:02:58 thorpej Exp $	*/
+/*	$NetBSD: ifconfig.c,v 1.247 2020/09/28 13:50:22 roy Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 2000 The NetBSD Foundation, Inc.
@@ -63,7 +63,7 @@
 #ifndef lint
 __COPYRIGHT("@(#) Copyright (c) 1983, 1993\
  The Regents of the University of California.  All rights reserved.");
-__RCSID("$NetBSD: ifconfig.c,v 1.242 2020/06/07 06:02:58 thorpej Exp $");
+__RCSID("$NetBSD: ifconfig.c,v 1.247 2020/09/28 13:50:22 roy Exp $");
 #endif /* not lint */
 
 #include <sys/param.h>
@@ -135,8 +135,8 @@ static int setlinkstr(prop_dictionary_t, prop_dictionary_t);
 static int unsetlinkstr(prop_dictionary_t, prop_dictionary_t);
 static int setifdescr(prop_dictionary_t, prop_dictionary_t);
 static int unsetifdescr(prop_dictionary_t, prop_dictionary_t);
-static void status(const struct sockaddr *, prop_dictionary_t,
-    prop_dictionary_t);
+static void status(const struct sockaddr_dl *, const void *,
+    prop_dictionary_t, prop_dictionary_t);
 __dead static void usage(void);
 
 static const struct kwinst ifflagskw[] = {
@@ -851,7 +851,8 @@ printall(const char *ifname, prop_dictionary_t env0)
 {
 	struct ifaddrs *ifap, *ifa;
 	struct ifreq ifr;
-	const struct sockaddr *sdl = NULL;
+	const struct sockaddr_dl *sdl = NULL;
+	const struct if_data *ifi = NULL;
 	prop_dictionary_t env, oenv;
 	int idx;
 	char *p;
@@ -880,8 +881,10 @@ printall(const char *ifname, prop_dictionary_t env0)
 
 		if (ifname != NULL && strcmp(ifname, ifa->ifa_name) != 0)
 			continue;
-		if (ifa->ifa_addr->sa_family == AF_LINK)
-			sdl = ifa->ifa_addr;
+		if (ifa->ifa_addr->sa_family == AF_LINK) {
+			sdl = (const struct sockaddr_dl *)ifa->ifa_addr;
+			ifi = (const struct if_data *)ifa->ifa_data;
+		}
 		if (p && strcmp(p, ifa->ifa_name) == 0)
 			continue;
 		if (!prop_dictionary_set_string(env, "if", ifa->ifa_name))
@@ -895,7 +898,8 @@ printall(const char *ifname, prop_dictionary_t env0)
 		if (uflag && (ifa->ifa_flags & IFF_UP) == 0)
 			continue;
 
-		if (sflag && carrier(env))
+		if (sflag && (ifi == NULL ||
+		              ifi->ifi_link_state == LINK_STATE_DOWN))
 			continue;
 		idx++;
 		/*
@@ -908,8 +912,9 @@ printall(const char *ifname, prop_dictionary_t env0)
 			continue;
 		}
 
-		status(sdl, env, oenv);
+		status(sdl, ifa->ifa_data, env, oenv);
 		sdl = NULL;
+		ifi = NULL;
 	}
 	if (lflag)
 		printf("\n");
@@ -1213,29 +1218,15 @@ setifmtu(prop_dictionary_t env, prop_dictionary_t oenv)
 static int
 carrier(prop_dictionary_t env)
 {
-	struct ifmediareq ifmr;
+	struct ifdatareq ifdr = { .ifdr_data.ifi_link_state = 0 };
 
-	memset(&ifmr, 0, sizeof(ifmr));
-
-	if (direct_ioctl(env, SIOCGIFMEDIA, &ifmr) == -1) {
-		/*
-		 * Interface doesn't support SIOC{G,S}IFMEDIA;
-		 * assume ok.
-		 */
-		return EXIT_SUCCESS;
-	}
-	if ((ifmr.ifm_status & IFM_AVALID) == 0) {
-		/*
-		 * Interface doesn't report media-valid status.
-		 * assume ok.
-		 */
-		return EXIT_SUCCESS;
-	}
-	/* otherwise, return ok for active, not-ok if not active. */
-	if (ifmr.ifm_status & IFM_ACTIVE)
-		return EXIT_SUCCESS;
-	else
+	if (direct_ioctl(env, SIOCGIFDATA, &ifdr) == -1)
 		return EXIT_FAILURE;
+
+	if (ifdr.ifdr_data.ifi_link_state == LINK_STATE_DOWN)
+		return EXIT_FAILURE;
+	else /* Assume UP if UNKNOWN */
+		return EXIT_SUCCESS;
 }
 
 static void
@@ -1265,10 +1256,10 @@ print_human_bytes(bool humanize, uint64_t n)
 #define MAX_PRINT_LEN 58	/* XXX need a better way to determine this! */
 
 void
-status(const struct sockaddr *sdl, prop_dictionary_t env,
-    prop_dictionary_t oenv)
+status(const struct sockaddr_dl *sdl, const void *ifa_data,
+    prop_dictionary_t env, prop_dictionary_t oenv)
 {
-	const struct if_data *ifi;
+	const struct if_data *ifi = ifa_data;
 	status_func_t *status_f;
 	statistics_func_t *statistics_f;
 	struct ifdatareq ifdr;
@@ -1360,17 +1351,18 @@ status(const struct sockaddr *sdl, prop_dictionary_t env,
 		free(p);
 	}
 
-	media_status(env, oenv);
+	media_status(sdl->sdl_type, ifi->ifi_link_state, env, oenv);
 
 	if (!vflag && !zflag)
 		goto proto_status;
 
-	estrlcpy(ifdr.ifdr_name, ifname, sizeof(ifdr.ifdr_name));
-
-	if (prog_ioctl(s, zflag ? SIOCZIFDATA : SIOCGIFDATA, &ifdr) == -1)
-		err(EXIT_FAILURE, zflag ? "SIOCZIFDATA" : "SIOCGIFDATA");
-
-	ifi = &ifdr.ifdr_data;
+	/* We already have if_data from SIOCGIFDATA in ifa_data. */
+	if (zflag) {
+		estrlcpy(ifdr.ifdr_name, ifname, sizeof(ifdr.ifdr_name));
+		if (prog_ioctl(s, SIOCZIFDATA, &ifdr) == -1)
+			err(EXIT_FAILURE, "SIOCZIFDATA");
+		ifi = &ifdr.ifdr_data;
+	}
 
 	print_plural("\tinput: ", ifi->ifi_ipackets, "packet");
 	print_human_bytes(hflag, ifi->ifi_ibytes);

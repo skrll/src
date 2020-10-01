@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.142 2020/09/13 15:15:51 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.151 2020/09/28 22:38:32 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -87,6 +87,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include <fcntl.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -200,7 +201,7 @@ typedef enum {
     OP_USE		= 1 << 4,
     /* Target is never out of date, but always execute commands anyway.
      * Its time doesn't matter, so it has none...sort of */
-    OP_EXEC	  	= 1 << 5,
+    OP_EXEC		= 1 << 5,
     /* Ignore errors when creating the node */
     OP_IGNORE		= 1 << 6,
     /* Don't remove the target when interrupted */
@@ -251,7 +252,9 @@ typedef enum {
     /* Target has all the commands it should. Used when parsing to catch
      * multiple commands for a target. */
     OP_HAS_COMMANDS	= 1 << 27,
-    /* Saving commands on .END (Compat) */
+    /* The special command "..." has been seen. All further commands from
+     * this node will be saved on the .END node instead, to be executed at
+     * the very end. */
     OP_SAVE_CMDS	= 1 << 26,
     /* Already processed by Suff_FindDeps */
     OP_DEPS_FOUND	= 1 << 25,
@@ -271,6 +274,14 @@ typedef enum {
     DONECYCLE	= 0x2000,	/* Used by MakePrintStatus */
     INTERNAL	= 0x4000	/* Internal use only */
 } GNodeFlags;
+
+typedef struct List StringList;
+typedef struct ListNode StringListNode;
+
+typedef struct List GNodeList;
+typedef struct ListNode GNodeListNode;
+
+typedef struct List /* of CachedDir */ SearchPath;
 
 /* A graph node represents a target that can possibly be made, including its
  * relation to other targets and a lot of other details. */
@@ -299,25 +310,25 @@ typedef struct GNode {
     /* The GNodes for which this node is an implied source. May be empty.
      * For example, when there is an inference rule for .c.o, the node for
      * file.c has the node for file.o in this list. */
-    Lst implicitParents;
+    GNodeList *implicitParents;
 
     /* Other nodes of the same name for the :: operator. */
-    Lst cohorts;
+    GNodeList *cohorts;
 
     /* The nodes that depend on this one, or in other words, the nodes for
      * which this is a source. */
-    Lst parents;
+    GNodeList *parents;
     /* The nodes on which this one depends. */
-    Lst children;
+    GNodeList *children;
 
     /* .ORDER nodes we need made. The nodes that must be made (if they're
      * made) before this node can be made, but that do not enter into the
      * datedness of this node. */
-    Lst order_pred;
+    GNodeList *order_pred;
     /* .ORDER nodes who need us. The nodes that must be made (if they're made
      * at all) after this node is made, but that do not depend on this node,
      * in the normal sense. */
-    Lst order_succ;
+    GNodeList *order_succ;
 
     /* #n for this cohort */
     char cohort_num[8];
@@ -335,7 +346,7 @@ typedef struct GNode {
     Hash_Table context;
 
     /* The commands to be given to a shell to create this target. */
-    Lst commands;
+    StringList *commands;
 
     /* Suffix for the node (determined by Suff_FindDeps and opaque to everyone
      * but the Suff module) */
@@ -355,18 +366,6 @@ typedef struct GNode {
 #define OP_NOP(t)	(((t) & OP_OPMASK) == 0x00000000)
 
 #define OP_NOTARGET (OP_NOTMAIN|OP_USE|OP_EXEC|OP_TRANSFORM)
-
-/*
- * The TARG_ constants are used when calling the Targ_FindNode and
- * Targ_FindList functions in targ.c. They simply tell the functions what to
- * do if the desired node(s) is (are) not found. If the TARG_CREATE constant
- * is given, a new, empty node will be created for the target, placed in the
- * table of all targets and its address returned. If TARG_NOCREATE is given,
- * a NULL pointer will be returned.
- */
-#define TARG_NOCREATE	0x00	  /* don't create it */
-#define TARG_CREATE	0x01	  /* create node if not found */
-#define TARG_NOHASH	0x02	  /* don't look in/add to hash table */
 
 /*
  * Error levels for parsing. PARSE_FATAL means the process cannot continue
@@ -389,43 +388,45 @@ typedef enum {
 /*
  * Definitions for the "local" variables. Used only for clarity.
  */
-#define TARGET	  	  "@" 	/* Target of dependency */
-#define OODATE	  	  "?" 	/* All out-of-date sources */
-#define ALLSRC	  	  ">" 	/* All sources */
-#define IMPSRC	  	  "<" 	/* Source implied by transformation */
-#define PREFIX	  	  "*" 	/* Common prefix */
-#define ARCHIVE	  	  "!" 	/* Archive in "archive(member)" syntax */
-#define MEMBER	  	  "%" 	/* Member in "archive(member)" syntax */
+#define TARGET		"@"	/* Target of dependency */
+#define OODATE		"?"	/* All out-of-date sources */
+#define ALLSRC		">"	/* All sources */
+#define IMPSRC		"<"	/* Source implied by transformation */
+#define PREFIX		"*"	/* Common prefix */
+#define ARCHIVE		"!"	/* Archive in "archive(member)" syntax */
+#define MEMBER		"%"	/* Member in "archive(member)" syntax */
 
-#define FTARGET           "@F"  /* file part of TARGET */
-#define DTARGET           "@D"  /* directory part of TARGET */
-#define FIMPSRC           "<F"  /* file part of IMPSRC */
-#define DIMPSRC           "<D"  /* directory part of IMPSRC */
-#define FPREFIX           "*F"  /* file part of PREFIX */
-#define DPREFIX           "*D"  /* directory part of PREFIX */
+#define FTARGET		"@F"	/* file part of TARGET */
+#define DTARGET		"@D"	/* directory part of TARGET */
+#define FIMPSRC		"<F"	/* file part of IMPSRC */
+#define DIMPSRC		"<D"	/* directory part of IMPSRC */
+#define FPREFIX		"*F"	/* file part of PREFIX */
+#define DPREFIX		"*D"	/* directory part of PREFIX */
 
 /*
  * Global Variables
  */
-extern Lst  	create;	    	/* The list of target names specified on the
+extern StringList *create;	/* The list of target names specified on the
 				 * command line. used to resolve #if
 				 * make(...) statements */
-extern Lst     	dirSearchPath; 	/* The list of directories to search when
+extern SearchPath *dirSearchPath;
+				/* The list of directories to search when
 				 * looking for targets */
 
 extern Boolean	compatMake;	/* True if we are make compatible */
-extern Boolean	ignoreErrors;  	/* True if should ignore all errors */
-extern Boolean  beSilent;    	/* True if should print no commands */
-extern Boolean  noExecute;    	/* True if should execute nothing */
-extern Boolean  noRecursiveExecute;    	/* True if should execute nothing */
-extern Boolean  allPrecious;   	/* True if every target is precious */
+extern Boolean	ignoreErrors;	/* True if should ignore all errors */
+extern Boolean  beSilent;	/* True if should print no commands */
+extern Boolean  noExecute;	/* True if should execute nothing */
+extern Boolean  noRecursiveExecute;
+				/* True if should execute nothing */
+extern Boolean  allPrecious;	/* True if every target is precious */
 extern Boolean  deleteOnError;	/* True if failed targets should be deleted */
-extern Boolean  keepgoing;    	/* True if should continue on unaffected
+extern Boolean  keepgoing;	/* True if should continue on unaffected
 				 * portions of the graph when have an error
 				 * in one portion */
-extern Boolean 	touchFlag;    	/* TRUE if targets should just be 'touched'
+extern Boolean	touchFlag;	/* TRUE if targets should just be 'touched'
 				 * if out of date. Set by the -t flag */
-extern Boolean 	queryFlag;    	/* TRUE if we aren't supposed to really make
+extern Boolean	queryFlag;	/* TRUE if we aren't supposed to really make
 				 * anything, just see if the targets are out-
 				 * of-date */
 extern Boolean	doing_depend;	/* TRUE if processing .depend */
@@ -439,27 +440,27 @@ extern Boolean	parseWarnFatal;	/* TRUE if makefile parsing warnings are
 extern Boolean	varNoExportEnv;	/* TRUE if we should not export variables
 				 * set on the command line to the env. */
 
-extern GNode    *DEFAULT;    	/* .DEFAULT rule */
+extern GNode    *DEFAULT;	/* .DEFAULT rule */
 
 extern GNode	*VAR_INTERNAL;	/* Variables defined internally by make
 				 * which should not override those set by
 				 * makefiles.
 				 */
-extern GNode    *VAR_GLOBAL;   	/* Variables defined in a global context, e.g
+extern GNode    *VAR_GLOBAL;	/* Variables defined in a global context, e.g
 				 * in the Makefile itself */
-extern GNode    *VAR_CMD;    	/* Variables defined on the command line */
-extern char    	var_Error[];   	/* Value returned by Var_Parse when an error
+extern GNode    *VAR_CMD;	/* Variables defined on the command line */
+extern char	var_Error[];	/* Value returned by Var_Parse when an error
 				 * is encountered. It actually points to
 				 * an empty string, so naive callers needn't
 				 * worry about it. */
 
-extern time_t 	now;	    	/* The time at the start of this whole
+extern time_t	now;		/* The time at the start of this whole
 				 * process */
 
-extern Boolean	oldVars;    	/* Do old-style variable substitution */
+extern Boolean	oldVars;	/* Do old-style variable substitution */
 
-extern Lst	sysIncPath;	/* The system include path. */
-extern Lst	defIncPath;	/* The default include path. */
+extern SearchPath *sysIncPath;	/* The system include path. */
+extern SearchPath *defIncPath;	/* The default include path. */
 
 extern char	curdir[];	/* Startup directory */
 extern char	*progname;	/* The program name */
@@ -523,26 +524,52 @@ extern int debug;
 
 #define	DEBUG(module)	(debug & CONCAT(DEBUG_,module))
 
+void debug_printf(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
+
+#define DEBUG0(module, text) \
+    if (!DEBUG(module)) (void)0; \
+    else debug_printf("%s", text)
+
+#define DEBUG1(module, fmt, arg1) \
+    if (!DEBUG(module)) (void)0; \
+    else debug_printf(fmt, arg1)
+
+#define DEBUG2(module, fmt, arg1, arg2) \
+    if (!DEBUG(module)) (void)0; \
+    else debug_printf(fmt, arg1, arg2)
+
+#define DEBUG3(module, fmt, arg1, arg2, arg3) \
+    if (!DEBUG(module)) (void)0; \
+    else debug_printf(fmt, arg1, arg2, arg3)
+
+#define DEBUG4(module, fmt, arg1, arg2, arg3, arg4) \
+    if (!DEBUG(module)) (void)0; \
+    else debug_printf(fmt, arg1, arg2, arg3, arg4)
+
+#define DEBUG5(module, fmt, arg1, arg2, arg3, arg4, arg5) \
+    if (!DEBUG(module)) (void)0; \
+    else debug_printf(fmt, arg1, arg2, arg3, arg4, arg5)
+
 #include "nonints.h"
 
-int Make_TimeStamp(GNode *, GNode *);
+void Make_TimeStamp(GNode *, GNode *);
 Boolean Make_OODate(GNode *);
-void Make_ExpandUse(Lst);
+void Make_ExpandUse(GNodeList *);
 time_t Make_Recheck(GNode *);
 void Make_HandleUse(GNode *, GNode *);
 void Make_Update(GNode *);
 void Make_DoAllVar(GNode *);
-Boolean Make_Run(Lst);
+Boolean Make_Run(GNodeList *);
 int dieQuietly(GNode *, int);
 void PrintOnError(GNode *, const char *);
 void Main_ExportMAKEFLAGS(Boolean);
 Boolean Main_SetObjdir(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
 int mkTempFile(const char *, char **);
-int str2Lst_Append(Lst, char *, const char *);
+int str2Lst_Append(StringList *, char *, const char *);
 void GNode_FprintDetails(FILE *, const char *, const GNode *, const char *);
 
 #ifdef __GNUC__
-#define UNCONST(ptr)	({ 		\
+#define UNCONST(ptr)	({		\
     union __unconst {			\
 	const void *__cp;		\
 	void *__p;			\

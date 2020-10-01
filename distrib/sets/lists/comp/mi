@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2356 2020/09/15 07:00:03 mrg Exp $
+#	$NetBSD: mi,v 1.2360 2020/09/29 18:33:22 roy Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -649,6 +649,9 @@
 ./usr/include/dev/mii/tlphyvar.h		comp-obsolete		obsolete
 ./usr/include/dev/mii/tqphyreg.h		comp-obsolete		obsolete
 ./usr/include/dev/mulaw.h			comp-obsolete		obsolete
+./usr/include/dev/nvmm				comp-c-include		nvmm
+./usr/include/dev/nvmm/nvmm.h			comp-c-include		nvmm
+./usr/include/dev/nvmm/nvmm_ioctl.h		comp-c-include		nvmm
 ./usr/include/dev/ofisa/ofisavar.h		comp-obsolete		obsolete
 ./usr/include/dev/ofw/ofw_pci.h			comp-obsolete		obsolete
 ./usr/include/dev/ofw/openfirm.h		comp-obsolete		obsolete
@@ -2662,6 +2665,7 @@
 ./usr/include/ntfs/ntfs_vfsops.h		comp-obsolete		obsolete
 ./usr/include/ntfs/ntfsmount.h			comp-c-include
 ./usr/include/null.h				comp-obsolete		obsolete
+./usr/include/nvmm.h				comp-c-include		nvmm
 ./usr/include/objc/NXConstStr.h			comp-c-include		gcc
 ./usr/include/objc/Object.h			comp-c-include		gcc
 ./usr/include/objc/Protocol.h			comp-c-include		gcc
@@ -3655,6 +3659,9 @@
 ./usr/lib/libns_p.a				comp-bind-proflib	compatfile,profile
 ./usr/lib/libntp.a				comp-obsolete		obsolete
 ./usr/lib/libntp_p.a				comp-obsolete		obsolete
+./usr/lib/libnvmm.a				comp-c-lib		nvmm
+./usr/lib/libnvmm_p.a				comp-c-proflib		nvmm,profile
+./usr/lib/libnvmm_pic.a				comp-c-piclib		nvmm,pic,picinstall
 ./usr/lib/libnvpair.a				comp-zfs-lib		compatfile,zfs
 ./usr/lib/libnvpair_p.a				comp-zfs-proflib	compatfile,zfs,profile
 ./usr/lib/libobjc.a				comp-objc-lib		compatfile,gcc
@@ -3889,6 +3896,8 @@
 ./usr/lib/librumpnet_tap_p.a			comp-c-proflib		rump,profile
 ./usr/lib/librumpnet_tun.a			comp-c-lib		rump
 ./usr/lib/librumpnet_tun_p.a			comp-c-proflib		rump,profile
+./usr/lib/librumpnet_vether.a			comp-c-lib		rump
+./usr/lib/librumpnet_vether_p.a			comp-c-proflib		rump,profile
 ./usr/lib/librumpnet_virtif.a			comp-c-lib		rump
 ./usr/lib/librumpnet_virtif_p.a			comp-c-proflib		rump,profile
 ./usr/lib/librumpnet_vlan.a			comp-c-lib		rump
@@ -4071,6 +4080,7 @@
 ./usr/libdata/lint/llib-lnpf.ln			comp-npf-lintlib	lint,npf
 ./usr/libdata/lint/llib-lns.ln			comp-bind-lintlib		lint
 ./usr/libdata/lint/llib-lntp.ln			comp-obsolete		obsolete
+./usr/libdata/lint/llib-lnvmm.ln		comp-c-lintlib		nvmm,lint
 ./usr/libdata/lint/llib-lopenpgpsdk.ln		comp-obsolete		obsolete
 ./usr/libdata/lint/llib-lossaudio.ln		comp-c-lintlib		lint
 ./usr/libdata/lint/llib-lp2k.ln			comp-puffs-lintlib	lint,rump
@@ -7408,7 +7418,7 @@
 ./usr/share/man/cat3/getdiskrawname.0		comp-c-catman		.cat
 ./usr/share/man/cat3/getdomainname.0		comp-c-catman		.cat
 ./usr/share/man/cat3/getdtablesize.0		comp-c-catman		.cat
-./usr/share/man/cat3/getentropy.0		comp-c-catman		.cat
+./usr/share/man/cat3/getentropy.0		comp-c-catman		obsolete
 ./usr/share/man/cat3/getenv.0			comp-c-catman		.cat
 ./usr/share/man/cat3/getenv_r.0			comp-c-catman		.cat
 ./usr/share/man/cat3/getfsent.0			comp-c-catman		.cat
@@ -8522,6 +8532,7 @@
 ./usr/share/man/cat3/libnetpgp.0		comp-c-catman		.cat
 ./usr/share/man/cat3/libnetpgpverify.0		comp-c-catman		.cat
 ./usr/share/man/cat3/libnpf.0			comp-npf-catman		npf,.cat
+./usr/share/man/cat3/libnvmm.0			comp-c-catman		nvmm,.cat
 ./usr/share/man/cat3/libperfuse.0		comp-perfuse-catman	.cat
 ./usr/share/man/cat3/libquota.0			comp-c-catman		.cat
 ./usr/share/man/cat3/libradius.0		comp-c-catman		.cat
@@ -15659,7 +15670,7 @@
 ./usr/share/man/html3/getdiskrawname.html	comp-c-htmlman		html
 ./usr/share/man/html3/getdomainname.html	comp-c-htmlman		html
 ./usr/share/man/html3/getdtablesize.html	comp-c-htmlman		html
-./usr/share/man/html3/getentropy.html		comp-c-htmlman		html
+./usr/share/man/html3/getentropy.html		comp-c-htmlman		obsolete
 ./usr/share/man/html3/getenv.html		comp-c-htmlman		html
 ./usr/share/man/html3/getenv_r.html		comp-c-htmlman		html
 ./usr/share/man/html3/getfsent.html		comp-c-htmlman		html
@@ -16752,6 +16763,7 @@
 ./usr/share/man/html3/libnetpgp.html		comp-c-htmlman		html
 ./usr/share/man/html3/libnetpgpverify.html	comp-c-htmlman		html
 ./usr/share/man/html3/libnpf.html		comp-npf-htmlman	npf,html
+./usr/share/man/html3/libnvmm.html		comp-c-htmlman		nvmm,html
 ./usr/share/man/html3/libperfuse.html		comp-perfuse-htmlman	html
 ./usr/share/man/html3/libquota.html		comp-c-htmlman		html
 ./usr/share/man/html3/libradius.html		comp-c-htmlman		html
@@ -23847,7 +23859,7 @@
 ./usr/share/man/man3/getdiskrawname.3		comp-c-man		.man
 ./usr/share/man/man3/getdomainname.3		comp-c-man		.man
 ./usr/share/man/man3/getdtablesize.3		comp-c-man		.man
-./usr/share/man/man3/getentropy.3		comp-c-man		.man
+./usr/share/man/man3/getentropy.3		comp-c-man		obsolete
 ./usr/share/man/man3/getenv.3			comp-c-man		.man
 ./usr/share/man/man3/getenv_r.3			comp-c-man		.man
 ./usr/share/man/man3/getfsent.3			comp-c-man		.man
@@ -24962,6 +24974,7 @@
 ./usr/share/man/man3/libnetpgp.3		comp-c-man		.man
 ./usr/share/man/man3/libnetpgpverify.3		comp-c-man		.man
 ./usr/share/man/man3/libnpf.3			comp-npf-man		npf,.man
+./usr/share/man/man3/libnvmm.3			comp-c-man		nvmm,.man
 ./usr/share/man/man3/libperfuse.3		comp-perfuse-man	.man
 ./usr/share/man/man3/libquota.3			comp-c-man		.man
 ./usr/share/man/man3/libradius.3		comp-c-man		.man

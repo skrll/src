@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.143 2020/09/15 16:22:04 rillig Exp $
+# $NetBSD: Makefile,v 1.155 2020/09/29 18:16:24 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -71,8 +71,10 @@ TESTS+=		cond-undef-lint
 TESTS+=		cond1
 TESTS+=		cond2
 TESTS+=		counter
+TESTS+=		counter-append
 TESTS+=		dep
 TESTS+=		dep-colon
+TESTS+=		dep-colon-bug-cross-file
 TESTS+=		dep-double-colon
 TESTS+=		dep-exclam
 TESTS+=		dep-none
@@ -102,6 +104,7 @@ TESTS+=		deptgt-begin
 TESTS+=		deptgt-default
 TESTS+=		deptgt-delete_on_error
 TESTS+=		deptgt-end
+TESTS+=		deptgt-end-jobs
 TESTS+=		deptgt-error
 TESTS+=		deptgt-ignore
 TESTS+=		deptgt-interrupt
@@ -166,6 +169,7 @@ TESTS+=		forloop
 TESTS+=		forsubst
 TESTS+=		impsrc
 TESTS+=		include-main
+TESTS+=		job-output-long-lines
 TESTS+=		lint
 TESTS+=		make-exported
 TESTS+=		misc
@@ -240,6 +244,7 @@ TESTS+=		sh-meta-chars
 TESTS+=		sh-multi-line
 TESTS+=		sh-single-line
 TESTS+=		# suffixes	# runs into an endless loop (try -dA)
+TESTS+=		suff-rebuild
 TESTS+=		sunshcmd
 TESTS+=		sysv
 TESTS+=		ternary
@@ -345,6 +350,7 @@ TESTS+=		varname-makeflags
 TESTS+=		varname-pwd
 TESTS+=		varname-vpath
 TESTS+=		varparse-dynamic
+TESTS+=		varparse-undef-partial
 TESTS+=		varquote
 TESTS+=		varshell
 
@@ -358,7 +364,7 @@ ENV.varmisc+=		FROM_ENV_AFTER=env
 # Override make flags for some of the tests; default is -k.
 # If possible, write ".MAKEFLAGS: -dv" in the test .mk file instead of
 # settings FLAGS.test=-dv here, since that is closer to the test code.
-FLAGS.counter=		-dv
+FLAGS.cond-func-make=	via-cmdline
 FLAGS.directive-ifmake=	first second
 FLAGS.doterror=		# none
 FLAGS.envfirst=		-e
@@ -379,6 +385,17 @@ FLAGS.varname-dot-shell= -dpv
 FLAGS.varname-empty=	-dv '$${:U}=cmdline-u' '=cmline-plain'
 
 # Some tests need extra postprocessing.
+SED_CMDS.job-output-long-lines= \
+	${:D Job separators on their own line are ok. } \
+	-e '/^--- job-[ab] ---$$/d' \
+	${:D Plain output lines are ok as well. } \
+	${:D They may come in multiples of 1024 or as 10000. } \
+	-e '/^aa*$$/d' \
+	-e '/^bb*$$/d' \
+	${:D The following lines should rather not occur since the job } \
+	${:D marker should always be at the beginning of the line. } \
+	-e '/^aa*--- job-b ---$$/d' \
+	-e '/^bb*--- job-a ---$$/d'
 SED_CMDS.opt-debug-graph1= \
 			-e 's,${.CURDIR},CURDIR,'
 SED_CMDS.opt-debug-graph1+= \
@@ -389,12 +406,13 @@ SED_CMDS.varmod-subst-regex+= \
 SED_CMDS.varmod-edge+=	-e 's, line [0-9]*:, line omitted:,'
 SED_CMDS.varshell+=	-e 's,^${.SHELL:T}: ,,'
 SED_CMDS.varshell+=	-e '/command/s,No such.*,not found,'
+SED_CMDS.varname-dot-parsedir=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
+SED_CMDS.varname-dot-parsefile=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
 SED_CMDS.varname-dot-shell=	-e 's, = /.*, = (details omitted),'
 SED_CMDS.varname-dot-shell+=	-e 's,"/[^"]*","(details omitted)",'
 SED_CMDS.varname-dot-shell+=	-e 's,\[/[^]]*\],[(details omitted)],'
 
 # Some tests need an additional round of postprocessing.
-POSTPROC.counter=	${TOOL_SED} -n -e '/:RELEVANT = yes/,/:RELEVANT = no/p'
 POSTPROC.deptgt-suffixes= \
 			${TOOL_SED} -n -e '/^\#\*\*\* Suffixes/,/^\#\*/p'
 POSTPROC.vardebug=	${TOOL_SED} -n -e '/:RELEVANT = yes/,/:RELEVANT = no/p'
@@ -416,7 +434,11 @@ unexport-env.rawout: export.mk
 UNIT_TESTS:=	${.PARSEDIR}
 .PATH: ${UNIT_TESTS}
 
+.if ${USE_ABSOLUTE_TESTNAMES:Uno} == yes
+OUTFILES=	${TESTS:@test@${.CURDIR:tA}/${test}.out@}
+.else
 OUTFILES=	${TESTS:=.out}
+.endif
 
 all: ${OUTFILES}
 
@@ -437,6 +459,8 @@ LC_ALL=		C
 LANG=		C
 .export LANG LC_ALL
 
+MAKE_TEST_ENV?=	MALLOC_OPTIONS="JA"	# for jemalloc
+
 # Each test is run in a sub-make, to keep the tests for interfering with
 # each other, and because they use different environment variables and
 # command line options.
@@ -445,10 +469,10 @@ LANG=		C
 	@${_MKMSG_TEST:Uecho '#      test '} ${.PREFIX}
 	@set -eu; \
 	cd ${.OBJDIR}; \
-	env -i PATH="$$PATH" ${ENV.${.TARGET:R}} \
+	env -i PATH="$$PATH" ${MAKE_TEST_ENV} ${ENV.${.PREFIX:T}} \
 	  ${TEST_MAKE} \
 	    -r -C ${.CURDIR} -f ${.IMPSRC} \
-	    ${FLAGS.${.TARGET:R}:U-k} \
+	    ${FLAGS.${.PREFIX:T}:U-k} \
 	    > ${.TARGET}.tmp 2>&1 \
 	&& status=$$? || status=$$?; \
 	echo $$status > ${.TARGET:R}.status
@@ -466,9 +490,9 @@ _SED_CMDS+=	-e 's,${.CURDIR:S,.,\\.,g}/,,g'
 _SED_CMDS+=	-e 's,${UNIT_TESTS:S,.,\\.,g}/,,g'
 
 .rawout.out:
-	@${TOOL_SED} ${_SED_CMDS} ${SED_CMDS.${.TARGET:R}} \
+	@${TOOL_SED} ${_SED_CMDS} ${SED_CMDS.${.PREFIX:T}} \
 	  < ${.IMPSRC} > ${.TARGET}.tmp1
-	@${POSTPROC.${.TARGET:R}:Ucat} < ${.TARGET}.tmp1 > ${.TARGET}.tmp2
+	@${POSTPROC.${.PREFIX:T}:Ucat} < ${.TARGET}.tmp1 > ${.TARGET}.tmp2
 	@rm ${.TARGET}.tmp1
 	@echo "exit status `cat ${.TARGET:R}.status`" >> ${.TARGET}.tmp2
 	@mv ${.TARGET}.tmp2 ${.TARGET}

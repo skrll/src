@@ -1,4 +1,4 @@
-/*	$NetBSD: for.c,v 1.84 2020/09/14 20:43:44 rillig Exp $	*/
+/*	$NetBSD: for.c,v 1.89 2020/09/28 20:46:11 rillig Exp $	*/
 
 /*
  * Copyright (c) 1992, The Regents of the University of California.
@@ -52,7 +52,8 @@
  * ${:Uvalue}, and then this modified body is "included" as a special file.
  *
  * Interface:
- *	For_Eval 	Evaluate the loop in the passed line.
+ *	For_Eval	Evaluate the loop in the passed line.
+ *
  *	For_Run		Run accumulated loop
  */
 
@@ -60,7 +61,7 @@
 #include    "strlist.h"
 
 /*	"@(#)for.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: for.c,v 1.84 2020/09/14 20:43:44 rillig Exp $");
+MAKE_RCSID("$NetBSD: for.c,v 1.89 2020/09/28 20:46:11 rillig Exp $");
 
 typedef enum {
     FOR_SUB_ESCAPE_CHAR = 0x0001,
@@ -73,7 +74,7 @@ static int forLevel = 0;	/* Nesting level */
 /*
  * State of a for loop.
  */
-typedef struct {
+typedef struct For {
     Buffer buf;			/* Body of loop */
     strlist_t vars;		/* Iteration variables */
     strlist_t items;		/* Substitution items */
@@ -190,7 +191,9 @@ For_Eval(const char *line)
      * we will be substituting into ${...} or $(...).
      */
     {
-	char *items = Var_Subst(ptr, VAR_GLOBAL, VARE_WANTRES);
+	char *items;
+	(void)Var_Subst(ptr, VAR_GLOBAL, VARE_WANTRES, &items);
+	/* TODO: handle errors */
 	words = Str_Words(items, FALSE);
 	free(items);
     }
@@ -269,14 +272,12 @@ For_Accum(const char *line)
 	    continue;
 
 	if (strncmp(ptr, "endfor", 6) == 0 && (ch_isspace(ptr[6]) || !ptr[6])) {
-	    if (DEBUG(FOR))
-		(void)fprintf(debug_file, "For: end for %d\n", forLevel);
+	    DEBUG1(FOR, "For: end for %d\n", forLevel);
 	    if (--forLevel <= 0)
 		return FALSE;
 	} else if (strncmp(ptr, "for", 3) == 0 && ch_isspace(ptr[3])) {
 	    forLevel++;
-	    if (DEBUG(FOR))
-		(void)fprintf(debug_file, "For: new loop %d\n", forLevel);
+	    DEBUG1(FOR, "For: new loop %d\n", forLevel);
 	}
     }
 
@@ -431,10 +432,9 @@ ForIterate(void *v_arg, size_t *ret_len)
     }
     Buf_AddBytesBetween(&cmds, cmd_cp, body_end);
 
-    *ret_len = Buf_Size(&cmds);
+    *ret_len = Buf_Len(&cmds);
     cmds_str = Buf_Destroy(&cmds, FALSE);
-    if (DEBUG(FOR))
-	(void)fprintf(debug_file, "For: loop body:\n%s", cmds_str);
+    DEBUG1(FOR, "For: loop body:\n%s", cmds_str);
 
     arg->sub_next += strlist_num(&arg->vars);
 

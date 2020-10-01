@@ -1,4 +1,4 @@
-/* $NetBSD: clock.c,v 1.43 2020/09/04 03:41:49 thorpej Exp $ */
+/* $NetBSD: clock.c,v 1.45 2020/09/29 01:33:00 thorpej Exp $ */
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: clock.c,v 1.43 2020/09/04 03:41:49 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: clock.c,v 1.45 2020/09/29 01:33:00 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -47,6 +47,7 @@ __KERNEL_RCSID(0, "$NetBSD: clock.c,v 1.43 2020/09/04 03:41:49 thorpej Exp $");
 #include <sys/device.h>
 #include <sys/lwp.h>
 
+#include <machine/alpha.h>
 #include <machine/autoconf.h>
 #include <machine/cpuconf.h>
 #include <machine/cpu_counter.h>
@@ -63,10 +64,16 @@ clockattach(void (*fns)(void *), void *dev)
 {
 
 	/*
-	 * Just bookkeeping.
+	 * Just bookkeeping.  We only allow one system clock.  If
+	 * we're running on real hardware, enforce this.  If we're
+	 * running under Qemu, anything after the first one.
 	 */
-	if (clock_init != NULL)
+	if (clock_init != NULL) {
+		if (alpha_is_qemu) {
+			return;
+		}
 		panic("clockattach: multiple clocks");
+	}
 	clock_init = fns;
 	clockdev = dev;
 }
@@ -78,7 +85,6 @@ clockattach(void (*fns)(void *), void *dev)
 void
 cpu_initclocks(void)
 {
-	uint64_t pcc_freq;
 
 	if (clock_init == NULL)
 		panic("cpu_initclocks: no clock attached");
@@ -99,14 +105,27 @@ cpu_initclocks(void)
 	schedhz = 16;
 
 	/*
-	 * Initialize PCC timecounter.
+	 * Initialize PCC timecounter, unless we're running in Qemu
+	 * (we will use a different timecounter in that case).
 	 */
-	pcc_freq = cpu_frequency(curcpu());
-	cc_init(NULL, pcc_freq, "PCC", PCC_QUAL);
+	if (! alpha_is_qemu) {
+		const uint64_t pcc_freq = cpu_frequency(curcpu());
+		cc_init(NULL, pcc_freq, "PCC", PCC_QUAL);
+	}
 
 	/*
 	 * Get the clock started.
 	 */
+	(*clock_init)(clockdev);
+}
+
+/*
+ * Some platforms might have other per-cpu clock initialization.  This
+ * is handled here.
+ */
+void
+cpu_initclocks_secondary(void)
+{
 	(*clock_init)(clockdev);
 }
 

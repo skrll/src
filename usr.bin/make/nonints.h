@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.122 2020/09/13 20:38:47 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.132 2020/09/27 11:37:19 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -73,21 +73,21 @@
  */
 
 /* arch.c */
-Boolean Arch_ParseArchive(char **, Lst, GNode *);
+Boolean Arch_ParseArchive(char **, GNodeList *, GNode *);
 void Arch_Touch(GNode *);
 void Arch_TouchLib(GNode *);
 time_t Arch_MTime(GNode *);
 time_t Arch_MemMTime(GNode *);
-void Arch_FindLib(GNode *, Lst);
+void Arch_FindLib(GNode *, SearchPath *);
 Boolean Arch_LibOODate(GNode *);
 void Arch_Init(void);
 void Arch_End(void);
 Boolean Arch_IsLib(GNode *);
 
 /* compat.c */
-int Compat_RunCommand(char *, GNode *);
-void Compat_Run(Lst);
-int Compat_Make(GNode *, GNode *);
+int Compat_RunCommand(const char *, GNode *);
+void Compat_Run(GNodeList *);
+void Compat_Make(GNode *, GNode *);
 
 /* cond.c */
 CondEvalResult Cond_EvalCondition(const char *, Boolean *);
@@ -128,10 +128,10 @@ void Parse_File(const char *, int);
 void Parse_Init(void);
 void Parse_End(void);
 void Parse_SetInput(const char *, int, int, char *(*)(void *, size_t *), void *);
-Lst Parse_MainName(void);
+GNodeList *Parse_MainName(void);
 
 /* str.c */
-typedef struct {
+typedef struct Words {
     char **words;
     size_t len;
     void *freeIt;
@@ -152,17 +152,17 @@ Boolean Str_Match(const char *, const char *);
 
 /* suff.c */
 void Suff_ClearSuffixes(void);
-Boolean Suff_IsTransform(char *);
-GNode *Suff_AddTransform(char *);
+Boolean Suff_IsTransform(const char *);
+GNode *Suff_AddTransform(const char *);
 void Suff_EndTransform(GNode *);
 void Suff_AddSuffix(const char *, GNode **);
-Lst Suff_GetPath(char *);
+SearchPath *Suff_GetPath(const char *);
 void Suff_DoPaths(void);
-void Suff_AddInclude(char *);
+void Suff_AddInclude(const char *);
 void Suff_AddLib(const char *);
 void Suff_FindDeps(GNode *);
-Lst Suff_FindPath(GNode *);
-void Suff_SetNull(char *);
+SearchPath *Suff_FindPath(GNode *);
+void Suff_SetNull(const char *);
 void Suff_Init(void);
 void Suff_End(void);
 void Suff_PrintAll(void);
@@ -171,17 +171,20 @@ void Suff_PrintAll(void);
 void Targ_Init(void);
 void Targ_End(void);
 void Targ_Stats(void);
-Lst Targ_List(void);
+GNodeList *Targ_List(void);
 GNode *Targ_NewGN(const char *);
-GNode *Targ_FindNode(const char *, int);
-Lst Targ_FindList(Lst, int);
+GNode *Targ_FindNode(const char *);
+GNode *Targ_GetNode(const char *);
+GNode *Targ_NewInternalNode(const char *);
+GNode *Targ_GetEndNode(void);
+GNodeList *Targ_FindList(StringList *);
 Boolean Targ_Ignore(GNode *);
 Boolean Targ_Silent(GNode *);
 Boolean Targ_Precious(GNode *);
 void Targ_SetMain(GNode *);
 void Targ_PrintCmds(GNode *);
 void Targ_PrintNode(GNode *, int);
-void Targ_PrintNodes(Lst, int);
+void Targ_PrintNodes(GNodeList *, int);
 char *Targ_FmtTime(time_t);
 void Targ_PrintType(int);
 void Targ_PrintGraph(int);
@@ -216,50 +219,48 @@ typedef enum {
 typedef enum {
 
     /* Both parsing and evaluation succeeded. */
-    VPE_OK		= 0x0000,
-
-    /* Parsing failed.
-     * An error message has already been printed. */
-    VPE_PARSE_MSG	= 0x0001,
-
-    /* Parsing failed.
-     * No error message has been printed yet.
-     *
-     * This should never happen since it is impossible to say where
-     * the parsing error occurred. */
-    VPE_PARSE_SILENT	= 0x0002,
-
-    /* Parsing succeeded.
-     * During evaluation, VARE_UNDEFERR was set and there was an undefined
-     * variable.
-     * An error message has already been printed. */
-    VPE_UNDEF_MSG	= 0x0010,
-
-    /* Parsing succeeded.
-     * During evaluation, VARE_UNDEFERR was set and there was an undefined
-     * variable.
-     * No error message has been printed yet.
-     *
-     * This should never happen since it is impossible to say which of
-     * the variables was undefined. */
-    VPE_UNDEF_SILENT	= 0x0020,
-
-    /* Parsing succeeded.
-     * Evaluation failed.
-     * An error message has already been printed. */
-    VPE_EVAL_MSG	= 0x0100,
-
-    /* Parsing succeeded.
-     * Evaluation failed.
-     * No error message has been printed yet.
-     *
-     * This should never happen since it is impossible to say where
-     * exactly the evaluation error occurred. */
-    VPE_EVAL_SILENT	= 0x0200,
+    VPR_OK		= 0x0000,
 
     /* See if a message has already been printed for this error. */
-    VPE_ANY_MSG		= VPE_PARSE_MSG | VPE_UNDEF_MSG | VPE_EVAL_MSG
-} VarParseErrors;
+    VPR_ANY_MSG		= 0x0001,
+
+    /* Parsing failed.
+     * No error message has been printed yet.
+     * Deprecated, migrate to VPR_PARSE_MSG instead. */
+    VPR_PARSE_SILENT	= 0x0002,
+
+    /* Parsing failed.
+     * An error message has already been printed. */
+    VPR_PARSE_MSG	= VPR_PARSE_SILENT | VPR_ANY_MSG,
+
+    /* Parsing succeeded.
+     * During evaluation, VARE_UNDEFERR was set and there was an undefined
+     * variable.
+     * No error message has been printed yet.
+     * Deprecated, migrate to VPR_UNDEF_MSG instead. */
+    VPR_UNDEF_SILENT	= 0x0004,
+
+    /* Parsing succeeded.
+     * During evaluation, VARE_UNDEFERR was set and there was an undefined
+     * variable.
+     * An error message has already been printed. */
+    VPR_UNDEF_MSG	= VPR_UNDEF_SILENT | VPR_ANY_MSG,
+
+    /* Parsing succeeded.
+     * Evaluation failed.
+     * No error message has been printed yet.
+     * Deprecated, migrate to VPR_EVAL_MSG instead. */
+    VPR_EVAL_SILENT	= 0x0006,
+
+    /* Parsing succeeded.
+     * Evaluation failed.
+     * An error message has already been printed. */
+    VPR_EVAL_MSG	= VPR_EVAL_SILENT | VPR_ANY_MSG,
+
+    /* The exact error handling status is not known yet.
+     * Deprecated, migrate to VPR_OK or any VPE_*_MSG instead. */
+    VPR_UNKNOWN		= 0x0008
+} VarParseResult;
 
 void Var_Delete(const char *, GNode *);
 void Var_Set(const char *, const char *, GNode *);
@@ -267,9 +268,9 @@ void Var_Set_with_flags(const char *, const char *, GNode *, VarSet_Flags);
 void Var_Append(const char *, const char *, GNode *);
 Boolean Var_Exists(const char *, GNode *);
 const char *Var_Value(const char *, GNode *, char **);
-VarParseErrors Var_Parse(const char **, GNode *, VarEvalFlags,
+VarParseResult Var_Parse(const char **, GNode *, VarEvalFlags,
 			 const char **, void **);
-char *Var_Subst(const char *, GNode *, VarEvalFlags);
+VarParseResult Var_Subst(const char *, GNode *, VarEvalFlags, char **);
 void Var_Init(void);
 void Var_End(void);
 void Var_Stats(void);

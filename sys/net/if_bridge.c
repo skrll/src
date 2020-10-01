@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bridge.c,v 1.174 2020/08/01 06:50:43 maxv Exp $	*/
+/*	$NetBSD: if_bridge.c,v 1.176 2020/09/27 19:16:28 roy Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.174 2020/08/01 06:50:43 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.176 2020/09/27 19:16:28 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -438,9 +438,8 @@ bridge_clone_create(struct if_clone *ifc, int unit)
 
 	if_initname(ifp, ifc->ifc_name, unit);
 	ifp->if_softc = sc;
-	ifp->if_extflags = IFEF_NO_LINK_STATE_CHANGE;
 #ifdef NET_MPSAFE
-	ifp->if_extflags |= IFEF_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 #endif
 	ifp->if_mtu = ETHERMTU;
 	ifp->if_ioctl = bridge_ioctl;
@@ -465,6 +464,14 @@ bridge_clone_create(struct if_clone *ifc, int unit)
 
 		return error;
 	}
+
+	/*
+	 * Set the link state to down.
+	 * When interfaces are added the link state will reflect
+	 * the best link state of the combined interfaces.
+	 */
+	ifp->if_link_state = LINK_STATE_DOWN;
+
 	if_alloc_sadl(ifp);
 	if_register(ifp);
 
@@ -796,6 +803,32 @@ bridge_calc_csum_flags(struct bridge_softc *sc)
 	BRIDGE_UNLOCK(sc);
 }
 
+/*
+ * bridge_calc_link_state:
+ *
+ *	Calculate the link state based on each member interface.
+ */
+void
+bridge_calc_link_state(struct bridge_softc *sc)
+{
+	struct bridge_iflist *bif;
+	struct ifnet *ifs;
+	int link_state = LINK_STATE_DOWN;
+
+	BRIDGE_LOCK(sc);
+	BRIDGE_IFLIST_READER_FOREACH(bif, sc) {
+		ifs = bif->bif_ifp;
+		if (ifs->if_link_state == LINK_STATE_UP) {
+			link_state = LINK_STATE_UP;
+			break;
+		}
+		if (ifs->if_link_state == LINK_STATE_UNKNOWN)
+			link_state = LINK_STATE_UNKNOWN;
+	}
+	if_link_state_change(&sc->sc_if, link_state);
+	BRIDGE_UNLOCK(sc);
+}
+
 static int
 bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 {
@@ -871,6 +904,13 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 	PSLIST_ENTRY_INIT(bif, bif_next);
 	psref_target_init(&bif->bif_psref, bridge_psref_class);
 
+	/*
+	 * Pretend that the link is down for domains.
+	 * This will detach any addresses assigned to the interface.
+	 */
+	if (ifs->if_link_state != LINK_STATE_DOWN)
+		if_domain_link_state_change(ifs, LINK_STATE_DOWN);
+
 	BRIDGE_LOCK(sc);
 
 	ifs->if_bridge = sc;
@@ -881,11 +921,19 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 	BRIDGE_UNLOCK(sc);
 
 	bridge_calc_csum_flags(sc);
+	bridge_calc_link_state(sc);
 
 	if (sc->sc_if.if_flags & IFF_RUNNING)
 		bstp_initialization(sc);
 	else
 		bstp_stop(sc);
+
+	/*
+	 * If the link was not initially down then mark any detached addresses
+	 * as tentative and start Duplicate Address Detection for them.
+	 */
+	if (ifs->if_link_state != LINK_STATE_DOWN)
+		if_domain_link_state_change(ifs, ifs->if_link_state);
 
 out:
 	if_put(ifs, &psref);
@@ -927,6 +975,7 @@ bridge_ioctl_del(struct bridge_softc *sc, void *arg)
 
 	bridge_rtdelete(sc, ifs);
 	bridge_calc_csum_flags(sc);
+	bridge_calc_link_state(sc);
 
 	if (sc->sc_if.if_flags & IFF_RUNNING)
 		bstp_initialization(sc);
