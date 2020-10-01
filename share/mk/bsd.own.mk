@@ -161,7 +161,8 @@ HAVE_UEFI=	no
 #
 # Does the platform support NVMM?
 #
-.if ${MACHINE_ARCH} == "x86_64"
+.if ${MACHINE_ARCH} == "x86_64" || \
+    ${MACHINE_ARCH} == "aarch64
 HAVE_NVMM=	yes
 .else
 HAVE_NVMM=	no
