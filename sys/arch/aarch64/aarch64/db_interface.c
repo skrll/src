@@ -128,7 +128,7 @@ db_write_text(vaddr_t addr, size_t size, const char *data)
 		 * will stop...
 		 */
 		pmap_kvattr(addr, VM_PROT_EXECUTE|VM_PROT_READ|VM_PROT_WRITE);
-		aarch64_tlbi_by_va(addr)
+		aarch64_tlbi_by_va(addr);
 
 		s = size;
 		if (size > PAGE_SIZE)
@@ -139,7 +139,7 @@ db_write_text(vaddr_t addr, size_t size, const char *data)
 
 		/* restore pte */
 		*ptep = pte;
-		aarch64_tlbi_by_va(addr)
+		aarch64_tlbi_by_va(addr);
 
 		addr += s;
 		size -= s;

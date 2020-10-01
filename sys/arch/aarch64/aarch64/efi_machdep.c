@@ -71,11 +71,13 @@ arm_efirt_md_map_range(vaddr_t va, paddr_t pa, size_t sz, enum arm_efirt_mem_typ
 	}
 
 	pmapboot_enter(va, pa, sz, L3_SIZE, attr, NULL);
+#if 0
 	while (sz >= PAGE_SIZE) {
 		aarch64_tlbi_by_va(va);
 		va += PAGE_SIZE;
 		sz -= PAGE_SIZE;
 	}
+#endif
 }
 
 int
