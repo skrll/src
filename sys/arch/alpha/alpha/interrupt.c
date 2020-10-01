@@ -1,4 +1,4 @@
-/* $NetBSD: interrupt.c,v 1.88 2020/09/19 03:02:07 thorpej Exp $ */
+/* $NetBSD: interrupt.c,v 1.91 2020/09/26 21:07:48 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2000, 2001 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: interrupt.c,v 1.88 2020/09/19 03:02:07 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: interrupt.c,v 1.91 2020/09/26 21:07:48 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -88,10 +88,9 @@ __KERNEL_RCSID(0, "$NetBSD: interrupt.c,v 1.88 2020/09/19 03:02:07 thorpej Exp $
 #include <machine/cpuconf.h>
 #include <machine/alpha.h>
 
-struct scbvec scb_iovectab[SCB_VECTOIDX(SCB_SIZE - SCB_IOVECBASE)];
-static bool scb_mpsafe[SCB_VECTOIDX(SCB_SIZE - SCB_IOVECBASE)];
-
-void	netintr(void);
+/* Protected by cpu_lock */
+struct scbvec scb_iovectab[SCB_VECTOIDX(SCB_SIZE - SCB_IOVECBASE)]
+							__read_mostly;
 
 void	scb_stray(void *, u_long);
 
@@ -114,12 +113,11 @@ scb_stray(void *arg, u_long vec)
 }
 
 void
-scb_set(u_long vec, void (*func)(void *, u_long), void *arg, int level)
+scb_set(u_long vec, void (*func)(void *, u_long), void *arg)
 {
 	u_long idx;
-	int s;
 
-	s = splhigh();
+	KASSERT(mutex_owned(&cpu_lock));
 
 	if (vec < SCB_IOVECBASE || vec >= SCB_SIZE ||
 	    (vec & (SCB_VECSIZE - 1)) != 0)
@@ -130,20 +128,18 @@ scb_set(u_long vec, void (*func)(void *, u_long), void *arg, int level)
 	if (scb_iovectab[idx].scb_func != scb_stray)
 		panic("scb_set: vector 0x%lx already occupied", vec);
 
-	scb_iovectab[idx].scb_func = func;
 	scb_iovectab[idx].scb_arg = arg;
-	scb_mpsafe[idx] = (level != IPL_VM);
-
-	splx(s);
+	alpha_mb();
+	scb_iovectab[idx].scb_func = func;
+	alpha_mb();
 }
 
 u_long
 scb_alloc(void (*func)(void *, u_long), void *arg)
 {
 	u_long vec, idx;
-	int s;
 
-	s = splhigh();
+	KASSERT(mutex_owned(&cpu_lock));
 
 	/*
 	 * Allocate "downwards", to avoid bumping into
@@ -154,14 +150,13 @@ scb_alloc(void (*func)(void *, u_long), void *arg)
 	     vec >= SCB_IOVECBASE; vec -= SCB_VECSIZE) {
 		idx = SCB_VECTOIDX(vec - SCB_IOVECBASE);
 		if (scb_iovectab[idx].scb_func == scb_stray) {
-			scb_iovectab[idx].scb_func = func;
 			scb_iovectab[idx].scb_arg = arg;
-			splx(s);
+			alpha_mb();
+			scb_iovectab[idx].scb_func = func;
+			alpha_mb();
 			return (vec);
 		}
 	}
-
-	splx(s);
 
 	return (SCB_ALLOC_FAILED);
 }
@@ -170,9 +165,8 @@ void
 scb_free(u_long vec)
 {
 	u_long idx;
-	int s;
 
-	s = splhigh();
+	KASSERT(mutex_owned(&cpu_lock));
 
 	if (vec < SCB_IOVECBASE || vec >= SCB_SIZE ||
 	    (vec & (SCB_VECSIZE - 1)) != 0)
@@ -184,9 +178,9 @@ scb_free(u_long vec)
 		panic("scb_free: vector 0x%lx is empty", vec);
 
 	scb_iovectab[idx].scb_func = scb_stray;
+	alpha_mb();
 	scb_iovectab[idx].scb_arg = (void *) vec;
-
-	splx(s);
+	alpha_mb();
 }
 
 void
@@ -257,23 +251,17 @@ interrupt(unsigned long a0, unsigned long a1, unsigned long a2,
 
 	case ALPHA_INTR_DEVICE:	/* I/O device interrupt */
 	    {
-		struct scbvec *scb;
-		int idx = SCB_VECTOIDX(a1 - SCB_IOVECBASE);
-		bool mpsafe = scb_mpsafe[idx];
+		const int idx = SCB_VECTOIDX(a1 - SCB_IOVECBASE);
 
 		KDASSERT(a1 >= SCB_IOVECBASE && a1 < SCB_SIZE);
 
 		atomic_inc_ulong(&sc->sc_evcnt_device.ev_count);
 		atomic_inc_ulong(&ci->ci_intrdepth);
 
-		if (!mpsafe) {
-			KERNEL_LOCK(1, NULL);
-		}
 		ci->ci_data.cpu_nintr++;
-		scb = &scb_iovectab[idx];
+
+		struct scbvec * const scb = &scb_iovectab[idx];
 		(*scb->scb_func)(scb->scb_arg, a1);
-		if (!mpsafe)
-			KERNEL_UNLOCK_ONE(NULL);
 
 		atomic_dec_ulong(&ci->ci_intrdepth);
 		break;
@@ -585,6 +573,31 @@ cpu_intr_p(void)
 {
 
 	return curcpu()->ci_intrdepth != 0;
+}
+
+void	(*alpha_intr_redistribute)(void);
+
+/*
+ * cpu_intr_redistribute:
+ *
+ *	Redistribute interrupts amongst CPUs eligible to handle them.
+ */
+void
+cpu_intr_redistribute(void)
+{
+	if (alpha_intr_redistribute != NULL)
+		(*alpha_intr_redistribute)();
+}
+
+/*
+ * cpu_intr_count:
+ *
+ *	Return the number of device interrupts this CPU handles.
+ */
+unsigned int
+cpu_intr_count(struct cpu_info * const ci)
+{
+	return ci->ci_nintrhand;
 }
 
 /*

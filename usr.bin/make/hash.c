@@ -1,4 +1,4 @@
-/*	$NetBSD: hash.c,v 1.32 2020/09/13 15:15:51 rillig Exp $	*/
+/*	$NetBSD: hash.c,v 1.35 2020/09/28 20:46:11 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -69,17 +69,17 @@
  * SUCH DAMAGE.
  */
 
-/* hash.c --
- *
- * 	This module contains routines to manipulate a hash table.
- * 	See hash.h for a definition of the structure of the hash
- * 	table.  Hash tables grow automatically as the amount of
- * 	information increases.
+/*
+ * This module contains routines to manipulate a hash table.
+ * See hash.h for a definition of the structure of the hash
+ * table.  Hash tables grow automatically as the amount of
+ * information increases.
  */
+
 #include "make.h"
 
 /*	"@(#)hash.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: hash.c,v 1.32 2020/09/13 15:15:51 rillig Exp $");
+MAKE_RCSID("$NetBSD: hash.c,v 1.35 2020/09/28 20:46:11 rillig Exp $");
 
 /*
  * Forward references to local procedures that are used before they're
@@ -174,9 +174,7 @@ Hash_FindEntry(Hash_Table *t, const char *key)
 	p = key;
 	chainlen = 0;
 #ifdef DEBUG_HASH_LOOKUP
-	if (DEBUG(HASH))
-		fprintf(debug_file, "%s: %p h=%x key=%s\n", __func__,
-		    t, h, key);
+	DEBUG4(HASH, "%s: %p h=%x key=%s\n", __func__, t, h, key);
 #endif
 	for (e = t->buckets[h & t->bucketsMask]; e != NULL; e = e->next) {
 		chainlen++;
@@ -186,6 +184,13 @@ Hash_FindEntry(Hash_Table *t, const char *key)
 	if (chainlen > t->maxchain)
 		t->maxchain = chainlen;
 	return e;
+}
+
+void *
+Hash_FindValue(Hash_Table *t, const char *key)
+{
+    Hash_Entry *he = Hash_FindEntry(t, key);
+    return he != NULL ? he->value : NULL;
 }
 
 /* Searches the hash table for an entry corresponding to the key.
@@ -216,9 +221,7 @@ Hash_CreateEntry(Hash_Table *t, const char *key, Boolean *newPtr)
 	p = key;
 	chainlen = 0;
 #ifdef DEBUG_HASH_LOOKUP
-	if (DEBUG(HASH))
-		fprintf(debug_file, "%s: %p h=%x key=%s\n", __func__,
-		    t, h, key);
+	DEBUG4(HASH, "%s: %p h=%x key=%s\n", __func__, t, h, key);
 #endif
 	for (e = t->buckets[h & t->bucketsMask]; e != NULL; e = e->next) {
 		chainlen++;
@@ -354,9 +357,8 @@ RebuildTable(Hash_Table *t)
 		}
 	}
 	free(oldhp);
-	if (DEBUG(HASH))
-		fprintf(debug_file, "%s: %p size=%d entries=%d maxchain=%d\n",
-			__func__, t, t->bucketsSize, t->numEntries, t->maxchain);
+	DEBUG5(HASH, "%s: %p size=%d entries=%d maxchain=%d\n",
+	       __func__, t, t->bucketsSize, t->numEntries, t->maxchain);
 	t->maxchain = 0;
 }
 
@@ -375,7 +377,6 @@ Hash_ForEach(Hash_Table *t, void (*action)(void *, void *), void *data)
 void
 Hash_DebugStats(Hash_Table *t, const char *name)
 {
-    if (DEBUG(HASH))
-	fprintf(debug_file, "Hash_Table %s: size=%d numEntries=%d maxchain=%d\n",
-		name, t->bucketsSize, t->numEntries, t->maxchain);
+    DEBUG4(HASH, "Hash_Table %s: size=%d numEntries=%d maxchain=%d\n",
+	   name, t->bucketsSize, t->numEntries, t->maxchain);
 }

@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1702 2020/09/08 19:06:49 rillig Exp $
+# $NetBSD: mi,v 1.1704 2020/09/27 13:31:04 roy Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -831,7 +831,9 @@
 ./usr/share/man/cat4/amiga/ed.0			man-sys-catman		.cat
 ./usr/share/man/cat4/amiga/efa.0		man-sys-catman		.cat
 ./usr/share/man/cat4/amiga/em4k.0		man-sys-catman		.cat
+./usr/share/man/cat4/amiga/emmem.0		man-sys-catman		.cat
 ./usr/share/man/cat4/amiga/empb.0		man-sys-catman		.cat
+./usr/share/man/cat4/amiga/empm.0		man-sys-catman		.cat
 ./usr/share/man/cat4/amiga/es.0			man-sys-catman		.cat
 ./usr/share/man/cat4/amiga/fdc.0		man-sys-catman		.cat
 ./usr/share/man/cat4/amiga/grf.0		man-sys-catman		.cat
@@ -2018,6 +2020,7 @@
 ./usr/share/man/cat4/vioscsi.0			man-sys-catman		.cat
 ./usr/share/man/cat4/virt.0			man-sys-catman		.cat
 ./usr/share/man/cat4/virtio.0			man-sys-catman		.cat
+./usr/share/man/cat4/vether.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vlan.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vmmon.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vmnet.0			man-sys-catman		.cat
@@ -4086,7 +4089,9 @@
 ./usr/share/man/html4/amiga/ed.html		man-sys-htmlman		html
 ./usr/share/man/html4/amiga/efa.html		man-sys-htmlman		html
 ./usr/share/man/html4/amiga/em4k.html		man-sys-htmlman		html
+./usr/share/man/html4/amiga/emmem.html		man-sys-htmlman		html
 ./usr/share/man/html4/amiga/empb.html		man-sys-htmlman		html
+./usr/share/man/html4/amiga/empm.html		man-sys-htmlman		html
 ./usr/share/man/html4/amiga/es.html		man-sys-htmlman		html
 ./usr/share/man/html4/amiga/fdc.html		man-sys-htmlman		html
 ./usr/share/man/html4/amiga/grf.html		man-sys-htmlman		html
@@ -5154,6 +5159,7 @@
 ./usr/share/man/html4/vioscsi.html		man-sys-htmlman		html
 ./usr/share/man/html4/virt.html			man-sys-htmlman		html
 ./usr/share/man/html4/virtio.html		man-sys-htmlman		html
+./usr/share/man/html4/vether.html		man-sys-htmlman		html
 ./usr/share/man/html4/vlan.html			man-sys-htmlman		html
 ./usr/share/man/html4/vmmon.html		man-sys-htmlman		html
 ./usr/share/man/html4/vmnet.html		man-sys-htmlman		html
@@ -7035,7 +7041,9 @@
 ./usr/share/man/man4/amiga/ed.4			man-sys-man		.man
 ./usr/share/man/man4/amiga/efa.4		man-sys-man		.man
 ./usr/share/man/man4/amiga/em4k.4		man-sys-man		.man
+./usr/share/man/man4/amiga/emmem.4		man-sys-man		.man
 ./usr/share/man/man4/amiga/empb.4		man-sys-man		.man
+./usr/share/man/man4/amiga/empm.4		man-sys-man		.man
 ./usr/share/man/man4/amiga/es.4			man-sys-man		.man
 ./usr/share/man/man4/amiga/fdc.4		man-sys-man		.man
 ./usr/share/man/man4/amiga/grf.4		man-sys-man		.man
@@ -8222,6 +8230,7 @@
 ./usr/share/man/man4/vioscsi.4			man-sys-man		.man
 ./usr/share/man/man4/virt.4			man-sys-man		.man
 ./usr/share/man/man4/virtio.4			man-sys-man		.man
+./usr/share/man/man4/vether.4			man-sys-man		.man
 ./usr/share/man/man4/vlan.4			man-sys-man		.man
 ./usr/share/man/man4/vmmon.4			man-sys-man		.man
 ./usr/share/man/man4/vmnet.4			man-sys-man		.man

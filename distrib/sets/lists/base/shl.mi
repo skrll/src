@@ -1,4 +1,4 @@
-# $NetBSD: shl.mi,v 1.905 2020/09/15 07:00:03 mrg Exp $
+# $NetBSD: shl.mi,v 1.907 2020/09/29 18:33:22 roy Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -471,6 +471,9 @@
 ./usr/lib/libns.so				base-bind-shlib		compatfile
 ./usr/lib/libns.so.15				base-bind-shlib		compatfile
 ./usr/lib/libns.so.15.0				base-bind-shlib		compatfile
+./usr/lib/libnvmm.so				base-sys-shlib		nvmm,pic
+./usr/lib/libnvmm.so.0				base-sys-shlib		nvmm,pic
+./usr/lib/libnvmm.so.0.1			base-sys-shlib		nvmm,pic
 ./usr/lib/libnvpair.so				base-zfs-shlib		compatfile,zfs
 ./usr/lib/libnvpair.so.0			base-zfs-shlib		compatfile,zfs
 ./usr/lib/libnvpair.so.0.0			base-zfs-shlib		compatfile,zfs
@@ -822,6 +825,9 @@
 ./usr/lib/librumpnet_tun.so			base-rump-shlib		rump
 ./usr/lib/librumpnet_tun.so.0			base-rump-shlib		rump
 ./usr/lib/librumpnet_tun.so.0.0			base-rump-shlib		rump
+./usr/lib/librumpnet_vether.so			base-rump-shlib		rump
+./usr/lib/librumpnet_vether.so.0		base-rump-shlib		rump
+./usr/lib/librumpnet_vether.so.0.0		base-rump-shlib		rump
 ./usr/lib/librumpnet_virtif.so			base-rump-shlib		rump
 ./usr/lib/librumpnet_virtif.so.0		base-rump-shlib		rump
 ./usr/lib/librumpnet_virtif.so.0.0		base-rump-shlib		rump

@@ -1,4 +1,4 @@
-/*	$NetBSD: job.h,v 1.47 2020/08/29 12:20:17 rillig Exp $	*/
+/*	$NetBSD: job.h,v 1.54 2020/09/28 00:13:03 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -73,10 +73,10 @@
  *	from: @(#)job.h	8.1 (Berkeley) 6/6/93
  */
 
-/*-
- * job.h --
- *	Definitions pertaining to the running of jobs in parallel mode.
+/*
+ * Running of jobs in parallel mode.
  */
+
 #ifndef MAKE_JOB_H
 #define MAKE_JOB_H
 
@@ -110,28 +110,6 @@ emul_poll(struct pollfd *fd, int nfd, int timeout);
  */
 #define POLL_MSEC	5000
 
-/*-
- * Job Table definitions.
- *
- * Each job has several things associated with it:
- *	1) The process id of the child shell
- *	2) The graph node describing the target being made by this job
- *	3) A LstNode for the first command to be saved after the job
- *	   completes. This is NULL if there was no "..." in the job's
- *	   commands.
- *	4) An FILE* for writing out the commands. This is only
- *	   used before the job is actually started.
- *	5) The output is being caught via a pipe and
- *	   the descriptors of our pipe, an array in which output is line
- *	   buffered and the current position in that buffer are all
- *	   maintained for each job.
- *	6) A word of flags which determine how the module handles errors,
- *	   echoing, etc. for the job
- *
- * When a job is finished, the Make_Update function is called on each of the
- * parents of the node which was just remade. This takes care of the upward
- * traversal of the dependency graph.
- */
 struct pollfd;
 
 
@@ -139,44 +117,65 @@ struct pollfd;
 # include "meta.h"
 #endif
 
-#define JOB_BUFSIZE	1024
+/* A Job manages the shell commands that are run to create a single target.
+ * Each job is run in a separate subprocess by a shell.  Several jobs can run
+ * in parallel.
+ *
+ * The shell commands for the target are written to a temporary file,
+ * then the shell is run with the temporary file as stdin, and the output
+ * of that shell is captured via a pipe.
+ *
+ * When a job is finished, Make_Update updates all parents of the node
+ * that was just remade, marking them as ready to be made next if all
+ * other dependencies are finished as well. */
 typedef struct Job {
-    int       	pid;	    /* The child's process ID */
-    GNode    	*node;      /* The target the child is making */
-    LstNode 	tailCmds;   /* The node of the first command to be
-			     * saved when the job has been run */
-    FILE 	*cmdFILE;   /* When creating the shell script, this is
-			     * where the commands go */
-    int		exit_status; /* from wait4() in signal handler */
-    char        job_state;  /* status of the job entry */
+    /* The process ID of the shell running the commands */
+    int pid;
+
+    /* The target the child is making */
+    GNode *node;
+
+    /* If one of the shell commands is "...", all following commands are
+     * delayed until the .END node is made.  This list node points to the
+     * first of these commands, if any. */
+    StringListNode *tailCmds;
+
+    /* When creating the shell script, this is where the commands go.
+     * This is only used before the job is actually started. */
+    FILE *cmdFILE;
+
+    int exit_status;		/* from wait4() in signal handler */
+
+    char job_state;		/* status of the job entry */
 #define JOB_ST_FREE	0	/* Job is available */
 #define JOB_ST_SETUP	1	/* Job is allocated but otherwise invalid */
 #define JOB_ST_RUNNING	3	/* Job is running, pid valid */
 #define JOB_ST_FINISHED	4	/* Job is done (ie after SIGCHILD) */
-    char        job_suspended;
-    short      	flags;	    /* Flags to control treatment of job */
+
+    char job_suspended;
+
+    short flags;		/* Flags to control treatment of job */
 #define	JOB_IGNERR	0x001	/* Ignore non-zero exits */
 #define	JOB_SILENT	0x002	/* no output */
 #define JOB_SPECIAL	0x004	/* Target is a special one. i.e. run it locally
 				 * if we can't export it and maxLocal is 0 */
-#define JOB_IGNDOTS	0x008  	/* Ignore "..." lines when processing
+#define JOB_IGNDOTS	0x008	/* Ignore "..." lines when processing
 				 * commands */
 #define JOB_TRACED	0x400	/* we've sent 'set -x' */
 
-    int	  	 jobPipe[2];	/* Pipe for reading output from job */
+    int inPipe;			/* Pipe for reading output from job */
+    int outPipe;		/* Pipe for writing control commands */
     struct pollfd *inPollfd;	/* pollfd associated with inPipe */
-    char  	outBuf[JOB_BUFSIZE + 1];
-				/* Buffer for storing the output of the
-				 * job, line by line */
-    int   	curPos;	/* Current position in op_outBuf */
+
+#define JOB_BUFSIZE	1024
+    /* Buffer for storing the output of the job, line by line. */
+    char outBuf[JOB_BUFSIZE + 1];
+    int curPos;			/* Current position in outBuf. */
 
 #ifdef USE_META
-    struct BuildMon	bm;
+    struct BuildMon bm;
 #endif
 } Job;
-
-#define inPipe jobPipe[0]
-#define outPipe jobPipe[1]
 
 /*-
  * Shell Specifications:
@@ -209,52 +208,51 @@ typedef struct Job {
  * echo "%s\n" as a template.
  */
 typedef struct Shell {
-    const char	 *name;		/* the name of the shell. For Bourne and C
+    const char *name;		/* the name of the shell. For Bourne and C
 				 * shells, this is used only to find the
 				 * shell description when used as the single
 				 * source of a .SHELL target. For user-defined
 				 * shells, this is the full path of the shell.
 				 */
-    Boolean 	  hasEchoCtl;	/* True if both echoOff and echoOn defined */
-    const char   *echoOff;	/* command to turn off echo */
-    const char   *echoOn;	/* command to turn it back on again */
-    const char   *noPrint;	/* command to skip when printing output from
+    Boolean hasEchoCtl;		/* True if both echoOff and echoOn defined */
+    const char *echoOff;	/* command to turn off echo */
+    const char *echoOn;		/* command to turn it back on again */
+    const char *noPrint;	/* command to skip when printing output from
 				 * shell. This is usually the command which
 				 * was executed to turn off echoing */
-    int           noPLen;	/* length of noPrint command */
-    Boolean	  hasErrCtl;	/* set if can control error checking for
+    size_t noPLen;		/* length of noPrint command */
+    Boolean hasErrCtl;		/* set if can control error checking for
 				 * individual commands */
-    const char	 *errCheck;	/* string to turn error checking on */
-    const char	 *ignErr;	/* string to turn off error checking */
-    const char	 *errOut;	/* string to use for testing exit code */
-    const char	 *newline;	/* string literal that results in a newline
+    const char *errCheck;	/* string to turn error checking on */
+    const char *ignErr;		/* string to turn off error checking */
+    const char *errOut;		/* string to use for testing exit code */
+    const char *newline;	/* string literal that results in a newline
 				 * character when it appears outside of any
 				 * 'quote' or "quote" characters */
-    char   commentChar;		/* character used by shell for comment lines */
+    char commentChar;		/* character used by shell for comment lines */
 
     /*
      * command-line flags
      */
-    const char   *echo;		/* echo commands */
-    const char   *exit;		/* exit on error */
-}               Shell;
+    const char *echo;		/* echo commands */
+    const char *exit;		/* exit on error */
+} Shell;
 
 extern const char *shellPath;
 extern const char *shellName;
 extern char *shellErrFlag;
 
-extern int	jobTokensRunning; /* tokens currently "out" */
-extern int	maxJobs;	/* Max jobs we can run */
+extern int jobTokensRunning;	/* tokens currently "out" */
+extern int maxJobs;		/* Max jobs we can run */
 
 void Shell_Init(void);
 const char *Shell_GetNewline(void);
 void Job_Touch(GNode *, Boolean);
-Boolean Job_CheckCommands(GNode *, void (*abortProc )(const char *, ...));
+Boolean Job_CheckCommands(GNode *, void (*abortProc)(const char *, ...));
 void Job_CatchChildren(void);
 void Job_CatchOutput(void);
 void Job_Make(GNode *);
 void Job_Init(void);
-Boolean Job_Empty(void);
 Boolean Job_ParseShell(char *);
 int Job_Finish(void);
 void Job_End(void);

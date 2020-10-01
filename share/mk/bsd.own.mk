@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1219 2020/09/15 09:32:31 mrg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1222 2020/09/26 17:49:50 jmcneill Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -106,9 +106,13 @@ EXTERNAL_BINUTILS_SUBDIR=	/does/not/exist
 #
 # What GDB is used?
 #
+.if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "i386"
+HAVE_GDB?=	1100
+.else
 HAVE_GDB?=	830
+.endif
 
-.if ${HAVE_GDB} == 1000
+.if ${HAVE_GDB} == 1100
 EXTERNAL_GDB_SUBDIR=		gdb
 .elif ${HAVE_GDB} == 830
 EXTERNAL_GDB_SUBDIR=		gdb.old
@@ -152,6 +156,15 @@ HAVE_ACPI=	no
 HAVE_UEFI=	yes
 .else
 HAVE_UEFI=	no
+.endif
+
+#
+# Does the platform support NVMM?
+#
+.if ${MACHINE_ARCH} == "x86_64"
+HAVE_NVMM=	yes
+.else
+HAVE_NVMM=	no
 .endif
 
 
