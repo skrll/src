@@ -1,4 +1,4 @@
-/*	$NetBSD: compat.c,v 1.145 2020/09/13 15:15:51 rillig Exp $	*/
+/*	$NetBSD: compat.c,v 1.159 2020/09/28 23:13:57 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -78,8 +78,8 @@
  *	    - friendly variable substitution.
  *
  * Interface:
- *	Compat_Run	    Initialize things for this module and recreate
- *	    	  	    thems as need creatin'
+ *	Compat_Run	Initialize things for this module and recreate
+ *			thems as need creatin'
  */
 
 #include    <sys/types.h>
@@ -99,10 +99,9 @@
 #include    "pathnames.h"
 
 /*	"@(#)compat.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: compat.c,v 1.145 2020/09/13 15:15:51 rillig Exp $");
+MAKE_RCSID("$NetBSD: compat.c,v 1.159 2020/09/28 23:13:57 rillig Exp $");
 
 static GNode	    *curTarg = NULL;
-static GNode	    *ENDNode;
 static void CompatInterrupt(int);
 static pid_t compatChild;
 static int compatSigno;
@@ -146,7 +145,7 @@ CompatInterrupt(int signo)
 	 * Run .INTERRUPT only if hit with interrupt signal
 	 */
 	if (signo == SIGINT) {
-	    gn = Targ_FindNode(".INTERRUPT", TARG_NOCREATE);
+	    gn = Targ_FindNode(".INTERRUPT");
 	    if (gn != NULL) {
 		Compat_Make(gn, gn);
 	    }
@@ -186,30 +185,31 @@ CompatInterrupt(int signo)
  *-----------------------------------------------------------------------
  */
 int
-Compat_RunCommand(char *cmdp, struct GNode *gn)
+Compat_RunCommand(const char *cmdp, struct GNode *gn)
 {
-    char    	  *cmdStart;	/* Start of expanded command */
-    char 	  *cp, *bp;
-    Boolean 	  silent,   	/* Don't print command */
-		  doIt;		/* Execute even if -n */
-    volatile Boolean errCheck; 	/* Check errors */
-    int 	  reason;   	/* Reason for child's death */
-    int	    	  status;   	/* Description of child's death */
-    pid_t	  cpid;	    	/* Child actually found */
-    pid_t	  retstat;    	/* Result of wait */
-    LstNode 	  cmdNode;  	/* Node where current command is located */
-    const char  ** volatile av;	/* Argument vector for thing to exec */
-    char	** volatile mav;/* Copy of the argument vector for freeing */
-    Boolean 	  useShell;    	/* TRUE if command should be executed
+    char *cmdStart;		/* Start of expanded command */
+    char *bp;
+    Boolean silent;		/* Don't print command */
+    Boolean doIt;		/* Execute even if -n */
+    volatile Boolean errCheck;	/* Check errors */
+    int reason;			/* Reason for child's death */
+    int status;			/* Description of child's death */
+    pid_t cpid;			/* Child actually found */
+    pid_t retstat;		/* Result of wait */
+    StringListNode *cmdNode;	/* Node where current command is located */
+    const char **volatile av;	/* Argument vector for thing to exec */
+    char **volatile mav;	/* Copy of the argument vector for freeing */
+    Boolean useShell;		/* TRUE if command should be executed
 				 * using a shell */
-    char	  * volatile cmd = (char *)cmdp;
+    const char *volatile cmd = cmdp;
 
     silent = (gn->type & OP_SILENT) != 0;
     errCheck = !(gn->type & OP_IGNORE);
     doIt = FALSE;
 
     cmdNode = Lst_FindDatum(gn->commands, cmd);
-    cmdStart = Var_Subst(cmd, gn, VARE_WANTRES);
+    (void)Var_Subst(cmd, gn, VARE_WANTRES, &cmdStart);
+    /* TODO: handle errors */
 
     /*
      * brk_string will return an argv with a NULL in av[0], thus causing
@@ -225,10 +225,12 @@ Compat_RunCommand(char *cmdp, struct GNode *gn)
     cmd = cmdStart;
     LstNode_Set(cmdNode, cmdStart);
 
-    if ((gn->type & OP_SAVE_CMDS) && (gn != ENDNode)) {
-	assert(ENDNode != NULL);
-	Lst_Append(ENDNode->commands, cmdStart);
-	return 0;
+    if (gn->type & OP_SAVE_CMDS) {
+	GNode *endNode = Targ_GetEndNode();
+	if (gn != endNode) {
+	    Lst_Append(endNode->commands, cmdStart);
+	    return 0;
+	}
     }
     if (strcmp(cmdStart, "...") == 0) {
 	gn->type |= OP_SAVE_CMDS;
@@ -299,8 +301,7 @@ Compat_RunCommand(char *cmdp, struct GNode *gn)
     if (!doIt && NoExecute(gn)) {
 	return 0;
     }
-    if (DEBUG(JOB))
-	fprintf(debug_file, "Execute: '%s'\n", cmd);
+    DEBUG1(JOB, "Execute: '%s'\n", cmd);
 
     if (useShell) {
 	/*
@@ -401,19 +402,20 @@ Compat_RunCommand(char *cmdp, struct GNode *gn)
 #endif
 	if (status != 0) {
 	    if (DEBUG(ERROR)) {
-		fprintf(debug_file, "\n*** Failed target:  %s\n*** Failed command: ",
-		    gn->name);
+		const char *cp;
+		debug_printf("\n*** Failed target:  %s\n*** Failed command: ",
+			     gn->name);
 		for (cp = cmd; *cp; ) {
 		    if (ch_isspace(*cp)) {
-			fprintf(debug_file, " ");
+			debug_printf(" ");
 			while (ch_isspace(*cp))
 			    cp++;
 		    } else {
-			fprintf(debug_file, "%c", *cp);
+			debug_printf("%c", *cp);
 			cp++;
 		    }
 		}
-		fprintf(debug_file, "\n");
+		debug_printf("\n");
 	    }
 	    printf("*** Error code %d", status);
 	}
@@ -463,36 +465,36 @@ Compat_RunCommand(char *cmdp, struct GNode *gn)
     return status;
 }
 
-static int
-CompatRunCommand(void *cmd, void *gn)
+static void
+RunCommands(GNode *gn)
 {
-    return Compat_RunCommand(cmd, gn);
+    StringListNode *ln;
+    for (ln = gn->commands->first; ln != NULL; ln = ln->next) {
+	const char *cmd = ln->datum;
+	if (Compat_RunCommand(cmd, gn) != 0)
+	    break;
+    }
 }
 
-static int
-CompatMake(void *gn, void *pgn)
+static void
+MakeNodes(GNodeList *gnodes, GNode *pgn)
 {
-    return Compat_Make(gn, pgn);
+    GNodeListNode *ln;
+    for (ln = gnodes->first; ln != NULL; ln = ln->next) {
+	GNode *cohort = ln->datum;
+	Compat_Make(cohort, pgn);
+    }
 }
 
-/*-
- *-----------------------------------------------------------------------
- * Compat_Make --
- *	Make a target.
+/* Make a target.
+ *
+ * If an error is detected and not being ignored, the process exits.
  *
  * Input:
- *	gnp		The node to make
- *	pgnp		Parent to abort if necessary
- *
- * Results:
- *	0
- *
- * Side Effects:
- *	If an error is detected and not being ignored, the process exits.
- *
- *-----------------------------------------------------------------------
+ *	gn		The node to make
+ *	pgn		Parent to abort if necessary
  */
-int
+void
 Compat_Make(GNode *gn, GNode *pgn)
 {
     if (!shellName)		/* we came here from jobs */
@@ -510,7 +512,7 @@ Compat_Make(GNode *gn, GNode *pgn)
 	gn->made = BEINGMADE;
 	if ((gn->type & OP_MADE) == 0)
 	    Suff_FindDeps(gn);
-	Lst_ForEach(gn->children, CompatMake, gn);
+	MakeNodes(gn->children, gn);
 	if ((gn->flags & REMAKE) == 0) {
 	    gn->made = ABORTED;
 	    pgn->flags &= ~(unsigned)REMAKE;
@@ -529,18 +531,13 @@ Compat_Make(GNode *gn, GNode *pgn)
 	 * exist and when we were modified last. The criteria for datedness
 	 * are defined by the Make_OODate function.
 	 */
-	if (DEBUG(MAKE)) {
-	    fprintf(debug_file, "Examining %s...", gn->name);
-	}
+	DEBUG1(MAKE, "Examining %s...", gn->name);
 	if (! Make_OODate(gn)) {
 	    gn->made = UPTODATE;
-	    if (DEBUG(MAKE)) {
-		fprintf(debug_file, "up-to-date.\n");
-	    }
+	    DEBUG0(MAKE, "up-to-date.\n");
 	    goto cohorts;
-	} else if (DEBUG(MAKE)) {
-	    fprintf(debug_file, "out-of-date.\n");
-	}
+	} else
+	    DEBUG0(MAKE, "out-of-date.\n");
 
 	/*
 	 * If the user is just seeing if something is out-of-date, exit now
@@ -580,7 +577,7 @@ Compat_Make(GNode *gn, GNode *pgn)
 		    meta_job_start(NULL, gn);
 		}
 #endif
-		Lst_ForEach(gn->commands, CompatRunCommand, gn);
+		RunCommands(gn);
 		curTarg = NULL;
 	    } else {
 		Job_Touch(gn, (gn->type & OP_SILENT) != 0);
@@ -650,8 +647,7 @@ Compat_Make(GNode *gn, GNode *pgn)
     }
 
 cohorts:
-    Lst_ForEach(gn->cohorts, CompatMake, pgn);
-    return 0;
+    MakeNodes(gn->cohorts, pgn);
 }
 
 /* Initialize this module and start making.
@@ -660,10 +656,10 @@ cohorts:
  *	targs		The target nodes to re-create
  */
 void
-Compat_Run(Lst targs)
+Compat_Run(GNodeList *targs)
 {
-    GNode   	  *gn = NULL;/* Current root target */
-    int	    	  errors;   /* Number of targets not remade due to errors */
+    GNode *gn = NULL;		/* Current root target */
+    int errors;			/* Number of targets not remade due to errors */
 
     if (!shellName)
 	Shell_Init();
@@ -681,14 +677,16 @@ Compat_Run(Lst targs)
 	bmake_signal(SIGQUIT, CompatInterrupt);
     }
 
-    ENDNode = Targ_FindNode(".END", TARG_CREATE);
-    ENDNode->type = OP_SPECIAL;
+    /* Create the .END node now, to keep the (debug) output of the
+     * counter.mk test the same as before 2020-09-23.  This implementation
+     * detail probably doesn't matter though. */
+    (void)Targ_GetEndNode();
     /*
      * If the user has defined a .BEGIN target, execute the commands attached
      * to it.
      */
     if (!queryFlag) {
-	gn = Targ_FindNode(".BEGIN", TARG_NOCREATE);
+	gn = Targ_FindNode(".BEGIN");
 	if (gn != NULL) {
 	    Compat_Make(gn, gn);
 	    if (gn->made == ERROR) {
@@ -708,11 +706,11 @@ Compat_Run(Lst targs)
      * For each entry in the list of targets to create, call Compat_Make on
      * it to create the thing. Compat_Make will leave the 'made' field of gn
      * in one of several states:
-     *	    UPTODATE	    gn was already up-to-date
-     *	    MADE  	    gn was recreated successfully
-     *	    ERROR 	    An error occurred while gn was being created
-     *	    ABORTED	    gn was not remade because one of its inferiors
-     *	    	  	    could not be made due to errors.
+     *	    UPTODATE	gn was already up-to-date
+     *	    MADE	gn was recreated successfully
+     *	    ERROR	An error occurred while gn was being created
+     *	    ABORTED	gn was not remade because one of its inferiors
+     *			could not be made due to errors.
      */
     errors = 0;
     while (!Lst_IsEmpty(targs)) {
@@ -723,7 +721,7 @@ Compat_Run(Lst targs)
 	    printf("`%s' is up to date.\n", gn->name);
 	} else if (gn->made == ABORTED) {
 	    printf("`%s' not remade because of errors.\n", gn->name);
-	    errors += 1;
+	    errors++;
 	}
     }
 
@@ -731,7 +729,9 @@ Compat_Run(Lst targs)
      * If the user has defined a .END target, run its commands.
      */
     if (errors == 0) {
-	Compat_Make(ENDNode, ENDNode);
+	GNode *endNode = Targ_GetEndNode();
+	Compat_Make(endNode, endNode);
+	/* XXX: Did you mean endNode->made instead of gn->made? */
 	if (gn->made == ERROR) {
 	    PrintOnError(gn, "\nStop.");
 	    exit(1);

@@ -1,4 +1,4 @@
-/*	$NetBSD: hash.h,v 1.23 2020/09/13 15:27:25 rillig Exp $	*/
+/*	$NetBSD: hash.h,v 1.25 2020/09/27 21:35:16 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -90,10 +90,10 @@ typedef struct Hash_Entry {
 typedef struct Hash_Table {
     Hash_Entry **buckets;	/* Pointers to Hash_Entry, one
 				 * for each bucket in the table. */
-    int 	bucketsSize;
-    int 	numEntries;	/* Number of entries in the table. */
-    int 	bucketsMask;	/* Used to select the bucket for a hash. */
-    int 	maxchain;	/* max length of chain detected */
+    int bucketsSize;
+    int numEntries;		/* Number of entries in the table. */
+    int bucketsMask;		/* Used to select the bucket for a hash. */
+    int maxchain;		/* max length of chain detected */
 } Hash_Table;
 
 /*
@@ -101,9 +101,9 @@ typedef struct Hash_Table {
  * to record where we are in the search.
  */
 typedef struct Hash_Search {
-    Hash_Table  *table;		/* Table being searched. */
-    int 	nextBucket;	/* Next bucket to check (after current). */
-    Hash_Entry 	*entry;		/* Next entry to check in current bucket. */
+    Hash_Table *table;		/* Table being searched. */
+    int nextBucket;		/* Next bucket to check (after current). */
+    Hash_Entry *entry;		/* Next entry to check in current bucket. */
 } Hash_Search;
 
 static inline MAKE_ATTR_UNUSED void *
@@ -121,6 +121,7 @@ Hash_SetValue(Hash_Entry *h, void *datum)
 void Hash_InitTable(Hash_Table *);
 void Hash_DeleteTable(Hash_Table *);
 Hash_Entry *Hash_FindEntry(Hash_Table *, const char *);
+void *Hash_FindValue(Hash_Table *, const char *);
 Hash_Entry *Hash_CreateEntry(Hash_Table *, const char *, Boolean *);
 void Hash_DeleteEntry(Hash_Table *, Hash_Entry *);
 Hash_Entry *Hash_EnumFirst(Hash_Table *, Hash_Search *);

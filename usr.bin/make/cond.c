@@ -1,4 +1,4 @@
-/*	$NetBSD: cond.c,v 1.147 2020/09/14 23:09:34 rillig Exp $	*/
+/*	$NetBSD: cond.c,v 1.155 2020/09/28 23:13:57 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -72,7 +72,7 @@
 /* Handling of conditionals in a makefile.
  *
  * Interface:
- *	Cond_EvalLine 	Evaluate the conditional in the passed line.
+ *	Cond_EvalLine	Evaluate the conditional in the passed line.
  *
  *	Cond_EvalCondition
  *			Evaluate the conditional in the passed line, which
@@ -93,7 +93,7 @@
 #include "dir.h"
 
 /*	"@(#)cond.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: cond.c,v 1.147 2020/09/14 23:09:34 rillig Exp $");
+MAKE_RCSID("$NetBSD: cond.c,v 1.155 2020/09/28 23:13:57 rillig Exp $");
 
 /*
  * The parsing of conditional expressions is based on this grammar:
@@ -138,7 +138,7 @@ typedef enum {
     TOK_LPAREN, TOK_RPAREN, TOK_EOF, TOK_NONE, TOK_ERROR
 } Token;
 
-typedef struct {
+typedef struct CondParser {
     const struct If *if_info;	/* Info for current statement */
     const char *p;		/* The remaining condition to parse */
     Token curr;			/* Single push-back token used in parsing */
@@ -194,8 +194,8 @@ CondParser_SkipWhitespace(CondParser *par)
 /* Parse the argument of a built-in function.
  *
  * Arguments:
- *	*linePtr initially points at the '(', upon successful return points
- *	right after the ')'.
+ *	*pp initially points at the '(',
+ *	upon successful return it points right after the ')'.
  *
  *	*out_arg receives the argument as string.
  *
@@ -204,20 +204,17 @@ CondParser_SkipWhitespace(CondParser *par)
  *
  * Return the length of the argument. */
 static int
-ParseFuncArg(const char **linePtr, Boolean doEval, const char *func,
+ParseFuncArg(const char **pp, Boolean doEval, const char *func,
 	     char **out_arg) {
-    const char *cp;
-    Buffer buf;
+    const char *p = *pp;
+    Buffer argBuf;
     int paren_depth;
-    char ch;
     size_t argLen;
 
-    cp = *linePtr;
     if (func != NULL)
-	/* Skip opening '(' - verified by caller */
-	cp++;
+	p++;			/* Skip opening '(' - verified by caller */
 
-    if (*cp == '\0') {
+    if (*p == '\0') {
 	/*
 	 * No arguments whatsoever. Because 'make' and 'defined' aren't really
 	 * "reserved words", we don't print a message. I think this is better
@@ -228,62 +225,58 @@ ParseFuncArg(const char **linePtr, Boolean doEval, const char *func,
 	return 0;
     }
 
-    while (*cp == ' ' || *cp == '\t') {
-	cp++;
+    while (*p == ' ' || *p == '\t') {
+	p++;
     }
 
-    /*
-     * Create a buffer for the argument and start it out at 16 characters
-     * long. Why 16? Why not?
-     */
-    Buf_Init(&buf, 16);
+    Buf_Init(&argBuf, 16);
 
     paren_depth = 0;
     for (;;) {
-	ch = *cp;
+	char ch = *p;
 	if (ch == 0 || ch == ' ' || ch == '\t')
 	    break;
 	if ((ch == '&' || ch == '|') && paren_depth == 0)
 	    break;
-	if (*cp == '$') {
+	if (*p == '$') {
 	    /*
 	     * Parse the variable spec and install it as part of the argument
 	     * if it's valid. We tell Var_Parse to complain on an undefined
 	     * variable, so we don't need to do it. Nor do we return an error,
 	     * though perhaps we should...
 	     */
-	    void *freeIt;
+	    void *nestedVal_freeIt;
 	    VarEvalFlags eflags = VARE_UNDEFERR | (doEval ? VARE_WANTRES : 0);
-	    const char *cp2;
-	    (void)Var_Parse(&cp, VAR_CMD, eflags, &cp2, &freeIt);
+	    const char *nestedVal;
+	    (void)Var_Parse(&p, VAR_CMD, eflags, &nestedVal, &nestedVal_freeIt);
 	    /* TODO: handle errors */
-	    Buf_AddStr(&buf, cp2);
-	    free(freeIt);
+	    Buf_AddStr(&argBuf, nestedVal);
+	    free(nestedVal_freeIt);
 	    continue;
 	}
 	if (ch == '(')
 	    paren_depth++;
 	else if (ch == ')' && --paren_depth < 0)
 	    break;
-	Buf_AddByte(&buf, *cp);
-	cp++;
+	Buf_AddByte(&argBuf, *p);
+	p++;
     }
 
-    *out_arg = Buf_GetAll(&buf, &argLen);
-    Buf_Destroy(&buf, FALSE);
+    *out_arg = Buf_GetAll(&argBuf, &argLen);
+    Buf_Destroy(&argBuf, FALSE);
 
-    while (*cp == ' ' || *cp == '\t') {
-	cp++;
+    while (*p == ' ' || *p == '\t') {
+	p++;
     }
 
-    if (func != NULL && *cp++ != ')') {
+    if (func != NULL && *p++ != ')') {
 	Parse_Error(PARSE_WARNING, "Missing closing parenthesis for %s()",
 		    func);
 	/* The PARSE_FATAL is done as a follow-up by CondEvalExpression. */
 	return 0;
     }
 
-    *linePtr = cp;
+    *pp = p;
     return argLen;
 }
 
@@ -319,10 +312,7 @@ FuncExists(int argLen MAKE_ATTR_UNUSED, const char *arg)
     char *path;
 
     path = Dir_FindFile(arg, dirSearchPath);
-    if (DEBUG(COND)) {
-	fprintf(debug_file, "exists(%s) result is \"%s\"\n",
-		arg, path ? path : "");
-    }
+    DEBUG2(COND, "exists(%s) result is \"%s\"\n", arg, path ? path : "");
     if (path != NULL) {
 	result = TRUE;
 	free(path);
@@ -336,9 +326,7 @@ FuncExists(int argLen MAKE_ATTR_UNUSED, const char *arg)
 static Boolean
 FuncTarget(int argLen MAKE_ATTR_UNUSED, const char *arg)
 {
-    GNode *gn;
-
-    gn = Targ_FindNode(arg, TARG_NOCREATE);
+    GNode *gn = Targ_FindNode(arg);
     return gn != NULL && !OP_NOP(gn->type);
 }
 
@@ -347,9 +335,7 @@ FuncTarget(int argLen MAKE_ATTR_UNUSED, const char *arg)
 static Boolean
 FuncCommands(int argLen MAKE_ATTR_UNUSED, const char *arg)
 {
-    GNode *gn;
-
-    gn = Targ_FindNode(arg, TARG_NOCREATE);
+    GNode *gn = Targ_FindNode(arg);
     return gn != NULL && !OP_NOP(gn->type) && !Lst_IsEmpty(gn->commands);
 }
 
@@ -417,7 +403,7 @@ CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
     Boolean qt;
     const char *start;
     VarEvalFlags eflags;
-    VarParseErrors errors;
+    VarParseResult parseResult;
 
     Buf_Init(&buf, 0);
     str = NULL;
@@ -461,10 +447,10 @@ CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
 		     (doEval ? VARE_WANTRES : 0);
 	    nested_p = par->p;
 	    atStart = nested_p == start;
-	    errors = Var_Parse(&nested_p, VAR_CMD, eflags, &str, freeIt);
+	    parseResult = Var_Parse(&nested_p, VAR_CMD, eflags, &str, freeIt);
 	    /* TODO: handle errors */
 	    if (str == var_Error) {
-	        if (errors & VPE_ANY_MSG)
+	        if (parseResult & VPR_ANY_MSG)
 	            par->printedError = TRUE;
 		if (*freeIt) {
 		    free(*freeIt);
@@ -560,8 +546,7 @@ EvalNotEmpty(CondParser *par, const char *lhs, Boolean lhsQuoted)
 static Token
 EvalCompareNum(double lhs, const char *op, double rhs)
 {
-    if (DEBUG(COND))
-	fprintf(debug_file, "lhs = %f, rhs = %f, op = %.2s\n", lhs, rhs, op);
+    DEBUG3(COND, "lhs = %f, rhs = %f, op = %.2s\n", lhs, rhs, op);
 
     switch (op[0]) {
     case '!':
@@ -596,10 +581,7 @@ EvalCompareStr(const char *lhs, const char *op, const char *rhs)
 	return TOK_ERROR;
     }
 
-    if (DEBUG(COND)) {
-	fprintf(debug_file, "lhs = \"%s\", rhs = \"%s\", op = %.2s\n",
-		lhs, rhs, op);
-    }
+    DEBUG3(COND, "lhs = \"%s\", rhs = \"%s\", op = %.2s\n", lhs, rhs, op);
     return (*op == '=') == (strcmp(lhs, rhs) == 0);
 }
 
@@ -660,7 +642,7 @@ CondParser_Comparison(CondParser *par, Boolean doEval)
 	if (par->p[1] == '=') {
 	    par->p += 2;
 	} else {
-	    par->p += 1;
+	    par->p++;
 	}
 	break;
     default:
@@ -998,8 +980,7 @@ CondParser_Eval(CondParser *par, Boolean *value)
 {
     Token res;
 
-    if (DEBUG(COND))
-	fprintf(debug_file, "CondParser_Eval: %s\n", par->p);
+    DEBUG1(COND, "CondParser_Eval: %s\n", par->p);
 
     res = CondParser_Expr(par, TRUE);
     if (res != TOK_FALSE && res != TOK_TRUE)
@@ -1018,7 +999,7 @@ CondParser_Eval(CondParser *par, Boolean *value)
  *
  * Results:
  *	COND_PARSE	if the condition was valid grammatically
- *	COND_INVALID  	if not a valid conditional.
+ *	COND_INVALID	if not a valid conditional.
  *
  *	(*value) is set to the boolean value of the condition
  */
@@ -1080,7 +1061,7 @@ Cond_EvalCondition(const char *cond, Boolean *out_value)
  *	COND_SKIP	to skip the lines after the conditional
  *			(when .if or .elif returns FALSE, or when a previous
  *			branch has already been taken)
- *	COND_INVALID  	if the conditional was not valid, either because of
+ *	COND_INVALID	if the conditional was not valid, either because of
  *			a syntax error or because some variable was undefined
  *			or because the condition could not be evaluated
  */
