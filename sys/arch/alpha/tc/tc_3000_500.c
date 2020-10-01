@@ -1,4 +1,4 @@
-/* $NetBSD: tc_3000_500.c,v 1.34 2020/09/05 16:29:08 thorpej Exp $ */
+/* $NetBSD: tc_3000_500.c,v 1.36 2020/09/25 03:40:11 thorpej Exp $ */
 
 /*
  * Copyright (c) 1994, 1995, 1996 Carnegie-Mellon University.
@@ -29,12 +29,13 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: tc_3000_500.c,v 1.34 2020/09/05 16:29:08 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tc_3000_500.c,v 1.36 2020/09/25 03:40:11 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/malloc.h>
+#include <sys/cpu.h>
 
 #include <machine/autoconf.h>
 #include <machine/pte.h>
@@ -166,8 +167,17 @@ tc_3000_500_intr_establish(device_t tcadev, void *cookie, tc_intrlevel_t level, 
 	if (tc_3000_500_intr[dev].tci_func != tc_3000_500_intrnull)
 		panic("tc_3000_500_intr_establish: cookie %lu twice", dev);
 
+	const int s = splhigh();
+
+	/* All TC systems are uniprocessors. */
+	KASSERT(CPU_IS_PRIMARY(curcpu()));
+	KASSERT(ncpu == 1);
+	curcpu()->ci_nintrhand++;
+
 	tc_3000_500_intr[dev].tci_func = func;
 	tc_3000_500_intr[dev].tci_arg = arg;
+
+	splx(s);
 
 	tc_3000_500_imask &= ~tc_3000_500_intrbits[dev];
 	*(volatile uint32_t *)TC_3000_500_IMR_WRITE = tc_3000_500_imask;
@@ -191,8 +201,14 @@ tc_3000_500_intr_disestablish(device_t tcadev, void *cookie)
 	*(volatile uint32_t *)TC_3000_500_IMR_WRITE = tc_3000_500_imask;
 	tc_mb();
 
+	const int s = splhigh();
+
+	curcpu()->ci_nintrhand--;
+
 	tc_3000_500_intr[dev].tci_func = tc_3000_500_intrnull;
 	tc_3000_500_intr[dev].tci_arg = (void *)dev;
+
+	splx(s);
 }
 
 int
@@ -208,6 +224,8 @@ tc_3000_500_iointr(void *arg, unsigned long vec)
 {
 	uint32_t ir;
 	int ifound;
+
+	KERNEL_LOCK(1, NULL);
 
 #ifdef DIAGNOSTIC
 	int s;
@@ -271,6 +289,8 @@ tc_3000_500_iointr(void *arg, unsigned long vec)
 #undef PRINTINTR
 #endif
 	} while (ifound);
+
+	KERNEL_UNLOCK_ONE(NULL);
 }
 
 #if NWSDISPLAY > 0

@@ -1,4 +1,4 @@
-/* $NetBSD: intr.h,v 1.78 2020/09/19 01:24:31 thorpej Exp $ */
+/* $NetBSD: intr.h,v 1.82 2020/09/26 21:07:48 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2000, 2001, 2002 The NetBSD Foundation, Inc.
@@ -195,13 +195,18 @@ void	alpha_multicast_ipi(unsigned long, unsigned long);
  * Alpha shared-interrupt-line common code.
  */
 
+#define	ALPHA_INTR_MPSAFE		0x01
+
 struct alpha_shared_intrhand {
 	TAILQ_ENTRY(alpha_shared_intrhand)
 		ih_q;
 	struct alpha_shared_intr *ih_intrhead;
 	int	(*ih_fn)(void *);
 	void	*ih_arg;
+	int	(*ih_real_fn)(void *);
+	void	*ih_real_arg;
 	int	ih_level;
+	int	ih_type;
 	unsigned int ih_num;
 };
 
@@ -211,6 +216,7 @@ struct alpha_shared_intr {
 	struct evcnt intr_evcnt;
 	char	*intr_string;
 	void	*intr_private;
+	struct cpu_info *intr_cpu;
 	int	intr_sharetype;
 	int	intr_dfltsharetype;
 	int	intr_nstrays;
@@ -224,10 +230,15 @@ struct alpha_shared_intr {
 struct alpha_shared_intr *alpha_shared_intr_alloc(unsigned int, unsigned int);
 int	alpha_shared_intr_dispatch(struct alpha_shared_intr *,
 	    unsigned int);
-void	*alpha_shared_intr_establish(struct alpha_shared_intr *,
-	    unsigned int, int, int, int (*)(void *), void *, const char *);
-void	alpha_shared_intr_disestablish(struct alpha_shared_intr *,
-	    void *, const char *);
+struct alpha_shared_intrhand *
+	alpha_shared_intr_alloc_intrhand(struct alpha_shared_intr *,
+	    unsigned int, int, int, int, int (*)(void *), void *,
+	    const char *);
+void	alpha_shared_intr_free_intrhand(struct alpha_shared_intrhand *);
+bool	alpha_shared_intr_link(struct alpha_shared_intr *,
+	    struct alpha_shared_intrhand *, const char *);
+void	alpha_shared_intr_unlink(struct alpha_shared_intr *,
+	    struct alpha_shared_intrhand *, const char *);
 int	alpha_shared_intr_get_sharetype(struct alpha_shared_intr *,
 	    unsigned int);
 int	alpha_shared_intr_isactive(struct alpha_shared_intr *,
@@ -246,15 +257,21 @@ void	alpha_shared_intr_set_private(struct alpha_shared_intr *,
 	    unsigned int, void *);
 void	*alpha_shared_intr_get_private(struct alpha_shared_intr *,
 	    unsigned int);
+void	alpha_shared_intr_set_cpu(struct alpha_shared_intr *,
+	    unsigned int, struct cpu_info *ci);
+struct cpu_info	*
+	alpha_shared_intr_get_cpu(struct alpha_shared_intr *,
+	    unsigned int);
 char	*alpha_shared_intr_string(struct alpha_shared_intr *,
 	    unsigned int);
 struct evcnt *alpha_shared_intr_evcnt(struct alpha_shared_intr *,
 	    unsigned int);
 
 extern struct scbvec scb_iovectab[];
+extern void (*alpha_intr_redistribute)(void);
 
 void	scb_init(void);
-void	scb_set(u_long, void (*)(void *, u_long), void *, int);
+void	scb_set(u_long, void (*)(void *, u_long), void *);
 u_long	scb_alloc(void (*)(void *, u_long), void *);
 void	scb_free(u_long);
 

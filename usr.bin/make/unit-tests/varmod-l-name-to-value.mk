@@ -1,4 +1,4 @@
-# $NetBSD: varmod-l-name-to-value.mk,v 1.3 2020/08/25 22:25:05 rillig Exp $
+# $NetBSD: varmod-l-name-to-value.mk,v 1.5 2020/09/30 06:15:43 rillig Exp $
 #
 # Tests for the :L modifier, which returns the variable name as the new value.
 
@@ -25,6 +25,13 @@
 # Probably unintended, but maybe useful.
 .if ${VARNAME:L:S,VAR,,:L} != "VARNAME"
 .error
+.endif
+
+# Between 2020-09-22 (var.c 1.527) and 2020-09-30 (var.c 1.553), there was
+# a bug in the evaluation of variable expressions.  Indirect modifiers like
+# the below :L did not update the definedness of the enclosing expression.
+# This resulted in a wrong "Malformed conditional".
+.if ${value:${:UL}} == ""
 .endif
 
 all:
