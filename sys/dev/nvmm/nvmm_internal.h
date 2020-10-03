@@ -134,6 +134,9 @@ struct nvmm_impl {
 extern const struct nvmm_impl nvmm_x86_svm;
 extern const struct nvmm_impl nvmm_x86_vmx;
 #endif
+#if defined(__aarch64__)
+extern const struct nvmm_impl nvmm_aarch64;
+#endif
 
 static inline bool
 nvmm_return_needed(void)

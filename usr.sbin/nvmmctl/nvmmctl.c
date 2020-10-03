@@ -114,9 +114,6 @@ usage(void)
 	/* NOTREACHED */
 }
 
-#define MACH_CONF_FLAGS		"\20"
-#define VCPU_CONF_FLAGS		"\20" "\1" "CPUID" "\2" "TPR"
-
 static void
 nvmm_identify(char **argv)
 {
@@ -143,7 +140,7 @@ nvmm_identify(char **argv)
 	snprintb(buf, sizeof(buf), VCPU_CONF_FLAGS, cap.arch.vcpu_conf_support);
 	printf("nvmm: Arch VCPU conf %s\n", buf);
 
-#if defined(__x86_64__
+#if defined(__x86_64__)
 	snprintb(buf, sizeof(buf), XCR0_FLAGS1, cap.arch.xcr0_mask);
 	printf("nvmm: Guest FPU states %s\n", buf);
 #endif
