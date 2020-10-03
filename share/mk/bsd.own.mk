@@ -122,7 +122,7 @@ EXTERNAL_GDB_SUBDIR=		/does/not/exist
 
 #
 # What OpenSSL is used?
-# 
+#
 HAVE_OPENSSL?=  11
 
 .if ${HAVE_OPENSSL} == 11
@@ -161,8 +161,8 @@ HAVE_UEFI=	no
 #
 # Does the platform support NVMM?
 #
-.if ${MACHINE_ARCH} == "x86_64" || \
-    ${MACHINE_ARCH} == "aarch64
+.if ${MACHINE_ARCH} == "aarch64" || \
+    ${MACHINE_ARCH} == "x86_64"
 HAVE_NVMM=	yes
 .else
 HAVE_NVMM=	no
@@ -1291,7 +1291,7 @@ ${var}?=	${${var}.${MACHINE_ARCH}:U${${var}.${MACHINE}:Uno}}
 
 .if ${MACHINE_ARCH} == "i386" || \
     ${MACHINE_ARCH} == "x86_64" || \
-    ${MACHINE_ARCH} == "sparc" 
+    ${MACHINE_ARCH} == "sparc"
 MKSLJIT=	yes
 .endif
 
@@ -1400,7 +1400,7 @@ MKLIBCXX:=	yes
 #
 COPY?=		-c
 .if ${MKUPDATE} == "no"
-PRESERVE?=	
+PRESERVE?=
 .else
 PRESERVE?=	-p
 .endif
@@ -1418,7 +1418,7 @@ INSTPRIV.unpriv=
 .endif
 INSTPRIV?=	${INSTPRIV.unpriv} -N ${NETBSDSRCDIR}/etc
 .endif
-STRIPFLAG?=	
+STRIPFLAG?=
 
 .if ${NEED_OWN_INSTALL_TARGET} != "no"
 INSTALL_DIR?=		${INSTALL} ${INSTPRIV} -d
@@ -1494,7 +1494,7 @@ ${var}?= no
 USE_XZ_SETS?= yes
 .else
 USE_XZ_SETS?= no
-.endif 
+.endif
 
 #
 # TOOL_GZIP and friends.  These might refer to TOOL_PIGZ or to the host gzip.
@@ -1619,7 +1619,7 @@ EXTRA_DRIVERS=
 .if ${HAVE_XORG_SERVER_VER} == "120"
 X11SRCDIR.xf86-video-modesetting=${X11SRCDIR.xorg-server}/hw/xfree86/drivers/modesetting
 .else
-EXTRA_DRIVERS=	modesetting 
+EXTRA_DRIVERS=	modesetting
 .endif
 
 .for _v in \
@@ -1689,7 +1689,7 @@ MAKEDIRTARGET=\
 #	2	Describe what is occurring and echo the actual command
 #	3	Ignore the effect of the "@" prefix in make commands
 #	4	Trace shell commands using the shell's -x flag
-#		
+#
 MAKEVERBOSE?=		2
 
 .if ${MAKEVERBOSE} == 0

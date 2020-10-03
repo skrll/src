@@ -6,17 +6,23 @@
 CPPFLAGS+=
 
 .PATH:	${S}/dev/nvmm
-.PATH:	${S}/dev/nvmm/x86
 
 KMOD=	nvmm
 IOCONF=	nvmm.ioconf
 SRCS=	nvmm.c
 
 .if ${MACHINE_ARCH} == "x86_64"
+.PATH:	${S}/dev/nvmm/x86
 SRCS+=	nvmm_x86.c
 SRCS+=	nvmm_x86_svm.c nvmm_x86_svmfunc.S
 SRCS+=	nvmm_x86_vmx.c nvmm_x86_vmxfunc.S
 .endif
+
+.if ${MACHINE_ARCH} == "aarch64"
+.PATH:	${S}/dev/nvmm/aarch64
+SRCS+=	nvmm_aarch64.c
+.endif
+
 
 WARNS=	5
 

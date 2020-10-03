@@ -2,6 +2,8 @@
 
 .if ${MACHINE_ARCH} == "x86_64"
 SUBDIR= x86
+.elif ${MACHINE_ARCH} == "aarch64"
+SUBDIR=	aarch64
 .endif
 
 .include <bsd.own.mk>

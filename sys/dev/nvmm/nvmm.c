@@ -64,6 +64,9 @@ static const struct nvmm_impl *nvmm_impl_list[] = {
 	&nvmm_x86_svm,	/* x86 AMD SVM */
 	&nvmm_x86_vmx	/* x86 Intel VMX */
 #endif
+#if defined(__aarch64__)
+	&nvmm_aarch64,	/* Armv8-A */
+#endif
 };
 
 static const struct nvmm_impl *nvmm_impl __read_mostly = NULL;

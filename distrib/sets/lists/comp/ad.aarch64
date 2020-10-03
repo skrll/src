@@ -123,6 +123,8 @@
 ./usr/include/clang-9.0/arm64intr.h		comp-c-include		llvm
 ./usr/include/clang-9.0/arm_acle.h		comp-c-include		llvm
 ./usr/include/clang-9.0/arm_neon.h		comp-c-include		llvm
+./usr/include/dev/nvmm/aarch64			comp-c-include		nvmm
+./usr/include/dev/nvmm/aarch64/nvmm_aarch64.h	comp-c-include		nvmm
 ./usr/include/evbarm				comp-c-include
 ./usr/include/evbarm/disklabel.h		comp-c-include
 ./usr/include/evbarm/intr.h			comp-c-include

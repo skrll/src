@@ -12,3 +12,6 @@ file	dev/nvmm/x86/nvmm_x86_vmx.c	nvmm
 file	dev/nvmm/x86/nvmm_x86_vmxfunc.S	nvmm
 endif
 
+ifdef aarch64
+file	dev/nvmm/aarch64/nvmm_aarch64.c	nvmm
+endif
