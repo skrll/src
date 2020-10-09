@@ -1,4 +1,4 @@
-/*	$NetBSD: bsddisklabel.c,v 1.42 2020/05/12 06:23:07 martin Exp $	*/
+/*	$NetBSD: bsddisklabel.c,v 1.45 2020/09/29 15:29:17 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -76,7 +76,7 @@ default_parts_init[] =
 #endif
 #ifdef PART_BOOT_TYPE
 	  .fs_type = PART_BOOT_TYPE,
-#if PART_BOOT_TYPE == FS_MSDOS
+#if (PART_BOOT_TYPE == FS_MSDOS) || (PART_BOOT_TYPE == FS_EX2FS)
 	  .flags = PUIFLAG_ADD_OUTER,
 #endif
 #endif
@@ -100,7 +100,7 @@ default_parts_init[] =
 #endif
 #ifdef PART_BOOT1_TYPE
 	  .fs_type = PART_BOOT1_TYPE,
-#if PART_BOOT1_TYPE == FS_MSDOS
+#if (PART_BOOT1_TYPE == FS_MSDOS) || (PART_BOOT1_TYPE == FS_EX2FS)
 	  .flags = PUIFLAG_ADD_OUTER,
 #endif
 #endif
@@ -119,7 +119,7 @@ default_parts_init[] =
 #endif
 #ifdef PART_BOOT2_TYPE
 	  .fs_type = PART_BOOT2_TYPE,
-#if PART_BOOT2_TYPE == FS_MSDOS
+#if (PART_BOOT2_TYPE == FS_MSDOS) || (PART_BOOT2_TYPE == FS_EX2FS)
 	  .flags = PUIFLAG_ADD_OUTER,
 #endif
 #endif
@@ -260,7 +260,13 @@ draw_size_menu_line(menudesc *m, int opt, void *arg)
 		    pset->infos[opt].fs_version));
 		mount = swap;
 	} else if (pset->infos[opt].mount[0]) {
-		mount = pset->infos[opt].mount;
+		if (pset->infos[opt].instflags & PUIINST_BOOT) {
+			snprintf(swap, sizeof swap, "%s <%s>",
+			    pset->infos[opt].mount, msg_string(MSG_ptn_boot));
+			mount = swap;
+		} else {
+			mount = pset->infos[opt].mount;
+		}
 #ifndef NO_CLONES
 	} else if (pset->infos[opt].flags & PUIFLG_CLONE_PARTS) {
 		snprintf(swap, sizeof swap, "%zu %s",
@@ -278,6 +284,11 @@ draw_size_menu_line(menudesc *m, int opt, void *arg)
 		if (mount == NULL)
 			mount = getfslabelname(pset->infos[opt].fs_type,
 			    pset->infos[opt].fs_version);
+		if (pset->infos[opt].instflags & PUIINST_BOOT) {
+			snprintf(swap, sizeof swap, "%s <%s>",
+			    mount, msg_string(MSG_ptn_boot));
+			mount = swap;
+		}
 		mount = str_arg_subst(msg_string(MSG_size_ptn_not_mounted),
 		    1, &mount);
 		free_mount = true;
@@ -963,7 +974,8 @@ fill_defaults(struct partition_usage_set *wanted, struct disk_partitions *parts,
 				wanted->infos[i].type = pt->generic_ptype;
 		}
 		if (wanted->parts->parent != NULL &&
-		    wanted->infos[i].fs_type == FS_MSDOS)
+		    (wanted->infos[i].fs_type == FS_MSDOS ||
+		     wanted->infos[i].fs_type == FS_EX2FS))
 			wanted->infos[i].flags |=
 			    PUIFLG_ADD_INNER|PUIFLAG_ADD_OUTER;
 
@@ -1010,8 +1022,8 @@ fill_defaults(struct partition_usage_set *wanted, struct disk_partitions *parts,
 	 * empty disk. Merge the partitions in target range that are already
 	 * there (match with wanted) or are there additionaly.
 	 * The only thing outside of target range that we care for
-	 * are FAT partitions and a potential swap partition - we assume one
-	 * is enough.
+	 * are FAT partitions, EXT2FS partitions, and a potential
+	 * swap partition - we assume one is enough.
 	 */
 	size_t num = wanted->num;
 	if (parts->parent) {
@@ -1022,7 +1034,8 @@ fill_defaults(struct partition_usage_set *wanted, struct disk_partitions *parts,
 			    parts->parent, pno, &info))
 				continue;
 			if (info.nat_type->generic_ptype != PT_swap &&
-			    info.fs_type != FS_MSDOS)
+			    info.fs_type != FS_MSDOS &&
+			    info.fs_type != FS_EX2FS)
 				continue;
 			merge_part_with_wanted(parts->parent, pno, &info,
 			    wanted, num, true);
@@ -1774,6 +1787,8 @@ make_bsd_partitions(struct install_partition_desc *install)
 		/* update install infos */
 		install->num = wanted.num;
 		install->infos = wanted.infos;
+		install->write_back = wanted.write_back;
+		install->num_write_back = wanted.num_write_back;
 		/* and check them */
 		if (check_partitions(install))
 			break;
@@ -1781,6 +1796,7 @@ make_bsd_partitions(struct install_partition_desc *install)
 
 	/* we moved infos from wanted to install target */
 	wanted.infos = NULL;
+	wanted.write_back = NULL;
 	free_usage_set(&wanted);
 
 	/* Everything looks OK. */

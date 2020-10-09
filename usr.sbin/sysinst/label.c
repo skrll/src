@@ -1,4 +1,4 @@
-/*	$NetBSD: label.c,v 1.21 2020/08/14 08:46:54 martin Exp $	*/
+/*	$NetBSD: label.c,v 1.25 2020/09/29 14:29:56 martin Exp $	*/
 
 /*
  * Copyright 1997 Jonathan Stone
@@ -36,7 +36,7 @@
 
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: label.c,v 1.21 2020/08/14 08:46:54 martin Exp $");
+__RCSID("$NetBSD: label.c,v 1.25 2020/09/29 14:29:56 martin Exp $");
 #endif
 
 #include <sys/types.h>
@@ -291,10 +291,15 @@ static int
 edit_fs_size(menudesc *m, void *arg)
 {
 	struct single_part_fs_edit *edit = arg;
+	struct disk_part_info pinfo;
 	daddr_t size;
 
-	size = getpartsize(edit->pset->parts, edit->info.start,
-	    edit->info.size);
+	/* get original partition data, in case start moved already */
+	edit->pset->parts->pscheme->get_part_info(edit->pset->parts,
+	    edit->id, &pinfo);
+	/* ask for new size with old start and current values */
+	size = getpartsize(edit->pset->parts, pinfo.start,
+	    edit->info.start, edit->info.size);
 	if (size < 0)
 		return 0;
 	if (size > edit->pset->parts->disk_size)
@@ -710,6 +715,29 @@ static void update_edit_ptn_menu(menudesc *m, void *arg);
 static void draw_edit_ptn_line(menudesc *m, int opt, void *arg);
 static int edit_ptn_custom_type(menudesc *m, void *arg);
 
+static void
+remember_deleted(struct partition_usage_set *pset,
+    struct disk_partitions *parts)
+{
+	size_t i, num;
+	struct disk_partitions **tab;
+
+	/* do we have parts on record already? */
+	for (i = 0; i < pset->num_write_back; i++)
+		if (pset->write_back[i] == parts)
+			return;
+	/*
+	 * Need to record this partition table for write back
+	 */
+	num = pset->num_write_back + 1;
+	tab = realloc(pset->write_back, num*sizeof(*pset->write_back));
+	if (!tab)
+		return;
+	tab[pset->num_write_back] = parts;
+	pset->write_back = tab;
+	pset->num_write_back = num;
+}
+
 int
 edit_ptn(menudesc *menu, void *arg)
 {
@@ -835,6 +863,7 @@ edit_ptn(menudesc *menu, void *arg)
 	if (edit.rv == 0) {	/* OK, set new data */
 		edit.info.last_mounted = edit.wanted->mount;
 		if (is_new_part) {
+			edit.wanted->parts = pset->parts;
 			edit.wanted->cur_part_id = pset->parts->pscheme->
 			    add_partition(pset->parts, &edit.info, &err);
 			if (edit.wanted->cur_part_id == NO_PART)
@@ -883,6 +912,8 @@ edit_ptn(menudesc *menu, void *arg)
 			err_msg_win(err);
 			return 0;
 		}
+		remember_deleted(pset,
+		    pset->infos[edit.index].parts);
 		memmove(pset->infos+edit.index,
 		    pset->infos+edit.index+1,
 		    sizeof(*pset->infos)*(pset->num-edit.index));
@@ -891,6 +922,8 @@ edit_ptn(menudesc *menu, void *arg)
 		    sizeof(*menu->opts)*(menu->numopts-edit.index));
 		menu->numopts--;
 		menu->cursel = 0;
+		if (pset->parts->num_part == 0)
+			menu->cursel = 1;	/* skip sentinel line */
 
 		/* things have changed, re-sort */
 		pset->num--;
@@ -2012,7 +2045,8 @@ getpartoff(struct disk_partitions *parts, daddr_t defpartstart)
 
 /* Ask for a partition size, check bounds and do the needed roundups */
 daddr_t
-getpartsize(struct disk_partitions *parts, daddr_t partstart, daddr_t dflt)
+getpartsize(struct disk_partitions *parts, daddr_t orig_start,
+    daddr_t partstart, daddr_t dflt)
 {
 	char dsize[24], isize[24], max_size[24], maxpartc, valid_parts[4],
 	    *label_msg, *prompt, *head, *hint, *tail;
@@ -2022,7 +2056,10 @@ getpartsize(struct disk_partitions *parts, daddr_t partstart, daddr_t dflt)
 	part_id partn;
 
 	diskend = parts->disk_start + parts->disk_size;
-	max = parts->pscheme->max_free_space_at(parts, partstart);
+	max = parts->pscheme->max_free_space_at(parts, orig_start);
+	max += orig_start - partstart;
+	if (sizemult == 1)
+		max--;	/* with hugher scale proper rounding later will be ok */
 
 	/* We need to keep both the unrounded and rounded (_r) max and dflt */
 	dflt_r = (partstart + dflt) / sizemult - partstart / sizemult;
