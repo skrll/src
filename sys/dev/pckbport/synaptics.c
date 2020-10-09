@@ -1,4 +1,4 @@
-/*	$NetBSD: synaptics.c,v 1.67 2020/05/14 18:06:58 nia Exp $	*/
+/*	$NetBSD: synaptics.c,v 1.70 2020/10/01 17:13:19 nia Exp $	*/
 
 /*
  * Copyright (c) 2005, Steve C. Woodford
@@ -48,7 +48,7 @@
 #include "opt_pms.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: synaptics.c,v 1.67 2020/05/14 18:06:58 nia Exp $");
+__KERNEL_RCSID(0, "$NetBSD: synaptics.c,v 1.70 2020/10/01 17:13:19 nia Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -124,6 +124,7 @@ static int synaptics_fscroll_min = 13;
 static int synaptics_fscroll_max = 14;
 static int synaptics_dz_hold = 30;
 static int synaptics_movement_enable = 1;
+static bool synaptics_aux_mid_button_scroll = TRUE;
 
 /* Sysctl nodes. */
 static int synaptics_button_boundary_nodenum;
@@ -152,6 +153,7 @@ static int synaptics_finger_scroll_min_nodenum;
 static int synaptics_finger_scroll_max_nodenum;
 static int synaptics_dz_hold_nodenum;
 static int synaptics_movement_enable_nodenum;
+static int synaptics_aux_mid_button_scroll_nodenum;
 
 static int
 synaptics_poll_cmd(struct pms_softc *psc, ...)
@@ -830,6 +832,18 @@ pms_sysctl_synaptics(struct sysctllog **clog)
 		goto err;
 
 	synaptics_dz_hold_nodenum = node->sysctl_num;
+
+	if ((rc = sysctl_createv(clog, 0, NULL, &node,
+	    CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
+	    CTLTYPE_BOOL, "aux_mid_button_scroll",
+	    SYSCTL_DESCR("Interpet Y-Axis movement with the middle button held as scrolling on the passthrough device (e.g. TrackPoint)"),
+	    pms_sysctl_synaptics_verify, 0,
+	    &synaptics_aux_mid_button_scroll,
+	    0, CTL_HW, root_num, CTL_CREATE,
+	    CTL_EOL)) != 0)
+		goto err;
+
+	synaptics_aux_mid_button_scroll_nodenum = node->sysctl_num;
 	return;
 
 err:
@@ -920,6 +934,10 @@ pms_sysctl_synaptics_verify(SYSCTLFN_ARGS)
 			return (EINVAL);
 	} else
 	if (node.sysctl_num == synaptics_movement_enable_nodenum) {
+		if (t < 0 || t > 1)
+			return (EINVAL);
+	} else
+	if (node.sysctl_num == synaptics_aux_mid_button_scroll_nodenum) {
 		if (t < 0 || t > 1)
 			return (EINVAL);
 	} else
@@ -1141,6 +1159,10 @@ pms_synaptics_parse(struct pms_softc *psc)
 	pms_synaptics_process_packet(psc, &sp);
 }
 
+/*
+ * Passthrough is used for e.g. TrackPoints and additional pointing
+ * devices connected to a Synaptics touchpad.
+ */
 static void
 pms_synaptics_passthrough(struct pms_softc *psc)
 {
@@ -1170,6 +1192,15 @@ pms_synaptics_passthrough(struct pms_softc *psc)
 	psc->buttons ^= changed;
 
 	if (dx || dy || dz || changed) {
+		/*
+		 * If the middle button is held, interpret Y-axis
+		 * movement as scrolling.
+		 */
+		if (synaptics_aux_mid_button_scroll &&
+		    dy && (psc->buttons & 0x2)) {
+			dz = -dy;
+			dx = dy = 0;
+		}
 		buttons = (psc->buttons & 0x1f) | ((psc->buttons >> 5) & 0x7);
 		s = spltty();
 		wsmouse_input(psc->sc_wsmousedev,
@@ -1683,20 +1714,12 @@ pms_synaptics_process_packet(struct pms_softc *psc, struct synaptics_packet *sp)
 	if (synaptics_up_down_emul == 2) {
 		if (sc->up_down == 0) {
 			if (sp->sp_up && sp->sp_down) {
-				/*
-				 * Most up/down buttons will be actuated using
-				 * a rocker switch, so we should never see
-				 * them both simultaneously. But just in case,
-				 * treat this situation as a middle button
-				 * event.
-				 */
 				sp->sp_middle = 1;
-			} else
-			if (sp->sp_up)
+			} else if (sp->sp_up) {
 				dz = -synaptics_up_down_motion_delta;
-			else
-			if (sp->sp_down)
+			} else if (sp->sp_down) {
 				dz = synaptics_up_down_motion_delta;
+			}
 		}
 
 		sc->up_down = sp->sp_up | sp->sp_down;

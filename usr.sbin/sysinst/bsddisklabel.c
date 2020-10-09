@@ -1,4 +1,4 @@
-/*	$NetBSD: bsddisklabel.c,v 1.45 2020/09/29 15:29:17 martin Exp $	*/
+/*	$NetBSD: bsddisklabel.c,v 1.49 2020/10/05 12:28:45 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -869,7 +869,9 @@ merge_part_with_wanted(struct disk_partitions *parts, part_id pno,
 		wanted->infos[i].cur_start = info->start;
 		wanted->infos[i].flags &= ~PUIFLAG_EXTEND;
 		if (wanted->infos[i].fs_type != FS_UNUSED &&
-		    wanted->infos[i].type != PT_swap)
+		    wanted->infos[i].type != PT_swap &&
+		    info->last_mounted != NULL &&
+		    info->last_mounted[0] != 0)
 			wanted->infos[i].instflags |= PUIINST_MOUNT;
 		if (is_outer)
 			wanted->infos[i].flags |= PUIFLG_IS_OUTER;
@@ -1431,7 +1433,7 @@ apply_settings_to_partitions(struct pm_devs *p, struct disk_partitions *parts,
 		}
 	}
 
-	from = -1;
+	from = p->ptstart > 0 ? pm->ptstart : -1;
 	/*
 	 * First add all outer partitions - we need to align those exactly
 	 * with the inner counterpart later.
@@ -1772,6 +1774,86 @@ make_bsd_partitions(struct install_partition_desc *install)
 	} else {
 		usage_set_from_parts(&wanted, parts);
 	}
+
+	/*
+	 * Make sure the target root partition is properly marked,
+	 * check for existing EFI boot partition.
+	 */
+	bool have_inst_target = false;
+#ifdef HAVE_EFI_BOOT
+	daddr_t target_start = -1;
+#endif
+	for (size_t i = 0; i < wanted.num; i++) {
+		if (wanted.infos[i].cur_flags & PTI_INSTALL_TARGET) {
+			have_inst_target = true;
+#ifdef HAVE_EFI_BOOT
+			target_start = wanted.infos[i].cur_start;
+#endif
+			break;
+		 }
+	}
+	if (!have_inst_target) {
+		for (size_t i = 0; i < wanted.num; i++) {
+			struct disk_part_info info;
+
+			if (wanted.infos[i].type != PT_root ||
+			    strcmp(wanted.infos[i].mount, "/") != 0) 
+				continue;
+			wanted.infos[i].cur_flags |= PTI_INSTALL_TARGET;
+
+			if (!wanted.parts->pscheme->get_part_info(wanted.parts,
+			    wanted.infos[i].cur_part_id, &info))
+				break;
+			info.flags |= PTI_INSTALL_TARGET;
+			wanted.parts->pscheme->set_part_info(wanted.parts,
+			    wanted.infos[i].cur_part_id, &info, NULL);
+#ifdef HAVE_EFI_BOOT
+			target_start = wanted.infos[i].cur_start;
+#endif
+			break;
+		}
+	}
+#ifdef HAVE_EFI_BOOT
+	size_t boot_part = ~0U;
+	for (part_id i = 0; i < wanted.num; i++) {
+		if ((wanted.infos[i].cur_flags & PTI_BOOT) != 0 ||
+		    wanted.infos[i].type ==  PT_EFI_SYSTEM) {
+			boot_part = i;
+			break;
+		}
+	}
+	if (boot_part == ~0U) {
+		for (part_id i = 0; i < wanted.num; i++) {
+			/*
+			 * heuristic to recognize existing MBR FAT
+			 * partitions as EFI without looking for
+			 * details
+			 */
+			if ((wanted.infos[i].type != PT_FAT &&
+			    wanted.infos[i].type != PT_EFI_SYSTEM) ||
+			    wanted.infos[i].fs_type != FS_MSDOS)
+				continue;
+			daddr_t ps = wanted.infos[i].cur_start;
+			daddr_t pe = ps + wanted.infos[i].size;
+			if (target_start >= 0 &&
+			   (ps >= target_start || pe >= target_start)) 
+				continue;
+			boot_part = i;
+			break;
+		}
+	}
+	if (boot_part != ~0U) {
+		struct disk_part_info info;
+
+		if (wanted.parts->pscheme->get_part_info(wanted.parts,
+		    wanted.infos[boot_part].cur_part_id, &info)) {
+			info.flags |= PTI_BOOT;
+			wanted.parts->pscheme->set_part_info(wanted.parts,
+			    wanted.infos[boot_part].cur_part_id, &info, NULL);
+		}
+		wanted.infos[boot_part].instflags |= PUIINST_BOOT;
+	}
+#endif
 
 	/*
 	 * OK, we have a partition table. Give the user the chance to
