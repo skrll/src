@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.155 2020/09/29 18:16:24 rillig Exp $
+# $NetBSD: Makefile,v 1.164 2020/10/08 19:11:35 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -137,6 +137,7 @@ TESTS+=		directive-endif
 TESTS+=		directive-error
 TESTS+=		directive-export
 TESTS+=		directive-export-env
+TESTS+=		directive-export-gmake
 TESTS+=		directive-export-literal
 TESTS+=		directive-for
 TESTS+=		directive-for-generating-endif
@@ -167,12 +168,12 @@ TESTS+=		export-env
 TESTS+=		export-variants
 TESTS+=		forloop
 TESTS+=		forsubst
+TESTS+=		hanoi-include
 TESTS+=		impsrc
 TESTS+=		include-main
 TESTS+=		job-output-long-lines
 TESTS+=		lint
 TESTS+=		make-exported
-TESTS+=		misc
 TESTS+=		moderrs
 TESTS+=		modmatch
 TESTS+=		modmisc
@@ -228,6 +229,7 @@ TESTS+=		opt-warnings-as-errors
 TESTS+=		opt-where-am-i
 TESTS+=		opt-x-reduce-exported
 TESTS+=		order
+TESTS+=		parse-var
 TESTS+=		phony-end
 TESTS+=		posix
 TESTS+=		# posix1	# broken by reverting POSIX changes
@@ -243,6 +245,10 @@ TESTS+=		sh-leading-plus
 TESTS+=		sh-meta-chars
 TESTS+=		sh-multi-line
 TESTS+=		sh-single-line
+TESTS+=		shell-csh
+TESTS+=		shell-custom
+TESTS+=		shell-ksh
+TESTS+=		shell-sh
 TESTS+=		# suffixes	# runs into an endless loop (try -dA)
 TESTS+=		suff-rebuild
 TESTS+=		sunshcmd
@@ -263,6 +269,7 @@ TESTS+=		var-op-assign
 TESTS+=		var-op-default
 TESTS+=		var-op-expand
 TESTS+=		var-op-shell
+TESTS+=		var-op-sunsh
 TESTS+=		varcmd
 TESTS+=		vardebug
 TESTS+=		varfind
@@ -350,6 +357,7 @@ TESTS+=		varname-makeflags
 TESTS+=		varname-pwd
 TESTS+=		varname-vpath
 TESTS+=		varparse-dynamic
+TESTS+=		varparse-mod
 TESTS+=		varparse-undef-partial
 TESTS+=		varquote
 TESTS+=		varshell
@@ -401,6 +409,12 @@ SED_CMDS.opt-debug-graph1= \
 SED_CMDS.opt-debug-graph1+= \
 			-e '/Global Variables:/,/Suffixes:/d'
 SED_CMDS.sh-dots=	-e 's,^.*\.\.\.:.*,<normalized: ...: not found>,'
+SED_CMDS.opt-debug-jobs=	-e 's,([0-9][0-9]*),(<pid>),'
+SED_CMDS.opt-debug-jobs+=	-e 's,pid [0-9][0-9]*,pid <pid>,'
+SED_CMDS.opt-debug-jobs+=	-e 's,Process [0-9][0-9]*,Process <pid>,'
+SED_CMDS.opt-debug-jobs+=	-e 's,JobFinish: [0-9][0-9]*,JobFinish: <pid>,'
+# The "-q" may be there or not, see jobs.c, variable shells.
+SED_CMDS.opt-debug-jobs+=	-e 's,^\(.Command: sh\) -q,\1,'
 SED_CMDS.varmod-subst-regex+= \
 			-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
 SED_CMDS.varmod-edge+=	-e 's, line [0-9]*:, line omitted:,'
