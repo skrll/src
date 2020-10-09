@@ -1,4 +1,4 @@
-/*	$NetBSD: cond.c,v 1.155 2020/09/28 23:13:57 rillig Exp $	*/
+/*	$NetBSD: cond.c,v 1.162 2020/10/05 19:59:07 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -93,7 +93,7 @@
 #include "dir.h"
 
 /*	"@(#)cond.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: cond.c,v 1.155 2020/09/28 23:13:57 rillig Exp $");
+MAKE_RCSID("$NetBSD: cond.c,v 1.162 2020/10/05 19:59:07 rillig Exp $");
 
 /*
  * The parsing of conditional expressions is based on this grammar:
@@ -151,7 +151,6 @@ typedef struct CondParser {
 } CondParser;
 
 static Token CondParser_Expr(CondParser *par, Boolean);
-static CondEvalResult CondParser_Eval(CondParser *par, Boolean *value);
 
 static unsigned int cond_depth = 0;	/* current .if nesting level */
 static unsigned int cond_min_depth = 0;	/* depth at makefile open */
@@ -187,8 +186,7 @@ CondParser_PushBack(CondParser *par, Token t)
 static void
 CondParser_SkipWhitespace(CondParser *par)
 {
-    while (ch_isspace(par->p[0]))
-	par->p++;
+    cpp_skip_whitespace(&par->p);
 }
 
 /* Parse the argument of a built-in function.
@@ -203,7 +201,7 @@ CondParser_SkipWhitespace(CondParser *par)
  *	whether the parsed argument is passed to the default function.
  *
  * Return the length of the argument. */
-static int
+static size_t
 ParseFuncArg(const char **pp, Boolean doEval, const char *func,
 	     char **out_arg) {
     const char *p = *pp;
@@ -282,7 +280,7 @@ ParseFuncArg(const char **pp, Boolean doEval, const char *func,
 
 /* Test whether the given variable is defined. */
 static Boolean
-FuncDefined(int argLen MAKE_ATTR_UNUSED, const char *arg)
+FuncDefined(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
     char *freeIt;
     Boolean result = Var_Value(arg, VAR_CMD, &freeIt) != NULL;
@@ -299,14 +297,14 @@ CondFindStrMatch(const void *string, const void *pattern)
 
 /* See if the given target is being made. */
 static Boolean
-FuncMake(int argLen MAKE_ATTR_UNUSED, const char *arg)
+FuncMake(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
     return Lst_Find(create, CondFindStrMatch, arg) != NULL;
 }
 
 /* See if the given file exists. */
 static Boolean
-FuncExists(int argLen MAKE_ATTR_UNUSED, const char *arg)
+FuncExists(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
     Boolean result;
     char *path;
@@ -324,7 +322,7 @@ FuncExists(int argLen MAKE_ATTR_UNUSED, const char *arg)
 
 /* See if the given node exists and is an actual target. */
 static Boolean
-FuncTarget(int argLen MAKE_ATTR_UNUSED, const char *arg)
+FuncTarget(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
     GNode *gn = Targ_FindNode(arg);
     return gn != NULL && !OP_NOP(gn->type);
@@ -333,7 +331,7 @@ FuncTarget(int argLen MAKE_ATTR_UNUSED, const char *arg)
 /* See if the given node exists and is an actual target with commands
  * associated with it. */
 static Boolean
-FuncCommands(int argLen MAKE_ATTR_UNUSED, const char *arg)
+FuncCommands(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
     GNode *gn = Targ_FindNode(arg);
     return gn != NULL && !OP_NOP(gn->type) && !Lst_IsEmpty(gn->commands);
@@ -509,7 +507,7 @@ static const struct If {
     const char *form;		/* Form of if */
     size_t formlen;		/* Length of form */
     Boolean doNot;		/* TRUE if default function should be negated */
-    Boolean (*defProc)(int, const char *); /* Default function to apply */
+    Boolean (*defProc)(size_t, const char *); /* Default function to apply */
 } ifs[] = {
     { "def",   3, FALSE, FuncDefined },
     { "ndef",  4, TRUE,  FuncDefined },
@@ -539,7 +537,7 @@ EvalNotEmpty(CondParser *par, const char *lhs, Boolean lhsQuoted)
 	return lhs[0] != 0;
 
     /* Otherwise action default test ... */
-    return par->if_info->defProc(strlen(lhs), lhs) != par->if_info->doNot;
+    return par->if_info->defProc(strlen(lhs), lhs) == !par->if_info->doNot;
 }
 
 /* Evaluate a numerical comparison, such as in ".if ${VAR} >= 9". */
@@ -675,13 +673,13 @@ done:
     return t;
 }
 
-static int
+static size_t
 ParseEmptyArg(const char **linePtr, Boolean doEval,
 	      const char *func MAKE_ATTR_UNUSED, char **argPtr)
 {
     void *val_freeIt;
     const char *val;
-    int magic_res;
+    size_t magic_res;
 
     /* We do all the work here and return the result as the length */
     *argPtr = NULL;
@@ -694,12 +692,11 @@ ParseEmptyArg(const char **linePtr, Boolean doEval,
 
     if (val == var_Error) {
 	free(val_freeIt);
-	return -1;
+	return (size_t)-1;
     }
 
     /* A variable is empty when it just contains spaces... 4/15/92, christos */
-    while (ch_isspace(val[0]))
-	val++;
+    cpp_skip_whitespace(&val);
 
     /*
      * For consistency with the other functions we can't generate the
@@ -711,7 +708,7 @@ ParseEmptyArg(const char **linePtr, Boolean doEval,
 }
 
 static Boolean
-FuncEmpty(int arglen, const char *arg MAKE_ATTR_UNUSED)
+FuncEmpty(size_t arglen, const char *arg MAKE_ATTR_UNUSED)
 {
     /* Magic values ahead, see ParseEmptyArg. */
     return arglen == 1;
@@ -723,8 +720,8 @@ CondParser_Func(CondParser *par, Boolean doEval)
     static const struct fn_def {
 	const char *fn_name;
 	size_t fn_name_len;
-	int (*fn_parse)(const char **, Boolean, const char *, char **);
-	Boolean (*fn_eval)(int, const char *);
+	size_t (*fn_parse)(const char **, Boolean, const char *, char **);
+	Boolean (*fn_eval)(size_t, const char *);
     } fn_defs[] = {
 	{ "defined",  7, ParseFuncArg,  FuncDefined },
 	{ "make",     4, ParseFuncArg,  FuncMake },
@@ -737,7 +734,7 @@ CondParser_Func(CondParser *par, Boolean doEval)
     const struct fn_def *fn_def;
     Token t;
     char *arg = NULL;
-    int arglen;
+    size_t arglen;
     const char *cp = par->p;
     const char *cp1;
 
@@ -746,15 +743,14 @@ CondParser_Func(CondParser *par, Boolean doEval)
 	    continue;
 	cp += fn_def->fn_name_len;
 	/* There can only be whitespace before the '(' */
-	while (ch_isspace(*cp))
-	    cp++;
+	cpp_skip_whitespace(&cp);
 	if (*cp != '(')
 	    break;
 
 	arglen = fn_def->fn_parse(&cp, doEval, fn_def->fn_name, &arg);
-	if (arglen <= 0) {
+	if (arglen == 0 || arglen == (size_t)-1) {
 	    par->p = cp;
-	    return arglen < 0 ? TOK_ERROR : TOK_FALSE;
+	    return arglen == 0 ? TOK_FALSE : TOK_ERROR;
 	}
 	/* Evaluate the argument using the required function. */
 	t = !doEval || fn_def->fn_eval(arglen, arg);
@@ -777,8 +773,8 @@ CondParser_Func(CondParser *par, Boolean doEval)
      * expression.
      */
     arglen = ParseFuncArg(&cp, doEval, NULL, &arg);
-    for (cp1 = cp; ch_isspace(*cp1); cp1++)
-	continue;
+    cp1 = cp;
+    cpp_skip_whitespace(&cp1);
     if (*cp1 == '=' || *cp1 == '!')
 	return CondParser_Comparison(par, doEval);
     par->p = cp;
@@ -789,7 +785,7 @@ CondParser_Func(CondParser *par, Boolean doEval)
      * after .if must have been taken literally, so the argument cannot
      * be empty - even if it contained a variable expansion.
      */
-    t = !doEval || par->if_info->defProc(arglen, arg) != par->if_info->doNot;
+    t = !doEval || par->if_info->defProc(arglen, arg) == !par->if_info->doNot;
     free(arg);
     return t;
 }
@@ -1217,10 +1213,10 @@ Cond_EvalLine(const char *line)
 void
 Cond_restore_depth(unsigned int saved_depth)
 {
-    int open_conds = cond_depth - cond_min_depth;
+    unsigned int open_conds = cond_depth - cond_min_depth;
 
     if (open_conds != 0 || saved_depth > cond_depth) {
-	Parse_Error(PARSE_FATAL, "%d open conditional%s", open_conds,
+	Parse_Error(PARSE_FATAL, "%u open conditional%s", open_conds,
 		    open_conds == 1 ? "" : "s");
 	cond_depth = cond_min_depth;
     }
@@ -1231,7 +1227,7 @@ Cond_restore_depth(unsigned int saved_depth)
 unsigned int
 Cond_save_depth(void)
 {
-    int depth = cond_min_depth;
+    unsigned int depth = cond_min_depth;
 
     cond_min_depth = cond_depth;
     return depth;

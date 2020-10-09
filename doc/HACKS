@@ -1,4 +1,4 @@
-# $NetBSD: HACKS,v 1.209 2020/09/18 14:09:47 christos Exp $
+# $NetBSD: HACKS,v 1.214 2020/10/08 08:31:37 rin Exp $
 #
 # This file is intended to document workarounds for currently unsolved
 # (mostly) compiler bugs.
@@ -951,12 +951,14 @@ descr	Disable optimization for rtld.c on the vax with gcc-7. Crashes on the
 kcah
 
 port	alpha
-hack	GCC 7.4/8.3: userland binaries crash randomly (port-alpha/54307)
+hack	GCC 7.4/8.3/9.3: userland binaries crash randomly (port-alpha/54307)
 cdate	Fri Nov  1 20:43:35 UTC 2019
+mdate	Wed Oct  7 16:00:00 JST 2020
 who	rin
 file	src/external/bsd/jemalloc/lib/Makefile.inc: 1.11
-descr	rtree.c and tcache.c need to be compiled with -O0, alternatively,
-	you can compile whole jemalloc with -DJEMALLOC_DEBUG.
+descr	GCC miscompiles rtree.c (for 7.4 and 8.3) and tcache.c (for 7.4, 8.3,
+	and 9.3) with optimization levels -O[12]. Compile these files with -O0,
+	alternatively, compile whole jemalloc with -DJEMALLOC_DEBUG.
 kcah
 
 port	powerpc
@@ -973,39 +975,28 @@ descr	Disable optimization on tc.c, logerr.c, ubsan.c crashes:
 	function "__int64_t llvm::MachineFrameInfo::getObjectOffset(int) const"
 kcah
 
-port	earmv7hf*
-hack	compile gdb/dwarf2expr.c with -O0 for GCC8 (toolchain/54820 and 54877)
+port	arm
+hack	compile gdb/dwarf2{expr,loc}.c with -O0 for GCC[89] (PR/54820, 54877)
 cdate	Wed Apr 29 11:04:58 UTC 2020
+mdate	Thu Oct  8 17:00:00 JST 2020
 who	rin
 file	src/external/gpl3/gdb/lib/libgdb/Makefile: 1.22
-descr	GCC 8.4 miscompiles dwarf2expr.c with -O2 or -O1, which results in
-	crashes with 'gdb_exception_RETURN_MASK_ERROR'. Note that this occurs
-	only for earmv7hf{,eb} as far as I can see. Neither earmv6hf{,eb} nor
-	earmv7{,eb} (softfloat) are affected.
+descr	For earmv7hf{,eb}, GCC 8.4 and 9.3 miscompile dwarf2expr.c with -O[21].
+	For earmv5hf{,eb}, GCC 9.3 miscompiles dwarf2{expr,loc}.c with -O2
+	(GCC9 -O1 and GCC8 -O2 work fine). These result in GDB crash with
+	``gdb_exception_RETURN_MASK_ERROR''. For everyone's safety, compile
+	these files with -O0 for all arm variants with GCC >= 8.
 kcah
 
 port	m68k
-hack	compile aes_ccm_tag() with -O0 for GCC8
+hack	compile aes_ccm_tag() with -O0 for GCC8 and GCC9
 cdate	Mon Aug 10 06:27:29 UTC 2020
+mdate	Mon Oct  5 22:00:00 JST 2020
 who	rin
 file	src/sys/crypto/aes/aes_ccm.c: 1.5
-descr	GCC 8.4 miscompiles aes_ccm_tag() for m68k with optimization level
-	-O[12], which results in failure in aes_ccm_selftest().
-	This is observed for amiga (A1200, 68060), mac68k (Quadra 840AV,
-	68040), and luna68k (nono, 68030 emulator). However, it is not for
-	sun3 (TME, 68020 emulator) and sun2 (TME, 68010 emulator).
-	At the moment, it is unclear whether this is due to differences b/w
-	68010-20 vs 68030-60, or something wrong with TME.
-kcah
-
-port	sun2
-hack	compile kernel with -fno-omit-frame-pointer for GCC8
-cdate	Mon Aug 10 06:28:42 UTC 2020
-who	rin
-file	src/sys/arch/sun2/conf/Makefile.sun2: 1.25
-descr	Work around for reproducible kernel freezes just after ``Starting
-	postfix.'', where I cannot even enter DDB nor obtain crash dump.
-	I still haven't figured out why. Possibly something wrong with -Os
-	optimization level for GCC/m68k, cf.,
-	http://mail-index.netbsd.org/port-sun3/2020/07/19/msg000166.html
+descr	GCC 9.4 and 8.3 miscompile aes_ccm_tag() for m68k with optimization
+	level -O[12], which results in failure in aes_ccm_selftest().
+	For 9.4, -O0 and -O1 work but -O2 fails for amiga (A1200, 68060) and
+	mac68k (Quadra 840AV, 68040). Whereas -O0 and -O2 work but -O1 fails
+	for sun3 (TME, 68020 emulator) and sun2 (TME, 68010 emulator).
 kcah
