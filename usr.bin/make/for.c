@@ -1,4 +1,4 @@
-/*	$NetBSD: for.c,v 1.89 2020/09/28 20:46:11 rillig Exp $	*/
+/*	$NetBSD: for.c,v 1.93 2020/10/05 20:21:30 rillig Exp $	*/
 
 /*
  * Copyright (c) 1992, The Regents of the University of California.
@@ -61,7 +61,7 @@
 #include    "strlist.h"
 
 /*	"@(#)for.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: for.c,v 1.89 2020/09/28 20:46:11 rillig Exp $");
+MAKE_RCSID("$NetBSD: for.c,v 1.93 2020/10/05 20:21:30 rillig Exp $");
 
 typedef enum {
     FOR_SUB_ESCAPE_CHAR = 0x0001,
@@ -83,7 +83,7 @@ typedef struct For {
      * are substituted, the parser must handle $V expressions as well, not
      * only ${V} and $(V). */
     Boolean short_var;
-    int sub_next;
+    unsigned int sub_next;
 } For;
 
 static For *accumFor;		/* Loop being accumulated */
@@ -119,8 +119,8 @@ For_Eval(const char *line)
     Words words;
 
     /* Skip the '.' and any following whitespace */
-    for (ptr = line + 1; ch_isspace(*ptr); ptr++)
-	continue;
+    ptr = line + 1;
+    cpp_skip_whitespace(&ptr);
 
     /*
      * If we are not in a for loop quickly determine if the statement is
@@ -149,11 +149,10 @@ For_Eval(const char *line)
     new_for->sub_next = 0;
 
     /* Grab the variables. Terminate on "in". */
-    while (TRUE) {
+    for (;;) {
 	size_t len;
 
-	while (ch_isspace(*ptr))
-	    ptr++;
+	cpp_skip_whitespace(&ptr);
 	if (*ptr == '\0') {
 	    Parse_Error(PARSE_FATAL, "missing `in' in for");
 	    For_Free(new_for);
@@ -169,7 +168,8 @@ For_Eval(const char *line)
 	if (len == 1)
 	    new_for->short_var = TRUE;
 
-	strlist_add_str(&new_for->vars, bmake_strldup(ptr, len), len);
+	strlist_add_str(&new_for->vars, bmake_strldup(ptr, len),
+			(unsigned int)len);
 	ptr += len;
     }
 
@@ -179,8 +179,7 @@ For_Eval(const char *line)
 	return -1;
     }
 
-    while (ch_isspace(*ptr))
-	ptr++;
+    cpp_skip_whitespace(&ptr);
 
     /*
      * Make a list with the remaining words.
@@ -267,9 +266,8 @@ For_Accum(const char *line)
     const char *ptr = line;
 
     if (*ptr == '.') {
-
-	for (ptr++; *ptr && ch_isspace(*ptr); ptr++)
-	    continue;
+	ptr++;
+	cpp_skip_whitespace(&ptr);
 
 	if (strncmp(ptr, "endfor", 6) == 0 && (ch_isspace(ptr[6]) || !ptr[6])) {
 	    DEBUG1(FOR, "For: end for %d\n", forLevel);
@@ -328,8 +326,8 @@ for_substitute(Buffer *cmds, strlist_t *items, unsigned int item_no, char ech)
 
     /* If there were no escapes, or the only escape is the other variable
      * terminator, then just substitute the full string */
-    if (!(escapes &
-	  (ech == ')' ? ~FOR_SUB_ESCAPE_BRACE : ~FOR_SUB_ESCAPE_PAREN))) {
+    if (!(escapes & (ech == ')' ? ~(unsigned)FOR_SUB_ESCAPE_BRACE
+				: ~(unsigned)FOR_SUB_ESCAPE_PAREN))) {
 	Buf_AddStr(cmds, item);
 	return;
     }
@@ -355,7 +353,7 @@ static char *
 ForIterate(void *v_arg, size_t *ret_len)
 {
     For *arg = v_arg;
-    int i;
+    unsigned int i;
     char *var;
     const char *cp;
     const char *cmd_cp;

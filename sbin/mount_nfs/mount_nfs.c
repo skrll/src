@@ -1,4 +1,4 @@
-/*	$NetBSD: mount_nfs.c,v 1.72 2018/05/17 02:34:31 thorpej Exp $	*/
+/*	$NetBSD: mount_nfs.c,v 1.74 2020/10/03 18:42:20 christos Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993, 1994
@@ -42,7 +42,7 @@ __COPYRIGHT("@(#) Copyright (c) 1992, 1993, 1994\
 #if 0
 static char sccsid[] = "@(#)mount_nfs.c	8.11 (Berkeley) 5/4/95";
 #else
-__RCSID("$NetBSD: mount_nfs.c,v 1.72 2018/05/17 02:34:31 thorpej Exp $");
+__RCSID("$NetBSD: mount_nfs.c,v 1.74 2020/10/03 18:42:20 christos Exp $");
 #endif
 #endif /* not lint */
 
@@ -52,7 +52,8 @@ __RCSID("$NetBSD: mount_nfs.c,v 1.72 2018/05/17 02:34:31 thorpej Exp $");
 #include <sys/stat.h>
 #include <syslog.h>
 
-#include <nfs/rpcv2.h>
+#include <rpc/rpc.h>
+#include <nfs/rpcv2.h>	/* XXX: redefines enums */
 #include <nfs/nfsproto.h>
 #include <nfs/nfs.h>
 #include <nfs/nfsmount.h>
@@ -79,6 +80,7 @@ __RCSID("$NetBSD: mount_nfs.c,v 1.72 2018/05/17 02:34:31 thorpej Exp $");
 #define ALTF_CONN	0x00000002
 #define ALTF_DUMBTIMR	0x00000004
 #define ALTF_INTR	0x00000008
+#define ALTF_NOAC	0x00000010
 #define ALTF_NFSV3	0x00000020
 #define ALTF_RDIRPLUS	0x00000040
 #define	ALTF_MNTUDP	0x00000080
@@ -109,6 +111,7 @@ static const struct mntopt mopts[] = {
 	{ "conn", 0, ALTF_CONN, 1 },
 	{ "dumbtimer", 0, ALTF_DUMBTIMR, 1 },
 	{ "intr", 0, ALTF_INTR, 1 },
+	{ "ac", 1, ALTF_NOAC, 1 },
 	{ "nfsv3", 0, ALTF_NFSV3, 1 },
 	{ "rdirplus", 0, ALTF_RDIRPLUS, 1 },
 	{ "mntudp", 0, ALTF_MNTUDP, 1 },
@@ -179,13 +182,29 @@ mount_nfs_dogetargs(struct nfs_args *nfsargsp, int mntflags, const char *spec)
 		nfsargsp->addrlen = sizeof(sa);
 	} else {
 		if ((tspec = strdup(spec)) == NULL) {
-			err(1, "strdup");
+			err(EXIT_FAILURE, "strdup");
 		}
 		if (!getnfsargs(tspec, nfsargsp)) {
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 		free(tspec);
 	}
+}
+
+static int
+getnum(const char *s, int c)
+{
+	char *es;
+	long num = strtol(s, &es, 10);
+	if (*es || num <= 0 || num > INT_MAX)
+		errx(EXIT_FAILURE, "Illegal value `%s' for option -%c", s, c);
+	return (int)num;
+}
+
+static __dead void
+conflicting(void)
+{
+	errx(EXIT_FAILURE, "Conflicting version options");
 }
 
 void
@@ -193,7 +212,6 @@ mount_nfs_parseargs(int argc, char *argv[],
 	struct nfs_args *nfsargsp, int *mntflags,
 	char *spec, char *name)
 {
-	char *p;
 	int altflags, num;
 	int c;
 	mntoptparse_t mp;
@@ -208,20 +226,20 @@ mount_nfs_parseargs(int argc, char *argv[],
 		case '3':
 		case 'q':
 			if (force2)
-				errx(1, "conflicting version options");
+				conflicting();
 			force3 = 1;
 			break;
 		case '2':
 			if (force3)
-				errx(1, "conflicting version options");
+				conflicting();
 			force2 = 1;
 			nfsargsp->flags &= ~NFSMNT_NFSV3;
 			break;
+		case 'A':
+			nfsargsp->flags |= NFSMNT_NOAC;
+			break;
 		case 'a':
-			num = strtol(optarg, &p, 10);
-			if (*p || num < 0)
-				errx(1, "illegal -a value -- %s", optarg);
-			nfsargsp->readahead = num;
+			nfsargsp->readahead = getnum(optarg, c);
 			nfsargsp->flags |= NFSMNT_READAHEAD;
 			break;
 		case 'b':
@@ -234,30 +252,20 @@ mount_nfs_parseargs(int argc, char *argv[],
 			nfsargsp->flags &= ~NFSMNT_NOCONN;
 			break;
 		case 'D':
-			num = strtol(optarg, &p, 10);
-			if (*p || num <= 0)
-				errx(1, "illegal -D value -- %s", optarg);
-			nfsargsp->deadthresh = num;
+			nfsargsp->deadthresh = getnum(optarg, c);
 			nfsargsp->flags |= NFSMNT_DEADTHRESH;
 			break;
 		case 'd':
 			nfsargsp->flags |= NFSMNT_DUMBTIMR;
 			break;
-#if 0 /* XXXX */
 		case 'g':
-			num = strtol(optarg, &p, 10);
-			if (*p || num <= 0)
-				errx(1, "illegal -g value -- %s", optarg);
+			num = getnum(optarg, c);
 			set_rpc_maxgrouplist(num);
 			nfsargsp->maxgrouplist = num;
 			nfsargsp->flags |= NFSMNT_MAXGRPS;
 			break;
-#endif
 		case 'I':
-			num = strtol(optarg, &p, 10);
-			if (*p || num <= 0)
-				errx(1, "illegal -I value -- %s", optarg);
-			nfsargsp->readdirsize = num;
+			nfsargsp->readdirsize = getnum(optarg, c);
 			nfsargsp->flags |= NFSMNT_READDIRSIZE;
 			break;
 		case 'i':
@@ -272,7 +280,7 @@ mount_nfs_parseargs(int argc, char *argv[],
 		case 'o':
 			mp = getmntopts(optarg, mopts, mntflags, &altflags);
 			if (mp == NULL)
-				err(1, "getmntopts");
+				err(EXIT_FAILURE, "getmntopts");
 			if (altflags & ALTF_BG)
 				opflags |= BGRND;
 			if (altflags & ALTF_CONN)
@@ -281,14 +289,16 @@ mount_nfs_parseargs(int argc, char *argv[],
 				nfsargsp->flags |= NFSMNT_DUMBTIMR;
 			if (altflags & ALTF_INTR)
 				nfsargsp->flags |= NFSMNT_INT;
+			if (altflags & ALTF_NOAC)
+				nfsargsp->flags |= NFSMNT_NOAC;
 			if (altflags & (ALTF_NFSV3|ALTF_NQNFS)) {
 				if (force2)
-					errx(1, "conflicting version options");
+					conflicting();
 				force3 = 1;
 			}
 			if (altflags & ALTF_NFSV2) {
 				if (force3)
-					errx(1, "conflicting version options");
+					conflicting();
 				force2 = 1;
 				nfsargsp->flags &= ~NFSMNT_NFSV3;
 			}
@@ -311,7 +321,7 @@ mount_nfs_parseargs(int argc, char *argv[],
 				nfsargsp->sotype = SOCK_STREAM;
 			}
 			if (altflags & ALTF_PORT) {
-				port = getmntoptnum(mp, "port");
+				port = (int)getmntoptnum(mp, "port");
 			}
 			if (altflags & ALTF_RSIZE) {
 				nfsargsp->rsize =
@@ -371,16 +381,10 @@ mount_nfs_parseargs(int argc, char *argv[],
 			nfsargsp->flags &= ~NFSMNT_RESVPORT;
 			break;
 		case 'R':
-			num = strtol(optarg, &p, 10);
-			if (*p || num <= 0)
-				errx(1, "illegal -R value -- %s", optarg);
-			retrycnt = num;
+			retrycnt = getnum(optarg, c);
 			break;
 		case 'r':
-			num = strtol(optarg, &p, 10);
-			if (*p || num <= 0)
-				errx(1, "illegal -r value -- %s", optarg);
-			nfsargsp->rsize = num;
+			nfsargsp->rsize = getnum(optarg, c);
 			nfsargsp->flags |= NFSMNT_RSIZE;
 			break;
 		case 's':
@@ -390,24 +394,15 @@ mount_nfs_parseargs(int argc, char *argv[],
 			nfsargsp->sotype = SOCK_STREAM;
 			break;
 		case 't':
-			num = strtol(optarg, &p, 10);
-			if (*p || num <= 0)
-				errx(1, "illegal -t value -- %s", optarg);
-			nfsargsp->timeo = num;
+			nfsargsp->timeo = getnum(optarg, c);
 			nfsargsp->flags |= NFSMNT_TIMEO;
 			break;
 		case 'w':
-			num = strtol(optarg, &p, 10);
-			if (*p || num <= 0)
-				errx(1, "illegal -w value -- %s", optarg);
-			nfsargsp->wsize = num;
+			nfsargsp->wsize = getnum(optarg, c);
 			nfsargsp->flags |= NFSMNT_WSIZE;
 			break;
 		case 'x':
-			num = strtol(optarg, &p, 10);
-			if (*p || num <= 0)
-				errx(1, "illegal -x value -- %s", optarg);
-			nfsargsp->retrans = num;
+			nfsargsp->retrans = getnum(optarg, c);
 			nfsargsp->flags |= NFSMNT_RETRANS;
 			break;
 		case 'X':
@@ -460,13 +455,13 @@ mount_nfs(int argc, char *argv[])
 		}
 	}
 	if (retval == -1)
-		err(1, "%s on %s", spec, name);
+		err(EXIT_FAILURE, "%s on %s", spec, name);
 	if (mntflags & MNT_GETARGS) {
 		shownfsargs(&args);
-		return (0);
+		return EXIT_SUCCESS;
 	}
 		
-	exit(0);
+	exit(EXIT_SUCCESS);
 }
 
 static void
@@ -476,9 +471,11 @@ shownfsargs(const struct nfs_args *nfsargsp)
 	char host[NI_MAXHOST], serv[NI_MAXSERV];
 	int error;
 
-	(void)snprintb(fbuf, sizeof(fbuf), NFSMNT_BITS, nfsargsp->flags);
+	(void)snprintb(fbuf, sizeof(fbuf), NFSMNT_BITS,
+	    (uint64_t)nfsargsp->flags);
 	if (nfsargsp->addr != NULL) {
-		error = getnameinfo(nfsargsp->addr, nfsargsp->addrlen, host,
+		error = getnameinfo(nfsargsp->addr,
+		    (socklen_t)nfsargsp->addrlen, host,
 		    sizeof(host), serv, sizeof(serv),
 		    NI_NUMERICHOST | NI_NUMERICSERV);
 		if (error != 0)
@@ -511,11 +508,11 @@ shownfsargs(const struct nfs_args *nfsargsp)
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: %s %s\n%s\n%s\n%s\n%s\n", getprogname(),
+	(void)fprintf(stderr, "Usage: %s %s\n%s\n%s\n%s\n%s\n", getprogname(),
 "[-23bCcdilPpqsTUuX] [-a maxreadahead] [-D deadthresh]",
 "\t[-g maxgroups] [-I readdirsize] [-L leaseterm]",
 "\t[-o options] [-R retrycnt] [-r readsize] [-t timeout]",
 "\t[-w writesize] [-x retrans]",
 "\trhost:path node");
-	exit(1);
+	exit(EXIT_FAILURE);
 }

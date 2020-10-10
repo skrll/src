@@ -1,4 +1,4 @@
-/*	$NetBSD: job.c,v 1.253 2020/09/28 23:31:18 rillig Exp $	*/
+/*	$NetBSD: job.c,v 1.262 2020/10/06 16:39:23 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -143,7 +143,7 @@
 #include "trace.h"
 
 /*	"@(#)job.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: job.c,v 1.253 2020/09/28 23:31:18 rillig Exp $");
+MAKE_RCSID("$NetBSD: job.c,v 1.262 2020/10/06 16:39:23 rillig Exp $");
 
 # define STATIC static
 
@@ -161,16 +161,6 @@ static int aborting = 0;	/* why is the make aborting? */
  * this tracks the number of tokens currently "out" to build jobs.
  */
 int jobTokensRunning = 0;
-
-/*
- * XXX: Avoid SunOS bug... FILENO() is fp->_file, and file
- * is a char! So when we go above 127 we turn negative!
- *
- * XXX: This cannot have ever worked. Converting a signed char directly to
- * unsigned creates very large numbers. It should have been converted to
- * unsigned char first, in the same way as for the <ctype.h> functions.
- */
-#define FILENO(a) ((unsigned) fileno(a))
 
 /* The number of commands actually printed for a target.
  * XXX: Why printed? Shouldn't that be run/printed instead, depending on the
@@ -264,7 +254,7 @@ static Shell    shells[] = {
      */
 {
     "csh",
-    TRUE, "unset verbose", "set verbose", "unset verbose", 10,
+    TRUE, "unset verbose", "set verbose", "unset verbose", 13,
     FALSE, "echo \"%s\"\n", "csh -c \"%s || exit 0\"\n", "", "'\\\n'", '#',
     "v", "e",
 },
@@ -290,7 +280,7 @@ static char *shellArgv = NULL;	/* Custom shell args */
 
 STATIC Job	*job_table;	/* The structures that describe them */
 STATIC Job	*job_table_end;	/* job_table + maxJobs */
-static int	wantToken;	/* we want a token */
+static unsigned int wantToken;	/* we want a token */
 static int lurking_children = 0;
 static int make_suspended = 0;	/* non-zero if we've seen a SIGTSTP (etc) */
 
@@ -300,7 +290,7 @@ static int make_suspended = 0;	/* non-zero if we've seen a SIGTSTP (etc) */
  */
 static struct pollfd *fds = NULL;
 static Job **jobfds = NULL;
-static int nfds = 0;
+static nfds_t nfds = 0;
 static void watchfd(Job *);
 static void clearfd(Job *);
 static int readyfd(Job *);
@@ -314,7 +304,7 @@ static Job childExitJob;	/* child exit pseudo-job */
 #define	CHILD_EXIT	"."
 #define	DO_JOB_RESUME	"R"
 
-static const int npseudojobs = 2; /* number of pseudo-jobs */
+enum { npseudojobs = 2 };	/* number of pseudo-jobs */
 
 #define TARG_FMT  "%s %s ---\n" /* Default format */
 #define MESSAGE(fp, gn) \
@@ -323,22 +313,9 @@ static const int npseudojobs = 2; /* number of pseudo-jobs */
 
 static sigset_t caught_signals;	/* Set of signals we handle */
 
-static void JobChildSig(int);
-static void JobContinueSig(int);
-static Job *JobFindPid(int, int, Boolean);
-static int JobPrintCommand(void *, void *);
-static void JobClose(Job *);
-static void JobExec(Job *, char **);
-static void JobMakeArgv(Job *, char **);
-static int JobStart(GNode *, int);
-static char *JobOutput(Job *, char *, char *, int);
 static void JobDoOutput(Job *, Boolean);
-static Shell *JobMatchShell(const char *);
 static void JobInterrupt(int, int) MAKE_ATTR_DEAD;
 static void JobRestartJobs(void);
-static void JobTokenAdd(void);
-static void JobSigLock(sigset_t *);
-static void JobSigUnlock(sigset_t *);
 static void JobSigReset(void);
 
 static unsigned
@@ -668,8 +645,7 @@ JobPrintCommand(void *cmdp, void *jobp)
 	cmd++;
     }
 
-    while (ch_isspace(*cmd))
-	cmd++;
+    pp_skip_whitespace(&cmd);
 
     /*
      * If the shell doesn't have error control the alternate echo'ing will
@@ -1227,7 +1203,7 @@ JobExec(Job *job, char **argv)
 	 * reset it to the beginning (again). Since the stream was marked
 	 * close-on-exec, we must clear that bit in the new input.
 	 */
-	if (dup2(FILENO(job->cmdFILE), 0) == -1) {
+	if (dup2(fileno(job->cmdFILE), 0) == -1) {
 	    execError("dup2", "job->cmdFILE");
 	    _exit(1);
 	}
@@ -1480,7 +1456,7 @@ JobStart(GNode *gn, int flags)
 	if (job->cmdFILE == NULL) {
 	    Punt("Could not fdopen %s", tfile);
 	}
-	(void)fcntl(FILENO(job->cmdFILE), F_SETFD, FD_CLOEXEC);
+	(void)fcntl(fileno(job->cmdFILE), F_SETFD, FD_CLOEXEC);
 	/*
 	 * Send the commands to the command file, flush all its buffers then
 	 * rewind and remove the thing.
@@ -1589,19 +1565,14 @@ JobStart(GNode *gn, int flags)
 }
 
 static char *
-JobOutput(Job *job, char *cp, char *endp, int msg)
+JobOutput(Job *job, char *cp, char *endp)
 {
     char *ecp;
 
-    if (commandShell->noPrint) {
-	ecp = Str_FindSubstring(cp, commandShell->noPrint);
-	while (ecp != NULL) {
+    if (commandShell->noPrint && commandShell->noPrint[0] != '\0') {
+	while ((ecp = strstr(cp, commandShell->noPrint)) != NULL) {
 	    if (cp != ecp) {
 		*ecp = '\0';
-		if (!beSilent && msg && job->node != lastNode) {
-		    MESSAGE(stdout, job->node);
-		    lastNode = job->node;
-		}
 		/*
 		 * The only way there wouldn't be a newline after
 		 * this line is if it were the last in the buffer.
@@ -1622,7 +1593,6 @@ JobOutput(Job *job, char *cp, char *endp, int msg)
 		while (*cp == ' ' || *cp == '\t' || *cp == '\n') {
 		    cp++;
 		}
-		ecp = Str_FindSubstring(cp, commandShell->noPrint);
 	    } else {
 		return cp;
 	    }
@@ -1668,10 +1638,10 @@ JobDoOutput(Job *job, Boolean finish)
 {
     Boolean gotNL = FALSE;	/* true if got a newline */
     Boolean fbuf;		/* true if our buffer filled up */
-    int nr;			/* number of bytes read */
-    int i;			/* auxiliary index into outBuf */
-    int max;			/* limit for i (end of current data) */
-    int nRead;			/* (Temporary) number of bytes read */
+    size_t nr;			/* number of bytes read */
+    size_t i;			/* auxiliary index into outBuf */
+    size_t max;			/* limit for i (end of current data) */
+    ssize_t nRead;		/* (Temporary) number of bytes read */
 
     /*
      * Read as many bytes as will fit in the buffer.
@@ -1690,7 +1660,7 @@ end_loop:
 	}
 	nr = 0;
     } else {
-	nr = nRead;
+	nr = (size_t)nRead;
     }
 
     /*
@@ -1713,7 +1683,7 @@ end_loop:
      * TRUE.
      */
     max = job->curPos + nr;
-    for (i = job->curPos + nr - 1; i >= job->curPos; i--) {
+    for (i = job->curPos + nr - 1; i >= job->curPos && i != (size_t)-1; i--) {
 	if (job->outBuf[i] == '\n') {
 	    gotNL = TRUE;
 	    break;
@@ -1751,7 +1721,7 @@ end_loop:
 	if (i >= job->curPos) {
 	    char *cp;
 
-	    cp = JobOutput(job, job->outBuf, &job->outBuf[i], FALSE);
+	    cp = JobOutput(job, job->outBuf, &job->outBuf[i]);
 
 	    /*
 	     * There's still more in that thar buffer. This time, though,
@@ -1912,7 +1882,7 @@ Job_CatchOutput(void)
 {
     int nready;
     Job *job;
-    int i;
+    unsigned int i;
 
     (void)fflush(stdout);
 
@@ -1946,9 +1916,9 @@ Job_CatchOutput(void)
 
     Job_CatchChildren();
     if (nready == 0)
-	    return;
+	return;
 
-    for (i = npseudojobs*nfds_per_job(); i < nfds; i++) {
+    for (i = npseudojobs * nfds_per_job(); i < nfds; i++) {
 	if (!fds[i].revents)
 	    continue;
 	job = jobfds[i];
@@ -1967,7 +1937,7 @@ Job_CatchOutput(void)
 	}
 #endif
 	if (--nready == 0)
-		return;
+	    return;
     }
 }
 
@@ -2011,7 +1981,7 @@ Shell_Init(void)
 	    shellErrFlag = NULL;
 	}
 	if (!shellErrFlag) {
-	    int n = strlen(commandShell->exit) + 2;
+	    size_t n = strlen(commandShell->exit) + 2;
 
 	    shellErrFlag = bmake_malloc(n);
 	    if (shellErrFlag) {
@@ -2052,8 +2022,8 @@ Job_Init(void)
 {
     Job_SetPrefix();
     /* Allocate space for all the job info */
-    job_table = bmake_malloc(maxJobs * sizeof *job_table);
-    memset(job_table, 0, maxJobs * sizeof *job_table);
+    job_table = bmake_malloc((size_t)maxJobs * sizeof *job_table);
+    memset(job_table, 0, (size_t)maxJobs * sizeof *job_table);
     job_table_end = job_table + maxJobs;
     wantToken =	0;
 
@@ -2085,9 +2055,9 @@ Job_Init(void)
 
     /* Preallocate enough for the maximum number of jobs.  */
     fds = bmake_malloc(sizeof(*fds) *
-	(npseudojobs + maxJobs) * nfds_per_job());
+	(npseudojobs + (size_t)maxJobs) * nfds_per_job());
     jobfds = bmake_malloc(sizeof(*jobfds) *
-	(npseudojobs + maxJobs) * nfds_per_job());
+	(npseudojobs + (size_t)maxJobs) * nfds_per_job());
 
     /* These are permanent entries and take slots 0 and 1 */
     watchfd(&tokenWaitJob);
@@ -2226,8 +2196,7 @@ Job_ParseShell(char *line)
     Boolean	fullSpec = FALSE;
     Shell	*sh;
 
-    while (ch_isspace(*line))
-	line++;
+    pp_skip_whitespace(&line);
 
     free(shellArgv);
 
@@ -2542,10 +2511,10 @@ watchfd(Job *job)
 static void
 clearfd(Job *job)
 {
-    int i;
+    size_t i;
     if (job->inPollfd == NULL)
 	Punt("Unwatching unwatched job");
-    i = job->inPollfd - fds;
+    i = (size_t)(job->inPollfd - fds);
     nfds--;
 #if defined(USE_FILEMON) && !defined(USE_FILEMON_DEV)
     if (useMeta) {
@@ -2659,7 +2628,7 @@ Boolean
 Job_TokenWithdraw(void)
 {
     char tok, tok1;
-    int count;
+    ssize_t count;
 
     wantToken = 0;
     DEBUG3(JOB, "Job_TokenWithdraw(%d): aborting %d, running %d\n",
