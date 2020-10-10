@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.555 2020/09/30 06:46:43 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.570 2020/10/06 08:13:27 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -121,7 +121,7 @@
 #include    "metachar.h"
 
 /*	"@(#)var.c	8.3 (Berkeley) 3/19/94" */
-MAKE_RCSID("$NetBSD: var.c,v 1.555 2020/09/30 06:46:43 rillig Exp $");
+MAKE_RCSID("$NetBSD: var.c,v 1.570 2020/10/06 08:13:27 rillig Exp $");
 
 #define VAR_DEBUG1(fmt, arg1) DEBUG1(VAR, fmt, arg1)
 #define VAR_DEBUG2(fmt, arg1, arg2) DEBUG2(VAR, fmt, arg1, arg2)
@@ -213,11 +213,31 @@ ENUM_FLAGS_RTTI_6(VarFlags,
 		  VAR_IN_USE, VAR_FROM_ENV,
 		  VAR_EXPORTED, VAR_REEXPORT, VAR_FROM_CMD, VAR_READONLY);
 
+/* Variables are defined using one of the VAR=value assignments.  Their
+ * value can be queried by expressions such as $V, ${VAR}, or with modifiers
+ * such as ${VAR:S,from,to,g:Q}.
+ *
+ * There are 3 kinds of variables: context variables, environment variables,
+ * undefined variables.
+ *
+ * Context variables are stored in a GNode.context.  The only way to undefine
+ * a context variable is using the .undef directive.  In particular, it must
+ * not be possible to undefine a variable during the evaluation of an
+ * expression, or Var.name might point nowhere.
+ *
+ * Environment variables are temporary.  They are returned by VarFind, and
+ * after using them, they must be freed using VarFreeEnv.
+ *
+ * Undefined variables occur during evaluation of variable expressions such
+ * as ${UNDEF:Ufallback} in Var_Parse and ApplyModifiers.
+ */
 typedef struct Var {
-    char          *name;	/* the variable's name; it is allocated for
-				 * environment variables and aliased to the
-				 * Hash_Entry name for all other variables,
-				 * and thus must not be modified */
+    /* The name of the variable, once set, doesn't change anymore.
+     * For context variables, it aliases the corresponding Hash_Entry name.
+     * For environment and undefined variables, it is allocated. */
+    const char *name;
+    void *name_freeIt;
+
     Buffer	  val;		/* its value */
     VarFlags	  flags;	/* miscellaneous status flags */
 } Var;
@@ -252,6 +272,19 @@ typedef enum {
     VARP_ANCHOR_START	= 0x04,	/* Match at start of word */
     VARP_ANCHOR_END	= 0x08	/* Match at end of word */
 } VarPatternFlags;
+
+static Var *
+VarNew(const char *name, void *name_freeIt, const char *value, VarFlags flags)
+{
+    size_t value_len = strlen(value);
+    Var *var = bmake_malloc(sizeof *var);
+    var->name = name;
+    var->name_freeIt = name_freeIt;
+    Buf_Init(&var->val, value_len + 1);
+    Buf_AddBytes(&var->val, value, value_len);
+    var->flags = flags;
+    return var;
+}
 
 /*-
  *-----------------------------------------------------------------------
@@ -349,16 +382,8 @@ VarFind(const char *name, GNode *ctxt, VarFindFlags flags)
 	char *env;
 
 	if ((env = getenv(name)) != NULL) {
-	    Var *v = bmake_malloc(sizeof(Var));
-	    size_t len;
-	    v->name = bmake_strdup(name);
-
-	    len = strlen(env);
-	    Buf_Init(&v->val, len + 1);
-	    Buf_AddBytes(&v->val, env, len);
-
-	    v->flags = VAR_FROM_ENV;
-	    return v;
+	    char *varname = bmake_strdup(name);
+	    return VarNew(varname, varname, env, VAR_FROM_ENV);
 	}
 
 	if (checkEnvFirst && (flags & FIND_GLOBAL) && ctxt != VAR_GLOBAL) {
@@ -392,7 +417,7 @@ VarFreeEnv(Var *v, Boolean destroy)
 {
     if (!(v->flags & VAR_FROM_ENV))
 	return FALSE;
-    free(v->name);
+    free(v->name_freeIt);
     Buf_Destroy(&v->val, destroy);
     free(v);
     return TRUE;
@@ -403,20 +428,10 @@ VarFreeEnv(Var *v, Boolean destroy)
 static void
 VarAdd(const char *name, const char *val, GNode *ctxt, VarSet_Flags flags)
 {
-    Var *v = bmake_malloc(sizeof(Var));
-    size_t len = strlen(val);
-    Hash_Entry *he;
-
-    Buf_Init(&v->val, len + 1);
-    Buf_AddBytes(&v->val, val, len);
-
-    v->flags = 0;
-    if (flags & VAR_SET_READONLY)
-	v->flags |= VAR_READONLY;
-
-    he = Hash_CreateEntry(&ctxt->context, name, NULL);
+    Hash_Entry *he = Hash_CreateEntry(&ctxt->context, name, NULL);
+    Var *v = VarNew(he->name, NULL, val,
+		      flags & VAR_SET_READONLY ? VAR_READONLY : 0);
     Hash_SetValue(he, v);
-    v->name = he->name;
     if (!(ctxt->flags & INTERNAL)) {
 	VAR_DEBUG3("%s:%s = %s\n", ctxt->name, name, val);
     }
@@ -445,8 +460,7 @@ Var_Delete(const char *name, GNode *ctxt)
 	    unsetenv(v->name);
 	if (strcmp(v->name, MAKE_EXPORTED) == 0)
 	    var_exportedVars = VAR_EXPORTED_NONE;
-	if (v->name != he->name)
-	    free(v->name);
+	assert(v->name_freeIt == NULL);
 	Hash_DeleteEntry(&ctxt->context, he);
 	Buf_Destroy(&v->val, TRUE);
 	free(v);
@@ -470,6 +484,8 @@ Var_Export1(const char *name, VarExportFlags flags)
 
     if (name[0] == '.')
 	return FALSE;		/* skip internals */
+    if (name[0] == '-')
+	return FALSE;		/* skip misnamed variables */
     if (name[1] == '\0') {
 	/*
 	 * A single char.
@@ -601,14 +617,14 @@ Var_Export(const char *str, Boolean isExport)
 	return;
     }
 
-    flags = 0;
-    if (strncmp(str, "-env", 4) == 0) {
+    if (isExport && strncmp(str, "-env", 4) == 0) {
 	str += 4;
-    } else if (strncmp(str, "-literal", 8) == 0) {
+    	flags = 0;
+    } else if (isExport && strncmp(str, "-literal", 8) == 0) {
 	str += 8;
-	flags |= VAR_EXPORT_LITERAL;
+	flags = VAR_EXPORT_LITERAL;
     } else {
-	flags |= VAR_EXPORT_PARENT;
+	flags = VAR_EXPORT_PARENT;
     }
 
     (void)Var_Subst(str, VAR_GLOBAL, VARE_WANTRES, &val);
@@ -675,8 +691,7 @@ Var_UnExport(const char *str)
 	if (cp && *cp)
 	    setenv(MAKE_LEVEL_ENV, cp, 1);
     } else {
-	for (; ch_isspace(*str); str++)
-	    continue;
+	cpp_skip_whitespace(&str);
 	if (str[0] != '\0')
 	    varnames = str;
     }
@@ -1290,8 +1305,11 @@ ModifyWord_Subst(const char *word, SepBuf *buf, void *data)
 	return;
     }
 
+    if (args->lhs[0] == '\0')
+    	goto nosub;
+
     /* unanchored case, may match more than once */
-    while ((match = Str_FindSubstring(word, args->lhs)) != NULL) {
+    while ((match = strstr(word, args->lhs)) != NULL) {
 	SepBuf_AddBytesBetween(buf, word, match);
 	SepBuf_AddBytes(buf, args->rhs, args->rhsLen);
 	args->matched = TRUE;
@@ -1395,7 +1413,7 @@ tryagain:
 	break;
     default:
 	VarREError(xrv, &args->re, "Unexpected regex error");
-	/* fall through */
+	/* FALLTHROUGH */
     case REG_NOMATCH:
     nosub:
 	SepBuf_AddStr(buf, wp);
@@ -2063,6 +2081,16 @@ ApplyModifier_Defined(const char **pp, ApplyModifiersState *st)
     return AMR_OK;
 }
 
+/* :L */
+static ApplyModifierResult
+ApplyModifier_Literal(const char **pp, ApplyModifiersState *st)
+{
+    ApplyModifiersState_Define(st);
+    st->newVal = bmake_strdup(st->v->name);
+    (*pp)++;
+    return AMR_OK;
+}
+
 /* :gmtime */
 static ApplyModifierResult
 ApplyModifier_Gmtime(const char **pp, ApplyModifiersState *st)
@@ -2448,9 +2476,7 @@ ModifyWord_Copy(const char *word, SepBuf *buf, void *data MAKE_ATTR_UNUSED)
 static ApplyModifierResult
 ApplyModifier_ToSep(const char **pp, ApplyModifiersState *st)
 {
-    /* XXX: pp points to the 's', for historic reasons only.
-     * Changing this will influence the error messages. */
-    const char *sep = *pp + 1;
+    const char *sep = *pp + 2;
 
     /* ":ts<any><endc>" or ":ts<any>:" */
     if (sep[0] != st->endc && (sep[1] == st->endc || sep[1] == ':')) {
@@ -2467,8 +2493,10 @@ ApplyModifier_ToSep(const char **pp, ApplyModifiersState *st)
     }
 
     /* ":ts<unrecognised><unrecognised>". */
-    if (sep[0] != '\\')
+    if (sep[0] != '\\') {
+	(*pp)++;		/* just for backwards compatibility */
 	return AMR_BAD;
+    }
 
     /* ":ts\n" */
     if (sep[1] == 'n') {
@@ -2493,12 +2521,16 @@ ApplyModifier_ToSep(const char **pp, ApplyModifiersState *st)
 	if (sep[1] == 'x') {
 	    base = 16;
 	    numStart++;
-	} else if (!ch_isdigit(sep[1]))
+	} else if (!ch_isdigit(sep[1])) {
+	    (*pp)++;		/* just for backwards compatibility */
 	    return AMR_BAD;	/* ":ts<backslash><unrecognised>". */
+	}
 
 	st->sep = (char)strtoul(numStart, &end, base);
-	if (*end != ':' && *end != st->endc)
+	if (*end != ':' && *end != st->endc) {
+	    (*pp)++;		/* just for backwards compatibility */
 	    return AMR_BAD;
+	}
 	*pp = end;
     }
 
@@ -2515,15 +2547,18 @@ ApplyModifier_To(const char **pp, ApplyModifiersState *st)
     const char *mod = *pp;
     assert(mod[0] == 't');
 
-    *pp = mod + 1;		/* make sure it is set */
-    if (mod[1] == st->endc || mod[1] == ':' || mod[1] == '\0')
+    if (mod[1] == st->endc || mod[1] == ':' || mod[1] == '\0') {
+	*pp = mod + 1;
 	return AMR_BAD;		/* Found ":t<endc>" or ":t:". */
+    }
 
     if (mod[1] == 's')
 	return ApplyModifier_ToSep(pp, st);
 
-    if (mod[2] != st->endc && mod[2] != ':')
+    if (mod[2] != st->endc && mod[2] != ':') {
+	*pp = mod + 1;
 	return AMR_BAD;		/* Found ":t<unrecognised><unrecognised>". */
+    }
 
     /* Check for two-character options: ":tu", ":tl" */
     if (mod[1] == 'A') {	/* absolute path */
@@ -2533,7 +2568,7 @@ ApplyModifier_To(const char **pp, ApplyModifiersState *st)
 	return AMR_OK;
     }
 
-    if (mod[1] == 'u') {
+    if (mod[1] == 'u') {	/* :tu */
 	size_t i;
 	size_t len = strlen(st->val);
 	st->newVal = bmake_malloc(len + 1);
@@ -2543,7 +2578,7 @@ ApplyModifier_To(const char **pp, ApplyModifiersState *st)
 	return AMR_OK;
     }
 
-    if (mod[1] == 'l') {
+    if (mod[1] == 'l') {	/* :tl */
 	size_t i;
 	size_t len = strlen(st->val);
 	st->newVal = bmake_malloc(len + 1);
@@ -2553,7 +2588,7 @@ ApplyModifier_To(const char **pp, ApplyModifiersState *st)
 	return AMR_OK;
     }
 
-    if (mod[1] == 'W' || mod[1] == 'w') {
+    if (mod[1] == 'W' || mod[1] == 'w') { /* :tW, :tw */
 	st->oneBigWord = mod[1] == 'W';
 	st->newVal = st->val;
 	*pp = mod + 2;
@@ -2561,6 +2596,7 @@ ApplyModifier_To(const char **pp, ApplyModifiersState *st)
     }
 
     /* Found ":t<unrecognised>:" or ":t<unrecognised><endc>". */
+    *pp = mod + 1;
     return AMR_BAD;
 }
 
@@ -2794,7 +2830,6 @@ static ApplyModifierResult
 ApplyModifier_Assign(const char **pp, ApplyModifiersState *st)
 {
     GNode *v_ctxt;
-    char *sv_name;
     char delim;
     char *val;
     VarParseResult res;
@@ -2807,20 +2842,13 @@ ApplyModifier_Assign(const char **pp, ApplyModifiersState *st)
 	return AMR_UNKNOWN;	/* "::<unrecognised>" */
 
 
-    if (st->v->name[0] == 0) {
+    if (st->v->name[0] == '\0') {
 	*pp = mod + 1;
 	return AMR_BAD;
     }
 
     v_ctxt = st->ctxt;		/* context where v belongs */
-    sv_name = NULL;
-    if (st->exprFlags & VEF_UNDEF) {
-	/*
-	 * We need to bmake_strdup() it in case ParseModifierPart() recurses.
-	 */
-	sv_name = st->v->name;
-	st->v->name = bmake_strdup(st->v->name);
-    } else if (st->ctxt != VAR_GLOBAL) {
+    if (!(st->exprFlags & VEF_UNDEF) && st->ctxt != VAR_GLOBAL) {
 	Var *gv = VarFind(st->v->name, st->ctxt, 0);
 	if (gv == NULL)
 	    v_ctxt = VAR_GLOBAL;
@@ -2841,11 +2869,6 @@ ApplyModifier_Assign(const char **pp, ApplyModifiersState *st)
 
     delim = st->startc == '(' ? ')' : '}';
     res = ParseModifierPart(pp, delim, st->eflags, st, &val, NULL, NULL, NULL);
-    if (st->exprFlags & VEF_UNDEF) {
-	/* restore original name */
-	free(st->v->name);
-	st->v->name = sv_name;
-    }
     if (res != VPR_OK)
 	return AMR_CLEANUP;
 
@@ -2915,6 +2938,17 @@ ApplyModifier_WordFunc(const char **pp, ApplyModifiersState *st,
 			     st->val, modifyWord, NULL);
     (*pp)++;
     return AMR_OK;
+}
+
+static ApplyModifierResult
+ApplyModifier_Unique(const char **pp, ApplyModifiersState *st)
+{
+    if ((*pp)[1] == st->endc || (*pp)[1] == ':') {
+	st->newVal = VarUniq(st->val);
+	(*pp)++;
+	return AMR_OK;
+    } else
+	return AMR_UNKNOWN;
 }
 
 #ifdef SYSVVARSUB
@@ -3055,10 +3089,7 @@ ApplyModifier(const char **pp, ApplyModifiersState *st)
     case 'U':
 	return ApplyModifier_Defined(pp, st);
     case 'L':
-	ApplyModifiersState_Define(st);
-	st->newVal = bmake_strdup(st->v->name);
-	(*pp)++;
-	return AMR_OK;
+        return ApplyModifier_Literal(pp, st);
     case 'P':
 	return ApplyModifier_Path(pp, st);
     case '!':
@@ -3100,12 +3131,7 @@ ApplyModifier(const char **pp, ApplyModifiersState *st)
     case 'O':
 	return ApplyModifier_Order(pp, st);
     case 'u':
-	if ((*pp)[1] == st->endc || (*pp)[1] == ':') {
-	    st->newVal = VarUniq(st->val);
-	    (*pp)++;
-	    return AMR_OK;
-	} else
-	    return AMR_UNKNOWN;
+        return ApplyModifier_Unique(pp, st);
 #ifdef SUNSHCMD
     case 's':
 	return ApplyModifier_SunShell(pp, st);
@@ -3159,13 +3185,21 @@ ApplyModifiers(
 	    /* TODO: handle errors */
 
 	    /*
-	     * If we have not parsed up to st.endc or ':',
-	     * we are not interested.
+	     * If we have not parsed up to st.endc or ':', we are not
+	     * interested.  This means the expression ${VAR:${M_1}${M_2}}
+	     * is not accepted, but ${VAR:${M_1}:${M_2}} is.
 	     */
 	    if (rval[0] != '\0' &&
 		(c = *nested_p) != '\0' && c != ':' && c != st.endc) {
+		if (DEBUG(LINT))
+		    Parse_Error(PARSE_FATAL,
+				"Missing delimiter ':' after indirect modifier \"%.*s\"",
+				(int)(nested_p - p), p);
+
 		free(freeIt);
 		/* XXX: apply_mods doesn't sound like "not interested". */
+		/* XXX: Why is the indirect modifier parsed again by
+		 * apply_mods?  If any, p should be advanced to nested_p. */
 		goto apply_mods;
 	    }
 
@@ -3186,6 +3220,7 @@ ApplyModifiers(
 		}
 	    }
 	    free(freeIt);
+
 	    if (*p == ':')
 		p++;
 	    else if (*p == '\0' && endc != '\0') {
@@ -3242,6 +3277,10 @@ ApplyModifiers(
 		  st.endc, st.v->name, st.val, *mod);
 	} else if (*p == ':') {
 	    p++;
+	} else if (DEBUG(LINT) && *p != '\0' && *p != endc) {
+	    Parse_Error(PARSE_FATAL,
+			"Missing delimiter ':' after modifier \"%.*s\"",
+			(int)(p - mod), mod);
 	}
     }
 out:
@@ -3601,10 +3640,7 @@ Var_Parse(const char **pp, GNode *ctxt, VarEvalFlags eflags,
 	     * At the end, after applying all modifiers, if the expression
 	     * is still undefined, Var_Parse will return an empty string
 	     * instead of the actually computed value. */
-	    v = bmake_malloc(sizeof(Var));
-	    v->name = varname;
-	    Buf_Init(&v->val, 1);
-	    v->flags = 0;
+	    v = VarNew(varname, varname, "", 0);
 	    exprFlags = VEF_UNDEF;
 	} else
 	    free(varname);
@@ -3690,7 +3726,7 @@ Var_Parse(const char **pp, GNode *ctxt, VarEvalFlags eflags,
 	}
 	if (nstr != Buf_GetAll(&v->val, NULL))
 	    Buf_Destroy(&v->val, TRUE);
-	free(v->name);
+	free(v->name_freeIt);
 	free(v);
     }
     *out_val = nstr;
@@ -3730,11 +3766,7 @@ Var_Subst(const char *str, GNode *ctxt, VarEvalFlags eflags, char **out_res)
 
     while (*p != '\0') {
 	if (p[0] == '$' && p[1] == '$') {
-	    /*
-	     * A dollar sign may be escaped with another dollar sign.
-	     * In such a case, we skip over the escape character and store the
-	     * dollar sign into the buffer directly.
-	     */
+	    /* A dollar sign may be escaped with another dollar sign. */
 	    if (save_dollars && (eflags & VARE_ASSIGN))
 		Buf_AddByte(&buf, '$');
 	    Buf_AddByte(&buf, '$');
