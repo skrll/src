@@ -1,4 +1,4 @@
-/*	$NetBSD: msg.mi.pl,v 1.30 2020/05/18 21:19:36 jmcneill Exp $	*/
+/*	$NetBSD: msg.mi.pl,v 1.32 2020/10/13 17:26:28 martin Exp $	*/
 /*	Based on english version: */
 /*	NetBSD: msg.mi.pl,v 1.36 2004/04/17 18:55:35 atatat Exp       */
 
@@ -143,9 +143,6 @@ message heads
 
 message sectors
 {sektory}
-
-message fs_isize
-{sredni rozmiar pliku (bajty)}
 
 message mountpoint
 {punkt montowania (lub 'zaden')}
@@ -390,12 +387,6 @@ message label_offset_tail		{Poczatek ($2)}
 
 message invalid_sector_number
 {Nieprawidlowa liczba}
-
-message Select_file_system_block_size
-{Wybierz rozmiar bloku dla systemu plikow}
-
-message Select_file_system_fragment_size
-{Wybierz rozmiar fragmentu dla systemu plikow}
 
 message packname
 {Podaj nazwe dla swojego dysku NetBSD}
@@ -1001,8 +992,16 @@ message Set_Sizes {Ustaw rozmiary partycji NetBSD}
  */
 message Use_Default_Parts {Uzyj domyslnych rozmiarow partycji}
 
+/* Called with:				Example
+ *  $0 = current partitioning name	Master Boot Record (MBR)
+ *  $1 = short version of $0		MBR
+ */
+message Use_Different_Part_Scheme
+{Delete everything, use different partitions (not $1)}
+
 message Gigabytes {Gigabajty}
 message Megabytes {Megabajty}
+message Bytes {Bajty}
 message Cylinders {Cylindry}
 message Sectors {Sektory}
 message Select_medium {Wybierz nosnik}
@@ -1261,6 +1260,25 @@ message ptn_type		{rodzaj}
 message ptn_start		{poczatek}
 message ptn_size		{rozmiar}
 message ptn_end			{koniec}
+
+message ptn_bsize		{rozmiar bloku}
+message ptn_fsize		{rozmiar fragmentu}
+message ptn_isize		{Sredni rozm. pliku}
+
+/* Called with: 			Example
+ *  $0 = avg file size in byte		1200
+ */
+message ptn_isize_bytes		{$0 bajtow}
+message ptn_isize_dflt		{4 fragmenty}
+
+message Select_file_system_block_size
+{Wybierz rozmiar bloku dla systemu plikow}
+
+message Select_file_system_fragment_size
+{Wybierz rozmiar fragmentu dla systemu plikow}
+
+message ptn_isize_prompt
+{sredni rozmiar pliku (bajty)}
 
 message No_free_space {Brak wolnego miejsca}
 message Invalid_numeric {Nieprawidlowa wartosc!}

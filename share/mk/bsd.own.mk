@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1222 2020/09/26 17:49:50 jmcneill Exp $
+#	$NetBSD: bsd.own.mk,v 1.1225 2020/10/09 23:58:50 rin Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -63,10 +63,6 @@ TOOLCHAIN_MISSING?=	no
 #
 # What GCC is used?
 #
-.if ${MACHINE_CPU} == "powerpc" || ${MACHINE_CPU} == "sh3" || \
-    ${MACHINE_CPU} == "m68k" || ${MACHINE} == "vax"
-HAVE_GCC?=	8
-.endif
 HAVE_GCC?=	9
 
 #
@@ -833,8 +829,6 @@ MKGCC:= no
 MKGCC:= no
 .endif
 
-# No GDB support for aarch64eb
-MKGDB.aarch64eb=no
 MKGDB.or1k=	no
 MKGDB.riscv32=	no
 MKGDB.riscv64=	no
@@ -1311,6 +1305,7 @@ MKSLJIT=	yes
     ${MACHINE} == "hpcarm"	|| \
     ${MACHINE} == "hpcmips"	|| \
     ${MACHINE} == "hpcsh"	|| \
+    ${MACHINE} == "hppa"	|| \
     ${MACHINE} == "i386"	|| \
     ${MACHINE} == "ibmnws"	|| \
     ${MACHINE} == "iyonix"	|| \

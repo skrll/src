@@ -1,4 +1,4 @@
-/*	$NetBSD: factor.c,v 1.35 2020/10/07 19:48:29 christos Exp $	*/
+/*	$NetBSD: factor.c,v 1.38 2020/10/12 13:54:51 christos Exp $	*/
 /*
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -41,7 +41,7 @@ __COPYRIGHT("@(#) Copyright (c) 1989, 1993\
 __SCCSID("@(#)factor.c	8.4 (Berkeley) 5/4/95");
 #endif
 #ifdef __RCSID
-__RCSID("$NetBSD: factor.c,v 1.35 2020/10/07 19:48:29 christos Exp $");
+__RCSID("$NetBSD: factor.c,v 1.38 2020/10/12 13:54:51 christos Exp $");
 #endif
 #ifdef __FBSDID
 __FBSDID("$FreeBSD: head/usr.bin/factor/factor.c 356666 2020-01-12 20:25:11Z gad $");
@@ -70,7 +70,6 @@ __FBSDID("$FreeBSD: head/usr.bin/factor/factor.c 356666 2020-01-12 20:25:11Z gad
  * If the -x flag is specified numbers are printed in hex.
  *
  * If no number args are given, the list of numbers are read from stdin.
- * If no args are given, the list of numbers are read from stdin.
  */
 
 #include <ctype.h>
@@ -91,7 +90,8 @@ __FBSDID("$FreeBSD: head/usr.bin/factor/factor.c 356666 2020-01-12 20:25:11Z gad
 
 #define	PRIME_CHECKS	5
 
-static void	pollard_pminus1(BIGNUM *, int); /* print factors for big numbers */
+/* print factors for big numbers */
+static void	pollard_pminus1(BIGNUM *, int, int);
 
 #else
 
@@ -119,9 +119,8 @@ static void	BN_print_fp(FILE *, const BIGNUM *);
 
 static void	BN_print_dec_fp(FILE *, const BIGNUM *);
 static void	convert_str2bn(BIGNUM **, char *);
-static bool	is_hex_str(char *);
 static void	pr_fact(BIGNUM *, int, int);	/* print factors of a value */
-static void	pr_print(BIGNUM *, int);	/* print a prime */
+static void	pr_print(BIGNUM *, int, int);	/* print a prime */
 static void	usage(void) __dead;
 
 static BN_CTX	*ctx;			/* just use a global context */
@@ -225,6 +224,7 @@ pr_fact(BIGNUM *val, int hflag, int xflag)
 	} else
 		BN_print_dec_fp(stdout, val);
 	putchar(':');
+	fflush(stdout);
 	for (fact = &prime[0]; !BN_is_one(val); ++fact) {
 		/* Look for the smallest factor. */
 		do {
@@ -243,13 +243,13 @@ pr_fact(BIGNUM *val, int hflag, int xflag)
 				errx(1, "error in BN_sqr()");
 			if (BN_cmp(bnfact, val) > 0 ||
 			    BN_is_prime_ex(val, PRIME_CHECKS, NULL, NULL) == 1)
-				pr_print(val, xflag);
+				pr_print(val, hflag, xflag);
 			else
-				pollard_pminus1(val, xflag);
+				pollard_pminus1(val, hflag, xflag);
 #else
-			pr_print(val, xflag);
+			pr_print(val, hflag, xflag);
 #endif
-			pr_print(NULL, xflag);
+			pr_print(NULL, hflag, xflag);
 			break;
 		}
 
@@ -275,39 +275,49 @@ pr_fact(BIGNUM *val, int hflag, int xflag)
 }
 
 static void
-pr_print(BIGNUM *val, int xflag)
+pr_print(BIGNUM *val, int hflag, int xflag)
 {
 	static BIGNUM *sval;
 	static int ex = 1;
-	if (sval == NULL) {
-		sval = BN_dup(val);
-		return;
-	}
+	BIGNUM *pval;
 
-	if (val != NULL && BN_cmp(val, sval) == 0) {
-		ex++;
+	if (hflag) {
+		if (sval == NULL) {
+			sval = BN_dup(val);
+			return;
+		}
+
+		if (val != NULL && BN_cmp(val, sval) == 0) {
+			ex++;
+			return;
+		}
+		pval = sval;
+	} else if (val == NULL) {
 		return;
+	} else {
+		pval = val;
 	}
-	if (val == NULL)
-		val = sval;
 
 	if (xflag) {
 		fputs(" 0x", stdout);
-		BN_print_fp(stdout, val);
+		BN_print_fp(stdout, pval);
 	} else {
 		putchar(' ');
-		BN_print_dec_fp(stdout, val);
+		BN_print_dec_fp(stdout, pval);
 	}
-	if (ex > 1)
-		pr_exp(ex, xflag);
 
-	if (val != NULL) {
-		BN_copy(sval, val);
-	} else {
-		BN_free(sval);
-		sval = NULL;
+	if (hflag) {
+		if (ex > 1)
+			pr_exp(ex, xflag);
+
+		if (val != NULL) {
+			BN_copy(sval, val);
+		} else {
+			BN_free(sval);
+			sval = NULL;
+		}
+		ex = 1;
 	}
-	ex = 1;
 }
 
 static void
@@ -321,7 +331,7 @@ usage(void)
 
 /* pollard p-1, algorithm from Jim Gillogly, May 2000 */
 static void
-pollard_pminus1(BIGNUM *val, int xflag)
+pollard_pminus1(BIGNUM *val, int hflag, int xflag)
 {
 	BIGNUM *base, *rbase, *num, *i, *x;
 
@@ -350,9 +360,9 @@ newbase:
 
 		if (!BN_is_one(x)) {
 			if (BN_is_prime_ex(x, PRIME_CHECKS, NULL, NULL) == 1)
-				pr_print(x, xflag);
+				pr_print(x, hflag, xflag);
 			else
-				pollard_pminus1(x, xflag);
+				pollard_pminus1(x, hflag, xflag);
 			fflush(stdout);
 
 			BN_div(num, NULL, val, x, ctx);
@@ -360,7 +370,7 @@ newbase:
 				return;
 			if (BN_is_prime_ex(num, PRIME_CHECKS, NULL,
 			    NULL) == 1) {
-				pr_print(num, xflag);
+				pr_print(num, hflag, xflag);
 				fflush(stdout);
 				return;
 			}
@@ -440,29 +450,6 @@ BN_dup(const BIGNUM *a)
 
 #endif
 
-/*
- * Scan the string from left-to-right to see if the longest substring
- * is a valid hexadecimal number.
- */
-static bool
-is_hex_str(char *str)
-{
-	char c, *p;
-	bool saw_hex = false;
-
-	for (p = str; *p; p++) {
-		if (isdigit((unsigned char)*p))
-			continue;
-		c = tolower((unsigned char)*p);
-		if (c >= 'a' && c <= 'f') {
-			saw_hex = true;
-			continue;
-		}
-		break;	/* Not a hexadecimal digit. */
-	}
-	return saw_hex;
-}
-
 /* Convert string pointed to by *str to a bignum.  */
 static void
 convert_str2bn(BIGNUM **val, char *p)
@@ -475,7 +462,7 @@ convert_str2bn(BIGNUM **val, char *p)
 	if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
 		n = BN_hex2bn(val, p + 2);
 	} else {
-		n = is_hex_str(p) ? BN_hex2bn(val, p) : BN_dec2bn(val, p);
+		n = BN_dec2bn(val, p);
 	}
 	if (n == 0)
 		errx(1, "%s: illegal numeric format.", p);
