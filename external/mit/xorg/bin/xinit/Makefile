@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.9 2020/09/21 13:51:55 nia Exp $
+#	$NetBSD: Makefile,v 1.11 2020/10/12 11:43:11 nia Exp $
 
 .include <bsd.own.mk>
 
@@ -14,6 +14,7 @@ CPPSCRIPTS=	startx xinitrc
 CPPSCRIPTFLAGS_xinitrc=	-DXINITDIR=${XINITDIR} -DBINDIR=${X11BINDIR} \
 		-DSHELL_CMD=/bin/sh -DXRDB=xrdb -DXMODMAP=xmodmap \
 		-DTWM=twm -DXCLOCK=xclock -DXTERM=${X11BINDIR}/xterm \
+		-DXSETROOT=${X11BINDIR}/xsetroot \
 		-DUXTERM=${X11BINDIR}/uxterm \
 		-DCTWM=${X11BINDIR}/ctwm
 CPPSCRIPTFLAGS_startx=	-DXINITDIR=${XINITDIR} -DBINDIR=${X11BINDIR} \
@@ -21,6 +22,7 @@ CPPSCRIPTFLAGS_startx=	-DXINITDIR=${XINITDIR} -DBINDIR=${X11BINDIR} \
 		-DXSERVER=${X11BINDIR}/X -DXTERM=${X11BINDIR}/xterm \
 		-DUXTERM=${X11BINDIR}/uxterm \
 		-DCTWM=${X11BINDIR}/ctwm \
+		-DXSETROOT=${X11BINDIR}/xsetroot \
 		-DHAS_COOKIE_MAKER \
 		-DMK_COOKIE='dd if=/dev/urandom bs=16 count=1 2>/dev/null | hexdump -e \\"%08x\\"'
 

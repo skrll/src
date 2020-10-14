@@ -1,4 +1,4 @@
-/*	$NetBSD: disks.c,v 1.69 2020/09/28 18:51:34 martin Exp $ */
+/*	$NetBSD: disks.c,v 1.71 2020/10/13 17:26:28 martin Exp $ */
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -1078,7 +1078,8 @@ int
 make_filesystems(struct install_partition_desc *install)
 {
 	int error = 0, partno = -1;
-	char *newfs = NULL, devdev[PATH_MAX], rdev[PATH_MAX];
+	char *newfs = NULL, devdev[PATH_MAX], rdev[PATH_MAX],
+	    opts[200], opt[30];
 	size_t i;
 	struct part_usage_info *ptn;
 	struct disk_partitions *parts;
@@ -1142,16 +1143,33 @@ make_filesystems(struct install_partition_desc *install)
 		parts->pscheme->get_part_device(parts, ptn->cur_part_id,
 		    rdev, sizeof rdev, &partno, raw_dev_name, true, true);
 
+		opts[0] = 0;
 		switch (ptn->fs_type) {
 		case FS_APPLEUFS:
-			asprintf(&newfs, "/sbin/newfs");
+			if (ptn->fs_opt3 != 0)
+				snprintf(opts, sizeof opts, "-i %u",
+				    ptn->fs_opt3);
+			asprintf(&newfs, "/sbin/newfs %s", opts);
 			mnt_opts = "-tffs -o async";
 			fsname = "ffs";
 			break;
 		case FS_BSDFFS:
+			if (ptn->fs_opt3 != 0)
+				snprintf(opts, sizeof opts, "-i %u ",
+				    ptn->fs_opt3);
+			if (ptn->fs_opt1 != 0) {
+				snprintf(opt, sizeof opt, "-b %u ",
+				    ptn->fs_opt1);
+				strcat(opts, opt);
+			}
+			if (ptn->fs_opt2 != 0) {
+				snprintf(opt, sizeof opt, "-f %u ",
+				    ptn->fs_opt2);
+				strcat(opts, opt);
+			}
 			asprintf(&newfs,
-			    "/sbin/newfs -V2 -O %d",
-			    ptn->fs_version == 2 ? 2 : 1);
+			    "/sbin/newfs -V2 -O %d %s",
+			    ptn->fs_version == 2 ? 2 : 1, opts);
 			if (ptn->mountflags & PUIMNT_LOG)
 				mnt_opts = "-tffs -o log";
 			else
@@ -1159,7 +1177,10 @@ make_filesystems(struct install_partition_desc *install)
 			fsname = "ffs";
 			break;
 		case FS_BSDLFS:
-			asprintf(&newfs, "/sbin/newfs_lfs");
+			if (ptn->fs_opt1 != 0 && ptn->fs_opt2 != 0)
+				snprintf(opts, sizeof opts, "-b %u",
+				     ptn->fs_opt1 * ptn->fs_opt2);
+			asprintf(&newfs, "/sbin/newfs_lfs %s", opts);
 			mnt_opts = "-tlfs";
 			fsname = "lfs";
 			break;
@@ -1188,23 +1209,8 @@ make_filesystems(struct install_partition_desc *install)
 			break;
 		}
 		if ((ptn->instflags & PUIINST_NEWFS) && newfs != NULL) {
-			if (ptn->fs_type == FS_MSDOS) {
-			        /* newfs only if mount fails */
-			        if (run_program(RUN_SILENT | RUN_ERROR_OK,
-				    "mount -rt msdos %s /mnt2", devdev) != 0)
-					error = run_program(
-					    RUN_DISPLAY | RUN_PROGRESS,
-					    "%s %s",
-					    newfs, rdev);
-				else {
-					run_program(RUN_SILENT | RUN_ERROR_OK,
-					    "umount /mnt2");
-					error = 0;
-				}
-			} else {
-				error = run_program(RUN_DISPLAY | RUN_PROGRESS,
+			error = run_program(RUN_DISPLAY | RUN_PROGRESS,
 			    "%s %s", newfs, rdev);
-			}
 		} else if ((ptn->instflags & (PUIINST_MOUNT|PUIINST_BOOT))
 		    && fsname != NULL) {
 			/* We'd better check it isn't dirty */
