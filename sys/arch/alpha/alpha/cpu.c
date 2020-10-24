@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.97 2019/04/08 00:47:21 thorpej Exp $ */
+/* $NetBSD: cpu.c,v 1.102 2020/10/10 03:05:04 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.97 2019/04/08 00:47:21 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.102 2020/10/10 03:05:04 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -80,7 +80,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.97 2019/04/08 00:47:21 thorpej Exp $");
 #include <machine/prom.h>
 #include <machine/alpha.h>
 
-struct cpu_info cpu_info_primary = {
+struct cpu_info cpu_info_primary __cacheline_aligned = {
 	.ci_curlwp = &lwp0
 };
 struct cpu_info *cpu_info_list = &cpu_info_primary;
@@ -93,12 +93,33 @@ struct cpu_info *cpu_info_list = &cpu_info_primary;
 struct cpu_info *cpu_info[ALPHA_MAXPROCS];
 
 /* Bitmask of CPUs booted, currently running, and paused. */
-volatile u_long cpus_booted;
-volatile u_long cpus_running;
-volatile u_long cpus_paused;
+volatile u_long cpus_booted __read_mostly;
+volatile u_long cpus_running __read_mostly;
+volatile u_long cpus_paused __read_mostly;
 
 void	cpu_boot_secondary(struct cpu_info *);
 #endif /* MULTIPROCESSOR */
+
+static void
+cpu_idle_default(void)
+{
+	/*
+	 * Default is to do nothing.  Platform code can overwrite
+	 * as needed.
+	 */
+}
+
+void
+cpu_idle_wtint(void)
+{
+	/*
+	 * Some PALcode versions implement the WTINT call to idle
+	 * in a low power mode.
+	 */
+	alpha_pal_wtint(0);
+}
+
+void	(*cpu_idle_fn)(void) __read_mostly = cpu_idle_default;
 
 /*
  * The Implementation Version and the Architecture Mask must be
@@ -108,7 +129,8 @@ void	cpu_boot_secondary(struct cpu_info *);
  * Note, we invert the AMASK so that if a bit is set, it means "has
  * extension".
  */
-u_long	cpu_implver, cpu_amask;
+u_long	cpu_implver __read_mostly;
+u_long	cpu_amask __read_mostly;
 
 /* Definition of the driver for autoconfig. */
 static int	cpumatch(device_t, cfdata_t, void *);
@@ -276,7 +298,12 @@ recognized:
 	if (ma->ma_slot == hwrpb->rpb_primary_cpu_id)
 		ci = &cpu_info_primary;
 	else {
+		/*
+		 * kmem_zalloc() will guarante cache line alignment for
+		 * all allocations >= CACHE_LINE_SIZE.
+		 */
 		ci = kmem_zalloc(sizeof(*ci), KM_SLEEP);
+		KASSERT(((uintptr_t)ci & (CACHE_LINE_SIZE - 1)) == 0);
 	}
 #if defined(MULTIPROCESSOR)
 	cpu_info[ma->ma_slot] = ci;
@@ -408,7 +435,7 @@ cpu_boot_secondary_processors(void)
 		ci = cpu_info[i];
 		if (ci == NULL || ci->ci_data.cpu_idlelwp == NULL)
 			continue;
-		if (ci->ci_flags & CPUF_PRIMARY)
+		if (CPU_IS_PRIMARY(ci))
 			continue;
 		if ((cpus_booted & (1UL << i)) == 0)
 			continue;
@@ -549,8 +576,8 @@ cpu_hatch(struct cpu_info *ci)
 	u_long cpu_id = cpu_number();
 	u_long cpumask = (1UL << cpu_id);
 
-	/* Mark the kernel pmap active on this processor. */
-	atomic_or_ulong(&pmap_kernel()->pm_cpus, cpumask);
+	/* pmap initialization for this processor. */
+	pmap_init_cpu(ci);
 
 	/* Initialize trap vectors for this processor. */
 	trap_init();
@@ -575,7 +602,11 @@ cpu_hatch(struct cpu_info *ci)
 	ALPHA_TBIA();
 	alpha_pal_imb();
 
-	cc_calibrate_cpu(ci);
+	if (alpha_use_cctr) {
+		cc_init_secondary(ci);
+	}
+
+	cpu_initclocks_secondary();
 }
 
 int

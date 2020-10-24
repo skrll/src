@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_swap.c,v 1.197 2020/07/09 05:57:15 skrll Exp $	*/
+/*	$NetBSD: uvm_swap.c,v 1.200 2020/10/07 17:51:50 chs Exp $	*/
 
 /*
  * Copyright (c) 1995, 1996, 1997, 2009 Matthew R. Green
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_swap.c,v 1.197 2020/07/09 05:57:15 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_swap.c,v 1.200 2020/10/07 17:51:50 chs Exp $");
 
 #include "opt_uvmhist.h"
 #include "opt_compat_netbsd.h"
@@ -66,6 +66,7 @@ __KERNEL_RCSID(0, "$NetBSD: uvm_swap.c,v 1.197 2020/07/09 05:57:15 skrll Exp $")
 #include <miscfs/specfs/specdev.h>
 
 #include <crypto/aes/aes.h>
+#include <crypto/aes/aes_cbc.h>
 
 /*
  * uvm_swap.c: manage configuration and i/o to swap space.
@@ -79,7 +80,7 @@ __KERNEL_RCSID(0, "$NetBSD: uvm_swap.c,v 1.197 2020/07/09 05:57:15 skrll Exp $")
  * information that is passed up to the user (via system calls).
  *
  * each swap partition is assigned a "priority" (int) which controls
- * swap parition usage.
+ * swap partition usage.
  *
  * the system maintains a global data structure describing all swap
  * partitions/files.   there is a sorted LIST of "swappri" structures
@@ -1699,6 +1700,10 @@ uvm_swapisfull(void)
 {
 	int swpgonly;
 	bool rv;
+
+	if (uvmexp.swpages == 0) {
+		return true;
+	}
 
 	mutex_enter(&uvm_swap_data_lock);
 	KASSERT(uvmexp.swpgonly <= uvmexp.swpages);

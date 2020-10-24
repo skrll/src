@@ -1,4 +1,4 @@
-/* $NetBSD: interrupt.c,v 1.81 2016/01/17 10:44:57 martin Exp $ */
+/* $NetBSD: interrupt.c,v 1.92 2020/10/10 03:05:04 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2000, 2001 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: interrupt.c,v 1.81 2016/01/17 10:44:57 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: interrupt.c,v 1.92 2020/10/10 03:05:04 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -88,10 +88,9 @@ __KERNEL_RCSID(0, "$NetBSD: interrupt.c,v 1.81 2016/01/17 10:44:57 martin Exp $"
 #include <machine/cpuconf.h>
 #include <machine/alpha.h>
 
-struct scbvec scb_iovectab[SCB_VECTOIDX(SCB_SIZE - SCB_IOVECBASE)];
-static bool scb_mpsafe[SCB_VECTOIDX(SCB_SIZE - SCB_IOVECBASE)];
-
-void	netintr(void);
+/* Protected by cpu_lock */
+struct scbvec scb_iovectab[SCB_VECTOIDX(SCB_SIZE - SCB_IOVECBASE)]
+							__read_mostly;
 
 void	scb_stray(void *, u_long);
 
@@ -114,12 +113,11 @@ scb_stray(void *arg, u_long vec)
 }
 
 void
-scb_set(u_long vec, void (*func)(void *, u_long), void *arg, int level)
+scb_set(u_long vec, void (*func)(void *, u_long), void *arg)
 {
 	u_long idx;
-	int s;
 
-	s = splhigh();
+	KASSERT(mutex_owned(&cpu_lock));
 
 	if (vec < SCB_IOVECBASE || vec >= SCB_SIZE ||
 	    (vec & (SCB_VECSIZE - 1)) != 0)
@@ -130,20 +128,18 @@ scb_set(u_long vec, void (*func)(void *, u_long), void *arg, int level)
 	if (scb_iovectab[idx].scb_func != scb_stray)
 		panic("scb_set: vector 0x%lx already occupied", vec);
 
-	scb_iovectab[idx].scb_func = func;
 	scb_iovectab[idx].scb_arg = arg;
-	scb_mpsafe[idx] = (level != IPL_VM);
-
-	splx(s);
+	alpha_mb();
+	scb_iovectab[idx].scb_func = func;
+	alpha_mb();
 }
 
 u_long
 scb_alloc(void (*func)(void *, u_long), void *arg)
 {
 	u_long vec, idx;
-	int s;
 
-	s = splhigh();
+	KASSERT(mutex_owned(&cpu_lock));
 
 	/*
 	 * Allocate "downwards", to avoid bumping into
@@ -154,14 +150,13 @@ scb_alloc(void (*func)(void *, u_long), void *arg)
 	     vec >= SCB_IOVECBASE; vec -= SCB_VECSIZE) {
 		idx = SCB_VECTOIDX(vec - SCB_IOVECBASE);
 		if (scb_iovectab[idx].scb_func == scb_stray) {
-			scb_iovectab[idx].scb_func = func;
 			scb_iovectab[idx].scb_arg = arg;
-			splx(s);
+			alpha_mb();
+			scb_iovectab[idx].scb_func = func;
+			alpha_mb();
 			return (vec);
 		}
 	}
-
-	splx(s);
 
 	return (SCB_ALLOC_FAILED);
 }
@@ -170,9 +165,8 @@ void
 scb_free(u_long vec)
 {
 	u_long idx;
-	int s;
 
-	s = splhigh();
+	KASSERT(mutex_owned(&cpu_lock));
 
 	if (vec < SCB_IOVECBASE || vec >= SCB_SIZE ||
 	    (vec & (SCB_VECSIZE - 1)) != 0)
@@ -184,9 +178,9 @@ scb_free(u_long vec)
 		panic("scb_free: vector 0x%lx is empty", vec);
 
 	scb_iovectab[idx].scb_func = scb_stray;
+	alpha_mb();
 	scb_iovectab[idx].scb_arg = (void *) vec;
-
-	splx(s);
+	alpha_mb();
 }
 
 void
@@ -234,6 +228,12 @@ interrupt(unsigned long a0, unsigned long a1, unsigned long a2,
 			 */
 			(*platform.clockintr)((struct clockframe *)framep);
 
+#if defined(MULTIPROCESSOR)
+			if (alpha_use_cctr) {
+				cc_hardclock(ci);
+			}
+#endif /* MULTIPROCESSOR */
+
 			/*
 			 * If it's time to call the scheduler clock,
 			 * do so.
@@ -257,23 +257,17 @@ interrupt(unsigned long a0, unsigned long a1, unsigned long a2,
 
 	case ALPHA_INTR_DEVICE:	/* I/O device interrupt */
 	    {
-		struct scbvec *scb;
-		int idx = SCB_VECTOIDX(a1 - SCB_IOVECBASE);
-		bool mpsafe = scb_mpsafe[idx];
+		const int idx = SCB_VECTOIDX(a1 - SCB_IOVECBASE);
 
 		KDASSERT(a1 >= SCB_IOVECBASE && a1 < SCB_SIZE);
 
 		atomic_inc_ulong(&sc->sc_evcnt_device.ev_count);
 		atomic_inc_ulong(&ci->ci_intrdepth);
 
-		if (!mpsafe) {
-			KERNEL_LOCK(1, NULL);
-		}
 		ci->ci_data.cpu_nintr++;
-		scb = &scb_iovectab[idx];
+
+		struct scbvec * const scb = &scb_iovectab[idx];
 		(*scb->scb_func)(scb->scb_arg, a1);
-		if (!mpsafe)
-			KERNEL_UNLOCK_ONE(NULL);
 
 		atomic_dec_ulong(&ci->ci_intrdepth);
 		break;
@@ -450,52 +444,130 @@ badaddr_read(void *addr, size_t size, void *rptr)
 	return (rv);
 }
 
-volatile unsigned long ssir;
-
 /*
- * spl0:
- *
- *	Lower interrupt priority to IPL 0 -- must check for
- *	software interrupts.
+ * Fast soft interrupt support.
  */
-void
-spl0(void)
-{
 
-	if (ssir) {
-		(void) alpha_pal_swpipl(ALPHA_PSL_IPL_SOFT);
-		softintr_dispatch();
-	}
+#define	SOFTINT_TO_IPL(si)						\
+	(ALPHA_PSL_IPL_SOFT_LO + ((ALPHA_IPL2_SOFTINTS >> (si)) & 1))
 
-	(void) alpha_pal_swpipl(ALPHA_PSL_IPL_0);
-}
+#define	SOFTINTS_ELIGIBLE(ipl)						\
+	((ALPHA_ALL_SOFTINTS << ((ipl) << 1)) & ALPHA_ALL_SOFTINTS)
 
-/*
- * softintr_dispatch:
- *
- *	Process pending software interrupts.
- */
-void
-softintr_dispatch(void)
-{
+/* Validate some assumptions the code makes. */
+__CTASSERT(SOFTINT_TO_IPL(SOFTINT_CLOCK) == ALPHA_PSL_IPL_SOFT_LO);
+__CTASSERT(SOFTINT_TO_IPL(SOFTINT_BIO) == ALPHA_PSL_IPL_SOFT_LO);
+__CTASSERT(SOFTINT_TO_IPL(SOFTINT_NET) == ALPHA_PSL_IPL_SOFT_HI);
+__CTASSERT(SOFTINT_TO_IPL(SOFTINT_SERIAL) == ALPHA_PSL_IPL_SOFT_HI);
 
-	/* XXX Nothing until alpha gets __HAVE_FAST_SOFTINTS */
-}
+__CTASSERT(IPL_SOFTCLOCK == ALPHA_PSL_IPL_SOFT_LO);
+__CTASSERT(IPL_SOFTBIO == ALPHA_PSL_IPL_SOFT_LO);
+__CTASSERT(IPL_SOFTNET == ALPHA_PSL_IPL_SOFT_HI);
+__CTASSERT(IPL_SOFTSERIAL == ALPHA_PSL_IPL_SOFT_HI);
 
-#ifdef __HAVE_FAST_SOFTINTS
+__CTASSERT(SOFTINT_CLOCK_MASK & 0x3);
+__CTASSERT(SOFTINT_BIO_MASK & 0x3);
+__CTASSERT(SOFTINT_NET_MASK & 0xc);
+__CTASSERT(SOFTINT_SERIAL_MASK & 0xc);
+__CTASSERT(SOFTINT_COUNT == 4);
+
+__CTASSERT((ALPHA_ALL_SOFTINTS & ~0xfUL) == 0);
+__CTASSERT(SOFTINTS_ELIGIBLE(IPL_NONE) == ALPHA_ALL_SOFTINTS);
+__CTASSERT(SOFTINTS_ELIGIBLE(IPL_SOFTCLOCK) == ALPHA_IPL2_SOFTINTS);
+__CTASSERT(SOFTINTS_ELIGIBLE(IPL_SOFTBIO) == ALPHA_IPL2_SOFTINTS);
+__CTASSERT(SOFTINTS_ELIGIBLE(IPL_SOFTNET) == 0);
+__CTASSERT(SOFTINTS_ELIGIBLE(IPL_SOFTSERIAL) == 0);
+
 /*
  * softint_trigger:
  *
  *	Trigger a soft interrupt.
  */
 void
-softint_trigger(uintptr_t machdep)
+softint_trigger(uintptr_t const machdep)
+{
+	/* No need for an atomic; called at splhigh(). */
+	KASSERT((alpha_pal_rdps() & ALPHA_PSL_IPL_MASK) == ALPHA_PSL_IPL_HIGH);
+	curcpu()->ci_ssir |= machdep;
+}
+
+/*
+ * softint_init_md:
+ *
+ *	Machine-dependent initialization for a fast soft interrupt thread.
+ */
+void
+softint_init_md(lwp_t * const l, u_int const level, uintptr_t * const machdep)
+{
+	lwp_t ** lp = &l->l_cpu->ci_silwps[level];
+	KASSERT(*lp == NULL || *lp == l);
+	*lp = l;
+
+	const uintptr_t si_bit = __BIT(level);
+	KASSERT(si_bit & ALPHA_ALL_SOFTINTS);
+	*machdep = si_bit;
+}
+
+/*
+ * Helper macro.
+ *
+ * Dispatch a softint and then restart the loop so that higher
+ * priority softints are always done first.
+ */
+#define	DOSOFTINT(level)						\
+	if (ssir & SOFTINT_##level##_MASK) {				\
+		ci->ci_ssir &= ~SOFTINT_##level##_MASK;			\
+		alpha_softint_switchto(l, IPL_SOFT##level,		\
+		    ci->ci_silwps[SOFTINT_##level]);			\
+		KASSERT((alpha_pal_rdps() & ALPHA_PSL_IPL_MASK) ==	\
+		    ALPHA_PSL_IPL_HIGH);				\
+		continue;						\
+	}								\
+
+/*
+ * alpha_softint_dispatch:
+ *
+ *	Process pending soft interrupts that are eligible to run
+ *	at the specified new IPL.  Must be called at splhigh().
+ */
+void
+alpha_softint_dispatch(int const ipl)
+{
+	struct lwp * const l = curlwp;
+	struct cpu_info * const ci = l->l_cpu;
+	unsigned long ssir;
+	const unsigned long eligible = SOFTINTS_ELIGIBLE(ipl);
+
+	KASSERT((alpha_pal_rdps() & ALPHA_PSL_IPL_MASK) == ALPHA_PSL_IPL_HIGH);
+
+	for (;;) {
+		ssir = ci->ci_ssir & eligible;
+		if (ssir == 0)
+			break;
+
+		DOSOFTINT(SERIAL);
+		DOSOFTINT(NET);
+		DOSOFTINT(BIO);
+		DOSOFTINT(CLOCK);
+	}
+}
+
+/*
+ * spllower:
+ *
+ *	Lower interrupt priority.  May need to check for software
+ *	interrupts.
+ */
+void
+spllower(int const ipl)
 {
 
-	/* XXX Needs to be per-CPU */
-	atomic_or_ulong(&ssir, 1 << (x))
+	if (ipl < ALPHA_PSL_IPL_SOFT_HI && curcpu()->ci_ssir) {
+		(void) alpha_pal_swpipl(ALPHA_PSL_IPL_HIGH);
+		alpha_softint_dispatch(ipl);
+	}
+	(void) alpha_pal_swpipl(ipl);
 }
-#endif
 
 /*
  * cpu_intr_p:
@@ -507,6 +579,31 @@ cpu_intr_p(void)
 {
 
 	return curcpu()->ci_intrdepth != 0;
+}
+
+void	(*alpha_intr_redistribute)(void);
+
+/*
+ * cpu_intr_redistribute:
+ *
+ *	Redistribute interrupts amongst CPUs eligible to handle them.
+ */
+void
+cpu_intr_redistribute(void)
+{
+	if (alpha_intr_redistribute != NULL)
+		(*alpha_intr_redistribute)();
+}
+
+/*
+ * cpu_intr_count:
+ *
+ *	Return the number of device interrupts this CPU handles.
+ */
+unsigned int
+cpu_intr_count(struct cpu_info * const ci)
+{
+	return ci->ci_nintrhand;
 }
 
 /*
@@ -524,19 +621,4 @@ rlprintf(struct timeval *t, const char *fmt, ...)
 	va_start(ap, fmt);
 	vprintf(fmt, ap);
 	va_end(ap);
-}
-
-const static uint8_t ipl2psl_table[] = {
-	[IPL_NONE] = ALPHA_PSL_IPL_0,
-	[IPL_SOFTCLOCK] = ALPHA_PSL_IPL_SOFT,
-	[IPL_VM] = ALPHA_PSL_IPL_IO,
-	[IPL_CLOCK] = ALPHA_PSL_IPL_CLOCK,
-	[IPL_HIGH] = ALPHA_PSL_IPL_HIGH,
-};
-
-ipl_cookie_t
-makeiplcookie(ipl_t ipl)
-{
-
-	return (ipl_cookie_t){._psl = ipl2psl_table[ipl]};
 }

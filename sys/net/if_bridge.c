@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bridge.c,v 1.173 2020/05/01 22:27:42 jdolecek Exp $	*/
+/*	$NetBSD: if_bridge.c,v 1.176 2020/09/27 19:16:28 roy Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -80,10 +80,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.173 2020/05/01 22:27:42 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.176 2020/09/27 19:16:28 roy Exp $");
 
 #ifdef _KERNEL_OPT
-#include "opt_bridge_ipf.h"
 #include "opt_inet.h"
 #include "opt_net_mpsafe.h"
 #endif /* _KERNEL_OPT */
@@ -114,19 +113,16 @@ __KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.173 2020/05/01 22:27:42 jdolecek Exp
 #include <net/if_bridgevar.h>
 #include <net/ether_sw_offload.h>
 
-#if defined(BRIDGE_IPF)
 /* Used for bridge_ip[6]_checkbasic */
 #include <netinet/in.h>
 #include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 #include <netinet/ip_private.h>		/* XXX */
-
 #include <netinet/ip6.h>
 #include <netinet6/in6_var.h>
 #include <netinet6/ip6_var.h>
 #include <netinet6/ip6_private.h>	/* XXX */
-#endif /* BRIDGE_IPF */
 
 /*
  * Size of the route hash table.  Must be a power of two.
@@ -314,7 +310,6 @@ static int	bridge_ioctl_gma(struct bridge_softc *, void *);
 static int	bridge_ioctl_sma(struct bridge_softc *, void *);
 static int	bridge_ioctl_sifprio(struct bridge_softc *, void *);
 static int	bridge_ioctl_sifcost(struct bridge_softc *, void *);
-#if defined(BRIDGE_IPF)
 static int	bridge_ioctl_gfilt(struct bridge_softc *, void *);
 static int	bridge_ioctl_sfilt(struct bridge_softc *, void *);
 static int	bridge_ipf(void *, struct mbuf **, struct ifnet *, int);
@@ -322,7 +317,6 @@ static int	bridge_ip_checkbasic(struct mbuf **mp);
 # ifdef INET6
 static int	bridge_ip6_checkbasic(struct mbuf **mp);
 # endif /* INET6 */
-#endif /* BRIDGE_IPF */
 
 struct bridge_control {
 	int	(*bc_func)(struct bridge_softc *, void *);
@@ -373,10 +367,10 @@ static const struct bridge_control bridge_control_table[] = {
 [BRDGSIFPRIO] = {bridge_ioctl_sifprio, sizeof(struct ifbreq), BC_F_COPYIN|BC_F_SUSER}, 
 
 [BRDGSIFCOST] = {bridge_ioctl_sifcost, sizeof(struct ifbreq), BC_F_COPYIN|BC_F_SUSER}, 
-#if defined(BRIDGE_IPF)
+
 [BRDGGFILT] = {bridge_ioctl_gfilt, sizeof(struct ifbrparam), BC_F_COPYOUT},
 [BRDGSFILT] = {bridge_ioctl_sfilt, sizeof(struct ifbrparam), BC_F_COPYIN|BC_F_SUSER},
-#endif /* BRIDGE_IPF */
+
 [BRDGGIFS] = {bridge_ioctl_gifs, sizeof(struct ifbifconf), BC_F_XLATEIN|BC_F_XLATEOUT},
 [BRDGRTS] = {bridge_ioctl_rts, sizeof(struct ifbaconf), BC_F_XLATEIN|BC_F_XLATEOUT},
 };
@@ -444,9 +438,8 @@ bridge_clone_create(struct if_clone *ifc, int unit)
 
 	if_initname(ifp, ifc->ifc_name, unit);
 	ifp->if_softc = sc;
-	ifp->if_extflags = IFEF_NO_LINK_STATE_CHANGE;
 #ifdef NET_MPSAFE
-	ifp->if_extflags |= IFEF_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 #endif
 	ifp->if_mtu = ETHERMTU;
 	ifp->if_ioctl = bridge_ioctl;
@@ -471,6 +464,14 @@ bridge_clone_create(struct if_clone *ifc, int unit)
 
 		return error;
 	}
+
+	/*
+	 * Set the link state to down.
+	 * When interfaces are added the link state will reflect
+	 * the best link state of the combined interfaces.
+	 */
+	ifp->if_link_state = LINK_STATE_DOWN;
+
 	if_alloc_sadl(ifp);
 	if_register(ifp);
 
@@ -802,6 +803,32 @@ bridge_calc_csum_flags(struct bridge_softc *sc)
 	BRIDGE_UNLOCK(sc);
 }
 
+/*
+ * bridge_calc_link_state:
+ *
+ *	Calculate the link state based on each member interface.
+ */
+void
+bridge_calc_link_state(struct bridge_softc *sc)
+{
+	struct bridge_iflist *bif;
+	struct ifnet *ifs;
+	int link_state = LINK_STATE_DOWN;
+
+	BRIDGE_LOCK(sc);
+	BRIDGE_IFLIST_READER_FOREACH(bif, sc) {
+		ifs = bif->bif_ifp;
+		if (ifs->if_link_state == LINK_STATE_UP) {
+			link_state = LINK_STATE_UP;
+			break;
+		}
+		if (ifs->if_link_state == LINK_STATE_UNKNOWN)
+			link_state = LINK_STATE_UNKNOWN;
+	}
+	if_link_state_change(&sc->sc_if, link_state);
+	BRIDGE_UNLOCK(sc);
+}
+
 static int
 bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 {
@@ -877,6 +904,13 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 	PSLIST_ENTRY_INIT(bif, bif_next);
 	psref_target_init(&bif->bif_psref, bridge_psref_class);
 
+	/*
+	 * Pretend that the link is down for domains.
+	 * This will detach any addresses assigned to the interface.
+	 */
+	if (ifs->if_link_state != LINK_STATE_DOWN)
+		if_domain_link_state_change(ifs, LINK_STATE_DOWN);
+
 	BRIDGE_LOCK(sc);
 
 	ifs->if_bridge = sc;
@@ -887,11 +921,19 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 	BRIDGE_UNLOCK(sc);
 
 	bridge_calc_csum_flags(sc);
+	bridge_calc_link_state(sc);
 
 	if (sc->sc_if.if_flags & IFF_RUNNING)
 		bstp_initialization(sc);
 	else
 		bstp_stop(sc);
+
+	/*
+	 * If the link was not initially down then mark any detached addresses
+	 * as tentative and start Duplicate Address Detection for them.
+	 */
+	if (ifs->if_link_state != LINK_STATE_DOWN)
+		if_domain_link_state_change(ifs, ifs->if_link_state);
 
 out:
 	if_put(ifs, &psref);
@@ -933,6 +975,7 @@ bridge_ioctl_del(struct bridge_softc *sc, void *arg)
 
 	bridge_rtdelete(sc, ifs);
 	bridge_calc_csum_flags(sc);
+	bridge_calc_link_state(sc);
 
 	if (sc->sc_if.if_flags & IFF_RUNNING)
 		bstp_initialization(sc);
@@ -1313,7 +1356,6 @@ bridge_ioctl_sifprio(struct bridge_softc *sc, void *arg)
 	return 0;
 }
 
-#if defined(BRIDGE_IPF)
 static int
 bridge_ioctl_gfilt(struct bridge_softc *sc, void *arg)
 {
@@ -1349,7 +1391,6 @@ bridge_ioctl_sfilt(struct bridge_softc *sc, void *arg)
 
 	return 0;
 }
-#endif /* BRIDGE_IPF */
 
 static int
 bridge_ioctl_sifcost(struct bridge_softc *sc, void *arg)
@@ -2636,7 +2677,6 @@ bridge_rtnode_destroy(struct bridge_rtnode *brt)
 	pool_put(&bridge_rtnode_pool, brt);
 }
 
-#if defined(BRIDGE_IPF)
 extern pfil_head_t *inet_pfil_hook;                 /* XXX */
 extern pfil_head_t *inet6_pfil_hook;                /* XXX */
 
@@ -2917,4 +2957,3 @@ bridge_ip6_checkbasic(struct mbuf **mp)
 	return -1;
 }
 # endif /* INET6 */
-#endif /* BRIDGE_IPF */

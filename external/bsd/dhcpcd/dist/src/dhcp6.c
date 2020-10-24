@@ -147,7 +147,7 @@ struct dhcp_compat {
 	uint16_t dhcp6_opt;
 };
 
-const struct dhcp_compat dhcp_compats[] = {
+static const struct dhcp_compat dhcp_compats[] = {
 	{ DHO_DNSSERVER,	D6_OPTION_DNS_SERVERS },
 	{ DHO_HOSTNAME,		D6_OPTION_FQDN },
 	{ DHO_DNSDOMAIN,	D6_OPTION_FQDN },
@@ -1237,7 +1237,7 @@ dhcp6_sendmessage(struct interface *ifp, void (*callback)(void *))
 	};
 	char uaddr[INET6_ADDRSTRLEN];
 
-	if (!callback && ifp->carrier <= LINK_DOWN)
+	if (!callback && !if_is_link_up(ifp))
 		return 0;
 
 	if (!IN6_IS_ADDR_UNSPECIFIED(&state->unicast)) {
@@ -1298,7 +1298,7 @@ dhcp6_sendmessage(struct interface *ifp, void (*callback)(void *))
 		    + (unsigned int)((float)state->RT
 		    * ((float)lr / DHCP6_RAND_DIV));
 
-		if (ifp->carrier > LINK_DOWN)
+		if (if_is_link_up(ifp))
 			logdebugx("%s: %s %s (xid 0x%02x%02x%02x)%s%s,"
 			    " next in %0.1f seconds",
 			    ifp->name,
@@ -1320,7 +1320,7 @@ dhcp6_sendmessage(struct interface *ifp, void (*callback)(void *))
 		}
 	}
 
-	if (ifp->carrier <= LINK_DOWN)
+	if (!if_is_link_up(ifp))
 		return 0;
 
 	/* Update the elapsed time */
@@ -2588,7 +2588,7 @@ dhcp6_readlease(struct interface *ifp, int validate)
 		logdebugx("reading standard input");
 		bytes = read(fileno(stdin), buf.buf, sizeof(buf.buf));
 	} else {
-		logdebugx("%s: reading lease `%s'",
+		logdebugx("%s: reading lease: %s",
 		    ifp->name, state->leasefile);
 		bytes = dhcp_readfile(ifp->ctx, state->leasefile,
 		    buf.buf, sizeof(buf.buf));
@@ -2906,7 +2906,7 @@ dhcp6_delegate_prefix(struct interface *ifp)
 				if (ia->sla_len == 0) {
 					/* no SLA configured, so lets
 					 * automate it */
-					if (ifd->carrier != LINK_UP) {
+					if (!if_is_link_up(ifd)) {
 						logdebugx(
 						    "%s: has no carrier, cannot"
 						    " delegate addresses",
@@ -2922,7 +2922,7 @@ dhcp6_delegate_prefix(struct interface *ifp)
 					sla = &ia->sla[j];
 					if (strcmp(ifd->name, sla->ifname))
 						continue;
-					if (ifd->carrier != LINK_UP) {
+					if (!if_is_link_up(ifd)) {
 						logdebugx(
 						    "%s: has no carrier, cannot"
 						    " delegate addresses",
@@ -3218,7 +3218,7 @@ dhcp6_bind(struct interface *ifp, const char *op, const char *sfrom)
 			    ifp->name, state->expire);
 		rt_build(ifp->ctx, AF_INET6);
 		if (!confirmed && !timedout) {
-			logdebugx("%s: writing lease `%s'",
+			logdebugx("%s: writing lease: %s",
 			    ifp->name, state->leasefile);
 			if (dhcp_writefile(ifp->ctx, state->leasefile, 0640,
 			    state->new, state->new_len) == -1)
@@ -3657,12 +3657,12 @@ dhcp6_recvmsg(struct dhcpcd_ctx *ctx, struct msghdr *msg, struct ipv6_addr *ia)
 	    "/tmp/dhcp6.reply%d.raw", replyn++);
 	fd = open(fname, O_RDONLY, 0);
 	if (fd == -1) {
-		logerr("%s: open `%s'", __func__, fname);
+		logerr("%s: open: %s", __func__, fname);
 		return;
 	}
 	tlen = read(fd, tbuf, sizeof(tbuf));
 	if (tlen == -1)
-		logerr("%s: read `%s'", __func__, fname);
+		logerr("%s: read: %s", __func__, fname);
 	close(fd);
 
 	/* Copy across ServerID so we can work with our own server. */
@@ -4029,7 +4029,7 @@ dhcp6_freedrop(struct interface *ifp, int drop, const char *reason)
 		if (drop && options & DHCPCD_RELEASE &&
 		    state->state != DH6S_DELEGATED)
 		{
-			if (ifp->carrier == LINK_UP &&
+			if (if_is_link_up(ifp) &&
 			    state->state != DH6S_RELEASED &&
 			    state->state != DH6S_INFORMED)
 			{

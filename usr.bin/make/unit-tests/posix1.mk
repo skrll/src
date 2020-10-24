@@ -1,4 +1,4 @@
-# $NetBSD: posix1.mk,v 1.3 2014/08/30 22:21:08 sjg Exp $
+# $NetBSD: posix1.mk,v 1.5 2020/09/27 21:35:16 rillig Exp $
 
 # Keep the default suffixes from interfering, just in case.
 .SUFFIXES:
@@ -8,6 +8,8 @@ all:	line-continuations suffix-substitution localvars
 # we need to clean for repeatable results
 .BEGIN: clean
 clean:
+	@rm -f lib.a dir/* dummy obj*
+.END:
 	@rm -f lib.a dir/* dummy obj*
 
 #
@@ -58,7 +60,7 @@ ARFLAGS = -rcv
 localvars: lib.a
 
 # $@ = target or archive name	$< = implied source
-# $* = target without suffix 	$? = sources newer than target
+# $* = target without suffix	$? = sources newer than target
 # $% = archive member name
 LOCALS = \
 	"Local variables\n\

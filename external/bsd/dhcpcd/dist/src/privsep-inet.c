@@ -34,7 +34,6 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -47,10 +46,6 @@
 #include "ipv6nd.h"
 #include "logerr.h"
 #include "privsep.h"
-
-#ifdef HAVE_CAPSICUM
-#include <sys/capsicum.h>
-#endif
 
 #ifdef INET
 static void
@@ -93,6 +88,28 @@ ps_inet_recvdhcp6(void *arg)
 		logerr(__func__);
 }
 #endif
+
+bool
+ps_inet_canstart(const struct dhcpcd_ctx *ctx)
+{
+
+#ifdef INET
+	if ((ctx->options & (DHCPCD_IPV4 | DHCPCD_MASTER)) ==
+	    (DHCPCD_IPV4 | DHCPCD_MASTER))
+		return true;
+#endif
+#if defined(INET6) && !defined(__sun)
+	if (ctx->options & DHCPCD_IPV6)
+		return true;
+#endif
+#ifdef DHCP6
+	if ((ctx->options & (DHCPCD_IPV6 | DHCPCD_MASTER)) ==
+	    (DHCPCD_IPV6 | DHCPCD_MASTER))
+		return true;
+#endif
+
+	return false;
+}
 
 static int
 ps_inet_startcb(void *arg)
@@ -291,18 +308,6 @@ ps_inet_recvmsg(void *arg)
 		logerr(__func__);
 }
 
-static void
-ps_inet_signalcb(int sig, void *arg)
-{
-	struct dhcpcd_ctx *ctx = arg;
-
-	if (sig != SIGTERM)
-		return;
-
-	shutdown(ctx->ps_inet_fd, SHUT_RDWR);
-	eloop_exit(ctx->eloop, EXIT_SUCCESS);
-}
-
 ssize_t
 ps_inet_dispatch(void *arg, struct ps_msghdr *psm, struct msghdr *msg)
 {
@@ -347,17 +352,11 @@ ps_inet_start(struct dhcpcd_ctx *ctx)
 
 	pid = ps_dostart(ctx, &ctx->ps_inet_pid, &ctx->ps_inet_fd,
 	    ps_inet_recvmsg, ps_inet_dodispatch, ctx,
-	    ps_inet_startcb, ps_inet_signalcb,
+	    ps_inet_startcb, NULL,
 	    PSF_DROPPRIVS);
 
-#ifdef HAVE_CAPSICUM
-	if (pid == 0 && cap_enter() == -1 && errno != ENOSYS)
-		logerr("%s: cap_enter", __func__);
-#endif
-#ifdef HAVE_PLEDGE
-	if (pid == 0 && pledge("stdio", NULL) == -1)
-		logerr("%s: pledge", __func__);
-#endif
+	if (pid == 0)
+		ps_entersandbox("stdio", NULL);
 
 	return pid;
 }
@@ -576,21 +575,14 @@ ps_inet_cmd(struct dhcpcd_ctx *ctx, struct ps_msghdr *psm, struct msghdr *msg)
 	start = ps_dostart(ctx,
 	    &psp->psp_pid, &psp->psp_fd,
 	    ps_inet_recvmsgpsp, NULL, psp,
-	    start_func, ps_inet_signalcb,
+	    start_func, NULL,
 	    PSF_DROPPRIVS);
 	switch (start) {
 	case -1:
 		ps_freeprocess(psp);
 		return -1;
 	case 0:
-#ifdef HAVE_CAPSICUM
-		if (cap_enter() == -1 && errno != ENOSYS)
-			logerr("%s: cap_enter", __func__);
-#endif
-#ifdef HAVE_PLEDGE
-		if (pledge("stdio", NULL) == -1)
-			logerr("%s: pledge", __func__);
-#endif
+		ps_entersandbox("stdio", NULL);
 		break;
 	default:
 		break;

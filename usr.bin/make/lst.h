@@ -1,4 +1,4 @@
-/*	$NetBSD: lst.h,v 1.20 2014/09/07 20:55:34 joerg Exp $	*/
+/*	$NetBSD: lst.h,v 1.69 2020/09/26 17:15:20 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -73,117 +73,155 @@
  *	from: @(#)lst.h	8.1 (Berkeley) 6/6/93
  */
 
-/*-
- * lst.h --
- *	Header for using the list library
- */
-#ifndef _LST_H_
-#define _LST_H_
+/* Doubly-linked lists of arbitrary pointers. */
 
-#include	<sys/param.h>
-#include	<stdlib.h>
+#ifndef MAKE_LST_H
+#define MAKE_LST_H
 
-#include	"sprite.h"
+#include <sys/param.h>
+#include <stdint.h>
+#include <stdlib.h>
 
-/*
- * basic typedef. This is what the Lst_ functions handle
- */
+/* A doubly-linked list of pointers. */
+typedef	struct List	List;
+/* A single node in the doubly-linked list. */
+typedef	struct ListNode	ListNode;
 
-typedef	struct List	*Lst;
-typedef	struct ListNode	*LstNode;
+struct ListNode {
+    ListNode *prev;		/* previous node in list, or NULL */
+    ListNode *next;		/* next node in list, or NULL */
+    uint8_t priv_useCount;	/* Count of functions using the node.
+				 * node may not be deleted until count
+				 * goes to 0 */
+    Boolean priv_deleted;	/* List node should be removed when done */
+    union {
+	void *datum;		/* datum associated with this element */
+	const struct GNode *priv_gnode; /* alias, just for debugging */
+	const char *priv_str;	/* alias, just for debugging */
+    };
+};
 
-typedef void		*DuplicateProc(void *);
-typedef void		FreeProc(void *);
+typedef enum {
+    Head, Middle, Tail, Unknown
+} ListForEachUntilWhere;
 
-#define LST_CONCNEW	0   /* create new LstNode's when using Lst_Concat */
-#define LST_CONCLINK	1   /* relink LstNode's when using Lst_Concat */
+struct List {
+    ListNode *first;		/* first node in list */
+    ListNode *last;		/* last node in list */
 
-/*
- * Creation/destruction functions
- */
-/* Create a new list */
-Lst		Lst_Init(Boolean);
-/* Duplicate an existing list */
-Lst		Lst_Duplicate(Lst, DuplicateProc *);
-/* Destroy an old one */
-void		Lst_Destroy(Lst, FreeProc *);
-/* True if list is empty */
-Boolean		Lst_IsEmpty(Lst);
+    /* fields for sequential access */
+    Boolean priv_isOpen;	/* true if list has been Lst_Open'ed */
+    ListForEachUntilWhere priv_lastAccess;
+    ListNode *priv_curr;	/* current node, if open. NULL if
+				 * *just* opened */
+    ListNode *priv_prev;	/* Previous node, if open. Used by Lst_Remove */
+};
 
-/*
- * Functions to modify a list
- */
-/* Insert an element before another */
-ReturnStatus	Lst_InsertBefore(Lst, LstNode, void *);
-/* Insert an element after another */
-ReturnStatus	Lst_InsertAfter(Lst, LstNode, void *);
-/* Place an element at the front of a lst. */
-ReturnStatus	Lst_AtFront(Lst, void *);
-/* Place an element at the end of a lst. */
-ReturnStatus	Lst_AtEnd(Lst, void *);
-/* Remove an element */
-ReturnStatus	Lst_Remove(Lst, LstNode);
-/* Replace a node with a new value */
-ReturnStatus	Lst_Replace(LstNode, void *);
-/* Concatenate two lists */
-ReturnStatus	Lst_Concat(Lst, Lst, int);
+/* Copy a node, usually by allocating a copy of the given object.
+ * For reference-counted objects, the original object may need to be
+ * modified, therefore the parameter is not const. */
+typedef void *LstCopyProc(void *);
+/* Free the datum of a node, called before freeing the node itself. */
+typedef void LstFreeProc(void *);
+/* Return TRUE if the datum matches the args, for Lst_Find. */
+typedef Boolean LstFindProc(const void *datum, const void *args);
+/* An action for Lst_ForEach. */
+typedef void LstActionProc(void *datum, void *args);
+/* An action for Lst_ForEachUntil. */
+typedef int LstActionUntilProc(void *datum, void *args);
 
-/*
- * Node-specific functions
- */
-/* Return first element in list */
-LstNode		Lst_First(Lst);
-/* Return last element in list */
-LstNode		Lst_Last(Lst);
-/* Return successor to given element */
-LstNode		Lst_Succ(LstNode);
-/* Return predecessor to given element */
-LstNode		Lst_Prev(LstNode);
-/* Get datum from LstNode */
-void		*Lst_Datum(LstNode);
+/* Create or destroy a list */
 
-/*
- * Functions for entire lists
- */
-/* Find an element in a list */
-LstNode		Lst_Find(Lst, const void *, int (*)(const void *, const void *));
-/* Find an element starting from somewhere */
-LstNode		Lst_FindFrom(Lst, LstNode, const void *,
-			     int (*cProc)(const void *, const void *));
-/*
- * See if the given datum is on the list. Returns the LstNode containing
- * the datum
- */
-LstNode		Lst_Member(Lst, void *);
-/* Apply a function to all elements of a lst */
-int		Lst_ForEach(Lst, int (*)(void *, void *), void *);
-/*
- * Apply a function to all elements of a lst starting from a certain point.
- * If the list is circular, the application will wrap around to the
- * beginning of the list again.
- */
-int		Lst_ForEachFrom(Lst, LstNode, int (*)(void *, void *),
-				void *);
-/*
- * these functions are for dealing with a list as a table, of sorts.
- * An idea of the "current element" is kept and used by all the functions
- * between Lst_Open() and Lst_Close().
- */
-/* Open the list */
-ReturnStatus	Lst_Open(Lst);
-/* Next element please */
-LstNode		Lst_Next(Lst);
-/* Done yet? */
-Boolean		Lst_IsAtEnd(Lst);
-/* Finish table access */
-void		Lst_Close(Lst);
+/* Create a new list. */
+List *Lst_Init(void);
+/* Duplicate an existing list. */
+List *Lst_Copy(List *, LstCopyProc);
+/* Free the list, leaving the node data unmodified. */
+void Lst_Free(List *);
+/* Free the list, freeing the node data using the given function. */
+void Lst_Destroy(List *, LstFreeProc);
 
-/*
- * for using the list as a queue
- */
-/* Place an element at tail of queue */
-ReturnStatus	Lst_EnQueue(Lst, void *);
-/* Remove an element from head of queue */
-void		*Lst_DeQueue(Lst);
+/* Get information about a list */
 
-#endif /* _LST_H_ */
+static inline MAKE_ATTR_UNUSED Boolean
+Lst_IsEmpty(List *list) { return list->first == NULL; }
+/* Return the first node of the list, or NULL if the list is empty. */
+static inline MAKE_ATTR_UNUSED ListNode *
+Lst_First(List *list) { return list->first; }
+/* Return the last node of the list, or NULL if the list is empty. */
+static inline MAKE_ATTR_UNUSED ListNode *
+Lst_Last(List *list) { return list->last; }
+/* Find the first node for which the function returns TRUE, or NULL. */
+ListNode *Lst_Find(List *, LstFindProc, const void *);
+/* Find the first node for which the function returns TRUE, or NULL.
+ * The search starts at the given node, towards the end of the list. */
+ListNode *Lst_FindFrom(List *, ListNode *, LstFindProc, const void *);
+/* Find the first node that contains the given datum, or NULL. */
+ListNode *Lst_FindDatum(List *, const void *);
+
+/* Modify a list */
+
+/* Insert a datum before the given node. */
+void Lst_InsertBefore(List *, ListNode *, void *);
+/* Place a datum at the front of the list. */
+void Lst_Prepend(List *, void *);
+/* Place a datum at the end of the list. */
+void Lst_Append(List *, void *);
+/* Remove the node from the list. */
+void Lst_Remove(List *, ListNode *);
+void Lst_PrependAll(List *, List *);
+void Lst_AppendAll(List *, List *);
+void Lst_MoveAll(List *, List *);
+
+/* Node-specific functions */
+
+/* Return the datum of the node. Usually not NULL. */
+static inline MAKE_ATTR_UNUSED void *
+LstNode_Datum(ListNode *node) { return node->datum; }
+/* Replace the value of the node. */
+void LstNode_Set(ListNode *, void *);
+/* Set the value of the node to NULL. Having NULL in a list is unusual. */
+void LstNode_SetNull(ListNode *);
+
+/* Iterating over a list, using a callback function */
+
+/* Apply a function to each datum of the list.
+ * The function must not modify the structure of the list, for example by
+ * adding or removing nodes. */
+void Lst_ForEach(List *, LstActionProc, void *);
+/* Apply a function to each datum of the list, until the callback function
+ * returns non-zero. */
+int Lst_ForEachUntil(List *, LstActionUntilProc, void *);
+
+/* Iterating over a list while keeping track of the current node and possible
+ * concurrent modifications */
+
+/* Start iterating the list. */
+void Lst_Open(List *);
+/* Return the next node, or NULL. */
+ListNode *Lst_Next(List *);
+/* Finish iterating the list. */
+void Lst_Close(List *);
+
+/* Using the list as a queue */
+
+/* Add a datum at the tail of the queue. */
+void Lst_Enqueue(List *, void *);
+/* Remove the head node of the queue and return its datum. */
+void *Lst_Dequeue(List *);
+
+/* A stack is a very simple collection of items that only allows access to the
+ * top-most item. */
+typedef struct Stack {
+    void **items;
+    size_t len;
+    size_t cap;
+} Stack;
+
+void Stack_Init(Stack *);
+Boolean Stack_IsEmpty(Stack *);
+void Stack_Push(Stack *, void *);
+void *Stack_Pop(Stack *);
+void Stack_Done(Stack *);
+
+#endif /* MAKE_LST_H */

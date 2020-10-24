@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.tests,v 1.173 2020/07/03 04:25:28 jruoho Exp $
+#	$NetBSD: NetBSD.dist.tests,v 1.180 2020/09/30 20:20:53 roy Exp $
 
 ./usr/libdata/debug/usr/tests
 ./usr/libdata/debug/usr/tests/atf
@@ -147,6 +147,8 @@
 ./usr/libdata/debug/usr/tests/net/icmp
 ./usr/libdata/debug/usr/tests/net/if
 ./usr/libdata/debug/usr/tests/net/if_loop
+./usr/libdata/debug/usr/tests/net/if_tap
+./usr/libdata/debug/usr/tests/net/if_vether
 ./usr/libdata/debug/usr/tests/net/if_vlan
 ./usr/libdata/debug/usr/tests/net/in_cksum
 ./usr/libdata/debug/usr/tests/net/ipsec
@@ -164,6 +166,7 @@
 ./usr/libdata/debug/usr/tests/sys
 ./usr/libdata/debug/usr/tests/sys/crypto
 ./usr/libdata/debug/usr/tests/sys/crypto/aes
+./usr/libdata/debug/usr/tests/sys/crypto/chacha
 ./usr/libdata/debug/usr/tests/sys/net
 ./usr/libdata/debug/usr/tests/sys/netatalk
 ./usr/libdata/debug/usr/tests/sys/netinet
@@ -356,7 +359,9 @@
 ./usr/tests/net/if_pppoe
 ./usr/tests/net/if_tap
 ./usr/tests/net/if_tun
+./usr/tests/net/if_vether
 ./usr/tests/net/if_vlan
+./usr/tests/net/if_wg
 ./usr/tests/net/in_cksum
 ./usr/tests/net/ipsec
 ./usr/tests/net/mcast
@@ -391,6 +396,7 @@
 ./usr/tests/sys
 ./usr/tests/sys/crypto
 ./usr/tests/sys/crypto/aes
+./usr/tests/sys/crypto/chacha
 ./usr/tests/sys/net
 ./usr/tests/sys/netatalk
 ./usr/tests/sys/netinet

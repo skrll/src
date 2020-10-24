@@ -1,6 +1,6 @@
-# $Id: sysv.mk,v 1.8 2020/07/20 16:27:55 rillig Exp $
+# $Id: sysv.mk,v 1.13 2020/08/23 14:52:06 rillig Exp $
 
-all: foo fun sam bla words ampersand anchor-dollar
+all: foo fun sam bla
 
 FOO ?=
 FOOBAR = ${FOO:=bar}
@@ -41,23 +41,3 @@ BLA=
 
 bla:
 	@echo $(BLA:%=foo/%x)
-
-# The :Q looks like a modifier but isn't.
-# It is part of the replacement string.
-words:
-	@echo a${a b c d e:L:%a=x:Q}b
-
-# Before 2020-07-19, an ampersand could be used in the replacement part
-# of a SysV substitution modifier.  This was probably a copy-and-paste
-# mistake since the SysV modifier code looked a lot like the code for the
-# :S and :C modifiers.  The ampersand is not mentioned in the manual page.
-ampersand:
-	@echo ${:U${a.bcd.e:L:a.%=%}:Q}
-	@echo ${:U${a.bcd.e:L:a.%=&}:Q}
-
-# Before 2020-07-20, when a SysV modifier was parsed, a single dollar
-# before the '=' was interpreted as an anchor, which doesn't make sense
-# since the anchor was discarded immediately.
-anchor-dollar:
-	@echo $@: ${:U${value:L:e$=x}:Q}
-	@echo $@: ${:U${value:L:e=x}:Q}

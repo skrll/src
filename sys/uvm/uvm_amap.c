@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_amap.c,v 1.122 2020/07/09 05:57:15 skrll Exp $	*/
+/*	$NetBSD: uvm_amap.c,v 1.125 2020/09/21 18:41:59 chs Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_amap.c,v 1.122 2020/07/09 05:57:15 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_amap.c,v 1.125 2020/09/21 18:41:59 chs Exp $");
 
 #include "opt_uvmhist.h"
 
@@ -353,7 +353,7 @@ amap_extend(struct vm_map_entry *entry, vsize_t addsize, int flags)
 	struct vm_amap *amap = entry->aref.ar_amap;
 	int slotoff = entry->aref.ar_pageoff;
 	int slotmapped, slotadd, slotneed, slotadded, slotalloc;
-	int slotadj, slotarea;
+	int slotadj, slotarea, slotendoff;
 	int oldnslots;
 #ifdef UVM_AMAP_PPREF
 	int *newppref, *oldppref;
@@ -385,6 +385,36 @@ amap_extend(struct vm_map_entry *entry, vsize_t addsize, int flags)
 		slotneed = slotadd + slotmapped;
 		slotadj = slotadd - slotoff;
 		slotarea = amap->am_maxslot - slotmapped;
+	}
+
+	/*
+	 * Because this amap only has 1 ref, we know that there is
+	 * only one vm_map_entry pointing to it, and the one entry is
+	 * using slots between slotoff and slotoff + slotmapped.  If
+	 * we have been using ppref then we know that only slots in
+	 * the one map entry's range can have anons, since ppref
+	 * allowed us to free any anons outside that range as other map
+	 * entries which used this amap were removed. But without ppref,
+	 * we couldn't know which slots were still needed by other map
+	 * entries, so we couldn't free any anons as we removed map
+	 * entries, and so any slot from 0 to am_nslot can have an
+	 * anon.  But now that we know there is only one map entry
+	 * left and we know its range, we can free up any anons
+	 * outside that range.  This is necessary because the rest of
+	 * this function assumes that there are no anons in the amap
+	 * outside of the one map entry's range.
+	 */
+
+	slotendoff = slotoff + slotmapped;
+	if (amap->am_ppref == PPREF_NONE) {
+		amap_wiperange(amap, 0, slotoff);
+		amap_wiperange(amap, slotendoff, amap->am_nslot - slotendoff);
+	}
+	for (i = 0; i < slotoff; i++) {
+		KASSERT(amap->am_anon[i] == NULL);
+	}
+	for (i = slotendoff; i < amap->am_nslot - slotendoff; i++) {
+		KASSERT(amap->am_anon[i] == NULL);
 	}
 
 	/*
@@ -1563,7 +1593,7 @@ amap_adjref_anons(struct vm_amap *amap, vaddr_t offset, vsize_t len,
 	 * so that the ppref values match the current amap refcount.
 	 */
 
-	if (amap->am_ppref == NULL && !all && len != amap->am_nslot) {
+	if (amap->am_ppref == NULL) {
 		amap_pp_establish(amap, offset);
 	}
 #endif
@@ -1572,11 +1602,7 @@ amap_adjref_anons(struct vm_amap *amap, vaddr_t offset, vsize_t len,
 
 #ifdef UVM_AMAP_PPREF
 	if (amap->am_ppref && amap->am_ppref != PPREF_NONE) {
-		if (all) {
-			amap_pp_adjref(amap, 0, amap->am_nslot, refv);
-		} else {
-			amap_pp_adjref(amap, offset, len, refv);
-		}
+		amap_pp_adjref(amap, offset, len, refv);
 	}
 #endif
 	amap_unlock(amap);

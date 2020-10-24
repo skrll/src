@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.sun2,v 1.24 2018/09/22 12:24:03 rin Exp $
+# $NetBSD: Makefile.sun2,v 1.27 2020/10/05 10:42:53 rin Exp $
 
 # Makefile for NetBSD
 #
@@ -34,6 +34,9 @@ GENASSYM_CONF=	${SUN2}/sun2/genassym.cf
 CPPFLAGS+=	-Dsun2
 CFLAGS+=	-msoft-float -fno-defer-pop
 AFLAGS+=	-x assembler-with-cpp
+
+# XXX
+COPTS.promlib.c+=${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 9:? -Wno-error=array-bounds :}
 
 ##
 ## (3) libkern and compat

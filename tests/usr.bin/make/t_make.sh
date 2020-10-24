@@ -1,4 +1,4 @@
-# $NetBSD: t_make.sh,v 1.8 2020/06/08 19:50:10 rillig Exp $
+# $NetBSD: t_make.sh,v 1.11 2020/09/10 17:40:34 kre Exp $
 #
 # Copyright (c) 2008, 2010, 2014 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -35,8 +35,6 @@ run_and_check()
 	# 49085 - adjust for more concrete PR if there is one
 	case ${makename} in
 	escape)		atf_expect_fail "see PR toolchain/49085";;
-	impsrc)		atf_expect_fail "see PR toolchain/49085";;
-	phony*)		atf_expect_fail "see PR toolchain/49085";;
 	posix1)		atf_expect_fail "see PR toolchain/49085";;
 	suffixes)	atf_expect_fail "see PR toolchain/49085"
 			atf_fail "this uses up all memory and then fails";;
@@ -83,9 +81,16 @@ atf_init_test_cases()
 	    include-sub*) continue;;
 	    esac
 
-	    atfname="$(echo "${basename}" | tr "x-" "x_")"
+	    atfname=${basename}
+	    while :
+	    do
+		case "${atfname}" in
+		(*-*)	atfname=${atfname%-*}_${atfname##*-};;
+		(*)	break;;
+		esac
+	    done
 	    descr='' # XXX
-            test_case "${atfname}" "${basename}" "${descr}"
+	    test_case "${atfname}" "${basename}" "${descr}"
 	    atf_add_test_case "${atfname}"
 	done
 }

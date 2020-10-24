@@ -114,7 +114,11 @@ CONFIGURATION
 
      HOST_CC           Path name to C compiler used to create the toolchain.
 
+     HOST_CFLAGS       Flags passed to the host C compiler.
+
      HOST_CXX          Path name to C++ compiler used to create the toolchain.
+
+     HOST_CXXFLAGS     Flags passed to the host C++ compiler.
 
      MACHINE           Machine type, e.g., "macppc".
 
@@ -187,6 +191,11 @@ CONFIGURATION
                  resulting in identical (reproducible) builds.  Additional
                  information is available in the GCC documentation of
                  -frandom-seed.
+
+     CPUFLAGS    Additional flags to the compiler/assembler to select CPU
+                 instruction set options, CPU tuning options, etc.
+
+                 Default: Unset.
 
      DESTDIR     Directory to contain the built NetBSD system.  If set,
                  special options are passed to the compilation tools to
@@ -906,6 +915,17 @@ BUILDING
                may be specified via multiple -C options, or via a single
                option whose argument contains multiple space-separated paths.
 
+     -c compiler
+               Select the compiler for the toolchain to build NetBSD and for
+               inclusion in the NetBSD distribution.  Supported choices:
+
+                     clang
+
+                     gcc [default]
+
+               The compiler used to build the toolchain can be different; see
+               HOST_CC and HOST_CXX.
+
      -D dest   Set the value of DESTDIR to dest.  If a relative path is
                specified, it will be converted to an absolute path before
                being used.
@@ -1113,4 +1133,4 @@ CAVEATS
      in object directories.  Instead, one may have to manually remove the
      files.  Consult the UPDATING file for notices concerning this.
 
-NetBSD                           July 29, 2018                          NetBSD
+NetBSD                         October 13, 2020                         NetBSD

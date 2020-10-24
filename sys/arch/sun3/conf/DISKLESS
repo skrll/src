@@ -1,4 +1,4 @@
-# $NetBSD: DISKLESS,v 1.77 2020/06/19 10:35:11 tsutsui Exp $
+# $NetBSD: DISKLESS,v 1.79 2020/09/27 13:48:54 roy Exp $
 
 # DISKLESS - Root and swap on NFS
 # Desktop machines only (3/50, 3/60, 3/110)
@@ -157,7 +157,7 @@ pseudo-device	ppp			# PPP
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+#pseudo-device	vether			# Virtual Ethernet for bridge
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
 
 pseudo-device	pty			# pseudo-terminals

@@ -27,7 +27,6 @@
  */
 
 #include <errno.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -36,10 +35,6 @@
 #include "eloop.h"
 #include "logerr.h"
 #include "privsep.h"
-
-#ifdef HAVE_CAPSICUM
-#include <sys/capsicum.h>
-#endif
 
 static int
 ps_ctl_startcb(void *arg)
@@ -93,18 +88,6 @@ ps_ctl_recvmsg(void *arg)
 
 	if (ps_recvpsmsg(ctx, ctx->ps_control_fd, ps_ctl_recvmsgcb, ctx) == -1)
 		logerr(__func__);
-}
-
-static void
-ps_ctl_signalcb(int sig, void *arg)
-{
-	struct dhcpcd_ctx *ctx = arg;
-
-	if (sig != SIGTERM)
-		return;
-
-	shutdown(ctx->ps_control_fd, SHUT_RDWR);
-	eloop_exit(ctx->eloop, EXIT_SUCCESS);
 }
 
 ssize_t
@@ -238,20 +221,18 @@ ps_ctl_start(struct dhcpcd_ctx *ctx)
 	int data_fd[2], listen_fd[2];
 	pid_t pid;
 
-	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CXNB, 0, data_fd) == -1)
-		return -1;
-	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CXNB, 0, listen_fd) == -1)
+	if (xsocketpair(AF_UNIX, SOCK_STREAM | SOCK_CXNB, 0, data_fd) == -1 ||
+	    xsocketpair(AF_UNIX, SOCK_STREAM | SOCK_CXNB, 0, listen_fd) == -1)
 		return -1;
 #ifdef PRIVSEP_RIGHTS
-	if (ps_rights_limit_fdpair(data_fd) == -1)
-		return -1;
-	if (ps_rights_limit_fdpair(listen_fd) == -1)
+	if (ps_rights_limit_fdpair(data_fd) == -1 ||
+	    ps_rights_limit_fdpair(listen_fd) == -1)
 		return -1;
 #endif
 
 	pid = ps_dostart(ctx, &ctx->ps_control_pid, &ctx->ps_control_fd,
 	    ps_ctl_recvmsg, ps_ctl_dodispatch, ctx,
-	    ps_ctl_startcb, ps_ctl_signalcb,
+	    ps_ctl_startcb, NULL,
 	    PSF_DROPPRIVS);
 
 	if (pid == -1)
@@ -282,14 +263,7 @@ ps_ctl_start(struct dhcpcd_ctx *ctx)
 	    ps_ctl_listen, ctx) == -1)
 		return -1;
 
-#ifdef HAVE_CAPSICUM
-	if (cap_enter() == -1 && errno != ENOSYS)
-		logerr("%s: cap_enter", __func__);
-#endif
-#ifdef HAVE_PLEDGE
-	if (pledge("stdio inet", NULL) == -1)
-		logerr("%s: pledge", __func__);
-#endif
+	ps_entersandbox("stdio inet", NULL);
 	return 0;
 }
 

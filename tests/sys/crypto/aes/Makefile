@@ -1,10 +1,12 @@
-#	$NetBSD: Makefile,v 1.2 2020/07/01 09:58:29 riastradh Exp $
+#	$NetBSD: Makefile,v 1.6 2020/09/08 17:35:27 jakllsch Exp $
 
 .include <bsd.own.mk>
 
 TESTSDIR=	${TESTSBASE}/sys/crypto/aes
 
 TESTS_C=	t_aes
+
+AFLAGS+=	-D_LOCORE
 
 .PATH:	${NETBSDSRCDIR}/sys/crypto/aes
 CPPFLAGS+=	-I${NETBSDSRCDIR}/sys
@@ -27,11 +29,21 @@ SRCS.t_aes+=	aes_armv8.c
 SRCS.t_aes+=	aes_armv8_64.S
 .endif
 
+CLANG_NO_NONPORTABLE_VECTOR_INITIALIZATION= ${${ACTIVE_CC} == "clang":? -Wno-nonportable-vector-initialization :}
+
 SRCS.t_aes+=	aes_neon.c
+COPTS.aes_neon.c+=${CLANG_NO_NONPORTABLE_VECTOR_INITIALIZATION}
 SRCS.t_aes+=	aes_neon_impl.c
 SRCS.t_aes+=	aes_neon_subr.c
+COPTS.aes_neon_subr.c+=${CLANG_NO_NONPORTABLE_VECTOR_INITIALIZATION}
 .if !empty(MACHINE_ARCH:Mearmv7*)
 SRCS.t_aes+=	aes_neon_32.S
+.endif
+
+.if !empty(MACHINE_ARCH:Mearmv7*) && empty(MACHINE_ARCH:Mearmv7hf*)
+COPTS.aes_neon.c+=	-mfloat-abi=softfp -mfpu=neon
+COPTS.aes_neon_subr.c+=	-mfloat-abi=softfp -mfpu=neon
+AOPTS.aes_neon_32.S+=	-D__SOFTFP__
 .endif
 
 .endif				# earmv7/aarch64

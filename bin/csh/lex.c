@@ -1,4 +1,4 @@
-/* $NetBSD: lex.c,v 1.34 2019/02/01 08:29:03 mrg Exp $ */
+/* $NetBSD: lex.c,v 1.38 2020/10/02 17:33:13 christos Exp $ */
 
 /*-
  * Copyright (c) 1980, 1991, 1993
@@ -34,7 +34,7 @@
 #if 0
 static char sccsid[] = "@(#)lex.c	8.1 (Berkeley) 5/31/93";
 #else
-__RCSID("$NetBSD: lex.c,v 1.34 2019/02/01 08:29:03 mrg Exp $");
+__RCSID("$NetBSD: lex.c,v 1.38 2020/10/02 17:33:13 christos Exp $");
 #endif
 #endif /* not lint */
 
@@ -877,7 +877,7 @@ dosub(int sc, struct wordent *en, int global)
 
     wdp = hp;
     while (--i >= 0) {
-	struct wordent *new = (struct wordent *)xcalloc(1, sizeof *wdp);
+	struct wordent *new = xcalloc(1, sizeof *new);
 
 	new->word = 0;
 	new->prev = wdp;
@@ -996,18 +996,18 @@ domod(Char *cp, int type)
 	    if ((c != ' ' && c != '\t') || type == 'q')
 		*xp |= QUOTE;
 	return (wp);
+
     case 'h':
     case 't':
-	if (!any(short2str(cp), '/'))
-	    return (type == 't' ? Strsave(cp) : 0);
-	wp = Strend(cp);
-	while (*--wp != '/')
-	    continue;
-	if (type == 'h')
-	    xp = Strsave(cp), xp[wp - cp] = 0;
-	else
+	wp = Strrchr(cp, '/');
+	if (wp == NULL)
+	    return Strsave(type == 't' ? cp : STRNULL);
+	if (type == 't')
 	    xp = Strsave(wp + 1);
+	else
+	    xp = Strsave(cp), xp[wp - cp] = 0;
 	return (xp);
+
     case 'e':
     case 'r':
 	wp = Strend(cp);
@@ -1020,6 +1020,7 @@ domod(Char *cp, int type)
 		return (xp);
 	    }
 	return (Strsave(type == 'e' ? STRNULL : cp));
+
     default:
 	break;
     }
@@ -1453,13 +1454,14 @@ again:
     if (buf >= fblocks) {
 	Char **nfbuf;
 
-	nfbuf = (Char **)xcalloc((size_t) (fblocks + 2), sizeof(char **));
+	/* XXX the cast is needed because fblocks is signed */
+	nfbuf = xcalloc((size_t)(fblocks + 2), sizeof(*nfbuf));
 	if (fbuf) {
 	    (void)blkcpy(nfbuf, fbuf);
 	    free(fbuf);
 	}
 	fbuf = nfbuf;
-	fbuf[fblocks] = (Char *)xcalloc(BUFSIZE, sizeof(Char));
+	fbuf[fblocks] = xcalloc(BUFSIZE, sizeof(Char));
 	fblocks++;
 	if (!intty)
 	    goto again;
@@ -1623,9 +1625,9 @@ settell(void)
 	return;
     if (lseek(SHIN, (off_t) 0, SEEK_CUR) < 0 || errno == ESPIPE)
 	return;
-    fbuf = (Char **)xcalloc(2, sizeof(Char **));
+    fbuf = xcalloc(2, sizeof(*fbuf));
     fblocks = 1;
-    fbuf[0] = (Char *)xcalloc(BUFSIZE, sizeof(Char));
+    fbuf[0] = xcalloc(BUFSIZE, sizeof(Char));
     fseekp = fbobp = feobp = lseek(SHIN, (off_t) 0, SEEK_CUR);
     cantell = 1;
 }

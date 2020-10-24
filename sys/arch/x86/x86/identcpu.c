@@ -1,4 +1,4 @@
-/*	$NetBSD: identcpu.c,v 1.113 2020/07/20 16:45:41 riastradh Exp $	*/
+/*	$NetBSD: identcpu.c,v 1.117 2020/09/05 07:45:44 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.113 2020/07/20 16:45:41 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.117 2020/09/05 07:45:44 maxv Exp $");
 
 #include "opt_xen.h"
 
@@ -39,10 +39,13 @@ __KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.113 2020/07/20 16:45:41 riastradh Exp
 #include <sys/device.h>
 #include <sys/cpu.h>
 
+#include <crypto/aes/aes_impl.h>
 #include <crypto/aes/arch/x86/aes_ni.h>
 #include <crypto/aes/arch/x86/aes_sse2.h>
 #include <crypto/aes/arch/x86/aes_ssse3.h>
 #include <crypto/aes/arch/x86/aes_via.h>
+#include <crypto/chacha/chacha_impl.h>
+#include <crypto/chacha/arch/x86/chacha_sse2.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -921,7 +924,7 @@ cpu_probe(struct cpu_info *ci)
 		}
 
 		/* CLFLUSH line size is next 8 bits */
-		if (ci->ci_feat_val[0] & CPUID_CFLUSH)
+		if (ci->ci_feat_val[0] & CPUID_CLFSH)
 			ci->ci_cflush_lsize
 			    = __SHIFTOUT(miscbytes, CPUID_CLFLUSH_SIZE) << 3;
 		ci->ci_initapicid = __SHIFTOUT(miscbytes, CPUID_LOCAL_APIC_ID);
@@ -1000,14 +1003,10 @@ cpu_probe(struct cpu_info *ci)
 		/* Early patch of text segment. */
 		x86_patch(true);
 #endif
-		/*
-		 * XXX There is a bug with FPU in kernel that we
-		 * haven't been able to track down yet, and all of the
-		 * accelerated AES code relies on that, so it is
-		 * disabled temporarily while we diagnose the bug.
-		 */
+
+		/* AES */
 #ifdef __x86_64__	/* not yet implemented on i386 */
-		if (cpu_feature[1] & CPUID2_AES)
+		if (cpu_feature[1] & CPUID2_AESNI)
 			aes_md_init(&aes_ni_impl);
 		else
 #endif
@@ -1019,6 +1018,10 @@ cpu_probe(struct cpu_info *ci)
 			aes_md_init(&aes_ssse3_impl);
 		else if (i386_has_sse && i386_has_sse2)
 			aes_md_init(&aes_sse2_impl);
+
+		/* ChaCha */
+		if (i386_has_sse && i386_has_sse2)
+			chacha_md_init(&chacha_sse2_impl);
 	} else {
 		/*
 		 * If not first. Warn about cpu_feature mismatch for

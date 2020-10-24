@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_page.c,v 1.244 2020/07/09 05:57:15 skrll Exp $	*/
+/*	$NetBSD: uvm_page.c,v 1.247 2020/09/20 10:30:05 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2019, 2020 The NetBSD Foundation, Inc.
@@ -95,7 +95,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.244 2020/07/09 05:57:15 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.247 2020/09/20 10:30:05 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_uvm.h"
@@ -240,15 +240,17 @@ uvm_pageinsert_tree(struct uvm_object *uobj, struct vm_page *pg)
 	const uint64_t idx = pg->offset >> PAGE_SHIFT;
 	int error;
 
+	KASSERT(rw_write_held(uobj->vmobjlock));
+
 	error = radix_tree_insert_node(&uobj->uo_pages, idx, pg);
 	if (error != 0) {
 		return error;
 	}
 	if ((pg->flags & PG_CLEAN) == 0) {
-		radix_tree_set_tag(&uobj->uo_pages, idx, UVM_PAGE_DIRTY_TAG);
+		uvm_obj_page_set_dirty(pg);
 	}
 	KASSERT(((pg->flags & PG_CLEAN) == 0) ==
-	    radix_tree_get_tag(&uobj->uo_pages, idx, UVM_PAGE_DIRTY_TAG));
+		uvm_obj_page_dirty_p(pg));
 	return 0;
 }
 
@@ -296,6 +298,8 @@ static inline void
 uvm_pageremove_tree(struct uvm_object *uobj, struct vm_page *pg)
 {
 	struct vm_page *opg __unused;
+
+	KASSERT(rw_write_held(uobj->vmobjlock));
 
 	opg = radix_tree_remove_node(&uobj->uo_pages, pg->offset >> PAGE_SHIFT);
 	KASSERT(pg == opg);
@@ -443,14 +447,6 @@ uvm_page_init(vaddr_t *kvm_startp, vaddr_t *kvm_endp)
 
 	*kvm_startp = round_page(virtual_space_start);
 	*kvm_endp = trunc_page(virtual_space_end);
-#ifdef DEBUG
-	/*
-	 * steal kva for uvm_pagezerocheck().
-	 */
-	uvm_zerocheckkva = *kvm_startp;
-	*kvm_startp += PAGE_SIZE;
-	mutex_init(&uvm_zerochecklock, MUTEX_DEFAULT, IPL_VM);
-#endif /* DEBUG */
 
 	/*
 	 * init various thresholds.
@@ -1363,11 +1359,9 @@ uvm_pagereplace(struct vm_page *oldpg, struct vm_page *newpg)
 	KASSERT(pg == oldpg);
 	if (((oldpg->flags ^ newpg->flags) & PG_CLEAN) != 0) {
 		if ((newpg->flags & PG_CLEAN) != 0) {
-			radix_tree_clear_tag(&uobj->uo_pages, idx,
-			    UVM_PAGE_DIRTY_TAG);
+			uvm_obj_page_clear_dirty(newpg);
 		} else {
-			radix_tree_set_tag(&uobj->uo_pages, idx,
-			    UVM_PAGE_DIRTY_TAG);
+			uvm_obj_page_set_dirty(newpg);
 		}
 	}
 	/*
@@ -1424,42 +1418,6 @@ uvm_pagerealloc(struct vm_page *pg, struct uvm_object *newobj, voff_t newoff)
 
 	return error;
 }
-
-#ifdef DEBUG
-/*
- * check if page is zero-filled
- */
-void
-uvm_pagezerocheck(struct vm_page *pg)
-{
-	int *p, *ep;
-
-	KASSERT(uvm_zerocheckkva != 0);
-
-	/*
-	 * XXX assuming pmap_kenter_pa and pmap_kremove never call
-	 * uvm page allocator.
-	 *
-	 * it might be better to have "CPU-local temporary map" pmap interface.
-	 */
-	mutex_spin_enter(&uvm_zerochecklock);
-	pmap_kenter_pa(uvm_zerocheckkva, VM_PAGE_TO_PHYS(pg), VM_PROT_READ, 0);
-	p = (int *)uvm_zerocheckkva;
-	ep = (int *)((char *)p + PAGE_SIZE);
-	pmap_update(pmap_kernel());
-	while (p < ep) {
-		if (*p != 0)
-			panic("zero page isn't zero-filled");
-		p++;
-	}
-	pmap_kremove(uvm_zerocheckkva, PAGE_SIZE);
-	mutex_spin_exit(&uvm_zerochecklock);
-	/*
-	 * pmap_update() is not necessary here because no one except us
-	 * uses this VA.
-	 */
-}
-#endif /* DEBUG */
 
 /*
  * uvm_pagefree: free page
@@ -1788,8 +1746,13 @@ struct vm_page *
 uvm_pagelookup(struct uvm_object *obj, voff_t off)
 {
 	struct vm_page *pg;
+	bool ddb __diagused = false;
+#ifdef DDB
+	extern int db_active;
+	ddb = db_active != 0;
+#endif
 
-	/* No - used from DDB. KASSERT(rw_lock_held(obj->vmobjlock)); */
+	KASSERT(ddb || rw_lock_held(obj->vmobjlock));
 
 	pg = radix_tree_lookup_node(&obj->uo_pages, off >> PAGE_SHIFT);
 

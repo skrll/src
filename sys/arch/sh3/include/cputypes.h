@@ -1,4 +1,4 @@
-/*	$NetBSD: cputypes.h,v 1.12 2009/04/21 12:57:41 nonaka Exp $	*/
+/*	$NetBSD: cputypes.h,v 1.14 2020/07/28 01:40:43 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -33,8 +33,8 @@
 
 #if defined(_KERNEL_OPT)
 #include "opt_cputype.h"
-#elif defined(_LKM)
-/* If building an LKM, include both SH3 and SH4 support. */
+#elif defined(_MODULE)
+/* If building a module, include both SH3 and SH4 support. */
 #define	SH3
 #define	SH4
 #endif
@@ -56,6 +56,9 @@
 #define	CPU_PRODUCT_7750R	9
 #define	CPU_PRODUCT_7751	10
 #define	CPU_PRODUCT_7751R	11
+
+/* STMicroelectronics ST40 series (SH4) */
+#define CPU_PRODUCT_STX7105	12	/* ST40-300 */
 
 
 #ifndef _LOCORE

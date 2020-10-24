@@ -1,4 +1,4 @@
-# $NetBSD: MODULAR,v 1.15 2020/03/25 17:06:18 jdolecek Exp $
+# $NetBSD: MODULAR,v 1.17 2020/09/27 13:48:49 roy Exp $
 #
 # Try to exclude all the drivers in GENERIC that have been modularized
 # XXX: incomplete
@@ -30,8 +30,6 @@ options 	MODULAR_DEFAULT_AUTOLOAD
 
 -no options 	COMPAT_OSSAUDIO
 -no options 	COMPAT_NETBSD32
--no options 	COMPAT_LINUX
--no options 	COMPAT_LINUX32	# req. COMPAT_LINUX and COMPAT_NETBSD32
 -no options 	EXEC_ELF32
 -no options 	COMPAT_BSDPTY	# /dev/[pt]ty?? ptys.
 
@@ -139,6 +137,8 @@ options 	MODULAR_DEFAULT_AUTOLOAD
 -no pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 -no pseudo-device	faith			# IPv[46] tcp relay translation i/f
 -no pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
+
+-no pseudo-device	vether			# Virtual Ethernet for bridge
 -no pseudo-device	vlan			# IEEE 802.1q encapsulation
 -no pseudo-device	agr			# IEEE 802.3ad link aggregation
 -no pseudo-device	l2tp			# L2TPv3 interface

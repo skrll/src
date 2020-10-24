@@ -1,10 +1,10 @@
 #!/bin/sh
 #
-# $NetBSD: network,v 1.80 2020/07/04 06:24:53 skrll Exp $
+# $NetBSD: network,v 1.83 2020/10/11 22:38:48 kim Exp $
 #
 
 # PROVIDE: network
-# REQUIRE: ipfilter ipsec mountcritlocal root tty sysctl
+# REQUIRE: ipfilter ipsec CRITLOCALMOUNTED root tty sysctl
 # BEFORE:  NETWORKING
 
 $_rc_subr_loaded . /etc/rc.subr
@@ -325,7 +325,10 @@ network_start_interfaces()
 				;;
 			rtsol)
 				if ! checkyesno dhcpcd; then
-					/sbin/dhcpcd -n --ipv6rs \
+					/sbin/dhcpcd -n -f /dev/null \
+						--background --persistent \
+						--noipv4 --nodhcp6 \
+						--ipv6ra_noautoconf \
 						${dhcpcd_flags} $int
 				fi
 				;;

@@ -176,7 +176,11 @@ duid_get(struct dhcpcd_ctx *ctx, const struct interface *ifp)
 
 	/* No file? OK, lets make one based the machines UUID */
 	if (ifp == NULL) {
-		len = duid_make_uuid(data);
+		if (ctx->duid_type != DUID_DEFAULT &&
+		    ctx->duid_type != DUID_UUID)
+			len = 0;
+		else
+			len = duid_make_uuid(data);
 		if (len == 0)
 			free(data);
 		else
@@ -199,13 +203,15 @@ duid_get(struct dhcpcd_ctx *ctx, const struct interface *ifp)
 			logwarnx("picked interface %s to generate a DUID",
 			    ifp->name);
 		} else {
-			logwarnx("no interfaces have a fixed hardware "
-			    "address");
+			if (ctx->duid_type != DUID_LL)
+				logwarnx("no interfaces have a fixed hardware "
+				    "address");
 			return duid_make(data, ifp, DUID_LL);
 		}
 	}
 
-	len = duid_make(data, ifp, DUID_LLT);
+	len = duid_make(data, ifp,
+	    ctx->duid_type == DUID_LL ? DUID_LL : DUID_LLT);
 	hwaddr_ntoa(data, len, line, sizeof(line));
 	slen = strlen(line);
 	if (slen < sizeof(line) - 2) {
@@ -214,7 +220,8 @@ duid_get(struct dhcpcd_ctx *ctx, const struct interface *ifp)
 	}
 	if (dhcp_writefile(ctx, DUID, 0640, line, slen) == -1) {
 		logerr("%s: cannot write duid", __func__);
-		return duid_make(data, ifp, DUID_LL);
+		if (ctx->duid_type != DUID_LL)
+			return duid_make(data, ifp, DUID_LL);
 	}
 	return len;
 }

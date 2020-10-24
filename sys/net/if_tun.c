@@ -1,4 +1,4 @@
-/*	$NetBSD: if_tun.c,v 1.159 2020/06/23 18:30:17 maxv Exp $	*/
+/*	$NetBSD: if_tun.c,v 1.161 2020/09/27 19:25:54 roy Exp $	*/
 
 /*
  * Copyright (c) 1988, Julian Onions <jpo@cs.nott.ac.uk>
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_tun.c,v 1.159 2020/06/23 18:30:17 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_tun.c,v 1.161 2020/09/27 19:25:54 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -256,12 +256,12 @@ tunattach0(struct tun_softc *tp)
 	ifp->if_start = tunstart;
 #endif
 	ifp->if_flags = IFF_POINTOPOINT;
-	ifp->if_extflags = IFEF_NO_LINK_STATE_CHANGE;
 	ifp->if_type = IFT_TUNNEL;
 	ifp->if_snd.ifq_maxlen = ifqmaxlen;
 	ifp->if_dlt = DLT_NULL;
 	IFQ_SET_READY(&ifp->if_snd);
 	if_attach(ifp);
+	ifp->if_link_state = LINK_STATE_DOWN;
 	if_alloc_sadl(ifp);
 	bpf_attach(ifp, DLT_NULL, sizeof(uint32_t));
 }
@@ -347,6 +347,7 @@ tunopen(dev_t dev, int flag, int mode, struct lwp *l)
 	ifp = &tp->tun_if;
 	tp->tun_flags |= TUN_OPEN;
 	TUNDEBUG("%s: open\n", ifp->if_xname);
+	if_link_state_change(ifp, LINK_STATE_UP);
 
 	mutex_exit(&tp->tun_lock);
 
@@ -411,6 +412,9 @@ tunclose(dev_t dev, int flag, int mode,
 			}
 		}
 	}
+
+	if_link_state_change(ifp, LINK_STATE_DOWN);
+
 out_nolock:
 	return 0;
 }
@@ -857,9 +861,6 @@ tunwrite(dev_t dev, struct uio *uio, int ioflag)
 
 	TUNDEBUG("%s: tunwrite\n", ifp->if_xname);
 
-	if (uio->uio_resid == 0)
-		return 0;
-
 	if (tp->tun_flags & TUN_PREPADDR) {
 		if (uio->uio_resid < sizeof(dst)) {
 			error = EIO;
@@ -890,7 +891,7 @@ tunwrite(dev_t dev, struct uio *uio, int ioflag)
 #endif
 	}
 
-	if (uio->uio_resid > TUNMTU) {
+	if (uio->uio_resid == 0 || uio->uio_resid > TUNMTU) {
 		TUNDEBUG("%s: len=%lu!\n", ifp->if_xname,
 		    (unsigned long)uio->uio_resid);
 		error = EIO;

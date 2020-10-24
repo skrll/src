@@ -1,4 +1,4 @@
-/* $NetBSD: armreg.h,v 1.50 2020/07/01 08:01:07 ryo Exp $ */
+/* $NetBSD: armreg.h,v 1.54 2020/09/30 08:40:49 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@ reg_##regname##_write(uint64_t __val)				\
 {								\
 	__asm __volatile(					\
 	    ASM_ARCH(arch)					\
-	    "msr " #regdesc ", %0" :: "r"(__val)		\
+	    "msr " #regdesc ", %0" :: "r"(__val) : "memory"	\
 	);							\
 }
 
@@ -77,7 +77,9 @@ reg_##regname##_write(uint64_t __val)				\
 static __inline void						\
 reg_##regname##_write(uint64_t __val)				\
 {								\
-	__asm __volatile("msr " #regdesc ", %0" :: "n"(__val));	\
+	__asm __volatile(					\
+	    "msr " #regdesc ", %0" :: "n"(__val) : "memory"	\
+	);							\
 }
 
 #define AARCH64REG_READ_INLINE(regname)				\
@@ -97,7 +99,9 @@ reg_##regname##_write(uint64_t __val)				\
 static __inline void						\
 reg_##regname##_write(uint64_t __val)				\
 {								\
-	__asm __volatile("at " #regdesc ", %0" :: "r"(__val));	\
+	__asm __volatile(					\
+	    "at " #regdesc ", %0" :: "r"(__val) : "memory"	\
+	);							\
 }
 
 #define AARCH64REG_ATWRITE_INLINE(regname)			\
@@ -303,6 +307,15 @@ AARCH64REG_READ_INLINE(id_aa64isar0_el1)
 
 AARCH64REG_READ_INLINE(id_aa64isar1_el1)
 
+#define	ID_AA64ISAR1_EL1_I8MM		__BITS(55,52)
+#define	 ID_AA64ISAR1_EL1_I8MM_NONE	 0
+#define	 ID_AA64ISAR1_EL1_I8MM_SUPPORTED 1
+#define	ID_AA64ISAR1_EL1_DGH		__BITS(51,48)
+#define	 ID_AA64ISAR1_EL1_DGH_NONE	 0
+#define	 ID_AA64ISAR1_EL1_DGH_SUPPORTED	 1
+#define	ID_AA64ISAR1_EL1_BF16		__BITS(47,44)
+#define	 ID_AA64ISAR1_EL1_BF16_NONE	 0
+#define	 ID_AA64ISAR1_EL1_BF16_BFDOT	 1
 #define	ID_AA64ISAR1_EL1_SPECRES	__BITS(43,40)
 #define	 ID_AA64ISAR1_EL1_SPECRES_NONE	 0
 #define	 ID_AA64ISAR1_EL1_SPECRES_SUPPORTED 1
@@ -598,6 +611,9 @@ AARCH64REG_WRITE_INLINE3(APGAKeyLo_EL1, apgakeylo_el1, ATTR_ARCH("armv8.3-a"))
 AARCH64REG_READ_INLINE3(APGAKeyHi_EL1, apgakeyhi_el1, ATTR_ARCH("armv8.3-a"))
 AARCH64REG_WRITE_INLINE3(APGAKeyHi_EL1, apgakeyhi_el1, ATTR_ARCH("armv8.3-a"))
 
+AARCH64REG_READ_INLINE3(pan, pan, ATTR_ARCH("armv8.1-a"))
+AARCH64REG_WRITE_INLINE3(pan, pan, ATTR_ARCH("armv8.1-a"))
+
 AARCH64REG_READ_INLINE(cpacr_el1)	// Coprocessor Access Control Regiser
 AARCH64REG_WRITE_INLINE(cpacr_el1)
 
@@ -819,7 +835,7 @@ AARCH64REG_WRITE_INLINE(sctlr_el1)
 #define	SCTLR_IESB		__BIT(21)
 #define	SCTLR_EIS		__BIT(22)
 #define	SCTLR_SPAN		__BIT(23)
-#define	SCTLR_EOE		__BIT(24)
+#define	SCTLR_E0E		__BIT(24)
 #define	SCTLR_EE		__BIT(25)
 #define	SCTLR_UCI		__BIT(26)
 #define	SCTLR_EnDA		__BIT(27)
@@ -864,6 +880,7 @@ AARCH64REG_WRITE_INLINE(spsr_el1)
 #define	SPSR_A32_Q 		__BIT(27)	// A32: Overflow
 #define	SPSR_A32_IT1 		__BIT(26)	// A32: IT[1]
 #define	SPSR_A32_IT0 		__BIT(25)	// A32: IT[0]
+#define	SPSR_PAN	 	__BIT(22)	// Privileged Access Never
 #define	SPSR_SS	 		__BIT(21)	// Software Step
 #define	SPSR_SS_SHIFT		21
 #define	SPSR_IL	 		__BIT(20)	// Instruction Length
