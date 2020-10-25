@@ -1,4 +1,4 @@
-#	$NetBSD: files.riscv,v 1.4 2019/11/20 19:37:52 pgoyette Exp $
+#	$NetBSD: files.riscv,v 1.6 2020/10/21 13:31:51 christos Exp $
 #
 
 maxpartitions	16
