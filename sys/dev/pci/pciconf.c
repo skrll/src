@@ -1,4 +1,4 @@
-/*	$NetBSD: pciconf.c,v 1.48 2020/07/08 13:12:35 thorpej Exp $	*/
+/*	$NetBSD: pciconf.c,v 1.50 2020/10/20 23:03:30 jmcneill Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pciconf.c,v 1.48 2020/07/08 13:12:35 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pciconf.c,v 1.50 2020/10/20 23:03:30 jmcneill Exp $");
 
 #include "opt_pci.h"
 
@@ -116,6 +116,18 @@ static const char *pciconf_resource_names[] = {
 struct pciconf_resources {
 	struct pciconf_resource resources[PCICONF_RESOURCE_NTYPES];
 };
+
+struct pciconf_resource_rsvd {
+	int		type;
+	uint64_t	start;
+	bus_size_t	size;
+	void		(*callback)(void *, uint64_t);
+	void		*callback_arg;
+	LIST_ENTRY(pciconf_resource_rsvd) next;
+};
+
+static LIST_HEAD(, pciconf_resource_rsvd) pciconf_resource_reservations =
+    LIST_HEAD_INITIALIZER(pciconf_resource_reservations);
 
 typedef struct _s_pciconf_dev_t {
 	int		ipin;
@@ -506,6 +518,72 @@ err:
 	return NULL;
 }
 
+static struct pciconf_resource_rsvd *
+pci_resource_is_reserved(int type, uint64_t addr, uint64_t size)
+{
+	struct pciconf_resource_rsvd *rsvd;
+
+	LIST_FOREACH(rsvd, &pciconf_resource_reservations, next) {
+		if (rsvd->type != type)
+			continue;
+		if (rsvd->start <= addr + size && rsvd->start + rsvd->size >= addr)
+			return rsvd;
+	}
+
+	return NULL;
+}
+
+static struct pciconf_resource_rsvd *
+pci_bar_is_reserved(pciconf_bus_t *pb, pciconf_dev_t *pd, int br)
+{
+	pcireg_t base, base64, mask, mask64;
+	pcitag_t tag;
+	uint64_t addr, size;
+
+	/*
+	 * Resource reservation does not apply to bridges
+	 */
+	if (pd->ppb)
+		return NULL;
+
+	tag = pd->tag;
+
+	/*
+	 * Look to see if this device is enabled and one of the resources
+	 * is already in use (eg. firmware configured console device).
+	 */
+	base = pci_conf_read(pb->pc, tag, br);
+	pci_conf_write(pb->pc, tag, br, 0xffffffff);
+	mask = pci_conf_read(pb->pc, tag, br);
+	pci_conf_write(pb->pc, tag, br, base);
+
+	switch (PCI_MAPREG_TYPE(base)) {
+	case PCI_MAPREG_TYPE_IO:
+		addr = PCI_MAPREG_IO_ADDR(base);
+		size = PCI_MAPREG_IO_SIZE(mask);
+		return pci_resource_is_reserved(PCI_CONF_MAP_IO, addr, size);
+
+	case PCI_MAPREG_TYPE_MEM:
+		if (PCI_MAPREG_MEM_TYPE(base) == PCI_MAPREG_MEM_TYPE_64BIT) {
+			base64 = pci_conf_read(pb->pc, tag, br + 4);
+			pci_conf_write(pb->pc, tag, br + 4, 0xffffffff);
+			mask64 = pci_conf_read(pb->pc, tag, br + 4);
+			pci_conf_write(pb->pc, tag, br + 4, base64);
+			addr = (uint64_t)PCI_MAPREG_MEM64_ADDR(
+			      (((uint64_t)base64) << 32) | base);
+			size = (uint64_t)PCI_MAPREG_MEM64_SIZE(
+			      (((uint64_t)mask64) << 32) | mask);
+		} else {
+			addr = PCI_MAPREG_MEM_ADDR(base);
+			size = PCI_MAPREG_MEM_SIZE(mask);
+		}
+		return pci_resource_is_reserved(PCI_CONF_MAP_MEM, addr, size);
+
+	default:
+		return NULL;
+	}
+}
+
 static int
 pci_do_device_query(pciconf_bus_t *pb, pcitag_t tag, int dev, int func,
     int mode)
@@ -825,19 +903,23 @@ setup_iowins(pciconf_bus_t *pb)
 {
 	pciconf_win_t	*pi;
 	pciconf_dev_t	*pd;
-	int error;
+	struct pciconf_resource_rsvd *rsvd;
+	int		error;
 
 	for (pi = pb->pciiowin; pi < &pb->pciiowin[pb->niowin]; pi++) {
 		if (pi->size == 0)
 			continue;
 
 		pd = pi->dev;
+		rsvd = pci_bar_is_reserved(pb, pd, pi->reg);
+
 		if (pb->io_res.arena == NULL) {
 			/* Bus has no IO ranges, disable IO BAR */
 			pi->address = 0;
 			pd->enable &= ~PCI_CONF_ENABLE_IO;
 			goto write_ioaddr;
 		}
+
 		pi->address = pci_allocate_range(&pb->io_res, pi->size,
 		    pi->align, false);
 		if (~pi->address == 0) {
@@ -871,6 +953,9 @@ write_ioaddr:
 		}
 		pci_conf_write(pd->pc, pd->tag, pi->reg,
 		    PCI_MAPREG_IO_ADDR(pi->address) | PCI_MAPREG_TYPE_IO);
+
+		if (rsvd != NULL && rsvd->start != pi->address)
+			rsvd->callback(rsvd->callback_arg, pi->address);
 	}
 	return 0;
 }
@@ -882,6 +967,7 @@ setup_memwins(pciconf_bus_t *pb)
 	pciconf_dev_t	*pd;
 	pcireg_t	base;
 	struct pciconf_resource *r;
+	struct pciconf_resource_rsvd *rsvd;
 	bool		ok64;
 	int		error;
 
@@ -891,6 +977,8 @@ setup_memwins(pciconf_bus_t *pb)
 
 		ok64 = false;
 		pd = pm->dev;
+		rsvd = pci_bar_is_reserved(pb, pd, pm->reg);
+
 		if (pm->prefetch) {
 			r = &pb->pmem_res;
 			ok64 = pb->pmem_64bit;
@@ -962,6 +1050,10 @@ setup_memwins(pciconf_bus_t *pb)
 				pci_conf_write(pd->pc, pd->tag, pm->reg + 4,
 				    base);
 			}
+		}
+
+		if (rsvd != NULL && rsvd->start != pm->address) {
+			rsvd->callback(rsvd->callback_arg, pm->address);
 		}
 	}
 	for (pm = pb->pcimemwin; pm < &pb->pcimemwin[pb->nmemwin]; pm++) {
@@ -1312,7 +1404,9 @@ pciconf_resource_add(struct pciconf_resources *rs, int type,
 {
 	bus_addr_t end = start + (size - 1);
 	struct pciconf_resource *r;
-	int error;
+	struct pciconf_resource_rsvd *rsvd;
+	int error, rsvd_type, align;
+	vmem_addr_t result;
 	bool first;
 
 	if (size == 0 || end <= start)
@@ -1341,7 +1435,61 @@ pciconf_resource_add(struct pciconf_resources *rs, int type,
 
 	r->total_size += size;
 
+	switch (type) {
+	case PCICONF_RESOURCE_IO:
+		rsvd_type = PCI_CONF_MAP_IO;
+		align = 0x1000;
+		break;
+	case PCICONF_RESOURCE_MEM:
+	case PCICONF_RESOURCE_PREFETCHABLE_MEM:
+		rsvd_type = PCI_CONF_MAP_MEM;
+		align = 0x100000;
+		break;
+	default:
+		rsvd_type = 0;
+		align = 0;
+		break;
+	}
+
+	/*
+	 * Exclude reserved ranges from available resources
+	 */
+	LIST_FOREACH(rsvd, &pciconf_resource_reservations, next) {
+		if (rsvd->type != rsvd_type)
+			continue;
+		/*
+		 * The reserved range may not be within our resource window.
+		 * That's fine, so ignore the error.
+		 */
+		(void)vmem_xalloc(r->arena, rsvd->size, align, 0, 0,
+				  rsvd->start, rsvd->start + rsvd->size,
+				  VM_BESTFIT | VM_NOSLEEP,
+				  &result);
+	}
+
 	return 0;
+}
+
+/*
+ * pciconf_resource_reserve:
+ *
+ *	Mark a pci configuration resource as in-use. Devices
+ *	already configured to use these resources are notified
+ *	during resource assignment if their resources are changed.
+ */
+void
+pciconf_resource_reserve(int type, bus_addr_t start, bus_size_t size,
+    void (*callback)(void *, uint64_t), void *callback_arg)
+{
+	struct pciconf_resource_rsvd *rsvd;
+
+	rsvd = kmem_zalloc(sizeof(*rsvd), KM_SLEEP);
+	rsvd->type = type;
+	rsvd->start = start;
+	rsvd->size = size;
+	rsvd->callback = callback;
+	rsvd->callback_arg = callback_arg;
+	LIST_INSERT_HEAD(&pciconf_resource_reservations, rsvd, next);
 }
 
 /*

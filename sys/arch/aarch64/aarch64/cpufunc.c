@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.c,v 1.23 2020/07/04 04:59:36 rin Exp $	*/
+/*	$NetBSD: cpufunc.c,v 1.26 2020/10/22 07:31:15 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -30,7 +30,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.23 2020/07/04 04:59:36 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.26 2020/10/22 07:31:15 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -40,7 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.23 2020/07/04 04:59:36 rin Exp $");
 #include <uvm/uvm.h>
 #include <uvm/uvm_page.h>
 
-#include <aarch64/cpufunc.h>
+#include <arm/cpufunc.h>
 
 u_int cputype;			/* compat arm */
 u_int arm_dcache_align;		/* compat arm */
@@ -50,6 +50,7 @@ u_int arm_dcache_maxline;
 u_int aarch64_cache_vindexsize;
 u_int aarch64_cache_prefer_mask;
 
+int aarch64_pan_enabled __read_mostly;
 int aarch64_pac_enabled __read_mostly;
 
 /* cache info per cluster. the same cluster has the same cache configuration? */
@@ -68,7 +69,7 @@ extract_cacheunit(int level, bool insn, int cachetype,
 	/* select and extract level N data cache */
 	reg_csselr_el1_write(__SHIFTIN(level, CSSELR_LEVEL) |
 	    __SHIFTIN(insn ? 1 : 0, CSSELR_IND));
-	__asm __volatile ("isb");
+	isb();
 
 	ccsidr = reg_ccsidr_el1_read();
 	mmfr2 = reg_id_aa64mmfr2_el1_read();
@@ -390,10 +391,10 @@ aarch64_dcache_wbinv_all(void)
 		if (cinfo[level].cacheable == CACHE_CACHEABLE_NONE)
 			break;
 
-		__asm __volatile ("dsb ish");
+		dsb(ish);
 		ln_dcache_wbinv_all(level, &cinfo[level].dcache);
 	}
-	__asm __volatile ("dsb ish");
+	dsb(ish);
 }
 
 void
@@ -408,10 +409,10 @@ aarch64_dcache_inv_all(void)
 		if (cinfo[level].cacheable == CACHE_CACHEABLE_NONE)
 			break;
 
-		__asm __volatile ("dsb ish");
+		dsb(ish);
 		ln_dcache_inv_all(level, &cinfo[level].dcache);
 	}
-	__asm __volatile ("dsb ish");
+	dsb(ish);
 }
 
 void
@@ -426,10 +427,10 @@ aarch64_dcache_wb_all(void)
 		if (cinfo[level].cacheable == CACHE_CACHEABLE_NONE)
 			break;
 
-		__asm __volatile ("dsb ish");
+		dsb(ish);
 		ln_dcache_wb_all(level, &cinfo[level].dcache);
 	}
-	__asm __volatile ("dsb ish");
+	dsb(ish);
 }
 
 int
@@ -472,6 +473,36 @@ set_cpufuncs(void)
 #endif
 
 	return 0;
+}
+
+void
+aarch64_pan_init(int primary)
+{
+#ifdef ARMV81_PAN
+	uint64_t reg, sctlr;
+
+	/* CPU0 does the detection. */
+	if (primary) {
+		reg = reg_id_aa64mmfr1_el1_read();
+		if (__SHIFTOUT(reg, ID_AA64MMFR1_EL1_PAN) !=
+		    ID_AA64MMFR1_EL1_PAN_NONE)
+			aarch64_pan_enabled = 1;
+	}
+
+	if (!aarch64_pan_enabled)
+		return;
+
+	/*
+	 * On an exception to EL1, have the CPU set the PAN bit automatically.
+	 * This ensures PAN is enabled each time the kernel is entered.
+	 */
+	sctlr = reg_sctlr_el1_read();
+	sctlr &= ~SCTLR_SPAN;
+	reg_sctlr_el1_write(sctlr);
+
+	/* Set the PAN bit right now. */
+	reg_pan_write(1);
+#endif
 }
 
 /*

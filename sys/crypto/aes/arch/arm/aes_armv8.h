@@ -1,4 +1,4 @@
-/*	$NetBSD: aes_armv8.h,v 1.1 2020/06/29 23:31:41 riastradh Exp $	*/
+/*	$NetBSD: aes_armv8.h,v 1.3 2020/07/25 22:33:04 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -31,7 +31,10 @@
 
 #include <sys/types.h>
 
-#include <crypto/aes/aes.h>
+#include <crypto/aes/aes_impl.h>
+
+struct aesenc;
+struct aesdec;
 
 /* Assembly routines */
 
@@ -62,6 +65,13 @@ void	aesarmv8_xts_dec1(const struct aesdec *, const uint8_t[static 16],
 void	aesarmv8_xts_dec8(const struct aesdec *, const uint8_t[static 128],
 	    uint8_t[static 128], size_t, const uint8_t[static 16], uint32_t);
 void	aesarmv8_xts_update(const uint8_t[static 16], uint8_t[static 16]);
+
+void	aesarmv8_cbcmac_update1(const struct aesenc *,
+	    const uint8_t[static 16], size_t, uint8_t[static 16], uint32_t);
+void	aesarmv8_ccm_enc1(const struct aesenc *, const uint8_t[static 16],
+	    uint8_t[static 16], size_t, uint8_t[static 32], uint32_t);
+void	aesarmv8_ccm_dec1(const struct aesenc *, const uint8_t[static 16],
+	    uint8_t[static 16], size_t, uint8_t[static 32], uint32_t);
 
 extern struct aes_impl aes_armv8_impl;
 

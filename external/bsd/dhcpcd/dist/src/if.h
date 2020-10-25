@@ -146,6 +146,7 @@ int if_getflags(struct interface *);
 int if_setflag(struct interface *, short, short);
 #define if_up(ifp) if_setflag((ifp), (IFF_UP | IFF_RUNNING), 0)
 #define if_down(ifp) if_setflag((ifp), 0, IFF_UP);
+bool if_is_link_up(const struct interface *);
 bool if_valid_hwaddr(const uint8_t *, size_t);
 struct if_head *if_discover(struct dhcpcd_ctx *, struct ifaddrs **,
     int, char * const *);
@@ -159,8 +160,7 @@ void if_free(struct interface *);
 int if_domtu(const struct interface *, short int);
 #define if_getmtu(ifp) if_domtu((ifp), 0)
 #define if_setmtu(ifp, mtu) if_domtu((ifp), (mtu))
-int if_carrier(struct interface *);
-int if_pollinit(struct interface *ifp);
+int if_carrier(struct interface *, const void *);
 
 #ifdef ALIAS_ADDR
 int if_makealias(char *, size_t, const char *, int);
@@ -184,6 +184,7 @@ struct if_spec {
 int if_nametospec(const char *, struct if_spec *);
 
 /* The below functions are provided by if-KERNEL.c */
+int os_init(void);
 int if_conf(struct interface *);
 int if_init(struct interface *);
 int if_getssid(struct interface *);
@@ -191,6 +192,7 @@ int if_ignoregroup(int, const char *);
 bool if_ignore(struct dhcpcd_ctx *, const char *);
 int if_vimaster(struct dhcpcd_ctx *ctx, const char *);
 unsigned short if_vlanid(const struct interface *);
+char * if_getnetworknamespace(char *, size_t);
 int if_opensockets(struct dhcpcd_ctx *);
 int if_opensockets_os(struct dhcpcd_ctx *);
 void if_closesockets(struct dhcpcd_ctx *);
@@ -224,6 +226,8 @@ int if_setmac(struct interface *ifp, void *, uint8_t);
 #ifndef SOCK_CXNB
 #define	SOCK_CXNB	SOCK_CLOEXEC | SOCK_NONBLOCK
 #endif
+int xsocket(int, int, int);
+int xsocketpair(int, int, int, int[2]);
 
 int if_route(unsigned char, const struct rt *rt);
 int if_initrt(struct dhcpcd_ctx *, rb_tree_t *, int);
@@ -259,7 +263,6 @@ int if_getlifetime6(struct ipv6_addr *);
 int if_machinearch(char *, size_t);
 struct interface *if_findifpfromcmsg(struct dhcpcd_ctx *,
     struct msghdr *, int *);
-int xsocket(int, int, int);
 
 #ifdef __linux__
 int if_linksocket(struct sockaddr_nl *, int, int);

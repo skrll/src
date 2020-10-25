@@ -99,7 +99,7 @@
 #define DHCPCD_NOALIAS			(1ULL << 39)
 #define DHCPCD_IA_FORCED		(1ULL << 40)
 #define DHCPCD_STOPPING			(1ULL << 41)
-#define DHCPCD_DEPARTED			(1ULL << 42)
+#define DHCPCD_LAUNCHER			(1ULL << 42)
 #define DHCPCD_HOSTNAME_SHORT		(1ULL << 43)
 #define DHCPCD_EXITING			(1ULL << 44)
 #define DHCPCD_WAITIP4			(1ULL << 45)
@@ -180,7 +180,6 @@
 #define O_INACTIVE		O_BASE + 47
 #define O_MUDURL		O_BASE + 48
 #define O_MSUSERCLASS		O_BASE + 49
-#define	O_POLL			O_BASE + 50
 
 extern const struct option cf_options[];
 
@@ -216,7 +215,6 @@ struct if_options {
 	time_t mtime;
 	uint8_t iaid[4];
 	int metric;
-	unsigned long poll;
 	uint8_t requestmask[256 / NBBY];
 	uint8_t requiremask[256 / NBBY];
 	uint8_t nomask[256 / NBBY];

@@ -1,4 +1,4 @@
-/*	$NetBSD: bus_dma.c,v 1.122 2020/06/20 07:10:36 skrll Exp $	*/
+/*	$NetBSD: bus_dma.c,v 1.124 2020/10/24 14:51:59 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2020 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
 #include "opt_cputypes.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.122 2020/06/20 07:10:36 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.124 2020/10/24 14:51:59 skrll Exp $");
 
 #include <sys/param.h>
 
@@ -1811,31 +1811,40 @@ int
 _bus_dmatag_subregion(bus_dma_tag_t tag, bus_addr_t min_addr,
     bus_addr_t max_addr, bus_dma_tag_t *newtag, int flags)
 {
+	if (min_addr >= max_addr)
+		return EOPNOTSUPP;
 
 #ifdef _ARM32_NEED_BUS_DMA_BOUNCE
 	struct arm32_dma_range *dr;
-	bool subset = false;
+	bool psubset = true;
 	size_t nranges = 0;
 	size_t i;
 	for (i = 0, dr = tag->_ranges; i < tag->_nranges; i++, dr++) {
-		if (dr->dr_sysbase <= min_addr
-		    && max_addr <= dr->dr_sysbase + dr->dr_len - 1) {
-			subset = true;
+		/*
+		 * If the new {min,max}_addr are narrower than any of the
+		 * ranges in the parent tag then we need a new tag;
+		 * otherwise the parent tag is a subset of the new
+		 * range and can continue to be used.
+		 */
+		if (min_addr > dr->dr_sysbase
+		    || max_addr < dr->dr_sysbase + dr->dr_len - 1) {
+			psubset = false;
 		}
 		if (min_addr <= dr->dr_sysbase + dr->dr_len
 		    && max_addr >= dr->dr_sysbase) {
 			nranges++;
 		}
 	}
-	if (subset) {
+	if (nranges == 0) {
+		nranges = 1;
+		psubset = false;
+	}
+	if (psubset) {
 		*newtag = tag;
 		/* if the tag must be freed, add a reference */
 		if (tag->_tag_needs_free)
 			(tag->_tag_needs_free)++;
 		return 0;
-	}
-	if (nranges == 0) {
-		nranges = 1;
 	}
 
 	const size_t tagsize = sizeof(*tag) + nranges * sizeof(*dr);
@@ -1854,22 +1863,35 @@ _bus_dmatag_subregion(bus_dma_tag_t tag, bus_addr_t min_addr,
 		dr->dr_busbase = min_addr;
 		dr->dr_len = max_addr + 1 - min_addr;
 	} else {
-		for (i = 0; i < nranges; i++) {
-			if (min_addr > dr->dr_sysbase + dr->dr_len
-			    || max_addr < dr->dr_sysbase)
+		struct arm32_dma_range *pdr;
+
+		for (i = 0, pdr = tag->_ranges; i < tag->_nranges; i++, pdr++) {
+			KASSERT(nranges != 0);
+
+			if (min_addr > pdr->dr_sysbase + pdr->dr_len
+			    || max_addr < pdr->dr_sysbase) {
+				/*
+				 * this range doesn't overlap with new limits,
+				 * so skip.
+				 */
 				continue;
-			dr[0] = tag->_ranges[i];
+			}
+			/*
+			 * Copy the range and adjust to fit within the new
+			 * limits
+			 */
+			dr[0] = pdr[0];
 			if (dr->dr_sysbase < min_addr) {
 				psize_t diff = min_addr - dr->dr_sysbase;
 				dr->dr_busbase += diff;
 				dr->dr_len -= diff;
 				dr->dr_sysbase += diff;
 			}
-			if (max_addr != 0xffffffff
-			    && max_addr + 1 < dr->dr_sysbase + dr->dr_len) {
+			if (max_addr <= dr->dr_sysbase + dr->dr_len - 1) {
 				dr->dr_len = max_addr + 1 - dr->dr_sysbase;
 			}
 			dr++;
+			nranges--;
 		}
 	}
 

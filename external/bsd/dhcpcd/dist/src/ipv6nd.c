@@ -437,7 +437,7 @@ ipv6nd_sendadvertisement(void *arg)
 	const struct rs_state *state = RS_CSTATE(ifp);
 	int s;
 
-	if (state == NULL || ifp->carrier <= LINK_DOWN)
+	if (state == NULL || !if_is_link_up(ifp))
 		goto freeit;
 
 #ifdef SIN6_LEN
@@ -505,7 +505,7 @@ ipv6nd_advertise(struct ipv6_addr *ia)
 	iaf = NULL;
 	TAILQ_FOREACH(ifp, ctx->ifaces, next) {
 		state = IPV6_STATE(ifp);
-		if (state == NULL || ifp->carrier <= LINK_DOWN)
+		if (state == NULL || !if_is_link_up(ifp))
 			continue;
 
 		TAILQ_FOREACH(iap, &state->addrs, next) {
@@ -544,11 +544,11 @@ ipv6nd_advertise(struct ipv6_addr *ia)
 	na->nd_na_flags_reserved = ND_NA_FLAG_OVERRIDE;
 #if defined(PRIVSEP) && (defined(__linux__) || defined(HAVE_PLEDGE))
 	if (IN_PRIVSEP(ctx)) {
-		if (ps_root_ip6forwarding(ctx, ifp->name) == 1)
+		if (ps_root_ip6forwarding(ctx, ifp->name) != 0)
 			na->nd_na_flags_reserved |= ND_NA_FLAG_ROUTER;
 	} else
 #endif
-	if (ip6_forwarding(ifp->name) == 1)
+	if (ip6_forwarding(ifp->name) != 0)
 		na->nd_na_flags_reserved |= ND_NA_FLAG_ROUTER;
 	na->nd_na_target = ia->addr;
 
@@ -1223,7 +1223,7 @@ ipv6nd_handlera(struct dhcpcd_ctx *ctx,
 	if (rap->willexpire)
 		new_data = true;
 	loglevel = new_rap || rap->willexpire || !rap->isreachable ?
-	    LOG_INFO : LOG_DEBUG,
+	    LOG_INFO : LOG_DEBUG;
 	logmessage(loglevel, "%s: Router Advertisement from %s",
 	    ifp->name, rap->sfrom);
 

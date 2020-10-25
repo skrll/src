@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.c,v 1.25 2020/07/02 11:10:48 jmcneill Exp $ */
+/* $NetBSD: db_machdep.c,v 1.28 2020/10/22 07:31:15 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.25 2020/07/02 11:10:48 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.28 2020/10/22 07:31:15 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd32.h"
@@ -45,9 +45,10 @@ __KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.25 2020/07/02 11:10:48 jmcneill Exp
 
 #include <uvm/uvm.h>
 
+#include <arm/cpufunc.h>
+
 #include <aarch64/db_machdep.h>
 #include <aarch64/armreg.h>
-#include <aarch64/cpufunc.h>
 #include <aarch64/locore.h>
 #include <aarch64/pmap.h>
 
@@ -322,8 +323,6 @@ show_cpuinfo(struct cpu_info *ci)
 	    &ci->ci_cpl, cpuid, cpuinfobuf.ci_cpl);
 	db_printf("%p cpu[%lu].ci_softints     = 0x%08x\n",
 	    &ci->ci_softints, cpuid, cpuinfobuf.ci_softints);
-	db_printf("%p cpu[%lu].ci_astpending   = 0x%08x\n",
-	    &ci->ci_astpending, cpuid, cpuinfobuf.ci_astpending);
 	db_printf("%p cpu[%lu].ci_intr_depth   = %u\n",
 	    &ci->ci_intr_depth, cpuid, cpuinfobuf.ci_intr_depth);
 	db_printf("%p cpu[%lu].ci_biglock_count = %u\n",
@@ -445,13 +444,13 @@ db_md_pte_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 	}
 
 	reg_s1e0r_write(addr);
-	__asm __volatile ("isb");
+	isb();
 	par = reg_par_el1_read();
 	db_printf("Stage1 EL0 translation %016llx -> PAR_EL1 = ", addr);
 	db_par_print(par, addr);
 
 	reg_s1e1r_write(addr);
-	__asm __volatile ("isb");
+	isb();
 	par = reg_par_el1_read();
 	db_printf("Stage1 EL1 translation %016llx -> PAR_EL1 = ", addr);
 	db_par_print(par, addr);

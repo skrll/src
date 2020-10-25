@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.tests,v 1.173 2020/07/03 04:25:28 jruoho Exp $
+#	$NetBSD: NetBSD.dist.tests,v 1.181 2020/10/15 17:44:44 mgorny Exp $
 
 ./usr/libdata/debug/usr/tests
 ./usr/libdata/debug/usr/tests/atf
@@ -147,6 +147,8 @@
 ./usr/libdata/debug/usr/tests/net/icmp
 ./usr/libdata/debug/usr/tests/net/if
 ./usr/libdata/debug/usr/tests/net/if_loop
+./usr/libdata/debug/usr/tests/net/if_tap
+./usr/libdata/debug/usr/tests/net/if_vether
 ./usr/libdata/debug/usr/tests/net/if_vlan
 ./usr/libdata/debug/usr/tests/net/in_cksum
 ./usr/libdata/debug/usr/tests/net/ipsec
@@ -164,10 +166,12 @@
 ./usr/libdata/debug/usr/tests/sys
 ./usr/libdata/debug/usr/tests/sys/crypto
 ./usr/libdata/debug/usr/tests/sys/crypto/aes
+./usr/libdata/debug/usr/tests/sys/crypto/chacha
 ./usr/libdata/debug/usr/tests/sys/net
 ./usr/libdata/debug/usr/tests/sys/netatalk
 ./usr/libdata/debug/usr/tests/sys/netinet
 ./usr/libdata/debug/usr/tests/sys/netinet6
+./usr/libdata/debug/usr/tests/sys/x86
 ./usr/libdata/debug/usr/tests/usr.bin
 ./usr/libdata/debug/usr/tests/usr.bin/cpio
 ./usr/libdata/debug/usr/tests/usr.bin/id
@@ -356,7 +360,9 @@
 ./usr/tests/net/if_pppoe
 ./usr/tests/net/if_tap
 ./usr/tests/net/if_tun
+./usr/tests/net/if_vether
 ./usr/tests/net/if_vlan
+./usr/tests/net/if_wg
 ./usr/tests/net/in_cksum
 ./usr/tests/net/ipsec
 ./usr/tests/net/mcast
@@ -391,11 +397,13 @@
 ./usr/tests/sys
 ./usr/tests/sys/crypto
 ./usr/tests/sys/crypto/aes
+./usr/tests/sys/crypto/chacha
 ./usr/tests/sys/net
 ./usr/tests/sys/netatalk
 ./usr/tests/sys/netinet
 ./usr/tests/sys/netinet6
 ./usr/tests/sys/rc
+./usr/tests/sys/x86
 ./usr/tests/usr.bin
 ./usr/tests/usr.bin/awk
 ./usr/tests/usr.bin/basename

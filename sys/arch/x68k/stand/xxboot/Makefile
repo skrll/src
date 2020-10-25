@@ -1,5 +1,10 @@
-#	$NetBSD: Makefile,v 1.15 2012/03/20 13:01:32 minoura Exp $
+#	$NetBSD: Makefile,v 1.17 2020/08/16 07:03:45 isaki Exp $
 
-SUBDIR=	cdboot_cd9660 xxboot_ffsv1 xxboot_ffsv2 xxboot_lfsv1 xxboot_lfsv2
+SUBDIR+=	cdboot_cd9660
+SUBDIR+=	fdboot_ustarfs
+SUBDIR+=	xxboot_ffsv1
+SUBDIR+=	xxboot_ffsv2
+SUBDIR+=	xxboot_lfsv1
+SUBDIR+=	xxboot_lfsv2
 
 .include <bsd.subdir.mk>

@@ -1,4 +1,4 @@
-/* $NetBSD: aarch64_machdep.c,v 1.45 2020/07/16 11:36:35 skrll Exp $ */
+/* $NetBSD: aarch64_machdep.c,v 1.53 2020/10/22 07:31:15 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,14 +30,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.45 2020/07/16 11:36:35 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.53 2020/10/22 07:31:15 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_cpuoptions.h"
 #include "opt_ddb.h"
+#include "opt_fdt.h"
 #include "opt_kernhist.h"
 #include "opt_modular.h"
-#include "opt_fdt.h"
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -59,8 +59,9 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.45 2020/07/16 11:36:35 skrll E
 
 #include <machine/bootconfig.h>
 
+#include <arm/cpufunc.h>
+
 #include <aarch64/armreg.h>
-#include <aarch64/cpufunc.h>
 #ifdef DDB
 #include <aarch64/db_machdep.h>
 #endif
@@ -170,7 +171,7 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
 	/* Disable translation table walks using TTBR0 */
 	uint64_t tcr = reg_tcr_el1_read();
 	reg_tcr_el1_write(tcr | TCR_EPD0);
-	__asm __volatile("isb" ::: "memory");
+	isb();
 
 	aarch64_tlbi_all();
 
@@ -205,18 +206,17 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
  *               0xffff_ffff_ffe0_0000  End of KVA
  *                                      = VM_MAX_KERNEL_ADDRESS
  *
- *               0xffff_ffc0_0???_????  End of kernel
+ *               0xffff_c000_0???_????  End of kernel
  *                                      = _end[]
- *               0xffff_ffc0_00??_????  Start of kernel
+ *               0xffff_c000_00??_????  Start of kernel
  *                                      = __kernel_text[]
  *
- *               0xffff_ffc0_0000_0000  Kernel base address & start of KVA
+ *               0xffff_c000_0000_0000  Kernel base address & start of KVA
  *                                      = VM_MIN_KERNEL_ADDRESS
  *
- *               0xffff_ffbf_ffff_ffff  End of direct mapped
+ *               0xffff_bfff_ffff_ffff  End of direct mapped
  *               0xffff_0000_0000_0000  Start of direct mapped
  *                                      = AARCH64_KSEG_START
- *                                      = AARCH64_KMEMORY_BASE
  *
  * Hole:         0xfffe_ffff_ffff_ffff
  *               0x0001_0000_0000_0000
@@ -252,11 +252,10 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 
 #ifdef MODULAR
 	/*
-	 * aarch64 compiler (gcc & llvm) uses R_AARCH_CALL26/R_AARCH_JUMP26
-	 * for function calling/jumping.
-	 * (at this time, both compilers doesn't support -mlong-calls)
-	 * therefore kernel modules should be loaded within maximum 26bit word,
-	 * or +-128MB from kernel.
+	 * The aarch64 compilers (gcc & llvm) use R_AARCH_CALL26/R_AARCH_JUMP26
+	 * for function calls (bl)/jumps(b). At this time, neither compiler
+	 * supports -mlong-calls therefore the kernel modules should be loaded
+	 * within the maximum range of +/-128MB from kernel text.
 	 */
 #define MODULE_RESERVED_MAX	(1024 * 1024 * 128)
 #define MODULE_RESERVED_SIZE	(1024 * 1024 * 32)	/* good enough? */
@@ -368,7 +367,7 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 		 * order.
 		 */
 		paddr_t segend = end;
-		for (size_t j = 0; j < nbp; j++ /*, start = segend, segend = end */) {
+		for (size_t j = 0; j < nbp; j++) {
 			paddr_t bp_start = bp[j].bp_start;
 			paddr_t bp_end = bp_start + bp[j].bp_pages;
 
@@ -476,6 +475,14 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 	    CTLTYPE_INT, "tagged_address",
 	    SYSCTL_DESCR("top byte ignored in the address calculation"),
 	    sysctl_machdep_tagged_address, 0, NULL, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+
+	sysctl_createv(clog, 0, NULL, NULL,
+	    CTLFLAG_PERMANENT,
+	    CTLTYPE_INT, "pan",
+	    SYSCTL_DESCR("Whether Privileged Access Never is enabled"),
+	    NULL, 0,
+	    &aarch64_pan_enabled, 0,
 	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
 
 	sysctl_createv(clog, 0, NULL, NULL,

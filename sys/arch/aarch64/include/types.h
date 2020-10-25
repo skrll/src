@@ -1,4 +1,4 @@
-/* $NetBSD: types.h,v 1.14 2020/02/14 07:21:02 skrll Exp $ */
+/* $NetBSD: types.h,v 1.16 2020/09/14 10:06:35 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -96,6 +96,7 @@ typedef __uint64_t __register_t;
 #define __HAVE_COMMON___TLS_GET_ADDR
 #define __HAVE_CPU_COUNTER
 #define __HAVE_CPU_DATA_FIRST
+#define __HAVE_CPU_MAXPROC
 #define __HAVE_FAST_SOFTINTS
 #define __HAVE_MINIMAL_EMUL
 #define __HAVE_MM_MD_DIRECT_MAPPED_PHYS
@@ -105,6 +106,7 @@ typedef __uint64_t __register_t;
 #define __HAVE_SYSCALL_INTERN
 #define __HAVE_TLS_VARIANT_I
 #define __HAVE___LWP_GETPRIVATE_FAST
+#define __HAVE_UCAS_FULL
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #define PCU_FPU			0

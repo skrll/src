@@ -1,4 +1,4 @@
-/*	$NetBSD: util.c,v 1.45 2020/05/18 21:19:36 jmcneill Exp $	*/
+/*	$NetBSD: util.c,v 1.49 2020/10/24 16:13:15 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -419,6 +419,8 @@ get_iso9660_volname(int dev, int sess, char *volname, size_t volnamelen)
  * Local state while iterating CDs and collecting volumes
  */
 struct get_available_cds_state {
+	size_t num_mounted;
+	struct statvfs *mounted;
 	struct cd_info *info;
 	size_t count;
 };
@@ -430,14 +432,26 @@ static bool
 get_available_cds_helper(void *arg, const char *device)
 {
 	struct get_available_cds_state *state = arg;
-	char dname[16], volname[80];
+	char dname[16], tname[16], volname[80], *t;
 	struct disklabel label;
-	int part, dev, error, sess, ready;
+	int part, dev, error, sess, ready, tlen;
 
 	if (!is_cdrom_device(device, false))
 		return true;
 
 	sprintf(dname, "/dev/r%s%c", device, 'a'+RAW_PART);
+	tlen = sprintf(tname, "/dev/%s", device);
+
+	/* check if this is mounted already */
+	for (size_t i = 0; i < state->num_mounted; i++) {
+		if (strncmp(state->mounted[i].f_mntfromname, tname, tlen)
+		    == 0) {
+			t = state->mounted[i].f_mntfromname + tlen;
+			if (t[0] >= 'a' && t[0] <= 'z' && t[1] == 0)
+				return true;
+		}
+	}
+
 	dev = open(dname, O_RDONLY, 0);
 	if (dev == -1)
 		return true;
@@ -501,11 +515,23 @@ static int
 get_available_cds(void)
 {
 	struct get_available_cds_state data;
+	int n, e;
 
+	memset(&data, 0, sizeof data);
 	data.info = cds;
-	data.count = 0;
+
+	n = getvfsstat(NULL, 0, ST_NOWAIT);
+	if (n > 0) {
+		data.mounted = calloc(n, sizeof(*data.mounted));
+		e = getvfsstat(data.mounted, n*sizeof(*data.mounted),
+		    ST_NOWAIT);
+		assert(e == n);
+		data.num_mounted = n;
+	}
 
 	enumerate_disks(&data, get_available_cds_helper);
+
+	free(data.mounted);
 
 	return data.count;
 }
@@ -590,7 +616,8 @@ get_via_cdrom(void)
 	memset(cd_menu, 0, sizeof(cd_menu));
 	num_cds = get_available_cds();
 	if (num_cds <= 0) {
-		silent = true;
+		hit_enter_to_continue(MSG_No_cd_found, NULL);
+		return SET_RETRY;
 	} else if (num_cds == 1) {
 		/* single CD found, check for sets on it */
 		strcpy(cdrom_dev, cds[0].device_name);
@@ -1343,6 +1370,26 @@ static char *tz_selected;	/* timezonename (relative to share/zoneinfo */
 const char *tz_default;		/* UTC, or whatever /etc/localtime points to */
 static char tz_env[STRSIZE];
 static int save_cursel, save_topline;
+static int time_menu = -1;
+
+static void
+update_time_display(void)
+{
+	time_t t;
+	struct tm *tm;
+	char cur_time[STRSIZE], *p;
+
+	t = time(NULL);
+	tm = localtime(&t);
+	strlcpy(cur_time, safectime(&t), sizeof cur_time);
+	p = strchr(cur_time, '\n');
+	if (p != NULL)
+		*p = 0;
+
+	msg_clear();
+	msg_fmt_table_add(MSG_choose_timezone, "%s%s%s%s",
+	    tz_default, tz_selected, cur_time, tm ? tm->tm_zone : "?");
+}
 
 /*
  * Callback from timezone menu
@@ -1350,9 +1397,7 @@ static int save_cursel, save_topline;
 static int
 set_tz_select(menudesc *m, void *arg)
 {
-	time_t t;
 	char *new;
-	struct tm *tm;
 
 	if (m && strcmp(tz_selected, m->opts[m->cursel].opt_name) != 0) {
 		/* Change the displayed timezone */
@@ -1369,12 +1414,14 @@ set_tz_select(menudesc *m, void *arg)
 		/* Warp curser to 'Exit' line on menu */
 		m->cursel = -1;
 
-	/* Update displayed time */
-	t = time(NULL);
-	tm = localtime(&t);
-	msg_fmt_display(MSG_choose_timezone, "%s%s%s%s",
-		    tz_default, tz_selected, safectime(&t), tm ? tm->tm_zone :
-		    "?");
+	update_time_display();
+	if (time_menu >= 1) {
+		WINDOW *w = get_menudesc(time_menu)->mw;
+		if (w != NULL) {
+			touchwin(w);
+			wrefresh(w);
+		}
+	}
 	return 0;
 }
 
@@ -1529,8 +1576,6 @@ set_timezone(void)
 {
 	char localtime_link[STRSIZE];
 	char localtime_target[STRSIZE];
-	time_t t;
-	struct tm *tm;
 	int menu_no;
 
 	strlcpy(zoneinfo_dir, target_expand("/usr/share/zoneinfo/"),
@@ -1542,10 +1587,7 @@ set_timezone(void)
 	tz_selected = strdup(tz_default);
 	snprintf(tz_env, sizeof(tz_env), "%s%s", zoneinfo_dir, tz_selected);
 	setenv("TZ", tz_env, 1);
-	t = time(NULL);
-	tm = localtime(&t);
-	msg_fmt_display(MSG_choose_timezone, "%s%s%s%s",
-	    tz_default, tz_selected, safectime(&t), tm ? tm->tm_zone : "?");
+	update_time_display();
 
 	signal(SIGALRM, timezone_sig);
 	alarm(60);
@@ -1558,7 +1600,9 @@ set_timezone(void)
 	if (menu_no < 0)
 		goto done;	/* error - skip timezone setting */
 
+	time_menu = menu_no;
 	process_menu(menu_no, NULL);
+	time_menu = -1;
 
 	free_menu(menu_no);
 
@@ -2116,6 +2160,9 @@ usage_info_list_from_parts(struct part_usage_info **list, size_t *count,
 			(*list)[no].fs_type = info.fs_type;
 			(*list)[no].fs_version = info.fs_sub_type;
 		}
+		(*list)[no].fs_opt1 = info.fs_opt1;
+		(*list)[no].fs_opt2 = info.fs_opt2;
+		(*list)[no].fs_opt3 = info.fs_opt3;
 		no++;
 	}
 	return true;
@@ -2181,6 +2228,7 @@ void
 free_usage_set(struct partition_usage_set *wanted)
 {
 	/* XXX - free parts? free clone src? */
+	free(wanted->write_back);
 	free(wanted->menu_opts);
 	free(wanted->infos);
 }
@@ -2202,6 +2250,7 @@ free_install_desc(struct install_partition_desc *install)
 				install->infos[j].clone_src = NULL; 
 	}
 #endif
+	free(install->write_back);
 	free(install->infos);
 }
 

@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_platform.c,v 1.22 2020/07/10 12:25:09 skrll Exp $ */
+/* $NetBSD: tegra_platform.c,v 1.24 2020/09/28 11:54:23 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -34,7 +34,7 @@
 #include "ukbd.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra_platform.c,v 1.22 2020/07/10 12:25:09 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra_platform.c,v 1.24 2020/09/28 11:54:23 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -86,6 +86,7 @@ tegra_platform_early_putchar(char c)
 #endif
 }
 
+#if defined(SOC_TEGRA124) || defined(SOC_TEGRA210)
 static const struct pmap_devmap *
 tegra_platform_devmap(void)
 {
@@ -107,6 +108,7 @@ tegra_platform_devmap(void)
 
 	return devmap;
 }
+#endif	/* SOC_TEGRA124 || SOC_TEGRA210 */
 
 #if defined(SOC_TEGRA124)
 static void
@@ -133,15 +135,14 @@ tegra210_platform_bootstrap(void)
 }
 #endif
 
+#if defined(SOC_TEGRA124) || defined(SOC_TEGRA210)
 static void
 tegra_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	extern struct bus_space arm_generic_bs_tag;
-	extern struct bus_space arm_generic_a4x_bs_tag;
 	extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 
 	faa->faa_bst = &arm_generic_bs_tag;
-	faa->faa_a4x_bst = &arm_generic_a4x_bs_tag;
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 
@@ -212,6 +213,7 @@ tegra_platform_uart_freq(void)
 {
 	return PLLP_OUT0_FREQ;
 }
+#endif	/* SOC_TEGRA124 || SOC_TEGRA210 */
 
 #if defined(SOC_TEGRA124)
 static const struct arm_platform tegra124_platform = {

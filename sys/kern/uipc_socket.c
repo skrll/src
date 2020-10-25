@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_socket.c,v 1.290 2020/06/07 15:19:05 maxv Exp $	*/
+/*	$NetBSD: uipc_socket.c,v 1.292 2020/10/17 09:06:15 mlelstv Exp $	*/
 
 /*
  * Copyright (c) 2002, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.290 2020/06/07 15:19:05 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.292 2020/10/17 09:06:15 mlelstv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -165,6 +165,11 @@ static struct mbuf *so_pendfree = NULL;
 int somaxkva = SOMAXKVA;
 static int socurkva;
 static kcondvar_t socurkva_cv;
+
+#ifndef SOFIXEDBUF
+#define SOFIXEDBUF true
+#endif
+bool sofixedbuf = SOFIXEDBUF;
 
 static kauth_listener_t socket_listener;
 
@@ -526,6 +531,7 @@ socreate(int dom, struct socket **aso, int type, int proto, struct lwp *l,
 #endif
 	uid = kauth_cred_geteuid(l->l_cred);
 	so->so_uidinfo = uid_find(uid);
+	so->so_egid = kauth_cred_getegid(l->l_cred);
 	so->so_cpid = l->l_proc->p_pid;
 
 	/*
@@ -1797,7 +1803,8 @@ sosetopt1(struct socket *so, const struct sockopt *sopt)
 				error = ENOBUFS;
 				break;
 			}
-			so->so_snd.sb_flags &= ~SB_AUTOSIZE;
+			if (sofixedbuf)
+				so->so_snd.sb_flags &= ~SB_AUTOSIZE;
 			break;
 
 		case SO_RCVBUF:
@@ -1805,7 +1812,8 @@ sosetopt1(struct socket *so, const struct sockopt *sopt)
 				error = ENOBUFS;
 				break;
 			}
-			so->so_rcv.sb_flags &= ~SB_AUTOSIZE;
+			if (sofixedbuf)
+				so->so_rcv.sb_flags &= ~SB_AUTOSIZE;
 			break;
 
 		/*
@@ -2536,6 +2544,13 @@ sysctl_kern_socket_setup(void)
 		                    "used for socket buffers"),
 		       sysctl_kern_somaxkva, 0, NULL, 0,
 		       CTL_KERN, KERN_SOMAXKVA, CTL_EOL);
+
+	sysctl_createv(&socket_sysctllog, 0, NULL, NULL,
+		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
+		       CTLTYPE_BOOL, "sofixedbuf",
+		       SYSCTL_DESCR("Prevent scaling of fixed socket buffers"),
+		       NULL, 0, &sofixedbuf, 0,
+		       CTL_KERN, KERN_SOFIXEDBUF, CTL_EOL);
 
 	sysctl_createv(&socket_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,

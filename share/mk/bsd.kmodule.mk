@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.kmodule.mk,v 1.68 2020/05/11 10:21:24 skrll Exp $
+#	$NetBSD: bsd.kmodule.mk,v 1.72 2020/10/18 19:57:44 christos Exp $
 
 # We are not building this with PIE
 MKPIE=no
@@ -29,9 +29,9 @@ MKLDSCRIPT?=	no
 CFLAGS+=	-ffreestanding ${COPTS}
 CPPFLAGS+=	-nostdinc -I. -I${.CURDIR} -isystem $S -isystem $S/arch
 CPPFLAGS+=	-isystem ${S}/../common/include
-CPPFLAGS+=	-D_KERNEL -D_LKM -D_MODULE -DSYSCTL_INCLUDE_DESCR
+CPPFLAGS+=	-D_KERNEL -D_MODULE -DSYSCTL_INCLUDE_DESCR
 
-CWARNFLAGS.clang+=	-Wno-error=address-of-packed-member -Wno-error=constant-conversion
+CWARNFLAGS.clang+=	-Wno-error=constant-conversion
 
 # XXX until the kernel is fixed again...
 CFLAGS+=	-fno-strict-aliasing -Wno-pointer-sign
@@ -50,6 +50,7 @@ CFLAGS+=	-fno-common -fno-unwind-tables
 CFLAGS+=	-mlong-calls -mno-space-regs -mfast-indirect-calls
 .elif ${MACHINE_CPU} == "powerpc"
 CFLAGS+=	${${ACTIVE_CC} == "gcc":? -mlongcall :}
+CFLAGS+=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 9:? -mno-pltseq :}
 .elif ${MACHINE_CPU} == "vax"
 CFLAGS+=	-fno-pic
 .elif ${MACHINE_CPU} == "riscv"

@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_page.h,v 1.105 2020/06/14 21:41:42 ad Exp $	*/
+/*	$NetBSD: uvm_page.h,v 1.107 2020/10/07 17:51:50 chs Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -259,6 +259,7 @@ struct vm_page {
 #define	PG_FREE		0x00004000	/* page is on free list */
 #define	PG_MARKER	0x00008000	/* dummy marker page */
 #define	PG_PAGER1	0x00010000	/* pager-specific flag */
+#define	PG_PGLCA	0x00020000	/* allocated by uvm_pglistalloc_contig */
 
 #define	PG_STAT		(PG_ANON|PG_AOBJ|PG_FILE)
 #define	PG_SWAPBACKED	(PG_ANON|PG_AOBJ)
@@ -268,7 +269,7 @@ struct vm_page {
 	"\5PAGEOUT\6RELEASED\7FAKE\10RDONLY" \
 	"\11ZERO\12TABLED\13AOBJ\14ANON" \
 	"\15FILE\16READAHEAD\17FREE\20MARKER" \
-	"\21PAGER1"
+	"\21PAGER1\22PGLCA"
 
 /*
  * Flags stored in pg->pqflags, which is protected by pg->interlock.
@@ -330,6 +331,7 @@ struct vm_page {
  */
 
 void uvm_page_init(vaddr_t *, vaddr_t *);
+void uvm_pglistalloc_init(void);
 #if defined(UVM_PAGE_TRKOWN)
 void uvm_page_own(struct vm_page *, const char *);
 #endif
@@ -404,6 +406,7 @@ int uvm_direct_process(struct vm_page **, u_int, voff_t, vsize_t,
 
 #ifdef __HAVE_VM_PAGE_MD
 #define	VM_PAGE_TO_MD(pg)	(&(pg)->mdpage)
+#define	VM_MD_TO_PAGE(md)	(container_of((md), struct vm_page, mdpage))
 #endif
 
 /*
@@ -469,10 +472,6 @@ uvm_page_set_bucket(struct vm_page *pg, unsigned b)
 	pg->phys_addr &= ~UVM_PHYSADDR_BUCKET;
 	pg->phys_addr |= __SHIFTIN(b, UVM_PHYSADDR_BUCKET);
 }
-
-#ifdef DEBUG
-void uvm_pagezerocheck(struct vm_page *);
-#endif /* DEBUG */
 
 #endif /* _KERNEL */
 

@@ -1,4 +1,4 @@
-/* $NetBSD: bus_space.c,v 1.9 2019/12/28 17:19:43 jmcneill Exp $ */
+/* $NetBSD: bus_space.c,v 1.11 2020/10/15 21:14:15 jmcneill Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: bus_space.c,v 1.9 2019/12/28 17:19:43 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: bus_space.c,v 1.11 2020/10/15 21:14:15 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -38,10 +38,17 @@ __KERNEL_RCSID(1, "$NetBSD: bus_space.c,v 1.9 2019/12/28 17:19:43 jmcneill Exp $
 #include <aarch64/bus_funcs.h>
 #include <aarch64/machdep.h>
 
+#include <arm/cpufunc.h>
 
 /* Prototypes for all the bus_space structure functions */
 bs_protos(generic)
 bs_protos(generic_dsb)
+
+#if __AARCH64EB__
+#define NSWAP(n)	n ## _swap
+#else
+#define NSWAP(n)	n
+#endif
 
 struct bus_space arm_generic_bs_tag = {
 	.bs_cookie = &arm_generic_bs_tag,
@@ -60,27 +67,27 @@ struct bus_space arm_generic_bs_tag = {
 
 	/* read */
 	.bs_r_1 = generic_bs_r_1,
-	.bs_r_2 = generic_bs_r_2,
-	.bs_r_4 = generic_bs_r_4,
-	.bs_r_8 = generic_bs_r_8,
+	.bs_r_2 = NSWAP(generic_bs_r_2),
+	.bs_r_4 = NSWAP(generic_bs_r_4),
+	.bs_r_8 = NSWAP(generic_bs_r_8),
 
 	/* write */
 	.bs_w_1 = generic_bs_w_1,
-	.bs_w_2 = generic_bs_w_2,
-	.bs_w_4 = generic_bs_w_4,
-	.bs_w_8 = generic_bs_w_8,
+	.bs_w_2 = NSWAP(generic_bs_w_2),
+	.bs_w_4 = NSWAP(generic_bs_w_4),
+	.bs_w_8 = NSWAP(generic_bs_w_8),
 
 	/* read region */
 	.bs_rr_1 = generic_bs_rr_1,
-	.bs_rr_2 = generic_bs_rr_2,
-	.bs_rr_4 = generic_bs_rr_4,
-	.bs_rr_8 = generic_bs_rr_8,
+	.bs_rr_2 = NSWAP(generic_bs_rr_2),
+	.bs_rr_4 = NSWAP(generic_bs_rr_4),
+	.bs_rr_8 = NSWAP(generic_bs_rr_8),
 
 	/* write region */
 	.bs_wr_1 = generic_bs_wr_1,
-	.bs_wr_2 = generic_bs_wr_2,
-	.bs_wr_4 = generic_bs_wr_4,
-	.bs_wr_8 = generic_bs_wr_8,
+	.bs_wr_2 = NSWAP(generic_bs_wr_2),
+	.bs_wr_4 = NSWAP(generic_bs_wr_4),
+	.bs_wr_8 = NSWAP(generic_bs_wr_8),
 
 	/* copy region */
 	.bs_c_1 = generic_bs_c_1,
@@ -90,27 +97,27 @@ struct bus_space arm_generic_bs_tag = {
 
 	/* set region */
 	.bs_sr_1 = generic_bs_sr_1,
-	.bs_sr_2 = generic_bs_sr_2,
-	.bs_sr_4 = generic_bs_sr_4,
-	.bs_sr_8 = generic_bs_sr_8,
+	.bs_sr_2 = NSWAP(generic_bs_sr_2),
+	.bs_sr_4 = NSWAP(generic_bs_sr_4),
+	.bs_sr_8 = NSWAP(generic_bs_sr_8),
 
 	/* read multi */
 	.bs_rm_1 = generic_bs_rm_1,
-	.bs_rm_2 = generic_bs_rm_2,
-	.bs_rm_4 = generic_bs_rm_4,
-	.bs_rm_8 = generic_bs_rm_8,
+	.bs_rm_2 = NSWAP(generic_bs_rm_2),
+	.bs_rm_4 = NSWAP(generic_bs_rm_4),
+	.bs_rm_8 = NSWAP(generic_bs_rm_8),
 
 	/* write multi */
 	.bs_wm_1 = generic_bs_wm_1,
-	.bs_wm_2 = generic_bs_wm_2,
-	.bs_wm_4 = generic_bs_wm_4,
-	.bs_wm_8 = generic_bs_wm_8,
+	.bs_wm_2 = NSWAP(generic_bs_wm_2),
+	.bs_wm_4 = NSWAP(generic_bs_wm_4),
+	.bs_wm_8 = NSWAP(generic_bs_wm_8),
 
 	/* set multi */
 	.bs_sm_1 = generic_bs_sm_1,
-	.bs_sm_2 = generic_bs_sm_2,
-	.bs_sm_4 = generic_bs_sm_4,
-	.bs_sm_8 = generic_bs_sm_8,
+	.bs_sm_2 = NSWAP(generic_bs_sm_2),
+	.bs_sm_4 = NSWAP(generic_bs_sm_4),
+	.bs_sm_8 = NSWAP(generic_bs_sm_8),
 
 #ifdef __BUS_SPACE_HAS_STREAM_METHODS
 	/* read stream */
@@ -182,27 +189,27 @@ struct bus_space aarch64_generic_dsb_bs_tag = {
 
 	/* read */
 	.bs_r_1 = generic_dsb_bs_r_1,
-	.bs_r_2 = generic_dsb_bs_r_2,
-	.bs_r_4 = generic_dsb_bs_r_4,
-	.bs_r_8 = generic_dsb_bs_r_8,
+	.bs_r_2 = NSWAP(generic_dsb_bs_r_2),
+	.bs_r_4 = NSWAP(generic_dsb_bs_r_4),
+	.bs_r_8 = NSWAP(generic_dsb_bs_r_8),
 
 	/* write */
 	.bs_w_1 = generic_dsb_bs_w_1,
-	.bs_w_2 = generic_dsb_bs_w_2,
-	.bs_w_4 = generic_dsb_bs_w_4,
-	.bs_w_8 = generic_dsb_bs_w_8,
+	.bs_w_2 = NSWAP(generic_dsb_bs_w_2),
+	.bs_w_4 = NSWAP(generic_dsb_bs_w_4),
+	.bs_w_8 = NSWAP(generic_dsb_bs_w_8),
 
 	/* read region */
 	.bs_rr_1 = generic_dsb_bs_rr_1,
-	.bs_rr_2 = generic_dsb_bs_rr_2,
-	.bs_rr_4 = generic_dsb_bs_rr_4,
-	.bs_rr_8 = generic_dsb_bs_rr_8,
+	.bs_rr_2 = NSWAP(generic_dsb_bs_rr_2),
+	.bs_rr_4 = NSWAP(generic_dsb_bs_rr_4),
+	.bs_rr_8 = NSWAP(generic_dsb_bs_rr_8),
 
 	/* write region */
 	.bs_wr_1 = generic_dsb_bs_wr_1,
-	.bs_wr_2 = generic_dsb_bs_wr_2,
-	.bs_wr_4 = generic_dsb_bs_wr_4,
-	.bs_wr_8 = generic_dsb_bs_wr_8,
+	.bs_wr_2 = NSWAP(generic_dsb_bs_wr_2),
+	.bs_wr_4 = NSWAP(generic_dsb_bs_wr_4),
+	.bs_wr_8 = NSWAP(generic_dsb_bs_wr_8),
 
 	/* copy region */
 	.bs_c_1 = generic_dsb_bs_c_1,
@@ -212,27 +219,27 @@ struct bus_space aarch64_generic_dsb_bs_tag = {
 
 	/* set region */
 	.bs_sr_1 = generic_dsb_bs_sr_1,
-	.bs_sr_2 = generic_dsb_bs_sr_2,
-	.bs_sr_4 = generic_dsb_bs_sr_4,
-	.bs_sr_8 = generic_dsb_bs_sr_8,
+	.bs_sr_2 = NSWAP(generic_dsb_bs_sr_2),
+	.bs_sr_4 = NSWAP(generic_dsb_bs_sr_4),
+	.bs_sr_8 = NSWAP(generic_dsb_bs_sr_8),
 
 	/* read multi */
 	.bs_rm_1 = generic_dsb_bs_rm_1,
-	.bs_rm_2 = generic_dsb_bs_rm_2,
-	.bs_rm_4 = generic_dsb_bs_rm_4,
-	.bs_rm_8 = generic_dsb_bs_rm_8,
+	.bs_rm_2 = NSWAP(generic_dsb_bs_rm_2),
+	.bs_rm_4 = NSWAP(generic_dsb_bs_rm_4),
+	.bs_rm_8 = NSWAP(generic_dsb_bs_rm_8),
 
 	/* write multi */
 	.bs_wm_1 = generic_dsb_bs_wm_1,
-	.bs_wm_2 = generic_dsb_bs_wm_2,
-	.bs_wm_4 = generic_dsb_bs_wm_4,
-	.bs_wm_8 = generic_dsb_bs_wm_8,
+	.bs_wm_2 = NSWAP(generic_dsb_bs_wm_2),
+	.bs_wm_4 = NSWAP(generic_dsb_bs_wm_4),
+	.bs_wm_8 = NSWAP(generic_dsb_bs_wm_8),
 
 	/* set multi */
 	.bs_sm_1 = generic_dsb_bs_sm_1,
-	.bs_sm_2 = generic_dsb_bs_sm_2,
-	.bs_sm_4 = generic_dsb_bs_sm_4,
-	.bs_sm_8 = generic_dsb_bs_sm_8,
+	.bs_sm_2 = NSWAP(generic_dsb_bs_sm_2),
+	.bs_sm_4 = NSWAP(generic_dsb_bs_sm_4),
+	.bs_sm_8 = NSWAP(generic_dsb_bs_sm_8),
 
 #ifdef __BUS_SPACE_HAS_STREAM_METHODS
 	/* read stream */
@@ -304,27 +311,27 @@ struct bus_space arm_generic_a4x_bs_tag = {
 
 	/* read */
 	.bs_r_1 = generic_bs_r_1,
-	.bs_r_2 = generic_bs_r_2,
-	.bs_r_4 = generic_bs_r_4,
-	.bs_r_8 = generic_bs_r_8,
+	.bs_r_2 = NSWAP(generic_bs_r_2),
+	.bs_r_4 = NSWAP(generic_bs_r_4),
+	.bs_r_8 = NSWAP(generic_bs_r_8),
 
 	/* write */
 	.bs_w_1 = generic_bs_w_1,
-	.bs_w_2 = generic_bs_w_2,
-	.bs_w_4 = generic_bs_w_4,
-	.bs_w_8 = generic_bs_w_8,
+	.bs_w_2 = NSWAP(generic_bs_w_2),
+	.bs_w_4 = NSWAP(generic_bs_w_4),
+	.bs_w_8 = NSWAP(generic_bs_w_8),
 
 	/* read region */
 	.bs_rr_1 = generic_bs_rr_1,
-	.bs_rr_2 = generic_bs_rr_2,
-	.bs_rr_4 = generic_bs_rr_4,
-	.bs_rr_8 = generic_bs_rr_8,
+	.bs_rr_2 = NSWAP(generic_bs_rr_2),
+	.bs_rr_4 = NSWAP(generic_bs_rr_4),
+	.bs_rr_8 = NSWAP(generic_bs_rr_8),
 
 	/* write region */
 	.bs_wr_1 = generic_bs_wr_1,
-	.bs_wr_2 = generic_bs_wr_2,
-	.bs_wr_4 = generic_bs_wr_4,
-	.bs_wr_8 = generic_bs_wr_8,
+	.bs_wr_2 = NSWAP(generic_bs_wr_2),
+	.bs_wr_4 = NSWAP(generic_bs_wr_4),
+	.bs_wr_8 = NSWAP(generic_bs_wr_8),
 
 	/* copy region */
 	.bs_c_1 = generic_bs_c_1,
@@ -334,27 +341,27 @@ struct bus_space arm_generic_a4x_bs_tag = {
 
 	/* set region */
 	.bs_sr_1 = generic_bs_sr_1,
-	.bs_sr_2 = generic_bs_sr_2,
-	.bs_sr_4 = generic_bs_sr_4,
-	.bs_sr_8 = generic_bs_sr_8,
+	.bs_sr_2 = NSWAP(generic_bs_sr_2),
+	.bs_sr_4 = NSWAP(generic_bs_sr_4),
+	.bs_sr_8 = NSWAP(generic_bs_sr_8),
 
 	/* read multi */
 	.bs_rm_1 = generic_bs_rm_1,
-	.bs_rm_2 = generic_bs_rm_2,
-	.bs_rm_4 = generic_bs_rm_4,
-	.bs_rm_8 = generic_bs_rm_8,
+	.bs_rm_2 = NSWAP(generic_bs_rm_2),
+	.bs_rm_4 = NSWAP(generic_bs_rm_4),
+	.bs_rm_8 = NSWAP(generic_bs_rm_8),
 
 	/* write multi */
 	.bs_wm_1 = generic_bs_wm_1,
-	.bs_wm_2 = generic_bs_wm_2,
-	.bs_wm_4 = generic_bs_wm_4,
-	.bs_wm_8 = generic_bs_wm_8,
+	.bs_wm_2 = NSWAP(generic_bs_wm_2),
+	.bs_wm_4 = NSWAP(generic_bs_wm_4),
+	.bs_wm_8 = NSWAP(generic_bs_wm_8),
 
 	/* set multi */
 	.bs_sm_1 = generic_bs_sm_1,
-	.bs_sm_2 = generic_bs_sm_2,
-	.bs_sm_4 = generic_bs_sm_4,
-	.bs_sm_8 = generic_bs_sm_8,
+	.bs_sm_2 = NSWAP(generic_bs_sm_2),
+	.bs_sm_4 = NSWAP(generic_bs_sm_4),
+	.bs_sm_8 = NSWAP(generic_bs_sm_8),
 
 #ifdef __BUS_SPACE_HAS_STREAM_METHODS
 	/* read stream */
@@ -426,27 +433,27 @@ struct bus_space aarch64_generic_a4x_dsb_bs_tag = {
 
 	/* read */
 	.bs_r_1 = generic_dsb_bs_r_1,
-	.bs_r_2 = generic_dsb_bs_r_2,
-	.bs_r_4 = generic_dsb_bs_r_4,
-	.bs_r_8 = generic_dsb_bs_r_8,
+	.bs_r_2 = NSWAP(generic_dsb_bs_r_2),
+	.bs_r_4 = NSWAP(generic_dsb_bs_r_4),
+	.bs_r_8 = NSWAP(generic_dsb_bs_r_8),
 
 	/* write */
 	.bs_w_1 = generic_dsb_bs_w_1,
-	.bs_w_2 = generic_dsb_bs_w_2,
-	.bs_w_4 = generic_dsb_bs_w_4,
-	.bs_w_8 = generic_dsb_bs_w_8,
+	.bs_w_2 = NSWAP(generic_dsb_bs_w_2),
+	.bs_w_4 = NSWAP(generic_dsb_bs_w_4),
+	.bs_w_8 = NSWAP(generic_dsb_bs_w_8),
 
 	/* read region */
 	.bs_rr_1 = generic_dsb_bs_rr_1,
-	.bs_rr_2 = generic_dsb_bs_rr_2,
-	.bs_rr_4 = generic_dsb_bs_rr_4,
-	.bs_rr_8 = generic_dsb_bs_rr_8,
+	.bs_rr_2 = NSWAP(generic_dsb_bs_rr_2),
+	.bs_rr_4 = NSWAP(generic_dsb_bs_rr_4),
+	.bs_rr_8 = NSWAP(generic_dsb_bs_rr_8),
 
 	/* write region */
 	.bs_wr_1 = generic_dsb_bs_wr_1,
-	.bs_wr_2 = generic_dsb_bs_wr_2,
-	.bs_wr_4 = generic_dsb_bs_wr_4,
-	.bs_wr_8 = generic_dsb_bs_wr_8,
+	.bs_wr_2 = NSWAP(generic_dsb_bs_wr_2),
+	.bs_wr_4 = NSWAP(generic_dsb_bs_wr_4),
+	.bs_wr_8 = NSWAP(generic_dsb_bs_wr_8),
 
 	/* copy region */
 	.bs_c_1 = generic_dsb_bs_c_1,
@@ -456,27 +463,27 @@ struct bus_space aarch64_generic_a4x_dsb_bs_tag = {
 
 	/* set region */
 	.bs_sr_1 = generic_dsb_bs_sr_1,
-	.bs_sr_2 = generic_dsb_bs_sr_2,
-	.bs_sr_4 = generic_dsb_bs_sr_4,
-	.bs_sr_8 = generic_dsb_bs_sr_8,
+	.bs_sr_2 = NSWAP(generic_dsb_bs_sr_2),
+	.bs_sr_4 = NSWAP(generic_dsb_bs_sr_4),
+	.bs_sr_8 = NSWAP(generic_dsb_bs_sr_8),
 
 	/* read multi */
 	.bs_rm_1 = generic_dsb_bs_rm_1,
-	.bs_rm_2 = generic_dsb_bs_rm_2,
-	.bs_rm_4 = generic_dsb_bs_rm_4,
-	.bs_rm_8 = generic_dsb_bs_rm_8,
+	.bs_rm_2 = NSWAP(generic_dsb_bs_rm_2),
+	.bs_rm_4 = NSWAP(generic_dsb_bs_rm_4),
+	.bs_rm_8 = NSWAP(generic_dsb_bs_rm_8),
 
 	/* write multi */
 	.bs_wm_1 = generic_dsb_bs_wm_1,
-	.bs_wm_2 = generic_dsb_bs_wm_2,
-	.bs_wm_4 = generic_dsb_bs_wm_4,
-	.bs_wm_8 = generic_dsb_bs_wm_8,
+	.bs_wm_2 = NSWAP(generic_dsb_bs_wm_2),
+	.bs_wm_4 = NSWAP(generic_dsb_bs_wm_4),
+	.bs_wm_8 = NSWAP(generic_dsb_bs_wm_8),
 
 	/* set multi */
 	.bs_sm_1 = generic_dsb_bs_sm_1,
-	.bs_sm_2 = generic_dsb_bs_sm_2,
-	.bs_sm_4 = generic_dsb_bs_sm_4,
-	.bs_sm_8 = generic_dsb_bs_sm_8,
+	.bs_sm_2 = NSWAP(generic_dsb_bs_sm_2),
+	.bs_sm_4 = NSWAP(generic_dsb_bs_sm_4),
+	.bs_sm_8 = NSWAP(generic_dsb_bs_sm_8),
 
 #ifdef __BUS_SPACE_HAS_STREAM_METHODS
 	/* read stream */
@@ -606,8 +613,17 @@ generic_bs_barrier(void *t, bus_space_handle_t bsh, bus_size_t offset,
 {
 	flags &= BUS_SPACE_BARRIER_READ|BUS_SPACE_BARRIER_WRITE;
 
-	if (flags != 0)
-		__asm __volatile ("dmb sy" ::: "memory");
+	switch (flags) {
+	case BUS_SPACE_BARRIER_READ:
+		dmb(ishld);
+		break;
+	case BUS_SPACE_BARRIER_WRITE:
+		dmb(ishst);
+		break;
+	case BUS_SPACE_BARRIER_READ|BUS_SPACE_BARRIER_WRITE:
+		dmb(ish);
+		break;
+	}
 }
 
 void *
@@ -669,7 +685,7 @@ generic_bs_pe_2(void *t, bus_space_handle_t bsh, bus_size_t offset,
 	int error;
 
 	if ((error = cpu_set_onfault(&fb)) == 0) {
-		*datap = generic_dsb_bs_r_2(t, bsh, offset);
+		*datap = NSWAP(generic_dsb_bs_r_2)(t, bsh, offset);
 		cpu_unset_onfault();
 	}
 	return error;
@@ -683,7 +699,7 @@ generic_bs_pe_4(void *t, bus_space_handle_t bsh, bus_size_t offset,
 	int error;
 
 	if ((error = cpu_set_onfault(&fb)) == 0) {
-		*datap = generic_dsb_bs_r_4(t, bsh, offset);
+		*datap = NSWAP(generic_dsb_bs_r_4)(t, bsh, offset);
 		cpu_unset_onfault();
 	}
 	return error;
@@ -697,7 +713,7 @@ generic_bs_pe_8(void *t, bus_space_handle_t bsh, bus_size_t offset,
 	int error;
 
 	if ((error = cpu_set_onfault(&fb)) == 0) {
-		*datap = generic_dsb_bs_r_8(t, bsh, offset);
+		*datap = NSWAP(generic_dsb_bs_r_8)(t, bsh, offset);
 		cpu_unset_onfault();
 	}
 	return error;
@@ -725,7 +741,7 @@ generic_bs_po_2(void *t, bus_space_handle_t bsh, bus_size_t offset,
 	int error;
 
 	if ((error = cpu_set_onfault(&fb)) == 0) {
-		generic_dsb_bs_w_2(t, bsh, offset, data);
+		NSWAP(generic_dsb_bs_w_2)(t, bsh, offset, data);
 		cpu_unset_onfault();
 	}
 	return error;
@@ -739,7 +755,7 @@ generic_bs_po_4(void *t, bus_space_handle_t bsh, bus_size_t offset,
 	int error;
 
 	if ((error = cpu_set_onfault(&fb)) == 0) {
-		generic_dsb_bs_w_4(t, bsh, offset, data);
+		NSWAP(generic_dsb_bs_w_4)(t, bsh, offset, data);
 		cpu_unset_onfault();
 	}
 	return error;
@@ -753,7 +769,7 @@ generic_bs_po_8(void *t, bus_space_handle_t bsh, bus_size_t offset,
 	int error;
 
 	if ((error = cpu_set_onfault(&fb)) == 0) {
-		generic_dsb_bs_w_8(t, bsh, offset, data);
+		NSWAP(generic_dsb_bs_w_8)(t, bsh, offset, data);
 		cpu_unset_onfault();
 	}
 	return error;

@@ -1,4 +1,4 @@
-/*	$NetBSD: pciconf.h,v 1.14 2020/07/07 03:38:49 thorpej Exp $	*/
+/*	$NetBSD: pciconf.h,v 1.16 2020/10/20 23:03:30 jmcneill Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -51,6 +51,8 @@ struct pciconf_resources *
 void	pciconf_resource_fini(struct pciconf_resources *);
 int	pciconf_resource_add(struct pciconf_resources *, int,
 	    bus_addr_t, bus_size_t);
+void	pciconf_resource_reserve(int, bus_addr_t, bus_size_t,
+	    void (*)(void *, uint64_t), void *);
 
 /*
  * args: pci_chipset_tag_t, resources, firstbus, cacheline_size

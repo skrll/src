@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1696 2020/07/17 15:24:03 kamil Exp $
+# $NetBSD: mi,v 1.1706 2020/10/16 15:40:40 ryo Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -831,7 +831,9 @@
 ./usr/share/man/cat4/amiga/ed.0			man-sys-catman		.cat
 ./usr/share/man/cat4/amiga/efa.0		man-sys-catman		.cat
 ./usr/share/man/cat4/amiga/em4k.0		man-sys-catman		.cat
+./usr/share/man/cat4/amiga/emmem.0		man-sys-catman		.cat
 ./usr/share/man/cat4/amiga/empb.0		man-sys-catman		.cat
+./usr/share/man/cat4/amiga/empm.0		man-sys-catman		.cat
 ./usr/share/man/cat4/amiga/es.0			man-sys-catman		.cat
 ./usr/share/man/cat4/amiga/fdc.0		man-sys-catman		.cat
 ./usr/share/man/cat4/amiga/grf.0		man-sys-catman		.cat
@@ -1311,6 +1313,7 @@
 ./usr/share/man/cat4/i4btrc.0			man-obsolete		obsolete
 ./usr/share/man/cat4/i915drm.0			man-sys-catman		.cat
 ./usr/share/man/cat4/iavc.0			man-obsolete		obsolete
+./usr/share/man/cat4/iavf.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ibmcd.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ibmhawk.0			man-sys-catman		.cat
 ./usr/share/man/cat4/ichlpcib.0			man-obsolete		obsolete
@@ -2017,9 +2020,11 @@
 ./usr/share/man/cat4/vioscsi.0			man-sys-catman		.cat
 ./usr/share/man/cat4/virt.0			man-sys-catman		.cat
 ./usr/share/man/cat4/virtio.0			man-sys-catman		.cat
+./usr/share/man/cat4/vether.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vlan.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vmmon.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vmnet.0			man-sys-catman		.cat
+./usr/share/man/cat4/vmx.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vnd.0			man-sys-catman		.cat
 ./usr/share/man/cat4/voodoofb.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vr.0			man-sys-catman		.cat
@@ -2032,6 +2037,7 @@
 ./usr/share/man/cat4/wds.0			man-sys-catman		.cat
 ./usr/share/man/cat4/we.0			man-sys-catman		.cat
 ./usr/share/man/cat4/wedge.0			man-sys-catman		.cat
+./usr/share/man/cat4/wg.0			man-sys-catman		.cat
 ./usr/share/man/cat4/wi.0			man-sys-catman		.cat
 ./usr/share/man/cat4/wm.0			man-sys-catman		.cat
 ./usr/share/man/cat4/wmidell.0			man-sys-catman		.cat
@@ -2049,6 +2055,8 @@
 ./usr/share/man/cat4/wsmuxctl.0			man-sys-catman		.cat
 ./usr/share/man/cat4/wss.0			man-sys-catman		.cat
 ./usr/share/man/cat4/wt.0			man-sys-catman		.cat
+./usr/share/man/cat4/wwan.0			man-sys-catman		.cat
+./usr/share/man/cat4/wwanc.0			man-sys-catman		.cat
 ./usr/share/man/cat4/x68k/bmd.0			man-sys-catman		.cat
 ./usr/share/man/cat4/x68k/intio.0		man-sys-catman		.cat
 ./usr/share/man/cat4/x68k/intro.0		man-sys-catman		.cat
@@ -2082,7 +2090,7 @@
 ./usr/share/man/cat4/x86/tprof_amdpmi.0		man-obsolete		obsolete
 ./usr/share/man/cat4/x86/tprof_pmi.0		man-obsolete		obsolete
 ./usr/share/man/cat4/x86/vmt.0			man-sys-catman		.cat
-./usr/share/man/cat4/x86/vmx.0			man-sys-catman		.cat
+./usr/share/man/cat4/x86/vmx.0			man-obsolete		obsolete
 ./usr/share/man/cat4/xbd.0			man-sys-catman		.cat
 ./usr/share/man/cat4/xbdback.0			man-sys-catman		.cat
 ./usr/share/man/cat4/xbox.0			man-sys-catman		.cat
@@ -2485,6 +2493,7 @@
 ./usr/share/man/cat8/cobalt/boot.0		man-sys-catman		.cat
 ./usr/share/man/cat8/cobalt/makedev.0		man-obsolete		obsolete
 ./usr/share/man/cat8/compat_30.0		man-sys-catman		.cat
+./usr/share/man/cat8/compat_bsdos.0		man-sys-catman		.cat
 ./usr/share/man/cat8/compat_darwin.0		man-obsolete		obsolete
 ./usr/share/man/cat8/compat_freebsd.0		man-sys-catman		.cat
 ./usr/share/man/cat8/compat_hpux.0		man-obsolete		obsolete
@@ -2595,7 +2604,7 @@
 ./usr/share/man/cat8/fusermount.0		man-refuse-catman	.cat
 ./usr/share/man/cat8/fwctl.0			man-sysutil-catman	.cat
 ./usr/share/man/cat8/genassym.sh.0		man-obsolete		obsolete
-./usr/share/man/cat8/getNAME.0			man-man-catman		!makemandb, .cat
+./usr/share/man/cat8/getNAME.0			man-man-catman		!makemandb,.cat
 ./usr/share/man/cat8/getencstat.0		man-sysutil-catman	.cat
 ./usr/share/man/cat8/gettable.0			man-obsolete		obsolete
 ./usr/share/man/cat8/getty.0			man-sysutil-catman	.cat
@@ -3275,6 +3284,9 @@
 ./usr/share/man/cat8/walnut/MAKEDEV.0		man-obsolete		obsolete
 ./usr/share/man/cat8/walnut/makedev.0		man-obsolete		obsolete
 ./usr/share/man/cat8/wdogctl.0			man-sysutil-catman	.cat
+./usr/share/man/cat8/wg-keygen.0		man-netutil-catman	.cat
+./usr/share/man/cat8/wg-userspace.0		man-netutil-catman	.cat
+./usr/share/man/cat8/wgconfig.0			man-netutil-catman	.cat
 ./usr/share/man/cat8/wiconfig.0			man-netutil-catman	.cat
 ./usr/share/man/cat8/wire-test.0		man-netutil-catman	.cat
 ./usr/share/man/cat8/wizd.0			man-sysutil-catman	.cat
@@ -4078,7 +4090,9 @@
 ./usr/share/man/html4/amiga/ed.html		man-sys-htmlman		html
 ./usr/share/man/html4/amiga/efa.html		man-sys-htmlman		html
 ./usr/share/man/html4/amiga/em4k.html		man-sys-htmlman		html
+./usr/share/man/html4/amiga/emmem.html		man-sys-htmlman		html
 ./usr/share/man/html4/amiga/empb.html		man-sys-htmlman		html
+./usr/share/man/html4/amiga/empm.html		man-sys-htmlman		html
 ./usr/share/man/html4/amiga/es.html		man-sys-htmlman		html
 ./usr/share/man/html4/amiga/fdc.html		man-sys-htmlman		html
 ./usr/share/man/html4/amiga/grf.html		man-sys-htmlman		html
@@ -4489,6 +4503,7 @@
 ./usr/share/man/html4/i386/viac7temp.html	man-sys-htmlman		html
 ./usr/share/man/html4/i915drm.html		man-sys-htmlman		html
 ./usr/share/man/html4/iavc.html			man-obsolete		obsolete
+./usr/share/man/html4/iavf.html			man-sys-htmlman		html
 ./usr/share/man/html4/ibmcd.html		man-sys-htmlman		html
 ./usr/share/man/html4/ibmhawk.html		man-sys-htmlman		html
 ./usr/share/man/html4/ichlpcib.html		man-obsolete		obsolete
@@ -5145,9 +5160,11 @@
 ./usr/share/man/html4/vioscsi.html		man-sys-htmlman		html
 ./usr/share/man/html4/virt.html			man-sys-htmlman		html
 ./usr/share/man/html4/virtio.html		man-sys-htmlman		html
+./usr/share/man/html4/vether.html		man-sys-htmlman		html
 ./usr/share/man/html4/vlan.html			man-sys-htmlman		html
 ./usr/share/man/html4/vmmon.html		man-sys-htmlman		html
 ./usr/share/man/html4/vmnet.html		man-sys-htmlman		html
+./usr/share/man/html4/vmx.html			man-sys-htmlman		html
 ./usr/share/man/html4/vnd.html			man-sys-htmlman		html
 ./usr/share/man/html4/voodoofb.html		man-sys-htmlman		html
 ./usr/share/man/html4/vr.html			man-sys-htmlman		html
@@ -5160,6 +5177,7 @@
 ./usr/share/man/html4/wds.html			man-sys-htmlman		html
 ./usr/share/man/html4/we.html			man-sys-htmlman		html
 ./usr/share/man/html4/wedge.html		man-sys-htmlman		html
+./usr/share/man/html4/wg.html			man-sys-htmlman		html
 ./usr/share/man/html4/wi.html			man-sys-htmlman		html
 ./usr/share/man/html4/wm.html			man-sys-htmlman		html
 ./usr/share/man/html4/wmidell.html		man-sys-htmlman		html
@@ -5177,6 +5195,8 @@
 ./usr/share/man/html4/wsmuxctl.html		man-sys-htmlman		html
 ./usr/share/man/html4/wss.html			man-sys-htmlman		html
 ./usr/share/man/html4/wt.html			man-sys-htmlman		html
+./usr/share/man/html4/wwan.html			man-sys-htmlman		html
+./usr/share/man/html4/wwanc.html		man-sys-htmlman		html
 ./usr/share/man/html4/x68k/bmd.html		man-sys-htmlman		html
 ./usr/share/man/html4/x68k/intio.html		man-sys-htmlman		html
 ./usr/share/man/html4/x68k/intro.html		man-sys-htmlman		html
@@ -5210,7 +5230,7 @@
 ./usr/share/man/html4/x86/tprof_amdpmi.html	man-obsolete		obsolete
 ./usr/share/man/html4/x86/tprof_pmi.html	man-obsolete		obsolete
 ./usr/share/man/html4/x86/vmt.html		man-sys-htmlman		html
-./usr/share/man/html4/x86/vmx.html		man-sys-htmlman		html
+./usr/share/man/html4/x86/vmx.html		man-obsolete		obsolete
 ./usr/share/man/html4/xbd.html			man-sys-htmlman		html
 ./usr/share/man/html4/xbdback.html		man-sys-htmlman		html
 ./usr/share/man/html4/xbox.html			man-sys-htmlman		html
@@ -5553,6 +5573,7 @@
 ./usr/share/man/html8/cnwctl.html		man-sysutil-htmlman	html
 ./usr/share/man/html8/cobalt/boot.html		man-sys-htmlman		html
 ./usr/share/man/html8/compat_30.html		man-sys-htmlman		html
+./usr/share/man/html8/compat_bsdos.html		man-sys-htmlman		html
 ./usr/share/man/html8/compat_darwin.html	man-obsolete		obsolete
 ./usr/share/man/html8/compat_freebsd.html	man-sys-htmlman		html
 ./usr/share/man/html8/compat_ibcs2.html		man-obsolete		obsolete
@@ -6180,6 +6201,9 @@
 ./usr/share/man/html8/wake.html			man-obsolete		obsolete
 ./usr/share/man/html8/wakeonlan.html		man-netutil-htmlman	html
 ./usr/share/man/html8/wdogctl.html		man-sysutil-htmlman	html
+./usr/share/man/html8/wg-keygen.html		man-netutil-htmlman	html
+./usr/share/man/html8/wg-userspace.html		man-netutil-htmlman	html
+./usr/share/man/html8/wgconfig.html		man-netutil-htmlman	html
 ./usr/share/man/html8/wiconfig.html		man-netutil-htmlman	html
 ./usr/share/man/html8/wire-test.html		man-netutil-htmlman	html
 ./usr/share/man/html8/wizd.html			man-sysutil-htmlman	html
@@ -7019,7 +7043,9 @@
 ./usr/share/man/man4/amiga/ed.4			man-sys-man		.man
 ./usr/share/man/man4/amiga/efa.4		man-sys-man		.man
 ./usr/share/man/man4/amiga/em4k.4		man-sys-man		.man
+./usr/share/man/man4/amiga/emmem.4		man-sys-man		.man
 ./usr/share/man/man4/amiga/empb.4		man-sys-man		.man
+./usr/share/man/man4/amiga/empm.4		man-sys-man		.man
 ./usr/share/man/man4/amiga/es.4			man-sys-man		.man
 ./usr/share/man/man4/amiga/fdc.4		man-sys-man		.man
 ./usr/share/man/man4/amiga/grf.4		man-sys-man		.man
@@ -7499,6 +7525,7 @@
 ./usr/share/man/man4/i4btrc.4			man-obsolete		obsolete
 ./usr/share/man/man4/i915drm.4			man-sys-man		.man
 ./usr/share/man/man4/iavc.4			man-obsolete		obsolete
+./usr/share/man/man4/iavf.4			man-sys-man		.man
 ./usr/share/man/man4/ibmcd.4			man-sys-man		.man
 ./usr/share/man/man4/ibmhawk.4			man-sys-man		.man
 ./usr/share/man/man4/ichlpcib.4			man-obsolete		obsolete
@@ -8205,9 +8232,11 @@
 ./usr/share/man/man4/vioscsi.4			man-sys-man		.man
 ./usr/share/man/man4/virt.4			man-sys-man		.man
 ./usr/share/man/man4/virtio.4			man-sys-man		.man
+./usr/share/man/man4/vether.4			man-sys-man		.man
 ./usr/share/man/man4/vlan.4			man-sys-man		.man
 ./usr/share/man/man4/vmmon.4			man-sys-man		.man
 ./usr/share/man/man4/vmnet.4			man-sys-man		.man
+./usr/share/man/man4/vmx.4			man-sys-man		.man
 ./usr/share/man/man4/vnd.4			man-sys-man		.man
 ./usr/share/man/man4/voodoofb.4			man-sys-man		.man
 ./usr/share/man/man4/vr.4			man-sys-man		.man
@@ -8220,6 +8249,7 @@
 ./usr/share/man/man4/wds.4			man-sys-man		.man
 ./usr/share/man/man4/we.4			man-sys-man		.man
 ./usr/share/man/man4/wedge.4			man-sys-man		.man
+./usr/share/man/man4/wg.4			man-sys-man		.man
 ./usr/share/man/man4/wi.4			man-sys-man		.man
 ./usr/share/man/man4/wm.4			man-sys-man		.man
 ./usr/share/man/man4/wmidell.4			man-sys-man		.man
@@ -8237,6 +8267,8 @@
 ./usr/share/man/man4/wsmuxctl.4			man-sys-man		.man
 ./usr/share/man/man4/wss.4			man-sys-man		.man
 ./usr/share/man/man4/wt.4			man-sys-man		.man
+./usr/share/man/man4/wwan.4			man-sys-man		.man
+./usr/share/man/man4/wwanc.4			man-sys-man		.man
 ./usr/share/man/man4/x68k/bmd.4			man-sys-man		.man
 ./usr/share/man/man4/x68k/intio.4		man-sys-man		.man
 ./usr/share/man/man4/x68k/intro.4		man-sys-man		.man
@@ -8270,7 +8302,7 @@
 ./usr/share/man/man4/x86/tprof_amdpmi.4		man-obsolete		obsolete
 ./usr/share/man/man4/x86/tprof_pmi.4		man-obsolete		obsolete
 ./usr/share/man/man4/x86/vmt.4			man-sys-man		.man
-./usr/share/man/man4/x86/vmx.4			man-sys-man		.man
+./usr/share/man/man4/x86/vmx.4			man-obsolete		obsolete
 ./usr/share/man/man4/xbd.4			man-sys-man		.man
 ./usr/share/man/man4/xbdback.4			man-sys-man		.man
 ./usr/share/man/man4/xbox.4			man-sys-man		.man
@@ -8672,6 +8704,7 @@
 ./usr/share/man/man8/cobalt/boot.8		man-sys-man		.man
 ./usr/share/man/man8/cobalt/makedev.8		man-obsolete		obsolete
 ./usr/share/man/man8/compat_30.8		man-sys-man		.man
+./usr/share/man/man8/compat_bsdos.8		man-sys-man		.man
 ./usr/share/man/man8/compat_darwin.8		man-obsolete		obsolete
 ./usr/share/man/man8/compat_freebsd.8		man-sys-man		.man
 ./usr/share/man/man8/compat_hpux.8		man-obsolete		obsolete
@@ -9460,6 +9493,9 @@
 ./usr/share/man/man8/walnut/MAKEDEV.8		man-obsolete		obsolete
 ./usr/share/man/man8/walnut/makedev.8		man-obsolete		obsolete
 ./usr/share/man/man8/wdogctl.8			man-sysutil-man		.man
+./usr/share/man/man8/wg-keygen.8		man-netutil-man		.man
+./usr/share/man/man8/wg-userspace.8		man-netutil-man		.man
+./usr/share/man/man8/wgconfig.8			man-netutil-man		.man
 ./usr/share/man/man8/wiconfig.8			man-netutil-man		.man
 ./usr/share/man/man8/wire-test.8		man-netutil-man		.man
 ./usr/share/man/man8/wizd.8			man-sysutil-man		.man

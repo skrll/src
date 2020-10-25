@@ -1,4 +1,4 @@
-/*	$NetBSD: fault.c,v 1.14 2020/07/08 03:45:13 ryo Exp $	*/
+/*	$NetBSD: fault.c,v 1.20 2020/10/15 22:30:34 rin Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fault.c,v 1.14 2020/07/08 03:45:13 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fault.c,v 1.20 2020/10/15 22:30:34 rin Exp $");
 
 #include "opt_compat_netbsd32.h"
 #include "opt_ddb.h"
@@ -134,8 +134,9 @@ data_abort_handler(struct trapframe *tf, uint32_t eclass)
 	vaddr_t va;
 	uint32_t esr, fsc, rw;
 	vm_prot_t ftype;
-	int error = 0, len;
+	int error = EFAULT, len;
 	const bool user = IS_SPSR_USER(tf->tf_spsr) ? true : false;
+	bool is_pan_trap = false;
 
 	bool fatalabort;
 	const char *faultstr;
@@ -168,10 +169,8 @@ data_abort_handler(struct trapframe *tf, uint32_t eclass)
 		map = &p->p_vmspace->vm_map;
 		UVMHIST_LOG(pmaphist, "use user vm_map %p (kernel_map=%p)",
 		   map, kernel_map, 0, 0);
-	} else {
-		error = EINVAL;
+	} else
 		goto do_fault;
-	}
 
 	if ((eclass == ESR_EC_INSN_ABT_EL0) || (eclass == ESR_EC_INSN_ABT_EL1))
 		ftype = VM_PROT_EXECUTE;
@@ -180,16 +179,23 @@ data_abort_handler(struct trapframe *tf, uint32_t eclass)
 	else
 		ftype = (rw == 0) ? VM_PROT_READ : VM_PROT_WRITE;
 
-#ifdef UVMHIST
 	if (ftype & VM_PROT_EXECUTE) {
-		UVMHIST_LOG(pmaphist, "pagefault %016lx %016lx in %s EXEC",
-		    tf->tf_far, va, user ? "user" : "kernel", 0);
+		UVMHIST_LOG(pmaphist, "pagefault %016jx %016jx user=%jd EXEC",
+		    tf->tf_far, va, user, 0);
 	} else {
-		UVMHIST_LOG(pmaphist, "pagefault %016lx %016lx in %s %s",
-		    tf->tf_far, va, user ? "user" : "kernel",
-		    (rw == 0) ? "read" : "write");
+		UVMHIST_LOG(pmaphist, "pagefault %016lx %016lx user=%jd "
+		    "write=%jd", tf->tf_far, va, user, rw);
 	}
-#endif
+
+	if (__predict_false(!user && (map != kernel_map) &&
+	    (tf->tf_spsr & SPSR_PAN))) {
+		/*
+		 * We were in kernel mode, faulted on a user address,
+		 * and had PAN enabled. This is a fatal fault.
+		 */
+		is_pan_trap = true;
+		goto handle_fault;
+	}
 
 	/* reference/modified emulation */
 	if (pmap_fault_fixup(map->pmap, va, ftype, user)) {
@@ -212,12 +218,15 @@ data_abort_handler(struct trapframe *tf, uint32_t eclass)
 
  do_fault:
 	/* faultbail path? */
-	fb = cpu_disable_onfault();
-	if (fb != NULL) {
-		cpu_jump_onfault(tf, fb, EFAULT);
-		return;
+	if (curcpu()->ci_intr_depth == 0) {
+		fb = cpu_disable_onfault();
+		if (fb != NULL) {
+			cpu_jump_onfault(tf, fb, error);
+			return;
+		}
 	}
 
+ handle_fault:
 	fsc = __SHIFTOUT(esr, ESR_ISS_DATAABORT_DFSC); /* also IFSC */
 	if (user) {
 		if (!fatalabort) {
@@ -325,6 +334,10 @@ data_abort_handler(struct trapframe *tf, uint32_t eclass)
 	if (__SHIFTOUT(esr, ESR_ISS_DATAABORT_S1PTW) != 0)
 		len += snprintf(panicinfo + len, sizeof(panicinfo) - len,
 		    ", State 2 Fault");
+
+	if (is_pan_trap)
+		len += snprintf(panicinfo + len, sizeof(panicinfo) - len,
+		    ", PAN Set");
 
 	len += snprintf(panicinfo + len, sizeof(panicinfo) - len,
 	    ": pc %016"PRIxREGISTER, tf->tf_pc);

@@ -1,16 +1,16 @@
-# $Id: sysv.mk,v 1.8 2020/07/20 16:27:55 rillig Exp $
+# $NetBSD: sysv.mk,v 1.15 2020/10/24 08:50:17 rillig Exp $
 
-all: foo fun sam bla words ampersand anchor-dollar
+all: foo fun sam bla
 
-FOO ?=
-FOOBAR = ${FOO:=bar}
+FOO?=
+FOOBAR=	${FOO:=bar}
 
-_this := ${.PARSEDIR}/${.PARSEFILE}
+_this:=	${.PARSEDIR}/${.PARSEFILE}
 
-B = /b
-S = /
-FUN = ${B}${S}fun
-SUN = the Sun
+B=	/b
+S=	/
+FUN=	${B}${S}fun
+SUN=	the Sun
 
 # we expect nothing when FOO is empty
 foo:
@@ -26,7 +26,7 @@ fun:
 	@echo ${In:L:%=% ${SUN}}
 
 
-SAM=sam.c
+SAM=	sam.c
 
 sam:
 	@echo ${SAM:s%.c=acme}
@@ -41,23 +41,3 @@ BLA=
 
 bla:
 	@echo $(BLA:%=foo/%x)
-
-# The :Q looks like a modifier but isn't.
-# It is part of the replacement string.
-words:
-	@echo a${a b c d e:L:%a=x:Q}b
-
-# Before 2020-07-19, an ampersand could be used in the replacement part
-# of a SysV substitution modifier.  This was probably a copy-and-paste
-# mistake since the SysV modifier code looked a lot like the code for the
-# :S and :C modifiers.  The ampersand is not mentioned in the manual page.
-ampersand:
-	@echo ${:U${a.bcd.e:L:a.%=%}:Q}
-	@echo ${:U${a.bcd.e:L:a.%=&}:Q}
-
-# Before 2020-07-20, when a SysV modifier was parsed, a single dollar
-# before the '=' was interpreted as an anchor, which doesn't make sense
-# since the anchor was discarded immediately.
-anchor-dollar:
-	@echo $@: ${:U${value:L:e$=x}:Q}
-	@echo $@: ${:U${value:L:e=x}:Q}

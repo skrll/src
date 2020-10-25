@@ -1,4 +1,4 @@
-/*	$NetBSD: mainbus.c,v 1.3 2020/07/16 16:40:28 jmcneill Exp $	*/
+/*	$NetBSD: mainbus.c,v 1.6 2020/09/28 12:14:47 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2007
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.3 2020/07/16 16:40:28 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.6 2020/09/28 12:14:47 jmcneill Exp $");
 
 #define	_MIPS_BUS_DMA_PRIVATE
 
@@ -118,13 +118,13 @@ mainbus_attach_devicetree(device_t self)
 	config_found_sm_loc(self, "mainbus", NULL, &aa, mainbus_print,
 	    mainbus_submatch);
 
-	octpow_bootstrap(&octeon_configuration);
-	octfpa_bootstrap(&octeon_configuration);
+	aa.aa_name = "iobus";
+	config_found_sm_loc(self, "mainbus", NULL, &aa, mainbus_print,
+	    mainbus_submatch);
 
 	simplebus_bus_io_init(&simplebus_bus_tag, NULL);
 
 	faa.faa_bst = &simplebus_bus_tag;
-	faa.faa_a4x_bst = NULL;		/* XXX */
 	faa.faa_dmat = &simplebus_dma_tag;
 	faa.faa_name = "";
 

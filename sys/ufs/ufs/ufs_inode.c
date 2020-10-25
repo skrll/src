@@ -1,4 +1,4 @@
-/*	$NetBSD: ufs_inode.c,v 1.110 2020/04/18 19:18:34 christos Exp $	*/
+/*	$NetBSD: ufs_inode.c,v 1.112 2020/09/05 16:30:13 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1991, 1993
@@ -37,12 +37,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ufs_inode.c,v 1.110 2020/04/18 19:18:34 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ufs_inode.c,v 1.112 2020/09/05 16:30:13 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"
 #include "opt_quota.h"
 #include "opt_wapbl.h"
+#include "opt_uvmhist.h"
 #endif
 
 #include <sys/param.h>
@@ -67,7 +68,11 @@ __KERNEL_RCSID(0, "$NetBSD: ufs_inode.c,v 1.110 2020/04/18 19:18:34 christos Exp
 #include <ufs/ufs/extattr.h>
 #endif
 
+#ifdef UVMHIST
 #include <uvm/uvm.h>
+#endif
+#include <uvm/uvm_page.h>
+#include <uvm/uvm_stat.h>
 
 /*
  * Last reference to an inode.  If necessary, write or delete it.
@@ -327,5 +332,5 @@ ufs_truncate_all(struct vnode *vp)
 
 	if (isize == 0)
 		return 0;
-	return ufs_truncate_retry(vp, IO_EXT, 0, NOCRED);
+	return ufs_truncate_retry(vp, IO_NORMAL | IO_EXT, 0, NOCRED);
 }

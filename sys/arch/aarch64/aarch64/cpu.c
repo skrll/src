@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.52 2020/07/01 08:01:07 ryo Exp $ */
+/* $NetBSD: cpu.c,v 1.56 2020/10/10 08:22:57 jmcneill Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.52 2020/07/01 08:01:07 ryo Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.56 2020/10/10 08:22:57 jmcneill Exp $");
 
 #include "locators.h"
 #include "opt_arm_debug.h"
@@ -44,8 +44,11 @@ __KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.52 2020/07/01 08:01:07 ryo Exp $");
 #include <sys/sysctl.h>
 #include <sys/systm.h>
 
+#include <crypto/aes/aes_impl.h>
 #include <crypto/aes/arch/arm/aes_armv8.h>
 #include <crypto/aes/arch/arm/aes_neon.h>
+#include <crypto/chacha/chacha_impl.h>
+#include <crypto/chacha/arch/arm/chacha_neon.h>
 
 #include <aarch64/armreg.h>
 #include <aarch64/cpu.h>
@@ -74,6 +77,7 @@ static void cpu_setup_id(struct cpu_info *);
 static void cpu_setup_sysctl(device_t, struct cpu_info *);
 static void cpu_setup_rng(device_t, struct cpu_info *);
 static void cpu_setup_aes(device_t, struct cpu_info *);
+static void cpu_setup_chacha(device_t, struct cpu_info *);
 
 #ifdef MULTIPROCESSOR
 #define NCPUINFO	MAXCPUS
@@ -163,6 +167,7 @@ cpu_attach(device_t dv, cpuid_t id)
 	cpu_setup_sysctl(dv, ci);
 	cpu_setup_rng(dv, ci);
 	cpu_setup_aes(dv, ci);
+	cpu_setup_chacha(dv, ci);
 }
 
 struct cpuidtab {
@@ -373,7 +378,9 @@ cpu_identify2(device_t self, struct cpu_info *ci)
 		break;
 	}
 	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_FP)) {
-	case ID_AA64PFR0_EL1_FP_IMPL:
+	case ID_AA64PFR0_EL1_FP_NONE:
+		break;
+	default:
 		aprint_verbose(", FP");
 		break;
 	}
@@ -417,7 +424,9 @@ cpu_identify2(device_t self, struct cpu_info *ci)
 
 	/* PFR0:AdvSIMD */
 	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_ADVSIMD)) {
-	case ID_AA64PFR0_EL1_ADV_SIMD_IMPL:
+	case ID_AA64PFR0_EL1_ADV_SIMD_NONE:
+		break;
+	default:
 		aprint_verbose(", NEON");
 		break;
 	}
@@ -467,6 +476,13 @@ cpu_identify2(device_t self, struct cpu_info *ci)
 static void
 cpu_init_counter(struct cpu_info *ci)
 {
+	const uint64_t dfr0 = reg_id_aa64dfr0_el1_read();
+	const u_int pmuver = __SHIFTOUT(dfr0, ID_AA64DFR0_EL1_PMUVER);
+	if (pmuver == ID_AA64DFR0_EL1_PMUVER_NONE) {
+		/* Performance Monitors Extension not implemented. */
+		return;
+	}
+
 	reg_pmcr_el0_write(PMCR_E | PMCR_C);
 	reg_pmcntenset_el0_write(PMCNTEN_C);
 
@@ -626,6 +642,24 @@ cpu_setup_aes(device_t dv, struct cpu_info *ci)
 	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_ADVSIMD)) {
 	case ID_AA64PFR0_EL1_ADV_SIMD_IMPL:
 		aes_md_init(&aes_neon_impl);
+		return;
+	default:
+		break;
+	}
+}
+
+/*
+ * setup the ChaCha implementation
+ */
+static void
+cpu_setup_chacha(device_t dv, struct cpu_info *ci)
+{
+	struct aarch64_sysctl_cpu_id *id = &ci->ci_id;
+
+	/* Check for SIMD support.  */
+	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_ADVSIMD)) {
+	case ID_AA64PFR0_EL1_ADV_SIMD_IMPL:
+		chacha_md_init(&chacha_neon_impl);
 		return;
 	default:
 		break;

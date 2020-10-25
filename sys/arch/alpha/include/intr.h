@@ -1,4 +1,4 @@
-/* $NetBSD: intr.h,v 1.72 2017/01/14 00:35:37 christos Exp $ */
+/* $NetBSD: intr.h,v 1.83 2020/10/10 03:05:04 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2000, 2001, 2002 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
 #define _ALPHA_INTR_H_
 
 #include <sys/evcnt.h>
-#include <machine/cpu.h>
+#include <machine/alpha_cpu.h>
 
 /*
  * The Alpha System Control Block.  This is 8k long, and you get
@@ -92,33 +92,52 @@ struct scbvec {
 };
 
 /*
- * Alpha interrupts come in at one of 4 levels:
+ * Alpha interrupts come in at one of 3 levels:
  *
- *	software interrupt level
  *	i/o level 1
  *	i/o level 2
  *	clock level
  *
  * However, since we do not have any way to know which hardware
  * level a particular i/o interrupt comes in on, we have to
- * whittle it down to 3.
+ * whittle it down to 2.  In addition, there are 2 software interrupt
+ * levels available to system software.
  */
 
-#define	IPL_NONE	0	/* no interrupt level */
-#define	IPL_SOFTCLOCK	1	/* generic software interrupts */
-#define	IPL_SOFTBIO	1	/* generic software interrupts */
-#define	IPL_SOFTNET	1	/* generic software interrupts */
-#define	IPL_SOFTSERIAL	1	/* generic software interrupts */
-#define	IPL_VM		2	/* interrupts that can alloc mem */
-#define	IPL_SCHED	3	/* clock interrupts */
-#define	IPL_HIGH	4	/* all interrupts */
+#define	IPL_NONE	ALPHA_PSL_IPL_0
+#define	IPL_SOFTCLOCK	ALPHA_PSL_IPL_SOFT_LO
+#define	IPL_SOFTBIO	ALPHA_PSL_IPL_SOFT_LO
+#ifdef __HAVE_FAST_SOFTINTS
+#define	IPL_SOFTNET	ALPHA_PSL_IPL_SOFT_HI
+#define	IPL_SOFTSERIAL	ALPHA_PSL_IPL_SOFT_HI
+#else
+#define	IPL_SOFTNET	ALPHA_PSL_IPL_SOFT_LO
+#define	IPL_SOFTSERIAL	ALPHA_PSL_IPL_SOFT_LO
+#endif /* __HAVE_FAST_SOFTINTS */
+#define	IPL_VM		ALPHA_PSL_IPL_IO_HI
+#define	IPL_SCHED	ALPHA_PSL_IPL_CLOCK
+#define	IPL_HIGH	ALPHA_PSL_IPL_HIGH
+
+#define	SOFTINT_CLOCK_MASK	__BIT(SOFTINT_CLOCK)
+#define	SOFTINT_BIO_MASK	__BIT(SOFTINT_BIO)
+#define	SOFTINT_NET_MASK	__BIT(SOFTINT_NET)
+#define	SOFTINT_SERIAL_MASK	__BIT(SOFTINT_SERIAL)
+
+#define	ALPHA_IPL1_SOFTINTS	(SOFTINT_CLOCK_MASK | SOFTINT_BIO_MASK)
+#define	ALPHA_IPL2_SOFTINTS	(SOFTINT_NET_MASK | SOFTINT_SERIAL_MASK)
+
+#define	ALPHA_ALL_SOFTINTS	(ALPHA_IPL1_SOFTINTS | ALPHA_IPL2_SOFTINTS)
 
 typedef int ipl_t;
 typedef struct {
 	uint8_t _psl;
 } ipl_cookie_t;
 
-ipl_cookie_t makeiplcookie(ipl_t);
+static inline ipl_cookie_t
+makeiplcookie(ipl_t ipl)
+{
+	return (ipl_cookie_t){._psl = (uint8_t)ipl};
+}
 
 #define	IST_UNUSABLE	-1	/* interrupt cannot be used */
 #define	IST_NONE	0	/* none (dummy) */
@@ -128,20 +147,12 @@ ipl_cookie_t makeiplcookie(ipl_t);
 
 #ifdef	_KERNEL
 
-/* Simulated software interrupt register. */
-extern volatile unsigned long ssir;
-
 /* IPL-lowering/restoring macros */
-void	spl0(void);
+void	spllower(int);
 
-static __inline void
-splx(int s)
-{
-	if (s == ALPHA_PSL_IPL_0 && ssir != 0)
-		spl0();
-	else
-		alpha_pal_swpipl(s);
-}
+#define	splx(s)		spllower(s)
+#define	spl0()		spllower(ALPHA_PSL_IPL_0)
+
 /* IPL-raising functions/macros */
 static __inline int
 _splraise(int s)
@@ -154,19 +165,22 @@ _splraise(int s)
 
 #include <sys/spl.h>
 
+/* Fast soft interrupt dispatch. */
+void	alpha_softint_dispatch(int);
+void	alpha_softint_switchto(struct lwp *, int, struct lwp *);
+
 /*
  * Interprocessor interrupts.  In order how we want them processed.
  */
 #define	ALPHA_IPI_HALT			(1UL << 0)
-#define	ALPHA_IPI_MICROSET		(1UL << 1)
+#define	ALPHA_IPI_PRIMARY_CC		(1UL << 1)
 #define	ALPHA_IPI_SHOOTDOWN		(1UL << 2)
-#define	ALPHA_IPI_IMB			(1UL << 3)
-#define	ALPHA_IPI_AST			(1UL << 4)
-#define	ALPHA_IPI_PAUSE			(1UL << 5)
-#define	ALPHA_IPI_XCALL			(1UL << 6)
-#define	ALPHA_IPI_GENERIC		(1UL << 7)
+#define	ALPHA_IPI_AST			(1UL << 3)
+#define	ALPHA_IPI_PAUSE			(1UL << 4)
+#define	ALPHA_IPI_XCALL			(1UL << 5)
+#define	ALPHA_IPI_GENERIC		(1UL << 6)
 
-#define	ALPHA_NIPIS			8	/* must not exceed 64 */
+#define	ALPHA_NIPIS			7	/* must not exceed 64 */
 
 struct cpu_info;
 struct trapframe;
@@ -181,13 +195,18 @@ void	alpha_multicast_ipi(unsigned long, unsigned long);
  * Alpha shared-interrupt-line common code.
  */
 
+#define	ALPHA_INTR_MPSAFE		0x01
+
 struct alpha_shared_intrhand {
 	TAILQ_ENTRY(alpha_shared_intrhand)
 		ih_q;
 	struct alpha_shared_intr *ih_intrhead;
 	int	(*ih_fn)(void *);
 	void	*ih_arg;
+	int	(*ih_real_fn)(void *);
+	void	*ih_real_arg;
 	int	ih_level;
+	int	ih_type;
 	unsigned int ih_num;
 };
 
@@ -197,6 +216,7 @@ struct alpha_shared_intr {
 	struct evcnt intr_evcnt;
 	char	*intr_string;
 	void	*intr_private;
+	struct cpu_info *intr_cpu;
 	int	intr_sharetype;
 	int	intr_dfltsharetype;
 	int	intr_nstrays;
@@ -207,15 +227,18 @@ struct alpha_shared_intr {
 	((asi)[num].intr_maxstrays != 0 &&				\
 	 (asi)[num].intr_nstrays == (asi)[num].intr_maxstrays)
 
-void	softintr_dispatch(void);
-
 struct alpha_shared_intr *alpha_shared_intr_alloc(unsigned int, unsigned int);
 int	alpha_shared_intr_dispatch(struct alpha_shared_intr *,
 	    unsigned int);
-void	*alpha_shared_intr_establish(struct alpha_shared_intr *,
-	    unsigned int, int, int, int (*)(void *), void *, const char *);
-void	alpha_shared_intr_disestablish(struct alpha_shared_intr *,
-	    void *, const char *);
+struct alpha_shared_intrhand *
+	alpha_shared_intr_alloc_intrhand(struct alpha_shared_intr *,
+	    unsigned int, int, int, int, int (*)(void *), void *,
+	    const char *);
+void	alpha_shared_intr_free_intrhand(struct alpha_shared_intrhand *);
+bool	alpha_shared_intr_link(struct alpha_shared_intr *,
+	    struct alpha_shared_intrhand *, const char *);
+void	alpha_shared_intr_unlink(struct alpha_shared_intr *,
+	    struct alpha_shared_intrhand *, const char *);
 int	alpha_shared_intr_get_sharetype(struct alpha_shared_intr *,
 	    unsigned int);
 int	alpha_shared_intr_isactive(struct alpha_shared_intr *,
@@ -234,15 +257,21 @@ void	alpha_shared_intr_set_private(struct alpha_shared_intr *,
 	    unsigned int, void *);
 void	*alpha_shared_intr_get_private(struct alpha_shared_intr *,
 	    unsigned int);
+void	alpha_shared_intr_set_cpu(struct alpha_shared_intr *,
+	    unsigned int, struct cpu_info *ci);
+struct cpu_info	*
+	alpha_shared_intr_get_cpu(struct alpha_shared_intr *,
+	    unsigned int);
 char	*alpha_shared_intr_string(struct alpha_shared_intr *,
 	    unsigned int);
 struct evcnt *alpha_shared_intr_evcnt(struct alpha_shared_intr *,
 	    unsigned int);
 
 extern struct scbvec scb_iovectab[];
+extern void (*alpha_intr_redistribute)(void);
 
 void	scb_init(void);
-void	scb_set(u_long, void (*)(void *, u_long), void *, int);
+void	scb_set(u_long, void (*)(void *, u_long), void *);
 u_long	scb_alloc(void (*)(void *, u_long), void *);
 void	scb_free(u_long);
 

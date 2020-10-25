@@ -1,4 +1,4 @@
-/*$NetBSD: ixv.c,v 1.151 2020/06/25 07:53:02 msaitoh Exp $*/
+/*$NetBSD: ixv.c,v 1.154 2020/09/07 05:50:58 msaitoh Exp $*/
 
 /******************************************************************************
 
@@ -90,13 +90,13 @@ static int	ixv_ioctl(struct ifnet *, u_long, void *);
 static int	ixv_init(struct ifnet *);
 static void	ixv_init_locked(struct adapter *);
 static void	ixv_ifstop(struct ifnet *, int);
-static void	ixv_stop(void *);
+static void	ixv_stop_locked(void *);
 static void	ixv_init_device_features(struct adapter *);
 static void	ixv_media_status(struct ifnet *, struct ifmediareq *);
 static int	ixv_media_change(struct ifnet *);
 static int	ixv_allocate_pci_resources(struct adapter *,
 		    const struct pci_attach_args *);
-static void	ixv_free_workqueue(struct adapter *);
+static void	ixv_free_deferred_handlers(struct adapter *);
 static int	ixv_allocate_msix(struct adapter *,
 		    const struct pci_attach_args *);
 static int	ixv_configure_interrupts(struct adapter *);
@@ -329,7 +329,7 @@ ixv_attach(device_t parent, device_t dev, void *aux)
 	hw = &adapter->hw;
 
 	adapter->init_locked = ixv_init_locked;
-	adapter->stop_locked = ixv_stop;
+	adapter->stop_locked = ixv_stop_locked;
 
 	adapter->osdep.pc = pa->pa_pc;
 	adapter->osdep.tag = pa->pa_tag;
@@ -608,7 +608,7 @@ ixv_detach(device_t dev, int flags)
 
 	ether_ifdetach(adapter->ifp);
 	callout_halt(&adapter->timer, NULL);
-	ixv_free_workqueue(adapter);
+	ixv_free_deferred_handlers(adapter);
 
 	if (adapter->feat_en & IXGBE_FEATURE_NETMAP)
 		netmap_detach(adapter->ifp);
@@ -723,7 +723,7 @@ ixv_init_locked(struct adapter *adapter)
 	/* Prepare transmit descriptors and buffers */
 	if (ixgbe_setup_transmit_structures(adapter)) {
 		aprint_error_dev(dev, "Could not setup transmit structures\n");
-		ixv_stop(adapter);
+		ixv_stop_locked(adapter);
 		return;
 	}
 
@@ -752,7 +752,7 @@ ixv_init_locked(struct adapter *adapter)
 	/* Prepare receive descriptors and buffers */
 	if (ixgbe_setup_receive_structures(adapter)) {
 		device_printf(dev, "Could not setup receive structures\n");
-		ixv_stop(adapter);
+		ixv_stop_locked(adapter);
 		return;
 	}
 
@@ -787,7 +787,7 @@ ixv_init_locked(struct adapter *adapter)
 
 	/* Start watchdog */
 	callout_reset(&adapter->timer, hz, ixv_local_timer, adapter);
-	atomic_and_uint(&adapter->timer_pending, ~1);
+	atomic_store_relaxed(&adapter->timer_pending, 0);
 
 	/* OK to schedule workqueues. */
 	adapter->schedule_wqs_ok = true;
@@ -1063,11 +1063,9 @@ static void
 ixv_schedule_admin_tasklet(struct adapter *adapter)
 {
 	if (adapter->schedule_wqs_ok) {
-		if (!adapter->admin_pending) {
-			atomic_or_uint(&adapter->admin_pending, 1);
+		if (atomic_cas_uint(&adapter->admin_pending, 0, 1) == 0)
 			workqueue_enqueue(adapter->admin_wq,
 			    &adapter->admin_wc, NULL);
-		}
 	}
 }
 
@@ -1252,11 +1250,9 @@ ixv_local_timer(void *arg)
 	struct adapter *adapter = arg;
 
 	if (adapter->schedule_wqs_ok) {
-		if (!adapter->timer_pending) {
-			atomic_or_uint(&adapter->timer_pending, 1);
+		if (atomic_cas_uint(&adapter->timer_pending, 0, 1) == 0)
 			workqueue_enqueue(adapter->timer_wq,
 			    &adapter->timer_wc, NULL);
-		}
 	}
 }
 
@@ -1348,7 +1344,7 @@ ixv_handle_timer(struct work *wk, void *context)
 	}
 #endif
 
-	atomic_and_uint(&adapter->timer_pending, ~1);
+	atomic_store_relaxed(&adapter->timer_pending, 0);
 	IXGBE_CORE_UNLOCK(adapter);
 	callout_reset(&adapter->timer, hz, ixv_local_timer, adapter);
 
@@ -1439,17 +1435,17 @@ ixv_ifstop(struct ifnet *ifp, int disable)
 	struct adapter *adapter = ifp->if_softc;
 
 	IXGBE_CORE_LOCK(adapter);
-	ixv_stop(adapter);
+	ixv_stop_locked(adapter);
 	IXGBE_CORE_UNLOCK(adapter);
 
 	workqueue_wait(adapter->admin_wq, &adapter->admin_wc);
-	atomic_and_uint(&adapter->admin_pending, ~1);
+	atomic_store_relaxed(&adapter->admin_pending, 0);
 	workqueue_wait(adapter->timer_wq, &adapter->timer_wc);
-	atomic_and_uint(&adapter->timer_pending, ~1);
+	atomic_store_relaxed(&adapter->timer_pending, 0);
 }
 
 static void
-ixv_stop(void *arg)
+ixv_stop_locked(void *arg)
 {
 	struct ifnet	*ifp;
 	struct adapter	*adapter = arg;
@@ -1459,7 +1455,7 @@ ixv_stop(void *arg)
 
 	KASSERT(mutex_owned(&adapter->core_mtx));
 
-	INIT_DEBUGOUT("ixv_stop: begin\n");
+	INIT_DEBUGOUT("ixv_stop_locked: begin\n");
 	ixv_disable_intr(adapter);
 
 	/* Tell the stack that the interface is no longer active */
@@ -1477,7 +1473,7 @@ ixv_stop(void *arg)
 	hw->mac.ops.set_rar(hw, 0, hw->mac.addr, 0, IXGBE_RAH_AV);
 
 	return;
-} /* ixv_stop */
+} /* ixv_stop_locked */
 
 
 /************************************************************************
@@ -1534,7 +1530,7 @@ map_err:
 } /* ixv_allocate_pci_resources */
 
 static void
-ixv_free_workqueue(struct adapter *adapter)
+ixv_free_deferred_handlers(struct adapter *adapter)
 {
 	struct ix_queue *que = adapter->queues;
 	struct tx_ring *txr = adapter->tx_rings;
@@ -1564,7 +1560,7 @@ ixv_free_workqueue(struct adapter *adapter)
 		workqueue_destroy(adapter->timer_wq);
 		adapter->timer_wq = NULL;
 	}
-} /* ixv_free_workqueue */
+} /* ixv_free_deferred_handlers */
 
 /************************************************************************
  * ixv_free_pci_resources
@@ -2982,7 +2978,7 @@ ixv_shutdown(device_t dev)
 {
 	struct adapter *adapter = device_private(dev);
 	IXGBE_CORE_LOCK(adapter);
-	ixv_stop(adapter);
+	ixv_stop_locked(adapter);
 	IXGBE_CORE_UNLOCK(adapter);
 
 	return (0);
@@ -3417,7 +3413,7 @@ ixv_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 	return (0);
 err_out:
 	kcpuset_destroy(affinity);
-	ixv_free_workqueue(adapter);
+	ixv_free_deferred_handlers(adapter);
 	ixv_free_pci_resources(adapter);
 	return (error);
 } /* ixv_allocate_msix */
@@ -3492,7 +3488,7 @@ ixv_handle_admin(struct work *wk, void *context)
 	ixv_update_link_status(adapter);
 
 	adapter->task_requests = 0;
-	atomic_and_uint(&adapter->admin_pending, ~1);
+	atomic_store_relaxed(&adapter->admin_pending, 0);
 
 	/* Re-enable interrupts */
 	IXGBE_WRITE_REG(hw, IXGBE_VTEIMS, (1 << adapter->vector));

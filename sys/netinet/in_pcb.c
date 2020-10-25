@@ -1,4 +1,4 @@
-/*	$NetBSD: in_pcb.c,v 1.183 2019/05/15 02:59:18 ozaki-r Exp $	*/
+/*	$NetBSD: in_pcb.c,v 1.185 2020/09/08 14:12:57 christos Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -93,7 +93,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in_pcb.c,v 1.183 2019/05/15 02:59:18 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in_pcb.c,v 1.185 2020/09/08 14:12:57 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -205,6 +205,8 @@ in_pcballoc(struct socket *so, void *v)
 	inp->inp_portalgo = PORTALGO_DEFAULT;
 	inp->inp_bindportonsend = false;
 	inp->inp_prefsrcip.s_addr = INADDR_ANY;
+	inp->inp_overudp_cb = NULL;
+	inp->inp_overudp_arg = NULL;
 #if defined(IPSEC)
 	if (ipsec_enabled) {
 		int error = ipsec_init_pcbpolicy(so, &inp->inp_sp);
@@ -272,7 +274,8 @@ in_pcbsetport(struct sockaddr_in *sin, struct inpcb *inp, kauth_cred_t cred)
 }
 
 int
-in_pcbbindableaddr(struct sockaddr_in *sin, kauth_cred_t cred)
+in_pcbbindableaddr(const struct inpcb *inp, struct sockaddr_in *sin,
+    kauth_cred_t cred)
 {
 	int error = EADDRNOTAVAIL;
 	struct ifaddr *ifa = NULL;
@@ -293,6 +296,10 @@ in_pcbbindableaddr(struct sockaddr_in *sin, kauth_cred_t cred)
 			ifa = ifa_ifwithaddr(sintosa(sin));
 			if (ifa != NULL)
 				ia = ifatoia(ifa);
+			else if ((inp->inp_flags & INP_BINDANY) != 0) {
+				error = 0;
+				goto error;
+			}
 		}
 		if (ia == NULL)
 			goto error;
@@ -310,7 +317,7 @@ in_pcbbind_addr(struct inpcb *inp, struct sockaddr_in *sin, kauth_cred_t cred)
 {
 	int error;
 
-	error = in_pcbbindableaddr(sin, cred);
+	error = in_pcbbindableaddr(inp, sin, cred);
 	if (error == 0)
 		inp->inp_laddr = sin->sin_addr;
 	return error;
@@ -544,7 +551,7 @@ in_pcbconnect(void *v, struct sockaddr_in *sin, struct lwp *l)
 		}
 		s = pserialize_read_enter();
 		_ia = in_get_ia(IA_SIN(ia)->sin_addr);
-		if (_ia == NULL) {
+		if (_ia == NULL && (inp->inp_flags & INP_BINDANY) == 0) {
 			pserialize_read_exit(s);
 			ia4_release(ia, &psref);
 			curlwp_bindx(bound);
@@ -585,7 +592,7 @@ in_pcbconnect(void *v, struct sockaddr_in *sin, struct lwp *l)
 		lsin.sin_addr = inp->inp_laddr;
 		lsin.sin_port = 0;
 
-               if ((error = in_pcbbind_port(inp, &lsin, l->l_cred)) != 0)
+		if ((error = in_pcbbind_port(inp, &lsin, l->l_cred)) != 0)
                        return error;
 	}
 

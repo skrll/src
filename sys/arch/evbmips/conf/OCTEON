@@ -1,11 +1,11 @@
-#	$NetBSD: OCTEON,v 1.7 2020/07/17 14:57:54 jmcneill Exp $
+#	$NetBSD: OCTEON,v 1.9 2020/09/27 13:48:50 roy Exp $
 
 include 	"arch/mips/conf/std.octeon"
 include 	"arch/evbmips/conf/files.octeon"
 
 #options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"OCTEON-$Revision: 1.7 $"
+#ident 		"OCTEON-$Revision: 1.9 $"
 
 maxusers	32
 
@@ -181,12 +181,14 @@ pseudo-device	gif				# RFC1933 tunnel
 #pseudo-device	stf				# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan				# IEEE 802.1q encapsulation
 pseudo-device	bridge				# simple inter-network bridging
+pseudo-device	vether				# Virtual Ethernet for bridge
 
 # Miscellaneous pseudo-devices
 pseudo-device	pty				# pseudo-terminals
 pseudo-device	clockctl			# user control of clock subsystem
 pseudo-device	ksyms				# /dev/ksyms
 pseudo-device	drvctl				# driver control
+pseudo-device	openfirm			# /dev/openfirm
 
 # A pseudo device needed for Coda		# also needs CODA (above)
 #pseudo-device	vcoda				# coda minicache <-> venus comm.

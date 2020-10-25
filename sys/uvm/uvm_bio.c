@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_bio.c,v 1.121 2020/07/09 09:24:32 rin Exp $	*/
+/*	$NetBSD: uvm_bio.c,v 1.123 2020/10/18 08:52:15 rin Exp $	*/
 
 /*
  * Copyright (c) 1998 Chuck Silvers.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.121 2020/07/09 09:24:32 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.123 2020/10/18 08:52:15 rin Exp $");
 
 #include "opt_uvmhist.h"
 #include "opt_ubc.h"

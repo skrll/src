@@ -1,9 +1,9 @@
-/*	$NetBSD: cgi-bozo.c,v 1.49 2019/12/06 05:53:20 mrg Exp $	*/
+/*	$NetBSD: cgi-bozo.c,v 1.51 2020/10/15 04:21:53 mrg Exp $	*/
 
 /*	$eterna: cgi-bozo.c,v 1.40 2011/11/18 09:21:15 mrg Exp $	*/
 
 /*
- * Copyright (c) 1997-2019 Matthew R. Green
+ * Copyright (c) 1997-2020 Matthew R. Green
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -637,6 +637,8 @@ bozo_process_cgi(bozo_httpreq_t *request)
 		/* child reader/writer */
 		close(STDIN_FILENO);
 		finish_cgi_output(httpd, request, sv[0], nph);
+		/* if we do SSL, send a SSL_shutdown now */
+		bozo_ssl_shutdown(request->hr_httpd);
 		/* if we're done output, our parent is useless... */
 		kill(getppid(), SIGKILL);
 		debug((httpd, DEBUG_FAT, "done processing cgi output"));

@@ -1,4 +1,4 @@
-/*	$NetBSD: t_aes.c,v 1.1 2020/06/30 20:32:11 riastradh Exp $	*/
+/*	$NetBSD: t_aes.c,v 1.4 2020/08/17 16:26:02 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -30,6 +30,7 @@
 
 #include <crypto/aes/aes.h>
 #include <crypto/aes/aes_bear.h>
+#include <crypto/aes/aes_impl.h>
 
 #if defined(__i386__) || defined(__x86_64__)
 #include <crypto/aes/arch/x86/aes_ni.h>
@@ -42,7 +43,7 @@
 #include <crypto/aes/arch/arm/aes_armv8.h>
 #endif
 
-#ifdef __ARM_NEON
+#if __ARM_ARCH >= 7
 #include <crypto/aes/arch/arm/aes_neon.h>
 #endif
 
@@ -92,7 +93,7 @@ ATF_TC_BODY(name, tc)							      \
 AES_SELFTEST(aes_armv8_selftest, &aes_armv8_impl, "ARMv8.0-AES self-test")
 #endif
 
-#ifdef __ARM_NEON
+#if __ARM_ARCH >= 7
 AES_SELFTEST(aes_neon_selftest, &aes_neon_impl, "ARM NEON vpaes self-test")
 #endif
 
@@ -117,7 +118,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, aes_armv8_selftest);
 #endif
 
-#ifdef __ARM_NEON
+#if __ARM_ARCH >= 7
 	ATF_TP_ADD_TC(tp, aes_neon_selftest);
 #endif
 

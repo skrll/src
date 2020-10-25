@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.kern.inc,v 1.274 2020/06/25 14:52:26 jdolecek Exp $
+#	$NetBSD: Makefile.kern.inc,v 1.276 2020/09/06 07:20:29 mrg Exp $
 #
 # This file contains common `MI' targets and definitions and it is included
 # at the bottom of each `MD' ${MACHINE}/conf/Makefile.${MACHINE}.
@@ -94,6 +94,7 @@ CWARNFLAGS+=	-Wno-sign-compare
 CWARNFLAGS.clang+=	-Wno-unknown-pragmas -Wno-conversion \
 			-Wno-self-assign -Wno-error=address-of-packed-member \
 			-Wno-error=constant-conversion
+CWARNFLAGS.gcc+=	${GCC_NO_ADDR_OF_PACKED_MEMBER}
 
 CWARNFLAGS.ah_regdomain.c= ${${ACTIVE_CC} == "clang":? \
     -Wno-shift-count-negative -Wno-shift-count-overflow:}
@@ -104,12 +105,14 @@ CFLAGS+=	-ffreestanding -fno-zero-initialized-in-bss
 CFLAGS+=	${${ACTIVE_CC} == "gcc":? -fno-delete-null-pointer-checks :}
 CFLAGS+=	${DEBUG} ${COPTS}
 AFLAGS+=	-D_LOCORE -Wa,--fatal-warnings
+
 # example usage to find largest stack users in kernel compile directory:
 #    find . -name \*.su | xargs awk '{ printf "%6d %s\n", $2, $1 }' | sort -n
 .if ${MACHINE} != "vax"
 # GCC/vax 8.4 does not support -fstack-usage.
 CFLAGS+=	${${ACTIVE_CC} == "gcc":? -fstack-usage -Wstack-usage=3584 :}
 .endif
+CWARNFLAGS+=	-Walloca
 
 # XXX
 .if defined(HAVE_GCC) || defined(HAVE_LLVM)

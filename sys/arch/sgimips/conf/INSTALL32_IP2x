@@ -27,7 +27,6 @@ no options	COMPAT_16
 no options	COMPAT_20
 no options	COMPAT_30
 no options	COMPAT_40
-no options	COMPAT_LINUX
 
 no file-system	EXT2FS
 no file-system	LFS
@@ -65,6 +64,7 @@ no pseudo-device ccd
 no pseudo-device fss
 no pseudo-device npf
 no pseudo-device bridge
+no pseudo-device vether
 no pseudo-device accf_data
 no pseudo-device accf_http
 no pseudo-device sequencer

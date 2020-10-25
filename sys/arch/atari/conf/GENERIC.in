@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC.in,v 1.118 2019/04/13 08:22:59 isaki Exp $
+#	$NetBSD: GENERIC.in,v 1.120 2020/09/27 13:48:49 roy Exp $
 #
 # Generic atari
 #
@@ -20,7 +20,9 @@ options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 #endif /* !SMALL030_KERNEL */
 
 #if !defined(SMALL030_KERNEL)
-makeoptions	COPTS="-O2 -fno-reorder-blocks"	# see share/mk/sys.mk
+makeoptions	COPTS="-O2 -fno-reorder-blocks -fno-omit-frame-pointer" \
+# See share/mk/sys.mk. -fno-omit-frame-pointer is necessary for backtraces \
+in DDB.
 #else
 makeoptions	COPTS="-Os"			# optimize for space
 #endif /* !SMALL030_KERNEL */
@@ -262,6 +264,7 @@ pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #if !defined(NO_PHYS_NETWORK)
 #pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
+#pseudo-device	vether			# Virtual Ethernet for bridge
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
 #endif /* NO_PHYS_NETWORK */
 #pseudo-device	ccd			# concatenating disk driver

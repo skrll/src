@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_machdep.c,v 1.73 2020/06/27 18:44:02 jmcneill Exp $ */
+/* $NetBSD: fdt_machdep.c,v 1.77 2020/10/20 23:03:30 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.73 2020/06/27 18:44:02 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.77 2020/10/20 23:03:30 jmcneill Exp $");
 
 #include "opt_machdep.h"
 #include "opt_bootconfig.h"
@@ -38,6 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.73 2020/06/27 18:44:02 jmcneill Ex
 #include "opt_cpuoptions.h"
 #include "opt_efi.h"
 
+#include "genfb.h"
 #include "ukbd.h"
 #include "wsdisplay.h"
 
@@ -47,6 +48,7 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.73 2020/06/27 18:44:02 jmcneill Ex
 #include <sys/atomic.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
+#include <sys/endian.h>
 #include <sys/exec.h>
 #include <sys/kernel.h>
 #include <sys/kmem.h>
@@ -96,6 +98,10 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.73 2020/06/27 18:44:02 jmcneill Ex
 #include <arm/arm/efi_runtime.h>
 #endif
 
+#if NWSDISPLAY > 0 && NGENFB > 0
+#include <arm/fdt/arm_simplefb.h>
+#endif
+
 #if NUKBD > 0
 #include <dev/usb/ukbdvar.h>
 #endif
@@ -137,6 +143,10 @@ static void fdt_device_register_post_config(device_t, void *);
 static void fdt_cpu_rootconf(void);
 static void fdt_reset(void);
 static void fdt_powerdown(void);
+
+#if BYTE_ORDER == BIG_ENDIAN
+static void fdt_update_fb_format(void);
+#endif
 
 static void
 earlyconsputc(dev_t dev, int c)
@@ -573,6 +583,17 @@ initarm(void *arg)
 	VPRINTF("stdout\n");
 	fdt_update_stdout_path();
 
+#if BYTE_ORDER == BIG_ENDIAN
+	/*
+	 * Most boards are configured to little-endian mode in initial, and
+	 * switched to big-endian mode after kernel is loaded. In this case,
+	 * framebuffer seems byte-swapped to CPU. Override FDT to let
+	 * drivers know.
+	 */
+	VPRINTF("fb_format\n");
+	fdt_update_fb_format();
+#endif
+
 	/*
 	 * Done making changes to the FDT.
 	 */
@@ -657,6 +678,7 @@ initarm(void *arg)
 
 	if (error)
 		return sp;
+
 	/*
 	 * Now we have APs started the pages used for stacks and L1PT can
 	 * be given to uvm
@@ -847,8 +869,24 @@ fdt_device_register(device_t self, void *aux)
 {
 	const struct arm_platform *plat = arm_fdt_platform();
 
-	if (device_is_a(self, "armfdt"))
+	if (device_is_a(self, "armfdt")) {
 		fdt_setup_initrd();
+
+#if NWSDISPLAY > 0 && NGENFB > 0
+		/*
+		 * Setup framebuffer console, if present.
+		 */
+		arm_simplefb_preattach();
+#endif
+	}
+
+#if NWSDISPLAY > 0 && NGENFB > 0
+	if (device_is_a(self, "genfb")) {
+		prop_dictionary_t dict = device_properties(self);
+		prop_dictionary_set_uint64(dict,
+		    "simplefb-physaddr", arm_simplefb_physaddr());
+	}
+#endif
 
 	if (plat && plat->ap_device_register)
 		plat->ap_device_register(self, aux);
@@ -902,3 +940,36 @@ fdt_powerdown(void)
 {
 	fdtbus_power_poweroff();
 }
+
+#if BYTE_ORDER == BIG_ENDIAN
+static void
+fdt_update_fb_format(void)
+{
+	int off, len;
+	const char *format, *replace;
+
+	off = fdt_path_offset(fdt_data, "/chosen");
+	if (off < 0)
+		return;
+
+	for (;;) {
+		off = fdt_node_offset_by_compatible(fdt_data, off,
+		    "simple-framebuffer");
+		if (off < 0)
+			return;
+
+		format = fdt_getprop(fdt_data, off, "format", &len);
+		if (format == NULL)
+			continue;
+
+		replace = NULL;
+		if (strcmp(format, "a8b8g8r8") == 0)
+			replace = "r8g8b8a8";
+		else if (strcmp(format, "x8r8g8b8") == 0)
+			replace = "b8g8r8x8";
+		if (replace != NULL)
+			fdt_setprop(fdt_data, off, "format", replace,
+			    strlen(replace) + 1);
+	}
+}
+#endif

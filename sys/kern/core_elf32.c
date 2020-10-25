@@ -1,4 +1,4 @@
-/*	$NetBSD: core_elf32.c,v 1.64 2020/05/30 16:12:56 thorpej Exp $	*/
+/*	$NetBSD: core_elf32.c,v 1.66 2020/10/19 19:33:02 christos Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: core_elf32.c,v 1.64 2020/05/30 16:12:56 thorpej Exp $");
+__KERNEL_RCSID(1, "$NetBSD: core_elf32.c,v 1.66 2020/10/19 19:33:02 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd32.h"
@@ -64,6 +64,10 @@ __KERNEL_RCSID(1, "$NetBSD: core_elf32.c,v 1.64 2020/05/30 16:12:56 thorpej Exp 
 #include <machine/reg.h>
 
 #include <uvm/uvm_extern.h>
+
+#ifdef COMPAT_NETBSD32
+#include <machine/netbsd32_machdep.h>
+#endif
 
 struct writesegs_state {
 	Elf_Phdr *psections;
@@ -105,7 +109,7 @@ static int	ELFNAMEEND(coredump_note)(struct lwp *, struct note_state *);
 #define elf_fpreg		CONCAT(process_fpreg, ELFSIZE)
 
 int
-ELFNAMEEND(coredump)(struct lwp *l, struct coredump_iostate *cookie)
+ELFNAMEEND(real_coredump)(struct lwp *l, struct coredump_iostate *cookie)
 {
 	Elf_Ehdr ehdr;
 	Elf_Shdr shdr;
@@ -510,8 +514,13 @@ ELFNAMEEND(coredump_note)(struct lwp *l, struct note_state *ns)
 	if (error)
 		goto out;
 
-	ELFNAMEEND(coredump_savenote)(ns, PT_GETREGS, d->name, &d->intreg,
-	    sizeof(d->intreg));
+	ELFNAMEEND(coredump_savenote)(ns,
+#if ELFSIZE == 32 && defined(PT32_GETREGS)
+	    PT32_GETREGS,
+#else
+	    PT_GETREGS,
+#endif
+	    d->name, &d->intreg, sizeof(d->intreg));
 
 #ifdef PT_GETFPREGS
 	freglen = sizeof(d->freg);
@@ -519,8 +528,13 @@ ELFNAMEEND(coredump_note)(struct lwp *l, struct note_state *ns)
 	if (error)
 		goto out;
 
-	ELFNAMEEND(coredump_savenote)(ns, PT_GETFPREGS, d->name, &d->freg,
-	    freglen);
+	ELFNAMEEND(coredump_savenote)(ns,
+#  if ELFSIZE == 32 && defined(PT32_GETFPREGS)
+	    PT32_GETFPREGS,
+#  else
+	    PT_GETFPREGS,
+#  endif
+	    d->name, &d->freg, freglen);
 #endif
 
 #ifdef COREDUMP_MACHDEP_LWP_NOTES

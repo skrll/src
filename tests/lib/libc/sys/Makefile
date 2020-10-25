@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.66 2020/07/17 15:34:16 kamil Exp $
+# $NetBSD: Makefile,v 1.68 2020/09/06 07:20:31 mrg Exp $
 
 MKMAN=	no
 
@@ -25,6 +25,7 @@ TESTS_C+=		t_getgroups
 TESTS_C+=		t_getitimer
 TESTS_C+=		t_getlogin
 TESTS_C+=		t_getpid
+TESTS_C+=		t_getrandom
 TESTS_C+=		t_getrusage
 TESTS_C+=		t_getsid
 TESTS_C+=		t_getsockname
@@ -143,5 +144,8 @@ truncate_test.root_owned:
 	dd if=/dev/null bs=1 count=1 of=${.TARGET}
 
 WARNS=			4
+
+CWARNFLAGS.gcc+=	${GCC_NO_ADDR_OF_PACKED_MEMBER} \
+			${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wno-error=deprecated :}
 
 .include <bsd.test.mk>

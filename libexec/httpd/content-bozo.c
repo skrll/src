@@ -1,9 +1,9 @@
-/*	$NetBSD: content-bozo.c,v 1.16 2018/11/23 08:11:20 mrg Exp $	*/
+/*	$NetBSD: content-bozo.c,v 1.19 2020/10/15 04:21:53 mrg Exp $	*/
 
 /*	$eterna: content-bozo.c,v 1.17 2011/11/18 09:21:15 mrg Exp $	*/
 
 /*
- * Copyright (c) 1997-2018 Matthew R. Green
+ * Copyright (c) 1997-2020 Matthew R. Green
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -135,6 +135,7 @@ static bozo_content_map_t static_content_map[] = {
 	{ ".snd",	"audio/basic",			"",		"", NULL },
 	{ ".mpga",	"audio/mpeg",			"",		"", NULL },
 	{ ".mp2",	"audio/mpeg",			"",		"", NULL },
+	{ ".m4a",	"audio/mp4",			"",		"", NULL },
 	{ ".aif",	"audio/x-aiff",			"",		"", NULL },
 	{ ".aiff",	"audio/x-aiff",			"",		"", NULL },
 	{ ".aifc",	"audio/x-aiff",			"",		"", NULL },
@@ -167,6 +168,7 @@ static bozo_content_map_t static_content_map[] = {
 	{ ".ts",	"video/mpeg",			"",		"", NULL },
 	{ ".vob",	"video/mpeg",			"",		"", NULL },
 	{ ".mp4",	"video/mp4",			"",		"", NULL },
+	{ ".m4v",	"video/mp4",			"",		"", NULL },
 	{ ".qt",	"video/quicktime",		"",		"", NULL },
 	{ ".mov",	"video/quicktime",		"",		"", NULL },
 	{ ".avi",	"video/x-msvideo",		"",		"", NULL },
@@ -211,7 +213,6 @@ bozo_match_content_map(bozohttpd_t *httpd, const char *name,
 /*
  * given the file name, return a valid Content-Type: value.
  */
-/* ARGSUSED */
 const char *
 bozo_content_type(bozo_httpreq_t *request, const char *file)
 {

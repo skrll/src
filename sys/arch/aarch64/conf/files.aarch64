@@ -1,4 +1,4 @@
-#	$NetBSD: files.aarch64,v 1.25 2020/07/17 07:16:10 ryo Exp $
+#	$NetBSD: files.aarch64,v 1.30 2020/10/21 13:31:50 christos Exp $
 
 defflag opt_cpuoptions.h	AARCH64_ALIGNMENT_CHECK
 defflag opt_cpuoptions.h	AARCH64_EL0_STACK_ALIGNMENT_CHECK
@@ -8,9 +8,6 @@ defflag opt_cpuoptions.h	AARCH64_DEVICE_MEM_STRONGLY_ORDERED
 
 defflag	opt_cputypes.h		CPU_ARMV8
 defflag	opt_cputypes.h		CPU_CORTEX: CPU_ARMV8
-defflag	opt_cputypes.h		CPU_CORTEXA35: CPU_CORTEX
-defflag	opt_cputypes.h		CPU_CORTEXA53: CPU_CORTEX
-defflag	opt_cputypes.h		CPU_CORTEXA57: CPU_CORTEX
 defflag	opt_cputypes.h		CPU_THUNDERX: CPU_ARMV8
 
 # Interrupt implementation header definition
@@ -100,6 +97,7 @@ file	arch/aarch64/aarch64/exec_machdep.c
 file	arch/aarch64/aarch64/fusu.S
 file	arch/aarch64/aarch64/idle_machdep.S
 file	arch/aarch64/aarch64/kobj_machdep.c		modular
+file	arch/aarch64/aarch64/lock_stubs.S
 file	arch/aarch64/aarch64/process_machdep.c
 file	arch/aarch64/aarch64/procfs_machdep.c		procfs
 file	arch/aarch64/aarch64/sig_machdep.c
@@ -145,3 +143,6 @@ include "crypto/aes/arch/arm/files.aesarmv8"
 
 # vpaes with ARM NEON
 include "crypto/aes/arch/arm/files.aesneon"
+
+# ChaCha with ARM NEON
+include "crypto/chacha/arch/arm/files.chacha_arm"

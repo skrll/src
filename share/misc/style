@@ -1,4 +1,4 @@
-/* $NetBSD: style,v 1.54 2019/01/28 17:29:44 christos Exp $ */
+/* $NetBSD: style,v 1.59 2020/08/02 01:36:46 riastradh Exp $ */
 
 /*
  * The revision control tag appears first, with a blank line after it.
@@ -30,7 +30,7 @@
 #include <sys/cdefs.h>
 __COPYRIGHT("@(#) Copyright (c) 2008\
  The NetBSD Foundation, inc. All rights reserved.");
-__RCSID("$NetBSD: style,v 1.54 2019/01/28 17:29:44 christos Exp $");
+__RCSID("$NetBSD: style,v 1.59 2020/08/02 01:36:46 riastradh Exp $");
 
 /*
  * VERY important single-line comments look like this.
@@ -147,7 +147,7 @@ do {									\
 
 #define	DOUBLE(x) ((x) * 2)
 
-/* Enum types are capitalized.  No comma on the last element. */
+/* Enum constants are capitalized.  No comma on the last element. */
 enum enumtype {
 	ONE,
 	TWO
@@ -241,8 +241,9 @@ main(int argc, char *argv[])
 			errno = 0;
 			num = strtol(optarg, &ep, 10);
 			if (num <= 0 || *ep != '\0' || (errno == ERANGE &&
-			    (num == LONG_MAX || num == LONG_MIN)) )
+			    (num == LONG_MAX || num == LONG_MIN)) ) {
 				errx(1, "illegal number -- %s", optarg);
+			}
 			break;
 		case '?':
 		default:
@@ -254,9 +255,9 @@ main(int argc, char *argv[])
 	argv += optind;
 
 	/*
-	 * Space after keywords (while, for, return, switch).  No braces are
-	 * required for control statements with only a single statement,
-	 * unless it's a long statement.
+	 * Space after keywords (while, for, return, switch).
+	 *
+	 * Braces around single-line bodies are optional; use discretion.
 	 *
 	 * Forever loops are done with for's, not while's.
 	 */
@@ -264,19 +265,6 @@ main(int argc, char *argv[])
 		continue;		/* Explicit no-op */
 	for (;;)
 		stmt;
-
-	/*
-	 * Braces are required for control statements with a single statement
-	 * that may expand to nothing.
-	 */
-#ifdef DEBUG_FOO
-#define DPRINTF(a) printf a
-#else
-#define DPRINTF(a)
-#endif
-	if (broken) {
-		DPRINTF(("broken is %d\n", broken));
-	}
 
 	/*
 	 * Parts of a for loop may be left empty.  Don't put declarations
@@ -288,15 +276,14 @@ main(int argc, char *argv[])
 	}
 
 	/* Second level indents are four spaces. */
-	while (cnt < 20)
+	while (cnt < 20) {
 		z = a + really + long + statement + that + needs + two + lines +
 		    gets + indented + four + spaces + on + the + second +
 		    and + subsequent + lines;
+	}
 
 	/*
 	 * Closing and opening braces go on the same line as the else.
-	 * Don't add braces that aren't necessary except in cases where
-	 * there are ambiguity or readability issues.
 	 */
 	if (test) {
 		/*
@@ -310,8 +297,9 @@ main(int argc, char *argv[])
 	} else if (bar) {
 		stmt;
 		stmt;
-	} else
+	} else {
 		stmt;
+	}
 
 	/* No spaces after function names. */
 	if ((result = function(a1, a2, a3, a4)) == NULL)

@@ -1,4 +1,4 @@
-# $NetBSD: t_repeated_updown.sh,v 1.3 2020/06/27 04:15:17 jruoho Exp $
+# $NetBSD: t_repeated_updown.sh,v 1.5 2020/07/27 06:52:48 gson Exp $
 #
 # Copyright (c) 2020 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -35,6 +35,11 @@ repeated_updown_head() {
 }
 
 repeated_updown_body() {
+
+	if ! [ $(atf_config_get "run_unsafe" "no") = "yes" ]
+	then
+		atf_skip "can disrupt networking; also PR port-evbarm/55504"
+	fi
 
 	# Try to avoid stalling any automated test runs.
 	#
