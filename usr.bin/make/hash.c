@@ -1,4 +1,4 @@
-/*	$NetBSD: hash.c,v 1.44 2020/10/05 20:21:30 rillig Exp $	*/
+/*	$NetBSD: hash.c,v 1.47 2020/10/18 12:47:43 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -79,7 +79,7 @@
 #include "make.h"
 
 /*	"@(#)hash.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: hash.c,v 1.44 2020/10/05 20:21:30 rillig Exp $");
+MAKE_RCSID("$NetBSD: hash.c,v 1.47 2020/10/18 12:47:43 rillig Exp $");
 
 /*
  * The ratio of # entries to # buckets at which we rebuild the table to
@@ -100,10 +100,10 @@ hash(const char *key, size_t *out_keylen)
 	return h;
 }
 
-static Hash_Entry *
-HashTable_Find(Hash_Table *t, unsigned int h, const char *key)
+static HashEntry *
+HashTable_Find(HashTable *t, unsigned int h, const char *key)
 {
-	Hash_Entry *e;
+	HashEntry *e;
 	unsigned int chainlen = 0;
 
 #ifdef DEBUG_HASH_LOOKUP
@@ -112,7 +112,7 @@ HashTable_Find(Hash_Table *t, unsigned int h, const char *key)
 
 	for (e = t->buckets[h & t->bucketsMask]; e != NULL; e = e->next) {
 		chainlen++;
-		if (e->namehash == h && strcmp(e->name, key) == 0)
+		if (e->key_hash == h && strcmp(e->key, key) == 0)
 			break;
 	}
 
@@ -124,10 +124,10 @@ HashTable_Find(Hash_Table *t, unsigned int h, const char *key)
 
 /* Sets up the hash table. */
 void
-Hash_InitTable(Hash_Table *t)
+Hash_InitTable(HashTable *t)
 {
 	unsigned int n = 16, i;
-	struct Hash_Entry **hp;
+	HashEntry **hp;
 
 	t->numEntries = 0;
 	t->maxchain = 0;
@@ -139,11 +139,11 @@ Hash_InitTable(Hash_Table *t)
 }
 
 /* Removes everything from the hash table and frees up the memory space it
- * occupied (except for the space in the Hash_Table structure). */
+ * occupied (except for the space in the HashTable structure). */
 void
-Hash_DeleteTable(Hash_Table *t)
+Hash_DeleteTable(HashTable *t)
 {
-	struct Hash_Entry **hp, *h, *nexth = NULL;
+	HashEntry **hp, *h, *nexth = NULL;
 	int i;
 
 	for (hp = t->buckets, i = (int)t->bucketsSize; --i >= 0;) {
@@ -171,29 +171,29 @@ Hash_DeleteTable(Hash_Table *t)
  *	Returns a pointer to the entry for key, or NULL if the table contains
  *	no entry for the key.
  */
-Hash_Entry *
-Hash_FindEntry(Hash_Table *t, const char *key)
+HashEntry *
+Hash_FindEntry(HashTable *t, const char *key)
 {
 	unsigned int h = hash(key, NULL);
 	return HashTable_Find(t, h, key);
 }
 
 void *
-Hash_FindValue(Hash_Table *t, const char *key)
+Hash_FindValue(HashTable *t, const char *key)
 {
-	Hash_Entry *he = Hash_FindEntry(t, key);
+	HashEntry *he = Hash_FindEntry(t, key);
 	return he != NULL ? he->value : NULL;
 }
 
 /* Makes a new hash table that is larger than the old one. The entire hash
  * table is moved, so any bucket numbers from the old table become invalid. */
 static void
-RebuildTable(Hash_Table *t)
+RebuildTable(HashTable *t)
 {
-	Hash_Entry *e, *next = NULL, **hp, **xp;
+	HashEntry *e, *next = NULL, **hp, **xp;
 	int i;
 	unsigned int mask, oldsize, newsize;
-	Hash_Entry **oldhp;
+	HashEntry **oldhp;
 
 	oldhp = t->buckets;
 	oldsize = t->bucketsSize;
@@ -207,7 +207,7 @@ RebuildTable(Hash_Table *t)
 	for (hp = oldhp, i = (int)oldsize; --i >= 0;) {
 		for (e = *hp++; e != NULL; e = next) {
 			next = e->next;
-			xp = &t->buckets[e->namehash & mask];
+			xp = &t->buckets[e->key_hash & mask];
 			e->next = *xp;
 			*xp = e;
 		}
@@ -227,13 +227,13 @@ RebuildTable(Hash_Table *t)
  *	newPtr		Filled with TRUE if new entry created,
  *			FALSE otherwise.
  */
-Hash_Entry *
-Hash_CreateEntry(Hash_Table *t, const char *key, Boolean *newPtr)
+HashEntry *
+Hash_CreateEntry(HashTable *t, const char *key, Boolean *newPtr)
 {
-	Hash_Entry *e;
+	HashEntry *e;
 	unsigned h;
 	size_t keylen;
-	struct Hash_Entry **hp;
+	HashEntry **hp;
 
 	h = hash(key, &keylen);
 	e = HashTable_Find(t, h, key);
@@ -256,8 +256,8 @@ Hash_CreateEntry(Hash_Table *t, const char *key, Boolean *newPtr)
 	e->next = *hp;
 	*hp = e;
 	Hash_SetValue(e, NULL);
-	e->namehash = h;
-	memcpy(e->name, key, keylen + 1);
+	e->key_hash = h;
+	memcpy(e->key, key, keylen + 1);
 	t->numEntries++;
 
 	if (newPtr != NULL)
@@ -267,11 +267,11 @@ Hash_CreateEntry(Hash_Table *t, const char *key, Boolean *newPtr)
 
 /* Delete the given hash table entry and free memory associated with it. */
 void
-Hash_DeleteEntry(Hash_Table *t, Hash_Entry *e)
+Hash_DeleteEntry(HashTable *t, HashEntry *e)
 {
-	Hash_Entry **hp, *p;
+	HashEntry **hp, *p;
 
-	for (hp = &t->buckets[e->namehash & t->bucketsMask];
+	for (hp = &t->buckets[e->key_hash & t->bucketsMask];
 	     (p = *hp) != NULL; hp = &p->next) {
 		if (p == e) {
 			*hp = p->next;
@@ -283,43 +283,29 @@ Hash_DeleteEntry(Hash_Table *t, Hash_Entry *e)
 	abort();
 }
 
-/* Sets things up for enumerating all entries in the hash table.
- *
- * Input:
- *	t		Table to be searched.
- *	searchPtr	Area in which to keep state about search.
- *
- * Results:
- *	The return value is the address of the first entry in
- *	the hash table, or NULL if the table is empty.
- */
-Hash_Entry *
-Hash_EnumFirst(Hash_Table *t, Hash_Search *searchPtr)
+/* Set things up for iterating over all entries in the hash table. */
+void
+HashIter_Init(HashIter *hi, HashTable *t)
 {
-	searchPtr->table = t;
-	searchPtr->nextBucket = 0;
-	searchPtr->entry = NULL;
-	return Hash_EnumNext(searchPtr);
+	hi->table = t;
+	hi->nextBucket = 0;
+	hi->entry = NULL;
 }
 
-/* Returns the next entry in the hash table, or NULL if the end of the table
- * is reached.
- *
- * Input:
- *	searchPtr	Area used to keep state about search.
- */
-Hash_Entry *
-Hash_EnumNext(Hash_Search *searchPtr)
+/* Return the next entry in the hash table, or NULL if the end of the table
+ * is reached. */
+HashEntry *
+HashIter_Next(HashIter *hi)
 {
-	Hash_Entry *e;
-	Hash_Table *t = searchPtr->table;
+	HashEntry *e;
+	HashTable *t = hi->table;
 
 	/*
 	 * The entry field points to the most recently returned
 	 * entry, or is NULL if we are starting up.  If not NULL, we have
 	 * to start at the next one in the chain.
 	 */
-	e = searchPtr->entry;
+	e = hi->entry;
 	if (e != NULL)
 		e = e->next;
 	/*
@@ -327,29 +313,17 @@ Hash_EnumNext(Hash_Search *searchPtr)
 	 * find the next nonempty chain.
 	 */
 	while (e == NULL) {
-		if (searchPtr->nextBucket >= t->bucketsSize)
+		if (hi->nextBucket >= t->bucketsSize)
 			return NULL;
-		e = t->buckets[searchPtr->nextBucket++];
+		e = t->buckets[hi->nextBucket++];
 	}
-	searchPtr->entry = e;
+	hi->entry = e;
 	return e;
 }
 
 void
-Hash_ForEach(Hash_Table *t, void (*action)(void *, void *), void *data)
+Hash_DebugStats(HashTable *t, const char *name)
 {
-	Hash_Search search;
-	Hash_Entry *e;
-
-	for (e = Hash_EnumFirst(t, &search);
-	     e != NULL;
-	     e = Hash_EnumNext(&search))
-		action(Hash_GetValue(e), data);
-}
-
-void
-Hash_DebugStats(Hash_Table *t, const char *name)
-{
-	DEBUG4(HASH, "Hash_Table %s: size=%u numEntries=%u maxchain=%u\n",
+	DEBUG4(HASH, "HashTable %s: size=%u numEntries=%u maxchain=%u\n",
 	       name, t->bucketsSize, t->numEntries, t->maxchain);
 }
