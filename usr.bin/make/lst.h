@@ -1,4 +1,4 @@
-/*	$NetBSD: lst.h,v 1.69 2020/09/26 17:15:20 rillig Exp $	*/
+/*	$NetBSD: lst.h,v 1.79 2020/10/24 10:36:23 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -90,10 +90,6 @@ typedef	struct ListNode	ListNode;
 struct ListNode {
     ListNode *prev;		/* previous node in list, or NULL */
     ListNode *next;		/* next node in list, or NULL */
-    uint8_t priv_useCount;	/* Count of functions using the node.
-				 * node may not be deleted until count
-				 * goes to 0 */
-    Boolean priv_deleted;	/* List node should be removed when done */
     union {
 	void *datum;		/* datum associated with this element */
 	const struct GNode *priv_gnode; /* alias, just for debugging */
@@ -101,20 +97,9 @@ struct ListNode {
     };
 };
 
-typedef enum {
-    Head, Middle, Tail, Unknown
-} ListForEachUntilWhere;
-
 struct List {
     ListNode *first;		/* first node in list */
     ListNode *last;		/* last node in list */
-
-    /* fields for sequential access */
-    Boolean priv_isOpen;	/* true if list has been Lst_Open'ed */
-    ListForEachUntilWhere priv_lastAccess;
-    ListNode *priv_curr;	/* current node, if open. NULL if
-				 * *just* opened */
-    ListNode *priv_prev;	/* Previous node, if open. Used by Lst_Remove */
 };
 
 /* Copy a node, usually by allocating a copy of the given object.
@@ -123,17 +108,13 @@ struct List {
 typedef void *LstCopyProc(void *);
 /* Free the datum of a node, called before freeing the node itself. */
 typedef void LstFreeProc(void *);
-/* Return TRUE if the datum matches the args, for Lst_Find. */
-typedef Boolean LstFindProc(const void *datum, const void *args);
-/* An action for Lst_ForEach. */
-typedef void LstActionProc(void *datum, void *args);
-/* An action for Lst_ForEachUntil. */
+/* An action for Lst_ForEachUntil and Lst_ForEachUntilConcurrent. */
 typedef int LstActionUntilProc(void *datum, void *args);
 
 /* Create or destroy a list */
 
 /* Create a new list. */
-List *Lst_Init(void);
+List *Lst_New(void);
 /* Duplicate an existing list. */
 List *Lst_Copy(List *, LstCopyProc);
 /* Free the list, leaving the node data unmodified. */
@@ -145,17 +126,7 @@ void Lst_Destroy(List *, LstFreeProc);
 
 static inline MAKE_ATTR_UNUSED Boolean
 Lst_IsEmpty(List *list) { return list->first == NULL; }
-/* Return the first node of the list, or NULL if the list is empty. */
-static inline MAKE_ATTR_UNUSED ListNode *
-Lst_First(List *list) { return list->first; }
-/* Return the last node of the list, or NULL if the list is empty. */
-static inline MAKE_ATTR_UNUSED ListNode *
-Lst_Last(List *list) { return list->last; }
-/* Find the first node for which the function returns TRUE, or NULL. */
-ListNode *Lst_Find(List *, LstFindProc, const void *);
-/* Find the first node for which the function returns TRUE, or NULL.
- * The search starts at the given node, towards the end of the list. */
-ListNode *Lst_FindFrom(List *, ListNode *, LstFindProc, const void *);
+
 /* Find the first node that contains the given datum, or NULL. */
 ListNode *Lst_FindDatum(List *, const void *);
 
@@ -175,9 +146,6 @@ void Lst_MoveAll(List *, List *);
 
 /* Node-specific functions */
 
-/* Return the datum of the node. Usually not NULL. */
-static inline MAKE_ATTR_UNUSED void *
-LstNode_Datum(ListNode *node) { return node->datum; }
 /* Replace the value of the node. */
 void LstNode_Set(ListNode *, void *);
 /* Set the value of the node to NULL. Having NULL in a list is unusual. */
@@ -185,23 +153,14 @@ void LstNode_SetNull(ListNode *);
 
 /* Iterating over a list, using a callback function */
 
-/* Apply a function to each datum of the list.
- * The function must not modify the structure of the list, for example by
- * adding or removing nodes. */
-void Lst_ForEach(List *, LstActionProc, void *);
-/* Apply a function to each datum of the list, until the callback function
- * returns non-zero. */
+/* Run the action for each datum of the list, until the action returns
+ * non-zero.
+ *
+ * During this iteration, the list must not be modified structurally. */
 int Lst_ForEachUntil(List *, LstActionUntilProc, void *);
 
 /* Iterating over a list while keeping track of the current node and possible
  * concurrent modifications */
-
-/* Start iterating the list. */
-void Lst_Open(List *);
-/* Return the next node, or NULL. */
-ListNode *Lst_Next(List *);
-/* Finish iterating the list. */
-void Lst_Close(List *);
 
 /* Using the list as a queue */
 
@@ -210,18 +169,17 @@ void Lst_Enqueue(List *, void *);
 /* Remove the head node of the queue and return its datum. */
 void *Lst_Dequeue(List *);
 
-/* A stack is a very simple collection of items that only allows access to the
- * top-most item. */
-typedef struct Stack {
+/* A vector is an ordered collection of items, allowing fast indexed access. */
+typedef struct Vector {
     void **items;
     size_t len;
     size_t cap;
-} Stack;
+} Vector;
 
-void Stack_Init(Stack *);
-Boolean Stack_IsEmpty(Stack *);
-void Stack_Push(Stack *, void *);
-void *Stack_Pop(Stack *);
-void Stack_Done(Stack *);
+void Vector_Init(Vector *);
+Boolean Vector_IsEmpty(Vector *);
+void Vector_Push(Vector *, void *);
+void *Vector_Pop(Vector *);
+void Vector_Done(Vector *);
 
 #endif /* MAKE_LST_H */
