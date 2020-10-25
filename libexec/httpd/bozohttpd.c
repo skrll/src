@@ -1,9 +1,9 @@
-/*	$NetBSD: bozohttpd.c,v 1.121 2020/09/05 13:38:24 mrg Exp $	*/
+/*	$NetBSD: bozohttpd.c,v 1.123 2020/10/15 04:21:53 mrg Exp $	*/
 
 /*	$eterna: bozohttpd.c,v 1.178 2011/11/18 09:21:15 mrg Exp $	*/
 
 /*
- * Copyright (c) 1997-2019 Matthew R. Green
+ * Copyright (c) 1997-2020 Matthew R. Green
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -40,7 +40,6 @@
  *	- CGI/1.1 this will only be provided for "system" scripts
  *	- automatic "missing trailing slash" redirections
  *	- configurable translation of /~user/ to ~user/public_html,
- *	  however, this does not include cgi-bin support
  *	- access lists via libwrap via inetd/tcpd
  *	- virtual hosting
  *	- not that we do not even pretend to understand MIME, but
@@ -109,7 +108,7 @@
 #define INDEX_HTML		"index.html"
 #endif
 #ifndef SERVER_SOFTWARE
-#define SERVER_SOFTWARE		"bozohttpd/20200820"
+#define SERVER_SOFTWARE		"bozohttpd/20201014"
 #endif
 #ifndef PUBLIC_HTML
 #define PUBLIC_HTML		"public_html"
@@ -373,6 +372,7 @@ bozo_clean_request(bozo_httpreq_t *request)
 static void
 alarmer(int sig)
 {
+	USE_ARG(sig);
 	bozo_timeout_hit = 1;
 }
 
@@ -651,7 +651,7 @@ bozo_read_request(bozohttpd_t *httpd)
 	 * if passed through a proxy that doesn't rewrite the port.
 	 */
 	if (httpd->bindport) {
-		if (strcmp(httpd->bindport, "80") != 0)
+		if (strcmp(httpd->bindport, BOZO_HTTP_PORT) != 0)
 			port = httpd->bindport;
 		else
 			port = NULL;
@@ -1099,7 +1099,7 @@ handle_redirect(bozo_httpreq_t *request, const char *url, int absolute)
 		hostname = "";
 		portbuf[0] = '\0';
 	} else {
-		const char *defport = httpd->sslinfo ? "443" : "80";
+		const char *defport = httpd->sslinfo ? BOZO_HTTPS_PORT : BOZO_HTTP_PORT;
 
 		if (request->hr_serverport &&
 		    strcmp(request->hr_serverport, defport) != 0)
@@ -1335,7 +1335,8 @@ check_virtual(bozo_httpreq_t *request)
 	 * canonicalise hr_host - that is, remove any :80.
 	 */
 	len = strlen(request->hr_host);
-	if (len > 3 && strcmp(request->hr_host + len - 3, ":80") == 0) {
+	if (len > 3 &&
+	    strcmp(request->hr_host + len - 3, ":" BOZO_HTTP_PORT) == 0) {
 		request->hr_host[len - 3] = '\0';
 		len = strlen(request->hr_host);
 	}
@@ -1554,7 +1555,7 @@ bozo_decode_url_percent(bozo_httpreq_t *request, char *str)
 		if (s[1] == '0' && s[2] == '0')
 			return bozo_http_error(httpd, 404, request,
 			    "percent hack was %00");
-		if (s[1] == '2' && s[2] == 'f')
+		if (s[1] == '2' && (s[2] == 'f' || s[2] == 'F'))
 			return bozo_http_error(httpd, 404, request,
 			    "percent hack was %2f (/)");
 
@@ -2191,7 +2192,6 @@ pfilter_notify(const int what, const int code)
 #endif /* !NO_BLOCKLIST_SUPPORT */
 
 /* the follow functions and variables are used in handling HTTP errors */
-/* ARGSUSED */
 int
 bozo_http_error(bozohttpd_t *httpd, int code, bozo_httpreq_t *request,
 		const char *msg)
@@ -2204,6 +2204,8 @@ bozo_http_error(bozohttpd_t *httpd, int code, bozo_httpreq_t *request,
 	int	size;
 	bozoheaders_t *hdr;
 
+	USE_ARG(msg);
+
 	debug((httpd, DEBUG_FAT, "bozo_http_error %d: %s", code, msg));
 	if (header == NULL || reason == NULL) {
 		bozoerr(httpd, 1,
@@ -2213,7 +2215,7 @@ bozo_http_error(bozohttpd_t *httpd, int code, bozo_httpreq_t *request,
 	}
 
 	if (request && request->hr_serverport &&
-	    strcmp(request->hr_serverport, "80") != 0)
+	    strcmp(request->hr_serverport, BOZO_HTTP_PORT) != 0)
 		snprintf(portbuf, sizeof(portbuf), ":%s",
 				request->hr_serverport);
 	else

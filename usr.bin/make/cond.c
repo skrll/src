@@ -1,4 +1,4 @@
-/*	$NetBSD: cond.c,v 1.162 2020/10/05 19:59:07 rillig Exp $	*/
+/*	$NetBSD: cond.c,v 1.168 2020/10/24 04:51:19 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -72,12 +72,12 @@
 /* Handling of conditionals in a makefile.
  *
  * Interface:
- *	Cond_EvalLine	Evaluate the conditional in the passed line.
+ *	Cond_EvalLine	Evaluate the conditional.
  *
  *	Cond_EvalCondition
- *			Evaluate the conditional in the passed line, which
- *			is either the argument of one of the .if directives
- *			or the condition in a :?true:false variable modifier.
+ *			Evaluate the conditional, which is either the argument
+ *			of one of the .if directives or the condition in a
+ *			':?then:else' variable modifier.
  *
  *	Cond_save_depth
  *	Cond_restore_depth
@@ -93,7 +93,7 @@
 #include "dir.h"
 
 /*	"@(#)cond.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: cond.c,v 1.162 2020/10/05 19:59:07 rillig Exp $");
+MAKE_RCSID("$NetBSD: cond.c,v 1.168 2020/10/24 04:51:19 rillig Exp $");
 
 /*
  * The parsing of conditional expressions is based on this grammar:
@@ -133,7 +133,7 @@ MAKE_RCSID("$NetBSD: cond.c,v 1.162 2020/10/05 19:59:07 rillig Exp $");
  * All non-terminal functions (CondParser_Expr, CondParser_Factor and
  * CondParser_Term) return either TOK_FALSE, TOK_TRUE, or TOK_ERROR on error.
  */
-typedef enum {
+typedef enum Token {
     TOK_FALSE = 0, TOK_TRUE = 1, TOK_AND, TOK_OR, TOK_NOT,
     TOK_LPAREN, TOK_RPAREN, TOK_EOF, TOK_NONE, TOK_ERROR
 } Token;
@@ -288,18 +288,16 @@ FuncDefined(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
     return result;
 }
 
-/* Wrapper around Str_Match, to be used by Lst_Find. */
-static Boolean
-CondFindStrMatch(const void *string, const void *pattern)
-{
-    return Str_Match(string, pattern);
-}
-
 /* See if the given target is being made. */
 static Boolean
 FuncMake(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
-    return Lst_Find(create, CondFindStrMatch, arg) != NULL;
+    StringListNode *ln;
+
+    for (ln = create->first; ln != NULL; ln = ln->next)
+	if (Str_Match(ln->datum, arg))
+	    return TRUE;
+    return FALSE;
 }
 
 /* See if the given file exists. */
@@ -325,7 +323,7 @@ static Boolean
 FuncTarget(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
     GNode *gn = Targ_FindNode(arg);
-    return gn != NULL && !OP_NOP(gn->type);
+    return gn != NULL && GNode_IsTarget(gn);
 }
 
 /* See if the given node exists and is an actual target with commands
@@ -334,7 +332,7 @@ static Boolean
 FuncCommands(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
     GNode *gn = Targ_FindNode(arg);
-    return gn != NULL && !OP_NOP(gn->type) && !Lst_IsEmpty(gn->commands);
+    return gn != NULL && GNode_IsTarget(gn) && !Lst_IsEmpty(gn->commands);
 }
 
 /*-
@@ -355,7 +353,7 @@ TryParseNumber(const char *str, double *value)
 
     errno = 0;
     if (!*str) {
-	*value = (double)0;
+	*value = 0.0;
 	return TRUE;
     }
     l_val = strtoul(str, &eptr, str[1] == 'x' ? 16 : 10);
@@ -448,8 +446,8 @@ CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
 	    parseResult = Var_Parse(&nested_p, VAR_CMD, eflags, &str, freeIt);
 	    /* TODO: handle errors */
 	    if (str == var_Error) {
-	        if (parseResult & VPR_ANY_MSG)
-	            par->printedError = TRUE;
+		if (parseResult & VPR_ANY_MSG)
+		    par->printedError = TRUE;
 		if (*freeIt) {
 		    free(*freeIt);
 		    *freeIt = NULL;

@@ -1,4 +1,4 @@
-/* $NetBSD: simplefb.c,v 1.8 2019/07/23 14:34:12 rin Exp $ */
+/* $NetBSD: simplefb.c,v 1.11 2020/10/21 11:02:31 rin Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #include "opt_wsdisplay_compat.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: simplefb.c,v 1.8 2019/07/23 14:34:12 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: simplefb.c,v 1.11 2020/10/21 11:02:31 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -132,6 +132,7 @@ simplefb_attach_genfb(struct simplefb_softc *sc)
 	uint32_t width, height, stride;
 	uint16_t depth;
 	const char *format;
+	uint64_t sfb_addr;
 	bus_addr_t addr;
 	bus_size_t size;
 
@@ -157,11 +158,21 @@ simplefb_attach_genfb(struct simplefb_softc *sc)
 	if (strcmp(format, "a8b8g8r8") == 0 ||
 	    strcmp(format, "x8r8g8b8") == 0) {
 		depth = 32;
+	} else if (strcmp(format, "r8g8b8a8") == 0 ||
+		   strcmp(format, "b8g8r8x8") == 0) {
+		depth = 32;
+		prop_dictionary_set_bool(dict, "is_swapped", true);
 	} else if (strcmp(format, "r5g6b5") == 0) {
 		depth = 16;
 	} else {
 		aprint_error(": unsupported format '%s'\n", format);
 		return ENXIO;
+	}
+
+	/* Device may have been reconfigured. MD code will tell us. */
+	if (prop_dictionary_get_uint64(dict, "simplefb-physaddr", &sfb_addr) &&
+	    sfb_addr != 0) {
+		addr = (bus_addr_t)sfb_addr;
 	}
 
 	if (bus_space_map(sc->sc_bst, addr, size,

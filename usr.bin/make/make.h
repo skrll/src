@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.156 2020/10/05 22:15:45 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.171 2020/10/24 20:51:49 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -138,22 +138,30 @@
 #ifdef USE_DOUBLE_BOOLEAN
 /* During development, to find type mismatches in function declarations. */
 typedef double Boolean;
+#define TRUE 1.0
+#define FALSE 0.0
 #elif defined(USE_UCHAR_BOOLEAN)
 /* During development, to find code that depends on the exact value of TRUE or
  * that stores other values in Boolean variables. */
 typedef unsigned char Boolean;
 #define TRUE ((unsigned char)0xFF)
 #define FALSE ((unsigned char)0x00)
+#elif defined(USE_CHAR_BOOLEAN)
+/* During development, to find code that uses a boolean as array index, via
+ * -Wchar-subscripts. */
+typedef char Boolean;
+#define TRUE ((char)-1)
+#define FALSE ((char)0x00)
 #elif defined(USE_ENUM_BOOLEAN)
-typedef enum { FALSE, TRUE } Boolean;
+typedef enum Boolean { FALSE, TRUE } Boolean;
 #else
 typedef int Boolean;
-#endif
 #ifndef TRUE
 #define TRUE	1
 #endif
 #ifndef FALSE
 #define FALSE	0
+#endif
 #endif
 
 #include "lst.h"
@@ -181,18 +189,20 @@ typedef enum  {
  * communicating to other parts of the program the way in which a target
  * should be made.
  *
- * These constants are bitwise-OR'ed together and placed in the 'type' field
- * of each node. Any node that has a 'type' field which satisfies the OP_NOP
- * function was never never on the left-hand side of an operator, though it
- * may have been on the right-hand side... */
-typedef enum {
-    /* Execution of commands depends on children (:) */
+ * Some of the OP_ constants can be combined, others cannot. */
+typedef enum GNodeType {
+    /* The dependency operator ':' is the most common one.  The commands of
+     * this node are executed if any child is out-of-date. */
     OP_DEPENDS		= 1 << 0,
-    /* Always execute commands (!) */
+    /* The dependency operator '!' always executes its commands, even if
+     * its children are up-to-date. */
     OP_FORCE		= 1 << 1,
-    /* Execution of commands depends on children per line (::) */
+    /* The dependency operator '::' behaves like ':', except that it allows
+     * multiple dependency groups to be defined.  Each of these groups is
+     * executed on its own, independently from the others. */
     OP_DOUBLEDEP	= 1 << 2,
 
+    /* Matches the dependency operators ':', '!' and '::'. */
     OP_OPMASK		= OP_DEPENDS|OP_FORCE|OP_DOUBLEDEP,
 
     /* Don't care if the target doesn't exist and can't be created */
@@ -202,7 +212,7 @@ typedef enum {
     /* Target is never out of date, but always execute commands anyway.
      * Its time doesn't matter, so it has none...sort of */
     OP_EXEC		= 1 << 5,
-    /* Ignore errors when creating the node */
+    /* Ignore non-zero exit status from shell commands when creating the node */
     OP_IGNORE		= 1 << 6,
     /* Don't remove the target when interrupted */
     OP_PRECIOUS		= 1 << 7,
@@ -244,13 +254,18 @@ typedef enum {
     /* The node is a transformation rule */
     OP_TRANSFORM	= 1 << 31,
     /* Target is a member of an archive */
+    /* XXX: How does this differ from OP_ARCHV? */
     OP_MEMBER		= 1 << 30,
-    /* Target is a library */
+    /* The node is a library,
+     * its name has the form "-l<libname>" */
     OP_LIB		= 1 << 29,
-    /* Target is an archive construct */
+    /* The node is an archive member,
+     * its name has the form "archive(member)" */
+    /* XXX: How does this differ from OP_MEMBER? */
     OP_ARCHV		= 1 << 28,
     /* Target has all the commands it should. Used when parsing to catch
-     * multiple commands for a target. */
+     * multiple command groups for a target.  Only applies to the dependency
+     * operators ':' and '!', but not to '::'. */
     OP_HAS_COMMANDS	= 1 << 27,
     /* The special command "..." has been seen. All further commands from
      * this node will be saved on the .END node instead, to be executed at
@@ -264,7 +279,7 @@ typedef enum {
     OP_NOTARGET		= OP_NOTMAIN | OP_USE | OP_EXEC | OP_TRANSFORM
 } GNodeType;
 
-typedef enum {
+typedef enum GNodeFlags {
     REMAKE	= 0x0001,	/* this target needs to be (re)made */
     CHILDMADE	= 0x0002,	/* children of this target were made */
     FORCE	= 0x0004,	/* children don't exist, and we pretend made */
@@ -299,22 +314,23 @@ typedef struct GNode {
     /* The type of operator used to define the sources (see the OP flags below).
      * XXX: This looks like a wild mixture of type and flags. */
     GNodeType type;
-    /* whether it is involved in this invocation of make */
     GNodeFlags flags;
 
     /* The state of processing on this node */
     GNodeMade made;
     int unmade;			/* The number of unmade children */
 
-    time_t mtime;		/* Its modification time */
-    struct GNode *cmgn;		/* The youngest child */
+    /* The modification time; 0 means the node does not have a corresponding
+     * file; see Make_OODate. */
+    time_t mtime;
+    struct GNode *youngestChild;
 
     /* The GNodes for which this node is an implied source. May be empty.
      * For example, when there is an inference rule for .c.o, the node for
      * file.c has the node for file.o in this list. */
     GNodeList *implicitParents;
 
-    /* Other nodes of the same name for the :: operator. */
+    /* Other nodes of the same name, for the '::' operator. */
     GNodeList *cohorts;
 
     /* The nodes that depend on this one, or in other words, the nodes for
@@ -341,11 +357,14 @@ typedef struct GNode {
     struct GNode *centurion;
 
     /* Last time (sequence number) we tried to make this node */
-    unsigned int checked;
+    unsigned int checked_seqno;
 
     /* The "local" variables that are specific to this target and this target
-     * only, such as $@, $<, $?. */
-    Hash_Table context;
+     * only, such as $@, $<, $?.
+     *
+     * Also used for the global variable scopes VAR_GLOBAL, VAR_CMD,
+     * VAR_INTERNAL, which contain variables with arbitrary names. */
+    HashTable context;
 
     /* The commands to be given to a shell to create this target. */
     StringList *commands;
@@ -362,17 +381,19 @@ typedef struct GNode {
 
 /*
  * Error levels for parsing. PARSE_FATAL means the process cannot continue
- * once the makefile has been parsed. PARSE_WARNING means it can. Passed
- * as the first argument to Parse_Error.
+ * once the top-level makefile has been parsed. PARSE_WARNING and PARSE_INFO
+ * mean it can.
  */
-#define PARSE_INFO	3
-#define PARSE_WARNING	2
-#define PARSE_FATAL	1
+typedef enum ParseErrorLevel {
+    PARSE_FATAL = 1,
+    PARSE_WARNING,
+    PARSE_INFO
+} ParseErrorLevel;
 
 /*
  * Values returned by Cond_EvalLine and Cond_EvalCondition.
  */
-typedef enum {
+typedef enum CondEvalResult {
     COND_PARSE,			/* Parse the next lines */
     COND_SKIP,			/* Skip the next lines */
     COND_INVALID		/* Not a conditional statement */
@@ -409,13 +430,13 @@ extern SearchPath *dirSearchPath;
 extern Boolean	compatMake;	/* True if we are make compatible */
 extern Boolean	ignoreErrors;	/* True if should ignore all errors */
 extern Boolean  beSilent;	/* True if should print no commands */
-extern Boolean  noExecute;	/* True if should execute nothing */
+extern Boolean  noExecute;	/* True if should execute almost nothing */
 extern Boolean  noRecursiveExecute;
 				/* True if should execute nothing */
 extern Boolean  allPrecious;	/* True if every target is precious */
 extern Boolean  deleteOnError;	/* True if failed targets should be deleted */
 extern Boolean  keepgoing;	/* True if should continue on unaffected
-				 * portions of the graph when have an error
+				 * portions of the graph when an error occurs
 				 * in one portion */
 extern Boolean	touchFlag;	/* TRUE if targets should just be 'touched'
 				 * if out of date. Set by the -t flag */
@@ -473,7 +494,7 @@ extern pid_t	myPid;
 #define	MAKEOVERRIDES	".MAKEOVERRIDES"
 #define	MAKE_JOB_PREFIX	".MAKE.JOB.PREFIX" /* prefix for job target output */
 #define	MAKE_EXPORTED	".MAKE.EXPORTED"   /* variables we export */
-#define	MAKE_MAKEFILES	".MAKE.MAKEFILES"  /* all the makefiles we read */
+#define	MAKE_MAKEFILES	".MAKE.MAKEFILES"  /* all makefiles already loaded */
 #define	MAKE_LEVEL	".MAKE.LEVEL"	   /* recursion level */
 #define MAKEFILE_PREFERENCE ".MAKE.MAKEFILE_PREFERENCE"
 #define MAKE_DEPENDFILE	".MAKE.DEPENDFILE" /* .depend */
@@ -482,36 +503,39 @@ extern pid_t	myPid;
 # define MAKE_LEVEL_ENV	"MAKELEVEL"
 #endif
 
+typedef enum DebugFlags {
+    DEBUG_ARCH		= 1 << 0,
+    DEBUG_COND		= 1 << 1,
+    DEBUG_DIR		= 1 << 2,
+    DEBUG_GRAPH1	= 1 << 3,
+    DEBUG_GRAPH2	= 1 << 4,
+    DEBUG_JOB		= 1 << 5,
+    DEBUG_MAKE		= 1 << 6,
+    DEBUG_SUFF		= 1 << 7,
+    DEBUG_TARG		= 1 << 8,
+    DEBUG_VAR		= 1 << 9,
+    DEBUG_FOR		= 1 << 10,
+    DEBUG_SHELL		= 1 << 11,
+    DEBUG_ERROR		= 1 << 12,
+    DEBUG_LOUD		= 1 << 13,
+    DEBUG_META		= 1 << 14,
+    DEBUG_HASH		= 1 << 15,
+
+    DEBUG_GRAPH3	= 1 << 16,
+    DEBUG_SCRIPT	= 1 << 17,
+    DEBUG_PARSE		= 1 << 18,
+    DEBUG_CWD		= 1 << 19,
+
+    DEBUG_LINT		= 1 << 20
+} DebugFlags;
+
 /*
  * debug control:
  *	There is one bit per module.  It is up to the module what debug
  *	information to print.
  */
 extern FILE *debug_file;	/* Output is written here - default stderr */
-extern int debug;
-#define	DEBUG_ARCH	0x00001
-#define	DEBUG_COND	0x00002
-#define	DEBUG_DIR	0x00004
-#define	DEBUG_GRAPH1	0x00008
-#define	DEBUG_GRAPH2	0x00010
-#define	DEBUG_JOB	0x00020
-#define	DEBUG_MAKE	0x00040
-#define	DEBUG_SUFF	0x00080
-#define	DEBUG_TARG	0x00100
-#define	DEBUG_VAR	0x00200
-#define DEBUG_FOR	0x00400
-#define DEBUG_SHELL	0x00800
-#define DEBUG_ERROR	0x01000
-#define DEBUG_LOUD	0x02000
-#define DEBUG_META	0x04000
-#define DEBUG_HASH	0x08000
-
-#define DEBUG_GRAPH3	0x10000
-#define DEBUG_SCRIPT	0x20000
-#define DEBUG_PARSE	0x40000
-#define DEBUG_CWD	0x80000
-
-#define DEBUG_LINT	0x100000
+extern DebugFlags debug;
 
 #define CONCAT(a,b)	a##b
 
@@ -560,21 +584,13 @@ Boolean Main_SetObjdir(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
 int mkTempFile(const char *, char **);
 int str2Lst_Append(StringList *, char *, const char *);
 void GNode_FprintDetails(FILE *, const char *, const GNode *, const char *);
+Boolean NoExecute(GNode *gn);
 
+/* See if the node was seen on the left-hand side of a dependency operator. */
 static Boolean MAKE_ATTR_UNUSED
-NoExecute(GNode *gn)
+GNode_IsTarget(const GNode *gn)
 {
-    return (gn->type & OP_MAKE) ? noRecursiveExecute : noExecute;
-}
-
-/*
- * See if the node with the given type was not the object of a dependency
- * operator.
- */
-static Boolean MAKE_ATTR_UNUSED
-OP_NOP(GNodeType t)
-{
-    return !(t & OP_OPMASK);
+    return (gn->type & OP_OPMASK) != 0;
 }
 
 #ifdef __GNUC__
@@ -586,13 +602,6 @@ OP_NOP(GNodeType t)
     __d.__cp = ptr, __d.__p; })
 #else
 #define UNCONST(ptr)	(void *)(ptr)
-#endif
-
-#ifndef MIN
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#endif
-#ifndef MAX
-#define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #endif
 
 /* At least GNU/Hurd systems lack hardcoded MAXPATHLEN/PATH_MAX */
@@ -639,13 +648,13 @@ pp_skip_whitespace(char **pp)
 	(*pp)++;
 }
 
-#ifndef MAKE_NATIVE
-#define MAKE_RCSID(id) static volatile char rcsid[] = id
+#ifdef MAKE_NATIVE
+#  include <sys/cdefs.h>
+#  ifndef lint
+#    define MAKE_RCSID(id) __RCSID(id)
+#  endif
 #else
-#include <sys/cdefs.h>
-#ifndef lint
-#define MAKE_RCSID(id) __RCSID(id)
-#endif
+#  define MAKE_RCSID(id) static volatile char rcsid[] = id
 #endif
 
 #endif /* MAKE_MAKE_H */
