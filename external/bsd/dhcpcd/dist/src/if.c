@@ -185,8 +185,23 @@ if_setflag(struct interface *ifp, short setflag, short unsetflag)
 	    if_ioctl(ifp->ctx, SIOCSIFFLAGS, &ifr, sizeof(ifr)) == -1)
 		return -1;
 
-	ifp->flags = (unsigned int)ifr.ifr_flags;
+	/*
+	 * Do NOT set ifp->flags here.
+	 * We need to listen for flag updates from the kernel as they
+	 * need to sync with carrier.
+	 */
 	return 0;
+}
+
+bool
+if_is_link_up(const struct interface *ifp)
+{
+
+	return ifp->flags & IFF_UP &&
+	    (ifp->carrier == LINK_UP ||
+	     (ifp->carrier == LINK_UNKNOWN &&
+	      !(ifp->options == NULL ||
+	        ifp->options->options & DHCPCD_LINK)));
 }
 
 int
@@ -399,7 +414,7 @@ if_check_arphrd(struct interface *ifp, unsigned int active, bool if_noconf)
 		break;
 	case ARPHRD_LOOPBACK:
 	case ARPHRD_PPP:
-		if (if_noconf) {
+		if (if_noconf && active) {
 			logdebugx("%s: ignoring due to interface type and"
 			    " no config",
 			    ifp->name);
@@ -407,11 +422,16 @@ if_check_arphrd(struct interface *ifp, unsigned int active, bool if_noconf)
 		}
 		break;
 	default:
-		if (if_noconf)
-			active = IF_INACTIVE;
-		if (active)
-			logwarnx("%s: unsupported interface type 0x%.2x",
+		if (active) {
+			int i;
+
+			if (if_noconf)
+				active = IF_INACTIVE;
+			i = active ? LOG_WARNING : LOG_DEBUG;
+			logmessage(i, "%s: unsupported"
+			    " interface type 0x%.2x",
 			    ifp->name, ifp->hwtype);
+		}
 		break;
 	}
 
@@ -519,8 +539,11 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 
 #ifdef PLUGIN_DEV
 		/* Ensure that the interface name has settled */
-		if (!dev_initialized(ctx, spec.devname))
+		if (!dev_initialised(ctx, spec.devname)) {
+			logdebugx("%s: waiting for interface to initialise",
+			    spec.devname);
 			continue;
+		}
 #endif
 
 		if (if_vimaster(ctx, spec.devname) == 1) {
@@ -535,8 +558,11 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 		    !if_hasconf(ctx, spec.devname));
 
 		/* Don't allow some reserved interface names unless explicit. */
-		if (if_noconf && if_ignore(ctx, spec.devname))
+		if (if_noconf && if_ignore(ctx, spec.devname)) {
+			logdebugx("%s: ignoring due to interface type and"
+			    " no config", spec.devname);
 			active = IF_INACTIVE;
+		}
 
 		ifp = calloc(1, sizeof(*ifp));
 		if (ifp == NULL) {
@@ -581,7 +607,7 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 			case IFT_LOOP: /* FALLTHROUGH */
 			case IFT_PPP:
 				/* Don't allow unless explicit */
-				if (if_noconf) {
+				if (if_noconf && active) {
 					logdebugx("%s: ignoring due to"
 					    " interface type and"
 					    " no config",
@@ -611,12 +637,14 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 #endif
 			default:
 				/* Don't allow unless explicit */
-				if (if_noconf)
-					active = IF_INACTIVE;
-				if (active)
-					logwarnx("%s: unsupported"
+				if (active) {
+					if (if_noconf)
+						active = IF_INACTIVE;
+					i = active ? LOG_WARNING : LOG_DEBUG;
+					logmessage(i, "%s: unsupported"
 					    " interface type 0x%.2x",
 					    ifp->name, sdl->sdl_type);
+				}
 				/* Pretend it's ethernet */
 				ifp->hwtype = ARPHRD_ETHER;
 				break;
@@ -681,38 +709,11 @@ if_discover(struct dhcpcd_ctx *ctx, struct ifaddrs **ifaddrs,
 #endif
 
 		ifp->active = active;
-		if (ifp->active)
-			ifp->carrier = if_carrier(ifp);
-		else
-			ifp->carrier = LINK_UNKNOWN;
+		ifp->carrier = if_carrier(ifp, ifa->ifa_data);
 		TAILQ_INSERT_TAIL(ifs, ifp, next);
 	}
 
 	return ifs;
-}
-
-static void
-if_poll(void *arg)
-{
-	struct interface *ifp = arg;
-	unsigned int flags = ifp->flags;
-	int carrier;
-
-	carrier = if_carrier(ifp); /* if_carrier will update ifp->flags */
-	if (ifp->carrier != carrier || ifp->flags != flags)
-		dhcpcd_handlecarrier(ifp->ctx, carrier, ifp->flags, ifp->name);
-
-	if (ifp->options->poll != 0 || ifp->carrier != LINK_UP)
-		if_pollinit(ifp);
-}
-
-int
-if_pollinit(struct interface *ifp)
-{
-	unsigned long msec;
-
-	msec = ifp->options->poll != 0 ? ifp->options->poll : IF_POLL_UP;
-	return eloop_timeout_add_msec(ifp->ctx->eloop, msec, if_poll, ifp);
 }
 
 /*
@@ -992,6 +993,53 @@ xsocket(int domain, int type, int protocol)
 #if !defined(HAVE_SOCK_CLOEXEC) || !defined(HAVE_SOCK_NONBLOCK)
 out:
 	close(s);
+	return -1;
+#endif
+}
+
+int
+xsocketpair(int domain, int type, int protocol, int fd[2])
+{
+	int s;
+#if !defined(HAVE_SOCK_CLOEXEC) || !defined(HAVE_SOCK_NONBLOCK)
+	int xflags, xtype = type;
+#endif
+
+#ifndef HAVE_SOCK_CLOEXEC
+	if (xtype & SOCK_CLOEXEC)
+		type &= ~SOCK_CLOEXEC;
+#endif
+#ifndef HAVE_SOCK_NONBLOCK
+	if (xtype & SOCK_NONBLOCK)
+		type &= ~SOCK_NONBLOCK;
+#endif
+
+	if ((s = socketpair(domain, type, protocol, fd)) == -1)
+		return -1;
+
+#ifndef HAVE_SOCK_CLOEXEC
+	if ((xtype & SOCK_CLOEXEC) && ((xflags = fcntl(fd[0], F_GETFD)) == -1 ||
+	    fcntl(fd[0], F_SETFD, xflags | FD_CLOEXEC) == -1))
+		goto out;
+	if ((xtype & SOCK_CLOEXEC) && ((xflags = fcntl(fd[1], F_GETFD)) == -1 ||
+	    fcntl(fd[1], F_SETFD, xflags | FD_CLOEXEC) == -1))
+		goto out;
+#endif
+#ifndef HAVE_SOCK_NONBLOCK
+	if ((xtype & SOCK_NONBLOCK) && ((xflags = fcntl(fd[0], F_GETFL)) == -1 ||
+	    fcntl(fd[0], F_SETFL, xflags | O_NONBLOCK) == -1))
+		goto out;
+	if ((xtype & SOCK_NONBLOCK) && ((xflags = fcntl(fd[1], F_GETFL)) == -1 ||
+	    fcntl(fd[1], F_SETFL, xflags | O_NONBLOCK) == -1))
+		goto out;
+#endif
+
+	return s;
+
+#if !defined(HAVE_SOCK_CLOEXEC) || !defined(HAVE_SOCK_NONBLOCK)
+out:
+	close(fd[0]);
+	close(fd[1]);
 	return -1;
 #endif
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: lex.c,v 1.36 2020/08/09 00:34:21 dholland Exp $ */
+/* $NetBSD: lex.c,v 1.38 2020/10/02 17:33:13 christos Exp $ */
 
 /*-
  * Copyright (c) 1980, 1991, 1993
@@ -34,7 +34,7 @@
 #if 0
 static char sccsid[] = "@(#)lex.c	8.1 (Berkeley) 5/31/93";
 #else
-__RCSID("$NetBSD: lex.c,v 1.36 2020/08/09 00:34:21 dholland Exp $");
+__RCSID("$NetBSD: lex.c,v 1.38 2020/10/02 17:33:13 christos Exp $");
 #endif
 #endif /* not lint */
 
@@ -996,18 +996,18 @@ domod(Char *cp, int type)
 	    if ((c != ' ' && c != '\t') || type == 'q')
 		*xp |= QUOTE;
 	return (wp);
+
     case 'h':
     case 't':
-	if (!any(short2str(cp), '/'))
-	    return (type == 't' ? Strsave(cp) : 0);
-	wp = Strend(cp);
-	while (*--wp != '/')
-	    continue;
-	if (type == 'h')
-	    xp = Strsave(cp), xp[wp - cp] = 0;
-	else
+	wp = Strrchr(cp, '/');
+	if (wp == NULL)
+	    return Strsave(type == 't' ? cp : STRNULL);
+	if (type == 't')
 	    xp = Strsave(wp + 1);
+	else
+	    xp = Strsave(cp), xp[wp - cp] = 0;
 	return (xp);
+
     case 'e':
     case 'r':
 	wp = Strend(cp);
@@ -1020,6 +1020,7 @@ domod(Char *cp, int type)
 		return (xp);
 	    }
 	return (Strsave(type == 'e' ? STRNULL : cp));
+
     default:
 	break;
     }

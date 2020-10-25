@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_segtab.c,v 1.23 2020/08/22 15:34:51 skrll Exp $	*/
+/*	$NetBSD: pmap_segtab.c,v 1.26 2020/10/08 14:02:40 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.23 2020/08/22 15:34:51 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.26 2020/10/08 14:02:40 skrll Exp $");
 
 /*
  *	Manages physical address maps.
@@ -192,7 +192,7 @@ pmap_check_ptes(pt_entry_t *pte, const char *caller)
 					    j, pte_value(pte[j]), 0, 0);
 #endif
 			panic("%s: pte[%zu] entry at %p not 0 (%#"PRIxPTE")",
-			      caller, i, &pte[i], pte_value(pte[i]));
+			    caller, i, &pte[i], pte_value(pte[i]));
 		}
 #endif
 }
@@ -246,7 +246,7 @@ pmap_segtab_free(pmap_segtab_t *stp)
 {
 	UVMHIST_FUNC(__func__);
 
-	UVMHIST_CALLARGS(pmapsegtabhist, "stp=%#jx", stp, 0, 0, 0);
+	UVMHIST_CALLARGS(pmapsegtabhist, "stp=%#jx", (uintptr_t)stp, 0, 0, 0);
 
 	mutex_spin_enter(&pmap_segtab_lock);
 	stp->seg_seg[0] = pmap_segtab_info.free_segtab;
@@ -265,7 +265,7 @@ pmap_segtab_release(pmap_t pmap, pmap_segtab_t **stp_p, bool free_stp,
 	UVMHIST_FUNC(__func__);
 	UVMHIST_CALLARGS(pmapsegtabhist, "pm=%#jx stpp=%#jx free=%jd",
 	    (uintptr_t)pmap, (uintptr_t)stp_p, free_stp, 0);
-	UVMHIST_LOG(pmapsegtabhist, " callback=%jx flags=%jx va=%jx vinc=%jx",
+	UVMHIST_LOG(pmapsegtabhist, " callback=%#jx flags=%jx va=%#jx vinc=%#jx",
 	    (uintptr_t)callback, flags, (uintptr_t)va, (uintptr_t)vinc);
 	for (size_t i = (va / vinc) & (PMAP_SEGTABSIZE - 1);
 	     i < PMAP_SEGTABSIZE;
@@ -346,7 +346,8 @@ pmap_segtab_alloc(void)
 		stp->seg_seg[0] = NULL;
 		SEGTAB_ADD(nget, 1);
 		found_on_freelist = true;
-		UVMHIST_CALLARGS(pmapsegtabhist, "freelist stp=%#jx", stp, 0, 0, 0);
+		UVMHIST_CALLARGS(pmapsegtabhist, "freelist stp=%#jx",
+		    (uintptr_t)stp, 0, 0, 0);
 	}
 	mutex_spin_exit(&pmap_segtab_lock);
 
@@ -364,7 +365,8 @@ pmap_segtab_alloc(void)
 		const paddr_t stp_pa = VM_PAGE_TO_PHYS(stp_pg);
 
 		stp = (pmap_segtab_t *)PMAP_MAP_POOLPAGE(stp_pa);
-		UVMHIST_CALLARGS(pmapsegtabhist, "new stp=%#jx", stp, 0, 0, 0);
+		UVMHIST_CALLARGS(pmapsegtabhist, "new stp=%#jx",
+		    (uintptr_t)stp, 0, 0, 0);
 		const size_t n = NBPG / sizeof(*stp);
 		if (n > 1) {
 			/*
@@ -572,9 +574,9 @@ pmap_pte_reserve(pmap_t pmap, vaddr_t va, int flags)
 		*pte_p = pte;
 #endif
 		KASSERT(pte == stp->seg_tab[(va >> SEGSHIFT) & (PMAP_SEGTABSIZE - 1)]);
-		UVMHIST_CALLARGS(pmapsegtabhist, "pm=%#jx va=%#jx -> tab[%jd]=%jx",
+		UVMHIST_CALLARGS(pmapsegtabhist, "pm=%#jx va=%#jx -> tab[%jd]=%#jx",
 		    (uintptr_t)pmap, (uintptr_t)va,
-		    (va >> SEGSHIFT) & (PMAP_SEGTABSIZE - 1), pte);
+		    (va >> SEGSHIFT) & (PMAP_SEGTABSIZE - 1), (uintptr_t)pte);
 
 		pmap_check_ptes(pte, __func__);
 		pte += (va >> PGSHIFT) & (NPTEPG - 1);

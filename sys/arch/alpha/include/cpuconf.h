@@ -1,4 +1,4 @@
-/*	$NetBSD: cpuconf.h,v 1.15 2012/02/06 02:14:13 matt Exp $	*/
+/*	$NetBSD: cpuconf.h,v 1.17 2020/10/14 00:59:50 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All rights reserved.
@@ -70,6 +70,7 @@ struct platform {
 	void	(*mcheck_handler)(unsigned long, struct trapframe *,
 		    unsigned long, unsigned long);
 	void	(*powerdown)(void);
+	void	(*page_physload)(unsigned long, unsigned long);
 };
 
 /*
@@ -79,7 +80,6 @@ struct platform {
  * tags. It may optionally fill in the cons_init, device_register and
  * mcheck_handler tags.
  *
- * The iointr tag is filled in by set_iointr (in interrupt.c).
  * The clockintr tag is filled in by cpu_initclocks (in clock.c).
  *
  * nocpu is function to call when you can't figure what platform you're on.

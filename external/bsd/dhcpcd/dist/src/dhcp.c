@@ -777,7 +777,7 @@ make_message(struct bootp **bootpm, const struct interface *ifp, uint8_t type)
 	    (type == DHCP_REQUEST &&
 	    state->addr->mask.s_addr == lease->mask.s_addr &&
 	    (state->new == NULL || IS_DHCP(state->new)) &&
-	    !(state->added & STATE_FAKE))))
+	    !(state->added & (STATE_FAKE | STATE_EXPIRED)))))
 		bootp->ciaddr = state->addr->addr.s_addr;
 
 	bootp->op = BOOTREQUEST;
@@ -836,7 +836,7 @@ make_message(struct bootp **bootpm, const struct interface *ifp, uint8_t type)
 		if (type == DHCP_DECLINE ||
 		    (type == DHCP_REQUEST &&
 		    (state->addr == NULL ||
-		    state->added & STATE_FAKE ||
+		    state->added & (STATE_FAKE | STATE_EXPIRED) ||
 		    lease->addr.s_addr != state->addr->addr.s_addr)))
 		{
 			putip = true;
@@ -1164,7 +1164,7 @@ read_lease(struct interface *ifp, struct bootp **bootp)
 		logdebugx("reading standard input");
 		sbytes = read(fileno(stdin), buf.buf, sizeof(buf.buf));
 	} else {
-		logdebugx("%s: reading lease `%s'",
+		logdebugx("%s: reading lease: %s",
 		    ifp->name, state->leasefile);
 		sbytes = dhcp_readfile(ifp->ctx, state->leasefile,
 		    buf.buf, sizeof(buf.buf));
@@ -1712,7 +1712,7 @@ send_message(struct interface *ifp, uint8_t type,
 
 	if (callback == NULL) {
 		/* No carrier? Don't bother sending the packet. */
-		if (ifp->carrier <= LINK_DOWN)
+		if (!if_is_link_up(ifp))
 			return;
 		logdebugx("%s: sending %s with xid 0x%x",
 		    ifp->name,
@@ -1731,7 +1731,7 @@ send_message(struct interface *ifp, uint8_t type,
 		    (arc4random_uniform(MSEC_PER_SEC * 2) - MSEC_PER_SEC);
 		/* No carrier? Don't bother sending the packet.
 		 * However, we do need to advance the timeout. */
-		if (ifp->carrier <= LINK_DOWN)
+		if (!if_is_link_up(ifp))
 			goto fail;
 		logdebugx("%s: sending %s (xid 0x%x), next in %0.1f seconds",
 		    ifp->name,
@@ -1745,7 +1745,7 @@ send_message(struct interface *ifp, uint8_t type,
 		goto fail;
 	len = (size_t)r;
 
-	if (!(state->added & STATE_FAKE) &&
+	if (!(state->added & (STATE_FAKE | STATE_EXPIRED)) &&
 	    state->addr != NULL &&
 	    ipv4_iffindaddr(ifp, &state->lease.addr, NULL) != NULL)
 		from.s_addr = state->lease.addr.s_addr;
@@ -1869,14 +1869,16 @@ dhcp_discover(void *arg)
 	state->state = DHS_DISCOVER;
 	dhcp_new_xid(ifp);
 	eloop_timeout_delete(ifp->ctx->eloop, NULL, ifp);
-	if (ifo->fallback)
-		eloop_timeout_add_sec(ifp->ctx->eloop,
-		    ifo->reboot, dhcp_fallback, ifp);
+	if (!(state->added & STATE_EXPIRED)) {
+		if (ifo->fallback)
+			eloop_timeout_add_sec(ifp->ctx->eloop,
+			    ifo->reboot, dhcp_fallback, ifp);
 #ifdef IPV4LL
-	else if (ifo->options & DHCPCD_IPV4LL)
-		eloop_timeout_add_sec(ifp->ctx->eloop,
-		    ifo->reboot, ipv4ll_start, ifp);
+		else if (ifo->options & DHCPCD_IPV4LL)
+			eloop_timeout_add_sec(ifp->ctx->eloop,
+			    ifo->reboot, ipv4ll_start, ifp);
 #endif
+	}
 	if (ifo->options & DHCPCD_REQUEST)
 		loginfox("%s: soliciting a DHCP lease (requesting %s)",
 		    ifp->name, inet_ntoa(ifo->req_addr));
@@ -1897,30 +1899,21 @@ dhcp_request(void *arg)
 }
 
 static void
-dhcp_expire1(struct interface *ifp)
-{
-	struct dhcp_state *state = D_STATE(ifp);
-
-	eloop_timeout_delete(ifp->ctx->eloop, NULL, ifp);
-	dhcp_drop(ifp, "EXPIRE");
-	dhcp_unlink(ifp->ctx, state->leasefile);
-	state->interval = 0;
-	if (!(ifp->options->options & DHCPCD_LINK) || ifp->carrier > LINK_DOWN)
-		dhcp_discover(ifp);
-}
-
-static void
 dhcp_expire(void *arg)
 {
 	struct interface *ifp = arg;
+	struct dhcp_state *state = D_STATE(ifp);
 
 	if (ifp->options->options & DHCPCD_LASTLEASE_EXTEND) {
 		logwarnx("%s: DHCP lease expired, extending lease", ifp->name);
-		return;
+		state->added |= STATE_EXPIRED;
+	} else {
+		logerrx("%s: DHCP lease expired", ifp->name);
+		dhcp_drop(ifp, "EXPIRE");
+		dhcp_unlink(ifp->ctx, state->leasefile);
 	}
-
-	logerrx("%s: DHCP lease expired", ifp->name);
-	dhcp_expire1(ifp);
+	state->interval = 0;
+	dhcp_discover(ifp);
 }
 
 #if defined(ARP) || defined(IN_IFF_DUPLICATED)
@@ -2291,7 +2284,9 @@ dhcp_bind(struct interface *ifp)
 		return;
 	}
 	if (state->reason == NULL) {
-		if (state->old && !(state->added & STATE_FAKE)) {
+		if (state->old &&
+		    !(state->added & (STATE_FAKE | STATE_EXPIRED)))
+		{
 			if (state->old->yiaddr == state->new->yiaddr &&
 			    lease->server.s_addr &&
 			    state->state != DHS_REBIND)
@@ -2319,7 +2314,7 @@ dhcp_bind(struct interface *ifp)
 	state->state = DHS_BOUND;
 	if (!state->lease.frominfo &&
 	    !(ifo->options & (DHCPCD_INFORM | DHCPCD_STATIC))) {
-		logdebugx("%s: writing lease `%s'",
+		logdebugx("%s: writing lease: %s",
 		    ifp->name, state->leasefile);
 		if (dhcp_writefile(ifp->ctx, state->leasefile, 0640,
 		    state->new, state->new_len) == -1)
@@ -2362,19 +2357,6 @@ dhcp_bind(struct interface *ifp)
 		return;
 	}
 	eloop_event_add(ctx->eloop, state->udp_rfd, dhcp_handleifudp, ifp);
-}
-
-static void
-dhcp_lastlease(void *arg)
-{
-	struct interface *ifp = arg;
-	struct dhcp_state *state = D_STATE(ifp);
-
-	loginfox("%s: timed out contacting a DHCP server, using last lease",
-	    ifp->name);
-	dhcp_bind(ifp);
-	state->interval = 0;
-	dhcp_discover(ifp);
 }
 
 static size_t
@@ -2474,6 +2456,26 @@ dhcp_arp_bind(struct interface *ifp)
 		dhcp_bind(ifp);
 }
 #endif
+
+static void
+dhcp_lastlease(void *arg)
+{
+	struct interface *ifp = arg;
+	struct dhcp_state *state = D_STATE(ifp);
+
+	loginfox("%s: timed out contacting a DHCP server, using last lease",
+	    ifp->name);
+#if defined(ARP) || defined(KERNEL_RFC5227)
+	dhcp_arp_bind(ifp);
+#else
+	dhcp_bind(ifp);
+#endif
+	/* Set expired here because dhcp_bind() -> ipv4_addaddr() will reset
+	 * state */
+	state->added |= STATE_EXPIRED;
+	state->interval = 0;
+	dhcp_discover(ifp);
+}
 
 static void
 dhcp_static(struct interface *ifp)
@@ -2631,7 +2633,7 @@ dhcp_reboot(struct interface *ifp)
 	state->state = DHS_REBOOT;
 	state->interval = 0;
 
-	if (ifo->options & DHCPCD_LINK && ifp->carrier <= LINK_DOWN) {
+	if (ifo->options & DHCPCD_LINK && !if_is_link_up(ifp)) {
 		loginfox("%s: waiting for carrier", ifp->name);
 		return;
 	}
@@ -2731,7 +2733,7 @@ dhcp_drop(struct interface *ifp, const char *reason)
 		state->state = DHS_RELEASE;
 
 		dhcp_unlink(ifp->ctx, state->leasefile);
-		if (ifp->carrier > LINK_DOWN &&
+		if (if_is_link_up(ifp) &&
 		    state->new != NULL &&
 		    state->lease.server.s_addr != INADDR_ANY)
 		{
@@ -2863,10 +2865,10 @@ log_dhcp(int loglevel, const char *msg,
 		print_string(sname, sizeof(sname), OT_STRING | OT_DOMAIN,
 		    bootp->sname, sizeof(bootp->sname));
 		if (a == NULL)
-			logmessage(loglevel, "%s: %s %s %s `%s'",
+			logmessage(loglevel, "%s: %s %s %s %s",
 			    ifp->name, msg, tfrom, inet_ntoa(addr), sname);
 		else
-			logmessage(loglevel, "%s: %s %s %s %s `%s'",
+			logmessage(loglevel, "%s: %s %s %s %s %s",
 			    ifp->name, msg, a, tfrom, inet_ntoa(addr), sname);
 	} else {
 		if (r != 0) {
@@ -3474,6 +3476,16 @@ dhcp_packet(struct interface *ifp, uint8_t *data, size_t len,
 	size_t fl = bpf_frame_header_len(ifp);
 #ifdef PRIVSEP
 	const struct dhcp_state *state = D_CSTATE(ifp);
+
+	/* It's possible that an interface departs and arrives in short
+	 * order to receive a BPF frame out of order.
+	 * There is a similar check in ARP, but much lower down the stack.
+	 * It's not needed for other inet protocols because we send the
+	 * message as a whole and select the interface off that and then
+	 * check state. BPF on the other hand is very interface
+	 * specific and we do need this check. */
+	if (state == NULL)
+		return;
 
 	/* Ignore double reads */
 	if (IN_PRIVSEP(ifp->ctx)) {

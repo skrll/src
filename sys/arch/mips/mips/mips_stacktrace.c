@@ -1,4 +1,4 @@
-/*	$NetBSD: mips_stacktrace.c,v 1.4 2020/08/17 21:50:14 mrg Exp $	*/
+/*	$NetBSD: mips_stacktrace.c,v 1.7 2020/09/24 03:17:18 mrg Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mips_stacktrace.c,v 1.4 2020/08/17 21:50:14 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mips_stacktrace.c,v 1.7 2020/09/24 03:17:18 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -53,6 +53,7 @@ __KERNEL_RCSID(0, "$NetBSD: mips_stacktrace.c,v 1.4 2020/08/17 21:50:14 mrg Exp 
 
 #include <mips/locore.h>
 #include <mips/mips_opcode.h>
+#include <mips/regnum.h>
 #include <mips/stacktrace.h>
 
 #if defined(_KMEMUSER) && !defined(DDB)
@@ -228,13 +229,13 @@ kdbrpeek(vaddr_t addr, size_t n)
 	} else {
 		if (sizeof(mips_reg_t) == 8 && n == 8)
 #if _KERNEL
-			db_read_bytes((db_addr_t)addr, sizeof(int64_t), (char *)&rc);
-		else
-			db_read_bytes((db_addr_t)addr, sizeof(int32_t), (char *)&rc);
-#else
 			rc = *(int64_t *)addr;
  		else
 			rc = *(int32_t *)addr;
+#else
+			db_read_bytes((db_addr_t)addr, sizeof(int64_t), (char *)&rc);
+		else
+			db_read_bytes((db_addr_t)addr, sizeof(int32_t), (char *)&rc);
 #endif
 	}
 	return rc;
@@ -290,10 +291,6 @@ stacktrace_subr(mips_reg_t a0, mips_reg_t a1, mips_reg_t a2, mips_reg_t a3,
 		[_R_A0] = a0, [_R_A1] = a1, [_R_A2] = a2, [_R_A3] = a3,
 		[_R_RA] = ra,
 	};
-#ifdef DDB
-	db_expr_t diff;
-	db_sym_t sym;
-#endif
 
 /* Jump here when done with a frame, to start a new one */
 loop:
@@ -321,61 +318,72 @@ loop:
 		goto done;
 	}
 
-#ifdef DDB
-	/*
-	 * Check the kernel symbol table to see the beginning of
-	 * the current subroutine.
-	 */
-	diff = 0;
-	sym = db_search_symbol(pc, DB_STGY_ANY, &diff);
-	if (sym != DB_SYM_NULL && diff == 0) {
-		/* check func(foo) __attribute__((__noreturn__)) case */
-		if (!kdbpeek(pc - 2 * sizeof(unsigned), &instr))
-			return;
-		i.word = instr;
-		if (i.JType.op == OP_JAL) {
-			sym = db_search_symbol(pc - sizeof(int),
-			    DB_STGY_ANY, &diff);
-			if (sym != DB_SYM_NULL && diff != 0)
-				diff += sizeof(int);
+#if defined(DDB) && defined(_KERNEL)
+	if (ksyms_available()) {
+		db_expr_t diff;
+		db_sym_t sym;
+
+		/*
+		 * Check the kernel symbol table to see the beginning of
+		 * the current subroutine.
+		 */
+		diff = 0;
+		sym = db_search_symbol(pc, DB_STGY_ANY, &diff);
+		if (sym != DB_SYM_NULL && diff == 0) {
+			/* check func(foo) __attribute__((__noreturn__)) case */
+			if (!kdbpeek(pc - 2 * sizeof(unsigned), &instr))
+				return;
+			i.word = instr;
+			if (i.JType.op == OP_JAL) {
+				sym = db_search_symbol(pc - sizeof(int),
+				    DB_STGY_ANY, &diff);
+				if (sym != DB_SYM_NULL && diff != 0)
+					diff += sizeof(int);
+			}
 		}
-	}
-	if (sym == DB_SYM_NULL) {
-		ra = 0;
-		goto done;
-	}
-	va = pc - diff;
-#else
-	/*
-	 * Find the beginning of the current subroutine by scanning backwards
-	 * from the current PC for the end of the previous subroutine.
-	 *
-	 * XXX This won't work well because nowadays gcc is so aggressive
-	 *     as to reorder instruction blocks for branch-predict.
-	 *     (i.e. 'jr ra' wouldn't indicate the end of subroutine)
-	 */
-	va = pc;
-	do {
-		va -= sizeof(int);
-		if (va <= (vaddr_t)verylocore)
-			goto finish;
-		if (!kdbpeek(va, &instr))
-			return;
-		if (instr == MIPS_ERET)
-			goto mips3_eret;
-	} while (instr != MIPS_JR_RA && instr != MIPS_JR_K0);
-	/* skip back over branch & delay slot */
-	va += sizeof(int);
-mips3_eret:
-	va += sizeof(int);
-	/* skip over nulls which might separate .o files */
-	instr = 0;
-	while (instr == 0) {
-		if (!kdbpeek(va, &instr))
-			return;
-		va += sizeof(int);
-	}
+		if (sym == DB_SYM_NULL) {
+			ra = 0;
+			goto done;
+		}
+		va = pc - diff;
+	} else {
+#endif /* DDB && _KERNEL */
+		/*
+		 * Find the beginning of the current subroutine by
+		 * scanning backwards from the current PC for the end
+		 * of the previous subroutine.
+		 *
+		 * XXX This won't work well because nowadays gcc is so
+		 *     aggressive as to reorder instruction blocks for
+		 *     branch-predict. (i.e. 'jr ra' wouldn't indicate
+		 *     the end of subroutine)
+		 */
+		va = pc;
+		do {
+			va -= sizeof(int);
+#ifdef _KERNEL /* XXX crash */
+			if (va <= (vaddr_t)verylocore)
+				goto finish;
 #endif
+			if (!kdbpeek(va, &instr))
+				return;
+			if (instr == MIPS_ERET)
+				goto mips3_eret;
+		} while (instr != MIPS_JR_RA && instr != MIPS_JR_K0);
+		/* skip back over branch & delay slot */
+		va += sizeof(int);
+mips3_eret:
+		va += sizeof(int);
+		/* skip over nulls which might separate .o files */
+		instr = 0;
+		while (instr == 0) {
+			if (!kdbpeek(va, &instr))
+				return;
+			va += sizeof(int);
+		}
+#if defined(DDB) && defined(_KERNEL)
+	}
+#endif /* DDB && _KERNEL */
 	subr = va;
 
 	/* scan forwards to find stack size and any saved registers */

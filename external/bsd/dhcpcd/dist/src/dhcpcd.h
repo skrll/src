@@ -55,7 +55,6 @@
 #define	LINK_UP		1
 #define	LINK_UNKNOWN	0
 #define	LINK_DOWN	-1
-#define	LINK_DOWN_IFFUP	-2
 
 #define IF_DATA_IPV4	0
 #define IF_DATA_ARP	1
@@ -96,7 +95,6 @@ TAILQ_HEAD(if_head, interface);
 
 #include "privsep.h"
 
-#ifdef INET6
 /* dhcpcd requires CMSG_SPACE to evaluate to a compile time constant. */
 #if defined(__QNX) || \
 	(defined(__NetBSD_Version__) && __NetBSD_Version__ < 600000000)
@@ -113,15 +111,15 @@ TAILQ_HEAD(if_head, interface);
 #define	CMSG_SPACE(len)	(ALIGN(sizeof(struct cmsghdr)) + ALIGN(len))
 #endif
 
-#define IP6BUFLEN	(CMSG_SPACE(sizeof(struct in6_pktinfo)) + \
-			CMSG_SPACE(sizeof(int)))
-#endif
-
 struct passwd;
 
 struct dhcpcd_ctx {
 	char pidfile[sizeof(PIDFILE) + IF_NAMESIZE + 1];
 	char vendor[256];
+	bool stdin_valid;	/* It's possible stdin, stdout and stderr */
+	bool stdout_valid;	/* could be closed when dhcpcd starts. */
+	bool stderr_valid;
+	int stderr_fd;	/* FD for logging to stderr */
 	int fork_fd;	/* FD for the fork init signal pipe */
 	const char *cffile;
 	unsigned long long options;
@@ -136,6 +134,7 @@ struct dhcpcd_ctx {
 	char **ifv;	/* listed interfaces */
 	int ifcc;	/* configured interfaces */
 	char **ifcv;	/* configured interfaces */
+	uint8_t duid_type;
 	unsigned char *duid;
 	size_t duid_len;
 	struct if_head *ifaces;
@@ -271,7 +270,7 @@ void dhcpcd_daemonise(struct dhcpcd_ctx *);
 
 void dhcpcd_linkoverflow(struct dhcpcd_ctx *);
 int dhcpcd_handleargs(struct dhcpcd_ctx *, struct fd_list *, int, char **);
-void dhcpcd_handlecarrier(struct dhcpcd_ctx *, int, unsigned int, const char *);
+void dhcpcd_handlecarrier(struct interface *, int, unsigned int);
 int dhcpcd_handleinterface(void *, int, const char *);
 void dhcpcd_handlehwaddr(struct interface *, uint16_t, const void *, uint8_t);
 void dhcpcd_dropinterface(struct interface *, const char *);

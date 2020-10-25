@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wg.c,v 1.32 2020/08/28 07:03:08 riastradh Exp $	*/
+/*	$NetBSD: if_wg.c,v 1.60 2020/09/14 04:57:20 riastradh Exp $	*/
 
 /*
  * Copyright (C) Ryota Ozaki <ozaki.ryota@gmail.com>
@@ -41,9 +41,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wg.c,v 1.32 2020/08/28 07:03:08 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wg.c,v 1.60 2020/09/14 04:57:20 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
+#include "opt_altq_enabled.h"
 #include "opt_inet.h"
 #endif
 
@@ -61,11 +62,10 @@ __KERNEL_RCSID(0, "$NetBSD: if_wg.c,v 1.32 2020/08/28 07:03:08 riastradh Exp $")
 #include <sys/ioctl.h>
 #include <sys/kernel.h>
 #include <sys/kmem.h>
-#include <sys/kthread.h>
 #include <sys/mbuf.h>
 #include <sys/module.h>
 #include <sys/mutex.h>
-#include <sys/pcq.h>
+#include <sys/once.h>
 #include <sys/percpu.h>
 #include <sys/pserialize.h>
 #include <sys/psref.h>
@@ -77,13 +77,17 @@ __KERNEL_RCSID(0, "$NetBSD: if_wg.c,v 1.32 2020/08/28 07:03:08 riastradh Exp $")
 #include <sys/sysctl.h>
 #include <sys/syslog.h>
 #include <sys/systm.h>
+#include <sys/thmap.h>
+#include <sys/threadpool.h>
 #include <sys/time.h>
 #include <sys/timespec.h>
+#include <sys/workqueue.h>
 
 #include <net/bpf.h>
 #include <net/if.h>
 #include <net/if_types.h>
 #include <net/if_wg.h>
+#include <net/pktqueue.h>
 #include <net/route.h>
 
 #include <netinet/in.h>
@@ -119,12 +123,11 @@ __KERNEL_RCSID(0, "$NetBSD: if_wg.c,v 1.32 2020/08/28 07:03:08 riastradh Exp $")
  * Data structures
  * - struct wg_softc is an instance of wg interfaces
  *   - It has a list of peers (struct wg_peer)
- *   - It has a kthread that sends/receives handshake messages and
+ *   - It has a threadpool job that sends/receives handshake messages and
  *     runs event handlers
  *   - It has its own two routing tables: one is for IPv4 and the other IPv6
  * - struct wg_peer is a representative of a peer
- *   - It has a softint that is used to send packets over an wg interface
- *     to a peer
+ *   - It has a struct work to handle handshakes and timer tasks
  *   - It has a pair of session instances (struct wg_session)
  *   - It has a pair of endpoint instances (struct wg_sockaddr)
  *     - Normally one endpoint is used and the second one is used only on
@@ -136,31 +139,28 @@ __KERNEL_RCSID(0, "$NetBSD: if_wg.c,v 1.32 2020/08/28 07:03:08 riastradh Exp $")
  * - struct wg_session represents a session of a secure tunnel with a peer
  *   - Two instances of sessions belong to a peer; a stable session and a
  *     unstable session
- *   - A handshake process of a session always starts with a unstable instace
+ *   - A handshake process of a session always starts with a unstable instance
  *   - Once a session is established, its instance becomes stable and the
  *     other becomes unstable instead
  *   - Data messages are always sent via a stable session
  *
  * Locking notes:
- * - wg interfaces (struct wg_softc, wg) is listed in wg_softcs.list and
- *   protected by wg_softcs.lock
- * - Each wg has a mutex(9) and a rwlock(9)
- *   - The mutex (wg_lock) protects its peer list (wg_peers)
- *   - A peer on the list is also protected by pserialize(9) or psref(9)
+ * - Each wg has a mutex(9) wg_lock, and a rwlock(9) wg_rwlock
+ *   - Changes to the peer list are serialized by wg_lock
+ *   - The peer list may be read with pserialize(9) and psref(9)
  *   - The rwlock (wg_rwlock) protects the routing tables (wg_rtable_ipv[46])
- * - Each peer (struct wg_peer, wgp) has a mutex
- *   - The mutex (wgp_lock) protects wgp_session_unstable and wgp_state
- * - Each session (struct wg_session, wgs) has a mutex
- *   - The mutex (wgs_lock) protects its state (wgs_state) and its handshake
- *     states
- *   - wgs_state of a unstable session can be changed while it never be
- *     changed on a stable session, so once get a session instace via
- *     wgp_session_stable we can safely access wgs_state without
- *     holding wgs_lock
- *   - A session is protected by pserialize or psref like wgp
+ *     => XXX replace by pserialize when routing table is psz-safe
+ * - Each peer (struct wg_peer, wgp) has a mutex wgp_lock, which can be taken
+ *   only in thread context and serializes:
+ *   - the stable and unstable session pointers
+ *   - all unstable session state
+ * - Packet processing may be done in softint context:
+ *   - The stable session can be read under pserialize(9) or psref(9)
+ *     - The stable session is always ESTABLISHED
  *     - On a session swap, we must wait for all readers to release a
  *       reference to a stable session before changing wgs_state and
  *       session states
+ * - Lock order: wg_lock -> wgp_lock
  */
 
 
@@ -213,15 +213,39 @@ static bool wg_force_underload = false;
 
 #ifdef WG_DEBUG_DUMP
 
+static char *
+gethexdump(const char *p, size_t n)
+{
+	char *buf;
+	size_t i;
+
+	if (n > SIZE_MAX/3 - 1)
+		return NULL;
+	buf = kmem_alloc(3*n + 1, KM_NOSLEEP);
+	if (buf == NULL)
+		return NULL;
+	for (i = 0; i < n; i++)
+		snprintf(buf + 3*i, 3 + 1, " %02hhx", p[i]);
+	return buf;
+}
+
+static void
+puthexdump(char *buf, const void *p, size_t n)
+{
+
+	if (buf == NULL)
+		return;
+	kmem_free(buf, 3*n + 1);
+}
+
 #ifdef WG_RUMPKERNEL
 static void
 wg_dump_buf(const char *func, const char *buf, const size_t size)
 {
+	char *hex = gethexdump(buf, size);
 
-	log(LOG_DEBUG, "%s: ", func);
-	for (int i = 0; i < size; i++)
-		log(LOG_DEBUG, "%02x ", (int)(0xff & buf[i]));
-	log(LOG_DEBUG, "\n");
+	log(LOG_DEBUG, "%s: %s\n", func, hex ? hex : "(enomem)");
+	puthexdump(hex, buf, size);
 }
 #endif
 
@@ -229,11 +253,10 @@ static void
 wg_dump_hash(const uint8_t *func, const uint8_t *name, const uint8_t *hash,
     const size_t size)
 {
+	char *hex = gethexdump(hash, size);
 
-	log(LOG_DEBUG, "%s: %s: ", func, name);
-	for (int i = 0; i < size; i++)
-		log(LOG_DEBUG, "%02x ", (int)(0xff & hash[i]));
-	log(LOG_DEBUG, "\n");
+	log(LOG_DEBUG, "%s: %s: %s\n", func, name, hex ? hex : "(enomem)");
+	puthexdump(hex, hash, size);
 }
 
 #define WG_DUMP_HASH(name, hash) \
@@ -425,23 +448,10 @@ sliwin_update(struct sliwin *W, uint64_t S)
 	return 0;
 }
 
-struct wg_worker {
-	kmutex_t	wgw_lock;
-	kcondvar_t	wgw_cv;
-	bool		wgw_todie;
-	struct socket	*wgw_so4;
-	struct socket	*wgw_so6;
-	int		wgw_wakeup_reasons;
-#define WG_WAKEUP_REASON_RECEIVE_PACKETS_IPV4	__BIT(0)
-#define WG_WAKEUP_REASON_RECEIVE_PACKETS_IPV6	__BIT(1)
-#define WG_WAKEUP_REASON_PEER			__BIT(2)
-};
-
 struct wg_session {
 	struct wg_peer	*wgs_peer;
 	struct psref_target
 			wgs_psref;
-	kmutex_t	*wgs_lock;
 
 	int		wgs_state;
 #define WGS_STATE_UNKNOWN	0
@@ -454,8 +464,8 @@ struct wg_session {
 	time_t		wgs_time_last_data_sent;
 	bool		wgs_is_initiator;
 
-	uint32_t	wgs_sender_index;
-	uint32_t	wgs_receiver_index;
+	uint32_t	wgs_local_index;
+	uint32_t	wgs_remote_index;
 #ifdef __HAVE_ATOMIC64_LOADSTORE
 	volatile uint64_t
 			wgs_send_counter;
@@ -488,9 +498,12 @@ struct wg_sockaddr {
 	struct psref_target	wgsa_psref;
 };
 
+#define wgsatoss(wgsa)		(&(wgsa)->_ss)
 #define wgsatosa(wgsa)		(&(wgsa)->_sa)
 #define wgsatosin(wgsa)		(&(wgsa)->_sin)
 #define wgsatosin6(wgsa)	(&(wgsa)->_sin6)
+
+#define	wgsa_family(wgsa)	(wgsatosa(wgsa)->sa_family)
 
 struct wg_peer;
 struct wg_allowedip {
@@ -527,31 +540,22 @@ struct wg_peer {
 	pserialize_t		wgp_psz;
 	struct psref_target	wgp_psref;
 	kmutex_t		*wgp_lock;
+	kmutex_t		*wgp_intr_lock;
 
 	uint8_t	wgp_pubkey[WG_STATIC_KEY_LEN];
 	struct wg_sockaddr	*wgp_endpoint;
-#define wgp_ss		wgp_endpoint->_ss
-#define wgp_sa		wgp_endpoint->_sa
-#define wgp_sin		wgp_endpoint->_sin
-#define wgp_sin6	wgp_endpoint->_sin6
 	struct wg_sockaddr	*wgp_endpoint0;
-	bool			wgp_endpoint_changing;
+	volatile unsigned	wgp_endpoint_changing;
 	bool			wgp_endpoint_available;
 
 			/* The preshared key (optional) */
 	uint8_t		wgp_psk[WG_PRESHARED_KEY_LEN];
 
-	int wgp_state;
-#define WGP_STATE_INIT		0
-#define WGP_STATE_ESTABLISHED	1
-#define WGP_STATE_GIVEUP	2
-#define WGP_STATE_DESTROYING	3
-
-	void		*wgp_si;
-	pcq_t		*wgp_q;
-
 	struct wg_session	*wgp_session_stable;
 	struct wg_session	*wgp_session_unstable;
+
+	/* first outgoing packet awaiting session initiation */
+	struct mbuf		*wgp_pending;
 
 	/* timestamp in big-endian */
 	wg_timestamp_t	wgp_timestamp_latest_init;
@@ -581,11 +585,14 @@ struct wg_peer {
 
 	struct wg_ppsratecheck	wgp_ppsratecheck;
 
-	volatile unsigned int	wgp_tasks;
+	struct work		wgp_work;
+	unsigned int		wgp_tasks;
 #define WGP_TASK_SEND_INIT_MESSAGE		__BIT(0)
-#define WGP_TASK_ENDPOINT_CHANGED		__BIT(1)
-#define WGP_TASK_SEND_KEEPALIVE_MESSAGE	__BIT(2)
-#define WGP_TASK_DESTROY_PREV_SESSION		__BIT(3)
+#define WGP_TASK_RETRY_HANDSHAKE		__BIT(1)
+#define WGP_TASK_ESTABLISH_SESSION		__BIT(2)
+#define WGP_TASK_ENDPOINT_CHANGED		__BIT(3)
+#define WGP_TASK_SEND_KEEPALIVE_MESSAGE		__BIT(4)
+#define WGP_TASK_DESTROY_PREV_SESSION		__BIT(5)
 };
 
 struct wg_ops;
@@ -594,6 +601,7 @@ struct wg_softc {
 	struct ifnet	wg_if;
 	LIST_ENTRY(wg_softc) wg_list;
 	kmutex_t	*wg_lock;
+	kmutex_t	*wg_intr_lock;
 	krwlock_t	*wg_rwlock;
 
 	uint8_t		wg_privkey[WG_STATIC_KEY_LEN];
@@ -601,13 +609,26 @@ struct wg_softc {
 
 	int		wg_npeers;
 	struct pslist_head	wg_peers;
+	struct thmap	*wg_peers_bypubkey;
+	struct thmap	*wg_peers_byname;
+	struct thmap	*wg_sessions_byindex;
 	uint16_t	wg_listen_port;
 
-	struct wg_worker	*wg_worker;
-	lwp_t			*wg_worker_lwp;
+	struct threadpool	*wg_threadpool;
 
+	struct threadpool_job	wg_job;
+	int			wg_upcalls;
+#define	WG_UPCALL_INET	__BIT(0)
+#define	WG_UPCALL_INET6	__BIT(1)
+
+#ifdef INET
+	struct socket		*wg_so4;
 	struct radix_node_head	*wg_rtable_ipv4;
+#endif
+#ifdef INET6
+	struct socket		*wg_so6;
 	struct radix_node_head	*wg_rtable_ipv6;
+#endif
 
 	struct wg_ppsratecheck	wg_ppsratecheck;
 
@@ -641,14 +662,12 @@ static unsigned wg_keepalive_timeout = WG_KEEPALIVE_TIMEOUT;
 static struct mbuf *
 		wg_get_mbuf(size_t, size_t);
 
-static void	wg_wakeup_worker(struct wg_worker *, int);
-
 static int	wg_send_data_msg(struct wg_peer *, struct wg_session *,
 		    struct mbuf *);
 static int	wg_send_cookie_msg(struct wg_softc *, struct wg_peer *,
 		    const uint32_t, const uint8_t [], const struct sockaddr *);
-static int	wg_send_handshake_msg_resp(struct wg_softc *,
-		    struct wg_peer *, const struct wg_msg_init *);
+static int	wg_send_handshake_msg_resp(struct wg_softc *, struct wg_peer *,
+		    struct wg_session *, const struct wg_msg_init *);
 static void	wg_send_keepalive_msg(struct wg_peer *, struct wg_session *);
 
 static struct wg_peer *
@@ -667,7 +686,6 @@ static void	wg_update_endpoint_if_necessary(struct wg_peer *,
 
 static void	wg_schedule_rekey_timer(struct wg_peer *);
 static void	wg_schedule_session_dtor_timer(struct wg_peer *);
-static void	wg_stop_session_dtor_timer(struct wg_peer *);
 
 static bool	wg_is_underload(struct wg_softc *, struct wg_peer *, int);
 static void	wg_calculate_keys(struct wg_session *, const bool);
@@ -685,7 +703,15 @@ static void	wg_input(struct ifnet *, struct mbuf *, const int);
 static int	wg_ioctl(struct ifnet *, u_long, void *);
 static int	wg_bind_port(struct wg_softc *, const uint16_t);
 static int	wg_init(struct ifnet *);
+#ifdef ALTQ
+static void	wg_start(struct ifnet *);
+#endif
 static void	wg_stop(struct ifnet *, int);
+
+static void	wg_peer_work(struct work *, void *);
+static void	wg_job(struct threadpool_job *);
+static void	wgintr(void *);
+static void	wg_purge_pending_packets(struct wg_peer *);
 
 static int	wg_clone_create(struct if_clone *, int);
 static int	wg_clone_destroy(struct ifnet *);
@@ -756,17 +782,15 @@ wg_rnh(struct wg_softc *wg, const int family)
 /*
  * Global variables
  */
-LIST_HEAD(wg_sclist, wg_softc);
-static struct {
-	struct wg_sclist list;
-	kmutex_t lock;
-} wg_softcs __cacheline_aligned;
+static volatile unsigned wg_count __cacheline_aligned;
 
 struct psref_class *wg_psref_class __read_mostly;
 
 static struct if_clone wg_cloner =
     IF_CLONE_INITIALIZER("wg", wg_clone_create, wg_clone_destroy);
 
+static struct pktqueue *wg_pktq __read_mostly;
+static struct workqueue *wg_wq __read_mostly;
 
 void wgattach(int);
 /* ARGSUSED */
@@ -785,29 +809,83 @@ wginit(void)
 
 	wg_psref_class = psref_class_create("wg", IPL_SOFTNET);
 
-	mutex_init(&wg_softcs.lock, MUTEX_DEFAULT, IPL_NONE);
-	LIST_INIT(&wg_softcs.list);
 	if_clone_attach(&wg_cloner);
+}
+
+/*
+ * XXX Kludge: This should just happen in wginit, but workqueue_create
+ * cannot be run until after CPUs have been detected, and wginit runs
+ * before configure.
+ */
+static int
+wginitqueues(void)
+{
+	int error __diagused;
+
+	wg_pktq = pktq_create(IFQ_MAXLEN, wgintr, NULL);
+	KASSERT(wg_pktq != NULL);
+
+	error = workqueue_create(&wg_wq, "wgpeer", wg_peer_work, NULL,
+	    PRI_NONE, IPL_SOFTNET, WQ_MPSAFE|WQ_PERCPU);
+	KASSERT(error == 0);
+
+	return 0;
+}
+
+static void
+wg_guarantee_initialized(void)
+{
+	static ONCE_DECL(init);
+	int error __diagused;
+
+	error = RUN_ONCE(&init, wginitqueues);
+	KASSERT(error == 0);
+}
+
+static int
+wg_count_inc(void)
+{
+	unsigned o, n;
+
+	do {
+		o = atomic_load_relaxed(&wg_count);
+		if (o == UINT_MAX)
+			return ENFILE;
+		n = o + 1;
+	} while (atomic_cas_uint(&wg_count, o, n) != o);
+
+	return 0;
+}
+
+static void
+wg_count_dec(void)
+{
+	unsigned c __diagused;
+
+	c = atomic_dec_uint_nv(&wg_count);
+	KASSERT(c != UINT_MAX);
 }
 
 static int
 wgdetach(void)
 {
-	int error = 0;
 
-	mutex_enter(&wg_softcs.lock);
-	if (!LIST_EMPTY(&wg_softcs.list)) {
-		mutex_exit(&wg_softcs.lock);
-		error = EBUSY;
+	/* Prevent new interface creation.  */
+	if_clone_detach(&wg_cloner);
+
+	/* Check whether there are any existing interfaces.  */
+	if (atomic_load_relaxed(&wg_count)) {
+		/* Back out -- reattach the cloner.  */
+		if_clone_attach(&wg_cloner);
+		return EBUSY;
 	}
 
-	if (error == 0) {
-		psref_class_destroy(wg_psref_class);
+	/* No interfaces left.  Nuke it.  */
+	workqueue_destroy(wg_wq);
+	pktq_destroy(wg_pktq);
+	psref_class_destroy(wg_psref_class);
 
-		if_clone_detach(&wg_cloner);
-	}
-
-	return error;
+	return 0;
 }
 
 static void
@@ -1023,7 +1101,7 @@ wg_algo_aead_enc(uint8_t out[], size_t expected_outsize, const uint8_t key[],
 	long long unsigned int outsize;
 	int error __diagused;
 
-	memcpy(&nonce[4], &counter, sizeof(counter));
+	le64enc(&nonce[4], counter);
 
 	error = crypto_aead_chacha20poly1305_ietf_encrypt(out, &outsize, plain,
 	    plainsize, auth, authlen, NULL, nonce, key);
@@ -1040,7 +1118,7 @@ wg_algo_aead_dec(uint8_t out[], size_t expected_outsize, const uint8_t key[],
 	long long unsigned int outsize;
 	int error;
 
-	memcpy(&nonce[4], &counter, sizeof(counter));
+	le64enc(&nonce[4], counter);
 
 	error = crypto_aead_chacha20poly1305_ietf_decrypt(out, &outsize, NULL,
 	    encrypted, encryptedsize, auth, authlen, nonce, key);
@@ -1067,8 +1145,7 @@ wg_algo_xaead_enc(uint8_t out[], const size_t expected_outsize,
 
 static int
 wg_algo_xaead_dec(uint8_t out[], const size_t expected_outsize,
-    const uint8_t key[], const uint64_t counter,
-    const uint8_t encrypted[], const size_t encryptedsize,
+    const uint8_t key[], const uint8_t encrypted[], const size_t encryptedsize,
     const uint8_t auth[], size_t authlen,
     const uint8_t nonce[WG_SALT_LEN])
 {
@@ -1097,19 +1174,17 @@ wg_algo_tai64n(wg_timestamp_t timestamp)
 	be32enc(timestamp + 8, ts.tv_nsec);
 }
 
-static struct wg_session *
-wg_get_unstable_session(struct wg_peer *wgp, struct psref *psref)
-{
-	int s;
-	struct wg_session *wgs;
-
-	s = pserialize_read_enter();
-	wgs = wgp->wgp_session_unstable;
-	psref_acquire(psref, &wgs->wgs_psref, wg_psref_class);
-	pserialize_read_exit(s);
-	return wgs;
-}
-
+/*
+ * wg_get_stable_session(wgp, psref)
+ *
+ *	Get a passive reference to the current stable session, or
+ *	return NULL if there is no current stable session.
+ *
+ *	The pointer is always there but the session is not necessarily
+ *	ESTABLISHED; if it is not ESTABLISHED, return NULL.  However,
+ *	the session may transition from ESTABLISHED to DESTROYING while
+ *	holding the passive reference.
+ */
 static struct wg_session *
 wg_get_stable_session(struct wg_peer *wgp, struct psref *psref)
 {
@@ -1117,17 +1192,14 @@ wg_get_stable_session(struct wg_peer *wgp, struct psref *psref)
 	struct wg_session *wgs;
 
 	s = pserialize_read_enter();
-	wgs = wgp->wgp_session_stable;
-	psref_acquire(psref, &wgs->wgs_psref, wg_psref_class);
+	wgs = atomic_load_consume(&wgp->wgp_session_stable);
+	if (__predict_false(wgs->wgs_state != WGS_STATE_ESTABLISHED))
+		wgs = NULL;
+	else
+		psref_acquire(psref, &wgs->wgs_psref, wg_psref_class);
 	pserialize_read_exit(s);
+
 	return wgs;
-}
-
-static void
-wg_get_session(struct wg_session *wgs, struct psref *psref)
-{
-
-	psref_acquire(psref, &wgs->wgs_psref, wg_psref_class);
 }
 
 static void
@@ -1137,26 +1209,88 @@ wg_put_session(struct wg_session *wgs, struct psref *psref)
 	psref_release(psref, &wgs->wgs_psref, wg_psref_class);
 }
 
-static struct wg_session *
-wg_lock_unstable_session(struct wg_peer *wgp)
-{
-	struct wg_session *wgs;
-
-	mutex_enter(wgp->wgp_lock);
-	wgs = wgp->wgp_session_unstable;
-	mutex_enter(wgs->wgs_lock);
-	mutex_exit(wgp->wgp_lock);
-	return wgs;
-}
-
-#if 0
 static void
-wg_unlock_session(struct wg_peer *wgp, struct wg_session *wgs)
+wg_destroy_session(struct wg_softc *wg, struct wg_session *wgs)
 {
+	struct wg_peer *wgp = wgs->wgs_peer;
+	struct wg_session *wgs0 __diagused;
+	void *garbage;
 
-	mutex_exit(wgs->wgs_lock);
+	KASSERT(mutex_owned(wgp->wgp_lock));
+	KASSERT(wgs->wgs_state != WGS_STATE_UNKNOWN);
+
+	/* Remove the session from the table.  */
+	wgs0 = thmap_del(wg->wg_sessions_byindex,
+	    &wgs->wgs_local_index, sizeof(wgs->wgs_local_index));
+	KASSERT(wgs0 == wgs);
+	garbage = thmap_stage_gc(wg->wg_sessions_byindex);
+
+	/* Wait for passive references to drain.  */
+	pserialize_perform(wgp->wgp_psz);
+	psref_target_destroy(&wgs->wgs_psref, wg_psref_class);
+
+	/* Free memory, zero state, and transition to UNKNOWN.  */
+	thmap_gc(wg->wg_sessions_byindex, garbage);
+	wg_clear_states(wgs);
+	wgs->wgs_state = WGS_STATE_UNKNOWN;
 }
-#endif
+
+/*
+ * wg_get_session_index(wg, wgs)
+ *
+ *	Choose a session index for wgs->wgs_local_index, and store it
+ *	in wg's table of sessions by index.
+ *
+ *	wgs must be the unstable session of its peer, and must be
+ *	transitioning out of the UNKNOWN state.
+ */
+static void
+wg_get_session_index(struct wg_softc *wg, struct wg_session *wgs)
+{
+	struct wg_peer *wgp __diagused = wgs->wgs_peer;
+	struct wg_session *wgs0;
+	uint32_t index;
+
+	KASSERT(mutex_owned(wgp->wgp_lock));
+	KASSERT(wgs == wgp->wgp_session_unstable);
+	KASSERT(wgs->wgs_state == WGS_STATE_UNKNOWN);
+
+	do {
+		/* Pick a uniform random index.  */
+		index = cprng_strong32();
+
+		/* Try to take it.  */
+		wgs->wgs_local_index = index;
+		wgs0 = thmap_put(wg->wg_sessions_byindex,
+		    &wgs->wgs_local_index, sizeof wgs->wgs_local_index, wgs);
+
+		/* If someone else beat us, start over.  */
+	} while (__predict_false(wgs0 != wgs));
+}
+
+/*
+ * wg_put_session_index(wg, wgs)
+ *
+ *	Remove wgs from the table of sessions by index, wait for any
+ *	passive references to drain, and transition the session to the
+ *	UNKNOWN state.
+ *
+ *	wgs must be the unstable session of its peer, and must not be
+ *	UNKNOWN or ESTABLISHED.
+ */
+static void
+wg_put_session_index(struct wg_softc *wg, struct wg_session *wgs)
+{
+	struct wg_peer *wgp __diagused = wgs->wgs_peer;
+
+	KASSERT(mutex_owned(wgp->wgp_lock));
+	KASSERT(wgs == wgp->wgp_session_unstable);
+	KASSERT(wgs->wgs_state != WGS_STATE_UNKNOWN);
+	KASSERT(wgs->wgs_state != WGS_STATE_ESTABLISHED);
+
+	wg_destroy_session(wg, wgs);
+	psref_target_init(&wgs->wgs_psref, wg_psref_class);
+}
 
 /*
  * Handshake patterns
@@ -1190,8 +1324,12 @@ wg_fill_msg_init(struct wg_softc *wg, struct wg_peer *wgp,
 	uint8_t pubkey[WG_EPHEMERAL_KEY_LEN];
 	uint8_t privkey[WG_EPHEMERAL_KEY_LEN];
 
-	wgmi->wgmi_type = WG_MSG_TYPE_INIT;
-	wgmi->wgmi_sender = cprng_strong32();
+	KASSERT(mutex_owned(wgp->wgp_lock));
+	KASSERT(wgs == wgp->wgp_session_unstable);
+	KASSERT(wgs->wgs_state == WGS_STATE_INIT_ACTIVE);
+
+	wgmi->wgmi_type = htole32(WG_MSG_TYPE_INIT);
+	wgmi->wgmi_sender = wgs->wgs_local_index;
 
 	/* [W] 5.4.2: First Message: Initiator to Responder */
 
@@ -1266,8 +1404,7 @@ wg_fill_msg_init(struct wg_softc *wg, struct wg_peer *wgp,
 	memcpy(wgs->wgs_ephemeral_key_priv, privkey, sizeof(privkey));
 	memcpy(wgs->wgs_handshake_hash, hash, sizeof(hash));
 	memcpy(wgs->wgs_chaining_key, ckey, sizeof(ckey));
-	wgs->wgs_sender_index = wgmi->wgmi_sender;
-	WG_DLOG("%s: sender=%x\n", __func__, wgs->wgs_sender_index);
+	WG_DLOG("%s: sender=%x\n", __func__, wgs->wgs_local_index);
 }
 
 static void
@@ -1280,13 +1417,25 @@ wg_handle_msg_init(struct wg_softc *wg, const struct wg_msg_init *wgmi,
 	uint8_t peer_pubkey[WG_STATIC_KEY_LEN];
 	struct wg_peer *wgp;
 	struct wg_session *wgs;
-	bool reset_state_on_error = false;
 	int error, ret;
 	struct psref psref_peer;
-	struct psref psref_session;
 	uint8_t mac1[WG_MAC_LEN];
 
 	WG_TRACE("init msg received");
+
+	wg_algo_mac_mac1(mac1, sizeof(mac1),
+	    wg->wg_pubkey, sizeof(wg->wg_pubkey),
+	    (const uint8_t *)wgmi, offsetof(struct wg_msg_init, wgmi_mac1));
+
+	/*
+	 * [W] 5.3: Denial of Service Mitigation & Cookies
+	 * "the responder, ..., must always reject messages with an invalid
+	 *  msg.mac1"
+	 */
+	if (!consttime_memequal(mac1, wgmi->wgmi_mac1, sizeof(mac1))) {
+		WG_DLOG("mac1 is invalid\n");
+		return;
+	}
 
 	/*
 	 * [W] 5.4.2: First Message: Initiator to Responder
@@ -1337,44 +1486,13 @@ wg_handle_msg_init(struct wg_softc *wg, const struct wg_msg_init *wgmi,
 		return;
 	}
 
-	wgs = wg_lock_unstable_session(wgp);
-	if (wgs->wgs_state == WGS_STATE_DESTROYING) {
-		/*
-		 * We can assume that the peer doesn't have an established
-		 * session, so clear it now.
-		 */
-		WG_TRACE("Session destroying, but force to clear");
-		wg_stop_session_dtor_timer(wgp);
-		wg_clear_states(wgs);
-		wgs->wgs_state = WGS_STATE_UNKNOWN;
-	}
-	if (wgs->wgs_state == WGS_STATE_INIT_ACTIVE) {
-		WG_TRACE("Sesssion already initializing, ignoring the message");
-		mutex_exit(wgs->wgs_lock);
-		goto out_wgp;
-	}
-	if (wgs->wgs_state == WGS_STATE_INIT_PASSIVE) {
-		WG_TRACE("Sesssion already initializing, destroying old states");
-		wg_clear_states(wgs);
-	}
-	wgs->wgs_state = WGS_STATE_INIT_PASSIVE;
-	reset_state_on_error = true;
-	wg_get_session(wgs, &psref_session);
-	mutex_exit(wgs->wgs_lock);
-
-	wg_algo_mac_mac1(mac1, sizeof(mac1),
-	    wg->wg_pubkey, sizeof(wg->wg_pubkey),
-	    (const uint8_t *)wgmi, offsetof(struct wg_msg_init, wgmi_mac1));
-
 	/*
-	 * [W] 5.3: Denial of Service Mitigation & Cookies
-	 * "the responder, ..., must always reject messages with an invalid
-	 *  msg.mac1"
+	 * Lock the peer to serialize access to cookie state.
+	 *
+	 * XXX Can we safely avoid holding the lock across DH?  Take it
+	 * just to verify mac2 and then unlock/DH/lock?
 	 */
-	if (!consttime_memequal(mac1, wgmi->wgmi_mac1, sizeof(mac1))) {
-		WG_DLOG("mac1 is invalid\n");
-		goto out;
-	}
+	mutex_enter(wgp->wgp_lock);
 
 	if (__predict_false(wg_is_underload(wg, wgp, WG_MSG_TYPE_INIT))) {
 		WG_TRACE("under load");
@@ -1441,6 +1559,37 @@ wg_handle_msg_init(struct wg_softc *wg, const struct wg_msg_init *wgmi,
 	}
 	memcpy(wgp->wgp_timestamp_latest_init, timestamp, sizeof(timestamp));
 
+	/*
+	 * Message is good -- we're committing to handle it now, unless
+	 * we were already initiating a session.
+	 */
+	wgs = wgp->wgp_session_unstable;
+	switch (wgs->wgs_state) {
+	case WGS_STATE_UNKNOWN:		/* new session initiated by peer */
+		wg_get_session_index(wg, wgs);
+		break;
+	case WGS_STATE_INIT_ACTIVE:	/* we're already initiating, drop */
+		WG_TRACE("Session already initializing, ignoring the message");
+		goto out;
+	case WGS_STATE_INIT_PASSIVE:	/* peer is retrying, start over */
+		WG_TRACE("Session already initializing, destroying old states");
+		wg_clear_states(wgs);
+		/* keep session index */
+		break;
+	case WGS_STATE_ESTABLISHED:	/* can't happen */
+		panic("unstable session can't be established");
+		break;
+	case WGS_STATE_DESTROYING:	/* rekey initiated by peer */
+		WG_TRACE("Session destroying, but force to clear");
+		callout_stop(&wgp->wgp_session_dtor_timer);
+		wg_clear_states(wgs);
+		/* keep session index */
+		break;
+	default:
+		panic("invalid session state: %d", wgs->wgs_state);
+	}
+	wgs->wgs_state = WGS_STATE_INIT_PASSIVE;
+
 	memcpy(wgs->wgs_handshake_hash, hash, sizeof(hash));
 	memcpy(wgs->wgs_chaining_key, ckey, sizeof(ckey));
 	memcpy(wgs->wgs_ephemeral_key_peer, wgmi->wgmi_ephemeral,
@@ -1448,58 +1597,28 @@ wg_handle_msg_init(struct wg_softc *wg, const struct wg_msg_init *wgmi,
 
 	wg_update_endpoint_if_necessary(wgp, src);
 
-	(void)wg_send_handshake_msg_resp(wg, wgp, wgmi);
+	(void)wg_send_handshake_msg_resp(wg, wgp, wgs, wgmi);
 
 	wg_calculate_keys(wgs, false);
 	wg_clear_states(wgs);
 
-	wg_put_session(wgs, &psref_session);
-	wg_put_peer(wgp, &psref_peer);
-	return;
-
 out:
-	if (reset_state_on_error) {
-		mutex_enter(wgs->wgs_lock);
-		KASSERT(wgs->wgs_state == WGS_STATE_INIT_PASSIVE);
-		wgs->wgs_state = WGS_STATE_UNKNOWN;
-		mutex_exit(wgs->wgs_lock);
-	}
-	wg_put_session(wgs, &psref_session);
-out_wgp:
+	mutex_exit(wgp->wgp_lock);
 	wg_put_peer(wgp, &psref_peer);
 }
 
-static void
-wg_schedule_handshake_timeout_timer(struct wg_peer *wgp)
+static struct socket *
+wg_get_so_by_af(struct wg_softc *wg, const int af)
 {
 
-	mutex_enter(wgp->wgp_lock);
-	if (__predict_true(wgp->wgp_state != WGP_STATE_DESTROYING)) {
-		callout_schedule(&wgp->wgp_handshake_timeout_timer,
-		    MIN(wg_rekey_timeout, INT_MAX/hz) * hz);
-	}
-	mutex_exit(wgp->wgp_lock);
-}
-
-static void
-wg_stop_handshake_timeout_timer(struct wg_peer *wgp)
-{
-
-	callout_halt(&wgp->wgp_handshake_timeout_timer, NULL);
+	return (af == AF_INET) ? wg->wg_so4 : wg->wg_so6;
 }
 
 static struct socket *
-wg_get_so_by_af(struct wg_worker *wgw, const int af)
+wg_get_so_by_peer(struct wg_peer *wgp, struct wg_sockaddr *wgsa)
 {
 
-	return (af == AF_INET) ? wgw->wgw_so4 : wgw->wgw_so6;
-}
-
-static struct socket *
-wg_get_so_by_peer(struct wg_peer *wgp)
-{
-
-	return wg_get_so_by_af(wgp->wgp_sc->wg_worker, wgp->wgp_sa.sa_family);
+	return wg_get_so_by_af(wgp->wgp_sc, wgsa_family(wgsa));
 }
 
 static struct wg_sockaddr *
@@ -1509,7 +1628,7 @@ wg_get_endpoint_sa(struct wg_peer *wgp, struct psref *psref)
 	int s;
 
 	s = pserialize_read_enter();
-	wgsa = wgp->wgp_endpoint;
+	wgsa = atomic_load_consume(&wgp->wgp_endpoint);
 	psref_acquire(psref, &wgsa->wgsa_psref, wg_psref_class);
 	pserialize_read_exit(s);
 
@@ -1531,8 +1650,8 @@ wg_send_so(struct wg_peer *wgp, struct mbuf *m)
 	struct psref psref;
 	struct wg_sockaddr *wgsa;
 
-	so = wg_get_so_by_peer(wgp);
 	wgsa = wg_get_endpoint_sa(wgp, &psref);
+	so = wg_get_so_by_peer(wgp, wgsa);
 	error = sosend(so, wgsatosa(wgsa), NULL, m, NULL, 0, curlwp);
 	wg_put_sa(wgp, wgsa, &psref);
 
@@ -1546,27 +1665,32 @@ wg_send_handshake_msg_init(struct wg_softc *wg, struct wg_peer *wgp)
 	struct mbuf *m;
 	struct wg_msg_init *wgmi;
 	struct wg_session *wgs;
-	struct psref psref;
 
-	wgs = wg_lock_unstable_session(wgp);
-	if (wgs->wgs_state == WGS_STATE_DESTROYING) {
+	KASSERT(mutex_owned(wgp->wgp_lock));
+
+	wgs = wgp->wgp_session_unstable;
+	/* XXX pull dispatch out into wg_task_send_init_message */
+	switch (wgs->wgs_state) {
+	case WGS_STATE_UNKNOWN:		/* new session initiated by us */
+		wg_get_session_index(wg, wgs);
+		break;
+	case WGS_STATE_INIT_ACTIVE:	/* we're already initiating, stop */
+		WG_TRACE("Session already initializing, skip starting new one");
+		return EBUSY;
+	case WGS_STATE_INIT_PASSIVE:	/* peer was trying -- XXX what now? */
+		WG_TRACE("Session already initializing, destroying old states");
+		wg_clear_states(wgs);
+		/* keep session index */
+		break;
+	case WGS_STATE_ESTABLISHED:	/* can't happen */
+		panic("unstable session can't be established");
+		break;
+	case WGS_STATE_DESTROYING:	/* rekey initiated by us too early */
 		WG_TRACE("Session destroying");
-		mutex_exit(wgs->wgs_lock);
 		/* XXX should wait? */
 		return EBUSY;
 	}
-	if (wgs->wgs_state == WGS_STATE_INIT_ACTIVE) {
-		WG_TRACE("Sesssion already initializing, skip starting a new one");
-		mutex_exit(wgs->wgs_lock);
-		return EBUSY;
-	}
-	if (wgs->wgs_state == WGS_STATE_INIT_PASSIVE) {
-		WG_TRACE("Sesssion already initializing, destroying old states");
-		wg_clear_states(wgs);
-	}
 	wgs->wgs_state = WGS_STATE_INIT_ACTIVE;
-	wg_get_session(wgs, &psref);
-	mutex_exit(wgs->wgs_lock);
 
 	m = m_gethdr(M_WAIT, MT_DATA);
 	m->m_pkthdr.len = m->m_len = sizeof(*wgmi);
@@ -1579,36 +1703,38 @@ wg_send_handshake_msg_init(struct wg_softc *wg, struct wg_peer *wgp)
 
 		if (wgp->wgp_handshake_start_time == 0)
 			wgp->wgp_handshake_start_time = time_uptime;
-		wg_schedule_handshake_timeout_timer(wgp);
+		callout_schedule(&wgp->wgp_handshake_timeout_timer,
+		    MIN(wg_rekey_timeout, INT_MAX/hz) * hz);
 	} else {
-		mutex_enter(wgs->wgs_lock);
-		KASSERT(wgs->wgs_state == WGS_STATE_INIT_ACTIVE);
-		wgs->wgs_state = WGS_STATE_UNKNOWN;
-		mutex_exit(wgs->wgs_lock);
+		wg_put_session_index(wg, wgs);
+		/* Initiation failed; toss packet waiting for it if any.  */
+		if ((m = atomic_swap_ptr(&wgp->wgp_pending, NULL)) != NULL)
+			m_freem(m);
 	}
-	wg_put_session(wgs, &psref);
 
 	return error;
 }
 
 static void
 wg_fill_msg_resp(struct wg_softc *wg, struct wg_peer *wgp,
-    struct wg_msg_resp *wgmr, const struct wg_msg_init *wgmi)
+    struct wg_session *wgs, struct wg_msg_resp *wgmr,
+    const struct wg_msg_init *wgmi)
 {
 	uint8_t ckey[WG_CHAINING_KEY_LEN]; /* [W] 5.4.3: Cr */
 	uint8_t hash[WG_HASH_LEN]; /* [W] 5.4.3: Hr */
 	uint8_t cipher_key[WG_KDF_OUTPUT_LEN];
 	uint8_t pubkey[WG_EPHEMERAL_KEY_LEN];
 	uint8_t privkey[WG_EPHEMERAL_KEY_LEN];
-	struct wg_session *wgs;
-	struct psref psref;
 
-	wgs = wg_get_unstable_session(wgp, &psref);
+	KASSERT(mutex_owned(wgp->wgp_lock));
+	KASSERT(wgs == wgp->wgp_session_unstable);
+	KASSERT(wgs->wgs_state == WGS_STATE_INIT_PASSIVE);
+
 	memcpy(hash, wgs->wgs_handshake_hash, sizeof(hash));
 	memcpy(ckey, wgs->wgs_chaining_key, sizeof(ckey));
 
-	wgmr->wgmr_type = WG_MSG_TYPE_RESP;
-	wgmr->wgmr_sender = cprng_strong32();
+	wgmr->wgmr_type = htole32(WG_MSG_TYPE_RESP);
+	wgmr->wgmr_sender = wgs->wgs_local_index;
 	wgmr->wgmr_receiver = wgmi->wgmi_sender;
 
 	/* [W] 5.4.3 Second Message: Responder to Initiator */
@@ -1679,22 +1805,26 @@ wg_fill_msg_resp(struct wg_softc *wg, struct wg_peer *wgp,
 	memcpy(wgs->wgs_chaining_key, ckey, sizeof(ckey));
 	memcpy(wgs->wgs_ephemeral_key_pub, pubkey, sizeof(pubkey));
 	memcpy(wgs->wgs_ephemeral_key_priv, privkey, sizeof(privkey));
-	wgs->wgs_sender_index = wgmr->wgmr_sender;
-	wgs->wgs_receiver_index = wgmi->wgmi_sender;
-	WG_DLOG("sender=%x\n", wgs->wgs_sender_index);
-	WG_DLOG("receiver=%x\n", wgs->wgs_receiver_index);
-	wg_put_session(wgs, &psref);
+	wgs->wgs_remote_index = wgmi->wgmi_sender;
+	WG_DLOG("sender=%x\n", wgs->wgs_local_index);
+	WG_DLOG("receiver=%x\n", wgs->wgs_remote_index);
 }
 
 static void
 wg_swap_sessions(struct wg_peer *wgp)
 {
+	struct wg_session *wgs, *wgs_prev;
 
 	KASSERT(mutex_owned(wgp->wgp_lock));
 
-	wgp->wgp_session_unstable = atomic_swap_ptr(&wgp->wgp_session_stable,
-	    wgp->wgp_session_unstable);
-	KASSERT(wgp->wgp_session_stable->wgs_state == WGS_STATE_ESTABLISHED);
+	wgs = wgp->wgp_session_unstable;
+	KASSERT(wgs->wgs_state == WGS_STATE_ESTABLISHED);
+
+	wgs_prev = wgp->wgp_session_stable;
+	KASSERT(wgs_prev->wgs_state == WGS_STATE_ESTABLISHED ||
+	    wgs_prev->wgs_state == WGS_STATE_UNKNOWN);
+	atomic_store_release(&wgp->wgp_session_stable, wgs);
+	wgp->wgp_session_unstable = wgs_prev;
 }
 
 static void
@@ -1710,15 +1840,7 @@ wg_handle_msg_resp(struct wg_softc *wg, const struct wg_msg_resp *wgmr,
 	int error;
 	uint8_t mac1[WG_MAC_LEN];
 	struct wg_session *wgs_prev;
-
-	WG_TRACE("resp msg received");
-	wgs = wg_lookup_session_by_index(wg, wgmr->wgmr_receiver, &psref);
-	if (wgs == NULL) {
-		WG_TRACE("No session found");
-		return;
-	}
-
-	wgp = wgs->wgs_peer;
+	struct mbuf *m;
 
 	wg_algo_mac_mac1(mac1, sizeof(mac1),
 	    wg->wg_pubkey, sizeof(wg->wg_pubkey),
@@ -1731,6 +1853,23 @@ wg_handle_msg_resp(struct wg_softc *wg, const struct wg_msg_resp *wgmr,
 	 */
 	if (!consttime_memequal(mac1, wgmr->wgmr_mac1, sizeof(mac1))) {
 		WG_DLOG("mac1 is invalid\n");
+		return;
+	}
+
+	WG_TRACE("resp msg received");
+	wgs = wg_lookup_session_by_index(wg, wgmr->wgmr_receiver, &psref);
+	if (wgs == NULL) {
+		WG_TRACE("No session found");
+		return;
+	}
+
+	wgp = wgs->wgs_peer;
+
+	mutex_enter(wgp->wgp_lock);
+
+	/* If we weren't waiting for a handshake response, drop it.  */
+	if (wgs->wgs_state != WGS_STATE_INIT_ACTIVE) {
+		WG_TRACE("peer sent spurious handshake response, ignoring");
 		goto out;
 	}
 
@@ -1827,9 +1966,10 @@ wg_handle_msg_resp(struct wg_softc *wg, const struct wg_msg_resp *wgmr,
 
 	memcpy(wgs->wgs_handshake_hash, hash, sizeof(wgs->wgs_handshake_hash));
 	memcpy(wgs->wgs_chaining_key, ckey, sizeof(wgs->wgs_chaining_key));
-	wgs->wgs_receiver_index = wgmr->wgmr_sender;
-	WG_DLOG("receiver=%x\n", wgs->wgs_receiver_index);
+	wgs->wgs_remote_index = wgmr->wgmr_sender;
+	WG_DLOG("receiver=%x\n", wgs->wgs_remote_index);
 
+	KASSERT(wgs->wgs_state == WGS_STATE_INIT_ACTIVE);
 	wgs->wgs_state = WGS_STATE_ESTABLISHED;
 	wgs->wgs_time_established = time_uptime;
 	wgs->wgs_time_last_data_sent = 0;
@@ -1838,59 +1978,73 @@ wg_handle_msg_resp(struct wg_softc *wg, const struct wg_msg_resp *wgmr,
 	wg_clear_states(wgs);
 	WG_TRACE("WGS_STATE_ESTABLISHED");
 
-	wg_stop_handshake_timeout_timer(wgp);
+	callout_stop(&wgp->wgp_handshake_timeout_timer);
 
-	mutex_enter(wgp->wgp_lock);
 	wg_swap_sessions(wgp);
+	KASSERT(wgs == wgp->wgp_session_stable);
 	wgs_prev = wgp->wgp_session_unstable;
-	mutex_enter(wgs_prev->wgs_lock);
-
 	getnanotime(&wgp->wgp_last_handshake_time);
 	wgp->wgp_handshake_start_time = 0;
 	wgp->wgp_last_sent_mac1_valid = false;
 	wgp->wgp_last_sent_cookie_valid = false;
-	mutex_exit(wgp->wgp_lock);
 
 	wg_schedule_rekey_timer(wgp);
 
 	wg_update_endpoint_if_necessary(wgp, src);
 
 	/*
-	 * Send something immediately (same as the official implementation)
-	 * XXX if there are pending data packets, we don't need to send
-	 *     a keepalive message.
+	 * If we had a data packet queued up, send it; otherwise send a
+	 * keepalive message -- either way we have to send something
+	 * immediately or else the responder will never answer.
 	 */
-	wg_send_keepalive_msg(wgp, wgs);
-
-	/* Anyway run a softint to flush pending packets */
-	kpreempt_disable();
-	softint_schedule(wgp->wgp_si);
-	kpreempt_enable();
-	WG_TRACE("softint scheduled");
+	if ((m = atomic_swap_ptr(&wgp->wgp_pending, NULL)) != NULL) {
+		kpreempt_disable();
+		const uint32_t h = curcpu()->ci_index; // pktq_rps_hash(m)
+		M_SETCTX(m, wgp);
+		if (__predict_false(!pktq_enqueue(wg_pktq, m, h))) {
+			WGLOG(LOG_ERR, "pktq full, dropping\n");
+			m_freem(m);
+		}
+		kpreempt_enable();
+	} else {
+		wg_send_keepalive_msg(wgp, wgs);
+	}
 
 	if (wgs_prev->wgs_state == WGS_STATE_ESTABLISHED) {
+		/* Wait for wg_get_stable_session to drain.  */
+		pserialize_perform(wgp->wgp_psz);
+
+		/* Transition ESTABLISHED->DESTROYING.  */
 		wgs_prev->wgs_state = WGS_STATE_DESTROYING;
+
 		/* We can't destroy the old session immediately */
 		wg_schedule_session_dtor_timer(wgp);
+	} else {
+		KASSERTMSG(wgs_prev->wgs_state == WGS_STATE_UNKNOWN,
+		    "state=%d", wgs_prev->wgs_state);
 	}
-	mutex_exit(wgs_prev->wgs_lock);
 
 out:
+	mutex_exit(wgp->wgp_lock);
 	wg_put_session(wgs, &psref);
 }
 
 static int
 wg_send_handshake_msg_resp(struct wg_softc *wg, struct wg_peer *wgp,
-    const struct wg_msg_init *wgmi)
+    struct wg_session *wgs, const struct wg_msg_init *wgmi)
 {
 	int error;
 	struct mbuf *m;
 	struct wg_msg_resp *wgmr;
 
+	KASSERT(mutex_owned(wgp->wgp_lock));
+	KASSERT(wgs == wgp->wgp_session_unstable);
+	KASSERT(wgs->wgs_state == WGS_STATE_INIT_PASSIVE);
+
 	m = m_gethdr(M_WAIT, MT_DATA);
 	m->m_pkthdr.len = m->m_len = sizeof(*wgmr);
 	wgmr = mtod(m, struct wg_msg_resp *);
-	wg_fill_msg_resp(wg, wgp, wgmr, wgmi);
+	wg_fill_msg_resp(wg, wgp, wgs, wgmr, wgmi);
 
 	error = wg->wg_ops->send_hs_msg(wgp, m);
 	if (error == 0)
@@ -1905,12 +2059,7 @@ wg_lookup_peer_by_pubkey(struct wg_softc *wg,
 	struct wg_peer *wgp;
 
 	int s = pserialize_read_enter();
-	/* XXX O(n) */
-	WG_PEER_READER_FOREACH(wgp, wg) {
-		if (consttime_memequal(wgp->wgp_pubkey, pubkey,
-			sizeof(wgp->wgp_pubkey)))
-			break;
-	}
+	wgp = thmap_get(wg->wg_peers_bypubkey, pubkey, WG_STATIC_KEY_LEN);
 	if (wgp != NULL)
 		wg_get_peer(wgp, psref);
 	pserialize_read_exit(s);
@@ -1929,7 +2078,9 @@ wg_fill_msg_cookie(struct wg_softc *wg, struct wg_peer *wgp,
 	size_t addrlen;
 	uint16_t uh_sport; /* be */
 
-	wgmc->wgmc_type = WG_MSG_TYPE_COOKIE;
+	KASSERT(mutex_owned(wgp->wgp_lock));
+
+	wgmc->wgmc_type = htole32(WG_MSG_TYPE_COOKIE);
 	wgmc->wgmc_receiver = sender;
 	cprng_fast(wgmc->wgmc_salt, sizeof(wgmc->wgmc_salt));
 
@@ -1961,7 +2112,7 @@ wg_fill_msg_cookie(struct wg_softc *wg, struct wg_peer *wgp,
 	    }
 #endif
 	default:
-		panic("invalid af=%d", wgp->wgp_sa.sa_family);
+		panic("invalid af=%d", src->sa_family);
 	}
 
 	wg_algo_mac(cookie, sizeof(cookie),
@@ -1985,6 +2136,8 @@ wg_send_cookie_msg(struct wg_softc *wg, struct wg_peer *wgp,
 	int error;
 	struct mbuf *m;
 	struct wg_msg_cookie *wgmc;
+
+	KASSERT(mutex_owned(wgp->wgp_lock));
 
 	m = m_gethdr(M_WAIT, MT_DATA);
 	m->m_pkthdr.len = m->m_len = sizeof(*wgmc);
@@ -2019,6 +2172,8 @@ wg_is_underload(struct wg_softc *wg, struct wg_peer *wgp, int msgtype)
 static void
 wg_calculate_keys(struct wg_session *wgs, const bool initiator)
 {
+
+	KASSERT(mutex_owned(wgs->wgs_peer->wgp_lock));
 
 	/*
 	 * [W] 5.4.5: Ti^send = Tr^recv, Ti^recv = Tr^send := KDF2(Ci = Cr, e)
@@ -2070,6 +2225,8 @@ static void
 wg_clear_states(struct wg_session *wgs)
 {
 
+	KASSERT(mutex_owned(wgs->wgs_peer->wgp_lock));
+
 	wgs->wgs_send_counter = 0;
 	sliwin_reset(&wgs->wgs_recvwin->window);
 
@@ -2086,26 +2243,15 @@ static struct wg_session *
 wg_lookup_session_by_index(struct wg_softc *wg, const uint32_t index,
     struct psref *psref)
 {
-	struct wg_peer *wgp;
 	struct wg_session *wgs;
 
 	int s = pserialize_read_enter();
-	/* XXX O(n) */
-	WG_PEER_READER_FOREACH(wgp, wg) {
-		wgs = wgp->wgp_session_stable;
-		WG_DLOG("index=%x wgs_sender_index=%x\n",
-		    index, wgs->wgs_sender_index);
-		if (wgs->wgs_sender_index == index)
-			break;
-		wgs = wgp->wgp_session_unstable;
-		WG_DLOG("index=%x wgs_sender_index=%x\n",
-		    index, wgs->wgs_sender_index);
-		if (wgs->wgs_sender_index == index)
-			break;
-		wgs = NULL;
-	}
-	if (wgs != NULL)
+	wgs = thmap_get(wg->wg_sessions_byindex, &index, sizeof index);
+	if (wgs != NULL) {
+		KASSERT(atomic_load_relaxed(&wgs->wgs_state) !=
+		    WGS_STATE_UNKNOWN);
 		psref_acquire(psref, &wgs->wgs_psref, wg_psref_class);
+	}
 	pserialize_read_exit(s);
 
 	return wgs;
@@ -2154,25 +2300,33 @@ static void
 wg_schedule_peer_task(struct wg_peer *wgp, int task)
 {
 
-	atomic_or_uint(&wgp->wgp_tasks, task);
+	mutex_enter(wgp->wgp_intr_lock);
 	WG_DLOG("tasks=%d, task=%d\n", wgp->wgp_tasks, task);
-	wg_wakeup_worker(wgp->wgp_sc->wg_worker, WG_WAKEUP_REASON_PEER);
+	if (wgp->wgp_tasks == 0)
+		/*
+		 * XXX If the current CPU is already loaded -- e.g., if
+		 * there's already a bunch of handshakes queued up --
+		 * consider tossing this over to another CPU to
+		 * distribute the load.
+		 */
+		workqueue_enqueue(wg_wq, &wgp->wgp_work, NULL);
+	wgp->wgp_tasks |= task;
+	mutex_exit(wgp->wgp_intr_lock);
 }
 
 static void
 wg_change_endpoint(struct wg_peer *wgp, const struct sockaddr *new)
 {
-
-	KASSERT(mutex_owned(wgp->wgp_lock));
+	struct wg_sockaddr *wgsa_prev;
 
 	WG_TRACE("Changing endpoint");
 
 	memcpy(wgp->wgp_endpoint0, new, new->sa_len);
-	wgp->wgp_endpoint0 = atomic_swap_ptr(&wgp->wgp_endpoint,
-	    wgp->wgp_endpoint0);
-	if (!wgp->wgp_endpoint_available)
-		wgp->wgp_endpoint_available = true;
-	wgp->wgp_endpoint_changing = true;
+	wgsa_prev = wgp->wgp_endpoint;
+	atomic_store_release(&wgp->wgp_endpoint, wgp->wgp_endpoint0);
+	wgp->wgp_endpoint0 = wgsa_prev;
+	atomic_store_release(&wgp->wgp_endpoint_available, true);
+
 	wg_schedule_peer_task(wgp, WGP_TASK_ENDPOINT_CHANGED);
 }
 
@@ -2260,13 +2414,6 @@ wg_session_dtor_timer(void *arg)
 
 	WG_TRACE("enter");
 
-	mutex_enter(wgp->wgp_lock);
-	if (__predict_false(wgp->wgp_state == WGP_STATE_DESTROYING)) {
-		mutex_exit(wgp->wgp_lock);
-		return;
-	}
-	mutex_exit(wgp->wgp_lock);
-
 	wg_schedule_peer_task(wgp, WGP_TASK_DESTROY_PREV_SESSION);
 }
 
@@ -2276,13 +2423,6 @@ wg_schedule_session_dtor_timer(struct wg_peer *wgp)
 
 	/* 1 second grace period */
 	callout_schedule(&wgp->wgp_session_dtor_timer, hz);
-}
-
-static void
-wg_stop_session_dtor_timer(struct wg_peer *wgp)
-{
-
-	callout_halt(&wgp->wgp_session_dtor_timer, NULL);
 }
 
 static bool
@@ -2305,10 +2445,14 @@ static void
 wg_update_endpoint_if_necessary(struct wg_peer *wgp,
     const struct sockaddr *src)
 {
+	struct wg_sockaddr *wgsa;
+	struct psref psref;
+
+	wgsa = wg_get_endpoint_sa(wgp, &psref);
 
 #ifdef WG_DEBUG_LOG
 	char oldaddr[128], newaddr[128];
-	sockaddr_format(&wgp->wgp_sa, oldaddr, sizeof(oldaddr));
+	sockaddr_format(wgsatosa(wgsa), oldaddr, sizeof(oldaddr));
 	sockaddr_format(src, newaddr, sizeof(newaddr));
 	WG_DLOG("old=%s, new=%s\n", oldaddr, newaddr);
 #endif
@@ -2317,15 +2461,15 @@ wg_update_endpoint_if_necessary(struct wg_peer *wgp,
 	 * III: "Since the packet has authenticated correctly, the source IP of
 	 * the outer UDP/IP packet is used to update the endpoint for peer..."
 	 */
-	if (__predict_false(sockaddr_cmp(src, &wgp->wgp_sa) != 0 ||
-	                    !sockaddr_port_match(src, &wgp->wgp_sa))) {
-		mutex_enter(wgp->wgp_lock);
+	if (__predict_false(sockaddr_cmp(src, wgsatosa(wgsa)) != 0 ||
+		!sockaddr_port_match(src, wgsatosa(wgsa)))) {
 		/* XXX We can't change the endpoint twice in a short period */
-		if (!wgp->wgp_endpoint_changing) {
+		if (atomic_swap_uint(&wgp->wgp_endpoint_changing, 1) == 0) {
 			wg_change_endpoint(wgp, src);
 		}
-		mutex_exit(wgp->wgp_lock);
 	}
+
+	wg_put_sa(wgp, wgsa, &psref);
 }
 
 static void
@@ -2337,6 +2481,7 @@ wg_handle_msg_data(struct wg_softc *wg, struct mbuf *m,
 	size_t encrypted_len, decrypted_len;
 	struct wg_session *wgs;
 	struct wg_peer *wgp;
+	int state;
 	size_t mlen;
 	struct psref psref;
 	int error, af;
@@ -2346,34 +2491,62 @@ wg_handle_msg_data(struct wg_softc *wg, struct mbuf *m,
 	KASSERT(m->m_len >= sizeof(struct wg_msg_data));
 	wgmd = mtod(m, struct wg_msg_data *);
 
-	KASSERT(wgmd->wgmd_type == WG_MSG_TYPE_DATA);
+	KASSERT(wgmd->wgmd_type == htole32(WG_MSG_TYPE_DATA));
 	WG_TRACE("data");
 
+	/* Find the putative session, or drop.  */
 	wgs = wg_lookup_session_by_index(wg, wgmd->wgmd_receiver, &psref);
 	if (wgs == NULL) {
 		WG_TRACE("No session found");
 		m_freem(m);
 		return;
 	}
+
+	/*
+	 * We are only ready to handle data when in INIT_PASSIVE,
+	 * ESTABLISHED, or DESTROYING.  All transitions out of that
+	 * state dissociate the session index and drain psrefs.
+	 */
+	state = atomic_load_relaxed(&wgs->wgs_state);
+	switch (state) {
+	case WGS_STATE_UNKNOWN:
+		panic("wg session %p in unknown state has session index %u",
+		    wgs, wgmd->wgmd_receiver);
+	case WGS_STATE_INIT_ACTIVE:
+		WG_TRACE("not yet ready for data");
+		goto out;
+	case WGS_STATE_INIT_PASSIVE:
+	case WGS_STATE_ESTABLISHED:
+	case WGS_STATE_DESTROYING:
+		break;
+	}
+
+	/*
+	 * Get the peer, for rate-limited logs (XXX MPSAFE, dtrace) and
+	 * to update the endpoint if authentication succeeds.
+	 */
 	wgp = wgs->wgs_peer;
 
+	/*
+	 * Reject outrageously wrong sequence numbers before doing any
+	 * crypto work or taking any locks.
+	 */
 	error = sliwin_check_fast(&wgs->wgs_recvwin->window,
-	    wgmd->wgmd_counter);
+	    le64toh(wgmd->wgmd_counter));
 	if (error) {
 		WG_LOG_RATECHECK(&wgp->wgp_ppsratecheck, LOG_DEBUG,
 		    "out-of-window packet: %"PRIu64"\n",
-		    wgmd->wgmd_counter);
+		    le64toh(wgmd->wgmd_counter));
 		goto out;
 	}
 
+	/* Ensure the payload and authenticator are contiguous.  */
 	mlen = m_length(m);
 	encrypted_len = mlen - sizeof(*wgmd);
-
 	if (encrypted_len < WG_AUTHTAG_LEN) {
 		WG_DLOG("Short encrypted_len: %lu\n", encrypted_len);
 		goto out;
 	}
-
 	success = m_ensure_contig(&m, sizeof(*wgmd) + encrypted_len);
 	if (success) {
 		encrypted_buf = mtod(m, char *) + sizeof(*wgmd);
@@ -2390,14 +2563,17 @@ wg_handle_msg_data(struct wg_softc *wg, struct mbuf *m,
 	KASSERT(m->m_len >= sizeof(*wgmd));
 	wgmd = mtod(m, struct wg_msg_data *);
 
+	/*
+	 * Get a buffer for the plaintext.  Add WG_AUTHTAG_LEN to avoid
+	 * a zero-length buffer (XXX).  Drop if plaintext is longer
+	 * than MCLBYTES (XXX).
+	 */
 	decrypted_len = encrypted_len - WG_AUTHTAG_LEN;
 	if (decrypted_len > MCLBYTES) {
 		/* FIXME handle larger data than MCLBYTES */
 		WG_DLOG("couldn't handle larger data than MCLBYTES\n");
 		goto out;
 	}
-
-	/* To avoid zero length */
 	n = wg_get_mbuf(0, decrypted_len + WG_AUTHTAG_LEN);
 	if (n == NULL) {
 		WG_DLOG("wg_get_mbuf failed\n");
@@ -2405,10 +2581,11 @@ wg_handle_msg_data(struct wg_softc *wg, struct mbuf *m,
 	}
 	decrypted_buf = mtod(n, char *);
 
+	/* Decrypt and verify the packet.  */
 	WG_DLOG("mlen=%lu, encrypted_len=%lu\n", mlen, encrypted_len);
 	error = wg_algo_aead_dec(decrypted_buf,
 	    encrypted_len - WG_AUTHTAG_LEN /* can be 0 */,
-	    wgs->wgs_tkey_recv, wgmd->wgmd_counter, encrypted_buf,
+	    wgs->wgs_tkey_recv, le64toh(wgmd->wgmd_counter), encrypted_buf,
 	    encrypted_len, NULL, 0);
 	if (error != 0) {
 		WG_LOG_RATECHECK(&wgp->wgp_ppsratecheck, LOG_DEBUG,
@@ -2418,31 +2595,44 @@ wg_handle_msg_data(struct wg_softc *wg, struct mbuf *m,
 	}
 	WG_DLOG("outsize=%u\n", (u_int)decrypted_len);
 
+	/* Packet is genuine.  Reject it if a replay or just too old.  */
 	mutex_enter(&wgs->wgs_recvwin->lock);
 	error = sliwin_update(&wgs->wgs_recvwin->window,
-	    wgmd->wgmd_counter);
+	    le64toh(wgmd->wgmd_counter));
 	mutex_exit(&wgs->wgs_recvwin->lock);
 	if (error) {
 		WG_LOG_RATECHECK(&wgp->wgp_ppsratecheck, LOG_DEBUG,
 		    "replay or out-of-window packet: %"PRIu64"\n",
-		    wgmd->wgmd_counter);
+		    le64toh(wgmd->wgmd_counter));
 		m_freem(n);
 		goto out;
 	}
 
+	/* We're done with m now; free it and chuck the pointers.  */
 	m_freem(m);
 	m = NULL;
 	wgmd = NULL;
 
+	/*
+	 * Validate the encapsulated packet header and get the address
+	 * family, or drop.
+	 */
 	ok = wg_validate_inner_packet(decrypted_buf, decrypted_len, &af);
 	if (!ok) {
-		/* something wrong... */
 		m_freem(n);
 		goto out;
 	}
 
+	/*
+	 * The packet is genuine.  Update the peer's endpoint if the
+	 * source address changed.
+	 *
+	 * XXX How to prevent DoS by replaying genuine packets from the
+	 * wrong source address?
+	 */
 	wg_update_endpoint_if_necessary(wgp, src);
 
+	/* Submit it into our network stack if routable.  */
 	ok = wg_validate_route(wg, wgp, af, decrypted_buf);
 	if (ok) {
 		wg->wg_ops->input(&wg->wg_if, n, af);
@@ -2457,40 +2647,14 @@ wg_handle_msg_data(struct wg_softc *wg, struct mbuf *m,
 	}
 	n = NULL;
 
-	if (wgs->wgs_state == WGS_STATE_INIT_PASSIVE) {
-		struct wg_session *wgs_prev;
-
-		KASSERT(wgs == wgp->wgp_session_unstable);
-		wgs->wgs_state = WGS_STATE_ESTABLISHED;
-		wgs->wgs_time_established = time_uptime;
-		wgs->wgs_time_last_data_sent = 0;
-		wgs->wgs_is_initiator = false;
-		WG_TRACE("WGS_STATE_ESTABLISHED");
-
-		mutex_enter(wgp->wgp_lock);
-		wg_swap_sessions(wgp);
-		wgs_prev = wgp->wgp_session_unstable;
-		mutex_enter(wgs_prev->wgs_lock);
-		getnanotime(&wgp->wgp_last_handshake_time);
-		wgp->wgp_handshake_start_time = 0;
-		wgp->wgp_last_sent_mac1_valid = false;
-		wgp->wgp_last_sent_cookie_valid = false;
-		mutex_exit(wgp->wgp_lock);
-
-		if (wgs_prev->wgs_state == WGS_STATE_ESTABLISHED) {
-			wgs_prev->wgs_state = WGS_STATE_DESTROYING;
-			/* We can't destroy the old session immediately */
-			wg_schedule_session_dtor_timer(wgp);
-		} else {
-			wg_clear_states(wgs_prev);
-			wgs_prev->wgs_state = WGS_STATE_UNKNOWN;
-		}
-		mutex_exit(wgs_prev->wgs_lock);
-
-		/* Anyway run a softint to flush pending packets */
-		kpreempt_disable();
-		softint_schedule(wgp->wgp_si);
-		kpreempt_enable();
+	/* Update the state machine if necessary.  */
+	if (__predict_false(state == WGS_STATE_INIT_PASSIVE)) {
+		/*
+		 * We were waiting for the initiator to send their
+		 * first data transport message, and that has happened.
+		 * Schedule a task to establish this session.
+		 */
+		wg_schedule_peer_task(wgp, WGP_TASK_ESTABLISH_SESSION);
 	} else {
 		if (__predict_false(wg_need_to_send_init_message(wgs))) {
 			wg_schedule_peer_task(wgp, WGP_TASK_SEND_INIT_MESSAGE);
@@ -2502,8 +2666,9 @@ wg_handle_msg_data(struct wg_softc *wg, struct mbuf *m,
 		 *  itself to send back for KEEPALIVE-TIMEOUT seconds, it sends
 		 *  a keepalive message."
 		 */
-		WG_DLOG("time_uptime=%lu wgs_time_last_data_sent=%lu\n",
-		    time_uptime, wgs->wgs_time_last_data_sent);
+		WG_DLOG("time_uptime=%ju wgs_time_last_data_sent=%ju\n",
+		    (uintmax_t)time_uptime,
+		    (uintmax_t)wgs->wgs_time_last_data_sent);
 		if ((time_uptime - wgs->wgs_time_last_data_sent) >=
 		    wg_keepalive_timeout) {
 			WG_TRACE("Schedule sending keepalive message");
@@ -2535,21 +2700,27 @@ wg_handle_msg_cookie(struct wg_softc *wg, const struct wg_msg_cookie *wgmc)
 	uint8_t cookie[WG_COOKIE_LEN];
 
 	WG_TRACE("cookie msg received");
+
+	/* Find the putative session.  */
 	wgs = wg_lookup_session_by_index(wg, wgmc->wgmc_receiver, &psref);
 	if (wgs == NULL) {
 		WG_TRACE("No session found");
 		return;
 	}
+
+	/* Lock the peer so we can update the cookie state.  */
 	wgp = wgs->wgs_peer;
+	mutex_enter(wgp->wgp_lock);
 
 	if (!wgp->wgp_last_sent_mac1_valid) {
 		WG_TRACE("No valid mac1 sent (or expired)");
 		goto out;
 	}
 
+	/* Decrypt the cookie and store it for later handshake retry.  */
 	wg_algo_mac_cookie(key, sizeof(key), wgp->wgp_pubkey,
 	    sizeof(wgp->wgp_pubkey));
-	error = wg_algo_xaead_dec(cookie, sizeof(cookie), key, 0,
+	error = wg_algo_xaead_dec(cookie, sizeof(cookie), key,
 	    wgmc->wgmc_cookie, sizeof(wgmc->wgmc_cookie),
 	    wgp->wgp_last_sent_mac1, sizeof(wgp->wgp_last_sent_mac1),
 	    wgmc->wgmc_salt);
@@ -2567,6 +2738,7 @@ wg_handle_msg_cookie(struct wg_softc *wg, const struct wg_msg_cookie *wgmc)
 	wgp->wgp_latest_cookie_time = time_uptime;
 	memcpy(wgp->wgp_latest_cookie, cookie, sizeof(wgp->wgp_latest_cookie));
 out:
+	mutex_exit(wgp->wgp_lock);
 	wg_put_session(wgs, &psref);
 }
 
@@ -2589,7 +2761,7 @@ wg_validate_msg_header(struct wg_softc *wg, struct mbuf *m)
 	 * worry about contiguity and alignment later.
 	 */
 	m_copydata(m, 0, sizeof(wgm), &wgm);
-	switch (wgm.wgm_type) {
+	switch (le32toh(wgm.wgm_type)) {
 	case WG_MSG_TYPE_INIT:
 		msglen = sizeof(struct wg_msg_init);
 		break;
@@ -2604,14 +2776,14 @@ wg_validate_msg_header(struct wg_softc *wg, struct mbuf *m)
 		break;
 	default:
 		WG_LOG_RATECHECK(&wg->wg_ppsratecheck, LOG_DEBUG,
-		    "Unexpected msg type: %u\n", wgm.wgm_type);
+		    "Unexpected msg type: %u\n", le32toh(wgm.wgm_type));
 		goto error;
 	}
 
 	/* Verify the mbuf chain is long enough for this type of message.  */
 	if (__predict_false(mbuflen < msglen)) {
 		WG_DLOG("Invalid msg size: mbuflen=%lu type=%u\n", mbuflen,
-		    wgm.wgm_type);
+		    le32toh(wgm.wgm_type));
 		goto error;
 	}
 
@@ -2641,7 +2813,7 @@ wg_handle_packet(struct wg_softc *wg, struct mbuf *m,
 
 	KASSERT(m->m_len >= sizeof(struct wg_msg));
 	wgm = mtod(m, struct wg_msg *);
-	switch (wgm->wgm_type) {
+	switch (le32toh(wgm->wgm_type)) {
 	case WG_MSG_TYPE_INIT:
 		wg_handle_msg_init(wg, (struct wg_msg_init *)wgm, src);
 		break;
@@ -2653,11 +2825,13 @@ wg_handle_packet(struct wg_softc *wg, struct mbuf *m,
 		break;
 	case WG_MSG_TYPE_DATA:
 		wg_handle_msg_data(wg, m, src);
-		break;
+		/* wg_handle_msg_data frees m for us */
+		return;
 	default:
-		/* wg_validate_msg_header should already reject this case */
-		break;
+		panic("invalid message type: %d", le32toh(wgm->wgm_type));
 	}
+
+	m_freem(m);
 }
 
 static void
@@ -2672,7 +2846,7 @@ wg_receive_packets(struct wg_softc *wg, const int af)
 		struct mbuf *paddr = NULL;
 		struct sockaddr *src;
 
-		so = wg_get_so_by_af(wg->wg_worker, af);
+		so = wg_get_so_by_af(wg, af);
 		flags = MSG_DONTWAIT;
 		dummy_uio.uio_resid = 1000000000;
 
@@ -2708,28 +2882,122 @@ wg_put_peer(struct wg_peer *wgp, struct psref *psref)
 static void
 wg_task_send_init_message(struct wg_softc *wg, struct wg_peer *wgp)
 {
-	struct psref psref;
 	struct wg_session *wgs;
 
 	WG_TRACE("WGP_TASK_SEND_INIT_MESSAGE");
 
-	if (!wgp->wgp_endpoint_available) {
+	KASSERT(mutex_owned(wgp->wgp_lock));
+
+	if (!atomic_load_acquire(&wgp->wgp_endpoint_available)) {
 		WGLOG(LOG_DEBUG, "No endpoint available\n");
 		/* XXX should do something? */
 		return;
 	}
 
-	wgs = wg_get_stable_session(wgp, &psref);
+	wgs = wgp->wgp_session_stable;
 	if (wgs->wgs_state == WGS_STATE_UNKNOWN) {
-		wg_put_session(wgs, &psref);
+		/* XXX What if the unstable session is already INIT_ACTIVE?  */
 		wg_send_handshake_msg_init(wg, wgp);
 	} else {
-		wg_put_session(wgs, &psref);
 		/* rekey */
-		wgs = wg_get_unstable_session(wgp, &psref);
+		wgs = wgp->wgp_session_unstable;
 		if (wgs->wgs_state != WGS_STATE_INIT_ACTIVE)
 			wg_send_handshake_msg_init(wg, wgp);
-		wg_put_session(wgs, &psref);
+	}
+}
+
+static void
+wg_task_retry_handshake(struct wg_softc *wg, struct wg_peer *wgp)
+{
+	struct wg_session *wgs;
+
+	WG_TRACE("WGP_TASK_RETRY_HANDSHAKE");
+
+	KASSERT(mutex_owned(wgp->wgp_lock));
+	KASSERT(wgp->wgp_handshake_start_time != 0);
+
+	wgs = wgp->wgp_session_unstable;
+	if (wgs->wgs_state != WGS_STATE_INIT_ACTIVE)
+		return;
+
+	/*
+	 * XXX no real need to assign a new index here, but we do need
+	 * to transition to UNKNOWN temporarily
+	 */
+	wg_put_session_index(wg, wgs);
+
+	/* [W] 6.4 Handshake Initiation Retransmission */
+	if ((time_uptime - wgp->wgp_handshake_start_time) >
+	    wg_rekey_attempt_time) {
+		/* Give up handshaking */
+		wgp->wgp_handshake_start_time = 0;
+		WG_TRACE("give up");
+
+		/*
+		 * If a new data packet comes, handshaking will be retried
+		 * and a new session would be established at that time,
+		 * however we don't want to send pending packets then.
+		 */
+		wg_purge_pending_packets(wgp);
+		return;
+	}
+
+	wg_task_send_init_message(wg, wgp);
+}
+
+static void
+wg_task_establish_session(struct wg_softc *wg, struct wg_peer *wgp)
+{
+	struct wg_session *wgs, *wgs_prev;
+	struct mbuf *m;
+
+	KASSERT(mutex_owned(wgp->wgp_lock));
+
+	wgs = wgp->wgp_session_unstable;
+	if (wgs->wgs_state != WGS_STATE_INIT_PASSIVE)
+		/* XXX Can this happen?  */
+		return;
+
+	wgs->wgs_state = WGS_STATE_ESTABLISHED;
+	wgs->wgs_time_established = time_uptime;
+	wgs->wgs_time_last_data_sent = 0;
+	wgs->wgs_is_initiator = false;
+	WG_TRACE("WGS_STATE_ESTABLISHED");
+
+	wg_swap_sessions(wgp);
+	KASSERT(wgs == wgp->wgp_session_stable);
+	wgs_prev = wgp->wgp_session_unstable;
+	getnanotime(&wgp->wgp_last_handshake_time);
+	wgp->wgp_handshake_start_time = 0;
+	wgp->wgp_last_sent_mac1_valid = false;
+	wgp->wgp_last_sent_cookie_valid = false;
+
+	/* If we had a data packet queued up, send it.  */
+	if ((m = atomic_swap_ptr(&wgp->wgp_pending, NULL)) != NULL) {
+		kpreempt_disable();
+		const uint32_t h = curcpu()->ci_index; // pktq_rps_hash(m)
+		M_SETCTX(m, wgp);
+		if (__predict_false(!pktq_enqueue(wg_pktq, m, h))) {
+			WGLOG(LOG_ERR, "pktq full, dropping\n");
+			m_freem(m);
+		}
+		kpreempt_enable();
+	}
+
+	if (wgs_prev->wgs_state == WGS_STATE_ESTABLISHED) {
+		/* Wait for wg_get_stable_session to drain.  */
+		pserialize_perform(wgp->wgp_psz);
+
+		/* Transition ESTABLISHED->DESTROYING.  */
+		wgs_prev->wgs_state = WGS_STATE_DESTROYING;
+
+		/* We can't destroy the old session immediately */
+		wg_schedule_session_dtor_timer(wgp);
+	} else {
+		KASSERTMSG(wgs_prev->wgs_state == WGS_STATE_UNKNOWN,
+		    "state=%d", wgs_prev->wgs_state);
+		wg_clear_states(wgs_prev);
+		wgs_prev->wgs_state = WGS_STATE_UNKNOWN;
 	}
 }
 
@@ -2739,29 +3007,34 @@ wg_task_endpoint_changed(struct wg_softc *wg, struct wg_peer *wgp)
 
 	WG_TRACE("WGP_TASK_ENDPOINT_CHANGED");
 
-	mutex_enter(wgp->wgp_lock);
-	if (wgp->wgp_endpoint_changing) {
+	KASSERT(mutex_owned(wgp->wgp_lock));
+
+	if (atomic_load_relaxed(&wgp->wgp_endpoint_changing)) {
 		pserialize_perform(wgp->wgp_psz);
+		mutex_exit(wgp->wgp_lock);
 		psref_target_destroy(&wgp->wgp_endpoint0->wgsa_psref,
 		    wg_psref_class);
 		psref_target_init(&wgp->wgp_endpoint0->wgsa_psref,
 		    wg_psref_class);
-		wgp->wgp_endpoint_changing = false;
+		mutex_enter(wgp->wgp_lock);
+		atomic_store_release(&wgp->wgp_endpoint_changing, 0);
 	}
-	mutex_exit(wgp->wgp_lock);
 }
 
 static void
 wg_task_send_keepalive_message(struct wg_softc *wg, struct wg_peer *wgp)
 {
-	struct psref psref;
 	struct wg_session *wgs;
 
 	WG_TRACE("WGP_TASK_SEND_KEEPALIVE_MESSAGE");
 
-	wgs = wg_get_stable_session(wgp, &psref);
+	KASSERT(mutex_owned(wgp->wgp_lock));
+
+	wgs = wgp->wgp_session_stable;
+	if (wgs->wgs_state != WGS_STATE_ESTABLISHED)
+		return;
+
 	wg_send_keepalive_msg(wgp, wgs);
-	wg_put_session(wgs, &psref);
 }
 
 static void
@@ -2771,113 +3044,72 @@ wg_task_destroy_prev_session(struct wg_softc *wg, struct wg_peer *wgp)
 
 	WG_TRACE("WGP_TASK_DESTROY_PREV_SESSION");
 
-	mutex_enter(wgp->wgp_lock);
+	KASSERT(mutex_owned(wgp->wgp_lock));
+
 	wgs = wgp->wgp_session_unstable;
-	mutex_enter(wgs->wgs_lock);
 	if (wgs->wgs_state == WGS_STATE_DESTROYING) {
-		pserialize_perform(wgp->wgp_psz);
-		psref_target_destroy(&wgs->wgs_psref, wg_psref_class);
-		psref_target_init(&wgs->wgs_psref, wg_psref_class);
-		wg_clear_states(wgs);
-		wgs->wgs_state = WGS_STATE_UNKNOWN;
+		wg_put_session_index(wg, wgs);
 	}
-	mutex_exit(wgs->wgs_lock);
-	mutex_exit(wgp->wgp_lock);
 }
 
 static void
-wg_process_peer_tasks(struct wg_softc *wg)
+wg_peer_work(struct work *wk, void *cookie)
 {
-	struct wg_peer *wgp;
-	int s;
+	struct wg_peer *wgp = container_of(wk, struct wg_peer, wgp_work);
+	struct wg_softc *wg = wgp->wgp_sc;
+	int tasks;
 
-	/* XXX should avoid checking all peers */
-	s = pserialize_read_enter();
-	WG_PEER_READER_FOREACH(wgp, wg) {
-		struct psref psref;
-		unsigned int tasks;
+	mutex_enter(wgp->wgp_intr_lock);
+	while ((tasks = wgp->wgp_tasks) != 0) {
+		wgp->wgp_tasks = 0;
+		mutex_exit(wgp->wgp_intr_lock);
 
-		if (wgp->wgp_tasks == 0)
-			continue;
-
-		wg_get_peer(wgp, &psref);
-		pserialize_read_exit(s);
-
-	restart:
-		tasks = atomic_swap_uint(&wgp->wgp_tasks, 0);
-		KASSERT(tasks != 0);
-
-		WG_DLOG("tasks=%x\n", tasks);
-
+		mutex_enter(wgp->wgp_lock);
 		if (ISSET(tasks, WGP_TASK_SEND_INIT_MESSAGE))
 			wg_task_send_init_message(wg, wgp);
+		if (ISSET(tasks, WGP_TASK_RETRY_HANDSHAKE))
+			wg_task_retry_handshake(wg, wgp);
+		if (ISSET(tasks, WGP_TASK_ESTABLISH_SESSION))
+			wg_task_establish_session(wg, wgp);
 		if (ISSET(tasks, WGP_TASK_ENDPOINT_CHANGED))
 			wg_task_endpoint_changed(wg, wgp);
 		if (ISSET(tasks, WGP_TASK_SEND_KEEPALIVE_MESSAGE))
 			wg_task_send_keepalive_message(wg, wgp);
 		if (ISSET(tasks, WGP_TASK_DESTROY_PREV_SESSION))
 			wg_task_destroy_prev_session(wg, wgp);
+		mutex_exit(wgp->wgp_lock);
 
-		/* New tasks may be scheduled during processing tasks */
-		WG_DLOG("wgp_tasks=%d\n", wgp->wgp_tasks);
-		if (wgp->wgp_tasks != 0)
-			goto restart;
-
-		s = pserialize_read_enter();
-		wg_put_peer(wgp, &psref);
+		mutex_enter(wgp->wgp_intr_lock);
 	}
-	pserialize_read_exit(s);
+	mutex_exit(wgp->wgp_intr_lock);
 }
 
 static void
-wg_worker(void *arg)
+wg_job(struct threadpool_job *job)
 {
-	struct wg_softc *wg = arg;
-	struct wg_worker *wgw = wg->wg_worker;
-	bool todie = false;
+	struct wg_softc *wg = container_of(job, struct wg_softc, wg_job);
+	int bound, upcalls;
 
-	KASSERT(wg != NULL);
-	KASSERT(wgw != NULL);
-
-	while (!todie) {
-		int reasons;
-		int bound;
-
-		mutex_enter(&wgw->wgw_lock);
-		/* New tasks may come during task handling */
-		while ((reasons = wgw->wgw_wakeup_reasons) == 0 &&
-		    !(todie = wgw->wgw_todie))
-			cv_wait(&wgw->wgw_cv, &wgw->wgw_lock);
-		wgw->wgw_wakeup_reasons = 0;
-		mutex_exit(&wgw->wgw_lock);
-
+	mutex_enter(wg->wg_intr_lock);
+	while ((upcalls = wg->wg_upcalls) != 0) {
+		wg->wg_upcalls = 0;
+		mutex_exit(wg->wg_intr_lock);
 		bound = curlwp_bind();
-		if (ISSET(reasons, WG_WAKEUP_REASON_RECEIVE_PACKETS_IPV4))
+		if (ISSET(upcalls, WG_UPCALL_INET))
 			wg_receive_packets(wg, AF_INET);
-		if (ISSET(reasons, WG_WAKEUP_REASON_RECEIVE_PACKETS_IPV6))
+		if (ISSET(upcalls, WG_UPCALL_INET6))
 			wg_receive_packets(wg, AF_INET6);
-		if (ISSET(reasons, WG_WAKEUP_REASON_PEER))
-			wg_process_peer_tasks(wg);
 		curlwp_bindx(bound);
+		mutex_enter(wg->wg_intr_lock);
 	}
-	kthread_exit(0);
-}
-
-static void
-wg_wakeup_worker(struct wg_worker *wgw, const int reason)
-{
-
-	mutex_enter(&wgw->wgw_lock);
-	wgw->wgw_wakeup_reasons |= reason;
-	cv_broadcast(&wgw->wgw_cv);
-	mutex_exit(&wgw->wgw_lock);
+	threadpool_job_done(job);
+	mutex_exit(wg->wg_intr_lock);
 }
 
 static int
 wg_bind_port(struct wg_softc *wg, const uint16_t port)
 {
 	int error;
-	struct wg_worker *wgw = wg->wg_worker;
 	uint16_t old_port = wg->wg_listen_port;
 
 	if (port != 0 && old_port == port)
@@ -2889,7 +3121,7 @@ wg_bind_port(struct wg_softc *wg, const uint16_t port)
 	sin->sin_addr.s_addr = INADDR_ANY;
 	sin->sin_port = htons(port);
 
-	error = sobind(wgw->wgw_so4, sintosa(sin), curlwp);
+	error = sobind(wg->wg_so4, sintosa(sin), curlwp);
 	if (error != 0)
 		return error;
 
@@ -2900,7 +3132,7 @@ wg_bind_port(struct wg_softc *wg, const uint16_t port)
 	sin6->sin6_addr = in6addr_any;
 	sin6->sin6_port = htons(port);
 
-	error = sobind(wgw->wgw_so6, sin6tosa(sin6), curlwp);
+	error = sobind(wg->wg_so6, sin6tosa(sin6), curlwp);
 	if (error != 0)
 		return error;
 #endif
@@ -2911,15 +3143,19 @@ wg_bind_port(struct wg_softc *wg, const uint16_t port)
 }
 
 static void
-wg_so_upcall(struct socket *so, void *arg, int events, int waitflag)
+wg_so_upcall(struct socket *so, void *cookie, int events, int waitflag)
 {
-	struct wg_worker *wgw = arg;
+	struct wg_softc *wg = cookie;
 	int reason;
 
 	reason = (so->so_proto->pr_domain->dom_family == AF_INET) ?
-	    WG_WAKEUP_REASON_RECEIVE_PACKETS_IPV4 :
-	    WG_WAKEUP_REASON_RECEIVE_PACKETS_IPV6;
-	wg_wakeup_worker(wgw, reason);
+	    WG_UPCALL_INET :
+	    WG_UPCALL_INET6;
+
+	mutex_enter(wg->wg_intr_lock);
+	wg->wg_upcalls |= reason;
+	threadpool_schedule_job(wg->wg_threadpool, &wg->wg_job);
+	mutex_exit(wg->wg_intr_lock);
 }
 
 static int
@@ -2945,14 +3181,14 @@ wg_overudp_cb(struct mbuf **mp, int offset, struct socket *so,
 	 * worry about contiguity and alignment later.
 	 */
 	m_copydata(m, offset, sizeof(struct wg_msg), &wgm);
-	WG_DLOG("type=%d\n", wgm.wgm_type);
+	WG_DLOG("type=%d\n", le32toh(wgm.wgm_type));
 
 	/*
 	 * Handle DATA packets promptly as they arrive.  Other packets
 	 * may require expensive public-key crypto and are not as
 	 * sensitive to latency, so defer them to the worker thread.
 	 */
-	switch (wgm.wgm_type) {
+	switch (le32toh(wgm.wgm_type)) {
 	case WG_MSG_TYPE_DATA:
 		/* handle immediately */
 		m_adj(m, offset);
@@ -2977,8 +3213,7 @@ wg_overudp_cb(struct mbuf **mp, int offset, struct socket *so,
 }
 
 static int
-wg_worker_socreate(struct wg_softc *wg, struct wg_worker *wgw, const int af,
-    struct socket **sop)
+wg_socreate(struct wg_softc *wg, int af, struct socket **sop)
 {
 	int error;
 	struct socket *so;
@@ -2988,7 +3223,7 @@ wg_worker_socreate(struct wg_softc *wg, struct wg_worker *wgw, const int af,
 		return error;
 
 	solock(so);
-	so->so_upcallarg = wgw;
+	so->so_upcallarg = wg;
 	so->so_upcall = wg_so_upcall;
 	so->so_rcv.sb_flags |= SB_UPCALL;
 	if (af == AF_INET)
@@ -3002,77 +3237,6 @@ wg_worker_socreate(struct wg_softc *wg, struct wg_worker *wgw, const int af,
 	*sop = so;
 
 	return 0;
-}
-
-static int
-wg_worker_init(struct wg_softc *wg)
-{
-	int error;
-	struct wg_worker *wgw;
-	const char *ifname = wg->wg_if.if_xname;
-	struct socket *so;
-
-	wgw = kmem_zalloc(sizeof(struct wg_worker), KM_SLEEP);
-
-	mutex_init(&wgw->wgw_lock, MUTEX_DEFAULT, IPL_NONE);
-	cv_init(&wgw->wgw_cv, ifname);
-	wgw->wgw_todie = false;
-	wgw->wgw_wakeup_reasons = 0;
-
-	error = wg_worker_socreate(wg, wgw, AF_INET, &so);
-	if (error != 0)
-		goto error;
-	wgw->wgw_so4 = so;
-#ifdef INET6
-	error = wg_worker_socreate(wg, wgw, AF_INET6, &so);
-	if (error != 0)
-		goto error;
-	wgw->wgw_so6 = so;
-#endif
-
-	wg->wg_worker = wgw;
-
-	error = kthread_create(PRI_NONE, KTHREAD_MPSAFE | KTHREAD_MUSTJOIN,
-	    NULL, wg_worker, wg, &wg->wg_worker_lwp, "%s", ifname);
-	if (error != 0)
-		goto error;
-
-	return 0;
-
-error:
-#ifdef INET6
-	if (wgw->wgw_so6 != NULL)
-		soclose(wgw->wgw_so6);
-#endif
-	if (wgw->wgw_so4 != NULL)
-		soclose(wgw->wgw_so4);
-	cv_destroy(&wgw->wgw_cv);
-	mutex_destroy(&wgw->wgw_lock);
-
-	return error;
-}
-
-static void
-wg_worker_destroy(struct wg_softc *wg)
-{
-	struct wg_worker *wgw = wg->wg_worker;
-
-	mutex_enter(&wgw->wgw_lock);
-	wgw->wgw_todie = true;
-	wgw->wgw_wakeup_reasons = 0;
-	cv_broadcast(&wgw->wgw_cv);
-	mutex_exit(&wgw->wgw_lock);
-
-	kthread_join(wg->wg_worker_lwp);
-
-#ifdef INET6
-	soclose(wgw->wgw_so6);
-#endif
-	soclose(wgw->wgw_so4);
-	cv_destroy(&wgw->wgw_cv);
-	mutex_destroy(&wgw->wgw_lock);
-	kmem_free(wg->wg_worker, sizeof(struct wg_worker));
-	wg->wg_worker = NULL;
 }
 
 static bool
@@ -3100,30 +3264,32 @@ wg_session_hit_limits(struct wg_session *wgs)
 }
 
 static void
-wg_peer_softint(void *arg)
+wgintr(void *cookie)
 {
-	struct wg_peer *wgp = arg;
+	struct wg_peer *wgp;
 	struct wg_session *wgs;
 	struct mbuf *m;
 	struct psref psref;
 
-	wgs = wg_get_stable_session(wgp, &psref);
-	if (wgs->wgs_state != WGS_STATE_ESTABLISHED) {
-		/* XXX how to treat? */
-		WG_TRACE("skipped");
-		goto out;
-	}
-	if (wg_session_hit_limits(wgs)) {
-		wg_schedule_peer_task(wgp, WGP_TASK_SEND_INIT_MESSAGE);
-		goto out;
-	}
-	WG_TRACE("running");
-
-	while ((m = pcq_get(wgp->wgp_q)) != NULL) {
+	while ((m = pktq_dequeue(wg_pktq)) != NULL) {
+		wgp = M_GETCTX(m, struct wg_peer *);
+		if ((wgs = wg_get_stable_session(wgp, &psref)) == NULL) {
+			WG_TRACE("no stable session");
+			wg_schedule_peer_task(wgp, WGP_TASK_SEND_INIT_MESSAGE);
+			goto next0;
+		}
+		if (__predict_false(wg_session_hit_limits(wgs))) {
+			WG_TRACE("stable session hit limits");
+			wg_schedule_peer_task(wgp, WGP_TASK_SEND_INIT_MESSAGE);
+			goto next1;
+		}
 		wg_send_data_msg(wgp, wgs, m);
+		m = NULL;	/* consumed */
+next1:		wg_put_session(wgs, &psref);
+next0:		if (m)
+			m_freem(m);
+		/* XXX Yield to avoid userland starvation?  */
 	}
-out:
-	wg_put_session(wgs, &psref);
 }
 
 static void
@@ -3131,11 +3297,7 @@ wg_rekey_timer(void *arg)
 {
 	struct wg_peer *wgp = arg;
 
-	mutex_enter(wgp->wgp_lock);
-	if (__predict_true(wgp->wgp_state != WGP_STATE_DESTROYING)) {
-		wg_schedule_peer_task(wgp, WGP_TASK_SEND_INIT_MESSAGE);
-	}
-	mutex_exit(wgp->wgp_lock);
+	wg_schedule_peer_task(wgp, WGP_TASK_SEND_INIT_MESSAGE);
 }
 
 static void
@@ -3143,56 +3305,19 @@ wg_purge_pending_packets(struct wg_peer *wgp)
 {
 	struct mbuf *m;
 
-	while ((m = pcq_get(wgp->wgp_q)) != NULL) {
+	if ((m = atomic_swap_ptr(&wgp->wgp_pending, NULL)) != NULL)
 		m_freem(m);
-	}
+	pktq_barrier(wg_pktq);
 }
 
 static void
 wg_handshake_timeout_timer(void *arg)
 {
 	struct wg_peer *wgp = arg;
-	struct wg_session *wgs;
-	struct psref psref;
 
 	WG_TRACE("enter");
 
-	mutex_enter(wgp->wgp_lock);
-	if (__predict_false(wgp->wgp_state == WGP_STATE_DESTROYING)) {
-		mutex_exit(wgp->wgp_lock);
-		return;
-	}
-	mutex_exit(wgp->wgp_lock);
-
-	KASSERT(wgp->wgp_handshake_start_time != 0);
-	wgs = wg_get_unstable_session(wgp, &psref);
-	KASSERT(wgs->wgs_state == WGS_STATE_INIT_ACTIVE);
-
-	/* [W] 6.4 Handshake Initiation Retransmission */
-	if ((time_uptime - wgp->wgp_handshake_start_time) >
-	    wg_rekey_attempt_time) {
-		/* Give up handshaking */
-		wgs->wgs_state = WGS_STATE_UNKNOWN;
-		wg_clear_states(wgs);
-		wgp->wgp_state = WGP_STATE_GIVEUP;
-		wgp->wgp_handshake_start_time = 0;
-		wg_put_session(wgs, &psref);
-		WG_TRACE("give up");
-		/*
-		 * If a new data packet comes, handshaking will be retried
-		 * and a new session would be established at that time,
-		 * however we don't want to send pending packets then.
-		 */
-		wg_purge_pending_packets(wgp);
-		return;
-	}
-
-	/* No response for an initiation message sent, retry handshaking */
-	wgs->wgs_state = WGS_STATE_UNKNOWN;
-	wg_clear_states(wgs);
-	wg_put_session(wgs, &psref);
-
-	wg_schedule_peer_task(wgp, WGP_TASK_SEND_INIT_MESSAGE);
+	wg_schedule_peer_task(wgp, WGP_TASK_RETRY_HANDSHAKE);
 }
 
 static struct wg_peer *
@@ -3203,9 +3328,6 @@ wg_alloc_peer(struct wg_softc *wg)
 	wgp = kmem_zalloc(sizeof(*wgp), KM_SLEEP);
 
 	wgp->wgp_sc = wg;
-	wgp->wgp_state = WGP_STATE_INIT;
-	wgp->wgp_q = pcq_create(1024, KM_SLEEP);
-	wgp->wgp_si = softint_establish(SOFTINT_NET, wg_peer_softint, wgp);
 	callout_init(&wgp->wgp_rekey_timer, CALLOUT_MPSAFE);
 	callout_setfunc(&wgp->wgp_rekey_timer, wg_rekey_timer, wgp);
 	callout_init(&wgp->wgp_handshake_timeout_timer, CALLOUT_MPSAFE);
@@ -3218,6 +3340,7 @@ wg_alloc_peer(struct wg_softc *wg)
 	wgp->wgp_endpoint_changing = false;
 	wgp->wgp_endpoint_available = false;
 	wgp->wgp_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
+	wgp->wgp_intr_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_SOFTNET);
 	wgp->wgp_psz = pserialize_create();
 	psref_target_init(&wgp->wgp_psref, wg_psref_class);
 
@@ -3235,23 +3358,21 @@ wg_alloc_peer(struct wg_softc *wg)
 	wgs->wgs_peer = wgp;
 	wgs->wgs_state = WGS_STATE_UNKNOWN;
 	psref_target_init(&wgs->wgs_psref, wg_psref_class);
-	wgs->wgs_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 #ifndef __HAVE_ATOMIC64_LOADSTORE
 	mutex_init(&wgs->wgs_send_counter_lock, MUTEX_DEFAULT, IPL_SOFTNET);
 #endif
 	wgs->wgs_recvwin = kmem_zalloc(sizeof(*wgs->wgs_recvwin), KM_SLEEP);
-	mutex_init(&wgs->wgs_recvwin->lock, MUTEX_DEFAULT, IPL_NONE);
+	mutex_init(&wgs->wgs_recvwin->lock, MUTEX_DEFAULT, IPL_SOFTNET);
 
 	wgs = wgp->wgp_session_unstable;
 	wgs->wgs_peer = wgp;
 	wgs->wgs_state = WGS_STATE_UNKNOWN;
 	psref_target_init(&wgs->wgs_psref, wg_psref_class);
-	wgs->wgs_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 #ifndef __HAVE_ATOMIC64_LOADSTORE
 	mutex_init(&wgs->wgs_send_counter_lock, MUTEX_DEFAULT, IPL_SOFTNET);
 #endif
 	wgs->wgs_recvwin = kmem_zalloc(sizeof(*wgs->wgs_recvwin), KM_SLEEP);
-	mutex_init(&wgs->wgs_recvwin->lock, MUTEX_DEFAULT, IPL_NONE);
+	mutex_init(&wgs->wgs_recvwin->lock, MUTEX_DEFAULT, IPL_SOFTNET);
 
 	return wgp;
 }
@@ -3262,6 +3383,7 @@ wg_destroy_peer(struct wg_peer *wgp)
 	struct wg_session *wgs;
 	struct wg_softc *wg = wgp->wgp_sc;
 
+	/* Prevent new packets from this peer on any source address.  */
 	rw_enter(wg->wg_rwlock, RW_WRITER);
 	for (int i = 0; i < wgp->wgp_n_allowedips; i++) {
 		struct wg_allowedip *wga = &wgp->wgp_allowedips[i];
@@ -3280,23 +3402,36 @@ wg_destroy_peer(struct wg_peer *wgp)
 	}
 	rw_exit(wg->wg_rwlock);
 
-	softint_disestablish(wgp->wgp_si);
+	/* Purge pending packets.  */
+	wg_purge_pending_packets(wgp);
+
+	/* Halt all packet processing and timeouts.  */
 	callout_halt(&wgp->wgp_rekey_timer, NULL);
 	callout_halt(&wgp->wgp_handshake_timeout_timer, NULL);
 	callout_halt(&wgp->wgp_session_dtor_timer, NULL);
 
+	/* Wait for any queued work to complete.  */
+	workqueue_wait(wg_wq, &wgp->wgp_work);
+
 	wgs = wgp->wgp_session_unstable;
-	psref_target_destroy(&wgs->wgs_psref, wg_psref_class);
-	mutex_obj_free(wgs->wgs_lock);
+	if (wgs->wgs_state != WGS_STATE_UNKNOWN) {
+		mutex_enter(wgp->wgp_lock);
+		wg_destroy_session(wg, wgs);
+		mutex_exit(wgp->wgp_lock);
+	}
 	mutex_destroy(&wgs->wgs_recvwin->lock);
 	kmem_free(wgs->wgs_recvwin, sizeof(*wgs->wgs_recvwin));
 #ifndef __HAVE_ATOMIC64_LOADSTORE
 	mutex_destroy(&wgs->wgs_send_counter_lock);
 #endif
 	kmem_free(wgs, sizeof(*wgs));
+
 	wgs = wgp->wgp_session_stable;
-	psref_target_destroy(&wgs->wgs_psref, wg_psref_class);
-	mutex_obj_free(wgs->wgs_lock);
+	if (wgs->wgs_state != WGS_STATE_UNKNOWN) {
+		mutex_enter(wgp->wgp_lock);
+		wg_destroy_session(wg, wgs);
+		mutex_exit(wgp->wgp_lock);
+	}
 	mutex_destroy(&wgs->wgs_recvwin->lock);
 	kmem_free(wgs->wgs_recvwin, sizeof(*wgs->wgs_recvwin));
 #ifndef __HAVE_ATOMIC64_LOADSTORE
@@ -3310,7 +3445,7 @@ wg_destroy_peer(struct wg_peer *wgp)
 	kmem_free(wgp->wgp_endpoint0, sizeof(*wgp->wgp_endpoint0));
 
 	pserialize_destroy(wgp->wgp_psz);
-	pcq_destroy(wgp->wgp_q);
+	mutex_obj_free(wgp->wgp_intr_lock);
 	mutex_obj_free(wgp->wgp_lock);
 
 	kmem_free(wgp, sizeof(*wgp));
@@ -3319,14 +3454,26 @@ wg_destroy_peer(struct wg_peer *wgp)
 static void
 wg_destroy_all_peers(struct wg_softc *wg)
 {
-	struct wg_peer *wgp;
+	struct wg_peer *wgp, *wgp0 __diagused;
+	void *garbage_byname, *garbage_bypubkey;
 
 restart:
+	garbage_byname = garbage_bypubkey = NULL;
 	mutex_enter(wg->wg_lock);
 	WG_PEER_WRITER_FOREACH(wgp, wg) {
+		if (wgp->wgp_name[0]) {
+			wgp0 = thmap_del(wg->wg_peers_byname, wgp->wgp_name,
+			    strlen(wgp->wgp_name));
+			KASSERT(wgp0 == wgp);
+			garbage_byname = thmap_stage_gc(wg->wg_peers_byname);
+		}
+		wgp0 = thmap_del(wg->wg_peers_bypubkey, wgp->wgp_pubkey,
+		    sizeof(wgp->wgp_pubkey));
+		KASSERT(wgp0 == wgp);
+		garbage_bypubkey = thmap_stage_gc(wg->wg_peers_bypubkey);
 		WG_PEER_WRITER_REMOVE(wgp);
+		wg->wg_npeers--;
 		mutex_enter(wgp->wgp_lock);
-		wgp->wgp_state = WGP_STATE_DESTROYING;
 		pserialize_perform(wgp->wgp_psz);
 		mutex_exit(wgp->wgp_lock);
 		PSLIST_ENTRY_DESTROY(wgp, wgp_peerlist_entry);
@@ -3340,6 +3487,8 @@ restart:
 	psref_target_destroy(&wgp->wgp_psref, wg_psref_class);
 
 	wg_destroy_peer(wgp);
+	thmap_gc(wg->wg_peers_byname, garbage_byname);
+	thmap_gc(wg->wg_peers_bypubkey, garbage_bypubkey);
 
 	goto restart;
 }
@@ -3347,18 +3496,20 @@ restart:
 static int
 wg_destroy_peer_name(struct wg_softc *wg, const char *name)
 {
-	struct wg_peer *wgp;
+	struct wg_peer *wgp, *wgp0 __diagused;
+	void *garbage_byname, *garbage_bypubkey;
 
 	mutex_enter(wg->wg_lock);
-	WG_PEER_WRITER_FOREACH(wgp, wg) {
-		if (strcmp(wgp->wgp_name, name) == 0)
-			break;
-	}
+	wgp = thmap_del(wg->wg_peers_byname, name, strlen(name));
 	if (wgp != NULL) {
+		wgp0 = thmap_del(wg->wg_peers_bypubkey, wgp->wgp_pubkey,
+		    sizeof(wgp->wgp_pubkey));
+		KASSERT(wgp0 == wgp);
+		garbage_byname = thmap_stage_gc(wg->wg_peers_byname);
+		garbage_bypubkey = thmap_stage_gc(wg->wg_peers_bypubkey);
 		WG_PEER_WRITER_REMOVE(wgp);
 		wg->wg_npeers--;
 		mutex_enter(wgp->wgp_lock);
-		wgp->wgp_state = WGP_STATE_DESTROYING;
 		pserialize_perform(wgp->wgp_psz);
 		mutex_exit(wgp->wgp_lock);
 		PSLIST_ENTRY_DESTROY(wgp, wgp_peerlist_entry);
@@ -3371,6 +3522,8 @@ wg_destroy_peer_name(struct wg_softc *wg, const char *name)
 	psref_target_destroy(&wgp->wgp_psref, wg_psref_class);
 
 	wg_destroy_peer(wgp);
+	thmap_gc(wg->wg_peers_byname, garbage_byname);
+	thmap_gc(wg->wg_peers_bypubkey, garbage_bypubkey);
 
 	return 0;
 }
@@ -3382,17 +3535,22 @@ wg_if_attach(struct wg_softc *wg)
 
 	wg->wg_if.if_addrlen = 0;
 	wg->wg_if.if_mtu = WG_MTU;
-	wg->wg_if.if_flags = IFF_POINTOPOINT | IFF_MULTICAST;
+	wg->wg_if.if_flags = IFF_MULTICAST;
 	wg->wg_if.if_extflags = IFEF_NO_LINK_STATE_CHANGE;
 	wg->wg_if.if_extflags |= IFEF_MPSAFE;
 	wg->wg_if.if_ioctl = wg_ioctl;
 	wg->wg_if.if_output = wg_output;
 	wg->wg_if.if_init = wg_init;
+#ifdef ALTQ
+	wg->wg_if.if_start = wg_start;
+#endif
 	wg->wg_if.if_stop = wg_stop;
 	wg->wg_if.if_type = IFT_OTHER;
 	wg->wg_if.if_dlt = DLT_NULL;
 	wg->wg_if.if_softc = wg;
+#ifdef ALTQ
 	IFQ_SET_READY(&wg->wg_if.if_snd);
+#endif
 
 	error = if_initialize(&wg->wg_if);
 	if (error != 0)
@@ -3406,62 +3564,113 @@ wg_if_attach(struct wg_softc *wg)
 	return 0;
 }
 
+static void
+wg_if_detach(struct wg_softc *wg)
+{
+	struct ifnet *ifp = &wg->wg_if;
+
+	bpf_detach(ifp);
+	if_detach(ifp);
+}
+
 static int
 wg_clone_create(struct if_clone *ifc, int unit)
 {
 	struct wg_softc *wg;
 	int error;
 
-	wg = kmem_zalloc(sizeof(struct wg_softc), KM_SLEEP);
+	wg_guarantee_initialized();
+
+	error = wg_count_inc();
+	if (error)
+		return error;
+
+	wg = kmem_zalloc(sizeof(*wg), KM_SLEEP);
 
 	if_initname(&wg->wg_if, ifc->ifc_name, unit);
 
-	error = wg_worker_init(wg);
-	if (error != 0) {
-		kmem_free(wg, sizeof(struct wg_softc));
-		return error;
-	}
+	PSLIST_INIT(&wg->wg_peers);
+	wg->wg_peers_bypubkey = thmap_create(0, NULL, THMAP_NOCOPY);
+	wg->wg_peers_byname = thmap_create(0, NULL, THMAP_NOCOPY);
+	wg->wg_sessions_byindex = thmap_create(0, NULL, THMAP_NOCOPY);
+	wg->wg_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
+	wg->wg_intr_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_SOFTNET);
+	wg->wg_rwlock = rw_obj_alloc();
+	threadpool_job_init(&wg->wg_job, wg_job, wg->wg_intr_lock,
+	    "%s", if_name(&wg->wg_if));
+	wg->wg_ops = &wg_ops_rumpkernel;
 
+	error = threadpool_get(&wg->wg_threadpool, PRI_NONE);
+	if (error)
+		goto fail0;
+
+#ifdef INET
+	error = wg_socreate(wg, AF_INET, &wg->wg_so4);
+	if (error)
+		goto fail1;
 	rn_inithead((void **)&wg->wg_rtable_ipv4,
 	    offsetof(struct sockaddr_in, sin_addr) * NBBY);
+#endif
 #ifdef INET6
+	error = wg_socreate(wg, AF_INET6, &wg->wg_so6);
+	if (error)
+		goto fail2;
 	rn_inithead((void **)&wg->wg_rtable_ipv6,
 	    offsetof(struct sockaddr_in6, sin6_addr) * NBBY);
 #endif
 
-	PSLIST_INIT(&wg->wg_peers);
-	wg->wg_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
-	wg->wg_rwlock = rw_obj_alloc();
-	wg->wg_ops = &wg_ops_rumpkernel;
-
 	error = wg_if_attach(wg);
-	if (error != 0) {
-		wg_worker_destroy(wg);
-		if (wg->wg_rtable_ipv4 != NULL)
-			free(wg->wg_rtable_ipv4, M_RTABLE);
-		if (wg->wg_rtable_ipv6 != NULL)
-			free(wg->wg_rtable_ipv6, M_RTABLE);
-		PSLIST_DESTROY(&wg->wg_peers);
-		mutex_obj_free(wg->wg_lock);
-		kmem_free(wg, sizeof(struct wg_softc));
-		return error;
-	}
-
-	mutex_enter(&wg_softcs.lock);
-	LIST_INSERT_HEAD(&wg_softcs.list, wg, wg_list);
-	mutex_exit(&wg_softcs.lock);
+	if (error)
+		goto fail3;
 
 	return 0;
+
+fail4: __unused
+	wg_if_detach(wg);
+fail3:	wg_destroy_all_peers(wg);
+#ifdef INET6
+	solock(wg->wg_so6);
+	wg->wg_so6->so_rcv.sb_flags &= ~SB_UPCALL;
+	sounlock(wg->wg_so6);
+#endif
+#ifdef INET
+	solock(wg->wg_so4);
+	wg->wg_so4->so_rcv.sb_flags &= ~SB_UPCALL;
+	sounlock(wg->wg_so4);
+#endif
+	mutex_enter(wg->wg_intr_lock);
+	threadpool_cancel_job(wg->wg_threadpool, &wg->wg_job);
+	mutex_exit(wg->wg_intr_lock);
+#ifdef INET6
+	if (wg->wg_rtable_ipv6 != NULL)
+		free(wg->wg_rtable_ipv6, M_RTABLE);
+	soclose(wg->wg_so6);
+fail2:
+#endif
+#ifdef INET
+	if (wg->wg_rtable_ipv4 != NULL)
+		free(wg->wg_rtable_ipv4, M_RTABLE);
+	soclose(wg->wg_so4);
+fail1:
+#endif
+	threadpool_put(wg->wg_threadpool, PRI_NONE);
+fail0:	threadpool_job_destroy(&wg->wg_job);
+	rw_obj_free(wg->wg_rwlock);
+	mutex_obj_free(wg->wg_intr_lock);
+	mutex_obj_free(wg->wg_lock);
+	thmap_destroy(wg->wg_sessions_byindex);
+	thmap_destroy(wg->wg_peers_byname);
+	thmap_destroy(wg->wg_peers_bypubkey);
+	PSLIST_DESTROY(&wg->wg_peers);
+	kmem_free(wg, sizeof(*wg));
+	wg_count_dec();
+	return error;
 }
 
 static int
 wg_clone_destroy(struct ifnet *ifp)
 {
 	struct wg_softc *wg = container_of(ifp, struct wg_softc, wg_if);
-
-	mutex_enter(&wg_softcs.lock);
-	LIST_REMOVE(wg, wg_list);
-	mutex_exit(&wg_softcs.lock);
 
 #ifdef WG_RUMPKERNEL
 	if (wg_user_mode(wg)) {
@@ -3470,20 +3679,42 @@ wg_clone_destroy(struct ifnet *ifp)
 	}
 #endif
 
-	bpf_detach(ifp);
-	if_detach(ifp);
-	wg_worker_destroy(wg);
+	wg_if_detach(wg);
 	wg_destroy_all_peers(wg);
-	if (wg->wg_rtable_ipv4 != NULL)
-		free(wg->wg_rtable_ipv4, M_RTABLE);
+#ifdef INET6
+	solock(wg->wg_so6);
+	wg->wg_so6->so_rcv.sb_flags &= ~SB_UPCALL;
+	sounlock(wg->wg_so6);
+#endif
+#ifdef INET
+	solock(wg->wg_so4);
+	wg->wg_so4->so_rcv.sb_flags &= ~SB_UPCALL;
+	sounlock(wg->wg_so4);
+#endif
+	mutex_enter(wg->wg_intr_lock);
+	threadpool_cancel_job(wg->wg_threadpool, &wg->wg_job);
+	mutex_exit(wg->wg_intr_lock);
+#ifdef INET6
 	if (wg->wg_rtable_ipv6 != NULL)
 		free(wg->wg_rtable_ipv6, M_RTABLE);
-
-	PSLIST_DESTROY(&wg->wg_peers);
-	mutex_obj_free(wg->wg_lock);
+	soclose(wg->wg_so6);
+#endif
+#ifdef INET
+	if (wg->wg_rtable_ipv4 != NULL)
+		free(wg->wg_rtable_ipv4, M_RTABLE);
+	soclose(wg->wg_so4);
+#endif
+	threadpool_put(wg->wg_threadpool, PRI_NONE);
+	threadpool_job_destroy(&wg->wg_job);
 	rw_obj_free(wg->wg_rwlock);
-
-	kmem_free(wg, sizeof(struct wg_softc));
+	mutex_obj_free(wg->wg_intr_lock);
+	mutex_obj_free(wg->wg_lock);
+	thmap_destroy(wg->wg_sessions_byindex);
+	thmap_destroy(wg->wg_peers_byname);
+	thmap_destroy(wg->wg_peers_bypubkey);
+	PSLIST_DESTROY(&wg->wg_peers);
+	kmem_free(wg, sizeof(*wg));
+	wg_count_dec();
 
 	return 0;
 }
@@ -3530,12 +3761,12 @@ wg_fill_msg_data(struct wg_softc *wg, struct wg_peer *wgp,
 {
 
 	memset(wgmd, 0, sizeof(*wgmd));
-	wgmd->wgmd_type = WG_MSG_TYPE_DATA;
-	wgmd->wgmd_receiver = wgs->wgs_receiver_index;
+	wgmd->wgmd_type = htole32(WG_MSG_TYPE_DATA);
+	wgmd->wgmd_receiver = wgs->wgs_remote_index;
 	/* [W] 5.4.6: msg.counter := Nm^send */
 	/* [W] 5.4.6: Nm^send := Nm^send + 1 */
-	wgmd->wgmd_counter = wg_session_inc_send_counter(wgs);
-	WG_DLOG("counter=%"PRIu64"\n", wgmd->wgmd_counter);
+	wgmd->wgmd_counter = htole64(wg_session_inc_send_counter(wgs));
+	WG_DLOG("counter=%"PRIu64"\n", le64toh(wgmd->wgmd_counter));
 }
 
 static int
@@ -3543,64 +3774,98 @@ wg_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
     const struct rtentry *rt)
 {
 	struct wg_softc *wg = ifp->if_softc;
-	int error = 0;
+	struct wg_peer *wgp = NULL;
+	struct wg_session *wgs = NULL;
+	struct psref wgp_psref, wgs_psref;
 	int bound;
-	struct psref psref;
-
-	/* TODO make the nest limit configurable via sysctl */
-	error = if_tunnel_check_nesting(ifp, m, 1);
-	if (error != 0) {
-		m_freem(m);
-		WGLOG(LOG_ERR, "tunneling loop detected and packet dropped\n");
-		return error;
-	}
+	int error;
 
 	bound = curlwp_bind();
 
-	IFQ_CLASSIFY(&ifp->if_snd, m, dst->sa_family);
+	/* TODO make the nest limit configurable via sysctl */
+	error = if_tunnel_check_nesting(ifp, m, 1);
+	if (error) {
+		WGLOG(LOG_ERR, "tunneling loop detected and packet dropped\n");
+		goto out0;
+	}
+
+#ifdef ALTQ
+	bool altq = atomic_load_relaxed(&ifp->if_snd.altq_flags)
+	    & ALTQF_ENABLED;
+	if (altq)
+		IFQ_CLASSIFY(&ifp->if_snd, m, dst->sa_family);
+#endif
 
 	bpf_mtap_af(ifp, dst->sa_family, m, BPF_D_OUT);
 
 	m->m_flags &= ~(M_BCAST|M_MCAST);
 
-	struct wg_peer *wgp = wg_pick_peer_by_sa(wg, dst, &psref);
+	wgp = wg_pick_peer_by_sa(wg, dst, &wgp_psref);
 	if (wgp == NULL) {
 		WG_TRACE("peer not found");
 		error = EHOSTUNREACH;
-		goto error;
+		goto out0;
 	}
 
 	/* Clear checksum-offload flags. */
 	m->m_pkthdr.csum_flags = 0;
 	m->m_pkthdr.csum_data = 0;
 
-	if (!pcq_put(wgp->wgp_q, m)) {
+	/* Check whether there's an established session.  */
+	wgs = wg_get_stable_session(wgp, &wgs_psref);
+	if (wgs == NULL) {
+		/*
+		 * No established session.  If we're the first to try
+		 * sending data, schedule a handshake and queue the
+		 * packet for when the handshake is done; otherwise
+		 * just drop the packet and let the ongoing handshake
+		 * attempt continue.  We could queue more data packets
+		 * but it's not clear that's worthwhile.
+		 */
+		if (atomic_cas_ptr(&wgp->wgp_pending, NULL, m) == NULL) {
+			m = NULL; /* consume */
+			WG_TRACE("queued first packet; init handshake");
+			wg_schedule_peer_task(wgp, WGP_TASK_SEND_INIT_MESSAGE);
+		} else {
+			WG_TRACE("first packet already queued, dropping");
+		}
+		goto out1;
+	}
+
+	/* There's an established session.  Toss it in the queue.  */
+#ifdef ALTQ
+	if (altq) {
+		mutex_enter(ifp->if_snd.ifq_lock);
+		if (ALTQ_IS_ENABLED(&ifp->if_snd)) {
+			M_SETCTX(m, wgp);
+			ALTQ_ENQUEUE(&ifp->if_snd, m, error);
+			m = NULL; /* consume */
+		}
+		mutex_exit(ifp->if_snd.ifq_lock);
+		if (m == NULL) {
+			wg_start(ifp);
+			goto out2;
+		}
+	}
+#endif
+	kpreempt_disable();
+	const uint32_t h = curcpu()->ci_index;	// pktq_rps_hash(m)
+	M_SETCTX(m, wgp);
+	if (__predict_false(!pktq_enqueue(wg_pktq, m, h))) {
+		WGLOG(LOG_ERR, "pktq full, dropping\n");
 		error = ENOBUFS;
-		goto error;
+		goto out3;
 	}
+	m = NULL;		/* consumed */
+	error = 0;
+out3:	kpreempt_enable();
 
-	struct psref psref_wgs;
-	struct wg_session *wgs;
-	wgs = wg_get_stable_session(wgp, &psref_wgs);
-	if (wgs->wgs_state == WGS_STATE_ESTABLISHED &&
-	    !wg_session_hit_limits(wgs)) {
-		kpreempt_disable();
-		softint_schedule(wgp->wgp_si);
-		kpreempt_enable();
-		WG_TRACE("softint scheduled");
-	} else {
-		wg_schedule_peer_task(wgp, WGP_TASK_SEND_INIT_MESSAGE);
-		WG_TRACE("softint NOT scheduled");
-	}
-	wg_put_session(wgs, &psref_wgs);
-	wg_put_peer(wgp, &psref);
-
-	return 0;
-
-error:
-	if (wgp != NULL)
-		wg_put_peer(wgp, &psref);
-	if (m != NULL)
+#ifdef ALTQ
+out2:
+#endif
+	wg_put_session(wgs, &wgs_psref);
+out1:	wg_put_peer(wgp, &wgp_psref);
+out0:	if (m)
 		m_freem(m);
 	curlwp_bindx(bound);
 	return error;
@@ -3612,10 +3877,11 @@ wg_send_udp(struct wg_peer *wgp, struct mbuf *m)
 	struct psref psref;
 	struct wg_sockaddr *wgsa;
 	int error;
-	struct socket *so = wg_get_so_by_peer(wgp);
+	struct socket *so;
 
-	solock(so);
 	wgsa = wg_get_endpoint_sa(wgp, &psref);
+	so = wg_get_so_by_peer(wgp, wgsa);
+	solock(so);
 	if (wgsatosa(wgsa)->sa_family == AF_INET) {
 		error = udp_send(so, m, wgsatosa(wgsa), NULL, curlwp);
 	} else {
@@ -3623,11 +3889,12 @@ wg_send_udp(struct wg_peer *wgp, struct mbuf *m)
 		error = udp6_output(sotoin6pcb(so), m, wgsatosin6(wgsa),
 		    NULL, curlwp);
 #else
-		error = EPROTONOSUPPORT;
+		m_freem(m);
+		error = EPFNOSUPPORT;
 #endif
 	}
-	wg_put_sa(wgp, wgsa, &psref);
 	sounlock(so);
+	wg_put_sa(wgp, wgsa, &psref);
 
 	return error;
 }
@@ -3705,7 +3972,8 @@ wg_send_data_msg(struct wg_peer *wgp, struct wg_session *wgs,
 	wg_fill_msg_data(wg, wgp, wgs, wgmd);
 	/* [W] 5.4.6: AEAD(Tm^send, Nm^send, P, e) */
 	wg_algo_aead_enc((char *)wgmd + sizeof(*wgmd), encrypted_len,
-	    wgs->wgs_tkey_send, wgmd->wgmd_counter, padded_buf, padded_len,
+	    wgs->wgs_tkey_send, le64toh(wgmd->wgmd_counter),
+	    padded_buf, padded_len,
 	    NULL, 0);
 
 	error = wg->wg_ops->send_data_msg(wgp, n);
@@ -3773,6 +4041,7 @@ wg_input(struct ifnet *ifp, struct mbuf *m, const int af)
 		panic("invalid af=%d", af);
 	}
 
+	kpreempt_disable();
 	const u_int h = curcpu()->ci_index;
 	if (__predict_true(pktq_enqueue(pktq, m, h))) {
 		if_statadd(ifp, if_ibytes, pktlen);
@@ -3780,6 +4049,7 @@ wg_input(struct ifnet *ifp, struct mbuf *m, const int af)
 	} else {
 		m_freem(m);
 	}
+	kpreempt_enable();
 }
 
 static void
@@ -3834,10 +4104,12 @@ wg_handle_prop_peer(struct wg_softc *wg, prop_dictionary_t peer,
 		goto out;
 	}
 #ifdef WG_DEBUG_DUMP
-	log(LOG_DEBUG, "pubkey=%p, pubkey_len=%lu\n", pubkey, pubkey_len);
-	for (int _i = 0; _i < pubkey_len; _i++)
-		log(LOG_DEBUG, "%c", ((const char *)pubkey)[_i]);
-	log(LOG_DEBUG, "\n");
+    {
+	char *hex = gethexdump(pubkey, pubkey_len);
+	log(LOG_DEBUG, "pubkey=%p, pubkey_len=%lu\n%s\n",
+	    pubkey, pubkey_len, hex);
+	puthexdump(hex, pubkey, pubkey_len);
+    }
 #endif
 
 	struct wg_peer *wgp = wg_alloc_peer(wg);
@@ -3853,41 +4125,37 @@ wg_handle_prop_peer(struct wg_softc *wg, prop_dictionary_t peer,
 		memcpy(wgp->wgp_psk, psk, sizeof(wgp->wgp_psk));
 	}
 
-	struct sockaddr_storage sockaddr;
 	const void *addr;
 	size_t addr_len;
+	struct wg_sockaddr *wgsa = wgp->wgp_endpoint;
 
 	if (!prop_dictionary_get_data(peer, "endpoint", &addr, &addr_len))
 		goto skip_endpoint;
-	memcpy(&sockaddr, addr, addr_len);
-	switch (sockaddr.ss_family) {
-	case AF_INET: {
-		struct sockaddr_in sin;
-		sockaddr_copy(sintosa(&sin), sizeof(sin),
-		    (const struct sockaddr *)&sockaddr);
-		sockaddr_copy(sintosa(&wgp->wgp_sin),
-		    sizeof(wgp->wgp_sin), (const struct sockaddr *)&sockaddr);
-		char addrstr[128];
-		sockaddr_format(sintosa(&sin), addrstr, sizeof(addrstr));
-		WG_DLOG("addr=%s\n", addrstr);
-		break;
-	    }
-#ifdef INET6
-	case AF_INET6: {
-		struct sockaddr_in6 sin6;
-		char addrstr[128];
-		sockaddr_copy(sintosa(&sin6), sizeof(sin6),
-		    (const struct sockaddr *)&sockaddr);
-		sockaddr_format(sintosa(&sin6), addrstr, sizeof(addrstr));
-		WG_DLOG("addr=%s\n", addrstr);
-		sockaddr_copy(sin6tosa(&wgp->wgp_sin6),
-		    sizeof(wgp->wgp_sin6), (const struct sockaddr *)&sockaddr);
-		break;
-	    }
-#endif
-	default:
-		break;
+	if (addr_len < sizeof(*wgsatosa(wgsa)) ||
+	    addr_len > sizeof(*wgsatoss(wgsa))) {
+		error = EINVAL;
+		goto out;
 	}
+	memcpy(wgsatoss(wgsa), addr, addr_len);
+	switch (wgsa_family(wgsa)) {
+	case AF_INET:
+#ifdef INET6
+	case AF_INET6:
+#endif
+		break;
+	default:
+		error = EPFNOSUPPORT;
+		goto out;
+	}
+	if (addr_len != sockaddr_getsize_by_family(wgsa_family(wgsa))) {
+		error = EINVAL;
+		goto out;
+	}
+    {
+	char addrstr[128];
+	sockaddr_format(wgsatosa(wgsa), addrstr, sizeof(addrstr));
+	WG_DLOG("addr=%s\n", addrstr);
+    }
 	wgp->wgp_endpoint_available = true;
 
 	prop_array_t allowedips;
@@ -3999,9 +4267,9 @@ wg_alloc_prop_buf(char **_buf, struct ifdrv *ifd)
 		return error;
 	buf[ifd->ifd_len] = '\0';
 #ifdef WG_DEBUG_DUMP
-	for (int i = 0; i < ifd->ifd_len; i++)
-		log(LOG_DEBUG, "%c", buf[i]);
-	log(LOG_DEBUG, "\n");
+	log(LOG_DEBUG, "%.*s\n",
+	    (int)MIN(INT_MAX, ifd->ifd_len),
+	    (const char *)buf);
 #endif
 	*_buf = buf;
 	return 0;
@@ -4027,10 +4295,12 @@ wg_ioctl_set_private_key(struct wg_softc *wg, struct ifdrv *ifd)
 		&privkey, &privkey_len))
 		goto out;
 #ifdef WG_DEBUG_DUMP
-	log(LOG_DEBUG, "privkey=%p, privkey_len=%lu\n", privkey, privkey_len);
-	for (int i = 0; i < privkey_len; i++)
-		log(LOG_DEBUG, "%c", ((const char *)privkey)[i]);
-	log(LOG_DEBUG, "\n");
+    {
+	char *hex = gethexdump(privkey, privkey_len);
+	log(LOG_DEBUG, "privkey=%p, privkey_len=%lu\n%s\n",
+	    privkey, privkey_len, hex);
+	puthexdump(hex, privkey, privkey_len);
+    }
 #endif
 	if (privkey_len != WG_STATIC_KEY_LEN)
 		goto out;
@@ -4074,7 +4344,7 @@ wg_ioctl_add_peer(struct wg_softc *wg, struct ifdrv *ifd)
 	int error;
 	prop_dictionary_t prop_dict;
 	char *buf = NULL;
-	struct wg_peer *wgp = NULL;
+	struct wg_peer *wgp = NULL, *wgp0 __diagused;
 
 	error = wg_alloc_prop_buf(&buf, ifd);
 	if (error != 0)
@@ -4089,6 +4359,24 @@ wg_ioctl_add_peer(struct wg_softc *wg, struct ifdrv *ifd)
 		goto out;
 
 	mutex_enter(wg->wg_lock);
+	if (thmap_get(wg->wg_peers_bypubkey, wgp->wgp_pubkey,
+		sizeof(wgp->wgp_pubkey)) != NULL ||
+	    (wgp->wgp_name[0] &&
+		thmap_get(wg->wg_peers_byname, wgp->wgp_name,
+		    strlen(wgp->wgp_name)) != NULL)) {
+		mutex_exit(wg->wg_lock);
+		wg_destroy_peer(wgp);
+		error = EEXIST;
+		goto out;
+	}
+	wgp0 = thmap_put(wg->wg_peers_bypubkey, wgp->wgp_pubkey,
+	    sizeof(wgp->wgp_pubkey), wgp);
+	KASSERT(wgp0 == wgp);
+	if (wgp->wgp_name[0]) {
+		wgp0 = thmap_put(wg->wg_peers_byname, wgp->wgp_name,
+		    strlen(wgp->wgp_name), wgp);
+		KASSERT(wgp0 == wgp);
+	}
 	WG_PEER_WRITER_INSERT_HEAD(wgp, wg);
 	wg->wg_npeers++;
 	mutex_exit(wg->wg_lock);
@@ -4159,10 +4447,11 @@ wg_ioctl_get(struct wg_softc *wg, struct ifdrv *ifd)
 	s = pserialize_read_enter();
 	i = 0;
 	WG_PEER_READER_FOREACH(wgp, wg) {
-		struct psref psref;
+		struct wg_sockaddr *wgsa;
+		struct psref wgp_psref, wgsa_psref;
 		prop_dictionary_t prop_peer;
 
-		wg_get_peer(wgp, &psref);
+		wg_get_peer(wgp, &wgp_psref);
 		pserialize_read_exit(s);
 
 		prop_peer = prop_dictionary_create();
@@ -4188,20 +4477,16 @@ wg_ioctl_get(struct wg_softc *wg, struct ifdrv *ifd)
 				goto next;
 		}
 
-		switch (wgp->wgp_sa.sa_family) {
-		case AF_INET:
-			if (!prop_dictionary_set_data(prop_peer, "endpoint",
-				&wgp->wgp_sin, sizeof(wgp->wgp_sin)))
-				goto next;
-			break;
-#ifdef INET6
-		case AF_INET6:
-			if (!prop_dictionary_set_data(prop_peer, "endpoint",
-				&wgp->wgp_sin6, sizeof(wgp->wgp_sin6)))
-				goto next;
-			break;
-#endif
+		wgsa = wg_get_endpoint_sa(wgp, &wgsa_psref);
+		CTASSERT(AF_UNSPEC == 0);
+		if (wgsa_family(wgsa) != 0 /*AF_UNSPEC*/ &&
+		    !prop_dictionary_set_data(prop_peer, "endpoint",
+			wgsatoss(wgsa),
+			sockaddr_getsize_by_family(wgsa_family(wgsa)))) {
+			wg_put_sa(wgp, wgsa, &wgsa_psref);
+			goto next;
 		}
+		wg_put_sa(wgp, wgsa, &wgsa_psref);
 
 		const struct timespec *t = &wgp->wgp_last_handshake_time;
 
@@ -4267,7 +4552,7 @@ wg_ioctl_get(struct wg_softc *wg, struct ifdrv *ifd)
 		i++;
 
 		s = pserialize_read_enter();
-		wg_put_peer(wgp, &psref);
+		wg_put_peer(wgp, &wgp_psref);
 	}
 	pserialize_read_exit(s);
 
@@ -4435,6 +4720,28 @@ wg_init(struct ifnet *ifp)
 	return 0;
 }
 
+#ifdef ALTQ
+static void
+wg_start(struct ifnet *ifp)
+{
+	struct mbuf *m;
+
+	for (;;) {
+		IFQ_DEQUEUE(&ifp->if_snd, m);
+		if (m == NULL)
+			break;
+
+		kpreempt_disable();
+		const uint32_t h = curcpu()->ci_index;	// pktq_rps_hash(m)
+		if (__predict_false(!pktq_enqueue(wg_pktq, m, h))) {
+			WGLOG(LOG_ERR, "pktq full, dropping\n");
+			m_freem(m);
+		}
+		kpreempt_enable();
+	}
+}
+#endif
+
 static void
 wg_stop(struct ifnet *ifp, int disable)
 {
@@ -4554,6 +4861,8 @@ wg_send_user(struct wg_peer *wgp, struct mbuf *m)
 
 	wg_put_sa(wgp, wgsa, &psref);
 
+	m_freem(m);
+
 	return error;
 }
 
@@ -4593,6 +4902,8 @@ wg_input_user(struct ifnet *ifp, struct mbuf *m, const int af)
 
 	/* Send decrypted packets to users via a tun. */
 	rumpuser_wg_send_user(wg->wg_user, iov, 2);
+
+	m_freem(m);
 }
 
 static int
@@ -4624,7 +4935,7 @@ rumpkern_wg_recv_user(struct wg_softc *wg, struct iovec *iov, size_t iovlen)
 
 	dst = iov[0].iov_base;
 
-	m = m_gethdr(M_NOWAIT, MT_DATA);
+	m = m_gethdr(M_DONTWAIT, MT_DATA);
 	if (m == NULL)
 		return;
 	m->m_len = m->m_pkthdr.len = 0;
@@ -4649,7 +4960,7 @@ rumpkern_wg_recv_peer(struct wg_softc *wg, struct iovec *iov, size_t iovlen)
 
 	src = iov[0].iov_base;
 
-	m = m_gethdr(M_NOWAIT, MT_DATA);
+	m = m_gethdr(M_DONTWAIT, MT_DATA);
 	if (m == NULL)
 		return;
 	m->m_len = m->m_pkthdr.len = 0;

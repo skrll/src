@@ -1,4 +1,4 @@
-/*	$NetBSD: install.c,v 1.16 2020/05/12 17:04:00 martin Exp $	*/
+/*	$NetBSD: install.c,v 1.18 2020/10/12 16:14:32 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -57,12 +57,28 @@ write_all_parts(struct install_partition_desc *install)
 	bool found, res;
 
 	/* pessimistic assumption: all partitions on different devices */
-	allparts = calloc(install->num, sizeof(*allparts));
+	allparts = calloc(install->num + install->num_write_back,
+	    sizeof(*allparts));
 	if (allparts == NULL)
 		return false;
 
 	/* collect all different partition sets */
 	num_parts = 0;
+	for (i = 0; i < install->num_write_back; i++) {
+		parts = install->write_back[i];
+		if (parts == NULL)
+			continue;
+		found = false;
+		for (j = 0; j < num_parts; j++) {
+			if (allparts[j] == parts) {
+				found = true;
+				break;
+			}
+		}
+		if (found)
+			continue;
+		allparts[num_parts++] = parts;
+	}
 	for (i = 0; i < install->num; i++) {
 		parts = install->infos[i].parts;
 		if (parts == NULL)
@@ -137,7 +153,7 @@ void
 do_install(void)
 {
 	int find_disks_ret;
-	int retcode = 0;
+	int retcode = 0, res;
 	struct install_partition_desc install = {};
 	struct disk_partitions *parts;
 
@@ -179,8 +195,16 @@ do_install(void)
 			}
 		}
 
-		if (!md_get_info(&install) ||
-		    !md_make_bsd_partitions(&install)) {
+		for (;;) {
+			if (md_get_info(&install)) {
+				res = md_make_bsd_partitions(&install);
+				if (res == -1) {
+					pm->parts = NULL;
+					continue;
+				} else if (res == 1) {
+					break;
+				}
+			}
 			hit_enter_to_continue(MSG_abort_inst, NULL);
 			goto error;
 		}

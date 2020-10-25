@@ -1,4 +1,4 @@
-# $NetBSD: md.amd64,v 1.88 2020/08/27 15:32:00 riastradh Exp $
+# $NetBSD: md.amd64,v 1.90 2020/09/26 17:49:50 jmcneill Exp $
 #
 ./@MODULEDIR@/acpiacad				modules-base-kernel	kmod
 ./@MODULEDIR@/acpiacad/acpiacad.kmod		modules-base-kernel	kmod
@@ -158,6 +158,8 @@
 ./@MODULEDIR@/i915drmkms/i915drmkms.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/ichsmb				modules-base-kernel	kmod
 ./@MODULEDIR@/ichsmb/ichsmb.kmod		modules-base-kernel	kmod
+./@MODULEDIR@/if_iavf				modules-base-kernel	kmod
+./@MODULEDIR@/if_iavf/if_iavf.kmod		modules-base-kernel	kmod
 ./@MODULEDIR@/if_ixl				modules-base-kernel	kmod
 ./@MODULEDIR@/if_ixl/if_ixl.kmod		modules-base-kernel	kmod
 ./@MODULEDIR@/imc				modules-base-kernel	kmod
@@ -182,8 +184,6 @@
 ./@MODULEDIR@/mt2131/mt2131.kmod		modules-base-kernel	kmod
 ./@MODULEDIR@/nvme				base-obsolete		obsolete
 ./@MODULEDIR@/nvme/nvme.kmod			base-obsolete		obsolete
-./@MODULEDIR@/nvmm				modules-base-kernel	kmod
-./@MODULEDIR@/nvmm/nvmm.kmod			modules-base-kernel	kmod
 ./@MODULEDIR@/nxt2k				modules-base-kernel	kmod
 ./@MODULEDIR@/nxt2k/nxt2k.kmod			modules-base-kernel	kmod
 ./@MODULEDIR@/odcm				modules-base-kernel	kmod

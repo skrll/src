@@ -589,7 +589,6 @@ send_interface(struct fd_list *fd, const struct interface *ifp, int af)
 			reason = "CARRIER";
 			break;
 		case LINK_DOWN:
-		case LINK_DOWN_IFFUP:
 			reason = "NOCARRIER";
 			break;
 		default:
@@ -736,7 +735,7 @@ script_runreason(const struct interface *ifp, const char *reason)
 
 	argv[0] = ctx->script;
 	argv[1] = NULL;
-	logdebugx("%s: executing `%s' %s", ifp->name, argv[0], reason);
+	logdebugx("%s: executing: %s %s", ifp->name, argv[0], reason);
 
 #ifdef PRIVSEP
 	if (ctx->options & DHCPCD_PRIVSEP) {

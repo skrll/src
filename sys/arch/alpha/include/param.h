@@ -1,4 +1,4 @@
-/* $NetBSD: param.h,v 1.45 2019/01/07 22:00:30 jdolecek Exp $ */
+/* $NetBSD: param.h,v 1.47 2020/10/10 21:59:03 thorpej Exp $ */
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -71,6 +71,13 @@
 #endif
 
 /*
+ * EV4 (21064) and EV5 (21164) have a 32-byte cache line size.
+ * EV6 (21264) and EV7 (21364) have a 64-byte cache line size.
+ */
+#define	COHERENCY_UNIT	64
+#define	CACHE_LINE_SIZE	64
+
+/*
  * Constants related to network buffer management.
  * MCLBYTES must be no larger than NBPG (the software page size), and,
  * on machines that exchange pages of input or output buffers with mbuf
@@ -109,10 +116,6 @@
 
 void	delay(unsigned long);
 #define	DELAY(n)	delay(n)
-
-/* XXX THE FOLLOWING PROTOTYPE SHOULD BE A BUS.H INTERFACE */
-paddr_t alpha_XXX_dmamap(vaddr_t);
-/* XXX END BUS.H */
 
 #endif
 #endif /* !_KERNEL */

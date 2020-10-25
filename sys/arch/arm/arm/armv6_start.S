@@ -1,4 +1,4 @@
-/*	$NetBSD: armv6_start.S,v 1.27 2020/08/28 13:36:52 skrll Exp $	*/
+/*	$NetBSD: armv6_start.S,v 1.30 2020/10/13 21:06:18 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2017, 2018 The NetBSD Foundation, Inc.
@@ -572,6 +572,13 @@ generic_vstartv6:
 #define CPU_CONTROL_XP_ENABLE_SET	0
 #endif
 
+/* SWP is only usable on uni-processor ARMv7 systems. */
+#ifdef MULTIPROCESSOR
+#define CPU_CONTROL_XP_SWP_ENABLE 0 
+#else
+#define CPU_CONTROL_XP_SWP_ENABLE CPU_CONTROL_SWP_ENABLE  
+#endif
+
 // bits to set in the Control Register
 //
 #define CPU_CONTROL_SET			( 	\
@@ -660,6 +667,7 @@ armv7_init:
 
 #define ARMV7_SCTLR_SET	( 	\
     CPU_CONTROL_UNAL_ENABLE |	\
+    CPU_CONTROL_XP_SWP_ENABLE | \
     0)
 
 	mrc	p15, 0, r0, c1, c0, 0
@@ -713,7 +721,6 @@ armv7_mmuinit:
 	mov	r4, lr
 	mov	r5, r0			// save TTBR
 
-	// XXXNH dsb - Why?
 	XPUTC(#'F')
 	dsb				// Drain the write buffers.
 
@@ -747,7 +754,6 @@ armv7_mmuinit:
 	mov	r1, #0			// get KERNEL_PID
 	mcr	p15, 0, r1, c13, c0, 1	// CONTEXTIDR write
 
-	// XXXNH FreeBSD doesn't do this isb
 	isb
 
 	// Set the Domain Access register.  Very important!

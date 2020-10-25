@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.578 2020/08/30 11:16:17 dholland Exp $
+# $NetBSD: GENERIC,v 1.580 2020/09/27 13:48:49 roy Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.578 $"
+#ident		"GENERIC-$Revision: 1.580 $"
 
 maxusers	64		# estimated number of users
 
@@ -811,6 +811,7 @@ fxp*	at pci? dev ? function ?	# Intel EtherExpress PRO 10+/100B
 gem*	at pci? dev ? function ?	# Apple GMAC and Sun ERI gigabit enet
 gsip*	at pci? dev ? function ?	# NS83820 Gigabit Ethernet
 hme*	at pci? dev ? function ?	# Sun Microelectronics STP2002-STQ
+iavf*	at pci? dev ? function ?	# Intel Adaptive Virtual Function
 ipw*	at pci? dev ? function ?	# Intel PRO/Wireless 2100
 iwi*	at pci? dev ? function ?	# Intel PRO/Wireless 2200BG
 iwm*	at pci? dev ? function ?	# Intel Centrino 7260
@@ -1167,6 +1168,7 @@ pseudo-device	ipsecif			# tunnel interface for routing based ipsec
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	l2tp			# L2TPv3 interface
 pseudo-device	npf			# NPF packet filter

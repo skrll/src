@@ -1,4 +1,4 @@
-/*	$NetBSD: md.c,v 1.5 2019/12/14 12:00:40 martin Exp $	*/
+/*	$NetBSD: md.c,v 1.7 2020/10/12 16:14:34 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -106,7 +106,7 @@ md_get_info(struct install_partition_desc *install)
 /*
  * md back-end code for menu-driven BSD disklabel editor.
  */
-bool
+int
 md_make_bsd_partitions(struct install_partition_desc *install)
 {
 
@@ -133,7 +133,7 @@ md_pre_disklabel(struct install_partition_desc *install,
 	struct disk_part_info info;
 	daddr_t boot_offset = ews4800mips_boot_offset();
 
-	/* make sure the boot parition is at the right offset */
+	/* make sure the boot partition is at the right offset */
 	for (part = 0; part < parts->num_part; part++) {
 		if (!parts->pscheme->get_part_info(parts, part, &info))
 			continue;

@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.54 2020/07/25 22:51:57 riastradh Exp $ */
+/* $NetBSD: cpu.c,v 1.56 2020/10/10 08:22:57 jmcneill Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.54 2020/07/25 22:51:57 riastradh Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.56 2020/10/10 08:22:57 jmcneill Exp $");
 
 #include "locators.h"
 #include "opt_arm_debug.h"
@@ -372,7 +372,9 @@ cpu_identify2(device_t self, struct cpu_info *ci)
 		break;
 	}
 	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_FP)) {
-	case ID_AA64PFR0_EL1_FP_IMPL:
+	case ID_AA64PFR0_EL1_FP_NONE:
+		break;
+	default:
 		aprint_verbose(", FP");
 		break;
 	}
@@ -416,7 +418,9 @@ cpu_identify2(device_t self, struct cpu_info *ci)
 
 	/* PFR0:AdvSIMD */
 	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_ADVSIMD)) {
-	case ID_AA64PFR0_EL1_ADV_SIMD_IMPL:
+	case ID_AA64PFR0_EL1_ADV_SIMD_NONE:
+		break;
+	default:
 		aprint_verbose(", NEON");
 		break;
 	}
@@ -466,6 +470,13 @@ cpu_identify2(device_t self, struct cpu_info *ci)
 static void
 cpu_init_counter(struct cpu_info *ci)
 {
+	const uint64_t dfr0 = reg_id_aa64dfr0_el1_read();
+	const u_int pmuver = __SHIFTOUT(dfr0, ID_AA64DFR0_EL1_PMUVER);
+	if (pmuver == ID_AA64DFR0_EL1_PMUVER_NONE) {
+		/* Performance Monitors Extension not implemented. */
+		return;
+	}
+
 	reg_pmcr_el0_write(PMCR_E | PMCR_C);
 	reg_pmcntenset_el0_write(PMCNTEN_C);
 

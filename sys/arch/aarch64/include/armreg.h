@@ -1,4 +1,4 @@
-/* $NetBSD: armreg.h,v 1.52 2020/08/02 06:58:16 maxv Exp $ */
+/* $NetBSD: armreg.h,v 1.54 2020/09/30 08:40:49 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -307,6 +307,15 @@ AARCH64REG_READ_INLINE(id_aa64isar0_el1)
 
 AARCH64REG_READ_INLINE(id_aa64isar1_el1)
 
+#define	ID_AA64ISAR1_EL1_I8MM		__BITS(55,52)
+#define	 ID_AA64ISAR1_EL1_I8MM_NONE	 0
+#define	 ID_AA64ISAR1_EL1_I8MM_SUPPORTED 1
+#define	ID_AA64ISAR1_EL1_DGH		__BITS(51,48)
+#define	 ID_AA64ISAR1_EL1_DGH_NONE	 0
+#define	 ID_AA64ISAR1_EL1_DGH_SUPPORTED	 1
+#define	ID_AA64ISAR1_EL1_BF16		__BITS(47,44)
+#define	 ID_AA64ISAR1_EL1_BF16_NONE	 0
+#define	 ID_AA64ISAR1_EL1_BF16_BFDOT	 1
 #define	ID_AA64ISAR1_EL1_SPECRES	__BITS(43,40)
 #define	 ID_AA64ISAR1_EL1_SPECRES_NONE	 0
 #define	 ID_AA64ISAR1_EL1_SPECRES_SUPPORTED 1
@@ -826,7 +835,7 @@ AARCH64REG_WRITE_INLINE(sctlr_el1)
 #define	SCTLR_IESB		__BIT(21)
 #define	SCTLR_EIS		__BIT(22)
 #define	SCTLR_SPAN		__BIT(23)
-#define	SCTLR_EOE		__BIT(24)
+#define	SCTLR_E0E		__BIT(24)
 #define	SCTLR_EE		__BIT(25)
 #define	SCTLR_UCI		__BIT(26)
 #define	SCTLR_EnDA		__BIT(27)

@@ -49,6 +49,7 @@
 #include "dhcp.h"
 #include "dhcp6.h"
 #include "dhcpcd-embedded.h"
+#include "duid.h"
 #include "if.h"
 #include "if-options.h"
 #include "ipv4.h"
@@ -58,6 +59,8 @@
 #define	IN_CONFIG_BLOCK(ifo)	((ifo)->options & DHCPCD_FORKED)
 #define	SET_CONFIG_BLOCK(ifo)	((ifo)->options |= DHCPCD_FORKED)
 #define	CLEAR_CONFIG_BLOCK(ifo)	((ifo)->options &= ~DHCPCD_FORKED)
+
+static unsigned long long default_options;
 
 const struct option cf_options[] = {
 	{"background",      no_argument,       NULL, 'b'},
@@ -92,7 +95,7 @@ const struct option cf_options[] = {
 	{"noarp",           no_argument,       NULL, 'A'},
 	{"nobackground",    no_argument,       NULL, 'B'},
 	{"nohook",          required_argument, NULL, 'C'},
-	{"duid",            no_argument,       NULL, 'D'},
+	{"duid",            optional_argument, NULL, 'D'},
 	{"lastlease",       no_argument,       NULL, 'E'},
 	{"fqdn",            optional_argument, NULL, 'F'},
 	{"nogateway",       no_argument,       NULL, 'G'},
@@ -162,7 +165,6 @@ const struct option cf_options[] = {
 	{"inactive",        no_argument,       NULL, O_INACTIVE},
 	{"mudurl",          required_argument, NULL, O_MUDURL},
 	{"link_rcvbuf",     required_argument, NULL, O_LINK_RCVBUF},
-	{"poll",            optional_argument, NULL, O_POLL},
 	{NULL,              0,                 NULL, '\0'}
 };
 
@@ -458,13 +460,13 @@ parse_addr(struct in_addr *addr, struct in_addr *net, const char *arg)
 		if (e != 0 ||
 		    (net != NULL && inet_cidrtoaddr((int)i, net) != 0))
 		{
-			logerrx("`%s' is not a valid CIDR", p);
+			logerrx("invalid CIDR: %s", p);
 			return -1;
 		}
 	}
 
 	if (addr != NULL && inet_aton(arg, addr) == 0) {
-		logerrx("`%s' is not a valid IP address", arg);
+		logerrx("invalid IP address: %s", arg);
 		return -1;
 	}
 	if (p != NULL)
@@ -759,6 +761,10 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case 'l':
 		ARG_REQUIRED;
+		if (strcmp(arg, "-1") == 0) {
+			ifo->leasetime = DHCP_INFINITE_LIFETIME;
+			break;
+		}
 		ifo->leasetime = (uint32_t)strtou(arg, NULL,
 		    0, 0, UINT32_MAX, &e);
 		if (e) {
@@ -782,7 +788,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		    make_option_mask(d, dl, od, odl, no, arg, -1) != 0 ||
 		    make_option_mask(d, dl, od, odl, reject, arg, -1) != 0)
 		{
-			logerrx("unknown option `%s'", arg);
+			logerrx("unknown option: %s", arg);
 			return -1;
 		}
 		break;
@@ -794,7 +800,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		    make_option_mask(d, dl, od, odl, request, arg, -1) != 0 ||
 		    make_option_mask(d, dl, od, odl, require, arg, -1) != 0)
 		{
-			logerrx("unknown option `%s'", arg);
+			logerrx("unknown option: %s", arg);
 			return -1;
 		}
 		break;
@@ -979,6 +985,20 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case 'D':
 		ifo->options |= DHCPCD_CLIENTID | DHCPCD_DUID;
+		if (ifname != NULL) /* duid type only a global option */
+			break;
+		if (arg == NULL)
+			ctx->duid_type = DUID_DEFAULT;
+		else if (strcmp(arg, "ll") == 0)
+			ctx->duid_type = DUID_LL;
+		else if (strcmp(arg, "llt") == 0)
+			ctx->duid_type = DUID_LLT;
+		else if (strcmp(arg, "uuid") == 0)
+			ctx->duid_type = DUID_UUID;
+		else {
+			logwarnx("%s: invalid duid type", arg);
+			ctx->duid_type = DUID_DEFAULT;
+		}
 		break;
 	case 'E':
 		ifo->options |= DHCPCD_LASTLEASE;
@@ -997,7 +1017,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		else if (strcmp(arg, "disable") == 0)
 			ifo->fqdn = FQDN_DISABLE;
 		else {
-			logerrx("invalid value `%s' for FQDN", arg);
+			logerrx("invalid FQDN value: %s", arg);
 			return -1;
 		}
 		break;
@@ -1021,6 +1041,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		}
 		ifo->options |= DHCPCD_CLIENTID;
 		ifo->clientid[0] = (uint8_t)s;
+		ifo->options &= ~DHCPCD_DUID;
 		break;
 	case 'J':
 		ifo->options |= DHCPCD_BROADCAST;
@@ -1042,7 +1063,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		    make_option_mask(d, dl, od, odl, require, arg, -1) != 0 ||
 		    make_option_mask(d, dl, od, odl, no, arg, 1) != 0)
 		{
-			logerrx("unknown option `%s'", arg);
+			logerrx("unknown option: %s", arg);
 			return -1;
 		}
 		break;
@@ -1055,7 +1076,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		    make_option_mask(d, dl, od, odl, no, arg, -1) != 0 ||
 		    make_option_mask(d, dl, od, odl, reject, arg, -1) != 0)
 		{
-			logerrx("unknown option `%s'", arg);
+			logerrx("unknown option: %s", arg);
 			return -1;
 		}
 		break;
@@ -1204,13 +1225,23 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		ifo->options |= DHCPCD_ONESHOT;
 		break;
 	case '4':
+#ifdef INET
 		ifo->options &= ~DHCPCD_IPV6;
 		ifo->options |= DHCPCD_IPV4;
 		break;
+#else
+		logerrx("INET has been compiled out");
+		return -1;
+#endif
 	case '6':
+#ifdef INET6
 		ifo->options &= ~DHCPCD_IPV4;
 		ifo->options |= DHCPCD_IPV6;
 		break;
+#else
+		logerrx("INET6 has been compiled out");
+		return -1;
+#endif
 	case O_IPV4:
 		ifo->options |= DHCPCD_IPV4;
 		break;
@@ -1282,10 +1313,10 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		    ifo->dstmask, arg, 2) != 0)
 		{
 			if (errno == EINVAL)
-				logerrx("option `%s' does not take"
-				    " an IPv4 address", arg);
+				logerrx("option does not take"
+				    " an IPv4 address: %s", arg);
 			else
-				logerrx("unknown option `%s'", arg);
+				logerrx("unknown option: %s", arg);
 			return -1;
 		}
 		break;
@@ -1768,7 +1799,7 @@ err_sla:
 			return -1;
 		}
 		if (l && !(t & (OT_STRING | OT_BINHEX))) {
-			logwarnx("ignoring length for type `%s'", arg);
+			logwarnx("ignoring length for type: %s", arg);
 			l = 0;
 		}
 		if (t & OT_ARRAY && t & (OT_STRING | OT_BINHEX) &&
@@ -2090,6 +2121,12 @@ invalid_token:
 		break;
 	case O_CONTROLGRP:
 		ARG_REQUIRED;
+#ifdef PRIVSEP
+		/* Control group is already set by this point.
+		 * We don't need to pledge getpw either with this. */
+		if (IN_PRIVSEP(ctx))
+			break;
+#endif
 #ifdef _REENTRANT
 		l = sysconf(_SC_GETGR_R_SIZE_MAX);
 		if (l == -1)
@@ -2196,18 +2233,6 @@ invalid_token:
 			return -1;
 		}
 #endif
-		break;
-	case O_POLL:
-		if (arg == NULL) {
-			ifo->poll = IF_POLL_UP;
-			break;
-		}
-		ifo->poll = (unsigned long)
-		    strtou(arg, NULL, 0, 0, ULONG_MAX, &e);
-		if (e) {
-			logerrx("failed to convert poll %s", arg);
-			return -1;
-		}
 		break;
 	default:
 		return 0;
@@ -2326,18 +2351,30 @@ read_config(struct dhcpcd_ctx *ctx,
 	/* Seed our default options */
 	if ((ifo = default_config(ctx)) == NULL)
 		return NULL;
-	ifo->options |= DHCPCD_DAEMONISE | DHCPCD_GATEWAY;
-#ifdef PLUGIN_DEV
-	ifo->options |= DHCPCD_DEV;
-#endif
+	if (default_options == 0) {
+		default_options |= DHCPCD_DAEMONISE | DHCPCD_GATEWAY;
 #ifdef INET
-	ifo->options |= DHCPCD_IPV4 | DHCPCD_ARP | DHCPCD_DHCP | DHCPCD_IPV4LL;
+		skip = socket(PF_INET, SOCK_DGRAM, 0);
+		if (skip != -1) {
+			close(skip);
+			default_options |= DHCPCD_IPV4 | DHCPCD_ARP |
+			    DHCPCD_DHCP | DHCPCD_IPV4LL;
+		}
 #endif
 #ifdef INET6
-	ifo->options |= DHCPCD_IPV6 | DHCPCD_IPV6RS;
-	ifo->options |= DHCPCD_IPV6RA_AUTOCONF | DHCPCD_IPV6RA_REQRDNSS;
-	ifo->options |= DHCPCD_DHCP6;
+		skip = socket(PF_INET6, SOCK_DGRAM, 0);
+		if (skip != -1) {
+			close(skip);
+			default_options |= DHCPCD_IPV6 | DHCPCD_IPV6RS |
+			    DHCPCD_IPV6RA_AUTOCONF | DHCPCD_IPV6RA_REQRDNSS |
+			    DHCPCD_DHCP6;
+		}
 #endif
+#ifdef PLUGIN_DEV
+		default_options |= DHCPCD_DEV;
+#endif
+	}
+	ifo->options |= default_options;
 
 	CLEAR_CONFIG_BLOCK(ifo);
 

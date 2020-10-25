@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.26 2020/08/12 13:19:35 skrll Exp $ */
+/* $NetBSD: cpu.h,v 1.28 2020/10/01 06:40:16 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014, 2020 The NetBSD Foundation, Inc.
@@ -147,6 +147,7 @@ static __inline struct cpu_info *lwp_getcpu(struct lwp *);
 #undef curlwp
 #define	curlwp			(aarch64_curlwp())
 
+int	cpu_maxproc(void);
 void	cpu_signotify(struct lwp *l);
 void	cpu_need_proftick(struct lwp *l);
 
@@ -155,7 +156,7 @@ void	cpu_hatch(struct cpu_info *);
 extern struct cpu_info *cpu_info[];
 extern struct cpu_info cpu_info_store[];
 
-#define CPU_INFO_ITERATOR	cpuid_t
+#define CPU_INFO_ITERATOR	int
 #if defined(MULTIPROCESSOR) || defined(_MODULE)
 #define cpu_number()		(curcpu()->ci_index)
 #define CPU_IS_PRIMARY(ci)	((ci)->ci_index == 0)
