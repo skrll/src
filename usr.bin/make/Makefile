@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.103 2020/10/05 22:15:45 rillig Exp $
+#	$NetBSD: Makefile,v 1.105 2020/10/23 15:44:38 rillig Exp $
 #	@(#)Makefile	5.2 (Berkeley) 12/28/90
 
 PROG=	make
@@ -65,7 +65,6 @@ COPTS.arch.c+=	-Wno-error=format-truncation
 COPTS.dir.c+=	-Wno-error=format-truncation
 COPTS.main.c+=	-Wno-error=format-truncation
 COPTS.meta.c+=	-Wno-error=format-truncation
-COPTS.parse.c+=	-Wno-error=format-truncation
 .endif
 
 # Whether to compile with GCC 9 from pkgsrc, during development.
@@ -88,7 +87,6 @@ COPTS.arch.c+=	-Wno-error=format-truncation
 COPTS.dir.c+=	-Wno-error=format-truncation
 COPTS.main.c+=	-Wno-error=format-truncation
 COPTS.meta.c+=	-Wno-error=format-truncation
-COPTS.parse.c+=	-Wno-error=format-truncation
 .endif
 
 USE_META?=	yes
@@ -160,7 +158,6 @@ COPTS.arch.c+=	${GCC_NO_FORMAT_TRUNCATION}
 COPTS.dir.c+=	${GCC_NO_FORMAT_TRUNCATION}
 COPTS.main.c+=	${GCC_NO_FORMAT_TRUNCATION} ${GCC_NO_STRINGOP_TRUNCATION}
 COPTS.meta.c+=	${GCC_NO_FORMAT_TRUNCATION}
-COPTS.parse.c+=	${GCC_NO_FORMAT_TRUNCATION}
 
 COPTS+=		-Wdeclaration-after-statement
 
@@ -192,6 +189,6 @@ retest:
 # Just out of curiosity, during development.
 .SUFFIXES: .cpre .casm
 .c.cpre:
-	${COMPILE.c:S,^-c$,-E,} ${.IMPSRC} -o ${.TARGET}
+	${COMPILE.c:S,^-c$,-E,} ${COPTS.${.IMPSRC}} ${.IMPSRC} -o ${.TARGET}
 .c.casm:
-	${COMPILE.c:S,^-c$,-S,} ${.IMPSRC} -o ${.TARGET}
+	${COMPILE.c:S,^-c$,-S,} ${COPTS.${.IMPSRC}} ${.IMPSRC} -o ${.TARGET}

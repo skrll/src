@@ -1,4 +1,4 @@
-/* $NetBSD: __sigtramp2.S,v 1.2 2020/10/13 01:59:55 kamil Exp $ */
+/* $NetBSD: __sigtramp2.S,v 1.6 2020/10/24 07:02:20 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -33,7 +33,7 @@
 #include "assym.h"
 
 /*
- * The ARM signal trampoline is invoked only to return from
+ * The ARM64 signal trampoline is invoked only to return from
  * the signal; the kernel calls the signal handler directly.
  *
  * On entry, the stack looks like:
@@ -41,12 +41,13 @@
  *		ucontext structure
  *	sp->	siginfo structure
  * and x28 points to the ucontext
- *
- * The unwind entry includes the one byte prior to the trampoline
+ */
+
+/*
+ * The unwind entry includes the one instruction prior to the trampoline
  * because the unwinder will look up (return PC - 1) while unwinding.
- * Normally (return PC - 1) computes an address inside the call
- * instruction that created the child frame, but here there is no call
- * instruction so we have to manually add padding.
+ * Normally this would be the jump / branch, but since there isn't one in
+ * this case, we place an explicit nop there instead.
  */
 	.cfi_startproc simple
 	.cfi_signal_frame
@@ -81,8 +82,8 @@
 	.cfi_offset x27, _UC_REGS_X27
 	.cfi_offset x28, _UC_REGS_X28
 	.cfi_offset x29, _UC_REGS_X29
-	.cfi_offset x30, _UC_REGS_X30
-	/* The unwinder will use the CFA to restore X31 (SP). */
+	.cfi_offset lr, _UC_REGS_LR
+	.cfi_offset sp, _UC_REGS_SP
 	nop
 ENTRY_NP(__sigtramp_siginfo_2)
 	mov	x0, x28				/* set the arg         */

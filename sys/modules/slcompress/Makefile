@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.2 2019/02/17 04:05:57 rin Exp $
+#	$NetBSD: Makefile,v 1.4 2020/10/18 19:56:42 christos Exp $
 
 .include "../Makefile.inc"
 
@@ -8,6 +8,9 @@ KMOD=	slcompress
 SRCS=	slcompress.c
 
 CPPFLAGS+=	-DINET
+
+COPTS.slcompress.c+=   ${NO_ADDR_OF_PACKED_MEMBER}
+
 
 WARNS=	3
 
