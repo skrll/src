@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu.c,v 1.74 2020/08/02 18:23:33 riastradh Exp $	*/
+/*	$NetBSD: fpu.c,v 1.76 2020/10/24 07:14:30 mgorny Exp $	*/
 
 /*
  * Copyright (c) 2008, 2019 The NetBSD Foundation, Inc.  All
@@ -96,7 +96,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.74 2020/08/02 18:23:33 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.76 2020/10/24 07:14:30 mgorny Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -156,7 +156,7 @@ fpu_save_lwp(struct lwp *l)
 	s = splvm();
 	if (l->l_md.md_flags & MDL_FPU_IN_CPU) {
 		KASSERT((l->l_flag & LW_SYSTEM) == 0);
-		fpu_area_save(area, x86_xsave_features);
+		fpu_area_save(area, x86_xsave_features, !(l->l_proc->p_flag & PK_32));
 		l->l_md.md_flags &= ~MDL_FPU_IN_CPU;
 	}
 	splx(s);
@@ -246,21 +246,27 @@ fpu_errata_amd(void)
 	fldummy();
 }
 
+#ifdef __x86_64__
+#define XS64(x) (is_64bit ? x##64 : x)
+#else
+#define XS64(x) x
+#endif
+
 void
-fpu_area_save(void *area, uint64_t xsave_features)
+fpu_area_save(void *area, uint64_t xsave_features, bool is_64bit)
 {
 	switch (x86_fpu_save) {
 	case FPU_SAVE_FSAVE:
 		fnsave(area);
 		break;
 	case FPU_SAVE_FXSAVE:
-		fxsave(area);
+		XS64(fxsave)(area);
 		break;
 	case FPU_SAVE_XSAVE:
-		xsave(area, xsave_features);
+		XS64(xsave)(area, xsave_features);
 		break;
 	case FPU_SAVE_XSAVEOPT:
-		xsaveopt(area, xsave_features);
+		XS64(xsaveopt)(area, xsave_features);
 		break;
 	}
 
@@ -268,7 +274,7 @@ fpu_area_save(void *area, uint64_t xsave_features)
 }
 
 void
-fpu_area_restore(const void *area, uint64_t xsave_features)
+fpu_area_restore(const void *area, uint64_t xsave_features, bool is_64bit)
 {
 	clts();
 
@@ -279,13 +285,13 @@ fpu_area_restore(const void *area, uint64_t xsave_features)
 	case FPU_SAVE_FXSAVE:
 		if (cpu_vendor == CPUVENDOR_AMD)
 			fpu_errata_amd();
-		fxrstor(area);
+		XS64(fxrstor)(area);
 		break;
 	case FPU_SAVE_XSAVE:
 	case FPU_SAVE_XSAVEOPT:
 		if (cpu_vendor == CPUVENDOR_AMD)
 			fpu_errata_amd();
-		xrstor(area, xsave_features);
+		XS64(xrstor)(area, xsave_features);
 		break;
 	}
 }
@@ -294,7 +300,8 @@ void
 fpu_handle_deferred(void)
 {
 	struct pcb *pcb = lwp_getpcb(curlwp);
-	fpu_area_restore(&pcb->pcb_savefpu, x86_xsave_features);
+	fpu_area_restore(&pcb->pcb_savefpu, x86_xsave_features,
+	    !(curlwp->l_proc->p_flag & PK_32));
 }
 
 void
@@ -309,7 +316,8 @@ fpu_switch(struct lwp *oldlwp, struct lwp *newlwp)
 	if (oldlwp->l_md.md_flags & MDL_FPU_IN_CPU) {
 		KASSERT(!(oldlwp->l_flag & LW_SYSTEM));
 		pcb = lwp_getpcb(oldlwp);
-		fpu_area_save(&pcb->pcb_savefpu, x86_xsave_features);
+		fpu_area_save(&pcb->pcb_savefpu, x86_xsave_features,
+		    !(oldlwp->l_proc->p_flag & PK_32));
 		oldlwp->l_md.md_flags &= ~MDL_FPU_IN_CPU;
 	}
 	KASSERT(!(newlwp->l_md.md_flags & MDL_FPU_IN_CPU));
@@ -413,7 +421,7 @@ fpu_kern_leave(void)
 	 * through Spectre-class attacks to userland, even if there are
 	 * no bugs in fpu state management.
 	 */
-	fpu_area_restore(&zero_fpu, x86_xsave_features);
+	fpu_area_restore(&zero_fpu, x86_xsave_features, false);
 
 	/*
 	 * Set CR0_TS again so that the kernel can't accidentally use
@@ -661,126 +669,6 @@ fpu_sigreset(struct lwp *l)
 		fpu_save->sv_87.s87_tw = 0xffff;
 		fpu_save->sv_87.s87_cw = pcb->pcb_fpu_dflt_cw;
 	}
-}
-
-/* -------------------------------------------------------------------------- */
-
-static void
-process_xmm_to_s87(const struct fxsave *sxmm, struct save87 *s87)
-{
-	unsigned int tag, ab_tag;
-	const struct fpaccfx *fx_reg;
-	struct fpacc87 *s87_reg;
-	int i;
-
-	/*
-	 * For historic reasons core dumps and ptrace all use the old save87
-	 * layout.  Convert the important parts.
-	 * getucontext gets what we give it.
-	 * setucontext should return something given by getucontext, but
-	 * we are (at the moment) willing to change it.
-	 *
-	 * It really isn't worth setting the 'tag' bits to 01 (zero) or
-	 * 10 (NaN etc) since the processor will set any internal bits
-	 * correctly when the value is loaded (the 287 believed them).
-	 *
-	 * Additionally the s87_tw and s87_tw are 'indexed' by the actual
-	 * register numbers, whereas the registers themselves have ST(0)
-	 * first. Pairing the values and tags can only be done with
-	 * reference to the 'top of stack'.
-	 *
-	 * If any x87 registers are used, they will typically be from
-	 * r7 downwards - so the high bits of the tag register indicate
-	 * used registers. The conversions are not optimised for this.
-	 *
-	 * The ABI we use requires the FP stack to be empty on every
-	 * function call. I think this means that the stack isn't expected
-	 * to overflow - overflow doesn't drop a core in my testing.
-	 *
-	 * Note that this code writes to all of the 's87' structure that
-	 * actually gets written to userspace.
-	 */
-
-	/* FPU control/status */
-	s87->s87_cw = sxmm->fx_cw;
-	s87->s87_sw = sxmm->fx_sw;
-	/* tag word handled below */
-	s87->s87_ip = sxmm->fx_ip;
-	s87->s87_opcode = sxmm->fx_opcode;
-	s87->s87_dp = sxmm->fx_dp;
-
-	/* FP registers (in stack order) */
-	fx_reg = sxmm->fx_87_ac;
-	s87_reg = s87->s87_ac;
-	for (i = 0; i < 8; fx_reg++, s87_reg++, i++)
-		*s87_reg = fx_reg->r;
-
-	/* Tag word and registers. */
-	ab_tag = sxmm->fx_tw & 0xff;	/* Bits set if valid */
-	if (ab_tag == 0) {
-		/* none used */
-		s87->s87_tw = 0xffff;
-		return;
-	}
-
-	tag = 0;
-	/* Separate bits of abridged tag word with zeros */
-	for (i = 0x80; i != 0; tag <<= 1, i >>= 1)
-		tag |= ab_tag & i;
-	/* Replicate and invert so that 0 => 0b11 and 1 => 0b00 */
-	s87->s87_tw = (tag | tag >> 1) ^ 0xffff;
-}
-
-static void
-process_s87_to_xmm(const struct save87 *s87, struct fxsave *sxmm)
-{
-	unsigned int tag, ab_tag;
-	struct fpaccfx *fx_reg;
-	const struct fpacc87 *s87_reg;
-	int i;
-
-	/*
-	 * ptrace gives us registers in the save87 format and
-	 * we must convert them to the correct format.
-	 *
-	 * This code is normally used when overwriting the processes
-	 * registers (in the pcb), so it musn't change any other fields.
-	 *
-	 * There is a lot of pad in 'struct fxsave', if the destination
-	 * is written to userspace, it must be zeroed first.
-	 */
-
-	/* FPU control/status */
-	sxmm->fx_cw = s87->s87_cw;
-	sxmm->fx_sw = s87->s87_sw;
-	/* tag word handled below */
-	sxmm->fx_ip = s87->s87_ip;
-	sxmm->fx_opcode = s87->s87_opcode;
-	sxmm->fx_dp = s87->s87_dp;
-
-	/* Tag word */
-	tag = s87->s87_tw;	/* 0b11 => unused */
-	if (tag == 0xffff) {
-		/* All unused - values don't matter, zero for safety */
-		sxmm->fx_tw = 0;
-		memset(&sxmm->fx_87_ac, 0, sizeof sxmm->fx_87_ac);
-		return;
-	}
-
-	tag ^= 0xffff;		/* So 0b00 is unused */
-	tag |= tag >> 1;	/* Look at even bits */
-	ab_tag = 0;
-	i = 1;
-	do
-		ab_tag |= tag & i;
-	while ((tag >>= 1) >= (i <<= 1));
-	sxmm->fx_tw = ab_tag;
-
-	/* FP registers (in stack order) */
-	fx_reg = sxmm->fx_87_ac;
-	s87_reg = s87->s87_ac;
-	for (i = 0; i < 8; fx_reg++, s87_reg++, i++)
-		fx_reg->r = *s87_reg;
 }
 
 void

@@ -1,8 +1,8 @@
-# $Id: qequals.mk,v 1.1 2014/08/21 13:44:51 apb Exp $
+# $NetBSD: qequals.mk,v 1.3 2020/10/24 08:50:17 rillig Exp $
 
-M= i386
-V.i386= OK
-V.$M ?= bug
+M=	i386
+V.i386=	OK
+V.$M?=	bug
 
 all:
 	@echo 'V.$M ?= ${V.$M}'

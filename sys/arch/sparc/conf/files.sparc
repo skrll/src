@@ -1,4 +1,4 @@
-#	$NetBSD: files.sparc,v 1.160 2020/09/12 05:19:15 isaki Exp $
+#	$NetBSD: files.sparc,v 1.162 2020/10/21 13:31:52 christos Exp $
 
 # @(#)files.sparc	8.1 (Berkeley) 7/19/93
 # sparc-specific configuration info

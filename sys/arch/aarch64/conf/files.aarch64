@@ -1,4 +1,4 @@
-#	$NetBSD: files.aarch64,v 1.28 2020/09/29 19:58:49 jmcneill Exp $
+#	$NetBSD: files.aarch64,v 1.30 2020/10/21 13:31:50 christos Exp $
 
 defflag opt_cpuoptions.h	AARCH64_ALIGNMENT_CHECK
 defflag opt_cpuoptions.h	AARCH64_EL0_STACK_ALIGNMENT_CHECK
