@@ -1,4 +1,4 @@
-# $NetBSD: files.alpha,v 1.192 2020/09/27 23:59:37 thorpej Exp $
+# $NetBSD: files.alpha,v 1.194 2020/10/21 13:31:50 christos Exp $
 #
 # alpha-specific configuration info
 

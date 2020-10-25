@@ -1,4 +1,4 @@
-/*	$NetBSD: config.h,v 1.23 2020/09/27 17:17:01 rillig Exp $	*/
+/*	$NetBSD: config.h,v 1.25 2020/10/19 23:43:55 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -133,8 +133,10 @@
 /*
  * SYSVINCLUDE
  *	Recognize system V like include directives [include "filename"]
+ *	(required by POSIX 2018)
  * SYSVVARSUB
  *	Recognize system V like ${VAR:x=y} variable substitutions
+ *	(required by POSIX 2018)
  */
 #define SYSVINCLUDE
 #define SYSVVARSUB
@@ -153,12 +155,6 @@
  *				# of ${VAR}
  */
 #define SUNSHCMD
-
-/*
- * USE_IOVEC
- *	We have writev(2)
- */
-#define USE_IOVEC
 
 #if defined(MAKE_NATIVE) && !defined(__ELF__)
 # ifndef RANLIBMAG
