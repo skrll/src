@@ -137,6 +137,7 @@ db_write_text(vaddr_t addr, size_t size, const char *data)
 		memcpy((void *)addr, data, s);
 		cpu_icache_sync_range(addr, size);
 
+		// XXXNH BBM?
 		/* restore pte */
 		*ptep = pte;
 		aarch64_tlbi_by_va(addr);
