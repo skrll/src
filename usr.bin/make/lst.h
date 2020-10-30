@@ -1,4 +1,4 @@
-/*	$NetBSD: lst.h,v 1.79 2020/10/24 10:36:23 rillig Exp $	*/
+/*	$NetBSD: lst.h,v 1.84 2020/10/28 02:43:16 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -102,10 +102,6 @@ struct List {
     ListNode *last;		/* last node in list */
 };
 
-/* Copy a node, usually by allocating a copy of the given object.
- * For reference-counted objects, the original object may need to be
- * modified, therefore the parameter is not const. */
-typedef void *LstCopyProc(void *);
 /* Free the datum of a node, called before freeing the node itself. */
 typedef void LstFreeProc(void *);
 /* An action for Lst_ForEachUntil and Lst_ForEachUntilConcurrent. */
@@ -115,8 +111,6 @@ typedef int LstActionUntilProc(void *datum, void *args);
 
 /* Create a new list. */
 List *Lst_New(void);
-/* Duplicate an existing list. */
-List *Lst_Copy(List *, LstCopyProc);
 /* Free the list, leaving the node data unmodified. */
 void Lst_Free(List *);
 /* Free the list, freeing the node data using the given function. */
@@ -159,9 +153,6 @@ void LstNode_SetNull(ListNode *);
  * During this iteration, the list must not be modified structurally. */
 int Lst_ForEachUntil(List *, LstActionUntilProc, void *);
 
-/* Iterating over a list while keeping track of the current node and possible
- * concurrent modifications */
-
 /* Using the list as a queue */
 
 /* Add a datum at the tail of the queue. */
@@ -169,16 +160,27 @@ void Lst_Enqueue(List *, void *);
 /* Remove the head node of the queue and return its datum. */
 void *Lst_Dequeue(List *);
 
-/* A vector is an ordered collection of items, allowing fast indexed access. */
+/* A vector is an ordered collection of items, allowing for fast indexed
+ * access. */
 typedef struct Vector {
-    void **items;
-    size_t len;
-    size_t cap;
+    void *items;		/* memory holding the items */
+    size_t itemSize;		/* size of a single item in bytes */
+    size_t len;			/* number of actually usable elements */
+    size_t priv_cap;		/* capacity */
 } Vector;
 
-void Vector_Init(Vector *);
-Boolean Vector_IsEmpty(Vector *);
-void Vector_Push(Vector *, void *);
+void Vector_Init(Vector *, size_t);
+
+/* Return the pointer to the given item in the vector.
+ * The returned data is valid until the next modifying operation. */
+static inline MAKE_ATTR_UNUSED void *
+Vector_Get(Vector *v, size_t i)
+{
+    unsigned char *items = v->items;
+    return items + i * v->itemSize;
+}
+
+void *Vector_Push(Vector *);
 void *Vector_Pop(Vector *);
 void Vector_Done(Vector *);
 

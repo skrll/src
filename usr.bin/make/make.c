@@ -1,4 +1,4 @@
-/*	$NetBSD: make.c,v 1.178 2020/10/23 19:48:17 rillig Exp $	*/
+/*	$NetBSD: make.c,v 1.181 2020/10/26 21:34:10 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -107,7 +107,7 @@
 #include    "job.h"
 
 /*	"@(#)make.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: make.c,v 1.178 2020/10/23 19:48:17 rillig Exp $");
+MAKE_RCSID("$NetBSD: make.c,v 1.181 2020/10/26 21:34:10 rillig Exp $");
 
 /* Sequence # to detect recursion. */
 static unsigned int checked = 1;
@@ -126,7 +126,7 @@ debug_printf(const char *fmt, ...)
     va_list args;
 
     va_start(args, fmt);
-    vfprintf(debug_file, fmt, args);
+    vfprintf(opts.debug_file, fmt, args);
     va_end(args);
 }
 
@@ -180,7 +180,7 @@ GNode_FprintDetails(FILE *f, const char *prefix, const GNode *gn,
 Boolean
 NoExecute(GNode *gn)
 {
-    return (gn->type & OP_MAKE) ? noRecursiveExecute : noExecute;
+    return (gn->type & OP_MAKE) ? opts.noRecursiveExecute : opts.noExecute;
 }
 
 /* Update the youngest child of the node, according to the given child. */
@@ -294,8 +294,7 @@ Make_OODate(GNode *gn)
 	    if (gn->youngestChild != NULL &&
 		gn->mtime < gn->youngestChild->mtime) {
 		debug_printf("modified before source %s...",
-			     gn->youngestChild->path ? gn->youngestChild->path
-						     : gn->youngestChild->name);
+			     GNode_Path(gn->youngestChild));
 	    } else if (gn->mtime == 0) {
 		debug_printf("non-existent and no sources...");
 	    } else {
@@ -785,7 +784,7 @@ MakeAddAllSrc(GNode *cgn, GNode *pgn)
 	if (cgn->type & OP_ARCHV)
 	    child = Var_Value(MEMBER, cgn, &p1);
 	else
-	    child = cgn->path ? cgn->path : cgn->name;
+	    child = GNode_Path(cgn);
 	if (cgn->type & OP_JOIN) {
 	    allsrc = Var_Value(ALLSRC, cgn, &p2);
 	} else {
@@ -979,7 +978,7 @@ MakeStartJobs(void)
 	gn->made = BEINGMADE;
 	if (Make_OODate(gn)) {
 	    DEBUG0(MAKE, "out-of-date\n");
-	    if (queryFlag) {
+	    if (opts.queryFlag) {
 		return TRUE;
 	    }
 	    Make_DoAllVar(gn);
@@ -1018,10 +1017,10 @@ MakePrintStatusOrderNode(GNode *ogn, GNode *gn)
 	   gn->name, gn->cohort_num, ogn->name, ogn->cohort_num);
     GNode_FprintDetails(stdout, "(", ogn, ")\n");
 
-    if (DEBUG(MAKE) && debug_file != stdout) {
+    if (DEBUG(MAKE) && opts.debug_file != stdout) {
 	debug_printf("    `%s%s' has .ORDER dependency against %s%s ",
 		     gn->name, gn->cohort_num, ogn->name, ogn->cohort_num);
-	GNode_FprintDetails(debug_file, "(", ogn, ")\n");
+	GNode_FprintDetails(opts.debug_file, "(", ogn, ")\n");
     }
 }
 
@@ -1061,9 +1060,9 @@ MakePrintStatus(GNode *gn, int *errors)
 	    (*errors)++;
 	    printf("`%s%s' was not built", gn->name, gn->cohort_num);
 	    GNode_FprintDetails(stdout, " (", gn, ")!\n");
-	    if (DEBUG(MAKE) && debug_file != stdout) {
+	    if (DEBUG(MAKE) && opts.debug_file != stdout) {
 		debug_printf("`%s%s' was not built", gn->name, gn->cohort_num);
-		GNode_FprintDetails(debug_file, " (", gn, ")!\n");
+		GNode_FprintDetails(opts.debug_file, " (", gn, ")!\n");
 	    }
 	    /* Most likely problem is actually caused by .ORDER */
 	    MakePrintStatusOrder(gn);
@@ -1072,7 +1071,7 @@ MakePrintStatus(GNode *gn, int *errors)
 	    /* Errors - already counted */
 	    printf("`%s%s' not remade because of errors.\n",
 		    gn->name, gn->cohort_num);
-	    if (DEBUG(MAKE) && debug_file != stdout)
+	    if (DEBUG(MAKE) && opts.debug_file != stdout)
 		debug_printf("`%s%s' not remade because of errors.\n",
 			     gn->name, gn->cohort_num);
 	    break;
@@ -1126,7 +1125,15 @@ Make_ExpandUse(GNodeList *targs)
 {
     GNodeList *examine;		/* List of targets to examine */
 
-    examine = Lst_Copy(targs, NULL);
+    {
+        /* XXX: Why is it necessary to copy the list? There shouldn't be
+         * any modifications to the list, at least the function name
+         * ExpandUse doesn't suggest that. */
+	GNodeListNode *ln;
+	examine = Lst_New();
+	for (ln = targs->first; ln != NULL; ln = ln->next)
+	    Lst_Append(examine, ln->datum);
+    }
 
     /*
      * Make an initial downward pass over the graph, marking nodes to be made
@@ -1170,7 +1177,7 @@ Make_ExpandUse(GNodeList *targs)
 	}
 
 	(void)Dir_MTime(gn, 0);
-	Var_Set(TARGET, gn->path ? gn->path : gn->name, gn);
+	Var_Set(TARGET, GNode_Path(gn), gn);
 	UnmarkChildren(gn);
 	HandleUseNodes(gn);
 
@@ -1315,7 +1322,7 @@ Make_Run(GNodeList *targs)
 	 Targ_PrintGraph(1);
     }
 
-    if (queryFlag) {
+    if (opts.queryFlag) {
 	/*
 	 * We wouldn't do any work unless we could start some jobs in the
 	 * next loop... (we won't actually start any, of course, this is just

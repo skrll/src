@@ -1,8 +1,8 @@
-# $NetBSD: vardebug.mk,v 1.3 2020/08/08 14:28:46 rillig Exp $
+# $NetBSD: vardebug.mk,v 1.5 2020/10/29 18:38:24 rillig Exp $
 #
 # Demonstrates the debugging output for var.c.
 
-RELEVANT=	yes
+.MAKEFLAGS: -dv FROM_CMDLINE=
 
 VAR=		added		# VarAdd
 VAR=		overwritten	# Var_Set
@@ -53,7 +53,12 @@ VAR+=		3
 .if ${UNDEFINED}
 .endif
 
-RELEVANT=	no
+# By default, .SHELL is not defined and thus can be set.  As soon as it is
+# accessed, it is initialized in the command line context (during VarFind),
+# where it is set to read-only.  Assigning to it is ignored.
+.MAKEFLAGS: .SHELL=overwritten
+
+.MAKEFLAGS: -d0
 
 all:
 	@:
