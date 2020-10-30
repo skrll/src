@@ -1,4 +1,4 @@
-/*	$NetBSD: cond.c,v 1.162 2020/10/05 19:59:07 rillig Exp $	*/
+/*	$NetBSD: cond.c,v 1.170 2020/10/30 07:19:30 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -72,12 +72,12 @@
 /* Handling of conditionals in a makefile.
  *
  * Interface:
- *	Cond_EvalLine	Evaluate the conditional in the passed line.
+ *	Cond_EvalLine	Evaluate the conditional.
  *
  *	Cond_EvalCondition
- *			Evaluate the conditional in the passed line, which
- *			is either the argument of one of the .if directives
- *			or the condition in a :?true:false variable modifier.
+ *			Evaluate the conditional, which is either the argument
+ *			of one of the .if directives or the condition in a
+ *			':?then:else' variable modifier.
  *
  *	Cond_save_depth
  *	Cond_restore_depth
@@ -93,7 +93,7 @@
 #include "dir.h"
 
 /*	"@(#)cond.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: cond.c,v 1.162 2020/10/05 19:59:07 rillig Exp $");
+MAKE_RCSID("$NetBSD: cond.c,v 1.170 2020/10/30 07:19:30 rillig Exp $");
 
 /*
  * The parsing of conditional expressions is based on this grammar:
@@ -133,7 +133,7 @@ MAKE_RCSID("$NetBSD: cond.c,v 1.162 2020/10/05 19:59:07 rillig Exp $");
  * All non-terminal functions (CondParser_Expr, CondParser_Factor and
  * CondParser_Term) return either TOK_FALSE, TOK_TRUE, or TOK_ERROR on error.
  */
-typedef enum {
+typedef enum Token {
     TOK_FALSE = 0, TOK_TRUE = 1, TOK_AND, TOK_OR, TOK_NOT,
     TOK_LPAREN, TOK_RPAREN, TOK_EOF, TOK_NONE, TOK_ERROR
 } Token;
@@ -246,7 +246,8 @@ ParseFuncArg(const char **pp, Boolean doEval, const char *func,
 	    void *nestedVal_freeIt;
 	    VarEvalFlags eflags = VARE_UNDEFERR | (doEval ? VARE_WANTRES : 0);
 	    const char *nestedVal;
-	    (void)Var_Parse(&p, VAR_CMD, eflags, &nestedVal, &nestedVal_freeIt);
+	    (void)Var_Parse(&p, VAR_CMDLINE, eflags, &nestedVal,
+			    &nestedVal_freeIt);
 	    /* TODO: handle errors */
 	    Buf_AddStr(&argBuf, nestedVal);
 	    free(nestedVal_freeIt);
@@ -283,23 +284,21 @@ static Boolean
 FuncDefined(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
     char *freeIt;
-    Boolean result = Var_Value(arg, VAR_CMD, &freeIt) != NULL;
+    Boolean result = Var_Value(arg, VAR_CMDLINE, &freeIt) != NULL;
     bmake_free(freeIt);
     return result;
-}
-
-/* Wrapper around Str_Match, to be used by Lst_Find. */
-static Boolean
-CondFindStrMatch(const void *string, const void *pattern)
-{
-    return Str_Match(string, pattern);
 }
 
 /* See if the given target is being made. */
 static Boolean
 FuncMake(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
-    return Lst_Find(create, CondFindStrMatch, arg) != NULL;
+    StringListNode *ln;
+
+    for (ln = opts.create->first; ln != NULL; ln = ln->next)
+	if (Str_Match(ln->datum, arg))
+	    return TRUE;
+    return FALSE;
 }
 
 /* See if the given file exists. */
@@ -325,7 +324,7 @@ static Boolean
 FuncTarget(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
     GNode *gn = Targ_FindNode(arg);
-    return gn != NULL && !OP_NOP(gn->type);
+    return gn != NULL && GNode_IsTarget(gn);
 }
 
 /* See if the given node exists and is an actual target with commands
@@ -334,7 +333,7 @@ static Boolean
 FuncCommands(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
     GNode *gn = Targ_FindNode(arg);
-    return gn != NULL && !OP_NOP(gn->type) && !Lst_IsEmpty(gn->commands);
+    return gn != NULL && GNode_IsTarget(gn) && !Lst_IsEmpty(gn->commands);
 }
 
 /*-
@@ -355,7 +354,7 @@ TryParseNumber(const char *str, double *value)
 
     errno = 0;
     if (!*str) {
-	*value = (double)0;
+	*value = 0.0;
 	return TRUE;
     }
     l_val = strtoul(str, &eptr, str[1] == 'x' ? 16 : 10);
@@ -445,11 +444,12 @@ CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
 		     (doEval ? VARE_WANTRES : 0);
 	    nested_p = par->p;
 	    atStart = nested_p == start;
-	    parseResult = Var_Parse(&nested_p, VAR_CMD, eflags, &str, freeIt);
+	    parseResult = Var_Parse(&nested_p, VAR_CMDLINE, eflags, &str,
+				    freeIt);
 	    /* TODO: handle errors */
 	    if (str == var_Error) {
-	        if (parseResult & VPR_ANY_MSG)
-	            par->printedError = TRUE;
+		if (parseResult & VPR_ANY_MSG)
+		    par->printedError = TRUE;
 		if (*freeIt) {
 		    free(*freeIt);
 		    *freeIt = NULL;
@@ -685,7 +685,7 @@ ParseEmptyArg(const char **linePtr, Boolean doEval,
     *argPtr = NULL;
 
     (*linePtr)--;		/* Make (*linePtr)[1] point to the '('. */
-    (void)Var_Parse(linePtr, VAR_CMD, doEval ? VARE_WANTRES : 0,
+    (void)Var_Parse(linePtr, VAR_CMDLINE, doEval ? VARE_WANTRES : 0,
 		    &val, &val_freeIt);
     /* TODO: handle errors */
     /* If successful, *linePtr points beyond the closing ')' now. */

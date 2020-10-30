@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.15 2019/03/11 09:20:13 mrg Exp $
+#	$NetBSD: Makefile,v 1.17 2020/10/28 08:10:09 nia Exp $
 
 SUBDIR=	appres bdftopcf bdftruncate beforelight bitmap ccmakedep \
 	cleanlinks cxpm editres \
@@ -16,8 +16,8 @@ SUBDIR=	appres bdftopcf bdftruncate beforelight bitmap ccmakedep \
 	xkbevd xkbprint xkbutils xkill xload xlogo xlsatoms xlsclients \
 	xlsfonts xmag xman xmessage xmh xmkmf xmlwf xmodmap xmore \
 	xprop xrandr xrdb xrefresh xset xsetmode xsetpointer \
-	xsetroot xsm xstdcmap xterm xtrap xvidtune \
-	xvinfo xwd xwininfo xwud xdriinfo sessreg
+	xsetroot xsm xstdcmap xterm xvidtune \
+	xvinfo xwd xwininfo xwud xdriinfo sessreg xcompmgr
 
 SUBDIR+=ssh-askpass
 SUBDIR+=xsetwallpaper

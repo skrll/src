@@ -1,4 +1,4 @@
-/*	$NetBSD: ptrace.h,v 1.70 2020/05/14 13:32:15 kamil Exp $	*/
+/*	$NetBSD: ptrace.h,v 1.72 2020/10/20 20:28:55 christos Exp $	*/
 
 /*-
  * Copyright (c) 1984, 1993
@@ -243,6 +243,7 @@ struct ptrace_methods {
 
 int	ptrace_init(void);
 int	ptrace_fini(void);
+int	ptrace_update_lwp(struct proc *t, struct lwp **lt, lwpid_t lid);
 void	ptrace_hooks(void);
 
 int	process_doregs(struct lwp *, struct lwp *, struct uio *);
@@ -337,11 +338,20 @@ int	process_write_regs(struct lwp *, const struct reg *);
 #endif
 #endif
 
-int	ptrace_machdep_dorequest(struct lwp *, struct lwp *, int,
+int	ptrace_machdep_dorequest(struct lwp *, struct lwp **, int,
 	    void *, int);
 
 #ifndef FIX_SSTEP
 #define FIX_SSTEP(p)
+#endif
+
+typedef int (*ptrace_regrfunc_t)(struct lwp *, void *, size_t *);
+typedef int (*ptrace_regwfunc_t)(struct lwp *, void *, size_t);
+
+#if defined(PT_SETREGS) || defined(PT_GETREGS) || \
+    defined(PT_SETFPREGS) || defined(PT_GETFPREGS) || \
+    defined(PT_SETDBREGS) || defined(PT_GETDBREGS)
+# define PT_REGISTERS
 #endif
 
 #else /* !_KERNEL */

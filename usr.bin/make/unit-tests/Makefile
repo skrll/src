@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.165 2020/10/10 19:25:19 sjg Exp $
+# $NetBSD: Makefile,v 1.176 2020/10/29 18:19:41 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -69,18 +69,20 @@ TESTS+=		cond-token-string
 TESTS+=		cond-token-var
 TESTS+=		cond-undef-lint
 TESTS+=		cond1
-TESTS+=		cond2
 TESTS+=		counter
 TESTS+=		counter-append
 TESTS+=		dep
 TESTS+=		dep-colon
 TESTS+=		dep-colon-bug-cross-file
 TESTS+=		dep-double-colon
+TESTS+=		dep-double-colon-indep
 TESTS+=		dep-exclam
 TESTS+=		dep-none
+TESTS+=		dep-percent
 TESTS+=		dep-var
 TESTS+=		dep-wildcards
 TESTS+=		depsrc
+TESTS+=		depsrc-end
 TESTS+=		depsrc-exec
 TESTS+=		depsrc-ignore
 TESTS+=		depsrc-made
@@ -249,8 +251,15 @@ TESTS+=		shell-csh
 TESTS+=		shell-custom
 TESTS+=		shell-ksh
 TESTS+=		shell-sh
-TESTS+=		# suffixes	# runs into an endless loop (try -dA)
+TESTS+=		suff-add-later
+TESTS+=		suff-clear-regular
+TESTS+=		suff-clear-single
+TESTS+=		suff-lookup
+TESTS+=		suff-main
 TESTS+=		suff-rebuild
+TESTS+=		suff-transform-endless
+TESTS+=		suff-transform-expand
+TESTS+=		suff-transform-select
 TESTS+=		sunshcmd
 TESTS+=		sysv
 TESTS+=		ternary
@@ -352,6 +361,7 @@ TESTS+=		varname-dot-targets
 TESTS+=		varname-empty
 TESTS+=		varname-make
 TESTS+=		varname-make_print_var_on_error
+TESTS+=		varname-make_print_var_on_error-jobs
 TESTS+=		varname-makefile
 TESTS+=		varname-makeflags
 TESTS+=		varname-pwd
@@ -387,18 +397,11 @@ FLAGS.opt-warnings-as-errors= -W
 FLAGS.order=		-j1
 FLAGS.recursive=	-dL
 FLAGS.sh-leading-plus=	-n
-FLAGS.vardebug=		-k -dv FROM_CMDLINE=
 FLAGS.varmod-match-escape= -dv
 FLAGS.varname-dot-shell= -dpv
 FLAGS.varname-empty=	-dv '$${:U}=cmdline-u' '=cmline-plain'
 
 # Some tests need extra postprocessing.
-SED_CMDS.export= \
-	-e '/^[^=_A-Za-z0-9]*=/d'
-# these all share the same requirement
-.for t in export-all export-env
-SED_CMDS.$t= ${SED_CMDS.export}
-.endfor
 SED_CMDS.job-output-long-lines= \
 	${:D Job separators on their own line are ok. } \
 	-e '/^--- job-[ab] ---$$/d' \
@@ -435,7 +438,6 @@ SED_CMDS.varname-dot-shell+=	-e 's,\[/[^]]*\],[(details omitted)],'
 # Some tests need an additional round of postprocessing.
 POSTPROC.deptgt-suffixes= \
 			${TOOL_SED} -n -e '/^\#\*\*\* Suffixes/,/^\#\*/p'
-POSTPROC.vardebug=	${TOOL_SED} -n -e '/:RELEVANT = yes/,/:RELEVANT = no/p'
 POSTPROC.varmod-match-escape= ${TOOL_SED} -n -e '/^Pattern/p'
 POSTPROC.varname=	${TOOL_SED} -n -e '/^MAGIC/p' -e '/^ORDER_/p'
 POSTPROC.varname-dot-shell= \
@@ -551,7 +553,12 @@ sync-mi:
 	cvs diff "$$mi" || true
 
 .if exists(${TEST_MAKE})
-${TESTS:=.rawout}: ${TEST_MAKE} ${.PARSEDIR}/Makefile
+${TESTS:=.rawout}: ${TEST_MAKE}
+# in meta mode, we *know* if a target script is impacted
+# by a makefile change.
+.if ${.MAKE.MODE:Unormal:Mmeta} == ""
+${TESTS:=.rawout}: ${.PARSEDIR}/Makefile
+.endif
 .endif
 
 .-include <bsd.obj.mk>

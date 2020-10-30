@@ -14,7 +14,7 @@
 
 #include <sys/cdefs.h>
 #ifdef __RCSID
-__RCSID("$NetBSD: parsedate.y,v 1.32 2017/03/22 18:17:42 kre Exp $");
+__RCSID("$NetBSD: parsedate.y,v 1.35 2020/10/19 17:47:45 kre Exp $");
 #endif
 
 #include <stdio.h>
@@ -249,7 +249,14 @@ time:
 		param->yyMinutes = $3;
 		param->yySeconds = $5;
 		param->yyMeridian = MER24;
-		/* XXX: Do nothing with millis */
+		/* XXX: Do nothing with fractional secs ($7) */
+	  }
+	| tUNUMBER ':' tUNUMBER ':' tUNUMBER ',' tUNUMBER {
+		param->yyHour = $1;
+		param->yyMinutes = $3;
+		param->yySeconds = $5;
+		param->yyMeridian = MER24;
+		/* XXX: Do nothing with fractional seconds ($7) */
 	  }
 	| tTIME {
 		param->yyHour = $1;
@@ -293,6 +300,12 @@ zone:
 	  tZONE		{ param->yyTimezone = $1; param->yyDSTmode = DSToff; }
 	| tDAYZONE	{ param->yyTimezone = $1; param->yyDSTmode = DSTon; }
 	| tZONE tDST	{ param->yyTimezone = $1; param->yyDSTmode = DSTon; }
+	| tSNUMBER	{
+			  if (param->yyHaveDate == 0 && param->yyHaveTime == 0)
+				YYREJECT;
+			  param->yyTimezone = - ($1 % 100 + ($1 / 100) * 60);
+			  param->yyDSTmode = DSTmaybe;
+			}
 ;
 
 day:
@@ -664,7 +677,8 @@ RelVal(struct dateinfo *param, time_t v, int type)
  * e.g. convert 70 to 1970.
  * Input Year is either:
  *  - A negative number, which means to use its absolute value (why?)
- *  - A number from 0 to 99, which means a year from 1900 to 1999, or
+ *  - A number from 0 to 68, which means a year from 2000 to 2068, 
+ *  - A number from 69 to 99, which means a year from 1969 to 1999, or
  *  - The actual year (>=100).
  * Returns the full year.
  */
@@ -674,7 +688,7 @@ AdjustYear(time_t Year)
     /* XXX Y2K */
     if (Year < 0)
 	Year = -Year;
-    if (Year < 70)
+    if (Year < 69)	/* POSIX compliant, 0..68 is 2000's, 69-99 1900's */
 	Year += 2000;
     else if (Year < 100)
 	Year += 1900;
@@ -1057,6 +1071,88 @@ parsedate(const char *p, const time_t *now, const int *zone)
     param.yyHaveRel = 0;
     param.yyHaveTime = 0;
     param.yyHaveZone = 0;
+
+    /*
+     * This one is too hard to parse using a grammar (the lexer would
+     * confuse the 'T' with the Mil format timezone designator)
+     * so handle it as a special case.
+     */
+    do {
+	const unsigned char *pp = (const unsigned char *)p;
+	char *ep;	/* starts as "expected, becomes "end ptr" */
+	static char format[] = "-dd-ddTdd:dd:dd";
+	time_t yr;
+
+	while (isdigit(*pp))
+		pp++;
+
+	if (pp == (const unsigned char *)p)
+		break;
+
+	for (ep = format; *ep; ep++, pp++) {
+		switch (*ep) {
+		case 'd':
+			if (isdigit(*pp))
+				continue;
+			break;
+		case 'T':
+			if (*pp == 'T' || *pp == 't' || *pp == ' ')
+				continue;
+			break;
+		default:
+			if (*pp == *ep)
+				continue;
+			break;
+		}
+		break;
+	}
+	if (*ep != '\0')
+		break;
+	if (*pp == '.' || *pp == ',') {
+		if (!isdigit(pp[1]))
+			break;
+		while (isdigit(*++pp))
+			continue;
+	}
+	if (*pp == 'Z' || *pp == 'z')
+		pp++;
+	else if (isdigit(*pp))
+		break;
+
+	if (*pp != '\0' && !isspace(*pp))
+		break;
+
+	errno = 0;
+	yr = (time_t)strtol(p, &ep, 10);
+	if (errno != 0)			/* out of range (can be big number) */
+		break;			/* the ones below are all 2 digits */
+
+	/*
+	 * This is good enough to commit to there being an ISO format
+	 * timestamp leading the input string.   We permit standard
+	 * parsedate() modifiers to follow but not precede this string.
+	 */
+	param.yyHaveTime = 1;
+	param.yyHaveDate = 1;
+	param.yyHaveFullYear = 1;
+
+	if (pp[-1] == 'Z' || pp[-1] == 'z') {
+		param.yyTimezone = 0;
+		param.yyHaveZone = 1;
+	}
+
+	param.yyYear = yr;
+	param.yyMonth = (time_t)strtol(ep + 1, &ep, 10);
+	param.yyDay = (time_t)strtol(ep + 1, &ep, 10);
+	param.yyHour = (time_t)strtol(ep + 1, &ep, 10);
+	param.yyMinutes = (time_t)strtol(ep + 1, &ep, 10);
+	param.yySeconds = (time_t)strtol(ep + 1, &ep, 10);
+	/* ignore any fractional seconds, no way to return them in a time_t */
+
+	param.yyMeridian = MER24;
+
+	p = (const char *)pp;
+    } while (0);
 
     if (yyparse(&param, &p) || param.yyHaveTime > 1 || param.yyHaveZone > 1 ||
 	param.yyHaveDate > 1 || param.yyHaveDay > 1) {

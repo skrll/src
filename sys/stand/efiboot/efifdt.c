@@ -1,4 +1,4 @@
-/* $NetBSD: efifdt.c,v 1.25 2020/10/10 19:17:39 jmcneill Exp $ */
+/* $NetBSD: efifdt.c,v 1.27 2020/10/22 09:28:30 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2019 Jason R. Thorpe
@@ -345,8 +345,10 @@ efi_fdt_gop(void)
 
 		snprintf(buf, sizeof(buf), "framebuffer@%" PRIx64, mode->FrameBufferBase);
 		fb = fdt_add_subnode(fdt_data, chosen, buf);
-		if (fb < 0)
-			panic("FDT: Failed to create framebuffer node");
+		if (fb < 0) {
+			/* Framebuffer node already exists. No need to create a new one! */
+			return;
+		}
 
 		fdt_appendprop_string(fdt_data, fb, "compatible", "simple-framebuffer");
 		fdt_appendprop_string(fdt_data, fb, "status", "okay");

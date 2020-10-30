@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.103 2020/10/05 22:15:45 rillig Exp $
+#	$NetBSD: Makefile,v 1.106 2020/10/25 13:25:19 rillig Exp $
 #	@(#)Makefile	5.2 (Berkeley) 12/28/90
 
 PROG=	make
@@ -18,7 +18,6 @@ SRCS+=  make_malloc.c
 SRCS+=  metachar.c
 SRCS+=  parse.c
 SRCS+=	str.c
-SRCS+=  strlist.c
 SRCS+=  suff.c
 SRCS+=  targ.c
 SRCS+=  trace.c
@@ -37,7 +36,6 @@ HDRS+=  meta.h
 HDRS+=  metachar.h
 HDRS+=  nonints.h
 HDRS+=  pathnames.h
-HDRS+=  strlist.h
 HDRS+=  trace.h
 
 # Whether to generate a coverage report after running the tests.
@@ -65,7 +63,6 @@ COPTS.arch.c+=	-Wno-error=format-truncation
 COPTS.dir.c+=	-Wno-error=format-truncation
 COPTS.main.c+=	-Wno-error=format-truncation
 COPTS.meta.c+=	-Wno-error=format-truncation
-COPTS.parse.c+=	-Wno-error=format-truncation
 .endif
 
 # Whether to compile with GCC 9 from pkgsrc, during development.
@@ -88,7 +85,6 @@ COPTS.arch.c+=	-Wno-error=format-truncation
 COPTS.dir.c+=	-Wno-error=format-truncation
 COPTS.main.c+=	-Wno-error=format-truncation
 COPTS.meta.c+=	-Wno-error=format-truncation
-COPTS.parse.c+=	-Wno-error=format-truncation
 .endif
 
 USE_META?=	yes
@@ -160,7 +156,6 @@ COPTS.arch.c+=	${GCC_NO_FORMAT_TRUNCATION}
 COPTS.dir.c+=	${GCC_NO_FORMAT_TRUNCATION}
 COPTS.main.c+=	${GCC_NO_FORMAT_TRUNCATION} ${GCC_NO_STRINGOP_TRUNCATION}
 COPTS.meta.c+=	${GCC_NO_FORMAT_TRUNCATION}
-COPTS.parse.c+=	${GCC_NO_FORMAT_TRUNCATION}
 
 COPTS+=		-Wdeclaration-after-statement
 
@@ -192,6 +187,6 @@ retest:
 # Just out of curiosity, during development.
 .SUFFIXES: .cpre .casm
 .c.cpre:
-	${COMPILE.c:S,^-c$,-E,} ${.IMPSRC} -o ${.TARGET}
+	${COMPILE.c:S,^-c$,-E,} ${COPTS.${.IMPSRC}} ${.IMPSRC} -o ${.TARGET}
 .c.casm:
-	${COMPILE.c:S,^-c$,-S,} ${.IMPSRC} -o ${.TARGET}
+	${COMPILE.c:S,^-c$,-S,} ${COPTS.${.IMPSRC}} ${.IMPSRC} -o ${.TARGET}
