@@ -1,4 +1,4 @@
-/*	$NetBSD: suff.c,v 1.222 2020/10/24 10:36:23 rillig Exp $	*/
+/*	$NetBSD: suff.c,v 1.227 2020/10/26 20:14:27 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -129,7 +129,7 @@
 #include "dir.h"
 
 /*	"@(#)suff.c	8.4 (Berkeley) 3/21/94"	*/
-MAKE_RCSID("$NetBSD: suff.c,v 1.222 2020/10/24 10:36:23 rillig Exp $");
+MAKE_RCSID("$NetBSD: suff.c,v 1.227 2020/10/26 20:14:27 rillig Exp $");
 
 #define SUFF_DEBUG0(text) DEBUG0(SUFF, text)
 #define SUFF_DEBUG1(fmt, arg1) DEBUG1(SUFF, fmt, arg1)
@@ -266,7 +266,7 @@ SuffSuffGetSuffix(const Suff *s, size_t nameLen, const char *nameEnd)
 }
 
 static Boolean
-SuffSuffIsSuffix(const Suff *suff, size_t nameLen, char *nameEnd)
+SuffSuffIsSuffix(const Suff *suff, size_t nameLen, const char *nameEnd)
 {
     return SuffSuffGetSuffix(suff, nameLen, nameEnd) != NULL;
 }
@@ -789,7 +789,7 @@ Suff_DoPaths(void)
 	    Dir_Concat(s->searchPath, dirSearchPath);
 	} else {
 	    Lst_Destroy(s->searchPath, Dir_Destroy);
-	    s->searchPath = Lst_Copy(dirSearchPath, Dir_CopyDir);
+	    s->searchPath = Dir_CopyDirSearchPath();
 	}
     }
 
@@ -875,7 +875,8 @@ SuffAddSrc(Suff *suff, SrcList *srcList, Src *targ, char *srcName,
     Lst_Append(srcList, s2);
 #ifdef DEBUG_SRC
     Lst_Append(targ->childrenList, s2);
-    debug_printf("%s add %p %p to %p:", debug_tag, targ, s2, srcList);
+    debug_printf("%s add suff %p src %p to list %p:",
+		 debug_tag, targ, s2, srcList);
     SrcList_PrintAddrs(srcList);
 #endif
 }
@@ -927,7 +928,7 @@ SuffRemoveSrc(SrcList *l)
     SrcListNode *ln;
 
 #ifdef DEBUG_SRC
-    debug_printf("cleaning %p:", l);
+    debug_printf("cleaning list %p:", l);
     SrcList_PrintAddrs(l);
 #endif
 
@@ -947,7 +948,8 @@ SuffRemoveSrc(SrcList *l)
 		s->parent->children--;
 	    }
 #ifdef DEBUG_SRC
-	    debug_printf("free: [l=%p] p=%p %d\n", l, s, s->children);
+	    debug_printf("free: list %p src %p children %d\n",
+			 l, s, s->children);
 	    Lst_Free(s->childrenList);
 #endif
 	    Lst_Remove(l, ln);
@@ -956,7 +958,8 @@ SuffRemoveSrc(SrcList *l)
 	}
 #ifdef DEBUG_SRC
 	else {
-	    debug_printf("keep: [l=%p] p=%p %d:", l, s, s->children);
+	    debug_printf("keep: list %p src %p children %d:",
+			 l, s, s->children);
 	    SrcList_PrintAddrs(s->childrenList);
 	}
 #endif
@@ -989,7 +992,7 @@ SuffFindThem(SrcList *srcs, SrcList *slst)
 	 */
 	if (Targ_FindNode(src->file) != NULL) {
 #ifdef DEBUG_SRC
-	    debug_printf("remove %p from %p\n", src, srcs);
+	    debug_printf("remove from list %p src %p\n", srcs, src);
 #endif
 	    retsrc = src;
 	    break;
@@ -1000,7 +1003,7 @@ SuffFindThem(SrcList *srcs, SrcList *slst)
 	    if (file != NULL) {
 		retsrc = src;
 #ifdef DEBUG_SRC
-		debug_printf("remove %p from %p\n", src, srcs);
+		debug_printf("remove from list %p src %p\n", srcs, src);
 #endif
 		free(file);
 		break;
@@ -1099,7 +1102,7 @@ SuffFindCmds(Src *targ, SrcList *slst)
     suff->refCount++;
     targ->children++;
 #ifdef DEBUG_SRC
-    debug_printf("3 add %p %p\n", targ, ret);
+    debug_printf("3 add targ %p ret %p\n", targ, ret);
     Lst_Append(targ->childrenList, ret);
 #endif
     Lst_Append(slst, ret);
@@ -1345,13 +1348,11 @@ Suff_FindPath(GNode* gn)
     }
 
     if (suff != NULL) {
-	SUFF_DEBUG1("suffix is \"%s\"...", suff->name);
+	SUFF_DEBUG1("suffix is \"%s\"...\n", suff->name);
 	return suff->searchPath;
     } else {
-	/*
-	 * Use default search path
-	 */
-	return dirSearchPath;
+        SUFF_DEBUG0("\n");
+	return dirSearchPath;	/* Use default search path */
     }
 }
 
@@ -1579,7 +1580,7 @@ SuffFindArchiveDeps(GNode *gn, SrcList *slst)
 }
 
 static void
-SuffFindNormalDepsKnown(char *name, size_t nameLen, GNode *gn,
+SuffFindNormalDepsKnown(const char *name, size_t nameLen, GNode *gn,
 			SrcList *srcs, SrcList *targs)
 {
     SuffListNode *ln;
@@ -1722,7 +1723,7 @@ SuffFindNormalDeps(GNode *gn, SrcList *slst)
     char *pref;			/* Prefix to use */
     Src *targ;			/* General Src target pointer */
 
-    char *name = gn->name;
+    const char *name = gn->name;
     size_t nameLen = strlen(name);
 
     /*
@@ -1785,7 +1786,7 @@ SuffFindNormalDeps(GNode *gn, SrcList *slst)
 	}
     }
 
-    Var_Set(TARGET, gn->path ? gn->path : gn->name, gn);
+    Var_Set(TARGET, GNode_Path(gn), gn);
 
     pref = (targ != NULL) ? targ->pref : gn->name;
     Var_Set(PREFIX, pref, gn);
@@ -1950,7 +1951,7 @@ SuffFindDeps(GNode *gn, SrcList *slst)
     /*
      * Make sure we have these set, may get revised below.
      */
-    Var_Set(TARGET, gn->path ? gn->path : gn->name, gn);
+    Var_Set(TARGET, GNode_Path(gn), gn);
     Var_Set(PREFIX, gn->name, gn);
 
     SUFF_DEBUG1("SuffFindDeps (%s)\n", gn->name);
