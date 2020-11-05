@@ -1,4 +1,4 @@
-/*	$NetBSD: cond.c,v 1.168 2020/10/24 04:51:19 rillig Exp $	*/
+/*	$NetBSD: cond.c,v 1.174 2020/11/02 19:07:09 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -93,7 +93,7 @@
 #include "dir.h"
 
 /*	"@(#)cond.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: cond.c,v 1.168 2020/10/24 04:51:19 rillig Exp $");
+MAKE_RCSID("$NetBSD: cond.c,v 1.174 2020/11/02 19:07:09 rillig Exp $");
 
 /*
  * The parsing of conditional expressions is based on this grammar:
@@ -246,7 +246,8 @@ ParseFuncArg(const char **pp, Boolean doEval, const char *func,
 	    void *nestedVal_freeIt;
 	    VarEvalFlags eflags = VARE_UNDEFERR | (doEval ? VARE_WANTRES : 0);
 	    const char *nestedVal;
-	    (void)Var_Parse(&p, VAR_CMD, eflags, &nestedVal, &nestedVal_freeIt);
+	    (void)Var_Parse(&p, VAR_CMDLINE, eflags, &nestedVal,
+			    &nestedVal_freeIt);
 	    /* TODO: handle errors */
 	    Buf_AddStr(&argBuf, nestedVal);
 	    free(nestedVal_freeIt);
@@ -282,8 +283,8 @@ ParseFuncArg(const char **pp, Boolean doEval, const char *func,
 static Boolean
 FuncDefined(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
-    char *freeIt;
-    Boolean result = Var_Value(arg, VAR_CMD, &freeIt) != NULL;
+    void *freeIt;
+    Boolean result = Var_Value(arg, VAR_CMDLINE, &freeIt) != NULL;
     bmake_free(freeIt);
     return result;
 }
@@ -294,7 +295,7 @@ FuncMake(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
     StringListNode *ln;
 
-    for (ln = create->first; ln != NULL; ln = ln->next)
+    for (ln = opts.create->first; ln != NULL; ln = ln->next)
 	if (Str_Match(ln->datum, arg))
 	    return TRUE;
     return FALSE;
@@ -375,7 +376,7 @@ TryParseNumber(const char *str, double *value)
 static Boolean
 is_separator(char ch)
 {
-    return ch == '\0' || ch_isspace(ch) || strchr("!=><)", ch);
+    return ch == '\0' || ch_isspace(ch) || strchr("!=><)", ch) != NULL;
 }
 
 /*-
@@ -405,9 +406,9 @@ CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
     str = NULL;
     *freeIt = NULL;
     *quoted = qt = par->p[0] == '"' ? 1 : 0;
+    start = par->p;
     if (qt)
 	par->p++;
-    start = par->p;
     while (par->p[0] && str == NULL) {
 	switch (par->p[0]) {
 	case '\\':
@@ -443,7 +444,8 @@ CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
 		     (doEval ? VARE_WANTRES : 0);
 	    nested_p = par->p;
 	    atStart = nested_p == start;
-	    parseResult = Var_Parse(&nested_p, VAR_CMD, eflags, &str, freeIt);
+	    parseResult = Var_Parse(&nested_p, VAR_CMDLINE, eflags, &str,
+				    freeIt);
 	    /* TODO: handle errors */
 	    if (str == var_Error) {
 		if (parseResult & VPR_ANY_MSG)
@@ -672,21 +674,21 @@ done:
 }
 
 static size_t
-ParseEmptyArg(const char **linePtr, Boolean doEval,
-	      const char *func MAKE_ATTR_UNUSED, char **argPtr)
+ParseEmptyArg(const char **pp, Boolean doEval,
+	      const char *func MAKE_ATTR_UNUSED, char **out_arg)
 {
     void *val_freeIt;
     const char *val;
     size_t magic_res;
 
     /* We do all the work here and return the result as the length */
-    *argPtr = NULL;
+    *out_arg = NULL;
 
-    (*linePtr)--;		/* Make (*linePtr)[1] point to the '('. */
-    (void)Var_Parse(linePtr, VAR_CMD, doEval ? VARE_WANTRES : 0,
+    (*pp)--;			/* Make (*pp)[1] point to the '('. */
+    (void)Var_Parse(pp, VAR_CMDLINE, doEval ? VARE_WANTRES : 0,
 		    &val, &val_freeIt);
     /* TODO: handle errors */
-    /* If successful, *linePtr points beyond the closing ')' now. */
+    /* If successful, *pp points beyond the closing ')' now. */
 
     if (val == var_Error) {
 	free(val_freeIt);

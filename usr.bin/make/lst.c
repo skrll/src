@@ -1,4 +1,4 @@
-/* $NetBSD: lst.c,v 1.87 2020/10/24 10:36:23 rillig Exp $ */
+/* $NetBSD: lst.c,v 1.91 2020/10/28 02:43:16 rillig Exp $ */
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -34,7 +34,7 @@
 
 #include "make.h"
 
-MAKE_RCSID("$NetBSD: lst.c,v 1.87 2020/10/24 10:36:23 rillig Exp $");
+MAKE_RCSID("$NetBSD: lst.c,v 1.91 2020/10/28 02:43:16 rillig Exp $");
 
 static ListNode *
 LstNodeNew(ListNode *prev, ListNode *next, void *datum)
@@ -56,25 +56,6 @@ Lst_New(void)
     list->last = NULL;
 
     return list;
-}
-
-/* Duplicate an entire list, usually by copying the datum pointers.
- * If copyProc is given, that function is used to create the new datum from the
- * old datum, usually by creating a copy of it. */
-List *
-Lst_Copy(List *list, LstCopyProc copyProc)
-{
-    List *newList;
-    ListNode *node;
-
-    newList = Lst_New();
-
-    for (node = list->first; node != NULL; node = node->next) {
-	void *datum = copyProc != NULL ? copyProc(node->datum) : node->datum;
-	Lst_Append(newList, datum);
-    }
-
-    return newList;
 }
 
 /* Free a list and all its nodes. The node data are not freed though. */
@@ -294,43 +275,39 @@ Lst_Dequeue(List *list)
 }
 
 void
-Vector_Init(Vector *v)
+Vector_Init(Vector *v, size_t itemSize)
 {
     v->len = 0;
-    v->cap = 10;
-    v->items = bmake_malloc(v->cap * sizeof v->items[0]);
+    v->priv_cap = 10;
+    v->itemSize = itemSize;
+    v->items = bmake_malloc(v->priv_cap * v->itemSize);
 }
 
-Boolean Vector_IsEmpty(Vector *v)
+/* Add space for a new item to the vector and return a pointer to that space.
+ * The returned data is valid until the next modifying operation. */
+void *
+Vector_Push(Vector *v)
 {
-    return v->len == 0;
-}
-
-void Vector_Push(Vector *v, void *datum)
-{
-    if (v->len >= v->cap) {
-	v->cap *= 2;
-	v->items = bmake_realloc(v->items,
-				 v->cap * sizeof v->items[0]);
+    if (v->len >= v->priv_cap) {
+	v->priv_cap *= 2;
+	v->items = bmake_realloc(v->items, v->priv_cap * v->itemSize);
     }
-    v->items[v->len] = datum;
     v->len++;
+    return Vector_Get(v, v->len - 1);
 }
 
-void *Vector_Pop(Vector *v)
+/* Return the pointer to the last item in the vector.
+ * The returned data is valid until the next modifying operation. */
+void *
+Vector_Pop(Vector *v)
 {
-    void *datum;
-
     assert(v->len > 0);
     v->len--;
-    datum = v->items[v->len];
-#ifdef CLEANUP
-    v->items[v->len] = NULL;
-#endif
-    return datum;
+    return Vector_Get(v, v->len);
 }
 
-void Vector_Done(Vector *v)
+void
+Vector_Done(Vector *v)
 {
     free(v->items);
 }

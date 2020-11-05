@@ -1,4 +1,4 @@
-# $NetBSD: directive-for.mk,v 1.6 2020/10/24 08:50:17 rillig Exp $
+# $NetBSD: directive-for.mk,v 1.8 2020/10/25 15:49:03 rillig Exp $
 #
 # Tests for the .for directive.
 
@@ -123,6 +123,21 @@ EXPANSION${plus}=	value
 # removed.
 .for path in a:\ a:\file.txt d:\\ d:\\file.txt
 .  info ${path}
+.endfor
+
+# Ensure that braces and parentheses are properly escaped by the .for loop.
+# Each line must print the same word 3 times.
+# See GetEscapes.
+.for v in ( [ { ) ] } (()) [[]] {{}} )( ][ }{
+.  info $v ${v} $(v)
+.endfor
+
+# As of 2020-10-25, the variable names may contain arbitrary characters,
+# except for whitespace.  This allows for creative side effects. Hopefully
+# nobody is misusing this "feature".
+var=	outer
+.for var:Q in value "quoted"
+.  info ${var} ${var:Q} ${var:Q:Q}
 .endfor
 
 all:
