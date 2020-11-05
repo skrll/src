@@ -1,4 +1,4 @@
-/*	$NetBSD: libnvmm_x86.c,v 1.40 2020/09/05 07:22:25 maxv Exp $	*/
+/*	$NetBSD: libnvmm_x86.c,v 1.42 2020/10/31 15:44:01 reinoud Exp $	*/
 
 /*
  * Copyright (c) 2018-2020 Maxime Villard, m00nbsd.net

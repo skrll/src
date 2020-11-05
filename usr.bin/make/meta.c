@@ -1,4 +1,4 @@
-/*      $NetBSD: meta.c,v 1.131 2020/10/25 21:51:49 rillig Exp $ */
+/*      $NetBSD: meta.c,v 1.137 2020/11/04 13:27:00 rillig Exp $ */
 
 /*
  * Implement 'meta' mode.
@@ -80,7 +80,6 @@ static Boolean metaCurdirOk = FALSE;	/* write .meta in .CURDIR Ok? */
 static Boolean metaSilent = FALSE;	/* if we have a .meta be SILENT */
 
 extern Boolean forceJobs;
-extern Boolean comatMake;
 extern char    **environ;
 
 #define	MAKE_META_PREFIX	".MAKE.META.PREFIX"
@@ -175,7 +174,7 @@ filemon_read(FILE *mfp, int fd)
 	warn("Could not rewind filemon");
 	fprintf(mfp, "\n");
     } else {
-        ssize_t n;
+	ssize_t n;
 
 	error = 0;
 	fprintf(mfp, "\n-- filemon acquired metadata --\n");
@@ -326,7 +325,8 @@ is_submake(void *cmdp, void *gnp)
     int rc = 0;				/* keep looking */
 
     if (!p_make) {
-	p_make = Var_Value(".MAKE", gn, &cp);
+	void *dontFreeIt;
+	p_make = Var_Value(".MAKE", gn, &dontFreeIt);
 	p_len = strlen(p_make);
     }
     cp = strchr(cmd, '$');
@@ -473,14 +473,12 @@ meta_create(BuildMon *pbm, GNode *gn)
     const char *tname;
     char *fname;
     const char *cp;
-    char *p[5];				/* >= possible uses */
-    int i;
+    void *objdir_freeIt;
 
     mf.fp = NULL;
-    i = 0;
 
-    dname = Var_Value(".OBJDIR", gn, &p[i++]);
-    tname = Var_Value(TARGET, gn, &p[i++]);
+    dname = Var_Value(".OBJDIR", gn, &objdir_freeIt);
+    tname = GNode_VarTarget(gn);
 
     /* if this succeeds objdir is realpath of dname */
     if (!meta_needed(gn, dname, tname, objdir, TRUE))
@@ -528,7 +526,7 @@ meta_create(BuildMon *pbm, GNode *gn)
 
     fprintf(mf.fp, "CWD %s\n", getcwd(buf, sizeof(buf)));
     fprintf(mf.fp, "TARGET %s\n", tname);
-    cp = Var_Value(".OODATE", gn, &p[i++]);
+    cp = GNode_VarOodate(gn);
     if (cp && *cp) {
 	    fprintf(mf.fp, "OODATE %s\n", cp);
     }
@@ -548,9 +546,7 @@ meta_create(BuildMon *pbm, GNode *gn)
 	    gn->type |= OP_SILENT;
     }
  out:
-    for (i--; i >= 0; i--) {
-	bmake_free(p[i]);
-    }
+    bmake_free(objdir_freeIt);
 
     return mf.fp;
 }
@@ -594,6 +590,7 @@ meta_mode_init(const char *make_mode)
 {
     static int once = 0;
     char *cp;
+    void *freeIt;
 
     useMeta = TRUE;
     useFilemon = TRUE;
@@ -651,15 +648,15 @@ meta_mode_init(const char *make_mode)
     /*
      * We ignore any paths that match ${.MAKE.META.IGNORE_PATTERNS}
      */
-    cp = NULL;
-    if (Var_Value(MAKE_META_IGNORE_PATTERNS, VAR_GLOBAL, &cp)) {
+    freeIt = NULL;
+    if (Var_Value(MAKE_META_IGNORE_PATTERNS, VAR_GLOBAL, &freeIt)) {
 	metaIgnorePatterns = TRUE;
-	bmake_free(cp);
+	bmake_free(freeIt);
     }
-    cp = NULL;
-    if (Var_Value(MAKE_META_IGNORE_FILTER, VAR_GLOBAL, &cp)) {
+    freeIt = NULL;
+    if (Var_Value(MAKE_META_IGNORE_FILTER, VAR_GLOBAL, &freeIt)) {
 	metaIgnoreFilter = TRUE;
-	bmake_free(cp);
+	bmake_free(freeIt);
     }
 }
 
@@ -1059,7 +1056,7 @@ append_if_new(StringList *list, const char *str)
     StringListNode *ln;
 
     for (ln = list->first; ln != NULL; ln = ln->next)
-        if (strcmp(ln->datum, str) == 0)
+	if (strcmp(ln->datum, str) == 0)
 	    return;
     Lst_Append(list, bmake_strdup(str));
 }
@@ -1088,17 +1085,14 @@ meta_oodate(GNode *gn, Boolean oodate)
     FILE *fp;
     Boolean needOODATE = FALSE;
     StringList *missingFiles;
-    char *pa[4];			/* >= possible uses */
-    int i;
     int have_filemon = FALSE;
+    void *objdir_freeIt;
 
     if (oodate)
 	return oodate;		/* we're done */
 
-    i = 0;
-
-    dname = Var_Value(".OBJDIR", gn, &pa[i++]);
-    tname = Var_Value(TARGET, gn, &pa[i++]);
+    dname = Var_Value(".OBJDIR", gn, &objdir_freeIt);
+    tname = GNode_VarTarget(gn);
 
     /* if this succeeds fname3 is realpath of dname */
     if (!meta_needed(gn, dname, tname, fname3, FALSE))
@@ -1222,7 +1216,7 @@ meta_oodate(GNode *gn, Boolean oodate)
 		    pid = atoi(p);
 		    if (pid > 0 && pid != lastpid) {
 			const char *ldir;
-			char *tp;
+			void *tp;
 
 			if (lastpid > 0) {
 			    /* We need to remember these. */
@@ -1323,8 +1317,8 @@ meta_oodate(GNode *gn, Boolean oodate)
 			while (ln != NULL) {
 			    StringListNode *next = ln->next;
 			    if (path_starts_with(ln->datum, p)) {
-			        free(ln->datum);
-			        Lst_Remove(missingFiles, ln);
+				free(ln->datum);
+				Lst_Remove(missingFiles, ln);
 			    }
 			    ln = next;
 			}
@@ -1606,14 +1600,11 @@ meta_oodate(GNode *gn, Boolean oodate)
 	 * All we can sanely do is set it to .ALLSRC.
 	 */
 	Var_Delete(OODATE, gn);
-	Var_Set(OODATE, Var_Value(ALLSRC, gn, &cp), gn);
-	bmake_free(cp);
+	Var_Set(OODATE, GNode_VarAllsrc(gn), gn);
     }
 
  oodate_out:
-    for (i--; i >= 0; i--) {
-	bmake_free(pa[i]);
-    }
+    bmake_free(objdir_freeIt);
     return oodate;
 }
 
