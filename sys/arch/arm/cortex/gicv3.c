@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3.c,v 1.25 2020/04/13 12:14:55 jmcneill Exp $ */
+/* $NetBSD: gicv3.c,v 1.32 2020/11/01 14:30:12 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #define	_INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.25 2020/04/13 12:14:55 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.32 2020/11/01 14:30:12 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -41,6 +41,7 @@ __KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.25 2020/04/13 12:14:55 jmcneill Exp $");
 #include <sys/systm.h>
 #include <sys/cpu.h>
 #include <sys/vmem.h>
+#include <sys/atomic.h>
 
 #include <machine/cpufunc.h>
 
@@ -121,7 +122,7 @@ gicv3_unblock_irqs(struct pic_softc *pic, size_t irqbase, uint32_t mask)
 	const u_int group = irqbase / 32;
 
 	if (group == 0) {
-		sc->sc_enabled_sgippi |= mask;
+		atomic_or_32(&sc->sc_enabled_sgippi, mask);
 		gicr_write_4(sc, ci->ci_gic_redist, GICR_ISENABLER0, mask);
 		while (gicr_read_4(sc, ci->ci_gic_redist, GICR_CTLR) & GICR_CTLR_RWP)
 			;
@@ -140,7 +141,7 @@ gicv3_block_irqs(struct pic_softc *pic, size_t irqbase, uint32_t mask)
 	const u_int group = irqbase / 32;
 
 	if (group == 0) {
-		sc->sc_enabled_sgippi &= ~mask;
+		atomic_and_32(&sc->sc_enabled_sgippi, ~mask);
 		gicr_write_4(sc, ci->ci_gic_redist, GICR_ICENABLER0, mask);
 		while (gicr_read_4(sc, ci->ci_gic_redist, GICR_CTLR) & GICR_CTLR_RWP)
 			;
@@ -214,7 +215,6 @@ gicv3_set_priority(struct pic_softc *pic, int ipl)
 	struct gicv3_softc * const sc = PICTOSOFTC(pic);
 
 	icc_pmr_write(IPL_TO_PMR(sc, ipl));
-	arm_isb();
 }
 
 static void
@@ -419,38 +419,24 @@ gicv3_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 static void
 gicv3_ipi_send(struct pic_softc *pic, const kcpuset_t *kcp, u_long ipi)
 {
-	CPU_INFO_ITERATOR cii;
 	struct cpu_info *ci;
-	uint64_t intid, aff, targets;
+	uint64_t sgir;
 
-	intid = __SHIFTIN(ipi, ICC_SGIR_EL1_INTID);
+	sgir = __SHIFTIN(ipi, ICC_SGIR_EL1_INTID);
 	if (kcp == NULL) {
 		/* Interrupts routed to all PEs, excluding "self" */
 		if (ncpu == 1)
 			return;
-		icc_sgi1r_write(intid | ICC_SGIR_EL1_IRM);
+		sgir |= ICC_SGIR_EL1_IRM;
 	} else {
-		/* Interrupts routed to specific PEs */
-		aff = 0;
-		targets = 0;
-		for (CPU_INFO_FOREACH(cii, ci)) {
-			if (!kcpuset_isset(kcp, cpu_index(ci)))
-				continue;
-			if ((ci->ci_gic_sgir & ICC_SGIR_EL1_Aff) != aff) {
-				if (targets != 0) {
-					icc_sgi1r_write(intid | aff | targets);
-					arm_isb();
-					targets = 0;
-				}
-				aff = (ci->ci_gic_sgir & ICC_SGIR_EL1_Aff);
-			}
-			targets |= (ci->ci_gic_sgir & ICC_SGIR_EL1_TargetList);
-		}
-		if (targets != 0) {
-			icc_sgi1r_write(intid | aff | targets);
-			arm_isb();
-		}
+		/* Interrupt to exactly one PE */
+		ci = cpu_lookup(kcpuset_ffs(kcp) - 1);
+		if (ci == curcpu())
+			return;
+		sgir |= ci->ci_gic_sgir;
 	}
+	icc_sgi1r_write(sgir);
+	isb();
 }
 
 static void
@@ -529,7 +515,7 @@ gicv3_lpi_unblock_irqs(struct pic_softc *pic, size_t irqbase, uint32_t mask)
 	}
 
 	if (!sc->sc_lpiconf_flush)
-		__asm __volatile ("dsb ishst");
+		dsb(ishst);
 }
 
 static void
@@ -546,7 +532,7 @@ gicv3_lpi_block_irqs(struct pic_softc *pic, size_t irqbase, uint32_t mask)
 	}
 
 	if (!sc->sc_lpiconf_flush)
-		__asm __volatile ("dsb ishst");
+		dsb(ishst);
 }
 
 static void
@@ -559,7 +545,7 @@ gicv3_lpi_establish_irq(struct pic_softc *pic, struct intrsource *is)
 	if (sc->sc_lpiconf_flush)
 		cpu_dcache_wb_range((vaddr_t)&sc->sc_lpiconf.base[is->is_irq], 1);
 	else
-		__asm __volatile ("dsb ishst");
+		dsb(ishst);
 }
 
 static void
@@ -582,7 +568,7 @@ gicv3_lpi_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 	ctlr = gicr_read_4(sc, ci->ci_gic_redist, GICR_CTLR);
 	ctlr &= ~GICR_CTLR_Enable_LPIs;
 	gicr_write_4(sc, ci->ci_gic_redist, GICR_CTLR, ctlr);
-	arm_dsb();
+	dsb(sy);
 
 	/* Setup the LPI configuration table */
 	propbase = sc->sc_lpiconf.segs[0].ds_addr |
@@ -620,7 +606,7 @@ gicv3_lpi_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 	ctlr = gicr_read_4(sc, ci->ci_gic_redist, GICR_CTLR);
 	ctlr |= GICR_CTLR_Enable_LPIs;
 	gicr_write_4(sc, ci->ci_gic_redist, GICR_CTLR, ctlr);
-	arm_dsb();
+	dsb(sy);
 
 	/* Setup ITS if present */
 	LIST_FOREACH(cb, &sc->sc_lpi_callbacks, list)
@@ -721,7 +707,7 @@ gicv3_irq_handler(void *frame)
 
 	for (;;) {
 		const uint32_t iar = icc_iar1_read();
-		arm_dsb();
+		dsb(sy);
 		const uint32_t irq = __SHIFTOUT(iar, ICC_IAR_INTID);
 		if (irq == ICC_IAR_INTID_SPURIOUS)
 			break;
@@ -738,14 +724,14 @@ gicv3_irq_handler(void *frame)
 		const int ipl = is->is_ipl;
 		if (__predict_false(ipl < ci->ci_cpl)) {
 			pic_do_pending_ints(I32_bit, ipl, frame);
-		} else {
+		} else if (ci->ci_cpl != ipl) {
 			gicv3_set_priority(pic, ipl);
 			ci->ci_cpl = ipl;
 		}
 
 		if (early_eoi) {
 			icc_eoi1r_write(iar);
-			arm_isb();
+			isb();
 		}
 
 		cpsie(I32_bit);
@@ -754,7 +740,7 @@ gicv3_irq_handler(void *frame)
 
 		if (!early_eoi) {
 			icc_eoi1r_write(iar);
-			arm_isb();
+			isb();
 		}
 	}
 
@@ -857,13 +843,6 @@ gicv3_init(struct gicv3_softc *sc)
 	gicv3_cpu_init(&sc->sc_pic, curcpu());
 	if ((gicd_typer & GICD_TYPER_LPIS) != 0)
 		gicv3_lpi_cpu_init(&sc->sc_lpi, curcpu());
-
-#ifdef __HAVE_PIC_FAST_SOFTINTS
-	intr_establish_xname(SOFTINT_BIO, IPL_SOFTBIO, IST_MPSAFE | IST_EDGE, pic_handle_softint, (void *)SOFTINT_BIO, "softint bio");
-	intr_establish_xname(SOFTINT_CLOCK, IPL_SOFTCLOCK, IST_MPSAFE | IST_EDGE, pic_handle_softint, (void *)SOFTINT_CLOCK, "softint clock");
-	intr_establish_xname(SOFTINT_NET, IPL_SOFTNET, IST_MPSAFE | IST_EDGE, pic_handle_softint, (void *)SOFTINT_NET, "softint net");
-	intr_establish_xname(SOFTINT_SERIAL, IPL_SOFTSERIAL, IST_MPSAFE | IST_EDGE, pic_handle_softint, (void *)SOFTINT_SERIAL, "softint serial");
-#endif
 
 #ifdef MULTIPROCESSOR
 	intr_establish_xname(IPI_AST, IPL_VM, IST_MPSAFE | IST_EDGE, pic_ipi_ast, (void *)-1, "IPI ast");

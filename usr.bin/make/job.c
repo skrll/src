@@ -1,4 +1,4 @@
-/*	$NetBSD: job.c,v 1.294 2020/10/30 07:19:30 rillig Exp $	*/
+/*	$NetBSD: job.c,v 1.302 2020/11/01 18:45:49 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -143,7 +143,7 @@
 #include "trace.h"
 
 /*	"@(#)job.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: job.c,v 1.294 2020/10/30 07:19:30 rillig Exp $");
+MAKE_RCSID("$NetBSD: job.c,v 1.302 2020/11/01 18:45:49 rillig Exp $");
 
 /* A shell defines how the commands are run.  All commands for a target are
  * written into a single file, which is then given to the shell to execute
@@ -646,6 +646,52 @@ JobFindPid(int pid, JobState status, Boolean isJobs)
     return NULL;
 }
 
+/* Parse leading '@', '-' and '+', which control the exact execution mode. */
+static void
+ParseRunOptions(
+	char **pp,
+	Boolean *out_shutUp, Boolean *out_errOff, Boolean *out_runAlways)
+{
+    char *p = *pp;
+    *out_shutUp = FALSE;
+    *out_errOff = FALSE;
+    *out_runAlways = FALSE;
+
+    for (;;) {
+	if (*p == '@')
+	    *out_shutUp = !DEBUG(LOUD);
+	else if (*p == '-')
+	    *out_errOff = TRUE;
+	else if (*p == '+')
+	    *out_runAlways = TRUE;
+	else
+	    break;
+	p++;
+    }
+
+    pp_skip_whitespace(&p);
+
+    *pp = p;
+}
+
+/* Escape a string for a double-quoted string literal in sh, csh and ksh. */
+static char *
+EscapeShellDblQuot(const char *cmd)
+{
+    size_t i, j;
+
+    /* Worst that could happen is every char needs escaping. */
+    char *esc = bmake_malloc(strlen(cmd) * 2 + 1);
+    for (i = 0, j = 0; cmd[i] != '\0'; i++, j++) {
+	if (cmd[i] == '$' || cmd[i] == '`' || cmd[i] == '\\' || cmd[i] == '"')
+	    esc[j++] = '\\';
+	esc[j] = cmd[i];
+    }
+    esc[j] = '\0';
+
+    return esc;
+}
+
 /*-
  *-----------------------------------------------------------------------
  * JobPrintCommand  --
@@ -674,17 +720,18 @@ JobPrintCommand(Job *job, char *cmd)
     Boolean noSpecials;		/* true if we shouldn't worry about
 				 * inserting special commands into
 				 * the input stream. */
-    Boolean shutUp = FALSE;	/* true if we put a no echo command
+    Boolean shutUp;		/* true if we put a no echo command
 				 * into the command file */
-    Boolean errOff = FALSE;	/* true if we turned error checking
+    Boolean errOff;		/* true if we turned error checking
 				 * off before printing the command
 				 * and need to turn it back on */
+    Boolean runAlways;
     const char *cmdTemplate;	/* Template to use when printing the
 				 * command */
     char *cmdStart;		/* Start of expanded command */
     char *escCmd = NULL;	/* Command with quotes/backticks escaped */
 
-    noSpecials = NoExecute(job->node);
+    noSpecials = !GNode_ShouldExecute(job->node);
 
 #define DBPRINTF(fmt, arg) if (DEBUG(JOB)) {	\
 	debug_printf(fmt, arg);			\
@@ -700,33 +747,17 @@ JobPrintCommand(Job *job, char *cmd)
 
     cmdTemplate = "%s\n";
 
-    /*
-     * Check for leading @' and -'s to control echoing and error checking.
-     */
-    while (*cmd == '@' || *cmd == '-' || (*cmd == '+')) {
-	switch (*cmd) {
-	case '@':
-	    shutUp = DEBUG(LOUD) ? FALSE : TRUE;
-	    break;
-	case '-':
-	    errOff = TRUE;
-	    break;
-	case '+':
-	    if (noSpecials) {
-		/*
-		 * We're not actually executing anything...
-		 * but this one needs to be - use compat mode just for it.
-		 */
-		Compat_RunCommand(cmdp, job->node);
-		free(cmdStart);
-		return;
-	    }
-	    break;
-	}
-	cmd++;
-    }
+    ParseRunOptions(&cmd, &shutUp, &errOff, &runAlways);
 
-    pp_skip_whitespace(&cmd);
+    if (runAlways && noSpecials) {
+	/*
+	 * We're not actually executing anything...
+	 * but this one needs to be - use compat mode just for it.
+	 */
+	Compat_RunCommand(cmdp, job->node);
+	free(cmdStart);
+	return;
+    }
 
     /*
      * If the shell doesn't have error control the alternate echo'ing will
@@ -734,19 +765,8 @@ JobPrintCommand(Job *job, char *cmd)
      * and this will need the characters '$ ` \ "' escaped
      */
 
-    if (!commandShell->hasErrCtl) {
-	int i, j;
-
-	/* Worst that could happen is every char needs escaping. */
-	escCmd = bmake_malloc((strlen(cmd) * 2) + 1);
-	for (i = 0, j = 0; cmd[i] != '\0'; i++, j++) {
-	    if (cmd[i] == '$' || cmd[i] == '`' || cmd[i] == '\\' ||
-		cmd[i] == '"')
-		escCmd[j++] = '\\';
-	    escCmd[j] = cmd[i];
-	}
-	escCmd[j] = '\0';
-    }
+    if (!commandShell->hasErrCtl)
+	escCmd = EscapeShellDblQuot(cmd);
 
     if (shutUp) {
 	if (!(job->flags & JOB_SILENT) && !noSpecials &&
@@ -877,7 +897,7 @@ JobPrintCommands(Job *job)
     StringListNode *ln;
 
     for (ln = job->node->commands->first; ln != NULL; ln = ln->next) {
-        const char *cmd = ln->datum;
+	const char *cmd = ln->datum;
 
 	if (strcmp(cmd, "...") == 0) {
 	    job->node->type |= OP_SAVE_CMDS;
@@ -1122,12 +1142,12 @@ Job_Touch(GNode *gn, Boolean silent)
 	return;
     }
 
-    if (!silent || NoExecute(gn)) {
+    if (!silent || !GNode_ShouldExecute(gn)) {
 	(void)fprintf(stdout, "touch %s\n", gn->name);
 	(void)fflush(stdout);
     }
 
-    if (NoExecute(gn)) {
+    if (!GNode_ShouldExecute(gn)) {
 	return;
     }
 
@@ -1193,7 +1213,6 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
      */
     if ((DEFAULT != NULL) && !Lst_IsEmpty(DEFAULT->commands) &&
 	(gn->type & OP_SPECIAL) == 0) {
-	char *p1;
 	/*
 	 * Make only looks for a .DEFAULT if the node was never the
 	 * target of an operator, so that's what we do too. If
@@ -1204,8 +1223,7 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
 	 * .DEFAULT itself.
 	 */
 	Make_HandleUse(DEFAULT, gn);
-	Var_Set(IMPSRC, Var_Value(TARGET, gn, &p1), gn);
-	bmake_free(p1);
+	Var_Set(IMPSRC, GNode_VarTarget(gn), gn);
 	return TRUE;
     }
 
@@ -1582,7 +1600,7 @@ JobStart(GNode *gn, int flags)
 	}
 
 	free(tfile);
-    } else if (NoExecute(gn)) {
+    } else if (!GNode_ShouldExecute(gn)) {
 	/*
 	 * Not executing anything -- just print all the commands to stdout
 	 * in one fell swoop. This will still set up job->tailCmds correctly.
@@ -2218,7 +2236,7 @@ static void JobSigReset(void)
 
 /* Find a shell in 'shells' given its name, or return NULL. */
 static Shell *
-JobMatchShell(const char *name)
+FindShellByName(const char *name)
 {
     Shell *sh = shells;
     const Shell *shellsEnd = sh + sizeof shells / sizeof shells[0];
@@ -2352,7 +2370,7 @@ Job_ParseShell(char *line)
     if (path == NULL) {
 	/*
 	 * If no path was given, the user wants one of the pre-defined shells,
-	 * yes? So we find the one s/he wants with the help of JobMatchShell
+	 * yes? So we find the one s/he wants with the help of FindShellByName
 	 * and set things up the right way. shellPath will be set up by
 	 * Shell_Init.
 	 */
@@ -2361,7 +2379,7 @@ Job_ParseShell(char *line)
 	    free(words);
 	    return FALSE;
 	} else {
-	    if ((sh = JobMatchShell(newShell.name)) == NULL) {
+	    if ((sh = FindShellByName(newShell.name)) == NULL) {
 		    Parse_Error(PARSE_WARNING, "%s: No matching shell",
 				newShell.name);
 		    free(words);
@@ -2397,7 +2415,7 @@ Job_ParseShell(char *line)
 	    shellName = path;
 	}
 	if (!fullSpec) {
-	    if ((sh = JobMatchShell(shellName)) == NULL) {
+	    if ((sh = FindShellByName(shellName)) == NULL) {
 		    Parse_Error(PARSE_WARNING, "%s: No matching shell",
 				shellName);
 		    free(words);

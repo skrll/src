@@ -1,4 +1,4 @@
-/*	$NetBSD: make.c,v 1.181 2020/10/26 21:34:10 rillig Exp $	*/
+/*	$NetBSD: make.c,v 1.186 2020/11/01 17:47:26 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -102,12 +102,12 @@
  *	Make_ExpandUse	Expand .USE nodes
  */
 
-#include    "make.h"
-#include    "dir.h"
-#include    "job.h"
+#include "make.h"
+#include "dir.h"
+#include "job.h"
 
 /*	"@(#)make.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: make.c,v 1.181 2020/10/26 21:34:10 rillig Exp $");
+MAKE_RCSID("$NetBSD: make.c,v 1.186 2020/11/01 17:47:26 rillig Exp $");
 
 /* Sequence # to detect recursion. */
 static unsigned int checked = 1;
@@ -178,9 +178,9 @@ GNode_FprintDetails(FILE *f, const char *prefix, const GNode *gn,
 }
 
 Boolean
-NoExecute(GNode *gn)
+GNode_ShouldExecute(GNode *gn)
 {
-    return (gn->type & OP_MAKE) ? opts.noRecursiveExecute : opts.noExecute;
+    return !((gn->type & OP_MAKE) ? opts.noRecursiveExecute : opts.noExecute);
 }
 
 /* Update the youngest child of the node, according to the given child. */
@@ -547,7 +547,7 @@ Make_Recheck(GNode *gn)
      * the target is made now. Otherwise archives with ... rules
      * don't work!
      */
-    if (NoExecute(gn) || (gn->type & OP_SAVE_CMDS) ||
+    if (!GNode_ShouldExecute(gn) || (gn->type & OP_SAVE_CMDS) ||
 	    (mtime == 0 && !(gn->type & OP_WAIT))) {
 	DEBUG2(MAKE, " recheck(%s): update time from %s to now\n",
 	       gn->name, Targ_FmtTime(gn->mtime));
@@ -569,8 +569,7 @@ static void
 UpdateImplicitParentsVars(GNode *cgn, const char *cname)
 {
     GNodeListNode *ln;
-    char *cpref_freeIt;
-    const char *cpref = Var_Value(PREFIX, cgn, &cpref_freeIt);
+    const char *cpref = GNode_VarPrefix(cgn);
 
     for (ln = cgn->implicitParents->first; ln != NULL; ln = ln->next) {
 	GNode *pgn = ln->datum;
@@ -580,7 +579,6 @@ UpdateImplicitParentsVars(GNode *cgn, const char *cname)
 		Var_Set(PREFIX, cpref, pgn);
 	}
     }
-    bmake_free(cpref_freeIt);
 }
 
 /* Perform update on the parents of a node. Used by JobFinish once
@@ -614,11 +612,7 @@ Make_Update(GNode *cgn)
     /* It is save to re-examine any nodes again */
     checked++;
 
-    {
-        char *cname_freeIt;
-	cname = Var_Value(TARGET, cgn, &cname_freeIt);
-	assert(cname_freeIt == NULL);
-    }
+    cname = GNode_VarTarget(cgn);
 
     DEBUG2(MAKE, "Make_Update: %s%s\n", cgn->name, cgn->cohort_num);
 
@@ -779,20 +773,18 @@ MakeAddAllSrc(GNode *cgn, GNode *pgn)
 
     if ((cgn->type & (OP_EXEC|OP_USE|OP_USEBEFORE|OP_INVISIBLE)) == 0) {
 	const char *child, *allsrc;
-	char *p1 = NULL, *p2 = NULL;
 
 	if (cgn->type & OP_ARCHV)
-	    child = Var_Value(MEMBER, cgn, &p1);
+	    child = GNode_VarMember(cgn);
 	else
 	    child = GNode_Path(cgn);
 	if (cgn->type & OP_JOIN) {
-	    allsrc = Var_Value(ALLSRC, cgn, &p2);
+	    allsrc = GNode_VarAllsrc(cgn);
 	} else {
 	    allsrc = child;
 	}
 	if (allsrc != NULL)
 		Var_Append(ALLSRC, allsrc, pgn);
-	bmake_free(p2);
 	if (pgn->type & OP_JOIN) {
 	    if (cgn->made == MADE) {
 		Var_Append(OODATE, child, pgn);
@@ -818,7 +810,6 @@ MakeAddAllSrc(GNode *cgn, GNode *pgn)
 	     */
 	    Var_Append(OODATE, child, pgn);
 	}
-	bmake_free(p1);
     }
 }
 
@@ -845,7 +836,7 @@ Make_DoAllVar(GNode *gn)
 
     UnmarkChildren(gn);
     for (ln = gn->children->first; ln != NULL; ln = ln->next)
-        MakeAddAllSrc(ln->datum, gn);
+	MakeAddAllSrc(ln->datum, gn);
 
     if (!Var_Exists(OODATE, gn)) {
 	Var_Set(OODATE, "", gn);
@@ -854,11 +845,8 @@ Make_DoAllVar(GNode *gn)
 	Var_Set(ALLSRC, "", gn);
     }
 
-    if (gn->type & OP_JOIN) {
-	char *p1;
-	Var_Set(TARGET, Var_Value(ALLSRC, gn, &p1), gn);
-	bmake_free(p1);
-    }
+    if (gn->type & OP_JOIN)
+	Var_Set(TARGET, GNode_VarAllsrc(gn), gn);
     gn->flags |= DONE_ALLSRC;
 }
 
@@ -1029,7 +1017,7 @@ MakePrintStatusOrder(GNode *gn)
 {
     GNodeListNode *ln;
     for (ln = gn->order_pred->first; ln != NULL; ln = ln->next)
-        MakePrintStatusOrderNode(ln->datum, gn);
+	MakePrintStatusOrderNode(ln->datum, gn);
 }
 
 static void MakePrintStatusList(GNodeList *, int *);
@@ -1111,7 +1099,7 @@ MakePrintStatusList(GNodeList *gnodes, int *errors)
 {
     GNodeListNode *ln;
     for (ln = gnodes->first; ln != NULL; ln = ln->next)
-        if (MakePrintStatus(ln->datum, errors))
+	if (MakePrintStatus(ln->datum, errors))
 	    break;
 }
 
@@ -1126,9 +1114,9 @@ Make_ExpandUse(GNodeList *targs)
     GNodeList *examine;		/* List of targets to examine */
 
     {
-        /* XXX: Why is it necessary to copy the list? There shouldn't be
-         * any modifications to the list, at least the function name
-         * ExpandUse doesn't suggest that. */
+	/* XXX: Why is it necessary to copy the list? There shouldn't be
+	 * any modifications to the list, at least the function name
+	 * ExpandUse doesn't suggest that. */
 	GNodeListNode *ln;
 	examine = Lst_New();
 	for (ln = targs->first; ln != NULL; ln = ln->next)
