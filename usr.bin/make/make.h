@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.176 2020/10/30 07:19:30 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.189 2020/11/05 00:40:31 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -171,7 +171,7 @@ typedef int Boolean;
 #include "buf.h"
 #include "make_malloc.h"
 
-typedef enum  {
+typedef enum GNodeMade {
     UNMADE,			/* Not examined yet */
     DEFERRED,			/* Examined once (building child) */
     REQUESTED,			/* on toBeMade list */
@@ -230,7 +230,7 @@ typedef enum GNodeType {
     /* Like .USE, only prepend commands */
     OP_USEBEFORE	= 1 << 13,
     /* The node is invisible to its parents. I.e. it doesn't show up in the
-     * parents' local variables. */
+     * parents' local variables (.IMPSRC, .ALLSRC). */
     OP_INVISIBLE	= 1 << 14,
     /* The node is exempt from normal 'main target' processing in parse.c */
     OP_NOTMAIN		= 1 << 15,
@@ -238,7 +238,10 @@ typedef enum GNodeType {
     OP_PHONY		= 1 << 16,
     /* Don't search for file in the path */
     OP_NOPATH		= 1 << 17,
-    /* .WAIT phony node */
+    /* In a dependency line "target: source1 .WAIT source2", source1 is made
+     * first, including its children.  Once that is finished, source2 is made,
+     * including its children.  The .WAIT keyword may appear more than once in
+     * a single dependency declaration. */
     OP_WAIT		= 1 << 18,
     /* .NOMETA do not create a .meta file */
     OP_NOMETA		= 1 << 19,
@@ -251,7 +254,7 @@ typedef enum GNodeType {
 
     /* Attributes applied by PMake */
 
-    /* The node is a transformation rule */
+    /* The node is a transformation rule, such as ".c.o". */
     OP_TRANSFORM	= 1 << 31,
     /* Target is a member of an archive */
     /* XXX: How does this differ from OP_ARCHV? */
@@ -330,9 +333,6 @@ typedef struct GNode {
      * file.c has the node for file.o in this list. */
     GNodeList *implicitParents;
 
-    /* Other nodes of the same name, for the '::' operator. */
-    GNodeList *cohorts;
-
     /* The nodes that depend on this one, or in other words, the nodes for
      * which this is a source. */
     GNodeList *parents;
@@ -348,6 +348,8 @@ typedef struct GNode {
      * in the normal sense. */
     GNodeList *order_succ;
 
+    /* Other nodes of the same name, for the '::' dependency operator. */
+    GNodeList *cohorts;
     /* The "#n" suffix for this cohort, or "" for other nodes */
     char cohort_num[8];
     /* The number of unmade instances on the cohorts list */
@@ -364,7 +366,7 @@ typedef struct GNode {
      *
      * Also used for the global variable scopes VAR_GLOBAL, VAR_CMDLINE,
      * VAR_INTERNAL, which contain variables with arbitrary names. */
-    HashTable context;
+    HashTable /* of Var pointer */ context;
 
     /* The commands to be given to a shell to create this target. */
     StringList *commands;
@@ -373,20 +375,19 @@ typedef struct GNode {
      * but the Suff module) */
     struct Suff *suffix;
 
-    /* filename where the GNode got defined */
+    /* Filename where the GNode got defined */
     const char *fname;
-    /* line number where the GNode got defined */
+    /* Line number where the GNode got defined */
     int lineno;
 } GNode;
 
-/*
- * Error levels for parsing. PARSE_FATAL means the process cannot continue
- * once the top-level makefile has been parsed. PARSE_WARNING and PARSE_INFO
- * mean it can.
- */
+/* Error levels for diagnostics during parsing. */
 typedef enum ParseErrorLevel {
+    /* Exit when the current top-level makefile has been parsed completely. */
     PARSE_FATAL = 1,
+    /* Print "warning"; may be upgraded to fatal by the -w option. */
     PARSE_WARNING,
+    /* Informational, mainly used during development of makefiles. */
     PARSE_INFO
 } ParseErrorLevel;
 
@@ -409,13 +410,6 @@ typedef enum CondEvalResult {
 #define PREFIX		"*"	/* Common prefix */
 #define ARCHIVE		"!"	/* Archive in "archive(member)" syntax */
 #define MEMBER		"%"	/* Member in "archive(member)" syntax */
-
-#define FTARGET		"@F"	/* file part of TARGET */
-#define DTARGET		"@D"	/* directory part of TARGET */
-#define FIMPSRC		"<F"	/* file part of IMPSRC */
-#define DIMPSRC		"<D"	/* directory part of IMPSRC */
-#define FPREFIX		"*F"	/* file part of PREFIX */
-#define DPREFIX		"*D"	/* directory part of PREFIX */
 
 /*
  * Global Variables
@@ -444,15 +438,34 @@ extern char	var_Error[];	/* Value returned by Var_Parse when an error
 extern time_t	now;		/* The time at the start of this whole
 				 * process */
 
-extern Boolean	oldVars;	/* Do old-style variable substitution */
+/*
+ * If FALSE (the default behavior), undefined subexpressions in a variable
+ * expression are discarded.  If TRUE (only during variable assignments using
+ * the ':=' assignment operator, in the top-level expansion), they are
+ * preserved and possibly expanded later when the variable from the
+ * subexpression has been defined.
+ *
+ * Example for a ':=' assignment:
+ *	CFLAGS = $(.INCLUDES)
+ *	CFLAGS := -I.. $(CFLAGS)
+ *	# If .INCLUDES (an undocumented special variable, by the way) is
+ *	# still undefined, the updated CFLAGS becomes "-I.. $(.INCLUDES)".
+ */
+extern Boolean preserveUndefined;
 
-extern SearchPath *sysIncPath;	/* The system include path. */
-extern SearchPath *defSysIncPath; /* The default system include path. */
+/* Used for .include "...". */
+extern SearchPath *parseIncPath;
+/* Used for .include <...>, for the built-in sys.mk and makefiles from the
+ * command line arguments. */
+extern SearchPath *sysIncPath;
+/* The default for sysIncPath. */
+extern SearchPath *defSysIncPath;
 
-extern char	curdir[];	/* Startup directory */
-extern char	*progname;	/* The program name */
-extern char	*makeDependfile; /* .depend */
-extern char	**savedEnv;	 /* if we replaced environ this will be non-NULL */
+extern char curdir[];		/* Startup directory */
+extern char *progname;		/* The program name */
+extern char *makeDependfile;	/* .depend */
+/* If we replaced environ, this will be non-NULL. */
+extern char **savedEnv;
 
 extern int	makelevel;
 
@@ -469,7 +482,7 @@ extern pid_t	myPid;
 #define	MAKE_EXPORTED	".MAKE.EXPORTED"   /* variables we export */
 #define	MAKE_MAKEFILES	".MAKE.MAKEFILES"  /* all makefiles already loaded */
 #define	MAKE_LEVEL	".MAKE.LEVEL"	   /* recursion level */
-#define MAKEFILE_PREFERENCE ".MAKE.MAKEFILE_PREFERENCE"
+#define MAKE_MAKEFILE_PREFERENCE ".MAKE.MAKEFILE_PREFERENCE"
 #define MAKE_DEPENDFILE	".MAKE.DEPENDFILE" /* .depend */
 #define MAKE_MODE	".MAKE.MODE"
 #ifndef MAKE_LEVEL_ENV
@@ -629,7 +642,7 @@ Boolean Main_SetObjdir(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
 int mkTempFile(const char *, char **);
 int str2Lst_Append(StringList *, char *, const char *);
 void GNode_FprintDetails(FILE *, const char *, const GNode *, const char *);
-Boolean NoExecute(GNode *gn);
+Boolean GNode_ShouldExecute(GNode *gn);
 
 /* See if the node was seen on the left-hand side of a dependency operator. */
 static MAKE_ATTR_UNUSED Boolean
@@ -643,6 +656,21 @@ GNode_Path(const GNode *gn)
 {
     return gn->path != NULL ? gn->path : gn->name;
 }
+
+static MAKE_ATTR_UNUSED const char *
+GNode_VarTarget(GNode *gn) { return Var_ValueDirect(TARGET, gn); }
+static MAKE_ATTR_UNUSED const char *
+GNode_VarOodate(GNode *gn) { return Var_ValueDirect(OODATE, gn); }
+static MAKE_ATTR_UNUSED const char *
+GNode_VarAllsrc(GNode *gn) { return Var_ValueDirect(ALLSRC, gn); }
+static MAKE_ATTR_UNUSED const char *
+GNode_VarImpsrc(GNode *gn) { return Var_ValueDirect(IMPSRC, gn); }
+static MAKE_ATTR_UNUSED const char *
+GNode_VarPrefix(GNode *gn) { return Var_ValueDirect(PREFIX, gn); }
+static MAKE_ATTR_UNUSED const char *
+GNode_VarArchive(GNode *gn) { return Var_ValueDirect(ARCHIVE, gn); }
+static MAKE_ATTR_UNUSED const char *
+GNode_VarMember(GNode *gn) { return Var_ValueDirect(MEMBER, gn); }
 
 #ifdef __GNUC__
 #define UNCONST(ptr)	({		\
