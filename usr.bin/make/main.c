@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.410 2020/10/30 07:19:30 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.425 2020/11/04 13:29:42 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -118,7 +118,7 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.410 2020/10/30 07:19:30 rillig Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.425 2020/11/04 13:29:42 rillig Exp $");
 #if defined(MAKE_NATIVE) && !defined(lint)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
@@ -138,7 +138,7 @@ Boolean			deleteOnError;	/* .DELETE_ON_ERROR: set */
 static int		maxJobTokens;	/* -j argument */
 Boolean			enterFlagObj;	/* -w and objdir != srcdir */
 
-Boolean			oldVars;	/* variable substitution style */
+Boolean preserveUndefined;
 static int jp_0 = -1, jp_1 = -1;	/* ends of parent job pipe */
 Boolean			doing_depend;	/* Set while reading .depend */
 static Boolean		jobsRunning;	/* TRUE if the jobs might be running */
@@ -156,8 +156,7 @@ pid_t myPid;
 int makelevel;
 
 Boolean forceJobs = FALSE;
-
-extern SearchPath *parseIncPath;
+static int errors = 0;
 
 /*
  * For compatibility with the POSIX version of MAKEFLAGS that includes
@@ -639,8 +638,6 @@ rearg:
 		argc -= arginc;
 	}
 
-	oldVars = TRUE;
-
 	/*
 	 * See if the rest of the arguments are variable assignments and
 	 * perform them if so. Else take them to be targets and stuff them
@@ -674,7 +671,7 @@ void
 Main_ParseArgLine(const char *line)
 {
 	Words words;
-	char *p1;
+	void *p1;
 	const char *argv0 = Var_Value(".MAKE", VAR_GLOBAL, &p1);
 	char *buf;
 
@@ -721,7 +718,9 @@ Main_SetObjdir(const char *fmt, ...)
 
 	/* look for the directory and try to chdir there */
 	if (stat(path, &sb) == 0 && S_ISDIR(sb.st_mode)) {
-		if (chdir(path)) {
+		/* if not .CURDIR it must be writable */
+		if ((strcmp(path, curdir) != 0 && access(path, W_OK) != 0) ||
+		    chdir(path)) {
 			(void)fprintf(stderr, "make warning: %s: %s.\n",
 				      path, strerror(errno));
 		} else {
@@ -742,7 +741,7 @@ Main_SetObjdir(const char *fmt, ...)
 static Boolean
 Main_SetVarObjdir(const char *var, const char *suffix)
 {
-	char *path_freeIt;
+	void *path_freeIt;
 	const char *path = Var_Value(var, VAR_CMDLINE, &path_freeIt);
 	const char *xpath;
 	char *xpath_freeIt;
@@ -857,7 +856,7 @@ PrintVar(const char *varname, Boolean expandVars)
 		bmake_free(evalue);
 
 	} else {
-		char *freeIt;
+		void *freeIt;
 		const char *value = Var_Value(varname, VAR_GLOBAL, &freeIt);
 		printf("%s\n", value ? value : "");
 		bmake_free(freeIt);
@@ -1029,7 +1028,7 @@ static void
 HandlePWD(const struct stat *curdir_st)
 {
 	char *pwd;
-	char *prefix_freeIt, *makeobjdir_freeIt;
+	void *prefix_freeIt, *makeobjdir_freeIt;
 	const char *makeobjdir;
 	struct stat pwd_st;
 
@@ -1271,7 +1270,7 @@ ReadMakefiles(void)
 		}
 	} else {
 		char *p1;
-		(void)Var_Subst("${" MAKEFILE_PREFERENCE "}",
+		(void)Var_Subst("${" MAKE_MAKEFILE_PREFERENCE "}",
 				VAR_CMDLINE, VARE_WANTRES, &p1);
 		/* TODO: handle errors */
 		(void)str2Lst_Append(opts.makefiles, p1, NULL);
@@ -1336,7 +1335,6 @@ main(int argc, char **argv)
 {
 	Boolean outOfDate;	/* FALSE if all targets up to date */
 	struct stat sa;
-	char *p1;
 	const char *machine;
 	const char *machine_arch;
 	char *syspath = getenv("MAKESYSPATH");
@@ -1395,7 +1393,7 @@ main(int argc, char **argv)
 #ifndef MAKEFILE_PREFERENCE_LIST
 # define MAKEFILE_PREFERENCE_LIST "makefile Makefile"
 #endif
-	Var_Set(MAKEFILE_PREFERENCE, MAKEFILE_PREFERENCE_LIST,
+	Var_Set(MAKE_MAKEFILE_PREFERENCE, MAKEFILE_PREFERENCE_LIST,
 		VAR_GLOBAL);
 	Var_Set(MAKE_DEPENDFILE, ".depend", VAR_GLOBAL);
 
@@ -1461,9 +1459,11 @@ main(int argc, char **argv)
 	 * in a different format).
 	 */
 #ifdef POSIX
-	p1 = explode(getenv("MAKEFLAGS"));
-	Main_ParseArgLine(p1);
-	free(p1);
+	{
+	    char *p1 = explode(getenv("MAKEFLAGS"));
+	    Main_ParseArgLine(p1);
+	    free(p1);
+	}
 #else
 	Main_ParseArgLine(getenv("MAKE"));
 #endif
@@ -1544,8 +1544,13 @@ main(int argc, char **argv)
 
 	MakeMode(NULL);
 
-	Var_Append("MFLAGS", Var_Value(MAKEFLAGS, VAR_GLOBAL, &p1), VAR_GLOBAL);
-	bmake_free(p1);
+	{
+	    void *freeIt;
+	    Var_Append("MFLAGS", Var_Value(MAKEFLAGS, VAR_GLOBAL, &freeIt),
+		       VAR_GLOBAL);
+	    bmake_free(freeIt);
+
+	}
 
 	InitMaxJobs();
 
@@ -1592,6 +1597,8 @@ main(int argc, char **argv)
 
 	CleanUp();
 
+	if (DEBUG(LINT) && (errors > 0 || Parse_GetFatals() > 0))
+	    return 2;		/* Not 1 so -q can distinguish error */
 	return outOfDate ? 1 : 0;
 }
 
@@ -1817,11 +1824,12 @@ Error(const char *fmt, ...)
 			break;
 		err_file = stderr;
 	}
+	errors++;
 }
 
 /* Produce a Fatal error message, then exit immediately.
  *
- * If jobs are running, waits for them to finish. */
+ * If jobs are running, wait for them to finish. */
 void
 Fatal(const char *fmt, ...)
 {
@@ -1881,11 +1889,11 @@ DieHorribly(void)
  * The program exits.
  * Errors is the number of errors encountered in Make_Make. */
 void
-Finish(int errors)
+Finish(int errs)
 {
 	if (dieQuietly(NULL, -1))
 		exit(2);
-	Fatal("%d error%s", errors, errors == 1 ? "" : "s");
+	Fatal("%d error%s", errs, errs == 1 ? "" : "s");
 }
 
 /*
@@ -2013,14 +2021,14 @@ cached_realpath(const char *pathname, char *resolved)
 {
     GNode *cache;
     const char *rp;
-    char *cp;
+    void *freeIt;
 
     if (!pathname || !pathname[0])
 	return NULL;
 
     cache = get_cached_realpaths();
 
-    if ((rp = Var_Value(pathname, cache, &cp)) != NULL) {
+    if ((rp = Var_Value(pathname, cache, &freeIt)) != NULL) {
 	/* a hit */
 	strncpy(resolved, rp, MAXPATHLEN);
 	resolved[MAXPATHLEN - 1] = '\0';
@@ -2028,7 +2036,7 @@ cached_realpath(const char *pathname, char *resolved)
 	Var_Set(pathname, rp, cache);
     } /* else should we negative-cache? */
 
-    bmake_free(cp);
+    bmake_free(freeIt);
     return rp ? resolved : NULL;
 }
 
@@ -2043,7 +2051,7 @@ dieQuietly(GNode *gn, int bf)
     static int quietly = -1;
 
     if (quietly < 0) {
-	if (DEBUG(JOB) || getBoolean(".MAKE.DIE_QUIETLY", 1) == 0)
+	if (DEBUG(JOB) || !getBoolean(".MAKE.DIE_QUIETLY", TRUE))
 	    quietly = 0;
 	else if (bf >= 0)
 	    quietly = bf;
@@ -2097,7 +2105,7 @@ PrintOnError(GNode *gn, const char *s)
     if (en)
 	return;				/* we've been here! */
     if (gn)
-        SetErrorVars(gn);
+	SetErrorVars(gn);
     expr = "${MAKE_PRINT_VAR_ON_ERROR:@v@$v='${$v}'\n@}";
     (void)Var_Subst(expr, VAR_GLOBAL, VARE_WANTRES, &cp);
     /* TODO: handle errors */
@@ -2163,19 +2171,19 @@ getTmpdir(void)
 
 /*
  * Create and open a temp file using "pattern".
- * If "fnamep" is provided set it to a copy of the filename created.
+ * If out_fname is provided, set it to a copy of the filename created.
  * Otherwise unlink the file once open.
  */
 int
-mkTempFile(const char *pattern, char **fnamep)
+mkTempFile(const char *pattern, char **out_fname)
 {
     static char *tmpdir = NULL;
     char tfile[MAXPATHLEN];
     int fd;
 
-    if (!pattern)
+    if (pattern != NULL)
 	pattern = TMPPAT;
-    if (!tmpdir)
+    if (tmpdir == NULL)
 	tmpdir = getTmpdir();
     if (pattern[0] == '/') {
 	snprintf(tfile, sizeof(tfile), "%s", pattern);
@@ -2184,8 +2192,8 @@ mkTempFile(const char *pattern, char **fnamep)
     }
     if ((fd = mkstemp(tfile)) < 0)
 	Punt("Could not create temporary file %s: %s", tfile, strerror(errno));
-    if (fnamep) {
-	*fnamep = bmake_strdup(tfile);
+    if (out_fname) {
+	*out_fname = bmake_strdup(tfile);
     } else {
 	unlink(tfile);			/* we just want the descriptor */
     }
@@ -2200,48 +2208,35 @@ mkTempFile(const char *pattern, char **fnamep)
 Boolean
 s2Boolean(const char *s, Boolean bf)
 {
-    if (s) {
-	switch(*s) {
-	case '\0':			/* not set - the default wins */
-	    break;
-	case '0':
-	case 'F':
-	case 'f':
-	case 'N':
-	case 'n':
-	    bf = FALSE;
-	    break;
-	case 'O':
-	case 'o':
-	    switch (s[1]) {
-	    case 'F':
-	    case 'f':
-		bf = FALSE;
-		break;
-	    default:
-		bf = TRUE;
-		break;
-	    }
-	    break;
-	default:
-	    bf = TRUE;
-	    break;
-	}
+    switch(s[0]) {
+    case '\0':			/* not set - the default wins */
+	break;
+    case '0':
+    case 'F':
+    case 'f':
+    case 'N':
+    case 'n':
+	return FALSE;
+    case 'O':
+    case 'o':
+	return s[1] != 'F' && s[1] != 'f';
+    default:
+	return TRUE;
     }
     return bf;
 }
 
 /*
- * Return a Boolean based on setting of a knob.
+ * Return a Boolean based on a variable.
  *
- * If the knob is not set, the supplied default is the return value.
- * If set, anything that looks or smells like "No", "False", "Off", "0" etc,
+ * If the knob is not set, return the fallback.
+ * If set, anything that looks or smells like "No", "False", "Off", "0", etc.
  * is FALSE, otherwise TRUE.
  */
 Boolean
-getBoolean(const char *name, Boolean fallback)
+getBoolean(const char *varname, Boolean fallback)
 {
-    char *expr = str_concat3("${", name, ":U:tl}");
+    char *expr = str_concat3("${", varname, ":U}");
     char *value;
     Boolean res;
 
