@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.189 2020/11/05 00:40:31 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.198 2020/11/08 01:39:24 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -400,9 +400,7 @@ typedef enum CondEvalResult {
     COND_INVALID		/* Not a conditional statement */
 } CondEvalResult;
 
-/*
- * Definitions for the "local" variables. Used only for clarity.
- */
+/* Names of the variables that are "local" to a specific target. */
 #define TARGET		"@"	/* Target of dependency */
 #define OODATE		"?"	/* All out-of-date sources */
 #define ALLSRC		">"	/* All sources */
@@ -414,29 +412,30 @@ typedef enum CondEvalResult {
 /*
  * Global Variables
  */
-extern SearchPath *dirSearchPath;
-				/* The list of directories to search when
-				 * looking for targets */
-extern Boolean  allPrecious;	/* True if every target is precious */
-extern Boolean  deleteOnError;	/* True if failed targets should be deleted */
-extern Boolean	doing_depend;	/* TRUE if processing .depend */
 
-extern GNode    *DEFAULT;	/* .DEFAULT rule */
+/* True if every target is precious */
+extern Boolean allPrecious;
+/* True if failed targets should be deleted */
+extern Boolean deleteOnError;
+/* TRUE while processing .depend */
+extern Boolean doing_depend;
+/* .DEFAULT rule */
+extern GNode *DEFAULT;
 
-extern GNode	*VAR_INTERNAL;	/* Variables defined internally by make
-				 * which should not override those set by
-				 * makefiles.
-				 */
-extern GNode    *VAR_GLOBAL;	/* Variables defined in a global context, e.g
-				 * in the Makefile itself */
-extern GNode    *VAR_CMDLINE;	/* Variables defined on the command line */
-extern char	var_Error[];	/* Value returned by Var_Parse when an error
-				 * is encountered. It actually points to
-				 * an empty string, so naive callers needn't
-				 * worry about it. */
+/* Variables defined internally by make which should not override those set
+ * by makefiles. */
+extern GNode *VAR_INTERNAL;
+/* Variables defined in a global context, e.g in the Makefile itself. */
+extern GNode *VAR_GLOBAL;
+/* Variables defined on the command line. */
+extern GNode *VAR_CMDLINE;
 
-extern time_t	now;		/* The time at the start of this whole
-				 * process */
+/* Value returned by Var_Parse when an error is encountered. It actually
+ * points to an empty string, so naive callers needn't worry about it. */
+extern char var_Error[];
+
+/* The time at the start of this whole process */
+extern time_t now;
 
 /*
  * If FALSE (the default behavior), undefined subexpressions in a variable
@@ -453,6 +452,9 @@ extern time_t	now;		/* The time at the start of this whole
  */
 extern Boolean preserveUndefined;
 
+/* The list of directories to search when looking for targets (set by the
+ * special target .PATH). */
+extern SearchPath *dirSearchPath;
 /* Used for .include "...". */
 extern SearchPath *parseIncPath;
 /* Used for .include <...>, for the built-in sys.mk and makefiles from the
@@ -461,20 +463,23 @@ extern SearchPath *sysIncPath;
 /* The default for sysIncPath. */
 extern SearchPath *defSysIncPath;
 
-extern char curdir[];		/* Startup directory */
-extern char *progname;		/* The program name */
-extern char *makeDependfile;	/* .depend */
+/* Startup directory */
+extern char curdir[];
+/* The basename of the program name, suffixed with [n] for sub-makes.  */
+extern char *progname;
+/* Name of the .depend makefile */
+extern char *makeDependfile;
 /* If we replaced environ, this will be non-NULL. */
 extern char **savedEnv;
 
-extern int	makelevel;
+extern int makelevel;
 
 /*
  * We cannot vfork() in a child of vfork().
  * Most systems do not enforce this but some do.
  */
 #define vFork() ((getpid() == myPid) ? vfork() : fork())
-extern pid_t	myPid;
+extern pid_t myPid;
 
 #define	MAKEFLAGS	".MAKEFLAGS"
 #define	MAKEOVERRIDES	".MAKEOVERRIDES"
@@ -492,26 +497,29 @@ extern pid_t	myPid;
 typedef enum DebugFlags {
     DEBUG_ARCH		= 1 << 0,
     DEBUG_COND		= 1 << 1,
-    DEBUG_DIR		= 1 << 2,
-    DEBUG_GRAPH1	= 1 << 3,
-    DEBUG_GRAPH2	= 1 << 4,
-    DEBUG_JOB		= 1 << 5,
-    DEBUG_MAKE		= 1 << 6,
-    DEBUG_SUFF		= 1 << 7,
-    DEBUG_TARG		= 1 << 8,
-    DEBUG_VAR		= 1 << 9,
-    DEBUG_FOR		= 1 << 10,
-    DEBUG_SHELL		= 1 << 11,
-    DEBUG_ERROR		= 1 << 12,
-    DEBUG_LOUD		= 1 << 13,
-    DEBUG_META		= 1 << 14,
-    DEBUG_HASH		= 1 << 15,
+    DEBUG_CWD		= 1 << 2,
+    DEBUG_DIR		= 1 << 3,
+    DEBUG_ERROR		= 1 << 4,
+    DEBUG_GRAPH1	= 1 << 5,
+    DEBUG_GRAPH2	= 1 << 6,
+    DEBUG_GRAPH3	= 1 << 7,
+    DEBUG_HASH		= 1 << 8,
+    DEBUG_JOB		= 1 << 9,
+    DEBUG_LOUD		= 1 << 10,
+    DEBUG_MAKE		= 1 << 11,
+    DEBUG_META		= 1 << 12,
+    DEBUG_PARSE		= 1 << 13,
+    DEBUG_SCRIPT	= 1 << 14,
+    DEBUG_SHELL		= 1 << 15,
+    DEBUG_SUFF		= 1 << 16,
+    DEBUG_TARG		= 1 << 17,
+    DEBUG_VAR		= 1 << 18,
+    DEBUG_FOR		= 1 << 19,
 
-    DEBUG_GRAPH3	= 1 << 16,
-    DEBUG_SCRIPT	= 1 << 17,
-    DEBUG_PARSE		= 1 << 18,
-    DEBUG_CWD		= 1 << 19,
-
+    /* Runs make in strict mode, with additional checks and better error
+     * handling.  This is not the default mode to preserve compatibility.
+     *
+     * XXX: This is not really a debug flag, it doesn't belong here. */
     DEBUG_LINT		= 1 << 20
 } DebugFlags;
 
@@ -546,8 +554,9 @@ void debug_printf(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
     else debug_printf(fmt, arg1, arg2, arg3, arg4, arg5)
 
 typedef enum PrintVarsMode {
-    COMPAT_VARS = 1,
-    EXPAND_VARS
+    PVM_NONE,
+    PVM_UNEXPANDED,
+    PVM_EXPANDED
 } PrintVarsMode;
 
 /* Command line options */
@@ -635,7 +644,7 @@ void Make_HandleUse(GNode *, GNode *);
 void Make_Update(GNode *);
 void Make_DoAllVar(GNode *);
 Boolean Make_Run(GNodeList *);
-int dieQuietly(GNode *, int);
+Boolean shouldDieQuietly(GNode *, int);
 void PrintOnError(GNode *, const char *);
 void Main_ExportMAKEFLAGS(Boolean);
 Boolean Main_SetObjdir(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
@@ -698,20 +707,20 @@ GNode_VarMember(GNode *gn) { return Var_ValueDirect(MEMBER, gn); }
 #define KILLPG(pid, sig)	killpg((pid), (sig))
 #endif
 
-static inline MAKE_ATTR_UNUSED Boolean ch_isalnum(char ch)
-{ return isalnum((unsigned char)ch) != 0; }
-static inline MAKE_ATTR_UNUSED Boolean ch_isalpha(char ch)
-{ return isalpha((unsigned char)ch) != 0; }
-static inline MAKE_ATTR_UNUSED Boolean ch_isdigit(char ch)
-{ return isdigit((unsigned char)ch) != 0; }
-static inline MAKE_ATTR_UNUSED Boolean ch_isspace(char ch)
-{ return isspace((unsigned char)ch) != 0; }
-static inline MAKE_ATTR_UNUSED Boolean ch_isupper(char ch)
-{ return isupper((unsigned char)ch) != 0; }
-static inline MAKE_ATTR_UNUSED char ch_tolower(char ch)
-{ return (char)tolower((unsigned char)ch); }
-static inline MAKE_ATTR_UNUSED char ch_toupper(char ch)
-{ return (char)toupper((unsigned char)ch); }
+static inline MAKE_ATTR_UNUSED Boolean
+ch_isalnum(char ch) { return isalnum((unsigned char)ch) != 0; }
+static inline MAKE_ATTR_UNUSED Boolean
+ch_isalpha(char ch) { return isalpha((unsigned char)ch) != 0; }
+static inline MAKE_ATTR_UNUSED Boolean
+ch_isdigit(char ch) { return isdigit((unsigned char)ch) != 0; }
+static inline MAKE_ATTR_UNUSED Boolean
+ch_isspace(char ch) { return isspace((unsigned char)ch) != 0; }
+static inline MAKE_ATTR_UNUSED Boolean
+ch_isupper(char ch) { return isupper((unsigned char)ch) != 0; }
+static inline MAKE_ATTR_UNUSED char
+ch_tolower(char ch) { return (char)tolower((unsigned char)ch); }
+static inline MAKE_ATTR_UNUSED char
+ch_toupper(char ch) { return (char)toupper((unsigned char)ch); }
 
 static inline MAKE_ATTR_UNUSED void
 cpp_skip_whitespace(const char **pp)
@@ -721,9 +730,23 @@ cpp_skip_whitespace(const char **pp)
 }
 
 static inline MAKE_ATTR_UNUSED void
+cpp_skip_hspace(const char **pp)
+{
+    while (**pp == ' ' || **pp == '\t')
+	(*pp)++;
+}
+
+static inline MAKE_ATTR_UNUSED void
 pp_skip_whitespace(char **pp)
 {
     while (ch_isspace(**pp))
+	(*pp)++;
+}
+
+static inline MAKE_ATTR_UNUSED void
+pp_skip_hspace(char **pp)
+{
+    while (**pp == ' ' || **pp == '\t')
 	(*pp)++;
 }
 
