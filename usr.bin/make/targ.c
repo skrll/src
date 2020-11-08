@@ -1,4 +1,4 @@
-/*	$NetBSD: targ.c,v 1.122 2020/10/23 19:48:17 rillig Exp $	*/
+/*	$NetBSD: targ.c,v 1.127 2020/11/05 17:27:16 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -121,7 +121,7 @@
 #include "dir.h"
 
 /*	"@(#)targ.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: targ.c,v 1.122 2020/10/23 19:48:17 rillig Exp $");
+MAKE_RCSID("$NetBSD: targ.c,v 1.127 2020/11/05 17:27:16 rillig Exp $");
 
 static GNodeList *allTargets;	/* the list of all targets found so far */
 #ifdef CLEANUP
@@ -137,7 +137,7 @@ void
 Targ_Init(void)
 {
     allTargets = Lst_New();
-    Hash_InitTable(&targets);
+    HashTable_Init(&targets);
 }
 
 void
@@ -148,14 +148,14 @@ Targ_End(void)
     Lst_Free(allTargets);
     if (allGNs != NULL)
 	Lst_Destroy(allGNs, TargFreeGN);
-    Hash_DeleteTable(&targets);
+    HashTable_Done(&targets);
 #endif
 }
 
 void
 Targ_Stats(void)
 {
-    Hash_DebugStats(&targets, "targets");
+    HashTable_DebugStats(&targets, "targets");
 }
 
 /* Return the list of all targets. */
@@ -176,7 +176,7 @@ Targ_NewGN(const char *name)
 {
     GNode *gn;
 
-    gn = bmake_malloc(sizeof(GNode));
+    gn = bmake_malloc(sizeof *gn);
     gn->name = bmake_strdup(name);
     gn->uname = NULL;
     gn->path = NULL;
@@ -196,7 +196,7 @@ Targ_NewGN(const char *name)
     gn->children = Lst_New();
     gn->order_pred = Lst_New();
     gn->order_succ = Lst_New();
-    Hash_InitTable(&gn->context);
+    HashTable_Init(&gn->context);
     gn->commands = Lst_New();
     gn->suffix = NULL;
     gn->fname = NULL;
@@ -227,7 +227,7 @@ TargFreeGN(void *gnp)
     Lst_Free(gn->children);
     Lst_Free(gn->order_succ);
     Lst_Free(gn->order_pred);
-    Hash_DeleteTable(&gn->context);
+    HashTable_Done(&gn->context);
     Lst_Free(gn->commands);
 
     /* XXX: does gn->suffix need to be freed? It is reference-counted. */
@@ -240,7 +240,7 @@ TargFreeGN(void *gnp)
 GNode *
 Targ_FindNode(const char *name)
 {
-    return Hash_FindValue(&targets, name);
+    return HashTable_FindValue(&targets, name);
 }
 
 /* Get the existing global node, or create it. */
@@ -248,13 +248,13 @@ GNode *
 Targ_GetNode(const char *name)
 {
     Boolean isNew;
-    HashEntry *he = Hash_CreateEntry(&targets, name, &isNew);
+    HashEntry *he = HashTable_CreateEntry(&targets, name, &isNew);
     if (!isNew)
-	return Hash_GetValue(he);
+	return HashEntry_Get(he);
 
     {
 	GNode *gn = Targ_NewInternalNode(name);
-	Hash_SetValue(he, gn);
+	HashEntry_Set(he, gn);
 	return gn;
     }
 }
@@ -305,14 +305,14 @@ Targ_FindList(StringList *names)
 Boolean
 Targ_Ignore(GNode *gn)
 {
-    return ignoreErrors || gn->type & OP_IGNORE;
+    return opts.ignoreErrors || gn->type & OP_IGNORE;
 }
 
 /* Return true if be silent when creating gn. */
 Boolean
 Targ_Silent(GNode *gn)
 {
-    return beSilent || gn->type & OP_SILENT;
+    return opts.beSilent || gn->type & OP_SILENT;
 }
 
 /* See if the given target is precious. */
@@ -449,7 +449,7 @@ void
 Targ_PrintNode(GNode *gn, int pass)
 {
     debug_printf("# %s%s", gn->name, gn->cohort_num);
-    GNode_FprintDetails(debug_file, ", ", gn, "\n");
+    GNode_FprintDetails(opts.debug_file, ", ", gn, "\n");
     if (gn->flags == 0)
 	return;
 
@@ -516,8 +516,7 @@ PrintOnlySources(void)
 	if (GNode_IsTarget(gn))
 	    continue;
 
-	debug_printf("#\t%s [%s]",
-		gn->name, gn->path ? gn->path : gn->name);
+	debug_printf("#\t%s [%s]", gn->name, GNode_Path(gn));
 	Targ_PrintType(gn->type);
 	debug_printf("\n");
     }
@@ -539,7 +538,7 @@ Targ_PrintGraph(int pass)
     debug_printf("#*** Global Variables:\n");
     Var_Dump(VAR_GLOBAL);
     debug_printf("#*** Command-line Variables:\n");
-    Var_Dump(VAR_CMD);
+    Var_Dump(VAR_CMDLINE);
     debug_printf("\n");
     Dir_PrintDirectories();
     debug_printf("\n");

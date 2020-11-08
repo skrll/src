@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.93 2020/10/22 07:34:18 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.95 2020/11/07 08:33:50 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.93 2020/10/22 07:34:18 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.95 2020/11/07 08:33:50 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
@@ -349,6 +349,7 @@ pmap_devmap_register(const struct pmap_devmap *table)
 void
 pmap_devmap_bootstrap(vaddr_t l0pt, const struct pmap_devmap *table)
 {
+	bool done = false;
 	vaddr_t va;
 	int i;
 
@@ -376,8 +377,10 @@ pmap_devmap_bootstrap(vaddr_t l0pt, const struct pmap_devmap *table)
 		    table[i].pd_size,
 		    table[i].pd_prot,
 		    table[i].pd_flags);
-		pmap_devmap_bootstrap_done = true;
+		done = true;
 	}
+	if (done)
+		pmap_devmap_bootstrap_done = true;
 }
 
 const struct pmap_devmap *
@@ -1439,11 +1442,6 @@ pmap_activate(struct lwp *l)
 	KASSERT(pm->pm_l0table != NULL);
 
 	UVMHIST_LOG(pmaphist, "lwp=%p (pid=%d)", l, l->l_proc->p_pid, 0, 0);
-
-	/* Disable translation table walks using TTBR0 */
-	tcr = reg_tcr_el1_read();
-	reg_tcr_el1_write(tcr | TCR_EPD0);
-	isb();
 
 	/* XXX: allocate asid, and regenerate if needed */
 	if (pm->pm_asid == -1)

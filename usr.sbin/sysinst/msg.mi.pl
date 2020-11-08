@@ -1,4 +1,4 @@
-/*	$NetBSD: msg.mi.pl,v 1.33 2020/10/24 16:13:15 martin Exp $	*/
+/*	$NetBSD: msg.mi.pl,v 1.35 2020/11/04 14:29:40 martin Exp $	*/
 /*	Based on english version: */
 /*	NetBSD: msg.mi.pl,v 1.36 2004/04/17 18:55:35 atatat Exp       */
 
@@ -524,8 +524,15 @@ Pamietaj, ze katalog musi zawierac pliki $0.
 }
 
 message No_cd_found
-{Could not locate a CD medium in any drive with the distribution sets. 
-Check the proper medium and retry!}
+{Could not locate a CD medium in any drive with the distribution sets! 
+Enter the correct data manually, or insert a disk and retry. 
+}
+
+message abort_install
+{Cancel installation}
+
+message source_sel_retry
+{Back to source selection & retry}
 
 message Available_cds
 {Dostepne napedy CD}
@@ -1169,21 +1176,9 @@ pakietow binarnych.
 Sprawdz sciezke pakietow i sprobuj ponownie.}
 message failed {Nie powiodlo sie}
 
-message notsupported {Operacja nie jest obslugiwana!}
 message askfsmountadv {Punkt montowania (lub "raid", "cgd" albo "lvm")?}
 message partman {Partycje rozszerzone}
-message edit_parts {Edytuj partycje}
 message editpart {Edytuj partycje}
-message switch_parts {Switch partitioning scheme}
-message fmtasraid {Formatuj jako RAID}
-message fmtaslvm {Formatuj jak LVM PV}
-message encrypt {Szyfrowanie (CGD)}
-message setbootable {Rozruchowy}
-message erase {Bezpieczne kasowanie}
-message undo {Cofanie zmian}
-message unconfig {Cofnij konfiguracje}
-message edit {Edytuj}
-message doumount {Wymus odmontowanie}
 
 message fremove {USUN}
 message remove {Usun}
@@ -1465,4 +1460,3 @@ message clone_target_hdr
 message clone_target_disp		{cloned partition(s)}
 message clone_src_done
 {Source selection OK, proceed to target selection}
-

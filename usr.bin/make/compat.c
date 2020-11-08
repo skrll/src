@@ -1,4 +1,4 @@
-/*	$NetBSD: compat.c,v 1.168 2020/10/24 04:40:45 rillig Exp $	*/
+/*	$NetBSD: compat.c,v 1.179 2020/11/07 14:32:12 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -96,28 +96,25 @@
 #include "pathnames.h"
 
 /*	"@(#)compat.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: compat.c,v 1.168 2020/10/24 04:40:45 rillig Exp $");
+MAKE_RCSID("$NetBSD: compat.c,v 1.179 2020/11/07 14:32:12 rillig Exp $");
 
 static GNode *curTarg = NULL;
 static pid_t compatChild;
 static int compatSigno;
 
 /*
- * CompatDeleteTarget -- delete a failed, interrupted, or otherwise
- * duffed target if not inhibited by .PRECIOUS.
+ * CompatDeleteTarget -- delete the file of a failed, interrupted, or
+ * otherwise duffed target if not inhibited by .PRECIOUS.
  */
 static void
 CompatDeleteTarget(GNode *gn)
 {
     if (gn != NULL && !Targ_Precious(gn)) {
-	char *file_freeIt;
-	const char *file = Var_Value(TARGET, gn, &file_freeIt);
+	const char *file = GNode_VarTarget(gn);
 
-	if (!noExecute && eunlink(file) != -1) {
+	if (!opts.noExecute && eunlink(file) != -1) {
 	    Error("*** %s removed", file);
 	}
-
-	bmake_free(file_freeIt);
     }
 }
 
@@ -132,8 +129,6 @@ CompatDeleteTarget(GNode *gn)
 static void
 CompatInterrupt(int signo)
 {
-    GNode   *gn;
-
     CompatDeleteTarget(curTarg);
 
     if (curTarg != NULL && !Targ_Precious(curTarg)) {
@@ -141,7 +136,7 @@ CompatInterrupt(int signo)
 	 * Run .INTERRUPT only if hit with interrupt signal
 	 */
 	if (signo == SIGINT) {
-	    gn = Targ_FindNode(".INTERRUPT");
+	    GNode *gn = Targ_FindNode(".INTERRUPT");
 	    if (gn != NULL) {
 		Compat_Make(gn, gn);
 	    }
@@ -206,7 +201,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
     (void)Var_Subst(cmd, gn, VARE_WANTRES, &cmdStart);
     /* TODO: handle errors */
 
-    if (*cmdStart == '\0') {
+    if (cmdStart[0] == '\0') {
 	free(cmdStart);
 	return 0;
     }
@@ -225,20 +220,17 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 	return 0;
     }
 
-    while (*cmd == '@' || *cmd == '-' || *cmd == '+') {
-	switch (*cmd) {
-	case '@':
+    for (;;) {
+	if (*cmd == '@')
 	    silent = !DEBUG(LOUD);
-	    break;
-	case '-':
+	else if (*cmd == '-')
 	    errCheck = FALSE;
-	    break;
-	case '+':
+	else if (*cmd == '+') {
 	    doIt = TRUE;
-	    if (!shellName)		/* we came here from jobs */
+	    if (!shellName)	/* we came here from jobs */
 		Shell_Init();
+	} else
 	    break;
-	}
 	cmd++;
     }
 
@@ -248,7 +240,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
     /*
      * If we did not end up with a command, just skip it.
      */
-    if (!*cmd)
+    if (cmd[0] == '\0')
 	return 0;
 
 #if !defined(MAKE_NATIVE)
@@ -270,14 +262,14 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
      * meta characters as documented in make(1).
      */
 
-    useShell = needshell(cmd, FALSE);
+    useShell = needshell(cmd);
 #endif
 
     /*
      * Print the command before echoing if we're not supposed to be quiet for
      * this one. We also print the command if -n given.
      */
-    if (!silent || NoExecute(gn)) {
+    if (!silent || !GNode_ShouldExecute(gn)) {
 	printf("%s\n", cmd);
 	fflush(stdout);
     }
@@ -286,9 +278,9 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
      * If we're not supposed to execute any commands, this is as far as
      * we go...
      */
-    if (!doIt && NoExecute(gn)) {
+    if (!doIt && !GNode_ShouldExecute(gn))
 	return 0;
-    }
+
     DEBUG1(JOB, "Execute: '%s'\n", cmd);
 
     if (useShell) {
@@ -297,20 +289,13 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 	 * because the command contains a "meta" character.
 	 */
 	static const char *shargv[5];
-	int shargc;
 
-	shargc = 0;
+	/* The following work for any of the builtin shell specs. */
+	int shargc = 0;
 	shargv[shargc++] = shellPath;
-	/*
-	 * The following work for any of the builtin shell specs.
-	 */
-	if (errCheck && shellErrFlag) {
+	if (errCheck && shellErrFlag)
 	    shargv[shargc++] = shellErrFlag;
-	}
-	if (DEBUG(SHELL))
-		shargv[shargc++] = "-xc";
-	else
-		shargv[shargc++] = "-c";
+	shargv[shargc++] = DEBUG(SHELL) ? "-xc" : "-c";
 	shargv[shargc++] = cmd;
 	shargv[shargc] = NULL;
 	av = shargv;
@@ -389,17 +374,19 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 #endif
 	if (status != 0) {
 	    if (DEBUG(ERROR)) {
-		const char *cp;
+		const char *p = cmd;
 		debug_printf("\n*** Failed target:  %s\n*** Failed command: ",
 			     gn->name);
-		for (cp = cmd; *cp; ) {
-		    if (ch_isspace(*cp)) {
+
+		/* Replace runs of whitespace with a single space, to reduce
+		 * the amount of whitespace for multi-line command lines. */
+		while (*p != '\0') {
+		    if (ch_isspace(*p)) {
 			debug_printf(" ");
-			while (ch_isspace(*cp))
-			    cp++;
+			cpp_skip_whitespace(&p);
 		    } else {
-			debug_printf("%c", *cp);
-			cp++;
+			debug_printf("%c", *p);
+			p++;
 		    }
 		}
 		debug_printf("\n");
@@ -420,7 +407,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 	    }
 #endif
 	    gn->made = ERROR;
-	    if (keepgoing) {
+	    if (opts.keepgoing) {
 		/* Abort the current target, but let others continue. */
 		printf(" (continuing)\n");
 	    } else {
@@ -480,16 +467,17 @@ MakeNodes(GNodeList *gnodes, GNode *pgn)
 void
 Compat_Make(GNode *gn, GNode *pgn)
 {
-    if (!shellName)		/* we came here from jobs */
+    if (shellName == NULL)	/* we came here from jobs */
 	Shell_Init();
+
     if (gn->made == UNMADE && (gn == pgn || !(pgn->type & OP_MADE))) {
 	/*
 	 * First mark ourselves to be made, then apply whatever transformations
 	 * the suffix module thinks are necessary. Once that's done, we can
 	 * descend and make all our children. If any of them has an error
-	 * but the -k flag was given, our 'make' field will be set FALSE again.
-	 * This is our signal to not attempt to do anything but abort our
-	 * parent as well.
+	 * but the -k flag was given, our 'make' field will be set to FALSE
+	 * again. This is our signal to not attempt to do anything but abort
+	 * our parent as well.
 	 */
 	gn->flags |= REMAKE;
 	gn->made = BEINGMADE;
@@ -502,11 +490,8 @@ Compat_Make(GNode *gn, GNode *pgn)
 	    goto cohorts;
 	}
 
-	if (Lst_FindDatum(gn->implicitParents, pgn) != NULL) {
-	    char *target_freeIt;
-	    Var_Set(IMPSRC, Var_Value(TARGET, gn, &target_freeIt), pgn);
-	    bmake_free(target_freeIt);
-	}
+	if (Lst_FindDatum(gn->implicitParents, pgn) != NULL)
+	    Var_Set(IMPSRC, GNode_VarTarget(gn), pgn);
 
 	/*
 	 * All the children were made ok. Now youngestChild->mtime contains the
@@ -526,7 +511,7 @@ Compat_Make(GNode *gn, GNode *pgn)
 	 * If the user is just seeing if something is out-of-date, exit now
 	 * to tell him/her "yes".
 	 */
-	if (queryFlag) {
+	if (opts.queryFlag) {
 	    exit(1);
 	}
 
@@ -551,10 +536,10 @@ Compat_Make(GNode *gn, GNode *pgn)
 	     * Our commands are ok, but we still have to worry about the -t
 	     * flag...
 	     */
-	    if (!touchFlag || (gn->type & OP_MAKE)) {
+	    if (!opts.touchFlag || (gn->type & OP_MAKE)) {
 		curTarg = gn;
 #ifdef USE_META
-		if (useMeta && !NoExecute(gn)) {
+		if (useMeta && GNode_ShouldExecute(gn)) {
 		    meta_job_start(NULL, gn);
 		}
 #endif
@@ -567,7 +552,7 @@ Compat_Make(GNode *gn, GNode *pgn)
 	    gn->made = ERROR;
 	}
 #ifdef USE_META
-	if (useMeta && !NoExecute(gn)) {
+	if (useMeta && GNode_ShouldExecute(gn)) {
 	    if (meta_job_finish(NULL) != 0)
 		gn->made = ERROR;
 	}
@@ -581,12 +566,13 @@ Compat_Make(GNode *gn, GNode *pgn)
 	     * This is to keep its state from affecting that of its parent.
 	     */
 	    gn->made = MADE;
-	    pgn->flags |= Make_Recheck(gn) == 0 ? FORCE : 0;
+	    if (Make_Recheck(gn) == 0)
+		pgn->flags |= FORCE;
 	    if (!(gn->type & OP_EXEC)) {
 		pgn->flags |= CHILDMADE;
 		Make_TimeStamp(pgn, gn);
 	    }
-	} else if (keepgoing) {
+	} else if (opts.keepgoing) {
 	    pgn->flags &= ~(unsigned)REMAKE;
 	} else {
 	    PrintOnError(gn, "\nStop.");
@@ -597,10 +583,8 @@ Compat_Make(GNode *gn, GNode *pgn)
 	pgn->flags &= ~(unsigned)REMAKE;
     } else {
 	if (Lst_FindDatum(gn->implicitParents, pgn) != NULL) {
-	    char *target_freeIt;
-	    const char *target = Var_Value(TARGET, gn, &target_freeIt);
+	    const char *target = GNode_VarTarget(gn);
 	    Var_Set(IMPSRC, target != NULL ? target : "", pgn);
-	    bmake_free(target_freeIt);
 	}
 	switch(gn->made) {
 	    case BEINGMADE:
@@ -609,15 +593,14 @@ Compat_Make(GNode *gn, GNode *pgn)
 		pgn->flags &= ~(unsigned)REMAKE;
 		break;
 	    case MADE:
-		if ((gn->type & OP_EXEC) == 0) {
+		if (!(gn->type & OP_EXEC)) {
 		    pgn->flags |= CHILDMADE;
 		    Make_TimeStamp(pgn, gn);
 		}
 		break;
 	    case UPTODATE:
-		if ((gn->type & OP_EXEC) == 0) {
+		if (!(gn->type & OP_EXEC))
 		    Make_TimeStamp(pgn, gn);
-		}
 		break;
 	    default:
 		break;
@@ -659,7 +642,7 @@ Compat_Run(GNodeList *targs)
      * If the user has defined a .BEGIN target, execute the commands attached
      * to it.
      */
-    if (!queryFlag) {
+    if (!opts.queryFlag) {
 	gn = Targ_FindNode(".BEGIN");
 	if (gn != NULL) {
 	    Compat_Make(gn, gn);

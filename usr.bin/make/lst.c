@@ -1,4 +1,4 @@
-/* $NetBSD: lst.c,v 1.87 2020/10/24 10:36:23 rillig Exp $ */
+/* $NetBSD: lst.c,v 1.92 2020/11/08 01:29:26 rillig Exp $ */
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -34,16 +34,16 @@
 
 #include "make.h"
 
-MAKE_RCSID("$NetBSD: lst.c,v 1.87 2020/10/24 10:36:23 rillig Exp $");
+MAKE_RCSID("$NetBSD: lst.c,v 1.92 2020/11/08 01:29:26 rillig Exp $");
 
 static ListNode *
 LstNodeNew(ListNode *prev, ListNode *next, void *datum)
 {
-    ListNode *node = bmake_malloc(sizeof *node);
-    node->prev = prev;
-    node->next = next;
-    node->datum = datum;
-    return node;
+    ListNode *ln = bmake_malloc(sizeof *ln);
+    ln->prev = prev;
+    ln->next = next;
+    ln->datum = datum;
+    return ln;
 }
 
 /* Create and initialize a new, empty list. */
@@ -58,35 +58,15 @@ Lst_New(void)
     return list;
 }
 
-/* Duplicate an entire list, usually by copying the datum pointers.
- * If copyProc is given, that function is used to create the new datum from the
- * old datum, usually by creating a copy of it. */
-List *
-Lst_Copy(List *list, LstCopyProc copyProc)
-{
-    List *newList;
-    ListNode *node;
-
-    newList = Lst_New();
-
-    for (node = list->first; node != NULL; node = node->next) {
-	void *datum = copyProc != NULL ? copyProc(node->datum) : node->datum;
-	Lst_Append(newList, datum);
-    }
-
-    return newList;
-}
-
 /* Free a list and all its nodes. The node data are not freed though. */
 void
 Lst_Free(List *list)
 {
-    ListNode *node;
-    ListNode *next;
+    ListNode *ln, *next;
 
-    for (node = list->first; node != NULL; node = next) {
-	next = node->next;
-	free(node);
+    for (ln = list->first; ln != NULL; ln = next) {
+	next = ln->next;
+	free(ln);
     }
 
     free(list);
@@ -97,37 +77,32 @@ Lst_Free(List *list)
 void
 Lst_Destroy(List *list, LstFreeProc freeProc)
 {
-    ListNode *node;
-    ListNode *next;
+    ListNode *ln, *next;
 
-    for (node = list->first; node != NULL; node = next) {
-	next = node->next;
-	freeProc(node->datum);
-	free(node);
+    for (ln = list->first; ln != NULL; ln = next) {
+	next = ln->next;
+	freeProc(ln->datum);
+	free(ln);
     }
 
     free(list);
 }
 
-/*
- * Functions to modify a list
- */
-
 /* Insert a new node with the datum before the given node. */
 void
-Lst_InsertBefore(List *list, ListNode *node, void *datum)
+Lst_InsertBefore(List *list, ListNode *ln, void *datum)
 {
     ListNode *newNode;
 
     assert(datum != NULL);
 
-    newNode = LstNodeNew(node->prev, node, datum);
+    newNode = LstNodeNew(ln->prev, ln, datum);
 
-    if (node->prev != NULL)
-	node->prev->next = newNode;
-    node->prev = newNode;
+    if (ln->prev != NULL)
+	ln->prev->next = newNode;
+    ln->prev = newNode;
 
-    if (node == list->first)
+    if (ln == list->first)
 	list->first = newNode;
 }
 
@@ -135,18 +110,18 @@ Lst_InsertBefore(List *list, ListNode *node, void *datum)
 void
 Lst_Prepend(List *list, void *datum)
 {
-    ListNode *node;
+    ListNode *ln;
 
     assert(datum != NULL);
 
-    node = LstNodeNew(NULL, list->first, datum);
+    ln = LstNodeNew(NULL, list->first, datum);
 
     if (list->first == NULL) {
-	list->first = node;
-	list->last = node;
+	list->first = ln;
+	list->last = ln;
     } else {
-	list->first->prev = node;
-	list->first = node;
+	list->first->prev = ln;
+	list->first = ln;
     }
 }
 
@@ -154,71 +129,69 @@ Lst_Prepend(List *list, void *datum)
 void
 Lst_Append(List *list, void *datum)
 {
-    ListNode *node;
+    ListNode *ln;
 
     assert(datum != NULL);
 
-    node = LstNodeNew(list->last, NULL, datum);
+    ln = LstNodeNew(list->last, NULL, datum);
 
     if (list->last == NULL) {
-	list->first = node;
-	list->last = node;
+	list->first = ln;
+	list->last = ln;
     } else {
-	list->last->next = node;
-	list->last = node;
+	list->last->next = ln;
+	list->last = ln;
     }
 }
 
 /* Remove the given node from the given list.
  * The datum stored in the node must be freed by the caller, if necessary. */
 void
-Lst_Remove(List *list, ListNode *node)
+Lst_Remove(List *list, ListNode *ln)
 {
     /* unlink it from its neighbors */
-    if (node->next != NULL)
-	node->next->prev = node->prev;
-    if (node->prev != NULL)
-	node->prev->next = node->next;
+    if (ln->next != NULL)
+	ln->next->prev = ln->prev;
+    if (ln->prev != NULL)
+	ln->prev->next = ln->next;
 
     /* unlink it from the list */
-    if (list->first == node)
-	list->first = node->next;
-    if (list->last == node)
-	list->last = node->prev;
+    if (list->first == ln)
+	list->first = ln->next;
+    if (list->last == ln)
+	list->last = ln->prev;
 }
 
 /* Replace the datum in the given node with the new datum. */
 void
-LstNode_Set(ListNode *node, void *datum)
+LstNode_Set(ListNode *ln, void *datum)
 {
     assert(datum != NULL);
 
-    node->datum = datum;
+    ln->datum = datum;
 }
 
-/* Replace the datum in the given node to NULL.
+/* Replace the datum in the given node with NULL.
  * Having NULL values in a list is unusual though. */
 void
-LstNode_SetNull(ListNode *node)
+LstNode_SetNull(ListNode *ln)
 {
-    node->datum = NULL;
+    ln->datum = NULL;
 }
 
-/*
- * Functions for entire lists
- */
-
-/* Return the first node that contains the given datum, or NULL. */
+/* Return the first node that contains the given datum, or NULL.
+ *
+ * Time complexity: O(length(list)) */
 ListNode *
 Lst_FindDatum(List *list, const void *datum)
 {
-    ListNode *node;
+    ListNode *ln;
 
     assert(datum != NULL);
 
-    for (node = list->first; node != NULL; node = node->next)
-	if (node->datum == datum)
-	    return node;
+    for (ln = list->first; ln != NULL; ln = ln->next)
+	if (ln->datum == datum)
+	    return ln;
 
     return NULL;
 }
@@ -226,32 +199,32 @@ Lst_FindDatum(List *list, const void *datum)
 int
 Lst_ForEachUntil(List *list, LstActionUntilProc proc, void *procData)
 {
-    ListNode *node;
+    ListNode *ln;
     int result = 0;
 
-    for (node = list->first; node != NULL; node = node->next) {
-	result = proc(node->datum, procData);
+    for (ln = list->first; ln != NULL; ln = ln->next) {
+	result = proc(ln->datum, procData);
 	if (result != 0)
 	    break;
     }
     return result;
 }
 
-/* Move all nodes from list2 to the end of list1.
- * List2 is destroyed and freed. */
+/* Move all nodes from src to the end of dst.
+ * The source list is destroyed and freed. */
 void
-Lst_MoveAll(List *list1, List *list2)
+Lst_MoveAll(List *dst, List *src)
 {
-    if (list2->first != NULL) {
-	list2->first->prev = list1->last;
-	if (list1->last != NULL)
-	    list1->last->next = list2->first;
+    if (src->first != NULL) {
+	src->first->prev = dst->last;
+	if (dst->last != NULL)
+	    dst->last->next = src->first;
 	else
-	    list1->first = list2->first;
+	    dst->first = src->first;
 
-	list1->last = list2->last;
+	dst->last = src->last;
     }
-    free(list2);
+    free(src);
 }
 
 /* Copy the element data from src to the start of dst. */
@@ -294,43 +267,39 @@ Lst_Dequeue(List *list)
 }
 
 void
-Vector_Init(Vector *v)
+Vector_Init(Vector *v, size_t itemSize)
 {
     v->len = 0;
-    v->cap = 10;
-    v->items = bmake_malloc(v->cap * sizeof v->items[0]);
+    v->priv_cap = 10;
+    v->itemSize = itemSize;
+    v->items = bmake_malloc(v->priv_cap * v->itemSize);
 }
 
-Boolean Vector_IsEmpty(Vector *v)
+/* Add space for a new item to the vector and return a pointer to that space.
+ * The returned data is valid until the next modifying operation. */
+void *
+Vector_Push(Vector *v)
 {
-    return v->len == 0;
-}
-
-void Vector_Push(Vector *v, void *datum)
-{
-    if (v->len >= v->cap) {
-	v->cap *= 2;
-	v->items = bmake_realloc(v->items,
-				 v->cap * sizeof v->items[0]);
+    if (v->len >= v->priv_cap) {
+	v->priv_cap *= 2;
+	v->items = bmake_realloc(v->items, v->priv_cap * v->itemSize);
     }
-    v->items[v->len] = datum;
     v->len++;
+    return Vector_Get(v, v->len - 1);
 }
 
-void *Vector_Pop(Vector *v)
+/* Return the pointer to the last item in the vector.
+ * The returned data is valid until the next modifying operation. */
+void *
+Vector_Pop(Vector *v)
 {
-    void *datum;
-
     assert(v->len > 0);
     v->len--;
-    datum = v->items[v->len];
-#ifdef CLEANUP
-    v->items[v->len] = NULL;
-#endif
-    return datum;
+    return Vector_Get(v, v->len);
 }
 
-void Vector_Done(Vector *v)
+void
+Vector_Done(Vector *v)
 {
     free(v->items);
 }

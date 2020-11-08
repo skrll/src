@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.146 2020/10/23 20:04:56 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.156 2020/11/07 21:31:07 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -80,7 +80,7 @@ Boolean Arch_ParseArchive(char **, GNodeList *, GNode *);
 void Arch_Touch(GNode *);
 void Arch_TouchLib(GNode *);
 time_t Arch_MTime(GNode *);
-time_t Arch_MemMTime(GNode *);
+time_t Arch_MemberMTime(GNode *);
 void Arch_FindLib(GNode *, SearchPath *);
 Boolean Arch_LibOODate(GNode *);
 Boolean Arch_IsLib(GNode *);
@@ -116,8 +116,7 @@ void Finish(int) MAKE_ATTR_DEAD;
 int eunlink(const char *);
 void execDie(const char *, const char *);
 char *getTmpdir(void);
-Boolean s2Boolean(const char *, Boolean);
-Boolean getBoolean(const char *, Boolean);
+Boolean ParseBoolean(const char *, Boolean);
 char *cached_realpath(const char *, char *);
 
 /* parse.c */
@@ -147,6 +146,7 @@ void Parse_AddIncludeDir(const char *);
 void Parse_File(const char *, int);
 void Parse_SetInput(const char *, int, int, NextBufProc, void *);
 GNodeList *Parse_MainName(void);
+int Parse_GetFatals(void);
 
 /* str.c */
 typedef struct Words {
@@ -216,20 +216,27 @@ void Var_End(void);
 typedef enum VarEvalFlags {
     VARE_NONE		= 0,
     /* Treat undefined variables as errors. */
-    VARE_UNDEFERR	= 0x01,
+    VARE_UNDEFERR	= 1 << 0,
     /* Expand and evaluate variables during parsing. */
-    VARE_WANTRES	= 0x02,
+    VARE_WANTRES	= 1 << 1,
     /* In an assignment using the ':=' operator, keep '$$' as '$$' instead
-     * of reducing it to a single '$'. */
-    VARE_ASSIGN		= 0x04
+     * of reducing it to a single '$'.
+     *
+     * See also preserveUndefined, which preserves subexpressions based on
+     * undefined variables; maybe that can be converted to a flag as well. */
+    VARE_ASSIGN		= 1 << 2
 } VarEvalFlags;
 
-typedef enum VarSet_Flags {
-    VAR_NO_EXPORT	= 0x01,	/* do not export */
+typedef enum VarSetFlags {
+    VAR_SET_NONE	= 0,
+
+    /* do not export */
+    VAR_SET_NO_EXPORT	= 1 << 0,
+
     /* Make the variable read-only. No further modification is possible,
      * except for another call to Var_Set with the same flag. */
-    VAR_SET_READONLY	= 0x02
-} VarSet_Flags;
+    VAR_SET_READONLY	= 1 << 1
+} VarSetFlags;
 
 /* The state of error handling returned by Var_Parse.
  *
@@ -288,10 +295,11 @@ typedef enum VarParseResult {
 
 void Var_Delete(const char *, GNode *);
 void Var_Set(const char *, const char *, GNode *);
-void Var_Set_with_flags(const char *, const char *, GNode *, VarSet_Flags);
+void Var_SetWithFlags(const char *, const char *, GNode *, VarSetFlags);
 void Var_Append(const char *, const char *, GNode *);
 Boolean Var_Exists(const char *, GNode *);
-const char *Var_Value(const char *, GNode *, char **);
+const char *Var_Value(const char *, GNode *, void **);
+const char *Var_ValueDirect(const char *, GNode *);
 VarParseResult Var_Parse(const char **, GNode *, VarEvalFlags,
 			 const char **, void **);
 VarParseResult Var_Subst(const char *, GNode *, VarEvalFlags, char **);

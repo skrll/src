@@ -1,4 +1,4 @@
-/*      $NetBSD: meta.c,v 1.130 2020/10/24 10:32:25 rillig Exp $ */
+/*      $NetBSD: meta.c,v 1.140 2020/11/07 21:26:43 rillig Exp $ */
 
 /*
  * Implement 'meta' mode.
@@ -80,7 +80,6 @@ static Boolean metaCurdirOk = FALSE;	/* write .meta in .CURDIR Ok? */
 static Boolean metaSilent = FALSE;	/* if we have a .meta be SILENT */
 
 extern Boolean forceJobs;
-extern Boolean comatMake;
 extern char    **environ;
 
 #define	MAKE_META_PREFIX	".MAKE.META.PREFIX"
@@ -93,7 +92,7 @@ extern char    **environ;
 #endif
 
 #if !defined(HAVE_STRSEP)
-# define strsep(s, d) stresep((s), (d), 0)
+# define strsep(s, d) stresep((s), (d), '\0')
 #endif
 
 /*
@@ -175,12 +174,12 @@ filemon_read(FILE *mfp, int fd)
 	warn("Could not rewind filemon");
 	fprintf(mfp, "\n");
     } else {
-        ssize_t n;
+	ssize_t n;
 
 	error = 0;
 	fprintf(mfp, "\n-- filemon acquired metadata --\n");
 
-	while ((n = read(fd, buf, sizeof(buf))) > 0) {
+	while ((n = read(fd, buf, sizeof buf)) > 0) {
 	    if ((ssize_t)fwrite(buf, 1, (size_t)n, mfp) < n)
 		error = EIO;
 	}
@@ -272,12 +271,12 @@ meta_name(char *mname, size_t mnamelen,
 	     * next time through.
 	     */
 	    if (tname[0] == '/') {
-		strlcpy(buf, tname, sizeof(buf));
+		strlcpy(buf, tname, sizeof buf);
 	    } else {
-		snprintf(buf, sizeof(buf), "%s/%s", cwd, tname);
+		snprintf(buf, sizeof buf, "%s/%s", cwd, tname);
 	    }
-	    eat_dots(buf, sizeof(buf), 1);	/* ./ */
-	    eat_dots(buf, sizeof(buf), 2);	/* ../ */
+	    eat_dots(buf, sizeof buf, 1);	/* ./ */
+	    eat_dots(buf, sizeof buf, 2);	/* ../ */
 	    tname = buf;
 	}
     }
@@ -326,7 +325,8 @@ is_submake(void *cmdp, void *gnp)
     int rc = 0;				/* keep looking */
 
     if (!p_make) {
-	p_make = Var_Value(".MAKE", gn, &cp);
+	void *dontFreeIt;
+	p_make = Var_Value(".MAKE", gn, &dontFreeIt);
 	p_len = strlen(p_make);
     }
     cp = strchr(cmd, '$');
@@ -336,7 +336,7 @@ is_submake(void *cmdp, void *gnp)
 	cmd = mp;
     }
     cp2 = strstr(cmd, p_make);
-    if ((cp2)) {
+    if (cp2 != NULL) {
 	switch (cp2[p_len]) {
 	case '\0':
 	case ' ':
@@ -473,14 +473,12 @@ meta_create(BuildMon *pbm, GNode *gn)
     const char *tname;
     char *fname;
     const char *cp;
-    char *p[5];				/* >= possible uses */
-    int i;
+    void *objdir_freeIt;
 
     mf.fp = NULL;
-    i = 0;
 
-    dname = Var_Value(".OBJDIR", gn, &p[i++]);
-    tname = Var_Value(TARGET, gn, &p[i++]);
+    dname = Var_Value(".OBJDIR", gn, &objdir_freeIt);
+    tname = GNode_VarTarget(gn);
 
     /* if this succeeds objdir is realpath of dname */
     if (!meta_needed(gn, dname, tname, objdir, TRUE))
@@ -510,7 +508,7 @@ meta_create(BuildMon *pbm, GNode *gn)
 	/* Don't create meta data. */
 	goto out;
 
-    fname = meta_name(pbm->meta_fname, sizeof(pbm->meta_fname),
+    fname = meta_name(pbm->meta_fname, sizeof pbm->meta_fname,
 		      dname, tname, objdir);
 
 #ifdef DEBUG_META_MODE
@@ -526,9 +524,9 @@ meta_create(BuildMon *pbm, GNode *gn)
 
     printCMDs(gn, &mf);
 
-    fprintf(mf.fp, "CWD %s\n", getcwd(buf, sizeof(buf)));
+    fprintf(mf.fp, "CWD %s\n", getcwd(buf, sizeof buf));
     fprintf(mf.fp, "TARGET %s\n", tname);
-    cp = Var_Value(".OODATE", gn, &p[i++]);
+    cp = GNode_VarOodate(gn);
     if (cp && *cp) {
 	    fprintf(mf.fp, "OODATE %s\n", cp);
     }
@@ -548,9 +546,7 @@ meta_create(BuildMon *pbm, GNode *gn)
 	    gn->type |= OP_SILENT;
     }
  out:
-    for (i--; i >= 0; i--) {
-	bmake_free(p[i]);
-    }
+    bmake_free(objdir_freeIt);
 
     return mf.fp;
 }
@@ -584,7 +580,7 @@ meta_init(void)
 
 #define get_mode_bf(bf, token) \
     if ((cp = strstr(make_mode, token))) \
-	bf = boolValue(&cp[sizeof(token) - 1])
+	bf = boolValue(cp + sizeof (token) - 1)
 
 /*
  * Initialization we need after reading makefiles.
@@ -594,6 +590,7 @@ meta_mode_init(const char *make_mode)
 {
     static int once = 0;
     char *cp;
+    void *freeIt;
 
     useMeta = TRUE;
     useFilemon = TRUE;
@@ -628,7 +625,7 @@ meta_mode_init(const char *make_mode)
     if (once)
 	return;
     once = 1;
-    memset(&Mybm, 0, sizeof(Mybm));
+    memset(&Mybm, 0, sizeof Mybm);
     /*
      * We consider ourselves master of all within ${.MAKE.META.BAILIWICK}
      */
@@ -651,15 +648,15 @@ meta_mode_init(const char *make_mode)
     /*
      * We ignore any paths that match ${.MAKE.META.IGNORE_PATTERNS}
      */
-    cp = NULL;
-    if (Var_Value(MAKE_META_IGNORE_PATTERNS, VAR_GLOBAL, &cp)) {
+    freeIt = NULL;
+    if (Var_Value(MAKE_META_IGNORE_PATTERNS, VAR_GLOBAL, &freeIt)) {
 	metaIgnorePatterns = TRUE;
-	bmake_free(cp);
+	bmake_free(freeIt);
     }
-    cp = NULL;
-    if (Var_Value(MAKE_META_IGNORE_FILTER, VAR_GLOBAL, &cp)) {
+    freeIt = NULL;
+    if (Var_Value(MAKE_META_IGNORE_FILTER, VAR_GLOBAL, &freeIt)) {
 	metaIgnoreFilter = TRUE;
-	bmake_free(cp);
+	bmake_free(freeIt);
     }
 }
 
@@ -794,11 +791,11 @@ meta_job_error(Job *job, GNode *gn, int flags, int status)
 		"(ignored)" : "");
     }
     if (gn) {
-	Var_Set(".ERROR_TARGET", gn->path ? gn->path : gn->name, VAR_GLOBAL);
+	Var_Set(".ERROR_TARGET", GNode_Path(gn), VAR_GLOBAL);
     }
-    getcwd(cwd, sizeof(cwd));
+    getcwd(cwd, sizeof cwd);
     Var_Set(".ERROR_CWD", cwd, VAR_GLOBAL);
-    if (pbm->meta_fname[0]) {
+    if (pbm->meta_fname[0] != '\0') {
 	Var_Set(".ERROR_META_FILE", pbm->meta_fname, VAR_GLOBAL);
     }
     meta_job_finish(job);
@@ -849,7 +846,7 @@ meta_cmd_finish(void *pbmp)
     int x;
 #endif
 
-    if (!pbm)
+    if (pbm == NULL)
 	pbm = &Mybm;
 
 #ifdef USE_FILEMON
@@ -863,9 +860,11 @@ meta_cmd_finish(void *pbmp)
 	    error = x;
 	pbm->mon_fd = -1;
 	pbm->filemon = NULL;
-    } else
+	return error;
+    }
 #endif
-	fprintf(pbm->mfp, "\n");	/* ensure end with newline */
+
+    fprintf(pbm->mfp, "\n");	/* ensure end with newline */
     return error;
 }
 
@@ -1010,7 +1009,7 @@ meta_ignore(GNode *gn, const char *p)
 	char *fm;
 
 	/* skip if filter result is empty */
-	snprintf(fname, sizeof(fname),
+	snprintf(fname, sizeof fname,
 		 "${%s:L:${%s:ts:}}",
 		 p, MAKE_META_IGNORE_FILTER);
 	(void)Var_Subst(fname, gn, VARE_WANTRES, &fm);
@@ -1059,7 +1058,7 @@ append_if_new(StringList *list, const char *str)
     StringListNode *ln;
 
     for (ln = list->first; ln != NULL; ln = ln->next)
-        if (strcmp(ln->datum, str) == 0)
+	if (strcmp(ln->datum, str) == 0)
 	    return;
     Lst_Append(list, bmake_strdup(str));
 }
@@ -1088,17 +1087,14 @@ meta_oodate(GNode *gn, Boolean oodate)
     FILE *fp;
     Boolean needOODATE = FALSE;
     StringList *missingFiles;
-    char *pa[4];			/* >= possible uses */
-    int i;
     int have_filemon = FALSE;
+    void *objdir_freeIt;
 
     if (oodate)
 	return oodate;		/* we're done */
 
-    i = 0;
-
-    dname = Var_Value(".OBJDIR", gn, &pa[i++]);
-    tname = Var_Value(TARGET, gn, &pa[i++]);
+    dname = Var_Value(".OBJDIR", gn, &objdir_freeIt);
+    tname = GNode_VarTarget(gn);
 
     /* if this succeeds fname3 is realpath of dname */
     if (!meta_needed(gn, dname, tname, fname3, FALSE))
@@ -1115,7 +1111,7 @@ meta_oodate(GNode *gn, Boolean oodate)
      */
     Make_DoAllVar(gn);
 
-    meta_name(fname, sizeof(fname), dname, tname, dname);
+    meta_name(fname, sizeof fname, dname, tname, dname);
 
 #ifdef DEBUG_META_MODE
     DEBUG1(META, "meta_oodate: %s\n", fname);
@@ -1137,12 +1133,12 @@ meta_oodate(GNode *gn, Boolean oodate)
 	}
 
 	if (!cwdlen) {
-	    if (getcwd(cwd, sizeof(cwd)) == NULL)
+	    if (getcwd(cwd, sizeof cwd) == NULL)
 		err(1, "Could not get current working directory");
 	    cwdlen = strlen(cwd);
 	}
-	strlcpy(lcwd, cwd, sizeof(lcwd));
-	strlcpy(latestdir, cwd, sizeof(latestdir));
+	strlcpy(lcwd, cwd, sizeof lcwd);
+	strlcpy(latestdir, cwd, sizeof latestdir);
 
 	if (!tmpdir) {
 	    tmpdir = getTmpdir();
@@ -1222,24 +1218,24 @@ meta_oodate(GNode *gn, Boolean oodate)
 		    pid = atoi(p);
 		    if (pid > 0 && pid != lastpid) {
 			const char *ldir;
-			char *tp;
+			void *tp;
 
 			if (lastpid > 0) {
 			    /* We need to remember these. */
 			    Var_Set(lcwd_vname, lcwd, VAR_GLOBAL);
 			    Var_Set(ldir_vname, latestdir, VAR_GLOBAL);
 			}
-			snprintf(lcwd_vname, sizeof(lcwd_vname), LCWD_VNAME_FMT, pid);
-			snprintf(ldir_vname, sizeof(ldir_vname), LDIR_VNAME_FMT, pid);
+			snprintf(lcwd_vname, sizeof lcwd_vname, LCWD_VNAME_FMT, pid);
+			snprintf(ldir_vname, sizeof ldir_vname, LDIR_VNAME_FMT, pid);
 			lastpid = pid;
 			ldir = Var_Value(ldir_vname, VAR_GLOBAL, &tp);
 			if (ldir) {
-			    strlcpy(latestdir, ldir, sizeof(latestdir));
+			    strlcpy(latestdir, ldir, sizeof latestdir);
 			    bmake_free(tp);
 			}
 			ldir = Var_Value(lcwd_vname, VAR_GLOBAL, &tp);
 			if (ldir) {
-			    strlcpy(lcwd, ldir, sizeof(lcwd));
+			    strlcpy(lcwd, ldir, sizeof lcwd);
 			    bmake_free(tp);
 			}
 		    }
@@ -1272,9 +1268,9 @@ meta_oodate(GNode *gn, Boolean oodate)
 
 			child = atoi(p);
 			if (child > 0) {
-			    snprintf(cldir, sizeof(cldir), LCWD_VNAME_FMT, child);
+			    snprintf(cldir, sizeof cldir, LCWD_VNAME_FMT, child);
 			    Var_Set(cldir, lcwd, VAR_GLOBAL);
-			    snprintf(cldir, sizeof(cldir), LDIR_VNAME_FMT, child);
+			    snprintf(cldir, sizeof cldir, LDIR_VNAME_FMT, child);
 			    Var_Set(cldir, latestdir, VAR_GLOBAL);
 #ifdef DEBUG_META_MODE
 			    if (DEBUG(META))
@@ -1289,8 +1285,8 @@ meta_oodate(GNode *gn, Boolean oodate)
 
 		case 'C':		/* Chdir */
 		    /* Update lcwd and latest directory. */
-		    strlcpy(latestdir, p, sizeof(latestdir));
-		    strlcpy(lcwd, p, sizeof(lcwd));
+		    strlcpy(latestdir, p, sizeof latestdir);
+		    strlcpy(lcwd, p, sizeof lcwd);
 		    Var_Set(lcwd_vname, lcwd, VAR_GLOBAL);
 		    Var_Set(ldir_vname, lcwd, VAR_GLOBAL);
 #ifdef DEBUG_META_MODE
@@ -1323,8 +1319,8 @@ meta_oodate(GNode *gn, Boolean oodate)
 			while (ln != NULL) {
 			    StringListNode *next = ln->next;
 			    if (path_starts_with(ln->datum, p)) {
-			        free(ln->datum);
-			        Lst_Remove(missingFiles, ln);
+				free(ln->datum);
+				Lst_Remove(missingFiles, ln);
 			    }
 			    ln = next;
 			}
@@ -1426,17 +1422,17 @@ meta_oodate(GNode *gn, Boolean oodate)
 				continue;  /* no point */
 
 			    /* Check vs latestdir */
-			    snprintf(fname1, sizeof(fname1), "%s/%s", latestdir, p);
+			    snprintf(fname1, sizeof fname1, "%s/%s", latestdir, p);
 			    sdirs[sdx++] = fname1;
 
 			    if (strcmp(latestdir, lcwd) != 0) {
 				/* Check vs lcwd */
-				snprintf(fname2, sizeof(fname2), "%s/%s", lcwd, p);
+				snprintf(fname2, sizeof fname2, "%s/%s", lcwd, p);
 				sdirs[sdx++] = fname2;
 			    }
 			    if (strcmp(lcwd, cwd) != 0) {
 				/* Check vs cwd */
-				snprintf(fname3, sizeof(fname3), "%s/%s", cwd, p);
+				snprintf(fname3, sizeof fname3, "%s/%s", cwd, p);
 				sdirs[sdx++] = fname3;
 			    }
 			}
@@ -1477,7 +1473,7 @@ meta_oodate(GNode *gn, Boolean oodate)
 		    }
 		    if (buf[0] == 'E') {
 			/* previous latestdir is no longer relevant */
-			strlcpy(latestdir, lcwd, sizeof(latestdir));
+			strlcpy(latestdir, lcwd, sizeof latestdir);
 		    }
 		    break;
 		default:
@@ -1538,10 +1534,10 @@ meta_oodate(GNode *gn, Boolean oodate)
 			if (buf[x - 1] == '\n')
 			    buf[x - 1] = '\0';
 		    }
-		    if (p &&
+		    if (p != NULL &&
 			!hasOODATE &&
 			!(gn->type & OP_NOMETA_CMP) &&
-			strcmp(p, cmd) != 0) {
+			(strcmp(p, cmd) != 0)) {
 			DEBUG4(META, "%s: %d: a build command has changed\n%s\nvs\n%s\n",
 			       fname, lineno, p, cmd);
 			if (!metaIgnoreCMDs)
@@ -1606,14 +1602,11 @@ meta_oodate(GNode *gn, Boolean oodate)
 	 * All we can sanely do is set it to .ALLSRC.
 	 */
 	Var_Delete(OODATE, gn);
-	Var_Set(OODATE, Var_Value(ALLSRC, gn, &cp), gn);
-	bmake_free(cp);
+	Var_Set(OODATE, GNode_VarAllsrc(gn), gn);
     }
 
  oodate_out:
-    for (i--; i >= 0; i--) {
-	bmake_free(pa[i]);
-    }
+    bmake_free(objdir_freeIt);
     return oodate;
 }
 
@@ -1690,7 +1683,7 @@ meta_compat_parent(pid_t child)
 
 	if (outfd != -1 && FD_ISSET(outfd, &readfds)) do {
 	    /* XXX this is not line-buffered */
-	    ssize_t nread = read(outfd, buf, sizeof(buf) - 1);
+	    ssize_t nread = read(outfd, buf, sizeof buf - 1);
 	    if (nread == -1)
 		err(1, "read");
 	    if (nread == 0) {
