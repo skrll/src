@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.426 2020/11/04 13:31:58 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.433 2020/11/08 02:37:22 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -117,7 +117,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.426 2020/11/04 13:31:58 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.433 2020/11/08 02:37:22 rillig Exp $");
 
 /* types and constants */
 
@@ -360,7 +360,7 @@ loadedfile_create(const char *path)
 {
 	struct loadedfile *lf;
 
-	lf = bmake_malloc(sizeof(*lf));
+	lf = bmake_malloc(sizeof *lf);
 	lf->path = path == NULL ? "(stdin)" : path;
 	lf->buf = NULL;
 	lf->len = 0;
@@ -373,11 +373,10 @@ static void
 loadedfile_destroy(struct loadedfile *lf)
 {
 	if (lf->buf != NULL) {
-		if (lf->maplen > 0) {
+		if (lf->maplen > 0)
 			munmap(lf->buf, lf->maplen);
-		} else {
+		else
 			free(lf->buf);
-		}
 	}
 	free(lf);
 }
@@ -391,9 +390,9 @@ loadedfile_nextbuf(void *x, size_t *len)
 {
 	struct loadedfile *lf = x;
 
-	if (lf->used) {
+	if (lf->used)
 		return NULL;
-	}
+
 	lf->used = TRUE;
 	*len = lf->len;
 	return lf->buf;
@@ -407,13 +406,11 @@ load_getsize(int fd, size_t *ret)
 {
 	struct stat st;
 
-	if (fstat(fd, &st) < 0) {
+	if (fstat(fd, &st) < 0)
 		return FALSE;
-	}
 
-	if (!S_ISREG(st.st_mode)) {
+	if (!S_ISREG(st.st_mode))
 		return FALSE;
-	}
 
 	/*
 	 * st_size is an off_t, which is 64 bits signed; *ret is
@@ -424,9 +421,8 @@ load_getsize(int fd, size_t *ret)
 	 *
 	 * While we're at it reject negative sizes too, just in case.
 	 */
-	if (st.st_size < 0 || st.st_size > 0x7fffffff) {
+	if (st.st_size < 0 || st.st_size > 0x7fffffff)
 		return FALSE;
-	}
 
 	*ret = (size_t)st.st_size;
 	return TRUE;
@@ -437,46 +433,45 @@ loadedfile_mmap(struct loadedfile *lf, int fd)
 {
 	static unsigned long pagesize = 0;
 
-	if (load_getsize(fd, &lf->len)) {
+	if (!load_getsize(fd, &lf->len))
+		return FALSE;
 
-		/* found a size, try mmap */
-		if (pagesize == 0)
-			pagesize = (unsigned long)sysconf(_SC_PAGESIZE);
-		if (pagesize == 0 || pagesize == (unsigned long)-1) {
-			pagesize = 0x1000;
-		}
-		/* round size up to a page */
-		lf->maplen = pagesize * ((lf->len + pagesize - 1) / pagesize);
+	/* found a size, try mmap */
+	if (pagesize == 0)
+		pagesize = (unsigned long)sysconf(_SC_PAGESIZE);
+	if (pagesize == 0 || pagesize == (unsigned long)-1)
+		pagesize = 0x1000;
 
-		/*
-		 * XXX hack for dealing with empty files; remove when
-		 * we're no longer limited by interfacing to the old
-		 * logic elsewhere in this file.
-		 */
-		if (lf->maplen == 0) {
-			lf->maplen = pagesize;
-		}
+	/* round size up to a page */
+	lf->maplen = pagesize * ((lf->len + pagesize - 1) / pagesize);
 
-		/*
-		 * FUTURE: remove PROT_WRITE when the parser no longer
-		 * needs to scribble on the input.
-		 */
-		lf->buf = mmap(NULL, lf->maplen, PROT_READ|PROT_WRITE,
-			       MAP_FILE|MAP_COPY, fd, 0);
-		if (lf->buf != MAP_FAILED) {
-			/* succeeded */
-			if (lf->len == lf->maplen && lf->buf[lf->len - 1] != '\n') {
-				char *b = bmake_malloc(lf->len + 1);
-				b[lf->len] = '\n';
-				memcpy(b, lf->buf, lf->len++);
-				munmap(lf->buf, lf->maplen);
-				lf->maplen = 0;
-				lf->buf = b;
-			}
-			return TRUE;
-		}
+	/*
+	 * XXX hack for dealing with empty files; remove when
+	 * we're no longer limited by interfacing to the old
+	 * logic elsewhere in this file.
+	 */
+	if (lf->maplen == 0)
+		lf->maplen = pagesize;
+
+	/*
+	 * FUTURE: remove PROT_WRITE when the parser no longer
+	 * needs to scribble on the input.
+	 */
+	lf->buf = mmap(NULL, lf->maplen, PROT_READ|PROT_WRITE,
+		       MAP_FILE|MAP_COPY, fd, 0);
+	if (lf->buf == MAP_FAILED)
+		return FALSE;
+
+	if (lf->len == lf->maplen && lf->buf[lf->len - 1] != '\n') {
+		char *b = bmake_malloc(lf->len + 1);
+		b[lf->len] = '\n';
+		memcpy(b, lf->buf, lf->len++);
+		munmap(lf->buf, lf->maplen);
+		lf->maplen = 0;
+		lf->buf = b;
 	}
-	return FALSE;
+
+	return TRUE;
 }
 
 /*
@@ -486,8 +481,7 @@ loadedfile_mmap(struct loadedfile *lf, int fd)
  * being in the caller in another source file, we need to have the fd
  * passed in already open. Bleh.
  *
- * If the path is NULL use stdin and (to insure against fd leaks)
- * assert that the caller passed in -1.
+ * If the path is NULL, use stdin.
  */
 static struct loadedfile *
 loadfile(const char *path, int fd)
@@ -522,7 +516,7 @@ loadfile(const char *path, int fd)
 	lf->buf = bmake_malloc(lf->len);
 
 	bufpos = 0;
-	while (1) {
+	for (;;) {
 		assert(bufpos <= lf->len);
 		if (bufpos == lf->len) {
 			if (lf->len > SIZE_MAX/2) {
@@ -539,9 +533,9 @@ loadfile(const char *path, int fd)
 			Error("%s: read error: %s", path, strerror(errno));
 			exit(1);
 		}
-		if (result == 0) {
+		if (result == 0)
 			break;
-		}
+
 		bufpos += (size_t)result;
 	}
 	assert(bufpos <= lf->len);
@@ -557,9 +551,9 @@ loadfile(const char *path, int fd)
 	}
 
 done:
-	if (path != NULL) {
+	if (path != NULL)
 		close(fd);
-	}
+
 	return lf;
 }
 
@@ -594,24 +588,21 @@ ParseMark(GNode *gn)
 static int
 ParseFindKeyword(const char *str)
 {
-    int start, end, cur;
-    int diff;
-
-    start = 0;
-    end = sizeof parseKeywords / sizeof parseKeywords[0] - 1;
+    int start = 0;
+    int end = sizeof parseKeywords / sizeof parseKeywords[0] - 1;
 
     do {
-	cur = start + (end - start) / 2;
-	diff = strcmp(str, parseKeywords[cur].name);
+	int cur = start + (end - start) / 2;
+	int diff = strcmp(str, parseKeywords[cur].name);
 
-	if (diff == 0) {
+	if (diff == 0)
 	    return cur;
-	} else if (diff < 0) {
+	if (diff < 0)
 	    end = cur - 1;
-	} else {
+	else
 	    start = cur + 1;
-	}
     } while (start <= end);
+
     return -1;
 }
 
@@ -971,11 +962,10 @@ ParseDoSrcOther(const char *src, GNodeType tOp, ParseSpecial specType)
     gn = Targ_GetNode(src);
     if (doing_depend)
 	ParseMark(gn);
-    if (tOp) {
+    if (tOp)
 	gn->type |= tOp;
-    } else {
+    else
 	LinkToTargets(gn, specType != SP_NOT);
-    }
 }
 
 /* Given the name of a source in a dependency line, figure out if it is an
@@ -1124,15 +1114,13 @@ ParseDoDependencyTargetSpecial(ParseSpecial *inout_specType,
 {
     switch (*inout_specType) {
     case SP_PATH:
-	if (*inout_paths == NULL) {
+	if (*inout_paths == NULL)
 	    *inout_paths = Lst_New();
-	}
 	Lst_Append(*inout_paths, dirSearchPath);
 	break;
     case SP_MAIN:
-	if (!Lst_IsEmpty(opts.create)) {
+	if (!Lst_IsEmpty(opts.create))
 	    *inout_specType = SP_NOT;
-	}
 	break;
     case SP_BEGIN:
     case SP_END:
@@ -1185,12 +1173,12 @@ ParseDoDependencyTargetPath(const char *line, SearchPathList **inout_paths)
 		    "Suffix '%s' not defined (yet)",
 		    &line[5]);
 	return FALSE;
-    } else {
-	if (*inout_paths == NULL) {
-	    *inout_paths = Lst_New();
-	}
-	Lst_Append(*inout_paths, path);
     }
+
+    if (*inout_paths == NULL)
+	*inout_paths = Lst_New();
+    Lst_Append(*inout_paths, path);
+
     return TRUE;
 }
 
@@ -1273,17 +1261,16 @@ ParseDoDependencyTargetExtraWarn(char **pp, const char *lstart)
     Boolean warning = FALSE;
     char *cp = *pp;
 
-    while (*cp && (ParseIsEscaped(lstart, cp) ||
-		   (*cp != '!' && *cp != ':'))) {
-	if (ParseIsEscaped(lstart, cp) ||
-	    (*cp != ' ' && *cp != '\t')) {
+    while (*cp != '\0') {
+	if (!ParseIsEscaped(lstart, cp) && (*cp == '!' || *cp == ':'))
+	    break;
+	if (ParseIsEscaped(lstart, cp) || (*cp != ' ' && *cp != '\t'))
 	    warning = TRUE;
-	}
 	cp++;
     }
-    if (warning) {
+    if (warning)
 	Parse_Error(PARSE_WARNING, "Extra target ignored");
-    }
+
     *pp = cp;
 }
 
@@ -1515,11 +1502,10 @@ ParseDoDependencyTargets(char **inout_cp,
 	 * Have word in line. Get or create its node and stick it at
 	 * the end of the targets list
 	 */
-	if (*inout_specType == SP_NOT && *line != '\0') {
+	if (*inout_specType == SP_NOT && *line != '\0')
 	    ParseDoDependencyTargetMundane(line, curTargs);
-	} else if (*inout_specType == SP_PATH && *line != '.' && *line != '\0') {
+	else if (*inout_specType == SP_PATH && *line != '.' && *line != '\0')
 	    Parse_Error(PARSE_WARNING, "Extra target (%s) ignored", line);
-	}
 
 	/* Don't need the inserted null terminator any more. */
 	*cp = savec;
@@ -1528,11 +1514,11 @@ ParseDoDependencyTargets(char **inout_cp,
 	 * If it is a special type and not .PATH, it's the only target we
 	 * allow on this line...
 	 */
-	if (*inout_specType != SP_NOT && *inout_specType != SP_PATH) {
+	if (*inout_specType != SP_NOT && *inout_specType != SP_PATH)
 	    ParseDoDependencyTargetExtraWarn(&cp, lstart);
-	} else {
+	else
 	    pp_skip_whitespace(&cp);
-	}
+
 	line = cp;
 	if (*line == '\0')
 	    break;
@@ -1569,7 +1555,7 @@ static Boolean
 ParseDoDependencySourcesMundane(char *start, char *end,
 				ParseSpecial specType, GNodeType tOp)
 {
-    while (*start) {
+    while (*start != '\0') {
 	/*
 	 * The targets take real sources, so we must beware of archive
 	 * specifications (i.e. things with left parentheses in them)
@@ -1834,9 +1820,7 @@ Parse_IsVar(const char *p, VarAssign *out_var)
     const char *firstSpace = NULL;
     int level = 0;
 
-    /* Skip to variable name */
-    while (*p == ' ' || *p == '\t')
-	p++;
+    cpp_skip_hspace(&p);	/* Skip to variable name */
 
     /* During parsing, the '+' of the '+=' operator is initially parsed
      * as part of the variable name.  It is later corrected, as is the ':sh'
@@ -1870,7 +1854,7 @@ Parse_IsVar(const char *p, VarAssign *out_var)
 	    ch = *p++;
 
 #ifdef SUNSHCMD
-	if (ch == ':' && strncmp(p, "sh", 2) == 0) {
+	if (ch == ':' && p[0] == 's' && p[1] == 'h') {
 	    p += 2;
 	    continue;
 	}
@@ -1990,13 +1974,13 @@ VarAssign_Eval(const char *name, VarAssignOp op, const char *uvalue,
     const char *avalue = uvalue;
     void *avalue_freeIt = NULL;
 
-    if (op == VAR_APPEND) {
+    if (op == VAR_APPEND)
 	Var_Append(name, uvalue, ctxt);
-    } else if (op == VAR_SUBST) {
+    else if (op == VAR_SUBST)
 	VarAssign_EvalSubst(name, uvalue, ctxt, &avalue, &avalue_freeIt);
-    } else if (op == VAR_SHELL) {
+    else if (op == VAR_SHELL)
 	VarAssign_EvalShell(name, uvalue, ctxt, &avalue, &avalue_freeIt);
-    } else {
+    else {
 	if (op == VAR_DEFAULT && Var_Exists(name, ctxt)) {
 	    *out_avalue_freeIt = NULL;
 	    return FALSE;
@@ -2024,11 +2008,10 @@ VarAssignSpecial(const char *name, const char *avalue)
 	 */
 	Dir_InitCur(avalue);
 	Dir_SetPATH();
-    } else if (strcmp(name, MAKE_JOB_PREFIX) == 0) {
+    } else if (strcmp(name, MAKE_JOB_PREFIX) == 0)
 	Job_SetPrefix();
-    } else if (strcmp(name, MAKE_EXPORTED) == 0) {
+    else if (strcmp(name, MAKE_EXPORTED) == 0)
 	Var_Export(avalue, FALSE);
-    }
 }
 
 /* Perform the variable variable assignment in the given context. */
@@ -2048,36 +2031,41 @@ Parse_DoVar(VarAssign *var, GNode *ctxt)
 }
 
 
-/*
- * ParseMaybeSubMake --
- *	Scan the command string to see if it a possible submake node
- * Input:
- *	cmd		the command to scan
- * Results:
- *	TRUE if the command is possibly a submake, FALSE if not.
- */
+/* See if the command possibly calls a sub-make by using the variable
+ * expressions ${.MAKE}, ${MAKE} or the plain word "make". */
 static Boolean
-ParseMaybeSubMake(const char *cmd)
+MaybeSubMake(const char *cmd)
 {
-    size_t i;
-    static struct {
-	const char *name;
-	size_t len;
-    } vals[] = {
-#define MKV(A)	{	A, sizeof(A) - 1	}
-	MKV("${MAKE}"),
-	MKV("${.MAKE}"),
-	MKV("$(MAKE)"),
-	MKV("$(.MAKE)"),
-	MKV("make"),
-    };
-    for (i = 0; i < sizeof vals / sizeof vals[0]; i++) {
-	char *ptr;
-	if ((ptr = strstr(cmd, vals[i].name)) == NULL)
+    const char *start;
+
+    for (start = cmd; *start != '\0'; start++) {
+	const char *p = start;
+	char endc;
+
+	/* XXX: What if progname != "make"? */
+	if (p[0] == 'm' && p[1] == 'a' && p[2] == 'k' && p[3] == 'e')
+	    if (start == cmd || !ch_isalnum(p[-1]))
+		if (!ch_isalnum(p[4]))
+		    return TRUE;
+
+	if (*p != '$')
 	    continue;
-	if ((ptr == cmd || !ch_isalnum(ptr[-1]))
-	    && !ch_isalnum(ptr[vals[i].len]))
-	    return TRUE;
+	p++;
+
+	if (*p == '{')
+	    endc = '}';
+	else if (*p == '(')
+	    endc = ')';
+	else
+	    continue;
+	p++;
+
+	if (*p == '.')		/* Accept either ${.MAKE} or ${MAKE}. */
+	    p++;
+
+	if (p[0] == 'M' && p[1] == 'A' && p[2] == 'K' && p[3] == 'E')
+	    if (p[4] == endc)
+		return TRUE;
     }
     return FALSE;
 }
@@ -2096,7 +2084,7 @@ ParseAddCmd(GNode *gn, char *cmd)
     /* if target already supplied, ignore commands */
     if (!(gn->type & OP_HAS_COMMANDS)) {
 	Lst_Append(gn->commands, cmd);
-	if (ParseMaybeSubMake(cmd))
+	if (MaybeSubMake(cmd))
 	    gn->type |= OP_SUBMAKE;
 	ParseMark(gn);
     } else {
@@ -2190,15 +2178,13 @@ Parse_include_file(char *file, Boolean isSystem, Boolean depinc, int silent)
 
 	    if ((suff = strrchr(file, '.'))) {
 		suffPath = Suff_GetPath(suff);
-		if (suffPath != NULL) {
+		if (suffPath != NULL)
 		    fullname = Dir_FindFile(file, suffPath);
-		}
 	    }
 	    if (fullname == NULL) {
 		fullname = Dir_FindFile(file, parseIncPath);
-		if (fullname == NULL) {
+		if (fullname == NULL)
 		    fullname = Dir_FindFile(file, dirSearchPath);
-		}
 	    }
 	}
     }
@@ -2246,8 +2232,7 @@ ParseDoInclude(char *line)
     char *file = line + (silent ? 8 : 7);
 
     /* Skip to delimiter character so we know where to look */
-    while (*file == ' ' || *file == '\t')
-	file++;
+    pp_skip_hspace(&file);
 
     if (*file != '"' && *file != '<') {
 	Parse_Error(PARSE_FATAL,
@@ -2260,11 +2245,10 @@ ParseDoInclude(char *line)
      * characters which bracket its name. Angle-brackets imply it's
      * a system Makefile while double-quotes imply it's a user makefile
      */
-    if (*file == '<') {
+    if (*file == '<')
 	endc = '>';
-    } else {
+    else
 	endc = '"';
-    }
 
     /* Skip to matching delimiter */
     for (cp = ++file; *cp && *cp != endc; cp++)
@@ -2276,6 +2260,7 @@ ParseDoInclude(char *line)
 		    '.', endc);
 	return;
     }
+
     *cp = '\0';
 
     /*
@@ -2485,14 +2470,14 @@ IsSysVInclude(const char *line)
 
 	/* Avoid interpreting a dependency line as an include */
 	for (p = line; (p = strchr(p, ':')) != NULL;) {
-		if (*++p == '\0') {
-			/* end of line -> dependency */
+
+		/* end of line -> it's a dependency */
+		if (*++p == '\0')
 			return FALSE;
-		}
-		if (*p == ':' || ch_isspace(*p)) {
-			/* :: operator or ': ' -> dependency */
+
+		/* '::' operator or ': ' -> it's a dependency */
+		if (*p == ':' || ch_isspace(*p))
 			return FALSE;
-		}
 	}
 	return TRUE;
 }
@@ -2502,7 +2487,7 @@ static void
 ParseTraditionalInclude(char *line)
 {
     char *cp;			/* current position in file spec */
-    int done = 0;
+    Boolean done = FALSE;
     int silent = line[0] != 'i';
     char *file = line + (silent ? 8 : 7);
     char *all_files;
@@ -2528,10 +2513,10 @@ ParseTraditionalInclude(char *line)
 	for (cp = file; *cp && !ch_isspace(*cp); cp++)
 	    continue;
 
-	if (*cp)
+	if (*cp != '\0')
 	    *cp = '\0';
 	else
-	    done = 1;
+	    done = TRUE;
 
 	Parse_include_file(file, FALSE, FALSE, silent);
     }
@@ -2597,10 +2582,8 @@ ParseEOF(void)
     curFile->buf_freeIt = ptr;
     curFile->buf_end = ptr + len;
     curFile->lineno = curFile->first_lineno;
-    if (ptr != NULL) {
-	/* Iterate again */
-	return TRUE;
-    }
+    if (ptr != NULL)
+	return TRUE;		/* Iterate again */
 
     /* Ensure the makefile (or loop) didn't have mismatched conditionals */
     Cond_restore_depth(curFile->cond_depth);
@@ -2659,11 +2642,11 @@ ParseGetLine(int flags)
 	    /* XXX: can buf_end ever be null? */
 	    if (cf->buf_end != NULL && ptr == cf->buf_end) {
 		/* end of buffer */
-		ch = 0;
+		ch = '\0';
 		break;
 	    }
 	    ch = *ptr;
-	    if (ch == 0 || (ch == '\\' && ptr[1] == 0)) {
+	    if (ch == '\0' || (ch == '\\' && ptr[1] == '\0')) {
 		/* XXX: can buf_end ever be null? */
 		if (cf->buf_end == NULL)
 		    /* End of string (aka for loop) data */
@@ -2719,7 +2702,7 @@ ParseGetLine(int flags)
 
 	/* Check we have a non-comment, non-blank line */
 	if (line_end == line || comment == line) {
-	    if (ch == 0)
+	    if (ch == '\0')
 		/* At end of file */
 		return NULL;
 	    /* Parse another line */
@@ -2727,7 +2710,7 @@ ParseGetLine(int flags)
 	}
 
 	/* We now have a line of data */
-	*line_end = 0;
+	*line_end = '\0';
 
 	if (flags & PARSE_RAW) {
 	    /* Leave '\' (etc) in line buffer (eg 'for' lines) */
@@ -2746,7 +2729,7 @@ ParseGetLine(int flags)
     /* Brutally ignore anything after a non-escaped '#' in non-commands */
     if (comment != NULL && line[0] != '\t') {
 	line_end = comment;
-	*line_end = 0;
+	*line_end = '\0';
     }
 
     /* If we didn't see a '\\' then the in-situ data is fine */
@@ -2759,13 +2742,13 @@ ParseGetLine(int flags)
     for (; ; *tp++ = ch) {
 	ch = *ptr++;
 	if (ch != '\\') {
-	    if (ch == 0)
+	    if (ch == '\0')
 		break;
 	    continue;
 	}
 
 	ch = *ptr++;
-	if (ch == 0) {
+	if (ch == '\0') {
 	    /* Delete '\\' at end of buffer */
 	    tp--;
 	    break;
@@ -2783,9 +2766,8 @@ ParseGetLine(int flags)
 	    continue;
 	}
 
-	/* Escaped '\n' replace following whitespace with a single ' ' */
-	while (ptr[0] == ' ' || ptr[0] == '\t')
-	    ptr++;
+	/* Escaped '\n' -- replace following whitespace with a single ' '. */
+	pp_skip_hspace(&ptr);
 	ch = ' ';
     }
 
@@ -2793,7 +2775,7 @@ ParseGetLine(int flags)
     while (tp > escaped && ch_isspace(tp[-1]))
 	tp--;
 
-    *tp = 0;
+    *tp = '\0';
     return line;
 }
 
@@ -2867,22 +2849,24 @@ ParseReadLine(void)
 static void
 FinishDependencyGroup(void)
 {
-    if (targets != NULL) {
-	GNodeListNode *ln;
-	for (ln = targets->first; ln != NULL; ln = ln->next) {
-	    GNode *gn = ln->datum;
+    GNodeListNode *ln;
 
-	    Suff_EndTransform(gn);
+    if (targets == NULL)
+	return;
 
-	    /* Mark the target as already having commands if it does, to
-	     * keep from having shell commands on multiple dependency lines. */
-	    if (!Lst_IsEmpty(gn->commands))
-		gn->type |= OP_HAS_COMMANDS;
-	}
+    for (ln = targets->first; ln != NULL; ln = ln->next) {
+	GNode *gn = ln->datum;
 
-	Lst_Free(targets);
-	targets = NULL;
+	Suff_EndTransform(gn);
+
+	/* Mark the target as already having commands if it does, to
+	 * keep from having shell commands on multiple dependency lines. */
+	if (!Lst_IsEmpty(gn->commands))
+	    gn->type |= OP_HAS_COMMANDS;
     }
+
+    Lst_Free(targets);
+    targets = NULL;
 }
 
 /* Add the command to each target from the current dependency spec. */
@@ -2964,12 +2948,13 @@ static Boolean
 ParseVarassign(const char *line)
 {
     VarAssign var;
-    if (Parse_IsVar(line, &var)) {
-	FinishDependencyGroup();
-	Parse_DoVar(&var, VAR_GLOBAL);
-	return TRUE;
-    }
-    return FALSE;
+
+    if (!Parse_IsVar(line, &var))
+	return FALSE;
+
+    FinishDependencyGroup();
+    Parse_DoVar(&var, VAR_GLOBAL);
+    return TRUE;
 }
 
 static char *
@@ -2983,19 +2968,12 @@ FindSemicolon(char *p)
 	    continue;
 	}
 
-	if (*p == '$' && (p[1] == '(' || p[1] == '{')) {
+	if (*p == '$' && (p[1] == '(' || p[1] == '{'))
 	    level++;
-	    continue;
-	}
-
-	if (level > 0 && (*p == ')' || *p == '}')) {
+	else if (level > 0 && (*p == ')' || *p == '}'))
 	    level--;
-	    continue;
-	}
-
-	if (level == 0 && *p == ';') {
+	else if (level == 0 && *p == ';')
 	    break;
-	}
     }
     return p;
 }
@@ -3147,7 +3125,7 @@ Parse_File(const char *name, int fd)
 
     FinishDependencyGroup();
 
-    if (fatals) {
+    if (fatals != 0) {
 	(void)fflush(stdout);
 	(void)fprintf(stderr,
 		      "%s: Fatal errors encountered -- cannot continue",
@@ -3208,10 +3186,10 @@ Parse_MainName(void)
 
     mainList = Lst_New();
 
-    if (mainNode == NULL) {
+    if (mainNode == NULL)
 	Punt("no target to make.");
-	/*NOTREACHED*/
-    } else if (mainNode->type & OP_DOUBLEDEP) {
+
+    if (mainNode->type & OP_DOUBLEDEP) {
 	Lst_Append(mainList, mainNode);
 	Lst_AppendAll(mainList, mainNode->cohorts);
     } else

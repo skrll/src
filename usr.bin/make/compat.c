@@ -1,4 +1,4 @@
-/*	$NetBSD: compat.c,v 1.174 2020/11/02 20:50:24 rillig Exp $	*/
+/*	$NetBSD: compat.c,v 1.179 2020/11/07 14:32:12 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -96,7 +96,7 @@
 #include "pathnames.h"
 
 /*	"@(#)compat.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: compat.c,v 1.174 2020/11/02 20:50:24 rillig Exp $");
+MAKE_RCSID("$NetBSD: compat.c,v 1.179 2020/11/07 14:32:12 rillig Exp $");
 
 static GNode *curTarg = NULL;
 static pid_t compatChild;
@@ -201,7 +201,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
     (void)Var_Subst(cmd, gn, VARE_WANTRES, &cmdStart);
     /* TODO: handle errors */
 
-    if (*cmdStart == '\0') {
+    if (cmdStart[0] == '\0') {
 	free(cmdStart);
 	return 0;
     }
@@ -220,20 +220,17 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 	return 0;
     }
 
-    while (*cmd == '@' || *cmd == '-' || *cmd == '+') {
-	switch (*cmd) {
-	case '@':
+    for (;;) {
+	if (*cmd == '@')
 	    silent = !DEBUG(LOUD);
-	    break;
-	case '-':
+	else if (*cmd == '-')
 	    errCheck = FALSE;
-	    break;
-	case '+':
+	else if (*cmd == '+') {
 	    doIt = TRUE;
-	    if (!shellName)		/* we came here from jobs */
+	    if (!shellName)	/* we came here from jobs */
 		Shell_Init();
+	} else
 	    break;
-	}
 	cmd++;
     }
 
@@ -243,7 +240,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
     /*
      * If we did not end up with a command, just skip it.
      */
-    if (!*cmd)
+    if (cmd[0] == '\0')
 	return 0;
 
 #if !defined(MAKE_NATIVE)
@@ -281,9 +278,9 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
      * If we're not supposed to execute any commands, this is as far as
      * we go...
      */
-    if (!doIt && !GNode_ShouldExecute(gn)) {
+    if (!doIt && !GNode_ShouldExecute(gn))
 	return 0;
-    }
+
     DEBUG1(JOB, "Execute: '%s'\n", cmd);
 
     if (useShell) {
@@ -292,20 +289,13 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 	 * because the command contains a "meta" character.
 	 */
 	static const char *shargv[5];
-	int shargc;
 
-	shargc = 0;
+	/* The following work for any of the builtin shell specs. */
+	int shargc = 0;
 	shargv[shargc++] = shellPath;
-	/*
-	 * The following work for any of the builtin shell specs.
-	 */
-	if (errCheck && shellErrFlag) {
+	if (errCheck && shellErrFlag)
 	    shargv[shargc++] = shellErrFlag;
-	}
-	if (DEBUG(SHELL))
-		shargv[shargc++] = "-xc";
-	else
-		shargv[shargc++] = "-c";
+	shargv[shargc++] = DEBUG(SHELL) ? "-xc" : "-c";
 	shargv[shargc++] = cmd;
 	shargv[shargc] = NULL;
 	av = shargv;
@@ -384,17 +374,19 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 #endif
 	if (status != 0) {
 	    if (DEBUG(ERROR)) {
-		const char *cp;
+		const char *p = cmd;
 		debug_printf("\n*** Failed target:  %s\n*** Failed command: ",
 			     gn->name);
-		for (cp = cmd; *cp; ) {
-		    if (ch_isspace(*cp)) {
+
+		/* Replace runs of whitespace with a single space, to reduce
+		 * the amount of whitespace for multi-line command lines. */
+		while (*p != '\0') {
+		    if (ch_isspace(*p)) {
 			debug_printf(" ");
-			while (ch_isspace(*cp))
-			    cp++;
+			cpp_skip_whitespace(&p);
 		    } else {
-			debug_printf("%c", *cp);
-			cp++;
+			debug_printf("%c", *p);
+			p++;
 		    }
 		}
 		debug_printf("\n");
@@ -475,16 +467,17 @@ MakeNodes(GNodeList *gnodes, GNode *pgn)
 void
 Compat_Make(GNode *gn, GNode *pgn)
 {
-    if (!shellName)		/* we came here from jobs */
+    if (shellName == NULL)	/* we came here from jobs */
 	Shell_Init();
+
     if (gn->made == UNMADE && (gn == pgn || !(pgn->type & OP_MADE))) {
 	/*
 	 * First mark ourselves to be made, then apply whatever transformations
 	 * the suffix module thinks are necessary. Once that's done, we can
 	 * descend and make all our children. If any of them has an error
-	 * but the -k flag was given, our 'make' field will be set FALSE again.
-	 * This is our signal to not attempt to do anything but abort our
-	 * parent as well.
+	 * but the -k flag was given, our 'make' field will be set to FALSE
+	 * again. This is our signal to not attempt to do anything but abort
+	 * our parent as well.
 	 */
 	gn->flags |= REMAKE;
 	gn->made = BEINGMADE;
@@ -573,7 +566,8 @@ Compat_Make(GNode *gn, GNode *pgn)
 	     * This is to keep its state from affecting that of its parent.
 	     */
 	    gn->made = MADE;
-	    pgn->flags |= Make_Recheck(gn) == 0 ? FORCE : 0;
+	    if (Make_Recheck(gn) == 0)
+		pgn->flags |= FORCE;
 	    if (!(gn->type & OP_EXEC)) {
 		pgn->flags |= CHILDMADE;
 		Make_TimeStamp(pgn, gn);
@@ -599,15 +593,14 @@ Compat_Make(GNode *gn, GNode *pgn)
 		pgn->flags &= ~(unsigned)REMAKE;
 		break;
 	    case MADE:
-		if ((gn->type & OP_EXEC) == 0) {
+		if (!(gn->type & OP_EXEC)) {
 		    pgn->flags |= CHILDMADE;
 		    Make_TimeStamp(pgn, gn);
 		}
 		break;
 	    case UPTODATE:
-		if ((gn->type & OP_EXEC) == 0) {
+		if (!(gn->type & OP_EXEC))
 		    Make_TimeStamp(pgn, gn);
-		}
 		break;
 	    default:
 		break;

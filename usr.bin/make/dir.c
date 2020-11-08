@@ -1,4 +1,4 @@
-/*	$NetBSD: dir.c,v 1.193 2020/10/31 17:39:20 rillig Exp $	*/
+/*	$NetBSD: dir.c,v 1.198 2020/11/07 20:45:21 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -134,7 +134,7 @@
 #include "job.h"
 
 /*	"@(#)dir.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: dir.c,v 1.193 2020/10/31 17:39:20 rillig Exp $");
+MAKE_RCSID("$NetBSD: dir.c,v 1.198 2020/11/07 20:45:21 rillig Exp $");
 
 #define DIR_DEBUG0(text) DEBUG0(DIR, text)
 #define DIR_DEBUG1(fmt, arg1) DEBUG1(DIR, fmt, arg1)
@@ -312,8 +312,9 @@ struct cache_st {
 
 /* minimize changes below */
 typedef enum CachedStatsFlags {
-    CST_LSTAT = 0x01,		/* call lstat(2) instead of stat(2) */
-    CST_UPDATE = 0x02		/* ignore existing cached entry */
+    CST_NONE	= 0,
+    CST_LSTAT	= 1 << 0,	/* call lstat(2) instead of stat(2) */
+    CST_UPDATE	= 1 << 1	/* ignore existing cached entry */
 } CachedStatsFlags;
 
 /* Returns 0 and the result of stat(2) or lstat(2) in *mst, or -1 on error. */
@@ -326,7 +327,7 @@ cached_stats(HashTable *htp, const char *pathname, struct make_stat *mst,
     struct cache_st *cst;
     int rc;
 
-    if (!pathname || !pathname[0])
+    if (pathname == NULL || pathname[0] == '\0')
 	return -1;
 
     entry = HashTable_FindEntry(htp, pathname);
@@ -358,8 +359,8 @@ cached_stats(HashTable *htp, const char *pathname, struct make_stat *mst,
     if (entry == NULL)
 	entry = HashTable_CreateEntry(htp, pathname, NULL);
     if (HashEntry_Get(entry) == NULL) {
-	HashEntry_Set(entry, bmake_malloc(sizeof(*cst)));
-	memset(HashEntry_Get(entry), 0, sizeof(*cst));
+	HashEntry_Set(entry, bmake_malloc(sizeof *cst));
+	memset(HashEntry_Get(entry), 0, sizeof *cst);
     }
     cst = HashEntry_Get(entry);
     if (flags & CST_LSTAT) {
@@ -377,7 +378,7 @@ cached_stats(HashTable *htp, const char *pathname, struct make_stat *mst,
 int
 cached_stat(const char *pathname, struct make_stat *st)
 {
-    return cached_stats(&mtimes, pathname, st, 0);
+    return cached_stats(&mtimes, pathname, st, CST_NONE);
 }
 
 int
@@ -401,7 +402,7 @@ Dir_InitDir(const char *cdname)
 {
     Dir_InitCur(cdname);
 
-    dotLast = bmake_malloc(sizeof(CachedDir));
+    dotLast = bmake_malloc(sizeof *dotLast);
     dotLast->refCount = 1;
     dotLast->hits = 0;
     dotLast->name = bmake_strdup(".DOTLAST");
@@ -1176,7 +1177,7 @@ Dir_FindFile(const char *name, SearchPath *path)
      * When searching for $(FILE), we will find it in $(INSTALLDIR)
      * b/c we added it here. This is not good...
      */
-#ifdef notdef
+#if 0
     if (base == trailing_dot) {
 	base = strrchr(name, '/');
 	base++;
@@ -1198,7 +1199,7 @@ Dir_FindFile(const char *name, SearchPath *path)
     } else {
 	return NULL;
     }
-#else /* !notdef */
+#else
     DIR_DEBUG1("   Looking for \"%s\" ...\n", name);
 
     bigmisses++;
@@ -1208,7 +1209,7 @@ Dir_FindFile(const char *name, SearchPath *path)
 
     DIR_DEBUG0("   failed. Returning NULL\n");
     return NULL;
-#endif /* notdef */
+#endif
 }
 
 
@@ -1298,6 +1299,7 @@ Dir_MTime(GNode *gn, Boolean recheck)
 {
     char *fullName;		/* the full pathname of name */
     struct make_stat mst;	/* buffer for finding the mod time */
+    CachedStatsFlags flags;
 
     if (gn->type & OP_ARCHV) {
 	return Arch_MTime(gn);
@@ -1344,18 +1346,19 @@ Dir_MTime(GNode *gn, Boolean recheck)
 	fullName = gn->path;
     }
 
-    if (fullName == NULL) {
+    if (fullName == NULL)
 	fullName = bmake_strdup(gn->name);
-    }
 
-    if (cached_stats(&mtimes, fullName, &mst, recheck ? CST_UPDATE : 0) < 0) {
+
+    flags = recheck ? CST_UPDATE : CST_NONE;
+    if (cached_stats(&mtimes, fullName, &mst, flags) < 0) {
 	if (gn->type & OP_MEMBER) {
 	    if (fullName != gn->path)
 		free(fullName);
-	    return Arch_MemMTime(gn);
-	} else {
-	    mst.mst_mtime = 0;
+	    return Arch_MemberMTime(gn);
 	}
+
+	mst.mst_mtime = 0;
     }
 
     if (fullName != NULL && gn->path == NULL)
@@ -1410,7 +1413,7 @@ Dir_AddDir(SearchPath *path, const char *name)
     DIR_DEBUG1("Caching %s ...", name);
 
     if ((d = opendir(name)) != NULL) {
-	dir = bmake_malloc(sizeof(CachedDir));
+	dir = bmake_malloc(sizeof *dir);
 	dir->name = bmake_strdup(name);
 	dir->hits = 0;
 	dir->refCount = 1;
@@ -1480,7 +1483,7 @@ Dir_MakeFlags(const char *flag, SearchPath *path)
     Buffer buf;
     SearchPathNode *ln;
 
-    Buf_Init(&buf, 0);
+    Buf_Init(&buf);
 
     if (path != NULL) {
 	for (ln = path->first; ln != NULL; ln = ln->next) {
