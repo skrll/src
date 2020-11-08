@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.188 2020/11/04 04:24:57 rillig Exp $
+# $NetBSD: Makefile,v 1.190 2020/11/07 23:25:06 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -172,9 +172,11 @@ TESTS+=		export-env
 TESTS+=		export-variants
 TESTS+=		forloop
 TESTS+=		forsubst
+TESTS+=		gnode-submake
 TESTS+=		hanoi-include
 TESTS+=		impsrc
 TESTS+=		include-main
+TESTS+=		job-flags
 TESTS+=		job-output-long-lines
 TESTS+=		lint
 TESTS+=		make-exported
@@ -439,6 +441,7 @@ SED_CMDS.varname-dot-shell+=	-e 's,\[/[^] ]*\],[(details omitted)],g'
 # Some tests need an additional round of postprocessing.
 POSTPROC.deptgt-suffixes= \
 			${TOOL_SED} -n -e '/^\#\*\*\* Suffixes/,/^\#\*/p'
+POSTPROC.gnode-submake=	awk '/Input graph/, /^$$/'
 POSTPROC.varname-empty=	${TOOL_SED} -n -e '/^Var_Set/p' -e '/^out:/p'
 
 # Some tests reuse other tests, which makes them unnecessarily fragile.
