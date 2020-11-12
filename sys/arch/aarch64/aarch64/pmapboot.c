@@ -40,6 +40,8 @@ __KERNEL_RCSID(0, "$NetBSD: pmapboot.c,v 1.11 2020/11/07 08:48:11 skrll Exp $");
 
 #include <uvm/uvm.h>
 
+#include <arm/cpufunc.h>
+
 #include <aarch64/armreg.h>
 #include <aarch64/cpufunc.h>
 #include <aarch64/machdep.h>
@@ -62,6 +64,8 @@ pmapboot_protect_entry(pt_entry_t *pte, vm_prot_t clrprot)
 	}
 	if (clrprot & VM_PROT_EXECUTE)
 		*pte |= LX_BLKPAG_UXN|LX_BLKPAG_PXN;
+
+	dsb(ish);
 }
 
 /*
@@ -434,6 +438,8 @@ pmapboot_enter(vaddr_t va, paddr_t pa, psize_t size, psize_t blocksize,
 			break;
 		}
 	}
+
+	dsb(ish);
 
 	return nskip;
 }
