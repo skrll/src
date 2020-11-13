@@ -1,4 +1,4 @@
-# $NetBSD: cond-func.mk,v 1.4 2020/10/24 08:46:08 rillig Exp $
+# $NetBSD: cond-func.mk,v 1.6 2020/11/08 21:40:13 rillig Exp $
 #
 # Tests for those parts of the functions in .if conditions that are common
 # among several functions.
@@ -9,7 +9,12 @@
 DEF=			defined
 ${:UA B}=		variable name with spaces
 ${:UVAR(value)}=	variable name with parentheses
-${:UVAR{value}}=	variable name with braces
+${:UVAR{value}}=	variable name with balanced braces
+
+# Really strange variable names must be given indirectly via another variable,
+# so that no unbalanced braces appear in the top-level expression.
+VARNAME_UNBALANCED_BRACES=	VAR{{{value
+${VARNAME_UNBALANCED_BRACES}=	variable name with unbalanced braces
 
 .if !defined(DEF)
 .  error
@@ -59,11 +64,25 @@ ${:UVAR{value}}=	variable name with braces
 .  error
 .endif
 
+# Braces do not have any special meaning when parsing arguments.
+# They don't need to be balanced.
+.if !defined(VAR{{{value)
+.  error
+.endif
+
 # There may be spaces around the operators and parentheses, and even
 # inside the parentheses.  The spaces inside the parentheses are not
 # allowed for the empty() function (see cond-func-empty.mk), therefore
 # they are typically omitted for the other functions as well.
 .if ! defined ( DEF )
+.  error
+.endif
+
+# The following condition is interpreted as defined(A) && defined(B).
+# In lack of a function call expression, each kind of .if directive has a
+# default function that is called when a bare word is parsed.  For the plain
+# .if directive, this function is defined(); see "struct If ifs" in cond.c.
+.if A&B
 .  error
 .endif
 

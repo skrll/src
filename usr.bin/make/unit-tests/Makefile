@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.190 2020/11/07 23:25:06 rillig Exp $
+# $NetBSD: Makefile,v 1.196 2020/11/10 00:19:19 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -62,8 +62,10 @@ TESTS+=		cond-func-target
 TESTS+=		cond-late
 TESTS+=		cond-op
 TESTS+=		cond-op-and
+TESTS+=		cond-op-and-lint
 TESTS+=		cond-op-not
 TESTS+=		cond-op-or
+TESTS+=		cond-op-or-lint
 TESTS+=		cond-op-parentheses
 TESTS+=		cond-short
 TESTS+=		cond-token-number
@@ -371,37 +373,27 @@ TESTS+=		varname-makeflags
 TESTS+=		varname-pwd
 TESTS+=		varname-vpath
 TESTS+=		varparse-dynamic
+TESTS+=		varparse-errors
 TESTS+=		varparse-mod
 TESTS+=		varparse-undef-partial
 TESTS+=		varquote
-TESTS+=		varshell
 
 # Additional environment variables for some of the tests.
 # The base environment is -i PATH="$PATH".
+ENV.depsrc-optional+=   TZ=UTC
 ENV.envfirst=		FROM_ENV=value-from-env
 ENV.varmisc=		FROM_ENV=env
 ENV.varmisc+=		FROM_ENV_BEFORE=env
 ENV.varmisc+=		FROM_ENV_AFTER=env
 ENV.varmod-localtime+=	TZ=Europe/Berlin
+ENV.varname-vpath+=	VPATH=varname-vpath.dir:varname-vpath.dir2
 
 # Override make flags for some of the tests; default is -k.
 # If possible, write ".MAKEFLAGS: -dv" in the test .mk file instead of
 # settings FLAGS.test=-dv here, since that is closer to the test code.
 FLAGS.cond-func-make=	via-cmdline
 FLAGS.directive-ifmake=	first second
-FLAGS.doterror=		# none
-FLAGS.envfirst=		-e
-FLAGS.export=		# none
-FLAGS.opt-ignore=	-i
-FLAGS.opt-keep-going=	-k
-FLAGS.opt-no-action=	-n
-FLAGS.opt-query=	-q
-FLAGS.opt-var-expanded=	-v VAR -v VALUE
-FLAGS.opt-var-literal=	-V VAR -V VALUE
-FLAGS.opt-warnings-as-errors= -W
-FLAGS.order=		-j1
-FLAGS.recursive=	-dL
-FLAGS.sh-leading-plus=	-n
+FLAGS.doterror=		# none, especially not -k
 FLAGS.varname-empty=	-dv '$${:U}=cmdline-u' '=cmline-plain'
 
 # Some tests need extra postprocessing.
@@ -427,11 +419,11 @@ SED_CMDS.opt-debug-jobs+=	-e 's,Process [0-9][0-9]*,Process <pid>,'
 SED_CMDS.opt-debug-jobs+=	-e 's,JobFinish: [0-9][0-9]*,JobFinish: <pid>,'
 # The "-q" may be there or not, see jobs.c, variable shells.
 SED_CMDS.opt-debug-jobs+=	-e 's,^\(.Command: sh\) -q,\1,'
+SED_CMDS.var-op-shell+=	-e 's,^${.SHELL:T}: ,,'
+SED_CMDS.var-op-shell+=	-e '/command/s,No such.*,not found,'
 SED_CMDS.varmod-subst-regex+= \
 			-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
 SED_CMDS.varmod-edge+=	-e 's, line [0-9]*:, line omitted:,'
-SED_CMDS.varshell+=	-e 's,^${.SHELL:T}: ,,'
-SED_CMDS.varshell+=	-e '/command/s,No such.*,not found,'
 SED_CMDS.varname-dot-parsedir=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
 SED_CMDS.varname-dot-parsefile=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
 SED_CMDS.varname-dot-shell=	-e 's, = /[^ ]*, = (details omitted),g'

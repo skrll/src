@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.675 2020/11/07 22:28:24 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.684 2020/11/10 00:32:12 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -130,7 +130,7 @@
 #include "metachar.h"
 
 /*	"@(#)var.c	8.3 (Berkeley) 3/19/94" */
-MAKE_RCSID("$NetBSD: var.c,v 1.675 2020/11/07 22:28:24 rillig Exp $");
+MAKE_RCSID("$NetBSD: var.c,v 1.684 2020/11/10 00:32:12 rillig Exp $");
 
 #define VAR_DEBUG1(fmt, arg1) DEBUG1(VAR, fmt, arg1)
 #define VAR_DEBUG2(fmt, arg1, arg2) DEBUG2(VAR, fmt, arg1, arg2)
@@ -138,7 +138,7 @@ MAKE_RCSID("$NetBSD: var.c,v 1.675 2020/11/07 22:28:24 rillig Exp $");
 #define VAR_DEBUG4(fmt, arg1, arg2, arg3, arg4) DEBUG4(VAR, fmt, arg1, arg2, arg3, arg4)
 
 ENUM_FLAGS_RTTI_3(VarEvalFlags,
-		  VARE_UNDEFERR, VARE_WANTRES, VARE_ASSIGN);
+		  VARE_UNDEFERR, VARE_WANTRES, VARE_KEEP_DOLLAR);
 
 /*
  * This lets us tell if we have replaced the original environ
@@ -1721,9 +1721,9 @@ VarStrftime(const char *fmt, Boolean zulu, time_t tim)
 {
     char buf[BUFSIZ];
 
-    if (!tim)
+    if (tim == 0)
 	time(&tim);
-    if (!*fmt)
+    if (*fmt == '\0')
 	fmt = "%c";
     strftime(buf, sizeof buf, fmt, zulu ? gmtime(&tim) : localtime(&tim));
 
@@ -1922,7 +1922,7 @@ ParseModifierPart(
 	    const char *nested_p = p;
 	    const char *nested_val;
 	    void *nested_val_freeIt;
-	    VarEvalFlags nested_eflags = eflags & ~(unsigned)VARE_ASSIGN;
+	    VarEvalFlags nested_eflags = eflags & ~(unsigned)VARE_KEEP_DOLLAR;
 
 	    (void)Var_Parse(&nested_p, st->ctxt, nested_eflags,
 			    &nested_val, &nested_val_freeIt);
@@ -1985,7 +1985,7 @@ ParseModifierPart(
 }
 
 /* Test whether mod starts with modname, followed by a delimiter. */
-static Boolean
+MAKE_INLINE Boolean
 ModMatch(const char *mod, const char *modname, char endc)
 {
     size_t n = strlen(modname);
@@ -1994,7 +1994,7 @@ ModMatch(const char *mod, const char *modname, char endc)
 }
 
 /* Test whether mod starts with modname, followed by a delimiter or '='. */
-static inline Boolean
+MAKE_INLINE Boolean
 ModMatchEq(const char *mod, const char *modname, char endc)
 {
     size_t n = strlen(modname);
@@ -2068,17 +2068,16 @@ ApplyModifier_Loop(const char **pp, ApplyModifiersState *st)
 {
     struct ModifyWord_LoopArgs args;
     char prev_sep;
-    VarEvalFlags eflags = st->eflags & ~(unsigned)VARE_WANTRES;
     VarParseResult res;
 
     args.ctx = st->ctxt;
 
     (*pp)++;			/* Skip the first '@' */
-    res = ParseModifierPart(pp, '@', eflags, st,
+    res = ParseModifierPart(pp, '@', VARE_NONE, st,
 			    &args.tvar, NULL, NULL, NULL);
     if (res != VPR_OK)
 	return AMR_CLEANUP;
-    if (DEBUG(LINT) && strchr(args.tvar, '$') != NULL) {
+    if (opts.lint && strchr(args.tvar, '$') != NULL) {
 	Parse_Error(PARSE_FATAL,
 		    "In the :@ modifier of \"%s\", the variable name \"%s\" "
 		    "must not contain a dollar.",
@@ -2086,12 +2085,12 @@ ApplyModifier_Loop(const char **pp, ApplyModifiersState *st)
 	return AMR_CLEANUP;
     }
 
-    res = ParseModifierPart(pp, '@', eflags, st,
+    res = ParseModifierPart(pp, '@', VARE_NONE, st,
 			    &args.str, NULL, NULL, NULL);
     if (res != VPR_OK)
 	return AMR_CLEANUP;
 
-    args.eflags = st->eflags & (VARE_UNDEFERR | VARE_WANTRES);
+    args.eflags = st->eflags & ~(unsigned)VARE_KEEP_DOLLAR;
     prev_sep = st->sep;
     st->sep = ' ';		/* XXX: should be st->sep for consistency */
     st->newVal = ModifyWords(st->val, ModifyWord_Loop, &args,
@@ -2110,11 +2109,10 @@ ApplyModifier_Defined(const char **pp, ApplyModifiersState *st)
     Buffer buf;
     const char *p;
 
-    VarEvalFlags eflags = st->eflags & ~(unsigned)VARE_WANTRES;
-    if (st->eflags & VARE_WANTRES) {
+    VarEvalFlags eflags = VARE_NONE;
+    if (st->eflags & VARE_WANTRES)
 	if ((**pp == 'D') == !(st->exprFlags & VEF_UNDEF))
-	    eflags |= VARE_WANTRES;
-    }
+	    eflags = st->eflags;
 
     Buf_Init(&buf);
     p = *pp + 1;
@@ -2873,16 +2871,16 @@ ApplyModifier_IfElse(const char **pp, ApplyModifiersState *st)
     VarParseResult res;
 
     Boolean value = FALSE;
-    VarEvalFlags then_eflags = st->eflags & ~(unsigned)VARE_WANTRES;
-    VarEvalFlags else_eflags = st->eflags & ~(unsigned)VARE_WANTRES;
+    VarEvalFlags then_eflags = VARE_NONE;
+    VarEvalFlags else_eflags = VARE_NONE;
 
     int cond_rc = COND_PARSE;	/* anything other than COND_INVALID */
     if (st->eflags & VARE_WANTRES) {
 	cond_rc = Cond_EvalCondition(st->v->name, &value);
 	if (cond_rc != COND_INVALID && value)
-	    then_eflags |= VARE_WANTRES;
+	    then_eflags = st->eflags;
 	if (cond_rc != COND_INVALID && !value)
-	    else_eflags |= VARE_WANTRES;
+	    else_eflags = st->eflags;
     }
 
     (*pp)++;			/* skip past the '?' */
@@ -2979,8 +2977,6 @@ ok:
     }
 
     delim = st->startc == '(' ? ')' : '}';
-    /* TODO: Add test for using the ::= modifier in a := assignment line.
-     * Probably st->eflags should be passed down without VARE_ASSIGN here. */
     res = ParseModifierPart(pp, delim, st->eflags, st, &val, NULL, NULL, NULL);
     if (res != VPR_OK)
 	return AMR_CLEANUP;
@@ -3282,7 +3278,7 @@ ApplyModifiersIndirect(
      * is not accepted, but ${VAR:${M_1}:${M_2}} is.
      */
     if (mods[0] != '\0' && *p != '\0' && *p != ':' && *p != st->endc) {
-	if (DEBUG(LINT))
+	if (opts.lint)
 	    Parse_Error(PARSE_FATAL,
 			"Missing delimiter ':' after indirect modifier \"%.*s\"",
 			(int)(p - *inout_p), *inout_p);
@@ -3418,7 +3414,7 @@ ApplyModifiers(
 		  st.endc, st.v->name, st.val, *mod);
 	} else if (*p == ':') {
 	    p++;
-	} else if (DEBUG(LINT) && *p != '\0' && *p != endc) {
+	} else if (opts.lint && *p != '\0' && *p != endc) {
 	    Parse_Error(PARSE_FATAL,
 			"Missing delimiter ':' after modifier \"%.*s\"",
 			(int)(p - mod), mod);
@@ -3553,7 +3549,7 @@ ValidShortVarname(char varname, const char *start)
 	return VPR_OK;
     }
 
-    if (!DEBUG(LINT))
+    if (!opts.lint)
 	return VPR_PARSE_SILENT;
 
     if (varname == '$')
@@ -3601,7 +3597,7 @@ ParseVarnameShort(char startc, const char **pp, GNode *ctxt,
 	*pp += 2;
 
 	*out_FALSE_val = UndefinedShortVarValue(startc, ctxt, eflags);
-	if (DEBUG(LINT) && *out_FALSE_val == var_Error) {
+	if (opts.lint && *out_FALSE_val == var_Error) {
 	    Parse_Error(PARSE_FATAL, "Variable \"%s\" is undefined", name);
 	    *out_FALSE_res = VPR_UNDEF_MSG;
 	    return FALSE;
@@ -3658,9 +3654,7 @@ EvalUndefined(Boolean dynamic, const char *start, const char *p, char *varname,
 	return VPR_OK;
     }
 
-    if ((eflags & VARE_UNDEFERR) && (eflags & VARE_WANTRES) &&
-	DEBUG(LINT))
-    {
+    if ((eflags & VARE_UNDEFERR) && opts.lint) {
 	Parse_Error(PARSE_FATAL, "Variable \"%s\" is undefined", varname);
 	free(varname);
 	*out_val = var_Error;
@@ -3870,7 +3864,7 @@ Var_Parse(const char **pp, GNode *ctxt, VarEvalFlags eflags,
      * variable value. */
     if (strchr(value, '$') != NULL && (eflags & VARE_WANTRES)) {
 	VarEvalFlags nested_eflags = eflags;
-	if (DEBUG(LINT))
+	if (opts.lint)
 	    nested_eflags &= ~(unsigned)VARE_UNDEFERR;
 	v->flags |= VAR_IN_USE;
 	(void)Var_Subst(value, ctxt, nested_eflags, &value);
@@ -3938,6 +3932,56 @@ Var_Parse(const char **pp, GNode *ctxt, VarEvalFlags eflags,
     return VPR_UNKNOWN;
 }
 
+static void
+VarSubstNested(const char **const pp, Buffer *const buf, GNode *const ctxt,
+	       VarEvalFlags const eflags, Boolean *inout_errorReported)
+{
+    const char *p = *pp;
+    const char *nested_p = p;
+    const char *val;
+    void *val_freeIt;
+
+    (void)Var_Parse(&nested_p, ctxt, eflags, &val, &val_freeIt);
+    /* TODO: handle errors */
+
+    if (val == var_Error || val == varUndefined) {
+	if (!preserveUndefined) {
+	    p = nested_p;
+	} else if ((eflags & VARE_UNDEFERR) || val == var_Error) {
+	    /* XXX: This condition is wrong.  If val == var_Error,
+	     * this doesn't necessarily mean there was an undefined
+	     * variable.  It could equally well be a parse error; see
+	     * unit-tests/varmod-order.exp. */
+
+	    /*
+	     * If variable is undefined, complain and skip the
+	     * variable. The complaint will stop us from doing anything
+	     * when the file is parsed.
+	     */
+	    if (!*inout_errorReported) {
+		Parse_Error(PARSE_FATAL, "Undefined variable \"%.*s\"",
+			    (int)(size_t)(nested_p - p), p);
+	    }
+	    p = nested_p;
+	    *inout_errorReported = TRUE;
+	} else {
+	    /* Copy the initial '$' of the undefined expression,
+	     * thereby deferring expansion of the expression, but
+	     * expand nested expressions if already possible.
+	     * See unit-tests/varparse-undef-partial.mk. */
+	    Buf_AddByte(buf, *p);
+	    p++;
+	}
+    } else {
+	p = nested_p;
+	Buf_AddStr(buf, val);
+    }
+
+    free(val_freeIt);
+
+    *pp = p;
+}
+
 /* Expand all variable expressions like $V, ${VAR}, $(VAR:Modifiers) in the
  * given string.
  *
@@ -3946,9 +3990,7 @@ Var_Parse(const char **pp, GNode *ctxt, VarEvalFlags eflags,
  *			expanded.
  *	ctxt		The context in which to start searching for
  *			variables.  The other contexts are searched as well.
- *	eflags		VARE_UNDEFERR	if undefineds are an error
- *			VARE_WANTRES	if we actually want the result
- *			VARE_ASSIGN	if we are in a := assignment
+ *	eflags		Special effects during expansion.
  */
 VarParseResult
 Var_Subst(const char *str, GNode *ctxt, VarEvalFlags eflags, char **out_res)
@@ -3966,11 +4008,15 @@ Var_Subst(const char *str, GNode *ctxt, VarEvalFlags eflags, char **out_res)
     while (*p != '\0') {
 	if (p[0] == '$' && p[1] == '$') {
 	    /* A dollar sign may be escaped with another dollar sign. */
-	    if (save_dollars && (eflags & VARE_ASSIGN))
+	    if (save_dollars && (eflags & VARE_KEEP_DOLLAR))
 		Buf_AddByte(&buf, '$');
 	    Buf_AddByte(&buf, '$');
 	    p += 2;
-	} else if (*p != '$') {
+
+	} else if (p[0] == '$') {
+	    VarSubstNested(&p, &buf, ctxt, eflags, &errorReported);
+
+	} else {
 	    /*
 	     * Skip as many characters as possible -- either to the end of
 	     * the string or to the next dollar sign (variable expression).
@@ -3980,47 +4026,6 @@ Var_Subst(const char *str, GNode *ctxt, VarEvalFlags eflags, char **out_res)
 	    for (p++; *p != '$' && *p != '\0'; p++)
 		continue;
 	    Buf_AddBytesBetween(&buf, plainStart, p);
-	} else {
-	    const char *nested_p = p;
-	    void *freeIt;
-	    const char *val;
-	    (void)Var_Parse(&nested_p, ctxt, eflags, &val, &freeIt);
-	    /* TODO: handle errors */
-
-	    if (val == var_Error || val == varUndefined) {
-		if (!preserveUndefined) {
-		    p = nested_p;
-		} else if ((eflags & VARE_UNDEFERR) || val == var_Error) {
-		    /* XXX: This condition is wrong.  If val == var_Error,
-		     * this doesn't necessarily mean there was an undefined
-		     * variable.  It could equally well be a parse error; see
-		     * unit-tests/varmod-order.exp. */
-
-		    /*
-		     * If variable is undefined, complain and skip the
-		     * variable. The complaint will stop us from doing anything
-		     * when the file is parsed.
-		     */
-		    if (!errorReported) {
-			Parse_Error(PARSE_FATAL, "Undefined variable \"%.*s\"",
-				    (int)(size_t)(nested_p - p), p);
-		    }
-		    p = nested_p;
-		    errorReported = TRUE;
-		} else {
-		    /* Copy the initial '$' of the undefined expression,
-		     * thereby deferring expansion of the expression, but
-		     * expand nested expressions if already possible.
-		     * See unit-tests/varparse-undef-partial.mk. */
-		    Buf_AddByte(&buf, *p);
-		    p++;
-		}
-	    } else {
-		p = nested_p;
-		Buf_AddStr(&buf, val);
-	    }
-	    free(freeIt);
-	    freeIt = NULL;
 	}
     }
 
