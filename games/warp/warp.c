@@ -5,17 +5,33 @@ char rcsid[] = "@(#)Header: warp.c,v 7.0.1.3 86/12/12 17:07:44 lwall Exp";
  *	helpers: Jonathan and Mark Biggar, and Dan Faigin
  *	special thanks to my sweetie Gloria who suggested the Planet Crusher
  *
- *	Copyright (C) 1986, Larry Wall
- *
- *	This program may be copied as long as this copyright notice is
- *	included, and as long as it is not being copied for purposes
- *	of profit.  If you want to modify this program in any way other
- *	than normal configuration changes, common decency would suggest
- *	that you also modify the name of the program so that my good name
- *	(what there is of it) is not impugned.  (Calling it something like
- *	"warpx" or "superwarp" would be fine.)  Also, give it another
- *	WARPDIR so that the scoreboards don't get confused.
- *
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
+ * All rights reserved.
+ * 
+ * This code is derived from software contributed to The NetBSD Foundation
+ * by Larry Wall.
+ * 
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ * 
  * version 5.0  04/20/83
  *         5.1  05/05/83	various tidbits
  *	   5.2  05/12/83	VAX -> vax, ifdef'ed a SIGCONT
@@ -133,33 +149,11 @@ char rcsid[] = "@(#)Header: warp.c,v 7.0.1.3 86/12/12 17:07:44 lwall Exp";
 #include "weapon.h"
 
 int
-main(argc,argv)
-int argc;
-char *argv[];
+main(int argc, char *argv[])
 {
     char tmp, *s, *tcbuf;
 
-    int i;
-
     FILE *savfil;
-
-#if RANDBITS > 16
-    for (i=100; i; i--)
-	if (rand() >= 65536)
-	    goto rand_ok;
-    printf("Recompile with RANDBITS = 15 or 16.\n");
-    exit(1);
-#else
-#if RANDBITS > 15
-    for (i=100; i; i--) {
-	if (rand() >= 32768)
-	    goto rand_ok;
-    }
-    printf("Recompile with RANDBITS = 15.\n");
-    exit(1);
-#endif
-#endif
-rand_ok:
 
 #ifdef lint  /* to suppress "defined but never used" */
 # ifdef SIGTSTP
@@ -174,22 +168,22 @@ rand_ok:
 	for (s = argv[0]+1; *s != '\0'; s++)
 	    switch (*s) {
 	    case '&':
-		amoebaspec = TRUE;
-		beginner = TRUE;
+		amoebaspec = true;
+		beginner = true;
 		break;
 	    case 'A':
-		apolspec = TRUE;
-		beginner = TRUE;
+		apolspec = true;
+		beginner = true;
 		break;
 	    case 'b':
-		beginner = TRUE;
+		beginner = true;
 		break;
 	    case 'C':
-		crushspec = TRUE;
-		beginner = TRUE;
+		crushspec = true;
+		beginner = true;
 		break;
 	    case 'D':
-		debugging = TRUE;
+		debugging = true;
 #ifdef DEBUGGING
 		debug = atoi(++s);
 #endif
@@ -204,49 +198,49 @@ rand_ok:
 		if (ismarts > 99)
 		    ismarts = 99;
 		if (ismarts > 40)
-		    beginner = TRUE;
+		    beginner = true;
 		s += strlen(s)-1;
 		break;
 	    case 'E':
-		klingspec = TRUE;
-		beginner = TRUE;
+		klingspec = true;
+		beginner = true;
 		s++;
 		if (*s == '=') s++;
 		inumenemies = atoi(s);
 		s += strlen(s)-1;
 		break;
 	    case 'F':
-		friendspec = TRUE;
-		beginner = TRUE;
+		friendspec = true;
+		beginner = true;
 		s++;
 		if (*s == '=') s++;
 		inumfriends = atoi(s);
 		s += strlen(s)-1;
 		break;
 	    case 'G':
-		gornspec = TRUE;
-		beginner = TRUE;
+		gornspec = true;
+		beginner = true;
 		break;
 	    case 'l':
-		lowspeed = TRUE;
+		lowspeed = true;
 		break;
 	    case 'm':
-		metakey = TRUE;
+		metakey = true;
 		break;
 	    case 'M':
-		massacre = TRUE;
+		massacre = true;
 		break;
 	    case 'P':
-		piratespec = TRUE;
-		beginner = TRUE;
+		piratespec = true;
+		beginner = true;
 		s++;
 		if (*s == '=') s++;
 		inumpirates = atoi(s);
 		s += strlen(s)-1;
 		break;
 	    case 'S':
-		prespec = TRUE;
-		beginner = TRUE;
+		prespec = true;
+		beginner = true;
 		s++;
 		if (*s == '=') s++;
 		if (*s)
@@ -256,26 +250,26 @@ rand_ok:
 		s += strlen(s)-1;
 		break;
 	    case 'R':
-		romspec = TRUE;
-		beginner = TRUE;
+		romspec = true;
+		beginner = true;
 		break;
 	    case '*':
-		starspec = TRUE;
-		beginner = TRUE;
+		starspec = true;
+		beginner = true;
 		s++;
 		if (*s == '=') s++;
 		inumstars = atoi(s);
 		s += strlen(s)-1;
 		break;
 	    case 's':
-		scorespec = TRUE;
+		scorespec = true;
 		break;
 	    case 'T':
-		tholspec = TRUE;
-		beginner = TRUE;
+		tholspec = true;
+		beginner = true;
 		break;
 	    case 'x':
-		experimenting = TRUE;
+		experimenting = true;
 		break;
 	    case 'v':
 		version();
@@ -303,7 +297,7 @@ rand_ok:
     intrp_init(tcbuf);
 
     if (chdir(warplib) < 0)
-	fprintf(stderr,nocd,warplib);
+	fprintf(stderr,NOCD,warplib);
 
     term_init();
 
@@ -323,14 +317,14 @@ rand_ok:
 	roundsleep(1);
     }
 
-    srand(getpid());
+    srandom(getpid());
 
     do {
-	for (keepgoing = TRUE;;) {
+	for (keepgoing = true;;) {
 	    if (!experimenting) {
 		if ((savfil = fopen(savefilename,"w")) == NULL) {
 		    resetty();
-		    printf("Can't open savefile\r\n");
+		    printf("Can't open savefile `%s'\r\n", savefilename);
 		    finalize(1);
 		}
 		fprintf(savfil,
@@ -349,7 +343,7 @@ rand_ok:
 		);
 		fprintf(savfil,"         running on %s, process #%d\n",
 		    term+5,getpid());
-		Fclose(savfil);
+		fclose(savfil);
 	    }
 
 	    lastscore = totalscore;
@@ -358,7 +352,7 @@ rand_ok:
 	    cumsmarts += smarts;
 	    wavescore();
 	    if (numents<=0 && numbases<=0)
-		keepgoing = FALSE;
+		keepgoing = false;
 	  if (!keepgoing) break;
 	    do {
 		if (experimenting) {
@@ -370,7 +364,7 @@ rand_ok:
 		      "[Hit space to continue, 's' to save, 'q' to quit]");
 		}
 		sleep(1);
-		Fflush(stdout);
+		fflush(stdout);
 		eat_typeahead();
 		getcmd(&tmp);
 		if (tmp == BREAKCH || tmp == INTRCH) {
@@ -384,7 +378,7 @@ rand_ok:
 		    else
 			tmp = 1;
 		}
-	    } while (tmp != INTRCH && tmp != BREAKCH && !index(" qQs",tmp));
+	    } while (tmp != INTRCH && tmp != BREAKCH && !strchr(" qQs",tmp));
 	  if (tmp != ' ' && tmp != 's') break;
 	    if (!beginner && smarts < 20)
 		smarts += 4;

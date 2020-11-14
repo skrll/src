@@ -34,33 +34,33 @@
 #include "init.h"
 
 void
-initialize()
+initialize(void)
 {
-    Reg1 int i;
-    Reg2 int x;
-    Reg3 int y;
-    Reg4 int dist;
-    Reg5 int ydist;
-    Reg6 int xdist;
+    int i;
+    int x;
+    int y;
+    int dist;
+    int ydist = 0;
+    int xdist = 0;
     long e;
-    int yoff, xoff, ypred, xpred;
-    Reg7 OBJECT *obj;
+    int yoff = 0, xoff = 0, ypred, xpred;
+    OBJECT *obj = NULL;
     char ch;
     FILE *mapfp = NULL;
     bool tmptholspec;
     int inhabjackpot;
     long inhenergy;
     int walksplit = 200;
-    static char *distname[] =
+    static const char *distname[] =
 	{" #"," -"," \\"," /",
 	 " |"," *"," `"," '"};
 
-    cloaking = madgorns = FALSE;
+    cloaking = madgorns = false;
     deados = madfriends = 0;
     curscore = possiblescore = 0L;
     yamblast = xamblast = ambsize = 0;
     if (smarts > 90)
-	massacre = TRUE;
+	massacre = true;
     scandist = (massacre?20:15);
     antibase = (smarts>60?1:(smarts>40?2:(smarts>25?4:100)));
     sm35 = (smarts>35?35:smarts);
@@ -100,14 +100,15 @@ initialize()
 	yblasted[y] = 0;
     for (x=0; x<XSIZE; x++)
 	xblasted[x] = 0;
-    blasted = FALSE;
-    if (!starspec)
+    blasted = false;
+    if (!starspec) {
 	if (smarts < 15)
 	    inumstars = 50 + rand_mod(50);
 	else if (smarts < 50 || smarts > 85)
 	    inumstars = exdis(800) + rand_mod(100) + 1;
 	else /* too few stars makes 50..85 too hard */
 	    inumstars = exdis(700) + rand_mod(150-super*2) + 50+super*2;
+    }
     tmptholspec = (smarts > 15 && inumstars < 450 && ! rand_mod(90-sm80));
     if (!klingspec) {
 	inumenemies = rand_mod((smarts+1)/2) + 1;
@@ -203,7 +204,7 @@ stars_again:
 	if (debugging)
 	    printf(" P\r\n");
 	dist = 0;
-	Sprintf(spbuf,"smap.%d",
+	snprintf(spbuf, sizeof(spbuf), "smap.%d",
 	    (prescene>=0?prescene:rand_mod(MAPS)) );
 	if ((mapfp = fopen(spbuf,"r")) != NULL &&
 	    fgets(spbuf,10,mapfp) != NULL ) {
@@ -216,7 +217,7 @@ stars_again:
 	    xoff = rand_mod(XSIZE);	/* how much to shift x */
 	}
 	else {
-	    prespec = FALSE;
+	    prespec = false;
 	    prescene = -1;
 	    if (rand_mod(2))
 		goto scenario_again;
@@ -245,11 +246,9 @@ stars_again:
 		x = rand_mod(XSIZE);	/* pick from 0..39, uniform */
 		break;
 	    case 1: case 2: case 3:
-#ifndef lint
 		x = (int)((((double)(myrand()-HALFRAND)) *
 		           ((double)(myrand()-HALFRAND))/RANDRAND)
 			  * 20.0) + xoff;	/* pick from -20..20, clumped */
-#endif
 		break;
 	    case 4:
 		if (fscanf(mapfp,"%d %d\n",&ypred,&xpred) == EOF)
@@ -270,11 +269,9 @@ stars_again:
 		y = rand_mod(YSIZE);
 		break;
 	    case 1:
-#ifndef lint
 		y = (int)((((double)(myrand()-HALFRAND)) *
 		           ((double)(myrand()-HALFRAND))/RANDRAND)
 			  * 12.0) + yoff;	/* pick from -12..12, clumped */
-#endif
 		break;
 	    case 2:
 #ifndef lint
@@ -356,7 +353,7 @@ stars_again:
 	}
     }
     if (mapfp != NULL)
-	Fclose(mapfp);
+	fclose(mapfp);
     if (numcrushes) {
 	do {
 	    x = rand_mod(XSIZE);
@@ -491,7 +488,7 @@ stars_again:
 
 	    dist = rand_mod(20);
 	    ch = let[dist];
-	}		/* grr, venix doesn't like indexing into string */
+	}		/* grr, venix doesn't like strchring into string */
 	obj = make_object(Enemy,ch,y,x,0,0,
 	    e + rand_mod(super*200+2),e/4,&root);
 	if (numpirates-- > 0) {
@@ -515,7 +512,7 @@ stars_again:
 	mvaddch(base->posy+1, base->posx*2, base->image);
     sleep(2);
     {
-	Reg7 OBJECT *curobj;
+	OBJECT *curobj;
 
 	for (curobj = root.next; curobj != &root; curobj = curobj->next) {
 	    mvaddch(curobj->posy+1, curobj->posx*2, curobj->image);
@@ -528,7 +525,7 @@ stars_again:
     whenok = 0;
     timer = 0;
     finish = 0;
-    bombed_out = FALSE;
+    bombed_out = false;
     if (ent)
 	entmode = status = 0;
     else
@@ -537,7 +534,7 @@ stars_again:
 	else
 	    status = 3;
 
-    Sprintf(spbuf,
+    snprintf(spbuf, sizeof(spbuf),
     "%-4s E: %4d %2d B: %5d %3d Enemies: %-3d Stars: %-3d Stardate%5d.%1d %9ld",
 	"   ", 0, 0, 0, 0, 0, 0, smarts * 100, 0, 0L);
     mvaddstr(0,0,spbuf);

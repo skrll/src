@@ -1,4 +1,4 @@
-/*	$NetBSD: cond.c,v 1.200 2020/11/10 08:02:35 rillig Exp $	*/
+/*	$NetBSD: cond.c,v 1.214 2020/11/13 09:01:59 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -72,7 +72,8 @@
 /* Handling of conditionals in a makefile.
  *
  * Interface:
- *	Cond_EvalLine	Evaluate the conditional.
+ *	Cond_EvalLine   Evaluate the conditional directive, such as
+ *			'.if <cond>', '.elifnmake <cond>', '.else', '.endif'.
  *
  *	Cond_EvalCondition
  *			Evaluate the conditional, which is either the argument
@@ -93,7 +94,7 @@
 #include "dir.h"
 
 /*	"@(#)cond.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: cond.c,v 1.200 2020/11/10 08:02:35 rillig Exp $");
+MAKE_RCSID("$NetBSD: cond.c,v 1.214 2020/11/13 09:01:59 rillig Exp $");
 
 /*
  * The parsing of conditional expressions is based on this grammar:
@@ -219,14 +220,8 @@ ParseFuncArg(const char **pp, Boolean doEval, const char *func,
 	p++;			/* Skip opening '(' - verified by caller */
 
     if (*p == '\0') {
-	/*
-	 * No arguments whatsoever. Because 'make' and 'defined' aren't really
-	 * "reserved words", we don't print a message. I think this is better
-	 * than hitting the user with a warning message every time s/he uses
-	 * the word 'make' or 'defined' at the beginning of a symbol...
-	 */
-	*out_arg = NULL;
-	return 0;
+	*out_arg = NULL;	/* Missing closing parenthesis: */
+	return 0;		/* .if defined( */
     }
 
     cpp_skip_hspace(&p);
@@ -454,6 +449,8 @@ CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
 		if (parseResult & VPR_ANY_MSG)
 		    par->printedError = TRUE;
 		if (*out_freeIt != NULL) {
+		    /* XXX: Can there be any situation in which a returned
+		     * var_Error requires freeIt? */
 		    free(*out_freeIt);
 		    *out_freeIt = NULL;
 		}
@@ -485,10 +482,6 @@ CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
 	default:
 	    if (strictLHS && !quoted && *start != '$' && !ch_isdigit(*start)) {
 		/* lhs must be quoted, a variable reference or number */
-		if (*out_freeIt) {
-		    free(*out_freeIt);
-		    *out_freeIt = NULL;
-		}
 		str = NULL;
 		goto cleanup;
 	    }
@@ -521,6 +514,7 @@ static const struct If ifs[] = {
     { "",      0, FALSE, FuncDefined },
     { NULL,    0, FALSE, NULL }
 };
+enum { PLAIN_IF_INDEX = 4 };
 
 static Boolean
 If_Eval(const struct If *if_info, const char *arg, size_t arglen)
@@ -544,11 +538,14 @@ EvalNotEmpty(CondParser *par, const char *value, Boolean quoted)
     if (TryParseNumber(value, &num))
 	return num != 0.0;
 
-    /* For .if ${...}, check for non-empty string (defProc is ifdef). */
+    /* For .if ${...}, check for non-empty string.  This is different from
+     * the evaluation function from that .if variant, which would test
+     * whether a variable of the given name were defined. */
+    /* XXX: Whitespace should count as empty, just as in ParseEmptyArg. */
     if (par->if_info->form[0] == '\0')
 	return value[0] != '\0';
 
-    /* Otherwise action default test ... */
+    /* For the other variants of .ifxxx ${...}, use its default function. */
     return If_Eval(par->if_info, value, strlen(value));
 }
 
@@ -1033,7 +1030,6 @@ static CondEvalResult
 CondEvalExpression(const struct If *info, const char *cond, Boolean *value,
 		    Boolean eprint, Boolean strictLHS)
 {
-    static const struct If *dflt_info;
     CondParser par;
     CondEvalResult rval;
 
@@ -1041,16 +1037,7 @@ CondEvalExpression(const struct If *info, const char *cond, Boolean *value,
 
     cpp_skip_hspace(&cond);
 
-    if (info == NULL && (info = dflt_info) == NULL) {
-	/* Scan for the entry for .if - it can't be first */
-	for (info = ifs;; info++)
-	    if (info->form[0] == '\0')
-		break;
-	dflt_info = info;
-    }
-    assert(info != NULL);
-
-    par.if_info = info;
+    par.if_info = info != NULL ? info : ifs + PLAIN_IF_INDEX;
     par.p = cond;
     par.curr = TOK_NONE;
     par.printedError = FALSE;
@@ -1063,121 +1050,154 @@ CondEvalExpression(const struct If *info, const char *cond, Boolean *value,
     return rval;
 }
 
+/* Evaluate a condition in a :? modifier, such as
+ * ${"${VAR}" == value:?yes:no}. */
 CondEvalResult
 Cond_EvalCondition(const char *cond, Boolean *out_value)
 {
 	return CondEvalExpression(NULL, cond, out_value, FALSE, FALSE);
 }
 
-/* Evaluate the conditional in the passed line. The line looks like this:
- *	.<cond-type> <expr>
- * In this line, <cond-type> is any of if, ifmake, ifnmake, ifdef, ifndef,
- * elif, elifmake, elifnmake, elifdef, elifndef.
- * In this line, <expr> consists of &&, ||, !, function(arg), comparisons
- * and parenthetical groupings thereof.
+/* Evaluate the conditional directive in the line, which is one of:
  *
- * Note that the states IF_ACTIVE and ELSE_ACTIVE are only different in order
- * to detect spurious .else lines (as are SKIP_TO_ELSE and SKIP_TO_ENDIF),
- * otherwise .else could be treated as '.elif 1'.
+ *	.if <cond>
+ *	.ifmake <cond>
+ *	.ifnmake <cond>
+ *	.ifdef <cond>
+ *	.ifndef <cond>
+ *	.elif <cond>
+ *	.elifmake <cond>
+ *	.elifnmake <cond>
+ *	.elifdef <cond>
+ *	.elifndef <cond>
+ *	.else
+ *	.endif
+ *
+ * In these directives, <cond> consists of &&, ||, !, function(arg),
+ * comparisons, expressions, bare words, numbers and strings, and
+ * parenthetical groupings thereof.
  *
  * Results:
- *	COND_PARSE	to continue parsing the lines after the conditional
- *			(when .if or .else returns TRUE)
+ *	COND_PARSE	to continue parsing the lines that follow the
+ *			conditional (when <cond> evaluates to TRUE)
  *	COND_SKIP	to skip the lines after the conditional
- *			(when .if or .elif returns FALSE, or when a previous
+ *			(when <cond> evaluates to FALSE, or when a previous
  *			branch has already been taken)
  *	COND_INVALID	if the conditional was not valid, either because of
  *			a syntax error or because some variable was undefined
  *			or because the condition could not be evaluated
  */
 CondEvalResult
-Cond_EvalLine(const char *line)
+Cond_EvalLine(const char *const line)
 {
-    enum { MAXIF = 128 };	/* maximum depth of .if'ing */
-    enum { MAXIF_BUMP = 32 };	/* how much to grow by */
-    enum if_states {
-	IF_ACTIVE,		/* .if or .elif part active */
-	ELSE_ACTIVE,		/* .else part active */
-	SEARCH_FOR_ELIF,	/* searching for .elif/else to execute */
-	SKIP_TO_ELSE,		/* has been true, but not seen '.else' */
-	SKIP_TO_ENDIF		/* nothing else to execute */
-    };
-    static enum if_states *cond_state = NULL;
-    static unsigned int max_if_depth = MAXIF;
+    typedef enum IfState {
+
+	/* None of the previous <cond> evaluated to TRUE. */
+	IFS_INITIAL	= 0,
+
+	/* The previous <cond> evaluated to TRUE.
+	 * The lines following this condition are interpreted. */
+	IFS_ACTIVE	= 1 << 0,
+
+	/* The previous directive was an '.else'. */
+	IFS_SEEN_ELSE	= 1 << 1,
+
+	/* One of the previous <cond> evaluated to TRUE. */
+	IFS_WAS_ACTIVE	= 1 << 2
+
+    } IfState;
+
+    static enum IfState *cond_states = NULL;
+    static unsigned int cond_states_cap = 128;
 
     const struct If *ifp;
     Boolean isElif;
     Boolean value;
-    enum if_states state;
+    IfState state;
+    const char *p = line;
 
-    if (cond_state == NULL) {
-	cond_state = bmake_malloc(max_if_depth * sizeof *cond_state);
-	cond_state[0] = IF_ACTIVE;
+    if (cond_states == NULL) {
+	cond_states = bmake_malloc(cond_states_cap * sizeof *cond_states);
+	cond_states[0] = IFS_ACTIVE;
     }
-    line++;		/* skip the leading '.' */
-    cpp_skip_hspace(&line);
 
-    /* Find what type of if we're dealing with.  */
-    if (line[0] == 'e') {
-	if (line[1] != 'l') {
-	    if (!is_token(line + 1, "ndif", 4))
+    p++;		/* skip the leading '.' */
+    cpp_skip_hspace(&p);
+
+    /* Parse the name of the directive, such as 'if', 'elif', 'endif'. */
+    if (p[0] == 'e') {
+	if (p[1] != 'l') {
+	    if (!is_token(p + 1, "ndif", 4)) {
+		/* Unknown directive.  It might still be a transformation
+		 * rule like '.elisp.scm', therefore no error message here. */
 		return COND_INVALID;
-	    /* End of conditional section */
+	    }
+
+	    /* It is an '.endif'. */
+	    /* TODO: check for extraneous <cond> */
+
 	    if (cond_depth == cond_min_depth) {
 		Parse_Error(PARSE_FATAL, "if-less endif");
 		return COND_PARSE;
 	    }
+
 	    /* Return state for previous conditional */
 	    cond_depth--;
-	    return cond_state[cond_depth] <= ELSE_ACTIVE
+	    return cond_states[cond_depth] & IFS_ACTIVE
 		   ? COND_PARSE : COND_SKIP;
 	}
 
 	/* Quite likely this is 'else' or 'elif' */
-	line += 2;
-	if (is_token(line, "se", 2)) {
-	    /* It is else... */
+	p += 2;
+	if (is_token(p, "se", 2)) {	/* It is an 'else'. */
+
+	    if (opts.lint && p[2] != '\0')
+		Parse_Error(PARSE_FATAL,
+			    "The .else directive does not take arguments.");
+
 	    if (cond_depth == cond_min_depth) {
 		Parse_Error(PARSE_FATAL, "if-less else");
 		return COND_PARSE;
 	    }
 
-	    state = cond_state[cond_depth];
-	    switch (state) {
-	    case SEARCH_FOR_ELIF:
-		state = ELSE_ACTIVE;
-		break;
-	    case ELSE_ACTIVE:
-	    case SKIP_TO_ENDIF:
-		Parse_Error(PARSE_WARNING, "extra else");
-		/* FALLTHROUGH */
-	    default:
-	    case IF_ACTIVE:
-	    case SKIP_TO_ELSE:
-		state = SKIP_TO_ENDIF;
-		break;
+	    state = cond_states[cond_depth];
+	    if (state == IFS_INITIAL) {
+		state = IFS_ACTIVE | IFS_SEEN_ELSE;
+	    } else {
+		if (state & IFS_SEEN_ELSE)
+		    Parse_Error(PARSE_WARNING, "extra else");
+		state = IFS_WAS_ACTIVE | IFS_SEEN_ELSE;
 	    }
-	    cond_state[cond_depth] = state;
-	    return state <= ELSE_ACTIVE ? COND_PARSE : COND_SKIP;
+	    cond_states[cond_depth] = state;
+
+	    return state & IFS_ACTIVE ? COND_PARSE : COND_SKIP;
 	}
 	/* Assume for now it is an elif */
 	isElif = TRUE;
     } else
 	isElif = FALSE;
 
-    if (line[0] != 'i' || line[1] != 'f')
+    if (p[0] != 'i' || p[1] != 'f') {
+	/* Unknown directive.  It might still be a transformation rule like
+	 * '.elisp.scm', therefore no error message here. */
 	return COND_INVALID;	/* Not an ifxxx or elifxxx line */
+    }
 
     /*
      * Figure out what sort of conditional it is -- what its default
      * function is, etc. -- by looking in the table of valid "ifs"
      */
-    line += 2;
+    p += 2;
     for (ifp = ifs;; ifp++) {
-	if (ifp->form == NULL)
+	if (ifp->form == NULL) {
+	    /* TODO: Add error message about unknown directive,
+	     * since there is no other known directive that starts with 'el'
+	     * or 'if'.
+	     * Example: .elifx 123 */
 	    return COND_INVALID;
-	if (is_token(ifp->form, line, ifp->formlen)) {
-	    line += ifp->formlen;
+	}
+	if (is_token(p, ifp->form, ifp->formlen)) {
+	    p += ifp->formlen;
 	    break;
 	}
     }
@@ -1189,51 +1209,51 @@ Cond_EvalLine(const char *line)
 	    Parse_Error(PARSE_FATAL, "if-less elif");
 	    return COND_PARSE;
 	}
-	state = cond_state[cond_depth];
-	if (state == SKIP_TO_ENDIF || state == ELSE_ACTIVE) {
+	state = cond_states[cond_depth];
+	if (state & IFS_SEEN_ELSE) {
 	    Parse_Error(PARSE_WARNING, "extra elif");
-	    cond_state[cond_depth] = SKIP_TO_ENDIF;
+	    cond_states[cond_depth] = IFS_WAS_ACTIVE | IFS_SEEN_ELSE;
 	    return COND_SKIP;
 	}
-	if (state != SEARCH_FOR_ELIF) {
-	    /* Either just finished the 'true' block, or already SKIP_TO_ELSE */
-	    cond_state[cond_depth] = SKIP_TO_ELSE;
+	if (state != IFS_INITIAL) {
+	    cond_states[cond_depth] = IFS_WAS_ACTIVE;
 	    return COND_SKIP;
 	}
     } else {
 	/* Normal .if */
-	if (cond_depth + 1 >= max_if_depth) {
+	if (cond_depth + 1 >= cond_states_cap) {
 	    /*
 	     * This is rare, but not impossible.
 	     * In meta mode, dirdeps.mk (only runs at level 0)
 	     * can need more than the default.
 	     */
-	    max_if_depth += MAXIF_BUMP;
-	    cond_state = bmake_realloc(cond_state,
-				       max_if_depth * sizeof *cond_state);
+	    cond_states_cap += 32;
+	    cond_states = bmake_realloc(cond_states,
+					cond_states_cap * sizeof *cond_states);
 	}
-	state = cond_state[cond_depth];
+	state = cond_states[cond_depth];
 	cond_depth++;
-	if (state > ELSE_ACTIVE) {
+	if (!(state & IFS_ACTIVE)) {
 	    /* If we aren't parsing the data, treat as always false */
-	    cond_state[cond_depth] = SKIP_TO_ELSE;
+	    cond_states[cond_depth] = IFS_WAS_ACTIVE;
 	    return COND_SKIP;
 	}
     }
 
     /* And evaluate the conditional expression */
-    if (CondEvalExpression(ifp, line, &value, TRUE, TRUE) == COND_INVALID) {
+    if (CondEvalExpression(ifp, p, &value, TRUE, TRUE) == COND_INVALID) {
 	/* Syntax error in conditional, error message already output. */
 	/* Skip everything to matching .endif */
-	cond_state[cond_depth] = SKIP_TO_ELSE;
+	/* XXX: An extra '.else' is not detected in this case. */
+	cond_states[cond_depth] = IFS_WAS_ACTIVE;
 	return COND_SKIP;
     }
 
     if (!value) {
-	cond_state[cond_depth] = SEARCH_FOR_ELIF;
+	cond_states[cond_depth] = IFS_INITIAL;
 	return COND_SKIP;
     }
-    cond_state[cond_depth] = IF_ACTIVE;
+    cond_states[cond_depth] = IFS_ACTIVE;
     return COND_PARSE;
 }
 

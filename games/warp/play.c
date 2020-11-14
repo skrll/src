@@ -24,20 +24,20 @@
 #include "play.h"
 
 void
-play_init()
+play_init(void)
 {
     ;
 }
 
 void
-play()
+play(void)
 {
-    bool done = FALSE;
-    Reg1 OBJECT *curobj;
-    Reg2 OBJECT *to;
-    Reg3 int i;
-    Reg4 int x;
-    Reg5 int y;
+    bool done = false;
+    OBJECT *curobj;
+    OBJECT *to;
+    int i;
+    int x;
+    int y;
 
     display_status();
 #ifdef TIOCOUTQ
@@ -48,7 +48,7 @@ play()
     do {
 	timer++;
 	nxtbang = 0;
-	banging = FALSE;
+	banging = false;
 	display_status();
 #ifdef TIOCOUTQ
 	while (output_pending() > charsperhalfsec)
@@ -69,7 +69,7 @@ play()
 		ent->energy -= ent->energy/40;
 	    }
 	    else
-		cloaking = FALSE;
+		cloaking = false;
 	    cloaked = cloaking;
 	}
 	if (base) {
@@ -152,7 +152,7 @@ play()
 	if (aretorps) {
 	    aretorps = 0;
 	    for (i=0;i<2;i++) for (y=0;y<3;y++) for (x=0;x<3;x++) {
-		if (curobj = isatorp[i][y][x]) {
+		if ((curobj = isatorp[i][y][x]) != NULL) {
 		    to = occupant[(curobj->posy+curobj->vely+YSIZE00)%YSIZE]
 				 [(curobj->posx+curobj->velx+XSIZE00)%XSIZE];
 		    if (to && !to->vely && !to->velx) {
@@ -170,7 +170,7 @@ play()
 	if (finish) {
 	    finish--;
 	    if (!finish && (!(numenemies || numos) || (!ent && !base))) {
-		done = TRUE;
+		done = true;
 		timer -= 5;
 	    }
 	}

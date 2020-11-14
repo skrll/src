@@ -26,7 +26,7 @@ EXT long oldeenergy;
 EXT long oldbenergy;
 EXT long oldcurscore;
 
-EXT char savefilename[40];
+EXT char savefilename[512];
 
 #ifdef SCOREFULL
 #define COMPOFF 0
@@ -41,9 +41,9 @@ EXT char longlognam[128];
 
 EXT char c INIT(' ');
 
-void score_init();
-void wscore();
-void display_status();
-void wavescore();
-void score();
-void save_game();
+void score_init(void);
+void wscore(void);
+void display_status(void);
+void wavescore(void);
+void score(void);
+void save_game(void);

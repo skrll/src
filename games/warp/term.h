@@ -42,8 +42,8 @@
 #define mvaddstr(y,x,s) (move((y),(x),0), tmpstr = (s), \
      tmplen = strlen(tmpstr), write(1, tmpstr, tmplen), real_x += tmplen)
 
-EXT int tmplen;
-EXT char *tmpstr;
+EXT size_t tmplen;
+EXT const char *tmpstr;
 /* EXT char tmpchr; */
 
 /* The following macros are like the pseudo-curses macros above, but do
@@ -131,7 +131,7 @@ EXT char INTRCH INIT('\03');
 #	    endif /* RDCHK */
 #	endif /* FIONREAD */
 #   else /* PENDING */
-	??? warp will not work without PENDING
+#	??? warp will not work without PENDING
 #	ifndef lint
 #	    define input_pending() (nextin!=nextout)
 #	else
@@ -162,7 +162,7 @@ EXT char INTRCH INIT('\03');
 		    ??? PENDING is not defined correctly in warp.h
 #		endif
 		EXT int devtty INIT(0);
-		EXT bool is_input INIT(FALSE);
+		EXT bool is_input INIT(false);
 		EXT char pending_ch INIT(0);
 #		ifndef lint
 #		    define input_pending() (is_input || \
@@ -175,36 +175,43 @@ EXT char INTRCH INIT('\03');
 #   else /* PENDING */
 	??? warp will not work without PENDING
 #	define read_tty(addr,size) read(0,addr,size)
-#	define input_pending() (FALSE)
+#	define input_pending() (false)
 #   endif /* PENDING */
 #endif /* PUSHBACK */
 
 /* stuff wanted by terminal mode diddling routines */
 
-#ifdef TERMIO
+#ifdef TERMIOS
+EXT struct termios _tty, _oldtty;
+#elif defined(TERMIO)
+typedef int speed_t;
 EXT struct termio _tty, _oldtty;
+#define tcsetattr(fd, how, ti) ioctl(fd, how, ti)
+#define tcgetattr(fd, ti) ioctl(fd, TCGETA, ti)
+#define cfgetospeed(ti) ((ti)->c_cflag & CBAUD)
 #else
+typedef int speed_t;
 EXT struct sgttyb _tty;
 EXT int _res_flg INIT(0);
 #endif
 
 EXT int _tty_ch INIT(2);
-EXT bool bizarre INIT(FALSE);			/* do we need to restore terminal? */
+EXT bool bizarre INIT(false);			/* do we need to restore terminal? */
 
 /* terminal mode diddling routines */
 
-#ifdef TERMIO
+#if defined(TERMIO) || defined(TERMIOS)
   
-#define raw() ((bizarre=1),_tty.c_lflag &=~ISIG,_tty.c_cc[VMIN] = 1,ioctl(_tty_ch,TCSETAF,&_tty))
-#define noraw() ((bizarre=1),_tty.c_lflag |= ISIG,_tty.c_cc[VEOF] = CEOF,ioctl(_tty_ch,TCSETAF,&_tty))
-#define crmode() ((bizarre=1),_tty.c_lflag &=~ICANON,_tty.c_cc[VMIN] = 1,ioctl(_tty_ch,TCSETAF,&_tty))
-#define nocrmode() ((bizarre=1),_tty.c_lflag |= ICANON,_tty.c_cc[VEOF] = CEOF,ioctl(_tty_ch,TCSETAF,&_tty))
-#define echo()	 ((bizarre=1),_tty.c_lflag |= ECHO, ioctl(_tty_ch, TCSETAW, &_tty))
-#define noecho() ((bizarre=1),_tty.c_lflag &=~ECHO, ioctl(_tty_ch, TCSETAW, &_tty))
-#define nl()	 ((bizarre=1),_tty.c_iflag |= ICRNL,_tty.c_oflag |= ONLCR,ioctl(_tty_ch, TCSETAW, &_tty))
-#define nonl()	 ((bizarre=1),_tty.c_iflag &=~ICRNL,_tty.c_oflag &=~ONLCR,ioctl(_tty_ch, TCSETAW, &_tty))
-#define	savetty() (ioctl(_tty_ch, TCGETA, &_oldtty),ioctl(_tty_ch, TCGETA, &_tty))
-#define	resetty() ((bizarre=0),ioctl(_tty_ch, TCSETAF, &_oldtty))
+#define raw() ((bizarre=1),_tty.c_lflag &=~ISIG,_tty.c_cc[VMIN] = 1,tcsetattr(_tty_ch,TCSAFLUSH,&_tty))
+#define noraw() ((bizarre=1),_tty.c_lflag |= ISIG,_tty.c_cc[VEOF] = CEOF,tcsetattr(_tty_ch,TCSAFLUSH,&_tty))
+#define crmode() ((bizarre=1),_tty.c_lflag &=~ICANON,_tty.c_cc[VMIN] = 1,tcsetattr(_tty_ch,TCSAFLUSH,&_tty))
+#define nocrmode() ((bizarre=1),_tty.c_lflag |= ICANON,_tty.c_cc[VEOF] = CEOF,tcsetattr(_tty_ch,TCSAFLUSH,&_tty))
+#define echo()	 ((bizarre=1),_tty.c_lflag |= ECHO, tcsetattr(_tty_ch, TCSANOW, &_tty))
+#define noecho() ((bizarre=1),_tty.c_lflag &=~ECHO, tcsetattr(_tty_ch, TCSANOW, &_tty))
+#define nl()	 ((bizarre=1),_tty.c_iflag |= ICRNL,_tty.c_oflag |= ONLCR,tcsetattr(_tty_ch, TCSANOW, &_tty))
+#define nonl()	 ((bizarre=1),_tty.c_iflag &=~ICRNL,_tty.c_oflag &=~ONLCR,tcsetattr(_tty_ch, TCSANOW, &_tty))
+#define	savetty() (tcgetattr(_tty_ch, &_oldtty),tcgetattr(_tty_ch, &_tty))
+#define	resetty() ((bizarre=0),tcsetattr(_tty_ch, TCSAFLUSH, &_oldtty))
 #define unflush_output()
 
 #else
@@ -245,29 +252,29 @@ EXT bool bizarre INIT(FALSE);			/* do we need to restore terminal? */
  */
 
 #ifdef HAVETERMLIB
-EXT char *BC INIT(Nullch);		/* backspace character */
-EXT char *UP INIT(Nullch);		/* move cursor up one line */
+EXT char *BC INIT(NULL);		/* backspace character */
+EXT char *UP INIT(NULL);		/* move cursor up one line */
 EXT char *myUP;
-EXT char *ND INIT(Nullch);		/* non-destructive cursor right */
+EXT char *ND INIT(NULL);		/* non-destructive cursor right */
 EXT char *myND;
-EXT char *DO INIT(Nullch);		/* move cursor down one line */
+EXT char *DO INIT(NULL);		/* move cursor down one line */
 EXT char *myDO;
-EXT char *CR INIT(Nullch);		/* get to left margin, somehow */
-EXT char *VB INIT(Nullch);		/* visible bell */
-EXT char *CL INIT(Nullch);		/* home and clear screen */
-EXT char *CE INIT(Nullch);		/* clear to end of line */
-EXT char *CM INIT(Nullch);		/* cursor motion -- PWP */
-EXT char *HO INIT(Nullch);		/* home cursor -- PWP */
-EXT char *CD INIT(Nullch);		/* clear to end of display -- PWP */
-EXT char *SO INIT(Nullch);		/* begin standout mode */
-EXT char *SE INIT(Nullch);		/* end standout mode */
+EXT char *CR INIT(NULL);		/* get to left margin, somehow */
+EXT char *VB INIT(NULL);		/* visible bell */
+EXT char *CL INIT(NULL);		/* home and clear screen */
+EXT char *CE INIT(NULL);		/* clear to end of line */
+EXT char *CM INIT(NULL);		/* cursor motion -- PWP */
+EXT char *HO INIT(NULL);		/* home cursor -- PWP */
+EXT char *CD INIT(NULL);		/* clear to end of display -- PWP */
+EXT char *SO INIT(NULL);		/* begin standout mode */
+EXT char *SE INIT(NULL);		/* end standout mode */
 EXT int SG INIT(0);		/* blanks left by SO and SE */
-EXT char *US INIT(Nullch);		/* start underline mode */
-EXT char *UE INIT(Nullch);		/* end underline mode */
-EXT char *UC INIT(Nullch);		/* underline a character, if that's how it's done */
+EXT char *US INIT(NULL);		/* start underline mode */
+EXT char *UE INIT(NULL);		/* end underline mode */
+EXT char *UC INIT(NULL);		/* underline a character, if that's how it's done */
 EXT int UG INIT(0);		/* blanks left by US and UE */
-EXT bool AM INIT(FALSE);		/* does terminal have automatic margins? */
-EXT bool XN INIT(FALSE);		/* does it eat 1st newline after automatic wrap? */
+EXT bool AM INIT(false);		/* does terminal have automatic margins? */
+EXT bool XN INIT(false);		/* does it eat 1st newline after automatic wrap? */
 EXT char PC INIT(0);		/* pad character for use by tputs() */
 EXT short ospeed INIT(0);	/* terminal output speed, for use by tputs() */
 EXT int LINES INIT(0), COLS INIT(0);	/* size of screen */
@@ -293,27 +300,27 @@ EXT char KILLCH;		/* line delete character */
   ????????		/* up to you */
 #endif
 
-void	term_init();
-void	term_set();
+void term_init(void);
+void term_set(char *);
 #ifdef PUSHBACK
-void	pushchar();
-void	mac_init();
-void	mac_line();
+void pushchar(int);
+void mac_init(char *);
+void mac_line(char *, char *, size_t);
 #endif
-void	eat_typeahead();
-void	settle_down();
-#ifndef read_tty
-    int		read_tty();
-#endif
-void	getcmd();
-
-int read_nd();
-void page();
-void move();
-void do_tc();
-int comp_tc();
-void helper();
-void rewrite();
+void page(const char *filename, size_t);
+void move(int, int, int);
+void do_tc(const char *, int);
+int comp_tc(char *, const char *, int);
+void helper(void);
+void rewrite(void);
 int cmstore(int);
+void eat_typeahead(void);
+void settle_down(void);
+#ifndef read_tty
+int read_tty(char *, ssize_t);
+#endif
+int read_nd(char *, size_t);
+void getcmd(char *);
+void pushstring(char *);
 
 #endif

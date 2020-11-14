@@ -23,11 +23,8 @@
 #include "sig.h"
 
 void
-sig_init()
+sig_init(void)
 {
-#ifdef lint
-    ;
-#else
     sigignore(SIGINT);  /* for inquiry of existence via kill call */
 #ifdef SIGTTOU
     sigignore(SIGTTOU);
@@ -38,8 +35,10 @@ sig_init()
 	sigset(SIGQUIT, sig_catcher);
 	sigset(SIGILL, sig_catcher);
 	sigset(SIGFPE, sig_catcher);
+#if 0
 	sigset(SIGBUS, sig_catcher);
 	sigset(SIGSEGV, sig_catcher);
+#endif
 	sigset(SIGSYS, sig_catcher);
 	sigset(SIGTERM, sig_catcher);
     }
@@ -53,7 +52,6 @@ sig_init()
     sigset(SIGTSTP, stop_catcher);
     sigset(SIGSTOP, stop_catcher);
 #endif
-#endif /* lint */
 }
 
 #ifdef SIGTSTP
@@ -72,7 +70,7 @@ cont_catcher(int x)
 #endif
 
 void
-mytstp()
+mytstp(void)
 {
     resetty();
 #ifdef SIGTSTP
@@ -94,8 +92,7 @@ mytstp()
 }
 
 void					/* very much void */
-finalize(status)
-int status;
+finalize(int status)
 {
     if (bizarre)
 	resetty();
@@ -113,7 +110,7 @@ void
 sig_catcher(int signo)
 {
 #ifdef VERBOSE
-    static char *signame[] = {
+    static const char *signame[] = {
 	"",
 	"HUP",
 	"INT",
@@ -180,7 +177,7 @@ sig_catcher(int signo)
 	totalscore -= possiblescore / 2;
     }
     save_game();
-    if (signo != SIGHUP && signo != SIGQUIT)
+    if (signo != SIGHUP && signo != SIGQUIT) {
 #ifdef VERBOSE
 	IF(verbose)
 	    printf("\r\nCaught %s%s--%s\r\n",
@@ -189,8 +186,9 @@ sig_catcher(int signo)
 	ELSE
 #endif
 #ifdef TERSE
-	    printf("\r\nSignal %d--bye bye\r\n",signo);
+	    printf("\r\nsignal %d--bye bye\r\n",signo);
 #endif
+    }
     switch (signo) {
     case SIGBUS:
     case SIGILL:

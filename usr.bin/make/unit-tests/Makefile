@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.196 2020/11/10 00:19:19 rillig Exp $
+# $NetBSD: Makefile,v 1.198 2020/11/12 23:35:21 sjg Exp $
 #
 # Unit tests for make(1)
 #
@@ -150,6 +150,7 @@ TESTS+=		directive-for
 TESTS+=		directive-for-generating-endif
 TESTS+=		directive-hyphen-include
 TESTS+=		directive-if
+TESTS+=		directive-if-nested
 TESTS+=		directive-ifdef
 TESTS+=		directive-ifmake
 TESTS+=		directive-ifndef
@@ -187,6 +188,7 @@ TESTS+=		modmatch
 TESTS+=		modmisc
 TESTS+=		modts
 TESTS+=		modword
+TESTS+=		objdir-writable
 TESTS+=		opt
 TESTS+=		opt-backwards
 TESTS+=		opt-chdir
@@ -378,10 +380,16 @@ TESTS+=		varparse-mod
 TESTS+=		varparse-undef-partial
 TESTS+=		varquote
 
+.if ${.OBJDIR} != ${.CURDIR}
+RO_OBJDIR:=	${.OBJDIR}/roobj
+.else
+RO_OBJDIR:=	${TMPDIR:U/tmp}/roobj
+.endif
 # Additional environment variables for some of the tests.
 # The base environment is -i PATH="$PATH".
 ENV.depsrc-optional+=   TZ=UTC
 ENV.envfirst=		FROM_ENV=value-from-env
+ENV.objdir-writable+=	RO_OBJDIR=${RO_OBJDIR}
 ENV.varmisc=		FROM_ENV=env
 ENV.varmisc+=		FROM_ENV_BEFORE=env
 ENV.varmisc+=		FROM_ENV_AFTER=env
@@ -408,6 +416,7 @@ SED_CMDS.job-output-long-lines= \
 	${:D marker should always be at the beginning of the line. } \
 	-e '/^aa*--- job-b ---$$/d' \
 	-e '/^bb*--- job-a ---$$/d'
+SED_CMDS.objdir-writable= -e 's,${RO_OBJDIR},OBJDIR/roobj,g'
 SED_CMDS.opt-debug-graph1= \
 			-e 's,${.CURDIR},CURDIR,'
 SED_CMDS.opt-debug-graph1+= \
