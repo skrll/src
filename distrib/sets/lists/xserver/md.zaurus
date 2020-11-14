@@ -1,4 +1,4 @@
-# $NetBSD: md.zaurus,v 1.23 2019/12/31 05:01:49 uki Exp $
+# $NetBSD: md.zaurus,v 1.25 2020/11/10 21:47:41 kamil Exp $
 ./etc/X11/xorg.conf.C3x00				xserver-xorg-server-etc	xorg
 ./etc/X11/xorg.conf.C7x0				xserver-xorg-server-etc	xorg
 ./etc/X11/xorg.conf.sample				xserver-obsolete	obsolete

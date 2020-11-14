@@ -1,4 +1,4 @@
-# $NetBSD: md.sun3,v 1.17 2020/07/26 07:02:14 tsutsui Exp $
+# $NetBSD: md.sun3,v 1.19 2020/11/10 21:47:41 kamil Exp $
 ./usr/X11R7/bin/X					xserver-xorg-server-bin	xorg
 ./usr/X11R7/bin/Xsun					xserver-xorg-server-bin	xorg
 ./usr/X11R7/bin/XsunMono				xserver-xorg-server-bin	xorg

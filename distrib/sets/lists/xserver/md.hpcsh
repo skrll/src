@@ -1,4 +1,4 @@
-# $NetBSD: md.hpcsh,v 1.26 2019/12/31 05:01:49 uki Exp $
+# $NetBSD: md.hpcsh,v 1.28 2020/11/10 21:47:41 kamil Exp $
 ./etc/X11/xorg.conf.640x240-jp				xserver-xorg-server-etc	xorg
 ./etc/X11/xorg.conf.640x240-us				xserver-xorg-server-etc	xorg
 ./etc/X11/xorg.conf.640x480-jp				xserver-xorg-server-etc	xorg

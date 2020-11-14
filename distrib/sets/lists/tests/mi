@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.963 2020/11/08 02:33:18 rillig Exp $
+# $NetBSD: mi,v 1.968 2020/11/13 17:19:06 sjg Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -4859,10 +4859,14 @@
 ./usr/tests/usr.bin/make/unit-tests/cond-func.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-late.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-late.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/cond-op-and-lint.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/cond-op-and-lint.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-op-and.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-op-and.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-op-not.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-op-not.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/cond-op-or-lint.exp				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/cond-op-or-lint.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-op-or.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-op-or.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-op-parentheses.exp			tests-usr.bin-tests	compattestfile,atf
@@ -5033,6 +5037,8 @@
 ./usr/tests/usr.bin/make/unit-tests/directive-for.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/directive-hyphen-include.exp		tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/directive-hyphen-include.mk			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/directive-if-nested.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/directive-if-nested.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/directive-if.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/directive-if.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/directive-ifdef.exp				tests-usr.bin-tests	compattestfile,atf
@@ -5121,6 +5127,8 @@
 ./usr/tests/usr.bin/make/unit-tests/modts.mk					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/modword.exp					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/modword.mk					tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/objdir-writable.exp				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/objdir-writable.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/opt-backwards.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/opt-backwards.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/opt-chdir.exp				tests-usr.bin-tests	compattestfile,atf
@@ -5499,14 +5507,16 @@
 ./usr/tests/usr.bin/make/unit-tests/varname.mk					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varparse-dynamic.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varparse-dynamic.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/varparse-errors.exp				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/varparse-errors.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varparse-mod.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varparse-mod.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varparse-undef-partial.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varparse-undef-partial.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varquote.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/varquote.mk					tests-usr.bin-tests	compattestfile,atf
-./usr/tests/usr.bin/make/unit-tests/varshell.exp				tests-usr.bin-tests	compattestfile,atf
-./usr/tests/usr.bin/make/unit-tests/varshell.mk					tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/varshell.exp				tests-obsolete		obsolete
+./usr/tests/usr.bin/make/unit-tests/varshell.mk					tests-obsolete		obsolete
 ./usr/tests/usr.bin/mixerctl				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/mixerctl/Atffile			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/mixerctl/Kyuafile			tests-usr.bin-tests	compattestfile,atf,kyua

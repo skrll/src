@@ -1,4 +1,4 @@
-# $NetBSD: md.alpha,v 1.51 2019/12/29 07:31:36 uki Exp $
+# $NetBSD: md.alpha,v 1.53 2020/11/10 21:47:41 kamil Exp $
 ./usr/X11R7/bin/X					xserver-xorg-server-bin	xorg
 ./usr/X11R7/bin/Xorg					xserver-xorg-server-bin	xorg
 ./usr/X11R7/bin/cvt					xserver-xorg-server-bin	xorg
