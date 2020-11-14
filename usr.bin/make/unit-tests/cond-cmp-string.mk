@@ -1,4 +1,4 @@
-# $NetBSD: cond-cmp-string.mk,v 1.6 2020/10/24 08:46:08 rillig Exp $
+# $NetBSD: cond-cmp-string.mk,v 1.12 2020/11/08 23:00:09 rillig Exp $
 #
 # Tests for string comparisons in .if conditions.
 
@@ -52,3 +52,52 @@
 .  error
 .endif
 
+# A variable expression can be enclosed in double quotes.
+.if ${:Uword} != "${:Uword}"
+.  error
+.endif
+
+# Between 2003-01-01 (maybe even earlier) and 2020-10-30, adding one of the
+# characters " \t!=><" directly after a variable expression resulted in a
+# "Malformed conditional", even though the string was well-formed.
+.if ${:Uword } != "${:Uword} "
+.  error
+.endif
+# Some other characters worked though, and some didn't.
+# Those that are mentioned in is_separator didn't work.
+.if ${:Uword0} != "${:Uword}0"
+.  error
+.endif
+.if ${:Uword&} != "${:Uword}&"
+.  error
+.endif
+.if ${:Uword!} != "${:Uword}!"
+.  error
+.endif
+.if ${:Uword<} != "${:Uword}<"
+.  error
+.endif
+
+# Adding another variable expression to the string literal works though.
+.if ${:Uword} != "${:Uwo}${:Urd}"
+.  error
+.endif
+
+# Adding a space at the beginning of the quoted variable expression works
+# though.
+.if ${:U word } != " ${:Uword} "
+.  error
+.endif
+
+# If at least one side of the comparison is a string literal, the string
+# comparison is performed.
+.if 12345 != "12345"
+.  error
+.endif
+
+# If at least one side of the comparison is a string literal, the string
+# comparison is performed.  The ".0" in the left-hand side makes the two
+# sides of the equation unequal.
+.if 12345.0 == "12345"
+.  error
+.endif

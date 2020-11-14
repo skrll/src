@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_sig.c,v 1.392 2020/10/20 13:16:26 christos Exp $	*/
+/*	$NetBSD: kern_sig.c,v 1.395 2020/11/01 18:51:02 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2019 The NetBSD Foundation, Inc.
@@ -70,8 +70,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_sig.c,v 1.392 2020/10/20 13:16:26 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_sig.c,v 1.395 2020/11/01 18:51:02 pgoyette Exp $");
 
+#include "opt_execfmt.h"
 #include "opt_ptrace.h"
 #include "opt_dtrace.h"
 #include "opt_compat_sunos.h"
@@ -2347,16 +2348,27 @@ sigexit(struct lwp *l, int signo)
  * Since the "real" code may (or may not) be present in loadable module,
  * we provide routines here which calls the module hooks.
  */
+
 int
 coredump_netbsd(struct lwp *l, struct coredump_iostate *iocookie)
 {
+
 	int retval;
 
 	MODULE_HOOK_CALL(coredump_netbsd_hook, (l, iocookie), ENOSYS, retval);
 	return retval;
 }
 
-#if !defined(_LP64) || defined(COMPAT_NETBSD32)
+int
+coredump_netbsd32(struct lwp *l, struct coredump_iostate *iocookie)
+{
+
+	int retval;
+
+	MODULE_HOOK_CALL(coredump_netbsd32_hook, (l, iocookie), ENOSYS, retval);
+	return retval;
+}
+
 int
 coredump_elf32(struct lwp *l, struct coredump_iostate *iocookie)
 {
@@ -2365,9 +2377,7 @@ coredump_elf32(struct lwp *l, struct coredump_iostate *iocookie)
 	MODULE_HOOK_CALL(coredump_elf32_hook, (l, iocookie), ENOSYS, retval);
 	return retval;
 }
-#endif
 
-#ifdef _LP64
 int
 coredump_elf64(struct lwp *l, struct coredump_iostate *iocookie)
 {
@@ -2376,7 +2386,6 @@ coredump_elf64(struct lwp *l, struct coredump_iostate *iocookie)
 	MODULE_HOOK_CALL(coredump_elf64_hook, (l, iocookie), ENOSYS, retval);
 	return retval;
 }
-#endif
 
 /*
  * Put process 'p' into the stopped state and optionally, notify the parent.
@@ -2681,8 +2690,8 @@ filt_signal(struct knote *kn, long hint)
 }
 
 const struct filterops sig_filtops = {
-		.f_isfd = 0,
-		.f_attach = filt_sigattach,
-		.f_detach = filt_sigdetach,
-		.f_event = filt_signal,
+	.f_isfd = 0,
+	.f_attach = filt_sigattach,
+	.f_detach = filt_sigdetach,
+	.f_event = filt_signal,
 };

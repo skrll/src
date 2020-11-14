@@ -1,4 +1,4 @@
-# $NetBSD: md.i386,v 1.129 2020/01/31 20:56:03 jmcneill Exp $
+# $NetBSD: md.i386,v 1.131 2020/11/10 21:47:41 kamil Exp $
 ./usr/X11R7/bin/X					xserver-xorg-server-bin	xorg
 ./usr/X11R7/bin/Xorg					xserver-xorg-server-bin	xorg
 ./usr/X11R7/bin/cvt					xserver-xorg-server-bin	xorg

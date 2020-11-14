@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1228 2020/10/18 19:58:02 christos Exp $
+#	$NetBSD: bsd.own.mk,v 1.1233 2020/11/10 21:47:49 kamil Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -1237,6 +1237,7 @@ MKTEGRAFIRMWARE.evbarm=		yes
 
 # Only build devicetree (dtb) files on armv6, armv7, and aarch64.
 MKDTB.aarch64=			yes
+MKDTB.aarch64eb=		yes
 MKDTB.earmv6=			yes
 MKDTB.earmv6hf=			yes
 MKDTB.earmv6eb=			yes
@@ -1494,7 +1495,6 @@ ${var}?= no
 .if ${USE_PIGZGZIP} == "no" && \
 		(${MACHINE} == "amd64" || \
 		 ${MACHINE} == "sparc64" || \
-		 ${MACHINE} == "alpha" || \
 		 ${MACHINE_ARCH} == "aarch64")
 USE_XZ_SETS?= yes
 .else

@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.175 2020/10/24 02:25:02 rillig Exp $
+# $NetBSD: Makefile,v 1.198 2020/11/12 23:35:21 sjg Exp $
 #
 # Unit tests for make(1)
 #
@@ -37,8 +37,11 @@
 # src/tests/usr.bin/make/t_make.sh as well.
 TESTS+=		archive
 TESTS+=		archive-suffix
+TESTS+=		cmd-errors
+TESTS+=		cmd-errors-lint
 TESTS+=		cmd-interrupt
 TESTS+=		cmdline
+TESTS+=		cmdline-undefined
 TESTS+=		comment
 TESTS+=		cond-cmp-numeric
 TESTS+=		cond-cmp-numeric-eq
@@ -59,8 +62,10 @@ TESTS+=		cond-func-target
 TESTS+=		cond-late
 TESTS+=		cond-op
 TESTS+=		cond-op-and
+TESTS+=		cond-op-and-lint
 TESTS+=		cond-op-not
 TESTS+=		cond-op-or
+TESTS+=		cond-op-or-lint
 TESTS+=		cond-op-parentheses
 TESTS+=		cond-short
 TESTS+=		cond-token-number
@@ -145,6 +150,7 @@ TESTS+=		directive-for
 TESTS+=		directive-for-generating-endif
 TESTS+=		directive-hyphen-include
 TESTS+=		directive-if
+TESTS+=		directive-if-nested
 TESTS+=		directive-ifdef
 TESTS+=		directive-ifmake
 TESTS+=		directive-ifndef
@@ -157,7 +163,6 @@ TESTS+=		directive-undef
 TESTS+=		directive-unexport
 TESTS+=		directive-unexport-env
 TESTS+=		directive-warning
-TESTS+=		directives
 TESTS+=		dollar
 TESTS+=		doterror
 TESTS+=		dotwait
@@ -170,9 +175,11 @@ TESTS+=		export-env
 TESTS+=		export-variants
 TESTS+=		forloop
 TESTS+=		forsubst
+TESTS+=		gnode-submake
 TESTS+=		hanoi-include
 TESTS+=		impsrc
 TESTS+=		include-main
+TESTS+=		job-flags
 TESTS+=		job-output-long-lines
 TESTS+=		lint
 TESTS+=		make-exported
@@ -181,6 +188,7 @@ TESTS+=		modmatch
 TESTS+=		modmisc
 TESTS+=		modts
 TESTS+=		modword
+TESTS+=		objdir-writable
 TESTS+=		opt
 TESTS+=		opt-backwards
 TESTS+=		opt-chdir
@@ -261,7 +269,6 @@ TESTS+=		suff-transform-endless
 TESTS+=		suff-transform-expand
 TESTS+=		suff-transform-select
 TESTS+=		sunshcmd
-TESTS+=		sysv
 TESTS+=		ternary
 TESTS+=		unexport
 TESTS+=		unexport-env
@@ -279,6 +286,7 @@ TESTS+=		var-op-default
 TESTS+=		var-op-expand
 TESTS+=		var-op-shell
 TESTS+=		var-op-sunsh
+TESTS+=		var-recursive
 TESTS+=		varcmd
 TESTS+=		vardebug
 TESTS+=		varfind
@@ -367,39 +375,33 @@ TESTS+=		varname-makeflags
 TESTS+=		varname-pwd
 TESTS+=		varname-vpath
 TESTS+=		varparse-dynamic
+TESTS+=		varparse-errors
 TESTS+=		varparse-mod
 TESTS+=		varparse-undef-partial
 TESTS+=		varquote
-TESTS+=		varshell
 
+.if ${.OBJDIR} != ${.CURDIR}
+RO_OBJDIR:=	${.OBJDIR}/roobj
+.else
+RO_OBJDIR:=	${TMPDIR:U/tmp}/roobj
+.endif
 # Additional environment variables for some of the tests.
 # The base environment is -i PATH="$PATH".
+ENV.depsrc-optional+=   TZ=UTC
 ENV.envfirst=		FROM_ENV=value-from-env
+ENV.objdir-writable+=	RO_OBJDIR=${RO_OBJDIR}
 ENV.varmisc=		FROM_ENV=env
 ENV.varmisc+=		FROM_ENV_BEFORE=env
 ENV.varmisc+=		FROM_ENV_AFTER=env
+ENV.varmod-localtime+=	TZ=Europe/Berlin
+ENV.varname-vpath+=	VPATH=varname-vpath.dir:varname-vpath.dir2
 
 # Override make flags for some of the tests; default is -k.
 # If possible, write ".MAKEFLAGS: -dv" in the test .mk file instead of
 # settings FLAGS.test=-dv here, since that is closer to the test code.
 FLAGS.cond-func-make=	via-cmdline
 FLAGS.directive-ifmake=	first second
-FLAGS.doterror=		# none
-FLAGS.envfirst=		-e
-FLAGS.export=		# none
-FLAGS.opt-ignore=	-i
-FLAGS.opt-keep-going=	-k
-FLAGS.opt-no-action=	-n
-FLAGS.opt-query=	-q
-FLAGS.opt-var-expanded=	-v VAR -v VALUE
-FLAGS.opt-var-literal=	-V VAR -V VALUE
-FLAGS.opt-warnings-as-errors= -W
-FLAGS.order=		-j1
-FLAGS.recursive=	-dL
-FLAGS.sh-leading-plus=	-n
-FLAGS.vardebug=		-k -dv FROM_CMDLINE=
-FLAGS.varmod-match-escape= -dv
-FLAGS.varname-dot-shell= -dpv
+FLAGS.doterror=		# none, especially not -k
 FLAGS.varname-empty=	-dv '$${:U}=cmdline-u' '=cmline-plain'
 
 # Some tests need extra postprocessing.
@@ -414,6 +416,7 @@ SED_CMDS.job-output-long-lines= \
 	${:D marker should always be at the beginning of the line. } \
 	-e '/^aa*--- job-b ---$$/d' \
 	-e '/^bb*--- job-a ---$$/d'
+SED_CMDS.objdir-writable= -e 's,${RO_OBJDIR},OBJDIR/roobj,g'
 SED_CMDS.opt-debug-graph1= \
 			-e 's,${.CURDIR},CURDIR,'
 SED_CMDS.opt-debug-graph1+= \
@@ -425,25 +428,21 @@ SED_CMDS.opt-debug-jobs+=	-e 's,Process [0-9][0-9]*,Process <pid>,'
 SED_CMDS.opt-debug-jobs+=	-e 's,JobFinish: [0-9][0-9]*,JobFinish: <pid>,'
 # The "-q" may be there or not, see jobs.c, variable shells.
 SED_CMDS.opt-debug-jobs+=	-e 's,^\(.Command: sh\) -q,\1,'
+SED_CMDS.var-op-shell+=	-e 's,^${.SHELL:T}: ,,'
+SED_CMDS.var-op-shell+=	-e '/command/s,No such.*,not found,'
 SED_CMDS.varmod-subst-regex+= \
 			-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
 SED_CMDS.varmod-edge+=	-e 's, line [0-9]*:, line omitted:,'
-SED_CMDS.varshell+=	-e 's,^${.SHELL:T}: ,,'
-SED_CMDS.varshell+=	-e '/command/s,No such.*,not found,'
 SED_CMDS.varname-dot-parsedir=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
 SED_CMDS.varname-dot-parsefile=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
-SED_CMDS.varname-dot-shell=	-e 's, = /.*, = (details omitted),'
-SED_CMDS.varname-dot-shell+=	-e 's,"/[^"]*","(details omitted)",'
-SED_CMDS.varname-dot-shell+=	-e 's,\[/[^]]*\],[(details omitted)],'
+SED_CMDS.varname-dot-shell=	-e 's, = /[^ ]*, = (details omitted),g'
+SED_CMDS.varname-dot-shell+=	-e 's,"/[^" ]*","(details omitted)",g'
+SED_CMDS.varname-dot-shell+=	-e 's,\[/[^] ]*\],[(details omitted)],g'
 
 # Some tests need an additional round of postprocessing.
 POSTPROC.deptgt-suffixes= \
 			${TOOL_SED} -n -e '/^\#\*\*\* Suffixes/,/^\#\*/p'
-POSTPROC.vardebug=	${TOOL_SED} -n -e '/:RELEVANT = yes/,/:RELEVANT = no/p'
-POSTPROC.varmod-match-escape= ${TOOL_SED} -n -e '/^Pattern/p'
-POSTPROC.varname=	${TOOL_SED} -n -e '/^MAGIC/p' -e '/^ORDER_/p'
-POSTPROC.varname-dot-shell= \
-			awk '/\.SHELL/ || /^ParseReadLine/'
+POSTPROC.gnode-submake=	awk '/Input graph/, /^$$/'
 POSTPROC.varname-empty=	${TOOL_SED} -n -e '/^Var_Set/p' -e '/^out:/p'
 
 # Some tests reuse other tests, which makes them unnecessarily fragile.
@@ -550,8 +549,10 @@ sync-mi:
 	cvs update "$$mi";						\
 	testsdir="usr.bin/make/unit-tests";				\
 	fmt="./usr/tests/$$testsdir/%s\ttests-usr.bin-tests\tcompattestfile,atf\\n"; \
-	(cd "$$testsdir" && ls *.exp *.mk) | xargs printf "$$fmt" >> "$$mi"; \
-	distrib/sets/fmt-list "$$mi";					\
+	cat "$$mi" > "$$mi.tmp";					\
+	(cd "$$testsdir" && ls *.exp *.mk) | xargs printf "$$fmt" >> "$$mi.tmp"; \
+	distrib/sets/fmt-list "$$mi.tmp";				\
+	mv "$$mi.tmp" "$$mi";						\
 	cvs diff "$$mi" || true
 
 .if exists(${TEST_MAKE})
