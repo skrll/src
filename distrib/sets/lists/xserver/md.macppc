@@ -1,4 +1,4 @@
-# $NetBSD: md.macppc,v 1.81 2019/12/31 01:54:19 uki Exp $
+# $NetBSD: md.macppc,v 1.83 2020/11/10 21:47:41 kamil Exp $
 ./usr/X11R7/bin/X					xserver-xorg-server-bin	xorg
 ./usr/X11R7/bin/Xorg					xserver-xorg-server-bin	xorg
 ./usr/X11R7/bin/cvt					xserver-xorg-server-bin	xorg

@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.6 2020/10/30 08:41:58 martin Exp $
+# $NetBSD: Makefile,v 1.8 2020/11/12 17:53:43 nia Exp $
 
 PROG=		sqlite3
 
