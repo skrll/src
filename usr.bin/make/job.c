@@ -1,4 +1,4 @@
-/*	$NetBSD: job.c,v 1.314 2020/11/08 01:16:04 rillig Exp $	*/
+/*	$NetBSD: job.c,v 1.316 2020/11/08 15:07:37 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -143,7 +143,7 @@
 #include "trace.h"
 
 /*	"@(#)job.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: job.c,v 1.314 2020/11/08 01:16:04 rillig Exp $");
+MAKE_RCSID("$NetBSD: job.c,v 1.316 2020/11/08 15:07:37 rillig Exp $");
 
 /* A shell defines how the commands are run.  All commands for a target are
  * written into a single file, which is then given to the shell to execute
@@ -375,8 +375,8 @@ static char *shellArgv = NULL;	/* Custom shell args */
 static Job *job_table;		/* The structures that describe them */
 static Job *job_table_end;	/* job_table + maxJobs */
 static unsigned int wantToken;	/* we want a token */
-static int lurking_children = 0;
-static int make_suspended = 0;	/* non-zero if we've seen a SIGTSTP (etc) */
+static Boolean lurking_children = FALSE;
+static Boolean make_suspended = FALSE;	/* Whether we've seen a SIGTSTP (etc) */
 
 /*
  * Set of descriptors of pipes connected to
@@ -583,7 +583,7 @@ JobPassSig_suspend(int signo)
     struct sigaction act;
 
     /* Suppress job started/continued messages */
-    make_suspended = 1;
+    make_suspended = TRUE;
 
     /* Pass the signal onto every job */
     JobCondPassSig(signo);
@@ -1225,7 +1225,8 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
 	return TRUE;
     }
 
-    if (Dir_MTime(gn, 0) != 0 || (gn->type & OP_SPECIAL))
+    Dir_UpdateMTime(gn, FALSE);
+    if (gn->mtime != 0 || (gn->type & OP_SPECIAL))
 	return TRUE;
 
     /*
@@ -2138,7 +2139,7 @@ Job_Init(void)
 	if (rval > 0)
 	    continue;
 	if (rval == 0)
-	    lurking_children = 1;
+	    lurking_children = TRUE;
 	break;
     }
 
@@ -2578,7 +2579,7 @@ JobRestartJobs(void)
 	    /* Job exit deferred after calling waitpid() in a signal handler */
 	    JobFinish(job, job->exit_status);
     }
-    make_suspended = 0;
+    make_suspended = FALSE;
 }
 
 static void

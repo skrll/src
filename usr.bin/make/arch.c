@@ -1,4 +1,4 @@
-/*	$NetBSD: arch.c,v 1.171 2020/11/07 14:04:49 rillig Exp $	*/
+/*	$NetBSD: arch.c,v 1.175 2020/11/08 19:53:11 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -93,12 +93,12 @@
  *			because it also updates the modification time
  *			of the library's table of contents.
  *
- *	Arch_MTime	Find the modification time of a member of
- *			an archive *in the archive*. The time is also
- *			placed in the member's GNode. Returns the
- *			modification time.
+ *	Arch_UpdateMTime
+ *			Find the modification time of a member of
+ *			an archive *in the archive* and place it in the
+ *			member's GNode.
  *
- *	Arch_MemberMTime
+ *	Arch_UpdateMemberMTime
  *			Find the modification time of a member of
  *			an archive. Called when the member doesn't
  *			already exist. Looks in the archive for the
@@ -125,7 +125,7 @@
 #include "config.h"
 
 /*	"@(#)arch.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: arch.c,v 1.171 2020/11/07 14:04:49 rillig Exp $");
+MAKE_RCSID("$NetBSD: arch.c,v 1.175 2020/11/08 19:53:11 rillig Exp $");
 
 typedef struct List ArchList;
 typedef struct ListNode ArchListNode;
@@ -210,7 +210,7 @@ Arch_ParseArchive(char **pp, GNodeList *nodeLst, GNode *ctxt)
 	    Boolean isError;
 
 	    /* XXX: is expanded twice: once here and once below */
-	    (void)Var_Parse(&nested_p, ctxt, VARE_UNDEFERR|VARE_WANTRES,
+	    (void)Var_Parse(&nested_p, ctxt, VARE_WANTRES | VARE_UNDEFERR,
 			    &result, &result_freeIt);
 	    /* TODO: handle errors */
 	    isError = result == var_Error;
@@ -226,7 +226,7 @@ Arch_ParseArchive(char **pp, GNodeList *nodeLst, GNode *ctxt)
 
     *cp++ = '\0';
     if (expandLibName) {
-	(void)Var_Subst(libName, ctxt, VARE_UNDEFERR|VARE_WANTRES, &libName);
+	(void)Var_Subst(libName, ctxt, VARE_WANTRES | VARE_UNDEFERR, &libName);
 	/* TODO: handle errors */
 	libName_freeIt = libName;
     }
@@ -254,7 +254,7 @@ Arch_ParseArchive(char **pp, GNodeList *nodeLst, GNode *ctxt)
 		Boolean isError;
 		const char *nested_p = cp;
 
-		(void)Var_Parse(&nested_p, ctxt, VARE_UNDEFERR|VARE_WANTRES,
+		(void)Var_Parse(&nested_p, ctxt, VARE_WANTRES | VARE_UNDEFERR,
 				&result, &freeIt);
 		/* TODO: handle errors */
 		isError = result == var_Error;
@@ -307,7 +307,7 @@ Arch_ParseArchive(char **pp, GNodeList *nodeLst, GNode *ctxt)
 	    char *sacrifice;
 	    char *oldMemName = memName;
 
-	    (void)Var_Subst(memName, ctxt, VARE_UNDEFERR|VARE_WANTRES,
+	    (void)Var_Subst(memName, ctxt, VARE_WANTRES | VARE_UNDEFERR,
 			    &memName);
 	    /* TODO: handle errors */
 
@@ -889,27 +889,22 @@ Arch_TouchLib(GNode *gn MAKE_ATTR_UNUSED)
 
 /* Update the mtime of the GNode with the mtime from the archive member on
  * disk (or in the cache). */
-time_t
-Arch_MTime(GNode *gn)
+void
+Arch_UpdateMTime(GNode *gn)
 {
     struct ar_hdr *arh;
-    time_t modTime;
 
     arh = ArchStatMember(GNode_VarArchive(gn), GNode_VarMember(gn), TRUE);
-    if (arh != NULL) {
-	modTime = (time_t)strtol(arh->ar_date, NULL, 10);
-    } else {
-	modTime = 0;
-    }
-
-    gn->mtime = modTime;
-    return modTime;
+    if (arh != NULL)
+	gn->mtime = (time_t)strtol(arh->ar_date, NULL, 10);
+    else
+	gn->mtime = 0;
 }
 
-/* Given a non-existent archive member's node, get its modification time from
- * its archived form, if it exists. gn->mtime is filled in as well. */
-time_t
-Arch_MemberMTime(GNode *gn)
+/* Given a non-existent archive member's node, update gn->mtime from its
+ * archived form, if it exists. */
+void
+Arch_UpdateMemberMTime(GNode *gn)
 {
     GNodeListNode *ln;
 
@@ -930,7 +925,8 @@ Arch_MemberMTime(GNode *gn)
 
 	    if ((pgn->flags & REMAKE) &&
 		strncmp(nameStart, gn->name, nameLen) == 0) {
-		gn->mtime = Arch_MTime(pgn);
+		Arch_UpdateMTime(pgn);
+		gn->mtime = pgn->mtime;
 	    }
 	} else if (pgn->flags & REMAKE) {
 	    /*
@@ -941,8 +937,6 @@ Arch_MemberMTime(GNode *gn)
 	    break;
 	}
     }
-
-    return gn->mtime;
 }
 
 /* Search for a library along the given search path.
@@ -974,7 +968,7 @@ Arch_FindLib(GNode *gn, SearchPath *path)
 }
 
 /* Decide if a node with the OP_LIB attribute is out-of-date. Called from
- * Make_OODate to make its life easier.
+ * GNode_IsOODate to make its life easier.
  * The library is cached if it hasn't been already.
  *
  * There are several ways for a library to be out-of-date that are

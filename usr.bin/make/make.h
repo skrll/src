@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.198 2020/11/08 01:39:24 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.206 2020/11/12 23:35:21 sjg Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -130,6 +130,8 @@
 #define MAKE_ATTR_PRINTFLIKE(fmtarg, firstvararg)	/* delete */
 #endif
 
+#define MAKE_INLINE static inline MAKE_ATTR_UNUSED
+
 /*
  * A boolean type is defined as an integer, not an enum, for historic reasons.
  * The only allowed values are the constants TRUE and FALSE (1 and 0).
@@ -199,7 +201,8 @@ typedef enum GNodeType {
     OP_FORCE		= 1 << 1,
     /* The dependency operator '::' behaves like ':', except that it allows
      * multiple dependency groups to be defined.  Each of these groups is
-     * executed on its own, independently from the others. */
+     * executed on its own, independently from the others.  Each individual
+     * dependency group is called a cohort. */
     OP_DOUBLEDEP	= 1 << 2,
 
     /* Matches the dependency operators ':', '!' and '::'. */
@@ -324,7 +327,7 @@ typedef struct GNode {
     int unmade;			/* The number of unmade children */
 
     /* The modification time; 0 means the node does not have a corresponding
-     * file; see Make_OODate. */
+     * file; see GNode_IsOODate. */
     time_t mtime;
     struct GNode *youngestChild;
 
@@ -440,7 +443,7 @@ extern time_t now;
 /*
  * If FALSE (the default behavior), undefined subexpressions in a variable
  * expression are discarded.  If TRUE (only during variable assignments using
- * the ':=' assignment operator, in the top-level expansion), they are
+ * the ':=' assignment operator, no matter how deeply nested), they are
  * preserved and possibly expanded later when the variable from the
  * subexpression has been defined.
  *
@@ -495,32 +498,28 @@ extern pid_t myPid;
 #endif
 
 typedef enum DebugFlags {
+    DEBUG_NONE		= 0,
     DEBUG_ARCH		= 1 << 0,
     DEBUG_COND		= 1 << 1,
     DEBUG_CWD		= 1 << 2,
     DEBUG_DIR		= 1 << 3,
     DEBUG_ERROR		= 1 << 4,
-    DEBUG_GRAPH1	= 1 << 5,
-    DEBUG_GRAPH2	= 1 << 6,
-    DEBUG_GRAPH3	= 1 << 7,
-    DEBUG_HASH		= 1 << 8,
-    DEBUG_JOB		= 1 << 9,
-    DEBUG_LOUD		= 1 << 10,
-    DEBUG_MAKE		= 1 << 11,
-    DEBUG_META		= 1 << 12,
-    DEBUG_PARSE		= 1 << 13,
-    DEBUG_SCRIPT	= 1 << 14,
-    DEBUG_SHELL		= 1 << 15,
-    DEBUG_SUFF		= 1 << 16,
-    DEBUG_TARG		= 1 << 17,
-    DEBUG_VAR		= 1 << 18,
-    DEBUG_FOR		= 1 << 19,
-
-    /* Runs make in strict mode, with additional checks and better error
-     * handling.  This is not the default mode to preserve compatibility.
-     *
-     * XXX: This is not really a debug flag, it doesn't belong here. */
-    DEBUG_LINT		= 1 << 20
+    DEBUG_FOR		= 1 << 5,
+    DEBUG_GRAPH1	= 1 << 6,
+    DEBUG_GRAPH2	= 1 << 7,
+    DEBUG_GRAPH3	= 1 << 8,
+    DEBUG_HASH		= 1 << 9,
+    DEBUG_JOB		= 1 << 10,
+    DEBUG_LOUD		= 1 << 11,
+    DEBUG_MAKE		= 1 << 12,
+    DEBUG_META		= 1 << 13,
+    DEBUG_PARSE		= 1 << 14,
+    DEBUG_SCRIPT	= 1 << 15,
+    DEBUG_SHELL		= 1 << 16,
+    DEBUG_SUFF		= 1 << 17,
+    DEBUG_TARG		= 1 << 18,
+    DEBUG_VAR		= 1 << 19,
+    DEBUG_ALL		= (1 << 20) - 1
 } DebugFlags;
 
 #define CONCAT(a,b)	a##b
@@ -570,6 +569,12 @@ typedef struct CmdOpts {
 
     /* -df: debug output is written here - default stderr */
     FILE *debug_file;
+
+    /* -dL: lint mode
+     *
+     * Runs make in strict mode, with additional checks and better error
+     * handling. */
+    Boolean lint;
 
     /* -dV: for the -V option, print unexpanded variable values */
     Boolean debugVflag;
@@ -636,8 +641,8 @@ extern CmdOpts opts;
 
 #include "nonints.h"
 
-void Make_TimeStamp(GNode *, GNode *);
-Boolean Make_OODate(GNode *);
+void GNode_UpdateYoungestChild(GNode *, GNode *);
+Boolean GNode_IsOODate(GNode *);
 void Make_ExpandUse(GNodeList *);
 time_t Make_Recheck(GNode *);
 void Make_HandleUse(GNode *, GNode *);
@@ -647,38 +652,38 @@ Boolean Make_Run(GNodeList *);
 Boolean shouldDieQuietly(GNode *, int);
 void PrintOnError(GNode *, const char *);
 void Main_ExportMAKEFLAGS(Boolean);
-Boolean Main_SetObjdir(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
+Boolean Main_SetObjdir(Boolean, const char *, ...) MAKE_ATTR_PRINTFLIKE(2, 3);
 int mkTempFile(const char *, char **);
 int str2Lst_Append(StringList *, char *, const char *);
 void GNode_FprintDetails(FILE *, const char *, const GNode *, const char *);
 Boolean GNode_ShouldExecute(GNode *gn);
 
 /* See if the node was seen on the left-hand side of a dependency operator. */
-static MAKE_ATTR_UNUSED Boolean
+MAKE_INLINE Boolean
 GNode_IsTarget(const GNode *gn)
 {
     return (gn->type & OP_OPMASK) != 0;
 }
 
-static MAKE_ATTR_UNUSED const char *
+MAKE_INLINE const char *
 GNode_Path(const GNode *gn)
 {
     return gn->path != NULL ? gn->path : gn->name;
 }
 
-static MAKE_ATTR_UNUSED const char *
+MAKE_INLINE const char *
 GNode_VarTarget(GNode *gn) { return Var_ValueDirect(TARGET, gn); }
-static MAKE_ATTR_UNUSED const char *
+MAKE_INLINE const char *
 GNode_VarOodate(GNode *gn) { return Var_ValueDirect(OODATE, gn); }
-static MAKE_ATTR_UNUSED const char *
+MAKE_INLINE const char *
 GNode_VarAllsrc(GNode *gn) { return Var_ValueDirect(ALLSRC, gn); }
-static MAKE_ATTR_UNUSED const char *
+MAKE_INLINE const char *
 GNode_VarImpsrc(GNode *gn) { return Var_ValueDirect(IMPSRC, gn); }
-static MAKE_ATTR_UNUSED const char *
+MAKE_INLINE const char *
 GNode_VarPrefix(GNode *gn) { return Var_ValueDirect(PREFIX, gn); }
-static MAKE_ATTR_UNUSED const char *
+MAKE_INLINE const char *
 GNode_VarArchive(GNode *gn) { return Var_ValueDirect(ARCHIVE, gn); }
-static MAKE_ATTR_UNUSED const char *
+MAKE_INLINE const char *
 GNode_VarMember(GNode *gn) { return Var_ValueDirect(MEMBER, gn); }
 
 #ifdef __GNUC__
@@ -707,43 +712,43 @@ GNode_VarMember(GNode *gn) { return Var_ValueDirect(MEMBER, gn); }
 #define KILLPG(pid, sig)	killpg((pid), (sig))
 #endif
 
-static inline MAKE_ATTR_UNUSED Boolean
+MAKE_INLINE Boolean
 ch_isalnum(char ch) { return isalnum((unsigned char)ch) != 0; }
-static inline MAKE_ATTR_UNUSED Boolean
+MAKE_INLINE Boolean
 ch_isalpha(char ch) { return isalpha((unsigned char)ch) != 0; }
-static inline MAKE_ATTR_UNUSED Boolean
+MAKE_INLINE Boolean
 ch_isdigit(char ch) { return isdigit((unsigned char)ch) != 0; }
-static inline MAKE_ATTR_UNUSED Boolean
+MAKE_INLINE Boolean
 ch_isspace(char ch) { return isspace((unsigned char)ch) != 0; }
-static inline MAKE_ATTR_UNUSED Boolean
+MAKE_INLINE Boolean
 ch_isupper(char ch) { return isupper((unsigned char)ch) != 0; }
-static inline MAKE_ATTR_UNUSED char
+MAKE_INLINE char
 ch_tolower(char ch) { return (char)tolower((unsigned char)ch); }
-static inline MAKE_ATTR_UNUSED char
+MAKE_INLINE char
 ch_toupper(char ch) { return (char)toupper((unsigned char)ch); }
 
-static inline MAKE_ATTR_UNUSED void
+MAKE_INLINE void
 cpp_skip_whitespace(const char **pp)
 {
     while (ch_isspace(**pp))
 	(*pp)++;
 }
 
-static inline MAKE_ATTR_UNUSED void
+MAKE_INLINE void
 cpp_skip_hspace(const char **pp)
 {
     while (**pp == ' ' || **pp == '\t')
 	(*pp)++;
 }
 
-static inline MAKE_ATTR_UNUSED void
+MAKE_INLINE void
 pp_skip_whitespace(char **pp)
 {
     while (ch_isspace(**pp))
 	(*pp)++;
 }
 
-static inline MAKE_ATTR_UNUSED void
+MAKE_INLINE void
 pp_skip_hspace(char **pp)
 {
     while (**pp == ' ' || **pp == '\t')

@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.433 2020/11/08 02:37:22 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.438 2020/11/12 23:35:21 sjg Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -117,7 +117,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.433 2020/11/08 02:37:22 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.438 2020/11/12 23:35:21 sjg Exp $");
 
 /* types and constants */
 
@@ -1063,8 +1063,8 @@ ParseDependencyTargetWord(/*const*/ char **pp, const char *lstart)
 	    const char *nested_val;
 	    void *freeIt;
 
-	    (void)Var_Parse(&nested_p, VAR_CMDLINE, VARE_UNDEFERR|VARE_WANTRES,
-			    &nested_val, &freeIt);
+	    (void)Var_Parse(&nested_p, VAR_CMDLINE,
+			    VARE_WANTRES | VARE_UNDEFERR, &nested_val, &freeIt);
 	    /* TODO: handle errors */
 	    free(freeIt);
 	    cp += nested_p - cp;
@@ -1429,7 +1429,7 @@ ParseDoDependencySourceSpecial(ParseSpecial specType, char *word,
 	Suff_SetNull(word);
 	break;
     case SP_OBJDIR:
-	Main_SetObjdir("%s", word);
+	Main_SetObjdir(FALSE, "%s", word);
 	break;
     default:
 	break;
@@ -1884,7 +1884,7 @@ Parse_IsVar(const char *p, VarAssign *out_var)
 static void
 VarCheckSyntax(VarAssignOp type, const char *uvalue, GNode *ctxt)
 {
-    if (DEBUG(LINT)) {
+    if (opts.lint) {
 	if (type != VAR_SUBST && strchr(uvalue, '$') != NULL) {
 	    /* Check for syntax errors such as unclosed expressions or
 	     * unknown modifiers. */
@@ -1923,7 +1923,7 @@ VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
     if (!Var_Exists(name, ctxt))
 	Var_Set(name, "", ctxt);
 
-    (void)Var_Subst(uvalue, ctxt, VARE_WANTRES|VARE_ASSIGN, &evalue);
+    (void)Var_Subst(uvalue, ctxt, VARE_WANTRES|VARE_KEEP_DOLLAR, &evalue);
     /* TODO: handle errors */
     preserveUndefined = savedPreserveUndefined;
     avalue = evalue;
@@ -1944,7 +1944,7 @@ VarAssign_EvalShell(const char *name, const char *uvalue, GNode *ctxt,
     cmd = uvalue;
     if (strchr(cmd, '$') != NULL) {
 	char *ecmd;
-	(void)Var_Subst(cmd, VAR_CMDLINE, VARE_UNDEFERR | VARE_WANTRES, &ecmd);
+	(void)Var_Subst(cmd, VAR_CMDLINE, VARE_WANTRES | VARE_UNDEFERR, &ecmd);
 	/* TODO: handle errors */
 	cmd = cmd_freeIt = ecmd;
     }
@@ -2122,7 +2122,7 @@ Parse_AddIncludeDir(const char *dir)
  * the -I command line options.
  */
 static void
-Parse_include_file(char *file, Boolean isSystem, Boolean depinc, int silent)
+Parse_include_file(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
 {
     struct loadedfile *lf;
     char *fullname;		/* full pathname of file */
@@ -2228,7 +2228,7 @@ ParseDoInclude(char *line)
 {
     char endc;			/* the character which ends the file spec */
     char *cp;			/* current position in file spec */
-    int silent = *line != 'i';
+    Boolean silent = *line != 'i';
     char *file = line + (silent ? 8 : 7);
 
     /* Skip to delimiter character so we know where to look */
@@ -2488,7 +2488,7 @@ ParseTraditionalInclude(char *line)
 {
     char *cp;			/* current position in file spec */
     Boolean done = FALSE;
-    int silent = line[0] != 'i';
+    Boolean silent = line[0] != 'i';
     char *file = line + (silent ? 8 : 7);
     char *all_files;
 
@@ -3032,7 +3032,7 @@ ParseDependency(char *line)
      * Var_Parse does not print any parse errors in such a case.
      * It simply returns the special empty string var_Error,
      * which cannot be detected in the result of Var_Subst. */
-    eflags = DEBUG(LINT) ? VARE_WANTRES : VARE_UNDEFERR | VARE_WANTRES;
+    eflags = opts.lint ? VARE_WANTRES : VARE_WANTRES | VARE_UNDEFERR;
     (void)Var_Subst(line, VAR_CMDLINE, eflags, &expanded_line);
     /* TODO: handle errors */
 

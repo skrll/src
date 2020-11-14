@@ -1,7 +1,9 @@
-# $NetBSD: directive-ifmake.mk,v 1.5 2020/11/06 20:29:35 rillig Exp $
+# $NetBSD: directive-ifmake.mk,v 1.7 2020/11/11 07:13:42 rillig Exp $
 #
 # Tests for the .ifmake directive, which provides a shortcut for asking
 # whether a certain target is requested to be made from the command line.
+
+# The targets 'first' and 'second' are passed in on the command line.
 
 # This is the most basic form.
 .ifmake first
@@ -50,6 +52,25 @@
 .else
 .  info No, targets cannot be added at parse time anymore.
 .endif
+
+# Numbers are interpreted as numbers, no matter whether the directive is
+# a plain .if or an .ifmake.
+.ifmake 0
+.  error
+.endif
+.ifmake 1
+.else
+.  error
+.endif
+
+# A condition that consists of a variable expression only (without any
+# comparison operator) can be used with .if and the other .ifxxx directives.
+.ifmake ${:Ufirst}
+.  info ok
+.else
+.  error
+.endif
+
 
 first second unmentioned late-target:
 	: $@
