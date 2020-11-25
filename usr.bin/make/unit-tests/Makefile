@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.190 2020/11/07 23:25:06 rillig Exp $
+# $NetBSD: Makefile,v 1.226 2020/11/25 00:50:44 sjg Exp $
 #
 # Unit tests for make(1)
 #
@@ -58,12 +58,15 @@ TESTS+=		cond-func-defined
 TESTS+=		cond-func-empty
 TESTS+=		cond-func-exists
 TESTS+=		cond-func-make
+TESTS+=		cond-func-make-main
 TESTS+=		cond-func-target
 TESTS+=		cond-late
 TESTS+=		cond-op
 TESTS+=		cond-op-and
+TESTS+=		cond-op-and-lint
 TESTS+=		cond-op-not
 TESTS+=		cond-op-or
+TESTS+=		cond-op-or-lint
 TESTS+=		cond-op-parentheses
 TESTS+=		cond-short
 TESTS+=		cond-token-number
@@ -106,9 +109,13 @@ TESTS+=		depsrc-usebefore-double-colon
 TESTS+=		depsrc-wait
 TESTS+=		deptgt
 TESTS+=		deptgt-begin
+TESTS+=		deptgt-begin-fail
+TESTS+=		deptgt-begin-fail-indirect
 TESTS+=		deptgt-default
 TESTS+=		deptgt-delete_on_error
 TESTS+=		deptgt-end
+TESTS+=		deptgt-end-fail
+TESTS+=		deptgt-end-fail-indirect
 TESTS+=		deptgt-end-jobs
 TESTS+=		deptgt-error
 TESTS+=		deptgt-ignore
@@ -148,6 +155,7 @@ TESTS+=		directive-for
 TESTS+=		directive-for-generating-endif
 TESTS+=		directive-hyphen-include
 TESTS+=		directive-if
+TESTS+=		directive-if-nested
 TESTS+=		directive-ifdef
 TESTS+=		directive-ifmake
 TESTS+=		directive-ifndef
@@ -185,6 +193,9 @@ TESTS+=		modmatch
 TESTS+=		modmisc
 TESTS+=		modts
 TESTS+=		modword
+.if ${.MAKE.UID:U0} > 0
+TESTS+=		objdir-writable
+.endif
 TESTS+=		opt
 TESTS+=		opt-backwards
 TESTS+=		opt-chdir
@@ -228,6 +239,7 @@ TESTS+=		opt-query
 TESTS+=		opt-raw
 TESTS+=		opt-silent
 TESTS+=		opt-touch
+TESTS+=		opt-touch-jobs
 TESTS+=		opt-tracefile
 TESTS+=		opt-var-expanded
 TESTS+=		opt-var-literal
@@ -258,9 +270,14 @@ TESTS+=		shell-sh
 TESTS+=		suff-add-later
 TESTS+=		suff-clear-regular
 TESTS+=		suff-clear-single
+TESTS+=		suff-incomplete
 TESTS+=		suff-lookup
 TESTS+=		suff-main
+TESTS+=		suff-main-several
+TESTS+=		suff-phony
 TESTS+=		suff-rebuild
+TESTS+=		suff-self
+TESTS+=		suff-transform-debug
 TESTS+=		suff-transform-endless
 TESTS+=		suff-transform-expand
 TESTS+=		suff-transform-select
@@ -371,40 +388,59 @@ TESTS+=		varname-makeflags
 TESTS+=		varname-pwd
 TESTS+=		varname-vpath
 TESTS+=		varparse-dynamic
+TESTS+=		varparse-errors
 TESTS+=		varparse-mod
 TESTS+=		varparse-undef-partial
 TESTS+=		varquote
-TESTS+=		varshell
 
+# Ideas for more tests:
+#	char-0020-space.mk
+#	char-005C-backslash.mk
+#	escape-cond-str.mk
+#	escape-cond-func-arg.mk
+#	escape-cond-func-arg.mk
+#	escape-varmod.mk
+#	escape-varmod-define.mk
+#	escape-varmod-match.mk
+#	escape-varname.mk
+#	escape-varassign-varname.mk
+#	escape-varassign-varname-cmdline.mk
+#	escape-varassign-value.mk
+#	escape-varassign-value-cmdline.mk
+#	escape-dependency-source.mk
+#	escape-dependency-target.mk
+#	escape-for-varname.mk
+#	escape-for-item.mk
+#	posix-*.mk (see posix.mk and posix1.mk)
+
+.if ${.OBJDIR} != ${.CURDIR}
+RO_OBJDIR:=	${.OBJDIR}/roobj
+.else
+RO_OBJDIR:=	${TMPDIR:U/tmp}/roobj
+.endif
 # Additional environment variables for some of the tests.
 # The base environment is -i PATH="$PATH".
+ENV.depsrc-optional+=   TZ=UTC
 ENV.envfirst=		FROM_ENV=value-from-env
+ENV.objdir-writable+=	RO_OBJDIR=${RO_OBJDIR}
 ENV.varmisc=		FROM_ENV=env
 ENV.varmisc+=		FROM_ENV_BEFORE=env
 ENV.varmisc+=		FROM_ENV_AFTER=env
 ENV.varmod-localtime+=	TZ=Europe/Berlin
+ENV.varname-vpath+=	VPATH=varname-vpath.dir:varname-vpath.dir2
 
 # Override make flags for some of the tests; default is -k.
 # If possible, write ".MAKEFLAGS: -dv" in the test .mk file instead of
 # settings FLAGS.test=-dv here, since that is closer to the test code.
 FLAGS.cond-func-make=	via-cmdline
 FLAGS.directive-ifmake=	first second
-FLAGS.doterror=		# none
-FLAGS.envfirst=		-e
-FLAGS.export=		# none
-FLAGS.opt-ignore=	-i
-FLAGS.opt-keep-going=	-k
-FLAGS.opt-no-action=	-n
-FLAGS.opt-query=	-q
-FLAGS.opt-var-expanded=	-v VAR -v VALUE
-FLAGS.opt-var-literal=	-V VAR -V VALUE
-FLAGS.opt-warnings-as-errors= -W
-FLAGS.order=		-j1
-FLAGS.recursive=	-dL
-FLAGS.sh-leading-plus=	-n
-FLAGS.varname-empty=	-dv '$${:U}=cmdline-u' '=cmline-plain'
+FLAGS.doterror=		# none, especially not -k
+FLAGS.varname-empty=	-dv '$${:U}=cmdline-u' '=cmdline-plain'
 
 # Some tests need extra postprocessing.
+SED_CMDS.export=	-e '/^[^=_A-Za-z0-9]*=/d'
+SED_CMDS.export-all=	${SED_CMDS.export}
+SED_CMDS.export-env=	${SED_CMDS.export}
 SED_CMDS.job-output-long-lines= \
 	${:D Job separators on their own line are ok. } \
 	-e '/^--- job-[ab] ---$$/d' \
@@ -416,22 +452,26 @@ SED_CMDS.job-output-long-lines= \
 	${:D marker should always be at the beginning of the line. } \
 	-e '/^aa*--- job-b ---$$/d' \
 	-e '/^bb*--- job-a ---$$/d'
-SED_CMDS.opt-debug-graph1= \
-			-e 's,${.CURDIR},CURDIR,'
-SED_CMDS.opt-debug-graph1+= \
-			-e '/Global Variables:/,/Suffixes:/d'
-SED_CMDS.sh-dots=	-e 's,^.*\.\.\.:.*,<normalized: ...: not found>,'
+SED_CMDS.objdir-writable=	-e 's,${RO_OBJDIR},OBJDIR/roobj,g'
+SED_CMDS.opt-debug-graph1=	${STD_SED_CMDS.dg1}
 SED_CMDS.opt-debug-jobs=	-e 's,([0-9][0-9]*),(<pid>),'
 SED_CMDS.opt-debug-jobs+=	-e 's,pid [0-9][0-9]*,pid <pid>,'
 SED_CMDS.opt-debug-jobs+=	-e 's,Process [0-9][0-9]*,Process <pid>,'
 SED_CMDS.opt-debug-jobs+=	-e 's,JobFinish: [0-9][0-9]*,JobFinish: <pid>,'
+SED_CMDS.opt-debug-jobs+=	-e 's,Command: ${.SHELL:T},Command: <shell>,'
 # The "-q" may be there or not, see jobs.c, variable shells.
-SED_CMDS.opt-debug-jobs+=	-e 's,^\(.Command: sh\) -q,\1,'
+SED_CMDS.opt-debug-jobs+=	-e 's,^\(.Command: <shell>\) -q,\1,'
+SED_CMDS.sh-dots=		-e 's,^.*\.\.\.:.*,<normalized: ...: not found>,'
+SED_CMDS.suff-main+=		${STD_SED_CMDS.dg1}
+SED_CMDS.suff-main-several+=	${STD_SED_CMDS.dg1}
+SED_CMDS.suff-transform-debug+=	${STD_SED_CMDS.dg1}
+SED_CMDS.var-op-shell+=	\
+	-e 's,^${.SHELL:T}: [ 0-9:]*,,' \
+	-e '/command/s,No such.*,not found,'
+SED_CMDS.vardebug+=	-e 's,${.SHELL},</path/to/shell>,'
 SED_CMDS.varmod-subst-regex+= \
 			-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
 SED_CMDS.varmod-edge+=	-e 's, line [0-9]*:, line omitted:,'
-SED_CMDS.varshell+=	-e 's,^${.SHELL:T}: ,,'
-SED_CMDS.varshell+=	-e '/command/s,No such.*,not found,'
 SED_CMDS.varname-dot-parsedir=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
 SED_CMDS.varname-dot-parsefile=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
 SED_CMDS.varname-dot-shell=	-e 's, = /[^ ]*, = (details omitted),g'
@@ -439,10 +479,12 @@ SED_CMDS.varname-dot-shell+=	-e 's,"/[^" ]*","(details omitted)",g'
 SED_CMDS.varname-dot-shell+=	-e 's,\[/[^] ]*\],[(details omitted)],g'
 
 # Some tests need an additional round of postprocessing.
-POSTPROC.deptgt-suffixes= \
-			${TOOL_SED} -n -e '/^\#\*\*\* Suffixes/,/^\#\*/p'
+POSTPROC.deptgt-suffixes= awk '/^\#\*\*\* Suffixes/,/^never-stop/'
 POSTPROC.gnode-submake=	awk '/Input graph/, /^$$/'
+POSTPROC.opt-debug-graph1=	${STD_POSTPROC.dg1}
 POSTPROC.varname-empty=	${TOOL_SED} -n -e '/^Var_Set/p' -e '/^out:/p'
+POSTPROC.suff-main-several=	${STD_POSTPROC.dg1}
+POSTPROC.suff-transform-debug=	${STD_POSTPROC.dg1}
 
 # Some tests reuse other tests, which makes them unnecessarily fragile.
 export-all.rawout: export.mk
@@ -450,6 +492,21 @@ unexport.rawout: export.mk
 unexport-env.rawout: export.mk
 
 # End of the configuration section.
+
+# Some standard sed commands, to be used in the SED_CMDS above.
+
+# Omit details from the output of the -dg1 option such as process IDs.
+STD_SED_CMDS.dg1=	-e 's,${.CURDIR},<curdir>,'
+STD_SED_CMDS.dg1+=	-e 's,^\(\.MAKE *=\) .*,\1 <details omitted>,'
+STD_SED_CMDS.dg1+=	-e 's,^\(\.MAKE\.[A-Z_]* *=\) .*,\1 <details omitted>,'
+STD_SED_CMDS.dg1+=	-e 's,^\(MACHINE[_ARCH]* *=\) .*,\1 <details omitted>,'
+STD_SED_CMDS.dg1+=	-e 's,^\(MAKE *=\) .*,\1 <details omitted>,'
+
+# The layout of the lines in the directory cache vary depending on the path
+# length, which cannot be predicted.  Therefore omit these lines.
+STD_POSTPROC.dg1=	awk '/Directory Cache/,/^$$/ { next } { print }'
+
+# End of the configuration helpers section.
 
 .MAIN: all
 
@@ -483,6 +540,11 @@ LANG=		C
 
 MAKE_TEST_ENV?=	MALLOC_OPTIONS="JA"	# for jemalloc
 
+.if ${:!uname -s!} == "NetBSD"
+LIMIT_RESOURCES?=	ulimit -v 200000
+.endif
+LIMIT_RESOURCES?=	:
+
 # Each test is run in a sub-make, to keep the tests for interfering with
 # each other, and because they use different environment variables and
 # command line options.
@@ -490,6 +552,7 @@ MAKE_TEST_ENV?=	MALLOC_OPTIONS="JA"	# for jemalloc
 .mk.rawout:
 	@${_MKMSG_TEST:Uecho '#      test '} ${.PREFIX}
 	@set -eu; \
+	${LIMIT_RESOURCES}; \
 	cd ${.OBJDIR}; \
 	env -i PATH="$$PATH" ${MAKE_TEST_ENV} ${ENV.${.PREFIX:T}} \
 	  ${TEST_MAKE} \
@@ -505,6 +568,8 @@ MAKE_TEST_ENV?=	MALLOC_OPTIONS="JA"	# for jemalloc
 # always pretend .MAKE was called 'make'
 _SED_CMDS+=	-e 's,^${TEST_MAKE:T:S,.,\\.,g}[][0-9]*:,make:,'
 _SED_CMDS+=	-e 's,${TEST_MAKE:S,.,\\.,g},make,'
+_SED_CMDS+=	-e 's,${TEST_MAKE:T:S,.,\\.,g}[][0-9]* warning,make warning,'
+_SED_CMDS+=	-e 's,^usage: ${TEST_MAKE:T:S,.,\\.,g} ,usage: make ,'
 # replace anything after 'stopped in' with unit-tests
 _SED_CMDS+=	-e '/stopped/s, /.*, unit-tests,'
 # strip ${.CURDIR}/ from the output

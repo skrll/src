@@ -1,4 +1,4 @@
-/*	$NetBSD: util.c,v 1.66 2020/11/07 22:29:58 rillig Exp $	*/
+/*	$NetBSD: util.c,v 1.70 2020/11/23 23:41:11 rillig Exp $	*/
 
 /*
  * Missing stuff from OS's
@@ -15,7 +15,7 @@
 
 #include "make.h"
 
-MAKE_RCSID("$NetBSD: util.c,v 1.66 2020/11/07 22:29:58 rillig Exp $");
+MAKE_RCSID("$NetBSD: util.c,v 1.70 2020/11/23 23:41:11 rillig Exp $");
 
 #if !defined(MAKE_NATIVE) && !defined(HAVE_STRERROR)
 extern int errno, sys_nerr;
@@ -28,8 +28,7 @@ strerror(int e)
     if (e < 0 || e >= sys_nerr) {
 	snprintf(buf, sizeof buf, "Unknown error %d", e);
 	return buf;
-    }
-    else
+    } else
 	return sys_errlist[e];
 }
 #endif
@@ -98,7 +97,7 @@ setenv(const char *name, const char *value, int rewrite)
 	}
 
 	if (*value == '=')			/* no `=' in value */
-		++value;
+		value++;
 	l_value = strlen(value);
 
 	/* find if already exists */
@@ -163,7 +162,7 @@ strrcpy(char *ptr, char *str)
 {
     int len = strlen(str);
 
-    while (len)
+    while (len != 0)
 	*--ptr = str[--len];
 
     return ptr;
@@ -171,38 +170,38 @@ strrcpy(char *ptr, char *str)
 
 char    *sys_siglist[] = {
 	"Signal 0",
-	"Hangup",                       /* SIGHUP    */
-	"Interrupt",                    /* SIGINT    */
-	"Quit",                         /* SIGQUIT   */
-	"Illegal instruction",          /* SIGILL    */
-	"Trace/BPT trap",               /* SIGTRAP   */
-	"IOT trap",                     /* SIGIOT    */
-	"EMT trap",                     /* SIGEMT    */
-	"Floating point exception",     /* SIGFPE    */
-	"Killed",                       /* SIGKILL   */
-	"Bus error",                    /* SIGBUS    */
-	"Segmentation fault",           /* SIGSEGV   */
-	"Bad system call",              /* SIGSYS    */
-	"Broken pipe",                  /* SIGPIPE   */
-	"Alarm clock",                  /* SIGALRM   */
-	"Terminated",                   /* SIGTERM   */
-	"User defined signal 1",        /* SIGUSR1   */
-	"User defined signal 2",        /* SIGUSR2   */
-	"Child exited",                 /* SIGCLD    */
-	"Power-fail restart",           /* SIGPWR    */
-	"Virtual timer expired",        /* SIGVTALRM */
-	"Profiling timer expired",      /* SIGPROF   */
-	"I/O possible",                 /* SIGIO     */
-	"Window size changes",          /* SIGWINDOW */
-	"Stopped (signal)",             /* SIGSTOP   */
-	"Stopped",                      /* SIGTSTP   */
-	"Continued",                    /* SIGCONT   */
-	"Stopped (tty input)",          /* SIGTTIN   */
-	"Stopped (tty output)",         /* SIGTTOU   */
-	"Urgent I/O condition",         /* SIGURG    */
-	"Remote lock lost (NFS)",       /* SIGLOST   */
-	"Signal 31",                    /* reserved  */
-	"DIL signal"                    /* SIGDIL    */
+	"Hangup",			/* SIGHUP    */
+	"Interrupt",			/* SIGINT    */
+	"Quit",				/* SIGQUIT   */
+	"Illegal instruction",		/* SIGILL    */
+	"Trace/BPT trap",		/* SIGTRAP   */
+	"IOT trap",			/* SIGIOT    */
+	"EMT trap",			/* SIGEMT    */
+	"Floating point exception",	/* SIGFPE    */
+	"Killed",			/* SIGKILL   */
+	"Bus error",			/* SIGBUS    */
+	"Segmentation fault",		/* SIGSEGV   */
+	"Bad system call",		/* SIGSYS    */
+	"Broken pipe",			/* SIGPIPE   */
+	"Alarm clock",			/* SIGALRM   */
+	"Terminated",			/* SIGTERM   */
+	"User defined signal 1",	/* SIGUSR1   */
+	"User defined signal 2",	/* SIGUSR2   */
+	"Child exited",			/* SIGCLD    */
+	"Power-fail restart",		/* SIGPWR    */
+	"Virtual timer expired",	/* SIGVTALRM */
+	"Profiling timer expired",	/* SIGPROF   */
+	"I/O possible",			/* SIGIO     */
+	"Window size changes",		/* SIGWINDOW */
+	"Stopped (signal)",		/* SIGSTOP   */
+	"Stopped",			/* SIGTSTP   */
+	"Continued",			/* SIGCONT   */
+	"Stopped (tty input)",		/* SIGTTIN   */
+	"Stopped (tty output)",		/* SIGTTOU   */
+	"Urgent I/O condition",		/* SIGURG    */
+	"Remote lock lost (NFS)",	/* SIGLOST   */
+	"Signal 31",			/* reserved  */
+	"DIL signal"			/* SIGDIL    */
 };
 #endif /* __hpux__ || __hpux */
 
@@ -291,8 +290,7 @@ getwd(char *pathname)
 	    for (d = readdir(dp); d != NULL; d = readdir(dp))
 		if (d->d_fileno == st_cur.st_ino)
 		    break;
-	}
-	else {
+	} else {
 	    /*
 	     * Parent has a different device. This is a mount point so we
 	     * need to stat every member

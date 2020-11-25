@@ -1,4 +1,4 @@
-/*	$NetBSD: lst.h,v 1.84 2020/10/28 02:43:16 rillig Exp $	*/
+/*	$NetBSD: lst.h,v 1.86 2020/11/24 19:46:29 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -83,23 +83,23 @@
 #include <stdlib.h>
 
 /* A doubly-linked list of pointers. */
-typedef	struct List	List;
+typedef struct List List;
 /* A single node in the doubly-linked list. */
-typedef	struct ListNode	ListNode;
+typedef struct ListNode ListNode;
 
 struct ListNode {
-    ListNode *prev;		/* previous node in list, or NULL */
-    ListNode *next;		/* next node in list, or NULL */
-    union {
-	void *datum;		/* datum associated with this element */
-	const struct GNode *priv_gnode; /* alias, just for debugging */
-	const char *priv_str;	/* alias, just for debugging */
-    };
+	ListNode *prev;		/* previous node in list, or NULL */
+	ListNode *next;		/* next node in list, or NULL */
+	union {
+		void *datum;	/* datum associated with this element */
+		const struct GNode *priv_gnode; /* alias, just for debugging */
+		const char *priv_str; /* alias, just for debugging */
+	};
 };
 
 struct List {
-    ListNode *first;		/* first node in list */
-    ListNode *last;		/* last node in list */
+	ListNode *first;	/* first node in list */
+	ListNode *last;		/* last node in list */
 };
 
 /* Free the datum of a node, called before freeing the node itself. */
@@ -118,8 +118,9 @@ void Lst_Destroy(List *, LstFreeProc);
 
 /* Get information about a list */
 
-static inline MAKE_ATTR_UNUSED Boolean
-Lst_IsEmpty(List *list) { return list->first == NULL; }
+MAKE_INLINE Boolean
+Lst_IsEmpty(List *list)
+{ return list->first == NULL; }
 
 /* Find the first node that contains the given datum, or NULL. */
 ListNode *Lst_FindDatum(List *, const void *);
@@ -163,21 +164,21 @@ void *Lst_Dequeue(List *);
 /* A vector is an ordered collection of items, allowing for fast indexed
  * access. */
 typedef struct Vector {
-    void *items;		/* memory holding the items */
-    size_t itemSize;		/* size of a single item in bytes */
-    size_t len;			/* number of actually usable elements */
-    size_t priv_cap;		/* capacity */
+	void *items;		/* memory holding the items */
+	size_t itemSize;	/* size of a single item in bytes */
+	size_t len;		/* number of actually usable elements */
+	size_t priv_cap;	/* capacity */
 } Vector;
 
 void Vector_Init(Vector *, size_t);
 
 /* Return the pointer to the given item in the vector.
  * The returned data is valid until the next modifying operation. */
-static inline MAKE_ATTR_UNUSED void *
+MAKE_INLINE void *
 Vector_Get(Vector *v, size_t i)
 {
-    unsigned char *items = v->items;
-    return items + i * v->itemSize;
+	unsigned char *items = v->items;
+	return items + i * v->itemSize;
 }
 
 void *Vector_Push(Vector *);

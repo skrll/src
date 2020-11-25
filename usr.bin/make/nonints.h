@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.156 2020/11/07 21:31:07 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.162 2020/11/16 21:48:18 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -79,8 +79,8 @@ void Arch_End(void);
 Boolean Arch_ParseArchive(char **, GNodeList *, GNode *);
 void Arch_Touch(GNode *);
 void Arch_TouchLib(GNode *);
-time_t Arch_MTime(GNode *);
-time_t Arch_MemberMTime(GNode *);
+void Arch_UpdateMTime(GNode *gn);
+void Arch_UpdateMemberMTime(GNode *gn);
 void Arch_FindLib(GNode *, SearchPath *);
 Boolean Arch_LibOODate(GNode *);
 Boolean Arch_IsLib(GNode *);
@@ -156,7 +156,7 @@ typedef struct Words {
 } Words;
 
 Words Str_Words(const char *, Boolean);
-static inline MAKE_ATTR_UNUSED void
+MAKE_INLINE void
 Words_Free(Words w) {
     free(w.words);
     free(w.freeIt);
@@ -191,15 +191,15 @@ void Targ_End(void);
 
 void Targ_Stats(void);
 GNodeList *Targ_List(void);
-GNode *Targ_NewGN(const char *);
+GNode *GNode_New(const char *);
 GNode *Targ_FindNode(const char *);
 GNode *Targ_GetNode(const char *);
 GNode *Targ_NewInternalNode(const char *);
 GNode *Targ_GetEndNode(void);
 GNodeList *Targ_FindList(StringList *);
-Boolean Targ_Ignore(GNode *);
-Boolean Targ_Silent(GNode *);
-Boolean Targ_Precious(GNode *);
+Boolean Targ_Ignore(const GNode *);
+Boolean Targ_Silent(const GNode *);
+Boolean Targ_Precious(const GNode *);
 void Targ_SetMain(GNode *);
 void Targ_PrintCmds(GNode *);
 void Targ_PrintNode(GNode *, int);
@@ -215,16 +215,28 @@ void Var_End(void);
 
 typedef enum VarEvalFlags {
     VARE_NONE		= 0,
-    /* Treat undefined variables as errors. */
-    VARE_UNDEFERR	= 1 << 0,
-    /* Expand and evaluate variables during parsing. */
-    VARE_WANTRES	= 1 << 1,
-    /* In an assignment using the ':=' operator, keep '$$' as '$$' instead
-     * of reducing it to a single '$'.
+
+    /* Expand and evaluate variables during parsing.
      *
-     * See also preserveUndefined, which preserves subexpressions based on
-     * undefined variables; maybe that can be converted to a flag as well. */
-    VARE_ASSIGN		= 1 << 2
+     * TODO: Document what Var_Parse and Var_Subst return when this flag
+     * is not set. */
+    VARE_WANTRES	= 1 << 0,
+
+    /* Treat undefined variables as errors.
+     * Must only be used in combination with VARE_WANTRES. */
+    VARE_UNDEFERR	= 1 << 1,
+
+    /* Keep '$$' as '$$' instead of reducing it to a single '$'.
+     *
+     * Used in variable assignments using the ':=' operator.  It allows
+     * multiple such assignments to be chained without accidentally expanding
+     * '$$file' to '$file' in the first assignment and interpreting it as
+     * '${f}' followed by 'ile' in the next assignment.
+     *
+     * See also preserveUndefined, which preserves subexpressions that are
+     * based on undefined variables; maybe that can be converted to a flag
+     * as well. */
+    VARE_KEEP_DOLLAR	= 1 << 2
 } VarEvalFlags;
 
 typedef enum VarSetFlags {

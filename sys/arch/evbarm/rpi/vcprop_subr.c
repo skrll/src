@@ -1,4 +1,4 @@
-/*	$NetBSD: vcprop_subr.c,v 1.6 2020/07/04 15:14:56 skrll Exp $	*/
+/*	$NetBSD: vcprop_subr.c,v 1.8 2020/11/23 06:39:54 rin Exp $	*/
 
 /*
  * Copyright (c) 2014 Michael Lorenz
@@ -28,10 +28,12 @@
 /*
  * Mailbox property interface wrapper functions
  */
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: vcprop_subr.c,v 1.8 2020/11/23 06:39:54 rin Exp $");
 
 #include <sys/param.h>
-#include <sys/device.h>
 #include <sys/bus.h>
+#include <sys/device.h>
 
 #include <uvm/uvm_extern.h>
 
