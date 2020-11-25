@@ -1,4 +1,4 @@
-#	$NetBSD: files.mips,v 1.79 2020/08/15 07:42:07 mrg Exp $
+#	$NetBSD: files.mips,v 1.81 2020/10/21 13:31:51 christos Exp $
 #
 
 defflag	opt_cputype.h		NOFPU FPEMUL

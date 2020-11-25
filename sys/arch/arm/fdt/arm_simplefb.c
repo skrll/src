@@ -1,4 +1,4 @@
-/* $NetBSD: arm_simplefb.c,v 1.1 2020/10/10 15:25:31 jmcneill Exp $ */
+/* $NetBSD: arm_simplefb.c,v 1.4 2020/10/21 11:06:13 rin Exp $ */
 
 /*-
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -33,7 +33,7 @@
 #include "opt_pci.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arm_simplefb.c,v 1.1 2020/10/10 15:25:31 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm_simplefb.c,v 1.4 2020/10/21 11:06:13 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -66,6 +66,7 @@ static struct arm_simplefb_softc {
 	uint32_t	sc_height;
 	uint32_t	sc_stride;
 	uint16_t	sc_depth;
+	bool		sc_swapped;
 	void		*sc_bits;
 } arm_simplefb_softc;
 
@@ -83,6 +84,10 @@ static struct wsscreen_descr arm_simplefb_stdscreen = {
 static struct wsdisplay_accessops arm_simplefb_accessops;
 static struct vcons_data arm_simplefb_vcons_data;
 static struct vcons_screen arm_simplefb_screen;
+
+static bus_addr_t arm_simplefb_addr;
+static bus_size_t arm_simplefb_size;
+static bus_space_handle_t arm_simplefb_bsh;
 
 static int
 arm_simplefb_find_node(void)
@@ -120,6 +125,14 @@ arm_simplefb_init_screen(void *cookie, struct vcons_screen *scr,
 	ri->ri_bits = sc->sc_bits;
 	ri->ri_flg = RI_CENTER | RI_FULLCLEAR | RI_CLEAR;
 
+	if (sc->sc_swapped) {
+		KASSERT(ri->ri_depth == 32);
+		ri->ri_rnum = ri->ri_gnum = ri->ri_bnum = 8;
+		ri->ri_rpos =  8;
+		ri->ri_gpos = 16;
+		ri->ri_bpos = 24;
+	}
+
 	scr->scr_flags |= VCONS_LOADFONT;
 	scr->scr_flags |= VCONS_DONT_READ;
 
@@ -148,6 +161,31 @@ arm_simplefb_pollc(void *v, int on)
 {
 }
 
+#if NPCI > 0 && defined(PCI_NETBSD_CONFIGURE)
+static void
+arm_simplefb_reconfig(void *arg, uint64_t new_addr)
+{
+	struct arm_simplefb_softc * const sc = &arm_simplefb_softc;
+	struct rasops_info *ri = &arm_simplefb_screen.scr_ri;
+	bus_space_tag_t bst = &arm_generic_bs_tag;
+
+	bus_space_unmap(bst, arm_simplefb_bsh, arm_simplefb_size);
+	bus_space_map(bst, new_addr, arm_simplefb_size,
+	    BUS_SPACE_MAP_LINEAR | BUS_SPACE_MAP_PREFETCHABLE, &arm_simplefb_bsh);
+
+	sc->sc_bits = bus_space_vaddr(bst, arm_simplefb_bsh);
+	ri->ri_bits = sc->sc_bits;
+
+	arm_simplefb_addr = (bus_addr_t)new_addr;
+}
+#endif
+
+uint64_t
+arm_simplefb_physaddr(void)
+{
+	return arm_simplefb_addr;
+}
+
 void
 arm_simplefb_preattach(void)
 {
@@ -161,6 +199,7 @@ arm_simplefb_preattach(void)
 	bus_size_t size;
 	uint16_t depth;
 	long defattr;
+	bool swapped = false;
 
 	const int phandle = arm_simplefb_find_node();
 	if (phandle == -1)
@@ -181,6 +220,10 @@ arm_simplefb_preattach(void)
 	if (strcmp(format, "a8b8g8r8") == 0 ||
 	    strcmp(format, "x8r8g8b8") == 0) {
 		depth = 32;
+	} else if (strcmp(format, "r8g8b8a8") == 0 ||
+		   strcmp(format, "b8g8r8x8") == 0) {
+		depth = 32;
+		swapped = true;
 	} else if (strcmp(format, "r5g6b5") == 0) {
 		depth = 16;
 	} else {
@@ -191,11 +234,16 @@ arm_simplefb_preattach(void)
 	    BUS_SPACE_MAP_LINEAR | BUS_SPACE_MAP_PREFETCHABLE, &bsh) != 0)
 		return;
 
+	arm_simplefb_addr = addr;
+	arm_simplefb_size = size;
+	arm_simplefb_bsh = bsh;
+
 	sc->sc_width = width;
 	sc->sc_height = height;
 	sc->sc_depth = depth;
 	sc->sc_stride = stride;
 	sc->sc_bits = bus_space_vaddr(bst, bsh);
+	sc->sc_swapped = swapped;
 
 	wsfont_init();
 
@@ -225,9 +273,10 @@ arm_simplefb_preattach(void)
 #if NPCI > 0 && defined(PCI_NETBSD_CONFIGURE)
 	/*
 	 * Let the PCI resource allocator know about our framebuffer. This
-	 * protects the VGA device BARs from being reprogrammed when we the
-	 * framebuffer is located in VRAM.
+	 * lets us know if the FB base address changes so we can remap the
+	 * framebuffer if necessary.
 	 */
-	pciconf_resource_reserve(PCI_CONF_MAP_MEM, addr, size);
+	pciconf_resource_reserve(PCI_CONF_MAP_MEM, addr, size,
+	    arm_simplefb_reconfig, NULL);
 #endif
 }

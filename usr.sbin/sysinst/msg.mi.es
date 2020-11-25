@@ -1,4 +1,4 @@
-/*	$NetBSD: msg.mi.es,v 1.26 2020/10/13 17:26:28 martin Exp $	*/
+/*	$NetBSD: msg.mi.es,v 1.29 2020/11/04 14:29:40 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -502,8 +502,12 @@ instalaciones.  Puede escoger para instalar sólo los conjuntos esenciales
 seleccionar de entre los conjuntos de distribución opcionales.
 }
 
+/* Called with: 			Example
+ *  $0 = sets suffix			.tgz
+ *  $1 = URL protocol used		ftp
+ */
 message ftpsource
-{Lo siguiente son el sitio %s, directorio, usuario y contraseña que se
+{Lo siguiente son el sitio $1, directorio, usuario y contraseña que se
 usarán.  Si «usuario» es «ftp», no se necesita contraseña..
 
 }
@@ -514,9 +518,12 @@ message email
 message dev
 {dispositivo}
 
+/* Called with: 			Example
+ *  $0 = sets suffix			.tgz
+ */
 message nfssource
 {Introduzca el servidor nfs y el directorio del servidor donde se encuentre
-la distribución.  Recuerde: el directorio debe contener los archivos .tgz y
+la distribución.  Recuerde: el directorio debe contener los archivos $0 y
 debe ser montable por nfs.
 
 }
@@ -528,12 +535,26 @@ en el directorio raíz de los disquetes.
 
 }
 
+/* Called with: 			Example
+ *  $0 = sets suffix			.tgz
+ */
 message cdromsource
 {Introduzca el dispositivo de CDROM a usar y el directorio del CDROM
 donde se encuentre la distribución.
-Recuerde, el directorio debe contener los archivos .tgz.
+Recuerde, el directorio debe contener los archivos $0.
 
 }
+
+message No_cd_found
+{Could not locate a CD medium in any drive with the distribution sets! 
+Enter the correct data manually, or insert a disk and retry. 
+}
+
+message abort_install
+{Cancel installation}
+
+message source_sel_retry
+{Back to source selection & retry}
 
 message Available_cds
 {Available CDs}
@@ -545,16 +566,22 @@ message cd_path_not_found
 {The installation sets have not been found at the default location on this
 CD. Please check device and path name.}
 
+/* Called with: 			Example
+ *  $0 = sets suffix			.tgz
+ */
 message localfssource
 {Introduzca el dispositivo local desmontado y el directorio de ese
 dispositivo donde se encuentre la distribución. 
-Recuerde, el directorio debe contener los archivos .tgz.
+Recuerde, el directorio debe contener los archivos $0.
 
 }
 
+/* Called with: 			Example
+ *  $0 = sets suffix			.tgz
+ */
 message localdir
 {Introduzca el directorio local ya montado donde se encuentre la distribución.
-Recuerde, el directorio debe contener los archivos .tgz.
+Recuerde, el directorio debe contener los archivos $0.
 
 }
 
@@ -1200,21 +1227,9 @@ paquetes binarios.  Por favor verifique el camino a los paquetes y
 reinténtelo de nuevo.}
 message failed {Error}
 
-message notsupported {Operación no admitida!}
 message askfsmountadv {Punto de montaje o 'raid' o 'CGD' o 'lvm'?}
 message partman {Partición extendida}
-message edit_parts {Editar particiones}
 message editpart {Editar particiones}
-message switch_parts {Switch partitioning scheme}
-message fmtasraid {Formato como RAID}
-message fmtaslvm {Formato como LVM PV}
-message encrypt {Cifrar (CGD)}
-message setbootable {La bandera de arranque}
-message erase {Borrado seguro}
-message undo {Deshacer los cambios}
-message unconfig {Desconfigurar}
-message edit {Editar}
-message doumount {Fuerza umount}
 
 message fremove {QUITAR}
 message remove {Quitar}
@@ -1508,4 +1523,3 @@ message clone_target_hdr
 message clone_target_disp		{cloned partition(s)}
 message clone_src_done
 {Source selection OK, proceed to target selection}
-

@@ -1,7 +1,9 @@
-# $NetBSD: varmod-defined.mk,v 1.6 2020/09/29 18:48:43 rillig Exp $
+# $NetBSD: varmod-defined.mk,v 1.9 2020/11/12 00:40:55 rillig Exp $
 #
 # Tests for the :D variable modifier, which returns the given string
 # if the variable is defined.  It is closely related to the :U modifier.
+
+.MAKE.SAVE_DOLLARS=	yes
 
 DEF=	defined
 .undef UNDEF
@@ -10,7 +12,7 @@ DEF=	defined
 # "defined".
 #
 .if ${DEF:Dvalue} != "value"
-.error
+.  error
 .endif
 
 # Since UNDEF is not defined, the "value" is ignored.  Instead of leaving the
@@ -21,7 +23,7 @@ DEF=	defined
 # 2020-08-25 it is "Malformed conditional".
 #
 .if ${UNDEF:Dvalue} != ""
-.error
+.  error
 .endif
 
 # The modifier text may contain plain text as well as expressions.
@@ -84,6 +86,20 @@ DEF=	defined
 
 # TODO: Add more tests for parsing the plain text part, to cover each branch
 # of ApplyModifier_Defined.
+
+# The :D and :U modifiers behave differently from the :@var@ modifier in
+# that they preserve dollars in a ':=' assignment.  This is because
+# ApplyModifier_Defined passes the eflags unmodified to Var_Parse, unlike
+# ApplyModifier_Loop, which uses ParseModifierPart, which in turn removes
+# VARE_KEEP_DOLLAR from eflags.
+#
+# XXX: This inconsistency is documented nowhere.
+.MAKEFLAGS: -dv
+8_DOLLARS=	$$$$$$$$
+VAR:=		${8_DOLLARS}
+VAR:=		${VAR:D${8_DOLLARS}}
+VAR:=		${VAR:@var@${8_DOLLARS}@}
+.MAKEFLAGS: -d0
 
 all:
 	@:;

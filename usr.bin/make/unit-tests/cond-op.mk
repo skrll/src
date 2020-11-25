@@ -1,4 +1,4 @@
-# $NetBSD: cond-op.mk,v 1.7 2020/09/11 05:29:46 rillig Exp $
+# $NetBSD: cond-op.mk,v 1.10 2020/11/15 14:58:14 rillig Exp $
 #
 # Tests for operators like &&, ||, ! in .if conditions.
 #
@@ -9,48 +9,53 @@
 #	cond-op-parentheses.mk
 
 # In make, && binds more tightly than ||, like in C.
-# If make had the same precedence for both && and ||, the result would be
-# different.
+# If make had the same precedence for both && and ||, like in the shell,
+# the result would be different.
 # If || were to bind more tightly than &&, the result would be different
 # as well.
 .if !(1 || 1 && 0)
-.error
+.  error
 .endif
 
 # If make were to interpret the && and || operators like the shell, the
-# implicit binding would be this:
+# previous condition would be interpreted as:
 .if (1 || 1) && 0
-.error
+.  error
 .endif
 
 # The precedence of the ! operator is different from C though. It has a
-# lower precedence than the comparison operators.
+# lower precedence than the comparison operators.  Negating a condition
+# does not need parentheses.
+#
+# This kind of condition looks so unfamiliar that it doesn't occur in
+# practice.
 .if !"word" == "word"
-.error
+.  error
 .endif
 
 # This is how the above condition is actually interpreted.
 .if !("word" == "word")
-.error
+.  error
 .endif
 
 # TODO: Demonstrate that the precedence of the ! and == operators actually
 # makes a difference.  There is a simple example for sure, I just cannot
-# wrap my head around it.
+# wrap my head around it right now.  See the truth table generator below
+# for an example that doesn't require much thought.
 
 # This condition is malformed because the '!' on the right-hand side must not
 # appear unquoted.  If any, it must be enclosed in quotes.
 # In any case, it is not interpreted as a negation of an unquoted string.
 # See CondParser_String.
 .if "!word" == !word
-.error
+.  error
 .endif
 
 # Surprisingly, the ampersand and pipe are allowed in bare strings.
 # That's another opportunity for writing confusing code.
 # See CondParser_String, which only has '!' in the list of stop characters.
 .if "a&&b||c" != a&&b||c
-.error
+.  error
 .endif
 
 # As soon as the parser sees the '$', it knows that the condition will
@@ -71,11 +76,27 @@
 .  error
 .endif
 .if ${ERR:Uundefined} == evaluated
-.  warning After detecting a parse error, the rest is evaluated.
+.  info After detecting a parse error, the rest is evaluated.
 .endif
 
 # Just in case that parsing should ever stop on the first error.
 .info Parsing continues until here.
+
+# Demonstration that '&&' has higher precedence than '||'.
+.info A B C   =>   (A || B) && C   A || B && C   A || (B && C)
+.for a in 0 1
+.  for b in 0 1
+.    for c in 0 1
+.      for r1 in ${ ($a || $b) && $c :?1:0}
+.        for r2 in ${ $a || $b && $c :?1:0}
+.          for r3 in ${ $a || ($b && $c) :?1:0}
+.            info $a $b $c   =>   ${r1}               ${r2}             ${r3}
+.          endfor
+.        endfor
+.      endfor
+.    endfor
+.  endfor
+.endfor
 
 all:
 	@:;

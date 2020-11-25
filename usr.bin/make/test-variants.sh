@@ -1,5 +1,5 @@
 #! /bin/sh
-# $NetBSD: test-variants.sh,v 1.4 2020/09/21 04:20:35 rillig Exp $
+# $NetBSD: test-variants.sh,v 1.6 2020/11/20 00:24:21 rillig Exp $
 #
 # Build several variants of make and run the tests on them.
 #
@@ -24,7 +24,8 @@ testcase() {
 	&& env -i PATH="$PATH" USETOOLS="no" "$@" \
 		sh -ce "make -ks all" \
 	&& size *.o make \
-	&& env -i PATH="$PATH" USETOOLS="no" MALLOC_OPTIONS="JA" "$@" \
+	&& env -i PATH="$PATH" USETOOLS="no" MALLOC_OPTIONS="JA" \
+		_MKMSG_TEST=":" "$@" \
 		sh -ce "make -s test" \
 	|| fail
 }
@@ -42,6 +43,10 @@ testcase USER_CPPFLAGS="-DUSE_DOUBLE_BOOLEAN"
 # The only valid values are TRUE and FALSE.
 #
 testcase USER_CPPFLAGS="-DUSE_UCHAR_BOOLEAN"
+
+# Ensure that variables of type Boolean are not used as array index.
+#
+testcase USER_CPPFLAGS="-DUSE_CHAR_BOOLEAN"
 
 # Try a different compiler, with slightly different warnings and error
 # messages.  One feature that is missing from GCC is a little stricter
@@ -173,5 +178,11 @@ testcase USE_GCC10=yes GCC10BASE=$HOME/pkg/gcc10 USER_CFLAGS="\
 -Wenum-compare -Wmissing-field-initializers -Wredundant-decls \
 -Wno-error=conversion -Wno-error=sign-conversion -Wno-error=unused-macros \
 -Wno-error=unused-parameter -Wno-error=duplicated-branches"
+
+for shell in /usr/pkg/bin/bash /usr/pkg/bin/dash; do
+	if [ -x "$shell" ]; then
+		testcase USER_CPPFLAGS=-DDEFSHELL_CUSTOM="\\\"$shell\\\""
+	fi
+done
 
 test "$failed" = "no"

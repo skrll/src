@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1752 2020/10/12 14:10:37 roy Exp $
+#	$NetBSD: 3RDPARTY,v 1.1761 2020/11/20 13:33:07 roy Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -352,12 +352,12 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	9.3.1
-Current Vers:	9.3.1
+Version:	9.3.3
+Current Vers:	9.3.3
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
-Date:		2020-10-12
+Date:		2020-11-20
 Mailing List: 	dhcpcd-discuss@marples.name
 License:	BSD (2-clause)
 Location:	external/bsd/dhcpcd/dist
@@ -831,7 +831,7 @@ into inetd. The provided libwrap2netbsd script handles just libwrap.
 
 Package:	Lua
 Version:	Lua 5.3.5
-Current Vers:	Lua 5.4.0
+Current Vers:	Lua 5.3.6/5.4.1
 Maintainer:	PUC Rio
 Home Page:	https://www.lua.org/
 Date:		2020-06-30
@@ -1369,8 +1369,8 @@ perhaps this implementation should be kept anyway for historical
 purposes.
 
 Package:	tmux
-Version:	3.0a
-Current Vers:	3.1b
+Version:	3.1c
+Current Vers:	3.1c
 Maintainer:	Nicholas Marriott <nicholas.marriott@gmail.com>
 Archive site:	https://github.com/tmux/tmux
 Home page:	http://tmux.github.io
@@ -1409,8 +1409,8 @@ Notes:
 Added changes from a5 -> a12 manually.
 
 Package:	tz
-Version:	tzcode2020b / tzdata2020b
-Current Vers:	tzcode2020b / tzdata2020b
+Version:	tzcode2020c / tzdata2020d
+Current Vers:	tzcode2020d / tzdata2020d
 Maintainer:	Paul Eggert <eggert@cs.ucla.edu>
 Archive Site:	ftp://ftp.iana.org/tz/releases/
 Archive Site:	ftp://munnari.oz.au/pub/oldtz/
@@ -2080,7 +2080,7 @@ we use BSD-licensed implementation from Citrus project (see entry for
 
 Package:	grep
 Version:	2.5.1a (last GPLv2+ version)
-Current Vers:	3.1
+Current Vers:	3.5
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/grep/
 Home Page:	http://www.gnu.org/software/grep/

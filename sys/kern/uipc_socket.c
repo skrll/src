@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_socket.c,v 1.291 2020/08/26 22:54:30 christos Exp $	*/
+/*	$NetBSD: uipc_socket.c,v 1.293 2020/11/23 00:52:53 chs Exp $	*/
 
 /*
  * Copyright (c) 2002, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.291 2020/08/26 22:54:30 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.293 2020/11/23 00:52:53 chs Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -165,6 +165,11 @@ static struct mbuf *so_pendfree = NULL;
 int somaxkva = SOMAXKVA;
 static int socurkva;
 static kcondvar_t socurkva_cv;
+
+#ifndef SOFIXEDBUF
+#define SOFIXEDBUF true
+#endif
+bool sofixedbuf = SOFIXEDBUF;
 
 static kauth_listener_t socket_listener;
 
@@ -1181,9 +1186,6 @@ soreceive(struct socket *so, struct mbuf **paddr, struct uio *uio,
 			    MIN(uio->uio_resid, m->m_len), uio);
 			m = m_free(m);
 		} while (uio->uio_resid > 0 && error == 0 && m);
-		/* We consumed the oob data, no more oobmark.  */
-		so->so_oobmark = 0;
-		so->so_state &= ~SS_RCVATMARK;
 bad:
 		if (m != NULL)
 			m_freem(m);
@@ -1560,6 +1562,8 @@ dontblock:
 				if (offset == so->so_oobmark)
 					break;
 			}
+		} else {
+			so->so_state &= ~SS_POLLRDBAND;
 		}
 		if (flags & MSG_EOR)
 			break;
@@ -1798,7 +1802,8 @@ sosetopt1(struct socket *so, const struct sockopt *sopt)
 				error = ENOBUFS;
 				break;
 			}
-			so->so_snd.sb_flags &= ~SB_AUTOSIZE;
+			if (sofixedbuf)
+				so->so_snd.sb_flags &= ~SB_AUTOSIZE;
 			break;
 
 		case SO_RCVBUF:
@@ -1806,7 +1811,8 @@ sosetopt1(struct socket *so, const struct sockopt *sopt)
 				error = ENOBUFS;
 				break;
 			}
-			so->so_rcv.sb_flags &= ~SB_AUTOSIZE;
+			if (sofixedbuf)
+				so->so_rcv.sb_flags &= ~SB_AUTOSIZE;
 			break;
 
 		/*
@@ -2207,6 +2213,7 @@ void
 sohasoutofband(struct socket *so)
 {
 
+	so->so_state |= SS_POLLRDBAND;
 	fownsignal(so->so_pgid, SIGURG, POLL_PRI, POLLPRI|POLLRDBAND, so);
 	selnotify(&so->so_rcv.sb_sel, POLLPRI | POLLRDBAND, NOTE_SUBMIT);
 }
@@ -2381,7 +2388,7 @@ sodopoll(struct socket *so, int events)
 			revents |= events & (POLLOUT | POLLWRNORM);
 
 	if (events & (POLLPRI | POLLRDBAND))
-		if (so->so_oobmark || (so->so_state & SS_RCVATMARK))
+		if (so->so_state & SS_POLLRDBAND)
 			revents |= events & (POLLPRI | POLLRDBAND);
 
 	return revents;
@@ -2537,6 +2544,13 @@ sysctl_kern_socket_setup(void)
 		                    "used for socket buffers"),
 		       sysctl_kern_somaxkva, 0, NULL, 0,
 		       CTL_KERN, KERN_SOMAXKVA, CTL_EOL);
+
+	sysctl_createv(&socket_sysctllog, 0, NULL, NULL,
+		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
+		       CTLTYPE_BOOL, "sofixedbuf",
+		       SYSCTL_DESCR("Prevent scaling of fixed socket buffers"),
+		       NULL, 0, &sofixedbuf, 0,
+		       CTL_KERN, KERN_SOFIXEDBUF, CTL_EOL);
 
 	sysctl_createv(&socket_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,

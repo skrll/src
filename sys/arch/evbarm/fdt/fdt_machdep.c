@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_machdep.c,v 1.75 2020/10/10 15:25:30 jmcneill Exp $ */
+/* $NetBSD: fdt_machdep.c,v 1.79 2020/11/24 06:36:36 skrll Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.75 2020/10/10 15:25:30 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.79 2020/11/24 06:36:36 skrll Exp $");
 
 #include "opt_machdep.h"
 #include "opt_bootconfig.h"
@@ -48,6 +48,7 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.75 2020/10/10 15:25:30 jmcneill Ex
 #include <sys/atomic.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
+#include <sys/endian.h>
 #include <sys/exec.h>
 #include <sys/kernel.h>
 #include <sys/kmem.h>
@@ -142,6 +143,10 @@ static void fdt_device_register_post_config(device_t, void *);
 static void fdt_cpu_rootconf(void);
 static void fdt_reset(void);
 static void fdt_powerdown(void);
+
+#if BYTE_ORDER == BIG_ENDIAN
+static void fdt_update_fb_format(void);
+#endif
 
 static void
 earlyconsputc(dev_t dev, int c)
@@ -529,17 +534,17 @@ initarm(void *arg)
 
 	/* Load FDT */
 	int error = fdt_check_header(fdt_addr_r);
-	if (error == 0) {
-		/* If the DTB is too big, try to pack it in place first. */
-		if (fdt_totalsize(fdt_addr_r) > sizeof(fdt_data))
-			(void)fdt_pack(__UNCONST(fdt_addr_r));
-		error = fdt_open_into(fdt_addr_r, fdt_data, sizeof(fdt_data));
-		if (error != 0)
-			panic("fdt_move failed: %s", fdt_strerror(error));
-		fdtbus_init(fdt_data);
-	} else {
+	if (error != 0)
 		panic("fdt_check_header failed: %s", fdt_strerror(error));
-	}
+
+	/* If the DTB is too big, try to pack it in place first. */
+	if (fdt_totalsize(fdt_addr_r) > sizeof(fdt_data))
+		(void)fdt_pack(__UNCONST(fdt_addr_r));
+	error = fdt_open_into(fdt_addr_r, fdt_data, sizeof(fdt_data));
+	if (error != 0)
+		panic("fdt_move failed: %s", fdt_strerror(error));
+
+	fdtbus_init(fdt_data);
 
 	/* Lookup platform specific backend */
 	plat = arm_fdt_platform();
@@ -564,7 +569,7 @@ initarm(void *arg)
 	 * l1pt VA is fine
 	 */
 
-	VPRINTF("devmap\n");
+	VPRINTF("devmap %p\n", plat->ap_devmap());
 	extern char ARM_BOOTSTRAP_LxPT[];
 	pmap_devmap_bootstrap((vaddr_t)ARM_BOOTSTRAP_LxPT, plat->ap_devmap());
 
@@ -577,6 +582,17 @@ initarm(void *arg)
 	 */
 	VPRINTF("stdout\n");
 	fdt_update_stdout_path();
+
+#if BYTE_ORDER == BIG_ENDIAN
+	/*
+	 * Most boards are configured to little-endian mode in initial, and
+	 * switched to big-endian mode after kernel is loaded. In this case,
+	 * framebuffer seems byte-swapped to CPU. Override FDT to let
+	 * drivers know.
+	 */
+	VPRINTF("fb_format\n");
+	fdt_update_fb_format();
+#endif
 
 	/*
 	 * Done making changes to the FDT.
@@ -864,6 +880,14 @@ fdt_device_register(device_t self, void *aux)
 #endif
 	}
 
+#if NWSDISPLAY > 0 && NGENFB > 0
+	if (device_is_a(self, "genfb")) {
+		prop_dictionary_t dict = device_properties(self);
+		prop_dictionary_set_uint64(dict,
+		    "simplefb-physaddr", arm_simplefb_physaddr());
+	}
+#endif
+
 	if (plat && plat->ap_device_register)
 		plat->ap_device_register(self, aux);
 }
@@ -916,3 +940,36 @@ fdt_powerdown(void)
 {
 	fdtbus_power_poweroff();
 }
+
+#if BYTE_ORDER == BIG_ENDIAN
+static void
+fdt_update_fb_format(void)
+{
+	int off, len;
+	const char *format, *replace;
+
+	off = fdt_path_offset(fdt_data, "/chosen");
+	if (off < 0)
+		return;
+
+	for (;;) {
+		off = fdt_node_offset_by_compatible(fdt_data, off,
+		    "simple-framebuffer");
+		if (off < 0)
+			return;
+
+		format = fdt_getprop(fdt_data, off, "format", &len);
+		if (format == NULL)
+			continue;
+
+		replace = NULL;
+		if (strcmp(format, "a8b8g8r8") == 0)
+			replace = "r8g8b8a8";
+		else if (strcmp(format, "x8r8g8b8") == 0)
+			replace = "b8g8r8x8";
+		if (replace != NULL)
+			fdt_setprop(fdt_data, off, "format", replace,
+			    strlen(replace) + 1);
+	}
+}
+#endif

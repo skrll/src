@@ -1422,10 +1422,15 @@ dhcpcd_signal_cb(int sig, void *arg)
 		return;
 	case SIGUSR2:
 		loginfox(sigmsg, "SIGUSR2", "reopening log");
-		/* XXX This may not work that well in a chroot */
-		logclose();
+#ifdef PRIVSEP
+		if (IN_PRIVSEP(ctx)) {
+			if (ps_root_logreopen(ctx) == -1)
+				logerr("ps_root_logreopen");
+			return;
+		}
+#endif
 		if (logopen(ctx->logfile) == -1)
-			logerr(__func__);
+			logerr("logopen");
 		return;
 	case SIGCHLD:
 		while (waitpid(-1, NULL, WNOHANG) > 0)
@@ -1860,7 +1865,7 @@ main(int argc, char **argv, char **envp)
 	ctx.dhcp6_wfd = -1;
 #endif
 #ifdef PRIVSEP
-	ctx.ps_root_fd = ctx.ps_data_fd = -1;
+	ctx.ps_root_fd = ctx.ps_log_fd = ctx.ps_data_fd = -1;
 	ctx.ps_inet_fd = ctx.ps_control_fd = -1;
 	TAILQ_INIT(&ctx.ps_processes);
 #endif
@@ -2174,6 +2179,9 @@ printpidfile:
 		if (!(ctx.options & DHCPCD_MASTER))
 			ctx.control_fd = control_open(argv[optind], family,
 			    ctx.options & DHCPCD_DUMPLEASE);
+		if (!(ctx.options & DHCPCD_MASTER) && ctx.control_fd == -1)
+			ctx.control_fd = control_open(argv[optind], AF_UNSPEC,
+			    ctx.options & DHCPCD_DUMPLEASE);
 		if (ctx.control_fd == -1)
 			ctx.control_fd = control_open(NULL, AF_UNSPEC,
 			    ctx.options & DHCPCD_DUMPLEASE);
@@ -2235,6 +2243,9 @@ printpidfile:
 	loginfox(PACKAGE "-" VERSION " starting");
 	if (ctx.stdin_valid && freopen(_PATH_DEVNULL, "w", stdin) == NULL)
 		logwarn("freopen stdin");
+
+	if (!(ctx.options & DHCPCD_DAEMONISE))
+		goto start_master;
 
 #if defined(USE_SIGNALS) && !defined(THERE_IS_NO_FORK)
 	if (xsocketpair(AF_UNIX, SOCK_DGRAM | SOCK_CXNB, 0, fork_fd) == -1 ||
@@ -2327,7 +2338,10 @@ printpidfile:
 
 	/* We have now forked, setsid, forked once more.
 	 * From this point on, we are the controlling daemon. */
+	logdebugx("spawned master process on PID %d", getpid());
+start_master:
 	ctx.options |= DHCPCD_STARTED;
+	logdebugx("spawned master process on PID %d", getpid());
 	if ((pid = pidfile_lock(ctx.pidfile)) != 0) {
 		logerr("%s: pidfile_lock %d", __func__, pid);
 #ifdef PRIVSEP

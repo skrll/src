@@ -1,4 +1,4 @@
-#	$NetBSD: files.kern,v 1.52 2020/09/07 03:50:41 thorpej Exp $
+#	$NetBSD: files.kern,v 1.54 2020/11/01 18:51:02 pgoyette Exp $
 
 #
 # kernel sources
@@ -16,8 +16,8 @@ file	kern/bufq_fcfs.c		bufq_fcfs
 file	kern/bufq_priocscan.c		bufq_priocscan
 file	kern/bufq_readprio.c		bufq_readprio | new_bufq_strategy
 file	kern/compat_stub.c		kern
-file	kern/core_elf32.c		exec_elf32
-file	kern/core_elf64.c		exec_elf64
+file	kern/core_elf32.c		exec_elf32 & coredump
+file	kern/core_elf64.c		exec_elf64 & coredump
 file	kern/core_netbsd.c		coredump
 file	kern/cnmagic.c			kern
 file	kern/exec_aout.c		exec_aout
@@ -167,7 +167,7 @@ file	kern/sys_pipe.c			!pipe_socketpair
 file	kern/sys_process.c		ptrace_hooks | ktrace
 file	kern/sys_process_lwpstatus.c	kern
 file	kern/sys_ptrace.c		ptrace
-file	kern/sys_ptrace_common.c	ptrace
+file	kern/sys_ptrace_common.c	ptrace | procfs
 file	kern/sys_pset.c			kern
 file	kern/sys_select.c		kern
 file	kern/sys_sig.c			kern

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wg.c,v 1.60 2020/09/14 04:57:20 riastradh Exp $	*/
+/*	$NetBSD: if_wg.c,v 1.62 2020/11/11 18:08:34 riastradh Exp $	*/
 
 /*
  * Copyright (C) Ryota Ozaki <ozaki.ryota@gmail.com>
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wg.c,v 1.60 2020/09/14 04:57:20 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wg.c,v 1.62 2020/11/11 18:08:34 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_altq_enabled.h"
@@ -1611,7 +1611,18 @@ static struct socket *
 wg_get_so_by_af(struct wg_softc *wg, const int af)
 {
 
-	return (af == AF_INET) ? wg->wg_so4 : wg->wg_so6;
+	switch (af) {
+#ifdef INET
+	case AF_INET:
+		return wg->wg_so4;
+#endif
+#ifdef INET6
+	case AF_INET6:
+		return wg->wg_so6;
+#endif
+	default:
+		panic("wg: no such af: %d", af);
+	}
 }
 
 static struct socket *
@@ -2349,9 +2360,14 @@ wg_validate_inner_packet(const char *packet, size_t decrypted_len, int *af)
 
 	WG_DLOG("af=%d\n", *af);
 
-	if (*af == AF_INET) {
+	switch (*af) {
+#ifdef INET
+	case AF_INET:
 		packet_len = ntohs(ip->ip_len);
-	} else {
+		break;
+#endif
+#ifdef INET6
+	case AF_INET6: {
 		const struct ip6_hdr *ip6;
 
 		if (__predict_false(decrypted_len < sizeof(struct ip6_hdr)))
@@ -2359,6 +2375,11 @@ wg_validate_inner_packet(const char *packet, size_t decrypted_len, int *af)
 
 		ip6 = (const struct ip6_hdr *)packet;
 		packet_len = sizeof(struct ip6_hdr) + ntohs(ip6->ip6_plen);
+		break;
+	}
+#endif
+	default:
+		return false;
 	}
 
 	WG_DLOG("packet_len=%u\n", packet_len);
@@ -2432,12 +2453,16 @@ sockaddr_port_match(const struct sockaddr *sa1, const struct sockaddr *sa2)
 		return false;
 
 	switch (sa1->sa_family) {
+#ifdef INET
 	case AF_INET:
 		return satocsin(sa1)->sin_port == satocsin(sa2)->sin_port;
+#endif
+#ifdef INET6
 	case AF_INET6:
 		return satocsin6(sa1)->sin6_port == satocsin6(sa2)->sin6_port;
+#endif
 	default:
-		return true;
+		return false;
 	}
 }
 
@@ -3509,6 +3534,8 @@ wg_destroy_peer_name(struct wg_softc *wg, const char *name)
 		garbage_bypubkey = thmap_stage_gc(wg->wg_peers_bypubkey);
 		WG_PEER_WRITER_REMOVE(wgp);
 		wg->wg_npeers--;
+		if (wg->wg_npeers == 0)
+			if_link_state_change(&wg->wg_if, LINK_STATE_DOWN);
 		mutex_enter(wgp->wgp_lock);
 		pserialize_perform(wgp->wgp_psz);
 		mutex_exit(wgp->wgp_lock);
@@ -3536,8 +3563,7 @@ wg_if_attach(struct wg_softc *wg)
 	wg->wg_if.if_addrlen = 0;
 	wg->wg_if.if_mtu = WG_MTU;
 	wg->wg_if.if_flags = IFF_MULTICAST;
-	wg->wg_if.if_extflags = IFEF_NO_LINK_STATE_CHANGE;
-	wg->wg_if.if_extflags |= IFEF_MPSAFE;
+	wg->wg_if.if_extflags = IFEF_MPSAFE;
 	wg->wg_if.if_ioctl = wg_ioctl;
 	wg->wg_if.if_output = wg_output;
 	wg->wg_if.if_init = wg_init;
@@ -3556,6 +3582,7 @@ wg_if_attach(struct wg_softc *wg)
 	if (error != 0)
 		return error;
 
+	wg->wg_if.if_link_state = LINK_STATE_DOWN;
 	if_alloc_sadl(&wg->wg_if);
 	if_register(&wg->wg_if);
 
@@ -3936,8 +3963,7 @@ wg_send_data_msg(struct wg_peer *wgp, struct wg_session *wgs,
 	struct wg_msg_data *wgmd;
 	bool free_padded_buf = false;
 	struct mbuf *n;
-	size_t leading_len = max_linkhdr + sizeof(struct ip6_hdr) +
-	    sizeof(struct udphdr);
+	size_t leading_len = max_hdr + sizeof(struct udphdr);
 
 	mlen = m_length(m);
 	inner_len = mlen;
@@ -4380,6 +4406,8 @@ wg_ioctl_add_peer(struct wg_softc *wg, struct ifdrv *ifd)
 	WG_PEER_WRITER_INSERT_HEAD(wgp, wg);
 	wg->wg_npeers++;
 	mutex_exit(wg->wg_lock);
+
+	if_link_state_change(&wg->wg_if, LINK_STATE_UP);
 
 out:
 	kmem_free(buf, ifd->ifd_len + 1);

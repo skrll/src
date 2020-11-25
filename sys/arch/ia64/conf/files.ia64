@@ -1,4 +1,4 @@
-#	$NetBSD: files.ia64,v 1.9 2019/11/20 19:37:52 pgoyette Exp $
+#	$NetBSD: files.ia64,v 1.11 2020/10/21 13:31:51 christos Exp $
 #
 # new style config file for ia64 architecture
 #

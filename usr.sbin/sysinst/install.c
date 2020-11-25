@@ -1,4 +1,4 @@
-/*	$NetBSD: install.c,v 1.18 2020/10/12 16:14:32 martin Exp $	*/
+/*	$NetBSD: install.c,v 1.20 2020/11/04 14:29:40 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -155,7 +155,6 @@ do_install(void)
 	int find_disks_ret;
 	int retcode = 0, res;
 	struct install_partition_desc install = {};
-	struct disk_partitions *parts;
 
 #ifndef NO_PARTMAN
 	partman_go = -1;
@@ -167,6 +166,13 @@ do_install(void)
 	msg_display(MSG_installusure);
 	if (!ask_noyes(NULL))
 		return;
+#endif
+
+#ifdef CHECK_ENTROPY
+	if (!do_check_entropy()) {
+		hit_enter_to_continue(MSG_abort_installation, NULL);
+		return;
+	}
 #endif
 
 	memset(&install, 0, sizeof install);
@@ -216,21 +222,6 @@ do_install(void)
 		if (!ask_noyes(NULL))
 			goto error;
 
-		/*
-		 * Check if we have a secondary partitioning and
-		 * use that if available. The MD code will typically
-		 * have written the outer partitioning in md_pre_disklabel.
-		 */
-		parts = pm->parts;
-		if (!pm->no_part && parts != NULL) {
-			if (parts->pscheme->secondary_scheme != NULL &&
-			    parts->pscheme->secondary_partitions != NULL) {
-				parts = parts->pscheme->secondary_partitions(
-				    parts, pm->ptstart, false);
-				if (parts == NULL)
-					parts = pm->parts;
-			}
-		}
 		if ((!pm->no_part && !write_all_parts(&install)) ||
 		    make_filesystems(&install) ||
 		    make_fstab(&install) != 0 ||

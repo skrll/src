@@ -1,7 +1,7 @@
-/*	$NetBSD: ossaudio.c,v 1.44 2020/04/20 12:01:44 nia Exp $	*/
+/*	$NetBSD: ossaudio.c,v 1.64 2020/11/13 09:02:39 nia Exp $	*/
 
 /*-
- * Copyright (c) 1997 The NetBSD Foundation, Inc.
+ * Copyright (c) 1997, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,15 +27,17 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: ossaudio.c,v 1.44 2020/04/20 12:01:44 nia Exp $");
+__RCSID("$NetBSD: ossaudio.c,v 1.64 2020/11/13 09:02:39 nia Exp $");
 
 /*
- * This is an OSS (Linux) sound API emulator.
- * It provides the essentials of the API.
- */
-
-/* XXX This file is essentially the same as sys/compat/ossaudio.c.
- * With some preprocessor magic it could be the same file.
+ * This is an Open Sound System compatibility layer, which provides
+ * fairly complete ioctl emulation for OSSv3 and some of OSSv4.
+ *
+ * The canonical OSS specification is available at
+ * http://manuals.opensound.com/developer/
+ * 
+ * This file is similar to sys/compat/ossaudio.c with additional OSSv4
+ * compatibility.
  */
 
 #include <string.h>
@@ -47,6 +49,7 @@ __RCSID("$NetBSD: ossaudio.c,v 1.44 2020/04/20 12:01:44 nia Exp $");
 #include <fcntl.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdbool.h>
 
@@ -64,6 +67,12 @@ __RCSID("$NetBSD: ossaudio.c,v 1.44 2020/04/20 12:01:44 nia Exp $");
 
 static struct audiodevinfo *getdevinfo(int);
 
+static int getaudiocount(void);
+static int getmixercount(void);
+static int getmixercontrolcount(int);
+
+static int getcaps(int, int *);
+
 static int getvol(u_int, u_char);
 static void setvol(int, int, bool);
 
@@ -71,7 +80,9 @@ static void setchannels(int, int, int);
 static void setblocksize(int, struct audio_info *);
 
 static int audio_ioctl(int, unsigned long, void *);
-static int mixer_ioctl(int, unsigned long, void *);
+static int mixer_oss3_ioctl(int, unsigned long, void *);
+static int mixer_oss4_ioctl(int, unsigned long, void *);
+static int global_oss4_ioctl(int, unsigned long, void *);
 static int opaque_to_enum(struct audiodevinfo *, audio_mixer_name_t *, int);
 static int enum_to_ord(struct audiodevinfo *, int);
 static int enum_to_mask(struct audiodevinfo *, int);
@@ -91,7 +102,11 @@ _oss_ioctl(int fd, unsigned long com, ...)
 	if (IOCGROUP(com) == 'P')
 		return audio_ioctl(fd, com, argp);
 	else if (IOCGROUP(com) == 'M')
-		return mixer_ioctl(fd, com, argp);
+		return mixer_oss3_ioctl(fd, com, argp);
+	else if (IOCGROUP(com) == 'X')
+		return mixer_oss4_ioctl(fd, com, argp);
+	else if (IOCGROUP(com) == 'Y')
+		return global_oss4_ioctl(fd, com, argp);
 	else
 		return ioctl(fd, com, argp);
 }
@@ -103,21 +118,18 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 	struct audio_info tmpinfo, hwfmt;
 	struct audio_offset tmpoffs;
 	struct audio_buf_info bufinfo;
+	struct audio_errinfo *tmperrinfo;
 	struct count_info cntinfo;
 	struct audio_encoding tmpenc;
-	struct oss_sysinfo tmpsysinfo;
-	struct oss_audioinfo *tmpaudioinfo;
-	audio_device_t tmpaudiodev;
-	struct stat tmpstat;
-	dev_t devno;
-	char version[32] = "4.01";
-	char license[16] = "NetBSD";
 	u_int u;
 	u_int encoding;
 	u_int precision;
-	int idat, idata;
+	int perrors, rerrors;
+	static int totalperrors = 0;
+	static int totalrerrors = 0;
+	oss_count_t osscount;
+	int idat;
 	int retval;
-	int i;
 
 	idat = 0;
 
@@ -132,42 +144,75 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 		if (retval < 0)
 			return retval;
 		break;
+	case SNDCTL_DSP_GETERROR:
+		tmperrinfo = (struct audio_errinfo *)argp;
+		if (tmperrinfo == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		memset(tmperrinfo, 0, sizeof(struct audio_errinfo));
+		if ((retval = ioctl(fd, AUDIO_GETBUFINFO, &tmpinfo)) < 0)
+			return retval;
+		/*
+		 * OSS requires that we return counters that are relative to
+		 * the last call. We must maintain state here...
+		 */
+		if (ioctl(fd, AUDIO_PERROR, &perrors) != -1) {
+			perrors /= ((tmpinfo.play.precision / NBBY) *
+			    tmpinfo.play.channels);
+			tmperrinfo->play_underruns =
+			    (perrors / tmpinfo.blocksize) - totalperrors;
+			totalperrors += tmperrinfo->play_underruns;
+		}
+		if (ioctl(fd, AUDIO_RERROR, &rerrors) != -1) {
+			rerrors /= ((tmpinfo.record.precision / NBBY) *
+			    tmpinfo.record.channels);
+			tmperrinfo->rec_overruns =
+			    (rerrors / tmpinfo.blocksize) - totalrerrors;
+			totalrerrors += tmperrinfo->rec_overruns;
+		}
+		break;
+	case SNDCTL_DSP_COOKEDMODE:
+		/*
+		 * NetBSD is always running in "cooked mode" - the kernel
+		 * always performs format conversions.
+		 */
+		INTARG = 1;
+		break;
 	case SNDCTL_DSP_POST:
 		/* This call is merely advisory, and may be a nop. */
 		break;
 	case SNDCTL_DSP_SPEED:
 		AUDIO_INITINFO(&tmpinfo);
-		tmpinfo.play.sample_rate =
-		tmpinfo.record.sample_rate = INTARG;
 		/*
-		 * The default NetBSD behavior if an unsupported sample rate
-		 * is set is to return an error code and keep the rate at the
-		 * default of 8000 Hz.
-		 * 
-		 * However, OSS specifies that a sample rate supported by the
-		 * hardware is returned if the exact rate could not be set.
-		 * 
-		 * So, if the chosen sample rate is invalid, set and return
-		 * the current hardware rate.
+		 * In Solaris, 0 is used a special value to query the
+		 * current rate. This seems useful to support.
 		 */
-		if (ioctl(fd, AUDIO_SETINFO, &tmpinfo) < 0) {
-			/* Don't care that SETINFO failed the first time... */
-			errno = 0;
+		if (INTARG == 0) {
+			retval = ioctl(fd, AUDIO_GETBUFINFO, &tmpinfo);
+			if (retval < 0)
+				return retval;
 			retval = ioctl(fd, AUDIO_GETFORMAT, &hwfmt);
 			if (retval < 0)
 				return retval;
-			retval = ioctl(fd, AUDIO_GETINFO, &tmpinfo);
-			if (retval < 0)
-				return retval;
-			tmpinfo.play.sample_rate =
-			tmpinfo.record.sample_rate =
-			    (tmpinfo.mode == AUMODE_RECORD) ?
+			INTARG = (tmpinfo.mode == AUMODE_RECORD) ?
 			    hwfmt.record.sample_rate :
 			    hwfmt.play.sample_rate;
-			retval = ioctl(fd, AUDIO_SETINFO, &tmpinfo);
-			if (retval < 0)
-				return retval;
 		}
+		/*
+		 * Conform to kernel limits.
+		 * NetBSD will reject unsupported sample rates, but OSS
+		 * applications need to be able to negotiate a supported one.
+		 */
+		if (INTARG < 1000)
+			INTARG = 1000;
+		if (INTARG > 192000)
+			INTARG = 192000;
+		tmpinfo.play.sample_rate =
+		tmpinfo.record.sample_rate = INTARG;
+		retval = ioctl(fd, AUDIO_SETINFO, &tmpinfo);
+		if (retval < 0)
+			return retval;
 		/* FALLTHRU */
 	case SOUND_PCM_READ_RATE:
 		retval = ioctl(fd, AUDIO_GETBUFINFO, &tmpinfo);
@@ -389,8 +434,10 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 	case SNDCTL_DSP_SETFRAGMENT:
 		AUDIO_INITINFO(&tmpinfo);
 		idat = INTARG;
-		if ((idat & 0xffff) < 4 || (idat & 0xffff) > 17)
-			return EINVAL;
+		if ((idat & 0xffff) < 4 || (idat & 0xffff) > 17) {
+			errno = EINVAL;
+			return -1;
+		}
 		tmpinfo.blocksize = 1 << (idat & 0xffff);
 		tmpinfo.hiwat = ((unsigned)idat >> 16) & 0x7fff;
 		if (tmpinfo.hiwat == 0)	/* 0 means set to max */
@@ -498,15 +545,9 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 			return retval;
 		break;
 	case SNDCTL_DSP_GETCAPS:
-		retval = ioctl(fd, AUDIO_GETPROPS, &idata);
+		retval = getcaps(fd, (int *)argp);
 		if (retval < 0)
 			return retval;
-		idat = DSP_CAP_TRIGGER;
-		if (idata & AUDIO_PROP_FULLDUPLEX)
-			idat |= DSP_CAP_DUPLEX;
-		if (idata & AUDIO_PROP_MMAP)
-			idat |= DSP_CAP_MMAP;
-		INTARG = idat;
 		break;
 	case SNDCTL_DSP_SETTRIGGER:
 		retval = ioctl(fd, AUDIO_GETBUFINFO, &tmpinfo);
@@ -539,6 +580,20 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 		cntinfo.ptr = tmpoffs.offset;
 		*(struct count_info *)argp = cntinfo;
 		break;
+	case SNDCTL_DSP_CURRENT_IPTR:
+		retval = ioctl(fd, AUDIO_GETBUFINFO, &tmpinfo);
+		if (retval < 0)
+			return retval;
+		/* XXX: 'samples' may wrap */
+		memset(osscount.filler, 0, sizeof(osscount.filler));
+		osscount.samples = tmpinfo.record.samples /
+		    ((tmpinfo.record.precision / NBBY) *
+			tmpinfo.record.channels);
+		osscount.fifo_samples = tmpinfo.record.seek /
+		    ((tmpinfo.record.precision / NBBY) *
+			tmpinfo.record.channels);
+		*(oss_count_t *)argp = osscount;
+		break;
 	case SNDCTL_DSP_GETOPTR:
 		retval = ioctl(fd, AUDIO_GETOOFFS, &tmpoffs);
 		if (retval < 0)
@@ -548,88 +603,19 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 		cntinfo.ptr = tmpoffs.offset;
 		*(struct count_info *)argp = cntinfo;
 		break;
-	case SNDCTL_SYSINFO:
-		strlcpy(tmpsysinfo.product, "OSS/NetBSD",
-		    sizeof tmpsysinfo.product);
-		strlcpy(tmpsysinfo.version, version, sizeof tmpsysinfo.version);
-		strlcpy(tmpsysinfo.license, license, sizeof tmpsysinfo.license);
-		tmpsysinfo.versionnum = SOUND_VERSION;
-		memset(tmpsysinfo.options, 0, 8);
-		tmpsysinfo.numaudios = OSS_MAX_AUDIO_DEVS;
-		tmpsysinfo.numaudioengines = 1;
-		memset(tmpsysinfo.openedaudio, 0, sizeof(tmpsysinfo.openedaudio));
-		tmpsysinfo.numsynths = 1;
-		tmpsysinfo.nummidis = -1;
-		tmpsysinfo.numtimers = -1;
-		tmpsysinfo.nummixers = 1;
-		tmpsysinfo.numcards = 1;
-		memset(tmpsysinfo.openedmidi, 0, sizeof(tmpsysinfo.openedmidi));
-		*(struct oss_sysinfo *)argp = tmpsysinfo;
-		break;
-	case SNDCTL_ENGINEINFO:
-	case SNDCTL_AUDIOINFO:
-		devno = 0;
-		tmpaudioinfo = (struct oss_audioinfo*)argp;
-		if (tmpaudioinfo == NULL)
-			return EINVAL;
-		if (tmpaudioinfo->dev < 0) {
-			fstat(fd, &tmpstat);
-			if ((tmpstat.st_rdev & 0xff00) == 0x2a00)
-				devno = tmpstat.st_rdev & 0xff;
-			if (devno >= 0x80)
-				tmpaudioinfo->dev = devno & 0x7f;
-		}
-		if (tmpaudioinfo->dev < 0)
-			tmpaudioinfo->dev = 0;
-
-		snprintf(tmpaudioinfo->devnode, OSS_DEVNODE_SIZE,
-		    "/dev/audio%d", tmpaudioinfo->dev); 
-
-		retval = ioctl(fd, AUDIO_GETDEV, &tmpaudiodev);
+	case SNDCTL_DSP_CURRENT_OPTR:
+		retval = ioctl(fd, AUDIO_GETBUFINFO, &tmpinfo);
 		if (retval < 0)
 			return retval;
-		retval = ioctl(fd, AUDIO_GETINFO, &tmpinfo);
-		if (retval < 0)
-			return retval;
-		retval = ioctl(fd, AUDIO_GETPROPS, &idata);
-		if (retval < 0)
-			return retval;
-		idat = DSP_CAP_TRIGGER;
-		if (idata & AUDIO_PROP_FULLDUPLEX)
-			idat |= DSP_CAP_DUPLEX;
-		if (idata & AUDIO_PROP_MMAP)
-			idat |= DSP_CAP_MMAP;
-		idat = PCM_CAP_INPUT | PCM_CAP_OUTPUT;
-		strlcpy(tmpaudioinfo->name, tmpaudiodev.name,
-		    sizeof tmpaudioinfo->name);
-		tmpaudioinfo->busy = tmpinfo.play.open;
-		tmpaudioinfo->pid = -1;
-		tmpaudioinfo->caps = idat;
-		ioctl(fd, SNDCTL_DSP_GETFMTS, &tmpaudioinfo->iformats);
-		tmpaudioinfo->oformats = tmpaudioinfo->iformats;
-		tmpaudioinfo->magic = -1;
-		memset(tmpaudioinfo->cmd, 0, 64);
-		tmpaudioinfo->card_number = -1;
-		memset(tmpaudioinfo->song_name, 0, 64);
-		memset(tmpaudioinfo->label, 0, 16);
-		tmpaudioinfo->port_number = tmpinfo.play.port;
-		tmpaudioinfo->mixer_dev = tmpaudioinfo->dev;
-		tmpaudioinfo->legacy_device = -1;
-		tmpaudioinfo->enabled = 1;
-		tmpaudioinfo->flags = -1;
-		tmpaudioinfo->min_rate = tmpinfo.play.sample_rate;
-		tmpaudioinfo->max_rate = tmpinfo.play.sample_rate;
-		tmpaudioinfo->nrates = 2;
-		for (i = 0; i < tmpaudioinfo->nrates; i++)
-			tmpaudioinfo->rates[i] = tmpinfo.play.sample_rate;
-		tmpaudioinfo->min_channels = tmpinfo.play.channels;
-		tmpaudioinfo->max_channels = tmpinfo.play.channels;
-		tmpaudioinfo->binding = -1;
-		tmpaudioinfo->rate_source = -1;
-		memset(tmpaudioinfo->handle, 0, 16);
-		tmpaudioinfo->next_play_engine = 0;
-		tmpaudioinfo->next_rec_engine = 0;
-		argp = tmpaudioinfo;
+		/* XXX: 'samples' may wrap */
+		memset(osscount.filler, 0, sizeof(osscount.filler));
+		osscount.samples = tmpinfo.play.samples /
+		    ((tmpinfo.play.precision / NBBY) *
+			tmpinfo.play.channels);
+		osscount.fifo_samples = tmpinfo.play.seek /
+		    ((tmpinfo.play.precision / NBBY) *
+			tmpinfo.play.channels);
+		*(oss_count_t *)argp = osscount;
 		break;
 	case SNDCTL_DSP_SETPLAYVOL:
 		setvol(fd, INTARG, false);
@@ -650,8 +636,9 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 		INTARG = getvol(tmpinfo.record.gain, tmpinfo.record.balance);
 		break;
 	case SNDCTL_DSP_SKIP:
-	case SNDCTL_DSP_SILENCE:
-		return EINVAL;
+	case SNDCTL_DSP_SILENCE: 
+		errno = EINVAL;
+		return -1;
 	case SNDCTL_DSP_SETDUPLEX:
 		idat = 1;
 		retval = ioctl(fd, AUDIO_SETFD, &idat);
@@ -685,7 +672,7 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 
 
 /* If the NetBSD mixer device should have more than NETBSD_MAXDEVS devices
- * some will not be available to Linux */
+ * some will not be available to OSS applications */
 #define NETBSD_MAXDEVS 64
 struct audiodevinfo {
 	int done;
@@ -746,7 +733,7 @@ enum_to_mask(struct audiodevinfo *di, int enm)
 
 /*
  * Collect the audio device information to allow faster
- * emulation of the Linux mixer ioctls.  Cache the information
+ * emulation of the OSSv3 mixer ioctls.  Cache the information
  * to eliminate the overhead of repeating all the ioctls needed
  * to collect the information.
  */
@@ -869,8 +856,8 @@ getdevinfo(int fd)
 	return di;
 }
 
-int
-mixer_ioctl(int fd, unsigned long com, void *argp)
+static int
+mixer_oss3_ioctl(int fd, unsigned long com, void *argp)
 {
 	struct audiodevinfo *di;
 	struct mixer_info *omi;
@@ -902,8 +889,10 @@ mixer_ioctl(int fd, unsigned long com, void *argp)
 		strlcpy(omi->name, adev.name, sizeof omi->name);
 		return 0;
 	case SOUND_MIXER_READ_RECSRC:
-		if (di->source == -1)
-			return EINVAL;
+		if (di->source == -1) {
+			errno = EINVAL;
+			return -1;
+		}
 		mc.dev = di->source;
 		if (di->caps & SOUND_CAP_EXCL_INPUT) {
 			mc.type = AUDIO_MIXER_ENUM;
@@ -937,8 +926,10 @@ mixer_ioctl(int fd, unsigned long com, void *argp)
 		break;
 	case SOUND_MIXER_WRITE_RECSRC:
 	case SOUND_MIXER_WRITE_R_RECSRC:
-		if (di->source == -1)
-			return EINVAL;
+		if (di->source == -1) {
+			errno = EINVAL;
+			return -1;
+		}
 		mc.dev = di->source;
 		idat = INTARG;
 		if (di->caps & SOUND_CAP_EXCL_INPUT) {
@@ -947,16 +938,20 @@ mixer_ioctl(int fd, unsigned long com, void *argp)
 				if (idat & (1 << i))
 					break;
 			if (i >= SOUND_MIXER_NRDEVICES ||
-			    di->devmap[i] == -1)
-				return EINVAL;
+			    di->devmap[i] == -1) {
+				errno = EINVAL;
+				return -1;
+			}
 			mc.un.ord = enum_to_ord(di, di->devmap[i]);
 		} else {
 			mc.type = AUDIO_MIXER_SET;
 			mc.un.mask = 0;
 			for(i = 0; i < SOUND_MIXER_NRDEVICES; i++) {
 				if (idat & (1 << i)) {
-					if (di->devmap[i] == -1)
-						return EINVAL;
+					if (di->devmap[i] == -1) {
+						errno = EINVAL;
+						return -1;
+					}
 					mc.un.mask |=
 					    enum_to_mask(di, di->devmap[i]);
 				}
@@ -967,8 +962,10 @@ mixer_ioctl(int fd, unsigned long com, void *argp)
 		if (MIXER_READ(SOUND_MIXER_FIRST) <= com &&
 		    com < MIXER_READ(SOUND_MIXER_NRDEVICES)) {
 			n = GET_DEV(com);
-			if (di->devmap[n] == -1)
-				return EINVAL;
+			if (di->devmap[n] == -1) {
+				errno = EINVAL;
+				return -1;
+			}
 			mc.dev = di->devmap[n];
 			mc.type = AUDIO_MIXER_VALUE;
 		    doread:
@@ -977,8 +974,10 @@ mixer_ioctl(int fd, unsigned long com, void *argp)
 			retval = ioctl(fd, AUDIO_MIXER_READ, &mc);
 			if (retval < 0)
 				return retval;
-			if (mc.type != AUDIO_MIXER_VALUE)
-				return EINVAL;
+			if (mc.type != AUDIO_MIXER_VALUE) {
+				errno = EINVAL;
+				return -1;
+			}
 			if (mc.un.value.num_channels != 2) {
 				l = r =
 				    mc.un.value.level[AUDIO_MIXER_LEVEL_MONO];
@@ -993,8 +992,10 @@ mixer_ioctl(int fd, unsigned long com, void *argp)
 			   (MIXER_WRITE(SOUND_MIXER_FIRST) <= com &&
 			   com < MIXER_WRITE(SOUND_MIXER_NRDEVICES))) {
 			n = GET_DEV(com);
-			if (di->devmap[n] == -1)
-				return EINVAL;
+			if (di->devmap[n] == -1) {
+				errno = EINVAL;
+				return -1;
+			}
 			idat = INTARG;
 			l = FROM_OSSVOL((u_int)idat & 0xff);
 			r = FROM_OSSVOL(((u_int)idat >> 8) & 0xff);
@@ -1023,6 +1024,652 @@ mixer_ioctl(int fd, unsigned long com, void *argp)
 	}
 	INTARG = (int)idat;
 	return 0;
+}
+
+static int
+mixer_oss4_ioctl(int fd, unsigned long com, void *argp)
+{
+	oss_audioinfo *tmpai;
+	oss_card_info *cardinfo;
+	oss_mixext *ext;
+	oss_mixext_root root;
+	oss_mixer_enuminfo *ei;
+	oss_mixer_value *mv;
+	oss_mixerinfo *mi;
+	oss_sysinfo sysinfo;
+	dev_t devno;
+	struct stat tmpstat;
+	struct audio_device dev;
+	struct audio_format_query fmtq;
+	struct mixer_devinfo mdi;
+	struct mixer_ctrl mc;
+	char devname[32];
+	size_t len;
+	int newfd = -1, tmperrno;
+	int i, noffs;
+	int retval;
+
+	/*
+	 * Note: it is difficult to translate the NetBSD concept of a "set"
+	 * mixer control type to the OSSv4 API, as far as I can tell.
+	 *
+	 * This means they are treated like enums, i.e. only one entry in the
+	 * set can be selected at a time.
+	 */
+
+	switch (com) {
+	case SNDCTL_AUDIOINFO:
+	/*
+	 * SNDCTL_AUDIOINFO_EX is intended for underlying hardware devices
+	 * that are to be opened in "exclusive mode" (bypassing the normal
+	 * kernel mixer for exclusive control). NetBSD does not support
+	 * bypassing the kernel mixer, so it's an alias of SNDCTL_AUDIOINFO.
+	 */
+	case SNDCTL_AUDIOINFO_EX:
+	case SNDCTL_ENGINEINFO:
+		devno = 0;
+		tmpai = (struct oss_audioinfo*)argp;
+		if (tmpai == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+
+		/*
+		 * If the input device is -1, guess the device related to
+		 * the open mixer device.
+		 */
+		if (tmpai->dev < 0) {
+			fstat(fd, &tmpstat);
+			if ((tmpstat.st_rdev & 0xff00) == 0x2a00)
+				devno = tmpstat.st_rdev & 0xff;
+			if (devno >= 0x80)
+				tmpai->dev = devno & 0x7f;
+		}
+		if (tmpai->dev < 0)
+			tmpai->dev = 0;
+
+		snprintf(tmpai->devnode, sizeof(tmpai->devnode),
+		    "/dev/audio%d", tmpai->dev);
+
+		if ((newfd = open(tmpai->devnode, O_WRONLY)) < 0) {
+			if ((newfd = open(tmpai->devnode, O_RDONLY)) < 0) {
+				return newfd;
+			}
+		}
+
+		retval = ioctl(newfd, AUDIO_GETDEV, &dev);
+		if (retval < 0) {
+			tmperrno = errno;
+			close(newfd);
+			errno = tmperrno;
+			return retval;
+		}
+		if (getcaps(newfd, &tmpai->caps) < 0) {
+			tmperrno = errno;
+			close(newfd);
+			errno = tmperrno;
+			return retval;
+		}
+		snprintf(tmpai->name, sizeof(tmpai->name),
+		    "%s %s", dev.name, dev.version);
+		tmpai->busy = 0;
+		tmpai->pid = -1;
+		ioctl(newfd, SNDCTL_DSP_GETFMTS, &tmpai->iformats);
+		tmpai->oformats = tmpai->iformats;
+		tmpai->magic = -1; /* reserved for "internal use" */
+		memset(tmpai->cmd, 0, sizeof(tmpai->cmd));
+		tmpai->card_number = -1;
+		memset(tmpai->song_name, 0,
+		    sizeof(tmpai->song_name));
+		memset(tmpai->label, 0, sizeof(tmpai->label));
+		tmpai->port_number = 0;
+		tmpai->mixer_dev = tmpai->dev;
+		tmpai->legacy_device = tmpai->dev;
+		tmpai->enabled = 1;
+		tmpai->flags = -1; /* reserved for "future versions" */
+		tmpai->min_rate = 1000;
+		tmpai->max_rate = 192000;
+		tmpai->nrates = 0;
+		tmpai->min_channels = 1;
+		tmpai->max_channels = 2;
+		for (fmtq.index = 0;
+		    ioctl(newfd, AUDIO_QUERYFORMAT, &fmtq) != -1; ++fmtq.index) {
+			if (fmtq.fmt.channels > (unsigned)tmpai->max_channels)
+				tmpai->max_channels = fmtq.fmt.channels;
+		}
+		tmpai->binding = -1; /* reserved for "future versions" */
+		tmpai->rate_source = -1;
+		/*
+		 * 'handle' is supposed to be globally unique. The closest
+		 * we have to that is probably device nodes.
+		 */
+		strlcpy(tmpai->handle, tmpai->devnode,
+		    sizeof(tmpai->handle));
+		tmpai->next_play_engine = 0;
+		tmpai->next_rec_engine = 0;
+		argp = tmpai;
+		close(newfd);
+		break;
+	case SNDCTL_CARDINFO:
+		cardinfo = (oss_card_info *)argp;
+		if (cardinfo == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (cardinfo->card != -1) {
+			snprintf(devname, sizeof(devname),
+			    "/dev/audio%d", cardinfo->card);
+			newfd = open(devname, O_RDONLY);
+			if (newfd < 0)
+				return newfd;
+		} else {
+			newfd = fd;
+		}
+		retval = ioctl(newfd, AUDIO_GETDEV, &dev);
+		tmperrno = errno;
+		if (newfd != fd)
+			close(newfd);
+		if (retval < 0) {
+			errno = tmperrno;
+			return retval;
+		}
+		strlcpy(cardinfo->shortname, dev.name,
+		    sizeof(cardinfo->shortname));
+		snprintf(cardinfo->longname, sizeof(cardinfo->longname),
+		    "%s %s %s", dev.name, dev.version, dev.config);
+		memset(cardinfo->hw_info, 0, sizeof(cardinfo->hw_info));
+		/*
+		 * OSSv4 does not document this ioctl, and claims it should
+		 * not be used by applications and is provided for "utiltiy
+		 * programs included in OSS". We follow the Solaris
+		 * implementation (which is documented) and leave these fields
+		 * unset.
+		 */
+		cardinfo->flags = 0;
+		cardinfo->intr_count = 0;
+		cardinfo->ack_count = 0;
+		break;
+	case SNDCTL_SYSINFO:
+		memset(&sysinfo, 0, sizeof(sysinfo));
+		strlcpy(sysinfo.product,
+		    "OSS/NetBSD", sizeof(sysinfo.product));
+		strlcpy(sysinfo.version,
+		    "4.01", sizeof(sysinfo.version));
+		strlcpy(sysinfo.license,
+		    "BSD", sizeof(sysinfo.license));
+		sysinfo.versionnum = SOUND_VERSION;
+		sysinfo.numaudios = 
+		    sysinfo.numcards =
+			getaudiocount();
+		sysinfo.numaudioengines = 1;
+		sysinfo.numsynths = 1;
+		sysinfo.nummidis = -1;
+		sysinfo.numtimers = -1;
+		sysinfo.nummixers = getmixercount();
+		*(struct oss_sysinfo *)argp = sysinfo;
+		break;
+	case SNDCTL_MIXERINFO:
+		mi = (oss_mixerinfo *)argp;
+		if (mi == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		snprintf(devname, sizeof(devname), "/dev/mixer%d", mi->dev);
+		if ((newfd = open(devname, O_RDONLY)) < 0)
+			return newfd;
+		retval = ioctl(newfd, AUDIO_GETDEV, &dev);
+		if (retval < 0) {
+			tmperrno = errno;
+			close(newfd);
+			errno = tmperrno;
+			return retval;
+		}
+		strlcpy(mi->id, devname, sizeof(mi->id));
+		snprintf(mi->name, sizeof(mi->name),
+		    "%s %s", dev.name, dev.version);
+		mi->card_number = mi->dev;
+		mi->port_number = 0;
+		mi->magic = 0;
+		mi->enabled = 1;
+		mi->caps = 0;
+		mi->flags = 0;
+		mi->nrext = getmixercontrolcount(newfd) + 1;
+		mi->priority = UCHAR_MAX - mi->dev;
+		strlcpy(mi->devnode, devname, sizeof(mi->devnode));
+		mi->legacy_device = mi->dev;
+		break;
+	case SNDCTL_MIX_DESCRIPTION:
+		/* No description available. */
+		errno = ENOSYS;
+		return -1;
+	case SNDCTL_MIX_NRMIX:
+		INTARG = getmixercount();
+		break;
+	case SNDCTL_MIX_NREXT:
+		snprintf(devname, sizeof(devname), "/dev/mixer%d", INTARG);
+		if ((newfd = open(devname, O_RDONLY)) < 0)
+			return newfd;
+		INTARG = getmixercontrolcount(newfd) + 1;
+		close(newfd);
+		break;
+	case SNDCTL_MIX_EXTINFO:
+		ext = (oss_mixext *)argp;
+		snprintf(devname, sizeof(devname), "/dev/mixer%d", ext->dev);
+		if ((newfd = open(devname, O_RDONLY)) < 0)
+			return newfd;
+		if (ext->ctrl == 0) {
+			/*
+			 * NetBSD has no concept of a "root mixer control", but
+ 			 * OSSv4 requires one to work. We fake one at 0 and
+			 * simply add 1 to all real control indexes.
+			 */
+			retval = ioctl(newfd, AUDIO_GETDEV, &dev);
+			tmperrno = errno;
+			close(newfd);
+			if (retval < 0) {
+				errno = tmperrno;
+				return -1;
+			}
+			memset(&root, 0, sizeof(root));
+			strlcpy(root.id, devname, sizeof(root.id));
+			snprintf(root.name, sizeof(root.name),
+			    "%s %s", dev.name, dev.version);
+			strlcpy(ext->id, devname, sizeof(ext->id));
+			snprintf(ext->extname, sizeof(ext->extname),
+			    "%s %s", dev.name, dev.version);
+			strlcpy(ext->extname, "root", sizeof(ext->extname));
+			ext->type = MIXT_DEVROOT;
+			ext->minvalue = 0;
+			ext->maxvalue = 0;
+			ext->flags = 0;
+			ext->parent = -1;
+			ext->control_no = -1;
+			ext->update_counter = 0;
+			ext->rgbcolor = 0;
+			memcpy(&ext->data, &root,
+			    sizeof(root) > sizeof(ext->data) ?
+			    sizeof(ext->data) : sizeof(root));
+			return 0;
+		}
+		mdi.index = ext->ctrl - 1;
+		retval = ioctl(newfd, AUDIO_MIXER_DEVINFO, &mdi);
+		if (retval < 0) {
+			tmperrno = errno;
+			close(newfd);
+			errno = tmperrno;
+			return retval;
+		}
+		ext->flags = MIXF_READABLE | MIXF_WRITEABLE | MIXF_POLL;
+		ext->parent = mdi.mixer_class + 1;
+		strlcpy(ext->id, mdi.label.name, sizeof(ext->id));
+		strlcpy(ext->extname, mdi.label.name, sizeof(ext->extname));
+		len = strlen(ext->extname);
+		memset(ext->data, 0, sizeof(ext->data));
+		ext->control_no = -1;
+		ext->update_counter = 0;
+		ext->rgbcolor = 0;
+		switch (mdi.type) {
+		case AUDIO_MIXER_CLASS:
+			ext->type = MIXT_GROUP;
+			ext->parent = 0;
+			ext->minvalue = 0;
+			ext->maxvalue = 0;
+			break;
+		case AUDIO_MIXER_ENUM:
+			ext->maxvalue = mdi.un.e.num_mem;
+			ext->minvalue = 0;
+			for (i = 0; i < mdi.un.e.num_mem; ++i) {
+				ext->enum_present[i / 8] |= (1 << (i % 8));
+			}
+			if (mdi.un.e.num_mem == 2) {
+				if (!strcmp(mdi.un.e.member[0].label.name, AudioNoff) &&
+				    !strcmp(mdi.un.e.member[1].label.name, AudioNon)) {
+					ext->type = MIXT_MUTE;
+				} else {
+					ext->type = MIXT_ENUM;
+				}
+			} else {
+				ext->type = MIXT_ENUM;
+			}
+			break;
+		case AUDIO_MIXER_SET:
+			ext->maxvalue = mdi.un.s.num_mem;
+			ext->minvalue = 0;
+#ifdef notyet
+			/*
+			 * XXX: This is actually the correct type for "set"
+			 * controls, but it seems no real world software
+			 * supports it. The only documentation exists in
+			 * the OSSv4 headers and describes it as "reserved
+			 * for Sun's implementation".
+			 */
+			ext->type = MIXT_ENUM_MULTI;
+#else
+			ext->type = MIXT_ENUM;
+#endif
+			for (i = 0; i < mdi.un.s.num_mem; ++i) {
+				ext->enum_present[i / 8] |= (1 << (i % 8));
+			}
+			break;
+		case AUDIO_MIXER_VALUE:
+			ext->maxvalue = UCHAR_MAX + 1;
+			ext->minvalue = 0;
+			if (mdi.un.v.num_channels == 2) {
+				ext->type = MIXT_STEREOSLIDER;
+			} else {
+				ext->type = MIXT_MONOSLIDER;
+			}
+			break;
+		}
+		close(newfd);
+		break;
+	case SNDCTL_MIX_ENUMINFO:
+		ei = (oss_mixer_enuminfo *)argp;
+		if (ei == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (ei->ctrl == 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		snprintf(devname, sizeof(devname), "/dev/mixer%d", ei->dev);
+		if ((newfd = open(devname, O_RDONLY)) < 0)
+			return newfd;
+		mdi.index = ei->ctrl - 1;
+		retval = ioctl(newfd, AUDIO_MIXER_DEVINFO, &mdi);
+		tmperrno = errno;
+		close(newfd);
+		if (retval < 0) {
+			errno = tmperrno;
+			return retval;
+		}
+		ei->version = 0;
+		switch (mdi.type) {
+		case AUDIO_MIXER_ENUM:
+			ei->nvalues = mdi.un.e.num_mem;
+			noffs = 0;
+			for (i = 0; i < ei->nvalues; ++i) {
+				ei->strindex[i] = noffs;
+				len = strlen(mdi.un.e.member[i].label.name) + 1;
+				if ((noffs + len) >= sizeof(ei->strings)) {
+				    errno = ENOMEM;
+				    return -1;
+				}
+				memcpy(ei->strings + noffs,
+				    mdi.un.e.member[i].label.name, len);
+				noffs += len;
+			}
+			break;
+		case AUDIO_MIXER_SET:
+			ei->nvalues = mdi.un.s.num_mem;
+			noffs = 0;
+			for (i = 0; i < ei->nvalues; ++i) {
+				ei->strindex[i] = noffs;
+				len = strlen(mdi.un.s.member[i].label.name) + 1;
+				if ((noffs + len) >= sizeof(ei->strings)) {
+				    errno = ENOMEM;
+				    return -1;
+				}
+				memcpy(ei->strings + noffs,
+				    mdi.un.s.member[i].label.name, len);
+				noffs += len;
+			}
+			break;
+		default:
+			errno = EINVAL;
+			return -1;
+		}
+		break;
+	case SNDCTL_MIX_WRITE:
+		mv = (oss_mixer_value *)argp;
+		if (mv == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (mv->ctrl == 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		snprintf(devname, sizeof(devname), "/dev/mixer%d", mv->dev);
+		if ((newfd = open(devname, O_RDWR)) < 0)
+			return newfd;
+		mdi.index = mc.dev = mv->ctrl - 1;
+		retval = ioctl(newfd, AUDIO_MIXER_DEVINFO, &mdi);
+		if (retval < 0) {
+			tmperrno = errno;
+			close(newfd);
+			errno = tmperrno;
+			return retval;
+		}
+		switch (mdi.type) {
+		case AUDIO_MIXER_ENUM:
+			if (mv->value >= mdi.un.e.num_mem) {
+				close(newfd);
+				errno = EINVAL;
+				return -1;
+			}
+			mc.un.ord = mdi.un.e.member[mv->value].ord;
+			break;
+		case AUDIO_MIXER_SET:
+			if (mv->value >= mdi.un.s.num_mem) {
+				close(newfd);
+				errno = EINVAL;
+				return -1;
+			}
+#ifdef notyet
+			mc.un.mask = 0;
+			for (i = 0; i < mdi.un.s.num_mem; ++i) {
+				if (mv->value & (1 << i)) {
+					mc.un.mask |= mdi.un.s.member[mv->value].mask;
+				}
+			}
+#else
+			mc.un.mask = mdi.un.s.member[mv->value].mask;
+#endif
+			break;
+		case AUDIO_MIXER_VALUE:
+			if (mdi.un.v.num_channels != 2) {
+				for (i = 0; i < mdi.un.v.num_channels; ++i) {
+					mc.un.value.level[i] = mv->value;
+				}
+			} else {
+			    mc.un.value.level[AUDIO_MIXER_LEVEL_LEFT] = 
+				(mv->value >> 0) & 0xFF;
+			    mc.un.value.level[AUDIO_MIXER_LEVEL_RIGHT] =
+				(mv->value >> 8) & 0xFF;
+			}
+			break;
+		}
+		retval = ioctl(newfd, AUDIO_MIXER_WRITE, &mc);
+		if (retval < 0) {
+			tmperrno = errno;
+			close(newfd);
+			errno = tmperrno;
+			return retval;
+		}
+		close(newfd);
+		break;
+	case SNDCTL_MIX_READ:
+		mv = (oss_mixer_value *)argp;
+		if (mv == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (mv->ctrl == 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		snprintf(devname, sizeof(devname), "/dev/mixer%d", mv->dev);
+		if ((newfd = open(devname, O_RDWR)) < 0)
+			return newfd;
+		mdi.index = mc.dev = (mv->ctrl - 1);
+		retval = ioctl(newfd, AUDIO_MIXER_DEVINFO, &mdi);
+		if (retval < 0) {
+			tmperrno = errno;
+			close(newfd);
+			errno = tmperrno;
+			return retval;
+		}
+		mc.dev = mdi.index;
+		retval = ioctl(newfd, AUDIO_MIXER_READ, &mc);
+		if (retval < 0) {
+			tmperrno = errno;
+			close(newfd);
+			errno = tmperrno;
+			return retval;
+		}
+		close(newfd);
+		mv->value = 0;
+		switch (mdi.type) {
+		case AUDIO_MIXER_ENUM:
+			for (i = 0; i < mdi.un.e.num_mem; ++i) {
+				if (mc.un.ord == mdi.un.e.member[i].ord) {
+					mv->value = i;
+					break;
+				}
+			}
+			break;
+		case AUDIO_MIXER_SET:
+			for (i = 0; i < mdi.un.s.num_mem; ++i) {
+#ifdef notyet
+				if (mc.un.mask & mdi.un.s.member[i].mask)
+					mv->value |= (1 << i);
+#else
+				if (mc.un.mask == mdi.un.s.member[i].mask) {
+					mv->value = i;
+					break;
+				}
+#endif
+			}
+			break;
+		case AUDIO_MIXER_VALUE:
+			if (mdi.un.v.num_channels != 2) {
+				mv->value = mc.un.value.level[0];
+			} else {
+				mv->value = \
+				    ((mc.un.value.level[1] & 0xFF) << 8) |
+				    ((mc.un.value.level[0] & 0xFF) << 0);
+			}
+			break;
+		default:
+			errno = EINVAL;
+			return -1;
+		}
+		break;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+	return 0;
+}
+
+static int
+global_oss4_ioctl(int fd, unsigned long com, void *argp)
+{
+	int retval = 0;
+
+	switch (com) {
+	/*
+	 * These ioctls were added in OSSv4 with the idea that
+	 * applications could apply strings to audio devices to
+	 * display what they are using them for (e.g. with song
+	 * names) in mixer applications. In practice, the popular
+	 * implementations of the API in FreeBSD and Solaris treat
+	 * these as a no-op and return EINVAL, and no software in the
+	 * wild seems to use them.
+	 */
+	case SNDCTL_SETSONG:
+	case SNDCTL_GETSONG:
+	case SNDCTL_SETNAME:
+	case SNDCTL_SETLABEL:
+	case SNDCTL_GETLABEL:
+		errno = EINVAL;
+		retval = -1;
+		break;
+	default:
+		errno = EINVAL;
+		retval = -1;
+		break;
+	}
+	return retval;
+}
+
+static int
+getcaps(int fd, int *out)
+{
+	int props, caps;
+
+	if (ioctl(fd, AUDIO_GETPROPS, &props) < 0)
+		return -1;
+
+	caps = DSP_CAP_TRIGGER;
+
+	if (props & AUDIO_PROP_FULLDUPLEX)
+		caps |= DSP_CAP_DUPLEX;
+	if (props & AUDIO_PROP_MMAP)
+		caps |= DSP_CAP_MMAP;
+	if (props & AUDIO_PROP_CAPTURE)
+		caps |= PCM_CAP_INPUT;
+	if (props & AUDIO_PROP_PLAYBACK)
+		caps |= PCM_CAP_OUTPUT;
+
+	*out = caps;
+	return 0;
+}
+
+static int
+getaudiocount(void)
+{
+	char devname[32];
+	int ndevs = 0;
+	int tmpfd;
+	int tmperrno = errno;
+
+	do {
+		snprintf(devname, sizeof(devname),
+		    "/dev/audio%d", ndevs);
+		if ((tmpfd = open(devname, O_RDONLY)) != -1 ||
+		    (tmpfd = open(devname, O_WRONLY)) != -1) {
+			ndevs++;
+			close(tmpfd);
+		}
+	} while (tmpfd != -1);
+	errno = tmperrno;
+	return ndevs;
+}
+
+static int
+getmixercount(void)
+{
+	char devname[32];
+	int ndevs = 0;
+	int tmpfd;
+	int tmperrno = errno;
+
+	do {
+		snprintf(devname, sizeof(devname),
+		    "/dev/mixer%d", ndevs);
+		if ((tmpfd = open(devname, O_RDONLY)) != -1) {
+			ndevs++;
+			close(tmpfd);
+		}
+	} while (tmpfd != -1);
+	errno = tmperrno;
+	return ndevs;
+}
+
+static int
+getmixercontrolcount(int fd)
+{
+	struct mixer_devinfo mdi;
+	int ndevs = 0;
+
+	do {
+		mdi.index = ndevs++;
+	} while (ioctl(fd, AUDIO_MIXER_DEVINFO, &mdi) != -1);
+
+	return ndevs > 0 ? ndevs - 1 : 0;
 }
 
 static int
@@ -1079,6 +1726,8 @@ setvol(int fd, int volume, bool record)
  * When this happens, we use the current hardware settings. This is just in
  * case an application is abusing SNDCTL_DSP_CHANNELS - OSSv4 always sets and
  * returns a reasonable value, even if it wasn't what the user requested.
+ *
+ * Solaris guarantees this behaviour if nchannels = 0.
  *
  * XXX: If a device is opened for both playback and recording, and supports
  * fewer channels for recording than playback, applications that do both will

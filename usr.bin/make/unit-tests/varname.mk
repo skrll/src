@@ -1,43 +1,44 @@
-# $NetBSD: varname.mk,v 1.3 2020/09/05 12:59:07 rillig Exp $
+# $NetBSD: varname.mk,v 1.8 2020/11/02 22:59:48 rillig Exp $
 #
 # Tests for special variables, such as .MAKE or .PARSEDIR.
+# And for variable names in general.
 
-# These following MAGIC variables have the same hash code, at least with
-# the default hashing algorithm, which is the same as in Java.  The order
-# in which these variables are defined determines the order in which they
-# appear in the Hash_Table.  New entries are prepended to the bucket lists,
-# therefore this test numbers the values in descending order.
+.MAKEFLAGS: -dv
 
-.if defined(ORDER_01)
+# In variable names, braces are allowed, but they must be balanced.
+# Parentheses and braces may be mixed.
+VAR{{{}}}=	3 braces
+.if "${VAR{{{}}}}" != "3 braces"
+.  error
+.endif
 
-MAGIC0a0a0a=	8
-MAGIC0a0a1B=	7
-MAGIC0a1B0a=	6
-MAGIC0a1B1B=	5
-MAGIC1B0a0a=	4
-MAGIC1B0a1B=	3
-MAGIC1B1B0a=	2
-MAGIC1B1B1B=	1
+# In variable expressions, the parser works differently.  It doesn't treat
+# braces and parentheses equally, therefore the first closing brace already
+# marks the end of the variable name.
+VARNAME=	VAR(((
+${VARNAME}=	3 open parentheses
+.if "${VAR(((}}}}" != "3 open parentheses}}}"
+.  error
+.endif
 
-all: # nothing
+# In the above test, the variable name is constructed indirectly.  Neither
+# of the following expressions produces the intended effect.
+#
+# This is not a variable assignment since the parentheses and braces are not
+# balanced.  At the end of the line, there are still 3 levels open, which
+# means the variable name is not finished.
+${:UVAR(((}=	try1
+# On the left-hand side of a variable assignments, the backslash is not parsed
+# as an escape character, therefore the parentheses still count to the nesting
+# level, which at the end of the line is still 3.  Therefore this is not a
+# variable assignment as well.
+${:UVAR\(\(\(}=	try2
+# To assign to a variable with an arbitrary name, the variable name has to
+# come from an external source, not the text that is parsed in the assignment
+# itself.  This is exactly the reason why further above, the indirect
+# ${VARNAME} works, while all other attempts fail.
+${VARNAME}=	try3
 
-.elif defined(ORDER_10)
-
-MAGIC1B1B1B=	8
-MAGIC1B1B0a=	7
-MAGIC1B0a1B=	6
-MAGIC1B0a0a=	5
-MAGIC0a1B1B=	4
-MAGIC0a1B0a=	3
-MAGIC0a0a1B=	2
-MAGIC0a0a0a=	1
-
-all: # nothing
-
-.else
+.MAKEFLAGS: -d0
 
 all:
-	@${.MAKE} -f ${MAKEFILE} -dg1 ORDER_01=yes
-	@${.MAKE} -f ${MAKEFILE} -dg1 ORDER_10=yes
-
-.endif

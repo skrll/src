@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_bio.c,v 1.122 2020/10/05 04:48:23 rin Exp $	*/
+/*	$NetBSD: uvm_bio.c,v 1.124 2020/11/10 04:27:22 chs Exp $	*/
 
 /*
  * Copyright (c) 1998 Chuck Silvers.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.122 2020/10/05 04:48:23 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.124 2020/11/10 04:27:22 chs Exp $");
 
 #include "opt_uvmhist.h"
 #include "opt_ubc.h"
@@ -235,7 +235,9 @@ static inline int
 ubc_fault_page(const struct uvm_faultinfo *ufi, const struct ubc_map *umap,
     struct vm_page *pg, vm_prot_t prot, vm_prot_t access_type, vaddr_t va)
 {
+	vm_prot_t mask;
 	int error;
+	bool rdonly;
 
 	KASSERT(rw_write_held(pg->uobject->vmobjlock));
 
@@ -278,11 +280,11 @@ ubc_fault_page(const struct uvm_faultinfo *ufi, const struct ubc_map *umap,
 	    pg->offset < umap->writeoff ||
 	    pg->offset + PAGE_SIZE > umap->writeoff + umap->writelen);
 
-	KASSERT((access_type & VM_PROT_WRITE) == 0 ||
-	    uvm_pagegetdirty(pg) != UVM_PAGE_STATUS_CLEAN);
+	rdonly = uvm_pagereadonly_p(pg);
+	mask = rdonly ? ~VM_PROT_WRITE : VM_PROT_ALL;
 
 	error = pmap_enter(ufi->orig_map->pmap, va, VM_PAGE_TO_PHYS(pg),
-	    prot, PMAP_CANFAIL | access_type);
+	    prot & mask, PMAP_CANFAIL | (access_type & mask));
 
 	uvm_pagelock(pg);
 	uvm_pageactivate(pg);
@@ -778,7 +780,6 @@ ubc_uiomove(struct uvm_object *uobj, struct uio *uio, vsize_t todo, int advice,
 			 * do it now.  it's safe to use memset here
 			 * because we just mapped the pages above.
 			 */
-			printf("%s: error=%d\n", __func__, error);
 			memset(win, 0, bytelen);
 		}
 		ubc_release(win, flags, pgs, npages);
@@ -1007,7 +1008,6 @@ ubc_uiomove_direct(struct uvm_object *uobj, struct uio *uio, vsize_t todo, int a
 			 * error above, do it now.
 			 */
 			if (error != 0) {
-				printf("%s: error=%d\n", __func__, error);
 				(void) uvm_direct_process(pgs, npages, off,
 				    bytelen, ubc_zerorange_process, NULL);
 			}

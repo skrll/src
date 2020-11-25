@@ -1,4 +1,4 @@
-/*	$NetBSD: md.c,v 1.17 2020/10/12 16:14:33 martin Exp $ */
+/*	$NetBSD: md.c,v 1.19 2020/10/14 15:09:10 martin Exp $ */
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -117,6 +117,13 @@ again:
 			pm->dlsize = ps->size_limit;
 	}
 
+	/*
+	 * If the selected scheme does not need two-stage partitioning
+	 * (like GPT), do not bother to edit the outer partitions.
+	 */
+	if (pm->parts->pscheme->secondary_partitions == NULL ||
+	    pm->parts->pscheme->secondary_scheme == NULL)
+		return true;
 
 	res = edit_outer_parts(pm->parts);
 	if (res == 0)
@@ -164,6 +171,21 @@ md_pre_disklabel(struct install_partition_desc *install,
     struct disk_partitions *parts)
 {
 
+	/*
+	 * RAW_PART is 2 on evbarm and bad things happen if we
+	 * write the MBR first and then the disklabel - so postpone
+	 * the MBR to md_post_disklabel(), unlike other architecturs.
+	 */
+	return true;
+}
+
+/*
+ * hook called after writing disklabel to new target disk.
+ */
+bool
+md_post_disklabel(struct install_partition_desc *install,
+    struct disk_partitions *parts)
+{
 	if (parts->parent == NULL)
 		return true;	/* no outer partitions */
 
@@ -179,16 +201,6 @@ md_pre_disklabel(struct install_partition_desc *install,
 		process_menu(MENU_ok, NULL);
 		return false;
 	}
-	return true;
-}
-
-/*
- * hook called after writing disklabel to new target disk.
- */
-bool
-md_post_disklabel(struct install_partition_desc *install,
-    struct disk_partitions *parts)
-{
 	return true;
 }
 
@@ -321,7 +333,8 @@ md_parts_use_wholedisk(struct disk_partitions *parts)
 {
 	struct disk_part_info boot_part = {
 		.size = boardtype == BOARD_TYPE_NORMAL ? 
-		    PART_BOOT_LARGE/512 : PART_BOOT/512,
+		    PART_BOOT_LARGE/parts->bytes_per_sector :
+		    PART_BOOT/parts->bytes_per_sector,
 		.fs_type = PART_BOOT_TYPE, .fs_sub_type = MBR_PTYPE_FAT16L,
 	};
 
@@ -361,7 +374,8 @@ evbarm_part_defaults(struct pm_devs *my_pm, struct part_usage_info *infos,
 		if (infos[i].fs_type == PART_BOOT_TYPE &&
 		    infos[i].mount[0] != 0 &&
 		    strcmp(infos[i].mount, PART_BOOT_MOUNT) == 0) {
-			infos[i].size = PART_BOOT_LARGE;
+			infos[i].size = PART_BOOT_LARGE /
+			    my_pm->parts->bytes_per_sector;
 			return;
 		}
 	}

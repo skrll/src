@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1225 2020/10/09 23:58:50 rin Exp $
+#	$NetBSD: bsd.own.mk,v 1.1234 2020/11/17 10:49:41 rin Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -833,10 +833,14 @@ MKGDB.or1k=	no
 MKGDB.riscv32=	no
 MKGDB.riscv64=	no
 
-# No kernel modules for or1k (yet)
+# No kernel modules for or1k, riscv or mips (yet)
 MKKMOD.or1k=	no
 MKKMOD.riscv32=	no
 MKKMOD.riscv64=	no
+MKKMOD.mipsel=	no
+MKKMOD.mipseb=	no
+MKKMOD.mips64el=no
+MKKMOD.mips64eb=no
 
 # No profiling for or1k (yet)
 MKPROFILE.or1k=	no
@@ -866,6 +870,13 @@ GCC_NO_STRINGOP_OVERFLOW=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-
 GCC_NO_STRINGOP_TRUNCATION=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wno-stringop-truncation :}
 GCC_NO_CAST_FUNCTION_TYPE=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wno-cast-function-type :}
 GCC_NO_ADDR_OF_PACKED_MEMBER=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 9:? -Wno-error=address-of-packed-member :}
+
+#
+# Clang warnings
+#
+CLANG_NO_ADDR_OF_PACKED_MEMBER=	${${ACTIVE_CC} == "clang" :? -Wno-error=address-of-packed-member :}
+
+NO_ADDR_OF_PACKED_MEMBER=	${CLANG_NO_ADDR_OF_PACKED_MEMBER} ${GCC_NO_ADDR_OF_PACKED_MEMBER}
 
 #
 # The ia64 port is incomplete.
@@ -1226,6 +1237,7 @@ MKTEGRAFIRMWARE.evbarm=		yes
 
 # Only build devicetree (dtb) files on armv6, armv7, and aarch64.
 MKDTB.aarch64=			yes
+MKDTB.aarch64eb=		yes
 MKDTB.earmv6=			yes
 MKDTB.earmv6hf=			yes
 MKDTB.earmv6eb=			yes
@@ -1483,8 +1495,7 @@ ${var}?= no
 .if ${USE_PIGZGZIP} == "no" && \
 		(${MACHINE} == "amd64" || \
 		 ${MACHINE} == "sparc64" || \
-		 ${MACHINE} == "alpha" || \
-		 ${MACHINE_ARCH} == "aarch64")
+		 ${MACHINE_CPU} == "aarch64")
 USE_XZ_SETS?= yes
 .else
 USE_XZ_SETS?= no
@@ -1572,7 +1583,7 @@ HAVE_XORG_GLAMOR?=	no
 .for _dir in \
 	xtrans fontconfig freetype evieext mkfontscale bdftopcf \
 	xorg-cf-files imake xbiff xkeyboard-config \
-	xbitmaps appres xeyes xev xedit sessreg pixman \
+	xcompmgr xbitmaps appres xeyes xev xedit sessreg pixman \
 	beforelight bitmap editres makedepend fonttosfnt fslsfonts fstobdf \
 	glu glw mesa-demos MesaGLUT MesaLib MesaLib.old MesaLib7 \
 	ico iceauth listres lndir \

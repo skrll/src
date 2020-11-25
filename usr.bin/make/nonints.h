@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.140 2020/10/05 19:27:47 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.162 2020/11/16 21:48:18 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -73,15 +73,16 @@
  */
 
 /* arch.c */
+void Arch_Init(void);
+void Arch_End(void);
+
 Boolean Arch_ParseArchive(char **, GNodeList *, GNode *);
 void Arch_Touch(GNode *);
 void Arch_TouchLib(GNode *);
-time_t Arch_MTime(GNode *);
-time_t Arch_MemMTime(GNode *);
+void Arch_UpdateMTime(GNode *gn);
+void Arch_UpdateMemberMTime(GNode *gn);
 void Arch_FindLib(GNode *, SearchPath *);
 Boolean Arch_LibOODate(GNode *);
-void Arch_Init(void);
-void Arch_End(void);
 Boolean Arch_IsLib(GNode *);
 
 /* compat.c */
@@ -113,13 +114,14 @@ void Punt(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2) MAKE_ATTR_DEAD;
 void DieHorribly(void) MAKE_ATTR_DEAD;
 void Finish(int) MAKE_ATTR_DEAD;
 int eunlink(const char *);
-void execError(const char *, const char *);
+void execDie(const char *, const char *);
 char *getTmpdir(void);
-Boolean s2Boolean(const char *, Boolean);
-Boolean getBoolean(const char *, Boolean);
+Boolean ParseBoolean(const char *, Boolean);
 char *cached_realpath(const char *, char *);
 
 /* parse.c */
+void Parse_Init(void);
+void Parse_End(void);
 
 typedef enum VarAssignOp {
     VAR_NORMAL,			/* = */
@@ -130,23 +132,21 @@ typedef enum VarAssignOp {
 } VarAssignOp;
 
 typedef struct VarAssign {
-    const char *nameStart;	/* unexpanded */
-    const char *nameEndDraft;	/* before operator adjustment */
-    char *varname;
-    const char *eq;		/* the '=' of the assignment operator */
+    char *varname;		/* unexpanded */
     VarAssignOp op;
     const char *value;		/* unexpanded */
 } VarAssign;
 
-void Parse_Error(int, const char *, ...) MAKE_ATTR_PRINTFLIKE(2, 3);
+typedef char *(*NextBufProc)(void *, size_t *);
+
+void Parse_Error(ParseErrorLevel, const char *, ...) MAKE_ATTR_PRINTFLIKE(2, 3);
 Boolean Parse_IsVar(const char *, VarAssign *out_var);
 void Parse_DoVar(VarAssign *, GNode *);
 void Parse_AddIncludeDir(const char *);
 void Parse_File(const char *, int);
-void Parse_Init(void);
-void Parse_End(void);
-void Parse_SetInput(const char *, int, int, char *(*)(void *, size_t *), void *);
+void Parse_SetInput(const char *, int, int, NextBufProc, void *);
 GNodeList *Parse_MainName(void);
+int Parse_GetFatals(void);
 
 /* str.c */
 typedef struct Words {
@@ -156,7 +156,7 @@ typedef struct Words {
 } Words;
 
 Words Str_Words(const char *, Boolean);
-static inline MAKE_ATTR_UNUSED void
+MAKE_INLINE void
 Words_Free(Words w) {
     free(w.words);
     free(w.freeIt);
@@ -168,6 +168,9 @@ char *str_concat4(const char *, const char *, const char *, const char *);
 Boolean Str_Match(const char *, const char *);
 
 /* suff.c */
+void Suff_Init(void);
+void Suff_End(void);
+
 void Suff_ClearSuffixes(void);
 Boolean Suff_IsTransform(const char *);
 GNode *Suff_AddTransform(const char *);
@@ -180,24 +183,23 @@ void Suff_AddLib(const char *);
 void Suff_FindDeps(GNode *);
 SearchPath *Suff_FindPath(GNode *);
 void Suff_SetNull(const char *);
-void Suff_Init(void);
-void Suff_End(void);
 void Suff_PrintAll(void);
 
 /* targ.c */
 void Targ_Init(void);
 void Targ_End(void);
+
 void Targ_Stats(void);
 GNodeList *Targ_List(void);
-GNode *Targ_NewGN(const char *);
+GNode *GNode_New(const char *);
 GNode *Targ_FindNode(const char *);
 GNode *Targ_GetNode(const char *);
 GNode *Targ_NewInternalNode(const char *);
 GNode *Targ_GetEndNode(void);
 GNodeList *Targ_FindList(StringList *);
-Boolean Targ_Ignore(GNode *);
-Boolean Targ_Silent(GNode *);
-Boolean Targ_Precious(GNode *);
+Boolean Targ_Ignore(const GNode *);
+Boolean Targ_Silent(const GNode *);
+Boolean Targ_Precious(const GNode *);
 void Targ_SetMain(GNode *);
 void Targ_PrintCmds(GNode *);
 void Targ_PrintNode(GNode *, int);
@@ -208,24 +210,45 @@ void Targ_PrintGraph(int);
 void Targ_Propagate(void);
 
 /* var.c */
+void Var_Init(void);
+void Var_End(void);
 
-typedef enum {
+typedef enum VarEvalFlags {
     VARE_NONE		= 0,
-    /* Treat undefined variables as errors. */
-    VARE_UNDEFERR	= 0x01,
-    /* Expand and evaluate variables during parsing. */
-    VARE_WANTRES	= 0x02,
-    /* In an assignment using the ':=' operator, keep '$$' as '$$' instead
-     * of reducing it to a single '$'. */
-    VARE_ASSIGN		= 0x04
+
+    /* Expand and evaluate variables during parsing.
+     *
+     * TODO: Document what Var_Parse and Var_Subst return when this flag
+     * is not set. */
+    VARE_WANTRES	= 1 << 0,
+
+    /* Treat undefined variables as errors.
+     * Must only be used in combination with VARE_WANTRES. */
+    VARE_UNDEFERR	= 1 << 1,
+
+    /* Keep '$$' as '$$' instead of reducing it to a single '$'.
+     *
+     * Used in variable assignments using the ':=' operator.  It allows
+     * multiple such assignments to be chained without accidentally expanding
+     * '$$file' to '$file' in the first assignment and interpreting it as
+     * '${f}' followed by 'ile' in the next assignment.
+     *
+     * See also preserveUndefined, which preserves subexpressions that are
+     * based on undefined variables; maybe that can be converted to a flag
+     * as well. */
+    VARE_KEEP_DOLLAR	= 1 << 2
 } VarEvalFlags;
 
-typedef enum {
-    VAR_NO_EXPORT	= 0x01,	/* do not export */
+typedef enum VarSetFlags {
+    VAR_SET_NONE	= 0,
+
+    /* do not export */
+    VAR_SET_NO_EXPORT	= 1 << 0,
+
     /* Make the variable read-only. No further modification is possible,
      * except for another call to Var_Set with the same flag. */
-    VAR_SET_READONLY	= 0x02
-} VarSet_Flags;
+    VAR_SET_READONLY	= 1 << 1
+} VarSetFlags;
 
 /* The state of error handling returned by Var_Parse.
  *
@@ -236,7 +259,7 @@ typedef enum {
  * and then migrate away from the SILENT constants, step by step,
  * as these are not suited for reliable, consistent error handling
  * and reporting. */
-typedef enum {
+typedef enum VarParseResult {
 
     /* Both parsing and evaluation succeeded. */
     VPR_OK		= 0x0000,
@@ -284,15 +307,14 @@ typedef enum {
 
 void Var_Delete(const char *, GNode *);
 void Var_Set(const char *, const char *, GNode *);
-void Var_Set_with_flags(const char *, const char *, GNode *, VarSet_Flags);
+void Var_SetWithFlags(const char *, const char *, GNode *, VarSetFlags);
 void Var_Append(const char *, const char *, GNode *);
 Boolean Var_Exists(const char *, GNode *);
-const char *Var_Value(const char *, GNode *, char **);
+const char *Var_Value(const char *, GNode *, void **);
+const char *Var_ValueDirect(const char *, GNode *);
 VarParseResult Var_Parse(const char **, GNode *, VarEvalFlags,
 			 const char **, void **);
 VarParseResult Var_Subst(const char *, GNode *, VarEvalFlags, char **);
-void Var_Init(void);
-void Var_End(void);
 void Var_Stats(void);
 void Var_Dump(GNode *);
 void Var_ExportVars(void);
