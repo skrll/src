@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm283x_platform.c,v 1.41 2020/09/28 11:54:23 jmcneill Exp $	*/
+/*	$NetBSD: bcm283x_platform.c,v 1.43 2020/11/23 06:24:35 rin Exp $	*/
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.41 2020/09/28 11:54:23 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.43 2020/11/23 06:24:35 rin Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_bcm283x.h"
@@ -112,6 +112,7 @@ __KERNEL_RCSID(0, "$NetBSD: bcm283x_platform.c,v 1.41 2020/09/28 11:54:23 jmcnei
 #define RPI_CPU_MAX	4
 
 void bcm2835_platform_early_putchar(char c);
+void bcm2835_aux_platform_early_putchar(char c);
 void bcm2836_platform_early_putchar(char c);
 void bcm2837_platform_early_putchar(char c);
 void bcm2711_platform_early_putchar(char c);
@@ -1344,6 +1345,20 @@ bcm283x_platform_early_putchar(vaddr_t va, paddr_t pa, char c)
 		continue;
 }
 
+static void __noasan
+bcm283x_aux_platform_early_putchar(vaddr_t va, paddr_t pa, char c)
+{
+	volatile uint32_t *uartaddr =
+	    cpu_earlydevice_va_p() ?
+		(volatile uint32_t *)va :
+		(volatile uint32_t *)pa;
+
+	while ((uartaddr[com_lsr] & LSR_TXRDY) == 0)
+		continue;
+
+	uartaddr[com_data] = c;
+}
+
 void __noasan
 bcm2835_platform_early_putchar(char c)
 {
@@ -1351,6 +1366,15 @@ bcm2835_platform_early_putchar(char c)
 	vaddr_t va = BCM2835_IOPHYSTOVIRT(pa);
 
 	bcm283x_platform_early_putchar(va, pa, c);
+}
+
+void __noasan
+bcm2835_aux_platform_early_putchar(char c)
+{
+	paddr_t pa = BCM2835_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE);
+	vaddr_t va = BCM2835_IOPHYSTOVIRT(pa);
+
+	bcm283x_aux_platform_early_putchar(va, pa, c);
 }
 
 void __noasan
@@ -1365,37 +1389,19 @@ bcm2836_platform_early_putchar(char c)
 void __noasan
 bcm2837_platform_early_putchar(char c)
 {
-#define AUCONSADDR_PA	BCM2836_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE)
-#define AUCONSADDR_VA	BCM2835_IOPHYSTOVIRT(AUCONSADDR_PA)
-	volatile uint32_t *uartaddr =
-	    cpu_earlydevice_va_p() ?
-		(volatile uint32_t *)AUCONSADDR_VA :
-		(volatile uint32_t *)AUCONSADDR_PA;
+	paddr_t pa = BCM2836_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE);
+	vaddr_t va = BCM2835_IOPHYSTOVIRT(pa);
 
-	while ((uartaddr[com_lsr] & LSR_TXRDY) == 0)
-		;
-
-	uartaddr[com_data] = c;
-#undef AUCONSADDR_VA
-#undef AUCONSADDR_PA
+	bcm283x_aux_platform_early_putchar(va, pa, c);
 }
 
 void __noasan
 bcm2711_platform_early_putchar(char c)
 {
-#define AUCONSADDR_PA	BCM2711_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE)
-#define AUCONSADDR_VA	BCM2711_IOPHYSTOVIRT(AUCONSADDR_PA)
-	volatile uint32_t *uartaddr =
-	    cpu_earlydevice_va_p() ?
-		(volatile uint32_t *)AUCONSADDR_VA :
-		(volatile uint32_t *)AUCONSADDR_PA;
+	paddr_t pa = BCM2711_PERIPHERALS_BUS_TO_PHYS(BCM2835_AUX_UART_BASE);
+	vaddr_t va = BCM2711_IOPHYSTOVIRT(pa);
 
-	while ((uartaddr[com_lsr] & LSR_TXRDY) == 0)
-		;
-
-	uartaddr[com_data] = c;
-#undef AUCONSADDR_VA
-#undef AUCONSADDR_PA
+	bcm283x_aux_platform_early_putchar(va, pa, c);
 }
 
 #define	BCM283x_REF_FREQ	19200000

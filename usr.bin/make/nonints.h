@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.160 2020/11/10 00:32:12 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.162 2020/11/16 21:48:18 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -191,15 +191,15 @@ void Targ_End(void);
 
 void Targ_Stats(void);
 GNodeList *Targ_List(void);
-GNode *Targ_NewGN(const char *);
+GNode *GNode_New(const char *);
 GNode *Targ_FindNode(const char *);
 GNode *Targ_GetNode(const char *);
 GNode *Targ_NewInternalNode(const char *);
 GNode *Targ_GetEndNode(void);
 GNodeList *Targ_FindList(StringList *);
-Boolean Targ_Ignore(GNode *);
-Boolean Targ_Silent(GNode *);
-Boolean Targ_Precious(GNode *);
+Boolean Targ_Ignore(const GNode *);
+Boolean Targ_Silent(const GNode *);
+Boolean Targ_Precious(const GNode *);
 void Targ_SetMain(GNode *);
 void Targ_PrintCmds(GNode *);
 void Targ_PrintNode(GNode *, int);

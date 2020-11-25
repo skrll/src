@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.968 2020/11/13 17:19:06 sjg Exp $
+# $NetBSD: mi,v 1.978 2020/11/24 19:02:59 rillig Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -4851,6 +4851,8 @@
 ./usr/tests/usr.bin/make/unit-tests/cond-func-empty.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-func-exists.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-func-exists.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/cond-func-make-main.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/cond-func-make-main.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-func-make.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-func-make.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/cond-func-target.exp			tests-usr.bin-tests	compattestfile,atf
@@ -4953,12 +4955,20 @@
 ./usr/tests/usr.bin/make/unit-tests/depsrc-wait.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/depsrc.exp					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/depsrc.mk					tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/deptgt-begin-fail-indirect.exp		tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/deptgt-begin-fail-indirect.mk		tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/deptgt-begin-fail.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/deptgt-begin-fail.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-begin.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-begin.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-default.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-default.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-delete_on_error.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-delete_on_error.mk			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/deptgt-end-fail-indirect.exp		tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/deptgt-end-fail-indirect.mk			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/deptgt-end-fail.exp				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/deptgt-end-fail.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-end-jobs.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-end-jobs.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/deptgt-end.exp				tests-usr.bin-tests	compattestfile,atf
@@ -5213,6 +5223,8 @@
 ./usr/tests/usr.bin/make/unit-tests/opt-raw.mk					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/opt-silent.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/opt-silent.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/opt-touch-jobs.exp				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/opt-touch-jobs.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/opt-touch.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/opt-touch.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/opt-tracefile.exp				tests-usr.bin-tests	compattestfile,atf
@@ -5277,12 +5289,22 @@
 ./usr/tests/usr.bin/make/unit-tests/suff-clear-regular.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/suff-clear-single.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/suff-clear-single.mk			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/suff-incomplete.exp				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/suff-incomplete.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/suff-lookup.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/suff-lookup.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/suff-main-several.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/suff-main-several.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/suff-main.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/suff-main.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/suff-phony.exp				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/suff-phony.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/suff-rebuild.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/suff-rebuild.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/suff-self.exp				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/suff-self.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/suff-transform-debug.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/suff-transform-debug.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/suff-transform-endless.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/suff-transform-endless.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/suff-transform-expand.exp			tests-usr.bin-tests	compattestfile,atf
