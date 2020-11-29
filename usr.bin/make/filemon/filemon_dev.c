@@ -1,4 +1,4 @@
-/*	$NetBSD: filemon_dev.c,v 1.3 2020/07/10 15:53:30 sjg Exp $	*/
+/*	$NetBSD: filemon_dev.c,v 1.5 2020/11/23 23:41:11 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@ filemon_open(void)
 	int error;
 
 	/* Allocate and zero a struct filemon object.  */
-	F = calloc(1, sizeof(*F));
+	F = calloc(1, sizeof *F);
 	if (F == NULL)
 		return NULL;
 
@@ -127,7 +127,7 @@ filemon_close(struct filemon *F)
 	free(F);
 
 	/* Set errno and return -1 if anything went wrong.  */
-	if (error) {
+	if (error != 0) {
 		errno = error;
 		return -1;
 	}

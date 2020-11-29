@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1706 2020/10/16 15:40:40 ryo Exp $
+# $NetBSD: mi,v 1.1711 2020/11/10 21:47:41 kamil Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -421,6 +421,7 @@
 ./usr/share/man/cat1/openssl_x509v3_config.0	man-obsolete		obsolete
 ./usr/share/man/cat1/page.0			man-util-catman		.cat
 ./usr/share/man/cat1/pagesize.0			man-util-catman		.cat
+./usr/share/man/cat1/pamu2fcfg.0		man-util-catman		pam,.cat
 ./usr/share/man/cat1/passwd.0			man-util-catman		.cat
 ./usr/share/man/cat1/paste.0			man-util-catman		.cat
 ./usr/share/man/cat1/patch.0			man-util-catman		.cat
@@ -2024,6 +2025,7 @@
 ./usr/share/man/cat4/vlan.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vmmon.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vmnet.0			man-sys-catman		.cat
+./usr/share/man/cat4/vmt.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vmx.0			man-sys-catman		.cat
 ./usr/share/man/cat4/vnd.0			man-sys-catman		.cat
 ./usr/share/man/cat4/voodoofb.0			man-sys-catman		.cat
@@ -2089,7 +2091,7 @@
 ./usr/share/man/cat4/x86/tco.0			man-sys-catman		.cat
 ./usr/share/man/cat4/x86/tprof_amdpmi.0		man-obsolete		obsolete
 ./usr/share/man/cat4/x86/tprof_pmi.0		man-obsolete		obsolete
-./usr/share/man/cat4/x86/vmt.0			man-sys-catman		.cat
+./usr/share/man/cat4/x86/vmt.0			man-obsolete		obsolete
 ./usr/share/man/cat4/x86/vmx.0			man-obsolete		obsolete
 ./usr/share/man/cat4/xbd.0			man-sys-catman		.cat
 ./usr/share/man/cat4/xbdback.0			man-sys-catman		.cat
@@ -2939,6 +2941,7 @@
 ./usr/share/man/cat8/pam_self.0			man-sysutil-catman	pam,.cat
 ./usr/share/man/cat8/pam_skey.0			man-sysutil-catman	skey,pam,.cat
 ./usr/share/man/cat8/pam_ssh.0			man-sysutil-catman	pam,.cat
+./usr/share/man/cat8/pam_u2f.0			man-sysutil-catman	pam,.cat
 ./usr/share/man/cat8/pam_unix.0			man-sysutil-catman	pam,.cat
 ./usr/share/man/cat8/paxctl.0			man-sysutil-catman	.cat
 ./usr/share/man/cat8/pc532/MAKEDEV.0		man-obsolete		obsolete
@@ -3706,6 +3709,7 @@
 ./usr/share/man/html1/openssl_x509v3_config.html	man-obsolete	obsolete
 ./usr/share/man/html1/page.html			man-util-htmlman	html
 ./usr/share/man/html1/pagesize.html		man-util-htmlman	html
+./usr/share/man/html1/pamu2fcfg.html		man-util-htmlman	pam,html
 ./usr/share/man/html1/passwd.html		man-util-htmlman	html
 ./usr/share/man/html1/paste.html		man-util-htmlman	html
 ./usr/share/man/html1/patch.html		man-util-htmlman	html
@@ -5164,6 +5168,7 @@
 ./usr/share/man/html4/vlan.html			man-sys-htmlman		html
 ./usr/share/man/html4/vmmon.html		man-sys-htmlman		html
 ./usr/share/man/html4/vmnet.html		man-sys-htmlman		html
+./usr/share/man/html4/vmt.html			man-sys-htmlman		html
 ./usr/share/man/html4/vmx.html			man-sys-htmlman		html
 ./usr/share/man/html4/vnd.html			man-sys-htmlman		html
 ./usr/share/man/html4/voodoofb.html		man-sys-htmlman		html
@@ -5229,7 +5234,7 @@
 ./usr/share/man/html4/x86/tco.html		man-sys-htmlman		html
 ./usr/share/man/html4/x86/tprof_amdpmi.html	man-obsolete		obsolete
 ./usr/share/man/html4/x86/tprof_pmi.html	man-obsolete		obsolete
-./usr/share/man/html4/x86/vmt.html		man-sys-htmlman		html
+./usr/share/man/html4/x86/vmt.html		man-obsolete		obsolete
 ./usr/share/man/html4/x86/vmx.html		man-obsolete		obsolete
 ./usr/share/man/html4/xbd.html			man-sys-htmlman		html
 ./usr/share/man/html4/xbdback.html		man-sys-htmlman		html
@@ -5931,6 +5936,7 @@
 ./usr/share/man/html8/pam_self.html		man-sysutil-htmlman	pam,html
 ./usr/share/man/html8/pam_skey.html		man-sysutil-htmlman	skey,pam,html
 ./usr/share/man/html8/pam_ssh.html		man-sysutil-htmlman	pam,html
+./usr/share/man/html8/pam_u2f.html		man-sysutil-htmlman	pam,html
 ./usr/share/man/html8/pam_unix.html		man-sysutil-htmlman	pam,html
 ./usr/share/man/html8/paxctl.html		man-sysutil-htmlman	html
 ./usr/share/man/html8/pcictl.html		man-sysutil-htmlman	html
@@ -6633,6 +6639,7 @@
 ./usr/share/man/man1/openssl_x509v3_config.1	man-obsolete		obsolete
 ./usr/share/man/man1/page.1			man-util-man		.man
 ./usr/share/man/man1/pagesize.1			man-util-man		.man
+./usr/share/man/man1/pamu2fcfg.1		man-util-man		pam,.man
 ./usr/share/man/man1/passwd.1			man-util-man		.man
 ./usr/share/man/man1/paste.1			man-util-man		.man
 ./usr/share/man/man1/patch.1			man-util-man		.man
@@ -8236,6 +8243,7 @@
 ./usr/share/man/man4/vlan.4			man-sys-man		.man
 ./usr/share/man/man4/vmmon.4			man-sys-man		.man
 ./usr/share/man/man4/vmnet.4			man-sys-man		.man
+./usr/share/man/man4/vmt.4			man-sys-man		.man
 ./usr/share/man/man4/vmx.4			man-sys-man		.man
 ./usr/share/man/man4/vnd.4			man-sys-man		.man
 ./usr/share/man/man4/voodoofb.4			man-sys-man		.man
@@ -8301,7 +8309,7 @@
 ./usr/share/man/man4/x86/tco.4			man-sys-man		.man
 ./usr/share/man/man4/x86/tprof_amdpmi.4		man-obsolete		obsolete
 ./usr/share/man/man4/x86/tprof_pmi.4		man-obsolete		obsolete
-./usr/share/man/man4/x86/vmt.4			man-sys-man		.man
+./usr/share/man/man4/x86/vmt.4			man-obsolete		obsolete
 ./usr/share/man/man4/x86/vmx.4			man-obsolete		obsolete
 ./usr/share/man/man4/xbd.4			man-sys-man		.man
 ./usr/share/man/man4/xbdback.4			man-sys-man		.man
@@ -9151,6 +9159,7 @@
 ./usr/share/man/man8/pam_self.8			man-sysutil-man		.man,pam
 ./usr/share/man/man8/pam_skey.8			man-sysutil-man		skey,.man,pam
 ./usr/share/man/man8/pam_ssh.8			man-sysutil-man		.man,pam
+./usr/share/man/man8/pam_u2f.8			man-sysutil-man		.man,pam
 ./usr/share/man/man8/pam_unix.8			man-sysutil-man		.man,pam
 ./usr/share/man/man8/paxctl.8			man-sysutil-man		.man
 ./usr/share/man/man8/pc532/MAKEDEV.8		man-obsolete		obsolete

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.35 2020/05/18 21:19:36 jmcneill Exp $
+#	$NetBSD: Makefile.inc,v 1.38 2020/11/13 17:39:06 martin Exp $
 #
 # Makefile for sysinst
 
@@ -47,6 +47,11 @@ SRCS+=	mbr.c
 CPPFLAGS+=	-DNO_CLONES
 .endif
 
+.if ${CHECK_ENTROPY:Uno} != "no"
+MENUS_MI+=	menus.entropy
+CPPFLAGS+=	-DCHECK_ENTROPY=1
+.endif
+
 MSG_MD?=	msg.md.${SYSINSTLANG}
 MENUS_MD?=	menus.md.${SYSINSTLANG}
 
@@ -74,6 +79,10 @@ CPPFLAGS+=	-DUSING_PAXASTAR
 
 .if ${MKDTB:Uno} != "no"
 CPPFLAGS+=	-DHAVE_DTB
+.endif
+
+.if ${MKKMOD:Uno} != "no"
+CPPFLAGS+=	-DHAVE_MODULES
 .endif
 
 CATALOGDIR=	/usr/share/sysinst/catalog
@@ -193,7 +202,11 @@ msgtouch: ${DISTRIBVERDEP}
 	touch ${.TARGET}
 
 .if !defined(NOPARTMAN)
-MSG_MD+=	msg.pm.${SYSINSTLANG}	
+MSG_MD+=	msg.pm.${SYSINSTLANG}
+.endif
+
+.if ${CHECK_ENTROPY:Uno} != "no"
+MSG_MD+=	msg.entropy.${SYSINSTLANG}
 .endif
 
 msg.def: msg.mi.${SYSINSTLANG} ${MSG_MD} msgtouch

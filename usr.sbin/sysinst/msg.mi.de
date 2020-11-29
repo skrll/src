@@ -1,4 +1,4 @@
-/*	$NetBSD: msg.mi.de,v 1.25 2020/10/24 16:13:15 martin Exp $	*/
+/*	$NetBSD: msg.mi.de,v 1.28 2020/11/05 11:10:11 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -551,7 +551,16 @@ die Distribution zu finden ist.
 }
 
 message No_cd_found
-{Kein CD Laufwerk enthält eine CD mit den Distributions-Dateien!}
+{Kein CD Laufwerk enthält eine CD mit den Distributions-Dateien!  
+Geben Sie die korrekten Daten manuel ein, oder legen Sie eine CD
+ein und versuchen Sie es erneut. 
+}
+
+message abort_install
+{Installation abbrechen}
+
+message source_sel_retry
+{Zurück zur Quellauswahl}
 
 message Available_cds
 {Verfügbare CDs}
@@ -1238,21 +1247,9 @@ message pkgin_failed
 {Die Installation von pkgin ist fehlgeschlagen, evtl. weil keine Binärpakete 
 vorhanden sind. Bitte den Pfad der Pakete überprüfen und noch einmal versuchen.}
 message failed {Fehlgeschlagen}
-message notsupported {Operation wird nicht unterstützt!}
 message askfsmountadv {Mountpoint oder 'raid' oder 'cgd' oder 'lvm'?}
 message partman {Erweiterte Partitionierung}
-message edit_parts {Partitionen bearbeiten}
 message editpart {Partitionen bearbeiten}
-message switch_parts {Switch partitioning scheme}
-message fmtasraid {Als RAID Komponente formatieren}
-message fmtaslvm {Als LVM-PV formatieren}
-message encrypt {Verschlüsseln (CGD)}
-message setbootable {Boot-Flag}
-message erase {Safe Erase}
-message undo {Rückgängigmachen von Änderungen}
-message unconfig {Dekonfigurieren}
-message edit {Bearbeiten}
-message doumount {Force-umount}
 
 message fremove {ENTFERNEN}
 message remove {Entfernen}

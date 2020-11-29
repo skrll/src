@@ -1,4 +1,4 @@
-/*	$NetBSD: ossaudio.c,v 1.58 2020/10/24 14:43:53 roy Exp $	*/
+/*	$NetBSD: ossaudio.c,v 1.64 2020/11/13 09:02:39 nia Exp $	*/
 
 /*-
  * Copyright (c) 1997, 2020 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: ossaudio.c,v 1.58 2020/10/24 14:43:53 roy Exp $");
+__RCSID("$NetBSD: ossaudio.c,v 1.64 2020/11/13 09:02:39 nia Exp $");
 
 /*
  * This is an Open Sound System compatibility layer, which provides
@@ -70,6 +70,8 @@ static struct audiodevinfo *getdevinfo(int);
 static int getaudiocount(void);
 static int getmixercount(void);
 static int getmixercontrolcount(int);
+
+static int getcaps(int, int *);
 
 static int getvol(u_int, u_char);
 static void setvol(int, int, bool);
@@ -126,7 +128,7 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 	static int totalperrors = 0;
 	static int totalrerrors = 0;
 	oss_count_t osscount;
-	int idat, idata;
+	int idat;
 	int retval;
 
 	idat = 0;
@@ -144,8 +146,10 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 		break;
 	case SNDCTL_DSP_GETERROR:
 		tmperrinfo = (struct audio_errinfo *)argp;
-		if (tmperrinfo == NULL)
-			return EINVAL;
+		if (tmperrinfo == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
 		memset(tmperrinfo, 0, sizeof(struct audio_errinfo));
 		if ((retval = ioctl(fd, AUDIO_GETBUFINFO, &tmpinfo)) < 0)
 			return retval;
@@ -180,37 +184,35 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 		break;
 	case SNDCTL_DSP_SPEED:
 		AUDIO_INITINFO(&tmpinfo);
-		tmpinfo.play.sample_rate =
-		tmpinfo.record.sample_rate = INTARG;
 		/*
-		 * The default NetBSD behavior if an unsupported sample rate
-		 * is set is to return an error code and keep the rate at the
-		 * default of 8000 Hz.
-		 * 
-		 * However, OSS specifies that a sample rate supported by the
-		 * hardware is returned if the exact rate could not be set.
-		 * 
-		 * So, if the chosen sample rate is invalid, set and return
-		 * the current hardware rate.
+		 * In Solaris, 0 is used a special value to query the
+		 * current rate. This seems useful to support.
 		 */
-		if (ioctl(fd, AUDIO_SETINFO, &tmpinfo) < 0) {
-			/* Don't care that SETINFO failed the first time... */
-			errno = 0;
+		if (INTARG == 0) {
+			retval = ioctl(fd, AUDIO_GETBUFINFO, &tmpinfo);
+			if (retval < 0)
+				return retval;
 			retval = ioctl(fd, AUDIO_GETFORMAT, &hwfmt);
 			if (retval < 0)
 				return retval;
-			retval = ioctl(fd, AUDIO_GETINFO, &tmpinfo);
-			if (retval < 0)
-				return retval;
-			tmpinfo.play.sample_rate =
-			tmpinfo.record.sample_rate =
-			    (tmpinfo.mode == AUMODE_RECORD) ?
+			INTARG = (tmpinfo.mode == AUMODE_RECORD) ?
 			    hwfmt.record.sample_rate :
 			    hwfmt.play.sample_rate;
-			retval = ioctl(fd, AUDIO_SETINFO, &tmpinfo);
-			if (retval < 0)
-				return retval;
 		}
+		/*
+		 * Conform to kernel limits.
+		 * NetBSD will reject unsupported sample rates, but OSS
+		 * applications need to be able to negotiate a supported one.
+		 */
+		if (INTARG < 1000)
+			INTARG = 1000;
+		if (INTARG > 192000)
+			INTARG = 192000;
+		tmpinfo.play.sample_rate =
+		tmpinfo.record.sample_rate = INTARG;
+		retval = ioctl(fd, AUDIO_SETINFO, &tmpinfo);
+		if (retval < 0)
+			return retval;
 		/* FALLTHRU */
 	case SOUND_PCM_READ_RATE:
 		retval = ioctl(fd, AUDIO_GETBUFINFO, &tmpinfo);
@@ -432,8 +434,10 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 	case SNDCTL_DSP_SETFRAGMENT:
 		AUDIO_INITINFO(&tmpinfo);
 		idat = INTARG;
-		if ((idat & 0xffff) < 4 || (idat & 0xffff) > 17)
-			return EINVAL;
+		if ((idat & 0xffff) < 4 || (idat & 0xffff) > 17) {
+			errno = EINVAL;
+			return -1;
+		}
 		tmpinfo.blocksize = 1 << (idat & 0xffff);
 		tmpinfo.hiwat = ((unsigned)idat >> 16) & 0x7fff;
 		if (tmpinfo.hiwat == 0)	/* 0 means set to max */
@@ -541,15 +545,9 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 			return retval;
 		break;
 	case SNDCTL_DSP_GETCAPS:
-		retval = ioctl(fd, AUDIO_GETPROPS, &idata);
+		retval = getcaps(fd, (int *)argp);
 		if (retval < 0)
 			return retval;
-		idat = DSP_CAP_TRIGGER;
-		if (idata & AUDIO_PROP_FULLDUPLEX)
-			idat |= DSP_CAP_DUPLEX;
-		if (idata & AUDIO_PROP_MMAP)
-			idat |= DSP_CAP_MMAP;
-		INTARG = idat;
 		break;
 	case SNDCTL_DSP_SETTRIGGER:
 		retval = ioctl(fd, AUDIO_GETBUFINFO, &tmpinfo);
@@ -638,8 +636,9 @@ audio_ioctl(int fd, unsigned long com, void *argp)
 		INTARG = getvol(tmpinfo.record.gain, tmpinfo.record.balance);
 		break;
 	case SNDCTL_DSP_SKIP:
-	case SNDCTL_DSP_SILENCE:
-		return EINVAL;
+	case SNDCTL_DSP_SILENCE: 
+		errno = EINVAL;
+		return -1;
 	case SNDCTL_DSP_SETDUPLEX:
 		idat = 1;
 		retval = ioctl(fd, AUDIO_SETFD, &idat);
@@ -890,8 +889,10 @@ mixer_oss3_ioctl(int fd, unsigned long com, void *argp)
 		strlcpy(omi->name, adev.name, sizeof omi->name);
 		return 0;
 	case SOUND_MIXER_READ_RECSRC:
-		if (di->source == -1)
-			return EINVAL;
+		if (di->source == -1) {
+			errno = EINVAL;
+			return -1;
+		}
 		mc.dev = di->source;
 		if (di->caps & SOUND_CAP_EXCL_INPUT) {
 			mc.type = AUDIO_MIXER_ENUM;
@@ -925,8 +926,10 @@ mixer_oss3_ioctl(int fd, unsigned long com, void *argp)
 		break;
 	case SOUND_MIXER_WRITE_RECSRC:
 	case SOUND_MIXER_WRITE_R_RECSRC:
-		if (di->source == -1)
-			return EINVAL;
+		if (di->source == -1) {
+			errno = EINVAL;
+			return -1;
+		}
 		mc.dev = di->source;
 		idat = INTARG;
 		if (di->caps & SOUND_CAP_EXCL_INPUT) {
@@ -935,16 +938,20 @@ mixer_oss3_ioctl(int fd, unsigned long com, void *argp)
 				if (idat & (1 << i))
 					break;
 			if (i >= SOUND_MIXER_NRDEVICES ||
-			    di->devmap[i] == -1)
-				return EINVAL;
+			    di->devmap[i] == -1) {
+				errno = EINVAL;
+				return -1;
+			}
 			mc.un.ord = enum_to_ord(di, di->devmap[i]);
 		} else {
 			mc.type = AUDIO_MIXER_SET;
 			mc.un.mask = 0;
 			for(i = 0; i < SOUND_MIXER_NRDEVICES; i++) {
 				if (idat & (1 << i)) {
-					if (di->devmap[i] == -1)
-						return EINVAL;
+					if (di->devmap[i] == -1) {
+						errno = EINVAL;
+						return -1;
+					}
 					mc.un.mask |=
 					    enum_to_mask(di, di->devmap[i]);
 				}
@@ -955,8 +962,10 @@ mixer_oss3_ioctl(int fd, unsigned long com, void *argp)
 		if (MIXER_READ(SOUND_MIXER_FIRST) <= com &&
 		    com < MIXER_READ(SOUND_MIXER_NRDEVICES)) {
 			n = GET_DEV(com);
-			if (di->devmap[n] == -1)
-				return EINVAL;
+			if (di->devmap[n] == -1) {
+				errno = EINVAL;
+				return -1;
+			}
 			mc.dev = di->devmap[n];
 			mc.type = AUDIO_MIXER_VALUE;
 		    doread:
@@ -965,8 +974,10 @@ mixer_oss3_ioctl(int fd, unsigned long com, void *argp)
 			retval = ioctl(fd, AUDIO_MIXER_READ, &mc);
 			if (retval < 0)
 				return retval;
-			if (mc.type != AUDIO_MIXER_VALUE)
-				return EINVAL;
+			if (mc.type != AUDIO_MIXER_VALUE) {
+				errno = EINVAL;
+				return -1;
+			}
 			if (mc.un.value.num_channels != 2) {
 				l = r =
 				    mc.un.value.level[AUDIO_MIXER_LEVEL_MONO];
@@ -981,8 +992,10 @@ mixer_oss3_ioctl(int fd, unsigned long com, void *argp)
 			   (MIXER_WRITE(SOUND_MIXER_FIRST) <= com &&
 			   com < MIXER_WRITE(SOUND_MIXER_NRDEVICES))) {
 			n = GET_DEV(com);
-			if (di->devmap[n] == -1)
-				return EINVAL;
+			if (di->devmap[n] == -1) {
+				errno = EINVAL;
+				return -1;
+			}
 			idat = INTARG;
 			l = FROM_OSSVOL((u_int)idat & 0xff);
 			r = FROM_OSSVOL(((u_int)idat >> 8) & 0xff);
@@ -1035,7 +1048,6 @@ mixer_oss4_ioctl(int fd, unsigned long com, void *argp)
 	int newfd = -1, tmperrno;
 	int i, noffs;
 	int retval;
-	int props, caps;
 
 	/*
 	 * Note: it is difficult to translate the NetBSD concept of a "set"
@@ -1092,27 +1104,16 @@ mixer_oss4_ioctl(int fd, unsigned long com, void *argp)
 			errno = tmperrno;
 			return retval;
 		}
-		retval = ioctl(newfd, AUDIO_GETPROPS, &props);
-		if (retval < 0) {
+		if (getcaps(newfd, &tmpai->caps) < 0) {
 			tmperrno = errno;
 			close(newfd);
 			errno = tmperrno;
 			return retval;
 		}
-		caps = DSP_CAP_TRIGGER;
-		if (props & AUDIO_PROP_FULLDUPLEX)
-			caps |= DSP_CAP_DUPLEX;
-		if (props & AUDIO_PROP_MMAP)
-			caps |= DSP_CAP_MMAP;
-		if (props & AUDIO_PROP_CAPTURE)
-			caps |= PCM_CAP_INPUT;
-		if (props & AUDIO_PROP_PLAYBACK)
-			caps |= PCM_CAP_OUTPUT;
 		snprintf(tmpai->name, sizeof(tmpai->name),
 		    "%s %s", dev.name, dev.version);
 		tmpai->busy = 0;
 		tmpai->pid = -1;
-		tmpai->caps = caps;
 		ioctl(newfd, SNDCTL_DSP_GETFMTS, &tmpai->iformats);
 		tmpai->oformats = tmpai->iformats;
 		tmpai->magic = -1; /* reserved for "internal use" */
@@ -1151,8 +1152,10 @@ mixer_oss4_ioctl(int fd, unsigned long com, void *argp)
 		break;
 	case SNDCTL_CARDINFO:
 		cardinfo = (oss_card_info *)argp;
-		if (cardinfo == NULL)
-			return EINVAL;
+		if (cardinfo == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
 		if (cardinfo->card != -1) {
 			snprintf(devname, sizeof(devname),
 			    "/dev/audio%d", cardinfo->card);
@@ -1593,6 +1596,29 @@ global_oss4_ioctl(int fd, unsigned long com, void *argp)
 }
 
 static int
+getcaps(int fd, int *out)
+{
+	int props, caps;
+
+	if (ioctl(fd, AUDIO_GETPROPS, &props) < 0)
+		return -1;
+
+	caps = DSP_CAP_TRIGGER;
+
+	if (props & AUDIO_PROP_FULLDUPLEX)
+		caps |= DSP_CAP_DUPLEX;
+	if (props & AUDIO_PROP_MMAP)
+		caps |= DSP_CAP_MMAP;
+	if (props & AUDIO_PROP_CAPTURE)
+		caps |= PCM_CAP_INPUT;
+	if (props & AUDIO_PROP_PLAYBACK)
+		caps |= PCM_CAP_OUTPUT;
+
+	*out = caps;
+	return 0;
+}
+
+static int
 getaudiocount(void)
 {
 	char devname[32];
@@ -1700,6 +1726,8 @@ setvol(int fd, int volume, bool record)
  * When this happens, we use the current hardware settings. This is just in
  * case an application is abusing SNDCTL_DSP_CHANNELS - OSSv4 always sets and
  * returns a reasonable value, even if it wasn't what the user requested.
+ *
+ * Solaris guarantees this behaviour if nchannels = 0.
  *
  * XXX: If a device is opened for both playback and recording, and supports
  * fewer channels for recording than playback, applications that do both will
