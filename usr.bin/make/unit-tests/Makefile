@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.198 2020/11/12 23:35:21 sjg Exp $
+# $NetBSD: Makefile,v 1.231 2020/11/30 21:10:15 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -58,6 +58,7 @@ TESTS+=		cond-func-defined
 TESTS+=		cond-func-empty
 TESTS+=		cond-func-exists
 TESTS+=		cond-func-make
+TESTS+=		cond-func-make-main
 TESTS+=		cond-func-target
 TESTS+=		cond-late
 TESTS+=		cond-op
@@ -108,9 +109,13 @@ TESTS+=		depsrc-usebefore-double-colon
 TESTS+=		depsrc-wait
 TESTS+=		deptgt
 TESTS+=		deptgt-begin
+TESTS+=		deptgt-begin-fail
+TESTS+=		deptgt-begin-fail-indirect
 TESTS+=		deptgt-default
 TESTS+=		deptgt-delete_on_error
 TESTS+=		deptgt-end
+TESTS+=		deptgt-end-fail
+TESTS+=		deptgt-end-fail-indirect
 TESTS+=		deptgt-end-jobs
 TESTS+=		deptgt-error
 TESTS+=		deptgt-ignore
@@ -183,12 +188,15 @@ TESTS+=		job-flags
 TESTS+=		job-output-long-lines
 TESTS+=		lint
 TESTS+=		make-exported
+TESTS+=		meta-cmd-cmp
 TESTS+=		moderrs
 TESTS+=		modmatch
 TESTS+=		modmisc
 TESTS+=		modts
 TESTS+=		modword
+.if ${.MAKE.UID:U0} > 0
 TESTS+=		objdir-writable
+.endif
 TESTS+=		opt
 TESTS+=		opt-backwards
 TESTS+=		opt-chdir
@@ -232,6 +240,7 @@ TESTS+=		opt-query
 TESTS+=		opt-raw
 TESTS+=		opt-silent
 TESTS+=		opt-touch
+TESTS+=		opt-touch-jobs
 TESTS+=		opt-tracefile
 TESTS+=		opt-var-expanded
 TESTS+=		opt-var-literal
@@ -262,9 +271,14 @@ TESTS+=		shell-sh
 TESTS+=		suff-add-later
 TESTS+=		suff-clear-regular
 TESTS+=		suff-clear-single
+TESTS+=		suff-incomplete
 TESTS+=		suff-lookup
 TESTS+=		suff-main
+TESTS+=		suff-main-several
+TESTS+=		suff-phony
 TESTS+=		suff-rebuild
+TESTS+=		suff-self
+TESTS+=		suff-transform-debug
 TESTS+=		suff-transform-endless
 TESTS+=		suff-transform-expand
 TESTS+=		suff-transform-select
@@ -380,6 +394,26 @@ TESTS+=		varparse-mod
 TESTS+=		varparse-undef-partial
 TESTS+=		varquote
 
+# Ideas for more tests:
+#	char-0020-space.mk
+#	char-005C-backslash.mk
+#	escape-cond-str.mk
+#	escape-cond-func-arg.mk
+#	escape-cond-func-arg.mk
+#	escape-varmod.mk
+#	escape-varmod-define.mk
+#	escape-varmod-match.mk
+#	escape-varname.mk
+#	escape-varassign-varname.mk
+#	escape-varassign-varname-cmdline.mk
+#	escape-varassign-value.mk
+#	escape-varassign-value-cmdline.mk
+#	escape-dependency-source.mk
+#	escape-dependency-target.mk
+#	escape-for-varname.mk
+#	escape-for-item.mk
+#	posix-*.mk (see posix.mk and posix1.mk)
+
 .if ${.OBJDIR} != ${.CURDIR}
 RO_OBJDIR:=	${.OBJDIR}/roobj
 .else
@@ -402,9 +436,15 @@ ENV.varname-vpath+=	VPATH=varname-vpath.dir:varname-vpath.dir2
 FLAGS.cond-func-make=	via-cmdline
 FLAGS.directive-ifmake=	first second
 FLAGS.doterror=		# none, especially not -k
-FLAGS.varname-empty=	-dv '$${:U}=cmdline-u' '=cmline-plain'
+FLAGS.varname-empty=	-dv '$${:U}=cmdline-u' '=cmdline-plain'
 
 # Some tests need extra postprocessing.
+SED_CMDS.dir=		${:D remove output from -DCLEANUP mode }
+SED_CMDS.dir+=		-e '/^OpenDirs_Done:/d'
+SED_CMDS.dir+=		-e '/^CachedDir /d'
+SED_CMDS.export=	-e '/^[^=_A-Za-z0-9]*=/d'
+SED_CMDS.export-all=	${SED_CMDS.export}
+SED_CMDS.export-env=	${SED_CMDS.export}
 SED_CMDS.job-output-long-lines= \
 	${:D Job separators on their own line are ok. } \
 	-e '/^--- job-[ab] ---$$/d' \
@@ -416,23 +456,32 @@ SED_CMDS.job-output-long-lines= \
 	${:D marker should always be at the beginning of the line. } \
 	-e '/^aa*--- job-b ---$$/d' \
 	-e '/^bb*--- job-a ---$$/d'
-SED_CMDS.objdir-writable= -e 's,${RO_OBJDIR},OBJDIR/roobj,g'
-SED_CMDS.opt-debug-graph1= \
-			-e 's,${.CURDIR},CURDIR,'
-SED_CMDS.opt-debug-graph1+= \
-			-e '/Global Variables:/,/Suffixes:/d'
-SED_CMDS.sh-dots=	-e 's,^.*\.\.\.:.*,<normalized: ...: not found>,'
+SED_CMDS.objdir-writable=	-e 's,${RO_OBJDIR},OBJDIR/roobj,g'
+SED_CMDS.opt-debug-graph1=	${STD_SED_CMDS.dg1}
 SED_CMDS.opt-debug-jobs=	-e 's,([0-9][0-9]*),(<pid>),'
 SED_CMDS.opt-debug-jobs+=	-e 's,pid [0-9][0-9]*,pid <pid>,'
 SED_CMDS.opt-debug-jobs+=	-e 's,Process [0-9][0-9]*,Process <pid>,'
 SED_CMDS.opt-debug-jobs+=	-e 's,JobFinish: [0-9][0-9]*,JobFinish: <pid>,'
+SED_CMDS.opt-debug-jobs+=	-e 's,Command: ${.SHELL:T},Command: <shell>,'
 # The "-q" may be there or not, see jobs.c, variable shells.
-SED_CMDS.opt-debug-jobs+=	-e 's,^\(.Command: sh\) -q,\1,'
-SED_CMDS.var-op-shell+=	-e 's,^${.SHELL:T}: ,,'
-SED_CMDS.var-op-shell+=	-e '/command/s,No such.*,not found,'
+SED_CMDS.opt-debug-jobs+=	-e 's,^\(.Command: <shell>\) -q,\1,'
+SED_CMDS.sh-dots=		-e 's,^.*\.\.\.:.*,<normalized: ...: not found>,'
+SED_CMDS.suff-main+=		${STD_SED_CMDS.dg1}
+SED_CMDS.suff-main-several+=	${STD_SED_CMDS.dg1}
+SED_CMDS.suff-transform-debug+=	${STD_SED_CMDS.dg1}
+SED_CMDS.var-op-shell+=	\
+	-e 's,^${.SHELL:T}: [ 0-9:]*,,' \
+	-e '/command/s,No such.*,not found,'
+SED_CMDS.vardebug+=	-e 's,${.SHELL},</path/to/shell>,'
+SED_CMDS.varmod-edge+=	-e 's, line [0-9]*:, line omitted:,'
+SED_CMDS.varmod-gmtime+=	-e 's,Tue Jan 19 03:14:08 2038,<normalized>,'
+SED_CMDS.varmod-gmtime+=	${:D FreeBSD i386 still has 32-bit time_t. }
+SED_CMDS.varmod-gmtime+=	-e 's,Fri Dec 13 20:45:52 1901,<normalized>,'
+SED_CMDS.varmod-localtime+=	-e 's,Tue Jan 19 04:14:08 2038,<normalized>,'
+SED_CMDS.varmod-localtime+=	${:D FreeBSD i386 still has 32-bit time_t. }
+SED_CMDS.varmod-localtime+=	-e 's,Fri Dec 13 21:45:52 1901,<normalized>,'
 SED_CMDS.varmod-subst-regex+= \
 			-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
-SED_CMDS.varmod-edge+=	-e 's, line [0-9]*:, line omitted:,'
 SED_CMDS.varname-dot-parsedir=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
 SED_CMDS.varname-dot-parsefile=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
 SED_CMDS.varname-dot-shell=	-e 's, = /[^ ]*, = (details omitted),g'
@@ -440,10 +489,12 @@ SED_CMDS.varname-dot-shell+=	-e 's,"/[^" ]*","(details omitted)",g'
 SED_CMDS.varname-dot-shell+=	-e 's,\[/[^] ]*\],[(details omitted)],g'
 
 # Some tests need an additional round of postprocessing.
-POSTPROC.deptgt-suffixes= \
-			${TOOL_SED} -n -e '/^\#\*\*\* Suffixes/,/^\#\*/p'
+POSTPROC.deptgt-suffixes= awk '/^\#\*\*\* Suffixes/,/^never-stop/'
 POSTPROC.gnode-submake=	awk '/Input graph/, /^$$/'
+POSTPROC.opt-debug-graph1=	${STD_POSTPROC.dg1}
 POSTPROC.varname-empty=	${TOOL_SED} -n -e '/^Var_Set/p' -e '/^out:/p'
+POSTPROC.suff-main-several=	${STD_POSTPROC.dg1}
+POSTPROC.suff-transform-debug=	${STD_POSTPROC.dg1}
 
 # Some tests reuse other tests, which makes them unnecessarily fragile.
 export-all.rawout: export.mk
@@ -451,6 +502,21 @@ unexport.rawout: export.mk
 unexport-env.rawout: export.mk
 
 # End of the configuration section.
+
+# Some standard sed commands, to be used in the SED_CMDS above.
+
+# Omit details from the output of the -dg1 option such as process IDs.
+STD_SED_CMDS.dg1=	-e 's,${.CURDIR},<curdir>,'
+STD_SED_CMDS.dg1+=	-e 's,^\(\.MAKE *=\) .*,\1 <details omitted>,'
+STD_SED_CMDS.dg1+=	-e 's,^\(\.MAKE\.[A-Z_]* *=\) .*,\1 <details omitted>,'
+STD_SED_CMDS.dg1+=	-e 's,^\(MACHINE[_ARCH]* *=\) .*,\1 <details omitted>,'
+STD_SED_CMDS.dg1+=	-e 's,^\(MAKE *=\) .*,\1 <details omitted>,'
+
+# The layout of the lines in the directory cache vary depending on the path
+# length, which cannot be predicted.  Therefore omit these lines.
+STD_POSTPROC.dg1=	awk '/Directory Cache/,/^$$/ { next } { print }'
+
+# End of the configuration helpers section.
 
 .MAIN: all
 
@@ -484,6 +550,11 @@ LANG=		C
 
 MAKE_TEST_ENV?=	MALLOC_OPTIONS="JA"	# for jemalloc
 
+.if ${:!uname -s!} == "NetBSD"
+LIMIT_RESOURCES?=	ulimit -v 200000
+.endif
+LIMIT_RESOURCES?=	:
+
 # Each test is run in a sub-make, to keep the tests for interfering with
 # each other, and because they use different environment variables and
 # command line options.
@@ -491,6 +562,7 @@ MAKE_TEST_ENV?=	MALLOC_OPTIONS="JA"	# for jemalloc
 .mk.rawout:
 	@${_MKMSG_TEST:Uecho '#      test '} ${.PREFIX}
 	@set -eu; \
+	${LIMIT_RESOURCES}; \
 	cd ${.OBJDIR}; \
 	env -i PATH="$$PATH" ${MAKE_TEST_ENV} ${ENV.${.PREFIX:T}} \
 	  ${TEST_MAKE} \
@@ -506,6 +578,8 @@ MAKE_TEST_ENV?=	MALLOC_OPTIONS="JA"	# for jemalloc
 # always pretend .MAKE was called 'make'
 _SED_CMDS+=	-e 's,^${TEST_MAKE:T:S,.,\\.,g}[][0-9]*:,make:,'
 _SED_CMDS+=	-e 's,${TEST_MAKE:S,.,\\.,g},make,'
+_SED_CMDS+=	-e 's,${TEST_MAKE:T:S,.,\\.,g}[][0-9]* warning,make warning,'
+_SED_CMDS+=	-e 's,^usage: ${TEST_MAKE:T:S,.,\\.,g} ,usage: make ,'
 # replace anything after 'stopped in' with unit-tests
 _SED_CMDS+=	-e '/stopped/s, /.*, unit-tests,'
 # strip ${.CURDIR}/ from the output

@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1760 2020/11/08 15:57:01 wiz Exp $
+#	$NetBSD: 3RDPARTY,v 1.1763 2020/11/28 14:29:25 roy Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -41,12 +41,12 @@
 #
 
 Package:	acpica
-Version:	20200717
-Current Vers:	20200717
+Version:	20201113
+Current Vers:	20201113
 Maintainer:	Intel
 Archive Site:	http://www.acpica.org/downloads/
 Home Page:	http://www.acpica.org/
-Date:		2020-08-02
+Date:		2020-11-27
 Mailing List:	devel@acpica.org
 License:	BSD-like
 Responsible:	jruoho
@@ -352,12 +352,12 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	9.3.2
-Current Vers:	9.3.2
+Version:	9.3.4
+Current Vers:	9.3.4
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
-Date:		2020-11-01
+Date:		2020-11-28
 Mailing List: 	dhcpcd-discuss@marples.name
 License:	BSD (2-clause)
 Location:	external/bsd/dhcpcd/dist

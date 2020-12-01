@@ -134,9 +134,9 @@ const struct option cf_options[] = {
 	{"noipv6",          no_argument,       NULL, O_NOIPV6},
 	{"noalias",         no_argument,       NULL, O_NOALIAS},
 	{"iaid",            required_argument, NULL, O_IAID},
-	{"ia_na",           no_argument,       NULL, O_IA_NA},
-	{"ia_ta",           no_argument,       NULL, O_IA_TA},
-	{"ia_pd",           no_argument,       NULL, O_IA_PD},
+	{"ia_na",           optional_argument, NULL, O_IA_NA},
+	{"ia_ta",           optional_argument, NULL, O_IA_TA},
+	{"ia_pd",           optional_argument, NULL, O_IA_PD},
 	{"hostname_short",  no_argument,       NULL, O_HOSTNAME_SHORT},
 	{"dev",             required_argument, NULL, O_DEV},
 	{"nodev",           no_argument,       NULL, O_NODEV},
@@ -165,6 +165,8 @@ const struct option cf_options[] = {
 	{"inactive",        no_argument,       NULL, O_INACTIVE},
 	{"mudurl",          required_argument, NULL, O_MUDURL},
 	{"link_rcvbuf",     required_argument, NULL, O_LINK_RCVBUF},
+	{"configure",       no_argument,       NULL, O_CONFIGURE},
+	{"noconfigure",     no_argument,       NULL, O_NOCONFIGURE},
 	{NULL,              0,                 NULL, '\0'}
 };
 
@@ -782,6 +784,8 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case 'o':
 		ARG_REQUIRED;
+		if (ctx->options & DHCPCD_PRINT_PIDFILE)
+			break;
 		set_option_space(ctx, arg, &d, &dl, &od, &odl, ifo,
 		    &request, &require, &no, &reject);
 		if (make_option_mask(d, dl, od, odl, request, arg, 1) != 0 ||
@@ -794,6 +798,8 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case O_REJECT:
 		ARG_REQUIRED;
+		if (ctx->options & DHCPCD_PRINT_PIDFILE)
+			break;
 		set_option_space(ctx, arg, &d, &dl, &od, &odl, ifo,
 		    &request, &require, &no, &reject);
 		if (make_option_mask(d, dl, od, odl, reject, arg, 1) != 0 ||
@@ -996,8 +1002,16 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		else if (strcmp(arg, "uuid") == 0)
 			ctx->duid_type = DUID_UUID;
 		else {
-			logwarnx("%s: invalid duid type", arg);
-			ctx->duid_type = DUID_DEFAULT;
+			dl = hwaddr_aton(NULL, arg);
+			if (dl != 0) {
+				no = realloc(ctx->duid, dl);
+				if (no == NULL)
+					logerrx(__func__);
+				else {
+					ctx->duid = no;
+					ctx->duid_len = hwaddr_aton(no, arg);
+				}
+			}
 		}
 		break;
 	case 'E':
@@ -1057,6 +1071,8 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case 'O':
 		ARG_REQUIRED;
+		if (ctx->options & DHCPCD_PRINT_PIDFILE)
+			break;
 		set_option_space(ctx, arg, &d, &dl, &od, &odl, ifo,
 		    &request, &require, &no, &reject);
 		if (make_option_mask(d, dl, od, odl, request, arg, -1) != 0 ||
@@ -1069,6 +1085,8 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case 'Q':
 		ARG_REQUIRED;
+		if (ctx->options & DHCPCD_PRINT_PIDFILE)
+			break;
 		set_option_space(ctx, arg, &d, &dl, &od, &odl, ifo,
 		    &request, &require, &no, &reject);
 		if (make_option_mask(d, dl, od, odl, require, arg, 1) != 0 ||
@@ -1307,6 +1325,8 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 		break;
 	case O_DESTINATION:
 		ARG_REQUIRED;
+		if (ctx->options & DHCPCD_PRINT_PIDFILE)
+			break;
 		set_option_space(ctx, arg, &d, &dl, &od, &odl, ifo,
 		    &request, &require, &no, &reject);
 		if (make_option_mask(d, dl, od, odl,
@@ -1332,7 +1352,7 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 #endif
 	case O_IAID:
 		ARG_REQUIRED;
-		if (!IN_CONFIG_BLOCK(ifo)) {
+		if (ctx->options & DHCPCD_MASTER && !IN_CONFIG_BLOCK(ifo)) {
 			logerrx("IAID must belong in an interface block");
 			return -1;
 		}
@@ -1374,7 +1394,9 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 			logwarnx("%s: IA_PD not compiled in", ifname);
 			return -1;
 #else
-			if (!IN_CONFIG_BLOCK(ifo)) {
+			if (ctx->options & DHCPCD_MASTER &&
+			    !IN_CONFIG_BLOCK(ifo))
+			{
 				logerrx("IA PD must belong in an "
 				    "interface block");
 				return -1;
@@ -1382,7 +1404,9 @@ parse_option(struct dhcpcd_ctx *ctx, const char *ifname, struct if_options *ifo,
 			i = D6_OPTION_IA_PD;
 #endif
 		}
-		if (!IN_CONFIG_BLOCK(ifo) && arg) {
+		if (ctx->options & DHCPCD_MASTER &&
+		    !IN_CONFIG_BLOCK(ifo) && arg)
+		{
 			logerrx("IA with IAID must belong in an "
 			    "interface block");
 			return -1;
@@ -2234,6 +2258,12 @@ invalid_token:
 		}
 #endif
 		break;
+	case O_CONFIGURE:
+		ifo->options |= DHCPCD_CONFIGURE;
+		break;
+	case O_NOCONFIGURE:
+		ifo->options &= ~DHCPCD_CONFIGURE;
+		break;
 	default:
 		return 0;
 	}
@@ -2269,7 +2299,8 @@ parse_config_line(struct dhcpcd_ctx *ctx, const char *ifname,
 		    ldop, edop);
 	}
 
-	logerrx("unknown option: %s", opt);
+	if (!(ctx->options & DHCPCD_PRINT_PIDFILE))
+		logerrx("unknown option: %s", opt);
 	return -1;
 }
 
@@ -2324,6 +2355,8 @@ default_config(struct dhcpcd_ctx *ctx)
 #endif
 
 	/* Inherit some global defaults */
+	if (ctx->options & DHCPCD_CONFIGURE)
+		ifo->options |= DHCPCD_CONFIGURE;
 	if (ctx->options & DHCPCD_PERSISTENT)
 		ifo->options |= DHCPCD_PERSISTENT;
 	if (ctx->options & DHCPCD_SLAACPRIVATE)
@@ -2352,7 +2385,8 @@ read_config(struct dhcpcd_ctx *ctx,
 	if ((ifo = default_config(ctx)) == NULL)
 		return NULL;
 	if (default_options == 0) {
-		default_options |= DHCPCD_DAEMONISE | DHCPCD_GATEWAY;
+		default_options |= DHCPCD_CONFIGURE | DHCPCD_DAEMONISE |
+		    DHCPCD_GATEWAY;
 #ifdef INET
 		skip = socket(PF_INET, SOCK_DGRAM, 0);
 		if (skip != -1) {
