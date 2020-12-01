@@ -1,4 +1,4 @@
-/*	$NetBSD: isakmp_xauth.h,v 1.8 2011/11/15 13:51:23 tteras Exp $	*/
+/*	$NetBSD: isakmp_xauth.h,v 1.10 2020/11/25 18:11:00 bouyer Exp $	*/
 
 /*	$KAME$ */
 
@@ -158,6 +158,9 @@ int xauth_login_radius(struct ph1handle *, char *, char *);
 
 struct xauth_ldap_config {
 	int		pver;
+	int		debug;
+	int		timeout;
+	vchar_t 	*uri;
 	vchar_t 	*host;
 	int		port;
 	int		tls;
