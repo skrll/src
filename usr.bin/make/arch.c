@@ -1,4 +1,4 @@
-/*	$NetBSD: arch.c,v 1.178 2020/11/23 19:02:54 rillig Exp $	*/
+/*	$NetBSD: arch.c,v 1.182 2020/11/29 01:40:26 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -125,12 +125,12 @@
 #include "config.h"
 
 /*	"@(#)arch.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: arch.c,v 1.178 2020/11/23 19:02:54 rillig Exp $");
+MAKE_RCSID("$NetBSD: arch.c,v 1.182 2020/11/29 01:40:26 rillig Exp $");
 
 typedef struct List ArchList;
 typedef struct ListNode ArchListNode;
 
-static ArchList *archives;	/* The archives we've already examined */
+static ArchList archives;	/* The archives we've already examined */
 
 typedef struct Arch {
 	char *name;		/* Name of archive */
@@ -344,11 +344,11 @@ Arch_ParseArchive(char **pp, GNodeList *nodeLst, GNode *ctxt)
 			free(buf);
 
 		} else if (Dir_HasWildcards(memName)) {
-			StringList *members = Lst_New();
-			Dir_Expand(memName, dirSearchPath, members);
+			StringList members = LST_INIT;
+			Dir_Expand(memName, &dirSearchPath, &members);
 
-			while (!Lst_IsEmpty(members)) {
-				char *member = Lst_Dequeue(members);
+			while (!Lst_IsEmpty(&members)) {
+				char *member = Lst_Dequeue(&members);
 				char *fullname = str_concat4(libName, "(",
 							     member, ")");
 				free(member);
@@ -359,7 +359,7 @@ Arch_ParseArchive(char **pp, GNodeList *nodeLst, GNode *ctxt)
 				gn->type |= OP_ARCHV;
 				Lst_Append(nodeLst, gn);
 			}
-			Lst_Free(members);
+			Lst_Done(&members);
 
 		} else {
 			char *fullname = str_concat4(libName, "(", memName,
@@ -426,7 +426,7 @@ ArchStatMember(const char *archive, const char *member, Boolean addToCache)
 	if (lastSlash != NULL)
 		member = lastSlash + 1;
 
-	for (ln = archives->first; ln != NULL; ln = ln->next) {
+	for (ln = archives.first; ln != NULL; ln = ln->next) {
 		const Arch *a = ln->datum;
 		if (strcmp(a->name, archive) == 0)
 			break;
@@ -579,7 +579,7 @@ ArchStatMember(const char *archive, const char *member, Boolean addToCache)
 
 	fclose(arch);
 
-	Lst_Append(archives, ar);
+	Lst_Append(&archives, ar);
 
 	/*
 	 * Now that the archive has been read and cached, we can look into
@@ -925,7 +925,7 @@ Arch_UpdateMemberMTime(GNode *gn)
 {
 	GNodeListNode *ln;
 
-	for (ln = gn->parents->first; ln != NULL; ln = ln->next) {
+	for (ln = gn->parents.first; ln != NULL; ln = ln->next) {
 		GNode *pgn = ln->datum;
 
 		if (pgn->type & OP_ARCHV) {
@@ -1021,9 +1021,9 @@ Arch_LibOODate(GNode *gn)
 
 	if (gn->type & OP_PHONY) {
 		oodate = TRUE;
-	} else if (!GNode_IsTarget(gn) && Lst_IsEmpty(gn->children)) {
+	} else if (!GNode_IsTarget(gn) && Lst_IsEmpty(&gn->children)) {
 		oodate = FALSE;
-	} else if ((!Lst_IsEmpty(gn->children) && gn->youngestChild == NULL) ||
+	} else if ((!Lst_IsEmpty(&gn->children) && gn->youngestChild == NULL) ||
 		   (gn->mtime > now) ||
 		   (gn->youngestChild != NULL &&
 		    gn->mtime < gn->youngestChild->mtime)) {
@@ -1063,7 +1063,7 @@ Arch_LibOODate(GNode *gn)
 void
 Arch_Init(void)
 {
-	archives = Lst_New();
+	Lst_Init(&archives);
 }
 
 /* Clean up the archives module. */
@@ -1071,7 +1071,7 @@ void
 Arch_End(void)
 {
 #ifdef CLEANUP
-	Lst_Destroy(archives, ArchFree);
+	Lst_DoneCall(&archives, ArchFree);
 #endif
 }
 

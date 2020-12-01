@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.162 2020/11/16 21:48:18 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.164 2020/11/29 00:04:22 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -96,6 +96,14 @@ CondEvalResult Cond_EvalLine(const char *);
 void Cond_restore_depth(unsigned int);
 unsigned int Cond_save_depth(void);
 
+/* dir.c; see also dir.h */
+
+MAKE_INLINE SearchPath *
+SearchPath_New(void)
+{ return Lst_New(); }
+
+void SearchPath_Free(SearchPath *);
+
 /* for.c */
 int For_Eval(const char *);
 Boolean For_Accum(const char *);
@@ -145,7 +153,7 @@ void Parse_DoVar(VarAssign *, GNode *);
 void Parse_AddIncludeDir(const char *);
 void Parse_File(const char *, int);
 void Parse_SetInput(const char *, int, int, NextBufProc, void *);
-GNodeList *Parse_MainName(void);
+void Parse_MainName(GNodeList *);
 int Parse_GetFatals(void);
 
 /* str.c */
@@ -196,7 +204,7 @@ GNode *Targ_FindNode(const char *);
 GNode *Targ_GetNode(const char *);
 GNode *Targ_NewInternalNode(const char *);
 GNode *Targ_GetEndNode(void);
-GNodeList *Targ_FindList(StringList *);
+void Targ_FindList(GNodeList *, StringList *);
 Boolean Targ_Ignore(const GNode *);
 Boolean Targ_Silent(const GNode *);
 Boolean Targ_Precious(const GNode *);

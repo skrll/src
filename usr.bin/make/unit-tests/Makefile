@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.226 2020/11/25 00:50:44 sjg Exp $
+# $NetBSD: Makefile,v 1.231 2020/11/30 21:10:15 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -188,6 +188,7 @@ TESTS+=		job-flags
 TESTS+=		job-output-long-lines
 TESTS+=		lint
 TESTS+=		make-exported
+TESTS+=		meta-cmd-cmp
 TESTS+=		moderrs
 TESTS+=		modmatch
 TESTS+=		modmisc
@@ -438,6 +439,9 @@ FLAGS.doterror=		# none, especially not -k
 FLAGS.varname-empty=	-dv '$${:U}=cmdline-u' '=cmdline-plain'
 
 # Some tests need extra postprocessing.
+SED_CMDS.dir=		${:D remove output from -DCLEANUP mode }
+SED_CMDS.dir+=		-e '/^OpenDirs_Done:/d'
+SED_CMDS.dir+=		-e '/^CachedDir /d'
 SED_CMDS.export=	-e '/^[^=_A-Za-z0-9]*=/d'
 SED_CMDS.export-all=	${SED_CMDS.export}
 SED_CMDS.export-env=	${SED_CMDS.export}
@@ -469,9 +473,15 @@ SED_CMDS.var-op-shell+=	\
 	-e 's,^${.SHELL:T}: [ 0-9:]*,,' \
 	-e '/command/s,No such.*,not found,'
 SED_CMDS.vardebug+=	-e 's,${.SHELL},</path/to/shell>,'
+SED_CMDS.varmod-edge+=	-e 's, line [0-9]*:, line omitted:,'
+SED_CMDS.varmod-gmtime+=	-e 's,Tue Jan 19 03:14:08 2038,<normalized>,'
+SED_CMDS.varmod-gmtime+=	${:D FreeBSD i386 still has 32-bit time_t. }
+SED_CMDS.varmod-gmtime+=	-e 's,Fri Dec 13 20:45:52 1901,<normalized>,'
+SED_CMDS.varmod-localtime+=	-e 's,Tue Jan 19 04:14:08 2038,<normalized>,'
+SED_CMDS.varmod-localtime+=	${:D FreeBSD i386 still has 32-bit time_t. }
+SED_CMDS.varmod-localtime+=	-e 's,Fri Dec 13 21:45:52 1901,<normalized>,'
 SED_CMDS.varmod-subst-regex+= \
 			-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
-SED_CMDS.varmod-edge+=	-e 's, line [0-9]*:, line omitted:,'
 SED_CMDS.varname-dot-parsedir=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
 SED_CMDS.varname-dot-parsefile=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
 SED_CMDS.varname-dot-shell=	-e 's, = /[^ ]*, = (details omitted),g'
