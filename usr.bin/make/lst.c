@@ -1,4 +1,4 @@
-/* $NetBSD: lst.c,v 1.93 2020/11/24 19:46:29 rillig Exp $ */
+/* $NetBSD: lst.c,v 1.97 2020/11/29 00:54:43 rillig Exp $ */
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -34,7 +34,7 @@
 
 #include "make.h"
 
-MAKE_RCSID("$NetBSD: lst.c,v 1.93 2020/11/24 19:46:29 rillig Exp $");
+MAKE_RCSID("$NetBSD: lst.c,v 1.97 2020/11/29 00:54:43 rillig Exp $");
 
 static ListNode *
 LstNodeNew(ListNode *prev, ListNode *next, void *datum)
@@ -53,16 +53,12 @@ List *
 Lst_New(void)
 {
 	List *list = bmake_malloc(sizeof *list);
-
-	list->first = NULL;
-	list->last = NULL;
-
+	Lst_Init(list);
 	return list;
 }
 
-/* Free a list and all its nodes. The node data are not freed though. */
 void
-Lst_Free(List *list)
+Lst_Done(List *list)
 {
 	ListNode *ln, *next;
 
@@ -70,14 +66,10 @@ Lst_Free(List *list)
 		next = ln->next;
 		free(ln);
 	}
-
-	free(list);
 }
 
-/* Destroy a list and free all its resources. The freeProc is called with the
- * datum from each node in turn before the node is freed. */
 void
-Lst_Destroy(List *list, LstFreeProc freeProc)
+Lst_DoneCall(List *list, LstFreeProc freeProc)
 {
 	ListNode *ln, *next;
 
@@ -86,7 +78,23 @@ Lst_Destroy(List *list, LstFreeProc freeProc)
 		freeProc(ln->datum);
 		free(ln);
 	}
+}
 
+/* Free a list and all its nodes. The node data are not freed though. */
+void
+Lst_Free(List *list)
+{
+
+	Lst_Done(list);
+	free(list);
+}
+
+/* Destroy a list and free all its resources. The freeProc is called with the
+ * datum from each node in turn before the node is freed. */
+void
+Lst_Destroy(List *list, LstFreeProc freeProc)
+{
+	Lst_DoneCall(list, freeProc);
 	free(list);
 }
 
@@ -198,22 +206,8 @@ Lst_FindDatum(List *list, const void *datum)
 	return NULL;
 }
 
-int
-Lst_ForEachUntil(List *list, LstActionUntilProc proc, void *procData)
-{
-	ListNode *ln;
-	int result = 0;
-
-	for (ln = list->first; ln != NULL; ln = ln->next) {
-		result = proc(ln->datum, procData);
-		if (result != 0)
-			break;
-	}
-	return result;
-}
-
 /* Move all nodes from src to the end of dst.
- * The source list is destroyed and freed. */
+ * The source list becomes empty but is not freed. */
 void
 Lst_MoveAll(List *dst, List *src)
 {
@@ -226,7 +220,6 @@ Lst_MoveAll(List *dst, List *src)
 
 		dst->last = src->last;
 	}
-	free(src);
 }
 
 /* Copy the element data from src to the start of dst. */

@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_machdep.c,v 1.79 2020/11/24 06:36:36 skrll Exp $ */
+/* $NetBSD: fdt_machdep.c,v 1.82 2020/11/28 22:16:23 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.79 2020/11/24 06:36:36 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.82 2020/11/28 22:16:23 riastradh Exp $");
 
 #include "opt_machdep.h"
 #include "opt_bootconfig.h"
@@ -492,7 +492,43 @@ fdt_setup_efirng(void)
 
 	rnd_attach_source(&efirng_source, "efirng", RND_TYPE_RNG,
 	    RND_FLAG_DEFAULT);
-	rnd_add_data(&efirng_source, efirng, efirng_size, 0);
+
+	/*
+	 * We don't really have specific information about the physical
+	 * process underlying the data provided by the firmware via the
+	 * EFI RNG API, so the entropy estimate here is heuristic.
+	 * What efiboot provides us is up to 4096 bytes of data from
+	 * the EFI RNG API, although in principle it may return short.
+	 *
+	 * The UEFI Specification (2.8 Errata A, February 2020[1]) says
+	 *
+	 *	When a Deterministic Random Bit Generator (DRBG) is
+	 *	used on the output of a (raw) entropy source, its
+	 *	security level must be at least 256 bits.
+	 *
+	 * It's not entirely clear whether `it' refers to the DRBG or
+	 * the entropy source; if it refers to the DRBG, it's not
+	 * entirely clear how ANSI X9.31 3DES, one of the options for
+	 * DRBG in the UEFI spec, can provide a `256-bit security
+	 * level' because it has only 232 bits of inputs (three 56-bit
+	 * keys and one 64-bit block).  That said, even if it provides
+	 * only 232 bits of entropy, that's enough to prevent all
+	 * attacks and we probably get a few more bits from sampling
+	 * the clock anyway.
+	 *
+	 * In the event we get raw samples, e.g. the bits sampled by a
+	 * ring oscillator, we hope that the samples have at least half
+	 * a bit of entropy per bit of data -- and efiboot tries to
+	 * draw 4096 bytes to provide plenty of slop.  Hence we divide
+	 * the total number of bits by two and clamp at 256.  There are
+	 * ways this could go wrong, but on most machines it should
+	 * behave reasonably.
+	 *
+	 * [1] https://uefi.org/sites/default/files/resources/UEFI_Spec_2_8_A_Feb14.pdf
+	 */
+	rnd_add_data(&efirng_source, efirng, efirng_size,
+	    MIN(256, efirng_size*NBBY/2));
+
 	explicit_memset(efirng, 0, efirng_size);
 	fdt_unmap_range(efirng, efirng_size);
 }
@@ -623,10 +659,10 @@ initarm(void *arg)
 	fdt_get_memory(&memory_start, &memory_end);
 
 #if !defined(_LP64)
-	/* Cannot map memory above 4GB */
-	if (memory_end >= 0x100000000ULL)
-		memory_end = 0x100000000ULL - PAGE_SIZE;
-
+	/* Cannot map memory above 4GB (remove last page as well) */
+	const uint64_t memory_limit = 0x100000000ULL - PAGE_SIZE;
+	if (memory_end > memory_limit)
+		memory_end = memory_limit;
 #endif
 	uint64_t memory_size = memory_end - memory_start;
 
@@ -641,8 +677,7 @@ initarm(void *arg)
 	fdt_probe_efirng(&efirng_start, &efirng_end);
 
 	/*
-	 * Populate bootconfig structure for the benefit of
-	 * dodumpsys
+	 * Populate bootconfig structure for the benefit of dodumpsys
 	 */
 	VPRINTF("%s: fdt_build_bootconfig\n", __func__);
 	fdt_build_bootconfig(memory_start, memory_end);
