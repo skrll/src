@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.219 2020/11/24 20:17:17 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.230 2020/11/29 09:27:40 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -102,25 +102,25 @@
 #endif
 
 #if defined(__GNUC__)
-#define	MAKE_GNUC_PREREQ(x, y)						\
+#define MAKE_GNUC_PREREQ(x, y)						\
 	((__GNUC__ == (x) && __GNUC_MINOR__ >= (y)) ||			\
 	 (__GNUC__ > (x)))
 #else /* defined(__GNUC__) */
-#define	MAKE_GNUC_PREREQ(x, y)	0
+#define MAKE_GNUC_PREREQ(x, y)	0
 #endif /* defined(__GNUC__) */
 
 #if MAKE_GNUC_PREREQ(2, 7)
-#define	MAKE_ATTR_UNUSED	__attribute__((__unused__))
+#define MAKE_ATTR_UNUSED	__attribute__((__unused__))
 #else
-#define	MAKE_ATTR_UNUSED	/* delete */
+#define MAKE_ATTR_UNUSED	/* delete */
 #endif
 
 #if MAKE_GNUC_PREREQ(2, 5)
-#define	MAKE_ATTR_DEAD		__attribute__((__noreturn__))
+#define MAKE_ATTR_DEAD		__attribute__((__noreturn__))
 #elif defined(__GNUC__)
-#define	MAKE_ATTR_DEAD		__volatile
+#define MAKE_ATTR_DEAD		__volatile
 #else
-#define	MAKE_ATTR_DEAD		/* delete */
+#define MAKE_ATTR_DEAD		/* delete */
 #endif
 
 #if MAKE_GNUC_PREREQ(2, 7)
@@ -383,25 +383,25 @@ typedef struct GNode {
 	/* The GNodes for which this node is an implied source. May be empty.
 	 * For example, when there is an inference rule for .c.o, the node for
 	 * file.c has the node for file.o in this list. */
-	GNodeList *implicitParents;
+	GNodeList implicitParents;
 
 	/* The nodes that depend on this one, or in other words, the nodes for
 	 * which this is a source. */
-	GNodeList *parents;
+	GNodeList parents;
 	/* The nodes on which this one depends. */
-	GNodeList *children;
+	GNodeList children;
 
 	/* .ORDER nodes we need made. The nodes that must be made (if they're
 	 * made) before this node can be made, but that do not enter into the
 	 * datedness of this node. */
-	GNodeList *order_pred;
+	GNodeList order_pred;
 	/* .ORDER nodes who need us. The nodes that must be made (if they're
 	 * made at all) after this node is made, but that do not depend on
 	 * this node, in the normal sense. */
-	GNodeList *order_succ;
+	GNodeList order_succ;
 
 	/* Other nodes of the same name, for the '::' dependency operator. */
-	GNodeList *cohorts;
+	GNodeList cohorts;
 	/* The "#n" suffix for this cohort, or "" for other nodes */
 	char cohort_num[8];
 	/* The number of unmade instances on the cohorts list */
@@ -421,7 +421,7 @@ typedef struct GNode {
 	HashTable /* of Var pointer */ vars;
 
 	/* The commands to be given to a shell to create this target. */
-	StringList *commands;
+	StringList commands;
 
 	/* Suffix for the node (determined by Suff_FindDeps and opaque to
 	 * everyone but the Suff module) */
@@ -508,7 +508,7 @@ extern Boolean preserveUndefined;
 
 /* The list of directories to search when looking for targets (set by the
  * special target .PATH). */
-extern SearchPath *dirSearchPath;
+extern SearchPath dirSearchPath;
 /* Used for .include "...". */
 extern SearchPath *parseIncPath;
 /* Used for .include <...>, for the built-in sys.mk and makefiles from the
@@ -635,7 +635,7 @@ typedef struct CmdOpts {
 	Boolean checkEnvFirst;
 
 	/* -f: the makefiles to read */
-	StringList *makefiles;
+	StringList makefiles;
 
 	/* -i: if true, ignore all errors from shell commands */
 	Boolean ignoreErrors;
@@ -671,7 +671,7 @@ typedef struct CmdOpts {
 	/* -[Vv]: print expanded or unexpanded selected variables */
 	PrintVarsMode printVars;
 	/* -[Vv]: the variables to print */
-	StringList *variables;
+	StringList variables;
 
 	/* -W: if true, makefile parsing warnings are treated as errors */
 	Boolean parseWarnFatal;
@@ -685,7 +685,7 @@ typedef struct CmdOpts {
 
 	/* The target names specified on the command line.
 	 * Used to resolve .if make(...) statements. */
-	StringList *create;
+	StringList create;
 
 } CmdOpts;
 
@@ -835,6 +835,14 @@ pp_skip_hspace(char **pp)
 #  include <sys/cdefs.h>
 #  ifndef lint
 #    define MAKE_RCSID(id) __RCSID(id)
+#  endif
+#elif defined(MAKE_ALL_IN_ONE)
+#  if defined(__COUNTER__)
+#    define MAKE_RCSID_CONCAT(x, y) CONCAT(x, y)
+#    define MAKE_RCSID(id) static volatile char \
+	MAKE_RCSID_CONCAT(rcsid_, __COUNTER__)[] = id
+#  else
+#    define MAKE_RCSID(id) extern void do_not_define_rcsid(void)
 #  endif
 #else
 #  define MAKE_RCSID(id) static volatile char rcsid[] = id
