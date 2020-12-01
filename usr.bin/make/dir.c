@@ -1,4 +1,4 @@
-/*	$NetBSD: dir.c,v 1.222 2020/11/23 23:41:11 rillig Exp $	*/
+/*	$NetBSD: dir.c,v 1.245 2020/11/30 20:25:37 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -106,7 +106,8 @@
  *
  *	Dir_AddDir	Add a directory to a search path.
  *
- *	Dir_MakeFlags	Given a search path and a command flag, create
+ *	SearchPath_ToFlags
+ *			Given a search path and a command flag, create
  *			a string with each of the directories in the path
  *			preceded by the command flag and all of them
  *			separated by a space.
@@ -116,7 +117,8 @@
  *			as the element is no longer referenced by any other
  *			search path.
  *
- *	Dir_ClearPath	Resets a search path to the empty list.
+ *	SearchPath_Clear
+ *			Resets a search path to the empty list.
  *
  * For debugging:
  *	Dir_PrintDirectories
@@ -134,7 +136,7 @@
 #include "job.h"
 
 /*	"@(#)dir.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: dir.c,v 1.222 2020/11/23 23:41:11 rillig Exp $");
+MAKE_RCSID("$NetBSD: dir.c,v 1.245 2020/11/30 20:25:37 rillig Exp $");
 
 #define DIR_DEBUG0(text) DEBUG0(DIR, text)
 #define DIR_DEBUG1(fmt, arg1) DEBUG1(DIR, fmt, arg1)
@@ -207,23 +209,158 @@ MAKE_RCSID("$NetBSD: dir.c,v 1.222 2020/11/23 23:41:11 rillig Exp $");
  * the mtime in a cache for when Dir_UpdateMTime was actually called.
  */
 
+
+/* A cache for the filenames in a directory. */
+struct CachedDir {
+	/*
+	 * Name of directory, either absolute or relative to the current
+	 * directory. The name is not normalized in any way, that is, "."
+	 * and "./." are different.
+	 *
+	 * Not sure what happens when .CURDIR is assigned a new value; see
+	 * Parse_DoVar.
+	 */
+	char *name;
+
+	/*
+	 * The number of SearchPaths that refer to this directory.
+	 * Plus the number of global variables that refer to this directory.
+	 * References from openDirs do not count though.
+	 */
+	int refCount;
+
+	/* The number of times a file in this directory has been found. */
+	int hits;
+
+	/* The names of the directory entries. */
+	HashSet files;
+};
+
 typedef List CachedDirList;
 typedef ListNode CachedDirListNode;
 
 typedef ListNode SearchPathNode;
 
-SearchPath *dirSearchPath;	/* main search path */
-
 /* A list of cached directories, with fast lookup by directory name. */
 typedef struct OpenDirs {
-	CachedDirList *list;
+	CachedDirList list;
 	HashTable /* of CachedDirListNode */ table;
 } OpenDirs;
+
+typedef enum CachedStatsFlags {
+	CST_NONE	= 0,
+	CST_LSTAT	= 1 << 0,	/* call lstat(2) instead of stat(2) */
+	CST_UPDATE	= 1 << 1	/* ignore existing cached entry */
+} CachedStatsFlags;
+
+
+SearchPath dirSearchPath = LST_INIT;	/* main search path */
+
+static OpenDirs openDirs;	/* all cached directories */
+
+/*
+ * Variables for gathering statistics on the efficiency of the caching
+ * mechanism.
+ */
+static int hits;		/* Found in directory cache */
+static int misses;		/* Sad, but not evil misses */
+static int nearmisses;		/* Found under search path */
+static int bigmisses;		/* Sought by itself */
+
+/* The cached contents of ".", the relative current directory. */
+static CachedDir *dot = NULL;
+/* The cached contents of the absolute current directory. */
+static CachedDir *cur = NULL;
+/* A fake path entry indicating we need to look for '.' last. */
+static CachedDir *dotLast = NULL;
+
+/* Results of doing a last-resort stat in Dir_FindFile -- if we have to go to
+ * the system to find the file, we might as well have its mtime on record.
+ *
+ * XXX: If this is done way early, there's a chance other rules will have
+ * already updated the file, in which case we'll update it again. Generally,
+ * there won't be two rules to update a single file, so this should be ok,
+ * but... */
+static HashTable mtimes;
+
+static HashTable lmtimes;	/* same as mtimes but for lstat */
+
+
+static void OpenDirs_Remove(OpenDirs *, const char *);
+
+
+static CachedDir *
+CachedDir_New(const char *name)
+{
+	CachedDir *dir = bmake_malloc(sizeof *dir);
+
+	dir->name = bmake_strdup(name);
+	dir->refCount = 0;
+	dir->hits = 0;
+	HashSet_Init(&dir->files);
+
+#ifdef DEBUG_REFCNT
+	DEBUG2(DIR, "CachedDir %p new  for \"%s\"\n", dir, dir->name);
+#endif
+
+	return dir;
+}
+
+static CachedDir *
+CachedDir_Ref(CachedDir *dir)
+{
+	dir->refCount++;
+
+#ifdef DEBUG_REFCNT
+	DEBUG3(DIR, "CachedDir %p ++ %d for \"%s\"\n",
+	    dir, dir->refCount, dir->name);
+#endif
+
+	return dir;
+}
+
+static void
+CachedDir_Unref(CachedDir *dir)
+{
+	dir->refCount--;
+
+#ifdef DEBUG_REFCNT
+	DEBUG3(DIR, "CachedDir %p -- %d for \"%s\"\n",
+	    dir, dir->refCount, dir->name);
+#endif
+
+	if (dir->refCount > 0)
+		return;
+
+#ifdef DEBUG_REFCNT
+	DEBUG2(DIR, "CachedDir %p free for \"%s\"\n", dir, dir->name);
+#endif
+
+	OpenDirs_Remove(&openDirs, dir->name);
+
+	free(dir->name);
+	HashSet_Done(&dir->files);
+	free(dir);
+}
+
+/* Update the value of the CachedDir variable, updating the reference counts. */
+static void
+CachedDir_Assign(CachedDir **var, CachedDir *dir)
+{
+	CachedDir *prev;
+
+	prev = *var;
+	*var = dir;
+	if (dir != NULL)
+		CachedDir_Ref(dir);
+	if (prev != NULL)
+		CachedDir_Unref(prev);
+}
 
 static void
 OpenDirs_Init(OpenDirs *odirs)
 {
-	odirs->list = Lst_New();
+	Lst_Init(&odirs->list);
 	HashTable_Init(&odirs->table);
 }
 
@@ -231,14 +368,18 @@ OpenDirs_Init(OpenDirs *odirs)
 static void
 OpenDirs_Done(OpenDirs *odirs)
 {
-	CachedDirListNode *ln = odirs->list->first;
+	CachedDirListNode *ln = odirs->list.first;
+	DIR_DEBUG1("OpenDirs_Done: %u entries to remove\n",
+	    odirs->table.numEntries);
 	while (ln != NULL) {
 		CachedDirListNode *next = ln->next;
 		CachedDir *dir = ln->datum;
-		Dir_Destroy(dir);	/* removes the dir from odirs->list */
+		DIR_DEBUG2("OpenDirs_Done: refCount %d for \"%s\"\n",
+		    dir->refCount, dir->name);
+		CachedDir_Unref(dir);	/* removes the dir from odirs->list */
 		ln = next;
 	}
-	Lst_Free(odirs->list);
+	Lst_Done(&odirs->list);
 	HashTable_Done(&odirs->table);
 }
 #endif
@@ -255,8 +396,8 @@ OpenDirs_Add(OpenDirs *odirs, CachedDir *cdir)
 {
 	if (HashTable_FindEntry(&odirs->table, cdir->name) != NULL)
 		return;
-	Lst_Append(odirs->list, cdir);
-	HashTable_Set(&odirs->table, cdir->name, odirs->list->last);
+	Lst_Append(&odirs->list, cdir);
+	HashTable_Set(&odirs->table, cdir->name, odirs->list.last);
 }
 
 static void
@@ -268,41 +409,8 @@ OpenDirs_Remove(OpenDirs *odirs, const char *name)
 		return;
 	ln = HashEntry_Get(he);
 	HashTable_DeleteEntry(&odirs->table, he);
-	Lst_Remove(odirs->list, ln);
+	Lst_Remove(&odirs->list, ln);
 }
-
-static OpenDirs openDirs;	/* all cached directories */
-
-/*
- * Variables for gathering statistics on the efficiency of the caching
- * mechanism.
- */
-static int hits;		/* Found in directory cache */
-static int misses;		/* Sad, but not evil misses */
-static int nearmisses;		/* Found under search path */
-static int bigmisses;		/* Sought by itself */
-
-static CachedDir *dot;		/* contents of current directory */
-static CachedDir *cur;		/* contents of current directory, if not dot */
-static CachedDir *dotLast;	/* a fake path entry indicating we need to
-				 * look for . last */
-
-/* Results of doing a last-resort stat in Dir_FindFile -- if we have to go to
- * the system to find the file, we might as well have its mtime on record.
- *
- * XXX: If this is done way early, there's a chance other rules will have
- * already updated the file, in which case we'll update it again. Generally,
- * there won't be two rules to update a single file, so this should be ok,
- * but... */
-static HashTable mtimes;
-
-static HashTable lmtimes;	/* same as mtimes but for lstat */
-
-typedef enum CachedStatsFlags {
-	CST_NONE	= 0,
-	CST_LSTAT	= 1 << 0,	/* call lstat(2) instead of stat(2) */
-	CST_UPDATE	= 1 << 1	/* ignore existing cached entry */
-} CachedStatsFlags;
 
 /* Returns 0 and the result of stat(2) or lstat(2) in *out_cst,
  * or -1 on error. */
@@ -364,7 +472,6 @@ cached_lstat(const char *pathname, struct cached_stat *cst)
 void
 Dir_Init(void)
 {
-	dirSearchPath = Lst_New();
 	OpenDirs_Init(&openDirs);
 	HashTable_Init(&mtimes);
 	HashTable_Init(&lmtimes);
@@ -375,11 +482,7 @@ Dir_InitDir(const char *cdname)
 {
 	Dir_InitCur(cdname);
 
-	dotLast = bmake_malloc(sizeof *dotLast);
-	dotLast->refCount = 1;
-	dotLast->hits = 0;
-	dotLast->name = bmake_strdup(".DOTLAST");
-	HashSet_Init(&dotLast->files);
+	CachedDir_Assign(&dotLast, CachedDir_New(".DOTLAST"));
 }
 
 /*
@@ -401,44 +504,24 @@ Dir_InitCur(const char *cdname)
 	if (dir == NULL)
 		return;
 
-	/* XXX: Reference counting is wrong here.
-	 * If this function is called repeatedly with the same directory name,
-	 * its reference count increases each time even though the number of
-	 * actual references stays the same. */
-
-	dir->refCount++;
-	if (cur != NULL && cur != dir) {
-		/*
-		 * We've been here before, clean up.
-		 */
-		cur->refCount--;
-		Dir_Destroy(cur);
-	}
-	cur = dir;
+	CachedDir_Assign(&cur, dir);
 }
 
 /* (Re)initialize "dot" (current/object directory) path hash.
- * Some directories may be opened. */
+ * Some directories may be cached. */
 void
 Dir_InitDot(void)
 {
-	if (dot != NULL) {
-		/* Remove old entry from openDirs, but do not destroy. */
-		OpenDirs_Remove(&openDirs, dot->name);
-	}
+	CachedDir *dir;
 
-	dot = Dir_AddDir(NULL, ".");
-
-	if (dot == NULL) {
+	dir = Dir_AddDir(NULL, ".");
+	if (dir == NULL) {
 		Error("Cannot open `.' (%s)", strerror(errno));
 		exit(1);
 	}
 
-	/*
-	 * We always need to have dot around, so we increment its reference
-	 * count to make sure it's not destroyed.
-	 */
-	dot->refCount++;
+	CachedDir_Assign(&dot, dir);
+
 	Dir_SetPATH();		/* initialize */
 }
 
@@ -447,18 +530,13 @@ void
 Dir_End(void)
 {
 #ifdef CLEANUP
-	if (cur != NULL) {
-		cur->refCount--;
-		Dir_Destroy(cur);
-	}
-	dot->refCount--;
-	dotLast->refCount--;
-	Dir_Destroy(dotLast);
-	Dir_Destroy(dot);
-	Dir_ClearPath(dirSearchPath);
-	Lst_Free(dirSearchPath);
+	CachedDir_Assign(&cur, NULL);
+	CachedDir_Assign(&dot, NULL);
+	CachedDir_Assign(&dotLast, NULL);
+	SearchPath_Clear(&dirSearchPath);
 	OpenDirs_Done(&openDirs);
 	HashTable_Done(&mtimes);
+	HashTable_Done(&lmtimes);
 #endif
 }
 
@@ -475,7 +553,7 @@ Dir_SetPATH(void)
 
 	Var_Delete(".PATH", VAR_GLOBAL);
 
-	if ((ln = dirSearchPath->first) != NULL) {
+	if ((ln = dirSearchPath.first) != NULL) {
 		CachedDir *dir = ln->datum;
 		if (dir == dotLast) {
 			hasLastDot = TRUE;
@@ -490,7 +568,7 @@ Dir_SetPATH(void)
 			Var_Append(".PATH", cur->name, VAR_GLOBAL);
 	}
 
-	for (ln = dirSearchPath->first; ln != NULL; ln = ln->next) {
+	for (ln = dirSearchPath.first; ln != NULL; ln = ln->next) {
 		CachedDir *dir = ln->datum;
 		if (dir == dotLast)
 			continue;
@@ -852,10 +930,10 @@ Dir_Expand(const char *word, SearchPath *path, StringList *expansions)
 			if (*end == '/')
 				*end = '\0';
 
-			partPath = Lst_New();
+			partPath = SearchPath_New();
 			(void)Dir_AddDir(partPath, dirpath);
 			DirExpandPath(cp + 1, partPath, expansions);
-			Lst_Free(partPath);
+			SearchPath_Free(partPath);
 		}
 	}
 
@@ -981,24 +1059,14 @@ char *
 Dir_FindFile(const char *name, SearchPath *path)
 {
 	char *file;		/* the current filename to check */
-	const char *base;	/* Terminal name of file */
-	Boolean hasLastDot = FALSE; /* true if we should search dot last */
-	Boolean hasSlash;	/* true if 'name' contains a / */
+	const char *lastSlash;	/* the last slash in name */
+	const char *base;	/* basename(name) */
+	Boolean seenDotLast = FALSE; /* true if we should search dot last */
 	struct cached_stat cst;	/* Buffer for stat, if necessary */
 	const char *trailing_dot = ".";
 
-	/*
-	 * Find the final component of the name and note whether it has a
-	 * slash in it (the name, I mean)
-	 */
-	base = strrchr(name, '/');
-	if (base != NULL) {
-		hasSlash = TRUE;
-		base++;
-	} else {
-		hasSlash = FALSE;
-		base = name;
-	}
+	lastSlash = strrchr(name, '/');
+	base = lastSlash != NULL ? lastSlash + 1 : name;
 
 	DIR_DEBUG1("Searching for %s ...", name);
 
@@ -1011,7 +1079,7 @@ Dir_FindFile(const char *name, SearchPath *path)
 	if (path->first != NULL) {
 		CachedDir *dir = path->first->datum;
 		if (dir == dotLast) {
-			hasLastDot = TRUE;
+			seenDotLast = TRUE;
 			DIR_DEBUG0("[dot last]...");
 		}
 	}
@@ -1022,7 +1090,7 @@ Dir_FindFile(const char *name, SearchPath *path)
 	 * directory component is exactly `./', consult the cached contents
 	 * of each of the directories on the search path.
 	 */
-	if (!hasSlash || (base - name == 2 && *name == '.')) {
+	if (lastSlash == NULL || (base - name == 2 && *name == '.')) {
 		SearchPathNode *ln;
 
 		/*
@@ -1039,7 +1107,7 @@ Dir_FindFile(const char *name, SearchPath *path)
 		 * This is so there are no conflicts between what the user
 		 * specifies (fish.c) and what pmake finds (./fish.c).
 		 */
-		if (!hasLastDot && (file = DirFindDot(name, base)) != NULL)
+		if (!seenDotLast && (file = DirFindDot(name, base)) != NULL)
 			return file;
 
 		for (ln = path->first; ln != NULL; ln = ln->next) {
@@ -1050,7 +1118,7 @@ Dir_FindFile(const char *name, SearchPath *path)
 				return file;
 		}
 
-		if (hasLastDot && (file = DirFindDot(name, base)) != NULL)
+		if (seenDotLast && (file = DirFindDot(name, base)) != NULL)
 			return file;
 	}
 
@@ -1068,7 +1136,7 @@ Dir_FindFile(const char *name, SearchPath *path)
 	 * end).]
 	 * This phase is only performed if the file is *not* absolute.
 	 */
-	if (!hasSlash) {
+	if (lastSlash == NULL) {
 		DIR_DEBUG0("   failed.\n");
 		misses++;
 		return NULL;
@@ -1085,7 +1153,7 @@ Dir_FindFile(const char *name, SearchPath *path)
 
 		DIR_DEBUG0("   Trying subdirectories...\n");
 
-		if (!hasLastDot) {
+		if (!seenDotLast) {
 			if (dot != NULL) {
 				checkedDot = TRUE;
 				if ((file = DirLookupSubdir(dot, name)) != NULL)
@@ -1108,7 +1176,7 @@ Dir_FindFile(const char *name, SearchPath *path)
 				return file;
 		}
 
-		if (hasLastDot) {
+		if (seenDotLast) {
 			if (dot && !checkedDot) {
 				checkedDot = TRUE;
 				if ((file = DirLookupSubdir(dot, name)) != NULL)
@@ -1142,7 +1210,7 @@ Dir_FindFile(const char *name, SearchPath *path)
 		 */
 		DIR_DEBUG0("   Trying exact path matches...\n");
 
-		if (!hasLastDot && cur &&
+		if (!seenDotLast && cur &&
 		    ((file = DirLookupAbs(cur, name, base)) != NULL)) {
 			if (file[0] == '\0') {
 				free(file);
@@ -1164,7 +1232,7 @@ Dir_FindFile(const char *name, SearchPath *path)
 			}
 		}
 
-		if (hasLastDot && cur &&
+		if (seenDotLast && cur &&
 		    ((file = DirLookupAbs(cur, name, base)) != NULL)) {
 			if (file[0] == '\0') {
 				free(file);
@@ -1337,7 +1405,7 @@ ResolveFullName(GNode *gn)
 		fullName = Dir_FindFile(gn->name, Suff_FindPath(gn));
 
 		if (fullName == NULL && gn->flags & FROM_DEPEND &&
-		    !Lst_IsEmpty(gn->implicitParents))
+		    !Lst_IsEmpty(&gn->implicitParents))
 			fullName = ResolveMovedDepends(gn);
 
 		DIR_DEBUG2("Found '%s' as '%s'\n",
@@ -1392,6 +1460,50 @@ Dir_UpdateMTime(GNode *gn, Boolean recheck)
 	gn->mtime = cst.cst_mtime;
 }
 
+/*
+ * Read the directory and add it to the cache in openDirs.
+ * If a path is given, add the directory to that path as well.
+ */
+static CachedDir *
+CacheNewDir(const char *name, SearchPath *path)
+{
+	CachedDir *dir = NULL;
+	DIR *d;
+	struct dirent *dp;
+
+	if ((d = opendir(name)) == NULL) {
+		DIR_DEBUG1("Caching %s ... not found\n", name);
+		return dir;
+	}
+
+	DIR_DEBUG1("Caching %s ...\n", name);
+
+	dir = CachedDir_New(name);
+
+	while ((dp = readdir(d)) != NULL) {
+
+#if defined(sun) && defined(d_ino) /* d_ino is a sunos4 #define for d_fileno */
+		/*
+		 * The sun directory library doesn't check for a 0 inode
+		 * (0-inode slots just take up space), so we have to do
+		 * it ourselves.
+		 */
+		if (dp->d_fileno == 0)
+			continue;
+#endif /* sun && d_ino */
+
+		(void)HashSet_Add(&dir->files, dp->d_name);
+	}
+	(void)closedir(d);
+
+	OpenDirs_Add(&openDirs, dir);
+	if (path != NULL)
+		Lst_Append(path, CachedDir_Ref(dir));
+
+	DIR_DEBUG1("Caching %s done\n", name);
+	return dir;
+}
+
 /* Read the list of filenames in the directory and store the result
  * in openDirs.
  *
@@ -1402,17 +1514,16 @@ Dir_UpdateMTime(GNode *gn, Boolean recheck)
  *			added, or NULL to only add the directory to openDirs
  *	name		The name of the directory to add.
  *			The name is not normalized in any way.
+ * Output:
+ *	result		If no path is given and the directory exists, the
+ *			returned CachedDir has a reference count of 0.  It
+ *			must either be assigned to a variable using
+ *			CachedDir_Assign or be appended to a SearchPath using
+ *			Lst_Append and CachedDir_Ref.
  */
 CachedDir *
 Dir_AddDir(SearchPath *path, const char *name)
-/*
- * XXX: Maybe return const CachedDir, as a hint that the return value must
- * not be freed since it is owned by openDirs.
- */
 {
-	CachedDir *dir = NULL;	/* the added directory */
-	DIR *d;
-	struct dirent *dp;
 
 	if (path != NULL && strcmp(name, ".DOTLAST") == 0) {
 		SearchPathNode *ln;
@@ -1424,48 +1535,20 @@ Dir_AddDir(SearchPath *path, const char *name)
 				return pathDir;
 		}
 
-		dotLast->refCount++;
-		Lst_Prepend(path, dotLast);
+		Lst_Prepend(path, CachedDir_Ref(dotLast));
 	}
 
-	if (path != NULL)
-		dir = OpenDirs_Find(&openDirs, name);
-	if (dir != NULL) {
-		if (Lst_FindDatum(path, dir) == NULL) {
-			dir->refCount++;
-			Lst_Append(path, dir);
+	if (path != NULL) {
+		/* XXX: Why is OpenDirs only checked if path != NULL? */
+		CachedDir *dir = OpenDirs_Find(&openDirs, name);
+		if (dir != NULL) {
+			if (Lst_FindDatum(path, dir) == NULL)
+				Lst_Append(path, CachedDir_Ref(dir));
+			return dir;
 		}
-		return dir;
 	}
 
-	DIR_DEBUG1("Caching %s ...", name);
-
-	if ((d = opendir(name)) != NULL) {
-		dir = bmake_malloc(sizeof *dir);
-		dir->name = bmake_strdup(name);
-		dir->hits = 0;
-		dir->refCount = 1;
-		HashSet_Init(&dir->files);
-
-		while ((dp = readdir(d)) != NULL) {
-#if defined(sun) && defined(d_ino) /* d_ino is a sunos4 #define for d_fileno */
-			/*
-			 * The sun directory library doesn't check for a 0 inode
-			 * (0-inode slots just take up space), so we have to do
-			 * it ourselves.
-			 */
-			if (dp->d_fileno == 0)
-				continue;
-#endif /* sun && d_ino */
-			(void)HashSet_Add(&dir->files, dp->d_name);
-		}
-		(void)closedir(d);
-		OpenDirs_Add(&openDirs, dir);
-		if (path != NULL)
-			Lst_Append(path, dir);
-	}
-	DIR_DEBUG0("done\n");
-	return dir;
+	return CacheNewDir(name, path);
 }
 
 /* Return a copy of dirSearchPath, incrementing the reference counts for
@@ -1473,19 +1556,18 @@ Dir_AddDir(SearchPath *path, const char *name)
 SearchPath *
 Dir_CopyDirSearchPath(void)
 {
-	SearchPath *path = Lst_New();
+	SearchPath *path = SearchPath_New();
 	SearchPathNode *ln;
-	for (ln = dirSearchPath->first; ln != NULL; ln = ln->next) {
+	for (ln = dirSearchPath.first; ln != NULL; ln = ln->next) {
 		CachedDir *dir = ln->datum;
-		dir->refCount++;
-		Lst_Append(path, dir);
+		Lst_Append(path, CachedDir_Ref(dir));
 	}
 	return path;
 }
 
 /*-
  *-----------------------------------------------------------------------
- * Dir_MakeFlags --
+ * SearchPath_ToFlags --
  *	Make a string by taking all the directories in the given search
  *	path and preceding them by the given flag. Used by the suffix
  *	module to create variables for compilers based on suffix search
@@ -1505,7 +1587,7 @@ Dir_CopyDirSearchPath(void)
  *-----------------------------------------------------------------------
  */
 char *
-Dir_MakeFlags(const char *flag, SearchPath *path)
+SearchPath_ToFlags(const char *flag, SearchPath *path)
 {
 	Buffer buf;
 	SearchPathNode *ln;
@@ -1524,35 +1606,27 @@ Dir_MakeFlags(const char *flag, SearchPath *path)
 	return Buf_Destroy(&buf, FALSE);
 }
 
-/* Nuke a directory descriptor, if possible. Callback procedure for the
- * suffixes module when destroying a search path.
- *
- * Input:
- *	dirp		The directory descriptor to nuke
- */
+/* Free the search path and all directories mentioned in it. */
 void
-Dir_Destroy(void *dirp)
+SearchPath_Free(SearchPath *path)
 {
-	CachedDir *dir = dirp;
-	dir->refCount--;
+	SearchPathNode *ln;
 
-	if (dir->refCount == 0) {
-		OpenDirs_Remove(&openDirs, dir->name);
-
-		HashSet_Done(&dir->files);
-		free(dir->name);
-		free(dir);
+	for (ln = path->first; ln != NULL; ln = ln->next) {
+		CachedDir *dir = ln->datum;
+		CachedDir_Unref(dir);
 	}
+	Lst_Free(path);
 }
 
 /* Clear out all elements from the given search path.
  * The path is set to the empty list but is not destroyed. */
 void
-Dir_ClearPath(SearchPath *path)
+SearchPath_Clear(SearchPath *path)
 {
 	while (!Lst_IsEmpty(path)) {
 		CachedDir *dir = Lst_Dequeue(path);
-		Dir_Destroy(dir);
+		CachedDir_Unref(dir);
 	}
 }
 
@@ -1560,16 +1634,14 @@ Dir_ClearPath(SearchPath *path)
 /* Concatenate two paths, adding the second to the end of the first,
  * skipping duplicates. */
 void
-Dir_Concat(SearchPath *dst, SearchPath *src)
+SearchPath_AddAll(SearchPath *dst, SearchPath *src)
 {
 	SearchPathNode *ln;
 
 	for (ln = src->first; ln != NULL; ln = ln->next) {
 		CachedDir *dir = ln->datum;
-		if (Lst_FindDatum(dst, dir) == NULL) {
-			dir->refCount++;
-			Lst_Append(dst, dir);
-		}
+		if (Lst_FindDatum(dst, dir) == NULL)
+			Lst_Append(dst, CachedDir_Ref(dir));
 	}
 }
 
@@ -1592,7 +1664,7 @@ Dir_PrintDirectories(void)
 	    percentage(hits, hits + bigmisses + nearmisses));
 	debug_printf("# %-20s referenced\thits\n", "directory");
 
-	for (ln = openDirs.list->first; ln != NULL; ln = ln->next) {
+	for (ln = openDirs.list.first; ln != NULL; ln = ln->next) {
 		CachedDir *dir = ln->datum;
 		debug_printf("# %-20s %10d\t%4d\n",
 			     dir->name, dir->refCount, dir->hits);
@@ -1600,7 +1672,7 @@ Dir_PrintDirectories(void)
 }
 
 void
-Dir_PrintPath(SearchPath *path)
+SearchPath_Print(SearchPath *path)
 {
 	SearchPathNode *node;
 	for (node = path->first; node != NULL; node = node->next) {

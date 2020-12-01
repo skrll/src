@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.480 2020/11/25 00:50:44 sjg Exp $	*/
+/*	$NetBSD: main.c,v 1.490 2020/11/29 01:40:26 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -109,7 +109,7 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.480 2020/11/25 00:50:44 sjg Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.490 2020/11/29 01:40:26 rillig Exp $");
 #if defined(MAKE_NATIVE) && !defined(lint)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
@@ -146,7 +146,7 @@ pid_t myPid;
 int makelevel;
 
 Boolean forceJobs = FALSE;
-static int errors = 0;
+static int main_errors = 0;
 static HashTable cached_realpaths;
 
 /*
@@ -500,7 +500,7 @@ MainParseArg(char c, const char *argvalue)
 	case 'V':
 	case 'v':
 		opts.printVars = c == 'v' ? PVM_EXPANDED : PVM_UNEXPANDED;
-		Lst_Append(opts.variables, bmake_strdup(argvalue));
+		Lst_Append(&opts.variables, bmake_strdup(argvalue));
 		/* XXX: Why always -V? */
 		Var_Append(MAKEFLAGS, "-V", VAR_GLOBAL);
 		Var_Append(MAKEFLAGS, argvalue, VAR_GLOBAL);
@@ -528,7 +528,7 @@ MainParseArg(char c, const char *argvalue)
 		Var_Append(MAKEFLAGS, "-e", VAR_GLOBAL);
 		break;
 	case 'f':
-		Lst_Append(opts.makefiles, bmake_strdup(argvalue));
+		Lst_Append(&opts.makefiles, bmake_strdup(argvalue));
 		break;
 	case 'i':
 		opts.ignoreErrors = TRUE;
@@ -664,7 +664,7 @@ rearg:
 				Punt("illegal (null) argument.");
 			if (argv[1][0] == '-' && !dashDash)
 				goto rearg;
-			Lst_Append(opts.create, bmake_strdup(argv[1]));
+			Lst_Append(&opts.create, bmake_strdup(argv[1]));
 		}
 	}
 
@@ -904,7 +904,7 @@ doPrintVars(void)
 	else
 		expandVars = GetBooleanVar(".MAKE.EXPAND_VARIABLES", FALSE);
 
-	for (ln = opts.variables->first; ln != NULL; ln = ln->next) {
+	for (ln = opts.variables.first; ln != NULL; ln = ln->next) {
 		const char *varname = ln->datum;
 		PrintVar(varname, expandVars);
 	}
@@ -913,7 +913,7 @@ doPrintVars(void)
 static Boolean
 runTargets(void)
 {
-	GNodeList *targs;	/* target nodes to create */
+	GNodeList targs = LST_INIT;	/* target nodes to create */
 	Boolean outOfDate;	/* FALSE if all targets up to date */
 
 	/*
@@ -922,10 +922,10 @@ runTargets(void)
 	 * we consult the parsing module to find the main target(s)
 	 * to create.
 	 */
-	if (Lst_IsEmpty(opts.create))
-		targs = Parse_MainName();
+	if (Lst_IsEmpty(&opts.create))
+		Parse_MainName(&targs);
 	else
-		targs = Targ_FindList(opts.create);
+		Targ_FindList(&targs, &opts.create);
 
 	if (!opts.compatMake) {
 		/*
@@ -941,16 +941,16 @@ runTargets(void)
 		}
 
 		/* Traverse the graph, checking on all the targets */
-		outOfDate = Make_Run(targs);
+		outOfDate = Make_Run(&targs);
 	} else {
 		/*
 		 * Compat_Init will take care of creating all the
 		 * targets as well as initializing the module.
 		 */
-		Compat_Run(targs);
+		Compat_Run(&targs);
 		outOfDate = FALSE;
 	}
-	Lst_Free(targs);
+	Lst_Done(&targs);	/* Don't free the nodes. */
 	return outOfDate;
 }
 
@@ -964,12 +964,12 @@ InitVarTargets(void)
 {
 	StringListNode *ln;
 
-	if (Lst_IsEmpty(opts.create)) {
+	if (Lst_IsEmpty(&opts.create)) {
 		Var_Set(".TARGETS", "", VAR_GLOBAL);
 		return;
 	}
 
-	for (ln = opts.create->first; ln != NULL; ln = ln->next) {
+	for (ln = opts.create.first; ln != NULL; ln = ln->next) {
 		char *name = ln->datum;
 		Var_Append(".TARGETS", name, VAR_GLOBAL);
 	}
@@ -1126,7 +1126,7 @@ CmdOpts_Init(void)
 	opts.lint = FALSE;
 	opts.debugVflag = FALSE;
 	opts.checkEnvFirst = FALSE;
-	opts.makefiles = Lst_New();
+	Lst_Init(&opts.makefiles);
 	opts.ignoreErrors = FALSE;	/* Pay attention to non-zero returns */
 	opts.maxJobs = DEFMAXLOCAL;	/* Set default local max concurrency */
 	opts.keepgoing = FALSE;		/* Stop on error */
@@ -1137,11 +1137,11 @@ CmdOpts_Init(void)
 	opts.beSilent = FALSE;		/* Print commands as executed */
 	opts.touchFlag = FALSE;		/* Actually update targets */
 	opts.printVars = PVM_NONE;
-	opts.variables = Lst_New();
+	Lst_Init(&opts.variables);
 	opts.parseWarnFatal = FALSE;
 	opts.enterFlag = FALSE;
 	opts.varNoExportEnv = FALSE;
-	opts.create = Lst_New();
+	Lst_Init(&opts.create);
 }
 
 /* Initialize MAKE and .MAKE to the path of the executable, so that it can be
@@ -1210,25 +1210,25 @@ static void
 ReadBuiltinRules(void)
 {
 	StringListNode *ln;
-	StringList *sysMkPath = Lst_New();
+	StringList sysMkPath = LST_INIT;
 
 	Dir_Expand(_PATH_DEFSYSMK,
 	    Lst_IsEmpty(sysIncPath) ? defSysIncPath : sysIncPath,
-	    sysMkPath);
-	if (Lst_IsEmpty(sysMkPath))
+	    &sysMkPath);
+	if (Lst_IsEmpty(&sysMkPath))
 		Fatal("%s: no system rules (%s).", progname, _PATH_DEFSYSMK);
 
-	for (ln = sysMkPath->first; ln != NULL; ln = ln->next)
+	for (ln = sysMkPath.first; ln != NULL; ln = ln->next)
 		if (ReadMakefile(ln->datum) == 0)
 			break;
 
 	if (ln == NULL)
 		Fatal("%s: cannot open %s.",
-		    progname, (const char *)sysMkPath->first->datum);
+		    progname, (const char *)sysMkPath.first->datum);
 
 	/* Free the list but not the actual filenames since these may still
 	 * be used in GNodes. */
-	Lst_Free(sysMkPath);
+	Lst_Done(&sysMkPath);
 }
 
 static void
@@ -1288,7 +1288,7 @@ InitVpath(void)
 		savec = *cp;
 		*cp = '\0';
 		/* Add directory to search path */
-		(void)Dir_AddDir(dirSearchPath, path);
+		(void)Dir_AddDir(&dirSearchPath, path);
 		*cp = savec;
 		path = cp + 1;
 	} while (savec == ':');
@@ -1321,9 +1321,9 @@ ReadFirstDefaultMakefile(void)
 	 * since these makefiles do not come from the command line.  They
 	 * also have different semantics in that only the first file that
 	 * is found is processed.  See ReadAllMakefiles. */
-	(void)str2Lst_Append(opts.makefiles, prefs);
+	(void)str2Lst_Append(&opts.makefiles, prefs);
 
-	for (ln = opts.makefiles->first; ln != NULL; ln = ln->next)
+	for (ln = opts.makefiles.first; ln != NULL; ln = ln->next)
 		if (ReadMakefile(ln->datum) == 0)
 			break;
 
@@ -1531,8 +1531,8 @@ main_ReadFiles(void)
 	if (!opts.noBuiltins)
 		ReadBuiltinRules();
 
-	if (!Lst_IsEmpty(opts.makefiles))
-		ReadAllMakefiles(opts.makefiles);
+	if (!Lst_IsEmpty(&opts.makefiles))
+		ReadAllMakefiles(&opts.makefiles);
 	else
 		ReadFirstDefaultMakefile();
 }
@@ -1621,9 +1621,13 @@ static void
 main_CleanUp(void)
 {
 #ifdef CLEANUP
-	Lst_Destroy(opts.variables, free);
-	Lst_Free(opts.makefiles);	/* don't free, may be used in GNodes */
-	Lst_Destroy(opts.create, free);
+	Lst_DoneCall(&opts.variables, free);
+	/*
+	 * Don't free the actual strings from opts.makefiles, they may be
+	 * used in GNodes.
+	 */
+	Lst_Done(&opts.makefiles);
+	Lst_DoneCall(&opts.create, free);
 #endif
 
 	/* print the graph now it's been processed if the user requested it */
@@ -1654,7 +1658,7 @@ main_CleanUp(void)
 static int
 main_Exit(Boolean outOfDate)
 {
-	if (opts.lint && (errors > 0 || Parse_GetFatals() > 0))
+	if (opts.lint && (main_errors > 0 || Parse_GetFatals() > 0))
 		return 2;	/* Not 1 so -q can distinguish error */
 	return outOfDate ? 1 : 0;
 }
@@ -1753,7 +1757,7 @@ char *
 Cmd_Exec(const char *cmd, const char **errfmt)
 {
 	const char *args[4];	/* Args for invoking the shell */
-	int fds[2];		/* Pipe streams */
+	int pipefds[2];
 	int cpid;		/* Child PID */
 	int pid;		/* PID from wait() */
 	int status;		/* command exit status */
@@ -1779,7 +1783,7 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 	/*
 	 * Open a pipe for fetching its output
 	 */
-	if (pipe(fds) == -1) {
+	if (pipe(pipefds) == -1) {
 		*errfmt = "Couldn't create pipe for \"%s\"";
 		goto bad;
 	}
@@ -1789,15 +1793,15 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 	 */
 	switch (cpid = vFork()) {
 	case 0:
-		(void)close(fds[0]);	/* Close input side of pipe */
+		(void)close(pipefds[0]); /* Close input side of pipe */
 
 		/*
 		 * Duplicate the output stream to the shell's output, then
 		 * shut the extra thing down. Note we don't fetch the error
 		 * stream...why not? Why?
 		 */
-		(void)dup2(fds[1], 1);
-		(void)close(fds[1]);
+		(void)dup2(pipefds[1], 1);
+		(void)close(pipefds[1]);
 
 		Var_ExportVars();
 
@@ -1810,14 +1814,14 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 		goto bad;
 
 	default:
-		(void)close(fds[1]);	/* No need for the writing half */
+		(void)close(pipefds[1]); /* No need for the writing half */
 
 		savederr = 0;
 		Buf_Init(&buf);
 
 		do {
 			char result[BUFSIZ];
-			bytes_read = read(fds[0], result, sizeof result);
+			bytes_read = read(pipefds[0], result, sizeof result);
 			if (bytes_read > 0)
 				Buf_AddBytes(&buf, result, (size_t)bytes_read);
 		} while (bytes_read > 0 ||
@@ -1825,7 +1829,7 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 		if (bytes_read == -1)
 			savederr = errno;
 
-		(void)close(fds[0]);	/* Close the input side of the pipe. */
+		(void)close(pipefds[0]); /* Close the input side of the pipe. */
 
 		/* Wait for the process to exit. */
 		while ((pid = waitpid(cpid, &status, 0)) != cpid && pid >= 0)
@@ -1880,7 +1884,7 @@ Error(const char *fmt, ...)
 			break;
 		err_file = stderr;
 	}
-	errors++;
+	main_errors++;
 }
 
 /* Wait for any running jobs to finish, then produce an error message,
@@ -2093,7 +2097,7 @@ SetErrorVars(GNode *gn)
 	Var_Set(".ERROR_TARGET", gn->name, VAR_GLOBAL);
 	Var_Delete(".ERROR_CMD", VAR_GLOBAL);
 
-	for (ln = gn->commands->first; ln != NULL; ln = ln->next) {
+	for (ln = gn->commands.first; ln != NULL; ln = ln->next) {
 		const char *cmd = ln->datum;
 
 		if (cmd == NULL)
