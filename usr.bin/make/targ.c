@@ -1,4 +1,4 @@
-/*	$NetBSD: targ.c,v 1.141 2020/11/23 23:41:11 rillig Exp $	*/
+/*	$NetBSD: targ.c,v 1.148 2020/11/29 01:05:08 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -108,7 +108,7 @@
  *
  * Debugging:
  *	Targ_PrintGraph
- *			Print out the entire graphm all variables and
+ *			Print out the entire graph, all variables and
  *			statistics for the directory cache. Should print
  *			something for suffixes, too, but...
  */
@@ -119,17 +119,17 @@
 #include "dir.h"
 
 /*	"@(#)targ.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: targ.c,v 1.141 2020/11/23 23:41:11 rillig Exp $");
+MAKE_RCSID("$NetBSD: targ.c,v 1.148 2020/11/29 01:05:08 rillig Exp $");
 
 /*
  * All target nodes that appeared on the left-hand side of one of the
  * dependency operators ':', '::', '!'.
  */
-static GNodeList *allTargets;
+static GNodeList allTargets = LST_INIT;
 static HashTable allTargetsByName;
 
 #ifdef CLEANUP
-static GNodeList *allNodes;
+static GNodeList allNodes = LST_INIT;
 
 static void GNode_Free(void *);
 #endif
@@ -137,11 +137,7 @@ static void GNode_Free(void *);
 void
 Targ_Init(void)
 {
-    allTargets = Lst_New();
     HashTable_Init(&allTargetsByName);
-#ifdef CLEANUP
-    allNodes = Lst_New();
-#endif
 }
 
 void
@@ -149,9 +145,9 @@ Targ_End(void)
 {
     Targ_Stats();
 #ifdef CLEANUP
-    Lst_Free(allTargets);
+    Lst_Done(&allTargets);
     HashTable_Done(&allTargetsByName);
-    Lst_Destroy(allNodes, GNode_Free);
+    Lst_DoneCall(&allNodes, GNode_Free);
 #endif
 }
 
@@ -169,7 +165,7 @@ Targ_Stats(void)
 GNodeList *
 Targ_List(void)
 {
-    return allTargets;
+    return &allTargets;
 }
 
 /* Create a new graph node, but don't register it anywhere.
@@ -201,24 +197,24 @@ GNode_New(const char *name)
     gn->unmade = 0;
     gn->mtime = 0;
     gn->youngestChild = NULL;
-    gn->implicitParents = Lst_New();
-    gn->parents = Lst_New();
-    gn->children = Lst_New();
-    gn->order_pred = Lst_New();
-    gn->order_succ = Lst_New();
-    gn->cohorts = Lst_New();
+    Lst_Init(&gn->implicitParents);
+    Lst_Init(&gn->parents);
+    Lst_Init(&gn->children);
+    Lst_Init(&gn->order_pred);
+    Lst_Init(&gn->order_succ);
+    Lst_Init(&gn->cohorts);
     gn->cohort_num[0] = '\0';
     gn->unmade_cohorts = 0;
     gn->centurion = NULL;
     gn->checked_seqno = 0;
     HashTable_Init(&gn->vars);
-    gn->commands = Lst_New();
+    Lst_Init(&gn->commands);
     gn->suffix = NULL;
     gn->fname = NULL;
     gn->lineno = 0;
 
 #ifdef CLEANUP
-    Lst_Append(allNodes, gn);
+    Lst_Append(&allNodes, gn);
 #endif
 
     return gn;
@@ -234,16 +230,16 @@ GNode_Free(void *gnp)
     free(gn->uname);
     free(gn->path);
     /* gn->youngestChild is not owned by this node. */
-    Lst_Free(gn->implicitParents); /* Do not free the nodes themselves, */
-    Lst_Free(gn->parents);	/* as they are not owned by this node. */
-    Lst_Free(gn->children);	/* likewise */
-    Lst_Free(gn->order_pred);	/* likewise */
-    Lst_Free(gn->order_succ);	/* likewise */
-    Lst_Free(gn->cohorts);	/* likewise */
+    Lst_Done(&gn->implicitParents); /* Do not free the nodes themselves, */
+    Lst_Done(&gn->parents);	/* as they are not owned by this node. */
+    Lst_Done(&gn->children);	/* likewise */
+    Lst_Done(&gn->order_pred);	/* likewise */
+    Lst_Done(&gn->order_succ);	/* likewise */
+    Lst_Done(&gn->cohorts);	/* likewise */
     HashTable_Done(&gn->vars);	/* Do not free the variables themselves,
 				 * even though they are owned by this node.
 				 * XXX: they should probably be freed. */
-    Lst_Free(gn->commands);	/* Do not free the commands themselves,
+    Lst_Done(&gn->commands);	/* Do not free the commands themselves,
 				 * as they may be shared with other nodes. */
     /* gn->suffix is not owned by this node. */
     /* XXX: gn->suffix should be unreferenced here.  This requires a thorough
@@ -288,7 +284,7 @@ Targ_NewInternalNode(const char *name)
 {
     GNode *gn = GNode_New(name);
     Var_Append(".ALLTARGETS", name, VAR_GLOBAL);
-    Lst_Append(allTargets, gn);
+    Lst_Append(&allTargets, gn);
     DEBUG1(TARG, "Adding \"%s\" to all targets.\n", gn->name);
     if (doing_depend)
 	gn->flags |= FROM_DEPEND;
@@ -311,17 +307,15 @@ GNode *Targ_GetEndNode(void)
 }
 
 /* Return the named nodes, creating them as necessary. */
-GNodeList *
-Targ_FindList(StringList *names)
+void
+Targ_FindList(GNodeList *nodes, StringList *names)
 {
     StringListNode *ln;
-    GNodeList *nodes = Lst_New();
     for (ln = names->first; ln != NULL; ln = ln->next) {
 	const char *name = ln->datum;
 	GNode *gn = Targ_GetNode(name);
 	Lst_Append(nodes, gn);
     }
-    return nodes;
 }
 
 /* Return true if should ignore errors when creating gn. */
@@ -384,7 +378,7 @@ void
 Targ_PrintCmds(GNode *gn)
 {
     StringListNode *ln;
-    for (ln = gn->commands->first; ln != NULL; ln = ln->next) {
+    for (ln = gn->commands.first; ln != NULL; ln = ln->next) {
 	const char *cmd = ln->datum;
 	debug_printf("\t%s\n", cmd);
     }
@@ -503,23 +497,23 @@ Targ_PrintNode(GNode *gn, int pass)
 		    debug_printf("# unmade\n");
 		}
 	    }
-	    PrintNodeNamesLine("implicit parents", gn->implicitParents);
+	    PrintNodeNamesLine("implicit parents", &gn->implicitParents);
 	} else {
 	    if (gn->unmade)
 		debug_printf("# %d unmade children\n", gn->unmade);
 	}
-	PrintNodeNamesLine("parents", gn->parents);
-	PrintNodeNamesLine("order_pred", gn->order_pred);
-	PrintNodeNamesLine("order_succ", gn->order_succ);
+	PrintNodeNamesLine("parents", &gn->parents);
+	PrintNodeNamesLine("order_pred", &gn->order_pred);
+	PrintNodeNamesLine("order_succ", &gn->order_succ);
 
 	debug_printf("%-16s%s", gn->name, GNode_OpName(gn));
 	Targ_PrintType(gn->type);
-	PrintNodeNames(gn->children);
+	PrintNodeNames(&gn->children);
 	debug_printf("\n");
 	Targ_PrintCmds(gn);
 	debug_printf("\n\n");
 	if (gn->type & OP_DOUBLEDEP) {
-	    Targ_PrintNodes(gn->cohorts, pass);
+	    Targ_PrintNodes(&gn->cohorts, pass);
 	}
     }
 }
@@ -538,7 +532,7 @@ PrintOnlySources(void)
 {
     GNodeListNode *ln;
 
-    for (ln = allTargets->first; ln != NULL; ln = ln->next) {
+    for (ln = allTargets.first; ln != NULL; ln = ln->next) {
 	GNode *gn = ln->datum;
 	if (GNode_IsTarget(gn))
 	    continue;
@@ -558,7 +552,7 @@ void
 Targ_PrintGraph(int pass)
 {
     debug_printf("#*** Input graph:\n");
-    Targ_PrintNodes(allTargets, pass);
+    Targ_PrintNodes(&allTargets, pass);
     debug_printf("\n");
     debug_printf("\n");
 
@@ -589,14 +583,14 @@ Targ_Propagate(void)
 {
     GNodeListNode *ln, *cln;
 
-    for (ln = allTargets->first; ln != NULL; ln = ln->next) {
+    for (ln = allTargets.first; ln != NULL; ln = ln->next) {
 	GNode *gn = ln->datum;
 	GNodeType type = gn->type;
 
 	if (!(type & OP_DOUBLEDEP))
 	    continue;
 
-	for (cln = gn->cohorts->first; cln != NULL; cln = cln->next) {
+	for (cln = gn->cohorts.first; cln != NULL; cln = cln->next) {
 	    GNode *cohort = cln->datum;
 
 	    cohort->type |= type & ~OP_OPMASK;
