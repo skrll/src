@@ -244,11 +244,7 @@ wdc_extio_match(device_t parent, cfdata_t cf, void *aux)
 		return 0;
 
 	WDC_EXTIO_DPRINTF("%s: enter\n", __func__);
-
-	memset(&wdc, 0, sizeof(wdc));
-	memset(&ch, 0, sizeof(ch));
-	ch.ch_atac = &wdc.sc_atac;
-	wdc.regs = &wdr;
+#if 0
 	wdc.datain_pio = wdc_extio_datain;
 	wdc.dataout_pio = wdc_extio_dataout;
 	if (cf->cf_flags != -1) {
@@ -257,6 +253,7 @@ wdc_extio_match(device_t parent, cfdata_t cf, void *aux)
 		wdc.cap |= cf->cf_flags &
 		    (WDC_CAPABILITY_PREATA|WDC_CAPABILITY_NO_EXTRA_RESETS);
 	}
+#endif
 
 	if (wdc_extio_map(ea, &wdr, &gpio, &pm) == -1)
 		return 0;
