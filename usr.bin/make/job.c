@@ -1,4 +1,4 @@
-/*	$NetBSD: job.c,v 1.329 2020/11/24 18:17:45 rillig Exp $	*/
+/*	$NetBSD: job.c,v 1.334 2020/11/29 09:27:40 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -143,7 +143,7 @@
 #include "trace.h"
 
 /*	"@(#)job.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: job.c,v 1.329 2020/11/24 18:17:45 rillig Exp $");
+MAKE_RCSID("$NetBSD: job.c,v 1.334 2020/11/29 09:27:40 rillig Exp $");
 
 /* A shell defines how the commands are run.  All commands for a target are
  * written into a single file, which is then given to the shell to execute
@@ -215,7 +215,7 @@ typedef struct Shell {
 /*
  * error handling variables
  */
-static int errors = 0;		/* number of errors reported */
+static int job_errors = 0;	/* number of errors reported */
 typedef enum AbortReason {	/* why is the make aborting? */
     ABORT_NONE,
     ABORT_ERROR,		/* Because of an error */
@@ -383,8 +383,8 @@ static Boolean make_suspended = FALSE;	/* Whether we've seen a SIGTSTP (etc) */
  * the output channels of children
  */
 static struct pollfd *fds = NULL;
-static Job **jobfds = NULL;
-static nfds_t nfds = 0;
+static Job **allJobs = NULL;
+static nfds_t nJobs = 0;
 static void watchfd(Job *);
 static void clearfd(Job *);
 static int readyfd(Job *);
@@ -395,8 +395,8 @@ static char *targPrefix = NULL; /* What we print at the start of TARG_FMT */
 static Job tokenWaitJob;	/* token wait pseudo-job */
 
 static Job childExitJob;	/* child exit pseudo-job */
-#define	CHILD_EXIT	"."
-#define	DO_JOB_RESUME	"R"
+#define CHILD_EXIT	"."
+#define DO_JOB_RESUME	"R"
 
 enum { npseudojobs = 2 };	/* number of pseudo-jobs */
 
@@ -902,7 +902,7 @@ JobPrintCommands(Job *job)
 {
     StringListNode *ln;
 
-    for (ln = job->node->commands->first; ln != NULL; ln = ln->next) {
+    for (ln = job->node->commands.first; ln != NULL; ln = ln->next) {
 	const char *cmd = ln->datum;
 
 	if (strcmp(cmd, "...") == 0) {
@@ -929,7 +929,7 @@ JobSaveCommands(Job *job)
 	 * expand the other variables as well; see deptgt-end.mk. */
 	(void)Var_Subst(cmd, job->node, VARE_WANTRES, &expanded_cmd);
 	/* TODO: handle errors */
-	Lst_Append(Targ_GetEndNode()->commands, expanded_cmd);
+	Lst_Append(&Targ_GetEndNode()->commands, expanded_cmd);
     }
 }
 
@@ -952,7 +952,7 @@ JobClosePipes(Job *job)
  *
  * Deferred commands for the job are placed on the .END node.
  *
- * If there was a serious error (errors != 0; not an ignored one), no more
+ * If there was a serious error (job_errors != 0; not an ignored one), no more
  * jobs will be started.
  *
  * Input:
@@ -1080,18 +1080,18 @@ JobFinish(Job *job, int status)
 	Make_Update(job->node);
 	job->status = JOB_ST_FREE;
     } else if (status != 0) {
-	errors++;
+	job_errors++;
 	job->status = JOB_ST_FREE;
     }
 
-    if (errors > 0 && !opts.keepgoing && aborting != ABORT_INTERRUPT)
+    if (job_errors > 0 && !opts.keepgoing && aborting != ABORT_INTERRUPT)
 	aborting = ABORT_ERROR;	/* Prevent more jobs from getting started. */
 
     if (return_job_token)
 	Job_TokenReturn();
 
     if (aborting == ABORT_ERROR && jobTokensRunning == 0)
-	Finish(errors);
+	Finish(job_errors);
 }
 
 static void
@@ -1175,16 +1175,16 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
 {
     if (GNode_IsTarget(gn))
 	return TRUE;
-    if (!Lst_IsEmpty(gn->commands))
+    if (!Lst_IsEmpty(&gn->commands))
 	return TRUE;
-    if ((gn->type & OP_LIB) && !Lst_IsEmpty(gn->children))
+    if ((gn->type & OP_LIB) && !Lst_IsEmpty(&gn->children))
 	return TRUE;
 
     /*
      * No commands. Look for .DEFAULT rule from which we might infer
      * commands.
      */
-    if (defaultNode != NULL && !Lst_IsEmpty(defaultNode->commands) &&
+    if (defaultNode != NULL && !Lst_IsEmpty(&defaultNode->commands) &&
 	!(gn->type & OP_SPECIAL)) {
 	/*
 	 * The traditional Make only looks for a .DEFAULT if the node was
@@ -1942,7 +1942,7 @@ Job_CatchOutput(void)
 
     /* The first fd in the list is the job token pipe */
     do {
-	nready = poll(fds + 1 - wantToken, nfds - 1 + wantToken, POLL_MSEC);
+	nready = poll(fds + 1 - wantToken, nJobs - 1 + wantToken, POLL_MSEC);
     } while (nready < 0 && errno == EINTR);
 
     if (nready < 0)
@@ -1972,10 +1972,10 @@ Job_CatchOutput(void)
     if (nready == 0)
 	return;
 
-    for (i = npseudojobs * nfds_per_job(); i < nfds; i++) {
+    for (i = npseudojobs * nfds_per_job(); i < nJobs; i++) {
 	if (!fds[i].revents)
 	    continue;
-	job = jobfds[i];
+	job = allJobs[i];
 	if (job->status == JOB_ST_RUNNING)
 	    JobDoOutput(job, FALSE);
 #if defined(USE_FILEMON) && !defined(USE_FILEMON_DEV)
@@ -2082,7 +2082,7 @@ Job_Init(void)
     wantToken =	0;
 
     aborting = ABORT_NONE;
-    errors = 0;
+    job_errors = 0;
 
     lastNode = NULL;
 
@@ -2110,8 +2110,8 @@ Job_Init(void)
     /* Preallocate enough for the maximum number of jobs.  */
     fds = bmake_malloc(sizeof *fds *
 	(npseudojobs + (size_t)opts.maxJobs) * nfds_per_job());
-    jobfds = bmake_malloc(sizeof *jobfds *
-	(npseudojobs + (size_t)opts.maxJobs) * nfds_per_job());
+    allJobs = bmake_malloc(sizeof *allJobs *
+			   (npseudojobs + (size_t)opts.maxJobs) * nfds_per_job());
 
     /* These are permanent entries and take slots 0 and 1 */
     watchfd(&tokenWaitJob);
@@ -2451,14 +2451,14 @@ int
 Job_Finish(void)
 {
     GNode *endNode = Targ_GetEndNode();
-    if (!Lst_IsEmpty(endNode->commands) || !Lst_IsEmpty(endNode->children)) {
-	if (errors != 0) {
+    if (!Lst_IsEmpty(&endNode->commands) || !Lst_IsEmpty(&endNode->children)) {
+	if (job_errors != 0) {
 	    Error("Errors reported so .END ignored");
 	} else {
 	    JobRun(endNode);
 	}
     }
-    return errors;
+    return job_errors;
 }
 
 /* Clean up any memory used by the jobs module. */
@@ -2548,17 +2548,17 @@ watchfd(Job *job)
     if (job->inPollfd != NULL)
 	Punt("Watching watched job");
 
-    fds[nfds].fd = job->inPipe;
-    fds[nfds].events = POLLIN;
-    jobfds[nfds] = job;
-    job->inPollfd = &fds[nfds];
-    nfds++;
+    fds[nJobs].fd = job->inPipe;
+    fds[nJobs].events = POLLIN;
+    allJobs[nJobs] = job;
+    job->inPollfd = &fds[nJobs];
+    nJobs++;
 #if defined(USE_FILEMON) && !defined(USE_FILEMON_DEV)
     if (useMeta) {
-	fds[nfds].fd = meta_job_fd(job);
-	fds[nfds].events = fds[nfds].fd == -1 ? 0 : POLLIN;
-	jobfds[nfds] = job;
-	nfds++;
+	fds[nJobs].fd = meta_job_fd(job);
+	fds[nJobs].events = fds[nJobs].fd == -1 ? 0 : POLLIN;
+	allJobs[nJobs] = job;
+	nJobs++;
     }
 #endif
 }
@@ -2570,7 +2570,7 @@ clearfd(Job *job)
     if (job->inPollfd == NULL)
 	Punt("Unwatching unwatched job");
     i = (size_t)(job->inPollfd - fds);
-    nfds--;
+    nJobs--;
 #if defined(USE_FILEMON) && !defined(USE_FILEMON_DEV)
     if (useMeta) {
 	/*
@@ -2580,20 +2580,20 @@ clearfd(Job *job)
 	assert(nfds_per_job() == 2);
 	if (i % 2)
 	    Punt("odd-numbered fd with meta");
-	nfds--;
+	nJobs--;
     }
 #endif
     /*
      * Move last job in table into hole made by dead job.
      */
-    if (nfds != i) {
-	fds[i] = fds[nfds];
-	jobfds[i] = jobfds[nfds];
-	jobfds[i]->inPollfd = &fds[i];
+    if (nJobs != i) {
+	fds[i] = fds[nJobs];
+	allJobs[i] = allJobs[nJobs];
+	allJobs[i]->inPollfd = &fds[i];
 #if defined(USE_FILEMON) && !defined(USE_FILEMON_DEV)
 	if (useMeta) {
-	    fds[i + 1] = fds[nfds + 1];
-	    jobfds[i + 1] = jobfds[nfds + 1];
+	    fds[i + 1] = fds[nJobs + 1];
+	    allJobs[i + 1] = allJobs[nJobs + 1];
 	}
 #endif
     }
