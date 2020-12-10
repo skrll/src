@@ -1,4 +1,4 @@
-/*	$NetBSD: compat.c,v 1.196 2020/11/28 19:22:32 rillig Exp $	*/
+/*	$NetBSD: compat.c,v 1.204 2020/12/07 01:35:33 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -96,7 +96,7 @@
 #include "pathnames.h"
 
 /*	"@(#)compat.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: compat.c,v 1.196 2020/11/28 19:22:32 rillig Exp $");
+MAKE_RCSID("$NetBSD: compat.c,v 1.204 2020/12/07 01:35:33 rillig Exp $");
 
 static GNode *curTarg = NULL;
 static pid_t compatChild;
@@ -664,7 +664,7 @@ void
 Compat_Run(GNodeList *targs)
 {
 	GNode *gn = NULL;	/* Current root target */
-	int indirectErrors;	/* Number of targets not remade due to errors */
+	Boolean seenError;
 
 	if (!shellName)
 		Shell_Init();
@@ -704,7 +704,7 @@ Compat_Run(GNodeList *targs)
 	 */
 	Make_ExpandUse(targs);
 
-	indirectErrors = 0;
+	seenError = FALSE;
 	while (!Lst_IsEmpty(targs)) {
 		gn = Lst_Dequeue(targs);
 		Compat_Make(gn, gn);
@@ -714,19 +714,20 @@ Compat_Run(GNodeList *targs)
 		} else if (gn->made == ABORTED) {
 			printf("`%s' not remade because of errors.\n",
 			       gn->name);
-			indirectErrors++;
 		}
+		if (GNode_IsError(gn))
+			seenError = TRUE;
 	}
 
-	/*
-	 * If the user has defined a .END target, run its commands.
-	 */
-	if (indirectErrors == 0) {
+	/* If the user has defined a .END target, run its commands. */
+	if (!seenError) {
 		GNode *endNode = Targ_GetEndNode();
 		Compat_Make(endNode, endNode);
-		if (GNode_IsError(gn) || GNode_IsError(endNode)) {
-			PrintOnError(gn, "\nStop.");
-			exit(1);
-		}
+		seenError = GNode_IsError(endNode);
+	}
+
+	if (seenError) {
+		PrintOnError(gn, "\nStop.");
+		exit(1);
 	}
 }
