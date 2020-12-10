@@ -108,6 +108,13 @@ MFLAGS           =   -r -k -d mps -d 0 -d g1
 #*** Command-line Variables:
 .MAKE.LEVEL.ENV  = MAKELEVEL
 
+#*** Directory Cache:
+# Stats: 0 hits 2 misses 0 near misses 0 losers (0%)
+#  refs  hits  directory
+#     1     0  <curdir>
+#     1     0  .
+#     1     0  <defsyspath>
+
 #*** Suffixes:
 # ".4" (num 1, ref 1)
 #	To: 
@@ -130,4 +137,7 @@ make: don't know how to make suff-main-several.2 (continuing)
 make: don't know how to make suff-main-several.3 (continuing)
 make: don't know how to make suff-main-several.4 (continuing)
 `next-main' not remade because of errors.
-exit status 0
+
+Stop.
+make: stopped in unit-tests
+exit status 1

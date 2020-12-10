@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.231 2020/11/30 21:10:15 rillig Exp $
+# $NetBSD: Makefile,v 1.243 2020/12/09 08:18:35 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -115,6 +115,7 @@ TESTS+=		deptgt-default
 TESTS+=		deptgt-delete_on_error
 TESTS+=		deptgt-end
 TESTS+=		deptgt-end-fail
+TESTS+=		deptgt-end-fail-all
 TESTS+=		deptgt-end-fail-indirect
 TESTS+=		deptgt-end-jobs
 TESTS+=		deptgt-error
@@ -186,6 +187,9 @@ TESTS+=		impsrc
 TESTS+=		include-main
 TESTS+=		job-flags
 TESTS+=		job-output-long-lines
+TESTS+=		jobs-error-indirect
+TESTS+=		jobs-error-nested
+TESTS+=		jobs-error-nested-make
 TESTS+=		lint
 TESTS+=		make-exported
 TESTS+=		meta-cmd-cmp
@@ -232,10 +236,13 @@ TESTS+=		opt-ignore
 TESTS+=		opt-include-dir
 TESTS+=		opt-jobs
 TESTS+=		opt-jobs-internal
+TESTS+=		opt-jobs-no-action
 TESTS+=		opt-keep-going
+TESTS+=		opt-keep-going-multiple
 TESTS+=		opt-m-include-dir
 TESTS+=		opt-no-action
 TESTS+=		opt-no-action-at-all
+TESTS+=		opt-no-action-runflags
 TESTS+=		opt-query
 TESTS+=		opt-raw
 TESTS+=		opt-silent
@@ -252,7 +259,6 @@ TESTS+=		parse-var
 TESTS+=		phony-end
 TESTS+=		posix
 TESTS+=		# posix1	# broken by reverting POSIX changes
-TESTS+=		qequals
 TESTS+=		recursive
 TESTS+=		sh
 TESTS+=		sh-dots
@@ -315,6 +321,7 @@ TESTS+=		varmod-gmtime
 TESTS+=		varmod-hash
 TESTS+=		varmod-head
 TESTS+=		varmod-ifelse
+TESTS+=		varmod-indirect
 TESTS+=		varmod-l-name-to-value
 TESTS+=		varmod-localtime
 TESTS+=		varmod-loop
@@ -372,6 +379,7 @@ TESTS+=		varname-dot-make-path_filemon
 TESTS+=		varname-dot-make-pid
 TESTS+=		varname-dot-make-ppid
 TESTS+=		varname-dot-make-save_dollars
+TESTS+=		varname-dot-makeflags
 TESTS+=		varname-dot-makeoverrides
 TESTS+=		varname-dot-newline
 TESTS+=		varname-dot-objdir
@@ -433,10 +441,13 @@ ENV.varname-vpath+=	VPATH=varname-vpath.dir:varname-vpath.dir2
 # Override make flags for some of the tests; default is -k.
 # If possible, write ".MAKEFLAGS: -dv" in the test .mk file instead of
 # settings FLAGS.test=-dv here, since that is closer to the test code.
-FLAGS.cond-func-make=	via-cmdline
-FLAGS.directive-ifmake=	first second
-FLAGS.doterror=		# none, especially not -k
-FLAGS.varname-empty=	-dv '$${:U}=cmdline-u' '=cmdline-plain'
+FLAGS.cond-func-make=		via-cmdline
+FLAGS.directive-ifmake=		first second
+FLAGS.doterror=			# none, especially not -k
+FLAGS.jobs-error-indirect=	# none, especially not -k
+FLAGS.jobs-error-nested=	# none, especially not -k
+FLAGS.jobs-error-nested-make=	# none, especially not -k
+FLAGS.varname-empty=		-dv '$${:U}=cmdline-u' '=cmdline-plain'
 
 # Some tests need extra postprocessing.
 SED_CMDS.dir=		${:D remove output from -DCLEANUP mode }
@@ -465,7 +476,13 @@ SED_CMDS.opt-debug-jobs+=	-e 's,JobFinish: [0-9][0-9]*,JobFinish: <pid>,'
 SED_CMDS.opt-debug-jobs+=	-e 's,Command: ${.SHELL:T},Command: <shell>,'
 # The "-q" may be there or not, see jobs.c, variable shells.
 SED_CMDS.opt-debug-jobs+=	-e 's,^\(.Command: <shell>\) -q,\1,'
-SED_CMDS.sh-dots=		-e 's,^.*\.\.\.:.*,<normalized: ...: not found>,'
+SED_CMDS.opt-jobs-no-action=	${STD_SED_CMDS.hide-from-output}
+SED_CMDS.opt-no-action-runflags= ${STD_SED_CMDS.hide-from-output}
+# For Compat_RunCommand, useShell == FALSE.
+SED_CMDS.sh-dots=		-e 's,^.*\.\.\.:.*,<not found: ...>,'
+# For Compat_RunCommand, useShell == TRUE.
+SED_CMDS.sh-dots+=		-e 's,^make: exec(\(.*\)) failed (.*)$$,<not found: \1>,'
+SED_CMDS.sh-dots+=		-e 's,^\(\*\*\* Error code \)[1-9][0-9]*,\1<nonzero>,'
 SED_CMDS.suff-main+=		${STD_SED_CMDS.dg1}
 SED_CMDS.suff-main-several+=	${STD_SED_CMDS.dg1}
 SED_CMDS.suff-transform-debug+=	${STD_SED_CMDS.dg1}
@@ -489,12 +506,9 @@ SED_CMDS.varname-dot-shell+=	-e 's,"/[^" ]*","(details omitted)",g'
 SED_CMDS.varname-dot-shell+=	-e 's,\[/[^] ]*\],[(details omitted)],g'
 
 # Some tests need an additional round of postprocessing.
-POSTPROC.deptgt-suffixes= awk '/^\#\*\*\* Suffixes/,/^never-stop/'
-POSTPROC.gnode-submake=	awk '/Input graph/, /^$$/'
-POSTPROC.opt-debug-graph1=	${STD_POSTPROC.dg1}
-POSTPROC.varname-empty=	${TOOL_SED} -n -e '/^Var_Set/p' -e '/^out:/p'
-POSTPROC.suff-main-several=	${STD_POSTPROC.dg1}
-POSTPROC.suff-transform-debug=	${STD_POSTPROC.dg1}
+POSTPROC.deptgt-suffixes=	awk '/^\#\*\*\* Suffixes/,/^never-stop/'
+POSTPROC.gnode-submake=		awk '/Input graph/, /^$$/'
+POSTPROC.varname-empty=		${TOOL_SED} -n -e '/^Var_Set/p' -e '/^out:/p'
 
 # Some tests reuse other tests, which makes them unnecessarily fragile.
 export-all.rawout: export.mk
@@ -506,15 +520,19 @@ unexport-env.rawout: export.mk
 # Some standard sed commands, to be used in the SED_CMDS above.
 
 # Omit details from the output of the -dg1 option such as process IDs.
-STD_SED_CMDS.dg1=	-e 's,${.CURDIR},<curdir>,'
+STD_SED_CMDS.dg1=	-e 's,${.CURDIR}$$,<curdir>,'
+STD_SED_CMDS.dg1+=	-e 's,  ${DEFSYSPATH:U/usr/share/mk}$$,  <defsyspath>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(\.MAKE *=\) .*,\1 <details omitted>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(\.MAKE\.[A-Z_]* *=\) .*,\1 <details omitted>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(MACHINE[_ARCH]* *=\) .*,\1 <details omitted>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(MAKE *=\) .*,\1 <details omitted>,'
 
-# The layout of the lines in the directory cache vary depending on the path
-# length, which cannot be predicted.  Therefore omit these lines.
-STD_POSTPROC.dg1=	awk '/Directory Cache/,/^$$/ { next } { print }'
+# Reduce the noise for tests running with the -n option, since there is no
+# other way to suppress the echoing of the commands.
+STD_SED_CMDS.hide-from-output= \
+	-e '/^echo hide-from-output/d' \
+	-e 's,hide-from-output ,,' \
+	-e 's,hide-from-output,,'
 
 # End of the configuration helpers section.
 
@@ -550,7 +568,7 @@ LANG=		C
 
 MAKE_TEST_ENV?=	MALLOC_OPTIONS="JA"	# for jemalloc
 
-.if ${:!uname -s!} == "NetBSD"
+.if ${.MAKE.OS:U${uname -s:L:sh}} == "NetBSD"
 LIMIT_RESOURCES?=	ulimit -v 200000
 .endif
 LIMIT_RESOURCES?=	:
