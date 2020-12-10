@@ -1,4 +1,4 @@
-/*	$NetBSD: ohci.c,v 1.310 2020/06/03 15:38:02 skrll Exp $	*/
+/*	$NetBSD: ohci.c,v 1.311 2020/12/09 07:10:01 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2005, 2012, 2016, 2020 The NetBSD Foundation, Inc.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.310 2020/06/03 15:38:02 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.311 2020/12/09 07:10:01 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -390,6 +390,7 @@ ohci_detach(struct ohci_softc *sc, int flags)
 	if (sc->sc_hcca != NULL)
 		usb_freemem(&sc->sc_bus, &sc->sc_hccadma);
 	pool_cache_destroy(sc->sc_xferpool);
+	cv_destroy(&sc->sc_abort_cv);
 
 	return rv;
 }
@@ -807,6 +808,7 @@ ohci_init(ohci_softc_t *sc)
 		LIST_INIT(&sc->sc_hash_itds[i]);
 
 	TAILQ_INIT(&sc->sc_abortingxfers);
+	cv_init(&sc->sc_abort_cv, "ohciabt");
 
 	sc->sc_xferpool = pool_cache_init(sizeof(struct ohci_xfer), 0, 0, 0,
 	    "ohcixfer", NULL, IPL_USB, NULL, NULL, NULL);
@@ -1344,6 +1346,21 @@ ohci_intr1(ohci_softc_t *sc)
 		 */
 		usb_schedsoftintr(&sc->sc_bus);
 	}
+	if (eintrs & OHCI_SF) {
+		struct ohci_xfer *ox, *tmp;
+		TAILQ_FOREACH_SAFE(ox, &sc->sc_abortingxfers, ox_abnext, tmp) {
+			DPRINTFN(10, "SF %#jx xfer %#jx", (uintptr_t)sc,
+			    (uintptr_t)ox, 0, 0);
+			ox->ox_abintrs &= ~OHCI_SF;
+			KASSERT(ox->ox_abintrs == 0);
+			TAILQ_REMOVE(&sc->sc_abortingxfers, ox, ox_abnext);
+		}
+		cv_broadcast(&sc->sc_abort_cv);
+
+		KASSERT(TAILQ_EMPTY(&sc->sc_abortingxfers));
+		DPRINTFN(10, "end SOF %#jx", (uintptr_t)sc, 0, 0, 0);
+		/* Don't remove OHIC_SF from eintrs so it is blocked below */
+	}
 	if (eintrs & OHCI_RD) {
 		DPRINTFN(5, "resume detect sc=%#jx", (uintptr_t)sc, 0, 0, 0);
 		printf("%s: resume detect\n", device_xname(sc->sc_dev));
@@ -1362,20 +1379,6 @@ ohci_intr1(ohci_softc_t *sc)
 		 * a timeout.
 		 */
 		softint_schedule(sc->sc_rhsc_si);
-	}
-	if (eintrs & OHCI_SF) {
-		struct ohci_xfer *ox, *tmp;
-		TAILQ_FOREACH_SAFE(ox, &sc->sc_abortingxfers, ox_abnext, tmp) {
-			DPRINTFN(10, "SF %#jx xfer %#jx", (uintptr_t)sc, (uintptr_t)ox, 0, 0);
-			ox->ox_abintrs &= ~OHCI_SF;
-			KASSERT(ox->ox_abintrs == 0);
-			TAILQ_REMOVE(&sc->sc_abortingxfers, ox, ox_abnext);
-		}
-		cv_broadcast(&sc->sc_softwake_cv);
-
-		KASSERT(TAILQ_EMPTY(&sc->sc_abortingxfers));
-		DPRINTFN(10, "end SOF %#jx", (uintptr_t)sc, 0, 0, 0);
-		/* Don't remove OHIC_SF from eintrs so it is blocked below */
 	}
 
 	if (eintrs != 0) {
@@ -1502,9 +1505,17 @@ ohci_softintr(void *v)
 	DPRINTFN(10, "--- TD dump end ---", 0, 0, 0, 0);
 
 	for (std = sdone; std; std = stdnext) {
-		xfer = std->xfer;
 		stdnext = std->dnext;
-		DPRINTFN(10, "std=%#jx xfer=%#jx hcpriv=%#jx dnext=%'jx",
+		if (std->held == NULL) {
+			DPRINTFN(10, "std=%#jx held is null", (uintptr_t)std,
+			    0, 0, 0);
+			ohci_hash_rem_td(sc, std);
+			ohci_free_std_locked(sc, std);
+			continue;
+		}
+
+		xfer = std->xfer;
+		DPRINTFN(10, "std=%#jx xfer=%#jx hcpriv=%#jx dnext=%#jx",
 		    (uintptr_t)std, (uintptr_t)xfer,
 		    (uintptr_t)(xfer ? xfer->ux_hcpriv : 0), (uintptr_t)stdnext);
 		if (xfer == NULL) {
@@ -1516,13 +1527,6 @@ ohci_softintr(void *v)
 			 */
 			continue;
 		}
-		if (std->held == NULL) {
-			DPRINTFN(10, "std=%#jx held is null", (uintptr_t)std, 0, 0, 0);
-			ohci_hash_rem_td(sc, std);
-			ohci_free_std_locked(sc, std);
-			continue;
-		}
-
 		/*
 		 * Try to claim this xfer for completion.  If it has
 		 * already completed or aborted, drop it on the floor.
@@ -2279,12 +2283,10 @@ ohci_abortx(struct usbd_xfer *xfer)
 	}
 
 	/*
-	 * HC Step 1: Unless the endpoint is already halted, we set the endpoint
-	 * descriptor sKip bit and wait for hardware to complete processing.
-	 *
-	 * This includes ensuring that any TDs of the transfer that got onto
-	 * the done list are also removed.  We ensure this by waiting for
-	 * both a WDH and SOF interrupt.
+	 * HC Step 1: Unless the endpoint is already halted, we set the
+	 * endpoint descriptor sKip bit and wait for hardware to complete
+	 * processing.  We ensure the HC stops processing the endpoint by
+	 * waiting for the next start of frame (OHCI_SF)
 	 */
 	DPRINTFN(1, "stop ed=%#jx", (uintptr_t)sed, 0, 0, 0);
 	usb_syncmem(&sed->dma, sed->offs + offsetof(ohci_ed_t, ed_flags),
@@ -2299,33 +2301,47 @@ ohci_abortx(struct usbd_xfer *xfer)
 		    sizeof(sed->ed.ed_flags),
 		    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
 
-		DPRINTFN(10, "WDH %#jx xfer %#jx", (uintptr_t)sc, (uintptr_t)xfer, 0, 0);
+		DPRINTFN(10, "SF %#jx xfer %#jx", (uintptr_t)sc,
+		    (uintptr_t)xfer, 0, 0);
+
 		struct ohci_xfer *ox = OHCI_XFER2OXFER(xfer);
 		ox->ox_abintrs = OHCI_SF;
+
+		mutex_enter(&sc->sc_intr_lock);
 		TAILQ_INSERT_TAIL(&sc->sc_abortingxfers, ox, ox_abnext);
 
+		/* Clear any previous SF interrupt */
 		OWRITE4(sc, OHCI_INTERRUPT_STATUS, OHCI_SF);
+
+		/* Tell interrupt handler and HC SF interrupt is requested */
 		sc->sc_eintrs |= OHCI_SF;
 		OWRITE4(sc, OHCI_INTERRUPT_ENABLE, OHCI_SF);
 		/*
-		 * Step 2: Wait until we know hardware has finished any possible
-		 * use of the xfer.
+		 * Step 2: Wait until we know hardware has finished any
+		 * processing of the end-point.
 		 */
 		while (ox->ox_abintrs != 0) {
-			DPRINTFN(10, "WDH %#jx xfer %#jx intrs %#x", (uintptr_t)sc,
-			    (uintptr_t)xfer, (uintptr_t)ox->ox_abintrs, 0);
-			cv_wait(&sc->sc_softwake_cv, &sc->sc_lock);
+			DPRINTFN(10, "SF %#jx xfer %#jx intrs %#x",
+			    (uintptr_t)sc, (uintptr_t)xfer,
+			    (uintptr_t)ox->ox_abintrs, 0);
+			cv_wait(&sc->sc_abort_cv, &sc->sc_intr_lock);
 		}
+		mutex_exit(&sc->sc_intr_lock);
 	} else {
 		DPRINTFN(1, "halted ed=%#jx", (uintptr_t)sed, 0, 0, 0);
 	}
 
 	/*
 	 * HC Step 3: Remove any vestiges of the xfer from the hardware.
-	 * The complication here is that the hardware may have executed
-	 * beyond the xfer we're trying to abort.  So as we're scanning
-	 * the TDs of this xfer we check if the hardware points to
-	 * any of them.
+	 * There are two complications here
+	 *
+	 * 1) the hardware may have executed beyond the xfer we're trying to
+	 *    abort.  So as we're scanning the TDs of this xfer we check if
+	 *    the hardware points to any  of them.
+	 *
+	 * 2) the hardware may have only partially excuted the transfer
+	 *    which means some TDs will appear on the done list.  Wait for
+	 *    WDH so we can remove them safely.
 	 */
 	p = xfer->ux_hcpriv;
 	KASSERT(p);
@@ -2344,7 +2360,6 @@ ohci_abortx(struct usbd_xfer *xfer)
 #define OHCI_CC_ACCESSED_P(x)	\
     (((x) & OHCI_CC_NOT_ACCESSED_MASK) != OHCI_CC_NOT_ACCESSED)
 
-
 	headp = O32TOH(sed->ed.ed_headp) & OHCI_HEADMASK;
 	hit = 0;
 	for (; p->xfer == xfer; p = n) {
@@ -2360,12 +2375,20 @@ ohci_abortx(struct usbd_xfer *xfer)
 		   0, 0, 0);
 
 		mutex_exit(&sc->sc_lock);
-		ohci_soft_td_t *std = ohci_alloc_std(sc);
-		if (std == NULL) {
-			/* XXX What to do??? */
-			panic("hmm");
+		ohci_soft_td_t *std;
+		for (;;) {
+			std = ohci_alloc_std(sc);
+			if (std)
+				break;
+			kpause("ohciabt2", true, hz, NULL);
 		}
+
 		mutex_enter(&sc->sc_lock);
+		if (sc->sc_dying) {
+			DPRINTFN(4, "xfer %#jx dying %ju", (uintptr_t)xfer,
+			    xfer->ux_status, 0, 0);
+			goto dying;
+		}
 
 		DPRINTFN(10, "new std=%#jx now held at %#jx", (uintptr_t)std,
 		    (uintptr_t)p->held, 0, 0);

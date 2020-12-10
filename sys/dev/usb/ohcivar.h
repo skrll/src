@@ -1,4 +1,4 @@
-/*	$NetBSD: ohcivar.h,v 1.61 2020/03/15 07:56:19 skrll Exp $	*/
+/*	$NetBSD: ohcivar.h,v 1.62 2020/12/09 07:10:01 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -122,7 +122,7 @@ typedef struct ohci_softc {
 	int sc_flags;
 #define OHCIF_SUPERIO		0x0001
 
-	kcondvar_t sc_softwake_cv;
+	kcondvar_t sc_abort_cv;
 
 	ohci_soft_ed_t *sc_freeeds;
 	ohci_soft_td_t *sc_freetds;
@@ -147,6 +147,7 @@ struct ohci_xfer {
 	struct usbd_xfer xfer;
 	uint32_t ox_abintrs;
 	TAILQ_ENTRY(ohci_xfer) ox_abnext;
+
 	/* ctrl */
 	ohci_soft_td_t *ox_setup;
 	ohci_soft_td_t *ox_stat;
