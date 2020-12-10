@@ -1,4 +1,4 @@
-/*	$NetBSD: arch.c,v 1.182 2020/11/29 01:40:26 rillig Exp $	*/
+/*	$NetBSD: arch.c,v 1.187 2020/12/06 18:13:17 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -125,7 +125,7 @@
 #include "config.h"
 
 /*	"@(#)arch.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: arch.c,v 1.182 2020/11/29 01:40:26 rillig Exp $");
+MAKE_RCSID("$NetBSD: arch.c,v 1.187 2020/12/06 18:13:17 rillig Exp $");
 
 typedef struct List ArchList;
 typedef struct ListNode ArchListNode;
@@ -169,21 +169,20 @@ ArchFree(void *ap)
 
 /*
  * Parse an archive specification such as "archive.a(member1 member2.${EXT})",
- * adding nodes for the expanded members to nodeLst.  Nodes are created as
+ * adding nodes for the expanded members to gns.  Nodes are created as
  * necessary.
  *
  * Input:
  *	pp		The start of the specification.
- *	nodeLst		The list on which to place the nodes.
+ *	gns		The list on which to place the nodes.
  *	ctxt		The context in which to expand variables.
  *
  * Output:
  *	return		TRUE if it was a valid specification.
  *	*pp		Points to the first non-space after the archive spec.
- *	*nodeLst	Nodes for the members have been added.
  */
 Boolean
-Arch_ParseArchive(char **pp, GNodeList *nodeLst, GNode *ctxt)
+Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 {
 	char *cp;		/* Pointer into line */
 	GNode *gn;		/* New node */
@@ -305,9 +304,9 @@ Arch_ParseArchive(char **pp, GNodeList *nodeLst, GNode *ctxt)
 		 * thing would be taken care of later.
 		 */
 		if (doSubst) {
-			char *buf;
-			char *sacrifice;
-			char *oldMemName = memName;
+			char *fullName;
+			char *p;
+			char *unexpandedMemName = memName;
 
 			(void)Var_Subst(memName, ctxt,
 					VARE_WANTRES | VARE_UNDEFERR,
@@ -317,31 +316,30 @@ Arch_ParseArchive(char **pp, GNodeList *nodeLst, GNode *ctxt)
 			/*
 			 * Now form an archive spec and recurse to deal with
 			 * nested variables and multi-word variable values.
-			 * The results are just placed at the end of the
-			 * nodeLst we're returning.
 			 */
-			sacrifice = str_concat4(libName, "(", memName, ")");
-			buf = sacrifice;
+			fullName = str_concat4(libName, "(", memName, ")");
+			p = fullName;
 
 			if (strchr(memName, '$') != NULL &&
-			    strcmp(memName, oldMemName) == 0) {
+			    strcmp(memName, unexpandedMemName) == 0) {
 				/*
 				 * Must contain dynamic sources, so we can't
 				 * deal with it now. Just create an ARCHV node
 				 * for the thing and let SuffExpandChildren
 				 * handle it.
 				 */
-				gn = Targ_GetNode(buf);
+				gn = Targ_GetNode(fullName);
 				gn->type |= OP_ARCHV;
-				Lst_Append(nodeLst, gn);
+				Lst_Append(gns, gn);
 
-			} else if (!Arch_ParseArchive(&sacrifice, nodeLst,
-						      ctxt)) {
+			} else if (!Arch_ParseArchive(&p, gns, ctxt)) {
 				/* Error in nested call. */
-				free(buf);
+				free(fullName);
+				/* XXX: does unexpandedMemName leak? */
 				return FALSE;
 			}
-			free(buf);
+			free(fullName);
+			/* XXX: does unexpandedMemName leak? */
 
 		} else if (Dir_HasWildcards(memName)) {
 			StringList members = LST_INIT;
@@ -357,7 +355,7 @@ Arch_ParseArchive(char **pp, GNodeList *nodeLst, GNode *ctxt)
 				free(fullname);
 
 				gn->type |= OP_ARCHV;
-				Lst_Append(nodeLst, gn);
+				Lst_Append(gns, gn);
 			}
 			Lst_Done(&members);
 
@@ -375,7 +373,7 @@ Arch_ParseArchive(char **pp, GNodeList *nodeLst, GNode *ctxt)
 			 * we place it on the end of the provided list.
 			 */
 			gn->type |= OP_ARCHV;
-			Lst_Append(nodeLst, gn);
+			Lst_Append(gns, gn);
 		}
 		if (doSubst)
 			free(memName);
@@ -446,7 +444,6 @@ ArchStatMember(const char *archive, const char *member, Boolean addToCache)
 			size_t len = strlen(member);
 
 			if (len > AR_MAX_NAME_LEN) {
-				len = AR_MAX_NAME_LEN;
 				snprintf(copy, sizeof copy, "%s", member);
 				hdr = HashTable_FindValue(&ar->members, copy);
 			}
@@ -596,22 +593,18 @@ badarch:
 }
 
 #ifdef SVR4ARCHIVES
-/*-
- *-----------------------------------------------------------------------
- * ArchSVR4Entry --
- *	Parse an SVR4 style entry that begins with a slash.
- *	If it is "//", then load the table of filenames
- *	If it is "/<offset>", then try to substitute the long file name
- *	from offset of a table previously read.
- *	If a table is read, the file pointer is moved to the next archive
- *	member.
+/*
+ * Parse an SVR4 style entry that begins with a slash.
+ * If it is "//", then load the table of filenames.
+ * If it is "/<offset>", then try to substitute the long file name
+ * from offset of a table previously read.
+ * If a table is read, the file pointer is moved to the next archive member.
  *
  * Results:
  *	-1: Bad data in archive
  *	 0: A table was loaded from the file
  *	 1: Name was successfully substituted from table
  *	 2: Name was not successfully substituted from table
- *-----------------------------------------------------------------------
  */
 static int
 ArchSVR4Entry(Arch *ar, char *inout_name, size_t size, FILE *arch)
@@ -725,7 +718,7 @@ ArchFindMember(const char *archive, const char *member, struct ar_hdr *out_arh,
 	FILE *arch;		/* Stream to archive */
 	int size;		/* Size of archive member */
 	char magic[SARMAG];
-	size_t len, tlen;
+	size_t len;
 	const char *lastSlash;
 
 	arch = fopen(archive, mode);
@@ -750,10 +743,7 @@ ArchFindMember(const char *archive, const char *member, struct ar_hdr *out_arh,
 	if (lastSlash != NULL)
 		member = lastSlash + 1;
 
-	len = tlen = strlen(member);
-	if (len > sizeof out_arh->ar_name) {
-		tlen = sizeof out_arh->ar_name;
-	}
+	len = strlen(member);
 
 	while (fread(out_arh, sizeof *out_arh, 1, arch) == 1) {
 
