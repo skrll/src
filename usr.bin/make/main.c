@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.490 2020/11/29 01:40:26 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.492 2020/12/05 18:38:02 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -109,7 +109,7 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.490 2020/11/29 01:40:26 rillig Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.492 2020/12/05 18:38:02 rillig Exp $");
 #if defined(MAKE_NATIVE) && !defined(lint)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
@@ -1091,7 +1091,7 @@ InitObjdir(const char *machine, const char *machine_arch)
 {
 	Boolean writable;
 
-	Dir_InitDir(curdir);
+	Dir_InitCur(curdir);
 	writable = GetBooleanVar("MAKE_OBJDIR_CHECK_WRITABLE", TRUE);
 	(void)Main_SetObjdir(FALSE, "%s", curdir);
 
@@ -1121,7 +1121,7 @@ static void
 CmdOpts_Init(void)
 {
 	opts.compatMake = FALSE;	/* No compat mode */
-	opts.debug = 0;			/* No debug verbosity, please. */
+	opts.debug = DEBUG_NONE;	/* No debug verbosity, please. */
 	/* opts.debug_file has been initialized earlier */
 	opts.lint = FALSE;
 	opts.debugVflag = FALSE;

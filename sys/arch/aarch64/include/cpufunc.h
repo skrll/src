@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.h,v 1.18 2020/08/03 06:30:00 ryo Exp $	*/
+/*	$NetBSD: cpufunc.h,v 1.19 2020/12/04 08:29:11 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>

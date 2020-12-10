@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.230 2020/11/29 09:27:40 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.232 2020/12/06 10:33:42 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -322,6 +322,7 @@ typedef enum GNodeType {
 } GNodeType;
 
 typedef enum GNodeFlags {
+	GNF_NONE	= 0,
 	/* this target needs to be (re)made */
 	REMAKE		= 0x0001,
 	/* children of this target were made */
@@ -580,29 +581,24 @@ typedef enum DebugFlags {
 
 void debug_printf(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
 
+#define DEBUG_IMPL(module, args) \
+	do { \
+		if (DEBUG(module)) \
+			debug_printf args; \
+	} while (0)
+
 #define DEBUG0(module, text) \
-    if (!DEBUG(module)) (void)0; \
-    else debug_printf("%s", text)
-
+	DEBUG_IMPL(module, ("%s", text))
 #define DEBUG1(module, fmt, arg1) \
-    if (!DEBUG(module)) (void)0; \
-    else debug_printf(fmt, arg1)
-
+	DEBUG_IMPL(module, (fmt, arg1))
 #define DEBUG2(module, fmt, arg1, arg2) \
-    if (!DEBUG(module)) (void)0; \
-    else debug_printf(fmt, arg1, arg2)
-
+	DEBUG_IMPL(module, (fmt, arg1, arg2))
 #define DEBUG3(module, fmt, arg1, arg2, arg3) \
-    if (!DEBUG(module)) (void)0; \
-    else debug_printf(fmt, arg1, arg2, arg3)
-
+	DEBUG_IMPL(module, (fmt, arg1, arg2, arg3))
 #define DEBUG4(module, fmt, arg1, arg2, arg3, arg4) \
-    if (!DEBUG(module)) (void)0; \
-    else debug_printf(fmt, arg1, arg2, arg3, arg4)
-
+	DEBUG_IMPL(module, (fmt, arg1, arg2, arg3, arg4))
 #define DEBUG5(module, fmt, arg1, arg2, arg3, arg4, arg5) \
-    if (!DEBUG(module)) (void)0; \
-    else debug_printf(fmt, arg1, arg2, arg3, arg4, arg5)
+	DEBUG_IMPL(module, (fmt, arg1, arg2, arg3, arg4, arg5))
 
 typedef enum PrintVarsMode {
 	PVM_NONE,
