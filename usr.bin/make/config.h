@@ -1,4 +1,4 @@
-/*	$NetBSD: config.h,v 1.26 2020/11/29 09:27:40 rillig Exp $	*/
+/*	$NetBSD: config.h,v 1.28 2020/12/11 22:53:08 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -73,19 +73,6 @@
  */
 
 /*
- * DEFMAXJOBS
- * DEFMAXLOCAL
- *	These control the default concurrency. On no occasion will more
- *	than DEFMAXJOBS targets be created at once (locally or remotely).
- *
- *	DEFMAXLOCAL is the highest number of targets which will be
- *	created on the local machine at once. Note that if you set this
- *	to 0, nothing will ever happen.
- */
-#define DEFMAXJOBS	4
-#define DEFMAXLOCAL	1
-
-/*
  * INCLUDES
  * LIBRARIES
  *	These control the handling of the .INCLUDES and .LIBS variables.
@@ -126,7 +113,6 @@
  *	Adhere to the POSIX 1003.2 draft for the make(1) program.
  *	- Use MAKEFLAGS instead of MAKE to pick arguments from the
  *	  environment.
- *	- Allow empty command lines if starting with tab.
  */
 #define POSIX
 

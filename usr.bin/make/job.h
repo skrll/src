@@ -1,4 +1,4 @@
-/*	$NetBSD: job.h,v 1.64 2020/11/29 09:27:40 rillig Exp $	*/
+/*	$NetBSD: job.h,v 1.69 2020/12/12 10:21:50 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -125,19 +125,6 @@ typedef enum JobStatus {
     JOB_ST_FINISHED =	4	/* Job is done (ie after SIGCHILD) */
 } JobStatus;
 
-typedef enum JobFlags {
-    JOB_NONE	= 0,
-    /* Ignore non-zero exits */
-    JOB_IGNERR	= 1 << 0,
-    /* no output */
-    JOB_SILENT	= 1 << 1,
-    /* Target is a special one. i.e. run it locally
-     * if we can't export it and maxLocal is 0 */
-    JOB_SPECIAL	= 1 << 2,
-    /* we've sent 'set -x' */
-    JOB_TRACED	= 1 << 10
-} JobFlags;
-
 /* A Job manages the shell commands that are run to create a single target.
  * Each job is run in a separate subprocess by a shell.  Several jobs can run
  * in parallel.
@@ -161,8 +148,7 @@ typedef struct Job {
      * first of these commands, if any. */
     StringListNode *tailCmds;
 
-    /* When creating the shell script, this is where the commands go.
-     * This is only used before the job is actually started. */
+    /* This is where the shell commands go. */
     FILE *cmdFILE;
 
     int exit_status;		/* from wait4() in signal handler */
@@ -171,7 +157,12 @@ typedef struct Job {
 
     Boolean suspended;
 
-    JobFlags flags;		/* Flags to control treatment of job */
+    /* Ignore non-zero exits */
+    Boolean ignerr;
+    /* Output the command before or instead of running it. */
+    Boolean echo;
+    /* Target is a special one. */
+    Boolean special;
 
     int inPipe;			/* Pipe for reading output from job */
     int outPipe;		/* Pipe for writing control commands */
@@ -211,5 +202,6 @@ Boolean Job_TokenWithdraw(void);
 void Job_ServerStart(int, int, int);
 void Job_SetPrefix(void);
 Boolean Job_RunTarget(const char *, const char *);
+void Job_FlagsToString(const Job *, char *, size_t);
 
 #endif /* MAKE_JOB_H */
