@@ -1,4 +1,4 @@
-/*	$NetBSD: job.c,v 1.351 2020/12/08 21:34:49 rillig Exp $	*/
+/*	$NetBSD: job.c,v 1.386 2020/12/13 02:01:43 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -143,7 +143,7 @@
 #include "trace.h"
 
 /*	"@(#)job.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: job.c,v 1.351 2020/12/08 21:34:49 rillig Exp $");
+MAKE_RCSID("$NetBSD: job.c,v 1.386 2020/12/13 02:01:43 rillig Exp $");
 
 /*
  * A shell defines how the commands are run.  All commands for a target are
@@ -162,12 +162,12 @@ MAKE_RCSID("$NetBSD: job.c,v 1.351 2020/12/08 21:34:49 rillig Exp $");
  * it is filtered out using noPrint and noPrintLen.
  *
  * The error checking for individual commands is controlled using hasErrCtl,
- * errOnOrEcho, errOffOrExecIgnore and errExit.
+ * errOn, errOff and runChkTmpl.
  *
- * If a shell doesn't have error control, errOnOrEcho becomes a printf template
- * for echoing the command, should echoing be on; errOffOrExecIgnore becomes
+ * If a shell doesn't have error control, echoTmpl becomes a printf template
+ * for echoing the command, should echoing be on; runIgnTmpl becomes
  * another printf template for executing the command while ignoring the return
- * status. Finally errExit is a printf template for running the command and
+ * status. Finally runChkTmpl is a printf template for running the command and
  * causing the shell to exit on error. If any of these strings are empty when
  * hasErrCtl is FALSE, the command will be executed anyway as is, and if it
  * causes an error, so be it. Any templates set up to echo the command will
@@ -189,40 +189,38 @@ typedef struct Shell {
 	 */
 	const char *name;
 
-	Boolean hasEchoCtl;	/* True if both echoOff and echoOn defined */
-	const char *echoOff;	/* command to turn off echo */
-	const char *echoOn;	/* command to turn it back on again */
-	const char *noPrint;	/* text to skip when printing output from
+	Boolean hasEchoCtl;	/* whether both echoOff and echoOn are there */
+	const char *echoOff;	/* command to turn echoing off */
+	const char *echoOn;	/* command to turn echoing back on */
+	const char *noPrint;	/* text to skip when printing output from the
 				 * shell. This is usually the same as echoOff */
 	size_t noPrintLen;	/* length of noPrint command */
 
-	Boolean hasErrCtl;	/* set if can control error checking for
-				 * individual commands */
-	/* XXX: split into errOn and echoCmd */
-	const char *errOnOrEcho; /* template to turn on error checking */
-	/*
-	 * template to turn off error checking
-	 * XXX: split into errOff and execIgnore
-	 */
-	const char *errOffOrExecIgnore;
-	const char *errExit;	/* template to use for testing exit code */
+	Boolean hasErrCtl;	/* whether error checking can be controlled
+				 * for individual commands */
+	const char *errOn;	/* command to turn on error checking */
+	const char *errOff;	/* command to turn off error checking */
+
+	const char *echoTmpl;	/* template to echo a command */
+	const char *runIgnTmpl;	/* template to run a command
+				 * without error checking */
+	const char *runChkTmpl;	/* template to run a command
+				 * with error checking */
 
 	/* string literal that results in a newline character when it appears
 	 * outside of any 'quote' or "quote" characters */
 	const char *newline;
 	char commentChar;	/* character used by shell for comment lines */
 
-	/*
-	 * command-line flags
-	 */
-	const char *echo;	/* echo commands */
-	const char *exit;	/* exit on error */
+	const char *echoFlag;	/* shell flag to echo commands */
+	const char *errFlag;	/* shell flag to exit on error */
 } Shell;
 
-typedef struct RunFlags {
+typedef struct CommandFlags {
 	/* Whether to echo the command before running it. */
 	Boolean echo;
 
+	/* Run the command even in -n or -N mode. */
 	Boolean always;
 
 	/*
@@ -230,7 +228,21 @@ typedef struct RunFlags {
 	 * and need to turn it back on
 	 */
 	Boolean ignerr;
-} RunFlags;
+} CommandFlags;
+
+/*
+ * Write shell commands to a file.
+ *
+ * TODO: keep track of whether commands are echoed.
+ * TODO: keep track of whether error checking is active.
+ */
+typedef struct ShellWriter {
+	FILE *f;
+
+	/* we've sent 'set -x' */
+	Boolean xtraced;
+
+} ShellWriter;
 
 /*
  * error handling variables
@@ -249,10 +261,6 @@ static AbortReason aborting = ABORT_NONE;
  * this tracks the number of tokens currently "out" to build jobs.
  */
 int jobTokensRunning = 0;
-
-/* The number of commands actually printed to the shell commands file for
- * the current job.  Should this number be 0, no shell will be executed. */
-static int numCommands;
 
 typedef enum JobStartResult {
 	JOB_RUNNING,		/* Job is running */
@@ -307,13 +315,15 @@ static Shell shells[] = {
 	"",			/* .noPrint */
 	0,			/* .noPrintLen */
 	FALSE,			/* .hasErrCtl */
-	"echo \"%s\"\n",	/* .errOnOrEcho */
-	"%s\n",			/* .errOffOrExecIgnore */
-	"{ %s \n} || exit $?\n", /* .errExit */
+	"",			/* .errOn */
+	"",			/* .errOff */
+	"echo \"%s\"\n",	/* .echoTmpl */
+	"%s\n",			/* .runIgnTmpl */
+	"{ %s \n} || exit $?\n", /* .runChkTmpl */
 	"'\n'",			/* .newline */
 	'#',			/* .commentChar */
-	"",			/* .echo */
-	"",			/* .exit */
+	"",			/* .echoFlag */
+	"",			/* .errFlag */
     },
 #endif /* DEFSHELL_CUSTOM */
     /*
@@ -328,17 +338,20 @@ static Shell shells[] = {
 	"",			/* .noPrint */
 	0,			/* .noPrintLen */
 	FALSE,			/* .hasErrCtl */
-	"echo \"%s\"\n",	/* .errOnOrEcho */
-	"%s\n",			/* .errOffOrExecIgnore */
-	"{ %s \n} || exit $?\n", /* .errExit */
+	"",			/* .errOn */
+	"",			/* .errOff */
+	"echo \"%s\"\n",	/* .echoTmpl */
+	"%s\n",			/* .runIgnTmpl */
+	"{ %s \n} || exit $?\n", /* .runChkTmpl */
 	"'\n'",			/* .newline */
 	'#',			/* .commentChar*/
 #if defined(MAKE_NATIVE) && defined(__NetBSD__)
-	"q",			/* .echo */
+	/* XXX: -q is not really echoFlag, it's more like noEchoInSysFlag. */
+	"q",			/* .echoFlag */
 #else
-	"",			/* .echo */
+	"",			/* .echoFlag */
 #endif
-	"",			/* .exit */
+	"",			/* .errFlag */
     },
     /*
      * KSH description.
@@ -351,13 +364,15 @@ static Shell shells[] = {
 	"set +v",		/* .noPrint */
 	6,			/* .noPrintLen */
 	FALSE,			/* .hasErrCtl */
-	"echo \"%s\"\n",	/* .errOnOrEcho */
-	"%s\n",			/* .errOffOrExecIgnore */
-	"{ %s \n} || exit $?\n", /* .errExit */
+	"",			/* .errOn */
+	"",			/* .errOff */
+	"echo \"%s\"\n",	/* .echoTmpl */
+	"%s\n",			/* .runIgnTmpl */
+	"{ %s \n} || exit $?\n", /* .runChkTmpl */
 	"'\n'",			/* .newline */
 	'#',			/* .commentChar */
-	"v",			/* .echo */
-	"",			/* .exit */
+	"v",			/* .echoFlag */
+	"",			/* .errFlag */
     },
     /*
      * CSH description. The csh can do echo control by playing
@@ -372,20 +387,21 @@ static Shell shells[] = {
 	"unset verbose",	/* .noPrint */
 	13,			/* .noPrintLen */
 	FALSE,			/* .hasErrCtl */
-	"echo \"%s\"\n",	/* .errOnOrEcho */
-	/* XXX: Mismatch between errOn and execIgnore */
-	"csh -c \"%s || exit 0\"\n", /* .errOffOrExecIgnore */
-	"",			/* .errExit */
+	"",			/* .errOn */
+	"",			/* .errOff */
+	"echo \"%s\"\n",	/* .echoTmpl */
+	"csh -c \"%s || exit 0\"\n", /* .runIgnTmpl */
+	"",			/* .runChkTmpl */
 	"'\\\n'",		/* .newline */
 	'#',			/* .commentChar */
-	"v",			/* .echo */
-	"e",			/* .exit */
+	"v",			/* .echoFlag */
+	"e",			/* .errFlag */
     }
 };
 
 /* This is the shell to which we pass all commands in the Makefile.
  * It is set by the Job_ParseShell function. */
-static Shell *commandShell = &shells[DEFSHELL_INDEX];
+static Shell *shell = &shells[DEFSHELL_INDEX];
 const char *shellPath = NULL;	/* full pathname of executable image */
 const char *shellName = NULL;	/* last component of shellPath */
 char *shellErrFlag = NULL;
@@ -451,15 +467,26 @@ nfds_per_job(void)
 	return 1;
 }
 
+void
+Job_FlagsToString(const Job *job, char *buf, size_t bufsize)
+{
+	snprintf(buf, bufsize, "%c%c%c",
+	    job->ignerr ? 'i' : '-',
+	    !job->echo ? 's' : '-',
+	    job->special ? 'S' : '-');
+}
+
 static void
 job_table_dump(const char *where)
 {
 	Job *job;
+	char flags[4];
 
 	debug_printf("job table @ %s\n", where);
 	for (job = job_table; job < job_table_end; job++) {
-		debug_printf("job %d, status %d, flags %d, pid %d\n",
-		    (int)(job - job_table), job->status, job->flags, job->pid);
+		Job_FlagsToString(job, flags, sizeof flags);
+		debug_printf("job %d, status %d, flags %s, pid %d\n",
+		    (int)(job - job_table), job->status, flags, job->pid);
 	}
 }
 
@@ -683,20 +710,20 @@ JobFindPid(int pid, JobStatus status, Boolean isJobs)
 
 /* Parse leading '@', '-' and '+', which control the exact execution mode. */
 static void
-ParseRunOptions(char **pp, RunFlags *out_runFlags)
+ParseCommandFlags(char **pp, CommandFlags *out_cmdFlags)
 {
 	char *p = *pp;
-	out_runFlags->echo = TRUE;
-	out_runFlags->ignerr = FALSE;
-	out_runFlags->always = FALSE;
+	out_cmdFlags->echo = TRUE;
+	out_cmdFlags->ignerr = FALSE;
+	out_cmdFlags->always = FALSE;
 
 	for (;;) {
 		if (*p == '@')
-			out_runFlags->echo = DEBUG(LOUD);
+			out_cmdFlags->echo = DEBUG(LOUD);
 		else if (*p == '-')
-			out_runFlags->ignerr = TRUE;
+			out_cmdFlags->ignerr = TRUE;
 		else if (*p == '+')
-			out_runFlags->always = TRUE;
+			out_cmdFlags->always = TRUE;
 		else
 			break;
 		p++;
@@ -727,215 +754,229 @@ EscapeShellDblQuot(const char *cmd)
 }
 
 static void
-JobPrintf(Job *job, const char *fmt, const char *arg)
+ShellWriter_PrintFmt(ShellWriter *wr, const char *fmt, const char *arg)
 {
 	DEBUG1(JOB, fmt, arg);
 
-	(void)fprintf(job->cmdFILE, fmt, arg);
-	(void)fflush(job->cmdFILE);
+	(void)fprintf(wr->f, fmt, arg);
+	/* XXX: Is flushing needed in any case, or only if f == stdout? */
+	(void)fflush(wr->f);
 }
 
 static void
-JobPrintln(Job *job, const char *line)
+ShellWriter_Println(ShellWriter *wr, const char *line)
 {
-	JobPrintf(job, "%s\n", line);
+	ShellWriter_PrintFmt(wr, "%s\n", line);
 }
 
-/*
- * We don't want the error-control commands showing up either, so we turn
- * off echoing while executing them. We could put another field in the shell
- * structure to tell JobDoOutput to look for this string too, but why make
- * it any more complex than it already is?
- */
 static void
-JobPrintSpecialsErrCtl(Job *job, Boolean echo)
+ShellWriter_EchoOff(ShellWriter *wr)
 {
-	if (!(job->flags & JOB_SILENT) && echo && commandShell->hasEchoCtl) {
-		JobPrintln(job, commandShell->echoOff);
-		JobPrintln(job, commandShell->errOffOrExecIgnore);
-		JobPrintln(job, commandShell->echoOn);
-	} else {
-		JobPrintln(job, commandShell->errOffOrExecIgnore);
+	if (shell->hasEchoCtl)
+		ShellWriter_Println(wr, shell->echoOff);
+}
+
+static void
+ShellWriter_EchoCmd(ShellWriter *wr, const char *escCmd)
+{
+	ShellWriter_PrintFmt(wr, shell->echoTmpl, escCmd);
+}
+
+static void
+ShellWriter_EchoOn(ShellWriter *wr)
+{
+	if (shell->hasEchoCtl)
+		ShellWriter_Println(wr, shell->echoOn);
+}
+
+static void
+ShellWriter_TraceOn(ShellWriter *wr)
+{
+	if (!wr->xtraced) {
+		ShellWriter_Println(wr, "set -x");
+		wr->xtraced = TRUE;
 	}
 }
 
+static void
+ShellWriter_ErrOff(ShellWriter *wr, Boolean echo)
+{
+	if (echo)
+		ShellWriter_EchoOff(wr);
+	ShellWriter_Println(wr, shell->errOff);
+	if (echo)
+		ShellWriter_EchoOn(wr);
+}
+
+static void
+ShellWriter_ErrOn(ShellWriter *wr, Boolean echo)
+{
+	if (echo)
+		ShellWriter_EchoOff(wr);
+	ShellWriter_Println(wr, shell->errOn);
+	if (echo)
+		ShellWriter_EchoOn(wr);
+}
+
 /*
- * The shell has no error control, so we need to be weird to get it to
- * ignore any errors from the command. If echoing is turned on, we turn it
- * off and use the errOnOrEcho template to echo the command. Leave echoing
- * off so the user doesn't see the weirdness we go through to ignore errors.
- * Set cmdTemplate to use the weirdness instead of the simple "%s\n" template.
+ * The shell has no built-in error control, so emulate error control by
+ * enclosing each shell command in a template like "{ %s \n } || exit $?"
+ * (configurable per shell).
  */
 static void
-JobPrintSpecialsEchoCtl(Job *job, RunFlags *inout_runFlags, const char *escCmd,
-			const char **inout_cmdTemplate)
+JobPrintSpecialsEchoCtl(Job *job, ShellWriter *wr, CommandFlags *inout_cmdFlags,
+			const char *escCmd, const char **inout_cmdTemplate)
 {
-	job->flags |= JOB_IGNERR;
+	/* XXX: Why is the job modified at this point? */
+	job->ignerr = TRUE;
 
-	if (!(job->flags & JOB_SILENT) && inout_runFlags->echo) {
-		if (commandShell->hasEchoCtl)
-			JobPrintln(job, commandShell->echoOff);
-		JobPrintf(job, commandShell->errOnOrEcho, escCmd);
-		inout_runFlags->echo = FALSE;
+	if (job->echo && inout_cmdFlags->echo) {
+		ShellWriter_EchoOff(wr);
+		ShellWriter_EchoCmd(wr, escCmd);
+
+		/*
+		 * Leave echoing off so the user doesn't see the commands
+		 * for toggling the error checking.
+		 */
+		inout_cmdFlags->echo = FALSE;
 	} else {
-		if (inout_runFlags->echo)
-			JobPrintf(job, commandShell->errOnOrEcho, escCmd);
+		if (inout_cmdFlags->echo)
+			ShellWriter_EchoCmd(wr, escCmd);
 	}
-	*inout_cmdTemplate = commandShell->errOffOrExecIgnore;
+	*inout_cmdTemplate = shell->runIgnTmpl;
 
 	/*
-	 * The error ignoration (hee hee) is already taken care of by the
-	 * errOffOrExecIgnore template, so pretend error checking is still on.
+	 * The template runIgnTmpl already takes care of ignoring errors,
+	 * so pretend error checking is still on.
+	 * XXX: What effects does this have, and why is it necessary?
 	 */
-	inout_runFlags->ignerr = FALSE;
+	inout_cmdFlags->ignerr = FALSE;
 }
 
 static void
-JobPrintSpecials(Job *const job, const char *const escCmd,
-		 Boolean const run, RunFlags *const inout_runFlags,
-		 const char **const inout_cmdTemplate)
+JobPrintSpecials(Job *job, ShellWriter *wr, const char *escCmd, Boolean run,
+		 CommandFlags *inout_cmdFlags, const char **inout_cmdTemplate)
 {
-	if (!run)
-		inout_runFlags->ignerr = FALSE;
-	else if (commandShell->hasErrCtl)
-		JobPrintSpecialsErrCtl(job, inout_runFlags->echo);
-	else if (commandShell->errOffOrExecIgnore != NULL &&
-		 commandShell->errOffOrExecIgnore[0] != '\0') {
-		JobPrintSpecialsEchoCtl(job, inout_runFlags, escCmd,
+	if (!run) {
+		/*
+		 * If there is no command to run, there is no need to switch
+		 * error checking off and on again for nothing.
+		 */
+		inout_cmdFlags->ignerr = FALSE;
+	} else if (shell->hasErrCtl)
+		ShellWriter_ErrOff(wr, job->echo && inout_cmdFlags->echo);
+	else if (shell->runIgnTmpl != NULL && shell->runIgnTmpl[0] != '\0') {
+		JobPrintSpecialsEchoCtl(job, wr, inout_cmdFlags, escCmd,
 		    inout_cmdTemplate);
 	} else
-		inout_runFlags->ignerr = FALSE;
+		inout_cmdFlags->ignerr = FALSE;
 }
 
 /*
- * Put out another command for the given job. If the command starts with an
- * '@' or a '-' we process it specially. In the former case, so long as the
- * -s and -n flags weren't given to make, we stick a shell-specific echoOff
- * command in the script. In the latter, we ignore errors for the entire job,
- * unless the shell has error control.
+ * Put out another command for the given job.
  *
- * If the command is just "..." we take all future commands for this job to
- * be commands to be executed once the entire graph has been made and return
- * non-zero to signal that the end of the commands was reached. These commands
- * are later attached to the .END node and executed by Job_End when all things
- * are done.
+ * If the command starts with '@' and neither the -s nor the -n flag was
+ * given to make, we stick a shell-specific echoOff command in the script.
  *
- * Side Effects:
- *	If the command begins with a '-' and the shell has no error control,
- *	the JOB_IGNERR flag is set in the job descriptor.
- *	numCommands is incremented if the command is actually printed.
+ * If the command starts with '-' and the shell has no error control (none
+ * of the predefined shells has that), we ignore errors for the entire job.
+ * XXX: Why ignore errors for the entire job?
+ * XXX: Even ignore errors for the commands before this command?
+ *
+ * If the command is just "...", all further commands of this job are skipped
+ * for now.  They are attached to the .END node and will be run by Job_Finish
+ * after all other targets have been made.
  */
 static void
-JobPrintCommand(Job *job, char *cmd)
+JobPrintCommand(Job *job, ShellWriter *wr, const char *ucmd)
 {
-	const char *const cmdp = cmd;
-
 	Boolean run;
 
-	RunFlags runFlags;
-	/* Template to use when printing the command */
+	CommandFlags cmdFlags;
+	/* Template for printing a command to the shell file */
 	const char *cmdTemplate;
-	char *cmdStart;		/* Start of expanded command */
-	char *escCmd = NULL;	/* Command with quotes/backticks escaped */
+	char *xcmd;		/* The expanded command */
+	char *xcmdStart;
+	char *escCmd;		/* xcmd escaped to be used in double quotes */
 
 	run = GNode_ShouldExecute(job->node);
 
-	numCommands++;
-
-	Var_Subst(cmd, job->node, VARE_WANTRES, &cmd);
+	Var_Subst(ucmd, job->node, VARE_WANTRES, &xcmd);
 	/* TODO: handle errors */
-	cmdStart = cmd;
+	xcmdStart = xcmd;
 
 	cmdTemplate = "%s\n";
 
-	ParseRunOptions(&cmd, &runFlags);
+	ParseCommandFlags(&xcmd, &cmdFlags);
 
 	/* The '+' command flag overrides the -n or -N options. */
-	if (runFlags.always && !run) {
+	if (cmdFlags.always && !run) {
 		/*
 		 * We're not actually executing anything...
 		 * but this one needs to be - use compat mode just for it.
 		 */
-		Compat_RunCommand(cmdp, job->node);
-		free(cmdStart);
+		Compat_RunCommand(ucmd, job->node);
+		free(xcmdStart);
 		return;
 	}
 
 	/*
-	 * If the shell doesn't have error control the alternate echo'ing will
-	 * be done (to avoid showing additional error checking code)
-	 * and this will need the characters '$ ` \ "' escaped
+	 * If the shell doesn't have error control, the alternate echoing
+	 * will be done (to avoid showing additional error checking code)
+	 * and this needs some characters escaped.
 	 */
+	escCmd = shell->hasErrCtl ? NULL : EscapeShellDblQuot(xcmd);
 
-	if (!commandShell->hasErrCtl)
-		escCmd = EscapeShellDblQuot(cmd);
-
-	if (!runFlags.echo) {
-		if (!(job->flags & JOB_SILENT) && run &&
-		    commandShell->hasEchoCtl) {
-			JobPrintln(job, commandShell->echoOff);
+	if (!cmdFlags.echo) {
+		if (job->echo && run && shell->hasEchoCtl) {
+			ShellWriter_EchoOff(wr);
 		} else {
-			if (commandShell->hasErrCtl)
-				runFlags.echo = TRUE;
+			if (shell->hasErrCtl)
+				cmdFlags.echo = TRUE;
 		}
 	}
 
-	if (runFlags.ignerr) {
-		JobPrintSpecials(job, escCmd, run, &runFlags, &cmdTemplate);
+	if (cmdFlags.ignerr) {
+		JobPrintSpecials(job, wr, escCmd, run, &cmdFlags, &cmdTemplate);
 	} else {
 
 		/*
 		 * If errors are being checked and the shell doesn't have
-		 * error control but does supply an errExit template, then
+		 * error control but does supply an runChkTmpl template, then
 		 * set up commands to run through it.
 		 */
 
-		if (!commandShell->hasErrCtl && commandShell->errExit &&
-		    commandShell->errExit[0] != '\0') {
-			if (!(job->flags & JOB_SILENT) && runFlags.echo) {
-				if (commandShell->hasEchoCtl)
-					JobPrintln(job, commandShell->echoOff);
-				JobPrintf(job, commandShell->errOnOrEcho,
-				    escCmd);
-				runFlags.echo = FALSE;
+		if (!shell->hasErrCtl && shell->runChkTmpl &&
+		    shell->runChkTmpl[0] != '\0') {
+			if (job->echo && cmdFlags.echo) {
+				ShellWriter_EchoOff(wr);
+				ShellWriter_EchoCmd(wr, escCmd);
+				cmdFlags.echo = FALSE;
 			}
 			/*
-			 * If it's a comment line or blank, treat as an
-			 * ignored error.
+			 * If it's a comment line or blank, avoid the possible
+			 * syntax error generated by "{\n} || exit $?".
 			 */
-			if (escCmd[0] == commandShell->commentChar ||
-			    (escCmd[0] == '\0'))
-				cmdTemplate = commandShell->errOffOrExecIgnore;
-			else
-				cmdTemplate = commandShell->errExit;
-			runFlags.ignerr = FALSE;
+			cmdTemplate = escCmd[0] == shell->commentChar ||
+				      escCmd[0] == '\0'
+			    ? shell->runIgnTmpl
+			    : shell->runChkTmpl;
+			cmdFlags.ignerr = FALSE;
 		}
 	}
 
-	if (DEBUG(SHELL) && strcmp(shellName, "sh") == 0 &&
-	    !(job->flags & JOB_TRACED)) {
-		JobPrintln(job, "set -x");
-		job->flags |= JOB_TRACED;
-	}
+	if (DEBUG(SHELL) && strcmp(shellName, "sh") == 0)
+		ShellWriter_TraceOn(wr);
 
-	JobPrintf(job, cmdTemplate, cmd);
-	free(cmdStart);
+	ShellWriter_PrintFmt(wr, cmdTemplate, xcmd);
+	free(xcmdStart);
 	free(escCmd);
-	if (runFlags.ignerr) {
-		/*
-		 * If echoing is already off, there's no point in issuing the
-		 * echoOff command. Otherwise we issue it and pretend it was on
-		 * for the whole command...
-		 */
-		if (runFlags.echo && !(job->flags & JOB_SILENT) &&
-		    commandShell->hasEchoCtl) {
-			JobPrintln(job, commandShell->echoOff);
-			runFlags.echo = FALSE;
-		}
-		JobPrintln(job, commandShell->errOnOrEcho);
-	}
-	if (!runFlags.echo && commandShell->hasEchoCtl)
-		JobPrintln(job, commandShell->echoOn);
+
+	if (cmdFlags.ignerr)
+		ShellWriter_ErrOn(wr, cmdFlags.echo && job->echo);
+
+	if (!cmdFlags.echo)
+		ShellWriter_EchoOn(wr);
 }
 
 /*
@@ -943,11 +984,15 @@ JobPrintCommand(Job *job, char *cmd)
  *
  * The special command "..." stops printing and saves the remaining commands
  * to be executed later.
+ *
+ * Return whether at least one command was written to the shell file.
  */
-static void
+static Boolean
 JobPrintCommands(Job *job)
 {
 	StringListNode *ln;
+	Boolean seen = FALSE;
+	ShellWriter wr = { job->cmdFILE, FALSE };
 
 	for (ln = job->node->commands.first; ln != NULL; ln = ln->next) {
 		const char *cmd = ln->datum;
@@ -958,8 +1003,11 @@ JobPrintCommands(Job *job)
 			break;
 		}
 
-		JobPrintCommand(job, ln->datum);
+		JobPrintCommand(job, &wr, ln->datum);
+		seen = TRUE;
 	}
+
+	return seen;
 }
 
 /* Save the delayed commands, to be executed when everything else is done. */
@@ -994,6 +1042,65 @@ JobClosePipes(Job *job)
 	job->inPipe = -1;
 }
 
+static void
+JobFinishDoneExitedError(Job *job, int *inout_status)
+{
+	SwitchOutputTo(job->node);
+#ifdef USE_META
+	if (useMeta) {
+		meta_job_error(job, job->node,
+		    job->ignerr, WEXITSTATUS(*inout_status));
+	}
+#endif
+	if (!shouldDieQuietly(job->node, -1)) {
+		(void)printf("*** [%s] Error code %d%s\n",
+		    job->node->name, WEXITSTATUS(*inout_status),
+		    job->ignerr ? " (ignored)" : "");
+	}
+
+	if (job->ignerr)
+		*inout_status = 0;
+	else {
+		if (deleteOnError)
+			JobDeleteTarget(job->node);
+		PrintOnError(job->node, NULL);
+	}
+}
+
+static void
+JobFinishDoneExited(Job *job, int *inout_status)
+{
+	DEBUG2(JOB, "Process %d [%s] exited.\n", job->pid, job->node->name);
+
+	if (WEXITSTATUS(*inout_status) != 0)
+		JobFinishDoneExitedError(job, inout_status);
+	else if (DEBUG(JOB)) {
+		SwitchOutputTo(job->node);
+		(void)printf("*** [%s] Completed successfully\n",
+		    job->node->name);
+	}
+}
+
+static void
+JobFinishDoneSignaled(Job *job, int status)
+{
+	SwitchOutputTo(job->node);
+	(void)printf("*** [%s] Signal %d\n", job->node->name, WTERMSIG(status));
+	if (deleteOnError)
+		JobDeleteTarget(job->node);
+}
+
+static void
+JobFinishDone(Job *job, int *inout_status)
+{
+	if (WIFEXITED(*inout_status))
+		JobFinishDoneExited(job, inout_status);
+	else
+		JobFinishDoneSignaled(job, *inout_status);
+
+	(void)fflush(stdout);
+}
+
 /*
  * Do final processing for the given job including updating parent nodes and
  * starting new jobs as available/necessary.
@@ -1016,22 +1123,17 @@ JobFinish(Job *job, int status)
 	    job->pid, job->node->name, status);
 
 	if ((WIFEXITED(status) &&
-	     ((WEXITSTATUS(status) != 0 && !(job->flags & JOB_IGNERR)))) ||
+	     ((WEXITSTATUS(status) != 0 && !job->ignerr))) ||
 	    WIFSIGNALED(status)) {
-		/*
-		 * If it exited non-zero and either we're doing things our
-		 * way or we're not ignoring errors, the job is finished.
-		 * Similarly, if the shell died because of a signal
-		 * the job is also finished. In these
-		 * cases, finish out the job's output before printing the exit
-		 * status...
-		 */
+		/* Finished because of an error. */
+
 		JobClosePipes(job);
 		if (job->cmdFILE != NULL && job->cmdFILE != stdout) {
 			(void)fclose(job->cmdFILE);
 			job->cmdFILE = NULL;
 		}
 		done = TRUE;
+
 	} else if (WIFEXITED(status)) {
 		/*
 		 * Deal with ignored errors in -B mode. We need to print a
@@ -1039,57 +1141,16 @@ JobFinish(Job *job, int status)
 		 * the next command.
 		 */
 		done = WEXITSTATUS(status) != 0;
+
 		JobClosePipes(job);
+
 	} else {
-		/*
-		 * No need to close things down or anything.
-		 */
+		/* No need to close things down or anything. */
 		done = FALSE;
 	}
 
-	if (done) {
-		if (WIFEXITED(status)) {
-			DEBUG2(JOB, "Process %d [%s] exited.\n",
-			    job->pid, job->node->name);
-			if (WEXITSTATUS(status) != 0) {
-				SwitchOutputTo(job->node);
-#ifdef USE_META
-				if (useMeta) {
-					meta_job_error(job, job->node,
-					    job->flags, WEXITSTATUS(status));
-				}
-#endif
-				if (!shouldDieQuietly(job->node, -1))
-					(void)printf(
-					    "*** [%s] Error code %d%s\n",
-					    job->node->name,
-					    WEXITSTATUS(status),
-					    (job->flags & JOB_IGNERR)
-						? " (ignored)" : "");
-				if (job->flags & JOB_IGNERR) {
-					status = 0;
-				} else {
-					if (deleteOnError) {
-						JobDeleteTarget(job->node);
-					}
-					PrintOnError(job->node, NULL);
-				}
-			} else if (DEBUG(JOB)) {
-				SwitchOutputTo(job->node);
-				(void)printf(
-				    "*** [%s] Completed successfully\n",
-				    job->node->name);
-			}
-		} else {
-			SwitchOutputTo(job->node);
-			(void)printf("*** [%s] Signal %d\n",
-			    job->node->name, WTERMSIG(status));
-			if (deleteOnError) {
-				JobDeleteTarget(job->node);
-			}
-		}
-		(void)fflush(stdout);
-	}
+	if (done)
+		JobFinishDone(job, &status);
 
 #ifdef USE_META
 	if (useMeta) {
@@ -1102,7 +1163,7 @@ JobFinish(Job *job, int status)
 	return_job_token = FALSE;
 
 	Trace_Log(JOBEND, job);
-	if (!(job->flags & JOB_SPECIAL)) {
+	if (!job->special) {
 		if (status != 0 ||
 		    (aborting == ABORT_ERROR) || aborting == ABORT_INTERRUPT)
 			return_job_token = TRUE;
@@ -1117,7 +1178,7 @@ JobFinish(Job *job, int status)
 		 */
 		JobSaveCommands(job);
 		job->node->made = MADE;
-		if (!(job->flags & JOB_SPECIAL))
+		if (!job->special)
 			return_job_token = TRUE;
 		Make_Update(job->node);
 		job->status = JOB_ST_FREE;
@@ -1173,7 +1234,7 @@ TouchRegular(GNode *gn)
  * The modification date of the file is changed.
  * If the file did not exist, it is created. */
 void
-Job_Touch(GNode *gn, Boolean silent)
+Job_Touch(GNode *gn, Boolean echo)
 {
 	if (gn->type &
 	    (OP_JOIN | OP_USE | OP_USEBEFORE | OP_EXEC | OP_OPTIONAL |
@@ -1185,7 +1246,7 @@ Job_Touch(GNode *gn, Boolean silent)
 		return;
 	}
 
-	if (!silent || !GNode_ShouldExecute(gn)) {
+	if (echo || !GNode_ShouldExecute(gn)) {
 		(void)fprintf(stdout, "touch %s\n", gn->name);
 		(void)fflush(stdout);
 	}
@@ -1193,17 +1254,12 @@ Job_Touch(GNode *gn, Boolean silent)
 	if (!GNode_ShouldExecute(gn))
 		return;
 
-	if (gn->type & OP_ARCHV) {
+	if (gn->type & OP_ARCHV)
 		Arch_Touch(gn);
-		return;
-	}
-
-	if (gn->type & OP_LIB) {
+	else if (gn->type & OP_LIB)
 		Arch_TouchLib(gn);
-		return;
-	}
-
-	TouchRegular(gn);
+	else
+		TouchRegular(gn);
 }
 
 /* Make sure the given node has all the commands it needs.
@@ -1296,8 +1352,6 @@ JobExec(Job *job, char **argv)
 	int cpid;		/* ID of new child */
 	sigset_t mask;
 
-	job->flags &= ~JOB_TRACED;
-
 	if (DEBUG(JOB)) {
 		int i;
 
@@ -1315,7 +1369,7 @@ JobExec(Job *job, char **argv)
 	 * banner with their name in it never appears). This is an attempt to
 	 * provide that feedback, even if nothing follows it.
 	 */
-	if (!(job->flags & JOB_SILENT))
+	if (job->echo)
 		SwitchOutputTo(job->node);
 
 	/* No interruptions until this job is on the `jobs' list */
@@ -1405,7 +1459,7 @@ JobExec(Job *job, char **argv)
 #  endif
 #endif
 
-		Var_ExportVars();
+		Var_ReexportVars();
 
 		(void)execv(shellPath, argv);
 		execDie("exec", shellPath);
@@ -1456,8 +1510,8 @@ JobMakeArgv(Job *job, char **argv)
 	argv[0] = UNCONST(shellName);
 	argc = 1;
 
-	if ((commandShell->exit && commandShell->exit[0] != '-') ||
-	    (commandShell->echo && commandShell->echo[0] != '-')) {
+	if ((shell->errFlag != NULL && shell->errFlag[0] != '-') ||
+	    (shell->echoFlag != NULL && shell->echoFlag[0] != '-')) {
 		/*
 		 * At least one of the flags doesn't have a minus before it,
 		 * so merge them together. Have to do this because the Bourne
@@ -1469,26 +1523,79 @@ JobMakeArgv(Job *job, char **argv)
 		 * practically relevant.
 		 */
 		(void)snprintf(args, sizeof args, "-%s%s",
-		    ((job->flags & JOB_IGNERR) ? "" :
-			(commandShell->exit ? commandShell->exit : "")),
-		    ((job->flags & JOB_SILENT) ? "" :
-			(commandShell->echo ? commandShell->echo : "")));
+		    (job->ignerr ? "" :
+			(shell->errFlag != NULL ? shell->errFlag : "")),
+		    (!job->echo ? "" :
+			(shell->echoFlag != NULL ? shell->echoFlag : "")));
 
 		if (args[1]) {
 			argv[argc] = args;
 			argc++;
 		}
 	} else {
-		if (!(job->flags & JOB_IGNERR) && commandShell->exit) {
-			argv[argc] = UNCONST(commandShell->exit);
+		if (!job->ignerr && shell->errFlag) {
+			argv[argc] = UNCONST(shell->errFlag);
 			argc++;
 		}
-		if (!(job->flags & JOB_SILENT) && commandShell->echo) {
-			argv[argc] = UNCONST(commandShell->echo);
+		if (job->echo && shell->echoFlag) {
+			argv[argc] = UNCONST(shell->echoFlag);
 			argc++;
 		}
 	}
 	argv[argc] = NULL;
+}
+
+static void
+JobOpenTmpFile(Job *job, GNode *gn, Boolean cmdsOK, Boolean *out_run)
+{
+	/*
+	 * tfile is the name of a file into which all shell commands
+	 * are put. It is removed before the child shell is executed,
+	 * unless DEBUG(SCRIPT) is set.
+	 */
+	char *tfile;
+	sigset_t mask;
+	int tfd;		/* File descriptor to the temp file */
+
+	/*
+	 * We're serious here, but if the commands were bogus, we're
+	 * also dead...
+	 */
+	if (!cmdsOK) {
+		PrintOnError(gn, NULL); /* provide some clue */
+		DieHorribly();
+	}
+
+	JobSigLock(&mask);
+	tfd = mkTempFile(TMPPAT, &tfile);
+	if (!DEBUG(SCRIPT))
+		(void)eunlink(tfile);
+	JobSigUnlock(&mask);
+
+	job->cmdFILE = fdopen(tfd, "w+");
+	if (job->cmdFILE == NULL)
+		Punt("Could not fdopen %s", tfile);
+
+	(void)fcntl(fileno(job->cmdFILE), F_SETFD, FD_CLOEXEC);
+	/*
+	 * Send the commands to the command file, flush all its
+	 * buffers then rewind and remove the thing.
+	 */
+	*out_run = TRUE;
+
+#ifdef USE_META
+	if (useMeta) {
+		meta_job_start(job, gn);
+		if (gn->type & OP_SILENT) /* might have changed */
+			job->echo = FALSE;
+	}
+#endif
+
+	/* We can do all the commands at once. hooray for sanity */
+	if (!JobPrintCommands(job))
+		*out_run = FALSE;
+
+	free(tfile);
 }
 
 /*
@@ -1512,13 +1619,12 @@ JobMakeArgv(Job *job, char **argv)
  * NB: The return value is ignored by everyone.
  */
 static JobStartResult
-JobStart(GNode *gn, JobFlags flags)
+JobStart(GNode *gn, Boolean special)
 {
 	Job *job;		/* new job descriptor */
 	char *argv[10];		/* Argument vector to shell */
 	Boolean cmdsOK;		/* true if the nodes commands were all right */
-	Boolean noExec;		/* Set true if we decide not to run the job */
-	int tfd;		/* File descriptor to the temp file */
+	Boolean run;
 
 	for (job = job_table; job < job_table_end; job++) {
 		if (job->status == JOB_ST_FREE)
@@ -1532,13 +1638,9 @@ JobStart(GNode *gn, JobFlags flags)
 	job->tailCmds = NULL;
 	job->status = JOB_ST_SET_UP;
 
-	if (gn->type & OP_SPECIAL)
-		flags |= JOB_SPECIAL;
-	if (Targ_Ignore(gn))
-		flags |= JOB_IGNERR;
-	if (Targ_Silent(gn))
-		flags |= JOB_SILENT;
-	job->flags = flags;
+	job->special = special || gn->type & OP_SPECIAL;
+	job->ignerr = opts.ignoreErrors || gn->type & OP_IGNORE;
+	job->echo = !(opts.beSilent || gn->type & OP_SILENT);
 
 	/*
 	 * Check the commands now so any attributes from .DEFAULT have a
@@ -1555,59 +1657,7 @@ JobStart(GNode *gn, JobFlags flags)
 	 */
 	if (((gn->type & OP_MAKE) && !opts.noRecursiveExecute) ||
 	    (!opts.noExecute && !opts.touchFlag)) {
-		/*
-		 * tfile is the name of a file into which all shell commands
-		 * are put. It is removed before the child shell is executed,
-		 * unless DEBUG(SCRIPT) is set.
-		 */
-		char *tfile;
-		sigset_t mask;
-		/*
-		 * We're serious here, but if the commands were bogus, we're
-		 * also dead...
-		 */
-		if (!cmdsOK) {
-			PrintOnError(gn, NULL); /* provide some clue */
-			DieHorribly();
-		}
-
-		JobSigLock(&mask);
-		tfd = mkTempFile(TMPPAT, &tfile);
-		if (!DEBUG(SCRIPT))
-			(void)eunlink(tfile);
-		JobSigUnlock(&mask);
-
-		job->cmdFILE = fdopen(tfd, "w+");
-		if (job->cmdFILE == NULL)
-			Punt("Could not fdopen %s", tfile);
-
-		(void)fcntl(fileno(job->cmdFILE), F_SETFD, FD_CLOEXEC);
-		/*
-		 * Send the commands to the command file, flush all its
-		 * buffers then rewind and remove the thing.
-		 */
-		noExec = FALSE;
-
-#ifdef USE_META
-		if (useMeta) {
-			meta_job_start(job, gn);
-			if (Targ_Silent(gn)) /* might have changed */
-				job->flags |= JOB_SILENT;
-		}
-#endif
-		/* We can do all the commands at once. hooray for sanity */
-		numCommands = 0;
-		JobPrintCommands(job);
-
-		/*
-		 * If we didn't print out any commands to the shell script,
-		 * there's not much point in executing the shell, is there?
-		 */
-		if (numCommands == 0) {
-			noExec = TRUE;
-		}
-
-		free(tfile);
+		JobOpenTmpFile(job, gn, cmdsOK, &run);
 	} else if (!GNode_ShouldExecute(gn)) {
 		/*
 		 * Not executing anything -- just print all the commands to
@@ -1625,7 +1675,7 @@ JobStart(GNode *gn, JobFlags flags)
 		if (cmdsOK)
 			JobPrintCommands(job);
 		/* Don't execute the shell, thank you. */
-		noExec = TRUE;
+		run = FALSE;
 	} else {
 		/*
 		 * Just touch the target and note that no shell should be
@@ -1634,15 +1684,15 @@ JobStart(GNode *gn, JobFlags flags)
 		 * good -- it does no harm to keep working up the graph.
 		 */
 		job->cmdFILE = stdout;
-		Job_Touch(gn, job->flags & JOB_SILENT);
-		noExec = TRUE;
+		Job_Touch(gn, job->echo);
+		run = FALSE;
 	}
 	/* Just in case it isn't already... */
 	(void)fflush(job->cmdFILE);
 
 	/* If we're not supposed to execute a shell, don't. */
-	if (noExec) {
-		if (!(job->flags & JOB_SPECIAL))
+	if (!run) {
+		if (!job->special)
 			Job_TokenReturn();
 		/* Unlink and close the command file if we opened one */
 		if (job->cmdFILE != NULL && job->cmdFILE != stdout) {
@@ -1685,10 +1735,10 @@ JobOutput(char *cp, char *endp)
 {
 	char *ecp;
 
-	if (commandShell->noPrint == NULL || commandShell->noPrint[0] == '\0')
+	if (shell->noPrint == NULL || shell->noPrint[0] == '\0')
 		return cp;
 
-	while ((ecp = strstr(cp, commandShell->noPrint)) != NULL) {
+	while ((ecp = strstr(cp, shell->noPrint)) != NULL) {
 		if (ecp != cp) {
 			*ecp = '\0';
 			/*
@@ -1700,7 +1750,7 @@ JobOutput(char *cp, char *endp)
 			(void)fprintf(stdout, "%s", cp);
 			(void)fflush(stdout);
 		}
-		cp = ecp + commandShell->noPrintLen;
+		cp = ecp + shell->noPrintLen;
 		if (cp != endp) {
 			/*
 			 * Still more to print, look again after skipping
@@ -2050,13 +2100,13 @@ Job_CatchOutput(void)
 void
 Job_Make(GNode *gn)
 {
-	(void)JobStart(gn, JOB_NONE);
+	(void)JobStart(gn, FALSE);
 }
 
 static void
 InitShellNameAndPath(void)
 {
-	shellName = commandShell->name;
+	shellName = shell->name;
 
 #ifdef DEFSHELL_CUSTOM
 	if (shellName[0] == '/') {
@@ -2076,26 +2126,23 @@ Shell_Init(void)
 		InitShellNameAndPath();
 
 	Var_SetWithFlags(".SHELL", shellPath, VAR_CMDLINE, VAR_SET_READONLY);
-	if (commandShell->exit == NULL) {
-		commandShell->exit = "";
-	}
-	if (commandShell->echo == NULL) {
-		commandShell->echo = "";
-	}
-	if (commandShell->hasErrCtl && commandShell->exit[0] != '\0') {
+	if (shell->errFlag == NULL)
+		shell->errFlag = "";
+	if (shell->echoFlag == NULL)
+		shell->echoFlag = "";
+	if (shell->hasErrCtl && shell->errFlag[0] != '\0') {
 		if (shellErrFlag &&
-		    strcmp(commandShell->exit, &shellErrFlag[1]) != 0) {
+		    strcmp(shell->errFlag, &shellErrFlag[1]) != 0) {
 			free(shellErrFlag);
 			shellErrFlag = NULL;
 		}
 		if (shellErrFlag == NULL) {
-			size_t n = strlen(commandShell->exit) + 2;
+			size_t n = strlen(shell->errFlag) + 2;
 
 			shellErrFlag = bmake_malloc(n);
-			if (shellErrFlag != NULL) {
+			if (shellErrFlag != NULL)
 				snprintf(shellErrFlag, n, "-%s",
-				    commandShell->exit);
-			}
+				    shell->errFlag);
 		}
 	} else if (shellErrFlag != NULL) {
 		free(shellErrFlag);
@@ -2110,7 +2157,7 @@ Shell_Init(void)
 const char *
 Shell_GetNewline(void)
 {
-	return commandShell->newline;
+	return shell->newline;
 }
 
 void
@@ -2253,7 +2300,7 @@ FindShellByName(const char *name)
 }
 
 /*
- * Parse a shell specification and set up commandShell, shellPath and
+ * Parse a shell specification and set up 'shell', shellPath and
  * shellName appropriately.
  *
  * Input:
@@ -2263,9 +2310,9 @@ FindShellByName(const char *name)
  *	FALSE if the specification was incorrect.
  *
  * Side Effects:
- *	commandShell points to a Shell structure (either predefined or
+ *	'shell' points to a Shell structure (either predefined or
  *	created from the shell spec), shellPath is the full path of the
- *	shell described by commandShell, while shellName is just the
+ *	shell described by 'shell', while shellName is just the
  *	final component of shellPath.
  *
  * Notes:
@@ -2307,6 +2354,7 @@ Job_ParseShell(char *line)
 	Boolean fullSpec = FALSE;
 	Shell *sh;
 
+	/* XXX: don't use line as an iterator variable */
 	pp_skip_whitespace(&line);
 
 	free(shellArgv);
@@ -2341,9 +2389,9 @@ Job_ParseShell(char *line)
 				newShell.noPrint = arg + 7;
 				newShell.noPrintLen = strlen(newShell.noPrint);
 			} else if (strncmp(arg, "echoFlag=", 9) == 0) {
-				newShell.echo = arg + 9;
+				newShell.echoFlag = arg + 9;
 			} else if (strncmp(arg, "errFlag=", 8) == 0) {
-				newShell.exit = arg + 8;
+				newShell.errFlag = arg + 8;
 			} else if (strncmp(arg, "hasErrCtl=", 10) == 0) {
 				char c = arg[10];
 				newShell.hasErrCtl = c == 'Y' || c == 'y' ||
@@ -2351,11 +2399,17 @@ Job_ParseShell(char *line)
 			} else if (strncmp(arg, "newline=", 8) == 0) {
 				newShell.newline = arg + 8;
 			} else if (strncmp(arg, "check=", 6) == 0) {
-				newShell.errOnOrEcho = arg + 6;
+				/* Before 2020-12-10, these two variables
+				 * had been a single variable. */
+				newShell.errOn = arg + 6;
+				newShell.echoTmpl = arg + 6;
 			} else if (strncmp(arg, "ignore=", 7) == 0) {
-				newShell.errOffOrExecIgnore = arg + 7;
+				/* Before 2020-12-10, these two variables
+				 * had been a single variable. */
+				newShell.errOff = arg + 7;
+				newShell.runIgnTmpl = arg + 7;
 			} else if (strncmp(arg, "errout=", 7) == 0) {
-				newShell.errExit = arg + 7;
+				newShell.runChkTmpl = arg + 7;
 			} else if (strncmp(arg, "comment=", 8) == 0) {
 				newShell.commentChar = arg[8];
 			} else {
@@ -2387,7 +2441,7 @@ Job_ParseShell(char *line)
 				free(words);
 				return FALSE;
 			}
-			commandShell = sh;
+			shell = sh;
 			shellName = newShell.name;
 			if (shellPath != NULL) {
 				/*
@@ -2426,26 +2480,23 @@ Job_ParseShell(char *line)
 				free(words);
 				return FALSE;
 			}
-			commandShell = sh;
+			shell = sh;
 		} else {
-			commandShell = bmake_malloc(sizeof *commandShell);
-			*commandShell = newShell;
+			shell = bmake_malloc(sizeof *shell);
+			*shell = newShell;
 		}
 		/* this will take care of shellErrFlag */
 		Shell_Init();
 	}
 
-	if (commandShell->echoOn && commandShell->echoOff) {
-		commandShell->hasEchoCtl = TRUE;
-	}
+	if (shell->echoOn && shell->echoOff)
+		shell->hasEchoCtl = TRUE;
 
-	if (!commandShell->hasErrCtl) {
-		if (commandShell->errOnOrEcho == NULL) {
-			commandShell->errOnOrEcho = "";
-		}
-		if (commandShell->errOffOrExecIgnore == NULL) {
-			commandShell->errOffOrExecIgnore = "%s\n";
-		}
+	if (!shell->hasErrCtl) {
+		if (shell->echoTmpl == NULL)
+			shell->echoTmpl = "";
+		if (shell->runIgnTmpl == NULL)
+			shell->runIgnTmpl = "%s\n";
 	}
 
 	/*
@@ -2504,7 +2555,7 @@ JobInterrupt(int runINTERRUPT, int signo)
 		}
 	}
 	Trace_Log(MAKEINTR, NULL);
-	exit(signo);
+	exit(signo);		/* XXX: why signo? */
 }
 
 /*
