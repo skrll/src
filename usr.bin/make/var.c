@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.719 2020/12/07 01:50:19 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.732 2020/12/13 02:15:49 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -98,7 +98,8 @@
  *
  *	Var_Delete	Delete a variable.
  *
- *	Var_ExportVars	Export some or even all variables to the environment
+ *	Var_ReexportVars
+ *			Export some or even all variables to the environment
  *			of this process and its child processes.
  *
  *	Var_Export	Export the variable to the environment of this process
@@ -130,7 +131,7 @@
 #include "metachar.h"
 
 /*	"@(#)var.c	8.3 (Berkeley) 3/19/94" */
-MAKE_RCSID("$NetBSD: var.c,v 1.719 2020/12/07 01:50:19 rillig Exp $");
+MAKE_RCSID("$NetBSD: var.c,v 1.732 2020/12/13 02:15:49 rillig Exp $");
 
 /* A string that may need to be freed after use. */
 typedef struct FStr {
@@ -210,19 +211,6 @@ typedef struct Var {
 	/* Miscellaneous status flags. */
 	VarFlags flags;
 } Var;
-
-typedef enum VarExportFlags {
-	VAR_EXPORT_NORMAL = 0,
-	/*
-	 * We pass this to Var_Export when doing the initial export
-	 * or after updating an exported var.
-	 */
-	VAR_EXPORT_PARENT = 0x01,
-	/*
-	 * We pass this to ExportVar to tell it to leave the value alone.
-	 */
-	VAR_EXPORT_LITERAL = 0x02
-} VarExportFlags;
 
 /*
  * Exporting vars is expensive so skip it if we can
@@ -565,9 +553,9 @@ MayExport(const char *name)
  * We only manipulate flags of vars if 'parent' is set.
  */
 static Boolean
-ExportVar(const char *name, VarExportFlags flags)
+ExportVar(const char *name, VarExportMode mode)
 {
-	Boolean parent = (flags & VAR_EXPORT_PARENT) != 0;
+	Boolean parent = mode == VEM_PARENT;
 	Var *v;
 	char *val;
 
@@ -582,7 +570,7 @@ ExportVar(const char *name, VarExportFlags flags)
 		return FALSE;	/* nothing to do */
 
 	val = Buf_GetAll(&v->val, NULL);
-	if (!(flags & VAR_EXPORT_LITERAL) && strchr(val, '$') != NULL) {
+	if (mode != VEM_LITERAL && strchr(val, '$') != NULL) {
 		char *expr;
 
 		if (parent) {
@@ -627,7 +615,7 @@ ExportVar(const char *name, VarExportFlags flags)
  * This gets called from our child processes.
  */
 void
-Var_ExportVars(void)
+Var_ReexportVars(void)
 {
 	char *val;
 
@@ -651,7 +639,7 @@ Var_ExportVars(void)
 		HashIter_Init(&hi, &VAR_GLOBAL->vars);
 		while (HashIter_Next(&hi) != NULL) {
 			Var *var = hi.entry->value;
-			ExportVar(var->name.str, VAR_EXPORT_NORMAL);
+			ExportVar(var->name.str, VEM_NORMAL);
 		}
 		return;
 	}
@@ -664,61 +652,62 @@ Var_ExportVars(void)
 		size_t i;
 
 		for (i = 0; i < words.len; i++)
-			ExportVar(words.words[i], VAR_EXPORT_NORMAL);
+			ExportVar(words.words[i], VEM_NORMAL);
 		Words_Free(words);
 	}
 	free(val);
 }
 
-/*
- * This is called when .export is seen or .MAKE.EXPORTED is modified.
- *
- * It is also called when any exported variable is modified.
- * XXX: Is it really?
- *
- * str has the format "[-env|-literal] varname...".
- */
-void
-Var_Export(const char *str, Boolean isExport)
+static void
+ExportVars(const char *varnames, Boolean isExport, VarExportMode mode)
 {
-	VarExportFlags flags;
-	char *val;
+	Words words = Str_Words(varnames, FALSE);
+	size_t i;
 
-	if (isExport && str[0] == '\0') {
+	if (words.len == 1 && words.words[0][0] == '\0')
+		words.len = 0;
+
+	for (i = 0; i < words.len; i++) {
+		const char *varname = words.words[i];
+		if (!ExportVar(varname, mode))
+			continue;
+
+		if (var_exportedVars == VAR_EXPORTED_NONE)
+			var_exportedVars = VAR_EXPORTED_SOME;
+
+		if (isExport && mode == VEM_PARENT)
+			Var_Append(MAKE_EXPORTED, varname, VAR_GLOBAL);
+	}
+	Words_Free(words);
+}
+
+static void
+ExportVarsExpand(const char *uvarnames, Boolean isExport, VarExportMode mode)
+{
+	char *xvarnames;
+
+	(void)Var_Subst(uvarnames, VAR_GLOBAL, VARE_WANTRES, &xvarnames);
+	/* TODO: handle errors */
+	ExportVars(xvarnames, isExport, mode);
+	free(xvarnames);
+}
+
+/* Export the named variables, or all variables. */
+void
+Var_Export(VarExportMode mode, const char *varnames)
+{
+	if (mode == VEM_PARENT && varnames[0] == '\0') {
 		var_exportedVars = VAR_EXPORTED_ALL; /* use with caution! */
 		return;
 	}
 
-	if (isExport && strncmp(str, "-env", 4) == 0) {
-		str += 4;
-		flags = VAR_EXPORT_NORMAL;
-	} else if (isExport && strncmp(str, "-literal", 8) == 0) {
-		str += 8;
-		flags = VAR_EXPORT_LITERAL;
-	} else {
-		flags = VAR_EXPORT_PARENT;
-	}
+	ExportVarsExpand(varnames, TRUE, mode);
+}
 
-	(void)Var_Subst(str, VAR_GLOBAL, VARE_WANTRES, &val);
-	/* TODO: handle errors */
-	if (val[0] != '\0') {
-		Words words = Str_Words(val, FALSE);
-
-		size_t i;
-		for (i = 0; i < words.len; i++) {
-			const char *name = words.words[i];
-			if (ExportVar(name, flags)) {
-				if (var_exportedVars == VAR_EXPORTED_NONE)
-					var_exportedVars = VAR_EXPORTED_SOME;
-				if (isExport && (flags & VAR_EXPORT_PARENT)) {
-					Var_Append(MAKE_EXPORTED, name,
-					    VAR_GLOBAL);
-				}
-			}
-		}
-		Words_Free(words);
-	}
-	free(val);
+void
+Var_ExportVars(const char *varnames)
+{
+	ExportVarsExpand(varnames, FALSE, VEM_PARENT);
 }
 
 
@@ -751,20 +740,24 @@ ClearEnv(void)
 }
 
 static void
-GetVarnamesToUnexport(const char *str,
+GetVarnamesToUnexport(Boolean isEnv, const char *arg,
 		      FStr *out_varnames, UnexportWhat *out_what)
 {
 	UnexportWhat what;
 	FStr varnames = FSTR_INIT;
 
-	str += strlen("unexport");
-	if (strncmp(str, "-env", 4) == 0)
+	if (isEnv) {
+		if (arg[0] != '\0') {
+			Parse_Error(PARSE_FATAL,
+			    "The directive .unexport-env does not take "
+			    "arguments");
+		}
 		what = UNEXPORT_ENV;
-	else {
-		cpp_skip_whitespace(&str);
-		what = str[0] != '\0' ? UNEXPORT_NAMED : UNEXPORT_ALL;
+
+	} else {
+		what = arg[0] != '\0' ? UNEXPORT_NAMED : UNEXPORT_ALL;
 		if (what == UNEXPORT_NAMED)
-			FStr_Assign(&varnames, str, NULL);
+			FStr_Assign(&varnames, arg, NULL);
 	}
 
 	if (what != UNEXPORT_NAMED) {
@@ -835,12 +828,12 @@ UnexportVars(FStr *varnames, UnexportWhat what)
  * str must have the form "unexport[-env] varname...".
  */
 void
-Var_UnExport(const char *str)
+Var_UnExport(Boolean isEnv, const char *arg)
 {
 	UnexportWhat what;
 	FStr varnames;
 
-	GetVarnamesToUnexport(str, &varnames, &what);
+	GetVarnamesToUnexport(isEnv, arg, &varnames, &what);
 	UnexportVars(&varnames, what);
 	FStr_Done(&varnames);
 }
@@ -910,7 +903,7 @@ Var_SetWithFlags(const char *name, const char *val, GNode *ctxt,
 
 		DEBUG3(VAR, "%s:%s = %s\n", ctxt->name, name, val);
 		if (v->flags & VAR_EXPORTED)
-			ExportVar(name, VAR_EXPORT_PARENT);
+			ExportVar(name, VEM_PARENT);
 	}
 	/*
 	 * Any variables given on the command line are automatically exported
@@ -3269,7 +3262,7 @@ ApplyModifier_SunShell(const char **pp, ApplyModifiersState *st)
 #endif
 
 static void
-LogBeforeApply(const ApplyModifiersState *st, const char *mod, const char endc)
+LogBeforeApply(const ApplyModifiersState *st, const char *mod, char endc)
 {
 	char eflags_str[VarEvalFlags_ToStringSize];
 	char vflags_str[VarFlags_ToStringSize];
@@ -3388,13 +3381,10 @@ typedef enum ApplyModifiersIndirectResult {
 /* While expanding a variable expression, expand and apply indirect
  * modifiers such as in ${VAR:${M_indirect}}. */
 static ApplyModifiersIndirectResult
-ApplyModifiersIndirect(
-    ApplyModifiersState *const st,
-    const char **const inout_p,
-    void **const inout_freeIt
-)
+ApplyModifiersIndirect(ApplyModifiersState *st, const char **pp,
+		       void **inout_freeIt)
 {
-	const char *p = *inout_p;
+	const char *p = *pp;
 	const char *mods;
 	void *mods_freeIt;
 
@@ -3403,35 +3393,34 @@ ApplyModifiersIndirect(
 
 	/*
 	 * If we have not parsed up to st->endc or ':', we are not
-	 * interested.  This means the expression ${VAR:${M_1}${M_2}}
-	 * is not accepted, but ${VAR:${M_1}:${M_2}} is.
+	 * interested.  This means the expression ${VAR:${M1}${M2}}
+	 * is not accepted, but ${VAR:${M1}:${M2}} is.
 	 */
 	if (mods[0] != '\0' && *p != '\0' && *p != ':' && *p != st->endc) {
 		if (opts.lint)
 			Parse_Error(PARSE_FATAL,
 			    "Missing delimiter ':' "
 			    "after indirect modifier \"%.*s\"",
-			    (int)(p - *inout_p), *inout_p);
+			    (int)(p - *pp), *pp);
 
 		free(mods_freeIt);
 		/* XXX: apply_mods doesn't sound like "not interested". */
 		/* XXX: Why is the indirect modifier parsed once more by
-		 * apply_mods?  If any, p should be advanced to nested_p. */
+		 * apply_mods?  Try *pp = p here. */
 		return AMIR_APPLY_MODS;
 	}
 
 	DEBUG3(VAR, "Indirect modifier \"%s\" from \"%.*s\"\n",
-	    mods, (int)(p - *inout_p), *inout_p);
+	    mods, (int)(p - *pp), *pp);
 
 	if (mods[0] != '\0') {
-		const char *rval_pp = mods;
-		st->val = ApplyModifiers(&rval_pp, st->val, '\0', '\0',
+		st->val = ApplyModifiers(&mods, st->val, '\0', '\0',
 		    st->var, &st->exprFlags, st->ctxt, st->eflags,
 		    inout_freeIt);
 		if (st->val == var_Error || st->val == varUndefined ||
-		    *rval_pp != '\0') {
+		    *mods != '\0') {
 			free(mods_freeIt);
-			*inout_p = p;
+			*pp = p;
 			return AMIR_OUT;	/* error already reported */
 		}
 	}
@@ -3443,26 +3432,26 @@ ApplyModifiersIndirect(
 		Error("Unclosed variable specification after complex "
 		      "modifier (expecting '%c') for %s",
 		    st->endc, st->var->name.str);
-		*inout_p = p;
+		*pp = p;
 		return AMIR_OUT;
 	}
 
-	*inout_p = p;
+	*pp = p;
 	return AMIR_CONTINUE;
 }
 
 /* Apply any modifiers (such as :Mpattern or :@var@loop@ or :Q or ::=value). */
 static char *
 ApplyModifiers(
-    const char **const pp,	/* the parsing position, updated upon return */
-    char *const val,		/* the current value of the expression */
-    char const startc,		/* '(' or '{', or '\0' for indirect modifiers */
-    char const endc,		/* ')' or '}', or '\0' for indirect modifiers */
-    Var *const v,
-    VarExprFlags *const exprFlags,
-    GNode *const ctxt,		/* for looking up and modifying variables */
-    VarEvalFlags const eflags,
-    void **const inout_freeIt	/* free this after using the return value */
+    const char **pp,		/* the parsing position, updated upon return */
+    char *val,			/* the current value of the expression */
+    char startc,		/* '(' or '{', or '\0' for indirect modifiers */
+    char endc,			/* ')' or '}', or '\0' for indirect modifiers */
+    Var *v,
+    VarExprFlags *exprFlags,
+    GNode *ctxt,		/* for looking up and modifying variables */
+    VarEvalFlags eflags,
+    void **inout_freeIt		/* free this after using the return value */
 )
 {
 	ApplyModifiersState st = {
@@ -4120,8 +4109,8 @@ Var_Parse(const char **pp, GNode *ctxt, VarEvalFlags eflags,
 }
 
 static void
-VarSubstNested(const char **const pp, Buffer *const buf, GNode *const ctxt,
-	       VarEvalFlags const eflags, Boolean *inout_errorReported)
+VarSubstNested(const char **pp, Buffer *buf, GNode *ctxt,
+	       VarEvalFlags eflags, Boolean *inout_errorReported)
 {
 	const char *p = *pp;
 	const char *nested_p = p;
