@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_ptrace_common.c,v 1.87 2020/10/20 20:28:55 christos Exp $	*/
+/*	$NetBSD: sys_ptrace_common.c,v 1.91 2020/11/04 19:27:41 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -107,7 +107,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.87 2020/10/20 20:28:55 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.91 2020/11/04 19:27:41 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ptrace.h"
@@ -143,7 +143,6 @@ __KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.87 2020/10/20 20:28:55 chris
 
 #include <machine/reg.h>
 
-#ifdef PTRACE
 # ifdef PTRACE_DEBUG
 #  define DPRINTF(a) uprintf a
 # else
@@ -291,40 +290,6 @@ ptrace_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 #endif
 
 	return result;
-}
-
-int
-ptrace_init(void)
-{
-
-#if 0
-	mutex_init(&ptrace_mtx, MUTEX_DEFAULT, IPL_NONE);
-	cv_init(&ptrace_cv, "ptracecb");
-	ptrace_cbref = 0;
-#endif
-	ptrace_listener = kauth_listen_scope(KAUTH_SCOPE_PROCESS,
-	    ptrace_listener_cb, NULL);
-	return 0;
-}
-
-int
-ptrace_fini(void)
-{
-
-	kauth_unlisten_scope(ptrace_listener);
-
-#if 0
-	/* Make sure no-one is executing our kauth listener */
-
-	mutex_enter(&ptrace_mtx);
-	while (ptrace_cbref != 0)
-		cv_wait(&ptrace_cv, &ptrace_mtx);
-	mutex_exit(&ptrace_mtx);
-	mutex_destroy(&ptrace_mtx);
-	cv_destroy(&ptrace_cv);
-#endif
-
-	return 0;
 }
 
 static struct proc *
@@ -1572,10 +1537,43 @@ process_auxv_offset(struct proc *p, struct uio *uio)
 #endif
 	return 0;
 }
-#endif /* PTRACE */
 
 MODULE(MODULE_CLASS_EXEC, ptrace_common, NULL);
  
+static int
+ptrace_common_init(void)
+{
+
+#if 0
+	mutex_init(&ptrace_mtx, MUTEX_DEFAULT, IPL_NONE);
+	cv_init(&ptrace_cv, "ptracecb");
+	ptrace_cbref = 0;
+#endif
+	ptrace_listener = kauth_listen_scope(KAUTH_SCOPE_PROCESS,
+	    ptrace_listener_cb, NULL);
+	return 0;
+}
+
+static int
+ptrace_common_fini(void)
+{
+
+	kauth_unlisten_scope(ptrace_listener);
+
+#if 0
+	/* Make sure no-one is executing our kauth listener */
+
+	mutex_enter(&ptrace_mtx);
+	while (ptrace_cbref != 0)
+		cv_wait(&ptrace_cv, &ptrace_mtx);
+	mutex_exit(&ptrace_mtx);
+	mutex_destroy(&ptrace_mtx);
+	cv_destroy(&ptrace_cv);
+#endif
+
+	return 0;
+}
+
 static int
 ptrace_common_modcmd(modcmd_t cmd, void *arg)
 {
@@ -1583,10 +1581,10 @@ ptrace_common_modcmd(modcmd_t cmd, void *arg)
  
         switch (cmd) {
         case MODULE_CMD_INIT:
-                error = ptrace_init();
+                error = ptrace_common_init();
                 break;
         case MODULE_CMD_FINI:
-                error = ptrace_fini();
+                error = ptrace_common_fini();
                 break;
         default:
 		ptrace_hooks();

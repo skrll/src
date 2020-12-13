@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1228 2020/10/18 19:58:02 christos Exp $
+#	$NetBSD: bsd.own.mk,v 1.1235 2020/12/06 14:28:34 christos Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -102,11 +102,7 @@ EXTERNAL_BINUTILS_SUBDIR=	/does/not/exist
 #
 # What GDB is used?
 #
-.if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "i386"
 HAVE_GDB?=	1100
-.else
-HAVE_GDB?=	830
-.endif
 
 .if ${HAVE_GDB} == 1100
 EXTERNAL_GDB_SUBDIR=		gdb
@@ -1237,6 +1233,7 @@ MKTEGRAFIRMWARE.evbarm=		yes
 
 # Only build devicetree (dtb) files on armv6, armv7, and aarch64.
 MKDTB.aarch64=			yes
+MKDTB.aarch64eb=		yes
 MKDTB.earmv6=			yes
 MKDTB.earmv6hf=			yes
 MKDTB.earmv6eb=			yes
@@ -1494,8 +1491,7 @@ ${var}?= no
 .if ${USE_PIGZGZIP} == "no" && \
 		(${MACHINE} == "amd64" || \
 		 ${MACHINE} == "sparc64" || \
-		 ${MACHINE} == "alpha" || \
-		 ${MACHINE_ARCH} == "aarch64")
+		 ${MACHINE_CPU} == "aarch64")
 USE_XZ_SETS?= yes
 .else
 USE_XZ_SETS?= no

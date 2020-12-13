@@ -72,7 +72,7 @@ arm_nbsd_supply_gregset (const struct regset *regset, struct regcache *regcache,
 
   if (regnum == -1 || regnum == ARM_PC_REGNUM)
     {
-      CORE_ADDR r_pc = gdbarch_addr_bits_remove (regcache->arch (), gregset->pc);
+      uint32_t r_pc = gdbarch_addr_bits_remove (regcache->arch (), gregset->pc);
       regcache->raw_supply (ARM_PC_REGNUM, (char *) &r_pc);
     }
 
@@ -166,9 +166,6 @@ arm_netbsd_elf_init_abi (struct gdbarch_info info,
   /* NetBSD ELF uses SVR4-style shared libraries.  */
   set_solib_svr4_fetch_link_map_offsets
     (gdbarch, svr4_ilp32_fetch_link_map_offsets);
-
-  /* for single stepping; see PR/50773 */
-  set_gdbarch_skip_solib_resolver (gdbarch, nbsd_skip_solib_resolver);
 }
 
 void _initialize_arm_netbsd_tdep ();

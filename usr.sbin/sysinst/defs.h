@@ -1,4 +1,4 @@
-/*	$NetBSD: defs.h,v 1.67 2020/10/13 17:26:28 martin Exp $	*/
+/*	$NetBSD: defs.h,v 1.69 2020/11/04 14:29:40 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -41,6 +41,7 @@
 #include <sys/queue.h>
 #include <sys/types.h>
 #include <sys/disk.h>
+#include <limits.h>
 #include <uuid.h>
 
 const char *getfslabelname(uint, uint);
@@ -178,11 +179,16 @@ enum {
 /* All kernels */
 #define SET_KERNEL SET_KERNEL_1, SET_KERNEL_2, SET_KERNEL_3, SET_KERNEL_4, \
 		    SET_KERNEL_5, SET_KERNEL_6, SET_KERNEL_7, SET_KERNEL_8
+#ifdef HAVE_MODULES
+#define	WITH_MODULES	SET_MODULES,
+#else
+#define	WITH_MODULES
+#endif
 /* Core system sets */
 #ifdef HAVE_DTB
-#define SET_CORE SET_MODULES, SET_BASE, SET_DTB, SET_ETC
+#define SET_CORE WITH_MODULES SET_BASE, SET_DTB, SET_ETC
 #else
-#define SET_CORE SET_MODULES, SET_BASE, SET_ETC
+#define SET_CORE WITH_MODULES SET_BASE, SET_ETC
 #endif
 /* All system sets */
 #define SET_SYSTEM SET_CORE, SET_COMPILER, SET_GAMES, \
@@ -599,6 +605,7 @@ extern struct ftpinfo ftp, pkg, pkgsrc;
 extern int (*fetch_fn)(const char *);
 extern char nfs_host[STRSIZE];
 extern char nfs_dir[STRSIZE];
+extern char entropy_file[PATH_MAX];
 
 extern char cdrom_dev[SSTRSIZE];		/* Typically "cd0a" */
 extern char fd_dev[SSTRSIZE];			/* Typically "/dev/fd0a" */
@@ -883,6 +890,7 @@ bool	install_desc_from_parts(struct install_partition_desc *,
 	    struct disk_partitions*);
 void	free_install_desc(struct install_partition_desc*);
 bool	may_swap_if_not_sdmmc(const char*);
+bool	do_check_entropy(void);
 
 /* from target.c */
 #if defined(DEBUG)  ||	defined(DEBUG_ROOT)

@@ -1,4 +1,4 @@
-/*	$NetBSD: pic.c,v 1.57 2020/07/27 16:26:51 skrll Exp $	*/
+/*	$NetBSD: pic.c,v 1.61 2020/11/01 14:42:05 jmcneill Exp $	*/
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -33,7 +33,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pic.c,v 1.57 2020/07/27 16:26:51 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pic.c,v 1.61 2020/11/01 14:42:05 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -197,25 +197,37 @@ intr_ipi_send(const kcpuset_t *kcp, u_long ipi)
 {
 	struct cpu_info * const ci = curcpu();
 	KASSERT(ipi < NIPI);
+	KASSERT(kcp == NULL || kcpuset_countset(kcp) == 1);
 	bool __diagused sent_p = false;
 	for (size_t slot = 0; slot < PIC_MAXPICS; slot++) {
 		struct pic_softc * const pic = pic_list[slot];
 		if (pic == NULL || pic->pic_cpus == NULL)
 			continue;
 		if (kcp == NULL || kcpuset_intersecting_p(kcp, pic->pic_cpus)) {
-			// never send to ourself
+			/*
+			 * Never send to ourself.
+			 *
+			 * This test uses pointer comparison for systems
+			 * that have a pic per cpu, e.g. RPI[23].  GIC sets
+			 * pic_cpus to kcpuset_running and handles "not for
+			 * self" internally.
+			 */
 			if (pic->pic_cpus == ci->ci_kcpuset)
 				continue;
 
 			(*pic->pic_ops->pic_ipi_send)(pic, kcp, ipi);
-			// If we were targeting a single CPU or this pic
-			// handles all cpus, we're done.
+
+			/*
+			 * If we were targeting a single CPU or this pic
+			 * handles all cpus, we're done.
+			 */
 			if (kcp != NULL || pic->pic_cpus == kcpuset_running)
 				return;
 			sent_p = true;
 		}
 	}
-	KASSERT(cold || sent_p || ncpu <= 1);
+	KASSERTMSG(cold || sent_p || ncpu <= 1, "cold %d sent_p %d ncpu %d",
+	    cold, sent_p, ncpu);
 }
 #endif /* MULTIPROCESSOR */
 

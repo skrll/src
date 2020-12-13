@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.man.mk,v 1.120 2019/01/21 21:11:54 christos Exp $
+#	$NetBSD: bsd.man.mk,v 1.122 2020/11/10 21:47:49 kamil Exp $
 #	@(#)bsd.man.mk	8.1 (Berkeley) 6/8/93
 
 .include <bsd.init.mk>

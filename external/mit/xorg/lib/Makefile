@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.51 2020/01/19 00:58:14 jmcneill Exp $
+#	$NetBSD: Makefile,v 1.54 2020/10/28 08:10:10 nia Exp $
 
 # build libraries for xorg
 
@@ -36,7 +36,7 @@ SUBDIR+=libvdpau \
 	.WAIT
 .endif
 SUBDIR+=libXi libXxf86vm \
-	libGL${OLD_PREFIX} libXScrnSaver libXTrap libXevie libXfont libXfont2 \
+	libGL${OLD_PREFIX} libXScrnSaver libXfont libXfont2 \
 	libXinerama libXmu libXmuu libXpm libXrender \
 	libXres libXtst libXvMC libXvMCW libXv libXxf86dga libXxf86misc \
 	libxkbui \
@@ -50,7 +50,7 @@ SUBDIR+=libchromeXvMCPro
 SUBDIR+=libGLU libGLw libXaw6 libXaw libXcursor \
 	libXrandr \
 	.WAIT \
-	libXpresent libXft libglut \
+	libXpresent libXft \
 	.WAIT \
 	libXdmGreet \
 	xcb-util

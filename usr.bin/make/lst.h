@@ -1,4 +1,4 @@
-/*	$NetBSD: lst.h,v 1.79 2020/10/24 10:36:23 rillig Exp $	*/
+/*	$NetBSD: lst.h,v 1.92 2020/12/04 20:11:48 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -83,49 +83,56 @@
 #include <stdlib.h>
 
 /* A doubly-linked list of pointers. */
-typedef	struct List	List;
+typedef struct List List;
 /* A single node in the doubly-linked list. */
-typedef	struct ListNode	ListNode;
+typedef struct ListNode ListNode;
 
 struct ListNode {
-    ListNode *prev;		/* previous node in list, or NULL */
-    ListNode *next;		/* next node in list, or NULL */
-    union {
-	void *datum;		/* datum associated with this element */
-	const struct GNode *priv_gnode; /* alias, just for debugging */
-	const char *priv_str;	/* alias, just for debugging */
-    };
+	ListNode *prev;		/* previous node in list, or NULL */
+	ListNode *next;		/* next node in list, or NULL */
+	union {
+		void *datum;	/* datum associated with this element */
+		const struct GNode *priv_gnode; /* alias, just for debugging */
+		const char *priv_str; /* alias, just for debugging */
+	};
 };
 
 struct List {
-    ListNode *first;		/* first node in list */
-    ListNode *last;		/* last node in list */
+	ListNode *first;	/* first node in list */
+	ListNode *last;		/* last node in list */
 };
 
-/* Copy a node, usually by allocating a copy of the given object.
- * For reference-counted objects, the original object may need to be
- * modified, therefore the parameter is not const. */
-typedef void *LstCopyProc(void *);
 /* Free the datum of a node, called before freeing the node itself. */
 typedef void LstFreeProc(void *);
-/* An action for Lst_ForEachUntil and Lst_ForEachUntilConcurrent. */
-typedef int LstActionUntilProc(void *datum, void *args);
 
 /* Create or destroy a list */
 
 /* Create a new list. */
 List *Lst_New(void);
-/* Duplicate an existing list. */
-List *Lst_Copy(List *, LstCopyProc);
+/* Free the list nodes, but not the list itself. */
+void Lst_Done(List *);
+/* Free the list nodes, freeing the node data using the given function. */
+void Lst_DoneCall(List *, LstFreeProc);
 /* Free the list, leaving the node data unmodified. */
 void Lst_Free(List *);
 /* Free the list, freeing the node data using the given function. */
 void Lst_Destroy(List *, LstFreeProc);
 
+#define LST_INIT { NULL, NULL }
+
+/* Initialize a list, without memory allocation. */
+MAKE_INLINE void
+Lst_Init(List *list)
+{
+    list->first = NULL;
+    list->last = NULL;
+}
+
 /* Get information about a list */
 
-static inline MAKE_ATTR_UNUSED Boolean
-Lst_IsEmpty(List *list) { return list->first == NULL; }
+MAKE_INLINE Boolean
+Lst_IsEmpty(List *list)
+{ return list->first == NULL; }
 
 /* Find the first node that contains the given datum, or NULL. */
 ListNode *Lst_FindDatum(List *, const void *);
@@ -151,35 +158,43 @@ void LstNode_Set(ListNode *, void *);
 /* Set the value of the node to NULL. Having NULL in a list is unusual. */
 void LstNode_SetNull(ListNode *);
 
-/* Iterating over a list, using a callback function */
-
-/* Run the action for each datum of the list, until the action returns
- * non-zero.
- *
- * During this iteration, the list must not be modified structurally. */
-int Lst_ForEachUntil(List *, LstActionUntilProc, void *);
-
-/* Iterating over a list while keeping track of the current node and possible
- * concurrent modifications */
-
 /* Using the list as a queue */
 
 /* Add a datum at the tail of the queue. */
-void Lst_Enqueue(List *, void *);
+MAKE_INLINE void
+Lst_Enqueue(List *list, void *datum) {
+	Lst_Append(list, datum);
+}
+
 /* Remove the head node of the queue and return its datum. */
 void *Lst_Dequeue(List *);
 
-/* A vector is an ordered collection of items, allowing fast indexed access. */
+/* A vector is an ordered collection of items, allowing for fast indexed
+ * access. */
 typedef struct Vector {
-    void **items;
-    size_t len;
-    size_t cap;
+	void *items;		/* memory holding the items */
+	size_t itemSize;	/* size of a single item in bytes */
+	size_t len;		/* number of actually usable elements */
+	size_t priv_cap;	/* capacity */
 } Vector;
 
-void Vector_Init(Vector *);
-Boolean Vector_IsEmpty(Vector *);
-void Vector_Push(Vector *, void *);
+void Vector_Init(Vector *, size_t);
+
+/* Return the pointer to the given item in the vector.
+ * The returned data is valid until the next modifying operation. */
+MAKE_INLINE void *
+Vector_Get(Vector *v, size_t i)
+{
+	unsigned char *items = v->items;
+	return items + i * v->itemSize;
+}
+
+void *Vector_Push(Vector *);
 void *Vector_Pop(Vector *);
-void Vector_Done(Vector *);
+
+MAKE_INLINE void
+Vector_Done(Vector *v) {
+	free(v->items);
+}
 
 #endif /* MAKE_LST_H */

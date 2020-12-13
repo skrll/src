@@ -30,8 +30,6 @@
 #include "trad-frame.h"
 #include "tramp-frame.h"
 
-#include "common/gdb_assert.h"
-
 #include "solib-svr4.h"
 
 #include "sh-tdep.h"
@@ -172,7 +170,7 @@ shnbsd_sigtramp_cache_init (const struct tramp_frame *self,
 			    CORE_ADDR func)
 {
   struct gdbarch *gdbarch = get_frame_arch (next_frame);
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  // struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
   int sp_regnum = gdbarch_sp_regnum (gdbarch);
   CORE_ADDR sp = get_frame_register_unsigned (next_frame, sp_regnum);
   CORE_ADDR base;

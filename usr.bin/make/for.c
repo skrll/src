@@ -1,4 +1,4 @@
-/*	$NetBSD: for.c,v 1.94 2020/10/18 17:19:54 rillig Exp $	*/
+/*	$NetBSD: for.c,v 1.116 2020/12/12 00:33:25 rillig Exp $	*/
 
 /*
  * Copyright (c) 1992, The Regents of the University of California.
@@ -57,47 +57,72 @@
  *	For_Run		Run accumulated loop
  */
 
-#include    "make.h"
-#include    "strlist.h"
+#include "make.h"
 
 /*	"@(#)for.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: for.c,v 1.94 2020/10/18 17:19:54 rillig Exp $");
-
-typedef enum ForEscapes {
-    FOR_SUB_ESCAPE_CHAR = 0x0001,
-    FOR_SUB_ESCAPE_BRACE = 0x0002,
-    FOR_SUB_ESCAPE_PAREN = 0x0004
-} ForEscapes;
+MAKE_RCSID("$NetBSD: for.c,v 1.116 2020/12/12 00:33:25 rillig Exp $");
 
 static int forLevel = 0;	/* Nesting level */
+
+/* One of the variables to the left of the "in" in a .for loop. */
+typedef struct ForVar {
+    char *name;
+    size_t len;
+} ForVar;
 
 /*
  * State of a for loop.
  */
 typedef struct For {
-    Buffer buf;			/* Body of loop */
-    strlist_t vars;		/* Iteration variables */
-    strlist_t items;		/* Substitution items */
-    char *parse_buf;
+    Buffer body;		/* Unexpanded body of the loop */
+    Vector /* of ForVar */ vars; /* Iteration variables */
+    Words items;		/* Substitution items */
+    Buffer curBody;		/* Expanded body of the current iteration */
     /* Is any of the names 1 character long? If so, when the variable values
      * are substituted, the parser must handle $V expressions as well, not
      * only ${V} and $(V). */
     Boolean short_var;
-    unsigned int sub_next;
+    unsigned int sub_next;	/* Where to continue iterating */
 } For;
 
 static For *accumFor;		/* Loop being accumulated */
 
+static void
+ForAddVar(For *f, const char *name, size_t len)
+{
+    ForVar *var = Vector_Push(&f->vars);
+    var->name = bmake_strldup(name, len);
+    var->len = len;
+}
 
 static void
-For_Free(For *arg)
+For_Free(For *f)
 {
-    Buf_Destroy(&arg->buf, TRUE);
-    strlist_clean(&arg->vars);
-    strlist_clean(&arg->items);
-    free(arg->parse_buf);
+    Buf_Destroy(&f->body, TRUE);
 
-    free(arg);
+    while (f->vars.len > 0) {
+	ForVar *var = Vector_Pop(&f->vars);
+	free(var->name);
+    }
+    Vector_Done(&f->vars);
+
+    Words_Free(f->items);
+    Buf_Destroy(&f->curBody, TRUE);
+
+    free(f);
+}
+
+static Boolean
+IsFor(const char *p)
+{
+    return p[0] == 'f' && p[1] == 'o' && p[2] == 'r' && ch_isspace(p[3]);
+}
+
+static Boolean
+IsEndfor(const char *p)
+{
+    return p[0] == 'e' && strncmp(p, "endfor", 6) == 0 &&
+	   (p[6] == '\0' || ch_isspace(p[6]));
 }
 
 /* Evaluate the for loop in the passed line. The line looks like this:
@@ -114,144 +139,96 @@ For_Free(For *arg)
 int
 For_Eval(const char *line)
 {
-    For *new_for;
-    const char *ptr;
-    Words words;
+    For *f;
+    const char *p;
 
-    /* Skip the '.' and any following whitespace */
-    ptr = line + 1;
-    cpp_skip_whitespace(&ptr);
+    p = line + 1;		/* skip the '.' */
+    cpp_skip_whitespace(&p);
 
-    /*
-     * If we are not in a for loop quickly determine if the statement is
-     * a for.
-     */
-    if (ptr[0] != 'f' || ptr[1] != 'o' || ptr[2] != 'r' ||
-	!ch_isspace(ptr[3])) {
-	if (ptr[0] == 'e' && strncmp(ptr + 1, "ndfor", 5) == 0) {
+    if (!IsFor(p)) {
+	if (IsEndfor(p)) {
 	    Parse_Error(PARSE_FATAL, "for-less endfor");
 	    return -1;
 	}
 	return 0;
     }
-    ptr += 3;
+    p += 3;
 
     /*
      * we found a for loop, and now we are going to parse it.
      */
 
-    new_for = bmake_malloc(sizeof *new_for);
-    Buf_Init(&new_for->buf, 0);
-    strlist_init(&new_for->vars);
-    strlist_init(&new_for->items);
-    new_for->parse_buf = NULL;
-    new_for->short_var = FALSE;
-    new_for->sub_next = 0;
+    f = bmake_malloc(sizeof *f);
+    Buf_Init(&f->body);
+    Vector_Init(&f->vars, sizeof(ForVar));
+    f->items.words = NULL;
+    f->items.freeIt = NULL;
+    Buf_Init(&f->curBody);
+    f->short_var = FALSE;
+    f->sub_next = 0;
 
     /* Grab the variables. Terminate on "in". */
     for (;;) {
 	size_t len;
 
-	cpp_skip_whitespace(&ptr);
-	if (*ptr == '\0') {
+	cpp_skip_whitespace(&p);
+	if (*p == '\0') {
 	    Parse_Error(PARSE_FATAL, "missing `in' in for");
-	    For_Free(new_for);
+	    For_Free(f);
 	    return -1;
 	}
 
-	for (len = 1; ptr[len] && !ch_isspace(ptr[len]); len++)
+	/* XXX: This allows arbitrary variable names; see directive-for.mk. */
+	for (len = 1; p[len] != '\0' && !ch_isspace(p[len]); len++)
 	    continue;
-	if (len == 2 && ptr[0] == 'i' && ptr[1] == 'n') {
-	    ptr += 2;
+
+	if (len == 2 && p[0] == 'i' && p[1] == 'n') {
+	    p += 2;
 	    break;
 	}
 	if (len == 1)
-	    new_for->short_var = TRUE;
+	    f->short_var = TRUE;
 
-	strlist_add_str(&new_for->vars, bmake_strldup(ptr, len),
-			(unsigned int)len);
-	ptr += len;
+	ForAddVar(f, p, len);
+	p += len;
     }
 
-    if (strlist_num(&new_for->vars) == 0) {
+    if (f->vars.len == 0) {
 	Parse_Error(PARSE_FATAL, "no iteration variables in for");
-	For_Free(new_for);
+	For_Free(f);
 	return -1;
     }
 
-    cpp_skip_whitespace(&ptr);
+    cpp_skip_whitespace(&p);
 
-    /*
-     * Make a list with the remaining words.
-     * The values are later substituted as ${:U<value>...} so we must
-     * backslash-escape characters that break that syntax.
-     * Variables are fully expanded - so it is safe for escape $.
-     * We can't do the escapes here - because we don't know whether
-     * we will be substituting into ${...} or $(...).
-     */
     {
 	char *items;
-	(void)Var_Subst(ptr, VAR_GLOBAL, VARE_WANTRES, &items);
+	(void)Var_Subst(p, VAR_GLOBAL, VARE_WANTRES, &items);
 	/* TODO: handle errors */
-	words = Str_Words(items, FALSE);
+	f->items = Str_Words(items, FALSE);
 	free(items);
+
+	if (f->items.len == 1 && f->items.words[0][0] == '\0')
+	    f->items.len = 0;	/* .for var in ${:U} */
     }
 
     {
-	size_t n;
+	size_t nitems, nvars;
 
-	for (n = 0; n < words.len; n++) {
-	    ForEscapes escapes;
-	    char ch;
-
-	    ptr = words.words[n];
-	    if (ptr[0] == '\0')
-		continue;
-	    escapes = 0;
-	    while ((ch = *ptr++)) {
-		switch (ch) {
-		case ':':
-		case '$':
-		case '\\':
-		    escapes |= FOR_SUB_ESCAPE_CHAR;
-		    break;
-		case ')':
-		    escapes |= FOR_SUB_ESCAPE_PAREN;
-		    break;
-		case '}':
-		    escapes |= FOR_SUB_ESCAPE_BRACE;
-		    break;
-		}
-	    }
-	    /*
-	     * We have to dup words[n] to maintain the semantics of
-	     * strlist.
-	     */
-	    strlist_add_str(&new_for->items, bmake_strdup(words.words[n]),
-			    escapes);
-	}
-    }
-
-    Words_Free(words);
-
-    {
-	size_t len, n;
-
-	if ((len = strlist_num(&new_for->items)) > 0 &&
-	    len % (n = strlist_num(&new_for->vars))) {
+	if ((nitems = f->items.len) > 0 && nitems % (nvars = f->vars.len)) {
 	    Parse_Error(PARSE_FATAL,
 			"Wrong number of words (%zu) in .for substitution list"
-			" with %zu vars", len, n);
+			" with %zu variables", nitems, nvars);
 	    /*
 	     * Return 'success' so that the body of the .for loop is
 	     * accumulated.
 	     * Remove all items so that the loop doesn't iterate.
 	     */
-	    strlist_clean(&new_for->items);
+	    f->items.len = 0;
 	}
     }
 
-    accumFor = new_for;
+    accumFor = f;
     forLevel = 1;
     return 1;
 }
@@ -269,18 +246,18 @@ For_Accum(const char *line)
 	ptr++;
 	cpp_skip_whitespace(&ptr);
 
-	if (strncmp(ptr, "endfor", 6) == 0 && (ch_isspace(ptr[6]) || !ptr[6])) {
+	if (IsEndfor(ptr)) {
 	    DEBUG1(FOR, "For: end for %d\n", forLevel);
 	    if (--forLevel <= 0)
 		return FALSE;
-	} else if (strncmp(ptr, "for", 3) == 0 && ch_isspace(ptr[3])) {
+	} else if (IsFor(ptr)) {
 	    forLevel++;
 	    DEBUG1(FOR, "For: new loop %d\n", forLevel);
 	}
     }
 
-    Buf_AddStr(&accumFor->buf, line);
-    Buf_AddByte(&accumFor->buf, '\n');
+    Buf_AddStr(&accumFor->body, line);
+    Buf_AddByte(&accumFor->body, '\n');
     return TRUE;
 }
 
@@ -293,7 +270,7 @@ for_var_len(const char *var)
     size_t len;
 
     var_start = *var;
-    if (var_start == 0)
+    if (var_start == '\0')
 	/* just escape the $ */
 	return 0;
 
@@ -306,7 +283,7 @@ for_var_len(const char *var)
 	return 1;
 
     depth = 1;
-    for (len = 1; (ch = var[len++]) != 0;) {
+    for (len = 1; (ch = var[len++]) != '\0';) {
 	if (ch == var_start)
 	    depth++;
 	else if (ch == var_end && --depth == 0)
@@ -317,24 +294,37 @@ for_var_len(const char *var)
     return 0;
 }
 
-static void
-for_substitute(Buffer *cmds, strlist_t *items, unsigned int item_no, char ech)
+/* The .for loop substitutes the items as ${:U<value>...}, which means
+ * that characters that break this syntax must be backslash-escaped. */
+static Boolean
+NeedsEscapes(const char *word, char endc)
 {
-    const char *item = strlist_str(items, item_no);
-    ForEscapes escapes = strlist_info(items, item_no);
+    const char *p;
+
+    for (p = word; *p != '\0'; p++) {
+	if (*p == ':' || *p == '$' || *p == '\\' || *p == endc)
+	    return TRUE;
+    }
+    return FALSE;
+}
+
+/* While expanding the body of a .for loop, write the item in the ${:U...}
+ * expression, escaping characters as needed.
+ *
+ * The result is later unescaped by ApplyModifier_Defined. */
+static void
+Buf_AddEscaped(Buffer *cmds, const char *item, char ech)
+{
     char ch;
 
-    /* If there were no escapes, or the only escape is the other variable
-     * terminator, then just substitute the full string */
-    if (!(escapes & (ech == ')' ? ~(unsigned)FOR_SUB_ESCAPE_BRACE
-				: ~(unsigned)FOR_SUB_ESCAPE_PAREN))) {
+    if (!NeedsEscapes(item, ech)) {
 	Buf_AddStr(cmds, item);
 	return;
     }
 
     /* Escape ':', '$', '\\' and 'ech' - these will be removed later by
      * :U processing, see ApplyModifier_Defined. */
-    while ((ch = *item++) != 0) {
+    while ((ch = *item++) != '\0') {
 	if (ch == '$') {
 	    size_t len = for_var_len(item);
 	    if (len != 0) {
@@ -349,94 +339,126 @@ for_substitute(Buffer *cmds, strlist_t *items, unsigned int item_no, char ech)
     }
 }
 
-static char *
-ForIterate(void *v_arg, size_t *ret_len)
+/* While expanding the body of a .for loop, replace expressions like
+ * ${i}, ${i:...}, $(i) or $(i:...) with their ${:U...} expansion. */
+static void
+SubstVarLong(For *f, const char **pp, const char **inout_mark, char ech)
 {
-    For *arg = v_arg;
-    unsigned int i;
-    char *var;
-    const char *cp;
-    const char *cmd_cp;
-    const char *body_end;
-    char ch;
-    Buffer cmds;
-    char *cmds_str;
-    size_t cmd_len;
+    size_t i;
+    const char *p = *pp;
 
-    if (arg->sub_next + strlist_num(&arg->vars) > strlist_num(&arg->items)) {
+    for (i = 0; i < f->vars.len; i++) {
+	ForVar *forVar = Vector_Get(&f->vars, i);
+	char *var = forVar->name;
+	size_t vlen = forVar->len;
+
+	/* XXX: undefined behavior for p if vlen is longer than p? */
+	if (memcmp(p, var, vlen) != 0)
+	    continue;
+	/* XXX: why test for backslash here? */
+	if (p[vlen] != ':' && p[vlen] != ech && p[vlen] != '\\')
+	    continue;
+
+	/* Found a variable match. Replace with :U<value> */
+	Buf_AddBytesBetween(&f->curBody, *inout_mark, p);
+	Buf_AddStr(&f->curBody, ":U");
+	Buf_AddEscaped(&f->curBody, f->items.words[f->sub_next + i], ech);
+
+	p += vlen;
+	*inout_mark = p;
+	break;
+    }
+
+    *pp = p;
+}
+
+/* While expanding the body of a .for loop, replace single-character
+ * variable expressions like $i with their ${:U...} expansion. */
+static void
+SubstVarShort(For *f, char ch, const char **pp, const char **inout_mark)
+{
+    const char *p = *pp;
+    size_t i;
+
+    /* Probably a single character name, ignore $$ and stupid ones. */
+    if (!f->short_var || strchr("}):$", ch) != NULL) {
+	p++;
+	*pp = p;
+	return;
+    }
+
+    for (i = 0; i < f->vars.len; i++) {
+	ForVar *var = Vector_Get(&f->vars, i);
+	const char *varname = var->name;
+	if (varname[0] != ch || varname[1] != '\0')
+	    continue;
+
+	/* Found a variable match. Replace with ${:U<value>} */
+	Buf_AddBytesBetween(&f->curBody, *inout_mark, p);
+	Buf_AddStr(&f->curBody, "{:U");
+	Buf_AddEscaped(&f->curBody, f->items.words[f->sub_next + i], '}');
+	Buf_AddByte(&f->curBody, '}');
+
+	*inout_mark = ++p;
+	break;
+    }
+
+    *pp = p;
+}
+
+/*
+ * Scan the for loop body and replace references to the loop variables
+ * with variable references that expand to the required text.
+ *
+ * Using variable expansions ensures that the .for loop can't generate
+ * syntax, and that the later parsing will still see a variable.
+ * We assume that the null variable will never be defined.
+ *
+ * The detection of substitutions of the loop control variable is naive.
+ * Many of the modifiers use \ to escape $ (not $) so it is possible
+ * to contrive a makefile where an unwanted substitution happens.
+ */
+static char *
+ForIterate(void *v_arg, size_t *out_len)
+{
+    For *f = v_arg;
+    const char *p;
+    const char *mark;		/* where the last replacement left off */
+    const char *body_end;
+    char *cmds_str;
+
+    if (f->sub_next + f->vars.len > f->items.len) {
 	/* No more iterations */
-	For_Free(arg);
+	For_Free(f);
 	return NULL;
     }
 
-    free(arg->parse_buf);
-    arg->parse_buf = NULL;
+    Buf_Empty(&f->curBody);
 
-    /*
-     * Scan the for loop body and replace references to the loop variables
-     * with variable references that expand to the required text.
-     * Using variable expansions ensures that the .for loop can't generate
-     * syntax, and that the later parsing will still see a variable.
-     * We assume that the null variable will never be defined.
-     *
-     * The detection of substitutions of the loop control variable is naive.
-     * Many of the modifiers use \ to escape $ (not $) so it is possible
-     * to contrive a makefile where an unwanted substitution happens.
-     */
-
-    cmd_cp = Buf_GetAll(&arg->buf, &cmd_len);
-    body_end = cmd_cp + cmd_len;
-    Buf_Init(&cmds, cmd_len + 256);
-    for (cp = cmd_cp; (cp = strchr(cp, '$')) != NULL;) {
-	char ech;
-	ch = *++cp;
+    mark = Buf_GetAll(&f->body, NULL);
+    body_end = mark + Buf_Len(&f->body);
+    for (p = mark; (p = strchr(p, '$')) != NULL;) {
+	char ch, ech;
+	ch = *++p;
 	if ((ch == '(' && (ech = ')', 1)) || (ch == '{' && (ech = '}', 1))) {
-	    cp++;
+	    p++;
 	    /* Check variable name against the .for loop variables */
-	    STRLIST_FOREACH(var, &arg->vars, i) {
-		size_t vlen = strlist_info(&arg->vars, i);
-		if (memcmp(cp, var, vlen) != 0)
-		    continue;
-		if (cp[vlen] != ':' && cp[vlen] != ech && cp[vlen] != '\\')
-		    continue;
-		/* Found a variable match. Replace with :U<value> */
-		Buf_AddBytesBetween(&cmds, cmd_cp, cp);
-		Buf_AddStr(&cmds, ":U");
-		cp += vlen;
-		cmd_cp = cp;
-		for_substitute(&cmds, &arg->items, arg->sub_next + i, ech);
-		break;
-	    }
+	    SubstVarLong(f, &p, &mark, ech);
 	    continue;
 	}
-	if (ch == 0)
+	if (ch == '\0')
 	    break;
-	/* Probably a single character name, ignore $$ and stupid ones. {*/
-	if (!arg->short_var || strchr("}):$", ch) != NULL) {
-	    cp++;
-	    continue;
-	}
-	STRLIST_FOREACH(var, &arg->vars, i) {
-	    if (var[0] != ch || var[1] != 0)
-		continue;
-	    /* Found a variable match. Replace with ${:U<value>} */
-	    Buf_AddBytesBetween(&cmds, cmd_cp, cp);
-	    Buf_AddStr(&cmds, "{:U");
-	    cmd_cp = ++cp;
-	    for_substitute(&cmds, &arg->items, arg->sub_next + i, '}');
-	    Buf_AddByte(&cmds, '}');
-	    break;
-	}
-    }
-    Buf_AddBytesBetween(&cmds, cmd_cp, body_end);
 
-    *ret_len = Buf_Len(&cmds);
-    cmds_str = Buf_Destroy(&cmds, FALSE);
+	SubstVarShort(f, ch, &p, &mark);
+    }
+    Buf_AddBytesBetween(&f->curBody, mark, body_end);
+
+    *out_len = Buf_Len(&f->curBody);
+    cmds_str = Buf_GetAll(&f->curBody, NULL);
     DEBUG1(FOR, "For: loop body:\n%s", cmds_str);
 
-    arg->sub_next += strlist_num(&arg->vars);
+    f->sub_next += f->vars.len;
 
-    arg->parse_buf = cmds_str;
     return cmds_str;
 }
 
@@ -444,16 +466,14 @@ ForIterate(void *v_arg, size_t *ret_len)
 void
 For_Run(int lineno)
 {
-    For *arg;
-
-    arg = accumFor;
+    For *f = accumFor;
     accumFor = NULL;
 
-    if (strlist_num(&arg->items) == 0) {
+    if (f->items.len == 0) {
 	/* Nothing to expand - possibly due to an earlier syntax error. */
-	For_Free(arg);
+	For_Free(f);
 	return;
     }
 
-    Parse_SetInput(NULL, lineno, -1, ForIterate, arg);
+    Parse_SetInput(NULL, lineno, -1, ForIterate, f);
 }

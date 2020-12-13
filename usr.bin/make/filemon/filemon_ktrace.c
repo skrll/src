@@ -1,4 +1,4 @@
-/*	$NetBSD: filemon_ktrace.c,v 1.3 2020/10/18 11:54:43 rillig Exp $	*/
+/*	$NetBSD: filemon_ktrace.c,v 1.8 2020/11/29 09:27:40 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define	_KERNTYPES		/* register_t */
+#define _KERNTYPES		/* register_t */
 
 #include "filemon.h"
 
@@ -90,9 +90,9 @@ static filemon_syscall_t *const filemon_syscalls[] = {
 };
 
 struct filemon {
-	int			ktrfd; /* kernel writes ktrace events here */
-	FILE			*in;   /* we read ktrace events from here */
-	FILE			*out;  /* we write filemon events to here */
+	int			ktrfd;	/* kernel writes ktrace events here */
+	FILE			*in;	/* we read ktrace events from here */
+	FILE			*out;	/* we write filemon events to here */
 	rb_tree_t		active;
 	pid_t			child;
 
@@ -198,7 +198,7 @@ filemon_open(void)
 	int error;
 
 	/* Allocate and zero a struct filemon object.  */
-	F = calloc(1, sizeof(*F));
+	F = calloc(1, sizeof *F);
 	if (F == NULL)
 		return NULL;
 
@@ -225,7 +225,6 @@ filemon_open(void)
 	/* Success!  */
 	return F;
 
-fail2: __unused
 	(void)fclose(F->in);
 fail1:	(void)close(ktrpipe[0]);
 	(void)close(ktrpipe[1]);
@@ -262,7 +261,7 @@ filemon_closefd(struct filemon *F)
 	F->out = NULL;
 
 	/* Set errno and return -1 if anything went wrong.  */
-	if (error) {
+	if (error != 0) {
 		errno = error;
 		return -1;
 	}
@@ -373,7 +372,7 @@ filemon_close(struct filemon *F)
 	free(F);
 
 	/* Set errno and return -1 if anything went wrong.  */
-	if (error) {
+	if (error != 0) {
 		errno = error;
 		return -1;
 	}

@@ -841,13 +841,17 @@ dhcpcd_initduid(struct dhcpcd_ctx *ctx, struct interface *ifp)
 {
 	char buf[DUID_LEN * 3];
 
-	if (ctx->duid != NULL)
+	if (ctx->duid != NULL) {
+		if (ifp == NULL)
+			goto log;
 		return;
+	}
 
 	duid_init(ctx, ifp);
 	if (ctx->duid == NULL)
 		return;
 
+log:
 	loginfox("DUID %s",
 	    hwaddr_ntoa(ctx->duid, ctx->duid_len, buf, sizeof(buf)));
 }
@@ -991,17 +995,20 @@ void
 dhcpcd_activateinterface(struct interface *ifp, unsigned long long options)
 {
 
-	if (!ifp->active) {
-		ifp->active = IF_ACTIVE;
-		dhcpcd_initstate2(ifp, options);
-		/* It's possible we might not have been able to load
-		 * a config. */
-		if (ifp->active) {
-			configure_interface1(ifp);
-			run_preinit(ifp);
-			dhcpcd_prestartinterface(ifp);
-		}
-	}
+	if (ifp->active)
+		return;
+
+	ifp->active = IF_ACTIVE;
+	dhcpcd_initstate2(ifp, options);
+
+	/* It's possible we might not have been able to load
+	 * a config. */
+	if (!ifp->active)
+		return;
+
+	configure_interface1(ifp);
+	run_preinit(ifp);
+	dhcpcd_prestartinterface(ifp);
 }
 
 int
@@ -1422,10 +1429,15 @@ dhcpcd_signal_cb(int sig, void *arg)
 		return;
 	case SIGUSR2:
 		loginfox(sigmsg, "SIGUSR2", "reopening log");
-		/* XXX This may not work that well in a chroot */
-		logclose();
+#ifdef PRIVSEP
+		if (IN_PRIVSEP(ctx)) {
+			if (ps_root_logreopen(ctx) == -1)
+				logerr("ps_root_logreopen");
+			return;
+		}
+#endif
 		if (logopen(ctx->logfile) == -1)
-			logerr(__func__);
+			logerr("logopen");
 		return;
 	case SIGCHLD:
 		while (waitpid(-1, NULL, WNOHANG) > 0)
@@ -1860,7 +1872,7 @@ main(int argc, char **argv, char **envp)
 	ctx.dhcp6_wfd = -1;
 #endif
 #ifdef PRIVSEP
-	ctx.ps_root_fd = ctx.ps_data_fd = -1;
+	ctx.ps_root_fd = ctx.ps_log_fd = ctx.ps_data_fd = -1;
 	ctx.ps_inet_fd = ctx.ps_control_fd = -1;
 	TAILQ_INIT(&ctx.ps_processes);
 #endif
@@ -1875,6 +1887,7 @@ main(int argc, char **argv, char **envp)
 		logopts |= LOGERR_ERR;
 
 	i = 0;
+
 	while ((opt = getopt_long(argc, argv,
 	    ctx.options & DHCPCD_PRINT_PIDFILE ? NOERR_IF_OPTS : IF_OPTS,
 	    cf_options, &oi)) != -1)
@@ -1949,6 +1962,9 @@ main(int argc, char **argv, char **envp)
 		}
 	}
 
+	if (optind != argc - 1)
+		ctx.options |= DHCPCD_MASTER;
+
 	logsetopts(logopts);
 	logopen(ctx.logfile);
 
@@ -1965,6 +1981,7 @@ main(int argc, char **argv, char **envp)
 			goto printpidfile;
 		goto exit_failure;
 	}
+
 	opt = add_options(&ctx, NULL, ifo, argc, argv);
 	if (opt != 1) {
 		if (ctx.options & DHCPCD_PRINT_PIDFILE)
@@ -2005,6 +2022,7 @@ main(int argc, char **argv, char **envp)
 		goto exit_success;
 	}
 	ctx.options |= ifo->options;
+
 	if (i == 1 || i == 3) {
 		if (i == 1)
 			ctx.options |= DHCPCD_TEST;
@@ -2174,6 +2192,9 @@ printpidfile:
 		if (!(ctx.options & DHCPCD_MASTER))
 			ctx.control_fd = control_open(argv[optind], family,
 			    ctx.options & DHCPCD_DUMPLEASE);
+		if (!(ctx.options & DHCPCD_MASTER) && ctx.control_fd == -1)
+			ctx.control_fd = control_open(argv[optind], AF_UNSPEC,
+			    ctx.options & DHCPCD_DUMPLEASE);
 		if (ctx.control_fd == -1)
 			ctx.control_fd = control_open(NULL, AF_UNSPEC,
 			    ctx.options & DHCPCD_DUMPLEASE);
@@ -2235,6 +2256,9 @@ printpidfile:
 	loginfox(PACKAGE "-" VERSION " starting");
 	if (ctx.stdin_valid && freopen(_PATH_DEVNULL, "w", stdin) == NULL)
 		logwarn("freopen stdin");
+
+	if (!(ctx.options & DHCPCD_DAEMONISE))
+		goto start_master;
 
 #if defined(USE_SIGNALS) && !defined(THERE_IS_NO_FORK)
 	if (xsocketpair(AF_UNIX, SOCK_DGRAM | SOCK_CXNB, 0, fork_fd) == -1 ||
@@ -2327,7 +2351,10 @@ printpidfile:
 
 	/* We have now forked, setsid, forked once more.
 	 * From this point on, we are the controlling daemon. */
+	logdebugx("spawned master process on PID %d", getpid());
+start_master:
 	ctx.options |= DHCPCD_STARTED;
+	logdebugx("spawned master process on PID %d", getpid());
 	if ((pid = pidfile_lock(ctx.pidfile)) != 0) {
 		logerr("%s: pidfile_lock %d", __func__, pid);
 #ifdef PRIVSEP
@@ -2514,7 +2541,7 @@ exit_failure:
 	i = EXIT_FAILURE;
 
 exit1:
-	if (control_stop(&ctx) == -1)
+	if (!(ctx.options & DHCPCD_TEST) && control_stop(&ctx) == -1)
 		logerr("%s: control_stop", __func__);
 	if (ifaddrs != NULL) {
 #ifdef PRIVSEP_GETIFADDRS

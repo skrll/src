@@ -1,4 +1,4 @@
-/*	$NetBSD: cftoken.l,v 1.27 2012/11/29 15:31:24 vanhu Exp $	*/
+/*	$NetBSD: cftoken.l,v 1.29 2020/11/25 18:11:00 bouyer Exp $	*/
 
 /* Id: cftoken.l,v 1.53 2006/08/22 18:17:17 manubsd Exp */
 
@@ -224,6 +224,9 @@ hexstring	0x{hexdigit}+
 <S_INI>ldapcfg		{ BEGIN S_LDAP; YYDB; return(LDAPCFG); }
 <S_LDAP>{bcl}		{ return(BOC); }
 <S_LDAP>version		{ YYD; return(LDAP_PVER); }
+<S_LDAP>debug		{ YYD; return(LDAP_DEBUG); }
+<S_LDAP>timeout		{ YYD; return(LDAP_TIMEOUT); }
+<S_LDAP>uri		{ YYD; return(LDAP_URI); }
 <S_LDAP>host		{ YYD; return(LDAP_HOST); }
 <S_LDAP>port		{ YYD; return(LDAP_PORT); }
 <S_LDAP>tls		{ YYD; return(LDAP_TLS); }

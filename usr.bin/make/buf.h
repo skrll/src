@@ -1,4 +1,4 @@
-/*	$NetBSD: buf.h,v 1.34 2020/09/27 16:59:02 rillig Exp $	*/
+/*	$NetBSD: buf.h,v 1.37 2020/12/06 11:00:56 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -81,9 +81,9 @@
 
 /* An automatically growing null-terminated buffer of characters. */
 typedef struct Buffer {
-    size_t cap;		/* Allocated size of the buffer, including the null */
-    size_t len;		/* Number of bytes in buffer, excluding the null */
-    char *data;		/* The buffer itself (always null-terminated) */
+	size_t cap;	/* Allocated size of the buffer, including the null */
+	size_t len;	/* Number of bytes in buffer, excluding the null */
+	char *data;	/* The buffer itself (always null-terminated) */
 } Buffer;
 
 /* If we aren't on NetBSD, __predict_false() might not be defined. */
@@ -94,28 +94,28 @@ typedef struct Buffer {
 void Buf_Expand_1(Buffer *);
 
 /* Buf_AddByte adds a single byte to a buffer. */
-static inline MAKE_ATTR_UNUSED void
+MAKE_INLINE void
 Buf_AddByte(Buffer *buf, char byte)
 {
-    size_t old_len = buf->len++;
-    char *end;
-    if (__predict_false(old_len + 1 >= buf->cap))
-	Buf_Expand_1(buf);
-    end = buf->data + old_len;
-    end[0] = byte;
-    end[1] = '\0';
+	size_t old_len = buf->len++;
+	char *end;
+	if (__predict_false(old_len + 1 >= buf->cap))
+		Buf_Expand_1(buf);
+	end = buf->data + old_len;
+	end[0] = byte;
+	end[1] = '\0';
 }
 
-static inline MAKE_ATTR_UNUSED size_t
+MAKE_INLINE size_t
 Buf_Len(const Buffer *buf)
 {
-    return buf->len;
+	return buf->len;
 }
 
-static inline MAKE_ATTR_UNUSED Boolean
+MAKE_INLINE Boolean
 Buf_EndsWith(const Buffer *buf, char ch)
 {
-    return buf->len > 0 && buf->data[buf->len - 1] == ch;
+	return buf->len > 0 && buf->data[buf->len - 1] == ch;
 }
 
 void Buf_AddBytes(Buffer *, const char *, size_t);
@@ -124,7 +124,8 @@ void Buf_AddStr(Buffer *, const char *);
 void Buf_AddInt(Buffer *, int);
 char *Buf_GetAll(Buffer *, size_t *);
 void Buf_Empty(Buffer *);
-void Buf_Init(Buffer *, size_t);
+void Buf_Init(Buffer *);
+void Buf_InitSize(Buffer *, size_t);
 char *Buf_Destroy(Buffer *, Boolean);
 char *Buf_DestroyCompact(Buffer *);
 

@@ -1,4 +1,4 @@
-# $NetBSD: shl.mi,v 1.89 2020/08/27 15:32:00 riastradh Exp $
+# $NetBSD: shl.mi,v 1.92 2020/10/28 08:10:08 nia Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -53,9 +53,9 @@
 ./usr/X11R7/lib/libXRes.so			xbase-libXres-lib		xorg,compatx11file
 ./usr/X11R7/lib/libXRes.so.2			xbase-libXres-lib		xorg,compatx11file
 ./usr/X11R7/lib/libXRes.so.2.0			xbase-libXres-lib		xorg,compatx11file
-./usr/X11R7/lib/libXTrap.so			xbase-libXTrap-lib		xorg,compatx11file
-./usr/X11R7/lib/libXTrap.so.7			xbase-libXTrap-lib		xorg,compatx11file
-./usr/X11R7/lib/libXTrap.so.7.0			xbase-libXTrap-lib		xorg,compatx11file
+./usr/X11R7/lib/libXTrap.so			xbase-obsolete	obsolete
+./usr/X11R7/lib/libXTrap.so.7			xbase-obsolete	obsolete
+./usr/X11R7/lib/libXTrap.so.7.0			xbase-obsolete	obsolete
 ./usr/X11R7/lib/libXau.so			xbase-libXau-lib		xorg,compatx11file
 ./usr/X11R7/lib/libXau.so.7			xbase-libXau-lib		xorg,compatx11file
 ./usr/X11R7/lib/libXau.so.7.0			xbase-libXau-lib		xorg,compatx11file
@@ -83,9 +83,9 @@
 ./usr/X11R7/lib/libXdmcp.so			xbase-libXdmcp-lib		xorg,compatx11file
 ./usr/X11R7/lib/libXdmcp.so.7			xbase-libXdmcp-lib		xorg,compatx11file
 ./usr/X11R7/lib/libXdmcp.so.7.0			xbase-libXdmcp-lib		xorg,compatx11file
-./usr/X11R7/lib/libXevie.so			xbase-libXevie-lib		xorg,compatx11file
-./usr/X11R7/lib/libXevie.so.2			xbase-libXevie-lib		xorg,compatx11file
-./usr/X11R7/lib/libXevie.so.2.0			xbase-libXevie-lib		xorg,compatx11file
+./usr/X11R7/lib/libXevie.so			xbase-obsolete	obsolete
+./usr/X11R7/lib/libXevie.so.2			xbase-obsolete	obsolete
+./usr/X11R7/lib/libXevie.so.2.0			xbase-obsolete	obsolete
 ./usr/X11R7/lib/libXext.so			xbase-libXext-lib		xorg,compatx11file
 ./usr/X11R7/lib/libXext.so.7			xbase-libXext-lib		xorg,compatx11file
 ./usr/X11R7/lib/libXext.so.7.1			xbase-libXext-lib		xorg,compatx11file
@@ -191,9 +191,9 @@
 ./usr/X11R7/lib/libglapi.so			xbase-libglapi-lib		xorg,compatx11file
 ./usr/X11R7/lib/libglapi.so.1			xbase-libglapi-lib		xorg,compatx11file
 ./usr/X11R7/lib/libglapi.so.1.0			xbase-libglapi-lib		xorg,compatx11file
-./usr/X11R7/lib/libglut.so			xbase-libglut-lib		xorg,compatx11file
-./usr/X11R7/lib/libglut.so.4			xbase-libglut-lib		xorg,compatx11file
-./usr/X11R7/lib/libglut.so.4.0			xbase-libglut-lib		xorg,compatx11file
+./usr/X11R7/lib/libglut.so			xbase-obsolete		obsolete
+./usr/X11R7/lib/libglut.so.4			xbase-obsolete		obsolete
+./usr/X11R7/lib/libglut.so.4.0			xbase-obsolete		obsolete
 ./usr/X11R7/lib/liblbxutil.so			xbase-obsolete		obsolete
 ./usr/X11R7/lib/liblbxutil.so.2			xbase-obsolete		obsolete
 ./usr/X11R7/lib/liblbxutil.so.2.0		xbase-obsolete		obsolete

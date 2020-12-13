@@ -1,6 +1,13 @@
-# $NetBSD: directive-for.mk,v 1.6 2020/10/24 08:50:17 rillig Exp $
+# $NetBSD: directive-for.mk,v 1.9 2020/11/15 20:20:58 rillig Exp $
 #
 # Tests for the .for directive.
+#
+# TODO: Describe naming conventions for the loop variables.
+#	.for f in values
+#	.for file in values
+#	.for _FILE_ in values
+#	.for .FILE. in values
+#	.for _f_ in values
 
 # Using the .for loop, lists of values can be produced.
 # In simple cases, the :@var@${var}@ variable modifier can be used to
@@ -15,6 +22,7 @@ NUMBERS+=	${num}
 .endif
 
 # The .for loop also works for multiple iteration variables.
+# This is something that the variable modifier :@ cannot do.
 .for name value in VARNAME value NAME2 value2
 ${name}=	${value}
 .endfor
@@ -26,7 +34,7 @@ ${name}=	${value}
 # just like the :M or :S variable modifiers.
 #
 # Until 2012-06-03, it had split the items exactly at whitespace, without
-# taking the quotes into account.
+# taking the quotes into account.  This had resulted in 10 words.
 #
 .undef WORDS
 .for var in one t\ w\ o "three three" 'four four' `five six`
@@ -123,6 +131,21 @@ EXPANSION${plus}=	value
 # removed.
 .for path in a:\ a:\file.txt d:\\ d:\\file.txt
 .  info ${path}
+.endfor
+
+# Ensure that braces and parentheses are properly escaped by the .for loop.
+# Each line must print the same word 3 times.
+# See GetEscapes.
+.for v in ( [ { ) ] } (()) [[]] {{}} )( ][ }{
+.  info $v ${v} $(v)
+.endfor
+
+# As of 2020-10-25, the variable names may contain arbitrary characters,
+# except for whitespace.  This allows for creative side effects. Hopefully
+# nobody is misusing this "feature".
+var=	outer
+.for var:Q in value "quoted"
+.  info ${var} ${var:Q} ${var:Q:Q}
 .endfor
 
 all:

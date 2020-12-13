@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.8 2018/09/23 08:26:00 maxv Exp $
+#	$NetBSD: Makefile,v 1.10 2020/11/10 21:47:43 kamil Exp $
 
 SUBDIR+=man-adosfs-catman
 SUBDIR+=man-adosfs-man

@@ -1,4 +1,4 @@
-/*	$NetBSD: soundcard.h,v 1.31 2020/10/23 09:05:20 nia Exp $	*/
+/*	$NetBSD: soundcard.h,v 1.33 2020/12/03 22:10:21 nia Exp $	*/
 
 /*-
  * Copyright (c) 1997, 2020 The NetBSD Foundation, Inc.
@@ -81,17 +81,42 @@
 #define SNDCTL_DSP_GETISPACE		_IOR ('P',13, struct audio_buf_info)
 #define SNDCTL_DSP_NONBLOCK		_IO  ('P',14)
 #define SNDCTL_DSP_GETCAPS		_IOR ('P',15, int)
-# define DSP_CAP_REVISION		0x000000ff
-# define DSP_CAP_DUPLEX			0x00000100
-# define DSP_CAP_REALTIME		0x00000200
-# define DSP_CAP_BATCH			0x00000400
-# define DSP_CAP_COPROC			0x00000800
-# define DSP_CAP_TRIGGER		0x00001000
-# define DSP_CAP_MMAP			0x00002000
-# define PCM_CAP_INPUT			0x00004000
-# define PCM_CAP_OUTPUT			0x00008000
-# define PCM_CAP_MODEM			0x00010000
-# define PCM_CAP_HIDDEN			0x00020000
+/* PCM_CAP_* were known as DSP_CAP_ before OSS 4.0 */
+# define DSP_CAP_REVISION		PCM_CAP_REVISION
+# define DSP_CAP_DUPLEX			PCM_CAP_DUPLEX
+# define DSP_CAP_REALTIME		PCM_CAP_REALTIME
+# define DSP_CAP_BATCH			PCM_CAP_BATCH
+# define DSP_CAP_COPROC			PCM_CAP_COPROC
+# define DSP_CAP_TRIGGER		PCM_CAP_TRIGGER
+# define DSP_CAP_MMAP			PCM_CAP_MMAP
+# define DSP_CAP_INPUT			PCM_CAP_INPUT
+# define DSP_CAP_OUTPUT			PCM_CAP_OUTPUT
+# define DSP_CAP_MODEM			PCM_CAP_MODEM
+# define DSP_CAP_HIDDEN			PCM_CAP_HIDDEN
+# define DSP_CAP_VIRTUAL		PCM_CAP_VIRTUAL
+# define DSP_CAP_ANALOGOUT		PCM_CAP_ANALOGOUT
+# define DSP_CAP_ANALOGIN		PCM_CAP_ANALOGIN
+# define DSP_CAP_DIGITALOUT		PCM_CAP_DIGITALOUT
+# define DSP_CAP_DIGITALIN		PCM_CAP_DIGITALIN
+# define DSP_CAP_ADMASK			PCM_CAP_ADMASK
+# define PCM_CAP_REVISION		0x000000ff	/* Unused in NetBSD */
+# define PCM_CAP_DUPLEX			0x00000100	/* Full duplex */
+# define PCM_CAP_REALTIME		0x00000200	/* Unused in NetBSD */
+# define PCM_CAP_BATCH			0x00000400	/* Unused in NetBSD */
+# define PCM_CAP_COPROC			0x00000800	/* Unused in NetBSD */
+# define PCM_CAP_TRIGGER		0x00001000	/* Supports SETTRIGGER */
+# define PCM_CAP_MMAP			0x00002000	/* Supports mmap() */
+# define PCM_CAP_INPUT			0x00004000	/* Recording device */
+# define PCM_CAP_OUTPUT			0x00008000	/* Playback device */
+# define PCM_CAP_MODEM			0x00010000	/* Unused in NetBSD */
+# define PCM_CAP_HIDDEN			0x00020000	/* Unused in NetBSD */
+# define PCM_CAP_VIRTUAL		0x00040000	/* Unused in NetBSD */
+# define PCM_CAP_ANALOGOUT		0x00100000	/* Unused in NetBSD */
+# define PCM_CAP_ANALOGIN		0x00200000	/* Unused in NetBSD */
+# define PCM_CAP_DIGITALOUT		0x00400000	/* Unused in NetBSD */
+# define PCM_CAP_DIGITALIN		0x00800000	/* Unused in NetBSD */
+# define PCM_CAP_ADMASK			0x00f00000	/* Unused in NetBSD */
+# define PCM_CAP_SPECIAL		0x01000000	/* Unused in NetBSD */
 #define SNDCTL_DSP_GETTRIGGER		_IOR ('P', 16, int)
 #define SNDCTL_DSP_SETTRIGGER		_IOW ('P', 16, int)
 # define PCM_ENABLE_INPUT		0x00000001
@@ -332,6 +357,21 @@ typedef struct buffmem_desc {
 #define SNDCTL_DSP_GETERROR		_IOR ('P',34, struct audio_errinfo)
 #define SNDCTL_DSP_CURRENT_IPTR		_IOR ('P',35, oss_count_t)
 #define SNDCTL_DSP_CURRENT_OPTR		_IOR ('P',36, oss_count_t)
+
+#define SNDCTL_DSP_GET_CHNORDER		_IOR ('P',42, unsigned long long)
+#define SNDCTL_DSP_SET_CHNORDER		_IOWR ('P',42, unsigned long long)
+
+#define CHID_UNDEF	0
+#define CHID_L		1
+#define CHID_R		2
+#define CHID_C		3
+#define CHID_LFE	4
+#define CHID_LS		5
+#define CHID_RS		6
+#define CHID_LR		7
+#define CHID_RR		8
+#define CHNORDER_UNDEF	0x0000000000000000ULL
+#define CHNORDER_NORMAL	0x0000000087654321ULL
 
 typedef struct {
 	long long samples;

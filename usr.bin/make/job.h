@@ -1,4 +1,4 @@
-/*	$NetBSD: job.h,v 1.57 2020/10/23 07:14:32 rillig Exp $	*/
+/*	$NetBSD: job.h,v 1.69 2020/12/12 10:21:50 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -97,8 +97,8 @@ struct emul_pollfd {
     short revents;
 };
 
-#define	POLLIN		0x0001
-#define	POLLOUT		0x0004
+#define POLLIN		0x0001
+#define POLLOUT		0x0004
 
 int
 emul_poll(struct pollfd *fd, int nfd, int timeout);
@@ -117,26 +117,13 @@ struct pollfd;
 # include "meta.h"
 #endif
 
-typedef enum JobState {
+typedef enum JobStatus {
     JOB_ST_FREE =	0,	/* Job is available */
-    JOB_ST_SETUP =	1,	/* Job is allocated but otherwise invalid */
+    JOB_ST_SET_UP =	1,	/* Job is allocated but otherwise invalid */
+    /* XXX: What about the 2? */
     JOB_ST_RUNNING =	3,	/* Job is running, pid valid */
     JOB_ST_FINISHED =	4	/* Job is done (ie after SIGCHILD) */
-} JobState;
-
-typedef enum JobFlags {
-    /* Ignore non-zero exits */
-    JOB_IGNERR =	0x001,
-    /* no output */
-    JOB_SILENT =	0x002,
-    /* Target is a special one. i.e. run it locally
-     * if we can't export it and maxLocal is 0 */
-    JOB_SPECIAL =	0x004,
-    /* Ignore "..." lines when processing commands */
-    JOB_IGNDOTS	=	0x008,
-    /* we've sent 'set -x' */
-    JOB_TRACED =	0x400
-} JobFlags;
+} JobStatus;
 
 /* A Job manages the shell commands that are run to create a single target.
  * Each job is run in a separate subprocess by a shell.  Several jobs can run
@@ -161,17 +148,21 @@ typedef struct Job {
      * first of these commands, if any. */
     StringListNode *tailCmds;
 
-    /* When creating the shell script, this is where the commands go.
-     * This is only used before the job is actually started. */
+    /* This is where the shell commands go. */
     FILE *cmdFILE;
 
     int exit_status;		/* from wait4() in signal handler */
 
-    JobState job_state;		/* status of the job entry */
+    JobStatus status;
 
-    char job_suspended;
+    Boolean suspended;
 
-    JobFlags flags;		/* Flags to control treatment of job */
+    /* Ignore non-zero exits */
+    Boolean ignerr;
+    /* Output the command before or instead of running it. */
+    Boolean echo;
+    /* Target is a special one. */
+    Boolean special;
 
     int inPipe;			/* Pipe for reading output from job */
     int outPipe;		/* Pipe for writing control commands */
@@ -192,7 +183,6 @@ extern const char *shellName;
 extern char *shellErrFlag;
 
 extern int jobTokensRunning;	/* tokens currently "out" */
-extern int maxJobs;		/* Max jobs we can run */
 
 void Shell_Init(void);
 const char *Shell_GetNewline(void);
@@ -212,5 +202,6 @@ Boolean Job_TokenWithdraw(void);
 void Job_ServerStart(int, int, int);
 void Job_SetPrefix(void);
 Boolean Job_RunTarget(const char *, const char *);
+void Job_FlagsToString(const Job *, char *, size_t);
 
 #endif /* MAKE_JOB_H */

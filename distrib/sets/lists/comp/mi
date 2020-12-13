@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2362 2020/10/24 05:01:57 kamil Exp $
+#	$NetBSD: mi,v 1.2367 2020/12/04 18:27:18 christos Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -7185,6 +7185,7 @@
 ./usr/share/man/cat3/fido_cred_verify.0			man-util-catman	.cat
 ./usr/share/man/cat3/fido_credman_metadata_new.0	man-util-catman	.cat
 ./usr/share/man/cat3/fido_dev_get_assert.0		man-util-catman	.cat
+./usr/share/man/cat3/fido_dev_get_touch_begin.0		man-util-catman	.cat
 ./usr/share/man/cat3/fido_dev_info_manifest.0		man-util-catman	.cat
 ./usr/share/man/cat3/fido_dev_make_cred.0		man-util-catman	.cat
 ./usr/share/man/cat3/fido_dev_open.0			man-util-catman	.cat
@@ -11347,6 +11348,7 @@
 ./usr/share/man/cat9/days_in_month.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/days_per_year.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/dbtob.0			comp-sys-catman		.cat
+./usr/share/man/cat9/ddb.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/ddc.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/delay.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/device_printf.0		comp-sys-catman		.cat
@@ -15438,6 +15440,7 @@
 ./usr/share/man/html3/fido_cred_verify.html		man-util-htmlman	html
 ./usr/share/man/html3/fido_credman_metadata_new.html	man-util-htmlman	html
 ./usr/share/man/html3/fido_dev_get_assert.html		man-util-htmlman	html
+./usr/share/man/html3/fido_dev_get_touch_begin.html	man-util-htmlman	html
 ./usr/share/man/html3/fido_dev_info_manifest.html	man-util-htmlman	html
 ./usr/share/man/html3/fido_dev_make_cred.html		man-util-htmlman	html
 ./usr/share/man/html3/fido_dev_open.html		man-util-htmlman	html
@@ -19508,6 +19511,7 @@
 ./usr/share/man/html9/days_in_month.html	comp-sys-htmlman	html
 ./usr/share/man/html9/days_per_year.html	comp-sys-htmlman	html
 ./usr/share/man/html9/dbtob.html		comp-sys-htmlman	html
+./usr/share/man/html9/ddb.html			comp-sys-htmlman	html
 ./usr/share/man/html9/ddc.html			comp-sys-htmlman	html
 ./usr/share/man/html9/delay.html		comp-sys-htmlman	html
 ./usr/share/man/html9/device_printf.html	comp-sys-htmlman	html
@@ -20197,15 +20201,15 @@
 ./usr/share/man/html9/pserialize_read_exit.html comp-sys-htmlman	html
 ./usr/share/man/html9/psignal.html		comp-sys-htmlman	html
 ./usr/share/man/html9/pslist.html		comp-sys-htmlman	html
-./usr/share/man/html9/psref.html		comp-sys-catman		html
-./usr/share/man/html9/psref_acquire.html	comp-sys-catman		html
-./usr/share/man/html9/psref_class_create.html	comp-sys-catman		html
-./usr/share/man/html9/psref_class_destroy.html	comp-sys-catman		html
-./usr/share/man/html9/psref_copy.html		comp-sys-catman		html
-./usr/share/man/html9/psref_held.html		comp-sys-catman		html
-./usr/share/man/html9/psref_release.html	comp-sys-catman		html
-./usr/share/man/html9/psref_target_destroy.html	comp-sys-catman		html
-./usr/share/man/html9/psref_target_init.html	comp-sys-catman		html
+./usr/share/man/html9/psref.html		comp-sys-htmlman	html
+./usr/share/man/html9/psref_acquire.html	comp-sys-htmlman	html
+./usr/share/man/html9/psref_class_create.html	comp-sys-htmlman	html
+./usr/share/man/html9/psref_class_destroy.html	comp-sys-htmlman	html
+./usr/share/man/html9/psref_copy.html		comp-sys-htmlman	html
+./usr/share/man/html9/psref_held.html		comp-sys-htmlman	html
+./usr/share/man/html9/psref_release.html	comp-sys-htmlman	html
+./usr/share/man/html9/psref_target_destroy.html	comp-sys-htmlman	html
+./usr/share/man/html9/psref_target_init.html	comp-sys-htmlman	html
 ./usr/share/man/html9/ptoa.html			comp-sys-htmlman	html
 ./usr/share/man/html9/putiobuf.html		comp-sys-htmlman	html
 ./usr/share/man/html9/putter.html		comp-sys-htmlman	html
@@ -23628,6 +23632,7 @@
 ./usr/share/man/man3/fido_cred_verify.3			man-util-man	.man
 ./usr/share/man/man3/fido_credman_metadata_new.3	man-util-man	.man
 ./usr/share/man/man3/fido_dev_get_assert.3		man-util-man	.man
+./usr/share/man/man3/fido_dev_get_touch_begin.3		man-util-man	.man
 ./usr/share/man/man3/fido_dev_info_manifest.3		man-util-man	.man
 ./usr/share/man/man3/fido_dev_make_cred.3		man-util-man	.man
 ./usr/share/man/man3/fido_dev_open.3			man-util-man	.man
@@ -27809,6 +27814,7 @@
 ./usr/share/man/man9/days_in_month.9		comp-sys-man		.man
 ./usr/share/man/man9/days_per_year.9		comp-sys-man		.man
 ./usr/share/man/man9/dbtob.9			comp-sys-man		.man
+./usr/share/man/man9/ddb.9			comp-sys-man		.man
 ./usr/share/man/man9/ddc.9			comp-sys-man		.man
 ./usr/share/man/man9/delay.9			comp-sys-man		.man
 ./usr/share/man/man9/device_printf.9		comp-sys-man		.man

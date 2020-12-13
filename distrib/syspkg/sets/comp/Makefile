@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.3 2004/06/30 03:37:37 jmc Exp $
+#	$NetBSD: Makefile,v 1.5 2020/11/10 21:47:41 kamil Exp $
 
 SUBDIR += comp-c-bin
 SUBDIR += comp-c-catman

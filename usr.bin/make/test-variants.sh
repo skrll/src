@@ -1,5 +1,5 @@
 #! /bin/sh
-# $NetBSD: test-variants.sh,v 1.5 2020/10/23 17:59:25 rillig Exp $
+# $NetBSD: test-variants.sh,v 1.8 2020/12/07 22:27:56 rillig Exp $
 #
 # Build several variants of make and run the tests on them.
 #
@@ -24,7 +24,8 @@ testcase() {
 	&& env -i PATH="$PATH" USETOOLS="no" "$@" \
 		sh -ce "make -ks all" \
 	&& size *.o make \
-	&& env -i PATH="$PATH" USETOOLS="no" MALLOC_OPTIONS="JA" "$@" \
+	&& env -i PATH="$PATH" USETOOLS="no" MALLOC_OPTIONS="JA" \
+		_MKMSG_TEST=":" "$@" \
 		sh -ce "make -s test" \
 	|| fail
 }
@@ -69,6 +70,8 @@ testcase USE_FILEMON="ktrace"
 testcase USE_META="no"
 
 testcase USER_CPPFLAGS="-DCLEANUP"
+
+testcase USER_CPPFLAGS="-DDEBUG_REFCNT"
 
 testcase USER_CPPFLAGS="-DDEBUG_HASH_LOOKUP"
 
@@ -146,6 +149,12 @@ testcase USER_CFLAGS="-ansi" USER_CPPFLAGS="-Dinline="
 #
 testcase USER_CPPFLAGS="-DNDEBUG"
 
+# Only in native mode, make dares to use a shortcut in Compat_RunCommand
+# that circumvents the shell and instead calls execvp directly.
+# Another effect is that the shell is run with -q, which prevents the
+# -x and -v flags from echoing the commands from profile files.
+testcase USER_CPPFLAGS="-UMAKE_NATIVE -DHAVE_STRERROR -DHAVE_SETENV -DHAVE_VSNPRINTF"
+
 # Running the code coverage using gcov takes a long time.  Most of this
 # time is spent in gcov_read_unsigned because gcov_open sets the .gcda
 # file to unbuffered, which means that every single byte needs its own
@@ -177,5 +186,11 @@ testcase USE_GCC10=yes GCC10BASE=$HOME/pkg/gcc10 USER_CFLAGS="\
 -Wenum-compare -Wmissing-field-initializers -Wredundant-decls \
 -Wno-error=conversion -Wno-error=sign-conversion -Wno-error=unused-macros \
 -Wno-error=unused-parameter -Wno-error=duplicated-branches"
+
+for shell in /usr/pkg/bin/bash /usr/pkg/bin/dash; do
+	if [ -x "$shell" ]; then
+		testcase USER_CPPFLAGS=-DDEFSHELL_CUSTOM="\\\"$shell\\\""
+	fi
+done
 
 test "$failed" = "no"

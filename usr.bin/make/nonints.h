@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.146 2020/10/23 20:04:56 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.170 2020/12/13 02:15:49 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -79,8 +79,8 @@ void Arch_End(void);
 Boolean Arch_ParseArchive(char **, GNodeList *, GNode *);
 void Arch_Touch(GNode *);
 void Arch_TouchLib(GNode *);
-time_t Arch_MTime(GNode *);
-time_t Arch_MemMTime(GNode *);
+void Arch_UpdateMTime(GNode *gn);
+void Arch_UpdateMemberMTime(GNode *gn);
 void Arch_FindLib(GNode *, SearchPath *);
 Boolean Arch_LibOODate(GNode *);
 Boolean Arch_IsLib(GNode *);
@@ -95,6 +95,14 @@ CondEvalResult Cond_EvalCondition(const char *, Boolean *);
 CondEvalResult Cond_EvalLine(const char *);
 void Cond_restore_depth(unsigned int);
 unsigned int Cond_save_depth(void);
+
+/* dir.c; see also dir.h */
+
+MAKE_INLINE SearchPath *
+SearchPath_New(void)
+{ return Lst_New(); }
+
+void SearchPath_Free(SearchPath *);
 
 /* for.c */
 int For_Eval(const char *);
@@ -116,8 +124,7 @@ void Finish(int) MAKE_ATTR_DEAD;
 int eunlink(const char *);
 void execDie(const char *, const char *);
 char *getTmpdir(void);
-Boolean s2Boolean(const char *, Boolean);
-Boolean getBoolean(const char *, Boolean);
+Boolean ParseBoolean(const char *, Boolean);
 char *cached_realpath(const char *, char *);
 
 /* parse.c */
@@ -138,15 +145,16 @@ typedef struct VarAssign {
     const char *value;		/* unexpanded */
 } VarAssign;
 
-typedef char *(*NextBufProc)(void *, size_t *);
+typedef char *(*ReadMoreProc)(void *, size_t *);
 
 void Parse_Error(ParseErrorLevel, const char *, ...) MAKE_ATTR_PRINTFLIKE(2, 3);
 Boolean Parse_IsVar(const char *, VarAssign *out_var);
 void Parse_DoVar(VarAssign *, GNode *);
 void Parse_AddIncludeDir(const char *);
 void Parse_File(const char *, int);
-void Parse_SetInput(const char *, int, int, NextBufProc, void *);
-GNodeList *Parse_MainName(void);
+void Parse_SetInput(const char *, int, int, ReadMoreProc, void *);
+void Parse_MainName(GNodeList *);
+int Parse_GetFatals(void);
 
 /* str.c */
 typedef struct Words {
@@ -156,7 +164,7 @@ typedef struct Words {
 } Words;
 
 Words Str_Words(const char *, Boolean);
-static inline MAKE_ATTR_UNUSED void
+MAKE_INLINE void
 Words_Free(Words w) {
     free(w.words);
     free(w.freeIt);
@@ -191,15 +199,13 @@ void Targ_End(void);
 
 void Targ_Stats(void);
 GNodeList *Targ_List(void);
-GNode *Targ_NewGN(const char *);
+GNode *GNode_New(const char *);
 GNode *Targ_FindNode(const char *);
 GNode *Targ_GetNode(const char *);
 GNode *Targ_NewInternalNode(const char *);
 GNode *Targ_GetEndNode(void);
-GNodeList *Targ_FindList(StringList *);
-Boolean Targ_Ignore(GNode *);
-Boolean Targ_Silent(GNode *);
-Boolean Targ_Precious(GNode *);
+void Targ_FindList(GNodeList *, StringList *);
+Boolean Targ_Precious(const GNode *);
 void Targ_SetMain(GNode *);
 void Targ_PrintCmds(GNode *);
 void Targ_PrintNode(GNode *, int);
@@ -215,21 +221,40 @@ void Var_End(void);
 
 typedef enum VarEvalFlags {
     VARE_NONE		= 0,
-    /* Treat undefined variables as errors. */
-    VARE_UNDEFERR	= 0x01,
-    /* Expand and evaluate variables during parsing. */
-    VARE_WANTRES	= 0x02,
-    /* In an assignment using the ':=' operator, keep '$$' as '$$' instead
-     * of reducing it to a single '$'. */
-    VARE_ASSIGN		= 0x04
+
+    /* Expand and evaluate variables during parsing.
+     *
+     * TODO: Document what Var_Parse and Var_Subst return when this flag
+     * is not set. */
+    VARE_WANTRES	= 1 << 0,
+
+    /* Treat undefined variables as errors.
+     * Must only be used in combination with VARE_WANTRES. */
+    VARE_UNDEFERR	= 1 << 1,
+
+    /* Keep '$$' as '$$' instead of reducing it to a single '$'.
+     *
+     * Used in variable assignments using the ':=' operator.  It allows
+     * multiple such assignments to be chained without accidentally expanding
+     * '$$file' to '$file' in the first assignment and interpreting it as
+     * '${f}' followed by 'ile' in the next assignment.
+     *
+     * See also preserveUndefined, which preserves subexpressions that are
+     * based on undefined variables; maybe that can be converted to a flag
+     * as well. */
+    VARE_KEEP_DOLLAR	= 1 << 2
 } VarEvalFlags;
 
-typedef enum VarSet_Flags {
-    VAR_NO_EXPORT	= 0x01,	/* do not export */
+typedef enum VarSetFlags {
+    VAR_SET_NONE	= 0,
+
+    /* do not export */
+    VAR_SET_NO_EXPORT	= 1 << 0,
+
     /* Make the variable read-only. No further modification is possible,
      * except for another call to Var_Set with the same flag. */
-    VAR_SET_READONLY	= 0x02
-} VarSet_Flags;
+    VAR_SET_READONLY	= 1 << 1
+} VarSetFlags;
 
 /* The state of error handling returned by Var_Parse.
  *
@@ -286,20 +311,31 @@ typedef enum VarParseResult {
     VPR_UNKNOWN		= 0x0008
 } VarParseResult;
 
+typedef enum VarExportMode {
+	/* .export-env */
+	VEM_NORMAL,
+	/* .export: Initial export or update an already exported variable. */
+	VEM_PARENT,
+	/* .export-literal: Do not expand the variable value. */
+	VEM_LITERAL
+} VarExportMode;
+
 void Var_Delete(const char *, GNode *);
 void Var_Set(const char *, const char *, GNode *);
-void Var_Set_with_flags(const char *, const char *, GNode *, VarSet_Flags);
+void Var_SetWithFlags(const char *, const char *, GNode *, VarSetFlags);
 void Var_Append(const char *, const char *, GNode *);
 Boolean Var_Exists(const char *, GNode *);
-const char *Var_Value(const char *, GNode *, char **);
+const char *Var_Value(const char *, GNode *, void **);
+const char *Var_ValueDirect(const char *, GNode *);
 VarParseResult Var_Parse(const char **, GNode *, VarEvalFlags,
 			 const char **, void **);
 VarParseResult Var_Subst(const char *, GNode *, VarEvalFlags, char **);
 void Var_Stats(void);
 void Var_Dump(GNode *);
-void Var_ExportVars(void);
-void Var_Export(const char *, Boolean);
-void Var_UnExport(const char *);
+void Var_ReexportVars(void);
+void Var_Export(VarExportMode, const char *);
+void Var_ExportVars(const char *);
+void Var_UnExport(Boolean, const char *);
 
 /* util.c */
 typedef void (*SignalProc)(int);

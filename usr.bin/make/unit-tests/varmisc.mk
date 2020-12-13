@@ -1,4 +1,4 @@
-# $NetBSD: varmisc.mk,v 1.26 2020/10/24 08:50:17 rillig Exp $
+# $NetBSD: varmisc.mk,v 1.29 2020/11/28 14:08:37 rillig Exp $
 #
 # Miscellaneous variable tests.
 
@@ -77,17 +77,7 @@ MAN+=	${MAN$s}
 manok:
 	@echo MAN=${MAN}
 
-# This is an expanded variant of the above .for loop.
-# Between 2020-06-28 and 2020-07-02 this paragraph generated a wrong
-# error message "Variable VARNAME is recursive".
-# When evaluating the !empty expression, the ${:U1} was not expanded and
-# thus resulted in the seeming definition VARNAME=${VARNAME}, which is
-# obviously recursive.
-VARNAME=	${VARNAME${:U1}}
-.if defined(VARNAME${:U2}) && !empty(VARNAME${:U2})
-.endif
-
-# begin .MAKE.SAVE_DOLLARS; see Var_Set_with_flags and s2Boolean.
+# begin .MAKE.SAVE_DOLLARS; see Var_SetWithFlags and ParseBoolean.
 SD_VALUES=	0 1 2 False True false true Yes No yes no On Off ON OFF on off
 SD_4_DOLLARS=	$$$$
 

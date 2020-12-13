@@ -1,6 +1,9 @@
-# $NetBSD: directive-undef.mk,v 1.4 2020/10/24 08:46:08 rillig Exp $
+# $NetBSD: directive-undef.mk,v 1.6 2020/12/13 01:07:54 rillig Exp $
 #
 # Tests for the .undef directive.
+#
+# See also:
+#	directive-misspellings.mk
 
 # As of 2020-07-28, .undef only undefines the first variable.
 # All further variable names are silently ignored.
@@ -12,6 +15,8 @@
 .if ${1:U_}${2:U_}${3:U_} != _23
 .  warning $1$2$3
 .endif
+
+.undef				# oops: missing argument
 
 all:
 	@:;

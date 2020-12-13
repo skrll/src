@@ -1,4 +1,4 @@
-/*	$NetBSD: if_l2tp.c,v 1.44 2020/10/15 02:54:10 roy Exp $	*/
+/*	$NetBSD: if_l2tp.c,v 1.46 2020/10/25 08:18:39 roy Exp $	*/
 
 /*
  * Copyright (c) 2017 Internet Initiative Japan Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_l2tp.c,v 1.44 2020/10/15 02:54:10 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_l2tp.c,v 1.46 2020/10/25 08:18:39 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -321,13 +321,12 @@ l2tpattach0(struct l2tp_softc *sc)
 	 * if_percpuq_enqueue(). However, that causes recursive softnet_lock
 	 * when NET_MPSAFE is not set.
 	 */
-	rv = if_initialize(&sc->l2tp_ec.ec_if);
+	rv = if_attach(&sc->l2tp_ec.ec_if);
 	if (rv != 0)
 		return rv;
-	sc->l2tp_ec.ec_if.if_link_state = LINK_STATE_DOWN;
+	if_link_state_change(&sc->l2tp_ec.ec_if, LINK_STATE_DOWN);
 	if_alloc_sadl(&sc->l2tp_ec.ec_if);
 	bpf_attach(&sc->l2tp_ec.ec_if, DLT_EN10MB, sizeof(struct ether_header));
-	if_register(&sc->l2tp_ec.ec_if);
 
 	return 0;
 }
@@ -811,7 +810,6 @@ l2tp_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 
 	case SIOCDIFPHYADDR:
 		l2tp_delete_tunnel(&sc->l2tp_ec.ec_if);
-		if_link_state_change(&sc->l2tp_ec.ec_if, LINK_STATE_DOWN);
 		break;
 
 	case SIOCGIFPSRCADDR:
@@ -1074,8 +1072,6 @@ l2tp_set_tunnel(struct ifnet *ifp, struct sockaddr *src, struct sockaddr *dst)
 	if (odst)
 		sockaddr_free(odst);
 	kmem_free(ovar, sizeof(*ovar));
-
-	if_link_state_change(ifp, LINK_STATE_UP);
 	return 0;
 
 error:
@@ -1359,6 +1355,7 @@ l2tp_set_state(struct l2tp_softc *sc, int state)
 {
 	struct ifnet *ifp = &sc->l2tp_ec.ec_if;
 	struct l2tp_variant *nvar;
+	int ostate;
 
 	nvar = kmem_alloc(sizeof(*nvar), KM_SLEEP);
 
@@ -1366,16 +1363,21 @@ l2tp_set_state(struct l2tp_softc *sc, int state)
 
 	*nvar = *sc->l2tp_var;
 	psref_target_init(&nvar->lv_psref, lv_psref_class);
+	ostate = nvar->lv_state;
 	nvar->lv_state = state;
 	l2tp_variant_update(sc, nvar);
-
-	if (nvar->lv_state == L2TP_STATE_UP) {
-		ifp->if_link_state = LINK_STATE_UP;
-	} else {
-		ifp->if_link_state = LINK_STATE_DOWN;
-	}
-
 	mutex_exit(&sc->l2tp_lock);
+
+	if (ostate != state) {
+		int lstate;
+
+		if (state == L2TP_STATE_UP)
+			lstate = LINK_STATE_UP;
+		else
+			lstate = LINK_STATE_DOWN;
+
+		if_link_state_change(ifp, lstate);
+	}
 
 #ifdef NOTYET
 	vlan_linkstate_notify(ifp, ifp->if_link_state);

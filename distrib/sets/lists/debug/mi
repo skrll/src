@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.342 2020/10/18 10:10:18 rin Exp $
+# $NetBSD: mi,v 1.344 2020/12/12 03:03:14 pgoyette Exp $
 ./etc/mtree/set.debug                           comp-sys-root
 ./usr/lib					comp-sys-usr		compatdir
 ./usr/lib/i18n/libBIG5_g.a			comp-c-debuglib		debuglib,compatfile
@@ -939,6 +939,7 @@
 ./usr/libdata/debug/usr/games/tetris.debug	comp-games-debug	debug
 ./usr/libdata/debug/usr/games/trek.debug	comp-games-debug	debug
 ./usr/libdata/debug/usr/games/unstr.debug	comp-utils-debug	debug
+./usr/libdata/debug/usr/games/warp.debug	comp-games-debug	debug
 ./usr/libdata/debug/usr/games/worm.debug	comp-games-debug	debug
 ./usr/libdata/debug/usr/games/worms.debug	comp-games-debug	debug
 ./usr/libdata/debug/usr/games/wump.debug	comp-games-debug	debug
@@ -2283,6 +2284,7 @@
 ./usr/libdata/debug/usr/tests/lib/libm/t_tan.debug			tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libm/t_tanh.debug			tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libobjc/t_threads.debug		tests-lib-debug		debug,atf,gcc,compattestfile
+./usr/libdata/debug/usr/tests/lib/libossaudio/t_ossaudio.debug          tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libposix/bsd/t_rename.debug		tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libposix/posix1/t_rename.debug	tests-lib-debug		debug,atf,compattestfile
 ./usr/libdata/debug/usr/tests/lib/libposix/posix2/t_rename.debug	tests-lib-debug		debug,atf,compattestfile

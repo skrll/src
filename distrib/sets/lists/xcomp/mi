@@ -1,4 +1,4 @@
-#	 $NetBSD: mi,v 1.218 2020/10/21 15:12:15 maya Exp $
+#	 $NetBSD: mi,v 1.223 2020/11/10 21:47:41 kamil Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -20,8 +20,8 @@
 ./usr/X11R7/include/GL/glext.h				xcomp-xorgproto-include	xorg
 ./usr/X11R7/include/GL/glu.h				xcomp-xorgproto-include	xorg
 ./usr/X11R7/include/GL/glu_mangle.h			xcomp-xorgproto-include	xorg
-./usr/X11R7/include/GL/glut.h				xcomp-xorgproto-include	xorg
-./usr/X11R7/include/GL/glutf90.h			xcomp-xorgproto-include	xorg
+./usr/X11R7/include/GL/glut.h				xcomp-obsolete	obsolete
+./usr/X11R7/include/GL/glutf90.h			xcomp-obsolete	obsolete
 ./usr/X11R7/include/GL/glx.h				xcomp-xorgproto-include	xorg
 ./usr/X11R7/include/GL/glx_mangle.h			xcomp-xorgproto-include	xorg
 ./usr/X11R7/include/GL/glxext.h				xcomp-xorgproto-include	xorg
@@ -377,8 +377,8 @@
 ./usr/X11R7/include/X11/extensions/Xdamage.h		xcomp-libXdamage-include	xorg
 ./usr/X11R7/include/X11/extensions/Xdbe.h		xcomp-libXext-include	xorg
 ./usr/X11R7/include/X11/extensions/Xdbeproto.h		xcomp-obsolete	obsolete
-./usr/X11R7/include/X11/extensions/Xevie.h		xcomp-libXevie-include	xorg
-./usr/X11R7/include/X11/extensions/Xeviestr.h		xcomp-evieext-include	xorg
+./usr/X11R7/include/X11/extensions/Xevie.h		xcomp-obsolete	obsolete
+./usr/X11R7/include/X11/extensions/Xeviestr.h		xcomp-obsolete	obsolete
 ./usr/X11R7/include/X11/extensions/Xext.h		xcomp-libXext-include	xorg
 ./usr/X11R7/include/X11/extensions/Xfixes.h		xcomp-libXfixes-include	xorg
 ./usr/X11R7/include/X11/extensions/Xge.h		xcomp-libXext-include	xorg
@@ -1135,8 +1135,8 @@
 ./usr/X11R7/lib/libX11_p.a				xcomp-libX11-lib	profile,xorg,compatx11file
 ./usr/X11R7/lib/libXRes.a				xcomp-libXRes-lib	xorg,compatx11file
 ./usr/X11R7/lib/libXRes_p.a				xcomp-libXRes-lib	profile,xorg,compatx11file
-./usr/X11R7/lib/libXTrap.a				xcomp-libXTrap-lib	xorg,compatx11file
-./usr/X11R7/lib/libXTrap_p.a				xcomp-libXTrap-lib	profile,xorg,compatx11file
+./usr/X11R7/lib/libXTrap.a				xcomp-obsolete	xorg,obsolete
+./usr/X11R7/lib/libXTrap_p.a				xcomp-obsolete	xorg,obsolete
 ./usr/X11R7/lib/libXau.a				xcomp-libXau-lib	xorg,compatx11file
 ./usr/X11R7/lib/libXau_p.a				xcomp-libXau-lib	profile,xorg,compatx11file
 ./usr/X11R7/lib/libXaw.a				xcomp-libXaw-lib	xorg,compatx11file
@@ -1155,8 +1155,8 @@
 ./usr/X11R7/lib/libXdmGreet_p.a				xcomp-libXdmGreet-lib	profile,xorg,compatx11file
 ./usr/X11R7/lib/libXdmcp.a				xcomp-libXdmcp-lib	xorg,compatx11file
 ./usr/X11R7/lib/libXdmcp_p.a				xcomp-libXdmcp-lib	profile,xorg,compatx11file
-./usr/X11R7/lib/libXevie.a				xcomp-libXevie-lib	xorg,compatx11file
-./usr/X11R7/lib/libXevie_p.a				xcomp-libXevie-lib	profile,xorg,compatx11file
+./usr/X11R7/lib/libXevie.a				xcomp-obsolete	obsolete
+./usr/X11R7/lib/libXevie_p.a				xcomp-obsolete	obsolete
 ./usr/X11R7/lib/libXext.a				xcomp-libXext-lib	xorg,compatx11file
 ./usr/X11R7/lib/libXext_p.a				xcomp-libXext-lib	profile,xorg,compatx11file
 ./usr/X11R7/lib/libXfixes.a				xcomp-libXfixes-lib	xorg,compatx11file
@@ -1229,8 +1229,8 @@
 ./usr/X11R7/lib/libgbm_p.a				xcomp-libgbm-lib	profile,xorg,compatx11file
 ./usr/X11R7/lib/libglapi.a				xcomp-libglapi-lib	xorg,compatx11file
 ./usr/X11R7/lib/libglapi_p.a				xcomp-libglapi-lib	profile,xorg,compatx11file
-./usr/X11R7/lib/libglut.a				xcomp-libglut-lib	xorg,compatx11file
-./usr/X11R7/lib/libglut_p.a				xcomp-libglut-lib	profile,xorg,compatx11file
+./usr/X11R7/lib/libglut.a				xcomp-obsolete	obsolete
+./usr/X11R7/lib/libglut_p.a				xcomp-obsolete	obsolete
 ./usr/X11R7/lib/liblbxutil.a				xcomp-obsolete	obsolete,compatx11file
 ./usr/X11R7/lib/liblbxutil_p.a				xcomp-obsolete	obsolete,compatx11file
 ./usr/X11R7/lib/liblisp.a				xcomp-obsolete	obsolete
@@ -1340,7 +1340,7 @@
 ./usr/X11R7/lib/pkgconfig/gl.pc				xcomp-libGL-lib	xorg
 ./usr/X11R7/lib/pkgconfig/glproto.pc			xcomp-xorgproto-lib	xorg
 ./usr/X11R7/lib/pkgconfig/glu.pc			xcomp-libGLU-lib	xorg
-./usr/X11R7/lib/pkgconfig/glut.pc			xcomp-libglut-lib	xorg
+./usr/X11R7/lib/pkgconfig/glut.pc			xcomp-obsolete	obsolete
 ./usr/X11R7/lib/pkgconfig/glw.pc			xcomp-libGLw-lib	xorg
 ./usr/X11R7/lib/pkgconfig/ice.pc			xcomp-libICE-lib	xorg
 ./usr/X11R7/lib/pkgconfig/inputproto.pc			xcomp-xorgproto-lib	xorg
@@ -1409,7 +1409,7 @@
 ./usr/X11R7/lib/pkgconfig/xcursor.pc			xcomp-libXcursor-lib	xorg
 ./usr/X11R7/lib/pkgconfig/xdamage.pc			xcomp-libXdamage-lib	xorg
 ./usr/X11R7/lib/pkgconfig/xdmcp.pc			xcomp-libXdmcp-lib	xorg
-./usr/X11R7/lib/pkgconfig/xevie.pc			xcomp-libXevie-lib	xorg
+./usr/X11R7/lib/pkgconfig/xevie.pc			xcomp-obsolete	obsolete
 ./usr/X11R7/lib/pkgconfig/xext.pc			xcomp-libXext-lib	xorg
 ./usr/X11R7/lib/pkgconfig/xextproto.pc			xcomp-xorgproto-lib	xorg
 ./usr/X11R7/lib/pkgconfig/xf86bigfontproto.pc		xcomp-xorgproto-lib	xorg
@@ -1446,7 +1446,7 @@
 ./usr/X11R7/lib/pkgconfig/xshmfence.pc			xcomp-libxshmfence-lib	xorg
 ./usr/X11R7/lib/pkgconfig/xt.pc				xcomp-libXt-lib	xorg
 ./usr/X11R7/lib/pkgconfig/xtrans.pc			xcomp-xtrans-lib	xorg
-./usr/X11R7/lib/pkgconfig/xtrap.pc			xcomp-libXTrap-lib	xorg
+./usr/X11R7/lib/pkgconfig/xtrap.pc			xcomp-obsolete	obsolete
 ./usr/X11R7/lib/pkgconfig/xtst.pc			xcomp-libXtst-lib	xorg
 ./usr/X11R7/lib/pkgconfig/xv.pc				xcomp-libXv-lib	xorg
 ./usr/X11R7/lib/pkgconfig/xvmc.pc			xcomp-libXvMC-lib	xorg
@@ -2036,12 +2036,12 @@
 ./usr/X11R7/man/cat3/XeviGetVisualInfo.0		xcomp-libXext-catman	.cat,xorg
 ./usr/X11R7/man/cat3/XeviQueryExtension.0		xcomp-libXext-catman	.cat,xorg
 ./usr/X11R7/man/cat3/XeviQueryVersion.0			xcomp-libXext-catman	.cat,xorg
-./usr/X11R7/man/cat3/Xevie.0				xcomp-libXevie-catman	.cat,xorg
-./usr/X11R7/man/cat3/XevieEnd.0				xcomp-libXevie-catman	.cat,xorg
-./usr/X11R7/man/cat3/XevieQueryVersion.0		xcomp-libXevie-catman	.cat,xorg
-./usr/X11R7/man/cat3/XevieSelectInput.0			xcomp-libXevie-catman	.cat,xorg
-./usr/X11R7/man/cat3/XevieSendEvent.0			xcomp-libXevie-catman	.cat,xorg
-./usr/X11R7/man/cat3/XevieStart.0			xcomp-libXevie-catman	.cat,xorg
+./usr/X11R7/man/cat3/Xevie.0				xcomp-obsolete	obsolete
+./usr/X11R7/man/cat3/XevieEnd.0				xcomp-obsolete	obsolete
+./usr/X11R7/man/cat3/XevieQueryVersion.0		xcomp-obsolete	obsolete
+./usr/X11R7/man/cat3/XevieSelectInput.0			xcomp-obsolete	obsolete
+./usr/X11R7/man/cat3/XevieSendEvent.0			xcomp-obsolete	obsolete
+./usr/X11R7/man/cat3/XevieStart.0			xcomp-obsolete	obsolete
 ./usr/X11R7/man/cat3/Xfixes.0				xcomp-libXfixes-catman	.cat,xorg
 ./usr/X11R7/man/cat3/Xfontcache.0			xcomp-obsolete	obsolete
 ./usr/X11R7/man/cat3/Xft.0				xcomp-libXft-catman	.cat,xorg
@@ -2984,12 +2984,12 @@
 ./usr/X11R7/man/html3/XeviGetVisualInfo.html		xcomp-libXext-htmlman	html,xorg
 ./usr/X11R7/man/html3/XeviQueryExtension.html		xcomp-libXext-htmlman	html,xorg
 ./usr/X11R7/man/html3/XeviQueryVersion.html		xcomp-libXext-htmlman	html,xorg
-./usr/X11R7/man/html3/Xevie.html			xcomp-libXevie-htmlman	html,xorg
-./usr/X11R7/man/html3/XevieEnd.html			xcomp-libXevie-htmlman	html,xorg
-./usr/X11R7/man/html3/XevieQueryVersion.html		xcomp-libXevie-htmlman	html,xorg
-./usr/X11R7/man/html3/XevieSelectInput.html		xcomp-libXevie-htmlman	html,xorg
-./usr/X11R7/man/html3/XevieSendEvent.html		xcomp-libXevie-htmlman	html,xorg
-./usr/X11R7/man/html3/XevieStart.html			xcomp-libXevie-htmlman	html,xorg
+./usr/X11R7/man/html3/Xevie.html			xcomp-obsolete	obsolete
+./usr/X11R7/man/html3/XevieEnd.html			xcomp-obsolete	obsolete
+./usr/X11R7/man/html3/XevieQueryVersion.html		xcomp-obsolete	obsolete
+./usr/X11R7/man/html3/XevieSelectInput.html		xcomp-obsolete	obsolete
+./usr/X11R7/man/html3/XevieSendEvent.html		xcomp-obsolete	obsolete
+./usr/X11R7/man/html3/XevieStart.html			xcomp-obsolete	obsolete
 ./usr/X11R7/man/html3/Xfixes.html			xcomp-libXfixes-htmlman	html,xorg
 ./usr/X11R7/man/html3/Xfontcache.html			xcomp-obsolete	obsolete
 ./usr/X11R7/man/html3/Xft.html				xcomp-libXft-htmlman	html,xorg
@@ -3931,12 +3931,12 @@
 ./usr/X11R7/man/man3/XeviGetVisualInfo.3		xcomp-libXext-man	.man,xorg
 ./usr/X11R7/man/man3/XeviQueryExtension.3		xcomp-libXext-man	.man,xorg
 ./usr/X11R7/man/man3/XeviQueryVersion.3			xcomp-libXext-man	.man,xorg
-./usr/X11R7/man/man3/Xevie.3				xcomp-libXevie-man	.man,xorg
-./usr/X11R7/man/man3/XevieEnd.3				xcomp-libXevie-man	.man,xorg
-./usr/X11R7/man/man3/XevieQueryVersion.3		xcomp-libXevie-man	.man,xorg
-./usr/X11R7/man/man3/XevieSelectInput.3			xcomp-libXevie-man	.man,xorg
-./usr/X11R7/man/man3/XevieSendEvent.3			xcomp-libXevie-man	.man,xorg
-./usr/X11R7/man/man3/XevieStart.3			xcomp-libXevie-man	.man,xorg
+./usr/X11R7/man/man3/Xevie.3				xcomp-obsolete	obsolete
+./usr/X11R7/man/man3/XevieEnd.3				xcomp-obsolete	obsolete
+./usr/X11R7/man/man3/XevieQueryVersion.3		xcomp-obsolete	obsolete
+./usr/X11R7/man/man3/XevieSelectInput.3			xcomp-obsolete	obsolete
+./usr/X11R7/man/man3/XevieSendEvent.3			xcomp-obsolete	obsolete
+./usr/X11R7/man/man3/XevieStart.3			xcomp-obsolete	obsolete
 ./usr/X11R7/man/man3/Xfixes.3				xcomp-libXfixes-man	.man,xorg
 ./usr/X11R7/man/man3/Xfontcache.3			xcomp-obsolete	obsolete
 ./usr/X11R7/man/man3/Xft.3				xcomp-libXft-man	.man,xorg
@@ -4337,7 +4337,7 @@
 ./usr/libdata/lint/llib-lSM.ln				xcomp-libSM-lintlib	lint,xorg
 ./usr/libdata/lint/llib-lX11.ln				xcomp-libX11-lintlib	lint,xorg
 ./usr/libdata/lint/llib-lXRes.ln			xcomp-libXRes-lintlib	lint,xorg
-./usr/libdata/lint/llib-lXTrap.ln			xcomp-libXTrap-lintlib	lint,xorg
+./usr/libdata/lint/llib-lXTrap.ln			xcomp-obsolete	obsolete
 ./usr/libdata/lint/llib-lXau.ln				xcomp-libXau-lintlib	lint,xorg
 ./usr/libdata/lint/llib-lXaw7.ln			xcomp-libXaw-lintlib	lint,xorg
 ./usr/libdata/lint/llib-lXaw8.ln			xcomp-obsolete	obsolete
@@ -4346,7 +4346,7 @@
 ./usr/libdata/lint/llib-lXdamage.ln			xcomp-libXdamage-lintlib	lint,xorg
 ./usr/libdata/lint/llib-lXdmGreet.ln			xcomp-libXdmGreet-lintlib	lint,xorg
 ./usr/libdata/lint/llib-lXdmcp.ln			xcomp-Xdmcp-lintlib	lint,xorg
-./usr/libdata/lint/llib-lXevie.ln			xcomp-libXevie-lintlib	lint,xorg
+./usr/libdata/lint/llib-lXevie.ln			xcomp-obsolete	obsolete
 ./usr/libdata/lint/llib-lXext.ln			xcomp-libXext-lintlib	lint,xorg
 ./usr/libdata/lint/llib-lXfixes.ln			xcomp-libXfixes-lintlib	lint,xorg
 ./usr/libdata/lint/llib-lXfont.ln			xcomp-libXfont-lintlib	lint,xorg
@@ -4381,7 +4381,7 @@
 ./usr/libdata/lint/llib-lfontenc.ln			xcomp-libXfont2-lintlib	lint,xorg
 ./usr/libdata/lint/llib-lfreetype.ln			xcomp-freetype-lintlib	lint,xorg
 ./usr/libdata/lint/llib-lgbm.ln				xcomp-libgbm-lintlib	lint,xorg
-./usr/libdata/lint/llib-lglut.ln			xcomp-libglut-lintlib	lint,xorg
+./usr/libdata/lint/llib-lglut.ln			xcomp-obsolete	obsolete
 ./usr/libdata/lint/llib-llbxutil.ln			xcomp-obsolete	obsolete,xorg
 ./usr/libdata/lint/llib-llisp.ln			xcomp-obsolete	obsolete
 ./usr/libdata/lint/llib-lmp.ln				xcomp-obsolete	obsolete

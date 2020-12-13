@@ -1,4 +1,4 @@
-/*	$NetBSD: msg.mi.es,v 1.27 2020/10/24 16:13:15 martin Exp $	*/
+/*	$NetBSD: msg.mi.es,v 1.29 2020/11/04 14:29:40 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -546,8 +546,15 @@ Recuerde, el directorio debe contener los archivos $0.
 }
 
 message No_cd_found
-{Could not locate a CD medium in any drive with the distribution sets. 
-Check the proper medium and retry!}
+{Could not locate a CD medium in any drive with the distribution sets! 
+Enter the correct data manually, or insert a disk and retry. 
+}
+
+message abort_install
+{Cancel installation}
+
+message source_sel_retry
+{Back to source selection & retry}
 
 message Available_cds
 {Available CDs}
@@ -1220,21 +1227,9 @@ paquetes binarios.  Por favor verifique el camino a los paquetes y
 reinténtelo de nuevo.}
 message failed {Error}
 
-message notsupported {Operación no admitida!}
 message askfsmountadv {Punto de montaje o 'raid' o 'CGD' o 'lvm'?}
 message partman {Partición extendida}
-message edit_parts {Editar particiones}
 message editpart {Editar particiones}
-message switch_parts {Switch partitioning scheme}
-message fmtasraid {Formato como RAID}
-message fmtaslvm {Formato como LVM PV}
-message encrypt {Cifrar (CGD)}
-message setbootable {La bandera de arranque}
-message erase {Borrado seguro}
-message undo {Deshacer los cambios}
-message unconfig {Desconfigurar}
-message edit {Editar}
-message doumount {Fuerza umount}
 
 message fremove {QUITAR}
 message remove {Quitar}
@@ -1528,4 +1523,3 @@ message clone_target_hdr
 message clone_target_disp		{cloned partition(s)}
 message clone_src_done
 {Source selection OK, proceed to target selection}
-

@@ -1,4 +1,4 @@
-/*	$NetBSD: zynq_machdep.c,v 1.13 2020/07/10 12:25:11 skrll Exp $	*/
+/*	$NetBSD: zynq_machdep.c,v 1.16 2020/12/03 07:45:53 skrll Exp $	*/
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: zynq_machdep.c,v 1.13 2020/07/10 12:25:11 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: zynq_machdep.c,v 1.16 2020/12/03 07:45:53 skrll Exp $");
 
 #include "opt_evbarm_boardtype.h"
 #include "opt_arm_debug.h"
@@ -220,30 +220,22 @@ zynq_mpstart(void)
 
 	bus_space_unmap(bst, bsh, ZYNQ7000_CPU1_ENTRY_SZ);
 
-	arm_dsb();
-	__asm __volatile("sev" ::: "memory");
+	dsb(sy);
+	sev();
 
-
-	for (int loop = 0; loop < 16; loop++) {
-		VPRINTF("%u hatched %#x\n", loop, arm_cpu_hatched);
-		if (arm_cpu_hatched == __BITS(arm_cpu_max - 1, 1))
+	u_int cpuindex = 1;
+	u_int i;
+	for (i = 0x10000000; i > 0; i--) {
+		if (cpu_hatched_p(cpuindex))
 			break;
-		int timo = 1500000;
-		while (arm_cpu_hatched != __BITS(arm_cpu_max - 1, 1))
-			if (--timo == 0)
-				break;
-	}
-	for (size_t i = 1; i < arm_cpu_max; i++) {
-		if (cpu_hatched_p(i)) {
-			ret++;
-			printf("%s: warning: cpu%zu failed to hatch\n",
-			    __func__, i);
-		}
 	}
 
-	VPRINTF(" (%u cpu%s, hatched %#x)",
-	    arm_cpu_max, arm_cpu_max ? "s" : "",
-	    arm_cpu_hatched);
+	if (i == 0) {
+		ret++;
+		aprint_error("cpu%d: WARNING: AP failed to start\n",
+		    cpuindex);
+	}
+
 #endif /* MULTIPROCESSOR */
 	return ret;
 }
