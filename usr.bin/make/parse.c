@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.472 2020/12/06 20:33:44 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.479 2020/12/13 02:15:49 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -117,7 +117,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.472 2020/12/06 20:33:44 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.479 2020/12/13 02:15:49 rillig Exp $");
 
 /* types and constants */
 
@@ -726,26 +726,20 @@ Parse_Error(ParseErrorLevel type, const char *fmt, ...)
 /* Parse and handle a .info, .warning or .error directive.
  * For an .error directive, immediately exit. */
 static Boolean
-ParseMessage(const char *directive)
+ParseMessage(ParseErrorLevel level, const char *umsg)
 {
-	const char *p = directive;
-	ParseErrorLevel mtype = *p == 'i' ? PARSE_INFO :
-	    *p == 'w' ? PARSE_WARNING : PARSE_FATAL;
-	char *arg;
+	char *xmsg;
 
-	while (ch_isalpha(*p))
-		p++;
-	if (!ch_isspace(*p))
+	if (umsg[0] == '\0')
 		return FALSE;	/* missing argument */
 
-	cpp_skip_whitespace(&p);
-	(void)Var_Subst(p, VAR_CMDLINE, VARE_WANTRES, &arg);
+	(void)Var_Subst(umsg, VAR_CMDLINE, VARE_WANTRES, &xmsg);
 	/* TODO: handle errors */
 
-	Parse_Error(mtype, "%s", arg);
-	free(arg);
+	Parse_Error(level, "%s", xmsg);
+	free(xmsg);
 
-	if (mtype == PARSE_FATAL) {
+	if (level == PARSE_FATAL) {
 		PrintOnError(NULL, NULL);
 		exit(1);
 	}
@@ -1105,7 +1099,7 @@ ParseDependencyTargetWord(const char **pp, const char *lstart)
 /* Handle special targets like .PATH, .DEFAULT, .BEGIN, .ORDER. */
 static void
 ParseDoDependencyTargetSpecial(ParseSpecial *inout_specType,
-			       const char *line,
+			       const char *line, /* XXX: bad name */
 			       SearchPathList **inout_paths)
 {
 	switch (*inout_specType) {
@@ -1170,7 +1164,8 @@ ParseDoDependencyTargetSpecial(ParseSpecial *inout_specType,
  * Call on the suffix module to give us a path to modify.
  */
 static Boolean
-ParseDoDependencyTargetPath(const char *line, SearchPathList **inout_paths)
+ParseDoDependencyTargetPath(const char *line, /* XXX: bad name */
+			    SearchPathList **inout_paths)
 {
 	SearchPath *path;
 
@@ -1192,12 +1187,13 @@ ParseDoDependencyTargetPath(const char *line, SearchPathList **inout_paths)
  * See if it's a special target and if so set specType to match it.
  */
 static Boolean
-ParseDoDependencyTarget(const char *line, ParseSpecial *inout_specType,
+ParseDoDependencyTarget(const char *line, /* XXX: bad name */
+			ParseSpecial *inout_specType,
 			GNodeType *out_tOp, SearchPathList **inout_paths)
 {
 	int keywd;
 
-	if (!(*line == '.' && ch_isupper(line[1])))
+	if (!(line[0] == '.' && ch_isupper(line[1])))
 		return TRUE;
 
 	/*
@@ -1227,7 +1223,8 @@ ParseDoDependencyTarget(const char *line, ParseSpecial *inout_specType,
 }
 
 static void
-ParseDoDependencyTargetMundane(char *line, StringList *curTargs)
+ParseDoDependencyTargetMundane(char *line, /* XXX: bad name */
+			       StringList *curTargs)
 {
 	if (Dir_HasWildcards(line)) {
 		/*
@@ -1672,6 +1669,7 @@ ParseDoDependency(char *line)
 	/*
 	 * First, grind through the targets.
 	 */
+	/* XXX: don't use line as an iterator variable */
 	if (!ParseDoDependencyTargets(&cp, &line, lstart, &specType, &tOp,
 	    &paths, &curTargs))
 		goto out;
@@ -2042,7 +2040,7 @@ VarAssignSpecial(const char *name, const char *avalue)
 	} else if (strcmp(name, MAKE_JOB_PREFIX) == 0)
 		Job_SetPrefix();
 	else if (strcmp(name, MAKE_EXPORTED) == 0)
-		Var_Export(avalue, FALSE);
+		Var_ExportVars(avalue);
 }
 
 /* Perform the variable variable assignment in the given context. */
@@ -2263,11 +2261,11 @@ Parse_include_file(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
 }
 
 static void
-ParseDoInclude(char *line)
+ParseDoInclude(char *line /* XXX: bad name */)
 {
 	char endc;		/* the character which ends the file spec */
 	char *cp;		/* current position in file spec */
-	Boolean silent = *line != 'i';
+	Boolean silent = line[0] != 'i';
 	char *file = line + (silent ? 8 : 7);
 
 	/* Skip to delimiter character so we know where to look */
@@ -2308,7 +2306,7 @@ ParseDoInclude(char *line)
 	(void)Var_Subst(file, VAR_CMDLINE, VARE_WANTRES, &file);
 	/* TODO: handle errors */
 
-	Parse_include_file(file, endc == '>', *line == 'd', silent);
+	Parse_include_file(file, endc == '>', line[0] == 'd', silent);
 	free(file);
 }
 
@@ -2949,51 +2947,72 @@ ParseLine_ShellCommand(const char *p)
 	}
 }
 
+MAKE_INLINE Boolean
+IsDirective(const char *dir, size_t dirlen, const char *name)
+{
+	return dirlen == strlen(name) && memcmp(dir, name, dirlen) == 0;
+}
+
+/*
+ * See if the line starts with one of the known directives, and if so, handle
+ * the directive.
+ */
 static Boolean
 ParseDirective(char *line)
 {
-	char *cp;
+	char *cp = line + 1;
+	const char *dir, *arg;
+	size_t dirlen;
 
-	if (*line == '.') {
-		/*
-		 * Lines that begin with '.' can be pretty much anything:
-		 *	- directives like '.include' or '.if',
-		 *	- suffix rules like '.c.o:',
-		 *	- dependencies for filenames that start with '.',
-		 *	- variable assignments like '.tmp=value'.
-		 */
-		cp = line + 1;
-		pp_skip_whitespace(&cp);
-		if (IsInclude(cp, FALSE)) {
-			ParseDoInclude(cp);
+	pp_skip_whitespace(&cp);
+	if (IsInclude(cp, FALSE)) {
+		ParseDoInclude(cp);
+		return TRUE;
+	}
+
+	dir = cp;
+	while (ch_isalpha(*cp) || *cp == '-')
+		cp++;
+	dirlen = (size_t)(cp - dir);
+
+	if (*cp != '\0' && !ch_isspace(*cp))
+		return FALSE;
+
+	pp_skip_whitespace(&cp);
+	arg = cp;
+
+	if (IsDirective(dir, dirlen, "undef")) {
+		for (; !ch_isspace(*cp) && *cp != '\0'; cp++)
+			continue;
+		*cp = '\0';
+		Var_Delete(arg, VAR_GLOBAL);
+		/* TODO: undefine all variables, not only the first */
+		/* TODO: use Str_Words, like everywhere else */
+		return TRUE;
+	} else if (IsDirective(dir, dirlen, "export")) {
+		Var_Export(VEM_PARENT, arg);
+		return TRUE;
+	} else if (IsDirective(dir, dirlen, "export-env")) {
+		Var_Export(VEM_NORMAL, arg);
+		return TRUE;
+	} else if (IsDirective(dir, dirlen, "export-literal")) {
+		Var_Export(VEM_LITERAL, arg);
+		return TRUE;
+	} else if (IsDirective(dir, dirlen, "unexport")) {
+		Var_UnExport(FALSE, arg);
+		return TRUE;
+	} else if (IsDirective(dir, dirlen, "unexport-env")) {
+		Var_UnExport(TRUE, arg);
+		return TRUE;
+	} else if (IsDirective(dir, dirlen, "info")) {
+		if (ParseMessage(PARSE_INFO, arg))
 			return TRUE;
-		}
-		if (strncmp(cp, "undef", 5) == 0) {
-			const char *varname;
-			cp += 5;
-			pp_skip_whitespace(&cp);
-			varname = cp;
-			for (; !ch_isspace(*cp) && *cp != '\0'; cp++)
-				continue;
-			*cp = '\0';
-			Var_Delete(varname, VAR_GLOBAL);
-			/* TODO: undefine all variables, not only the first */
-			/* TODO: use Str_Words, like everywhere else */
+	} else if (IsDirective(dir, dirlen, "warning")) {
+		if (ParseMessage(PARSE_WARNING, arg))
 			return TRUE;
-		} else if (strncmp(cp, "export", 6) == 0) {
-			cp += 6;
-			pp_skip_whitespace(&cp);
-			Var_Export(cp, TRUE);
+	} else if (IsDirective(dir, dirlen, "error")) {
+		if (ParseMessage(PARSE_FATAL, arg))
 			return TRUE;
-		} else if (strncmp(cp, "unexport", 8) == 0) {
-			Var_UnExport(cp);
-			return TRUE;
-		} else if (strncmp(cp, "info", 4) == 0 ||
-			   strncmp(cp, "error", 5) == 0 ||
-			   strncmp(cp, "warning", 7) == 0) {
-			if (ParseMessage(cp))
-				return TRUE;
-		}
 	}
 	return FALSE;
 }
@@ -3105,10 +3124,17 @@ ParseDependency(char *line)
 static void
 ParseLine(char *line)
 {
-	if (ParseDirective(line))
+	/*
+	 * Lines that begin with '.' can be pretty much anything:
+	 *	- directives like '.include' or '.if',
+	 *	- suffix rules like '.c.o:',
+	 *	- dependencies for filenames that start with '.',
+	 *	- variable assignments like '.tmp=value'.
+	 */
+	if (line[0] == '.' && ParseDirective(line))
 		return;
 
-	if (*line == '\t') {
+	if (line[0] == '\t') {
 		ParseLine_ShellCommand(line + 1);
 		return;
 	}
