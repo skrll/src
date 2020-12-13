@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.243 2020/12/09 08:18:35 rillig Exp $
+# $NetBSD: Makefile,v 1.248 2020/12/13 05:13:38 sjg Exp $
 #
 # Unit tests for make(1)
 #
@@ -30,6 +30,9 @@
 # and are thus not added to TESTS.  Such files must be ignored in
 # src/tests/usr.bin/make/t_make.sh.
 #
+
+# we use this below but we might be an older make
+.MAKE.UID?= ${id -u:L:sh}
 
 # Each test is in a sub-makefile.
 # Keep the list sorted.
@@ -164,6 +167,7 @@ TESTS+=		directive-ifnmake
 TESTS+=		directive-include
 TESTS+=		directive-include-fatal
 TESTS+=		directive-info
+TESTS+=		directive-misspellings
 TESTS+=		directive-sinclude
 TESTS+=		directive-undef
 TESTS+=		directive-unexport
@@ -198,7 +202,7 @@ TESTS+=		modmatch
 TESTS+=		modmisc
 TESTS+=		modts
 TESTS+=		modword
-.if ${.MAKE.UID:U0} > 0
+.if ${.MAKE.UID} > 0
 TESTS+=		objdir-writable
 .endif
 TESTS+=		opt
@@ -262,6 +266,8 @@ TESTS+=		# posix1	# broken by reverting POSIX changes
 TESTS+=		recursive
 TESTS+=		sh
 TESTS+=		sh-dots
+TESTS+=		sh-errctl
+TESTS+=		sh-flags
 TESTS+=		sh-jobs
 TESTS+=		sh-jobs-error
 TESTS+=		sh-leading-at
@@ -483,6 +489,8 @@ SED_CMDS.sh-dots=		-e 's,^.*\.\.\.:.*,<not found: ...>,'
 # For Compat_RunCommand, useShell == TRUE.
 SED_CMDS.sh-dots+=		-e 's,^make: exec(\(.*\)) failed (.*)$$,<not found: \1>,'
 SED_CMDS.sh-dots+=		-e 's,^\(\*\*\* Error code \)[1-9][0-9]*,\1<nonzero>,'
+SED_CMDS.sh-errctl=		${STD_SED_CMDS.dj}
+SED_CMDS.sh-flags=		${STD_SED_CMDS.hide-from-output}
 SED_CMDS.suff-main+=		${STD_SED_CMDS.dg1}
 SED_CMDS.suff-main-several+=	${STD_SED_CMDS.dg1}
 SED_CMDS.suff-transform-debug+=	${STD_SED_CMDS.dg1}
@@ -519,13 +527,21 @@ unexport-env.rawout: export.mk
 
 # Some standard sed commands, to be used in the SED_CMDS above.
 
-# Omit details from the output of the -dg1 option such as process IDs.
+# Omit details such as process IDs from the output of the -dg1 option.
 STD_SED_CMDS.dg1=	-e 's,${.CURDIR}$$,<curdir>,'
 STD_SED_CMDS.dg1+=	-e 's,  ${DEFSYSPATH:U/usr/share/mk}$$,  <defsyspath>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(\.MAKE *=\) .*,\1 <details omitted>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(\.MAKE\.[A-Z_]* *=\) .*,\1 <details omitted>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(MACHINE[_ARCH]* *=\) .*,\1 <details omitted>,'
 STD_SED_CMDS.dg1+=	-e 's,^\(MAKE *=\) .*,\1 <details omitted>,'
+
+# Omit details such as process IDs from the output of the -dj option.
+STD_SED_CMDS.dj= \
+	-e '/Process/d;/JobFinish:/d' \
+	-e 's,^\(Job_TokenWithdraw\)([0-9]*),\1(<pid>),' \
+	-e 's,^([0-9][0-9]*) \(withdrew token\),(<pid>) \1,' \
+	-e 's, \(pid\) [0-9][0-9]*, \1 <pid>,' \
+	-e 's,^\(	Command:\) .*,\1 <shell>,'
 
 # Reduce the noise for tests running with the -n option, since there is no
 # other way to suppress the echoing of the commands.

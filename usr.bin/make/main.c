@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.492 2020/12/05 18:38:02 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.496 2020/12/13 02:01:43 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -109,15 +109,11 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.492 2020/12/05 18:38:02 rillig Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.496 2020/12/13 02:01:43 rillig Exp $");
 #if defined(MAKE_NATIVE) && !defined(lint)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
 	    "All rights reserved.");
-#endif
-
-#ifndef DEFMAXLOCAL
-#define DEFMAXLOCAL DEFMAXJOBS
 #endif
 
 CmdOpts opts;
@@ -687,6 +683,7 @@ Main_ParseArgLine(const char *line)
 
 	if (line == NULL)
 		return;
+	/* XXX: don't use line as an iterator variable */
 	for (; *line == ' '; ++line)
 		continue;
 	if (line[0] == '\0')
@@ -1120,22 +1117,22 @@ UnlimitFiles(void)
 static void
 CmdOpts_Init(void)
 {
-	opts.compatMake = FALSE;	/* No compat mode */
-	opts.debug = DEBUG_NONE;	/* No debug verbosity, please. */
+	opts.compatMake = FALSE;
+	opts.debug = DEBUG_NONE;
 	/* opts.debug_file has been initialized earlier */
 	opts.lint = FALSE;
 	opts.debugVflag = FALSE;
 	opts.checkEnvFirst = FALSE;
 	Lst_Init(&opts.makefiles);
 	opts.ignoreErrors = FALSE;	/* Pay attention to non-zero returns */
-	opts.maxJobs = DEFMAXLOCAL;	/* Set default local max concurrency */
+	opts.maxJobs = 1;
 	opts.keepgoing = FALSE;		/* Stop on error */
 	opts.noRecursiveExecute = FALSE; /* Execute all .MAKE targets */
 	opts.noExecute = FALSE;		/* Execute all commands */
-	opts.queryFlag = FALSE;		/* This is not just a check-run */
+	opts.queryFlag = FALSE;
 	opts.noBuiltins = FALSE;	/* Read the built-in rules */
 	opts.beSilent = FALSE;		/* Print commands as executed */
-	opts.touchFlag = FALSE;		/* Actually update targets */
+	opts.touchFlag = FALSE;
 	opts.printVars = PVM_NONE;
 	Lst_Init(&opts.variables);
 	opts.parseWarnFatal = FALSE;
@@ -1803,7 +1800,7 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 		(void)dup2(pipefds[1], 1);
 		(void)close(pipefds[1]);
 
-		Var_ExportVars();
+		Var_ReexportVars();
 
 		(void)execv(shellPath, UNCONST(args));
 		_exit(1);
