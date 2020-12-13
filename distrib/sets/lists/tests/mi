@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.987 2020/12/09 07:57:51 rillig Exp $
+# $NetBSD: mi,v 1.992 2020/12/13 00:46:25 rillig Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -130,6 +130,7 @@
 ./usr/libdata/debug/usr/tests/lib/libm			tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libnvmm		tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libobjc		tests-lib-debug		compattestfile,atf
+./usr/libdata/debug/usr/tests/lib/libossaudio		tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libposix		tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libposix/bsd		tests-lib-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/libposix/posix1	tests-lib-debug		compattestfile,atf
@@ -3796,6 +3797,10 @@
 ./usr/tests/lib/libobjc/Atffile				tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libobjc/Kyuafile			tests-lib-tests		compattestfile,atf,kyua
 ./usr/tests/lib/libobjc/t_threads			tests-lib-tests		compattestfile,atf,gcc
+./usr/tests/lib/libossaudio				tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libossaudio/Atffile			tests-lib-tests		compattestfile,atf
+./usr/tests/lib/libossaudio/Kyuafile			tests-lib-tests		compattestfile,atf,kyua
+./usr/tests/lib/libossaudio/t_ossaudio			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libposix				tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libposix/Atffile			tests-lib-tests		compattestfile,atf
 ./usr/tests/lib/libposix/Kyuafile			tests-lib-tests		compattestfile,atf,kyua
@@ -5067,6 +5072,8 @@
 ./usr/tests/usr.bin/make/unit-tests/directive-include.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/directive-info.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/directive-info.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/directive-misspellings.exp			tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/directive-misspellings.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/directive-sinclude.exp			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/directive-sinclude.mk			tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/directive-undef.exp				tests-usr.bin-tests	compattestfile,atf
@@ -5273,6 +5280,10 @@
 ./usr/tests/usr.bin/make/unit-tests/recursive.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/sh-dots.exp					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/sh-dots.mk					tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/sh-errctl.exp				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/sh-errctl.mk				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/sh-flags.exp				tests-usr.bin-tests	compattestfile,atf
+./usr/tests/usr.bin/make/unit-tests/sh-flags.mk					tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/sh-jobs-error.exp				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/sh-jobs-error.mk				tests-usr.bin-tests	compattestfile,atf
 ./usr/tests/usr.bin/make/unit-tests/sh-jobs.exp					tests-usr.bin-tests	compattestfile,atf

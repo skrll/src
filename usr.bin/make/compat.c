@@ -1,4 +1,4 @@
-/*	$NetBSD: compat.c,v 1.204 2020/12/07 01:35:33 rillig Exp $	*/
+/*	$NetBSD: compat.c,v 1.208 2020/12/12 18:53:53 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -96,7 +96,7 @@
 #include "pathnames.h"
 
 /*	"@(#)compat.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: compat.c,v 1.204 2020/12/07 01:35:33 rillig Exp $");
+MAKE_RCSID("$NetBSD: compat.c,v 1.208 2020/12/12 18:53:53 rillig Exp $");
 
 static GNode *curTarg = NULL;
 static pid_t compatChild;
@@ -348,7 +348,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 		Fatal("Could not fork");
 	}
 	if (cpid == 0) {
-		Var_ExportVars();
+		Var_ReexportVars();
 #ifdef USE_META
 		if (useMeta) {
 			meta_compat_child();
@@ -409,7 +409,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 		if (errCheck) {
 #ifdef USE_META
 			if (useMeta) {
-				meta_job_error(NULL, gn, 0, status);
+				meta_job_error(NULL, gn, FALSE, status);
 			}
 #endif
 			gn->made = ERROR;
@@ -468,7 +468,7 @@ MakeNodes(GNodeList *gnodes, GNode *pgn)
 }
 
 static Boolean
-MakeUnmade(GNode *const gn, GNode *const pgn)
+MakeUnmade(GNode *gn, GNode *pgn)
 {
 
 	assert(gn->made == UNMADE);
@@ -529,9 +529,9 @@ MakeUnmade(GNode *const gn, GNode *const pgn)
 	 * Alter our type to tell if errors should be ignored or things
 	 * should not be printed so CompatRunCommand knows what to do.
 	 */
-	if (Targ_Ignore(gn))
+	if (opts.ignoreErrors)
 		gn->type |= OP_IGNORE;
-	if (Targ_Silent(gn))
+	if (opts.beSilent)
 		gn->type |= OP_SILENT;
 
 	if (Job_CheckCommands(gn, Fatal)) {
