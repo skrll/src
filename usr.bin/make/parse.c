@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.479 2020/12/13 02:15:49 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.503 2020/12/19 22:33:11 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -117,7 +117,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.479 2020/12/13 02:15:49 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.503 2020/12/19 22:33:11 rillig Exp $");
 
 /* types and constants */
 
@@ -618,7 +618,7 @@ PrintLocation(FILE *f, const char *fname, size_t lineno)
 	void *dir_freeIt, *base_freeIt;
 
 	if (*fname == '/' || strcmp(fname, "(stdin)") == 0) {
-		(void)fprintf(f, "\"%s\" line %zu: ", fname, lineno);
+		(void)fprintf(f, "\"%s\" line %u: ", fname, (unsigned)lineno);
 		return;
 	}
 
@@ -632,12 +632,10 @@ PrintLocation(FILE *f, const char *fname, size_t lineno)
 		dir = realpath(dir, dirbuf);
 
 	base = Var_Value(".PARSEFILE", VAR_GLOBAL, &base_freeIt);
-	if (base == NULL) {
-		const char *slash = strrchr(fname, '/');
-		base = slash != NULL ? slash + 1 : fname;
-	}
+	if (base == NULL)
+		base = str_basename(fname);
 
-	(void)fprintf(f, "\"%s/%s\" line %zu: ", dir, base, lineno);
+	(void)fprintf(f, "\"%s/%s\" line %u: ", dir, base, (unsigned)lineno);
 	bmake_free(base_freeIt);
 	bmake_free(dir_freeIt);
 }
@@ -725,13 +723,16 @@ Parse_Error(ParseErrorLevel type, const char *fmt, ...)
 
 /* Parse and handle a .info, .warning or .error directive.
  * For an .error directive, immediately exit. */
-static Boolean
-ParseMessage(ParseErrorLevel level, const char *umsg)
+static void
+ParseMessage(ParseErrorLevel level, const char *levelName, const char *umsg)
 {
 	char *xmsg;
 
-	if (umsg[0] == '\0')
-		return FALSE;	/* missing argument */
+	if (umsg[0] == '\0') {
+		Parse_Error(PARSE_FATAL, "Missing argument for \".%s\"",
+		    levelName);
+		return;
+	}
 
 	(void)Var_Subst(umsg, VAR_CMDLINE, VARE_WANTRES, &xmsg);
 	/* TODO: handle errors */
@@ -743,7 +744,6 @@ ParseMessage(ParseErrorLevel level, const char *umsg)
 		PrintOnError(NULL, NULL);
 		exit(1);
 	}
-	return TRUE;
 }
 
 /* Add the child to the parent's children.
@@ -2431,7 +2431,7 @@ ParseTrackInput(const char *name)
  * The given file is added to the includes stack.
  */
 void
-Parse_SetInput(const char *name, int line, int fd,
+Parse_SetInput(const char *name, int lineno, int fd,
 	       ReadMoreProc readMore, void *readMoreArg)
 {
 	IFile *curFile;
@@ -2444,13 +2444,9 @@ Parse_SetInput(const char *name, int line, int fd,
 	else
 		ParseTrackInput(name);
 
-	if (DEBUG(PARSE)) {
-		const char *caller = readMore == loadedfile_readMore
-		    ? "loadedfile" : "other";
-		debug_printf(
-		    "%s: file %s, line %d, fd %d, readMore %s, readMoreArg %p\n",
-		    __func__, name, line, fd, caller, readMoreArg);
-	}
+	DEBUG3(PARSE, "Parse_SetInput: %s %s, line %d\n",
+	    readMore == loadedfile_readMore ? "file" : ".for loop in",
+	    name, lineno);
 
 	if (fd == -1 && readMore == NULL)
 		/* sanity */
@@ -2459,8 +2455,8 @@ Parse_SetInput(const char *name, int line, int fd,
 	curFile = Vector_Push(&includes);
 	curFile->fname = bmake_strdup(name);
 	curFile->fromForLoop = fromForLoop;
-	curFile->lineno = line;
-	curFile->first_lineno = line;
+	curFile->lineno = lineno;
+	curFile->first_lineno = lineno;
 	curFile->readMore = readMore;
 	curFile->readMoreArg = readMoreArg;
 	curFile->lf = NULL;
@@ -2658,153 +2654,122 @@ ParseEOF(void)
 	return TRUE;
 }
 
-typedef enum GetLineMode {
-	PARSE_NORMAL,
-	PARSE_RAW,
-	PARSE_SKIP
-} GetLineMode;
+typedef enum ParseRawLineResult {
+	PRLR_LINE,
+	PRLR_EOF,
+	PRLR_ERROR
+} ParseRawLineResult;
 
-static char *
-ParseGetLine(GetLineMode mode)
+/*
+ * Parse until the end of a line, taking into account lines that end with
+ * backslash-newline.
+ */
+static ParseRawLineResult
+ParseRawLine(IFile *curFile, char **out_line, char **out_line_end,
+	     char **out_firstBackslash, char **out_firstComment)
 {
-	IFile *cf = CurFile();
-	char *ptr;
-	char ch;
-	char *line;
-	char *line_end;
-	char *escaped;
-	char *comment;
-	char *tp;
+	char *line = curFile->buf_ptr;
+	char *p = line;
+	char *line_end = line;
+	char *firstBackslash = NULL;
+	char *firstComment = NULL;
+	ParseRawLineResult res = PRLR_LINE;
 
-	/* Loop through blank lines and comment lines */
+	curFile->lineno++;
+
 	for (;;) {
-		cf->lineno++;
-		line = cf->buf_ptr;
-		ptr = line;
-		line_end = line;
-		escaped = NULL;
-		comment = NULL;
-		for (;;) {
-			if (ptr == cf->buf_end) {
-				/* end of buffer */
-				ch = '\0';
-				break;
-			}
-			ch = *ptr;
-			if (ch == '\0' ||
-			    (ch == '\\' && ptr + 1 < cf->buf_end &&
-			     ptr[1] == '\0')) {
-				Parse_Error(PARSE_FATAL,
-				    "Zero byte read from file");
-				return NULL;
-			}
+		char ch;
 
-			if (ch == '\\') {
-				/*
-				 * Don't treat next character as special,
-				 * remember first one.
-				 */
-				if (escaped == NULL)
-					escaped = ptr;
-				if (ptr[1] == '\n')
-					cf->lineno++;
-				ptr += 2;
-				line_end = ptr;
-				continue;
-			}
-			if (ch == '#' && comment == NULL) {
-				/*
-				 * Remember the first '#' for comment
-				 * stripping, unless the previous char was
-				 * '[', as in the modifier ':[#]'.
-				 */
-				if (!(ptr > line && ptr[-1] == '['))
-					comment = line_end;
-			}
-			ptr++;
-			if (ch == '\n')
-				break;
-			if (!ch_isspace(ch)) {
-				/*
-				 * We are not interested in trailing
-				 * whitespace.
-				 */
-				line_end = ptr;
-			}
-		}
-
-		/* Save next 'to be processed' location */
-		cf->buf_ptr = ptr;
-
-		/* Check we have a non-comment, non-blank line */
-		if (line_end == line || comment == line) {
-			if (ch == '\0')
-				/* At end of file */
-				return NULL;
-			/* Parse another line */
-			continue;
-		}
-
-		/* We now have a line of data */
-		*line_end = '\0';
-
-		if (mode == PARSE_RAW) {
-			/* Leave '\' (etc) in line buffer (eg 'for' lines) */
-			return line;
-		}
-
-		if (mode == PARSE_SKIP) {
-			/* Completely ignore non-directives */
-			if (line[0] != '.')
-				continue;
-			/*
-			 * We could do more of the .else/.elif/.endif checks
-			 * here.
-			 */
-		}
-		break;
-	}
-
-	/* Brutally ignore anything after a non-escaped '#' in non-commands. */
-	if (comment != NULL && line[0] != '\t') {
-		line_end = comment;
-		*line_end = '\0';
-	}
-
-	/* If we didn't see a '\\' then the in-situ data is fine. */
-	if (escaped == NULL)
-		return line;
-
-	/* Remove escapes from '\n' and '#' */
-	tp = ptr = escaped;
-	escaped = line;
-	for (;; *tp++ = ch) {
-		ch = *ptr++;
-		if (ch != '\\') {
-			if (ch == '\0')
-				break;
-			continue;
-		}
-
-		ch = *ptr++;
-		if (ch == '\0') {
-			/* Delete '\\' at end of buffer */
-			tp--;
+		if (p == curFile->buf_end) {
+			res = PRLR_EOF;
 			break;
 		}
 
-		if (ch == '#' && line[0] != '\t')
-			/* Delete '\\' from before '#' on non-command lines */
+		ch = *p;
+		if (ch == '\0' ||
+		    (ch == '\\' && p + 1 < curFile->buf_end && p[1] == '\0')) {
+			Parse_Error(PARSE_FATAL, "Zero byte read from file");
+			return PRLR_ERROR;
+		}
+
+		/* Treat next character after '\' as literal. */
+		if (ch == '\\') {
+			if (firstBackslash == NULL)
+				firstBackslash = p;
+			if (p[1] == '\n')
+				curFile->lineno++;
+			p += 2;
+			line_end = p;
 			continue;
+		}
+
+		/*
+		 * Remember the first '#' for comment stripping, unless
+		 * the previous char was '[', as in the modifier ':[#]'.
+		 */
+		if (ch == '#' && firstComment == NULL &&
+		    !(p > line && p[-1] == '['))
+			firstComment = line_end;
+
+		p++;
+		if (ch == '\n')
+			break;
+
+		/* We are not interested in trailing whitespace. */
+		if (!ch_isspace(ch))
+			line_end = p;
+	}
+
+	*out_line = line;
+	curFile->buf_ptr = p;
+	*out_line_end = line_end;
+	*out_firstBackslash = firstBackslash;
+	*out_firstComment = firstComment;
+	return res;
+}
+
+/*
+ * Beginning at start, unescape '\#' to '#' and replace backslash-newline
+ * with a single space.
+ */
+static void
+UnescapeBackslash(char *const line, char *start)
+{
+	char *src = start;
+	char *dst = start;
+	char *spaceStart = line;
+
+	for (;;) {
+		char ch = *src++;
+		if (ch != '\\') {
+			if (ch == '\0')
+				break;
+			*dst++ = ch;
+			continue;
+		}
+
+		ch = *src++;
+		if (ch == '\0') {
+			/* Delete '\\' at end of buffer */
+			dst--;
+			break;
+		}
+
+		/* Delete '\\' from before '#' on non-command lines */
+		if (ch == '#' && line[0] != '\t') {
+			*dst++ = ch;
+			continue;
+		}
 
 		if (ch != '\n') {
 			/* Leave '\\' in buffer for later */
-			*tp++ = '\\';
+			*dst++ = '\\';
 			/*
 			 * Make sure we don't delete an escaped ' ' from the
 			 * line end.
 			 */
-			escaped = tp + 1;
+			spaceStart = dst + 1;
+			*dst++ = ch;
 			continue;
 		}
 
@@ -2812,33 +2777,168 @@ ParseGetLine(GetLineMode mode)
 		 * Escaped '\n' -- replace following whitespace with a single
 		 * ' '.
 		 */
-		pp_skip_hspace(&ptr);
-		ch = ' ';
+		pp_skip_hspace(&src);
+		*dst++ = ' ';
 	}
 
 	/* Delete any trailing spaces - eg from empty continuations */
-	while (tp > escaped && ch_isspace(tp[-1]))
-		tp--;
+	while (dst > spaceStart && ch_isspace(dst[-1]))
+		dst--;
+	*dst = '\0';
+}
 
-	*tp = '\0';
+typedef enum GetLineMode {
+	/*
+	 * Return the next line that is neither empty nor a comment.
+	 * Backslash line continuations are folded into a single space.
+	 * A trailing comment, if any, is discarded.
+	 */
+	GLM_NONEMPTY,
+
+	/*
+	 * Return the next line, even if it is empty or a comment.
+	 * Preserve backslash-newline to keep the line numbers correct.
+	 *
+	 * Used in .for loops to collect the body of the loop while waiting
+	 * for the corresponding .endfor.
+	 */
+	GLM_FOR_BODY,
+
+	/*
+	 * Return the next line that starts with a dot.
+	 * Backslash line continuations are folded into a single space.
+	 * A trailing comment, if any, is discarded.
+	 *
+	 * Used in .if directives to skip over irrelevant branches while
+	 * waiting for the corresponding .endif.
+	 */
+	GLM_DOT
+} GetLineMode;
+
+/* Return the next "interesting" logical line from the current file. */
+static char *
+ParseGetLine(GetLineMode mode)
+{
+	IFile *curFile = CurFile();
+	char *line;
+	char *line_end;
+	char *firstBackslash;
+	char *firstComment;
+
+	/* Loop through blank lines and comment lines */
+	for (;;) {
+		ParseRawLineResult res = ParseRawLine(curFile,
+		    &line, &line_end, &firstBackslash, &firstComment);
+		if (res == PRLR_ERROR)
+			return NULL;
+
+		if (line_end == line || firstComment == line) {
+			if (res == PRLR_EOF)
+				return NULL;
+			if (mode != GLM_FOR_BODY)
+				continue;
+		}
+
+		/* We now have a line of data */
+		*line_end = '\0';
+
+		if (mode == GLM_FOR_BODY)
+			return line;	/* Don't join the physical lines. */
+
+		if (mode == GLM_DOT && line[0] != '.')
+			continue;
+		break;
+	}
+
+	/* Brutally ignore anything after a non-escaped '#' in non-commands. */
+	if (firstComment != NULL && line[0] != '\t') {
+		line_end = firstComment;
+		*line_end = '\0';
+	}
+
+	/* If we didn't see a '\\' then the in-situ data is fine. */
+	if (firstBackslash == NULL)
+		return line;
+
+	/* Remove escapes from '\n' and '#' */
+	UnescapeBackslash(line, firstBackslash);
+
 	return line;
 }
 
+static Boolean
+ParseSkippedBranches(void)
+{
+	char *line;
+
+	while ((line = ParseGetLine(GLM_DOT)) != NULL) {
+		if (Cond_EvalLine(line) == COND_PARSE)
+			break;
+		/*
+		 * TODO: Check for typos in .elif directives
+		 * such as .elsif or .elseif.
+		 *
+		 * This check will probably duplicate some of
+		 * the code in ParseLine.  Most of the code
+		 * there cannot apply, only ParseVarassign and
+		 * ParseDependency can, and to prevent code
+		 * duplication, these would need to be called
+		 * with a flag called onlyCheckSyntax.
+		 *
+		 * See directive-elif.mk for details.
+		 */
+	}
+
+	return line != NULL;
+}
+
+static Boolean
+ParseForLoop(const char *line)
+{
+	int rval;
+	int firstLineno;
+
+	rval = For_Eval(line);
+	if (rval == 0)
+		return FALSE;	/* Not a .for line */
+	if (rval < 0)
+		return TRUE;	/* Syntax error - error printed, ignore line */
+
+	firstLineno = CurFile()->lineno;
+
+	/* Accumulate loop lines until matching .endfor */
+	do {
+		line = ParseGetLine(GLM_FOR_BODY);
+		if (line == NULL) {
+			Parse_Error(PARSE_FATAL,
+			    "Unexpected end of file in for loop.");
+			break;
+		}
+	} while (For_Accum(line));
+
+	For_Run(firstLineno);	/* Stash each iteration as a new 'input file' */
+
+	return TRUE;		/* Read next line from for-loop buffer */
+}
+
 /*
- * Read an entire line from the input file. Called only by Parse_File.
+ * Read an entire line from the input file.
+ *
+ * Empty lines, .if and .for are completely handled by this function,
+ * leaving only variable assignments, other directives, dependency lines
+ * and shell commands to the caller.
  *
  * Results:
- *	A line without its newline and without any trailing whitespace.
+ *	A line without its newline and without any trailing whitespace,
+ *	or NULL.
  */
 static char *
 ParseReadLine(void)
 {
-	char *line;		/* Result */
-	int lineno;		/* Saved line # */
-	int rval;
+	char *line;
 
 	for (;;) {
-		line = ParseGetLine(PARSE_NORMAL);
+		line = ParseGetLine(GLM_NONEMPTY);
 		if (line == NULL)
 			return NULL;
 
@@ -2851,43 +2951,15 @@ ParseReadLine(void)
 		 */
 		switch (Cond_EvalLine(line)) {
 		case COND_SKIP:
-			/*
-			 * Skip to next conditional that evaluates to
-			 * COND_PARSE.
-			 */
-			do {
-				line = ParseGetLine(PARSE_SKIP);
-			} while (line && Cond_EvalLine(line) != COND_PARSE);
-			if (line == NULL)
-				break;
+			if (!ParseSkippedBranches())
+				return NULL;
 			continue;
 		case COND_PARSE:
 			continue;
 		case COND_INVALID:	/* Not a conditional line */
-			/* Check for .for loops */
-			rval = For_Eval(line);
-			if (rval == 0)
-				/* Not a .for line */
-				break;
-			if (rval < 0)
-				/* Syntax error - error printed, ignore line */
+			if (ParseForLoop(line))
 				continue;
-			/* Start of a .for loop */
-			lineno = CurFile()->lineno;
-			/* Accumulate loop lines until matching .endfor */
-			do {
-				line = ParseGetLine(PARSE_RAW);
-				if (line == NULL) {
-					Parse_Error(PARSE_FATAL,
-					    "Unexpected end of file "
-					    "in for loop.");
-					break;
-				}
-			} while (For_Accum(line));
-			/* Stash each iteration as a new 'input file' */
-			For_Run(lineno);
-			/* Read next line from for-loop buffer */
-			continue;
+			break;
 		}
 		return line;
 	}
@@ -2982,12 +3054,7 @@ ParseDirective(char *line)
 	arg = cp;
 
 	if (IsDirective(dir, dirlen, "undef")) {
-		for (; !ch_isspace(*cp) && *cp != '\0'; cp++)
-			continue;
-		*cp = '\0';
-		Var_Delete(arg, VAR_GLOBAL);
-		/* TODO: undefine all variables, not only the first */
-		/* TODO: use Str_Words, like everywhere else */
+		Var_Undef(cp);
 		return TRUE;
 	} else if (IsDirective(dir, dirlen, "export")) {
 		Var_Export(VEM_PARENT, arg);
@@ -3005,14 +3072,14 @@ ParseDirective(char *line)
 		Var_UnExport(TRUE, arg);
 		return TRUE;
 	} else if (IsDirective(dir, dirlen, "info")) {
-		if (ParseMessage(PARSE_INFO, arg))
-			return TRUE;
+		ParseMessage(PARSE_INFO, "info", arg);
+		return TRUE;
 	} else if (IsDirective(dir, dirlen, "warning")) {
-		if (ParseMessage(PARSE_WARNING, arg))
-			return TRUE;
+		ParseMessage(PARSE_WARNING, "warning", arg);
+		return TRUE;
 	} else if (IsDirective(dir, dirlen, "error")) {
-		if (ParseMessage(PARSE_FATAL, arg))
-			return TRUE;
+		ParseMessage(PARSE_FATAL, "error", arg);
+		return TRUE;
 	}
 	return FALSE;
 }
