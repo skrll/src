@@ -1,4 +1,4 @@
-/*	$NetBSD: cond.c,v 1.222 2020/12/12 00:33:25 rillig Exp $	*/
+/*	$NetBSD: cond.c,v 1.226 2020/12/14 22:17:11 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -94,7 +94,7 @@
 #include "dir.h"
 
 /*	"@(#)cond.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: cond.c,v 1.222 2020/12/12 00:33:25 rillig Exp $");
+MAKE_RCSID("$NetBSD: cond.c,v 1.226 2020/12/14 22:17:11 rillig Exp $");
 
 /*
  * The parsing of conditional expressions is based on this grammar:
@@ -1038,7 +1038,7 @@ CondParser_Eval(CondParser *par, Boolean *value)
 	if (res != TOK_FALSE && res != TOK_TRUE)
 		return COND_INVALID;
 
-	if (CondParser_Token(par, TRUE /* XXX: Why TRUE? */) != TOK_EOF)
+	if (CondParser_Token(par, FALSE) != TOK_EOF)
 		return COND_INVALID;
 
 	*value = res == TOK_TRUE;
@@ -1085,6 +1085,13 @@ CondEvalResult
 Cond_EvalCondition(const char *cond, Boolean *out_value)
 {
 	return CondEvalExpression(NULL, cond, out_value, FALSE, FALSE);
+}
+
+static Boolean
+IsEndif(const char *p)
+{
+	return p[0] == 'e' && p[1] == 'n' && p[2] == 'd' &&
+	       p[3] == 'i' && p[4] == 'f' && !ch_isalpha(p[5]);
 }
 
 /* Evaluate the conditional directive in the line, which is one of:
@@ -1154,37 +1161,39 @@ Cond_EvalLine(const char *line)
 	p++;			/* skip the leading '.' */
 	cpp_skip_hspace(&p);
 
+	if (IsEndif(p)) {	/* It is an '.endif'. */
+		if (p[5] != '\0') {
+			Parse_Error(PARSE_FATAL,
+			    "The .endif directive does not take arguments.");
+		}
+
+		if (cond_depth == cond_min_depth) {
+			Parse_Error(PARSE_FATAL, "if-less endif");
+			return COND_PARSE;
+		}
+
+		/* Return state for previous conditional */
+		cond_depth--;
+		return cond_states[cond_depth] & IFS_ACTIVE
+		    ? COND_PARSE : COND_SKIP;
+	}
+
 	/* Parse the name of the directive, such as 'if', 'elif', 'endif'. */
 	if (p[0] == 'e') {
 		if (p[1] != 'l') {
-			if (!is_token(p + 1, "ndif", 4)) {
-				/*
-				 * Unknown directive.  It might still be a
-				 * transformation rule like '.elisp.scm',
-				 * therefore no error message here.
-				 */
-				return COND_INVALID;
-			}
-
-			/* It is an '.endif'. */
-			/* TODO: check for extraneous <cond> */
-
-			if (cond_depth == cond_min_depth) {
-				Parse_Error(PARSE_FATAL, "if-less endif");
-				return COND_PARSE;
-			}
-
-			/* Return state for previous conditional */
-			cond_depth--;
-			return cond_states[cond_depth] & IFS_ACTIVE
-			       ? COND_PARSE : COND_SKIP;
+			/*
+			 * Unknown directive.  It might still be a
+			 * transformation rule like '.elisp.scm',
+			 * therefore no error message here.
+			 */
+			return COND_INVALID;
 		}
 
 		/* Quite likely this is 'else' or 'elif' */
 		p += 2;
 		if (is_token(p, "se", 2)) {	/* It is an 'else'. */
 
-			if (opts.lint && p[2] != '\0')
+			if (p[2] != '\0')
 				Parse_Error(PARSE_FATAL,
 					    "The .else directive "
 					    "does not take arguments.");
