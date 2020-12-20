@@ -1,5 +1,5 @@
 #
-#	$NetBSD: DUOVERO,v 1.16 2020/03/25 17:06:18 jdolecek Exp $
+#	$NetBSD: DUOVERO,v 1.22 2020/09/29 19:58:50 jmcneill Exp $
 #
 #	DUOOVERO -- Gumstix. Inc. DuoVero COMS platforms kernel
 #
@@ -14,12 +14,12 @@ maxusers	32
 
 # CPU options
 
-options 	CPU_CORTEXA9
+options 	CPU_CORTEX
 options 	OMAP_4430
 options 	MULTIPROCESSOR
 options 	 __HAVE_CPU_UAREA_ALLOC_IDLELWP	# need for MULTIPROCESSOR
 options 	FPU_VFP
-options 	PMAPCOUNTERS
+#options 	PMAPCOUNTERS
 options 	ARM_HAS_VBAR
 options 	__HAVE_MM_MD_DIRECT_MAPPED_PHYS
 makeoptions	CPUFLAGS="-mcpu=cortex-a9 -mfpu=neon"
@@ -101,7 +101,6 @@ include 	"conf/compat_netbsd30.config"
 options 	COMPAT_NETBSD32	# allow running arm (e.g. non-earm) binaries
 
 options 	COMPAT_OSSAUDIO	# OSS (Voxware) audio driver compatibility
-options 	COMPAT_LINUX	# binary compatibility with Linux
 
 # Shared memory options
 
@@ -131,7 +130,7 @@ options 	IRQSTATS	# manage IRQ statistics
 options 	DIAGNOSTIC	# internal consistency checks
 options 	DEBUG
 #options 	LOCKDEBUG
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	VERBOSE_INIT_ARM # verbose bootstraping messages
 options 	DDB		# in-kernel debugger
 options 	DDB_ONPANIC=1
@@ -267,7 +266,7 @@ pseudo-device	tap			# virtual Ethernet
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
 
 # miscellaneous pseudo-devices

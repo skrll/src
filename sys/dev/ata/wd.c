@@ -1,4 +1,4 @@
-/*	$NetBSD: wd.c,v 1.460 2020/04/07 13:22:05 jdolecek Exp $ */
+/*	$NetBSD: wd.c,v 1.465 2020/09/28 12:47:49 jakllsch Exp $ */
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.  All rights reserved.
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wd.c,v 1.460 2020/04/07 13:22:05 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wd.c,v 1.465 2020/09/28 12:47:49 jakllsch Exp $");
 
 #include "opt_ata.h"
 #include "opt_wd.h"
@@ -201,9 +201,9 @@ static int	wd_discard(device_t, off_t, off_t);
 static void	wdbioretry(void *);
 static void	wdbiorequeue(void *);
 static void	wddone(device_t, struct ata_xfer *);
-static int	wd_get_params(struct wd_softc *, uint8_t, struct ataparams *);
+static int	wd_get_params(struct wd_softc *, struct ataparams *);
 static void	wd_set_geometry(struct wd_softc *);
-static int	wd_flushcache(struct wd_softc *, int, bool);
+static int	wd_flushcache(struct wd_softc *, int);
 static int	wd_trim(struct wd_softc *, daddr_t, long);
 static bool	wd_shutdown(device_t, int);
 
@@ -213,7 +213,7 @@ static int wd_setcache(struct wd_softc *, int);
 static void wd_sysctl_attach(struct wd_softc *);
 static void wd_sysctl_detach(struct wd_softc *);
 
-struct dkdriver wddkdriver = {
+static const struct dkdriver wddkdriver = {
 	.d_open = wdopen,
 	.d_close = wdclose,
 	.d_strategy = wdstrategy,
@@ -336,7 +336,7 @@ wdattach(device_t parent, device_t self, void *aux)
 	aprint_normal("\n");
 
 	/* read our drive info */
-	if (wd_get_params(wd, AT_WAIT, &wd->sc_params) != 0) {
+	if (wd_get_params(wd, &wd->sc_params) != 0) {
 		aprint_error_dev(self, "IDENTIFY failed\n");
 		goto out;
 	}
@@ -453,7 +453,7 @@ wdattach(device_t parent, device_t self, void *aux)
 	    wd->sc_blksize, (unsigned long long)wd->sc_capacity);
 	if (wd->sc_sectoralign.dsa_alignment != 1) {
 		aprint_normal(" (%d bytes/physsect",
-		    wd->sc_sectoralign.dsa_alignment & wd->sc_blksize);
+		    wd->sc_sectoralign.dsa_alignment * wd->sc_blksize);
 		if (wd->sc_sectoralign.dsa_firstaligned != 0) {
 			aprint_normal("; first aligned sector: %jd",
 			    (intmax_t)wd->sc_sectoralign.dsa_firstaligned);
@@ -512,7 +512,7 @@ wd_suspend(device_t dv, const pmf_qual_t *qual)
 	if (sc->atabus->ata_addref(sc->drvp))
 		return true; /* no need to complain */
 
-	wd_flushcache(sc, AT_WAIT, false);
+	wd_flushcache(sc, AT_WAIT);
 	wd_standby(sc, AT_WAIT);
 
 	sc->atabus->ata_delref(sc->drvp);
@@ -663,6 +663,7 @@ static void
 wdstart1(struct wd_softc *wd, struct buf *bp, struct ata_xfer *xfer)
 {
 	struct dk_softc *dksc = &wd->sc_dksc;
+	const uint32_t secsize = dksc->sc_dkdev.dk_geom.dg_secsize;
 
 	KASSERT(bp == xfer->c_bio.bp || xfer->c_bio.bp == NULL);
 	KASSERT((xfer->c_flags & (C_WAITACT|C_FREE)) == 0);
@@ -679,6 +680,14 @@ wdstart1(struct wd_softc *wd, struct buf *bp, struct ata_xfer *xfer)
 	xfer->c_bio.databuf = bp->b_data;
 	xfer->c_bio.blkdone = 0;
 	xfer->c_bio.bp = bp;
+
+	/* Adjust blkno and bcount if xfer has been already partially done */
+	if (__predict_false(xfer->c_skip > 0)) {
+		KASSERT(xfer->c_skip < xfer->c_bio.bcount);
+		KASSERT((xfer->c_skip % secsize) == 0);
+		xfer->c_bio.bcount -= xfer->c_skip;
+		xfer->c_bio.blkno += xfer->c_skip / secsize;
+	}
 
 #ifdef WD_CHAOS_MONKEY
 	/*
@@ -714,10 +723,9 @@ wdstart1(struct wd_softc *wd, struct buf *bp, struct ata_xfer *xfer)
 	 * and needed by transfer offset or size.
 	 */
 	if (wd->sc_flags & WDF_LBA48 &&
-	    (((xfer->c_bio.blkno +
-	     xfer->c_bio.bcount / dksc->sc_dkdev.dk_geom.dg_secsize) >
+	    (((xfer->c_bio.blkno + xfer->c_bio.bcount / secsize) >
 	    wd->sc_capacity28) ||
-	    ((xfer->c_bio.bcount / dksc->sc_dkdev.dk_geom.dg_secsize) > 128)))
+	    ((xfer->c_bio.bcount / secsize) > 128)))
 		xfer->c_bio.flags |= ATA_LBA48;
 
 	/*
@@ -760,16 +768,8 @@ wdstart1(struct wd_softc *wd, struct buf *bp, struct ata_xfer *xfer)
 		wd->inflight++;
 	mutex_exit(&wd->sc_lock);
 
-	switch (wd->atabus->ata_bio(wd->drvp, xfer)) {
-	case ATACMD_TRY_AGAIN:
-		panic("wdstart1: try again");
-		break;
-	case ATACMD_QUEUED:
-	case ATACMD_COMPLETE:
-		break;
-	default:
-		panic("wdstart1: bad return code from ata_bio()");
-	}
+	/* Queue the xfer */
+	wd->atabus->ata_bio(wd->drvp, xfer);
 
 	mutex_enter(&wd->sc_lock);
 }
@@ -1165,7 +1165,7 @@ wd_firstopen(device_t self, dev_t dev, int flag, int fmt)
 		int param_error;
 
 		/* Load the physical device parameters. */
-		param_error = wd_get_params(wd, AT_WAIT, &wd->sc_params);
+		param_error = wd_get_params(wd, &wd->sc_params);
 		if (param_error != 0) {
 			aprint_error_dev(dksc->sc_dev, "IDENTIFY failed\n");
 			error = EIO;
@@ -1194,7 +1194,7 @@ wd_lastclose(device_t self)
 	KASSERTMSG(bufq_peek(wd->sc_dksc.sc_bufq) == NULL, "bufq not empty");
 
 	if (wd->sc_flags & WDF_DIRTY)
-		wd_flushcache(wd, AT_WAIT, false);
+		wd_flushcache(wd, AT_WAIT);
 
 	wd->atabus->ata_delref(wd->drvp);
 	wd->sc_flags &= ~WDF_OPEN;
@@ -1373,7 +1373,7 @@ wdioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
 		return wd_setcache(wd, *(int *)addr);
 
 	case DIOCCACHESYNC:
-		return wd_flushcache(wd, AT_WAIT, true);
+		return wd_flushcache(wd, AT_WAIT);
 
 	case ATAIOCCOMMAND:
 		/*
@@ -1609,18 +1609,9 @@ wd_dumpblocks(device_t dev, void *va, daddr_t blkno, int nblk)
 	xfer->c_bio.bcount = nblk * dg->dg_secsize;
 	xfer->c_bio.databuf = va;
 #ifndef WD_DUMP_NOT_TRUSTED
-	switch (err = wd->atabus->ata_bio(wd->drvp, xfer)) {
-	case ATACMD_TRY_AGAIN:
-		panic("wddump: try again");
-		break;
-	case ATACMD_QUEUED:
-		panic("wddump: polled command has been queued");
-		break;
-	case ATACMD_COMPLETE:
-		break;
-	default:
-		panic("wddump: unknown atacmd code %d", err);
-	}
+	/* This will poll until the bio is complete */
+	wd->atabus->ata_bio(wd->drvp, xfer);
+
 	switch(err = xfer->c_bio.error) {
 	case TIMEOUT:
 		printf("wddump: device timed out");
@@ -1707,10 +1698,11 @@ wd_set_geometry(struct wd_softc *wd)
 }
 
 int
-wd_get_params(struct wd_softc *wd, uint8_t flags, struct ataparams *params)
+wd_get_params(struct wd_softc *wd, struct ataparams *params)
 {
 	int retry = 0;
 	struct ata_channel *chp = wd->drvp->chnl_softc;
+	const int flags = AT_WAIT;
 
 again:
 	switch (wd->atabus->ata_get_params(wd->drvp, flags, params)) {
@@ -1755,7 +1747,7 @@ wd_getcache(struct wd_softc *wd, int *bitsp)
 {
 	struct ataparams params;
 
-	if (wd_get_params(wd, AT_WAIT, &params) != 0)
+	if (wd_get_params(wd, &params) != 0)
 		return EIO;
 	if (params.atap_cmd_set1 == 0x0000 ||
 	    params.atap_cmd_set1 == 0xffff ||
@@ -1773,7 +1765,28 @@ wd_getcache(struct wd_softc *wd, int *bitsp)
 	return 0;
 }
 
-const char at_errbits[] = "\20\10ERROR\11TIMEOU\12DF";
+
+static int
+wd_check_error(const struct dk_softc *dksc, const struct ata_xfer *xfer,
+    const char *func)
+{
+	static const char at_errbits[] = "\20\10ERROR\11TIMEOU\12DF";
+
+	int flags = xfer->c_ata_c.flags;
+
+	if ((flags & AT_ERROR) != 0 && xfer->c_ata_c.r_error == WDCE_ABRT) {
+		/* command not supported */
+		aprint_debug_dev(dksc->sc_dev, "%s: not supported\n", func);
+		return ENODEV;
+	}
+	if (flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
+		char sbuf[sizeof(at_errbits) + 64];
+		snprintb(sbuf, sizeof(sbuf), at_errbits, flags);
+		aprint_error_dev(dksc->sc_dev, "%s: status=%s\n", func, sbuf);
+		return EIO;
+	}
+	return 0;
+}
 
 int
 wd_setcache(struct wd_softc *wd, int bits)
@@ -1783,7 +1796,7 @@ wd_setcache(struct wd_softc *wd, int bits)
 	struct ata_xfer *xfer;
 	int error;
 
-	if (wd_get_params(wd, AT_WAIT, &params) != 0)
+	if (wd_get_params(wd, &params) != 0)
 		return EIO;
 
 	if (params.atap_cmd_set1 == 0x0000 ||
@@ -1806,24 +1819,11 @@ wd_setcache(struct wd_softc *wd, int bits)
 		xfer->c_ata_c.r_features = WDSF_WRITE_CACHE_EN;
 	else
 		xfer->c_ata_c.r_features = WDSF_WRITE_CACHE_DS;
-	if (wd->atabus->ata_exec_command(wd->drvp, xfer) != ATACMD_COMPLETE) {
-		aprint_error_dev(dksc->sc_dev,
-		    "wd_setcache command not complete\n");
-		error = EIO;
-		goto out;
-	}
 
-	if (xfer->c_ata_c.flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
-		char sbuf[sizeof(at_errbits) + 64];
-		snprintb(sbuf, sizeof(sbuf), at_errbits, xfer->c_ata_c.flags);
-		aprint_error_dev(dksc->sc_dev, "wd_setcache: status=%s\n", sbuf);
-		error = EIO;
-		goto out;
-	}
+	wd->atabus->ata_exec_command(wd->drvp, xfer);
+	ata_wait_cmd(wd->drvp->chnl_softc, xfer);
 
-	error = 0;
-
-out:
+	error = wd_check_error(dksc, xfer, __func__);
 	ata_free_xfer(wd->drvp->chnl_softc, xfer);
 	return error;
 }
@@ -1843,37 +1843,17 @@ wd_standby(struct wd_softc *wd, int flags)
 	xfer->c_ata_c.r_st_pmask = WDCS_DRDY;
 	xfer->c_ata_c.flags = flags;
 	xfer->c_ata_c.timeout = 30000; /* 30s timeout */
-	if (wd->atabus->ata_exec_command(wd->drvp, xfer) != ATACMD_COMPLETE) {
-		aprint_error_dev(dksc->sc_dev,
-		    "standby immediate command didn't complete\n");
-		error = EIO;
-		goto out;
-	}
-	if (xfer->c_ata_c.flags & AT_ERROR) {
-		if (xfer->c_ata_c.r_error == WDCE_ABRT) {
-			/* command not supported */
-			aprint_debug_dev(dksc->sc_dev,
-				"standby immediate not supported\n");
-			error = ENODEV;
-			goto out;
-		}
-	}
-	if (xfer->c_ata_c.flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
-		char sbuf[sizeof(at_errbits) + 64];
-		snprintb(sbuf, sizeof(sbuf), at_errbits, xfer->c_ata_c.flags);
-		aprint_error_dev(dksc->sc_dev, "wd_standby: status=%s\n", sbuf);
-		error = EIO;
-		goto out;
-	}
-	error = 0;
 
-out:
+	wd->atabus->ata_exec_command(wd->drvp, xfer);
+	ata_wait_cmd(wd->drvp->chnl_softc, xfer);
+
+	error = wd_check_error(dksc, xfer, __func__);
 	ata_free_xfer(wd->drvp->chnl_softc, xfer);
 	return error;
 }
 
 int
-wd_flushcache(struct wd_softc *wd, int flags, bool start_self)
+wd_flushcache(struct wd_softc *wd, int flags)
 {
 	struct dk_softc *dksc = &wd->sc_dksc;
 	struct ata_xfer *xfer;
@@ -1900,31 +1880,12 @@ wd_flushcache(struct wd_softc *wd, int flags, bool start_self)
 	xfer->c_ata_c.r_st_pmask = WDCS_DRDY;
 	xfer->c_ata_c.flags = flags | AT_READREG;
 	xfer->c_ata_c.timeout = 300000; /* 5m timeout */
-	if (wd->atabus->ata_exec_command(wd->drvp, xfer) != ATACMD_COMPLETE) {
-		aprint_error_dev(dksc->sc_dev,
-		    "flush cache command didn't complete\n");
-		error = EIO;
-		goto out_xfer;
-	}
-	if (xfer->c_ata_c.flags & AT_ERROR) {
-		if (xfer->c_ata_c.r_error == WDCE_ABRT) {
-			/* command not supported */
-			error = ENODEV;
-			goto out_xfer;
-		}
-	}
-	if (xfer->c_ata_c.flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
-		char sbuf[sizeof(at_errbits) + 64];
-		snprintb(sbuf, sizeof(sbuf), at_errbits, xfer->c_ata_c.flags);
-		aprint_error_dev(dksc->sc_dev, "wd_flushcache: status=%s\n",
-		    sbuf);
-		error = EIO;
-		goto out_xfer;
-	}
-	wd->sc_flags &= ~WDF_DIRTY;
-	error = 0;
 
-out_xfer:
+	wd->atabus->ata_exec_command(wd->drvp, xfer);
+	ata_wait_cmd(wd->drvp->chnl_softc, xfer);
+
+	error = wd_check_error(dksc, xfer, __func__);
+	wd->sc_flags &= ~WDF_DIRTY;
 	ata_free_xfer(wd->drvp->chnl_softc, xfer);
 	return error;
 }
@@ -1969,32 +1930,12 @@ wd_trim(struct wd_softc *wd, daddr_t bno, long size)
 	xfer->c_ata_c.data = req;
 	xfer->c_ata_c.bcount = 512;
 	xfer->c_ata_c.flags |= AT_WRITE | AT_WAIT;
-	if (wd->atabus->ata_exec_command(wd->drvp, xfer) != ATACMD_COMPLETE) {
-		aprint_error_dev(dksc->sc_dev,
-		    "trim command didn't complete\n");
-		kmem_free(req, 512);
-		error = EIO;
-		goto out;
-	}
-	kmem_free(req, 512);
-	if (xfer->c_ata_c.flags & AT_ERROR) {
-		if (xfer->c_ata_c.r_error == WDCE_ABRT) {
-			/* command not supported */
-			error = ENODEV;
-			goto out;
-		}
-	}
-	if (xfer->c_ata_c.flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
-		char sbuf[sizeof(at_errbits) + 64];
-		snprintb(sbuf, sizeof(sbuf), at_errbits, xfer->c_ata_c.flags);
-		aprint_error_dev(dksc->sc_dev, "wd_trim: status=%s\n",
-		    sbuf);
-		error = EIO;
-		goto out;
-	}
-	error = 0;
 
-out:
+	wd->atabus->ata_exec_command(wd->drvp, xfer);
+	ata_wait_cmd(wd->drvp->chnl_softc, xfer);
+
+	kmem_free(req, 512);
+	error = wd_check_error(dksc, xfer, __func__);
 	ata_free_xfer(wd->drvp->chnl_softc, xfer);
 	return error;
 }
@@ -2008,7 +1949,7 @@ wd_shutdown(device_t dev, int how)
 	if (wd->atabus->ata_addref(wd->drvp))
 		return true; /* no need to complain */
 
-	wd_flushcache(wd, AT_POLL, false);
+	wd_flushcache(wd, AT_POLL);
 	if ((how & RB_POWERDOWN) == RB_POWERDOWN)
 		wd_standby(wd, AT_POLL);
 	return true;
@@ -2170,12 +2111,8 @@ wdioctlstrategy(struct buf *bp)
 	xfer->c_ata_c.data = wi->wi_bp.b_data;
 	xfer->c_ata_c.bcount = wi->wi_bp.b_bcount;
 
-	if (wi->wi_softc->atabus->ata_exec_command(wi->wi_softc->drvp, xfer)
-	    != ATACMD_COMPLETE) {
-		wi->wi_atareq.retsts = ATACMD_ERROR;
-		error = EIO;
-		goto out;
-	}
+	wi->wi_softc->atabus->ata_exec_command(wi->wi_softc->drvp, xfer);
+	ata_wait_cmd(wi->wi_softc->drvp->chnl_softc, xfer);
 
 	if (xfer->c_ata_c.flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
 		if (xfer->c_ata_c.flags & AT_ERROR) {

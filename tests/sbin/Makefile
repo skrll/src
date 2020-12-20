@@ -1,10 +1,12 @@
-#	$NetBSD: Makefile,v 1.7 2015/12/04 17:20:38 christos Exp $
+#	$NetBSD: Makefile,v 1.9 2020/06/25 17:08:32 jruoho Exp $
 #
 
 .include <bsd.own.mk>
 
 TESTSDIR=	${TESTSBASE}/sbin
 
-TESTS_SUBDIRS+=	fsck_ffs gpt ifconfig newfs newfs_msdos resize_ffs route sysctl
+TESTS_SUBDIRS+=	envstat fsck_ffs gpt ifconfig \
+		newfs newfs_msdos resize_ffs \
+		route setkey sysctl
 
 .include <bsd.test.mk>

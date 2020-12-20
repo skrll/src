@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_init.c,v 1.53 2020/03/06 20:46:12 ad Exp $	*/
+/*	$NetBSD: uvm_init.c,v 1.55 2020/11/04 01:30:19 chs Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_init.c,v 1.53 2020/03/06 20:46:12 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_init.c,v 1.55 2020/11/04 01:30:19 chs Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -107,6 +107,7 @@ uvm_init(void)
 	 */
 
 	uvm_page_init(&kvm_start, &kvm_end);
+	uvm_pglistalloc_init();
 
 	/*
 	 * Init the map sub-system.
@@ -165,8 +166,11 @@ uvm_init(void)
 
 	/*
 	 * Enable paging of kernel objects.
+	 * This second pass of initializing kernel_object requires rw_obj,
+	 * so initialize that first.
 	 */
 
+	rw_obj_init();
 	uao_create(VM_MAX_KERNEL_ADDRESS - VM_MIN_KERNEL_ADDRESS,
 	    UAO_FLAG_KERNSWAP);
 

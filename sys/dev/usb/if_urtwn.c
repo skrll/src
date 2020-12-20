@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urtwn.c,v 1.85 2020/04/04 08:46:01 skrll Exp $	*/
+/*	$NetBSD: if_urtwn.c,v 1.88 2020/06/27 14:34:45 jdolecek Exp $	*/
 /*	$OpenBSD: if_urtwn.c,v 1.42 2015/02/10 23:25:46 mpi Exp $	*/
 
 /*-
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.85 2020/04/04 08:46:01 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.88 2020/06/27 14:34:45 jdolecek Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -584,6 +584,8 @@ urtwn_detach(device_t self, int flags)
 		ieee80211_ifdetach(&sc->sc_ic);
 		if_detach(ifp);
 
+		mutex_destroy(&sc->sc_media_mtx);
+
 		/* Close Tx/Rx pipes.  Abort done by urtwn_stop. */
 		urtwn_close_pipes(sc);
 	}
@@ -731,7 +733,7 @@ urtwn_close_pipes(struct urtwn_softc *sc)
 	}
 }
 
-static int
+static int __noinline
 urtwn_alloc_rx_list(struct urtwn_softc *sc)
 {
 	struct urtwn_rx_data *data;
@@ -783,7 +785,7 @@ urtwn_free_rx_list(struct urtwn_softc *sc)
 	}
 }
 
-static int
+static int __noinline
 urtwn_alloc_tx_list(struct urtwn_softc *sc)
 {
 	struct urtwn_tx_data *data;
@@ -1564,7 +1566,7 @@ urtwn_media_change(struct ifnet *ifp)
 /*
  * Initialize rate adaptation in firmware.
  */
-static int
+static int __noinline
 urtwn_ra_init(struct urtwn_softc *sc)
 {
 	static const uint8_t map[] = {
@@ -2527,7 +2529,10 @@ urtwn_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 
 	/* Get the number of encapsulated frames. */
 	stat = (struct r92c_rx_desc_usb *)buf;
-	npkts = MS(le32toh(stat->rxdw2), R92C_RXDW2_PKTCNT);
+	if (ISSET(sc->chip, URTWN_CHIP_92EU))
+		npkts = MS(le32toh(stat->rxdw2), R92E_RXDW2_PKTCNT);
+	else
+		npkts = MS(le32toh(stat->rxdw2), R92C_RXDW2_PKTCNT);
 	DPRINTFN(DBG_RX, "Rx %jd frames in one chunk", npkts, 0, 0, 0);
 
 	if (npkts != 0)
@@ -3266,7 +3271,7 @@ urtwn_r88e_power_on(struct urtwn_softc *sc)
 	return 0;
 }
 
-static int
+static int __noinline
 urtwn_llt_init(struct urtwn_softc *sc)
 {
 	size_t i, page_count, pktbuf_count;
@@ -3408,7 +3413,7 @@ urtwn_fw_loadpage(struct urtwn_softc *sc, int page, uint8_t *buf, int len)
 	return error;
 }
 
-static int
+static int __noinline
 urtwn_load_firmware(struct urtwn_softc *sc)
 {
 	firmware_handle_t fwh;
@@ -3702,7 +3707,7 @@ urtwn_r88e_dma_init(struct urtwn_softc *sc)
 	return 0;
 }
 
-static void
+static void __noinline
 urtwn_mac_init(struct urtwn_softc *sc)
 {
 	size_t i;
@@ -3727,7 +3732,7 @@ urtwn_mac_init(struct urtwn_softc *sc)
 	}
 }
 
-static void
+static void __noinline
 urtwn_bb_init(struct urtwn_softc *sc)
 {
 	const struct rtwn_bb_prog *prog;
@@ -3891,7 +3896,7 @@ urtwn_bb_init(struct urtwn_softc *sc)
 	}
 }
 
-static void
+static void __noinline
 urtwn_rf_init(struct urtwn_softc *sc)
 {
 	const struct rtwn_rf_prog *prog;
@@ -3977,7 +3982,7 @@ urtwn_rf_init(struct urtwn_softc *sc)
 	}
 }
 
-static void
+static void __noinline
 urtwn_cam_init(struct urtwn_softc *sc)
 {
 	uint32_t content, command;
@@ -4027,7 +4032,7 @@ urtwn_cam_init(struct urtwn_softc *sc)
 	urtwn_write_4(sc, R92C_CAMCMD, R92C_CAMCMD_POLLING | R92C_CAMCMD_CLR);
 }
 
-static void
+static void __noinline
 urtwn_pa_bias_init(struct urtwn_softc *sc)
 {
 	uint8_t reg;
@@ -4053,7 +4058,7 @@ urtwn_pa_bias_init(struct urtwn_softc *sc)
 	}
 }
 
-static void
+static void __noinline
 urtwn_rxfilter_init(struct urtwn_softc *sc)
 {
 
@@ -4078,7 +4083,7 @@ urtwn_rxfilter_init(struct urtwn_softc *sc)
 	urtwn_write_2(sc, R92C_RXFLTMAP2, 0xffff);
 }
 
-static void
+static void __noinline
 urtwn_edca_init(struct urtwn_softc *sc)
 {
 
@@ -4365,7 +4370,7 @@ urtwn_set_txpower(struct urtwn_softc *sc, u_int chan, u_int ht40m)
 	}
 }
 
-static void
+static void __noinline
 urtwn_set_chan(struct urtwn_softc *sc, struct ieee80211_channel *c, u_int ht40m)
 {
 	struct ieee80211com *ic = &sc->sc_ic;
@@ -4455,7 +4460,7 @@ urtwn_set_chan(struct urtwn_softc *sc, struct ieee80211_channel *c, u_int ht40m)
 	}
 }
 
-static void
+static void __noinline
 urtwn_iq_calib(struct urtwn_softc *sc, bool inited)
 {
 
@@ -4966,7 +4971,7 @@ urtwn_init(struct ifnet *ifp)
 	return error;
 }
 
-static void
+static void __noinline
 urtwn_stop(struct ifnet *ifp, int disable)
 {
 	struct urtwn_softc *sc = ifp->if_softc;

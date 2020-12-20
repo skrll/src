@@ -1,8 +1,8 @@
-/*	$NetBSD: LDAPRebind.h,v 1.1.1.6 2019/08/08 13:31:08 christos Exp $	*/
+/*	$NetBSD: LDAPRebind.h,v 1.2 2020/08/11 13:15:34 christos Exp $	*/
 
 // $OpenLDAP$
 /*
- * Copyright 2000-2019 The OpenLDAP Foundation, All Rights Reserved.
+ * Copyright 2000-2020 The OpenLDAP Foundation, All Rights Reserved.
  * COPYING RESTRICTIONS APPLY, see COPYRIGHT file
  */
 

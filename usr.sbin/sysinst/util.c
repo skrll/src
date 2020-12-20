@@ -1,4 +1,4 @@
-/*	$NetBSD: util.c,v 1.42 2020/01/26 14:37:29 martin Exp $	*/
+/*	$NetBSD: util.c,v 1.56 2020/11/10 09:14:01 gson Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -62,6 +62,10 @@
 #ifdef MD_MAY_SWAP_TO
 #include <sys/drvctlio.h>
 #endif
+#ifdef CHECK_ENTROPY
+#include <sha2.h>
+#include <paths.h>
+#endif
 
 #define MAX_CD_DEVS	256	/* how many cd drives do we expect to attach */
 #define ISO_BLKSIZE	ISO_DEFAULT_BLOCK_SIZE
@@ -114,8 +118,13 @@ distinfo dist_list[] = {
 	{SET_KERNEL_9_NAME,	SET_KERNEL_9,		false, MSG_set_kernel_9, NULL},
 #endif
 
+#ifdef HAVE_MODULES
 	{"modules",		SET_MODULES,		false, MSG_set_modules, NULL},
+#endif
 	{"base",		SET_BASE,		false, MSG_set_base, NULL},
+#ifdef HAVE_DTB
+	{"dtb",			SET_DTB,		false, MSG_set_dtb, NULL},
+#endif
 	{"etc",			SET_ETC,		false, MSG_set_system, NULL},
 	{"comp",		SET_COMPILER,		false, MSG_set_compiler, NULL},
 	{"games",		SET_GAMES,		false, MSG_set_games, NULL},
@@ -416,6 +425,8 @@ get_iso9660_volname(int dev, int sess, char *volname, size_t volnamelen)
  * Local state while iterating CDs and collecting volumes
  */
 struct get_available_cds_state {
+	size_t num_mounted;
+	struct statvfs *mounted;
 	struct cd_info *info;
 	size_t count;
 };
@@ -427,14 +438,26 @@ static bool
 get_available_cds_helper(void *arg, const char *device)
 {
 	struct get_available_cds_state *state = arg;
-	char dname[16], volname[80];
+	char dname[16], tname[16], volname[80], *t;
 	struct disklabel label;
-	int part, dev, error, sess, ready;
+	int part, dev, error, sess, ready, tlen;
 
 	if (!is_cdrom_device(device, false))
 		return true;
 
 	sprintf(dname, "/dev/r%s%c", device, 'a'+RAW_PART);
+	tlen = sprintf(tname, "/dev/%s", device);
+
+	/* check if this is mounted already */
+	for (size_t i = 0; i < state->num_mounted; i++) {
+		if (strncmp(state->mounted[i].f_mntfromname, tname, tlen)
+		    == 0) {
+			t = state->mounted[i].f_mntfromname + tlen;
+			if (t[0] >= 'a' && t[0] <= 'z' && t[1] == 0)
+				return true;
+		}
+	}
+
 	dev = open(dname, O_RDONLY, 0);
 	if (dev == -1)
 		return true;
@@ -498,11 +521,23 @@ static int
 get_available_cds(void)
 {
 	struct get_available_cds_state data;
+	int n, m;
 
+	memset(&data, 0, sizeof data);
 	data.info = cds;
-	data.count = 0;
+
+	n = getvfsstat(NULL, 0, ST_NOWAIT);
+	if (n > 0) {
+		data.mounted = calloc(n, sizeof(*data.mounted));
+		m = getvfsstat(data.mounted, n*sizeof(*data.mounted),
+		    ST_NOWAIT);
+		assert(m >= 0 && m <= n);
+		data.num_mounted = m;
+	}
 
 	enumerate_disks(&data, get_available_cds_helper);
+
+	free(data.mounted);
 
 	return data.count;
 }
@@ -510,6 +545,11 @@ get_available_cds(void)
 static int
 cd_has_sets(void)
 {
+
+	/* sanity check */
+	if (cdrom_dev[0] == 0)
+		return 0;
+
 	/* Mount it */
 	if (run_program(RUN_SILENT, "/sbin/mount -rt cd9660 /dev/%s /mnt2",
 	    cdrom_dev) != 0)
@@ -567,7 +607,6 @@ get_via_cdrom(void)
 	menu_ent cd_menu[MAX_CD_INFOS];
 	struct stat sb;
 	int rv, num_cds, menu_cd, i, selected_cd = 0;
-	bool silent = false;
 	int mib[2];
 	char rootdev[SSTRSIZE] = "";
 	size_t varlen;
@@ -587,7 +626,8 @@ get_via_cdrom(void)
 	memset(cd_menu, 0, sizeof(cd_menu));
 	num_cds = get_available_cds();
 	if (num_cds <= 0) {
-		silent = true;
+		msg_display(MSG_No_cd_found);
+		cdrom_dev[0] = 0;
 	} else if (num_cds == 1) {
 		/* single CD found, check for sets on it */
 		strcpy(cdrom_dev, cds[0].device_name);
@@ -614,9 +654,7 @@ get_via_cdrom(void)
 			return SET_OK;
 	}
 
-	if (silent)
-		msg_display("");
-	else {
+	if (num_cds >= 1 && mnt2_mounted) {
 		umount_mnt2();
 		hit_enter_to_continue(MSG_cd_path_not_found, NULL);
 	}
@@ -624,8 +662,8 @@ get_via_cdrom(void)
 	/* ask for paths on the CD */
 	rv = -1;
 	process_menu(MENU_cdromsource, &rv);
-	if (rv == SET_RETRY)
-		return SET_RETRY;
+	if (rv == SET_RETRY || rv == SET_ABANDON)
+		return rv;
 
 	if (cd_has_sets())
 		return SET_OK;
@@ -1073,6 +1111,268 @@ get_set_distinfo(int opt)
 	return NULL;
 }
 
+#ifdef CHECK_ENTROPY
+
+char entropy_file[PATH_MAX];
+
+/*
+ * Are we short of entropy?
+ */
+static size_t
+entropy_needed(void)
+{
+	int needed;
+	size_t len;
+
+	len = sizeof(needed);
+	if (sysctlbyname("kern.entropy.needed", &needed, &len, NULL, 0))
+		return 0;
+
+	if (needed < 0)
+		return 0;
+
+	return needed;
+}
+
+static void
+entropy_write_to_kernel(const uint8_t *data, size_t len)
+{
+	int fd;
+
+	fd = open(_PATH_RANDOM, O_RDWR, 0);
+	if (fd >= 0) {
+		write(fd, data, len);
+		close(fd);
+	}
+}
+
+static void
+entropy_add_manual(void)
+{
+	SHA256_CTX ctx;
+	char buf[256], line[25];
+	size_t line_no, l;
+	uint8_t digest[SHA256_DIGEST_LENGTH];
+	bool ok = false;
+
+	msg_display(MSG_entropy_enter_manual1);
+	msg_printf("\n\n");
+	msg_display_add(MSG_entropy_enter_manual2);
+	msg_printf("\n\n   dd if=/dev/random bs=32 count=16 | openssl base64\n\n");
+	msg_display_add(MSG_entropy_enter_manual3);
+	msg_printf("\n\n");
+	SHA256_Init(&ctx);
+	line_no = 1;
+	do {
+		sprintf(line, "%zu", line_no);
+		msg_prompt_win(line, -1, 15, 0, 0, "", buf, sizeof(buf));
+		l = strlen(buf);
+		if (l > 0)
+			SHA256_Update(&ctx, (const uint8_t*)buf, l);
+		line_no++;
+	} while(buf[0] != 0);
+	ok = ctx.bitcount >= 256;
+	SHA256_Final(digest, &ctx);
+
+	if (ok)
+		entropy_write_to_kernel(digest, sizeof digest);
+	else
+		hit_enter_to_continue(NULL, MSG_entropy_manual_not_enough);
+}
+
+/*
+ * Get a file by some means and return a (potentially only
+ * temporary valid) path to the local copy.
+ * If mountpt is nonempty, the caller should unmount that
+ * directory after processing the file.
+ * Return success if the file is available, or failure if
+ * the user cancelled the request or network transfer failed.
+ */
+static bool
+entropy_get_file(bool use_netbsd_seed, char *path)
+{
+	static struct ftpinfo server = { .user = "ftp" };
+	char url[STRSIZE], tmpf[PATH_MAX], mountpt[PATH_MAX];
+	const char *ftp_opt;
+	arg_rv arg;
+	int rv = 0;
+	const char *file_desc = msg_string(use_netbsd_seed ?
+	    MSG_entropy_seed : MSG_entropy_data);
+	char *dir;
+
+	path[0] = 0;
+	mountpt[0] = 0;
+
+	sprintf(tmpf, "/tmp/entr.%06x", getpid());
+
+	msg_display(use_netbsd_seed ?
+	    MSG_entropy_seed_hdr : MSG_entropy_data_hdr);
+	msg_printf("\n\n    %s\n\n",
+	    use_netbsd_seed ?
+	    "rndctl -S /tmp/entropy-file" :
+	    "dd if=/dev/random bs=32 count=1 of=/tmp/random.tmp");
+	strcpy(entropy_file, use_netbsd_seed ?
+	    "entropy-file" : "random.tmp");
+	process_menu(MENU_entropy_select_file, &rv);
+	switch (rv) {
+	case 1:
+	case 2:
+#ifndef DEBUG
+		if (!network_up)
+			config_network();
+#endif
+		server.xfer = rv == 1 ? XFER_HTTP : XFER_FTP;
+		arg.arg = &server;
+		arg.rv = -1;
+		msg_display_add_subst(MSG_entropy_via_download, 1, file_desc);
+		msg_printf("\n\n");
+		process_menu(MENU_entropy_ftpsource, &arg);
+		if (arg.rv == SET_RETRY)
+			return false;
+		make_url(url, &server, entropy_file);
+		if (server.xfer == XFER_FTP &&
+		    strcmp("ftp", server.user) == 0 && server.pass[0] == 0) {
+			/* do anon ftp */
+			ftp_opt = "-a ";
+		} else {
+			ftp_opt = "";
+		}
+		rv = run_program(RUN_DISPLAY | RUN_PROGRESS,
+		    "/usr/bin/ftp %s -o %s %s",
+		    ftp_opt, tmpf, url);
+		strcpy(path, tmpf);
+		return rv == 0;
+	case 3:
+#ifndef DEBUG
+		if (!network_up)
+			config_network();
+#endif
+		rv = -1;
+		msg_display_add_subst(MSG_entropy_via_nfs, 1, file_desc);
+		msg_printf("\n\n");
+		process_menu(MENU_entropy_nfssource, &rv);
+		if (rv == SET_RETRY)
+			return false;
+		if (nfs_host[0] != 0 && nfs_dir[0] != 0 &&
+		    entropy_file[0] != 0) {
+			strcpy(mountpt, "/tmp/ent-mnt.XXXXXX");
+			dir = mkdtemp(mountpt);
+			if (dir == NULL)
+				return false;
+			sprintf(path, "%s/%s", mountpt, entropy_file);
+			if (run_program(RUN_SILENT,
+			    "mount -t nfs -r %s:/%s %s",
+			    nfs_host, nfs_dir, mountpt) == 0) {
+				run_program(RUN_SILENT,
+				    "cp %s %s", path, tmpf);
+				run_program(RUN_SILENT,
+				    "umount %s", mountpt);
+				rmdir(mountpt);
+				strcpy(path, tmpf);
+			}
+		}
+		break;
+	case 4:
+		rv = -1;
+		/* Get device, filesystem, and filepath */
+		process_menu (MENU_entropy_localfs, &rv);
+		if (rv == SET_RETRY)
+			return false;
+		if (localfs_dev[0] != 0 && localfs_fs[0] != 0 &&
+		    entropy_file[0] != 0) {
+			strcpy(mountpt, "/tmp/ent-mnt.XXXXXX");
+			dir = mkdtemp(mountpt);
+			if (dir == NULL)
+				return false;
+			sprintf(path, "%s/%s", mountpt, entropy_file);
+			if (run_program(RUN_SILENT,
+			    "mount -t %s -r /dev/%s %s",
+			    localfs_fs, localfs_dev, mountpt) == 0) {
+				run_program(RUN_SILENT,
+				    "cp %s %s", path, tmpf);
+				run_program(RUN_SILENT,
+				    "umount %s", mountpt);
+				rmdir(mountpt);
+				strcpy(path, tmpf);
+			}
+		}
+		break;
+	}
+	return path[0] != 0;
+}
+
+static void
+entropy_add_bin_file(void)
+{
+	char fname[PATH_MAX];
+
+	if (!entropy_get_file(false, fname))
+		return;
+	if (access(fname, R_OK) == 0)
+		run_program(RUN_SILENT, "dd if=%s of=" _PATH_RANDOM,
+		    fname);
+}
+
+static void
+entropy_add_seed(void)
+{
+	char fname[PATH_MAX];
+
+	if (!entropy_get_file(true, fname))
+		return;
+	if (access(fname, R_OK) == 0)
+		run_program(RUN_SILENT, "rndctl -L %s", fname);
+}
+
+/*
+ * return true if we have enough entropy
+ */
+bool
+do_check_entropy(void)
+{
+	int rv;
+
+	if (entropy_needed() == 0)
+		return true;
+
+	for (;;) {
+		if (entropy_needed() == 0)
+			return true;
+
+		msg_clear();
+		rv = 0;
+		process_menu(MENU_not_enough_entropy, &rv);
+		switch (rv) {
+		case 0:
+			return false;
+		case 1:
+			entropy_add_manual();
+			break;
+		case 2:
+			entropy_add_seed();
+			break;
+		case 3:
+			entropy_add_bin_file();
+			break;
+		default:
+			/*
+			 * retry after small delay to give a new USB device
+			 * a chance to attach and do deliver some
+			 * entropy
+			 */
+			msg_display(".");
+			for (size_t i = 0; i < 10; i++) {
+				if (entropy_needed() == 0)
+					return true;
+				sleep(1);
+				msg_display_add(".");
+			}
+		}
+	}
+}
+#endif  
+
+
 
 /*
  * Get and unpack the distribution.
@@ -1086,6 +1386,7 @@ get_and_unpack_sets(int update, msg setupdone_msg, msg success_msg, msg failure_
 	distinfo *dist;
 	int status;
 	int set, olderror, oldfound;
+	bool entropy_loaded = false;
 
 	/* Ensure mountpoint for distribution files exists in current root. */
 	(void)mkdir("/mnt2", S_IRWXU| S_IRGRP|S_IXGRP | S_IROTH|S_IXOTH);
@@ -1203,14 +1504,22 @@ get_and_unpack_sets(int update, msg setupdone_msg, msg success_msg, msg failure_
 
 		/* Don't discard the system's old entropy if any */
 		run_program(RUN_CHROOT | RUN_SILENT,
-			    "/etc/rc.d/random_seed start");
+		    "/etc/rc.d/random_seed start");
+		entropy_loaded = true;
 	}
 
 	/* Configure the system */
 	if (set_status[SET_BASE] & SET_INSTALLED)
 		run_makedev();
 
-	if (!update) {
+	if (update) {
+#ifdef CHECK_ENTROPY
+		if (!do_check_entropy()) {
+			hit_enter_to_continue(NULL, MSG_abortupgr);
+			return 1;
+		}
+#endif
+	} else {
 		struct stat sb1, sb2;
 
 		if (stat(target_expand("/"), &sb1) == 0
@@ -1244,8 +1553,13 @@ get_and_unpack_sets(int update, msg setupdone_msg, msg success_msg, msg failure_
 	/* Mounted dist dir? */
 	umount_mnt2();
 
+#ifdef CHECK_ENTROPY
+	entropy_loaded |= entropy_needed() == 0;
+#endif
+
 	/* Save entropy -- on some systems it's ~all we'll ever get */
-	run_program(RUN_DISPLAY | RUN_CHROOT | RUN_FATAL | RUN_PROGRESS,
+	if (!update || entropy_loaded)
+		run_program(RUN_SILENT | RUN_CHROOT | RUN_ERROR_OK,
 		    "/etc/rc.d/random_seed stop");
 	/* Install/Upgrade complete ... reboot or exit to script */
 	hit_enter_to_continue(success_msg, NULL);
@@ -1337,6 +1651,26 @@ static char *tz_selected;	/* timezonename (relative to share/zoneinfo */
 const char *tz_default;		/* UTC, or whatever /etc/localtime points to */
 static char tz_env[STRSIZE];
 static int save_cursel, save_topline;
+static int time_menu = -1;
+
+static void
+update_time_display(void)
+{
+	time_t t;
+	struct tm *tm;
+	char cur_time[STRSIZE], *p;
+
+	t = time(NULL);
+	tm = localtime(&t);
+	strlcpy(cur_time, safectime(&t), sizeof cur_time);
+	p = strchr(cur_time, '\n');
+	if (p != NULL)
+		*p = 0;
+
+	msg_clear();
+	msg_fmt_table_add(MSG_choose_timezone, "%s%s%s%s",
+	    tz_default, tz_selected, cur_time, tm ? tm->tm_zone : "?");
+}
 
 /*
  * Callback from timezone menu
@@ -1344,9 +1678,7 @@ static int save_cursel, save_topline;
 static int
 set_tz_select(menudesc *m, void *arg)
 {
-	time_t t;
 	char *new;
-	struct tm *tm;
 
 	if (m && strcmp(tz_selected, m->opts[m->cursel].opt_name) != 0) {
 		/* Change the displayed timezone */
@@ -1363,12 +1695,14 @@ set_tz_select(menudesc *m, void *arg)
 		/* Warp curser to 'Exit' line on menu */
 		m->cursel = -1;
 
-	/* Update displayed time */
-	t = time(NULL);
-	tm = localtime(&t);
-	msg_fmt_display(MSG_choose_timezone, "%s%s%s%s",
-		    tz_default, tz_selected, safectime(&t), tm ? tm->tm_zone :
-		    "?");
+	update_time_display();
+	if (time_menu >= 1) {
+		WINDOW *w = get_menudesc(time_menu)->mw;
+		if (w != NULL) {
+			touchwin(w);
+			wrefresh(w);
+		}
+	}
 	return 0;
 }
 
@@ -1523,8 +1857,6 @@ set_timezone(void)
 {
 	char localtime_link[STRSIZE];
 	char localtime_target[STRSIZE];
-	time_t t;
-	struct tm *tm;
 	int menu_no;
 
 	strlcpy(zoneinfo_dir, target_expand("/usr/share/zoneinfo/"),
@@ -1536,10 +1868,7 @@ set_timezone(void)
 	tz_selected = strdup(tz_default);
 	snprintf(tz_env, sizeof(tz_env), "%s%s", zoneinfo_dir, tz_selected);
 	setenv("TZ", tz_env, 1);
-	t = time(NULL);
-	tm = localtime(&t);
-	msg_fmt_display(MSG_choose_timezone, "%s%s%s%s",
-	    tz_default, tz_selected, safectime(&t), tm ? tm->tm_zone : "?");
+	update_time_display();
 
 	signal(SIGALRM, timezone_sig);
 	alarm(60);
@@ -1552,7 +1881,9 @@ set_timezone(void)
 	if (menu_no < 0)
 		goto done;	/* error - skip timezone setting */
 
+	time_menu = menu_no;
 	process_menu(menu_no, NULL);
+	time_menu = -1;
 
 	free_menu(menu_no);
 
@@ -2110,6 +2441,9 @@ usage_info_list_from_parts(struct part_usage_info **list, size_t *count,
 			(*list)[no].fs_type = info.fs_type;
 			(*list)[no].fs_version = info.fs_sub_type;
 		}
+		(*list)[no].fs_opt1 = info.fs_opt1;
+		(*list)[no].fs_opt2 = info.fs_opt2;
+		(*list)[no].fs_opt3 = info.fs_opt3;
 		no++;
 	}
 	return true;
@@ -2175,6 +2509,7 @@ void
 free_usage_set(struct partition_usage_set *wanted)
 {
 	/* XXX - free parts? free clone src? */
+	free(wanted->write_back);
 	free(wanted->menu_opts);
 	free(wanted->infos);
 }
@@ -2196,6 +2531,7 @@ free_install_desc(struct install_partition_desc *install)
 				install->infos[j].clone_src = NULL; 
 	}
 #endif
+	free(install->write_back);
 	free(install->infos);
 }
 
@@ -2216,11 +2552,11 @@ may_swap_if_not_sdmmc(const char *disk)
 	command_dict = prop_dictionary_create();
 	args_dict = prop_dictionary_create();
 
-	string = prop_string_create_cstring_nocopy("get-properties");
+	string = prop_string_create_nocopy("get-properties");
 	prop_dictionary_set(command_dict, "drvctl-command", string);
 	prop_object_release(string);
 
-	string = prop_string_create_cstring(disk);
+	string = prop_string_create_copy(disk);
 	prop_dictionary_set(args_dict, "device-name", string);
 	prop_object_release(string);
 
@@ -2236,14 +2572,14 @@ may_swap_if_not_sdmmc(const char *disk)
 		return true;
 
 	number = prop_dictionary_get(results_dict, "drvctl-error");
-	if (prop_number_integer_value(number) == 0) {
+	if (prop_number_signed_value(number) == 0) {
 		data_dict = prop_dictionary_get(results_dict,
 		    "drvctl-result-data");
 		if (data_dict != NULL) {
 			string = prop_dictionary_get(data_dict,
 			    "device-parent");
 			if (string != NULL)
-				parent = prop_string_cstring_nocopy(string);
+				parent = prop_string_value(string);
 		}
 	}
 

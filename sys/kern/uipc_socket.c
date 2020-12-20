@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_socket.c,v 1.288 2020/02/22 08:39:33 maxv Exp $	*/
+/*	$NetBSD: uipc_socket.c,v 1.294 2020/12/11 03:00:09 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2002, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.288 2020/02/22 08:39:33 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.294 2020/12/11 03:00:09 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -165,6 +165,11 @@ static struct mbuf *so_pendfree = NULL;
 int somaxkva = SOMAXKVA;
 static int socurkva;
 static kcondvar_t socurkva_cv;
+
+#ifndef SOFIXEDBUF
+#define SOFIXEDBUF true
+#endif
+bool sofixedbuf = SOFIXEDBUF;
 
 static kauth_listener_t socket_listener;
 
@@ -526,6 +531,7 @@ socreate(int dom, struct socket **aso, int type, int proto, struct lwp *l,
 #endif
 	uid = kauth_cred_geteuid(l->l_cred);
 	so->so_uidinfo = uid_find(uid);
+	so->so_egid = kauth_cred_getegid(l->l_cred);
 	so->so_cpid = l->l_proc->p_pid;
 
 	/*
@@ -1180,9 +1186,6 @@ soreceive(struct socket *so, struct mbuf **paddr, struct uio *uio,
 			    MIN(uio->uio_resid, m->m_len), uio);
 			m = m_free(m);
 		} while (uio->uio_resid > 0 && error == 0 && m);
-		/* We consumed the oob data, no more oobmark.  */
-		so->so_oobmark = 0;
-		so->so_state &= ~SS_RCVATMARK;
 bad:
 		if (m != NULL)
 			m_freem(m);
@@ -1336,7 +1339,7 @@ dontblock:
 				m = m->m_next;
 			} else {
 				sbfree(&so->so_rcv, m);
-				/* XXX XXX XXX: should set mbuf_removed? */
+				mbuf_removed = 1;
 				if (paddr) {
 					*paddr = m;
 					so->so_rcv.sb_mb = m->m_next;
@@ -1345,8 +1348,7 @@ dontblock:
 				} else {
 					m = so->so_rcv.sb_mb = m_free(m);
 				}
-				/* XXX XXX XXX: isn't there an sbsync()
-				 * missing here? */
+				sbsync(&so->so_rcv, nextrecord);
 			}
 		}
 	}
@@ -1560,6 +1562,8 @@ dontblock:
 				if (offset == so->so_oobmark)
 					break;
 			}
+		} else {
+			so->so_state &= ~SS_POLLRDBAND;
 		}
 		if (flags & MSG_EOR)
 			break;
@@ -1798,7 +1802,8 @@ sosetopt1(struct socket *so, const struct sockopt *sopt)
 				error = ENOBUFS;
 				break;
 			}
-			so->so_snd.sb_flags &= ~SB_AUTOSIZE;
+			if (sofixedbuf)
+				so->so_snd.sb_flags &= ~SB_AUTOSIZE;
 			break;
 
 		case SO_RCVBUF:
@@ -1806,7 +1811,8 @@ sosetopt1(struct socket *so, const struct sockopt *sopt)
 				error = ENOBUFS;
 				break;
 			}
-			so->so_rcv.sb_flags &= ~SB_AUTOSIZE;
+			if (sofixedbuf)
+				so->so_rcv.sb_flags &= ~SB_AUTOSIZE;
 			break;
 
 		/*
@@ -2040,13 +2046,15 @@ sogetopt(struct socket *so, struct sockopt *sopt)
 static int
 sockopt_alloc(struct sockopt *sopt, size_t len, km_flag_t kmflag)
 {
+	void *data;
 
 	KASSERT(sopt->sopt_size == 0);
 
 	if (len > sizeof(sopt->sopt_buf)) {
-		sopt->sopt_data = kmem_zalloc(len, kmflag);
-		if (sopt->sopt_data == NULL)
+		data = kmem_zalloc(len, kmflag);
+		if (data == NULL)
 			return ENOMEM;
+		sopt->sopt_data = data;
 	} else
 		sopt->sopt_data = sopt->sopt_buf;
 
@@ -2205,6 +2213,7 @@ void
 sohasoutofband(struct socket *so)
 {
 
+	so->so_state |= SS_POLLRDBAND;
 	fownsignal(so->so_pgid, SIGURG, POLL_PRI, POLLPRI|POLLRDBAND, so);
 	selnotify(&so->so_rcv.sb_sel, POLLPRI | POLLRDBAND, NOTE_SUBMIT);
 }
@@ -2216,9 +2225,9 @@ filt_sordetach(struct knote *kn)
 
 	so = ((file_t *)kn->kn_obj)->f_socket;
 	solock(so);
-	SLIST_REMOVE(&so->so_rcv.sb_sel.sel_klist, kn, knote, kn_selnext);
-	if (SLIST_EMPTY(&so->so_rcv.sb_sel.sel_klist))
-		so->so_rcv.sb_flags &= ~SB_KNOTE;
+	selremove_knote(&so->so_rcv.sb_sel, kn);
+	if (SLIST_EMPTY(&so->so_rcv.sb_sel.sel_klist))	/* XXX select/kqueue */
+		so->so_rcv.sb_flags &= ~SB_KNOTE;	/* XXX internals */
 	sounlock(so);
 }
 
@@ -2255,9 +2264,9 @@ filt_sowdetach(struct knote *kn)
 
 	so = ((file_t *)kn->kn_obj)->f_socket;
 	solock(so);
-	SLIST_REMOVE(&so->so_snd.sb_sel.sel_klist, kn, knote, kn_selnext);
-	if (SLIST_EMPTY(&so->so_snd.sb_sel.sel_klist))
-		so->so_snd.sb_flags &= ~SB_KNOTE;
+	selremove_knote(&so->so_snd.sb_sel, kn);
+	if (SLIST_EMPTY(&so->so_snd.sb_sel.sel_klist))	/* XXX select/kqueue */
+		so->so_snd.sb_flags &= ~SB_KNOTE;	/* XXX internals */
 	sounlock(so);
 }
 
@@ -2357,7 +2366,7 @@ soo_kqfilter(struct file *fp, struct knote *kn)
 		sounlock(so);
 		return EINVAL;
 	}
-	SLIST_INSERT_HEAD(&sb->sb_sel.sel_klist, kn, kn_selnext);
+	selrecord_knote(&sb->sb_sel, kn);
 	sb->sb_flags |= SB_KNOTE;
 	sounlock(so);
 	return 0;
@@ -2379,7 +2388,7 @@ sodopoll(struct socket *so, int events)
 			revents |= events & (POLLOUT | POLLWRNORM);
 
 	if (events & (POLLPRI | POLLRDBAND))
-		if (so->so_oobmark || (so->so_state & SS_RCVATMARK))
+		if (so->so_state & SS_POLLRDBAND)
 			revents |= events & (POLLPRI | POLLRDBAND);
 
 	return revents;
@@ -2535,6 +2544,13 @@ sysctl_kern_socket_setup(void)
 		                    "used for socket buffers"),
 		       sysctl_kern_somaxkva, 0, NULL, 0,
 		       CTL_KERN, KERN_SOMAXKVA, CTL_EOL);
+
+	sysctl_createv(&socket_sysctllog, 0, NULL, NULL,
+		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
+		       CTLTYPE_BOOL, "sofixedbuf",
+		       SYSCTL_DESCR("Prevent scaling of fixed socket buffers"),
+		       NULL, 0, &sofixedbuf, 0,
+		       CTL_KERN, KERN_SOFIXEDBUF, CTL_EOL);
 
 	sysctl_createv(&socket_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,

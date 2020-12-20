@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_loan.c,v 1.100 2020/03/22 18:32:42 ad Exp $	*/
+/*	$NetBSD: uvm_loan.c,v 1.104 2020/06/11 22:21:05 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_loan.c,v 1.100 2020/03/22 18:32:42 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_loan.c,v 1.104 2020/06/11 22:21:05 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -109,7 +109,7 @@ static int	uvm_loanuobj(struct uvm_faultinfo *, void ***,
 static int	uvm_loanzero(struct uvm_faultinfo *, void ***, int);
 static void	uvm_unloananon(struct vm_anon **, int);
 static void	uvm_unloanpage(struct vm_page **, int);
-static int	uvm_loanpage(struct vm_page **, int);
+static int	uvm_loanpage(struct vm_page **, int, bool);
 
 
 /*
@@ -442,12 +442,11 @@ uvm_loananon(struct uvm_faultinfo *ufi, void ***output, int flags,
  *
  * => pages should be object-owned and the object should be locked.
  * => in the case of error, the object might be unlocked and relocked.
- * => caller should busy the pages beforehand.
- * => pages will be unbusied.
+ * => pages will be unbusied (if busied is true).
  * => fail with EBUSY if meet a wired page.
  */
 static int
-uvm_loanpage(struct vm_page **pgpp, int npages)
+uvm_loanpage(struct vm_page **pgpp, int npages, bool busied)
 {
 	int i;
 	int error = 0;
@@ -461,7 +460,7 @@ uvm_loanpage(struct vm_page **pgpp, int npages)
 		KASSERT(pg->uobject == pgpp[0]->uobject);
 		KASSERT(!(pg->flags & (PG_RELEASED|PG_PAGEOUT)));
 		KASSERT(rw_write_held(pg->uobject->vmobjlock));
-		KASSERT(pg->flags & PG_BUSY);
+		KASSERT(busied == ((pg->flags & PG_BUSY) != 0));
 
 		if (pg->wire_count > 0) {
 			UVMHIST_LOG(loanhist, "wired %#jx", (uintptr_t)pg,
@@ -479,7 +478,9 @@ uvm_loanpage(struct vm_page **pgpp, int npages)
 		uvm_pageunlock(pg);
 	}
 
-	uvm_page_unbusy(pgpp, npages);
+	if (busied) {
+		uvm_page_unbusy(pgpp, npages);
+	}
 
 	if (error) {
 		/*
@@ -504,101 +505,80 @@ uvm_loanpage(struct vm_page **pgpp, int npages)
 #define	UVM_LOAN_GET_CHUNK	16
 
 /*
+ * uvm_loanuobjchunk: helper for uvm_loanuobjpages()
+ */
+static int
+uvm_loanuobjchunk(struct uvm_object *uobj, voff_t pgoff, int orignpages,
+    struct vm_page **pgpp)
+{
+	int error, npages;
+
+	rw_enter(uobj->vmobjlock, RW_WRITER);
+ reget:
+ 	npages = orignpages;
+	error = (*uobj->pgops->pgo_get)(uobj, pgoff, pgpp, &npages, 0,
+	    VM_PROT_READ, 0, PGO_SYNCIO);
+	switch (error) {
+	case 0:
+		KASSERT(npages == orignpages);
+
+		/* check for released pages */
+		rw_enter(uobj->vmobjlock, RW_WRITER);
+		for (int i = 0; i < npages; i++) {
+			KASSERT(pgpp[i]->uobject->vmobjlock == uobj->vmobjlock);
+			if ((pgpp[i]->flags & PG_RELEASED) != 0) {
+				/*
+				 * release pages and try again.
+				 */
+				uvm_page_unbusy(pgpp, npages);
+				goto reget;
+			}
+		}
+
+		/* loan out pages.  they will be unbusied whatever happens. */
+		error = uvm_loanpage(pgpp, npages, true);
+		rw_exit(uobj->vmobjlock);
+		if (error != 0) {
+			memset(pgpp, 0, sizeof(pgpp[0]) * npages);
+		}
+		return error;
+
+	case EAGAIN:
+		kpause("loanuopg", false, hz/2, NULL);
+		rw_enter(uobj->vmobjlock, RW_WRITER);
+		goto reget;
+
+	default:
+		return error;
+	}
+}
+
+/*
  * uvm_loanuobjpages: loan pages from a uobj out (O->K)
  *
  * => uobj shouldn't be locked.  (we'll lock it)
  * => fail with EBUSY if we meet a wired page.
  */
 int
-uvm_loanuobjpages(struct uvm_object *uobj, voff_t pgoff, int orignpages,
-    struct vm_page **origpgpp)
+uvm_loanuobjpages(struct uvm_object *uobj, voff_t pgoff, int npages,
+    struct vm_page **pgpp)
 {
-	int ndone; /* # of pages loaned out */
-	struct vm_page **pgpp;
-	int error;
-	int i;
-	krwlock_t *slock;
+	int ndone, error, chunk;
 
-	pgpp = origpgpp;
-	for (ndone = 0; ndone < orignpages; ) {
-		int npages;
-		/* npendloan: # of pages busied but not loand out yet. */
-		int npendloan = 0xdead; /* XXX gcc */
-reget:
-		npages = MIN(UVM_LOAN_GET_CHUNK, orignpages - ndone);
-		rw_enter(uobj->vmobjlock, RW_WRITER);
-		error = (*uobj->pgops->pgo_get)(uobj,
-		    pgoff + (ndone << PAGE_SHIFT), pgpp, &npages, 0,
-		    VM_PROT_READ, 0, PGO_SYNCIO);
-		if (error == EAGAIN) {
-			kpause("loanuopg", false, hz/2, NULL);
-			continue;
-		}
-		if (error)
-			goto fail;
+	KASSERT(npages > 0);
 
-		KASSERT(npages > 0);
-
-		/* loan and unbusy pages */
-		slock = NULL;
-		for (i = 0; i < npages; i++) {
-			krwlock_t *nextslock; /* slock for next page */
-			struct vm_page *pg = *pgpp;
-
-			/* XXX assuming that the page is owned by uobj */
-			KASSERT(pg->uobject != NULL);
-			nextslock = pg->uobject->vmobjlock;
-
-			if (slock != nextslock) {
-				if (slock) {
-					KASSERT(npendloan > 0);
-					error = uvm_loanpage(pgpp - npendloan,
-					    npendloan);
-					rw_exit(slock);
-					if (error)
-						goto fail;
-					ndone += npendloan;
-					KASSERT(origpgpp + ndone == pgpp);
-				}
-				slock = nextslock;
-				npendloan = 0;
-				rw_enter(slock, RW_WRITER);
+	memset(pgpp, 0, sizeof(pgpp[0]) * npages);
+	for (ndone = 0; ndone < npages; ndone += chunk) {
+		chunk = MIN(UVM_LOAN_GET_CHUNK, npages - ndone);
+		error = uvm_loanuobjchunk(uobj, pgoff + (ndone << PAGE_SHIFT),
+		    chunk, pgpp + ndone);
+		if (error != 0) {
+			if (ndone != 0) {
+				uvm_unloan(pgpp, ndone, UVM_LOAN_TOPAGE);
 			}
-
-			if ((pg->flags & PG_RELEASED) != 0) {
-				/*
-				 * release pages and try again.
-				 */
-				rw_exit(slock);
-				for (; i < npages; i++) {
-					pg = pgpp[i];
-					slock = pg->uobject->vmobjlock;
-
-					rw_enter(slock, RW_WRITER);
-					uvm_page_unbusy(&pg, 1);
-					rw_exit(slock);
-				}
-				goto reget;
-			}
-
-			npendloan++;
-			pgpp++;
-			KASSERT(origpgpp + ndone + npendloan == pgpp);
+			break;
 		}
-		KASSERT(slock != NULL);
-		KASSERT(npendloan > 0);
-		error = uvm_loanpage(pgpp - npendloan, npendloan);
-		rw_exit(slock);
-		if (error)
-			goto fail;
-		ndone += npendloan;
-		KASSERT(origpgpp + ndone == pgpp);
 	}
-
-	return 0;
-
-fail:
-	uvm_unloan(origpgpp, ndone, UVM_LOAN_TOPAGE);
 
 	return error;
 }
@@ -702,36 +682,45 @@ uvm_loanuobj(struct uvm_faultinfo *ufi, void ***output, int flags, vaddr_t va)
 		}
 
 		/*
-		 * didn't get the lock?   release the page and retry.
+		 * unbusy the page.
 		 */
 
-		if (locked == false) {
-			if (pg->flags & PG_RELEASED) {
-				uvm_pagefree(pg);
-				rw_exit(uobj->vmobjlock);
-				return (0);
-			}
+		if ((pg->flags & PG_RELEASED) == 0) {
 			uvm_pagelock(pg);
-			uvm_pageactivate(pg);
 			uvm_pagewakeup(pg);
 			uvm_pageunlock(pg);
 			pg->flags &= ~PG_BUSY;
 			UVM_PAGE_OWN(pg, NULL);
+		}
+
+		/*
+		 * didn't get the lock?   release the page and retry.
+		 */
+
+ 		if (locked == false) {
+			if (pg->flags & PG_RELEASED) {
+				uvm_pagefree(pg);
+			}
 			rw_exit(uobj->vmobjlock);
 			return (0);
 		}
 	}
 
-	KASSERT(uobj == pg->uobject);
+	/*
+	 * for tmpfs vnodes, the page will be from a UAO rather than
+	 * the vnode.  just check the locks match.
+	 */
+
+	KASSERT(uobj->vmobjlock == pg->uobject->vmobjlock);
 
 	/*
-	 * at this point we have the page we want ("pg") marked PG_BUSY for us
-	 * and we have all data structures locked.  do the loanout.  page can
-	 * not be PG_RELEASED (we caught this above).
+	 * at this point we have the page we want ("pg") and we have
+	 * all data structures locked.  do the loanout.  page can not
+	 * be PG_RELEASED (we caught this above).
 	 */
 
 	if ((flags & UVM_LOAN_TOANON) == 0) {
-		if (uvm_loanpage(&pg, 1)) {
+		if (uvm_loanpage(&pg, 1, false)) {
 			uvmfault_unlockall(ufi, amap, uobj);
 			return (-1);
 		}
@@ -1099,7 +1088,7 @@ uvm_loan_init(void)
  * uvm_loanbreak: break loan on a uobj page
  *
  * => called with uobj locked
- * => the page should be busy
+ * => the page may be busy; if it's busy, it will be unbusied
  * => return value:
  *	newly allocated page if succeeded
  */
@@ -1111,7 +1100,6 @@ uvm_loanbreak(struct vm_page *uobjpage)
 
 	KASSERT(uobj != NULL);
 	KASSERT(rw_write_held(uobj->vmobjlock));
-	KASSERT(uobjpage->flags & PG_BUSY);
 
 	/* alloc new un-owned page */
 	pg = uvm_pagealloc(NULL, 0, NULL, 0);
@@ -1131,8 +1119,10 @@ uvm_loanbreak(struct vm_page *uobjpage)
 	KASSERT(uvm_pagegetdirty(pg) == UVM_PAGE_STATUS_DIRTY);
 	pmap_page_protect(uobjpage, VM_PROT_NONE);
 	/* uobj still locked */
-	uobjpage->flags &= ~PG_BUSY;
-	UVM_PAGE_OWN(uobjpage, NULL);
+	if ((uobjpage->flags & PG_BUSY) != 0) {
+		uobjpage->flags &= ~PG_BUSY;
+		UVM_PAGE_OWN(uobjpage, NULL);
+	}
 
 	/*
 	 * if the page is no longer referenced by
@@ -1229,9 +1219,7 @@ uvm_loanbreak_anon(struct vm_anon *anon, struct uvm_object *uobj)
 
 	/* done! */
 	kpreempt_disable();
-	if (uobj != NULL) {
-		CPU_COUNT(CPU_COUNT_ANONPAGES, 1);
-	} else {
+	if (uobj == NULL) {
 		CPU_COUNT(CPU_COUNT_ANONUNKNOWN + oldstatus, -1);
 	}
 	CPU_COUNT(CPU_COUNT_ANONDIRTY, 1);

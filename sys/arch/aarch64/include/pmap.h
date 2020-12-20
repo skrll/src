@@ -1,4 +1,4 @@
-/* $NetBSD: pmap.h,v 1.37 2020/04/08 00:13:40 ryo Exp $ */
+/* $NetBSD: pmap.h,v 1.43 2020/09/19 13:33:08 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -84,33 +84,38 @@ struct pmap {
 	bool pm_activated;
 };
 
-struct pv_entry;
+/* sized to reduce memory consumption & cache misses (32 bytes) */
+struct pv_entry {
+	struct pv_entry *pv_next;
+	struct pmap *pv_pmap;
+	vaddr_t pv_va;	/* for embedded entry (pp_pv) also includes flags */
+	void *pv_ptep;	/* pointer for fast pte lookup */
+};
 
 struct pmap_page {
 	kmutex_t pp_pvlock;
-	LIST_HEAD(, pv_entry) pp_pvhead;
-
-	/* VM_PROT_READ means referenced, VM_PROT_WRITE means modified */
-	uint32_t pp_flags;
+	struct pv_entry pp_pv;
 };
 
+/* try to keep vm_page at or under 128 bytes to reduce cache misses */
 struct vm_page_md {
-	LIST_ENTRY(vm_page) mdpg_vmlist;	/* L[0123] table vm_page list */
-	pd_entry_t *mdpg_ptep_parent;	/* for page descriptor page only */
-
 	struct pmap_page mdpg_pp;
 };
+/* for page descriptor page only */
+#define	mdpg_ptep_parent	mdpg_pp.pp_pv.pv_ptep
 
-/* each mdpg_pp.pp_pvlock will be initialized in pmap_init() */
 #define VM_MDPAGE_INIT(pg)					\
 	do {							\
-		LIST_INIT(&(pg)->mdpage.mdpg_pp.pp_pvhead);	\
-		(pg)->mdpage.mdpg_pp.pp_flags = 0;		\
+		PMAP_PAGE_INIT(&(pg)->mdpage.mdpg_pp);		\
 	} while (/*CONSTCOND*/ 0)
 
 #define PMAP_PAGE_INIT(pp)						\
 	do {								\
-		mutex_init(&(pp)->pp_pvlock, MUTEX_SPIN, IPL_VM);	\
+		mutex_init(&(pp)->pp_pvlock, MUTEX_NODEBUG, IPL_NONE);	\
+		(pp)->pp_pv.pv_next = NULL;				\
+		(pp)->pp_pv.pv_pmap = NULL;				\
+		(pp)->pp_pv.pv_va = 0;					\
+		(pp)->pp_pv.pv_ptep = NULL;				\
 	} while (/*CONSTCOND*/ 0)
 
 /* saved permission bit for referenced/modified emulation */
@@ -168,17 +173,12 @@ void pmap_db_ttbrdump(bool, vaddr_t, void (*)(const char *, ...)
 pt_entry_t *kvtopte(vaddr_t);
 pt_entry_t pmap_kvattr(vaddr_t, vm_prot_t);
 
-/* locore.S */
-pd_entry_t *bootpage_alloc(void);
-
-/* pmap_locore.c */
-int pmapboot_enter(vaddr_t, paddr_t, psize_t, psize_t,
-    pt_entry_t, uint64_t, pd_entry_t *(*)(void),
+/* pmapboot.c */
+pd_entry_t *pmapboot_pagealloc(void);
+int pmapboot_enter(vaddr_t, paddr_t, psize_t, psize_t, pt_entry_t,
     void (*pr)(const char *, ...) __printflike(1, 2));
-#define PMAPBOOT_ENTER_NOBLOCK		0x00000001
-#define PMAPBOOT_ENTER_NOOVERWRITE	0x00000002
-int pmapboot_enter_range(vaddr_t, paddr_t, psize_t, pt_entry_t, uint64_t,
-    pd_entry_t *(*)(void), void (*)(const char *, ...) __printflike(1, 2));
+int pmapboot_enter_range(vaddr_t, paddr_t, psize_t, pt_entry_t,
+    void (*)(const char *, ...) __printflike(1, 2));
 int pmapboot_protect(vaddr_t, vaddr_t, vm_prot_t);
 void pmap_db_pte_print(pt_entry_t, int,
     void (*pr)(const char *, ...) __printflike(1, 2));
@@ -204,8 +204,6 @@ const struct pmap_devmap *pmap_devmap_find_pa(paddr_t, psize_t);
 const struct pmap_devmap *pmap_devmap_find_va(vaddr_t, vsize_t);
 vaddr_t pmap_devmap_phystov(paddr_t);
 paddr_t pmap_devmap_vtophys(paddr_t);
-
-paddr_t pmap_alloc_pdp(struct pmap *, struct vm_page **, int, bool);
 
 #define L1_TRUNC_BLOCK(x)	((x) & L1_FRAME)
 #define L1_ROUND_BLOCK(x)	L1_TRUNC_BLOCK((x) + L1_SIZE - 1)
@@ -280,76 +278,6 @@ aarch64_mmap_flags(paddr_t mdpgno)
 		break;
 	}
 	return pflag;
-}
-
-/*
- * Which is the address space of this VA?
- * return the space considering TBI. (PAC is not yet)
- *
- * return value: AARCH64_ADDRSPACE_{LOWER,UPPER}{_OUTOFRANGE}?
- */
-#define AARCH64_ADDRTOP_TAG		__BIT(55)	/* ECR_EL1.TBI[01]=1 */
-#define AARCH64_ADDRTOP_MSB		__BIT(63)	/* ECR_EL1.TBI[01]=0 */
-#define AARCH64_ADDRESS_TAG_MASK	__BITS(63,56)	/* if TCR.TBI[01]=1 */
-#define AARCH64_ADDRESS_PAC_MASK	__BITS(54,48)	/* depend on VIRT_BIT */
-#define AARCH64_ADDRESS_TAGPAC_MASK	\
-			(AARCH64_ADDRESS_TAG_MASK|AARCH64_ADDRESS_PAC_MASK)
-
-#define AARCH64_ADDRSPACE_LOWER			0	/* -> TTBR0 */
-#define AARCH64_ADDRSPACE_UPPER			1	/* -> TTBR1 */
-#define AARCH64_ADDRSPACE_LOWER_OUTOFRANGE	-1	/* certainly fault */
-#define AARCH64_ADDRSPACE_UPPER_OUTOFRANGE	-2	/* certainly fault */
-static inline int
-aarch64_addressspace(vaddr_t va)
-{
-	uint64_t addrtop, tbi;
-
-	addrtop = (uint64_t)va & AARCH64_ADDRTOP_TAG;
-	tbi = addrtop ? TCR_TBI1 : TCR_TBI0;
-	if (reg_tcr_el1_read() & tbi) {
-		if (addrtop == 0) {
-			/* lower address, and TBI0 enabled */
-			if ((va & AARCH64_ADDRESS_PAC_MASK) != 0)
-				return AARCH64_ADDRSPACE_LOWER_OUTOFRANGE;
-			return AARCH64_ADDRSPACE_LOWER;
-		}
-		/* upper address, and TBI1 enabled */
-		if ((va & AARCH64_ADDRESS_PAC_MASK) != AARCH64_ADDRESS_PAC_MASK)
-			return AARCH64_ADDRSPACE_UPPER_OUTOFRANGE;
-		return AARCH64_ADDRSPACE_UPPER;
-	}
-
-	addrtop = (uint64_t)va & AARCH64_ADDRTOP_MSB;
-	if (addrtop == 0) {
-		/* lower address, and TBI0 disabled */
-		if ((va & AARCH64_ADDRESS_TAGPAC_MASK) != 0)
-			return AARCH64_ADDRSPACE_LOWER_OUTOFRANGE;
-		return AARCH64_ADDRSPACE_LOWER;
-	}
-	/* upper address, and TBI1 disabled */
-	if ((va & AARCH64_ADDRESS_TAGPAC_MASK) != AARCH64_ADDRESS_TAGPAC_MASK)
-		return AARCH64_ADDRSPACE_UPPER_OUTOFRANGE;
-	return AARCH64_ADDRSPACE_UPPER;
-}
-
-static inline vaddr_t
-aarch64_untag_address(vaddr_t va)
-{
-	uint64_t addrtop, tbi;
-
-	addrtop = (uint64_t)va & AARCH64_ADDRTOP_TAG;
-	tbi = addrtop ? TCR_TBI1 : TCR_TBI0;
-	if (reg_tcr_el1_read() & tbi) {
-		if (addrtop == 0) {
-			/* lower address, and TBI0 enabled */
-			return (uint64_t)va & ~AARCH64_ADDRESS_TAG_MASK;
-		}
-		/* upper address, and TBI1 enabled */
-		return (uint64_t)va | AARCH64_ADDRESS_TAG_MASK;
-	}
-
-	/* TBI[01] is disabled, nothing to do */
-	return va;
 }
 
 #define pmap_phys_address(pa)		aarch64_ptob((pa))

@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.12 2019/12/31 13:07:10 ad Exp $	*/
+/*	$NetBSD: machdep.c,v 1.16 2020/09/14 16:11:32 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.12 2019/12/31 13:07:10 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.16 2020/09/14 16:11:32 skrll Exp $");
 
 #include "opt_cputype.h"
 #include "opt_ddb.h"
@@ -125,10 +125,6 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.12 2019/12/31 13:07:10 ad Exp $");
 #include <hppa/hppa/machdep.h>
 #include <hppa/hppa/pim.h>
 #include <hppa/dev/cpudevs.h>
-
-#ifdef PMAPDEBUG
-#include <hppa/hppa/hpt.h>
-#endif
 
 #include "ksyms.h"
 #include "lcd.h"
@@ -493,19 +489,19 @@ hppa_init(paddr_t start, void *bi)
 	DPRINTF(("SPID bits: 0x%x, error = %d\n", pdc_spidbits.spidbits, error));
 
 	/* Calculate the OS_HPMC handler checksums. */
-	p = &os_hpmc;
+	p = os_hpmc;
 	if (pdcproc_instr(p))
 		*p = 0x08000240;
 	p[7] = ((char *) &os_hpmc_cont_end) - ((char *) &os_hpmc_cont);
 	p[6] = (u_int) &os_hpmc_cont;
 	p[5] = -(p[0] + p[1] + p[2] + p[3] + p[4] + p[6] + p[7]);
 	p = &os_hpmc_cont;
-	q = (&os_hpmc_cont_end - 1);
-	for(*q = 0; p < q; *q -= *(p++));
+	q = os_hpmc_checksum;
+	for (*q = 0; p < q; *q -= *(p++));
 
 	/* Calculate the OS_TOC handler checksum. */
 	p = (u_int *) &os_toc;
-	q = (&os_toc_end - 1);
+	q = os_toc_checksum;
 	for (*q = 0; p < q; *q -= *(p++));
 
 	/* Install the OS_TOC handler. */
@@ -898,12 +894,7 @@ cpu_startup(void)
 {
 	vaddr_t minaddr, maxaddr;
 	char pbuf[3][9];
-#ifdef PMAPDEBUG
-	extern int pmapdebug;
-	int opmapdebug = pmapdebug;
 
-	pmapdebug = 0;
-#endif
 	/* Initialize the message buffer. */
 	initmsgbuf(msgbufaddr, MSGBUFSIZE);
 
@@ -940,10 +931,7 @@ cpu_startup(void)
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 	    VM_PHYS_SIZE, 0, false, NULL);
 
-#ifdef PMAPDEBUG
-	pmapdebug = opmapdebug;
-#endif
-	format_bytes(pbuf[0], sizeof(pbuf[0]), ptoa(uvm_availmem()));
+	format_bytes(pbuf[0], sizeof(pbuf[0]), ptoa(uvm_availmem(false)));
 	printf("avail mem = %s\n", pbuf[0]);
 }
 

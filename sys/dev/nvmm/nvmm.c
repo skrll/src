@@ -1,11 +1,10 @@
-/*	$NetBSD: nvmm.c,v 1.25 2019/10/28 09:00:08 maxv Exp $	*/
+/*	$NetBSD: nvmm.c,v 1.41 2020/09/08 16:58:38 maxv Exp $	*/
 
 /*
- * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2018-2020 Maxime Villard, m00nbsd.net
  * All rights reserved.
  *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Maxime Villard.
+ * This code is part of the NVMM hypervisor.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -16,26 +15,27 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.25 2019/10/28 09:00:08 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.41 2020/09/08 16:58:38 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
 
+#include <sys/atomic.h>
 #include <sys/cpu.h>
 #include <sys/conf.h>
 #include <sys/kmem.h>
@@ -44,9 +44,10 @@ __KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.25 2019/10/28 09:00:08 maxv Exp $");
 #include <sys/mman.h>
 #include <sys/file.h>
 #include <sys/filedesc.h>
-#include <sys/kauth.h>
+#include <sys/device.h>
 
-#include <uvm/uvm.h>
+#include <uvm/uvm_aobj.h>
+#include <uvm/uvm_extern.h>
 #include <uvm/uvm_page.h>
 
 #include "ioconf.h"
@@ -59,11 +60,13 @@ static struct nvmm_machine machines[NVMM_MAX_MACHINES];
 static volatile unsigned int nmachines __cacheline_aligned;
 
 static const struct nvmm_impl *nvmm_impl_list[] = {
+#if defined(__x86_64__)
 	&nvmm_x86_svm,	/* x86 AMD SVM */
 	&nvmm_x86_vmx	/* x86 Intel VMX */
+#endif
 };
 
-static const struct nvmm_impl *nvmm_impl = NULL;
+static const struct nvmm_impl *nvmm_impl __read_mostly = NULL;
 
 static struct nvmm_owner root_owner;
 
@@ -110,17 +113,17 @@ nvmm_machine_get(struct nvmm_owner *owner, nvmm_machid_t machid,
 	struct nvmm_machine *mach;
 	krw_t op = writer ? RW_WRITER : RW_READER;
 
-	if (machid >= NVMM_MAX_MACHINES) {
+	if (__predict_false(machid >= NVMM_MAX_MACHINES)) {
 		return EINVAL;
 	}
 	mach = &machines[machid];
 
 	rw_enter(&mach->lock, op);
-	if (!mach->present) {
+	if (__predict_false(!mach->present)) {
 		rw_exit(&mach->lock);
 		return ENOENT;
 	}
-	if (owner != &root_owner && mach->owner != owner) {
+	if (__predict_false(mach->owner != owner && owner != &root_owner)) {
 		rw_exit(&mach->lock);
 		return EPERM;
 	}
@@ -177,13 +180,13 @@ nvmm_vcpu_get(struct nvmm_machine *mach, nvmm_cpuid_t cpuid,
 {
 	struct nvmm_cpu *vcpu;
 
-	if (cpuid >= NVMM_MAX_VCPUS) {
+	if (__predict_false(cpuid >= NVMM_MAX_VCPUS)) {
 		return EINVAL;
 	}
 	vcpu = &mach->cpus[cpuid];
 
 	mutex_enter(&vcpu->lock);
-	if (!vcpu->present) {
+	if (__predict_false(!vcpu->present)) {
 		mutex_exit(&vcpu->lock);
 		return ENOENT;
 	}
@@ -225,6 +228,7 @@ nvmm_kill_machines(struct nvmm_owner *owner)
 			(*nvmm_impl->vcpu_destroy)(mach, vcpu);
 			nvmm_vcpu_free(mach, vcpu);
 			nvmm_vcpu_put(vcpu);
+			atomic_dec_uint(&mach->ncpus);
 		}
 		(*nvmm_impl->machine_destroy)(mach);
 		uvmspace_free(mach->vm);
@@ -312,6 +316,7 @@ nvmm_machine_destroy(struct nvmm_owner *owner,
 		(*nvmm_impl->vcpu_destroy)(mach, vcpu);
 		nvmm_vcpu_free(mach, vcpu);
 		nvmm_vcpu_put(vcpu);
+		atomic_dec_uint(&mach->ncpus);
 	}
 
 	(*nvmm_impl->machine_destroy)(mach);
@@ -412,6 +417,7 @@ nvmm_vcpu_create(struct nvmm_owner *owner, struct nvmm_ioc_vcpu_create *args)
 	}
 
 	nvmm_vcpu_put(vcpu);
+	atomic_inc_uint(&mach->ncpus);
 
 out:
 	nvmm_machine_put(mach);
@@ -436,6 +442,7 @@ nvmm_vcpu_destroy(struct nvmm_owner *owner, struct nvmm_ioc_vcpu_destroy *args)
 	(*nvmm_impl->vcpu_destroy)(mach, vcpu);
 	nvmm_vcpu_free(mach, vcpu);
 	nvmm_vcpu_put(vcpu);
+	atomic_dec_uint(&mach->ncpus);
 
 out:
 	nvmm_machine_put(mach);
@@ -566,11 +573,19 @@ nvmm_do_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	int ret;
 
 	while (1) {
+		/* Got a signal? Or pending resched? Leave. */
+		if (__predict_false(nvmm_return_needed())) {
+			exit->reason = NVMM_VCPU_EXIT_NONE;
+			return 0;
+		}
+
+		/* Run the VCPU. */
 		ret = (*nvmm_impl->vcpu_run)(mach, vcpu, exit);
 		if (__predict_false(ret != 0)) {
 			return ret;
 		}
 
+		/* Process nested page faults. */
 		if (__predict_true(exit->reason != NVMM_VCPU_EXIT_MEMORY)) {
 			break;
 		}
@@ -893,7 +908,6 @@ nvmm_ctl_mach_info(struct nvmm_owner *owner, struct nvmm_ioc_ctl *args)
 {
 	struct nvmm_ctl_mach_info ctl;
 	struct nvmm_machine *mach;
-	struct nvmm_cpu *vcpu;
 	int error;
 	size_t i;
 
@@ -907,14 +921,7 @@ nvmm_ctl_mach_info(struct nvmm_owner *owner, struct nvmm_ioc_ctl *args)
 	if (error)
 		return error;
 
-	ctl.nvcpus = 0;
-	for (i = 0; i < NVMM_MAX_VCPUS; i++) {
-		error = nvmm_vcpu_get(mach, i, &vcpu);
-		if (error)
-			continue;
-		ctl.nvcpus++;
-		nvmm_vcpu_put(vcpu);
-	}
+	ctl.nvcpus = mach->ncpus;
 
 	ctl.nram = 0;
 	for (i = 0; i < NVMM_MAX_HMAPPINGS; i++) {
@@ -948,22 +955,27 @@ nvmm_ctl(struct nvmm_owner *owner, struct nvmm_ioc_ctl *args)
 
 /* -------------------------------------------------------------------------- */
 
+static const struct nvmm_impl *
+nvmm_ident(void)
+{
+	size_t i;
+
+	for (i = 0; i < __arraycount(nvmm_impl_list); i++) {
+		if ((*nvmm_impl_list[i]->ident)())
+			return nvmm_impl_list[i];
+	}
+
+	return NULL;
+}
+
 static int
 nvmm_init(void)
 {
 	size_t i, n;
 
-	for (i = 0; i < __arraycount(nvmm_impl_list); i++) {
-		if (!(*nvmm_impl_list[i]->ident)()) {
-			continue;
-		}
-		nvmm_impl = nvmm_impl_list[i];
-		break;
-	}
-	if (nvmm_impl == NULL) {
-		printf("[!] No implementation found\n");
+	nvmm_impl = nvmm_ident();
+	if (nvmm_impl == NULL)
 		return ENOTSUP;
-	}
 
 	for (i = 0; i < NVMM_MAX_MACHINES; i++) {
 		machines[i].machid = i;
@@ -994,6 +1006,7 @@ nvmm_fini(void)
 	}
 
 	(*nvmm_impl->fini)();
+	nvmm_impl = NULL;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1020,7 +1033,7 @@ static int nvmm_close(file_t *);
 static int nvmm_mmap(file_t *, off_t *, size_t, int, int *, int *,
     struct uvm_object **, int *);
 
-const struct fileops nvmm_fileops = {
+static const struct fileops nvmm_fileops = {
 	.fo_read = fbadop_read,
 	.fo_write = fbadop_write,
 	.fo_ioctl = nvmm_ioctl,
@@ -1040,6 +1053,8 @@ nvmm_open(dev_t dev, int flags, int type, struct lwp *l)
 	struct file *fp;
 	int error, fd;
 
+	if (__predict_false(nvmm_impl == NULL))
+		return ENXIO;
 	if (minor(dev) != 0)
 		return EXDEV;
 	if (!(flags & O_CLOEXEC))
@@ -1070,7 +1085,7 @@ nvmm_close(file_t *fp)
 	}
 	fp->f_data = NULL;
 
-   	return 0;
+	return 0;
 }
 
 static int
@@ -1154,6 +1169,54 @@ nvmm_ioctl(file_t *fp, u_long cmd, void *data)
 
 /* -------------------------------------------------------------------------- */
 
+static int nvmm_match(device_t, cfdata_t, void *);
+static void nvmm_attach(device_t, device_t, void *);
+static int nvmm_detach(device_t, int);
+
+extern struct cfdriver nvmm_cd;
+
+CFATTACH_DECL_NEW(nvmm, 0, nvmm_match, nvmm_attach, nvmm_detach, NULL);
+
+static struct cfdata nvmm_cfdata[] = {
+	{
+		.cf_name = "nvmm",
+		.cf_atname = "nvmm",
+		.cf_unit = 0,
+		.cf_fstate = FSTATE_STAR,
+		.cf_loc = NULL,
+		.cf_flags = 0,
+		.cf_pspec = NULL,
+	},
+	{ NULL, NULL, 0, FSTATE_NOTFOUND, NULL, 0, NULL }
+};
+
+static int
+nvmm_match(device_t self, cfdata_t cfdata, void *arg)
+{
+	return 1;
+}
+
+static void
+nvmm_attach(device_t parent, device_t self, void *aux)
+{
+	int error;
+
+	error = nvmm_init();
+	if (error)
+		panic("%s: impossible", __func__);
+	aprint_normal_dev(self, "attached, using backend %s\n",
+	    nvmm_impl->name);
+}
+
+static int
+nvmm_detach(device_t self, int flags)
+{
+	if (atomic_load_relaxed(&nmachines) > 0)
+		return EBUSY;
+	nvmm_fini();
+	return 0;
+}
+
 void
 nvmmattach(int nunits)
 {
@@ -1162,51 +1225,83 @@ nvmmattach(int nunits)
 
 MODULE(MODULE_CLASS_MISC, nvmm, NULL);
 
+#if defined(_MODULE)
+CFDRIVER_DECL(nvmm, DV_VIRTUAL, NULL);
+#endif
+
 static int
 nvmm_modcmd(modcmd_t cmd, void *arg)
 {
+#if defined(_MODULE)
+	devmajor_t bmajor = NODEVMAJOR;
+	devmajor_t cmajor = 345;
+#endif
 	int error;
 
 	switch (cmd) {
 	case MODULE_CMD_INIT:
-		error = nvmm_init();
+		if (nvmm_ident() == NULL) {
+			aprint_error("%s: cpu not supported\n",
+			    nvmm_cd.cd_name);
+			return ENOTSUP;
+		}
+#if defined(_MODULE)
+		error = config_cfdriver_attach(&nvmm_cd);
 		if (error)
 			return error;
+#endif
+		error = config_cfattach_attach(nvmm_cd.cd_name, &nvmm_ca);
+		if (error) {
+			config_cfdriver_detach(&nvmm_cd);
+			aprint_error("%s: config_cfattach_attach failed\n",
+			    nvmm_cd.cd_name);
+			return error;
+		}
+
+		error = config_cfdata_attach(nvmm_cfdata, 1);
+		if (error) {
+			config_cfattach_detach(nvmm_cd.cd_name, &nvmm_ca);
+			config_cfdriver_detach(&nvmm_cd);
+			aprint_error("%s: unable to register cfdata\n",
+			    nvmm_cd.cd_name);
+			return error;
+		}
+
+		if (config_attach_pseudo(nvmm_cfdata) == NULL) {
+			aprint_error("%s: config_attach_pseudo failed\n",
+			    nvmm_cd.cd_name);
+			config_cfattach_detach(nvmm_cd.cd_name, &nvmm_ca);
+			config_cfdriver_detach(&nvmm_cd);
+			return ENXIO;
+		}
 
 #if defined(_MODULE)
-		{
-			devmajor_t bmajor = NODEVMAJOR;
-			devmajor_t cmajor = 345;
-
-			/* mknod /dev/nvmm c 345 0 */
-			error = devsw_attach("nvmm", NULL, &bmajor,
-			    &nvmm_cdevsw, &cmajor);
-			if (error) {
-				nvmm_fini();
-				return error;
-			}
+		/* mknod /dev/nvmm c 345 0 */
+		error = devsw_attach(nvmm_cd.cd_name, NULL, &bmajor,
+			&nvmm_cdevsw, &cmajor);
+		if (error) {
+			aprint_error("%s: unable to register devsw\n",
+			    nvmm_cd.cd_name);
+			config_cfattach_detach(nvmm_cd.cd_name, &nvmm_ca);
+			config_cfdriver_detach(&nvmm_cd);
+			return error;
 		}
 #endif
 		return 0;
-
 	case MODULE_CMD_FINI:
-		if (nmachines > 0) {
-			return EBUSY;
-		}
+		error = config_cfdata_detach(nvmm_cfdata);
+		if (error)
+			return error;
+		error = config_cfattach_detach(nvmm_cd.cd_name, &nvmm_ca);
+		if (error)
+			return error;
 #if defined(_MODULE)
-		{
-			error = devsw_detach(NULL, &nvmm_cdevsw);
-			if (error) {
-				return error;
-			}
-		}
+		config_cfdriver_detach(&nvmm_cd);
+		devsw_detach(NULL, &nvmm_cdevsw);
 #endif
-		nvmm_fini();
 		return 0;
-
 	case MODULE_CMD_AUTOUNLOAD:
 		return EBUSY;
-
 	default:
 		return ENOTTY;
 	}

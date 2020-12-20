@@ -1,4 +1,4 @@
-/*	$NetBSD: msg.mi.es,v 1.22 2020/02/06 19:41:57 martin Exp $	*/
+/*	$NetBSD: msg.mi.es,v 1.29 2020/11/04 14:29:40 martin Exp $	*/
 
 /*
  * Copyright 1997 Piermont Information Systems Inc.
@@ -146,9 +146,6 @@ message heads
 
 message sectors
 {sectores}
-
-message fs_isize
-{tamaño promedio del fichero (bytes)}
 
 message mountpoint
 {punto de montaje (o 'ninguno')}
@@ -405,12 +402,6 @@ message label_offset_tail		{inicio ($2)}
 message invalid_sector_number
 {Número mal formado}
 
-message Select_file_system_block_size
-{Seleccione el tamaño de bloque del sistema de archivos}
-
-message Select_file_system_fragment_size
-{Seleccione el tamaño de fragmento del sistema de archivos}
-
 message packname
 {Por favor entroduzca un nombre para el disco NetBSD}
 
@@ -511,8 +502,12 @@ instalaciones.  Puede escoger para instalar sólo los conjuntos esenciales
 seleccionar de entre los conjuntos de distribución opcionales.
 }
 
+/* Called with: 			Example
+ *  $0 = sets suffix			.tgz
+ *  $1 = URL protocol used		ftp
+ */
 message ftpsource
-{Lo siguiente son el sitio %s, directorio, usuario y contraseña que se
+{Lo siguiente son el sitio $1, directorio, usuario y contraseña que se
 usarán.  Si «usuario» es «ftp», no se necesita contraseña..
 
 }
@@ -523,9 +518,12 @@ message email
 message dev
 {dispositivo}
 
+/* Called with: 			Example
+ *  $0 = sets suffix			.tgz
+ */
 message nfssource
 {Introduzca el servidor nfs y el directorio del servidor donde se encuentre
-la distribución.  Recuerde: el directorio debe contener los archivos .tgz y
+la distribución.  Recuerde: el directorio debe contener los archivos $0 y
 debe ser montable por nfs.
 
 }
@@ -537,12 +535,26 @@ en el directorio raíz de los disquetes.
 
 }
 
+/* Called with: 			Example
+ *  $0 = sets suffix			.tgz
+ */
 message cdromsource
 {Introduzca el dispositivo de CDROM a usar y el directorio del CDROM
 donde se encuentre la distribución.
-Recuerde, el directorio debe contener los archivos .tgz.
+Recuerde, el directorio debe contener los archivos $0.
 
 }
+
+message No_cd_found
+{Could not locate a CD medium in any drive with the distribution sets! 
+Enter the correct data manually, or insert a disk and retry. 
+}
+
+message abort_install
+{Cancel installation}
+
+message source_sel_retry
+{Back to source selection & retry}
 
 message Available_cds
 {Available CDs}
@@ -554,16 +566,22 @@ message cd_path_not_found
 {The installation sets have not been found at the default location on this
 CD. Please check device and path name.}
 
+/* Called with: 			Example
+ *  $0 = sets suffix			.tgz
+ */
 message localfssource
 {Introduzca el dispositivo local desmontado y el directorio de ese
 dispositivo donde se encuentre la distribución. 
-Recuerde, el directorio debe contener los archivos .tgz.
+Recuerde, el directorio debe contener los archivos $0.
 
 }
 
+/* Called with: 			Example
+ *  $0 = sets suffix			.tgz
+ */
 message localdir
 {Introduzca el directorio local ya montado donde se encuentre la distribución.
-Recuerde, el directorio debe contener los archivos .tgz.
+Recuerde, el directorio debe contener los archivos $0.
 
 }
 
@@ -819,6 +837,9 @@ message set_system
 message set_compiler
 {Herramientas del compilador}
 
+message set_dtb
+{Devicetree hardware descriptions}
+
 message set_games
 {Juegos}
 
@@ -1030,8 +1051,16 @@ message Set_Sizes {Establecer los tamaños de las particiones NetBSD}
  */
 message Use_Default_Parts {Use default partition sizes}
 
+/* Called with:				Example
+ *  $0 = current partitioning name	Master Boot Record (MBR)
+ *  $1 = short version of $0		MBR
+ */
+message Use_Different_Part_Scheme
+{Delete everything, use different partitions (not $1)}
+
 message Gigabytes {Gigabytes}
 message Megabytes {Megabytes}
+message Bytes {Bytes}
 message Cylinders {Cilindros}
 message Sectors {Sectores}
 message Select_medium {Seleccione el medio}
@@ -1198,21 +1227,9 @@ paquetes binarios.  Por favor verifique el camino a los paquetes y
 reinténtelo de nuevo.}
 message failed {Error}
 
-message notsupported {Operación no admitida!}
 message askfsmountadv {Punto de montaje o 'raid' o 'CGD' o 'lvm'?}
 message partman {Partición extendida}
-message edit_parts {Editar particiones}
 message editpart {Editar particiones}
-message switch_parts {Switch partitioning scheme}
-message fmtasraid {Formato como RAID}
-message fmtaslvm {Formato como LVM PV}
-message encrypt {Cifrar (CGD)}
-message setbootable {La bandera de arranque}
-message erase {Borrado seguro}
-message undo {Deshacer los cambios}
-message unconfig {Desconfigurar}
-message edit {Editar}
-message doumount {Fuerza umount}
 
 message fremove {QUITAR}
 message remove {Quitar}
@@ -1298,7 +1315,7 @@ message	mp_already_exists	{$0 already defined!}
 
 message ptnsize_replace_existing
 {This is an already existing partition. 
-To change it's size, the partition will need to be deleted and later
+To change its size, the partition will need to be deleted and later
 recreated.  All data in this partition will be lost.
 
 Would you like to delete this partition and continue?}
@@ -1309,6 +1326,25 @@ message ptn_type		{tipo}
 message ptn_start		{inicio}
 message ptn_size		{tamaño}
 message ptn_end			{fin}
+
+message ptn_bsize		{tamaño bloque}
+message ptn_fsize		{tamaño frag}
+message ptn_isize		{tam prom archi}
+
+/* Called with:                         Example
+ *  $0 = avg file size in byte          1200
+ */
+message ptn_isize_bytes		{$0 bytes (para número de inodos)}
+message ptn_isize_dflt		{4 fragmentos}
+
+message Select_file_system_block_size
+{Seleccione el tamaño de bloque del sistema de archivos}
+
+message Select_file_system_fragment_size
+{Seleccione el tamaño de fragmento del sistema de archivos}
+
+message ptn_isize_prompt
+{tamaño promedio del fichero (bytes)}
 
 message No_free_space {Sin espacio libre}
 message Invalid_numeric {Número no válido!}
@@ -1487,4 +1523,3 @@ message clone_target_hdr
 message clone_target_disp		{cloned partition(s)}
 message clone_src_done
 {Source selection OK, proceed to target selection}
-

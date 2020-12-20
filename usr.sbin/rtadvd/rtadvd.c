@@ -1,4 +1,4 @@
-/*	$NetBSD: rtadvd.c,v 1.71 2019/11/11 13:42:49 roy Exp $	*/
+/*	$NetBSD: rtadvd.c,v 1.79 2020/08/28 00:19:37 rjs Exp $	*/
 /*	$KAME: rtadvd.c,v 1.92 2005/10/17 14:40:02 suz Exp $	*/
 
 /*
@@ -54,6 +54,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <syslog.h>
+#include <signal.h>
 #include <stdarg.h>
 #ifdef __NetBSD__
 #include <util.h>
@@ -62,7 +63,6 @@
 #include <pwd.h>
 
 #include "rtadvd.h"
-#include "rrenum.h"
 #include "advcap.h"
 #include "timer.h"
 #include "if.h"
@@ -85,11 +85,10 @@ struct iovec rcviov[2];
 struct iovec sndiov[2];
 struct sockaddr_in6 rcvfrom;
 static const char *dumpfilename = "/var/run/rtadvd.dump"; /* XXX configurable */
-static char *mcastif;
 int sock;
 int rtsock = -1;
-int accept_rr = 0;
 int Cflag = 0, dflag = 0, sflag = 0, Dflag;
+static int after_daemon = 0;
 
 static char **if_argv;
 static int if_argc;
@@ -187,7 +186,7 @@ main(int argc, char *argv[])
 	pid_t pid;
 
 	/* get command line options and arguments */
-#define OPTIONS "c:dDfM:p:Rs"
+#define OPTIONS "Cc:dDfp:s"
 	while ((ch = getopt(argc, argv, OPTIONS)) != -1) {
 #undef OPTIONS
 		switch (ch) {
@@ -206,17 +205,8 @@ main(int argc, char *argv[])
 		case 'f':
 			fflag = 1;
 			break;
-		case 'M':
-			mcastif = optarg;
-			break;
 		case 'p':
 			pidfilepath = optarg;
-			break;
-		case 'R':
-			fprintf(stderr, "rtadvd: "
-				"the -R option is currently ignored.\n");
-			/* accept_rr = 1; */
-			/* run anyway... */
 			break;
 		case 's':
 			sflag = 1;
@@ -226,20 +216,19 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 	if (argc == 0) {
-		fprintf(stderr, "Ysage: %s [-DdfRs] [-c conffile]"
-		    " [-M ifname] [-p pidfile] interface ...\n", getprogname());
+		fprintf(stderr, "Usage: %s [-CDdfs] [-c conffile]"
+		    " [-p pidfile] interface ...\n", getprogname());
 		return EXIT_FAILURE;
 	}
 
 	if ((pid = pidfile_lock(pidfilepath)) != 0) {
-		if (pid == -1)
+		if (pid == -1) {
 			logit(LOG_ERR, "pidfile_lock: %m");
-			/* Continue */
-		else {
+		} else {
 			logit(LOG_ERR, "Another instance of `%s' is running "
 			    "(pid %d); exiting.", getprogname(), pid);
-			return EXIT_FAILURE;
 		}
+		return EXIT_FAILURE;
 	}
 
 	if (prog_init && prog_init() == -1)
@@ -277,6 +266,7 @@ main(int argc, char *argv[])
 
 	if (!fflag) {
 		prog_daemon(1, 0);
+		after_daemon = 1;
 		if (pidfile_lock(pidfilepath) != 0)
 			logit(LOG_ERR, " pidfile_lock: %m");
 	}
@@ -627,7 +617,7 @@ rtmsg_input(void)
 				}
 				break;
 			}
-			make_prefix(rai, ifindex, addr, plen);
+			add_prefix(rai, ifindex, addr, plen);
 			prefixchange = 1;
 			break;
 		case RTM_DELETE:
@@ -737,7 +727,6 @@ rtadvd_input(void)
 	struct cmsghdr *cm;
 	struct in6_pktinfo *pi = NULL;
 	char ntopbuf[INET6_ADDRSTRLEN], ifnamebuf[IFNAMSIZ];
-	struct in6_addr dst = in6addr_any;
 	struct rainfo *rai;
 
 	/*
@@ -762,7 +751,6 @@ rtadvd_input(void)
 		    cm->cmsg_len == CMSG_LEN(sizeof(struct in6_pktinfo))) {
 			pi = (struct in6_pktinfo *)(CMSG_DATA(cm));
 			ifindex = pi->ipi6_ifindex;
-			dst = pi->ipi6_addr;
 		}
 		if (cm->cmsg_level == IPPROTO_IPV6 &&
 		    cm->cmsg_type == IPV6_HOPLIMIT &&
@@ -888,16 +876,6 @@ rtadvd_input(void)
 			return;
 		}
 		ra_input(i, (struct nd_router_advert *)icp, pi, &rcvfrom);
-		break;
-	case ICMP6_ROUTER_RENUMBERING:
-		if (accept_rr == 0) {
-			logit(LOG_ERR, "%s: received a router renumbering "
-			    "message, but not allowed to be accepted",
-			    __func__);
-			break;
-		}
-		rr_input(i, (struct icmp6_router_renum *)icp, pi, &rcvfrom,
-			 &dst);
 		break;
 	default:
 		/*
@@ -1572,8 +1550,6 @@ sock_open(void)
 	ICMP6_FILTER_SETBLOCKALL(&filt);
 	ICMP6_FILTER_SETPASS(ND_ROUTER_SOLICIT, &filt);
 	ICMP6_FILTER_SETPASS(ND_ROUTER_ADVERT, &filt);
-	if (accept_rr)
-		ICMP6_FILTER_SETPASS(ICMP6_ROUTER_RENUMBERING, &filt);
 	if (prog_setsockopt(sock, IPPROTO_ICMPV6, ICMP6_FILTER, &filt,
 		       sizeof(filt)) == -1) {
 		logit(LOG_ERR, "%s: IICMP6_FILTER: %m", __func__);
@@ -1597,39 +1573,6 @@ sock_open(void)
 			logit(LOG_ERR, "%s: IPV6_JOIN_GROUP(link) on %s: %m",
 			       __func__, ra->ifname);
 			continue;
-		}
-	}
-
-	/*
-	 * When attending router renumbering, join all-routers site-local
-	 * multicast group.
-	 */
-	if (accept_rr) {
-		if (inet_pton(AF_INET6, ALLROUTERS_SITE,
-		     mreq.ipv6mr_multiaddr.s6_addr) != 1)
-		{
-			logit(LOG_ERR, "%s: inet_pton failed(library bug?)",
-			    __func__);
-			exit(EXIT_FAILURE);
-		}
-		ra = TAILQ_FIRST(&ralist);
-		if (mcastif) {
-			if ((mreq.ipv6mr_interface = if_nametoindex(mcastif))
-			    == 0) {
-				logit(LOG_ERR,
-				       "%s: invalid interface: %s",
-				       __func__, mcastif);
-				exit(EXIT_FAILURE);
-			}
-		} else
-			mreq.ipv6mr_interface = ra->ifindex;
-		if (prog_setsockopt(sock, IPPROTO_IPV6, IPV6_JOIN_GROUP,
-			       &mreq, sizeof(mreq)) == -1) {
-			logit(LOG_ERR,
-			       "%s: IPV6_JOIN_GROUP(site) on %s: %m",
-			       __func__,
-			       mcastif ? mcastif : ra->ifname);
-			exit(EXIT_FAILURE);
 		}
 	}
 
@@ -1671,7 +1614,7 @@ rtsock_open(void)
 		exit(EXIT_FAILURE);
 	}
 #ifdef RO_MSGFILTER
-	if (setsockopt(rtsock, PF_ROUTE, RO_MSGFILTER,
+	if (prog_setsockopt(rtsock, PF_ROUTE, RO_MSGFILTER,
 	    &msgfilter, sizeof(msgfilter) == -1))
 		logit(LOG_ERR, "%s: RO_MSGFILTER: %m", __func__);
 #endif
@@ -1859,13 +1802,15 @@ logit(int level, const char *fmt, ...)
 	char *buf;
 
 	va_start(ap, fmt);
-	if (!Dflag) {
+	if (!Dflag && after_daemon) {
 		vsyslog(level, fmt, ap);
 		va_end(ap);
 		return;
 	}
+	if (level >= LOG_INFO && !dflag)
+		return;
 
-	vfprintf(stderr, expandm(fmt, "\n", &buf), ap);
+	vwarnx(expandm(fmt, "\n", &buf), ap);
 	free(buf);
 	va_end(ap);
 }

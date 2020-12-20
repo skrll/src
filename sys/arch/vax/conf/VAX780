@@ -1,4 +1,4 @@
-# $NetBSD: VAX780,v 1.30 2020/01/20 18:38:21 thorpej Exp $
+# $NetBSD: VAX780,v 1.32 2020/09/27 13:48:54 roy Exp $
 #
 # 11/780,750,730 machine description file
 # 
@@ -281,7 +281,7 @@ pseudo-device	pty			# pseudo-terminals
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+#pseudo-device	vether			# Virtual Ethernet for bridge
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
 #pseudo-device	vnd	
 #options 	VND_COMPRESSION		# compressed vnd(4)

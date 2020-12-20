@@ -1,4 +1,4 @@
-/* $NetBSD: subr_autoconf.c,v 1.269 2020/02/27 20:16:38 macallan Exp $ */
+/* $NetBSD: subr_autoconf.c,v 1.274 2020/10/03 22:32:50 riastradh Exp $ */
 
 /*
  * Copyright (c) 1996, 2000 Christopher G. Demetriou
@@ -77,7 +77,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.269 2020/02/27 20:16:38 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.274 2020/10/03 22:32:50 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -121,7 +121,7 @@ __KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.269 2020/02/27 20:16:38 macallan
 /*
  * Device autoconfiguration timings are mixed into the entropy pool.
  */
-extern krndsource_t rnd_autoconf_source;
+static krndsource_t rnd_autoconf_source;
 
 /*
  * ioconf.c exports exactly two names: cfdata and cfroots.  All system
@@ -224,7 +224,8 @@ static int alldevs_nread = 0;
 static int alldevs_nwrite = 0;
 static bool alldevs_garbage = false;
 
-static int config_pending;		/* semaphore for mountroot */
+static struct devicelist config_pending =
+    TAILQ_HEAD_INITIALIZER(config_pending);
 static kmutex_t config_misc_lock;
 static kcondvar_t config_misc_cv;
 
@@ -355,6 +356,9 @@ config_init(void)
 
 	initcftable.ct_cfdata = cfdata;
 	TAILQ_INSERT_TAIL(&allcftables, &initcftable, ct_list);
+
+	rnd_attach_source(&rnd_autoconf_source, "autoconf", RND_TYPE_UNKNOWN,
+	    RND_FLAG_COLLECT_TIME);
 
 	config_initialized = true;
 }
@@ -565,13 +569,13 @@ devmon_report_device(device_t dev, bool isattach)
 
 	what = (isattach ? "device-attach" : "device-detach");
 	parent = (pdev == NULL ? "root" : device_xname(pdev));
-	if (prop_dictionary_get_cstring_nocopy(dict, "location", &where)) {
-		prop_dictionary_set_cstring(ev, "location", where);
+	if (prop_dictionary_get_string(dict, "location", &where)) {
+		prop_dictionary_set_string(ev, "location", where);
 		aprint_debug("ev: %s %s at %s in [%s]\n",
 		    what, device_xname(dev), parent, where); 
 	}
-	if (!prop_dictionary_set_cstring(ev, "device", device_xname(dev)) ||
-	    !prop_dictionary_set_cstring(ev, "parent", parent)) {
+	if (!prop_dictionary_set_string(ev, "device", device_xname(dev)) ||
+	    !prop_dictionary_set_string(ev, "parent", parent)) {
 		prop_object_release(ev);
 		return;
 	}
@@ -1210,7 +1214,7 @@ config_makeroom(int n, struct cfdriver *cd)
 		 * sleep.
 		 */
 		mutex_exit(&alldevs_lock);
-		nsp = kmem_alloc(sizeof(device_t[nndevs]), KM_SLEEP);
+		nsp = kmem_alloc(sizeof(device_t) * nndevs, KM_SLEEP);
 		mutex_enter(&alldevs_lock);
 
 		/*
@@ -1219,20 +1223,20 @@ config_makeroom(int n, struct cfdriver *cd)
 		 */
 		if (cd->cd_devs != osp) {
 			mutex_exit(&alldevs_lock);
-			kmem_free(nsp, sizeof(device_t[nndevs]));
+			kmem_free(nsp, sizeof(device_t) * nndevs);
 			mutex_enter(&alldevs_lock);
 			continue;
 		}
 
-		memset(nsp + ondevs, 0, sizeof(device_t[nndevs - ondevs]));
+		memset(nsp + ondevs, 0, sizeof(device_t) * (nndevs - ondevs));
 		if (ondevs != 0)
-			memcpy(nsp, cd->cd_devs, sizeof(device_t[ondevs]));
+			memcpy(nsp, cd->cd_devs, sizeof(device_t) * ondevs);
 
 		cd->cd_ndevs = nndevs;
 		cd->cd_devs = nsp;
 		if (ondevs != 0) {
 			mutex_exit(&alldevs_lock);
-			kmem_free(osp, sizeof(device_t[ondevs]));
+			kmem_free(osp, sizeof(device_t) * ondevs);
 			mutex_enter(&alldevs_lock);
 		}
 	}
@@ -1262,12 +1266,11 @@ config_devlink(device_t dev)
 static void
 config_devfree(device_t dev)
 {
-	int priv = (dev->dv_flags & DVF_PRIV_ALLOC);
+	KASSERT(dev->dv_flags & DVF_PRIV_ALLOC);
 
 	if (dev->dv_cfattach->ca_devsize > 0)
 		kmem_free(dev->dv_private, dev->dv_cfattach->ca_devsize);
-	if (priv)
-		kmem_free(dev, sizeof(*dev));
+	kmem_free(dev, sizeof(*dev));
 }
 
 /*
@@ -1312,7 +1315,7 @@ config_devdelete(device_t dev)
 	device_lock_t dvl = device_getlock(dev);
 
 	if (dg->dg_devs != NULL)
-		kmem_free(dg->dg_devs, sizeof(device_t[dg->dg_ndevs]));
+		kmem_free(dg->dg_devs, sizeof(device_t) * dg->dg_ndevs);
 
 	cv_destroy(&dvl->dvl_cv);
 	mutex_destroy(&dvl->dvl_mtx);
@@ -1398,26 +1401,14 @@ config_devalloc(const device_t parent, const cfdata_t cf, const int *locs)
 		return NULL;
 
 	/* get memory for all device vars */
-	KASSERTMSG((ca->ca_flags & DVF_PRIV_ALLOC)
-	    || ca->ca_devsize >= sizeof(struct device),
-	    "%s: %s (%zu < %zu)", __func__, cf->cf_atname, ca->ca_devsize,
-	    sizeof(struct device));
+	KASSERT(ca->ca_flags & DVF_PRIV_ALLOC);
 	if (ca->ca_devsize > 0) {
 		dev_private = kmem_zalloc(ca->ca_devsize, KM_SLEEP);
 	} else {
-		KASSERT(ca->ca_flags & DVF_PRIV_ALLOC);
 		dev_private = NULL;
 	}
+	dev = kmem_zalloc(sizeof(*dev), KM_SLEEP);
 
-	if ((ca->ca_flags & DVF_PRIV_ALLOC) != 0) {
-		dev = kmem_zalloc(sizeof(*dev), KM_SLEEP);
-	} else {
-		dev = dev_private;
-#ifdef DIAGNOSTIC
-		printf("%s has not been converted to device_t\n", cd->cd_name);
-#endif
-		KASSERT(dev != NULL);
-	}
 	dev->dv_class = cd->cd_class;
 	dev->dv_cfdata = cf;
 	dev->dv_cfdriver = cd;
@@ -1457,19 +1448,19 @@ config_devalloc(const device_t parent, const cfdata_t cf, const int *locs)
 		KASSERT(parent); /* no locators at root */
 		ia = cfiattr_lookup(cfdata_ifattr(cf), parent->dv_cfdriver);
 		dev->dv_locators =
-		    kmem_alloc(sizeof(int [ia->ci_loclen + 1]), KM_SLEEP);
-		*dev->dv_locators++ = sizeof(int [ia->ci_loclen + 1]);
-		memcpy(dev->dv_locators, locs, sizeof(int [ia->ci_loclen]));
+		    kmem_alloc(sizeof(int) * (ia->ci_loclen + 1), KM_SLEEP);
+		*dev->dv_locators++ = sizeof(int) * (ia->ci_loclen + 1);
+		memcpy(dev->dv_locators, locs, sizeof(int) * ia->ci_loclen);
 	}
 	dev->dv_properties = prop_dictionary_create();
 	KASSERT(dev->dv_properties != NULL);
 
-	prop_dictionary_set_cstring_nocopy(dev->dv_properties,
+	prop_dictionary_set_string_nocopy(dev->dv_properties,
 	    "device-driver", dev->dv_cfdriver->cd_name);
 	prop_dictionary_set_uint16(dev->dv_properties,
 	    "device-unit", dev->dv_unit);
 	if (parent != NULL) {
-		prop_dictionary_set_cstring(dev->dv_properties,
+		prop_dictionary_set_string(dev->dv_properties,
 		    "device-parent", device_xname(parent));
 	}
 
@@ -1523,7 +1514,7 @@ config_add_attrib_dict(device_t dev)
 			break;
 		if ((attr_dict = prop_dictionary_create()) == NULL)
 			break;
-		prop_dictionary_set_cstring_nocopy(attr_dict, "attribute-name",
+		prop_dictionary_set_string_nocopy(attr_dict, "attribute-name",
 		    ci->ci_name);
 
 		/* Create an array of the locator names and defaults */
@@ -1534,10 +1525,10 @@ config_add_attrib_dict(device_t dev)
 				loc_dict = prop_dictionary_create();
 				if (loc_dict == NULL)
 					continue;
-				prop_dictionary_set_cstring_nocopy(loc_dict,
+				prop_dictionary_set_string_nocopy(loc_dict,
 				    "loc-name", ci->ci_locdesc[j].cld_name);
 				if (ci->ci_locdesc[j].cld_defaultstr != NULL)
-					prop_dictionary_set_cstring_nocopy(
+					prop_dictionary_set_string_nocopy(
 					    loc_dict, "default",
 					    ci->ci_locdesc[j].cld_defaultstr);
 				prop_array_set(loc_array, j, loc_dict);
@@ -2105,9 +2096,12 @@ config_pending_incr(device_t dev)
 {
 
 	mutex_enter(&config_misc_lock);
-	config_pending++;
+	KASSERTMSG(dev->dv_pending < INT_MAX,
+	    "%s: excess config_pending_incr", device_xname(dev));
+	if (dev->dv_pending++ == 0)
+		TAILQ_INSERT_TAIL(&config_pending, dev, dv_pending_list);
 #ifdef DEBUG_AUTOCONF
-	printf("%s: %s %d\n", __func__, device_xname(dev), config_pending);
+	printf("%s: %s %d\n", __func__, device_xname(dev), dev->dv_pending);
 #endif
 	mutex_exit(&config_misc_lock);
 }
@@ -2116,13 +2110,15 @@ void
 config_pending_decr(device_t dev)
 {
 
-	KASSERT(0 < config_pending);
 	mutex_enter(&config_misc_lock);
-	config_pending--;
+	KASSERTMSG(dev->dv_pending > 0,
+	    "%s: excess config_pending_decr", device_xname(dev));
+	if (--dev->dv_pending == 0)
+		TAILQ_REMOVE(&config_pending, dev, dv_pending_list);
 #ifdef DEBUG_AUTOCONF
-	printf("%s: %s %d\n", __func__, device_xname(dev), config_pending);
+	printf("%s: %s %d\n", __func__, device_xname(dev), dev->dv_pending);
 #endif
-	if (config_pending == 0)
+	if (TAILQ_EMPTY(&config_pending))
 		cv_broadcast(&config_misc_cv);
 	mutex_exit(&config_misc_lock);
 }
@@ -2175,8 +2171,12 @@ config_finalize(void)
 	 * them to finish any deferred autoconfiguration.
 	 */
 	mutex_enter(&config_misc_lock);
-	while (config_pending != 0)
+	while (!TAILQ_EMPTY(&config_pending)) {
+		device_t dev;
+		TAILQ_FOREACH(dev, &config_pending, dv_pending_list)
+			aprint_debug_dev(dev, "holding up boot\n");
 		cv_wait(&config_misc_cv, &config_misc_lock);
+	}
 	mutex_exit(&config_misc_lock);
 
 	KERNEL_LOCK(1, NULL);
@@ -2720,7 +2720,7 @@ device_active_register(device_t dev, void (*handler)(device_t, devactive_t))
 	}
 
 	new_size = old_size + 4;
-	new_handlers = kmem_alloc(sizeof(void *[new_size]), KM_SLEEP);
+	new_handlers = kmem_alloc(sizeof(void *) * new_size, KM_SLEEP);
 
 	for (i = 0; i < old_size; ++i)
 		new_handlers[i] = old_handlers[i];
@@ -2734,7 +2734,7 @@ device_active_register(device_t dev, void (*handler)(device_t, devactive_t))
 	splx(s);
 
 	if (old_size > 0)
-		kmem_free(old_handlers, sizeof(void * [old_size]));
+		kmem_free(old_handlers, sizeof(void *) * old_size);
 
 	return true;
 }
@@ -2768,7 +2768,7 @@ device_active_deregister(device_t dev, void (*handler)(device_t, devactive_t))
 			dev->dv_activity_count = 0;
 			dev->dv_activity_handlers = NULL;
 			splx(s);
-			kmem_free(old_handlers, sizeof(void *[old_size]));
+			kmem_free(old_handlers, sizeof(void *) * old_size);
 		}
 		return;
 	}

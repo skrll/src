@@ -1,4 +1,4 @@
-#	$NetBSD: files.pci,v 1.426 2020/02/09 16:06:18 jmcneill Exp $
+#	$NetBSD: files.pci,v 1.432 2020/10/14 10:19:11 ryo Exp $
 #
 # Config file and device description for machine-independent PCI code.
 # Included by ports that need it.  Requires that the SCSI files be
@@ -756,6 +756,10 @@ attach	amdpm at pci
 file	dev/pci/amdpm.c			amdpm
 file	dev/pci/amdpm_smbus.c		amdpm
 
+# AMD Cryptographic Coprocessor
+attach	amdccp at pci with amdccp_pci
+file	dev/pci/amdccp_pci.c		amdccp_pci
+
 # Hi/fn 7751
 device	hifn: opencrypto
 attach	hifn at pci
@@ -818,7 +822,7 @@ attach	machfb at pci
 file	dev/pci/machfb.c		machfb
 
 # 3Dfx Voodoo3 framebuffer console driver
-device	voodoofb: wsemuldisplaydev, rasops8, vcons, videomode, drm, i2cbus, i2c_bitbang, ddc_read_edid, edid
+device	voodoofb: wsemuldisplaydev, rasops8, vcons, videomode, drm, i2cexec, i2c_bitbang, ddc_read_edid, edid
 attach	voodoofb at pci
 file	dev/pci/voodoofb.c		voodoofb
 
@@ -829,7 +833,7 @@ file	dev/pci/unichromefb.c		unichromefb needs-flag
 
 # ATI Radeon framebuffer console driver
 # (Note: to enable the BIOS parser, add options RADEON_BIOS_INIT to the config)
-device	radeonfb: wsemuldisplaydev, videomode, rasops8, rasops32, vcons, splash, i2cbus, i2c_bitbang, ddc_read_edid, edid, drm, glyphcache
+device	radeonfb: wsemuldisplaydev, videomode, rasops8, rasops32, vcons, splash, i2cexec, i2c_bitbang, ddc_read_edid, edid, drm, glyphcache
 attach	radeonfb at pci
 file	dev/pci/radeonfb.c	radeonfb
 file	dev/pci/radeonfb_i2c.c	radeonfb
@@ -976,7 +980,7 @@ attach	ichsmb at pci
 file	dev/pci/ichsmb.c		ichsmb
 
 # ATI Rage 128 framebuffer console driver
-device	r128fb: wsemuldisplaydev, rasops8, rasops32, vcons, videomode, i2cbus, i2c_bitbang, glyphcache
+device	r128fb: wsemuldisplaydev, rasops8, rasops32, vcons, glyphcache
 attach	r128fb at pci
 file	dev/pci/r128fb.c		r128fb
 defflag	opt_r128fb.h	R128FB_DEBUG
@@ -1037,13 +1041,13 @@ attach	hdaudio at pci with hdaudio_pci
 file	dev/pci/hdaudio_pci.c		hdaudio_pci
 
 # Permedia 2 / Sun PGX32 / Raptor
-device	pm2fb: wsemuldisplaydev, rasops8, rasops32, vcons, videomode, i2cbus, i2c_bitbang, ddc_read_edid, edid, glyphcache
+device	pm2fb: wsemuldisplaydev, rasops8, rasops32, vcons, videomode, i2cexec, i2c_bitbang, ddc_read_edid, edid, glyphcache
 attach	pm2fb at pci
 file	dev/pci/pm2fb.c		pm2fb
 defflag	opt_pm2fb.h	PM2FB_DEBUG
 
 # Permedia 3 / Oxygen VX1 / Proformance 3  
-device  pm3fb: wsemuldisplaydev, rasops8, vcons, videomode, i2cbus, i2c_bitbang, ddc_read_edid, edid
+device  pm3fb: wsemuldisplaydev, rasops8, vcons, videomode, i2cexec, i2c_bitbang, ddc_read_edid, edid
 attach  pm3fb at pci
 file	dev/pci/pm3fb.c		pm3fb
 
@@ -1114,7 +1118,7 @@ attach	tdvfb at pci
 file	dev/pci/tdvfb.c		tdvfb	
 
 # nvidia geforce framebuffer console driver
-device	gffb: wsemuldisplaydev, rasops8, vcons, videomode, i2cbus, i2c_bitbang, glyphcache
+device	gffb: wsemuldisplaydev, rasops8, vcons, glyphcache
 attach	gffb at pci
 file	dev/pci/gffb.c		gffb
 defflag	opt_gffb.h	GFFB_DEBUG
@@ -1161,3 +1165,21 @@ file	dev/pci/if_ixl.c	ixl
 defflag	opt_if_ixl.h	IXL_DEBUG
 defparam opt_if_ixl.h	IXL_STATS_INTERVAL_MSEC
 			IXL_QUEUE_NUM
+
+# Intel Ethernet Adaptive Virtual Function
+device	iavf: ether, ifnet, arp
+attach	iavf at pci
+file	dev/pci/if_iavf.c	iavf
+
+# Intel XMM 7360 LTE modem
+device  wwanc {} : tty
+attach  wwanc at pci
+device  wwan: ifnet
+attach  wwan at wwanc
+file    dev/pci/xmm7360.c               wwanc | wwan            needs-flag
+
+# VMware VMXNET3 virtual interface
+device	vmx: ether, ifnet, arp
+attach	vmx at pci
+file	dev/pci/if_vmx.c	vmx
+

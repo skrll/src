@@ -1,11 +1,12 @@
-#	$NetBSD: XEN3PAE_DOM0,v 1.23 2020/04/10 20:56:56 jdolecek Exp $
+#	$NetBSD: XEN3PAE_DOM0,v 1.33 2020/09/27 13:48:51 roy Exp $
 #
 #	XEN3_0: Xen 3.0 domain0 kernel
 
 include 	"arch/i386/conf/std.xen"
 
 options		XENPV		# PV dom0 support
-#options 	MULTIPROCESSOR	# (not yet - dom0 stuff is not MP-safe)
+options 	MULTIPROCESSOR
+#options 	NO_PREEMPTION	# needed if MULTIPROCESSOR is disabled
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
@@ -82,8 +83,6 @@ options 	COMPAT_NOMID	# NetBSD 0.8, 386BSD, and BSDI
 #options 	COMPAT_386BSD_MBRPART # recognize old partition ID
 
 options 	COMPAT_OSSAUDIO	# OSS (Voxware) audio driver compatibility
-options 	COMPAT_LINUX	# binary compatibility with Linux
-#options 	COMPAT_FREEBSD	# binary compatibility with FreeBSD
 
 # Wedge support
 options 	DKWEDGE_AUTODISCOVER	# Automatically add dk(4) instances
@@ -654,9 +653,6 @@ ucom*	at ukyopon? portno ?
 # USB scanners that use SCSI emulation, e.g., HP5300
 usscanner* at uhub? port ?
 
-# Y@P firmware loader
-uyap*	at uhub? port ?
-
 # D-Link DSB-R100 USB radio
 udsbr*	at uhub? port ?
 radio*	at udsbr?
@@ -820,7 +816,7 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC 1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	l2tp			# L2TPv3 interface
 pseudo-device	npf			# NPF packet filter
 

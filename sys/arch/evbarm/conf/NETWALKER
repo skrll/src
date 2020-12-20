@@ -1,4 +1,4 @@
-#	$NetBSD: NETWALKER,v 1.39 2019/07/25 16:28:10 skrll Exp $
+#	$NetBSD: NETWALKER,v 1.41 2020/09/29 19:58:50 jmcneill Exp $
 #
 #	NETWALKER -- http://www.sharp.co.jp/netwalker/
 #
@@ -7,7 +7,7 @@ include	"arch/evbarm/conf/std.netwalker"
 include	"arch/evbarm/conf/GENERIC.common"
 
 # CPU options
-options 	CPU_CORTEXA8	# Support the ARM-v7a core
+options 	CPU_CORTEX	# Support the ARM-v7a core
 options 	IMX51
 
 # Device options
@@ -26,7 +26,6 @@ makeoptions	COPY_SYMTAB=1
 #  single		Boot to single user only
 #  kdb			Give control to kernel debugger
 #  ask			Ask for file name to reboot from
-#  pmapdebug=<n>	If PMAP_DEBUG, set pmap_debug_level to <n>
 #  memorydisk=<n>	Set memorydisk size to <n> KB
 #  quiet		Show aprint_naive output
 #  verbose		Show aprint_normal and aprint_verbose output

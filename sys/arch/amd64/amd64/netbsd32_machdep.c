@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_machdep.c,v 1.133 2019/12/12 02:15:42 pgoyette Exp $	*/
+/*	$NetBSD: netbsd32_machdep.c,v 1.137 2020/11/20 17:44:56 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.133 2019/12/12 02:15:42 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.137 2020/11/20 17:44:56 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -50,7 +50,7 @@ __KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.133 2019/12/12 02:15:42 pgoye
 #include <sys/exec.h>
 #include <sys/exec_aout.h>
 #include <sys/kmem.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/proc.h>
 #include <sys/signalvar.h>
 #include <sys/systm.h>
@@ -74,6 +74,7 @@ __KERNEL_RCSID(0, "$NetBSD: netbsd32_machdep.c,v 1.133 2019/12/12 02:15:42 pgoye
 #include <machine/netbsd32_machdep.h>
 #include <machine/sysarch.h>
 #include <machine/userret.h>
+#include <machine/gdt.h>
 
 #include <compat/netbsd32/netbsd32.h>
 #include <compat/netbsd32/netbsd32_exec.h>
@@ -214,18 +215,20 @@ netbsd32_sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	int onstack, error;
 	int sig = ksi->ksi_signo;
 	struct netbsd32_sigframe_siginfo *fp, frame;
-	sig_t catcher = SIGACTION(p, sig).sa_handler;
+	const struct sigaction *sa = &SIGACTION(p, sig);
+	sig_t catcher = sa->sa_handler;
 	struct trapframe *tf = l->l_md.md_regs;
+	struct sigaltstack * const ss = &l->l_sigstk;
 
 	/* Do we need to jump onto the signal stack? */
 	onstack =
-	    (l->l_sigstk.ss_flags & (SS_DISABLE | SS_ONSTACK)) == 0 &&
-	    (SIGACTION(p, sig).sa_flags & SA_ONSTACK) != 0;
+	    (ss->ss_flags & (SS_DISABLE | SS_ONSTACK)) == 0 &&
+	    (sa->sa_flags & SA_ONSTACK) != 0;
 
 	/* Allocate space for the signal handler context. */
 	if (onstack)
 		fp = (struct netbsd32_sigframe_siginfo *)
-		    ((char *)l->l_sigstk.ss_sp + l->l_sigstk.ss_size);
+		    ((char *)ss->ss_sp + ss->ss_size);
 	else
 		fp = (struct netbsd32_sigframe_siginfo *)tf->tf_rsp;
 
@@ -252,7 +255,7 @@ netbsd32_sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	frame.sf_uc.uc_flags = _UC_SIGMASK;
 	frame.sf_uc.uc_sigmask = *mask;
 	frame.sf_uc.uc_link = (uint32_t)(uintptr_t)l->l_ctxlink;
-	frame.sf_uc.uc_flags |= (l->l_sigstk.ss_flags & SS_ONSTACK)
+	frame.sf_uc.uc_flags |= (ss->ss_flags & SS_ONSTACK)
 	    ? _UC_SETSTACK : _UC_CLRSTACK;
 	sendsig_reset(l, sig);
 
@@ -626,17 +629,19 @@ x86_64_set_ldt32(struct lwp *l, void *args, register_t *retval)
 	ua.start = ua32.start;
 	ua.num = ua32.num;
 
-	if (ua.num < 0 || ua.num > 8192)
+	if (ua.num < 0 || ua.num > MAX_USERLDT_SLOTS)
 		return EINVAL;
 
-	descv = malloc(sizeof(*descv) * ua.num, M_TEMP, M_WAITOK);
+	const size_t alloc_size = sizeof(*descv) * ua.num;
+
+	descv = kmem_alloc(alloc_size, KM_SLEEP);
 	error = copyin((void *)(uintptr_t)ua32.desc, descv,
 	    sizeof(*descv) * ua.num);
 	if (error == 0)
 		error = x86_set_ldt1(l, &ua, descv);
 	*retval = ua.start;
 
-	free(descv, M_TEMP);
+	kmem_free(descv, alloc_size);
 	return error;
 }
 
@@ -654,17 +659,19 @@ x86_64_get_ldt32(struct lwp *l, void *args, register_t *retval)
 	ua.start = ua32.start;
 	ua.num = ua32.num;
 
-	if (ua.num < 0 || ua.num > 8192)
+	if (ua.num < 0 || ua.num > MAX_USERLDT_SLOTS)
 		return EINVAL;
 
-	cp = malloc(ua.num * sizeof(union descriptor), M_TEMP, M_WAITOK);
+	const size_t alloc_size = ua.num * sizeof(union descriptor);
+
+	cp = kmem_alloc(alloc_size, KM_SLEEP);
 	error = x86_get_ldt1(l, &ua, cp);
 	*retval = ua.num;
 	if (error == 0)
 		error = copyout(cp, (void *)(uintptr_t)ua32.desc,
 		    ua.num * sizeof(*cp));
 
-	free(cp, M_TEMP);
+	kmem_free(cp, alloc_size);
 	return error;
 }
 #endif

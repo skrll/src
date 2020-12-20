@@ -1,4 +1,4 @@
-/*	$NetBSD: vmparam.h,v 1.22 2019/03/29 12:51:15 christos Exp $	*/
+/*	$NetBSD: vmparam.h,v 1.24 2020/07/06 08:26:10 rin Exp $	*/
 
 #ifndef _POWERPC_VMPARAM_H_
 #define _POWERPC_VMPARAM_H_
@@ -28,15 +28,18 @@
 #define VM_DEFAULT_ADDRESS_BOTTOMUP(da, sz) \
     round_page((vaddr_t)(da) + (vsize_t)maxdmap)
 
+#if defined(MODULAR) || defined(_MODULE) || !defined(_KERNEL)
 /*
  * If we are a module or a modular kernel, then we need to defined the range
  * of our varible page sizes since BOOKE and OEA use 4KB pages while IBM4XX
  * use 16KB pages.
+ * This is also required for userland by jemalloc.
  */
 #define MIN_PAGE_SHIFT	12			/* BOOKE/OEA */
 #define MAX_PAGE_SHIFT	14			/* IBM4XX */
 #define	MIN_PAGE_SIZE	(1 << MIN_PAGE_SHIFT)
 #define	MAX_PAGE_SIZE	(1 << MAX_PAGE_SHIFT)
+#endif /* MODULAR || _MODULE || !_KERNEL */
 
 #if defined(_MODULE)
 #if defined(_RUMPKERNEL)
@@ -74,7 +77,7 @@ extern const char __USRSTACK;		/* let the linker resolve it */
 
 #endif /* !_MODULE */
 
-#if defined(MODULAR) || defined(_MODULAR)
+#if defined(MODULAR) || defined(_MODULE)
 /*
  * If we are a module or support modules, we need to define a compatible
  * pmap_physseg since IBM4XX uses one.  This will waste a tiny of space

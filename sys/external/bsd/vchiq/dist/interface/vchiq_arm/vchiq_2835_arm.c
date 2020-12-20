@@ -42,6 +42,8 @@
 
 #include <uvm/uvm_extern.h>
 
+#include <arm/cpufunc.h>
+
 #include <arch/arm/broadcom/bcm2835_mbox.h>
 #include <arch/arm/broadcom/bcm2835var.h>
 
@@ -181,7 +183,7 @@ vchiq_platform_init(VCHIQ_STATE_T *state)
 	}
 
 	/* Send the base address of the slots to VideoCore */
-	dsb(); /* Ensure all writes have completed */
+	dsb(sy); /* Ensure all writes have completed */
 
 	bus_dmamap_sync(dma_tag, dma_map, 0, slot_mem_size,
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);

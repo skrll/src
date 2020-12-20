@@ -1,4 +1,4 @@
-/*	$NetBSD: ptrace.h,v 1.16 2019/12/24 14:50:59 kamil Exp $	*/
+/*	$NetBSD: ptrace.h,v 1.18 2020/10/15 17:37:35 mgorny Exp $	*/
 
 #ifndef _POWERPC_PTRACE_H
 #define	_POWERPC_PTRACE_H
@@ -41,7 +41,7 @@
 	case PT_GETVECREGS: \
 	case PT_SETVECREGS:
 
-int ptrace_machdep_dorequest(struct lwp *, struct lwp *, int, void *, int);
+int ptrace_machdep_dorequest(struct lwp *, struct lwp **, int, void *, int);
 int process_machdep_dovecregs(struct lwp *, struct lwp *, struct uio *);
 int process_machdep_validvecregs(struct proc *);
 
@@ -76,9 +76,5 @@ int procfs_machdep_validvecregs(struct lwp *, struct mount *);
 #define PTRACE_BREAKPOINT	((const uint8_t[]) { 0x7f, 0xe0, 0x00, 0x08 })
 #define PTRACE_BREAKPOINT_ASM	__asm __volatile("trap")
 #define PTRACE_BREAKPOINT_SIZE	4
-
-#ifdef _KERNEL
-#define PTRACE_LWP_GETPRIVATE(l) (l)->l_md.md_utf->tf_fixreg[_REG_R2]
-#endif
 
 #endif /* _POWERPC_PTRACE_H */

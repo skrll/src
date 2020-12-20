@@ -1,9 +1,9 @@
-/*	$NetBSD: bozohttpd.h,v 1.60 2019/03/08 03:12:28 mrg Exp $	*/
+/*	$NetBSD: bozohttpd.h,v 1.65 2020/10/15 04:21:53 mrg Exp $	*/
 
 /*	$eterna: bozohttpd.h,v 1.39 2011/11/18 09:21:15 mrg Exp $	*/
 
 /*
- * Copyright (c) 1997-2019 Matthew R. Green
+ * Copyright (c) 1997-2020 Matthew R. Green
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,12 +29,13 @@
  * SUCH DAMAGE.
  *
  */
-#ifndef BOZOHTTOPD_H_
-#define BOZOHTTOPD_H_	1
+#ifndef BOZOHTTPD_H_
+#define BOZOHTTPD_H_	1
 
 #include "netbsd_queue.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <signal.h>
 
 #include <sys/stat.h>
@@ -42,7 +43,11 @@
 #ifndef NO_LUA_SUPPORT
 #include <lua.h>
 #endif
-#include <stdio.h>
+
+#ifndef NO_BLOCKLIST_SUPPORT
+#include <blocklist.h>
+void pfilter_notify(const int, const int);
+#endif
 
 /* QNX provides a lot of NetBSD things in nbutil.h */
 #ifdef HAVE_NBUTIL_H
@@ -117,6 +122,7 @@ typedef struct bozohttpd_t {
 	struct pollfd	*fds;		/* current poll fd set */
 	int		 request_times;	/* # times a request was processed */
 	int		 dir_indexing;	/* handle directories */
+	const char	*dir_readme;	/* include README footer in indexes */
 	int		 hide_dots;	/* hide .* */
 	int		 process_cgi;	/* use the cgi handler */
 	char		*cgibin;	/* cgi-bin directory */
@@ -247,6 +253,9 @@ void	debug__(bozohttpd_t *, int, const char *, ...) BOZO_PRINTFLIKE(3, 4);
 #define have_debug	(1)
 #endif /* NO_DEBUG */
 
+#define BOZO_HTTP_PORT	"80"
+#define BOZO_HTTPS_PORT	"443"
+
 /*
  * bozohttpd special files.  avoid serving these out.
  *
@@ -298,7 +307,7 @@ char	*bozostrdup(bozohttpd_t *, bozo_httpreq_t *, const char *);
 
 #define bozo_noop	do { /* nothing */ } while (/*CONSTCOND*/0)
 
-#define have_all					(1)
+#define have_core					(1)
 
 /* ssl-bozo.c */
 #ifdef NO_SSL_SUPPORT
@@ -306,6 +315,7 @@ char	*bozostrdup(bozohttpd_t *, bozo_httpreq_t *, const char *);
 #define bozo_ssl_set_ciphers(w, x)			bozo_noop
 #define bozo_ssl_init(x)				bozo_noop
 #define bozo_ssl_accept(x)				(0)
+#define bozo_ssl_shutdown(x)				bozo_noop
 #define bozo_ssl_destroy(x)				bozo_noop
 #define have_ssl					(0)
 #else
@@ -313,6 +323,7 @@ void	bozo_ssl_set_opts(bozohttpd_t *, const char *, const char *);
 void	bozo_ssl_set_ciphers(bozohttpd_t *, const char *);
 void	bozo_ssl_init(bozohttpd_t *);
 int	bozo_ssl_accept(bozohttpd_t *);
+void	bozo_ssl_shutdown(bozohttpd_t *);
 void	bozo_ssl_destroy(bozohttpd_t *);
 #define have_ssl					(1)
 #endif
@@ -448,4 +459,4 @@ int bozo_get_version(char */*buf*/, size_t /*size*/);
 
 extern volatile sig_atomic_t	bozo_timeout_hit;
 
-#endif	/* BOZOHTTOPD_H_ */
+#endif	/* BOZOHTTPD_H_ */

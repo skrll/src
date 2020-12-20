@@ -1,4 +1,4 @@
-/*	$NetBSD: ping.c,v 1.3 2020/02/05 14:10:46 pgoyette Exp $	*/
+/*	$NetBSD: ping.c,v 1.5 2020/04/30 10:55:32 christos Exp $	*/
 
 /*-
  * Copyright (c) 2015 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ping.c,v 1.3 2020/02/05 14:10:46 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ping.c,v 1.5 2020/04/30 10:55:32 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>

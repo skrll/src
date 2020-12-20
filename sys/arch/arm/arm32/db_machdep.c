@@ -1,4 +1,4 @@
-/*	$NetBSD: db_machdep.c,v 1.27 2020/03/25 06:17:23 skrll Exp $	*/
+/*	$NetBSD: db_machdep.c,v 1.38 2020/12/03 10:23:45 rin Exp $	*/
 
 /*
  * Copyright (c) 1996 Mark Brinicombe
@@ -34,15 +34,17 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.27 2020/03/25 06:17:23 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.38 2020/12/03 10:23:45 rin Exp $");
 
 #include <sys/param.h>
+
 #include <sys/cpu.h>
 #include <sys/proc.h>
 #include <sys/vnode.h>
 #include <sys/systm.h>
 
 #include <arm/arm32/db_machdep.h>
+#include <arm/arm32/machdep.h>
 #include <arm/cpufunc.h>
 
 #include <ddb/db_access.h>
@@ -58,6 +60,8 @@ __KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.27 2020/03/25 06:17:23 skrll Exp $"
 
 #ifdef _KERNEL
 static long nil;
+
+void db_md_cpuinfo_cmd(db_expr_t, bool, db_expr_t, const char *);
 
 int db_access_und_sp(const struct db_variable *, db_expr_t *, int);
 int db_access_abt_sp(const struct db_variable *, db_expr_t *, int);
@@ -109,29 +113,35 @@ const struct db_variable db_regs[] = {
 const struct db_variable * const db_eregs = db_regs + sizeof(db_regs)/sizeof(db_regs[0]);
 
 const struct db_command db_machine_command_table[] = {
+#ifdef _KERNEL
+#if defined(MULTIPROCESSOR)
+	{ DDB_ADD_CMD("cpu",	db_switch_cpu_cmd,	0,
+			"switch to a different cpu",
+		     	NULL,NULL) },
+#endif /* MULTIPROCESSOR */
+	{ DDB_ADD_CMD("cpuinfo", db_md_cpuinfo_cmd,	0,
+			"Displays the cpuinfo",
+		    NULL, NULL)
+	},
+	{ DDB_ADD_CMD("fault",	db_show_fault_cmd,	0,
+			"Displays the fault registers",
+		     	NULL,NULL) },
+#endif
 	{ DDB_ADD_CMD("frame",	db_show_frame_cmd,	0,
 			"Displays the contents of a trapframe",
 			"[address]",
 			"   address:\taddress of trapfame to display")},
 #ifdef _KERNEL
-	{ DDB_ADD_CMD("fault",	db_show_fault_cmd,	0,
-			"Displays the fault registers",
-		     	NULL,NULL) },
-#if defined(CPU_CORTEXA5) || defined(CPU_CORTEXA7)
+	{ DDB_ADD_CMD("reset",	db_reset_cmd,		0,
+			"Reset the system",
+			NULL,NULL) },
+#ifdef _ARM_ARCH_7
 	{ DDB_ADD_CMD("tlb",	db_show_tlb_cmd,	0,
 			"Displays the TLB",
 		     	NULL,NULL) },
 #endif
-#if defined(MULTIPROCESSOR)
-	{ DDB_ADD_CMD("cpu",	db_switch_cpu_cmd,	0,
-			"switch to a different cpu",
-		     	NULL,NULL) },
-#endif
 #endif /* _KERNEL */
 
-#ifdef ARM32_DB_COMMANDS
-	ARM32_DB_COMMANDS,
-#endif
 	{ DDB_ADD_CMD(NULL,     NULL,           0,NULL,NULL,NULL) }
 };
 
@@ -199,7 +209,18 @@ db_show_fault_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *m
 	    armreg_ttbr_read());
 }
 
-#if defined(CPU_CORTEXA5) || defined(CPU_CORTEXA7)
+void
+db_reset_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *modif)
+{
+	if (cpu_reset_address == NULL) {
+		db_printf("cpu_reset_address is not set\n");
+		return;
+	}
+
+	cpu_reset_address();
+}
+
+#ifdef _ARM_ARCH_7
 static void
 tlb_print_common_header(const char *str)
 {
@@ -236,7 +257,6 @@ struct db_tlbinfo {
 	u_int dti_index;
 };
 
-#if defined(CPU_CORTEXA5)
 static void
 tlb_print_cortex_a5_header(void)
 {
@@ -294,9 +314,7 @@ static const struct db_tlbinfo tlb_cortex_a5_info = {
 	.dti_print_entry = tlb_print_cortex_a5_entry,
 	.dti_index = ARM_A5_TLBDATAOP_INDEX,
 };
-#endif /* CPU_CORTEXA5 */
 
-#if defined(CPU_CORTEXA7)
 static const char tlb_cortex_a7_esizes[8][8] = {
     " 4KB(S)", " 4KB(L)", "64KB(S)", "64KB(L)",
     " 1MB(S)", " 2MB(L)", "16MB(S)", " 1GB(L)",
@@ -373,29 +391,18 @@ static const struct db_tlbinfo tlb_cortex_a7_info = {
 	.dti_print_entry = tlb_print_cortex_a7_entry,
 	.dti_index = ARM_A7_TLBDATAOP_INDEX,
 };
-#endif /* CPU_CORTEXA7 */
 
 static inline const struct db_tlbinfo *
 tlb_lookup_tlbinfo(void)
 {
-#if defined(CPU_CORTEXA5) && defined(CPU_CORTEXA7)
 	const bool cortex_a5_p = CPU_ID_CORTEX_A5_P(curcpu()->ci_arm_cpuid);
 	const bool cortex_a7_p = CPU_ID_CORTEX_A7_P(curcpu()->ci_arm_cpuid);
-#elif defined(CPU_CORTEXA5)
-	const bool cortex_a5_p = true;
-#else
-	const bool cortex_a7_p = true;
-#endif
-#ifdef CPU_CORTEXA5
 	if (cortex_a5_p) {
 		return &tlb_cortex_a5_info;
 	}
-#endif
-#ifdef CPU_CORTEXA7
 	if (cortex_a7_p) {
 		return &tlb_cortex_a7_info;
 	}
-#endif
 	return NULL;
 }
 
@@ -404,6 +411,11 @@ db_show_tlb_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *mod
 {
 	const struct db_tlbinfo * const dti = tlb_lookup_tlbinfo();
 
+	if (dti == NULL) {
+		db_printf("not supported on this CPU\n");
+		return;
+	}
+
 	if (have_addr) {
 		const vaddr_t vpn = (vaddr_t)addr >> L2_S_SHIFT;
 		const u_int va_index = vpn & dti->dti_index;
@@ -411,7 +423,7 @@ db_show_tlb_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *mod
 			armreg_tlbdataop_write(
 			    __SHIFTIN(va_index, dti->dti_index)
 			    | __SHIFTIN(way, ARM_TLBDATAOP_WAY));
-			arm_isb();
+			isb();
 			const uint32_t d0 = armreg_tlbdata0_read();
 			const uint32_t d1 = armreg_tlbdata1_read();
 			if ((d0 & ARM_TLBDATA_VALID)
@@ -432,7 +444,7 @@ db_show_tlb_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *mod
 			armreg_tlbdataop_write(
 			    __SHIFTIN(way, ARM_TLBDATAOP_WAY)
 			    | __SHIFTIN(va_index, dti->dti_index));
-			arm_isb();
+			isb();
 			const uint32_t d0 = armreg_tlbdata0_read();
 			const uint32_t d1 = armreg_tlbdata1_read();
 			if (d0 & ARM_TLBDATA_VALID) {
@@ -447,7 +459,7 @@ db_show_tlb_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *mod
 	}
 	db_printf("%zu TLB valid entries found\n", n);
 }
-#endif /* CPU_CORTEXA5 || CPU_CORTEXA7 */
+#endif
 
 #if defined(MULTIPROCESSOR)
 void
@@ -471,4 +483,66 @@ db_switch_cpu_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *m
 	db_continue_cmd(0, false, 0, "");
 }
 #endif
+
+static void
+show_cpuinfo(struct cpu_info *kci)
+{
+	struct cpu_info cpuinfobuf;
+	cpuid_t cpuid;
+	int i;
+
+	db_read_bytes((db_addr_t)kci, sizeof(cpuinfobuf), (char *)&cpuinfobuf);
+
+	struct cpu_info *ci = &cpuinfobuf;
+	cpuid = ci->ci_cpuid;
+	db_printf("cpu_info=%p, cpu_name=%s\n", kci, ci->ci_cpuname);
+	db_printf("%p cpu[%lu].ci_cpuid        = %lu\n",
+	    &ci->ci_cpuid, cpuid, ci->ci_cpuid);
+	db_printf("%p cpu[%lu].ci_curlwp       = %p\n",
+	    &ci->ci_curlwp, cpuid, ci->ci_curlwp);
+	for (i = 0; i < SOFTINT_COUNT; i++) {
+		db_printf("%p cpu[%lu].ci_softlwps[%d]  = %p\n",
+		    &ci->ci_softlwps[i], cpuid, i, ci->ci_softlwps[i]);
+	}
+	db_printf("%p cpu[%lu].ci_lastintr     = %" PRIu64 "\n",
+	    &ci->ci_lastintr, cpuid, ci->ci_lastintr);
+	db_printf("%p cpu[%lu].ci_want_resched = %d\n",
+	    &ci->ci_want_resched, cpuid, ci->ci_want_resched);
+	db_printf("%p cpu[%lu].ci_cpl          = %d\n",
+	    &ci->ci_cpl, cpuid, ci->ci_cpl);
+	db_printf("%p cpu[%lu].ci_softints     = 0x%08x\n",
+	    &ci->ci_softints, cpuid, ci->ci_softints);
+	db_printf("%p cpu[%lu].ci_intr_depth   = %u\n",
+	    &ci->ci_intr_depth, cpuid, ci->ci_intr_depth);
+
+}
+
+void
+db_md_cpuinfo_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
+    const char *modif)
+{
+#ifdef MULTIPROCESSOR
+	CPU_INFO_ITERATOR cii;
+	struct cpu_info *ci;
+	bool showall = false;
+
+	if (modif != NULL) {
+		for (; *modif != '\0'; modif++) {
+			switch (*modif) {
+			case 'a':
+				showall = true;
+				break;
+			}
+		}
+	}
+
+	if (showall) {
+		for (CPU_INFO_FOREACH(cii, ci)) {
+			show_cpuinfo(ci);
+		}
+	} else
+#endif /* MULTIPROCESSOR */
+		show_cpuinfo(curcpu());
+}
+
 #endif /* _KERNEL */

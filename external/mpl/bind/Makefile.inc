@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.5 2019/09/09 14:40:39 christos Exp $
+#	$NetBSD: Makefile.inc,v 1.9 2020/06/15 01:57:31 christos Exp $
 
 .if !defined(BIND9_MAKEFILE_INC)
 BIND9_MAKEFILE_INC=yes
@@ -13,6 +13,9 @@ CWARNFLAGS.clang+=	-Wno-unused-value -Wno-parentheses \
 			-Wno-atomic-alignment
 
 .include <bsd.own.mk>
+
+LIBUVDIR=${NETBSDSRCDIR}/external/mit/libuv
+LIBUVOBJDIR!=   cd ${LIBUVDIR}/lib && ${PRINTOBJDIR}
 
 NAMED_USE_OPENSSL?=yes
 
@@ -33,6 +36,8 @@ VERSION=${MAJORVER}.${MINORVER}.${PATCHVER}${RELEASETYPE}${RELEASEVER}
 SYSCONFDIR=/etc
 LOCALSTATEDIR=/var
 
+LINTFLAGS+=-Z-include -Z${BIND_SRCDIR}/include/config.h
+CPPFLAGS+=-include ${BIND_SRCDIR}/include/config.h
 CPPFLAGS+=-I${BIND_SRCDIR}/include \
 	-I${IDIST} \
 	-I${IDIST}/lib/bind9/include \
@@ -45,6 +50,7 @@ CPPFLAGS+=-I${BIND_SRCDIR}/include \
 	-DNS_LOCALSTATEDIR=\"${LOCALSTATEDIR}\" \
 	-DNS_SYSCONFDIR=\"${SYSCONFDIR}\" \
 	-DSESSION_KEYFILE=\"${LOCALSTATEDIR}/run/named/session.key\" \
+	-DNAMED_CONFFILE=\"${SYSCONFDIR}/named.conf\" \
 	-DVERSION=\"${VERSION}\" -DBIND9
 
 .if (${USE_INET6} != "no")
@@ -63,12 +69,19 @@ DBG=-g3 -gstabs
 .if !defined(LIB) || empty(LIB)
 # NOTE: the order of these libraries is important...
 .if defined(NAMED_DEBUG)
-LDADD+=		-lbind9_g -lisccfg_g -ldns_g -lns_g -lirs_g -lisccc_g -lisc_g -lz_g
+LDADD+=		-lbind9_g -lisccfg_g -ldns_g -lns_g -lirs_g
+LDADD+=		-lisccc_g -lisc_g
+LDADD+=		-L${LIBUVOBJDIR} -luv_g
+LDADD+=		-lkvm_g -lz_g
 .else
 LDADD+=		-lbind9 -lisccfg -ldns -lns -lirs
 DPADD+=		${LIBBIND9} ${LIBISCCFG} ${LIBDNS} ${LIBNS} ${LIBIRS}
-LDADD+=		-lisccc -lisc -lz
-DPADD+=		${LIBISCCC} ${LIBISC} ${LIBZ}
+LDADD+=		-lisccc -lisc 
+LDADD+=		-L${LIBUVOBJDIR} -luv
+LDADD+=		-lkvm -lz
+DPADD+=		${LIBISCCC} ${LIBISC}
+DPADD+=		${LIBUVOBJDIR}/libuv.a
+DPADD+=		${LIBKVM} ${LIBZ}
 .endif
 .else
 CPPFLAGS+= -DLIBINTERFACE=${LIBINTERFACE} \
@@ -77,8 +90,8 @@ CPPFLAGS+= -DLIBINTERFACE=${LIBINTERFACE} \
 #CPPFLAGS+= -DUSE_MEMIMPREGISTER -DUSE_APPIMPREGISTER -DUSE_SOCKETIMPREGISTER \
 #    -DUSE_TIMERIMPREGISTER
 
-LDADD+=-lblacklist
-DPADD+=${LIBBLACKLIST}
+LDADD+=-lblocklist
+DPADD+=${LIBBLOCKLIST}
 
 .if ${NAMED_USE_PTHREADS} == "yes"
 # XXX: Not ready yet

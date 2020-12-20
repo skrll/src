@@ -1,4 +1,4 @@
-/* 	$NetBSD: config.c,v 1.12 2011/08/31 13:32:36 joerg Exp $	*/
+/* 	$NetBSD: config.c,v 1.14 2020/11/14 09:11:55 mlelstv Exp $	*/
 
 /*-
  * Copyright (c) 2007 Juan Romero Pardines.
@@ -27,9 +27,11 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: config.c,v 1.12 2011/08/31 13:32:36 joerg Exp $");
+__RCSID("$NetBSD: config.c,v 1.14 2020/11/14 09:11:55 mlelstv Exp $");
 #endif /* not lint */
 
+#include <inttypes.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -107,8 +109,8 @@ config_dict_add_prop(const char *key, char *value)
 			err(EXIT_FAILURE, "sensordict");
 	}
 
-	if (!prop_dictionary_set_cstring(sensordict, key, value))
-		err(EXIT_FAILURE, "prop_dict_set_cstring");
+	if (!prop_dictionary_set_string(sensordict, key, value))
+		err(EXIT_FAILURE, "prop_dict_set_string");
 }
 
 /*
@@ -134,7 +136,7 @@ config_dict_mark(void)
 }
 
 /*
- * Only used for debugging purposses.
+ * Show raw data
  */
 void
 config_dict_dump(prop_dictionary_t d)
@@ -144,6 +146,81 @@ config_dict_dump(prop_dictionary_t d)
 	buf = prop_dictionary_externalize(d);
 	(void)printf("%s", buf);
 	free(buf);
+}
+
+static void
+display_object(prop_object_t obj, bool nflag)
+{
+	char *xml;
+	prop_object_t next_obj;
+	prop_object_iterator_t iter;
+
+	if (obj == NULL)
+		exit(EXIT_FAILURE);
+	switch (prop_object_type(obj)) {
+	case PROP_TYPE_BOOL:
+		printf("%s\n", prop_bool_true(obj) ? "true" : "false");
+		break;
+	case PROP_TYPE_NUMBER:
+		printf("%" PRId64 "\n", prop_number_signed_value(obj));
+		break;
+	case PROP_TYPE_STRING:
+		printf("%s\n", prop_string_value(obj));
+		break;
+	case PROP_TYPE_DICTIONARY:
+		xml = prop_dictionary_externalize(obj);
+		printf("%s", xml);
+		free(xml);
+		break;
+	case PROP_TYPE_ARRAY:
+		iter = prop_array_iterator(obj);
+		if (!nflag)
+			printf("Array:\n");
+		while ((next_obj = prop_object_iterator_next(iter)) != NULL)
+			display_object(next_obj, nflag);
+		break;
+	default:
+		errx(EXIT_FAILURE, "Unhandled type %d", prop_object_type(obj));
+	}
+}
+
+void
+config_dict_extract(prop_dictionary_t dict, const char *prop, bool nflag)
+{
+	char *s, *p, *cur, *ep = NULL;
+	prop_object_t obj;
+	unsigned long ind;
+
+	obj = dict;
+	cur = NULL;
+	s = strdup(prop);
+	p = strtok_r(s, "/", &ep);
+	while (p) {
+		cur = p;
+		p = strtok_r(NULL, "/", &ep);
+
+		switch (prop_object_type(obj)) {
+		case PROP_TYPE_DICTIONARY:
+			obj = prop_dictionary_get(obj, cur);
+			if (obj == NULL)
+				exit(EXIT_FAILURE);
+			break;
+		case PROP_TYPE_ARRAY:
+			ind = strtoul(cur, NULL, 0);
+			obj = prop_array_get(obj, ind);
+			if (obj == NULL)
+				exit(EXIT_FAILURE);
+			break;
+		default:
+			errx(EXIT_FAILURE, "Select neither dict nor array with"
+			" `%s'", cur);
+		}
+	}
+
+	if (obj != NULL && cur != NULL)
+		display_object(obj, nflag);
+
+	free(s);
 }
 
 /*
@@ -258,7 +335,7 @@ config_dict_destroy(prop_dictionary_t d)
 
 	 while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		 prop_dictionary_remove(d,
-		     prop_dictionary_keysym_cstring_nocopy(obj));
+		     prop_dictionary_keysym_value(obj));
 		 prop_object_iterator_reset(iter);
 	 }
 
@@ -292,7 +369,7 @@ config_devblock_add(const char *key, prop_dictionary_t kdict)
 	SLIST_FOREACH(sb, &sensor_block_list, sb_head) {
 		/* get the index object value from configuration */
 		lindex = prop_dictionary_get(sb->dict, "index");
-		sensor = prop_string_cstring_nocopy(lindex);
+		sensor = prop_string_value(lindex);
 
 		iter = prop_array_iterator(array);
 		if (!iter)
@@ -407,7 +484,7 @@ config_devblock_getdict(const char *dvname, const char *sensor_key)
 
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		obj2 = prop_dictionary_get(obj, "index");
-		if (prop_string_equals_cstring(obj2, sensor_key))
+		if (prop_string_equals_string(obj2, sensor_key))
 			break;
 	}
 
@@ -425,7 +502,8 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 				  const char *sensor)
 {
 	prop_object_t obj, obj2, obj3;
-	char *strval, *endptr;
+	const char *strval;
+	char *endptr;
 	double val;
 
 	/*
@@ -435,7 +513,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 	if (obj) {
 		obj2 = prop_dictionary_get(ksdict, "allow-rfact");
 		if (prop_bool_true(obj2)) {
-			strval = prop_string_cstring(obj);
+			strval = prop_string_value(obj);
 			val = strtod(strval, &endptr);
 			if (*endptr != '\0')
 				config_errmsg(VALUE_ERR, "rfact", sensor);
@@ -454,7 +532,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 		obj2 = prop_dictionary_get(ksdict, "want-percentage");
 		obj3 = prop_dictionary_get(ksdict, "monitoring-supported");
 		if (prop_bool_true(obj2) && prop_bool_true(obj3)) {
-			strval = prop_string_cstring(obj);
+			strval = prop_string_value(obj);
 			val = strtod(strval, &endptr);
 			if ((*endptr != '\0') || (val < 0 || val > 100))
 				config_errmsg(VALUE_ERR,
@@ -464,7 +542,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 			 * Convert the value to a valid percentage.
 			 */
 			obj = prop_dictionary_get(ksdict, "max-value");
-			val = (val / 100) * prop_number_integer_value(obj);
+			val = (val / 100) * prop_number_signed_value(obj);
 
 			if (!prop_dictionary_set_uint32(csdict,
 						       "critical-capacity",
@@ -482,7 +560,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 		obj2 = prop_dictionary_get(ksdict, "want-percentage");
 		obj3 = prop_dictionary_get(ksdict, "monitoring-supported");
 		if (prop_bool_true(obj2) && prop_bool_true(obj3)) {
-			strval = prop_string_cstring(obj);
+			strval = prop_string_value(obj);
 			val = strtod(strval, &endptr);
 			if ((*endptr != '\0') || (val < 0 || val > 100))
 				config_errmsg(VALUE_ERR,
@@ -492,7 +570,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 			 * Convert the value to a valid percentage.
 			 */
 			obj = prop_dictionary_get(ksdict, "max-value");
-			val = (val / 100) * prop_number_integer_value(obj);
+			val = (val / 100) * prop_number_signed_value(obj);
 
 			if (!prop_dictionary_set_uint32(csdict,
 						       "warning-capacity",
@@ -510,7 +588,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 		obj2 = prop_dictionary_get(ksdict, "want-percentage");
 		obj3 = prop_dictionary_get(ksdict, "monitoring-supported");
 		if (prop_bool_true(obj2) && prop_bool_true(obj3)) {
-			strval = prop_string_cstring(obj);
+			strval = prop_string_value(obj);
 			val = strtod(strval, &endptr);
 			if ((*endptr != '\0') || (val < 0 || val > 100))
 				config_errmsg(VALUE_ERR,
@@ -520,7 +598,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 			 * Convert the value to a valid percentage.
 			 */
 			obj = prop_dictionary_get(ksdict, "max-value");
-			val = (val / 100) * prop_number_integer_value(obj);
+			val = (val / 100) * prop_number_signed_value(obj);
 
 			if (!prop_dictionary_set_uint32(csdict,
 						       "high-capacity",
@@ -538,7 +616,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 		obj2 = prop_dictionary_get(ksdict, "want-percentage");
 		obj3 = prop_dictionary_get(ksdict, "monitoring-supported");
 		if (prop_bool_true(obj2) && prop_bool_true(obj3)) {
-			strval = prop_string_cstring(obj);
+			strval = prop_string_value(obj);
 			val = strtod(strval, &endptr);
 			if ((*endptr != '\0') || (val < 0 || val > 100))
 				config_errmsg(VALUE_ERR,
@@ -548,7 +626,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 			 * Convert the value to a valid percentage.
 			 */
 			obj = prop_dictionary_get(ksdict, "max-value");
-			val = (val / 100) * prop_number_integer_value(obj);
+			val = (val / 100) * prop_number_signed_value(obj);
 
 			if (!prop_dictionary_set_uint32(csdict,
 						       "maximum-capacity",
@@ -567,7 +645,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 		if (!prop_bool_true(obj2))
 			config_errmsg(PROP_ERR, "critical-max", sensor);
 
-		strval = prop_string_cstring(obj);
+		strval = prop_string_value(obj);
 		obj = convert_val_to_pnumber(ksdict, "critical-max",
 					     sensor, strval);
 		if (!prop_dictionary_set(csdict, "critical-max", obj))
@@ -583,7 +661,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 		if (!prop_bool_true(obj2))
 			config_errmsg(PROP_ERR, "critical-min", sensor);
 
-		strval = prop_string_cstring(obj);
+		strval = prop_string_value(obj);
 		obj = convert_val_to_pnumber(ksdict, "critical-min",
 					     sensor, strval);
 		if (!prop_dictionary_set(csdict, "critical-min", obj))
@@ -599,7 +677,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 		if (!prop_bool_true(obj2))
 			config_errmsg(PROP_ERR, "warning-max", sensor);
 
-		strval = prop_string_cstring(obj);
+		strval = prop_string_value(obj);
 		obj = convert_val_to_pnumber(ksdict, "warning-max",
 					     sensor, strval);
 		if (!prop_dictionary_set(csdict, "warning-max", obj))
@@ -614,7 +692,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
 		if (!prop_bool_true(obj2))
 			config_errmsg(PROP_ERR, "warning-min", sensor);
 
-		strval = prop_string_cstring(obj);
+		strval = prop_string_value(obj);
 		obj = convert_val_to_pnumber(ksdict, "warning-min",
 					     sensor, strval);
 		if (!prop_dictionary_set(csdict, "warning-min", obj))
@@ -627,7 +705,7 @@ config_devblock_check_sensorprops(prop_dictionary_t ksdict,
  */
 prop_number_t
 convert_val_to_pnumber(prop_dictionary_t kdict, const char *prop,
-		       const char *sensor, char *value)
+		       const char *sensor, const char *value)
 {
 	prop_object_t obj;
 	prop_number_t num;
@@ -642,13 +720,13 @@ convert_val_to_pnumber(prop_dictionary_t kdict, const char *prop,
 	 * Not allowed in battery sensors.
 	 */
 	obj = prop_dictionary_get(kdict, "type");
-	if (prop_string_equals_cstring(obj, "Battery capacity"))
+	if (prop_string_equals_string(obj, "Battery capacity"))
 		config_errmsg(PROP_ERR, prop, sensor);
 
 	/*
 	 * Make the conversion for sensor's type.
 	 */
-	if (prop_string_equals_cstring(obj, "Temperature")) {
+	if (prop_string_equals_string(obj, "Temperature")) {
 		tmp = strchr(value, 'C');
 		if (tmp)
 			celsius = true;
@@ -678,26 +756,26 @@ convert_val_to_pnumber(prop_dictionary_t kdict, const char *prop,
 
 		/* convert to microKelvin */
 		val = val * 1000000 + 273150000;
-		num = prop_number_create_unsigned_integer(val);
+		num = prop_number_create_unsigned(val);
 		free(strval);
 
-	} else if (prop_string_equals_cstring(obj, "Fan") ||
-		   prop_string_equals_cstring(obj, "Integer")) {
+	} else if (prop_string_equals_string(obj, "Fan") ||
+		   prop_string_equals_string(obj, "Integer")) {
 		/* no conversion */
 		val = strtod(value, &endptr);
 		if (*endptr != '\0')
 			config_errmsg(VALUE_ERR, prop, sensor);
 
-		num = prop_number_create_unsigned_integer(val);
+		num = prop_number_create_unsigned(val);
 
 	} else {
 		obj = prop_dictionary_get(kdict, "max-value");
 		if (obj)
-			max = prop_number_integer_value(obj);
+			max = prop_number_signed_value(obj);
 
 		obj = prop_dictionary_get(kdict, "min-value");
 		if (obj)
-			min = prop_number_integer_value(obj);
+			min = prop_number_signed_value(obj);
 
 		val = strtod(value, &endptr);
 		if (*endptr != '\0')
@@ -720,7 +798,7 @@ convert_val_to_pnumber(prop_dictionary_t kdict, const char *prop,
 		if (min && val < min)
 			config_errmsg(VALUE_ERR, prop, sensor);
 
-		num = prop_number_create_integer(val);
+		num = prop_number_create_signed(val);
 	}
 
 	return num;

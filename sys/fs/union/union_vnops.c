@@ -1,4 +1,4 @@
-/*	$NetBSD: union_vnops.c,v 1.72 2020/02/23 15:46:41 ad Exp $	*/
+/*	$NetBSD: union_vnops.c,v 1.74 2020/08/18 09:44:07 hannken Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993, 1994, 1995
@@ -72,7 +72,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: union_vnops.c,v 1.72 2020/02/23 15:46:41 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: union_vnops.c,v 1.74 2020/08/18 09:44:07 hannken Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -151,6 +151,7 @@ const struct vnodeopv_entry_desc union_vnodeop_entries[] = {
 	{ &vop_open_desc, union_open },			/* open */
 	{ &vop_close_desc, union_close },		/* close */
 	{ &vop_access_desc, union_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, union_getattr },		/* getattr */
 	{ &vop_setattr_desc, union_setattr },		/* setattr */
 	{ &vop_read_desc, union_read },			/* read */
@@ -708,7 +709,7 @@ union_access(void *v)
 	struct vop_access_args /* {
 		struct vnodeop_desc *a_desc;
 		struct vnode *a_vp;
-		int a_mode;
+		accmode_t a_accmode;
 		kauth_cred_t a_cred;
 	} */ *ap = v;
 	struct vnode *vp = ap->a_vp;
@@ -721,7 +722,7 @@ union_access(void *v)
 	 * unless the file is a socket, fifo, or a block or
 	 * character device resident on the file system.
 	 */
-	if (ap->a_mode & VWRITE) {
+	if (ap->a_accmode & VWRITE) {
 		switch (vp->v_type) {
 		case VDIR:
 		case VLNK:
@@ -1492,13 +1493,29 @@ union_readdir(void *v)
 		int a_ncookies;
 	} */ *ap = v;
 	struct union_node *un = VTOUNION(ap->a_vp);
-	struct vnode *uvp = un->un_uppervp;
+	struct vnode *vp;
+	int dolock, error;
 
-	if (uvp == NULLVP)
-		return (0);
+	if (un->un_hooknode) {
+		KASSERT(un->un_uppervp == NULLVP);
+		KASSERT(un->un_lowervp != NULLVP);
+		vp = un->un_lowervp;
+		dolock = 1;
+	} else {
+		vp = un->un_uppervp;
+		dolock = 0;
+	}
+	if (vp == NULLVP)
+		return 0;
 
-	ap->a_vp = uvp;
-	return (VCALL(uvp, VOFFSET(vop_readdir), ap));
+	if (dolock)
+		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+	ap->a_vp = vp;
+	error = VCALL(vp, VOFFSET(vop_readdir), ap);
+	if (dolock)
+		VOP_UNLOCK(vp);
+
+	return error;
 }
 
 int

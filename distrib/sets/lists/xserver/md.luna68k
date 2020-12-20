@@ -1,4 +1,4 @@
-# $NetBSD: md.luna68k,v 1.20 2019/10/26 07:31:39 uki Exp $
+# $NetBSD: md.luna68k,v 1.22 2020/11/10 21:47:41 kamil Exp $
 ./usr/X11R7/bin/X					xserver-xorg-server-bin	xorg
 ./usr/X11R7/bin/Xorg					xserver-xorg-server-bin	xorg
 ./usr/X11R7/bin/cvt					xserver-xorg-server-bin	xorg

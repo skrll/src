@@ -1,4 +1,4 @@
-/*	$NetBSD: identcpu.c,v 1.105 2020/04/09 02:07:01 christos Exp $	*/
+/*	$NetBSD: identcpu.c,v 1.118 2020/10/27 08:57:11 ryo Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.105 2020/04/09 02:07:01 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.118 2020/10/27 08:57:11 ryo Exp $");
 
 #include "opt_xen.h"
 
@@ -38,6 +38,14 @@ __KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.105 2020/04/09 02:07:01 christos Exp 
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/cpu.h>
+
+#include <crypto/aes/aes_impl.h>
+#include <crypto/aes/arch/x86/aes_ni.h>
+#include <crypto/aes/arch/x86/aes_sse2.h>
+#include <crypto/aes/arch/x86/aes_ssse3.h>
+#include <crypto/aes/arch/x86/aes_via.h>
+#include <crypto/chacha/chacha_impl.h>
+#include <crypto/chacha/arch/x86/chacha_sse2.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -50,10 +58,10 @@ __KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.105 2020/04/09 02:07:01 christos Exp 
 #include <x86/cpuvar.h>
 #include <x86/fpu.h>
 
-#include <x86/x86/vmtreg.h>	/* for vmt_hvcall() */
-#include <x86/x86/vmtvar.h>	/* for vmt_hvcall() */
+#include <dev/vmt/vmtreg.h>	/* for vmt_hvcall() */
+#include <dev/vmt/vmtvar.h>	/* for vmt_hvcall() */
 
-#ifndef XEN
+#ifndef XENPV
 #include "hyperv.h"
 #if NHYPERV > 0
 #include <x86/x86/hypervvar.h>
@@ -62,7 +70,7 @@ __KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.105 2020/04/09 02:07:01 christos Exp 
 
 static const struct x86_cache_info intel_cpuid_cache_info[] = INTEL_CACHE_INFO;
 
-static const struct x86_cache_info amd_cpuid_l2l3cache_assoc_info[] = 
+static const struct x86_cache_info amd_cpuid_l2l3cache_assoc_info[] =
 	AMD_L2L3CACHE_INFO;
 
 int cpu_vendor;
@@ -82,7 +90,7 @@ const int i386_nocpuid_cpus[] = {
 	CPUVENDOR_INTEL, CPUCLASS_386,	/* CPU_386SX */
 	CPUVENDOR_INTEL, CPUCLASS_386,	/* CPU_386   */
 	CPUVENDOR_INTEL, CPUCLASS_486,	/* CPU_486SX */
-	CPUVENDOR_INTEL, CPUCLASS_486, 	/* CPU_486   */
+	CPUVENDOR_INTEL, CPUCLASS_486,	/* CPU_486   */
 	CPUVENDOR_CYRIX, CPUCLASS_486,	/* CPU_486DLC */
 	CPUVENDOR_CYRIX, CPUCLASS_486,	/* CPU_6x86 */
 	CPUVENDOR_NEXGEN, CPUCLASS_386,	/* CPU_NX586 */
@@ -174,7 +182,7 @@ cpu_probe_intel_cache(struct cpu_info *ci)
 	int iterations, i, j;
 	uint8_t desc;
 
-	if (cpuid_level >= 2) { 
+	if (cpuid_level >= 2) {
 		/* Parse the cache info from `cpuid leaf 2', if we have it. */
 		x86_cpuid(2, descs);
 		iterations = descs[0] & 0xff;
@@ -461,7 +469,7 @@ cpu_probe_cyrix_cmn(struct cpu_info *ci)
 	 * even be in here, it should be in there. XXX
 	 */
 	uint8_t c3;
-#ifndef XEN
+#ifndef XENPV
 	extern int clock_broken_latch;
 
 	switch (ci->ci_signature) {
@@ -488,7 +496,7 @@ cpu_probe_cyrix_cmn(struct cpu_info *ci)
 	 */
 	cyrix_write_reg(0xc2, cyrix_read_reg(0xc2) | 0x08);
 
-	/* 
+	/*
 	 * Do not disable the TSC on the Geode GX, it's reported to
 	 * work fine.
 	 */
@@ -525,7 +533,7 @@ cpu_probe_winchip(struct cpu_info *ci)
 
 	if (cpu_vendor != CPUVENDOR_IDT ||
 	    CPUID_TO_FAMILY(ci->ci_signature) != 5)
-	    	return;
+		return;
 
 	/* WinChip C6 */
 	if (CPUID_TO_MODEL(ci->ci_signature) == 4)
@@ -556,7 +564,7 @@ cpu_probe_c3(struct cpu_info *ci)
 		 *
 		 * Quoting from page 3-4 of: "VIA Eden ESP Processor Datasheet"
 		 * http://www.via.com.tw/download/mainboards/6/14/Eden20v115.pdf
-		 * 
+		 *
 		 * 1. The CMPXCHG8B instruction is provided and always enabled,
 		 *    however, it appears disabled in the corresponding CPUID
 		 *    function bit 0 to avoid a bug in an early version of
@@ -646,7 +654,7 @@ cpu_probe_c3(struct cpu_info *ci)
 	if (ci->ci_feat_val[4] & CPUID_VIA_DO_ACE) {
 		msr = rdmsr(MSR_VIA_ACE);
 		wrmsr(MSR_VIA_ACE, msr & ~VIA_ACE_ALTINST);
-	} 
+	}
 
 	/*
 	 * Determine L1 cache/TLB info.
@@ -714,7 +722,7 @@ cpu_probe_geode(struct cpu_info *ci)
 
 	if (memcmp("Geode by NSC", ci->ci_vendor, 12) != 0 ||
 	    CPUID_TO_FAMILY(ci->ci_signature) != 5)
-	    	return;
+		return;
 
 	cpu_probe_cyrix_cmn(ci);
 	cpu_probe_amd_cache(ci);
@@ -916,7 +924,7 @@ cpu_probe(struct cpu_info *ci)
 		}
 
 		/* CLFLUSH line size is next 8 bits */
-		if (ci->ci_feat_val[0] & CPUID_CFLUSH)
+		if (ci->ci_feat_val[0] & CPUID_CLFSH)
 			ci->ci_cflush_lsize
 			    = __SHIFTOUT(miscbytes, CPUID_CLFLUSH_SIZE) << 3;
 		ci->ci_initapicid = __SHIFTOUT(miscbytes, CPUID_LOCAL_APIC_ID);
@@ -974,7 +982,7 @@ cpu_probe(struct cpu_info *ci)
 		cpu_probe_fpu(ci);
 	}
 
-#ifndef XEN
+#ifndef XENPV
 	x86_cpu_topology(ci);
 #endif
 
@@ -991,10 +999,29 @@ cpu_probe(struct cpu_info *ci)
 			cpu_feature[i] = ci->ci_feat_val[i];
 		}
 		identify_hypervisor();
-#ifndef XEN
+#ifndef XENPV
 		/* Early patch of text segment. */
 		x86_patch(true);
 #endif
+
+		/* AES */
+#ifdef __x86_64__	/* not yet implemented on i386 */
+		if (cpu_feature[1] & CPUID2_AESNI)
+			aes_md_init(&aes_ni_impl);
+		else
+#endif
+		if (cpu_feature[4] & CPUID_VIA_HAS_ACE)
+			aes_md_init(&aes_via_impl);
+		else if (i386_has_sse && i386_has_sse2 &&
+		    (cpu_feature[1] & CPUID2_SSE3) &&
+		    (cpu_feature[1] & CPUID2_SSSE3))
+			aes_md_init(&aes_ssse3_impl);
+		else if (i386_has_sse && i386_has_sse2)
+			aes_md_init(&aes_sse2_impl);
+
+		/* ChaCha */
+		if (i386_has_sse && i386_has_sse2)
+			chacha_md_init(&chacha_sse2_impl);
 	} else {
 		/*
 		 * If not first. Warn about cpu_feature mismatch for
@@ -1130,7 +1157,7 @@ identify_hypervisor(void)
 			} else if (memcmp(hv_vendor, "KVMKVMKVM\0\0\0", 12) == 0)
 				vm_guest = VM_GUEST_KVM;
 			else if (memcmp(hv_vendor, "XenVMMXenVMM", 12) == 0)
-				vm_guest = VM_GUEST_XEN;
+				vm_guest = VM_GUEST_XENHVM;
 			/* FreeBSD bhyve: "bhyve bhyve " */
 			/* OpenBSD vmm:   "OpenBSDVMM58" */
 			/* NetBSD nvmm:   "___ NVMM ___" */

@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.564 2020/03/28 08:35:36 isaki Exp $
+# $NetBSD: GENERIC,v 1.580 2020/09/27 13:48:49 roy Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.564 $"
+#ident		"GENERIC-$Revision: 1.580 $"
 
 maxusers	64		# estimated number of users
 
@@ -74,10 +74,12 @@ options 	USERCONF	# userconf(4) support
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
 # CPU-related options
-#options 	USER_LDT	# User-settable LDT, used by Wine
+options 	USER_LDT	# User-settable LDT, used by Wine
 options 	SVS		# Separate Virtual Space
-makeoptions	SPECTRE_V2_GCC_MITIGATION=1	# GCC Spectre variant 2
-						# migitation
+options 	PCPU_IDT	# Per CPU IDTs
+
+# GCC Spectre variant 2 mitigation
+makeoptions	SPECTRE_V2_GCC_MITIGATION=1
 options 	SPECTRE_V2_GCC_MITIGATION
 
 # CPU features
@@ -88,6 +90,15 @@ hyperv0 	at cpu0		# Microsoft Hyper-V
 #odcm0		at cpu0		# On-demand clock modulation
 powernow0	at cpu0		# AMD PowerNow! and Cool'n'Quiet (non-ACPI)
 vmt0		at cpu0		# VMware Tools
+
+#Xen PV support for HVM guests
+options 	XENPVHVM
+options 	XEN
+hypervisor*	at mainbus?		# Xen hypervisor
+xenbus*	 	at hypervisor?		# Xen virtual bus
+xencons*	at hypervisor?		# Xen virtual console
+xennet*  	at xenbus?		# Xen virtual network interface
+xbd*		at xenbus?		# Xen virtual block device
 
 # Alternate buffer queue strategies for better responsiveness under high
 # disk I/O load.
@@ -112,12 +123,15 @@ options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #options 	KGDB		# remote debugger
 #options 	KGDB_DEVNAME="\"com\"",KGDB_DEVADDR=0x3f8,KGDB_DEVRATE=9600
 makeoptions	DEBUG="-g"	# compile full symbol table for CTF
-#options 	KUBSAN		# Kernel Undefined Behavior Sanitizer (kUBSan)
-#options 	UBSAN_ALWAYS_FATAL	# (optional) Panic on all kUBSan reports
+options DDB_COMMANDONENTER="trace;show registers"
 #options 	SYSCALL_STATS	# per syscall counts
 #options 	SYSCALL_TIMES	# per syscall times
 #options 	SYSCALL_TIMES_HASCOUNTER	# use 'broken' rdtsc (soekris)
 options 	KDTRACE_HOOKS	# kernel DTrace hooks
+
+# Kernel Undefined Behavior Sanitizer (kUBSan).
+#options 	KUBSAN			# mandatory
+#options 	UBSAN_ALWAYS_FATAL	# optional: panic on all kUBSan reports
 
 # Kernel Address Sanitizer (kASan). You need to disable SVS to use it.
 # The quarantine is optional and can help KASAN find more use-after-frees.
@@ -134,19 +148,22 @@ options 	KDTRACE_HOOKS	# kernel DTrace hooks
 #options 	KCSAN_PANIC	# optional
 
 # Kernel Memory Sanitizer (kMSan). You need to disable SVS and kernel modules
-# to use it. The quarantine is optional and can help KMSAN find uninitialized
+# to use it. POOL_NOCACHE is optional and can help KMSAN find uninitialized
 # memory in pool caches. Note that KMSAN requires at least 4GB of RAM.
 #makeoptions 	KMSAN=1		# mandatory
 #options 	KMSAN		# mandatory
 #no options	SVS		# mandatory
 #no options 	MODULAR		# mandatory
 #no options 	MODULAR_DEFAULT_AUTOLOAD	# mandatory
-#options	POOL_QUARANTINE	# optional
+#options 	POOL_NOCACHE	# optional
 #options 	KMSAN_PANIC	# optional
 
 # Kernel Code Coverage Driver.
 #makeoptions	KCOV=1
 #options 	KCOV
+
+# Fault Injection Driver.
+#options 	FAULT
 
 # Compatibility options
 # x86_64 never shipped with a.out binaries; the two options below are
@@ -163,8 +180,6 @@ include 	"conf/compat_netbsd15.config"
 
 options 	COMPAT_OSSAUDIO
 options 	COMPAT_NETBSD32
-options 	COMPAT_LINUX
-options 	COMPAT_LINUX32	# req. COMPAT_LINUX and COMPAT_NETBSD32
 options 	EXEC_ELF32
 
 # Wedge support
@@ -187,6 +202,7 @@ options 	WAPBL		# File system journaling support
 # Note that UFS_DIRHASH is suspected of causing kernel memory corruption.
 # It is not recommended for general use.
 #options 	UFS_DIRHASH	# UFS Large Directory Hashing - Experimental
+options		UFS_ACL		# UFS Access Control Lists
 #options 	FFS_NO_SNAPSHOT	# No FFS snapshot support
 options 	UFS_EXTATTR	# Extended attribute support for UFS1
 # ext2fs
@@ -444,6 +460,7 @@ nouveaufb*	at nouveaufbbus?
 # Cryptographic Devices
 
 # PCI cryptographic devices
+amdccp*	at pci? dev ? function ?	# AMD Cryptographic Coprocessor
 hifn*	at pci? dev ? function ?	# Hifn 7755/7811/795x
 #qat*	at pci? dev ? function ?	# Intel QuickAssist
 ubsec*	at pci? dev ? function ?	# Broadcom 5501/5601/580x/582x
@@ -794,6 +811,7 @@ fxp*	at pci? dev ? function ?	# Intel EtherExpress PRO 10+/100B
 gem*	at pci? dev ? function ?	# Apple GMAC and Sun ERI gigabit enet
 gsip*	at pci? dev ? function ?	# NS83820 Gigabit Ethernet
 hme*	at pci? dev ? function ?	# Sun Microelectronics STP2002-STQ
+iavf*	at pci? dev ? function ?	# Intel Adaptive Virtual Function
 ipw*	at pci? dev ? function ?	# Intel PRO/Wireless 2100
 iwi*	at pci? dev ? function ?	# Intel PRO/Wireless 2200BG
 iwm*	at pci? dev ? function ?	# Intel Centrino 7260
@@ -1125,8 +1143,8 @@ options 	RAID_AUTOCONFIG		# auto-configuration of RAID components
 pseudo-device	fss			# file system snapshot device
 
 pseudo-device	md			# memory disk device (ramdisk)
-options 	MEMORY_DISK_HOOKS	# enable root ramdisk
-options 	MEMORY_DISK_DYNAMIC	# loaded via kernel module(7)
+options		MEMORY_DISK_HOOKS	# enable md specific hooks
+options 	MEMORY_DISK_DYNAMIC	# enable dynamic resizing
 
 pseudo-device	vnd			# disk-like interface to files
 options 	VND_COMPRESSION		# compressed vnd(4)
@@ -1150,7 +1168,7 @@ pseudo-device	ipsecif			# tunnel interface for routing based ipsec
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	l2tp			# L2TPv3 interface
 pseudo-device	npf			# NPF packet filter

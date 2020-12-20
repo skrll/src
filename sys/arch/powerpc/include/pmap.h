@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.38 2011/06/20 21:45:16 matt Exp $	*/
+/*	$NetBSD: pmap.h,v 1.40 2020/07/06 08:17:01 rin Exp $	*/
 
 #ifndef _POWERPC_PMAP_H_
 #define _POWERPC_PMAP_H_
@@ -30,11 +30,12 @@
  */
 #ifndef __HAVE_VM_PAGE_MD
 #define __HAVE_VM_PAGE_MD
+#define VM_MDPAGE_INIT(pg) __nothing
 
 struct vm_page_md {
 	uintptr_t mdpg_dummy[5];
 };
-#endif /* !__HVE_VM_PAGE_MD */
+#endif /* !__HAVE_VM_PAGE_MD */
 
 __CTASSERT(sizeof(struct vm_page_md) == sizeof(uintptr_t)*5);
 

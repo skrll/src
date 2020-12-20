@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.21 2018/12/31 11:14:06 mrg Exp $
+#	$NetBSD: Makefile,v 1.23 2020/08/05 15:48:09 tsutsui Exp $
 
 .include <bsd.own.mk>
 
@@ -16,8 +16,7 @@ PROG=	Xnest
 SRCS=		Args.c Color.c Cursor.c Display.c Events.c Font.c \
 		GC.c GCOps.c Handlers.c Init.c Keyboard.c \
 		Pixmap.c Pointer.c Screen.c Visual.c Window.c \
-		stubs.c miinitext.c \
-		fbcmap_mi.c
+		stubs.c miinitext.c
 
 CPPFLAGS+=	-I${X11SRCDIR.xorg-server}/hw/xnest \
 		-I${DESTDIR}${X11INCDIR}/X11 \
@@ -30,7 +29,7 @@ CPPFLAGS+=	-I${X11SRCDIR.xorg-server}/hw/xnest \
 		-I${DESTDIR}${X11INCDIR}/X11/extensions \
 		-I${DESTDIR}${X11INCDIR}/pixman-1 \
 		-I${X11SRCDIR.xorg-server}/../include \
-		-I${X11INCS.DIX}
+		${X11INCS.DIX}
 
 CPPFLAGS+=	${X11FLAGS.OS_DEFINES} \
 		${X11FLAGS.EXTENSION} \

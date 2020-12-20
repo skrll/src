@@ -1,4 +1,4 @@
-/*	$NetBSD: filemon_ktrace.c,v 1.2 2020/01/19 20:22:57 riastradh Exp $	*/
+/*	$NetBSD: filemon_ktrace.c,v 1.8 2020/11/29 09:27:40 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define	_KERNTYPES		/* register_t */
+#define _KERNTYPES		/* register_t */
 
 #include "filemon.h"
 
@@ -90,9 +90,9 @@ static filemon_syscall_t *const filemon_syscalls[] = {
 };
 
 struct filemon {
-	int			ktrfd; /* kernel writes ktrace events here */
-	FILE			*in;   /* we read ktrace events from here */
-	FILE			*out;  /* we write filemon events to here */
+	int			ktrfd;	/* kernel writes ktrace events here */
+	FILE			*in;	/* we read ktrace events from here */
+	FILE			*out;	/* we write filemon events to here */
 	rb_tree_t		active;
 	pid_t			child;
 
@@ -198,7 +198,7 @@ filemon_open(void)
 	int error;
 
 	/* Allocate and zero a struct filemon object.  */
-	F = calloc(1, sizeof(*F));
+	F = calloc(1, sizeof *F);
 	if (F == NULL)
 		return NULL;
 
@@ -225,7 +225,6 @@ filemon_open(void)
 	/* Success!  */
 	return F;
 
-fail2: __unused
 	(void)fclose(F->in);
 fail1:	(void)close(ktrpipe[0]);
 	(void)close(ktrpipe[1]);
@@ -262,7 +261,7 @@ filemon_closefd(struct filemon *F)
 	F->out = NULL;
 
 	/* Set errno and return -1 if anything went wrong.  */
-	if (error) {
+	if (error != 0) {
 		errno = error;
 		return -1;
 	}
@@ -373,7 +372,7 @@ filemon_close(struct filemon *F)
 	free(F);
 
 	/* Set errno and return -1 if anything went wrong.  */
-	if (error) {
+	if (error != 0) {
 		errno = error;
 		return -1;
 	}
@@ -478,7 +477,7 @@ filemon_dispatch(struct filemon *F)
 		 */
 		/* XXX What to do if syscall code doesn't match?  */
 		if (S->i == S->npath && S->syscode == ret->ktr_code)
-			(*S->show)(F, S, ret);
+			S->show(F, S, ret);
 
 		/* Free the state now that it is no longer active.  */
 		for (i = 0; i < S->i; i++)
@@ -771,7 +770,7 @@ filemon_sys_exit(struct filemon *F, const struct filemon_key *key,
     const struct ktr_syscall *call)
 {
 	const register_t *args = (const void *)&call[1];
-	int status = args[0];
+	int status = (int)args[0];
 
 	if (F->out) {
 		fprintf(F->out, "X %jd %d\n", (intmax_t)key->pid, status);
@@ -806,7 +805,7 @@ filemon_sys_open(struct filemon *F, const struct filemon_key *key,
 
 	if (call->ktr_argsize < 2)
 		return NULL;
-	flags = args[1];
+	flags = (int)args[1];
 
 	if ((flags & O_RDWR) == O_RDWR)
 		return syscall_enter(F, key, call, 1, &show_open_readwrite);
@@ -827,8 +826,8 @@ filemon_sys_openat(struct filemon *F, const struct filemon_key *key,
 
 	if (call->ktr_argsize < 3)
 		return NULL;
-	fd = args[0];
-	flags = args[2];
+	fd = (int)args[0];
+	flags = (int)args[2];
 
 	if (fd == AT_CWD) {
 		if ((flags & O_RDWR) == O_RDWR)

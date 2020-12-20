@@ -1,4 +1,4 @@
-/*	$NetBSD: int.c,v 1.30 2019/11/10 21:16:32 chs Exp $	*/
+/*	$NetBSD: int.c,v 1.32 2020/11/21 17:18:31 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2009 Stephen M. Rumble 
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: int.c,v 1.30 2019/11/10 21:16:32 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: int.c,v 1.32 2020/11/21 17:18:31 thorpej Exp $");
 
 #define __INTR_PRIVATE
 #include "opt_cputype.h"
@@ -44,7 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: int.c,v 1.30 2019/11/10 21:16:32 chs Exp $");
 #include <sys/timetc.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 
 #include <dev/ic/i8253reg.h>
 #include <machine/sysconf.h>
@@ -80,14 +80,10 @@ static u_long	int2_cal_timer(void);
 #endif
 
 static struct timecounter int_8254_timecounter = {
-	int_8254_get_timecount,	/* get_timecount */
-	0,			/* no poll_pps */
-	~0u,			/* counter_mask */
-	0,			/* frequency; set in int_8254_cal */
-	"int i8254",		/* name */
-	100,			/* quality */
-	NULL,			/* prev */
-	NULL,			/* next */
+	.tc_get_timecount = int_8254_get_timecount,
+	.tc_counter_mask = ~0u,
+	.tc_name = "int i8254",
+	.tc_quality = 100,
 };
 
 static u_long int_8254_tc_count;
@@ -372,7 +368,7 @@ int1_intr_establish(int level, int ipl, int (*handler) (void *), void *arg)
 	} else {
 		struct sgimips_intrhand *n, *ih;
 
-		ih = malloc(sizeof *ih, M_DEVBUF, M_WAITOK);
+		ih = kmem_alloc(sizeof *ih, KM_SLEEP);
 		ih->ih_fun = handler;
 		ih->ih_arg = arg;
 		ih->ih_next = NULL;
@@ -411,7 +407,7 @@ int2_intr_establish(int level, int ipl, int (*handler) (void *), void *arg)
 	} else {
 		struct sgimips_intrhand *n, *ih;
 
-		ih = malloc(sizeof *ih, M_DEVBUF, M_WAITOK);
+		ih = kmem_alloc(sizeof *ih, KM_SLEEP);
 		ih->ih_fun = handler;
 		ih->ih_arg = arg;
 		ih->ih_next = NULL;

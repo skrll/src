@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.114 2019/12/06 08:40:33 skrll Exp $	*/
+/*	$NetBSD: trap.c,v 1.116 2020/08/19 02:19:07 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.114 2019/12/06 08:40:33 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.116 2020/08/19 02:19:07 msaitoh Exp $");
 
 /* #define INTRDEBUG */
 /* #define TRAPDEBUG */
@@ -441,7 +441,7 @@ do {							\
 
 		/*
 		 * Don't check the instruction queues or stack on interrupts
-		 * as we could be be in the sti code (outside normal kernel
+		 * as we could be in the sti code (outside normal kernel
 		 * text) or switching LWPs (curlwp and sp are not in sync)
 		 */
 		if ((type & ~T_USER) == T_INTERRUPT)
@@ -851,7 +851,7 @@ do_onfault:
 		}
 
 		/* Never call uvm_fault in interrupt context. */
-		KASSERT(curcpu()->ci_cpl == 0);
+		KASSERT(curcpu()->ci_intr_depth == 0);
 
 		onfault = pcb->pcb_onfault;
 		pcb->pcb_onfault = 0;

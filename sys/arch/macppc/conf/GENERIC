@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.366 2020/03/28 08:35:36 isaki Exp $
+# $NetBSD: GENERIC,v 1.371 2020/09/27 13:48:52 roy Exp $
 #
 # GENERIC machine description file
 # 
@@ -22,7 +22,7 @@ include		"arch/macppc/conf/std.macppc"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.366 $"
+#ident 		"GENERIC-$Revision: 1.371 $"
 
 maxusers	32
 
@@ -373,16 +373,22 @@ iic*	at ki2c?
 # I2C devices
 dbcool* 	at iic?		# dbCool thermal monitor & fan control
 lmtemp* 	at iic?		# temperature sensor, found in PowerBook5,6
-deq* 		at iic?		# mixer/equalizer, used by snapper
 admtemp* 	at iic?		# temperature sensor found in Mini, G5
 psoc* 		at iic?		# fan controller found in TiBooks
 lmu* 		at iic?		# ambient / keyboard lights
+asms* 		at iic?		# sudden motion sensor, various later *Books
 videopll*	at iic?		# for valkyriefb
 sgsmix* 	at iic?		# Additional mixer found in beige G3
 				# use with awacs.
+deq* 		at iic?		# mixer/equalizer, used by snapper
 
 wi* 		at obio?	# AirMac
 snapper* 	at obio?	# Snapper audio device
+
+# this is for talking to the onewire-EEPROM hiding in Apple Pro speakers.
+# or other onewire devices you may want to hook up to it
+#onewire* 	at snapper?
+#oweeprom* 	at onewire?
 
 cardslot* at cbb?
 cardbus* at cardslot?
@@ -511,9 +517,8 @@ midi*	at eap?			# 137[01] MIDI port
 pseudo-device   accf_data		# "dataready" accept filter
 pseudo-device   accf_http		# "httpready" accept filter
 
-#pseudo-device 	crypto			# /dev/crypto device
-					# (disabled, requires generic softints)
-#pseudo-device	swcrypto		# software crypto implementation
+pseudo-device 	crypto			# /dev/crypto device
+pseudo-device	swcrypto		# software crypto implementation
 pseudo-device	vnd			# disk-like interface to files
 #options 	VND_COMPRESSION		# compressed vnd(4)
 pseudo-device	ccd			# concatenated/striped disk devices
@@ -546,7 +551,7 @@ pseudo-device	ipsecif			# tunnel interface for routing based ipsec
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	pty			# pseudo-terminals
 pseudo-device	openfirm		# /dev/openfirm

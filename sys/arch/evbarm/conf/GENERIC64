@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.149 2020/03/31 12:23:17 jmcneill Exp $
+#	$NetBSD: GENERIC64,v 1.167 2020/12/13 20:40:38 jmcneill Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -10,125 +10,7 @@ include	"arch/evbarm/conf/GENERIC.common"
 
 maxusers	64
 
-#
-# FDT files supported by this kernel - add to DTSSUBDIR and DTS as
-# appropriate
-#
-makeoptions 	DTSARCH="arm aarch64"
-makeoptions	DTSGNUARCH="arm arm64"
-makeoptions	DTSSUBDIR="allwinner amlogic broadcom freescale nvidia rockchip"
-makeoptions	DTS="
-	bcm2711-rpi-4-b.dts
-	bcm2837-rpi-3-a-plus.dts
-	bcm2837-rpi-3-b-plus.dts
-	bcm2837-rpi-3-b.dts
-	bcm2837-rpi-cm3-io3.dts
-
-	imx8mq-evk.dts
-	imx8mq-hummingboard-pulse.dts
-	imx8mq-librem5-devkit.dts
-	imx8mq-nitrogen.dts
-	imx8mq-pico-pi.dts
-	imx8mq-zii-ultra-rmb3.dts
-	imx8mq-zii-ultra-zest.dts
-
-	meson-gxbb-nanopi-k2.dts
-	meson-gxbb-nexbox-a95x.dts
-	meson-gxbb-odroidc2.dts
-	meson-gxbb-p200.dts
-	meson-gxbb-p201.dts
-	meson-gxbb-vega-s95-meta.dts
-	meson-gxbb-vega-s95-pro.dts
-	meson-gxbb-vega-s95-telos.dts
-	meson-gxbb-wetek-hub.dts
-	meson-gxbb-wetek-play2.dts
-
-	meson-gxl-s805x-libretech-ac.dts
-	meson-gxl-s805x-p241.dts
-	meson-gxl-s905d-p230.dts
-	meson-gxl-s905d-p231.dts
-	meson-gxl-s905d-phicomm-n1.dts
-	meson-gxl-s905w-p281.dts
-	meson-gxl-s905w-tx3-mini.dts
-	meson-gxl-s905x-hwacom-amazetv.dts
-	meson-gxl-s905x-khadas-vim.dts
-	meson-gxl-s905x-libretech-cc.dts
-	meson-gxl-s905x-nexbox-a95x.dts
-	meson-gxl-s905x-p212.dts
-
-	rk3328-a1.dts
-	rk3328-evb.dts
-	rk3328-roc-cc.dts
-	rk3328-rock64.dts
-
-	rk3399-evb.dts
-	rk3399-ficus.dts
-	rk3399-firefly.dts
-	rk3399-gru-bob.dts
-	rk3399-gru-kevin.dts
-	rk3399-gru-scarlet-inx.dts
-	rk3399-gru-scarlet-kd.dts
-	rk3399-hugsun-x99.dts
-	rk3399-khadas-edge-captain.dts
-	rk3399-khadas-edge-v.dts
-	rk3399-khadas-edge.dts
-	rk3399-leez-p710.dts
-	rk3399-nanopc-t4.dts
-	rk3399-nanopi-m4.dts
-	rk3399-nanopi-neo4.dts
-	rk3399-orangepi.dts
-	rk3399-pinebook-pro.dts
-	rk3399-puma-haikou.dts
-	rk3399-roc-pc-mezzanine.dts
-	rk3399-roc-pc.dts
-	rk3399-rock-pi-4.dts
-	rk3399-rock960.dts
-	rk3399-rockpro64.dts
-	rk3399-sapphire-excavator.dts
-	rk3399-sapphire.dts
-
-	sun50i-a64-amarula-relic.dts
-	sun50i-a64-bananapi-m64.dts
-	sun50i-a64-nanopi-a64.dts
-	sun50i-a64-oceanic-5205-5inmfd.dts
-	sun50i-a64-olinuxino-emmc.dts
-	sun50i-a64-olinuxino.dts
-	sun50i-a64-orangepi-win.dts
-	sun50i-a64-pine64-lts.dts
-	sun50i-a64-pine64-plus.dts
-	sun50i-a64-pine64.dts
-	sun50i-a64-pinebook.dts
-	sun50i-a64-sopine-baseboard.dts
-	sun50i-a64-teres-i.dts
-
-	sun50i-h5-bananapi-m2-plus-v1.2.dts
-	sun50i-h5-bananapi-m2-plus.dts
-	sun50i-h5-emlid-neutis-n5-devboard.dts
-	sun50i-h5-libretech-all-h3-cc.dts
-	sun50i-h5-nanopi-neo-plus2.dts
-	sun50i-h5-nanopi-neo2.dts
-	sun50i-h5-orangepi-pc2.dts
-	sun50i-h5-orangepi-prime.dts
-	sun50i-h5-orangepi-zero-plus.dts
-	sun50i-h5-orangepi-zero-plus2.dts
-
-	sun50i-h6-beelink-gs1.dts
-	sun50i-h6-orangepi-3.dts
-	sun50i-h6-orangepi-lite2.dts
-	sun50i-h6-orangepi-one-plus.dts
-	sun50i-h6-pine-h64.dts
-	sun50i-h6-tanix-tx6.dts
-
-	tegra210-p2371-0000.dts
-	tegra210-p2371-2180.dts
-	tegra210-p2571.dts
-	tegra210-p2894-0050-a08.dts
-	tegra210-p3450-0000.dts
-	tegra210-smaug.dts
-"
-
-options 	CPU_CORTEXA53
-options 	CPU_CORTEXA57
+options 	CPU_CORTEX
 options 	CPU_THUNDERX
 options 	SOC_BCM2837
 options 	SOC_MESONGXBB
@@ -147,22 +29,37 @@ pseudo-device 	openfirm	# /dev/openfirm
 #options 	DIAGNOSTIC	# internal consistency checks
 #options 	DEBUG
 #options 	LOCKDEBUG
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
 #options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 options 	INCLUDE_CONFIG_FILE
-#options 	UVMHIST
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	UVMHIST_PRINT,KERNHIST_DELAY=0
 
 # EARLYCONS is required for early init messages from VERBOSE_INIT_ARM.
-#options 	EARLYCONS=bcm2837
-#options 	EARLYCONS=bcm2711
+#options 	EARLYCONS=bcm2837, CONSADDR=0x3f215040
+#options 	EARLYCONS=bcm2711, CONSADDR=0xfe215040
 #options 	EARLYCONS=meson, CONSADDR=0xc81004c0
 #options 	EARLYCONS=rk3328, CONSADDR=0xff130000
 #options 	EARLYCONS=rk3399, CONSADDR=0xff1a0000
 #options 	EARLYCONS=sunxi, CONSADDR=0x01c28000
 #options 	EARLYCONS=tegra, CONSADDR=0x70006000
 #options 	EARLYCONS=thunderx, CONSADDR=0x87e024000000
-#options 	EARLYCONS=virt
+#options 	EARLYCONS=virt, CONSADDR=0x09000000
+
+# Privileged Access Never (PAN).
+options 	ARMV81_PAN
+
+# Pointer Authentication (PAC).
+#makeoptions 	ARMV83_PAC=1
+#options 	ARMV83_PAC
+
+# Branch Target Identification (BTI).
+#makeoptions 	ARMV85_BTI=1
+#options 	ARMV85_BTI
+
+# Kernel Undefined Behavior Sanitizer (kUBSan). Use UBSAN_ALWAYS_FATAL
+# if you want panics instead of warnings.
+#options 	KUBSAN			# mandatory
+#options 	UBSAN_ALWAYS_FATAL	# optional
 
 # Kernel Address Sanitizer (kASan). The quarantine is optional and can
 # help KASAN find more use-after-frees. Use KASAN_PANIC if you want panics
@@ -190,14 +87,23 @@ simplebus*	at fdt? pass 0
 # ACPI support
 acpifdt*	at fdt? pass 1
 acpi*		at acpifdt?
+acpiacad*	at acpi?
+acpibat*	at acpi?
 acpibut*	at acpi?
+acpicppc*	at acpi?
+acpipcd*	at acpi?
+acpipcc*	at acpi?
+acpifan*	at acpi?
 acpiged*	at acpi?
 acpilid*	at acpi?
+acpitz*		at acpi?
 
 # CPUs
 cpus*		at fdt? pass 0
 cpu*		at fdt? pass 0
 cpu*		at acpi?
+
+vmt*		at fdt?			# VMware Tools
 
 # Performance monitors
 armpmu*		at fdt?
@@ -328,13 +234,14 @@ enet*		at fdt?				# IMX FEC
 genet*		at acpi?			# Broadcom GENET v5
 genet*		at fdt?
 #scx*		at acpi?			# Socionext Gigabit Ethernet
-#scx*		at fdt?	
+#scx*		at fdt?
 aq*		at pci? dev ? function ?	# Aquantia AQC 10 gigabit
 ena*		at pci? dev ? function ?	# Amazon.com Elastic Network Adapter
 mcx*		at pci? dev ? function ?	# Mellanox 5th generation Ethernet
 mskc*		at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 msk*		at mskc?
 re*		at pci? dev ? function ?	# Realtek RTL8111GS
+vmx*		at pci? dev ? function ?	# VMware VMXNET3
 wm*		at pci? dev ? function ?	# Intel Gigabit Ethernet
 
 # MII/PHY support
@@ -359,6 +266,7 @@ pnaphy*		at mii? phy ?		# generic HomePNA PHYs
 rdcphy*		at mii? phy ?		# RDC R6040 10/100 PHY
 rgephy*		at mii? phy ?		# Realtek 8169S/8110S internal PHYs
 rlphy*		at mii? phy ?		# Realtek 8139/8201L PHYs
+smscphy*	at mii? phy ?		# SMSC LAN87xx PHYs
 sqphy*		at mii? phy ?		# Seeq 80220/80221/80223 PHYs
 tlphy*		at mii? phy ?		# ThunderLAN PHYs
 tqphy*		at mii? phy ?		# TDK Semiconductor PHYs
@@ -419,6 +327,7 @@ amdccp*		at acpi?
 bcmrng*		at fdt?			# Broadcom BCM283x RNG
 mesonrng*	at fdt?			# Amlogic Meson RNG
 sun8icrypto* 	at fdt?			# Allwinner Crypto Engine
+rkv1crypto* 	at fdt?			# Rockchip Crypto v1
 
 # RTC
 plrtc*		at fdt?			# ARM PrimeCell RTC
@@ -528,7 +437,8 @@ options 	FONT_BOLD16x32
 
 # GPU
 #nouveau*	at fdt?			# NVIDIA GPU
-#nouveau*	at pci?
+nouveau*	at pci? dev ? function ?
+nouveaufb*	at nouveaufbbus?
 radeon*		at pci? dev ? function ? # AMD Radeon
 radeondrmkmsfb*	at radeonfbbus?
 

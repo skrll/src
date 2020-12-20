@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_ptrace_common.c,v 1.78 2020/02/22 09:24:05 maxv Exp $	*/
+/*	$NetBSD: sys_ptrace_common.c,v 1.91 2020/11/04 19:27:41 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -106,19 +106,8 @@
  *	from: @(#)sys_process.c	8.1 (Berkeley) 6/10/93
  */
 
-/*
- * References:
- *	(1) Bach's "The Design of the UNIX Operating System",
- *	(2) sys/miscfs/procfs from UCB's 4.4BSD-Lite distribution,
- *	(3) the "4.4BSD Programmer's Reference Manual" published
- *		by USENIX and O'Reilly & Associates.
- * The 4.4BSD PRM does a reasonably good job of documenting what the various
- * ptrace() requests should actually do, and its text is quoted several times
- * in this file.
- */
-
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.78 2020/02/22 09:24:05 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.91 2020/11/04 19:27:41 pgoyette Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ptrace.h"
@@ -154,7 +143,6 @@ __KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.78 2020/02/22 09:24:05 maxv 
 
 #include <machine/reg.h>
 
-#ifdef PTRACE
 # ifdef PTRACE_DEBUG
 #  define DPRINTF(a) uprintf a
 # else
@@ -206,12 +194,6 @@ static kcondvar_t ptrace_cv;
 # define case_PT_SETDBREGS	case PT_SETDBREGS:
 #else
 # define case_PT_SETDBREGS
-#endif
-
-#if defined(PT_SETREGS) || defined(PT_GETREGS) || \
-    defined(PT_SETFPREGS) || defined(PT_GETFPREGS) || \
-    defined(PT_SETDBREGS) || defined(PT_GETDBREGS)
-# define PT_REGISTERS
 #endif
 
 static int
@@ -290,6 +272,8 @@ ptrace_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 	case PT_STOP:
 	case PT_LWPSTATUS:
 	case PT_LWPNEXT:
+	case PT_SET_SIGPASS:
+	case PT_GET_SIGPASS:
 		result = KAUTH_RESULT_ALLOW;
 		break;
 
@@ -306,40 +290,6 @@ ptrace_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 #endif
 
 	return result;
-}
-
-int
-ptrace_init(void)
-{
-
-#if 0
-	mutex_init(&ptrace_mtx, MUTEX_DEFAULT, IPL_NONE);
-	cv_init(&ptrace_cv, "ptracecb");
-	ptrace_cbref = 0;
-#endif
-	ptrace_listener = kauth_listen_scope(KAUTH_SCOPE_PROCESS,
-	    ptrace_listener_cb, NULL);
-	return 0;
-}
-
-int
-ptrace_fini(void)
-{
-
-	kauth_unlisten_scope(ptrace_listener);
-
-#if 0
-	/* Make sure no-one is executing our kauth listener */
-
-	mutex_enter(&ptrace_mtx);
-	while (ptrace_cbref != 0)
-		cv_wait(&ptrace_cv, &ptrace_mtx);
-	mutex_exit(&ptrace_mtx);
-	mutex_destroy(&ptrace_mtx);
-	cv_destroy(&ptrace_cv);
-#endif
-
-	return 0;
 }
 
 static struct proc *
@@ -500,6 +450,8 @@ ptrace_allowed(struct lwp *l, int req, struct proc *t, struct proc *p,
 	case PT_STOP:
 	case PT_LWPSTATUS:
 	case PT_LWPNEXT:
+	case PT_SET_SIGPASS:
+	case PT_GET_SIGPASS:
 		/*
 		 * You can't do what you want to the process if:
 		 *	(1) It's not being traced at all,
@@ -558,33 +510,6 @@ ptrace_needs_hold(int req)
 }
 
 static int
-ptrace_update_lwp(struct proc *t, struct lwp **lt, lwpid_t lid)
-{
-	if (lid == 0 || lid == (*lt)->l_lid || t->p_nlwps == 1)
-		return 0;
-
-	mutex_enter(t->p_lock);
-	lwp_delref2(*lt);
-
-	*lt = lwp_find(t, lid);
-	if (*lt == NULL) {
-		mutex_exit(t->p_lock);
-		return ESRCH;
-	}
-
-	if ((*lt)->l_flag & LW_SYSTEM) {
-		mutex_exit(t->p_lock);
-		*lt = NULL;
-		return EINVAL;
-	}
-
-	lwp_addref(*lt);
-	mutex_exit(t->p_lock);
-
-	return 0;
-}
-
-static int
 ptrace_get_siginfo(struct proc *t, struct ptrace_methods *ptm, void *addr,
     size_t data)
 {
@@ -618,6 +543,47 @@ ptrace_set_siginfo(struct proc *t, struct lwp **lt, struct ptrace_methods *ptm,
 	t->p_sigctx.ps_lwp = psi.psi_lwpid;
 	DPRINTF(("%s: lwp=%d signal=%d\n", __func__, psi.psi_lwpid,
 	    psi.psi_siginfo.si_signo));
+	return 0;
+}
+
+static int
+ptrace_get_sigpass(struct proc *t, void *addr, size_t data)
+{
+	sigset_t set;
+
+	if (data > sizeof(set) || data <= 0) {
+		DPRINTF(("%s: invalid data: %zu < %zu <= 0\n",
+		        __func__, sizeof(set), data));
+		return EINVAL;
+	}
+
+	set = t->p_sigctx.ps_sigpass;
+
+	return copyout(&set, addr, data);
+}
+
+static int
+ptrace_set_sigpass(struct proc *t, void *addr, size_t data)
+{
+	sigset_t set;
+	int error;
+
+	if (data > sizeof(set) || data <= 0) {
+		DPRINTF(("%s: invalid data: %zu < %zu <= 0\n",
+		        __func__, sizeof(set), data));
+		return EINVAL;
+	}
+
+	memset(&set, 0, sizeof(set));
+
+	if ((error = copyin(addr, &set, data)))
+		return error;
+
+	/* We catch SIGSTOP and cannot intercept SIGKILL. */
+	sigminusset(&sigcantmask, &set);
+
+	t->p_sigctx.ps_sigpass = set;
+
 	return 0;
 }
 
@@ -1127,11 +1093,11 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 	 * If attaching or detaching, we need to get a write hold on the
 	 * proclist lock so that we can re-parent the target process.
 	 */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 
 	t = ptrace_find(l, req, pid);
 	if (t == NULL) {
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		return ESRCH;
 	}
 
@@ -1158,7 +1124,7 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 	 */
 	if ((pheld = ptrace_needs_hold(req)) == 0) {
 		mutex_exit(t->p_lock);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 	}
 
 	/* Now do the operation. */
@@ -1376,23 +1342,24 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 		 * the requested thread, and clear it for other threads.
 		 */
 		LIST_FOREACH(lt2, &t->p_lwps, l_sibling) {
-			if (ISSET(lt2->l_pflag, LP_SINGLESTEP)) {
-				lwp_lock(lt2);
-				process_sstep(lt2, 1);
-				lwp_unlock(lt2);
-			} else if (lt != lt2) {
-				lwp_lock(lt2);
-				process_sstep(lt2, 0);
-				lwp_unlock(lt2);
-			}
+			error = process_sstep(lt2,
+			    ISSET(lt2->l_pflag, LP_SINGLESTEP));
+			if (error)
+				break;
 		}
+		if (error)
+			break;
 		error = process_sstep(lt,
 		    ISSET(lt->l_pflag, LP_SINGLESTEP) || req == PT_STEP);
 		if (error)
 			break;
 #endif
 		if (req == PT_DETACH) {
-			CLR(t->p_slflag, PSL_TRACED|PSL_SYSCALL);
+			CLR(t->p_slflag,
+			    PSL_TRACED|PSL_TRACEDCHILD|PSL_SYSCALL);
+
+			/* clear sigpass mask */
+			sigemptyset(&t->p_sigctx.ps_sigpass);
 
 			/* give process back to original parent or init */
 			if (t->p_opptr != t->p_pptr) {
@@ -1498,6 +1465,14 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 		error = ptrace_lwpstatus(t, ptm, &lt, addr, data, true);
 		break;
 
+	case PT_SET_SIGPASS:
+		error = ptrace_set_sigpass(t, addr, data);
+		break;
+
+	case PT_GET_SIGPASS:
+		error = ptrace_get_sigpass(t, addr, data);
+		break;
+
 #ifdef PT_REGISTERS
 	case_PT_SETREGS
 	case_PT_GETREGS
@@ -1511,7 +1486,7 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 
 #ifdef __HAVE_PTRACE_MACHDEP
 	PTRACE_MACHDEP_REQUEST_CASES
-		error = ptrace_machdep_dorequest(l, lt, req, addr, data);
+		error = ptrace_machdep_dorequest(l, &lt, req, addr, data);
 		break;
 #endif
 	}
@@ -1519,7 +1494,7 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 out:
 	if (pheld) {
 		mutex_exit(t->p_lock);
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 	}
 	if (lt != NULL)
 		lwp_delref(lt);
@@ -1527,181 +1502,6 @@ out:
 		rw_exit(&t->p_reflock);
 
 	return error;
-}
-
-typedef int (*regrfunc_t)(struct lwp *, void *, size_t *);
-typedef int (*regwfunc_t)(struct lwp *, void *, size_t);
-
-#ifdef PT_REGISTERS
-static int
-proc_regio(struct lwp *l, struct uio *uio, size_t ks, regrfunc_t r,
-    regwfunc_t w)
-{
-	char buf[1024];
-	int error;
-	char *kv;
-	size_t kl;
-
-	if (ks > sizeof(buf))
-		return E2BIG;
-
-	if (uio->uio_offset < 0 || uio->uio_offset > (off_t)ks)
-		return EINVAL;
-
-	kv = buf + uio->uio_offset;
-	kl = ks - uio->uio_offset;
-
-	if (kl > uio->uio_resid)
-		kl = uio->uio_resid;
-
-	error = (*r)(l, buf, &ks);
-	if (error == 0)
-		error = uiomove(kv, kl, uio);
-	if (error == 0 && uio->uio_rw == UIO_WRITE) {
-		if (l->l_stat != LSSTOP)
-			error = EBUSY;
-		else
-			error = (*w)(l, buf, ks);
-	}
-
-	uio->uio_offset = 0;
-	return error;
-}
-#endif
-
-int
-process_doregs(struct lwp *curl /*tracer*/,
-    struct lwp *l /*traced*/,
-    struct uio *uio)
-{
-#if defined(PT_GETREGS) || defined(PT_SETREGS)
-	size_t s;
-	regrfunc_t r;
-	regwfunc_t w;
-
-#ifdef COMPAT_NETBSD32
-	const bool pk32 = (curl->l_proc->p_flag & PK_32) != 0;
-
-	if (__predict_false(pk32)) {
-		if ((l->l_proc->p_flag & PK_32) == 0) {
-			// 32 bit tracer can't trace 64 bit process
-			return EINVAL;
-		}
-		s = sizeof(process_reg32);
-		r = __FPTRCAST(regrfunc_t, process_read_regs32);
-		w = __FPTRCAST(regwfunc_t, process_write_regs32);
-	} else
-#endif
-	{
-		s = sizeof(struct reg);
-		r = __FPTRCAST(regrfunc_t, process_read_regs);
-		w = __FPTRCAST(regwfunc_t, process_write_regs);
-	}
-	return proc_regio(l, uio, s, r, w);
-#else
-	return EINVAL;
-#endif
-}
-
-int
-process_validregs(struct lwp *l)
-{
-
-#if defined(PT_SETREGS) || defined(PT_GETREGS)
-	return (l->l_flag & LW_SYSTEM) == 0;
-#else
-	return 0;
-#endif
-}
-
-int
-process_dofpregs(struct lwp *curl /*tracer*/,
-    struct lwp *l /*traced*/,
-    struct uio *uio)
-{
-#if defined(PT_GETFPREGS) || defined(PT_SETFPREGS)
-	size_t s;
-	regrfunc_t r;
-	regwfunc_t w;
-
-#ifdef COMPAT_NETBSD32
-	const bool pk32 = (curl->l_proc->p_flag & PK_32) != 0;
-
-	if (__predict_false(pk32)) {
-		if ((l->l_proc->p_flag & PK_32) == 0) {
-			// 32 bit tracer can't trace 64 bit process
-			return EINVAL;
-		}
-		s = sizeof(process_fpreg32);
-		r = (regrfunc_t)process_read_fpregs32;
-		w = (regwfunc_t)process_write_fpregs32;
-	} else
-#endif
-	{
-		s = sizeof(struct fpreg);
-		r = (regrfunc_t)process_read_fpregs;
-		w = (regwfunc_t)process_write_fpregs;
-	}
-	return proc_regio(l, uio, s, r, w);
-#else
-	return EINVAL;
-#endif
-}
-
-int
-process_validfpregs(struct lwp *l)
-{
-
-#if defined(PT_SETFPREGS) || defined(PT_GETFPREGS)
-	return (l->l_flag & LW_SYSTEM) == 0;
-#else
-	return 0;
-#endif
-}
-
-int
-process_dodbregs(struct lwp *curl /*tracer*/,
-    struct lwp *l /*traced*/,
-    struct uio *uio)
-{
-#if defined(PT_GETDBREGS) || defined(PT_SETDBREGS)
-	size_t s;
-	regrfunc_t r;
-	regwfunc_t w;
-
-#ifdef COMPAT_NETBSD32
-	const bool pk32 = (curl->l_proc->p_flag & PK_32) != 0;
-
-	if (__predict_false(pk32)) {
-		if ((l->l_proc->p_flag & PK_32) == 0) {
-			// 32 bit tracer can't trace 64 bit process
-			return EINVAL;
-		}
-		s = sizeof(process_dbreg32);
-		r = (regrfunc_t)process_read_dbregs32;
-		w = (regwfunc_t)process_write_dbregs32;
-	} else
-#endif
-	{
-		s = sizeof(struct dbreg);
-		r = (regrfunc_t)process_read_dbregs;
-		w = (regwfunc_t)process_write_dbregs;
-	}
-	return proc_regio(l, uio, s, r, w);
-#else
-	return EINVAL;
-#endif
-}
-
-int
-process_validdbregs(struct lwp *l)
-{
-
-#if defined(PT_SETDBREGS) || defined(PT_GETDBREGS)
-	return (l->l_flag & LW_SYSTEM) == 0;
-#else
-	return 0;
-#endif
 }
 
 static int
@@ -1737,10 +1537,43 @@ process_auxv_offset(struct proc *p, struct uio *uio)
 #endif
 	return 0;
 }
-#endif /* PTRACE */
 
 MODULE(MODULE_CLASS_EXEC, ptrace_common, NULL);
  
+static int
+ptrace_common_init(void)
+{
+
+#if 0
+	mutex_init(&ptrace_mtx, MUTEX_DEFAULT, IPL_NONE);
+	cv_init(&ptrace_cv, "ptracecb");
+	ptrace_cbref = 0;
+#endif
+	ptrace_listener = kauth_listen_scope(KAUTH_SCOPE_PROCESS,
+	    ptrace_listener_cb, NULL);
+	return 0;
+}
+
+static int
+ptrace_common_fini(void)
+{
+
+	kauth_unlisten_scope(ptrace_listener);
+
+#if 0
+	/* Make sure no-one is executing our kauth listener */
+
+	mutex_enter(&ptrace_mtx);
+	while (ptrace_cbref != 0)
+		cv_wait(&ptrace_cv, &ptrace_mtx);
+	mutex_exit(&ptrace_mtx);
+	mutex_destroy(&ptrace_mtx);
+	cv_destroy(&ptrace_cv);
+#endif
+
+	return 0;
+}
+
 static int
 ptrace_common_modcmd(modcmd_t cmd, void *arg)
 {
@@ -1748,10 +1581,10 @@ ptrace_common_modcmd(modcmd_t cmd, void *arg)
  
         switch (cmd) {
         case MODULE_CMD_INIT:
-                error = ptrace_init();
+                error = ptrace_common_init();
                 break;
         case MODULE_CMD_FINI:
-                error = ptrace_fini();
+                error = ptrace_common_fini();
                 break;
         default:
 		ptrace_hooks();

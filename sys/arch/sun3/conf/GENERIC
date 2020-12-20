@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.181 2019/04/26 22:46:04 sevan Exp $
+# $NetBSD: GENERIC,v 1.186 2020/09/27 13:48:54 roy Exp $
 #
 # GENERIC machine description file
 # 
@@ -25,9 +25,11 @@ include 	"arch/sun3/conf/std.sun3"
 
 #options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.181 $"
+#ident		"GENERIC-$Revision: 1.186 $"
 
-makeoptions	COPTS="-Os"		# bootloader has size limit (~2MB)
+makeoptions	COPTS="-Os -fno-unwind-tables -fno-omit-frame-pointer"
+	# Bootloader has size limit (~2MB). -fno-omit-frame-pointer is
+	# necessary for backtraces in DDB.
 
 # Machines to be supported by this kernel
 options 	FPU_EMULATE
@@ -58,7 +60,7 @@ options 	PIPE_SOCKETPAIR	# smaller, but slower pipe(2)
 # Which kernel debugger?  Uncomment either this:
 options 	DDB
 # ... or these for KGDB (gdb remote target)
-#makeoptions	DEBUG="-g"	# debugging symbols for gdb
+makeoptions	DEBUG="-g"	# debugging symbols for gdb
 #options 	KGDB
 #options 	KGDB_DEV=0x0C01	# ttya=0C00 ttyb=0C01
 
@@ -265,7 +267,7 @@ pseudo-device	ppp			# PPP
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+#pseudo-device	vether			# Virtual Ethernet for bridge
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
 
 pseudo-device	pty			# pseudo-terminals

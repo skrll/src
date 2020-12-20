@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_pager.c,v 1.124 2020/04/07 19:15:23 ad Exp $	*/
+/*	$NetBSD: uvm_pager.c,v 1.130 2020/10/18 18:22:29 chs Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_pager.c,v 1.124 2020/04/07 19:15:23 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_pager.c,v 1.130 2020/10/18 18:22:29 chs Exp $");
 
 #include "opt_uvmhist.h"
 #include "opt_readahead.h"
@@ -189,13 +189,12 @@ uvm_pagermapin(struct vm_page **pps, int npages, int flags)
 	vm_prot_t prot;
 	const bool pdaemon = (curlwp == uvm.pagedaemon_lwp);
 	const u_int first_color = VM_PGCOLOR(*pps);
-	UVMHIST_FUNC("uvm_pagermapin"); UVMHIST_CALLED(maphist);
-
-	UVMHIST_LOG(maphist,"(pps=%#jx, npages=%jd, first_color=%ju)",
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(maphist,"(pps=%#jx, npages=%jd, first_color=%ju)",
 		(uintptr_t)pps, npages, first_color, 0);
 
 #ifdef PMAP_DIRECT
-	/* 
+	/*
 	 * for a single page the direct mapped segment can be used.
 	 */
 
@@ -280,12 +279,11 @@ uvm_pagermapout(vaddr_t kva, int npages)
 {
 	vsize_t size = ptoa(npages);
 	struct vm_map_entry *entries;
-	UVMHIST_FUNC("uvm_pagermapout"); UVMHIST_CALLED(maphist);
-
-	UVMHIST_LOG(maphist, " (kva=%#jx, npages=%jd)", kva, npages,0,0);
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(maphist, " (kva=%#jx, npages=%jd)", kva, npages,0,0);
 
 #ifdef PMAP_DIRECT
-	/* 
+	/*
 	 * solitary pages are mapped directly.
 	 */
 
@@ -335,7 +333,7 @@ uvm_aio_aiodone_pages(struct vm_page **pgs, int npages, bool write, int error)
 	int swslot;
 	int i;
 	bool swap;
-	UVMHIST_FUNC("uvm_aio_aiodone_pages"); UVMHIST_CALLED(ubchist);
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(ubchist);
 
 	swslot = 0;
 	pageout_done = 0;
@@ -393,10 +391,8 @@ uvm_aio_aiodone_pages(struct vm_page **pgs, int npages, bool write, int error)
 #endif /* defined(VMSWAP) */
 
 		if (write && uobj != NULL) {
-			KASSERT(radix_tree_get_tag(&uobj->uo_pages,
-			    pg->offset >> PAGE_SHIFT, UVM_PAGE_WRITEBACK_TAG));
-			radix_tree_clear_tag(&uobj->uo_pages,
-			    pg->offset >> PAGE_SHIFT, UVM_PAGE_WRITEBACK_TAG);
+			KASSERT(uvm_obj_page_writeback_p(pg));
+			uvm_obj_page_clear_writeback(pg);
 		}
 
 		/*
@@ -460,18 +456,6 @@ uvm_aio_aiodone_pages(struct vm_page **pgs, int npages, bool write, int error)
 			uvm_pageunlock(pg);
 		}
 
-		/*
-		 * do accounting for pagedaemon i/o and arrange to free
-		 * the pages instead of just unbusying them.
-		 */
-
-		if (pg->flags & PG_PAGEOUT) {
-			pg->flags &= ~PG_PAGEOUT;
-			pageout_done++;
-			atomic_inc_uint(&uvmexp.pdfreed);
-			pg->flags |= PG_RELEASED;
-		}
-
 #if defined(VMSWAP)
 		/*
 		 * for swap pages, unlock everything for this page now.
@@ -487,7 +471,9 @@ uvm_aio_aiodone_pages(struct vm_page **pgs, int npages, bool write, int error)
 		}
 #endif /* defined(VMSWAP) */
 	}
-	uvm_pageout_done(pageout_done);
+	if (pageout_done != 0) {
+		uvm_pageout_done(pageout_done);
+	}
 	if (!swap) {
 		uvm_page_unbusy(pgs, npages);
 		rw_exit(slock);
@@ -514,16 +500,18 @@ uvm_aio_aiodone_pages(struct vm_page **pgs, int npages, bool write, int error)
  * uvm_aio_aiodone: do iodone processing for async i/os.
  * this should be called in thread context, not interrupt context.
  */
-
 void
 uvm_aio_aiodone(struct buf *bp)
 {
-	int npages = bp->b_bufsize >> PAGE_SHIFT;
-	struct vm_page *pgs[npages];
+	const int npages = bp->b_bufsize >> PAGE_SHIFT;
+	struct vm_page *pgs[howmany(MAXPHYS, MIN_PAGE_SIZE)];
 	int i, error;
 	bool write;
-	UVMHIST_FUNC("uvm_aio_aiodone"); UVMHIST_CALLED(ubchist);
-	UVMHIST_LOG(ubchist, "bp %#jx", (uintptr_t)bp, 0,0,0);
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(ubchist, "bp %#jx", (uintptr_t)bp, 0,0,0);
+
+	KASSERT(bp->b_bufsize <= MAXPHYS);
+	KASSERT(npages <= __arraycount(pgs));
 
 	error = bp->b_error;
 	write = (bp->b_flags & B_READ) == 0;

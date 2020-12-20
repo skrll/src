@@ -1,4 +1,4 @@
-/*	$NetBSD: stdtime.c,v 1.2 2018/08/12 13:02:40 christos Exp $	*/
+/*	$NetBSD: stdtime.c,v 1.4 2020/08/03 17:23:43 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -10,9 +10,6 @@
  * See the COPYRIGHT file distributed with this work for additional
  * information regarding copyright ownership.
  */
-
-
-#include <config.h>
 
 #include <time.h>
 
@@ -29,4 +26,18 @@ isc_stdtime_get(isc_stdtime_t *t) {
 	REQUIRE(t != NULL);
 
 	(void)_time32(t);
+}
+
+void
+isc_stdtime_tostring(isc_stdtime_t t, char *out, size_t outlen) {
+	time_t when;
+
+	REQUIRE(out != NULL);
+	/* Minimum buffer as per ctime_r() specification. */
+	REQUIRE(outlen >= 26);
+
+	/* time_t and isc_stdtime_t might be different sizes */
+	when = t;
+	INSIST((ctime_s(out, outlen, &when) == 0));
+	*(out + strlen(out) - 1) = '\0';
 }

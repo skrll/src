@@ -1,13 +1,13 @@
-/*	$NetBSD: uhci.c,v 1.300 2020/04/05 20:59:38 skrll Exp $	*/
+/*	$NetBSD: uhci.c,v 1.304 2020/07/07 10:02:17 skrll Exp $	*/
 
 /*
- * Copyright (c) 1998, 2004, 2011, 2012 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2004, 2011, 2012, 2016, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
  * by Lennart Augustsson (lennart@augustsson.net) at
- * Carlstedt Research & Technology, Jared D. McNeill (jmcneill@invisible.ca)
- * and Matthew R. Green (mrg@eterna.com.au).
+ * Carlstedt Research & Technology, Jared D. McNeill (jmcneill@invisible.ca),
+ * Matthew R. Green (mrg@eterna.com.au) and Nick Hudson.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.300 2020/04/05 20:59:38 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uhci.c,v 1.304 2020/07/07 10:02:17 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -582,6 +582,7 @@ uhci_init(uhci_softc_t *sc)
 	sc->sc_bus.ub_methods = &uhci_bus_methods;
 	sc->sc_bus.ub_pipesize = sizeof(struct uhci_pipe);
 	sc->sc_bus.ub_usedma = true;
+	sc->sc_bus.ub_dmaflags = USBMALLOC_MULTISEG;
 
 	UHCICMD(sc, UHCI_CMD_MAXP); /* Assume 64 byte packets at frame end */
 
@@ -1283,7 +1284,7 @@ uhci_add_bulk(uhci_softc_t *sc, uhci_soft_qh_t *sqh)
 {
 	uhci_soft_qh_t *eqh;
 
-	KASSERT(mutex_owned(&sc->sc_lock));
+	KASSERT(sc->sc_bus.ub_usepolling || mutex_owned(&sc->sc_lock));
 
 	UHCIHIST_FUNC(); UHCIHIST_CALLED();
 	DPRINTFN(10, "sqh %#jx", (uintptr_t)sqh, 0, 0, 0);
@@ -1309,7 +1310,7 @@ uhci_remove_bulk(uhci_softc_t *sc, uhci_soft_qh_t *sqh)
 {
 	uhci_soft_qh_t *pqh;
 
-	KASSERT(mutex_owned(&sc->sc_lock));
+	KASSERT(sc->sc_bus.ub_usepolling || mutex_owned(&sc->sc_lock));
 
 	UHCIHIST_FUNC(); UHCIHIST_CALLED();
 	DPRINTFN(10, "sqh %#jx", (uintptr_t)sqh, 0, 0, 0);
@@ -1614,10 +1615,9 @@ uhci_idone(struct uhci_xfer *ux, ux_completeq_t *cqp)
 	struct uhci_pipe *upipe = UHCI_PIPE2UPIPE(xfer->ux_pipe);
 	uhci_soft_td_t *std;
 	uint32_t status = 0, nstatus;
-	const bool polling __diagused = sc->sc_bus.ub_usepolling;
 	int actlen;
 
-	KASSERT(polling || mutex_owned(&sc->sc_lock));
+	KASSERT(sc->sc_bus.ub_usepolling || mutex_owned(&sc->sc_lock));
 
 	DPRINTFN(12, "ux=%#jx", (uintptr_t)ux, 0, 0, 0);
 
@@ -1752,7 +1752,7 @@ uhci_idone(struct uhci_xfer *ux, ux_completeq_t *cqp)
 	if (cqp)
 		TAILQ_INSERT_TAIL(cqp, ux, ux_list);
 
-	KASSERT(polling || mutex_owned(&sc->sc_lock));
+	KASSERT(sc->sc_bus.ub_usepolling || mutex_owned(&sc->sc_lock));
 	DPRINTFN(12, "ux=%#jx done", (uintptr_t)ux, 0, 0, 0);
 }
 
@@ -2009,6 +2009,17 @@ uhci_alloc_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer, int len,
 		return EINVAL;
 	}
 	size_t ntd = howmany(len, maxp);
+	/*
+	 * if our transfer is bigger than PAGE_SIZE and maxp not a factor of
+	 * PAGE_SIZE then we will need another TD per page.
+	 */
+	if (len > PAGE_SIZE && (PAGE_SIZE % maxp) != 0) {
+		ntd += howmany(len, PAGE_SIZE);
+	}
+
+	/*
+	 * Might need one more TD if we're writing a ZLP
+	 */
 	if (!rd && (flags & USBD_FORCE_SHORT_XFER)) {
 		ntd++;
 	}
@@ -2080,7 +2091,7 @@ uhci_reset_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer,
 	int tog = *toggle;
 	int maxp;
 	uint32_t status;
-	size_t i;
+	size_t i, offs;
 
 	UHCIHIST_FUNC(); UHCIHIST_CALLED();
 	DPRINTFN(8, "xfer=%#jx len %jd isread %jd toggle %jd", (uintptr_t)xfer,
@@ -2102,9 +2113,15 @@ uhci_reset_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer,
 	usb_syncmem(dma, 0, len,
 	    isread ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
 	std = prev = NULL;
-	for (i = 0; len != 0 && i < uxfer->ux_nstd; i++, prev = std) {
+	for (offs = i = 0; len != 0 && i < uxfer->ux_nstd; i++, prev = std) {
 		int l = len;
 		std = uxfer->ux_stds[i];
+
+		const bus_addr_t sbp = DMAADDR(dma, offs);
+		const bus_addr_t ebp = DMAADDR(dma, offs + l - 1);
+		if (((sbp ^ ebp) & ~PAGE_MASK) != 0)
+			l = PAGE_SIZE - (DMAADDR(dma, offs) & PAGE_MASK);
+
 		if (l > maxp)
 			l = maxp;
 
@@ -2129,7 +2146,7 @@ uhci_reset_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer,
 		    UHCI_TD_SET_DT(tog) |
 		    UHCI_TD_SET_MAXLEN(l)
 		    );
-		std->td.td_buffer = htole32(DMAADDR(dma, i * maxp));
+		std->td.td_buffer = htole32(DMAADDR(dma, offs));
 
 		std->link.std = NULL;
 
@@ -2137,6 +2154,7 @@ uhci_reset_std_chain(uhci_softc_t *sc, struct usbd_xfer *xfer,
 		    BUS_DMASYNC_PREWRITE | BUS_DMASYNC_PREREAD);
 		tog ^= 1;
 
+		offs += l;
 		len -= l;
 	}
 	KASSERTMSG(len == 0, "xfer %p alen %d len %d mps %d ux_nqtd %zu i %zu",
@@ -2918,8 +2936,9 @@ uhci_device_isoc_transfer(struct usbd_xfer *xfer)
 
 	KASSERT(xfer->ux_nframes != 0);
 
-	usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
-	    rd ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
+	if (xfer->ux_length)
+		usb_syncmem(&xfer->ux_dmabuf, 0, xfer->ux_length,
+		    rd ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
 
 	mutex_enter(&sc->sc_lock);
 	next = isoc->next;
@@ -2932,17 +2951,20 @@ uhci_device_isoc_transfer(struct usbd_xfer *xfer)
 	xfer->ux_status = USBD_IN_PROGRESS;
 	ux->ux_curframe = next;
 
-	buf = DMAADDR(&xfer->ux_dmabuf, 0);
 	offs = 0;
 	status = UHCI_TD_ZERO_ACTLEN(UHCI_TD_SET_ERRCNT(0) |
 				     UHCI_TD_ACTIVE |
 				     UHCI_TD_IOS);
 	nframes = xfer->ux_nframes;
 	for (i = 0; i < nframes; i++) {
+		buf = DMAADDR(&xfer->ux_dmabuf, offs);
 		std = isoc->stds[next];
 		if (++next >= UHCI_VFRAMELIST_COUNT)
 			next = 0;
 		len = xfer->ux_frlengths[i];
+
+		KASSERTMSG(len <= __SHIFTOUT_MASK(UHCI_TD_MAXLEN_MASK),
+		    "len %d", len);
 		std->td.td_buffer = htole32(buf);
 		usb_syncmem(&xfer->ux_dmabuf, offs, len,
 		    rd ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
@@ -2961,8 +2983,11 @@ uhci_device_isoc_transfer(struct usbd_xfer *xfer)
 			DPRINTF("--- dump end ---", 0, 0, 0, 0);
 		}
 #endif
-		buf += len;
 		offs += len;
+		const bus_addr_t bend __diagused =
+		    DMAADDR(&xfer->ux_dmabuf, offs - 1);
+
+		KASSERT(((buf ^ bend) & ~PAGE_MASK) == 0);
 	}
 	isoc->next = next;
 	isoc->inuse += xfer->ux_nframes;
@@ -3181,6 +3206,7 @@ uhci_setup_isoc(struct usbd_pipe *pipe)
 void
 uhci_device_isoc_done(struct usbd_xfer *xfer)
 {
+	uhci_softc_t *sc __diagused = UHCI_XFER2SC(xfer);
 	struct uhci_pipe *upipe = UHCI_PIPE2UPIPE(xfer->ux_pipe);
 	struct uhci_xfer *ux = UHCI_XFER2UXFER(xfer);
 	int i, offs;
@@ -3189,6 +3215,8 @@ uhci_device_isoc_done(struct usbd_xfer *xfer)
 	UHCIHIST_FUNC(); UHCIHIST_CALLED();
 	DPRINTFN(4, "length=%jd, ux_state=0x%08jx",
 	    xfer->ux_actlen, xfer->ux_state, 0, 0);
+
+	KASSERT(sc->sc_bus.ub_usepolling || mutex_owned(&sc->sc_lock));
 
 #ifdef DIAGNOSTIC
 	if (ux->ux_stdend == NULL) {
@@ -3259,10 +3287,9 @@ uhci_device_ctrl_done(struct usbd_xfer *xfer)
 	int len = UGETW(xfer->ux_request.wLength);
 	int isread = (xfer->ux_request.bmRequestType & UT_READ);
 
-	KASSERT(sc->sc_bus.ub_usepolling || mutex_owned(&sc->sc_lock));
-
 	UHCIHIST_FUNC(); UHCIHIST_CALLED();
 
+	KASSERT(sc->sc_bus.ub_usepolling || mutex_owned(&sc->sc_lock));
 	KASSERT(xfer->ux_rqflags & URQ_REQUEST);
 
 	/* XXXNH move to uhci_idone??? */
@@ -3295,7 +3322,7 @@ uhci_device_bulk_done(struct usbd_xfer *xfer)
 	DPRINTFN(5, "xfer=%#jx sc=%#jx upipe=%#jx", (uintptr_t)xfer,
 	    (uintptr_t)sc, (uintptr_t)upipe, 0);
 
-	KASSERT(mutex_owned(&sc->sc_lock));
+	KASSERT(sc->sc_bus.ub_usepolling || mutex_owned(&sc->sc_lock));
 
 	uhci_remove_bulk(sc, upipe->bulk.sqh);
 

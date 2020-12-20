@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.18 2018/06/15 15:16:05 christos Exp $
+#	$NetBSD: Makefile,v 1.20 2020/09/07 03:19:05 mrg Exp $
 #	@(#)Makefile	8.1 (Berkeley) 6/18/93
 
 WARNS?=	3	# XXX -Wsign-compare

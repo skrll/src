@@ -1,4 +1,4 @@
-/*	$NetBSD: node.c,v 1.23 2019/06/07 05:34:34 ozaki-r Exp $	*/
+/*	$NetBSD: node.c,v 1.29 2020/06/01 13:30:52 uwe Exp $	*/
 
 /*
  * Copyright (c) 2007  Antti Kantee.  All Rights Reserved.
@@ -27,7 +27,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: node.c,v 1.23 2019/06/07 05:34:34 ozaki-r Exp $");
+__RCSID("$NetBSD: node.c,v 1.29 2020/06/01 13:30:52 uwe Exp $");
 #endif /* !lint */
 
 #include <assert.h>
@@ -57,6 +57,7 @@ do_getattr(struct puffs_usermount *pu, struct puffs_node *pn, struct vattr *vap)
 	AUTOVAR(pu);
 	struct p9pnode *p9n = pn->pn_data;
 
+	tag = NEXTTAG(p9p);
 	p9pbuf_put_1(pb, P9PROTO_T_STAT);
 	p9pbuf_put_2(pb, tag);
 	p9pbuf_put_4(pb, p9n->fid_base);
@@ -93,10 +94,11 @@ puffs9p_node_lookup(struct puffs_usermount *pu, void *opc, struct puffs_newinfo 
 	struct vattr va;
 	struct puffs_node *pn, *pn_dir = opc;
 	struct p9pnode *p9n_dir = pn_dir->pn_data;
-	p9ptag_t tfid = NEXTFID(p9p);
+	p9pfid_t tfid = NEXTFID(p9p);
 	struct qid9p newqid;
 	uint16_t nqid;
 
+	tag = NEXTTAG(p9p);
 	p9pbuf_put_1(pb, P9PROTO_T_WALK);
 	p9pbuf_put_2(pb, tag);
 	p9pbuf_put_4(pb, p9n_dir->fid_base);
@@ -232,6 +234,7 @@ puffs9p_node_setattr(struct puffs_usermount *pu, void *opc,
 	struct puffs_node *pn = opc;
 	struct p9pnode *p9n = pn->pn_data;
 
+	tag = NEXTTAG(p9p);
 	p9pbuf_put_1(pb, P9PROTO_T_WSTAT);
 	p9pbuf_put_2(pb, tag);
 	p9pbuf_put_4(pb, p9n->fid_base);
@@ -327,6 +330,7 @@ puffs9p_node_read(struct puffs_usermount *pu, void *opc, uint8_t *buf,
 
 	nread = 0;
 	while (*resid > 0 && (uint64_t)(offset+nread) < pn->pn_va.va_size) {
+		tag = NEXTTAG(p9p);
 		p9pbuf_put_1(pb, P9PROTO_T_READ);
 		p9pbuf_put_2(pb, tag);
 		p9pbuf_put_4(pb, p9n->fid_read);
@@ -374,6 +378,7 @@ puffs9p_node_write(struct puffs_usermount *pu, void *opc, uint8_t *buf,
 	while (*resid > 0) {
 		chunk = MIN(*resid, p9p->maxreq-32);
 
+		tag = NEXTTAG(p9p);
 		p9pbuf_put_1(pb, P9PROTO_T_WRITE);
 		p9pbuf_put_2(pb, tag);
 		p9pbuf_put_4(pb, p9n->fid_write);
@@ -425,6 +430,7 @@ nodecreate(struct puffs_usermount *pu, struct puffs_node *pn,
 	if (rv)
 		goto out;
 
+	tag = NEXTTAG(p9p);
 	p9pbuf_put_1(pb, P9PROTO_T_CREATE);
 	p9pbuf_put_2(pb, tag);
 	p9pbuf_put_4(pb, nfid);
@@ -448,6 +454,7 @@ nodecreate(struct puffs_usermount *pu, struct puffs_node *pn,
 	nfid = NEXTFID(p9p);
 
 	p9pbuf_recycleout(pb);
+	tag = NEXTTAG(p9p);
 	p9pbuf_put_1(pb, P9PROTO_T_WALK);
 	p9pbuf_put_2(pb, tag);
 	p9pbuf_put_4(pb, p9n->fid_base);
@@ -506,6 +513,7 @@ noderemove(struct puffs_usermount *pu, struct puffs_node *pn)
 	if (rv)
 		goto out;
 
+	tag = NEXTTAG(p9p);
 	p9pbuf_put_1(pb, P9PROTO_T_REMOVE);
 	p9pbuf_put_2(pb, tag);
 	p9pbuf_put_4(pb, testfid);
@@ -525,9 +533,6 @@ noderemove(struct puffs_usermount *pu, struct puffs_node *pn)
 	}
 
  out:
-	if (rv == 0)
-		puffs_setback(pcc, PUFFS_SETBACK_NOREF_N2);
-
 	RETURN(rv);
 }
 
@@ -535,42 +540,54 @@ int
 puffs9p_node_remove(struct puffs_usermount *pu, void *opc, void *targ,
 	const struct puffs_cn *pcn)
 {
+	struct puffs_cc *pcc = puffs_cc_getcc(pu);
 	struct puffs_node *pn = targ;
+	int rv;
 
 	if (pn->pn_va.va_type == VDIR)
 		return EISDIR;
 
-	return noderemove(pu, pn);
+	rv = noderemove(pu, pn);
+	if (rv == 0)
+		puffs_setback(pcc, PUFFS_SETBACK_NOREF_N2);
+
+	return rv;
 }
 
 int
 puffs9p_node_rmdir(struct puffs_usermount *pu, void *opc, void *targ,
 	const struct puffs_cn *pcn)
 {
+	struct puffs_cc *pcc = puffs_cc_getcc(pu);
 	struct puffs_node *pn = targ;
+	int rv;
 
 	if (pn->pn_va.va_type != VDIR)
 		return ENOTDIR;
 
-	return noderemove(pu, pn);
+	rv = noderemove(pu, pn);
+	if (rv == 0)
+		puffs_setback(pcc, PUFFS_SETBACK_NOREF_N2);
+
+	return rv;
 }
 
-/*
- * 9P supports renames only for files within a directory
- * from what I could tell.  So just support in-directory renames
- * for now.
- */ 
 int
-puffs9p_node_rename(struct puffs_usermount *pu, void *opc, void *src,
-	const struct puffs_cn *pcn_src, void *targ_dir, void *targ,
-	const struct puffs_cn *pcn_targ)
+puffs9p_node_rename(struct puffs_usermount *pu,
+		    void *src_dir, void *src, const struct puffs_cn *pcn_src,
+		    void *targ_dir, void *targ, const struct puffs_cn *pcn_targ)
 {
 	AUTOVAR(pu);
 	struct puffs_node *pn_src = src;
 	struct p9pnode *p9n_src = pn_src->pn_data;
 
-	if (opc != targ_dir) {
-		rv = EOPNOTSUPP;
+	/*
+	 * 9P rename can only change the last pathname component.
+	 * Return EXDEV for attempts to move a file to a different
+	 * directory to make mv(1) fall back to copying.
+	 */
+	if (src_dir != targ_dir) {
+		rv = EXDEV;
 		goto out;
 	}
 
@@ -578,11 +595,12 @@ puffs9p_node_rename(struct puffs_usermount *pu, void *opc, void *src,
 	if (targ) {
 		struct puffs_node *pn_targ = targ;
 
-		rv = noderemove(pu, pn_targ->pn_data);
+		rv = noderemove(pu, pn_targ);
 		if (rv)
 			goto out;
 	}
 
+	tag = NEXTTAG(p9p);
 	p9pbuf_put_1(pb, P9PROTO_T_WSTAT);
 	p9pbuf_put_2(pb, tag);
 	p9pbuf_put_4(pb, p9n_src->fid_base);

@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon1p_iobus.c,v 1.2 2015/05/01 07:23:47 hikaru Exp $	*/
+/*	$NetBSD: octeon1p_iobus.c,v 1.6 2020/08/17 21:25:12 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: octeon1p_iobus.c,v 1.2 2015/05/01 07:23:47 hikaru Exp $");
+__KERNEL_RCSID(0, "$NetBSD: octeon1p_iobus.c,v 1.6 2020/08/17 21:25:12 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -41,9 +41,8 @@ __KERNEL_RCSID(0, "$NetBSD: octeon1p_iobus.c,v 1.2 2015/05/01 07:23:47 hikaru Ex
 #include <mips/cavium/include/iobusvar.h>
 
 /* ---- UART */
-
 #include <mips/cavium/dev/octeon_uartreg.h>
-static const struct iobus_unit iobus_units_octeon_uart[] = {
+static const struct iobus_unit iobus_units_octuart[] = {
 	{
 		.addr = MIO_UART0_BASE
 	},
@@ -52,95 +51,108 @@ static const struct iobus_unit iobus_units_octeon_uart[] = {
 	}
 };
 
-static const struct iobus_dev iobus_dev_octeon_uart = {
+static const struct iobus_dev iobus_dev_octuart = {
 	.name = "com",
 	.nunits = 2,
-	.units = iobus_units_octeon_uart
+	.units = iobus_units_octuart
 };
 
 /* ---- RNM */
-
 #include <mips/cavium/dev/octeon_rnmreg.h>
-static const struct iobus_unit iobus_units_octeon_rnm[] = {
+static const struct iobus_unit iobus_units_octrnm[] = {
 	{
 		.addr = RNM_BASE
 	}
 };
 
-static const struct iobus_dev iobus_dev_octeon_rnm = {
-	.name = "octeon_rnm",
+static const struct iobus_dev iobus_dev_octrnm = {
+	.name = "octrnm",
+	.flags = IOBUS_DEV_FDT,
 	.nunits = RNM_NUNITS,
-	.units = iobus_units_octeon_rnm
+	.units = iobus_units_octrnm
 };
 
 /* ---- TWSI */
-
 #include <mips/cavium/dev/octeon_twsireg.h>
-static const struct iobus_unit iobus_units_octeon_twsi[] = {
+static const struct iobus_unit iobus_units_octtwsi[] = {
 	{
 		.addr = MIO_TWS_BASE_0
 	}
 };
 
-static const struct iobus_dev iobus_dev_octeon_twsi = {
-	.name = "octeon_twsi",
+static const struct iobus_dev iobus_dev_octtwsi = {
+	.name = "octtwsi",
 	.nunits = MIO_TWS_NUNITS,
-	.units = iobus_units_octeon_twsi
+	.units = iobus_units_octtwsi
 };
 
 /* ---- MPI/SPI */
-
 #include <mips/cavium/dev/octeon_mpireg.h>
-static const struct iobus_unit	iobus_units_octeon_mpi[] = {
+static const struct iobus_unit	iobus_units_octmpi[] = {
 	{
 		.addr = MPI_BASE
 	}
 };
 
-static const struct iobus_dev iobus_dev_octeon_mpi = {
-	.name = "octeon_mpi",
+static const struct iobus_dev iobus_dev_octmpi = {
+	.name = "octmpi",
 	.nunits = MPI_NUNITS,
-	.units = iobus_units_octeon_mpi
+	.units = iobus_units_octmpi
 };
-/* ---- GMX */
 
-#include <mips/cavium/dev/octeon_gmxreg.h>
-static const struct iobus_unit	iobus_units_octeon_gmx[] = {
+/* ---- SMI */
+#include <mips/cavium/dev/octeon_smireg.h>
+static const struct iobus_unit	iobus_units_octsmi[] = {
 	{
-		.addr = GMX0_BASE_IF0
+		.addr = SMI_BASE
 	}
 };
 
-static const struct iobus_dev iobus_dev_octeon_gmx = {
-	.name = "octeon_gmx",
-	.nunits = GMX_IF_NUNITS,
-	.units = iobus_units_octeon_gmx
+static const struct iobus_dev iobus_dev_octsmi = {
+	.name = "octsmi",
+	.nunits = SMI_NUNITS,
+	.units = iobus_units_octsmi
+};
+
+/* ---- PIP */
+#include <mips/cavium/dev/octeon_pipreg.h>
+static const struct iobus_unit	iobus_units_octpip[] = {
+	{
+		.addr = PIP_BASE
+	}
+};
+
+static const struct iobus_dev iobus_dev_octpip = {
+	.name = "octpip",
+	.nunits = 1,
+	.units = iobus_units_octpip
 };
 
 
 /* ---- USBN */
 #include <mips/cavium/dev/octeon_usbnreg.h>
-static const struct iobus_unit	iobus_units_octeon_usbn[] = {
+static const struct iobus_unit	iobus_units_octusbn[] = {
 	{
 		.addr = USBN_BASE
 	}
 };
 
-static const struct iobus_dev iobus_dev_octeon_usbn = {
+static const struct iobus_dev iobus_dev_octusbn = {
 	.name = "dwctwo",
 	.nunits = USBN_NUNITS,
-	.units = iobus_units_octeon_usbn
+	.units = iobus_units_octusbn
 };
 
 /* ---- global */
 
 const struct iobus_dev * const iobus_devs[] = {
-	&iobus_dev_octeon_uart,
-	&iobus_dev_octeon_rnm,
-	&iobus_dev_octeon_twsi,
-	&iobus_dev_octeon_mpi,
-	&iobus_dev_octeon_gmx,
-	&iobus_dev_octeon_usbn,
+	&iobus_dev_octuart,
+	&iobus_dev_octrnm,
+	&iobus_dev_octtwsi,
+	&iobus_dev_octmpi,
+	&iobus_dev_octsmi,
+	&iobus_dev_octpip,
+	&iobus_dev_octusbn,
 };
 
 const size_t iobus_ndevs = __arraycount(iobus_devs);

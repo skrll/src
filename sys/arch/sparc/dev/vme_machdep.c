@@ -1,4 +1,4 @@
-/*	$NetBSD: vme_machdep.c,v 1.69 2019/11/10 21:16:32 chs Exp $	*/
+/*	$NetBSD: vme_machdep.c,v 1.71 2020/11/22 03:55:33 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -30,13 +30,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vme_machdep.c,v 1.69 2019/11/10 21:16:32 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vme_machdep.c,v 1.71 2020/11/22 03:55:33 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/extent.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/errno.h>
 
 #include <sys/proc.h>
@@ -315,9 +315,7 @@ vmeattach_mainbus(device_t parent, device_t self, void *aux)
 		sizeof(vmebus_translations)/sizeof(vmebus_translations[0]);
 
 	vme_dvmamap = extent_create("vmedvma", VME4_DVMA_BASE, VME4_DVMA_END,
-				    0, 0, EX_NOWAIT);
-	if (vme_dvmamap == NULL)
-		panic("vme: unable to allocate DVMA map");
+				    0, 0, EX_WAITOK);
 
 	printf("\n");
 	(void)config_found(self, &vba, 0);
@@ -719,7 +717,7 @@ sparc_vme_intr_map(void *cookie, int level, int vec,
 {
 	struct sparc_vme_intr_handle *ih;
 
-	ih = malloc(sizeof(struct sparc_vme_intr_handle), M_DEVBUF, M_WAITOK);
+	ih = kmem_alloc(sizeof(*ih), KM_SLEEP);
 	ih->pri = level;
 	ih->vec = vec;
 	ih->sc = cookie;/*XXX*/
@@ -764,7 +762,7 @@ sparc_vme_intr_establish(void *cookie, vme_intr_handle_t vih, int level,
 			break;
 
 	if (ih == NULL) {
-		ih = malloc(sizeof(struct intrhand), M_DEVBUF, M_WAITOK|M_ZERO);
+		ih = kmem_zalloc(sizeof(*ih), KM_SLEEP);
 		ih->ih_fun = sc->sc_vmeintr;
 		ih->ih_arg = vih;
 		intr_establish(pil, 0, ih, NULL, false);

@@ -1,4 +1,4 @@
-/*	$NetBSD: spec_vnops.c,v 1.176 2019/09/22 22:59:39 christos Exp $	*/
+/*	$NetBSD: spec_vnops.c,v 1.180 2020/06/27 17:29:19 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: spec_vnops.c,v 1.176 2019/09/22 22:59:39 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spec_vnops.c,v 1.180 2020/06/27 17:29:19 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -121,6 +121,7 @@ const struct vnodeopv_entry_desc spec_vnodeop_entries[] = {
 	{ &vop_open_desc, spec_open },			/* open */
 	{ &vop_close_desc, spec_close },		/* close */
 	{ &vop_access_desc, spec_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, spec_getattr },		/* getattr */
 	{ &vop_setattr_desc, spec_setattr },		/* setattr */
 	{ &vop_read_desc, spec_read },			/* read */
@@ -717,7 +718,7 @@ spec_read(void *v)
 			return (EINVAL);
 
 		if (bdev_ioctl(vp->v_rdev, DIOCGPARTINFO, &pi, FREAD, l) == 0)
-			bsize = pi.pi_bsize;
+			bsize = imin(imax(pi.pi_bsize, DEV_BSIZE), MAXBSIZE);
 		else
 			bsize = BLKDEV_IOSIZE;
 
@@ -786,7 +787,7 @@ spec_write(void *v)
 			return (EINVAL);
 
 		if (bdev_ioctl(vp->v_rdev, DIOCGPARTINFO, &pi, FREAD, l) == 0)
-			bsize = pi.pi_bsize;
+			bsize = imin(imax(pi.pi_bsize, DEV_BSIZE), MAXBSIZE);
 		else
 			bsize = BLKDEV_IOSIZE;
 
@@ -1181,7 +1182,7 @@ spec_close(void *v)
 		 *
 		 * XXX V. fishy.
 		 */
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		sess = curlwp->l_proc->p_session;
 		if (sn->sn_opencnt == 1 && vp == sess->s_ttyvp) {
 			mutex_spin_enter(&tty_lock);
@@ -1196,11 +1197,11 @@ spec_close(void *v)
 				mutex_spin_exit(&tty_lock);
 				if (sess->s_ttyp->t_pgrp != NULL)
 					panic("spec_close: spurious pgrp ref");
-				mutex_exit(proc_lock);
+				mutex_exit(&proc_lock);
 			}
 			vrele(vp);
 		} else
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 
 		/*
 		 * If the vnode is locked, then we are in the midst
@@ -1315,7 +1316,7 @@ spec_pathconf(void *v)
 		*ap->a_retval = 1;
 		return (0);
 	default:
-		return (EINVAL);
+		return genfs_pathconf(ap);
 	}
 	/* NOTREACHED */
 }

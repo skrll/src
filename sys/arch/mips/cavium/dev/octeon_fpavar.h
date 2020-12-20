@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_fpavar.h,v 1.3 2019/05/28 08:59:34 msaitoh Exp $	*/
+/*	$NetBSD: octeon_fpavar.h,v 1.7 2020/06/23 05:14:18 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -29,7 +29,12 @@
 #ifndef _OCTEON_FPAVAR_H_
 #define _OCTEON_FPAVAR_H_
 
-struct octeon_fpa_buf {
+#include <mips/cache_octeon.h>
+
+#include <mips/cavium/octeonreg.h>
+#include <mips/cavium/dev/octeon_fpareg.h>
+
+struct octfpa_buf {
 	int		fb_poolno;	/* pool # */
 
 	size_t		fb_size;	/* element size */
@@ -46,28 +51,22 @@ struct octeon_fpa_buf {
 	int		fb_dma_nsegs;
 };
 
-uint64_t	octeon_fpa_int_summary(void);
-int		octeon_fpa_buf_init(int, size_t, size_t, struct octeon_fpa_buf **);
-void		*octeon_fpa_buf_get(struct octeon_fpa_buf *);
-uint64_t	octeon_fpa_query(int);
-int		octeon_fpa_available_fpa_pool(int *available, int pool_no);
-
-#ifdef OCTEON_ETH_DEBUG
-void	octeon_fpa_dump(void);
-#endif
-
-#define OCTEON_CACHE_LINE_SIZE (128)
+uint64_t	octfpa_int_summary(void);
+int		octfpa_buf_init(int, size_t, size_t, struct octfpa_buf **);
+void		*octfpa_buf_get(struct octfpa_buf *);
+uint64_t	octfpa_query(int);
+int		octfpa_available_fpa_pool(int *available, int pool_no);
 
 /* Pool sizes in bytes, must be multiple of a cache line */
-#define FPA_POOL_0_SIZE (16 * OCTEON_CACHE_LINE_SIZE)
-#define FPA_POOL_1_SIZE (1 * OCTEON_CACHE_LINE_SIZE)
-#define FPA_POOL_2_SIZE (8 * OCTEON_CACHE_LINE_SIZE)
-#define FPA_POOL_3_SIZE (4 * OCTEON_CACHE_LINE_SIZE)
+#define FPA_POOL_0_SIZE (16 * OCTEON_CACHELINE_SIZE)
+#define FPA_POOL_1_SIZE (1 * OCTEON_CACHELINE_SIZE)
+#define FPA_POOL_2_SIZE (8 * OCTEON_CACHELINE_SIZE)
+#define FPA_POOL_3_SIZE (4 * OCTEON_CACHELINE_SIZE)
 
-#define FPA_POOL_4_SIZE (16 * OCTEON_CACHE_LINE_SIZE)
-#define FPA_POOL_5_SIZE (16 * OCTEON_CACHE_LINE_SIZE)
-#define FPA_POOL_6_SIZE (16 * OCTEON_CACHE_LINE_SIZE)
-#define FPA_POOL_7_SIZE (16 * OCTEON_CACHE_LINE_SIZE)
+#define FPA_POOL_4_SIZE (16 * OCTEON_CACHELINE_SIZE)
+#define FPA_POOL_5_SIZE (16 * OCTEON_CACHELINE_SIZE)
+#define FPA_POOL_6_SIZE (16 * OCTEON_CACHELINE_SIZE)
+#define FPA_POOL_7_SIZE (16 * OCTEON_CACHELINE_SIZE)
 
 /* Pools in use */
 #define FPA_RECV_PKT_POOL		(0)	/* Receive Packet buffers */
@@ -93,65 +92,62 @@ void	octeon_fpa_dump(void);
  */
 
 static __inline uint64_t
-octeon_fpa_load(uint64_t fpapool)
+octfpa_load(uint64_t fpapool)
 {
-	uint64_t addr;
+	/* for FPA operations, subdid == pool number */
+	uint64_t addr = OCTEON_ADDR_IO_DID(FPA_MAJOR_DID, fpapool);
 
-	addr =
-	    (0x1ULL << 48) |
-	    (0x5ULL << 43) |
-	    (fpapool & 0x07ULL) << 40;
-
-	return octeon_read_csr(addr);
+	return octeon_xkphys_read_8(addr);
 }
 
 #ifdef notyet
 static __inline uint64_t
-octeon_fpa_iobdma(struct octeon_fpa_softc *sc, int srcaddr, int len)
+octfpa_iobdma(struct octfpa_softc *sc, int srcaddr, int len)
 {
+
 	/* XXX */
 	return 0ULL;
 }
 #endif
 
 static __inline void
-octeon_fpa_store(uint64_t addr, uint64_t fpapool, uint64_t dwbcount)
+octfpa_store(uint64_t addr, uint64_t fpapool, uint64_t dwbcount)
 {
-	uint64_t ptr;
-
-	ptr =
-	    (0x1ULL << 48) |
-	    (0x5ULL << 43) |
-	    (fpapool & 0x07ULL) << 40 |
-	    (addr & 0xffffffffffULL);
+	/* for FPA operations, subdid == pool number */
+	uint64_t ptr =
+	    OCTEON_ADDR_IO_DID(FPA_MAJOR_DID, fpapool) |
+	    __SHIFTIN(addr, FPA_OPS_STORE_ADDR);
 
 	OCTEON_SYNCWS;
-	octeon_write_csr(ptr, (dwbcount & 0x0ffULL));
+	octeon_xkphys_write_8(ptr,
+	    __SHIFTIN(dwbcount, FPA_OPS_STORE_DATA_DWBCOUNT));
 }
 
 static __inline paddr_t
-octeon_fpa_buf_get_paddr(struct octeon_fpa_buf *fb)
+octfpa_buf_get_paddr(struct octfpa_buf *fb)
 {
-	return octeon_fpa_load(fb->fb_poolno);
+
+	return octfpa_load(fb->fb_poolno);
 }
 
 static __inline void
-octeon_fpa_buf_put_paddr(struct octeon_fpa_buf *fb, paddr_t paddr)
+octfpa_buf_put_paddr(struct octfpa_buf *fb, paddr_t paddr)
 {
+
 	KASSERT(paddr >= fb->fb_paddr);
 	KASSERT(paddr < fb->fb_paddr + fb->fb_len);
-	octeon_fpa_store(paddr, fb->fb_poolno, fb->fb_size / 128);
+	octfpa_store(paddr, fb->fb_poolno, fb->fb_size / 128);
 }
 
 static __inline void
-octeon_fpa_buf_put(struct octeon_fpa_buf *fb, void *addr)
+octfpa_buf_put(struct octfpa_buf *fb, void *addr)
 {
 	paddr_t paddr;
 
 	KASSERT((vaddr_t)addr >= fb->fb_addr);
 	KASSERT((vaddr_t)addr < fb->fb_addr + fb->fb_len);
 	paddr = fb->fb_paddr + (paddr_t/* XXX */)((vaddr_t)addr - fb->fb_addr);
-	octeon_fpa_buf_put_paddr(fb, paddr);
+	octfpa_buf_put_paddr(fb, paddr);
 }
 
-#endif
+#endif /* _OCTEON_FPAVAR_H_ */

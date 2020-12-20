@@ -1,9 +1,9 @@
-# $NetBSD: INSTALL,v 1.132 2019/05/26 23:03:31 sevan Exp $
+# $NetBSD: INSTALL,v 1.137 2020/10/26 06:22:28 rin Exp $
 #
 # This file was automatically created.
 # Changes will be lost when make is run in this directory.
 #
-# Created from: # NetBSD: GENERIC.in,v 1.142 2019/05/26 23:00:57 sevan Exp $
+# Created from: # NetBSD: GENERIC.in,v 1.147 2020/10/26 06:21:49 rin Exp $
 #
 ##
 # GENERIC machine description file
@@ -29,9 +29,9 @@ include "arch/amiga/conf/std.amiga"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.132 $"
+#ident 		"GENERIC-$Revision: 1.137 $"
 
-makeoptions	COPTS="-Os"
+makeoptions	COPTS="-Os -fno-omit-frame-pointer"
 
 maxusers	8
 options 	RTC_OFFSET=0
@@ -139,6 +139,7 @@ options 	DDB		# Kernel debugger
 #options 	DDB_HISTORY_SIZE=100	# Enable history editing in DDB
 #options 	DIAGNOSTIC	# Extra kernel sanity checks
 #options 	DEBUG		# Enable misc. kernel debugging code
+makeoptions	DEBUG="-g"	# compile full symbol table
 #options 	SYSCALL_DEBUG	# debug all syscalls.
 #options 	SCSIDEBUG	# Add SCSI debugging statements
 #options 	PANICBUTTON	# Forced crash via keypress (?)
@@ -504,7 +505,7 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 #pseudo-device	fss			# file system snapshot device
 #pseudo-device	putter			# for puffs and pud

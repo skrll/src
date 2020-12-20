@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.2 2013/10/18 23:36:10 jmmv Exp $
+# $NetBSD: Makefile,v 1.4 2020/07/02 13:56:10 lukem Exp $
 
 .include <bsd.own.mk>
 
@@ -12,12 +12,17 @@ CPPFLAGS+=	-I${NETBSDSRCDIR}/lib/liblutok
 
 FILESDIR=	${TESTSDIR}
 
-TESTS_CXX=	c_gate_test \
+TESTS_CXX=
+.for test in	\
+		c_gate_test \
 		debug_test \
 		exceptions_test \
 		operations_test \
 		stack_cleaner_test \
 		state_test
+TESTS_CXX+=	${test}
+SRCS.${test}=	${test}.cpp
+.endfor
 
 LDADD+=		-llutok -llua
 DPADD+=		${LIBLUTOK} ${LIBLUA}

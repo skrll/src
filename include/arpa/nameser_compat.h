@@ -1,4 +1,4 @@
-/*	$NetBSD: nameser_compat.h,v 1.6 2015/02/24 17:57:08 christos Exp $	*/
+/*	$NetBSD: nameser_compat.h,v 1.8 2020/11/18 12:49:52 is Exp $	*/
 
 /* Copyright (c) 1983, 1989
  *    The Regents of the University of California.  All rights reserved.
@@ -82,7 +82,7 @@
 	 * which will force your compiles to bomb until you fix
 	 * the above macros.
 	 */
-  error "Undefined or invalid BYTE_ORDER";
+#error "Undefined or invalid BYTE_ORDER"
 #endif
 
 /*%
@@ -210,6 +210,7 @@ typedef struct {
 #define T_ATMA		ns_t_atma
 #define T_NAPTR		ns_t_naptr
 #define T_A6		ns_t_a6
+#define T_DNAME		ns_t_dname
 #define	T_TSIG		ns_t_tsig
 #define	T_IXFR		ns_t_ixfr
 #define T_AXFR		ns_t_axfr

@@ -1,4 +1,4 @@
-# $NetBSD: HDL_G,v 1.60 2020/03/25 17:06:18 jdolecek Exp $
+# $NetBSD: HDL_G,v 1.64 2020/09/27 13:48:50 roy Exp $
 #
 #       HDL_G -- I-O DATA HDL-G Kernel
 #
@@ -110,7 +110,7 @@ options 	USERCONF	# userconf(4) support
 
 #options 	DIAGNOSTIC	# internal consistency checks
 #options 	DEBUG
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	VERBOSE_INIT_ARM # verbose bootstraping messages
 options 	DDB		# in-kernel debugger
 #options 	DDB_HISTORY_SIZE=100	# Enable history editing in DDB
@@ -339,9 +339,6 @@ ucom*	at ukyopon? portno ?
 # USB scanners that use SCSI emulation, e.g., HP5300
 usscanner* at uhub? port ?
 
-# Y@P firmware loader
-uyap* at uhub? port ?
-
 # D-Link DSB-R100 USB radio
 udsbr*	at uhub? port ?
 radio*	at udsbr?
@@ -399,7 +396,7 @@ pseudo-device	faith			# IPv[46] tcp relay translation i/f
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 #pseudo-device	kttcp
 
 # miscellaneous pseudo-devices

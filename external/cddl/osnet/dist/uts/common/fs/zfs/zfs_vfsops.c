@@ -1517,7 +1517,7 @@ zfs_domount(vfs_t *vfsp, char *osname)
 #endif
 #ifdef __NetBSD__
 	vfsp->mnt_flag |= MNT_LOCAL;
-	vfsp->mnt_iflag |= IMNT_MPSAFE;
+	vfsp->mnt_iflag |= IMNT_MPSAFE | IMNT_NCLOOKUP;
 #endif
 
 	/*
@@ -1994,7 +1994,7 @@ zfs_mount(vfs_t *vfsp, const char *path, void *data, size_t *data_len)
 	mutex_enter(mvp->v_interlock);
 	if ((uap->flags & MS_REMOUNT) == 0 &&
 	    (uap->flags & MS_OVERLAY) == 0 &&
-	    (mvp->v_count != 1 || (mvp->v_flag & VROOT))) {
+	    (vrefcnt(mvp) != 1 || (mvp->v_flag & VROOT))) {
 		mutex_exit(mvp->v_interlock);
 		return (SET_ERROR(EBUSY));
 	}
@@ -2078,7 +2078,7 @@ zfs_mount(vfs_t *vfsp, const char *path, void *data, size_t *data_len)
 	vfsp->vfs_flag |= MNT_NFS4ACLS;
 #endif
 #ifdef __NetBSD__
-	vfsp->mnt_iflag |= IMNT_MPSAFE;
+	vfsp->mnt_iflag |= IMNT_MPSAFE | IMNT_NCLOOKUP;
 #endif
 
 	/*
@@ -2311,7 +2311,11 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	for (zp = list_head(&zfsvfs->z_all_znodes); zp != NULL;
 	    zp = list_next(&zfsvfs->z_all_znodes, zp))
 		if (zp->z_sa_hdl) {
+#ifdef __NetBSD__
+			ASSERT(vrefcnt(ZTOV(zp)) >= 0);
+#else
 			ASSERT(ZTOV(zp)->v_count >= 0);
+#endif
 			zfs_znode_dmu_fini(zp);
 		}
 	mutex_exit(&zfsvfs->z_znodes_lock);

@@ -91,7 +91,7 @@
 #define DHCPCD_IPV6RS			(1ULL << 31)
 #define DHCPCD_IPV6RA_REQRDNSS		(1ULL << 32)
 #define DHCPCD_PRIVSEP			(1ULL << 33)
-#define DHCPCD_UNPRIV			(1ULL << 34)
+#define DHCPCD_CONFIGURE		(1ULL << 34)
 #define DHCPCD_IPV4			(1ULL << 35)
 #define DHCPCD_FORKED			(1ULL << 36)
 #define DHCPCD_IPV6			(1ULL << 37)
@@ -99,7 +99,7 @@
 #define DHCPCD_NOALIAS			(1ULL << 39)
 #define DHCPCD_IA_FORCED		(1ULL << 40)
 #define DHCPCD_STOPPING			(1ULL << 41)
-#define DHCPCD_DEPARTED			(1ULL << 42)
+#define DHCPCD_LAUNCHER			(1ULL << 42)
 #define DHCPCD_HOSTNAME_SHORT		(1ULL << 43)
 #define DHCPCD_EXITING			(1ULL << 44)
 #define DHCPCD_WAITIP4			(1ULL << 45)
@@ -119,6 +119,8 @@
 #define DHCPCD_PRINT_PIDFILE		(1ULL << 59)
 #define DHCPCD_ONESHOT			(1ULL << 60)
 #define DHCPCD_INACTIVE			(1ULL << 61)
+#define	DHCPCD_SLAACTEMP		(1ULL << 62)
+#define DHCPCD_PRIVSEPROOT		(1ULL << 63)
 
 #define DHCPCD_NODROP	(DHCPCD_EXITING | DHCPCD_PERSISTENT)
 
@@ -127,6 +129,60 @@
 #define DHCPCD_WARNINGS	(DHCPCD_CSR_WARNED | \
 		DHCPCD_ROUTER_HOST_ROUTE_WARNED)
 
+/* These options only make sense in the config file, so don't use any
+   valid short options for them */
+#define O_BASE			MAX('z', 'Z') + 1
+#define O_ARPING		O_BASE + 1
+#define O_FALLBACK		O_BASE + 2
+#define O_DESTINATION		O_BASE + 3
+#define O_IPV6RS		O_BASE + 4
+#define O_NOIPV6RS		O_BASE + 5
+#define O_IPV6RA_FORK		O_BASE + 6
+#define O_LINK_RCVBUF		O_BASE + 7
+#define O_ANONYMOUS		O_BASE + 8
+#define O_NOALIAS		O_BASE + 9
+#define O_IA_NA			O_BASE + 10
+#define O_IA_TA			O_BASE + 11
+#define O_IA_PD			O_BASE + 12
+#define O_HOSTNAME_SHORT	O_BASE + 13
+#define O_DEV			O_BASE + 14
+#define O_NODEV			O_BASE + 15
+#define O_NOIPV4		O_BASE + 16
+#define O_NOIPV6		O_BASE + 17
+#define O_IAID			O_BASE + 18
+#define O_DEFINE		O_BASE + 19
+#define O_DEFINE6		O_BASE + 20
+#define O_EMBED			O_BASE + 21
+#define O_ENCAP			O_BASE + 22
+#define O_VENDOPT		O_BASE + 23
+#define O_VENDCLASS		O_BASE + 24
+#define O_AUTHPROTOCOL		O_BASE + 25
+#define O_AUTHTOKEN		O_BASE + 26
+#define O_AUTHNOTREQUIRED	O_BASE + 27
+#define O_NODHCP		O_BASE + 28
+#define O_NODHCP6		O_BASE + 29
+#define O_DHCP			O_BASE + 30
+#define O_DHCP6			O_BASE + 31
+#define O_IPV4			O_BASE + 32
+#define O_IPV6			O_BASE + 33
+#define O_CONTROLGRP		O_BASE + 34
+#define O_SLAAC			O_BASE + 35
+#define O_GATEWAY		O_BASE + 36
+#define O_NOUP			O_BASE + 37
+#define O_IPV6RA_AUTOCONF	O_BASE + 38
+#define O_IPV6RA_NOAUTOCONF	O_BASE + 39
+#define O_REJECT		O_BASE + 40
+#define O_BOOTP			O_BASE + 42
+#define O_DEFINEND		O_BASE + 43
+#define O_NODELAY		O_BASE + 44
+#define O_INFORM6		O_BASE + 45
+#define O_LASTLEASE_EXTEND	O_BASE + 46
+#define O_INACTIVE		O_BASE + 47
+#define O_MUDURL		O_BASE + 48
+#define O_MSUSERCLASS		O_BASE + 49
+#define O_CONFIGURE		O_BASE + 50
+#define O_NOCONFIGURE		O_BASE + 51
+
 extern const struct option cf_options[];
 
 struct if_sla {
@@ -134,7 +190,7 @@ struct if_sla {
 	uint32_t sla;
 	uint8_t prefix_len;
 	uint64_t suffix;
-	int8_t sla_set;
+	bool sla_set;
 };
 
 struct if_ia {
@@ -189,7 +245,6 @@ struct if_options {
 	char **config;
 
 	char **environ;
-	char *script;
 
 	char hostname[HOSTNAME_MAX_LEN + 1]; /* We don't store the length */
 	uint8_t fqdn;

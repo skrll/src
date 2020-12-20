@@ -1,4 +1,4 @@
-/*	$NetBSD: stdtime.h,v 1.3 2019/01/09 16:55:17 christos Exp $	*/
+/*	$NetBSD: stdtime.h,v 1.5 2020/08/03 17:23:43 christos Exp $	*/
 
 /*
  * Copyright (C) Internet Systems Consortium, Inc. ("ISC")
@@ -11,12 +11,13 @@
  * information regarding copyright ownership.
  */
 
-
 #ifndef ISC_STDTIME_H
 #define ISC_STDTIME_H 1
 
-#include <isc/lang.h>
 #include <inttypes.h>
+#include <stdlib.h>
+
+#include <isc/lang.h>
 
 /*
  * It's public information that 'isc_stdtime_t' is an unsigned integral type.
@@ -35,6 +36,20 @@ isc_stdtime_get(isc_stdtime_t *t);
  * Requires:
  *
  *	't' is a valid pointer.
+ */
+
+void
+isc_stdtime_tostring(isc_stdtime_t t, char *out, size_t outlen);
+/*
+ * Convert 't' into a null-terminated string of the form
+ * "Wed Jun 30 21:49:08 1993". Store the string in the 'out'
+ * buffer.
+ *
+ * Requires:
+ *
+ *	't' is a valid time.
+ *	'out' is a valid pointer.
+ *	'outlen' is at least 26.
  */
 
 #define isc_stdtime_convert32(t, t32p) (*(t32p) = t)

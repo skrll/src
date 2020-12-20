@@ -1,10 +1,10 @@
 #!/bin/sh
 #
-# $NetBSD: bootconf.sh,v 1.15 2012/12/31 23:21:27 christos Exp $
+# $NetBSD: bootconf.sh,v 1.18 2020/09/08 12:52:18 martin Exp $
 #
 
 # PROVIDE: bootconf
-# REQUIRE: mountcritlocal
+# REQUIRE: CRITLOCALMOUNTED
 # KEYWORD: interactive
 
 $_rc_subr_loaded . /etc/rc.subr
@@ -38,7 +38,7 @@ bootconf_start()
 		case $name in
 		current|default|\*)
 			continue
-			;;	
+			;;
 		*)
 			if [ "$name" = "$default" ]; then
 				echo -n "${spc}[${name}]"

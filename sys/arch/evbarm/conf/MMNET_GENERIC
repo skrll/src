@@ -1,4 +1,4 @@
-# $NetBSD: MMNET_GENERIC,v 1.50 2020/03/25 17:06:18 jdolecek Exp $
+# $NetBSD: MMNET_GENERIC,v 1.53 2020/09/27 13:48:50 roy Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include		"arch/evbarm/conf/std.mmnet"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.50 $"
+#ident 		"GENERIC-$Revision: 1.53 $"
 
 maxusers	32		# estimated number of users
 
@@ -462,9 +462,6 @@ ucom*	at uvscom? portno ?
 # Topfield TF5000PVR range of DVB recorders
 #utoppy*	at uhub? port ?
 
-# Y@P firmware loader
-#uyap* at uhub? port ?
-
 # D-Link DSB-R100 USB radio
 #udsbr*	at uhub? port ?
 #radio*	at udsbr?
@@ -561,7 +558,7 @@ pseudo-device	tun			# network tunneling over tty
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+#pseudo-device	vether			# Virtual Ethernet for bridge
 # srt is EXPERIMENTAL
 #pseudo-device	srt			# source-address-based routing
 

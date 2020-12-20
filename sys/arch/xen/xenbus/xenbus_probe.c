@@ -1,4 +1,4 @@
-/* $NetBSD: xenbus_probe.c,v 1.48 2020/04/10 14:54:33 jdolecek Exp $ */
+/* $NetBSD: xenbus_probe.c,v 1.55 2020/05/26 10:37:25 bouyer Exp $ */
 /******************************************************************************
  * Talks to Xen Store to figure out what devices we have.
  *
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xenbus_probe.c,v 1.48 2020/04/10 14:54:33 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xenbus_probe.c,v 1.55 2020/05/26 10:37:25 bouyer Exp $");
 
 #if 0
 #define DPRINTK(fmt, args...) \
@@ -45,6 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: xenbus_probe.c,v 1.48 2020/04/10 14:54:33 jdolecek E
 #include <sys/systm.h>
 #include <sys/param.h>
 #include <sys/kthread.h>
+#include <sys/mutex.h>
 #include <uvm/uvm.h>
 
 #include <xen/xen.h>	/* for xendomain_is_dom0() */
@@ -54,6 +55,8 @@ __KERNEL_RCSID(0, "$NetBSD: xenbus_probe.c,v 1.48 2020/04/10 14:54:33 jdolecek E
 #include <xen/shutdown_xenbus.h>
 
 #include "xenbus_comms.h"
+
+#include "kernfs.h"
 
 static int  xenbus_match(device_t, cfdata_t, void *);
 static void xenbus_attach(device_t, device_t, void *);
@@ -108,8 +111,8 @@ xenbus_attach(device_t parent, device_t self, void *aux)
 	xenbus_dmat = xa->xa_dmat;
 	config_pending_incr(self);
 
-	err = kthread_create(PRI_NONE, 0, NULL, xenbus_probe_init, NULL,
-	    NULL, "xenbus_probe");
+	err = kthread_create(PRI_NONE, KTHREAD_MPSAFE, NULL,
+	    xenbus_probe_init, NULL, NULL, "xenbus_probe");
 	if (err)
 		aprint_error_dev(xenbus_dev,
 				"kthread_create(xenbus_probe): %d\n", err);
@@ -130,7 +133,7 @@ xenbus_suspend(device_t dev, const pmf_qual_t *qual)
 static bool
 xenbus_resume(device_t dev, const pmf_qual_t *qual)
 {
-	xb_init_comms(dev);
+	xb_resume_comms(dev);
 	xs_resume();
 
 	return true;
@@ -194,7 +197,7 @@ read_otherend_details(struct xenbus_device *xendev,
 		return err;
 	}
 	DPRINTK("read_otherend_details: read %s/%s returned %s\n",
-	    xendev->xbusd_path, path_node, val);
+	    xendev->xbusd_path, path_node, xendev->xbusd_otherend);
 
 	if (strlen(xendev->xbusd_otherend) == 0 ||
 	    !xenbus_exists(NULL, xendev->xbusd_otherend, "")) {
@@ -321,7 +324,7 @@ xenbus_probe_device_type(const char *path, const char *type,
 
 	DPRINTK("probe %s type %s", path, type);
 	err = xenbus_directory(NULL, path, "", &orig_dir_n, &dir);
-	DPRINTK("directory err %d dir_n %d", err, dir_n);
+	DPRINTK("directory err %d dir_n %d", err, orig_dir_n);
 	if (err)
 		return err;
 	dir_n = orig_dir_n;
@@ -387,6 +390,7 @@ xenbus_probe_device_type(const char *path, const char *type,
 		msize = sizeof(*xbusd) + strlen(path) + strlen(dir[i]) + 2;
 		xbusd = kmem_zalloc(msize, KM_SLEEP);
 		xbusd->xbusd_sz = msize;
+		xbusd->xbusd_dmat = xenbus_dmat;
 
 		snprintf(__UNCONST(xbusd->xbusd_path),
 		    msize - sizeof(*xbusd) + 1, "%s/%s", path, dir[i]);
@@ -398,7 +402,7 @@ xenbus_probe_device_type(const char *path, const char *type,
 		err = xenbus_read_ul(NULL, xbusd->xbusd_path, "state",
 		    &state, 10);
 		if (err) {
-			printf("xenbus: can't get state "
+			aprint_error_dev(xenbus_dev, "can't get state "
 			    "for %s (%d)\n", xbusd->xbusd_path, err);
 			kmem_free(xbusd, xbusd->xbusd_sz);
 			err = 0;
@@ -417,8 +421,9 @@ xenbus_probe_device_type(const char *path, const char *type,
 			xbusd->xbusd_type = XENBUS_BACKEND_DEVICE;
 			err = read_frontend_details(xbusd);
 			if (err != 0) {
-				printf("xenbus: can't get frontend details "
-				    "for %s (%d)\n", xbusd->xbusd_path, err);
+				aprint_error_dev(xenbus_dev,
+				    "can't get frontend details for %s (%d)\n",
+				    xbusd->xbusd_path, err);
 				break;
 			}
 			if (create(xbusd)) {
@@ -427,21 +432,40 @@ xenbus_probe_device_type(const char *path, const char *type,
 			}
 		} else {
 			xbusd->xbusd_type = XENBUS_FRONTEND_DEVICE;
-			xa.xa_dmat = xenbus_dmat;
 			xa.xa_xbusd = xbusd;
 			xa.xa_type = type;
 			xa.xa_id = strtoul(dir[i], &ep, 0);
 			if (dir[i][0] == '\0' || *ep != '\0') {
-				printf("xenbus device type %s: id %s is not a"
-				    " number\n", type, dir[i]);
+				aprint_error_dev(xenbus_dev,
+				    "device type %s: id %s is not a number\n",
+				    type, dir[i]);
 				err = EFTYPE;
 				kmem_free(xbusd, xbusd->xbusd_sz);
 				break;
 			}
+			if (strcmp(xa.xa_type, "vbd") == 0) {
+				char dtype[10];
+				if (xenbus_read(NULL, xbusd->xbusd_path,
+				    "device-type", dtype, sizeof(dtype)) !=0) {
+					aprint_error_dev(xenbus_dev,
+					    "%s: can't read device-type\n",
+					    xbusd->xbusd_path);
+					kmem_free(xbusd, xbusd->xbusd_sz);
+					break;
+				}
+				if (strcmp(dtype, "cdrom") == 0) {
+					aprint_verbose_dev(xenbus_dev,
+					    "ignoring %s type cdrom\n",
+					    xbusd->xbusd_path);
+					kmem_free(xbusd, xbusd->xbusd_sz);
+					continue;
+				}
+			}
 			err = read_backend_details(xbusd);
 			if (err != 0) {
-				printf("xenbus: can't get backend details "
-				    "for %s (%d)\n", xbusd->xbusd_path, err);
+				aprint_error_dev(xenbus_dev,
+				    "can't get backend details for %s (%d)\n",
+				    xbusd->xbusd_path, err);
 				kmem_free(xbusd, xbusd->xbusd_sz);
 				break;
 			}
@@ -597,6 +621,8 @@ static struct xenbus_watch be_watch;
 
 /* A flag to determine if xenstored is 'ready' (i.e. has started) */
 int xenstored_ready = 0;
+static kmutex_t xenstored_lock;
+static kcondvar_t xenstored_cv;
 
 void
 xenbus_probe(void *unused)
@@ -634,6 +660,15 @@ xenbus_probe(void *unused)
 	//notifier_call_chain(&xenstore_chain, 0, NULL);
 }
 
+void
+xb_xenstored_make_ready(void)
+{
+	mutex_enter(&xenstored_lock);
+	xenstored_ready = 1;
+	cv_broadcast(&xenstored_cv);
+	mutex_exit(&xenstored_lock);
+}
+
 static void
 xenbus_probe_init(void *unused)
 {
@@ -644,6 +679,8 @@ xenbus_probe_init(void *unused)
 	DPRINTK("");
 
 	SLIST_INIT(&xenbus_device_list);
+	mutex_init(&xenstored_lock, MUTEX_DEFAULT, IPL_TTY);
+	cv_init(&xenstored_cv, "xsready");
 
 	/*
 	** Domain0 doesn't have a store_evtchn or store_mfn yet.
@@ -684,8 +721,10 @@ xenbus_probe_init(void *unused)
 #endif /* DOM0OPS */
 	}
 
+#if NKERNFS > 0
 	/* Publish xenbus and Xenstore info in /kern/xen */
 	xenbus_kernfs_init();
+#endif
 
 	/* register event handler */
 	xb_init_comms(xenbus_dev);
@@ -707,13 +746,14 @@ xenbus_probe_init(void *unused)
 	config_pending_decr(xenbus_dev);
 #ifdef DOM0OPS
 	if (dom0) {
-		int s;
-		s = spltty();
+		mutex_enter(&xenstored_lock);
 		while (xenstored_ready == 0) {
-			tsleep(&xenstored_ready, PRIBIO, "xsready", 0);
+			cv_wait(&xenstored_cv, &xenstored_lock);
+			mutex_exit(&xenstored_lock);
 			xenbus_probe(NULL);
+			mutex_enter(&xenstored_lock);
 		}
-		splx(s);
+		mutex_exit(&xenstored_lock);
 	}
 #endif
 	kthread_exit(0);

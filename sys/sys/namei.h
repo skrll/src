@@ -1,11 +1,11 @@
-/*	$NetBSD: namei.h,v 1.108 2020/04/04 20:52:18 ad Exp $	*/
+/*	$NetBSD: namei.h,v 1.113 2020/05/30 20:16:34 ad Exp $	*/
 
 
 /*
  * WARNING: GENERATED FILE.  DO NOT EDIT
  * (edit namei.src and run make namei in src/sys/sys)
  *   by:   NetBSD: gennameih.awk,v 1.5 2009/12/23 14:17:19 pooka Exp 
- *   from: NetBSD: namei.src,v 1.53 2020/04/04 20:49:31 ad Exp 
+ *   from: NetBSD: namei.src,v 1.58 2020/05/30 20:16:14 ad Exp 
  */
 
 /*
@@ -45,7 +45,7 @@
 #include <sys/queue.h>
 #include <sys/mutex.h>
 
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(_MODULE)
 #include <sys/kauth.h>
 #include <sys/rwlock.h>
 
@@ -171,11 +171,12 @@ struct nameidata {
 #define	ISDOTDOT	0x0002000	/* current component name is .. */
 #define	MAKEENTRY	0x0004000	/* entry is to be added to name cache */
 #define	ISLASTCN	0x0008000	/* this is last component of pathname */
+#define	WILLBEDIR	0x0010000	/* new files will be dirs */
 #define	ISWHITEOUT	0x0020000	/* found whiteout */
 #define	DOWHITEOUT	0x0040000	/* do whiteouts */
 #define	REQUIREDIR	0x0080000	/* must be a directory */
 #define	CREATEDIR	0x0200000	/* trailing slashes are ok */
-#define	PARAMASK	0x02ef800	/* mask of parameter descriptors */
+#define	PARAMASK	0x02ff800	/* mask of parameter descriptors */
 
 /*
  * Initialization of a nameidata structure.
@@ -298,15 +299,18 @@ bool	cache_lookup_raw(struct vnode *, const char *, size_t, uint32_t,
 bool	cache_lookup_linked(struct vnode *, const char *, size_t,
 			    struct vnode **, krwlock_t **, kauth_cred_t);
 int	cache_revlookup(struct vnode *, struct vnode **, char **, char *,
-			bool, int);
+			bool, accmode_t);
 int	cache_diraccess(struct vnode *, int);
 void	cache_enter(struct vnode *, struct vnode *,
 			const char *, size_t, uint32_t);
-void	cache_enter_id(struct vnode *, mode_t, uid_t, gid_t);
+void	cache_enter_id(struct vnode *, mode_t, uid_t, gid_t, bool);
 bool	cache_have_id(struct vnode *);
 void	cache_vnode_init(struct vnode * );
 void	cache_vnode_fini(struct vnode * );
 void	cache_cpu_init(struct cpu_info *);
+void	cache_enter_mount(struct vnode *, struct vnode *);
+bool	cache_cross_mount(struct vnode **, krwlock_t **);
+bool	cache_lookup_mount(struct vnode *, struct vnode **);
 
 void	nchinit(void);
 void	namecache_count_pass2(void);
@@ -366,10 +370,11 @@ struct	nchstats _NAMEI_CACHE_STATS(uint64_t);
 #define NAMEI_ISDOTDOT	0x0002000
 #define NAMEI_MAKEENTRY	0x0004000
 #define NAMEI_ISLASTCN	0x0008000
+#define NAMEI_WILLBEDIR	0x0010000
 #define NAMEI_ISWHITEOUT	0x0020000
 #define NAMEI_DOWHITEOUT	0x0040000
 #define NAMEI_REQUIREDIR	0x0080000
 #define NAMEI_CREATEDIR	0x0200000
-#define NAMEI_PARAMASK	0x02ef800
+#define NAMEI_PARAMASK	0x02ff800
 
 #endif /* !_SYS_NAMEI_H_ */

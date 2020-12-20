@@ -1,4 +1,4 @@
-/* $NetBSD: vexpress_platform.c,v 1.16 2020/02/15 08:16:12 skrll Exp $ */
+/* $NetBSD: vexpress_platform.c,v 1.19 2020/10/30 18:54:36 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "opt_console.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.16 2020/02/15 08:16:12 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.19 2020/10/30 18:54:36 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -61,7 +61,6 @@ __KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.16 2020/02/15 08:16:12 skrll
 #define	VEXPRESS_REF_FREQ	24000000
 
 extern struct bus_space armv7_generic_bs_tag;
-extern struct bus_space armv7_generic_a4x_bs_tag;
 extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 
 #define	SYSREG_BASE		0x1c010000
@@ -92,7 +91,7 @@ static bus_space_handle_t sysreg_bsh;
 
 void vexpress_platform_early_putchar(char);
 
-void
+void __noasan
 vexpress_platform_early_putchar(char c)
 {
 #ifdef CONSADDR
@@ -105,7 +104,7 @@ vexpress_platform_early_putchar(char c)
 		continue;
 
 	uartaddr[PL01XCOM_DR / 4] = htole32(c);
-	arm_dsb();
+	dsb(sy);
 
 	while ((le32toh(uartaddr[PL01XCOM_FR / 4]) & PL01X_FR_TXFE) == 0)
 		continue;
@@ -190,7 +189,6 @@ static void
 vexpress_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	faa->faa_bst = &armv7_generic_bs_tag;
-	faa->faa_a4x_bst = &armv7_generic_a4x_bs_tag;
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 

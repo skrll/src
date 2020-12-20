@@ -1,4 +1,4 @@
-/*	$NetBSD: xen_intr.c,v 1.21 2020/04/06 19:26:00 jdolecek Exp $	*/
+/*	$NetBSD: xen_intr.c,v 1.28 2020/08/01 12:39:40 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001 The NetBSD Foundation, Inc.
@@ -30,9 +30,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xen_intr.c,v 1.21 2020/04/06 19:26:00 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xen_intr.c,v 1.28 2020/08/01 12:39:40 jdolecek Exp $");
 
 #include "opt_multiprocessor.h"
+#include "opt_pci.h"
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -40,6 +41,7 @@ __KERNEL_RCSID(0, "$NetBSD: xen_intr.c,v 1.21 2020/04/06 19:26:00 jdolecek Exp $
 #include <sys/cpu.h>
 #include <sys/device.h>
 
+#include <xen/intr.h>
 #include <xen/evtchn.h>
 #include <xen/xenfunc.h>
 
@@ -67,43 +69,15 @@ __KERNEL_RCSID(0, "$NetBSD: xen_intr.c,v 1.21 2020/04/06 19:26:00 jdolecek Exp $
 
 #if NPCI > 0
 #include <dev/pci/ppbreg.h>
+#ifdef __HAVE_PCI_MSI_MSIX
+#include <x86/pci/msipic.h>
+#include <x86/pci/pci_msi_machdep.h>
+#endif
 #endif
 
 #if defined(MULTIPROCESSOR)
 static const char *xen_ipi_names[XEN_NIPIS] = XEN_IPI_NAMES;
 #endif
-
-/*
- * Restore a value to cpl (unmasking interrupts).  If any unmasked
- * interrupts are pending, call Xspllower() to process them.
- */
-void xen_spllower(int nlevel);
-
-void
-xen_spllower(int nlevel)
-{
-	struct cpu_info *ci = curcpu();
-	uint32_t xmask;
-	u_long psl;
-
-	if (ci->ci_ilevel <= nlevel)
-		return;
-
-	__insn_barrier();
-
-	xmask = XUNMASK(ci, nlevel);
-	psl = xen_read_psl();
-	x86_disable_intr();
-	if (ci->ci_xpending & xmask) {
-		KASSERT(psl == 0);
-		Xspllower(nlevel);
-		/* Xspllower does enable_intr() */
-	} else {
-		ci->ci_ilevel = nlevel;
-		xen_write_psl(psl);
-	}
-}
-
 
 #if !defined(XENPVHVM)
 void
@@ -169,35 +143,23 @@ xen_intr_establish_xname(int legacy_irq, struct pic *pic, int pin,
 		intrstr = intr_create_intrid(legacy_irq, pic, pin, intrstr_buf,
 		    sizeof(intrstr_buf));
 
-		event_set_handler(pin, handler, arg, level, intrstr, xname,
-		    known_mpsafe);
+		rih = event_set_handler(pin, handler, arg, level,
+		    intrstr, xname, known_mpsafe, NULL);
 
-		rih = kmem_zalloc(sizeof(*rih), cold ? KM_NOSLEEP : KM_SLEEP);
 		if (rih == NULL) {
-			printf("%s: can't allocate handler info\n", __func__);
+			printf("%s: can't establish interrupt\n", __func__);
 			return NULL;
 		}
 
-		/*
-		 * XXX:
-		 * This is just a copy for API conformance.
-		 * The real ih is lost in the innards of
-		 * event_set_handler(); where the details of
-		 * biglock_wrapper etc are taken care of.
-		 * All that goes away when we nuke event_set_handler()
-		 * et. al. and unify with x86/intr.c
-		 */
-		rih->ih_pin = pin; /* port */
-		rih->ih_fun = rih->ih_realfun = handler;
-		rih->ih_arg = rih->ih_realarg = arg;
-		rih->pic_type = pic->pic_type;
 		return rih;
 	} 	/* Else we assume pintr */
 
 #if (NPCI > 0 || NISA > 0) && defined(XENPV) /* XXX: support PVHVM pirq */
 	struct pintrhand *pih;
 	int gsi;
-	int vector, evtchn;
+	int evtchn;
+	/* the hack below is from x86's intr_establish_xname() */
+	bool mpsafe = (known_mpsafe || level != IPL_VM);
 
 	KASSERTMSG(legacy_irq == -1 || (0 <= legacy_irq && legacy_irq < NUM_XEN_IRQS),
 	    "bad legacy IRQ value: %d", legacy_irq);
@@ -205,17 +167,17 @@ xen_intr_establish_xname(int legacy_irq, struct pic *pic, int pin,
 	    "non-legacy IRQon i8259 ");
 
 	gsi = xen_pic_to_gsi(pic, pin);
+	KASSERTMSG(gsi < NR_EVENT_CHANNELS, "gsi %d >= NR_EVENT_CHANNELS %u",
+	    gsi, (int)NR_EVENT_CHANNELS);
 
 	intrstr = intr_create_intrid(gsi, pic, pin, intrstr_buf,
 	    sizeof(intrstr_buf));
-
-	vector = xen_vec_alloc(gsi);
 
 	if (irq2port[gsi] == 0) {
 		extern struct cpu_info phycpu_info_primary; /* XXX */
 		struct cpu_info *ci = &phycpu_info_primary;
 
-		pic->pic_addroute(pic, ci, pin, vector, type);
+		pic->pic_addroute(pic, ci, pin, gsi, type);
 
 		evtchn = bind_pirq_to_evtch(gsi);
 		KASSERT(evtchn > 0);
@@ -231,8 +193,8 @@ xen_intr_establish_xname(int legacy_irq, struct pic *pic, int pin,
 	}
 
 	pih = pirq_establish(gsi, evtchn, handler, arg, level,
-			     intrstr, xname, known_mpsafe);
-	pih->pic_type = pic->pic_type;
+			     intrstr, xname, mpsafe);
+	pih->pic = pic;
 	return pih;
 #endif /* NPCI > 0 || NISA > 0 */
 
@@ -267,13 +229,13 @@ void
 xen_intr_disestablish(struct intrhand *ih)
 {
 
-	if (ih->pic_type == PIC_XEN) {
+	if (ih->ih_pic->pic_type == PIC_XEN) {
 		event_remove_handler(ih->ih_pin, ih->ih_realfun,
 		    ih->ih_realarg);
-		kmem_free(ih, sizeof(*ih));
+		/* event_remove_handler frees ih */
 		return;
 	}
-#if defined(DOM0OPS)
+#if defined(DOM0OPS) && defined(XENPV)
 	/* 
 	 * Cache state, to prevent a use after free situation with
 	 * ih.
@@ -338,11 +300,10 @@ void xen_cpu_intr_init(struct cpu_info *);
 void
 xen_cpu_intr_init(struct cpu_info *ci)
 {
-	int i; /* XXX: duplicate */
-
-	ci->ci_xunmask[0] = 0xfffffffe;
-	for (i = 1; i < NIPL; i++)
-		ci->ci_xunmask[i] = ci->ci_xunmask[i - 1] & ~(1 << i);
+#if defined(__HAVE_PREEMPTION)
+	x86_init_preempt(ci);
+#endif
+	x86_intr_calculatemasks(ci);
 
 #if defined(INTRSTACKSIZE)
 	vaddr_t istack;
@@ -370,7 +331,7 @@ xen_cpu_intr_init(struct cpu_info *ci)
 #endif
 
 #ifdef MULTIPROCESSOR
-	for (i = 0; i < XEN_NIPIS; i++)
+	for (int i = 0; i < XEN_NIPIS; i++)
 		evcnt_attach_dynamic(&ci->ci_ipi_events[i], EVCNT_TYPE_MISC,
 		    NULL, device_xname(ci->ci_dev), xen_ipi_names[i]);
 #endif
@@ -403,7 +364,7 @@ xen_intr_string(int port, char *buf, size_t len, struct pic *pic)
 	KASSERT(port >= 0);
 	KASSERT(port < NR_EVENT_CHANNELS);
 
-	snprintf(buf, len, "%s channel %d", pic->pic_name, port);
+	snprintf(buf, len, "%s chan %d", pic->pic_name, port);
 
 	return buf;
 }
@@ -477,7 +438,7 @@ xen_intr_create_intrid(int legacy_irq, struct pic *pic, int pin, char *buf, size
 {
 	int ih = 0;
 
-#if NPCI > 0
+#if NPCI > 0 && defined(XENPV)
 #if defined(__HAVE_PCI_MSI_MSIX)
 	if ((pic->pic_type == PIC_MSI) || (pic->pic_type == PIC_MSIX)) {
 		uint64_t pih;
@@ -527,8 +488,22 @@ xen_intr_create_intrid(int legacy_irq, struct pic *pic, int pin, char *buf, size
 	return NULL; /* No pic found! */
 }
 
-#if !defined(XENPVHVM)
-__strong_alias(spllower, xen_spllower);
+static struct intrsource xen_dummy_intrsource;
+
+struct intrsource *
+xen_intr_allocate_io_intrsource(const char *intrid)
+{
+	/* Nothing to do, required by MSI code */
+	return &xen_dummy_intrsource;
+}
+
+void
+xen_intr_free_io_intrsource(const char *intrid)
+{
+	/* Nothing to do, required by MSI code */
+}
+
+#if defined(XENPV)
 __strong_alias(x86_read_psl, xen_read_psl);
 __strong_alias(x86_write_psl, xen_write_psl);
 
@@ -542,4 +517,6 @@ __strong_alias(intr_disestablish, xen_intr_disestablish);
 __strong_alias(cpu_intr_redistribute, xen_cpu_intr_redistribute);
 __strong_alias(cpu_intr_count, xen_cpu_intr_count);
 __strong_alias(cpu_intr_init, xen_cpu_intr_init);
-#endif /* !XENPVHVM */
+__strong_alias(intr_allocate_io_intrsource, xen_intr_allocate_io_intrsource);
+__strong_alias(intr_free_io_intrsource, xen_intr_free_io_intrsource);
+#endif /* XENPV */

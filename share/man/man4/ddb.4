@@ -1,4 +1,4 @@
-.\"	$NetBSD: ddb.4,v 1.189 2020/03/30 20:47:57 maya Exp $
+.\"	$NetBSD: ddb.4,v 1.197 2020/12/19 23:38:21 mrg Exp $
 .\"
 .\" Copyright (c) 1997 - 2019 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -56,7 +56,7 @@
 .\" any improvements or extensions that they make and grant Carnegie Mellon
 .\" the rights to redistribute these changes.
 .\"
-.Dd March 30, 2020
+.Dd December 19, 2020
 .Dt DDB 4
 .Os
 .Sh NAME
@@ -584,7 +584,7 @@ is specified, the complete vnode list is printed.
 Display basic information about all physical pages managed by the VM system.
 For more detailed information about a single page, use
 .Ic show page .
-.It Ic show all pools Ns Op Cm /clp
+.It Ic show all pools Ns Op Cm /clpsS
 Display all pool information.
 Modifiers are the same as
 .Ic show pool .
@@ -721,7 +721,7 @@ If
 is specified, the complete page is printed.
 .It Ic show panic
 Print the current "panic" string.
-.It Ic show pool Ns Oo Cm /clp Oc Ar address
+.It Ic show pool Ns Oo Cm /clpsS Oc Ar address
 Print the pool at
 .Ar address .
 Valid modifiers:
@@ -732,6 +732,13 @@ Print the cachelist and its statistics for this pool.
 Print the log entries for this pool.
 .It Cm /p
 Print the pagelist for this pool.
+.It Cm /s
+Print a short (one line) list per pool, showing the wait channel, pool
+address, allocation size, alignment, allocated pages, allocated items,
+consumed items, allocation requests, allocation frees, pages allocated,
+pages freed, and currently idle pages, respectively.
+.It Cm /S
+Skip pools with zero allocations.
 .El
 .It Ic show proc Ns Oo Cm /ap Oc Ar address | pid
 Show information about a process and its LWPs.
@@ -1009,15 +1016,17 @@ Some of these commands are:
 .Ss AARCH64
 .Bl -tag -width "traptrace" -compact
 .It Ic cpu
-Switch to another cpu.
+Switch to another CPU.
 .It Ic cpuinfo
-Print cpu information about the ``struct cpuinfo''.
+Print CPU information about the ``struct cpuinfo''.
 .It Ic frame
 Given a trap frame address, print out the trap frame.
 .It Ic lwp
 Print lwp information about the ``struct lwp''.
 .It Ic pte
 Print PTE information.
+.It Ic reset
+Reset the system.
 .It Ic sysreg
 Print system registers.
 .It Ic watch
@@ -1048,7 +1057,7 @@ for 64 bit.
 .Ss ALPHA
 .Bl -tag -width "traptrace" -compact
 .It Ic cpu
-Switch to another cpu.
+Switch to another CPU.
 .\" .It Ic halt
 .\" Call the PROM monitor to halt the CPU.
 .\" .It Ic reboot
@@ -1057,12 +1066,14 @@ Switch to another cpu.
 .Ss AMD64
 .Bl -tag -width "traptrace" -compact
 .It Ic cpu
-Switch to another cpu.
+Switch to another CPU.
 .El
 .Ss ARM32
 .Bl -tag -width "traptrace" -compact
 .It Ic frame
 Given a trap frame address, print out the trap frame.
+.It Ic reset
+Reset the system.
 .El
 .Ss HPPA
 .Bl -tag -width "traptrace" -compact
@@ -1075,7 +1086,7 @@ modifier is used, an LWP address.
 .Ss I386
 .Bl -tag -width "traptrace" -compact
 .It Ic cpu
-Switch to another cpu.
+Switch to another CPU.
 .El
 .Ss IA64
 .Bl -tag -width "traptrace" -compact
@@ -1087,15 +1098,48 @@ Otherwise, the given vector is shown.
 .Bl -tag -width "traptrace" -compact
 .It Ic cp0
 Dump CP0 (coprocessor 0) register values.
+.It Ic cpu
+Switch to another CPU.
 .It Ic kvtop
 Print the physical address for a given kernel virtual address.
+.\" .It Ic mfcr -- document this!
+.\" .It Ic mtcr -- document this!
+.It Ic nmi
+Send an NMI to a different CPU.
+This DDB command is currently only implemented for Cavium
+Octeon CPUs.
+.It Ic reset
+Reset the system.
+Not implemented for many CPUs and/or systems.
 .It Ic tlb
 Print out the Translation Lookaside Buffer (TLB).
-Only works in
-.Nx
-kernels compiled with
-.Dv DEBUG
-option.
+Use the
+.Cm /v
+modifier to show only valid TLB entries.
+.It Ic watch
+Set a hardware watchpoint on an address or a TLB ASID.
+Pass the address to be watched.
+If no address is specified, show a list of active watchpoints.
+The modifiers are
+.Cm /m
+i for trap on an instruction fetch,
+.Cm /r
+for trap on a read,
+.Cm /w
+for trap on a write,
+.Cm /m
+for a mask on the address to match,
+.Cm /a
+for trap on a TLB ASID match.
+The
+.Cm /m
+and
+.Cm /a
+modifiers require an extra argument for the mask and ASID respectively.
+.It Ic unwatch
+Clear a hardware watchpoint.
+If an address is specified, clear watchpoints that match that address.
+If no address is specified, clear all watchpoints.
 .El
 .Ss POWERPC 4xx
 .Bl -tag -width "traptrace" -compact
@@ -1144,7 +1188,7 @@ option.
 .Ss SPARC
 .Bl -tag -width "traptrace" -compact
 .It Ic cpu
-Switch to another cpu.
+Switch to another CPU.
 .It Ic prom
 Enter the Sun PROM monitor.
 .It Ic proc
@@ -1163,7 +1207,7 @@ for this physical address.
 .It Ic ctx
 Print process context information.
 .It Ic cpu
-Switch to another cpu.
+Switch to another CPU.
 .It Ic dtlb
 Print data translation look-aside buffer context information.
 .It Ic dtsb
@@ -1267,7 +1311,7 @@ Page Table Entry (PTE).
 .Ss VAX
 .Bl -tag -width "traptrace" -compact
 .It Ic cpu
-Switch to another cpu.
+Switch to another CPU.
 .El
 .Sh VARIABLES
 .Nm
@@ -1469,7 +1513,8 @@ and modifiers as described above.
 .Xr crash 8 ,
 .Xr reboot 8 ,
 .Xr sysctl 8 ,
-.Xr cnmagic 9
+.Xr cnmagic 9 ,
+.Xr ddb 9
 .Sh HISTORY
 The
 .Nm

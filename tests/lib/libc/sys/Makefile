@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.61 2020/03/06 18:32:35 kamil Exp $
+# $NetBSD: Makefile,v 1.68 2020/09/06 07:20:31 mrg Exp $
 
 MKMAN=	no
 
@@ -18,11 +18,14 @@ TESTS_C+=		t_connect
 TESTS_C+=		t_dup
 TESTS_C+=		t_fork
 TESTS_C+=		t_fsync
+TESTS_C+=		t_futex_ops
+TESTS_C+=		t_futex_robust
 TESTS_C+=		t_getcontext
 TESTS_C+=		t_getgroups
 TESTS_C+=		t_getitimer
 TESTS_C+=		t_getlogin
 TESTS_C+=		t_getpid
+TESTS_C+=		t_getrandom
 TESTS_C+=		t_getrusage
 TESTS_C+=		t_getsid
 TESTS_C+=		t_getsockname
@@ -51,7 +54,9 @@ TESTS_C+=		t_nanosleep
 TESTS_C+=		t_pipe
 TESTS_C+=		t_pipe2
 TESTS_C+=		t_poll
+TESTS_C+=		t_pollts
 TESTS_C+=		t_posix_fallocate
+TESTS_C+=		t_ppoll
 TESTS_C+=		t_ptrace
 TESTS_C+=		t_ptrace_sigchld
 TESTS_C+=		t_ptrace_wait
@@ -68,6 +73,7 @@ TESTS_C+=		t_sendrecv
 TESTS_C+=		t_setrlimit
 TESTS_C+=		t_setuid
 TESTS_C+=		t_sigaction
+TESTS_C+=		t_sigaltstack
 TESTS_C+=		t_sigqueue
 TESTS_C+=		t_sigtimedwait
 TESTS_C+=		t_socketpair
@@ -85,7 +91,7 @@ TESTS_C+=		t_wait_noproc
 TESTS_C+=		t_wait_noproc_wnohang
 TESTS_C+=		t_write
 
-SRCS.t_mprotect=	t_mprotect.c ${SRCS_EXEC_PROT}
+SRCS.t_mprotect=	t_mprotect.c ${SRCS_EXEC_PROT} t_mprotect_helper.c
 
 LDADD.t_getpid+=        -lpthread
 
@@ -104,7 +110,11 @@ TESTS_C+=		t_posix_fadvise
 LDADD.t_posix_fadvise+= ${LIBRUMPBASE}
 .endif
 
+CPPFLAGS.t_futex_ops.c		+= -I${.CURDIR}/../../../../lib
+CPPFLAGS.t_futex_robust.c	+= -I${.CURDIR}/../../../../lib
+
 CPPFLAGS.t_lwp_create.c		+= -D_KERNTYPES
+CPPFLAGS.t_ptrace_sigchld.c	+= -D__TEST_FENV
 CPPFLAGS.t_ptrace_wait.c	+= -D_KERNTYPES -D__TEST_FENV
 CPPFLAGS.t_ptrace_wait3.c	+= -D_KERNTYPES -D__TEST_FENV
 CPPFLAGS.t_ptrace_wait4.c	+= -D_KERNTYPES -D__TEST_FENV
@@ -134,5 +144,8 @@ truncate_test.root_owned:
 	dd if=/dev/null bs=1 count=1 of=${.TARGET}
 
 WARNS=			4
+
+CWARNFLAGS.gcc+=	${GCC_NO_ADDR_OF_PACKED_MEMBER} \
+			${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wno-error=deprecated :}
 
 .include <bsd.test.mk>

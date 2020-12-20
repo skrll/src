@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.59 2019/07/21 16:12:59 rin Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.63 2020/12/03 07:45:52 skrll Exp $	*/
 
 /*
  * Copyright (c) 1996 Scott K. Stevens
@@ -35,19 +35,20 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.59 2019/07/21 16:12:59 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.63 2020/12/03 07:45:52 skrll Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_multiprocessor.h"
 
 #include <sys/param.h>
+
+#include <sys/atomic.h>
+#include <sys/exec.h>
+#include <sys/intr.h>
 #include <sys/proc.h>
 #include <sys/reboot.h>
 #include <sys/systm.h>	/* just for boothowto */
-#include <sys/exec.h>
-#include <sys/atomic.h>
-#include <sys/intr.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -171,10 +172,8 @@ kdb_trap(int type, db_regs_t *regs)
 		if (is_mp_p && db_newcpu != NULL) {
 			db_onproc = db_newcpu;
 			db_newcpu = NULL;
-#ifdef _ARM_ARCH_6
-			membar_producer();
-			__asm __volatile("sev; sev");
-#endif
+			dsb(ishst);
+			sev();
 			continue;
 		}
 		break;
@@ -186,9 +185,8 @@ kdb_trap(int type, db_regs_t *regs)
 		 * the other CPUs to exit.
 		 */
 		db_onproc = NULL;
-#ifdef _ARM_ARCH_6
-		__asm __volatile("sev; sev");
-#endif
+		dsb(ishst);
+		sev();
 	}
 #endif
 
@@ -209,7 +207,7 @@ db_validate_address(vaddr_t addr)
 	else
 		pmap = p->p_vmspace->vm_map.pmap;
 
-	return (pmap_extract(pmap, addr, NULL) == false);
+	return pmap_extract(pmap, addr, NULL) == false;
 }
 
 /*
@@ -302,10 +300,10 @@ db_write_bytes(vaddr_t addr, size_t size, const char *data)
 void
 cpu_Debugger(void)
 {
-#if _BYTE_ORDER == _LITTLE_ENDIAN
-	__asm(".word	0xe7ffffff");
-#else
+#ifdef _ARM_ARCH_BE8
 	__asm(".word	0xffffffe7");
+#else
+	__asm(".word	0xe7ffffff");
 #endif
 }
 

@@ -1,7 +1,7 @@
-# $NetBSD: GENERIC,v 1.178 2020/01/29 18:39:01 maya Exp $
+# $NetBSD: GENERIC,v 1.183 2020/09/27 13:48:50 roy Exp $
 #
 # GENERIC machine description file
-# 
+#
 # This machine description file is used to generate the default NetBSD
 # kernel.  The generic kernel does not include all options, subsystems
 # and device drivers, but should be useful for most applications.
@@ -164,7 +164,6 @@ options 	WSDISPLAY_COMPAT_RAWKBD		# can get raw scancodes
 
 #options 	PORTMASTER	# Enable PortMaster only options
 #options 	DIAGNOSTIC	# internal consistency checks
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
 options 	DDB		# in-kernel debugger
 options 	DDB_HISTORY_SIZE=100	# Enable history editing in DDB
 #makeoptions	DEBUG="-g"	# compile full symbol table
@@ -411,9 +410,6 @@ ucom*	at ukyopon? portno ?
 usscanner* at uhub? port ?
 scsibus* at usscanner? channel ?
 
-# Y@P firmware loader
-uyap* at uhub? port ?
-
 # USB Generic driver
 ugen* at uhub? port ?
 
@@ -545,7 +541,7 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 
 #

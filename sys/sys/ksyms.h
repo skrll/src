@@ -1,4 +1,4 @@
-/*	$NetBSD: ksyms.h,v 1.37 2017/11/06 17:56:25 christos Exp $	*/
+/*	$NetBSD: ksyms.h,v 1.39 2020/09/24 09:37:07 mrg Exp $	*/
 
 /*
  * Copyright (c) 2001, 2003 Anders Magnusson (ragge@ludd.luth.se).
@@ -126,6 +126,8 @@ struct ksyms_gvalue {
 #define KSYMS_PROC	0100	/* Procedures only */
 #define KSYMS_ANY	0200	/* Also local symbols (DDB use only) */
 
+#if defined(_KERNEL)
+
 typedef int (*ksyms_callback_t)(const char *, int, void *,
 	uint32_t, int, void *);
 
@@ -144,9 +146,11 @@ int ksyms_delsymtab(const char *);
 void ksyms_init(void);
 void ksyms_addsyms_elf(int, void *, void *);
 void ksyms_addsyms_explicit(void *, void *, size_t, void *, size_t);
+bool ksyms_available(void);
 int ksyms_sift(char *, char *, int);
 void ksyms_modload(const char *, void *, vsize_t, char *, vsize_t);
 void ksyms_modunload(const char *);
 
 #endif /* _KERNEL */
+#endif /* _KERNEL || _KMEMUSER */
 #endif /* _SYS_KSYMS_H_ */

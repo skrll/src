@@ -1,10 +1,10 @@
 #!/bin/sh
 #
-# $NetBSD: ipfilter,v 1.18 2009/03/23 18:52:02 hannken Exp $
+# $NetBSD: ipfilter,v 1.21 2020/09/08 12:52:18 martin Exp $
 #
 
 # PROVIDE: ipfilter
-# REQUIRE: root bootconf mountcritlocal tty
+# REQUIRE: root bootconf CRITLOCALMOUNTED tty
 
 $_rc_subr_loaded . /etc/rc.subr
 
@@ -84,7 +84,7 @@ ipfilter_reload()
 	if [ -f /etc/ipf6.conf ] && ! /sbin/ipf -I -6 -f /etc/ipf6.conf; then
 		err 1 "reload of ipf6.conf failed; not swapping to new ruleset."
 	fi
-		
+
 		# Swap in the new rules
 		#
 	/sbin/ipf -s

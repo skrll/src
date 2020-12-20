@@ -30,11 +30,12 @@
 #define DUID_H
 
 #define DUID_LEN	128 + 2
+#define	DUID_DEFAULT	0
 #define	DUID_LLT	1
 #define	DUID_LL		3
 #define	DUID_UUID	4
 
 size_t duid_make(void *, const struct interface *, uint16_t);
-size_t duid_init(const struct interface *);
+size_t duid_init(struct dhcpcd_ctx *, const struct interface *);
 
 #endif

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.13 2012/10/12 20:15:52 tsutsui Exp $
+#	$NetBSD: Makefile,v 1.15 2020/08/16 07:03:45 isaki Exp $
 
 # host tools
 SUBDIR= newdisk installboot
@@ -8,7 +8,8 @@ SUBDIR+= libdos libiocs libsa .WAIT
 
 # standalone bootloaders
 SUBDIR+= mboot
-SUBDIR+= boot_ufs boot_ustar xxboot
+SUBDIR+= boot_ufs
+SUBDIR+= xxboot
 SUBDIR+= boot netboot
 
 # Human68k utility

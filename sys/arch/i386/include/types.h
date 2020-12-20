@@ -1,4 +1,4 @@
-/*	$NetBSD: types.h,v 1.90 2019/09/23 23:06:26 kamil Exp $	*/
+/*	$NetBSD: types.h,v 1.92 2020/08/01 12:14:40 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -133,13 +133,6 @@ typedef __register_t	register_t;
 #define	__HAVE_TLS_VARIANT_II
 #define	__HAVE_COMMON___TLS_GET_ADDR
 #define	__HAVE_UCAS_FULL
-
-#if defined(_KERNEL)
 #define	__HAVE_RAS
-
-#if !defined(XEN) && !defined(NO_PCI_MSI_MSIX)
-#define __HAVE_PCI_MSI_MSIX
-#endif
-#endif
 
 #endif	/* _I386_MACHTYPES_H_ */

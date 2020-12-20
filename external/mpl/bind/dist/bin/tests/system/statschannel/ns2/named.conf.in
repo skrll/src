@@ -18,7 +18,7 @@ options {
 	listen-on { 10.53.0.2; };
 	listen-on-v6 { none; };
 	recursion no;
-	notify yes;
+	notify no;
 	minimal-responses no;
 	version none;  // make statistics independent of the version number
 };
@@ -32,6 +32,17 @@ key rndc_key {
 
 controls {
 	inet 10.53.0.2 port @CONTROLPORT@ allow { any; } keys { rndc_key; };
+};
+
+dnssec-policy "manykeys" {
+	keys {
+		ksk lifetime unlimited algorithm 5;
+		zsk lifetime unlimited algorithm 5;
+		ksk lifetime unlimited algorithm 13;
+		zsk lifetime unlimited algorithm 13;
+		ksk lifetime unlimited algorithm 14;
+		zsk lifetime unlimited algorithm 14;
+	};
 };
 
 zone "example" {
@@ -48,4 +59,11 @@ zone "dnssec" {
 	zone-statistics full;
 	dnssec-dnskey-kskonly yes;
 	update-check-ksk yes;
+};
+
+zone "manykeys" {
+        type master;
+        file "manykeys.db.signed";
+	zone-statistics full;
+	dnssec-policy "manykeys";
 };

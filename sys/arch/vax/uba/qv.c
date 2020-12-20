@@ -1,4 +1,4 @@
-/*$Header: /cvsroot/src/sys/arch/vax/uba/qv.c,v 1.34 2019/03/14 23:49:38 thorpej Exp $*/
+/* $NetBSD: qv.c,v 1.36 2020/11/21 22:37:11 thorpej Exp $ */
 /*
  * Copyright (c) 2015 Charles H. Dickman. All rights reserved.
  * Derived from smg.c
@@ -31,7 +31,7 @@
 /*3456789012345678901234567890123456789012345678901234567890123456789012345678*/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$Header: /cvsroot/src/sys/arch/vax/uba/qv.c,v 1.34 2019/03/14 23:49:38 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: qv.c,v 1.36 2020/11/21 22:37:11 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -40,7 +40,7 @@ __KERNEL_RCSID(0, "$Header: /cvsroot/src/sys/arch/vax/uba/qv.c,v 1.34 2019/03/14
 #include <sys/cpu.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
+#include <sys/kmem.h>
 #include <sys/extent.h>		/***/
 #include <sys/time.h>
 #include <sys/bus.h>
@@ -428,7 +428,7 @@ qv_attach(device_t parent, device_t self, void *aux)
 	sc->sc_scanmap = (uint16_t *)&sc->sc_fb[QV_SCANMAP];
 #if 0
 	if (extent_alloc_region(((struct uba_vsoftc*)uh)->uv_sgmap.aps_ex,
-			sc->sc_fbphys & 0x3fffff, QVSIZE, EX_NOWAIT)) {
+			sc->sc_fbphys & 0x3fffff, QVSIZE, EX_WAITOK)) {
 		aprint_error_dev(self, 
 			"Couldn't alloc graphics memory in sgmap.\n");
 		return;
@@ -900,7 +900,7 @@ qv_alloc_screen(void *v, const struct wsscreen_descr *type, void **cookiep,
         struct qv_softc *sc = device_private(v);
         struct qv_screen *ss;
 
-	ss = malloc(sizeof(struct qv_screen), M_DEVBUF, M_WAITOK|M_ZERO);
+	ss = kmem_zalloc(sizeof(struct qv_screen), KM_SLEEP);
 	ss->ss_sc = sc;
 	ss->ss_type = type;
 	*cookiep = ss;
@@ -916,7 +916,7 @@ void
 qv_free_screen(void *v, void *cookie)
 {
         printf("qv_free_screen: %p\n", cookie);
-        free(cookie, M_DEVBUF);
+        kmem_free(cookie, sizeof(struct qv_screen));
 }
 
 /*

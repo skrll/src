@@ -1,4 +1,4 @@
-/* $NetBSD: secmodel_suser.c,v 1.52 2020/03/16 21:20:12 pgoyette Exp $ */
+/* $NetBSD: secmodel_suser.c,v 1.55 2020/09/08 14:12:57 christos Exp $ */
 /*-
  * Copyright (c) 2006 Elad Efrat <elad@NetBSD.org>
  * All rights reserved.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: secmodel_suser.c,v 1.52 2020/03/16 21:20:12 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: secmodel_suser.c,v 1.55 2020/09/08 14:12:57 christos Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -599,6 +599,7 @@ secmodel_suser_network_cb(kauth_cred_t cred, kauth_action_t action,
 		switch (req) {
 		case KAUTH_REQ_NETWORK_BIND_PORT:
 		case KAUTH_REQ_NETWORK_BIND_PRIVPORT:
+		case KAUTH_REQ_NETWORK_BIND_ANYADDR:
 			if (isroot)
 				result = KAUTH_RESULT_ALLOW;
 			break;
@@ -846,7 +847,12 @@ secmodel_suser_machdep_cb(kauth_cred_t cred, kauth_action_t action,
 	case KAUTH_MACHDEP_NVRAM:
 	case KAUTH_MACHDEP_UNMANAGEDMEM:
 	case KAUTH_MACHDEP_PXG:
+		if (isroot)
+			result = KAUTH_RESULT_ALLOW;
+		break;
+
 	case KAUTH_MACHDEP_SVS_DISABLE:
+		/* Deprecated. */
 		if (isroot)
 			result = KAUTH_RESULT_ALLOW;
 		break;

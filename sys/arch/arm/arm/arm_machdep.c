@@ -1,4 +1,4 @@
-/*	$NetBSD: arm_machdep.c,v 1.63 2020/02/15 08:16:10 skrll Exp $	*/
+/*	$NetBSD: arm_machdep.c,v 1.65 2020/12/01 02:43:13 rin Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -80,7 +80,7 @@
 
 #include <sys/param.h>
 
-__KERNEL_RCSID(0, "$NetBSD: arm_machdep.c,v 1.63 2020/02/15 08:16:10 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm_machdep.c,v 1.65 2020/12/01 02:43:13 rin Exp $");
 
 #include <sys/atomic.h>
 #include <sys/cpu.h>
@@ -176,15 +176,14 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 	tf->tf_usr_lr = pack->ep_entry;
 	tf->tf_svc_lr = 0x77777777;		/* Something we can see */
 	tf->tf_pc = pack->ep_entry;
-#if defined(__ARMEB__)
-	/*
-	 * If we are running on ARMv7, we need to set the E bit to force
-	 * programs to start as big endian.
-	 */
-	tf->tf_spsr = PSR_USR32_MODE | (CPU_IS_ARMV7_P() ? PSR_E_BIT : 0);
-#else
 	tf->tf_spsr = PSR_USR32_MODE;
-#endif /* __ARMEB__ */
+#ifdef _ARM_ARCH_BE8
+	/*
+	 * If we are running on BE8 mode, we need to set the E bit to
+	 * force programs to start as big endian.
+	 */
+	tf->tf_spsr |= PSR_E_BIT;
+#endif
 
 #ifdef THUMB_CODE
 	if (pack->ep_entry & 1)
@@ -241,17 +240,39 @@ cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 		if (flags & RESCHED_REMOTE) {
 			intr_ipi_send(ci->ci_kcpuset, IPI_KPREEMPT);
 		} else {
-			atomic_or_uint(&ci->ci_astpending, __BIT(1));
+			l->l_md.md_astpending |= __BIT(1);
 		}
 #endif /* __HAVE_PREEMPTION */
 		return;
 	}
+
+	KASSERT((flags & RESCHED_UPREEMPT) != 0);
 	if (flags & RESCHED_REMOTE) {
 #ifdef MULTIPROCESSOR
 		intr_ipi_send(ci->ci_kcpuset, IPI_AST);
 #endif /* MULTIPROCESSOR */
 	} else {
-		setsoftast(ci);
+		l->l_md.md_astpending |= __BIT(0);
+	}
+}
+
+
+/*
+ * Notify the current lwp (l) that it has a signal pending,
+ * process as soon as possible.
+ */
+void
+cpu_signotify(struct lwp *l)
+{
+
+	KASSERT(kpreempt_disabled());
+
+	if (l->l_cpu != curcpu()) {
+#ifdef MULTIPROCESSOR
+		intr_ipi_send(l->l_cpu->ci_kcpuset, IPI_AST);
+#endif
+	} else {
+		l->l_md.md_astpending |= __BIT(0);
 	}
 }
 

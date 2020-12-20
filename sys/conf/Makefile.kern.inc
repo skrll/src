@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.kern.inc,v 1.269 2020/04/04 19:50:54 christos Exp $
+#	$NetBSD: Makefile.kern.inc,v 1.276 2020/09/06 07:20:29 mrg Exp $
 #
 # This file contains common `MI' targets and definitions and it is included
 # at the bottom of each `MD' ${MACHINE}/conf/Makefile.${MACHINE}.
@@ -94,6 +94,7 @@ CWARNFLAGS+=	-Wno-sign-compare
 CWARNFLAGS.clang+=	-Wno-unknown-pragmas -Wno-conversion \
 			-Wno-self-assign -Wno-error=address-of-packed-member \
 			-Wno-error=constant-conversion
+CWARNFLAGS.gcc+=	${GCC_NO_ADDR_OF_PACKED_MEMBER}
 
 CWARNFLAGS.ah_regdomain.c= ${${ACTIVE_CC} == "clang":? \
     -Wno-shift-count-negative -Wno-shift-count-overflow:}
@@ -104,6 +105,14 @@ CFLAGS+=	-ffreestanding -fno-zero-initialized-in-bss
 CFLAGS+=	${${ACTIVE_CC} == "gcc":? -fno-delete-null-pointer-checks :}
 CFLAGS+=	${DEBUG} ${COPTS}
 AFLAGS+=	-D_LOCORE -Wa,--fatal-warnings
+
+# example usage to find largest stack users in kernel compile directory:
+#    find . -name \*.su | xargs awk '{ printf "%6d %s\n", $2, $1 }' | sort -n
+.if ${MACHINE} != "vax"
+# GCC/vax 8.4 does not support -fstack-usage.
+CFLAGS+=	${${ACTIVE_CC} == "gcc":? -fstack-usage -Wstack-usage=3584 :}
+.endif
+CWARNFLAGS+=	-Walloca
 
 # XXX
 .if defined(HAVE_GCC) || defined(HAVE_LLVM)
@@ -233,12 +242,12 @@ LINKFLAGS?=	${LINKFORMAT} ${LINKSCRIPT} ${LINKTEXT} ${LINKDATA} ${LINKENTRY} \
 LINKFLAGS_DEBUG?=	-X
 
 SYSTEM_LD_TAIL?=@${TOOL_SED} '/const char sccs/!d;s/.*@(.)//;s/" "//;s/\\.*//' vers.c && \
-		${SIZE} $@ && chmod 755 $@ && \
-		${SYSTEM_CTFMERGE}
+		${SIZE} $@ && ${SYSTEM_CTFMERGE} && chmod 755 $@
 SYSTEM_LD_TAIL_DEBUG?=&& \
 		echo mv -f $@ $@.gdb && mv -f $@ $@.gdb && \
 		echo ${STRIP} ${STRIPFLAGS} -o $@ $@.gdb && \
-		${STRIP} ${STRIPFLAGS} -o $@ $@.gdb
+		${STRIP} ${STRIPFLAGS} -o $@ $@.gdb && \
+		chmod 755 $@ $@.gdb
 LINKFLAGS_NORMAL?=	-S
 STRIPFLAGS?=	-g
 
@@ -338,8 +347,8 @@ ${_s:T:R}.o: ${_s}
 .if !target(__CLEANKERNEL)
 __CLEANKERNEL: .USE
 	${_MKMSG} "${.TARGET}ing the kernel objects"
-	rm -f ${KERNELS} *.map eddep tags *.[io] *.ko *.ln [a-z]*.s vers.c \
-	    [Ee]rrs linterrs makelinks assym.h.tmp assym.h \
+	rm -f ${KERNELS} *.map *.[io] *.ko *.ln [a-z]*.s *.su vers.c \
+	    eddep tags [Ee]rrs linterrs makelinks assym.h.tmp assym.h \
 	    ${EXTRA_KERNELS} ${EXTRA_CLEAN}
 .endif
 

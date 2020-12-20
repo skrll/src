@@ -42,6 +42,39 @@
 #ifndef _ARM_CPUFUNC_H_
 #define _ARM_CPUFUNC_H_
 
+#ifdef _ARM_ARCH_7
+/*
+ * Options for DMB and DSB:
+ *	oshld	Outer Shareable, load
+ *	oshst	Outer Shareable, store
+ *	osh	Outer Shareable, all
+ *	nshld	Non-shareable, load
+ *	nshst	Non-shareable, store
+ *	nsh	Non-shareable, all
+ *	ishld	Inner Shareable, load
+ *	ishst	Inner Shareable, store
+ *	ish	Inner Shareable, all
+ *	ld	Full system, load
+ *	st	Full system, store
+ *	sy	Full system, all
+ */
+#define	dsb(opt)	__asm __volatile("dsb " __STRING(opt) : : : "memory")
+#define	dmb(opt)	__asm __volatile("dmb " __STRING(opt) : : : "memory")
+#define	isb()		__asm __volatile("isb" : : : "memory")
+#define	sev()		__asm __volatile("sev" : : : "memory")
+
+#else
+
+#define dsb(opt)	\
+	__asm __volatile("mcr p15, 0, %0, c7, c10, 4" :: "r" (0) : "memory")
+#define dmb(opt)	\
+	__asm __volatile("mcr p15, 0, %0, c7, c10, 5" :: "r" (0) : "memory")
+#define isb()		\
+	__asm __volatile("mcr p15, 0, %0, c7, c5, 4" :: "r" (0) : "memory")
+#define sev()		__nothing
+
+#endif
+
 #ifdef __arm__
 
 #ifdef _KERNEL

@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_emmc.c,v 1.36 2020/02/20 01:44:06 jmcneill Exp $	*/
+/*	$NetBSD: bcm2835_emmc.c,v 1.39 2020/12/01 04:15:04 rin Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_emmc.c,v 1.36 2020/02/20 01:44:06 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_emmc.c,v 1.39 2020/12/01 04:15:04 rin Exp $");
 
 #include "bcmdmac.h"
 
@@ -117,13 +117,8 @@ bcmemmc_attach(device_t parent, device_t self, void *aux)
 {
 	struct bcmemmc_softc *sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
-	prop_dictionary_t dict = device_properties(self);
 	const int phandle = faa->faa_phandle;
-	bool disable = false;
-	enum bcmemmc_type type;
 	int error;
-
-	type = of_search_compatible(phandle, compat_data)->data;
 
 	sc->sc.sc_dev = self;
 	sc->sc.sc_dmat = faa->faa_dmat;
@@ -137,13 +132,6 @@ bcmemmc_attach(device_t parent, device_t self, void *aux)
 	sc->sc.sc_host = sc->sc_hosts;
 	sc->sc.sc_clkbase = 50000;	/* Default to 50MHz */
 	sc->sc_iot = faa->faa_bst;
-
-	prop_dictionary_get_bool(dict, "disable", &disable);
-	if (disable) {
-		aprint_naive(": disabled\n");
-		aprint_normal(": disabled\n");
-		return;
-	}
 
 	bus_addr_t addr;
 	bus_size_t size;
@@ -195,6 +183,8 @@ bcmemmc_attach(device_t parent, device_t self, void *aux)
 	aprint_normal_dev(self, "interrupting on %s\n", intrstr);
 
 #if NBCMDMAC > 0
+	enum bcmemmc_type type = of_search_compatible(phandle, compat_data)->data;
+
 	if (type != BCM2835_SDHCI)
 		goto done;
 
@@ -337,6 +327,7 @@ bcmemmc_xfer_data_dma(struct sdhc_softc *sdhc_sc, struct sdmmc_command *cmd)
 			    sc->sc_dmamap->dm_segs[0].ds_addr +
 			    sizeof(struct bcm_dmac_conblk) * (seg+1);
 		}
+		bcm_dmac_swap_conblk(&sc->sc_cblk[seg]);
 		sc->sc_cblk[seg].cb_padding[0] = 0;
 		sc->sc_cblk[seg].cb_padding[1] = 0;
 	}

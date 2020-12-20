@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu.h,v 1.20 2019/11/27 06:24:33 maxv Exp $	*/
+/*	$NetBSD: fpu.h,v 1.23 2020/10/24 07:14:29 mgorny Exp $	*/
 
 #ifndef	_X86_FPU_H_
 #define	_X86_FPU_H_
@@ -14,8 +14,8 @@ struct trapframe;
 void fpuinit(struct cpu_info *);
 void fpuinit_mxcsr_mask(void);
 
-void fpu_area_save(void *, uint64_t);
-void fpu_area_restore(void *, uint64_t);
+void fpu_area_save(void *, uint64_t, bool);
+void fpu_area_restore(const void *, uint64_t, bool);
 
 void fpu_save(void);
 
@@ -23,6 +23,9 @@ void fpu_set_default_cw(struct lwp *, unsigned int);
 
 void fputrap(struct trapframe *);
 void fpudna(struct trapframe *);
+
+void process_xmm_to_s87(const struct fxsave *, struct save87 *);
+void process_s87_to_xmm(const struct save87 *, struct fxsave *);
 
 void fpu_clear(struct lwp *, unsigned int);
 void fpu_sigreset(struct lwp *);

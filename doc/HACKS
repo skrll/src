@@ -1,4 +1,4 @@
-# $NetBSD: HACKS,v 1.200 2020/04/04 16:25:17 jdolecek Exp $
+# $NetBSD: HACKS,v 1.216 2020/12/16 01:35:39 rin Exp $
 #
 # This file is intended to document workarounds for currently unsolved
 # (mostly) compiler bugs.
@@ -27,13 +27,31 @@
 #
 # this is a comment.
 
+hack	llvm needs no-unused-command-line-argument
+mdate	10 May 2020
+who	maxv
+file	share/mk/bsd.lib.mk 1.380 -> 1.381
+descr
+	To avoid LLVM warnings when compiling the kernel with special
+	CFLAGS such as KASAN on amd64 or ARMV83_PAC on aarch64, pass
+	-Wno-unused-command-line-argument.
+kcah
+
 hack	static linking with libpthread
 mdate	7 May 2019
 who	maya
-file	lib/libpthread/Makefile 1.92 -> 1.94
+file	src/lib/libpthread/Makefile 1.92 -> 1.94
 descr
 	To avoid some libc thread stub functions being picked up
 	in static builds, link pthread as one section.
+kcah
+
+hack	disable optimization for gcc-9.3 in src/lib/libc/gdtoa/strtod.c
+mdate	18 Sep 2020
+who	christos
+file    src/lib/libc/gdtoa/strtod.c 1.15 -> 1.16
+descr
+	See PR/55668, the program there causes infinite loop
 kcah
 
 hack	gcc-5.3 optimizes memset+malloc -> calloc inside calloc
@@ -81,7 +99,7 @@ kcah
 hack	wi-at-big-endian-bus
 cdate	15 Mar 2002
 who	martin
-file	dev/ic/wireg.h
+file	dev/ic/wireg.h : 1.20
 descr	Add an option to access the underlying bus in big endian byte order
 	to work around deficiencies in bus_space_{read,write}_* macros.
 	Those don't allow the implementation of a proper pcmcia bus space
@@ -171,8 +189,6 @@ file	sys/net/bpf.c			: 1.116
 file	sys/net/zlib.c			: 1.26
 file	sys/netccitt/if_x25subr.c	: 1.37
 file	sys/netinet/in.c		: 1.107
-file	sys/netsmb/smb_smb.c		: 1.27
-file	sys/netsmb/smb_trantcp.c	: 1.22
 file	sys/nfs/nfs_serv.c		: 1.108
 file	sys/nfs/nfs_socket.c		: 1.129
 file	sys/nfs/nfs_syscalls.c		: 1.91
@@ -284,7 +300,7 @@ file	usr.sbin/rbootd/Makefile	: 1.10
 file	usr.sbin/rpc.pcnfsd/Makefile	: 1.17
 file	usr.sbin/tcpdump/Makefile	: 1.42
 descr
-	GCC 4.1 warns on pointer sign comparision/assignments and lots of
+	GCC 4.1 warns on pointer sign comparison/assignments and lots of
 	code does not conform.  For now we use -Wno-pointer-sign and
 	-fno-strict-aliasing.
 kcah
@@ -407,9 +423,9 @@ kcah
 port	vax
 
 	hack	gcc4/vax ICE
-	cdate	
+	cdate	Sat Dec 22 08:17:57 2007 UTC
 	who	tsutsui
-	file	sys/arch/vax/conf/Makefile.vax
+	file	sys/arch/vax/conf/Makefile.vax : 1.79
 	descr
 		GCC4 on vax gets ICE on compiling sys/ddb/db_command.c.
 		-fno-tree-ter prevents it so add it to COPTS.
@@ -504,15 +520,14 @@ port	vax
 	hack	gcc 4.8 gcc miscompiles
 	date	Sat Nov  9 16:35:18 EST 2013
 	who	christos
-	file	distrib/utils/x_ping/Makefile
-	file	distrib/vax/miniroot/Makefile.inc
-	file	distrib/vax/ramdisk/Makefile
-	file	external/gpl3/gdb/lib/libdecnumber/Makefile
-	file	sbin/fsdb/Makefile
-	file	sbin/newfs_ext2fs/Makefile
-	file	sbin/ping/Makefile
-	file	usr.sbin/lmcconfig/Makefile
-	file	usr.sbin/mtrace/Makefile
+	file	distrib/utils/x_ping/Makefile : 1.8
+	file	distrib/vax/miniroot/Makefile.inc : ?
+	file	distrib/vax/ramdisk/Makefile : ?
+	file	external/gpl3/gdb/lib/libdecnumber/Makefile : 1.3
+	file	sbin/fsdb/Makefile : 1.36
+	file	sbin/newfs_ext2fs/Makefile : 1.6
+	file	sbin/ping/Makefile : 1.17
+	file	usr.sbin/mtrace/Makefile : 1.11
 	descr
 		external/gpl3/gcc/dist/gcc/expmed.c:2781:1:
 		internal compiler error: in change_address_1, at emit-rtl.c:2019
@@ -527,9 +542,6 @@ port	vax
 		at postreload.c:1561
 		external/gpl3/gdb/dist/libdecnumber/decNumber.c:7214:3:
 		internal compiler error: in change_address_1, at emit-rtl.c:2019
-		usr.sbin/lmcconfig/lmcconfig.c:939:3:
-		internal compiler error: in reload_combine_note_use,
-		at postreload.c:1561
 		usr.sbin/mtrace/mtrace.c:1655:1:
 		internal compiler error: in change_address_1, at emit-rtl.c:2019
 	kcah
@@ -606,25 +618,6 @@ port	arm
 		Also -O2 fails but -O2 -fno-tree-ter works on the following
 		test case in gcc bugzilla:
 		http://gcc.gnu.org/bugzilla/show_bug.cgi?id=48863#c4
-	kcah
-
-	hack	gcc-4.5 arm without -fno-tree-vrp generate broken code
-	cdate	Wed Nov 14 13:02:02 JST 2012
-	who	msaitoh
-	file	lib/libc/softfloat/Makefile.inc
-	pr	46953
-	regress	src/tests/lib/libm/t_cbrt
-	regress	src/tests/lib/libm/t_ceil
-	regress	src/tests/lib/libm/t_exp
-	regress	src/tests/lib/libm/t_log
-	regress	src/tests/lib/libm/t_scalbn
-	regress	src/tests/lib/libm/t_sinh
-	regress	src/tests/lib/libm/t_sqrt
-	descr	Gcc has a bug in tree optimization. For adddf3,
-		-INF + -INF returns 0 without -fno-tree-vrp.
-		Debugging with -fdump-tree-all shows that
-		softfloat.c.021t.cleanup_cfg is ok but softfloat.c.023t.ssa
-		is broken.
 	kcah
 
 port	sh3
@@ -746,6 +739,7 @@ port	x86
 		we are pass the wrong arguments to biosdisk_read(). 
 		$ cd /usr/src/sys/arch/i386/floppies/bootflopp-com
 		$ qemu-system-i386 -nographic -fda boot-com1.fs -boot a
+	cdate	Mon Apr 7 21:09:55 2014 UTC
 	who	christos
 	file	src/sys/arch/i386/stand/lib/Makefile : 1.38
 	descr
@@ -769,7 +763,7 @@ port	powerpc
 		properly.
 	cdate	Sat Mar 12 08:00:00 UTC 2011
 	who	matt
-	file	src/gnu/dist/gcc4/gcc/config/rs6000/netbsd.h
+	file	src/gnu/dist/gcc4/gcc/config/rs6000/netbsd.h : 1.7
 	descr
 		see above
 	kcah
@@ -843,7 +837,7 @@ port	x68k
 hack	fallback to /usr/bin/clang-cpp in rpcgen
 cdate	Wed Jun  5 15:49:27 CEST 2013
 who	joerg
-file	src/usr.bin/rpcgen/rpc_main.c
+file	src/usr.bin/rpcgen/rpc_main.c : 1.35
 descr
 	It is undecided which compiler owns /usr/bin/cpp and whether it should
 	exist in a MKGCC=no world. To allow rpcgen to work out-of-the-box,
@@ -900,14 +894,6 @@ file	/cvsroot/src/external/mit/xorg/lib/gallium/Makefile 1.36
 descr	gallium does not compile.
 kcah
 
-port	aarch64
-hack	compile ex_filter.c in vi with -O0
-cdate	Mon Oct 28 14:39:35 EDT 2019
-who	christos
-file	/cvsroot/src/external/bsd/nvi/usr.bin/nvi/Makefile 1.20
-descr	":%! sort" core-dumps, tm is NULL but was not NULL on entry.
-kcah
-
 port	sh3
 hack	compile parse.c in battlestar with -Wno-restrict
 cdate	Mon Oct 28 14:39:35 EDT 2019
@@ -927,6 +913,7 @@ kcah
 
 port	arm
 hack	avoid using labels in a 12-bit constant.
+cdate	Mon Mar 30 05:26:47 2015 UTC
 who	matt
 file	crypto/external/bsd/openssl/lib/libcrypto/arch/arm/aes-armv4.S: 1.2
 descr	workaround for clang misassembling an instruction
@@ -935,6 +922,7 @@ kcah
 port	sparc64
 hack	during profiling with -m32 (and ASLR) labels are not generated
 	consistently
+cdate	Sat Feb 11 04:56:37 2017 UTC
 who	christos
 file	/cvsroot/src/crypto/external/bsd/heimdal/lib/libasn1/Makefile: 1.4
 desc 	asn1_krb5_asn1.po does not produce the same results during successive
@@ -944,6 +932,7 @@ kcah
 
 port	ia64
 hack	ski emulator crashes
+cdate	Sat Apr 8 18:10:43 2017 UTC
 who	scole
 file	/cvsroot/src/sys/external/bsd/acpica/dist/tables/tbxfload.c: 1.6
 desc
@@ -962,12 +951,14 @@ descr	Disable optimization for rtld.c on the vax with gcc-7. Crashes on the
 kcah
 
 port	alpha
-hack	GCC 7.4/8.3: userland binaries crash randomly (port-alpha/54307)
+hack	GCC 7.4/8.3/9.3: userland binaries crash randomly (port-alpha/54307)
 cdate	Fri Nov  1 20:43:35 UTC 2019
+mdate	Wed Dec 16 01:21:32 UTC 2020
 who	rin
 file	src/external/bsd/jemalloc/lib/Makefile.inc: 1.11
-descr	rtree.c and tcache.c need to be compiled with -O0, alternatively,
-	you can compile whole jemalloc with -DJEMALLOC_DEBUG.
+descr	GCC miscompiles rtree.c and tcache.c (for 7.4, 8.3, and 9.3) with
+	optimization levels -O[12]. Compile these files with -O0,
+	alternatively, compile whole jemalloc with -DJEMALLOC_DEBUG.
 kcah
 
 port	powerpc
@@ -982,4 +973,30 @@ descr	Disable optimization on tc.c, logerr.c, ubsan.c crashes:
 	lib/libLLVMCodeGen/../../llvm/../../external/apache2/llvm/lib/..\
 	/dist/llvm/include/llvm/CodeGen/MachineFrameInfo.h", line 495, \
 	function "__int64_t llvm::MachineFrameInfo::getObjectOffset(int) const"
+kcah
+
+port	arm
+hack	compile gdb/dwarf2{expr,loc}.c with -O0 for GCC[89] (PR/54820, 54877)
+cdate	Wed Apr 29 11:04:58 UTC 2020
+mdate	Thu Oct  8 17:00:00 JST 2020
+who	rin
+file	src/external/gpl3/gdb/lib/libgdb/Makefile: 1.22
+descr	For earmv7hf{,eb}, GCC 8.4 and 9.3 miscompile dwarf2expr.c with -O[21].
+	For earmv5hf{,eb}, GCC 9.3 miscompiles dwarf2{expr,loc}.c with -O2
+	(GCC9 -O1 and GCC8 -O2 work fine). These result in GDB crash with
+	``gdb_exception_RETURN_MASK_ERROR''. For everyone's safety, compile
+	these files with -O0 for all arm variants with GCC >= 8.
+kcah
+
+port	m68k
+hack	compile aes_ccm_tag() with -O0 for GCC8 and GCC9
+cdate	Mon Aug 10 06:27:29 UTC 2020
+mdate	Mon Oct  5 22:00:00 JST 2020
+who	rin
+file	src/sys/crypto/aes/aes_ccm.c: 1.5
+descr	GCC 9.4 and 8.3 miscompile aes_ccm_tag() for m68k with optimization
+	level -O[12], which results in failure in aes_ccm_selftest().
+	For 9.4, -O0 and -O1 work but -O2 fails for amiga (A1200, 68060) and
+	mac68k (Quadra 840AV, 68040). Whereas -O0 and -O2 work but -O1 fails
+	for sun3 (TME, 68020 emulator) and sun2 (TME, 68010 emulator).
 kcah

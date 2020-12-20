@@ -1,4 +1,4 @@
-/*	$NetBSD: audiodef.h,v 1.13 2020/03/28 08:35:36 isaki Exp $	*/
+/*	$NetBSD: audiodef.h,v 1.15 2020/09/13 04:14:48 isaki Exp $	*/
 
 /*
  * Copyright (C) 2017 Tetsuya Isaki. All rights reserved.
@@ -43,25 +43,6 @@
 #define AUMINNOBLK	(3)
 
 /*
- * Hardware blocksize in msec.
- * We use 10 msec as default for most platforms.  But it's too severe for
- * most m68k.
- *
- * 40 msec was initially choosen for the following reason:
- * (1 / 40ms) = 25 = 5^2.  Thus, the frequency is factored by 5.
- * In this case, the number of frames in a block can be an integer
- * even if the frequency is a multiple of 100 (44100, 48000, etc),
- * or even if 15625Hz (vs(4)).
- */
-#if !defined(AUDIO_BLK_MS)
-# if defined(__m68k__)
-#  define AUDIO_BLK_MS 40
-# else
-#  define AUDIO_BLK_MS 10
-# endif
-#endif
-
-/*
  * Whether the playback mixer use single buffer mode.
  * It reduces the latency one block but needs machine power.
  * In case of the double buffer (as default), it increases the latency
@@ -97,6 +78,8 @@
 #define AUDIO_SCALEDOWN(value, bits)	((value) / (1 << (bits)))
 #endif
 
+#if defined(_KERNEL)
+
 /* conversion stage */
 typedef struct {
 	audio_ring_t srcbuf;
@@ -111,7 +94,7 @@ typedef enum {
 	AUDIO_STATE_DRAINING,	/* now draining */
 } audio_state_t;
 
-typedef struct audio_track {
+struct audio_track {
 	/*
 	 * AUMODE_PLAY for playback track, or
 	 * AUMODE_RECORD for recoding track.
@@ -186,7 +169,10 @@ typedef struct audio_track {
 	volatile uint	lock;
 
 	int		id;		/* track id for debug */
-} audio_track_t;
+};
+#endif /* _KERNEL */
+
+typedef struct audio_track audio_track_t;
 
 struct audio_file {
 	struct audio_softc *sc;
@@ -215,6 +201,8 @@ struct audio_file {
 
 	SLIST_ENTRY(audio_file) entry;
 };
+
+#if defined(_KERNEL)
 
 struct audio_trackmixer {
 	struct audio_softc *sc;
@@ -457,5 +445,7 @@ auring_get_contig_free(const audio_ring_t *ring)
 		return ring->capacity - ring->used;
 	}
 }
+
+#endif /* _KERNEL */
 
 #endif /* !_SYS_DEV_AUDIO_AUDIODEF_H_ */

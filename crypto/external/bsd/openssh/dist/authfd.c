@@ -1,5 +1,5 @@
-/*	$NetBSD: authfd.c,v 1.20 2020/02/27 00:24:40 christos Exp $	*/
-/* $OpenBSD: authfd.c,v 1.121 2019/12/21 02:19:13 djm Exp $ */
+/*	$NetBSD: authfd.c,v 1.22 2020/12/04 18:42:49 christos Exp $	*/
+/* $OpenBSD: authfd.c,v 1.124 2020/06/26 05:03:36 djm Exp $ */
 /*
  * Author: Tatu Ylonen <ylo@cs.hut.fi>
  * Copyright (c) 1995 Tatu Ylonen <ylo@cs.hut.fi>, Espoo, Finland
@@ -37,7 +37,7 @@
  */
 
 #include "includes.h"
-__RCSID("$NetBSD: authfd.c,v 1.20 2020/02/27 00:24:40 christos Exp $");
+__RCSID("$NetBSD: authfd.c,v 1.22 2020/12/04 18:42:49 christos Exp $");
 #include <sys/types.h>
 #include <sys/un.h>
 #include <sys/socket.h>
@@ -337,13 +337,13 @@ ssh_free_identitylist(struct ssh_identitylist *idl)
  * Returns 0 if found, or a negative SSH_ERR_* error code on failure.
  */
 int
-ssh_agent_has_key(int sock, struct sshkey *key)
+ssh_agent_has_key(int sock, const struct sshkey *key)
 {
 	int r, ret = SSH_ERR_KEY_NOT_FOUND;
 	size_t i;
 	struct ssh_identitylist *idlist = NULL;
 
-	if ((r = ssh_fetch_identitylist(sock, &idlist)) < 0) {
+	if ((r = ssh_fetch_identitylist(sock, &idlist)) != 0) {
 		return r;
 	}
 
@@ -535,7 +535,7 @@ ssh_add_identity_constrained(int sock, struct sshkey *key,
  * This call is intended only for use by ssh-add(1) and like applications.
  */
 int
-ssh_remove_identity(int sock, struct sshkey *key)
+ssh_remove_identity(int sock, const struct sshkey *key)
 {
 	struct sshbuf *msg;
 	int r;
@@ -562,10 +562,8 @@ ssh_remove_identity(int sock, struct sshkey *key)
 		goto out;
 	r = decode_reply(type);
  out:
-	if (blob != NULL) {
-		explicit_bzero(blob, blen);
-		free(blob);
-	}
+	if (blob != NULL)
+		freezero(blob, blen);
 	sshbuf_free(msg);
 	return r;
 }

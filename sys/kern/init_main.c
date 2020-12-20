@@ -1,4 +1,4 @@
-/*	$NetBSD: init_main.c,v 1.522 2020/02/24 20:47:47 jdolecek Exp $	*/
+/*	$NetBSD: init_main.c,v 1.534 2020/12/05 18:17:01 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009, 2019 The NetBSD Foundation, Inc.
@@ -97,8 +97,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.522 2020/02/24 20:47:47 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.534 2020/12/05 18:17:01 thorpej Exp $");
 
+#include "opt_cnmagic.h"
 #include "opt_ddb.h"
 #include "opt_inet.h"
 #include "opt_ipsec.h"
@@ -113,7 +114,6 @@ __KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.522 2020/02/24 20:47:47 jdolecek Exp
 #include "opt_compat_netbsd.h"
 #include "opt_wapbl.h"
 #include "opt_ptrace.h"
-#include "opt_rnd_printf.h"
 #include "opt_splash.h"
 #include "opt_kernhist.h"
 #include "opt_gprof.h"
@@ -180,6 +180,7 @@ extern void *_binary_splash_image_end;
 #include <sys/kprintf.h>
 #include <sys/bufq.h>
 #include <sys/threadpool.h>
+#include <sys/futex.h>
 #ifdef IPSEC
 #include <netipsec/ipsec.h>
 #endif
@@ -245,8 +246,6 @@ int	shutting_down __read_mostly;	/* system is shutting down */
 
 int	start_init_exec;		/* semaphore for start_init() */
 
-cprng_strong_t	*kern_cprng;
-
 static void check_console(struct lwp *l);
 static void start_init(void *);
 static void configure(void);
@@ -297,6 +296,9 @@ main(void)
 	 * in case of early panic or other messages.
 	 */
 	consinit();
+#ifdef CNMAGIC
+	cn_set_magic(CNMAGIC);
+#endif
 
 	kernel_lock_init();
 	once_init();
@@ -327,7 +329,6 @@ main(void)
 
 	/* Initialize lock caches. */
 	mutex_obj_init();
-	rw_obj_init();
 
 	/* Initialize radix trees (used by numerous subsystems). */
 	radix_tree_init();
@@ -359,6 +360,9 @@ main(void)
 	 * network drivers attach before bpf.
 	 */
 	bpf_setops();
+
+	/* Initialize what we can in ipi(9) before CPUs are detected. */
+	ipi_sysinit();
 
 	/* Start module system. */
 	module_init();
@@ -428,9 +432,6 @@ main(void)
 	/* Charge root for one process. */
 	(void)chgproccnt(0, 1);
 
-	/* Initialize timekeeping. */
-	time_init();
-
 	/* Initialize the run queues, turnstiles and sleep queues. */
 	sched_rqinit();
 	turnstile_init();
@@ -448,8 +449,8 @@ main(void)
 	error = mi_cpu_attach(curcpu());
 	KASSERT(error == 0);
 
-	/* Initialize timekeeping, part 2. */
-	time_init2();
+	/* Initialize timekeeping. */
+	time_init();
 
 	/*
 	 * Initialize mbuf's.  Do this now because we might attempt to
@@ -481,7 +482,22 @@ main(void)
 	    10, VNODE_KMEM_MAXPCT) / VNODE_COST;
 	if (usevnodes > desiredvnodes)
 		desiredvnodes = usevnodes;
-#endif
+#endif /* NVNODE_IMPLICIT */
+#ifdef MAXFILES_IMPLICIT
+	/*
+	 * If maximum number of files is not explicitly defined in
+	 * kernel config, adjust the number so that it is somewhat
+	 * more reasonable on machines with larger memory sizes.
+	 * Arbitary numbers are 20,000 files for 16GB RAM or more
+	 * and 10,000 files for 1GB RAM or more.
+	 *
+	 * XXXtodo: adjust this and other values totally dynamically
+	 */
+	if (ctob((uint64_t)physmem) >= 16ULL * 1024 * 1024 * 1024)
+		maxfiles = MAX(maxfiles, 20000);
+	if (ctob((uint64_t)physmem) >= 1024 * 1024 * 1024)
+		maxfiles = MAX(maxfiles, 10000);
+#endif /* MAXFILES_IMPLICIT */
 
 	/* Initialize fstrans. */
 	fstrans_init();
@@ -510,10 +526,6 @@ main(void)
 
 	/* Initialize the disk wedge subsystem. */
 	dkwedge_init();
-
-	/* Initialize the kernel strong PRNG. */
-	kern_cprng = cprng_strong_create("kernel", IPL_VM,
-					 CPRNG_INIT_ANY|CPRNG_REKEY_ANY);
 
 	/* Initialize pfil */
 	pfil_init();
@@ -548,7 +560,10 @@ main(void)
 
 	configure2();
 
-	ipi_sysinit();
+	/* Initialize the rest of ipi(9) after CPUs have been detected. */
+	ipi_percpu_init();
+
+	futex_sys_init();
 
 	/* Now timer is working.  Enable preemption. */
 	kpreempt_enable();
@@ -558,11 +573,6 @@ main(void)
 
 	/* Enable deferred processing of RNG samples */
 	rnd_init_softint();
-
-#ifdef RND_PRINTF
-	/* Enable periodic injection of console output into entropy pool */
-	kprintf_init_callout();
-#endif
 
 	vmem_rehash_start();	/* must be before exec_init */
 
@@ -637,9 +647,9 @@ main(void)
 	 * The initproc variable cannot be initialized in start_init as there
 	 * is a race between vfs_mountroot and start_init.
 	 */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	initproc = proc_find_raw(1);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	/*
 	 * Load any remaining builtin modules, and hand back temporary
@@ -693,7 +703,7 @@ main(void)
 	 */
 	getnanotime(&time);
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	LIST_FOREACH(p, &allproc, p_list) {
 		KASSERT((p->p_flag & PK_MARKER) == 0);
 		mutex_enter(p->p_lock);
@@ -705,7 +715,7 @@ main(void)
 		}
 		mutex_exit(p->p_lock);
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 	binuptime(&curlwp->l_stime);
 
 	for (CPU_INFO_FOREACH(cii, ci)) {
@@ -729,10 +739,10 @@ main(void)
 	/*
 	 * Okay, now we can let init(8) exec!  It's off to userland!
 	 */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	start_init_exec = 1;
 	cv_broadcast(&lbolt);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	/* The scheduler is an infinite loop. */
 	uvm_scheduler();
@@ -969,10 +979,10 @@ start_init(void *arg)
 	/*
 	 * Wait for main() to tell us that it's safe to exec.
 	 */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	while (start_init_exec == 0)
-		cv_wait(&lbolt, proc_lock);
-	mutex_exit(proc_lock);
+		cv_wait(&lbolt, &proc_lock);
+	mutex_exit(&proc_lock);
 
 	/*
 	 * This is not the right way to do this.  We really should
@@ -1169,6 +1179,6 @@ banner(void)
 	(*pr)("%s%s", copyright, version);
 	format_bytes(pbuf, MEM_PBUFSIZE, ctob((uint64_t)physmem));
 	(*pr)("total memory = %s\n", pbuf);
-	format_bytes(pbuf, MEM_PBUFSIZE, ctob((uint64_t)uvm_availmem()));
+	format_bytes(pbuf, MEM_PBUFSIZE, ctob((uint64_t)uvm_availmem(false)));
 	(*pr)("avail memory = %s\n", pbuf);
 }

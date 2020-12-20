@@ -1,4 +1,4 @@
-#	$NetBSD: MARVELL_NAS,v 1.36 2020/03/25 17:06:18 jdolecek Exp $
+#	$NetBSD: MARVELL_NAS,v 1.41 2020/09/27 13:48:50 roy Exp $
 #
 #  This configuration supports for generically Marvell NAS.
 
@@ -87,8 +87,6 @@ options 	NFS_BOOT_DHCP
 
 include 	"conf/compat_netbsd16.config"
 options 	COMPAT_NETBSD32	# allow running arm (e.g. non-earm) binaries
-
-options 	COMPAT_LINUX	# binary compatibility with Linux
 
 # Shared memory options
 
@@ -214,7 +212,7 @@ umass*	at uhub? port ? configuration ? interface ?
 uplcom* at uhub? port ?			# I/O DATA USB-RSAQ2 serial adapter
 ucom*   at uplcom? portno ?
 
-# Wedge support   
+# Wedge support
 options 	DKWEDGE_AUTODISCOVER	# Automatically add dk(4) instances
 options 	DKWEDGE_METHOD_GPT	# Supports GPT partitions as wedges
 
@@ -228,7 +226,7 @@ options 	BUFQ_PRIOCSCAN
 #options 	DIAGNOSTIC	# internal consistency checks
 #options 	DEBUG
 #options 	LOCKDEBUG
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	VERBOSE_INIT_ARM # verbose bootstraping messages
 options 	DDB		# in-kernel debugger
 options 	DDB_ONPANIC=0
@@ -280,7 +278,7 @@ pseudo-device	tun			# network tunneling over tty
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+#pseudo-device	vether			# Virtual Ethernet for bridge
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	npf			# NPF packet filter
 

@@ -1,4 +1,4 @@
-/* $NetBSD: atomic_cas_8.S,v 1.1 2014/08/10 05:47:35 matt Exp $ */
+/* $NetBSD: atomic_cas_8.S,v 1.3 2020/10/07 07:31:47 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -32,14 +32,14 @@
 #include "atomic_op_asm.h"
 
 ENTRY_NP(_atomic_cas_8)
-	mov	x4, x0			/* we need r0 for return value */
+	mov	x4, x0			/* we need x0 for return value */
 1:	ldxrb	w0, [x4]		/* load old value */
 	cmp	w0, w1			/*   compare? */
 	b.ne	2f
 	stxrb	w3, w2, [x4]		/* store new value */
-	cbnz	w3, 1b			/*   succeed? nope, try again. */
-	dmb	st			/* data memory barrier */
+	cbnz	w3, 3f			/*   succeed? nope, try again. */
 2:	ret				/* return. */
+3:	b	1b
 END(_atomic_cas_8)
 
 ATOMIC_OP_ALIAS(atomic_cas_8,_atomic_cas_8)

@@ -26,39 +26,35 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 
-test_target()
+tsan_available_archs()
 {
-	SUPPORT='n'
-	if uname -m | grep -q "amd64" && command -v cc >/dev/null 2>&1 && \
-		   ! echo __clang__ | cc -E - | grep -q __clang__; then
-		# only clang with major version newer than 7 is supported
-		CLANG_MAJOR=`echo __clang_major__ | cc -E - | grep -o '^[[:digit:]]'`
-		if [ "$CLANG_MAJOR" -ge "7" ]; then
-			SUPPORT='y'
-		fi
-	fi
+	atf_set "require.arch" "x86_64"
 }
 
 atf_test_case heap_use_after_free
 heap_use_after_free_head() {
 	atf_set "descr" "Test thread sanitizer for use-after-free condition"
 	atf_set "require.progs" "cc paxctl"
+	tsan_available_archs
 }
 
 atf_test_case heap_use_after_free_profile
 heap_use_after_free_profile_head() {
 	atf_set "descr" "Test thread sanitizer for use-after-free with profiling option"
 	atf_set "require.progs" "cc paxctl"
+	tsan_available_archs
 }
 atf_test_case heap_use_after_free_pic
 heap_use_after_free_pic_head() {
 	atf_set "descr" "Test thread sanitizer for use-after-free with position independent code (PIC) flag"
 	atf_set "require.progs" "cc paxctl"
+	tsan_available_archs
 }
 atf_test_case heap_use_after_free_pie
 heap_use_after_free_pie_head() {
 	atf_set "descr" "Test thread sanitizer for use-after-free with position independent execution (PIE) flag"
 	atf_set "require.progs" "cc paxctl"
+	tsan_available_archs
 }
 
 heap_use_after_free_body(){
@@ -92,6 +88,7 @@ EOF
 }
 
 heap_use_after_free_profile_body(){
+	atf_expect_fail "PR toolchain/55760"
 	cat > test.c << EOF
 #include <pthread.h>
 #include <stdlib.h>
@@ -195,25 +192,8 @@ EOF
 	atf_check -s ignore -o ignore -e match:"WARNING: ThreadSanitizer: heap-use-after-free" ./test
 }
 
-
-atf_test_case target_not_supported
-target_not_supported_head()
-{
-	atf_set "descr" "Test forced skip"
-}
-
-target_not_supported_body()
-{
-	atf_skip "Target is not supported"
-}
-
 atf_init_test_cases()
 {
-	test_target
-	test $SUPPORT = 'n' && {
-		atf_add_test_case target_not_supported
-		return 0
-	}
 	atf_add_test_case heap_use_after_free
 	atf_add_test_case heap_use_after_free_profile
 	atf_add_test_case heap_use_after_free_pie

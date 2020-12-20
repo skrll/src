@@ -1,7 +1,7 @@
-/*	$NetBSD: partitions.c,v 1.10 2020/01/28 07:43:42 martin Exp $	*/
+/*	$NetBSD: partitions.c,v 1.12 2020/11/06 12:23:10 martin Exp $	*/
 
 /*
- * Copyright 2018 The NetBSD Foundation, Inc.
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -13,18 +13,17 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY PIERMONT INFORMATION SYSTEMS INC. ``AS IS''
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL PIERMONT INFORMATION SYSTEMS INC. BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
  * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
  * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
  * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "defs.h"
@@ -133,7 +132,7 @@ extern const struct disk_partitioning_scheme gpt_parts;
 extern const struct disk_partitioning_scheme mbr_parts;
 #endif
 
-#if RAW_PART != 2
+#if RAW_PART == 3
 static struct disk_partitioning_scheme only_disklabel_parts;
 
 /*
@@ -163,7 +162,7 @@ partitions_init(void)
 	 * only offer very few entries.
 	 */
 static const struct part_scheme_desc all_descs[] = {
-#if RAW_PART == 2	/* only available as primary on some architectures */
+#if RAW_PART != 3	/* only available as primary on some architectures */
 		{ NULL, &disklabel_parts },
 #endif
 #ifdef HAVE_GPT
@@ -172,7 +171,7 @@ static const struct part_scheme_desc all_descs[] = {
 #ifdef HAVE_MBR
 		{ NULL, &mbr_parts },
 #endif
-#if RAW_PART != 2	/* "whole disk NetBSD" disklabel variant */
+#if RAW_PART == 3	/* "whole disk NetBSD" disklabel variant */
 		{ NULL, &only_disklabel_parts },
 #endif
 	};
@@ -184,7 +183,7 @@ static const struct part_scheme_desc all_descs[] = {
 
 	check_available_binaries();
 
-#if RAW_PART != 2
+#if RAW_PART == 3
 	/* generate a variant of disklabel w/o parent scheme */
 	only_disklabel_parts = disklabel_parts;
 	only_disklabel_parts.name = MSG_parttype_only_disklabel;

@@ -1,4 +1,4 @@
-/* $NetBSD: device.h,v 1.157 2018/12/01 01:51:38 msaitoh Exp $ */
+/* $NetBSD: device.h,v 1.159 2020/11/24 16:17:04 christos Exp $ */
 
 /*
  * Copyright (c) 1996, 2000 Christopher G. Demetriou
@@ -165,6 +165,9 @@ struct device {
 	int		*dv_locators;	/* our actual locators (optional) */
 	prop_dictionary_t dv_properties;/* properties dictionary */
 
+	int		dv_pending;	/* config_pending count */
+	TAILQ_ENTRY(device) dv_pending_list;
+
 	size_t		dv_activity_count;
 	void		(**dv_activity_handlers)(device_t, devactive_t);
 
@@ -276,8 +279,8 @@ struct cfparent {
 struct cfdata {
 	const char *cf_name;		/* driver name */
 	const char *cf_atname;		/* attachment name */
-	short	cf_unit;		/* unit number */
-	short	cf_fstate;		/* finding state (below) */
+	unsigned int cf_unit:24;	/* unit number */
+	unsigned char cf_fstate;	/* finding state (below) */
 	int	*cf_loc;		/* locators (machine dependent) */
 	int	cf_flags;		/* flags from config */
 	const struct cfparent *cf_pspec;/* parent specification */

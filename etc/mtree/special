@@ -1,4 +1,4 @@
-#	$NetBSD: special,v 1.167 2019/05/11 19:31:03 maxv Exp $
+#	$NetBSD: special,v 1.170 2020/06/28 03:05:59 kim Exp $
 #	@(#)special	8.2 (Berkeley) 1/23/94
 #
 # This file may be overwritten on upgrades.
@@ -37,7 +37,7 @@
 ./etc/autofs/special_media	type=file mode=0755
 ./etc/autofs/special_noauto	type=file mode=0755
 ./etc/autofs/special_null	type=file mode=0755
-./etc/blacklistd.conf		type=file mode=0644 optional
+./etc/blocklistd.conf		type=file mode=0644 optional
 ./etc/bluetooth			type=dir  mode=0755
 ./etc/bluetooth/btattach.conf	type=file mode=0644
 ./etc/bluetooth/btdevctl.conf	type=file mode=0644
@@ -64,8 +64,8 @@
 ./etc/defaults/security.conf	type=file mode=0444
 ./etc/defaults/weekly.conf	type=file mode=0444
 ./etc/dhcpcd.conf		type=file mode=0644
-./etc/dhcpcd.duid		type=file mode=0644 optional
-./etc/dhcpcd.hook		type=file mode=0644 optional
+./etc/dhcpcd.enter-hook		type=file mode=0644 optional
+./etc/dhcpcd.exit-hook		type=file mode=0644 optional
 ./etc/dhcpd.conf		type=file mode=0644 optional
 ./etc/dhcpd6.conf		type=file mode=0644 optional
 ./etc/disktab			type=file mode=0644
@@ -356,7 +356,7 @@
 ./etc/zfs			type=dir  mode=0755
 
 ./private			type=dir mode=0755 optional
-./private/tmp			type=dir mode=0111 optional ignore
+./private/tmp			type=dir mode=0555 optional ignore
 
 ./root				type=dir  mode=0755
 ./root/.cshrc			type=file mode=0644

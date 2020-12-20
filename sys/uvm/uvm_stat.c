@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_stat.c,v 1.43 2019/12/31 13:07:14 ad Exp $	 */
+/*	$NetBSD: uvm_stat.c,v 1.46 2020/06/14 21:41:42 ad Exp $	 */
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_stat.c,v 1.43 2019/12/31 13:07:14 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_stat.c,v 1.46 2020/06/14 21:41:42 ad Exp $");
 
 #include "opt_readahead.h"
 #include "opt_ddb.h"
@@ -55,28 +55,37 @@ void
 uvmexp_print(void (*pr)(const char *, ...)
     __attribute__((__format__(__printf__,1,2))))
 {
+	int64_t anonpg, execpg, filepg;
 	int active, inactive;
-	int poolpages;
+	int poolpages, freepg;
 
 	uvm_estimatepageable(&active, &inactive);
 	poolpages = pool_totalpages_locked();
 
-	cpu_count_sync_all();
+	/* this will sync all counters. */
+	freepg = uvm_availmem(false);
+
+	anonpg = cpu_count_get(CPU_COUNT_ANONCLEAN) +
+	    cpu_count_get(CPU_COUNT_ANONDIRTY) +
+	    cpu_count_get(CPU_COUNT_ANONUNKNOWN);
+	execpg = cpu_count_get(CPU_COUNT_EXECPAGES);
+	filepg = cpu_count_get(CPU_COUNT_FILECLEAN) +
+	    cpu_count_get(CPU_COUNT_FILEDIRTY) +
+	    cpu_count_get(CPU_COUNT_FILEUNKNOWN) -
+	    execpg;
+
 	(*pr)("Current UVM status:\n");
 	(*pr)("  pagesize=%d (0x%x), pagemask=0x%x, pageshift=%d, ncolors=%d\n",
 	    uvmexp.pagesize, uvmexp.pagesize, uvmexp.pagemask,
 	    uvmexp.pageshift, uvmexp.ncolors);
 	(*pr)("  %d VM pages: %d active, %d inactive, %d wired, %d free\n",
-	    uvmexp.npages, active, inactive, uvmexp.wired, uvm_availmem());
+	    uvmexp.npages, active, inactive, uvmexp.wired, freepg);
 	(*pr)("  pages  %" PRId64 " anon, %" PRId64 " file, %" PRId64 " exec\n",
-	    cpu_count_get(CPU_COUNT_ANONPAGES),
-	    cpu_count_get(CPU_COUNT_FILEPAGES),
-	    cpu_count_get(CPU_COUNT_EXECPAGES));
+	    anonpg, filepg, execpg);
 	(*pr)("  freemin=%d, free-target=%d, wired-max=%d\n",
 	    uvmexp.freemin, uvmexp.freetarg, uvmexp.wiredmax);
-	(*pr)("  resv-pg=%d, resv-kernel=%d, zeropages=%" PRId64 "\n",
-	    uvmexp.reserve_pagedaemon, uvmexp.reserve_kernel,
-	    cpu_count_get(CPU_COUNT_ZEROPAGES));
+	(*pr)("  resv-pg=%d, resv-kernel=%d\n",
+	    uvmexp.reserve_pagedaemon, uvmexp.reserve_kernel);
 	(*pr)("  bootpages=%d, poolpages=%d\n",
 	    uvmexp.bootpages, poolpages);
 

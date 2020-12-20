@@ -1,4 +1,4 @@
-# $NetBSD: CUBOX,v 1.16 2020/03/25 17:06:18 jdolecek Exp $
+# $NetBSD: CUBOX,v 1.19 2020/09/27 13:48:50 roy Exp $
 #
 #	CUBOX -- SolidRun Ltd. Cubox kernel
 #
@@ -51,7 +51,7 @@ options 	BUFQ_PRIOCSCAN
 options 	DIAGNOSTIC	# internally consistency checks
 
 #options 	DEBUG
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 options 	LOCKDEBUG	# expensive locking checks/support
 options 	IRQSTATS	# manage IRQ statistics
 #options 	NO_POWERSAVE	# uncomment this to run under ICE
@@ -335,7 +335,7 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 #pseudo-device	npf			# NPF packet filter
 

@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.55 2018/06/10 17:17:46 kamil Exp $
+# $NetBSD: mi,v 1.59 2020/11/10 21:47:41 kamil Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -89,6 +89,7 @@
 ./usr/games/trek				games-games-bin
 ./usr/games/unstr				games-utils-bin
 ./usr/games/wargames				games-games-bin
+./usr/games/warp				games-games-bin
 ./usr/games/worm				games-games-bin
 ./usr/games/worms				games-games-bin
 ./usr/games/wtf					games-utils-bin
@@ -104,7 +105,6 @@
 ./usr/share/doc/usd/30.rogue/Makefile		games-obsolete		obsolete
 ./usr/share/doc/usd/30.rogue/rogue.me		games-obsolete		obsolete
 ./usr/share/doc/usd/31.trek/Makefile		games-obsolete		obsolete
-./usr/share/doc/usd/31.trek/trek.me		games-obsolete		obsolete
 ./usr/share/doc/usd/31.trek/trek.me		games-obsolete		obsolete
 ./usr/share/games/atc/ATC_scores		games-obsolete		obsolete
 ./usr/share/games/atc/Atlantis			games-games-share	share
@@ -198,6 +198,17 @@
 ./usr/share/games/quiz.db/state			games-games-share	share
 ./usr/share/games/quiz.db/trek			games-games-share	share
 ./usr/share/games/quiz.db/ucc			games-games-share	share
+./usr/share/games/warp/README			games-games-share	share
+./usr/share/games/warp/smap.0			games-games-share	share
+./usr/share/games/warp/smap.1			games-games-share	share
+./usr/share/games/warp/smap.2			games-games-share	share
+./usr/share/games/warp/smap.3			games-games-share	share
+./usr/share/games/warp/smap.4			games-games-share	share
+./usr/share/games/warp/smap.5			games-games-share	share
+./usr/share/games/warp/smap.6			games-games-share	share
+./usr/share/games/warp/smap.7			games-games-share	share
+./usr/share/games/warp/warp.doc			games-games-share	share
+./usr/share/games/warp/warp.news		games-games-share	share
 ./usr/share/games/wump.info			games-games-share	share
 ./usr/share/man/cat5/dm.conf.0			games-games-catman	.cat
 ./usr/share/man/cat6/adventure.0		games-games-catman	.cat
@@ -303,6 +314,7 @@
 ./usr/share/man/html6/tetris.html		games-games-htmlman	html
 ./usr/share/man/html6/trek.html			games-games-htmlman	html
 ./usr/share/man/html6/wargames.html		games-games-htmlman	html
+./usr/share/man/html6/warp.html			games-games-htmlman	html
 ./usr/share/man/html6/worm.html			games-games-htmlman	html
 ./usr/share/man/html6/worms.html		games-games-htmlman	html
 ./usr/share/man/html6/wtf.html			games-utils-htmlman	html
@@ -359,6 +371,7 @@
 ./usr/share/man/man6/tetris.6			games-games-man		.man
 ./usr/share/man/man6/trek.6			games-games-man		.man
 ./usr/share/man/man6/wargames.6			games-games-man		.man
+./usr/share/man/man6/warp.6			games-games-man		.man
 ./usr/share/man/man6/worm.6			games-games-man		.man
 ./usr/share/man/man6/worms.6			games-games-man		.man
 ./usr/share/man/man6/wtf.6			games-utils-man		.man

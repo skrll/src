@@ -1,4 +1,4 @@
-# $NetBSD: INSTALL,v 1.114 2020/04/06 11:57:51 martin Exp $
+# $NetBSD: INSTALL,v 1.117 2020/09/28 03:48:12 thorpej Exp $
 #
 # Alpha INSTALL kernel.
 
@@ -9,6 +9,8 @@ include 	"arch/alpha/conf/std.alpha"
 makeoptions	COPTS="-Os"		# Optimise for space. Implies -O2
 
 maxusers 8
+
+no options 	MULTIPROCESSOR		# disable MP to save space
 
 # Enable the hooks used for initializing the ram-disk.
 options 	MEMORY_DISK_HOOKS
@@ -85,6 +87,7 @@ config		netbsd	root on ? type ?
 
 mainbus0 at	root
 cpu*	at	mainbus0
+qemu*	at	mainbus0
 
 # TurboLaser bus support and devices
 tlsb*	at	mainbus0
@@ -209,6 +212,7 @@ optiide* at	pci? dev ? function ?		# Opti IDE controllers
 pdcide* at	pci? dev ? function ?		# Promise IDE controllers
 pdcsata* at	pci? dev ? function ?		# Promise SATA150 controllers
 satalink* at	pci? dev ? function ?		# SiI SATALink controllers
+siisata* at	pci? dev ? function ?		# SiI SteelVine controllers
 siside* at	pci? dev ? function ?		# SiS IDE controllers
 slide*  at	pci? dev ? function ?		# Symphony Labs IDE controllers
 viaide* at	pci? dev ? function ?		# VIA/AMD/Nvidia IDE controllers

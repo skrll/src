@@ -1,4 +1,4 @@
-/* $NetBSD: bwfmvar.h,v 1.8 2020/03/25 04:53:11 thorpej Exp $ */
+/* $NetBSD: bwfmvar.h,v 1.12 2020/07/22 17:23:52 riastradh Exp $ */
 /* $OpenBSD: bwfmvar.h,v 1.1 2017/10/11 17:19:50 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -17,8 +17,25 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <sys/pcq.h>
-#include <dev/firmload.h>
+#ifndef	_DEV_IC_BWFMVAR_H
+#define	_DEV_IC_BWFMVAR_H
+
+#include <sys/types.h>
+
+#include <sys/cdefs.h>
+#include <sys/device_if.h>
+#include <sys/queue.h>
+#include <sys/workqueue.h>
+
+#include <net/if_ether.h>
+
+#include <net80211/ieee80211.h>
+#include <net80211/ieee80211_proto.h>
+#include <net80211/ieee80211_var.h>
+
+struct ieee80211_key;
+struct mbuf;
+struct pool_cache;
 
 /* Chipcommon Core Chip IDs */
 #define BRCM_CC_43143_CHIP_ID		43143
@@ -156,7 +173,7 @@ struct bwfm_proto_ops {
 	int (*proto_set_dcmd)(struct bwfm_softc *, int, int,
 	    char *, size_t);
 };
-extern struct bwfm_proto_ops bwfm_proto_bcdc_ops;
+extern const struct bwfm_proto_ops bwfm_proto_bcdc_ops;
 
 enum bwfm_task_cmd {
 	BWFM_TASK_NEWSTATE,
@@ -195,9 +212,9 @@ struct bwfm_softc {
 	struct ethercom		 sc_ec;
 #define	sc_if			 sc_ec.ec_if
 
-	struct bwfm_bus_ops	*sc_bus_ops;
-	struct bwfm_buscore_ops	*sc_buscore_ops;
-	struct bwfm_proto_ops	*sc_proto_ops;
+	const struct bwfm_bus_ops	*sc_bus_ops;
+	const struct bwfm_buscore_ops	*sc_buscore_ops;
+	const struct bwfm_proto_ops	*sc_proto_ops;
 	struct bwfm_chip	 sc_chip;
 	uint8_t			 sc_io_type;
 #define		BWFM_IO_TYPE_D11N		1
@@ -206,14 +223,18 @@ struct bwfm_softc {
 	int			 sc_tx_timer;
 
 	bool			 sc_if_attached;
-	struct bwfm_task	 sc_task[BWFM_TASK_COUNT];
-	pcq_t			*sc_freetask;
+	struct pool_cache	*sc_freetask;
 	struct workqueue	*sc_taskq;
 
 	int			(*sc_newstate)(struct ieee80211com *,
 				    enum ieee80211_state, int);
 
 	int			 sc_bcdc_reqid;
+
+	union {
+		struct bwfm_bss_info bss_info;
+		uint8_t padding[BWFM_BSS_INFO_BUFLEN];
+	}			sc_bss_buf;
 };
 
 void bwfm_attach(struct bwfm_softc *);
@@ -240,3 +261,5 @@ void	bwfm_firmware_close(struct bwfm_firmware_context *);
 void *	bwfm_firmware_data(struct bwfm_firmware_context *,
 	    unsigned int, size_t *);
 const char *bwfm_firmware_description(unsigned int);
+
+#endif	/* _DEV_IC_BWFMVAR_H */

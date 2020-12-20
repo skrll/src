@@ -1,10 +1,10 @@
 #!/bin/sh
 #
-# $NetBSD: ipsec,v 1.16 2020/01/27 08:28:33 kim Exp $
+# $NetBSD: ipsec,v 1.18 2020/09/08 12:52:18 martin Exp $
 #
 
 # PROVIDE: ipsec
-# REQUIRE: root bootconf mountcritlocal tty
+# REQUIRE: root bootconf CRITLOCALMOUNTED tty
 # BEFORE:  DAEMON
 
 $_rc_subr_loaded . /etc/rc.subr

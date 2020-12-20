@@ -1,4 +1,33 @@
-/* $NetBSD: shared_intr.c,v 1.22 2019/11/10 21:16:22 chs Exp $ */
+/* $NetBSD: shared_intr.c,v 1.26 2020/09/26 02:35:31 thorpej Exp $ */
+
+/*
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
+ * All rights reserved.
+ *
+ * This code is derived from software contributed to The NetBSD Foundation
+ * by Jason R. Thorpe.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
 
 /*
  * Copyright (c) 1996 Carnegie-Mellon University.
@@ -33,16 +62,19 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: shared_intr.c,v 1.22 2019/11/10 21:16:22 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: shared_intr.c,v 1.26 2020/09/26 02:35:31 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
+#include <sys/cpu.h>
+#include <sys/kmem.h>
+#include <sys/kmem.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
 #include <sys/syslog.h>
 #include <sys/queue.h>
 #include <sys/atomic.h>
 #include <sys/intr.h>
+#include <sys/xcall.h>
 
 static const char *intr_typename(int);
 
@@ -71,8 +103,7 @@ alpha_shared_intr_alloc(unsigned int n, unsigned int namesize)
 	struct alpha_shared_intr *intr;
 	unsigned int i;
 
-	intr = malloc(n * sizeof (struct alpha_shared_intr), M_DEVBUF,
-	    M_WAITOK);
+	intr = kmem_alloc(n * sizeof(*intr), KM_SLEEP);
 	for (i = 0; i < n; i++) {
 		TAILQ_INIT(&intr[i].intr_q);
 		intr[i].intr_sharetype = IST_NONE;
@@ -80,11 +111,12 @@ alpha_shared_intr_alloc(unsigned int n, unsigned int namesize)
 		intr[i].intr_nstrays = 0;
 		intr[i].intr_maxstrays = 5;
 		intr[i].intr_private = NULL;
+		intr[i].intr_cpu = NULL;
 		if (namesize != 0) {
-			intr[i].intr_string = malloc(namesize, M_DEVBUF,
-			    M_WAITOK);
-		} else
+			intr[i].intr_string = kmem_zalloc(namesize, KM_SLEEP);
+		} else {
 			intr[i].intr_string = NULL;
+		}
 	}
 
 	return (intr);
@@ -109,6 +141,7 @@ alpha_shared_intr_dispatch(struct alpha_shared_intr *intr, unsigned int num)
 		 *  -1: This interrupt might have been for me, but I can't say
 		 *      for sure.
 		 */
+
 		rv = (*ih->ih_fn)(ih->ih_arg);
 
 		handled = handled || (rv != 0);
@@ -118,23 +151,97 @@ alpha_shared_intr_dispatch(struct alpha_shared_intr *intr, unsigned int num)
 	return (handled);
 }
 
-void *
-alpha_shared_intr_establish(struct alpha_shared_intr *intr, unsigned int num,
-    int type, int level, int (*fn)(void *), void *arg, const char *basename)
+static int
+alpha_shared_intr_wrapper(void * const arg)
+{
+	struct alpha_shared_intrhand * const ih = arg;
+	int rv;
+
+	KERNEL_LOCK(1, NULL);
+	rv = (*ih->ih_real_fn)(ih->ih_real_arg);
+	KERNEL_UNLOCK_ONE(NULL);
+
+	return rv;
+}
+
+struct alpha_shared_intrhand *
+alpha_shared_intr_alloc_intrhand(struct alpha_shared_intr *intr,
+    unsigned int num, int type, int level, int flags,
+    int (*fn)(void *), void *arg, const char *basename)
 {
 	struct alpha_shared_intrhand *ih;
 
 	if (intr[num].intr_sharetype == IST_UNUSABLE) {
-		printf("alpha_shared_intr_establish: %s %d: unusable\n",
+		printf("%s: %s %d: unusable\n", __func__,
 		    basename, num);
 		return NULL;
 	}
 
-	ih = malloc(sizeof *ih, M_DEVBUF, M_WAITOK);
-#ifdef DIAGNOSTIC
-	if (type == IST_NONE)
-		panic("alpha_shared_intr_establish: bogus type");
-#endif
+	KASSERT(type != IST_NONE);
+
+	ih = kmem_alloc(sizeof(*ih), KM_SLEEP);
+
+	ih->ih_intrhead = intr;
+	ih->ih_fn = ih->ih_real_fn = fn;
+	ih->ih_arg = ih->ih_real_arg = arg;
+	ih->ih_level = level;
+	ih->ih_type = type;
+	ih->ih_num = num;
+
+	/*
+	 * Non-MPSAFE interrupts get a wrapper that takes the
+	 * KERNEL_LOCK.
+	 */
+	if ((flags & ALPHA_INTR_MPSAFE) == 0) {
+		ih->ih_fn = alpha_shared_intr_wrapper;
+		ih->ih_arg = ih;
+	}
+
+	return (ih);
+}
+
+void
+alpha_shared_intr_free_intrhand(struct alpha_shared_intrhand *ih)
+{
+
+	kmem_free(ih, sizeof(*ih));
+}
+
+static void
+alpha_shared_intr_link_unlink_xcall(void *arg1, void *arg2)
+{
+	struct alpha_shared_intrhand *ih = arg1;
+	struct alpha_shared_intr *intr = ih->ih_intrhead;
+	unsigned int num = ih->ih_num;
+
+	struct cpu_info *ci = intr[num].intr_cpu;
+
+	KASSERT(ci != NULL);
+	KASSERT(ci == curcpu() || !mp_online);
+	KASSERT(!cpu_intr_p());
+
+	const unsigned long psl = alpha_pal_swpipl(ALPHA_PSL_IPL_HIGH);
+
+	if (arg2 != NULL) {
+		TAILQ_INSERT_TAIL(&intr[num].intr_q, ih, ih_q);
+		ci->ci_nintrhand++;
+	} else {
+		TAILQ_REMOVE(&intr[num].intr_q, ih, ih_q);
+		ci->ci_nintrhand--;
+	}
+
+	alpha_pal_swpipl(psl);
+}
+
+bool
+alpha_shared_intr_link(struct alpha_shared_intr *intr,
+    struct alpha_shared_intrhand *ih, const char *basename)
+{
+	int type = ih->ih_type;
+	unsigned int num = ih->ih_num;
+
+	KASSERT(mutex_owned(&cpu_lock));
+	KASSERT(ih->ih_intrhead == intr);
 
 	switch (intr[num].intr_sharetype) {
 	case IST_EDGE:
@@ -149,9 +256,10 @@ alpha_shared_intr_establish(struct alpha_shared_intr *intr, unsigned int num,
 				    intr_typename(intr[num].intr_sharetype));
 				type = intr[num].intr_sharetype;
 			} else {
-				panic("alpha_shared_intr_establish: %s %d: can't share %s with %s",
+				printf("alpha_shared_intr_establish: %s %d: can't share %s with %s\n",
 				    basename, num, intr_typename(type),
 				    intr_typename(intr[num].intr_sharetype));
+				return (false);
 			}
 		}
 		break;
@@ -161,30 +269,48 @@ alpha_shared_intr_establish(struct alpha_shared_intr *intr, unsigned int num,
 		break;
 	}
 
-	ih->ih_intrhead = intr;
-	ih->ih_fn = fn;
-	ih->ih_arg = arg;
-	ih->ih_level = level;
-	ih->ih_num = num;
-
 	intr[num].intr_sharetype = type;
-	TAILQ_INSERT_TAIL(&intr[num].intr_q, ih, ih_q);
 
-	return (ih);
+	/*
+	 * If a CPU hasn't been assigned yet, just give it to the
+	 * primary.
+	 */
+	if (intr[num].intr_cpu == NULL) {
+		intr[num].intr_cpu = &cpu_info_primary;
+	}
+
+	kpreempt_disable();
+	if (intr[num].intr_cpu == curcpu() || !mp_online) {
+		alpha_shared_intr_link_unlink_xcall(ih, ih);
+	} else {
+		uint64_t where = xc_unicast(XC_HIGHPRI,
+		    alpha_shared_intr_link_unlink_xcall, ih, ih,
+		    intr->intr_cpu);
+		xc_wait(where);
+	}
+	kpreempt_enable();
+
+	return (true);
 }
 
 void
-alpha_shared_intr_disestablish(struct alpha_shared_intr *intr, void *cookie,
-    const char *basename)
+alpha_shared_intr_unlink(struct alpha_shared_intr *intr,
+    struct alpha_shared_intrhand *ih, const char *basename)
 {
-	struct alpha_shared_intrhand *ih = cookie;
 	unsigned int num = ih->ih_num;
 
-	/*
-	 * Just remove it from the list and free the entry.  We let
-	 * the caller deal with resetting the share type, if appropriate.
-	 */
-	TAILQ_REMOVE(&intr[num].intr_q, ih, ih_q);
+	KASSERT(mutex_owned(&cpu_lock));
+
+	kpreempt_disable();
+	if (intr[num].intr_cpu == curcpu() || !mp_online) {
+		alpha_shared_intr_link_unlink_xcall(ih, NULL);
+	} else {
+		uint64_t where = xc_unicast(XC_HIGHPRI,
+		    alpha_shared_intr_link_unlink_xcall, ih, NULL,
+		    intr->intr_cpu);
+		xc_wait(where);
+	}
+	kpreempt_enable();
 }
 
 int
@@ -276,6 +402,88 @@ alpha_shared_intr_get_private(struct alpha_shared_intr *intr,
 {
 
 	return (intr[num].intr_private);
+}
+
+static unsigned int
+alpha_shared_intr_q_count_handlers(struct alpha_shared_intr *intr_q)
+{
+	unsigned int cnt = 0;
+	struct alpha_shared_intrhand *ih;
+
+	TAILQ_FOREACH(ih, &intr_q->intr_q, ih_q) {
+		cnt++;
+	}
+
+	return cnt;
+}
+
+static void
+alpha_shared_intr_set_cpu_xcall(void *arg1, void *arg2)
+{
+	struct alpha_shared_intr *intr_q = arg1;
+	struct cpu_info *ci = arg2;
+	unsigned int cnt = alpha_shared_intr_q_count_handlers(intr_q);
+
+	KASSERT(ci == curcpu() || !mp_online);
+
+	ci->ci_nintrhand += cnt;
+	KASSERT(cnt <= ci->ci_nintrhand);
+}
+
+static void
+alpha_shared_intr_unset_cpu_xcall(void *arg1, void *arg2)
+{
+	struct alpha_shared_intr *intr_q = arg1;
+	struct cpu_info *ci = arg2;
+	unsigned int cnt = alpha_shared_intr_q_count_handlers(intr_q);
+
+	KASSERT(ci == curcpu() || !mp_online);
+
+	KASSERT(cnt <= ci->ci_nintrhand);
+	ci->ci_nintrhand -= cnt;
+}
+
+void
+alpha_shared_intr_set_cpu(struct alpha_shared_intr *intr, unsigned int num,
+    struct cpu_info *ci)
+{
+	struct cpu_info *old_ci;
+
+	KASSERT(mutex_owned(&cpu_lock));
+
+	old_ci = intr[num].intr_cpu;
+	intr[num].intr_cpu = ci;
+
+	if (old_ci != NULL && old_ci != ci) {
+		kpreempt_disable();
+
+		if (ci == curcpu() || !mp_online) {
+			alpha_shared_intr_set_cpu_xcall(&intr[num], ci);
+		} else {
+			uint64_t where = xc_unicast(XC_HIGHPRI,
+			    alpha_shared_intr_set_cpu_xcall, &intr[num],
+			    ci, ci);
+			xc_wait(where);
+		}
+
+		if (old_ci == curcpu() || !mp_online) {
+			alpha_shared_intr_unset_cpu_xcall(&intr[num], old_ci);
+		} else {
+			uint64_t where = xc_unicast(XC_HIGHPRI,
+			    alpha_shared_intr_unset_cpu_xcall, &intr[num],
+			    old_ci, old_ci);
+			xc_wait(where);
+		}
+
+		kpreempt_enable();
+	}
+}
+
+struct cpu_info *
+alpha_shared_intr_get_cpu(struct alpha_shared_intr *intr, unsigned int num)
+{
+
+	return (intr[num].intr_cpu);
 }
 
 struct evcnt *

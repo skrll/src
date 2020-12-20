@@ -1,4 +1,4 @@
-/* $NetBSD: xhci_acpi.c,v 1.7 2020/01/31 23:12:13 jmcneill Exp $ */
+/* $NetBSD: xhci_acpi.c,v 1.10 2020/12/07 10:02:51 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci_acpi.c,v 1.7 2020/01/31 23:12:13 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci_acpi.c,v 1.10 2020/12/07 10:02:51 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -130,15 +130,21 @@ xhci_acpi_attach(device_t parent, device_t self, void *aux)
 
 	hccparams = bus_space_read_4(sc->sc_iot, sc->sc_ioh, XHCI_HCCPARAMS);
 	if (XHCI_HCC_AC64(hccparams)) {
-		aprint_verbose_dev(self, "using 64-bit DMA\n");
-		sc->sc_bus.ub_dmatag = BUS_DMA_TAG_VALID(aa->aa_dmat64) ?
-		    aa->aa_dmat64 : aa->aa_dmat;
+		aprint_verbose_dev(self, "64-bit DMA");
+		if (BUS_DMA_TAG_VALID(aa->aa_dmat64)) {
+			aprint_verbose("\n");
+			sc->sc_bus.ub_dmatag = aa->aa_dmat64;
+		} else {
+			aprint_verbose(" - limited\n");
+			sc->sc_bus.ub_dmatag = aa->aa_dmat;
+		}
 	} else {
-		aprint_verbose_dev(self, "using 32-bit DMA\n");
+		aprint_verbose_dev(self, "32-bit DMA\n");
 		sc->sc_bus.ub_dmatag = aa->aa_dmat;
 	}
 
-        ih = acpi_intr_establish(self, (uint64_t)aa->aa_node->ad_handle,
+	ih = acpi_intr_establish(self,
+	    (uint64_t)(uintptr_t)aa->aa_node->ad_handle,
 	    IPL_USB, true, xhci_intr, sc, device_xname(self));
 	if (ih == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt\n");

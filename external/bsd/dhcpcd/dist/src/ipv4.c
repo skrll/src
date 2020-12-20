@@ -565,8 +565,6 @@ ipv4_getstate(struct interface *ifp)
 			return NULL;
 		}
 		TAILQ_INIT(&state->addrs);
-		state->buffer_size = state->buffer_len = state->buffer_pos = 0;
-		state->buffer = NULL;
 	}
 	return state;
 }
@@ -663,8 +661,13 @@ ipv4_addaddr(struct interface *ifp, const struct in_addr *addr,
 	ia->mask = *mask;
 	ia->brd = *bcast;
 #ifdef IP_LIFETIME
-	ia->vltime = vltime;
-	ia->pltime = pltime;
+	if (ifp->options->options & DHCPCD_LASTLEASE_EXTEND) {
+		/* We don't want the kernel to expire the address. */
+		ia->vltime = ia->pltime = DHCP_INFINITE_LIFETIME;
+	} else {
+		ia->vltime = vltime;
+		ia->pltime = pltime;
+	}
 #else
 	UNUSED(vltime);
 	UNUSED(pltime);
@@ -725,7 +728,7 @@ ipv4_daddaddr(struct interface *ifp, const struct dhcp_lease *lease)
 	return 0;
 }
 
-void
+struct ipv4_addr *
 ipv4_applyaddr(void *arg)
 {
 	struct interface *ifp = arg;
@@ -735,7 +738,7 @@ ipv4_applyaddr(void *arg)
 	struct ipv4_addr *ia;
 
 	if (state == NULL)
-		return;
+		return NULL;
 
 	lease = &state->lease;
 	if (state->new == NULL) {
@@ -754,7 +757,7 @@ ipv4_applyaddr(void *arg)
 			script_runreason(ifp, state->reason);
 		} else
 			rt_build(ifp->ctx, AF_INET);
-		return;
+		return NULL;
 	}
 
 	ia = ipv4_iffindaddr(ifp, &lease->addr, NULL);
@@ -780,22 +783,22 @@ ipv4_applyaddr(void *arg)
 #endif
 #ifndef IP_LIFETIME
 		if (ipv4_daddaddr(ifp, lease) == -1 && errno != EEXIST)
-			return;
+			return NULL;
 #endif
 	}
 #ifdef IP_LIFETIME
 	if (ipv4_daddaddr(ifp, lease) == -1 && errno != EEXIST)
-		return;
+		return NULL;
 #endif
 
 	ia = ipv4_iffindaddr(ifp, &lease->addr, NULL);
 	if (ia == NULL) {
 		logerrx("%s: added address vanished", ifp->name);
-		return;
+		return NULL;
 	}
 #if defined(ARP) && defined(IN_IFF_NOTUSEABLE)
 	if (ia->addr_flags & IN_IFF_NOTUSEABLE)
-		return;
+		return NULL;
 #endif
 
 	/* Delete the old address if different */
@@ -817,6 +820,7 @@ ipv4_applyaddr(void *arg)
 		script_runreason(ifp, state->reason);
 		dhcpcd_daemonise(ifp->ctx);
 	}
+	return ia;
 }
 
 void
@@ -963,6 +967,5 @@ ipv4_free(struct interface *ifp)
 		TAILQ_REMOVE(&state->addrs, ia, next);
 		free(ia);
 	}
-	free(state->buffer);
 	free(state);
 }

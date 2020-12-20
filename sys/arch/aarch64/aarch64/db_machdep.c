@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.c,v 1.20 2020/02/29 21:30:19 ryo Exp $ */
+/* $NetBSD: db_machdep.c,v 1.30 2020/12/11 18:03:33 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.20 2020/02/29 21:30:19 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.30 2020/12/11 18:03:33 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd32.h"
@@ -45,11 +45,14 @@ __KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.20 2020/02/29 21:30:19 ryo Exp $");
 
 #include <uvm/uvm.h>
 
+#include <arm/cpufunc.h>
+
 #include <aarch64/db_machdep.h>
 #include <aarch64/armreg.h>
-#include <aarch64/cpufunc.h>
 #include <aarch64/locore.h>
 #include <aarch64/pmap.h>
+
+#include <arm/cpufunc.h>
 
 #include <ddb/db_access.h>
 #include <ddb/db_command.h>
@@ -68,6 +71,7 @@ void db_md_cpuinfo_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_frame_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_lwp_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_pte_cmd(db_expr_t, bool, db_expr_t, const char *);
+void db_md_reset_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_tlbi_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_ttbr_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_sysreg_cmd(db_expr_t, bool, db_expr_t, const char *);
@@ -112,6 +116,12 @@ const struct db_command db_machine_command_table[] = {
 		    "Display information of pte",
 		    "address",
 		    "\taddress:\tvirtual address of page")
+	},
+	{
+		DDB_ADD_CMD(
+		    "reset", db_md_reset_cmd, 0,
+		    "Reset the system",
+		    NULL, NULL)
 	},
 	{
 		DDB_ADD_CMD(
@@ -196,6 +206,11 @@ db_regs_t ddb_regs;
 void
 dump_trapframe(struct trapframe *tf, void (*pr)(const char *, ...))
 {
+	struct trapframe tf_buf;
+
+	db_read_bytes((db_addr_t)tf, sizeof(tf_buf), (char *)&tf_buf);
+	tf = &tf_buf;
+
 #ifdef COMPAT_NETBSD32
 	if (tf->tf_spsr & SPSR_A32) {
 		(*pr)("    pc=%016"PRIxREGISTER",   spsr=%016"PRIxREGISTER
@@ -259,6 +274,29 @@ dump_trapframe(struct trapframe *tf, void (*pr)(const char *, ...))
 	    tf->tf_reg[30],  tf->tf_sp);
 }
 
+void
+dump_switchframe(struct trapframe *tf, void (*pr)(const char *, ...))
+{
+	struct trapframe tf_buf;
+
+	db_read_bytes((db_addr_t)tf, sizeof(tf_buf), (char *)&tf_buf);
+	tf = &tf_buf;
+
+	(*pr)("   x19=%016"PRIxREGISTER",    x20=%016"PRIxREGISTER"\n",
+	    tf->tf_reg[19], tf->tf_reg[20]);
+	(*pr)("   x21=%016"PRIxREGISTER",    x22=%016"PRIxREGISTER"\n",
+	    tf->tf_reg[21], tf->tf_reg[22]);
+	(*pr)("   x23=%016"PRIxREGISTER",    x24=%016"PRIxREGISTER"\n",
+	    tf->tf_reg[23], tf->tf_reg[24]);
+	(*pr)("   x25=%016"PRIxREGISTER",    x26=%016"PRIxREGISTER"\n",
+	    tf->tf_reg[25], tf->tf_reg[26]);
+	(*pr)("   x27=%016"PRIxREGISTER",    x28=%016"PRIxREGISTER"\n",
+	    tf->tf_reg[27], tf->tf_reg[28]);
+	(*pr)("fp=x29=%016"PRIxREGISTER", lr=x30=%016"PRIxREGISTER"\n",
+	    tf->tf_reg[29], tf->tf_reg[30]);
+}
+
+
 #if defined(_KERNEL)
 static void
 show_cpuinfo(struct cpu_info *ci)
@@ -287,10 +325,10 @@ show_cpuinfo(struct cpu_info *ci)
 	    &ci->ci_cpl, cpuid, cpuinfobuf.ci_cpl);
 	db_printf("%p cpu[%lu].ci_softints     = 0x%08x\n",
 	    &ci->ci_softints, cpuid, cpuinfobuf.ci_softints);
-	db_printf("%p cpu[%lu].ci_astpending   = 0x%08x\n",
-	    &ci->ci_astpending, cpuid, cpuinfobuf.ci_astpending);
 	db_printf("%p cpu[%lu].ci_intr_depth   = %u\n",
 	    &ci->ci_intr_depth, cpuid, cpuinfobuf.ci_intr_depth);
+	db_printf("%p cpu[%lu].ci_biglock_count = %u\n",
+	    &ci->ci_biglock_count, cpuid, cpuinfobuf.ci_biglock_count);
 }
 
 void
@@ -340,28 +378,33 @@ void
 db_md_lwp_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
     const char *modif)
 {
-	lwp_t *l;
-	struct pcb *pcb;
+	lwp_t *l, lwp_buf;
+	struct pcb *pcb, pcb_buf;
 
 	if (!have_addr) {
 		db_printf("lwp address must be specified\n");
 		return;
 	}
-	l = (lwp_t *)addr;
+
+	db_read_bytes(addr, sizeof(lwp_buf), (char *)&lwp_buf);
+	l = &lwp_buf;
 
 #define SAFESTRPTR(p)	(((p) == NULL) ? "NULL" : (p))
 
-	db_printf("lwp=%p\n", l);
+	db_printf("lwp=%p\n", (void *)addr);
 
 	db_printf("\tlwp_getpcb(l)     =%p\n", lwp_getpcb(l));
 
 	db_printf("\tl->l_md.md_onfault=%p\n", l->l_md.md_onfault);
 	db_printf("\tl->l_md.md_utf    =%p\n", l->l_md.md_utf);
 	dump_trapframe(l->l_md.md_utf, db_printf);
-	pcb = l->l_addr;
+
+	db_read_bytes((db_addr_t)l->l_addr, sizeof(pcb_buf), (char *)&pcb_buf);
+	pcb = &pcb_buf;
+
 	db_printf("\tl->l_addr.pcb_tf    =%p\n", pcb->pcb_tf);
 	if (pcb->pcb_tf != l->l_md.md_utf)
-		dump_trapframe(pcb->pcb_tf, db_printf);
+		dump_switchframe(pcb->pcb_tf, db_printf);
 	db_printf("\tl->l_md.md_cpacr  =%016" PRIx64 "\n", l->l_md.md_cpacr);
 	db_printf("\tl->l_md.md_flags  =%08x\n", l->l_md.md_flags);
 
@@ -403,18 +446,30 @@ db_md_pte_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 	}
 
 	reg_s1e0r_write(addr);
-	__asm __volatile ("isb");
+	isb();
 	par = reg_par_el1_read();
 	db_printf("Stage1 EL0 translation %016llx -> PAR_EL1 = ", addr);
 	db_par_print(par, addr);
 
 	reg_s1e1r_write(addr);
-	__asm __volatile ("isb");
+	isb();
 	par = reg_par_el1_read();
 	db_printf("Stage1 EL1 translation %016llx -> PAR_EL1 = ", addr);
 	db_par_print(par, addr);
 
 	pmap_db_pteinfo(addr, db_printf);
+}
+
+void
+db_md_reset_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
+    const char *modif)
+{
+	if (cpu_reset_address == NULL) {
+		db_printf("cpu_reset_address is not set\n");
+		return;
+	}
+
+	cpu_reset_address();
 }
 
 void
@@ -869,7 +924,7 @@ db_md_watch_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 volatile struct cpu_info *db_trigger;
 volatile struct cpu_info *db_onproc;
 volatile struct cpu_info *db_newcpu;
-volatile int db_readytoswitch[MAXCPUS];
+volatile struct trapframe *db_readytoswitch[MAXCPUS];
 
 #ifdef _KERNEL
 void
@@ -884,8 +939,9 @@ db_md_switch_cpu_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 
 	if (!have_addr) {
 		for (i = 0; i < ncpu; i++) {
-			if (db_readytoswitch[i] != 0)
-				db_printf("cpu%d: ready\n", i);
+			if (db_readytoswitch[i] != NULL)
+				db_printf("cpu%d: ready. tf=%p\n", i,
+				    db_readytoswitch[i]);
 			else
 				db_printf("cpu%d: not responding\n", i);
 		}
@@ -936,6 +992,7 @@ kdb_trap(int type, struct trapframe *tf)
 	case DB_TRAP_BKPT_INSN:
 	case DB_TRAP_WATCHPOINT:
 	case DB_TRAP_SW_STEP:
+	case -1:	/* from pic_ipi_ddb() */
 		break;
 	default:
 		if (db_recover != 0) {
@@ -956,7 +1013,7 @@ kdb_trap(int type, struct trapframe *tf)
 		db_trigger = ci;
 		membar_producer();
 	}
-	db_readytoswitch[ci->ci_index] = 1;
+	db_readytoswitch[ci->ci_index] = tf;
 	membar_producer();
 #endif
 
@@ -995,8 +1052,8 @@ kdb_trap(int type, struct trapframe *tf)
 		if ((ncpu > 1) && (db_newcpu != NULL)) {
 			db_onproc = db_newcpu;
 			db_newcpu = NULL;
-			membar_producer();
-			__asm __volatile ("sev; sev; sev");
+			dsb(ishst);
+			sev();
 			continue;	/* redo DDB on new cpu */
 		}
 #endif /* MULTIPROCESSOR */
@@ -1007,11 +1064,11 @@ kdb_trap(int type, struct trapframe *tf)
 #ifdef MULTIPROCESSOR
 	if (ncpu > 1) {
 		db_onproc = NULL;
-		membar_producer();
-		__asm __volatile ("sev; sev; sev");
+		dsb(ishst);
+		sev();
 	}
 	db_trigger = NULL;
-	db_readytoswitch[ci->ci_index] = 0;
+	db_readytoswitch[ci->ci_index] = NULL;
 	membar_producer();
 #endif
 

@@ -1,7 +1,7 @@
-# $NetBSD: GENERIC,v 1.137 2019/04/26 21:40:31 sevan Exp $
+# $NetBSD: GENERIC,v 1.142 2020/09/27 13:48:53 roy Exp $
 #
 # GENERIC machine description file
-# 
+#
 # This machine description file is used to generate the default NetBSD
 # kernel.  The generic kernel does not include all options, subsystems
 # and device drivers, but should be useful for most applications.
@@ -114,8 +114,6 @@ options 	NFS_BOOT_DHCP
 options 	COMPAT_NETBSD32	# allow running arm (e.g. non-earm) binaries
 include 	"conf/compat_netbsd14.config"
 
-options 	COMPAT_LINUX	# binary compatibility with Linux
-
 # Shared memory options
 
 options 	SYSVMSG		# System V-like message queues
@@ -145,7 +143,7 @@ options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 #options 	ARM700BUGTRACK	# track the ARM700 swi bug
 #options 	PORTMASTER	# Enable PortMaster only options
 #options 	DIAGNOSTIC	# internal consistency checks
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 options 	DDB		# in-kernel debugger
 options 	DDB_HISTORY_SIZE=100	# Enable history editing in DDB
 makeoptions	DEBUG="-g"	# compile full symbol table
@@ -277,7 +275,7 @@ pseudo-device	bpfilter		# Berkeley packet filter
 pseudo-device	carp			# Common Address Redundancy Protocol
 pseudo-device	pppoe			# PPP over Ethernet (RFC 2516)
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+#pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	loop			# network loopback
 
 #

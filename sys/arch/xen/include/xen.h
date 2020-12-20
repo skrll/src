@@ -1,4 +1,4 @@
-/*	$NetBSD: xen.h,v 1.45 2020/04/09 19:26:37 jdolecek Exp $	*/
+/*	$NetBSD: xen.h,v 1.47 2020/05/02 16:44:36 bouyer Exp $	*/
 
 /*
  *
@@ -60,6 +60,8 @@ void	xen_parse_cmdline(int, union xen_cmdline_parseinfo *);
 
 void	xenconscn_attach(void);
 
+void 	xen_pvh_consinit(void);
+
 void	xenprivcmd_init(void);
 
 void	xbdback_init(void);
@@ -69,8 +71,6 @@ void	xen_shm_init(void);
 void	xenevt_event(int);
 void	xenevt_setipending(int, int);
 void	xenevt_notify(void);
-
-void	idle_block(void);
 
 /* xen_machdep.c */
 void	sysctl_xen_suspend_setup(void);
@@ -295,6 +295,8 @@ xen_feature(int f)
 	KASSERT(f < XENFEAT_NR_SUBMAPS * 32);
 	return xen_feature_tables[f];
 }
+
+void xen_bootconf(void);
 
 #endif /* !__ASSEMBLY__ */
 

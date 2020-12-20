@@ -1,4 +1,4 @@
-/* $NetBSD: virtio_acpi.c,v 1.2 2018/11/16 23:18:17 jmcneill Exp $ */
+/* $NetBSD: virtio_acpi.c,v 1.4 2020/12/07 10:02:51 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: virtio_acpi.c,v 1.2 2018/11/16 23:18:17 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: virtio_acpi.c,v 1.4 2020/12/07 10:02:51 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -95,7 +95,14 @@ virtio_acpi_attach(device_t parent, device_t self, void *aux)
 	sc->sc_handle = aa->aa_node->ad_handle;
 	msc->sc_iot = aa->aa_memt;
 	vsc->sc_dev = self;
-	vsc->sc_dmat = aa->aa_dmat;
+
+	if (BUS_DMA_TAG_VALID(aa->aa_dmat64)) {
+		aprint_verbose(": using 64-bit DMA");
+		vsc->sc_dmat = aa->aa_dmat64;
+	} else {
+		aprint_verbose(": using 32-bit DMA");
+		vsc->sc_dmat = aa->aa_dmat;
+	}
 
 	rv = acpi_resource_parse(self, aa->aa_node->ad_handle, "_CRS",
 	    &res, &acpi_resource_parse_ops_default);
@@ -167,7 +174,8 @@ virtio_acpi_setup_interrupts(struct virtio_mmio_softc *msc)
 	struct virtio_acpi_softc * const sc = (struct virtio_acpi_softc *)msc;
 	struct virtio_softc * const vsc = &msc->sc_sc;
 
-	msc->sc_ih = acpi_intr_establish(vsc->sc_dev, (uint64_t)sc->sc_handle,
+	msc->sc_ih = acpi_intr_establish(vsc->sc_dev,
+	    (uint64_t)(uintptr_t)sc->sc_handle,
             IPL_VM, false, virtio_mmio_intr, msc, device_xname(vsc->sc_dev));
 	if (msc->sc_ih == NULL) {
 		aprint_error_dev(vsc->sc_dev, "couldn't install interrupt handler\n");

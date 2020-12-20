@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_ioctl.h,v 1.70 2019/11/18 04:17:08 rin Exp $	*/
+/*	$NetBSD: netbsd32_ioctl.h,v 1.73 2020/09/07 03:12:51 mrg Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Matthew R. Green
@@ -35,6 +35,7 @@
 #include <dev/dkvar.h>
 #include <dev/vndvar.h>
 
+#include <dev/lockstat.h>
 #include <dev/wscons/wsconsio.h>
 #include <net/route.h>
 #include <netinet/in.h>
@@ -120,6 +121,7 @@ struct netbsd32_bpf_dltlist {
 #define BIOCSUDPF32	_IOW('B',115, struct netbsd32_bpf_program)
 #define BIOCGDLTLIST32	_IOWR('B',119, struct netbsd32_bpf_dltlist)
 #define BIOCSRTIMEOUT32	_IOW('B',122, struct netbsd32_timeval)
+#define BIOCSETWF32	_IOW('B',127, struct netbsd32_bpf_program)
 
 
 struct netbsd32_wsdisplay_addscreendata {
@@ -627,5 +629,25 @@ struct netbsd32_disk_strategy {
 
 #define DIOCGSTRATEGY32		_IOR('d', 125, struct netbsd32_disk_strategy)
 #define DIOCSSTRATEGY32		_IOW('d', 126, struct netbsd32_disk_strategy)
+
+/* from <dev/lockstat.h> */
+struct netbsd32_lsenable {
+	netbsd32_uintptr_t	le_csstart;	/* callsite start */
+	netbsd32_uintptr_t	le_csend;	/* callsite end */
+	netbsd32_uintptr_t	le_lockstart;	/* lock address start */
+	netbsd32_uintptr_t	le_lockend;	/* lock address end */
+	netbsd32_uintptr_t	le_nbufs;	/* buffers to allocate, 0 = default */
+	u_int			le_flags;	/* request flags */
+	u_int			le_mask;	/* event mask (LB_*) */
+};
+
+struct netbsd32_lsdisable {
+	netbsd32_size_t		ld_size;	/* buffer space allocated */
+	struct netbsd32_timespec ld_time;	/* time spent enabled */
+	uint64_t		ld_freq[64];	/* counter HZ by CPU number */
+};
+
+#define	IOC_LOCKSTAT_ENABLE32	_IOW('L', 1, struct netbsd32_lsenable)
+#define	IOC_LOCKSTAT_DISABLE32	_IOR('L', 2, struct netbsd32_lsdisable)
 
 int	netbsd32_drm_ioctl(struct file *, unsigned long, void *, struct lwp *);

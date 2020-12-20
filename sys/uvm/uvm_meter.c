@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_meter.c,v 1.76 2020/03/22 18:32:42 ad Exp $	*/
+/*	$NetBSD: uvm_meter.c,v 1.80 2020/06/14 21:41:42 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_meter.c,v 1.76 2020/03/22 18:32:42 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_meter.c,v 1.80 2020/06/14 21:41:42 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -97,22 +97,20 @@ sysctl_vm_uvmexp2(SYSCTLFN_ARGS)
 	struct uvmexp_sysctl u;
 	int active, inactive;
 
-	cpu_count_sync_all();
 	uvm_estimatepageable(&active, &inactive);
 
 	memset(&u, 0, sizeof(u));
 
-	/* Entries here are in order of uvmexp_sysctl, not uvmexp */
+	/* uvm_availmem() will sync the counters if old. */
+	u.free = uvm_availmem(true);
 	u.pagesize = uvmexp.pagesize;
 	u.pagemask = uvmexp.pagemask;
 	u.pageshift = uvmexp.pageshift;
 	u.npages = uvmexp.npages;
-	u.free = uvm_availmem();
 	u.active = active;
 	u.inactive = inactive;
 	u.paging = uvmexp.paging;
 	u.wired = uvmexp.wired;
-	u.zeropages = cpu_count_get(CPU_COUNT_ZEROPAGES);
 	u.reserve_pagedaemon = uvmexp.reserve_pagedaemon;
 	u.reserve_kernel = uvmexp.reserve_kernel;
 	u.freemin = uvmexp.freemin;
@@ -138,8 +136,6 @@ sysctl_vm_uvmexp2(SYSCTLFN_ARGS)
 	u.forks = cpu_count_get(CPU_COUNT_FORKS);
 	u.forks_ppwait = cpu_count_get(CPU_COUNT_FORKS_PPWAIT);
 	u.forks_sharevm = cpu_count_get(CPU_COUNT_FORKS_SHAREVM);
-	u.pga_zerohit = cpu_count_get(CPU_COUNT_PGA_ZEROHIT);
-	u.pga_zeromiss = cpu_count_get(CPU_COUNT_PGA_ZEROMISS);
 	u.zeroaborts = uvmexp.zeroaborts;
 	u.fltnoram = cpu_count_get(CPU_COUNT_FLTNORAM);
 	u.fltnoanon = cpu_count_get(CPU_COUNT_FLTNOANON);
@@ -170,16 +166,13 @@ sysctl_vm_uvmexp2(SYSCTLFN_ARGS)
 	u.pdpageouts = uvmexp.pdpageouts;
 	u.pdpending = uvmexp.pdpending;
 	u.pddeact = uvmexp.pddeact;
-	u.anonpages = cpu_count_get(CPU_COUNT_ANONPAGES);
-	u.filepages = cpu_count_get(CPU_COUNT_FILEPAGES);
 	u.execpages = cpu_count_get(CPU_COUNT_EXECPAGES);
 	u.colorhit = cpu_count_get(CPU_COUNT_COLORHIT);
 	u.colormiss = cpu_count_get(CPU_COUNT_COLORMISS);
 	u.ncolors = uvmexp.ncolors;
 	u.bootpages = uvmexp.bootpages;
 	u.poolpages = pool_totalpages();
-	u.countsyncone = cpu_count_get(CPU_COUNT_SYNC_ONE);
-	u.countsyncall = cpu_count_get(CPU_COUNT_SYNC_ALL);
+	u.countsyncall = cpu_count_get(CPU_COUNT_SYNC);
 	u.anonunknown = cpu_count_get(CPU_COUNT_ANONUNKNOWN);
 	u.anonclean = cpu_count_get(CPU_COUNT_ANONCLEAN);
 	u.anondirty = cpu_count_get(CPU_COUNT_ANONDIRTY);
@@ -188,6 +181,8 @@ sysctl_vm_uvmexp2(SYSCTLFN_ARGS)
 	u.filedirty = cpu_count_get(CPU_COUNT_FILEDIRTY);
 	u.fltup = cpu_count_get(CPU_COUNT_FLTUP);
 	u.fltnoup = cpu_count_get(CPU_COUNT_FLTNOUP);
+	u.anonpages = u.anonclean + u.anondirty + u.anonunknown;
+	u.filepages = u.fileclean + u.filedirty + u.fileunknown - u.execpages;
 
 	node = *rnode;
 	node.sysctl_data = &u;
@@ -275,12 +270,6 @@ SYSCTL_SETUP(sysctl_vm_setup, "sysctl vm subtree setup")
 		       NULL, USPACE, NULL, 0,
 		       CTL_VM, VM_USPACE, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_BOOL, "idlezero",
-		       SYSCTL_DESCR("Whether try to zero pages in idle loop"),
-		       NULL, 0, &vm_page_zero_enable, 0,
-		       CTL_VM, CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_IMMEDIATE,
 		       CTLTYPE_LONG, "minaddress",
 		       SYSCTL_DESCR("Minimum user address"),
@@ -336,7 +325,7 @@ uvm_total(struct vmtotal *totalp)
 	/*
 	 * calculate process statistics
 	 */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	LIST_FOREACH(l, &alllwp, l_list) {
 		if (l->l_proc->p_flag & PK_SYSTEM)
 			continue;
@@ -385,12 +374,12 @@ uvm_total(struct vmtotal *totalp)
 			totalp->t_pw++;
 #endif
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	/*
 	 * Calculate object memory usage statistics.
 	 */
-	freepg = uvm_availmem();
+	freepg = uvm_availmem(true);
 	uvm_estimatepageable(&active, NULL);
 	totalp->t_free = freepg;
 	totalp->t_vm = uvmexp.npages - freepg + uvmexp.swpginuse;
@@ -455,10 +444,8 @@ void
 uvm_update_uvmexp(void)
 {
 
-	cpu_count_sync_all();
-
-	uvmexp.free = (int)uvm_availmem();
-	uvmexp.zeropages = (int)cpu_count_get(CPU_COUNT_ZEROPAGES);
+	/* uvm_availmem() will sync the counters if old. */
+	uvmexp.free = (int)uvm_availmem(true);
 	uvmexp.cpuhit = (int)cpu_count_get(CPU_COUNT_CPUHIT);
 	uvmexp.cpumiss = (int)cpu_count_get(CPU_COUNT_CPUMISS);
 	uvmexp.faults = (int)cpu_count_get(CPU_COUNT_NFAULT);
@@ -471,8 +458,6 @@ uvm_update_uvmexp(void)
 	uvmexp.forks = (int)cpu_count_get(CPU_COUNT_FORKS);
 	uvmexp.forks_ppwait = (int)cpu_count_get(CPU_COUNT_FORKS_PPWAIT);
 	uvmexp.forks_sharevm = (int)cpu_count_get(CPU_COUNT_FORKS_SHAREVM);
-	uvmexp.pga_zerohit = (int)cpu_count_get(CPU_COUNT_PGA_ZEROHIT);
-	uvmexp.pga_zeromiss = (int)cpu_count_get(CPU_COUNT_PGA_ZEROMISS);
 	uvmexp.fltnoram = (int)cpu_count_get(CPU_COUNT_FLTNORAM);
 	uvmexp.fltnoanon = (int)cpu_count_get(CPU_COUNT_FLTNOANON);
 	uvmexp.fltpgwait = (int)cpu_count_get(CPU_COUNT_FLTPGWAIT);
@@ -491,8 +476,13 @@ uvm_update_uvmexp(void)
 	uvmexp.flt_obj = (int)cpu_count_get(CPU_COUNT_FLT_OBJ);
 	uvmexp.flt_prcopy = (int)cpu_count_get(CPU_COUNT_FLT_PRCOPY);
 	uvmexp.flt_przero = (int)cpu_count_get(CPU_COUNT_FLT_PRZERO);
-	uvmexp.anonpages = (int)cpu_count_get(CPU_COUNT_ANONPAGES);
-	uvmexp.filepages = (int)cpu_count_get(CPU_COUNT_FILEPAGES);
+	uvmexp.anonpages = (int)(cpu_count_get(CPU_COUNT_ANONCLEAN) +
+	    cpu_count_get(CPU_COUNT_ANONDIRTY) +
+	    cpu_count_get(CPU_COUNT_ANONUNKNOWN));
+    	uvmexp.filepages = (int)(cpu_count_get(CPU_COUNT_FILECLEAN) +
+	    cpu_count_get(CPU_COUNT_FILEDIRTY) +
+	    cpu_count_get(CPU_COUNT_FILEUNKNOWN) -
+	    cpu_count_get(CPU_COUNT_EXECPAGES));
 	uvmexp.execpages = (int)cpu_count_get(CPU_COUNT_EXECPAGES);
 	uvmexp.colorhit = (int)cpu_count_get(CPU_COUNT_COLORHIT);
 	uvmexp.colormiss = (int)cpu_count_get(CPU_COUNT_COLORMISS);

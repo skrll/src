@@ -1,4 +1,4 @@
-#	$NetBSD: SHEEVAPLUG,v 1.67 2020/03/25 17:06:18 jdolecek Exp $
+#	$NetBSD: SHEEVAPLUG,v 1.72 2020/09/27 13:48:50 roy Exp $
 #
 #  This configuration supports for generically Marvell SheevaPlug
 #
@@ -98,7 +98,6 @@ include 	"conf/compat_netbsd50.config"
 options 	COMPAT_NETBSD32	# allow running arm (e.g. non-earm) binaries
 
 options 	COMPAT_OSSAUDIO	# OSS (Voxware) audio driver compatibility
-options 	COMPAT_LINUX	# binary compatibility with Linux
 
 # Shared memory options
 
@@ -135,7 +134,7 @@ options 	USBVERBOSE	# verbose USB device autoconfig messages
 options 	DIAGNOSTIC	# internal consistency checks
 options 	DEBUG
 #options 	LOCKDEBUG
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	VERBOSE_INIT_ARM # verbose bootstraping messages
 options 	DDB		# in-kernel debugger
 #options 	DDB_HISTORY_SIZE=100	# Enable history editing in DDB
@@ -359,9 +358,6 @@ usscanner* at uhub? port ?
 # Topfield TF5000PVR range of DVB recorders
 utoppy* at uhub? port ?
 
-# Y@P firmware loader
-uyap*	at uhub? port ?
-
 # D-Link DSB-R100 USB radio
 udsbr*	at uhub? port ?
 radio*	at udsbr?
@@ -460,7 +456,7 @@ pseudo-device	tap			# virtual Ethernet
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+#pseudo-device	vether			# Virtual Ethernet for bridge
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
 
 # miscellaneous pseudo-devices

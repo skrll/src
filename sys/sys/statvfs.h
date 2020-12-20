@@ -1,4 +1,4 @@
-/*	$NetBSD: statvfs.h,v 1.19 2019/09/22 22:59:40 christos Exp $	 */
+/*	$NetBSD: statvfs.h,v 1.21 2020/07/03 19:37:27 jdolecek Exp $	 */
 
 /*-
  * Copyright (c) 2004 The NetBSD Foundation, Inc.
@@ -113,6 +113,7 @@ struct statvfs {
 #define	ST_NODEV	MNT_NODEV
 #define	ST_UNION	MNT_UNION
 #define	ST_ASYNC	MNT_ASYNC
+#define	ST_ACLS		MNT_ACLS
 #define	ST_NOCOREDUMP	MNT_NOCOREDUMP
 #define	ST_RELATIME	MNT_RELATIME
 #define	ST_IGNORE	MNT_IGNORE
@@ -149,7 +150,8 @@ void	copy_statvfs_info(struct statvfs *, const struct mount *);
 int	dostatvfs(struct mount *, struct statvfs *, struct lwp *, int, int);
 
 #include <sys/kmem.h>
-#define	STATVFSBUF_GET()	kmem_zalloc(sizeof(struct statvfs), KM_SLEEP)
+#define	STATVFSBUF_GET()	\
+	(struct statvfs *)kmem_zalloc(sizeof(struct statvfs), KM_SLEEP)
 #define	STATVFSBUF_PUT(sb)	kmem_free(sb, sizeof(struct statvfs))
 
 #else

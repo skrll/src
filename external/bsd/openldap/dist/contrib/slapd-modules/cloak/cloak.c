@@ -1,10 +1,10 @@
-/*	$NetBSD: cloak.c,v 1.1.1.6 2019/08/08 13:31:04 christos Exp $	*/
+/*	$NetBSD: cloak.c,v 1.2 2020/08/11 13:15:35 christos Exp $	*/
 
 /* cloak.c - Overlay to hide some attribute except if explicitely requested */
 /* $OpenLDAP$ */
 /* This work is part of OpenLDAP Software <http://www.openldap.org/>.
  *
- * Copyright 2008-2019 The OpenLDAP Foundation.
+ * Copyright 2008-2020 The OpenLDAP Foundation.
  * Portions Copyright 2008 Emmanuel Dreyfus
  * All rights reserved.
  *
@@ -22,7 +22,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: cloak.c,v 1.1.1.6 2019/08/08 13:31:04 christos Exp $");
+__RCSID("$NetBSD: cloak.c,v 1.2 2020/08/11 13:15:35 christos Exp $");
 
 #include "portable.h"
 

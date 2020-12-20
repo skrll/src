@@ -1,4 +1,4 @@
-/*	$NetBSD: uvideo.c,v 1.56 2020/03/14 02:35:34 christos Exp $	*/
+/*	$NetBSD: uvideo.c,v 1.59 2020/08/10 19:27:27 rjs Exp $	*/
 
 /*
  * Copyright (c) 2008 Patrick Mahoney
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvideo.c,v 1.56 2020/03/14 02:35:34 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvideo.c,v 1.59 2020/08/10 19:27:27 rjs Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -81,6 +81,7 @@ __KERNEL_RCSID(0, "$NetBSD: uvideo.c,v 1.56 2020/03/14 02:35:34 christos Exp $")
 #include <dev/usb/uvideoreg.h>
 
 #define UVIDEO_NXFERS	3
+#define UVIDEO_NFRAMES_MAX 80
 #define PRI_UVIDEO	PRI_BIO
 
 /* #define UVIDEO_DISABLE_MJPEG */
@@ -275,6 +276,8 @@ static int	uvideo_enum_format(void *, uint32_t, struct video_format *);
 static int	uvideo_get_format(void *, struct video_format *);
 static int	uvideo_set_format(void *, struct video_format *);
 static int	uvideo_try_format(void *, struct video_format *);
+static int	uvideo_get_framerate(void *, struct video_fract *);
+static int	uvideo_set_framerate(void *, struct video_fract *);
 static int	uvideo_start_transfer(void *);
 static int	uvideo_stop_transfer(void *);
 
@@ -380,6 +383,8 @@ static const struct video_hw_if uvideo_hw_if = {
 	.get_format = uvideo_get_format,
 	.set_format = uvideo_set_format,
 	.try_format = uvideo_try_format,
+	.get_framerate = uvideo_get_framerate,
+	.set_framerate = uvideo_set_framerate,
 	.start_transfer = uvideo_start_transfer,
 	.stop_transfer = uvideo_stop_transfer,
 	.control_iter_init = NULL,
@@ -1557,6 +1562,7 @@ uvideo_stream_start_xfer(struct uvideo_stream *vs)
 		uframe_len = alt->max_packet_size;
 		nframes = (vframe_len + uframe_len - 1) / uframe_len;
 		nframes = (nframes + 7) & ~7; /*round up for ehci inefficiency*/
+		nframes = uimin(UVIDEO_NFRAMES_MAX, nframes);
 		DPRINTF(("uvideo_stream_start_xfer: nframes=%d\n", nframes));
 
 		ix->ix_nframes = nframes;
@@ -1877,6 +1883,8 @@ uvideo_close(void *addr)
 
 	sc = addr;
 
+	uvideo_stop_transfer(addr);
+
 	if (sc->sc_state != UVIDEO_STATE_CLOSED) {
 		sc->sc_state = UVIDEO_STATE_CLOSED;
 	}
@@ -1901,17 +1909,19 @@ uvideo_enum_format(void *addr, uint32_t index, struct video_format *format)
 {
 	struct uvideo_softc *sc = addr;
 	struct uvideo_stream *vs = sc->sc_stream_in;
-	struct uvideo_pixel_format *pixel_format;
+	struct uvideo_format *video_format;
 	int off;
 
 	if (sc->sc_dying)
 		return EIO;
 
 	off = 0;
-	SIMPLEQ_FOREACH(pixel_format, &vs->vs_pixel_formats, entries) {
+	SIMPLEQ_FOREACH(video_format, &vs->vs_formats, entries) {
 		if (off++ != index)
 			continue;
-		format->pixel_format = pixel_format->pixel_format;
+		format->pixel_format = video_format->format.pixel_format;
+		format->width = video_format->format.width;
+		format->height = video_format->format.height;
 		return 0;
 	}
 
@@ -2069,6 +2079,49 @@ uvideo_try_format(void *addr, struct video_format *format)
 
 	*format = uvfmt->format;
 	return 0;
+}
+
+static int
+uvideo_get_framerate(void *addr, struct video_fract *fract)
+{
+	struct uvideo_softc *sc = addr;
+	struct uvideo_stream *vs = sc->sc_stream_in;
+
+	switch (vs->vs_frame_interval) {
+	case 41666:	/* 240 */
+	case 83333:	/* 120 */
+	case 166666:	/* 60 */
+	case 200000:	/* 50 */
+	case 333333:	/* 30 */
+	case 400000:	/* 25 */
+	case 500000:	/* 20 */
+	case 666666:	/* 15 */
+	case 1000000:	/* 10 */
+		fract->numerator = 1;
+		fract->denominator = 10000000 / vs->vs_frame_interval;
+		break;
+	case 166833:	/* 59.94 */
+		fract->numerator = 60;
+		fract->denominator = 1001;
+		break;
+	case 333667:	/* 29.97 */
+		fract->numerator = 30;
+		fract->denominator = 1001;
+		break;
+	default:
+		fract->numerator = vs->vs_frame_interval;
+		fract->denominator = 10000000;
+		break;
+	}
+
+	return 0;
+}
+
+static int
+uvideo_set_framerate(void *addr, struct video_fract *fract)
+{
+	/* XXX setting framerate is not supported yet, return actual rate */
+	return uvideo_get_framerate(addr, fract);
 }
 
 static int

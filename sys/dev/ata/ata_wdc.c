@@ -1,4 +1,4 @@
-/*	$NetBSD: ata_wdc.c,v 1.114 2020/04/04 21:36:15 jdolecek Exp $	*/
+/*	$NetBSD: ata_wdc.c,v 1.118 2020/05/21 09:11:33 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001, 2003 Manuel Bouyer.
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ata_wdc.c,v 1.114 2020/04/04 21:36:15 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ata_wdc.c,v 1.118 2020/05/21 09:11:33 jdolecek Exp $");
 
 #include "opt_ata.h"
 #include "opt_wdc.h"
@@ -102,7 +102,7 @@ extern int wdcdebug_wd_mask; /* inited in wd.c */
 
 #define ATA_DELAY 10000 /* 10s for a drive I/O */
 
-static int	wdc_ata_bio(struct ata_drive_datas*, struct ata_xfer *);
+static void	wdc_ata_bio(struct ata_drive_datas*, struct ata_xfer *);
 static int	wdc_ata_bio_start(struct ata_channel *,struct ata_xfer *);
 static int	_wdc_ata_bio_start(struct ata_channel *,struct ata_xfer *);
 static void	wdc_ata_bio_poll(struct ata_channel *,struct ata_xfer *);
@@ -140,10 +140,9 @@ static const struct ata_xfer_ops wdc_bio_xfer_ops = {
 };
 
 /*
- * Handle block I/O operation. Return ATACMD_COMPLETE, ATACMD_QUEUED, or
- * ATACMD_TRY_AGAIN. Must be called at splbio().
+ * Handle block I/O operation.
  */
-static int
+static void
 wdc_ata_bio(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 {
 	struct ata_channel *chp = drvp->chnl_softc;
@@ -171,7 +170,6 @@ wdc_ata_bio(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 	xfer->c_bcount = ata_bio->bcount;
 	xfer->ops = &wdc_bio_xfer_ops;
 	ata_exec_xfer(chp, xfer);
-	return (ata_bio->flags & ATA_ITSDONE) ? ATACMD_COMPLETE : ATACMD_QUEUED;
 }
 
 static int
@@ -480,10 +478,6 @@ _wdc_ata_bio_start(struct ata_channel *chp, struct ata_xfer *xfer)
 				(*wdc->dma_start)(wdc->dma_arg,
 				    chp->ch_channel, xfer->c_drive);
 			chp->ch_flags |= ATACH_DMA_WAIT;
-			/* start timeout machinery */
-			if ((xfer->c_flags & C_POLL) == 0)
-				callout_reset(&chp->c_timo_callout,
-				    ATA_DELAY / 1000 * hz, wdctimeout, chp);
 			/* wait for irq */
 			goto intr;
 		} /* else not DMA */
@@ -551,16 +545,12 @@ _wdc_ata_bio_start(struct ata_channel *chp, struct ata_xfer *xfer)
 			(drvp->lp->d_type == DKTYPE_ST506) ?
 			drvp->lp->d_precompcyl / 4 : 0);
 		}
-		/* start timeout machinery */
-		if ((xfer->c_flags & C_POLL) == 0)
-			callout_reset(&chp->c_timo_callout,
-			    ATA_DELAY / 1000 * hz, wdctimeout, chp);
 	} else if (ata_bio->nblks > 1) {
 		/* The number of blocks in the last stretch may be smaller. */
 		nblks = xfer->c_bcount / drvp->lp->d_secsize;
 		if (ata_bio->nblks > nblks) {
-		ata_bio->nblks = nblks;
-		ata_bio->nbytes = xfer->c_bcount;
+			ata_bio->nblks = nblks;
+			ata_bio->nbytes = xfer->c_bcount;
 		}
 	}
 	/* If this was a write and not using DMA, push the data. */
@@ -600,7 +590,10 @@ _wdc_ata_bio_start(struct ata_channel *chp, struct ata_xfer *xfer)
 intr:
 #endif
 	/* Wait for IRQ (either real or polled) */
-	if ((ata_bio->flags & ATA_POLL) == 0) {
+	if ((xfer->c_flags & C_POLL) == 0) {
+		/* start timeout machinery */
+		callout_reset(&chp->c_timo_callout,
+		    ATA_DELAY / 1000 * hz, wdctimeout, chp);
 		chp->ch_flags |= ATACH_IRQ_WAIT;
 		return ATASTART_STARTED;
 	} else {
@@ -776,6 +769,8 @@ end:
 	if (xfer->c_bcount > 0) {
 		if ((ata_bio->flags & ATA_POLL) == 0) {
 			/* Start the next operation */
+			KASSERT((chp->ch_flags & ATACH_IRQ_WAIT) == 0);
+			callout_stop(&chp->c_timo_callout);
 			ata_xfer_start(xfer);
 		} else {
 			/* Let _wdc_ata_bio_start do the loop */

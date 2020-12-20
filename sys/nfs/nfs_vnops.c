@@ -1,4 +1,4 @@
-/*	$NetBSD: nfs_vnops.c,v 1.313 2020/02/23 15:46:41 ad Exp $	*/
+/*	$NetBSD: nfs_vnops.c,v 1.317 2020/09/05 16:30:12 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nfs_vnops.c,v 1.313 2020/02/23 15:46:41 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nfs_vnops.c,v 1.317 2020/09/05 16:30:12 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_nfs.h"
@@ -70,8 +70,11 @@ __KERNEL_RCSID(0, "$NetBSD: nfs_vnops.c,v 1.313 2020/02/23 15:46:41 ad Exp $");
 #include <sys/kauth.h>
 #include <sys/cprng.h>
 
-#include <uvm/uvm_extern.h>
+#ifdef UVMHIST
 #include <uvm/uvm.h>
+#endif
+#include <uvm/uvm_extern.h>
+#include <uvm/uvm_stat.h>
 
 #include <miscfs/fifofs/fifo.h>
 #include <miscfs/genfs/genfs.h>
@@ -103,6 +106,7 @@ const struct vnodeopv_entry_desc nfsv2_vnodeop_entries[] = {
 	{ &vop_open_desc, nfs_open },			/* open */
 	{ &vop_close_desc, nfs_close },			/* close */
 	{ &vop_access_desc, nfs_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, nfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, nfs_setattr },		/* setattr */
 	{ &vop_read_desc, nfs_read },			/* read */
@@ -156,6 +160,7 @@ const struct vnodeopv_entry_desc spec_nfsv2nodeop_entries[] = {
 	{ &vop_open_desc, spec_open },			/* open */
 	{ &vop_close_desc, nfsspec_close },		/* close */
 	{ &vop_access_desc, nfsspec_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, nfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, nfs_setattr },		/* setattr */
 	{ &vop_read_desc, nfsspec_read },		/* read */
@@ -206,6 +211,7 @@ const struct vnodeopv_entry_desc fifo_nfsv2nodeop_entries[] = {
 	{ &vop_open_desc, vn_fifo_bypass },		/* open */
 	{ &vop_close_desc, nfsfifo_close },		/* close */
 	{ &vop_access_desc, nfsspec_access },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, nfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, nfs_setattr },		/* setattr */
 	{ &vop_read_desc, nfsfifo_read },		/* read */
@@ -316,7 +322,7 @@ nfs_access(void *v)
 {
 	struct vop_access_args /* {
 		struct vnode *a_vp;
-		int  a_mode;
+		accmode_t  a_accmode;
 		kauth_cred_t a_cred;
 	} */ *ap = v;
 	struct vnode *vp = ap->a_vp;
@@ -344,9 +350,9 @@ nfs_access(void *v)
 	 */
 	if (cachevalid) {
 		if (!np->n_accerror) {
-			if  ((np->n_accmode & ap->a_mode) == ap->a_mode)
+			if  ((np->n_accmode & ap->a_accmode) == ap->a_accmode)
 				return np->n_accerror;
-		} else if ((np->n_accmode & ap->a_mode) == np->n_accmode)
+		} else if ((np->n_accmode & ap->a_accmode) == np->n_accmode)
 			return np->n_accerror;
 	}
 
@@ -364,20 +370,20 @@ nfs_access(void *v)
 		nfsm_reqhead(np, NFSPROC_ACCESS, NFSX_FH(v3) + NFSX_UNSIGNED);
 		nfsm_fhtom(np, v3);
 		nfsm_build(tl, u_int32_t *, NFSX_UNSIGNED);
-		if (ap->a_mode & VREAD)
+		if (ap->a_accmode & VREAD)
 			mode = NFSV3ACCESS_READ;
 		else
 			mode = 0;
 		if (vp->v_type != VDIR) {
-			if (ap->a_mode & VWRITE)
+			if (ap->a_accmode & VWRITE)
 				mode |= (NFSV3ACCESS_MODIFY | NFSV3ACCESS_EXTEND);
-			if (ap->a_mode & VEXEC)
+			if (ap->a_accmode & VEXEC)
 				mode |= NFSV3ACCESS_EXECUTE;
 		} else {
-			if (ap->a_mode & VWRITE)
+			if (ap->a_accmode & VWRITE)
 				mode |= (NFSV3ACCESS_MODIFY | NFSV3ACCESS_EXTEND |
 					 NFSV3ACCESS_DELETE);
-			if (ap->a_mode & VEXEC)
+			if (ap->a_accmode & VEXEC)
 				mode |= NFSV3ACCESS_LOOKUP;
 		}
 		*tl = txdr_unsigned(mode);
@@ -404,7 +410,7 @@ nfs_access(void *v)
 	 * unless the file is a socket, fifo, or a block or character
 	 * device resident on the filesystem.
 	 */
-	if (!error && (ap->a_mode & VWRITE) &&
+	if (!error && (ap->a_accmode & VWRITE) &&
 	    (vp->v_mount->mnt_flag & MNT_RDONLY)) {
 		switch (vp->v_type) {
 		case VREG:
@@ -425,13 +431,13 @@ nfs_access(void *v)
 		if (cachevalid && np->n_accstamp != -1 &&
 		    error == np->n_accerror) {
 			if (!error)
-				np->n_accmode |= ap->a_mode;
-			else if ((np->n_accmode & ap->a_mode) == ap->a_mode)
-				np->n_accmode = ap->a_mode;
+				np->n_accmode |= ap->a_accmode;
+			else if ((np->n_accmode & ap->a_accmode) == ap->a_accmode)
+				np->n_accmode = ap->a_accmode;
 		} else {
 			np->n_accstamp = time_uptime;
 			np->n_accuid = kauth_cred_geteuid(ap->a_cred);
-			np->n_accmode = ap->a_mode;
+			np->n_accmode = ap->a_accmode;
 			np->n_accerror = error;
 		}
 	}
@@ -1729,7 +1735,7 @@ again:
  * To try and make nfs semantics closer to ufs semantics, a file that has
  * other processes using the vnode is renamed instead of removed and then
  * removed later on the last close.
- * - If v_usecount > 1
+ * - If vrefcnt(vp) > 1
  *	  If a rename is not already in the works
  *	     call nfs_sillyrename() to set it up
  *     else
@@ -1752,12 +1758,12 @@ nfs_remove(void *v)
 	struct vattr vattr;
 
 #ifndef DIAGNOSTIC
-	if (vp->v_usecount < 1)
-		panic("nfs_remove: bad v_usecount");
+	if (vrefcnt(vp) < 1)
+		panic("nfs_remove: bad vrefcnt(vp)");
 #endif
 	if (vp->v_type == VDIR)
 		error = EPERM;
-	else if (vp->v_usecount == 1 || (np->n_sillyrename &&
+	else if (vrefcnt(vp) == 1 || (np->n_sillyrename &&
 	    VOP_GETATTR(vp, &vattr, cnp->cn_cred) == 0 &&
 	    vattr.va_nlink > 1)) {
 		/*
@@ -1886,7 +1892,7 @@ nfs_rename(void *v)
 	 * so that we don't lose the file if the rename fails, and so
 	 * that there's no window when the "to" file doesn't exist.
 	 */
-	if (tvp && tvp->v_usecount > 1 && !VTONFS(tvp)->n_sillyrename &&
+	if (tvp && vrefcnt(tvp) > 1 && !VTONFS(tvp)->n_sillyrename &&
 	    tvp->v_type != VDIR && !nfs_sillyrename(tdvp, tvp, tcnp, true)) {
 		VN_KNOTE(tvp, NOTE_DELETE);
 		vput(tvp);
@@ -3267,7 +3273,7 @@ nfs_pathconf(void *v)
 		}
 		break;
 	default:
-		error = EINVAL;
+		error = genfs_pathconf(ap);
 		break;
 	}
 
@@ -3346,7 +3352,7 @@ nfsspec_access(void *v)
 {
 	struct vop_access_args /* {
 		struct vnode *a_vp;
-		int  a_mode;
+		accmode_t  a_accmode;
 		kauth_cred_t a_cred;
 		struct lwp *a_l;
 	} */ *ap = v;
@@ -3363,7 +3369,7 @@ nfsspec_access(void *v)
 	 * unless the file is a socket, fifo, or a block or character
 	 * device resident on the filesystem.
 	 */
-	if ((ap->a_mode & VWRITE) && (vp->v_mount->mnt_flag & MNT_RDONLY)) {
+	if ((ap->a_accmode & VWRITE) && (vp->v_mount->mnt_flag & MNT_RDONLY)) {
 		switch (vp->v_type) {
 		case VREG:
 		case VDIR:
@@ -3374,9 +3380,10 @@ nfsspec_access(void *v)
 		}
 	}
 
-	return kauth_authorize_vnode(ap->a_cred, KAUTH_ACCESS_ACTION(ap->a_mode,
-	    va.va_type, va.va_mode), vp, NULL, genfs_can_access(va.va_type,
-	    va.va_mode, va.va_uid, va.va_gid, ap->a_mode, ap->a_cred));
+	return kauth_authorize_vnode(ap->a_cred, KAUTH_ACCESS_ACTION(
+	    ap->a_accmode, va.va_type, va.va_mode), vp, NULL, genfs_can_access(
+	    vp, ap->a_cred, va.va_uid, va.va_gid, va.va_mode, NULL,
+	    ap->a_accmode));
 }
 
 /*
@@ -3443,7 +3450,7 @@ nfsspec_close(void *v)
 
 	if (np->n_flag & (NACC | NUPD)) {
 		np->n_flag |= NCHG;
-		if (vp->v_usecount == 1 &&
+		if (vrefcnt(vp) == 1 &&
 		    (vp->v_mount->mnt_flag & MNT_RDONLY) == 0) {
 			vattr_null(&vattr);
 			if (np->n_flag & NACC)
@@ -3527,7 +3534,7 @@ nfsfifo_close(void *v)
 		if (np->n_flag & NUPD)
 			np->n_mtim = ts;
 		np->n_flag |= NCHG;
-		if (vp->v_usecount == 1 &&
+		if (vrefcnt(vp) == 1 &&
 		    (vp->v_mount->mnt_flag & MNT_RDONLY) == 0) {
 			vattr_null(&vattr);
 			if (np->n_flag & NACC)

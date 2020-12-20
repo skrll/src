@@ -1,4 +1,4 @@
-/*	$NetBSD: gumstix_machdep.c,v 1.65 2020/02/15 08:16:12 skrll Exp $ */
+/*	$NetBSD: gumstix_machdep.c,v 1.71 2020/12/03 07:45:53 skrll Exp $ */
 /*
  * Copyright (C) 2005, 2006, 2007  WIDE Project and SOUM Corporation.
  * All rights reserved.
@@ -145,7 +145,6 @@
 #include "opt_gumstix.h"
 #include "opt_kgdb.h"
 #include "opt_multiprocessor.h"
-#include "opt_pmap_debug.h"
 #if defined(OVERO) || defined(DUOVERO) || defined(PEPPER)
 #include "opt_omap.h"
 
@@ -153,6 +152,9 @@
 #include "arml2cc.h"
 #endif
 #include "prcm.h"
+
+#include "arma9tmr.h"
+#include "armgtmr.h"
 #endif
 
 #include <sys/param.h>
@@ -199,17 +201,13 @@
 #include <evbarm/gumstix/gumstixreg.h>
 #include <evbarm/gumstix/gumstixvar.h>
 
-#if defined(CPU_CORTEXA9)
 #include <arm/cortex/pl310_var.h>
 #include <arm/cortex/pl310_reg.h>
 #include <arm/cortex/scu_reg.h>
 
 #include <arm/cortex/a9tmr_var.h>
-#endif
 
-#if defined(CPU_CORTEXA7) || defined(CPU_CORTEXA15)
 #include <arm/cortex/gtmr_var.h>
-#endif
 
 #include <dev/cons.h>
 
@@ -480,10 +478,16 @@ void gumstix_cpu_hatch(struct cpu_info *);
 void
 gumstix_cpu_hatch(struct cpu_info *ci)
 {
-#if defined(CPU_CORTEXA9)
-	a9tmr_init_cpu_clock(ci);
-#elif defined(CPU_CORTEXA7) || defined(CPU_CORTEXA15)
-	gtmr_init_cpu_clock(ci);
+#if NARMA9TMR > 0
+	if (CPU_ID_CORTEX_A9_P(curcpu()->ci_arm_cpuid)) {
+		a9tmr_init_cpu_clock(ci);
+	}
+#endif
+#if NARMGTMR > 0
+	if (CPU_ID_CORTEX_A7_P(curcpu()->ci_arm_cpuid) ||
+	    CPU_ID_CORTEX_A15_P(curcpu()->ci_arm_cpuid)) {
+		gtmr_init_cpu_clock(ci);
+	}
 #endif
 }
 #endif
@@ -496,27 +500,28 @@ gumstix_mpstart(void)
 	const bus_space_tag_t iot = &omap_bs_tag;
 	int error;
 
-#if defined(CPU_CORTEXA9)
-	bus_space_handle_t scu_ioh;
-	error = bus_space_map(iot, OMAP4_SCU_BASE, OMAP4_SCU_SIZE, 0, &scu_ioh);
-	if (error)
-		panic("Could't map OMAP4_SCU_BASE");
+	if (CPU_ID_CORTEX_A9_P(curcpu()->ci_arm_cpuid)) {
+		bus_space_handle_t scu_ioh;
+		error = bus_space_map(iot, OMAP4_SCU_BASE, OMAP4_SCU_SIZE, 0, &scu_ioh);
+		if (error)
+			panic("Could't map OMAP4_SCU_BASE");
 
-	/*
-	 * Invalidate all SCU cache tags. That is, for all cores (0-3)
-	 */
-	bus_space_write_4(iot, scu_ioh, SCU_INV_ALL_REG, 0xffff);
+		/*
+		 * Invalidate all SCU cache tags. That is, for all cores (0-3)
+		 */
+		bus_space_write_4(iot, scu_ioh, SCU_INV_ALL_REG, 0xffff);
 
-	uint32_t diagctl = bus_space_read_4(iot, scu_ioh, SCU_DIAG_CONTROL);
-	diagctl |= SCU_DIAG_DISABLE_MIGBIT;
-	bus_space_write_4(iot, scu_ioh, SCU_DIAG_CONTROL, diagctl);
+		uint32_t diagctl = bus_space_read_4(iot, scu_ioh, SCU_DIAG_CONTROL);
+		diagctl |= SCU_DIAG_DISABLE_MIGBIT;
+		bus_space_write_4(iot, scu_ioh, SCU_DIAG_CONTROL, diagctl);
 
-	uint32_t scu_ctl = bus_space_read_4(iot, scu_ioh, SCU_CTL);
-	scu_ctl |= SCU_CTL_SCU_ENA;
-	bus_space_write_4(iot, scu_ioh, SCU_CTL, scu_ctl);
+		uint32_t scu_ctl = bus_space_read_4(iot, scu_ioh, SCU_CTL);
+		scu_ctl |= SCU_CTL_SCU_ENA;
+		bus_space_write_4(iot, scu_ioh, SCU_CTL, scu_ctl);
 
-	armv7_dcache_wbinv_all();
-#endif
+		armv7_dcache_wbinv_all();
+	}
+
 	bus_space_handle_t wugen_ioh;
 	error = bus_space_map(iot, OMAP4_WUGEN_BASE, OMAP4_WUGEN_SIZE, 0,
 	    &wugen_ioh);
@@ -532,28 +537,19 @@ gumstix_mpstart(void)
 		bus_space_write_4(iot, wugen_ioh, OMAP4_AUX_CORE_BOOT0, boot);
 	}
 
-	arm_dsb();
-	__asm __volatile("sev" ::: "memory");
+	dsb(sy);
+	sev();
 
-	for (int loop = 0; loop < 16; loop++) {
-		VPRINTF("%u hatched %#x\n", loop, arm_cpu_hatched);
-		if (arm_cpu_hatched == __BITS(arm_cpu_max - 1, 1))
+	u_int i;
+	for (i = 0x10000000; i > 0; i--) {
+		if (cpu_hatched_p(cpuindex))
 			break;
-		int timo = 1500000;
-		while (arm_cpu_hatched != __BITS(arm_cpu_max - 1, 1))
-			if (--timo == 0)
-				break;
-	}
-	for (size_t i = 1; i < arm_cpu_max; i++) {
-		if (cpu_hatched_p(i)) {
-			printf("%s: warning: cpu%zu failed to hatch\n",
-			    __func__, i);
-		}
 	}
 
-	VPRINTF(" (%u cpu%s, hatched %#x)",
-	    arm_cpu_max, arm_cpu_max ? "s" : "",
-	    arm_cpu_hatched);
+	if (i == 0) {
+		aprint_error("cpu%d: WARNING: AP failed to start\n",
+		    cpuindex);
+	}
 #endif
 }
 

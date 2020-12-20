@@ -1,4 +1,4 @@
-/*	$NetBSD: syscall.c,v 1.55 2019/04/06 11:54:20 kamil Exp $	*/
+/*	$NetBSD: syscall.c,v 1.57 2020/07/06 11:07:39 rin Exp $	*/
 
 /*
  * Copyright (C) 2002 Matt Thomas
@@ -32,8 +32,6 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "opt_altivec.h"
-#include "opt_multiprocessor.h"
 /* DO NOT INCLUDE opt_compat_XXX.h */
 /* If needed, they will be included by file that includes this one */
 
@@ -61,7 +59,7 @@
 #define EMULNAME(x)	(x)
 #define EMULNAMEU(x)	(x)
 
-__KERNEL_RCSID(0, "$NetBSD: syscall.c,v 1.55 2019/04/06 11:54:20 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: syscall.c,v 1.57 2020/07/06 11:07:39 rin Exp $");
 
 void
 md_child_return(struct lwp *l)

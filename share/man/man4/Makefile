@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.703 2020/04/04 15:39:13 jdolecek Exp $
+#	$NetBSD: Makefile,v 1.711 2020/10/27 08:57:10 ryo Exp $
 #	@(#)Makefile	8.1 (Berkeley) 6/18/93
 
 MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
@@ -29,9 +29,9 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	glxtphy.4 gpib.4 gpio.4 gpioirq.4 gpiolock.4 gpiopps.4 gpiopwm.4 \
 	gpiosim.4 gre.4 gphyter.4 gsip.4 \
 	hdaudio.4 hifn.4 hme.4 hpacel.4 hpqlb.4 hptide.4 hythygtemp.4 \
-	ibmcd.4 ibmhawk.4 ichsmb.4 icmp.4 icp.4 icsphy.4 iee.4 ieee80211.4 \
-	ifmedia.4 igmafb.4 igphy.4 igsfb.4 iha.4 ihidev.4 ihphy.4 iic.4 ims.4 \
-	inet.4 ikphy.4 inphy.4 intersil7170.4 intro.4 \
+	iavf.4 ibmcd.4 ibmhawk.4 ichsmb.4 icmp.4 icp.4 icsphy.4 iee.4 \
+	ieee80211.4 ifmedia.4 igmafb.4 igphy.4 igsfb.4 iha.4 ihidev.4 \
+	ihphy.4 iic.4 ims.4 inet.4 ikphy.4 inphy.4 intersil7170.4 intro.4 \
 	ioasic.4 ioat.4 iop.4 iophy.4 iopsp.4 ip.4 ipgphy.4 ipmi.4 ipw.4 \
 	irmce.4 isp.4 ismt.4 isv.4 itesio.4 iteide.4 iwi.4 iwm.4 iwn.4 ixg.4 \
 	ixl.4 ixpide.4 ixv.4 \
@@ -69,11 +69,13 @@ MAN=	aac.4 ac97.4 acardide.4 aceride.4 acphy.4 \
 	unix.4 userconf.4 \
 	vald.4 valz.4 veriexec.4 vga.4 vge.4 viaide.4 video.4 \
 	vio9p.4 vioif.4 viomb.4 viornd.4 vioscsi.4 virt.4 virtio.4 \
-	vlan.4 vmmon.4 vmnet.4 vnd.4 voodoofb.4 vr.4 vte.4 \
-	wapbl.4 wb.4 wbsio.4 wd.4 wdc.4 wi.4 wm.4 wpi.4 \
+	vether.4 vlan.4 vmmon.4 vmnet.4 vmt.4 vmx.4 vnd.4 voodoofb.4 vr.4 \
+	vte.4 \
+	wapbl.4 wb.4 wbsio.4 wd.4 wdc.4 wg.4 wi.4 wm.4 wpi.4 \
 	wsbell.4 wscons.4 wsdisplay.4 wsfont.4 wskbd.4 wsmouse.4 wsmux.4 \
 	xbox.4 xge.4 \
 	yds.4 ym.4 \
+	wwanc.4 \
 	zero.4 zstty.4 zyd.4
 
 # USB devices
@@ -87,8 +89,8 @@ MAN+=	atu.4 aubtfwl.4 aue.4 axe.4 axen.4 cdce.4 cue.4 ehci.4 kue.4 \
 	ulpt.4 umass.4 umcs.4 umct.4 umidi.4 umodem.4 ums.4 upgt.4 upl.4 \
 	uplcom.4 ure.4 url.4 urndis.4 urtw.4 urtwn.4 \
 	usb.4 usbnet.4 uscanner.4 uslsa.4 usmsc.4 usscanner.4 \
-	ustir.4 uthum.4 utoppy.4 uts.4 uvideo.4 uvisor.4 uvscom.4 uyap.4 \
-	xhci.4 \
+	ustir.4 uthum.4 utoppy.4 uts.4 uvideo.4 uvisor.4 uvscom.4 uxrcom.4 \
+	xhci.4
 
 # Ir devices
 MAN+=	irframe.4 cir.4 irframetty.4 oboe.4
@@ -238,6 +240,7 @@ MLINKS+=tty.4 dty.4
 MLINKS+=url.4 urlphy.4
 MLINKS+=usb.4 uhub.4
 MLINKS+=usb.4 usbtask.4
+MLINKS+=wwanc.4 wwan.4
 MLINKS+=wsmux.4 wsmuxctl.4
 MLINKS+=zstty.4 zs.4 zstty.4 zsc.4
 

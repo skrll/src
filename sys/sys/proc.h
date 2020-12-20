@@ -1,4 +1,4 @@
-/*	$NetBSD: proc.h,v 1.362 2020/04/06 08:20:05 kamil Exp $	*/
+/*	$NetBSD: proc.h,v 1.368 2020/12/05 18:17:01 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
@@ -223,8 +223,6 @@ struct emul {
  * l:	proc_lock
  * t:	p_stmutex
  * p:	p_lock
- * r:	p_treelock (only for use by LWPs in the same proc)
- * p,r:	p_lock + p_treelock to modify, either to inspect
  * (:	updated atomically
  * ::	unlocked, stable
  */
@@ -265,7 +263,6 @@ struct proc {
 	LIST_ENTRY(proc) p_sibling;	/* l: List of sibling processes. */
 	LIST_HEAD(, proc) p_children;	/* l: List of children. */
 	LIST_HEAD(, lwp) p_lwps;	/* p: List of LWPs. */
-	struct radix_tree p_lwptree;	/* p,r: Tree of LWPs. */
 	struct ras	*p_raslist;	/* a: List of RAS entries */
 
 /* The following fields are all zeroed upon creation in fork. */
@@ -276,7 +273,6 @@ struct proc {
 	int		p_nrlwps;	/* p: Number running/sleeping LWPs */
 	int		p_nlwpwait;	/* p: Number of LWPs in lwp_wait1() */
 	int		p_ndlwps;	/* p: Number of detached LWPs */
-	int 		p_nlwpid;	/* p: Next LWP ID */
 	u_int		p_nstopchild;	/* l: Count of stopped/dead children */
 	u_int		p_waited;	/* l: parent has waited on child */
 	struct lwp	*p_zomblwp;	/* p: detached LWP to be reaped */
@@ -350,7 +346,6 @@ struct proc {
 	    __aligned(COHERENCY_UNIT);
 	kmutex_t	p_stmutex;	/* :: mutex on profiling state */
 	krwlock_t	p_reflock;	/* :: lock for debugger, procfs */
-	krwlock_t	p_treelock;	/* :: lock on p_lwptree */
 };
 
 #define	p_rlimit	p_limit->pl_rlimit
@@ -418,6 +413,7 @@ struct proc {
 			0x00000020 /* traced process wants posix_spawn events */
 
 #define	PSL_TRACED	0x00000800 /* Debugged process being traced */
+#define	PSL_TRACEDCHILD 0x00001000 /* Report process birth */
 #define	PSL_CHTRACED	0x00400000 /* Child has been traced & reparented */
 #define	PSL_SYSCALL	0x04000000 /* process has PT_SYSCALL enabled */
 #define	PSL_SYSCALLEMU	0x08000000 /* cancel in-progress syscall */
@@ -489,7 +485,7 @@ extern u_int		nprocs;		/* Current number of procs */
 extern int		maxproc;	/* Max number of procs */
 #define	vmspace_kernel()	(proc0.p_vmspace)
 
-extern kmutex_t		*proc_lock;
+extern kmutex_t		proc_lock;
 extern struct proclist	allproc;	/* List of all processes */
 extern struct proclist	zombproc;	/* List of zombie processes */
 
@@ -497,11 +493,14 @@ extern struct proc	*initproc;	/* Process slots for init, pager */
 
 extern const struct proclist_desc proclists[];
 
-extern struct pool	ptimer_pool;	/* Memory pool for ptimers */
-
 int		proc_find_locked(struct lwp *, struct proc **, pid_t);
 proc_t *	proc_find_raw(pid_t);
 proc_t *	proc_find(pid_t);		/* Find process by ID */
+proc_t *	proc_find_lwpid(pid_t);		/* Find process by LWP ID */
+struct lwp *	proc_find_lwp(proc_t *, pid_t);	/* Find LWP in proc by ID */
+struct lwp *	proc_find_lwp_unlocked(proc_t *, pid_t);
+						/* Find LWP, acquire proc */
+struct lwp *	proc_find_lwp_acquire_proc(pid_t, proc_t **);
 struct pgrp *	pgrp_find(pid_t);		/* Find process group by ID */
 
 void	procinit(void);
@@ -526,6 +525,8 @@ struct proc *proc_alloc(void);
 void	proc0_init(void);
 pid_t	proc_alloc_pid(struct proc *);
 void	proc_free_pid(pid_t);
+pid_t	proc_alloc_lwpid(struct proc *, struct lwp *);
+void	proc_free_lwpid(struct proc *, pid_t);
 void	proc_free_mem(struct proc *);
 void	exit_lwps(struct lwp *l);
 int	fork1(struct lwp *, int, int, void *, size_t,

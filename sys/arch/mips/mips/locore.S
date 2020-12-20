@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.222 2020/01/08 20:59:19 skrll Exp $	*/
+/*	$NetBSD: locore.S,v 1.226 2020/09/26 08:21:10 simonb Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -63,16 +63,14 @@
 #include <mips/trap.h>
 #include <mips/locore.h>
 
-RCSID("$NetBSD: locore.S,v 1.222 2020/01/08 20:59:19 skrll Exp $")
+RCSID("$NetBSD: locore.S,v 1.226 2020/09/26 08:21:10 simonb Exp $")
 
 #include "assym.h"
 
 	.set	noreorder
 
-	.globl	start
-	.globl	_C_LABEL(kernel_text)		# libkvm refers this
-start:
-_C_LABEL(kernel_text):
+EXPORT(start)
+EXPORT_OBJECT(kernel_text)			# libkvm refers this
 	/* First disable the interrupts only, for safety */
 	mfc0	k0, MIPS_COP_0_STATUS
 	MFC0_HAZARD
@@ -88,7 +86,7 @@ _C_LABEL(kernel_text):
 	mtc0	zero, MIPS_COP_0_CAUSE
 	COP0_SYNC
 
-#if defined(_LP64) 
+#if defined(_LP64)
 	/* Enable 64-bit addressing */
 	mfc0	k0, MIPS_COP_0_STATUS
 	MFC0_HAZARD
@@ -119,7 +117,7 @@ _C_LABEL(kernel_text):
 	//
 	mfc0	a0, MIPS_COP_0_EBASE		# EBASE
 	COP0_SYNC
-	ext	a1, a0, 0, 10			# get CPU number
+	andi    a1, a0, MIPS_EBASE_CPUNUM	# fetch cpunum
 	beqz	a1, 2f				# normal startup if 0
 	 nop
 #ifdef MULTIPROCESSOR
@@ -313,7 +311,7 @@ NESTED(cpu_switchto, CALLFRAME_SIZ, ra)
 	teqi	t1, 0
 #elif defined(PARANOID_LOOP)
 	and	t1, t0, MIPS_SR_INT_IE
-2:	beqz	t1, 2b			# status reg should not differ
+2:	beqz	t1, 2b				# status reg should not differ
 	 nop
 #endif /* PARANOID_LOOP */
 	DYNAMIC_STATUS_MASK(t0,ra)

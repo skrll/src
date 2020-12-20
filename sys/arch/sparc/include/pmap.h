@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.93 2020/03/14 14:05:43 ad Exp $ */
+/*	$NetBSD: pmap.h,v 1.95 2020/12/18 00:45:52 mrg Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -49,6 +49,11 @@
 #if defined(_KERNEL_OPT)
 #include "opt_sparc_arch.h"
 #endif
+
+struct vm_page;
+
+#include <uvm/uvm_prot.h>
+#include <uvm/uvm_pmap.h>
 
 #include <sparc/pte.h>
 
@@ -177,15 +182,6 @@ struct segmap {
 					 * (not used for 4m/4d kernel_map) */
 	int8_t	sg_nwired;		/* number of wired pages */
 };
-
-#if 0
-struct kvm_cpustate {
-	int		kvm_npmemarr;
-	struct memarr	kvm_pmemarr[MA_SIZE];
-	int		kvm_seginval;			/* [4,4c] */
-	struct segmap	kvm_segmap_store[NKREG*NSEGRG];	/* [4,4c] */
-}/*not yet used*/;
-#endif
 
 #ifdef _KERNEL
 

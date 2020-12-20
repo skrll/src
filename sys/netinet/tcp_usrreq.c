@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_usrreq.c,v 1.225 2019/08/06 15:48:18 riastradh Exp $	*/
+/*	$NetBSD: tcp_usrreq.c,v 1.228 2020/11/23 00:52:53 chs Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -99,7 +99,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcp_usrreq.c,v 1.225 2019/08/06 15:48:18 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcp_usrreq.c,v 1.228 2020/11/23 00:52:53 chs Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -256,10 +256,12 @@ tcp_fill_info(struct tcpcb *tp, struct tcp_info *ti)
 	}
 
 	ti->tcpi_rto = tp->t_rxtcur * tick;
-	ti->tcpi_last_data_recv = (long)(hardclock_ticks -
+	ti->tcpi_last_data_recv = (long)(getticks() -
 					 (int)tp->t_rcvtime) * tick;
-	ti->tcpi_rtt = ((u_int64_t)tp->t_srtt * tick) >> TCP_RTT_SHIFT;
-	ti->tcpi_rttvar = ((u_int64_t)tp->t_rttvar * tick) >> TCP_RTTVAR_SHIFT;
+	ti->tcpi_rtt = ((u_int64_t)tp->t_srtt * tick / PR_SLOWHZ)
+	                   >> (TCP_RTT_SHIFT + 2);
+	ti->tcpi_rttvar = ((u_int64_t)tp->t_rttvar * tick / PR_SLOWHZ)
+	                   >> (TCP_RTTVAR_SHIFT + 2);
 
 	ti->tcpi_snd_ssthresh = tp->snd_ssthresh;
 	/* Linux API wants these in # of segments, apparently */
@@ -1093,8 +1095,10 @@ tcp_recvoob(struct socket *so, struct mbuf *m, int flags)
 
 	m->m_len = 1;
 	*mtod(m, char *) = tp->t_iobc;
-	if ((flags & MSG_PEEK) == 0)
+	if ((flags & MSG_PEEK) == 0) {
 		tp->t_oobflags ^= (TCPOOB_HAVEDATA | TCPOOB_HADDATA);
+		so->so_state &= ~SS_POLLRDBAND;
+	}
 
 	tcp_debug_trace(so, tp, ostate, PRU_RCVOOB);
 	splx(s);

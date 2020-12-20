@@ -1,4 +1,4 @@
-# $NetBSD: INSTALL,v 1.64 2019/03/14 16:59:09 thorpej Exp $
+# $NetBSD: INSTALL,v 1.66 2020/12/12 05:48:55 tsutsui Exp $
 #
 # INSTALL machine description file
 #
@@ -10,10 +10,11 @@ include 	"arch/hp300/conf/std.hp300"
 #options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
 # optimise for smaller kernels
-makeoptions 	COPTS="-Os"
-options 	NVNODE=50
-options 	NBUF=16
-options 	BUFPAGES=16
+makeoptions 	COPTS="-Os -fno-unwind-tables"
+#options 	NVNODE=50
+#options 	NBUF=16
+#options 	BUFPAGES=16
+options 	BUFCACHE=5
 options 	NFS_V2_ONLY
 options 	NFS_DEFAULT_NIOTHREADS=1
 options 	USERCONF		# userconf(4) support
@@ -232,4 +233,5 @@ pseudo-device	loop			# loopback network interface
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
+#pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	wsmux			# mouse & keyboard multiplexor

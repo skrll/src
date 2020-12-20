@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.124 2020/03/17 18:17:07 ad Exp $	*/
+/*	$NetBSD: pmap.h,v 1.126 2020/07/19 13:55:09 maxv Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -64,7 +64,6 @@
 #define	_I386_PMAP_H_
 
 #if defined(_KERNEL_OPT)
-#include "opt_user_ldt.h"
 #include "opt_xen.h"
 #endif
 
@@ -294,11 +293,10 @@
 #ifndef XENPV
 #define pmap_pa2pte(a)			(a)
 #define pmap_pte2pa(a)			((a) & PTE_FRAME)
+#define pmap_pte_set(p, n)		do { *(p) = (n); } while (0)
 #define pmap_pte_flush()		/* nothing */
 
 #ifdef PAE
-#define pmap_pte_set(p, n)		\
-    (void)atomic_swap_64((volatile uint64_t *)p, n)
 #define pmap_pte_cas(p, o, n)		atomic_cas_64((p), (o), (n))
 #define pmap_pte_testset(p, n)		\
     atomic_swap_64((volatile uint64_t *)p, n)
@@ -307,8 +305,6 @@
 #define pmap_pte_clearbits(p, b)	\
     atomic_and_64((volatile uint64_t *)p, ~(b))
 #else /* PAE */
-#define pmap_pte_set(p, n)		\
-    (void)atomic_swap_ulong((volatile unsigned long *)p, n)
 #define pmap_pte_cas(p, o, n)		atomic_cas_32((p), (o), (n))
 #define pmap_pte_testset(p, n)		\
     atomic_swap_ulong((volatile unsigned long *)p, n)

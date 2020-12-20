@@ -1,4 +1,4 @@
-#	$NetBSD: IYONIX,v 1.4 2020/03/25 17:06:18 jdolecek Exp $
+#	$NetBSD: IYONIX,v 1.8 2020/09/27 13:48:50 roy Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include	"arch/evbarm/conf/std.iyonix"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.4 $"
+#ident 		"GENERIC-$Revision: 1.8 $"
 
 maxusers	32		# estimated number of users
 
@@ -86,7 +86,7 @@ options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #options 	KGDB_DEVNAME="\"com\"",KGDB_DEVADDR=0x3f8,KGDB_DEVRATE=9600
 #makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	VERBOSE_INIT_ARM # verbose bootstraping messages
 
 #options 	PMAP_INCLUDE_PTE_SYNC
@@ -189,7 +189,7 @@ cpu0 at mainbus?
 iopxs*          at mainbus?
 
 iopaau*         at iopxs?               # Application Accelerator Unit
-iopiic*         at iopxs?               # I2C Controller Unit(s) 
+iopiic*         at iopxs?               # I2C Controller Unit(s)
 iic0            at iopiic?
 iic1            at iopiic?
 iopwdog*        at iopxs?               # Watchdog timer
@@ -384,7 +384,7 @@ pseudo-device	loop			# network loopback
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+#pseudo-device	vether			# Virtual Ethernet for bridge
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
 # srt is EXPERIMENTAL
 #pseudo-device	srt			# source-address-based routing

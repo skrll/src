@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.h,v 1.11 2020/01/15 08:34:04 mrg Exp $	*/
+/*	$NetBSD: cpufunc.h,v 1.19 2020/12/04 08:29:11 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -36,7 +36,7 @@
 
 struct aarch64_cache_unit {
 	u_int cache_type;
-#define CACHE_TYPE_UNKNOWN	0
+#define CACHE_TYPE_VPIPT	0	/* VMID-aware PIPT */
 #define CACHE_TYPE_VIVT		1	/* ASID-tagged VIVT */
 #define CACHE_TYPE_VIPT		2
 #define CACHE_TYPE_PIPT		3
@@ -45,11 +45,6 @@ struct aarch64_cache_unit {
 	u_int cache_sets;
 	u_int cache_way_size;
 	u_int cache_size;
-	u_int cache_purging;
-#define CACHE_PURGING_WB	0x01
-#define CACHE_PURGING_WT	0x02
-#define CACHE_PURGING_RA	0x04
-#define CACHE_PURGING_WA	0x08
 };
 
 struct aarch64_cache_info {
@@ -68,6 +63,12 @@ extern u_int aarch64_cache_vindexsize;	/* cachesize/way (VIVT/VIPT) */
 extern u_int aarch64_cache_prefer_mask;
 extern u_int cputype;			/* compat arm */
 
+extern int aarch64_pan_enabled;
+extern int aarch64_pac_enabled;
+
+void aarch64_pan_init(int);
+int aarch64_pac_init(int);
+
 int set_cpufuncs(void);
 void aarch64_getcacheinfo(int);
 void aarch64_printcacheinfo(device_t);
@@ -81,6 +82,8 @@ void aarch64_icache_inv_all(void);
 void aarch64_nullop(void);
 uint32_t aarch64_cpuid(void);
 void aarch64_icache_sync_range(vaddr_t, vsize_t);
+void aarch64_icache_inv_range(vaddr_t, vsize_t);
+void aarch64_icache_barrier_range(vaddr_t, vsize_t);
 void aarch64_idcache_wbinv_range(vaddr_t, vsize_t);
 void aarch64_dcache_wbinv_range(vaddr_t, vsize_t);
 void aarch64_dcache_inv_range(vaddr_t, vsize_t);
@@ -118,7 +121,8 @@ void aarch64_tlbi_by_asid_va_ll(int, vaddr_t);	/*  an ASID, a VA, lastlevel */
 #define cpu_dcache_inv_range(v,s)	aarch64_dcache_inv_range((v),(s))
 #define cpu_dcache_wb_range(v,s)	aarch64_dcache_wb_range((v),(s))
 #define cpu_idcache_wbinv_range(v,s)	aarch64_idcache_wbinv_range((v),(s))
-#define cpu_icache_sync_range(v,s)	aarch64_icache_sync_range((v),(s))
+#define cpu_icache_sync_range(v,s)	\
+	curcpu()->ci_cpufuncs.cf_icache_sync_range((v),(s))
 
 #define cpu_sdcache_wbinv_range(v,p,s)	((void)0)
 #define cpu_sdcache_inv_range(v,p,s)	((void)0)
@@ -161,5 +165,88 @@ cpu_earlydevice_va_p(void)
 }
 
 #endif /* _KERNEL */
+
+/* definitions of TAG and PAC in pointers */
+#define AARCH64_ADDRTOP_TAG_BIT		55
+#define AARCH64_ADDRTOP_TAG		__BIT(55)	/* ECR_EL1.TBI[01]=1 */
+#define AARCH64_ADDRTOP_MSB		__BIT(63)	/* ECR_EL1.TBI[01]=0 */
+#define AARCH64_ADDRESS_TAG_MASK	__BITS(63,56)	/* if TCR.TBI[01]=1 */
+#define AARCH64_ADDRESS_PAC_MASK	__BITS(54,48)	/* depend on VIRT_BIT */
+#define AARCH64_ADDRESS_TAGPAC_MASK	\
+			(AARCH64_ADDRESS_TAG_MASK|AARCH64_ADDRESS_PAC_MASK)
+
+#ifdef _KERNEL
+/*
+ * Which is the address space of this VA?
+ * return the space considering TBI. (PAC is not yet)
+ *
+ * return value: AARCH64_ADDRSPACE_{LOWER,UPPER}{_OUTOFRANGE}?
+ */
+#define AARCH64_ADDRSPACE_LOWER			0	/* -> TTBR0 */
+#define AARCH64_ADDRSPACE_UPPER			1	/* -> TTBR1 */
+#define AARCH64_ADDRSPACE_LOWER_OUTOFRANGE	-1	/* certainly fault */
+#define AARCH64_ADDRSPACE_UPPER_OUTOFRANGE	-2	/* certainly fault */
+static inline int
+aarch64_addressspace(vaddr_t va)
+{
+	uint64_t addrtop, tbi;
+
+	addrtop = va & AARCH64_ADDRTOP_TAG;
+	tbi = addrtop ? TCR_TBI1 : TCR_TBI0;
+	if (reg_tcr_el1_read() & tbi) {
+		if (addrtop == 0) {
+			/* lower address, and TBI0 enabled */
+			if ((va & AARCH64_ADDRESS_PAC_MASK) != 0)
+				return AARCH64_ADDRSPACE_LOWER_OUTOFRANGE;
+			return AARCH64_ADDRSPACE_LOWER;
+		}
+		/* upper address, and TBI1 enabled */
+		if ((va & AARCH64_ADDRESS_PAC_MASK) != AARCH64_ADDRESS_PAC_MASK)
+			return AARCH64_ADDRSPACE_UPPER_OUTOFRANGE;
+		return AARCH64_ADDRSPACE_UPPER;
+	}
+
+	addrtop = va & AARCH64_ADDRTOP_MSB;
+	if (addrtop == 0) {
+		/* lower address, and TBI0 disabled */
+		if ((va & AARCH64_ADDRESS_TAGPAC_MASK) != 0)
+			return AARCH64_ADDRSPACE_LOWER_OUTOFRANGE;
+		return AARCH64_ADDRSPACE_LOWER;
+	}
+	/* upper address, and TBI1 disabled */
+	if ((va & AARCH64_ADDRESS_TAGPAC_MASK) != AARCH64_ADDRESS_TAGPAC_MASK)
+		return AARCH64_ADDRSPACE_UPPER_OUTOFRANGE;
+	return AARCH64_ADDRSPACE_UPPER;
+}
+
+static inline vaddr_t
+aarch64_untag_address(vaddr_t va)
+{
+	uint64_t addrtop, tbi;
+
+	addrtop = va & AARCH64_ADDRTOP_TAG;
+	tbi = addrtop ? TCR_TBI1 : TCR_TBI0;
+	if (reg_tcr_el1_read() & tbi) {
+		if (addrtop == 0) {
+			/* lower address, and TBI0 enabled */
+			return va & ~AARCH64_ADDRESS_TAG_MASK;
+		}
+		/* upper address, and TBI1 enabled */
+		return va | AARCH64_ADDRESS_TAG_MASK;
+	}
+
+	/* TBI[01] is disabled, nothing to do */
+	return va;
+}
+
+#endif /* _KERNEL */
+
+static __inline uint64_t
+aarch64_strip_pac(uint64_t __val)
+{
+	if (__val & AARCH64_ADDRTOP_TAG)
+		return __val | AARCH64_ADDRESS_TAGPAC_MASK;
+	return __val & ~AARCH64_ADDRESS_TAGPAC_MASK;
+}
 
 #endif /* _AARCH64_CPUFUNC_H_ */

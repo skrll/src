@@ -1,11 +1,10 @@
-/*	$NetBSD: nvmm_internal.h,v 1.13 2019/10/23 07:01:11 maxv Exp $	*/
+/*	$NetBSD: nvmm_internal.h,v 1.19 2020/09/06 02:18:53 riastradh Exp $	*/
 
 /*
- * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2018-2020 Maxime Villard, m00nbsd.net
  * All rights reserved.
  *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Maxime Villard.
+ * This code is part of the NVMM hypervisor.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -16,21 +15,33 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #ifndef _NVMM_INTERNAL_H_
 #define _NVMM_INTERNAL_H_
+
+#include <sys/types.h>
+
+#include <sys/lwp.h>
+#include <sys/mutex.h>
+#include <sys/rwlock.h>
+#include <sys/sched.h>
+
+#include <dev/nvmm/nvmm.h>
+
+struct uvm_object;
+struct vmspace;
 
 #define NVMM_MAX_MACHINES	128
 #define NVMM_MAX_VCPUS		256
@@ -83,6 +94,7 @@ struct nvmm_machine {
 	struct nvmm_hmapping hmap[NVMM_MAX_HMAPPINGS];
 
 	/* CPU */
+	volatile unsigned int ncpus;
 	struct nvmm_cpu cpus[NVMM_MAX_VCPUS];
 
 	/* Implementation-specific */
@@ -90,6 +102,7 @@ struct nvmm_machine {
 };
 
 struct nvmm_impl {
+	const char *name;
 	bool (*ident)(void);
 	void (*init)(void);
 	void (*fini)(void);
@@ -117,7 +130,21 @@ struct nvmm_impl {
 	    struct nvmm_vcpu_exit *);
 };
 
+#if defined(__x86_64__)
 extern const struct nvmm_impl nvmm_x86_svm;
 extern const struct nvmm_impl nvmm_x86_vmx;
+#endif
+
+static inline bool
+nvmm_return_needed(void)
+{
+	if (preempt_needed()) {
+		return true;
+	}
+	if (curlwp->l_flag & LW_USERRET) {
+		return true;
+	}
+	return false;
+}
 
 #endif /* _NVMM_INTERNAL_H_ */

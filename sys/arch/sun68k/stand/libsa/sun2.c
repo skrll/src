@@ -1,4 +1,4 @@
-/*	$NetBSD: sun2.c,v 1.11 2009/12/11 18:42:05 tsutsui Exp $	*/
+/*	$NetBSD: sun2.c,v 1.13 2020/06/20 18:45:06 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -33,14 +33,8 @@
  * Standalone functions specific to the Sun2.
  */
 
-/* Need to avoid conflicts on these: */
-#define get_pte sun2_get_pte
-#define set_pte sun2_set_pte
-#define get_segmap sun2_get_segmap
-#define set_segmap sun2_set_segmap
-
 /*
- * We need to get the sun2 NBSG definition, even if we're 
+ * We need to get the sun2 NBSG definition, even if we're
  * building this with a different sun68k target.
  */
 #include <arch/sun2/include/pmap.h>
@@ -68,14 +62,16 @@
 
 #define OBIO_MASK 0xFFFFFF
 
-u_int	get_pte(vaddr_t);
-void	set_pte(vaddr_t, u_int);
-void	dvma2_init(void);
-char *	dvma2_alloc(int);
-void	dvma2_free(char *, int);
-char *	dvma2_mapin(char *, int);
-void	dvma2_mapout(char *, int);
-char *	dev2_mapin(int, u_long, int);
+static u_int	sun2_get_pte(vaddr_t);
+static void	sun2_set_pte(vaddr_t, u_int);
+static void	dvma2_init(void);
+static char *	dvma2_alloc(int);
+static void	dvma2_free(char *, int);
+static char *	dvma2_mapin(char *, int);
+static void	dvma2_mapout(char *, int);
+static char *	dev2_mapin(int, u_long, int);
+static int	sun2_get_segmap(vaddr_t);
+static void	sun2_set_segmap(vaddr_t, int);
 
 struct mapinfo {
 	int maptype;
@@ -108,7 +104,7 @@ sun2_mapinfo[MAP__NTYPES] = {
 /* The virtual address we will use for PROM device mappings. */
 int sun2_devmap = SUN3_MONSHORTSEG;
 
-char *
+static char *
 dev2_mapin(int maptype, u_long physaddr, int length)
 {
 #ifdef	notyet
@@ -132,7 +128,7 @@ found:
 
 	va = pgva = sun2_devmap;
 	do {
-		set_pte(pgva, pte);
+		sun2_set_pte(pgva, pte);
 		pgva += NBPG;
 		pte += 1;
 		length -= NBPG;
@@ -143,7 +139,7 @@ found:
 #ifdef	DEBUG_PROM
 	if (debug)
 		printf("dev2_mapin: va=0x%x pte=0x%x\n",
-			   va, get_pte(va));
+			   va, sun2_get_pte(va));
 #endif
 	return ((char*)va);
 #else
@@ -175,7 +171,7 @@ found:
 /* This points to the end of the free DVMA space. */
 u_int dvma2_end = DVMA_BASE + DVMA_MAPLEN;
 
-void 
+static void
 dvma2_init(void)
 {
 	int segva, dmava, sme;
@@ -184,22 +180,22 @@ dvma2_init(void)
 	dmava = DVMA_BASE;
 
 	while (segva < SA_MAX_VA) {
-		sme = get_segmap(segva);
-		set_segmap(dmava, sme);
+		sme = sun2_get_segmap(segva);
+		sun2_set_segmap(dmava, sme);
 		segva += NBSG;
 		dmava += NBSG;
 	}
 }
 
 /* Convert a local address to a DVMA address. */
-char *
+static char *
 dvma2_mapin(char *addr, int len)
 {
 	int va = (int)addr;
 
 	/* Make sure the address is in the DVMA map. */
 	if ((va < SA_MIN_VA) || (va >= SA_MAX_VA))
-		panic("dvma2_mapin: 0x%x outside 0x%x..0x%x", 
+		panic("dvma2_mapin: 0x%x outside 0x%x..0x%x",
 		    va, SA_MIN_VA, SA_MAX_VA);
 
 	va -= SA_MIN_VA;
@@ -219,7 +215,7 @@ dvma2_mapout(char *addr, int len)
 		panic("dvma2_mapout");
 }
 
-char *
+static char *
 dvma2_alloc(int len)
 {
 	len = m68k_round_page(len);
@@ -237,14 +233,14 @@ dvma2_free(char *dvma, int len)
  * Control space stuff...
  */
 
-u_int
-get_pte(vaddr_t va)
+static u_int
+sun2_get_pte(vaddr_t va)
 {
 	u_int pte;
 
 	pte = get_control_word(CONTROL_ADDR_BUILD(PGMAP_BASE, va));
 	if (pte & PG_VALID) {
-		/* 
+		/*
 		 * This clears bit 30 (the kernel readable bit, which
 		 * should always be set), bit 28 (which should always
 		 * be set) and bit 26 (the user writable bit, which we
@@ -263,8 +259,8 @@ get_pte(vaddr_t va)
 	return (pte);
 }
 
-void
-set_pte(vaddr_t va, u_int pte)
+static void
+sun2_set_pte(vaddr_t va, u_int pte)
 {
 	if (pte & PG_VALID) {
 		/* Clear bit 26 (the user writable bit).  */
@@ -291,15 +287,15 @@ set_pte(vaddr_t va, u_int pte)
 	set_control_word(CONTROL_ADDR_BUILD(PGMAP_BASE, va), pte);
 }
 
-int
-get_segmap(vaddr_t va)
+static int
+sun2_get_segmap(vaddr_t va)
 {
 	va = CONTROL_ADDR_BUILD(SEGMAP_BASE, va);
 	return (get_control_byte(va));
 }
 
-void
-set_segmap(vaddr_t va, int sme)
+static void
+sun2_set_segmap(vaddr_t va, int sme)
 {
 	va = CONTROL_ADDR_BUILD(SEGMAP_BASE, va);
 	set_control_byte(va, sme);
@@ -329,8 +325,8 @@ sun2_getidprom(u_char *dst)
  */
 
 /*
- * For booting, the PROM in fredette's Sun 2/120 doesn't map 
- * much main memory, and what is mapped is mapped strangely.  
+ * For booting, the PROM in fredette's Sun 2/120 doesn't map
+ * much main memory, and what is mapped is mapped strangely.
  * Low virtual memory is mapped like:
  *
  * 0x000000 - 0x0bffff virtual -> 0x000000 - 0x0bffff physical
@@ -352,7 +348,7 @@ sun2_getidprom(u_char *dst)
  * 0x400000 - 0x4bffff virtual -> 0x000000 - 0x0bffff physical
  * 0x4c0000 - 0x600000 virtual -> 0x2c0000 - 0x3fffff physical
  *
- * And then we load starting at virtual 0x400000.  We will do 
+ * And then we load starting at virtual 0x400000.  We will do
  * all of this mapping just by copying PMEGs.
  *
  * After the load is done, but before we enter the kernel, we're
@@ -379,20 +375,20 @@ sun2_getidprom(u_char *dst)
 #define MEM_CHUNK1_COPY_VIRT		MEM_CHUNK1_COPY_PHYS
 
 /* Maps memory for loading. */
-u_long 
+u_long
 sun2_map_mem_load(void)
 {
 	vaddr_t off;
 
 	/* Map chunk zero for loading. */
 	for(off = 0; off < MEM_CHUNK0_SIZE; off += NBSG)
-		set_segmap(MEM_CHUNK0_LOAD_VIRT + off,
-			   get_segmap(MEM_CHUNK0_LOAD_VIRT_PROM + off));
+		sun2_set_segmap(MEM_CHUNK0_LOAD_VIRT + off,
+			   sun2_get_segmap(MEM_CHUNK0_LOAD_VIRT_PROM + off));
 
 	/* Map chunk one for loading. */
 	for(off = 0; off < MEM_CHUNK1_SIZE; off += NBSG)
-		set_segmap(MEM_CHUNK1_LOAD_VIRT + off,
-			   get_segmap(MEM_CHUNK1_LOAD_VIRT_PROM + off));
+		sun2_set_segmap(MEM_CHUNK1_LOAD_VIRT + off,
+			   sun2_get_segmap(MEM_CHUNK1_LOAD_VIRT_PROM + off));
 
 	/* Tell our caller where in virtual space to load. */
 	return MEM_CHUNK0_LOAD_VIRT;
@@ -409,7 +405,7 @@ sun2_map_mem_run(void *entry)
 	/* Chunk zero is already mapped and copied. */
 
 	/* Chunk one needs to be mapped and copied. */
-	pte = (get_pte(0) & ~PG_FRAME);
+	pte = (sun2_get_pte(0) & ~PG_FRAME);
 	for(off = 0; off < MEM_CHUNK1_SIZE; ) {
 
 		/*
@@ -423,25 +419,25 @@ sun2_map_mem_run(void *entry)
 		 * PMEG used to map the previous segment, which
 		 * is now (since we already copied it) unused.
 		 */
-		sme = get_segmap((MEM_CHUNK1_LOAD_VIRT_PROM + off) - NBSG);
-		set_segmap(MEM_CHUNK1_COPY_VIRT + off, sme);
+		sme = sun2_get_segmap((MEM_CHUNK1_LOAD_VIRT_PROM + off) - NBSG);
+		sun2_set_segmap(MEM_CHUNK1_COPY_VIRT + off, sme);
 
 		/* Set the PTEs in this new PMEG. */
 		for(off_end = off + NBSG; off < off_end; off += NBPG)
-			set_pte(MEM_CHUNK1_COPY_VIRT + off, 
+			sun2_set_pte(MEM_CHUNK1_COPY_VIRT + off,
 				pte | PA_PGNUM(MEM_CHUNK1_COPY_PHYS + off));
-		
+
 		/* Copy this segment. */
 		memcpy((void *)(MEM_CHUNK1_COPY_VIRT + (off - NBSG)),
 		       (void *)(MEM_CHUNK1_LOAD_VIRT + (off - NBSG)),
 		       NBSG);
 	}
-		
+
 	/* Tell our caller where in virtual space to enter. */
 	return ((char *)entry) - MEM_CHUNK0_LOAD_VIRT;
 }
 
-void 
+void
 sun2_init(void)
 {
 	/* Set the function pointers. */
@@ -450,7 +446,7 @@ sun2_init(void)
 	dvma_free_p   = dvma2_free;
 	dvma_mapin_p  = dvma2_mapin;
 	dvma_mapout_p = dvma2_mapout;
-       
+
 	/* Prepare DVMA segment. */
 	dvma2_init();
 }

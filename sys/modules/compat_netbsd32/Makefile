@@ -1,13 +1,13 @@
-#	$NetBSD: Makefile,v 1.32 2020/03/12 15:02:29 pgoyette Exp $
+#	$NetBSD: Makefile,v 1.37 2020/11/07 21:42:32 christos Exp $
 
 .include "../Makefile.inc"
 .include "../Makefile.assym"
 
 KMOD=	compat_netbsd32
 
-.if ${MACHINE_ARCH} == "i386" || ${MACHINE_ARCH} == "x86_64"
-NETBSD32_DRMKMS?=yes
-.endif
+#.if ${MACHINE_ARCH} == "i386" || ${MACHINE_ARCH} == "x86_64"
+#NETBSD32_DRMKMS?=yes
+#.endif
 
 CPPFLAGS+=	-DCOMPAT_NETBSD32
 CPPFLAGS+=	-DEXEC_ELF32 -DEXEC_ELF64
@@ -29,9 +29,10 @@ CPPFLAGS+=	-I${NETBSDSRCDIR}/sys/external/bsd/drm2/dist/uapi
 .if ${NETBSD32_DRMKMS:Uno} == "yes"
 SRCS+=	netbsd32_drm.c
 .endif
-SRCS+=	netbsd32_core.c		netbsd32_event.c
+SRCS+=	netbsd32_acl.c		netbsd32_event.c
 SRCS+=	netbsd32_exec_elf32.c	netbsd32_execve.c
 SRCS+=	netbsd32_fd.c		netbsd32_fs.c
+SRCS+=	netbsd32_futex.c
 SRCS+=	netbsd32_ioctl.c	netbsd32_kern_proc.c
 SRCS+=	netbsd32_lwp.c		netbsd32_mod.c
 SRCS+=	netbsd32_module.c	netbsd32_netbsd.c
@@ -61,7 +62,7 @@ SRCS+=	netbsd32_sigcode.S
 SRCS+=	netbsd32_machdep.c
 .endif
 
-.if ${MACHINE_ARCH} == "arm"
+.if !empty(MACHINE_ARCH:M*arm*)
 .PATH:	${S}/arch/arm/arm32
 SRCS+=	netbsd32_machdep.c
 .endif

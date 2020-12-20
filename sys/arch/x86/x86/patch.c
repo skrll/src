@@ -1,4 +1,4 @@
-/*	$NetBSD: patch.c,v 1.39 2020/04/10 14:35:26 bouyer Exp $	*/
+/*	$NetBSD: patch.c,v 1.49 2020/05/07 18:13:05 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: patch.c,v 1.39 2020/04/10 14:35:26 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: patch.c,v 1.49 2020/05/07 18:13:05 maxv Exp $");
 
 #include "opt_lockdebug.h"
 #ifdef i386
@@ -49,77 +49,144 @@ __KERNEL_RCSID(0, "$NetBSD: patch.c,v 1.39 2020/04/10 14:35:26 bouyer Exp $");
 #include <machine/specialreg.h>
 #include <machine/frameasm.h>
 
+#include <uvm/uvm.h>
+#include <machine/pmap.h>
+
 #include <x86/cpuvar.h>
 #include <x86/cputypes.h>
 
-struct hotpatch {
+__link_set_decl(x86_hotpatch_descriptors, struct x86_hotpatch_descriptor);
+
+struct x86_hotpatch_destination {
 	uint8_t name;
 	uint8_t size;
 	void *addr;
 } __packed;
 
-void	spllower(int);
-void	spllower_end(void);
-void	cx8_spllower(int);
-void	cx8_spllower_end(void);
-void	cx8_spllower_patch(void);
+/* -------------------------------------------------------------------------- */
 
-void	mutex_spin_exit_end(void);
-void	i686_mutex_spin_exit(int);
-void	i686_mutex_spin_exit_end(void);
-void	i686_mutex_spin_exit_patch(void);
+/* CLAC instruction, part of SMAP. */
+extern uint8_t hp_clac, hp_clac_end;
+static const struct x86_hotpatch_source hp_clac_source = {
+	.saddr = &hp_clac,
+	.eaddr = &hp_clac_end
+};
+static const struct x86_hotpatch_descriptor hp_clac_desc = {
+	.name = HP_NAME_CLAC,
+	.nsrc = 1,
+	.srcs = { &hp_clac_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_clac_desc);
 
-void	membar_consumer(void);
-void	membar_consumer_end(void);
-void	membar_sync(void);
-void	membar_sync_end(void);
-void	sse2_lfence(void);
-void	sse2_lfence_end(void);
-void	sse2_mfence(void);
-void	sse2_mfence_end(void);
+/* STAC instruction, part of SMAP. */
+extern uint8_t hp_stac, hp_stac_end;
+static const struct x86_hotpatch_source hp_stac_source = {
+	.saddr = &hp_stac,
+	.eaddr = &hp_stac_end
+};
+static const struct x86_hotpatch_descriptor hp_stac_desc = {
+	.name = HP_NAME_STAC,
+	.nsrc = 1,
+	.srcs = { &hp_stac_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_stac_desc);
 
-void	_atomic_cas_64(void);
-void	_atomic_cas_64_end(void);
-void	_atomic_cas_cx8(void);
-void	_atomic_cas_cx8_end(void);
+/* Errata on certain AMD CPUs. */
+extern uint8_t hp_retfence, hp_retfence_end;
+static const struct x86_hotpatch_source hp_retfence_source = {
+	.saddr = &hp_retfence,
+	.eaddr = &hp_retfence_end
+};
+static const struct x86_hotpatch_descriptor hp_retfence_desc = {
+	.name = HP_NAME_RETFENCE,
+	.nsrc = 1,
+	.srcs = { &hp_retfence_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_retfence_desc);
 
-extern void	*atomic_lockpatch[];
+/* No lock when on a single processor. */
+extern uint8_t hp_nolock, hp_nolock_end;
+static const struct x86_hotpatch_source hp_nolock_source = {
+	.saddr = &hp_nolock,
+	.eaddr = &hp_nolock_end
+};
+static const struct x86_hotpatch_descriptor hp_nolock_desc = {
+	.name = HP_NAME_NOLOCK,
+	.nsrc = 1,
+	.srcs = { &hp_nolock_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_nolock_desc);
 
-#define	X86_NOP		0x90
-#define	X86_REP		0xf3
-#define	X86_RET		0xc3
-#define	X86_CS		0x2e
-#define	X86_DS		0x3e
-#define	X86_GROUP_0F	0x0f
+/* Use LFENCE if available, part of SSE2. */
+extern uint8_t sse2_lfence, sse2_lfence_end;
+static const struct x86_hotpatch_source hp_sse2_lfence_source = {
+	.saddr = &sse2_lfence,
+	.eaddr = &sse2_lfence_end
+};
+static const struct x86_hotpatch_descriptor hp_sse2_lfence_desc = {
+	.name = HP_NAME_SSE2_LFENCE,
+	.nsrc = 1,
+	.srcs = { &hp_sse2_lfence_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_sse2_lfence_desc);
 
-static void
-adjust_jumpoff(uint8_t *ptr, void *from_s, void *to_s)
-{
+/* Use MFENCE if available, part of SSE2. */
+extern uint8_t sse2_mfence, sse2_mfence_end;
+static const struct x86_hotpatch_source hp_sse2_mfence_source = {
+	.saddr = &sse2_mfence,
+	.eaddr = &sse2_mfence_end
+};
+static const struct x86_hotpatch_descriptor hp_sse2_mfence_desc = {
+	.name = HP_NAME_SSE2_MFENCE,
+	.nsrc = 1,
+	.srcs = { &hp_sse2_mfence_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_sse2_mfence_desc);
 
-	/* Branch hints */
-	if (ptr[0] == X86_CS || ptr[0] == X86_DS)
-		ptr++;
-	/* Conditional jumps */
-	if (ptr[0] == X86_GROUP_0F)
-		ptr++;		
-	/* 4-byte relative jump or call */
-	*(uint32_t *)(ptr + 1 - (uintptr_t)from_s + (uintptr_t)to_s) +=
-	    ((uint32_t)(uintptr_t)from_s - (uint32_t)(uintptr_t)to_s);
-}
+#ifdef i386
+/* CAS_64. */
+extern uint8_t _atomic_cas_cx8, _atomic_cas_cx8_end;
+static const struct x86_hotpatch_source hp_cas_cx8_source = {
+	.saddr = &_atomic_cas_cx8,
+	.eaddr = &_atomic_cas_cx8_end
+};
+static const struct x86_hotpatch_descriptor hp_cas_cx8_desc = {
+	.name = HP_NAME_CAS_64,
+	.nsrc = 1,
+	.srcs = { &hp_cas_cx8_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_cas_cx8_desc);
 
-static void __unused
-patchfunc(void *from_s, void *from_e, void *to_s, void *to_e,
-	  void *pcrel)
-{
+/* SPLLOWER. */
+extern uint8_t cx8_spllower, cx8_spllower_end;
+static const struct x86_hotpatch_source hp_cx8_spllower_source = {
+	.saddr = &cx8_spllower,
+	.eaddr = &cx8_spllower_end
+};
+static const struct x86_hotpatch_descriptor hp_cx8_spllower_desc = {
+	.name = HP_NAME_SPLLOWER,
+	.nsrc = 1,
+	.srcs = { &hp_cx8_spllower_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_cx8_spllower_desc);
 
-	if ((uintptr_t)from_e - (uintptr_t)from_s !=
-	    (uintptr_t)to_e - (uintptr_t)to_s)
-		panic("patchfunc: sizes do not match (from=%p)", from_s);
+/* MUTEX_EXIT. */
+#ifndef LOCKDEBUG
+extern uint8_t i686_mutex_spin_exit, i686_mutex_spin_exit_end;
+static const struct x86_hotpatch_source hp_i686_mutex_spin_exit_source = {
+	.saddr = &i686_mutex_spin_exit,
+	.eaddr = &i686_mutex_spin_exit_end
+};
+static const struct x86_hotpatch_descriptor hp_i686_mutex_spin_exit_desc = {
+	.name = HP_NAME_MUTEX_EXIT,
+	.nsrc = 1,
+	.srcs = { &hp_i686_mutex_spin_exit_source }
+};
+__link_set_add_rodata(x86_hotpatch_descriptors, hp_i686_mutex_spin_exit_desc);
+#endif
+#endif
 
-	memcpy(to_s, from_s, (uintptr_t)to_e - (uintptr_t)to_s);
-	if (pcrel != NULL)
-		adjust_jumpoff(pcrel, from_s, to_s);
-}
+/* -------------------------------------------------------------------------- */
 
 static inline void __unused
 patchbytes(void *addr, const uint8_t *bytes, size_t size)
@@ -132,61 +199,127 @@ patchbytes(void *addr, const uint8_t *bytes, size_t size)
 	}
 }
 
-/* The local variables have unknown alignment to UBSan */
-__noubsan
-void
-x86_hotpatch(uint32_t name, const uint8_t *bytes, size_t size)
+/*
+ * Rules: each pointer accessed in this function MUST be read-only.
+ *
+ * Called from ASM only, prototype not public.
+ */
+int x86_hotpatch_apply(uint8_t, uint8_t);
+int
+__noubsan /* the local variables have unknown alignment to UBSan */
+x86_hotpatch_apply(uint8_t name, uint8_t sel)
 {
+	struct x86_hotpatch_descriptor * const *iter;
+	const struct x86_hotpatch_descriptor *desc;
+	const struct x86_hotpatch_source *src;
+	const struct x86_hotpatch_destination *hps, *hpe, *hp;
 	extern char __rodata_hotpatch_start;
 	extern char __rodata_hotpatch_end;
-	struct hotpatch *hps, *hpe, *hp;
+	const uint8_t *bytes;
+	bool found = false;
+	size_t size;
 
-	hps = (struct hotpatch *)&__rodata_hotpatch_start;
-	hpe = (struct hotpatch *)&__rodata_hotpatch_end;
+	/*
+	 * Find the descriptor, and perform some sanity checks.
+	 */
+	__link_set_foreach(iter, x86_hotpatch_descriptors) {
+		desc = *iter;
+		if (desc->name == name) {
+			found = true;
+			break;
+		}
+	}
+	if (!found)
+		return -1;
+	if (desc->nsrc > 2)
+		return -1;
+	if (sel >= desc->nsrc)
+		return -1;
 
+	/*
+	 * Get the hotpatch source.
+	 */
+	src = desc->srcs[sel];
+	bytes = src->saddr;
+	size = (size_t)src->eaddr - (size_t)src->saddr;
+
+	/*
+	 * Apply the hotpatch on each registered destination.
+	 */
+	hps = (struct x86_hotpatch_destination *)&__rodata_hotpatch_start;
+	hpe = (struct x86_hotpatch_destination *)&__rodata_hotpatch_end;
 	for (hp = hps; hp < hpe; hp++) {
 		if (hp->name != name) {
 			continue;
 		}
 		if (hp->size != size) {
-			panic("x86_hotpatch: incorrect size");
+			return -1;
 		}
 		patchbytes(hp->addr, bytes, size);
 	}
+
+	return 0;
 }
 
-void
-x86_patch_window_open(u_long *psl, u_long *cr0)
+#ifdef __x86_64__
+/*
+ * The CPU added the D bit on the text pages while we were writing to them.
+ * Remove that bit. Kinda annoying, but we can't avoid it.
+ */
+static void
+remove_d_bit(void)
 {
-	/* Disable interrupts. */
-	*psl = x86_read_psl();
-	x86_disable_intr();
+	extern struct bootspace bootspace;
+	pt_entry_t pte;
+	vaddr_t va;
+	size_t i, n;
 
-	/* Disable write protection in supervisor mode. */
-	*cr0 = rcr0();
-	lcr0(*cr0 & ~CR0_WP);
+	for (i = 0; i < BTSPACE_NSEGS; i++) {
+		if (bootspace.segs[i].type != BTSEG_TEXT)
+			continue;
+		va = bootspace.segs[i].va;
+		n = 0;
+		while (n < bootspace.segs[i].sz) {
+			if (L2_BASE[pl2_i(va)] & PTE_PS) {
+				pte = L2_BASE[pl2_i(va)] & ~PTE_D;
+				pmap_pte_set(&L2_BASE[pl2_i(va)], pte);
+				n += NBPD_L2;
+				va += NBPD_L2;
+			} else {
+				pte = L1_BASE[pl1_i(va)] & ~PTE_D;
+				pmap_pte_set(&L1_BASE[pl1_i(va)], pte);
+				n += NBPD_L1;
+				va += NBPD_L1;
+			}
+		}
+	}
+
+	tlbflushg();
 }
+#else
+#define remove_d_bit()	__nothing
+#endif
 
+/*
+ * Interrupts disabled here. Called from ASM only, prototype not public.
+ */
+void x86_hotpatch_cleanup(int);
 void
-x86_patch_window_close(u_long psl, u_long cr0)
+x86_hotpatch_cleanup(int retval)
 {
-	/* Write back and invalidate cache, flush pipelines. */
-	wbinvd();
-	x86_flush();
+	if (retval != 0) {
+		panic("x86_hotpatch_apply failed");
+	}
 
-	/* Re-enable write protection. */
-	lcr0(cr0);
-
-	/* Restore the PSL, potentially re-enabling interrupts. */
-	x86_write_psl(psl);
+	remove_d_bit();
 }
+
+/* -------------------------------------------------------------------------- */
 
 void
 x86_patch(bool early)
 {
 	static bool first, second;
-	u_long psl;
-	u_long cr0;
 
 	if (early) {
 		if (first)
@@ -198,21 +331,12 @@ x86_patch(bool early)
 		second = true;
 	}
 
-	x86_patch_window_open(&psl, &cr0);
-
 	if (!early && ncpu == 1) {
 #ifndef LOCKDEBUG
 		/*
 		 * Uniprocessor: kill LOCK prefixes.
 		 */
-		const uint8_t bytes[] = {
-			X86_NOP
-		};
-
-		/* lock -> nop */
-		x86_hotpatch(HP_NAME_NOLOCK, bytes, sizeof(bytes));
-		for (int i = 0; atomic_lockpatch[i] != 0; i++)
-			patchbytes(atomic_lockpatch[i], bytes, sizeof(bytes));
+		x86_hotpatch(HP_NAME_NOLOCK, 0);
 #endif
 	}
 
@@ -223,16 +347,8 @@ x86_patch(bool early)
 		 * ordinary non-temporal stores are always issued in
 		 * program order to main memory and to other CPUs.
 		 */
-		patchfunc(
-		    sse2_lfence, sse2_lfence_end,
-		    membar_consumer, membar_consumer_end,
-		    NULL
-		);
-		patchfunc(
-		    sse2_mfence, sse2_mfence_end,
-		    membar_sync, membar_sync_end,
-		    NULL
-		);
+		x86_hotpatch(HP_NAME_SSE2_LFENCE, 0);
+		x86_hotpatch(HP_NAME_SSE2_MFENCE, 0);
 	}
 
 #ifdef i386
@@ -241,31 +357,19 @@ x86_patch(bool early)
 	 * may be gone.
 	 */
 	if ((cpu_feature[0] & CPUID_CX8) != 0) {
-		patchfunc(
-		    _atomic_cas_cx8, _atomic_cas_cx8_end,
-		    _atomic_cas_64, _atomic_cas_64_end,
-		    NULL
-		);
+		x86_hotpatch(HP_NAME_CAS_64, 0);
 	}
-#endif	/* i386 */
 
 #if !defined(SPLDEBUG)
 	if (!early && (cpu_feature[0] & CPUID_CX8) != 0) {
 		/* Faster splx(), mutex_spin_exit(). */
-		patchfunc(
-		    cx8_spllower, cx8_spllower_end,
-		    spllower, spllower_end,
-		    cx8_spllower_patch
-		);
-#if defined(i386) && !defined(LOCKDEBUG)
-		patchfunc(
-		    i686_mutex_spin_exit, i686_mutex_spin_exit_end,
-		    mutex_spin_exit, mutex_spin_exit_end,
-		    i686_mutex_spin_exit_patch
-		);
-#endif	/* i386 && !LOCKDEBUG */
+		x86_hotpatch(HP_NAME_SPLLOWER, 0);
+#if !defined(LOCKDEBUG)
+		x86_hotpatch(HP_NAME_MUTEX_EXIT, 0);
+#endif
 	}
 #endif /* !SPLDEBUG */
+#endif	/* i386 */
 
 	/*
 	 * On some Opteron revisions, locked operations erroneously
@@ -276,36 +380,17 @@ x86_patch(bool early)
 	    (CPUID_TO_FAMILY(cpu_info_primary.ci_signature) == 0xe ||
 	    (CPUID_TO_FAMILY(cpu_info_primary.ci_signature) == 0xf &&
 	    CPUID_TO_EXTMODEL(cpu_info_primary.ci_signature) < 0x4))) {
-		const uint8_t bytes[] = {
-			0x0F, 0xAE, 0xE8 /* lfence */
-		};
-
-		/* ret,nop,nop -> lfence */
-		x86_hotpatch(HP_NAME_RETFENCE, bytes, sizeof(bytes));
+		x86_hotpatch(HP_NAME_RETFENCE, 0);
 	}
 
 	/*
 	 * If SMAP is present then patch the prepared holes with clac/stac
 	 * instructions.
-	 *
-	 * clac = 0x0f, 0x01, 0xca
-	 * stac = 0x0f, 0x01, 0xcb
 	 */
 	if (!early && cpu_feature[5] & CPUID_SEF_SMAP) {
 		KASSERT(rcr4() & CR4_SMAP);
-		const uint8_t clac_bytes[] = {
-			0x0F, 0x01, 0xCA /* clac */
-		};
-		const uint8_t stac_bytes[] = {
-			0x0F, 0x01, 0xCB /* stac */
-		};
 
-		/* nop,nop,nop -> clac */
-		x86_hotpatch(HP_NAME_CLAC, clac_bytes, sizeof(clac_bytes));
-
-		/* nop,nop,nop -> stac */
-		x86_hotpatch(HP_NAME_STAC, stac_bytes, sizeof(stac_bytes));
+		x86_hotpatch(HP_NAME_CLAC, 0);
+		x86_hotpatch(HP_NAME_STAC, 0);
 	}
-
-	x86_patch_window_close(psl, cr0);
 }

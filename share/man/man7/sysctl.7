@@ -1,4 +1,4 @@
-.\"	$NetBSD: sysctl.7,v 1.142 2019/11/16 17:33:09 nia Exp $
+.\"	$NetBSD: sysctl.7,v 1.151 2020/10/17 09:20:33 wiz Exp $
 .\"
 .\" Copyright (c) 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -29,7 +29,7 @@
 .\"
 .\"	@(#)sysctl.3	8.4 (Berkeley) 5/9/95
 .\"
-.Dd November 14, 2019
+.Dd October 17, 2020
 .Dt SYSCTL 7
 .Os
 .Sh NAME
@@ -359,6 +359,7 @@ privilege may change the value.
 .It kern.sbmax	integer	yes
 .It kern.sched	node	not applicable
 .It kern.securelevel	integer	raise only
+.It kern.sofixedbuf	boolean	yes
 .It kern.somaxkva	integer	yes
 .It kern.sooptions	integer	yes
 .It kern.synchronized_io	integer	no
@@ -384,13 +385,25 @@ upon loading or unloading the corresponding kernel module.
 .It Li kern.aio_max
 The maximum number of asynchronous I/O operations.
 .It Li kern.arandom ( Dv KERN_ARND )
-This variable returns up to 256 bytes of random data.
-Multiple queries can be used to obtain an infinite amount of
-non-blocking cryptographically secure random data.
-The used random number generator
-.Pf ( RNG )
-is based on
-.Xr arc4random 3 .
+Returns independent uniformly distributed bytes at random each time, as
+many as requested up to 256, derived from the system entropy pool; see
+.Xr rnd 4 .
+.Pp
+Reading
+.Li kern.arandom
+is equivalent to reading up to 256 bytes at a time from
+.Pa /dev/urandom :
+reading
+.Li kern.arandom
+never blocks, and once the system entropy pool has full entropy, output
+subsequently read from
+.Li kern.arandom
+is fit for use as cryptographic key material.
+For example, the
+.Xr arc4random 3
+library routine uses
+.Li kern.arandom
+internally to seed a cryptographic pseudorandom number generator.
 .It Li kern.argmax ( Dv KERN_ARGMAX )
 The maximum bytes of argument to
 .Xr execve 2 .
@@ -1194,6 +1207,11 @@ Maximal POSIX real-time priority.
 See
 .Xr sched 3 .
 .El
+.It Li kern.sofixedbuf ( Dv KERN_SOFIXEDBUF )
+Prevent socket buffer autoscaling when a size is set with
+.Dv SO_SNDBUF
+or
+.Dv SO_RCVBUF .
 .It Li kern.somaxkva ( Dv KERN_SOMAXKVA )
 Maximum amount of kernel memory to be used for socket buffers in bytes.
 .It Li kern.sooptions
@@ -1407,8 +1425,13 @@ The fourth level name is the variable name.
 The currently defined protocols and names are:
 .Bl -column "Protocol" "anonportalgo.available" "integer" "Changeable" -offset indent
 .It Sy Protocol	Variable Ta Sy Type Ta Sy Changeable
-.It arp	down	integer	yes
-.It arp	keep	integer	yes
+.It arp	nd_delay	integer	yes
+.It arp	nd_bmaxtries	integer	yes
+.It arp	nd_umaxtries	integer	yes
+.It arp	nd_basereachable	integer	yes
+.It arp	nd_retrans	integer	yes
+.It arp	nd_nud		integer	yes
+.It arp	nd_maxnudhint	integer	yes
 .It arp	log_movements	integer	yes
 .It arp	log_permanent_modify	integer	yes
 .It arp	log_unknown_network	integer	yes
@@ -1490,10 +1513,31 @@ The currently defined protocols and names are:
 .Pp
 The variables are as follows:
 .Bl -tag -width "123456"
-.It Li arp.down
-Failed ARP entry lifetime.
-.It Li arp.keep
-Valid ARP entry lifetime.
+.It Li arp.nd_delay
+The delay in seconds before sending the first probe,
+after it has been decided that the entry is stale.
+.It Li arp.nd_bmaxtries
+The maximum number of broadcasts send to discover the hardware address
+claiming an IP address.
+.It Li arp.nd_umaxtries
+The maximum number of unicasts send to the hardware address to ensure
+it still claims an IP address.
+.It Li arp.nd_basereachable
+The number of milliseconds the ARP entry is considered reachable before
+probing reachability.
+.It Li arp.nd_retrans
+The number of milliseconds between ARP probes.
+.It Li arp.nd_nud
+If set to non-zero, perform Neighor Unreachability Detection.
+.It Li arp.nd_maxnudhint
+Neighbor discovery permits upper layer protocols to supply reachability
+hints, to avoid unnecessary neighbor discovery exchanges.
+The variable defines the number of consecutive hints the neighbor discovery
+layer will take.
+For example, by setting the variable to 3, neighbor discovery layer
+will take 3 consecutive hints in maximum.
+After receiving 3 hints, neighbor discovery layer will perform
+normal neighbor discovery process.
 .It Li carp.allow
 If set to 0, incoming
 .Xr carp 4
@@ -1530,7 +1574,9 @@ The available RFC 6056 port randomization algorithms.
 A bitmask of ports that will not be used during anonymous or privileged
 port selection.
 .It Li ip.anonportalgo.selected
-The currently selected RFC 6056 port randomization algorithm.
+The currently selected RFC 6056 port randomization algorithm; see
+.Xr rfc6056 7
+for details.
 .It Li ip.anonportmax
 The highest port number to use for TCP and UDP ephemeral port allocation.
 This cannot be set to less than 1024 or greater than 65535, and must
@@ -1847,7 +1893,9 @@ The available RFC 6056 port randomization algorithms.
 A bitmask of ports that will not be used during anonymous or privileged
 port selection.
 .It Li ip6.anonportalgo.selected
-The currently selected RFC 6056 port randomization algorithm.
+The currently selected RFC 6056 port randomization algorithm; see
+.Xr rfc6056 7
+for details.
 .It Li ip6.anonportmax
 The highest port number to use for TCP and UDP ephemeral port allocation.
 This cannot be set to less than 1024 or greater than 65535, and must
@@ -2008,7 +2056,7 @@ timing constant in IPv6 neighbor discovery specification
 .Pq RFC 2461 ,
 in seconds.
 .It Li icmp6.nd6_maxnudhint
-IPv6 neighbor discovery permits upper layer protocols to supply reachability
+Neighbor discovery permits upper layer protocols to supply reachability
 hints, to avoid unnecessary neighbor discovery exchanges.
 The variable defines the number of consecutive hints the neighbor discovery
 layer will take.
@@ -2481,6 +2529,7 @@ privilege may change the value.
 .It vm.proc.map	struct kinfo_vmentry	no
 .It vm.guard_size	unsigned int	no
 .It vm.thread_guard_size	unsigned int	yes
+.It vm.swap_encrypt	bool	yes
 .El
 .Bl -tag -width "123456"
 .It Li vm.anonmax ( Dv VM_ANONMAX )
@@ -2533,12 +2582,11 @@ the fifth is the size of
 Returns an array of
 .Vt struct kinfo_vmentry
 objects.
-.It Li vm.ubc_direct
+.It Li vm.ubc_direct Bq Sy "EXPERIMENTAL" Ns No , default off
 Use direct map for UBC I/O, avoiding need to map and unmap buffer memory.
 Speeds up operation for fast I/O devices like NVMe, especially
 on multi-CPU systems.
 Only available on some architectures.
-Currently still experimental, default is off.
 .It Li vm.uspace ( Dv VM_USPACE )
 The number of bytes allocated for each kernel stack.
 .It Li vm.uvmexp ( Dv VM_UVMEXP )
@@ -2554,7 +2602,29 @@ Return system wide guard size for the main thread of a program.
 .It Li vm.thread_guard_size
 Return system wide default size for the guard area of all other threads
 of a program.
-.\" XXX vm.idlezero
+.It Li vm.swap_encrypt Bq Sy "EXPERIMENTAL" Ns No , default off
+If true, encrypt data while swapped out to disk.
+.Pp
+Each swap device maintains an independent AES-256 key, generated when
+the first page is swapped to that device.
+Each page is swapped independently using AES-CBC, with an
+initialization vector chosen by the encryption under the AES-256 key of
+the little-endian swap slot number padded to 128 bits with zeros.
+(This is essentially the
+.Xr cgd 4
+.Sq encblkno1
+method.)
+.Pp
+Changes to
+.Li vm.swap_encrypt
+only affect pages of swap newly written out.
+To force encrypting or decrypting all existing swap, or to rekey
+previously encrypted swap, you can remove the swap devices and re-add
+them with
+.Xr swapctl 8 ,
+with the caveat that whatever pages were already written to disk
+unencrypted or encrypted with a compromised key may still be written to
+disk afterward.
 .El
 .Ss The ddb.* subtree ( Dv CTL_DDB )
 The information available for the

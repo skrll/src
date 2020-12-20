@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_runq.c,v 1.65 2020/04/04 20:17:58 ad Exp $	*/
+/*	$NetBSD: kern_runq.c,v 1.69 2020/05/23 21:24:41 ad Exp $	*/
 
 /*-
  * Copyright (c) 2019, 2020 The NetBSD Foundation, Inc.
@@ -56,7 +56,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_runq.c,v 1.65 2020/04/04 20:17:58 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_runq.c,v 1.69 2020/05/23 21:24:41 ad Exp $");
 
 #include "opt_dtrace.h"
 
@@ -206,16 +206,40 @@ sched_enqueue(struct lwp *l)
 		KASSERT((spc->spc_bitmap[i] & q) == 0);
 		spc->spc_bitmap[i] |= q;
 	}
-	/* Preempted SCHED_RR and SCHED_FIFO LWPs go to the queue head. */
-	if (l->l_class != SCHED_OTHER && (l->l_pflag & LP_PREEMPTING) != 0) {
-		TAILQ_INSERT_HEAD(q_head, l, l_runq);
+
+	/*
+	 * Determine run queue position according to POSIX.  XXX Explicitly
+	 * lowering a thread's priority with pthread_setschedparam() is not
+	 * handled.
+	 */
+	if ((l->l_pflag & LP_PREEMPTING) != 0) {
+		switch (l->l_class) {
+		case SCHED_OTHER:
+			TAILQ_INSERT_TAIL(q_head, l, l_runq);
+			break;
+		case SCHED_FIFO:
+			TAILQ_INSERT_HEAD(q_head, l, l_runq);
+			break;
+		case SCHED_RR:
+			if (getticks() - l->l_rticks >= sched_rrticks) {
+				TAILQ_INSERT_TAIL(q_head, l, l_runq);
+			} else {
+				TAILQ_INSERT_HEAD(q_head, l, l_runq);
+			}
+			break;
+		default: /* SCHED_OTHER */
+			panic("sched_enqueue: LWP %p has class %d\n",
+			    l, l->l_class);
+		}
 	} else {
 		TAILQ_INSERT_TAIL(q_head, l, l_runq);
 	}
 	spc->spc_flags &= ~SPCF_IDLE;
 	spc->spc_count++;
-	if ((l->l_pflag & LP_BOUND) == 0)
-		spc->spc_mcount++;
+	if ((l->l_pflag & LP_BOUND) == 0) {
+		atomic_store_relaxed(&spc->spc_mcount,
+		    atomic_load_relaxed(&spc->spc_mcount) + 1);
+	}
 
 	/*
 	 * Update the value of highest priority in the runqueue,
@@ -249,8 +273,10 @@ sched_dequeue(struct lwp *l)
 		spc->spc_migrating = NULL;
 
 	spc->spc_count--;
-	if ((l->l_pflag & LP_BOUND) == 0)
-		spc->spc_mcount--;
+	if ((l->l_pflag & LP_BOUND) == 0) {
+		atomic_store_relaxed(&spc->spc_mcount,
+		    atomic_load_relaxed(&spc->spc_mcount) - 1);
+	}
 
 	q_head = sched_getrq(spc, eprio);
 	TAILQ_REMOVE(q_head, l, l_runq);
@@ -417,7 +443,7 @@ lwp_cache_hot(const struct lwp *l)
 	if (__predict_false(l->l_slptime != 0 || l->l_rticks == 0))
 		return false;
 
-	return (hardclock_ticks - l->l_rticks < mstohz(cacheht_time));
+	return (getticks() - l->l_rticks < mstohz(cacheht_time));
 }
 
 /*
@@ -475,7 +501,13 @@ sched_bestcpu(struct lwp *l, struct cpu_info *pivot)
 	 */
 	bestci = pivot;
 	bestspc = &bestci->ci_schedstate;
-	bestpri = MAX(bestspc->spc_curpriority, bestspc->spc_maxpriority);
+	if (sched_migratable(l, bestci)) {
+		bestpri = MAX(bestspc->spc_curpriority,
+		    bestspc->spc_maxpriority);
+	} else {
+		/* Invalidate the priority. */
+		bestpri = PRI_COUNT;
+	}
 
 	/* In the outer loop scroll through all CPU packages. */
 	pivot = pivot->ci_package1st;
@@ -641,7 +673,7 @@ sched_catchlwp(struct cpu_info *ci)
 	gentle = ((curspc->spc_flags & SPCF_1STCLASS) == 0 ||
 	    (spc->spc_flags & SPCF_1STCLASS) != 0);
 
-	if (spc->spc_mcount < (gentle ? min_catch : 1) ||
+	if (atomic_load_relaxed(&spc->spc_mcount) < (gentle ? min_catch : 1) ||
 	    curspc->spc_psid != spc->spc_psid) {
 		spc_unlock(ci);
 		return NULL;
@@ -772,7 +804,8 @@ sched_steal(struct cpu_info *ci, struct cpu_info *tci)
 
 	spc = &ci->ci_schedstate;
 	tspc = &tci->ci_schedstate;
-	if (tspc->spc_mcount != 0 && spc->spc_psid == tspc->spc_psid) {
+	if (atomic_load_relaxed(&tspc->spc_mcount) != 0 &&
+	    spc->spc_psid == tspc->spc_psid) {
 		spc_dlock(ci, tci);
 		l = sched_catchlwp(tci);
 		spc_unlock(ci);
@@ -840,10 +873,10 @@ sched_idle(void)
 	 * XXX Should probably look at 2nd class CPUs first, but they will
 	 * shed jobs via preempt() anyway.
 	 */
-	if (spc->spc_nextskim > hardclock_ticks) {
+	if (spc->spc_nextskim > getticks()) {
 		return;
 	}
-	spc->spc_nextskim = hardclock_ticks + mstohz(skim_interval);
+	spc->spc_nextskim = getticks() + mstohz(skim_interval);
 
 	/* In the outer loop scroll through all CPU packages, starting here. */
 	first = ci->ci_package1st;
@@ -856,7 +889,7 @@ sched_idle(void)
 			tspc = &inner->ci_schedstate;
 			if (ci == inner || ci == mci ||
 			    spc->spc_psid != tspc->spc_psid ||
-			    tspc->spc_mcount < min_catch) {
+			    atomic_load_relaxed(&tspc->spc_mcount) < min_catch) {
 				continue;
 			}
 			spc_dlock(ci, inner);
@@ -1057,7 +1090,7 @@ sched_nextlwp(void)
 
 	/* Update the last run time on switch */
 	l = curlwp;
-	l->l_rticksum += (hardclock_ticks - l->l_rticks);
+	l->l_rticksum += (getticks() - l->l_rticks);
 
 	/* Return to idle LWP if there is a migrating thread */
 	spc = &ci->ci_schedstate;
@@ -1075,7 +1108,7 @@ sched_nextlwp(void)
 	KASSERT(l != NULL);
 
 	sched_oncpu(l);
-	l->l_rticks = hardclock_ticks;
+	l->l_rticks = getticks();
 
 	return l;
 }
@@ -1204,7 +1237,7 @@ sched_print_runqueue(void (*pr)(const char *, ...))
 			    l->l_flag, l->l_stat == LSRUN ? "RQ" :
 			    (l->l_stat == LSSLEEP ? "SQ" : "-"),
 			    l, ci->ci_index, (tci ? tci->ci_index : -1),
-			    (u_int)(hardclock_ticks - l->l_rticks));
+			    (u_int)(getticks() - l->l_rticks));
 		}
 	}
 }

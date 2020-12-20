@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: valkyriefbreg.h,v 1.3 2018/02/16 18:12:45 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: valkyriefbreg.h,v 1.5 2020/04/16 23:29:52 rin Exp $");
 
 #ifndef VALKYRIEFBREG_H
 #define VALKYRIEFBREG_H

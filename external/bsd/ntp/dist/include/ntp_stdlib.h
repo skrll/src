@@ -1,4 +1,4 @@
-/*	$NetBSD: ntp_stdlib.h,v 1.15 2018/04/07 00:19:52 christos Exp $	*/
+/*	$NetBSD: ntp_stdlib.h,v 1.17 2020/05/29 20:15:37 christos Exp $	*/
 
 /*
  * ntp_stdlib.h - Prototypes for NTP lib.
@@ -23,9 +23,11 @@
 #ifdef __GNUC__
 #define NTP_PRINTF(fmt, args) __attribute__((__format__(__printf__, fmt, args)))
 #define NTP_SYSLOG(fmt, args) __attribute__((__format__(__syslog__, fmt, args)))
+#define NTP_FORMAT_ARG(args) __attribute__((__format_arg__(args)))
 #else
 #define NTP_PRINTF(fmt, args)
 #define NTP_SYSLOG(fmt, args)
+#define NTP_FORMAT_ARG(args)
 #endif
 
 extern	int	mprintf(const char *, ...) NTP_SYSLOG(1, 2);
@@ -43,6 +45,9 @@ extern	void	setup_logfile	(const char *);
 #ifndef errno_to_str
 extern	void	errno_to_str(int, char *, size_t);
 #endif
+
+extern	int	xvsbprintf(char**, char* const, char const*, va_list) NTP_PRINTF(3, 0);
+extern	int	xsbprintf(char**, char* const, char const*, ...) NTP_PRINTF(3, 4);
 
 /*
  * When building without OpenSSL, use a few macros of theirs to
@@ -160,7 +165,7 @@ extern	const char * modetoa	(size_t);
 extern	const char * eventstr	(int);
 extern	const char * ceventstr	(int);
 extern	const char * res_match_flags(u_short);
-extern	const char * res_access_flags(u_short);
+extern	const char * res_access_flags(u_int32);
 #ifdef KERNEL_PLL
 extern	const char * k_st_flags	(u_int32);
 #endif

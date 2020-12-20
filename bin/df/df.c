@@ -1,4 +1,4 @@
-/*	$NetBSD: df.c,v 1.95 2019/09/22 22:59:37 christos Exp $ */
+/*	$NetBSD: df.c,v 1.97 2020/08/21 16:41:06 ryo Exp $ */
 
 /*
  * Copyright (c) 1980, 1990, 1993, 1994
@@ -45,7 +45,7 @@ __COPYRIGHT(
 #if 0
 static char sccsid[] = "@(#)df.c	8.7 (Berkeley) 4/2/94";
 #else
-__RCSID("$NetBSD: df.c,v 1.95 2019/09/22 22:59:37 christos Exp $");
+__RCSID("$NetBSD: df.c,v 1.97 2020/08/21 16:41:06 ryo Exp $");
 #endif
 #endif /* not lint */
 
@@ -72,12 +72,16 @@ static int	 selected(const char *, size_t);
 static void	 maketypelist(char *);
 static size_t	 regetmntinfo(struct statvfs **, size_t);
 __dead static void usage(void);
-static void	 prthumanval(int64_t, const char *);
+static void	 prthumanval(int64_t, int);
 static void	 prthuman(const struct statvfs *, int64_t, int64_t);
 
 static int	 aflag, gflag, hflag, iflag, lflag, nflag, Pflag, Wflag;
 static long	 usize;
 static char	**typelist;
+
+#define WIDTH_INODE	10
+#define WIDTH_BLKSIZE	12
+static int blksize_width = WIDTH_BLKSIZE;
 
 int
 main(int argc, char *argv[])
@@ -328,7 +332,7 @@ regetmntinfo(struct statvfs **mntbufp, size_t mntcount)
 }
 
 static void
-prthumanval(int64_t bytes, const char *pad)
+prthumanval(int64_t bytes, int width)
 {
 	char buf[6];
 
@@ -336,16 +340,16 @@ prthumanval(int64_t bytes, const char *pad)
 	    bytes, "", HN_AUTOSCALE,
 	    HN_B | HN_NOSPACE | HN_DECIMAL);
 
-	(void)printf("%s %6s", pad, buf);
+	(void)printf("%*s", width, buf);
 }
 
 static void
 prthuman(const struct statvfs *sfsp, int64_t used, int64_t bavail)
 {
 
-	prthumanval((int64_t)(sfsp->f_blocks * sfsp->f_frsize), "   ");
-	prthumanval((int64_t)(used * sfsp->f_frsize), "    ");
-	prthumanval((int64_t)(bavail * sfsp->f_frsize), "    ");
+	prthumanval((int64_t)(sfsp->f_blocks * sfsp->f_frsize), blksize_width);
+	prthumanval((int64_t)(used * sfsp->f_frsize), 1 + blksize_width);
+	prthumanval((int64_t)(bavail * sfsp->f_frsize), 1 + blksize_width);
 }
 
 /*
@@ -444,10 +448,19 @@ prtstat(const struct statvfs *sfsp, int maxwidth)
 			if (hflag) {
 				header = "Size";
 				headerlen = (int)strlen(header);
+				blksize_width = 6;
 			} else
 				header = getbsize(&headerlen, &blocksize);
 			break;
 		}
+
+		if (blocksize >= 1024 * 1024)
+			blksize_width -= 3;
+		if (blocksize >= 1024 * 1024 * 1024)
+			blksize_width -= 3;
+		if (blksize_width < headerlen)
+			blksize_width = headerlen;
+
 		if (Pflag) {
 			/*
 			 * either:
@@ -461,12 +474,16 @@ prtstat(const struct statvfs *sfsp, int maxwidth)
 			(void)printf("Filesystem %s Used Available Capacity "
 			    "Mounted on\n", header);
 		} else {
-			(void)printf("%-*.*s %s       Used      Avail %%Cap",
-			    maxwidth - (headerlen - 10),
-			    maxwidth - (headerlen - 10),
-			    "Filesystem", header);
-			if (iflag)
-				(void)printf("    iUsed   iAvail %%iCap");
+			(void)printf("%-*.*s %*s %*s %*s %%Cap",
+			    maxwidth, maxwidth, "Filesystem",
+			    blksize_width, header,
+			    blksize_width, "Used",
+			    blksize_width, "Avail");
+			if (iflag) {
+				(void)printf(" %*s %*s %%iCap",
+				    WIDTH_INODE, "iUsed",
+				    WIDTH_INODE, "iAvail");
+			}
 			(void)printf(" Mounted on\n");
 		}
 	}
@@ -502,18 +519,20 @@ prtstat(const struct statvfs *sfsp, int maxwidth)
 	if (hflag)
 		prthuman(sfsp, used, bavail);
 	else
-		(void)printf("%10" PRId64 " %10" PRId64 " %10" PRId64,
+		(void)printf("%*" PRId64 " %*" PRId64 " %*" PRId64,
+		    blksize_width,
 		    fsbtoblk(sfsp->f_blocks, sfsp->f_frsize, blocksize),
-		    fsbtoblk(used, sfsp->f_frsize, blocksize),
-		    fsbtoblk(bavail, sfsp->f_frsize, blocksize));
+		    blksize_width, fsbtoblk(used, sfsp->f_frsize, blocksize),
+		    blksize_width, fsbtoblk(bavail, sfsp->f_frsize, blocksize));
 	(void)printf(" %3s%%",
 	    availblks == 0 ? full :
 	    strspct(pb, sizeof(pb), used, availblks, 0));
 	if (iflag) {
 		inodes = sfsp->f_files;
 		used = inodes - sfsp->f_ffree;
-		(void)printf(" %8jd %8jd %4s%%",
-		    (intmax_t)used, (intmax_t)sfsp->f_ffree,
+		(void)printf(" %*jd %*jd %4s%%",
+		    WIDTH_INODE, (intmax_t)used,
+		    WIDTH_INODE, (intmax_t)sfsp->f_ffree,
 		    inodes == 0 ? (used == 0 ? empty : full) :
 		    strspct(pb, sizeof(pb), used, inodes, 0));
 	}

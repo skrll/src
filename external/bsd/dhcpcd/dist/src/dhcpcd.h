@@ -55,7 +55,6 @@
 #define	LINK_UP		1
 #define	LINK_UNKNOWN	0
 #define	LINK_DOWN	-1
-#define	LINK_DOWN_IFFUP	-2
 
 #define IF_DATA_IPV4	0
 #define IF_DATA_ARP	1
@@ -65,10 +64,6 @@
 #define IF_DATA_IPV6ND	5
 #define IF_DATA_DHCP6	6
 #define IF_DATA_MAX	7
-
-/* If the interface does not support carrier status (ie PPP),
- * dhcpcd can poll it for the relevant flags periodically */
-#define IF_POLL_UP	100	/* milliseconds */
 
 #ifdef __QNX__
 /* QNX carries defines for, but does not actually support PF_LINK */
@@ -82,7 +77,7 @@ struct interface {
 	unsigned int index;
 	unsigned int active;
 	unsigned int flags;
-	sa_family_t family;
+	uint16_t hwtype; /* ARPHRD_ETHER for example */
 	unsigned char hwaddr[HWADDR_LEN];
 	uint8_t hwlen;
 	unsigned short vlanid;
@@ -100,7 +95,6 @@ TAILQ_HEAD(if_head, interface);
 
 #include "privsep.h"
 
-#ifdef INET6
 /* dhcpcd requires CMSG_SPACE to evaluate to a compile time constant. */
 #if defined(__QNX) || \
 	(defined(__NetBSD_Version__) && __NetBSD_Version__ < 600000000)
@@ -117,14 +111,15 @@ TAILQ_HEAD(if_head, interface);
 #define	CMSG_SPACE(len)	(ALIGN(sizeof(struct cmsghdr)) + ALIGN(len))
 #endif
 
-#define IP6BUFLEN	(CMSG_SPACE(sizeof(struct in6_pktinfo)) + \
-			CMSG_SPACE(sizeof(int)))
-#endif
-
 struct passwd;
 
 struct dhcpcd_ctx {
 	char pidfile[sizeof(PIDFILE) + IF_NAMESIZE + 1];
+	char vendor[256];
+	bool stdin_valid;	/* It's possible stdin, stdout and stderr */
+	bool stdout_valid;	/* could be closed when dhcpcd starts. */
+	bool stderr_valid;
+	int stderr_fd;	/* FD for logging to stderr */
 	int fork_fd;	/* FD for the fork init signal pipe */
 	const char *cffile;
 	unsigned long long options;
@@ -139,9 +134,15 @@ struct dhcpcd_ctx {
 	char **ifv;	/* listed interfaces */
 	int ifcc;	/* configured interfaces */
 	char **ifcv;	/* configured interfaces */
+	uint8_t duid_type;
 	unsigned char *duid;
 	size_t duid_len;
 	struct if_head *ifaces;
+
+	char *ctl_buf;
+	size_t ctl_buflen;
+	size_t ctl_bufpos;
+	size_t ctl_extra;
 
 	rb_tree_t routes;	/* our routes */
 #ifdef RT_FREE_ROUTE_TABLE
@@ -150,6 +151,9 @@ struct dhcpcd_ctx {
 	size_t rt_order;	/* route order storage */
 
 	int pf_inet_fd;
+#ifdef PF_LINK
+	int pf_link_fd;
+#endif
 	void *priv;
 	int link_fd;
 #ifndef SMALL
@@ -163,6 +167,7 @@ struct dhcpcd_ctx {
 #endif
 	struct eloop *eloop;
 
+	char *script;
 #ifdef HAVE_OPEN_MEMSTREAM
 	FILE *script_fp;
 #endif
@@ -175,6 +180,7 @@ struct dhcpcd_ctx {
 	int control_unpriv_fd;
 	struct fd_list_head control_fds;
 	char control_sock[sizeof(CONTROLSOCKET) + IF_NAMESIZE];
+	char control_sock_unpriv[sizeof(CONTROLSOCKET) + IF_NAMESIZE + 7];
 	gid_t control_group;
 
 	/* DHCP Enterprise options, RFC3925 */
@@ -194,18 +200,25 @@ struct dhcpcd_ctx {
 	struct passwd *ps_user;	/* struct passwd for privsep user */
 	pid_t ps_root_pid;
 	int ps_root_fd;		/* Privileged Actioneer commands */
+	int ps_log_fd;		/* chroot logging */
 	int ps_data_fd;		/* Data from root spawned processes */
 	struct eloop *ps_eloop;	/* eloop for polling root data */
 	struct ps_process_head ps_processes;	/* List of spawned processes */
 	pid_t ps_inet_pid;
 	int ps_inet_fd;		/* Network Proxy commands and data */
+	pid_t ps_control_pid;
+	int ps_control_fd;	/* Control Proxy - generic listener */
+	int ps_control_data_fd;	/* Control Proxy - data query */
+	struct fd_list *ps_control;		/* Queue for the above */
+	struct fd_list *ps_control_client;	/* Queue for the above */
 #endif
 
 #ifdef INET
 	struct dhcp_opt *dhcp_opts;
 	size_t dhcp_opts_len;
 
-	int udp_fd;
+	int udp_rfd;
+	int udp_wfd;
 
 	/* Our aggregate option buffer.
 	 * We ONLY use this when options are split, which for most purposes is
@@ -222,11 +235,11 @@ struct dhcpcd_ctx {
 #endif
 	struct ra_head *ra_routers;
 
-	int dhcp6_fd;
-
 	struct dhcp_opt *nd_opts;
 	size_t nd_opts_len;
 #ifdef DHCP6
+	int dhcp6_rfd;
+	int dhcp6_wfd;
 	struct dhcp_opt *dhcp6_opts;
 	size_t dhcp6_opts_len;
 #endif
@@ -247,7 +260,11 @@ struct dhcpcd_ctx {
 #ifdef USE_SIGNALS
 extern const int dhcpcd_signals[];
 extern const size_t dhcpcd_signals_len;
+extern const int dhcpcd_signals_ignore[];
+extern const size_t dhcpcd_signals_ignore_len;
 #endif
+
+extern const char *dhcpcd_default_script;
 
 int dhcpcd_ifafwaiting(const struct interface *);
 int dhcpcd_afwaiting(const struct dhcpcd_ctx *);
@@ -255,10 +272,9 @@ void dhcpcd_daemonise(struct dhcpcd_ctx *);
 
 void dhcpcd_linkoverflow(struct dhcpcd_ctx *);
 int dhcpcd_handleargs(struct dhcpcd_ctx *, struct fd_list *, int, char **);
-void dhcpcd_handlecarrier(struct dhcpcd_ctx *, int, unsigned int, const char *);
+void dhcpcd_handlecarrier(struct interface *, int, unsigned int);
 int dhcpcd_handleinterface(void *, int, const char *);
-void dhcpcd_handlehwaddr(struct dhcpcd_ctx *, const char *,
-    const void *, uint8_t);
+void dhcpcd_handlehwaddr(struct interface *, uint16_t, const void *, uint8_t);
 void dhcpcd_dropinterface(struct interface *, const char *);
 int dhcpcd_selectprofile(struct interface *, const char *);
 

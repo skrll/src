@@ -1,4 +1,4 @@
-/*	$NetBSD: sun8i_crypto.c,v 1.12 2020/02/06 19:52:09 riastradh Exp $	*/
+/*	$NetBSD: sun8i_crypto.c,v 1.18 2020/06/14 16:29:47 ad Exp $	*/
 
 /*-
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: sun8i_crypto.c,v 1.12 2020/02/06 19:52:09 riastradh Exp $");
+__KERNEL_RCSID(1, "$NetBSD: sun8i_crypto.c,v 1.18 2020/06/14 16:29:47 ad Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -51,16 +51,20 @@ __KERNEL_RCSID(1, "$NetBSD: sun8i_crypto.c,v 1.12 2020/02/06 19:52:09 riastradh 
 #include <sys/bus.h>
 #include <sys/callout.h>
 #include <sys/conf.h>
+#include <sys/cprng.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
 #include <sys/kmem.h>
+#include <sys/mbuf.h>
 #include <sys/mutex.h>
-#include <sys/rndpool.h>
 #include <sys/rndsource.h>
+#include <sys/sdt.h>
 #include <sys/sysctl.h>
 #include <sys/workqueue.h>
 
 #include <dev/fdt/fdtvar.h>
+
+#include <opencrypto/cryptodev.h>
 
 #include <arm/sunxi/sun8i_crypto.h>
 
@@ -73,7 +77,6 @@ struct sun8i_crypto_task;
 struct sun8i_crypto_buf {
 	bus_dma_segment_t	cb_seg[1];
 	int			cb_nsegs;
-	bus_dmamap_t		cb_map;
 	void			*cb_kva;
 };
 
@@ -82,6 +85,7 @@ struct sun8i_crypto_softc {
 	bus_space_tag_t			sc_bst;
 	bus_space_handle_t		sc_bsh;
 	bus_dma_tag_t			sc_dmat;
+	struct pool_cache		*sc_taskpool;
 	kmutex_t			sc_lock;
 	struct sun8i_crypto_chan {
 		struct sun8i_crypto_task	*cc_task;
@@ -111,15 +115,41 @@ struct sun8i_crypto_softc {
 		const struct sysctlnode		*cy_root_node;
 		const struct sysctlnode		*cy_trng_node;
 	}				sc_sysctl;
+	struct sun8i_crypto_opencrypto {
+		uint32_t			co_driverid;
+	}				sc_opencrypto;
 };
 
 struct sun8i_crypto_task {
-	struct sun8i_crypto_buf	ct_buf;
+	struct sun8i_crypto_buf	ct_descbuf;
 	struct sun8i_crypto_taskdesc *ct_desc;
+	struct sun8i_crypto_buf	ct_ivbuf;
+	void			*ct_iv;
+	struct sun8i_crypto_buf	ct_ctrbuf;
+	void			*ct_ctr;
+	bus_dmamap_t		ct_descmap;
+	bus_dmamap_t		ct_keymap;
+	bus_dmamap_t		ct_ivmap;	/* IV input */
+	bus_dmamap_t		ct_ctrmap;	/* updated IV output */
+	bus_dmamap_t		ct_srcmap;
+	bus_dmamap_t		ct_dstmap;
+	uint32_t		ct_nbytes;
+	int			ct_flags;
+#define	TASK_KEY		__BIT(0)
+#define	TASK_IV			__BIT(1)
+#define	TASK_CTR		__BIT(2)
+#define	TASK_SRC		__BIT(3)
+#define	TASK_BYTES		__BIT(4) /* datalen is in bytes, not words */
 	void			(*ct_callback)(struct sun8i_crypto_softc *,
 				    struct sun8i_crypto_task *, void *, int);
 	void			*ct_cookie;
 };
+
+#define	SUN8I_CRYPTO_MAXDMASIZE		PAGE_SIZE
+#define	SUN8I_CRYPTO_MAXDMASEGSIZE	PAGE_SIZE
+
+CTASSERT(SUN8I_CRYPTO_MAXDMASIZE <= SUN8I_CRYPTO_MAXDATALEN);
+CTASSERT(SUN8I_CRYPTO_MAXDMASEGSIZE <= SUN8I_CRYPTO_MAXSEGLEN);
 
 /*
  * Forward declarations
@@ -128,33 +158,27 @@ struct sun8i_crypto_task {
 static int	sun8i_crypto_match(device_t, cfdata_t, void *);
 static void	sun8i_crypto_attach(device_t, device_t, void *);
 
+static int	sun8i_crypto_task_ctor(void *, void *, int);
+static void	sun8i_crypto_task_dtor(void *, void *);
 static struct sun8i_crypto_task *
 		sun8i_crypto_task_get(struct sun8i_crypto_softc *,
 		    void (*)(struct sun8i_crypto_softc *,
 			struct sun8i_crypto_task *, void *, int),
-		    void *);
+		    void *, int);
 static void	sun8i_crypto_task_put(struct sun8i_crypto_softc *,
 		    struct sun8i_crypto_task *);
-static void	sun8i_crypto_task_reset(struct sun8i_crypto_task *);
 
-static void	sun8i_crypto_task_set_key(struct sun8i_crypto_task *,
-		    bus_dmamap_t);
-static void	sun8i_crypto_task_set_iv(struct sun8i_crypto_task *,
-		    bus_dmamap_t);
-static void	sun8i_crypto_task_set_ctr(struct sun8i_crypto_task *,
-		    bus_dmamap_t);
-static void	sun8i_crypto_task_set_input(struct sun8i_crypto_task *,
-		    bus_dmamap_t);
-static void	sun8i_crypto_task_set_output(struct sun8i_crypto_task *,
-		    bus_dmamap_t);
+static int	sun8i_crypto_task_load(struct sun8i_crypto_softc *,
+		    struct sun8i_crypto_task *, uint32_t,
+		    uint32_t, uint32_t, uint32_t);
+static int	sun8i_crypto_task_scatter(struct sun8i_crypto_task *,
+		    struct sun8i_crypto_adrlen *, bus_dmamap_t, uint32_t);
 
-static void	sun8i_crypto_task_scatter(struct sun8i_crypto_adrlen *,
-		    bus_dmamap_t);
-
-static int	sun8i_crypto_submit_trng(struct sun8i_crypto_softc *,
+static int	sun8i_crypto_task_load_trng(struct sun8i_crypto_softc *,
 		    struct sun8i_crypto_task *, uint32_t);
-static int	sun8i_crypto_submit_aesecb(struct sun8i_crypto_softc *,
+static int	sun8i_crypto_task_load_aesecb(struct sun8i_crypto_softc *,
 		    struct sun8i_crypto_task *, uint32_t, uint32_t, uint32_t);
+
 static int	sun8i_crypto_submit(struct sun8i_crypto_softc *,
 		    struct sun8i_crypto_task *);
 
@@ -166,7 +190,7 @@ static void	sun8i_crypto_chan_done(struct sun8i_crypto_softc *, unsigned,
 		    int);
 
 static int	sun8i_crypto_allocbuf(struct sun8i_crypto_softc *, size_t,
-		    struct sun8i_crypto_buf *);
+		    struct sun8i_crypto_buf *, int);
 static void	sun8i_crypto_freebuf(struct sun8i_crypto_softc *, size_t,
 		    struct sun8i_crypto_buf *);
 
@@ -184,19 +208,106 @@ static int	sun8i_crypto_sysctl_rng(SYSCTLFN_ARGS);
 static void	sun8i_crypto_sysctl_rng_done(struct sun8i_crypto_softc *,
 		    struct sun8i_crypto_task *, void *, int);
 
+static void	sun8i_crypto_register(struct sun8i_crypto_softc *);
+static void	sun8i_crypto_register1(struct sun8i_crypto_softc *, uint32_t);
+static int	sun8i_crypto_newsession(void *, uint32_t *,
+		    struct cryptoini *);
+static int	sun8i_crypto_freesession(void *, uint64_t);
+static u_int	sun8i_crypto_ivlen(const struct cryptodesc *);
+static int	sun8i_crypto_process(void *, struct cryptop *, int);
+static void	sun8i_crypto_callback(struct sun8i_crypto_softc *,
+		    struct sun8i_crypto_task *, void *, int);
+
+/*
+ * Probes
+ */
+
+SDT_PROBE_DEFINE2(sdt, sun8i_crypto, register, read,
+    "bus_size_t"/*reg*/,
+    "uint32_t"/*value*/);
+SDT_PROBE_DEFINE2(sdt, sun8i_crypto, register, write,
+    "bus_size_t"/*reg*/,
+    "uint32_t"/*write*/);
+
+SDT_PROBE_DEFINE1(sdt, sun8i_crypto, task, ctor__success,
+    "struct sun8i_crypto_task *"/*task*/);
+SDT_PROBE_DEFINE1(sdt, sun8i_crypto, task, ctor__failure,
+    "int"/*error*/);
+SDT_PROBE_DEFINE1(sdt, sun8i_crypto, task, dtor,
+    "struct sun8i_crypto_task *"/*task*/);
+SDT_PROBE_DEFINE1(sdt, sun8i_crypto, task, get,
+    "struct sun8i_crypto_task *"/*task*/);
+SDT_PROBE_DEFINE1(sdt, sun8i_crypto, task, put,
+    "struct sun8i_crypto_task *"/*task*/);
+
+SDT_PROBE_DEFINE6(sdt, sun8i_crypto, task, load,
+    "struct sun8i_crypto_task *"/*task*/,
+    "uint32_t"/*tdqc*/,
+    "uint32_t"/*tdqs*/,
+    "uint32_t"/*tdqa*/,
+    "struct sun8i_crypto_taskdesc *"/*desc*/,
+    "int"/*error*/);
+SDT_PROBE_DEFINE3(sdt, sun8i_crypto, task, misaligned,
+    "struct sun8i_crypto_task *"/*task*/,
+    "bus_addr_t"/*ds_addr*/,
+    "bus_size_t"/*ds_len*/);
+SDT_PROBE_DEFINE2(sdt, sun8i_crypto, task, done,
+    "struct sun8i_crypto_task *"/*task*/,
+    "int"/*error*/);
+
+SDT_PROBE_DEFINE3(sdt, sun8i_crypto, engine, submit__failure,
+    "struct sun8i_crypto_softc *"/*sc*/,
+    "struct sun8i_crypto_task *"/*task*/,
+    "int"/*error*/);
+SDT_PROBE_DEFINE3(sdt, sun8i_crypto, engine, submit__success,
+    "struct sun8i_crypto_softc *"/*sc*/,
+    "struct sun8i_crypto_task *"/*task*/,
+    "unsigned"/*chan*/);
+SDT_PROBE_DEFINE3(sdt, sun8i_crypto, engine, intr,
+    "struct sun8i_crypto_softc *"/*sc*/,
+    "uint32_t"/*isr*/,
+    "uint32_t"/*esr*/);
+SDT_PROBE_DEFINE3(sdt, sun8i_crypto, engine, done,
+    "struct sun8i_crypto_softc *"/*sc*/,
+    "unsigned"/*chan*/,
+    "int"/*error*/);
+
+SDT_PROBE_DEFINE3(sdt, sun8i_crypto, process, entry,
+    "struct sun8i_crypto_softc *"/*sc*/,
+    "struct cryptop *"/*crp*/,
+    "int"/*hint*/);
+SDT_PROBE_DEFINE3(sdt, sun8i_crypto, process, busy,
+    "struct sun8i_crypto_softc *"/*sc*/,
+    "struct cryptop *"/*crp*/,
+    "int"/*hint*/);
+SDT_PROBE_DEFINE4(sdt, sun8i_crypto, process, queued,
+    "struct sun8i_crypto_softc *"/*sc*/,
+    "struct cryptop *"/*crp*/,
+    "int"/*hint*/,
+    "struct sun8i_crypto_task *"/*task*/);
+SDT_PROBE_DEFINE3(sdt, sun8i_crypto, process, done,
+    "struct sun8i_crypto_softc *"/*sc*/,
+    "struct cryptop *"/*crp*/,
+    "int"/*error*/);
+
 /*
  * Register access
  */
 
 static uint32_t
-sun8i_crypto_read(struct sun8i_crypto_softc *sc, bus_addr_t reg)
+sun8i_crypto_read(struct sun8i_crypto_softc *sc, bus_size_t reg)
 {
-	return bus_space_read_4(sc->sc_bst, sc->sc_bsh, reg);
+	uint32_t v = bus_space_read_4(sc->sc_bst, sc->sc_bsh, reg);
+
+	SDT_PROBE2(sdt, sun8i_crypto, register, read,  reg, v);
+	return v;
 }
 
 static void
-sun8i_crypto_write(struct sun8i_crypto_softc *sc, bus_addr_t reg, uint32_t v)
+sun8i_crypto_write(struct sun8i_crypto_softc *sc, bus_size_t reg, uint32_t v)
 {
+
+	SDT_PROBE2(sdt, sun8i_crypto, register, write,  reg, v);
 	bus_space_write_4(sc->sc_bst, sc->sc_bsh, reg, v);
 }
 
@@ -235,6 +346,9 @@ sun8i_crypto_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	sc->sc_dmat = faa->faa_dmat;
 	sc->sc_bst = faa->faa_bst;
+	sc->sc_taskpool = pool_cache_init(sizeof(struct sun8i_crypto_task),
+	    0, 0, 0, "sun8icry", NULL, IPL_VM,
+	    &sun8i_crypto_task_ctor, &sun8i_crypto_task_dtor, sc);
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
 	callout_init(&sc->sc_timeout, CALLOUT_MPSAFE);
 	callout_setfunc(&sc->sc_timeout, &sun8i_crypto_timeout, sc);
@@ -243,6 +357,13 @@ sun8i_crypto_attach(device_t parent, device_t self, void *aux)
 		aprint_error(": couldn't create workqueue\n");
 		return;
 	}
+
+	/*
+	 * Prime the pool with enough tasks that each channel can be
+	 * busy with a task as we prepare another task for when it's
+	 * done.
+	 */
+	pool_cache_prime(sc->sc_taskpool, 2*SUN8I_CRYPTO_NCHAN);
 
 	/* Get and map device registers.  */
 	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
@@ -312,111 +433,292 @@ sun8i_crypto_attach(device_t parent, device_t self, void *aux)
 
 	/* Perform self-tests.  */
 	config_interrupts(self, sun8i_crypto_selftest);
+
+	/* Register opencrypto handlers.  */
+	sun8i_crypto_register(sc);
+}
+
+static int
+sun8i_crypto_task_ctor(void *cookie, void *vtask, int pflags)
+{
+	struct sun8i_crypto_softc *sc = cookie;
+	struct sun8i_crypto_task *task = vtask;
+	int dmaflags = (pflags & PR_WAITOK) ? BUS_DMA_WAITOK : BUS_DMA_NOWAIT;
+	int error;
+
+	/* Create a DMA buffer for the task descriptor.  */
+	error = sun8i_crypto_allocbuf(sc, sizeof(*task->ct_desc),
+	    &task->ct_descbuf, dmaflags);
+	if (error)
+		goto fail0;
+	task->ct_desc = task->ct_descbuf.cb_kva;
+
+	/* Create DMA buffers for the IV and CTR.  */
+	error = sun8i_crypto_allocbuf(sc, SUN8I_CRYPTO_MAXIVBYTES,
+	    &task->ct_ivbuf, dmaflags);
+	if (error)
+		goto fail1;
+	task->ct_iv = task->ct_ivbuf.cb_kva;
+	error = sun8i_crypto_allocbuf(sc, SUN8I_CRYPTO_MAXCTRBYTES,
+	    &task->ct_ctrbuf, dmaflags);
+	if (error)
+		goto fail2;
+	task->ct_ctr = task->ct_ctrbuf.cb_kva;
+
+	/* Create a DMA map for the task descriptor and preload it.  */
+	error = bus_dmamap_create(sc->sc_dmat, sizeof(*task->ct_desc), 1,
+	    sizeof(*task->ct_desc), 0, dmaflags, &task->ct_descmap);
+	if (error)
+		goto fail3;
+	error = bus_dmamap_load(sc->sc_dmat, task->ct_descmap, task->ct_desc,
+	    sizeof(*task->ct_desc), NULL, BUS_DMA_WAITOK);
+	if (error)
+		goto fail4;
+
+	/* Create DMA maps for the key, IV, and CTR.  */
+	error = bus_dmamap_create(sc->sc_dmat, SUN8I_CRYPTO_MAXKEYBYTES, 1,
+	    SUN8I_CRYPTO_MAXKEYBYTES, 0, dmaflags, &task->ct_keymap);
+	if (error)
+		goto fail5;
+	error = bus_dmamap_create(sc->sc_dmat, SUN8I_CRYPTO_MAXIVBYTES, 1,
+	    SUN8I_CRYPTO_MAXIVBYTES, 0, dmaflags, &task->ct_ivmap);
+	if (error)
+		goto fail6;
+	error = bus_dmamap_create(sc->sc_dmat, SUN8I_CRYPTO_MAXCTRBYTES, 1,
+	    SUN8I_CRYPTO_MAXCTRBYTES, 0, dmaflags, &task->ct_ctrmap);
+	if (error)
+		goto fail7;
+
+	/* Create DMA maps for the src and dst scatter/gather vectors.  */
+	error = bus_dmamap_create(sc->sc_dmat, SUN8I_CRYPTO_MAXDMASIZE,
+	    SUN8I_CRYPTO_MAXSEGS, SUN8I_CRYPTO_MAXDMASEGSIZE, 0, dmaflags,
+	    &task->ct_srcmap);
+	if (error)
+		goto fail8;
+	error = bus_dmamap_create(sc->sc_dmat, SUN8I_CRYPTO_MAXDMASIZE,
+	    SUN8I_CRYPTO_MAXSEGS, SUN8I_CRYPTO_MAXDMASEGSIZE, 0, dmaflags,
+	    &task->ct_dstmap);
+	if (error)
+		goto fail9;
+
+	/* Success!  */
+	SDT_PROBE1(sdt, sun8i_crypto, task, ctor__success,  task);
+	return 0;
+
+fail10: __unused
+	bus_dmamap_destroy(sc->sc_dmat, task->ct_dstmap);
+fail9:	bus_dmamap_destroy(sc->sc_dmat, task->ct_srcmap);
+fail8:	bus_dmamap_destroy(sc->sc_dmat, task->ct_ctrmap);
+fail7:	bus_dmamap_destroy(sc->sc_dmat, task->ct_ivmap);
+fail6:	bus_dmamap_destroy(sc->sc_dmat, task->ct_keymap);
+fail5:	bus_dmamap_unload(sc->sc_dmat, task->ct_descmap);
+fail4:	bus_dmamap_destroy(sc->sc_dmat, task->ct_descmap);
+fail3:	sun8i_crypto_freebuf(sc, SUN8I_CRYPTO_MAXIVBYTES, &task->ct_ivbuf);
+fail2:	sun8i_crypto_freebuf(sc, SUN8I_CRYPTO_MAXCTRBYTES, &task->ct_ctrbuf);
+fail1:	sun8i_crypto_freebuf(sc, sizeof(*task->ct_desc), &task->ct_descbuf);
+fail0:	SDT_PROBE1(sdt, sun8i_crypto, task, ctor__failure,  error);
+	return error;
+}
+
+static void
+sun8i_crypto_task_dtor(void *cookie, void *vtask)
+{
+	struct sun8i_crypto_softc *sc = cookie;
+	struct sun8i_crypto_task *task = vtask;
+
+	SDT_PROBE1(sdt, sun8i_crypto, task, dtor,  task);
+
+	/* XXX Zero the bounce buffers if there are any.  */
+
+	bus_dmamap_destroy(sc->sc_dmat, task->ct_dstmap);
+	bus_dmamap_destroy(sc->sc_dmat, task->ct_srcmap);
+	bus_dmamap_destroy(sc->sc_dmat, task->ct_ctrmap);
+	bus_dmamap_destroy(sc->sc_dmat, task->ct_ivmap);
+	bus_dmamap_destroy(sc->sc_dmat, task->ct_keymap);
+	bus_dmamap_unload(sc->sc_dmat, task->ct_descmap);
+	bus_dmamap_destroy(sc->sc_dmat, task->ct_descmap);
+	sun8i_crypto_freebuf(sc, SUN8I_CRYPTO_MAXIVBYTES, &task->ct_ivbuf);
+	sun8i_crypto_freebuf(sc, SUN8I_CRYPTO_MAXCTRBYTES, &task->ct_ctrbuf);
+	sun8i_crypto_freebuf(sc, sizeof(*task->ct_desc), &task->ct_descbuf);
 }
 
 /*
- * Task allocation
+ * sun8i_crypto_task_get(sc, callback, cookie, pflags)
+ *
+ *	Allocate a task that will call callback(sc, task, cookie,
+ *	error) when done.  pflags is PR_WAITOK or PR_NOWAIT; if
+ *	PR_NOWAIT, may fail and return NULL.  No further allocation is
+ *	needed to submit the task if this succeeds (although task
+ *	submission may still fail if all channels are busy).
  */
-
 static struct sun8i_crypto_task *
 sun8i_crypto_task_get(struct sun8i_crypto_softc *sc,
     void (*callback)(struct sun8i_crypto_softc *, struct sun8i_crypto_task *,
 	void *, int),
-    void *cookie)
+    void *cookie, int pflags)
 {
 	struct sun8i_crypto_task *task;
-	int error;
 
-	/* Allocate a task.  */
-	task = kmem_zalloc(sizeof(*task), KM_SLEEP);
+	/* Allocate a task, or fail if we can't.  */
+	task = pool_cache_get(sc->sc_taskpool, pflags);
+	if (task == NULL)
+		goto out;
 
-	/* Allocate a buffer for the descriptor.  */
-	error = sun8i_crypto_allocbuf(sc, sizeof(*task->ct_desc),
-	    &task->ct_buf);
-	if (error)
-		goto fail0;
-
-	/* Initialize the task object and return it.  */
-	task->ct_desc = task->ct_buf.cb_kva;
+	/* Set up flags and the callback.  */
+	task->ct_flags = 0;
 	task->ct_callback = callback;
 	task->ct_cookie = cookie;
-	return task;
 
-fail1: __unused
-	sun8i_crypto_freebuf(sc, sizeof(*task->ct_desc), &task->ct_buf);
-fail0:	kmem_free(task, sizeof(*task));
-	return NULL;
+out:	SDT_PROBE1(sdt, sun8i_crypto, task, get,  task);
+	return task;
 }
 
+/*
+ * sun8i_crypto_task_invalid(sc, task, cookie, error)
+ *
+ *	Callback for a task not currently in use, to detect errors.
+ */
+static void
+sun8i_crypto_task_invalid(struct sun8i_crypto_softc *sc,
+    struct sun8i_crypto_task *task, void *cookie, int error)
+{
+	void (*callback)(struct sun8i_crypto_softc *,
+	    struct sun8i_crypto_task *, void *, int) = cookie;
+
+	panic("task for callback %p used after free", callback);
+}
+
+/*
+ * sun8i_crypto_task_put(sc, task)
+ *
+ *	Free a task obtained with sun8i_crypto_task_get.
+ */
 static void
 sun8i_crypto_task_put(struct sun8i_crypto_softc *sc,
     struct sun8i_crypto_task *task)
 {
 
-	sun8i_crypto_freebuf(sc, sizeof(*task->ct_desc), &task->ct_buf);
-	kmem_free(task, sizeof(*task));
+	SDT_PROBE1(sdt, sun8i_crypto, task, put,  task);
+
+	task->ct_cookie = task->ct_callback;
+	task->ct_callback = &sun8i_crypto_task_invalid;
+	pool_cache_put(sc->sc_taskpool, task);
 }
 
 /*
- * Task descriptor setup
+ * sun8i_crypto_task_load(sc, task, nbytes, tdqc, tdqs, tdqa)
  *
- * WARNING: Task descriptor fields are little-endian, not host-endian.
+ *	Set up the task descriptor after the relevant DMA maps have
+ *	been loaded for a transfer of nbytes.  bus_dmamap_sync matches
+ *	sun8i_crypto_chan_done.  May fail if input is inadequately
+ *	aligned.
+ *
+ *	XXX Teach this to support task chains.
  */
-
-static void
-sun8i_crypto_task_reset(struct sun8i_crypto_task *task)
+static int
+sun8i_crypto_task_load(struct sun8i_crypto_softc *sc,
+    struct sun8i_crypto_task *task, uint32_t nbytes,
+    uint32_t tdqc, uint32_t tdqs, uint32_t tdqa)
 {
+	struct sun8i_crypto_taskdesc *desc = task->ct_desc;
+	int error;
 
-	memset(task->ct_desc, 0, sizeof(*task->ct_desc));
+	KASSERT(tdqs == 0 || tdqa == 0);
+	KASSERT(nbytes % 4 == 0);
+
+	memset(desc, 0, sizeof(*desc));
+
+	/* Always enable interrupt for the task.  */
+	tdqc |= SUN8I_CRYPTO_TDQC_INTR_EN;
+
+	desc->td_tdqc = htole32(tdqc);
+	desc->td_tdqs = htole32(tdqs);
+	desc->td_tdqa = htole32(tdqa);
+
+	if (task->ct_flags & TASK_KEY) {
+		bus_dmamap_t keymap = task->ct_keymap;
+		KASSERT(keymap->dm_nsegs == 1);
+		desc->td_keydesc = htole32(keymap->dm_segs[0].ds_addr);
+		bus_dmamap_sync(sc->sc_dmat, keymap, 0,
+		    keymap->dm_segs[0].ds_len, BUS_DMASYNC_PREWRITE);
+	}
+	if (task->ct_flags & TASK_IV) {
+		bus_dmamap_t ivmap = task->ct_ivmap;
+		KASSERT(ivmap->dm_nsegs == 1);
+		desc->td_ivdesc = htole32(ivmap->dm_segs[0].ds_addr);
+		bus_dmamap_sync(sc->sc_dmat, ivmap, 0,
+		    ivmap->dm_segs[0].ds_len, BUS_DMASYNC_PREWRITE);
+	}
+	if (task->ct_flags & TASK_CTR) {
+		bus_dmamap_t ctrmap = task->ct_ctrmap;
+		KASSERT(ctrmap->dm_nsegs == 1);
+		desc->td_ctrdesc = htole32(ctrmap->dm_segs[0].ds_addr);
+		bus_dmamap_sync(sc->sc_dmat, ctrmap, 0,
+		    ctrmap->dm_segs[0].ds_len, BUS_DMASYNC_PREREAD);
+	}
+
+	if (task->ct_flags & TASK_BYTES)
+		desc->td_datalen = htole32(nbytes);
+	else
+		desc->td_datalen = htole32(nbytes/4);
+
+	if (task->ct_flags & TASK_SRC) {
+		bus_dmamap_t srcmap = task->ct_srcmap;
+		KASSERT(srcmap->dm_mapsize == task->ct_dstmap->dm_mapsize);
+		error = sun8i_crypto_task_scatter(task, desc->td_src, srcmap,
+		    nbytes);
+		if (error)
+			return error;
+		bus_dmamap_sync(sc->sc_dmat, srcmap, 0, nbytes,
+		    BUS_DMASYNC_PREWRITE);
+	}
+
+	error = sun8i_crypto_task_scatter(task, desc->td_dst, task->ct_dstmap,
+	    nbytes);
+	if (error)
+		goto out;
+	bus_dmamap_sync(sc->sc_dmat, task->ct_dstmap, 0, nbytes,
+	    BUS_DMASYNC_PREREAD);
+
+	task->ct_nbytes = nbytes;
+
+	/* Success!  */
+	error = 0;
+
+out:	SDT_PROBE6(sdt, sun8i_crypto, task, load,
+	    task, tdqc, tdqs, tdqa, desc, error);
+	return error;
 }
 
-static void
-sun8i_crypto_task_set_key(struct sun8i_crypto_task *task, bus_dmamap_t map)
-{
-
-	KASSERT(map->dm_nsegs == 1);
-	task->ct_desc->td_keydesc = htole32(map->dm_segs[0].ds_addr);
-}
-
-static void __unused		/* XXX opencrypto(9) */
-sun8i_crypto_task_set_iv(struct sun8i_crypto_task *task, bus_dmamap_t map)
-{
-
-	KASSERT(map->dm_nsegs == 1);
-	task->ct_desc->td_ivdesc = htole32(map->dm_segs[0].ds_addr);
-}
-
-static void __unused		/* XXX opencrypto(9) */
-sun8i_crypto_task_set_ctr(struct sun8i_crypto_task *task, bus_dmamap_t map)
-{
-
-	KASSERT(map->dm_nsegs == 1);
-	task->ct_desc->td_ctrdesc = htole32(map->dm_segs[0].ds_addr);
-}
-
-static void
-sun8i_crypto_task_set_input(struct sun8i_crypto_task *task, bus_dmamap_t map)
-{
-
-	sun8i_crypto_task_scatter(task->ct_desc->td_src, map);
-}
-
-static void
-sun8i_crypto_task_set_output(struct sun8i_crypto_task *task, bus_dmamap_t map)
-{
-
-	sun8i_crypto_task_scatter(task->ct_desc->td_dst, map);
-}
-
-static void
-sun8i_crypto_task_scatter(struct sun8i_crypto_adrlen *adrlen, bus_dmamap_t map)
+/*
+ * sun8i_crypto_task_scatter(task, adrlen, map, nbytes)
+ *
+ *	Set up a task's scatter/gather vector -- src or dst -- with the
+ *	given DMA map for a transfer of nbytes.  May fail if input is
+ *	inadequately aligned.
+ */
+static int
+sun8i_crypto_task_scatter(struct sun8i_crypto_task *task,
+    struct sun8i_crypto_adrlen *adrlen, bus_dmamap_t map,
+    uint32_t nbytes __diagused)
 {
 	uint32_t total __diagused = 0;
 	unsigned i;
 
+	/*
+	 * Verify that the alignment is correct and initialize the
+	 * scatter/gather vector.
+	 */
 	KASSERT(map->dm_nsegs <= SUN8I_CRYPTO_MAXSEGS);
 	for (i = 0; i < map->dm_nsegs; i++) {
-		KASSERT((map->dm_segs[i].ds_addr % 4) == 0);
+		if ((map->dm_segs[i].ds_addr % 4) |
+		    (map->dm_segs[i].ds_len % 4)) {
+			SDT_PROBE3(sdt, sun8i_crypto, task, misaligned,
+			    task,
+			    map->dm_segs[i].ds_addr,
+			    map->dm_segs[i].ds_len);
+			return EINVAL;
+		}
 		KASSERT(map->dm_segs[i].ds_addr <= UINT32_MAX);
 		KASSERT(map->dm_segs[i].ds_len <= UINT32_MAX - total);
 		adrlen[i].adr = htole32(map->dm_segs[i].ds_addr);
@@ -424,126 +726,95 @@ sun8i_crypto_task_scatter(struct sun8i_crypto_adrlen *adrlen, bus_dmamap_t map)
 		total += map->dm_segs[i].ds_len;
 	}
 
-	/* Verify the remainder are zero.  */
+	/* Set the remainder to zero.  */
 	for (; i < SUN8I_CRYPTO_MAXSEGS; i++) {
-		KASSERT(adrlen[i].adr == 0);
-		KASSERT(adrlen[i].len == 0);
+		adrlen[i].adr = 0;
+		adrlen[i].len = 0;
 	}
 
-	/* Verify the total size matches the DMA map.  */
-	KASSERT(total == map->dm_mapsize);
+	/* Verify the total size matches the transfer length.  */
+	KASSERT(total == nbytes);
+
+	/* Success!  */
+	return 0;
 }
 
 /*
- * Task submission
+ * sun8i_crypto_task_load_trng(task, nbytes)
  *
- * WARNING: Task descriptor fields are little-endian, not host-endian.
+ *	Set up the task descriptor for a transfer of nbytes from the
+ *	TRNG.
  */
-
 static int
-sun8i_crypto_submit_trng(struct sun8i_crypto_softc *sc,
-    struct sun8i_crypto_task *task, uint32_t datalen)
+sun8i_crypto_task_load_trng(struct sun8i_crypto_softc *sc,
+    struct sun8i_crypto_task *task, uint32_t nbytes)
 {
-	struct sun8i_crypto_taskdesc *desc = task->ct_desc;
 	uint32_t tdqc = 0;
-	uint32_t total __diagused;
-	unsigned i __diagused;
 
-	/* Data length must be a multiple of 4 because...reasons.  */
-	KASSERT((datalen % 4) == 0);
-
-	/* All of the sources should be empty.  */
-	for (total = 0, i = 0; i < SUN8I_CRYPTO_MAXSEGS; i++)
-		KASSERT(le32toh(task->ct_desc->td_src[i].len) == 0);
-
-	/* Verify the total output length -- should be datalen/4.  */
-	for (total = 0, i = 0; i < SUN8I_CRYPTO_MAXSEGS; i++) {
-		uint32_t len = le32toh(task->ct_desc->td_dst[i].len);
-		KASSERT(len <= UINT32_MAX - total);
-		total += len;
-	}
-	KASSERT(total == datalen/4);
-
-	/* Verify the key, IV, and CTR are unset.  */
-	KASSERT(desc->td_keydesc == 0);
-	KASSERT(desc->td_ivdesc == 0);
-	KASSERT(desc->td_ctrdesc == 0);
+	/* Caller must provide dst only.  */
+	KASSERT((task->ct_flags & TASK_KEY) == 0);
+	KASSERT((task->ct_flags & TASK_IV) == 0);
+	KASSERT((task->ct_flags & TASK_CTR) == 0);
+	KASSERT((task->ct_flags & TASK_SRC) == 0);
 
 	/* Set up the task descriptor queue control words.  */
-	tdqc |= SUN8I_CRYPTO_TDQC_INTR_EN;
 	tdqc |= __SHIFTIN(SUN8I_CRYPTO_TDQC_METHOD_TRNG,
 	    SUN8I_CRYPTO_TDQC_METHOD);
-	desc->td_tdqc = htole32(tdqc);
-	desc->td_tdqs = 0;	/* no symmetric crypto */
-	desc->td_tdqa = 0;	/* no asymmetric crypto */
 
-	/* Set the data length for the output.  */
-	desc->td_datalen = htole32(datalen/4);
-
-	/* Submit!  */
-	return sun8i_crypto_submit(sc, task);
+	/* Fill in the descriptor.  */
+	return sun8i_crypto_task_load(sc, task, nbytes, tdqc, 0, 0);
 }
 
 static int
-sun8i_crypto_submit_aesecb(struct sun8i_crypto_softc *sc,
+sun8i_crypto_task_load_aesecb(struct sun8i_crypto_softc *sc,
     struct sun8i_crypto_task *task,
-    uint32_t datalen, uint32_t keysize, uint32_t dir)
+    uint32_t nbytes, uint32_t keysize, uint32_t dir)
 {
-	struct sun8i_crypto_taskdesc *desc = task->ct_desc;
 	uint32_t tdqc = 0, tdqs = 0;
-	uint32_t total __diagused;
-	unsigned i __diagused;
 
-	/*
-	 * Data length must be a multiple of 4 because...reasons.
-	 *
-	 * WARNING: For `AES-CTS' (maybe that means AES-XTS?), datalen
-	 * is in units of bytes, not units of words -- but everything
-	 * _else_ is in units of words.  This routine applies only to
-	 * AES-ECB for the self-test.
-	 */
-	KASSERT((datalen % 4) == 0);
-
-	/* Verify the total input length -- should be datalen/4.  */
-	for (total = 0, i = 0; i < SUN8I_CRYPTO_MAXSEGS; i++) {
-		uint32_t len = le32toh(task->ct_desc->td_src[i].len);
-		KASSERT(len <= UINT32_MAX - total);
-		total += len;
-	}
-	KASSERT(total == datalen/4);
-
-	/* Verify the total output length -- should be datalen/4.  */
-	for (total = 0, i = 0; i < SUN8I_CRYPTO_MAXSEGS; i++) {
-		uint32_t len = le32toh(task->ct_desc->td_dst[i].len);
-		KASSERT(len <= UINT32_MAX - total);
-		total += len;
-	}
-	KASSERT(total == datalen/4);
+	/* Caller must provide key, src, and dst only.  */
+	KASSERT(task->ct_flags & TASK_KEY);
+	KASSERT((task->ct_flags & TASK_IV) == 0);
+	KASSERT((task->ct_flags & TASK_CTR) == 0);
+	KASSERT(task->ct_flags & TASK_SRC);
 
 	/* Set up the task descriptor queue control word.  */
-	tdqc |= SUN8I_CRYPTO_TDQC_INTR_EN;
 	tdqc |= __SHIFTIN(SUN8I_CRYPTO_TDQC_METHOD_AES,
 	    SUN8I_CRYPTO_TDQC_METHOD);
-	desc->td_tdqc = htole32(tdqc);
+	tdqc |= __SHIFTIN(dir, SUN8I_CRYPTO_TDQC_OP_DIR);
+
+#ifdef DIAGNOSTIC
+	switch (keysize) {
+	case SUN8I_CRYPTO_TDQS_AES_KEYSIZE_128:
+		KASSERT(task->ct_keymap->dm_segs[0].ds_len == 16);
+		break;
+	case SUN8I_CRYPTO_TDQS_AES_KEYSIZE_192:
+		KASSERT(task->ct_keymap->dm_segs[0].ds_len == 24);
+		break;
+	case SUN8I_CRYPTO_TDQS_AES_KEYSIZE_256:
+		KASSERT(task->ct_keymap->dm_segs[0].ds_len == 32);
+		break;
+	}
+#endif
 
 	/* Set up the symmetric control word.  */
 	tdqs |= __SHIFTIN(SUN8I_CRYPTO_TDQS_SKEY_SELECT_SS_KEYx,
 	    SUN8I_CRYPTO_TDQS_SKEY_SELECT);
 	tdqs |= __SHIFTIN(SUN8I_CRYPTO_TDQS_OP_MODE_ECB,
 	    SUN8I_CRYPTO_TDQS_OP_MODE);
-	tdqs |= __SHIFTIN(SUN8I_CRYPTO_TDQS_AES_KEYSIZE_128,
-	    SUN8I_CRYPTO_TDQS_AES_KEYSIZE);
-	desc->td_tdqs = htole32(tdqs);
+	tdqs |= __SHIFTIN(keysize, SUN8I_CRYPTO_TDQS_AES_KEYSIZE);
 
-	desc->td_tdqa = 0;	/* no asymmetric crypto */
-
-	/* Set the data length for the output.  */
-	desc->td_datalen = htole32(datalen/4);
-
-	/* Submit!  */
-	return sun8i_crypto_submit(sc, task);
+	/* Fill in the descriptor.  */
+	return sun8i_crypto_task_load(sc, task, nbytes, tdqc, tdqs, 0);
 }
 
+/*
+ * sun8i_crypto_submit(sc, task)
+ *
+ *	Submit a task to the crypto engine after it has been loaded
+ *	with sun8i_crypto_task_load.  On success, guarantees to
+ *	eventually call the task's callback.
+ */
 static int
 sun8i_crypto_submit(struct sun8i_crypto_softc *sc,
     struct sun8i_crypto_task *task)
@@ -572,8 +843,11 @@ sun8i_crypto_submit(struct sun8i_crypto_softc *sc,
 	 */
 	task->ct_desc->td_cid = htole32(i);
 
-	/* Prepare to send the descriptor to the device by DMA.  */
-	bus_dmamap_sync(sc->sc_dmat, task->ct_buf.cb_map, 0,
+	/*
+	 * Prepare to send the descriptor to the device by DMA.
+	 * Matches POSTWRITE in sun8i_crypto_chan_done.
+	 */
+	bus_dmamap_sync(sc->sc_dmat, task->ct_descmap, 0,
 	    sizeof(*task->ct_desc), BUS_DMASYNC_PREWRITE);
 
 	/* Confirm we're ready to go.  */
@@ -591,7 +865,7 @@ sun8i_crypto_submit(struct sun8i_crypto_softc *sc,
 
 	/* Set the task descriptor queue address.  */
 	sun8i_crypto_write(sc, SUN8I_CRYPTO_TDQ,
-	    task->ct_buf.cb_map->dm_segs[0].ds_addr);
+	    task->ct_descmap->dm_segs[0].ds_addr);
 
 	/* Notify the engine to load it, and wait for acknowledgement.  */
 	sun8i_crypto_write(sc, SUN8I_CRYPTO_TLR, SUN8I_CRYPTO_TLR_LOAD);
@@ -613,18 +887,36 @@ sun8i_crypto_submit(struct sun8i_crypto_softc *sc,
 		DELAY(1);
 	}
 
-	/* Loaded up and ready to go.  Start a timer ticking.  */
+	/*
+	 * Loaded up and ready to go.  Start a timer ticking if it's
+	 * not already.
+	 */
 	sc->sc_chan[i].cc_task = task;
-	sc->sc_chan[i].cc_starttime = atomic_load_relaxed(&hardclock_ticks);
-	callout_schedule(&sc->sc_timeout, SUN8I_CRYPTO_TIMEOUT);
+	sc->sc_chan[i].cc_starttime = getticks();
+	if (!callout_pending(&sc->sc_timeout))
+		callout_schedule(&sc->sc_timeout, SUN8I_CRYPTO_TIMEOUT);
 
 	/* XXX Consider polling if cold to get entropy earlier.  */
 
 out:	/* Done!  */
+	if (error)
+		SDT_PROBE3(sdt, sun8i_crypto, engine, submit__failure,
+		    sc, task, error);
+	else
+		SDT_PROBE3(sdt, sun8i_crypto, engine, submit__success,
+		    sc, task, i);
 	mutex_exit(&sc->sc_lock);
 	return error;
 }
 
+/*
+ * sun8i_crypto_timeout(cookie)
+ *
+ *	Timeout handler.  Schedules work in a thread to cancel all
+ *	pending tasks that were started long enough ago we're bored of
+ *	waiting for them, and reschedules another timeout unless the
+ *	channels are all idle.
+ */
 static void
 sun8i_crypto_timeout(void *cookie)
 {
@@ -652,6 +944,13 @@ sun8i_crypto_timeout(void *cookie)
 out:	mutex_exit(&sc->sc_lock);
 }
 
+/*
+ * sun8i_crypto_intr(cookie)
+ *
+ *	Device interrupt handler.  Find what channels have completed,
+ *	whether with success or with failure, and schedule work in
+ *	thread context to invoke the appropriate callbacks.
+ */
 static int
 sun8i_crypto_intr(void *cookie)
 {
@@ -672,6 +971,8 @@ sun8i_crypto_intr(void *cookie)
 	sun8i_crypto_write(sc, SUN8I_CRYPTO_ISR, isr);
 	sun8i_crypto_write(sc, SUN8I_CRYPTO_ESR, esr);
 
+	SDT_PROBE3(sdt, sun8i_crypto, engine, intr,  sc, isr, esr);
+
 	/* Start the worker if necessary.  */
 	sun8i_crypto_schedule_worker(sc);
 
@@ -684,6 +985,12 @@ sun8i_crypto_intr(void *cookie)
 	return __SHIFTOUT(isr, SUN8I_CRYPTO_ISR_DONE) != 0;
 }
 
+/*
+ * sun8i_crypto_schedule_worker(sc)
+ *
+ *	Ensure that crypto engine thread context work to invoke task
+ *	callbacks will run promptly.  Idempotent.
+ */
 static void
 sun8i_crypto_schedule_worker(struct sun8i_crypto_softc *sc)
 {
@@ -697,6 +1004,13 @@ sun8i_crypto_schedule_worker(struct sun8i_crypto_softc *sc)
 	}
 }
 
+/*
+ * sun8i_crypto_worker(wk, cookie)
+ *
+ *	Thread-context worker: Invoke all task callbacks for which the
+ *	device has notified us of completion or for which we gave up
+ *	waiting.
+ */
 static void
 sun8i_crypto_worker(struct work *wk, void *cookie)
 {
@@ -726,7 +1040,7 @@ sun8i_crypto_worker(struct work *wk, void *cookie)
 	sc->sc_esr = 0;
 
 	/* Check the time to determine what's timed out.  */
-	now = atomic_load_relaxed(&hardclock_ticks);
+	now = getticks();
 
 	/* Process the channels.  */
 	for (i = 0; i < SUN8I_CRYPTO_NCHAN; i++) {
@@ -771,13 +1085,22 @@ sun8i_crypto_worker(struct work *wk, void *cookie)
 	mutex_exit(&sc->sc_lock);
 }
 
+/*
+ * sun8i_crypto_chan_done(sc, i, error)
+ *
+ *	Notify the callback for the task on channel i, if there is one,
+ *	of the specified error, or 0 for success.
+ */
 static void
 sun8i_crypto_chan_done(struct sun8i_crypto_softc *sc, unsigned i, int error)
 {
 	struct sun8i_crypto_task *task;
+	uint32_t nbytes;
 	uint32_t icr;
 
 	KASSERT(mutex_owned(&sc->sc_lock));
+
+	SDT_PROBE3(sdt, sun8i_crypto, engine, done,  sc, i, error);
 
 	/* Claim the task if there is one; bail if not.  */
 	if ((task = sc->sc_chan[i].cc_task) == NULL) {
@@ -793,92 +1116,127 @@ sun8i_crypto_chan_done(struct sun8i_crypto_softc *sc, unsigned i, int error)
 	    SUN8I_CRYPTO_ICR_INTR_EN);
 	sun8i_crypto_write(sc, SUN8I_CRYPTO_ICR, icr);
 
-	/* Finished sending the descriptor to the device by DMA.  */
-	bus_dmamap_sync(sc->sc_dmat, task->ct_buf.cb_map, 0,
+	/*
+	 * Finished sending the descriptor to the device by DMA.
+	 * Matches PREWRITE in sun8i_crypto_task_submit.
+	 */
+	bus_dmamap_sync(sc->sc_dmat, task->ct_descmap, 0,
 	    sizeof(*task->ct_desc), BUS_DMASYNC_POSTWRITE);
+
+	/*
+	 * Finished with all the other bits of DMA too.  Matches
+	 * sun8i_crypto_task_load.
+	 */
+	nbytes = task->ct_nbytes;
+	bus_dmamap_sync(sc->sc_dmat, task->ct_dstmap, 0, nbytes,
+	    BUS_DMASYNC_POSTREAD);
+	if (task->ct_flags & TASK_SRC)
+		bus_dmamap_sync(sc->sc_dmat, task->ct_srcmap, 0, nbytes,
+		    BUS_DMASYNC_POSTWRITE);
+	if (task->ct_flags & TASK_CTR)
+		bus_dmamap_sync(sc->sc_dmat, task->ct_ctrmap, 0,
+		    task->ct_ctrmap->dm_segs[0].ds_len, BUS_DMASYNC_POSTREAD);
+	if (task->ct_flags & TASK_IV)
+		bus_dmamap_sync(sc->sc_dmat, task->ct_ivmap, 0,
+		    task->ct_ivmap->dm_segs[0].ds_len, BUS_DMASYNC_POSTWRITE);
+	if (task->ct_flags & TASK_KEY)
+		/* XXX Can we zero the bounce buffer if there is one?  */
+		bus_dmamap_sync(sc->sc_dmat, task->ct_keymap, 0,
+		    task->ct_keymap->dm_segs[0].ds_len, BUS_DMASYNC_POSTWRITE);
 
 	/* Temporarily release the lock to invoke the callback.  */
 	mutex_exit(&sc->sc_lock);
+	SDT_PROBE2(sdt, sun8i_crypto, task, done,  task, error);
 	(*task->ct_callback)(sc, task, task->ct_cookie, error);
 	mutex_enter(&sc->sc_lock);
 }
 
 /*
- * DMA buffers
+ * sun8i_crypto_allocbuf(sc, size, buf, dmaflags)
+ *
+ *	Allocate a single-segment DMA-safe buffer and map it into KVA.
+ *	May fail if dmaflags is BUS_DMA_NOWAIT.
  */
-
 static int
 sun8i_crypto_allocbuf(struct sun8i_crypto_softc *sc, size_t size,
-    struct sun8i_crypto_buf *buf)
+    struct sun8i_crypto_buf *buf, int dmaflags)
 {
 	int error;
 
 	/* Allocate a DMA-safe buffer.  */
-	error = bus_dmamem_alloc(sc->sc_dmat, size, 0, 0, buf->cb_seg,
-	    __arraycount(buf->cb_seg), &buf->cb_nsegs, BUS_DMA_WAITOK);
+	error = bus_dmamem_alloc(sc->sc_dmat, size, sizeof(uint32_t), 0,
+	    buf->cb_seg, __arraycount(buf->cb_seg), &buf->cb_nsegs, dmaflags);
 	if (error)
 		goto fail0;
 
 	/* Map the buffer into kernel virtual address space.  */
 	error = bus_dmamem_map(sc->sc_dmat, buf->cb_seg, buf->cb_nsegs,
-	    size, &buf->cb_kva, BUS_DMA_WAITOK);
+	    size, &buf->cb_kva, dmaflags);
 	if (error)
 		goto fail1;
-
-	/* Create a DMA map for the buffer.   */
-	error = bus_dmamap_create(sc->sc_dmat, size, 1, size, 0,
-	    BUS_DMA_WAITOK, &buf->cb_map);
-	if (error)
-		goto fail2;
-
-	/* Load the buffer into the DMA map.  */
-	error = bus_dmamap_load(sc->sc_dmat, buf->cb_map, buf->cb_kva, size,
-	    NULL, BUS_DMA_WAITOK);
-	if (error)
-		goto fail3;
 
 	/* Success!  */
 	return 0;
 
-fail4: __unused
-	bus_dmamap_unload(sc->sc_dmat, buf->cb_map);
-fail3:	bus_dmamap_destroy(sc->sc_dmat, buf->cb_map);
-fail2:	bus_dmamem_unmap(sc->sc_dmat, buf->cb_kva, size);
+fail2: __unused
+	bus_dmamem_unmap(sc->sc_dmat, buf->cb_kva, size);
 fail1:	bus_dmamem_free(sc->sc_dmat, buf->cb_seg, buf->cb_nsegs);
 fail0:	return error;
 }
 
+/*
+ * sun8i_crypto_freebuf(sc, buf)
+ *
+ *	Unmap buf and free it.
+ */
 static void
 sun8i_crypto_freebuf(struct sun8i_crypto_softc *sc, size_t size,
     struct sun8i_crypto_buf *buf)
 {
 
-	bus_dmamap_unload(sc->sc_dmat, buf->cb_map);
-	bus_dmamap_destroy(sc->sc_dmat, buf->cb_map);
 	bus_dmamem_unmap(sc->sc_dmat, buf->cb_kva, size);
 	bus_dmamem_free(sc->sc_dmat, buf->cb_seg, buf->cb_nsegs);
 }
 
 /*
- * Crypto Engine - TRNG
+ * sun8i_crypto_rng_attach(sc)
+ *
+ *	Attach an rndsource for the crypto engine's TRNG.
  */
-
 static void
 sun8i_crypto_rng_attach(struct sun8i_crypto_softc *sc)
 {
 	device_t self = sc->sc_dev;
 	struct sun8i_crypto_rng *rng = &sc->sc_rng;
+	struct sun8i_crypto_task *task;
 	int error;
 
 	/* Preallocate a buffer to reuse.  */
-	error = sun8i_crypto_allocbuf(sc, SUN8I_CRYPTO_RNGBYTES, &rng->cr_buf);
-	if (error)
+	error = sun8i_crypto_allocbuf(sc, SUN8I_CRYPTO_RNGBYTES, &rng->cr_buf,
+	    BUS_DMA_WAITOK);
+	if (error) {
+		aprint_error_dev(self, "failed to allocate RNG buffer: %d\n",
+		    error);
 		goto fail0;
+	}
 
 	/* Create a task to reuse.  */
-	rng->cr_task = sun8i_crypto_task_get(sc, sun8i_crypto_rng_done, rng);
-	if (rng->cr_task == NULL)
+	task = rng->cr_task = sun8i_crypto_task_get(sc, sun8i_crypto_rng_done,
+	    rng, PR_WAITOK);
+	if (rng->cr_task == NULL) {
+		aprint_error_dev(self, "failed to allocate RNG task\n");
+		error = ENOMEM;
 		goto fail1;
+	}
+
+	/* Preload the destination map.  */
+	error = bus_dmamap_load(sc->sc_dmat, task->ct_dstmap,
+	    rng->cr_buf.cb_kva, SUN8I_CRYPTO_RNGBYTES, NULL, BUS_DMA_NOWAIT);
+	if (error) {
+		aprint_error_dev(self, "failed to load RNG buffer: %d\n",
+		    error);
+		goto fail2;
+	}
 
 	/*
 	 * Attach the rndsource.  This is _not_ marked as RND_TYPE_RNG
@@ -894,17 +1252,25 @@ sun8i_crypto_rng_attach(struct sun8i_crypto_softc *sc)
 	/* Success!  */
 	return;
 
-fail2: __unused
-	sun8i_crypto_task_put(sc, rng->cr_task);
+fail3: __unused
+	bus_dmamap_unload(sc->sc_dmat, task->ct_dstmap);
+fail2:	sun8i_crypto_task_put(sc, task);
 fail1:	sun8i_crypto_freebuf(sc, SUN8I_CRYPTO_RNGBYTES, &rng->cr_buf);
-fail0:	aprint_error_dev(self, "failed to set up RNG, error=%d\n", error);
+fail0:	return;
 }
 
+/*
+ * sun8i_crypto_rng_get(nbytes, cookie)
+ *
+ *	On-demand rndsource callback: try to gather nbytes of entropy
+ *	and enter them into the pool ASAP.
+ */
 static void
 sun8i_crypto_rng_get(size_t nbytes, void *cookie)
 {
 	struct sun8i_crypto_softc *sc = cookie;
 	struct sun8i_crypto_rng *rng = &sc->sc_rng;
+	struct sun8i_crypto_task *task = rng->cr_task;
 	bool pending;
 	int error;
 
@@ -919,17 +1285,13 @@ sun8i_crypto_rng_get(size_t nbytes, void *cookie)
 	if (pending)
 		return;
 
-	/* Prepare for a DMA read into the buffer.  */
-	bus_dmamap_sync(sc->sc_dmat, rng->cr_buf.cb_map,
-	    0, SUN8I_CRYPTO_RNGBYTES, BUS_DMASYNC_PREREAD);
+	/* Load the task descriptor.  */
+	error = sun8i_crypto_task_load_trng(sc, task, SUN8I_CRYPTO_RNGBYTES);
+	if (error)
+		goto fail;
 
-	/* Set the task up for TRNG to our buffer.  */
-	sun8i_crypto_task_reset(rng->cr_task);
-	sun8i_crypto_task_set_output(rng->cr_task, rng->cr_buf.cb_map);
-
-	/* Submit the TRNG task.  */
-	error = sun8i_crypto_submit_trng(sc, rng->cr_task,
-	    SUN8I_CRYPTO_RNGBYTES);
+	/* Submit!  */
+	error = sun8i_crypto_submit(sc, task);
 	if (error)
 		goto fail;
 
@@ -950,10 +1312,6 @@ sun8i_crypto_rng_done(struct sun8i_crypto_softc *sc,
 	uint32_t entropybits;
 
 	KASSERT(rng == &sc->sc_rng);
-
-	/* Finished the DMA read into the buffer.  */
-	bus_dmamap_sync(sc->sc_dmat, rng->cr_buf.cb_map,
-	    0, SUN8I_CRYPTO_RNGBYTES, BUS_DMASYNC_POSTREAD);
 
 	/* If anything went wrong, forget about it.  */
 	if (error)
@@ -1002,73 +1360,86 @@ static const uint8_t selftest_output[16] = {
 static void
 sun8i_crypto_selftest(device_t self)
 {
-	const size_t datalen = sizeof selftest_input;
+	const size_t keybytes = sizeof selftest_key;
+	const size_t nbytes = sizeof selftest_input;
 	struct sun8i_crypto_softc *sc = device_private(self);
 	struct sun8i_crypto_selftest *selftest = &sc->sc_selftest;
+	struct sun8i_crypto_task *task;
 	int error;
 
 	CTASSERT(sizeof selftest_input == sizeof selftest_output);
 
 	/* Allocate an input buffer.  */
-	error = sun8i_crypto_allocbuf(sc, sizeof selftest_input,
-	    &selftest->cs_in);
+	error = sun8i_crypto_allocbuf(sc, nbytes, &selftest->cs_in,
+	    BUS_DMA_WAITOK);
 	if (error)
 		goto fail0;
 
 	/* Allocate a key buffer.  */
-	error = sun8i_crypto_allocbuf(sc, sizeof selftest_key,
-	    &selftest->cs_key);
+	error = sun8i_crypto_allocbuf(sc, keybytes, &selftest->cs_key,
+	    BUS_DMA_WAITOK);
 	if (error)
 		goto fail1;
 
 	/* Allocate an output buffer.  */
-	error = sun8i_crypto_allocbuf(sc, sizeof selftest_output,
-	    &selftest->cs_out);
+	error = sun8i_crypto_allocbuf(sc, nbytes, &selftest->cs_out,
+	    BUS_DMA_WAITOK);
 	if (error)
 		goto fail2;
 
 	/* Allocate a task descriptor.  */
-	selftest->cs_task = sun8i_crypto_task_get(sc,
-	    sun8i_crypto_selftest_done, selftest);
-	if (selftest->cs_task == NULL)
+	task = selftest->cs_task = sun8i_crypto_task_get(sc,
+	    sun8i_crypto_selftest_done, selftest, PR_WAITOK);
+	if (selftest->cs_task == NULL) {
+		error = ENOMEM;
 		goto fail3;
+	}
 
 	/* Copy the input and key into their buffers.  */
-	memcpy(selftest->cs_in.cb_kva, selftest_input, sizeof selftest_input);
-	memcpy(selftest->cs_key.cb_kva, selftest_key, sizeof selftest_key);
+	memcpy(selftest->cs_in.cb_kva, selftest_input, nbytes);
+	memcpy(selftest->cs_key.cb_kva, selftest_key, keybytes);
 
-	/* Prepare for a DMA write from the input and key buffers.  */
-	bus_dmamap_sync(sc->sc_dmat, selftest->cs_in.cb_map, 0,
-	    sizeof selftest_input, BUS_DMASYNC_PREWRITE);
-	bus_dmamap_sync(sc->sc_dmat, selftest->cs_key.cb_map, 0,
-	    sizeof selftest_key, BUS_DMASYNC_PREWRITE);
-
-	/* Prepare for a DMA read into the output buffer.  */
-	bus_dmamap_sync(sc->sc_dmat, selftest->cs_out.cb_map, 0,
-	    sizeof selftest_output, BUS_DMASYNC_PREREAD);
-
-	/* Set up the task descriptor.  */
-	sun8i_crypto_task_reset(selftest->cs_task);
-	sun8i_crypto_task_set_key(selftest->cs_task, selftest->cs_key.cb_map);
-	sun8i_crypto_task_set_input(selftest->cs_task, selftest->cs_in.cb_map);
-	sun8i_crypto_task_set_output(selftest->cs_task,
-	    selftest->cs_out.cb_map);
-
-	/* Submit the AES-128 ECB task.  */
-	error = sun8i_crypto_submit_aesecb(sc, selftest->cs_task, datalen,
-	    SUN8I_CRYPTO_TDQS_AES_KEYSIZE_128, SUN8I_CRYPTO_TDQC_OP_DIR_ENC);
+	/* Load the key, src, and dst for DMA transfers.  */
+	error = bus_dmamap_load(sc->sc_dmat, task->ct_keymap,
+	    selftest->cs_key.cb_kva, keybytes, NULL, BUS_DMA_WAITOK);
 	if (error)
 		goto fail4;
+	task->ct_flags |= TASK_KEY;
+
+	error = bus_dmamap_load(sc->sc_dmat, task->ct_srcmap,
+	    selftest->cs_in.cb_kva, nbytes, NULL, BUS_DMA_WAITOK);
+	if (error)
+		goto fail5;
+	task->ct_flags |= TASK_SRC;
+
+	error = bus_dmamap_load(sc->sc_dmat, task->ct_dstmap,
+	    selftest->cs_out.cb_kva, nbytes, NULL, BUS_DMA_WAITOK);
+	if (error)
+		goto fail6;
+
+	/* Set up the task descriptor.  */
+	error = sun8i_crypto_task_load_aesecb(sc, task, nbytes,
+	    SUN8I_CRYPTO_TDQS_AES_KEYSIZE_128, SUN8I_CRYPTO_TDQC_OP_DIR_ENC);
+	if (error)
+		goto fail7;
+
+	/* Submit!  */
+	error = sun8i_crypto_submit(sc, task);
+	if (error)
+		goto fail7;
 
 	device_printf(sc->sc_dev, "AES-128 self-test initiated\n");
 
 	/* Success!  */
 	return;
 
-fail4:	sun8i_crypto_task_put(sc, selftest->cs_task);
-fail3:	sun8i_crypto_freebuf(sc, sizeof selftest_output, &selftest->cs_out);
-fail2:	sun8i_crypto_freebuf(sc, sizeof selftest_key, &selftest->cs_key);
-fail1:	sun8i_crypto_freebuf(sc, sizeof selftest_input, &selftest->cs_in);
+fail7:	bus_dmamap_unload(sc->sc_dmat, task->ct_dstmap);
+fail6:	bus_dmamap_unload(sc->sc_dmat, task->ct_srcmap);
+fail5:	bus_dmamap_unload(sc->sc_dmat, task->ct_keymap);
+fail4:	sun8i_crypto_task_put(sc, task);
+fail3:	sun8i_crypto_freebuf(sc, nbytes, &selftest->cs_out);
+fail2:	sun8i_crypto_freebuf(sc, keybytes, &selftest->cs_key);
+fail1:	sun8i_crypto_freebuf(sc, nbytes, &selftest->cs_in);
 fail0:	aprint_error_dev(self, "failed to run self-test, error=%d\n", error);
 }
 
@@ -1099,21 +1470,12 @@ static void
 sun8i_crypto_selftest_done(struct sun8i_crypto_softc *sc,
     struct sun8i_crypto_task *task, void *cookie, int error)
 {
+	const size_t keybytes = sizeof selftest_key;
+	const size_t nbytes = sizeof selftest_input;
 	struct sun8i_crypto_selftest *selftest = cookie;
 	bool ok = true;
 
 	KASSERT(selftest == &sc->sc_selftest);
-
-	/*
-	 * Finished the DMA read into the output buffer, and finished
-	 * the DMA writes from the key buffer and input buffer.
-	 */
-	bus_dmamap_sync(sc->sc_dmat, selftest->cs_out.cb_map, 0,
-	    sizeof selftest_output, BUS_DMASYNC_POSTREAD);
-	bus_dmamap_sync(sc->sc_dmat, selftest->cs_key.cb_map, 0,
-	    sizeof selftest_key, BUS_DMASYNC_POSTWRITE);
-	bus_dmamap_sync(sc->sc_dmat, selftest->cs_in.cb_map, 0,
-	    sizeof selftest_input, BUS_DMASYNC_POSTWRITE);
 
 	/* If anything went wrong, fail now.  */
 	if (error) {
@@ -1125,21 +1487,24 @@ sun8i_crypto_selftest_done(struct sun8i_crypto_softc *sc,
 	 * Verify the input and key weren't clobbered, and verify the
 	 * output matches what we expect.
 	 */
-	ok &= sun8i_crypto_selftest_check(sc, "input clobbered",
-	    sizeof selftest_input, selftest_input, selftest->cs_in.cb_kva);
-	ok &= sun8i_crypto_selftest_check(sc, "key clobbered",
-	    sizeof selftest_key, selftest_key, selftest->cs_key.cb_kva);
-	ok &= sun8i_crypto_selftest_check(sc, "output mismatch",
-	    sizeof selftest_output, selftest_output, selftest->cs_out.cb_kva);
+	ok &= sun8i_crypto_selftest_check(sc, "input clobbered", nbytes,
+	    selftest_input, selftest->cs_in.cb_kva);
+	ok &= sun8i_crypto_selftest_check(sc, "key clobbered", keybytes,
+	    selftest_key, selftest->cs_key.cb_kva);
+	ok &= sun8i_crypto_selftest_check(sc, "output mismatch", nbytes,
+	    selftest_output, selftest->cs_out.cb_kva);
 
 	/* XXX Disable the RNG and other stuff if this fails...  */
 	if (ok)
 		device_printf(sc->sc_dev, "AES-128 self-test passed\n");
 
-out:	sun8i_crypto_task_put(sc, task);
-	sun8i_crypto_freebuf(sc, sizeof selftest_output, &selftest->cs_out);
-	sun8i_crypto_freebuf(sc, sizeof selftest_key, &selftest->cs_key);
-	sun8i_crypto_freebuf(sc, sizeof selftest_input, &selftest->cs_in);
+out:	bus_dmamap_unload(sc->sc_dmat, task->ct_dstmap);
+	bus_dmamap_unload(sc->sc_dmat, task->ct_srcmap);
+	bus_dmamap_unload(sc->sc_dmat, task->ct_keymap);
+	sun8i_crypto_task_put(sc, task);
+	sun8i_crypto_freebuf(sc, nbytes, &selftest->cs_out);
+	sun8i_crypto_freebuf(sc, keybytes, &selftest->cs_key);
+	sun8i_crypto_freebuf(sc, nbytes, &selftest->cs_in);
 }
 
 /*
@@ -1195,6 +1560,7 @@ sun8i_crypto_sysctl_rng(SYSCTLFN_ARGS)
 	struct sysctlnode node = *rnode;
 	struct sun8i_crypto_softc *sc = node.sysctl_data;
 	struct sun8i_crypto_userreq *req;
+	struct sun8i_crypto_task *task;
 	size_t size;
 	int error;
 
@@ -1204,10 +1570,8 @@ sun8i_crypto_sysctl_rng(SYSCTLFN_ARGS)
 		return 0;
 	}
 
-	/* Verify the output buffer size is reasonable.  */
-	size = *oldlenp;
-	if (size > 4096)	/* size_t, so never negative */
-		return E2BIG;
+	/* Truncate to 4096 bytes.  */
+	size = MIN(4096, *oldlenp);
 	if (size == 0)
 		return 0;	/* nothing to do */
 
@@ -1225,30 +1589,34 @@ sun8i_crypto_sysctl_rng(SYSCTLFN_ARGS)
 	req->cu_cancel = false;
 
 	/* Allocate a buffer for the RNG output.  */
-	error = sun8i_crypto_allocbuf(sc, size, &req->cu_buf);
+	error = sun8i_crypto_allocbuf(sc, size, &req->cu_buf, BUS_DMA_NOWAIT);
 	if (error)
 		goto out0;
 
 	/* Allocate a task.  */
-	req->cu_task = sun8i_crypto_task_get(sc, sun8i_crypto_sysctl_rng_done,
-	    req);
-	if (req->cu_task == NULL)
+	task = req->cu_task = sun8i_crypto_task_get(sc,
+	    sun8i_crypto_sysctl_rng_done, req, PR_NOWAIT);
+	if (task == NULL) {
+		error = ENOMEM;
 		goto out1;
-
-	/* Prepare for a DMA read into the buffer.  */
-	bus_dmamap_sync(sc->sc_dmat, req->cu_buf.cb_map, 0, size,
-	    BUS_DMASYNC_PREREAD);
+	}
 
 	/* Set the task up for TRNG to our buffer.  */
-	sun8i_crypto_task_reset(req->cu_task);
-	sun8i_crypto_task_set_output(req->cu_task, req->cu_buf.cb_map);
+	error = bus_dmamap_load(sc->sc_dmat, task->ct_dstmap,
+	    req->cu_buf.cb_kva, SUN8I_CRYPTO_RNGBYTES, NULL, BUS_DMA_NOWAIT);
+	if (error)
+		goto out2;
+	error = sun8i_crypto_task_load_trng(sc, task, SUN8I_CRYPTO_RNGBYTES);
+	if (error)
+		goto out3;
 
-	/* Submit the TRNG task.  */
-	error = sun8i_crypto_submit_trng(sc, req->cu_task, size);
+	/* Submit!  */
+	error = sun8i_crypto_submit(sc, task);
 	if (error) {
+		/* Make sure we don't restart the syscall -- just fail.  */
 		if (error == ERESTART)
 			error = EBUSY;
-		goto out2;
+		goto out3;
 	}
 
 	/* Wait for the request to complete.  */
@@ -1281,11 +1649,7 @@ sun8i_crypto_sysctl_rng(SYSCTLFN_ARGS)
 	/* Check for error from the device.  */
 	error = req->cu_error;
 	if (error)
-		goto out2;
-
-	/* Finished the DMA read into the buffer.  */
-	bus_dmamap_sync(sc->sc_dmat, req->cu_buf.cb_map, 0, req->cu_size,
-	    BUS_DMASYNC_POSTREAD);
+		goto out3;
 
 	/* Copy out the data.  */
 	node.sysctl_data = req->cu_buf.cb_kva;
@@ -1296,7 +1660,8 @@ sun8i_crypto_sysctl_rng(SYSCTLFN_ARGS)
 	explicit_memset(req->cu_buf.cb_kva, 0, size);
 
 	/* Clean up.  */
-out2:	sun8i_crypto_task_put(sc, req->cu_task);
+out3:	bus_dmamap_unload(sc->sc_dmat, task->ct_dstmap);
+out2:	sun8i_crypto_task_put(sc, task);
 out1:	sun8i_crypto_freebuf(sc, req->cu_size, &req->cu_buf);
 out0:	cv_destroy(&req->cu_cv);
 	mutex_destroy(&req->cu_lock);
@@ -1330,9 +1695,724 @@ sun8i_crypto_sysctl_rng_done(struct sun8i_crypto_softc *sc,
 		return;
 
 	/* Clean up after the main thread cancelled.  */
-	sun8i_crypto_task_put(sc, req->cu_task);
+	bus_dmamap_unload(sc->sc_dmat, task->ct_dstmap);
+	sun8i_crypto_task_put(sc, task);
 	sun8i_crypto_freebuf(sc, req->cu_size, &req->cu_buf);
 	cv_destroy(&req->cu_cv);
 	mutex_destroy(&req->cu_lock);
 	kmem_free(req, sizeof(*req));
+}
+
+/*
+ * sun8i_crypto_register(sc)
+ *
+ *	Register opencrypto algorithms supported by the crypto engine.
+ */
+static void
+sun8i_crypto_register(struct sun8i_crypto_softc *sc)
+{
+	struct sun8i_crypto_opencrypto *co = &sc->sc_opencrypto;
+
+	co->co_driverid = crypto_get_driverid(0);
+	if (co->co_driverid == (uint32_t)-1) {
+		aprint_error_dev(sc->sc_dev,
+		    "failed to register crypto driver\n");
+		return;
+	}
+
+	sun8i_crypto_register1(sc, CRYPTO_AES_CBC);
+	sun8i_crypto_register1(sc, CRYPTO_AES_CTR);
+#ifdef CRYPTO_AES_ECB
+	sun8i_crypto_register1(sc, CRYPTO_AES_ECB);
+#endif
+#ifdef CRYPTO_AES_XTS
+	sun8i_crypto_register1(sc, CRYPTO_AES_XTS);
+#endif
+#ifdef CRYPTO_DES_CBC
+	sun8i_crypto_register1(sc, CRYPTO_DES_CBC);
+#endif
+#ifdef CRYPTO_DES_ECB
+	sun8i_crypto_register1(sc, CRYPTO_DES_ECB);
+#endif
+	sun8i_crypto_register1(sc, CRYPTO_3DES_CBC);
+#ifdef CRYPTO_3DES_ECB
+	sun8i_crypto_register1(sc, CRYPTO_3DES_ECB);
+#endif
+
+	sun8i_crypto_register1(sc, CRYPTO_MD5);
+	sun8i_crypto_register1(sc, CRYPTO_SHA1);
+#ifdef CRYPTO_SHA224
+	sun8i_crypto_register1(sc, CRYPTO_SHA224);
+#endif
+#ifdef CRYPTO_SHA256
+	sun8i_crypto_register1(sc, CRYPTO_SHA256);
+#endif
+
+	sun8i_crypto_register1(sc, CRYPTO_SHA1_HMAC);
+	sun8i_crypto_register1(sc, CRYPTO_SHA2_256_HMAC);
+
+	//sun8i_crypto_kregister(sc, CRK_MOD_EXP);	/* XXX unclear */
+}
+
+/*
+ * sun8i_crypto_register1(sc, alg)
+ *
+ *	Register support for one algorithm alg using
+ *	sun8i_crypto_newsession/freesession/process.
+ */
+static void
+sun8i_crypto_register1(struct sun8i_crypto_softc *sc, uint32_t alg)
+{
+
+	crypto_register(sc->sc_opencrypto.co_driverid, alg, 0, 0,
+	    sun8i_crypto_newsession,
+	    sun8i_crypto_freesession,
+	    sun8i_crypto_process,
+	    sc);
+}
+
+/*
+ * sun8i_crypto_newsession(cookie, sidp, cri)
+ *
+ *	Called by opencrypto to allocate a new session.  We don't keep
+ *	track of sessions, since there are no persistent keys in the
+ *	hardware that we take advantage of, so this only validates the
+ *	crypto operations and returns a zero session id.
+ */
+static int
+sun8i_crypto_newsession(void *cookie, uint32_t *sidp, struct cryptoini *cri)
+{
+
+	/* No composition of operations is supported here.  */
+	if (cri->cri_next)
+		return EINVAL;
+
+	/*
+	 * No variation of rounds is supported here.  (XXX Unused and
+	 * unimplemented in opencrypto(9) altogether?
+	 */
+	if (cri->cri_rnd)
+		return EINVAL;
+
+	/*
+	 * Validate per-algorithm key length.
+	 *
+	 * XXX Does opencrypto(9) do this internally?
+	 */
+	switch (cri->cri_alg) {
+	case CRYPTO_MD5:
+	case CRYPTO_SHA1:
+#ifdef CRYPTO_SHA224
+	case CRYPTO_SHA224:
+#endif
+#ifdef CRYPTO_SHA256
+	case CRYPTO_SHA256:
+#endif
+		if (cri->cri_klen)
+			return EINVAL;
+		break;
+	case CRYPTO_AES_CBC:
+#ifdef CRYPTO_AES_ECB
+	case CRYPTO_AES_ECB:
+#endif
+		switch (cri->cri_klen) {
+		case 128:
+		case 192:
+		case 256:
+			break;
+		default:
+			return EINVAL;
+		}
+		break;
+	case CRYPTO_AES_CTR:
+		/*
+		 * opencrypto `AES-CTR' takes four bytes of the input
+		 * block as the last four bytes of the key, for reasons
+		 * that are not entirely clear.
+		 */
+		switch (cri->cri_klen) {
+		case 128 + 32:
+		case 192 + 32:
+		case 256 + 32:
+			break;
+		default:
+			return EINVAL;
+		}
+		break;
+#ifdef CRYPTO_AES_XTS
+	case CRYPTO_AES_XTS:
+		switch (cri->cri_klen) {
+		case 256:
+		case 384:
+		case 512:
+			break;
+		default:
+			return EINVAL;
+		}
+		break;
+#endif
+	case CRYPTO_DES_CBC:
+#ifdef CRYPTO_DES_ECB
+	case CRYPTO_DES_ECB:
+#endif
+		switch (cri->cri_klen) {
+		case 64:
+			break;
+		default:
+			return EINVAL;
+		}
+		break;
+	case CRYPTO_3DES_CBC:
+#ifdef CRYPTO_3DES_ECB
+	case CRYPTO_3DES_ECB:
+#endif
+		switch (cri->cri_klen) {
+		case 192:
+			break;
+		default:
+			return EINVAL;
+		}
+		break;
+	case CRYPTO_SHA1_HMAC:
+		/*
+		 * XXX Unclear what the length limit is, but since HMAC
+		 * behaves qualitatively different for a key of at
+		 * least the full block size -- and is generally best
+		 * to use with half the block size -- let's limit it to
+		 * one block.
+		 */
+		if (cri->cri_klen % 8)
+			return EINVAL;
+		if (cri->cri_klen > 512)
+			return EINVAL;
+		break;
+	case CRYPTO_SHA2_256_HMAC:
+		if (cri->cri_klen % 8)
+			return EINVAL;
+		if (cri->cri_klen > 512)
+			return EINVAL;
+		break;
+	default:
+		panic("unsupported algorithm %d", cri->cri_alg);
+	}
+
+	KASSERT(cri->cri_klen % 8 == 0);
+
+	/* Success!  */
+	*sidp = 1;
+	return 0;
+}
+
+/*
+ * sun8i_crypto_freesession(cookie, dsid)
+ *
+ *	Called by opencrypto to free a session.  We don't keep track of
+ *	sessions, since there are no persistent keys in the hardware
+ *	that we take advantage of, so this is a no-op.
+ *
+ *	Note: dsid is actually a 64-bit quantity containing both the
+ *	driver id in the high half and the session id in the low half.
+ */
+static int
+sun8i_crypto_freesession(void *cookie, uint64_t dsid)
+{
+
+	KASSERT((dsid & 0xffffffff) == 1);
+
+	/* Success! */
+	return 0;
+}
+
+/*
+ * sun8i_crypto_ivlen(crd)
+ *
+ *	Return the crypto engine's notion of `IV length', in bytes, for
+ *	an opencrypto operation.
+ */
+static u_int
+sun8i_crypto_ivlen(const struct cryptodesc *crd)
+{
+
+	switch (crd->crd_alg) {
+	case CRYPTO_AES_CBC:
+		return 16;
+#ifdef CRYPTO_AES_XTS
+	case CRYPTO_AES_XTS:
+		return 16;
+#endif
+	case CRYPTO_AES_CTR:	/* XXX opencrypto quirk */
+		return 8;
+#ifdef CRYPTO_DES_CBC
+	case CRYPTO_DES_CBC:
+		return 8;
+#endif
+	case CRYPTO_3DES_CBC:
+		return 8;
+	case CRYPTO_MD5:
+		return 16;
+#ifdef CRYPTO_SHA224
+	case CRYPTO_SHA224:
+		return 32;
+#endif
+#ifdef CRYPTO_SHA256
+	case CRYPTO_SHA256:
+		return 32;
+#endif
+	case CRYPTO_SHA1_HMAC:
+		return 20;
+	case CRYPTO_SHA2_256_HMAC:
+		return 32;
+	default:
+		return 0;
+	}
+}
+
+/*
+ * sun8i_crypto_process(cookie, crp, hint)
+ *
+ *	Main opencrypto processing dispatch.
+ */
+static int
+sun8i_crypto_process(void *cookie, struct cryptop *crp, int hint)
+{
+	struct sun8i_crypto_softc *sc = cookie;
+	struct sun8i_crypto_task *task;
+	struct cryptodesc *crd = crp->crp_desc;
+	unsigned klen, ivlen;
+	uint32_t tdqc = 0, tdqs = 0;
+	uint32_t dir, method, mode = 0, ctrwidth = 0, aeskeysize = 0;
+	const uint32_t tdqa = 0;
+	int error;
+
+	SDT_PROBE3(sdt, sun8i_crypto, process, entry,  sc, crp, hint);
+
+	/* Reject compositions -- we do not handle them.  */
+	if (crd->crd_next != NULL) {
+		error = EOPNOTSUPP;
+		goto fail0;
+	}
+
+	/* Reject transfers with nonsense skip.  */
+	if (crd->crd_skip < 0) {
+		error = EINVAL;
+		goto fail0;
+	}
+
+	/*
+	 * Actually just reject any nonzero skip, because it requires
+	 * DMA segment bookkeeping that we don't do yet.
+	 */
+	if (crd->crd_skip) {
+		error = EOPNOTSUPP;
+		goto fail0;
+	}
+
+	/* Reject large transfers.  */
+	if (crd->crd_len > SUN8I_CRYPTO_MAXDMASIZE) {
+		error = EFBIG;
+		goto fail0;
+	}
+
+	/* Reject nonsense, unaligned, or mismatched lengths.  */
+	if (crd->crd_len < 0 ||
+	    crd->crd_len % 4 ||
+	    crd->crd_len != crp->crp_ilen) {
+		error = EINVAL;
+		goto fail0;
+	}
+
+	/* Reject mismatched buffer lengths.  */
+	/* XXX Handle crd_skip.  */
+	if (crp->crp_flags & CRYPTO_F_IMBUF) {
+		struct mbuf *m = crp->crp_buf;
+		uint32_t nbytes = 0;
+		while (m != NULL) {
+			KASSERT(m->m_len >= 0);
+			if (m->m_len > crd->crd_len ||
+			    nbytes > crd->crd_len - m->m_len) {
+				error = EINVAL;
+				goto fail0;
+			}
+			nbytes += m->m_len;
+			m = m->m_next;
+		}
+		if (nbytes != crd->crd_len) {
+			error = EINVAL;
+			goto fail0;
+		}
+	} else if (crp->crp_flags & CRYPTO_F_IOV) {
+		struct uio *uio = crp->crp_buf;
+		if (uio->uio_resid != crd->crd_len) {
+			error = EINVAL;
+			goto fail0;
+		}
+	}
+
+	/* Get a task, or fail with ERESTART if we can't.  */
+	task = sun8i_crypto_task_get(sc, &sun8i_crypto_callback, crp,
+	    PR_NOWAIT);
+	if (task == NULL) {
+		/*
+		 * Don't invoke crypto_done -- we are asking the
+		 * opencrypto(9) machinery to queue the request and get
+		 * back to us.
+		 */
+		SDT_PROBE3(sdt, sun8i_crypto, process, busy,  sc, crp, hint);
+		return ERESTART;
+	}
+
+	/* Load key in, if relevant.  */
+	klen = crd->crd_klen;
+	if (klen) {
+		if (crd->crd_alg == CRYPTO_AES_CTR)
+			/* AES-CTR is special -- see IV processing below.  */
+			klen -= 32;
+		error = bus_dmamap_load(sc->sc_dmat, task->ct_keymap,
+		    crd->crd_key, klen/8, NULL, BUS_DMA_NOWAIT);
+		if (error)
+			goto fail1;
+		task->ct_flags |= TASK_KEY;
+	}
+
+	/* Handle the IV, if relevant.  */
+	ivlen = sun8i_crypto_ivlen(crd);
+	if (ivlen) {
+		void *iv;
+
+		/*
+		 * If there's an explicit IV, use it; otherwise
+		 * randomly generate one.
+		 */
+		if (crd->crd_flags & CRD_F_IV_EXPLICIT) {
+			iv = crd->crd_iv;
+		} else {
+			cprng_fast(task->ct_iv, ivlen);
+			iv = task->ct_iv;
+		}
+
+		/*
+		 * If the IV is not already present in the user's
+		 * buffer, copy it over.
+		 */
+		if ((crd->crd_flags & CRD_F_IV_PRESENT) == 0) {
+			if (crp->crp_flags & CRYPTO_F_IMBUF) {
+				m_copyback(crp->crp_buf, crd->crd_inject,
+				    ivlen, iv);
+			} else if (crp->crp_flags & CRYPTO_F_IOV) {
+				cuio_copyback(crp->crp_buf, crd->crd_inject,
+				    ivlen, iv);
+			} else {
+				panic("invalid buffer type %x",
+				    crp->crp_flags);
+			}
+		}
+
+		/*
+		 * opencrypto's idea of `AES-CTR' is special.
+		 *
+		 * - The low 4 bytes of the input block are drawn from
+		 *   an extra 4 bytes at the end of the key.
+		 *
+		 * - The next 8 bytes of the input block are drawn from
+		 *   the opencrypto iv.
+		 *
+		 * - The high 4 bytes are the big-endian block counter,
+		 *   which starts at 1 because why not.
+		 */
+		if (crd->crd_alg == CRYPTO_AES_CTR) {
+			uint8_t block[16];
+			uint32_t blkno = 1;
+
+			/* Format the initial input block.  */
+			memcpy(block, crd->crd_key + klen/8, 4);
+			memcpy(block + 4, iv, 8);
+			be32enc(block + 12, blkno);
+
+			/* Copy it into the DMA buffer.  */
+			memcpy(task->ct_iv, block, 16);
+			iv = task->ct_iv;
+			ivlen = 16;
+		}
+
+		/* Load the IV.  */
+		error = bus_dmamap_load(sc->sc_dmat, task->ct_ivmap, iv, ivlen,
+		    NULL, BUS_DMA_NOWAIT);
+		if (error)
+			goto fail1;
+		task->ct_flags |= TASK_IV;
+	}
+
+	/* Load the src and dst.  */
+	if (crp->crp_flags & CRYPTO_F_IMBUF) {
+		struct mbuf *m = crp->crp_buf;
+
+		/* XXX Handle crd_skip.  */
+		KASSERT(crd->crd_skip == 0);
+		error = bus_dmamap_load_mbuf(sc->sc_dmat, task->ct_srcmap, m,
+		    BUS_DMA_NOWAIT);
+		if (error)
+			goto fail1;
+		task->ct_flags |= TASK_SRC;
+
+		/* XXX Handle crd_skip.  */
+		KASSERT(crd->crd_skip == 0);
+		error = bus_dmamap_load_mbuf(sc->sc_dmat, task->ct_dstmap, m,
+		    BUS_DMA_NOWAIT);
+		if (error)
+			goto fail1;
+	} else if (crp->crp_flags & CRYPTO_F_IOV) {
+		struct uio *uio = crp->crp_buf;
+
+		/* XXX Handle crd_skip.  */
+		KASSERT(crd->crd_skip == 0);
+		error = bus_dmamap_load_uio(sc->sc_dmat, task->ct_srcmap, uio,
+		    BUS_DMA_NOWAIT);
+		if (error)
+			goto fail1;
+		task->ct_flags |= TASK_SRC;
+
+		/* XXX Handle crd_skip.  */
+		KASSERT(crd->crd_skip == 0);
+		error = bus_dmamap_load_uio(sc->sc_dmat, task->ct_dstmap, uio,
+		    BUS_DMA_NOWAIT);
+		if (error)
+			goto fail1;
+	} else {
+		panic("invalid buffer type %x", crp->crp_flags);
+	}
+
+	/* Set the encryption direction.  */
+	if (crd->crd_flags & CRD_F_ENCRYPT)
+		dir = SUN8I_CRYPTO_TDQC_OP_DIR_ENC;
+	else
+		dir = SUN8I_CRYPTO_TDQC_OP_DIR_DEC;
+	tdqc |= __SHIFTIN(dir, SUN8I_CRYPTO_TDQC_OP_DIR);
+
+	/* Set the method.  */
+	switch (crd->crd_alg) {
+	case CRYPTO_AES_CBC:
+	case CRYPTO_AES_CTR:
+#ifdef CRYPTO_AES_ECB
+	case CRYPTO_AES_ECB:
+#endif
+		method = SUN8I_CRYPTO_TDQC_METHOD_AES;
+		break;
+#ifdef CRYPTO_AES_XTS
+	case CRYPTO_AES_XTS:
+		method = SUN8I_CRYPTO_TDQC_METHOD_AES;
+		break;
+#endif
+	case CRYPTO_DES_CBC:
+#ifdef CRYPTO_DES_ECB
+	case CRYPTO_DES_ECB:
+#endif
+		method = SUN8I_CRYPTO_TDQC_METHOD_DES;
+		break;
+	case CRYPTO_3DES_CBC:
+#ifdef CRYPTO_3DES_ECB
+	case CRYPTO_3DES_ECB:
+#endif
+		method = SUN8I_CRYPTO_TDQC_METHOD_3DES;
+		break;
+	case CRYPTO_MD5:
+		method = SUN8I_CRYPTO_TDQC_METHOD_MD5;
+		break;
+	case CRYPTO_SHA1:
+		method = SUN8I_CRYPTO_TDQC_METHOD_SHA1;
+		break;
+#ifdef CRYPTO_SHA224
+	case CRYPTO_SHA224:
+		method = SUN8I_CRYPTO_TDQC_METHOD_SHA224;
+		break;
+#endif
+#ifdef CRYPTO_SHA256
+	case CRYPTO_SHA256:
+		method = SUN8I_CRYPTO_TDQC_METHOD_SHA256;
+		break;
+#endif
+	case CRYPTO_SHA1_HMAC:
+		method = SUN8I_CRYPTO_TDQC_METHOD_HMAC_SHA1;
+		break;
+	case CRYPTO_SHA2_256_HMAC:
+		method = SUN8I_CRYPTO_TDQC_METHOD_HMAC_SHA256;
+		break;
+	default:
+		panic("unknown algorithm %d", crd->crd_alg);
+	}
+	tdqc |= __SHIFTIN(method, SUN8I_CRYPTO_TDQC_METHOD);
+
+	/* Set the key selector.  No idea how to use the internal keys.  */
+	tdqs |= __SHIFTIN(SUN8I_CRYPTO_TDQS_SKEY_SELECT_SS_KEYx,
+	    SUN8I_CRYPTO_TDQS_SKEY_SELECT);
+
+	/* XXX Deal with AES_CTS_Last_Block_Flag.  */
+
+	/* Set the mode.  */
+	switch (crd->crd_alg) {
+#ifdef CRYPTO_AES_ECB
+	case CRYPTO_AES_ECB:
+		mode = SUN8I_CRYPTO_TDQS_OP_MODE_ECB;
+		break;
+#endif
+#ifdef CRYPTO_DES_ECB
+	case CRYPTO_DES_ECB:
+		mode = SUN8I_CRYPTO_TDQS_OP_MODE_ECB;
+		break;
+#endif
+#ifdef CRYPTO_3DES_ECB
+	case CRYPTO_3DES_ECB:
+		mode = SUN8I_CRYPTO_TDQS_OP_MODE_ECB;
+		break;
+#endif
+	case CRYPTO_AES_CBC:
+	case CRYPTO_DES_CBC:
+	case CRYPTO_3DES_CBC:
+		mode = SUN8I_CRYPTO_TDQS_OP_MODE_CBC;
+		break;
+	case CRYPTO_AES_CTR:
+		mode = SUN8I_CRYPTO_TDQS_OP_MODE_CTR;
+		break;
+#ifdef CRYPTO_AES_XTS
+	case CRYPTO_AES_XTS:
+		mode = SUN8I_CRYPTO_TDQS_OP_MODE_CTS;
+		break;
+#endif
+	default:
+		panic("unknown algorithm %d", crd->crd_alg);
+	}
+	tdqs |= __SHIFTIN(mode, SUN8I_CRYPTO_TDQS_OP_MODE);
+
+	/* Set the CTR width.  */
+	switch (crd->crd_alg) {
+	case CRYPTO_AES_CTR:
+		ctrwidth = SUN8I_CRYPTO_TDQS_CTR_WIDTH_32;
+		break;
+	}
+	tdqs |= __SHIFTIN(ctrwidth, SUN8I_CRYPTO_TDQS_CTR_WIDTH);
+
+	/* Set the AES key size.  */
+	switch (crd->crd_alg) {
+	case CRYPTO_AES_CBC:
+#ifdef CRYPTO_AES_ECB
+	case CRYPTO_AES_ECB:
+#endif
+		switch (crd->crd_klen) {
+		case 128:
+			aeskeysize = SUN8I_CRYPTO_TDQS_AES_KEYSIZE_128;
+			break;
+		case 192:
+			aeskeysize = SUN8I_CRYPTO_TDQS_AES_KEYSIZE_192;
+			break;
+		case 256:
+			aeskeysize = SUN8I_CRYPTO_TDQS_AES_KEYSIZE_256;
+			break;
+		default:
+			panic("invalid AES key size in bits: %u",
+			    crd->crd_klen);
+		}
+		break;
+	case CRYPTO_AES_CTR:
+		switch (crd->crd_klen) {
+		case 128 + 32:
+			aeskeysize = SUN8I_CRYPTO_TDQS_AES_KEYSIZE_128;
+			break;
+		case 192 + 32:
+			aeskeysize = SUN8I_CRYPTO_TDQS_AES_KEYSIZE_192;
+			break;
+		case 256 + 32:
+			aeskeysize = SUN8I_CRYPTO_TDQS_AES_KEYSIZE_256;
+			break;
+		default:
+			panic("invalid `AES-CTR' ` ``key'' size' in bits: %u",
+			    crd->crd_klen);
+		}
+		break;
+#ifdef CRYPTO_AES_XTS
+	case CRYPTO_AES_XTS:
+		switch (crd->crd_klen) {
+		case 256:
+			aeskeysize = SUN8I_CRYPTO_TDQS_AES_KEYSIZE_128;
+			break;
+		case 384:
+			aeskeysize = SUN8I_CRYPTO_TDQS_AES_KEYSIZE_192;
+			break;
+		case 512:
+			aeskeysize = SUN8I_CRYPTO_TDQS_AES_KEYSIZE_256;
+			break;
+		default:
+			panic("invalid AES-XTS key size in bits: %u",
+			    crd->crd_klen);
+		}
+		break;
+#endif
+	}
+	tdqs |= __SHIFTIN(aeskeysize, SUN8I_CRYPTO_TDQS_AES_KEYSIZE);
+
+	/* Set up the task descriptor.  */
+	error = sun8i_crypto_task_load(sc, task, crd->crd_len,
+	    tdqc, tdqs, tdqa);
+	if (error)
+		goto fail2;
+
+	/* Submit!  */
+	error = sun8i_crypto_submit(sc, task);
+	if (error)
+		goto fail2;
+
+	/* Success!  */
+	SDT_PROBE4(sdt, sun8i_crypto, process, queued,  sc, crp, hint, task);
+	return 0;
+
+fail2:	bus_dmamap_unload(sc->sc_dmat, task->ct_dstmap);
+fail1:	if (task->ct_flags & TASK_SRC)
+		bus_dmamap_unload(sc->sc_dmat, task->ct_srcmap);
+	if (task->ct_flags & TASK_CTR)
+		bus_dmamap_unload(sc->sc_dmat, task->ct_ctrmap);
+	if (task->ct_flags & TASK_IV)
+		bus_dmamap_unload(sc->sc_dmat, task->ct_ivmap);
+	if (task->ct_flags & TASK_KEY)
+		bus_dmamap_unload(sc->sc_dmat, task->ct_keymap);
+	sun8i_crypto_task_put(sc, task);
+fail0:	KASSERT(error);
+	KASSERT(error != ERESTART);
+	crp->crp_etype = error;
+	SDT_PROBE3(sdt, sun8i_crypto, process, done,  sc, crp, error);
+	crypto_done(crp);
+	return 0;
+}
+
+/*
+ * sun8i_crypto_callback(sc, task, cookie, error)
+ *
+ *	Completion callback for a task submitted via opencrypto.
+ *	Release the task and pass the error on to opencrypto with
+ *	crypto_done.
+ */
+static void
+sun8i_crypto_callback(struct sun8i_crypto_softc *sc,
+    struct sun8i_crypto_task *task, void *cookie, int error)
+{
+	struct cryptop *crp = cookie;
+	struct cryptodesc *crd __diagused = crp->crp_desc;
+
+	KASSERT(error != ERESTART);
+	KASSERT(crd != NULL);
+	KASSERT(crd->crd_next == NULL);
+
+	/* Return the number of bytes processed.  */
+	crp->crp_olen = error ? 0 : crp->crp_ilen;
+
+	bus_dmamap_unload(sc->sc_dmat, task->ct_dstmap);
+	bus_dmamap_unload(sc->sc_dmat, task->ct_srcmap);
+	if (task->ct_flags & TASK_CTR)
+		bus_dmamap_unload(sc->sc_dmat, task->ct_ctrmap);
+	if (task->ct_flags & TASK_IV)
+		bus_dmamap_unload(sc->sc_dmat, task->ct_ivmap);
+	if (task->ct_flags & TASK_KEY)
+		bus_dmamap_unload(sc->sc_dmat, task->ct_keymap);
+	sun8i_crypto_task_put(sc, task);
+	KASSERT(error != ERESTART);
+	crp->crp_etype = error;
+	SDT_PROBE3(sdt, sun8i_crypto, process, done,  sc, crp, error);
+	crypto_done(crp);
 }

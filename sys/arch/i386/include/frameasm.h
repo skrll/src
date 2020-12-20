@@ -1,4 +1,4 @@
-/*	$NetBSD: frameasm.h,v 1.29 2019/10/12 06:31:03 maxv Exp $	*/
+/*	$NetBSD: frameasm.h,v 1.33 2020/05/01 09:40:47 maxv Exp $	*/
 
 #ifndef _I386_FRAMEASM_H_
 #define _I386_FRAMEASM_H_
@@ -25,9 +25,16 @@
 #define STIC(reg)	movl	CPUVAR(VCPU),reg ;  \
 			XEN_UNBLOCK_EVENTS(reg)  ; \
 			testb	$0xff,EVTCHN_UPCALL_PENDING(reg)
+#define PUSHF(reg) 	movl	CPUVAR(VCPU),reg ;  \
+			movzbl	EVTCHN_UPCALL_MASK(reg), reg; \
+			pushl	reg
+#define POPF(reg)	call _C_LABEL(xen_write_psl); \
+			addl    $4,%esp
 #else
 #define CLI(reg)	cli
 #define STI(reg)	sti
+#define PUSHF(reg)	pushf
+#define POPF(reg)	popf
 #ifdef XENPVHVM
 #define STIC(reg)	sti ; \
 			movl	CPUVAR(VCPU),reg ; \
@@ -41,6 +48,11 @@
 #define HP_NAME_STAC		2
 #define HP_NAME_NOLOCK		3
 #define HP_NAME_RETFENCE	4
+#define HP_NAME_SSE2_LFENCE	5
+#define HP_NAME_SSE2_MFENCE	6
+#define HP_NAME_CAS_64		7
+#define HP_NAME_SPLLOWER	8
+#define HP_NAME_MUTEX_EXIT	9
 
 #define HOTPATCH(name, size) \
 123:						; \

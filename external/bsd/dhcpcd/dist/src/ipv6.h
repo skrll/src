@@ -59,9 +59,7 @@
 #define TEMP_PREFERRED_LIFETIME	86400	/* 1 day */
 #define REGEN_ADVANCE		5	/* seconds */
 #define MAX_DESYNC_FACTOR	600	/* 10 minutes */
-
 #define TEMP_IDGEN_RETRIES	3
-#define GEN_TEMPID_RETRY_MAX	5
 
 /* RFC7217 constants */
 #define IDGEN_RETRIES	3
@@ -218,18 +216,19 @@ struct ipv6_addr {
 #define	IPV6_AF_STALE		(1U << 2)
 #define	IPV6_AF_ADDED		(1U << 3)
 #define	IPV6_AF_AUTOCONF	(1U << 4)
-#define	IPV6_AF_DUPLICATED	(1U << 5)
-#define	IPV6_AF_DADCOMPLETED	(1U << 6)
-#define	IPV6_AF_DELEGATED	(1U << 7)
-#define	IPV6_AF_DELEGATEDPFX	(1U << 8)
-#define	IPV6_AF_NOREJECT	(1U << 9)
-#define	IPV6_AF_REQUEST		(1U << 10)
-#define	IPV6_AF_STATIC		(1U << 11)
-#define	IPV6_AF_DELEGATEDLOG	(1U << 12)
-#define	IPV6_AF_RAPFX		(1U << 13)
-#define	IPV6_AF_EXTENDED	(1U << 14)
+#define	IPV6_AF_DADCOMPLETED	(1U << 5)
+#define	IPV6_AF_DELEGATED	(1U << 6)
+#define	IPV6_AF_DELEGATEDPFX	(1U << 7)
+#define	IPV6_AF_NOREJECT	(1U << 8)
+#define	IPV6_AF_REQUEST		(1U << 9)
+#define	IPV6_AF_STATIC		(1U << 10)
+#define	IPV6_AF_DELEGATEDLOG	(1U << 11)
+#define	IPV6_AF_RAPFX		(1U << 12)
+#define	IPV6_AF_EXTENDED	(1U << 13)
+#define	IPV6_AF_REGEN		(1U << 14)
+#define	IPV6_AF_ROUTER		(1U << 15)
 #ifdef IPV6_MANAGETEMPADDR
-#define	IPV6_AF_TEMPORARY	(1U << 15)
+#define	IPV6_AF_TEMPORARY	(1U << 16)
 #endif
 
 struct ll_callback {
@@ -245,9 +244,6 @@ struct ipv6_state {
 
 #ifdef IPV6_MANAGETEMPADDR
 	uint32_t desync_factor;
-	uint8_t randomseed0[8]; /* upper 64 bits of MD5 digest */
-	uint8_t randomseed1[8]; /* lower 64 bits */
-	uint8_t randomid[8];
 #endif
 };
 
@@ -259,11 +255,10 @@ struct ipv6_state {
 
 
 int ipv6_init(struct dhcpcd_ctx *);
-int ipv6_makestableprivate(struct in6_addr *addr,
-    const struct in6_addr *prefix, int prefix_len,
-    const struct interface *ifp, int *dad_counter);
+int ipv6_makestableprivate(struct in6_addr *,
+    const struct in6_addr *, int, const struct interface *, int *);
 int ipv6_makeaddr(struct in6_addr *, struct interface *,
-    const struct in6_addr *, int);
+    const struct in6_addr *, int, unsigned int);
 int ipv6_mask(struct in6_addr *, int);
 uint8_t ipv6_prefixlen(const struct in6_addr *);
 int ipv6_userprefix( const struct in6_addr *, short prefix_len,
@@ -293,22 +288,21 @@ struct ipv6_addr *ipv6_findmaskaddr(struct dhcpcd_ctx *,
     const struct in6_addr *);
 #define ipv6_linklocal(ifp) ipv6_iffindaddr((ifp), NULL, IN6_IFF_NOTUSEABLE)
 int ipv6_addlinklocalcallback(struct interface *, void (*)(void *), void *);
-struct ipv6_addr *ipv6_newaddr(struct interface *, const struct in6_addr *, uint8_t,
-    unsigned int);
+void ipv6_setscope(struct sockaddr_in6 *, unsigned int);
+unsigned int ipv6_getscope(const struct sockaddr_in6 *);
+struct ipv6_addr *ipv6_newaddr(struct interface *, const struct in6_addr *,
+    uint8_t, unsigned int);
 void ipv6_freeaddr(struct ipv6_addr *);
 void ipv6_freedrop(struct interface *, int);
 #define ipv6_free(ifp) ipv6_freedrop((ifp), 0)
 #define ipv6_drop(ifp) ipv6_freedrop((ifp), 2)
 
 #ifdef IPV6_MANAGETEMPADDR
-void ipv6_gentempifid(struct interface *);
 struct ipv6_addr *ipv6_createtempaddr(struct ipv6_addr *,
     const struct timespec *);
 struct ipv6_addr *ipv6_settemptime(struct ipv6_addr *, int);
 void ipv6_addtempaddrs(struct interface *, const struct timespec *);
-#else
-#define ipv6_gentempifid(a) {}
-#define ipv6_settempstale(a) {}
+void ipv6_regentempaddrs(void *);
 #endif
 
 int ipv6_start(struct interface *);

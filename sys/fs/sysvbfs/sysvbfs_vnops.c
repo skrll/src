@@ -1,4 +1,4 @@
-/*	$NetBSD: sysvbfs_vnops.c,v 1.64 2020/01/17 20:08:08 ad Exp $	*/
+/*	$NetBSD: sysvbfs_vnops.c,v 1.67 2020/06/27 17:29:18 christos Exp $	*/
 
 /*-
  * Copyright (c) 2004 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sysvbfs_vnops.c,v 1.64 2020/01/17 20:08:08 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sysvbfs_vnops.c,v 1.67 2020/06/27 17:29:18 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -249,13 +249,13 @@ sysvbfs_check_possible(struct vnode *vp, struct sysvbfs_node *bnode,
 
 static int
 sysvbfs_check_permitted(struct vnode *vp, struct sysvbfs_node *bnode,
-    mode_t mode, kauth_cred_t cred)
+    accmode_t accmode, kauth_cred_t cred)
 {
 	struct bfs_fileattr *attr = &bnode->inode->attr;
 
-	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(mode,
-	    vp->v_type, attr->mode), vp, NULL, genfs_can_access(vp->v_type,
-	    attr->mode, attr->uid, attr->gid, mode, cred));
+	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(accmode,
+	    vp->v_type, attr->mode), vp, NULL, genfs_can_access(vp, cred,
+	    attr->uid, attr->gid, attr->mode, NULL, accmode));
 }
 
 int
@@ -263,7 +263,7 @@ sysvbfs_access(void *arg)
 {
 	struct vop_access_args /* {
 		struct vnode	*a_vp;
-		int		a_mode;
+		accmode_t	a_accmode;
 		kauth_cred_t	a_cred;
 	} */ *ap = arg;
 	struct vnode *vp = ap->a_vp;
@@ -272,11 +272,11 @@ sysvbfs_access(void *arg)
 
 	DPRINTF("%s:\n", __func__);
 
-	error = sysvbfs_check_possible(vp, bnode, ap->a_mode);
+	error = sysvbfs_check_possible(vp, bnode, ap->a_accmode);
 	if (error)
 		return error;
 
-	error = sysvbfs_check_permitted(vp, bnode, ap->a_mode, ap->a_cred);
+	error = sysvbfs_check_permitted(vp, bnode, ap->a_accmode, ap->a_cred);
 
 	return error;
 }
@@ -359,7 +359,7 @@ sysvbfs_setattr(void *arg)
 		    (vap->va_gid != (gid_t)VNOVAL) ? vap->va_gid : attr->gid;
 		error = kauth_authorize_vnode(cred,
 		    KAUTH_VNODE_CHANGE_OWNERSHIP, vp, NULL,
-		    genfs_can_chown(cred, attr->uid, attr->gid, uid, gid));
+		    genfs_can_chown(vp, cred, attr->uid, attr->gid, uid, gid));
 		if (error)
 			return error;
 		attr->uid = uid;
@@ -386,7 +386,7 @@ sysvbfs_setattr(void *arg)
 	if (vap->va_mode != (mode_t)VNOVAL) {
 		mode_t mode = vap->va_mode;
 		error = kauth_authorize_vnode(cred, KAUTH_VNODE_WRITE_SECURITY,
-		    vp, NULL, genfs_can_chmod(vp->v_type, cred, attr->uid,
+		    vp, NULL, genfs_can_chmod(vp, cred, attr->uid,
 		    attr->gid, mode));
 		if (error)
 			return error;
@@ -397,8 +397,8 @@ sysvbfs_setattr(void *arg)
 	    (vap->va_mtime.tv_sec != VNOVAL) ||
 	    (vap->va_ctime.tv_sec != VNOVAL)) {
 		error = kauth_authorize_vnode(cred, KAUTH_VNODE_WRITE_TIMES, vp,
-		    NULL, genfs_can_chtimes(vp, vap->va_vaflags, attr->uid,
-		    cred));
+		    NULL, genfs_can_chtimes(vp, cred, attr->uid,
+			vap->va_vaflags));
 		if (error)
 			return error;
 
@@ -448,7 +448,7 @@ sysvbfs_read(void *arg)
 			break;
 
 		err = ubc_uiomove(&v->v_uobj, uio, sz, advice,
-		    UBC_READ | UBC_PARTIALOK | UBC_UNMAP_FLAG(v));
+		    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(v));
 		if (err)
 			break;
 		DPRINTF("%s: read %ldbyte\n", __func__, sz);
@@ -495,7 +495,7 @@ sysvbfs_write(void *arg)
 	while (uio->uio_resid > 0) {
 		sz = uio->uio_resid;
 		err = ubc_uiomove(&v->v_uobj, uio, sz, advice,
-		    UBC_WRITE | UBC_UNMAP_FLAG(v));
+		    UBC_WRITE | UBC_VNODE_FLAGS(v));
 		if (err)
 			break;
 		DPRINTF("%s: write %ldbyte\n", __func__, sz);
@@ -828,38 +828,34 @@ sysvbfs_pathconf(void *v)
 		int a_name;
 		register_t *a_retval;
 	} */ *ap = v;
-	int err = 0;
 
 	DPRINTF("%s:\n", __func__);
 
 	switch (ap->a_name) {
 	case _PC_LINK_MAX:
 		*ap->a_retval = 1;
-		break;
+		return 0;
 	case _PC_NAME_MAX:
 		*ap->a_retval = BFS_FILENAME_MAXLEN;
-		break;
+		return 0;
 	case _PC_PATH_MAX:
 		*ap->a_retval = BFS_FILENAME_MAXLEN;
-		break;
+		return 0;
 	case _PC_CHOWN_RESTRICTED:
 		*ap->a_retval = 1;
-		break;
+		return 0;
 	case _PC_NO_TRUNC:
 		*ap->a_retval = 0;
-		break;
+		return 0;
 	case _PC_SYNC_IO:
 		*ap->a_retval = 1;
-		break;
+		return 0;
 	case _PC_FILESIZEBITS:
 		*ap->a_retval = 32;
-		break;
+		return 0;
 	default:
-		err = EINVAL;
-		break;
+		return genfs_pathconf(ap);
 	}
-
-	return err;
 }
 
 int

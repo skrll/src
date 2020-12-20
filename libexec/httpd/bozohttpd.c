@@ -1,9 +1,9 @@
-/*	$NetBSD: bozohttpd.c,v 1.113 2019/02/28 09:16:42 mrg Exp $	*/
+/*	$NetBSD: bozohttpd.c,v 1.124 2020/11/19 10:45:36 hannken Exp $	*/
 
 /*	$eterna: bozohttpd.c,v 1.178 2011/11/18 09:21:15 mrg Exp $	*/
 
 /*
- * Copyright (c) 1997-2019 Matthew R. Green
+ * Copyright (c) 1997-2020 Matthew R. Green
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -40,7 +40,6 @@
  *	- CGI/1.1 this will only be provided for "system" scripts
  *	- automatic "missing trailing slash" redirections
  *	- configurable translation of /~user/ to ~user/public_html,
- *	  however, this does not include cgi-bin support
  *	- access lists via libwrap via inetd/tcpd
  *	- virtual hosting
  *	- not that we do not even pretend to understand MIME, but
@@ -109,7 +108,7 @@
 #define INDEX_HTML		"index.html"
 #endif
 #ifndef SERVER_SOFTWARE
-#define SERVER_SOFTWARE		"bozohttpd/20190228"
+#define SERVER_SOFTWARE		"bozohttpd/20201014"
 #endif
 #ifndef PUBLIC_HTML
 #define PUBLIC_HTML		"public_html"
@@ -317,7 +316,7 @@ parse_request(bozohttpd_t *httpd, char *in, char **method, char **file,
 
 	debug((httpd, DEBUG_FAT,
 		"url: method: \"%s\" file: \"%s\" query: \"%s\" proto: \"%s\"",
-		*method, *file, *query, *proto));
+		*method, *file, *query ? *query : "", *proto ? *proto : ""));
 }
 
 /*
@@ -373,6 +372,7 @@ bozo_clean_request(bozo_httpreq_t *request)
 static void
 alarmer(int sig)
 {
+	USE_ARG(sig);
 	bozo_timeout_hit = 1;
 }
 
@@ -496,7 +496,7 @@ got_proto_09:
 
 	if (strncasecmp(proto, "HTTP/", 5) != 0)
 		goto bad;
-	strncpy(majorstr, proto + 5, sizeof majorstr);
+	strncpy(majorstr, proto + 5, sizeof(majorstr)-1);
 	majorstr[sizeof(majorstr)-1] = 0;
 	minorstr = strchr(majorstr, '.');
 	if (minorstr == NULL)
@@ -651,7 +651,7 @@ bozo_read_request(bozohttpd_t *httpd)
 	 * if passed through a proxy that doesn't rewrite the port.
 	 */
 	if (httpd->bindport) {
-		if (strcmp(httpd->bindport, "80") != 0)
+		if (strcmp(httpd->bindport, BOZO_HTTP_PORT) != 0)
 			port = httpd->bindport;
 		else
 			port = NULL;
@@ -771,7 +771,7 @@ bozo_read_request(bozohttpd_t *httpd)
 
 			val = bozostrnsep(&str, ":", &len);
 			debug((httpd, DEBUG_EXPLODING, "read_req2: after "
-			    "bozostrnsep: str `%s' val `%s'", str, val));
+			    "bozostrnsep: str `%s' val `%s'", str, val ? val : ""));
 			if (val == NULL || len == -1) {
 				bozo_http_error(httpd, 404, request, "no header");
 				goto cleanup;
@@ -907,14 +907,14 @@ mmap_and_write_part(bozohttpd_t *httpd, int fd, off_t first_byte_pos, size_t sz)
 	 *
 	 * we use the write offset in all writes
 	 */
-	mappedoffset = first_byte_pos & ~(httpd->page_size - 1);
+	mappedoffset = first_byte_pos & ~((off_t)httpd->page_size - 1);
 	mappedsz = (size_t)
 		(first_byte_pos - mappedoffset + sz + httpd->page_size - 1) &
 		~(httpd->page_size - 1);
 	wroffset = (size_t)(first_byte_pos - mappedoffset);
 
 	addr = mmap(0, mappedsz, PROT_READ, MAP_SHARED, fd, mappedoffset);
-	if (addr == (char *)-1) {
+	if (addr == MAP_FAILED) {
 		bozowarn(httpd, "mmap failed: %s", strerror(errno));
 		return -1;
 	}
@@ -1099,7 +1099,7 @@ handle_redirect(bozo_httpreq_t *request, const char *url, int absolute)
 		hostname = "";
 		portbuf[0] = '\0';
 	} else {
-		const char *defport = httpd->sslinfo ? "443" : "80";
+		const char *defport = httpd->sslinfo ? BOZO_HTTPS_PORT : BOZO_HTTP_PORT;
 
 		if (request->hr_serverport &&
 		    strcmp(request->hr_serverport, defport) != 0)
@@ -1201,7 +1201,7 @@ check_remap(bozo_httpreq_t *request)
 	}
 
 	fmap = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, mapfile, 0);
-	if (fmap == NULL) {
+	if (fmap == MAP_FAILED) {
 		bozowarn(httpd, "could not mmap " REMAP_FILE ", error %d",
 		    errno);
 		goto out;
@@ -1335,7 +1335,8 @@ check_virtual(bozo_httpreq_t *request)
 	 * canonicalise hr_host - that is, remove any :80.
 	 */
 	len = strlen(request->hr_host);
-	if (len > 3 && strcmp(request->hr_host + len - 3, ":80") == 0) {
+	if (len > 3 &&
+	    strcmp(request->hr_host + len - 3, ":" BOZO_HTTP_PORT) == 0) {
 		request->hr_host[len - 3] = '\0';
 		len = strlen(request->hr_host);
 	}
@@ -1554,7 +1555,7 @@ bozo_decode_url_percent(bozo_httpreq_t *request, char *str)
 		if (s[1] == '0' && s[2] == '0')
 			return bozo_http_error(httpd, 404, request,
 			    "percent hack was %00");
-		if (s[1] == '2' && s[2] == 'f')
+		if (s[1] == '2' && (s[2] == 'f' || s[2] == 'F'))
 			return bozo_http_error(httpd, 404, request,
 			    "percent hack was %2f (/)");
 
@@ -1912,6 +1913,8 @@ bozo_process_request(bozo_httpreq_t *request)
  cleanup:
 	close(fd);
  cleanup_nofd:
+	/* If SSL enabled send close_notify. */
+	bozo_ssl_shutdown(request->hr_httpd);
 	close(STDIN_FILENO);
 	close(STDOUT_FILENO);
 	/*close(STDERR_FILENO);*/
@@ -2133,6 +2136,7 @@ static struct errors_map {
 	const char *shortmsg;		/* short version of message */
 	const char *longmsg;		/* long version of message */
 } errors_map[] = {
+	{ 200,	"200 OK",		"The request was valid", },
 	{ 400,	"400 Bad Request",	"The request was not valid", },
 	{ 401,	"401 Unauthorized",	"No authorization", },
 	{ 403,	"403 Forbidden",	"Access to this item has been denied",},
@@ -2170,8 +2174,24 @@ http_errors_long(int code)
 	return (help);
 }
 
+#ifndef NO_BLOCKLIST_SUPPORT
+static struct blocklist *blstate;
+
+void
+pfilter_notify(const int what, const int code)
+{
+
+	if (blstate == NULL)
+		blstate = blocklist_open();
+
+	if (blstate == NULL)
+		return;
+
+	(void)blocklist_r(blstate, what, 0, http_errors_short(code));
+}
+#endif /* !NO_BLOCKLIST_SUPPORT */
+
 /* the follow functions and variables are used in handling HTTP errors */
-/* ARGSUSED */
 int
 bozo_http_error(bozohttpd_t *httpd, int code, bozo_httpreq_t *request,
 		const char *msg)
@@ -2184,6 +2204,8 @@ bozo_http_error(bozohttpd_t *httpd, int code, bozo_httpreq_t *request,
 	int	size;
 	bozoheaders_t *hdr;
 
+	USE_ARG(msg);
+
 	debug((httpd, DEBUG_FAT, "bozo_http_error %d: %s", code, msg));
 	if (header == NULL || reason == NULL) {
 		bozoerr(httpd, 1,
@@ -2193,7 +2215,7 @@ bozo_http_error(bozohttpd_t *httpd, int code, bozo_httpreq_t *request,
 	}
 
 	if (request && request->hr_serverport &&
-	    strcmp(request->hr_serverport, "80") != 0)
+	    strcmp(request->hr_serverport, BOZO_HTTP_PORT) != 0)
 		snprintf(portbuf, sizeof(portbuf), ":%s",
 				request->hr_serverport);
 	else
@@ -2271,6 +2293,19 @@ bozo_http_error(bozohttpd_t *httpd, int code, bozo_httpreq_t *request,
 	if (size && request && request->hr_method != HTTP_HEAD)
 		bozo_printf(httpd, "%s", httpd->errorbuf);
 	bozo_flush(httpd, stdout);
+
+#ifndef NO_BLOCKLIST_SUPPORT
+	switch(code) {
+
+	case 401:
+		pfilter_notify(BLOCKLIST_AUTH_FAIL, code);
+		break;
+
+	case 403:
+		pfilter_notify(BLOCKLIST_ABUSIVE_BEHAVIOR, code);
+		break;
+	}
+#endif /* !NO_BLOCKLIST_SUPPORT */
 
 	return code;
 }
@@ -2569,6 +2604,9 @@ bozo_setup(bozohttpd_t *httpd, bozoprefs_t *prefs, const char *vhost,
 	if ((cp = bozo_get_pref(prefs, "directory indexing")) != NULL &&
 	    strcmp(cp, "true") == 0) {
 		httpd->dir_indexing = 1;
+	}
+	if ((cp = bozo_get_pref(prefs, "directory index readme")) != NULL) {
+		httpd->dir_readme = bozostrdup(httpd, NULL, cp);
 	}
 	if ((cp = bozo_get_pref(prefs, "public_html")) != NULL) {
 		httpd->public_html = bozostrdup(httpd, NULL, cp);

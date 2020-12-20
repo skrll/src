@@ -35,7 +35,7 @@
 
 #ifdef _KERNEL
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: npf_portmap.c,v 1.4 2019/08/11 20:26:34 rmind Exp $");
+__KERNEL_RCSID(0, "$NetBSD: npf_portmap.c,v 1.7 2020/08/28 06:35:50 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -109,6 +109,20 @@ struct npf_portmap {
 static kmutex_t			portmap_lock;
 
 void
+npf_portmap_sysinit(void)
+{
+
+	mutex_init(&portmap_lock, MUTEX_DEFAULT, IPL_SOFTNET);
+}
+
+void
+npf_portmap_sysfini(void)
+{
+
+	mutex_destroy(&portmap_lock);
+}
+
+void
 npf_portmap_init(npf_t *npf)
 {
 	npf_portmap_t *pm = npf_portmap_create(
@@ -123,20 +137,20 @@ npf_portmap_init(npf_t *npf)
 		{
 			"portmap.max_port",
 			&pm->max_port,
-			.default_val = NPF_PORTMAP_MAXPORT,
+			.default_val = 49151, // RFC 6335
 			.min = 1024, .max = 65535
 		}
 	};
+
 	npf_param_register(npf, param_map, __arraycount(param_map));
-	mutex_init(&portmap_lock, MUTEX_DEFAULT, IPL_SOFTNET);
 	npf->portmap = pm;
 }
 
 void
 npf_portmap_fini(npf_t *npf)
 {
+
 	npf_portmap_destroy(npf->portmap);
-	mutex_destroy(&portmap_lock);
 	npf->portmap = NULL; // diagnostic
 }
 
@@ -270,7 +284,7 @@ bitmap_isset(const bitmap_t *bm, unsigned bit)
 
 	KASSERT(bit < PORTMAP_MAX_BITS);
 	i = bit >> PORTMAP_L0_SHIFT;
-	bval = bm->bits0[i];
+	bval = atomic_load_relaxed(&bm->bits0[i]);
 
 	/*
 	 * Empty check.  Note: we can test the whole word against zero,
@@ -303,7 +317,7 @@ again:
 	KASSERT(bit < PORTMAP_MAX_BITS);
 	i = bit >> PORTMAP_L0_SHIFT;
 	chunk_bit = bit & PORTMAP_L0_MASK;
-	bval = bm->bits0[i]; // atomic fetch
+	bval = bm->bits0[i];
 
 	if ((bval & PORTMAP_L1_TAG) == 0) {
 		unsigned n = 0, bitvals[5];
@@ -362,7 +376,7 @@ again:
 	i = chunk_bit >> PORTMAP_L1_SHIFT;
 	b = UINT64_C(1) << (chunk_bit & PORTMAP_L1_MASK);
 
-	oval = bm1->bits1[i]; // atomic fetch
+	oval = bm1->bits1[i];
 	if (oval & b) {
 		return false;
 	}
@@ -402,7 +416,7 @@ again:
 	i = chunk_bit >> PORTMAP_L1_SHIFT;
 	b = UINT64_C(1) << (chunk_bit & PORTMAP_L1_MASK);
 
-	oval = bm1->bits1[i]; // atomic fetch
+	oval = bm1->bits1[i];
 	if ((oval & b) == 0) {
 		return false;
 	}
@@ -457,7 +471,6 @@ npf_portmap_autoget(npf_portmap_t *pm, unsigned alen, const npf_addr_t *addr)
 	return bm;
 }
 
-
 /*
  * npf_portmap_flush: free all bitmaps and remove all addresses.
  *
@@ -496,25 +509,32 @@ npf_portmap_flush(npf_portmap_t *pm)
 in_port_t
 npf_portmap_get(npf_portmap_t *pm, int alen, const npf_addr_t *addr)
 {
-	const unsigned port_delta = pm->max_port - pm->min_port;
+	const unsigned min_port = atomic_load_relaxed(&pm->min_port);
+	const unsigned max_port = atomic_load_relaxed(&pm->max_port);
+	const unsigned port_delta = max_port - min_port + 1;
 	unsigned bit, target;
 	bitmap_t *bm;
 
+	/* Sanity check: the user might set incorrect parameters. */
+	if (__predict_false(min_port > max_port)) {
+		return 0;
+	}
+
 	bm = npf_portmap_autoget(pm, alen, addr);
-	if (bm == NULL) {
+	if (__predict_false(bm == NULL)) {
 		/* No memory. */
 		return 0;
 	}
 
 	/* Randomly select a port. */
-	target = pm->min_port + (cprng_fast32() % port_delta);
+	target = min_port + (cprng_fast32() % port_delta);
 	bit = target;
 next:
 	if (bitmap_set(bm, bit)) {
 		/* Success. */
 		return htons(bit);
 	}
-	bit = pm->min_port + ((bit + 1) % port_delta);
+	bit = min_port + ((bit + 1) % port_delta);
 	if (target != bit) {
 		/* Next.. */
 		goto next;

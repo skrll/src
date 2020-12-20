@@ -1,4 +1,4 @@
-/*	$NetBSD: aarch64.c,v 1.8 2020/01/28 17:36:42 maxv Exp $	*/
+/*	$NetBSD: aarch64.c,v 1.12 2020/10/10 08:27:41 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2018 Ryo Shimizu <ryo@nerv.org>
@@ -29,7 +29,7 @@
 #include <sys/cdefs.h>
 
 #ifndef lint
-__RCSID("$NetBSD: aarch64.c,v 1.8 2020/01/28 17:36:42 maxv Exp $");
+__RCSID("$NetBSD: aarch64.c,v 1.12 2020/10/10 08:27:41 jmcneill Exp $");
 #endif /* no lint */
 
 #include <sys/types.h>
@@ -60,8 +60,11 @@ struct impltab {
 };
 
 struct fieldinfo {
-	int bitpos;
-	int bitwidth;
+	unsigned int flags;
+#define FIELDINFO_FLAGS_DEC	0x0001
+#define FIELDINFO_FLAGS_4LOG2	0x0002
+	unsigned char bitpos;
+	unsigned char bitwidth;
 	const char *name;
 	const char * const *info;
 };
@@ -138,6 +141,7 @@ struct fieldinfo id_aa64pfr0_fieldinfo[] = {
 		.bitpos = 16, .bitwidth = 4, .name = "FP",
 		.info = (const char *[16]) { /* 16=4bit */
 			[0] = "Floating Point",
+			[1] = "Floating Point including half-precision support",
 			[15] = "No Floating Point"
 		}
 	},
@@ -145,6 +149,7 @@ struct fieldinfo id_aa64pfr0_fieldinfo[] = {
 		.bitpos = 20, .bitwidth = 4, .name = "AdvSIMD",
 		.info = (const char *[16]) { /* 16=4bit */
 			[0] = "Advanced SIMD",
+			[1] = "Advanced SIMD including half-precision support",
 			[15] = "No Advanced SIMD"
 		}
 	},
@@ -224,6 +229,82 @@ struct fieldinfo id_aa64isar0_fieldinfo[] = {
 			[1] = "CRC32B/CRC32H/CRC32W/CRC32X"
 			    "/CRC32CB/CRC32CH/CRC32CW/CRC32CX"
 		}
+	},
+	{
+		.bitpos = 20, .bitwidth = 4, .name = "Atomic",
+		.info = (const char *[16]) { /* 16=4bit */
+			[0] = "No Atomic",
+			[1] = "LDADD/LDCLR/LDEOR/LDSET/LDSMAX/LDSMIN"
+			    "/LDUMAX/LDUMIN/CAS/CASP/SWP",
+		}
+	},
+	{
+		.bitpos = 28, .bitwidth = 4, .name = "RDM",
+		.info = (const char *[16]) { /* 16=4bit */
+			[0] = "No RDMA",
+			[1] = "SQRDMLAH/SQRDMLSH",
+		}
+	},
+	{
+		.bitpos = 32, .bitwidth = 4, .name = "SHA3",
+		.info = (const char *[16]) { /* 16=4bit */
+			[0] = "No SHA3",
+			[1] = "EOR3/RAX1/XAR/BCAX",
+		}
+	},
+	{
+		.bitpos = 36, .bitwidth = 4, .name = "SM3",
+		.info = (const char *[16]) { /* 16=4bit */
+			[0] = "No SM3",
+			[1] = "SM3SS1/SM3TT1A/SM3TT1B/SM3TT2A/SM3TT2B"
+			    "/SM3PARTW1/SM3PARTW2",
+		}
+	},
+	{
+		.bitpos = 40, .bitwidth = 4, .name = "SM4",
+		.info = (const char *[16]) { /* 16=4bit */
+			[0] = "No SM4",
+			[1] = "SM4E/SM4EKEY",
+		}
+	},
+	{
+		.bitpos = 44, .bitwidth = 4, .name = "DP",
+		.info = (const char *[16]) { /* 16=4bit */
+			[0] = "No Dot Product",
+			[1] = "UDOT/SDOT",
+		}
+	},
+	{
+		.bitpos = 48, .bitwidth = 4, .name = "FHM",
+		.info = (const char *[16]) { /* 16=4bit */
+			[0] = "No FHM",
+			[1] = "FMLAL/FMLSL",
+		}
+	},
+	{
+		.bitpos = 52, .bitwidth = 4, .name = "TS",
+		.info = (const char *[16]) { /* 16=4bit */
+			[0] = "No TS",
+			[1] = "CFINV/RMIF/SETF16/SETF8",
+			[2] = "CFINV/RMIF/SETF16/SETF8/AXFLAG/XAFLAG",
+		}
+	},
+	{
+		.bitpos = 56, .bitwidth = 4, .name = "TLBI",
+		.info = (const char *[16]) { /* 16=4bit */
+			[0] = "No outer shareable and TLB range maintenance"
+			    " instructions",
+			[1] = "Outer shareable TLB maintenance instructions",
+			[2] = "Outer shareable and TLB range maintenance"
+			    " instructions",
+		}
+	},
+	{
+		.bitpos = 60, .bitwidth = 4, .name = "RNDR",
+		.info = (const char *[16]) { /* 16=4bit */
+			[0] = "No RNDR/RNDRRS",
+			[1] = "RNDR/RNDRRS",
+		},
 	},
 	{ .bitwidth = 0 }	/* end of table */
 };
@@ -542,13 +623,108 @@ struct fieldinfo mvfr2_fieldinfo[] = {
 	{ .bitwidth = 0 }	/* end of table */
 };
 
+/* CLIDR_EL1 - Cache Level ID Register */
+const char * const clidr_cachetype[8] = { /* 8=3bit */
+	[0] = "None",
+	[1] = "Instruction cache",
+	[2] = "Data cache",
+	[3] = "Instruction and Data cache",
+	[4] = "Unified cache"
+};
+
+struct fieldinfo clidr_fieldinfo[] = {
+	{
+		.bitpos = 0, .bitwidth = 3, .name = "L1",
+		.info = clidr_cachetype
+	},
+	{
+		.bitpos = 3, .bitwidth = 3, .name = "L2",
+		.info = clidr_cachetype
+	},
+	{
+		.bitpos = 6, .bitwidth = 3, .name = "L3",
+		.info = clidr_cachetype
+	},
+	{
+		.bitpos = 9, .bitwidth = 3, .name = "L4",
+		.info = clidr_cachetype
+	},
+	{
+		.bitpos = 12, .bitwidth = 3, .name = "L5",
+		.info = clidr_cachetype
+	},
+	{
+		.bitpos = 15, .bitwidth = 3, .name = "L6",
+		.info = clidr_cachetype
+	},
+	{
+		.bitpos = 18, .bitwidth = 3, .name = "L7",
+		.info = clidr_cachetype
+	},
+	{
+		.bitpos = 21, .bitwidth = 3, .name = "LoUU",
+		.flags = FIELDINFO_FLAGS_DEC
+	},
+	{
+		.bitpos = 24, .bitwidth = 3, .name = "LoC",
+		.flags = FIELDINFO_FLAGS_DEC
+	},
+	{
+		.bitpos = 27, .bitwidth = 3, .name = "LoUIS",
+		.flags = FIELDINFO_FLAGS_DEC
+	},
+	{
+		.bitpos = 30, .bitwidth = 3, .name = "ICB",
+		.flags = FIELDINFO_FLAGS_DEC
+	},
+	{ .bitwidth = 0 }	/* end of table */
+};
+
+struct fieldinfo ctr_fieldinfo[] = {
+	{
+		.bitpos = 0, .bitwidth = 4, .name = "IminLine",
+		.flags = FIELDINFO_FLAGS_DEC | FIELDINFO_FLAGS_4LOG2
+	},
+	{
+		.bitpos = 16, .bitwidth = 4, .name = "DminLine",
+		.flags = FIELDINFO_FLAGS_DEC | FIELDINFO_FLAGS_4LOG2
+	},
+	{
+		.bitpos = 14, .bitwidth = 2, .name = "L1 Icache policy",
+		.info = (const char *[4]) { /* 4=2bit */
+			[0] = "VMID aware PIPT (VPIPT)",
+			[1] = "ASID-tagged VIVT (AIVIVT)",
+			[2] = "VIPT",
+			[3] = "PIPT"
+		},
+	},
+	{
+		.bitpos = 20, .bitwidth = 4, .name = "ERG",
+		.flags = FIELDINFO_FLAGS_DEC | FIELDINFO_FLAGS_4LOG2
+	},
+	{
+		.bitpos = 24, .bitwidth = 4, .name = "CWG",
+		.flags = FIELDINFO_FLAGS_DEC | FIELDINFO_FLAGS_4LOG2
+	},
+	{
+		.bitpos = 28, .bitwidth = 1, .name = "DIC",
+		.flags = FIELDINFO_FLAGS_DEC
+	},
+	{
+		.bitpos = 29, .bitwidth = 1, .name = "IDC",
+		.flags = FIELDINFO_FLAGS_DEC
+	},
+	{ .bitwidth = 0 }	/* end of table */
+};
+
+
 static void
 print_fieldinfo(const char *cpuname, const char *setname,
     struct fieldinfo *fieldinfo, uint64_t data)
 {
 	uint64_t v;
 	const char *info;
-	int i;
+	int i, flags;
 
 #define WIDTHMASK(w)	(0xffffffffffffffffULL >> (64 - (w)))
 
@@ -556,13 +732,24 @@ print_fieldinfo(const char *cpuname, const char *setname,
 		v = (data >> fieldinfo[i].bitpos) &
 		    WIDTHMASK(fieldinfo[i].bitwidth);
 
-		info = fieldinfo[i].info[v];
-		if (info == NULL)
-			printf("%s: %s: %s: 0x%"PRIx64"\n",
-			    cpuname, setname, fieldinfo[i].name, v);
-		else
-			printf("%s: %s: %s: %s\n",
-			    cpuname, setname, fieldinfo[i].name, info);
+		flags = fieldinfo[i].flags;
+		info = NULL;
+		if (fieldinfo[i].info != NULL)
+			info = fieldinfo[i].info[v];
+
+		printf("%s: %s: %s: ",
+		    cpuname, setname, fieldinfo[i].name);
+
+		if (info == NULL) {
+			if (flags & FIELDINFO_FLAGS_4LOG2)
+				v = 4 * (1 << v);
+			if (flags & FIELDINFO_FLAGS_DEC)
+				printf("%"PRIu64"\n", v);
+			else
+				printf("0x%"PRIx64"\n", v);
+		} else {
+			printf("%s\n", info);
+		}
 	}
 }
 
@@ -664,6 +851,7 @@ identifycpu(int fd, const char *cpuname)
 
 	snprintf(path, sizeof path, "machdep.%s.cpu_id", cpuname);
 	len = sizeof(sysctlbuf);
+	memset(sysctlbuf, 0, len);
 	if (sysctlbyname(path, id, &len, 0, 0) == -1)
 		err(1, "couldn't get %s", path);
 	if (len != sizeof(struct aarch64_sysctl_cpu_id))
@@ -700,6 +888,10 @@ identifycpu(int fd, const char *cpuname)
 		    cpuname, id->ac_mvfr1);
 		printf("%s: MVFR2_EL1: 0x%08"PRIx32"\n",
 		    cpuname, id->ac_mvfr2);
+		printf("%s: CLIDR_EL1: 0x%016"PRIx64"\n",
+		    cpuname, id->ac_clidr);
+		printf("%s: CTR_EL0: 0x%016"PRIx64"\n",
+		    cpuname, id->ac_ctr);
 	}
 
 	identify_midr(cpuname, id->ac_midr);
@@ -723,6 +915,13 @@ identifycpu(int fd, const char *cpuname)
 	    mvfr1_fieldinfo, id->ac_mvfr1);
 	print_fieldinfo(cpuname, "media and VFP features 2",
 	    mvfr2_fieldinfo, id->ac_mvfr2);
+
+	if (len <= offsetof(struct aarch64_sysctl_cpu_id, ac_clidr))
+		return;
+	print_fieldinfo(cpuname, "cache level",
+	    clidr_fieldinfo, id->ac_clidr);
+	print_fieldinfo(cpuname, "cache type",
+	    ctr_fieldinfo, id->ac_ctr);
 }
 
 bool

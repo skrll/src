@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_ccm.c,v 1.15 2019/11/12 04:32:36 hkenken Exp $	*/
+/*	$NetBSD: imx6_ccm.c,v 1.19 2020/06/19 16:11:14 skrll Exp $	*/
 
 /*
  * Copyright (c) 2010-2012, 2014  Genetec Corporation.  All rights reserved.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_ccm.c,v 1.15 2019/11/12 04:32:36 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx6_ccm.c,v 1.19 2020/06/19 16:11:14 skrll Exp $");
 
 #include "opt_cputypes.h"
 
@@ -661,7 +661,7 @@ static struct imx6_clk imx6_clks[] = {
 	CLK_PFD("pll3_pfd3_454m", "pll3_usb_otg", PFD_480, 3),
 
 	CLK_PLL("pll1", "osc", SYS, PLL_ARM, DIV_SELECT, POWERDOWN, 0),
-	CLK_PLL("pll2", "osc", GENNERIC, PLL_SYS, DIV_SELECT, POWERDOWN, 0),
+	CLK_PLL("pll2", "osc", GENERIC, PLL_SYS, DIV_SELECT, POWERDOWN, 0),
 	CLK_PLL("pll3", "osc", USB, PLL_USB1, DIV_SELECT, POWER, 0),
 	CLK_PLL("pll4", "osc", AUDIO_VIDEO, PLL_AUDIO, DIV_SELECT, POWERDOWN, 0),
 	CLK_PLL("pll5", "osc", AUDIO_VIDEO, PLL_VIDEO, DIV_SELECT, POWERDOWN, 0),
@@ -1035,7 +1035,7 @@ imxccm_clk_get_rate_pll_generic(struct imxccm_softc *sc, struct imx6_clk *iclk,
 	struct imx6_clk_pll *pll = &iclk->clk.pll;
 	uint64_t freq = rate_parent;
 
-	KASSERT((pll->type == IMX6_CLK_PLL_GENNERIC) ||
+	KASSERT((pll->type == IMX6_CLK_PLL_GENERIC) ||
 	    (pll->type == IMX6_CLK_PLL_USB));
 
 	uint32_t v = bus_space_read_4(sc->sc_iot, sc->sc_ioh_analog, pll->reg);
@@ -1124,7 +1124,7 @@ imxccm_clk_get_rate_pll(struct imxccm_softc *sc, struct imx6_clk *iclk)
 	uint64_t rate_parent = imxccm_clk_get_rate(sc, &parent->base);
 
 	switch(pll->type) {
-	case IMX6_CLK_PLL_GENNERIC:
+	case IMX6_CLK_PLL_GENERIC:
 		return imxccm_clk_get_rate_pll_generic(sc, iclk, rate_parent);
 	case IMX6_CLK_PLL_SYS:
 		return imxccm_clk_get_rate_pll_sys(sc, iclk, rate_parent);
@@ -1286,43 +1286,43 @@ static int
 imxccm_clk_set_rate_div(struct imxccm_softc *sc,
     struct imx6_clk *iclk, u_int rate)
 {
-        struct imx6_clk_div *div = &iclk->clk.div;
-        struct imx6_clk *parent;
+	struct imx6_clk_div *div = &iclk->clk.div;
+	struct imx6_clk *parent;
 
-        KASSERT(iclk->type == IMX6_CLK_DIV);
+	KASSERT(iclk->type == IMX6_CLK_DIV);
 
-        parent = imx6_clk_find(iclk->parent);
-        KASSERT(parent != NULL);
+	parent = imx6_clk_find(iclk->parent);
+	KASSERT(parent != NULL);
 
-        u_int rate_parent = imxccm_clk_get_rate(sc, &parent->base);
-        u_int divider = rate_parent / rate;
+	u_int rate_parent = imxccm_clk_get_rate(sc, &parent->base);
+	u_int divider = uimax(1, rate_parent / rate);
 
-        KASSERT(div->tbl != NULL);
+	bus_space_handle_t ioh;
+	if (div->base == IMX6_CLK_REG_CCM_ANALOG)
+		ioh = sc->sc_ioh_analog;
+	else
+		ioh = sc->sc_ioh;
 
-        bus_space_handle_t ioh;
-        if (div->base == IMX6_CLK_REG_CCM_ANALOG)
-                ioh = sc->sc_ioh_analog;
-        else
-                ioh = sc->sc_ioh;
+	uint32_t v = bus_space_read_4(sc->sc_iot, ioh, div->reg);
+	v &= ~div->mask;
+	if (div->type == IMX6_CLK_DIV_TABLE) {
+		int n = -1;
 
-        uint32_t v = bus_space_read_4(sc->sc_iot, ioh, div->reg);
-        v &= ~div->mask;
-        if (div->type == IMX6_CLK_DIV_TABLE) {
-                int n = -1;
-                for (int i = 0; div->tbl[i] != 0; i++)
-                        if (div->tbl[i] == divider)
-                                n = i;
+		KASSERT(div->tbl != NULL);
+		for (int i = 0; div->tbl[i] != 0; i++)
+			if (div->tbl[i] == divider)
+				n = i;
 
-                if (n >= 0)
-                        v |= __SHIFTIN(n, div->mask);
-                else
-                        return EINVAL;
-        } else {
-                v |= __SHIFTIN(divider - 1, div->mask);
-        }
-        bus_space_write_4(sc->sc_iot, ioh, div->reg, v);
+		if (n >= 0)
+			v |= __SHIFTIN(n, div->mask);
+		else
+			return EINVAL;
+	} else {
+		v |= __SHIFTIN(divider - 1, div->mask);
+	}
+	bus_space_write_4(sc->sc_iot, ioh, div->reg, v);
 
-        return 0;
+	return 0;
 }
 
 /*

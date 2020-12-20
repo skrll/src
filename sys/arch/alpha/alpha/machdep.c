@@ -1,7 +1,7 @@
-/* $NetBSD: machdep.c,v 1.359 2020/02/22 20:29:15 thorpej Exp $ */
+/* $NetBSD: machdep.c,v 1.369 2020/10/15 01:00:01 thorpej Exp $ */
 
 /*-
- * Copyright (c) 1998, 1999, 2000, 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 1999, 2000, 2019, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -67,7 +67,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.359 2020/02/22 20:29:15 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.369 2020/10/15 01:00:01 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -150,6 +150,7 @@ int	unusedmem;		/* amount of memory for OS that we don't use */
 int	unknownmem;		/* amount of memory with an unknown use */
 
 int	cputype;		/* system type, from the RPB */
+bool	alpha_is_qemu;		/* true if we've detected runnnig in qemu */
 
 int	bootdev_debug = 0;	/* patchable, or from DDB */
 
@@ -215,6 +216,69 @@ const pcu_ops_t * const pcu_ops_md_defs[PCU_UNIT_COUNT] = {
 	[PCU_FPU] = &fpu_ops,
 };
 
+static void
+alpha_page_physload(unsigned long const start_pfn, unsigned long const end_pfn)
+{
+
+	/*
+	 * Some Alpha platforms may have unique requirements about
+	 * how physical memory is managed (e.g. reserving memory
+	 * ranges due to lack of SGMAP DMA).
+	 */
+	if (platform.page_physload != NULL) {
+		(*platform.page_physload)(start_pfn, end_pfn);
+		return;
+	}
+
+	uvm_page_physload(start_pfn, end_pfn, start_pfn, end_pfn,
+	    VM_FREELIST_DEFAULT);
+}
+
+void
+alpha_page_physload_sheltered(unsigned long const start_pfn,
+    unsigned long const end_pfn, unsigned long const shelter_start_pfn,
+    unsigned long const shelter_end_pfn)
+{
+
+	/*
+	 * If the added region ends before or starts after the sheltered
+	 * region, then it just goes on the default freelist.
+	 */
+	if (end_pfn <= shelter_start_pfn || start_pfn >= shelter_end_pfn) {
+		uvm_page_physload(start_pfn, end_pfn,
+		    start_pfn, end_pfn, VM_FREELIST_DEFAULT);
+		return;
+	}
+
+	/*
+	 * Load any portion that comes before the sheltered region.
+	 */
+	if (start_pfn < shelter_start_pfn) {
+		KASSERT(end_pfn > shelter_start_pfn);
+		uvm_page_physload(start_pfn, shelter_start_pfn,
+		    start_pfn, shelter_start_pfn, VM_FREELIST_DEFAULT);
+	}
+
+	/*
+	 * Load the portion that overlaps that sheltered region.
+	 */
+	const unsigned long ov_start = MAX(start_pfn, shelter_start_pfn);
+	const unsigned long ov_end = MIN(end_pfn, shelter_end_pfn);
+	KASSERT(ov_start >= shelter_start_pfn);
+	KASSERT(ov_end <= shelter_end_pfn);
+	uvm_page_physload(ov_start, ov_end, ov_start, ov_end,
+	    VM_FREELIST_SHELTERED);
+
+	/*
+	 * Load any portion that comes after the sheltered region.
+	 */
+	if (end_pfn > shelter_end_pfn) {
+		KASSERT(start_pfn < shelter_end_pfn);
+		uvm_page_physload(shelter_end_pfn, end_pfn,
+		    shelter_end_pfn, end_pfn, VM_FREELIST_DEFAULT);
+	}
+}
+
 void
 alpha_init(u_long xxx_pfn __unused, u_long ptb, u_long bim, u_long bip,
     u_long biv)
@@ -253,17 +317,19 @@ alpha_init(u_long xxx_pfn __unused, u_long ptb, u_long bim, u_long bip,
 
 	cpu_id = cpu_number();
 
+	ci = &cpu_info_primary;
+	ci->ci_cpuid = cpu_id;
+
 #if defined(MULTIPROCESSOR)
 	/*
-	 * Set our SysValue to the address of our cpu_info structure.
-	 * Secondary processors do this in their spinup trampoline.
+	 * Set the SysValue to &lwp0, after making sure that lwp0
+	 * is pointing at the primary CPU.  Secondary processors do
+	 * this in their spinup trampoline.
 	 */
-	alpha_pal_wrval((u_long)&cpu_info_primary);
-	cpu_info[cpu_id] = &cpu_info_primary;
+	lwp0.l_cpu = ci;
+	cpu_info[cpu_id] = ci;
+	alpha_pal_wrval((u_long)&lwp0);
 #endif
-
-	ci = curcpu();
-	ci->ci_cpuid = cpu_id;
 
 	/*
 	 * Get critical system information (if possible, from the
@@ -299,7 +365,7 @@ alpha_init(u_long xxx_pfn __unused, u_long ptb, u_long bim, u_long bip,
 			    uimin(sizeof v1p->booted_kernel,
 			      sizeof bootinfo.booted_kernel));
 			/* booted dev not provided in bootinfo */
-			init_prom_interface((struct rpb *)
+			init_prom_interface(ptb, (struct rpb *)
 			    ALPHA_PHYS_TO_K0SEG(bootinfo.hwrpb_phys));
 	        	prom_getenv(PROM_E_BOOTED_DEV, bootinfo.booted_dev,
 			    sizeof bootinfo.booted_dev);
@@ -316,13 +382,25 @@ nobootinfo:
 		bootinfo.esym = (u_long)_end;
 		bootinfo.hwrpb_phys = ((struct rpb *)HWRPB_ADDR)->rpb_phys;
 		bootinfo.hwrpb_size = ((struct rpb *)HWRPB_ADDR)->rpb_size;
-		init_prom_interface((struct rpb *)HWRPB_ADDR);
-		prom_getenv(PROM_E_BOOTED_OSFLAGS, bootinfo.boot_flags,
-		    sizeof bootinfo.boot_flags);
-		prom_getenv(PROM_E_BOOTED_FILE, bootinfo.booted_kernel,
-		    sizeof bootinfo.booted_kernel);
-		prom_getenv(PROM_E_BOOTED_DEV, bootinfo.booted_dev,
-		    sizeof bootinfo.booted_dev);
+		init_prom_interface(ptb, (struct rpb *)HWRPB_ADDR);
+		if (alpha_is_qemu) {
+			/*
+			 * Grab boot flags from kernel command line.
+			 * Assume autoboot if not supplied.
+			 */
+			if (! prom_qemu_getenv("flags", bootinfo.boot_flags,
+					       sizeof(bootinfo.boot_flags))) {
+				strlcpy(bootinfo.boot_flags, "A",
+					sizeof(bootinfo.boot_flags));
+			}
+		} else {
+			prom_getenv(PROM_E_BOOTED_OSFLAGS, bootinfo.boot_flags,
+			    sizeof bootinfo.boot_flags);
+			prom_getenv(PROM_E_BOOTED_FILE, bootinfo.booted_kernel,
+			    sizeof bootinfo.booted_kernel);
+			prom_getenv(PROM_E_BOOTED_DEV, bootinfo.booted_dev,
+			    sizeof bootinfo.booted_dev);
+		}
 	}
 
 	/*
@@ -375,17 +453,10 @@ nobootinfo:
 	uvm_md_init();
 
 	/*
-	 * Find out what hardware we're on, and do basic initialization.
+	 * cputype has been initialized in init_prom_interface().
+	 * Perform basic platform initialization using this info.
 	 */
-	cputype = hwrpb->rpb_type;
-	if (cputype < 0) {
-		/*
-		 * At least some white-box systems have SRM which
-		 * reports a systype that's the negative of their
-		 * blue-box counterpart.
-		 */
-		cputype = -cputype;
-	}
+	KASSERT(prom_interface_initialized);
 	c = platform_lookup(cputype);
 	if (c == NULL) {
 		platform_not_supported();
@@ -416,12 +487,7 @@ nobootinfo:
 #endif
 
 	/* NO MORE FIRMWARE ACCESS ALLOWED */
-#ifdef _PMAP_MAY_USE_PROM_CONSOLE
-	/*
-	 * XXX (unless _PMAP_MAY_USE_PROM_CONSOLE is defined and
-	 * XXX pmap_uses_prom_console() evaluates to non-zero.)
-	 */
-#endif
+	/* XXX Unless prom_uses_prom_console() evaluates to non-zero.) */
 
 	/*
 	 * Find the beginning and end of the kernel (and leave a
@@ -507,14 +573,12 @@ nobootinfo:
 		 * software use.  We must determine if this cluster
 		 * holds the kernel.
 		 */
-#ifdef _PMAP_MAY_USE_PROM_CONSOLE
+
 		/*
 		 * XXX If the kernel uses the PROM console, we only use the
 		 * XXX memory after the kernel in the first system segment,
 		 * XXX to avoid clobbering prom mapping, data, etc.
 		 */
-	    if (!pmap_uses_prom_console() || physmem == 0) {
-#endif /* _PMAP_MAY_USE_PROM_CONSOLE */
 		physmem += memc->mddt_pg_cnt;
 		pfn0 = memc->mddt_pfn;
 		pfn1 = memc->mddt_pfn + memc->mddt_pg_cnt;
@@ -526,10 +590,7 @@ nobootinfo:
 #if 0
 			printf("Cluster %d contains kernel\n", i);
 #endif
-#ifdef _PMAP_MAY_USE_PROM_CONSOLE
-		    if (!pmap_uses_prom_console()) {
-#endif /* _PMAP_MAY_USE_PROM_CONSOLE */
-			if (pfn0 < kernstartpfn) {
+			if (pfn0 < kernstartpfn && !prom_uses_prom_console()) {
 				/*
 				 * There is a chunk before the kernel.
 				 */
@@ -537,12 +598,8 @@ nobootinfo:
 				printf("Loading chunk before kernel: "
 				    "0x%lx / 0x%lx\n", pfn0, kernstartpfn);
 #endif
-				uvm_page_physload(pfn0, kernstartpfn,
-				    pfn0, kernstartpfn, VM_FREELIST_DEFAULT);
+				alpha_page_physload(pfn0, kernstartpfn);
 			}
-#ifdef _PMAP_MAY_USE_PROM_CONSOLE
-		    }
-#endif /* _PMAP_MAY_USE_PROM_CONSOLE */
 			if (kernendpfn < pfn1) {
 				/*
 				 * There is a chunk after the kernel.
@@ -551,8 +608,7 @@ nobootinfo:
 				printf("Loading chunk after kernel: "
 				    "0x%lx / 0x%lx\n", kernendpfn, pfn1);
 #endif
-				uvm_page_physload(kernendpfn, pfn1,
-				    kernendpfn, pfn1, VM_FREELIST_DEFAULT);
+				alpha_page_physload(kernendpfn, pfn1);
 			}
 		} else {
 			/*
@@ -562,12 +618,8 @@ nobootinfo:
 			printf("Loading cluster %d: 0x%lx / 0x%lx\n", i,
 			    pfn0, pfn1);
 #endif
-			uvm_page_physload(pfn0, pfn1, pfn0, pfn1,
-			    VM_FREELIST_DEFAULT);
+			alpha_page_physload(pfn0, pfn1);
 		}
-#ifdef _PMAP_MAY_USE_PROM_CONSOLE
-	    }
-#endif /* _PMAP_MAY_USE_PROM_CONSOLE */
 	}
 
 	/*
@@ -732,7 +784,7 @@ nobootinfo:
 		case 'Q':
 			boothowto |= AB_QUIET;
 			break;
-			
+
 		case 'v': /* verbose boot */
 		case 'V':
 			boothowto |= AB_VERBOSE;
@@ -813,9 +865,9 @@ consinit(void)
 	 * Everything related to console initialization is done
 	 * in alpha_init().
 	 */
-#if defined(DIAGNOSTIC) && defined(_PMAP_MAY_USE_PROM_CONSOLE)
+#if defined(DIAGNOSTIC) && defined(_PROM_MAY_USE_PROM_CONSOLE)
 	printf("consinit: %susing prom console\n",
-	    pmap_uses_prom_console() ? "" : "not ");
+	    prom_uses_prom_console() ? "" : "not ");
 #endif
 }
 
@@ -869,7 +921,7 @@ cpu_startup(void)
 #if defined(DEBUG)
 	pmapdebug = opmapdebug;
 #endif
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem()));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 #if 0
 	{
@@ -965,15 +1017,6 @@ skipMHz:
 	printf("\n");
 	printf("%ld byte page size, %d processor%s.\n",
 	    hwrpb->rpb_page_size, ncpus, ncpus == 1 ? "" : "s");
-#if 0
-	/* this isn't defined for any systems that we run on? */
-	printf("serial number 0x%lx 0x%lx\n",
-	    ((long *)hwrpb->rpb_ssn)[0], ((long *)hwrpb->rpb_ssn)[1]);
-
-	/* and these aren't particularly useful! */
-	printf("variation: 0x%lx, revision 0x%lx\n",
-	    hwrpb->rpb_variation, *(long *)hwrpb->rpb_revision);
-#endif
 }
 
 int	waittime = -1;
@@ -1273,7 +1316,7 @@ dumpsys(void)
 			n = bytes - i;
 			if (n > BYTES_PER_DUMP)
 				n =  BYTES_PER_DUMP;
-	
+
 			error = (*dump)(dumpdev, blkno,
 			    (void *)ALPHA_PHYS_TO_K0SEG(maddr), n);
 			if (error)
@@ -1436,7 +1479,7 @@ getframe(const struct lwp *l, int sig, int *onstack)
 	else
 		frame = (void *)(alpha_pal_rdusp());
 	return (frame);
-}	
+}
 
 void
 buildcontext(struct lwp *l, const void *catcher, const void *tramp, const void *fp)
@@ -1514,7 +1557,7 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	 * the trampoline version numbers are coordinated with machine-
 	 * dependent code in libc.
 	 */
-	
+
 	tf->tf_regs[FRAME_A0] = sig;
 	tf->tf_regs[FRAME_A1] = (uint64_t)&fp->sf_si;
 	tf->tf_regs[FRAME_A2] = (uint64_t)&fp->sf_uc;
@@ -1585,6 +1628,16 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 		       CTLTYPE_INT, "fp_sync_complete", NULL,
 		       NULL, 0, &alpha_fp_sync_complete, 0,
 		       CTL_MACHDEP, CPU_FP_SYNC_COMPLETE, CTL_EOL);
+	sysctl_createv(clog, 0, NULL, NULL,
+		       CTLFLAG_PERMANENT,
+		       CTLTYPE_INT, "cctr", NULL,
+		       NULL, 0, &alpha_use_cctr, 0,
+		       CTL_MACHDEP, CPU_CCTR, CTL_EOL);
+	sysctl_createv(clog, 0, NULL, NULL,
+		       CTLFLAG_PERMANENT,
+		       CTLTYPE_BOOL, "is_qemu", NULL,
+		       NULL, 0, &alpha_is_qemu, 0,
+		       CTL_MACHDEP, CPU_IS_QEMU, CTL_EOL);
 }
 
 /*
@@ -1631,6 +1684,8 @@ setregs(register struct lwp *l, struct exec_package *pack, vaddr_t stack)
 	}
 }
 
+void	(*alpha_delay_fn)(unsigned long);
+
 /*
  * Wait "n" microseconds.
  */
@@ -1641,6 +1696,15 @@ delay(unsigned long n)
 
 	if (n == 0)
 		return;
+
+	/*
+	 * If we have an alternative delay function, go ahead and
+	 * use it.
+	 */
+	if (alpha_delay_fn != NULL) {
+		(*alpha_delay_fn)(n);
+		return;
+	}
 
 	pcc0 = alpha_rpcc() & 0xffffffffUL;
 	cycles = 0;
@@ -1740,17 +1804,6 @@ mm_md_direct_mapped_phys(paddr_t paddr, vaddr_t *vaddr)
 	*vaddr = ALPHA_PHYS_TO_K0SEG(paddr);
 	return true;
 }
-
-/* XXX XXX BEGIN XXX XXX */
-paddr_t alpha_XXX_dmamap_or;					/* XXX */
-								/* XXX */
-paddr_t								/* XXX */
-alpha_XXX_dmamap(vaddr_t v)					/* XXX */
-{								/* XXX */
-								/* XXX */
-	return (vtophys(v) | alpha_XXX_dmamap_or);		/* XXX */
-}								/* XXX */
-/* XXX XXX END XXX XXX */
 
 char *
 dot_conv(unsigned long x)
@@ -1862,6 +1915,14 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 	return (0);
 }
 
+static void
+cpu_kick(struct cpu_info * const ci)
+{
+#if defined(MULTIPROCESSOR)
+	alpha_send_ipi(ci->ci_cpuid, ALPHA_IPI_AST);
+#endif /* MULTIPROCESSOR */
+}
+
 /*
  * Preempt the current process if in interrupt from user mode,
  * or after the current trap/syscall if in system mode.
@@ -1869,13 +1930,56 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 void
 cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 {
-	if ((flags & RESCHED_IDLE) == 0) {
-		if ((flags & RESCHED_REMOTE) != 0) {
-#if defined(MULTIPROCESSOR)
-			alpha_send_ipi(ci->ci_cpuid, ALPHA_IPI_AST);
-#endif /* defined(MULTIPROCESSOR) */
-		} else {
-			aston(l);
-		}
+
+	KASSERT(kpreempt_disabled());
+
+	if ((flags & RESCHED_IDLE) != 0) {
+		/*
+		 * Nothing to do here; we are not currently using WTINT
+		 * in cpu_idle().
+		 */
+		return;
 	}
+
+	/* XXX RESCHED_KPREEMPT XXX */
+
+	KASSERT((flags & RESCHED_UPREEMPT) != 0);
+	if ((flags & RESCHED_REMOTE) != 0) {
+		cpu_kick(ci);
+	} else {
+		aston(l);
+	}
+}
+
+/*
+ * Notify the current lwp (l) that it has a signal pending,
+ * process as soon as possible.
+ */
+void
+cpu_signotify(struct lwp *l)
+{
+
+	KASSERT(kpreempt_disabled());
+
+	if (l->l_cpu != curcpu()) {
+		cpu_kick(l->l_cpu);
+	} else {
+		aston(l);
+	}
+}
+
+/*
+ * Give a profiling tick to the current process when the user profiling
+ * buffer pages are invalid.  On the alpha, request an AST to send us
+ * through trap, marking the proc as needing a profiling tick.
+ */
+void
+cpu_need_proftick(struct lwp *l)
+{
+
+	KASSERT(kpreempt_disabled());
+	KASSERT(l->l_cpu == curcpu());
+
+	l->l_pflag |= LP_OWEUPC;
+	aston(l);
 }

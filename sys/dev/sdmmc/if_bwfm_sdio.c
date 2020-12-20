@@ -1,4 +1,4 @@
-/* $NetBSD: if_bwfm_sdio.c,v 1.14 2020/03/25 03:44:45 thorpej Exp $ */
+/* $NetBSD: if_bwfm_sdio.c,v 1.24 2020/11/03 09:26:41 mlelstv Exp $ */
 /* $OpenBSD: if_bwfm_sdio.c,v 1.1 2017/10/11 17:19:50 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -18,35 +18,36 @@
  */
 
 #include <sys/param.h>
-#include <sys/systm.h>
+#include <sys/types.h>
+
 #include <sys/buf.h>
+#include <sys/device.h>
 #include <sys/endian.h>
 #include <sys/kernel.h>
+#include <sys/kmem.h>
 #include <sys/malloc.h>
-#include <sys/device.h>
+#include <sys/mutex.h>
 #include <sys/queue.h>
 #include <sys/socket.h>
-#include <sys/mutex.h>
+#include <sys/systm.h>
 
 #include <net/bpf.h>
 #include <net/if.h>
 #include <net/if_dl.h>
-#include <net/if_media.h>
 #include <net/if_ether.h>
+#include <net/if_media.h>
 
 #include <netinet/in.h>
 
-#include <dev/ofw/openfirm.h>
-#include <dev/fdt/fdtvar.h>
-
 #include <net80211/ieee80211_var.h>
 
+#include <dev/fdt/fdtvar.h>
+#include <dev/ic/bwfmreg.h>
+#include <dev/ic/bwfmvar.h>
+#include <dev/ofw/openfirm.h>
+#include <dev/sdmmc/if_bwfm_sdio.h>
 #include <dev/sdmmc/sdmmcdevs.h>
 #include <dev/sdmmc/sdmmcvar.h>
-
-#include <dev/ic/bwfmvar.h>
-#include <dev/ic/bwfmreg.h>
-#include <dev/sdmmc/if_bwfm_sdio.h>
 
 #ifdef BWFM_DEBUG
 #define DPRINTF(x)	do { if (bwfm_debug > 0) printf x; } while (0)
@@ -69,7 +70,6 @@ enum bwfm_sdio_clkstate {
 struct bwfm_sdio_softc {
 	struct bwfm_softc	sc_sc;
 	kmutex_t		sc_lock;
-	kmutex_t		sc_intr_lock;
 
 	bool			sc_bwfm_attached;
 
@@ -246,7 +246,7 @@ static const struct bwfm_firmware_selector bwfm_sdio_fwtab[] = {
 	BWFM_FW_ENTRY_END
 };
 
-struct bwfm_bus_ops bwfm_sdio_bus_ops = {
+static const struct bwfm_bus_ops bwfm_sdio_bus_ops = {
 	.bs_init = NULL,
 	.bs_stop = NULL,
 	.bs_txcheck = bwfm_sdio_txcheck,
@@ -255,7 +255,7 @@ struct bwfm_bus_ops bwfm_sdio_bus_ops = {
 	.bs_rxctl = bwfm_sdio_rxctl,
 };
 
-struct bwfm_buscore_ops bwfm_sdio_buscore_ops = {
+static const struct bwfm_buscore_ops bwfm_sdio_buscore_ops = {
 	.bc_read = bwfm_sdio_buscore_read,
 	.bc_write = bwfm_sdio_buscore_write,
 	.bc_prepare = bwfm_sdio_buscore_prepare,
@@ -297,9 +297,14 @@ static const struct bwfm_sdio_product {
 		SDMMC_PRODUCT_BROADCOM_BCM43455, 
 		SDMMC_CIS_BROADCOM_BCM43455
 	},
+	{
+		SDMMC_VENDOR_BROADCOM,
+		SDMMC_PRODUCT_BROADCOM_BCM43362, 
+		SDMMC_CIS_BROADCOM_BCM43362
+	},
 };
 
-static const char *compatible[] = {
+static const char * const compatible[] = {
 	"brcm,bcm4329-fmac",
 	NULL
 };
@@ -356,10 +361,8 @@ bwfm_sdio_attach(device_t parent, device_t self, void *aux)
 
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	cv_init(&sc->sc_rxctl_cv, "bwfmctl");
-	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_NONE);
 
 	sdmmc_init_task(&sc->sc_task, bwfm_sdio_task, sc);
-	sc->sc_task_queued = false;
 
 	sc->sc_bounce_size = 64 * 1024;
 	sc->sc_bounce_buf = kmem_alloc(sc->sc_bounce_size, KM_SLEEP);
@@ -503,9 +506,8 @@ bwfm_sdio_attachhook(device_t self)
 		goto err;
 	}
 
-//	bwfm_sdio_dev_write(sc, SDPCMD_HOSTINTMASK,
-//	    SDPCMD_INTSTATUS_HMB_SW_MASK | SDPCMD_INTSTATUS_CHIPACTIVE);
-	bwfm_sdio_dev_write(sc, SDPCMD_HOSTINTMASK, 0xffffffff);
+	bwfm_sdio_dev_write(sc, SDPCMD_HOSTINTMASK,
+	    SDPCMD_INTSTATUS_HMB_SW_MASK | SDPCMD_INTSTATUS_CHIPACTIVE);
 	bwfm_sdio_write_1(sc, BWFM_SDIO_WATERMARK, 8);
 
 	if (bwfm_chip_sr_capable(bwfm)) {
@@ -615,10 +617,11 @@ bwfm_sdio_detach(device_t self, int flags)
 	if (sc->sc_bwfm_attached)
 		bwfm_detach(&sc->sc_sc, flags);
 
+	sdmmc_del_task(sc->sc_sf[1]->sc, &sc->sc_task, NULL);
+
 	kmem_free(sc->sc_sf, sc->sc_sf_size);
 	kmem_free(sc->sc_bounce_buf, sc->sc_bounce_size);
 
-	mutex_destroy(&sc->sc_intr_lock);
 	cv_destroy(&sc->sc_rxctl_cv);
 	mutex_destroy(&sc->sc_lock);
 
@@ -686,7 +689,7 @@ bwfm_sdio_read_4(struct bwfm_sdio_softc *sc, uint32_t addr)
 		sf = sc->sc_sf[1];
 
 	rv = sdmmc_io_read_4(sf, addr);
-	return rv;
+	return htole32(rv);
 }
 
 static void
@@ -729,7 +732,7 @@ bwfm_sdio_write_4(struct bwfm_sdio_softc *sc, uint32_t addr, uint32_t data)
 	else
 		sf = sc->sc_sf[1];
 
-	sdmmc_io_write_4(sf, addr, data);
+	sdmmc_io_write_4(sf, addr, htole32(data));
 }
 
 static int
@@ -1421,11 +1424,7 @@ bwfm_sdio_intr1(void *v, const char *name)
 
 	DPRINTF(("%s: %s\n", DEVNAME(sc), name));
 
-	mutex_enter(&sc->sc_intr_lock);
-	if (!sdmmc_task_pending(&sc->sc_task))
-		sdmmc_add_task(sc->sc_sf[1]->sc, &sc->sc_task);
-	sc->sc_task_queued = true;
-	mutex_exit(&sc->sc_intr_lock);
+	sdmmc_add_task(sc->sc_sf[1]->sc, &sc->sc_task);
 	return 1;
 }
 
@@ -1439,33 +1438,13 @@ static void
 bwfm_sdio_task(void *v)
 {
 	struct bwfm_sdio_softc *sc = (void *)v;
-#ifdef BWFM_DEBUG
-	unsigned count = 0;
-#endif
 
-	mutex_enter(&sc->sc_intr_lock);
-	while (sc->sc_task_queued) {
+	mutex_enter(&sc->sc_lock);
+	bwfm_sdio_task1(sc);
 #ifdef BWFM_DEBUG
-		++count;
+	bwfm_sdio_debug_console(sc);
 #endif
-		sc->sc_task_queued = false;
-		mutex_exit(&sc->sc_intr_lock);
-
-		mutex_enter(&sc->sc_lock);
-		bwfm_sdio_task1(sc);
-#ifdef BWFM_DEBUG
-		bwfm_sdio_debug_console(sc);
-#endif
-		mutex_exit(&sc->sc_lock);
-
-		mutex_enter(&sc->sc_intr_lock);
-	}
-	mutex_exit(&sc->sc_intr_lock);
-
-#ifdef BWFM_DEBUG
-	if (count > 1)
-		DPRINTF(("%s: finished %u tasks\n", DEVNAME(sc), count));
-#endif
+	mutex_exit(&sc->sc_lock);
 }
 
 static void
@@ -1488,7 +1467,6 @@ bwfm_sdio_task1(struct bwfm_sdio_softc *sc)
 
 	intstat = bwfm_sdio_dev_read(sc, BWFM_SDPCMD_INTSTATUS);
 	DPRINTF(("%s: intstat 0x%" PRIx32 "\n", DEVNAME(sc), intstat));
-	intstat &= (SDPCMD_INTSTATUS_HMB_SW_MASK|SDPCMD_INTSTATUS_CHIPACTIVE);
 	if (intstat)
 		bwfm_sdio_dev_write(sc, BWFM_SDPCMD_INTSTATUS, intstat);
 
@@ -1500,6 +1478,8 @@ bwfm_sdio_task1(struct bwfm_sdio_softc *sc)
 		DPRINTF(("%s: hostint 0x%" PRIx32 "\n", DEVNAME(sc), hostint));
 		bwfm_sdio_dev_write(sc, SDPCMD_TOSBMAILBOX,
 		    SDPCMD_TOSBMAILBOX_INT_ACK);
+		if (hostint & SDPCMD_TOHOSTMAILBOXDATA_FWHALT)
+			printf("%s: firmware halted\n", DEVNAME(sc));
 		if (hostint & SDPCMD_TOHOSTMAILBOXDATA_NAKHANDLED)
 			sc->sc_rxskip = false;
 		if (hostint & SDPCMD_TOHOSTMAILBOXDATA_DEVREADY ||
@@ -1748,6 +1728,8 @@ bwfm_sdio_rx_frames(struct bwfm_sdio_softc *sc)
 
 		flen = hwhdr->frmlen - (sizeof(*hwhdr) + sizeof(*swhdr));
 		if (flen == 0) {
+			DPRINTF(("%s: empty payload (frmlen=%u)\n",
+			    DEVNAME(sc), hwhdr->frmlen));
 			nextlen = swhdr->nextlen << 4;
 			continue;
 		}
@@ -1816,11 +1798,10 @@ bwfm_sdio_rx_frames(struct bwfm_sdio_softc *sc)
 			}
 			m_adj(m, hoff);
 			/* don't pass empty packet to stack */
-			if (m->m_len == 0) {
+			if (m->m_len > 0)
+				bwfm_rx(&sc->sc_sc, m);
+			else
 				m_freem(m);
-				break;
-			}
-			bwfm_rx(&sc->sc_sc, m);
 			nextlen = swhdr->nextlen << 4;
 			break;
 		case BWFM_SDIO_SWHDR_CHANNEL_GLOM:

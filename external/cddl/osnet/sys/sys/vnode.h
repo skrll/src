@@ -1,5 +1,4 @@
-
-/*	$NetBSD: vnode.h,v 1.15 2019/01/12 10:44:36 hannken Exp $	*/
+/*	$NetBSD: vnode.h,v 1.17 2020/05/26 08:39:27 hannken Exp $	*/
 
 /*
  * CDDL HEADER START
@@ -136,7 +135,6 @@ typedef int (**vnodeops_t)(void *);
 #define	vop_fid_args	vop_vptofh_args
 #define	a_fid		a_fhp
 
-#define	v_count		v_usecount
 #define	v_object	v_uobj
 
 struct vop_vptofh_args {
@@ -156,7 +154,7 @@ int	vn_is_readonly(vnode_t *);
 #define	vn_vfsunlock(vp)	do { } while (0)
 #define	vn_ismntpt(vp)		((vp)->v_type == VDIR && (vp)->v_mountedhere != NULL)
 #define	vn_mountedvfs(vp)	((vp)->v_mountedhere)
-#define vn_has_cached_data(vp)	((vp)->v_uobj.uo_npages != 0)
+#define vn_has_cached_data(vp)	(((vp)->v_iflag & VI_PAGES) != 0)
 #define	vn_exists(vp)		do { } while (0)
 #define	vn_invalid(vp)		do { } while (0)
 #define	vn_free(vp)		do { } while (0)
@@ -166,7 +164,7 @@ int	vn_is_readonly(vnode_t *);
 #define	VN_HOLD(v)	vref(v)
 #define	VN_RELE(v)						      \
 do {								      \
-	if ((v)->v_usecount == 0) {				      \
+	if (vrefcnt(v) == 0) {					      \
 		printf("VN_RELE(%s,%d): %p unused\n", __FILE__, __LINE__, v); \
 		vprint("VN_RELE", (v));				      \
 		panic("VN_RELE");				      \

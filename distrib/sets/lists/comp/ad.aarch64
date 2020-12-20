@@ -1,4 +1,4 @@
-# $NetBSD: ad.aarch64,v 1.38 2020/04/05 05:19:24 mlelstv Exp $
+# $NetBSD: ad.aarch64,v 1.44 2020/09/26 10:06:25 skrll Exp $
 ./usr/include/aarch64				comp-c-include
 ./usr/include/aarch64/ansi.h			comp-c-include
 ./usr/include/aarch64/aout_machdep.h		comp-c-include
@@ -44,7 +44,7 @@
 ./usr/include/aarch64/signal.h			comp-c-include
 ./usr/include/aarch64/sljit_machdep.h		comp-c-include
 ./usr/include/aarch64/sysarch.h			comp-c-include
-./usr/include/aarch64/trap.h			comp-obsolete		obsolete
+./usr/include/aarch64/trap.h			comp-c-include
 ./usr/include/aarch64/types.h			comp-c-include
 ./usr/include/aarch64/vmparam.h			comp-c-include
 ./usr/include/aarch64/wchar_limits.h		comp-c-include
@@ -67,7 +67,7 @@
 ./usr/include/arm/arm32/vmparam.h		comp-c-include
 ./usr/include/arm/armreg.h			comp-c-include
 ./usr/include/arm/asm.h				comp-c-include
-./usr/include/arm/atomic.h			comp-c-include
+./usr/include/arm/atomic.h			comp-c-include		obsolete
 ./usr/include/arm/bswap.h			comp-c-include
 ./usr/include/arm/byte_swap.h			comp-c-include
 ./usr/include/arm/cdefs.h			comp-c-include
@@ -130,9 +130,9 @@
 ./usr/include/evbarm64				comp-obsolete		obsolete
 ./usr/include/evbarm64/disklabel.h		comp-obsolete		obsolete
 ./usr/include/evbarm64/intr.h			comp-obsolete		obsolete
-./usr/include/g++/bits/aarch64			comp-c-include		gcc,libstdcxx,compat
+./usr/include/g++/bits/aarch64			comp-c-include		libstdcxx,compat
 ./usr/include/g++/bits/aarch64/c++config.h	comp-c-include		gcc,libstdcxx,compat
-./usr/include/g++/bits/arm			comp-c-include		gcc,libstdcxx,compat
+./usr/include/g++/bits/arm			comp-c-include		libstdcxx,compat
 ./usr/include/g++/bits/arm/c++config.h		comp-c-include		gcc,libstdcxx,compat
 ./usr/include/gcc-4.8/arm_neon.h		comp-c-include		gcc=48
 ./usr/include/gcc-4.8/mmintrin.h		comp-c-include		gcc=48
@@ -141,14 +141,18 @@
 ./usr/include/gcc-6/arm_acle.h			comp-c-include		obsolete
 ./usr/include/gcc-6/arm_neon.h			comp-c-include		obsolete
 ./usr/include/gcc-6/tgmath.h			comp-c-include		obsolete
-./usr/include/gcc-7/arm_acle.h			comp-c-include		gcc=7
-./usr/include/gcc-7/arm_neon.h			comp-c-include		gcc=7
-./usr/include/gcc-7/tgmath.h			comp-c-include		gcc=7
-./usr/include/gcc-7/arm_fp16.h			comp-c-include		gcc=7
+./usr/include/gcc-7/arm_acle.h			comp-c-include		obsolete
+./usr/include/gcc-7/arm_fp16.h			comp-c-include		obsolete
+./usr/include/gcc-7/arm_neon.h			comp-c-include		obsolete
+./usr/include/gcc-7/tgmath.h			comp-c-include		obsolete
 ./usr/include/gcc-8/arm_acle.h			comp-c-include		gcc=8
+./usr/include/gcc-8/arm_fp16.h			comp-c-include		gcc=8
 ./usr/include/gcc-8/arm_neon.h			comp-c-include		gcc=8
 ./usr/include/gcc-8/tgmath.h			comp-c-include		gcc=8
-./usr/include/gcc-8/arm_fp16.h			comp-c-include		gcc=8
+./usr/include/gcc-9/arm_acle.h			comp-c-include		gcc=9
+./usr/include/gcc-9/arm_fp16.h			comp-c-include		gcc=9
+./usr/include/gcc-9/arm_neon.h			comp-c-include		gcc=9
+./usr/include/gcc-9/tgmath.h			comp-c-include		gcc=9
 ./usr/include/ieeefp.h				comp-c-include
 ./usr/lib/eabi/libarm.a				comp-c-lib		compat,llvm
 ./usr/lib/eabi/libarm.so			base-sys-shlib		compat,pic,llvm
@@ -225,9 +229,9 @@
 ./usr/libdata/ldscripts/armelf.x		comp-util-bin		binutils
 ./usr/libdata/ldscripts/armelf.xbn		comp-util-bin		binutils
 ./usr/libdata/ldscripts/armelf.xc		comp-util-bin		binutils
-./usr/libdata/ldscripts/armelf.xd		comp-util-bin		binutils=231
-./usr/libdata/ldscripts/armelf.xdc		comp-util-bin		binutils=231
-./usr/libdata/ldscripts/armelf.xdw		comp-util-bin		binutils=231
+./usr/libdata/ldscripts/armelf.xd		comp-util-bin		binutils
+./usr/libdata/ldscripts/armelf.xdc		comp-util-bin		binutils
+./usr/libdata/ldscripts/armelf.xdw		comp-util-bin		binutils
 ./usr/libdata/ldscripts/armelf.xn		comp-util-bin		binutils
 ./usr/libdata/ldscripts/armelf.xr		comp-util-bin		binutils
 ./usr/libdata/ldscripts/armelf.xs		comp-util-bin		binutils
@@ -277,9 +281,9 @@
 ./usr/libdata/ldscripts/armelfb.x		comp-util-bin		binutils
 ./usr/libdata/ldscripts/armelfb.xbn		comp-util-bin		binutils
 ./usr/libdata/ldscripts/armelfb.xc		comp-util-bin		binutils
-./usr/libdata/ldscripts/armelfb.xd		comp-util-bin		binutils=231
-./usr/libdata/ldscripts/armelfb.xdc		comp-util-bin		binutils=231
-./usr/libdata/ldscripts/armelfb.xdw		comp-util-bin		binutils=231
+./usr/libdata/ldscripts/armelfb.xd		comp-util-bin		binutils
+./usr/libdata/ldscripts/armelfb.xdc		comp-util-bin		binutils
+./usr/libdata/ldscripts/armelfb.xdw		comp-util-bin		binutils
 ./usr/libdata/ldscripts/armelfb.xn		comp-util-bin		binutils
 ./usr/libdata/ldscripts/armelfb.xr		comp-util-bin		binutils
 ./usr/libdata/ldscripts/armelfb.xs		comp-util-bin		binutils

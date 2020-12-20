@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.14 2020/03/15 11:36:24 rin Exp $	*/
+/*	$NetBSD: pmap.h,v 1.17 2020/08/20 05:54:32 mrg Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -78,6 +78,7 @@
 #ifdef UVMHIST
 UVMHIST_DECL(pmapexechist);
 UVMHIST_DECL(pmaphist);
+UVMHIST_DECL(pmapsegtabhist);
 #endif
 
 /*
@@ -103,12 +104,18 @@ typedef union pmap_segtab {
 struct pmap;
 typedef bool (*pte_callback_t)(struct pmap *, vaddr_t, vaddr_t,
 	pt_entry_t *, uintptr_t);
+
+/*
+ * Common part of the bootstraping the system enough to run with
+ * virtual memory.
+ */
 void pmap_bootstrap_common(void);
 pt_entry_t *pmap_pte_lookup(struct pmap *, vaddr_t);
 pt_entry_t *pmap_pte_reserve(struct pmap *, vaddr_t, int);
 void pmap_pte_process(struct pmap *, vaddr_t, vaddr_t, pte_callback_t,
 	uintptr_t);
 void pmap_segtab_activate(struct pmap *, struct lwp *);
+void pmap_segtab_deactivate(struct pmap *);
 void pmap_segtab_init(struct pmap *);
 void pmap_segtab_destroy(struct pmap *, pte_callback_t, uintptr_t);
 extern kmutex_t pmap_segtab_lock;
@@ -182,9 +189,6 @@ extern pmap_segtab_t pmap_kern_segtab;
 #define	pmap_wired_count(pmap) 	((pmap)->pm_stats.wired_count)
 #define pmap_resident_count(pmap) ((pmap)->pm_stats.resident_count)
 
-/*
- *	Bootstrap the system enough to run with virtual memory.
- */
 bool	pmap_remove_all(pmap_t);
 void	pmap_set_modified(paddr_t);
 bool	pmap_page_clear_attributes(struct vm_page_md *, u_int);

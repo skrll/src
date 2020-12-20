@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_pgflcache.c,v 1.4 2019/12/30 17:47:06 ad Exp $	*/
+/*	$NetBSD: uvm_pgflcache.c,v 1.6 2020/10/18 18:31:31 chs Exp $	*/
 
 /*-
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_pgflcache.c,v 1.4 2019/12/30 17:47:06 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_pgflcache.c,v 1.6 2020/10/18 18:31:31 chs Exp $");
 
 #include "opt_uvm.h"
 #include "opt_multiprocessor.h"
@@ -151,6 +151,7 @@ uvm_pgflcache_fill(struct uvm_cpu *ucpu, int fl, int b, int c)
 		pg->pageq.list.le_prev = &head->lh_first;
 	}
 	pgb->pgb_nfree -= (count - pcc->count);
+	CPU_COUNT(CPU_COUNT_FREEPAGES, -(count - pcc->count));
 	pcc->count = count;
 }
 
@@ -188,6 +189,7 @@ uvm_pgflcache_spill(struct uvm_cpu *ucpu, int fl, int c)
 		LIST_INSERT_HEAD(head, pcc->pages[pcc->count], pageq.list);
 	}
 	pgb->pgb_nfree += adj;
+	CPU_COUNT(CPU_COUNT_FREEPAGES, adj);
 	mutex_spin_exit(lock);
 }
 
@@ -217,10 +219,10 @@ uvm_pgflcache_alloc(struct uvm_cpu *ucpu, int fl, int c)
 	}
 	pg = pcc->pages[--(pcc->count)];
 	KASSERT(pg != NULL);
-	KASSERT(pg->flags & PG_FREE);
+	KASSERT(pg->flags == PG_FREE);
 	KASSERT(uvm_page_get_freelist(pg) == fl);
 	KASSERT(uvm_page_get_bucket(pg) == ucpu->pgflbucket);
-	pg->flags &= PG_ZERO;
+	pg->flags = PG_BUSY | PG_CLEAN | PG_FAKE;
 	return pg;
 }
 
@@ -253,7 +255,7 @@ uvm_pgflcache_free(struct uvm_cpu *ucpu, struct vm_page *pg)
 	if (__predict_false(pcc->count == MAXPGS)) {
 		uvm_pgflcache_spill(ucpu, fl, c);
 	}
-	pg->flags = (pg->flags & PG_ZERO) | PG_FREE;
+	pg->flags = PG_FREE;
 	pcc->pages[pcc->count] = pg;
 	pcc->count++;
 	return true;

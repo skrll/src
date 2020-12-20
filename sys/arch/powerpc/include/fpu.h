@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu.h,v 1.22 2018/04/19 21:50:07 christos Exp $	*/
+/*	$NetBSD: fpu.h,v 1.25 2020/07/15 09:19:49 rin Exp $	*/
 
 /*-
  * Copyright (C) 1996 Wolfgang Solfrank.
@@ -30,6 +30,7 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 #ifndef	_POWERPC_FPU_H_
 #define	_POWERPC_FPU_H_
 
@@ -68,9 +69,8 @@
 
 #ifdef _KERNEL
 
-#if defined(_KERNEL_OPT)
+#ifdef _KERNEL_OPT
 #include "opt_ppcarch.h"
-#include "opt_multiprocessor.h"
 #endif
 
 #include <sys/pcu.h>
@@ -82,6 +82,8 @@ void	fpu_mark_used(struct lwp *);
 
 void	fpu_restore_from_mcontext(struct lwp *, const mcontext_t *);
 bool	fpu_save_to_mcontext(struct lwp *, mcontext_t *, unsigned int *);
+
+int	fpu_get_fault_code(void);
 
 extern const pcu_ops_t fpu_ops;
 
@@ -111,8 +113,6 @@ fpu_discard(lwp_t *l)
 
 void	fpu_load_from_fpreg(const struct fpreg *);
 void	fpu_unload_to_fpreg(struct fpreg *);
-
-int	fpu_get_fault_code(void);
 
 #endif /* PPC_HAVE_FPU */
 #endif /* _KERNEL */

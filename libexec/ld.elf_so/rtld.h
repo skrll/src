@@ -1,4 +1,4 @@
-/*	$NetBSD: rtld.h,v 1.138 2020/02/29 04:24:33 kamil Exp $	 */
+/*	$NetBSD: rtld.h,v 1.141 2020/09/21 16:08:57 kamil Exp $	 */
 
 /*
  * Copyright 1996 John D. Polstra.
@@ -226,7 +226,7 @@ typedef struct Struct_Obj_Entry {
 			sysv_hash:1,	/* SysV Hash available */
 			gnu_hash:1;	/* GNU Hash available */
 
-	struct link_map linkmap;	/* for GDB */
+	struct link_map linkmap;	/* for the debugger */
 
 	/* These items are computed by map_object() or by digest_phdr(). */
 	const char     *interp;	/* Pathname of the interpreter, if any */
@@ -369,6 +369,8 @@ __dso_public int dl_iterate_phdr(int (*)(struct dl_phdr_info *, size_t, void *),
 
 __dso_public void *_dlauxinfo(void) __pure;
 __dso_public void __dl_cxa_refcount(void *addr, ssize_t delta);
+
+__dso_public pid_t __locked_fork(int *);
 
 #if defined(__ARM_EABI__) && !defined(__ARM_DWARF_EH__)
 /*

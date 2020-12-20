@@ -1,4 +1,4 @@
-/*	$NetBSD: sched.h,v 1.88 2020/03/14 18:08:39 ad Exp $	*/
+/*	$NetBSD: sched.h,v 1.90 2020/05/23 23:37:17 ad Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2002, 2007, 2008, 2019, 2020
@@ -200,7 +200,6 @@ struct schedstate_percpu {
 #define	CLONE_FS		0x00000200	/* share "file system" info */
 #define	CLONE_FILES		0x00000400	/* share file descriptors */
 #define	CLONE_SIGHAND		0x00000800	/* share signal actions */
-#define	CLONE_PID		0x00001000	/* share process ID */
 #define	CLONE_PTRACE		0x00002000	/* ptrace(2) continues on
 						   child */
 #define	CLONE_VFORK		0x00004000	/* parent blocks until child
@@ -211,6 +210,7 @@ struct schedstate_percpu {
 #ifdef _KERNEL
 
 extern int schedhz;			/* ideally: 16 */
+extern u_int sched_rrticks;
 
 struct proc;
 struct cpu_info;

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_tun.c,v 1.158 2020/01/29 04:34:10 thorpej Exp $	*/
+/*	$NetBSD: if_tun.c,v 1.162 2020/12/18 01:31:49 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1988, Julian Onions <jpo@cs.nott.ac.uk>
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_tun.c,v 1.158 2020/01/29 04:34:10 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_tun.c,v 1.162 2020/12/18 01:31:49 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -256,12 +256,12 @@ tunattach0(struct tun_softc *tp)
 	ifp->if_start = tunstart;
 #endif
 	ifp->if_flags = IFF_POINTOPOINT;
-	ifp->if_extflags = IFEF_NO_LINK_STATE_CHANGE;
 	ifp->if_type = IFT_TUNNEL;
 	ifp->if_snd.ifq_maxlen = ifqmaxlen;
 	ifp->if_dlt = DLT_NULL;
 	IFQ_SET_READY(&ifp->if_snd);
 	if_attach(ifp);
+	ifp->if_link_state = LINK_STATE_DOWN;
 	if_alloc_sadl(ifp);
 	bpf_attach(ifp, DLT_NULL, sizeof(uint32_t));
 }
@@ -347,6 +347,7 @@ tunopen(dev_t dev, int flag, int mode, struct lwp *l)
 	ifp = &tp->tun_if;
 	tp->tun_flags |= TUN_OPEN;
 	TUNDEBUG("%s: open\n", ifp->if_xname);
+	if_link_state_change(ifp, LINK_STATE_UP);
 
 	mutex_exit(&tp->tun_lock);
 
@@ -411,6 +412,9 @@ tunclose(dev_t dev, int flag, int mode,
 			}
 		}
 	}
+
+	if_link_state_change(ifp, LINK_STATE_DOWN);
+
 out_nolock:
 	return 0;
 }
@@ -887,7 +891,7 @@ tunwrite(dev_t dev, struct uio *uio, int ioflag)
 #endif
 	}
 
-	if (uio->uio_resid > TUNMTU) {
+	if (uio->uio_resid == 0 || uio->uio_resid > TUNMTU) {
 		TUNDEBUG("%s: len=%lu!\n", ifp->if_xname,
 		    (unsigned long)uio->uio_resid);
 		error = EIO;
@@ -1047,7 +1051,7 @@ filt_tunrdetach(struct knote *kn)
 	struct tun_softc *tp = kn->kn_hook;
 
 	mutex_enter(&tp->tun_lock);
-	SLIST_REMOVE(&tp->tun_rsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&tp->tun_rsel, kn);
 	mutex_exit(&tp->tun_lock);
 }
 
@@ -1095,7 +1099,6 @@ int
 tunkqfilter(dev_t dev, struct knote *kn)
 {
 	struct tun_softc *tp;
-	struct klist *klist;
 	int rv = 0;
 
 	tp = tun_find_unit(dev);
@@ -1104,12 +1107,10 @@ tunkqfilter(dev_t dev, struct knote *kn)
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &tp->tun_rsel.sel_klist;
 		kn->kn_fop = &tunread_filtops;
 		break;
 
 	case EVFILT_WRITE:
-		klist = &tp->tun_rsel.sel_klist;
 		kn->kn_fop = &tun_seltrue_filtops;
 		break;
 
@@ -1120,7 +1121,7 @@ tunkqfilter(dev_t dev, struct knote *kn)
 
 	kn->kn_hook = tp;
 
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	selrecord_knote(&tp->tun_rsel, kn);
 
 out:
 	mutex_exit(&tp->tun_lock);

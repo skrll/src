@@ -1,4 +1,4 @@
-/*	$NetBSD: kobj_machdep.c,v 1.12 2017/11/03 09:59:08 maxv Exp $	*/
+/*	$NetBSD: kobj_machdep.c,v 1.15 2020/12/01 02:43:14 rin Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -52,18 +52,19 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kobj_machdep.c,v 1.12 2017/11/03 09:59:08 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kobj_machdep.c,v 1.15 2020/12/01 02:43:14 rin Exp $");
 
 #define	ELFSIZE		ARCH_ELFSIZE
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/kobj.h>
+
 #include <sys/exec.h>
 #include <sys/exec_elf.h>
 #include <sys/kmem.h>
-#include <sys/ksyms.h>
+#include <sys/kobj.h>
 #include <sys/kobj_impl.h>
+#include <sys/ksyms.h>
+#include <sys/systm.h>
 
 #include <arm/cpufunc.h>
 #include <arm/locore.h>
@@ -208,7 +209,7 @@ kobj_reloc(kobj_t ko, uintptr_t relocbase, const void *data,
 	return -1;
 }
 
-#if __ARMEB__
+#ifdef _ARM_ARCH_BE8
 
 enum be8_magic_sym_type {
 	Other, ArmStart, ThumbStart, DataStart
@@ -345,7 +346,7 @@ be8_ksym_swap(void *start, size_t size, const struct be8_marker_list *list)
 		}
 	}
 }
- 
+
 static void
 kobj_be8_fixup(kobj_t ko)
 {
@@ -399,8 +400,8 @@ kobj_machdep(kobj_t ko, void *base, size_t size, bool load)
 {
 
 	if (load) {
-#if __ARMEB__
-		if (CPU_IS_ARMV7_P() && base == (void*)ko->ko_text_address)
+#ifdef _ARM_ARCH_BE8
+		if (base == (void*)ko->ko_text_address)
 			kobj_be8_fixup(ko);
 #endif
 #ifndef _RUMPKERNEL

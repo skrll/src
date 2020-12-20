@@ -1,4 +1,4 @@
-/*	$NetBSD: ath.c,v 1.130 2020/01/29 14:09:58 thorpej Exp $	*/
+/*	$NetBSD: ath.c,v 1.133 2020/11/16 00:12:13 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2002-2005 Sam Leffler, Errno Consulting
@@ -41,7 +41,7 @@
 __FBSDID("$FreeBSD: src/sys/dev/ath/if_ath.c,v 1.104 2005/09/16 10:09:23 ru Exp $");
 #endif
 #ifdef __NetBSD__
-__KERNEL_RCSID(0, "$NetBSD: ath.c,v 1.130 2020/01/29 14:09:58 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ath.c,v 1.133 2020/11/16 00:12:13 msaitoh Exp $");
 #endif
 
 /*
@@ -307,7 +307,7 @@ ath_attach(u_int16_t devid, struct ath_softc *sc)
 	sc->sc_ah = ah;
 
 	if (!prop_dictionary_set_bool(device_properties(sc->sc_dev),
-	    "pmf-powerdown", false))
+	    "pmf-no-powerdown", true))
 		goto bad;
 
 	/*
@@ -403,7 +403,7 @@ ath_attach(u_int16_t devid, struct ath_softc *sc)
 	/*
 	 * Allocate hardware transmit queues: one queue for
 	 * beacon frames and one data queue for each QoS
-	 * priority.  Note that the hal handles reseting
+	 * priority.  Note that the hal handles resetting
 	 * these queues at the needed time.
 	 *
 	 * XXX PS-Poll
@@ -4551,7 +4551,7 @@ ath_dfswait(void *arg)
 
 /*
  * Set/change channels.  If the channel is really being changed,
- * it's done by reseting the chip.  To accomplish this we must
+ * it's done by resetting the chip.  To accomplish this we must
  * first cleanup any pending DMA, then restart stuff after a la
  * ath_init.
  */
@@ -5226,7 +5226,7 @@ ath_setcurmode(struct ath_softc *sc, enum ieee80211_phymode mode)
 	/* XXX layering violation */
 	sc->sc_mcastrix = ath_tx_findrix(rt, sc->sc_ic.ic_mcast_rate);
 	sc->sc_mcastrate = sc->sc_ic.ic_mcast_rate;
-	/* NB: caller is responsible for reseting rate control state */
+	/* NB: caller is responsible for resetting rate control state */
 #undef N
 }
 

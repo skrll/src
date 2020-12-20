@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.473 2020/02/21 00:26:23 joerg Exp $	*/
+/*	$NetBSD: if.c,v 1.484 2020/10/15 10:20:44 roy Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.473 2020/02/21 00:26:23 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.484 2020/10/15 10:20:44 roy Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -164,6 +164,20 @@ __KERNEL_RCSID(0, "$NetBSD: if.c,v 1.473 2020/02/21 00:26:23 joerg Exp $");
 
 MALLOC_DEFINE(M_IFADDR, "ifaddr", "interface address");
 MALLOC_DEFINE(M_IFMADDR, "ether_multi", "link-level multicast address");
+
+/*
+ * XXX reusing (ifp)->if_snd->ifq_lock rather than having another spin mutex
+ * for each ifnet.  It doesn't matter because:
+ * - if IFEF_MPSAFE is enabled, if_snd isn't used and lock contentions on
+ *   ifq_lock don't happen
+ * - if IFEF_MPSAFE is disabled, there is no lock contention on ifq_lock
+ *   because if_snd, if_link_state_change and if_link_state_change_process
+ *   are all called with KERNEL_LOCK
+ */
+#define IF_LINK_STATE_CHANGE_LOCK(ifp)		\
+	mutex_enter((ifp)->if_snd.ifq_lock)
+#define IF_LINK_STATE_CHANGE_UNLOCK(ifp)	\
+	mutex_exit((ifp)->if_snd.ifq_lock)
 
 /*
  * Global list of interfaces.
@@ -703,6 +717,7 @@ if_initialize(ifnet_t *ifp)
 
 	ifp->if_link_state = LINK_STATE_UNKNOWN;
 	ifp->if_link_queue = -1; /* all bits set, see link_state_change() */
+	ifp->if_link_scheduled = false;
 
 	ifp->if_capenable = 0;
 	ifp->if_csum_flags_tx = 0;
@@ -1197,6 +1212,8 @@ if_deactivate(struct ifnet *ifp)
 	ifp->if_slowtimo = if_nullslowtimo;
 	ifp->if_drain	 = if_nulldrain;
 
+	ifp->if_link_state_changed = NULL;
+
 	/* No more packets may be enqueued. */
 	ifp->if_snd.ifq_maxlen = 0;
 
@@ -1317,7 +1334,22 @@ if_detach(struct ifnet *ifp)
 	s = splnet();
 
 	sysctl_teardown(&ifp->if_sysctl_log);
+
 	IFNET_LOCK(ifp);
+
+	/*
+	 * Unset all queued link states and pretend a
+	 * link state change is scheduled.
+	 * This stops any more link state changes occuring for this
+	 * interface while it's being detached so it's safe
+	 * to drain the workqueue.
+	 */
+	IF_LINK_STATE_CHANGE_LOCK(ifp);
+	ifp->if_link_queue = -1; /* all bits set, see link_state_change() */
+	ifp->if_link_scheduled = true;
+	IF_LINK_STATE_CHANGE_UNLOCK(ifp);
+	workqueue_wait(ifnet_link_state_wq, &ifp->if_link_work);
+
 	if_deactivate(ifp);
 	IFNET_UNLOCK(ifp);
 
@@ -2237,30 +2269,6 @@ link_rtrequest(int cmd, struct rtentry *rt, const struct rt_addrinfo *info)
 	}
 
 /*
- * XXX reusing (ifp)->if_snd->ifq_lock rather than having another spin mutex
- * for each ifnet.  It doesn't matter because:
- * - if IFEF_MPSAFE is enabled, if_snd isn't used and lock contentions on
- *   ifq_lock don't happen
- * - if IFEF_MPSAFE is disabled, there is no lock contention on ifq_lock
- *   because if_snd, if_link_state_change and if_link_state_change_process
- *   are all called with KERNEL_LOCK
- */
-#define IF_LINK_STATE_CHANGE_LOCK(ifp)		\
-	mutex_enter((ifp)->if_snd.ifq_lock)
-#define IF_LINK_STATE_CHANGE_UNLOCK(ifp)	\
-	mutex_exit((ifp)->if_snd.ifq_lock)
-
-static void
-if_link_state_change_work_schedule(struct ifnet *ifp)
-{
-	if (ifp->if_link_cansched && !ifp->if_link_scheduled) {
-		ifp->if_link_scheduled = true;
-		workqueue_enqueue(ifnet_link_state_wq, &ifp->if_link_work,
-		    NULL);
-	}
-}
-
-/*
  * Handle a change in the interface link state and
  * queue notifications.
  */
@@ -2268,10 +2276,6 @@ void
 if_link_state_change(struct ifnet *ifp, int link_state)
 {
 	int idx;
-
-	KASSERTMSG(if_is_link_state_changeable(ifp),
-	    "%s: IFEF_NO_LINK_STATE_CHANGE must not be set, but if_extflags=0x%x",
-	    ifp->if_xname, ifp->if_extflags);
 
 	/* Ensure change is to a valid state */
 	switch (link_state) {
@@ -2292,14 +2296,22 @@ if_link_state_change(struct ifnet *ifp, int link_state)
 	/* Find the last unset event in the queue. */
 	LQ_FIND_UNSET(ifp->if_link_queue, idx);
 
-	/*
-	 * Ensure link_state doesn't match the last event in the queue.
-	 * ifp->if_link_state is not checked and set here because
-	 * that would present an inconsistent picture to the system.
-	 */
-	if (idx != 0 &&
-	    LQ_ITEM(ifp->if_link_queue, idx - 1) == (uint8_t)link_state)
-		goto out;
+	if (idx == 0) {
+		/*
+		 * There is no queue of link state changes.
+		 * As we have the lock we can safely compare against the
+		 * current link state and return if the same.
+		 * Otherwise, if scheduled is true then the interface is being
+		 * detached and the queue is being drained so we need
+		 * to avoid queuing more work.
+		 */
+		 if (ifp->if_link_state == link_state || ifp->if_link_scheduled)
+			goto out;
+	} else {
+		/* Ensure link_state doesn't match the last queued state. */
+		if (LQ_ITEM(ifp->if_link_queue, idx - 1) == (uint8_t)link_state)
+			goto out;
+	}
 
 	/* Handle queue overflow. */
 	if (idx == LQ_MAX(ifp->if_link_queue)) {
@@ -2328,7 +2340,11 @@ if_link_state_change(struct ifnet *ifp, int link_state)
 	} else
 		LQ_STORE(ifp->if_link_queue, idx, (uint8_t)link_state);
 
-	if_link_state_change_work_schedule(ifp);
+	if (ifp->if_link_scheduled)
+		goto out;
+
+	ifp->if_link_scheduled = true;
+	workqueue_enqueue(ifnet_link_state_wq, &ifp->if_link_work, NULL);
 
 out:
 	IF_LINK_STATE_CHANGE_UNLOCK(ifp);
@@ -2397,6 +2413,14 @@ if_link_state_change_process(struct ifnet *ifp, int link_state)
 		carp_carpdev_state(ifp);
 #endif
 
+	if (ifp->if_link_state_changed != NULL)
+		ifp->if_link_state_changed(ifp, link_state);
+
+#if NBRIDGE > 0
+	if (ifp->if_bridge != NULL)
+		bridge_calc_link_state(ifp->if_bridge);
+#endif
+
 	DOMAIN_FOREACH(dp) {
 		if (dp->dom_if_link_state_change != NULL)
 			dp->dom_if_link_state_change(ifp, link_state);
@@ -2414,26 +2438,53 @@ if_link_state_change_work(struct work *work, void *arg)
 	struct ifnet *ifp = container_of(work, struct ifnet, if_link_work);
 	int s;
 	uint8_t state;
-	bool schedule;
 
 	KERNEL_LOCK_UNLESS_NET_MPSAFE();
 	s = splnet();
 
-	/* Pop a link state change from the queue and process it. */
+	/* Pop a link state change from the queue and process it.
+	 * If there is nothing to process then if_detach() has been called.
+	 * We keep if_link_scheduled = true so the queue can safely drain
+	 * without more work being queued. */
 	IF_LINK_STATE_CHANGE_LOCK(ifp);
-	ifp->if_link_scheduled = false;
 	LQ_POP(ifp->if_link_queue, state);
 	IF_LINK_STATE_CHANGE_UNLOCK(ifp);
+	if (state == LINK_STATE_UNSET)
+		goto out;
 
 	if_link_state_change_process(ifp, state);
 
 	/* If there is a link state change to come, schedule it. */
 	IF_LINK_STATE_CHANGE_LOCK(ifp);
-	schedule = (LQ_ITEM(ifp->if_link_queue, 0) != LINK_STATE_UNSET);
+	if (LQ_ITEM(ifp->if_link_queue, 0) != LINK_STATE_UNSET) {
+		ifp->if_link_scheduled = true;
+		workqueue_enqueue(ifnet_link_state_wq, &ifp->if_link_work, NULL);
+	} else
+		ifp->if_link_scheduled = false;
 	IF_LINK_STATE_CHANGE_UNLOCK(ifp);
 
-	if (schedule)
-		if_link_state_change_work_schedule(ifp);
+out:
+	splx(s);
+	KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
+}
+
+/*
+ * Used to mark addresses on an interface as DETATCHED or TENTATIVE
+ * and thus start Duplicate Address Detection without changing the
+ * real link state.
+ */
+void
+if_domain_link_state_change(struct ifnet *ifp, int link_state)
+{
+	struct domain *dp;
+	int s = splnet();
+
+	KERNEL_LOCK_UNLESS_NET_MPSAFE();
+
+	DOMAIN_FOREACH(dp) {
+		if (dp->dom_if_link_state_change != NULL)
+			dp->dom_if_link_state_change(ifp, link_state);
+	}
 
 	splx(s);
 	KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
@@ -2519,11 +2570,6 @@ _if_down(struct ifnet *ifp)
 	pserialize_read_exit(s);
 	curlwp_bindx(bound);
 
-	IF_LINK_STATE_CHANGE_LOCK(ifp);
-	ifp->if_link_cansched = false;
-	workqueue_wait(ifnet_link_state_wq, &ifp->if_link_work);
-	IF_LINK_STATE_CHANGE_UNLOCK(ifp);
-
 	IFQ_PURGE(&ifp->if_snd);
 #if NCARP > 0
 	if (ifp->if_carp)
@@ -2596,10 +2642,6 @@ if_up_locked(struct ifnet *ifp)
 		if (dp->dom_if_up)
 			dp->dom_if_up(ifp);
 	}
-
-	IF_LINK_STATE_CHANGE_LOCK(ifp);
-	ifp->if_link_cansched = true;
-	IF_LINK_STATE_CHANGE_UNLOCK(ifp);
 }
 
 /*
@@ -3128,15 +3170,6 @@ ifioctl_common(struct ifnet *ifp, u_long cmd, void *data)
 		if (ifp->if_mtu == ifr->ifr_mtu)
 			break;
 		ifp->if_mtu = ifr->ifr_mtu;
-		/*
-		 * If the link MTU changed, do network layer specific procedure.
-		 */
-#ifdef INET6
-		KERNEL_LOCK_UNLESS_NET_MPSAFE();
-		if (in6_present)
-			nd6_setmtu(ifp);
-		KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
-#endif
 		return ENETRESET;
 	case SIOCSIFDESCR:
 		error = kauth_authorize_network(curlwp->l_cred,
@@ -3482,11 +3515,14 @@ ifconf(u_long cmd, void *data)
 	int bound;
 	struct psref psref;
 
-	memset(&ifr, 0, sizeof(ifr));
 	if (docopy) {
+		if (ifc->ifc_len < 0)
+			return EINVAL;
+
 		space = ifc->ifc_len;
 		ifrp = ifc->ifc_req;
 	}
+	memset(&ifr, 0, sizeof(ifr));
 
 	bound = curlwp_bind();
 	s = pserialize_read_enter();
@@ -3780,12 +3816,13 @@ if_mcast_op(ifnet_t *ifp, const unsigned long cmd, const struct sockaddr *sa)
 	int rc;
 	struct ifreq ifr;
 
-	if (ifp->if_mcastop != NULL)
-		rc = (*ifp->if_mcastop)(ifp, cmd, sa);
-	else {
-		ifreq_setaddr(cmd, &ifr, sa);
-		rc = (*ifp->if_ioctl)(ifp, cmd, &ifr);
-	}
+	/*
+	 * XXX NOMPSAFE - this calls if_ioctl without holding IFNET_LOCK()
+	 * in some cases - e.g. when called from vlan/netinet/netinet6 code
+	 * directly rather than via doifoictl()
+	 */
+	ifreq_setaddr(cmd, &ifr, sa);
+	rc = (*ifp->if_ioctl)(ifp, cmd, &ifr);
 
 	return rc;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: boot.c,v 1.20 2020/01/25 11:24:20 jmcneill Exp $	*/
+/*	$NetBSD: boot.c,v 1.29 2020/11/28 14:02:09 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -29,15 +29,20 @@
 
 #include "efiboot.h"
 #include "efiblock.h"
+#include "efifile.h"
 #include "efifdt.h"
 #include "efiacpi.h"
-#include "efienv.h"
+#include "efirng.h"
+#include "module.h"
+#include "overlay.h"
+#include "bootmenu.h"
 
 #include <sys/bootblock.h>
 #include <sys/boot_flag.h>
 #include <machine/limits.h>
 
 #include <loadfile.h>
+#include <bootcfg.h>
 
 extern const char bootprog_name[], bootprog_rev[], bootprog_kernrev[];
 
@@ -70,9 +75,9 @@ static const char *efi_memory_type[] = {
 };
 
 static char default_device[32];
+static int default_fstype = FS_UNUSED;
 static char initrd_path[255];
 static char dtb_path[255];
-static char efibootplist_path[255];
 static char netbsd_path[255];
 static char netbsd_args[255];
 static char rndseed_path[255];
@@ -86,15 +91,16 @@ int	set_bootargs(const char *);
 void	command_boot(char *);
 void	command_dev(char *);
 void	command_dtb(char *);
-void	command_plist(char *);
 void	command_initrd(char *);
 void	command_rndseed(char *);
+void	command_dtoverlay(char *);
+void	command_dtoverlays(char *);
+void	command_modules(char *);
+void	command_load(char *);
+void	command_unload(char *);
 void	command_ls(char *);
 void	command_mem(char *);
-void	command_printenv(char *);
-void	command_setenv(char *);
-void	command_clearenv(char *);
-void	command_resetenv(char *);
+void	command_menu(char *);
 void	command_reset(char *);
 void	command_version(char *);
 void	command_quit(char *);
@@ -103,15 +109,16 @@ const struct boot_command commands[] = {
 	{ "boot",	command_boot,		"boot [dev:][filename] [args]\n     (ex. \"hd0a:\\netbsd.old -s\"" },
 	{ "dev",	command_dev,		"dev" },
 	{ "dtb",	command_dtb,		"dtb [dev:][filename]" },
-	{ "plist",	command_plist,		"plist [dev:][filename]" },
 	{ "initrd",	command_initrd,		"initrd [dev:][filename]" },
 	{ "rndseed",	command_rndseed,	"rndseed [dev:][filename]" },
+	{ "dtoverlay",	command_dtoverlay,	"dtoverlay [dev:][filename]" },
+	{ "dtoverlays",	command_dtoverlays,	"dtoverlays [{on|off|reset}]" },
+	{ "modules",	command_modules,	"modules [{on|off|reset}]" },
+	{ "load",	command_load,		"load <module_name>" },
+	{ "unload",	command_unload,		"unload <module_name>" },
 	{ "ls",		command_ls,		"ls [hdNn:/path]" },
 	{ "mem",	command_mem,		"mem" },
-	{ "printenv",	command_printenv,	"printenv [key]" },
-	{ "setenv",	command_setenv,		"setenv <key> <value>" },
-	{ "clearenv",	command_clearenv,	"clearenv <key>" },
-	{ "resetenv",	command_resetenv,	"resetenv" },
+	{ "menu",	command_menu,		"menu" },
 	{ "reboot",	command_reset,		"reboot|reset" },
 	{ "reset",	command_reset,		NULL },
 	{ "version",	command_version,	"version" },
@@ -121,6 +128,27 @@ const struct boot_command commands[] = {
 	{ "quit",	command_quit,		"quit" },
 	{ NULL,		NULL },
 };
+
+static int
+bootcfg_path(char *pathbuf, size_t pathbuflen)
+{
+	/*
+	 * Special handling of boot.cfg on ISO9660 because fs protocol doesn't
+	 * seem to work.
+	 */
+	if (default_fstype == FS_ISO9660) {
+		snprintf(pathbuf, pathbuflen, "%s:%s", default_device, BOOTCFG_FILENAME);
+		return 0;
+	}
+
+	/*
+	 * Fall back to fs protocol for loading boot.cfg
+	 */
+	if (efi_bootdp == NULL)
+		return ENXIO;
+
+	return efi_file_path(efi_bootdp, BOOTCFG_FILENAME, pathbuf, pathbuflen);
+}
 
 void
 command_help(char *arg)
@@ -173,13 +201,6 @@ command_dtb(char *arg)
 }
 
 void
-command_plist(char *arg)
-{
-	if (set_efibootplist_path(arg) == 0)
-		load_efibootplist(false);
-}
-
-void
 command_initrd(char *arg)
 {
 	set_initrd_path(arg);
@@ -189,6 +210,78 @@ void
 command_rndseed(char *arg)
 {
 	set_rndseed_path(arg);
+}
+
+void
+command_dtoverlays(char *arg)
+{
+	if (arg && *arg) {
+		if (strcmp(arg, "on") == 0)
+			dtoverlay_enable(1);
+		else if (strcmp(arg, "off") == 0)
+			dtoverlay_enable(0);
+		else if (strcmp(arg, "reset") == 0)
+			dtoverlay_remove_all();
+		else {
+			command_help("");
+			return;
+		}
+	} else {
+		printf("Device Tree overlays are %sabled\n",
+		    dtoverlay_enabled ? "en" : "dis");
+	}
+}
+
+void
+command_dtoverlay(char *arg)
+{
+	if (!arg || !*arg) {
+		command_help("");
+		return;
+	}
+
+	dtoverlay_add(arg);
+}
+
+void
+command_modules(char *arg)
+{
+	if (arg && *arg) {
+		if (strcmp(arg, "on") == 0)
+			module_enable(1);
+		else if (strcmp(arg, "off") == 0)
+			module_enable(0);
+		else if (strcmp(arg, "reset") == 0)
+			module_remove_all();
+		else {
+			command_help("");
+			return;
+		}
+	} else {
+		printf("modules are %sabled\n", module_enabled ? "en" : "dis");
+	}
+}
+
+void
+command_load(char *arg)
+{
+	if (!arg || !*arg) {
+		command_help("");
+		return;
+	}
+
+	module_add(arg);
+}
+
+void
+command_unload(char *arg)
+{
+	if (!arg || !*arg) {
+		command_help("");
+		return;
+	}
+
+	module_remove(arg);
 }
 
 void
@@ -220,55 +313,20 @@ command_mem(char *arg)
 }
 
 void
-command_printenv(char *arg)
+command_menu(char *arg)
 {
-	char *val;
-
-	if (arg && *arg) {
-		val = efi_env_get(arg);
-		if (val) {
-			printf("\"%s\" = \"%s\"\n", arg, val);
-			FreePool(val);
-		}
-	} else {
-		efi_env_print();
-	}
-}
-
-void
-command_setenv(char *arg)
-{
-	char *spc;
-
-	spc = strchr(arg, ' ');
-	if (spc == NULL || spc[1] == '\0') {
-		command_help("");
+	if (bootcfg_info.nummenu == 0) {
+		printf("No menu defined in boot.cfg\n");
 		return;
 	}
 
-	*spc = '\0';
-	efi_env_set(arg, spc + 1);
-}
-
-void
-command_clearenv(char *arg)
-{
-	if (*arg == '\0') {
-		command_help("");
-		return;
-	}
-	efi_env_clear(arg);
-}
-
-void
-command_resetenv(char *arg)
-{
-	efi_env_reset();
+	doboottypemenu();	/* Does not return */
 }
 
 void
 command_version(char *arg)
 {
+	char pathbuf[80];
 	char *ufirmware;
 	int rv;
 
@@ -282,9 +340,14 @@ command_version(char *arg)
 		    ST->FirmwareRevision);
 		FreePool(ufirmware);
 	}
+	if (bootcfg_path(pathbuf, sizeof(pathbuf)) == 0) {
+		printf("Config path: %s\n", pathbuf);
+	}
 
 	efi_fdt_show();
 	efi_acpi_show();
+	efi_rng_show();
+	efi_md_show();
 }
 
 void
@@ -312,6 +375,18 @@ char *
 get_default_device(void)
 {
 	return default_device;
+}
+
+void
+set_default_fstype(int fstype)
+{
+	default_fstype = fstype;
+}
+
+int
+get_default_fstype(void)
+{
+	return default_fstype;
 }
 
 int
@@ -342,20 +417,6 @@ char *
 get_dtb_path(void)
 {
 	return dtb_path;
-}
-
-int
-set_efibootplist_path(const char *arg)
-{
-	if (strlen(arg) + 1 > sizeof(efibootplist_path))
-		return ERANGE;
-	strcpy(efibootplist_path, arg);
-	return 0;
-}
-
-char *get_efibootplist_path(void)
-{
-	return efibootplist_path;
 }
 
 int
@@ -399,88 +460,27 @@ print_banner(void)
 	    bootprog_name, bootprog_rev);
 }
 
-static void
-read_env(void)
-{
-	char *s;
-
-	s = efi_env_get("efibootplist");
-	if (s) {
-#ifdef EFIBOOT_DEBUG
-		printf(">> Setting efiboot.plist path to '%s' from environment\n", s);
-#endif
-		set_efibootplist_path(s);
-		FreePool(s);
-	}
-
-	/*
-	 * Read the efiboot.plist now as it may contain additional
-	 * environment variables.
-	 */
-	load_efibootplist(true);
-
-	s = efi_env_get("fdtfile");
-	if (s) {
-#ifdef EFIBOOT_DEBUG
-		printf(">> Setting DTB path to '%s' from environment\n", s);
-#endif
-		set_dtb_path(s);
-		FreePool(s);
-	}
-
-	s = efi_env_get("initrd");
-	if (s) {
-#ifdef EFIBOOT_DEBUG
-		printf(">> Setting initrd path to '%s' from environment\n", s);
-#endif
-		set_initrd_path(s);
-		FreePool(s);
-	}
-
-	s = efi_env_get("bootfile");
-	if (s) {
-#ifdef EFIBOOT_DEBUG
-		printf(">> Setting bootfile path to '%s' from environment\n", s);
-#endif
-		set_bootfile(s);
-		FreePool(s);
-	}
-
-	s = efi_env_get("rootdev");
-	if (s) {
-#ifdef EFIBOOT_DEBUG
-		printf(">> Setting default device to '%s' from environment\n", s);
-#endif
-		set_default_device(s);
-		FreePool(s);
-	}
-
-	s = efi_env_get("bootargs");
-	if (s) {
-#ifdef EFIBOOT_DEBUG
-		printf(">> Setting default boot args to '%s' from environment\n", s);
-#endif
-		set_bootargs(s);
-		FreePool(s);
-	}
-
-	s = efi_env_get("rndseed");
-	if (s) {
-#ifdef EFIBOOT_DEBUG
-		printf(">> Setting rndseed path to '%s' from environment\n", s);
-#endif
-		set_rndseed_path(s);
-		FreePool(s);
-	}
-}
-
 void
 boot(void)
 {
+	char pathbuf[80];
 	int currname, c;
 
-	read_env();
+	if (bootcfg_path(pathbuf, sizeof(pathbuf)) == 0) {
+		twiddle_toggle = 1;
+		parsebootconf(pathbuf);
+	}
+
+	if (bootcfg_info.clear)
+		uefi_call_wrapper(ST->ConOut->ClearScreen, 1, ST->ConOut);
+
 	print_banner();
+
+	/* Display menu if configured */
+	if (bootcfg_info.nummenu > 0) {
+		doboottypemenu();	/* No return */
+	}
+
 	printf("Press return to boot now, any other key for boot prompt\n");
 
 	if (netbsd_path[0] != '\0')

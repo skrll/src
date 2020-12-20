@@ -1,4 +1,4 @@
-/*	$NetBSD: efs_vnops.c,v 1.38 2017/05/26 14:21:00 riastradh Exp $	*/
+/*	$NetBSD: efs_vnops.c,v 1.41 2020/06/27 17:29:17 christos Exp $	*/
 
 /*
  * Copyright (c) 2006 Stephen M. Rumble <rumble@ephemeral.org>
@@ -17,7 +17,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: efs_vnops.c,v 1.38 2017/05/26 14:21:00 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: efs_vnops.c,v 1.41 2020/06/27 17:29:17 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -115,10 +115,10 @@ efs_lookup(void *v)
 }
 
 static int
-efs_check_possible(struct vnode *vp, struct efs_inode *eip, mode_t mode)
+efs_check_possible(struct vnode *vp, struct efs_inode *eip, accmode_t accmode)
 {
 
-	if ((mode & VWRITE) && (vp->v_mount->mnt_flag & MNT_RDONLY))
+	if ((accmode & VWRITE) && (vp->v_mount->mnt_flag & MNT_RDONLY))
 		return (EROFS);
 
 	return 0;
@@ -131,13 +131,13 @@ efs_check_possible(struct vnode *vp, struct efs_inode *eip, mode_t mode)
  * Returns 0 on success.
  */
 static int
-efs_check_permitted(struct vnode *vp, struct efs_inode *eip, mode_t mode,
+efs_check_permitted(struct vnode *vp, struct efs_inode *eip, accmode_t accmode,
     kauth_cred_t cred)
 {
 
-	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(mode,
-	    vp->v_type, eip->ei_mode), vp, NULL, genfs_can_access(vp->v_type,
-	    eip->ei_mode, eip->ei_uid, eip->ei_gid, mode, cred));
+	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(accmode,
+	    vp->v_type, eip->ei_mode), vp, NULL, genfs_can_access(vp,
+	    cred, eip->ei_uid, eip->ei_gid, eip->ei_mode, NULL, accmode));
 }
 
 static int
@@ -146,18 +146,18 @@ efs_access(void *v)
 	struct vop_access_args /* {
 		const struct vnodeop_desc *a_desc;
 		struct vnode *a_vp;
-		int a_mode;
+		accmode_t a_accmode;
 		struct ucred *a_cred;
 	} */ *ap = v;
 	struct vnode *vp = ap->a_vp;
 	struct efs_inode *eip = EFS_VTOI(vp);
 	int error;
 
-	error = efs_check_possible(vp, eip, ap->a_mode);
+	error = efs_check_possible(vp, eip, ap->a_accmode);
 	if (error)
 		return error;
 
-	error = efs_check_permitted(vp, eip, ap->a_mode, ap->a_cred);
+	error = efs_check_permitted(vp, eip, ap->a_accmode, ap->a_cred);
 
 	return error;
 }
@@ -278,7 +278,7 @@ efs_read(void *v)
 		len = MIN(len, eip->ei_size - uio->uio_offset);
 
 		err = ubc_uiomove(&ap->a_vp->v_uobj, uio, len, advice,
-		    UBC_READ | UBC_PARTIALOK | UBC_UNMAP_FLAG(ap->a_vp));
+		    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(ap->a_vp));
 		if (err) {
 			EFS_DPRINTF(("efs_read: uiomove error %d\n",
 			    err));
@@ -757,7 +757,7 @@ efs_pathconf(void *v)
 		*ap->a_retval = 32;
 		break;
 	default:
-		return (EINVAL);
+		return genfs_pathconf(ap);
 	}
 
 	return (0);
@@ -789,6 +789,7 @@ const struct vnodeopv_entry_desc efs_vnodeop_entries[] = {
 	{ &vop_open_desc,	genfs_nullop	},	/* open */
 	{ &vop_close_desc,	genfs_nullop	},	/* close */
 	{ &vop_access_desc,	efs_access	},	/* access */
+	{ &vop_accessx_desc,	genfs_accessx	},	/* accessx */
 	{ &vop_getattr_desc,	efs_getattr	},	/* getattr */
 	{ &vop_setattr_desc,	genfs_eopnotsupp},	/* setattr */
 	{ &vop_read_desc,	efs_read	},	/* read */
@@ -847,6 +848,7 @@ const struct vnodeopv_entry_desc efs_specop_entries[] = {
 	{ &vop_open_desc,	spec_open	},	/* open */
 	{ &vop_close_desc,	spec_close	},	/* close */
 	{ &vop_access_desc,	efs_access	},	/* access */
+	{ &vop_accessx_desc,	genfs_accessx	},	/* accessx */
 	{ &vop_getattr_desc,	efs_getattr	},	/* getattr */
 	{ &vop_setattr_desc,	genfs_eopnotsupp},	/* setattr */
 	{ &vop_read_desc,	spec_read	},	/* read */
@@ -905,6 +907,7 @@ const struct vnodeopv_entry_desc efs_fifoop_entries[] = {
 	{ &vop_open_desc,	vn_fifo_bypass	},	/* open */
 	{ &vop_close_desc,	vn_fifo_bypass	},	/* close */
 	{ &vop_access_desc,	efs_access	},	/* access */
+	{ &vop_accessx_desc,	genfs_accessx	},	/* accessx */
 	{ &vop_getattr_desc,	efs_getattr	},	/* getattr */
 	{ &vop_setattr_desc,	genfs_eopnotsupp},	/* setattr */
 	{ &vop_read_desc,	vn_fifo_bypass	},	/* read */

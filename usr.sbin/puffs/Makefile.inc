@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.15 2016/01/23 21:22:50 christos Exp $
+#	$NetBSD: Makefile.inc,v 1.17 2020/05/17 18:59:02 christos Exp $
 
 WARNS?=	4
 
@@ -43,7 +43,7 @@ LDADD+=		-lrumpfs_${MOUNTNAME}
 LDADD+=		-lrumpdev_disk -lrumpdev
 .endif
 
-LDADD+=		-lp2k -lukfs -lrumpvfs -lrump -lrumpuser -lpuffs -lutil
+LDADD+=		-lp2k -lukfs -lrumpvfs -lrumpvfs_nofifofs -lrump -lrumpuser -lpuffs -lutil
 LDADD+=		-lpthread
 
 DPADD+=		${LIBP2K} ${LIBUKFS} ${LIBRUMPVFS} ${LIBRUMP} ${LIBRUMPUSER}

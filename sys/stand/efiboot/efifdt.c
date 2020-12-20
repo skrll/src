@@ -1,4 +1,4 @@
-/* $NetBSD: efifdt.c,v 1.21 2020/01/03 14:14:56 skrll Exp $ */
+/* $NetBSD: efifdt.c,v 1.28 2020/12/19 08:09:31 skrll Exp $ */
 
 /*-
  * Copyright (c) 2019 Jason R. Thorpe
@@ -30,6 +30,7 @@
 #include "efiboot.h"
 #include "efifdt.h"
 #include "efiblock.h"
+#include "efiacpi.h"
 
 #include <libfdt.h>
 
@@ -55,6 +56,7 @@ static EFI_GUID FdtTableGuid = FDT_TABLE_GUID;
 #define PRIxUINTN "x"
 #endif
 static void *fdt_data = NULL;
+static size_t fdt_data_size = 512*1024;
 
 int
 efi_fdt_probe(void)
@@ -76,10 +78,23 @@ efi_fdt_probe(void)
 int
 efi_fdt_set_data(void *data)
 {
+	int err;
+
 	if (fdt_check_header(data) != 0)
 		return EINVAL;
 
-	fdt_data = data;
+	fdt_data = alloc(fdt_data_size);
+	if (fdt_data == NULL)
+		return ENOMEM;
+	memset(fdt_data, 0, fdt_data_size);
+
+	err = fdt_open_into(data, fdt_data, fdt_data_size);
+	if (err != 0) {
+		dealloc(fdt_data, fdt_data_size);
+		fdt_data = NULL;
+		return ENXIO;
+	}
+
 	return 0;
 }
 
@@ -185,6 +200,34 @@ efi_fdt_show(void)
 	printf("]\n");
 }
 
+static int
+efi_fdt_chosen(void)
+{
+	int chosen;
+
+	chosen = fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH);
+	if (chosen < 0)
+		chosen = fdt_add_subnode(fdt_data,
+		    fdt_path_offset(fdt_data, "/"),
+		    FDT_CHOSEN_NODE_NAME);
+	if (chosen < 0)
+		panic("FDT: Failed to create " FDT_CHOSEN_NODE_PATH " node");
+
+	return chosen;
+}
+
+void
+efi_fdt_system_table(void)
+{
+#ifdef EFIBOOT_RUNTIME_ADDRESS
+	int chosen;
+
+	chosen = efi_fdt_chosen();
+
+	fdt_setprop_u64(fdt_data, chosen, "netbsd,uefi-system-table", (uint64_t)(uintptr_t)ST);
+#endif
+}
+
 void
 efi_fdt_memory_map(void)
 {
@@ -192,19 +235,13 @@ efi_fdt_memory_map(void)
 	EFI_MEMORY_DESCRIPTOR *md, *memmap;
 	UINT32 descver;
 	UINT64 phys_start, phys_size;
-	int n, memory, chosen;
+	int n, memory;
 
 	memory = fdt_path_offset(fdt_data, FDT_MEMORY_NODE_PATH);
 	if (memory < 0)
 		memory = fdt_add_subnode(fdt_data, fdt_path_offset(fdt_data, "/"), FDT_MEMORY_NODE_NAME);
 	if (memory < 0)
 		panic("FDT: Failed to create " FDT_MEMORY_NODE_PATH " node");
-
-	chosen = fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH);
-	if (chosen < 0)
-		chosen = fdt_add_subnode(fdt_data, fdt_path_offset(fdt_data, "/"), FDT_CHOSEN_NODE_NAME);
-	if (chosen < 0)
-		panic("FDT: Failed to create " FDT_CHOSEN_NODE_PATH " node");
 
 	fdt_delprop(fdt_data, memory, "reg");
 
@@ -213,10 +250,15 @@ efi_fdt_memory_map(void)
 
 	memmap = LibMemoryMap(&nentries, &mapkey, &descsize, &descver);
 	for (n = 0, md = memmap; n < nentries; n++, md = NextMemoryDescriptor(md, descsize)) {
-		fdt_appendprop_u32(fdt_data, fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "netbsd,uefi-memmap", md->Type);
-		fdt_appendprop_u64(fdt_data, fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "netbsd,uefi-memmap", md->PhysicalStart);
-		fdt_appendprop_u64(fdt_data, fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "netbsd,uefi-memmap", md->NumberOfPages);
-		fdt_appendprop_u64(fdt_data, fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "netbsd,uefi-memmap", md->Attribute);
+		/*
+		 * create / find the chosen node for each iteration as it might have changed
+		 * when adding to the memory node
+		 */
+		int chosen = efi_fdt_chosen();
+		fdt_appendprop_u32(fdt_data, chosen, "netbsd,uefi-memmap", md->Type);
+		fdt_appendprop_u64(fdt_data, chosen, "netbsd,uefi-memmap", md->PhysicalStart);
+		fdt_appendprop_u64(fdt_data, chosen, "netbsd,uefi-memmap", md->NumberOfPages);
+		fdt_appendprop_u64(fdt_data, chosen, "netbsd,uefi-memmap", md->Attribute);
 
 		if ((md->Attribute & EFI_MEMORY_RUNTIME) != 0)
 			continue;
@@ -234,26 +276,31 @@ efi_fdt_memory_map(void)
 		phys_size = md->NumberOfPages * EFI_PAGE_SIZE;
 
 		if (phys_start & EFI_PAGE_MASK) {
-			/* UEFI spec says these should be 4KB aligned, but U-Boot doesn't always.. */
+			/*
+			 * UEFI spec says these should be 4KB aligned, but
+			 * U-Boot doesn't always, so round up to the next
+			 * page.
+			 */
 			phys_start = (phys_start + EFI_PAGE_SIZE) & ~EFI_PAGE_MASK;
 			phys_size -= (EFI_PAGE_SIZE * 2);
 			if (phys_size == 0)
 				continue;
 		}
 
+		memory = fdt_path_offset(fdt_data, FDT_MEMORY_NODE_PATH);
 		if (address_cells == 1)
-			fdt_appendprop_u32(fdt_data, fdt_path_offset(fdt_data, FDT_MEMORY_NODE_PATH),
-			    "reg", (uint32_t)phys_start);
+			fdt_appendprop_u32(fdt_data, memory, "reg",
+			    (uint32_t)phys_start);
 		else
-			fdt_appendprop_u64(fdt_data, fdt_path_offset(fdt_data, FDT_MEMORY_NODE_PATH),
-			    "reg", phys_start);
+			fdt_appendprop_u64(fdt_data, memory, "reg",
+			    phys_start);
 
 		if (size_cells == 1)
-			fdt_appendprop_u32(fdt_data, fdt_path_offset(fdt_data, FDT_MEMORY_NODE_PATH),
-			    "reg", (uint32_t)phys_size);
+			fdt_appendprop_u32(fdt_data, memory, "reg",
+			    (uint32_t)phys_size);
 		else
-			fdt_appendprop_u64(fdt_data, fdt_path_offset(fdt_data, FDT_MEMORY_NODE_PATH),
-			    "reg", phys_size);
+			fdt_appendprop_u64(fdt_data, memory, "reg",
+			    phys_size);
 	}
 }
 
@@ -266,7 +313,7 @@ efi_fdt_gop(void)
 	EFI_HANDLE *gop_handle;
 	UINTN ngop_handle, n;
 	char buf[48];
-	int fb;
+	int fb, chosen;
 
 	status = LibLocateHandle(ByProtocol, &GraphicsOutputProtocol, NULL, &ngop_handle, &gop_handle);
 	if (EFI_ERROR(status) || ngop_handle == 0)
@@ -299,17 +346,17 @@ efi_fdt_gop(void)
 			continue;
 		}
 
-		fdt_setprop_u32(fdt_data,
-		    fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "#address-cells", 2);
-		fdt_setprop_u32(fdt_data,
-		    fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "#size-cells", 2);
-		fdt_setprop_empty(fdt_data,
-		    fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), "ranges");
+		chosen = efi_fdt_chosen();
+		fdt_setprop_u32(fdt_data, chosen, "#address-cells", 2);
+		fdt_setprop_u32(fdt_data, chosen, "#size-cells", 2);
+		fdt_setprop_empty(fdt_data, chosen, "ranges");
 
 		snprintf(buf, sizeof(buf), "framebuffer@%" PRIx64, mode->FrameBufferBase);
-		fb = fdt_add_subnode(fdt_data, fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH), buf);
-		if (fb < 0)
-			panic("FDT: Failed to create framebuffer node");
+		fb = fdt_add_subnode(fdt_data, chosen, buf);
+		if (fb < 0) {
+			/* Framebuffer node already exists. No need to create a new one! */
+			return;
+		}
 
 		fdt_appendprop_string(fdt_data, fb, "compatible", "simple-framebuffer");
 		fdt_appendprop_string(fdt_data, fb, "status", "okay");
@@ -320,9 +367,13 @@ efi_fdt_gop(void)
 		fdt_appendprop_u32(fdt_data, fb, "stride", mode->Info->PixelsPerScanLine * 4);	/* XXX */
 		fdt_appendprop_string(fdt_data, fb, "format", "a8b8g8r8");
 
-		snprintf(buf, sizeof(buf), "/chosen/framebuffer@%" PRIx64, mode->FrameBufferBase);
-		fdt_setprop_string(fdt_data, fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH),
-		    "stdout-path", buf);
+		/*
+		 * In ACPI mode, use GOP as console.
+		 */
+		if (efi_acpi_available()) {
+			snprintf(buf, sizeof(buf), "/chosen/framebuffer@%" PRIx64, mode->FrameBufferBase);
+			fdt_setprop_string(fdt_data, chosen, "stdout-path", buf);
+		}
 
 		return;
 	}
@@ -335,11 +386,7 @@ efi_fdt_bootargs(const char *bootargs)
 	uint8_t macaddr[6];
 	int chosen;
 
-	chosen = fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH);
-	if (chosen < 0)
-		chosen = fdt_add_subnode(fdt_data, fdt_path_offset(fdt_data, "/"), FDT_CHOSEN_NODE_NAME);
-	if (chosen < 0)
-		panic("FDT: Failed to create " FDT_CHOSEN_NODE_PATH " node");
+	chosen = efi_fdt_chosen();
 
 	if (*bootargs)
 		fdt_setprop_string(fdt_data, chosen, "bootargs", bootargs);
@@ -381,16 +428,12 @@ efi_fdt_initrd(u_long initrd_addr, u_long initrd_size)
 	if (initrd_size == 0)
 		return;
 
-	chosen = fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH);
-	if (chosen < 0)
-		chosen = fdt_add_subnode(fdt_data, fdt_path_offset(fdt_data, "/"), FDT_CHOSEN_NODE_NAME);
-	if (chosen < 0)
-		panic("FDT: Failed to create " FDT_CHOSEN_NODE_PATH " node");
-
+	chosen = efi_fdt_chosen();
 	fdt_setprop_u64(fdt_data, chosen, "linux,initrd-start", initrd_addr);
 	fdt_setprop_u64(fdt_data, chosen, "linux,initrd-end", initrd_addr + initrd_size);
 }
 
+/* pass in the NetBSD on-disk random seed */
 void
 efi_fdt_rndseed(u_long rndseed_addr, u_long rndseed_size)
 {
@@ -399,16 +442,40 @@ efi_fdt_rndseed(u_long rndseed_addr, u_long rndseed_size)
 	if (rndseed_size == 0)
 		return;
 
-	chosen = fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH);
-	if (chosen < 0)
-		chosen = fdt_add_subnode(fdt_data,
-		    fdt_path_offset(fdt_data, "/"),
-		    FDT_CHOSEN_NODE_NAME);
-	if (chosen < 0)
-		panic("FDT: Failed to create " FDT_CHOSEN_NODE_PATH " node");
-
+	chosen = efi_fdt_chosen();
 	fdt_setprop_u64(fdt_data, chosen, "netbsd,rndseed-start",
 	    rndseed_addr);
 	fdt_setprop_u64(fdt_data, chosen, "netbsd,rndseed-end",
 	    rndseed_addr + rndseed_size);
+}
+
+/* pass in output from the EFI firmware's RNG from some unknown source */
+void
+efi_fdt_efirng(u_long efirng_addr, u_long efirng_size)
+{
+	int chosen;
+
+	if (efirng_size == 0)
+		return;
+
+	chosen = efi_fdt_chosen();
+	fdt_setprop_u64(fdt_data, chosen, "netbsd,efirng-start",
+	    efirng_addr);
+	fdt_setprop_u64(fdt_data, chosen, "netbsd,efirng-end",
+	    efirng_addr + efirng_size);
+}
+
+/* pass in module information */
+void
+efi_fdt_module(const char *module_name, u_long module_addr, u_long module_size)
+{
+	int chosen;
+
+	if (module_size == 0)
+		return;
+
+	chosen = efi_fdt_chosen();
+	fdt_appendprop_string(fdt_data, chosen, "netbsd,module-names", module_name);
+	fdt_appendprop_u64(fdt_data, chosen, "netbsd,modules", module_addr);
+	fdt_appendprop_u64(fdt_data, chosen, "netbsd,modules", module_size);
 }

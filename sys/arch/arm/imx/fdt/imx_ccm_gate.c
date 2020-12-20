@@ -1,4 +1,4 @@
-/* $NetBSD: imx_ccm_gate.c,v 1.1 2020/01/15 01:09:57 jmcneill Exp $ */
+/* $NetBSD: imx_ccm_gate.c,v 1.2 2020/06/10 17:57:50 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2020 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx_ccm_gate.c,v 1.1 2020/01/15 01:09:57 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx_ccm_gate.c,v 1.2 2020/06/10 17:57:50 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -45,12 +45,12 @@ imx_ccm_gate_enable(struct imx_ccm_softc *sc, struct imx_ccm_clk *clk,
 
 	KASSERT(clk->type == IMX_CCM_GATE);
 
-	val = CCM_READ(sc, gate->reg);
+	val = CCM_READ(sc, clk->regidx, gate->reg);
 	if (enable)
 		val |= gate->mask;
 	else
 		val &= ~gate->mask;
-	CCM_WRITE(sc, gate->reg, val);
+	CCM_WRITE(sc, clk->regidx, gate->reg, val);
 
 	return 0;
 }

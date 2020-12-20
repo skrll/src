@@ -1,4 +1,4 @@
-/*	$NetBSD: ubsec.c,v 1.48 2020/03/16 21:20:09 pgoyette Exp $	*/
+/*	$NetBSD: ubsec.c,v 1.52 2020/06/14 23:22:09 riastradh Exp $	*/
 /* $FreeBSD: src/sys/dev/ubsec/ubsec.c,v 1.6.2.6 2003/01/23 21:06:43 sam Exp $ */
 /*	$OpenBSD: ubsec.c,v 1.143 2009/03/27 13:31:30 reyk Exp$	*/
 
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ubsec.c,v 1.48 2020/03/16 21:20:09 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ubsec.c,v 1.52 2020/06/14 23:22:09 riastradh Exp $");
 
 #undef UBSEC_DEBUG
 
@@ -47,11 +47,6 @@ __KERNEL_RCSID(0, "$NetBSD: ubsec.c,v 1.48 2020/03/16 21:20:09 pgoyette Exp $");
 #include <sys/systm.h>
 #include <sys/proc.h>
 #include <sys/endian.h>
-#ifdef __NetBSD__
-  #define UBSEC_NO_RNG	/* hangs on attach */
-  #define letoh16 htole16
-  #define letoh32 htole32
-#endif
 #include <sys/errno.h>
 #include <sys/malloc.h>
 #include <sys/kernel.h>
@@ -63,15 +58,9 @@ __KERNEL_RCSID(0, "$NetBSD: ubsec.c,v 1.48 2020/03/16 21:20:09 pgoyette Exp $");
 
 #include <opencrypto/cryptodev.h>
 #include <opencrypto/xform.h>
-#ifdef __OpenBSD__
- #include <dev/rndvar.h>
- #include <sys/md5k.h>
-#else
- #include <sys/cprng.h>
- #include <sys/md5.h>
- #include <sys/rndpool.h>
- #include <sys/rndsource.h>
-#endif
+#include <sys/cprng.h>
+#include <sys/md5.h>
+#include <sys/rndsource.h>
 #include <sys/sha1.h>
 
 #include <dev/pci/pcireg.h>
@@ -80,6 +69,10 @@ __KERNEL_RCSID(0, "$NetBSD: ubsec.c,v 1.48 2020/03/16 21:20:09 pgoyette Exp $");
 
 #include <dev/pci/ubsecreg.h>
 #include <dev/pci/ubsecvar.h>
+
+#define UBSEC_NO_RNG	/* hangs on attach */
+#define letoh16 htole16
+#define letoh32 htole32
 
 /*
  * Prototypes and count for the pci_device structure
@@ -94,19 +87,9 @@ static	void ubsec_cleanchip(struct ubsec_softc *);
 static	void ubsec_totalreset(struct ubsec_softc *);
 static	int  ubsec_free_q(struct ubsec_softc*, struct ubsec_q *);
 
-#ifdef __OpenBSD__
-struct cfattach ubsec_ca = {
-	sizeof(struct ubsec_softc), ubsec_probe, ubsec_attach,
-};
-
-struct cfdriver ubsec_cd = {
-	0, "ubsec", DV_DULL
-};
-#else
 CFATTACH_DECL_NEW(ubsec, sizeof(struct ubsec_softc), ubsec_probe, ubsec_attach,
 	      ubsec_detach, NULL);
 extern struct cfdriver ubsec_cd;
-#endif
 
 /* patchable */
 #ifdef	UBSEC_DEBUG
@@ -426,7 +409,6 @@ ubsec_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_rng_need = RND_POOLBITS / NBBY;
 	mutex_init(&sc->sc_mtx, MUTEX_DEFAULT, IPL_VM);
 
 	SIMPLEQ_INIT(&sc->sc_freequeue);
@@ -501,23 +483,17 @@ ubsec_attach(device_t parent, device_t self, void *aux)
 			ubsec_dma_free(sc, &sc->sc_rng.rng_q.q_mcr);
 			goto skip_rng;
 		}
-
-		rndsource_setcb(&sc->sc_rnd_source, ubsec_rng_get, sc);
-		rnd_attach_source(&sc->sc_rnd_source, device_xname(sc->sc_dev),
-				  RND_TYPE_RNG,
-				  RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
 		if (hz >= 100)
 			sc->sc_rnghz = hz / 100;
 		else
 			sc->sc_rnghz = 1;
-#ifdef __OpenBSD__
-		timeout_set(&sc->sc_rngto, ubsec_rng, sc);
-		timeout_add(&sc->sc_rngto, sc->sc_rnghz);
-#else
 		callout_init(&sc->sc_rngto, 0);
 		callout_setfunc(&sc->sc_rngto, ubsec_rng, sc);
-		callout_schedule(&sc->sc_rngto, sc->sc_rnghz);
-#endif
+		rndsource_setcb(&sc->sc_rnd_source, ubsec_rng_get, sc);
+		rnd_attach_source(&sc->sc_rnd_source, device_xname(sc->sc_dev),
+				  RND_TYPE_RNG,
+				  RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
+
  skip_rng:
 		if (sc->sc_rnghz)
 			aprint_normal_dev(self,
@@ -1055,13 +1031,6 @@ ubsec_newsession(void *arg, u_int32_t *sidp, struct cryptoini *cri)
 	memset(ses, 0, sizeof(struct ubsec_session));
 	ses->ses_used = 1;
 	if (encini) {
-		/* get an IV, network byte order */
-#ifdef __NetBSD__
-		cprng_fast(ses->ses_iv, sizeof(ses->ses_iv));
-#else
-		get_random_bytes(ses->ses_iv, sizeof(ses->ses_iv));
-#endif
-
 		/* Go ahead and compute key in ubsec's byte order */
 		if (encini->cri_alg == CRYPTO_AES_CBC) {
 			memcpy(ses->ses_key, encini->cri_key,
@@ -1178,9 +1147,6 @@ static int
 ubsec_process(void *arg, struct cryptop *crp, int hint)
 {
 	struct ubsec_q *q = NULL;
-#ifdef	__OpenBSD__
-	int card;
-#endif
 	int err = 0, i, j, nicealign;
 	struct ubsec_softc *sc;
 	struct cryptodesc *crd1, *crd2, *maccrd, *enccrd;
@@ -1325,14 +1291,10 @@ ubsec_process(void *arg, struct cryptop *crp, int hint)
 		encoffset = enccrd->crd_skip;
 
 		if (enccrd->crd_flags & CRD_F_ENCRYPT) {
-			q->q_flags |= UBSEC_QFLAGS_COPYOUTIV;
-
 			if (enccrd->crd_flags & CRD_F_IV_EXPLICIT)
 				memcpy(key.ses_iv, enccrd->crd_iv, ivlen);
-			else {
-				for (i = 0; i < (ivlen / 4); i++)
-					key.ses_iv[i] = ses->ses_iv[i];
-			}
+			else
+				cprng_fast(key.ses_iv, ivlen);
 
 			if ((enccrd->crd_flags & CRD_F_IV_PRESENT) == 0) {
 				if (crp->crp_flags & CRYPTO_F_IMBUF)
@@ -1866,26 +1828,6 @@ ubsec_callback(struct ubsec_softc *sc, struct ubsec_q *q)
 		crp->crp_buf = (void *)q->q_dst_m;
 	}
 
-	/* copy out IV for future use */
-	if (q->q_flags & UBSEC_QFLAGS_COPYOUTIV) {
-		for (crd = crp->crp_desc; crd; crd = crd->crd_next) {
-			if (crd->crd_alg != CRYPTO_DES_CBC &&
-			    crd->crd_alg != CRYPTO_3DES_CBC &&
-			    crd->crd_alg != CRYPTO_AES_CBC)
-				continue;
-			if (crp->crp_flags & CRYPTO_F_IMBUF)
-				m_copydata((struct mbuf *)crp->crp_buf,
-				    crd->crd_skip + crd->crd_len - 8, 8,
-				    (void *)sc->sc_sessions[q->q_sesn].ses_iv);
-			else if (crp->crp_flags & CRYPTO_F_IOV) {
-				cuio_copydata((struct uio *)crp->crp_buf,
-				    crd->crd_skip + crd->crd_len - 8, 8,
-				    (void *)sc->sc_sessions[q->q_sesn].ses_iv);
-			}
-			break;
-		}
-	}
-
 	for (crd = crp->crp_desc; crd; crd = crd->crd_next) {
 		if (crd->crd_alg != CRYPTO_MD5_HMAC_96 &&
 		    crd->crd_alg != CRYPTO_SHA1_HMAC_96)
@@ -2019,22 +1961,13 @@ ubsec_callback2(struct ubsec_softc *sc, struct ubsec_q2 *q)
 		bus_dmamap_sync(sc->sc_dmat, rng->rng_buf.dma_map, 0,
 		    rng->rng_buf.dma_map->dm_mapsize, BUS_DMASYNC_POSTREAD);
 		p = (u_int32_t *)rng->rng_buf.dma_vaddr;
-#ifndef __NetBSD__
-		for (i = 0; i < UBSEC_RNG_BUFSIZ; p++, i++)
-			add_true_randomness(letoh32(*p));
-#else
 		i = UBSEC_RNG_BUFSIZ * sizeof(u_int32_t);
 		rnd_add_data(&sc->sc_rnd_source, (char *)p, i, i * NBBY);
 		sc->sc_rng_need -= i;
-#endif
 		rng->rng_used = 0;
-#ifdef __OpenBSD__
-		timeout_add(&sc->sc_rngto, sc->sc_rnghz);
-#else
 		if (sc->sc_rng_need > 0) {
 			callout_schedule(&sc->sc_rngto, sc->sc_rnghz);
 		}
-#endif
 		break;
 	}
 #endif
@@ -2207,11 +2140,7 @@ out:
 	 * Something weird happened, generate our own call back.
 	 */
 	(*nqueue)--;
-#ifdef __OpenBSD__
-	timeout_add(&sc->sc_rngto, sc->sc_rnghz);
-#else
 	callout_schedule(&sc->sc_rngto, sc->sc_rnghz);
-#endif
 }
 #endif /* UBSEC_NO_RNG */
 
@@ -2437,24 +2366,6 @@ ubsec_dmamap_aligned(bus_dmamap_t map)
 	return (1);
 }
 
-#ifdef __OpenBSD__
-struct ubsec_softc *
-ubsec_kfind(struct cryptkop *krp)
-{
-	struct ubsec_softc *sc;
-	int i;
-
-	for (i = 0; i < ubsec_cd.cd_ndevs; i++) {
-		sc = ubsec_cd.cd_devs[i];
-		if (sc == NULL)
-			continue;
-		if (sc->sc_cid == krp->krp_hid)
-			return (sc);
-	}
-	return (NULL);
-}
-#endif
-
 static void
 ubsec_kfree(struct ubsec_softc *sc, struct ubsec_q2 *q)
 {
@@ -2496,13 +2407,8 @@ ubsec_kprocess(void *arg, struct cryptkop *krp, int hint)
 
 	if (krp == NULL || krp->krp_callback == NULL)
 		return (EINVAL);
-#ifdef __OpenBSD__
-	if ((sc = ubsec_kfind(krp)) == NULL)
-		return (EINVAL);
-#else
 	sc = arg;
 	KASSERT(sc != NULL /*, ("ubsec_kprocess: null softc")*/);
-#endif
 
 	while (!SIMPLEQ_EMPTY(&sc->sc_q2free)) {
 		struct ubsec_q2 *q;

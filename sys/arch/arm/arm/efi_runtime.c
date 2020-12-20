@@ -1,4 +1,4 @@
-/* $NetBSD: efi_runtime.c,v 1.3 2019/12/16 00:03:50 jmcneill Exp $ */
+/* $NetBSD: efi_runtime.c,v 1.5 2020/12/18 07:40:27 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,10 +30,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: efi_runtime.c,v 1.3 2019/12/16 00:03:50 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: efi_runtime.c,v 1.5 2020/12/18 07:40:27 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/mutex.h>
+#include <sys/endian.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -41,12 +42,13 @@ __KERNEL_RCSID(0, "$NetBSD: efi_runtime.c,v 1.3 2019/12/16 00:03:50 jmcneill Exp
 
 static kmutex_t efi_lock;
 
-static struct efi_systbl *ST = NULL;
 static struct efi_rt *RT = NULL;
 
 int
 arm_efirt_init(paddr_t efi_system_table)
 {
+#if BYTE_ORDER == LITTLE_ENDIAN
+	struct efi_systbl *ST;
 	const size_t sz = PAGE_SIZE * 2;
 	vaddr_t va, cva;
 	paddr_t cpa;
@@ -65,8 +67,8 @@ arm_efirt_init(paddr_t efi_system_table)
 
 	ST = (void *)(va + (efi_system_table - trunc_page(efi_system_table)));
 	if (ST->st_hdr.th_sig != EFI_SYSTBL_SIG) {
-		aprint_error("EFI: signature mismatch (%#lx != %#lx)\n",
-		    ST->st_hdr.th_sig, EFI_SYSTBL_SIG);
+		aprint_error("EFI: signature mismatch (%#" PRIx64 " != %#"
+		    PRIx64 ")\n", ST->st_hdr.th_sig, EFI_SYSTBL_SIG);
 		return EINVAL;
 	}
 
@@ -74,6 +76,10 @@ arm_efirt_init(paddr_t efi_system_table)
 	mutex_init(&efi_lock, MUTEX_DEFAULT, IPL_HIGH);
 
 	return 0;
+#else
+	/* EFI runtime not supported in big endian mode */
+	return ENXIO;
+#endif
 }
 
 int

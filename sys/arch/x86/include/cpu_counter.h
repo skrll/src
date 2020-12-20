@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_counter.h,v 1.5 2011/02/02 12:26:42 bouyer Exp $	*/
+/*	$NetBSD: cpu_counter.h,v 1.7 2020/06/15 09:09:23 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2008 The NetBSD Foundation, Inc.
@@ -34,11 +34,19 @@
 
 #ifdef _KERNEL
 
-uint64_t	cpu_counter(void);
-uint64_t	cpu_counter_serializing(void);
-uint32_t	cpu_counter32(void);
-uint64_t	cpu_frequency(struct cpu_info *);
-int		cpu_hascounter(void);
+#include <sys/lwp.h>
+
+extern uint64_t	cpu_frequency(struct cpu_info *);
+extern int	cpu_hascounter(void);
+extern uint64_t	(*cpu_counter)(void);
+extern uint32_t	(*cpu_counter32)(void);
+
+extern uint64_t	cpu_counter_cpuid(void);
+extern uint64_t	cpu_counter_lfence(void);
+extern uint64_t	cpu_counter_mfence(void);
+extern uint32_t	cpu_counter32_cpuid(void);
+extern uint32_t	cpu_counter32_lfence(void);
+extern uint32_t	cpu_counter32_mfence(void);
 
 #endif	/* _KERNEL */
 

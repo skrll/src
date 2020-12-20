@@ -1,4 +1,4 @@
-/*	$NetBSD: amdpm.c,v 1.39 2015/04/13 16:33:25 riastradh Exp $	*/
+/*	$NetBSD: amdpm.c,v 1.42 2020/05/30 10:27:29 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: amdpm.c,v 1.39 2015/04/13 16:33:25 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: amdpm.c,v 1.42 2020/05/30 10:27:29 jdolecek Exp $");
 
 #include "opt_amdpm.h"
 
@@ -39,7 +39,6 @@ __KERNEL_RCSID(0, "$NetBSD: amdpm.c,v 1.39 2015/04/13 16:33:25 riastradh Exp $")
 #include <sys/kernel.h>
 #include <sys/device.h>
 #include <sys/callout.h>
-#include <sys/rndpool.h>
 #include <sys/rndsource.h>
 #include <sys/mutex.h>
 
@@ -119,11 +118,6 @@ amdpm_attach(device_t parent, device_t self, void *aux)
 	sc->sc_iot = pa->pa_iot;
 	sc->sc_pa = pa;
 
-#if 0
-	aprint_normal_dev(self, "");
-	pci_conf_print(pa->pa_pc, pa->pa_tag, NULL);
-#endif
-
 	confreg = pci_conf_read(pa->pa_pc, pa->pa_tag, AMDPM_CONFREG);
 	/* enable pm i/o space for AMD-8111 and nForce */
 	if (PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_AMD_PBC8111_ACPI ||
@@ -191,11 +185,6 @@ amdpm_attach(device_t parent, device_t self, void *aux)
 			    "random number generator enabled (apprx. %dms)\n",
 			    i);
 			callout_init(&sc->sc_rnd_ch, CALLOUT_MPSAFE);
-			rndsource_setcb(&sc->sc_rnd_source,
-					amdpm_rnd_get, sc);
-			rnd_attach_source(&sc->sc_rnd_source,
-			    device_xname(self), RND_TYPE_RNG,
-			    RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
 #ifdef AMDPM_RND_COUNTERS
 			evcnt_attach_dynamic(&sc->sc_rnd_hits, EVCNT_TYPE_MISC,
 			    NULL, device_xname(self), "rnd hits");
@@ -207,8 +196,11 @@ amdpm_attach(device_t parent, device_t self, void *aux)
 				    "rnd data");
 			}
 #endif
-			sc->sc_rnd_need = RND_POOLBITS / NBBY;
-			amdpm_rnd_callout(sc);
+			rndsource_setcb(&sc->sc_rnd_source,
+					amdpm_rnd_get, sc);
+			rnd_attach_source(&sc->sc_rnd_source,
+			    device_xname(self), RND_TYPE_RNG,
+			    RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
 		}
 	}
 }

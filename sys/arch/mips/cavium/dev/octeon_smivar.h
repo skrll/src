@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_smivar.h,v 1.3 2019/01/22 03:42:26 msaitoh Exp $	*/
+/*	$NetBSD: octeon_smivar.h,v 1.6 2020/06/23 05:18:02 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -30,22 +30,16 @@
 #define _OCTEON_SMIVAR_H_
 
 /* XXX */
-struct octeon_smi_softc {
+struct octsmi_softc {
+	device_t		sc_dev;
 	int			sc_port;
 	bus_space_tag_t		sc_regt;
 	bus_space_handle_t	sc_regh;
 };
 
-/* XXX */
-struct octeon_smi_attach_args {
-	int			aa_port;
-	bus_space_tag_t		aa_regt;
-};
+int	octsmi_read(struct octsmi_softc *, int, int, uint16_t *);
+int	octsmi_write(struct octsmi_softc *, int, int, uint16_t);
+struct octsmi_softc
+	*octsmi_lookup(int, int);
 
-void	octeon_smi_init(struct octeon_smi_attach_args *,
-    struct octeon_smi_softc **);
-int	octeon_smi_read(struct octeon_smi_softc *, int, int, uint16_t *);
-int	octeon_smi_write(struct octeon_smi_softc *, int, int, uint16_t);
-void	octeon_smi_set_clock(struct octeon_smi_softc *, uint64_t);
-
-#endif
+#endif /* _OCTEON_SMIVAR_H_ */

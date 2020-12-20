@@ -1,4 +1,4 @@
-# $NetBSD: ALL,v 1.147 2020/03/25 17:06:17 jdolecek Exp $
+# $NetBSD: ALL,v 1.165 2020/12/13 08:23:52 martin Exp $
 # From NetBSD: GENERIC,v 1.787 2006/10/01 18:37:54 bouyer Exp
 #
 # ALL machine description file
@@ -17,25 +17,26 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"ALL-$Revision: 1.147 $"
+#ident		"ALL-$Revision: 1.165 $"
 
 maxusers	64		# estimated number of users
 
 makeoptions	USE_SSP=yes
 
 # CPU-related options.
-#options 	USER_LDT	# user-settable LDT; used by WINE
+options 	USER_LDT	# User-settable LDT, used by Wine
 options 	X86EMU		# 386 Real Mode emulator
 #options 	PAE		# PAE mode (36 bits physical addressing)
 makeoptions	SPECTRE_V2_GCC_MITIGATION=1	# GCC Spectre variant 2
 						# migitation
+options 	PCPU_IDT	# Per CPU IDT
 
 # CPU features
 acpicpu*	at cpu?		# ACPI CPU (including frequency scaling)
 coretemp*	at cpu?		# Intel on-die thermal sensor
 est0		at cpu0		# Intel Enhanced SpeedStep (non-ACPI)
 odcm0		at cpu0		# On-demand clock modulation
-#padlock0	at cpu0		# VIA PadLock
+padlock0	at cpu0		# VIA PadLock
 powernow0	at cpu0		# AMD PowerNow! and Cool'n'Quiet (non-ACPI)
 viac7temp*	at cpu?		# VIA C7 temperature sensor
 vmt0		at cpu0		# VMware Tools
@@ -136,6 +137,9 @@ options		KASAN
 # Kernel Code Coverage Driver.
 makeoptions	KCOV=1
 options		KCOV
+
+# Fault Injection Driver.
+options 	FAULT
 
 # Compatibility options
 options 	EXEC_AOUT	# required by binaries from before 1.5
@@ -373,6 +377,7 @@ aibs*		at acpi?		# ASUSTeK AI Booster hardware monitor
 applesmc*	at acpi?		# Apple System Management Controller
 asus*		at acpi?		# ASUS hotkeys
 attimer*	at acpi?		# AT Timer
+atppc*		at acpi?		# AT-style parallel port
 com*		at acpi?		# Serial communications interface
 fdc*		at acpi?		# Floppy disk controller
 fujbp*		at acpi?		# Fujitsu Brightness & Pointer
@@ -827,7 +832,6 @@ amr*	at pci? dev ? function ?	# AMI/LSI Logic MegaRAID
 arcmsr* at pci? dev ? function ?	# Areca SATA RAID controllers
 cac*	at pci? dev ? function ?	# Compaq PCI array controllers
 ciss*	at pci? dev ? function ?	# HP Smart Array controllers
-options CISS_NO_INTERRUPT_HACK
 
 icp*	at pci? dev ? function ?	# ICP-Vortex GDT & Intel RAID
 ips*	at pci? dev ? function ?	# Adaptec/IBM ServeRAID
@@ -964,6 +968,7 @@ bce*	at pci? dev ? function ?	# Broadcom 4401 10/100 Ethernet
 bge*	at pci? dev ? function ?	# Broadcom 570x gigabit Ethernet
 bnx*	at pci? dev ? function ?	# Broadcom NetXtremeII gigabit Ethernet
 bwi*	at pci? dev ? function ?	# Broadcom BCM43xx wireless
+bwfm*	at pci? dev ? function ?	# Broadcom FullMAC
 cas*	at pci? dev ? function ?	# Sun Cassini/Cassini+ Ethernet
 dge*	at pci? dev ? function ?	# Intel 82597 10GbE LR
 ena*	at pci? dev ? function ?	# Amazon Elastic Network Adapter
@@ -975,6 +980,7 @@ fxp*	at pci? dev ? function ?	# Intel EtherExpress PRO 10+/100B
 gem*	at pci? dev ? function ?	# Apple GMAC and Sun ERI gigabit enet
 gsip*	at pci? dev ? function ?	# NS83820 Gigabit Ethernet
 hme*	at pci? dev ? function ?	# Sun Microelectronics STP2002-STQ
+iavf*	at pci? dev ? function ?	# Intel Adaptive Virtual Function
 ipw*	at pci? dev ? function ?	# Intel PRO/Wireless 2100
 iwi*	at pci? dev ? function ?	# Intel PRO/Wireless 2200BG
 iwm*	at pci? dev ? function ?	# Intel Wireless WiFi Link 7xxx
@@ -1017,6 +1023,8 @@ wi*	at pci? dev ? function ?	# Intersil Prism Mini-PCI (802.11b)
 wm*	at pci? dev ? function ?	# Intel 8254x gigabit
 wpi*	at pci? dev ? function ?	# Intel PRO/Wireless 3945ABG
 xge*	at pci? dev ? function ?	# Neterion (S2io) Xframe-I 10GbE
+wwanc*  at pci? dev ? function ?	# Intel XMM7360 LTE modem
+wwan*   at wwanc?			# Intel XMM7360 LTE modem
 
 # PCMCIA network interfaces
 an*	at pcmcia? function ?		# Aironet PC4500/PC4800 (802.11)
@@ -1198,7 +1206,6 @@ uhso*	at uhub? port ? configuration ?
 
 # USB Mass Storage
 umass*	at uhub? port ? configuration ? interface ?
-wd*	at umass?
 
 # USB audio
 uaudio* at uhub? port ? configuration ?
@@ -1290,6 +1297,9 @@ ucom*	at uark? portno ?
 umcs* at uhub? port ?		# Moschip MCS7xxx serial adapter
 ucom*	at umcs? portno ?
 
+uxrcom*	at uhub? port ?		# Exar XR21V141x serial adapter
+ucom*	at uxrcom? portno ?
+
 uhmodem* at uhub?
 ucom*	at uhmodem? portno ?
 
@@ -1315,9 +1325,6 @@ usscanner* at uhub? port ?
 
 # Topfield TF5000PVR range of DVB recorders
 utoppy* at uhub? port ?
-
-# Y@P firmware loader
-uyap* at uhub? port ?
 
 # D-Link DSB-R100 USB radio
 udsbr*	at uhub? port ?
@@ -1536,6 +1543,7 @@ btsco* at bthub?
 # Cryptographic Devices
 
 # PCI cryptographic devices
+amdccp*	at pci? dev ? function ?	# AMD Cryptographic Coprocessor
 hifn*	at pci? dev ? function ?	# Hifn 7755/7811/795x
 qat*	at pci? dev ? function ?	# Intel QuickAssist
 ubsec*	at pci? dev ? function ?	# Broadcom 5501/5601/580x/582x
@@ -1626,7 +1634,7 @@ pseudo-device	faith			# IPv[46] tcp relay translation i/f
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	l2tp			# L2TPv3 interface
 #pseudo-device	pf			# PF packet filter
@@ -1636,6 +1644,7 @@ pseudo-device	npf			# NPF packet filter
 pseudo-device	kttcp
 # srt is EXPERIMENTAL
 pseudo-device	srt			# source-address-based routing
+pseudo-device	wg			# VPN tunnel compatible with WireGuard
 
 pseudo-device	canloop			# CAN loopback interface
 
@@ -2161,7 +2170,6 @@ options SMB_VNODE_DEBUG
 options SNAPPER_DEBUG
 options SNDEBUG
 options SOCKBUF_DEBUG
-options SOFTINT_INTR
 options SONIC_DEBUG
 options SPARC_PCI_DEBUG
 options SPC_DEBUG

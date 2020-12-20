@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.Xorg,v 1.26 2020/01/19 00:58:14 jmcneill Exp $
+#	$NetBSD: NetBSD.dist.Xorg,v 1.28 2020/11/10 21:47:49 kamil Exp $
 ./usr/X11R7
 ./usr/X11R7/bin
 ./usr/X11R7/include

@@ -1,4 +1,4 @@
-/* $NetBSD: cgdvar.h,v 1.19 2020/03/09 08:33:15 mlelstv Exp $ */
+/* $NetBSD: cgdvar.h,v 1.21 2020/06/13 22:15:58 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.
@@ -66,6 +66,7 @@ struct cgd_user {
 #ifdef _KERNEL
 
 #include <dev/cgd_crypto.h>
+#include <dev/dkvar.h>
 
 /* This cryptdata structure is here rather than cgd_crypto.h, since
  * it stores local state which will not be generalised beyond the
@@ -86,7 +87,7 @@ struct cgd_xfer {
 	struct buf		*cx_obp;
 	struct buf		*cx_nbp;
 	void			*cx_dstv;
-	void			*cx_srcv;
+	const void		*cx_srcv;
 	size_t			 cx_len;
 	daddr_t			 cx_blkno;
 	size_t			 cx_secsize;

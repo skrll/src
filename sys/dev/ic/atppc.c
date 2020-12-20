@@ -1,4 +1,4 @@
-/* $NetBSD: atppc.c,v 1.35 2019/12/27 09:41:50 msaitoh Exp $ */
+/* $NetBSD: atppc.c,v 1.37 2020/11/16 00:12:13 msaitoh Exp $ */
 
 /*
  * Copyright (c) 2001 Alcove - Nicolas Souchu
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atppc.c,v 1.35 2019/12/27 09:41:50 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atppc.c,v 1.37 2020/11/16 00:12:13 msaitoh Exp $");
 
 #include "opt_atppc.h"
 
@@ -1942,7 +1942,7 @@ atppc_ecp_read_error(struct atppc_softc *atppc)
 	/* Check for invalid states */
 	if ((ecr & ATPPC_FIFO_EMPTY) && (ecr & ATPPC_FIFO_FULL)) {
 		ATPPC_DPRINTF(("%s: FIFO full+empty bits set.\n", __func__));
-		ATPPC_DPRINTF(("%s: reseting FIFO.\n", __func__));
+		ATPPC_DPRINTF(("%s: resetting FIFO.\n", __func__));
 		atppc_w_ecr(atppc, ATPPC_ECR_PS2);
 		atppc_barrier_w(atppc);
 	}
@@ -2310,7 +2310,7 @@ atppc_fifo_write_error(struct atppc_softc * const atppc,
 		atppc->sc_outbstart += worklen;
 	}
 
-	ATPPC_DPRINTF(("%s: reseting FIFO.\n", __func__));
+	ATPPC_DPRINTF(("%s: resetting FIFO.\n", __func__));
 	atppc_w_ecr(atppc, ATPPC_ECR_PS2);
 	atppc_barrier_w(atppc);
 }

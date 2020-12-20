@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_netbsdkintf.c,v 1.381 2020/03/21 06:02:13 riastradh Exp $	*/
+/*	$NetBSD: rf_netbsdkintf.c,v 1.390 2020/09/27 21:39:08 christos Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2008-2011 The NetBSD Foundation, Inc.
@@ -101,7 +101,7 @@
  ***********************************************************/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.381 2020/03/21 06:02:13 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.390 2020/09/27 21:39:08 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_raid_autoconfig.h"
@@ -175,13 +175,15 @@ static RF_SparetWait_t *rf_sparet_resp_queue;	/* responses from
 						 * installation process */
 #endif
 
+const int rf_b_pass = (B_PHYS|B_RAW|B_MEDIA_FLAGS);
+
 MALLOC_DEFINE(M_RAIDFRAME, "RAIDframe", "RAIDframe structures");
 
 /* prototypes */
 static void KernelWakeupFunc(struct buf *);
 static void InitBP(struct buf *, struct vnode *, unsigned,
     dev_t, RF_SectorNum_t, RF_SectorCount_t, void *, void (*) (struct buf *),
-    void *, int, struct proc *);
+    void *, int);
 static void raidinit(struct raid_softc *);
 static int raiddoaccess(RF_Raid_t *raidPtr, struct buf *bp);
 static int rf_get_component_caches(RF_Raid_t *raidPtr, int *);
@@ -190,7 +192,7 @@ static int raid_match(device_t, cfdata_t, void *);
 static void raid_attach(device_t, device_t, void *);
 static int raid_detach(device_t, int);
 
-static int raidread_component_area(dev_t, struct vnode *, void *, size_t, 
+static int raidread_component_area(dev_t, struct vnode *, void *, size_t,
     daddr_t, daddr_t);
 static int raidwrite_component_area(dev_t, struct vnode *, void *, size_t,
     daddr_t, daddr_t, int);
@@ -377,7 +379,7 @@ raidget(int unit, bool create) {
 	return sc;
 }
 
-static void 
+static void
 raidput(struct raid_softc *sc) {
 	mutex_enter(&raid_lock);
 	LIST_REMOVE(sc, sc_link);
@@ -402,7 +404,7 @@ rf_autoconfig(device_t self)
 	RF_ConfigSet_t *config_sets;
 
 	if (!raidautoconfig || raidautoconfigdone == true)
-		return (0);
+		return 0;
 
 	/* XXX This code can only be run once. */
 	raidautoconfigdone = true;
@@ -584,13 +586,13 @@ rf_buildroothack(RF_ConfigSet_t *config_sets)
 		DPRINTF("%s: many roots=%d, %p\n", __func__, num_root,
 		    booted_device);
 
-		/* 
+		/*
 		 * Maybe the MD code can help. If it cannot, then
 		 * setroot() will discover that we have no
 		 * booted_device and will ask the user if nothing was
-		 * hardwired in the kernel config file 
+		 * hardwired in the kernel config file
 		 */
-		if (booted_device == NULL) 
+		if (booted_device == NULL)
 			return;
 
 		num_root = 0;
@@ -677,7 +679,7 @@ raid_dumpblocks(device_t dev, void *va, daddr_t blkno, int nblk)
 	raidPtr = &rs->sc_r;
 
 	/* we only support dumping to RAID 1 sets */
-	if (raidPtr->Layout.numDataCol != 1 || 
+	if (raidPtr->Layout.numDataCol != 1 ||
 	    raidPtr->Layout.numParityCol != 1)
 		return EINVAL;
 
@@ -686,13 +688,13 @@ raid_dumpblocks(device_t dev, void *va, daddr_t blkno, int nblk)
 
 	/* figure out what device is alive.. */
 
-	/* 
+	/*
 	   Look for a component to dump to.  The preference for the
 	   component to dump to is as follows:
-	   1) the master
-	   2) a used_spare of the master
-	   3) the slave
-	   4) a used_spare of the slave
+	   1) the first component
+	   2) a used_spare of the first component
+	   3) the second component
+	   4) a used_spare of the second component
 	*/
 
 	dumpto = -1;
@@ -703,12 +705,11 @@ raid_dumpblocks(device_t dev, void *va, daddr_t blkno, int nblk)
 			break;
 		}
 	}
-	
-	/* 
-	   At this point we have possibly selected a live master or a
-	   live slave.  We now check to see if there is a spared
-	   master (or a spared slave), if we didn't find a live master
-	   or a live slave.  
+
+	/*
+	   At this point we have possibly selected a live component.
+	   If we didn't find a live ocmponent, we now check to see
+	   if there is a relevant spared component.
 	*/
 
 	for (c = 0; c < raidPtr->numSpare; c++) {
@@ -723,32 +724,33 @@ raid_dumpblocks(device_t dev, void *va, daddr_t blkno, int nblk)
 				}
 			}
 			if (scol == 0) {
-				/* 
-				   We must have found a spared master!
-				   We'll take that over anything else
-				   found so far.  (We couldn't have
-				   found a real master before, since
-				   this is a used spare, and it's
-				   saying that it's replacing the
-				   master.)  On reboot (with
+				/*
+				   We must have found a spared first
+				   component!  We'll take that over
+				   anything else found so far.  (We
+				   couldn't have found a real first
+				   component before, since this is a
+				   used spare, and it's saying that
+				   it's replacing the first
+				   component.)  On reboot (with
 				   autoconfiguration turned on)
-				   sparecol will become the 1st
-				   component (component0) of this set.  
+				   sparecol will become the first
+				   component (component0) of this set.
 				*/
 				dumpto = sparecol;
 				break;
 			} else if (scol != -1) {
-				/* 
-				   Must be a spared slave.  We'll dump
-				   to that if we havn't found anything
-				   else so far. 
+				/*
+				   Must be a spared second component.
+				   We'll dump to that if we havn't found
+				   anything else so far.
 				*/
 				if (dumpto == -1)
 					dumpto = sparecol;
 			}
 		}
 	}
-	
+
 	if (dumpto == -1) {
 		/* we couldn't find any live components to dump to!?!?
 		 */
@@ -762,12 +764,12 @@ raid_dumpblocks(device_t dev, void *va, daddr_t blkno, int nblk)
 		goto out;
 	}
 
-	error = (*bdev->d_dump)(raidPtr->Disks[dumpto].dev, 
+	error = (*bdev->d_dump)(raidPtr->Disks[dumpto].dev,
 				blkno, va, nblk * raidPtr->bytesPerSector);
-	
+
 out:
 	raidunlock(rs);
-		
+
 	return error;
 }
 
@@ -785,7 +787,7 @@ raidopen(dev_t dev, int flags, int fmt,
 	if ((rs = raidget(unit, true)) == NULL)
 		return ENXIO;
 	if ((error = raidlock(rs)) != 0)
-		return (error);
+		return error;
 
 	if ((rs->sc_flags & RAIDF_SHUTDOWN) != 0) {
 		error = EBUSY;
@@ -816,7 +818,7 @@ raidopen(dev_t dev, int flags, int fmt,
 bad:
 	raidunlock(rs);
 
-	return (error);
+	return error;
 
 
 }
@@ -856,7 +858,7 @@ raidclose(dev_t dev, int flags, int fmt, struct lwp *l)
 	dksc = &rs->sc_dksc;
 
 	if ((error = raidlock(rs)) != 0)
-		return (error);
+		return error;
 
 	if ((rs->sc_flags & RAIDF_INITED) != 0) {
 		error = dk_close(dksc, dev, flags, fmt, l);
@@ -871,13 +873,13 @@ raidclose(dev_t dev, int flags, int fmt, struct lwp *l)
 		/* free the pseudo device attach bits */
 		cf = device_cfdata(dksc->sc_dev);
 		error = config_detach(dksc->sc_dev, 0);
-		if (error == 0) 
+		if (error == 0)
 			free(cf, M_RAIDFRAME);
 	} else if (do_put) {
 		raidput(rs);
 	}
 
-	return (error);
+	return error;
 
 }
 
@@ -972,9 +974,9 @@ raidread(dev_t dev, struct uio *uio, int flags)
 		return ENXIO;
 
 	if ((rs->sc_flags & RAIDF_INITED) == 0)
-		return (ENXIO);
+		return ENXIO;
 
-	return (physio(raidstrategy, NULL, dev, B_READ, minphys, uio));
+	return physio(raidstrategy, NULL, dev, B_READ, minphys, uio);
 
 }
 
@@ -989,9 +991,9 @@ raidwrite(dev_t dev, struct uio *uio, int flags)
 		return ENXIO;
 
 	if ((rs->sc_flags & RAIDF_INITED) == 0)
-		return (ENXIO);
+		return ENXIO;
 
-	return (physio(raidstrategy, NULL, dev, B_WRITE, minphys, uio));
+	return physio(raidstrategy, NULL, dev, B_WRITE, minphys, uio);
 
 }
 
@@ -1296,7 +1298,7 @@ rf_init_component_label(RF_Raid_t *raidPtr, RF_ComponentLabel_t *clabel)
 		raidflush_component_label(raidPtr, column);
 		/* XXXjld what about the spares? */
 	}
-	
+
 	return 0;
 }
 
@@ -1740,19 +1742,19 @@ raidioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 	}
 
 	if (!raidPtr->valid)
-		return (EINVAL);
+		return EINVAL;
 
 	/*
 	 * Add support for "regular" device ioctls here.
 	 */
-	
+
 	switch (cmd) {
 	case DIOCGCACHE:
 		retcode = rf_get_component_caches(raidPtr, (int *)data);
 		break;
 
 	case DIOCCACHESYNC:
-		retcode = rf_sync_component_caches(raidPtr);
+		retcode = rf_sync_component_caches(raidPtr, *(int *)data);
 		break;
 
 	default:
@@ -1760,7 +1762,7 @@ raidioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 		break;
 	}
 
-	return (retcode);
+	return retcode;
 
 }
 
@@ -1856,7 +1858,7 @@ rf_GetSpareTableFromDaemon(RF_SparetWait_t *req)
 	retcode = req->fcol;
 	RF_Free(req, sizeof(*req));	/* this is not the same req as we
 					 * alloc'd */
-	return (retcode);
+	return retcode;
 }
 #endif
 
@@ -2004,7 +2006,7 @@ rf_DispatchKernelIO(RF_DiskQueue_t *queue, RF_DiskQueueData_t *req)
 		    op, queue->rf_cinfo->ci_dev,
 		    req->sectorOffset, req->numSector,
 		    req->buf, KernelWakeupFunc, (void *) req,
-		    queue->raidPtr->logBytesPerSector, req->b_proc);
+		    queue->raidPtr->logBytesPerSector);
 
 		if (rf_debugKernelAccess) {
 			db1_printf(("dispatch: bp->b_blkno = %ld\n",
@@ -2026,7 +2028,7 @@ rf_DispatchKernelIO(RF_DiskQueue_t *queue, RF_DiskQueueData_t *req)
 			(int) queue->raidPtr->logBytesPerSector));
 
 		/*
-		 * XXX: drop lock here since this can block at 
+		 * XXX: drop lock here since this can block at
 		 * least with backing SCSI devices.  Retake it
 		 * to minimize fuss with calling interfaces.
 		 */
@@ -2041,7 +2043,7 @@ rf_DispatchKernelIO(RF_DiskQueue_t *queue, RF_DiskQueueData_t *req)
 	}
 	db1_printf(("Exiting from DispatchKernelIO\n"));
 
-	return (0);
+	return 0;
 }
 /* this is the callback function associated with a I/O invoked from
    kernel code.
@@ -2083,7 +2085,7 @@ KernelWakeupFunc(struct buf *bp)
 		if (((queue->raidPtr->Disks[queue->col].status ==
 		      rf_ds_optimal) ||
 		     (queue->raidPtr->Disks[queue->col].status ==
-		      rf_ds_used_spare)) && 
+		      rf_ds_used_spare)) &&
 		     (queue->raidPtr->numFailures <
 		      queue->raidPtr->Layout.map->faultsTolerated)) {
 			printf("raid%d: IO Error (%d). Marking %s as failed.\n",
@@ -2120,11 +2122,9 @@ KernelWakeupFunc(struct buf *bp)
 static void
 InitBP(struct buf *bp, struct vnode *b_vp, unsigned rw_flag, dev_t dev,
        RF_SectorNum_t startSect, RF_SectorCount_t numSect, void *bf,
-       void (*cbFunc) (struct buf *), void *cbArg, int logBytesPerSector,
-       struct proc *b_proc)
+       void (*cbFunc) (struct buf *), void *cbArg, int logBytesPerSector)
 {
-	/* bp->b_flags       = B_PHYS | rw_flag; */
-	bp->b_flags = rw_flag;	/* XXX need B_PHYS here too??? */
+	bp->b_flags = rw_flag | (bp->b_flags & rf_b_pass);
 	bp->b_oflags = 0;
 	bp->b_cflags = 0;
 	bp->b_bcount = numSect << logBytesPerSector;
@@ -2137,7 +2137,6 @@ InitBP(struct buf *bp, struct vnode *b_vp, unsigned rw_flag, dev_t dev,
 	if (bp->b_bcount == 0) {
 		panic("bp->b_bcount is zero in InitBP!!");
 	}
-	bp->b_proc = b_proc;
 	bp->b_iodone = cbFunc;
 	bp->b_private = cbArg;
 }
@@ -2165,7 +2164,7 @@ raidlock(struct raid_softc *rs)
 	rs->sc_flags |= RAIDF_LOCKED;
 done:
 	mutex_exit(&rs->sc_mutex);
-	return (error);
+	return error;
 }
 /*
  * Unlock and wake up any waiters.
@@ -2266,7 +2265,7 @@ raidfetch_component_label(RF_Raid_t *raidPtr, RF_RowCol_t col)
 	KASSERT(raidPtr->bytesPerSector);
 	return raidread_component_label(raidPtr->bytesPerSector,
 	    raidPtr->Disks[col].dev,
-	    raidPtr->raid_cinfo[col].ci_vp, 
+	    raidPtr->raid_cinfo[col].ci_vp,
 	    &raidPtr->raid_cinfo[col].ci_label);
 }
 
@@ -2296,7 +2295,7 @@ static int
 raidread_component_label(unsigned secsize, dev_t dev, struct vnode *b_vp,
     RF_ComponentLabel_t *clabel)
 {
-	return raidread_component_area(dev, b_vp, clabel, 
+	return raidread_component_area(dev, b_vp, clabel,
 	    sizeof(RF_ComponentLabel_t),
 	    rf_component_info_offset(),
 	    rf_component_info_size(secsize));
@@ -2353,7 +2352,7 @@ raidwrite_component_label(unsigned secsize, dev_t dev, struct vnode *b_vp,
 
 /* ARGSUSED */
 static int
-raidwrite_component_area(dev_t dev, struct vnode *b_vp, void *data, 
+raidwrite_component_area(dev_t dev, struct vnode *b_vp, void *data,
     size_t msize, daddr_t offset, daddr_t dsize, int asyncp)
 {
 	struct buf *bp;
@@ -2512,7 +2511,7 @@ rf_update_component_labels(RF_Raid_t *raidPtr, int final)
 			clabel = raidget_component_label(raidPtr, c);
 			/* make sure status is noted */
 			clabel->status = rf_ds_optimal;
-			
+
 			/* note what unit we are configured as */
 			if ((rs->sc_cflags & RAIDF_UNIT_CHANGED) == 0)
 				clabel->last_unit = raidPtr->raidid;
@@ -2709,14 +2708,14 @@ rf_get_component(RF_AutoConfig_t *ac_list, dev_t dev, struct vnode *vp,
     unsigned secsize)
 {
 	int good_one = 0;
-	RF_ComponentLabel_t *clabel; 
+	RF_ComponentLabel_t *clabel;
 	RF_AutoConfig_t *ac;
 
 	clabel = malloc(sizeof(RF_ComponentLabel_t), M_RAIDFRAME, M_WAITOK);
 
 	if (!raidread_component_label(secsize, dev, vp, clabel)) {
 		/* Got the label.  Does it look reasonable? */
-		if (rf_reasonable_label(clabel, numsecs) && 
+		if (rf_reasonable_label(clabel, numsecs) &&
 		    (rf_component_label_partitionsize(clabel) <= size)) {
 #ifdef DEBUG
 			printf("Component on: %s: %llu\n",
@@ -2863,7 +2862,7 @@ rf_find_raid_components(void)
 					vput(vp);
 					continue;
 				}
-					
+
 				VOP_UNLOCK(vp);
 				ac_list = rf_get_component(ac_list, dev, vp,
 				    device_xname(dv), dkw.dkw_size, numsecs, secsize);
@@ -3506,13 +3505,10 @@ void
 rf_pool_init(struct pool *p, size_t size, const char *w_chan,
 	     size_t xmin, size_t xmax)
 {
-	int error;
 
 	pool_init(p, size, 0, 0, 0, w_chan, NULL, IPL_BIO);
 	pool_sethiwat(p, xmax);
-	if ((error = pool_prime(p, xmin)) != 0)
-		panic("%s: failed to prime pool: %d", __func__, error);
-	pool_setlowat(p, xmin);
+	pool_prime(p, xmin);
 }
 
 /*
@@ -3581,7 +3577,7 @@ raid_detach(device_t self, int flags)
 		return ENXIO;
 
 	if ((error = raidlock(rs)) != 0)
-		return (error);
+		return error;
 
 	error = raid_detach_unlocked(rs);
 
@@ -3626,7 +3622,7 @@ rf_get_component_caches(RF_Raid_t *raidPtr, int *data)
 	int c;
 	int error;
 	int dkwhole = 0, dkpart;
-	
+
 	for (c = 0; c < raidPtr->numCol + raidPtr->numSpare; c++) {
 		/*
 		 * Check any non-dead disk, even when currently being
@@ -3658,49 +3654,49 @@ rf_get_component_caches(RF_Raid_t *raidPtr, int *data)
 	return 0;
 }
 
-/* 
+/*
  * Implement forwarding of the DIOCCACHESYNC ioctl to each of the components.
  * We end up returning whatever error was returned by the first cache flush
  * that fails.
  */
 
-int
-rf_sync_component_caches(RF_Raid_t *raidPtr)
+static int
+rf_sync_component_cache(RF_Raid_t *raidPtr, int c, int force)
 {
-	int c, sparecol;
-	int e,error;
-	int force = 1;
-	
+	int e = 0;
+	for (int i = 0; i < 5; i++) {
+		e = VOP_IOCTL(raidPtr->raid_cinfo[c].ci_vp, DIOCCACHESYNC,
+		    &force, FWRITE, NOCRED);
+		if (!e || e == ENODEV)
+			return e;
+		printf("raid%d: cache flush[%d] to component %s failed (%d)\n",
+		    raidPtr->raidid, i, raidPtr->Disks[c].devname, e);
+	}
+	return e;
+}
+
+int
+rf_sync_component_caches(RF_Raid_t *raidPtr, int force)
+{
+	int c, error;
+
 	error = 0;
 	for (c = 0; c < raidPtr->numCol; c++) {
 		if (raidPtr->Disks[c].status == rf_ds_optimal) {
-			e = VOP_IOCTL(raidPtr->raid_cinfo[c].ci_vp, DIOCCACHESYNC, 
-					  &force, FWRITE, NOCRED);
-			if (e) {
-				if (e != ENODEV)
-					printf("raid%d: cache flush to component %s failed.\n",
-					       raidPtr->raidid, raidPtr->Disks[c].devname);
-				if (error == 0) {
-					error = e;
-				}
-			}
+			int e = rf_sync_component_cache(raidPtr, c, force);
+			if (e && !error)
+				error = e;
 		}
 	}
 
-	for( c = 0; c < raidPtr->numSpare ; c++) {
-		sparecol = raidPtr->numCol + c;
+	for (c = 0; c < raidPtr->numSpare ; c++) {
+		int sparecol = raidPtr->numCol + c;
 		/* Need to ensure that the reconstruct actually completed! */
 		if (raidPtr->Disks[sparecol].status == rf_ds_used_spare) {
-			e = VOP_IOCTL(raidPtr->raid_cinfo[sparecol].ci_vp,
-					  DIOCCACHESYNC, &force, FWRITE, NOCRED);
-			if (e) {
-				if (e != ENODEV)
-					printf("raid%d: cache flush to component %s failed.\n",
-					       raidPtr->raidid, raidPtr->Disks[sparecol].devname);
-				if (error == 0) {
-					error = e;
-				}
-			}
+			int e = rf_sync_component_cache(raidPtr, sparecol,
+			    force);
+			if (e && !error)
+				error = e;
 		}
 	}
 	return error;
@@ -3759,14 +3755,14 @@ rf_get_info(RF_Raid_t *raidPtr, RF_DeviceConfig_t *config)
 	int	d, i, j;
 
 	if (!raidPtr->valid)
-		return (ENODEV);
+		return ENODEV;
 	config->cols = raidPtr->numCol;
 	config->ndevs = raidPtr->numCol;
 	if (config->ndevs >= RF_MAX_DISKS)
-		return (ENOMEM);
+		return ENOMEM;
 	config->nspares = raidPtr->numSpare;
 	if (config->nspares >= RF_MAX_DISKS)
-		return (ENOMEM);
+		return ENOMEM;
 	config->maxqdepth = raidPtr->maxQueueDepth;
 	d = 0;
 	for (j = 0; j < config->cols; j++) {

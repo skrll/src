@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.35 2018/04/01 23:00:40 christos Exp $
+# $NetBSD: Makefile,v 1.38 2020/12/02 02:21:43 rin Exp $
 
 WARNS?=	0	# XXX third-party program, many issues
 NOCLANGERROR=	# defined
@@ -58,6 +58,12 @@ CPPFLAGS+=-DHAVE_OPENSSL_IDEA_H
 CPPFLAGS+=-DINET6
 .endif
 
+.if (${USE_LDAP} != "no")
+CPPFLAGS+=-DHAVE_LIBLDAP
+LDADD+=-lldap -llber -lssl
+DPADD+= ${LIBLDAP} ${LIBLBER} ${LIBSSL}
+.endif
+
 LDADD+= -lcrypto -lcrypt
 DPADD+= ${LIBIPSEC} ${LIBCRYPT}
 
@@ -74,5 +80,7 @@ prsa_tok.c: ${DIST}/src/racoon/prsa_tok.l
 
 prsa_par.c: ${DIST}/src/racoon/prsa_par.y
 	${YACC} -pprsa -d -o ${.TARGET} ${.ALLSRC}
+
+CWARNFLAGS.gcc+=        ${GCC_NO_ADDR_OF_PACKED_MEMBER}
 
 .include <bsd.prog.mk>

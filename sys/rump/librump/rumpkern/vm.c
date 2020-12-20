@@ -1,4 +1,4 @@
-/*	$NetBSD: vm.c,v 1.187 2020/03/17 18:31:38 ad Exp $	*/
+/*	$NetBSD: vm.c,v 1.191 2020/12/05 19:08:50 chs Exp $	*/
 
 /*
  * Copyright (c) 2007-2011 Antti Kantee.  All Rights Reserved.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vm.c,v 1.187 2020/03/17 18:31:38 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vm.c,v 1.191 2020/12/05 19:08:50 chs Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -69,7 +69,6 @@ __KERNEL_RCSID(0, "$NetBSD: vm.c,v 1.187 2020/03/17 18:31:38 ad Exp $");
 #include <rump/rumpuser.h>
 
 kmutex_t vmpage_lruqueue_lock; /* non-free page lock */
-kmutex_t uvm_fpageqlock; /* free page lock, non-gpl license */
 kmutex_t uvm_swap_data_lock;
 
 struct uvmexp uvmexp;
@@ -172,17 +171,20 @@ uvm_pagealloc_strat(struct uvm_object *uobj, voff_t off, struct vm_anon *anon,
 	pg->offset = off;
 	pg->uobject = uobj;
 
-	if (UVM_OBJ_IS_VNODE(uobj) && uobj->uo_npages == 0) {
-		struct vnode *vp = (struct vnode *)uobj;
-		mutex_enter(vp->v_interlock);
-		vp->v_iflag |= VI_PAGES;
-		mutex_exit(vp->v_interlock);
-	}
-
 	if (radix_tree_insert_node(&uobj->uo_pages, off >> PAGE_SHIFT,
 	    pg) != 0) {
 		pool_cache_put(&pagecache, pg);
 		return NULL;
+	}
+
+	if (UVM_OBJ_IS_VNODE(uobj)) {
+		if (uobj->uo_npages == 0) {
+			struct vnode *vp = (struct vnode *)uobj;
+			mutex_enter(vp->v_interlock);
+			vp->v_iflag |= VI_PAGES;
+			mutex_exit(vp->v_interlock);
+		}
+		pg->flags |= PG_FILE;
 	}
 	uobj->uo_npages++;
 
@@ -201,6 +203,8 @@ uvm_pagealloc_strat(struct uvm_object *uobj, voff_t off, struct vm_anon *anon,
 		mutex_enter(&vmpage_lruqueue_lock);
 		TAILQ_INSERT_TAIL(&vmpage_lruqueue, pg, pageq.queue);
 		mutex_exit(&vmpage_lruqueue_lock);
+	} else {
+		pg->flags |= PG_AOBJ;
 	}
 
 	return pg;
@@ -220,10 +224,7 @@ uvm_pagefree(struct vm_page *pg)
 	KASSERT(rw_write_held(uobj->vmobjlock));
 
 	mutex_enter(&pg->interlock);
-	if (pg->pqflags & PQ_WANTED) {
-		pg->pqflags &= ~PQ_WANTED;
-		wakeup(pg);
-	}
+	uvm_pagewakeup(pg);
 	mutex_exit(&pg->interlock);
 
 	uobj->uo_npages--;
@@ -367,11 +368,8 @@ uvm_init(void)
 	mutex_init(&pagermtx, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&vmpage_lruqueue_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&uvm_swap_data_lock, MUTEX_DEFAULT, IPL_NONE);
-
-	/* just to appease linkage */
-	mutex_init(&uvm_fpageqlock, MUTEX_SPIN, IPL_VM);
-
 	mutex_init(&pdaemonmtx, MUTEX_DEFAULT, IPL_NONE);
+
 	cv_init(&pdaemoncv, "pdaemon");
 	cv_init(&oomwait, "oomwait");
 
@@ -432,7 +430,7 @@ uvm_pageunwire(struct vm_page *pg)
 }
 
 int
-uvm_availmem(void)
+uvm_availmem(bool cached)
 {
 
 	return uvmexp.free;
@@ -675,25 +673,50 @@ void
 uvm_page_unbusy(struct vm_page **pgs, int npgs)
 {
 	struct vm_page *pg;
-	int i;
+	int i, pageout_done;
 
 	KASSERT(npgs > 0);
-	KASSERT(rw_write_held(pgs[0]->uobject->vmobjlock));
 
+	pageout_done = 0;
 	for (i = 0; i < npgs; i++) {
 		pg = pgs[i];
-		if (pg == NULL)
+		if (pg == NULL || pg == PGO_DONTCARE) {
 			continue;
+		}
 
+#if 0
+		KASSERT(uvm_page_owner_locked_p(pg, true));
+#else
+		/*
+		 * uvm_page_owner_locked_p() is not available in rump,
+		 * and rump doesn't support amaps anyway.
+		 */
+		KASSERT(rw_write_held(pg->uobject->vmobjlock));
+#endif
 		KASSERT(pg->flags & PG_BUSY);
+
+		if (pg->flags & PG_PAGEOUT) {
+			pg->flags &= ~PG_PAGEOUT;
+			pg->flags |= PG_RELEASED;
+			pageout_done++;
+			atomic_inc_uint(&uvmexp.pdfreed);
+		}
 		if (pg->flags & PG_RELEASED) {
+			KASSERT(pg->uobject != NULL ||
+			    (pg->uanon != NULL && pg->uanon->an_ref > 0));
+			pg->flags &= ~PG_RELEASED;
 			uvm_pagefree(pg);
 		} else {
+			KASSERT((pg->flags & PG_FAKE) == 0);
 			pg->flags &= ~PG_BUSY;
 			uvm_pagelock(pg);
 			uvm_pagewakeup(pg);
 			uvm_pageunlock(pg);
+			UVM_PAGE_OWN(pg, NULL);
 		}
+	}
+	if (pageout_done != 0) {
+		uvm_pageout_done(pageout_done);
 	}
 }
 
@@ -1141,16 +1164,14 @@ uvm_pageout(void *arg)
 
 	mutex_enter(&pdaemonmtx);
 	for (;;) {
-		if (!NEED_PAGEDAEMON()) {
-			kernel_map->flags &= ~VM_MAP_WANTVA;
-		}
-
 		if (pdaemon_waiters) {
 			pdaemon_waiters = 0;
 			cv_broadcast(&oomwait);
 		}
-
-		cv_wait(&pdaemoncv, &pdaemonmtx);
+		if (!NEED_PAGEDAEMON()) {
+			kernel_map->flags &= ~VM_MAP_WANTVA;
+			cv_wait(&pdaemoncv, &pdaemonmtx);
+		}
 		uvmexp.pdwoke++;
 
 		/* tell the world that we are hungry */
@@ -1202,22 +1223,6 @@ uvm_pageout(void *arg)
 		mutex_exit(&vmpage_lruqueue_lock);
 
 		/*
-		 * Ok, someone is running with an object lock held.
-		 * We want to yield the host CPU to make sure the
-		 * thread is not parked on the host.  nanosleep
-		 * for the smallest possible time and hope we're back in
-		 * the game soon.
-		 */
-		if (cleaned == 0) {
-			rumpuser_clock_sleep(RUMPUSER_CLOCK_RELWALL, 0, 1);
-
-			skip = 0;
-
-			/* and here we go again */
-			goto again;
-		}
-
-		/*
 		 * And of course we need to reclaim the page cache
 		 * again to actually release memory.
 		 */
@@ -1249,8 +1254,6 @@ uvm_pageout(void *arg)
 		mutex_enter(&pdaemonmtx);
 		if (!succ && cleaned == 0 && pdaemon_waiters &&
 		    uvmexp.paging == 0) {
-			rumpuser_dprintf("pagedaemoness: failed to reclaim "
-			    "memory ... sleeping (deadlock?)\n");
 			kpause("pddlk", false, hz, &pdaemonmtx);
 		}
 	}

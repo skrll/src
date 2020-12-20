@@ -1,4 +1,4 @@
-#	$NetBSD: files.aarch64,v 1.20 2020/02/15 08:16:10 skrll Exp $
+#	$NetBSD: files.aarch64,v 1.30 2020/10/21 13:31:50 christos Exp $
 
 defflag opt_cpuoptions.h	AARCH64_ALIGNMENT_CHECK
 defflag opt_cpuoptions.h	AARCH64_EL0_STACK_ALIGNMENT_CHECK
@@ -8,9 +8,6 @@ defflag opt_cpuoptions.h	AARCH64_DEVICE_MEM_STRONGLY_ORDERED
 
 defflag	opt_cputypes.h		CPU_ARMV8
 defflag	opt_cputypes.h		CPU_CORTEX: CPU_ARMV8
-defflag	opt_cputypes.h		CPU_CORTEXA35: CPU_CORTEX
-defflag	opt_cputypes.h		CPU_CORTEXA53: CPU_CORTEX
-defflag	opt_cputypes.h		CPU_CORTEXA57: CPU_CORTEX
 defflag	opt_cputypes.h		CPU_THUNDERX: CPU_ARMV8
 
 # Interrupt implementation header definition
@@ -48,13 +45,11 @@ file	arch/arm/arm/psci_arm.S			psci
 defflag	opt_efi.h		EFI_RUNTIME
 file	arch/arm/arm/efi_runtime.c		efi_runtime
 
-# PMAP_DEBUG (heavily abused option)
-defflag				PMAP_DEBUG
-
 # PMAP options
 defflag opt_pmap.h		PMAPHIST : KERNHIST
 defflag opt_pmap.h		PMAPCOUNTERS PMAP_STEAL_MEMORY
 				PMAP_NEED_ALLOC_POOLPAGE
+defflag opt_pmapboot.h		PMAPBOOT_DEBUG
 
 # MI support
 file	dev/cons.c
@@ -86,6 +81,7 @@ file	arch/aarch64/aarch64/bus_space_notimpl.S
 file	arch/arm/arm/arm_cpu_topology.c
 file	arch/arm/arm/arm_generic_dma.c
 file	arch/arm/arm/bootconfig.c
+file	arch/arm/arm/bus_stubs.c
 file	arch/arm/arm/cpu_subr.c
 file	arch/arm/arm32/bus_dma.c
 file	arch/aarch64/aarch64/aarch64_machdep.c
@@ -101,6 +97,7 @@ file	arch/aarch64/aarch64/exec_machdep.c
 file	arch/aarch64/aarch64/fusu.S
 file	arch/aarch64/aarch64/idle_machdep.S
 file	arch/aarch64/aarch64/kobj_machdep.c		modular
+file	arch/aarch64/aarch64/lock_stubs.S
 file	arch/aarch64/aarch64/process_machdep.c
 file	arch/aarch64/aarch64/procfs_machdep.c		procfs
 file	arch/aarch64/aarch64/sig_machdep.c
@@ -140,3 +137,12 @@ file	arch/aarch64/aarch64/netbsd32_syscall.c		compat_netbsd32
 
 # profiling support
 file	dev/tprof/tprof_armv8.c			tprof	needs-flag
+
+# ARMv8.0-AES
+include "crypto/aes/arch/arm/files.aesarmv8"
+
+# vpaes with ARM NEON
+include "crypto/aes/arch/arm/files.aesneon"
+
+# ChaCha with ARM NEON
+include "crypto/chacha/arch/arm/files.chacha_arm"

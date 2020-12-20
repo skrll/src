@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_condvar.c,v 1.45 2020/04/10 17:16:21 ad Exp $	*/
+/*	$NetBSD: kern_condvar.c,v 1.53 2020/11/01 20:55:15 christos Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2019, 2020 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_condvar.c,v 1.45 2020/04/10 17:16:21 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_condvar.c,v 1.53 2020/11/01 20:55:15 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -102,6 +102,7 @@ void
 cv_destroy(kcondvar_t *cv)
 {
 
+	sleepq_destroy(CV_SLEEPQ(cv));
 #ifdef DIAGNOSTIC
 	KASSERT(cv_is_valid(cv));
 	KASSERT(!cv_has_waiters(cv));
@@ -116,7 +117,7 @@ cv_destroy(kcondvar_t *cv)
  *	condition variable, and increment the number of waiters.
  */
 static inline void
-cv_enter(kcondvar_t *cv, kmutex_t *mtx, lwp_t *l)
+cv_enter(kcondvar_t *cv, kmutex_t *mtx, lwp_t *l, bool catch_p)
 {
 	sleepq_t *sq;
 	kmutex_t *mp;
@@ -129,7 +130,7 @@ cv_enter(kcondvar_t *cv, kmutex_t *mtx, lwp_t *l)
 	mp = sleepq_hashlock(cv);
 	sq = CV_SLEEPQ(cv);
 	sleepq_enter(sq, l, mp);
-	sleepq_enqueue(sq, cv, CV_WMESG(cv), &cv_syncobj);
+	sleepq_enqueue(sq, cv, CV_WMESG(cv), &cv_syncobj, catch_p);
 	mutex_exit(mtx);
 	KASSERT(cv_has_waiters(cv));
 }
@@ -169,7 +170,7 @@ cv_wait(kcondvar_t *cv, kmutex_t *mtx)
 
 	KASSERT(mutex_owned(mtx));
 
-	cv_enter(cv, mtx, l);
+	cv_enter(cv, mtx, l, false);
 	(void)sleepq_block(0, false);
 	mutex_enter(mtx);
 }
@@ -190,7 +191,7 @@ cv_wait_sig(kcondvar_t *cv, kmutex_t *mtx)
 
 	KASSERT(mutex_owned(mtx));
 
-	cv_enter(cv, mtx, l);
+	cv_enter(cv, mtx, l, true);
 	error = sleepq_block(0, true);
 	mutex_enter(mtx);
 	return error;
@@ -213,7 +214,7 @@ cv_timedwait(kcondvar_t *cv, kmutex_t *mtx, int timo)
 
 	KASSERT(mutex_owned(mtx));
 
-	cv_enter(cv, mtx, l);
+	cv_enter(cv, mtx, l, false);
 	error = sleepq_block(timo, false);
 	mutex_enter(mtx);
 	return error;
@@ -238,7 +239,7 @@ cv_timedwait_sig(kcondvar_t *cv, kmutex_t *mtx, int timo)
 
 	KASSERT(mutex_owned(mtx));
 
-	cv_enter(cv, mtx, l);
+	cv_enter(cv, mtx, l, true);
 	error = sleepq_block(timo, true);
 	mutex_enter(mtx);
 	return error;
@@ -334,23 +335,45 @@ cv_timedwaitbt(kcondvar_t *cv, kmutex_t *mtx, struct bintime *bt,
 {
 	struct bintime slept;
 	unsigned start, end;
+	int timo;
 	int error;
 
 	KASSERTMSG(bt->sec >= 0, "negative timeout");
 	KASSERTMSG(epsilon != NULL, "specify maximum requested delay");
 
+	/* If there's nothing left to wait, time out.  */
+	if (bt->sec == 0 && bt->frac == 0)
+		return EWOULDBLOCK;
+
+	/* Convert to ticks, but clamp to be >=1.  */
+	timo = bintime2timo(bt);
+	KASSERTMSG(timo >= 0, "negative ticks: %d", timo);
+	if (timo == 0)
+		timo = 1;
+
 	/*
-	 * hardclock_ticks is technically int, but nothing special
+	 * getticks() is technically int, but nothing special
 	 * happens instead of overflow, so we assume two's-complement
 	 * wraparound and just treat it as unsigned.
 	 */
-	start = hardclock_ticks;
-	error = cv_timedwait(cv, mtx, bintime2timo(bt));
-	end = hardclock_ticks;
+	start = getticks();
+	error = cv_timedwait(cv, mtx, timo);
+	end = getticks();
 
+	/*
+	 * Set it to the time left, or zero, whichever is larger.  We
+	 * do not fail with EWOULDBLOCK here because this may have been
+	 * an explicit wakeup, so the caller needs to check before they
+	 * give up or else cv_signal would be lost.
+	 */
 	slept = timo2bintime(end - start);
-	/* bt := bt - slept */
-	bintime_sub(bt, &slept);
+	if (bintimecmp(bt, &slept, <=)) {
+		bt->sec = 0;
+		bt->frac = 0;
+	} else {
+		/* bt := bt - slept */
+		bintime_sub(bt, &slept);
+	}
 
 	return error;
 }
@@ -377,23 +400,45 @@ cv_timedwaitbt_sig(kcondvar_t *cv, kmutex_t *mtx, struct bintime *bt,
 {
 	struct bintime slept;
 	unsigned start, end;
+	int timo;
 	int error;
 
 	KASSERTMSG(bt->sec >= 0, "negative timeout");
 	KASSERTMSG(epsilon != NULL, "specify maximum requested delay");
 
+	/* If there's nothing left to wait, time out.  */
+	if (bt->sec == 0 && bt->frac == 0)
+		return EWOULDBLOCK;
+
+	/* Convert to ticks, but clamp to be >=1.  */
+	timo = bintime2timo(bt);
+	KASSERTMSG(timo >= 0, "negative ticks: %d", timo);
+	if (timo == 0)
+		timo = 1;
+
 	/*
-	 * hardclock_ticks is technically int, but nothing special
+	 * getticks() is technically int, but nothing special
 	 * happens instead of overflow, so we assume two's-complement
 	 * wraparound and just treat it as unsigned.
 	 */
-	start = hardclock_ticks;
-	error = cv_timedwait_sig(cv, mtx, bintime2timo(bt));
-	end = hardclock_ticks;
+	start = getticks();
+	error = cv_timedwait_sig(cv, mtx, timo);
+	end = getticks();
 
+	/*
+	 * Set it to the time left, or zero, whichever is larger.  We
+	 * do not fail with EWOULDBLOCK here because this may have been
+	 * an explicit wakeup, so the caller needs to check before they
+	 * give up or else cv_signal would be lost.
+	 */
 	slept = timo2bintime(end - start);
-	/* bt := bt - slept */
-	bintime_sub(bt, &slept);
+	if (bintimecmp(bt, &slept, <=)) {
+		bt->sec = 0;
+		bt->frac = 0;
+	} else {
+		/* bt := bt - slept */
+		bintime_sub(bt, &slept);
+	}
 
 	return error;
 }

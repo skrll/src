@@ -33,6 +33,8 @@ RNDCCMD="$RNDC -c $SYSTEMTESTTOP/common/rndc.conf -p ${CONTROLPORT} -s"
 status=0
 n=0
 
+nextpartreset ns3/named.run
+
 # wait for zone transfer to complete
 tries=0
 while true; do
@@ -506,7 +508,6 @@ grep "add nsec3param.test.	0	IN	TYPE65534 .# 6 000140000400" jp.out.ns3.$n > /de
 if [ $ret != 0 ] ; then echo_i "failed"; status=`expr $ret + $status`; fi
 
 
-
 ret=0
 echo_i "testing that rndc stop updates the master file"
 $NSUPDATE -k ns1/ddns.key <<END > /dev/null || ret=1
@@ -514,21 +515,29 @@ server 10.53.0.1 ${PORT}
 update add updated4.example.nil. 600 A 10.10.10.3
 send
 END
+sleep 3
 $PERL $SYSTEMTESTTOP/stop.pl --use-rndc --port ${CONTROLPORT} nsupdate ns1
+sleep 3
 # Removing the journal file and restarting the server means
 # that the data served by the new server process are exactly
 # those dumped to the master file by "rndc stop".
 rm -f ns1/*jnl
 $PERL $SYSTEMTESTTOP/start.pl --noclean --restart --port ${PORT} nsupdate ns1
-$DIG $DIGOPTS +tcp +noadd +nosea +nostat +noquest +nocomm +nocmd updated4.example.nil.\
-	@10.53.0.1 a > dig.out.ns1 || status=1
-digcomp knowngood.ns1.afterstop dig.out.ns1 || ret=1
-[ $ret = 0 ] || { echo_i "failed"; status=1; }
+for try in 0 1 2 3 4 5 6 7 8 9; do
+    iret=0
+    $DIG $DIGOPTS +tcp +noadd +nosea +nostat +noquest +nocomm +nocmd \
+	updated4.example.nil. @10.53.0.1 a > dig.out.ns1 || iret=1
+    digcomp knowngood.ns1.afterstop dig.out.ns1 || iret=1
+    [ "$iret" -eq 0 ] && break
+    sleep 1
+done
+[ "$iret" -ne 0 ] && ret=1
+[ "$ret" -eq 0 ] || { echo_i "failed"; status=1; }
 
 ret=0
 echo_i "check that 'nsupdate -l' with a missing keyfile reports the missing file"
-$NSUPDATE -4 -p ${PORT} -l -k ns1/nonexistant.key 2> nsupdate.out < /dev/null
-grep ns1/nonexistant.key nsupdate.out > /dev/null || ret=1
+$NSUPDATE -4 -p ${PORT} -l -k ns1/nonexistent.key 2> nsupdate.out < /dev/null
+grep ns1/nonexistent.key nsupdate.out > /dev/null || ret=1
 if test $ret -ne 0
 then
 echo_i "failed"; status=1
@@ -836,14 +845,11 @@ size=`$PERL -e 'use File::stat; my $sb = stat(@ARGV[0]); printf("%s\n", $sb->siz
 [ "$size" -gt 6000 ] || ret=1
 sleep 1
 $RNDCCMD 10.53.0.1 sync maxjournal.test
-for i in 1 2 3 4 5 6
-do
-    sleep 1
+check_size_lt_5000() (
     size=`$PERL -e 'use File::stat; my $sb = stat(@ARGV[0]); printf("%s\n", $sb->size);' ns1/maxjournal.db.jnl`
-    [ "$size" -lt 5000 ] && break
-done
-size=`$PERL -e 'use File::stat; my $sb = stat(@ARGV[0]); printf("%s\n", $sb->size);' ns1/maxjournal.db.jnl`
-[ "$size" -lt 5000 ] || ret=1
+    [ "$size" -lt 5000 ]
+)
+retry_quiet 20 check_size_lt_5000 || ret=1
 [ $ret = 0 ] || { echo_i "failed"; status=1; }
 
 n=`expr $n + 1`
@@ -1023,6 +1029,25 @@ send
 END
 grep "UPDATE, status: NOERROR" nsupdate.out-$n > /dev/null 2>&1 || ret=1
 grep "UPDATE, status: FORMERR" nsupdate.out-$n > /dev/null 2>&1 || ret=1
+[ $ret = 0 ] || { echo_i "failed"; status=1; }
+
+echo_i "check that DS to the zone apex is ignored ($n)"
+$DIG $DIGOPTS +tcp +norec example DS @10.53.0.3 > dig.out.pre.test$n || ret=1
+grep "status: NOERROR" dig.out.pre.test$n > /dev/null || ret=1
+grep "ANSWER: 0," dig.out.pre.test$n > /dev/null || ret=1
+nextpart ns3/named.run > /dev/null
+# specify zone to override the default of adding to parent zone
+$NSUPDATE -d <<END > nsupdate.out-$n 2>&1 || ret=1
+server 10.53.0.3 ${PORT}
+zone example
+update add example 0 in DS 14364 10 2 FD03B2312C8F0FE72C1751EFA1007D743C94EC91594FF0047C23C37CE119BA0C
+send
+END
+msg=": attempt to add a DS record at zone apex ignored"
+nextpart ns3/named.run | grep "$msg" > /dev/null || ret=1
+$DIG $DIGOPTS +tcp +norec example DS @10.53.0.3 > dig.out.post.test$n || ret=1
+grep "status: NOERROR" dig.out.post.test$n > /dev/null || ret=1
+grep "ANSWER: 0," dig.out.post.test$n > /dev/null || ret=1
 [ $ret = 0 ] || { echo_i "failed"; status=1; }
 
 if $FEATURETEST --gssapi ; then

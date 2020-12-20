@@ -1,4 +1,4 @@
-/*	$NetBSD: xen_machdep.c,v 1.22 2019/03/09 08:42:25 maxv Exp $	*/
+/*	$NetBSD: xen_machdep.c,v 1.26 2020/06/04 08:24:44 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -53,13 +53,16 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xen_machdep.c,v 1.22 2019/03/09 08:42:25 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xen_machdep.c,v 1.26 2020/06/04 08:24:44 msaitoh Exp $");
 
 #include "opt_xen.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/boot_flag.h>
+#include <sys/conf.h>
+#include <sys/disk.h>
+#include <sys/device.h>
 #include <sys/mount.h>
 #include <sys/reboot.h>
 #include <sys/timetc.h>
@@ -67,6 +70,7 @@ __KERNEL_RCSID(0, "$NetBSD: xen_machdep.c,v 1.22 2019/03/09 08:42:25 maxv Exp $"
 #include <sys/pmf.h>
 #include <sys/xcall.h>
 
+#include <xen/intr.h>
 #include <xen/hypervisor.h>
 #include <xen/shutdown_xenbus.h>
 #include <xen/include/public/version.h>
@@ -76,17 +80,14 @@ __KERNEL_RCSID(0, "$NetBSD: xen_machdep.c,v 1.22 2019/03/09 08:42:25 maxv Exp $"
 #define DPRINTK(x)
 #endif
 
-u_int	tsc_get_timecount(struct timecounter *);
+#ifdef DEBUG_GEOM
+#define DPRINTF(a) printf a
+#else
+#define DPRINTF(a)
+#endif
+
 
 bool xen_suspend_allow;
-
-#ifdef XENPV
-extern uint64_t tsc_freq;	/* XXX */
-
-static int sysctl_xen_suspend(SYSCTLFN_ARGS);
-static void xen_suspend_domain(void);
-static void xen_prepare_suspend(void);
-static void xen_prepare_resume(void);
 
 void
 xen_parse_cmdline(int what, union xen_cmdline_parseinfo *xcp)
@@ -216,12 +217,12 @@ xen_parse_cmdline(int what, union xen_cmdline_parseinfo *xcp)
 	}
 }
 
-u_int
-tsc_get_timecount(struct timecounter *tc)
-{
+#ifdef XENPV
 
-	panic("xen: tsc_get_timecount");
-}
+static int sysctl_xen_suspend(SYSCTLFN_ARGS);
+static void xen_suspend_domain(void);
+static void xen_prepare_suspend(void);
+static void xen_prepare_resume(void);
 
 /*
  * this function sets up the machdep.xen.suspend sysctl(7) that
@@ -452,5 +453,89 @@ xen_init_features(void)
 			xen_feature_tables[sm * 32 + f] =
 			    (features.submap & (1 << f)) ? 1 : 0;
 		}
+	}
+}
+
+/*
+ * Attempt to find the device from which we were booted.
+ */
+
+static int
+is_valid_disk(device_t dv)
+{
+	if (device_class(dv) != DV_DISK)
+		return (0);
+
+	return (device_is_a(dv, "dk") ||
+		device_is_a(dv, "sd") ||
+		device_is_a(dv, "wd") ||
+		device_is_a(dv, "ld") ||
+		device_is_a(dv, "ed") ||
+		device_is_a(dv, "xbd"));
+}
+
+void
+xen_bootconf(void)
+{
+	device_t dv;
+	deviter_t di;
+	union xen_cmdline_parseinfo xcp;
+	static char bootspecbuf[sizeof(xcp.xcp_bootdev)];
+
+	if (booted_device) {
+		DPRINTF(("%s: preset booted_device: %s\n", __func__, device_xname(booted_device)));
+		return;
+	}
+
+	xen_parse_cmdline(XEN_PARSE_BOOTDEV, &xcp);
+
+	for (dv = deviter_first(&di, DEVITER_F_ROOT_FIRST);
+	     dv != NULL;
+	     dv = deviter_next(&di)) {
+		bool is_ifnet, is_disk;
+		const char *devname;
+
+		is_ifnet = (device_class(dv) == DV_IFNET);
+		is_disk = is_valid_disk(dv);
+		devname = device_xname(dv);
+
+		if (!is_ifnet && !is_disk)
+			continue;
+
+		if (is_disk && xcp.xcp_bootdev[0] == 0) {
+			booted_device = dv;
+			break;
+		}
+
+		if (strncmp(xcp.xcp_bootdev, devname, strlen(devname)))
+			continue;
+
+		if (is_disk && strlen(xcp.xcp_bootdev) > strlen(devname)) {
+			/* XXX check device_cfdata as in x86_autoconf.c? */
+			booted_partition = toupper(
+				xcp.xcp_bootdev[strlen(devname)]) - 'A';
+			DPRINTF(("%s: booted_partition: %d\n", __func__, booted_partition));
+		}
+
+		booted_device = dv;
+		booted_method = "bootinfo/bootdev";
+		break;
+	}
+	deviter_release(&di);
+
+	if (booted_device) {
+		DPRINTF(("%s: booted_device: %s\n", __func__, device_xname(booted_device)));
+		return;
+	}
+
+	/*
+	 * not a boot device name, pass through to MI code
+	 */
+	if (xcp.xcp_bootdev[0] != '\0') {
+		strlcpy(bootspecbuf, xcp.xcp_bootdev, sizeof(bootspecbuf));
+		bootspec = bootspecbuf;
+		booted_method = "bootinfo/bootspec";
+		DPRINTF(("%s: bootspec: %s\n", __func__, bootspec));
+		return;
 	}
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: cycv_platform.c,v 1.12 2020/02/15 08:16:10 skrll Exp $ */
+/* $NetBSD: cycv_platform.c,v 1.15 2020/11/27 07:11:49 skrll Exp $ */
 
 /* This file is in the public domain. */
 
@@ -7,7 +7,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cycv_platform.c,v 1.12 2020/02/15 08:16:10 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cycv_platform.c,v 1.15 2020/11/27 07:11:49 skrll Exp $");
 
 #define	_ARM32_BUS_DMA_PRIVATE
 #include <sys/param.h>
@@ -34,7 +34,7 @@ __KERNEL_RCSID(0, "$NetBSD: cycv_platform.c,v 1.12 2020/02/15 08:16:10 skrll Exp
 
 void cycv_platform_early_putchar(char);
 
-void
+void __noasan
 cycv_platform_early_putchar(char c) {
 #ifdef CONSADDR
 #define CONSADDR_VA (CONSADDR - CYCV_PERIPHERAL_BASE + CYCV_PERIPHERAL_VBASE)
@@ -116,7 +116,6 @@ cycv_mpstart(void)
 	/* Wait for secondary processor to start */
 	int i;
 	for (i = 0x10000000; i > 0; i--) {
-		membar_consumer();
 		if (cpu_hatched_p(1))
 			break;
 	}
@@ -131,7 +130,6 @@ cycv_mpstart(void)
 static void
 cycv_platform_init_attach_args(struct fdt_attach_args *faa) {
 	faa->faa_bst = &armv7_generic_bs_tag;
-	faa->faa_a4x_bst = &armv7_generic_a4x_bs_tag;
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 

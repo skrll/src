@@ -1,4 +1,4 @@
-/*	$NetBSD: unistd.h,v 1.156 2020/03/31 16:50:31 kamil Exp $	*/
+/*	$NetBSD: unistd.h,v 1.161 2020/12/04 23:04:58 kre Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2008 The NetBSD Foundation, Inc.
@@ -102,9 +102,9 @@ char	*cuserid(char *);	/* obsolete */
 #endif /* __CUSERID_DECLARED */
 int	 dup(int);
 int	 dup2(int, int);
-int	 execl(const char *, const char *, ...);
+int	 execl(const char *, const char *, ...) __null_sentinel;
 int	 execle(const char *, const char *, ...);
-int	 execlp(const char *, const char *, ...);
+int	 execlp(const char *, const char *, ...) __null_sentinel;
 int	 execv(const char *, char * const *);
 int	 execve(const char *, char * const *, char * const *);
 int	 execvp(const char *, char * const *);
@@ -360,6 +360,7 @@ __aconst char *getusershell(void);
 int	 initgroups(const char *, gid_t);
 int	 iruserok(uint32_t, int, const char *, const char *);
 int      issetugid(void);
+long	 lpathconf(const char *, int);
 int	 mkstemps(char *, int);
 int	 nfssvc(int, void *);
 int	 pipe2(int *, int);

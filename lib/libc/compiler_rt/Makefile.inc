@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.inc,v 1.37 2020/03/08 06:30:06 rin Exp $
+# $NetBSD: Makefile.inc,v 1.39 2020/09/02 16:22:45 jakllsch Exp $
 
 COMPILER_RT_SRCDIR=	${NETBSDSRCDIR}/sys/external/bsd/compiler_rt/dist
 
@@ -132,7 +132,7 @@ GENERIC_SRCS+= \
 .endif
 
 
-.if ${MACHINE_ARCH} != "aarch64"
+.if ${MACHINE_CPU} != "aarch64"
 GENERIC_SRCS+= \
 	fixunsdfti.c \
 	fixunssfti.c \
@@ -170,16 +170,9 @@ GENERIC_SRCS+= \
 GENERIC_SRCS+= \
 	divmodsi4.c \
 	divsi3.c \
-	udivmodsi4.c \
-
-. if ${LIBC_MACHINE_ARCH} != "m68000"
-# Our __{,u}modsi3 codes assume that __udivsi3 returns remainder to
-# %d1 (volatile register). __udivsi3 in libgcc does not, and therefore
-# mixing them up results in mess.
-GENERIC_SRCS+= \
 	modsi3.c \
+	udivmodsi4.c \
 	umodsi3.c
-. endif
 
 . if ${LIBC_MACHINE_CPU} != "sh3"
 # On sh3 __udivsi3 is gcc "millicode" with special calling convention
@@ -203,7 +196,7 @@ GENERIC_SRCS+= \
 
 # These have h/w instructions which are always used.
 .if ${LIBC_MACHINE_ARCH} != "alpha" && ${LIBC_MACHINE_CPU} != "powerpc64" \
-    && ${LIBC_MACHINE_ARCH} != "aarch64" && ${LIBC_MACHINE_CPU} != "or1k"
+    && ${LIBC_MACHINE_CPU} != "aarch64" && ${LIBC_MACHINE_CPU} != "or1k"
 GENERIC_SRCS+= \
 	clzdi2.c \
 	ctzdi2.c \

@@ -1,7 +1,7 @@
-/*	$NetBSD: cpufunc.S,v 1.38 2019/11/21 19:24:00 ad Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.49 2020/07/19 07:35:08 maxv Exp $	*/
 
 /*-
- * Copyright (c) 1998, 2007 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2007, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -38,7 +38,7 @@
 #include <sys/errno.h>
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.38 2019/11/21 19:24:00 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.49 2020/07/19 07:35:08 maxv Exp $");
 
 #include "opt_xen.h"
 
@@ -71,6 +71,44 @@ ENTRY(lidt)
 	lidt	(%eax)
 	ret
 END(lidt)
+
+ENTRY(x86_hotpatch)
+	/* save EFLAGS, and disable intrs */
+	pushfl
+	cli
+
+	/* save CR0, and disable WP */
+	movl	%cr0,%ecx
+	pushl	%ecx
+	andl	$~CR0_WP,%ecx
+	movl	%ecx,%cr0
+
+	pushl	4*4(%esp) /* arg2 */
+	pushl	4*4(%esp) /* arg1 */
+	call	_C_LABEL(x86_hotpatch_apply)
+	addl	$2*4,%esp
+
+	/* write back and invalidate cache */
+	wbinvd
+
+	/* restore CR0 */
+	popl	%ecx
+	movl	%ecx,%cr0
+
+	/* flush instruction pipeline */
+	pushl	%eax
+	call	x86_flush
+	popl	%eax
+
+	/* clean up */
+	pushl	%eax
+	call	_C_LABEL(x86_hotpatch_cleanup)
+	addl	$4,%esp
+
+	/* restore RFLAGS */
+	popfl
+	ret
+END(x86_hotpatch)
 #endif /* XENPV */
 
 ENTRY(x86_read_flags)
@@ -125,18 +163,59 @@ ENTRY(msr_onfault)
 	ret
 END(msr_onfault)
 
-ENTRY(cpu_counter)
-	rdtsc
-	addl	CPUVAR(CC_SKEW), %eax
-	adcl	CPUVAR(CC_SKEW+4), %edx
-	ret
-END(cpu_counter)
+#define ADD_counter32	addl	CPUVAR(CC_SKEW), %eax
+#define ADD_counter	ADD_counter32			;\
+			adcl	CPUVAR(CC_SKEW+4), %edx
 
-ENTRY(cpu_counter32)
-	rdtsc
-	addl	CPUVAR(CC_SKEW), %eax
-	ret
-END(cpu_counter32)
+#define SERIALIZE_lfence	lfence
+#define SERIALIZE_mfence	mfence
+
+#define CPU_COUNTER_FENCE(counter, fence) \
+ENTRY(cpu_ ## counter ## _ ## fence)	;\
+	pushl	%ebx			;\
+	movl	CPUVAR(CURLWP), %ecx	;\
+1:					;\
+	movl	L_NCSW(%ecx), %ebx	;\
+	SERIALIZE_ ## fence		;\
+	rdtsc				;\
+	ADD_ ## counter			;\
+	cmpl	%ebx, L_NCSW(%ecx)	;\
+	jne	2f			;\
+	popl	%ebx			;\
+	ret				;\
+2:					;\
+	jmp	1b			;\
+END(cpu_ ## counter ## _ ## fence)
+
+CPU_COUNTER_FENCE(counter, lfence)
+CPU_COUNTER_FENCE(counter, mfence)
+CPU_COUNTER_FENCE(counter32, lfence)
+CPU_COUNTER_FENCE(counter32, mfence)
+
+#define CPU_COUNTER_CPUID(counter)	\
+ENTRY(cpu_ ## counter ## _cpuid)	;\
+	pushl	%ebx			;\
+	pushl	%esi			;\
+	movl	CPUVAR(CURLWP), %ecx	;\
+1:					;\
+	movl	L_NCSW(%ecx), %esi	;\
+	pushl	%ecx			;\
+	xor	%eax, %eax		;\
+	cpuid				;\
+	rdtsc				;\
+	ADD_ ## counter			;\
+	popl	%ecx			;\
+	cmpl	%esi, L_NCSW(%ecx)	;\
+	jne	2f			;\
+	popl	%esi			;\
+	popl	%ebx			;\
+	ret				;\
+2:					;\
+	jmp	1b			;\
+END(cpu_ ## counter ##_cpuid)
+
+CPU_COUNTER_CPUID(counter)
+CPU_COUNTER_CPUID(counter32)
 
 ENTRY(breakpoint)
 	pushl	%ebp

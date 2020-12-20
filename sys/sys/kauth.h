@@ -1,4 +1,4 @@
-/* $NetBSD: kauth.h,v 1.83 2020/02/14 04:36:33 riastradh Exp $ */
+/* $NetBSD: kauth.h,v 1.86 2020/09/08 14:12:57 christos Exp $ */
 
 /*-
  * Copyright (c) 2005, 2006 Elad Efrat <elad@NetBSD.org>  
@@ -57,7 +57,11 @@ typedef int (*kauth_scope_callback_t)(kauth_cred_t, kauth_action_t,
 typedef	struct kauth_key       *kauth_key_t;
 
 #ifdef __KAUTH_PRIVATE	/* For the debugger */
-/* 
+
+#include <sys/types.h>
+#include <sys/specificdata.h>
+
+/*
  * Credentials.
  *
  * A subset of this structure is used in kvm(3) (src/lib/libkvm/kvm_proc.c)
@@ -86,6 +90,7 @@ struct kauth_cred {
 	gid_t cr_groups[NGROUPS];	/* group memberships */
 	specificdata_reference cr_sd;	/* specific data */
 };
+
 #endif
 
 /*
@@ -306,6 +311,7 @@ enum kauth_network_req {
 	KAUTH_REQ_NETWORK_SMB_VC_ACCESS,
 	KAUTH_REQ_NETWORK_SMB_VC_CREATE,
 	KAUTH_REQ_NETWORK_INTERFACE_FIRMWARE,
+	KAUTH_REQ_NETWORK_BIND_ANYADDR
 };
 
 /*
@@ -520,11 +526,11 @@ int kauth_cred_uucmp(kauth_cred_t, const struct uucred *);
 void kauth_cred_toucred(kauth_cred_t, struct ki_ucred *);
 void kauth_cred_topcred(kauth_cred_t, struct ki_pcred *);
 
-kauth_action_t kauth_mode_to_action(mode_t);
+kauth_action_t kauth_accmode_to_action(accmode_t);
 kauth_action_t kauth_extattr_action(mode_t);
 
 #define KAUTH_ACCESS_ACTION(access_mode, vn_vtype, file_mode)	\
-	(kauth_mode_to_action(access_mode) |			\
+	(kauth_accmode_to_action(access_mode) |			\
 	(FS_OBJECT_CAN_EXEC(vn_vtype, file_mode) ? KAUTH_VNODE_IS_EXEC : 0))
 
 kauth_cred_t kauth_cred_get(void);

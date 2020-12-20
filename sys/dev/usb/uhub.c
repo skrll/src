@@ -1,4 +1,4 @@
-/*	$NetBSD: uhub.c,v 1.144 2020/01/07 06:42:26 maxv Exp $	*/
+/*	$NetBSD: uhub.c,v 1.147 2020/06/05 17:20:56 maxv Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/uhub.c,v 1.18 1999/11/17 22:33:43 n_hibma Exp $	*/
 /*	$OpenBSD: uhub.c,v 1.86 2015/06/29 18:27:40 mpi Exp $ */
 
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uhub.c,v 1.144 2020/01/07 06:42:26 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uhub.c,v 1.147 2020/06/05 17:20:56 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -52,7 +52,7 @@ __KERNEL_RCSID(0, "$NetBSD: uhub.c,v 1.144 2020/01/07 06:42:26 maxv Exp $");
 #include <sys/proc.h>
 #include <sys/sysctl.h>
 #include <sys/systm.h>
-
+#include <sys/kcov.h>
 
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
@@ -365,7 +365,6 @@ uhub_attach(device_t parent, device_t self, void *aux)
 	sc->sc_statuspend = kmem_zalloc(sc->sc_statuslen, KM_SLEEP);
 	sc->sc_status = kmem_alloc(sc->sc_statuslen, KM_SLEEP);
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_SOFTUSB);
-	memset(sc->sc_statuspend, 0, sc->sc_statuslen);
 
 	/* force initial scan */
 	memset(sc->sc_status, 0xff, sc->sc_statuslen);
@@ -755,9 +754,20 @@ uhub_explore(struct usbd_device *dev)
 				    port);
 		}
 
+		if (dev->ud_bus->ub_hctype == USBHCTYPE_VHCI) {
+			kcov_remote_enter(KCOV_REMOTE_VHCI,
+			    KCOV_REMOTE_VHCI_ID(dev->ud_bus->ub_busnum, port));
+		}
+
 		/* Get device info and set its address. */
 		err = usbd_new_device(sc->sc_dev, dev->ud_bus,
 			  dev->ud_depth + 1, speed, port, up);
+
+		if (dev->ud_bus->ub_hctype == USBHCTYPE_VHCI) {
+			kcov_remote_leave(KCOV_REMOTE_VHCI,
+			    KCOV_REMOTE_VHCI_ID(dev->ud_bus->ub_busnum, port));
+		}
+
 		/* XXX retry a few times? */
 		if (err) {
 			DPRINTF("uhub%jd: usbd_new_device failed, error %jd",

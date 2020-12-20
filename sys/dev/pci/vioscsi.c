@@ -1,4 +1,4 @@
-/*	$NetBSD: vioscsi.c,v 1.21 2019/04/13 06:17:33 maxv Exp $	*/
+/*	$NetBSD: vioscsi.c,v 1.24 2020/09/19 07:30:32 kim Exp $	*/
 /*	$OpenBSD: vioscsi.c,v 1.3 2015/03/14 03:38:49 jsg Exp $	*/
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vioscsi.c,v 1.21 2019/04/13 06:17:33 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vioscsi.c,v 1.24 2020/09/19 07:30:32 kim Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -194,8 +194,23 @@ vioscsi_attach(device_t parent, device_t self, void *aux)
 	chan->chan_channel = 0;
 	chan->chan_ntargets = MIN(max_target, 16);	/* cap reasonably */
 	chan->chan_nluns = MIN(max_lun, 1024);		/* cap reasonably */
-	chan->chan_id = 0;
+	chan->chan_id = max_target;
 	chan->chan_flags = SCSIPI_CHAN_NOSETTLE;
+	/*
+	 * XXX Remove this when scsipi is REPORT LUNS-aware.
+	 * scsipi(4) insists that LUNs must be contiguous starting from 0.
+	 * This is not true on Linode (circa 2020).
+	 *
+	 * Also if explicitly selecting the 'Virtio SCSI Single'
+	 * controller (which is not the default SCSI controller) on
+	 * Proxmox hosts, each disk will be on its own scsi bus at
+	 * target 0 but unexpectedly on a LUN matching the drive number
+	 * on the system (i.e. drive 0 will be bus 0, target 0, lun
+	 * 0; drive 1 will be bus 1, target 0, lun 1, drive 2 will be
+	 * bus 2, target 0, lun 2 -- which is where the gaps start
+	 * happening). https://bugzilla.proxmox.com/show_bug.cgi?id=2985
+	 */
+	chan->chan_defquirks = PQUIRK_FORCELUNS;
 
 	config_found(self, &sc->sc_channel, scsiprint);
 	return;
@@ -318,7 +333,7 @@ vioscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	}
 
 	req->lun[0] = 1;
-	req->lun[1] = periph->periph_target - 1;
+	req->lun[1] = periph->periph_target;
 	req->lun[2] = 0x40 | ((periph->periph_lun >> 8) & 0x3F);
 	req->lun[3] = periph->periph_lun & 0xFF;
 	memset(req->lun + 4, 0, 4);

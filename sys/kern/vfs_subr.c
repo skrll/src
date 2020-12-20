@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_subr.c,v 1.484 2020/03/14 20:45:23 ad Exp $	*/
+/*	$NetBSD: vfs_subr.c,v 1.489 2020/07/26 21:28:33 christos Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 2004, 2005, 2007, 2008, 2019, 2020
@@ -69,7 +69,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.484 2020/03/14 20:45:23 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.489 2020/07/26 21:28:33 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -730,18 +730,15 @@ lazy_sync_vnode(struct vnode *vp)
 	KASSERT(mutex_owned(&syncer_data_lock));
 
 	synced = false;
-	/* We are locking in the wrong direction. */
-	if (mutex_tryenter(vp->v_interlock)) {
+	if (vcache_tryvget(vp) == 0) {
 		mutex_exit(&syncer_data_lock);
-		if (vcache_tryvget(vp) == 0) {
-			if (vn_lock(vp, LK_EXCLUSIVE | LK_NOWAIT) == 0) {
-				synced = true;
-				(void) VOP_FSYNC(vp, curlwp->l_cred,
-				    FSYNC_LAZY, 0, 0);
-				vput(vp);
-			} else
-				vrele(vp);
-		}
+		if (vn_lock(vp, LK_EXCLUSIVE | LK_NOWAIT) == 0) {
+			synced = true;
+			(void) VOP_FSYNC(vp, curlwp->l_cred,
+			    FSYNC_LAZY, 0, 0);
+			vput(vp);
+		} else
+			vrele(vp);
 		mutex_enter(&syncer_data_lock);
 	}
 	return synced;
@@ -1104,7 +1101,7 @@ vprint_common(struct vnode *vp, const char *prefix,
 	    ARRAY_PRINT(vp->v_type, vnode_types), vp->v_type,
 	    vp->v_mount, vp->v_mountedhere);
 	(*pr)("%susecount %d writecount %d holdcount %d\n", prefix,
-	    vp->v_usecount, vp->v_writecount, vp->v_holdcnt);
+	    vrefcnt(vp), vp->v_writecount, vp->v_holdcnt);
 	(*pr)("%ssize %" PRIx64 " writesize %" PRIx64 " numoutput %d\n",
 	    prefix, vp->v_size, vp->v_writesize, vp->v_numoutput);
 	(*pr)("%sdata %p lock %p\n", prefix, vp->v_data, &vip->vi_lock);
@@ -1136,21 +1133,6 @@ vprint(const char *label, struct vnode *vp)
 		printf("\t");
 		VOP_PRINT(vp);
 	}
-}
-
-/* Deprecated. Kept for KPI compatibility. */
-int
-vaccess(enum vtype type, mode_t file_mode, uid_t uid, gid_t gid,
-    mode_t acc_mode, kauth_cred_t cred)
-{
-
-#ifdef DIAGNOSTIC
-	printf("vaccess: deprecated interface used.\n");
-#endif /* DIAGNOSTIC */
-
-	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(acc_mode,
-	    type, file_mode), NULL /* This may panic. */, NULL,
-	    genfs_can_access(type, file_mode, uid, gid, acc_mode, cred));
 }
 
 /*
@@ -1211,25 +1193,24 @@ set_statvfs_info(const char *onp, int ukon, const char *fromp, int ukfrom,
 	size_t size;
 	struct statvfs *sfs = &mp->mnt_stat;
 	int (*fun)(const void *, void *, size_t, size_t *);
-	struct vnode *rvp;
 
 	(void)strlcpy(mp->mnt_stat.f_fstypename, vfsname,
 	    sizeof(mp->mnt_stat.f_fstypename));
 
 	if (onp) {
+		struct cwdinfo *cwdi = l->l_proc->p_cwdi;
 		fun = (ukon == UIO_SYSSPACE) ? copystr : copyinstr;
-		KASSERT(l == curlwp);
-		rvp = cwdrdir();
-		if (rvp != NULL) {
+		if (cwdi->cwdi_rdir != NULL) {
 			size_t len;
 			char *bp;
 			char *path = PNBUF_GET();
 
 			bp = path + MAXPATHLEN;
 			*--bp = '\0';
-			error = getcwd_common(rvp, rootvnode, &bp,
+			rw_enter(&cwdi->cwdi_lock, RW_READER);
+			error = getcwd_common(cwdi->cwdi_rdir, rootvnode, &bp,
 			    path, MAXPATHLEN / 2, 0, l);
-			vrele(rvp);
+			rw_exit(&cwdi->cwdi_lock);
 			if (error) {
 				PNBUF_PUT(path);
 				return error;
@@ -1277,6 +1258,53 @@ vfs_timestamp(struct timespec *ts)
 {
 
 	nanotime(ts);
+}
+
+/*
+ * The purpose of this routine is to remove granularity from accmode_t,
+ * reducing it into standard unix access bits - VEXEC, VREAD, VWRITE,
+ * VADMIN and VAPPEND.
+ *
+ * If it returns 0, the caller is supposed to continue with the usual
+ * access checks using 'accmode' as modified by this routine.  If it
+ * returns nonzero value, the caller is supposed to return that value
+ * as errno.
+ *
+ * Note that after this routine runs, accmode may be zero.
+ */
+int
+vfs_unixify_accmode(accmode_t *accmode)
+{
+	/*
+	 * There is no way to specify explicit "deny" rule using
+	 * file mode or POSIX.1e ACLs.
+	 */
+	if (*accmode & VEXPLICIT_DENY) {
+		*accmode = 0;
+		return (0);
+	}
+
+	/*
+	 * None of these can be translated into usual access bits.
+	 * Also, the common case for NFSv4 ACLs is to not contain
+	 * either of these bits. Caller should check for VWRITE
+	 * on the containing directory instead.
+	 */
+	if (*accmode & (VDELETE_CHILD | VDELETE))
+		return (EPERM);
+
+	if (*accmode & VADMIN_PERMS) {
+		*accmode &= ~VADMIN_PERMS;
+		*accmode |= VADMIN;
+	}
+
+	/*
+	 * There is no way to deny VREAD_ATTRIBUTES, VREAD_ACL
+	 * or VSYNCHRONIZE using file mode or POSIX.1e ACL.
+	 */
+	*accmode &= ~(VSTAT_PERMS | VSYNCHRONIZE);
+
+	return (0);
 }
 
 time_t	rootfstime;			/* recorded root fs time, if known */
@@ -1515,7 +1543,7 @@ vfs_vnode_print(struct vnode *vp, int full, void (*pr)(const char *, ...))
 
 	uvm_object_printit(&vp->v_uobj, full, pr);
 	(*pr)("\n");
-	vprint_common(vp, "", printf);
+	vprint_common(vp, "", pr);
 	if (full) {
 		struct buf *bp;
 

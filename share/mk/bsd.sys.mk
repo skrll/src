@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.sys.mk,v 1.300 2020/04/04 07:03:57 maxv Exp $
+#	$NetBSD: bsd.sys.mk,v 1.304 2020/11/09 16:15:05 christos Exp $
 #
 # Build definitions used for NetBSD source tree builds.
 
@@ -103,7 +103,7 @@ CFLAGS+=	-Wcast-qual -Wwrite-strings
 CFLAGS+=	-Wextra -Wno-unused-parameter
 # Readd -Wno-sign-compare to override -Wextra with clang
 CFLAGS+=	-Wno-sign-compare
-.if "${ACTIVE_CC}" == "gcc" && ${HAVE_GCC} != "8"
+.if "${ACTIVE_CC}" == "gcc" && ${HAVE_GCC} < 8
 #  XXX: Won't warn about anything.  -Wabi warns about differences from
 #  the most up-to-date ABI, which in g++ 8 is used by default.
 CXXFLAGS+=	-Wabi
@@ -237,8 +237,8 @@ CFLAGS+=	${CPUFLAGS}
 AFLAGS+=	${CPUFLAGS}
 
 .if ${KCOV:U0} > 0
-KCOVFLAGS=	-fsanitize-coverage=trace-pc
-.for f in subr_kcov.c subr_asan.c subr_csan.c subr_msan.c
+KCOVFLAGS=	-fsanitize-coverage=trace-pc,trace-cmp
+.for f in subr_kcov.c subr_asan.c subr_csan.c subr_msan.c ubsan.c
 KCOVFLAGS.${f}=		# empty
 .endfor
 CFLAGS+=	${KCOVFLAGS.${.IMPSRC:T}:U${KCOVFLAGS}}
@@ -266,10 +266,8 @@ STRIP?=		strip
 # C
 .c.o:
 	${_MKTARGET_COMPILE}
-	${COMPILE.c} ${COPTS.${.IMPSRC:T}} ${CPUFLAGS.${.IMPSRC:T}} ${CPPFLAGS.${.IMPSRC:T}} ${.IMPSRC}
-.if defined(CTFCONVERT)
-	${CTFCONVERT} ${CTFFLAGS} ${.TARGET}
-.endif
+	${COMPILE.c} ${COPTS.${.IMPSRC:T}} ${CPUFLAGS.${.IMPSRC:T}} ${CPPFLAGS.${.IMPSRC:T}} ${.IMPSRC} ${OBJECT_TARGET}
+	${CTFCONVERT_RUN}
 
 .c.ln:
 	${_MKTARGET_COMPILE}
@@ -288,10 +286,8 @@ STRIP?=		strip
 #  used for Objective C source)
 .m.o:
 	${_MKTARGET_COMPILE}
-	${COMPILE.m} ${OBJCOPTS} ${OBJCOPTS.${.IMPSRC:T}} ${.IMPSRC}
-.if defined(CTFCONVERT)
-	${CTFCONVERT} ${CTFFLAGS} ${.TARGET}
-.endif
+	${COMPILE.m} ${OBJCOPTS} ${OBJCOPTS.${.IMPSRC:T}} ${.IMPSRC} ${OBJECT_TARGET}
+	${CTFCONVERT_RUN}
 
 # Host-compiled C objects
 # The intermediate step is necessary for Sun CC, which objects to calling
@@ -310,17 +306,13 @@ STRIP?=		strip
 # Assembly
 .s.o:
 	${_MKTARGET_COMPILE}
-	${COMPILE.s} ${COPTS.${.IMPSRC:T}} ${CPUFLAGS.${.IMPSRC:T}} ${CPPFLAGS.${.IMPSRC:T}} ${.IMPSRC}
-.if defined(CTFCONVERT)
-	${CTFCONVERT} ${CTFFLAGS} ${.TARGET}
-.endif
+	${COMPILE.s} ${COPTS.${.IMPSRC:T}} ${CPUFLAGS.${.IMPSRC:T}} ${CPPFLAGS.${.IMPSRC:T}} ${.IMPSRC} ${OBJECT_TARGET}
+	${CTFCONVERT_RUN}
 
 .S.o:
 	${_MKTARGET_COMPILE}
-	${COMPILE.S} ${COPTS.${.IMPSRC:T}} ${CPUFLAGS.${.IMPSRC:T}} ${CPPFLAGS.${.IMPSRC:T}} ${.IMPSRC}
-.if defined(CTFCONVERT)
-	${CTFCONVERT} ${CTFFLAGS} ${.TARGET}
-.endif
+	${COMPILE.S} ${COPTS.${.IMPSRC:T}} ${CPUFLAGS.${.IMPSRC:T}} ${CPPFLAGS.${.IMPSRC:T}} ${.IMPSRC} ${OBJECT_TARGET}
+	${CTFCONVERT_RUN}
 
 # Lex
 LFLAGS+=	${LPREFIX.${.IMPSRC:T}:D-P${LPREFIX.${.IMPSRC:T}}}

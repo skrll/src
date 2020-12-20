@@ -1,5 +1,5 @@
-/*	$NetBSD: if_rge.c,v 1.9 2020/02/29 21:27:19 thorpej Exp $	*/
-/*	$OpenBSD: if_rge.c,v 1.2 2020/01/02 09:00:45 kevlo Exp $	*/
+/*	$NetBSD: if_rge.c,v 1.14 2020/05/30 22:39:40 sevan Exp $	*/
+/*	$OpenBSD: if_rge.c,v 1.3 2020/03/27 15:15:24 krw Exp $	*/
 
 /*
  * Copyright (c) 2019 Kevin Lo <kevlo@openbsd.org>
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_rge.c,v 1.9 2020/02/29 21:27:19 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_rge.c,v 1.14 2020/05/30 22:39:40 sevan Exp $");
 
 /* #include "vlan.h" Sevan */
 
@@ -189,7 +189,7 @@ rge_match(device_t parent, cfdata_t match, void *aux)
 void
 rge_attach(device_t parent, device_t self, void *aux)
 {
-	struct rge_softc *sc = (struct rge_softc *)self;
+	struct rge_softc *sc = device_private(self);
 	struct pci_attach_args *pa = aux;
 	pci_chipset_tag_t pc = pa->pa_pc;
 	pci_intr_handle_t ih;
@@ -203,6 +203,8 @@ rge_attach(device_t parent, device_t self, void *aux)
 
 	pci_set_powerstate(pa->pa_pc, pa->pa_tag, PCI_PMCSR_STATE_D0);
 
+	sc->sc_dev = self;
+
 	/*
 	 * Map control/status registers.
 	 */
@@ -215,7 +217,7 @@ rge_attach(device_t parent, device_t self, void *aux)
 			if (pci_mapreg_map(pa, RGE_PCI_BAR0, PCI_MAPREG_TYPE_IO,
 			    0, &sc->rge_btag, &sc->rge_bhandle, NULL,
 			    &sc->rge_bsize)) {
-				printf(": can't map mem or i/o space\n");
+				aprint_error(": can't map mem or i/o space\n");
 				return;
 			}
 		}
@@ -227,20 +229,20 @@ rge_attach(device_t parent, device_t self, void *aux)
 	if (pci_intr_map(pa, &ih) == 0)
 		sc->rge_flags |= RGE_FLAG_MSI;
 	else if (pci_intr_map(pa, &ih) != 0) {
-		printf(": couldn't map interrupt\n");
+		aprint_error(": couldn't map interrupt\n");
 		return;
 	}
 	intrstr = pci_intr_string(pc, ih, intrbuf, sizeof(intrbuf));
 	sc->sc_ih = pci_intr_establish_xname(pc, ih, IPL_NET, rge_intr,
-	    sc, sc->sc_dev.dv_xname);
+	    sc, device_xname(sc->sc_dev));
 	if (sc->sc_ih == NULL) {
-		printf(": couldn't establish interrupt");
+		aprint_error_dev(sc->sc_dev, ": couldn't establish interrupt");
 		if (intrstr != NULL)
-			printf(" at %s", intrstr);
-		printf("\n");
+			aprint_error(" at %s\n", intrstr);
+		aprint_error("\n");
 		return;
 	}
-	printf(": %s", intrstr);
+	aprint_normal_dev(sc->sc_dev, "interrupting at %s\n", intrstr);
 
 	if (pci_dma64_available(pa))
 		sc->sc_dmat = pa->pa_dmat64;
@@ -260,7 +262,7 @@ rge_attach(device_t parent, device_t self, void *aux)
 		sc->rge_type = MAC_CFG3;
 		break;
 	default:
-		printf(": unknown version 0x%08x\n", hwrev);
+		aprint_error(": unknown version 0x%08x\n", hwrev);
 		return;
 	}
 
@@ -283,7 +285,8 @@ rge_attach(device_t parent, device_t self, void *aux)
 	rge_hw_init(sc);
 
 	rge_get_macaddr(sc, eaddr);
-	printf(", address %s\n", ether_sprintf(eaddr));
+	aprint_normal_dev(sc->sc_dev, "Ethernet address %s\n",
+	    ether_sprintf(eaddr));
 
 	memcpy(sc->sc_enaddr, eaddr, ETHER_ADDR_LEN);
 
@@ -295,7 +298,7 @@ rge_attach(device_t parent, device_t self, void *aux)
 
 	ifp = &sc->sc_ec.ec_if;
 	ifp->if_softc = sc;
-	strlcpy(ifp->if_xname, sc->sc_dev.dv_xname, IFNAMSIZ);
+	strlcpy(ifp->if_xname, device_xname(sc->sc_dev), IFNAMSIZ);
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 #ifdef RGE_MPSAFE
 	ifp->if_xflags = IFEF_MPSAFE;
@@ -620,7 +623,7 @@ rge_watchdog(struct ifnet *ifp)
 {
 	struct rge_softc *sc = ifp->if_softc;
 
-	printf("%s: watchdog timeout\n", sc->sc_dev.dv_xname);
+	aprint_error_dev(sc->sc_dev, "watchdog timeout\n");
 	if_statinc(ifp, if_oerrors);
 
 	rge_init(ifp);
@@ -655,8 +658,8 @@ rge_init(struct ifnet *ifp)
 
 	/* Initialize RX descriptors list. */
 	if (rge_rx_list_init(sc) == ENOBUFS) {
-		printf("%s: init failed: no memory for RX buffers\n",
-		    sc->sc_dev.dv_xname);
+		aprint_error_dev(sc->sc_dev,
+		    "init failed: no memory for RX buffers\n");
 		rge_stop(ifp);
 		return (ENOBUFS);
 	}
@@ -901,7 +904,8 @@ rge_ifmedia_upd(struct ifnet *ifp)
 		ifp->if_baudrate = IF_Mbps(10);
 		break;
 	default:
-		printf("%s: unsupported media type\n", sc->sc_dev.dv_xname);
+		aprint_error_dev(sc->sc_dev,
+		    "unsupported media type\n");
 		return (EINVAL);
 	}
 
@@ -958,14 +962,14 @@ rge_allocmem(struct rge_softc *sc)
 	error = bus_dmamap_create(sc->sc_dmat, RGE_TX_LIST_SZ, 1,
 	    RGE_TX_LIST_SZ, 0, BUS_DMA_NOWAIT, &sc->rge_ldata.rge_tx_list_map);
 	if (error) {
-		printf("%s: can't create TX list map\n", sc->sc_dev.dv_xname);
+		aprint_error_dev(sc->sc_dev, "can't create TX list map\n");
 		return (error);
 	}
 	error = bus_dmamem_alloc(sc->sc_dmat, RGE_TX_LIST_SZ, RGE_ALIGN, 0,
 	    &sc->rge_ldata.rge_tx_listseg, 1, &sc->rge_ldata.rge_tx_listnseg,
 	    BUS_DMA_NOWAIT); /* XXX OpenBSD adds BUS_DMA_ZERO */
 	if (error) {
-		printf("%s: can't alloc TX list\n", sc->sc_dev.dv_xname);
+		aprint_error_dev(sc->sc_dev, "can't alloc TX list\n");
 		return (error);
 	}
 
@@ -975,7 +979,7 @@ rge_allocmem(struct rge_softc *sc)
 	    (void **) &sc->rge_ldata.rge_tx_list,
 	    BUS_DMA_NOWAIT); /* XXX OpenBSD adds BUS_DMA_COHERENT */
 	if (error) {
-		printf("%s: can't map TX dma buffers\n", sc->sc_dev.dv_xname);
+		aprint_error_dev(sc->sc_dev, "can't map TX dma buffers\n");
 		bus_dmamem_free(sc->sc_dmat, &sc->rge_ldata.rge_tx_listseg,
 		    sc->rge_ldata.rge_tx_listnseg);
 		return (error);
@@ -983,7 +987,7 @@ rge_allocmem(struct rge_softc *sc)
 	error = bus_dmamap_load(sc->sc_dmat, sc->rge_ldata.rge_tx_list_map,
 	    sc->rge_ldata.rge_tx_list, RGE_TX_LIST_SZ, NULL, BUS_DMA_NOWAIT);
 	if (error) {
-		printf("%s: can't load TX dma map\n", sc->sc_dev.dv_xname);
+		aprint_error_dev(sc->sc_dev, "can't load TX dma map\n");
 		bus_dmamap_destroy(sc->sc_dmat, sc->rge_ldata.rge_tx_list_map);
 		bus_dmamem_unmap(sc->sc_dmat,
 		    sc->rge_ldata.rge_tx_list, RGE_TX_LIST_SZ);
@@ -998,8 +1002,7 @@ rge_allocmem(struct rge_softc *sc)
 		    RGE_TX_NSEGS, RGE_JUMBO_FRAMELEN, 0, 0,
 		    &sc->rge_ldata.rge_txq[i].txq_dmamap);
 		if (error) {
-			printf("%s: can't create DMA map for TX\n",
-			    sc->sc_dev.dv_xname);
+			aprint_error_dev(sc->sc_dev, "can't create DMA map for TX\n");
 			return (error);
 		}
 	}
@@ -1008,14 +1011,14 @@ rge_allocmem(struct rge_softc *sc)
 	error = bus_dmamap_create(sc->sc_dmat, RGE_RX_LIST_SZ, 1,
 	    RGE_RX_LIST_SZ, 0, 0, &sc->rge_ldata.rge_rx_list_map);
 	if (error) {
-		printf("%s: can't create RX list map\n", sc->sc_dev.dv_xname);
+		aprint_error_dev(sc->sc_dev, "can't create RX list map\n");
 		return (error);
 	}
 	error = bus_dmamem_alloc(sc->sc_dmat, RGE_RX_LIST_SZ, RGE_ALIGN, 0,
 	    &sc->rge_ldata.rge_rx_listseg, 1, &sc->rge_ldata.rge_rx_listnseg,
 	    BUS_DMA_NOWAIT);  /* XXX OpenBSD adds BUS_DMA_ZERO */
 	if (error) {
-		printf("%s: can't alloc RX list\n", sc->sc_dev.dv_xname);
+		aprint_error_dev(sc->sc_dev, "can't alloc RX list\n");
 		return (error);
 	}
 
@@ -1025,7 +1028,7 @@ rge_allocmem(struct rge_softc *sc)
 	    (void **) &sc->rge_ldata.rge_rx_list,
 	    BUS_DMA_NOWAIT);  /* XXX OpenBSD adds BUS_DMA_COHERENT */
 	if (error) {
-		printf("%s: can't map RX dma buffers\n", sc->sc_dev.dv_xname);
+		aprint_error_dev(sc->sc_dev, "can't map RX dma buffers\n");
 		bus_dmamem_free(sc->sc_dmat, &sc->rge_ldata.rge_rx_listseg,
 		    sc->rge_ldata.rge_rx_listnseg);
 		return (error);
@@ -1033,7 +1036,7 @@ rge_allocmem(struct rge_softc *sc)
 	error = bus_dmamap_load(sc->sc_dmat, sc->rge_ldata.rge_rx_list_map,
 	    sc->rge_ldata.rge_rx_list, RGE_RX_LIST_SZ, NULL, BUS_DMA_NOWAIT);
 	if (error) {
-		printf("%s: can't load RX dma map\n", sc->sc_dev.dv_xname);
+		aprint_error_dev(sc->sc_dev, "can't load RX dma map\n");
 		bus_dmamap_destroy(sc->sc_dmat, sc->rge_ldata.rge_rx_list_map);
 		bus_dmamem_unmap(sc->sc_dmat,
 		    sc->rge_ldata.rge_rx_list, RGE_RX_LIST_SZ);
@@ -1048,8 +1051,7 @@ rge_allocmem(struct rge_softc *sc)
 		    RGE_JUMBO_FRAMELEN, 0, 0,
 		    &sc->rge_ldata.rge_rxq[i].rxq_dmamap);
 		if (error) {
-			printf("%s: can't create DMA map for RX\n",
-			    sc->sc_dev.dv_xname);
+			aprint_error_dev(sc->sc_dev, "can't create DMA map for RX\n");
 			return (error);
 		}
 	}
@@ -1087,8 +1089,7 @@ rge_newbuf(struct rge_softc *sc, int idx)
 	r = &sc->rge_ldata.rge_rx_list[idx];
 
 	if (RGE_OWN(r)) {
-		printf("%s: tried to map busy RX descriptor\n",
-		    sc->sc_dev.dv_xname);
+		aprint_error_dev(sc->sc_dev, "tried to map busy RX descriptor\n");
 		goto out;
 	}
 
@@ -1383,7 +1384,7 @@ rge_reset(struct rge_softc *sc)
 			break;
 	}
 	if (i == RGE_TIMEOUT)
-		printf("%s: reset never completed!\n", sc->sc_dev.dv_xname);
+		aprint_error_dev(sc->sc_dev, "reset never completed!\n");
 }
 
 void
@@ -1448,7 +1449,7 @@ rge_set_phy_power(struct rge_softc *sc, int on)
 		rge_write_phy(sc, 0, MII_BMCR, BMCR_AUTOEN);
 
 		for (i = 0; i < RGE_TIMEOUT; i++) {
-			if ((rge_read_phy_ocp(sc, 0xa420) & 0x0080) == 3)
+			if ((rge_read_phy_ocp(sc, 0xa420) & 0x0007) == 3)
 				break;
 			DELAY(1000);
 		}
@@ -1780,8 +1781,7 @@ rge_patch_phy_mcu(struct rge_softc *sc, int set)
 			break;
 	}
 	if (i == 1000)
-		printf("%s: timeout waiting to patch phy mcu\n",
-		    sc->sc_dev.dv_xname);
+		aprint_error_dev(sc->sc_dev, "timeout waiting to patch phy mcu\n");
 }
 
 void
@@ -1813,7 +1813,7 @@ rge_config_imtype(struct rge_softc *sc, int imtype)
 		sc->rge_tx_ack = RGE_ISR_PCS_TIMEOUT;
 		break;
 	default:
-		panic("%s: unknown imtype %d", sc->sc_dev.dv_xname, imtype);
+		panic("%s: unknown imtype %d", device_xname(sc->sc_dev), imtype);
 	}
 }
 
@@ -1848,7 +1848,7 @@ rge_setup_intr(struct rge_softc *sc, int imtype)
 		rge_setup_sim_im(sc);
 		break;
 	default:
-		panic("%s: unknown imtype %d", sc->sc_dev.dv_xname, imtype);
+		panic("%s: unknown imtype %d", device_xname(sc->sc_dev), imtype);
 	}
 }
 
@@ -1889,7 +1889,7 @@ rge_exit_oob(struct rge_softc *sc)
 
 	if (rge_read_mac_ocp(sc, 0xd42c) & 0x0100) {
 		for (i = 0; i < RGE_TIMEOUT; i++) {
-			if ((rge_read_phy_ocp(sc, 0xa420) & 0x0080) == 2)
+			if ((rge_read_phy_ocp(sc, 0xa420) & 0x0007) == 2)
 				break;
 			DELAY(1000);
 		}

@@ -1,4 +1,4 @@
-/*	$NetBSD: gem.c,v 1.130 2020/03/15 22:19:00 thorpej Exp $ */
+/*	$NetBSD: gem.c,v 1.132 2020/09/15 08:33:40 mrg Exp $ */
 
 /*
  *
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.130 2020/03/15 22:19:00 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.132 2020/09/15 08:33:40 mrg Exp $");
 
 #include "opt_inet.h"
 
@@ -175,7 +175,6 @@ gem_detach(struct gem_softc *sc, int flags)
 		rnd_detach_source(&sc->rnd_source);
 		ether_ifdetach(ifp);
 		if_detach(ifp);
-		ifmedia_fini(&sc->sc_mii.mii_media);
 
 		callout_destroy(&sc->sc_tick_ch);
 		callout_destroy(&sc->sc_rx_watchdog);
@@ -184,6 +183,8 @@ gem_detach(struct gem_softc *sc, int flags)
 	case GEM_ATT_MII:
 		sc->sc_att_stage = GEM_ATT_MII;
 		mii_detach(&sc->sc_mii, MII_PHY_ANY, MII_OFFSET_ANY);
+		ifmedia_fini(&sc->sc_mii.mii_media);
+
 		/*FALLTHROUGH*/
 	case GEM_ATT_7:
 		for (i = 0; i < GEM_NRXDESC; i++) {
@@ -880,7 +881,7 @@ gem_reset_tx(struct gem_softc *sc)
 	bus_space_barrier(t, h, GEM_TX_CONFIG, 4, BUS_SPACE_BARRIER_WRITE);
 	/* Wait till it finishes */
 	if (!gem_bitwait(sc, h, GEM_TX_CONFIG, 1, 0))
-		aprint_error_dev(sc->sc_dev, "cannot disable tx dma\n"); /* OpenBSD 1.34 */
+		aprint_error_dev(sc->sc_dev, "cannot disable tx dma\n");
 	/* Wait 5ms extra. */
 	delay(5000);
 
@@ -889,7 +890,7 @@ gem_reset_tx(struct gem_softc *sc)
 	bus_space_barrier(t, h, GEM_RESET, 4, BUS_SPACE_BARRIER_WRITE);
 	/* Wait till it finishes */
 	if (!gem_bitwait(sc, h2, GEM_RESET, GEM_RESET_TX, 0)) {
-		aprint_error_dev(sc->sc_dev, "cannot reset transmitter\n"); /* OpenBSD 1.34 */
+		aprint_error_dev(sc->sc_dev, "cannot reset transmitter\n");
 		return (1);
 	}
 	return (0);

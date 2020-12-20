@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1180 2020/04/04 23:54:06 christos Exp $
+#	$NetBSD: bsd.own.mk,v 1.1235 2020/12/06 14:28:34 christos Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -63,20 +63,7 @@ TOOLCHAIN_MISSING?=	no
 #
 # What GCC is used?
 #
-.if ${MACHINE} == "amd64" || \
-    ${MACHINE} == "i386" || \
-    ${MACHINE} == "ia64" || \
-    ${MACHINE} == "sparc" || \
-    ${MACHINE} == "sparc64" || \
-    ${MACHINE_CPU} == "aarch64" || \
-    ${MACHINE_CPU} == "arm" || \
-    ${MACHINE_CPU} == "powerpc" || \
-    ${MACHINE_CPU} == "powerpc64" || \
-    ${MACHINE_CPU} == "riscv"
-HAVE_GCC?=	8
-.else
-HAVE_GCC?=	7
-.endif
+HAVE_GCC?=	9
 
 #
 # Platforms that can't run a modern GCC natively
@@ -88,15 +75,41 @@ MKGCCCMDS?=	no
 # We import the old gcc as "gcc.old" when upgrading.  EXTERNAL_GCC_SUBDIR is
 # set to the relevant subdirectory in src/external/gpl3 for his HAVE_GCC.
 #
-.if ${HAVE_GCC} == 7
+.if ${HAVE_GCC} == 8
 EXTERNAL_GCC_SUBDIR?=	gcc.old
-.elif ${HAVE_GCC} == 8
+.elif ${HAVE_GCC} == 9
 EXTERNAL_GCC_SUBDIR?=	gcc
 .else
-EXTERNAL_GCC_SUBDIR=?	/does/not/exist
+EXTERNAL_GCC_SUBDIR?=	/does/not/exist
 .endif
 .else
 MKGCCCMDS?=	no
+.endif
+
+#
+# What binutils is used?
+#
+HAVE_BINUTILS?=	234
+
+.if ${HAVE_BINUTILS} == 234
+EXTERNAL_BINUTILS_SUBDIR=	binutils
+.elif ${HAVE_BINUTILS} == 231
+EXTERNAL_BINUTILS_SUBDIR=	binutils.old
+.else
+EXTERNAL_BINUTILS_SUBDIR=	/does/not/exist
+.endif
+
+#
+# What GDB is used?
+#
+HAVE_GDB?=	1100
+
+.if ${HAVE_GDB} == 1100
+EXTERNAL_GDB_SUBDIR=		gdb
+.elif ${HAVE_GDB} == 830
+EXTERNAL_GDB_SUBDIR=		gdb.old
+.else
+EXTERNAL_GDB_SUBDIR=		/does/not/exist
 .endif
 
 #
@@ -111,6 +124,41 @@ EXTERNAL_OPENSSL_SUBDIR=openssl.old
 .else
 EXTERNAL_OPENSSL_SUBDIR=/does/not/exist
 .endif
+
+#
+# Does the platform support ACPI?
+#
+.if ${MACHINE_ARCH} == "i386" || \
+    ${MACHINE_ARCH} == "x86_64" || \
+    ${MACHINE_ARCH} == "ia64" || \
+    !empty(MACHINE_ARCH:Maarch64*)
+HAVE_ACPI=	yes
+.else
+HAVE_ACPI=	no
+.endif
+
+#
+# Does the platform support UEFI?
+#
+.if ${MACHINE_ARCH} == "i386" || \
+    ${MACHINE_ARCH} == "x86_64" || \
+    ${MACHINE_ARCH} == "ia64" || \
+    !empty(MACHINE_ARCH:Mearmv7*) || \
+    !empty(MACHINE_ARCH:Maarch64*)
+HAVE_UEFI=	yes
+.else
+HAVE_UEFI=	no
+.endif
+
+#
+# Does the platform support NVMM?
+#
+.if ${MACHINE_ARCH} == "x86_64"
+HAVE_NVMM=	yes
+.else
+HAVE_NVMM=	no
+.endif
+
 
 .if !empty(MACHINE_ARCH:Mearm*)
 _LIBC_COMPILER_RT.${MACHINE_ARCH}=	yes
@@ -154,40 +202,14 @@ USE_SSP?=	yes
 .endif
 
 #
-# What GDB is used?
-#
-HAVE_GDB?=	830
-
-.if ${HAVE_GDB} == 830
-EXTERNAL_GDB_SUBDIR=		gdb
-.elif ${HAVE_GDB} == 801
-EXTERNAL_GDB_SUBDIR=		gdb.old
-.else
-EXTERNAL_GDB_SUBDIR=		/does/not/exist
-.endif
-
-#
-# What binutils is used?
-#
-.if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "i386"
-HAVE_BINUTILS?=	234
-.else
-HAVE_BINUTILS?=	231
-.endif
-
-.if ${HAVE_BINUTILS} == 234
-EXTERNAL_BINUTILS_SUBDIR=	binutils
-.elif ${HAVE_BINUTILS} == 231
-EXTERNAL_BINUTILS_SUBDIR=	binutils.old
-.else
-EXTERNAL_BINUTILS_SUBDIR=	/does/not/exist
-.endif
-
-#
 # What version of jemalloc we use (100 is the one
 # built-in to libc from 2005 (pre version 3).
 #
+.if ${MACHINE_ARCH} == "vax" || ${MACHINE} == "sun2"
+HAVE_JEMALLOC?=		100
+.else
 HAVE_JEMALLOC?=		510
+.endif
 
 .if empty(.MAKEFLAGS:tW:M*-V .OBJDIR*)
 .if defined(MAKEOBJDIRPREFIX) || defined(MAKEOBJDIR)
@@ -766,6 +788,11 @@ DEBUGGRP?=	wheel
 DEBUGOWN?=	root
 DEBUGMODE?=	${NONBINMODE}
 
+DTBDIR?=	/boot/dtb
+DTBGRP?=	wheel
+DTBOWN?=	root
+DTBMODE?=	${NONBINMODE}
+
 MKDIRMODE?=	0755
 MKDIRPERM?=	-m ${MKDIRMODE}
 
@@ -798,16 +825,18 @@ MKGCC:= no
 MKGCC:= no
 .endif
 
-# No GDB support for aarch64eb
-MKGDB.aarch64eb=no
 MKGDB.or1k=	no
 MKGDB.riscv32=	no
 MKGDB.riscv64=	no
 
-# No kernel modules for or1k (yet)
+# No kernel modules for or1k, riscv or mips (yet)
 MKKMOD.or1k=	no
 MKKMOD.riscv32=	no
 MKKMOD.riscv64=	no
+MKKMOD.mipsel=	no
+MKKMOD.mipseb=	no
+MKKMOD.mips64el=no
+MKKMOD.mips64eb=no
 
 # No profiling for or1k (yet)
 MKPROFILE.or1k=	no
@@ -832,9 +861,18 @@ NOPROFILE=	# defined
 # COPTS.foo.c+= ${GCC_NO_STRINGOP_TRUNCATION}.
 #
 GCC_NO_FORMAT_TRUNCATION=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-format-truncation :}
+GCC_NO_FORMAT_OVERFLOW=		${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-format-overflow :}
 GCC_NO_STRINGOP_OVERFLOW=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 7:? -Wno-stringop-overflow :}
 GCC_NO_STRINGOP_TRUNCATION=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wno-stringop-truncation :}
 GCC_NO_CAST_FUNCTION_TYPE=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 8:? -Wno-cast-function-type :}
+GCC_NO_ADDR_OF_PACKED_MEMBER=	${${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} >= 9:? -Wno-error=address-of-packed-member :}
+
+#
+# Clang warnings
+#
+CLANG_NO_ADDR_OF_PACKED_MEMBER=	${${ACTIVE_CC} == "clang" :? -Wno-error=address-of-packed-member :}
+
+NO_ADDR_OF_PACKED_MEMBER=	${CLANG_NO_ADDR_OF_PACKED_MEMBER} ${GCC_NO_ADDR_OF_PACKED_MEMBER}
 
 #
 # The ia64 port is incomplete.
@@ -867,7 +905,9 @@ GNU_ARCH.earmhfeb=armeb
 GNU_ARCH.earmv4=armv4
 GNU_ARCH.earmv4eb=armv4eb
 GNU_ARCH.earmv5=arm
+GNU_ARCH.earmv5hf=arm
 GNU_ARCH.earmv5eb=armeb
+GNU_ARCH.earmv5hfeb=armeb
 GNU_ARCH.earmv6=armv6
 GNU_ARCH.earmv6hf=armv6
 GNU_ARCH.earmv6eb=armv6eb
@@ -964,9 +1004,9 @@ dependall:	.NOTMAIN realdepend .MAKE
 # including bsd.own.mk.
 #
 .for var in \
-	NOCRYPTO NODOC NOHTML NOINFO NOLIBCSANITIZER NOLINKLIB NOLINT NOMAN \
-	NONLS NOOBJ NOPIC NOPICINSTALL NOPROFILE NOSHARE NOSTATICLIB \
-	NODEBUGLIB NOSANITIZER NORELRO
+	NOCOMPAT NOCRYPTO NODOC NOHTML NOINFO NOLIBCSANITIZER NOLINKLIB \
+	NOLINT NOMAN NONLS NOOBJ NOPIC NOPICINSTALL NOPROFILE NOSHARE \
+	NOSTATICLIB NODEBUGLIB NOSANITIZER NORELRO
 .if defined(${var})
 MK${var:S/^NO//}:=	no
 .endif
@@ -1001,8 +1041,7 @@ MKCOMPATTESTS:=	no
 MKCOMPATX11:=	no
 .endif
 
-.if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "i386" \
-    || ${MACHINE_ARCH} == "mips64eb" || ${MACHINE_ARCH} == "mips64el" \
+.if ${MACHINE_ARCH} == "mips64eb" || ${MACHINE_ARCH} == "mips64el" \
     || (${MACHINE} == "evbppc" && ${MACHINE_ARCH} == "powerpc")
 MKCOMPATMODULES?=	yes
 .else
@@ -1192,6 +1231,18 @@ MKRADEONFIRMWARE.aarch64=	yes
 # Only install the tegra firmware on evbarm.
 MKTEGRAFIRMWARE.evbarm=		yes
 
+# Only build devicetree (dtb) files on armv6, armv7, and aarch64.
+MKDTB.aarch64=			yes
+MKDTB.aarch64eb=		yes
+MKDTB.earmv6=			yes
+MKDTB.earmv6hf=			yes
+MKDTB.earmv6eb=			yes
+MKDTB.earmv6hfeb=		yes
+MKDTB.earmv7=			yes
+MKDTB.earmv7hf=			yes
+MKDTB.earmv7eb=			yes
+MKDTB.earmv7hfeb=		yes
+
 # MesaLib.old and MesaLib7 go together, and MesaLib is alone.
 HAVE_MESA_VER?=	18
 .if ${HAVE_MESA_VER} == "10"
@@ -1219,7 +1270,7 @@ _MKVARS.no= \
 	MKARZERO \
 	MKBSDGREP \
 	MKCATPAGES MKCOMPATTESTS MKCOMPATX11 MKCTF \
-	MKDEBUG MKDEBUGLIB MKDTRACE \
+	MKDEBUG MKDEBUGLIB MKDTB MKDTRACE \
 	MKEXTSRC \
 	MKFIRMWARE \
 	MKGROFFHTMLDOC \
@@ -1262,6 +1313,7 @@ MKSLJIT=	yes
     ${MACHINE} == "hpcarm"	|| \
     ${MACHINE} == "hpcmips"	|| \
     ${MACHINE} == "hpcsh"	|| \
+    ${MACHINE} == "hppa"	|| \
     ${MACHINE} == "i386"	|| \
     ${MACHINE} == "ibmnws"	|| \
     ${MACHINE} == "iyonix"	|| \
@@ -1439,7 +1491,7 @@ ${var}?= no
 .if ${USE_PIGZGZIP} == "no" && \
 		(${MACHINE} == "amd64" || \
 		 ${MACHINE} == "sparc64" || \
-		 ${MACHINE} == "alpha")
+		 ${MACHINE_CPU} == "aarch64")
 USE_XZ_SETS?= yes
 .else
 USE_XZ_SETS?= no
@@ -1501,17 +1553,10 @@ X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
 .if \
     ${MACHINE} == "alpha"	|| \
     ${MACHINE} == "amiga"	|| \
-    ${MACHINE} == "ews4800mips"	|| \
-    ${MACHINE} == "hpcarm"	|| \
-    ${MACHINE} == "hpcmips"	|| \
-    ${MACHINE} == "hpcsh"	|| \
     ${MACHINE} == "mac68k"	|| \
     ${MACHINE} == "netwinder"	|| \
-    ${MACHINE} == "newsmips"	|| \
     ${MACHINE} == "sgimips"	|| \
-    ${MACHINE} == "vax"		|| \
-    ${MACHINE} == "x68k"	|| \
-    ${MACHINE} == "zaurus"
+    ${MACHINE} == "vax"
 HAVE_XORG_SERVER_VER?=110
 .else
 HAVE_XORG_SERVER_VER?=120
@@ -1534,7 +1579,7 @@ HAVE_XORG_GLAMOR?=	no
 .for _dir in \
 	xtrans fontconfig freetype evieext mkfontscale bdftopcf \
 	xorg-cf-files imake xbiff xkeyboard-config \
-	xbitmaps appres xeyes xev xedit sessreg pixman \
+	xcompmgr xbitmaps appres xeyes xev xedit sessreg pixman \
 	beforelight bitmap editres makedepend fonttosfnt fslsfonts fstobdf \
 	glu glw mesa-demos MesaGLUT MesaLib MesaLib.old MesaLib7 \
 	ico iceauth listres lndir \

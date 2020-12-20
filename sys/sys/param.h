@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.659 2020/04/10 23:58:48 ad Exp $	*/
+/*	$NetBSD: param.h,v 1.681 2020/12/05 18:17:01 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -67,7 +67,7 @@
  *	2.99.9		(299000900)
  */
 
-#define	__NetBSD_Version__	999005600	/* NetBSD 9.99.56 */
+#define	__NetBSD_Version__	999007700	/* NetBSD 9.99.77 */
 
 #define __NetBSD_Prereq__(M,m,p) (((((M) * 100000000) + \
     (m) * 1000000) + (p) * 100) <= __NetBSD_Version__)
@@ -148,13 +148,17 @@
 #include <sys/uio.h>
 #include <uvm/uvm_param.h>
 #ifndef NPROC
-#define	NPROC	(20 + 16 * MAXUSERS)
+#define	NPROC			(20 + 16 * MAXUSERS)
+#endif
+#ifndef MAXFILES
+#define	MAXFILES		(3 * (NPROC + MAXUSERS) + 80)
+#define	MAXFILES_IMPLICIT
 #endif
 #ifndef NTEXT
-#define	NTEXT	(80 + NPROC / 8)		/* actually the object cache */
+#define	NTEXT			(80 + NPROC / 8) /* actually the object cache */
 #endif
 #ifndef NVNODE
-#define	NVNODE	(NPROC + NTEXT + 100)
+#define	NVNODE			(NPROC + NTEXT + 100)
 #define	NVNODE_IMPLICIT
 #endif
 #ifndef VNODE_KMEM_MAXPCT
@@ -163,7 +167,7 @@
 #ifndef BUFCACHE_VA_MAXPCT
 #define	BUFCACHE_VA_MAXPCT	20
 #endif
-#define	VNODE_COST	2048			/* assumed space in bytes */
+#define	VNODE_COST		2048		/* assumed space in bytes */
 #endif /* _KERNEL */
 
 /* Signals. */

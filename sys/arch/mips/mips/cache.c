@@ -1,4 +1,4 @@
-/*	$NetBSD: cache.c,v 1.61 2019/12/27 09:47:18 msaitoh Exp $	*/
+/*	$NetBSD: cache.c,v 1.68 2020/08/02 06:51:47 skrll Exp $	*/
 
 /*
  * Copyright 2001, 2002 Wasabi Systems, Inc.
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cache.c,v 1.61 2019/12/27 09:47:18 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cache.c,v 1.68 2020/08/02 06:51:47 skrll Exp $");
 
 #include "opt_cputype.h"
 #include "opt_mips_cache.h"
@@ -205,7 +205,7 @@ mips_config_cache(void)
 
 #ifdef DIAGNOSTIC
 	/* Check that all cache ops are set up. */
-	if (mci->mci_picache_size || 1) {	/* XXX- must have primary Icache */
+	if (mci->mci_picache_size || 1) { /* XXX- must have primary Icache */
 		if (!mco->mco_icache_sync_all)
 			panic("no icache_sync_all cache op");
 		if (!mco->mco_icache_sync_range)
@@ -213,7 +213,7 @@ mips_config_cache(void)
 		if (!mco->mco_icache_sync_range_index)
 			panic("no icache_sync_range_index cache op");
 	}
-	if (mci->mci_pdcache_size || 1) {	/* XXX- must have primary Dcache */
+	if (mci->mci_pdcache_size || 1) { /* XXX- must have primary Dcache */
 		if (!mco->mco_pdcache_wbinv_all)
 			panic("no pdcache_wbinv_all");
 		if (!mco->mco_pdcache_wbinv_range)
@@ -375,7 +375,8 @@ mips_config_cache_prehistoric(void)
 		/* change to write-through mode */
 		tx39_cache_config_write_through();
 
-		uvmexp.ncolors = atop(mci->mci_pdcache_size) / mci->mci_pdcache_ways;
+		uvmexp.ncolors =
+		    atop(mci->mci_pdcache_size) / mci->mci_pdcache_ways;
 		break;
 #endif /* ENABLE_MIPS_TX3900 */
 #endif /* MIPS1 */
@@ -494,11 +495,11 @@ primary_cache_is_2way:
 		case 32:
 			/* used internally by mipsNN_picache_sync_range */
 			mco->mco_intern_icache_sync_range =
-			    cache_r4k_icache_hit_inv_16;
+			    cache_r4k_icache_hit_inv_32;
 
 			/* used internally by mipsNN_picache_sync_range_index */
 			mco->mco_intern_icache_sync_range_index =
-			    cache_r4k_icache_index_inv_16;
+			    cache_r4k_icache_index_inv_32;
 			break;
 
 		default:
@@ -617,7 +618,7 @@ primary_cache_is_2way:
 
 		mips3_get_cache_config(csizebase);
 
-		mci->mci_sdcache_line_size = 32;	/* don't trust config reg */
+		mci->mci_sdcache_line_size = 32; /* don't trust config reg */
 
 		if (mci->mci_picache_size / mci->mci_picache_ways > PAGE_SIZE)
 			mci->mci_icache_virtual_alias = true;
@@ -660,7 +661,8 @@ primary_cache_is_2way:
 	 */
 	if (mci->mci_picache_size) {
 		KASSERT(mci->mci_picache_ways != 0);
-		mci->mci_picache_way_size = mci->mci_picache_size / mci->mci_picache_ways;
+		mci->mci_picache_way_size =
+		    mci->mci_picache_size / mci->mci_picache_ways;
 		mci->mci_picache_way_mask = mci->mci_picache_way_size - 1;
 #if (MIPS2 + MIPS3 + MIPS4) > 0
 		if (mci->mci_icache_virtual_alias)
@@ -670,7 +672,8 @@ primary_cache_is_2way:
 	}
 	if (mci->mci_pdcache_size) {
 		KASSERT(mci->mci_pdcache_ways != 0);
-		mci->mci_pdcache_way_size = mci->mci_pdcache_size / mci->mci_pdcache_ways;
+		mci->mci_pdcache_way_size =
+		    mci->mci_pdcache_size / mci->mci_pdcache_ways;
 		mci->mci_pdcache_way_mask = mci->mci_pdcache_way_size - 1;
 #if (MIPS2 + MIPS3 + MIPS4) > 0
 		if (mci->mci_cache_virtual_alias)
@@ -777,7 +780,8 @@ primary_cache_is_2way:
 
 			default:
 				panic("r4k sdcache %d way line size %d",
-				    mci->mci_sdcache_ways, mci->mci_sdcache_line_size);
+				    mci->mci_sdcache_ways,
+				    mci->mci_sdcache_line_size);
 			}
 			break;
 
@@ -851,7 +855,8 @@ primary_cache_is_2way:
 	 */
 	if (mci->mci_sdcache_size) {
 		KASSERT(mci->mci_sdcache_ways != 0);
-		mci->mci_sdcache_way_size = mci->mci_sdcache_size / mci->mci_sdcache_ways;
+		mci->mci_sdcache_way_size =
+		    mci->mci_sdcache_size / mci->mci_sdcache_ways;
 		mci->mci_sdcache_way_mask = mci->mci_sdcache_way_size - 1;
 	}
 
@@ -1019,7 +1024,8 @@ mips3_get_cache_config(int csizebase)
 				mci->mci_scache_unified = true;
 		} else {
 #ifdef CACHE_DEBUG
-			printf("External cache detected, but is disabled -- WILL NOT ENABLE!\n");
+			printf("External cache detected, but is disabled -- "
+			    "WILL NOT ENABLE!\n");
 #endif	/* CACHE_DEBUG */
 		}
 	}
@@ -1072,20 +1078,17 @@ mips_config_cache_modern(uint32_t cpu_id)
 	/* figure out Dcache params. */
 	switch (MIPSNN_GET(CFG1_DL, cfg1)) {
 	case MIPSNN_CFG1_DL_NONE:
-#ifdef MIPS64_OCTEON
-		mci->mci_pdcache_line_size = 128;
-		mci->mci_pdcache_way_size = 256;
-		mci->mci_pdcache_ways = 64;
-		mci->mci_pdcache_write_through = true;
-
-		mci->mci_pdcache_size =
-		    mci->mci_pdcache_way_size * mci->mci_pdcache_ways;
-		mci->mci_pdcache_way_mask = mci->mci_pdcache_way_size - 1;
-		uvmexp.ncolors = atop(mci->mci_pdcache_size) / mci->mci_pdcache_ways;
-#else
 		mci->mci_pdcache_line_size = mci->mci_pdcache_way_size =
 		    mci->mci_pdcache_ways = 0;
-#endif
+#ifdef MIPS64_OCTEON
+		if (MIPS_PRID_CID(cpu_id) == MIPS_PRID_CID_CAVIUM) {
+			/*
+			 * Set the cache line size here, remaining Octeon
+			 * cache configuration will be done below.
+			 */
+			mci->mci_pdcache_line_size = OCTEON_CACHELINE_SIZE;
+		}
+#endif /* MIPS64_OCTEON */
 		break;
 	case MIPSNN_CFG1_DL_RSVD:
 		panic("reserved MIPS32/64 Dcache line size");
@@ -1141,39 +1144,18 @@ mips_config_cache_modern(uint32_t cpu_id)
 		break;
 	}
 
-#define CACHE_DEBUG
-#ifdef CACHE_DEBUG
-	printf("MIPS32/64 params: cpu arch: %d\n", opts->mips_cpu_arch);
-	printf("MIPS32/64 params: TLB entries: %d\n", opts->mips_num_tlb_entries);
-	if (mci->mci_picache_line_size == 0) {
-		printf("MIPS32/64 params: no Icache\n");
-	} else {
-		printf("MIPS32/64 params: %s: line=%d, total=%d, "
-		    "ways=%d, sets=%d, colors=%d\n", "Icache",
-		    mci->mci_picache_line_size,
-		    mci->mci_picache_way_size * mci->mci_picache_ways,
-		    mci->mci_picache_ways,
-		    mci->mci_picache_way_size / mci->mci_picache_line_size,
-		    mci->mci_picache_way_size >> PAGE_SHIFT);
-	}
-	if (mci->mci_pdcache_line_size == 0) {
-		printf("MIPS32/64 params: no Dcache\n");
-	} else {
-		printf("MIPS32/64 params: %s: line=%d, total=%d, "
-		    "ways=%d, sets=%d, colors=%d\n", "Dcache",
-		    mci->mci_pdcache_line_size,
-		    mci->mci_pdcache_way_size * mci->mci_pdcache_ways,
-		    mci->mci_pdcache_ways,
-		    mci->mci_pdcache_way_size / mci->mci_pdcache_line_size,
-		    mci->mci_pdcache_way_size >> PAGE_SHIFT);
-	}
-#endif /* CACHE_DEBUG */
-
 	mco->mco_icache_sync_all = mipsNN_picache_sync_all;
 	mco->mco_icache_sync_range = mipsNN_picache_sync_range;
 	mco->mco_icache_sync_range_index = mipsNN_picache_sync_range_index;
 
 	switch (mci->mci_picache_line_size) {
+#ifdef MIPS_DISABLE_L1_CACHE
+	case 0:
+		mco->mco_icache_sync_all = no_cache_op;
+		mco->mco_icache_sync_range = no_cache_op_range;
+		mco->mco_icache_sync_range_index = no_cache_op_range_index;
+		break;
+#endif
 	case 16:
 		/* used internally by mipsNN_picache_sync_range */
 		mco->mco_intern_icache_sync_range =
@@ -1192,13 +1174,6 @@ mips_config_cache_modern(uint32_t cpu_id)
 		mco->mco_intern_icache_sync_range_index =
 		    cache_r4k_icache_index_inv_32;
 		break;
-#ifdef MIPS_DISABLE_L1_CACHE
-	case 0:
-		mco->mco_icache_sync_all = no_cache_op;
-		mco->mco_icache_sync_range = no_cache_op_range;
-		mco->mco_icache_sync_range_index = no_cache_op_range_index;
-		break;
-#endif
 	case 64:
 		/* used internally by mipsNN_picache_sync_range */
 		mco->mco_intern_icache_sync_range =
@@ -1209,11 +1184,6 @@ mips_config_cache_modern(uint32_t cpu_id)
 		    cache_r4k_icache_index_inv_64;
 		break;
 	case 128:
-#ifdef MIPS64_OCTEON
-		mco->mco_icache_sync_all = octeon_icache_sync_all;
-		mco->mco_icache_sync_range = octeon_icache_sync_range;
-		mco->mco_icache_sync_range_index = octeon_icache_sync_range_index;
-#else
 		/* used internally by mipsNN_picache_sync_range */
 		mco->mco_intern_icache_sync_range =
 		    cache_r4k_icache_hit_inv_128;
@@ -1221,7 +1191,6 @@ mips_config_cache_modern(uint32_t cpu_id)
 		/* used internally by mipsNN_picache_sync_range_index */
 		mco->mco_intern_icache_sync_range_index =
 		    cache_r4k_icache_index_inv_128;
-#endif
 		break;
 	default:
 		panic("no Icache ops for %dB lines",
@@ -1232,6 +1201,15 @@ mips_config_cache_modern(uint32_t cpu_id)
 	mco->mco_pdcache_wbinv_range_index = mipsNN_pdcache_wbinv_range_index;
 
 	switch (mci->mci_pdcache_line_size) {
+#ifdef MIPS_DISABLE_L1_CACHE
+	case 0:
+		mco->mco_pdcache_wbinv_all = no_cache_op;
+		mco->mco_pdcache_wbinv_range = no_cache_op_range;
+		mco->mco_pdcache_wbinv_range_index = no_cache_op_index;
+		mco->mco_pdcache_inv_range = no_cache_op_range;
+		mco->mco_pdcache_wb_range = no_cache_op_range;
+		break;
+#endif
 	case 16:
 		mco->mco_pdcache_wbinv_range =
 		    cache_r4k_pdcache_hit_wb_inv_16;
@@ -1268,13 +1246,6 @@ mips_config_cache_modern(uint32_t cpu_id)
 		mco->mco_intern_pdcache_wbinv_range_index =
 		    cache_r4k_pdcache_index_wb_inv_64;
 	case 128:
-#ifdef MIPS64_OCTEON
-		mco->mco_pdcache_wbinv_all = octeon_pdcache_inv_all;
-		mco->mco_pdcache_wbinv_range = octeon_pdcache_inv_range;
-		mco->mco_pdcache_wbinv_range_index = octeon_pdcache_inv_range_index;
-		mco->mco_pdcache_inv_range = octeon_pdcache_inv_range;
-		mco->mco_pdcache_wb_range = no_cache_op_range;
-#else
 		mco->mco_pdcache_wbinv_range =
 		    cache_r4k_pdcache_hit_wb_inv_128;
 		mco->mco_pdcache_inv_range =
@@ -1285,24 +1256,15 @@ mips_config_cache_modern(uint32_t cpu_id)
 		/* used internally by mipsNN_pdcache_wbinv_range_index */
 		mco->mco_intern_pdcache_wbinv_range_index =
 		    cache_r4k_pdcache_index_wb_inv_128;
-#endif
 		break;
-#ifdef MIPS_DISABLE_L1_CACHE
-	case 0:
-		mco->mco_pdcache_wbinv_all = no_cache_op;
-		mco->mco_pdcache_wbinv_range = no_cache_op_range;
-		mco->mco_pdcache_wbinv_range_index = no_cache_op_index;
-		mco->mco_pdcache_inv_range = no_cache_op_range;
-		mco->mco_pdcache_wb_range = no_cache_op_range;
-		break;
-#endif
 	default:
 		panic("no Dcache ops for %dB lines",
 		    mci->mci_pdcache_line_size);
 	}
 
 	mco->mco_intern_pdcache_sync_all = mco->mco_pdcache_wbinv_all;
-	mco->mco_intern_pdcache_sync_range_index = mco->mco_intern_pdcache_wbinv_range_index;
+	mco->mco_intern_pdcache_sync_range_index =
+	    mco->mco_intern_pdcache_wbinv_range_index;
 	mco->mco_intern_pdcache_sync_range = mco->mco_pdcache_wb_range;
 
 	if (MIPSNN_CFG1_M & cfg1) {
@@ -1340,22 +1302,10 @@ mips_config_cache_modern(uint32_t cpu_id)
 			break;
 		}
 
-		// Note we don't set up any sd cache ops because we expect that
-		// the coherence checks below will overwrite them with no ops.
-
-#ifdef CACHE_DEBUG
-		if (mci->mci_sdcache_line_size != 0) {
-			printf("MIPS32/64 params: %s: line=%d, total=%d, "
-			    "ways=%d, sets=%d, colors=%d\n",
-			    "SDcache",
-			    mci->mci_sdcache_line_size,
-			    mci->mci_sdcache_way_size * mci->mci_sdcache_ways,
-			    mci->mci_sdcache_ways,
-			    mci->mci_sdcache_way_size
-			        / mci->mci_sdcache_line_size,
-			    mci->mci_sdcache_way_size >> PAGE_SHIFT);
-		}
-#endif
+		/*
+		 * Note we don't set up any sd cache ops because we expect that
+		 * the coherence checks below will overwrite them with no ops.
+		 */
 
 		switch (MIPSNN_GET(CFG2_TL, cfg2)) {
 		case MIPSNN_CFG2_TL_NONE:
@@ -1388,23 +1338,10 @@ mips_config_cache_modern(uint32_t cpu_id)
 	mci->mci_icache_virtual_alias = (mci->mci_icache_alias_mask != 0);
 
 	/*
-	 * RMI (NetLogic/Broadcom) don't support WB (op 6) so we have to make
-	 * do with WBINV (op 5).  This is merely for correctness since because
-	 * the caches are coherent, these routines will become noops in a bit.
+	 * Core specific overrides
 	 */
-	if (MIPS_PRID_CID(cpu_id) == MIPS_PRID_CID_RMI) {
-		mco->mco_pdcache_wb_range = mco->mco_pdcache_wbinv_range;
-		mco->mco_intern_pdcache_sync_range = mco->mco_pdcache_wbinv_range;
-		if (MIPSNN_GET(CFG_AR, cfg) == MIPSNN_CFG_AR_REV2) {
-			mci->mci_pdcache_write_through = true;
-			mci->mci_sdcache_write_through = false;
-			KASSERT(PAGE_SIZE >= mci->mci_picache_way_size
-			    || MIPS_ICACHE_VIRTUAL_ALIAS);
-		} else {
-			KASSERT(MIPS_CACHE_VIRTUAL_ALIAS == 0);
-			KASSERT(MIPS_ICACHE_VIRTUAL_ALIAS == 0);
-		}
-	} else if (MIPS_PRID_CID(cpu_id) == MIPS_PRID_CID_MTI) {
+	switch (MIPS_PRID_CID(cpu_id)) {
+	case MIPS_PRID_CID_MTI:
 		/*
 		 * All MTI cores share a (mostly) common config7 definition.
 		 * Use it to determine if the caches have virtual aliases.
@@ -1427,7 +1364,171 @@ mips_config_cache_modern(uint32_t cpu_id)
 			KASSERT(mci->mci_picache_way_size <= PAGE_SIZE);
 #endif
 		}
+		break;
+	case MIPS_PRID_CID_RMI:
+		/*
+		 * RMI (NetLogic/Broadcom) don't support WB (op 6)
+		 * so we have to make do with WBINV (op 5).  This is
+		 * merely for correctness since because the caches are
+		 * coherent, these routines will become noops in a bit.
+		 */
+		mco->mco_pdcache_wb_range = mco->mco_pdcache_wbinv_range;
+		mco->mco_intern_pdcache_sync_range =
+		    mco->mco_pdcache_wbinv_range;
+		if (MIPSNN_GET(CFG_AR, cfg) == MIPSNN_CFG_AR_REV2) {
+			mci->mci_pdcache_write_through = true;
+			mci->mci_sdcache_write_through = false;
+			KASSERT(PAGE_SIZE >= mci->mci_picache_way_size
+			    || MIPS_ICACHE_VIRTUAL_ALIAS);
+		} else {
+			KASSERT(MIPS_CACHE_VIRTUAL_ALIAS == 0);
+			KASSERT(MIPS_ICACHE_VIRTUAL_ALIAS == 0);
+		}
+		break;
+#ifdef MIPS64_OCTEON
+	case MIPS_PRID_CID_CAVIUM:
+		/*
+		 * Cavium Octeon cores have cache configurations that aren't
+		 * describable using the standard MIPS configN definitions.
+		 */
+		switch (MIPS_PRID_IMPL(cpu_id)) {
+		case MIPS_CN38XX:
+		case MIPS_CN31XX:
+		case MIPS_CN30XX:
+		case MIPS_CN50XX:
+		case MIPS_CN52XX:
+		case MIPS_CN58XX:
+		case MIPS_CN56XX:
+			/* OCTEON and OCTEON Plus */
+
+			/* Dcache on cnMIPS core doesn't follow spec */
+			mci->mci_pdcache_line_size = OCTEON_CACHELINE_SIZE;
+			mci->mci_pdcache_ways = OCTEON_I_DCACHE_WAYS;
+			mci->mci_pdcache_way_size =
+			    OCTEON_I_DCACHE_SETS * OCTEON_CACHELINE_SIZE;
+			mci->mci_pdcache_write_through = true;
+
+			/* Icache on cnMIPS core does follows MIPS spec */
+
+			break;
+
+		/* XXX cnMIPS II cores not yet tested */
+		case MIPS_CN61XX:
+		case MIPS_CN63XX:
+		case MIPS_CN66XX:
+		case MIPS_CN68XX:
+		case MIPS_CNF71XX:
+			/* OCTEON II */
+
+			mci->mci_pdcache_line_size = OCTEON_CACHELINE_SIZE;
+			mci->mci_pdcache_ways = OCTEON_II_DCACHE_WAYS;
+			mci->mci_pdcache_way_size =
+			    OCTEON_II_DCACHE_SETS * OCTEON_CACHELINE_SIZE;
+			mci->mci_pdcache_write_through = true;
+
+			mci->mci_picache_line_size = OCTEON_CACHELINE_SIZE;
+			mci->mci_picache_ways = OCTEON_II_ICACHE_WAYS;
+			mci->mci_picache_way_size =
+			    OCTEON_II_ICACHE_SETS * OCTEON_CACHELINE_SIZE;
+			break;
+
+		case MIPS_CN70XX:
+		case MIPS_CN73XX:
+		case MIPS_CNF75XX:
+		case MIPS_CN78XX:
+			/* OCTEON III */
+
+			mci->mci_pdcache_line_size = OCTEON_CACHELINE_SIZE;
+			mci->mci_pdcache_ways = OCTEON_III_DCACHE_WAYS;
+			mci->mci_pdcache_way_size =
+			    OCTEON_CACHELINE_SIZE * OCTEON_III_DCACHE_SETS;
+			mci->mci_pdcache_write_through = true;
+
+			mci->mci_picache_line_size = OCTEON_CACHELINE_SIZE;
+			mci->mci_picache_ways = OCTEON_III_ICACHE_WAYS;
+			mci->mci_picache_way_size =
+			    OCTEON_CACHELINE_SIZE * OCTEON_III_ICACHE_SETS;
+			break;
+
+		default:
+			panic("Unknown Octeon Cavium core impl %#x",
+			    MIPS_PRID_IMPL(cpu_id));
+		}
+
+		/* recalculate dcache params */
+		mci->mci_pdcache_size =
+		    mci->mci_pdcache_way_size * mci->mci_pdcache_ways;
+		mci->mci_pdcache_way_mask = mci->mci_pdcache_way_size - 1;
+		uvmexp.ncolors =
+		    atop(mci->mci_pdcache_size) / mci->mci_pdcache_ways;
+
+		/* recalculate icache params */
+		mci->mci_picache_size =
+		    mci->mci_picache_way_size * mci->mci_picache_ways;
+		mci->mci_picache_way_mask = mci->mci_picache_way_size - 1;
+
+		/* recalculate the alias masks */
+		mci->mci_cache_alias_mask =
+		    mci->mci_pdcache_way_mask & -PAGE_SIZE;
+		mci->mci_cache_virtual_alias =
+		    (mci->mci_cache_alias_mask != 0);
+
+		mci->mci_icache_alias_mask =
+		    mci->mci_picache_way_mask & -PAGE_SIZE;
+		mci->mci_icache_virtual_alias =
+		    (mci->mci_icache_alias_mask != 0);
+
+		/* use Octeon-specific cache ops */
+		mco->mco_icache_sync_all = octeon_icache_sync_all;
+		mco->mco_icache_sync_range = octeon_icache_sync_range;
+		mco->mco_icache_sync_range_index =
+		    octeon_icache_sync_range_index;
+
+		mco->mco_pdcache_wbinv_all = octeon_pdcache_inv_all;
+		mco->mco_pdcache_wbinv_range = octeon_pdcache_inv_range;
+		mco->mco_pdcache_wbinv_range_index =
+		    octeon_pdcache_inv_range_index;
+		mco->mco_pdcache_inv_range = octeon_pdcache_inv_range;
+		mco->mco_pdcache_wb_range = no_cache_op_range;
+#endif /* MIPS64_OCTEON */
 	}
+
+#define CACHE_DEBUG
+#ifdef CACHE_DEBUG
+	printf("MIPS32/64 params: cpu arch: %d\n", opts->mips_cpu_arch);
+	printf("MIPS32/64 params: TLB entries: %d\n", opts->mips_num_tlb_entries);
+	if (mci->mci_picache_line_size == 0) {
+		printf("MIPS32/64 params: no Icache\n");
+	} else {
+		printf("MIPS32/64 params: %s: line=%d, total=%d, "
+		    "ways=%d, sets=%d, colors=%d\n", "Icache",
+		    mci->mci_picache_line_size,
+		    mci->mci_picache_way_size * mci->mci_picache_ways,
+		    mci->mci_picache_ways,
+		    mci->mci_picache_way_size / mci->mci_picache_line_size,
+		    mci->mci_picache_way_size >> PAGE_SHIFT);
+	}
+	if (mci->mci_pdcache_line_size == 0) {
+		printf("MIPS32/64 params: no Dcache\n");
+	} else {
+		printf("MIPS32/64 params: %s: line=%d, total=%d, "
+		    "ways=%d, sets=%d, colors=%d\n", "Dcache",
+		    mci->mci_pdcache_line_size,
+		    mci->mci_pdcache_way_size * mci->mci_pdcache_ways,
+		    mci->mci_pdcache_ways,
+		    mci->mci_pdcache_way_size / mci->mci_pdcache_line_size,
+		    mci->mci_pdcache_way_size >> PAGE_SHIFT);
+	}
+	if (mci->mci_sdcache_line_size != 0) {
+		printf("MIPS32/64 params: %s: line=%d, total=%d, "
+		    "ways=%d, sets=%d, colors=%d\n", "SDcache",
+		    mci->mci_sdcache_line_size,
+		    mci->mci_sdcache_way_size * mci->mci_sdcache_ways,
+		    mci->mci_sdcache_ways,
+		    mci->mci_sdcache_way_size / mci->mci_sdcache_line_size,
+		    mci->mci_sdcache_way_size >> PAGE_SHIFT);
+	}
+#endif /* CACHE_DEBUG */
 
 	mipsNN_cache_init(cfg, cfg1);
 
@@ -1452,7 +1553,8 @@ mips_config_cache_modern(uint32_t cpu_id)
 		printf("  Icache is coherent against Dcache\n");
 #endif
 		mco->mco_intern_pdcache_sync_all = no_cache_op;
-		mco->mco_intern_pdcache_sync_range_index = no_cache_op_range_index;
+		mco->mco_intern_pdcache_sync_range_index =
+		    no_cache_op_range_index;
 		mco->mco_intern_pdcache_sync_range = no_cache_op_range;
 	}
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: pq3pci.c,v 1.23 2017/06/01 02:45:07 chs Exp $	*/
+/*	$NetBSD: pq3pci.c,v 1.27 2020/11/12 00:44:22 rin Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -38,13 +38,15 @@
 #define	GLOBAL_PRIVATE
 #define	__INTR_PRIVATE
 
-#include "opt_mpc85xx.h"
-#include "opt_pci.h"
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: pq3pci.c,v 1.27 2020/11/12 00:44:22 rin Exp $");
+
 #include "locators.h"
 
-#include <sys/cdefs.h>
-
-__KERNEL_RCSID(0, "$NetBSD: pq3pci.c,v 1.23 2017/06/01 02:45:07 chs Exp $");
+#ifdef _KERNEL_OPT
+#include "opt_mpc85xx.h"
+#include "opt_pci.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -939,16 +941,17 @@ pq3pci_cpunode_attach(device_t parent, device_t self, void *aux)
 			return;
 		}
 
-		struct extent *ioext = extent_create("pciio", 0, PCI_IOSIZE,
-		     NULL, 0, EX_NOWAIT);
-		struct extent *memext = extent_create("pcimem", membase,
-		     membase + PCI_MEMSIZE, NULL, 0, EX_NOWAIT);
+		struct pciconf_resources *pcires = pciconf_resource_init();
 
-		error = pci_configure_bus(pc, ioext, memext, NULL, 0,
+		pciconf_resource_add(pcires, PCICONF_RESOURCE_IO,
+		    0, PCI_IOSIZE);
+		pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+		    membase, PCI_MEMSIZE);
+
+		error = pci_configure_bus(pc, pcires, 0,
 		    curcpu()->ci_ci.dcache_line_size);
 
-		extent_destroy(ioext);
-		extent_destroy(memext);
+		pciconf_resource_fini(pcires);
 
 		if (error) {
 			aprint_normal(": configuration failed\n");
@@ -1193,7 +1196,6 @@ pq3pci_msi_claim(pci_intr_handle_t handle)
 	KASSERT(msig != NULL);
 	struct pq3pci_msihand * const msih = &msig->msig_ihands[irq & 31];
 	mutex_spin_enter(&msig->msig_lock);
-	KASSERT(msig->msig_free_mask & irq_mask);
 	msig->msig_free_mask ^= irq_mask;
 	mutex_spin_exit(&msig->msig_lock);
 	return msih;
@@ -1750,6 +1752,7 @@ pq3pci_pci_chipset_init(struct pq3pci_softc *sc)
 	pc->pc_intr_type = pq3pci_intr_type;
 	pc->pc_intr_alloc = pq3pci_intr_alloc;
 	pc->pc_intr_release = pq3pci_intr_release;
+	pc->pc_intr_setattr = genppc_pci_intr_setattr;
 	pc->pc_intx_alloc = genppc_pci_intx_alloc;
 
 	pc->pc_msi_v = sc;

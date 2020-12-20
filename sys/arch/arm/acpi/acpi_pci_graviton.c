@@ -1,7 +1,7 @@
-/* $NetBSD: acpi_pci_graviton.c,v 1.1 2020/01/17 17:06:33 jmcneill Exp $ */
+/* $NetBSD: acpi_pci_graviton.c,v 1.4 2020/10/24 07:08:22 skrll Exp $ */
 
 /*-
- * Copyright (c) 2018 The NetBSD Foundation, Inc.
+ * Copyright (c) 2018, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_pci_graviton.c,v 1.1 2020/01/17 17:06:33 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_pci_graviton.c,v 1.4 2020/10/24 07:08:22 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -38,10 +38,8 @@ __KERNEL_RCSID(0, "$NetBSD: acpi_pci_graviton.c,v 1.1 2020/01/17 17:06:33 jmcnei
 #include <sys/intr.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/extent.h>
 #include <sys/kmem.h>
-
-#include <machine/cpu.h>
+#include <sys/cpu.h>
 
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
@@ -69,7 +67,7 @@ acpi_pci_graviton_conf_read(pci_chipset_tag_t pc, pcitag_t tag, int reg, pcireg_
 		*data = bus_space_read_4(ap->ap_bst, ap->ap_conf_bsh, reg);
 		return 0;
 	}
-	
+
 	return acpimcfg_conf_read(pc, tag, reg, data);
 }
 
@@ -88,7 +86,7 @@ acpi_pci_graviton_conf_write(pci_chipset_tag_t pc, pcitag_t tag, int reg, pcireg
 		bus_space_write_4(ap->ap_bst, ap->ap_conf_bsh, reg, data);
 		return 0;
 	}
-	
+
 	return acpimcfg_conf_write(pc, tag, reg, data);
 }
 

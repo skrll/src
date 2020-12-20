@@ -1,4 +1,4 @@
-/*	$NetBSD: sysmon_power.c,v 1.62 2020/01/01 22:57:17 thorpej Exp $	*/
+/*	$NetBSD: sysmon_power.c,v 1.66 2020/12/18 01:46:39 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2007 Juan Romero Pardines.
@@ -69,7 +69,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sysmon_power.c,v 1.62 2020/01/01 22:57:17 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sysmon_power.c,v 1.66 2020/12/18 01:46:39 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -538,8 +538,7 @@ filt_sysmon_power_rdetach(struct knote *kn)
 {
 
 	mutex_enter(&sysmon_power_event_queue_mtx);
-	SLIST_REMOVE(&sysmon_power_event_queue_selinfo.sel_klist,
-	    kn, knote, kn_selnext);
+	selremove_knote(&sysmon_power_event_queue_selinfo, kn);
 	mutex_exit(&sysmon_power_event_queue_mtx);
 }
 
@@ -555,17 +554,17 @@ filt_sysmon_power_read(struct knote *kn, long hint)
 }
 
 static const struct filterops sysmon_power_read_filtops = {
-    .f_isfd = 1,
-    .f_attach = NULL,
-    .f_detach = filt_sysmon_power_rdetach,
-    .f_event = filt_sysmon_power_read,
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_sysmon_power_rdetach,
+	.f_event = filt_sysmon_power_read,
 };
 
 static const struct filterops sysmon_power_write_filtops = {
-    .f_isfd = 1,
-    .f_attach = NULL,
-    .f_detach = filt_sysmon_power_rdetach,
-    .f_event = filt_seltrue,
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_sysmon_power_rdetach,
+	.f_event = filt_seltrue,
 };
 
 /*
@@ -576,16 +575,13 @@ static const struct filterops sysmon_power_write_filtops = {
 int
 sysmonkqfilter_power(dev_t dev, struct knote *kn)
 {
-	struct klist *klist;
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &sysmon_power_event_queue_selinfo.sel_klist;
 		kn->kn_fop = &sysmon_power_read_filtops;
 		break;
 
 	case EVFILT_WRITE:
-		klist = &sysmon_power_event_queue_selinfo.sel_klist;
 		kn->kn_fop = &sysmon_power_write_filtops;
 		break;
 
@@ -594,7 +590,7 @@ sysmonkqfilter_power(dev_t dev, struct knote *kn)
 	}
 
 	mutex_enter(&sysmon_power_event_queue_mtx);
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	selrecord_knote(&sysmon_power_event_queue_selinfo, kn);
 	mutex_exit(&sysmon_power_event_queue_mtx);
 
 	return 0;
@@ -708,7 +704,7 @@ sysmon_power_make_dictionary(prop_dictionary_t dict, void *power_data,
 
 #define SETPROP(key, str)						\
 do {									\
-	if ((str) != NULL && !prop_dictionary_set_cstring(dict,		\
+	if ((str) != NULL && !prop_dictionary_set_string(dict,		\
 						  (key),		\
 						  (str))) {		\
 		printf("%s: failed to set %s\n", __func__, (str));	\
@@ -792,7 +788,7 @@ sysmon_power_destroy_dictionary(struct power_event_dictionary *ped)
 
 	while ((obj = prop_object_iterator_next(iter)) != NULL) {
 		prop_dictionary_remove(ped->dict,
-		    prop_dictionary_keysym_cstring_nocopy(obj));
+		    prop_dictionary_keysym_value(obj));
 		prop_object_iterator_reset(iter);
 	}
 

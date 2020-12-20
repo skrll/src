@@ -1,4 +1,4 @@
-$NetBSD: acronyms,v 1.298 2020/03/26 18:25:32 leot Exp $
+$NetBSD: acronyms,v 1.308 2020/10/05 14:54:50 nia Exp $
 10Q	thank you
 10X	thanks
 1337	elite ("leet")
@@ -9,6 +9,7 @@ A/S/L	age/sex/location
 AAMOF	as a matter of fact
 ABD	all but dissertation
 AC	audible chuckle
+ACAB	all cats are beautiful
 ADD	attention deficit disorder
 ADHD	attention deficit (and) hyperactivity disorder
 ADN	any day now
@@ -58,6 +59,7 @@ B/W	bandwidth
 B/W	between
 BAI	goodbye
 BAK	back at keyboard
+BAU	business as usual
 BBIAB	be back in a bit
 BBL	[I'll] be back later
 BBR	burnt beyond repair
@@ -116,6 +118,7 @@ D/B/A	doing business as
 D/L	download
 DBA	doing business as
 DBEYR	don't believe everything you read
+DC	Dreamcast
 DIAFYO	did I ask for your opinion?
 DIY	do it yourself
 DKDC	don't know, don't care
@@ -130,6 +133,7 @@ DNFT	do not feed troll
 DOA	dead on arrival
 DOTADIW	do one thing and do it well
 DRY	don't repeat yourself
+DS	Dual Screen
 DSTM	don't shoot the messenger
 DTRT	do the right thing
 DTWT	do the wrong thing
@@ -167,6 +171,7 @@ FNO	from now on
 FOC	free of charge
 FPS	first person shooter
 FPS	frames per second
+FQA	frequently questioned answer
 FRAND	fair, reasonable, and non-discriminatory
 FSDO	for some definition of
 FSVO	for some value of
@@ -189,8 +194,13 @@ G2K	good to know
 GA	go ahead
 GAC	get a clue
 GAL	get a life
+GB	Game Boy
+GBA	Game Boy Advance
+GBC	Game Boy Color
 GBTW	get back to work
+GC	GameCube
 GCD	greatest common divisor
+GCHQ	Government Communications Headquarters (UK)
 GDPR	General Data Protection Regulation
 GF	girlfriend
 GFCI	ground-fault circuit interrupter
@@ -347,6 +357,7 @@ M&O	management & operations
 M8	mate
 MAD	mutually assured destruction
 MBA	master of business administration
+MD	Mega Drive
 MDMA	methylenedioxy methamphetamine
 MFW	my face when
 MIA	missing in action
@@ -367,8 +378,11 @@ NB	nota bene
 NBD	no big deal
 NE1	anyone
 NEDM	not even Doom music
+NES	Nintendo Entertainment System
 NFA	no flaming allowed
 NFC	no functional change
+NGP	Neo Geo Pocket
+NGPC	Neo Geo Pocket Color
 NIFOC	naked in front of computer
 NIH	not invented here
 NIMBY	not in my backyard
@@ -424,6 +438,7 @@ OWTTE	or words to that effect
 PC	player character
 PC	politically correct
 PCB	polychlorinated biphenyl(s)
+PCE 	PC Engine
 PD	police department
 PDA	public display of affection
 PDQ	pretty darn quick
@@ -456,6 +471,7 @@ PPS	pulse per second (signal)
 PR	public relations
 PSA 	prostate-specific antigen
 PSA 	public service announcement
+PSX	PlayStation
 PTA	parent-teacher association
 PTO	{paid,personal} time off
 PTO	parent-teacher organization
@@ -466,12 +482,15 @@ PTT	post-telephone-telegraph
 PTV	parental tunnel vision
 QED	quod erat demonstrandum
 QFT	quoted for truth
+QOI	quality of information
 RA	residential advisor
 RAND	reasonable and non-discriminatory
 RCD	residual current device
 RFC	request for comments
 RFD	request for discussion
 RFE	request for enhancements
+RFI	request for information
+RFP	request for proposal
 RIF	reduction in force
 RIP	rest in peace
 RL	real life
@@ -503,7 +522,9 @@ SMAP	Soil Moisture Active Passive
 SMH	shaking my head
 SMLSFB	so many losers, so few bullets
 SMOP	simple matter of programming
+SMS	Sega Master System
 SNERT	snot-nosed egotistical rude teenager
+SNES	Super Nintendo Entertainment System
 SNMP	sorry, not my problem
 SO	significant other
 SOB	son of [a] bitch
@@ -561,6 +582,7 @@ TNF	The NetBSD Foundation
 TOC	table of contents
 TOCTOU	time of check to time of use
 TOEFL	test of english as a foreign language
+TOFU	text over, fullquote under (in email)
 TOH	to other half
 TP	toilet paper
 TPTB	the powers that be
@@ -582,6 +604,7 @@ UGT	universal greeting time
 UPC	Universal Product Code
 UR	your
 UR	{you're, you are}
+URM	underrepresented minority
 UTSL	use the source, Luke
 VCR	video cassette recorder
 VEG	very evil grin
@@ -601,6 +624,7 @@ WDYMBT	what do you mean by that
 WELC	working effectively with legacy code
 WFH	working from home
 WFM	works for me
+WGACA	what goes around comes around
 WIBNI	wouldn't it be nice if
 WIP	work in progress
 WLW	women-loving women

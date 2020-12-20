@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_speedctl.c,v 1.1 2018/06/01 18:06:58 macallan Exp $ */
+/*	$NetBSD: cpu_speedctl.c,v 1.3 2020/07/06 10:58:06 rin Exp $ */
 
 /*-
  * Copyright (c) 2006 Michael Lorenz
@@ -25,10 +25,9 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_speedctl.c,v 1.1 2018/06/01 18:06:58 macallan Exp $");
 
-#include "opt_ppcparam.h"
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: cpu_speedctl.c,v 1.3 2020/07/06 10:58:06 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

@@ -1,4 +1,4 @@
-/*$NetBSD: at91tctmr.c,v 1.7 2012/11/12 18:00:36 skrll Exp $*/
+/*$NetBSD: at91tctmr.c,v 1.9 2020/07/03 16:23:02 maxv Exp $*/
 
 /*
  * AT91 Timer Counter (TC) based clock functions
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at91tctmr.c,v 1.7 2012/11/12 18:00:36 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at91tctmr.c,v 1.9 2020/07/03 16:23:02 maxv Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -157,14 +157,11 @@ CFATTACH_DECL_NEW(at91tctmr, sizeof(struct at91tctmr_softc),
 static u_int at91tctmr_get_timecount(struct timecounter *);
 
 static struct timecounter at91tctmr_timecounter = {
-	at91tctmr_get_timecount,/* get_timecount */
-	0,                      /* no poll_pps */
-	0xffffffff,		/* counter_mask */
-	COUNTS_PER_SEC,		/* frequency */
-	"at91tctmr",		/* name */
-	100,			/* quality */
-	NULL,			/* prev */
-	NULL,			/* next */
+	.tc_get_timecount = at91tctmr_get_timecount,
+	.tc_counter_mask = 0xffffffff,
+	.tc_frequency = COUNTS_PER_SEC,
+	.tc_name = "at91tctmr",
+	.tc_quality = 100,
 };
 #endif
 
@@ -305,20 +302,20 @@ static void udelay(unsigned int usec)
     unsigned footick = (sc->sc_timerclock * 64ULL / 1000000UL);
 
     if (usec > 0) {
-      prev_ticks = hardclock_ticks;
+      prev_ticks = getticks();
       __insn_barrier();
       prev_cvr = READ_TC(sc, TC_CV);
-      ticks = hardclock_ticks;
+      ticks = getticks();
       __insn_barrier();
       if (ticks != prev_ticks) {
 	prev_cvr = READ_TC(sc, TC_CV);
 	prev_ticks = ticks;
       }
       for (;;) {
-	ticks = hardclock_ticks;
+	ticks = getticks();
 	__insn_barrier();
 	cvr = READ_TC(sc, TC_CV);
-	ticks2 = hardclock_ticks;
+	ticks2 = getticks();
 	__insn_barrier();
 	if (ticks2 != ticks) {
 	  cvr = READ_TC(sc, TC_CV);

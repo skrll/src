@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.base,v 1.213 2020/04/02 12:58:49 roy Exp $
+#	$NetBSD: NetBSD.dist.base,v 1.230 2020/11/23 12:41:47 martin Exp $
 #	@(#)4.4BSD.dist	8.1 (Berkeley) 6/13/93
 
 # Do not customize this file as it may be overwritten on upgrades.
@@ -13,6 +13,7 @@
 ./dev
 ./dev/altq
 ./dev/fd
+./dev/pts
 ./etc
 ./etc/X11
 ./etc/X11/fs
@@ -92,6 +93,7 @@
 ./libexec/devpubd-hooks
 ./libexec/dhcpcd-hooks
 ./libexec/resolvconf
+./libexec/resolvconf/libc.d
 ./mnt
 ./rescue
 ./root
@@ -157,7 +159,6 @@
 ./usr/include/fs/nilfs
 ./usr/include/fs/ptyfs
 ./usr/include/fs/puffs
-./usr/include/fs/smbfs
 ./usr/include/fs/sysvbfs
 ./usr/include/fs/tmpfs
 ./usr/include/fs/udf
@@ -196,13 +197,14 @@
 ./usr/include/g++/parallel
 ./usr/include/g++/profile
 ./usr/include/g++/profile/impl
+./usr/include/g++/pstl
 ./usr/include/g++/tr1
 ./usr/include/g++/tr1_impl
 ./usr/include/g++/tr2
-./usr/include/gcc-7
-./usr/include/gcc-7/sanitizer
 ./usr/include/gcc-8
 ./usr/include/gcc-8/sanitizer
+./usr/include/gcc-9
+./usr/include/gcc-9/sanitizer
 ./usr/include/gssapi
 ./usr/include/isofs
 ./usr/include/isofs/cd9660
@@ -233,7 +235,6 @@
 ./usr/include/netipsec
 ./usr/include/netmpls
 ./usr/include/netpgp
-./usr/include/netsmb
 ./usr/include/nfs
 ./usr/include/ntfs
 ./usr/include/objc
@@ -280,6 +281,7 @@
 ./usr/libdata/debug/lib/npf
 ./usr/libdata/debug/libexec
 ./usr/libdata/debug/sbin
+./usr/libdata/debug/stand
 ./usr/libdata/debug/usr
 ./usr/libdata/debug/usr/bin
 ./usr/libdata/debug/usr/games
@@ -378,7 +380,7 @@
 ./usr/share/examples/asm
 ./usr/share/examples/asm/hello
 ./usr/share/examples/atf
-./usr/share/examples/blacklist
+./usr/share/examples/blocklist
 ./usr/share/examples/dhcp
 ./usr/share/examples/dhcpcd
 ./usr/share/examples/dhcpcd/hooks
@@ -413,7 +415,6 @@
 ./usr/share/examples/rpcapd
 ./usr/share/examples/rtadvd
 ./usr/share/examples/slip
-./usr/share/examples/smbfs
 ./usr/share/examples/syslogd
 ./usr/share/examples/tmux
 ./usr/share/examples/wpa_supplicant
@@ -426,6 +427,9 @@
 ./usr/share/games/fortune
 ./usr/share/games/larn
 ./usr/share/games/quiz.db
+./usr/share/games/warp
+./usr/share/gdb
+./usr/share/gdb/syscalls
 ./usr/share/gnats
 ./usr/share/groff_font
 ./usr/share/groff_font/devX100
@@ -487,6 +491,7 @@
 ./usr/share/info
 ./usr/share/installboot
 ./usr/share/installboot/evbarm
+./usr/share/installboot/evbmips
 ./usr/share/keymaps
 ./usr/share/keymaps/amiga
 ./usr/share/keymaps/atari
@@ -1278,11 +1283,6 @@
 ./var/backups
 ./var/chroot
 ./var/chroot/dhcpcd
-./var/chroot/dhcpcd/etc
-./var/chroot/dhcpcd/var
-./var/chroot/dhcpcd/var/run
-./var/chroot/dhcpcd/var/db
-./var/chroot/dhcpcd/var/db/dhcpcd	mode=0775 uname=_dhcpcd gname=_dhcpcd
 ./var/chroot/ftp-proxy		mode=0755
 ./var/chroot/named
 ./var/chroot/named/dev
@@ -1327,6 +1327,7 @@
 ./var/cron
 ./var/cron/tabs			mode=0700
 ./var/db
+./var/db/dhcpcd			mode=0750
 ./var/db/ns
 ./var/db/obsolete
 ./var/db/postfix		uname=postfix gname=postfix mode=0755
@@ -1338,6 +1339,7 @@
 ./var/games/larn		uname=games gname=games mode=0775
 ./var/games/phantasia		uname=games gname=games mode=0775
 ./var/games/sail		uname=games gname=games mode=0775
+./var/games/warp		uname=games gname=games mode=0775
 ./var/heimdal
 ./var/log
 ./var/log/rdist

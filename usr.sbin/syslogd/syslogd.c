@@ -1,4 +1,4 @@
-/*	$NetBSD: syslogd.c,v 1.132 2019/12/26 04:53:12 msaitoh Exp $	*/
+/*	$NetBSD: syslogd.c,v 1.136 2020/11/08 01:12:46 dholland Exp $	*/
 
 /*
  * Copyright (c) 1983, 1988, 1993, 1994
@@ -39,7 +39,7 @@ __COPYRIGHT("@(#) Copyright (c) 1983, 1988, 1993, 1994\
 #if 0
 static char sccsid[] = "@(#)syslogd.c	8.3 (Berkeley) 4/4/94";
 #else
-__RCSID("$NetBSD: syslogd.c,v 1.132 2019/12/26 04:53:12 msaitoh Exp $");
+__RCSID("$NetBSD: syslogd.c,v 1.136 2020/11/08 01:12:46 dholland Exp $");
 #endif
 #endif /* not lint */
 
@@ -206,7 +206,8 @@ bool	BSDOutputFormat = true;	/* if true emit traditional BSD Syslog lines,
 				 * configurations (e.g. with SG="0").
 				 */
 char	appname[]   = "syslogd";/* the APPNAME for own messages */
-char   *include_pid = NULL;	/* include PID in own messages */
+char   *include_pid;		/* include PID in own messages */
+char	include_pid_buf[11];
 
 
 /* init and setup */
@@ -573,9 +574,8 @@ getgroup:
 #endif /* __NetBSD_Version__ */
 	}
 
-#define MAX_PID_LEN 5
-	include_pid = malloc(MAX_PID_LEN+1);
-	snprintf(include_pid, MAX_PID_LEN+1, "%d", getpid());
+	include_pid = include_pid_buf;
+	snprintf(include_pid_buf, sizeof(include_pid_buf), "%d", getpid());
 
 	/*
 	 * Create the global kernel event descriptor.
@@ -2881,7 +2881,7 @@ logerror(const char *fmt, ...)
 	if (!daemonized && Debug)
 		DPRINTF(D_MISC, "%s\n", outbuf);
 	if (!daemonized && !Debug)
-		printf("%s\n", outbuf);
+		printf("%s: %s\n", getprogname(), outbuf);
 
 	logerror_running = 0;
 }
@@ -3012,10 +3012,7 @@ die(int fd, short event, void *ev)
 	 */
 	if (finet) {
 		for (i = 0; i < finet->fd; i++) {
-			if (close(finet[i+1].fd) < 0) {
-				logerror("close() failed");
-				die(0, 0, NULL);
-			}
+			(void)close(finet[i+1].fd);
 			DEL_EVENT(finet[i+1].ev);
 			FREEPTR(finet[i+1].ev);
 		}

@@ -1,4 +1,4 @@
-/*	$NetBSD: p_dti_arcstation.c,v 1.18 2019/11/10 21:16:22 chs Exp $	*/
+/*	$NetBSD: p_dti_arcstation.c,v 1.20 2020/11/18 02:14:13 thorpej Exp $	*/
 /*	$OpenBSD: machdep.c,v 1.36 1999/05/22 21:22:19 weingart Exp $	*/
 
 /*
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: p_dti_arcstation.c,v 1.18 2019/11/10 21:16:22 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: p_dti_arcstation.c,v 1.20 2020/11/18 02:14:13 thorpej Exp $");
 
 #define __INTR_PRIVATE
 #include <sys/param.h>
@@ -165,7 +165,7 @@ btl_dti_arcstation_bouncemem(u_int *basep, u_int *sizep)
 
 	*sizep = TYNE_S_BOUNCE; /* Good enough? XXX */
 #if 0
-	*basep = (u_int) malloc(*sizep, M_DEVBUF, M_WAITOK);
+	*basep = (u_int) kmem_alloc(*sizep, KM_SLEEP);
 #else
 	*basep = (u_int) rpc44_buffer | 0xa0000000;
 #endif
@@ -203,14 +203,6 @@ p_dti_arcstation_init(void)
 	 *	- use MIP3_INTERNAL_TIMER_INTERRUPT for clock
 	 */
 	ipl_sr_map = dti_arcstation_ipl_sr_map;
-
-	/*
-	 * XXX - should be enabled, if tested.
-	 *
-	 * We use safe default for now, because this platform is untested.
-	 * In other words, the following may not be needed at all.
-	 */
-	vm_page_zero_enable = false;
 
 	/*
 	 * Initialize I/O address offset

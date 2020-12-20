@@ -48,7 +48,14 @@
 #ifdef _LP64
 /* XXX: I will take care of this later */
 # ifdef __alpha__
-#  define LG_VADDR 43	/* bit 42 indicates direct map, 42--63 are same */
+/*
+ * Bit 42 indicates kernel space. Bits 42--63 must be same. For user space,
+ * VA can be regarded to have 43 significant bits with sign-extension to
+ * 64 bits. ``Negative'' addresses are not used in this case. Alternatively,
+ * VA can also be regarded to have 42 significant bits with zero-extension.
+ * See rtree_leaf_elm_bits_extent_get() in rtree.h for more details.
+ */
+#  define LG_VADDR 43
 # else
 #  define LG_VADDR 48
 # endif
@@ -138,7 +145,7 @@
  * _malloc_thread_cleanup() exists, use it as the basis for thread cleanup in
  * malloc_tsd.
  */
-/* #undef JEMALLOC_MALLOC_THREAD_CLEANUP */
+#define JEMALLOC_MALLOC_THREAD_CLEANUP
 
 /*
  * Defined if threaded initialization is known to be safe on this platform.
@@ -156,15 +163,7 @@
 
 /* Non-empty if the tls_model attribute is supported. */
 #if !defined(__vax__) && !defined(__mc68010__)
-# if defined(__clang__) && defined(__ppc__) && defined(__pic__)
-/*
- * XXX: In pic mode clang generates PPC32_GOT instead of PPC32_PICGOT for
- * tls model initial-exec. It shouldn't; see PPCISelLowering.h
- */
-#  define JEMALLOC_TLS_MODEL __attribute__((tls_model("global-dynamic")))
-# else
 #  define JEMALLOC_TLS_MODEL __attribute__((tls_model("initial-exec")))
-# endif
 #endif
 
 /*

@@ -1,4 +1,4 @@
-#	$NetBSD: GENERIC_TINY,v 1.167 2020/01/25 18:38:36 thorpej Exp $
+#	$NetBSD: GENERIC_TINY,v 1.169 2020/09/27 13:48:51 roy Exp $
 #
 #	GENERIC_TINY -- suitable default for 4M machines
 #			No EISA, PCI, or SCSI.
@@ -457,9 +457,6 @@ we1	at isa? port 0x300 iomem 0xcc000 irq 10
 #ure*	at uhub? port ?		# Realtek RTL8152/RTL8153 based adapters
 #url*	at uhub? port ?		# Realtek RTL8150L based adapters
 
-# Y@P firmware loader
-#uyap* at uhub? port ?
-
 # USB Generic driver
 #ugen*	at uhub? port ?
 
@@ -511,6 +508,7 @@ pseudo-device	vnd			# disk-like interface to files
 # network pseudo-devices
 pseudo-device	bpfilter		# Berkeley packet filter
 pseudo-device	bridge			# simple inter-network bridging
+#pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	npf			# NPF packet filter
 pseudo-device	loop			# network loopback
 pseudo-device	ppp			# Point-to-Point Protocol

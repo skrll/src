@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC.in,v 1.143 2020/03/25 17:06:18 jdolecek Exp $
+# $NetBSD: GENERIC.in,v 1.147 2020/10/26 06:21:49 rin Exp $
 #
 ##
 # GENERIC machine description file
@@ -52,12 +52,14 @@ include "arch/amiga/conf/std.amiga"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.143 $"
+#ident 		"GENERIC-$Revision: 1.147 $"
 
 m4_ifdef(`INSTALL_CONFIGURATION', `m4_dnl
-makeoptions	COPTS="-Os"
+makeoptions	COPTS="-Os -fno-omit-frame-pointer"
 ',`m4_dnl
-makeoptions	COPTS="-O2 -fno-reorder-blocks"	# see share/mk/sys.mk
+makeoptions	COPTS="-O2 -fno-reorder-blocks -fno-omit-frame-pointer"
+	# See share/mk/sys.mk. -fno-omit-frame-pointer is necessary for
+	# backtraces in DDB.
 ')m4_dnl
 
 maxusers	8
@@ -224,6 +226,7 @@ options 	DDB		# Kernel debugger
 #options 	DDB_HISTORY_SIZE=100	# Enable history editing in DDB
 #options 	DIAGNOSTIC	# Extra kernel sanity checks
 #options 	DEBUG		# Enable misc. kernel debugging code
+makeoptions	DEBUG="-g"	# compile full symbol table
 #options 	SYSCALL_DEBUG	# debug all syscalls.
 #options 	SCSIDEBUG	# Add SCSI debugging statements
 #options 	PANICBUTTON	# Forced crash via keypress (?)
@@ -651,7 +654,7 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 m4_ifdef(`INSTALL_CONFIGURATION', `m4_dnl
 #pseudo-device	fss			# file system snapshot device

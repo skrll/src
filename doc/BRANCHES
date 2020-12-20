@@ -1,4 +1,4 @@
-#	$NetBSD: BRANCHES,v 1.353 2020/04/06 18:15:57 martin Exp $
+#	$NetBSD: BRANCHES,v 1.356 2020/12/18 01:08:13 thorpej Exp $
 #
 # This file contains a list of branches that exist in the NetBSD CVS
 # tree and their current state.
@@ -668,14 +668,15 @@ Notes:		A more flexible infrastructure for third-party packages by
 
 Branch:		phil-wifi
 Description:	Refresh WiFi code from FreeBSD
-Status:		Active
+Status:		Abandoned
 Start Date:	2018-06-28
 End Date:	-
 Base Tag:	phil-wifi-base
 Maintainer:	phil, martin
 Scope:		src
-Notes:		Please check with martin before commiting,
-		but no formal commit restrictions.
+Notes:		This branch has been superseeded by the topic 'wifi'
+		in the src-draft mercurial repository.
+		See https://wiki.netbsd.org/Wifi_renewal_on_hg/
 
 Branch:		rmind-smpnet
 Description:	MP safe network stack (milestone 1): IPv4, UDP and ICMP
@@ -721,6 +722,23 @@ Notes:		No longer active due to the lack of time. If you plan to
 		After the work is done, you are required to test the branch
 		(before the merge to -current) with an interop IPv6 test.
 		More info at: http://www.tahi.org/
+
+Branch:		thorpej-futex
+Description:	Overhaul of futex operations to fix thread priority issues
+Status:		Active
+Start Date:	Sun Nov 1 2020
+End Date:
+Base Tag:	thorpej-futex-base
+Maintainer:	Jason Thorpe <thorpej@netbsd.org>
+Scope:		src/sys src/tests/lib/libc/sys src/distrib/sets/lists
+Note:		Normal futex operataions pass the test suite, but there are
+		issues with Linux compatibility currently, that need to be
+		addressed before merging.  Also includes new NetBSD extensions
+		to the futex interface to support reader/writer locks.  Those
+		changes can be discounted in favor of fixing the standard
+		futex operations with respect to Linux compatibility.
+		Also includes implementations of eventfd and timerfd, as
+		well as some additional improvements to COMPAT_LINUX{,32}.
 
 Branch:  	wrstuden-fixsa
 Description:	Fix a number of issues present with Scheduler Activations.

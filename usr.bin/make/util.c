@@ -1,4 +1,4 @@
-/*	$NetBSD: util.c,v 1.55 2020/01/07 21:24:16 rillig Exp $	*/
+/*	$NetBSD: util.c,v 1.72 2020/12/15 20:39:15 rillig Exp $	*/
 
 /*
  * Missing stuff from OS's
@@ -7,23 +7,15 @@
 #include <signal.h>
 #endif
 
-#ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: util.c,v 1.55 2020/01/07 21:24:16 rillig Exp $";
-#else
-#include <sys/cdefs.h>
-#ifndef lint
-__RCSID("$NetBSD: util.c,v 1.55 2020/01/07 21:24:16 rillig Exp $");
-#endif
-#endif
-
 #include <sys/param.h>
 
 #include <errno.h>
-#include <stdio.h>
 #include <time.h>
 #include <signal.h>
 
 #include "make.h"
+
+MAKE_RCSID("$NetBSD: util.c,v 1.72 2020/12/15 20:39:15 rillig Exp $");
 
 #if !defined(MAKE_NATIVE) && !defined(HAVE_STRERROR)
 extern int errno, sys_nerr;
@@ -34,10 +26,9 @@ strerror(int e)
 {
     static char buf[100];
     if (e < 0 || e >= sys_nerr) {
-	snprintf(buf, sizeof(buf), "Unknown error %d", e);
+	snprintf(buf, sizeof buf, "Unknown error %d", e);
 	return buf;
-    }
-    else
+    } else
 	return sys_errlist[e];
 }
 #endif
@@ -70,7 +61,7 @@ getenv(const char *name)
 {
     int offset;
 
-    return(findenv(name, &offset));
+    return findenv(name, &offset);
 }
 
 int
@@ -106,7 +97,7 @@ setenv(const char *name, const char *value, int rewrite)
 	}
 
 	if (*value == '=')			/* no `=' in value */
-		++value;
+		value++;
 	l_value = strlen(value);
 
 	/* find if already exists */
@@ -171,46 +162,46 @@ strrcpy(char *ptr, char *str)
 {
     int len = strlen(str);
 
-    while (len)
+    while (len != 0)
 	*--ptr = str[--len];
 
-    return (ptr);
+    return ptr;
 } /* end strrcpy */
 
 char    *sys_siglist[] = {
-        "Signal 0",
-        "Hangup",                       /* SIGHUP    */
-        "Interrupt",                    /* SIGINT    */
-        "Quit",                         /* SIGQUIT   */
-        "Illegal instruction",          /* SIGILL    */
-        "Trace/BPT trap",               /* SIGTRAP   */
-        "IOT trap",                     /* SIGIOT    */
-        "EMT trap",                     /* SIGEMT    */
-        "Floating point exception",     /* SIGFPE    */
-        "Killed",                       /* SIGKILL   */
-        "Bus error",                    /* SIGBUS    */
-        "Segmentation fault",           /* SIGSEGV   */
-        "Bad system call",              /* SIGSYS    */
-        "Broken pipe",                  /* SIGPIPE   */
-        "Alarm clock",                  /* SIGALRM   */
-        "Terminated",                   /* SIGTERM   */
-        "User defined signal 1",        /* SIGUSR1   */
-        "User defined signal 2",        /* SIGUSR2   */
-        "Child exited",                 /* SIGCLD    */
-        "Power-fail restart",           /* SIGPWR    */
-        "Virtual timer expired",        /* SIGVTALRM */
-        "Profiling timer expired",      /* SIGPROF   */
-        "I/O possible",                 /* SIGIO     */
-        "Window size changes",          /* SIGWINDOW */
-        "Stopped (signal)",             /* SIGSTOP   */
-        "Stopped",                      /* SIGTSTP   */
-        "Continued",                    /* SIGCONT   */
-        "Stopped (tty input)",          /* SIGTTIN   */
-        "Stopped (tty output)",         /* SIGTTOU   */
-        "Urgent I/O condition",         /* SIGURG    */
-        "Remote lock lost (NFS)",       /* SIGLOST   */
-        "Signal 31",                    /* reserved  */
-        "DIL signal"                    /* SIGDIL    */
+	"Signal 0",
+	"Hangup",			/* SIGHUP    */
+	"Interrupt",			/* SIGINT    */
+	"Quit",				/* SIGQUIT   */
+	"Illegal instruction",		/* SIGILL    */
+	"Trace/BPT trap",		/* SIGTRAP   */
+	"IOT trap",			/* SIGIOT    */
+	"EMT trap",			/* SIGEMT    */
+	"Floating point exception",	/* SIGFPE    */
+	"Killed",			/* SIGKILL   */
+	"Bus error",			/* SIGBUS    */
+	"Segmentation fault",		/* SIGSEGV   */
+	"Bad system call",		/* SIGSYS    */
+	"Broken pipe",			/* SIGPIPE   */
+	"Alarm clock",			/* SIGALRM   */
+	"Terminated",			/* SIGTERM   */
+	"User defined signal 1",	/* SIGUSR1   */
+	"User defined signal 2",	/* SIGUSR2   */
+	"Child exited",			/* SIGCLD    */
+	"Power-fail restart",		/* SIGPWR    */
+	"Virtual timer expired",	/* SIGVTALRM */
+	"Profiling timer expired",	/* SIGPROF   */
+	"I/O possible",			/* SIGIO     */
+	"Window size changes",		/* SIGWINDOW */
+	"Stopped (signal)",		/* SIGSTOP   */
+	"Stopped",			/* SIGTSTP   */
+	"Continued",			/* SIGCONT   */
+	"Stopped (tty input)",		/* SIGTTIN   */
+	"Stopped (tty output)",		/* SIGTTOU   */
+	"Urgent I/O condition",		/* SIGURG    */
+	"Remote lock lost (NFS)",	/* SIGLOST   */
+	"Signal 31",			/* reserved  */
+	"DIL signal"			/* SIGDIL    */
 };
 #endif /* __hpux__ || __hpux */
 
@@ -276,7 +267,7 @@ getwd(char *pathname)
 	if (st_cur.st_ino == st_root.st_ino &&
 	    DEV_DEV_COMPARE(st_cur.st_dev, st_root.st_dev)) {
 	    (void)strcpy(pathname, *pathptr != '/' ? "/" : pathptr);
-	    return (pathname);
+	    return pathname;
 	}
 
 	/* open the parent directory */
@@ -299,8 +290,7 @@ getwd(char *pathname)
 	    for (d = readdir(dp); d != NULL; d = readdir(dp))
 		if (d->d_fileno == st_cur.st_ino)
 		    break;
-	}
-	else {
+	} else {
 	    /*
 	     * Parent has a different device. This is a mount point so we
 	     * need to stat every member
@@ -339,19 +329,19 @@ getwd(char *pathname)
 #endif /* __hpux */
 
 /* force posix signals */
-void (*
-bmake_signal(int s, void (*a)(int)))(int)
+SignalProc
+bmake_signal(int s, SignalProc a)
 {
-    struct sigaction sa, osa;
+	struct sigaction sa, osa;
 
-    sa.sa_handler = a;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
+	sa.sa_handler = a;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_RESTART;
 
-    if (sigaction(s, &sa, &osa) == -1)
-	return SIG_ERR;
-    else
-	return osa.sa_handler;
+	if (sigaction(s, &sa, &osa) == -1)
+		return SIG_ERR;
+	else
+		return osa.sa_handler;
 }
 
 #if !defined(MAKE_NATIVE) && !defined(HAVE_VSNPRINTF)
@@ -379,17 +369,16 @@ vsnprintf(char *s, size_t n, const char *fmt, va_list args)
 	 * We cast to void * to make everyone happy.
 	 */
 	fakebuf._ptr = (void *)s;
-	fakebuf._cnt = n-1;
+	fakebuf._cnt = n - 1;
 	fakebuf._file = -1;
 	_doprnt(fmt, args, &fakebuf);
 	fakebuf._cnt++;
 	putc('\0', &fakebuf);
-	if (fakebuf._cnt<0)
+	if (fakebuf._cnt < 0)
 	    fakebuf._cnt = 0;
-	return (n-fakebuf._cnt-1);
+	return n - fakebuf._cnt - 1;
 #else
-	(void)vsprintf(s, fmt, args);
-	return strlen(s);
+	::: "error: vsnprintf must be available";
 #endif
 }
 
@@ -405,64 +394,4 @@ snprintf(char *s, size_t n, const char *fmt, ...)
 	return rv;
 }
 
-#if !defined(MAKE_NATIVE) && !defined(HAVE_STRFTIME)
-size_t
-strftime(char *buf, size_t len, const char *fmt, const struct tm *tm)
-{
-	static char months[][4] = {
-		"Jan", "Feb", "Mar", "Apr", "May", "Jun", 
-		"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-	};
-
-	size_t s;
-	char *b = buf;
-
-	while (*fmt) {
-		if (len == 0)
-			return buf - b;
-		if (*fmt != '%') {
-			*buf++ = *fmt++;
-			len--;
-			continue;
-		}
-		switch (*fmt++) {
-		case '%':
-			*buf++ = '%';
-			len--;
-			if (len == 0) return buf - b;
-			/*FALLTHROUGH*/
-		case '\0':
-			*buf = '%';
-			s = 1;
-			break;
-		case 'k':
-			s = snprintf(buf, len, "%d", tm->tm_hour);
-			break;
-		case 'M':
-			s = snprintf(buf, len, "%02d", tm->tm_min);
-			break;
-		case 'S':
-			s = snprintf(buf, len, "%02d", tm->tm_sec);
-			break;
-		case 'b':
-			if (tm->tm_mon >= 12)
-				return buf - b;
-			s = snprintf(buf, len, "%s", months[tm->tm_mon]);
-			break;
-		case 'd':
-			s = snprintf(buf, len, "%02d", tm->tm_mday);
-			break;
-		case 'Y':
-			s = snprintf(buf, len, "%d", 1900 + tm->tm_year);
-			break;
-		default:
-			s = snprintf(buf, len, "Unsupported format %c",
-			    fmt[-1]);
-			break;
-		}
-		buf += s;
-		len -= s;
-	}
-}
-#endif
 #endif

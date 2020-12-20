@@ -755,14 +755,13 @@ mappedread(vnode_t *vp, int nbytes, uio_t *uio)
 			va = zfs_map_page(pp, S_READ);
 			error = uiomove(va + off, bytes, UIO_READ, uio);
 			zfs_unmap_page(pp, va);
+			rw_enter(rw, RW_WRITER);
+			uvm_page_unbusy(&pp, 1);
+			rw_exit(rw);
 		} else {
 			error = dmu_read_uio_dbuf(sa_get_db(zp->z_sa_hdl),
 			    uio, bytes);
 		}
-
-		rw_enter(rw, RW_WRITER);
-		uvm_page_unbusy(&pp, 1);
-		rw_exit(rw);
 
 		len -= bytes;
 		off = 0;
@@ -1355,6 +1354,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			newmode = zp->z_mode;
 			(void) sa_update(zp->z_sa_hdl, SA_ZPL_MODE(zfsvfs),
 			    (void *)&newmode, sizeof (uint64_t), tx);
+#ifdef __NetBSD__
+			cache_enter_id(vp, zp->z_mode, zp->z_uid, zp->z_gid,
+			    true);
+#endif
 		}
 		mutex_exit(&zp->z_acl_lock);
 
@@ -5155,11 +5158,11 @@ zfs_netbsd_access(void *v)
 {
 	struct vop_access_args /* {
 		struct vnode *a_vp;
-		int a_mode;
+		accmode_t a_accmode;
 		kauth_cred_t a_cred;
 	} */ *ap = v;
 	struct vnode *vp = ap->a_vp;
-	int mode = ap->a_mode;
+	accmode_t accmode = ap->a_accmode;
 	mode_t zfs_mode = 0;
 	kauth_cred_t cred = ap->a_cred;
 	int error;
@@ -5169,11 +5172,11 @@ zfs_netbsd_access(void *v)
 	 * and it exists only because of randomness in zfs_unix_to_v4
 	 * and zfs_zaccess_rwx in zfs_acl.c.
 	 */
-	if (mode & VREAD)
+	if (accmode & VREAD)
 		zfs_mode |= S_IROTH;
-	if (mode & VWRITE)
+	if (accmode & VWRITE)
 		zfs_mode |= S_IWOTH;
-	if (mode & VEXEC)
+	if (accmode & VEXEC)
 		zfs_mode |= S_IXOTH;
 	zfs_mode <<= 6;
 
@@ -5631,8 +5634,7 @@ zfs_netbsd_setattr(void *v)
 		}
 
 		error = kauth_authorize_vnode(cred, action, vp, NULL,
-		    genfs_can_chflags(cred, vp->v_type, zp->z_uid,
-		    changing_sysflags));
+		    genfs_can_chflags(vp, cred, zp->z_uid, changing_sysflags));
 		if (error)
 			return error;
 	}
@@ -5640,15 +5642,18 @@ zfs_netbsd_setattr(void *v)
 	if (vap->va_atime.tv_sec != VNOVAL || vap->va_mtime.tv_sec != VNOVAL ||
 	    vap->va_birthtime.tv_sec != VNOVAL) {
 		error = kauth_authorize_vnode(cred, KAUTH_VNODE_WRITE_TIMES, vp,
-		     NULL, genfs_can_chtimes(vp, vap->va_vaflags, zp->z_uid,
-		     cred));
+		     NULL, genfs_can_chtimes(vp, cred, zp->z_uid,
+		     vap->va_vaflags));
 		if (error)
 			return error;
 	}
 
 	error = zfs_setattr(vp, (vattr_t *)&xvap, flags, cred, NULL);
-	if (error == 0)
-		VN_KNOTE(vp, NOTE_ATTRIB);
+	if (error)
+		return error;
+
+	VN_KNOTE(vp, NOTE_ATTRIB);
+	cache_enter_id(vp, zp->z_mode, zp->z_uid, zp->z_gid, true);
 
 	return error;
 }
@@ -5858,10 +5863,15 @@ zfs_netbsd_reclaim(void *v)
 			zp->z_atime_dirty = 0;
 			dmu_tx_commit(tx);
 		}
-
-		if (zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
-			zil_commit(zfsvfs->z_log, zp->z_id);
 	}
+
+	/*
+	 * Operation zfs_znode.c::zfs_zget_cleaner() depends on this
+	 * zil_commit() as a barrier to guarantee the znode cannot
+	 * get freed before its log entries are resolved.
+	 */
+	if (zfsvfs->z_log)
+		zil_commit(zfsvfs->z_log, zp->z_id);
 
 	if (zp->z_sa_hdl == NULL)
 		zfs_znode_free(zp);
@@ -5968,7 +5978,6 @@ zfs_netbsd_getpages(void *v)
 	} */ * const ap = v;
 
 	vnode_t *const vp = ap->a_vp;
-	off_t offset = ap->a_offset + (ap->a_centeridx << PAGE_SHIFT);
 	const int flags = ap->a_flags;
 	const bool async = (flags & PGO_SYNCIO) == 0;
 	const bool memwrite = (ap->a_access_type & VM_PROT_WRITE) != 0;
@@ -5980,20 +5989,33 @@ zfs_netbsd_getpages(void *v)
 	vfs_t *mp;
 	struct vm_page *pg;
 	caddr_t va;
-	int npages, found, err = 0;
+	int npages = *ap->a_count, found, err = 0;
 
 	if (flags & PGO_LOCKED) {
-		*ap->a_count = 0;
-		ap->a_m[ap->a_centeridx] = NULL;
-		return EBUSY;
+ 		uvn_findpages(uobj, ap->a_offset, &npages, ap->a_m, NULL,
+		    UFP_NOWAIT | UFP_NOALLOC | UFP_NOBUSY |
+		    (memwrite ? UFP_NORDONLY : 0));
+		KASSERT(npages == *ap->a_count);
+		if (memwrite) {
+			KASSERT(rw_write_held(uobj->vmobjlock));
+			for (int i = 0; i < npages; i++) {
+				pg = ap->a_m[i];
+				if (pg == NULL || pg == PGO_DONTCARE) {
+					continue;
+				}
+				if (uvm_pagegetdirty(pg) ==
+				    UVM_PAGE_STATUS_CLEAN) {
+					uvm_pagemarkdirty(pg,
+					    UVM_PAGE_STATUS_UNKNOWN);
+				}
+			}
+		}
+		return ap->a_m[ap->a_centeridx] == NULL ? EBUSY : 0;
 	}
 	rw_exit(rw);
 
 	if (async) {
 		return 0;
-	}
-	if (*ap->a_count != 1) {
-		return EBUSY;
 	}
 
 	mp = vp->v_mount;
@@ -6006,34 +6028,43 @@ zfs_netbsd_getpages(void *v)
 	ZFS_VERIFY_ZP(zp);
 
 	rw_enter(rw, RW_WRITER);
-	if (offset >= vp->v_size) {
+	if (ap->a_offset + (npages << PAGE_SHIFT) > round_page(vp->v_size)) {
 		rw_exit(rw);
 		ZFS_EXIT(zfsvfs);
 		fstrans_done(mp);
 		return EINVAL;
 	}
-	npages = 1;
-	pg = NULL;
-	uvn_findpages(uobj, offset, &npages, &pg, NULL, UFP_ALL);
+	uvn_findpages(uobj, ap->a_offset, &npages, ap->a_m, NULL, UFP_ALL);
+	KASSERT(npages == *ap->a_count);
 
-	if (pg->flags & PG_FAKE) {
-		rw_exit(rw);
+	for (int i = 0; i < npages; i++) {
+		pg = ap->a_m[i];
+		if (pg->flags & PG_FAKE) {
+			voff_t offset = pg->offset;
+			KASSERT(pg->offset == ap->a_offset + (i << PAGE_SHIFT));
+			rw_exit(rw);
 
-		va = zfs_map_page(pg, S_WRITE);
-		err = dmu_read(zfsvfs->z_os, zp->z_id, offset, PAGE_SIZE,
-		    va, DMU_READ_PREFETCH);
-		zfs_unmap_page(pg, va);
+			va = zfs_map_page(pg, S_WRITE);
+			err = dmu_read(zfsvfs->z_os, zp->z_id, offset,
+			    PAGE_SIZE, va, DMU_READ_PREFETCH);
+			zfs_unmap_page(pg, va);
 
-		rw_enter(rw, RW_WRITER);
-		pg->flags &= ~(PG_FAKE);
-	}
+			if (err != 0) {
+				uvm_aio_aiodone_pages(ap->a_m, npages, false, err);
+				memset(ap->a_m, 0, sizeof(ap->a_m[0]) *
+				    npages);
+				break;
+			}
+			rw_enter(rw, RW_WRITER);
+			pg->flags &= ~(PG_FAKE);
+		}
 
-	if (memwrite && uvm_pagegetdirty(pg) == UVM_PAGE_STATUS_CLEAN) {
-		/* For write faults, start dirtiness tracking. */
-		uvm_pagemarkdirty(pg, UVM_PAGE_STATUS_UNKNOWN);
+		if (memwrite && uvm_pagegetdirty(pg) == UVM_PAGE_STATUS_CLEAN) {
+			/* For write faults, start dirtiness tracking. */
+			uvm_pagemarkdirty(pg, UVM_PAGE_STATUS_UNKNOWN);
+		}
 	}
 	rw_exit(rw);
-	ap->a_m[ap->a_centeridx] = pg;
 
 	ZFS_EXIT(zfsvfs);
 	fstrans_done(mp);
@@ -6051,19 +6082,38 @@ zfs_putapage(vnode_t *vp, page_t **pp, int count, int flags)
 	voff_t		len, klen;
 	int		err;
 
-	bool async = (flags & PGO_SYNCIO) == 0;
 	bool *cleanedp;
 	struct uvm_object *uobj = &vp->v_uobj;
 	krwlock_t *rw = uobj->vmobjlock;
 
 	if (zp->z_sa_hdl == NULL) {
 		err = 0;
-		goto out_unbusy;
+		goto out;
 	}
+
+	/*
+	 * Calculate the length and assert that no whole pages are past EOF.
+	 * This check is equivalent to "off + len <= round_page(zp->z_size)",
+	 * with gyrations to avoid signed integer overflow.
+	 */
 
 	off = pp[0]->offset;
 	len = count * PAGESIZE;
-	KASSERT(off + len <= round_page(zp->z_size));
+	KASSERT(off <= zp->z_size);
+	KASSERT(len <= round_page(zp->z_size));
+	KASSERT(off <= round_page(zp->z_size) - len);
+
+	/*
+	 * If EOF is within the last page, reduce len to avoid writing past
+	 * the file size in the ZFS buffer.  Assert that
+	 * "off + len <= zp->z_size", again avoiding signed integer overflow.
+	 */
+
+	if (len > zp->z_size - off) {
+		len = zp->z_size - off;
+	}
+	KASSERT(len <= zp->z_size);
+	KASSERT(off <= zp->z_size - len);
 
 	if (zfs_owner_overquota(zfsvfs, zp, B_FALSE) ||
 	    zfs_owner_overquota(zfsvfs, zp, B_TRUE)) {
@@ -6112,12 +6162,8 @@ zfs_putapage(vnode_t *vp, page_t **pp, int count, int flags)
 	}
 	dmu_tx_commit(tx);
 
-out_unbusy:
-	rw_enter(rw, RW_WRITER);
-	uvm_page_unbusy(pp, count);
-	rw_exit(rw);
-
 out:
+	uvm_aio_aiodone_pages(pp, count, true, err);
 	return (err);
 }
 
@@ -6307,6 +6353,7 @@ const struct vnodeopv_entry_desc zfs_vnodeop_entries[] = {
 	{ &vop_open_desc,		zfs_netbsd_open },
 	{ &vop_close_desc,		zfs_netbsd_close },
 	{ &vop_access_desc,		zfs_netbsd_access },
+	{ &vop_accessx_desc,		genfs_accessx },
 	{ &vop_getattr_desc,		zfs_netbsd_getattr },
 	{ &vop_setattr_desc,		zfs_netbsd_setattr },
 	{ &vop_read_desc,		zfs_netbsd_read },
@@ -6352,6 +6399,7 @@ const struct vnodeopv_entry_desc zfs_specop_entries[] = {
 	{ &vop_open_desc,		spec_open },
 	{ &vop_close_desc,		spec_close },
 	{ &vop_access_desc,		zfs_netbsd_access },
+	{ &vop_accessx_desc,		genfs_accessx },
 	{ &vop_getattr_desc,		zfs_netbsd_getattr },
 	{ &vop_setattr_desc,		zfs_netbsd_setattr },
 	{ &vop_read_desc,		/**/zfs_netbsd_read },
@@ -6399,6 +6447,7 @@ const struct vnodeopv_entry_desc zfs_fifoop_entries[] = {
 	{ &vop_open_desc,		vn_fifo_bypass },
 	{ &vop_close_desc,		vn_fifo_bypass },
 	{ &vop_access_desc,		zfs_netbsd_access },
+	{ &vop_accessx_desc,		genfs_accessx },
 	{ &vop_getattr_desc,		zfs_netbsd_getattr },
 	{ &vop_setattr_desc,		zfs_netbsd_setattr },
 	{ &vop_read_desc,		/**/zfs_netbsd_read },

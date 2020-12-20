@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_usrreq.c,v 1.197 2020/02/23 22:14:03 ad Exp $	*/
+/*	$NetBSD: uipc_usrreq.c,v 1.200 2020/11/06 14:50:13 christos Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000, 2004, 2008, 2009, 2020 The NetBSD Foundation, Inc.
@@ -96,7 +96,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_usrreq.c,v 1.197 2020/02/23 22:14:03 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_usrreq.c,v 1.200 2020/11/06 14:50:13 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -196,6 +196,8 @@ static kcondvar_t unp_thread_cv;
 static lwp_t *unp_thread_lwp;
 static SLIST_HEAD(,file) unp_thread_discard;
 static int unp_defer;
+static struct sysctllog *usrreq_sysctllog;
+static void unp_sysctl_create(void);
 
 /* Compat interface */
 
@@ -218,6 +220,8 @@ void
 uipc_init(void)
 {
 	int error;
+
+	unp_sysctl_create();
 
 	uipc_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 	cv_init(&unp_thread_cv, "unpgc");
@@ -898,6 +902,8 @@ unp_stat(struct socket *so, struct stat *ub)
 		unp->unp_ino = unp_ino++;
 	ub->st_atimespec = ub->st_mtimespec = ub->st_ctimespec = unp->unp_ctime;
 	ub->st_ino = unp->unp_ino;
+	ub->st_uid = so->so_uidinfo->ui_uid;
+	ub->st_gid = so->so_egid;
 	return (0);
 }
 
@@ -1395,7 +1401,6 @@ unp_externalize(struct mbuf *rights, struct lwp *l, int flags)
 {
 	struct cmsghdr * const cm = mtod(rights, struct cmsghdr *);
 	struct proc * const p = l->l_proc;
-	struct vnode *rvp = NULL;
 	file_t **rp;
 	int error = 0;
 
@@ -1405,11 +1410,9 @@ unp_externalize(struct mbuf *rights, struct lwp *l, int flags)
 		goto noop;
 
 	int * const fdp = kmem_alloc(nfds * sizeof(int), KM_SLEEP);
-
-	KASSERT(l == curlwp);
+	rw_enter(&p->p_cwdi->cwdi_lock, RW_READER);
 
 	/* Make sure the recipient should be able to see the files.. */
-	rvp = cwdrdir();
 	rp = (file_t **)CMSG_DATA(cm);
 	for (size_t i = 0; i < nfds; i++) {
 		file_t * const fp = *rp++;
@@ -1423,15 +1426,16 @@ unp_externalize(struct mbuf *rights, struct lwp *l, int flags)
 		 * sure it's inside the subtree we're allowed
 		 * to access.
 		 */
-		if (rvp != NULL && fp->f_type == DTYPE_VNODE) {
+		if (p->p_cwdi->cwdi_rdir != NULL && fp->f_type == DTYPE_VNODE) {
 			vnode_t *vp = fp->f_vnode;
-			if ((vp->v_type == VDIR) && !vn_isunder(vp, rvp, l)) {
+			if ((vp->v_type == VDIR) &&
+			    !vn_isunder(vp, p->p_cwdi->cwdi_rdir, l)) {
 				error = EPERM;
 				goto out;
 			}
 		}
 	}
-	
+
  restart:
 	/*
 	 * First loop -- allocate file descriptor table slots for the
@@ -1508,6 +1512,7 @@ unp_externalize(struct mbuf *rights, struct lwp *l, int flags)
 		cm->cmsg_len = CMSG_LEN(0);
 		rights->m_len = CMSG_SPACE(0);
 	}
+	rw_exit(&p->p_cwdi->cwdi_lock);
 	kmem_free(fdp, nfds * sizeof(int));
 
  noop:
@@ -1517,10 +1522,6 @@ unp_externalize(struct mbuf *rights, struct lwp *l, int flags)
 	KASSERT(cm->cmsg_len <= rights->m_len);
 	memset(&mtod(rights, char *)[cm->cmsg_len], 0, rights->m_len -
 	    cm->cmsg_len);
-
-	/* Async release since in the networking code. */
-	if (rvp != NULL)
-		vrele_async(rvp);
 	return error;
 }
 
@@ -1991,40 +1992,42 @@ unp_discard_later(file_t *fp)
 	mutex_exit(&filelist_lock);
 }
 
-void
-unp_sysctl_create(struct sysctllog **clog)
+static void
+unp_sysctl_create(void)
 {
-	sysctl_createv(clog, 0, NULL, NULL,
+
+	KASSERT(usrreq_sysctllog == NULL);
+	sysctl_createv(&usrreq_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_LONG, "sendspace",
 		       SYSCTL_DESCR("Default stream send space"),
 		       NULL, 0, &unpst_sendspace, 0,
 		       CTL_NET, PF_LOCAL, SOCK_STREAM, CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
+	sysctl_createv(&usrreq_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_LONG, "recvspace",
 		       SYSCTL_DESCR("Default stream recv space"),
 		       NULL, 0, &unpst_recvspace, 0,
 		       CTL_NET, PF_LOCAL, SOCK_STREAM, CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
+	sysctl_createv(&usrreq_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_LONG, "sendspace",
 		       SYSCTL_DESCR("Default datagram send space"),
 		       NULL, 0, &unpdg_sendspace, 0,
 		       CTL_NET, PF_LOCAL, SOCK_DGRAM, CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
+	sysctl_createv(&usrreq_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_LONG, "recvspace",
 		       SYSCTL_DESCR("Default datagram recv space"),
 		       NULL, 0, &unpdg_recvspace, 0,
 		       CTL_NET, PF_LOCAL, SOCK_DGRAM, CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
+	sysctl_createv(&usrreq_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READONLY,
 		       CTLTYPE_INT, "inflight",
 		       SYSCTL_DESCR("File descriptors in flight"),
 		       NULL, 0, &unp_rights, 0,
 		       CTL_NET, PF_LOCAL, CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
+	sysctl_createv(&usrreq_sysctllog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READONLY,
 		       CTLTYPE_INT, "deferred",
 		       SYSCTL_DESCR("File descriptors deferred for close"),

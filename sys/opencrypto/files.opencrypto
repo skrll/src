@@ -1,4 +1,4 @@
-#	$NetBSD: files.opencrypto,v 1.28 2020/01/27 17:09:17 pgoyette Exp $
+#	$NetBSD: files.opencrypto,v 1.30 2020/06/29 23:34:48 riastradh Exp $
 #
 #
 
@@ -7,7 +7,7 @@
 # that use the opencrypto framework, should list opencrypto as a dependency
 # to pull in the framework.
 
-define	opencrypto
+define	opencrypto: aes
 file	opencrypto/criov.c		opencrypto
 file	opencrypto/xform.c		opencrypto
 file	opencrypto/crypto.c		opencrypto

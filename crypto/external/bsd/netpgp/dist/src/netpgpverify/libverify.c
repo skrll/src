@@ -40,7 +40,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "bzlib.h"
+#include "netpgpv-bzlib.h"
 #include "zlib.h"
 
 #include "array.h"
@@ -52,6 +52,10 @@
 #include "pgpsum.h"
 #include "rsa.h"
 #include "verify.h"
+
+#ifndef PRIi64
+#define PRIi64	"lld"
+#endif
 
 /* 64bit key ids */
 #define PGPV_KEYID_LEN		8
@@ -147,6 +151,8 @@ typedef struct pgpv_signature_t {
 	char			*features;
 	char			*why_revoked;
 	uint8_t			*revoke_fingerprint;
+	uint8_t			*issuer_fingerprint;
+	uint8_t			 ifver;
 	uint8_t			 revoke_alg;
 	uint8_t			 revoke_sensitive;
 	uint8_t			 trustsig;
@@ -921,6 +927,7 @@ str_to_keyid(const char *s, uint8_t *keyid)
 #define SUBPKT_FEATURES			30
 #define SUBPKT_SIGNATURE_TARGET		31
 #define SUBPKT_EMBEDDED_SIGNATURE	32
+#define SUBPKT_ISSUER_FINGERPRINT	33
 
 #define UNCOMPRESSED			0
 #define ZIP_COMPRESSION			1
@@ -1176,6 +1183,10 @@ read_sig_subpackets(pgpv_t *pgp, pgpv_sigpkt_t *sigpkt, uint8_t *p, size_t pktle
 			sigpkt->sig.revoked = *p++ + 1;
 			sigpkt->sig.why_revoked = (char *)(void *)p;
 			break;
+		case SUBPKT_ISSUER_FINGERPRINT:
+			sigpkt->sig.ifver = *p;
+			sigpkt->sig.issuer_fingerprint = &p[1];
+			break;
 		default:
 			printf("Ignoring unusual/reserved signature subpacket %d\n", subpkt.tag);
 			break;
@@ -1312,7 +1323,7 @@ read_compressed(pgpv_t *pgp, pgpv_compress_t *compressed, uint8_t *p, size_t len
 		ok = (inflateInit(&z) == Z_OK);
 		break;
 	case BZIP2_COMPRESSION:
-		ok = (BZ2_bzDecompressInit(&bz, 1, 0) == BZ_OK);
+		ok = (netpgpv_BZ2_bzDecompressInit(&bz, 1, 0) == BZ_OK);
 		break;
 	}
 	if (!ok) {
@@ -1326,7 +1337,7 @@ read_compressed(pgpv_t *pgp, pgpv_compress_t *compressed, uint8_t *p, size_t len
 		unzmem->size = z.total_out;
 		break;
 	case BZIP2_COMPRESSION:
-		ok = (BZ2_bzDecompress(&bz) == BZ_STREAM_END);
+		ok = (netpgpv_BZ2_bzDecompress(&bz) == BZ_STREAM_END);
 		unzmem->size = ((uint64_t)bz.total_out_hi32 << 32) | bz.total_out_lo32;
 		break;
 	}
@@ -1877,7 +1888,7 @@ rsa_padding_check_none(uint8_t *to, int tlen, const uint8_t *from, int flen, int
 
 /* check against the exponent/moudulo operation */
 static int
-lowlevel_rsa_public_check(const uint8_t *encbuf, int enclen, uint8_t *dec, const rsa_pubkey_t *rsa)
+lowlevel_rsa_public_check(const uint8_t *encbuf, int enclen, uint8_t *dec, const netpgpv_rsa_pubkey_t *rsa)
 {
 	uint8_t		*decbuf;
 	PGPV_BIGNUM		*decbn;
@@ -1943,10 +1954,10 @@ err:
 
 /* verify */
 static int
-rsa_public_decrypt(int enclen, const unsigned char *enc, unsigned char *dec, RSA *rsa, int padding)
+rsa_public_decrypt(int enclen, const unsigned char *enc, unsigned char *dec, NETPGPV_RSA *rsa, int padding)
 {
-	rsa_pubkey_t	pub;
-	int		ret;
+	netpgpv_rsa_pubkey_t	pub;
+	int			ret;
 
 	if (enc == NULL || dec == NULL || rsa == NULL) {
 		return 0;
@@ -1981,7 +1992,7 @@ estimate_primarykey_size(pgpv_primarykey_t *primary)
 static int 
 pgpv_rsa_public_decrypt(uint8_t *out, const uint8_t *in, size_t length, const pgpv_pubkey_t *pubkey)
 {
-	RSA            *orsa;
+	NETPGPV_RSA    *orsa;
 	int             n;
 
 	if ((orsa = calloc(1, sizeof(*orsa))) == NULL) {
@@ -1989,7 +2000,7 @@ pgpv_rsa_public_decrypt(uint8_t *out, const uint8_t *in, size_t length, const pg
 	}
 	orsa->n = pubkey->bn[RSA_N].bn;
 	orsa->e = pubkey->bn[RSA_E].bn;
-	n = rsa_public_decrypt((int)length, in, out, orsa, RSA_NO_PADDING);
+	n = rsa_public_decrypt((int)length, in, out, orsa, NETPGPV_RSA_NO_PADDING);
 	orsa->n = orsa->e = NULL;
 	free(orsa);
 	return n;
@@ -2138,18 +2149,18 @@ valid_dates(pgpv_signature_t *signature, pgpv_pubkey_t *pubkey, char *buf, size_
 	cc = 0;
 	if (signature->birth < pubkey->birth) {
 		TIME_SNPRINTF(cc, buf, size, "Signature time (%.24s) was before pubkey creation ", signature->birth);
-		TIME_SNPRINTF(cc, &buf[cc], size - cc, "(%s)\n", pubkey->birth);
+		TIME_SNPRINTF(cc, &buf[cc], size - cc, "(%s)", pubkey->birth);
 		return cc;
 	}
 	now = time(NULL);
 	if (signature->expiry != 0) {
 		if ((t = signature->birth + signature->expiry) < now) {
-			TIME_SNPRINTF(cc, buf, size, "Signature expired on %.24s\n", t);
+			TIME_SNPRINTF(cc, buf, size, "Signature expired on %.24s", t);
 			return cc;
 		}
 	}
 	if (now < signature->birth) {
-		TIME_SNPRINTF(cc, buf, size, "Signature not valid before %.24s\n", signature->birth);
+		TIME_SNPRINTF(cc, buf, size, "Signature not valid before %.24s", signature->birth);
 		return cc;
 	}
 	return 0;
@@ -2167,12 +2178,12 @@ key_expired(pgpv_pubkey_t *pubkey, char *buf, size_t size)
 	cc = 0;
 	if (pubkey->expiry != 0) {
 		if ((t = pubkey->birth + pubkey->expiry) < now) {
-			TIME_SNPRINTF(cc, buf, size, "Pubkey expired on %.24s\n", t);
+			TIME_SNPRINTF(cc, buf, size, "Pubkey expired on %.24s", t);
 			return (int)cc;
 		}
 	}
 	if (now < pubkey->birth) {
-		TIME_SNPRINTF(cc, buf, size, "Pubkey not valid before %.24s\n", pubkey->birth);
+		TIME_SNPRINTF(cc, buf, size, "Pubkey not valid before %.24s", pubkey->birth);
 		return (int)cc;
 	}
 	return 0;
@@ -2309,7 +2320,7 @@ read_ascii_armor(pgpv_cursor_t *cursor, pgpv_mem_t *mem, const char *filename)
 			(size_t)(p - mem->mem));
 		return 0;
 	}
-	binsigsize = b64decode((char *)p, (size_t)(sigend - p), binsig, sizeof(binsig));
+	binsigsize = netpgpv_b64decode((char *)p, (size_t)(sigend - p), binsig, sizeof(binsig));
 
 	read_binary_memory(cursor->pgp, "signature", cons_onepass, 15);
 	ARRAY_APPEND(cursor->pgp->pkts, litdata);
@@ -2622,7 +2633,7 @@ read_ssh_file(pgpv_t *pgp, pgpv_primarykey_t *primary, const char *fmt, ...)
 	int64_t			 off;
 	va_list			 args;
 	char			 hostname[256];
-	char			 owner[2 * 256];
+	char			 owner[256];
 	char			*space;
 	char		 	*buf;
 	char		 	*bin;
@@ -2734,8 +2745,8 @@ read_ssh_file(pgpv_t *pgp, pgpv_primarykey_t *primary, const char *fmt, ...)
 		memset(&userid, 0x0, sizeof(userid));
 		(void) gethostname(hostname, sizeof(hostname));
 		if (strlen(space + 1) - 1 == 0) {
-			(void) snprintf(owner, sizeof(owner), "<root@%s>",
-					hostname);
+			(void) snprintf(owner, sizeof(owner), "<root@%.*s>",
+					240, hostname);
 		} else {
 			(void) snprintf(owner, sizeof(owner), "<%.*s>",
 				(int)strlen(space + 1) - 1,
@@ -3222,9 +3233,6 @@ pgpv_verify(pgpv_cursor_t *cursor, pgpv_t *pgp, const void *p, ssize_t size)
 		return 0;
 	}
 	if (!match_sig_id(cursor, pgp, signature, litdata, (unsigned)j, sub)) {
-		snprintf(cursor->why, sizeof(cursor->why),
-			"Signature does not match %.*s",
-			(int)obuf.c, (char *)obuf.v);
 		return 0;
 	}
 	ARRAY_APPEND(cursor->datacookies, pkt);

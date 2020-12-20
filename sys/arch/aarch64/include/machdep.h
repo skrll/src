@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.h,v 1.10 2020/02/15 08:16:10 skrll Exp $	*/
+/*	$NetBSD: machdep.h,v 1.17 2020/09/06 17:38:10 ryo Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -59,6 +59,8 @@ aarch64_kern_phystov(paddr_t pa)
 
 extern paddr_t physical_start;
 extern paddr_t physical_end;
+extern vaddr_t module_start;
+extern vaddr_t module_end;
 
 extern void (*cpu_reset_address0)(void);
 extern void (*cpu_reset_address)(void);
@@ -89,9 +91,11 @@ void data_abort_handler(struct trapframe *, uint32_t);
 
 /* trap.c */
 void lwp_trampoline(void);
+void configure_cpu_traps(void);
 void cpu_dosoftints(void);
 void cpu_switchto_softint(struct lwp *, int);
 void dosoftints(void);
+int fetch_arm_insn(uint64_t, uint64_t, uint32_t *);
 void trap_doast(struct trapframe *);
 
 void trap_el1t_sync(struct trapframe *);
@@ -136,10 +140,13 @@ cpu_disable_onfault(void)
 }
 #endif
 
+/* exec_machdep.c */
+void aarch64_setregs_ptrauth(struct lwp *, bool);
+
 /* fpu.c */
 void fpu_attach(struct cpu_info *);
 struct fpreg;
-void load_fpregs(struct fpreg *);
+void load_fpregs(const struct fpreg *);
 void save_fpregs(struct fpreg *);
 
 #ifdef TRAP_SIGDEBUG

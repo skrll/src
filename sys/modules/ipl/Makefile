@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.3 2019/02/17 04:05:53 rin Exp $
+#	$NetBSD: Makefile,v 1.6 2020/10/18 19:56:42 christos Exp $
 #
 
 .include "../Makefile.inc"
@@ -57,5 +57,12 @@ SRCS+=	radix_ipf.c
 WARNS=	3
 
 CWARNFLAGS.clang+=	-Wno-self-assign
+COPTS.fil.c+=   ${NO_ADDR_OF_PACKED_MEMBER}
+COPTS.ip_fil_netbsd.c+=   ${NO_ADDR_OF_PACKED_MEMBER}
+COPTS.ip_htable.c+=   ${NO_ADDR_OF_PACKED_MEMBER}
+COPTS.ip_nat.c+=   ${NO_ADDR_OF_PACKED_MEMBER}
+COPTS.ip_nat6.c+=   ${NO_ADDR_OF_PACKED_MEMBER}
+COPTS.ip_proxy.c+=   ${NO_ADDR_OF_PACKED_MEMBER}
+COPTS.ip_state.c+=   ${NO_ADDR_OF_PACKED_MEMBER}
 
 .include <bsd.kmodule.mk>

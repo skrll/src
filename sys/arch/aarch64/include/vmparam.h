@@ -1,4 +1,4 @@
-/* $NetBSD: vmparam.h,v 1.11 2020/03/04 19:28:04 ryo Exp $ */
+/* $NetBSD: vmparam.h,v 1.17 2020/11/10 07:51:19 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -103,10 +103,6 @@
 
 #define USRSTACK32	VM_MAXUSER_ADDRESS32
 
-#ifndef MAXTSIZ32
-#define	MAXTSIZ32	(1L << 26)	/* 32bit max text size (64MB) */
-#endif
-
 #ifndef	MAXDSIZ32
 #define	MAXDSIZ32	(3U*1024*1024*1024)	/* max data size */
 #endif
@@ -131,25 +127,27 @@
 
 /*
  * kernel virtual space layout:
- *   0xffff000000000000-   64T KSEG(direct mapping)
- *   0xffff400000000000-   32T (KASAN SHADOW MAP)
- *   0xffff600000000000-   32T (not used)
- *   0xffff800000000000-    1G EFI_RUNTIME
- *   0xffff800040000000-   64T (not used)
- *   0xffffc00000000000-   64T KERNEL VM Space (including kernel text/data/bss)
- *   0xfffffffff0000000-  254M KERNEL_IO for pmap_devmap
- *   0xffffffffffe00000-    2M RESERVED
+ *   0xffff_0000_0000_0000  -   64T  direct mapping
+ *   0xffff_4000_0000_0000  -   32T  (KASAN SHADOW MAP)
+ *   0xffff_6000_0000_0000  -   32T  (not used)
+ *   0xffff_8000_0000_0000  -    1G  EFI_RUNTIME
+ *   0xffff_8000_4000_0000  -   64T  (not used)
+ *   0xffff_c000_0000_0000  -   64T  KERNEL VM Space (including text/data/bss)
+ *   0xffff_ffff_f000_0000  -  254M  KERNEL_IO for pmap_devmap
+ *   0xffff_ffff_ffe0_0000  -    2M  RESERVED
  */
 #define VM_MIN_KERNEL_ADDRESS	((vaddr_t) 0xffffc00000000000L)
 #define VM_MAX_KERNEL_ADDRESS	((vaddr_t) 0xffffffffffe00000L)
 
 /*
  * last 254MB of kernel vm area (0xfffffffff0000000-0xffffffffffe00000)
- * may be used for devmap. address must be aligned 2MB (L2_SIZE)
- * see also aarch64/pmap.c:pmap_devmap_*
+ * may be used for devmap.  see aarch64/pmap.c:pmap_devmap_*
  */
 #define VM_KERNEL_IO_ADDRESS	0xfffffffff0000000L
 #define VM_KERNEL_IO_SIZE	(VM_MAX_KERNEL_ADDRESS - VM_KERNEL_IO_ADDRESS)
+
+#define VM_KERNEL_VM_BASE	VM_MIN_KERNEL_ADDRESS
+#define VM_KERNEL_VM_SIZE	(VM_MAX_KERNEL_ADDRESS - VM_KERNEL_VM_BASE)
 
 /*
  * Reserved space for EFI runtime services
@@ -170,14 +168,13 @@
  * Since we have the address space, we map all of physical memory (RAM)
  * using block page table entries.
  */
-#define AARCH64_KSEG_MASK	((vaddr_t) 0xffff000000000000L)
-#define AARCH64_KSEG_SIZE	(1UL << 46)	/* 64TB */
-#define AARCH64_KSEG_START	AARCH64_KSEG_MASK
-#define AARCH64_KSEG_END	(AARCH64_KSEG_START + AARCH64_KSEG_SIZE)
-#define AARCH64_KMEMORY_BASE	AARCH64_KSEG_MASK
-#define AARCH64_KVA_P(va)	(((vaddr_t) (va) & AARCH64_KSEG_MASK) != 0)
-#define AARCH64_PA_TO_KVA(pa)	((vaddr_t) ((pa) | AARCH64_KSEG_START))
-#define AARCH64_KVA_TO_PA(va)	((paddr_t) ((va) & ~AARCH64_KSEG_MASK))
+#define AARCH64_DIRECTMAP_MASK	((vaddr_t) 0xffff000000000000L)
+#define AARCH64_DIRECTMAP_SIZE	(1UL << 46)	/* 64TB */
+#define AARCH64_DIRECTMAP_START	AARCH64_DIRECTMAP_MASK
+#define AARCH64_DIRECTMAP_END	(AARCH64_DIRECTMAP_START + AARCH64_DIRECTMAP_SIZE)
+#define AARCH64_KVA_P(va)	(((vaddr_t) (va) & AARCH64_DIRECTMAP_MASK) != 0)
+#define AARCH64_PA_TO_KVA(pa)	((vaddr_t) ((pa) | AARCH64_DIRECTMAP_START))
+#define AARCH64_KVA_TO_PA(va)	((paddr_t) ((va) & ~AARCH64_DIRECTMAP_MASK))
 
 /* */
 #define VM_PHYSSEG_MAX		64              /* XXX */

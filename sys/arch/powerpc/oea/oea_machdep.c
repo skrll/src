@@ -1,4 +1,4 @@
-/*	$NetBSD: oea_machdep.c,v 1.78 2019/12/31 13:07:11 ad Exp $	*/
+/*	$NetBSD: oea_machdep.c,v 1.81 2020/07/06 10:34:23 rin Exp $	*/
 
 /*
  * Copyright (C) 2002 Matt Thomas
@@ -33,14 +33,15 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: oea_machdep.c,v 1.78 2019/12/31 13:07:11 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: oea_machdep.c,v 1.81 2020/07/06 10:34:23 rin Exp $");
 
-#include "opt_ppcarch.h"
-#include "opt_compat_netbsd.h"
+#ifdef _KERNEL_OPT
+#include "opt_altivec.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_multiprocessor.h"
-#include "opt_altivec.h"
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/buf.h>
@@ -1000,7 +1001,7 @@ oea_startup(const char *model)
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 				 VM_PHYS_SIZE, 0, false, NULL);
 
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem()));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem(false)));
 	printf("avail memory = %s\n", pbuf);
 
 #ifdef MULTIPROCESSOR

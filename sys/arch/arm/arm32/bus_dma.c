@@ -1,4 +1,4 @@
-/*	$NetBSD: bus_dma.c,v 1.121 2020/03/14 18:08:38 ad Exp $	*/
+/*	$NetBSD: bus_dma.c,v 1.127 2020/12/19 23:22:18 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2020 The NetBSD Foundation, Inc.
@@ -36,9 +36,10 @@
 #include "opt_cputypes.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.121 2020/03/14 18:08:38 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.127 2020/12/19 23:22:18 jmcneill Exp $");
 
 #include <sys/param.h>
+
 #include <sys/bus.h>
 #include <sys/cpu.h>
 #include <sys/kmem.h>
@@ -367,8 +368,23 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 			goto out;
 	}
 
-	if (t->_ranges != NULL)
-		cookieflags |= _BUS_DMA_MIGHT_NEED_BOUNCE;
+	if (t->_ranges != NULL) {
+		/*
+		 * If ranges are defined, we may have to bounce. The only
+		 * exception is if there is exactly one range that covers
+		 * all of physical memory.
+		 */
+		switch (t->_nranges) {
+		case 1:
+			if (t->_ranges[0].dr_sysbase == 0 &&
+			    t->_ranges[0].dr_len == UINTPTR_MAX) {
+				break;
+			}
+			/* FALLTHROUGH */
+		default:
+			cookieflags |= _BUS_DMA_MIGHT_NEED_BOUNCE;
+		}
+	}
 
 	if ((cookieflags & _BUS_DMA_MIGHT_NEED_BOUNCE) == 0) {
 		STAT_INCR(creates);
@@ -882,6 +898,7 @@ _bus_dmamap_sync_segment(vaddr_t va, paddr_t pa, vsize_t len, int ops,
 		cpu_dcache_inv_range(va, len);
 		cpu_sdcache_inv_range(va, pa, len);
 		break;
+
 	case BUS_DMASYNC_POSTREAD:
 		STAT_INCR(sync_postread);
 		cpu_dcache_inv_range(va, len);
@@ -1048,7 +1065,7 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 	 */
 	if ((ops & (BUS_DMASYNC_PREREAD|BUS_DMASYNC_PREWRITE)) != 0 &&
 	    (ops & (BUS_DMASYNC_POSTREAD|BUS_DMASYNC_POSTWRITE)) != 0)
-		panic("_bus_dmamap_sync: mix PRE and POST");
+		panic("%s: mix PRE and POST", __func__);
 
 	KASSERTMSG(offset < map->dm_mapsize,
 	    "offset %lu mapsize %lu",
@@ -1109,24 +1126,28 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 		case _BUS_DMA_BUFTYPE_LINEAR:
 			memcpy(dataptr, cookie->id_origlinearbuf + offset, len);
 			break;
+
 		case _BUS_DMA_BUFTYPE_MBUF:
 			m_copydata(cookie->id_origmbuf, offset, len, dataptr);
 			break;
+
 		case _BUS_DMA_BUFTYPE_UIO:
-			_bus_dma_uiomove(dataptr, cookie->id_origuio, len, UIO_WRITE);
+			_bus_dma_uiomove(dataptr, cookie->id_origuio, len,
+			    UIO_WRITE);
 			break;
+
 #ifdef DIAGNOSTIC
 		case _BUS_DMA_BUFTYPE_RAW:
-			panic("_bus_dmamap_sync(pre): _BUS_DMA_BUFTYPE_RAW");
+			panic("%s:(pre): _BUS_DMA_BUFTYPE_RAW", __func__);
 			break;
 
 		case _BUS_DMA_BUFTYPE_INVALID:
-			panic("_bus_dmamap_sync(pre): _BUS_DMA_BUFTYPE_INVALID");
+			panic("%s(pre): _BUS_DMA_BUFTYPE_INVALID", __func__);
 			break;
 
 		default:
-			panic("_bus_dmamap_sync(pre): map %p: unknown buffer type %d\n",
-			    map, map->_dm_buftype);
+			panic("%s(pre): map %p: unknown buffer type %d\n",
+			    __func__, map, map->_dm_buftype);
 			break;
 #endif /* DIAGNOSTIC */
 		}
@@ -1134,6 +1155,29 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 
 	/* Skip cache frobbing if mapping was COHERENT */
 	if ((map->_dm_flags & _BUS_DMAMAP_COHERENT)) {
+		switch (ops) {
+		case BUS_DMASYNC_PREREAD|BUS_DMASYNC_PREWRITE:
+			STAT_INCR(sync_prereadwrite);
+			break;
+
+		case BUS_DMASYNC_PREREAD:
+			STAT_INCR(sync_preread);
+			break;
+
+		case BUS_DMASYNC_PREWRITE:
+			STAT_INCR(sync_prewrite);
+			break;
+
+		case BUS_DMASYNC_POSTREAD|BUS_DMASYNC_POSTWRITE:
+			STAT_INCR(sync_postreadwrite);
+			break;
+
+		case BUS_DMASYNC_POSTREAD:
+			STAT_INCR(sync_postread);
+			break;
+
+		/* BUS_DMASYNC_POSTWRITE was aleady handled as a fastpath */
+		}
 		/*
 		 * Drain the write buffer of DMA operators.
 		 * 1) when cpu->device (prewrite)
@@ -1183,12 +1227,12 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 		break;
 
 	case _BUS_DMA_BUFTYPE_INVALID:
-		panic("_bus_dmamap_sync: _BUS_DMA_BUFTYPE_INVALID");
+		panic("%s: _BUS_DMA_BUFTYPE_INVALID", __func__);
 		break;
 
 	default:
-		panic("_bus_dmamap_sync: map %p: unknown buffer type %d\n",
-		    map, map->_dm_buftype);
+		panic("%s: map %p: unknown buffer type %d\n", __func__, map,
+		    map->_dm_buftype);
 	}
 
 	/* Drain the write buffer. */
@@ -1217,17 +1261,18 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 	case _BUS_DMA_BUFTYPE_UIO:
 		_bus_dma_uiomove(dataptr, cookie->id_origuio, len, UIO_READ);
 		break;
+
 #ifdef DIAGNOSTIC
 	case _BUS_DMA_BUFTYPE_RAW:
-		panic("_bus_dmamap_sync(post): _BUS_DMA_BUFTYPE_RAW");
+		panic("%s(post): _BUS_DMA_BUFTYPE_RAW", __func__);
 		break;
 
 	case _BUS_DMA_BUFTYPE_INVALID:
-		panic("_bus_dmamap_sync(post): _BUS_DMA_BUFTYPE_INVALID");
+		panic("%s(post): _BUS_DMA_BUFTYPE_INVALID", __func__);
 		break;
 
 	default:
-		panic("_bus_dmamap_sync(post): map %p: unknown buffer type %d\n",
+		panic("%s(post): map %p: unknown buffer type %d\n", __func__,
 		    map, map->_dm_buftype);
 		break;
 #endif
@@ -1810,31 +1855,40 @@ int
 _bus_dmatag_subregion(bus_dma_tag_t tag, bus_addr_t min_addr,
     bus_addr_t max_addr, bus_dma_tag_t *newtag, int flags)
 {
+	if (min_addr >= max_addr)
+		return EOPNOTSUPP;
 
 #ifdef _ARM32_NEED_BUS_DMA_BOUNCE
 	struct arm32_dma_range *dr;
-	bool subset = false;
+	bool psubset = true;
 	size_t nranges = 0;
 	size_t i;
 	for (i = 0, dr = tag->_ranges; i < tag->_nranges; i++, dr++) {
-		if (dr->dr_sysbase <= min_addr
-		    && max_addr <= dr->dr_sysbase + dr->dr_len - 1) {
-			subset = true;
+		/*
+		 * If the new {min,max}_addr are narrower than any of the
+		 * ranges in the parent tag then we need a new tag;
+		 * otherwise the parent tag is a subset of the new
+		 * range and can continue to be used.
+		 */
+		if (min_addr > dr->dr_sysbase
+		    || max_addr < dr->dr_sysbase + dr->dr_len - 1) {
+			psubset = false;
 		}
 		if (min_addr <= dr->dr_sysbase + dr->dr_len
 		    && max_addr >= dr->dr_sysbase) {
 			nranges++;
 		}
 	}
-	if (subset) {
+	if (nranges == 0) {
+		nranges = 1;
+		psubset = false;
+	}
+	if (psubset) {
 		*newtag = tag;
 		/* if the tag must be freed, add a reference */
 		if (tag->_tag_needs_free)
 			(tag->_tag_needs_free)++;
 		return 0;
-	}
-	if (nranges == 0) {
-		nranges = 1;
 	}
 
 	const size_t tagsize = sizeof(*tag) + nranges * sizeof(*dr);
@@ -1853,22 +1907,35 @@ _bus_dmatag_subregion(bus_dma_tag_t tag, bus_addr_t min_addr,
 		dr->dr_busbase = min_addr;
 		dr->dr_len = max_addr + 1 - min_addr;
 	} else {
-		for (i = 0; i < nranges; i++) {
-			if (min_addr > dr->dr_sysbase + dr->dr_len
-			    || max_addr < dr->dr_sysbase)
+		struct arm32_dma_range *pdr;
+
+		for (i = 0, pdr = tag->_ranges; i < tag->_nranges; i++, pdr++) {
+			KASSERT(nranges != 0);
+
+			if (min_addr > pdr->dr_sysbase + pdr->dr_len
+			    || max_addr < pdr->dr_sysbase) {
+				/*
+				 * this range doesn't overlap with new limits,
+				 * so skip.
+				 */
 				continue;
-			dr[0] = tag->_ranges[i];
+			}
+			/*
+			 * Copy the range and adjust to fit within the new
+			 * limits
+			 */
+			dr[0] = pdr[0];
 			if (dr->dr_sysbase < min_addr) {
 				psize_t diff = min_addr - dr->dr_sysbase;
 				dr->dr_busbase += diff;
 				dr->dr_len -= diff;
 				dr->dr_sysbase += diff;
 			}
-			if (max_addr != 0xffffffff
-			    && max_addr + 1 < dr->dr_sysbase + dr->dr_len) {
+			if (max_addr <= dr->dr_sysbase + dr->dr_len - 1) {
 				dr->dr_len = max_addr + 1 - dr->dr_sysbase;
 			}
 			dr++;
+			nranges--;
 		}
 	}
 

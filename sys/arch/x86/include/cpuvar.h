@@ -1,4 +1,4 @@
-/* 	$NetBSD: cpuvar.h,v 1.51 2019/02/11 14:59:32 cherry Exp $ */
+/* 	$NetBSD: cpuvar.h,v 1.53 2020/07/14 00:45:53 yamaguchi Exp $ */
 
 /*-
  * Copyright (c) 2000, 2007 The NetBSD Foundation, Inc.
@@ -99,6 +99,7 @@ struct cpufeature_attach_args {
 #include <sys/kcpuset.h>
 #if defined(_KERNEL_OPT)
 #include "opt_multiprocessor.h"
+#include "opt_xen.h"
 #endif /* defined(_KERNEL_OPT) */
 
 extern int (*x86_ipi)(int, int, int);
@@ -111,11 +112,12 @@ void identifycpu_cpuids(struct cpu_info *);
 void cpu_init(struct cpu_info *);
 void cpu_init_tss(struct cpu_info *);
 void cpu_init_first(void);
+void cpu_init_idt(struct cpu_info *);
 
 void x86_cpu_idle_init(void);
 void x86_cpu_idle_halt(void);
 void x86_cpu_idle_mwait(void);
-#ifdef XENPV
+#ifdef XEN
 void x86_cpu_idle_xen(void);
 #endif
 

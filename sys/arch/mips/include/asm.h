@@ -1,4 +1,4 @@
-/*	$NetBSD: asm.h,v 1.55 2018/09/04 00:01:41 mrg Exp $	*/
+/*	$NetBSD: asm.h,v 1.62 2020/09/26 08:19:11 simonb Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -56,6 +56,13 @@
 
 #include <sys/cdefs.h>		/* for API selection */
 #include <mips/regdef.h>
+
+#define	__BIT(n)	(1 << (n))
+#define	__BITS(hi,lo)	((~((~0)<<((hi)+1)))&((~0)<<(lo)))
+
+#define	__LOWEST_SET_BIT(__mask) ((((__mask) - 1) & (__mask)) ^ (__mask))
+#define	__SHIFTOUT(__x, __mask) (((__x) & (__mask)) / __LOWEST_SET_BIT(__mask))
+#define	__SHIFTIN(__x, __mask) ((__x) * __LOWEST_SET_BIT(__mask))
 
 /*
  * Define -pg profile entry code.
@@ -230,6 +237,14 @@ _C_LABEL(x):
 _C_LABEL(x):
 
 /*
+ * EXPORT_OBJECT -- export definition of symbol of symbol
+ * type Object, visible to ksyms(4) address search.
+ */
+#define	EXPORT_OBJECT(x)		\
+	EXPORT(x);			\
+	.type	_C_LABEL(x), @object;
+
+/*
  * VECTOR
  *	exception vector entrypoint
  *	XXX: regmask should be used to generate .mask
@@ -267,7 +282,9 @@ _C_LABEL(x):
 	.asciz str;			\
 	.align	3
 
-#define	RCSID(name)	.pushsection ".ident"; .asciz name; .popsection
+#define	RCSID(x)	.pushsection ".ident","MS",@progbits,1;		\
+			.asciz x;					\
+			.popsection
 
 /*
  * XXX retain dialects XXX
@@ -511,11 +528,27 @@ _C_LABEL(x):
 #define	NOP_L		/* nothing */
 #endif
 
+/* compiler define */
+#if defined(__OCTEON__)
+				/* early cnMIPS have erratum which means 2 */
+#define	LLSCSYNC	sync 4; sync 4
+#define	SYNC		sync 4		/* sync 4 == syncw - sync all writes */
+#define	BDSYNC		sync 4		/* sync 4 == syncw - sync all writes */
+#elif __mips >= 3 || !defined(__mips_o32)
+#define	LLSCSYNC	sync
+#define	SYNC		sync
+#define	BDSYNC		sync
+#else
+#define	LLSCSYNC	/* nothing */
+#define	SYNC		/* nothing */
+#define	BDSYNC		nop
+#endif
+
 /* CPU dependent hook for cp0 load delays */
 #if defined(MIPS1) || defined(MIPS2) || defined(MIPS3)
-#define MFC0_HAZARD	sll $0,$0,1	/* super scalar nop */
+#define	MFC0_HAZARD	sll $0,$0,1	/* super scalar nop */
 #else
-#define MFC0_HAZARD	/* nothing */
+#define	MFC0_HAZARD	/* nothing */
 #endif
 
 #if _MIPS_ISA == _MIPS_ISA_MIPS1 || _MIPS_ISA == _MIPS_ISA_MIPS2 || \

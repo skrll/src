@@ -1,4 +1,4 @@
-/*	$NetBSD: clock.c,v 1.60 2019/06/29 16:37:49 tsutsui Exp $	*/
+/*	$NetBSD: clock.c,v 1.62 2020/07/03 16:23:03 maxv Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: clock.c,v 1.60 2019/06/29 16:37:49 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: clock.c,v 1.62 2020/07/03 16:23:03 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -80,14 +80,11 @@ static int	atari_rtc_set(todr_chip_handle_t, struct clock_ymdhms *);
 static u_int clk_getcounter(struct timecounter *);
 
 static struct timecounter clk_timecounter = {
-	clk_getcounter,	/* get_timecount */
-	0,		/* no poll_pps */
-	~0u,		/* counter_mask */
-	CLOCK_HZ,	/* frequency */
-	"clock",	/* name, overriden later */
-	100,		/* quality */
-	NULL,		/* prev */
-	NULL,		/* next */
+	.tc_get_timecount = clk_getcounter,
+	.tc_counter_mask = ~0u,
+	.tc_frequency = CLOCK_HZ,
+	.tc_name = "clock",
+	.tc_quality = 100,
 };
 
 /*
@@ -283,7 +280,7 @@ clk_getcounter(struct timecounter *tc)
 	static uint32_t lastcount;
 
 	s = splhigh();
-	cur_hardclock = hardclock_ticks;
+	cur_hardclock = getticks();
 	ipra = MFP->mf_ipra;
 	tadr = MFP->mf_tadr;
 	delta = divisor - tadr;

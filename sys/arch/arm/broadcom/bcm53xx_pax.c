@@ -34,12 +34,11 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: bcm53xx_pax.c,v 1.17 2018/11/16 15:06:21 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: bcm53xx_pax.c,v 1.20 2020/10/30 18:54:36 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
 #include <sys/device.h>
-#include <sys/extent.h>
 #include <sys/intr.h>
 #include <sys/kmem.h>
 #include <sys/systm.h>
@@ -346,13 +345,12 @@ bcmpax_ccb_attach(device_t parent, device_t self, void *aux)
 			bcmpax_write_4(sc, PCIE_OMAP_1_LOWER, base1 | 1);
 		}
 
-		struct extent *memext = extent_create("pcimem", base,
-		     base + size, NULL, 0, EX_NOWAIT);
-
-		error = pci_configure_bus(&sc->sc_pc,
-		    NULL, memext, NULL, 0, arm_pcache.dcache_line_size);
-
-		extent_destroy(memext);
+		struct pciconf_resources *pcires = pciconf_resource_init();
+		pciconf_resource_add(pcires, PCICONF_RESOURCE_MEM,
+		    base, size);
+		error = pci_configure_bus(&sc->sc_pc, pcires,
+		    0, arm_pcache.dcache_line_size);
+		pciconf_resource_fini(pcires);
 
 		if (error) {
 			aprint_normal_dev(self, "configuration failed\n");
@@ -419,12 +417,12 @@ bcmpax_conf_addr_write(struct bcmpax_softc *sc, pcitag_t tag)
 		bcmpax_write_4(sc, PCIE_CFG_IND_ADDR,
 		    __SHIFTIN(func, CFG_IND_ADDR_FUNC)
 		    | __SHIFTIN(reg, CFG_IND_ADDR_REG));
-		arm_dsb();
+		dsb(sy);
 		return PCIE_CFG_IND_DATA;
 	}
 	if (sc->sc_linkup) {
 		bcmpax_write_4(sc, PCIE_CFG_ADDR, tag);
-		arm_dsb();
+		dsb(sy);
 		return PCIE_CFG_DATA;
 	} 
 	return 0;

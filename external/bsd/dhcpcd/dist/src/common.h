@@ -31,6 +31,7 @@
 
 #include <sys/param.h>
 #include <sys/time.h>
+#include <sys/types.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -43,6 +44,7 @@
 #define	ELOOP_IPV6ND		6
 #define	ELOOP_IPV6RA_EXPIRE	7
 #define	ELOOP_DHCP6		8
+#define	ELOOP_IF		9
 
 #ifndef HOSTNAME_MAX_LEN
 #define HOSTNAME_MAX_LEN	250	/* 255 - 3 (FQDN) - 2 (DNS enc) */
@@ -147,6 +149,9 @@
 
 const char *hwaddr_ntoa(const void *, size_t, char *, size_t);
 size_t hwaddr_aton(uint8_t *, const char *);
-size_t read_hwaddr_aton(uint8_t **, const char *);
+ssize_t readfile(const char *, void *, size_t);
+ssize_t writefile(const char *, mode_t, const void *, size_t);
+int filemtime(const char *, time_t *);
+char *get_line(char ** __restrict, ssize_t * __restrict);
 int is_root_local(void);
 #endif

@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_prf.c,v 1.182 2020/01/01 22:57:17 thorpej Exp $	*/
+/*	$NetBSD: subr_prf.c,v 1.185 2020/07/11 07:14:53 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1986, 1988, 1991, 1993
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_prf.c,v 1.182 2020/01/01 22:57:17 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_prf.c,v 1.185 2020/07/11 07:14:53 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -65,7 +65,6 @@ __KERNEL_RCSID(0, "$NetBSD: subr_prf.c,v 1.182 2020/01/01 22:57:17 thorpej Exp $
 #include <sys/atomic.h>
 #include <sys/kernel.h>
 #include <sys/cpu.h>
-#include <sys/sha2.h>
 #include <sys/rndsource.h>
 #include <sys/kmem.h>
 
@@ -105,7 +104,6 @@ static void	 putchar(int, int, struct tty *);
 
 extern	struct tty *constty;	/* pointer to console "window" tty */
 extern	int log_open;	/* subr_log: is /dev/klog open? */
-extern	krndsource_t	rnd_printf_source;
 const	char *panicstr; /* arg to first call to panic (used as a flag
 			   to indicate that panic has already been called). */
 struct cpu_info *paniccpu;	/* cpu that first paniced */
@@ -114,12 +112,7 @@ long	panicstart, panicend;	/* position in the msgbuf of the start and
 int	doing_shutdown;	/* set to indicate shutdown in progress */
 
 #ifdef RND_PRINTF
-static bool kprintf_inited_callout = false;
-static SHA512_CTX kprnd_sha;
-static uint8_t kprnd_accum[SHA512_DIGEST_LENGTH];
-static int kprnd_added;
-
-static struct callout kprnd_callout;
+static krndsource_t	rnd_printf_source;
 #endif
 
 #ifndef	DUMP_ON_PANIC
@@ -145,34 +138,6 @@ const char HEXDIGITS[] = "0123456789ABCDEF";
  * functions
  */
 
-#ifdef RND_PRINTF
-static void kprintf_rnd_get(size_t bytes, void *priv)
-{
-	if (kprnd_added)  {
-		KASSERT(kprintf_inited);
-		if (mutex_tryenter(&kprintf_mtx)) {
-			SHA512_Final(kprnd_accum, &kprnd_sha);
-			rnd_add_data(&rnd_printf_source,
-				     kprnd_accum, sizeof(kprnd_accum), 0);
-			kprnd_added = 0;
-			/* This, we must do, since we called _Final. */
-			SHA512_Init(&kprnd_sha);
-			/* This is optional but seems useful. */
-			SHA512_Update(&kprnd_sha, kprnd_accum,
-				      sizeof(kprnd_accum));
-			mutex_exit(&kprintf_mtx);
-		}
-	}
-}
-
-static void kprintf_rnd_callout(void *arg)
-{
-	kprintf_rnd_get(0, NULL);
-	callout_schedule(&kprnd_callout, hz);
-}
-
-#endif
-
 /*
  * Locking is inited fairly early in MI bootstrap.  Before that
  * prints are done unlocked.  But that doesn't really matter,
@@ -183,24 +148,13 @@ kprintf_init(void)
 {
 
 	KASSERT(!kprintf_inited && cold); /* not foolproof, but ... */
-#ifdef RND_PRINTF
-	SHA512_Init(&kprnd_sha);
-#endif
 	mutex_init(&kprintf_mtx, MUTEX_DEFAULT, IPL_HIGH);
+#ifdef RND_PRINTF
+	rnd_attach_source(&rnd_printf_source, "printf", RND_TYPE_UNKNOWN,
+	    RND_FLAG_COLLECT_TIME|RND_FLAG_COLLECT_VALUE);
+#endif
 	kprintf_inited = true;
 }
-
-#ifdef RND_PRINTF
-void
-kprintf_init_callout(void)
-{
-	KASSERT(!kprintf_inited_callout);
-	callout_init(&kprnd_callout, CALLOUT_MPSAFE);
-	callout_setfunc(&kprnd_callout, kprintf_rnd_callout, NULL);
-	callout_schedule(&kprnd_callout, hz);
-	kprintf_inited_callout = true;
-}
-#endif
 
 void
 kprintf_lock(void)
@@ -546,17 +500,8 @@ putchar(int c, int flags, struct tty *tp)
 
 #ifdef RND_PRINTF
 	if (__predict_true(kprintf_inited)) {
-		static uint8_t rbuf[SHA512_BLOCK_LENGTH];
-		static int cursor;
-
-		rbuf[cursor] = c;
-		if (cursor == sizeof(rbuf) - 1) {
-			SHA512_Update(&kprnd_sha, rbuf, sizeof(rbuf));
-			kprnd_added++;
-			cursor = 0;
-		} else {
-			cursor++;
-		}
+		unsigned char ch = c;
+		rnd_add_data(&rnd_printf_source, &ch, 1, 0);
 	}
 #endif
 }
@@ -589,7 +534,7 @@ uprintf(const char *fmt, ...)
 	struct proc *p = curproc;
 	va_list ap;
 
-	/* mutex_enter(proc_lock); XXXSMP */
+	/* mutex_enter(&proc_lock); XXXSMP */
 
 	if (p->p_lflag & PL_CONTROLT && p->p_session->s_ttyvp) {
 		/* No mutex needed; going to process TTY. */
@@ -598,7 +543,7 @@ uprintf(const char *fmt, ...)
 		va_end(ap);
 	}
 
-	/* mutex_exit(proc_lock); XXXSMP */
+	/* mutex_exit(&proc_lock); XXXSMP */
 }
 
 void
@@ -637,12 +582,12 @@ tprintf_open(struct proc *p)
 
 	cookie = NULL;
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	if (p->p_lflag & PL_CONTROLT && p->p_session->s_ttyvp) {
 		proc_sesshold(p->p_session);
 		cookie = (tpr_t)p->p_session;
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	return cookie;
 }
@@ -656,7 +601,7 @@ tprintf_close(tpr_t sess)
 {
 
 	if (sess) {
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		/* Releases proc_lock. */
 		proc_sessrele((struct session *)sess);
 	}
@@ -676,7 +621,7 @@ tprintf(tpr_t tpr, const char *fmt, ...)
 	int flags = TOLOG;
 	va_list ap;
 
-	/* mutex_enter(proc_lock); XXXSMP */
+	/* mutex_enter(&proc_lock); XXXSMP */
 	if (sess && sess->s_ttyvp && ttycheckoutq(sess->s_ttyp, 0)) {
 		flags |= TOTTY;
 		tp = sess->s_ttyp;
@@ -690,7 +635,7 @@ tprintf(tpr_t tpr, const char *fmt, ...)
 	va_end(ap);
 
 	kprintf_unlock();
-	/* mutex_exit(proc_lock);	XXXSMP */
+	/* mutex_exit(&proc_lock);	XXXSMP */
 
 	logwakeup();
 }
@@ -1428,20 +1373,21 @@ reswitch:	switch (ch) {
 			base = DEC;
 			goto number;
 		case 'n':
+			/* no %n support in the kernel, consume and skip */
 			if (flags & MAXINT)
-				*va_arg(ap, intmax_t *) = ret;
+				(void)va_arg(ap, intmax_t *);
 			else if (flags & PTRINT)
-				*va_arg(ap, intptr_t *) = ret;
+				(void)va_arg(ap, intptr_t *);
 			else if (flags & SIZEINT)
-				*va_arg(ap, ssize_t *) = ret;
+				(void)va_arg(ap, ssize_t *);
 			else if (flags & QUADINT)
-				*va_arg(ap, quad_t *) = ret;
+				(void)va_arg(ap, quad_t *);
 			else if (flags & LONGINT)
-				*va_arg(ap, long *) = ret;
+				(void)va_arg(ap, long *);
 			else if (flags & SHORTINT)
-				*va_arg(ap, short *) = ret;
+				(void)va_arg(ap, short *);
 			else
-				*va_arg(ap, int *) = ret;
+				(void)va_arg(ap, int *);
 			continue;	/* no output */
 		case 'O':
 			flags |= LONGINT;
@@ -1642,11 +1588,8 @@ done:
 	(*v_flush)();
 
 #ifdef RND_PRINTF
-	if (!cold) {
-		struct timespec ts;
-		(void)nanotime(&ts);
-		SHA512_Update(&kprnd_sha, (char *)&ts, sizeof(ts));
-	}
+	if (__predict_true(kprintf_inited))
+		rnd_add_data(&rnd_printf_source, NULL, 0, 0);
 #endif
 	return ret;
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: nilfs_vnops.c,v 1.38 2019/12/27 09:41:51 msaitoh Exp $ */
+/*	$NetBSD: nilfs_vnops.c,v 1.42 2020/06/27 17:29:18 christos Exp $	*/
 
 /*
  * Copyright (c) 2008, 2009 Reinoud Zandijk
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: nilfs_vnops.c,v 1.38 2019/12/27 09:41:51 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nilfs_vnops.c,v 1.42 2020/06/27 17:29:18 christos Exp $");
 #endif /* not lint */
 
 
@@ -179,7 +179,7 @@ nilfs_read(void *v)
 
 		/* ubc, here we come, prepare to trap */
 		error = ubc_uiomove(uobj, uio, len, advice,
-		    UBC_READ | UBC_PARTIALOK | UBC_UNMAP_FLAG(vp));
+		    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 		if (error)
 			break;
 	}
@@ -269,7 +269,7 @@ nilfs_write(void *v)
 
 		/* ubc, here we come, prepare to trap */
 		error = ubc_uiomove(uobj, uio, len, advice,
-		    UBC_WRITE | UBC_UNMAP_FLAG(vp));
+		    UBC_WRITE | UBC_VNODE_FLAGS(vp));
 		if (error)
 			break;
 	}
@@ -926,9 +926,9 @@ nilfs_pathconf(void *v)
 #endif
 		*ap->a_retval = bits;
 		return 0;
+	default:
+		return genfs_pathconf(ap);
 	}
-
-	return EINVAL;
 }
 
 
@@ -976,8 +976,8 @@ nilfs_close(void *v)
 	nilfs_node = nilfs_node;	/* shut up gcc */
 
 	mutex_enter(vp->v_interlock);
-		if (vp->v_usecount > 1)
-			nilfs_itimes(nilfs_node, NULL, NULL, NULL);
+	if (vrefcnt(vp) > 1)
+		nilfs_itimes(nilfs_node, NULL, NULL, NULL);
 	mutex_exit(vp->v_interlock);
 
 	return 0;
@@ -987,7 +987,7 @@ nilfs_close(void *v)
 /* --------------------------------------------------------------------- */
 
 static int
-nilfs_check_possible(struct vnode *vp, struct vattr *vap, mode_t mode)
+nilfs_check_possible(struct vnode *vp, struct vattr *vap, accmode_t accmode)
 {
 	int flags;
 
@@ -1000,7 +1000,7 @@ nilfs_check_possible(struct vnode *vp, struct vattr *vap, mode_t mode)
 		 * normal nodes: check if we're on a read-only mounted
 		 * filingsystem and bomb out if we're trying to write.
 		 */
-		if ((mode & VWRITE) && (vp->v_mount->mnt_flag & MNT_RDONLY))
+		if ((accmode & VWRITE) && (vp->v_mount->mnt_flag & MNT_RDONLY))
 			return EROFS;
 		break;
 	case VBLK:
@@ -1020,21 +1020,21 @@ nilfs_check_possible(struct vnode *vp, struct vattr *vap, mode_t mode)
 	/* noone may write immutable files */
 	/* TODO: get chflags(2) flags */
 	flags = 0;
-	if ((mode & VWRITE) && (flags & IMMUTABLE))
+	if ((accmode & VWRITE) && (flags & IMMUTABLE))
 		return EPERM;
 
 	return 0;
 }
 
 static int
-nilfs_check_permitted(struct vnode *vp, struct vattr *vap, mode_t mode,
+nilfs_check_permitted(struct vnode *vp, struct vattr *vap, accmode_t accmode,
     kauth_cred_t cred)
 {
 
 	/* ask the generic genfs_can_access to advice on security */
-	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(mode,
-	    vp->v_type, vap->va_mode), vp, NULL, genfs_can_access(vp->v_type,
-	    vap->va_mode, vap->va_uid, vap->va_gid, mode, cred));
+	return kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(accmode,
+	    vp->v_type, vap->va_mode), vp, NULL, genfs_can_access(vp, cred,
+	    vap->va_uid, vap->va_gid, vap->va_mode, NULL, accmode));
 }
 
 int
@@ -1042,12 +1042,12 @@ nilfs_access(void *v)
 {
 	struct vop_access_args /* {
 		struct vnode *a_vp;
-		int a_mode;
+		accmode_t a_accmode;
 		kauth_cred_t a_cred;
 		struct proc *a_p;
 	} */ *ap = v;
 	struct vnode    *vp   = ap->a_vp;
-	mode_t	         mode = ap->a_mode;
+	accmode_t        accmode = ap->a_accmode;
 	kauth_cred_t     cred = ap->a_cred;
 	/* struct nilfs_node *nilfs_node = VTOI(vp); */
 	struct vattr vap;
@@ -1059,11 +1059,11 @@ nilfs_access(void *v)
 	if (error)
 		return error;
 
-	error = nilfs_check_possible(vp, &vap, mode);
+	error = nilfs_check_possible(vp, &vap, accmode);
 	if (error)
 		return error;
 
-	error = nilfs_check_permitted(vp, &vap, mode, cred);
+	error = nilfs_check_permitted(vp, &vap, accmode, cred);
 
 	return error;
 }
@@ -1549,6 +1549,7 @@ const struct vnodeopv_entry_desc nilfs_vnodeop_entries[] = {
 	{ &vop_open_desc, nilfs_open },		/* open */
 	{ &vop_close_desc, nilfs_close },	/* close */
 	{ &vop_access_desc, nilfs_access },	/* access */
+	{ &vop_accessx_desc, genfs_accessx },	/* accessx */
 	{ &vop_getattr_desc, nilfs_getattr },	/* getattr */
 	{ &vop_setattr_desc, nilfs_setattr },	/* setattr */	/* TODO chflags */
 	{ &vop_read_desc, nilfs_read },		/* read */

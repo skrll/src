@@ -1,4 +1,4 @@
-/*	$NetBSD: nfs_subs.c,v 1.239 2020/04/04 07:07:20 mlelstv Exp $	*/
+/*	$NetBSD: nfs_subs.c,v 1.241 2020/09/05 16:30:12 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nfs_subs.c,v 1.239 2020/04/04 07:07:20 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nfs_subs.c,v 1.241 2020/09/05 16:30:12 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_nfs.h"
@@ -100,7 +100,7 @@ __KERNEL_RCSID(0, "$NetBSD: nfs_subs.c,v 1.239 2020/04/04 07:07:20 mlelstv Exp $
 #include <sys/atomic.h>
 #include <sys/cprng.h>
 
-#include <uvm/uvm.h>
+#include <uvm/uvm_page.h>
 #include <uvm/uvm_page_array.h>
 
 #include <nfs/rpcv2.h>
@@ -1798,10 +1798,10 @@ nfs_clearcommit(struct mount *mp)
 		    np->n_pushedhi = 0;
 		np->n_commitflags &=
 		    ~(NFS_COMMIT_PUSH_VALID | NFS_COMMIT_PUSHED_VALID);
-		uvm_page_array_init(&a);
+		uvm_page_array_init(&a, &vp->v_uobj, 0);
 		off = 0;
-		while ((pg = uvm_page_array_fill_and_peek(&a, &vp->v_uobj, off,
-		    0, 0)) != NULL) {
+		while ((pg = uvm_page_array_fill_and_peek(&a, off, 0)) !=
+		    NULL) {
 			pg->flags &= ~PG_NEEDCOMMIT;
 			uvm_page_array_advance(&a);
 			off = pg->offset + PAGE_SIZE;

@@ -1,4 +1,4 @@
-/*	$NetBSD: cdefs_elf.h,v 1.55 2020/03/22 00:25:01 kamil Exp $	*/
+/*	$NetBSD: cdefs_elf.h,v 1.57 2020/04/30 14:32:05 joerg Exp $	*/
 
 /*
  * Copyright (c) 1995, 1996 Carnegie-Mellon University.
@@ -134,16 +134,30 @@
 	      _C_LABEL_STRING(#name) " = " _C_LABEL_STRING(#resolver))
 #endif
 
+#ifdef __arm__
 #if __STDC__
-#define	__SECTIONSTRING(_sec, _str)					\
-	__asm(".pushsection " #_sec "\n"				\
+#  define	__SECTIONSTRING(_sec, _str)					\
+	__asm(".pushsection " #_sec ",\"MS\",%progbits,1\n"		\
 	      ".asciz \"" _str "\"\n"					\
 	      ".popsection")
 #else
-#define	__SECTIONSTRING(_sec, _str)					\
-	__asm(".pushsection _sec\n"					\
+#  define	__SECTIONSTRING(_sec, _str)					\
+	__asm(".pushsection " _sec ",\"MS\",%progbits,1\n"		\
 	      ".asciz \"" _str "\"\n"					\
 	      ".popsection")
+#  endif
+#else
+#  if __STDC__
+#  define	__SECTIONSTRING(_sec, _str)					\
+	__asm(".pushsection " #_sec ",\"MS\",@progbits,1\n"		\
+	      ".asciz \"" _str "\"\n"					\
+	      ".popsection")
+#  else
+#  define	__SECTIONSTRING(_sec, _str)					\
+	__asm(".pushsection " _sec ",\"MS\",@progbits,1\n"		\
+	      ".asciz \"" _str "\"\n"					\
+	      ".popsection")
+#  endif
 #endif
 
 #define	__IDSTRING(_n,_s)		__SECTIONSTRING(.ident,_s)

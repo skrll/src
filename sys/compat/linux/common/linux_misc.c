@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_misc.c,v 1.247 2019/12/31 13:07:13 ad Exp $	*/
+/*	$NetBSD: linux_misc.c,v 1.251 2020/06/11 22:21:05 ad Exp $	*/
 
 /*-
  * Copyright (c) 1995, 1998, 1999, 2008 The NetBSD Foundation, Inc.
@@ -57,7 +57,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_misc.c,v 1.247 2019/12/31 13:07:13 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_misc.c,v 1.251 2020/06/11 22:21:05 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -93,6 +93,7 @@ __KERNEL_RCSID(0, "$NetBSD: linux_misc.c,v 1.247 2019/12/31 13:07:13 ad Exp $");
 #include <sys/swap.h>		/* for SWAP_ON */
 #include <sys/sysctl.h>		/* for KERN_DOMAINNAME */
 #include <sys/kauth.h>
+#include <sys/futex.h>
 
 #include <sys/ptrace.h>
 #include <machine/ptrace.h>
@@ -1346,6 +1347,7 @@ linux_sys_sysinfo(struct lwp *l, const struct linux_sys_sysinfo_args *uap, regis
 	} */
 	struct linux_sysinfo si;
 	struct loadavg *la;
+	int64_t filepg;
 
 	memset(&si, 0, sizeof(si));
 	si.uptime = time_uptime;
@@ -1354,13 +1356,18 @@ linux_sys_sysinfo(struct lwp *l, const struct linux_sys_sysinfo_args *uap, regis
 	si.loads[1] = la->ldavg[1] * LINUX_SYSINFO_LOADS_SCALE / la->fscale;
 	si.loads[2] = la->ldavg[2] * LINUX_SYSINFO_LOADS_SCALE / la->fscale;
 	si.totalram = ctob((u_long)physmem);
-	si.freeram = (u_long)uvm_availmem() * uvmexp.pagesize;
+	/* uvm_availmem() may sync the counters. */
+	si.freeram = (u_long)uvm_availmem(true) * uvmexp.pagesize;
+	filepg = cpu_count_get(CPU_COUNT_FILECLEAN) +
+	    cpu_count_get(CPU_COUNT_FILEDIRTY) +
+	    cpu_count_get(CPU_COUNT_FILEUNKNOWN) -
+	    cpu_count_get(CPU_COUNT_EXECPAGES);
 	si.sharedram = 0;	/* XXX */
-	si.bufferram = (u_long)uvmexp.filepages * uvmexp.pagesize;
+	si.bufferram = (u_long)(filepg * uvmexp.pagesize);
 	si.totalswap = (u_long)uvmexp.swpages * uvmexp.pagesize;
 	si.freeswap = 
 	    (u_long)(uvmexp.swpages - uvmexp.swpginuse) * uvmexp.pagesize;
-	si.procs = nprocs;
+	si.procs = atomic_load_relaxed(&nprocs);
 
 	/* The following are only present in newer Linux kernels. */
 	si.totalbig = 0;
@@ -1516,4 +1523,60 @@ linux_sys_utimensat(struct lwp *l, const struct linux_sys_utimensat_args *uap,
 
 	return linux_do_sys_utimensat(l, SCARG(uap, fd), SCARG(uap, path),
 	    tsp, SCARG(uap, flag), retval);
+}
+
+int
+linux_sys_futex(struct lwp *l, const struct linux_sys_futex_args *uap,
+	register_t *retval)
+{
+	/* {
+		syscallarg(int *) uaddr;
+		syscallarg(int) op;
+		syscallarg(int) val;
+		syscallarg(const struct linux_timespec *) timeout;
+		syscallarg(int *) uaddr2;
+		syscallarg(int) val3;
+	} */
+	struct linux_timespec lts;
+	struct timespec ts, *tsp = NULL;
+	int val2 = 0;
+	int error;
+
+	/*
+	 * Linux overlays the "timeout" field and the "val2" field.
+	 * "timeout" is only valid for FUTEX_WAIT and FUTEX_WAIT_BITSET
+	 * on Linux.
+	 */
+	const int op = (SCARG(uap, op) & FUTEX_CMD_MASK);
+	if ((op == FUTEX_WAIT || op == FUTEX_WAIT_BITSET) &&
+	    SCARG(uap, timeout) != NULL) {
+		if ((error = copyin(SCARG(uap, timeout), 
+		    &lts, sizeof(lts))) != 0) {
+			return error;
+		}
+		linux_to_native_timespec(&ts, &lts);
+		tsp = &ts;
+	} else {
+		val2 = (int)(uintptr_t)SCARG(uap, timeout);
+	}
+
+	return linux_do_futex(SCARG(uap, uaddr), SCARG(uap, op),
+	    SCARG(uap, val), tsp, SCARG(uap, uaddr2), val2,
+	    SCARG(uap, val3), retval);
+}
+
+int
+linux_do_futex(int *uaddr, int op, int val, struct timespec *timeout,
+    int *uaddr2, int val2, int val3, register_t *retval)
+{
+	/*
+	 * Always clear FUTEX_PRIVATE_FLAG for Linux processes.
+	 * NetBSD-native futexes exist in different namespace
+	 * depending on FUTEX_PRIVATE_FLAG.  This appears not
+	 * to be the case in Linux, and some futex users will
+	 * mix private and non-private ops on the same futex
+	 * object.
+	 */
+	return do_futex(uaddr, op & ~FUTEX_PRIVATE_FLAG,
+			val, timeout, uaddr2, val2, val3, retval);
 }

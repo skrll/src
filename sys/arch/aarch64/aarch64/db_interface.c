@@ -1,4 +1,4 @@
-/* $NetBSD: db_interface.c,v 1.7 2019/01/27 02:08:36 pgoyette Exp $ */
+/* $NetBSD: db_interface.c,v 1.11 2020/12/11 18:03:33 skrll Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.7 2019/01/27 02:08:36 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.11 2020/12/11 18:03:33 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -38,7 +38,8 @@ __KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.7 2019/01/27 02:08:36 pgoyette Ex
 #include <aarch64/db_machdep.h>
 #include <aarch64/machdep.h>
 #include <aarch64/pmap.h>
-#include <aarch64/cpufunc.h>
+
+#include <arm/cpufunc.h>
 
 #include <ddb/db_access.h>
 #include <ddb/db_command.h>
@@ -67,6 +68,9 @@ db_read_bytes(vaddr_t addr, size_t size, char *data)
 		}
 		lastpage = atop((vaddr_t)src);
 
+		if (aarch64_pan_enabled)
+			reg_pan_write(0); /* disable PAN */
+
 		tmp = (uintptr_t)src | (uintptr_t)data;
 		if ((size >= 8) && ((tmp & 7) == 0)) {
 			*(uint64_t *)data = *(const uint64_t *)src;
@@ -87,6 +91,9 @@ db_read_bytes(vaddr_t addr, size_t size, char *data)
 			*data++ = *src++;
 			size--;
 		}
+
+		if (aarch64_pan_enabled)
+			reg_pan_write(1); /* enable PAN */
 	}
 }
 
@@ -115,10 +122,11 @@ db_write_text(vaddr_t addr, size_t size, const char *data)
 		pte = *ptep;
 
 		/*
-		 * change to writable. require to keep execute permission.
-		 * because if the block/page to which the target address belongs and
-		 * the block/page to which this function itself belongs are the same,
-		 * if drop PROT_EXECUTE and TLB invalidate, the program stop...
+		 * change to writable.  it is required to keep execute permission.
+		 * because if the block/page to which the target address belongs is
+		 * the same as the block/page to which this function belongs, then
+		 * if PROT_EXECUTE is dropped and TLB is invalidated, the program
+		 * will stop...
 		 */
 		pmap_kvattr(addr, VM_PROT_EXECUTE|VM_PROT_READ|VM_PROT_WRITE);
 		aarch64_tlbi_all();
@@ -227,6 +235,8 @@ SignExtend(int bitwidth, uint64_t imm, unsigned int multiply)
 db_addr_t
 db_branch_taken(db_expr_t inst, db_addr_t pc, db_regs_t *regs)
 {
+	LE32TOH(inst);
+
 #define INSN_FMT_RN(insn)		(((insn) >> 5) & 0x1f)
 #define INSN_FMT_IMM26(insn)	((insn) & 0x03ffffff)
 #define INSN_FMT_IMM19(insn)	(((insn) >> 5) & 0x7ffff)
@@ -260,6 +270,8 @@ db_branch_taken(db_expr_t inst, db_addr_t pc, db_regs_t *regs)
 bool
 db_inst_unconditional_flow_transfer(db_expr_t inst)
 {
+	LE32TOH(inst);
+
 	if (((inst & 0xfffffc1f) == 0xd65f0000) ||	/* ret xN */
 	    ((inst & 0xfc000000) == 0x94000000) ||	/* bl */
 	    ((inst & 0xfffffc1f) == 0xd63f0000) ||	/* blr */

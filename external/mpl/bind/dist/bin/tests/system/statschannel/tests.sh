@@ -46,21 +46,6 @@ if [ ! "$PERL_JSON" -a ! "$PERL_XML" ]; then
 fi
 
 
-gettraffic() {
-    sleep 1
-    echo_i "... using $1"
-    case $1 in
-        xml) path='xml/v3/traffic' ;;
-        json) path='json/v1/traffic' ;;
-        *) return 1 ;;
-    esac
-    file=`$PERL fetch.pl -p ${EXTRAPORT1} $path`
-    cp $file $file.$1.$2
-    $PERL traffic-${1}.pl $file 2>/dev/null | sort > traffic.out.$2
-    result=$?
-    return $result
-}
-
 getzones() {
     sleep 1
     echo_i "... using $1"
@@ -70,110 +55,23 @@ getzones() {
         *) return 1 ;;
     esac
     file=`$PERL fetch.pl -p ${EXTRAPORT1} $path`
-    cp $file $file.$1.$2
-    $PERL zones-${1}.pl $file 2>/dev/null | sort > zones.out.$2
+    cp $file $file.$1.$3
+    $PERL zones-${1}.pl $file $2 2>/dev/null | sort > zones.out.$3
     result=$?
     return $result
 }
 
-# TODO: Move wait_for_log and loadkeys_on to conf.sh.common
-wait_for_log() {
-    msg=$1
-    file=$2
-
-    for i in 1 2 3 4 5 6 7 8 9 10; do
-        nextpart "$file" | grep "$msg" > /dev/null && return
-        sleep 1
-    done
-    echo_i "exceeded time limit waiting for '$msg' in $file"
-    ret=1
-}
-
+# TODO: Move loadkeys_on to conf.sh.common
 loadkeys_on() {
     nsidx=$1
     zone=$2
     nextpart ns${nsidx}/named.run > /dev/null
     $RNDCCMD 10.53.0.${nsidx} loadkeys ${zone} | sed "s/^/ns${nsidx} /" | cat_i
-    wait_for_log "next key event" ns${nsidx}/named.run
+    wait_for_log 20 "next key event" ns${nsidx}/named.run
 }
 
 status=0
 n=1
-ret=0
-echo_i "fetching traffic size data ($n)"
-if [ $PERL_XML ]; then
-    gettraffic xml x$n || ret=1
-    cmp traffic.out.x$n traffic.expect.$n || ret=1
-fi
-if [ $PERL_JSON ]; then
-    gettraffic json j$n || ret=1
-    cmp traffic.out.j$n traffic.expect.$n || ret=1
-fi
-if [ $ret != 0 ]; then echo_i "failed"; fi
-status=`expr $status + $ret`
-n=`expr $n + 1`
-
-ret=0
-echo_i "fetching traffic size data after small UDP query ($n)"
-$DIGCMD short.example txt > dig.out.$n || ret=1
-if [ $PERL_XML ]; then
-    gettraffic xml x$n || ret=1
-    cmp traffic.out.x$n traffic.expect.$n || ret=1
-fi
-if [ $PERL_JSON ]; then
-    gettraffic json j$n || ret=1
-    cmp traffic.out.j$n traffic.expect.$n || ret=1
-fi
-if [ $ret != 0 ]; then echo_i "failed"; fi
-status=`expr $status + $ret`
-n=`expr $n + 1`
-
-ret=0
-n=`expr $n + 1`
-echo_i "fetching traffic size data after large UDP query ($n)"
-$DIGCMD long.example txt > dig.out.$n || ret=1
-if [ $PERL_XML ]; then
-    gettraffic xml x$n || ret=1
-    cmp traffic.out.x$n traffic.expect.$n || ret=1
-fi
-if [ $PERL_JSON ]; then
-    gettraffic json j$n || ret=1
-    cmp traffic.out.j$n traffic.expect.$n || ret=1
-fi
-if [ $ret != 0 ]; then echo_i "failed"; fi
-status=`expr $status + $ret`
-n=`expr $n + 1`
-
-ret=0
-echo_i "fetching traffic size data after small TCP query ($n)"
-$DIGCMD +tcp short.example txt > dig.out.$n || ret=1
-if [ $PERL_XML ]; then
-    gettraffic xml x$n || ret=1
-    cmp traffic.out.x$n traffic.expect.$n || ret=1
-fi
-if [ $PERL_JSON ]; then
-    gettraffic json j$n || ret=1
-    cmp traffic.out.j$n traffic.expect.$n || ret=1
-fi
-if [ $ret != 0 ]; then echo_i "failed"; fi
-status=`expr $status + $ret`
-n=`expr $n + 1`
-
-ret=0
-echo_i "fetching traffic size data after large TCP query ($n)"
-$DIGCMD +tcp long.example txt > dig.out.$n || ret=1
-if [ $PERL_XML ]; then
-    gettraffic xml x$n || ret=1
-    cmp traffic.out.x$n traffic.expect.$n || ret=1
-fi
-if [ $PERL_JSON ]; then
-    gettraffic json j$n || ret=1
-    cmp traffic.out.j$n traffic.expect.$n || ret=1
-fi
-if [ $ret != 0 ]; then echo_i "failed"; fi
-status=`expr $status + $ret`
-n=`expr $n + 1`
-
 ret=0
 echo_i "checking consistency between named.stats and xml/json ($n)"
 rm -f ns2/named.stats
@@ -264,7 +162,7 @@ n=`expr $n + 1`
 
 ret=0
 echo_i "checking if compressed output is really compressed ($n)"
-if [ "$ZLIB" ];
+if [ "$HAVEZLIB" ];
 then
     REGSIZE=`cat regular.headers | \
 	grep -i Content-Length | sed -e "s/.*: \([0-9]*\).*/\1/"`
@@ -294,25 +192,21 @@ ret=0
 # almost right away, this should trigger 10 zsk and 1 ksk sign operations.
 # However, the DNSSEC maintenance assumes when we see the SOA record we have
 # walked the whole zone, since the SOA record should always have the most
-# recent signature.  This however is not always the case, for example when
-# the signature expiration is the same, `dns_db_getsigningtime could return
-# the SOA RRset before a competing RRset. This happens here and so the
-# SOA RRset is updated and resigned twice at startup, that explains the
-# additional zsk sign operation (11 instead of 10).
-echo "${refresh_prefix} ${zsk_id}: 11" > zones.expect
+# recent signature.
+echo "${refresh_prefix} ${zsk_id}: 10" > zones.expect
 echo "${refresh_prefix} ${ksk_id}: 1" >> zones.expect
-echo "${sign_prefix} ${zsk_id}: 11" >> zones.expect
+echo "${sign_prefix} ${zsk_id}: 10" >> zones.expect
 echo "${sign_prefix} ${ksk_id}: 1" >> zones.expect
 cat zones.expect | sort > zones.expect.$n
 rm -f zones.expect
 # Fetch and check the dnssec sign statistics.
 echo_i "fetching zone stats data after zone maintenance at startup ($n)"
 if [ $PERL_XML ]; then
-    getzones xml x$n || ret=1
+    getzones xml $zone x$n || ret=1
     cmp zones.out.x$n zones.expect.$n || ret=1
 fi
 if [ $PERL_JSON ]; then
-    getzones json j$n || ret=1
+    getzones json $zone j$n || ret=1
     cmp zones.out.j$n zones.expect.$n || ret=1
 fi
 if [ $ret != 0 ]; then echo_i "failed"; fi
@@ -329,20 +223,20 @@ echo update add $zone. 300 in txt "nsupdate added me"
 echo send
 ) | $NSUPDATE
 # This should trigger the resign of SOA, TXT and NSEC (+3 zsk).
-echo "${refresh_prefix} ${zsk_id}: 11" > zones.expect
+echo "${refresh_prefix} ${zsk_id}: 10" > zones.expect
 echo "${refresh_prefix} ${ksk_id}: 1" >> zones.expect
-echo "${sign_prefix} ${zsk_id}: 14" >> zones.expect
+echo "${sign_prefix} ${zsk_id}: 13" >> zones.expect
 echo "${sign_prefix} ${ksk_id}: 1" >> zones.expect
 cat zones.expect | sort > zones.expect.$n
 rm -f zones.expect
 # Fetch and check the dnssec sign statistics.
 echo_i "fetching zone stats data after dynamic update ($n)"
 if [ $PERL_XML ]; then
-    getzones xml x$n || ret=1
+    getzones xml $zone x$n || ret=1
     cmp zones.out.x$n zones.expect.$n || ret=1
 fi
 if [ $PERL_JSON ]; then
-    getzones json j$n || ret=1
+    getzones json $zone j$n || ret=1
     cmp zones.out.j$n zones.expect.$n || ret=1
 fi
 if [ $ret != 0 ]; then echo_i "failed"; fi
@@ -357,21 +251,25 @@ zsk=$("$KEYGEN" -K ns2 -q -a "$DEFAULT_ALGORITHM" -b "$DEFAULT_BITS" "$zone")
 $SETTIME -K ns2 -P now -A never $zsk.key > /dev/null
 loadkeys_on 2 $zone || ret=1
 # This should trigger the resign of SOA (+1 zsk) and DNSKEY (+1 ksk).
-echo "${refresh_prefix} ${zsk_id}: 12" > zones.expect
+echo "${refresh_prefix} ${zsk_id}: 11" > zones.expect
 echo "${refresh_prefix} ${ksk_id}: 2" >> zones.expect
-echo "${sign_prefix} ${zsk_id}: 15" >> zones.expect
+echo "${sign_prefix} ${zsk_id}: 14" >> zones.expect
 echo "${sign_prefix} ${ksk_id}: 2" >> zones.expect
 cat zones.expect | sort > zones.expect.$n
 rm -f zones.expect
 # Fetch and check the dnssec sign statistics.
 if [ $PERL_XML ]; then
-    getzones xml x$n || ret=1
+    getzones xml $zone x$n || ret=1
     cmp zones.out.x$n zones.expect.$n || ret=1
 fi
 if [ $PERL_JSON ]; then
-    getzones json j$n || ret=1
+    getzones json $zone j$n || ret=1
     cmp zones.out.j$n zones.expect.$n || ret=1
 fi
+if [ $ret != 0 ]; then echo_i "failed"; fi
+status=`expr $status + $ret`
+n=`expr $n + 1`
+
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 n=`expr $n + 1`

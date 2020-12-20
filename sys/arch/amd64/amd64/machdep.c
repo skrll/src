@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.346 2020/01/31 08:21:11 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.357 2020/09/07 00:47:27 mrg Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
@@ -110,7 +110,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.346 2020/01/31 08:21:11 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.357 2020/09/07 00:47:27 mrg Exp $");
 
 #include "opt_modular.h"
 #include "opt_user_ldt.h"
@@ -158,6 +158,8 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.346 2020/01/31 08:21:11 maxv Exp $");
 #include <sys/kgdb.h>
 #endif
 
+#include <lib/libkern/entpool.h> /* XXX */
+
 #include <dev/cons.h>
 #include <dev/mm.h>
 
@@ -167,6 +169,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.346 2020/01/31 08:21:11 maxv Exp $");
 #include <sys/sysctl.h>
 
 #include <machine/cpu.h>
+#include <machine/cpu_rng.h>
 #include <machine/cpufunc.h>
 #include <machine/gdt.h>
 #include <machine/intr.h>
@@ -278,14 +281,6 @@ extern paddr_t lowmem_rsvd;
 extern paddr_t avail_start, avail_end;
 #ifdef XENPV
 extern paddr_t pmap_pa_start, pmap_pa_end;
-#endif
-
-#ifndef XENPV
-void (*delay_func)(unsigned int) = i8254_delay;
-void (*initclock_func)(void) = i8254_initclocks;
-#else /* XENPV */
-void (*delay_func)(unsigned int) = xen_delay;
-void (*initclock_func)(void) = xen_initclocks;
 #endif
 
 struct nmistore {
@@ -428,10 +423,9 @@ void
 x86_64_switch_context(struct pcb *new)
 {
 	HYPERVISOR_stack_switch(GSEL(GDATA_SEL, SEL_KPL), new->pcb_rsp0);
-	struct physdev_op physop;
-	physop.cmd = PHYSDEVOP_SET_IOPL;
-	physop.u.set_iopl.iopl = new->pcb_iopl;
-	HYPERVISOR_physdev_op(&physop);
+	struct physdev_set_iopl set_iopl;
+	set_iopl.iopl = new->pcb_iopl;
+	HYPERVISOR_physdev_op(PHYSDEVOP_set_iopl, &set_iopl);
 }
 
 void
@@ -489,14 +483,13 @@ x86_64_proc0_pcb_ldt_init(void)
 #if !defined(XENPV)
 	lldt(GSYSSEL(GLDT_SEL, SEL_KPL));
 #else
-	struct physdev_op physop;
 	xen_set_ldt((vaddr_t)ldtstore, LDT_SIZE >> 3);
 	/* Reset TS bit and set kernel stack for interrupt handlers */
 	HYPERVISOR_fpu_taskswitch(1);
 	HYPERVISOR_stack_switch(GSEL(GDATA_SEL, SEL_KPL), pcb->pcb_rsp0);
-	physop.cmd = PHYSDEVOP_SET_IOPL;
-	physop.u.set_iopl.iopl = pcb->pcb_iopl;
-	HYPERVISOR_physdev_op(&physop);
+	struct physdev_set_iopl set_iopl;
+	set_iopl.iopl = pcb->pcb_iopl;
+	HYPERVISOR_physdev_op(PHYSDEVOP_set_iopl, &set_iopl);
 #endif
 }
 
@@ -729,9 +722,12 @@ haltsys:
 
 		acpi_enter_sleep_state(ACPI_STATE_S5);
 #endif
-#ifdef XENPV
-		HYPERVISOR_shutdown();
-#endif /* XENPV */
+#ifdef XEN
+		if (vm_guest == VM_GUEST_XENPV ||
+		    vm_guest == VM_GUEST_XENPVH ||
+		    vm_guest == VM_GUEST_XENPVHVM)
+			HYPERVISOR_shutdown();
+#endif /* XEN */
 	}
 
 	cpu_broadcast_halt();
@@ -1396,11 +1392,15 @@ char *ldtstore;
 char *gdtstore;
 
 void
-setgate(struct gate_descriptor *gd, void *func, int ist, int type, int dpl, int sel)
+setgate(struct gate_descriptor *gd, void *func,
+    int ist, int type, int dpl, int sel)
 {
+	vaddr_t vaddr;
+
+	vaddr = ((vaddr_t)gd) & ~PAGE_MASK;
 
 	kpreempt_disable();
-	pmap_changeprot_local(idt_vaddr, VM_PROT_READ|VM_PROT_WRITE);
+	pmap_changeprot_local(vaddr, VM_PROT_READ|VM_PROT_WRITE);
 
 	gd->gd_looffset = (uint64_t)func & 0xffff;
 	gd->gd_selector = sel;
@@ -1414,20 +1414,23 @@ setgate(struct gate_descriptor *gd, void *func, int ist, int type, int dpl, int 
 	gd->gd_xx2 = 0;
 	gd->gd_xx3 = 0;
 
-	pmap_changeprot_local(idt_vaddr, VM_PROT_READ);
+	pmap_changeprot_local(vaddr, VM_PROT_READ);
 	kpreempt_enable();
 }
 
 void
 unsetgate(struct gate_descriptor *gd)
 {
+	vaddr_t vaddr;
+
+	vaddr = ((vaddr_t)gd) & ~PAGE_MASK;
 
 	kpreempt_disable();
-	pmap_changeprot_local(idt_vaddr, VM_PROT_READ|VM_PROT_WRITE);
+	pmap_changeprot_local(vaddr, VM_PROT_READ|VM_PROT_WRITE);
 
 	memset(gd, 0, sizeof (*gd));
 
-	pmap_changeprot_local(idt_vaddr, VM_PROT_READ);
+	pmap_changeprot_local(vaddr, VM_PROT_READ);
 	kpreempt_enable();
 }
 
@@ -1474,10 +1477,12 @@ set_sys_segment(struct sys_segment_descriptor *sd, void *base, size_t limit,
 }
 
 void
-cpu_init_idt(void)
+cpu_init_idt(struct cpu_info *ci)
 {
 	struct region_descriptor region;
+	idt_descriptor_t *idt;
 
+	idt = ci->ci_idtvec.iv_idt;
 	setregion(&region, idt, NIDT * sizeof(idt[0]) - 1);
 	lidt(&region);
 }
@@ -1489,22 +1494,20 @@ extern vector IDTVEC(syscall32);
 extern vector IDTVEC(osyscall);
 extern vector *x86_exceptions[];
 
+#ifndef XENPV
 static void
 init_x86_64_ksyms(void)
 {
 #if NKSYMS || defined(DDB) || defined(MODULAR)
 	extern int end;
 	extern int *esym;
-#ifndef XENPV
 	struct btinfo_symtab *symtab;
 	vaddr_t tssym, tesym;
-#endif
 
 #ifdef DDB
 	db_machine_init();
 #endif
 
-#ifndef XENPV
 	symtab = lookup_bootinfo(BTINFO_SYMTAB);
 	if (symtab) {
 #ifdef KASLR
@@ -1515,18 +1518,15 @@ init_x86_64_ksyms(void)
 		tesym = (vaddr_t)symtab->esym + KERNBASE;
 #endif
 		ksyms_addsyms_elf(symtab->nsym, (void *)tssym, (void *)tesym);
-	} else
-		ksyms_addsyms_elf(*(long *)(void *)&end,
-		    ((long *)(void *)&end) + 1, esym);
-#else  /* XENPV */
-	esym = xen_start_info.mod_start ?
-	    (void *)xen_start_info.mod_start :
-	    (void *)xen_start_info.mfn_list;
-	ksyms_addsyms_elf(*(int *)(void *)&end,
-	    ((int *)(void *)&end) + 1, esym);
-#endif /* XENPV */
+	} else {
+		uintptr_t endp = (uintptr_t)(void *)&end;
+
+		ksyms_addsyms_elf(*(long *)endp,
+		    ((long *)endp) + 1, esym);
+	}
 #endif
 }
+#endif /* XENPV */
 
 void __noasan
 init_bootspace(void)
@@ -1576,7 +1576,7 @@ init_bootspace(void)
 	bootspace.emodule = KERNBASE + NKL2_KIMG_ENTRIES * NBPD_L2;
 }
 
-static void __noasan
+static void
 init_pte(void)
 {
 #ifndef XENPV
@@ -1592,10 +1592,21 @@ init_pte(void)
 	normal_pdes[2] = L4_BASE;
 }
 
-void __noasan
+void
 init_slotspace(void)
 {
+	/*
+	 * XXX Too early to use cprng(9), or even entropy_extract.
+	 */
+	struct entpool pool;
+	size_t randhole;
+	vaddr_t randva;
+	uint64_t sample;
 	vaddr_t va;
+
+	memset(&pool, 0, sizeof pool);
+	cpu_rng_early_sample(&sample);
+	entpool_enter(&pool, &sample, sizeof sample);
 
 	memset(&slotspace, 0, sizeof(slotspace));
 
@@ -1650,24 +1661,36 @@ init_slotspace(void)
 	slotspace.area[SLAREA_KERN].active = true;
 
 	/* Main. */
+	cpu_rng_early_sample(&sample);
+	entpool_enter(&pool, &sample, sizeof sample);
+	entpool_extract(&pool, &randhole, sizeof randhole);
+	entpool_extract(&pool, &randva, sizeof randva);
 	va = slotspace_rand(SLAREA_MAIN, NKL4_MAX_ENTRIES * NBPD_L4,
-	    NBPD_L4); /* TODO: NBPD_L1 */
+	    NBPD_L4, randhole, randva); /* TODO: NBPD_L1 */
 	vm_min_kernel_address = va;
 	vm_max_kernel_address = va + NKL4_MAX_ENTRIES * NBPD_L4;
 
 #ifndef XENPV
 	/* PTE. */
-	va = slotspace_rand(SLAREA_PTE, NBPD_L4, NBPD_L4);
+	cpu_rng_early_sample(&sample);
+	entpool_enter(&pool, &sample, sizeof sample);
+	entpool_extract(&pool, &randhole, sizeof randhole);
+	entpool_extract(&pool, &randva, sizeof randva);
+	va = slotspace_rand(SLAREA_PTE, NBPD_L4, NBPD_L4, randhole, randva);
 	pte_base = (pd_entry_t *)va;
 #endif
+
+	explicit_memset(&pool, 0, sizeof pool);
 }
 
-void __noasan
+void
 init_x86_64(paddr_t first_avail)
 {
 	extern void consinit(void);
 	struct region_descriptor region;
 	struct mem_segment_descriptor *ldt_segp;
+	struct idt_vec *iv;
+	idt_descriptor_t *idt;
 	int x;
 	struct pcb *pcb;
 	extern vaddr_t lwp0uarea;
@@ -1682,9 +1705,11 @@ init_x86_64(paddr_t first_avail)
 	cpu_info_primary.ci_vcpu = &HYPERVISOR_shared_info->vcpu_info[0];
 #endif
 
+#ifdef XEN
+	if (vm_guest == VM_GUEST_XENPVH)
+		xen_parse_cmdline(XEN_PARSE_BOOTFLAGS, NULL);
+#endif
 	init_pte();
-
-	kasan_early_init((void *)lwp0uarea);
 
 	uvm_lwp_setuarea(&lwp0, lwp0uarea);
 
@@ -1693,7 +1718,8 @@ init_x86_64(paddr_t first_avail)
 	svs_init();
 #endif
 	cpu_init_msrs(&cpu_info_primary, true);
-#ifndef XEN
+	cpu_rng_init();
+#ifndef XENPV
 	cpu_speculation_init(&cpu_info_primary);
 #endif
 
@@ -1710,6 +1736,8 @@ init_x86_64(paddr_t first_avail)
 #if NISA > 0 || NPCI > 0
 	x86_bus_space_init();
 #endif
+
+	pat_init(&cpu_info_primary);
 
 	consinit();	/* XXX SHOULD NOT BE DONE HERE */
 
@@ -1793,7 +1821,9 @@ init_x86_64(paddr_t first_avail)
 
 	pmap_update(pmap_kernel());
 
-	idt = (idt_descriptor_t *)idt_vaddr;
+	iv = &(cpu_info_primary.ci_idtvec);
+	idt_vec_init_cpu_md(iv, cpu_index(&cpu_info_primary));
+	idt = iv->iv_idt;
 	gdtstore = (char *)gdt_vaddr;
 	ldtstore = (char *)ldt_vaddr;
 
@@ -1858,7 +1888,7 @@ init_x86_64(paddr_t first_avail)
 		sel = SEL_KPL;
 		ist = 0;
 
-		idt_vec_reserve(x);
+		idt_vec_reserve(iv, x);
 
 		switch (x) {
 		case 1:	/* DB */
@@ -1888,7 +1918,7 @@ init_x86_64(paddr_t first_avail)
 	}
 
 	/* new-style interrupt gate for syscalls */
-	idt_vec_reserve(128);
+	idt_vec_reserve(iv, 128);
 	set_idtgate(&idt[128], &IDTVEC(osyscall), 0, SDT_SYS386IGT, SEL_UPL,
 	    GSEL(GCODE_SEL, SEL_KPL));
 
@@ -1906,9 +1936,18 @@ init_x86_64(paddr_t first_avail)
 		panic("HYPERVISOR_set_callbacks() failed");
 #endif /* XENPV */
 
-	cpu_init_idt();
+	cpu_init_idt(&cpu_info_primary);
 
-	init_x86_64_ksyms();
+#ifdef XENPV
+	xen_init_ksyms();
+#else /* XENPV */
+#ifdef XEN
+	if (vm_guest == VM_GUEST_XENPVH)
+		xen_init_ksyms();
+	else
+#endif /* XEN */
+		init_x86_64_ksyms();
+#endif /* XENPV */
 
 #ifndef XENPV
 	intr_default_setup();
@@ -1938,6 +1977,14 @@ init_x86_64(paddr_t first_avail)
 void
 cpu_reset(void)
 {
+#ifndef XENPV
+	idt_descriptor_t *idt;
+	vaddr_t vaddr;
+
+	idt = cpu_info_primary.ci_idtvec.iv_idt;
+	vaddr = (vaddr_t)idt;
+#endif
+
 	x86_disable_intr();
 
 #ifdef XENPV
@@ -1951,7 +1998,7 @@ cpu_reset(void)
 	 * invalid and causing a fault.
 	 */
 	kpreempt_disable();
-	pmap_changeprot_local(idt_vaddr, VM_PROT_READ|VM_PROT_WRITE);
+	pmap_changeprot_local(vaddr, VM_PROT_READ|VM_PROT_WRITE);
 	memset((void *)idt, 0, NIDT * sizeof(idt[0]));
 	kpreempt_enable();
 	breakpoint();
@@ -2126,12 +2173,6 @@ cpu_mcontext_validate(struct lwp *l, const mcontext_t *mcp)
 	return 0;
 }
 
-void
-cpu_initclocks(void)
-{
-	(*initclock_func)();
-}
-
 int
 mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
 {
@@ -2303,4 +2344,57 @@ mm_md_direct_mapped_phys(paddr_t paddr, vaddr_t *vaddr)
 #else
 	return false;
 #endif
+}
+
+static void
+idt_vec_copy(struct idt_vec *dst, struct idt_vec *src)
+{
+	idt_descriptor_t *idt_dst;
+
+	idt_dst = dst->iv_idt;
+
+	kpreempt_disable();
+	pmap_changeprot_local((vaddr_t)idt_dst, VM_PROT_READ|VM_PROT_WRITE);
+
+	memcpy(idt_dst, src->iv_idt, PAGE_SIZE);
+	memcpy(dst->iv_allocmap, src->iv_allocmap, sizeof(dst->iv_allocmap));
+
+	pmap_changeprot_local((vaddr_t)idt_dst, VM_PROT_READ);
+	kpreempt_enable();
+}
+
+void
+idt_vec_init_cpu_md(struct idt_vec *iv, cpuid_t cid)
+{
+	vaddr_t va;
+
+	if (cid != cpu_index(&cpu_info_primary) &&
+	    idt_vec_is_pcpu()) {
+#ifdef __HAVE_PCPU_AREA
+		va = (vaddr_t)&pcpuarea->ent[cid].idt;
+#else
+		struct vm_page *pg;
+
+		va = uvm_km_alloc(kernel_map, PAGE_SIZE, 0,
+		    UVM_KMF_VAONLY);
+		pg = uvm_pagealloc(NULL, 0, NULL, UVM_PGA_ZERO);
+		if (pg == NULL) {
+			panic("failed to allocate a page for IDT");
+		}
+		pmap_kenter_pa(va, VM_PAGE_TO_PHYS(pg),
+		    VM_PROT_READ|VM_PROT_WRITE, 0);
+		pmap_update(pmap_kernel());
+#endif
+
+		memset((void *)va, 0, PAGE_SIZE);
+#ifndef XENPV
+		pmap_changeprot_local(va, VM_PROT_READ);
+#endif
+		pmap_update(pmap_kernel());
+
+		iv->iv_idt = (void *)va;
+		idt_vec_copy(iv, &(cpu_info_primary.ci_idtvec));
+	} else {
+		iv->iv_idt = (void *)idt_vaddr;
+	}
 }

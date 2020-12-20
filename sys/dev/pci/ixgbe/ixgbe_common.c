@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe_common.c,v 1.27 2020/02/05 07:45:46 msaitoh Exp $ */
+/* $NetBSD: ixgbe_common.c,v 1.30 2020/08/31 14:12:50 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -1138,7 +1138,7 @@ s32 ixgbe_stop_adapter_generic(struct ixgbe_hw *hw)
 	 * This function is called in the state of both interrupt disabled
 	 * and interrupt enabled, e.g.
 	 * + interrupt disabled case:
-	 *   - ixgbe_stop()
+	 *   - ixgbe_stop_locked()
 	 *     - ixgbe_disable_intr() // interrupt disabled here
 	 *     - ixgbe_stop_adapter()
 	 *       - hw->mac.ops.stop_adapter()
@@ -4267,25 +4267,8 @@ s32 ixgbe_check_mac_link_generic(struct ixgbe_hw *hw, ixgbe_link_speed *speed,
 	 * the SFP+ cage is full.
 	 */
 	if (ixgbe_need_crosstalk_fix(hw)) {
-		u32 sfp_cage_full;
-
-		switch (hw->mac.type) {
-		case ixgbe_mac_82599EB:
-			sfp_cage_full = IXGBE_READ_REG(hw, IXGBE_ESDP) &
-					IXGBE_ESDP_SDP2;
-			break;
-		case ixgbe_mac_X550EM_x:
-		case ixgbe_mac_X550EM_a:
-			sfp_cage_full = IXGBE_READ_REG(hw, IXGBE_ESDP) &
-					IXGBE_ESDP_SDP0;
-			break;
-		default:
-			/* sanity check - No SFP+ devices here */
-			sfp_cage_full = FALSE;
-			break;
-		}
-
-		if (!sfp_cage_full) {
+		if ((hw->mac.type != ixgbe_mac_82598EB) &&
+		    !ixgbe_sfp_cage_full(hw)) {
 			*link_up = FALSE;
 			*speed = IXGBE_LINK_SPEED_UNKNOWN;
 			return IXGBE_SUCCESS;
@@ -5234,7 +5217,7 @@ void ixgbe_get_oem_prod_version(struct ixgbe_hw *hw,
 	nvm_ver->oem_valid = FALSE;
 	hw->eeprom.ops.read(hw, NVM_OEM_PROD_VER_PTR, &offset);
 
-	/* Return is offset to OEM Product Version block is invalid */
+	/* Return if offset to OEM Product Version block is invalid */
 	if (offset == 0x0 || offset == NVM_INVALID_PTR)
 		return;
 

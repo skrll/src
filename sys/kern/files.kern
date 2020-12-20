@@ -1,12 +1,14 @@
-#	$NetBSD: files.kern,v 1.44 2020/03/02 16:00:54 riastradh Exp $
+#	$NetBSD: files.kern,v 1.54 2020/11/01 18:51:02 pgoyette Exp $
 
 #
 # kernel sources
 #
-define	kern:	machdep, uvm
+define	kern:	cprng_fast, machdep, uvm
 defflag	opt_kern.h			KERN
 defflag	opt_script.h			SETUIDSCRIPTS FDSCRIPTS
 defflag					KASLR
+defparam opt_cnmagic.h			CNMAGIC
+
 file	conf/debugsyms.c		kern
 file	conf/param.c			kern
 file	kern/bufq_disksort.c		bufq_disksort
@@ -14,8 +16,8 @@ file	kern/bufq_fcfs.c		bufq_fcfs
 file	kern/bufq_priocscan.c		bufq_priocscan
 file	kern/bufq_readprio.c		bufq_readprio | new_bufq_strategy
 file	kern/compat_stub.c		kern
-file	kern/core_elf32.c		exec_elf32
-file	kern/core_elf64.c		exec_elf64
+file	kern/core_elf32.c		exec_elf32 & coredump
+file	kern/core_elf64.c		exec_elf64 & coredump
 file	kern/core_netbsd.c		coredump
 file	kern/cnmagic.c			kern
 file	kern/exec_aout.c		exec_aout
@@ -40,6 +42,7 @@ file	kern/kern_cpu.c			kern
 #file	kern/kern_ctf.c			kdtrace_hooks
 
 file	kern/kern_descrip.c		kern
+file	kern/kern_entropy.c		kern
 file	kern/kern_event.c		kern
 file	kern/kern_exec.c		kern
 file	kern/kern_exit.c		kern
@@ -69,9 +72,6 @@ file	kern/kern_ras.c			kern
 file	kern/kern_rate.c		kern
 file	kern/kern_reboot.c		kern
 file	kern/kern_resource.c		kern
-file	kern/kern_rndpool.c		kern
-file	kern/kern_rndq.c		kern
-file	kern/kern_rndsink.c		kern
 file	kern/kern_runq.c		kern
 file	kern/kern_rwlock.c		kern
 file	kern/kern_rwlock_obj.c		kern
@@ -98,6 +98,8 @@ file	kern/kern_uuid.c		kern
 file	kern/kgdb_stub.c		kgdb
 file	kern/sched_4bsd.c		sched_4bsd
 file	kern/sched_m2.c			sched_m2
+file	kern/subr_acl_posix1e.c		kern
+file	kern/subr_acl_nfs4.c		kern
 file	kern/subr_asan.c		kasan
 file	kern/subr_autoconf.c		kern
 file	kern/subr_blist.c		vmswap
@@ -118,6 +120,7 @@ file	kern/subr_emul.c		kern
 file	kern/subr_evcnt.c		kern
 file	kern/subr_exec_fd.c		kern
 file	kern/subr_extent.c		kern
+file	kern/subr_fault.c		fault
 file	kern/subr_hash.c		kern
 file	kern/subr_humanize.c		kern
 file	kern/subr_interrupt.c		kern
@@ -154,7 +157,9 @@ file	kern/subr_workqueue.c		kern
 file	kern/subr_xcall.c		kern
 file	kern/sys_aio.c			aio
 file	kern/sys_descrip.c		kern
+file	kern/sys_futex.c		kern
 file	kern/sys_generic.c		kern
+file	kern/sys_getrandom.c		kern
 file	kern/sys_module.c		kern
 file	kern/sys_mqueue.c		mqueue
 file	kern/sys_lwp.c			kern
@@ -162,7 +167,7 @@ file	kern/sys_pipe.c			!pipe_socketpair
 file	kern/sys_process.c		ptrace_hooks | ktrace
 file	kern/sys_process_lwpstatus.c	kern
 file	kern/sys_ptrace.c		ptrace
-file	kern/sys_ptrace_common.c	ptrace
+file	kern/sys_ptrace_common.c	ptrace | procfs
 file	kern/sys_pset.c			kern
 file	kern/sys_select.c		kern
 file	kern/sys_sig.c			kern
@@ -183,7 +188,7 @@ file	kern/tty_tty.c			kern
 file	kern/uipc_accf.c		kern
 file	kern/uipc_domain.c		kern
 file	kern/uipc_mbuf.c		kern
-file	kern/uipc_mbufdebug.c		kern & ether
+file	kern/uipc_mbufdebug.c		kern & ether & ddb
 file	net/link_proto.c		kern	# XXX
 file	kern/uipc_proto.c		kern
 file	kern/uipc_sem.c			kern
@@ -193,6 +198,7 @@ file	kern/uipc_syscalls.c		kern
 file	kern/uipc_usrreq.c		kern
 
 define	vfs: kern
+file	kern/vfs_acl.c			vfs
 file	kern/vfs_bio.c			vfs
 file	kern/vfs_cache.c		vfs
 file	kern/vfs_cwd.c			vfs

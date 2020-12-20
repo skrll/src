@@ -1,4 +1,4 @@
-/*	$NetBSD: nfs_bio.c,v 1.195 2020/03/22 18:32:42 ad Exp $	*/
+/*	$NetBSD: nfs_bio.c,v 1.199 2020/09/05 16:30:12 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nfs_bio.c,v 1.195 2020/03/22 18:32:42 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nfs_bio.c,v 1.199 2020/09/05 16:30:12 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_nfs.h"
@@ -55,8 +55,8 @@ __KERNEL_RCSID(0, "$NetBSD: nfs_bio.c,v 1.195 2020/03/22 18:32:42 ad Exp $");
 #include <sys/dirent.h>
 #include <sys/kauth.h>
 
-#include <uvm/uvm_extern.h>
 #include <uvm/uvm.h>
+#include <uvm/uvm_extern.h>
 
 #include <nfs/rpcv2.h>
 #include <nfs/nfsproto.h>
@@ -158,7 +158,7 @@ nfs_bioread(struct vnode *vp, struct uio *uio, int ioflag,
 			bytelen =
 			    MIN(np->n_size - uio->uio_offset, uio->uio_resid);
 			error = ubc_uiomove(&vp->v_uobj, uio, bytelen, advice,
-			    UBC_READ | UBC_PARTIALOK | UBC_UNMAP_FLAG(vp));
+			    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 			if (error) {
 				/*
 				 * XXXkludge
@@ -487,9 +487,9 @@ nfs_write(void *v)
 		 */
 		if (uio->uio_offset + uio->uio_resid >
 		      l->l_proc->p_rlimit[RLIMIT_FSIZE].rlim_cur) {
-			mutex_enter(proc_lock);
+			mutex_enter(&proc_lock);
 			psignal(l->l_proc, SIGXFSZ);
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			return (EFBIG);
 		}
 	}
@@ -531,7 +531,7 @@ nfs_write(void *v)
 		error = ubc_uiomove(&vp->v_uobj, uio, bytelen,
 		    UVM_ADV_RANDOM, UBC_WRITE | UBC_PARTIALOK |
 		    (overwrite ? UBC_FAULTBUSY : 0) |
-		    UBC_UNMAP_FLAG(vp));
+		    UBC_VNODE_FLAGS(vp));
 		if (error) {
 			uvm_vnp_setwritesize(vp, vp->v_size);
 			if (overwrite && np->n_size != oldsize) {
@@ -893,9 +893,9 @@ nfs_doio_read(struct buf *bp, struct uio *uiop)
 #if 0
 		if (uiop->uio_lwp && (vp->v_iflag & VI_TEXT) &&
 		    timespeccmp(&np->n_mtime, &np->n_vattr->va_mtime, !=)) {
-		    	mutex_enter(proc_lock);
+		    	mutex_enter(&proc_lock);
 			killproc(uiop->uio_lwp->l_proc, "process text file was modified");
-		    	mutex_exit(proc_lock);
+		    	mutex_exit(&proc_lock);
 #if 0 /* XXX NJWLWP */
 			uiop->uio_lwp->l_proc->p_holdcnt++;
 #endif
@@ -1260,7 +1260,6 @@ nfs_getpages(void *v)
 	bool v3 = NFS_ISV3(vp);
 	bool write = (ap->a_access_type & VM_PROT_WRITE) != 0;
 	bool locked = (ap->a_flags & PGO_LOCKED) != 0;
-	bool nobusy = (ap->a_flags & PGO_NOBUSY);
 
 	/*
 	 * XXX NFS wants to modify the pages below and that can't be done
@@ -1348,14 +1347,10 @@ nfs_getpages(void *v)
 			if (!mutex_tryenter(&np->n_commitlock)) {
 
 				/*
-				 * Since PGO_LOCKED is set, we need to unbusy
-				 * all pages fetched by genfs_getpages() above,
 				 * tell the caller that there are no pages
 				 * available and put back original pgs array.
 				 */
 
-				if (nobusy == false)
-					uvm_page_unbusy(pgs, npages);
 				*ap->a_count = 0;
 				memcpy(pgs, opgs,
 				    npages * sizeof(struct vm_pages *));

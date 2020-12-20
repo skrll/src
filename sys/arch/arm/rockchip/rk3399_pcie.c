@@ -1,4 +1,4 @@
-/* $NetBSD: rk3399_pcie.c,v 1.9 2019/12/28 17:19:44 jmcneill Exp $ */
+/* $NetBSD: rk3399_pcie.c,v 1.12 2020/10/11 15:33:18 tnn Exp $ */
 /*
  * Copyright (c) 2018 Mark Kettenis <kettenis@openbsd.org>
  *
@@ -17,13 +17,12 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: rk3399_pcie.c,v 1.9 2019/12/28 17:19:44 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: rk3399_pcie.c,v 1.12 2020/10/11 15:33:18 tnn Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/bitops.h>
 #include <sys/device.h>
-#include <sys/extent.h>
 #include <sys/kmem.h>
 
 #include <machine/intr.h>
@@ -135,6 +134,7 @@ struct rkpcie_softc {
 	bus_addr_t		sc_apb_addr;
 	bus_size_t		sc_axi_size;
 	bus_size_t		sc_apb_size;
+	kmutex_t		sc_conf_lock;
 };
 
 static int rkpcie_match(device_t, cfdata_t, void *);
@@ -279,7 +279,7 @@ again:
 	reset_assert(phandle, "mgmt-sticky");
 	reset_assert(phandle, "pipe");
 
-	delay(10);
+	delay(1000);	/* TPERST. use 1ms */
 	
 	reset_deassert(phandle, "pm");
 	reset_deassert(phandle, "aclk");
@@ -312,10 +312,11 @@ again:
 	reset_deassert(phandle, "mgmt");
 	reset_deassert(phandle, "pipe");
 
+	fdtbus_gpio_write(ep_gpio, 1);
+	delay(20000);	/* 20 ms according to PCI-e BS "Conventional Reset" */
+
 	/* Start link training. */
 	HWRITE4(sc, PCIE_CLIENT_BASIC_STRAP_CONF, PCBSC_LINK_TRAIN_EN);
-
-	fdtbus_gpio_write(ep_gpio, 1);
 
 	for (timo = 500; timo > 0; timo--) {
 		status = HREAD4(sc, PCIE_CLIENT_BASIC_STATUS1);
@@ -347,6 +348,7 @@ again:
 			goto again;
 		}
 	}
+	delay(80000);	/* wait 100 ms before CSR access. already waited 20. */
 
 	fdtbus_gpio_release(ep_gpio);
 
@@ -404,6 +406,8 @@ again:
 	sc->sc_phsc.sc_pc.pc_conf_read = rkpcie_conf_read;
 	sc->sc_phsc.sc_pc.pc_conf_write = rkpcie_conf_write;
 	sc->sc_phsc.sc_pc.pc_conf_hook = rkpcie_conf_hook;
+
+	mutex_init(&sc->sc_conf_lock, MUTEX_DEFAULT, IPL_HIGH);
 	pcihost_init2(&sc->sc_phsc);
 }
 
@@ -418,7 +422,7 @@ rkpcie_atr_init(struct rkpcie_softc *sc)
 	int region, i, ranges_len;
 
 	/* Use region 0 to map PCI configuration space */
-	HWRITE4(sc, PCIE_ATR_OB_ADDR0(0), 25 - 1);
+	HWRITE4(sc, PCIE_ATR_OB_ADDR0(0), 20 - 1);
 	HWRITE4(sc, PCIE_ATR_OB_ADDR1(0), 0);
 	HWRITE4(sc, PCIE_ATR_OB_DESC0(0), PCIE_ATR_HDR_CFG_TYPE0 | PCIE_ATR_HDR_RID);
 	HWRITE4(sc, PCIE_ATR_OB_DESC1(0), 0);
@@ -516,8 +520,13 @@ rkpcie_decompose_tag(void *v, pcitag_t tag, int *bp, int *dp, int *fp)
 
 /* Only one device on root port and the first subordinate port. */
 static bool
-rkpcie_conf_ok(int bus, int dev, int fn, int bus_min)
+rkpcie_conf_ok(int bus, int dev, int fn, int offset, struct rkpcie_softc *sc)
 {
+	int bus_min = sc->sc_phsc.sc_bus_min;
+
+	if ((unsigned int)offset >= (1<<12))
+		return false;
+	/* first two buses use type 0 cfg which doesn't use bus/device numbers */
 	if (dev != 0 && (bus == bus_min || bus == bus_min + 1))
 		return false;
 	return true;
@@ -527,33 +536,45 @@ pcireg_t
 rkpcie_conf_read(void *v, pcitag_t tag, int offset)
 {
 	struct rkpcie_softc *sc = v;
-	struct pcihost_softc *phsc = &sc->sc_phsc;
+	int bus_min = sc->sc_phsc.sc_bus_min;
 	int bus, dev, fn;
 	u_int reg;
+	int32_t val;
 
 	KASSERT(offset >= 0);
 	KASSERT(offset < PCI_EXTCONF_SIZE);
 
 	rkpcie_decompose_tag(sc, tag, &bus, &dev, &fn);
-	if (!rkpcie_conf_ok(bus, dev, fn, phsc->sc_bus_min))
+	if (!rkpcie_conf_ok(bus, dev, fn, offset, sc))
 		return 0xffffffff;
-	reg = (bus << 20) | (dev << 15) | (fn << 12) | offset;
+	reg = (dev << 15) | (fn << 12) | offset;
 
-	if (bus == phsc->sc_bus_min)
-		return HREAD4(sc, PCIE_RC_NORMAL_BASE + reg);
+	if (bus == bus_min)
+		val = HREAD4(sc, PCIE_RC_NORMAL_BASE + reg);
 	else {
-		uint32_t val;
+		mutex_spin_enter(&sc->sc_conf_lock);
+		HWRITE4(sc, PCIE_ATR_OB_ADDR0(0),
+		    (bus << 20) | (20 - 1));
+		HWRITE4(sc, PCIE_ATR_OB_DESC0(0),
+		    PCIE_ATR_HDR_RID | ((bus == bus_min + 1)
+		    ? PCIE_ATR_HDR_CFG_TYPE0 : PCIE_ATR_HDR_CFG_TYPE1));
+		bus_space_barrier(sc->sc_iot, sc->sc_ioh, 0, sc->sc_apb_size,
+		      BUS_SPACE_BARRIER_READ);
 		if (AXIPEEK4(sc, reg, &val) != 0)
-			return 0xffffffff;
-		return val;
+			val = 0xffffffff;
+		bus_space_barrier(sc->sc_iot, sc->sc_axi_ioh,
+		    0, sc->sc_axi_size,
+		    BUS_SPACE_BARRIER_READ | BUS_SPACE_BARRIER_WRITE);
+		mutex_spin_exit(&sc->sc_conf_lock);
 	}
+	return val;
 }
 
 void
 rkpcie_conf_write(void *v, pcitag_t tag, int offset, pcireg_t data)
 {
 	struct rkpcie_softc *sc = v;
-	struct pcihost_softc *phsc = &sc->sc_phsc;
+	int bus_min = sc->sc_phsc.sc_bus_min;
 	int bus, dev, fn;
 	u_int reg;
 
@@ -561,14 +582,27 @@ rkpcie_conf_write(void *v, pcitag_t tag, int offset, pcireg_t data)
 	KASSERT(offset < PCI_EXTCONF_SIZE);
 
 	rkpcie_decompose_tag(sc, tag, &bus, &dev, &fn);
-	if (!rkpcie_conf_ok(bus, dev, fn, phsc->sc_bus_min))
+	if (!rkpcie_conf_ok(bus, dev, fn, offset, sc))
 		return;
-	reg = (bus << 20) | (dev << 15) | (fn << 12) | offset;
+	reg = (dev << 15) | (fn << 12) | offset;
 
-	if (bus == phsc->sc_bus_min)
+	if (bus == bus_min)
 		HWRITE4(sc, PCIE_RC_NORMAL_BASE + reg, data);
-	else
+	else {
+		mutex_spin_enter(&sc->sc_conf_lock);
+		HWRITE4(sc, PCIE_ATR_OB_ADDR0(0),
+		    (bus << 20) | (20 - 1));
+		HWRITE4(sc, PCIE_ATR_OB_DESC0(0),
+		    PCIE_ATR_HDR_RID | ((bus == bus_min + 1)
+		    ? PCIE_ATR_HDR_CFG_TYPE0 : PCIE_ATR_HDR_CFG_TYPE1));
+		bus_space_barrier(sc->sc_iot, sc->sc_ioh, 0, sc->sc_apb_size,
+		    BUS_SPACE_BARRIER_WRITE);
 		AXIPOKE4(sc, reg, data);
+		bus_space_barrier(sc->sc_iot, sc->sc_axi_ioh,
+		    0, sc->sc_axi_size,
+		    BUS_SPACE_BARRIER_READ | BUS_SPACE_BARRIER_WRITE);
+		mutex_spin_exit(&sc->sc_conf_lock);
+	}
 }
 
 static int

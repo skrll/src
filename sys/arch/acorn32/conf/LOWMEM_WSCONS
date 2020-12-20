@@ -1,4 +1,4 @@
-#	$NetBSD: LOWMEM_WSCONS,v 1.76 2020/01/19 01:25:03 thorpej Exp $
+#	$NetBSD: LOWMEM_WSCONS,v 1.78 2020/09/07 07:08:34 mrg Exp $
 #
 #	LOWMEM_WSCONS -- RiscPC config with wscons for SMALL machines
 #
@@ -24,7 +24,7 @@ options 	CPU_ARM7	# Support the ARM7 core
 #options 	ARM6_LATE_ABORT	# ARM6XX late abort support
 
 # For StrongARM only kernels
-#makeoptions	COPTS="-O2 -march=armv3m -mtune=strongarm"
+#makeoptions	COPTS="-O2 -mtune=strongarm"
 
 # For small kernels
 makeoptions	COPTS="-Os -fno-inline -Dinline= -D__inline__= -D_inline_= "
@@ -97,7 +97,7 @@ options 	USERCONF	# userconf(4) support
 #options 	ARM700BUGTRACK	# track the ARM700 swi bug
 #options 	PORTMASTER	# Enable PortMaster only options
 #options 	DIAGNOSTIC	# internal consistency checks
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	DDB		# in-kernel debugger
 #options 	DDB_HISTORY_SIZE=100	# Enable history editing in DDB
 #makeoptions	DEBUG="-g"	# compile full symbol table

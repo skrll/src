@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.35 2019/11/14 02:27:18 uki Exp $
+# $NetBSD: mi,v 1.39 2020/10/28 08:10:09 nia Exp $
 ./etc/mtree/set.xdebug					comp-sys-root
 ./usr/X11R7/lib						base-x11-root	xorg,debuglib,compatx11dir
 ./usr/X11R7/lib/libEGL_g.a				xdebug-libEGL-debuglib	xorg,debuglib,compatx11file,xorg_glamor
@@ -12,7 +12,7 @@
 ./usr/X11R7/lib/libX11-xcb_g.a				xdebug-libX11-debuglib	xorg,debuglib,compatx11file
 ./usr/X11R7/lib/libX11_g.a				xdebug-libX11-debuglib	xorg,debuglib,compatx11file
 ./usr/X11R7/lib/libXRes_g.a				xdebug-libXres-debuglib	xorg,debuglib,compatx11file
-./usr/X11R7/lib/libXTrap_g.a				xdebug-libXTrap-debuglib	xorg,debuglib,compatx11file
+./usr/X11R7/lib/libXTrap_g.a				xdebug-obsolete xorg,obsolete
 ./usr/X11R7/lib/libXau_g.a				xdebug-libXau-debuglib	xorg,debuglib,compatx11file
 ./usr/X11R7/lib/libXaw6_g.a				xdebug-libXaw6-debuglib	xorg,debuglib,compatx11file
 ./usr/X11R7/lib/libXaw7_g.a				xdebug-libXaw-debuglib	xorg,debuglib,compatx11file
@@ -22,7 +22,7 @@
 ./usr/X11R7/lib/libXdamage_g.a				xdebug-libXdamage-debuglib	xorg,debuglib,compatx11file
 ./usr/X11R7/lib/libXdmGreet_g.a				xdebug-libXdmGreet-debuglib	xorg,debuglib,compatx11file
 ./usr/X11R7/lib/libXdmcp_g.a				xdebug-libXdmcp-debuglib	xorg,debuglib,compatx11file
-./usr/X11R7/lib/libXevie_g.a				xdebug-libXevie-debuglib	xorg,debuglib,compatx11file
+./usr/X11R7/lib/libXevie_g.a				xdebug-obsolete	xorg,obsolete
 ./usr/X11R7/lib/libXext_g.a				xdebug-libXext-debuglib	xorg,debuglib,compatx11file
 ./usr/X11R7/lib/libXfixes_g.a				xdebug-libXfixes-debuglib	xorg,debuglib,compatx11file
 ./usr/X11R7/lib/libXfont2_g.a				xdebug-libXfont2-debuglib	xorg,debuglib,compatx11file
@@ -59,7 +59,7 @@
 ./usr/X11R7/lib/libfreetype_g.a				xdebug-freetype-debuglib	xorg,debuglib,compatx11file
 ./usr/X11R7/lib/libgbm_g.a				xdebug-libgbm-debuglib	xorg,debuglib,compatx11file
 ./usr/X11R7/lib/libglapi_g.a				xdebug-libglapi-debuglib	xorg,debuglib,compatx11file
-./usr/X11R7/lib/libglut_g.a				xdebug-libglut-debuglib	xorg,debuglib,compatx11file
+./usr/X11R7/lib/libglut_g.a				xdebug-obsolete xorg,obsolete
 ./usr/X11R7/lib/liblbxutil_g.a				xdebug-obsolete	xorg,obsolete
 ./usr/X11R7/lib/liblisp_g.a				xdebug-obsolete	xorg,obsolete
 ./usr/X11R7/lib/libmp_g.a				xdebug-obsolete	xorg,obsolete
@@ -164,6 +164,7 @@
 ./usr/libdata/debug/usr/X11R7/bin/xclipboard.debug	xdebug-xclipboard-debug	xorg,debug
 ./usr/libdata/debug/usr/X11R7/bin/xclock.debug		xdebug-xclock-debug	xorg,debug
 ./usr/libdata/debug/usr/X11R7/bin/xcmsdb.debug		xdebug-xcmsdb-debug	xorg,debug
+./usr/libdata/debug/usr/X11R7/bin/xcompmgr.debug	xdebug-xcompmgr-debug	xorg,debug
 ./usr/libdata/debug/usr/X11R7/bin/xconsole.debug	xdebug-xconsole-debug	xorg,debug
 ./usr/libdata/debug/usr/X11R7/bin/xcutsel.debug		xdebug-xcutsel-debug	xorg,debug
 ./usr/libdata/debug/usr/X11R7/bin/xditview.debug	xdebug-xditview-debug	xorg,debug
@@ -220,13 +221,13 @@
 ./usr/libdata/debug/usr/X11R7/bin/xsm.debug		xdebug-xsm-debug	xorg,debug
 ./usr/libdata/debug/usr/X11R7/bin/xstdcmap.debug	xdebug-xstdcmap-debug	xorg,debug
 ./usr/libdata/debug/usr/X11R7/bin/xterm.debug		xdebug-xterm-debug	xorg,debug
-./usr/libdata/debug/usr/X11R7/bin/xtrapchar.debug	xdebug-xtrap-debug	xorg,debug
-./usr/libdata/debug/usr/X11R7/bin/xtrapin.debug		xdebug-xtrap-debug	xorg,debug
-./usr/libdata/debug/usr/X11R7/bin/xtrapinfo.debug	xdebug-xtrap-debug	xorg,debug
-./usr/libdata/debug/usr/X11R7/bin/xtrapout.debug	xdebug-xtrap-debug	xorg,debug
-./usr/libdata/debug/usr/X11R7/bin/xtrapproto.debug	xdebug-xtrap-debug	xorg,debug
-./usr/libdata/debug/usr/X11R7/bin/xtrapreset.debug	xdebug-xtrap-debug	xorg,debug
-./usr/libdata/debug/usr/X11R7/bin/xtrapstats.debug	xdebug-xtrap-debug	xorg,debug
+./usr/libdata/debug/usr/X11R7/bin/xtrapchar.debug	xdebug-obsolete	xorg,obsolete
+./usr/libdata/debug/usr/X11R7/bin/xtrapin.debug		xdebug-obsolete	xorg,obsolete
+./usr/libdata/debug/usr/X11R7/bin/xtrapinfo.debug	xdebug-obsolete	xorg,obsolete
+./usr/libdata/debug/usr/X11R7/bin/xtrapout.debug	xdebug-obsolete	xorg,obsolete
+./usr/libdata/debug/usr/X11R7/bin/xtrapproto.debug	xdebug-obsolete	xorg,obsolete
+./usr/libdata/debug/usr/X11R7/bin/xtrapreset.debug	xdebug-obsolete	xorg,obsolete
+./usr/libdata/debug/usr/X11R7/bin/xtrapstats.debug	xdebug-obsolete	xorg,obsolete
 ./usr/libdata/debug/usr/X11R7/bin/xvidtune.debug	xdebug-xvidtune-debug	xorg,debug
 ./usr/libdata/debug/usr/X11R7/bin/xvinfo.debug		xdebug-xvinfo-debug	xorg,debug
 ./usr/libdata/debug/usr/X11R7/bin/xwd.debug		xdebug-xwd-debug	xorg,debug

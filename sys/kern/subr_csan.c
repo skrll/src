@@ -1,11 +1,10 @@
-/*	$NetBSD: subr_csan.c,v 1.7 2020/04/02 16:31:37 maxv Exp $	*/
+/*	$NetBSD: subr_csan.c,v 1.10 2020/09/10 14:04:45 maxv Exp $	*/
 
 /*
- * Copyright (c) 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2019-2020 Maxime Villard, m00nbsd.net
  * All rights reserved.
  *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Maxime Villard.
+ * This code is part of the KCSAN subsystem of the NetBSD kernel.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -16,21 +15,21 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_csan.c,v 1.7 2020/04/02 16:31:37 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_csan.c,v 1.10 2020/09/10 14:04:45 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -322,20 +321,17 @@ kcsan_strlen(const char *str)
 }
 
 #undef kcopy
-#undef copystr
 #undef copyinstr
 #undef copyoutstr
 #undef copyin
 #undef copyout
 
 int	kcsan_kcopy(const void *, void *, size_t);
-int	kcsan_copystr(const void *, void *, size_t, size_t *);
 int	kcsan_copyinstr(const void *, void *, size_t, size_t *);
 int	kcsan_copyoutstr(const void *, void *, size_t, size_t *);
 int	kcsan_copyin(const void *, void *, size_t);
 int	kcsan_copyout(const void *, void *, size_t);
 int	kcopy(const void *, void *, size_t);
-int	copystr(const void *, void *, size_t, size_t *);
 int	copyinstr(const void *, void *, size_t, size_t *);
 int	copyoutstr(const void *, void *, size_t, size_t *);
 int	copyin(const void *, void *, size_t);
@@ -347,13 +343,6 @@ kcsan_kcopy(const void *src, void *dst, size_t len)
 	kcsan_access((uintptr_t)src, len, false, false, __RET_ADDR);
 	kcsan_access((uintptr_t)dst, len, true, false, __RET_ADDR);
 	return kcopy(src, dst, len);
-}
-
-int
-kcsan_copystr(const void *kfaddr, void *kdaddr, size_t len, size_t *done)
-{
-	kcsan_access((uintptr_t)kdaddr, len, true, false, __RET_ADDR);
-	return copystr(kfaddr, kdaddr, len, done);
 }
 
 int
@@ -606,14 +595,10 @@ CSAN_ATOMIC_FUNC_INC(uint, unsigned int, unsigned int);
 CSAN_ATOMIC_FUNC_INC(ulong, unsigned long, unsigned long);
 CSAN_ATOMIC_FUNC_INC(ptr, void *, void);
 
-/*
- * TODO: these two functions should qualify as atomic accesses. However
- * for now we just whitelist them, to reduce the output.
- */
-
 void
 kcsan_atomic_load(const volatile void *p, void *v, int size)
 {
+	kcsan_access((uintptr_t)p, size, false, true, __RET_ADDR);
 	switch (size) {
 	case 1: *(uint8_t *)v = *(const volatile uint8_t *)p; break;
 	case 2: *(uint16_t *)v = *(const volatile uint16_t *)p; break;
@@ -625,6 +610,7 @@ kcsan_atomic_load(const volatile void *p, void *v, int size)
 void
 kcsan_atomic_store(volatile void *p, const void *v, int size)
 {
+	kcsan_access((uintptr_t)p, size, true, true, __RET_ADDR);
 	switch (size) {
 	case 1: *(volatile uint8_t *)p = *(const uint8_t *)v; break;
 	case 2: *(volatile uint16_t *)p = *(const uint16_t *)v; break;

@@ -1,4 +1,4 @@
-/*	$NetBSD: evtchn.c,v 1.88 2020/04/06 19:26:00 jdolecek Exp $	*/
+/*	$NetBSD: evtchn.c,v 1.96 2020/11/15 14:01:06 bouyer Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -54,7 +54,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: evtchn.c,v 1.88 2020/04/06 19:26:00 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: evtchn.c,v 1.96 2020/11/15 14:01:06 bouyer Exp $");
 
 #include "opt_xen.h"
 #include "isa.h"
@@ -70,15 +70,18 @@ __KERNEL_RCSID(0, "$NetBSD: evtchn.c,v 1.88 2020/04/06 19:26:00 jdolecek Exp $")
 #include <sys/reboot.h>
 #include <sys/mutex.h>
 #include <sys/interrupt.h>
+#include <sys/xcall.h>
 
 #include <uvm/uvm.h>
 
-#include <machine/intrdefs.h>
+#include <xen/intr.h>
 
 #include <xen/xen.h>
 #include <xen/hypervisor.h>
 #include <xen/evtchn.h>
 #include <xen/xenfunc.h>
+
+#define	NR_PIRQS	NR_EVENT_CHANNELS
 
 /*
  * This lock protects updates to the following mapping and reference-count
@@ -88,9 +91,6 @@ static kmutex_t evtchn_lock;
 
 /* event handlers */
 struct evtsource *evtsource[NR_EVENT_CHANNELS];
-
-/* channel locks */
-static kmutex_t evtlock[NR_EVENT_CHANNELS];
 
 /* Reference counts for bindings to event channels XXX: redo for SMP */
 static uint8_t evtch_bindcount[NR_EVENT_CHANNELS];
@@ -108,12 +108,7 @@ static int virq_to_evtch[NR_VIRQS];
 #if NPCI > 0 || NISA > 0
 /* event-channel <-> PIRQ mapping */
 static int pirq_to_evtch[NR_PIRQS];
-/* PIRQ needing notify */
-static uint32_t pirq_needs_unmask_notify[NR_EVENT_CHANNELS / 32];
 int pirq_interrupt(void *);
-physdev_op_t physdev_op_notify = {
-	.cmd = PHYSDEVOP_IRQ_UNMASK_NOTIFY,
-};
 #endif
 
 static void xen_evtchn_mask(struct pic *, int);
@@ -121,7 +116,9 @@ static void xen_evtchn_unmask(struct pic *, int);
 static void xen_evtchn_addroute(struct pic *, struct cpu_info *, int, int, int);
 static void xen_evtchn_delroute(struct pic *, struct cpu_info *, int, int, int);
 static bool xen_evtchn_trymask(struct pic *, int);
-
+static void xen_intr_get_devname(const char *, char *, size_t);
+static void xen_intr_get_assigned(const char *, kcpuset_t *);
+static uint64_t xen_intr_get_count(const char *, u_int);
 
 struct pic xen_pic = {
 	.pic_name = "xenev0",
@@ -136,6 +133,9 @@ struct pic xen_pic = {
 	.pic_trymask = xen_evtchn_trymask,
 	.pic_level_stubs = xenev_stubs,
 	.pic_edge_stubs = xenev_stubs,
+	.pic_intr_get_devname = xen_intr_get_devname,
+	.pic_intr_get_assigned = xen_intr_get_assigned,
+	.pic_intr_get_count = xen_intr_get_count,
 };
 	
 /*
@@ -193,7 +193,7 @@ struct pic xen_pic = {
 
 int debug_port = -1;
 
-// #define IRQ_DEBUG 4
+/* #define IRQ_DEBUG 4 */
 
 /* http://mail-index.netbsd.org/port-amd64/2004/02/22/0000.html */
 #ifdef MULTIPROCESSOR
@@ -239,8 +239,6 @@ events_default_setup(void)
 	/* No PIRQ -> event mappings. */
 	for (i = 0; i < NR_PIRQS; i++)
 		pirq_to_evtch[i] = -1;
-	for (i = 0; i < NR_EVENT_CHANNELS / 32; i++)
-		pirq_needs_unmask_notify[i] = 0;
 #endif
 
 	/* No event-channel are 'live' right now. */
@@ -256,7 +254,13 @@ void
 events_init(void)
 {
 	mutex_init(&evtchn_lock, MUTEX_DEFAULT, IPL_NONE);
-#ifdef XENPV
+
+	(void)events_resume();
+}
+
+bool
+events_resume(void)
+{
 	debug_port = bind_virq_to_evtch(VIRQ_DEBUG);
 
 	KASSERT(debug_port != -1);
@@ -271,11 +275,9 @@ events_init(void)
 	evtsource[debug_port] = (void *)-1;
 	xen_atomic_set_bit(&curcpu()->ci_evtmask[0], debug_port);
 	hypervisor_unmask_event(debug_port);
-#if NPCI > 0 || NISA > 0
-	hypervisor_ack_pirq_event(debug_port);
-#endif /* NPCI > 0 || NISA > 0 */
-#endif /* XENPV */
 	x86_enable_intr();		/* at long last... */
+
+	return true;
 }
 
 bool
@@ -299,15 +301,6 @@ events_suspend(void)
 	return true;
 }
 
-bool
-events_resume (void)
-{
-	events_init();
-
-	return true;
-}
-
-
 unsigned int
 evtchn_do_event(int evtch, struct intrframe *regs)
 {
@@ -316,8 +309,6 @@ evtchn_do_event(int evtch, struct intrframe *regs)
 	struct intrhand *ih;
 	int	(*ih_fun)(void *, void *);
 	uint32_t iplmask;
-	int i;
-	uint32_t iplbit;
 
 	KASSERTMSG(evtch >= 0, "negative evtch: %d", evtch);
 	KASSERTMSG(evtch < NR_EVENT_CHANNELS,
@@ -336,21 +327,17 @@ evtchn_do_event(int evtch, struct intrframe *regs)
 	if (__predict_false(evtch == debug_port)) {
 		xen_debug_handler(NULL);
 		hypervisor_unmask_event(debug_port);
-#if NPCI > 0 || NISA > 0
-		hypervisor_ack_pirq_event(debug_port);
-#endif /* NPCI > 0 || NISA > 0 */		
 		return 0;
 	}
 
 	KASSERTMSG(evtsource[evtch] != NULL, "unknown event %d", evtch);
+
+	if (evtsource[evtch]->ev_cpu != ci)
+		return 0;
+
 	ci->ci_data.cpu_nintr++;
 	evtsource[evtch]->ev_evcnt.ev_count++;
 	ilevel = ci->ci_ilevel;
-
-	if (evtsource[evtch]->ev_cpu != ci /* XXX: get stats */) {
-		hypervisor_send_event(evtsource[evtch]->ev_cpu, evtch);
-		return 0;
-	}
 
 	if (evtsource[evtch]->ev_maxlevel <= ilevel) {
 #ifdef IRQ_DEBUG
@@ -368,16 +355,20 @@ evtchn_do_event(int evtch, struct intrframe *regs)
 	}
 	ci->ci_ilevel = evtsource[evtch]->ev_maxlevel;
 	iplmask = evtsource[evtch]->ev_imask;
+	KASSERT(ci->ci_ilevel >= IPL_VM);
+	KASSERT(cpu_intr_p());
 	x86_enable_intr();
-	mutex_spin_enter(&evtlock[evtch]);
 	ih = evtsource[evtch]->ev_handlers;
 	while (ih != NULL) {
+		KASSERT(ih->ih_cpu == ci);
+#if 0
 		if (ih->ih_cpu != ci) {
 			hypervisor_send_event(ih->ih_cpu, evtch);
-			iplmask &= ~XUNMASK(ci, ih->ih_level);
+			iplmask &= ~(1 << XEN_IPL2SIR(ih->ih_level));
 			ih = ih->ih_evt_next;
 			continue;
 		}
+#endif
 		if (ih->ih_level <= ilevel) {
 #ifdef IRQ_DEBUG
 		if (evtch == IRQ_DEBUG)
@@ -387,52 +378,18 @@ evtchn_do_event(int evtch, struct intrframe *regs)
 			hypervisor_set_ipending(iplmask,
 			    evtch >> LONG_SHIFT, evtch & LONG_MASK);
 			/* leave masked */
-			mutex_spin_exit(&evtlock[evtch]);
 			goto splx;
 		}
-		iplmask &= ~XUNMASK(ci, ih->ih_level);
+		iplmask &= ~(1 << XEN_IPL2SIR(ih->ih_level));
 		ci->ci_ilevel = ih->ih_level;
 		ih_fun = (void *)ih->ih_fun;
 		ih_fun(ih->ih_arg, regs);
 		ih = ih->ih_evt_next;
 	}
-	mutex_spin_exit(&evtlock[evtch]);
 	x86_disable_intr();
 	hypervisor_unmask_event(evtch);
-#if NPCI > 0 || NISA > 0
-	hypervisor_ack_pirq_event(evtch);
-#endif /* NPCI > 0 || NISA > 0 */		
 
 splx:
-	/*
-	 * C version of spllower(). ASTs will be checked when
-	 * hypevisor_callback() exits, so no need to check here.
-	 */
-	iplmask = (XUNMASK(ci, ilevel) & ci->ci_xpending);
-	while (iplmask != 0) {
-		iplbit = 1 << (NIPL - 1);
-		i = (NIPL - 1);
-		while (iplmask != 0 && i > ilevel) {
-			while (iplmask & iplbit) {
-				ci->ci_xpending &= ~iplbit;
-				ci->ci_ilevel = i;
-				for (ih = ci->ci_xsources[i]->is_handlers;
-				    ih != NULL; ih = ih->ih_next) {
-					KASSERT(ih->ih_cpu == ci);
-					x86_enable_intr();
-					ih_fun = (void *)ih->ih_fun;
-					ih_fun(ih->ih_arg, regs);
-					x86_disable_intr();
-				}
-				hypervisor_enable_ipl(i);
-				/* more pending IPLs may have been registered */
-				iplmask =
-				    (XUNMASK(ci, ilevel) & ci->ci_xpending);
-			}
-			i--;
-			iplbit >>= 1;
-		}
-	}
 	ci->ci_ilevel = ilevel;
 	return 0;
 }
@@ -450,7 +407,6 @@ xen_evtchn_mask(struct pic *pic, int pin)
 	KASSERT(evtchn < NR_EVENT_CHANNELS);
 
 	hypervisor_mask_event(evtchn);
-	
 }
 
 static void
@@ -595,7 +551,7 @@ bind_virq_to_evtch(int virq)
 	}
 
 	if (virq == VIRQ_TIMER) {
-		evtchn = virq_timer_to_evtch[ci->ci_cpuid];
+		evtchn = virq_timer_to_evtch[ci->ci_vcpuid];
 	} else {
 		evtchn = virq_to_evtch[virq];
 	}
@@ -604,7 +560,7 @@ bind_virq_to_evtch(int virq)
 	if (evtchn == -1) {
 		op.cmd = EVTCHNOP_bind_virq;
 		op.u.bind_virq.virq = virq;
-		op.u.bind_virq.vcpu = ci->ci_cpuid;
+		op.u.bind_virq.vcpu = ci->ci_vcpuid;
 		if (HYPERVISOR_event_channel_op(&op) != 0)
 			panic("Failed to bind virtual IRQ %d\n", virq);
 		evtchn = op.u.bind_virq.port;
@@ -612,7 +568,7 @@ bind_virq_to_evtch(int virq)
 
 	/* Set event channel */
 	if (virq == VIRQ_TIMER) {
-		virq_timer_to_evtch[ci->ci_cpuid] = evtchn;
+		virq_timer_to_evtch[ci->ci_vcpuid] = evtchn;
 	} else {
 		virq_to_evtch[virq] = evtchn;
 	}
@@ -634,7 +590,7 @@ unbind_virq_from_evtch(int virq)
 	struct cpu_info *ci = curcpu();
 
 	if (virq == VIRQ_TIMER) {
-		evtchn = virq_timer_to_evtch[ci->ci_cpuid];
+		evtchn = virq_timer_to_evtch[ci->ci_vcpuid];
 	}
 	else {
 		evtchn = virq_to_evtch[virq];
@@ -654,7 +610,7 @@ unbind_virq_from_evtch(int virq)
 			panic("Failed to unbind virtual IRQ %d\n", virq);
 
 		if (virq == VIRQ_TIMER) {
-			virq_timer_to_evtch[ci->ci_cpuid] = -1;
+			virq_timer_to_evtch[ci->ci_vcpuid] = -1;
 		} else {
 			virq_to_evtch[virq] = -1;
 		}
@@ -764,14 +720,12 @@ pirq_establish(int pirq, int evtch, int (*func)(void *), void *arg, int level,
 	ih->arg = arg;
 
 	if (event_set_handler(evtch, pirq_interrupt, ih, level, intrname,
-	    xname, known_mpsafe) != 0) {
+	    xname, known_mpsafe, NULL) == NULL) {
 		kmem_free(ih, sizeof(struct pintrhand));
 		return NULL;
 	}
 
-	hypervisor_prime_pirq_event(pirq, evtch);
 	hypervisor_unmask_event(evtch);
-	hypervisor_ack_pirq_event(evtch);
 	return ih;
 }
 
@@ -812,16 +766,13 @@ intr_calculatemasks(struct evtsource *evts, int evtch, struct cpu_info *ci)
 	struct intrhand *ih;
 	int cpu_receive = 0;
 
-#ifdef MULTIPROCESSOR
-	KASSERT(!mutex_owned(&evtlock[evtch]));
-#endif
-	mutex_spin_enter(&evtlock[evtch]);
 	evts->ev_maxlevel = IPL_NONE;
 	evts->ev_imask = 0;
 	for (ih = evts->ev_handlers; ih != NULL; ih = ih->ih_evt_next) {
+		KASSERT(ih->ih_cpu == curcpu());
 		if (ih->ih_level > evts->ev_maxlevel)
 			evts->ev_maxlevel = ih->ih_level;
-		evts->ev_imask |= (1 << ih->ih_level);
+		evts->ev_imask |= (1 << XEN_IPL2SIR(ih->ih_level));
 		if (ih->ih_cpu == ci)
 			cpu_receive = 1;
 	}
@@ -829,17 +780,83 @@ intr_calculatemasks(struct evtsource *evts, int evtch, struct cpu_info *ci)
 		xen_atomic_set_bit(&curcpu()->ci_evtmask[0], evtch);
 	else
 		xen_atomic_clear_bit(&curcpu()->ci_evtmask[0], evtch);
-	mutex_spin_exit(&evtlock[evtch]);
 }
 
-int
-event_set_handler(int evtch, int (*func)(void *), void *arg, int level,
-    const char *intrname, const char *xname, bool mpsafe)
-{
-	struct cpu_info *ci = curcpu(); /* XXX: pass in ci ? */
+
+struct event_set_handler_args {
+	struct intrhand *ih;
+	struct intrsource *ipls;
 	struct evtsource *evts;
-	struct intrhand *ih, **ihp;
-	int s;
+	int evtch;
+};
+
+/*
+ * Called on bound CPU to handle event_set_handler()
+ * caller (on initiating CPU) holds cpu_lock on our behalf
+ * arg1: struct event_set_handler_args *
+ * arg2: NULL
+ */
+
+static void
+event_set_handler_xcall(void *arg1, void *arg2)
+{
+	struct event_set_handler_args *esh_args = arg1;
+	struct intrhand **ihp, *ih = esh_args->ih;
+	struct evtsource *evts = esh_args->evts;
+
+	const u_long psl = x86_read_psl();
+	x86_disable_intr();
+	/* sort by IPL order, higher first */
+	for (ihp = &evts->ev_handlers; *ihp != NULL;
+	    ihp = &((*ihp)->ih_evt_next)) {
+		if ((*ihp)->ih_level < ih->ih_level)
+			break;
+	}
+	/* insert before *ihp */
+	ih->ih_evt_next = *ihp;
+	*ihp = ih;
+#ifndef XENPV
+	evts->ev_isl->is_handlers = evts->ev_handlers;
+#endif
+	/* register per-cpu handler for spllower() */
+	struct cpu_info *ci = ih->ih_cpu;
+	int sir = XEN_IPL2SIR(ih->ih_level);
+	KASSERT(sir >= SIR_XENIPL_VM && sir <= SIR_XENIPL_HIGH);
+
+	KASSERT(ci == curcpu());
+	if (ci->ci_isources[sir] == NULL) {
+		KASSERT(esh_args->ipls != NULL);
+		ci->ci_isources[sir] = esh_args->ipls;
+	}
+	struct intrsource *ipls = ci->ci_isources[sir];
+	ih->ih_next = ipls->is_handlers;
+	ipls->is_handlers = ih;
+	x86_intr_calculatemasks(ci);
+
+	intr_calculatemasks(evts, esh_args->evtch, ci);
+	x86_write_psl(psl);
+}
+
+struct intrhand *
+event_set_handler(int evtch, int (*func)(void *), void *arg, int level,
+    const char *intrname, const char *xname, bool mpsafe, struct cpu_info *ci)
+{
+	struct event_set_handler_args esh_args;
+	char intrstr_buf[INTRIDBUF];
+	bool bind = false;
+
+	memset(&esh_args, 0, sizeof(esh_args));
+
+	/*
+	 * if ci is not specified, we bind to the current cpu.
+	 * if ci has been proviced by the called, we assume 
+	 * he will do the EVTCHNOP_bind_vcpu if needed.
+	 */
+	if (ci == NULL) {
+		ci = curcpu();
+		bind = true;
+	}
+		
 
 #ifdef IRQ_DEBUG
 	printf("event_set_handler IRQ %d handler %p\n", evtch, func);
@@ -848,197 +865,207 @@ event_set_handler(int evtch, int (*func)(void *), void *arg, int level,
 	KASSERTMSG(evtch >= 0, "negative evtch: %d", evtch);
 	KASSERTMSG(evtch < NR_EVENT_CHANNELS,
 	    "evtch number %d > NR_EVENT_CHANNELS", evtch);
-	KASSERT(intrname != NULL && xname != NULL);
+	KASSERT(xname != NULL);
 
 #if 0
 	printf("event_set_handler evtch %d handler %p level %d\n", evtch,
 	       handler, level);
 #endif
-	ih = kmem_zalloc(sizeof (struct intrhand), KM_NOSLEEP);
-	if (ih == NULL)
+	esh_args.ih = kmem_zalloc(sizeof (struct intrhand), KM_NOSLEEP);
+	if (esh_args.ih == NULL)
 		panic("can't allocate fixed interrupt source");
 
 
-	ih->ih_level = level;
-	ih->ih_fun = ih->ih_realfun = func;
-	ih->ih_arg = ih->ih_realarg = arg;
-	ih->ih_evt_next = NULL;
-	ih->ih_next = NULL;
-	ih->ih_cpu = ci;
+	esh_args.ih->ih_pic = &xen_pic;
+	esh_args.ih->ih_level = level;
+	esh_args.ih->ih_fun = esh_args.ih->ih_realfun = func;
+	esh_args.ih->ih_arg = esh_args.ih->ih_realarg = arg;
+	esh_args.ih->ih_evt_next = NULL;
+	esh_args.ih->ih_next = NULL;
+	esh_args.ih->ih_cpu = ci;
+	esh_args.ih->ih_pin = evtch;
 #ifdef MULTIPROCESSOR
 	if (!mpsafe) {
-		ih->ih_fun = xen_intr_biglock_wrapper;
-		ih->ih_arg = ih;
+		esh_args.ih->ih_fun = xen_intr_biglock_wrapper;
+		esh_args.ih->ih_arg = esh_args.ih;
 	}
 #endif /* MULTIPROCESSOR */
+	KASSERT(mpsafe || level < IPL_HIGH);
 
-	s = splhigh();
-
-	/* register per-cpu handler for spllower() */
-	event_set_iplhandler(ci, ih, level);
-
+	mutex_enter(&cpu_lock);
+	/* allocate IPL source if needed */
+	int sir = XEN_IPL2SIR(level);
+	if (ci->ci_isources[sir] == NULL) {
+		struct intrsource *ipls;
+		ipls = kmem_zalloc(sizeof (struct intrsource), KM_NOSLEEP);
+		if (ipls == NULL)
+			panic("can't allocate fixed interrupt source");
+		ipls->is_recurse = xenev_stubs[level - IPL_VM].ist_recurse;
+		ipls->is_resume = xenev_stubs[level - IPL_VM].ist_resume;
+		ipls->is_pic = &xen_pic;
+		esh_args.ipls = ipls;
+		/*
+		 * note that we can't set ci_isources here, as
+		 * the assembly can't handle is_handlers being NULL
+		 */
+	}
 	/* register handler for event channel */
 	if (evtsource[evtch] == NULL) {
+		struct evtsource *evts;
+		evtchn_op_t op;
+		if (intrname == NULL)
+			intrname = intr_create_intrid(-1, &xen_pic, evtch,
+			    intrstr_buf, sizeof(intrstr_buf));
 		evts = kmem_zalloc(sizeof (struct evtsource),
 		    KM_NOSLEEP);
 		if (evts == NULL)
 			panic("can't allocate fixed interrupt source");
 
-		evts->ev_handlers = ih;
-		/*
-		 * XXX: We're assuming here that ci is the same cpu as
-		 * the one on which this event/port is bound on. The
-		 * api needs to be reshuffled so that this assumption
-		 * is more explicitly implemented.
-		 */
 		evts->ev_cpu = ci;
-		mutex_init(&evtlock[evtch], MUTEX_DEFAULT, IPL_HIGH);
-		evtsource[evtch] = evts;
 		strlcpy(evts->ev_intrname, intrname, sizeof(evts->ev_intrname));
 
 		evcnt_attach_dynamic(&evts->ev_evcnt, EVCNT_TYPE_INTR, NULL,
 		    device_xname(ci->ci_dev), evts->ev_intrname);
-	} else {
-		evts = evtsource[evtch];
-		/* sort by IPL order, higher first */
-		mutex_spin_enter(&evtlock[evtch]);
-		for (ihp = &evts->ev_handlers; ; ihp = &((*ihp)->ih_evt_next)) {
-			if ((*ihp)->ih_level < ih->ih_level) {
-				/* insert before *ihp */
-				ih->ih_evt_next = *ihp;
-				*ihp = ih;
-				break;
-			}
-			if ((*ihp)->ih_evt_next == NULL) {
-				(*ihp)->ih_evt_next = ih;
-				break;
+		if (bind) {
+			op.cmd = EVTCHNOP_bind_vcpu;
+			op.u.bind_vcpu.port = evtch;
+			op.u.bind_vcpu.vcpu = ci->ci_vcpuid;
+			if (HYPERVISOR_event_channel_op(&op) != 0) {
+				panic("Failed to bind event %d to VCPU  %s %d",
+				    evtch, device_xname(ci->ci_dev),
+				    ci->ci_vcpuid);
 			}
 		}
-		mutex_spin_exit(&evtlock[evtch]);
+#ifndef XENPV
+		evts->ev_isl = intr_allocate_io_intrsource(intrname);
+		evts->ev_isl->is_pic = &xen_pic;
+#endif
+		evtsource[evtch] = evts;
 	}
-
+	esh_args.evts = evtsource[evtch];
 
 	// append device name
-	if (evts->ev_xname[0] != '\0')
-		strlcat(evts->ev_xname, ", ", sizeof(evts->ev_xname));
-	strlcat(evts->ev_xname, xname, sizeof(evts->ev_xname));
+	if (esh_args.evts->ev_xname[0] != '\0') {
+		strlcat(esh_args.evts->ev_xname, ", ",
+		    sizeof(esh_args.evts->ev_xname));
+	}
+	strlcat(esh_args.evts->ev_xname, xname,
+	    sizeof(esh_args.evts->ev_xname));
 
-	intr_calculatemasks(evts, evtch, ci);
-	splx(s);
+	esh_args.evtch = evtch;
 
-	return 0;
+	if (ci == curcpu() || !mp_online) {
+		event_set_handler_xcall(&esh_args, NULL);
+	} else {
+		uint64_t where = xc_unicast(0, event_set_handler_xcall,
+		    &esh_args, NULL, ci);
+		xc_wait(where);
+	}
+
+	mutex_exit(&cpu_lock);
+	return esh_args.ih;
 }
 
-void
-event_set_iplhandler(struct cpu_info *ci,
-		     struct intrhand *ih,
-		     int level)
+/*
+ * Called on bound CPU to handle event_remove_handler()
+ * caller (on initiating CPU) holds cpu_lock on our behalf
+ * arg1: evtch
+ * arg2: struct intrhand *ih
+ */
+
+static void
+event_remove_handler_xcall(void *arg1, void *arg2)
 {
 	struct intrsource *ipls;
+	struct evtsource *evts;
+	struct intrhand **ihp;
+	struct cpu_info *ci;
+	struct intrhand *ih = arg2;
+	int evtch = (intptr_t)(arg1);
 
-	KASSERT(ci == ih->ih_cpu);
-	if (ci->ci_xsources[level] == NULL) {
-		ipls = kmem_zalloc(sizeof (struct intrsource),
-		    KM_NOSLEEP);
-		if (ipls == NULL)
-			panic("can't allocate fixed interrupt source");
-		ipls->is_recurse = xenev_stubs[level].ist_entry;
-		ipls->is_recurse = xenev_stubs[level].ist_recurse;
-		ipls->is_resume = xenev_stubs[level].ist_resume;
-		ipls->is_handlers = ih;
-		ci->ci_xsources[level] = ipls;
-	} else {
-		ipls = ci->ci_xsources[level];
-		ih->ih_next = ipls->is_handlers;
-		ipls->is_handlers = ih;
+	evts = evtsource[evtch];
+	KASSERT(evts != NULL);
+	KASSERT(ih != NULL);
+	ci = ih->ih_cpu;
+	KASSERT(ci == curcpu());
+
+	const u_long psl = x86_read_psl();
+	x86_disable_intr();
+	
+	for (ihp = &evts->ev_handlers; *ihp != NULL;
+	    ihp = &(*ihp)->ih_evt_next) {
+		if ((*ihp) == ih)
+			break;
 	}
+	if (*(ihp) == NULL) {
+		panic("event_remove_handler_xcall: not in ev_handlers");
+	}
+
+	*ihp = ih->ih_evt_next;
+
+	int sir = XEN_IPL2SIR(ih->ih_level);
+	KASSERT(sir >= SIR_XENIPL_VM && sir <= SIR_XENIPL_HIGH);
+	ipls = ci->ci_isources[sir];
+	for (ihp = &ipls->is_handlers; *ihp != NULL; ihp = &(*ihp)->ih_next) {
+		if (*ihp == ih)
+			break;
+	}
+	if (*ihp == NULL)
+		panic("event_remove_handler_xcall: not in is_handlers");
+	*ihp = ih->ih_next;
+	intr_calculatemasks(evts, evtch, ci);
+#ifndef XENPV
+	evts->ev_isl->is_handlers = evts->ev_handlers;
+#endif
+	if (evts->ev_handlers == NULL)
+		xen_atomic_clear_bit(&ci->ci_evtmask[0], evtch);
+
+	x86_write_psl(psl);
 }
 
 int
 event_remove_handler(int evtch, int (*func)(void *), void *arg)
 {
-	struct intrsource *ipls;
-	struct evtsource *evts;
 	struct intrhand *ih;
-	struct intrhand **ihp;
 	struct cpu_info *ci;
+	struct evtsource *evts;
 
+	mutex_enter(&cpu_lock);
 	evts = evtsource[evtch];
 	if (evts == NULL)
 		return ENOENT;
 
-	mutex_spin_enter(&evtlock[evtch]);
-	for (ihp = &evts->ev_handlers, ih = evts->ev_handlers;
-	    ih != NULL;
-	    ihp = &ih->ih_evt_next, ih = ih->ih_evt_next) {
+	for (ih = evts->ev_handlers; ih != NULL; ih = ih->ih_evt_next) {
 		if (ih->ih_realfun == func && ih->ih_realarg == arg)
 			break;
 	}
 	if (ih == NULL) {
-		mutex_spin_exit(&evtlock[evtch]);
+		mutex_exit(&cpu_lock);
 		return ENOENT;
 	}
 	ci = ih->ih_cpu;
-	*ihp = ih->ih_evt_next;
 
-	ipls = ci->ci_xsources[ih->ih_level];
-	for (ihp = &ipls->is_handlers, ih = ipls->is_handlers;
-	    ih != NULL;
-	    ihp = &ih->ih_next, ih = ih->ih_next) {
-		if (ih->ih_realfun == func && ih->ih_realarg == arg)
-			break;
+	if (ci == curcpu() || !mp_online) {
+		event_remove_handler_xcall((void *)(intptr_t)evtch, ih);
+	} else {
+		uint64_t where = xc_unicast(0, event_remove_handler_xcall,
+		    (void *)(intptr_t)evtch, ih, ci);
+		xc_wait(where);
 	}
-	if (ih == NULL)
-		panic("event_remove_handler");
-	*ihp = ih->ih_next;
-	mutex_spin_exit(&evtlock[evtch]);
+
 	kmem_free(ih, sizeof (struct intrhand));
 	if (evts->ev_handlers == NULL) {
-		xen_atomic_clear_bit(&ci->ci_evtmask[0], evtch);
+#ifndef XENPV
+		KASSERT(evts->ev_isl->is_handlers == NULL);
+		intr_free_io_intrsource(evts->ev_intrname);
+#endif
 		evcnt_detach(&evts->ev_evcnt);
 		kmem_free(evts, sizeof (struct evtsource));
 		evtsource[evtch] = NULL;
-	} else {
-		intr_calculatemasks(evts, evtch, ci);
 	}
+	mutex_exit(&cpu_lock);
 	return 0;
 }
-
-#if NPCI > 0 || NISA > 0
-void
-hypervisor_prime_pirq_event(int pirq, unsigned int evtch)
-{
-	physdev_op_t physdev_op;
-	physdev_op.cmd = PHYSDEVOP_IRQ_STATUS_QUERY;
-	physdev_op.u.irq_status_query.irq = pirq;
-	if (HYPERVISOR_physdev_op(&physdev_op) < 0)
-		panic("HYPERVISOR_physdev_op(PHYSDEVOP_IRQ_STATUS_QUERY)");
-	if (physdev_op.u.irq_status_query.flags &
-	    PHYSDEVOP_IRQ_NEEDS_UNMASK_NOTIFY) {
-		pirq_needs_unmask_notify[evtch >> 5] |= (1 << (evtch & 0x1f));
-#ifdef IRQ_DEBUG
-		printf("pirq %d needs notify\n", pirq);
-#endif
-	}
-}
-
-void
-hypervisor_ack_pirq_event(unsigned int evtch)
-{
-#ifdef IRQ_DEBUG
-	if (evtch == IRQ_DEBUG)
-		printf("%s: evtch %d\n", __func__, evtch);
-#endif
-
-	if (pirq_needs_unmask_notify[evtch >> 5] & (1 << (evtch & 0x1f))) {
-#ifdef  IRQ_DEBUG
-		if (evtch == IRQ_DEBUG)
-		    printf("pirq_notify(%d)\n", evtch);
-#endif
-		(void)HYPERVISOR_physdev_op(&physdev_op_notify);
-	}
-}
-#endif /* NPCI > 0 || NISA > 0 */
 
 int
 xen_debug_handler(void *arg)
@@ -1046,7 +1073,7 @@ xen_debug_handler(void *arg)
 	struct cpu_info *ci = curcpu();
 	int i;
 	int xci_ilevel = ci->ci_ilevel;
-	int xci_xpending = ci->ci_xpending;
+	int xci_ipending = ci->ci_ipending;
 	int xci_idepth = ci->ci_idepth;
 	u_long upcall_pending = ci->ci_vcpu->evtchn_upcall_pending;
 	u_long upcall_mask = ci->ci_vcpu->evtchn_upcall_mask;
@@ -1063,8 +1090,8 @@ xen_debug_handler(void *arg)
 
 	__insn_barrier();
 	printf("debug event\n");
-	printf("ci_ilevel 0x%x ci_xpending 0x%x ci_idepth %d\n",
-	    xci_ilevel, xci_xpending, xci_idepth);
+	printf("ci_ilevel 0x%x ci_ipending 0x%x ci_idepth %d\n",
+	    xci_ilevel, xci_ipending, xci_idepth);
 	printf("evtchn_upcall_pending %ld evtchn_upcall_mask %ld"
 	    " evtchn_pending_sel 0x%lx\n",
 		upcall_pending, upcall_mask, pending_sel);
@@ -1079,7 +1106,6 @@ xen_debug_handler(void *arg)
 	return 0;
 }
 
-#ifdef XENPV
 static struct evtsource *
 event_get_handler(const char *intrid)
 {
@@ -1096,11 +1122,8 @@ event_get_handler(const char *intrid)
 	return NULL;
 }
 
-/*
- * MI interface for subr_interrupt.c
- */
-uint64_t
-interrupt_get_count(const char *intrid, u_int cpu_idx)
+static uint64_t
+xen_intr_get_count(const char *intrid, u_int cpu_idx)
 {
 	int count = 0;
 	struct evtsource *evp;
@@ -1116,11 +1139,8 @@ interrupt_get_count(const char *intrid, u_int cpu_idx)
 	return count;
 }
 
-/*
- * MI interface for subr_interrupt.c
- */
-void
-interrupt_get_assigned(const char *intrid, kcpuset_t *cpuset)
+static void
+xen_intr_get_assigned(const char *intrid, kcpuset_t *cpuset)
 {
 	struct evtsource *evp;
 
@@ -1135,11 +1155,8 @@ interrupt_get_assigned(const char *intrid, kcpuset_t *cpuset)
 	mutex_spin_exit(&evtchn_lock);
 }
 
-/*
- * MI interface for subr_interrupt.c
- */
-void
-interrupt_get_devname(const char *intrid, char *buf, size_t len)
+static void
+xen_intr_get_devname(const char *intrid, char *buf, size_t len)
 {
 	struct evtsource *evp;
 
@@ -1151,6 +1168,7 @@ interrupt_get_devname(const char *intrid, char *buf, size_t len)
 	mutex_spin_exit(&evtchn_lock);
 }
 
+#ifdef XENPV
 /*
  * MI interface for subr_interrupt.
  */
@@ -1204,7 +1222,12 @@ interrupt_construct_intrids(const kcpuset_t *cpuset)
 		off++;
 	}
 	mutex_spin_exit(&evtchn_lock);
-
 	return ii_handler;
 }
+__strong_alias(interrupt_get_count, xen_intr_get_count);
+__strong_alias(interrupt_get_assigned, xen_intr_get_assigned);
+__strong_alias(interrupt_get_devname, xen_intr_get_devname);
+__strong_alias(x86_intr_get_count, xen_intr_get_count);
+__strong_alias(x86_intr_get_assigned, xen_intr_get_assigned);
+__strong_alias(x86_intr_get_devname, xen_intr_get_devname);
 #endif /* XENPV */

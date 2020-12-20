@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.106 2019/09/18 05:16:15 nonaka Exp $
+# $NetBSD: Makefile,v 1.109 2020/09/08 12:54:36 martin Exp $
 
 .include <bsd.own.mk>
 
@@ -14,10 +14,10 @@
 # src/sbin/rcorder.
 
 CONFIGFILES=\
-		DAEMON DISKS LOGIN NETWORKING SERVERS \
+		CRITLOCALMOUNTED DAEMON DISKS LOGIN NETWORKING SERVERS \
 		accounting altqd amd apmd automount automountd autounmountd \
 		bluetooth bootconf.sh bootparams \
-		ccd cgd cleartmp cron \
+		ccd cgd clearcritlocal cleartmp cron \
 		devpubd dhcpcd dhcpd dhcpd6 dhcrelay dmesg \
 		downinterfaces \
 		envsys \
@@ -27,7 +27,7 @@ CONFIGFILES=\
 		identd ifwatchd inetd ip6addrctl ipfilter ipfs ipmon ipnat \
 		ipsec irdaattach iscsi_target iscsid isibootd \
 		kdc \
-		ldconfig ldpd local lpd lvm \
+		ldconfig ldpd llvmlockdir local lpd lvm \
 		makemandb mdnsd mixerctl modules mopd motd mountall \
 		mountcritlocal mountcritremote mountd moused mrouted \
 		named ndbootd network newsyslog nfsd nfslocking npf npf_boot \

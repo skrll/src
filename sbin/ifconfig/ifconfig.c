@@ -1,4 +1,4 @@
-/*	$NetBSD: ifconfig.c,v 1.241 2020/01/02 23:02:19 ryo Exp $	*/
+/*	$NetBSD: ifconfig.c,v 1.248 2020/10/14 13:37:14 roy Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 2000 The NetBSD Foundation, Inc.
@@ -63,7 +63,7 @@
 #ifndef lint
 __COPYRIGHT("@(#) Copyright (c) 1983, 1993\
  The Regents of the University of California.  All rights reserved.");
-__RCSID("$NetBSD: ifconfig.c,v 1.241 2020/01/02 23:02:19 ryo Exp $");
+__RCSID("$NetBSD: ifconfig.c,v 1.248 2020/10/14 13:37:14 roy Exp $");
 #endif /* not lint */
 
 #include <sys/param.h>
@@ -135,8 +135,7 @@ static int setlinkstr(prop_dictionary_t, prop_dictionary_t);
 static int unsetlinkstr(prop_dictionary_t, prop_dictionary_t);
 static int setifdescr(prop_dictionary_t, prop_dictionary_t);
 static int unsetifdescr(prop_dictionary_t, prop_dictionary_t);
-static void status(const struct sockaddr *, prop_dictionary_t,
-    prop_dictionary_t);
+static void status(prop_dictionary_t, prop_dictionary_t);
 __dead static void usage(void);
 
 static const struct kwinst ifflagskw[] = {
@@ -614,7 +613,7 @@ do_setifcaps(prop_dictionary_t env)
 
 	assert(sizeof(ifcr) == prop_data_size(d));
 
-	memcpy(&ifcr, prop_data_data_nocopy(d), sizeof(ifcr));
+	memcpy(&ifcr, prop_data_value(d), sizeof(ifcr));
 	if (direct_ioctl(env, SIOCSIFCAP, &ifcr) == -1)
 		err(EXIT_FAILURE, "SIOCSIFCAP");
 }
@@ -850,8 +849,6 @@ void
 printall(const char *ifname, prop_dictionary_t env0)
 {
 	struct ifaddrs *ifap, *ifa;
-	struct ifreq ifr;
-	const struct sockaddr *sdl = NULL;
 	prop_dictionary_t env, oenv;
 	int idx;
 	char *p;
@@ -871,20 +868,11 @@ printall(const char *ifname, prop_dictionary_t env0)
 	p = NULL;
 	idx = 0;
 	for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
-		memset(&ifr, 0, sizeof(ifr));
-		estrlcpy(ifr.ifr_name, ifa->ifa_name, sizeof(ifr.ifr_name));
-		if (sizeof(ifr.ifr_addr) >= ifa->ifa_addr->sa_len) {
-			memcpy(&ifr.ifr_addr, ifa->ifa_addr,
-			    ifa->ifa_addr->sa_len);
-		}
-
 		if (ifname != NULL && strcmp(ifname, ifa->ifa_name) != 0)
 			continue;
-		if (ifa->ifa_addr->sa_family == AF_LINK)
-			sdl = ifa->ifa_addr;
 		if (p && strcmp(p, ifa->ifa_name) == 0)
 			continue;
-		if (!prop_dictionary_set_cstring(env, "if", ifa->ifa_name))
+		if (!prop_dictionary_set_string(env, "if", ifa->ifa_name))
 			continue;
 		p = ifa->ifa_name;
 
@@ -895,7 +883,7 @@ printall(const char *ifname, prop_dictionary_t env0)
 		if (uflag && (ifa->ifa_flags & IFF_UP) == 0)
 			continue;
 
-		if (sflag && carrier(env))
+		if (sflag && carrier(env) == LINK_STATE_DOWN)
 			continue;
 		idx++;
 		/*
@@ -908,8 +896,7 @@ printall(const char *ifname, prop_dictionary_t env0)
 			continue;
 		}
 
-		status(sdl, env, oenv);
-		sdl = NULL;
+		status(env, oenv);
 	}
 	if (lflag)
 		printf("\n");
@@ -990,7 +977,7 @@ setifaddr(prop_dictionary_t env, prop_dictionary_t oenv)
 
 	d = (prop_data_t)prop_dictionary_get(env, "address");
 	assert(d != NULL);
-	pfx0 = prop_data_data_nocopy(d);
+	pfx0 = prop_data_value(d);
 
 	if (pfx0->pfx_len >= 0) {
 		pfx = prefixlen_to_mask(af, pfx0->pfx_len);
@@ -1107,7 +1094,7 @@ getifcaps(prop_dictionary_t env, prop_dictionary_t oenv, struct ifcapreq *oifcr)
 	capdata = (prop_data_t)prop_dictionary_get(env, "ifcaps");
 
 	if (capdata != NULL) {
-		tmpifcr = prop_data_data_nocopy(capdata);
+		tmpifcr = prop_data_value(capdata);
 		*oifcr = *tmpifcr;
 		return 0;
 	}
@@ -1115,7 +1102,7 @@ getifcaps(prop_dictionary_t env, prop_dictionary_t oenv, struct ifcapreq *oifcr)
 	(void)direct_ioctl(env, SIOCGIFCAP, &ifcr);
 	*oifcr = ifcr;
 
-	capdata = prop_data_create_data(&ifcr, sizeof(ifcr));
+	capdata = prop_data_create_copy(&ifcr, sizeof(ifcr));
 
 	rc = prop_dictionary_set(oenv, "ifcaps", capdata);
 
@@ -1144,7 +1131,7 @@ setifcaps(prop_dictionary_t env, prop_dictionary_t oenv)
 	} else
 		ifcr.ifcr_capenable |= ifcap;
 
-	if ((capdata = prop_data_create_data(&ifcr, sizeof(ifcr))) == NULL)
+	if ((capdata = prop_data_create_copy(&ifcr, sizeof(ifcr))) == NULL)
 		return -1;
 
 	rc = prop_dictionary_set(oenv, "ifcaps", capdata);
@@ -1185,7 +1172,7 @@ do_setifpreference(prop_dictionary_t env)
 	d = (prop_data_t)prop_dictionary_get(env, "address");
 	assert(d != NULL);
 
-	pfx = prop_data_data_nocopy(d);
+	pfx = prop_data_value(d);
 
 	memcpy(&ifap.ifap_addr, &pfx->pfx_addr,
 	    MIN(sizeof(ifap.ifap_addr), pfx->pfx_addr.sa_len));
@@ -1213,29 +1200,15 @@ setifmtu(prop_dictionary_t env, prop_dictionary_t oenv)
 static int
 carrier(prop_dictionary_t env)
 {
-	struct ifmediareq ifmr;
+	struct ifdatareq ifdr = { .ifdr_data.ifi_link_state = 0 };
 
-	memset(&ifmr, 0, sizeof(ifmr));
-
-	if (direct_ioctl(env, SIOCGIFMEDIA, &ifmr) == -1) {
-		/*
-		 * Interface doesn't support SIOC{G,S}IFMEDIA;
-		 * assume ok.
-		 */
-		return EXIT_SUCCESS;
-	}
-	if ((ifmr.ifm_status & IFM_AVALID) == 0) {
-		/*
-		 * Interface doesn't report media-valid status.
-		 * assume ok.
-		 */
-		return EXIT_SUCCESS;
-	}
-	/* otherwise, return ok for active, not-ok if not active. */
-	if (ifmr.ifm_status & IFM_ACTIVE)
-		return EXIT_SUCCESS;
-	else
+	if (direct_ioctl(env, SIOCGIFDATA, &ifdr) == -1)
 		return EXIT_FAILURE;
+
+	if (ifdr.ifdr_data.ifi_link_state == LINK_STATE_DOWN)
+		return EXIT_FAILURE;
+	else /* Assume UP if UNKNOWN */
+		return EXIT_SUCCESS;
 }
 
 static void
@@ -1265,13 +1238,12 @@ print_human_bytes(bool humanize, uint64_t n)
 #define MAX_PRINT_LEN 58	/* XXX need a better way to determine this! */
 
 void
-status(const struct sockaddr *sdl, prop_dictionary_t env,
-    prop_dictionary_t oenv)
+status(prop_dictionary_t env, prop_dictionary_t oenv)
 {
-	const struct if_data *ifi;
 	status_func_t *status_f;
 	statistics_func_t *statistics_f;
 	struct ifdatareq ifdr;
+	struct if_data *ifi;
 	struct ifreq ifr;
 	struct ifdrv ifdrv;
 	char fbuf[BUFSIZ];
@@ -1365,11 +1337,10 @@ status(const struct sockaddr *sdl, prop_dictionary_t env,
 	if (!vflag && !zflag)
 		goto proto_status;
 
+	/* We already have if_data from SIOCGIFDATA in ifa_data. */
 	estrlcpy(ifdr.ifdr_name, ifname, sizeof(ifdr.ifdr_name));
-
 	if (prog_ioctl(s, zflag ? SIOCZIFDATA : SIOCGIFDATA, &ifdr) == -1)
 		err(EXIT_FAILURE, zflag ? "SIOCZIFDATA" : "SIOCGIFDATA");
-
 	ifi = &ifdr.ifdr_data;
 
 	print_plural("\tinput: ", ifi->ifi_ipackets, "packet");
@@ -1422,9 +1393,9 @@ setifprefixlen(prop_dictionary_t env, prop_dictionary_t oenv)
 	if (pfx == NULL)
 		err(EXIT_FAILURE, "prefixlen_to_mask");
 
-	d = prop_data_create_data(pfx, paddr_prefix_size(pfx));
+	d = prop_data_create_copy(pfx, paddr_prefix_size(pfx));
 	if (d == NULL)
-		err(EXIT_FAILURE, "%s: prop_data_create_data", __func__);
+		err(EXIT_FAILURE, "%s: prop_data_create_copy", __func__);
 
 	if (!prop_dictionary_set(oenv, "netmask", (prop_object_t)d))
 		err(EXIT_FAILURE, "%s: prop_dictionary_set", __func__);

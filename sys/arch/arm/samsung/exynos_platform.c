@@ -1,4 +1,4 @@
-/* $NetBSD: exynos_platform.c,v 1.28 2020/03/19 08:33:04 skrll Exp $ */
+/* $NetBSD: exynos_platform.c,v 1.32 2020/11/27 07:11:49 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -35,7 +35,7 @@
 #include "ukbd.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: exynos_platform.c,v 1.28 2020/03/19 08:33:04 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: exynos_platform.c,v 1.32 2020/11/27 07:11:49 skrll Exp $");
 
 
 /*
@@ -129,7 +129,7 @@ exynos5800_mpstart(void)
 	bus_space_write_4(bst, pmu_bsh, EXYNOS5800_PMU_COMMON_OPTION(1), val | option);
 
 	bus_space_write_4(bst, sysram_bsh, EXYNOS5800_SYSRAM_HOTPLUG, KERN_VTOPHYS((vaddr_t)cpu_mpstart));
-	arm_dsb();
+	dsb(sy);
 
 	/* Power on clusters */
 	bus_space_write_4(bst, pmu_bsh, EXYNOS5800_PMU_COMMON_CONFIG(0),
@@ -179,7 +179,6 @@ exynos5800_mpstart(void)
 
 		/* Wait for AP to start */
 		for (n = 0x100000; n > 0; n--) {
-			membar_consumer();
 			if (cpu_hatched_p(cpuindex))
 				break;
 		}
@@ -222,15 +221,13 @@ static void
 exynos_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	extern struct bus_space armv7_generic_bs_tag;
-	extern struct bus_space armv7_generic_a4x_bs_tag;
 	extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 
 	faa->faa_bst = &armv7_generic_bs_tag;
-	faa->faa_a4x_bst = &armv7_generic_a4x_bs_tag;
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 
-void
+void __noasan
 exynos_platform_early_putchar(char c)
 {
 #ifdef CONSADDR

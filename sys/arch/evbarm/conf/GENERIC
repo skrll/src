@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC,v 1.75 2020/03/28 08:35:36 isaki Exp $
+#	$NetBSD: GENERIC,v 1.83 2020/09/29 19:58:50 jmcneill Exp $
 #
 #	GENERIC ARM (aarch32) kernel
 #
@@ -8,262 +8,15 @@ include	"arch/evbarm/conf/std.generic"
 include "arch/evbarm/conf/files.generic"
 include	"arch/evbarm/conf/GENERIC.common"
 
-#
-# FDT files supported by this kernel - add to DTSSUBDIR and DTS as
-# appropriate
-#
-makeoptions	DTSARCH="arm"
-makeoptions	DTSGNUARCH="arm"
-makeoptions	DTSSUBDIR=""
-makeoptions	DTS="
-	am335x-baltos-ir2110.dts
-	am335x-baltos-ir3220.dts
-	am335x-baltos-ir5221.dts
-	am335x-base0033.dts
-	am335x-bone.dts
-	am335x-boneblack-wireless.dts
-	am335x-boneblack.dts
-	am335x-boneblue.dts
-	am335x-bonegreen-wireless.dts
-	am335x-bonegreen.dts
-	am335x-chiliboard.dts
-	am335x-cm-t335.dts
-	am335x-evm.dts
-	am335x-evmsk.dts
-	am335x-guardian.dts
-	am335x-icev2.dts
-	am335x-lxm.dts
-	am335x-moxa-uc-2101.dts
-	am335x-moxa-uc-8100-me-t.dts
-	am335x-nano.dts
-	am335x-osd3358-sm-red.dts
-	am335x-pdu001.dts
-	am335x-pepper.dts
-	am335x-phycore-rdk.dts
-	am335x-pocketbeagle.dts
-	am335x-sancloud-bbe.dts
-	am335x-sbc-t335.dts
-	am335x-shc.dts
-	am335x-sl50.dts
-	am335x-wega-rdk.dts
-
-	bcm2836-rpi-2-b.dts
-	bcm2837-rpi-3-a-plus.dts
-	bcm2837-rpi-3-b-plus.dts
-	bcm2837-rpi-3-b.dts
-	bcm2837-rpi-cm3-io3.dts
-
-	exynos5422-odroidhc1.dts
-	exynos5422-odroidxu3-lite.dts
-	exynos5422-odroidxu3.dts
-	exynos5422-odroidxu4.dts
-
-	meson8b-ec100.dts
-	meson8b-mxq.dts
-	meson8b-odroidc1.dts
-
-	omap3-beagle-xm-ab.dts
-	omap3-beagle-xm.dts
-	omap3-beagle.dts
-	omap3-cm-t3517.dts
-	omap3-cm-t3530.dts
-	omap3-cm-t3730.dts
-	omap3-devkit8000-lcd43.dts
-	omap3-devkit8000-lcd70.dts
-	omap3-devkit8000.dts
-	omap3-evm-37xx.dts
-	omap3-evm.dts
-	omap3-gta04a3.dts
-	omap3-gta04a4.dts
-	omap3-gta04a5.dts
-	omap3-gta04a5one.dts
-	omap3-ha-lcd.dts
-	omap3-ha.dts
-	omap3-igep0020-rev-f.dts
-	omap3-igep0020.dts
-	omap3-igep0030-rev-g.dts
-	omap3-igep0030.dts
-	omap3-ldp.dts
-	omap3-lilly-dbb056.dts
-	omap3-n9.dts
-	omap3-n900.dts
-	omap3-n950.dts
-	omap3-overo-alto35.dts
-	omap3-overo-chestnut43.dts
-	omap3-overo-gallop43.dts
-	omap3-overo-palo35.dts
-	omap3-overo-palo43.dts
-	omap3-overo-storm-alto35.dts
-	omap3-overo-storm-chestnut43.dts
-	omap3-overo-storm-gallop43.dts
-	omap3-overo-storm-palo35.dts
-	omap3-overo-storm-palo43.dts
-	omap3-overo-storm-summit.dts
-	omap3-overo-storm-tobi.dts
-	omap3-overo-storm-tobiduo.dts
-	omap3-overo-summit.dts
-	omap3-overo-tobi.dts
-	omap3-overo-tobiduo.dts
-	omap3-pandora-1ghz.dts
-	omap3-pandora-600mhz.dts
-	omap3-sbc-t3517.dts
-	omap3-sbc-t3530.dts
-	omap3-sbc-t3730.dts
-	omap3-sniper.dts
-	omap3-thunder.dts
-	omap3-zoom3.dts
-
-	omap3430-sdp.dts
-
-	socfpga_cyclone5_de0_nano_soc.dts
-
-	sun4i-a10-a1000.dts
-	sun4i-a10-ba10-tvbox.dts
-	sun4i-a10-chuwi-v7-cw0825.dts
-	sun4i-a10-cubieboard.dts
-	sun4i-a10-dserve-dsrv9703c.dts
-	sun4i-a10-gemei-g9.dts
-	sun4i-a10-hackberry.dts
-	sun4i-a10-hyundai-a7hd.dts
-	sun4i-a10-inet1.dts
-	sun4i-a10-inet97fv2.dts
-	sun4i-a10-inet9f-rev03.dts
-	sun4i-a10-itead-iteaduino-plus.dts
-	sun4i-a10-jesurun-q5.dts
-	sun4i-a10-marsboard.dts
-	sun4i-a10-mini-xplus.dts
-	sun4i-a10-mk802.dts
-	sun4i-a10-mk802ii.dts
-	sun4i-a10-olinuxino-lime.dts
-	sun4i-a10-pcduino.dts
-	sun4i-a10-pcduino2.dts
-	sun4i-a10-pov-protab2-ips9.dts
-
-	sun5i-a13-difrnce-dit4350.dts
-	sun5i-a13-empire-electronix-d709.dts
-	sun5i-a13-empire-electronix-m712.dts
-	sun5i-a13-hsg-h702.dts
-	sun5i-a13-inet-98v-rev2.dts
-	sun5i-a13-licheepi-one.dts
-	sun5i-a13-olinuxino-micro.dts
-	sun5i-a13-olinuxino.dts
-	sun5i-a13-q8-tablet.dts
-	sun5i-a13-utoo-p66.dts
-
-	sun5i-gr8-chip-pro.dts
-	sun5i-gr8-evb.dts
-
-	sun5i-r8-chip.dts
-	sun5i-r8-pocketchip.dts
-
-	sun6i-a31-app4-evb1.dts
-	sun6i-a31-colombus.dts
-	sun6i-a31-hummingbird.dts
-	sun6i-a31-i7.dts
-	sun6i-a31-m9.dts
-	sun6i-a31-mele-a1000g-quad.dts
-
-	sun7i-a20-bananapi-m1-plus.dts
-	sun7i-a20-bananapi.dts
-	sun7i-a20-bananapro.dts
-	sun7i-a20-cubieboard2.dts
-	sun7i-a20-cubietruck.dts
-	sun7i-a20-hummingbird.dts
-	sun7i-a20-i12-tvbox.dts
-	sun7i-a20-icnova-swac.dts
-	sun7i-a20-itead-ibox.dts
-	sun7i-a20-lamobo-r1.dts
-	sun7i-a20-m3.dts
-	sun7i-a20-mk808c.dts
-	sun7i-a20-olimex-som-evb-emmc.dts
-	sun7i-a20-olimex-som-evb.dts
-	sun7i-a20-olimex-som204-evb-emmc.dts
-	sun7i-a20-olimex-som204-evb.dts
-	sun7i-a20-olinuxino-lime.dts
-	sun7i-a20-olinuxino-lime2-emmc-spi.dts
-	sun7i-a20-olinuxino-lime2-emmc.dts
-	sun7i-a20-olinuxino-lime2.dts
-	sun7i-a20-olinuxino-micro-emmc.dts
-	sun7i-a20-olinuxino-micro.dts
-	sun7i-a20-orangepi-mini.dts
-	sun7i-a20-orangepi.dts
-	sun7i-a20-pcduino3-nano.dts
-	sun7i-a20-pcduino3.dts
-	sun7i-a20-wexler-tab7200.dts
-	sun7i-a20-wits-pro-a20-dkt.dts
-
-	sun8i-a83t-allwinner-h8homlet-v2.dts
-	sun8i-a83t-bananapi-m3.dts
-	sun8i-a83t-cubietruck-plus.dts
-	sun8i-a83t-tbs-a711.dts
-
-	sun8i-h2-plus-bananapi-m2-zero.dts
-	sun8i-h2-plus-bananapi-p2-zero.dts
-	sun8i-h2-plus-libretech-all-h3-cc.dts
-	sun8i-h2-plus-orangepi-r1.dts
-	sun8i-h2-plus-orangepi-zero.dts
-
-	sun8i-h3-bananapi-m2-plus-v1.2.dts
-	sun8i-h3-bananapi-m2-plus.dts
-	sun8i-h3-beelink-x2.dts
-	sun8i-h3-libretech-all-h3-cc.dts
-	sun8i-h3-mapleboard-mp130.dts
-	sun8i-h3-nanopi-duo2.dts
-	sun8i-h3-nanopi-m1-plus.dts
-	sun8i-h3-nanopi-m1.dts
-	sun8i-h3-nanopi-neo-air.dts
-	sun8i-h3-nanopi-neo.dts
-	sun8i-h3-nanopi-r1.dts
-	sun8i-h3-orangepi-2.dts
-	sun8i-h3-orangepi-lite.dts
-	sun8i-h3-orangepi-one.dts
-	sun8i-h3-orangepi-pc-plus.dts
-	sun8i-h3-orangepi-pc.dts
-	sun8i-h3-orangepi-plus.dts
-	sun8i-h3-orangepi-plus2e.dts
-	sun8i-h3-orangepi-zero-plus2.dts
-
-	sun9i-a80-cubieboard4.dts
-	sun9i-a80-optimus.dts
-
-	tegra124-apalis-eval.dts
-	tegra124-apalis-v1.2-eval.dts
-	tegra124-jetson-tk1.dts
-	tegra124-nyan-big.dts
-	tegra124-nyan-blaze.dts
-	tegra124-venice2.dts
-
-	vexpress-v2p-ca15-tc1.dts
-	vexpress-v2p-ca15_a7.dts
-	vexpress-v2p-ca5s.dts
-	vexpress-v2p-ca9.dts
-
-	zynq-cc108.dts
-	zynq-microzed.dts
-	zynq-parallella.dts
-	zynq-zc702.dts
-	zynq-zc706.dts
-	zynq-zc770-xm010.dts
-	zynq-zc770-xm011.dts
-	zynq-zc770-xm012.dts
-	zynq-zc770-xm013.dts
-	zynq-zed.dts
-	zynq-zturn.dts
-	zynq-zybo-z7.dts
-	zynq-zybo.dts
-"
-
-options 	CPU_CORTEXA5
-options 	CPU_CORTEXA7
-options 	CPU_CORTEXA8
-options 	CPU_CORTEXA9
-options 	CPU_CORTEXA15
-options 	CPU_CORTEXA17
-options 	CPU_CORTEXA53
+options 	CPU_CORTEX
 
 options 	SOC_AM33XX
 options 	SOC_BCM2836
 options 	SOC_EXYNOS5422
+options 	SOC_IMX6DL
+options 	SOC_IMX6Q
+options 	SOC_IMX6QDL
+options 	SOC_IMX7D
 options 	SOC_MESON8B
 options 	SOC_OMAP3
 options 	SOC_SUN4I_A10
@@ -284,7 +37,7 @@ pseudo-device 	openfirm	# /dev/openfirm
 #options 	DIAGNOSTIC	# internal consistency checks
 #options 	DEBUG
 #options 	LOCKDEBUG
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 
 options 	MSGBUFSIZE=32768
 
@@ -293,6 +46,7 @@ options 	MSGBUFSIZE=32768
 # EARLYCONS is required for early init messages from VERBOSE_INIT_ARM.
 
 #options 	EARLYCONS=am33xx, CONSADDR=0x44e09000
+#options 	EARLYCONS=imx, CONSADDR=0x02020000
 #options 	EARLYCONS=omap3, CONSADDR=0x49020000
 
 # ODROID-C1
@@ -321,6 +75,19 @@ options 	MSGBUFSIZE=32768
 
 #options 	EARLYCONS=zynq, CONSADDR=0xe0001000
 
+# Kernel Undefined Behavior Sanitizer (kUBSan). Use UBSAN_ALWAYS_FATAL
+# if you want panics instead of warnings.
+#options 	KUBSAN			# mandatory
+#options 	UBSAN_ALWAYS_FATAL	# optional
+
+# Kernel Address Sanitizer (kASan). The quarantine is optional and can
+# help KASAN find more use-after-frees. Use KASAN_PANIC if you want panics
+# instead of warnings.
+#makeoptions 	KASAN=1		# mandatory
+#options 	KASAN		# mandatory
+#options 	POOL_QUARANTINE	# optional
+#options 	KASAN_PANIC	# optional
+
 makeoptions 	DEBUG="-g"	# compile full symbol table
 makeoptions 	COPY_SYMTAB=1
 
@@ -347,6 +114,8 @@ cycvclkmgr* 	at fdt? pass 1		# Cyclone V clock manager
 cycvrstmgr* 	at fdt? pass 0		# Cyclone V reset manager
 exy5410clk* 	at fdt? pass 3		# Exynos5410 clock controller
 exy5422clk* 	at fdt? pass 3		# Exynos5422 clock controller
+imx6ccm* 	at fdt? pass 1		# i.MX6 CCM
+imx7dccm*	at fdt? pass 2		# i.MX7D CCM
 meson8bclkc* 	at fdt? pass 2		# Amlogic Meson8b clock controller
 mesonresets* 	at fdt? pass 2		# Amlogic Meson misc. clock resets
 omap3cm*	at fdt? pass 1		# TI OMAP3 CM
@@ -417,6 +186,8 @@ gic*		at fdt? pass 1		# ARM GIC
 armgic0		at gic?
 bcmicu* 	at fdt? pass 1		# Broadcom BCM283x ICU
 exyointr* 	at fdt? pass 1		# Samsung Exynos ICU
+imxgpc* 	at fdt? pass 2		# i.MX General Power Controller INTC
+imx7gpc*	at fdt? pass 2		# i.MX General Power Controller v2 INTC
 omapintc*	at fdt? pass 2		# TI OMAP INTC
 tegralic* 	at fdt? pass 1		# NVIDIA Tegra LIC
 sunxiintc* 	at fdt? pass 1		# Allwinner INTC
@@ -460,6 +231,7 @@ bcmaux* 	at fdt? pass 1		# Broadcom BCM283x Aux Periph Clocks
 # GPIO controller
 bcmgpio* 	at fdt?			# Broadcom BCM283x GPIO
 exyopctl* 	at fdt? pass 2		# Samsung Exynos GPIO
+imxgpio*	at fdt? pass 3		# i.MX GPIO
 mesonpinctrl* 	at fdt? pass 2		# Amlogic Meson GPIO
 plgpio* 	at fdt?			# ARM PrimeCell GPIO
 sunxigpio* 	at fdt? pass 3		# Allwinner GPIO
@@ -470,9 +242,11 @@ gpio* 		at gpiobus?
 # MPIO / Pinmux
 pinctrl*	at fdt? pass 2		# Generic pinctrl driver
 tegrapinmux* 	at fdt?			# NVIDIA Tegra MPIO
+imxiomux*	at fdt? pass 2		# i.MX IOMUX
 
 # PWM controller
 expwm* 		at fdt? pass 4		# PWM
+imxpwm* 	at fdt?			# i.MX PWM
 sunxipwm* 	at fdt? pass 3		# Allwinner PWM
 
 # Backlight
@@ -489,6 +263,7 @@ tegra210xphy* 	at tegra210xpad?
 # PCIE
 pcihost* 	at fdt?			# Generic PCI host controller
 tegrapcie0 	at fdt?			# NVIDIA Tegra PCIE
+imxpcie*	at fdt?			# i.MX PCIE
 pci* 		at pcibus?
 ppb* 		at pci? dev ? function ?
 pci* 		at ppb?
@@ -498,12 +273,14 @@ awge* 		at fdt?			# Allwinner Gigabit Ethernet (GMAC)
 cemac* 		at fdt?			# Cadence EMAC/GEM ethernet controller
 cpsw*		at fdt?			# TI CPSW 3-port Ethernet Switch
 emac* 		at fdt?			# Allwinner Fast/Gigabit Ethernet (EMAC)
+enet*		at fdt?			# i.MX FEC
 smsh* 		at fdt?			# SMSC LAN9118
 
 # PCI Ethernet
 re* 		at pci? dev ? function ?	# Realtek RTL8111GS
 
 # MII/PHY support
+atphy* 		at mii? phy ?		# Attansic/Atheros PHYs
 exphy* 		at mii? phy ?		# 3Com internal PHYs
 gentbi* 	at mii? phy ?		# Generic Ten-Bit 1000BASE-[CLS]X PHYs
 glxtphy* 	at mii? phy ?		# Level One LXT-1000 PHYs
@@ -523,6 +300,7 @@ qsphy* 		at mii? phy ?		# Quality Semiconductor QS6612 PHYs
 rdcphy* 	at mii? phy ?		# RDC R6040 10/100 PHY
 rgephy* 	at mii? phy ?		# Realtek 8169S/8110S internal PHYs
 rlphy* 		at mii? phy ?		# Realtek 8139/8201L PHYs
+smscphy*	at mii? phy ?		# SMSC LAN87xx PHYs
 sqphy* 		at mii? phy ?		# Seeq 80220/80221/80223 PHYs
 tlphy* 		at mii? phy ?		# ThunderLAN PHYs
 tqphy* 		at mii? phy ?		# TDK Semiconductor PHYs
@@ -538,6 +316,7 @@ ukphy* 		at mii? phy ?		# generic unknown PHYs
 com* 		at fdt?	pass 4		# UART
 exuart* 	at fdt?	pass 4		# SSCOM UART
 plcom* 		at fdt?	pass 4		# ARM PL011 UART
+imxuart* 	at fdt?	pass 4		# i.MX UART
 mesonuart* 	at fdt?	pass 4		# Amlogic Meson UART
 zynquart* 	at fdt?	pass 4		# Cadence UART
 
@@ -545,6 +324,7 @@ zynquart* 	at fdt?	pass 4		# Cadence UART
 options 	I2C_MAX_ADDR=0xfff
 bsciic* 	at fdt?			# Broadcom BCM283x Serial Control
 exyoi2c* 	at fdt?			# Samsung Exynos I2C
+imxi2c* 	at fdt?			# i.MX I2C
 sunxirsb* 	at fdt? pass 4		# Allwinner RSB
 sunxitwi* 	at fdt?			# Allwinner TWI
 tegrai2c* 	at fdt? pass 4		# NVIDIA Tegra I2C
@@ -579,6 +359,7 @@ pseudo-device 	canloop			# CAN loopback interface
 sunxican* 	at fdt?			# A10/A20 CAN controller
 
 # SPI
+imxspi* 	at fdt?			# i.MX SPI
 sun4ispi* 	at fdt?
 sun6ispi* 	at fdt?
 spi* 		at spibus?
@@ -670,6 +451,7 @@ hdmicec* 	at hdmicecbus?
 # Display
 #tegradrm* 	at fdt?			# NVIDIA Tegra Display
 #tegrafb* 	at tegrafbbus?
+dwhdmi* 	at fdt?			# Designware HDMI TX
 genfb* 		at fdt?			# Simple Framebuffer
 mesonfb* 	at fdt?			# Amlogic Meson Framebuffer
 omapfb*		at fdt?			# TI OMAP3 Framebuffer
@@ -723,17 +505,20 @@ tegrasoctherm* 	at fdt?			# NVIDIA Tegra SOC_THERM
 # USB
 exusbphy* 	at fdt? pass 9		# Samsung Exynos USB2 PHY
 exusbdrdphy* 	at fdt? pass 9		# Samsung Exynos USB3 DRD PHY
+imxusbphy*	at fdt? pass 9		# i.MX USB PHY
 mesonusbphy* 	at fdt? pass 9		# Amlogic Meson USB2 PHY
 sun9iusbphy* 	at fdt? pass 9		# Allwinner A80 USB PHY
 sunxiusbphy* 	at fdt? pass 9		# Allwinner USB PHY
 sunxiusb3phy* 	at fdt? pass 9		# Allwinner USB3 PHY
 tegrausbphy* 	at fdt?			# NVIDIA Tegra USB PHY
 usbnopphy*	at fdt? pass 9		# Generic USB PHY
+imxusbc*	at fdt? pass 9		# i.MX USB host
 tiotg*		at fdt?			# TI dual port OTG
 tiusb*		at fdt? pass 9		# TI HS USB host
 tiusbtll*	at fdt? pass 8		# TI HS USB host TLL
 dwctwo* 	at fdt?			# Designware USB DRD
 ehci* 		at fdt?			# EHCI
+ehci*		at imxusbc?
 motg* 		at fdt?			# Mentor Graphics USB OTG
 ohci* 		at fdt?			# OHCI
 xhci* 		at fdt?			# XHCI

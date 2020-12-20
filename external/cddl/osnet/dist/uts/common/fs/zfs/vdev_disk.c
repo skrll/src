@@ -215,20 +215,27 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 		return (SET_ERROR(error));
 	}
 	if (vp->v_type != VBLK) {
+#ifdef __NetBSD__
+		vn_close(vp, FREAD|FWRITE, kcred);
+#else
 		vrele(vp);
+#endif
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
 		return (SET_ERROR(EINVAL));
 	}
 
 	pdk = NULL;
 	if (getdiskinfo(vp, &dkw) == 0)
-		pdk = disk_find(dkw.dkw_parent);
+		pdk = disk_find(dkw.dkw_devname);
 
 	/* XXXNETBSD Once tls-maxphys gets merged this block becomes:
 		dvd->vd_maxphys = (pdk ? disk_maxphys(pdk) : MACHINE_MAXPHYS);
 	*/
 	{
-		struct buf buf = { .b_bcount = MAXPHYS };
+		struct buf buf = {
+			.b_dev = vp->v_rdev,
+			.b_bcount = MAXPHYS,
+		};
 		if (pdk && pdk->dk_driver && pdk->dk_driver->d_minphys)
 			(*pdk->dk_driver->d_minphys)(&buf);
 		dvd->vd_maxphys = buf.b_bcount;
@@ -244,7 +251,11 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	error = workqueue_create(&dvd->vd_wq, "vdevsync",
 	    vdev_disk_flush, dvd, PRI_NONE, IPL_NONE, WQ_MPSAFE);
 	if (error != 0) {
+#ifdef __NetBSD__
+		vn_close(vp, FREAD|FWRITE, kcred);
+#else
 		vrele(vp);
+#endif
 		return (SET_ERROR(error));
 	}
 

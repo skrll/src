@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_mutex.c,v 1.90 2020/03/08 00:26:06 chs Exp $	*/
+/*	$NetBSD: kern_mutex.c,v 1.95 2020/12/15 08:35:52 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007, 2008, 2019 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
 #define	__MUTEX_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_mutex.c,v 1.90 2020/03/08 00:26:06 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_mutex.c,v 1.95 2020/12/15 08:35:52 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -456,11 +456,13 @@ mutex_vector_enter(kmutex_t *mtx)
 	/*
 	 * Handle spin mutexes.
 	 */
+	KPREEMPT_DISABLE(curlwp);
 	owner = mtx->mtx_owner;
 	if (MUTEX_SPIN_P(owner)) {
 #if defined(LOCKDEBUG) && defined(MULTIPROCESSOR)
 		u_int spins = 0;
 #endif
+		KPREEMPT_ENABLE(curlwp);
 		MUTEX_SPIN_SPLRAISE(mtx);
 		MUTEX_WANTLOCK(mtx);
 #ifdef FULL
@@ -521,7 +523,6 @@ mutex_vector_enter(kmutex_t *mtx)
 	 * determine that the owner is not running on a processor,
 	 * then we stop spinning, and sleep instead.
 	 */
-	KPREEMPT_DISABLE(curlwp);
 	for (;;) {
 		if (!MUTEX_OWNED(owner)) {
 			/*
@@ -592,7 +593,7 @@ mutex_vector_enter(kmutex_t *mtx)
 		 *	    set waiters  	           ..
 		 *	 unlock cache line		   ..
 		 *	  lose cache line     ->    acquire cache line
-		 *		..	          clear lock word, waiters 
+		 *		..	          clear lock word, waiters
 		 *	  return success
 		 *
 		 * There is another race that can occur: a third CPU could
@@ -627,11 +628,11 @@ mutex_vector_enter(kmutex_t *mtx)
 		 *   completes before the modification of curlwp becomes
 		 *   visible to this CPU.
 		 *
-		 * o mi_switch() posts a store fence before setting curlwp
+		 * o cpu_switchto() posts a store fence after setting curlwp
 		 *   and before resuming execution of an LWP.
-		 * 
+		 *
 		 * o _kernel_lock() posts a store fence before setting
-		 *   curcpu()->ci_biglock_wanted, and after clearing it. 
+		 *   curcpu()->ci_biglock_wanted, and after clearing it.
 		 *   This ensures that any overwrite of the mutex waiters
 		 *   flag by mutex_exit() completes before the modification
 		 *   of ci_biglock_wanted becomes visible.
@@ -731,7 +732,7 @@ mutex_vector_exit(kmutex_t *mtx)
 #ifndef __HAVE_MUTEX_STUBS
 	/*
 	 * On some architectures without mutex stubs, we can enter here to
-	 * release mutexes before interrupts and whatnot are up and running. 
+	 * release mutexes before interrupts and whatnot are up and running.
 	 * We need this hack to keep them sweet.
 	 */
 	if (__predict_false(cold)) {

@@ -1,4 +1,4 @@
-$NetBSD: pcidevs,v 1.1405 2020/04/10 18:23:22 christos Exp $
+$NetBSD: pcidevs,v 1.1421 2020/11/20 01:29:12 msaitoh Exp $
 
 /*
  * Copyright (c) 1995, 1996 Christopher G. Demetriou
@@ -654,6 +654,7 @@ vendor AMAZON		0x1d0f	Amazon.com, Inc.
 vendor AQUANTIA		0x1d6a	Aquantia
 vendor ROCKCHIP		0x1d87	Rockchip
 vendor TEKRAM2		0x1de1	Tekram Technology (2nd PCI Vendor ID)
+vendor AMPERE		0x1def	Ampere Computing
 vendor SUNIX2		0x1fd4	SUNIX Co
 vendor HINT		0x3388	HiNT
 vendor 3DLABS		0x3d3d	3D Labs
@@ -1024,11 +1025,13 @@ product AMD F17_DF_5		0x1464	Family17h Data Fabric
 product AMD F17_DF_6		0x1465	Family17h Data Fabric
 product AMD F17_DF_7		0x1466	Family17h Data Fabric
 product AMD F17_DF_8		0x1467	Family17h Data Fabric
+product AMD F17_CCP_2		0x1468	Family17h Crypto
 product AMD F17_PCIE_4		0x1470	Family17h PCIe
 product AMD F17_PCIE_5		0x1471	Family17h PCIe
 product AMD F17_7X_RC		0x1480	Family17h/7xh Root Complex
 product AMD F17_7X_IOMMU	0x1481	Family17h/7xh IOMMU
 product AMD F17_7X_RESV_SPP	0x1485	Family17h/7xh Reserved SPP
+product AMD F17_7X_CCP		0x1486	Family17h/7xh Crypto
 product AMD F17_7X_USB3		0x149c	Family17h/7xh USB 3.0 Host Controller
 product AMD F14_RC		0x1510	Family14h Root Complex
 product AMD F14_PCIE_1		0x1512	Family14h PCIe
@@ -1109,7 +1112,7 @@ product AMD PCSCSI_PCI		0x2020	PCscsi-PCI SCSI
 product AMD GEODELX_PCHB	0x2080	Geode LX Host-PCI Bridge
 product AMD GEODELX_VGA 	0x2081	Geode LX VGA Controller
 product AMD GEODELX_AES 	0x2082	Geode LX AES Security Block
-product	AMD CS5536_PCISB	0x208f	CS5536 GeodeLink PCI South Bridge
+product AMD CS5536_PCISB	0x208f	CS5536 GeodeLink PCI South Bridge
 product AMD CS5536_PCIB		0x2090	CS5536 PCI-ISA Bridge
 product AMD CS5536_FLASH	0x2091	CS5536 Flash
 product AMD CS5536_AUDIO	0x2093	CS5536 Audio
@@ -1219,6 +1222,16 @@ product AMI MEGARAID3		0x1960	MegaRAID 3
 product AMI MEGARAID		0x9010	MegaRAID
 product AMI MEGARAID2		0x9060	MegaRAID 2
 
+/* Ampere Computing products */
+product AMPERE EMAG_PCIE_0	0xe005	eMAG PCIe Root Port 0
+product AMPERE EMAG_PCIE_1	0xe006	eMAG PCIe Root Port 1
+product AMPERE EMAG_PCIE_2	0xe007	eMAG PCIe Root Port 2
+product AMPERE EMAG_PCIE_3	0xe008	eMAG PCIe Root Port 3
+product AMPERE EMAG_PCIE_4	0xe009	eMAG PCIe Root Port 4
+product AMPERE EMAG_PCIE_5	0xe00a	eMAG PCIe Root Port 5
+product AMPERE EMAG_PCIE_6	0xe00b	eMAG PCIe Root Port 6
+product AMPERE EMAG_PCIE_7	0xe00c	eMAG PCIe Root Port 7
+
 /* Analog Devices products */
 product ANALOG AD1889	0x1889	AD1889 PCI SoundMAX Controller
 product ANALOG SAFENET	0x2f44	SafeNet Crypto Accelerator ADSP-2141
@@ -1289,16 +1302,19 @@ product APPLE INTREPID2_GMAC	0x006b	Intrepid 2 GMAC
 product APPLE BCM5701		0x1645	BCM5701
 
 /* Aquantia Corp. */
+product AQUANTIA AQC100		0x00b1	AQC100 10 Gigabit Network Adapter
 product AQUANTIA AQC107		0x07b1	AQC107 10 Gigabit Network Adapter
 product AQUANTIA AQC108		0x08b1	AQC108 5 Gigabit Network Adapter
 product AQUANTIA AQC109		0x09b1	AQC109 2.5 Gigabit Network Adapter
 product AQUANTIA AQC111		0x11b1	AQC111 5 Gigabit Network Adapter
 product AQUANTIA AQC112		0x12b1	AQC112 2.5 Gigabit Network Adapter
+product AQUANTIA AQC100S	0x80b1	AQC100S 10 Gigabit Network Adapter
 product AQUANTIA AQC107S	0x87b1	AQC107S 10 Gigabit Network Adapter
 product AQUANTIA AQC108S	0x88b1	AQC108S 5 Gigabit Network Adapter
 product AQUANTIA AQC109S	0x89b1	AQC109S 2.5 Gigabit Network Adapter
 product AQUANTIA AQC111S	0x91b1	AQC111S 5 Gigabit Network Adapter
 product AQUANTIA AQC112S	0x92b1	AQC112S 2.5 Gigabit Network Adapter
+product AQUANTIA D100		0xd100	D100 10 Gigabit Network Adapter
 product AQUANTIA D107		0xd107	D107 10 Gigabit Network Adapter
 product AQUANTIA D108		0xd108	D108 5 Gigabit Network Adapter
 product AQUANTIA D109		0xd109	D109 2.5 Gigabit Network Adapter
@@ -1332,6 +1348,7 @@ product ARECA ARC1880 		0x1880	ARC-1880
 
 /* ASIX Electronics products */
 product ASIX AX88140A	0x1400	AX88140A 10/100 Ethernet
+product ASIX AX99100	0x9100	AX99100 Multi I/O Controller
 
 /* ASMedia products */
 product ASMEDIA ASM1061_01	0x0601	ASM1061 AHCI SATA III Controller
@@ -1782,6 +1799,7 @@ product ATI RADEON_HD6320	0x9806	Radeon HD6320 Graphics
 product ATI RADEON_HD7340	0x9808	Radeon HD7340 Graphics
 product ATI RADEON_HDMI_DP_AUDIO	0x9840	HDMI/DP Audio
 product ATI RADEON_R2_R3_R3E_R4	0x9854	Radeon R2/R3/R4 Graphics
+product ATI RADEON_R5_R6_R7	0x9874	Radeon R5/R6/R7 Graphics
 product ATI RADEON_HD2900_HDA	0xaa00	Radeon HD 2900 HD Audio Controller
 product ATI RADEON_HD3650_HDA	0xaa01	Radeon HD 3650/3730/3750 HD Audio Controller
 product ATI RADEON_HD2600_HDA	0xaa08	Radeon HD 2600 HD Audio Controller
@@ -2916,6 +2934,46 @@ product HP HPSA_10		0x3239	Smart Array
 product HP HPSA_11		0x323a	Smart Array
 product HP HPSA_12		0x323b	Smart Array
 product HP HPSA_13		0x323c	Smart Array
+product HP HPSA_P700M		0x323d	Smart Array P700m
+product HP HPSA_P212		0x3241	Smart Array P212
+product HP HPSA_P410		0x3243	Smart Array P410
+product HP HPSA_P410I		0x3245	Smart Array P410i
+product HP HPSA_P411		0x3247	Smart Array P411
+product HP HPSA_P812		0x3249	Smart Array P822
+product HP HPSA_P712M		0x324a	Smart Array P712m
+product HP HPSA_14		0x324b	Smart Array
+product HP HPSA_P222		0x3350	Smart Array P222
+product HP HPSA_P420		0x3351	Smart Array P420
+product HP HPSA_P421		0x3352	Smart Array P421
+product HP HPSA_P822		0x3353	Smart Array P822
+product HP HPSA_P420I		0x3354	Smart Array P420i
+product HP HPSA_P220I		0x3355	Smart Array P220i
+product HP HPSA_P721I		0x3356	Smart Array P721i
+product HP HPSA_P430I		0x1920	Smart Array P430i
+product HP HPSA_P830I		0x1921	Smart Array P830i
+product HP HPSA_P430		0x1922	Smart Array P430
+product HP HPSA_P431		0x1923	Smart Array P431
+product HP HPSA_P830		0x1924	Smart Array P830
+product HP HPSA_P731M		0x1926	Smart Array P731m
+product HP HPSA_P230I		0x1928	Smart Array P230i
+product HP HPSA_P530		0x1929	Smart Array P530
+product HP HPSA_P531		0x192A	Smart Array P531
+product HP HPSA_P244BR		0x21bd	Smart Array P244br
+product HP HPSA_P741M		0x21be	Smart Array P741m
+product HP HPSA_H240AR		0x21bf	Smart Array H240ar
+product HP HPSA_P440AR		0x21c0	Smart Array H440ar
+product HP HPSA_P840AR		0x21c1	Smart Array P840ar
+product HP HPSA_P440		0x21c2	Smart Array P440
+product HP HPSA_P441		0x21c3	Smart Array P441
+product HP HPSA_P841		0x21c5	Smart Array P841
+product HP HPSA_H244BR		0x21c6	Smart Array H244br
+product HP HPSA_H240		0x21c7	Smart Array H240
+product HP HPSA_H241		0x21c8	Smart Array H241
+product HP HPSA_P246BR		0x21ca	Smart Array P246br
+product HP HPSA_P840		0x21cb	Smart Array P840
+product HP HPSA_P542D		0x21cc	Smart Array P542d
+product HP HPSA_P240NR		0x21cd	Smart Array P240nr
+product HP HPSA_H240NR		0x21ce	Smart Array H240nr
 product HP USB			0x3300	iLO3 Virtual USB
 product HP IPMI			0x3302	IPMI
 product HP ILO3_SLAVE		0x3306	iLO3 Slave
@@ -3081,6 +3139,91 @@ product INTEL IVYBRIDGE_PCIE_3	0x015d	Ivy Bridge PCI Express Root Port
 product INTEL IVYBRIDGE_IGD_1	0x0162	Ivy Bridge Integrated Graphics Device
 product INTEL IVYBRIDGE_M_IGD_1	0x0166	Ivy Bridge Integrated Graphics Device
 product INTEL IVYBRIDGE_S_IGD_1	0x016a	Ivy Bridge Integrated Graphics Device
+product INTEL CMTLK_U_P_LPC	0x0284	Comet Lake U (Premium) LPC or eSPI
+product INTEL CMTLK_U_LPC	0x0285	Comet Lake U LPC or eSPI
+product INTEL CMTLK_P2SB	0x02a0	Comet Lake P2SB
+product INTEL CMTLK_PMC		0x02a1	Comet Lake PMC
+product INTEL CMTLK_SMB		0x02a3	Comet Lake SMBus
+product INTEL CMTLK_SPI		0x02a4	Comet Lake SPI (FLASH)
+product INTEL CMTLK_TRACE	0x02a6	Comet Lake Trace Hub
+product INTEL CMTLK_UART_0	0x02a8	Comet Lake UART 0
+product INTEL CMTLK_UART_1	0x02a9	Comet Lake UART 1
+product INTEL CMTLK_SPI_0	0x02aa	Comet Lake SPI 0
+product INTEL CMTLK_SPI_1	0x02ab	Comet Lake SPI 1
+product INTEL CMTLK_PCIE_9	0x02b0	Comet Lake PCIe Root Port 9
+product INTEL CMTLK_PCIE_10	0x02b1	Comet Lake PCIe Root Port 10
+product INTEL CMTLK_PCIE_11	0x02b2	Comet Lake PCIe Root Port 11
+product INTEL CMTLK_PCIE_12	0x02b3	Comet Lake PCIe Root Port 12
+product INTEL CMTLK_PCIE_13	0x02b4	Comet Lake PCIe Root Port 13
+product INTEL CMTLK_PCIE_14	0x02b5	Comet Lake PCIe Root Port 14
+product INTEL CMTLK_PCIE_15	0x02b6	Comet Lake PCIe Root Port 15
+product INTEL CMTLK_PCIE_16	0x02b7	Comet Lake PCIe Root Port 16
+product INTEL CMTLK_PCIE_1	0x02b8	Comet Lake PCIe Root Port 1
+product INTEL CMTLK_PCIE_2	0x02b9	Comet Lake PCIe Root Port 2
+product INTEL CMTLK_PCIE_3	0x02ba	Comet Lake PCIe Root Port 3
+product INTEL CMTLK_PCIE_4	0x02bb	Comet Lake PCIe Root Port 4
+product INTEL CMTLK_PCIE_5	0x02bc	Comet Lake PCIe Root Port 5
+product INTEL CMTLK_PCIE_6	0x02bd	Comet Lake PCIe Root Port 6
+product INTEL CMTLK_PCIE_7	0x02be	Comet Lake PCIe Root Port 7
+product INTEL CMTLK_PCIE_8	0x02bf	Comet Lake PCIe Root Port 8
+product INTEL CMTLK_EMMC	0x02c4	Comet Lake eMMC
+product INTEL CMTLK_I2C_4	0x02c5	Comet Lake I2C 4
+product INTEL CMTLK_I2C_5	0x02c6	Comet Lake I2C 5
+product INTEL CMTLK_UART_2	0x02c7	Comet Lake UART 2
+product INTEL CMTLK_HDA		0x02c8	Comet Lake HD Audio
+product INTEL CMTLK_AHCI	0x02d3	Comet Lake SATA (AHCI)
+product INTEL CMTLK_RAID	0x02d5	Comet Lake SATA (RAID)
+product INTEL CMTLK_RAID_P	0x02d7	Comet Lake SATA (RAID) premium
+product INTEL CMTLK_MEI_1	0x02e0	Comet Lake MEI 1
+product INTEL CMTLK_MEI_2	0x02e1	Comet Lake MEI 2
+product INTEL CMTLK_IDER	0x02e2	Comet Lake IDE-R
+product INTEL CMTLK_KT		0x02e3	Comet Lake KT
+product INTEL CMTLK_MEI_3	0x02e4	Comet Lake MEI 3
+product INTEL CMTLK_MEI_4	0x02e5	Comet Lake MEI 4
+product INTEL CMTLK_I2C_0	0x02e8	Comet Lake I2C 0
+product INTEL CMTLK_I2C_1	0x02e9	Comet Lake I2C 1
+product INTEL CMTLK_I2C_2	0x02ea	Comet Lake I2C 2
+product INTEL CMTLK_I2C_3	0x02eb	Comet Lake I2C 3
+product INTEL CMTLK_XHCI	0x02ed	Comet Lake USB 3.2 Gen 2x1 xHCI
+product INTEL CMTLK_XDCI	0x02ee	Comet Lake USB 3.2 Gen 1x1 xDCI
+product INTEL CMTLK_SSRAM	0x02ef	Comet Lake Shared SRAM
+product INTEL CMTLK_CNVI_WIFI	0x02f0	Comet Lake CNVi WiFi
+product INTEL CMTLK_SDXC	0x02f5	Comet Lake SDXC
+product INTEL CMTLK_THERM	0x02f9	Comet Lake Thermal
+product INTEL CMTLK_SPI_2	0x02fb	Comet Lake SPI 2
+product INTEL CMTLK_ISH		0x02fc	Comet Lake Integrated Sensor Hub
+product INTEL CMTLK_PCIE_9	0x02b0	Comet Lake PCIe Root Port 9
+product INTEL CMTLK_PCIE_10	0x02b1	Comet Lake PCIe Root Port 10
+product INTEL CMTLK_PCIE_11	0x02b2	Comet Lake PCIe Root Port 11
+product INTEL CMTLK_PCIE_12	0x02b3	Comet Lake PCIe Root Port 12
+product INTEL CMTLK_PCIE_13	0x02b4	Comet Lake PCIe Root Port 13
+product INTEL CMTLK_PCIE_14	0x02b5	Comet Lake PCIe Root Port 14
+product INTEL CMTLK_PCIE_15	0x02b6	Comet Lake PCIe Root Port 15
+product INTEL CMTLK_PCIE_16	0x02b7	Comet Lake PCIe Root Port 16
+product INTEL CMTLK_PCIE_1	0x02b8	Comet Lake PCIe Root Port 1
+product INTEL CMTLK_PCIE_2	0x02b9	Comet Lake PCIe Root Port 2
+product INTEL CMTLK_PCIE_3	0x02ba	Comet Lake PCIe Root Port 3
+product INTEL CMTLK_PCIE_4	0x02bb	Comet Lake PCIe Root Port 4
+product INTEL CMTLK_PCIE_5	0x02bc	Comet Lake PCIe Root Port 5
+product INTEL CMTLK_PCIE_6	0x02bd	Comet Lake PCIe Root Port 6
+product INTEL CMTLK_PCIE_7	0x02be	Comet Lake PCIe Root Port 7
+product INTEL CMTLK_PCIE_8	0x02bf	Comet Lake PCIe Root Port 8
+product INTEL CMTLK_HDA		0x02c8	Comet Lake HD Audio
+product INTEL CMTLK_SATA_AHCI_0 0x02d3	Comet Lake SATA (AHCI)
+product INTEL CMTLK_MEI_1	0x02e0	Comet Lake MEI Controller #1
+product INTEL CMTLK_MEI_2	0x02e1	Comet Lake MEI Controller #2
+product INTEL CMTLK_IDE_R	0x02e2	Comet Lake IDE-R
+product INTEL CMTLK_KT		0x02e3	Comet Lake KT
+product INTEL CMTLK_MEI_3	0x02e4	Comet Lake MEI Controller #3
+product INTEL CMTLK_MEI_4	0x02e5	Comet Lake MEI Controller #4
+product INTEL CMTLK_I2C_0	0x02e8	Comet Lake I2C #0
+product INTEL CMTLK_I2C_1	0x02e9	Comet Lake I2C #1
+product INTEL CMTLK_I2C_2	0x02ea	Comet Lake I2C #2
+product INTEL CMTLK_I2C_3	0x02eb	Comet Lake I2C #3
+product INTEL CMTLK_XHCI	0x02ed	Comet Lake USB 3.2 Gen 2 xHCI
+product INTEL CMTLK_SSRAM	0x02ef	Comet Lake Shared SRAM
+product INTEL CMTLK_CNVI_WIFI	0x02f0	Comet Lake CNVi Wi-Fi
+product INTEL CMTLK_THERM	0x02f9	Comet Lake Thermal
 product INTEL 80312		0x030d	80312 I/O Companion Chip
 product INTEL 80321		0x0319	80321 I/O Processor
 product INTEL 6700PXH_IOXAPIC	0x0326	6700PXH IOxAPIC
@@ -3114,6 +3257,70 @@ product INTEL 82426EX		0x0486	82426EX PCI-ISA Bridge
 product INTEL PCMC		0x04a3	82434LX/NX PCI, Cache and Memory Controller (PCMC)
 product INTEL GDT_RAID1		0x0600	GDT RAID
 product INTEL GDT_RAID2		0x061f	GDT RAID
+product INTEL 4HS_LPC_H470	0x0684	H470 LPC
+product INTEL 4HS_LPC_Z490	0x0685	Z490 LPC
+product INTEL 4HS_LPC_Q470	0x0687	Q470 LPC
+product INTEL 4HS_LPC_QM480	0x068c	QM480 LPC
+product INTEL 4HS_LPC_HM470	0x068d	HM470 LPC
+product INTEL 4HS_LPC_WM490	0x068e	WM490 LPC
+product INTEL 4HS_LPC_W480	0x0697	W480 LPC
+product INTEL 4HS_H_P2SB	0x06a0	400 Series P2SB
+product INTEL 4HS_H_PMC		0x06a1	400 Series PMC
+product INTEL 4HS_H_SMB		0x06a3	400 Series SMBus
+product INTEL 4HS_H_SPI_FLASH	0x06a4	400 Series SPI (FLASH)
+product INTEL 4HS_H_TRACE	0x06a6	400 Series Trace Hub
+product INTEL 4HS_H_UART_0	0x06a8	400 Series UART 0
+product INTEL 4HS_H_UART_1	0x06a9	400 Series UART 1
+product INTEL 4HS_H_GSPI_0	0x06aa	400 Series GSPI 0
+product INTEL 4HS_H_GSPI_1	0x06ab	400 Series GSPI 1
+product INTEL 4HS_H_PCIE_21	0x06ac	400 Series PCIe Root Port 21
+product INTEL 4HS_H_PCIE_22	0x06ad	400 Series PCIe Root Port 22 
+product INTEL 4HS_H_PCIE_23	0x06ae	400 Series PCIe Root Port 23
+product INTEL 4HS_H_PCIE_24	0x06af	400 Series PCIe Root Port 24
+product INTEL 4HS_H_PCIE_9	0x06b0	400 Series PCIe Root Port 9
+product INTEL 4HS_H_PCIE_10	0x06b1	400 Series PCIe Root Port 10
+product INTEL 4HS_H_PCIE_11	0x06b2	400 Series PCIe Root Port 11
+product INTEL 4HS_H_PCIE_12	0x06b3	400 Series PCIe Root Port 12
+product INTEL 4HS_H_PCIE_13	0x06b4	400 Series PCIe Root Port 13
+product INTEL 4HS_H_PCIE_14	0x06b5	400 Series PCIe Root Port 14
+product INTEL 4HS_H_PCIE_15	0x06b6	400 Series PCIe Root Port 15
+product INTEL 4HS_H_PCIE_16	0x06b7	400 Series PCIe Root Port 16
+product INTEL 4HS_H_PCIE_1	0x06b8	400 Series PCIe Root Port 1
+product INTEL 4HS_H_PCIE_2	0x06b9	400 Series PCIe Root Port 2
+product INTEL 4HS_H_PCIE_3	0x06ba	400 Series PCIe Root Port 3
+product INTEL 4HS_H_PCIE_4	0x06bb	400 Series PCIe Root Port 4
+product INTEL 4HS_H_PCIE_5	0x06bc	400 Series PCIe Root Port 5
+product INTEL 4HS_H_PCIE_6	0x06bd	400 Series PCIe Root Port 6
+product INTEL 4HS_H_PCIE_7	0x06be	400 Series PCIe Root Port 7
+product INTEL 4HS_H_PCIE_8	0x06bf	400 Series PCIe Root Port 8
+product INTEL 4HS_H_PCIE_17	0x06c0	400 Series PCIe Root Port 17
+product INTEL 4HS_H_PCIE_18	0x06c1	400 Series PCIe Root Port 18
+product INTEL 4HS_H_PCIE_19	0x06c2	400 Series PCIe Root Port 19
+product INTEL 4HS_H_PCIE_20	0x06c3	400 Series PCIe Root Port 20
+product INTEL 4HS_H_UART_2	0x06c7	400 Series UART 2
+product INTEL 4HS_H_CAVS	0x06c8	400 Series cAVS 1.8
+product INTEL 4HS_H_D_AHCI	0x06d2	400 Series SATA (AHCI) desktop
+product INTEL 4HS_H_M_AHIC	0x06d3	400 Series SATA (AHCI) mobile
+product INTEL 4HS_H_M_RAID	0x06d5	400 Series SATA (RAID) mobile
+product INTEL 4HS_H_M_P_RAID	0x06d7	400 Series SATA (RAID) premium mobile
+product INTEL 4HS_H_AHCI_OPTANE	0x06de	400 Series SATA (AHCI) Optane
+product INTEL 4HS_H_HECI_1	0x06e0	400 Series HECI 1
+product INTEL 4HS_H_HECI_2	0x06e1	400 Series HECI 2
+product INTEL 4HS_H_IDE_R	0x06e2	400 Series IDE-R
+product INTEL 4HS_H_KT		0x06e3	400 Series KT
+product INTEL 4HS_H_HECI_3	0x06e4	400 Series HECI 3
+product INTEL 4HS_H_HECI_4	0x06e5	400 Series HECI 4
+product INTEL 4HS_H_I2C_0	0x06e8	400 Series I2C 0
+product INTEL 4HS_H_I2C_1	0x06e9	400 Series I2C 1
+product INTEL 4HS_H_I2C_2	0x06ea	400 Series I2C 2
+product INTEL 4HS_H_I2C_3	0x06eb	400 Series I2C 3
+product INTEL 4HS_H_XHCI	0x06ed	400 Series USB 3.2 Gen 2x1 xHCI
+product INTEL 4HS_H_SSRAM	0x06ef	400 Series Shared SRAM
+product INTEL 4HS_H_CNVI_WIFI	0x06f0	400 Series CNVi WiFi
+product INTEL 4HS_H_SDXC	0x06f5	400 Series SDXC
+product INTEL 4HS_H_THERM	0x06f9	400 Series Thermal
+product INTEL 4HS_H_GSIP_2	0x06fb	400 Series GSPI 2
+product INTEL 4HS_H_ISH		0x06fc	400 Series Integrated Sensor Hub
 product INTEL WIFI_LINK_6150_1	0x0885	Centrino Wireless-N 6150
 product INTEL WIFI_LINK_6150_2	0x0886	Centrino Wireless-N 6150
 product INTEL WIFI_LINK_2230_1	0x0887	Centrino Wireless-N 2230
@@ -4638,6 +4845,55 @@ product INTEL 82X58_QP1_P1	0x3428	5520/5500/X58 QuickPath Port 1
 product INTEL 82X58_IOXAPIC	0x342d	5520/5500/X58 IOxAPIC
 product INTEL 82X58_MISC	0x342e	5520/5500/X58 Misc
 product INTEL 82X58_THROTTLE	0x3438	5520/5500/X58 Throttling
+product INTEL 495_U_P_ESPI	0x3482	495 Series U Premium eSPI
+product INTEL 495_Y_P_ESPI	0x3487	495 Series Y Premium eSPI
+product INTEL 495_YU_P2SB	0x34a0	495 Series P2SB
+product INTEL 495_YU_PMC	0x34a1	495 Series PMC
+product INTEL 495_YU_SMB	0x34a3	495 Series SMBus
+product INTEL 495_YU_SPI	0x34a4	495 Series SPI (FLASH)
+product INTEL 495_YU_UART_0	0x34a8	495 Series UART 0
+product INTEL 495_YU_UART_1	0x34a9	495 Series UART 1
+product INTEL 495_YU_GSPI_0	0x34aa	495 Series GSPI 0
+product INTEL 495_YU_GSPI_1	0x34ab	495 Series GSPI 1
+product INTEL 495_YU_PCIE_9	0x34b0	495 Series PCIe Root Port 9
+product INTEL 495_YU_PCIE_10	0x34b1	495 Series PCIe Root Port 10
+product INTEL 495_YU_PCIE_11	0x34b2	495 Series PCIe Root Port 11
+product INTEL 495_YU_PCIE_12	0x34b3	495 Series PCIe Root Port 12
+product INTEL 495_YU_PCIE_13	0x34b4	495 Series PCIe Root Port 13
+product INTEL 495_YU_PCIE_14	0x34b5	495 Series PCIe Root Port 14
+product INTEL 495_YU_PCIE_15	0x34b6	495 Series PCIe Root Port 15
+product INTEL 495_YU_PCIE_16	0x34b7	495 Series PCIe Root Port 16
+product INTEL 495_YU_PCIE_1	0x34b8	495 Series PCIe Root Port 1
+product INTEL 495_YU_PCIE_2	0x34b9	495 Series PCIe Root Port 2
+product INTEL 495_YU_PCIE_3	0x34ba	495 Series PCIe Root Port 3
+product INTEL 495_YU_PCIE_4	0x34bb	495 Series PCIe Root Port 4
+product INTEL 495_YU_PCIE_5	0x34bc	495 Series PCIe Root Port 5
+product INTEL 495_YU_PCIE_6	0x34bd	495 Series PCIe Root Port 6
+product INTEL 495_YU_PCIE_7	0x34be	495 Series PCIe Root Port 7
+product INTEL 495_YU_PCIE_8	0x34bf	495 Series PCIe Root Port 8
+product INTEL 495_YU_PCIE_EMMC	0x34c4	495 Series eMMC
+product INTEL 495_YU_I2C_4	0x34c5	495 Series I2C 4
+product INTEL 495_YU_I2C_5	0x34c6	495 Series I2C 5
+product INTEL 495_YU_UART_2	0x34c7	495 Series UART 2
+product INTEL 495_YU_AHCI	0x34d3	495 Series SATA (AHCI)
+product INTEL 495_YU_RAID	0x34d5	495 Series SATA (RAID)
+product INTEL 495_YU_RAID_P	0x34d7	495 Series SATA (RAID) premium
+product INTEL 495_YU_HECI_1	0x34e0	495 Series HECI 1
+product INTEL 495_YU_HECI_2	0x34e1	495 Series HECI 2
+product INTEL 495_YU_IDER	0x34e2	495 Series IDE-R
+product INTEL 495_YU_KT		0x34e3	495 Series KT
+product INTEL 495_YU_HECI_3	0x34e4	495 Series HECI 3
+product INTEL 495_YU_HECI_4	0x34e5	495 Series HECI 4
+product INTEL 495_YU_I2C_0	0x34e8	495 Series I2C 0
+product INTEL 495_YU_I2C_1	0x34e9	495 Series I2C 1
+product INTEL 495_YU_I2C_2	0x34ea	495 Series I2C 2
+product INTEL 495_YU_I2C_3	0x34eb	495 Series I2C 3
+product INTEL 495_YU_XHCI	0x34ed	495 Series USB 3.2 Gen 2x1 xHCI
+product INTEL 495_YU_XDCI	0x34ee	495 Series USB 3.2 Gen 1x1 xDCI
+product INTEL 495_YU_SSRAM	0x34ef	495 Series Shared SRAM
+product INTEL 495_YU_SDXC	0x34f8	495 Series SDXC
+product INTEL 495_YU_GSPI_2	0x34fb	495 Series GSPI 2
+product INTEL 495_YU_ISH	0x34fc	495 Series ISH
 product INTEL 63XXESB_EXP_UP	0x3500	63xxESB PCI Express Upstream Port
 product INTEL 63XXESB_PCIX	0x350c	63xxESB PCI Express to PCI-X Bridge
 product INTEL 63XXESB_EXP_DN_1	0x3510	63xxESB PCI Express Downstream Port #1
@@ -4867,11 +5123,19 @@ product INTEL COFLK_IGD_1	0x3e90	UHD Graphics 610
 product INTEL COFLK_IGD_2	0x3e91	UHD Graphics 630
 product INTEL COFLK_IGD_3	0x3e92	UHD Graphics 630
 product INTEL COFLK_IGD_4	0x3e93	UHD Graphics 610
+product INTEL COFLK_H_GT2_4	0x3e94	UHD Graphics P630
 product INTEL XEONE_IGD		0x3e96	UHD Graphics P630
+product INTEL COFLK_S_GT2_4	0x3e98	UHD Graphics 630
+product INTEL COFLK_S_GT1_3	0x3e99	UHD Graphics 610
+product INTEL COFLK_S_GT2_5	0x3e9a	UHD Graphics P630
 product INTEL COFLK_IGD_5	0x3e9b	UHD Graphics 630
+product INTEL COFLK_H_GT1	0x3e9c	UHD Graphics 610
 product INTEL WHISKYLK_IGD_1	0x3ea0	UHD Graphics 620
 product INTEL WHISKYLK_IGD_2	0x3ea1	UHD Graphics 610
 product INTEL COFLK_IGD_6	0x3ea5	Iris Plus Graphics 655
+product INTEL COFLK_U_GT3_2	0x3ea6	Iris Plus Graphics 645
+product INTEL COFLK_U_GT3_4	0x3ea8	Iris Plus Graphics 655
+product INTEL COFLK_U_GT2_2	0x3ea9	UHD Graphics 620
 product INTEL XEONE_S_D_HOST_DRAM_6C 0x3ec2 Xeon E (S, Desktop) Host Bridge, DRAM
 product INTEL CORE8G_H_H_HOST_DRAM_6C 0x3ec4 Core 8G (H, Halo) Host Bridge, DRAM
 product INTEL XEONE_S_W_HOST_DRAM_6C 0x3ec6 Xeon E (S, WS) Host Bridge, DRAM
@@ -4965,8 +5229,9 @@ product INTEL CORE8G_U_GT2	0x5917	UHD Graphics 620 (GT2)
 product INTEL CORE7G_H_SW_HOST_DRAM 0x5918 Core 7G (H, Server or Workstation) Host Bridge, DRAM
 product INTEL CORE7G_IU		0x5919	Core 7G Image Unit
 product INTEL CORE7G_H_M_GT2	0x591b	HD Graphics 630 (GT2, Mobile)
+product INTEL AMBLK_Y_GT2	0x591c	UHD Graphics 615 (GT2)
 product INTEL CORE7G_HU_GT2	0x591d	HD Graphics P630 (GT2, H or U)
-product INTEL CORE7G_Y_GT2	0x591e	HD Graphics 615 (GT2)
+product INTEL CORE7G_Y_GT2	0x591e	UHD Graphics 615 (GT2)
 product INTEL CORE7G_S_Q_HOST_DRAM 0x591f Core 7G (S, Quad) Host Bridge, DRAM
 product INTEL CORE7G_U_GT3	0x5923	HD Graphics (GT3)
 product INTEL CORE7G_U_GT3E_15W	0x5926	Iris Plus Graphics 640 (GT3e, 15W)
@@ -5155,7 +5420,8 @@ product INTEL PCI450_PB		0x84c4	82454KX/GX PCI Bridge (PB)
 product INTEL PCI450_MC		0x84c5	82451KX/GX Memory Controller (MC)
 product INTEL 82451NX_MIOC	0x84ca	82451NX Memory & I/O Controller (MIOC)
 product INTEL 82451NX_PXB	0x84cb	82451NX PCI Expander Bridge (PXB)
-
+product INTEL AMBLK_Y_GT2_2	0x87c0	UHD Graphics 617 (GT2)
+product INTEL AMBLK_Y_IGD	0x87ca	UHD Graphics
 product INTEL EG20T_PCIB	0x8800	EG20T PCH PCIe Bridge
 product INTEL EG20T_PCTHUB	0x8801	EG20T PCH Packet Hub
 product INTEL EG20T_GBE		0x8802	EG20T PCH Gigabit Ether
@@ -5297,6 +5563,16 @@ product INTEL C610_SPSR		0x8d7c	C61x/X99 SPSR
 product INTEL C610_MS_SMB0	0x8d7d	C61x/X99 MS SMbus
 product INTEL C610_MS_SMB1	0x8d7e	C61x/X99 MS SMbus
 product INTEL C610_MS_SMB2	0x8d7f	C61x/X99 MS SMbus
+product INTEL CMTLK_GTx		0x9b41	UHD Graphics
+product INTEL CMTLK_U_HOST	0x9b71	Comet Lake U Host Bridge
+product INTEL CMTLK_GT1_6	0x9ba5	UHD Graphics 610
+product INTEL CMTLK_GT1_7	0x9ba8	UHD Graphics 610
+product INTEL CMTLK_GTx_2	0x9bc4	UHD Graphics
+product INTEL CMTLK_GT2_6	0x9bc5	UHD Graphics 630
+product INTEL CMTLK_GT2_10	0x9bc6	UHD Graphics P630
+product INTEL CMTLK_GT2_7	0x9bc8	UHD Graphics 630
+product INTEL CMTLK_GT2_11	0x9be6	UHD Graphics P630
+product INTEL CMTLK_GT2_12	0x9bf6	UHD Graphics P630
 product INTEL CORE4G_M_AHCI	0x9c03	Core 4G (mobile) SATA Controller (AHCI)
 product INTEL CORE4G_M_RAID_1	0x9c05	Core 4G (mobile) SATA Controller (RAID)
 product INTEL CORE4G_M_RAID_2	0x9c07	Core 4G (mobile) SATA Controller (RAID) Premium
@@ -5416,12 +5692,115 @@ product INTEL 100SERIES_LP_I2C_5 0x9d65	100 Series I2C 5
 product INTEL 100SERIES_LP_UART_2 0x9d66 100 Series UART 2
 product INTEL 100SERIES_LP_HDA	0x9d70	100 Series HD Audio
 product INTEL 2HS_U_HDA		0x9d71	200 Series HD Audio
+product INTEL 3HS_Y_P_LPC	0x9d83	300 Series Premiun-Y LPC
+product INTEL 3HS_U_P_LPC	0x9d84	300 Series Premium-U LPC
+product INTEL 3HS_U_M_LPC	0x9d84	300 Series Mainstream/Base U LPC
+product INTEL 3HS_U_P2SB	0x9da0	300 Series P2SB
+product INTEL 3HS_U_PMC		0x9da1	300 Series PMC
+product INTEL 3HS_U_SMB		0x9da3	300 Series SMBus
+product INTEL 3HS_U_SPI_FLASH	0x9da4	300 Series SPI (flash)
+product INTEL 3HS_U_TRACE	0x9da6	300 Series Trace Hub
+product INTEL 3HS_U_UART_0	0x9da8	300 Series UART #0
+product INTEL 3HS_U_UART_1	0x9da9	300 Series UART #1
+product INTEL 3HS_U_SPI_0	0x9daa	300 Series SPI #0
+product INTEL 3HS_U_SPI_1	0x9dab	300 Series SPI #1
+product INTEL 3HS_U_PCIE_9	0x9db0	300 Series PCIe Root Port 9
+product INTEL 3HS_U_PCIE_10	0x9db1	300 Series PCIe Root Port 10
+product INTEL 3HS_U_PCIE_11	0x9db2	300 Series PCIe Root Port 11
+product INTEL 3HS_U_PCIE_12	0x9db3	300 Series PCIe Root Port 12
+product INTEL 3HS_U_PCIE_13	0x9db4	300 Series PCIe Root Port 13
+product INTEL 3HS_U_PCIE_14	0x9db5	300 Series PCIe Root Port 14
+product INTEL 3HS_U_PCIE_15	0x9db6	300 Series PCIe Root Port 15
+product INTEL 3HS_U_PCIE_16	0x9db7	300 Series PCIe Root Port 16
+product INTEL 3HS_U_PCIE_1	0x9db8	300 Series PCIe Root Port 1
+product INTEL 3HS_U_PCIE_2	0x9db9	300 Series PCIe Root Port 2
+product INTEL 3HS_U_PCIE_3	0x9dba	300 Series PCIe Root Port 3
+product INTEL 3HS_U_PCIE_4	0x9dbb	300 Series PCIe Root Port 4
+product INTEL 3HS_U_PCIE_5	0x9dbc	300 Series PCIe Root Port 5
+product INTEL 3HS_U_PCIE_6	0x9dbd	300 Series PCIe Root Port 6
+product INTEL 3HS_U_PCIE_7	0x9dbe	300 Series PCIe Root Port 7
+product INTEL 3HS_U_PCIE_8	0x9dbf	300 Series PCIe Root Port 8
+product INTEL 3HS_U_EMMC	0x9dc4	300 Series eMMC
+product INTEL 3HS_U_I2C_4	0x9dc5	300 Series I2C #4
+product INTEL 3HS_U_I2C_5	0x9dc6	300 Series I2C #5
+product INTEL 3HS_U_UART_2	0x9dc7	300 Series UART #2
+product INTEL 3HS_U_HDA		0x9dc8	300 Series HD Audio
+product INTEL 3HS_U_AHCI	0x9dd3	300 Series SATA AHCI
+product INTEL 3HS_U_RAID_1	0x9dd5	300 Series SATA RAID
+product INTEL 3HS_U_RAID_2	0x9dd7	300 Series SATA RAID premium
+product INTEL 3HS_U_MEI_1	0x9de0	300 Series MEI #1
+product INTEL 3HS_U_MEI_2	0x9de1	300 Series MEI #2
+product INTEL 3HS_U_IDER	0x9de2	300 Series IDE-R
+product INTEL 3HS_U_KT		0x9de3	300 Series KT
+product INTEL 3HS_U_MEI_3	0x9de4	300 Series MEI #3
+product INTEL 3HS_U_MEI_4	0x9de5	300 Series MEI #4
+product INTEL 3HS_U_I2C_0	0x9de8	300 Series I2C #0
+product INTEL 3HS_U_I2C_1	0x9de9	300 Series I2C #1
+product INTEL 3HS_U_I2C_2	0x9dea	300 Series I2C #2
+product INTEL 3HS_U_I2C_3	0x9deb	300 Series I2C #3
+product INTEL 3HS_U_XHCI	0x9ded	300 Series USB 3.1 xHCI
+product INTEL 3HS_U_USBOTG	0x9dee	300 Series USB (OTG)
+product INTEL 3HS_U_SSRAM	0x9def	300 Series Shared SRAM
+product INTEL WL_9560_1		0x9df0	Dual Band Wireless AC 9560
+product INTEL 3HS_U_SDXC	0x9df5	300 Series SDXC
+product INTEL 3HS_U_THERM	0x9df9	300 Series Thermal
+product INTEL 3HS_U_SPI_2	0x9dfb	300 Series SPI #2
+product INTEL 3HS_U_ISH		0x9dfc	300 Series Image Sensor Hub
 product INTEL PINEVIEW_HB	0xa000	Pineview Host Bridge
 product INTEL PINEVIEW_IGD	0xa001	Pineview Integrated Graphics Device
 product INTEL PINEVIEW_IGD_1	0xa002	Pineview Integrated Graphics Device
 product INTEL PINEVIEW_M_HB	0xa010	Pineview Host Bridge
 product INTEL PINEVIEW_M_IGD	0xa011	Pineview Integrated Graphics Device
 product INTEL PINEVIEW_M_IGD_1	0xa012	Pineview Integrated Graphics Device
+product INTEL 5HS_LP_UP3_ESPI	0xa082	500 Series UP3 eSPI
+product INTEL 5HS_LP_UP4_ESPI	0xa087	500 Series UP4 eSPI
+product INTEL 5HS_LP_P2SB	0xa0a0	500 Series P2SB
+product INTEL 5HS_LP_PMC	0xa0a1	500 Series PMC
+product INTEL 5HS_LP_SMB	0xa0a3	500 Series SMBus
+product INTEL 5HS_LP_SPI	0xa0a4	500 Series SPI (FLASH)
+product INTEL 5HS_LP_TRACE	0xa0a6	500 Series Trace Hub
+product INTEL 5HS_LP_UART_0	0xa0a8	500 Series UART 0
+product INTEL 5HS_LP_UART_1	0xa0a9	500 Series UART 1
+product INTEL 5HS_LP_GSPI_0	0xa0aa	500 Series GSPI 0
+product INTEL 5HS_LP_GSPI_1	0xa0ab	500 Series GSPI 1
+product INTEL 5HS_LP_PCIE_9	0xa0b0	500 Series PCIe 9
+product INTEL 5HS_LP_PCIE_10	0xa0b1	500 Series PCIe 10
+product INTEL 5HS_LP_PCIE_11	0xa0b2	500 Series PCIe 11
+product INTEL 5HS_LP_PCIE_12	0xa0b3	500 Series PCIe 12
+product INTEL 5HS_LP_PCIE_1	0xa0b8	500 Series PCIe 1
+product INTEL 5HS_LP_PCIE_2	0xa0b9	500 Series PCIe 2
+product INTEL 5HS_LP_PCIE_3	0xa0ba	500 Series PCIe 3
+product INTEL 5HS_LP_PCIE_4	0xa0bb	500 Series PCIe 4
+product INTEL 5HS_LP_PCIE_5	0xa0bc	500 Series PCIe 5
+product INTEL 5HS_LP_PCIE_6	0xa0bd	500 Series PCIe 6
+product INTEL 5HS_LP_PCIE_7	0xa0be	500 Series PCIe 7
+product INTEL 5HS_LP_PCIE_8	0xa0bf	500 Series PCIe 8
+product INTEL 5HS_LP_I2C_4	0xa0c5	500 Series I2C 4
+product INTEL 5HS_LP_I2C_5	0xa0c6	500 Series I2C 5
+product INTEL 5HS_LP_UART_2	0xa0c7	500 Series UART 2
+product INTEL 5HS_LP_HDA	0xa0c8	500 Series HD Audio
+product INTEL 5HS_LP_THC_0	0xa0d0	500 Series THC 0
+product INTEL 5HS_LP_THC_1	0xa0d1	500 Series THC 1
+product INTEL 5HS_LP_AHCI	0xa0d3	500 Series SATA (AHCI)
+product INTEL 5HS_LP_RAID	0xa0d5	500 Series SATA (RAID)
+product INTEL 5HS_LP_RAID_P	0xa0d7	500 Series SATA (RAID) premium
+product INTEL 5HS_LP_UART_3	0xa0da	500 Series UART 3
+product INTEL 5HS_LP_HECI_1	0xa0e0	500 Series HECI 1
+product INTEL 5HS_LP_HECI_2	0xa0e1	500 Series HECI 2
+product INTEL 5HS_LP_IDER	0xa0e2	500 Series IDE-R
+product INTEL 5HS_LP_KT		0xa0e3	500 Series KT
+product INTEL 5HS_LP_HECI_3	0xa0e4	500 Series HECI 3
+product INTEL 5HS_LP_HECI_4	0xa0e5	500 Series HECI 4
+product INTEL 5HS_LP_I2C_0	0xa0e8	500 Series I2C 0
+product INTEL 5HS_LP_I2C_1	0xa0e9	500 Series I2C 1
+product INTEL 5HS_LP_I2C_2	0xa0ea	500 Series I2C 2
+product INTEL 5HS_LP_I2C_3	0xa0eb	500 Series I2C 3
+product INTEL 5HS_LP_XHCI	0xa0ed	500 Series USB 3.2 Gen 2x1 xHCI
+product INTEL 5HS_LP_XDCI	0xa0ee	500 Series USB 3.2 Gen 1x1 xDCI
+product INTEL 5HS_LP_SSRAM	0xa0ef	500 Series Shared SRAM
+product INTEL 5HS_LP_GSPI_2	0xa0fb	500 Series GSPI 2
+product INTEL 5HS_LP_ISH	0xa0fc	500 Series Integrated Sensor Hub
+product INTEL 5HS_LP_GSPI_3	0xa0fd	500 Series GSPI 3
 product INTEL Z170_AHCI		0xa102	Z170 AHCI
 product INTEL 100SERIES_AHCI_2	0xa103	HM170, QM170 AHCI
 product INTEL Z170_3RD_AHCI	0xa106	Z170 3rd Party RAID
@@ -5736,6 +6115,7 @@ product INTEL CP_SCS_REGS	0xd157	Core Processor System Control and Status Regist
 product INTEL CP_MISC_REGS	0xd158	Core Processor Miscellaneous Registers
 product INTEL HANKSVILLE	0xf0fe	HANKSVILLE LAN Controller
 product INTEL SSD_760P		0xf1a6	SSD 760p
+product INTEL XMM7360		0x7360  XMM 7360 LTE Modem
 
 /* Intergraph products */
 product INTERGRAPH 4D60T	0x00e3	Powerstorm 4D60T
@@ -6692,6 +7072,7 @@ product NVIDIA	NVS_4200M2	0x1057	GeForce NVS 4200M
 product NVIDIA	GEFORCE_610M	0x1058	GeForce 610M
 product NVIDIA	GEFORCE_610M2	0x1059	GeForce 610M
 product NVIDIA	GT610M		0x105A	GeForce GT 610M
+product NVIDIA	GF_GTX680	0x1180 	GeForce GTX 680
 product NVIDIA	GF116		0x1244	GeForce GTX 550 Ti
 product NVIDIA	GF_GTX960	0x1401 	GeForce GTX 960
 product NVIDIA	GF_GTX950	0x1402 	GeForce GTX 950
@@ -6973,11 +7354,11 @@ product QUMRANET VIRTIO_1001	0x1001	Virtio Storage
 product QUMRANET VIRTIO_1002	0x1002	Virtio Memory Balloon
 product QUMRANET VIRTIO_1003	0x1003	Virtio Console
 product QUMRANET VIRTIO_1004	0x1004	Virtio SCSI
-product QUMRANET VIRTIO_1005	0x1005	Virtio RNG
+product QUMRANET VIRTIO_1005	0x1005	Virtio RNG Entropy
 product QUMRANET VIRTIO_1006	0x1006	Virtio
 product QUMRANET VIRTIO_1007	0x1007	Virtio
 product QUMRANET VIRTIO_1008	0x1008	Virtio
-product QUMRANET VIRTIO_1009	0x1009	Virtio
+product QUMRANET VIRTIO_1009	0x1009	Virtio 9p Filesystem
 product QUMRANET VIRTIO_100A	0x100a	Virtio
 product QUMRANET VIRTIO_100B	0x100b	Virtio
 product QUMRANET VIRTIO_100C	0x100c	Virtio
@@ -7032,6 +7413,71 @@ product QUMRANET VIRTIO_103C	0x103c	Virtio
 product QUMRANET VIRTIO_103D	0x103d	Virtio
 product QUMRANET VIRTIO_103E	0x103e	Virtio
 product QUMRANET VIRTIO_103F	0x103f	Virtio
+
+product QUMRANET VIRTIO_1040	0x1040	Virtio
+product QUMRANET VIRTIO_1041	0x1041	Virtio Network
+product QUMRANET VIRTIO_1042	0x1042	Virtio Storage
+product QUMRANET VIRTIO_1043	0x1043	Virtio Console
+product QUMRANET VIRTIO_1044	0x1044	Virtio RNG Entropy
+product QUMRANET VIRTIO_1045	0x1045	Virtio Memory Balloon
+product QUMRANET VIRTIO_1046	0x1046	Virtio I/O memory
+product QUMRANET VIRTIO_1047	0x1047	Virtio Remote Processor Messaging
+product QUMRANET VIRTIO_1048	0x1048	Virtio SCSI
+product QUMRANET VIRTIO_1049	0x1049	Virtio 9p Filesystem
+product QUMRANET VIRTIO_104A	0x104a	Virtio
+product QUMRANET VIRTIO_104B	0x104b	Virtio
+product QUMRANET VIRTIO_104C	0x104c	Virtio
+product QUMRANET VIRTIO_104D	0x104d	Virtio
+product QUMRANET VIRTIO_104E	0x104e	Virtio
+product QUMRANET VIRTIO_104F	0x104f	Virtio
+product QUMRANET VIRTIO_1050	0x1050	Virtio
+product QUMRANET VIRTIO_1051	0x1051	Virtio
+product QUMRANET VIRTIO_1052	0x1052	Virtio
+product QUMRANET VIRTIO_1053	0x1053	Virtio
+product QUMRANET VIRTIO_1054	0x1054	Virtio
+product QUMRANET VIRTIO_1055	0x1055	Virtio
+product QUMRANET VIRTIO_1056	0x1056	Virtio
+product QUMRANET VIRTIO_1057	0x1057	Virtio
+product QUMRANET VIRTIO_1058	0x1058	Virtio
+product QUMRANET VIRTIO_1059	0x1059	Virtio
+product QUMRANET VIRTIO_105A	0x105a	Virtio
+product QUMRANET VIRTIO_105B	0x105b	Virtio
+product QUMRANET VIRTIO_105C	0x105c	Virtio
+product QUMRANET VIRTIO_105D	0x105d	Virtio
+product QUMRANET VIRTIO_105E	0x105e	Virtio
+product QUMRANET VIRTIO_105F	0x105f	Virtio
+product QUMRANET VIRTIO_1060	0x1060	Virtio
+product QUMRANET VIRTIO_1061	0x1061	Virtio
+product QUMRANET VIRTIO_1062	0x1062	Virtio
+product QUMRANET VIRTIO_1063	0x1063	Virtio
+product QUMRANET VIRTIO_1064	0x1064	Virtio
+product QUMRANET VIRTIO_1065	0x1065	Virtio
+product QUMRANET VIRTIO_1066	0x1066	Virtio
+product QUMRANET VIRTIO_1067	0x1067	Virtio
+product QUMRANET VIRTIO_1068	0x1068	Virtio
+product QUMRANET VIRTIO_1069	0x1069	Virtio
+product QUMRANET VIRTIO_106A	0x106a	Virtio
+product QUMRANET VIRTIO_106B	0x106b	Virtio
+product QUMRANET VIRTIO_106C	0x106c	Virtio
+product QUMRANET VIRTIO_106D	0x106d	Virtio
+product QUMRANET VIRTIO_106E	0x106e	Virtio
+product QUMRANET VIRTIO_106F	0x106f	Virtio
+product QUMRANET VIRTIO_1070	0x1070	Virtio
+product QUMRANET VIRTIO_1071	0x1071	Virtio
+product QUMRANET VIRTIO_1072	0x1072	Virtio
+product QUMRANET VIRTIO_1073	0x1073	Virtio
+product QUMRANET VIRTIO_1074	0x1074	Virtio
+product QUMRANET VIRTIO_1075	0x1075	Virtio
+product QUMRANET VIRTIO_1076	0x1076	Virtio
+product QUMRANET VIRTIO_1077	0x1077	Virtio
+product QUMRANET VIRTIO_1078	0x1078	Virtio
+product QUMRANET VIRTIO_1079	0x1079	Virtio
+product QUMRANET VIRTIO_107A	0x107a	Virtio
+product QUMRANET VIRTIO_107B	0x107b	Virtio
+product QUMRANET VIRTIO_107C	0x107c	Virtio
+product QUMRANET VIRTIO_107D	0x107d	Virtio
+product QUMRANET VIRTIO_107E	0x107e	Virtio
+product QUMRANET VIRTIO_107F	0x107f	Virtio
 
 /* Rainbow Technologies products */
 product RAINBOW	CS200		0x0200	CryptoSwift 200 PKI Accelerator
@@ -7099,6 +7545,7 @@ product REALTEK RTS5208		0x5208	RTS5208 PCI-E Card Reader
 product REALTEK RTS5209		0x5209	RTS5209 PCI-E Card Reader
 product REALTEK RTS5227		0x5227	RTS5227 PCI-E Card Reader
 product REALTEK RTS5229		0x5229	RTS5229 PCI-E Card Reader
+product REALTEK RTS522A		0x522A	RTS522A PCI-E Card Reader
 product REALTEK RTS5249		0x5249	RTS5249 PCI-E Card Reader
 product REALTEK RTS525A		0x525A	RTS525A PCI-E Card Reader
 product REALTEK RTL8402		0x5286	RTL8402 PCI-E Card Reader
@@ -7120,6 +7567,7 @@ product REALTEK RTL8192CE	0x8178	RTL8192CE Wireless LAN 802.11n PCI-E NIC
 product REALTEK RTL8188EE	0x8179	RTL8188EE Wireless LAN 802.11n PCI-E NIC
 product REALTEK RT8180		0x8180	8180 802.11b
 product REALTEK RT8185		0x8185	8185 802.11a/b/g
+product REALTEK RTL8192EE	0x818b	RTL8192EE Wireless LAN 802.11n PCI-E NIC
 
 /* Red Hat products */
 product REDHAT PPB		0x0001	Qemu PCI-PCI
@@ -7235,6 +7683,7 @@ product SANDBURST	FE1000	0x0200	FE1000
 
 /* Western Digital (SanDisk) products */
 product SANDISK	WDBLACK_NVME	0x5002	WD Black NVMe SSD
+product SANDISK	WDBLUE_SN550	0x5009	WD Blue SN550 NVMe SSD
 
 /* SEGA Enterprises products */
 product SEGA	BROADBAND	0x1234	Broadband Adapter

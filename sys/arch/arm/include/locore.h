@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.h,v 1.32 2020/02/15 08:16:11 skrll Exp $	*/
+/*	$NetBSD: locore.h,v 1.35 2020/12/01 02:48:29 rin Exp $	*/
 
 /*
  * Copyright (c) 1994-1996 Mark Brinicombe.
@@ -87,18 +87,23 @@
 #if defined (TPIDRPRW_IS_CURCPU)
 #define GET_CURCPU(rX)		mrc	p15, 0, rX, c13, c0, 4
 #define GET_CURLWP(rX)		GET_CURCPU(rX); ldr rX, [rX, #CI_CURLWP]
+#define GET_CURX(rCPU, rLWP)	GET_CURCPU(rCPU); ldr rLWP, [rCPU, #CI_CURLWP]
 #elif defined (TPIDRPRW_IS_CURLWP)
 #define GET_CURLWP(rX)		mrc	p15, 0, rX, c13, c0, 4
 #if defined (MULTIPROCESSOR)
 #define GET_CURCPU(rX)		GET_CURLWP(rX); ldr rX, [rX, #L_CPU]
+#define GET_CURX(rCPU, rLWP)	GET_CURLWP(rLWP); ldr rCPU, [rLWP, #L_CPU]
 #elif defined(_ARM_ARCH_7)
 #define GET_CURCPU(rX)		movw rX, #:lower16:cpu_info_store; movt rX, #:upper16:cpu_info_store
+#define GET_CURX(rCPU, rLWP)	GET_CURLWP(rLWP); GET_CURCPU(rCPU)
 #else
 #define GET_CURCPU(rX)		ldr rX, =_C_LABEL(cpu_info_store)
+#define GET_CURX(rCPU, rLWP)	GET_CURLWP(rLWP); ldr rCPU, [rLWP, #L_CPU]
 #endif
 #elif !defined(MULTIPROCESSOR)
 #define GET_CURCPU(rX)		ldr rX, =_C_LABEL(cpu_info_store)
 #define GET_CURLWP(rX)		GET_CURCPU(rX); ldr rX, [rX, #CI_CURLWP]
+#define GET_CURX(rCPU, rLWP)	GET_CURCPU(rCPU); ldr rLWP, [rCPU, #CI_CURLWP]
 #endif
 #define GET_CURPCB(rX)		GET_CURLWP(rX); ldr rX, [rX, #L_PCB]
 
@@ -197,7 +202,7 @@ read_insn(vaddr_t va, bool user_p)
 	} else {
 		insn = *(const uint32_t *)va;
 	}
-#if defined(__ARMEB__) && defined(_ARM_ARCH_7)
+#ifdef _ARM_ARCH_BE8
 	insn = bswap32(insn);
 #endif
 	return insn;
@@ -227,40 +232,11 @@ read_thumb_insn(vaddr_t va, bool user_p)
 	} else {
 		insn = *(const uint16_t *)va;
 	}
-#if defined(__ARMEB__) && defined(_ARM_ARCH_7)
+#ifdef _ARM_ARCH_BE8
 	insn = bswap16(insn);
 #endif
 	return insn;
 }
-
-#ifndef _RUMPKERNEL
-static inline void
-arm_dmb(void)
-{
-	if (CPU_IS_ARMV6_P())
-		armreg_dmb_write(0);
-	else if (CPU_IS_ARMV7_P())
-		__asm __volatile("dmb" ::: "memory");
-}
-
-static inline void
-arm_dsb(void)
-{
-	if (CPU_IS_ARMV6_P())
-		armreg_dsb_write(0);
-	else if (CPU_IS_ARMV7_P())
-		__asm __volatile("dsb" ::: "memory");
-}
-
-static inline void
-arm_isb(void)
-{
-	if (CPU_IS_ARMV6_P())
-		armreg_isb_write(0);
-	else if (CPU_IS_ARMV7_P())
-		__asm __volatile("isb" ::: "memory");
-}
-#endif
 
 /*
  * Random cruft

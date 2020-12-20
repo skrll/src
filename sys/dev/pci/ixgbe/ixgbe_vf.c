@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe_vf.c,v 1.23 2020/02/05 09:47:16 msaitoh Exp $ */
+/* $NetBSD: ixgbe_vf.c,v 1.25 2020/11/30 05:30:56 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -175,7 +175,7 @@ s32 ixgbe_init_hw_vf(struct ixgbe_hw *hw)
  *  ixgbe_reset_hw_vf - Performs hardware reset
  *  @hw: pointer to hardware structure
  *
- *  Resets the hardware by reseting the transmit and receive units, masks and
+ *  Resets the hardware by resetting the transmit and receive units, masks and
  *  clears all interrupts.
  **/
 s32 ixgbe_reset_hw_vf(struct ixgbe_hw *hw)
@@ -784,7 +784,7 @@ int ixgbevf_get_queues(struct ixgbe_hw *hw, unsigned int *num_tcs,
 		msg[0] &= ~IXGBE_VT_MSGTYPE_CTS;
 
 		/*
-		 * if we we didn't get an ACK there must have been
+		 * if we didn't get an ACK there must have been
 		 * some sort of mailbox error so we should treat it
 		 * as such
 		 */

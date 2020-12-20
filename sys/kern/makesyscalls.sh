@@ -1,4 +1,4 @@
-#	$NetBSD: makesyscalls.sh,v 1.176 2019/11/09 22:05:50 jdolecek Exp $
+#	$NetBSD: makesyscalls.sh,v 1.182 2020/09/29 02:58:53 msaitoh Exp $
 #
 # Copyright (c) 1994, 1996, 2000 Christopher G. Demetriou
 # All rights reserved.
@@ -47,6 +47,8 @@ esac
 #	syssw		the syscall switch file
 #	sysautoload	the syscall autoload definitions file
 #	sysarghdr	the syscall argument struct definitions
+#	sysarghdrextra	extra stuff dumped into sysarghdr
+#	systrace	the dtrace definitions
 #	compatopts	those syscall types that are for 'compat' syscalls
 #	switchname	the name for the 'struct sysent' we define
 #	namesname	the name for the 'const char *[]' we define
@@ -57,6 +59,9 @@ esac
 #	sys_nosys	[optional] name of function called for unsupported
 #			syscalls, if not sys_nosys()
 #       maxsysargs	[optiona] the maximum number or arguments
+#	rumpcalls	???
+#	rumpcallshdr	???
+#	rumpsysmap	???
 #
 # NOTE THAT THIS makesyscalls.sh DOES NOT SUPPORT 'SYSLIBCOMPAT'.
 
@@ -143,7 +148,7 @@ function toupper(str) {
 fi
 
 # before handing it off to awk, make a few adjustments:
-#	(1) insert spaces around {, }, (, ), *, and commas.
+#	(1) insert spaces around {, }, (, ), *, |, and commas.
 #	(2) get rid of any and all dollar signs (so that rcs id use safe)
 #
 # The awk script will deal with blank lines and lines that
@@ -600,10 +605,12 @@ function parseline() {
 		funcalias=funcname
 		sub(/^([^_]+_)*sys_/, "", funcalias)
 		realname=fbase
+		rumpfname=realname "" fcompat
 	} else {
 		realname=funcalias
+		rumpfname=realname
 	}
-	rumpfname=realname "" fcompat
+
 	f++
 
 	if ($f != "(")
@@ -712,9 +719,9 @@ function printproto(wrap) {
 		return
 
 	# accumulate fbases we have seen.  we want the last
-	# occurence for the default __RENAME()
-	seen = funcseen[fbase]
-	funcseen[fbase] = rumpfname
+	# occurrence for the default __RENAME()
+	seen = funcseen[realname]
+	funcseen[realname] = rumpfname
 	# special case for mknod as type of last argument changed from
 	# uint32_t to dev_t
 	if ((seen && fbase != "mknod") || (!seen && fbase == "mknod"))
@@ -731,7 +738,7 @@ function printproto(wrap) {
 	else
 		printf("%s)", uncompattype(argtype[argc])) > rumpprotos
 
-	printf(" __RENAME(RUMP_SYS_RENAME_%s)", toupper(fbase))> rumpprotos
+	printf(" __RENAME(RUMP_SYS_RENAME_%s)", toupper(realname))> rumpprotos
 	printf(";\n") > rumpprotos
 
 	# generate forward-declares for types, apart from the
@@ -749,7 +756,7 @@ function printproto(wrap) {
 	}
 }
 
-function printrumpsysent(insysent, compatwrap) {
+function printrumpsysent(insysent, compatwrap_) {
 	if (modular) {
 		fn = rumpnomodule
 		flags = rumpnoflags
@@ -765,7 +772,7 @@ function printrumpsysent(insysent, compatwrap) {
 
 	printf("\t{") > rumpsysent
 	if (argc != 0) {
-		printf("\n\t\tns(struct %ssys_%s_args),", compatwrap_, funcalias) > rumpsysent
+		printf("\n\t\tns(struct %s%s_args),", compatwrap_, funcname) > rumpsysent
 	}
 
 	printf("\n\t\t.sy_call = %s,\n\t},", fn) > rumpsysent
@@ -934,7 +941,7 @@ function putent(type, compatwrap) {
 	} else {
 		insysent = 1
 	}
-	printrumpsysent(insysent, compatwrap)
+	printrumpsysent(insysent, compatwrap_)
 
 	# output rump marshalling code if necessary
 	if (!rumpable) {
@@ -1104,6 +1111,24 @@ $2 == "EXTERN" {
 	printf("%s: line %d: unrecognized keyword %s\n", infile, NR, $2)
 	exit 1
 }
+
+function sort(arr, n,    i, j, t) {
+	# this is going to be bubble sort because I cannot be bothered to
+	# write a real sort, this whole script is hopefully going to be
+	# deprecated before much longer, and performance of a few hundred
+	# things (even interpreted in awk) should be adequate.
+	for (i = 1; i <= n; i++) {
+		for (j = i + 1; j <= n; j++) {
+			if (arr[j] < arr[i]) {
+				t = arr[i];
+				arr[i] = arr[j];
+				arr[j] = t;
+			}
+		}
+	}
+	return 0;
+}
+
 END {
 	# output pipe() syscall with its special retval[2] handling
 	if (rumphaspipe) {
@@ -1127,7 +1152,15 @@ END {
 	}
 
 	# print default rump syscall interfaces
+	# be sure to generate them in a deterministic order, not awk
+	# hash order as would happen with a plain "for (var in funcseen)"
+	numfuncseenvars = 0;
 	for (var in funcseen) {
+		funcseenvars[++numfuncseenvars] = var;
+	}
+	sort(funcseenvars, numfuncseenvars)
+	for (i = 1; i <= numfuncseenvars; i++) {
+		var = funcseenvars[i];
 		printf("#ifndef RUMP_SYS_RENAME_%s\n", \
 		    toupper(var)) > rumpcallshdr
 		printf("#define RUMP_SYS_RENAME_%s rump___sysimpl_%s\n", \

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.29 2020/03/29 21:06:03 maya Exp $
+#	$NetBSD: Makefile,v 1.31 2020/10/31 13:28:22 nia Exp $
 
 .include <bsd.own.mk>
 

@@ -1,7 +1,7 @@
-/* $NetBSD: cpuswitch.S,v 1.15 2020/01/08 20:59:18 skrll Exp $ */
+/* $NetBSD: cpuswitch.S,v 1.31 2020/10/22 07:36:02 skrll Exp $ */
 
 /*-
- * Copyright (c) 2014 The NetBSD Foundation, Inc.
+ * Copyright (c) 2014, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -31,13 +31,16 @@
 
 #include <aarch64/asm.h>
 #include <aarch64/locore.h>
+
 #include "assym.h"
 
-#include "opt_compat_netbsd32.h"
+#include "opt_cpuoptions.h"
 #include "opt_ddb.h"
 #include "opt_kasan.h"
 
-RCSID("$NetBSD: cpuswitch.S,v 1.15 2020/01/08 20:59:18 skrll Exp $")
+RCSID("$NetBSD: cpuswitch.S,v 1.31 2020/10/22 07:36:02 skrll Exp $")
+
+	ARMV8_DEFINE_OPTIONS
 
 /*
  * At IPL_SCHED:
@@ -57,6 +60,10 @@ ENTRY_NP(cpu_switchto)
 	stp	x25, x26, [sp, #TF_X25]
 	stp	x27, x28, [sp, #TF_X27]
 	stp	x29, x30, [sp, #TF_X29]
+#ifdef DDB
+	str	lr, [sp, #TF_PC]		/* for backtrace */
+	str	xzr, [sp, #TF_SP]		/* mark as switchframe */
+#endif
 
 	/*
 	 * Save the current stack pointer and the CPACR and save them in
@@ -69,16 +76,50 @@ ENTRY_NP(cpu_switchto)
 	str	x4, [x6, #PCB_TF]
 
 	/* We are done with the old lwp */
-
-	DISABLE_INTERRUPT
 	ldr	x6, [x1, #L_PCB]	/* x6 = lwp_getpcb(newlwp) */
 	ldr	x4, [x6, #PCB_TF]	/* get trapframe ptr (aka SP) */
+#ifdef DDB
+	str	xzr, [x6, #PCB_TF]	/* clear l->l_addr->pcb_tf */
+#endif
 	ldr	x5, [x1, #L_MD_CPACR]	/* get cpacr_el1 */
+
+	DISABLE_INTERRUPT
 	mov	sp, x4			/* restore stack pointer */
 	msr	cpacr_el1, x5		/* restore cpacr_el1 */
 
-	mrs	x3, tpidr_el1
+#ifdef ARMV83_PAC
+	/* Switch the PAC key. */
+	adrl	x4, _C_LABEL(aarch64_pac_enabled)
+	ldr	w4, [x4]
+	cbz	w4, 1f
+	ldp	x5, x6, [x1, #L_MD_IA_KERN]
+	msr	APIAKeyLo_EL1, x5
+	msr	APIAKeyHi_EL1, x6
+
+	/* Other keys only need to be updated when switching to user process */
+	ldr	w5, [x1, #L_FLAG]
+	and	w5, w5, #LW_SYSTEM	/* (lwp->l_flag & LW_SYSTEM) ? */
+	cbnz	w5, 1f
+
+	ldp	x5, x6, [x1, #L_MD_IB_USER]
+	msr	APIBKeyLo_EL1, x5
+	msr	APIBKeyHi_EL1, x6
+	ldp	x5, x6, [x1, #L_MD_DA_USER]
+	msr	APDAKeyLo_EL1, x5
+	msr	APDAKeyHi_EL1, x6
+	ldp	x5, x6, [x1, #L_MD_DB_USER]
+	msr	APDBKeyLo_EL1, x5
+	msr	APDBKeyHi_EL1, x6
+	ldp	x5, x6, [x1, #L_MD_GA_USER]
+	msr	APGAKeyLo_EL1, x5
+	msr	APGAKeyHi_EL1, x6
+1:
+#endif
+
+	msr	tpidr_el1, x1		/* switch curlwp to new lwp */
+	ldr	x3, [x1, #L_CPU]
 	str	x1, [x3, #CI_CURLWP]	/* switch curlwp to new lwp */
+	dmb	ishst			/* see comments in kern_mutex.c */
 	ENABLE_INTERRUPT
 
 	/*
@@ -120,17 +161,15 @@ ENTRY_NP(cpu_switchto_softint)
 	stp	x23, x24, [sp, #TF_X23]
 	stp	x25, x26, [sp, #TF_X25]
 	stp	x27, x28, [sp, #TF_X27]
-	stp	x29, x2, [sp, #TF_X29]	/* tf->lr = softint_cleanup; */
+	stp	x29, x2, [sp, #TF_X29]	/* tf->tf_lr = softint_cleanup; */
 
-	mrs	x3, tpidr_el1		/* x3 := curcpu() */
-	DISABLE_INTERRUPT
-	ldr	x19, [x3, #CI_CURLWP]	/* x19 := curcpu()->ci_curlwp */
+	mrs	x19, tpidr_el1		/* x19 := curlwp */
 	mov	x4, sp
+
 	mrs	x5, cpacr_el1
 	ldr	x6, [x19, #L_PCB]	/* x6 = lwp_getpcb(curlwp) */
 	str	x4, [x6, #PCB_TF]
 	str	x5, [x19, #L_MD_CPACR]
-	str	x0, [x3, #CI_CURLWP]	/* curcpu()->ci_curlwp = softlwp; */
 
 #ifdef KASAN
 	/* clear the new stack */
@@ -139,25 +178,62 @@ ENTRY_NP(cpu_switchto_softint)
 	ldp	x0, x1, [sp], #16
 #endif
 
-	/* onto new stack */
 	ldr	x4, [x0, #L_MD_UTF]
+
+	DISABLE_INTERRUPT
+	ldr	x20, [x19, #L_CPU]	/* x20 := curlwp->l_cpu */
+
+	/* onto new stack */
 	sub	sp, x4, #TF_SIZE	/* new sp := softlwp->l_md_utf - 1 */
+	msr	tpidr_el1, x0		/* curlwp = softlwp; */
+	str	x0, [x20, #CI_CURLWP]	/* curcpu()->ci_curlwp = softlwp; */
+					/* no need for memory barrier here */
+
 	mov	x5, #CPACR_FPEN_NONE
 	msr	cpacr_el1, x5		/* cpacr_el1 = CPACR_FPEN_NONE */
+
+#ifdef ARMV83_PAC
+	/* Switch the PAC key. */
+	adrl	x4, _C_LABEL(aarch64_pac_enabled)
+	ldr	w4, [x4]
+	cbz	w4, 1f
+	ldp	x5, x6, [x0, #L_MD_IA_KERN]
+	msr	APIAKeyLo_EL1, x5
+	msr	APIAKeyHi_EL1, x6
+1:
+#endif
 	ENABLE_INTERRUPT
 
 	/* softint_dispatch(pinned_lwp, ipl) */
 	mov	x0, x19			/* x0 := pinned_lwp */
 	bl	_C_LABEL(softint_dispatch)
 
-	mrs	x3, tpidr_el1
-	DISABLE_INTERRUPT
-	str	x19, [x3, #CI_CURLWP]	/* curcpu()->ci_curlwp := x19 */
 	ldr	x6, [x19, #L_PCB]	/* x6 = lwp_getpcb(curlwp) */
 	ldr	x4, [x6, #PCB_TF]	/* x4 := pinned_lwp->l_addr->pcb_tf */
+#ifdef DDB
+	str	xzr, [x6, #PCB_TF]	/* clear l->l_addr->pcb_tf */
+#endif
 	ldr	x5, [x19, #L_MD_CPACR]	/* x5 := pinned_lwp->l_md_cpacr */
+
+	DISABLE_INTERRUPT
+	msr	tpidr_el1, x19		/* curlwp = pinned_lwp */
+	ldr	x3, [x19, #L_CPU]	/* x3 = curlwp->l_cpu */
+	str	x19, [x3, #CI_CURLWP]	/* curlwp->l_cpu->ci_curlwp := x19 */
+	dmb	ishst			/* see comments in kern_mutex.c */
+
 	mov	sp, x4			/* restore pinned_lwp sp */
 	msr	cpacr_el1, x5		/* restore pinned_lwp cpacr */
+
+#ifdef ARMV83_PAC
+	/* Restore the PAC key. */
+	adrl	x4, _C_LABEL(aarch64_pac_enabled)
+	ldr	w4, [x4]
+	cbz	w4, 1f
+	ldp	x5, x6, [x19, #L_MD_IA_KERN]
+	msr	APIAKeyLo_EL1, x5
+	msr	APIAKeyHi_EL1, x6
+1:
+#endif
 
 	ldp	x19, x20, [sp, #TF_X19]
 	msr	daif, x19		/* restore interrupt mask */
@@ -181,7 +257,8 @@ END(cpu_switchto_softint)
 ENTRY_NP(softint_cleanup)
 	mov	lr, x20			/* restore original lr */
 
-	mrs	x3, tpidr_el1		/* curcpu() */
+	mrs	x20, tpidr_el1		/* curlwp */
+	ldr	x3, [x20, #L_CPU]	/* curcpu */
 	ldr	w2, [x3, #CI_MTX_COUNT]	/* ->ci_mtx_count */
 	add	w2, w2, #1
 	str	w2, [x3, #CI_MTX_COUNT]
@@ -199,146 +276,34 @@ END(softint_cleanup)
  *	x28 = arg
  */
 ENTRY_NP(lwp_trampoline)
+	stp	x0, x1, [sp, #-16]!	/* save x0, x1 */
 	bl	_C_LABEL(lwp_startup)
+	ldp	x0, x1, [sp], #16	/* restore x0, x1 */
+
+#ifdef ARMV83_PAC
+	/* Generate a new PAC key. */
+	adrl	x4, _C_LABEL(aarch64_pac_enabled)
+	ldr	w4, [x4]
+	cbz	w4, 1f
+	mov	x26, x1
+	bl	_C_LABEL(cprng_strong64)
+	str	x0, [x26, #L_MD_IA_KERN]
+	msr	APIAKeyLo_EL1, x0
+	bl	_C_LABEL(cprng_strong64)
+	str	x0, [x26, #(L_MD_IA_KERN + 8)]
+	msr	APIAKeyHi_EL1, x0
+1:
+#endif
 
 	/*
 	 * When the x27 function returns, it will jump to el0_trap_exit.
 	 */
-	adr	x30, el0_trap_exit	/* tail call via lr */
+	adr	lr, el0_trap_exit	/* tail call via lr */
 	mov	x0, x28			/* mov arg into place */
-	br	x27			/* call function with arg */
+	mov	x16, x27		/* use x16 as jump register, for BTI */
+	br	x16			/* call function with arg */
 END(lwp_trampoline)
 
-	.macro unwind_x0_x2
-	ldp	x0, x1, [sp, #TF_X0]
-	ldr	x2, [sp, #TF_X2]
-	.endm
-
-	.macro unwind_x3_x30
-	ldp	x3, x4, [sp, #TF_X3]
-	ldp	x5, x6, [sp, #TF_X5]
-	ldp	x7, x8, [sp, #TF_X7]
-	ldp	x9, x10, [sp, #TF_X9]
-	ldp	x11, x12, [sp, #TF_X11]
-	ldp	x13, x14, [sp, #TF_X13]
-	ldp	x15, x16, [sp, #TF_X15]
-	ldp	x17, x18, [sp, #TF_X17]
-	ldp	x19, x20, [sp, #TF_X19]
-	ldp	x21, x22, [sp, #TF_X21]
-	ldp	x23, x24, [sp, #TF_X23]
-	ldp	x25, x26, [sp, #TF_X25]
-	ldp	x27, x28, [sp, #TF_X27]
-	ldp	x29, x30, [sp, #TF_X29]
-	.endm
-
-/*
- * EL1 exception return for trap and interrupt.
- */
-#ifdef DDB
-ENTRY_NP(el1_trap)
-	nop				/* dummy for DDB backtrace (for lr-4) */
-#endif
-ENTRY_NP(el1_trap_exit)
-	DISABLE_INTERRUPT		/* make sure I|F marked */
-
-	unwind_x3_x30
-
-#if TF_PC + 8 == TF_SPSR
-	ldp	x0, x1, [sp, #TF_PC]
-#else
-	ldr	x0, [sp, #TF_PC]
-	ldr	x1, [sp, #TF_SPSR]
-#endif
-	msr	elr_el1, x0		/* exception pc */
-	msr	spsr_el1, x1		/* exception pstate */
-
-	/*
-	 * cpu_jump_onfault() modify tf->tf_sp, therefore
-	 * we need to restore sp from trapframe,
-	 * and unwind x0-x2 without sp.
-	 */
-	mov	x0, sp
-	ldr	x1, [x0, #TF_SP]
-	mov	sp, x1
-	ldp	x1, x2, [x0, #TF_X1]
-	ldr	x0, [x0, #TF_X0]
-
-	ERET
-END(el1_trap_exit)
-#ifdef DDB
-END(el1_trap)
-#endif
-
-/*
- * EL0 exception return for trap, interrupt and syscall with
- * possible AST processing.
- */
-#ifdef DDB
-ENTRY_NP(el0_trap)
-	nop				/* dummy for DDB backtrace (for lr-4) */
-#endif
-ENTRY_NP(el0_trap_exit)
-1:
-	/* while (curcpu()->ci_astpending & __BIT(0)) { */
-	mrs	x8, tpidr_el1
-	ldr	w9, [x8, #CI_ASTPENDING]
-	tbz	w9, #0, 9f
-
-	/*  atomic_and_uint(&curcpu()->ci_astpending, ~__BIT(0)); */
-	mov	w1, #~__BIT(0)
-	add	x0, x8, #CI_ASTPENDING
-	bl	_C_LABEL(atomic_and_uint);
-
-	/*  trap_doast(tf); */
-	ENABLE_INTERRUPT
-	mov	x0, sp
-	bl	_C_LABEL(trap_doast)
-	DISABLE_INTERRUPT
-	b	1b
-	/* } */
-9:
-	DISABLE_INTERRUPT		/* make sure I|F marked */
-
-	mrs	x8, tpidr_el1
-	ldr	x9, [x8, #CI_CURLWP]
-	ldr	x23, [x9, #L_MD_CPACR]
-	msr	cpacr_el1, x23		/* FP unit EL0 handover */
-	isb				/* necessary? */
-
-	ldr	x0, [x9, #L_PRIVATE]	/* tpidr_el0 = curlwp->l_private */
-	msr	tpidr_el0, x0
-#ifdef COMPAT_NETBSD32
-	msr	tpidrro_el0, x0
-#endif
-
-	unwind_x3_x30
-
-#if TF_PC + 8 == TF_SPSR
-	ldp	x0, x1, [sp, #TF_PC]
-#else
-	ldr	x0, [sp, #TF_PC]
-	ldr	x1, [sp, #TF_SPSR]
-#endif
-	ldr	x2, [sp, #TF_SP]
-	msr	elr_el1, x0		/* exception pc */
-	msr	spsr_el1, x1		/* exception pstate */
-	msr	sp_el0, x2		/* restore EL0 stack */
-
-	/* if the process is traced, enable MDSCR_EL1.SS */
-	tbz	x1, #SPSR_SS_SHIFT, 1f
-	mrs	x0, mdscr_el1
-	orr	x0, x0, #MDSCR_SS
-	msr	mdscr_el1, x0
-1:
-
-	unwind_x0_x2
-
-	/* leave sp at l_md.md_utf, return back to EL0 user process */
-	ERET
-END(el0_trap_exit)
-#ifdef DDB
-END(el0_trap)
-#endif
 
 #ifdef DDB
 ENTRY_NP(cpu_Debugger)
@@ -351,8 +316,7 @@ END(cpu_Debugger)
  * int cpu_set_onfault(struct faultbuf *fb)
  */
 ENTRY_NP(cpu_set_onfault)
-	mrs	x3, tpidr_el1
-	ldr	x2, [x3, #CI_CURLWP]	/* curlwp = curcpu()->ci_curlwp */
+	mrs	x2, tpidr_el1		/* x2 = curlwp */
 	str	x0, [x2, #L_MD_ONFAULT] /* l_md.md_onfault = fb */
 
 	stp	x19, x20, [x0, #(FB_X19 * 8)]

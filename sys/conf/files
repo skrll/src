@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1264 2020/04/04 19:02:53 jdolecek Exp $
+#	$NetBSD: files,v 1.1277 2020/10/27 08:57:11 ryo Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -37,6 +37,8 @@ defflag				KMSAN
 defflag opt_kmsan.h		KMSAN_PANIC
 defflag				KCOV
 defflag opt_pool.h		POOL_QUARANTINE
+defflag opt_pool.h		POOL_NOCACHE
+defflag				FAULT
 
 defparam opt_copy_symtab.h	makeoptions_COPY_SYMTAB
 
@@ -198,10 +200,12 @@ defflag	opt_machdep.h		MACHDEP
 # use it.
 
 # Individual crypto transforms
+include "crypto/adiantum/files.adiantum"
+include "crypto/aes/files.aes"
+include "crypto/chacha/files.chacha"
 include "crypto/des/files.des"
 include "crypto/blowfish/files.blowfish"
 include "crypto/cast128/files.cast128"
-include "crypto/rijndael/files.rijndael"
 include "crypto/skipjack/files.skipjack"
 include "crypto/camellia/files.camellia"
 # General-purpose crypto processing framework.
@@ -212,6 +216,12 @@ include "crypto/nist_hash_drbg/files.nist_hash_drbg"
 
 # ChaCha-based fast PRNG
 include "crypto/cprng_fast/files.cprng_fast"
+
+# BLAKE2s, a cryptographic hash function optimized for 8- to 32-bit
+include "crypto/blake2/files.blake2s"
+
+# Various cryptography functions
+include "crypto/sodium/files.sodium"
 
 #
 # Kernel history/tracing. Old UVMHIST depends upon this.
@@ -274,7 +284,6 @@ obsolete defflag		IPX		# obsolete
 obsolete defparam opt_md.h	MEMORY_RBFLAGS	# superseded by
 						# MEMORY_DISK_RBFLAGS
 
-defflag	opt_bridge_ipf.h	BRIDGE_IPF	# bridge(4) use inet_pfil_hooks
 defflag	opt_ppp.h		PPP_DEFLATE PPP_BSDCOMP PPP_FILTER
 						# Include deflate or bsd
 						# compression, enable pppd
@@ -451,7 +460,7 @@ define	arcnet
 define	ether
 define	ieee1394
 define	sppp
-define	wlan
+define	wlan: aes
 define	crypto
 
 # TPM
@@ -1393,7 +1402,7 @@ file	dev/ic/amdccp.c			amdccp
 defpseudodev vnd:	disk
 defflag opt_vnd.h	VND_COMPRESSION
 defpseudo ccd:		disk
-defpseudodev cgd:	disk, des, blowfish, cast128
+defpseudodev cgd:	disk, des, blowfish, cast128, aes, adiantum
 defpseudodev md:	disk
 defpseudodev fss:	disk
 
@@ -1411,6 +1420,7 @@ defpseudo pppoe:	ifnet, ether, sppp
 defpseudo tun:		ifnet
 defpseudo vlan:		ifnet, ether
 defpseudo bridge:	ifnet, ether
+defpseudo vether:	ifnet, ether
 defpseudo bpfilter:	ifnet, bpf_filter
 defpseudo strip:	ifnet
 defpseudo gre:		ifnet
@@ -1424,6 +1434,7 @@ defpseudo carp:		ifnet, ether, arp
 defpseudodev l2tp:	ifnet, ether, arp
 defpseudo canloop:	ifnet
 defpseudo ipsecif:	ifnet		# avoid to confuse ipsec itself option
+defpseudo wg:		ifnet, blake2s, libsodium
 
 defpseudo sequencer
 defpseudo clockctl
@@ -1471,7 +1482,7 @@ device	ipmi: sysmon_envsys, sysmon_wdog
 attach	ipmi at ipmibus
 
 # Designware HDMI TX
-device	dwhdmi: edid, videomode, drmkms, drmkms_i2c
+device	dwhdmi: edid, videomode, drmkms, drmkms_i2c, ddc_read_edid
 file	dev/ic/dw_hdmi.c		dwhdmi
 file	dev/ic/dw_hdmi_phy.c		dwhdmi
 
@@ -1482,6 +1493,9 @@ file	dev/ic/anx_dp.c			anxdp
 # Broadcom GENET v5 ethernet
 device	genet: arp, ether, ifnet, mii
 file	dev/ic/bcmgenet.c		genet
+
+# VMware Tools driver
+include "dev/vmt/files.vmt"
 
 #
 # File systems

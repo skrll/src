@@ -1,4 +1,4 @@
-# $NetBSD: shl.mi,v 1.331 2020/04/04 19:26:51 christos Exp $
+# $NetBSD: shl.mi,v 1.344 2020/09/29 18:33:22 roy Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -14,7 +14,8 @@
 ./usr/lib/libatf_pic.a				comp-obsolete		obsolete
 ./usr/lib/libavl_pic.a				comp-zfs-piclib		compatfile,picinstall,zfs
 ./usr/lib/libbind9_pic.a			comp-bind-piclib	compatfile,picinstall
-./usr/lib/libblacklist_pic.a			comp-c-piclib		compatfile,picinstall
+./usr/lib/libblacklist_pic.a			comp-obsolete		obsolete,compatfile
+./usr/lib/libblocklist_pic.a			comp-c-piclib		compatfile,picinstall
 ./usr/lib/libbluetooth_pic.a			comp-c-piclib		compatfile,picinstall
 ./usr/lib/libbozohttpd_pic.a			comp-c-piclib		compatfile,picinstall
 ./usr/lib/libbsdmalloc_pic.a			comp-c-piclib		compatfile,picinstall
@@ -121,10 +122,10 @@
 ./usr/lib/libntp_pic.a				comp-obsolete		obsolete
 ./usr/lib/libnvpair_pic.a			comp-zfs-piclib		compatfile,picinstall,zfs
 ./usr/lib/libobjc_pic.a				comp-objc-piclib	compatfile,picinstall,gcccmds
-./usr/lib/libopcodes.so.9			comp-c-shlib		compatfile,binutils=231
-./usr/lib/libopcodes.so.9.0			comp-c-shlib		compatfile,binutils=231
 ./usr/lib/libopcodes.so.10			comp-c-shlib		compatfile,binutils=234
 ./usr/lib/libopcodes.so.10.0			comp-c-shlib		compatfile,binutils=234
+./usr/lib/libopcodes.so.9			comp-c-shlib		compatfile,binutils=231
+./usr/lib/libopcodes.so.9.0			comp-c-shlib		compatfile,binutils=231
 ./usr/lib/libopenpgpsdk_pic.a			comp-obsolete		obsolete
 ./usr/lib/libossaudio_pic.a			comp-c-piclib		compatfile,picinstall
 ./usr/lib/libp2k_pic.a				comp-puffs-piclib	compatfile,picinstall,rump
@@ -245,13 +246,17 @@
 ./usr/lib/librumpnet_sockin_pic.a		comp-c-piclib		picinstall,rump
 ./usr/lib/librumpnet_tap_pic.a			comp-c-piclib		picinstall,rump
 ./usr/lib/librumpnet_tun_pic.a			comp-c-piclib		picinstall,rump
+./usr/lib/librumpnet_vether_pic.a		comp-c-piclib		picinstall,rump
 ./usr/lib/librumpnet_virtif_pic.a		comp-c-piclib		picinstall,rump
 ./usr/lib/librumpnet_vlan_pic.a			comp-c-piclib		picinstall,rump
+./usr/lib/librumpnet_wg_pic.a			comp-c-piclib		picinstall,rump
+./usr/lib/librumpnet_wireguard_pic.a		comp-obsolete		obsolete
 ./usr/lib/librumpres_pic.a			comp-c-piclib		compatfile,picinstall,rump
 ./usr/lib/librumpuser_pic.a			comp-c-piclib		compatfile,picinstall,rump
 ./usr/lib/librumpvfs_aio_pic.a			comp-c-piclib		picinstall,rump
 ./usr/lib/librumpvfs_fifofs_pic.a		comp-c-piclib		picinstall,rump
 ./usr/lib/librumpvfs_layerfs_pic.a		comp-c-piclib		picinstall,rump
+./usr/lib/librumpvfs_nofifofs_pic.a		comp-c-piclib		picinstall,rump
 ./usr/lib/librumpvfs_pic.a			comp-c-piclib		compatfile,picinstall,rump
 ./usr/lib/libsaslc_pic.a			comp-c-piclib		compatfile,picinstall
 ./usr/lib/libsdp_pic.a				comp-obsolete		obsolete
@@ -270,6 +275,7 @@
 ./usr/lib/libtermlib_pic.a			comp-c-piclib		compatfile,picinstall
 ./usr/lib/libtpm_unseal_pic.a			comp-tpm-lib		compatfile,picinstall,tpm
 ./usr/lib/libtre_pic.a				comp-c-piclib		compatfile,picinstall
+./usr/lib/libtsan_pic.a				comp-c-piclib		arch64,picinstall,cxx,gcc=9,machine=amd64
 ./usr/lib/libtspi_pic.a				comp-c-piclib		compatfile,picinstall,tpm
 ./usr/lib/libubsan_pic.a			comp-c-piclib		compatfile,picinstall,cxx,gcc
 ./usr/lib/libukfs_pic.a				comp-c-piclib		compatfile,picinstall,rump
@@ -279,6 +285,7 @@
 ./usr/lib/libusbhid_pic.a			comp-c-piclib		compatfile,picinstall
 ./usr/lib/libutil_pic.a				comp-c-piclib		compatfile,picinstall
 ./usr/lib/libuutil_pic.a			comp-zfs-piclib		compatfile,picinstall,zfs
+./usr/lib/libuv_pic.a				comp-obsolete		obsolete
 ./usr/lib/libwind_pic.a				comp-c-piclib		compatfile,picinstall,kerberos
 ./usr/lib/libwrap_pic.a				comp-c-piclib		compatfile,picinstall
 ./usr/lib/libz_pic.a				comp-c-piclib		compatfile,picinstall

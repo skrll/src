@@ -1,4 +1,4 @@
-/* $NetBSD: t_siginfo.c,v 1.39 2020/02/22 19:09:51 kamil Exp $ */
+/* $NetBSD: t_siginfo.c,v 1.42 2020/10/13 06:55:25 rin Exp $ */
 
 /*-
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -465,11 +465,21 @@ ATF_TC_BODY(sigbus_adraln, tc)
 		atf_tc_skip("No SIGBUS signal for unaligned accesses");
 #endif
 
+#ifdef __powerpc__
+	/*
+	 * SIGBUS is not mandatory for powerpc; most processors (not all)
+	 * can deal with unaligned accesses.
+	 */
+	atf_tc_skip("SIGBUS signal for unaligned accesses is "
+	    "not mandatory for this architecture");
+#endif
+
 	/* m68k (except sun2) never issue SIGBUS (PR lib/49653),
 	 * same for armv8 or newer */
-	if (strcmp(MACHINE_ARCH, "m68k") == 0 ||
-	    strcmp(MACHINE_ARCH, "aarch64") == 0)
-		atf_tc_skip("No SIGBUS signal for unaligned accesses");
+#if (defined(__m68k__) && !defined(__mc68010__)) || \
+    defined(__aarch64__)
+	atf_tc_skip("No SIGBUS signal for unaligned accesses");
+#endif
 
 	sa.sa_flags = SA_SIGINFO;
 	sa.sa_sigaction = sigbus_action;
@@ -486,7 +496,7 @@ ATF_TC_BODY(sigbus_adraln, tc)
 	addr = calloc(2, sizeof(int));
 	ATF_REQUIRE(addr != NULL);
 
-	if (isQEMU())
+	if (isQEMU_TCG())
 		atf_tc_expect_fail("QEMU fails to trap unaligned accesses");
 
 	/* Force an unaligned access */

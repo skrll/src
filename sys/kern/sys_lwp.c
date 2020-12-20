@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_lwp.c,v 1.76 2020/04/04 20:20:12 thorpej Exp $	*/
+/*	$NetBSD: sys_lwp.c,v 1.82 2020/05/23 23:42:43 ad Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2006, 2007, 2008, 2019, 2020 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_lwp.c,v 1.76 2020/04/04 20:20:12 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_lwp.c,v 1.82 2020/05/23 23:42:43 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -49,6 +49,7 @@ __KERNEL_RCSID(0, "$NetBSD: sys_lwp.c,v 1.76 2020/04/04 20:20:12 thorpej Exp $")
 #include <sys/sleepq.h>
 #include <sys/lwpctl.h>
 #include <sys/cpu.h>
+#include <sys/pserialize.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -76,10 +77,10 @@ mi_startlwp(void *arg)
 	if ((p->p_slflag & (PSL_TRACED|PSL_TRACELWP_CREATE)) ==
 	    (PSL_TRACED|PSL_TRACELWP_CREATE)) {
 		/* Paranoid check */
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		if ((p->p_slflag & (PSL_TRACED|PSL_TRACELWP_CREATE)) !=
 		    (PSL_TRACED|PSL_TRACELWP_CREATE)) { 
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			return;
 		}
 
@@ -171,14 +172,6 @@ sys__lwp_self(struct lwp *l, const void *v, register_t *retval)
 {
 
 	*retval = l->l_lid;
-	return 0;
-}
-
-int
-sys__lwp_gettid(struct lwp *l, const void *v, register_t *retval)
-{
-
-	*retval = lwp_gettid();
 	return 0;
 }
 
@@ -387,14 +380,14 @@ sys__lwp_kill(struct lwp *l, const struct sys__lwp_kill_args *uap,
 	ksi.ksi_uid = kauth_cred_geteuid(l->l_cred);
 	ksi.ksi_lid = SCARG(uap, target);
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	mutex_enter(p->p_lock);
 	if ((t = lwp_find(p, ksi.ksi_lid)) == NULL)
 		error = ESRCH;
 	else if (signo != 0)
 		kpsignal2(p, &ksi);
 	mutex_exit(p->p_lock);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	return error;
 }
@@ -423,8 +416,7 @@ sys__lwp_detach(struct lwp *l, const struct sys__lwp_detach_args *uap,
 		 * We can't use lwp_find() here because the target might
 		 * be a zombie.
 		 */
-		t = radix_tree_lookup_node(&p->p_lwptree,
-		    (uint64_t)(target - 1));
+		t = proc_find_lwp(p, target);
 		KASSERT(t == NULL || t->l_lid == target);
 	}
 
@@ -466,35 +458,33 @@ sys__lwp_detach(struct lwp *l, const struct sys__lwp_detach_args *uap,
 int
 lwp_unpark(const lwpid_t *tp, const u_int ntargets)
 {
-	uint64_t id;
 	u_int target;
-	int error;
+	int error, s;
 	proc_t *p;
 	lwp_t *t;
 
 	p = curproc;
 	error = 0;
 
-	rw_enter(&p->p_treelock, RW_READER);
+	s = pserialize_read_enter();
 	for (target = 0; target < ntargets; target++) {
-		/*
-		 * We don't bother excluding zombies or idle LWPs here, as
-		 * setting LW_UNPARKED on them won't do any harm.
-		 */
-		id = (uint64_t)(tp[target] - 1);
-		t = radix_tree_lookup_node(&p->p_lwptree, id);
-		if (t == NULL) {
+		t = proc_find_lwp_unlocked(p, tp[target]);
+		if (__predict_false(t == NULL)) {
 			error = ESRCH;
 			continue;
 		}
 
-		lwp_lock(t);
-		if (t->l_syncobj == &lwp_park_syncobj) {
+		KASSERT(lwp_locked(t, NULL));
+
+		if (__predict_true(t->l_syncobj == &lwp_park_syncobj)) {
 			/*
 			 * As expected it's parked, so wake it up. 
 			 * lwp_unsleep() will release the LWP lock.
 			 */
 			lwp_unsleep(t, true);
+		} else if (__predict_false(t->l_stat == LSZOMB)) {
+			lwp_unlock(t);
+			error = ESRCH;
 		} else {
 			/*
 			 * It hasn't parked yet because the wakeup side won
@@ -508,7 +498,7 @@ lwp_unpark(const lwpid_t *tp, const u_int ntargets)
 			lwp_unlock(t);
 		}
 	}
-	rw_exit(&p->p_treelock);
+	pserialize_read_exit(s);
 
 	return error;
 }
@@ -542,7 +532,7 @@ lwp_park(clockid_t clock_id, int flags, struct timespec *ts)
 		return EALREADY;
 	}
 	l->l_biglocks = 0;
-	sleepq_enqueue(NULL, l, "parked", &lwp_park_syncobj);
+	sleepq_enqueue(NULL, l, "parked", &lwp_park_syncobj, true);
 	error = sleepq_block(timo, true);
 	switch (error) {
 	case EWOULDBLOCK:

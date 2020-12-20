@@ -1,4 +1,4 @@
-/*	$NetBSD: arcbios.c,v 1.17 2009/11/27 03:23:04 rmind Exp $	*/
+/*	$NetBSD: arcbios.c,v 1.19 2020/08/14 16:53:06 skrll Exp $	*/
 /*	$OpenBSD: arcbios.c,v 1.3 1998/06/06 06:33:33 mickey Exp $	*/
 
 /*-
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arcbios.c,v 1.17 2009/11/27 03:23:04 rmind Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arcbios.c,v 1.19 2020/08/14 16:53:06 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: arcbios.c,v 1.17 2009/11/27 03:23:04 rmind Exp $");
 #include <uvm/uvm_extern.h>
 #include <dev/cons.h>
 #include <machine/cpu.h>
+#include <machine/regdef.h>
 #include <arc/arc/arcbios.h>
 
 int Bios_Read(int, char *, int, int *);
@@ -65,64 +66,6 @@ char arc_displayc_id[64 + 1];		/* DisplayController id */
 arc_dsp_stat_t	arc_displayinfo;	/* Save area for display status info. */
 
 int arc_cpu_l2cache_size = 0;
-
-/*
- *	ARC Bios trampoline code.
- */
-#define ARC_Call(Name,Offset)	\
-__asm("\n"			\
-"	.text\n"		\
-"	.ent	" #Name "\n"	\
-"	.align	3\n"		\
-"	.set	noreorder\n"	\
-"	.globl	" #Name "\n" 	\
-#Name":\n"			\
-"	lw	$2, 0x80001020\n"\
-"	lw	$2," #Offset "($2)\n"\
-"	jr	$2\n"		\
-"	nop\n"			\
-"	.end	" #Name "\n"	);
-
-ARC_Call(Bios_Load,			0x00);
-ARC_Call(Bios_Invoke,			0x04);
-ARC_Call(Bios_Execute,			0x08);
-ARC_Call(Bios_Halt,			0x0c);
-ARC_Call(Bios_PowerDown,		0x10);
-ARC_Call(Bios_Restart,			0x14);
-ARC_Call(Bios_Reboot,			0x18);
-ARC_Call(Bios_EnterInteractiveMode,	0x1c);
-ARC_Call(Bios_Unused1,			0x20);	/* return_from_main? */
-ARC_Call(Bios_GetPeer,			0x24);
-ARC_Call(Bios_GetChild,			0x28);
-ARC_Call(Bios_GetParent,		0x2c);
-ARC_Call(Bios_GetConfigurationData,	0x30);
-ARC_Call(Bios_AddChild,			0x34);
-ARC_Call(Bios_DeleteComponent,		0x38);
-ARC_Call(Bios_GetComponent,		0x3c);
-ARC_Call(Bios_SaveConfiguration,	0x40);
-ARC_Call(Bios_GetSystemId,		0x44);
-ARC_Call(Bios_GetMemoryDescriptor,	0x48);
-ARC_Call(Bios_Unused2,			0x4c);	/* signal??? */
-ARC_Call(Bios_GetTime,			0x50);
-ARC_Call(Bios_GetRelativeTime,		0x54);
-ARC_Call(Bios_GetDirectoryEntry,	0x58);
-ARC_Call(Bios_Open,			0x5c);
-ARC_Call(Bios_Close,			0x60);
-ARC_Call(Bios_Read,			0x64);
-ARC_Call(Bios_GetReadStatus,		0x68);
-ARC_Call(Bios_Write,			0x6c);
-ARC_Call(Bios_Seek,			0x70);
-ARC_Call(Bios_Mount,			0x74);
-ARC_Call(Bios_GetEnvironmentVariable,	0x78);
-ARC_Call(Bios_SetEnvironmentVariable,	0x7c);
-ARC_Call(Bios_GetFileInformation,	0x80);
-ARC_Call(Bios_SetFileInformation,	0x84);
-ARC_Call(Bios_FlushAllCaches,		0x88);
-/* note: the followings don't exist on SGI */
-#ifdef arc
-ARC_Call(Bios_TestUnicodeCharacter,	0x8c);
-ARC_Call(Bios_GetDisplayStatus,		0x90);
-#endif
 
 /*
  *	BIOS based console, for early stage.

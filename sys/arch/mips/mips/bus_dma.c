@@ -1,4 +1,4 @@
-/*	$NetBSD: bus_dma.c,v 1.40 2020/03/14 18:08:38 ad Exp $	*/
+/*	$NetBSD: bus_dma.c,v 1.42 2020/07/16 13:32:05 simonb Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 2001, 2020 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.40 2020/03/14 18:08:38 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.42 2020/07/16 13:32:05 simonb Exp $");
 
 #define _MIPS_BUS_DMA_PRIVATE
 
@@ -829,7 +829,7 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 	    || (ops & (BUS_DMASYNC_PREREAD|BUS_DMASYNC_PREWRITE)) == 0)
 		goto bounce_it;
 
-#ifdef _mips_o32
+#ifdef __mips_o32
 	/*
 	 * If the mapping belongs to the kernel, or it belongs
 	 * to the currently-running process (XXX actually, vmspace),
@@ -859,10 +859,10 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 		minlen = ulmin(len, seg->ds_len - offset);
 
 #ifdef BUS_DMA_DEBUG
-		printf("bus_dmamap_sync(op=%d: flushing segment %p "
+		printf("bus_dmamap_sync(ops=%d: flushing segment %p "
 		    "(0x%"PRIxREGISTER"+%"PRIxBUSADDR
 		    ", 0x%"PRIxREGISTER"+0x%"PRIxBUSADDR
-		    ") (olen = %"PRIxBUSADDR")...", op, seg,
+		    ") (olen = %"PRIxBUSADDR")...", ops, seg,
 		    vaddr - offset, offset,
 		    vaddr - offset, offset + minlen - 1, len);
 #endif
@@ -871,7 +871,7 @@ _bus_dmamap_sync(bus_dma_tag_t t, bus_dmamap_t map, bus_addr_t offset,
 		 * If we are forced to use Index ops, it's always a
 		 * Write-back,Invalidate, so just do one test.
 		 */
-#ifdef mips_o32
+#ifdef __mips_o32
 		if (__predict_false(useindex || vaddr == 0)) {
 			mips_dcache_wbinv_range_index(vaddr, minlen);
 #ifdef BUS_DMA_DEBUG

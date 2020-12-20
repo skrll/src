@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ptrace_wait.h,v 1.27 2020/03/08 15:07:44 martin Exp $	*/
+/*	$NetBSD: t_ptrace_wait.h,v 1.32 2020/06/22 12:21:02 rin Exp $	*/
 
 /*-
  * Copyright (c) 2016, 2017, 2018, 2019 The NetBSD Foundation, Inc.
@@ -654,9 +654,7 @@ trigger_ill(void)
 #endif
 }
 
-#ifdef __HAVE_FENV
 #include <fenv.h>
-#endif
 
 #if (__arm__ && !__SOFTFP__) || __aarch64__
 #include <ieeefp.h> /* only need for ARM Cortex/Neon hack */
@@ -680,15 +678,28 @@ are_fpu_exceptions_supported(void)
 static void __used
 trigger_fpe(void)
 {
-	volatile int a = getpid();
-	volatile int b = atoi("0");
+#if __i386__ || __x86_64__
+	/*
+	 * XXX
+	 * Hack for QEMU bug #1668041, by which floating-point division by
+	 * zero is not trapped correctly. Also, assertions for si_code in
+	 * ptrace_signal_wait.h are commented out. Clean them up after the
+	 * bug is fixed.
+	 */
+	volatile int a, b;
+#else
+	volatile double a, b;
+#endif
+
+	a = getpid();
+	b = atoi("0");
 
 #ifdef __HAVE_FENV
 	feenableexcept(FE_ALL_EXCEPT);
 #endif
 
 	/* Division by zero causes CPU trap, translated to SIGFPE */
-	usleep(a / b);
+	usleep((int)(a / b));
 }
 
 static void __used
@@ -742,6 +753,18 @@ find_event_count(struct lwp_event_count list[], lwpid_t lwp, size_t max_lwps)
 #define ATF_TP_ADD_TC_HAVE_PID(a,b)	ATF_TP_ADD_TC(a,b)
 #else
 #define ATF_TP_ADD_TC_HAVE_PID(a,b)
+#endif
+
+#if defined(TWAIT_HAVE_STATUS)
+#define ATF_TP_ADD_TC_HAVE_STATUS(a,b)	ATF_TP_ADD_TC(a,b)
+#else
+#define ATF_TP_ADD_TC_HAVE_STATUS(a,b)
+#endif
+
+#if defined(TWAIT_HAVE_STATUS) && (defined(__i386__) || defined(__x86_64__))
+#define ATF_TP_ADD_TC_HAVE_STATUS_X86(a,b)	ATF_TP_ADD_TC(a,b)
+#else
+#define ATF_TP_ADD_TC_HAVE_STATUS_X86(a,b)
 #endif
 
 #if defined(HAVE_GPREGS)

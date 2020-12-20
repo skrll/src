@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi_ec.c,v 1.77 2019/08/06 01:53:47 msaitoh Exp $	*/
+/*	$NetBSD: acpi_ec.c,v 1.84 2020/06/15 15:29:46 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 2007 Joerg Sonnenberger <joerg@NetBSD.org>.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_ec.c,v 1.77 2019/08/06 01:53:47 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_ec.c,v 1.84 2020/06/15 15:29:46 jdolecek Exp $");
 
 #include <sys/param.h>
 #include <sys/callout.h>
@@ -101,7 +101,7 @@ ACPI_MODULE_NAME            ("acpi_ec")
 #define	EC_STATUS_SCI		0x20
 #define	EC_STATUS_SMI		0x40
 
-static const char *ec_hid[] = {
+static const char * const ec_hid[] = {
 	"PNP0C09",
 	NULL,
 };
@@ -265,6 +265,11 @@ acpiec_attach(device_t parent, device_t self, void *aux)
 	if (ec_singleton != NULL) {
 		aprint_naive(": using %s\n", device_xname(ec_singleton));
 		aprint_normal(": using %s\n", device_xname(ec_singleton));
+		goto fail0;
+	}
+
+	if (!acpi_device_present(aa->aa_node->ad_handle)) {
+		aprint_normal(": not present\n");
 		goto fail0;
 	}
 
@@ -657,36 +662,40 @@ static ACPI_STATUS
 acpiec_space_handler(uint32_t func, ACPI_PHYSICAL_ADDRESS paddr,
     uint32_t width, ACPI_INTEGER *value, void *arg, void *region_arg)
 {
-	device_t dv = arg;
+	device_t dv;
 	ACPI_STATUS rv;
-	uint8_t addr;
-	uint8_t *reg;
+	uint8_t addr, *buf;
+	unsigned int i;
 
-	if ((func != ACPI_READ) && (func != ACPI_WRITE)) {
-		aprint_error("%s: invalid Address Space function called: %x\n",
-		    device_xname(dv), (unsigned int)func);
-		return AE_BAD_PARAMETER;
-	}
-	if (paddr > 0xff || width % 8 != 0 || value == NULL || arg == NULL ||
-	    paddr + width / 8 > 0x100)
+	if (paddr > 0xff || width % 8 != 0 ||
+	    value == NULL || arg == NULL || paddr + width / 8 > 0x100)
 		return AE_BAD_PARAMETER;
 
 	addr = paddr;
-	reg = (uint8_t *)value;
+	dv = arg;
+	buf = (uint8_t *)value;
 
 	rv = AE_OK;
 
-	if (func == ACPI_READ)
-		*value = 0;
-
-	for (addr = paddr; addr < (paddr + width / 8); addr++, reg++) {
-		if (func == ACPI_READ)
-			rv = acpiec_read(dv, addr, reg);
-		else
-			rv = acpiec_write(dv, addr, *reg);
-
-		if (rv != AE_OK)
-			break;
+	switch (func) {
+	case ACPI_READ:
+		for (i = 0; i < width; i += 8, ++addr, ++buf) {
+			rv = acpiec_read(dv, addr, buf);
+			if (rv != AE_OK)
+				break;
+		}
+		break;
+	case ACPI_WRITE:
+		for (i = 0; i < width; i += 8, ++addr, ++buf) {
+			rv = acpiec_write(dv, addr, *buf);
+			if (rv != AE_OK)
+				break;
+		}
+		break;
+	default:
+		aprint_error("%s: invalid Address Space function called: %x\n",
+		    device_xname(dv), (unsigned int)func);
+		return AE_BAD_PARAMETER;
 	}
 
 	return rv;

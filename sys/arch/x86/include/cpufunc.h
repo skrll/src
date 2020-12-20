@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.h,v 1.37 2019/10/30 17:06:57 maxv Exp $	*/
+/*	$NetBSD: cpufunc.h,v 1.42 2020/10/24 07:14:29 mgorny Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2019 The NetBSD Foundation, Inc.
@@ -89,24 +89,51 @@ invpcid(register_t op, uint64_t pcid, vaddr_t va)
 	);
 }
 
-static inline uint64_t
-rdtsc(void)
-{
-	uint32_t low, high;
+extern uint64_t (*rdtsc)(void);
 
-	__asm volatile (
-		"rdtsc"
-		: "=a" (low), "=d" (high)
-		:
-	);
+#define _SERIALIZE_lfence	__asm volatile ("lfence")
+#define _SERIALIZE_mfence	__asm volatile ("mfence")
+#define _SERIALIZE_cpuid	__asm volatile ("xor %%eax, %%eax;cpuid" ::: \
+	    "eax", "ebx", "ecx", "edx");
 
-	return (low | ((uint64_t)high << 32));
+#define RDTSCFUNC(fence)			\
+static inline uint64_t				\
+rdtsc_##fence(void)				\
+{						\
+	uint32_t low, high;			\
+						\
+	_SERIALIZE_##fence;			\
+	__asm volatile (			\
+		"rdtsc"				\
+		: "=a" (low), "=d" (high)	\
+		:				\
+	);					\
+						\
+	return (low | ((uint64_t)high << 32));	\
 }
 
-#ifndef XEN
-void	x86_hotpatch(uint32_t, const uint8_t *, size_t);
-void	x86_patch_window_open(u_long *, u_long *);
-void	x86_patch_window_close(u_long, u_long);
+RDTSCFUNC(lfence)
+RDTSCFUNC(mfence)
+RDTSCFUNC(cpuid)
+
+#undef _SERIALIZE_LFENCE
+#undef _SERIALIZE_MFENCE
+#undef _SERIALIZE_CPUID
+
+
+#ifndef XENPV
+struct x86_hotpatch_source {
+	uint8_t *saddr;
+	uint8_t *eaddr;
+};
+
+struct x86_hotpatch_descriptor {
+	uint8_t name;
+	uint8_t nsrc;
+	const struct x86_hotpatch_source *srcs[];
+};
+
+void	x86_hotpatch(uint8_t, uint8_t);
 void	x86_patch(bool);
 #endif
 
@@ -372,7 +399,7 @@ fnsave(void *addr)
 }
 
 static inline void
-frstor(void *addr)
+frstor(const void *addr)
 {
 	const uint8_t *area = addr;
 
@@ -398,7 +425,7 @@ fxsave(void *addr)
 }
 
 static inline void
-fxrstor(void *addr)
+fxrstor(const void *addr)
 {
 	const uint8_t *area = addr;
 
@@ -443,7 +470,7 @@ xsaveopt(void *addr, uint64_t mask)
 }
 
 static inline void
-xrstor(void *addr, uint64_t mask)
+xrstor(const void *addr, uint64_t mask)
 {
 	const uint8_t *area = addr;
 	uint32_t low, high;
@@ -457,6 +484,82 @@ xrstor(void *addr, uint64_t mask)
 		: "memory"
 	);
 }
+
+#ifdef __x86_64__
+static inline void
+fxsave64(void *addr)
+{
+	uint8_t *area = addr;
+
+	__asm volatile (
+		"fxsave64	%[area]"
+		: [area] "=m" (*area)
+		:
+		: "memory"
+	);
+}
+
+static inline void
+fxrstor64(const void *addr)
+{
+	const uint8_t *area = addr;
+
+	__asm volatile (
+		"fxrstor64 %[area]"
+		:
+		: [area] "m" (*area)
+		: "memory"
+	);
+}
+
+static inline void
+xsave64(void *addr, uint64_t mask)
+{
+	uint8_t *area = addr;
+	uint32_t low, high;
+
+	low = mask;
+	high = mask >> 32;
+	__asm volatile (
+		"xsave64	%[area]"
+		: [area] "=m" (*area)
+		: "a" (low), "d" (high)
+		: "memory"
+	);
+}
+
+static inline void
+xsaveopt64(void *addr, uint64_t mask)
+{
+	uint8_t *area = addr;
+	uint32_t low, high;
+
+	low = mask;
+	high = mask >> 32;
+	__asm volatile (
+		"xsaveopt64 %[area]"
+		: [area] "=m" (*area)
+		: "a" (low), "d" (high)
+		: "memory"
+	);
+}
+
+static inline void
+xrstor64(const void *addr, uint64_t mask)
+{
+	const uint8_t *area = addr;
+	uint32_t low, high;
+
+	low = mask;
+	high = mask >> 32;
+	__asm volatile (
+		"xrstor64 %[area]"
+		:
+		: [area] "m" (*area), "a" (low), "d" (high)
+		: "memory"
+	);
+}
+#endif
 
 /* -------------------------------------------------------------------------- */
 

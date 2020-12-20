@@ -1,4 +1,4 @@
-# $NetBSD: XEN3PAE_DOMU,v 1.10 2020/04/10 20:56:56 jdolecek Exp $
+# $NetBSD: XEN3PAE_DOMU,v 1.16 2020/09/27 13:48:51 roy Exp $
 
 include 	"arch/i386/conf/std.xen"
 
@@ -67,8 +67,6 @@ options 	COMPAT_NOMID	# NetBSD 0.8, 386BSD, and BSDI
 #options 	COMPAT_386BSD_MBRPART # recognize old partition ID
 
 options 	COMPAT_OSSAUDIO	# OSS (Voxware) audio driver compatibility
-options 	COMPAT_LINUX	# binary compatibility with Linux
-#options 	COMPAT_FREEBSD	# binary compatibility with FreeBSD
 
 # Wedge support
 options 	DKWEDGE_AUTODISCOVER	# Automatically add dk(4) instances
@@ -150,8 +148,6 @@ options 	NFS_BOOT_DHCP,NFS_BOOT_BOOTPARAM
 #options 	NFS_BOOTSTATIC_SERVADDR="\"169.254.1.1\""
 #options 	NFS_BOOTSTATIC_SERVER="\"server:/path/to/root\""
 
-options 	MAXPHYS=32768	#xbd doesn't handle 64k transfers
-
 config		netbsd	root on ? type ?
 #config		netbsd	root on wd0a type ffs
 #config		netbsd	root on xennet0 type nfs
@@ -210,7 +206,7 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC 1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	l2tp			# L2TPv3 interface
 pseudo-device	npf			# NPF packet filter
 

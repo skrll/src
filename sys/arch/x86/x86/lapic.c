@@ -1,7 +1,7 @@
-/*	$NetBSD: lapic.c,v 1.76 2019/12/01 08:23:09 maxv Exp $	*/
+/*	$NetBSD: lapic.c,v 1.85 2020/10/27 08:57:11 ryo Exp $	*/
 
 /*-
- * Copyright (c) 2000, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 2000, 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lapic.c,v 1.76 2019/12/01 08:23:09 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lapic.c,v 1.85 2020/10/27 08:57:11 ryo Exp $");
 
 #include "acpica.h"
 #include "ioapic.h"
@@ -41,6 +41,8 @@ __KERNEL_RCSID(0, "$NetBSD: lapic.c,v 1.76 2019/12/01 08:23:09 maxv Exp $");
 #include "opt_mpbios.h"		/* for MPDEBUG */
 #include "opt_multiprocessor.h"
 #include "opt_ntp.h"
+#include "opt_xen.h"
+
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -52,6 +54,7 @@ __KERNEL_RCSID(0, "$NetBSD: lapic.c,v 1.76 2019/12/01 08:23:09 maxv Exp $");
 
 #include <dev/ic/i8253reg.h>
 
+#include <x86/machdep.h>
 #include <machine/cpu.h>
 #include <machine/cpu_counter.h>
 #include <machine/cpufunc.h>
@@ -70,6 +73,7 @@ __KERNEL_RCSID(0, "$NetBSD: lapic.c,v 1.76 2019/12/01 08:23:09 maxv Exp $");
 #include <machine/i82489reg.h>
 #include <machine/i82489var.h>
 
+#ifndef XENPV
 #if NACPICA > 0
 #include <dev/acpi/acpica.h>
 #include <dev/acpi/acpivar.h>
@@ -86,8 +90,8 @@ extern int ddb_vec;
 #endif
 #endif
 
-#include <x86/x86/vmtreg.h>	/* for vmt_hvcall() */
-#include <x86/x86/vmtvar.h>	/* for vmt_hvcall() */
+#include <dev/vmt/vmtreg.h>	/* for vmt_hvcall() */
+#include <dev/vmt/vmtvar.h>	/* for vmt_hvcall() */
 
 /* Referenced from vector.S */
 void		lapic_clockintr(void *, struct intrframe *);
@@ -111,6 +115,9 @@ struct pic local_pic = {
 	.pic_hwunmask = lapic_hwunmask,
 	.pic_addroute = lapic_setup,
 	.pic_delroute = lapic_setup,
+	.pic_intr_get_devname = x86_intr_get_devname,
+	.pic_intr_get_assigned = x86_intr_get_assigned,
+	.pic_intr_get_count = x86_intr_get_count,
 };
 
 static int i82489_ipi(int vec, int target, int dl);
@@ -278,7 +285,7 @@ lapic_setup_bsp(paddr_t lapic_base)
 			    !ISSET(regs[0], VCPUINFO_LEGACY_X2APIC))
 				reason = "inside VMWare without intr "
 				    "redirection";
-		} else if (vm_guest == VM_GUEST_XEN) {
+		} else if (vm_guest == VM_GUEST_XENHVM) {
 			reason = "due to running under XEN";
 		} else if (vm_guest == VM_GUEST_NO &&
 		    CPUID_TO_FAMILY(curcpu()->ci_signature) == 6 &&
@@ -331,6 +338,8 @@ lapic_setup_bsp(paddr_t lapic_base)
 #endif
 #if defined(DDB) && defined(MULTIPROCESSOR)
 #ifdef __x86_64__
+		struct idt_vec *iv = &(cpu_info_primary.ci_idtvec);
+		idt_descriptor_t *idt = iv->iv_idt;
 		set_idtgate(&idt[ddb_vec], &Xintr_x2apic_ddbipi, 1,
 		    SDT_SYS386IGT, SEL_KPL, GSEL(GCODE_SEL, SEL_KPL));
 #else
@@ -468,23 +477,24 @@ lapic_set_lvt(void)
 void
 lapic_boot_init(paddr_t lapic_base)
 {
+	struct idt_vec *iv = &(cpu_info_primary.ci_idtvec);
 
 	lapic_setup_bsp(lapic_base);
 
 #ifdef MULTIPROCESSOR
-	idt_vec_reserve(LAPIC_IPI_VECTOR);
-	idt_vec_set(LAPIC_IPI_VECTOR,
+	idt_vec_reserve(iv, LAPIC_IPI_VECTOR);
+	idt_vec_set(iv, LAPIC_IPI_VECTOR,
 	    x2apic_mode ? Xintr_x2apic_ipi : Xintr_lapic_ipi);
 
-	idt_vec_reserve(LAPIC_TLB_VECTOR);
-	idt_vec_set(LAPIC_TLB_VECTOR,
+	idt_vec_reserve(iv, LAPIC_TLB_VECTOR);
+	idt_vec_set(iv, LAPIC_TLB_VECTOR,
 	    x2apic_mode ? Xintr_x2apic_tlb : Xintr_lapic_tlb);
 #endif
-	idt_vec_reserve(LAPIC_SPURIOUS_VECTOR);
-	idt_vec_set(LAPIC_SPURIOUS_VECTOR, Xintrspurious);
+	idt_vec_reserve(iv, LAPIC_SPURIOUS_VECTOR);
+	idt_vec_set(iv, LAPIC_SPURIOUS_VECTOR, Xintrspurious);
 
-	idt_vec_reserve(LAPIC_TIMER_VECTOR);
-	idt_vec_set(LAPIC_TIMER_VECTOR,
+	idt_vec_reserve(iv, LAPIC_TIMER_VECTOR);
+	idt_vec_set(iv, LAPIC_TIMER_VECTOR,
 	    x2apic_mode ? Xintr_x2apic_ltimer : Xintr_lapic_ltimer);
 }
 
@@ -546,18 +556,15 @@ lapic_get_timecount(struct timecounter *tc)
 }
 
 static struct timecounter lapic_timecounter = {
-	lapic_get_timecount,
-	NULL,
-	~0u,
-	0,
-	"lapic",
+	.tc_get_timecount = lapic_get_timecount,
+	.tc_counter_mask = ~0u,
+	.tc_name = "lapic",
+	.tc_quality =
 #ifndef MULTIPROCESSOR
-	2100,
+	    2100,
 #else
-	-100, /* per CPU state */
+	    -100, /* per CPU state */
 #endif
-	NULL,
-	NULL,
 };
 
 extern u_int i8254_get_timecount(struct timecounter *);
@@ -573,11 +580,10 @@ lapic_clockintr(void *arg, struct intrframe *frame)
 }
 
 void
-lapic_initclocks(void)
+lapic_reset(void)
 {
+
 	/*
-	 * Start local apic countdown timer running, in repeated mode.
-	 *
 	 * Mask the clock interrupt and set mode,
 	 * then set divisor,
 	 * then unmask and set the vector.
@@ -591,8 +597,28 @@ lapic_initclocks(void)
 	lapic_writereg(LAPIC_EOI, 0);
 }
 
-extern u_long rtclock_tval; /* XXX put in header file */
-extern void (*initclock_func)(void); /* XXX put in header file */
+static void
+lapic_initclock(void)
+{
+
+	if (curcpu() == &cpu_info_primary) {
+		/*
+		 * Recalibrate the timer using the cycle counter, now that
+		 * the cycle counter itself has been recalibrated.
+		 */
+		lapic_calibrate_timer(true);
+
+		/*
+		 * Hook up time counter.  This assume that all LAPICs have
+		 * the same frequency.
+		 */
+		lapic_timecounter.tc_frequency = lapic_per_second;
+		tc_init(&lapic_timecounter);
+	}
+
+	/* Start local apic countdown timer running, in repeated mode. */
+	lapic_reset();
+}
 
 /*
  * Calibrate the local apic count-down timer (which is running at
@@ -606,50 +632,71 @@ extern void (*initclock_func)(void); /* XXX put in header file */
  * We're actually using the IRQ0 timer.  Hmm.
  */
 void
-lapic_calibrate_timer(struct cpu_info *ci)
+lapic_calibrate_timer(bool secondpass)
 {
-	unsigned int seen, delta, initial_i8254, initial_lapic;
-	unsigned int cur_i8254, cur_lapic;
+	struct cpu_info *ci = curcpu();
 	uint64_t tmp;
 	int i;
 	char tbuf[9];
 
-	if (lapic_per_second != 0)
-		goto calibrate_done;
+	KASSERT(ci == &cpu_info_primary);
 
-	aprint_debug_dev(ci->ci_dev, "calibrating local timer\n");
+	aprint_debug_dev(ci->ci_dev, "[re]calibrating local timer\n");
 
 	/*
 	 * Configure timer to one-shot, interrupt masked,
 	 * large positive number.
 	 */
+	x86_disable_intr();
 	lapic_writereg(LAPIC_LVT_TIMER, LAPIC_LVT_MASKED);
 	lapic_writereg(LAPIC_DCR_TIMER, LAPIC_DCRT_DIV1);
 	lapic_writereg(LAPIC_ICR_TIMER, 0x80000000);
+	(void)lapic_gettick();
 
-	x86_disable_intr();
+	if (secondpass && cpu_hascounter()) {
+		/*
+		 * Second pass calibration, using the TSC which has ideally
+		 * been calibrated using the HPET or information gleaned
+		 * from MSRs by this point.
+		 */
+		uint64_t l0, l1, t0, t1;
 
-	initial_lapic = lapic_gettick();
-	initial_i8254 = gettick();
+		(void)cpu_counter();
+		t0 = cpu_counter();
+		l0 = lapic_gettick();
+		t0 += cpu_counter();
+		DELAY(50000);
+		t1 = cpu_counter();
+		l1 = lapic_gettick();
+		t1 += cpu_counter();
 
-	for (seen = 0; seen < TIMER_FREQ / 100; seen += delta) {
-		cur_i8254 = gettick();
-		if (cur_i8254 > initial_i8254)
-			delta = rtclock_tval - (cur_i8254 - initial_i8254);
-		else
-			delta = initial_i8254 - cur_i8254;
-		initial_i8254 = cur_i8254;
+		tmp = (l0 - l1) * cpu_frequency(ci) / ((t1 - t0 + 1) / 2);
+		lapic_per_second = rounddown(tmp + 500, 1000);
+	} else if (lapic_per_second == 0) {
+		/*
+		 * Inaccurate first pass calibration using the i8254.
+		 */
+		unsigned int seen, delta, initial_i8254, initial_lapic;
+		unsigned int cur_i8254, cur_lapic;
+
+		(void)gettick();
+		initial_lapic = lapic_gettick();
+		initial_i8254 = gettick();
+		for (seen = 0; seen < TIMER_FREQ / 100; seen += delta) {
+			cur_i8254 = gettick();
+			if (cur_i8254 > initial_i8254)
+				delta = x86_rtclock_tval - (cur_i8254 - initial_i8254);
+			else
+				delta = initial_i8254 - cur_i8254;
+			initial_i8254 = cur_i8254;
+		}
+		cur_lapic = lapic_gettick();
+		tmp = initial_lapic - cur_lapic;
+		lapic_per_second = (tmp * TIMER_FREQ + seen / 2) / seen;
 	}
-	cur_lapic = lapic_gettick();
-
 	x86_enable_intr();
 
-	tmp = initial_lapic - cur_lapic;
-	lapic_per_second = (tmp * TIMER_FREQ + seen / 2) / seen;
-
-calibrate_done:
 	humanize_number(tbuf, sizeof(tbuf), lapic_per_second, "Hz", 1000);
-
 	aprint_debug_dev(ci->ci_dev, "apic clock running at %s\n", tbuf);
 
 	if (lapic_per_second != 0) {
@@ -699,17 +746,10 @@ calibrate_done:
 		 * Now that the timer's calibrated, use the apic timer routines
 		 * for all our timing needs..
 		 */
-		delay_func = lapic_delay;
-		initclock_func = lapic_initclocks;
-		initrtclock(0);
-
-		if (lapic_timecounter.tc_frequency == 0) {
-			/*
-			 * Hook up time counter.
-			 * This assume that all LAPICs have the same frequency.
-			 */
-			lapic_timecounter.tc_frequency = lapic_per_second;
-			tc_init(&lapic_timecounter);
+		if (!secondpass) {
+			delay_func = lapic_delay;
+			x86_initclock_func = lapic_initclock;
+			initrtclock(0);
 		}
 	}
 }
@@ -722,12 +762,17 @@ static void
 lapic_delay(unsigned int usec)
 {
 	int32_t xtick, otick;
-	int64_t deltat;		/* XXX may want to be 64bit */
+	int64_t deltat;
 
+	/* XXX Bad to disable preemption, but it's tied to the cpu. */
+	kpreempt_disable();
 	otick = lapic_gettick();
 
-	if (usec <= 0)
+	if (usec <= 0) {
+		kpreempt_enable();
 		return;
+	}
+
 	if (usec <= 25)
 		deltat = lapic_delaytab[usec];
 	else
@@ -736,7 +781,7 @@ lapic_delay(unsigned int usec)
 	while (deltat > 0) {
 		xtick = lapic_gettick();
 		if (lapic_broken_periodic && xtick == 0 && otick == 0) {
-			lapic_initclocks();
+			lapic_reset();
 			xtick = lapic_gettick();
 			if (xtick == 0)
 				panic("lapic timer stopped ticking");
@@ -749,6 +794,7 @@ lapic_delay(unsigned int usec)
 
 		x86_pause();
 	}
+	kpreempt_enable();
 }
 
 /*
@@ -784,7 +830,7 @@ i82489_ipi_init(int target)
 
 	i82489_writereg(LAPIC_ICRLO, LAPIC_DLMODE_INIT | LAPIC_LEVEL_ASSERT);
 	i82489_icr_wait();
-	x86_delay(10000);
+	delay_func(10000);
 	i82489_writereg(LAPIC_ICRLO,
 	    LAPIC_DLMODE_INIT | LAPIC_TRIGMODE_LEVEL | LAPIC_LEVEL_DEASSERT);
 	i82489_icr_wait();
@@ -856,7 +902,7 @@ x2apic_ipi_init(int target)
 
 	x2apic_write_icr(target, LAPIC_DLMODE_INIT | LAPIC_LEVEL_ASSERT);
 
-	x86_delay(10000);
+	delay_func(10000);
 
 	x2apic_write_icr(0,
 	    LAPIC_DLMODE_INIT | LAPIC_TRIGMODE_LEVEL | LAPIC_LEVEL_DEASSERT);
@@ -963,3 +1009,9 @@ lapic_dump(void)
 
 #undef APIC_LVT_PRIINT
 }
+#else /* XENPV */
+void
+lapic_boot_init(paddr_t lapic_base)
+{
+}
+#endif /* XENPV */

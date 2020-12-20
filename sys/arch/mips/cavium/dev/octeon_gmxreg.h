@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_gmxreg.h,v 1.1 2015/04/29 08:32:01 hikaru Exp $	*/
+/*	$NetBSD: octeon_gmxreg.h,v 1.5 2020/06/23 05:17:13 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -169,7 +169,9 @@
 
 /* GMX Port Configuration Registers */
 
-#define	PRTN_CFG_XXX_63_4			UINT64_C(0xfffffffffffffff0)
+#define	PRTN_CFG_XXX_63_9			UINT64_C(0xfffffffffffffe00)
+#define	PRTN_CFG_SPEED_MSB			UINT64_C(0x0000000000000100)
+#define	PRTN_CFG_XXX_7_4			UINT64_C(0x00000000000000f0)
 #define	PRTN_CFG_SLOTTIME			UINT64_C(0x0000000000000008)
 #define	PRTN_CFG_DUPLEX				UINT64_C(0x0000000000000004)
 #define	PRTN_CFG_SPEED				UINT64_C(0x0000000000000002)
@@ -245,15 +247,13 @@
 
 #define	RXN_RX_INBND_XXX_63_4			UINT64_C(0xfffffffffffffff0)
 #define	RXN_RX_INBND_DUPLEX			UINT64_C(0x0000000000000008)
-#define	 RXN_RX_INBND_DUPLEX_SHIFT		3
-#define	  RXN_RX_INBND_DUPLEX_HALF		(0ULL << RXN_RX_INBND_DUPLEX_SHIFT)
-#define	  RXN_RX_INBND_DUPLEX_FULL		(1ULL << RXN_RX_INBND_DUPLEX_SHIFT)
+#define	  RXN_RX_INBND_DUPLEX_HALF		  0
+#define	  RXN_RX_INBND_DUPLEX_FULL		  1
 #define	RXN_RX_INBND_SPEED			UINT64_C(0x0000000000000006)
-#define	 RXN_RX_INBND_SPEED_SHIFT		1
-#define	  RXN_RX_INBND_SPEED_2_5		(0ULL << RXN_RX_INBND_SPEED_SHIFT)
-#define	  RXN_RX_INBND_SPEED_25			(1ULL << RXN_RX_INBND_SPEED_SHIFT)
-#define	  RXN_RX_INBND_SPEED_125		(2ULL << RXN_RX_INBND_SPEED_SHIFT)
-#define	  RXN_RX_INBND_SPEED_XXX_3		(3ULL << RXN_RX_INBND_SPEED_SHIFT)
+#define	  RXN_RX_INBND_SPEED_2_5		  0
+#define	  RXN_RX_INBND_SPEED_25			  1
+#define	  RXN_RX_INBND_SPEED_125		  2
+#define	  RXN_RX_INBND_SPEED_XXX_3		  3
 #define	RXN_RX_INBND_STATUS			UINT64_C(0x0000000000000001)
 
 /* GMX RX Good Packets Registers */
@@ -305,15 +305,13 @@
 
 #define	RXN_ADR_CTL_XXX_63_4			UINT64_C(0xfffffffffffffff0)
 #define	RXN_ADR_CTL_CAM_MODE			UINT64_C(0x0000000000000008)
-#define	 RXN_ADR_CTL_CAM_MODE_SHIFT		3
-#define	  RXN_ADR_CTL_CAM_MODE_REJECT		(0ULL << RXN_ADR_CTL_CAM_MODE_SHIFT)
-#define	  RXN_ADR_CTL_CAM_MODE_ACCEPT		(1ULL << RXN_ADR_CTL_CAM_MODE_SHIFT)
+#define	  RXN_ADR_CTL_CAM_MODE_REJECT		  0
+#define	  RXN_ADR_CTL_CAM_MODE_ACCEPT		  1
 #define	RXN_ADR_CTL_MCST			UINT64_C(0x0000000000000006)
-#define	 RXN_ADR_CTL_MCST_SHIFT			1
-#define	  RXN_ADR_CTL_MCST_AFCAM		(0ULL << RXN_ADR_CTL_MCST_SHIFT)
-#define	  RXN_ADR_CTL_MCST_REJECT		(1ULL << RXN_ADR_CTL_MCST_SHIFT)
-#define	  RXN_ADR_CTL_MCST_ACCEPT		(2ULL << RXN_ADR_CTL_MCST_SHIFT)
-#define	  RXN_ADR_CTL_MCST_XXX_3		(3ULL << RXN_ADR_CTL_MCST_SHIFT)
+#define	  RXN_ADR_CTL_MCST_AFCAM		  0
+#define	  RXN_ADR_CTL_MCST_REJECT		  1
+#define	  RXN_ADR_CTL_MCST_ACCEPT		  2
+#define	  RXN_ADR_CTL_MCST_XXX_3		  3
 #define	RXN_ADR_CTL_BCST			UINT64_C(0x0000000000000001)
 
 /* Address-Filtering Control Enable Registers */
@@ -509,13 +507,10 @@
 #define	TX_OVR_BP_XXX_63_12			UINT64_C(0xfffffffffffff000)
 #define	TX_OVR_BP_XXX_11			UINT64_C(0x0000000000000800)
 #define	TX_OVR_BP_EN				UINT64_C(0x0000000000000700)
-#define	 TX_OVR_BP_EN_SHIFT			8
 #define	TX_OVR_BP_XXX_7				UINT64_C(0x0000000000000080)
 #define	TX_OVR_BP_BP				UINT64_C(0x0000000000000070)
-#define	 TX_OVR_BP_BP_SHIFT			4
 #define	TX_OVR_BP_XXX_3				UINT64_C(0x0000000000000008)
 #define	TX_OVR_BP_IGN_FULL			UINT64_C(0x0000000000000007)
-#define	 TX_OVR_BP_IGN_FULL_SHIFT		0
 
 /* TX Override Backpressure Register */
 
@@ -618,553 +613,87 @@
 #define	INF_MODE_P0MII				UINT64_C(0x0000000000000004)
 #define	INF_MODE_EN				UINT64_C(0x0000000000000002)
 #define	INF_MODE_TYPE				UINT64_C(0x0000000000000001)
+/* Interface mode, applicable on CN68xx and CN7xxx (?) */
+#define	INF_MODE_MODE				UINT64_C(0x0000000000000070)
+#define	INF_MODE_MODE_SGMII			UINT64_C(0x0000000000000020)
+#define	INF_MODE_MODE_XAUI			UINT64_C(0x0000000000000030)
+
+#define	MIO_QLM_CFG(x)				(UINT64_C(0x0001180000001590) + (x)*8)
+
+#define	MIO_QLM_CFG_CFG				UINT64_C(0x000000000000000f)
 
 /* -------------------------------------------------------------------------- */
 
 /* for bus_space(9) */
 
-#define GMX_IF_NUNITS				1
-#define GMX_PORT_NUNITS				3
+#define	GMX_PORT_NUNITS				(5 * 16)
+#define	GMX_PORT_NUM(g, i)			((g) * 16 + (i))
+#define	GMX_PORT_IFACE(port)			((port) / 16)
+#define	GMX_PORT_INDEX(port)			((port) % 16)
 
-#define	GMX0_BASE_PORT0				0x0001180008000000ULL
-#define	GMX0_BASE_PORT1				0x0001180008000800ULL
-#define	GMX0_BASE_PORT2				0x0001180008001000ULL
-#define	GMX0_BASE_PORT_SIZE				0x00800
-#define	GMX0_BASE_IF0				0x0001180008000000ULL
-#define	GMX0_BASE_IF_SIZE			(GMX0_BASE_PORT_SIZE * GMX_PORT_NUNITS)
+#define	GMX_BLOCK_SIZE				0x8000000
+#define	GMX_CN68XX_BLOCK_SIZE			0x100000 /* different on CN68XX only */
 
-/* for snprintb(9) */
+#define	GMX0_BASE_PORT0				UINT64_C(0x0001180008000000)
+#define	GMX_PORT_SIZE				0x800
+#define	GMX_IF_SIZE(n)				(GMX_PORT_SIZE * (n))
+#define	GMX_BASE_PORT(n, m) 		/* address of GMX(n) * PORT(m) */ \
+	(GMX0_BASE_PORT0 + (n) * GMX_BLOCK_SIZE + GMX_IF_SIZE(m))
+#define	GMX_CN68XX_BASE_PORT(n, m) 	/* address of GMX(n) * PORT(m) */ \
+	(GMX0_BASE_PORT0 + (n) * GMX_CN68XX_BLOCK_SIZE + GMX_IF_SIZE(m))
 
-#define	RXN_INT_REG_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x12"		"PHY_DUPX\0" \
-	"b\x11"		"PHY_SPD\0" \
-	"b\x10"		"PHY_LINK\0" \
-	"b\x0f"		"IFGERR\0" \
-	"b\x0e"		"COLDET\0" \
-	"b\x0d"		"FALERR\0" \
-	"b\x0c"		"RSVERR\0" \
-	"b\x0b"		"PCTERR\0" \
-	"b\x0a"		"OVRERR\0" \
-	"b\x09"		"NIBERR\0" \
-	"b\x08"		"SKPERR\0" \
-	"b\x07"		"RCVERR\0" \
-	"b\x06"		"LENERR\0" \
-	"b\x05"		"ALNERR\0" \
-	"b\x04"		"FCSERR\0" \
-	"b\x03"		"JABBER\0" \
-	"b\x02"		"MAXERR\0" \
-	"b\x01"		"CAREXT\0" \
-	"b\x00"		"MINERR\0"
-#define	RXN_INT_EN_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x12"		"PHY_DUPX\0" \
-	"b\x11"		"PHY_SPD\0" \
-	"b\x10"		"PHY_LINK\0" \
-	"b\x0f"		"IFGERR\0" \
-	"b\x0e"		"COLDET\0" \
-	"b\x0d"		"FALERR\0" \
-	"b\x0c"		"RSVERR\0" \
-	"b\x0b"		"PCTERR\0" \
-	"b\x0a"		"OVRERR\0" \
-	"b\x09"		"NIBERR\0" \
-	"b\x08"		"SKPERR\0" \
-	"b\x07"		"RCVERR\0" \
-	"b\x06"		"LENERR\0" \
-	"b\x05"		"ALNERR\0" \
-	"b\x04"		"FCSERR\0" \
-	"b\x03"		"JABBER\0" \
-	"b\x02"		"MAXERR\0" \
-	"b\x01"		"CAREXT\0" \
-	"b\x00"		"MINERR\0"
-#define	PRTN_CFG_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x03"		"SLOTTIME\0" \
-	"b\x02"		"DUPLEX\0" \
-	"b\x01"		"SPEED\0" \
-	"b\x00"		"EN\0"
-#define	RXN_FRM_CTL_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x0a"		"NULL_DIS\0" \
-	"b\x09"		"PRE_ALIGN\0" \
-	"b\x08"		"PAD_LEN\0" \
-	"b\x07"		"VLAN_LEN\0" \
-	"b\x06"		"PRE_FREE\0" \
-	"b\x05"		"CTL_SMAC\0" \
-	"b\x04"		"CTL_MCST\0" \
-	"b\x03"		"CTL_BCK\0" \
-	"b\x02"		"CTL_DRP\0" \
-	"b\x01"		"PRE_STRP\0" \
-	"b\x00"		"PRE_CHK\0"
-#define	RXN_FRM_CHK_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x09"		"NIBERR\0" \
-	"b\x08"		"SKPERR\0" \
-	"b\x07"		"RCVERR\0" \
-	"b\x06"		"LENERR\0" \
-	"b\x05"		"ALNERR\0" \
-	"b\x04"		"FCSERR\0" \
-	"b\x03"		"JABBER\0" \
-	"b\x02"		"MAXERR\0" \
-	"b\x01"		"CAREXT\0" \
-	"b\x00"		"MINERR\0"
-/* RXN_FRM_MIN */
-/* RXN_FRM_MAX */
-#define	RXN_JABBER_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x10"	"CNT\0"
-#define	RXN_DECISION_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x05"	"CNT\0"
-#define	RXN_UDD_SKP_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x08"		"FCSSEL\0" \
-	"f\x00\x07"	"LEN\0"
-#define	RXN_STATS_CTL_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x00"		"RD_CLR\0"
-#define	RXN_IFG_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x04"	"IFG\0"
-#define	RXN_RX_INBND_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x03"		"DUPLEX\0" \
-	"f\x01\x02"	"SPEED\0" \
-	"b\x00"		"STATUS\0"
-#define	RXN_STATS_PKTS_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x20"	"CNT\0"
-#define	RXN_STATS_OCTS_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x30"	"CNT\0"
-#define	RXN_STATS_PKTS_CTL_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x20"	"CNT\0"
-#define	RXN_STATS_OCTS_CTL_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x30"	"CNT\0"
-#define	RXN_STATS_PKTS_DMAC_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x20"	"CNT\0"
-#define	RXN_STATS_OCTS_DMAC_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x30"	"CNT\0"
-#define	RXN_STATS_PKTS_DRP_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x20"	"CNT\0"
-#define	RXN_STATS_OCTS_DRP_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x30"	"CNT\0"
-#define	RXN_STATS_PKTS_BAD_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x20"	"CNT\0"
-#define	RXN_ADR_CTL_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x03"		"CAM_MODE\0" \
-	"f\x01\x02"	"MCST\0" \
-	"b\x00"		"BCST\0"
-#define	RXN_ADR_CAM_EN_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x08"	"EN\0"
-/* RXN_ADR_CAM0 */
-/* RXN_ADR_CAM1 */
-/* RXN_ADR_CAM2 */
-/* RXN_ADR_CAM3 */
-/* RXN_ADR_CAM4 */
-/* RXN_ADR_CAM5 */
-#define	TXN_CLK_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x06"	"CLK_CNT\0"
-#define	TXN_THRESH_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x06"	"CNT\0"
-#define	TXN_APPEND_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x03"		"FORCE_FCS\0" \
-	"b\x02"		"FCS\0" \
-	"b\x01"		"PAD\0" \
-	"b\x00"		"PREAMBLE\0"
-#define	TXN_SLOT_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x0a"	"SLOT\0"
-#define	TXN_BURST_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x10"	"BURST\0"
-/* SMAC0 */
-#define	TXN_PAUSE_PKT_TIME_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x10"	"TIME\0"
-#define	TXN_MIN_PKT_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x08"	"MIN_SIZE\0"
-#define	TXN_PAUSE_PKT_INTERVAL_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x10"	"INTERVAL\0"
-#define	TXN_SOFT_PAUSE_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x10"	"TIME\0"
-#define	TXN_PAUSE_TOGO_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x10"	"TIME\0"
-#define	TXN_PAUSE_ZERO_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x00"		"SEND\0"
-#define	TXN_STATS_CTL_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x00"		"RD_CLR\0"
-#define	TXN_CTL_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x01"		"XSDEF_EN\0" \
-	"b\x00"		"XSCOL_EN\0"
-#define	TXN_STAT0_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x20\x20"	"XSDEF\0" \
-	"f\x00\x20"	"XSCOL\0"
-#define	TXN_STAT1_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x20\x20"	"SCOL\0" \
-	"f\x00\x20"	"MSCOL\0"
-#define	TXN_STAT2_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x30"	"OCTS\0"
-#define	TXN_STAT3_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x20"	"PKTS\0"
-#define	TXN_STAT4_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x20\x20"	"HIST1\0" \
-	"f\x00\x20"	"HIST0\0"
-#define	TXN_STAT5_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x20\x20"	"HIST3\0" \
-	"f\x00\x20"	"HIST2\0"
-#define	TXN_STAT6_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x20\x20"	"HIST5\0" \
-	"f\x00\x20"	"HIST4\0"
-#define	TXN_STAT7_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x20\x20"	"HIST7\0" \
-	"f\x00\x20"	"HIST6\0"
-#define	TXN_STAT8_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x20\x20"	"MCST\0" \
-	"f\x00\x20"	"BCST\0"
-#define	TXN_STAT9_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x20\x20"	"UNDFLW\0" \
-	"f\x00\x20"	"CTL\0"
-/* BIST0 */
-#define	RX_PRTS_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x03"	"PRTS\0"
-#define	RX_BP_DROPN_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x06"	"MARK\0"
-#define	RX_BP_ONN_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x09"	"MARK\0"
-#define	RX_BP_OFFN_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x06"	"MARK\0"
-#define	TX_PRTS_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x05"	"PRTS\0"
-#define	TX_IFG_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x04\x04"	"IFG2\0" \
-	"f\x00\x04"	"IFG1\0"
-#define	TX_JAM_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x08"	"JAM\0"
-#define	TX_COL_ATTEMPT_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x05"	"LIMIT\0"
-#define	TX_PAUSE_PKT_DMAC_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x30"	"DMAC\0"
-#define	TX_PAUSE_PKT_TYPE_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x10"	"TYPE\0"
-#define	TX_OVR_BP_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x08\x03"	"EN\0" \
-	"f\x04\x03"	"BP\0" \
-	"f\x00\x03"	"IGN_FULL\0"
-#define	TX_BP_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x03"	"SR_BP\0"
-#define	TX_CORRUPT_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x03"	"CORRUPT\0"
-#define	RX_PRT_INFO_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x10\x03"	"DROP\0" \
-	"f\x00\x03"	"COMMIT\0"
-#define	TX_LFSR_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x10"	"LFSR\0"
-#define	TX_INT_REG_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x10\x03"	"LATE_COL\0" \
-	"f\x0c\x03"	"XSDEF\0" \
-	"f\x08\x03"	"XSCOL\0" \
-	"f\x02\x03"	"UNDFLW\0" \
-	"b\x00"		"PKO_NXA\0"
-#define	TX_INT_EN_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x10\x03"	"LATE_COL\0" \
-	"f\x0c\x03"	"XSDEF\0" \
-	"f\x08\x03"	"XSCOL\0" \
-	"f\x02\x03"	"UNDFLW\0" \
-	"b\x00"		"PKO_NXA\0"
-#define	NXA_ADR_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x06"	"PRT\0"
-#define	BAD_REG_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x1b\x04"	"INB_NXA\0" \
-	"b\x1a"		"STATOVR\0" \
-	"f\x16\x03"	"LOSTSTAT\0" \
-	"f\x02\x03"	"OUT_OVR\0"
-#define	STAT_BP_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x10"		"BP\0" \
-	"f\x00\x10"	"CNT\0"
-#define	TX_CLK_MSKN_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x00"		"MSK\0"
-#define	RX_TX_STATUS_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x04\x03"	"TX\0" \
-	"f\x00\x03"	"RX\0"
-#define	INF_MODE_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x02"		"P0MII\0" \
-	"b\x01"		"EN\0" \
-	"b\x00"		"TYPE\0"
+/* -------------------------------------------------------------------------- */
 
-#define GMX0_RX0_INT_REG_BITS			RXN_INT_REG_BITS
-#define GMX0_RX0_INT_EN_BITS			RXN_INT_EN_BITS
-#define GMX0_PRT0_CFG_BITS			PRTN_CFG_BITS
-#define GMX0_RX0_FRM_CTL_BITS			RXN_FRM_CTL_BITS
-#define GMX0_RX0_FRM_CHK_BITS			RXN_FRM_CHK_BITS
-#define GMX0_RX0_FRM_MIN_BITS			NULL//RXN_FRM_MIN_BITS
-#define GMX0_RX0_FRM_MAX_BITS			NULL//RXN_FRM_MAX_BITS
-#define GMX0_RX0_JABBER_BITS			RXN_JABBER_BITS
-#define GMX0_RX0_DECISION_BITS			RXN_DECISION_BITS
-#define GMX0_RX0_UDD_SKP_BITS			RXN_UDD_SKP_BITS
-#define GMX0_RX0_STATS_CTL_BITS			RXN_STATS_CTL_BITS
-#define GMX0_RX0_IFG_BITS			RXN_IFG_BITS
-#define GMX0_RX0_RX_INBND_BITS			RXN_RX_INBND_BITS
-#define GMX0_RX0_STATS_PKTS_BITS		RXN_STATS_PKTS_BITS
-#define GMX0_RX0_STATS_OCTS_BITS		RXN_STATS_OCTS_BITS
-#define GMX0_RX0_STATS_PKTS_CTL_BITS		RXN_STATS_PKTS_CTL_BITS
-#define GMX0_RX0_STATS_OCTS_CTL_BITS		RXN_STATS_OCTS_CTL_BITS
-#define GMX0_RX0_STATS_PKTS_DMAC_BITS		RXN_STATS_PKTS_DMAC_BITS
-#define GMX0_RX0_STATS_OCTS_DMAC_BITS		RXN_STATS_OCTS_DMAC_BITS
-#define GMX0_RX0_STATS_PKTS_DRP_BITS		RXN_STATS_PKTS_DRP_BITS
-#define GMX0_RX0_STATS_OCTS_DRP_BITS		RXN_STATS_OCTS_DRP_BITS
-#define GMX0_RX0_STATS_PKTS_BAD_BITS		RXN_STATS_PKTS_BAD_BITS
-#define GMX0_RX0_ADR_CTL_BITS			RXN_ADR_CTL_BITS
-#define GMX0_RX0_ADR_CAM_EN_BITS		RXN_ADR_CAM_EN_BITS
-#define GMX0_RX0_ADR_CAM0_BITS			NULL//RXN_ADR_CAM0_BITS
-#define GMX0_RX0_ADR_CAM1_BITS			NULL//RXN_ADR_CAM1_BITS
-#define GMX0_RX0_ADR_CAM2_BITS			NULL//RXN_ADR_CAM2_BITS
-#define GMX0_RX0_ADR_CAM3_BITS			NULL//RXN_ADR_CAM3_BITS
-#define GMX0_RX0_ADR_CAM4_BITS			NULL//RXN_ADR_CAM4_BITS
-#define GMX0_RX0_ADR_CAM5_BITS			NULL//RXN_ADR_CAM5_BITS
-#define GMX0_TX0_CLK_BITS			TXN_CLK_BITS
-#define GMX0_TX0_THRESH_BITS			TXN_THRESH_BITS
-#define GMX0_TX0_APPEND_BITS			TXN_APPEND_BITS
-#define GMX0_TX0_SLOT_BITS			TXN_SLOT_BITS
-#define GMX0_TX0_BURST_BITS			TXN_BURST_BITS
-#define GMX0_SMAC0_BITS				NULL//SMAC0_BITS
-#define GMX0_TX0_PAUSE_PKT_TIME_BITS		TXN_PAUSE_PKT_TIME_BITS
-#define GMX0_TX0_MIN_PKT_BITS			TXN_MIN_PKT_BITS
-#define GMX0_TX0_PAUSE_PKT_INTERVAL_BITS	TXN_PAUSE_PKT_INTERVAL_BITS
-#define GMX0_TX0_SOFT_PAUSE_BITS		TXN_SOFT_PAUSE_BITS
-#define GMX0_TX0_PAUSE_TOGO_BITS		TXN_PAUSE_TOGO_BITS
-#define GMX0_TX0_PAUSE_ZERO_BITS		TXN_PAUSE_ZERO_BITS
-#define GMX0_TX0_STATS_CTL_BITS			TXN_STATS_CTL_BITS
-#define GMX0_TX0_CTL_BITS			TXN_CTL_BITS
-#define GMX0_TX0_STAT0_BITS			TXN_STAT0_BITS
-#define GMX0_TX0_STAT1_BITS			TXN_STAT1_BITS
-#define GMX0_TX0_STAT2_BITS			TXN_STAT2_BITS
-#define GMX0_TX0_STAT3_BITS			TXN_STAT3_BITS
-#define GMX0_TX0_STAT4_BITS			TXN_STAT4_BITS
-#define GMX0_TX0_STAT5_BITS			TXN_STAT5_BITS
-#define GMX0_TX0_STAT6_BITS			TXN_STAT6_BITS
-#define GMX0_TX0_STAT7_BITS			TXN_STAT7_BITS
-#define GMX0_TX0_STAT8_BITS			TXN_STAT8_BITS
-#define GMX0_TX0_STAT9_BITS			TXN_STAT9_BITS
-#define GMX0_BIST0_BITS				NULL//BIST0_BITS
-#define GMX0_RX_PRTS_BITS			RX_PRTS_BITS
-#define GMX0_RX_BP_DROP0_BITS			RX_BP_DROPN_BITS
-#define GMX0_RX_BP_ON0_BITS			RX_BP_ONN_BITS
-#define GMX0_RX_BP_OFF0_BITS			RX_BP_OFFN_BITS
-#define GMX0_RX_BP_DROP1_BITS			RX_BP_DROPN_BITS
-#define GMX0_RX_BP_ON1_BITS			RX_BP_ONN_BITS
-#define GMX0_RX_BP_OFF1_BITS			RX_BP_OFFN_BITS
-#define GMX0_RX_BP_DROP2_BITS			RX_BP_DROPN_BITS
-#define GMX0_RX_BP_ON2_BITS			RX_BP_ONN_BITS
-#define GMX0_RX_BP_OFF2_BITS			RX_BP_OFFN_BITS
-#define GMX0_TX_PRTS_BITS			TX_PRTS_BITS
-#define GMX0_TX_IFG_BITS			TX_IFG_BITS
-#define GMX0_TX_JAM_BITS			TX_JAM_BITS
-#define GMX0_TX_COL_ATTEMPT_BITS		TX_COL_ATTEMPT_BITS
-#define GMX0_TX_PAUSE_PKT_DMAC_BITS		TX_PAUSE_PKT_DMAC_BITS
-#define GMX0_TX_PAUSE_PKT_TYPE_BITS		TX_PAUSE_PKT_TYPE_BITS
-#define GMX0_TX_OVR_BP_BITS			TX_OVR_BP_BITS
-#define GMX0_TX_BP_BITS				TX_BP_BITS
-#define GMX0_TX_CORRUPT_BITS			TX_CORRUPT_BITS
-#define GMX0_RX_PRT_INFO_BITS			RX_PRT_INFO_BITS
-#define GMX0_TX_LFSR_BITS			TX_LFSR_BITS
-#define GMX0_TX_INT_REG_BITS			TX_INT_REG_BITS
-#define GMX0_TX_INT_EN_BITS			TX_INT_EN_BITS
-#define GMX0_NXA_ADR_BITS			NXA_ADR_BITS
-#define GMX0_BAD_REG_BITS			BAD_REG_BITS
-#define GMX0_STAT_BP_BITS			STAT_BP_BITS
-#define GMX0_TX_CLK_MSK0_BITS			TX_CLK_MSKN_BITS
-#define GMX0_TX_CLK_MSK1_BITS			TX_CLK_MSKN_BITS
-#define GMX0_TX_CLK_MSK2_BITS			TX_CLK_MSKN_BITS
-#define GMX0_RX_TX_STATUS_BITS			RX_TX_STATUS_BITS
-#define GMX0_INF_MODE_BITS			INF_MODE_BITS
+/* Low-level SGMII link controll */
+
+#define	PCS_BASE(g, i)	(UINT64_C(0x00011800b0001000) + 0x8000000 * (g) + 0x400 * (i))
+#define	PCS_SIZE	0x98
+
+#define	PCS_MR_CONTROL				0x00
+#define	PCS_MR_STATUS				0x08
+#define	PCS_LINK_TIMER_COUNT			0x40
+#define	PCS_MISC_CTL				0x78
+
+#define	PCS_MR_CONTROL_RES_16_63		UINT64_C(0xffffffffffff0000)
+#define	PCS_MR_CONTROL_RESET			UINT64_C(0x0000000000008000)
+#define	PCS_MR_CONTROL_LOOPBCK1			UINT64_C(0x0000000000004000)
+#define	PCS_MR_CONTROL_SPDLSB			UINT64_C(0x0000000000002000)
+#define	PCS_MR_CONTROL_AN_EN			UINT64_C(0x0000000000001000)
+#define	PCS_MR_CONTROL_PWR_DN			UINT64_C(0x0000000000000800)
+#define	PCS_MR_CONTROL_RES_10_10		UINT64_C(0x0000000000000400)
+#define	PCS_MR_CONTROL_RST_AN			UINT64_C(0x0000000000000200)
+#define	PCS_MR_CONTROL_DUPLEX			UINT64_C(0x0000000000000100)
+#define	PCS_MR_CONTROL_COLTST			UINT64_C(0x0000000000000080)
+#define	PCS_MR_CONTROL_SPDMSB			UINT64_C(0x0000000000000040)
+#define	PCS_MR_CONTROL_UNI			UINT64_C(0x0000000000000020)
+#define	PCS_MR_CONTROL_RES_0_4			UINT64_C(0x000000000000001f)
+
+#define	PCS_MR_STATUS_RES_16_63			UINT64_C(0xffffffffffff0000)
+#define	PCS_MR_STATUS_HUN_T4			UINT64_C(0x0000000000008000)
+#define	PCS_MR_STATUS_HUN_XFD			UINT64_C(0x0000000000004000)
+#define	PCS_MR_STATUS_HUN_XHD			UINT64_C(0x0000000000002000)
+#define	PCS_MR_STATUS_TEN_FD			UINT64_C(0x0000000000001000)
+#define	PCS_MR_STATUS_TEN_HD			UINT64_C(0x0000000000000800)
+#define	PCS_MR_STATUS_HUN_T2FD			UINT64_C(0x0000000000000400)
+#define	PCS_MR_STATUS_HUN_T2HD			UINT64_C(0x0000000000000200)
+#define	PCS_MR_STATUS_EXT_ST			UINT64_C(0x0000000000000100)
+#define	PCS_MR_STATUS_RES_7_7			UINT64_C(0x0000000000000080)
+#define	PCS_MR_STATUS_PRB_SUP			UINT64_C(0x0000000000000040)
+#define	PCS_MR_STATUS_AN_CPT			UINT64_C(0x0000000000000020)
+#define	PCS_MR_STATUS_RM_FLT			UINT64_C(0x0000000000000010)
+#define	PCS_MR_STATUS_AN_ABIL			UINT64_C(0x0000000000000008)
+#define	PCS_MR_STATUS_LNK_ST			UINT64_C(0x0000000000000004)
+#define	PCS_MR_STATUS_RES_1_1			UINT64_C(0x0000000000000002)
+#define	PCS_MR_STATUS_EXTND			UINT64_C(0x0000000000000001)
+
+#define	PCS_LINK_TIMER_COUNT_MASK		UINT64_C(0x000000000000ffff)
+
+#define	PCS_MISC_CTL_SGMII			UINT64_C(0x0000000000001000)
+#define	PCS_MISC_CTL_GMXENO			UINT64_C(0x0000000000000800)
+#define	PCS_MISC_CTL_LOOPBCK2			UINT64_C(0x0000000000000400)
+#define	PCS_MISC_CTL_MAC_PHY			UINT64_C(0x0000000000000200)
+#define	PCS_MISC_CTL_MODE			UINT64_C(0x0000000000000100)
+#define	PCS_MISC_CTL_AN_OVRD			UINT64_C(0x0000000000000080)
+#define	PCS_MISC_CTL_SAMP_PT			UINT64_C(0x000000000000007f)
 
 #endif /* _OCTEON_GMXREG_H_ */

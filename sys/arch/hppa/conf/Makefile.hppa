@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.hppa,v 1.6 2018/09/22 12:24:02 rin Exp $
+# $NetBSD: Makefile.hppa,v 1.8 2020/09/14 16:13:18 skrll Exp $
 
 # Makefile for NetBSD
 #

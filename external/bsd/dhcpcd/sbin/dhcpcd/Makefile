@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.51 2020/04/02 12:56:01 roy Exp $
+# $NetBSD: Makefile,v 1.54 2020/06/15 17:02:58 roy Exp $
 #
 
 WARNS?=		6
@@ -13,9 +13,13 @@ SRCS+=		if.c if-options.c route.c sa.c script.c
 SRCS+=		dhcp-common.c dhcpcd-embedded.c
 SRCS+=		if-bsd.c
 
+# Disable privilege separation and sandboxing
+# This should be fine for ramdisk based installers
+.if !defined(SMALLPROG)
 CPPFLAGS+=	-DPRIVSEP -DPRIVSEP_USER=\"_dhcpcd\"
-SRCS+=		privsep.c privsep-root.c privsep-inet.c
+SRCS+=		privsep.c privsep-root.c privsep-inet.c privsep-control.c
 SRCS+=		privsep-bsd.c
+.endif
 
 CPPFLAGS+=	-DHAVE_CONFIG_H -D_OPENBSD_SOURCE
 
@@ -31,7 +35,16 @@ SRCS+=		auth.c
 .if (${USE_INET} != "no")
 CPPFLAGS+=	-DINET
 SRCS+=		bpf.c dhcp.c ipv4.c
+.if !defined(SMALLPROG)
 SRCS+=		privsep-bpf.c
+.endif
+
+.if (${MKLIBCSANITIZER:Uno} == "yes")
+.if (${ACTIVE_CC} == "gcc" && ${HAVE_GCC:U0} == 8)
+COPTS.dhcp.c+=	-Wno-error=sign-conversion
+.endif
+.endif
+
 .if !defined(SMALLPROG)
 CPPFLAGS+=	-DARP
 SRCS+=		arp.c

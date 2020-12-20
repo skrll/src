@@ -1,4 +1,4 @@
-/*	$NetBSD: apm.c,v 1.27 2014/07/25 08:10:34 dholland Exp $	*/
+/*	$NetBSD: apm.c,v 1.29 2020/12/19 21:54:42 thorpej Exp $	*/
 /*	$OpenBSD: apm.c,v 1.5 2002/06/07 07:13:59 miod Exp $	*/
 
 /*-
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: apm.c,v 1.27 2014/07/25 08:10:34 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: apm.c,v 1.29 2020/12/19 21:54:42 thorpej Exp $");
 
 #include "apm.h"
 
@@ -418,7 +418,7 @@ filt_apmrdetach(struct knote *kn)
 	struct apm_softc *sc = (struct apm_softc *)kn->kn_hook;
 
 	APM_LOCK(sc);
-	SLIST_REMOVE(&sc->sc_rsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->sc_rsel, kn);
 	APM_UNLOCK(sc);
 }
 
@@ -431,18 +431,20 @@ filt_apmread(struct knote *kn, long hint)
 	return (kn->kn_data > 0);
 }
 
-static struct filterops apmread_filtops =
-	{ 1, NULL, filt_apmrdetach, filt_apmread};
+static struct filterops apmread_filtops = {
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_apmrdetach,
+	.f_event = filt_apmread,
+};
 
 int
 apmkqfilter(dev_t dev, struct knote *kn)
 {
 	struct apm_softc *sc = device_lookup_private(&apm_cd,APMUNIT(dev));
-	struct klist *klist;
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &sc->sc_rsel.sel_klist;
 		kn->kn_fop = &apmread_filtops;
 		break;
 	default:
@@ -452,7 +454,7 @@ apmkqfilter(dev_t dev, struct knote *kn)
 	kn->kn_hook = sc;
 
 	APM_LOCK(sc);
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	selrecord_knote(&sc->sc_rsel, kn);
 	APM_UNLOCK(sc);
 
 	return (0);

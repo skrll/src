@@ -1,10 +1,10 @@
 #!/bin/sh
 #
-# $NetBSD: network,v 1.77 2020/02/22 11:52:45 roy Exp $
+# $NetBSD: network,v 1.85 2020/10/16 15:31:04 kim Exp $
 #
 
 # PROVIDE: network
-# REQUIRE: ipfilter ipsec mountcritlocal root tty sysctl
+# REQUIRE: ipfilter ipsec CRITLOCALMOUNTED root tty sysctl
 # BEFORE:  NETWORKING
 
 $_rc_subr_loaded . /etc/rc.subr
@@ -50,7 +50,6 @@ network_start()
 	network_start_defaultroute
 	network_start_defaultroute6
 	have_inet6 &&
-	network_start_ipv6_autoconf
 	network_wait_dad
 	network_start_resolv
 	network_start_local
@@ -171,7 +170,6 @@ network_start_ipv6_route()
 	/sbin/route -q add -inet6 ::0.0.0.0 -prefixlen 96 ::1 -reject
 
 	/sbin/sysctl -qw net.inet6.ip6.forwarding=0
-	/sbin/sysctl -qw net.inet6.ip6.accept_rtadv=0
 
 	case $ip6mode in
 	router)
@@ -187,11 +185,13 @@ network_start_ipv6_route()
 		;;
 
 	autohost)
-		echo 'IPv6 mode: autoconfigured host'
-		/sbin/sysctl -qw net.inet6.ip6.accept_rtadv=1
+		if ! checkyesno dhcpcd; then
+			warn "rtsol and kernel ra handling have been removed"
+			warn "please configure dhcpcd in its place."
+		fi
 		;;
 
-	host)	
+	host)
 		echo 'IPv6 mode: host'
 		;;
 
@@ -215,7 +215,8 @@ network_start_interfaces()
 	# For each line from the $ifconfig_xxN variable or the
 	# /etc/ifconfig.xxN file, we ignore comments and blank lines,
 	# treat lines beginning with "!" as commands to execute, treat
-	# "dhcp" as a special case to invoke dhcpcd, and for any other
+	# "dhcp" as a special case to invoke dhcpcd, treat "rtsol" as
+	# a special case to send a router solicitation, and for any other
 	# line we run "ifconfig xxN", using each line of the file as the
 	# arguments for a separate "ifconfig" invocation.
 	#
@@ -318,7 +319,13 @@ network_start_interfaces()
 				;;
 			dhcp)
 				if ! checkyesno dhcpcd; then
-					/sbin/dhcpcd -n \
+					/sbin/dhcpcd -n --dhcp \
+						${dhcpcd_flags} $int
+				fi
+				;;
+			rtsol)
+				if ! checkyesno dhcpcd; then
+					/sbin/dhcpcd -n6b \
 						${dhcpcd_flags} $int
 				fi
 				;;
@@ -428,20 +435,6 @@ network_start_defaultroute6()
 	    "ip6mode is set to 'autohost' and a v6 default route is also set."
 		fi
 		/sbin/route add -inet6 default $defaultroute6
-	fi
-}
-
-network_start_ipv6_autoconf()
-{
-	# IPv6 interface autoconfiguration.
-
-	# dhcpcd will ensure DAD completes before forking
-	if checkyesnox rtsol && ! checkyesno dhcpcd; then
-		if [ "$ip6mode" = "autohost" ]; then
-			echo
-			warn "rtsol has been removed, " \
-			    "please configure dhcpcd in its place."
-		fi
 	fi
 }
 

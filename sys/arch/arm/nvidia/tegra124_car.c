@@ -1,4 +1,4 @@
-/* $NetBSD: tegra124_car.c,v 1.19 2019/10/13 06:11:31 skrll Exp $ */
+/* $NetBSD: tegra124_car.c,v 1.21 2020/08/12 10:21:00 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra124_car.c,v 1.19 2019/10/13 06:11:31 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra124_car.c,v 1.21 2020/08/12 10:21:00 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -35,7 +35,6 @@ __KERNEL_RCSID(0, "$NetBSD: tegra124_car.c,v 1.19 2019/10/13 06:11:31 skrll Exp 
 #include <sys/intr.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/rndpool.h>
 #include <sys/rndsource.h>
 #include <sys/atomic.h>
 #include <sys/kmem.h>
@@ -152,6 +151,7 @@ static struct tegra124_car_clock_id {
 	{ 127, "se" },
 	{ 128, "hda2hdmi" },
 	{ 129, "sata_cold" },
+	{ 136, "cec" },
 	{ 144, "cilab" },
 	{ 145, "cilcd" },
 	{ 146, "cile" },
@@ -632,6 +632,7 @@ static struct tegra_clk tegra124_car_clocks[] = {
 	CLK_GATE_V("hda2codec_2x", "div_hda2codec_2x", CAR_DEV_V_HDA2CODEC_2X),
 	CLK_GATE_V("hda", "div_hda", CAR_DEV_V_HDA),
 	CLK_GATE_W("hda2hdmi", "clk_m", CAR_DEV_W_HDA2HDMICODEC),
+	CLK_GATE_W("cec", "clk_m", CAR_DEV_W_CEC),
 	CLK_GATE_H("fuse", "clk_m", CAR_DEV_H_FUSE),
 	CLK_GATE_U("soc_therm", "div_soc_therm", CAR_DEV_U_SOC_THERM),
 	CLK_GATE_V("mselect", "div_mselect", CAR_DEV_V_MSELECT),
@@ -919,7 +920,6 @@ tegra124_car_rnd_attach(device_t self)
 	rndsource_setcb(&sc->sc_rndsource, tegra124_car_rnd_callback, sc);
 	rnd_attach_source(&sc->sc_rndsource, device_xname(sc->sc_dev),
 	    RND_TYPE_RNG, RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
-	tegra124_car_rnd_callback(RND_POOLBITS / NBBY, sc);
 }
 
 static void

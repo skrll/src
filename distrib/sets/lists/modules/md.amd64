@@ -1,7 +1,4 @@
-# $NetBSD: md.amd64,v 1.86 2020/03/12 15:04:13 pgoyette Exp $
-#
-# NOTE that there are two sets of files here:
-# @MODULEDIR@ and amd64-xen
+# $NetBSD: md.amd64,v 1.91 2020/11/01 18:51:34 pgoyette Exp $
 #
 ./@MODULEDIR@/acpiacad				modules-base-kernel	kmod
 ./@MODULEDIR@/acpiacad/acpiacad.kmod		modules-base-kernel	kmod
@@ -73,6 +70,8 @@
 ./@MODULEDIR@/compat_netbsd32_30/compat_netbsd32_30.kmod modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_40		modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_40/compat_netbsd32_40.kmod modules-base-kernel	kmod
+./@MODULEDIR@/compat_netbsd32_43		modules-base-kernel	kmod
+./@MODULEDIR@/compat_netbsd32_43/compat_netbsd32_43.kmod modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_50		modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_50/compat_netbsd32_50.kmod modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_60		modules-base-kernel	kmod
@@ -81,20 +80,20 @@
 ./@MODULEDIR@/compat_netbsd32_80/compat_netbsd32_80.kmod modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_90		modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_90/compat_netbsd32_90.kmod modules-base-kernel	kmod
-./@MODULEDIR@/compat_netbsd32_43		modules-base-kernel	kmod
-./@MODULEDIR@/compat_netbsd32_43/compat_netbsd32_43.kmod modules-base-kernel	kmod
+./@MODULEDIR@/compat_netbsd32_coredump		modules-base-kernel	kmod
+./@MODULEDIR@/compat_netbsd32_coredump/compat_netbsd32_coredump.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_mqueue		modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_mqueue/compat_netbsd32_mqueue.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_nfssrv		modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_nfssrv/compat_netbsd32_nfssrv.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_ptrace		modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_ptrace/compat_netbsd32_ptrace.kmod	modules-base-kernel	kmod
-./@MODULEDIR@/compat_netbsd32_raid		modules-base-kernel	kmod
-./@MODULEDIR@/compat_netbsd32_raid/compat_netbsd32_raid.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_quota		modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_quota/compat_netbsd32_quota.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_quota_50		modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_quota_50/compat_netbsd32_quota_50.kmod	modules-base-kernel	kmod
+./@MODULEDIR@/compat_netbsd32_raid		modules-base-kernel	kmod
+./@MODULEDIR@/compat_netbsd32_raid/compat_netbsd32_raid.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_sysvipc		modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_sysvipc/compat_netbsd32_sysvipc.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/compat_netbsd32_sysvipc_10	modules-base-kernel	kmod
@@ -115,10 +114,10 @@
 ./@MODULEDIR@/drm/drm.kmod			modules-base-kernel	kmod
 ./@MODULEDIR@/drmkms				modules-base-kernel	kmod
 ./@MODULEDIR@/drmkms/drmkms.kmod		modules-base-kernel	kmod
-./@MODULEDIR@/drmkms_linux			modules-base-kernel	kmod
-./@MODULEDIR@/drmkms_linux/drmkms_linux.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/drmkms_agp			modules-base-kernel	kmod
 ./@MODULEDIR@/drmkms_agp/drmkms_agp.kmod	modules-base-kernel	kmod
+./@MODULEDIR@/drmkms_linux			modules-base-kernel	kmod
+./@MODULEDIR@/drmkms_linux/drmkms_linux.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/drmkms_pci			modules-base-kernel	kmod
 ./@MODULEDIR@/drmkms_pci/drmkms_pci.kmod	modules-base-kernel	kmod
 ./@MODULEDIR@/dtrace_syscall_linux		modules-base-kernel	kmod,dtrace
@@ -153,20 +152,22 @@
 ./@MODULEDIR@/hpacel/hpacel.kmod		modules-base-kernel	kmod
 ./@MODULEDIR@/hpet				modules-base-kernel	kmod
 ./@MODULEDIR@/hpet/hpet.kmod			modules-base-kernel	kmod
-./@MODULEDIR@/ichsmb				modules-base-kernel	kmod
-./@MODULEDIR@/ichsmb/ichsmb.kmod		modules-base-kernel	kmod
-./@MODULEDIR@/if_ixl				modules-base-kernel	kmod
-./@MODULEDIR@/if_ixl/if_ixl.kmod		modules-base-kernel	kmod
-./@MODULEDIR@/imc				modules-base-kernel	kmod
-./@MODULEDIR@/imc/imc.kmod			modules-base-kernel	kmod
-./@MODULEDIR@/imcsmb				modules-base-kernel	kmod
-./@MODULEDIR@/imcsmb/imcsmb.kmod		modules-base-kernel	kmod
 ./@MODULEDIR@/hpqlb				modules-base-kernel	kmod
 ./@MODULEDIR@/hpqlb/hpqlb.kmod			modules-base-kernel	kmod
 ./@MODULEDIR@/i915drm				modules-base-kernel	kmod
 ./@MODULEDIR@/i915drm/i915drm.kmod		modules-base-kernel	kmod
 ./@MODULEDIR@/i915drmkms			modules-base-kernel	kmod
 ./@MODULEDIR@/i915drmkms/i915drmkms.kmod	modules-base-kernel	kmod
+./@MODULEDIR@/ichsmb				modules-base-kernel	kmod
+./@MODULEDIR@/ichsmb/ichsmb.kmod		modules-base-kernel	kmod
+./@MODULEDIR@/if_iavf				modules-base-kernel	kmod
+./@MODULEDIR@/if_iavf/if_iavf.kmod		modules-base-kernel	kmod
+./@MODULEDIR@/if_ixl				modules-base-kernel	kmod
+./@MODULEDIR@/if_ixl/if_ixl.kmod		modules-base-kernel	kmod
+./@MODULEDIR@/imc				modules-base-kernel	kmod
+./@MODULEDIR@/imc/imc.kmod			modules-base-kernel	kmod
+./@MODULEDIR@/imcsmb				modules-base-kernel	kmod
+./@MODULEDIR@/imcsmb/imcsmb.kmod		modules-base-kernel	kmod
 ./@MODULEDIR@/itesio				modules-base-kernel	kmod
 ./@MODULEDIR@/itesio/itesio.kmod		modules-base-kernel	kmod
 ./@MODULEDIR@/ld_nvme				base-obsolete		obsolete
@@ -185,8 +186,6 @@
 ./@MODULEDIR@/mt2131/mt2131.kmod		modules-base-kernel	kmod
 ./@MODULEDIR@/nvme				base-obsolete		obsolete
 ./@MODULEDIR@/nvme/nvme.kmod			base-obsolete		obsolete
-./@MODULEDIR@/nvmm				modules-base-kernel	kmod
-./@MODULEDIR@/nvmm/nvmm.kmod			modules-base-kernel	kmod
 ./@MODULEDIR@/nxt2k				modules-base-kernel	kmod
 ./@MODULEDIR@/nxt2k/nxt2k.kmod			modules-base-kernel	kmod
 ./@MODULEDIR@/odcm				modules-base-kernel	kmod

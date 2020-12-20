@@ -1,4 +1,4 @@
-/*	$NetBSD: powerd.c,v 1.18 2013/02/09 01:16:39 christos Exp $	*/
+/*	$NetBSD: powerd.c,v 1.20 2020/10/12 16:54:43 roy Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -314,7 +314,6 @@ static void
 dispatch_power_event_state_change(int fd, power_event_t *pev)
 {
 	prop_dictionary_t dict;
-	prop_object_t obj;
 	const char *argv[6];
 	char *buf = NULL;
 	int error;
@@ -326,27 +325,32 @@ dispatch_power_event_state_change(int fd, power_event_t *pev)
 			    __func__, error);
 		return;
 	}
-	
+
 	if (debug) {
 		buf = prop_dictionary_externalize(dict);
 		printf("%s", buf);
 		free(buf);
 	}
 
-	obj = prop_dictionary_get(dict, "powerd-script-name");
-	argv[0] = prop_string_cstring_nocopy(obj);
+	/* First three arguments are not optional. */
+	if (!prop_dictionary_get_string(dict, "powerd-script-name", &argv[0])) {
+		powerd_log(LOG_ERR, "dict does not have powerd-script-name");
+		return;
+	}
+	if (!prop_dictionary_get_string(dict, "driver-name", &argv[1])) {
+		powerd_log(LOG_ERR, "dict does not have driver-name");
+		return;
+	}
+	if (!prop_dictionary_get_string(dict, "powerd-event-name", &argv[2])) {
+		powerd_log(LOG_ERR, "dict does not have powerd-event-name");
+		return;
+	}
 
-	obj = prop_dictionary_get(dict, "driver-name");
-	argv[1] = prop_string_cstring_nocopy(obj);
-
-	obj = prop_dictionary_get(dict, "powerd-event-name");
-	argv[2] = prop_string_cstring_nocopy(obj);
-
-	obj = prop_dictionary_get(dict, "sensor-name");
-	argv[3] = prop_string_cstring_nocopy(obj);
-
-	obj = prop_dictionary_get(dict, "state-description");
-	argv[4] = prop_string_cstring_nocopy(obj);
+	/* These arguments are optional. */
+	if (!prop_dictionary_get_string(dict, "sensor-name", &argv[3]))
+		argv[3] = NULL;
+	if (!prop_dictionary_get_string(dict, "state-description", &argv[4]))
+		argv[4] = NULL;
 
 	argv[5] = NULL;
 

@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.32 2020/01/29 18:39:02 maya Exp $
+# $NetBSD: GENERIC,v 1.36 2020/09/27 13:48:51 roy Exp $
 #
 # GENERIC machine description file
 #
@@ -23,7 +23,7 @@ include 	"arch/hppa/conf/std.hppa"
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
-#ident 		"GENERIC-$Revision: 1.32 $"
+#ident 		"GENERIC-$Revision: 1.36 $"
 
 maxusers	32		# estimated number of users
 
@@ -56,6 +56,9 @@ options 	KTRACE		# system call tracing via ktrace(1)
 options 	SYSVMSG		# System V-like message queues
 options 	SYSVSEM		# System V-like semaphores
 options 	SYSVSHM		# System V-like memory sharing
+
+options 	MODULAR		# new style module(7) framework
+options 	MODULAR_DEFAULT_AUTOLOAD
 
 options 	USERCONF	# userconf(4) support
 
@@ -669,9 +672,6 @@ usscanner* at uhub? port ?
 # Topfield TF5000PVR range of DVB recorders
 utoppy* at uhub? port ?
 
-# Y@P firmware loader
-uyap*	at uhub? port ?
-
 # D-Link DSB-R100 USB radio
 udsbr*	at uhub? port ?
 radio*	at udsbr?
@@ -729,7 +729,7 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 
 #

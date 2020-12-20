@@ -1,4 +1,4 @@
-/*$NetBSD: ixv.c,v 1.147 2020/03/15 23:04:50 thorpej Exp $*/
+/*$NetBSD: ixv.c,v 1.154 2020/09/07 05:50:58 msaitoh Exp $*/
 
 /******************************************************************************
 
@@ -90,19 +90,21 @@ static int	ixv_ioctl(struct ifnet *, u_long, void *);
 static int	ixv_init(struct ifnet *);
 static void	ixv_init_locked(struct adapter *);
 static void	ixv_ifstop(struct ifnet *, int);
-static void	ixv_stop(void *);
+static void	ixv_stop_locked(void *);
 static void	ixv_init_device_features(struct adapter *);
 static void	ixv_media_status(struct ifnet *, struct ifmediareq *);
 static int	ixv_media_change(struct ifnet *);
 static int	ixv_allocate_pci_resources(struct adapter *,
 		    const struct pci_attach_args *);
+static void	ixv_free_deferred_handlers(struct adapter *);
 static int	ixv_allocate_msix(struct adapter *,
 		    const struct pci_attach_args *);
 static int	ixv_configure_interrupts(struct adapter *);
 static void	ixv_free_pci_resources(struct adapter *);
 static void	ixv_local_timer(void *);
-static void	ixv_local_timer_locked(void *);
+static void	ixv_handle_timer(struct work *, void *);
 static int	ixv_setup_interface(device_t, struct adapter *);
+static void	ixv_schedule_admin_tasklet(struct adapter *);
 static int	ixv_negotiate_api(struct adapter *);
 
 static void	ixv_initialize_transmit_units(struct adapter *);
@@ -147,18 +149,18 @@ static int	ixv_sysctl_tdh_handler(SYSCTLFN_PROTO);
 static int	ixv_msix_que(void *);
 static int	ixv_msix_mbx(void *);
 
-/* Deferred interrupt tasklets */
+/* Event handlers running on workqueue */
 static void	ixv_handle_que(void *);
-static void	ixv_handle_link(void *);
 
-/* Workqueue handler for deferred work */
+/* Deferred workqueue handlers */
+static void	ixv_handle_admin(struct work *, void *);
 static void	ixv_handle_que_work(struct work *, void *);
 
 const struct sysctlnode *ixv_sysctl_instance(struct adapter *);
 static const ixgbe_vendor_info_t *ixv_lookup(const struct pci_attach_args *);
 
 /************************************************************************
- * FreeBSD Device Interface Entry Points
+ * NetBSD Device Interface Entry Points
  ************************************************************************/
 CFATTACH_DECL3_NEW(ixv, sizeof(struct adapter),
     ixv_probe, ixv_attach, ixv_detach, NULL, NULL, NULL,
@@ -226,12 +228,14 @@ TUNABLE_INT("hw.ixv.enable_legacy_tx", &ixv_enable_legacy_tx);
 #ifdef NET_MPSAFE
 #define IXGBE_MPSAFE		1
 #define IXGBE_CALLOUT_FLAGS	CALLOUT_MPSAFE
-#define IXGBE_SOFTINFT_FLAGS	SOFTINT_MPSAFE
+#define IXGBE_SOFTINT_FLAGS	SOFTINT_MPSAFE
 #define IXGBE_WORKQUEUE_FLAGS	WQ_PERCPU | WQ_MPSAFE
+#define IXGBE_TASKLET_WQ_FLAGS	WQ_MPSAFE
 #else
 #define IXGBE_CALLOUT_FLAGS	0
-#define IXGBE_SOFTINFT_FLAGS	0
+#define IXGBE_SOFTINT_FLAGS	0
 #define IXGBE_WORKQUEUE_FLAGS	WQ_PERCPU
+#define IXGBE_TASKLET_WQ_FLAGS	0
 #endif
 #define IXGBE_WORKQUEUE_PRI PRI_SOFTNET
 
@@ -307,6 +311,7 @@ ixv_attach(device_t parent, device_t dev, void *aux)
 	const struct pci_attach_args *pa = aux;
 	const char *apivstr;
 	const char *str;
+	char wqname[MAXCOMLEN];
 	char buf[256];
 
 	INIT_DEBUGOUT("ixv_attach: begin");
@@ -319,12 +324,12 @@ ixv_attach(device_t parent, device_t dev, void *aux)
 
 	/* Allocate, clear, and link in our adapter structure */
 	adapter = device_private(dev);
-	adapter->dev = dev;
 	adapter->hw.back = adapter;
+	adapter->dev = dev;
 	hw = &adapter->hw;
 
 	adapter->init_locked = ixv_init_locked;
-	adapter->stop_locked = ixv_stop;
+	adapter->stop_locked = ixv_stop_locked;
 
 	adapter->osdep.pc = pa->pa_pc;
 	adapter->osdep.tag = pa->pa_tag;
@@ -341,7 +346,7 @@ ixv_attach(device_t parent, device_t dev, void *aux)
 	aprint_normal(": %s, Version - %s\n",
 	    ixv_strings[ent->index], ixv_driver_version);
 
-	/* Core Lock Init*/
+	/* Core Lock Init */
 	IXGBE_CORE_LOCK_INIT(adapter, device_xname(dev));
 
 	/* Do base PCI setup - map BAR0 */
@@ -354,8 +359,17 @@ ixv_attach(device_t parent, device_t dev, void *aux)
 	/* SYSCTL APIs */
 	ixv_add_device_sysctls(adapter);
 
-	/* Set up the timer callout */
+	/* Set up the timer callout and workqueue */
 	callout_init(&adapter->timer, IXGBE_CALLOUT_FLAGS);
+	snprintf(wqname, sizeof(wqname), "%s-timer", device_xname(dev));
+	error = workqueue_create(&adapter->timer_wq, wqname,
+	    ixv_handle_timer, adapter, IXGBE_WORKQUEUE_PRI, IPL_NET,
+	    IXGBE_TASKLET_WQ_FLAGS);
+	if (error) {
+		aprint_error_dev(dev,
+		    "could not create timer workqueue (%d)\n", error);
+		goto err_out;
+	}
 
 	/* Save off the information about this board */
 	id = pci_conf_read(pa->pa_pc, pa->pa_tag, PCI_ID_REG);
@@ -569,7 +583,6 @@ ixv_detach(device_t dev, int flags)
 {
 	struct adapter	*adapter = device_private(dev);
 	struct ixgbe_hw *hw = &adapter->hw;
-	struct ix_queue *que = adapter->queues;
 	struct tx_ring *txr = adapter->tx_rings;
 	struct rx_ring *rxr = adapter->rx_rings;
 	struct ixgbevf_hw_stats *stats = &adapter->stats.vf;
@@ -593,23 +606,9 @@ ixv_detach(device_t dev, int flags)
 	}
 #endif
 
-	for (int i = 0; i < adapter->num_queues; i++, que++, txr++) {
-		if (!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX))
-			softint_disestablish(txr->txr_si);
-		softint_disestablish(que->que_si);
-	}
-	if (adapter->txr_wq != NULL)
-		workqueue_destroy(adapter->txr_wq);
-	if (adapter->txr_wq_enqueued != NULL)
-		percpu_free(adapter->txr_wq_enqueued, sizeof(u_int));
-	if (adapter->que_wq != NULL)
-		workqueue_destroy(adapter->que_wq);
-
-	/* Drain the Mailbox(link) queue */
-	softint_disestablish(adapter->link_si);
-
 	ether_ifdetach(adapter->ifp);
 	callout_halt(&adapter->timer, NULL);
+	ixv_free_deferred_handlers(adapter);
 
 	if (adapter->feat_en & IXGBE_FEATURE_NETMAP)
 		netmap_detach(adapter->ifp);
@@ -632,7 +631,8 @@ ixv_detach(device_t dev, int flags)
 	evcnt_detach(&adapter->enomem_tx_dma_setup);
 	evcnt_detach(&adapter->watchdog_events);
 	evcnt_detach(&adapter->tso_err);
-	evcnt_detach(&adapter->link_irq);
+	evcnt_detach(&adapter->admin_irqev);
+	evcnt_detach(&adapter->link_workev);
 
 	txr = adapter->tx_rings;
 	for (int i = 0; i < adapter->num_queues; i++, rxr++, txr++) {
@@ -723,7 +723,7 @@ ixv_init_locked(struct adapter *adapter)
 	/* Prepare transmit descriptors and buffers */
 	if (ixgbe_setup_transmit_structures(adapter)) {
 		aprint_error_dev(dev, "Could not setup transmit structures\n");
-		ixv_stop(adapter);
+		ixv_stop_locked(adapter);
 		return;
 	}
 
@@ -752,12 +752,15 @@ ixv_init_locked(struct adapter *adapter)
 	/* Prepare receive descriptors and buffers */
 	if (ixgbe_setup_receive_structures(adapter)) {
 		device_printf(dev, "Could not setup receive structures\n");
-		ixv_stop(adapter);
+		ixv_stop_locked(adapter);
 		return;
 	}
 
 	/* Configure RX settings */
 	ixv_initialize_receive_units(adapter);
+
+	/* Initialize variable holding task enqueue requests interrupts */
+	adapter->task_requests = 0;
 
 	/* Set up VLAN offload and filter */
 	ixv_setup_vlan_support(adapter);
@@ -784,6 +787,10 @@ ixv_init_locked(struct adapter *adapter)
 
 	/* Start watchdog */
 	callout_reset(&adapter->timer, hz, ixv_local_timer, adapter);
+	atomic_store_relaxed(&adapter->timer_pending, 0);
+
+	/* OK to schedule workqueues. */
+	adapter->schedule_wqs_ok = true;
 
 	/* And now turn on interrupts */
 	ixv_enable_intr(adapter);
@@ -951,14 +958,13 @@ ixv_msix_mbx(void *arg)
 	struct adapter	*adapter = arg;
 	struct ixgbe_hw *hw = &adapter->hw;
 
-	++adapter->link_irq.ev_count;
+	++adapter->admin_irqev.ev_count;
 	/* NetBSD: We use auto-clear, so it's not required to write VTEICR */
 
 	/* Link status change */
 	hw->mac.get_link_status = TRUE;
-	softint_schedule(adapter->link_si);
-
-	IXGBE_WRITE_REG(hw, IXGBE_VTEIMS, (1 << adapter->vector));
+	atomic_or_32(&adapter->task_requests, IXGBE_REQUEST_TASK_MBX);
+	ixv_schedule_admin_tasklet(adapter);
 
 	return 1;
 } /* ixv_msix_mbx */
@@ -1053,6 +1059,16 @@ ixv_media_change(struct ifnet *ifp)
 	return (0);
 } /* ixv_media_change */
 
+static void
+ixv_schedule_admin_tasklet(struct adapter *adapter)
+{
+	if (adapter->schedule_wqs_ok) {
+		if (atomic_cas_uint(&adapter->admin_pending, 0, 1) == 0)
+			workqueue_enqueue(adapter->admin_wq,
+			    &adapter->admin_wc, NULL);
+	}
+}
+
 /************************************************************************
  * ixv_negotiate_api
  *
@@ -1081,7 +1097,7 @@ ixv_negotiate_api(struct adapter *adapter)
 
 
 /************************************************************************
- * ixv_set_multi - Multicast Update
+ * ixv_set_rxfilter - Multicast Update
  *
  *   Called whenever multicast address list is updated.
  ************************************************************************/
@@ -1168,7 +1184,7 @@ ixv_set_rxfilter(struct adapter *adapter)
 			ETHER_LOCK(ec);
 			ec->ec_flags |= ETHER_F_ALLMULTI;
 			ETHER_UNLOCK(ec);
-			return rc; /* Promisc might failed */
+			return rc; /* Promisc might have failed */
 		}
 
 		if (rc == 0)
@@ -1233,15 +1249,17 @@ ixv_local_timer(void *arg)
 {
 	struct adapter *adapter = arg;
 
-	IXGBE_CORE_LOCK(adapter);
-	ixv_local_timer_locked(adapter);
-	IXGBE_CORE_UNLOCK(adapter);
+	if (adapter->schedule_wqs_ok) {
+		if (atomic_cas_uint(&adapter->timer_pending, 0, 1) == 0)
+			workqueue_enqueue(adapter->timer_wq,
+			    &adapter->timer_wc, NULL);
+	}
 }
 
 static void
-ixv_local_timer_locked(void *arg)
+ixv_handle_timer(struct work *wk, void *context)
 {
-	struct adapter	*adapter = arg;
+	struct adapter	*adapter = context;
 	device_t	dev = adapter->dev;
 	struct ix_queue	*que = adapter->queues;
 	u64		queues = 0;
@@ -1249,10 +1267,11 @@ ixv_local_timer_locked(void *arg)
 	int		hung = 0;
 	int		i;
 
-	KASSERT(mutex_owned(&adapter->core_mtx));
+	IXGBE_CORE_LOCK(adapter);
 
 	if (ixv_check_link(adapter)) {
 		ixv_init_locked(adapter);
+		IXGBE_CORE_UNLOCK(adapter);
 		return;
 	}
 
@@ -1325,17 +1344,19 @@ ixv_local_timer_locked(void *arg)
 	}
 #endif
 
+	atomic_store_relaxed(&adapter->timer_pending, 0);
+	IXGBE_CORE_UNLOCK(adapter);
 	callout_reset(&adapter->timer, hz, ixv_local_timer, adapter);
 
 	return;
 
 watchdog:
-
 	device_printf(adapter->dev, "Watchdog timeout -- resetting\n");
 	adapter->ifp->if_flags &= ~IFF_RUNNING;
 	adapter->watchdog_events.ev_count++;
 	ixv_init_locked(adapter);
-} /* ixv_local_timer */
+	IXGBE_CORE_UNLOCK(adapter);
+} /* ixv_handle_timer */
 
 /************************************************************************
  * ixv_update_link_status - Update OS on link state
@@ -1414,12 +1435,17 @@ ixv_ifstop(struct ifnet *ifp, int disable)
 	struct adapter *adapter = ifp->if_softc;
 
 	IXGBE_CORE_LOCK(adapter);
-	ixv_stop(adapter);
+	ixv_stop_locked(adapter);
 	IXGBE_CORE_UNLOCK(adapter);
+
+	workqueue_wait(adapter->admin_wq, &adapter->admin_wc);
+	atomic_store_relaxed(&adapter->admin_pending, 0);
+	workqueue_wait(adapter->timer_wq, &adapter->timer_wc);
+	atomic_store_relaxed(&adapter->timer_pending, 0);
 }
 
 static void
-ixv_stop(void *arg)
+ixv_stop_locked(void *arg)
 {
 	struct ifnet	*ifp;
 	struct adapter	*adapter = arg;
@@ -1429,7 +1455,7 @@ ixv_stop(void *arg)
 
 	KASSERT(mutex_owned(&adapter->core_mtx));
 
-	INIT_DEBUGOUT("ixv_stop: begin\n");
+	INIT_DEBUGOUT("ixv_stop_locked: begin\n");
 	ixv_disable_intr(adapter);
 
 	/* Tell the stack that the interface is no longer active */
@@ -1440,11 +1466,14 @@ ixv_stop(void *arg)
 	hw->mac.ops.stop_adapter(hw);
 	callout_stop(&adapter->timer);
 
+	/* Don't schedule workqueues. */
+	adapter->schedule_wqs_ok = false;
+
 	/* reprogram the RAR[0] in case user changed it. */
 	hw->mac.ops.set_rar(hw, 0, hw->mac.addr, 0, IXGBE_RAH_AV);
 
 	return;
-} /* ixv_stop */
+} /* ixv_stop_locked */
 
 
 /************************************************************************
@@ -1499,6 +1528,39 @@ map_err:
 
 	return (0);
 } /* ixv_allocate_pci_resources */
+
+static void
+ixv_free_deferred_handlers(struct adapter *adapter)
+{
+	struct ix_queue *que = adapter->queues;
+	struct tx_ring *txr = adapter->tx_rings;
+	int i;
+
+	for (i = 0; i < adapter->num_queues; i++, que++, txr++) {
+		if (!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX)) {
+			if (txr->txr_si != NULL)
+				softint_disestablish(txr->txr_si);
+		}
+		if (que->que_si != NULL)
+			softint_disestablish(que->que_si);
+	}
+	if (adapter->txr_wq != NULL)
+		workqueue_destroy(adapter->txr_wq);
+	if (adapter->txr_wq_enqueued != NULL)
+		percpu_free(adapter->txr_wq_enqueued, sizeof(u_int));
+	if (adapter->que_wq != NULL)
+		workqueue_destroy(adapter->que_wq);
+
+	/* Drain the Mailbox(link) queue */
+	if (adapter->admin_wq != NULL) {
+		workqueue_destroy(adapter->admin_wq);
+		adapter->admin_wq = NULL;
+	}
+	if (adapter->timer_wq != NULL) {
+		workqueue_destroy(adapter->timer_wq);
+		adapter->timer_wq = NULL;
+	}
+} /* ixv_free_deferred_handlers */
 
 /************************************************************************
  * ixv_free_pci_resources
@@ -2429,7 +2491,7 @@ ixv_sysctl_interrupt_rate_handler(SYSCTLFN_ARGS)
 	if (rate > 0 && rate < 500000) {
 		if (rate < 1000)
 			rate = 1000;
-		reg |= ((4000000/rate) & 0xff8);
+		reg |= ((4000000 / rate) & 0xff8);
 		/*
 		 * When RSC is used, ITR interval must be larger than
 		 * RSC_DELAY. Currently, we use 2us for RSC_DELAY.
@@ -2542,8 +2604,10 @@ ixv_add_stats_sysctls(struct adapter *adapter)
 	    NULL, xname, "Watchdog timeouts");
 	evcnt_attach_dynamic(&adapter->tso_err, EVCNT_TYPE_MISC,
 	    NULL, xname, "TSO errors");
-	evcnt_attach_dynamic(&adapter->link_irq, EVCNT_TYPE_INTR,
-	    NULL, xname, "Link MSI-X IRQ Handled");
+	evcnt_attach_dynamic(&adapter->admin_irqev, EVCNT_TYPE_INTR,
+	    NULL, xname, "Admin MSI-X IRQ Handled");
+	evcnt_attach_dynamic(&adapter->link_workev, EVCNT_TYPE_INTR,
+	    NULL, xname, "Admin event");
 
 	for (int i = 0; i < adapter->num_queues; i++, rxr++, txr++) {
 		snprintf(adapter->queues[i].evnamebuf,
@@ -2712,7 +2776,8 @@ ixv_clear_evcnt(struct adapter *adapter)
 	adapter->enomem_tx_dma_setup.ev_count = 0;
 	adapter->watchdog_events.ev_count = 0;
 	adapter->tso_err.ev_count = 0;
-	adapter->link_irq.ev_count = 0;
+	adapter->admin_irqev.ev_count = 0;
+	adapter->link_workev.ev_count = 0;
 
 	for (i = 0; i < adapter->num_queues; i++, rxr++, txr++) {
 		adapter->queues[i].irqs.ev_count = 0;
@@ -2829,8 +2894,10 @@ ixv_print_debug_info(struct adapter *adapter)
 		    txr->me, (long)txr->no_desc_avail.ev_count);
 	}
 
-	device_printf(dev, "MBX IRQ Handled: %lu\n",
-	    (long)adapter->link_irq.ev_count);
+	device_printf(dev, "Admin IRQ Handled: %lu\n",
+	    (long)adapter->admin_irqev.ev_count);
+	device_printf(dev, "Admin work Handled: %lu\n",
+	    (long)adapter->link_workev.ev_count);
 } /* ixv_print_debug_info */
 
 /************************************************************************
@@ -2911,7 +2978,7 @@ ixv_shutdown(device_t dev)
 {
 	struct adapter *adapter = device_private(dev);
 	IXGBE_CORE_LOCK(adapter);
-	ixv_stop(adapter);
+	ixv_stop_locked(adapter);
 	IXGBE_CORE_UNLOCK(adapter);
 
 	return (0);
@@ -3255,11 +3322,11 @@ ixv_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 
 #ifndef IXGBE_LEGACY_TX
 		txr->txr_si
-		    = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+		    = softint_establish(SOFTINT_NET | IXGBE_SOFTINT_FLAGS,
 			ixgbe_deferred_mq_start, txr);
 #endif
 		que->que_si
-		    = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+		    = softint_establish(SOFTINT_NET | IXGBE_SOFTINT_FLAGS,
 			ixv_handle_que, que);
 		if (que->que_si == NULL) {
 			aprint_error_dev(dev,
@@ -3306,8 +3373,8 @@ ixv_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 	/* Round-robin affinity */
 	kcpuset_zero(affinity);
 	kcpuset_set(affinity, cpu_id % ncpu);
-	error = interrupt_distribute(adapter->osdep.ihs[vector],
-	    affinity, NULL);
+	error = interrupt_distribute(adapter->osdep.ihs[vector], affinity,
+	    NULL);
 
 	aprint_normal_dev(dev,
 	    "for link, interrupting at %s", intrstr);
@@ -3317,8 +3384,16 @@ ixv_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 		aprint_normal("\n");
 
 	/* Tasklets for Mailbox */
-	adapter->link_si = softint_establish(SOFTINT_NET |IXGBE_SOFTINFT_FLAGS,
-	    ixv_handle_link, adapter);
+	snprintf(wqname, sizeof(wqname), "%s-admin", device_xname(dev));
+	error = workqueue_create(&adapter->admin_wq, wqname,
+	    ixv_handle_admin, adapter, IXGBE_WORKQUEUE_PRI, IPL_NET,
+	    IXGBE_TASKLET_WQ_FLAGS);
+	if (error) {
+		aprint_error_dev(dev,
+		    "could not create admin workqueue (%d)\n", error);
+		goto err_out;
+	}
+
 	/*
 	 * Due to a broken design QEMU will fail to properly
 	 * enable the guest for MSI-X unless the vectors in
@@ -3336,6 +3411,11 @@ ixv_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 
 	kcpuset_destroy(affinity);
 	return (0);
+err_out:
+	kcpuset_destroy(affinity);
+	ixv_free_deferred_handlers(adapter);
+	ixv_free_pci_resources(adapter);
+	return (error);
 } /* ixv_allocate_msix */
 
 /************************************************************************
@@ -3390,23 +3470,31 @@ ixv_configure_interrupts(struct adapter *adapter)
 
 
 /************************************************************************
- * ixv_handle_link - Tasklet handler for MSI-X MBX interrupts
+ * ixv_handle_admin - Tasklet handler for MSI-X MBX interrupts
  *
  *   Done outside of interrupt context since the driver might sleep
  ************************************************************************/
 static void
-ixv_handle_link(void *context)
+ixv_handle_admin(struct work *wk, void *context)
 {
 	struct adapter *adapter = context;
+	struct ixgbe_hw	*hw = &adapter->hw;
 
 	IXGBE_CORE_LOCK(adapter);
 
+	++adapter->link_workev.ev_count;
 	adapter->hw.mac.ops.check_link(&adapter->hw, &adapter->link_speed,
 	    &adapter->link_up, FALSE);
 	ixv_update_link_status(adapter);
 
+	adapter->task_requests = 0;
+	atomic_store_relaxed(&adapter->admin_pending, 0);
+
+	/* Re-enable interrupts */
+	IXGBE_WRITE_REG(hw, IXGBE_VTEIMS, (1 << adapter->vector));
+
 	IXGBE_CORE_UNLOCK(adapter);
-} /* ixv_handle_link */
+} /* ixv_handle_admin */
 
 /************************************************************************
  * ixv_check_link - Used in the local timer to poll for link changes

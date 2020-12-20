@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_powvar.h,v 1.3 2018/04/19 21:50:06 christos Exp $	*/
+/*	$NetBSD: octeon_powvar.h,v 1.7 2020/06/23 05:15:33 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -31,6 +31,8 @@
 
 #include <sys/cpu.h>
 
+#include <mips/cavium/octeonreg.h>
+
 #define POW_TAG_TYPE_ORDERED	0
 #define POW_TAG_TYPE_ATOMIC	1
 #define POW_TAG_TYPE_NULL	2
@@ -48,51 +50,30 @@
 #define POW_WAIT	1
 #define POW_NO_WAIT	0
 
+#define	POW_WORKQ_IRQ(group)		(group)
+
 /* XXX */
-struct octeon_pow_softc {
+struct octpow_softc {
 	device_t		sc_dev;
 	bus_space_tag_t		sc_regt;
 	bus_space_handle_t	sc_regh;
 	int			sc_port;
 	int			sc_int_pc_base;
-#ifdef OCTEON_ETH_DEBUG
-	struct evcnt		sc_ev_powecciopcsrpend;
-	struct evcnt		sc_ev_powecciopdbgpend;
-	struct evcnt		sc_ev_powecciopaddwork;
-	struct evcnt		sc_ev_powecciopillop;
-	struct evcnt		sc_ev_poweccioppend24;
-	struct evcnt		sc_ev_poweccioppend23;
-	struct evcnt		sc_ev_poweccioppend22;
-	struct evcnt		sc_ev_poweccioppend21;
-	struct evcnt		sc_ev_poweccioptagnull;
-	struct evcnt		sc_ev_poweccioptagnullnull;
-	struct evcnt		sc_ev_powecciopordatom;
-	struct evcnt		sc_ev_powecciopnull;
-	struct evcnt		sc_ev_powecciopnullnull;
-	struct evcnt		sc_ev_poweccrpe;
-	struct evcnt		sc_ev_poweccsyn;
-	struct evcnt		sc_ev_poweccdbe;
-	struct evcnt		sc_ev_poweccsbe;
-#endif
 };
 
 /* XXX */
-struct octeon_pow_attach_args {
+struct octpow_attach_args {
 	int			aa_port;
 	bus_space_tag_t		aa_regt;
 };
 
-void			octeon_pow_config(struct octeon_pow_softc *, int);
-void			*octeon_pow_intr_establish(int, int,
-			    void (*)(void *, uint64_t *),
-			    void (*)(int *, int *, uint64_t, void *),
-			    void *);
-void			octeon_pow_error_int_enable(void *, int);
-uint64_t		octeon_pow_error_int_summary(void *);
-int			octeon_pow_ring_reduce(void *);
-int			octeon_pow_ring_grow(void *);
-int			octeon_pow_ring_size(void);
-int			octeon_pow_ring_intr(void);
+void		octpow_config(struct octpow_softc *, int);
+void		octpow_error_int_enable(void *, int);
+uint64_t	octpow_error_int_summary(void *);
+int		octpow_ring_reduce(void *);
+int		octpow_ring_grow(void *);
+int		octpow_ring_size(void);
+int		octpow_ring_intr(void);
 
 #define	_POW_RD8(sc, off) \
 	bus_space_read_8((sc)->sc_regt, (sc)->sc_regh, (off))
@@ -105,7 +86,7 @@ int			octeon_pow_ring_intr(void);
 	bus_space_write_8((sc)->sc_regt, (sc)->sc_regh, \
 	    (off) + sizeof(uint64_t) * (pi)->pi_group, (v))
 
-extern struct octeon_pow_softc	octeon_pow_softc;
+extern struct octpow_softc	octpow_softc;
 
 /* -------------------------------------------------------------------------- */
 
@@ -114,108 +95,12 @@ extern struct octeon_pow_softc	octeon_pow_softc;
 /* GET_WORK Loads */
 
 static __inline uint64_t 
-octeon_pow_ops_get_work_load(
+octpow_ops_get_work_load(
 	int wait)			/* 0-1 */
 {
 	uint64_t ptr =
-	    POW_OPERATION_BASE_IO_BIT |
-	    __BITS64_SET(POW_OPERATION_BASE_MAJOR_DID, 0x0c) |
-	    __BITS64_SET(POW_OPERATION_BASE_SUB_DID, 0x00) |
-	    __BITS64_SET(POW_GET_WORK_LOAD_WAIT, wait);
-
-	return octeon_xkphys_read_8(ptr);
-}
-
-/* POW Status Loads */
-
-/*
- * a) get_cur == 0, get_wqp == 0 (pend_tag)
- * b) get_cur == 0, get_wqp == 1 (pend_wqp)
- * c) get_cur == 1, get_wqp == 0, get_rev == 0 (cur_tag_next)
- * d) get_cur == 1, get_wqp == 0, get_rev == 1 (cur_tag_prev)
- * e) get_cur == 1, get_wqp == 1, get_rev == 0 (cur_wqp_next)
- * f) get_cur == 1, get_wqp == 1, get_rev == 1 (cur_wqp_prev)
- */
-
-static __inline uint64_t
-octeon_pow_ops_pow_status(
-	int coreid,			/* 0-15 */
-	int get_rev,			/* 0-1 */
-	int get_cur,			/* 0-1 */
-	int get_wqp)			/* 0-1 */
-{
-	uint64_t ptr =
-	    POW_OPERATION_BASE_IO_BIT |
-	    __BITS64_SET(POW_OPERATION_BASE_MAJOR_DID, 0x0c) |
-	    __BITS64_SET(POW_OPERATION_BASE_SUB_DID, 0x01) |
-	    __BITS64_SET(POW_STATUS_LOAD_COREID, coreid) |
-	    __BITS64_SET(POW_STATUS_LOAD_GET_REV, get_rev) |
-	    __BITS64_SET(POW_STATUS_LOAD_GET_CUR, get_cur) |
-	    __BITS64_SET(POW_STATUS_LOAD_GET_WQP, get_wqp);
-
-	return octeon_xkphys_read_8(ptr);
-}
-
-/* POW Memory Loads */
-
-/*
- * a) get_des == 0, get_wqp == 0 (tag)
- * b) get_des == 0, get_wqp == 1 (wqe)
- * c) get_des == 1 (desched)
- */
-
-static __inline uint64_t
-octeon_pow_ops_pow_memory(
-	int index,			/* 0-2047 */
-	int get_des,			/* 0-1 */
-	int get_wqp)			/* 0-1 */
-{
-	uint64_t ptr =
-	    POW_OPERATION_BASE_IO_BIT |
-	    __BITS64_SET(POW_OPERATION_BASE_MAJOR_DID, 0x0c) |
-	    __BITS64_SET(POW_OPERATION_BASE_SUB_DID, 0x02) |
-	    __BITS64_SET(POW_MEMORY_LOAD_INDEX, index) |
-	    __BITS64_SET(POW_MEMORY_LOAD_GET_DES, get_des) |
-	    __BITS64_SET(POW_MEMORY_LOAD_GET_WQP, get_wqp);
-
-	return octeon_xkphys_read_8(ptr);
-}
-
-/* POW Index/Pointer Loads */
-
-/*
- * a) get_rmt == 0, get_des_get_tail == 0
- * b) get_rmt == 0, get_des_get_tail == 1
- * c) get_rmt == 1, get_des_get_tail == 0
- * d) get_rmt == 1, get_des_get_tail == 1
- */
-
-static __inline uint64_t
-octeon_pow_ops_pow_idxptr(
-	int qosgrp,			/* 0-7 */
-	int get_des_get_tail,		/* 0-1 */
-	int get_rmt)			/* 0-1 */
-{
-	uint64_t ptr =
-	    POW_OPERATION_BASE_IO_BIT |
-	    __BITS64_SET(POW_OPERATION_BASE_MAJOR_DID, 0x0c) |
-	    __BITS64_SET(POW_OPERATION_BASE_SUB_DID, 0x03) |
-	    __BITS64_SET(POW_IDXPTR_LOAD_QOSGRP, qosgrp) |
-	    __BITS64_SET(POW_IDXPTR_LOAD_GET_DES_GET_TAIL, get_des_get_tail) |
-	    __BITS64_SET(POW_IDXPTR_LOAD_GET_RMT, get_rmt);
-
-	return octeon_xkphys_read_8(ptr);
-}
-
-/* NULL_RD Loads */
-
-static __inline uint64_t
-octeon_pow_ops_null_rd_load(void)
-{
-	uint64_t ptr =
-	    POW_OPERATION_BASE_IO_BIT |
-	    __BITS64_SET(POW_OPERATION_BASE_MAJOR_DID, 0x0c) |
-	    __BITS64_SET(POW_OPERATION_BASE_SUB_DID, 0x04);
+	    OCTEON_ADDR_IO_DID(POW_MAJOR_DID, POW_OP_SUBDID_GET_WORK) |
+	    (wait ? POW_GET_WORK_LOAD_WAIT : 0);
 
 	return octeon_xkphys_read_8(ptr);
 }
@@ -229,21 +114,16 @@ octeon_pow_ops_null_rd_load(void)
 /* GET_WORK IOBDMAs */
 
 static __inline void
-octeon_pow_ops_get_work_iobdma(
+octpow_ops_get_work_iobdma(
 	int scraddr,			/* 0-2047 */
 	int wait)			/* 0-1 */
 {
  	/* ``scraddr'' part is index in 64-bit words, not address */
 	const int scrindex = scraddr / sizeof(uint64_t);
 
-        uint64_t args =
-             __BITS64_SET(POW_IOBDMA_GET_WORK_WAIT, wait);
-        uint64_t value =
-            __BITS64_SET(POW_IOBDMA_BASE_SCRADDR, scrindex) |
-            __BITS64_SET(POW_IOBDMA_BASE_LEN, 0x01) |
-            __BITS64_SET(POW_IOBDMA_BASE_MAJOR_DID, 0x0c) |
-            __BITS64_SET(POW_IOBDMA_BASE_SUB_DID, 0x00) |
-            __BITS64_SET(POW_IOBDMA_BASE_39_0, args);
+	uint64_t value = IOBDMA_CREATE(POW_MAJOR_DID,
+	    POW_IOBDMA_SUBDID_GET_WORK, scrindex, POW_IOBDMA_LEN,
+	    wait ? POW_IOBDMA_GET_WORK_WAIT : 0);
 
         octeon_iobdma_write_8(value);
 }
@@ -251,18 +131,14 @@ octeon_pow_ops_get_work_iobdma(
 /* NULL_RD IOBDMAs */
 
 static __inline void
-octeon_pow_ops_null_rd_iobdma(
+octpow_ops_null_rd_iobdma(
 	int scraddr)			/* 0-2047 */
 {
  	/* ``scraddr'' part is index in 64-bit words, not address */
 	const int scrindex = scraddr / sizeof(uint64_t);
 
-        uint64_t value =
-            __BITS64_SET(POW_IOBDMA_BASE_SCRADDR, scrindex) |
-            __BITS64_SET(POW_IOBDMA_BASE_LEN, 0x01) |
-            __BITS64_SET(POW_IOBDMA_BASE_MAJOR_DID, 0x0c) |
-            __BITS64_SET(POW_IOBDMA_BASE_SUB_DID, 0x04) |
-            __BITS64_SET(POW_IOBDMA_BASE_39_0, 0);
+	uint64_t value = IOBDMA_CREATE(POW_MAJOR_DID,
+	    POW_IOBDMA_SUBDID_NULL_RD, scrindex, POW_IOBDMA_LEN, 0);
 
         octeon_iobdma_write_8(value);
 }
@@ -270,7 +146,7 @@ octeon_pow_ops_null_rd_iobdma(
 /* Store Operations */
 
 static __inline void
-octeon_pow_store(
+octpow_store(
 	int subdid,			/* 0, 1, 3 */
 	uint64_t addr,			/* 0-0x0000.000f.ffff.ffff */
 	int no_sched,			/* 0, 1 */
@@ -282,21 +158,18 @@ octeon_pow_store(
 	uint32_t tag)			/* 0-0xffff.ffff */
 {
 	/* Physical Address to Store to POW */
-	uint64_t ptr =
-	    POW_OPERATION_BASE_IO_BIT |
-	    __BITS64_SET(POW_OPERATION_BASE_MAJOR_DID, 0x0c) |
-	    __BITS64_SET(POW_OPERATION_BASE_SUB_DID, subdid) |
-	    __BITS64_SET(POW_PHY_ADDR_STORE_ADDR, addr); 
+	uint64_t ptr = OCTEON_ADDR_IO_DID(POW_MAJOR_DID, subdid) |
+	    __SHIFTIN(addr, POW_PHY_ADDR_STORE_ADDR);
 
 	/* Store Data on Store to POW */
 	uint64_t args =
-	    __BITS64_SET(POW_STORE_DATA_NO_SCHED, no_sched) |
-	    __BITS64_SET(POW_STORE_DATA_INDEX, index) |
-	    __BITS64_SET(POW_STORE_DATA_OP, op) |
-	    __BITS64_SET(POW_STORE_DATA_QOS, qos) |
-	    __BITS64_SET(POW_STORE_DATA_GRP, grp) |
-	    __BITS64_SET(POW_STORE_DATA_TYPE, type) |
-	    __BITS64_SET(POW_STORE_DATA_TAG, tag); 
+	    __SHIFTIN(no_sched, POW_STORE_DATA_NO_SCHED) |
+	    __SHIFTIN(index, POW_STORE_DATA_INDEX) |
+	    __SHIFTIN(op, POW_STORE_DATA_OP) |
+	    __SHIFTIN(qos, POW_STORE_DATA_QOS) |
+	    __SHIFTIN(grp, POW_STORE_DATA_GRP) |
+	    __SHIFTIN(type, POW_STORE_DATA_TYPE) |
+	    __SHIFTIN(tag, POW_STORE_DATA_TAG); 
 
 	octeon_xkphys_write_8(ptr, args);
 }
@@ -304,10 +177,11 @@ octeon_pow_store(
 /* SWTAG */
 
 static __inline void
-octeon_pow_ops_swtag(int type, uint32_t tag)
+octpow_ops_swtag(int type, uint32_t tag)
 {
-	octeon_pow_store(
-		1,			/* subdid == 1 */
+
+	octpow_store(
+		POW_STORE_SUBDID_OTHER,
 		0, 			/* addr (not used for SWTAG) */
 		0,			/* no_sched (not used for SWTAG) */
 		0,			/* index (not used for SWTAG) */
@@ -322,10 +196,11 @@ octeon_pow_ops_swtag(int type, uint32_t tag)
 /* SWTAG_FULL */
 
 static __inline void
-octeon_pow_ops_swtag_full(paddr_t addr, int grp, int type, uint32_t tag)
+octpow_ops_swtag_full(paddr_t addr, int grp, int type, uint32_t tag)
 {
-	octeon_pow_store(
-		0,			/* subdid == 0 */
+
+	octpow_store(
+		POW_STORE_SUBDID_SWTAG_FULL,
 		addr,
 		0,			/* no_sched (not used for SWTAG_FULL) */
 		0,			/* index (not used for SWTAG_FULL) */
@@ -339,10 +214,11 @@ octeon_pow_ops_swtag_full(paddr_t addr, int grp, int type, uint32_t tag)
 /* SWTAG_DESCHED */
 
 static __inline void
-octeon_pow_ops_swtag_desched(int no_sched, int grp, int type, uint32_t tag)
+octpow_ops_swtag_desched(int no_sched, int grp, int type, uint32_t tag)
 {
-	octeon_pow_store(
-		3,			/* subdid == 3 */
+
+	octpow_store(
+		POW_STORE_SUBDID_DESCHED,
 		0,			/* addr (not used for SWTAG_DESCHED) */
 		no_sched,
 		0,			/* index (not used for SWTAG_DESCHED) */
@@ -356,10 +232,11 @@ octeon_pow_ops_swtag_desched(int no_sched, int grp, int type, uint32_t tag)
 /* DESCHED */
 
 static __inline void
-octeon_pow_ops_desched(int no_sched)
+octpow_ops_desched(int no_sched)
 {
-	octeon_pow_store(
-		3,			/* subdid == 3 */
+
+	octpow_store(
+		POW_STORE_SUBDID_DESCHED,
 		0,			/* addr (not used for DESCHED) */
 		no_sched,
 		0,			/* index (not used for DESCHED) */
@@ -373,10 +250,11 @@ octeon_pow_ops_desched(int no_sched)
 /* ADDWQ */
 
 static __inline void
-octeon_pow_ops_addwq(paddr_t addr, int qos, int grp, int type, uint32_t tag)
+octpow_ops_addwq(paddr_t addr, int qos, int grp, int type, uint32_t tag)
 {
-	octeon_pow_store(
-		1,			/* subdid == 1 */
+
+	octpow_store(
+		POW_STORE_SUBDID_OTHER,
 		addr,
 		0,			/* no_sched (not used for ADDWQ) */
 		0,			/* index (not used for ADDWQ) */
@@ -390,10 +268,11 @@ octeon_pow_ops_addwq(paddr_t addr, int qos, int grp, int type, uint32_t tag)
 /* UPD_WQP_GRP */
 
 static __inline void
-octeon_pow_ops_upd_wqp_grp(paddr_t addr, int grp)
+octpow_ops_upd_wqp_grp(paddr_t addr, int grp)
 {
-	octeon_pow_store(
-		1,			/* subdid == 1 */
+
+	octpow_store(
+		POW_STORE_SUBDID_OTHER,
 		addr,
 		0,			/* no_sched (not used for UPD_WQP_GRP) */
 		0,			/* index (not used for UPD_WQP_GRP) */
@@ -407,10 +286,11 @@ octeon_pow_ops_upd_wqp_grp(paddr_t addr, int grp)
 /* CLR_NSCHED */
 
 static __inline void
-octeon_pow_ops_clr_nsched(paddr_t addr, int index)
+octpow_ops_clr_nsched(paddr_t addr, int index)
 {
-	octeon_pow_store(
-		1,			/* subdid == 1 */
+
+	octpow_store(
+		POW_STORE_SUBDID_OTHER,
 		addr,
 		0,			/* no_sched (not used for CLR_NSCHED) */
 		index,
@@ -424,10 +304,11 @@ octeon_pow_ops_clr_nsched(paddr_t addr, int index)
 /* NOP */
 
 static __inline void
-octeon_pow_ops_nop(void)
+octpow_ops_nop(void)
 {
-	octeon_pow_store(
-		1,			/* subdid == 1 */
+
+	octpow_store(
+		POW_STORE_SUBDID_OTHER,
 		0,			/* addr (not used for NOP) */
 		0,			/* no_sched (not used for NOP) */
 		0,			/* index (not used for NOP) */
@@ -438,19 +319,54 @@ octeon_pow_ops_nop(void)
 		0);			/* tag (not used for NOP) */
 }
 
+/*
+ * Check if there is a pending POW tag switch.
+ */
+static __inline int
+octpow_tag_sw_pending(void)
+{
+	int result;
+
+	/*
+	 * "RDHWR rt, $30" returns:
+	 *	0 => pending bit is set
+	 *	1 => pending bit is clear
+	 */
+
+	__asm volatile (
+		"	.set	push\n"
+		"	.set	noreorder\n"
+		"	.set	arch=mips64r2\n"
+		"	rdhwr	%0, $30\n"
+		"	.set	pop\n"
+		: "=r" (result));
+	return result == 0;
+}
+
+/*
+ * Wait until there is no pending POW tag switch.
+ */
+static inline void
+octpow_tag_sw_wait(void)
+{
+	while (octpow_tag_sw_pending())
+		continue;
+}
+
 /* -------------------------------------------------------------------------- */
 
 /*
  * global functions
  */
 static __inline void
-octeon_pow_work_request_async(uint64_t scraddr, uint64_t wait)
+octpow_work_request_async(uint64_t scraddr, uint64_t wait)
 {
-        octeon_pow_ops_get_work_iobdma(scraddr, wait);
+
+        octpow_ops_get_work_iobdma(scraddr, wait);
 }
 
 static __inline uint64_t *
-octeon_pow_work_response_async(uint64_t scraddr)
+octpow_work_response_async(uint64_t scraddr)
 {
 	uint64_t result;
 
@@ -463,15 +379,14 @@ octeon_pow_work_response_async(uint64_t scraddr)
 	    return NULL;
 #ifdef __mips_n32
 	KASSERT(addr < MIPS_PHYS_MASK);
-	//if (addr < MIPS_PHYS_MASK)
-		return (uint64_t *)MIPS_PHYS_TO_KSEG0(addr);
+	return (uint64_t *)MIPS_PHYS_TO_KSEG0(addr);
 #else
 	return (uint64_t *)MIPS_PHYS_TO_XKPHYS_CACHED(addr);
 #endif
 }
 
 static __inline void
-octeon_pow_config_int_pc(struct octeon_pow_softc *sc, int unit)
+octpow_config_int_pc(struct octpow_softc *sc, int unit)
 {
 	uint64_t wq_int_pc;
 	uint64_t pc_thr;
@@ -483,29 +398,15 @@ octeon_pow_config_int_pc(struct octeon_pow_softc *sc, int unit)
 	/* from SDK */
 	pc_thr = (cpu_clock_hz) / (unit * 16 * 256);
 
-	wq_int_pc = pc_thr << POW_WQ_INT_PC_PC_THR_SHIFT;
+	wq_int_pc = __SHIFTIN(pc_thr, POW_WQ_INT_PC_PC_THR);
 	_POW_WR8(sc, POW_WQ_INT_PC_OFFSET, wq_int_pc);
 }
 
 static __inline void
-octeon_pow_config_int_pc_rate(struct octeon_pow_softc *sc, int rate)
+octpow_config_int_pc_rate(struct octpow_softc *sc, int rate)
 {
-	octeon_pow_config_int_pc(sc, sc->sc_int_pc_base / rate);
+
+	octpow_config_int_pc(sc, sc->sc_int_pc_base / rate);
 }
 
-/* wait until ready */
-static __inline void
-octeon_pow_tag_sw_wait(void)
-{
-	__asm __volatile (
-		"	.set	push		\n"
-		"	.set	noreorder	\n"
-		"	.set	arch=octeon	\n"
-		"1:	rdhwr	$2, $30		\n"
-		"	beqz	$2, 1b		\n"
-		"	 nop			\n"
-		"	.set	pop		\n"
-	);
-}
-
-#endif /* _OCTEON_POWVAR_H_ */
+#endif /* !_OCTEON_POWVAR_H_ */

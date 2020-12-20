@@ -1,4 +1,4 @@
-/*	$NetBSD: cryptosoft.c,v 1.54 2019/10/12 00:49:30 christos Exp $ */
+/*	$NetBSD: cryptosoft.c,v 1.57 2020/07/04 18:07:31 riastradh Exp $ */
 /*	$FreeBSD: src/sys/opencrypto/cryptosoft.c,v 1.2.2.1 2002/11/21 23:34:23 sam Exp $	*/
 /*	$OpenBSD: cryptosoft.c,v 1.35 2002/04/26 08:43:50 deraadt Exp $	*/
 
@@ -24,7 +24,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cryptosoft.c,v 1.54 2019/10/12 00:49:30 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cryptosoft.c,v 1.57 2020/07/04 18:07:31 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -112,25 +112,7 @@ swcr_encdec(struct cryptodesc *crd, const struct swcr_data *sw, void *bufv,
 		} else if (exf->reinit) {
 			exf->reinit(sw->sw_kschedule, 0, iv);
 		} else {
-			/* Get random IV */
-			for (i = 0;
-			    i + sizeof (u_int32_t) <= EALG_MAX_BLOCK_LEN;
-			    i += sizeof (u_int32_t)) {
-				u_int32_t temp = cprng_fast32();
-
-				memcpy(iv + i, &temp, sizeof(u_int32_t));
-			}
-			/*
-			 * What if the block size is not a multiple
-			 * of sizeof (u_int32_t), which is the size of
-			 * what arc4random() returns ?
-			 */
-			if (EALG_MAX_BLOCK_LEN % sizeof (u_int32_t) != 0) {
-				u_int32_t temp = cprng_fast32();
-
-				bcopy (&temp, iv + i,
-				    EALG_MAX_BLOCK_LEN - i);
-			}
+			cprng_fast(iv, EALG_MAX_BLOCK_LEN);
 		}
 
 		/* Do we need to write the IV */
@@ -849,8 +831,8 @@ swcr_newsession(void *arg, u_int32_t *sid, struct cryptoini *cri)
 		case CRYPTO_SKIPJACK_CBC:
 			txf = &swcr_enc_xform_skipjack;
 			goto enccommon;
-		case CRYPTO_RIJNDAEL128_CBC:
-			txf = &swcr_enc_xform_rijndael128;
+		case CRYPTO_AES_CBC:
+			txf = &swcr_enc_xform_aes;
 			goto enccommon;
 		case CRYPTO_CAMELLIA_CBC:
 			txf = &swcr_enc_xform_camellia;
@@ -908,15 +890,13 @@ swcr_newsession(void *arg, u_int32_t *sid, struct cryptoini *cri)
 			axf = &swcr_auth_hash_hmac_ripemd_160_96;
 			goto authcommon;	/* leave this for safety */
 		authcommon:
-			(*swd)->sw_ictx = malloc(axf->ctxsize,
-			    M_CRYPTO_DATA, M_NOWAIT);
+			(*swd)->sw_ictx = kmem_alloc(axf->ctxsize, KM_NOSLEEP);
 			if ((*swd)->sw_ictx == NULL) {
 				swcr_freesession(NULL, i);
 				return ENOBUFS;
 			}
 
-			(*swd)->sw_octx = malloc(axf->ctxsize,
-			    M_CRYPTO_DATA, M_NOWAIT);
+			(*swd)->sw_octx = kmem_alloc(axf->ctxsize, KM_NOSLEEP);
 			if ((*swd)->sw_octx == NULL) {
 				swcr_freesession(NULL, i);
 				return ENOBUFS;
@@ -954,16 +934,15 @@ swcr_newsession(void *arg, u_int32_t *sid, struct cryptoini *cri)
 			CTASSERT(SHA1_DIGEST_LENGTH >= MD5_DIGEST_LENGTH);
 			axf = &swcr_auth_hash_key_sha1;
 		auth2common:
-			(*swd)->sw_ictx = malloc(axf->ctxsize,
-			    M_CRYPTO_DATA, M_NOWAIT);
+			(*swd)->sw_ictx = kmem_alloc(axf->ctxsize, KM_NOSLEEP);
 			if ((*swd)->sw_ictx == NULL) {
 				swcr_freesession(NULL, i);
 				return ENOBUFS;
 			}
 
 			/* Store the key so we can "append" it to the payload */
-			(*swd)->sw_octx = malloc(cri->cri_klen / 8, M_CRYPTO_DATA,
-			    M_NOWAIT);
+			(*swd)->sw_octx = kmem_alloc(cri->cri_klen / 8,
+			    KM_NOSLEEP);
 			if ((*swd)->sw_octx == NULL) {
 				swcr_freesession(NULL, i);
 				return ENOBUFS;
@@ -986,8 +965,7 @@ swcr_newsession(void *arg, u_int32_t *sid, struct cryptoini *cri)
 		case CRYPTO_SHA1:
 			axf = &swcr_auth_hash_sha1;
 		auth3common:
-			(*swd)->sw_ictx = malloc(axf->ctxsize,
-			    M_CRYPTO_DATA, M_NOWAIT);
+			(*swd)->sw_ictx = kmem_alloc(axf->ctxsize, KM_NOSLEEP);
 			if ((*swd)->sw_ictx == NULL) {
 				swcr_freesession(NULL, i);
 				return ENOBUFS;
@@ -1009,8 +987,7 @@ swcr_newsession(void *arg, u_int32_t *sid, struct cryptoini *cri)
 		case CRYPTO_AES_256_GMAC:
 			axf = &swcr_auth_hash_gmac_aes_256;
 		auth4common:
-			(*swd)->sw_ictx = malloc(axf->ctxsize,
-			    M_CRYPTO_DATA, M_NOWAIT);
+			(*swd)->sw_ictx = kmem_alloc(axf->ctxsize, KM_NOSLEEP);
 			if ((*swd)->sw_ictx == NULL) {
 				swcr_freesession(NULL, i);
 				return ENOBUFS;
@@ -1075,7 +1052,7 @@ swcr_freesession(void *arg, u_int64_t tid)
 		case CRYPTO_BLF_CBC:
 		case CRYPTO_CAST_CBC:
 		case CRYPTO_SKIPJACK_CBC:
-		case CRYPTO_RIJNDAEL128_CBC:
+		case CRYPTO_AES_CBC:
 		case CRYPTO_CAMELLIA_CBC:
 		case CRYPTO_AES_CTR:
 		case CRYPTO_AES_GCM_16:
@@ -1101,11 +1078,11 @@ swcr_freesession(void *arg, u_int64_t tid)
 
 			if (swd->sw_ictx) {
 				explicit_memset(swd->sw_ictx, 0, axf->ctxsize);
-				free(swd->sw_ictx, M_CRYPTO_DATA);
+				kmem_free(swd->sw_ictx, axf->ctxsize);
 			}
 			if (swd->sw_octx) {
 				explicit_memset(swd->sw_octx, 0, axf->ctxsize);
-				free(swd->sw_octx, M_CRYPTO_DATA);
+				kmem_free(swd->sw_octx, axf->ctxsize);
 			}
 			break;
 
@@ -1115,11 +1092,11 @@ swcr_freesession(void *arg, u_int64_t tid)
 
 			if (swd->sw_ictx) {
 				explicit_memset(swd->sw_ictx, 0, axf->ctxsize);
-				free(swd->sw_ictx, M_CRYPTO_DATA);
+				kmem_free(swd->sw_ictx, axf->ctxsize);
 			}
 			if (swd->sw_octx) {
 				explicit_memset(swd->sw_octx, 0, swd->sw_klen);
-				free(swd->sw_octx, M_CRYPTO_DATA);
+				kmem_free(swd->sw_octx, swd->sw_klen);
 			}
 			break;
 
@@ -1133,7 +1110,7 @@ swcr_freesession(void *arg, u_int64_t tid)
 
 			if (swd->sw_ictx) {
 				explicit_memset(swd->sw_ictx, 0, axf->ctxsize);
-				free(swd->sw_ictx, M_CRYPTO_DATA);
+				kmem_free(swd->sw_ictx, axf->ctxsize);
 			}
 			break;
 
@@ -1211,7 +1188,7 @@ swcr_process(void *arg, struct cryptop *crp, int hint)
 		case CRYPTO_BLF_CBC:
 		case CRYPTO_CAST_CBC:
 		case CRYPTO_SKIPJACK_CBC:
-		case CRYPTO_RIJNDAEL128_CBC:
+		case CRYPTO_AES_CBC:
 		case CRYPTO_CAMELLIA_CBC:
 		case CRYPTO_AES_CTR:
 			if ((crp->crp_etype = swcr_encdec(crd, sw,
@@ -1312,7 +1289,7 @@ swcr_init(void)
 	REGISTER(CRYPTO_AES_128_GMAC);
 	REGISTER(CRYPTO_AES_192_GMAC);
 	REGISTER(CRYPTO_AES_256_GMAC);
-	REGISTER(CRYPTO_RIJNDAEL128_CBC);
+	REGISTER(CRYPTO_AES_CBC);
 	REGISTER(CRYPTO_DEFLATE_COMP);
 	REGISTER(CRYPTO_DEFLATE_COMP_NOGROW);
 	REGISTER(CRYPTO_GZIP_COMP);

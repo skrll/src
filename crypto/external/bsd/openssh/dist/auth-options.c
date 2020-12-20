@@ -1,5 +1,5 @@
-/*	$NetBSD: auth-options.c,v 1.22 2020/02/27 00:24:40 christos Exp $	*/
-/* $OpenBSD: auth-options.c,v 1.90 2019/11/25 00:54:23 djm Exp $ */
+/*	$NetBSD: auth-options.c,v 1.24 2020/12/04 18:42:49 christos Exp $	*/
+/* $OpenBSD: auth-options.c,v 1.93 2020/08/27 01:07:09 djm Exp $ */
 /*
  * Copyright (c) 2018 Damien Miller <djm@mindrot.org>
  *
@@ -17,7 +17,7 @@
  */
 
 #include "includes.h"
-__RCSID("$NetBSD: auth-options.c,v 1.22 2020/02/27 00:24:40 christos Exp $");
+__RCSID("$NetBSD: auth-options.c,v 1.24 2020/12/04 18:42:49 christos Exp $");
 #include <sys/types.h>
 #include <sys/queue.h>
 
@@ -120,7 +120,10 @@ cert_option_list(struct sshauthopt *opts, struct sshbuf *oblob,
 			}
 		}
 		if (!found && (which & OPTIONS_CRITICAL) != 0) {
-			if (strcmp(name, "force-command") == 0) {
+			if (strcmp(name, "verify-required") == 0) {
+				opts->require_verify = 1;
+				found = 1;
+			} else if (strcmp(name, "force-command") == 0) {
 				if ((r = sshbuf_get_cstring(data, &command,
 				    NULL)) != 0) {
 					error("Unable to parse \"%s\" "
@@ -135,8 +138,7 @@ cert_option_list(struct sshauthopt *opts, struct sshbuf *oblob,
 				}
 				opts->force_command = command;
 				found = 1;
-			}
-			if (strcmp(name, "source-address") == 0) {
+			} else if (strcmp(name, "source-address") == 0) {
 				if ((r = sshbuf_get_cstring(data, &allowed,
 				    NULL)) != 0) {
 					error("Unable to parse \"%s\" "
@@ -223,8 +225,7 @@ sshauthopt_free(struct sshauthopt *opts)
 		free(opts->permitlisten[i]);
 	free(opts->permitlisten);
 
-	explicit_bzero(opts, sizeof(*opts));
-	free(opts);
+	freezero(opts, sizeof(*opts));
 }
 
 struct sshauthopt *
@@ -353,6 +354,8 @@ sshauthopt_parse(const char *opts, const char **errstrp)
 			ret->permit_x11_forwarding_flag = r == 1;
 		} else if ((r = opt_flag("touch-required", 1, &opts)) != -1) {
 			ret->no_require_user_presence = r != 1; /* NB. flip */
+		} else if ((r = opt_flag("verify-required", 1, &opts)) != -1) {
+			ret->require_verify = r == 1;
 		} else if ((r = opt_flag("pty", 1, &opts)) != -1) {
 			ret->permit_pty_flag = r == 1;
 		} else if ((r = opt_flag("user-rc", 1, &opts)) != -1) {
@@ -574,6 +577,7 @@ sshauthopt_merge(const struct sshauthopt *primary,
 	}
 
 #define OPTFLAG_AND(x) ret->x = (primary->x == 1) && (additional->x == 1)
+#define OPTFLAG_OR(x) ret->x = (primary->x == 1) || (additional->x == 1)
 	/* Permissive flags are logical-AND (i.e. must be set in both) */
 	OPTFLAG_AND(permit_port_forwarding_flag);
 	OPTFLAG_AND(permit_agent_forwarding_flag);
@@ -581,6 +585,8 @@ sshauthopt_merge(const struct sshauthopt *primary,
 	OPTFLAG_AND(permit_pty_flag);
 	OPTFLAG_AND(permit_user_rc);
 	OPTFLAG_AND(no_require_user_presence);
+	/* Restrictive flags are logical-OR (i.e. must be set in either) */
+	OPTFLAG_OR(require_verify);
 #undef OPTFLAG_AND
 
 	/* Earliest expiry time should win */
@@ -651,6 +657,7 @@ sshauthopt_copy(const struct sshauthopt *orig)
 	OPTSCALAR(force_tun_device);
 	OPTSCALAR(valid_before);
 	OPTSCALAR(no_require_user_presence);
+	OPTSCALAR(require_verify);
 #undef OPTSCALAR
 #define OPTSTRING(x) \
 	do { \
@@ -736,9 +743,11 @@ deserialise_array(struct sshbuf *m, char ***ap, size_t *np)
 	*np = n;
 	n = 0;
  out:
-	for (i = 0; i < n; i++)
-		free(a[i]);
-	free(a);
+	if (a != NULL) {
+		for (i = 0; i < n; i++)
+			free(a[i]);
+		free(a);
+	}
 	sshbuf_free(b);
 	return r;
 }
@@ -781,7 +790,8 @@ sshauthopt_serialise(const struct sshauthopt *opts, struct sshbuf *m,
 	    (r = sshbuf_put_u8(m, opts->permit_user_rc)) != 0 ||
 	    (r = sshbuf_put_u8(m, opts->restricted)) != 0 ||
 	    (r = sshbuf_put_u8(m, opts->cert_authority)) != 0 ||
-	    (r = sshbuf_put_u8(m, opts->no_require_user_presence)) != 0)
+	    (r = sshbuf_put_u8(m, opts->no_require_user_presence)) != 0 ||
+	    (r = sshbuf_put_u8(m, opts->require_verify)) != 0)
 		return r;
 
 	/* Simple integer options */
@@ -844,6 +854,7 @@ sshauthopt_deserialise(struct sshbuf *m, struct sshauthopt **optsp)
 	OPT_FLAG(restricted);
 	OPT_FLAG(cert_authority);
 	OPT_FLAG(no_require_user_presence);
+	OPT_FLAG(require_verify);
 #undef OPT_FLAG
 
 	/* Simple integer options */

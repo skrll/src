@@ -1,4 +1,4 @@
-/* $NetBSD: bcm2835_sdhost.c,v 1.4 2017/12/10 21:38:26 skrll Exp $ */
+/* $NetBSD: bcm2835_sdhost.c,v 1.6 2020/12/01 04:15:04 rin Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_sdhost.c,v 1.4 2017/12/10 21:38:26 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_sdhost.c,v 1.6 2020/12/01 04:15:04 rin Exp $");
 
 #include "bcmdmac.h"
 
@@ -191,8 +191,6 @@ sdhost_attach(device_t parent, device_t self, void *aux)
 {
 	struct sdhost_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
-	prop_dictionary_t dict = device_properties(self);
-	bool disable = false;
 
 	sc->sc_dev = self;
 	sc->sc_bst = faa->faa_bst;
@@ -220,12 +218,6 @@ sdhost_attach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal(": SD HOST controller\n");
 
-	prop_dictionary_get_bool(dict, "disable", &disable);
-	if (disable) {
-		aprint_naive(": disabled\n");
-		aprint_normal(": disabled\n");
-		return;
-	}
 	/* Enable clocks */
 	struct clk *clk;
 	for (int i = 0; (clk = fdtbus_clock_get_index(phandle, i)); i++) {
@@ -405,6 +397,7 @@ sdhost_dma_transfer(struct sdhost_softc *sc, struct sdmmc_command *cmd)
 			    sc->sc_dmamap->dm_segs[0].ds_addr +
 			    sizeof(struct bcm_dmac_conblk) * (seg+1);
 		}
+		bcm_dmac_swap_conblk(&sc->sc_cblk[seg]);
 		sc->sc_cblk[seg].cb_padding[0] = 0;
 		sc->sc_cblk[seg].cb_padding[1] = 0;
 	}

@@ -14,12 +14,13 @@
 
 #include <sys/cdefs.h>
 #ifdef __RCSID
-__RCSID("$NetBSD: parsedate.y,v 1.32 2017/03/22 18:17:42 kre Exp $");
+__RCSID("$NetBSD: parsedate.y,v 1.36 2020/10/30 22:03:11 kre Exp $");
 #endif
 
 #include <stdio.h>
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 #include <string.h>
 #include <time.h>
 #include <util.h>
@@ -95,6 +96,15 @@ struct dateinfo {
 		int	yyRelMonth;
 	} yyRel[MAXREL];
 };
+
+static int RelVal(struct dateinfo *, time_t, time_t, int, int);
+
+#define CheckRelVal(a, b, c, d, e) do {				\
+		if (!RelVal((a), (b), (c), (d), (e))) {		\
+			YYREJECT;				\
+		}						\
+	} while (0)
+
 %}
 
 %union {
@@ -191,6 +201,8 @@ at_number:
 
 time:
 	  tUNUMBER tMERIDIAN {
+		if ($1 > 24)
+			YYREJECT;
 		param->yyMinutes = 0;
 		param->yySeconds = 0;
 		if ($2 == MER_NOON || $2 == MER_MN) {
@@ -209,6 +221,8 @@ time:
 		}
 	  }
 	| tUNUMBER ':' tUNUMBER o_merid {
+		if ($1 > 24 || $3 >= 60)
+			YYREJECT;
 		param->yyMinutes = $3;
 		param->yySeconds = 0;
 		if ($4 == MER_NOON || $4 == MER_MN) {
@@ -227,6 +241,8 @@ time:
 		}
 	  }
 	| tUNUMBER ':' tUNUMBER ':' tUNUMBER o_merid {
+		if ($1 > 24 || $3 >= 60 || $5 > 60)
+			YYREJECT;
 		param->yyMinutes = $3;
 		param->yySeconds = $5;
 		if ($6 == MER_NOON || $6 == MER_MN) {
@@ -245,11 +261,22 @@ time:
 		}
 	  }
 	| tUNUMBER ':' tUNUMBER ':' tUNUMBER '.' tUNUMBER {
+		if ($1 > 24 || $3 >= 60 || $5 > 60)
+			YYREJECT;
 		param->yyHour = $1;
 		param->yyMinutes = $3;
 		param->yySeconds = $5;
 		param->yyMeridian = MER24;
-		/* XXX: Do nothing with millis */
+		/* XXX: Do nothing with fractional secs ($7) */
+	  }
+	| tUNUMBER ':' tUNUMBER ':' tUNUMBER ',' tUNUMBER {
+		if ($1 > 24 || $3 >= 60 || $5 > 60)
+			YYREJECT;
+		param->yyHour = $1;
+		param->yyMinutes = $3;
+		param->yySeconds = $5;
+		param->yyMeridian = MER24;
+		/* XXX: Do nothing with fractional seconds ($7) */
 	  }
 	| tTIME {
 		param->yyHour = $1;
@@ -273,6 +300,10 @@ time:
 
 time_numericzone:
 	  tUNUMBER ':' tUNUMBER tSNUMBER {
+		if ($4 < -(47 * 100 + 59) || $4 > (47 * 100 + 59))
+			YYREJECT;
+		if ($1 > 24 || $3 > 59)
+			YYREJECT;
 		param->yyHour = $1;
 		param->yyMinutes = $3;
 		param->yyMeridian = MER24;
@@ -280,6 +311,10 @@ time_numericzone:
 		param->yyTimezone = - ($4 % 100 + ($4 / 100) * 60);
 	  }
 	| tUNUMBER ':' tUNUMBER ':' tUNUMBER tSNUMBER {
+		if ($6 < -(47 * 100 + 59) || $6 > (47 * 100 + 59))
+			YYREJECT;
+		if ($1 > 24 || $3 > 59 || $5 > 60)
+			YYREJECT;
 		param->yyHour = $1;
 		param->yyMinutes = $3;
 		param->yySeconds = $5;
@@ -293,6 +328,14 @@ zone:
 	  tZONE		{ param->yyTimezone = $1; param->yyDSTmode = DSToff; }
 	| tDAYZONE	{ param->yyTimezone = $1; param->yyDSTmode = DSTon; }
 	| tZONE tDST	{ param->yyTimezone = $1; param->yyDSTmode = DSTon; }
+	| tSNUMBER	{
+			  if (param->yyHaveDate == 0 && param->yyHaveTime == 0)
+				YYREJECT;
+			  if ($1 < -(47 * 100 + 59) || $1 > (47 * 100 + 59))
+				YYREJECT;
+			  param->yyTimezone = - ($1 % 100 + ($1 / 100) * 60);
+			  param->yyDSTmode = DSTmaybe;
+			}
 ;
 
 day:
@@ -303,15 +346,21 @@ day:
 
 date:
 	  tUNUMBER '/' tUNUMBER {
+		if ($1 > 12 || $3 > 31 || $1 == 0 || $3 == 0)
+			YYREJECT;
 		param->yyMonth = $1;
 		param->yyDay = $3;
 	  }
 	| tUNUMBER '/' tUNUMBER '/' tUNUMBER {
 		if ($1 >= 100) {
+			if ($3 > 12 || $5 > 31 || $3 == 0 || $5 == 0)
+				YYREJECT;
 			param->yyYear = $1;
 			param->yyMonth = $3;
 			param->yyDay = $5;
 		} else {
+			if ($1 >= 12 || $3 > 31 || $1 == 0 || $3 == 0)
+				YYREJECT;
 			param->yyMonth = $1;
 			param->yyDay = $3;
 			param->yyYear = $5;
@@ -319,39 +368,55 @@ date:
 	  }
 	| tUNUMBER tSNUMBER tSNUMBER {
 		/* ISO 8601 format.  yyyy-mm-dd.  */
+		if ($2 >= 0 || $2 < -12 || $3 >= 0 || $3 < -31)
+			YYREJECT;
 		param->yyYear = $1;
 		param->yyHaveFullYear = 1;
 		param->yyMonth = -$2;
 		param->yyDay = -$3;
 	  }
 	| tUNUMBER tMONTH tSNUMBER {
+		if ($3 > 0 || $1 == 0 || $1 > 31)
+			YYREJECT;
 		/* e.g. 17-JUN-1992.  */
 		param->yyDay = $1;
 		param->yyMonth = $2;
 		param->yyYear = -$3;
 	  }
 	| tMONTH tUNUMBER {
+		if ($2 == 0 || $2 > 31)
+			YYREJECT;
 		param->yyMonth = $1;
 		param->yyDay = $2;
 	  }
 	| tMONTH tUNUMBER ',' tUNUMBER {
+		if ($2 == 0 || $2 > 31)
+			YYREJECT;
 		param->yyMonth = $1;
 		param->yyDay = $2;
 		param->yyYear = $4;
 	  }
 	| tUNUMBER tMONTH {
+		if ($1 == 0 || $1 > 31)
+			YYREJECT;
 		param->yyMonth = $2;
 		param->yyDay = $1;
 	  }
 	| tUNUMBER tMONTH tUNUMBER {
-		param->yyMonth = $2;
+		if ($1 > 31 && $3 > 31)
+			YYREJECT;
 		if ($1 < 35) {
+			if ($1 == 0)
+				YYREJECT;
 			param->yyDay = $1;
 			param->yyYear = $3;
 		} else {
+			if ($3 == 0)
+				YYREJECT;
 			param->yyDay = $3;
 			param->yyYear = $1;
 		}
+		param->yyMonth = $2;
 	  }
 ;
 
@@ -364,15 +429,15 @@ rel:
 ;
 
 relunit:
-	  tUNUMBER tMINUTE_UNIT	{ RelVal(param, $1 * $2 * 60L, 0); }
-	| tSNUMBER tMINUTE_UNIT	{ RelVal(param, $1 * $2 * 60L, 0); }
-	| tMINUTE_UNIT		{ RelVal(param, $1 * 60L, 0); }
-	| tSNUMBER tSEC_UNIT	{ RelVal(param, $1, 0); }
-	| tUNUMBER tSEC_UNIT	{ RelVal(param, $1, 0); }
-	| tSEC_UNIT		{ RelVal(param, 1L, 0);  }
-	| tSNUMBER tMONTH_UNIT	{ RelVal(param, $1 * $2, 1); }
-	| tUNUMBER tMONTH_UNIT	{ RelVal(param, $1 * $2, 1); }
-	| tMONTH_UNIT		{ RelVal(param, $1, 1); }
+	  tUNUMBER tMINUTE_UNIT	{ CheckRelVal(param, $1, $2, 60, 0); }
+	| tSNUMBER tMINUTE_UNIT	{ CheckRelVal(param, $1, $2, 60, 0); }
+	| tMINUTE_UNIT		{ CheckRelVal(param,  1, $1, 60, 0); }
+	| tSNUMBER tSEC_UNIT	{ CheckRelVal(param, $1, 1,  1,  0); }
+	| tUNUMBER tSEC_UNIT	{ CheckRelVal(param, $1, 1,  1,  0); }
+	| tSEC_UNIT		{ CheckRelVal(param,  1, 1,  1,  0); }
+	| tSNUMBER tMONTH_UNIT	{ CheckRelVal(param, $1, $2, 1,  1); }
+	| tUNUMBER tMONTH_UNIT	{ CheckRelVal(param, $1, $2, 1,  1); }
+	| tMONTH_UNIT		{ CheckRelVal(param,  1, $1, 1,  1); }
 ;
 
 number:
@@ -648,15 +713,46 @@ yyerror(struct dateinfo *param, const char **inp, const char *s __unused)
 /*
  * Save a relative value, if it fits
  */
-static void
-RelVal(struct dateinfo *param, time_t v, int type)
+static int
+RelVal(struct dateinfo *param, time_t num, time_t unit, int scale, int type)
 {
 	int i;
+	time_t v;
+	uintmax_t m;
+	int sign = 1;
 
 	if ((i = param->yyHaveRel) >= MAXREL)
-		return;
+		return 0;
+
+	if (num < 0) {
+		sign = -sign;
+		num = -num;
+	}
+	if (unit < 0) {
+		sign = -sign;
+		unit = -unit;
+	}
+	/* scale is always positive */
+
+	m = LLONG_MAX;		/* TIME_T_MAX */
+	if (scale > 1)
+		m /= scale;
+	if (unit > 1)
+		m /= unit;
+	if ((uintmax_t)num > m)
+		return 0;
+
+	m = num * unit * scale;
+	v = (time_t) m;
+	if (v < 0 || (uintmax_t)v != m)
+		return 0;
+	if (sign < 0)
+		v = -v;
+
 	param->yyRel[i].yyRelMonth = type;
 	param->yyRel[i].yyRelVal = v;
+
+	return 1;
 }
 
 /*
@@ -664,7 +760,8 @@ RelVal(struct dateinfo *param, time_t v, int type)
  * e.g. convert 70 to 1970.
  * Input Year is either:
  *  - A negative number, which means to use its absolute value (why?)
- *  - A number from 0 to 99, which means a year from 1900 to 1999, or
+ *  - A number from 0 to 68, which means a year from 2000 to 2068, 
+ *  - A number from 69 to 99, which means a year from 1969 to 1999, or
  *  - The actual year (>=100).
  * Returns the full year.
  */
@@ -674,7 +771,7 @@ AdjustYear(time_t Year)
     /* XXX Y2K */
     if (Year < 0)
 	Year = -Year;
-    if (Year < 70)
+    if (Year < 69)	/* POSIX compliant, 0..68 is 2000's, 69-99 1900's */
 	Year += 2000;
     else if (Year < 100)
 	Year += 1900;
@@ -707,6 +804,10 @@ Convert(
     tm.tm_mday = Day;
     tm.tm_mon = Month - 1;
     tm.tm_year = Year - 1900;
+    if ((time_t)tm.tm_year + 1900 != Year) {
+	errno = EOVERFLOW;
+	return -1;
+    }
     if (Timezone == USE_LOCAL_TIME) {
 	    switch (DSTmode) {
 	    case DSTon:  tm.tm_isdst = 1; break;
@@ -783,12 +884,29 @@ RelativeDate(
 {
     struct tm	tm;
     time_t	now;
+    time_t	change;
 
     now = Start;
     if (localtime_r(&now, &tm) == NULL)
 	return -1;
-    now += SECSPERDAY * ((DayNumber - tm.tm_wday + 7) % 7);
-    now += 7 * SECSPERDAY * (DayOrdinal <= 0 ? DayOrdinal : DayOrdinal - 1);
+
+    /* should be using TIME_T_MAX but there is no such thing, so just "know" */
+    if (llabs(DayOrdinal) >= LLONG_MAX / (7 * SECSPERDAY)) {
+	errno = EOVERFLOW;
+	return -1;
+    }
+
+    change = SECSPERDAY * ((DayNumber - tm.tm_wday + 7) % 7);
+    change += 7 * SECSPERDAY * (DayOrdinal <= 0 ? DayOrdinal : DayOrdinal - 1);
+
+    /* same here for _MAX and _MIN */
+    if ((change > 0 && LLONG_MAX - change < now) ||
+	(change < 0 && LLONG_MIN - change > now)) {
+	    errno = EOVERFLOW;
+	    return -1;
+    }
+
+    now += change;
     return DSTcorrect(Start, now);
 }
 
@@ -820,8 +938,17 @@ RelativeMonth(
     if (localtime_r(&Start, &tm) == NULL)
 	return -1;
 
+    if (RelMonth >= LLONG_MAX - 12*((time_t)tm.tm_year + 1900) - tm.tm_mon) {
+	errno = EOVERFLOW;
+	return -1;
+    }
     Month = 12 * (tm.tm_year + 1900) + tm.tm_mon + RelMonth;
     tm.tm_year = (Month / 12) - 1900;
+    /* check for tm_year (an int) overflow */
+    if (((time_t)tm.tm_year + 1900) != Month/12) {
+	errno = EOVERFLOW;
+	return -1;
+    }
     tm.tm_mon = Month % 12;
     if (tm.tm_mday > (Day = DaysInMonth[tm.tm_mon] +
 	((tm.tm_mon==1) ? isleap(tm.tm_year) : 0)))
@@ -969,8 +1096,16 @@ yylex(YYSTYPE *yylval, const char **yyInput)
 	    }
 	    else
 		sign = 0;
-	    for (yylval->Number = 0; isdigit((unsigned char)(c = *inp++)); )
-		yylval->Number = 10 * yylval->Number + c - '0';
+	    for (yylval->Number = 0; isdigit((unsigned char)(c = *inp++)); ) {
+	        time_t	v;
+
+		v = yylval->Number;
+		if (v > LLONG_MAX/10 ||
+		    (v == LLONG_MAX/10 && (v * 10 > LLONG_MAX - (c - '0')))) 
+			yylval->Number = LLONG_MAX;
+		else
+			yylval->Number = 10 * yylval->Number + c - '0';
+	    }
 	    if (sign < 0)
 		yylval->Number = -yylval->Number;
 	    *yyInput = --inp;
@@ -1057,6 +1192,88 @@ parsedate(const char *p, const time_t *now, const int *zone)
     param.yyHaveRel = 0;
     param.yyHaveTime = 0;
     param.yyHaveZone = 0;
+
+    /*
+     * This one is too hard to parse using a grammar (the lexer would
+     * confuse the 'T' with the Mil format timezone designator)
+     * so handle it as a special case.
+     */
+    do {
+	const unsigned char *pp = (const unsigned char *)p;
+	char *ep;	/* starts as "expected, becomes "end ptr" */
+	static char format[] = "-dd-ddTdd:dd:dd";
+	time_t yr;
+
+	while (isdigit(*pp))
+		pp++;
+
+	if (pp == (const unsigned char *)p)
+		break;
+
+	for (ep = format; *ep; ep++, pp++) {
+		switch (*ep) {
+		case 'd':
+			if (isdigit(*pp))
+				continue;
+			break;
+		case 'T':
+			if (*pp == 'T' || *pp == 't' || *pp == ' ')
+				continue;
+			break;
+		default:
+			if (*pp == *ep)
+				continue;
+			break;
+		}
+		break;
+	}
+	if (*ep != '\0')
+		break;
+	if (*pp == '.' || *pp == ',') {
+		if (!isdigit(pp[1]))
+			break;
+		while (isdigit(*++pp))
+			continue;
+	}
+	if (*pp == 'Z' || *pp == 'z')
+		pp++;
+	else if (isdigit(*pp))
+		break;
+
+	if (*pp != '\0' && !isspace(*pp))
+		break;
+
+	errno = 0;
+	yr = (time_t)strtol(p, &ep, 10);
+	if (errno != 0)			/* out of range (can be big number) */
+		break;			/* the ones below are all 2 digits */
+
+	/*
+	 * This is good enough to commit to there being an ISO format
+	 * timestamp leading the input string.   We permit standard
+	 * parsedate() modifiers to follow but not precede this string.
+	 */
+	param.yyHaveTime = 1;
+	param.yyHaveDate = 1;
+	param.yyHaveFullYear = 1;
+
+	if (pp[-1] == 'Z' || pp[-1] == 'z') {
+		param.yyTimezone = 0;
+		param.yyHaveZone = 1;
+	}
+
+	param.yyYear = yr;
+	param.yyMonth = (time_t)strtol(ep + 1, &ep, 10);
+	param.yyDay = (time_t)strtol(ep + 1, &ep, 10);
+	param.yyHour = (time_t)strtol(ep + 1, &ep, 10);
+	param.yyMinutes = (time_t)strtol(ep + 1, &ep, 10);
+	param.yySeconds = (time_t)strtol(ep + 1, &ep, 10);
+	/* ignore any fractional seconds, no way to return them in a time_t */
+
+	param.yyMeridian = MER24;
+
+	p = (const char *)pp;
+    } while (0);
 
     if (yyparse(&param, &p) || param.yyHaveTime > 1 || param.yyHaveZone > 1 ||
 	param.yyHaveDate > 1 || param.yyHaveDay > 1) {

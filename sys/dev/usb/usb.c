@@ -1,4 +1,4 @@
-/*	$NetBSD: usb.c,v 1.183 2020/02/19 16:03:30 riastradh Exp $	*/
+/*	$NetBSD: usb.c,v 1.188 2020/12/18 01:40:20 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1998, 2002, 2008, 2012 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb.c,v 1.183 2020/02/19 16:03:30 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb.c,v 1.188 2020/12/18 01:40:20 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -137,7 +137,7 @@ struct usb_softc {
 #if 0
 	device_t	sc_dev;		/* base device */
 #endif
-	struct usbd_bus *sc_bus;		/* USB controller */
+	struct usbd_bus *sc_bus;	/* USB controller */
 	struct usbd_port sc_port;	/* dummy port for root hub */
 
 	struct lwp	*sc_event_thread;
@@ -232,6 +232,11 @@ Static void	usb_create_event_thread(device_t);
 Static void	usb_event_thread(void *);
 Static void	usb_task_thread(void *);
 
+/*
+ * Count of USB busses
+ */
+int nusbbusses = 0;
+
 #define USB_MAX_EVENTS 100
 struct usb_event_q {
 	struct usb_event ue;
@@ -263,8 +268,6 @@ static int usb_activate(device_t, enum devact);
 static void usb_childdet(device_t, device_t);
 static int usb_once_init(void);
 static void usb_doattach(device_t);
-
-
 
 CFATTACH_DECL3_NEW(usb, sizeof(struct usb_softc),
     usb_match, usb_attach, usb_detach, usb_activate, NULL, usb_childdet,
@@ -379,6 +382,9 @@ usb_doattach(device_t self)
 	struct usb_event *ue;
 
 	USBHIST_FUNC(); USBHIST_CALLED(usbdebug);
+
+	/* Protected by KERNEL_LOCK */
+	nusbbusses++;
 
 	sc->sc_bus->ub_usbctl = self;
 	sc->sc_port.up_power = USB_MAX_POWER;
@@ -721,13 +727,16 @@ usbopen(dev_t dev, int flag, int mode, struct lwp *l)
 	int unit = minor(dev);
 	struct usb_softc *sc;
 
+	if (nusbbusses == 0)
+		return ENXIO;
+
 	if (unit == USB_DEV_MINOR) {
 		if (usb_dev_open)
 			return EBUSY;
 		usb_dev_open = 1;
-		mutex_enter(proc_lock);
-		usb_async_proc = 0;
-		mutex_exit(proc_lock);
+		mutex_enter(&proc_lock);
+		usb_async_proc = NULL;
+		mutex_exit(&proc_lock);
 		return 0;
 	}
 
@@ -805,9 +814,9 @@ usbclose(dev_t dev, int flag, int mode,
 	int unit = minor(dev);
 
 	if (unit == USB_DEV_MINOR) {
-		mutex_enter(proc_lock);
-		usb_async_proc = 0;
-		mutex_exit(proc_lock);
+		mutex_enter(&proc_lock);
+		usb_async_proc = NULL;
+		mutex_exit(&proc_lock);
 		usb_dev_open = 0;
 	}
 
@@ -829,12 +838,12 @@ usbioctl(dev_t devt, u_long cmd, void *data, int flag, struct lwp *l)
 			return 0;
 
 		case FIOASYNC:
-			mutex_enter(proc_lock);
+			mutex_enter(&proc_lock);
 			if (*(int *)data)
 				usb_async_proc = l->l_proc;
 			else
-				usb_async_proc = 0;
-			mutex_exit(proc_lock);
+				usb_async_proc = NULL;
+			mutex_exit(&proc_lock);
 			return 0;
 
 		default:
@@ -1013,7 +1022,7 @@ filt_usbrdetach(struct knote *kn)
 {
 
 	mutex_enter(&usb_event_lock);
-	SLIST_REMOVE(&usb_selevent.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&usb_selevent, kn);
 	mutex_exit(&usb_event_lock);
 }
 
@@ -1038,13 +1047,11 @@ static const struct filterops usbread_filtops = {
 int
 usbkqfilter(dev_t dev, struct knote *kn)
 {
-	struct klist *klist;
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
 		if (minor(dev) != USB_DEV_MINOR)
 			return 1;
-		klist = &usb_selevent.sel_klist;
 		kn->kn_fop = &usbread_filtops;
 		break;
 
@@ -1055,7 +1062,7 @@ usbkqfilter(dev_t dev, struct knote *kn)
 	kn->kn_hook = NULL;
 
 	mutex_enter(&usb_event_lock);
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	selrecord_knote(&usb_selevent, kn);
 	mutex_exit(&usb_event_lock);
 
 	return 0;
@@ -1224,10 +1231,10 @@ usb_async_intr(void *cookie)
 {
 	proc_t *proc;
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	if ((proc = usb_async_proc) != NULL)
 		psignal(proc, SIGIO);
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 }
 
 Static void

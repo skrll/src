@@ -22,10 +22,8 @@ CINCLUDES =	${ISC_INCLUDES} ${DNS_INCLUDES}
 CDEFINES =	@USE_GSSAPI@ @CONTRIB_DLZ@
 CWARNINGS =
 
-DNSLIBS =
-ISCLIBS =	../../../lib/isc/libisc.@A@ @OPENSSL_LIBS@
+ISCLIBS =	../../../lib/isc/libisc.@A@ @NO_LIBTOOL_ISCLIBS@
 
-DNSDEPLIBS =
 ISCDEPLIBS =
 
 DEPLIBS =
@@ -64,7 +62,7 @@ parallel.mk:
 
 test: parallel.mk subdirs
 	@$(MAKE) -f parallel.mk check
-	@$(SHELL) ./runsequential.sh -r
+	@$(SHELL) ./runsequential.sh
 	@$(SHELL) ./testsummary.sh
 
 check: test

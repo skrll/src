@@ -1,4 +1,4 @@
-/*	$NetBSD: genfs_io.c,v 1.95 2020/03/22 18:32:41 ad Exp $	*/
+/*	$NetBSD: genfs_io.c,v 1.101 2020/08/19 07:29:00 simonb Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: genfs_io.c,v 1.95 2020/03/22 18:32:41 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: genfs_io.c,v 1.101 2020/08/19 07:29:00 simonb Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -128,12 +128,12 @@ genfs_getpages(void *v)
 
 	/*
 	 * the object must be locked.  it can only be a read lock when
-	 * processing a read fault with PGO_LOCKED | PGO_NOBUSY.
+	 * processing a read fault with PGO_LOCKED.
 	 */
 
 	KASSERT(rw_lock_held(uobj->vmobjlock));
 	KASSERT(rw_write_held(uobj->vmobjlock) ||
-	   ((~flags & (PGO_LOCKED | PGO_NOBUSY)) == 0 && !memwrite));
+	   ((flags & PGO_LOCKED) != 0 && !memwrite));
 
 #ifdef DIAGNOSTIC
 	if ((flags & PGO_JOURNALLOCKED) && vp->v_mount->mnt_wapbl)
@@ -237,9 +237,8 @@ startover:
 #endif /* defined(DEBUG) */
  		nfound = uvn_findpages(uobj, origoffset, &npages,
 		    ap->a_m, NULL,
-		    UFP_NOWAIT | UFP_NOALLOC |
-		    (memwrite ? UFP_NORDONLY : 0) |
-		    ((flags & PGO_NOBUSY) != 0 ? UFP_NOBUSY : 0));
+		    UFP_NOWAIT | UFP_NOALLOC | UFP_NOBUSY |
+		    (memwrite ? UFP_NORDONLY : 0));
 		KASSERT(npages == *ap->a_count);
 		if (nfound == 0) {
 			error = EBUSY;
@@ -250,10 +249,6 @@ startover:
 		 * the file behind us.
 		 */
 		if (!genfs_node_rdtrylock(vp)) {
-			if ((flags & PGO_NOBUSY) == 0) {
-				genfs_rel_pages(ap->a_m, npages);
-			}
-
 			/*
 			 * restore the array.
 			 */
@@ -325,7 +320,7 @@ startover:
 		(void)memset(pgs, 0, pgs_size);
 	}
 
-	UVMHIST_LOG(ubchist, "ridx %jd npages %jd startoff %jd endoff %jd",
+	UVMHIST_LOG(ubchist, "ridx %jd npages %jd startoff %#jx endoff %#jx",
 	    ridx, npages, startoffset, endoffset);
 
 	if (trans_mount == NULL) {
@@ -694,7 +689,7 @@ genfs_getpages_read(struct vnode *vp, struct vm_page **pgs, int npages,
 		lbn = offset >> fs_bshift;
 		error = VOP_BMAP(vp, lbn, &devvp, &blkno, &run);
 		if (error) {
-			UVMHIST_LOG(ubchist, "VOP_BMAP lbn 0x%jx -> %jd\n",
+			UVMHIST_LOG(ubchist, "VOP_BMAP lbn 0x%jx -> %jd",
 			    lbn,error,0,0);
 			skipbytes += bytes;
 			bytes = 0;
@@ -918,8 +913,7 @@ retry:
 	 * shortcut if we have no pages to process.
 	 */
 
-	nodirty = radix_tree_empty_tagged_tree_p(&uobj->uo_pages,
-            UVM_PAGE_DIRTY_TAG);
+	nodirty = uvm_obj_clean_p(uobj);
 #ifdef DIAGNOSTIC
 	mutex_enter(vp->v_interlock);
 	KASSERT((vp->v_iflag & VI_ONWORKLST) != 0 || nodirty);
@@ -927,9 +921,8 @@ retry:
 #endif
 	if (uobj->uo_npages == 0 || (dirtyonly && nodirty)) {
 		mutex_enter(vp->v_interlock);
-		if (vp->v_iflag & VI_ONWORKLST) {
-			if (LIST_FIRST(&vp->v_dirtyblkhd) == NULL)
-				vn_syncer_remove_from_worklist(vp);
+		if (vp->v_iflag & VI_ONWORKLST && LIST_EMPTY(&vp->v_dirtyblkhd)) {
+			vn_syncer_remove_from_worklist(vp);
 		}
 		mutex_exit(vp->v_interlock);
 		if (trans_mp) {
@@ -983,8 +976,7 @@ retry:
 	}
 
 	error = 0;
-	wasclean = radix_tree_empty_tagged_tree_p(&uobj->uo_pages,
-            UVM_PAGE_WRITEBACK_TAG);
+	wasclean = uvm_obj_nowriteback_p(uobj);
 	nextoff = startoff;
 	if (endoff == 0 || flags & PGO_ALLPAGES) {
 		endoff = trunc_page(LLONG_MAX);
@@ -1010,7 +1002,8 @@ retry:
 
 	cleanall = true;
 	freeflag = pagedaemon ? PG_PAGEOUT : PG_RELEASED;
-	uvm_page_array_init(&a);
+	uvm_page_array_init(&a, uobj, dirtyonly ? (UVM_PAGE_ARRAY_FILL_DIRTY |
+	    (!async ? UVM_PAGE_ARRAY_FILL_WRITEBACK : 0)) : 0);
 	for (;;) {
 		bool pgprotected;
 
@@ -1022,9 +1015,7 @@ retry:
 		 * wait on pages being written back by other threads as well.
 		 */
 
-		pg = uvm_page_array_fill_and_peek(&a, uobj, nextoff, 0,
-		    dirtyonly ? (UVM_PAGE_ARRAY_FILL_DIRTY |
-		    (!async ? UVM_PAGE_ARRAY_FILL_WRITEBACK : 0)) : 0);
+		pg = uvm_page_array_fill_and_peek(&a, nextoff, 0);
 		if (pg == NULL) {
 			break;
 		}
@@ -1036,8 +1027,7 @@ retry:
 		KASSERT(pg->offset >= nextoff);
 		KASSERT(!dirtyonly ||
 		    uvm_pagegetdirty(pg) != UVM_PAGE_STATUS_CLEAN ||
-		    radix_tree_get_tag(&uobj->uo_pages,
-			pg->offset >> PAGE_SHIFT, UVM_PAGE_WRITEBACK_TAG));
+		    uvm_obj_page_writeback_p(pg));
 
 		if (pg->offset >= endoff) {
 			break;
@@ -1214,6 +1204,11 @@ retry:
 			 *	0
 			 *	UVM_PAGE_ARRAY_FILL_DIRTY
 			 *	UVM_PAGE_ARRAY_FILL_DIRTY|WRITEBACK
+			 *
+			 * XXX this is fragile but it'll work: the array
+			 * was earlier filled sparsely, but UFP_DIRTYONLY
+			 * implies dense.  see corresponding comment in
+			 * uvn_findpages().
 			 */
 
 			npages = MAXPAGES - nback - 1;
@@ -1221,7 +1216,7 @@ retry:
 				npages = MIN(npages,
 					     (fshi - off - 1) >> PAGE_SHIFT);
 			uvn_findpages(uobj, off + PAGE_SIZE, &npages,
-			    &pgs[nback + 1], NULL,
+			    &pgs[nback + 1], &a,
 			    UFP_NOWAIT|UFP_NOALLOC|UFP_DIRTYONLY);
 			npages += nback + 1;
 		} else {
@@ -1246,9 +1241,7 @@ retry:
 				 * mark pages as WRITEBACK so that concurrent
 				 * fsync can find and wait for our activities.
 				 */
-				radix_tree_set_tag(&uobj->uo_pages,
-				    pgs[i]->offset >> PAGE_SHIFT,
-				    UVM_PAGE_WRITEBACK_TAG);
+				uvm_obj_page_set_writeback(pgs[i]);
 			}
 			if (tpg->offset < startoff || tpg->offset >= endoff)
 				continue;
@@ -1333,11 +1326,9 @@ retry:
 	 * syncer list.
 	 */
 
-	if ((vp->v_iflag & VI_ONWORKLST) != 0 &&
-	    radix_tree_empty_tagged_tree_p(&uobj->uo_pages,
-	    UVM_PAGE_DIRTY_TAG)) {
-		if (LIST_FIRST(&vp->v_dirtyblkhd) == NULL)
-			vn_syncer_remove_from_worklist(vp);
+	if ((vp->v_iflag & VI_ONWORKLST) != 0 && uvm_obj_clean_p(uobj) &&
+	    LIST_EMPTY(&vp->v_dirtyblkhd)) {
+		vn_syncer_remove_from_worklist(vp);
 	}
 
 #if !defined(DEBUG)
@@ -1525,7 +1516,7 @@ genfs_do_io(struct vnode *vp, off_t off, vaddr_t kva, size_t len, int flags,
 		lbn = offset >> fs_bshift;
 		error = VOP_BMAP(vp, lbn, &devvp, &blkno, &run);
 		if (error) {
-			UVMHIST_LOG(ubchist, "VOP_BMAP lbn 0x%jx -> %jd\n",
+			UVMHIST_LOG(ubchist, "VOP_BMAP lbn 0x%jx -> %jd",
 			    lbn, error, 0, 0);
 			skipbytes += bytes;
 			bytes = 0;

@@ -38,6 +38,10 @@
 
 #include <ifaddrs.h>
 
+/* If the interface does not support carrier status (ie PPP),
+ * dhcpcd can poll it for the relevant flags periodically */
+#define IF_POLL_UP	100	/* milliseconds */
+
 /* Some systems have in-built IPv4 DAD.
  * However, we need them to do DAD at carrier up as well. */
 #ifdef IN_IFF_TENTATIVE
@@ -95,6 +99,8 @@ typedef unsigned long		ioctl_request_t;
 #define	FRAMEHDRLEN_MAX			14	/* only ethernet support */
 #define	FRAMELEN_MAX			(FRAMEHDRLEN_MAX + 9216)
 
+#define UDPLEN_MAX			64 * 1024
+
 /* Work out if we have a private address or not
  * 10/8
  * 172.16/12
@@ -117,6 +123,11 @@ typedef unsigned long		ioctl_request_t;
  * but then ignores it. */
 #undef RTF_CLONING
 
+/* This interface is busted on DilOS at least.
+ * It used to work, but lukily Solaris can fall back to
+ * IP_PKTINFO. */
+#undef IP_RECVIF
+
 /* Solaris getifaddrs is very un-suitable for dhcpcd.
  * See if-sun.c for details why. */
 struct ifaddrs;
@@ -126,10 +137,16 @@ int if_getsubnet(struct dhcpcd_ctx *, const char *, int, void *, size_t);
 #endif
 
 int if_ioctl(struct dhcpcd_ctx *, ioctl_request_t, void *, size_t);
+#ifdef HAVE_PLEDGE
+#define	pioctl(ctx, req, data, len) if_ioctl((ctx), (req), (data), (len))
+#else
+#define	pioctl(ctx, req, data, len) ioctl((ctx)->pf_inet_fd, (req),(data),(len))
+#endif
 int if_getflags(struct interface *);
 int if_setflag(struct interface *, short, short);
 #define if_up(ifp) if_setflag((ifp), (IFF_UP | IFF_RUNNING), 0)
 #define if_down(ifp) if_setflag((ifp), 0, IFF_UP);
+bool if_is_link_up(const struct interface *);
 bool if_valid_hwaddr(const uint8_t *, size_t);
 struct if_head *if_discover(struct dhcpcd_ctx *, struct ifaddrs **,
     int, char * const *);
@@ -143,7 +160,7 @@ void if_free(struct interface *);
 int if_domtu(const struct interface *, short int);
 #define if_getmtu(ifp) if_domtu((ifp), 0)
 #define if_setmtu(ifp, mtu) if_domtu((ifp), (mtu))
-int if_carrier(struct interface *);
+int if_carrier(struct interface *, const void *);
 
 #ifdef ALIAS_ADDR
 int if_makealias(char *, size_t, const char *, int);
@@ -167,12 +184,15 @@ struct if_spec {
 int if_nametospec(const char *, struct if_spec *);
 
 /* The below functions are provided by if-KERNEL.c */
+int os_init(void);
 int if_conf(struct interface *);
 int if_init(struct interface *);
 int if_getssid(struct interface *);
+int if_ignoregroup(int, const char *);
 bool if_ignore(struct dhcpcd_ctx *, const char *);
-int if_vimaster(const struct dhcpcd_ctx *ctx, const char *);
+int if_vimaster(struct dhcpcd_ctx *ctx, const char *);
 unsigned short if_vlanid(const struct interface *);
+char * if_getnetworknamespace(char *, size_t);
 int if_opensockets(struct dhcpcd_ctx *);
 int if_opensockets_os(struct dhcpcd_ctx *);
 void if_closesockets(struct dhcpcd_ctx *);
@@ -203,6 +223,11 @@ int if_setmac(struct interface *ifp, void *, uint8_t);
 #else
 # define SOCK_NONBLOCK	0x20000000
 #endif
+#ifndef SOCK_CXNB
+#define	SOCK_CXNB	SOCK_CLOEXEC | SOCK_NONBLOCK
+#endif
+int xsocket(int, int, int);
+int xsocketpair(int, int, int, int[2]);
 
 int if_route(unsigned char, const struct rt *rt);
 int if_initrt(struct dhcpcd_ctx *, rb_tree_t *, int);
@@ -220,13 +245,6 @@ int if_addrflags(const struct interface *, const struct in_addr *,
 #ifdef INET6
 void if_disable_rtadv(void);
 void if_setup_inet6(const struct interface *);
-#ifdef IPV6_MANAGETEMPADDR
-int ip6_use_tempaddr(const char *ifname);
-int ip6_temp_preferred_lifetime(const char *ifname);
-int ip6_temp_valid_lifetime(const char *ifname);
-#else
-#define ip6_use_tempaddr(a) (0)
-#endif
 int ip6_forwarding(const char *ifname);
 
 struct ra;
@@ -245,10 +263,9 @@ int if_getlifetime6(struct ipv6_addr *);
 int if_machinearch(char *, size_t);
 struct interface *if_findifpfromcmsg(struct dhcpcd_ctx *,
     struct msghdr *, int *);
-int xsocket(int, int, int);
 
 #ifdef __linux__
-int if_linksocket(struct sockaddr_nl *, int);
+int if_linksocket(struct sockaddr_nl *, int, int);
 int if_getnetlink(struct dhcpcd_ctx *, struct iovec *, int, int,
     int (*)(struct dhcpcd_ctx *, void *, struct nlmsghdr *), void *);
 #endif

@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_xpmap.c,v 1.85 2019/10/30 07:40:06 maxv Exp $	*/
+/*	$NetBSD: x86_xpmap.c,v 1.90 2020/09/06 02:18:53 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2017 The NetBSD Foundation, Inc.
@@ -95,7 +95,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_xpmap.c,v 1.85 2019/10/30 07:40:06 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_xpmap.c,v 1.90 2020/09/06 02:18:53 riastradh Exp $");
 
 #include "opt_xen.h"
 #include "opt_ddb.h"
@@ -105,11 +105,12 @@ __KERNEL_RCSID(0, "$NetBSD: x86_xpmap.c,v 1.85 2019/10/30 07:40:06 maxv Exp $");
 #include <sys/systm.h>
 #include <sys/mutex.h>
 #include <sys/cpu.h>
+#include <sys/kernel.h>
 
 #include <uvm/uvm.h>
 
-#include <x86/pmap.h>
 #include <machine/gdt.h>
+
 #include <xen/xenfunc.h>
 
 #include <dev/isa/isareg.h>
@@ -135,7 +136,6 @@ static mmu_update_t xpq_queue_array[MAXCPUS][XPQUEUE_SIZE];
 
 void xen_failsafe_handler(void);
 
-extern volatile struct xencons_interface *xencons_interface; /* XXX */
 extern struct xenstore_domain_interface *xenstore_interface; /* XXX */
 
 static void xen_bt_set_readonly(vaddr_t);
@@ -182,7 +182,7 @@ xen_set_ldt(vaddr_t base, uint32_t entries)
 		ptp = kvtopte(va);
 		pmap_pte_clearbits(ptp, PTE_W);
 	}
-	s = splvm(); /* XXXSMP */
+	s = splvm();
 	xpq_queue_set_ldt(base, entries);
 	splx(s);
 }
@@ -193,6 +193,8 @@ xpq_flush_queue(void)
 	mmu_update_t *xpq_queue;
 	int done = 0, ret;
 	size_t xpq_idx;
+
+	KASSERT(curcpu()->ci_ilevel >= IPL_VM || cold);
 
 	xpq_idx = curcpu()->ci_xpq_idx;
 	xpq_queue = xpq_queue_array[curcpu()->ci_cpuid];
@@ -220,7 +222,7 @@ retry:
 static inline void
 xpq_increment_idx(void)
 {
-
+	KASSERT(curcpu()->ci_ilevel >= IPL_VM || cold);
 	if (__predict_false(++curcpu()->ci_xpq_idx == XPQUEUE_SIZE))
 		xpq_flush_queue();
 }
@@ -316,12 +318,12 @@ xpq_queue_tlb_flush(void)
 void
 xpq_flush_cache(void)
 {
-	int s = splvm(); /* XXXSMP */
+	int s = splvm();
 
 	xpq_flush_queue();
 
 	asm("wbinvd":::"memory");
-	splx(s); /* XXX: removeme */
+	splx(s);
 }
 
 void
@@ -427,17 +429,26 @@ xen_pagezero(paddr_t pa)
 }
 
 int
-xpq_update_foreign(paddr_t ptr, pt_entry_t val, int dom)
+xpq_update_foreign(paddr_t ptr, pt_entry_t val, int dom, u_int flags)
 {
 	mmu_update_t op;
 	int ok;
+	int err;
 
 	xpq_flush_queue();
 
 	op.ptr = ptr;
+	if (flags & PMAP_MD_XEN_NOTR)
+		op.ptr |= MMU_PT_UPDATE_NO_TRANSLATE;
 	op.val = val;
-	if (HYPERVISOR_mmu_update(&op, 1, &ok, dom) < 0)
-		return EFAULT;
+	/*
+	 * here we return a negative error number as Xen error to
+	 * pmap_enter_ma. only calls from privcmd.c should end here, and
+	 * it can deal with it.
+	 */
+	if ((err = HYPERVISOR_mmu_update(&op, 1, &ok, dom)) < 0) {
+		return err;
+	}
 	return 0;
 }
 
@@ -936,14 +947,14 @@ void
 xen_set_user_pgd(paddr_t page)
 {
 	struct mmuext_op op;
-	int s = splvm(); /* XXXSMP */
 
+	int s = splvm();
 	xpq_flush_queue();
+	splx(s);
 	op.cmd = MMUEXT_NEW_USER_BASEPTR;
 	op.arg1.mfn = xpmap_ptom_masked(page) >> PAGE_SHIFT;
 	if (HYPERVISOR_mmuext_op(&op, 1, NULL, DOMID_SELF) < 0)
 		panic("xen_set_user_pgd: failed to install new user page"
 			" directory %#" PRIxPADDR, page);
-	splx(s);
 }
 #endif /* __x86_64__ */

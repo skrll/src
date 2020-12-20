@@ -1,7 +1,7 @@
-/*	$NetBSD: tsc.c,v 1.40 2020/04/06 09:24:50 msaitoh Exp $	*/
+/*	$NetBSD: tsc.c,v 1.52 2020/06/15 20:27:30 riastradh Exp $	*/
 
 /*-
- * Copyright (c) 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.40 2020/04/06 09:24:50 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.52 2020/06/15 20:27:30 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -38,6 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.40 2020/04/06 09:24:50 msaitoh Exp $");
 #include <sys/kernel.h>
 #include <sys/cpu.h>
 #include <sys/xcall.h>
+#include <sys/lock.h>
 
 #include <machine/cpu_counter.h>
 #include <machine/cpuvar.h>
@@ -47,12 +48,20 @@ __KERNEL_RCSID(0, "$NetBSD: tsc.c,v 1.40 2020/04/06 09:24:50 msaitoh Exp $");
 
 #include "tsc.h"
 
-u_int	tsc_get_timecount(struct timecounter *);
+#define	TSC_SYNC_ROUNDS		1000
+#define	ABS(a)			((a) >= 0 ? (a) : -(a))
 
-uint64_t	tsc_freq; /* exported for sysctl */
-static int64_t	tsc_drift_max = 250;	/* max cycles */
+static u_int	tsc_get_timecount(struct timecounter *);
+
+static void	tsc_delay(unsigned int);
+
+static uint64_t	tsc_dummy_cacheline __cacheline_aligned;
+uint64_t	tsc_freq __read_mostly;	/* exported for sysctl */
+static int64_t	tsc_drift_max = 1000;	/* max cycles */
 static int64_t	tsc_drift_observed;
-static bool	tsc_good;
+uint64_t	(*rdtsc)(void) = rdtsc_cpuid;
+uint64_t	(*cpu_counter)(void) = cpu_counter_cpuid;
+uint32_t	(*cpu_counter32)(void) = cpu_counter32_cpuid;
 
 int tsc_user_enabled = 1;
 
@@ -142,6 +151,57 @@ tsc_is_invariant(void)
 	return invariant;
 }
 
+/* Setup function porniters for rdtsc() and timecounter(9). */
+void
+tsc_setfunc(struct cpu_info *ci)
+{
+	bool use_lfence, use_mfence;
+
+	use_lfence = use_mfence = false;
+
+	/*
+	 * XXX On AMD, we might be able to use lfence for some cases:
+	 *   a) if MSR_DE_CFG exist and the bit 1 is set.
+	 *   b) family == 0x0f or 0x11. Those have no MSR_DE_CFG and
+	 *      lfence is always serializing.
+	 *
+	 * We don't use it because the test result showed mfence was better
+	 * than lfence with MSR_DE_CFG.
+	 */
+	if (cpu_vendor == CPUVENDOR_AMD)
+		use_mfence = true;
+	else if (cpu_vendor == CPUVENDOR_INTEL)
+		use_lfence = true;
+
+	/* LFENCE and MFENCE are applicable if SSE2 is set. */
+	if ((ci->ci_feat_val[0] & CPUID_SSE2) == 0)
+		use_lfence = use_mfence = false;
+
+#define TSC_SETFUNC(fence)						      \
+	do {								      \
+		rdtsc = rdtsc_##fence;					      \
+		cpu_counter = cpu_counter_##fence;			      \
+		cpu_counter32 = cpu_counter32_##fence;			      \
+	} while (/* CONSTCOND */ 0)
+
+	if (use_lfence)
+		TSC_SETFUNC(lfence);
+	else if (use_mfence)
+		TSC_SETFUNC(mfence);
+	else
+		TSC_SETFUNC(cpuid);
+
+	aprint_verbose_dev(ci->ci_dev, "Use %s to serialize rdtsc\n",
+	    use_lfence ? "lfence" : (use_mfence ? "mfence" : "cpuid"));
+}
+
+/*
+ * Initialize timecounter(9) and DELAY() function of TSC.
+ *
+ * This function is called after all secondary processors were brought up
+ * and drift has been measured, and after any other potential delay funcs
+ * have been installed (e.g. lapic_delay()).
+ */
 void
 tsc_tc_init(void)
 {
@@ -153,9 +213,6 @@ tsc_tc_init(void)
 
 	ci = curcpu();
 	tsc_freq = ci->ci_data.cpu_cc_freq;
-	tsc_good = (cpu_feature[0] & CPUID_MSR) != 0 &&
-	    (rdmsr(MSR_TSC) != 0 || rdmsr(MSR_TSC) != 0);
-
 	invariant = tsc_is_invariant();
 	if (!invariant) {
 		aprint_debug("TSC not known invariant on this CPU\n");
@@ -165,6 +222,8 @@ tsc_tc_init(void)
 		    (long long)tsc_drift_observed);
 		tsc_timecounter.tc_quality = -100;
 		invariant = false;
+	} else if (vm_guest == VM_GUEST_NO) {
+		delay_func = tsc_delay;
 	}
 
 	if (tsc_freq != 0) {
@@ -190,7 +249,7 @@ tsc_sync_drift(int64_t drift)
  * Called during startup of APs, by the boot processor.  Interrupts
  * are disabled on entry.
  */
-static void
+static void __noinline
 tsc_read_bp(struct cpu_info *ci, uint64_t *bptscp, uint64_t *aptscp)
 {
 	uint64_t bptsc;
@@ -199,15 +258,17 @@ tsc_read_bp(struct cpu_info *ci, uint64_t *bptscp, uint64_t *aptscp)
 		panic("tsc_sync_bp: 1");
 	}
 
-	/* Flag it and read our TSC. */
-	atomic_or_uint(&ci->ci_flags, CPUF_SYNCTSC);
-	bptsc = (rdtsc() >> 1);
+	/* Prepare a cache miss for the other side. */
+	(void)atomic_swap_uint((void *)&tsc_dummy_cacheline, 0);
 
-	/* Wait for remote to complete, and read ours again. */
+	/* Flag our readiness. */
+	atomic_or_uint(&ci->ci_flags, CPUF_SYNCTSC);
+
+	/* Wait for other side then read our TSC. */
 	while ((ci->ci_flags & CPUF_SYNCTSC) != 0) {
 		__insn_barrier();
 	}
-	bptsc += (rdtsc() >> 1);
+	bptsc = rdtsc();
 
 	/* Wait for the results to come in. */
 	while (tsc_sync_cpu == ci) {
@@ -224,20 +285,28 @@ tsc_read_bp(struct cpu_info *ci, uint64_t *bptscp, uint64_t *aptscp)
 void
 tsc_sync_bp(struct cpu_info *ci)
 {
-	uint64_t bptsc, aptsc;
+	int64_t bptsc, aptsc, val, diff;
 
-	tsc_read_bp(ci, &bptsc, &aptsc); /* discarded - cache effects */
-	tsc_read_bp(ci, &bptsc, &aptsc);
+	if (!cpu_hascounter())
+		return;
 
-	/* Compute final value to adjust for skew. */
-	ci->ci_data.cpu_cc_skew = bptsc - aptsc;
+	val = INT64_MAX;
+	for (int i = 0; i < TSC_SYNC_ROUNDS; i++) {
+		tsc_read_bp(ci, &bptsc, &aptsc);
+		diff = bptsc - aptsc;
+		if (ABS(diff) < ABS(val)) {
+			val = diff;
+		}
+	}
+
+	ci->ci_data.cpu_cc_skew = val;
 }
 
 /*
  * Called during startup of AP, by the AP itself.  Interrupts are
  * disabled on entry.
  */
-static void
+static void __noinline
 tsc_post_ap(struct cpu_info *ci)
 {
 	uint64_t tsc;
@@ -246,11 +315,15 @@ tsc_post_ap(struct cpu_info *ci)
 	while ((ci->ci_flags & CPUF_SYNCTSC) == 0) {
 		__insn_barrier();
 	}
-	tsc = (rdtsc() >> 1);
 
 	/* Instruct primary to read its counter. */
 	atomic_and_uint(&ci->ci_flags, ~CPUF_SYNCTSC);
-	tsc += (rdtsc() >> 1);
+
+	/* Suffer a cache miss, then read TSC. */
+	__insn_barrier();
+	tsc = tsc_dummy_cacheline;
+	__insn_barrier();
+	tsc += rdtsc();
 
 	/* Post result.  Ensure the whole value goes out atomically. */
 	(void)atomic_swap_64(&tsc_sync_val, tsc);
@@ -264,8 +337,12 @@ void
 tsc_sync_ap(struct cpu_info *ci)
 {
 
-	tsc_post_ap(ci);
-	tsc_post_ap(ci);
+	if (!cpu_hascounter())
+		return;
+
+	for (int i = 0; i < TSC_SYNC_ROUNDS; i++) {
+		tsc_post_ap(ci);
+	}
 }
 
 static void
@@ -311,11 +388,52 @@ cpu_hascounter(void)
 	return cpu_feature[0] & CPUID_TSC;
 }
 
-uint64_t
-cpu_counter_serializing(void)
+static void
+tsc_delay(unsigned int us)
 {
-	if (tsc_good)
-		return rdmsr(MSR_TSC);
-	else
-		return cpu_counter();
+	uint64_t start, delta;
+
+	start = cpu_counter();
+	delta = (uint64_t)us * tsc_freq / 1000000;
+
+	while ((cpu_counter() - start) < delta) {
+		x86_pause();
+	}
+}
+
+static u_int
+tsc_get_timecount(struct timecounter *tc)
+{
+#ifdef _LP64 /* requires atomic 64-bit store */
+	static __cpu_simple_lock_t lock = __SIMPLELOCK_UNLOCKED;
+	static int lastwarn;
+	uint64_t cur, prev;
+	lwp_t *l = curlwp;
+	int ticks;
+
+	/*
+	 * Previous value must be read before the counter and stored to
+	 * after, because this routine can be called from interrupt context
+	 * and may run over the top of an existing invocation.  Ordering is
+	 * guaranteed by "volatile" on md_tsc.
+	 */
+	prev = l->l_md.md_tsc;
+	cur = cpu_counter();
+	if (__predict_false(cur < prev)) {
+		if ((cur >> 63) == (prev >> 63) &&
+		    __cpu_simple_lock_try(&lock)) {
+			ticks = getticks();
+			if (ticks - lastwarn >= hz) {
+				printf("WARNING: TSC time went backwards "
+				    " by %u\n", (unsigned)(prev - cur));
+				lastwarn = ticks;
+			}
+			__cpu_simple_unlock(&lock);
+		}
+	}
+	l->l_md.md_tsc = cur;
+	return (uint32_t)cur;
+#else
+	return cpu_counter32();
+#endif
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: ciss.c,v 1.41 2019/11/10 21:16:35 chs Exp $	*/
+/*	$NetBSD: ciss.c,v 1.50 2020/07/16 14:39:33 jdolecek Exp $	*/
 /*	$OpenBSD: ciss.c,v 1.68 2013/05/30 16:15:02 deraadt Exp $	*/
 
 /*
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ciss.c,v 1.41 2019/11/10 21:16:35 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ciss.c,v 1.50 2020/07/16 14:39:33 jdolecek Exp $");
 
 #include "bio.h"
 
@@ -74,20 +74,15 @@ static int	ciss_scsi_ioctl(struct scsipi_channel *chan, u_long cmd,
 	    void *addr, int flag, struct proc *p);
 static void	cissminphys(struct buf *bp);
 
-#if 0
-static void	ciss_scsi_raw_cmd(struct scsipi_channel *chan,
-			scsipi_adapter_req_t req, void *arg);
-#endif
-
 static int	ciss_sync(struct ciss_softc *sc);
 static void	ciss_heartbeat(void *v);
 static void	ciss_shutdown(void *v);
 
-static struct ciss_ccb *ciss_get_ccb(struct ciss_softc *sc);
-static void	ciss_put_ccb(struct ciss_ccb *ccb);
-static int	ciss_cmd(struct ciss_ccb *ccb, int flags, int wait);
-static int	ciss_done(struct ciss_ccb *ccb);
-static int	ciss_error(struct ciss_ccb *ccb);
+static struct ciss_ccb *ciss_get_ccb(struct ciss_softc *);
+static void	ciss_put_ccb(struct ciss_softc *, struct ciss_ccb *);
+static int	ciss_cmd(struct ciss_softc *, struct ciss_ccb *, int, int);
+static int	ciss_done(struct ciss_softc *, struct ciss_ccb *);
+static int	ciss_error(struct ciss_softc *, struct ciss_ccb *);
 struct ciss_ld *ciss_pdscan(struct ciss_softc *sc, int ld);
 static int	ciss_inq(struct ciss_softc *sc, struct ciss_inquiry *inq);
 int	ciss_ldid(struct ciss_softc *, int, struct ciss_ldid *);
@@ -118,14 +113,104 @@ ciss_get_ccb(struct ciss_softc *sc)
 }
 
 static void
-ciss_put_ccb(struct ciss_ccb *ccb)
+ciss_put_ccb(struct ciss_softc *sc, struct ciss_ccb *ccb)
 {
-	struct ciss_softc *sc = ccb->ccb_sc;
-
 	ccb->ccb_state = CISS_CCB_FREE;
 	mutex_enter(&sc->sc_mutex);
 	TAILQ_INSERT_TAIL(&sc->sc_free_ccb, ccb, ccb_link);
 	mutex_exit(&sc->sc_mutex);
+}
+
+static int
+ciss_init_perf(struct ciss_softc *sc)
+{
+	struct ciss_perf_config *pc = &sc->perfcfg;
+	int error, total, rseg;
+
+	if (sc->cfg.max_perfomant_mode_cmds)
+		sc->maxcmd = sc->cfg.max_perfomant_mode_cmds;
+
+	bus_space_read_region_4(sc->sc_iot, sc->cfg_ioh,
+	    sc->cfgoff + sc->cfg.troff,
+	    (u_int32_t *)pc, sizeof(*pc) / 4);
+
+	total = sizeof(uint64_t) * sc->maxcmd;
+
+	if ((error = bus_dmamem_alloc(sc->sc_dmat, total, PAGE_SIZE, 0,
+	    sc->replyseg, 1, &rseg, BUS_DMA_WAITOK))) {
+		aprint_error(": cannot allocate perf area (%d)\n", error);
+		return -1;
+	}
+
+	if ((error = bus_dmamem_map(sc->sc_dmat, sc->replyseg, rseg, total,
+	    (void **)&sc->perf_reply, BUS_DMA_WAITOK))) {
+		aprint_error(": cannot map perf area (%d)\n", error);
+		bus_dmamem_free(sc->sc_dmat, sc->replyseg, 1);
+		return -1;
+	}
+
+	if ((error = bus_dmamap_create(sc->sc_dmat, total, 1,
+	    total, 0, BUS_DMA_WAITOK | BUS_DMA_ALLOCNOW, &sc->replymap))) {
+		aprint_error(": cannot create perf dmamap (%d)\n", error);
+		bus_dmamem_unmap(sc->sc_dmat, sc->perf_reply, total);
+		sc->perf_reply = NULL;
+		bus_dmamem_free(sc->sc_dmat, sc->replyseg, 1);
+		return -1;
+	}
+
+	if ((error = bus_dmamap_load(sc->sc_dmat, sc->replymap, sc->perf_reply,
+	    total, NULL, BUS_DMA_WAITOK))) {
+		aprint_error(": cannot load perf dmamap (%d)\n", error);
+		bus_dmamap_destroy(sc->sc_dmat, sc->replymap);
+		bus_dmamem_unmap(sc->sc_dmat, sc->perf_reply, total);
+		sc->perf_reply = NULL;
+		bus_dmamem_free(sc->sc_dmat, sc->replyseg, 1);
+		return -1;
+	}
+
+	memset(sc->perf_reply, 0, total);
+
+	sc->perf_cycle = 0x1;
+	sc->perf_rqidx = 0;
+
+	/*
+	* Preload the fetch table with common command sizes.  This allows the
+	* hardware to not waste bus cycles for typical i/o commands, but also
+	* not tax the driver to be too exact in choosing sizes.  The table
+	* is optimized for page-aligned i/o's, but since most i/o comes
+	* from the various pagers, it's a reasonable assumption to make.
+	*/
+#define CISS_FETCH_COUNT(x)	\
+    (sizeof(struct ciss_cmd) + sizeof(struct ciss_sg_entry) * (x - 1) + 15) / 16
+
+	pc->fetch_count[CISS_SG_FETCH_NONE] = CISS_FETCH_COUNT(0);
+	pc->fetch_count[CISS_SG_FETCH_1] = CISS_FETCH_COUNT(1);
+	pc->fetch_count[CISS_SG_FETCH_2] = CISS_FETCH_COUNT(2);
+	pc->fetch_count[CISS_SG_FETCH_4] = CISS_FETCH_COUNT(4);
+	pc->fetch_count[CISS_SG_FETCH_8] = CISS_FETCH_COUNT(8);
+	pc->fetch_count[CISS_SG_FETCH_16] = CISS_FETCH_COUNT(16);
+	pc->fetch_count[CISS_SG_FETCH_32] = CISS_FETCH_COUNT(32);
+	pc->fetch_count[CISS_SG_FETCH_MAX] = (sc->ccblen + 15) / 16;
+
+	pc->rq_size = sc->maxcmd;
+	pc->rq_count = 1;	/* Hardcode for a single queue */
+	pc->rq_bank_hi = 0;
+	pc->rq_bank_lo = 0;
+	pc->rq[0].rq_addr_hi = 0x0;
+	pc->rq[0].rq_addr_lo = sc->replymap->dm_segs[0].ds_addr;
+
+	/*
+	 * Write back the changed configuration. Tt will be picked up
+	 * by controller together with general configuration later on.
+	 */
+	bus_space_write_region_4(sc->sc_iot, sc->cfg_ioh,
+	    sc->cfgoff + sc->cfg.troff,
+	    (u_int32_t *)pc, sizeof(*pc) / 4);
+	bus_space_barrier(sc->sc_iot, sc->cfg_ioh,
+	    sc->cfgoff + sc->cfg.troff, sizeof(*pc),
+	    BUS_SPACE_BARRIER_READ|BUS_SPACE_BARRIER_WRITE);
+
+	return 0;
 }
 
 int
@@ -138,27 +223,41 @@ ciss_attach(struct ciss_softc *sc)
 	int error, i, total, rseg, maxfer;
 	paddr_t pa;
 
-	bus_space_read_region_4(sc->sc_iot, sc->cfg_ioh, sc->cfgoff,
-	    (u_int32_t *)&sc->cfg, sizeof(sc->cfg) / 4);
-
 	if (sc->cfg.signature != CISS_SIGNATURE) {
 		aprint_error(": bad sign 0x%08x\n", sc->cfg.signature);
 		return -1;
 	}
 
-	if (!(sc->cfg.methods & CISS_METH_SIMPL)) {
-		aprint_error(": not simple 0x%08x\n", sc->cfg.methods);
+	if (!(sc->cfg.methods & (CISS_METH_SIMPL|CISS_METH_PERF))) {
+		aprint_error(": no supported method 0x%08x\n", sc->cfg.methods);
 		return -1;
 	}
 
-	sc->cfg.rmethod = CISS_METH_SIMPL;
+	if (!sc->cfg.maxsg)
+		sc->cfg.maxsg = MAXPHYS / PAGE_SIZE + 1;
+
+	sc->maxcmd = sc->cfg.maxcmd;
+	sc->maxsg = sc->cfg.maxsg;
+	if (sc->maxsg > MAXPHYS / PAGE_SIZE + 1)
+		sc->maxsg = MAXPHYS / PAGE_SIZE + 1;
+	i = sizeof(struct ciss_ccb) +
+	    sizeof(ccb->ccb_cmd.sgl[0]) * (sc->maxsg - 1);
+	for (sc->ccblen = 0x10; sc->ccblen < i; sc->ccblen <<= 1);
+
 	sc->cfg.paddr_lim = 0;			/* 32bit addrs */
 	sc->cfg.int_delay = 0;			/* disable coalescing */
 	sc->cfg.int_count = 0;
 	strlcpy(sc->cfg.hostname, "HUMPPA", sizeof(sc->cfg.hostname));
 	sc->cfg.driverf |= CISS_DRV_PRF;	/* enable prefetch */
-	if (!sc->cfg.maxsg)
-		sc->cfg.maxsg = MAXPHYS / PAGE_SIZE + 1;
+	if (CISS_PERF_SUPPORTED(sc)) {
+		sc->cfg.rmethod = CISS_METH_PERF | CISS_METH_SHORT_TAG;
+		if (ciss_init_perf(sc) != 0) {
+			/* Don't try to fallback, just bail out */
+			return -1;
+		}
+	} else {
+		sc->cfg.rmethod = CISS_METH_SIMPL;
+	}
 
 	bus_space_write_region_4(sc->sc_iot, sc->cfg_ioh, sc->cfgoff,
 	    (u_int32_t *)&sc->cfg, sizeof(sc->cfg) / 4);
@@ -178,15 +277,15 @@ ciss_attach(struct ciss_softc *sc)
 	}
 
 	if (bus_space_read_4(sc->sc_iot, sc->sc_ioh, CISS_IDB) & CISS_IDB_CFG) {
-		printf(": cannot set config\n");
+		aprint_error(": cannot set config\n");
 		return -1;
 	}
 
 	bus_space_read_region_4(sc->sc_iot, sc->cfg_ioh, sc->cfgoff,
 	    (u_int32_t *)&sc->cfg, sizeof(sc->cfg) / 4);
 
-	if (!(sc->cfg.amethod & CISS_METH_SIMPL)) {
-		printf(": cannot simplify 0x%08x\n", sc->cfg.amethod);
+	if (!(sc->cfg.amethod & (CISS_METH_SIMPL|CISS_METH_PERF))) {
+		aprint_error(": cannot set method 0x%08x\n", sc->cfg.amethod);
 		return -1;
 	}
 
@@ -210,13 +309,6 @@ ciss_attach(struct ciss_softc *sc)
 	mutex_init(&sc->sc_mutex, MUTEX_DEFAULT, IPL_VM);
 	mutex_init(&sc->sc_mutex_scratch, MUTEX_DEFAULT, IPL_VM);
 	cv_init(&sc->sc_condvar, "ciss_cmd");
-	sc->maxcmd = sc->cfg.maxcmd;
-	sc->maxsg = sc->cfg.maxsg;
-	if (sc->maxsg > MAXPHYS / PAGE_SIZE + 1)
-		sc->maxsg = MAXPHYS / PAGE_SIZE + 1;
-	i = sizeof(struct ciss_ccb) +
-	    sizeof(ccb->ccb_cmd.sgl[0]) * (sc->maxsg - 1);
-	for (sc->ccblen = 0x10; sc->ccblen < i; sc->ccblen <<= 1);
 
 	total = sc->ccblen * sc->maxcmd;
 	if ((error = bus_dmamem_alloc(sc->sc_dmat, total, PAGE_SIZE, 0,
@@ -247,8 +339,6 @@ ciss_attach(struct ciss_softc *sc)
 		return -1;
 	}
 
-	TAILQ_INIT(&sc->sc_ccbq);
-	TAILQ_INIT(&sc->sc_ccbdone);
 	TAILQ_INIT(&sc->sc_free_ccb);
 
 	maxfer = sc->maxsg * PAGE_SIZE;
@@ -257,7 +347,6 @@ ciss_attach(struct ciss_softc *sc)
 		cmd = &ccb->ccb_cmd;
 		pa = sc->cmdseg[0].ds_addr + i * sc->ccblen;
 
-		ccb->ccb_sc = sc;
 		ccb->ccb_cmdpa = pa + offsetof(struct ciss_ccb, ccb_cmd);
 		ccb->ccb_state = CISS_CCB_FREE;
 
@@ -331,6 +420,9 @@ ciss_attach(struct ciss_softc *sc)
 		aprint_normal(", 64bit fifo");
 	else if (sc->cfg.methods & CISS_METH_FIFO64_RRO)
 		aprint_normal(", 64bit fifo rro");
+	aprint_normal(", method %s %#x",
+	    CISS_IS_PERF(sc) ? "perf" : "simple",
+	    sc->cfg.amethod);
 	aprint_normal("\n");
 
 	mutex_exit(&sc->sc_mutex_scratch);
@@ -433,61 +525,110 @@ cissminphys(struct buf *bp)
 	minphys(bp);
 }
 
-static struct ciss_ccb *
-ciss_poll1(struct ciss_softc *sc)
+static void
+ciss_enqueue(struct ciss_softc *sc, ciss_queue_head *q, uint32_t id)
 {
 	struct ciss_ccb *ccb;
-	uint32_t id;
 
-	if (!(bus_space_read_4(sc->sc_iot, sc->sc_ioh, CISS_ISR) & sc->iem)) {
-		CISS_DPRINTF(CISS_D_CMD, ("N"));
-		return NULL;
-	}
+	KASSERT(mutex_owned(&sc->sc_mutex));
 
-	if (sc->cfg.methods & CISS_METH_FIFO64) {
-		if (bus_space_read_4(sc->sc_iot, sc->sc_ioh, CISS_OUTQ64_HI) ==
-		    0xffffffff) {
-			CISS_DPRINTF(CISS_D_CMD, ("Q"));
-			return NULL;
-		}
-		id = bus_space_read_4(sc->sc_iot, sc->sc_ioh, CISS_OUTQ64_LO);
-	} else if (sc->cfg.methods & CISS_METH_FIFO64_RRO) {
-		id = bus_space_read_4(sc->sc_iot, sc->sc_ioh, CISS_OUTQ64_LO);
-		if (id == 0xffffffff) {
-			CISS_DPRINTF(CISS_D_CMD, ("Q"));
-			return NULL;
-		}
-		(void)bus_space_read_4(sc->sc_iot, sc->sc_ioh, CISS_OUTQ64_HI);
-	} else {
-		id = bus_space_read_4(sc->sc_iot, sc->sc_ioh, CISS_OUTQ);
-		if (id == 0xffffffff) {
-			CISS_DPRINTF(CISS_D_CMD, ("Q"));
-			return NULL;
-		}
-	}
-
-	CISS_DPRINTF(CISS_D_CMD, ("got=0x%x ", id));
+	KASSERT((id >> 2) <= sc->maxcmd);
 	ccb = (struct ciss_ccb *) ((char *)sc->ccbs + (id >> 2) * sc->ccblen);
 	ccb->ccb_cmd.id = htole32(id);
 	ccb->ccb_cmd.id_hi = htole32(0);
-	return ccb;
+	TAILQ_INSERT_TAIL(q, ccb, ccb_link);
+}
+
+static void
+ciss_completed_simple(struct ciss_softc *sc, ciss_queue_head *q)
+{
+	uint32_t id;
+
+	KASSERT(mutex_owned(&sc->sc_mutex));
+
+	for (;;) {
+		if (sc->cfg.methods & CISS_METH_FIFO64) {
+			if (bus_space_read_4(sc->sc_iot, sc->sc_ioh,
+			    CISS_OUTQ64_HI) == 0xffffffff) {
+				CISS_DPRINTF(CISS_D_CMD, ("Q"));
+				break;
+			}
+			id = bus_space_read_4(sc->sc_iot, sc->sc_ioh,
+			    CISS_OUTQ64_LO);
+		} else if (sc->cfg.methods & CISS_METH_FIFO64_RRO) {
+			id = bus_space_read_4(sc->sc_iot, sc->sc_ioh,
+			    CISS_OUTQ64_LO);
+			if (id == 0xffffffff) {
+				CISS_DPRINTF(CISS_D_CMD, ("Q"));
+				break;
+			}
+			(void)bus_space_read_4(sc->sc_iot, sc->sc_ioh,
+			    CISS_OUTQ64_HI);
+		} else {
+			id = bus_space_read_4(sc->sc_iot, sc->sc_ioh,
+			    CISS_OUTQ);
+			if (id == 0xffffffff) {
+				CISS_DPRINTF(CISS_D_CMD, ("Q"));
+				break;
+			}
+		}
+
+		CISS_DPRINTF(CISS_D_CMD, ("got=0x%x ", id));
+		ciss_enqueue(sc, q, id);
+	}
+}
+
+static void
+ciss_completed_perf(struct ciss_softc *sc, ciss_queue_head *q)
+{
+	uint32_t id;
+
+	KASSERT(mutex_owned(&sc->sc_mutex));
+
+	for (;;) {
+		id = sc->perf_reply[sc->perf_rqidx];
+		if ((id & CISS_CYCLE_MASK) != sc->perf_cycle)
+			break;
+
+		if (++sc->perf_rqidx == sc->maxcmd) {
+			sc->perf_rqidx = 0;
+			sc->perf_cycle ^= 1;
+		}
+
+		CISS_DPRINTF(CISS_D_CMD, ("got=0x%x ", id));
+		ciss_enqueue(sc, q, id);
+	}
 }
 
 static int
 ciss_poll(struct ciss_softc *sc, struct ciss_ccb *ccb, int ms)
 {
+	ciss_queue_head q;
 	struct ciss_ccb *ccb1;
 
+	TAILQ_INIT(&q);
 	ms /= 10;
 
 	while (ms-- > 0) {
 		DELAY(10);
-		ccb1 = ciss_poll1(sc);
-		if (ccb1 == NULL)
-			continue;
-		ciss_done(ccb1);
-		if (ccb1 == ccb)
-			return 0;
+		mutex_enter(&sc->sc_mutex);
+		if (CISS_IS_PERF(sc))
+			ciss_completed_perf(sc, &q);
+		else
+			ciss_completed_simple(sc, &q);
+		mutex_exit(&sc->sc_mutex);
+
+		while (!TAILQ_EMPTY(&q)) {
+			ccb1 = TAILQ_FIRST(&q);
+			TAILQ_REMOVE(&q, ccb1, ccb_link);
+
+			KASSERT(ccb1->ccb_state == CISS_CCB_ONQ);
+			ciss_done(sc, ccb1);
+			if (ccb1 == ccb) {
+				KASSERT(TAILQ_EMPTY(&q));
+				return 0;
+			}
+		}
 	}
 
 	return ETIMEDOUT;
@@ -501,10 +642,9 @@ ciss_wait(struct ciss_softc *sc, struct ciss_ccb *ccb, int ms)
 	tohz = mstohz(ms);
 	if (tohz == 0)
 		tohz = 1;
-	etick = hardclock_ticks + tohz;
+	etick = getticks() + tohz;
 
 	for (;;) {
-		ccb->ccb_state = CISS_CCB_POLL;
 		CISS_DPRINTF(CISS_D_CMD, ("cv_timedwait(%d) ", tohz));
 		mutex_enter(&sc->sc_mutex);
 		if (cv_timedwait(&sc->sc_condvar, &sc->sc_mutex, tohz)
@@ -514,10 +654,10 @@ ciss_wait(struct ciss_softc *sc, struct ciss_ccb *ccb, int ms)
 		}
 		mutex_exit(&sc->sc_mutex);
 		if (ccb->ccb_state == CISS_CCB_ONQ) {
-			ciss_done(ccb);
+			ciss_done(sc, ccb);
 			return 0;
 		}
-		tohz = etick - hardclock_ticks;
+		tohz = etick - getticks();
 		if (tohz <= 0)
 			return EWOULDBLOCK;
 		CISS_DPRINTF(CISS_D_CMD, ("T"));
@@ -531,13 +671,14 @@ ciss_wait(struct ciss_softc *sc, struct ciss_ccb *ccb, int ms)
  * instead of busy loop waiting
  */
 static int
-ciss_cmd(struct ciss_ccb *ccb, int flags, int wait)
+ciss_cmd(struct ciss_softc *sc, struct ciss_ccb *ccb, int flags, int wait)
 {
-	struct ciss_softc *sc = ccb->ccb_sc;
 	struct ciss_cmd *cmd = &ccb->ccb_cmd;
 	bus_dmamap_t dmap = ccb->ccb_dmamap;
 	u_int64_t addr;
 	int i, error = 0;
+	const bool pollsleep = ((wait & (XS_CTL_POLL|XS_CTL_NOSLEEP)) ==
+	    XS_CTL_POLL);
 
 	if (ccb->ccb_state != CISS_CCB_READY) {
 		printf("%s: ccb %d not ready state=0x%x\n", device_xname(sc->sc_dev),
@@ -554,7 +695,7 @@ ciss_cmd(struct ciss_ccb *ccb, int flags, int wait)
 				printf("more than %d dma segs\n", sc->maxsg);
 			else
 				printf("error %d loading dma map\n", error);
-			ciss_put_ccb(ccb);
+			ciss_put_ccb(sc, ccb);
 			return (error);
 		}
 		cmd->sgin = dmap->dm_nsegs;
@@ -580,73 +721,98 @@ ciss_cmd(struct ciss_ccb *ccb, int flags, int wait)
 
 		bus_dmamap_sync(sc->sc_dmat, dmap, 0, dmap->dm_mapsize,
 		    BUS_DMASYNC_PREREAD|BUS_DMASYNC_PREWRITE);
-	} else
+
+		if (dmap->dm_nsegs == 0)
+			ccb->ccb_sg_tag = CISS_SG_FETCH_NONE;
+		else if (dmap->dm_nsegs == 1)
+			ccb->ccb_sg_tag = CISS_SG_FETCH_1;
+		else if (dmap->dm_nsegs == 2)
+			ccb->ccb_sg_tag = CISS_SG_FETCH_2;
+		else if (dmap->dm_nsegs <= 4)
+			ccb->ccb_sg_tag = CISS_SG_FETCH_4;
+		else if (dmap->dm_nsegs <= 8)
+			ccb->ccb_sg_tag = CISS_SG_FETCH_8;
+		else if (dmap->dm_nsegs <= 16)
+			ccb->ccb_sg_tag = CISS_SG_FETCH_16;
+		else if (dmap->dm_nsegs <= 32)
+			ccb->ccb_sg_tag = CISS_SG_FETCH_32;
+		else
+			ccb->ccb_sg_tag = CISS_SG_FETCH_MAX;
+	} else {
+		ccb->ccb_sg_tag = CISS_SG_FETCH_NONE;
 		cmd->sgin = 0;
+	}
 	cmd->sglen = htole16((u_int16_t)cmd->sgin);
 	memset(&ccb->ccb_err, 0, sizeof(ccb->ccb_err));
 
 	bus_dmamap_sync(sc->sc_dmat, sc->cmdmap, 0, sc->cmdmap->dm_mapsize,
 	    BUS_DMASYNC_PREWRITE);
 
-#ifndef CISS_NO_INTERRUPT_HACK
 	if ((wait & (XS_CTL_POLL|XS_CTL_NOSLEEP)) == (XS_CTL_POLL|XS_CTL_NOSLEEP))
 		bus_space_write_4(sc->sc_iot, sc->sc_ioh, CISS_IMR,
 		    bus_space_read_4(sc->sc_iot, sc->sc_ioh, CISS_IMR) | sc->iem);
-#endif
 
-	mutex_enter(&sc->sc_mutex);
-	TAILQ_INSERT_TAIL(&sc->sc_ccbq, ccb, ccb_link);
-	mutex_exit(&sc->sc_mutex);
-	ccb->ccb_state = CISS_CCB_ONQ;
+	if (!pollsleep)
+		ccb->ccb_state = CISS_CCB_ONQ;
+	else
+		ccb->ccb_state = CISS_CCB_POLL;
 	CISS_DPRINTF(CISS_D_CMD, ("submit=0x%x ", cmd->id));
+
+	addr = (u_int64_t)ccb->ccb_cmdpa;
+	if (CISS_IS_PERF(sc)) {
+		KASSERT((addr & 0xf) == 0);
+		/*
+		 * The bits in addr in performant mean:
+		 * - performant mode bit (bit 0)
+		 * - pull count (bits 1-3)
+		 * There is no support for ioaccel mode
+		 */
+		addr |= 1 | (ccb->ccb_sg_tag << 1);
+	}
 	if (sc->cfg.methods & (CISS_METH_FIFO64|CISS_METH_FIFO64_RRO)) {
 		/*
 		 * Write the upper 32bits immediately before the lower
 		 * 32bits and set bit 63 to indicate 64bit FIFO mode.
 		 */
-		addr = (u_int64_t)ccb->ccb_cmdpa;
 		bus_space_write_4(sc->sc_iot, sc->sc_ioh, CISS_INQ64_HI,
 		    (addr >> 32) | 0x80000000);
 		bus_space_write_4(sc->sc_iot, sc->sc_ioh, CISS_INQ64_LO,
 		    addr & 0x00000000ffffffffULL);
 	} else
 		bus_space_write_4(sc->sc_iot, sc->sc_ioh, CISS_INQ,
-		    ccb->ccb_cmdpa);
+		    (uint32_t)addr);
 
 	if (wait & XS_CTL_POLL) {
 		int ms;
 		CISS_DPRINTF(CISS_D_CMD, ("waiting "));
 
 		ms = ccb->ccb_xs ? ccb->ccb_xs->timeout : 60000;
-		if (wait & XS_CTL_NOSLEEP)
-			error = ciss_poll(sc, ccb, ms);
-		else
+		if (pollsleep)
 			error = ciss_wait(sc, ccb, ms);
+		else
+			error = ciss_poll(sc, ccb, ms);
 
 		/* if never got a chance to be done above... */
 		if (ccb->ccb_state != CISS_CCB_FREE) {
 			KASSERT(error);
 			ccb->ccb_err.cmd_stat = CISS_ERR_TMO;
-			error = ciss_done(ccb);
+			error = ciss_done(sc, ccb);
 		}
 
 		CISS_DPRINTF(CISS_D_CMD, ("done %d:%d",
 		    ccb->ccb_err.cmd_stat, ccb->ccb_err.scsi_stat));
 	}
 
-#ifndef CISS_NO_INTERRUPT_HACK
 	if ((wait & (XS_CTL_POLL|XS_CTL_NOSLEEP)) == (XS_CTL_POLL|XS_CTL_NOSLEEP))
 		bus_space_write_4(sc->sc_iot, sc->sc_ioh, CISS_IMR,
 		    bus_space_read_4(sc->sc_iot, sc->sc_ioh, CISS_IMR) & ~sc->iem);
-#endif
 
 	return (error);
 }
 
 static int
-ciss_done(struct ciss_ccb *ccb)
+ciss_done(struct ciss_softc *sc, struct ciss_ccb *ccb)
 {
-	struct ciss_softc *sc = ccb->ccb_sc;
 	struct scsipi_xfer *xs = ccb->ccb_xs;
 	struct ciss_cmd *cmd;
 	int error = 0;
@@ -660,12 +826,9 @@ ciss_done(struct ciss_ccb *ccb)
 	}
 
 	ccb->ccb_state = CISS_CCB_READY;
-	mutex_enter(&sc->sc_mutex);
-	TAILQ_REMOVE(&sc->sc_ccbq, ccb, ccb_link);
-	mutex_exit(&sc->sc_mutex);
 
 	if (ccb->ccb_cmd.id & CISS_CMD_ERR)
-		error = ciss_error(ccb);
+		error = ciss_error(sc, ccb);
 
 	cmd = &ccb->ccb_cmd;
 	if (ccb->ccb_data) {
@@ -677,7 +840,7 @@ ciss_done(struct ciss_ccb *ccb)
 		ccb->ccb_data = NULL;
 	}
 
-	ciss_put_ccb(ccb);
+	ciss_put_ccb(sc, ccb);
 
 	if (xs) {
 		xs->resid = 0;
@@ -697,9 +860,8 @@ ciss_done(struct ciss_ccb *ccb)
 }
 
 static int
-ciss_error(struct ciss_ccb *ccb)
+ciss_error(struct ciss_softc *sc, struct ciss_ccb *ccb)
 {
-	struct ciss_softc *sc = ccb->ccb_sc;
 	struct ciss_error *err = &ccb->ccb_err;
 	struct scsipi_xfer *xs = ccb->ccb_xs;
 	int rv;
@@ -799,7 +961,7 @@ ciss_inq(struct ciss_softc *sc, struct ciss_inquiry *inq)
 	cmd->cdb[7] = sizeof(*inq) >> 8;	/* biiiig endian */
 	cmd->cdb[8] = sizeof(*inq) & 0xff;
 
-	return ciss_cmd(ccb, BUS_DMA_NOWAIT, XS_CTL_POLL|XS_CTL_NOSLEEP);
+	return ciss_cmd(sc, ccb, BUS_DMA_NOWAIT, XS_CTL_POLL|XS_CTL_NOSLEEP);
 }
 
 static int
@@ -830,7 +992,7 @@ ciss_ldmap(struct ciss_softc *sc)
 	cmd->cdb[8] = total >> 8;	/* biiiig endian */
 	cmd->cdb[9] = total & 0xff;
 
-	rv = ciss_cmd(ccb, BUS_DMA_NOWAIT, XS_CTL_POLL|XS_CTL_NOSLEEP);
+	rv = ciss_cmd(sc, ccb, BUS_DMA_NOWAIT, XS_CTL_POLL|XS_CTL_NOSLEEP);
 
 	if (rv) {
 		mutex_exit(&sc->sc_mutex_scratch);
@@ -873,7 +1035,7 @@ ciss_sync(struct ciss_softc *sc)
 	cmd->cdb[7] = sizeof(*flush) >> 8;	/* biiiig endian */
 	cmd->cdb[8] = sizeof(*flush) & 0xff;
 
-	rv = ciss_cmd(ccb, BUS_DMA_NOWAIT, XS_CTL_POLL|XS_CTL_NOSLEEP);
+	rv = ciss_cmd(sc, ccb, BUS_DMA_NOWAIT, XS_CTL_POLL|XS_CTL_NOSLEEP);
 	mutex_exit(&sc->sc_mutex_scratch);
 
 	return rv;
@@ -904,7 +1066,7 @@ ciss_ldid(struct ciss_softc *sc, int target, struct ciss_ldid *id)
 	cmd->cdb[7] = sizeof(*id) >> 8;	/* biiiig endian */
 	cmd->cdb[8] = sizeof(*id) & 0xff;
 
-	return ciss_cmd(ccb, BUS_DMA_NOWAIT, XS_CTL_POLL | sc->sc_waitflag);
+	return ciss_cmd(sc, ccb, BUS_DMA_NOWAIT, XS_CTL_POLL | sc->sc_waitflag);
 }
 
 int
@@ -932,7 +1094,7 @@ ciss_ldstat(struct ciss_softc *sc, int target, struct ciss_ldstat *stat)
 	cmd->cdb[7] = sizeof(*stat) >> 8;	/* biiiig endian */
 	cmd->cdb[8] = sizeof(*stat) & 0xff;
 
-	return ciss_cmd(ccb, BUS_DMA_NOWAIT, XS_CTL_POLL | sc->sc_waitflag);
+	return ciss_cmd(sc, ccb, BUS_DMA_NOWAIT, XS_CTL_POLL | sc->sc_waitflag);
 }
 
 int
@@ -960,7 +1122,7 @@ ciss_pdid(struct ciss_softc *sc, u_int8_t drv, struct ciss_pdid *id, int wait)
 	cmd->cdb[7] = sizeof(*id) >> 8;	/* biiiig endian */
 	cmd->cdb[8] = sizeof(*id) & 0xff;
 
-	return ciss_cmd(ccb, BUS_DMA_NOWAIT, wait);
+	return ciss_cmd(sc, ccb, BUS_DMA_NOWAIT, wait);
 }
 
 
@@ -1000,83 +1162,6 @@ ciss_pdscan(struct ciss_softc *sc, int ld)
 	memcpy(ldp->tgts, buf, k);
 	return ldp;
 }
-
-#if 0
-static void
-ciss_scsi_raw_cmd(struct scsipi_channel *chan, scsipi_adapter_req_t req,
-	void *arg)				/* TODO */
-{
-	struct scsipi_xfer *xs = (struct scsipi_xfer *) arg;
-	struct ciss_rawsoftc *rsc = device_private(
-	    chan->chan_adapter->adapt_dev);
-	struct ciss_softc *sc = rsc->sc_softc;
-	struct ciss_ccb *ccb;
-	struct ciss_cmd *cmd;
-	int error;
-
-	CISS_DPRINTF(CISS_D_CMD, ("ciss_scsi_raw_cmd "));
-
-	switch (req)
-	{
-	case ADAPTER_REQ_RUN_XFER:
-		if (xs->cmdlen > CISS_MAX_CDB) {
-			CISS_DPRINTF(CISS_D_CMD, ("CDB too big %p ", xs));
-			memset(&xs->sense, 0, sizeof(xs->sense));
-			printf("ciss driver stuffup in %s:%d: %s()\n",
-			       __FILE__, __LINE__, __func__);
-			xs->error = XS_DRIVER_STUFFUP;
-			scsipi_done(xs);
-			break;
-		}
-
-		error = 0;
-		xs->error = XS_NOERROR;
-
-		/* TODO check this target has not yet employed w/ any volume */
-
-		ccb = ciss_get_ccb(sc);
-		cmd = &ccb->ccb_cmd;
-		ccb->ccb_len = xs->datalen;
-		ccb->ccb_data = xs->data;
-		ccb->ccb_xs = xs;
-
-		cmd->cdblen = xs->cmdlen;
-		cmd->flags = CISS_CDB_CMD | CISS_CDB_SIMPL;
-		if (xs->xs_control & XS_CTL_DATA_IN)
-			cmd->flags |= CISS_CDB_IN;
-		else if (xs->xs_control & XS_CTL_DATA_OUT)
-			cmd->flags |= CISS_CDB_OUT;
-		cmd->tmo = xs->timeout < 1000? 1 : xs->timeout / 1000;
-		memset(&cmd->cdb[0], 0, sizeof(cmd->cdb));
-		memcpy(&cmd->cdb[0], xs->cmd, CISS_MAX_CDB);
-
-		if (ciss_cmd(ccb, BUS_DMA_WAITOK,
-		    xs->xs_control & (XS_CTL_POLL|XS_CTL_NOSLEEP))) {
-			printf("ciss driver stuffup in %s:%d: %s()\n",
-			       __FILE__, __LINE__, __func__);
-			xs->error = XS_DRIVER_STUFFUP;
-			scsipi_done(xs);
-			break;
-		}
-
-		break;
-
-	case ADAPTER_REQ_GROW_RESOURCES:
-		/*
-		 * Not supported.
-		 */
-		break;
-
-	case ADAPTER_REQ_SET_XFER_MODE:
-		/*
-		 * We can't change the transfer mode, but at least let
-		 * scsipi know what the adapter has negociated.
-		 */
-		 /* Get xfer mode and return it */
-		break;
-	}
-}
-#endif
 
 static void
 ciss_scsi_cmd(struct scsipi_channel *chan, scsipi_adapter_req_t req,
@@ -1125,13 +1210,12 @@ ciss_scsi_cmd(struct scsipi_channel *chan, scsipi_adapter_req_t req,
 		else if (xs->xs_control & XS_CTL_DATA_OUT)
 			cmd->flags |= CISS_CDB_OUT;
 		cmd->tmo = htole16(xs->timeout < 1000? 1 : xs->timeout / 1000);
-		memset(&cmd->cdb[0], 0, sizeof(cmd->cdb));
-		memcpy(&cmd->cdb[0], xs->cmd, CISS_MAX_CDB);
+		memcpy(&cmd->cdb[0], xs->cmd, xs->cmdlen);
 		CISS_DPRINTF(CISS_D_CMD, ("cmd=%02x %02x %02x %02x %02x %02x ",
 			     cmd->cdb[0], cmd->cdb[1], cmd->cdb[2],
 			     cmd->cdb[3], cmd->cdb[4], cmd->cdb[5]));
 
-		if (ciss_cmd(ccb, BUS_DMA_WAITOK,
+		if (ciss_cmd(sc, ccb, BUS_DMA_WAITOK,
 		    xs->xs_control & (XS_CTL_POLL|XS_CTL_NOSLEEP))) {
 			printf("ciss driver stuffup in %s:%d: %s()\n",
 			       __FILE__, __LINE__, __func__);
@@ -1160,51 +1244,87 @@ ciss_scsi_cmd(struct scsipi_channel *chan, scsipi_adapter_req_t req,
 	}
 }
 
-int
-ciss_intr(void *v)
+static void
+ciss_completed_process(struct ciss_softc *sc, ciss_queue_head *q)
 {
-	struct ciss_softc *sc = v;
 	struct ciss_ccb *ccb;
-	u_int32_t id;
-	bus_size_t reg;
-	int hit = 0;
 
-	CISS_DPRINTF(CISS_D_INTR, ("intr "));
+	while (!TAILQ_EMPTY(q)) {
+		ccb = TAILQ_FIRST(q);
+		TAILQ_REMOVE(q, ccb, ccb_link);
 
-	if (!(bus_space_read_4(sc->sc_iot, sc->sc_ioh, CISS_ISR) & sc->iem))
-		return 0;
-
-	if (sc->cfg.methods & CISS_METH_FIFO64)
-		reg = CISS_OUTQ64_HI;
-	else if (sc->cfg.methods & CISS_METH_FIFO64_RRO)
-		reg = CISS_OUTQ64_LO;
-	else
-		reg = CISS_OUTQ;
-	while ((id = bus_space_read_4(sc->sc_iot, sc->sc_ioh, reg)) !=
-	    0xffffffff) {
-		if (reg == CISS_OUTQ64_HI)
-			id = bus_space_read_4(sc->sc_iot, sc->sc_ioh,
-			    CISS_OUTQ64_LO);
-		else if (reg == CISS_OUTQ64_LO)
-			(void)bus_space_read_4(sc->sc_iot, sc->sc_ioh,
-			    CISS_OUTQ64_HI);
-
-		ccb = (struct ciss_ccb *) ((char *)sc->ccbs + (id >> 2) * sc->ccblen);
-		ccb->ccb_cmd.id = htole32(id);
-		ccb->ccb_cmd.id_hi = htole32(0); /* ignore the upper 32bits */
 		if (ccb->ccb_state == CISS_CCB_POLL) {
 			ccb->ccb_state = CISS_CCB_ONQ;
 			mutex_enter(&sc->sc_mutex);
 			cv_broadcast(&sc->sc_condvar);
 			mutex_exit(&sc->sc_mutex);
 		} else
-			ciss_done(ccb);
-
-		hit = 1;
+			ciss_done(sc, ccb);
 	}
+}
 
+int
+ciss_intr_simple_intx(void *v)
+{
+	struct ciss_softc *sc = v;
+	ciss_queue_head q;
+	int hit = 0;
+
+	CISS_DPRINTF(CISS_D_INTR, ("intr "));
+
+	/* XXX shouldn't be necessary, intr triggers only if enabled */
+	if (!(bus_space_read_4(sc->sc_iot, sc->sc_ioh, CISS_ISR) & sc->iem))
+		return 0;
+
+	TAILQ_INIT(&q);
+	mutex_enter(&sc->sc_mutex);
+	ciss_completed_simple(sc, &q);
+	mutex_exit(&sc->sc_mutex);
+
+	hit = (!TAILQ_EMPTY(&q));
+	ciss_completed_process(sc, &q);
+
+	KASSERT(TAILQ_EMPTY(&q));
 	CISS_DPRINTF(CISS_D_INTR, ("exit\n"));
+
 	return hit;
+}
+
+int
+ciss_intr_perf_intx(void *v)
+{
+	struct ciss_softc *sc = v;
+
+	CISS_DPRINTF(CISS_D_INTR, ("intr "));
+
+	/* Clear the interrupt and flush the bridges.  Docs say that the flush
+	 * needs to be done twice, which doesn't seem right.
+	 */
+	bus_space_read_4(sc->sc_iot, sc->sc_ioh, CISS_OSR);
+	bus_space_write_4(sc->sc_iot, sc->sc_ioh, CISS_ODC, CISS_ODC_CLEAR);
+
+	return ciss_intr_perf_msi(sc);
+}
+
+int
+ciss_intr_perf_msi(void *v)
+{
+	struct ciss_softc *sc = v;
+	ciss_queue_head q;
+
+	CISS_DPRINTF(CISS_D_INTR, ("intr "));
+
+	TAILQ_INIT(&q);
+	mutex_enter(&sc->sc_mutex);
+	ciss_completed_perf(sc, &q);
+	mutex_exit(&sc->sc_mutex);
+
+	ciss_completed_process(sc, &q);
+
+	KASSERT(TAILQ_EMPTY(&q));
+	CISS_DPRINTF(CISS_D_INTR, ("exit"));
+
+	return 1;
 }
 
 static void
@@ -1497,7 +1617,7 @@ ciss_blink(struct ciss_softc *sc, int ld, int pd, int stat,
 	cmd->cdb[7] = sizeof(*blink) >> 8;	/* biiiig endian */
 	cmd->cdb[8] = sizeof(*blink) & 0xff;
 
-	return ciss_cmd(ccb, BUS_DMA_NOWAIT, XS_CTL_POLL);
+	return ciss_cmd(sc, ccb, BUS_DMA_NOWAIT, XS_CTL_POLL);
 }
 
 int

@@ -1,5 +1,5 @@
 #!/bin/sh
-# $NetBSD: mkimage,v 1.71 2019/10/30 14:16:15 martin Exp $
+# $NetBSD: mkimage,v 1.75 2020/07/17 15:16:34 jmcneill Exp $
 #
 # Copyright (c) 2013, 2014 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -54,6 +54,7 @@ PROG="$(basename "$0")"
 MAKE=${TOOL_MAKE:-make}
 DISKLABEL=${TOOL_DISKLABEL:-disklabel}
 FDISK=${TOOL_FDISK:-fdisk}
+GPT=${TOOL_GPT:-gpt}
 MAKEFS=${TOOL_MAKEFS:-makefs}
 MTREE=${TOOL_MTREE:-mtree}
 INSTALLBOOT=${TOOL_INSTALLBOOT:-installboot}
@@ -147,6 +148,8 @@ then
 fi
 
 resize=false
+gpt=false
+gpt_hybrid=false
 
 . "${DIR}/conf/${h}.conf"
 release="/usr/obj/${MACHINE}/release"
@@ -215,8 +218,27 @@ make_fstab
 customize
 populate
 
+if [ ! "${MKDTB}" = "no" ]; then
+	#
+	# Part of the dtb set resides on the FAT partition (/boot/dtb/*), and
+	# the rest on FFS. Split it up here.
+	#
+	echo ${bar} Installing devicetree blobs ${bar}
+	mkdir -p "${mnt}/boot"
+	cp -r "${release}/boot/dtb" "${mnt}/boot/dtb"
+
+	mkdir -p "${mnt}/etc/mtree"
+	cp "${release}/etc/mtree/set.dtb" "${mnt}/etc/mtree/set.dtb"
+	echo "./etc/mtree/set.dtb type=file uname=root gname=wheel mode=0444" >> "$tmp/selected_sets"
+
+	mkdir -p "${mnt}/var/db/obsolete"
+	cp "${release}/var/db/obsolete/dtb" "${mnt}/var/db/obsolete/dtb"
+	echo "./var/db/obsolete/dtb type=file uname=root gname=wheel mode=0644" >>"$tmp/selected_sets"
+fi
+
 if [ -n "${msdosid}" ]; then
 	echo ${bar} Populating msdos filesystem ${bar}
+
 	case $(( ${msdosid} )) in
 	1)	fat_opt=",fat_type=12";;
 	4|6|14)	fat_opt=",fat_type=16";;
@@ -249,32 +271,57 @@ do
 	compare="$((${newsize} * 2 * 1024))"
 done                      
 
-if [ -n "${msdosid}" ]; then
-	echo ${bar} Running fdisk ${bar}
+if $gpt; then
+	if $gpt_hybrid; then
+		gpt_flags="-H"
+	fi
 	initsecs=$((${init} * 1024))
 	bootsecs=$((${boot} * 1024))
-	${FDISK} -f -i ${image}
-	${FDISK} -f -a -u -0 -s ${msdosid}/${initsecs}/${bootsecs} -F ${image}
-	if [ -z "${bootonly}" ]; then
-		ffsstart="$(getsectors ${ffsoffset})"
-		imagesize="$(getsize "${image}")"
-		imagesecs="$(getsectors ${imagesize})"
-		ffssize="$(expr ${imagesecs} - ${ffsstart})"
-		${FDISK} -f -u -1 -s 169/${ffsstart}/${ffssize} -F ${image}
+	ffsstart="$(getsectors ${ffsoffset})"
+
+	echo ${bar} Clearing existing partitions ${bar}
+	${GPT} ${gpt_flags} ${image} destroy || true
+
+	echo ${bar} Creating partitions ${bar}
+	${GPT} ${gpt_flags} ${image} create ${gpt_create_flags}
+	${GPT} ${gpt_flags} ${image} add -b ${initsecs} -s ${bootsecs} -l ${gpt_label_boot:-EFI} -t ${gpt_boot_type:-efi}
+	${GPT} ${gpt_flags} ${image} set -a required -i 1
+	${GPT} ${gpt_flags} ${image} add -a 4m -b ${ffsstart} -l ${gpt_label_ffs:-netbsd-root} -t ffs
+	${GPT} ${gpt_flags} ${image} show
+	if $gpt_hybrid; then
+		echo ${bar} Creating hybrid MBR ${bar}
+		${FDISK} -f -g -u -0 -a -s ${msdosid}/${initsecs}/${bootsecs} -F ${image}
+		${FDISK} -f -g -u -3 -s 238/1/$((${initsecs} - 1)) -F ${image}
+		${FDISK} -F ${image}
 	fi
+else
+	if [ -n "${msdosid}" ]; then
+		echo ${bar} Running fdisk ${bar}
+		initsecs=$((${init} * 1024))
+		bootsecs=$((${boot} * 1024))
+		${FDISK} -f -i ${image}
+		${FDISK} -f -a -u -0 -s ${msdosid}/${initsecs}/${bootsecs} -F ${image}
+		if [ -z "${bootonly}" ]; then
+			ffsstart="$(getsectors ${ffsoffset})"
+			imagesize="$(getsize "${image}")"
+			imagesecs="$(getsectors ${imagesize})"
+			ffssize="$(expr ${imagesecs} - ${ffsstart})"
+			${FDISK} -f -u -1 -s 169/${ffsstart}/${ffssize} -F ${image}
+		fi
 
-	echo ${bar} Adding label ${bar}
-	make_label > ${tmp}/label
-	${DISKLABEL} -R -F ${image} ${tmp}/label
-elif [ -n "${netbsdid}" ]; then
-	echo ${bar} Adding label ${bar}
-	make_label > ${tmp}/label
-	${DISKLABEL} -R -F ${image} ${tmp}/label
+		echo ${bar} Adding label ${bar}
+		make_label > ${tmp}/label
+		${DISKLABEL} -R -F ${image} ${tmp}/label
+	elif [ -n "${netbsdid}" ]; then
+		echo ${bar} Adding label ${bar}
+		make_label > ${tmp}/label
+		${DISKLABEL} -R -F ${image} ${tmp}/label
 
-	echo ${bar} Running fdisk ${bar}
-	${FDISK} -f -i ${image}
-	${FDISK} -f -a -u -0 -s 169/${init} ${image}
-	${INSTALLBOOT} -f -v ${image} ${release}/usr/mdec/bootxx_ffsv1
+		echo ${bar} Running fdisk ${bar}
+		${FDISK} -f -i ${image}
+		${FDISK} -f -a -u -0 -s 169/${init} ${image}
+		${INSTALLBOOT} -f -v ${image} ${release}/usr/mdec/bootxx_ffsv1
+	fi
 fi
 
 if $compress; then

@@ -1,4 +1,4 @@
-/*	$NetBSD: lfs_vfsops.c,v 1.378 2020/04/04 20:49:31 ad Exp $	*/
+/*	$NetBSD: lfs_vfsops.c,v 1.380 2020/09/05 16:30:13 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2002, 2003, 2007, 2007
@@ -61,11 +61,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lfs_vfsops.c,v 1.378 2020/04/04 20:49:31 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lfs_vfsops.c,v 1.380 2020/09/05 16:30:13 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_lfs.h"
 #include "opt_quota.h"
+#include "opt_uvmhist.h"
 #endif
 
 #include <sys/param.h>
@@ -86,7 +87,6 @@ __KERNEL_RCSID(0, "$NetBSD: lfs_vfsops.c,v 1.378 2020/04/04 20:49:31 ad Exp $");
 #include <sys/pool.h>
 #include <sys/socket.h>
 #include <sys/syslog.h>
-#include <uvm/uvm_extern.h>
 #include <sys/sysctl.h>
 #include <sys/conf.h>
 #include <sys/kauth.h>
@@ -103,10 +103,13 @@ __KERNEL_RCSID(0, "$NetBSD: lfs_vfsops.c,v 1.378 2020/04/04 20:49:31 ad Exp $");
 #include <ufs/lfs/ulfs_bswap.h>
 #include <ufs/lfs/ulfs_extern.h>
 
+#ifdef UVMHIST
 #include <uvm/uvm.h>
+#endif
+#include <uvm/uvm_extern.h>
+#include <uvm/uvm_object.h>
+#include <uvm/uvm_page.h>
 #include <uvm/uvm_stat.h>
-#include <uvm/uvm_pager.h>
-#include <uvm/uvm_pdaemon.h>
 
 #include <ufs/lfs/lfs.h>
 #include <ufs/lfs/lfs_accessors.h>
@@ -1592,6 +1595,7 @@ lfs_init_vnode(struct ulfsmount *ump, ino_t ino, struct vnode *vp)
 
 	vp->v_tag = VT_LFS;
 	vp->v_op = lfs_vnodeop_p;
+	vp->v_vflag |= VV_LOCKSWORK;
 	vp->v_data = ip;
 }
 

@@ -54,6 +54,7 @@ struct eloop;
 
 unsigned long long eloop_timespec_diff(const struct timespec *tsp,
     const struct timespec *usp, unsigned int *nsp);
+size_t eloop_event_count(const struct eloop  *);
 int eloop_event_add_rw(struct eloop *, int,
     void (*)(void *), void *,
     void (*)(void *), void *);
@@ -83,15 +84,15 @@ int eloop_q_timeout_add_msec(struct eloop *, int,
     unsigned long, void (*)(void *), void *);
 int eloop_q_timeout_delete(struct eloop *, int, void (*)(void *), void *);
 
-int eloop_signal_set_cb(struct eloop *, const int *, size_t,
+void eloop_signal_set_cb(struct eloop *, const int *, size_t,
     void (*)(int, void *), void *);
 int eloop_signal_mask(struct eloop *, sigset_t *oldset);
 
 struct eloop * eloop_new(void);
-int eloop_requeue(struct eloop *);
 void eloop_clear(struct eloop *);
 void eloop_free(struct eloop *);
 void eloop_exit(struct eloop *, int);
+void eloop_enter(struct eloop *);
 int eloop_start(struct eloop *, sigset_t *);
 
 #endif

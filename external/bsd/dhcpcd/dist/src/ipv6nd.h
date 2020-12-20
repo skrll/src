@@ -98,12 +98,12 @@ struct rs_state {
 #define	RETRANS_TIMER			1000	/* milliseconds */
 #define	DELAY_FIRST_PROBE_TIME		5	/* seconds */
 
+int ipv6nd_open(bool);
 #ifdef __sun
-int ipv6nd_open(struct interface *);
-#else
-int ipv6nd_open(struct dhcpcd_ctx *);
+int ipv6nd_openif(struct interface *);
 #endif
 void ipv6nd_recvmsg(struct dhcpcd_ctx *, struct msghdr *);
+int ipv6nd_rtpref(struct ra *);
 void ipv6nd_printoptions(const struct dhcpcd_ctx *,
     const struct dhcp_opt *, size_t);
 void ipv6nd_startrs(struct interface *);

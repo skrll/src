@@ -1,4 +1,4 @@
-#	$NetBSD: TS7200,v 1.74 2020/01/29 18:39:01 maya Exp $
+#	$NetBSD: TS7200,v 1.76 2020/05/16 13:46:11 maya Exp $
 #
 #	TS7200 - Kernel for Technologic Systems TS7200 ARM hardware
 #
@@ -113,7 +113,7 @@ options 	IRQSTATS	# manage IRQ statistics
 
 options 	DIAGNOSTIC	# internal consistency checks
 #options 	DEBUG
-#options 	PMAP_DEBUG	# Enable pmap_debug_level code
+#options 	UVMHIST		# kernhist for uvm/pmap subsystems
 #options 	VERBOSE_INIT_ARM # verbose bootstraping messages
 options 	DDB		# in-kernel debugger
 options 	DDB_ONPANIC=1
@@ -369,9 +369,6 @@ uhub*	at uhub? port ?
 
 # USB scanners that use SCSI emulation, e.g., HP5300
 # usscanner* at uhub? port ?
-
-# Y@P firmware loader
-# uyap* at uhub? port ?
 
 # D-Link DSB-R100 USB radio
 # udsbr*	at uhub? port ?

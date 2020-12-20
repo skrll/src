@@ -1,5 +1,5 @@
 #!/bin/sh -
-#	$NetBSD: MAKEDEV.tmpl,v 1.218 2020/04/04 16:04:36 jdolecek Exp $
+#	$NetBSD: MAKEDEV.tmpl,v 1.222 2020/12/06 02:57:29 jmcneill Exp $
 #
 # Copyright (c) 2003,2007,2008 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -1761,6 +1761,10 @@ vio9p[0-9]*)
 	mkdev vio9p$unit c %vio9p_chr% $unit 660
 	;;
 
+fault)
+	mkdev fault c %fault_chr% 0
+	;;
+
 nvram)
 	mkdev nvram c %nvram_chr% 0 644
 	;;
@@ -1785,8 +1789,9 @@ veriexec)
 	mkdev veriexec c %veriexec_chr% 0 600
 	;;
 
-vhci)
-	mkdev vhci c %vhci_chr% 0
+vhci[0-7]*)
+	unit=${i#vhci}
+	mkdev vhci$unit c %vhci_chr% $unit
 	;;
 
 ttyv[0-9]*)
@@ -2228,6 +2233,18 @@ kcov)
 ipmi[0-9]*)
 	unit=${i#ipmi}
 	mkdev ipmi${unit} c %ipmi_chr% $unit 600
+	;;
+
+xmm[0-9])
+	unit=${i#xmm}
+	makedir xmm${unit} 755
+	mkdev xmm${unit}/rpc c %wwanc_chr% $(($unit * 65536 + 1))
+	mkdev ttyXMM${unit}0 c %wwanc_chr% $(($unit * 65536 + 2))
+	mkdev ttyXMM${unit}1 c %wwanc_chr% $(($unit * 65536 + 4))
+	;;
+
+acpi)
+	mkdev acpi c %acpi_chr% 0
 	;;
 
 midevend)

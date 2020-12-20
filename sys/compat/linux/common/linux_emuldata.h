@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_emuldata.h,v 1.18 2010/11/02 18:18:07 chs Exp $	*/
+/*	$NetBSD: linux_emuldata.h,v 1.19 2020/04/26 18:53:33 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1998,2002 The NetBSD Foundation, Inc.
@@ -29,8 +29,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <compat/linux/common/linux_futex.h>
-
 #ifndef _COMMON_LINUX_EMULDATA_H
 #define _COMMON_LINUX_EMULDATA_H
 
@@ -47,7 +45,6 @@ struct linux_emuldata {
 
 	void	*led_child_tidptr;	/* Used during clone() */
 	void	*led_clear_tid;		/* Own TID to clear on exit */
-	struct linux_robust_list_head *led_robust_head;
 	long	led_personality;
 };
 

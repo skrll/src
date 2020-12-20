@@ -1,9 +1,10 @@
-# $NetBSD: XEN3_DOM0,v 1.175 2020/02/09 16:06:18 jmcneill Exp $
+# $NetBSD: XEN3_DOM0,v 1.185 2020/09/27 13:48:49 roy Exp $
 
 include 	"arch/amd64/conf/std.xen"
 
 options		XENPV		# PV dom0 support
-#options 	MULTIPROCESSOR	# (not yet - dom0 stuff is not MP-safe)
+options 	MULTIPROCESSOR
+#options 	NO_PREEMPTION	# needed if MULTIPROCESSOR is disabled
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
@@ -11,7 +12,7 @@ options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 #options 	UVMHIST_PRINT
 #options 	SYSCALL_DEBUG
 
-#ident		"XEN3_DOM0-$Revision: 1.175 $"
+#ident		"XEN3_DOM0-$Revision: 1.185 $"
 
 maxusers	32		# estimated number of users
 
@@ -70,8 +71,6 @@ include 	"conf/compat_netbsd15.config"
 
 options 	COMPAT_OSSAUDIO
 options 	COMPAT_NETBSD32
-options 	COMPAT_LINUX
-options 	COMPAT_LINUX32	# req. COMPAT_LINUX and COMPAT_NETBSD32
 options 	EXEC_ELF32
 
 # Wedge support
@@ -680,9 +679,6 @@ ucom*	at ukyopon? portno ?
 # USB scanners that use SCSI emulation, e.g., HP5300
 usscanner* at uhub? port ?
 
-# Y@P firmware loader
-uyap*	at uhub? port ?
-
 # D-Link DSB-R100 USB radio
 udsbr*	at uhub? port ?
 radio*	at udsbr?
@@ -845,7 +841,7 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	l2tp			# L2TPv3 interface
 pseudo-device	npf			# NPF packet filter
 

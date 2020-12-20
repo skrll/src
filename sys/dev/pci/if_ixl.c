@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ixl.c,v 1.65 2020/03/19 03:11:23 yamaguchi Exp $	*/
+/*	$NetBSD: if_ixl.c,v 1.75 2020/09/08 10:05:47 yamaguchi Exp $	*/
 
 /*
  * Copyright (c) 2013-2015, Intel Corporation
@@ -74,7 +74,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ixl.c,v 1.65 2020/03/19 03:11:23 yamaguchi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ixl.c,v 1.75 2020/09/08 10:05:47 yamaguchi Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -84,6 +84,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_ixl.c,v 1.65 2020/03/19 03:11:23 yamaguchi Exp $"
 #include <sys/param.h>
 #include <sys/types.h>
 
+#include <sys/bitops.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
 #include <sys/evcnt.h>
@@ -147,29 +148,7 @@ struct ixl_softc; /* defined */
 #define I40E_INTR_NOTX_RX_MASK		I40E_PFINT_ICR0_QUEUE_0_MASK
 #define I40E_INTR_NOTX_TX_MASK		I40E_PFINT_ICR0_QUEUE_1_MASK
 
-#define BIT_ULL(a)	(1ULL << (a))
-#define IXL_RSS_HENA_DEFAULT_BASE			\
-	(BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV4_UDP) |	\
-	 BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV4_TCP) |	\
-	 BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV4_SCTP) |	\
-	 BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV4_OTHER) |	\
-	 BIT_ULL(I40E_FILTER_PCTYPE_FRAG_IPV4) |	\
-	 BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV6_UDP) |	\
-	 BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV6_TCP) |	\
-	 BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV6_SCTP) |	\
-	 BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV6_OTHER) |	\
-	 BIT_ULL(I40E_FILTER_PCTYPE_FRAG_IPV6) |	\
-	 BIT_ULL(I40E_FILTER_PCTYPE_L2_PAYLOAD))
-#define IXL_RSS_HENA_DEFAULT_XL710	IXL_RSS_HENA_DEFAULT_BASE
-#define IXL_RSS_HENA_DEFAULT_X722	(IXL_RSS_HENA_DEFAULT_XL710 |	\
-	BIT_ULL(I40E_FILTER_PCTYPE_NONF_UNICAST_IPV4_UDP) |		\
-	BIT_ULL(I40E_FILTER_PCTYPE_NONF_MULTICAST_IPV4_UDP) |		\
-	BIT_ULL(I40E_FILTER_PCTYPE_NONF_UNICAST_IPV6_UDP) |		\
-	BIT_ULL(I40E_FILTER_PCTYPE_NONF_MULTICAST_IPV6_UDP) |		\
-	BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV4_TCP_SYN_NO_ACK) |	\
-	BIT_ULL(I40E_FILTER_PCTYPE_NONF_IPV6_TCP_SYN_NO_ACK))
 #define I40E_HASH_LUT_SIZE_128		0
-#define IXL_RSS_KEY_SIZE_REG		13
 
 #define IXL_ICR0_CRIT_ERR_MASK			\
 	(I40E_PFINT_ICR0_PCI_EXCEPTION_MASK |	\
@@ -249,30 +228,6 @@ struct ixl_speed_type {
 	uint8_t		dev_speed;
 	uint64_t	net_speed;
 };
-
-struct ixl_aq_buf {
-	SIMPLEQ_ENTRY(ixl_aq_buf)
-				 aqb_entry;
-	void			*aqb_data;
-	bus_dmamap_t		 aqb_map;
-	bus_dma_segment_t	 aqb_seg;
-	size_t			 aqb_size;
-	int			 aqb_nsegs;
-};
-SIMPLEQ_HEAD(ixl_aq_bufs, ixl_aq_buf);
-
-struct ixl_dmamem {
-	bus_dmamap_t		 ixm_map;
-	bus_dma_segment_t	 ixm_seg;
-	int			 ixm_nsegs;
-	size_t			 ixm_size;
-	void			*ixm_kva;
-};
-
-#define IXL_DMA_MAP(_ixm)	((_ixm)->ixm_map)
-#define IXL_DMA_DVA(_ixm)	((_ixm)->ixm_map->dm_segs[0].ds_addr)
-#define IXL_DMA_KVA(_ixm)	((void *)(_ixm)->ixm_kva)
-#define IXL_DMA_LEN(_ixm)	((_ixm)->ixm_size)
 
 struct ixl_hmc_entry {
 	uint64_t		 hmc_base;
@@ -700,6 +655,7 @@ struct ixl_softc {
 	struct ixl_dmamem	 sc_hmc_pd;
 	struct ixl_hmc_entry	 sc_hmc_entries[IXL_HMC_COUNT];
 
+	struct if_percpuq	*sc_ipq;
 	unsigned int		 sc_tx_ring_ndescs;
 	unsigned int		 sc_rx_ring_ndescs;
 	unsigned int		 sc_nqueue_pairs;
@@ -760,11 +716,12 @@ do {							\
 static bool		 ixl_param_nomsix = false;
 static int		 ixl_param_stats_interval = IXL_STATS_INTERVAL_MSEC;
 static int		 ixl_param_nqps_limit = IXL_QUEUE_NUM;
-static unsigned int	 ixl_param_tx_ndescs = 1024;
-static unsigned int	 ixl_param_rx_ndescs = 1024;
+static unsigned int	 ixl_param_tx_ndescs = 512;
+static unsigned int	 ixl_param_rx_ndescs = 256;
 
 static enum i40e_mac_type
-    ixl_mactype(pci_product_id_t);
+	    ixl_mactype(pci_product_id_t);
+static void	ixl_pci_csr_setup(pci_chipset_tag_t, pcitag_t);
 static void	ixl_clear_hw(struct ixl_softc *);
 static int	ixl_pf_reset(struct ixl_softc *);
 
@@ -895,7 +852,7 @@ static int	ixl_vlan_cb(struct ethercom *, uint16_t, bool);
 static int	ixl_setup_vlan_hwfilter(struct ixl_softc *);
 static void	ixl_teardown_vlan_hwfilter(struct ixl_softc *);
 static int	ixl_update_macvlan(struct ixl_softc *);
-static int	ixl_setup_interrupts(struct ixl_softc *);;
+static int	ixl_setup_interrupts(struct ixl_softc *);
 static void	ixl_teardown_interrupts(struct ixl_softc *);
 static int	ixl_setup_stats(struct ixl_softc *);
 static void	ixl_teardown_stats(struct ixl_softc *);
@@ -903,6 +860,7 @@ static void	ixl_stats_callout(void *);
 static void	ixl_stats_update(void *);
 static int	ixl_setup_sysctls(struct ixl_softc *);
 static void	ixl_teardown_sysctls(struct ixl_softc *);
+static int	ixl_sysctl_itr_handler(SYSCTLFN_PROTO);
 static int	ixl_queue_pairs_alloc(struct ixl_softc *);
 static void	ixl_queue_pairs_free(struct ixl_softc *);
 
@@ -980,62 +938,6 @@ static const struct ixl_aq_regs ixl_pf_aq_regs = {
 #define ixl_flush(_s)	(void)ixl_rd((_s), I40E_GLGEN_STAT)
 #define ixl_nqueues(_sc)	(1 << ((_sc)->sc_nqueue_pairs - 1))
 
-static inline uint32_t
-ixl_dmamem_hi(struct ixl_dmamem *ixm)
-{
-	uint32_t retval;
-	uint64_t val;
-
-	if (sizeof(IXL_DMA_DVA(ixm)) > 4) {
-		val = (intptr_t)IXL_DMA_DVA(ixm);
-		retval = (uint32_t)(val >> 32);
-	} else {
-		retval = 0;
-	}
-
-	return retval;
-}
-
-static inline uint32_t
-ixl_dmamem_lo(struct ixl_dmamem *ixm)
-{
-
-	return (uint32_t)IXL_DMA_DVA(ixm);
-}
-
-static inline void
-ixl_aq_dva(struct ixl_aq_desc *iaq, bus_addr_t addr)
-{
-	uint64_t val;
-
-	if (sizeof(addr) > 4) {
-		val = (intptr_t)addr;
-		iaq->iaq_param[2] = htole32(val >> 32);
-	} else {
-		iaq->iaq_param[2] = htole32(0);
-	}
-
-	iaq->iaq_param[3] = htole32(addr);
-}
-
-static inline unsigned int
-ixl_rxr_unrefreshed(unsigned int prod, unsigned int cons, unsigned int ndescs)
-{
-	unsigned int num;
-
-	if (prod  < cons)
-		num = cons - prod;
-	else
-		num  = (ndescs - prod) + cons;
-
-	if (__predict_true(num > 0)) {
-		/* device cannot receive packets if all descripter is filled */
-		num -= 1;
-	}
-
-	return num;
-}
-
 CFATTACH_DECL3_NEW(ixl, sizeof(struct ixl_softc),
     ixl_match, ixl_attach, ixl_detach, NULL, NULL, NULL,
     DVF_DETACH_SHUTDOWN);
@@ -1106,6 +1008,8 @@ ixl_attach(device_t parent, device_t self, void *aux)
 	sc->sc_aq_regs = &ixl_pf_aq_regs;
 
 	sc->sc_mac_type = ixl_mactype(PCI_PRODUCT(pa->pa_id));
+
+	ixl_pci_csr_setup(pa->pa_pc, pa->pa_tag);
 
 	memtype = pci_mapreg_type(pa->pa_pc, pa->pa_tag, IXL_PCIREG);
 	if (pci_mapreg_map(pa, IXL_PCIREG, memtype, 0,
@@ -1246,6 +1150,10 @@ ixl_attach(device_t parent, device_t self, void *aux)
 
 	KASSERT(IXL_TXRX_PROCESS_UNLIMIT > sc->sc_rx_ring_ndescs);
 	KASSERT(IXL_TXRX_PROCESS_UNLIMIT > sc->sc_tx_ring_ndescs);
+	KASSERT(sc->sc_rx_ring_ndescs ==
+	    (1U << (fls32(sc->sc_rx_ring_ndescs) - 1)));
+	KASSERT(sc->sc_tx_ring_ndescs ==
+	    (1U << (fls32(sc->sc_tx_ring_ndescs) - 1)));
 
 	if (ixl_get_mac(sc) != 0) {
 		/* error printed by ixl_get_mac */
@@ -1408,7 +1316,13 @@ ixl_attach(device_t parent, device_t self, void *aux)
 	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_NONE, 0, NULL);
 	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_AUTO);
 
-	if_attach(ifp);
+	rv = if_initialize(ifp);
+	if (rv != 0) {
+		aprint_error_dev(self, "if_initialize failed=%d\n", rv);
+		goto teardown_wqs;
+	}
+
+	sc->sc_ipq = if_percpuq_create(ifp);
 	if_deferred_start_init(ifp, NULL);
 	ether_ifattach(ifp, sc->sc_enaddr);
 	ether_set_ifflags_cb(&sc->sc_ec, ixl_ifflags_cb);
@@ -1460,6 +1374,8 @@ ixl_attach(device_t parent, device_t self, void *aux)
 	sc->sc_itr_rx = IXL_ITR_RX;
 	sc->sc_itr_tx = IXL_ITR_TX;
 	sc->sc_attached = true;
+	if_register(ifp);
+
 	return;
 
 teardown_wqs:
@@ -1546,6 +1462,7 @@ ixl_detach(device_t self, int flags)
 		sc->sc_workq_txrx = NULL;
 	}
 
+	if_percpuq_destroy(sc->sc_ipq);
 	ether_ifdetach(ifp);
 	if_detach(ifp);
 	ifmedia_fini(&sc->sc_media);
@@ -1941,6 +1858,17 @@ ixl_mactype(pci_product_id_t id)
 	}
 
 	return I40E_MAC_GENERIC;
+}
+
+static void
+ixl_pci_csr_setup(pci_chipset_tag_t pc, pcitag_t tag)
+{
+	pcireg_t csr;
+
+	csr = pci_conf_read(pc, tag, PCI_COMMAND_STATUS_REG);
+	csr |= (PCI_COMMAND_MASTER_ENABLE |
+	    PCI_COMMAND_MEM_ENABLE);
+	pci_conf_write(pc, tag, PCI_COMMAND_STATUS_REG, csr);
 }
 
 static inline void *
@@ -3311,7 +3239,7 @@ ixl_rxeof(struct ixl_softc *sc, struct ixl_rx_ring *rxr, u_int rxlimit)
 				if_statinc_ref(nsr, if_ipackets);
 				if_statadd_ref(nsr, if_ibytes,
 				    m->m_pkthdr.len);
-				if_percpuq_enqueue(ifp->if_percpuq, m);
+				if_percpuq_enqueue(sc->sc_ipq, m);
 			} else {
 				if_statinc_ref(nsr, if_ierrors);
 				m_freem(m);
@@ -4368,7 +4296,7 @@ ixl_phy_mask_ints(struct ixl_softc *sc)
 }
 
 static int
-ixl_get_phy_abilities(struct ixl_softc *sc,struct ixl_dmamem *idm)
+ixl_get_phy_abilities(struct ixl_softc *sc, struct ixl_dmamem *idm)
 {
 	struct ixl_aq_desc iaq;
 	int rv;
@@ -4809,7 +4737,7 @@ ixl_register_rss_key(struct ixl_softc *sc)
 
 	ixl_get_default_rss_key(rss_seed, sizeof(rss_seed));
 
-	if (ISSET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_RSS)){
+	if (ISSET(sc->sc_aq_flags, IXL_SC_AQ_FLAG_RSS)) {
 		rv = ixl_set_rss_key(sc, (uint8_t*)rss_seed,
 		    sizeof(rss_seed));
 	} else {
@@ -5121,7 +5049,7 @@ ixl_hmc(struct ixl_softc *sc)
 
 		e->hmc_count = regs[i].count;
 		reg = ixl_rd(sc, regs[i].objsiz);
-		e->hmc_size = BIT_ULL(0x3F & reg);
+		e->hmc_size = IXL_BIT_ULL(0x3F & reg);
 		e->hmc_base = size;
 
 		if ((e->hmc_size * 8) < regs[i].minsize) {
@@ -5843,7 +5771,7 @@ ixl_establish_msix(struct ixl_softc *sc)
 		}
 
 		aprint_normal_dev(sc->sc_dev,
-		    "for TXRX%d interrupt at %s",i , intrstr);
+		    "for TXRX%d interrupt at %s", i, intrstr);
 
 		kcpuset_zero(affinity);
 		kcpuset_set(affinity, affinity_to);
@@ -6617,6 +6545,21 @@ ixl_setup_sysctls(struct ixl_softc *sc)
 		goto out;
 
 	error = sysctl_createv(log, 0, &rxnode, NULL,
+	    CTLFLAG_READWRITE, CTLTYPE_INT, "itr",
+	    SYSCTL_DESCR("Interrupt Throttling"),
+	    ixl_sysctl_itr_handler, 0,
+	    (void *)sc, 0, CTL_CREATE, CTL_EOL);
+	if (error)
+		goto out;
+
+	error = sysctl_createv(log, 0, &rxnode, NULL,
+	    CTLFLAG_READONLY, CTLTYPE_INT, "descriptor_num",
+	    SYSCTL_DESCR("the number of rx descriptors"),
+	    NULL, 0, &sc->sc_rx_ring_ndescs, 0, CTL_CREATE, CTL_EOL);
+	if (error)
+		goto out;
+
+	error = sysctl_createv(log, 0, &rxnode, NULL,
 	    CTLFLAG_READWRITE, CTLTYPE_INT, "intr_process_limit",
 	    SYSCTL_DESCR("max number of Rx packets"
 	    " to process for interrupt processing"),
@@ -6636,6 +6579,21 @@ ixl_setup_sysctls(struct ixl_softc *sc)
 	    0, CTLTYPE_NODE, "tx",
 	    SYSCTL_DESCR("ixl information and settings for Tx"),
 	    NULL, 0, NULL, 0, CTL_CREATE, CTL_EOL);
+	if (error)
+		goto out;
+
+	error = sysctl_createv(log, 0, &txnode, NULL,
+	    CTLFLAG_READWRITE, CTLTYPE_INT, "itr",
+	    SYSCTL_DESCR("Interrupt Throttling"),
+	    ixl_sysctl_itr_handler, 0,
+	    (void *)sc, 0, CTL_CREATE, CTL_EOL);
+	if (error)
+		goto out;
+
+	error = sysctl_createv(log, 0, &txnode, NULL,
+	    CTLFLAG_READONLY, CTLTYPE_INT, "descriptor_num",
+	    SYSCTL_DESCR("the number of tx descriptors"),
+	    NULL, 0, &sc->sc_tx_ring_ndescs, 0, CTL_CREATE, CTL_EOL);
 	if (error)
 		goto out;
 
@@ -6670,6 +6628,52 @@ ixl_teardown_sysctls(struct ixl_softc *sc)
 {
 
 	sysctl_teardown(&sc->sc_sysctllog);
+}
+
+static bool
+ixl_sysctlnode_is_rx(struct sysctlnode *node)
+{
+
+	if (strstr(node->sysctl_parent->sysctl_name, "rx") != NULL)
+		return true;
+
+	return false;
+}
+
+static int
+ixl_sysctl_itr_handler(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node = *rnode;
+	struct ixl_softc *sc = (struct ixl_softc *)node.sysctl_data;
+	struct ifnet *ifp = &sc->sc_ec.ec_if;
+	uint32_t newitr, *itrptr;
+	int error;
+
+	if (ixl_sysctlnode_is_rx(&node)) {
+		itrptr = &sc->sc_itr_rx;
+	} else {
+		itrptr = &sc->sc_itr_tx;
+	}
+
+	newitr = *itrptr;
+	node.sysctl_data = &newitr;
+	node.sysctl_size = sizeof(newitr);
+
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+
+	if (error || newp == NULL)
+		return error;
+
+	/* ITRs are applied in ixl_init() for simple implementaion */
+	if (ISSET(ifp->if_flags, IFF_RUNNING))
+		return EBUSY;
+
+	if (newitr > 0x07ff)
+		return EINVAL;
+
+	*itrptr = newitr;
+
+	return 0;
 }
 
 static struct workqueue *
@@ -7065,7 +7069,7 @@ ixl_parse_modprop(prop_dictionary_t dict)
 
 	obj = prop_dictionary_get(dict, "stats_interval");
 	if (obj != NULL && prop_object_type(obj) == PROP_TYPE_NUMBER) {
-		val = prop_number_integer_value((prop_number_t)obj);
+		val = prop_number_signed_value((prop_number_t)obj);
 
 		/* the range has no reason */
 		if (100 < val && val < 180000) {
@@ -7075,7 +7079,7 @@ ixl_parse_modprop(prop_dictionary_t dict)
 
 	obj = prop_dictionary_get(dict, "nqps_limit");
 	if (obj != NULL && prop_object_type(obj) == PROP_TYPE_NUMBER) {
-		val = prop_number_integer_value((prop_number_t)obj);
+		val = prop_number_signed_value((prop_number_t)obj);
 
 		if (val <= INT32_MAX)
 			ixl_param_nqps_limit = val;

@@ -1,4 +1,4 @@
-/* stSPDX-License-Identifier: BSD-2-Clause */
+/* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dhcpcd - DHCP client daemon
  * Copyright (c) 2006-2020 Roy Marples <roy@marples.name>
@@ -84,7 +84,7 @@ if_printoptions(void)
 }
 
 pid_t
-script_exec(const struct dhcpcd_ctx *ctx, char *const *argv, char *const *env)
+script_exec(char *const *argv, char *const *env)
 {
 	pid_t pid = 0;
 	posix_spawnattr_t attr;
@@ -105,11 +105,12 @@ script_exec(const struct dhcpcd_ctx *ctx, char *const *argv, char *const *env)
 	flags = POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF;
 	posix_spawnattr_setflags(&attr, flags);
 	sigemptyset(&defsigs);
+	posix_spawnattr_setsigmask(&attr, &defsigs);
 	for (i = 0; i < dhcpcd_signals_len; i++)
 		sigaddset(&defsigs, dhcpcd_signals[i]);
+	for (i = 0; i < dhcpcd_signals_ignore_len; i++)
+		sigaddset(&defsigs, dhcpcd_signals_ignore[i]);
 	posix_spawnattr_setsigdefault(&attr, &defsigs);
-	sigemptyset(&defsigs);
-	posix_spawnattr_setsigmask(&attr, &defsigs);
 #endif
 	errno = 0;
 	r = posix_spawn(&pid, argv[0], NULL, &attr, argv, env);
@@ -192,6 +193,8 @@ script_buftoenv(struct dhcpcd_ctx *ctx, char *buf, size_t len)
 		}
 	}
 	assert(*(bufp - 1) == '\0');
+	if (nenv == 0)
+		return NULL;
 
 	if (ctx->script_envlen < nenv) {
 		env = reallocarray(ctx->script_env, nenv + 1, sizeof(*env));
@@ -234,6 +237,7 @@ make_env(struct dhcpcd_ctx *ctx, const struct interface *ifp,
 #ifdef DHCP6
 	const struct dhcp6_state *d6_state;
 #endif
+	bool is_stdin = ifp->name[0] == '\0';
 
 #ifdef HAVE_OPEN_MEMSTREAM
 	if (ctx->script_fp == NULL) {
@@ -251,8 +255,10 @@ make_env(struct dhcpcd_ctx *ctx, const struct interface *ifp,
 
 	fp = NULL;
 	tmpfd = mkstemp(tmpfile);
-	if (tmpfd == -1)
-		goto eexit;
+	if (tmpfd == -1) {
+		logerr("%s: mkstemp", __func__);
+		return -1;
+	}
 	unlink(tmpfile);
 	fp = fdopen(tmpfd, "w+");
 	if (fp == NULL) {
@@ -261,23 +267,19 @@ make_env(struct dhcpcd_ctx *ctx, const struct interface *ifp,
 	}
 #endif
 
-	/* Needed for scripts */
-	path = getenv("PATH");
-	if (efprintf(fp, "PATH=%s", path == NULL ? DEFAULT_PATH:path) == -1)
-		goto eexit;
-	if (efprintf(fp, "reason=%s", reason) == -1)
-		goto eexit;
-	if (efprintf(fp, "pid=%d", getpid()) == -1)
-		goto eexit;
-
-#ifdef PRIVSEP
-	if (ctx->options & DHCPCD_PRIVSEP && ctx->ps_user != NULL) {
-		if (efprintf(fp, "chroot=%s", ctx->ps_user->pw_dir) == -1)
+	if (!(ifp->ctx->options & DHCPCD_DUMPLEASE)) {
+		/* Needed for scripts */
+		path = getenv("PATH");
+		if (efprintf(fp, "PATH=%s",
+		    path == NULL ? DEFAULT_PATH : path) == -1)
+			goto eexit;
+		if (efprintf(fp, "pid=%d", getpid()) == -1)
 			goto eexit;
 	}
-	if (strcmp(reason, "CHROOT") == 0)
-		goto make;
-#endif
+	if (!is_stdin) {
+		if (efprintf(fp, "reason=%s", reason) == -1)
+			goto eexit;
+	}
 
 	ifo = ifp->options;
 #ifdef INET
@@ -337,11 +339,20 @@ make_env(struct dhcpcd_ctx *ctx, const struct interface *ifp,
 		protocol = PROTO_DHCP;
 #endif
 
-
-	if (efprintf(fp, "interface=%s", ifp->name) == -1)
-		goto eexit;
-	if (ifp->ctx->options & DHCPCD_DUMPLEASE)
+	if (!is_stdin) {
+		if (efprintf(fp, "interface=%s", ifp->name) == -1)
+			goto eexit;
+		if (protocols[protocol] != NULL) {
+			if (efprintf(fp, "protocol=%s",
+			    protocols[protocol]) == -1)
+				goto eexit;
+		}
+	}
+	if (ifp->ctx->options & DHCPCD_DUMPLEASE && protocol != PROTO_LINK)
 		goto dumplease;
+	if (efprintf(fp, "if_configured=%s",
+	    ifo->options & DHCPCD_CONFIGURE ? "true" : "false") == -1)
+		goto eexit;
 	if (efprintf(fp, "ifcarrier=%s",
 	    ifp->carrier == LINK_UNKNOWN ? "unknown" :
 	    ifp->carrier == LINK_UP ? "up" : "down") == -1)
@@ -354,6 +365,22 @@ make_env(struct dhcpcd_ctx *ctx, const struct interface *ifp,
 		goto eexit;
 	if (efprintf(fp, "ifmtu=%d", if_getmtu(ifp)) == -1)
 		goto eexit;
+	if (ifp->wireless) {
+		char pssid[IF_SSIDLEN * 4];
+
+		if (print_string(pssid, sizeof(pssid), OT_ESCSTRING,
+		    ifp->ssid, ifp->ssid_len) != -1)
+		{
+			if (efprintf(fp, "ifssid=%s", pssid) == -1)
+				goto eexit;
+		}
+	}
+	if (*ifp->profile != '\0') {
+		if (efprintf(fp, "profile=%s", ifp->profile) == -1)
+			goto eexit;
+	}
+	if (ifp->ctx->options & DHCPCD_DUMPLEASE)
+		goto dumplease;
 
 	if (fprintf(fp, "interface_order=") == -1)
 		goto eexit;
@@ -409,10 +436,6 @@ make_env(struct dhcpcd_ctx *ctx, const struct interface *ifp,
 		if (efprintf(fp, "if_down=true") == -1)
 			goto eexit;
 	}
-	if (protocols[protocol] != NULL) {
-		if (efprintf(fp, "protocol=%s", protocols[protocol]) == -1)
-			goto eexit;
-	}
 	if ((af = dhcpcd_ifafwaiting(ifp)) != AF_MAX) {
 		if (efprintf(fp, "if_afwaiting=%d", af) == -1)
 			goto eexit;
@@ -430,20 +453,6 @@ make_env(struct dhcpcd_ctx *ctx, const struct interface *ifp,
 	if (ifo->options & DHCPCD_DEBUG) {
 		if (efprintf(fp, "syslog_debug=true") == -1)
 			goto eexit;
-	}
-	if (*ifp->profile != '\0') {
-		if (efprintf(fp, "profile=%s", ifp->profile) == -1)
-			goto eexit;
-	}
-	if (ifp->wireless) {
-		char pssid[IF_SSIDLEN * 4];
-
-		if (print_string(pssid, sizeof(pssid), OT_ESCSTRING,
-		    ifp->ssid, ifp->ssid_len) != -1)
-		{
-			if (efprintf(fp, "ifssid=%s", pssid) == -1)
-				goto eexit;
-		}
 	}
 #ifdef INET
 	if (protocol == PROTO_DHCP && state && state->old) {
@@ -505,9 +514,6 @@ dumplease:
 				goto eexit;
 	}
 
-#ifdef PRIVSEP
-make:
-#endif
 	/* Convert buffer to argv */
 	fflush(fp);
 
@@ -533,6 +539,9 @@ make:
 	fp = NULL;
 #endif
 
+	if (is_stdin)
+		return buf_pos;
+
 	if (script_buftoenv(ctx, ctx->script_buf, (size_t)buf_pos) == NULL)
 		goto eexit;
 
@@ -557,7 +566,7 @@ send_interface1(struct fd_list *fd, const struct interface *ifp,
 	len = make_env(ifp->ctx, ifp, reason);
 	if (len == -1)
 		return -1;
-	return control_queue(fd, ctx->script_buf, (size_t)len, 1);
+	return control_queue(fd, ctx->script_buf, (size_t)len);
 }
 
 int
@@ -583,7 +592,6 @@ send_interface(struct fd_list *fd, const struct interface *ifp, int af)
 			reason = "CARRIER";
 			break;
 		case LINK_DOWN:
-		case LINK_DOWN_IFFUP:
 			reason = "NOCARRIER";
 			break;
 		default:
@@ -658,7 +666,7 @@ script_run(struct dhcpcd_ctx *ctx, char **argv)
 	pid_t pid;
 	int status = 0;
 
-	pid = script_exec(ctx, argv, ctx->script_env);
+	pid = script_exec(argv, ctx->script_env);
 	if (pid == -1)
 		logerr("%s: %s", __func__, argv[0]);
 	else if (pid != 0) {
@@ -683,40 +691,65 @@ script_run(struct dhcpcd_ctx *ctx, char **argv)
 }
 
 int
+script_dump(const char *env, size_t len)
+{
+	const char *ep = env + len;
+
+	if (len == 0)
+		return 0;
+
+	if (*(ep - 1) != '\0') {
+		errno = EINVAL;
+		return -1;
+	}
+
+	for (; env < ep; env += strlen(env) + 1) {
+		if (strncmp(env, "new_", 4) == 0)
+			env += 4;
+		printf("%s\n", env);
+	}
+	return 0;
+}
+
+int
 script_runreason(const struct interface *ifp, const char *reason)
 {
 	struct dhcpcd_ctx *ctx = ifp->ctx;
 	char *argv[2];
 	int status = 0;
 	struct fd_list *fd;
+	long buflen;
 
-	if (ifp->options->script == NULL &&
+	if (ctx->script == NULL &&
 	    TAILQ_FIRST(&ifp->ctx->control_fds) == NULL)
 		return 0;
 
 	/* Make our env */
-	if (make_env(ifp->ctx, ifp, reason) == -1) {
+	if ((buflen = make_env(ifp->ctx, ifp, reason)) == -1) {
 		logerr(__func__);
 		return -1;
 	}
 
-	if (ifp->options->script == NULL)
+	if (strncmp(reason, "DUMP", 4) == 0)
+		return script_dump(ctx->script_buf, (size_t)buflen);
+
+	if (ctx->script == NULL)
 		goto send_listeners;
 
-	argv[0] = ifp->options->script;
+	argv[0] = ctx->script;
 	argv[1] = NULL;
-	logdebugx("%s: executing `%s' %s", ifp->name, argv[0], reason);
+	logdebugx("%s: executing: %s %s", ifp->name, argv[0], reason);
 
 #ifdef PRIVSEP
 	if (ctx->options & DHCPCD_PRIVSEP) {
-		if (ps_root_script(ifp,
+		if (ps_root_script(ctx,
 		    ctx->script_buf, ctx->script_buflen) == -1)
 			logerr(__func__);
 		goto send_listeners;
 	}
 #endif
 
-	status = script_run(ctx, argv);
+	script_run(ctx, argv);
 
 send_listeners:
 	/* Send to our listeners */
@@ -724,8 +757,7 @@ send_listeners:
 	TAILQ_FOREACH(fd, &ctx->control_fds, next) {
 		if (!(fd->flags & FD_LISTEN))
 			continue;
-		if (control_queue(fd, ctx->script_buf, ctx->script_buflen,
-		    true) == -1)
+		if (control_queue(fd, ctx->script_buf, ctx->script_buflen)== -1)
 			logerr("%s: control_queue", __func__);
 		else
 			status = 1;
@@ -733,23 +765,3 @@ send_listeners:
 
 	return status;
 }
-
-#ifdef PRIVSEP
-int
-script_runchroot(struct dhcpcd_ctx *ctx, char *script)
-{
-	char *argv[2];
-
-	/* Make our env */
-	if (make_env(ctx, NULL, "CHROOT") == -1) {
-		logerr(__func__);
-		return -1;
-	}
-
-	argv[0] = script;
-	argv[1] = NULL;
-	logdebugx("executing `%s' %s", argv[0], "CHROOT");
-
-	return script_run(ctx, argv);
-}
-#endif

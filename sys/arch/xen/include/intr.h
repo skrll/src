@@ -1,4 +1,4 @@
-/*	$NetBSD: intr.h,v 1.53 2019/12/23 13:35:37 thorpej Exp $	*/
+/*	$NetBSD: intr.h,v 1.58 2020/07/19 14:27:07 jdolecek Exp $	*/
 /*	NetBSD intr.h,v 1.15 2004/10/31 10:39:34 yamt Exp	*/
 
 /*-
@@ -33,7 +33,7 @@
 #ifndef _XEN_INTR_H_
 #define	_XEN_INTR_H_
 
-#include <machine/intrdefs.h>
+#include <xen/intrdefs.h>
 
 #ifndef _LOCORE
 #include <xen/include/public/xen.h>
@@ -58,23 +58,21 @@ struct evtsource {
 	struct intrhand *ev_handlers;	/* handler chain */
 	struct evcnt ev_evcnt;		/* interrupt counter */
 	struct cpu_info *ev_cpu;        /* cpu on which this event is bound */
-	char ev_intrname[32];		/* interrupt string */
-	char ev_xname[64];		/* handler device list */
+	char ev_intrname[INTRIDBUF];	/* interrupt string */
+	char ev_xname[INTRDEVNAMEBUF];	/* handler device list */
+	struct intrsource *ev_isl;	/* entry in intr sources list */
 };
 
-#define XMASK(ci,level) (ci)->ci_xmask[(level)]
-#define XUNMASK(ci,level) (ci)->ci_xunmask[(level)]
-
 extern struct intrstub xenev_stubs[];
-extern int irq2port[NR_EVENT_CHANNELS]; /* actually port + 1, so that 0 is invaid */
+extern short irq2port[NR_EVENT_CHANNELS]; /* actually port + 1, so that 0 is invaid */
 
 #ifdef MULTIPROCESSOR
 int xen_intr_biglock_wrapper(void *);
 #endif
 
 #if defined(DOM0OPS) || NPCI > 0
-int xen_vec_alloc(int);
 int xen_pic_to_gsi(struct pic *, int);
+int xen_pci_msi_probe(struct pic *, int);
 #endif /* defined(DOM0OPS) || NPCI > 0 */
 
 #ifdef MULTIPROCESSOR
@@ -94,6 +92,9 @@ void *xen_intr_establish(int, struct pic *, int, int, int, int (*)(void *),
 void xen_intr_mask(struct intrhand *);
 void xen_intr_unmask(struct intrhand *);
 void xen_intr_disestablish(struct intrhand *);
+
+struct intrsource *xen_intr_allocate_io_intrsource(const char *);
+void xen_intr_free_io_intrsource(const char *);
 
 #endif /* !_LOCORE */
 

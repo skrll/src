@@ -1,4 +1,4 @@
-/*	$NetBSD: __vfork14.S,v 1.6 2014/03/06 19:02:58 skrll Exp $	*/
+/*	$NetBSD: __vfork14.S,v 1.10 2020/05/09 08:25:33 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 ENTRY(__vfork14, 0)
 	/*
 	 * NB: __vfork14 is a tricky syscall.  We can't save
-	 * any values on the stack, because the stack will be 
+	 * any values on the stack, because the stack will be
 	 * trashed by the child, leaving garbage for when the
 	 * parent returns.
 	 *
@@ -48,19 +48,19 @@ ENTRY(__vfork14, 0)
 	 * because *our* caller is counting on us to do so.
 	 *
 	 * What we need is a normally caller-saved register,
-	 * that the kernel is willing to save for us.  The 
-	 * syscall entry code in locore.S has been modified 
+	 * that the kernel is willing to save for us.  The
+	 * syscall entry code in locore.S has been modified
 	 * to do just this for the t4 register.
 	 */
-	.import	__cerror, code
-
 	copy	%rp, %t4
 	ldil	L%SYSCALLGATE, %r1
 	ble	4(%sr2, %r1)
-	ldi	SYS___vfork14, %t1
-	comb,<>	%r0, %t1, __cerror
-	copy	%t4, %rp
+	 ldi	SYS___vfork14, %t1
+	comb,=,n %r0, %t1, 1f
+	b	__cerror
+1:
+	 copy	%t4, %rp		// delay slot of branch to __cerror
 	addi	-1, %ret1, %ret1
 	bv	%r0(%rp)
-	and	%ret0, %ret1, %ret0
+	 and	%ret0, %ret1, %ret0
 EXIT(__vfork14)

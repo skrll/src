@@ -1,4 +1,4 @@
-/*	$NetBSD: ata.c,v 1.154 2020/04/04 21:36:15 jdolecek Exp $	*/
+/*	$NetBSD: ata.c,v 1.160 2020/10/03 22:32:50 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.  All rights reserved.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ata.c,v 1.154 2020/04/04 21:36:15 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ata.c,v 1.160 2020/10/03 22:32:50 riastradh Exp $");
 
 #include "opt_ata.h"
 
@@ -82,6 +82,10 @@ int atadebug_mask = ATADEBUG_MASK;
 		printf args
 #else
 #define ATADEBUG_PRINT(args, level)
+#endif
+
+#if defined(ATA_DOWNGRADE_MODE) && NATA_DMA
+static int	ata_downgrade_mode(struct ata_drive_datas *, int);
 #endif
 
 static ONCE_DECL(ata_init_ctrl);
@@ -294,7 +298,7 @@ atabusconfig(struct atabus_softc *atabus_sc)
 
 	ata_delref(chp);
 
-	config_pending_decr(atac->atac_dev);
+	config_pending_decr(atabus_sc->sc_dev);
 }
 
 /*
@@ -420,7 +424,7 @@ atabusconfig_thread(void *arg)
 
 	ata_delref(chp);
 
-	config_pending_decr(atac->atac_dev);
+	config_pending_decr(atabus_sc->sc_dev);
 	kthread_exit(0);
 }
 
@@ -847,13 +851,8 @@ ata_get_params(struct ata_drive_datas *drvp, uint8_t flags,
 	xfer->c_ata_c.flags = AT_READ | flags;
 	xfer->c_ata_c.data = tb;
 	xfer->c_ata_c.bcount = ATA_BSIZE;
-	if ((*atac->atac_bustype_ata->ata_exec_command)(drvp,
-						xfer) != ATACMD_COMPLETE) {
-		ATADEBUG_PRINT(("ata_get_parms: wdc_exec_command failed\n"),
-		    DEBUG_FUNCS|DEBUG_PROBE);
-		rv = CMD_AGAIN;
-		goto out;
-	}
+	(*atac->atac_bustype_ata->ata_exec_command)(drvp, xfer);
+	ata_wait_cmd(chp, xfer);
 	if (xfer->c_ata_c.flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
 		ATADEBUG_PRINT(("ata_get_parms: ata_c.flags=0x%x\n",
 		    xfer->c_ata_c.flags), DEBUG_FUNCS|DEBUG_PROBE);
@@ -937,11 +936,8 @@ ata_set_mode(struct ata_drive_datas *drvp, uint8_t mode, uint8_t flags)
 	xfer->c_ata_c.r_count = mode;
 	xfer->c_ata_c.flags = flags;
 	xfer->c_ata_c.timeout = 1000; /* 1s */
-	if ((*atac->atac_bustype_ata->ata_exec_command)(drvp,
-						xfer) != ATACMD_COMPLETE) {
-		rv = CMD_AGAIN;
-		goto out;
-	}
+	(*atac->atac_bustype_ata->ata_exec_command)(drvp, xfer);
+	ata_wait_cmd(chp, xfer);
 	if (xfer->c_ata_c.flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
 		rv = CMD_ERR;
 		goto out;
@@ -969,8 +965,19 @@ ata_dmaerr(struct ata_drive_datas *drvp, int flags)
 	 */
 	drvp->n_dmaerrs++;
 	if (drvp->n_dmaerrs >= NERRS_MAX && drvp->n_xfers <= NXFER) {
+#ifdef ATA_DOWNGRADE_MODE
 		ata_downgrade_mode(drvp, flags);
 		drvp->n_dmaerrs = NERRS_MAX-1;
+#else
+		static struct timeval last;
+		static const struct timeval serrintvl = { 300, 0 };
+
+		if (ratecheck(&last, &serrintvl)) {
+			aprint_error_dev(drvp->drv_softc,
+			    "excessive DMA errors - %d in last %d transfers\n",
+			    drvp->n_dmaerrs, drvp->n_xfers);
+		}
+#endif
 		drvp->n_xfers = 0;
 		return;
 	}
@@ -1756,14 +1763,14 @@ ata_print_modes(struct ata_channel *chp)
 	}
 }
 
-#if NATA_DMA
+#if defined(ATA_DOWNGRADE_MODE) && NATA_DMA
 /*
  * downgrade the transfer mode of a drive after an error. return 1 if
  * downgrade was possible, 0 otherwise.
  *
  * MUST BE CALLED AT splbio()!
  */
-int
+static int
 ata_downgrade_mode(struct ata_drive_datas *drvp, int flags)
 {
 	struct ata_channel *chp = drvp->chnl_softc;
@@ -1813,7 +1820,7 @@ ata_downgrade_mode(struct ata_drive_datas *drvp, int flags)
 	ata_thread_run(chp, flags, ATACH_TH_RESET, ATACH_NODRIVE);
 	return 1;
 }
-#endif	/* NATA_DMA */
+#endif	/* ATA_DOWNGRADE_MODE && NATA_DMA */
 
 /*
  * Probe drive's capabilities, for use by the controller later

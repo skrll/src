@@ -1,4 +1,4 @@
-/*      $NetBSD: vfp_init.c,v 1.64 2019/10/29 16:18:23 joerg Exp $ */
+/*      $NetBSD: vfp_init.c,v 1.72 2020/10/30 18:54:37 skrll Exp $ */
 
 /*
  * Copyright (c) 2008 ARM Ltd
@@ -32,12 +32,13 @@
 #include "opt_cputypes.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfp_init.c,v 1.64 2019/10/29 16:18:23 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfp_init.c,v 1.72 2020/10/30 18:54:37 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/systm.h>
 #include <sys/device.h>
+#include <sys/kthread.h>
 #include <sys/proc.h>
 #include <sys/cpu.h>
 
@@ -46,8 +47,14 @@ __KERNEL_RCSID(0, "$NetBSD: vfp_init.c,v 1.64 2019/10/29 16:18:23 joerg Exp $");
 #include <arm/undefined.h>
 #include <arm/vfpreg.h>
 #include <arm/mcontext.h>
+#include <arm/fpu.h>
 
 #include <uvm/uvm_extern.h>		/* for pmap.h */
+
+#include <crypto/aes/aes_impl.h>
+#include <crypto/aes/arch/arm/aes_neon.h>
+#include <crypto/chacha/arch/arm/chacha_neon.h>
+#include <crypto/chacha/chacha_impl.h>
 
 #ifdef FPU_VFP
 
@@ -280,7 +287,7 @@ vfp_attach(struct cpu_info *ci)
 		cpacr |= __SHIFTIN(CPACR_ALL, cpacr_vfp2);
 		armreg_cpacr_write(cpacr);
 
-		arm_isb();
+		isb();
 
 		/*
 		 * If we could enable them, then they exist.
@@ -401,8 +408,12 @@ vfp_attach(struct cpu_info *ci)
 		install_coproc_handler(VFP_COPROC, vfp_handler);
 		install_coproc_handler(VFP_COPROC2, vfp_handler);
 #ifdef CPU_CORTEX
-		if (cpu_neon_present)
-			install_coproc_handler(CORE_UNKNOWN_HANDLER, neon_handler);
+		if (cpu_neon_present) {
+			install_coproc_handler(CORE_UNKNOWN_HANDLER,
+			    neon_handler);
+			aes_md_init(&aes_neon_impl);
+			chacha_md_init(&chacha_neon_impl);
+		}
 #endif
 	}
 }
@@ -414,7 +425,8 @@ vfp_handler(u_int address, u_int insn, trapframe_t *frame, int fault_code)
 	struct cpu_info * const ci = curcpu();
 
 	/* This shouldn't ever happen.  */
-	if (fault_code != FAULT_USER)
+	if (fault_code != FAULT_USER &&
+	    (curlwp->l_flag & (LW_SYSTEM|LW_SYSTEM_FPU)) == LW_SYSTEM)
 		panic("VFP fault at %#x in non-user mode", frame->tf_pc);
 
 	if (ci->ci_vfp_id == 0) {
@@ -494,7 +506,8 @@ neon_handler(u_int address, u_int insn, trapframe_t *frame, int fault_code)
 		return 1;
 
 	/* This shouldn't ever happen.  */
-	if (fault_code != FAULT_USER)
+	if (fault_code != FAULT_USER &&
+	    (curlwp->l_flag & (LW_SYSTEM|LW_SYSTEM_FPU)) == LW_SYSTEM)
 		panic("NEON fault in non-user mode");
 
 	/* if we already own the FPU and it's enabled, raise SIGILL */
@@ -656,6 +669,106 @@ vfp_setcontext(struct lwp *l, const mcontext_t *mcp)
 	pcb->pcb_vfp.vfp_fpscr = mcp->__fpu.__vfpregs.__vfp_fpscr;
 	memcpy(pcb->pcb_vfp.vfp_regs, mcp->__fpu.__vfpregs.__vfp_fstmx,
 	    sizeof(mcp->__fpu.__vfpregs.__vfp_fstmx));
+}
+
+/*
+ * True if this is a system thread with its own private FPU state.
+ */
+static inline bool
+lwp_system_fpu_p(struct lwp *l)
+{
+
+	return (l->l_flag & (LW_SYSTEM|LW_SYSTEM_FPU)) ==
+	    (LW_SYSTEM|LW_SYSTEM_FPU);
+}
+
+static const struct vfpreg zero_vfpreg;
+
+void
+fpu_kern_enter(void)
+{
+	struct cpu_info *ci;
+	uint32_t fpexc;
+	int s;
+
+	if (lwp_system_fpu_p(curlwp) && !cpu_intr_p()) {
+		KASSERT(!cpu_softintr_p());
+		return;
+	}
+
+	/*
+	 * Block interrupts up to IPL_VM.  We must block preemption
+	 * since -- if this is a user thread -- there is nowhere to
+	 * save the kernel fpu state, and if we want this to be usable
+	 * in interrupts, we can't let interrupts interfere with the
+	 * fpu state in use since there's nowhere for them to save it.
+	 */
+	s = splvm();
+	ci = curcpu();
+	KASSERTMSG(ci->ci_cpl <= IPL_VM, "cpl=%d", ci->ci_cpl);
+	KASSERT(ci->ci_kfpu_spl == -1);
+	ci->ci_kfpu_spl = s;
+
+	/* Save any fpu state on the current CPU.  */
+	pcu_save_all_on_cpu();
+
+	/* Enable the fpu.  */
+	fpexc = armreg_fpexc_read();
+	fpexc |= VFP_FPEXC_EN;
+	fpexc &= ~VFP_FPEXC_EX;
+	armreg_fpexc_write(fpexc);
+}
+
+void
+fpu_kern_leave(void)
+{
+	struct cpu_info *ci = curcpu();
+	int s;
+	uint32_t fpexc;
+
+	if (lwp_system_fpu_p(curlwp) && !cpu_intr_p()) {
+		KASSERT(!cpu_softintr_p());
+		return;
+	}
+
+	KASSERT(ci->ci_cpl == IPL_VM);
+	KASSERT(ci->ci_kfpu_spl != -1);
+
+	/*
+	 * Zero the fpu registers; otherwise we might leak secrets
+	 * through Spectre-class attacks to userland, even if there are
+	 * no bugs in fpu state management.
+	 */
+	load_vfpregs(&zero_vfpreg);
+
+	/*
+	 * Disable the fpu so that the kernel can't accidentally use
+	 * it again.
+	 */
+	fpexc = armreg_fpexc_read();
+	fpexc &= ~VFP_FPEXC_EN;
+	armreg_fpexc_write(fpexc);
+
+	/* Restore interrupts.  */
+	s = ci->ci_kfpu_spl;
+	ci->ci_kfpu_spl = -1;
+	splx(s);
+}
+
+void
+kthread_fpu_enter_md(void)
+{
+
+	pcu_load(&arm_vfp_ops);
+}
+
+void
+kthread_fpu_exit_md(void)
+{
+
+	/* XXX Should vfp_state_release zero the registers itself?  */
+	load_vfpregs(&zero_vfpreg);
+	vfp_discardcontext(curlwp, 0);
 }
 
 #endif /* FPU_VFP */

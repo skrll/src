@@ -1,4 +1,4 @@
-/* $NetBSD: acpi_pci_n1sdp.c,v 1.2 2020/02/13 00:02:40 jmcneill Exp $ */
+/* $NetBSD: acpi_pci_n1sdp.c,v 1.6 2020/10/24 07:08:22 skrll Exp $ */
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_pci_n1sdp.c,v 1.2 2020/02/13 00:02:40 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_pci_n1sdp.c,v 1.6 2020/10/24 07:08:22 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -38,10 +38,8 @@ __KERNEL_RCSID(0, "$NetBSD: acpi_pci_n1sdp.c,v 1.2 2020/02/13 00:02:40 jmcneill 
 #include <sys/intr.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/extent.h>
 #include <sys/kmem.h>
-
-#include <machine/cpu.h>
+#include <sys/cpu.h>
 
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
@@ -85,7 +83,7 @@ acpi_pci_n1sdp_valid(pci_chipset_tag_t pc, pcitag_t tag)
 
 	pci_decompose_tag(pc, tag, &b, &d, &f);
 
-	bdfaddr = (b << N1SDP_BUS_SHIFT) + 
+	bdfaddr = (b << N1SDP_BUS_SHIFT) +
 		  (d << N1SDP_DEV_SHIFT) +
 		  (f << N1SDP_FUNC_SHIFT);
 
@@ -118,7 +116,7 @@ acpi_pci_n1sdp_conf_read(pci_chipset_tag_t pc, pcitag_t tag, int reg, pcireg_t *
 		*data = -1;
 		return 0;
 	}
-	
+
 	return acpimcfg_conf_read(pc, tag, reg, data);
 }
 
@@ -140,7 +138,7 @@ acpi_pci_n1sdp_conf_write(pci_chipset_tag_t pc, pcitag_t tag, int reg, pcireg_t 
 
 	if (!acpi_pci_n1sdp_valid(pc, tag))
 		return 0;
-	
+
 	return acpimcfg_conf_write(pc, tag, reg, data);
 }
 
@@ -175,7 +173,7 @@ acpi_pci_n1sdp_init(struct acpi_pci_context *ap)
 		aprint_debug_dev(ap->ap_dev, "N1SDP: RC @ 0x%08x, %d devices\n",
 		    n1sdp_data[ap->ap_seg]->rc_base_addr, n1sdp_data[ap->ap_seg]->nr_bdfs);
 		for (n = 0; n < n1sdp_data[ap->ap_seg]->nr_bdfs; n++) {
-			const uint32_t bdf = n1sdp_data[ap->ap_seg]->valid_bdfs[n];
+			const uint32_t bdf = le32toh(n1sdp_data[ap->ap_seg]->valid_bdfs[n]);
 			const int b = (bdf >> N1SDP_BUS_SHIFT) & 0xff;
 			const int d = (bdf >> N1SDP_DEV_SHIFT) & 0x1f;
 			const int f = (bdf >> N1SDP_FUNC_SHIFT) & 0x7;

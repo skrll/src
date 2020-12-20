@@ -1,4 +1,4 @@
-/*	$NetBSD: cpuswitch.S,v 1.98 2020/02/11 15:11:27 skrll Exp $	*/
+/*	$NetBSD: cpuswitch.S,v 1.104 2020/11/21 19:44:52 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -78,15 +78,16 @@
  */
 
 #include "opt_armfpe.h"
-#include "opt_multiprocessor.h"
 #include "opt_cpuoptions.h"
+#include "opt_kasan.h"
 #include "opt_lockdebug.h"
+#include "opt_multiprocessor.h"
 
 #include "assym.h"
 #include <arm/asm.h>
 #include <arm/locore.h>
 
-	RCSID("$NetBSD: cpuswitch.S,v 1.98 2020/02/11 15:11:27 skrll Exp $")
+	RCSID("$NetBSD: cpuswitch.S,v 1.104 2020/11/21 19:44:52 skrll Exp $")
 
 /* LINTSTUB: include <sys/param.h> */
 
@@ -190,6 +191,11 @@ ENTRY(cpu_switchto)
 
 	/* We have a new curlwp now so make a note of it */
 	str	r6, [r5, #(CI_CURLWP)]
+
+#ifdef _ARM_ARCH_7
+	dmb					/* see comments in kern_mutex.c */
+#endif
+
 	/* Get the new pcb */
 	ldr	r7, [r6, #(L_PCB)]
 
@@ -236,7 +242,6 @@ ENTRY(cpu_switchto)
 	/*
 	 * Check for restartable atomic sequences (RAS).
 	 */
-
 	ldr	r0, [r6, #(L_PROC)]	/* fetch the proc for ras_lookup */
 	ldr	r2, [r0, #(P_RASLIST)]
 	cmp	r2, #0			/* p->p_nras == 0? */
@@ -319,7 +324,8 @@ ENTRY_NP(lwp_trampoline)
 	GET_CPSR(r0)
 	CPSID_I(r0, r0)			/* Kill irq's */
 
-	GET_CURCPU(r4)			/* for DO_AST */
+	/* for DO_AST */
+	GET_CURX(r4, r5)		/* r4 = curcpu, r5 = curlwp */
 	DO_AST_AND_RESTORE_ALIGNMENT_FAULTS
 	PULLFRAME
 
@@ -387,6 +393,14 @@ ENTRY_NP(softint_switch)
 	mcr	p15, 0, r5, c13, c0, 4	/* save new lwp */
 #endif
 	str	r5, [r7, #(CI_CURLWP)]	/* save new lwp */
+#ifdef _ARM_ARCH_7
+	dmb				/* see comments in kern_mutex.c */
+#endif
+
+#ifdef KASAN
+	mov	r0, r5
+	bl	_C_LABEL(kasan_softint)
+#endif
 
 	/*
 	 * Normally, we'd get {r8-r13} but since this is a softint lwp

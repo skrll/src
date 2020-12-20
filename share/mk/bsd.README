@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.README,v 1.401 2020/04/04 23:54:06 christos Exp $
+#	$NetBSD: bsd.README,v 1.415 2020/11/10 21:47:49 kamil Exp $
 #	@(#)bsd.README	8.2 (Berkeley) 4/2/94
 
 This is the README file for the make "include" files for the NetBSD
@@ -94,7 +94,7 @@ TOOL_xxx	A tool that is provided as part of the USETOOLS
 		TOOL_xxx variables should refer to tools that are
 		already installed on the host system.
 
-The following variables that control how things are made/installed that
+The following variables control how things are made/installed that
 are not set by default. These should not be set by Makefiles; they're for
 the user to define in MAKECONF (see <bsd.own.mk>, below, or mk.conf(5))
 or on the make(1) command line:
@@ -143,6 +143,9 @@ MKCOMPATTESTS  	If "yes", build and install the NetBSD test suite when
 MKCOMPATX11  	If "yes", build and install the X11 libraries when
 		building and installing src/compat.
 		Default: no
+
+MKCOMPATMODULES	If "no", don't build compat modules (xen, etc.)
+		Default: yes
 
 MKCOMPLEX	If "no", don't build libm support for <complex.h>
 		Default: yes
@@ -193,6 +196,9 @@ MKDTRACE	If "no", do not build and install the kernel modules,
 		utilities and libraries used to implement the dtrace(1)
 		facility.
 		Default: no
+
+MKDTB		If "no", disables building of devicetree blobs.
+		Default: yes on aarch64 and armv7, no elsewhere.
 
 MKDYNAMICROOT	If "no", build programs in /bin and /sbin statically,
 		don't install certain libraries in /lib, and don't
@@ -336,7 +342,7 @@ MKLLVMRT	If "yes", build the LLVM PIC libraries necessary for the
 		various Mesa backend and the native JIT of the target
 		architecture, if supported.  (Radeon R300 and newer,
 		LLVMPIPE for most.)
-		Default: no, enabled automatically with HAVE_MESA_VER=18.
+		Default: no, enabled automatically with X11 on x86 and aarch64.
 
 MKLVM		If "no", don't build or install the logical volume manager
 		and device mapper tools and libraries
@@ -1336,6 +1342,8 @@ LIBISMODULE	If not "no", install as ${LIB}.so (without the "lib" prefix),
 LIBISPRIVATE	If not "no", act as "MKDEBUGLIB=no MKLINT=no MKPIC=no
 		MKPROFILE=no", and don't install the (.a) library.
 		This is useful for "build only" helper libraries.
+		If set to "pic", then a _pic.a library is also produced,
+		so that it can be incorporated into other shared objects.
 		Default: no
 
 LIBISCXX	If not "no", Use ${CXX} instead of ${CC} to link
@@ -1517,6 +1525,9 @@ OBJMACHINE	If this is set but MAKEOBJDIR is not set, creates
 		object directories or links named "obj.${MACHINE}";
 		otherwise, just creates ones named "obj".
 
+OBJMACHINE_ARCH	If set with OBJMACHINE, creates object directories or
+		links named "obj.${MACHINE}-${MACHINE_ARCH}".
+
 USR_OBJMACHINE  If set, and the current directory is a subdirectory of
 		${BSDSRCDIR}, create object directory in the
 		corresponding subdirectory of ${BSDOBJDIR}.${MACHINE};
@@ -1637,8 +1648,16 @@ PROG_CXX	If defined, the name of the program to build.  Also
 PROGNAME	The name that the above program will be installed as, if
 		different from ${PROG}.
 
+PROGS		Multiple programs to build from a single directory.
+		Defaults to PROG. For each program ${_P} in ${PROGS},
+		uses SRCS.${_P}, defaulting to ${_P}.c.
+
+PROGS_CXX	Multiple C++ programs to build from a single directory.
+		Defaults to PROG_CXX. For each program ${_P} in ${PROGS_CXX},
+		uses SRCS.${_P}, defaulting to ${_P}.cc.
+
 SRCS		List of source files to build the program.  If SRCS is not
-		defined, it's assumed to be ${PROG}.c.
+		defined, it's assumed to be ${PROG}.c or ${PROG_CXX}.cc.
 
 DPSRCS		List of source files which are needed for generating
 		dependencies, but are not needed in ${SRCS}.
@@ -1656,6 +1675,7 @@ DPADD		Additional dependencies for the program.  Usually used for
 		LIBATF_C?=		${DESTDIR}/usr/lib/libatf-c.a
 		LIBATF_CXX?=		${DESTDIR}/usr/lib/libatf-c++.a
 		LIBBIND9?=		${DESTDIR}/usr/lib/libbind9.a
+		LIBBLOCKLIST?=		${DESTDIR}/usr/lib/libblocklist.a
 		LIBBLUETOOTH?=		${DESTDIR}/usr/lib/libbluetooth.a
 		LIBBSDMALLOC?=		${DESTDIR}/usr/lib/libbsdmalloc.a
 		LIBBZ2?=		${DESTDIR}/usr/lib/libbz2.a
@@ -1783,8 +1803,11 @@ DPADD		Additional dependencies for the program.  Usually used for
 		LIBXAU?=		${DESTDIR}/usr/X11R7/lib/libXau.a
 		LIBXAW?=		${DESTDIR}/usr/X11R7/lib/libXaw.a
 		LIBXCB?=		${DESTDIR}/usr/X11R7/lib/libxcb.a
+		LIBXCOMPOSITE?=		${DESTDIR}/usr/X11R7/lib/libXcomposite.a
+		LIBXDAMAGE?=		${DESTDIR}/usr/X11R7/lib/libXdamage.a
 		LIBXDMCP?=		${DESTDIR}/usr/X11R7/lib/libXdmcp.a
 		LIBXEXT?=		${DESTDIR}/usr/X11R7/lib/libXext.a
+		LIBXFIXES?=		${DESTDIR}/usr/X11R7/lib/libXfixes.a
 		LIBXFONT2?=		${DESTDIR}/usr/X11R7/lib/libXfont2.a
 		LIBXFONT?=		${DESTDIR}/usr/X11R7/lib/libXfont.a
 		LIBXFT?=		${DESTDIR}/usr/X11R7/lib/libXft.a

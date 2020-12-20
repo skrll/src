@@ -1,4 +1,4 @@
-/*	$NetBSD: msipic.c,v 1.20 2019/12/02 03:06:51 msaitoh Exp $	*/
+/*	$NetBSD: msipic.c,v 1.25 2020/12/11 09:22:20 knakahara Exp $	*/
 
 /*
  * Copyright (c) 2015 Internet Initiative Japan Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: msipic.c,v 1.20 2019/12/02 03:06:51 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: msipic.c,v 1.25 2020/12/11 09:22:20 knakahara Exp $");
 
 #include "opt_intrdebug.h"
 
@@ -70,12 +70,9 @@ __KERNEL_RCSID(0, "$NetBSD: msipic.c,v 1.20 2019/12/02 03:06:51 msaitoh Exp $");
  * is managed by below "dev_seqs".
  */
 struct msipic {
-	int mp_bus;
-	int mp_dev;
-	int mp_fun;
+	struct msipic_pci_info mp_i;
 
 	int mp_devid; /* The device id for the MSI/MSI-X device. */
-	int mp_veccnt; /* The number of MSI/MSI-X vectors. */
 
 	char mp_pic_name[MSIPICNAMEBUF]; /* The MSI/MSI-X device's name. */
 
@@ -114,7 +111,7 @@ static void msipic_release_common_msi_devid(int);
 
 static struct pic *msipic_find_msi_pic_locked(int);
 static struct pic *msipic_construct_common_msi_pic(const struct pci_attach_args *,
-						   struct pic *);
+						   const struct pic *);
 static void msipic_destruct_common_msi_pic(struct pic *);
 
 static void msi_set_msictl_enablebit(struct pic *, int, int);
@@ -231,7 +228,7 @@ msipic_find_msi_pic(int devid)
  */
 static struct pic *
 msipic_construct_common_msi_pic(const struct pci_attach_args *pa,
-    struct pic *pic_tmpl)
+    const struct pic *pic_tmpl)
 {
 	struct pic *pic;
 	struct msipic *msipic;
@@ -256,7 +253,7 @@ msipic_construct_common_msi_pic(const struct pci_attach_args *pa,
 	pic->pic_msipic = msipic;
 	msipic->mp_pic = pic;
 	pci_decompose_tag(pa->pa_pc, pa->pa_tag,
-	    &msipic->mp_bus, &msipic->mp_dev, &msipic->mp_fun);
+	    &msipic->mp_i.mp_bus, &msipic->mp_i.mp_dev, &msipic->mp_i.mp_fun);
 	memcpy(&msipic->mp_pa, pa, sizeof(msipic->mp_pa));
 	msipic->mp_devid = devid;
 	/*
@@ -309,6 +306,17 @@ msipic_get_devid(struct pic *pic)
 	KASSERT(msipic_is_msi_pic(pic));
 
 	return pic->pic_msipic->mp_devid;
+}
+
+/*
+ * Return the PCI bus/dev/func info for the device.
+ */
+const struct msipic_pci_info *
+msipic_get_pci_info(struct pic *pic)
+{
+	KASSERT(msipic_is_msi_pic(pic));
+
+	return &pic->pic_msipic->mp_i;
 }
 
 #define MSI_MSICTL_ENABLE 1
@@ -366,7 +374,10 @@ msi_addroute(struct pic *pic, struct cpu_info *ci,
 	pci_chipset_tag_t pc;
 	struct pci_attach_args *pa;
 	pcitag_t tag;
-	pcireg_t addr, data, ctl;
+#ifndef XENPV
+	pcireg_t addr, data;
+#endif
+	pcireg_t ctl;
 	int off, err __diagused;
 
 	pc = NULL;
@@ -375,6 +386,8 @@ msi_addroute(struct pic *pic, struct cpu_info *ci,
 	err = pci_get_capability(pc, tag, PCI_CAP_MSI, &off, NULL);
 	KASSERT(err != 0);
 
+	ctl = pci_conf_read(pc, tag, off + PCI_MSI_CTL);
+#ifndef XENPV
 	/*
 	 * See Intel 64 and IA-32 Architectures Software Developer's Manual
 	 * Volume 3 10.11 Message Signalled Interrupts.
@@ -398,7 +411,6 @@ msi_addroute(struct pic *pic, struct cpu_info *ci,
 	 * spec, so it's OK just to write it regardless of the value of the
 	 * upper 16bit.
 	 */
-	ctl = pci_conf_read(pc, tag, off + PCI_MSI_CTL);
 	if (ctl & PCI_MSI_CTL_64BIT_ADDR) {
 		pci_conf_write(pc, tag, off + PCI_MSI_MADDR64_LO, addr);
 		pci_conf_write(pc, tag, off + PCI_MSI_MADDR64_HI, 0);
@@ -407,6 +419,7 @@ msi_addroute(struct pic *pic, struct cpu_info *ci,
 		pci_conf_write(pc, tag, off + PCI_MSI_MADDR, addr);
 		pci_conf_write(pc, tag, off + PCI_MSI_MDATA, data);
 	}
+#endif /* !XENPV */
 	ctl |= PCI_MSI_CTL_MSI_ENABLE;
 	pci_conf_write(pc, tag, off + PCI_MSI_CTL, ctl);
 }
@@ -427,7 +440,7 @@ msi_delroute(struct pic *pic, struct cpu_info *ci,
  * Template for MSI pic.
  * .pic_msipic is set later in construct_msi_pic().
  */
-static struct pic msi_pic_tmpl = {
+static const struct pic msi_pic_tmpl = {
 	.pic_type = PIC_MSI,
 	.pic_vecbase = 0,
 	.pic_apicid = 0,
@@ -436,6 +449,9 @@ static struct pic msi_pic_tmpl = {
 	.pic_hwunmask = msi_hwunmask,
 	.pic_addroute = msi_addroute,
 	.pic_delroute = msi_delroute,
+	.pic_intr_get_devname = x86_intr_get_devname,
+	.pic_intr_get_assigned = x86_intr_get_assigned,
+	.pic_intr_get_count = x86_intr_get_count,
 };
 
 /*
@@ -532,8 +548,11 @@ msix_addroute(struct pic *pic, struct cpu_info *ci,
 	pcitag_t tag;
 	bus_space_tag_t bstag;
 	bus_space_handle_t bshandle;
+#ifndef XENPV
 	uint64_t entry_base;
-	pcireg_t addr, data, ctl;
+	pcireg_t addr, data;
+#endif
+	pcireg_t ctl;
 	int off, err __diagused;
 
 	if (msix_vec < 0) {
@@ -553,6 +572,9 @@ msix_addroute(struct pic *pic, struct cpu_info *ci,
 	ctl &= ~PCI_MSIX_CTL_ENABLE;
 	pci_conf_write(pc, tag, off + PCI_MSIX_CTL, ctl);
 
+	bstag = pic->pic_msipic->mp_bstag;
+	bshandle = pic->pic_msipic->mp_bshandle;
+#ifndef XENPV
 	entry_base = PCI_MSIX_TABLE_ENTRY_SIZE * msix_vec;
 
 	/*
@@ -569,16 +591,13 @@ msix_addroute(struct pic *pic, struct cpu_info *ci,
 	data = __SHIFTIN(idt_vec, LAPIC_VECTOR_MASK)
 		| LAPIC_TRIGMODE_EDGE | LAPIC_DLMODE_FIXED;
 
-	bstag = pic->pic_msipic->mp_bstag;
-	bshandle = pic->pic_msipic->mp_bshandle;
 	bus_space_write_4(bstag, bshandle,
 	    entry_base + PCI_MSIX_TABLE_ENTRY_ADDR_LO, addr);
 	bus_space_write_4(bstag, bshandle,
 	    entry_base + PCI_MSIX_TABLE_ENTRY_ADDR_HI, 0);
 	bus_space_write_4(bstag, bshandle,
 	    entry_base + PCI_MSIX_TABLE_ENTRY_DATA, data);
-	bus_space_write_4(bstag, bshandle,
-	    entry_base + PCI_MSIX_TABLE_ENTRY_VECTCTL, 0);
+#endif /* !XENPV */
 	BUS_SPACE_WRITE_FLUSH(bstag, bshandle);
 
 	ctl = pci_conf_read(pc, tag, off + PCI_MSIX_CTL);
@@ -602,7 +621,7 @@ msix_delroute(struct pic *pic, struct cpu_info *ci,
  * Template for MSI-X pic.
  * .pic_msipic is set later in construct_msix_pic().
  */
-static struct pic msix_pic_tmpl = {
+static const struct pic msix_pic_tmpl = {
 	.pic_type = PIC_MSIX,
 	.pic_vecbase = 0,
 	.pic_apicid = 0,
@@ -611,6 +630,9 @@ static struct pic msix_pic_tmpl = {
 	.pic_hwunmask = msix_hwunmask,
 	.pic_addroute = msix_addroute,
 	.pic_delroute = msix_delroute,
+	.pic_intr_get_devname = x86_intr_get_devname,
+	.pic_intr_get_assigned = x86_intr_get_assigned,
+	.pic_intr_get_count = x86_intr_get_count,
 };
 
 struct pic *
@@ -728,6 +750,7 @@ msipic_construct_msix_pic(const struct pci_attach_args *pa)
 	msix_pic->pic_msipic->mp_bstag = bstag;
 	msix_pic->pic_msipic->mp_bshandle = bshandle;
 	msix_pic->pic_msipic->mp_bssize = bssize;
+	msix_pic->pic_msipic->mp_i.mp_table_base = memaddr + table_offset;
 
 	return msix_pic;
 }
@@ -779,7 +802,7 @@ msipic_set_msi_vectors(struct pic *msi_pic, pci_intr_handle_t *pihs,
 		pci_conf_write(pc, tag, off + PCI_MSI_CTL, ctl);
 	}
 
-	msi_pic->pic_msipic->mp_veccnt = count;
+	msi_pic->pic_msipic->mp_i.mp_veccnt = count;
 	return 0;
 }
 

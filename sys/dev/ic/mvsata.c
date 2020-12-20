@@ -1,4 +1,4 @@
-/*	$NetBSD: mvsata.c,v 1.55 2020/04/04 21:36:15 jdolecek Exp $	*/
+/*	$NetBSD: mvsata.c,v 1.57 2020/05/19 08:08:51 jdolecek Exp $	*/
 /*
  * Copyright (c) 2008 KIYOHARA Takashi
  * All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mvsata.c,v 1.55 2020/04/04 21:36:15 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mvsata.c,v 1.57 2020/05/19 08:08:51 jdolecek Exp $");
 
 #include "opt_mvsata.h"
 
@@ -121,9 +121,9 @@ static void mvsata_probe_drive(struct ata_channel *);
 
 #ifndef MVSATA_WITHOUTDMA
 static void mvsata_reset_channel(struct ata_channel *, int);
-static int mvsata_bio(struct ata_drive_datas *, struct ata_xfer *);
+static void mvsata_bio(struct ata_drive_datas *, struct ata_xfer *);
 static void mvsata_reset_drive(struct ata_drive_datas *, int, uint32_t *);
-static int mvsata_exec_command(struct ata_drive_datas *, struct ata_xfer *);
+static void mvsata_exec_command(struct ata_drive_datas *, struct ata_xfer *);
 static int mvsata_addref(struct ata_drive_datas *);
 static void mvsata_delref(struct ata_drive_datas *);
 static void mvsata_killpending(struct ata_drive_datas *);
@@ -985,7 +985,7 @@ static const struct ata_xfer_ops mvsata_bio_xfer_ops = {
 	.c_kill_xfer = mvsata_bio_kill_xfer,
 };
 
-static int
+static void
 mvsata_bio(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 {
 	struct ata_channel *chp = drvp->chnl_softc;
@@ -1009,7 +1009,6 @@ mvsata_bio(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 	xfer->c_bcount = ata_bio->bcount;
 	xfer->ops = &mvsata_bio_xfer_ops;
 	ata_exec_xfer(chp, xfer);
-	return (ata_bio->flags & ATA_ITSDONE) ? ATACMD_COMPLETE : ATACMD_QUEUED;
 }
 
 static int
@@ -1109,10 +1108,6 @@ mvsata_bio_start(struct ata_channel *chp, struct ata_xfer *xfer)
 				return ATASTART_ABORT;
 			}
 			chp->ch_flags |= ATACH_DMA_WAIT;
-			/* start timeout machinery */
-			if ((xfer->c_flags & C_POLL) == 0)
-				callout_reset(&chp->c_timo_callout,
-				    mstohz(ATA_DELAY), ata_timeout, chp);
 			/* wait for irq */
 			goto intr;
 		} /* else not DMA */
@@ -1193,11 +1188,6 @@ do_pio:
 			    head, sect, nblks,
 			    (drvp->lp->d_type == DKTYPE_ST506) ?
 			    drvp->lp->d_precompcyl / 4 : 0);
-
-		/* start timeout machinery */
-		if ((xfer->c_flags & C_POLL) == 0)
-			callout_reset(&chp->c_timo_callout,
-			    mstohz(ATA_DELAY), wdctimeout, chp);
 	} else if (ata_bio->nblks > 1) {
 		/* The number of blocks in the last stretch may be smaller. */
 		nblks = xfer->c_bcount / drvp->lp->d_secsize;
@@ -1239,9 +1229,12 @@ intr:
 		xfer->c_flags, mvport->port_edmamode_curr, nodma); 
 
 	/* Wait for IRQ (either real or polled) */
-	if ((ata_bio->flags & ATA_POLL) != 0)
+	if ((ata_bio->flags & ATA_POLL) != 0) {
+		/* start timeout machinery */
+		callout_reset(&chp->c_timo_callout,
+		    mstohz(ATA_DELAY), wdctimeout, chp);
 		return ATASTART_POLL;
-	else
+	} else
 		return ATASTART_STARTED;
 
 timeout:
@@ -1601,12 +1594,11 @@ static const struct ata_xfer_ops mvsata_wdc_cmd_xfer_ops = {
 	.c_kill_xfer = mvsata_wdc_cmd_kill_xfer,
 };
 
-static int
+static void
 mvsata_exec_command(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 {
 	struct ata_channel *chp = drvp->chnl_softc;
 	struct ata_command *ata_c = &xfer->c_ata_c;
-	int rv, s;
 
 	DPRINTF(DEBUG_FUNCS|DEBUG_XFERS,
 	    ("%s:%d: mvsata_exec_command: drive=%d, bcount=%d,"
@@ -1625,24 +1617,8 @@ mvsata_exec_command(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 	xfer->c_databuf = ata_c->data;
 	xfer->c_bcount = ata_c->bcount;
 	xfer->ops = &mvsata_wdc_cmd_xfer_ops;
-	s = splbio();
+
 	ata_exec_xfer(chp, xfer);
-#ifdef DIAGNOSTIC
-	if ((ata_c->flags & AT_POLL) != 0 &&
-	    (ata_c->flags & AT_DONE) == 0)
-		panic("mvsata_exec_command: polled command not done");
-#endif
-	if (ata_c->flags & AT_DONE)
-		rv = ATACMD_COMPLETE;
-	else {
-		if (ata_c->flags & AT_WAIT) {
-			ata_wait_cmd(chp, xfer);
-			rv = ATACMD_COMPLETE;
-		} else
-			rv = ATACMD_QUEUED;
-	}
-	splx(s);
-	return rv;
 }
 
 static int
@@ -2134,11 +2110,6 @@ ready:
 		MVSATA_WDC_WRITE_1(mvport, SRB_CAS, WDCTL_4BIT);
 		delay(10); /* some drives need a little delay here */
 	}
-	/* start timeout machinery */
-	if ((sc_xfer->xs_control & XS_CTL_POLL) == 0)
-		callout_reset(&chp->c_timo_callout, mstohz(sc_xfer->timeout),
-		    wdctimeout, chp);
-
 	MVSATA_WDC_WRITE_1(mvport, SRB_H, WDSD_IBM);
 	if (wdc_wait_for_unbusy(chp, ATAPI_DELAY, wait_flags, &tfd) != 0) {
 		aprint_error_dev(atac->atac_dev, "not ready, st = %02x\n",
@@ -2146,6 +2117,11 @@ ready:
 		sc_xfer->error = XS_TIMEOUT;
 		return ATASTART_ABORT;
 	}
+
+	/* start timeout machinery */
+	if ((sc_xfer->xs_control & XS_CTL_POLL) == 0)
+		callout_reset(&chp->c_timo_callout, mstohz(sc_xfer->timeout),
+		    wdctimeout, chp);
 
 	/*
 	 * Even with WDCS_ERR, the device should accept a command packet

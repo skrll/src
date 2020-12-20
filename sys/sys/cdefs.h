@@ -1,4 +1,4 @@
-/*	$NetBSD: cdefs.h,v 1.151 2020/03/21 22:45:47 kamil Exp $	*/
+/*	$NetBSD: cdefs.h,v 1.155 2020/12/04 20:38:44 christos Exp $	*/
 
 /* * Copyright (c) 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -173,9 +173,9 @@
 #endif
 #define	__CTASSERT0(x, y, z)	__CTASSERT1(x, y, z)
 #define	__CTASSERT1(x, y, z)	\
-	typedef struct { \
+	struct y ## z ## _struct { \
 		unsigned int y ## z : /*CONSTCOND*/(x) ? 1 : -1; \
-	} y ## z ## _struct __unused
+	}
 
 /*
  * The following macro is used to remove const cast-away warnings
@@ -268,6 +268,12 @@
 #define	__always_inline	__attribute__((__always_inline__))
 #else
 #define	__always_inline	/* nothing */
+#endif
+
+#if __GNUC_PREREQ__(4, 0) || defined(__lint__)
+#define	__null_sentinel	__attribute__((__sentinel__))
+#else
+#define	__null_sentinel	/* nothing */
 #endif
 
 #if __GNUC_PREREQ__(4, 1) || defined(__lint__)
@@ -481,12 +487,12 @@
 #endif
 #endif /* !(__STDC_VERSION__ >= 199901L) && !(__cplusplus - 0 >= 201103L) */
 
-#if defined(_KERNEL)
-#if defined(NO_KERNEL_RCSIDS)
-#undef __KERNEL_RCSID
-#define	__KERNEL_RCSID(_n, _s)		/* nothing */
-#endif /* NO_KERNEL_RCSIDS */
-#endif /* _KERNEL */
+#if defined(_KERNEL) && defined(NO_KERNEL_RCSIDS)
+#undef	__KERNEL_RCSID
+#define	__KERNEL_RCSID(_n, _s)	/* nothing */
+#undef	__RCSID
+#define	__RCSID(_s)		/* nothing */
+#endif
 
 #if !defined(_STANDALONE) && !defined(_KERNEL)
 #if defined(__GNUC__) || defined(__PCC__)

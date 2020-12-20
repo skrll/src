@@ -26,39 +26,36 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 
-test_target()
+
+tsan_available_archs()
 {
-	SUPPORT='n'
-	if uname -m | grep -q "amd64" && command -v c++ >/dev/null 2>&1 && \
-		   ! echo __clang__ | c++ -E - | grep -q __clang__; then
-		# only clang with major version newer than 7 is supported
-		CLANG_MAJOR=`echo __clang_major__ | c++ -E - | grep -o '^[[:digit:]]'`
-		if [ "$CLANG_MAJOR" -ge "7" ]; then
-			SUPPORT='y'
-		fi
-	fi
+	atf_set "require.arch" "x86_64"
 }
 
 atf_test_case lock_order_inversion
 lock_order_inversion_head() {
 	atf_set "descr" "Test thread sanitizer for lock order inversion condition"
 	atf_set "require.progs" "c++ paxctl"
+	tsan_available_archs
 }
 
 atf_test_case lock_order_inversion_profile
 lock_order_inversion_profile_head() {
 	atf_set "descr" "Test thread sanitizer for lock order inversion with profiling option"
 	atf_set "require.progs" "c++ paxctl"
+	tsan_available_archs
 }
 atf_test_case lock_order_inversion_pic
 lock_order_inversion_pic_head() {
 	atf_set "descr" "Test thread sanitizer for lock order inversion with position independent code (PIC) flag"
 	atf_set "require.progs" "c++ paxctl"
+	tsan_available_archs
 }
 atf_test_case lock_order_inversion_pie
 lock_order_inversion_pie_head() {
 	atf_set "descr" "Test thread sanitizer for lock order inversion with position independent execution (PIE) flag"
 	atf_set "require.progs" "c++ paxctl"
+	tsan_available_archs
 }
 
 lock_order_inversion_body(){
@@ -88,6 +85,7 @@ EOF
 }
 
 lock_order_inversion_profile_body(){
+	atf_expect_fail "PR toolchain/55760"
 	cat > test.cc << EOF
 #include <pthread.h>
 
@@ -179,25 +177,8 @@ EOF
 	atf_check -s ignore -o ignore -e match:"WARNING: ThreadSanitizer: lock-order-inversion" ./test
 }
 
-
-atf_test_case target_not_supported
-target_not_supported_head()
-{
-	atf_set "descr" "Test forced skip"
-}
-
-target_not_supported_body()
-{
-	atf_skip "Target is not supported"
-}
-
 atf_init_test_cases()
 {
-	test_target
-	test $SUPPORT = 'n' && {
-		atf_add_test_case target_not_supported
-		return 0
-	}
 	atf_add_test_case lock_order_inversion
 	atf_add_test_case lock_order_inversion_profile
 	atf_add_test_case lock_order_inversion_pie

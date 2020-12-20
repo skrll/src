@@ -1,4 +1,4 @@
-/*	$NetBSD: usb_subr.c,v 1.244 2020/03/14 03:01:36 christos Exp $	*/
+/*	$NetBSD: usb_subr.c,v 1.248 2020/06/11 02:39:30 thorpej Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/usb_subr.c,v 1.18 1999/11/17 22:33:47 n_hibma Exp $	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.244 2020/03/14 03:01:36 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.248 2020/06/11 02:39:30 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -447,10 +447,17 @@ usbd_fill_iface_data(struct usbd_device *dev, int ifaceidx, int altidx)
 				break;
 		}
 		/* passed end, or bad desc */
-		printf("usbd_fill_iface_data: bad descriptor(s): %s\n",
-		       ed->bLength == 0 ? "0 length" :
-		       ed->bDescriptorType == UDESC_INTERFACE ? "iface desc":
-		       "out of data");
+		if (p < end) {
+			if (ed->bLength == 0) {
+				printf("%s: bad descriptor: 0 length\n",
+				    __func__);
+			} else {
+				printf("%s: bad descriptor: iface desc\n",
+				    __func__);
+			}
+		} else {
+			printf("%s: no desc found\n", __func__);
+		}
 		goto bad;
 	found:
 		ifc->ui_endpoints[endpt].ue_edesc = ed;
@@ -500,6 +507,7 @@ usbd_free_iface_data(struct usbd_device *dev, int ifcno)
 		int nendpt = ifc->ui_idesc->bNumEndpoints;
 		size_t sz = nendpt * sizeof(struct usbd_endpoint);
 		kmem_free(ifc->ui_endpoints, sz);
+		ifc->ui_endpoints = NULL;
 	}
 }
 
@@ -726,14 +734,21 @@ usbd_set_config_index(struct usbd_device *dev, int index, int msg)
 		if (err) {
 			while (--ifcidx >= 0)
 				usbd_free_iface_data(dev, ifcidx);
+			kmem_free(dev->ud_ifaces,
+			    nifc * sizeof(struct usbd_interface));
+			dev->ud_ifaces = NULL;
 			goto bad;
 		}
 	}
 
 	return USBD_NORMAL_COMPLETION;
 
- bad:
+bad:
+	/* XXX Use usbd_set_config() to reset the config? */
+	/* XXX Should we forbid USB_UNCONFIG_NO from bConfigurationValue? */
+	dev->ud_config = USB_UNCONFIG_NO;
 	kmem_free(cdp, len);
+	dev->ud_cdesc = NULL;
 	if (bdp != NULL) {
 		kmem_free(bdp, UGETW(bdp->wTotalLength));
 		dev->ud_bdesc = NULL;
@@ -850,7 +865,7 @@ static void
 usbd_serialnumber(device_t dv, struct usbd_device *dev)
 {
 	if (dev->ud_serial) {
-		prop_dictionary_set_cstring(device_properties(dv),
+		prop_dictionary_set_string(device_properties(dv),
 		    "serialnumber", dev->ud_serial);
 	}
 }

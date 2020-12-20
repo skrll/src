@@ -1,4 +1,4 @@
-/*	$NetBSD: sig_machdep.c,v 1.47 2020/02/20 07:07:02 rin Exp $	*/
+/*	$NetBSD: sig_machdep.c,v 1.52 2020/07/06 09:34:18 rin Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -32,10 +32,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sig_machdep.c,v 1.47 2020/02/20 07:07:02 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sig_machdep.c,v 1.52 2020/07/06 09:34:18 rin Exp $");
 
-#include "opt_ppcarch.h"
+#ifdef _KERNEL_OPT
 #include "opt_altivec.h"
+#include "opt_ppcarch.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/mount.h>
@@ -91,6 +93,8 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	/* Save register context. */
 	memset(&uc, 0, sizeof(uc));
 	uc.uc_flags = _UC_SIGMASK;
+	uc.uc_flags |= (ss->ss_flags & SS_ONSTACK) ?
+	    _UC_SETSTACK : _UC_CLRSTACK;
 	uc.uc_sigmask = *mask;
 	uc.uc_link = l->l_ctxlink;
 	sendsig_reset(l, ksi->ksi_signo);
@@ -191,8 +195,6 @@ cpu_getmcontext(struct lwp *l, mcontext_t *mcp, unsigned int *flagp)
 int
 cpu_mcontext_validate(struct lwp *l, const mcontext_t *mcp)
 {
-
-	KASSERT(PSL_USEROK_P(mcp->__gregs[_REG_MSR]));
 	return 0;
 }
 
@@ -201,6 +203,7 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 {
 	struct trapframe * const tf = l->l_md.md_utf;
 	const __greg_t * const gr = mcp->__gregs;
+	struct proc * const p = l->l_proc;
 	int error;
 
 	/* Restore GPR context, if any. */
@@ -263,6 +266,13 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 		vec_restore_from_mcontext(l, mcp);
 #endif
 
+	mutex_enter(p->p_lock);
+	if (flags & _UC_SETSTACK)
+		l->l_sigstk.ss_flags |= SS_ONSTACK;
+	if (flags & _UC_CLRSTACK)
+		l->l_sigstk.ss_flags &= ~SS_ONSTACK;
+	mutex_exit(p->p_lock);
+
 	return (0);
 }
 
@@ -272,5 +282,6 @@ cpu_lwp_setprivate(lwp_t *l, void *addr)
 	struct trapframe * const tf = l->l_md.md_utf;
 
 	tf->tf_fixreg[_REG_R2] = (register_t)addr;
+
 	return 0;
 }

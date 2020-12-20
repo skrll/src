@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.104 2019/03/04 17:45:16 christos Exp $ */
+/* $NetBSD: cgram.y,v 1.106 2020/12/04 17:56:04 christos Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.104 2019/03/04 17:45:16 christos Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.106 2020/12/04 17:56:04 christos Exp $");
 #endif
 
 #include <stdlib.h>
@@ -228,6 +228,7 @@ anonymize(sym_t *s)
 %token <y_type>		T_AT_NORETURN
 %token <y_type>		T_AT_NOTHROW
 %token <y_type>		T_AT_NO_INSTRUMENT_FUNCTION
+%token <y_type>		T_AT_OPTIMIZE
 %token <y_type>		T_AT_PACKED
 %token <y_type>		T_AT_PCS
 %token <y_type>		T_AT_PURE
@@ -542,10 +543,12 @@ type_attribute_spec:
 	| T_AT_BOUNDED T_LPARN type_attribute_bounded_type
 	  T_COMMA constant T_COMMA constant T_RPARN
 	| T_AT_SENTINEL T_LPARN constant T_RPARN
+	| T_AT_SENTINEL
 	| T_AT_FORMAT_ARG T_LPARN constant T_RPARN
 	| T_AT_NONNULL T_LPARN constant T_RPARN
 	| T_AT_MODE T_LPARN T_NAME T_RPARN
 	| T_AT_ALIAS T_LPARN string T_RPARN
+	| T_AT_OPTIMIZE T_LPARN string T_RPARN
 	| T_AT_PCS T_LPARN string T_RPARN
 	| T_AT_SECTION T_LPARN string T_RPARN
 	| T_AT_TLS_MODEL T_LPARN string T_RPARN

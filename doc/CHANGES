@@ -1,4 +1,4 @@
-# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2669 $>
+# LIST OF CHANGES FROM LAST RELEASE:			<$Revision: 1.2766 $>
 #
 #
 # [Note: This file does not mention every change made to the NetBSD source tree.
@@ -40,6 +40,7 @@ Changes from NetBSD 9.0 to NetBSD 10.0:
 		packets from userland. [maxv 20190914]
 	mos(4): Ported driver for MosChip MCS7730/7830/7832 USB ethernet.
 		[mrg 20190920]
+	gcc(1): Import GCC 8.3. [mrg 20191001]
 	libpcap: Import 1.9.1. [christos 20191001]
 	tcpdump(8): Import 4.9.3. [christos 20191001]
 	rescue(8): Moved into a separate, rescue-only set. [maya 20191001]
@@ -85,6 +86,8 @@ Changes from NetBSD 9.0 to NetBSD 10.0:
 	scheduler: Improve performance and interactivity. [ad 20191201]
 	vfs: Reduce false sharing and lock overhead during normal operation.
 		[ad 20191201]
+	evbarm: Added driver for Allwinner Crypto Engine random number
+		generator [riastradh 20191209]
 	ixl(4): Ported driver for Intel Ethernet 700 series
 		[yamaguchi 20191210]
 	acpi(4): Updated ACPICA to 20191213. [christos 20191214]
@@ -133,6 +136,7 @@ Changes from NetBSD 9.0 to NetBSD 10.0:
 	de(4): Removed from the tree. [thorpej 20200119]
 	token ring and tr(4): Removed from the tree. [thorpej 20200119]
 	fddi, fpa(4), fta(4), fea(4): Removed from the tree. [thorpej 20200120]
+	wm(4): Add Intel I219 LM10-LM15 and V10-V14. [msaitoh 20200121]
 	OpenSSL: Imported 1.1.1d. [christos 20200122]
 	dhcpcd(8): Import dhcpcd-8.1.6 [roy 20200127]
 	openresolv(8): Import openresolv-3.10.0 [roy 20200127]
@@ -150,6 +154,7 @@ Changes from NetBSD 9.0 to NetBSD 10.0:
 	libcbor: Import for libfido2 support [christos 20200302]
 	libfido2: Import for pam-u2f support [christos 20200302]
 	pam-u2f: Import token authenticator [christos 20200302]
+	gcc(1): Import GCC 8.4. [mrg 20200311]
 	terminfo: Support numeric parameters as int [roy 20200313]
 	postfix(1): Import version 3.5.0. [christos 20200318]
 	OpenSSL: Imported 1.1.1e. [christos 20200321]
@@ -169,3 +174,145 @@ Changes from NetBSD 9.0 to NetBSD 10.0:
 	xen: remove legacy rx-flip support from xennet(4) and xvif(4)
 		[jdolecek 20200405]
 	OpenSSL: Imported 1.1.1f. [christos 20200405]
+	xennet(4): Make the driver MP-safe [jdolecek 20200406]
+	aarch64: Add support for Pointer Authentication (PAC).
+		[maxv 20200412]
+	aarch64: Add support for Branch Target Identification (BTI).
+		[maxv 20200413]
+	umass(4): Removed obsolete ISD-ATA support [jdolecek 20200413]
+	dhcpcd(8): Import version 9.0.1 [roy 20200413]
+	xbd(4): Make the driver MP-safe [jdolecek 20200413]
+	xbd(4): Support regular 64KB MAXPHYS [jdolecek 20200415]
+	xbd(4): Support indirect segments [jdolecek 20200416]
+	dhcpcd(8): Import version 9.0.2 [roy 20200421]
+	xbdback(4): Support indirect segments [jdolecek 20200421]
+	xbdback(4): Make the driver MP-safe [jdolecek 20200423]
+	OpenSSL: Imported 1.1.1g. [christos 20200424]
+	tzdata updated to 2020a  [kre 20200425]
+	amd64, i386: Added support for Xen PV drivers under HVM guests.
+		[bouyer 20200425]
+	kernel: Overhauled entropy subsystem [riastradh 20200430]
+	xen: Added support for Xen PVH. [bouyer 20200502]
+	hp300: Add bitmap access ops support for EVRX framebuffer on
+		HP9000/425e. [tsutsui 20200504]
+	xennet(4): add support for feature-sg & jumbo frames [jdolecek 20200430]
+	xvif(4): add support for feature-sg & jumbo frames [jdolecek 20200503]
+	kernel: Added support for swap encryption with sysctl -w
+		vm.swap_encrypt=1 [riastradh 20200509]
+	xen: Support MSI for XenPV [jdolecek 20200504]
+	hppa: Enable modules in GENERIC by default.  [skrll 20200511]
+	aarch64: Added support for ARMv8.5-RNG RNDRRS CPU random number
+		generator instructions [riastradh 20200511]
+	xen: enable MULTIPROCESSOR for Xen dom0. [bouyer 20200513]
+	ptrace(2): Add PT_SET_SIGPASS and PT_GET_SIGPASS. [kamil 20200514]
+	evbarm: Added support for EFI RNG firwmare random number generator
+		[riastradh 20200514]
+	ACL: Add FFS support for ACLS via extended attributes, from FreeBSD.
+		[christos 20200516]
+	evbarm: Added support for Rockchip RK3399 crypto random number
+		generator device [riastradh 20200517]
+	libuv: Import version 1.38.0. [christos 20200524]
+	bind: Import version 9.16.3. [christos 20200524]
+	tzcode: Updated to 2020a. [christos 20200525]
+	ntp: Import ntp 4.2.8p14. [christos 20200525]
+	acpi(4): Updated ACPICA to 20200430. [christos 20200525]
+	postfix(1): Import version 3.5.2. [christos 20200525]
+	OpenSSH: Import 8.3. [christos 20200528]
+	evbarm: Add install media for earmv7hf and aarch64. [jmcneill 20200528]
+	dhcpcd: Import version 9.1.1 [roy 20200604]
+	inet6: in-kernel Router Advertisment handling removed. [roy 20200612]
+	file(1): Upgraded to 5.39. [christos 20200614]
+	blocklist: import current version [christos 20200614]
+	dhcpcd: Import version 9.1.2 [roy 20200615]
+	evbarm: Add support for loading modules with the bootloader.
+		[jmcneill 20200221]
+	evbarm: Added boot.cfg support to efiboot [jmcneill 20200211]
+	kernel: Remove all variable-time AES and replace it by constant-time
+		aes_ct from BearSSL or a CPU-dependent implementation,
+		selected at boot time according to CPU capabilities.
+		[riastradh 20200629]
+	amd64: Add support for AES-NI in kernel. [riastradh 20200629]
+	x86: Add support for bitsliced AES with SSE2 in kernel.
+		[riastradh 20200629]
+	x86: Add support for permutation-based AES (vpaes) with SSSE3 in
+		kernel. [riastradh 20200629]
+	x86: Add support for VIA ACE AES in kernel (not just via opencrypto).
+		[riastradh 20200629]
+	arm: Add support for ARMv8.0-AES in kernel. [riastradh 20200629]
+	arm: Add support for permutation-based AES (vpaes) with ARM NEON in
+		kernel. [riastradh 20200629]
+	cgd(4): Add support for Adiantum cipher, providing much better software
+		performance than AES-CBC or AES-XTS. [riastradh 20200629]
+	dhcpcd: Import version 9.1.4 [roy 20200703]
+	x86: Xen kernels now use the same kernel modules as native kernels.
+		[chs 20200704]
+	wskbd(4): Added keyboard layouts for Brazilian Portugese,
+		Canadian French, Estonian, Icelandic, and Latin American
+		Spanish to pckbd(4) and ukbd(4). [nia 20200713]
+	bnx(4): Enable support for MSI/MSI-X [jdolecek 20200714]
+	ciss(4): Add support for PERFORMANT mode, and enable MSI/MSI-X
+		for adapters supporting it [jdolecek 20200714]
+	ciss(4): Match new HP Smart Array adapters [jdolecek 20200714]
+	x86: Introduce per-cpu IDTs [yamaguchi 20200714]
+	evbmips: Renamed kernel config files:
+		ERLITE         -> OCTEON
+		INSTALL_ERLITE -> INSTALL_OCTEON
+		[simonb 20200715]
+	libc: Added ppoll() wrapper around native pollts(2) [kamil 20200717]
+	openresolv: Import version 3.11.0 [roy 20200722]
+	sun3: Add Xorg-Server-1.20'fied ancient monolithc Xsun servers.
+		[tsutsui 20200722]
+	wwanc(4): Add driver for Intel XMM7360 LTE modem [jdolecek 20200726]
+	xen: MSI enabled by default [jdolecek 20200728]
+	kernel: remove the BRIDGE_IPF option, build its code by default
+		unconditionally. [maxv 20200801]
+	aarch64: Add support for Privileged Access Never (PAN).
+		[maxv 20200802]
+	acpi(4): Updated ACPICA to 20200717. [christos 20200802]
+	bind: Import version 9.16.5. [christos 20200803]
+	dhcp: Import version 4.4.2. [christos 20200803]
+	openldap: Import 2.4.50. [christos 20200811]
+	kernel: Add getrandom system call. [riastradh 20200813]
+	kernel: Disable COMPAT_LINUX by default [jdolecek 20200816]
+	mips: Port crash(8) to mips.  [mrg 20200816]
+	wg(4): Add implementation of WireGuard protocol. [ozaki-r 20200820]
+	gcc(1): Import GCC 9.3. [mrg 20200904]
+	dhcpcd: Update to version 9.2.0. [roy 20200906]
+	iavf(4): Add driver for Intel Ethernet Adaptive Virtual Function
+		[yamaguchi 20200908]
+	gcc(1): Install TSan for 64bit CPUs. [kamil 20200913]
+	network: IPv6 Neighor Detection is now address agnostic
+		and is used by ARP. RFC 7048 is included. [roy 20200916]
+	alpha: Fixed several stability problems with MULTIPROCESSOR
+		enabled.  Improved performance of TLB operations in
+		pmap module.  Implemented fast-soft-interrupts.  Enabled
+		MULTIPROCESSOR in GENERIC.  [thorpej 20200918]
+	ld.so(1): Upgrade r_debug to the protocol version 1. [kamil 20200921]
+	vether(4): Imported from OpenBSD. [roy 20200927]
+	dhcpcd: Update to version 9.3.0 [roy 20201005]
+	tzdata updated to 2020b  [kre 20201008]
+	tzcode: Updated to 2020b. [christos 20201009]
+	dhcpcd: Update to version 9.3.1 [roy 20201012]
+	tzdata updated to 2020c  [kre 20201017]
+	tzcode: Updated to 2020c. [christos 20201017]
+	ossaudio(3): Added support for the OSSv4 Mixer API [nia 20201017]
+	tzdata updated to 2020d  [kre 20201022]
+	dhcpcd: Update to version 9.3.2 [roy 20201101]
+	tmux(1): Imported 3.1c. [christos 20201101]
+	kernel: Better default for kern.maxfiles for systems with
+		larger RAM [simonb 20201112]
+	acpi(4): Updated ACPICA to 20201113. [christos 20201127]
+	dhcpcd: Update to version 9.3.4 [roy 20201128]
+	arm: Switch earmv6{,hf}eb to BE8. [rin 20201201]
+	evbarm: Support Raspberry Pi 0-3 in big-endian mode. All devices
+		except for vchiq(4) and vcaudio(4) are supported. Pi 3 is
+		capable to run both in aarch64eb and earmv7{,hf}eb modes.
+		[rin 20201201]
+	pkg_install: Updated to 20201202. This changes the default database
+		location from /var/db/pkg to /usr/pkg/pkgdb. [wiz 20201202]
+	libfido2: Update to 1.5.0 for OpenSSH 8.4 support [christos 20201204]
+	OpenSSH: Import 8.4. [christos 20201204]
+	pkg_install: Updated to 20201205. [wiz 20201205]
+	acpicpu(4): Add support for Arm CPUs. [jmcneill 20201207]
+	OpenSSL: Imported 1.1.1i. [christos 20201209]
+	pkg_install: Updated to 20201212. [wiz 20201212]

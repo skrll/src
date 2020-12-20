@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_fork.c,v 1.221 2020/04/06 08:20:05 kamil Exp $	*/
+/*	$NetBSD: kern_fork.c,v 1.226 2020/05/23 23:42:43 ad Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2001, 2004, 2006, 2007, 2008, 2019
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_fork.c,v 1.221 2020/04/06 08:20:05 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_fork.c,v 1.226 2020/05/23 23:42:43 ad Exp $");
 
 #include "opt_ktrace.h"
 #include "opt_dtrace.h"
@@ -158,9 +158,9 @@ sys___clone(struct lwp *l, const struct sys___clone_args *uap,
 	int flags, sig;
 
 	/*
-	 * We don't support the CLONE_PID or CLONE_PTRACE flags.
+	 * We don't support the CLONE_PTRACE flag.
 	 */
-	if (SCARG(uap, flags) & (CLONE_PID|CLONE_PTRACE))
+	if (SCARG(uap, flags) & (CLONE_PTRACE))
 		return EINVAL;
 
 	/*
@@ -305,13 +305,17 @@ fork1(struct lwp *l1, int flags, int exitsig, void *stack, size_t stacksize,
 		return ENOMEM;
 	}
 
+	/* Allocate new proc. */
+	p2 = proc_alloc();
+	if (p2 == NULL) {
+		/* We were unable to allocate a process ID. */
+		return EAGAIN;
+	}
+
 	/*
 	 * We are now committed to the fork.  From here on, we may
 	 * block on resources, but resource allocation may NOT fail.
 	 */
-
-	/* Allocate new proc. */
-	p2 = proc_alloc();
 
 	/*
 	 * Make a proc table entry for the new process.
@@ -327,7 +331,6 @@ fork1(struct lwp *l1, int flags, int exitsig, void *stack, size_t stacksize,
 
 	LIST_INIT(&p2->p_lwps);
 	LIST_INIT(&p2->p_sigwaiters);
-	radix_tree_init_tree(&p2->p_lwptree);
 
 	/*
 	 * Duplicate sub-structures as needed.
@@ -354,7 +357,6 @@ fork1(struct lwp *l1, int flags, int exitsig, void *stack, size_t stacksize,
 	mutex_init(&p2->p_stmutex, MUTEX_DEFAULT, IPL_HIGH);
 	mutex_init(&p2->p_auxlock, MUTEX_DEFAULT, IPL_NONE);
 	rw_init(&p2->p_reflock);
-	rw_init(&p2->p_treelock);
 	cv_init(&p2->p_waitcv, "wait");
 	cv_init(&p2->p_lwpcv, "lwpwait");
 
@@ -500,7 +502,7 @@ fork1(struct lwp *l1, int flags, int exitsig, void *stack, size_t stacksize,
 	 * It's now safe for the scheduler and other processes to see the
 	 * child process.
 	 */
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 
 	if (p1->p_session->s_ttyvp != NULL && p1->p_lflag & PL_CONTROLT)
 		p2->p_lflag |= PL_CONTROLT;
@@ -513,8 +515,10 @@ fork1(struct lwp *l1, int flags, int exitsig, void *stack, size_t stacksize,
 	 */
 	if (tracefork(p1, flags) || tracevfork(p1, flags)) {
 		proc_changeparent(p2, p1->p_pptr);
-		p2->p_oppid = p1->p_pid;
+		SET(p2->p_slflag, PSL_TRACEDCHILD);
 	}
+
+	p2->p_oppid = p1->p_pid; /* Remember the original parent id. */
 
 	LIST_INSERT_AFTER(p1, p2, p_pglist);
 	LIST_INSERT_HEAD(&allproc, p2, p_list);
@@ -542,9 +546,9 @@ fork1(struct lwp *l1, int flags, int exitsig, void *stack, size_t stacksize,
 	 * Notify any interested parties about the new process.
 	 */
 	if (!SLIST_EMPTY(&p1->p_klist)) {
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		KNOTE(&p1->p_klist, NOTE_FORK | p2->p_pid);
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 	}
 
 	/*
@@ -601,7 +605,7 @@ fork1(struct lwp *l1, int flags, int exitsig, void *stack, size_t stacksize,
 		eventswitch(TRAP_CHLD,
 		    tracefork(p1, flags) ? PTRACE_FORK : PTRACE_VFORK,
 		    retval[0]);
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 	}
 
 	/*
@@ -609,7 +613,7 @@ fork1(struct lwp *l1, int flags, int exitsig, void *stack, size_t stacksize,
 	 * child to exec or exit, sleep until it clears p_vforkwaiting.
 	 */
 	while (l1->l_vforkwaiting)
-		cv_wait(&l1->l_waitcv, proc_lock);
+		cv_wait(&l1->l_waitcv, &proc_lock);
 
 	/*
 	 * Let the parent know that we are tracing its child.
@@ -618,7 +622,7 @@ fork1(struct lwp *l1, int flags, int exitsig, void *stack, size_t stacksize,
 		mutex_enter(p1->p_lock);
 		eventswitch(TRAP_CHLD, PTRACE_VFORK_DONE, retval[0]);
 	} else
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 
 	return 0;
 }
@@ -632,7 +636,8 @@ child_return(void *arg)
 	struct lwp *l = curlwp;
 	struct proc *p = l->l_proc;
 
-	if ((p->p_slflag & PSL_TRACED) != 0) {
+	if ((p->p_slflag & (PSL_TRACED|PSL_TRACEDCHILD)) ==
+	    (PSL_TRACED|PSL_TRACEDCHILD)) {
 		eventswitchchild(p, TRAP_CHLD, 
 		    ISSET(p->p_lflag, PL_PPWAIT) ? PTRACE_VFORK : PTRACE_FORK);
 	}

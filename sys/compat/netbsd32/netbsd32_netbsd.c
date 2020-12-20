@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_netbsd.c,v 1.228 2019/06/20 03:31:54 kamil Exp $	*/
+/*	$NetBSD: netbsd32_netbsd.c,v 1.230 2020/10/10 00:00:54 rin Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001, 2008, 2018 Matthew R. Green
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_netbsd.c,v 1.228 2019/06/20 03:31:54 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_netbsd.c,v 1.230 2020/10/10 00:00:54 rin Exp $");
 
 /*
  * below are all the standard NetBSD system calls, in the 32bit
@@ -1250,6 +1250,21 @@ netbsd32_seteuid(struct lwp *l, const struct netbsd32_seteuid_args *uap, registe
 	NETBSD32TO64_UAP(euid);
 
 	return sys_seteuid(l, &ua, retval);
+}
+
+int
+netbsd32_lpathconf(struct lwp *l, const struct netbsd32_lpathconf_args *uap, register_t *retval)
+{
+	/* {
+		syscallarg(netbsd32_charp) path;
+		syscallarg(int) name;
+	} */
+	struct sys_lpathconf_args ua;
+
+	NETBSD32TOP_UAP(path, const char);
+	NETBSD32TO64_UAP(name);
+
+	return sys_lpathconf(l, &ua, retval);
 }
 
 int
@@ -2592,6 +2607,22 @@ netbsd32__pset_bind(struct lwp *l,
 	return sys__pset_bind(l, &ua, retval);
 }
 
+int
+netbsd32_getrandom(struct lwp *l, const struct netbsd32_getrandom_args *uap,
+    register_t *retval)
+{
+	/* {
+		syscallarg(netbsd32_voidp)	buf;
+		syscallarg(netbsd32_size_t)	buflen;
+		syscallarg(unsigned)		flags;
+	} */
+	struct sys_getrandom_args ua;
+
+	NETBSD32TOP_UAP(buf, void *);
+	NETBSD32TOX_UAP(buflen, size_t);
+	NETBSD32TO64_UAP(flags);
+	return sys_getrandom(l, &ua, retval);
+}
 
 /*
  * MI indirect system call support.

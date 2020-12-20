@@ -1,4 +1,4 @@
-/*	$NetBSD: lwp.h,v 1.206 2020/04/10 17:16:21 ad Exp $	*/
+/*	$NetBSD: lwp.h,v 1.212 2020/10/23 00:25:45 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2010, 2019, 2020
@@ -83,14 +83,20 @@ struct lockdebug;
 struct sysent;
 
 struct lwp {
+	/* Must not be zeroed on free. */
+	struct cpu_info *volatile l_cpu;/* s: CPU we're on if LSONPROC */
+	kmutex_t * volatile l_mutex;	/* l: ptr to mutex on sched state */
+	struct turnstile *l_ts;		/* l: current turnstile */
+	int		l_stat;		/* l: overall LWP status */
+	int		l__reserved;	/*  : padding - reuse as needed */	
+
 	/* Scheduling and overall state. */
+#define	l_startzero l_runq
 	TAILQ_ENTRY(lwp) l_runq;	/* s: run queue */
 	union {
 		void *	info;		/* s: scheduler-specific structure */
 		u_int	timeslice;	/* l: time-quantum for SCHED_M2 */
 	} l_sched;
-	struct cpu_info *volatile l_cpu;/* s: CPU we're on if LSONPROC */
-	kmutex_t * volatile l_mutex;	/* l: ptr to mutex on sched state */
 	void		*l_addr;	/* l: PCB address; use lwp_getpcb() */
 	struct mdlwp	l_md;		/* l: machine-dependent fields. */
 	struct bintime 	l_rtime;	/* l: real time */
@@ -102,8 +108,7 @@ struct lwp {
 	u_int		l_slpticks;	/* l: Saved start time of sleep */
 	u_int		l_slpticksum;	/* l: Sum of ticks spent sleeping */
 	int		l_biglocks;	/* l: biglock count before sleep */
-	short		l_stat;		/* l: overall LWP status */
-	short		l_class;	/* l: scheduling class */
+	int		l_class;	/* l: scheduling class */
 	int		l_kpriority;	/* !: has kernel priority boost */
 	pri_t		l_kpribase;	/* !: kernel priority base level */
 	pri_t		l_priority;	/* l: scheduler priority */
@@ -124,7 +129,6 @@ struct lwp {
 	kcpuset_t	*l_affinity;	/* l: CPU set for affinity */
 
 	/* Synchronisation. */
-	struct turnstile *l_ts;		/* l: current turnstile */
 	struct syncobj	*l_syncobj;	/* l: sync object operations set */
 	LIST_ENTRY(lwp) l_sleepchain;	/* l: sleep queue */
 	wchan_t		l_wchan;	/* l: sleep address */
@@ -136,22 +140,8 @@ struct lwp {
 	bool		l_vforkwaiting;	/* a: vfork() waiting */
 
 	/* User-space synchronization. */
-	uintptr_t	l___reserved;	/* reserved for future use */
-	/*
-	 * The global thread ID has special locking and access
-	 * considerations.  Because many LWPs may never need one,
-	 * global thread IDs are allocated lazily in lwp_gettid().
-	 * l___tid is not bean to be accessed directly unless
-	 * the accessor has specific knowledge that doing so
-	 * is safe.  l___tid is only assigned by the LWP itself.
-	 * Once assigned, it is stable until the LWP exits.
-	 * An LWP assigns its own thread ID unlocked before it
-	 * reaches visibility to the rest of the system, and
-	 * can access its own thread ID unlocked.  But once
-	 * published, it must hold the proc's lock to change
-	 * the value.
-	 */
-	lwpid_t		l___tid;	/* p: global thread id */
+	uintptr_t	l_robust_head;	/* !: list of robust futexes */
+	uint32_t	l___rsvd1;	/* reserved for future use */
 
 #if PCU_UNIT_COUNT > 0
 	struct cpu_info	* volatile l_pcu_cpu[PCU_UNIT_COUNT];
@@ -265,7 +255,9 @@ extern int		maxlwp __read_mostly;	/* max number of lwps */
 #define	LW_LWPCTL	0x00000002 /* Adjust lwpctl in userret */
 #define	LW_STIMO	0x00000040 /* Sleep timed out */
 #define	LW_SINTR	0x00000080 /* Sleep is interruptible. */
+#define	LW_CATCHINTR	0x00000100 /* LW_SINTR intent; see sleepq_block(). */
 #define	LW_SYSTEM	0x00000200 /* Kernel thread */
+#define	LW_SYSTEM_FPU	0x00000400 /* Kernel thread with vector/FP enabled */
 #define	LW_DBGSUSPEND	0x00010000 /* Suspend by debugger */
 #define	LW_WSUSPEND	0x00020000 /* Suspend before return to user */
 #define	LW_BATCH	0x00040000 /* LWP tends to hog CPU */
@@ -287,7 +279,7 @@ extern int		maxlwp __read_mostly;	/* max number of lwps */
 #define	LP_KTRACTIVE	0x00000001 /* Executing ktrace operation */
 #define	LP_KTRCSW	0x00000002 /* ktrace context switch marker */
 #define	LP_KTRCSWUSER	0x00000004 /* ktrace context switch marker */
-#define	LP_PIDLID	0x00000008 /* free LID from PID space on exit */
+	/* 		0x00000008    was LP_PIDLID */
 #define	LP_OWEUPC	0x00000010 /* Owe user profiling tick */
 #define	LP_MPSAFE	0x00000020 /* Starts life without kernel_lock */
 #define	LP_INTR		0x00000040 /* Soft interrupt handler */
@@ -368,7 +360,6 @@ bool	lwp_drainrefs(lwp_t *);
 bool	lwp_alive(lwp_t *);
 lwp_t	*lwp_find_first(proc_t *);
 
-void	lwp_renumber(lwp_t *, lwpid_t);
 int	lwp_wait(lwp_t *, lwpid_t, lwpid_t *, bool);
 void	lwp_continue(lwp_t *);
 void	lwp_unsleep(lwp_t *, bool);
@@ -389,8 +380,6 @@ int	lwp_setprivate(lwp_t *, void *);
 int	do_lwp_create(lwp_t *, void *, u_long, lwp_t **, const sigset_t *,
     const stack_t *);
 
-lwpid_t	lwp_gettid(void);
-lwp_t *	lwp_getref_tid(lwpid_t);
 void	lwp_thread_cleanup(lwp_t *);
 
 void	lwpinit_specificdata(void);
@@ -606,7 +595,7 @@ curlwp_bindx(int bound)
 #define	LWP_SUSPENDED	0x00000080
 
 /* Kernel-internal flags for LWP creation. */
-#define	LWP_PIDLID	0x40000000
+	/*		0x40000000	was LWP_PIDLID */
 #define	LWP_VFORK	0x80000000
 
 #endif	/* !_SYS_LWP_H_ */

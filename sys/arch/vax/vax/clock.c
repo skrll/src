@@ -1,4 +1,4 @@
-/*	$NetBSD: clock.c,v 1.58 2017/05/22 16:39:40 ragge Exp $	 */
+/*	$NetBSD: clock.c,v 1.60 2020/07/03 16:23:03 maxv Exp $	 */
 /*
  * Copyright (c) 1995 Ludd, University of Lule}, Sweden.
  * All rights reserved.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: clock.c,v 1.58 2017/05/22 16:39:40 ragge Exp $");
+__KERNEL_RCSID(0, "$NetBSD: clock.c,v 1.60 2020/07/03 16:23:03 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -66,13 +66,13 @@ vax_diag_get_counter(struct timecounter *tc)
 	u_int counter;
 
 	do {
-		cur_hardclock = hardclock_ticks;
+		cur_hardclock = getticks();
 		counter = *(volatile u_int *)&ka46_cpu->vc_diagtimu;
-	} while (cur_hardclock != hardclock_ticks);
+	} while (cur_hardclock != getticks());
 
 	counter = (counter & 0x3ff) + (counter >> 16) * 1024;
 
-	return counter + hardclock_ticks * tick;
+	return counter + getticks() * tick;
 }
 #endif
 
@@ -84,13 +84,13 @@ vax_mfpr_get_counter(struct timecounter *tc)
 	static int prev_count, prev_hardclock;
 
 	do {
-		cur_hardclock = hardclock_ticks;
+		cur_hardclock = getticks();
 		counter = mfpr(PR_ICR) + tick;
-	} while (cur_hardclock != hardclock_ticks);
+	} while (cur_hardclock != getticks());
 
 	/*
 	 * Handle interval counter wrapping with interrupts blocked.
-	 * If the current hardclock_ticks is less than what we saw
+	 * If the current getticks() is less than what we saw
 	 *   previously, use the previous value.
 	 * If the interval counter is smaller, assume it has wrapped,
 	 *   and if the [adjusted] current hardclock ticks is the same
@@ -110,26 +110,20 @@ vax_mfpr_get_counter(struct timecounter *tc)
 
 #if VAX46 || VAXANY
 static struct timecounter vax_diag_tc = {
-	vax_diag_get_counter,	/* get_timecount */
-	0,			/* no poll_pps */
-	~0u,			/* counter_mask */
-	1000000,		/* frequency */
-	"diagtimer",		/* name */
-	100,			/* quality */
-	NULL,			/* prev */
-	NULL,			/* next */
+	.tc_get_timecount = vax_diag_get_counter,
+	.tc_counter_mask = ~0u,
+	.tc_frequency = 1000000,
+	.tc_name = "diagtimer",
+	.tc_quality = 100,
 };
 #endif
 
 static struct timecounter vax_mfpr_tc = {
-	vax_mfpr_get_counter,	/* get_timecount */
-	0,			/* no poll_pps */
-	~0u,			/* counter_mask */
-	1000000,		/* frequency */
-	"mfpr",			/* name */
-	100,			/* quality */
-	NULL,			/* prev */
-	NULL,			/* next */
+	.tc_get_timecount = vax_mfpr_get_counter,
+	.tc_counter_mask = ~0u,
+	.tc_frequency = 1000000,
+	.tc_name = "mfpr",
+	.tc_quality = 100,
 };
 
 /*

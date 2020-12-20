@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_descrip.c,v 1.245 2020/02/01 02:23:23 riastradh Exp $	*/
+/*	$NetBSD: kern_descrip.c,v 1.249 2020/08/28 10:20:14 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_descrip.c,v 1.245 2020/02/01 02:23:23 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_descrip.c,v 1.249 2020/08/28 10:20:14 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1777,9 +1777,9 @@ fsetown(pid_t *pgid, u_long cmd, const void *data)
 		break;
 	}
 	if (id > 0) {
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		error = proc_find(id) ? 0 : ESRCH;
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 	} else if (id < 0) {
 		error = pgid_in_session(curproc, -id);
 	} else {
@@ -1841,7 +1841,7 @@ fownsignal(pid_t pgid, int signo, int code, int band, void *fdescdata)
 	ksi.ksi_code = code;
 	ksi.ksi_band = band;
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	if (pgid > 0) {
 		struct proc *p1;
 
@@ -1858,7 +1858,7 @@ fownsignal(pid_t pgid, int signo, int code, int band, void *fdescdata)
 			kpgsignal(pgrp, &ksi, fdescdata, 0);
 		}
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 }
 
 int
@@ -2039,7 +2039,7 @@ sysctl_kern_file(SYSCTLFN_ARGS)
 	 * followed by an array of file structures
 	 */
 	mutex_enter(&sysctl_file_marker_lock);
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	PROCLIST_FOREACH(p, &allproc) {
 		struct filedesc *fd;
 		fdtab_t *dt;
@@ -2070,7 +2070,7 @@ sysctl_kern_file(SYSCTLFN_ARGS)
 		if (!rw_tryenter(&p->p_reflock, RW_READER)) {
 			continue;
 		}
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 
 		fd = p->p_fd;
 		mutex_enter(&fd->fd_lock);
@@ -2117,7 +2117,7 @@ sysctl_kern_file(SYSCTLFN_ARGS)
 		/*
 		 * Release reference to process.
 		 */
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		rw_exit(&p->p_reflock);
 
 		if (error)
@@ -2131,7 +2131,7 @@ sysctl_kern_file(SYSCTLFN_ARGS)
 		sysctl_file_marker++;
 	}
 
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 	mutex_exit(&sysctl_file_marker_lock);
 
 	*oldlenp = where - start;
@@ -2195,7 +2195,7 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 		sysctl_unlock();
 		if (op == KERN_FILE_BYFILE)
 			mutex_enter(&sysctl_file_marker_lock);
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		PROCLIST_FOREACH(p, &allproc) {
 			if (p->p_stat == SIDL) {
 				/* skip embryonic processes */
@@ -2227,7 +2227,7 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 			if (!rw_tryenter(&p->p_reflock, RW_READER)) {
 				continue;
 			}
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 
 			fd = p->p_fd;
 			mutex_enter(&fd->fd_lock);
@@ -2269,7 +2269,7 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 			/*
 			 * Release reference to process.
 			 */
-			mutex_enter(proc_lock);
+			mutex_enter(&proc_lock);
 			rw_exit(&p->p_reflock);
 		}
 		if (op == KERN_FILE_BYFILE) {
@@ -2281,7 +2281,7 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 				sysctl_file_marker++;
 			}
 		}
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		if (op == KERN_FILE_BYFILE)
 			mutex_exit(&sysctl_file_marker_lock);
 		sysctl_relock();
@@ -2305,11 +2305,10 @@ fill_file(struct file *fp, const struct file *fpsrc)
 	memset(fp, 0, sizeof(*fp));
 
 	fp->f_offset = fpsrc->f_offset;
-	COND_SET_VALUE(fp->f_cred, fpsrc->f_cred, allowaddr);
-	COND_SET_VALUE(fp->f_ops, fpsrc->f_ops, allowaddr);
-	COND_SET_VALUE(fp->f_undata, fpsrc->f_undata, allowaddr);
-	COND_SET_VALUE(fp->f_list, fpsrc->f_list, allowaddr);
-	COND_SET_VALUE(fp->f_lock, fpsrc->f_lock, allowaddr);
+	COND_SET_PTR(fp->f_cred, fpsrc->f_cred, allowaddr);
+	COND_SET_CPTR(fp->f_ops, fpsrc->f_ops, allowaddr);
+	COND_SET_STRUCT(fp->f_undata, fpsrc->f_undata, allowaddr);
+	COND_SET_STRUCT(fp->f_list, fpsrc->f_list, allowaddr);
 	fp->f_flag = fpsrc->f_flag;
 	fp->f_marker = fpsrc->f_marker;
 	fp->f_type = fpsrc->f_type;
@@ -2317,7 +2316,7 @@ fill_file(struct file *fp, const struct file *fpsrc)
 	fp->f_count = fpsrc->f_count;
 	fp->f_msgcount = fpsrc->f_msgcount;
 	fp->f_unpcount = fpsrc->f_unpcount;
-	COND_SET_VALUE(fp->f_unplist, fpsrc->f_unplist, allowaddr);
+	COND_SET_STRUCT(fp->f_unplist, fpsrc->f_unplist, allowaddr);
 }
 
 static void

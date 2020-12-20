@@ -1,4 +1,4 @@
-/*	$NetBSD: sdmmc_io.c,v 1.19 2020/01/04 22:28:26 mlelstv Exp $	*/
+/*	$NetBSD: sdmmc_io.c,v 1.21 2020/10/17 09:36:45 mlelstv Exp $	*/
 /*	$OpenBSD: sdmmc_io.c,v 1.10 2007/09/17 01:33:33 krw Exp $	*/
 
 /*
@@ -20,7 +20,7 @@
 /* Routines for SD I/O cards. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sdmmc_io.c,v 1.19 2020/01/04 22:28:26 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sdmmc_io.c,v 1.21 2020/10/17 09:36:45 mlelstv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_sdmmc.h"
@@ -375,7 +375,7 @@ sdmmc_io_rw_direct(struct sdmmc_softc *sc, struct sdmmc_function *sf,
 		device_printf(sc->sc_dev,
 		    "direct I/O error %d, r=%d p=%p %s\n",
 		    error, reg, datap,
-		    ISSET(arg, SD_ARG_CMD53_WRITE) ? "write" : "read");
+		    ISSET(arg, SD_ARG_CMD52_WRITE) ? "write" : "read");
 	}
 
 	return error;
@@ -804,10 +804,7 @@ sdmmc_card_intr(device_t dev)
 	if (sc->sc_sct->card_enable_intr == NULL)
 		return;
 
-	mutex_enter(&sc->sc_intr_task_mtx);
-	if (!sdmmc_task_pending(&sc->sc_intr_task))
-		sdmmc_add_task(sc, &sc->sc_intr_task);
-	mutex_exit(&sc->sc_intr_task_mtx);
+	sdmmc_add_task(sc, &sc->sc_intr_task);
 }
 
 void

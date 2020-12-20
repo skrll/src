@@ -1,11 +1,10 @@
-/*	$NetBSD: subr_msan.c,v 1.9 2020/04/03 18:26:14 maxv Exp $	*/
+/*	$NetBSD: subr_msan.c,v 1.14 2020/09/09 16:29:59 maxv Exp $	*/
 
 /*
- * Copyright (c) 2019-2020 The NetBSD Foundation, Inc.
+ * Copyright (c) 2019-2020 Maxime Villard, m00nbsd.net
  * All rights reserved.
  *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Maxime Villard.
+ * This code is part of the KMSAN subsystem of the NetBSD kernel.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -16,21 +15,21 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
- * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
- * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
- * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_msan.c,v 1.9 2020/04/03 18:26:14 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_msan.c,v 1.14 2020/09/09 16:29:59 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -46,9 +45,10 @@ __KERNEL_RCSID(0, "$NetBSD: subr_msan.c,v 1.9 2020/04/03 18:26:14 maxv Exp $");
 #include <sys/cpu.h>
 #include <sys/msan.h>
 
-#include <uvm/uvm.h>
-
 static void kmsan_printf(const char *, ...);
+
+void kmsan_init_arg(size_t);
+void kmsan_init_ret(size_t);
 
 #ifdef KMSAN_PANIC
 #define REPORT panic
@@ -356,9 +356,6 @@ kmsan_shadow_check(const void *addr, size_t size, const char *hook)
 	}
 }
 
-void kmsan_init_arg(size_t);
-void kmsan_init_ret(size_t);
-
 void
 kmsan_init_arg(size_t n)
 {
@@ -513,7 +510,7 @@ kmsan_check_mbuf(void *buf)
 	struct mbuf *m = buf;
 
 	do {
-		kmsan_shadow_check(mtod(m, void *), m->m_len, "if_transmit()");
+		kmsan_shadow_check(mtod(m, void *), m->m_len, "MbufChain");
 	} while ((m = m->m_next) != NULL);
 }
 
@@ -799,21 +796,18 @@ kmsan_strrchr(const char *s, int c)
 }
 
 #undef kcopy
-#undef copystr
 #undef copyin
 #undef copyout
 #undef copyinstr
 #undef copyoutstr
 
 int	kmsan_kcopy(const void *, void *, size_t);
-int	kmsan_copystr(const void *, void *, size_t, size_t *);
 int	kmsan_copyin(const void *, void *, size_t);
 int	kmsan_copyout(const void *, void *, size_t);
 int	kmsan_copyinstr(const void *, void *, size_t, size_t *);
 int	kmsan_copyoutstr(const void *, void *, size_t, size_t *);
 
 int	kcopy(const void *, void *, size_t);
-int	copystr(const void *, void *, size_t, size_t *);
 int	copyin(const void *, void *, size_t);
 int	copyout(const void *, void *, size_t);
 int	copyinstr(const void *, void *, size_t, size_t *);
@@ -829,26 +823,6 @@ kmsan_kcopy(const void *src, void *dst, size_t len)
 	}
 	kmsan_init_ret(sizeof(int));
 	return kcopy(src, dst, len);
-}
-
-int
-kmsan_copystr(const void *kfaddr, void *kdaddr, size_t len, size_t *done)
-{
-	size_t _done;
-	int ret;
-
-	kmsan_check_arg(sizeof(kfaddr) + sizeof(kdaddr) +
-	    sizeof(len) + sizeof(done), "copystr():args");
-	ret = copystr(kfaddr, kdaddr, len, &_done);
-	if (ret == 0)
-		kmsan_meta_copy(kdaddr, kfaddr, _done);
-	if (done != NULL) {
-		*done = _done;
-		kmsan_shadow_fill(done, KMSAN_STATE_INITED, sizeof(size_t));
-	}
-	kmsan_init_ret(sizeof(int));
-
-	return ret;
 }
 
 int

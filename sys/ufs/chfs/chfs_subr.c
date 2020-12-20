@@ -1,4 +1,4 @@
-/*	$NetBSD: chfs_subr.c,v 1.11 2019/12/31 13:07:13 ad Exp $	*/
+/*	$NetBSD: chfs_subr.c,v 1.15 2020/09/05 16:30:12 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2010 Department of Software Engineering,
@@ -49,7 +49,7 @@
 #include <sys/proc.h>
 #include <sys/atomic.h>
 
-#include <uvm/uvm.h>
+#include <uvm/uvm_extern.h>
 
 #include <miscfs/specfs/specdev.h>
 #include <miscfs/genfs/genfs.h>
@@ -79,7 +79,7 @@ chfs_mem_info(bool total)
 	if (!total) {
 		size -= uvmexp.swpgonly;
 	}
-	size += uvm_availmem();
+	size += uvm_availmem(true);
 	size += uvmexp.filepages;
 	if (size > uvmexp.wired) {
 		size -= uvmexp.wired;
@@ -232,7 +232,7 @@ chfs_chsize(struct vnode *vp, u_quad_t size, kauth_cred_t cred)
 	}
 
 	if (size != 0) {
-		ubc_zerorange(&vp->v_uobj, size, ip->size - size, UBC_UNMAP_FLAG(vp));
+		ubc_zerorange(&vp->v_uobj, size, ip->size - size, UBC_VNODE_FLAGS(vp));
 	}
 	
 	/* drop unused fragments */
@@ -279,7 +279,7 @@ chfs_chflags(struct vnode *vp, int flags, kauth_cred_t cred)
 	}
 
 	error = kauth_authorize_vnode(cred, action, vp, NULL,
-	    genfs_can_chflags(cred, CHTTOVT(ip->ch_type), ip->uid, changing_sysflags));
+	    genfs_can_chflags(vp, cred, ip->uid, changing_sysflags));
 	if (error)
 		return error;
 

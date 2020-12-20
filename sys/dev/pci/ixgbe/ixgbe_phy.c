@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe_phy.c,v 1.20 2019/12/23 09:36:18 msaitoh Exp $ */
+/* $NetBSD: ixgbe_phy.c,v 1.23 2020/08/31 11:19:54 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -1288,6 +1288,36 @@ err_eeprom:
 	return IXGBE_ERR_PHY;
 }
 
+/************************************************************************
+ * ixgbe_sfp_cage_full
+ *
+ *   Determine if an SFP+ module is inserted to the cage.
+ ************************************************************************/
+bool
+ixgbe_sfp_cage_full(struct ixgbe_hw *hw)
+{
+	uint32_t mask;
+	int rv;
+
+	KASSERT(hw->mac.type != ixgbe_mac_82598EB);
+
+	if (hw->mac.type >= ixgbe_mac_X540)
+		mask = IXGBE_ESDP_SDP0;
+	else
+		mask = IXGBE_ESDP_SDP2;
+
+	rv = IXGBE_READ_REG(hw, IXGBE_ESDP) & mask;
+	if ((hw->quirks & IXGBE_QUIRK_MOD_ABS_INVERT) != 0)
+		rv = !rv;
+
+	if (hw->mac.type == ixgbe_mac_X550EM_a) {
+		/* X550EM_a's SDP0 is inverted than others. */
+		return !rv;
+	}
+
+	return rv;
+} /* ixgbe_sfp_cage_full */
+
 /**
  *  ixgbe_identify_module_generic - Identifies module type
  *  @hw: pointer to hardware structure
@@ -1299,6 +1329,14 @@ s32 ixgbe_identify_module_generic(struct ixgbe_hw *hw)
 	s32 status = IXGBE_ERR_SFP_NOT_PRESENT;
 
 	DEBUGFUNC("ixgbe_identify_module_generic");
+
+	/* Lightweight way to check if the cage is not full. */
+	if (hw->mac.type != ixgbe_mac_82598EB) {
+		if (!ixgbe_sfp_cage_full(hw)) {
+			hw->phy.sfp_type = ixgbe_sfp_type_not_present;
+			return IXGBE_ERR_SFP_NOT_PRESENT;
+		}
+	}
 
 	switch (hw->mac.ops.get_media_type(hw)) {
 	case ixgbe_media_type_fiber:
@@ -1356,7 +1394,8 @@ s32 ixgbe_identify_sfp_module_generic(struct ixgbe_hw *hw)
 		goto err_read_i2c_eeprom;
 
 	if (identifier != IXGBE_SFF_IDENTIFIER_SFP) {
-		hw->phy.type = ixgbe_phy_sfp_unsupported;
+		if (hw->phy.type != ixgbe_phy_nl)
+			hw->phy.type = ixgbe_phy_sfp_unsupported;
 		status = IXGBE_ERR_SFP_NOT_SUPPORTED;
 	} else {
 		status = hw->phy.ops.read_i2c_eeprom(hw,
@@ -1529,12 +1568,17 @@ s32 ixgbe_identify_sfp_module_generic(struct ixgbe_hw *hw)
 
 		/* Allow any DA cable vendor */
 		if (cable_tech & (IXGBE_SFF_DA_PASSIVE_CABLE |
-			IXGBE_SFF_DA_ACTIVE_CABLE)) {
+		    IXGBE_SFF_DA_ACTIVE_CABLE)) {
+			status = IXGBE_SUCCESS;
+
+			/* Keep phy.type for ixgbe_phy_nl */
+			if (hw->phy.type == ixgbe_phy_nl)
+				goto out;
+
 			if (cable_tech & IXGBE_SFF_DA_PASSIVE_CABLE)
 				hw->phy.type = ixgbe_phy_sfp_passive_unknown;
 			else if (cable_tech & IXGBE_SFF_DA_ACTIVE_CABLE)
 				hw->phy.type = ixgbe_phy_sfp_active_unknown;
-			status = IXGBE_SUCCESS;
 			goto out;
 		}
 
@@ -1546,7 +1590,8 @@ s32 ixgbe_identify_sfp_module_generic(struct ixgbe_hw *hw)
 		      hw->phy.sfp_type == ixgbe_sfp_type_1g_lx_core1 ||
 		      hw->phy.sfp_type == ixgbe_sfp_type_1g_sx_core0 ||
 		      hw->phy.sfp_type == ixgbe_sfp_type_1g_sx_core1)) {
-			hw->phy.type = ixgbe_phy_sfp_unsupported;
+			if (hw->phy.type != ixgbe_phy_nl)
+				hw->phy.type = ixgbe_phy_sfp_unsupported;
 			status = IXGBE_ERR_SFP_NOT_SUPPORTED;
 			goto out;
 		}
@@ -1574,8 +1619,9 @@ s32 ixgbe_identify_sfp_module_generic(struct ixgbe_hw *hw)
 					status = IXGBE_SUCCESS;
 				} else {
 					DEBUGOUT("SFP+ module not supported\n");
-					hw->phy.type =
-						ixgbe_phy_sfp_unsupported;
+					if (hw->phy.type != ixgbe_phy_nl)
+						hw->phy.type =
+						    ixgbe_phy_sfp_unsupported;
 					status = IXGBE_ERR_SFP_NOT_SUPPORTED;
 				}
 			}
@@ -1585,7 +1631,7 @@ s32 ixgbe_identify_sfp_module_generic(struct ixgbe_hw *hw)
 	}
 
 out:
-	if (hw->phy.type == ixgbe_phy_sfp_unsupported)
+	if (status == IXGBE_ERR_SFP_NOT_SUPPORTED)
 		hw->need_unsupported_sfp_recovery = true;
 	return status;
 
@@ -1786,7 +1832,7 @@ s32 ixgbe_identify_qsfp_module_generic(struct ixgbe_hw *hw)
 
 	/* Determine PHY vendor for optical modules */
 	if (comp_codes_10g & (IXGBE_SFF_10GBASESR_CAPABLE |
-			      IXGBE_SFF_10GBASELR_CAPABLE))  {
+			      IXGBE_SFF_10GBASELR_CAPABLE)) {
 		status = hw->phy.ops.read_i2c_eeprom(hw,
 					    IXGBE_SFF_QSFP_VENDOR_OUI_BYTE0,
 					    &oui_bytes[0]);

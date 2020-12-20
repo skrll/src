@@ -1,4 +1,4 @@
-/*	$NetBSD: pci_machdep_common.h,v 1.23 2016/07/11 06:14:51 knakahara Exp $	*/
+/*	$NetBSD: pci_machdep_common.h,v 1.25 2020/08/01 12:14:40 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All rights reserved.
@@ -33,11 +33,15 @@
 #ifndef _X86_PCI_MACHDEP_COMMON_H_
 #define _X86_PCI_MACHDEP_COMMON_H_
 
+#if !defined(NO_PCI_MSI_MSIX)
+#define __HAVE_PCI_MSI_MSIX
+#endif
+
 /*
  * Machine-specific definitions for PCI autoconfiguration.
  */
 #define	__HAVE_PCIIDE_MACHDEP_COMPAT_INTR_ESTABLISH
-#ifndef XEN
+#ifndef XENPV
 #define	__HAVE_PCIIDE_MACHDEP_COMPAT_INTR_DISESTABLISH
 #endif
 

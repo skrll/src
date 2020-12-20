@@ -1,4 +1,4 @@
-/*	$NetBSD: if.h,v 1.282 2020/02/14 22:04:12 thorpej Exp $	*/
+/*	$NetBSD: if.h,v 1.289 2020/10/15 10:20:44 roy Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -208,6 +208,31 @@ struct if_data {
 #define	LINK_STATE_UP		2	/* link is up */
 
 /*
+ * Status bit descriptions for the various interface types.
+ */
+struct if_status_description {
+	unsigned char	ifs_type;
+	unsigned char	ifs_state;
+	const char	*ifs_string;
+};
+
+#define LINK_STATE_DESC_MATCH(_ifs, _t, _s)				\
+	(((_ifs)->ifs_type == (_t) || (_ifs)->ifs_type == 0) &&		\
+	    (_ifs)->ifs_state == (_s))
+
+#define LINK_STATE_DESCRIPTIONS {					\
+	{ IFT_ETHER, LINK_STATE_DOWN, "no carrier" },			\
+	{ IFT_IEEE80211, LINK_STATE_DOWN, "no network" },		\
+	{ IFT_PPP, LINK_STATE_DOWN, "no carrier" },			\
+	{ IFT_CARP, LINK_STATE_DOWN, "backup" },			\
+	{ IFT_CARP, LINK_STATE_UP, "master" },				\
+	{ 0, LINK_STATE_UP, "active" },					\
+	{ 0, LINK_STATE_UNKNOWN, "unknown" },				\
+	{ 0, LINK_STATE_DOWN, "down" },					\
+	{ 0, 0, NULL }							\
+}
+
+/*
  * Structure defining a queue for a network interface.
  */
 struct ifqueue {
@@ -381,9 +406,6 @@ typedef struct ifnet {
 			*if_sysctl_log;	/* :: */
 	int		(*if_initaddr)  /* :: */
 			    (struct ifnet *, struct ifaddr *, bool);
-	int		(*if_mcastop)	/* :: */
-			    (struct ifnet *, const unsigned long,
-			    const struct sockaddr *);
 	int		(*if_setflags)	/* :: */
 			    (struct ifnet *, const u_short);
 	kmutex_t	*if_ioctl_lock;	/* :: */
@@ -397,8 +419,7 @@ typedef struct ifnet {
 	uint16_t	if_link_queue;	/* q: masked link state change queue */
 					/* q: is link state work scheduled? */
 	bool		if_link_scheduled;
-					/* q: can link state work be scheduled? */
-	bool		if_link_cansched;
+	void		(*if_link_state_changed)(struct ifnet *, int);
 	struct pslist_entry
 			if_pslist_entry;/* i: */
 	struct psref_target
@@ -436,7 +457,6 @@ typedef struct ifnet {
 #define	IFF_MULTICAST	0x8000		/* supports multicast */
 
 #define	IFEF_MPSAFE			__BIT(0)	/* handlers can run in parallel (see below) */
-#define	IFEF_NO_LINK_STATE_CHANGE	__BIT(1)	/* doesn't use link state interrupts */
 
 /*
  * The guidelines for converting an interface to IFEF_MPSAFE are as follows
@@ -514,13 +534,6 @@ if_start_lock(struct ifnet *ifp)
 		(*ifp->if_start)(ifp);
 		KERNEL_UNLOCK_ONE(NULL);
 	}
-}
-
-static __inline bool
-if_is_link_state_changeable(struct ifnet *ifp)
-{
-
-	return ((ifp->if_extflags & IFEF_NO_LINK_STATE_CHANGE) == 0);
 }
 
 #define KERNEL_LOCK_IF_IFP_MPSAFE(ifp)					\
@@ -1072,6 +1085,20 @@ do {									\
 #define	IFQ_INC_DROPS(ifq)		((ifq)->ifq_drops++)
 #define	IFQ_SET_MAXLEN(ifq, len)	((ifq)->ifq_maxlen = (len))
 
+#define	IFQ_ENQUEUE_ISR(ifq, m, isr)					\
+do {									\
+	IFQ_LOCK(inq);							\
+	if (IF_QFULL(inq)) {						\
+		IF_DROP(inq);						\
+		IFQ_UNLOCK(inq);					\
+		m_freem(m);						\
+	} else {							\
+		IF_ENQUEUE(inq, m);					\
+		IFQ_UNLOCK(inq);					\
+		schednetisr(isr);					\
+	}								\
+} while (/*CONSTCOND*/ 0)
+
 #include <sys/mallocvar.h>
 MALLOC_DECLARE(M_IFADDR);
 MALLOC_DECLARE(M_IFMADDR);
@@ -1099,6 +1126,7 @@ void	if_detach(struct ifnet *);
 void	if_down(struct ifnet *);
 void	if_down_locked(struct ifnet *);
 void	if_link_state_change(struct ifnet *, int);
+void	if_domain_link_state_change(struct ifnet *, int);
 void	if_up(struct ifnet *);
 void	ifinit(void);
 void	ifinit1(void);

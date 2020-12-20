@@ -32,7 +32,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: armperiph.c,v 1.15 2018/09/25 20:55:34 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: armperiph.c,v 1.17 2020/11/28 14:29:02 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -43,6 +43,7 @@ __KERNEL_RCSID(1, "$NetBSD: armperiph.c,v 1.15 2018/09/25 20:55:34 skrll Exp $")
 #include <arm/mainbus/mainbus.h>
 #include <arm/cortex/mpcore_var.h>
 #include <arm/cortex/gtmr_intr.h>
+#include <arm/cortex/a9tmr_intr.h>
 
 static int armperiph_match(device_t, cfdata_t, void *);
 static void armperiph_attach(device_t, device_t, void *);
@@ -61,7 +62,6 @@ struct armperiph_info {
 	bus_size_t pi_off2;
 };
 
-#ifdef CPU_CORTEXA5
 static const struct armperiph_info a5_devices[] = {
 	{ "armscu",   0x0000, 0 },
 	{ "armgic",   0x1000, 0x0100 },
@@ -70,17 +70,13 @@ static const struct armperiph_info a5_devices[] = {
 	{ "arml2cc",  0, 0 },	/* external; needs "offset" property */
 	{ "", 0, 0 },
 };
-#endif
 
-#ifdef CPU_CORTEXA7
 static const struct armperiph_info a7_devices[] = {
 	{ "armgic",  0x1000, 0x2000 },
 	{ "armgtmr", 0, 0 },
 	{ "", 0, 0 },
 };
-#endif
 
-#ifdef CPU_CORTEXA9
 static const struct armperiph_info a9_devices[] = {
 	{ "armscu",   0x0000, 0 },
 	{ "arml2cc",  0x2000, 0 },
@@ -89,31 +85,24 @@ static const struct armperiph_info a9_devices[] = {
 	{ "a9wdt",    0x0600, 0 },
 	{ "", 0, 0 },
 };
-#endif
 
-#ifdef CPU_CORTEXA15
 static const struct armperiph_info a15_devices[] = {
 	{ "armgic",  0x1000, 0x2000 },
 	{ "armgtmr", 0, 0 },
 	{ "", 0, 0 },
 };
-#endif
 
-#ifdef CPU_CORTEXA17
 static const struct armperiph_info a17_devices[] = {
 	{ "armgic",  0x1000, 0x2000 },
 	{ "armgtmr", 0, 0 },
 	{ "", 0, 0 },
 };
-#endif
 
-#ifdef CPU_CORTEXA57
 static const struct armperiph_info a57_devices[] = {
 	{ "armgic",  0x1000, 0x2000 },
 	{ "armgtmr", 0, 0 },
 	{ "", 0, 0 },
 };
-#endif
 
 
 static const struct mpcore_config {
@@ -121,24 +110,12 @@ static const struct mpcore_config {
 	uint32_t cfg_cpuid;
 	uint32_t cfg_cbar_size;
 } configs[] = {
-#ifdef CPU_CORTEXA5
 	{ a5_devices, 0x410fc050, 2*4096 },
-#endif
-#ifdef CPU_CORTEXA7
 	{ a7_devices, 0x410fc070, 8*4096 },
-#endif
-#ifdef CPU_CORTEXA9
 	{ a9_devices, 0x410fc090, 3*4096 },
-#endif
-#ifdef CPU_CORTEXA15
 	{ a15_devices, 0x410fc0f0, 8*4096 },
-#endif
-#ifdef CPU_CORTEXA17
 	{ a17_devices, 0x410fc0e0, 8*4096 },
-#endif
-#ifdef CPU_CORTEXA57
 	{ a57_devices, 0x410fd070, 8*4096 },
-#endif
 };
 
 static const struct mpcore_config *
@@ -230,15 +207,12 @@ armperiph_attach(device_t parent, device_t self, void *aux)
 			.mpcaa_off1 = cfg->cfg_devices[i].pi_off1,
 			.mpcaa_off2 = cfg->cfg_devices[i].pi_off2,
 		};
-#if defined(CPU_CORTEXA9) || defined(CPU_CORTEXA5)
-		if (strcmp(mpcaa.mpcaa_name, "arma9tmr") == 0)
+		if (strcmp(mpcaa.mpcaa_name, "arma9tmr") == 0) {
 			mpcaa.mpcaa_irq = IRQ_A9TMR_PPI_GTIMER;
-#endif
-#if defined(CPU_CORTEXA7) || defined(CPU_CORTEXA15) || defined(CPU_CORTEXA57)
+		}
 		if (strcmp(mpcaa.mpcaa_name, "armgtmr") == 0) {
 			mpcaa.mpcaa_irq = IRQ_GTMR_PPI_VTIMER;
 		}
-#endif
 
 		config_found(self, &mpcaa, NULL);
 	}

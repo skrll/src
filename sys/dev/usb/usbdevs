@@ -1,4 +1,4 @@
-$NetBSD: usbdevs,v 1.779 2020/04/04 13:18:11 mlelstv Exp $
+$NetBSD: usbdevs,v 1.786 2020/09/07 06:32:13 ryoon Exp $
 
 /*-
  * Copyright (c) 1998-2004 The NetBSD Foundation, Inc.
@@ -153,6 +153,7 @@ vendor PANASONIC	0x04da	Panasonic (Matsushita)
 vendor HUANHSIN		0x04dc	Huan Hsin
 vendor SHARP		0x04dd	Sharp
 vendor IIYAMA		0x04e1	Iiyama
+vendor EXAR		0x04e2	Exar
 vendor SHUTTLE		0x04e6	Shuttle Technology
 vendor SAMSUNG		0x04e8	Samsung Electronics
 vendor ANNABOOKS	0x04ed	Annabooks
@@ -802,6 +803,7 @@ product ALCATELT ST121G		0x0121	SpeedTouch 121g
 /* Alcor Micro, Inc. products */
 product ALCOR2 KBD_HUB		0x2802	Kbd Hub
 
+product ALCOR AU6366		0x6366	AU6366 USB2.0 Single LUN Multiple Flash Card Reader Controller
 product ALCOR MA_KBD_HUB	0x9213	MacAlly Kbd Hub
 product ALCOR AU9814		0x9215	AU9814 Hub
 product ALCOR SM_KBD		0x9410	MicroConnectors/StrongMan Keyboard
@@ -1177,6 +1179,7 @@ product CHICONY RTL8188CUS_4	0xaffa	RTL8188CUS
 product CHICONY RTL8188CUS_5	0xaffb	RTL8188CUS
 product CHICONY RTL8188CUS_6	0xaffc	RTL8188CUS
 product CHICONY2 TWINKLECAM	0x600d	TwinkleCam USB camera
+product CHICONY2 BWC35HL01	0x602c	Buffalo WBC-35H/L01
 
 /* CH Products */
 product CHPRODUCTS PROTHROTTLE	0x00f1	Pro Throttle
@@ -1583,6 +1586,11 @@ product EPSON 1670		0x011f	Perfection 1670 scanner
 /* e-TEK Labs products */
 product ETEK 1COM		0x8007	Serial port
 
+/* Exar products */
+product EXAR XR21V1410		0x1410	XR21V1410 1 channel UART
+product EXAR XR21V1412		0x1412	XR21V1412 2 channel UART
+product EXAR XR21V1414		0x1414	XR21V1414 4 channel UART
+
 /* Extended Systems products */
 product EXTENDED XTNDACCESS	0x0100	XTNDAccess IrDA
 
@@ -1923,6 +1931,12 @@ product INTEL TESTBOARD		0x9890	82930 test board
 
 product INTEL2 RMH		0x0020	Rate Matching Hub
 product INTEL2 RMH2		0x0024	Rate Matching Hub
+product INTEL2 RMH3		0x8000	Rate Matching Hub
+product INTEL2 RMH4		0x8001	Rate Matching Hub
+product INTEL2 RMH5		0x8002	Rate Matching Hub
+product INTEL2 RMH6		0x8008	Rate Matching Hub
+product INTEL2 RMH7		0x8009	Rate Matching Hub
+product INTEL2 RMH8		0x800a	Rate Matching Hub
 product INTEL2 N_6235_BT	0x07da	Advanced-N 6235 Combo Bluetooth
 
 /* Intersil products */
@@ -2128,6 +2142,7 @@ product LINKSYS4 WUSB600NV2	0x0079	WUSB600N v2
 product LINUXFOUNDATION ROOT_HUB_11	0x0001	1.1 root hub
 product LINUXFOUNDATION ROOT_HUB_20	0x0002	2.0 root hub
 product LINUXFOUNDATION ROOT_HUB_30	0x0003	3.0 root hub
+product LINUXFOUNDATION USB3DEBUG	0x0010	USB 3.0 debug port
 
 /* Lite-On Technology */
 product LITEON AR9271		0x4605	AR9271
@@ -2328,6 +2343,8 @@ product MICROSOFT XBOX_CONTROLLER_S12	0x0289	Xbox Controller S (1.2)
 product MICROSOFT XBOX_360_WIRELESS_RECEIVER 0x0291 Xbox 360 Wireless Receiver
 product MICROSOFT 24GHZ_XCVR10		0x071d	2.4GHz Transceiver V1.0
 product MICROSOFT 24GHZ_XCVR20		0x071f	2.4GHz Transceiver V2.0
+product MICROSOFT 24GHZ_XCVR70		0x0745	2.4GHz Transceiver V7.0
+product MICROSOFT 24GHZ_XCVR80		0x07b2	2.4GHz Transceiver V8.0
 product MICROSOFT CM6000		0x077d	Comfort Mouse 6000
 
 
@@ -2633,6 +2650,8 @@ product PEGATRON RT3072		0x0011	RT3072
 
 /* Future Bits products */
 product FUTUREBITS 4PI		0x6019	4Pi reprap
+/* Moonbase Otago share vendor ID with Future Bits products */
+product	FUTUREBITS ONERNG	0x6086	OneRNG Random Number Generator
 
 /* Pen Driver */
 product PEN USBDISKPRO		0x0120	USB Disk Pro

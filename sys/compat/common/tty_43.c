@@ -1,4 +1,4 @@
-/*	$NetBSD: tty_43.c,v 1.35 2019/12/12 02:15:42 pgoyette Exp $	*/
+/*	$NetBSD: tty_43.c,v 1.39 2020/10/10 15:59:41 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tty_43.c,v 1.35 2019/12/12 02:15:42 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tty_43.c,v 1.39 2020/10/10 15:59:41 christos Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -220,20 +220,24 @@ compat_43_ttioctl(struct tty *tp, u_long com, void *data, int flag,
 	case TIOCLBIC:
 	case TIOCLSET: {
 		struct termios term;
-		int flags;
+		int argbits, flags;
+
+		argbits = *(int *)data;
+		if (argbits < 0)
+			return EINVAL;
 
 		mutex_spin_enter(&tty_lock);
 		term = tp->t_termios;
 		flags = ttcompatgetflags(tp);
 		switch (com) {
 		case TIOCLSET:
-			tp->t_flags = (flags&0xffff) | (*(int *)data<<16);
+			tp->t_flags = (flags & 0xffff) | (argbits << 16);
 			break;
 		case TIOCLBIS:
-			tp->t_flags = flags | (*(int *)data<<16);
+			tp->t_flags = flags | (argbits << 16);
 			break;
 		case TIOCLBIC:
-			tp->t_flags = flags & ~(*(int *)data<<16);
+			tp->t_flags = flags & ~(argbits << 16);
 			break;
 		}
 		ttcompatsetlflags(tp, &term);
@@ -250,8 +254,8 @@ compat_43_ttioctl(struct tty *tp, u_long com, void *data, int flag,
 
 	case OTIOCGETD:
 		mutex_spin_enter(&tty_lock);
-		*(int *)data = (tp->t_linesw == NULL) ?
-		    2 /* XXX old NTTYDISC */ : tp->t_linesw->l_no;
+		*(int *)data = (tp->t_linesw == NULL || tp->t_linesw->l_no == 0)
+		    ? 2 /* XXX old NTTYDISC */ : tp->t_linesw->l_no;
 		mutex_spin_exit(&tty_lock);
 		break;
 
@@ -271,20 +275,6 @@ compat_43_ttioctl(struct tty *tp, u_long com, void *data, int flag,
 		mutex_spin_enter(&tty_lock);
 		SET(tp->t_cflag, HUPCL);
 		mutex_spin_exit(&tty_lock);
-		break;
-
-	case TIOCGSID:
-		mutex_enter(proc_lock);
-		if (tp->t_session == NULL) {
-			mutex_exit(proc_lock);
-			return ENOTTY;
-		}
-		if (tp->t_session->s_leader == NULL) {
-			mutex_exit(proc_lock);
-			return ENOTTY;
-		}
-		*(int *) data =  tp->t_session->s_leader->p_pid;
-		mutex_exit(proc_lock);
 		break;
 
 	default:

@@ -168,6 +168,14 @@ rt_compare_proto(void *context, const void *node1, const void *node2)
 	if (c != 0)
 		return -c;
 
+#ifdef INET
+	/* IPv4LL routes always come last */
+	if (rt1->rt_dflags & RTDF_IPV4LL && !(rt2->rt_dflags & RTDF_IPV4LL))
+		return -1;
+	else if (!(rt1->rt_dflags & RTDF_IPV4LL) && rt2->rt_dflags & RTDF_IPV4LL)
+		return 1;
+#endif
+
 	/* Lower metric interfaces come first. */
 	c = (int)(ifp1->metric - ifp2->metric);
 	if (c != 0)
@@ -705,6 +713,11 @@ rt_build(struct dhcpcd_ctx *ctx, int af)
 #endif
 
 	RB_TREE_FOREACH_SAFE(rt, &routes, rtn) {
+		if (rt->rt_ifp->active) {
+			if (!(rt->rt_ifp->options->options & DHCPCD_CONFIGURE))
+				continue;
+		} else if (!(ctx->options & DHCPCD_CONFIGURE))
+			continue;
 #ifdef BSD
 		if (rt_is_default(rt) &&
 		    if_missfilter(rt->rt_ifp, &rt->rt_gateway) == -1)
@@ -762,7 +775,6 @@ rt_build(struct dhcpcd_ctx *ctx, int af)
 			rt_free(rt);
 		}
 	}
-
 
 getfail:
 	rt_headclear(&routes, AF_UNSPEC);

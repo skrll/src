@@ -1,4 +1,4 @@
-/*	$NetBSD: ahcisata_core.c,v 1.82 2020/02/19 16:04:39 riastradh Exp $	*/
+/*	$NetBSD: ahcisata_core.c,v 1.85 2020/12/20 00:14:30 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ahcisata_core.c,v 1.82 2020/02/19 16:04:39 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ahcisata_core.c,v 1.85 2020/12/20 00:14:30 jmcneill Exp $");
 
 #include <sys/types.h>
 #include <sys/malloc.h>
@@ -57,12 +57,12 @@ int ahcidebug_mask = 0;
 static void ahci_probe_drive(struct ata_channel *);
 static void ahci_setup_channel(struct ata_channel *);
 
-static int  ahci_ata_bio(struct ata_drive_datas *, struct ata_xfer *);
+static void ahci_ata_bio(struct ata_drive_datas *, struct ata_xfer *);
 static int  ahci_do_reset_drive(struct ata_channel *, int, int, uint32_t *,
 	uint8_t);
 static void ahci_reset_drive(struct ata_drive_datas *, int, uint32_t *);
 static void ahci_reset_channel(struct ata_channel *, int);
-static int  ahci_exec_command(struct ata_drive_datas *, struct ata_xfer *);
+static void  ahci_exec_command(struct ata_drive_datas *, struct ata_xfer *);
 static int  ahci_ata_addref(struct ata_drive_datas *);
 static void ahci_ata_delref(struct ata_drive_datas *);
 static void ahci_killpending(struct ata_drive_datas *);
@@ -761,14 +761,10 @@ ahci_exec_fis(struct ata_channel *chp, int timeout, int flags, int slot)
 	uint32_t is;
 
 	/*
-	 * Base timeout is specified in ms.
-	 * If we are allowed to sleep, wait a tick each round.
-	 * Otherwise delay for 10ms on each round.
+	 * Base timeout is specified in ms. Delay for 10ms
+	 * on each round.
 	 */
-	if (flags & AT_WAIT)
-		timeout = MAX(1, mstohz(timeout));
-	else
-		timeout = timeout / 10;
+	timeout = timeout / 10;
 
 	AHCI_CMDTBL_SYNC(sc, achp, slot, BUS_DMASYNC_PREWRITE);
 	AHCI_CMDH_SYNC(sc, achp, slot,
@@ -814,7 +810,7 @@ ahci_do_reset_drive(struct ata_channel *chp, int drive, int flags,
 	struct ahci_cmd_header *cmd_h;
 	int i, error = 0;
 	uint32_t sig, cmd;
-	int noclo_retry = 0;
+	int noclo_retry = 0, retry;
 
 	ata_channel_lock_owned(chp);
 
@@ -896,22 +892,34 @@ again:
 	 */
 	ata_delay(chp, 10, "ahcirstw", flags);
 
-	cmd_h->cmdh_flags = htole16(RHD_FISLEN / 4 |
-	    (drive << AHCI_CMDH_F_PMP_SHIFT));
-	cmd_h->cmdh_prdbc = 0;
-	memset(cmd_tbl->cmdt_cfis, 0, 64);
-	cmd_tbl->cmdt_cfis[fis_type] = RHD_FISTYPE;
-	cmd_tbl->cmdt_cfis[rhd_c] = drive;
-	cmd_tbl->cmdt_cfis[rhd_control] = WDCTL_4BIT;
-	switch (ahci_exec_fis(chp, 310, flags, c_slot)) {
-	case ERR_DF:
-	case TIMEOUT:
+	/*
+	 * Try to clear WDCTL_RST a few times before giving up.
+	 */
+	for (error = EBUSY, retry = 0; error != 0 && retry < 5; retry++) {
+		cmd_h->cmdh_flags = htole16(RHD_FISLEN / 4 |
+		    (drive << AHCI_CMDH_F_PMP_SHIFT));
+		cmd_h->cmdh_prdbc = 0;
+		memset(cmd_tbl->cmdt_cfis, 0, 64);
+		cmd_tbl->cmdt_cfis[fis_type] = RHD_FISTYPE;
+		cmd_tbl->cmdt_cfis[rhd_c] = drive;
+		cmd_tbl->cmdt_cfis[rhd_control] = WDCTL_4BIT;
+		switch (ahci_exec_fis(chp, 310, flags, c_slot)) {
+		case ERR_DF:
+		case TIMEOUT:
+			error = EBUSY;
+			break;
+		default:
+			error = 0;
+			break;
+		}
+		if (error == 0) {
+			break;
+		}
+	}
+	if (error == EBUSY) {
 		aprint_error("%s port %d: clearing WDCTL_RST failed "
 		    "for drive %d\n", AHCINAME(sc), chp->ch_channel, drive);
-		error = EBUSY;
 		goto end;
-	default:
-		break;
 	}
 
 skip_reset:
@@ -1101,13 +1109,11 @@ static const struct ata_xfer_ops ahci_cmd_xfer_ops = {
 	.c_kill_xfer = ahci_cmd_kill_xfer,
 };
 
-static int
+static void
 ahci_exec_command(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 {
 	struct ata_channel *chp = drvp->chnl_softc;
 	struct ata_command *ata_c = &xfer->c_ata_c;
-	int ret;
-	int s;
 
 	AHCIDEBUG_PRINT(("ahci_exec_command port %d CI 0x%x\n",
 	    chp->ch_channel,
@@ -1121,25 +1127,8 @@ ahci_exec_command(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 	xfer->c_databuf = ata_c->data;
 	xfer->c_bcount = ata_c->bcount;
 	xfer->ops = &ahci_cmd_xfer_ops;
-	s = splbio();
+
 	ata_exec_xfer(chp, xfer);
-#ifdef DIAGNOSTIC
-	if ((ata_c->flags & AT_POLL) != 0 &&
-	    (ata_c->flags & AT_DONE) == 0)
-		panic("ahci_exec_command: polled command not done");
-#endif
-	if (ata_c->flags & AT_DONE) {
-		ret = ATACMD_COMPLETE;
-	} else {
-		if (ata_c->flags & AT_WAIT) {
-			ata_wait_cmd(chp, xfer);
-			ret = ATACMD_COMPLETE;
-		} else {
-			ret = ATACMD_QUEUED;
-		}
-	}
-	splx(s);
-	return ret;
 }
 
 static int
@@ -1374,7 +1363,7 @@ static const struct ata_xfer_ops ahci_bio_xfer_ops = {
 	.c_kill_xfer = ahci_bio_kill_xfer,
 };
 
-static int
+static void
 ahci_ata_bio(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 {
 	struct ata_channel *chp = drvp->chnl_softc;
@@ -1391,7 +1380,6 @@ ahci_ata_bio(struct ata_drive_datas *drvp, struct ata_xfer *xfer)
 	xfer->c_bcount = ata_bio->bcount;
 	xfer->ops = &ahci_bio_xfer_ops;
 	ata_exec_xfer(chp, xfer);
-	return (ata_bio->flags & ATA_ITSDONE) ? ATACMD_COMPLETE : ATACMD_QUEUED;
 }
 
 static int

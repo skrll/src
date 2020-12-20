@@ -1,4 +1,4 @@
-#	$NetBSD: files.ufs,v 1.45 2019/06/17 03:32:58 christos Exp $
+#	$NetBSD: files.ufs,v 1.49 2020/09/24 17:20:53 riastradh Exp $
 
 deffs					FFS
 deffs					EXT2FS
@@ -7,7 +7,7 @@ deffs					LFS
 deffs					CHFS
 
 defflag	opt_ffs.h			FFS_EI FFS_NO_SNAPSHOT APPLE_UFS
-					UFS_DIRHASH UFS_EXTATTR
+					UFS_DIRHASH UFS_EXTATTR UFS_ACL
 
 defflag	opt_lfs.h			LFS_EI LFS_KERNEL_RFW
 					LFS_DIRHASH LFS_EXTATTR
@@ -52,6 +52,7 @@ define	ffs: vfs, ufs
 file	ufs/ffs/ffs_alloc.c		ffs
 file	ufs/ffs/ffs_balloc.c		ffs
 file	ufs/ffs/ffs_bswap.c		(ffs | mfs) & ffs_ei
+file	ufs/ffs/ffs_extattr.c		ffs & ufs_extattr
 file	ufs/ffs/ffs_inode.c		ffs
 file	ufs/ffs/ffs_snapshot.c		ffs
 file	ufs/ffs/ffs_subr.c		ffs
@@ -67,7 +68,7 @@ file	ufs/lfs/lfs_alloc.c		lfs
 file	ufs/lfs/lfs_balloc.c		lfs
 file	ufs/lfs/lfs_bio.c		lfs
 file	ufs/lfs/lfs_cksum.c		lfs
-file	ufs/lfs/lfs_debug.c		lfs
+file	ufs/lfs/lfs_debug.c		lfs & debug
 file	ufs/lfs/lfs_inode.c		lfs
 file	ufs/lfs/lfs_itimes.c		lfs
 file	ufs/lfs/lfs_pages.c		lfs
@@ -98,6 +99,7 @@ file	ufs/mfs/mfs_vnops.c		mfs
 file	ufs/mfs/mfs_miniroot.c
 
 define	ufs: vfs
+file	ufs/ufs/ufs_acl.c		ufs & (ffs | mfs | ext2fs | chfs)
 file	ufs/ufs/ufs_bmap.c		ufs & (ffs | mfs | ext2fs | chfs)
 file	ufs/ufs/ufs_dirhash.c		(ffs | mfs | ext2fs | chfs) & ufs_dirhash
 file	ufs/ufs/ufs_extattr.c		(ffs | mfs) & ufs_extattr
@@ -111,4 +113,3 @@ file	ufs/ufs/quota2_subr.c		quota2 & (ffs | mfs | ext2fs | chfs)
 file	ufs/ufs/ufs_rename.c		ffs | mfs | chfs
 file	ufs/ufs/ufs_vfsops.c		ufs & (ffs | mfs | ext2fs | chfs)
 file	ufs/ufs/ufs_vnops.c		ufs & (ffs | mfs | ext2fs | chfs)
-file	ufs/ufs/ufs_wapbl.c		ffs & wapbl

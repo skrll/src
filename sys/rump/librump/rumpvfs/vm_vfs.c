@@ -1,4 +1,4 @@
-/*	$NetBSD: vm_vfs.c,v 1.38 2020/02/23 15:46:42 ad Exp $	*/
+/*	$NetBSD: vm_vfs.c,v 1.41 2020/12/09 00:03:32 chs Exp $	*/
 
 /*
  * Copyright (c) 2008-2011 Antti Kantee.  All Rights Reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vm_vfs.c,v 1.38 2020/02/23 15:46:42 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vm_vfs.c,v 1.41 2020/12/09 00:03:32 chs Exp $");
 
 #include <sys/param.h>
 
@@ -36,19 +36,48 @@ __KERNEL_RCSID(0, "$NetBSD: vm_vfs.c,v 1.38 2020/02/23 15:46:42 ad Exp $");
 #include <uvm/uvm.h>
 #include <uvm/uvm_readahead.h>
 
+void
+uvm_aio_aiodone_pages(struct vm_page **pgs, int npages, bool write, int error)
+{
+	struct uvm_object *uobj = pgs[0]->uobject;
+	struct vm_page *pg;
+	int i;
+
+	rw_enter(uobj->vmobjlock, RW_WRITER);
+	for (i = 0; i < npages; i++) {
+		pg = pgs[i];
+		KASSERT((pg->flags & PG_PAGEOUT) == 0 ||
+			(pg->flags & PG_FAKE) == 0);
+
+		if (pg->flags & PG_FAKE) {
+			KASSERT(!write);
+			pg->flags &= ~PG_FAKE;
+			KASSERT(uvm_pagegetdirty(pg) == UVM_PAGE_STATUS_CLEAN);
+			uvm_pagelock(pg);
+			uvm_pageenqueue(pg);
+			uvm_pageunlock(pg);
+		}
+
+	}
+	uvm_page_unbusy(pgs, npages);
+	rw_exit(uobj->vmobjlock);
+}
+
 /*
- * release resources held during async io.  this is almost the
- * same as uvm_aio_aiodone() from uvm_pager.c and only lacks the
- * call to uvm_aio_aiodone_pages(): unbusies pages directly here.
+ * Release resources held during async io.
  */
 void
 uvm_aio_aiodone(struct buf *bp)
 {
 	struct uvm_object *uobj = NULL;
-	int i, npages = bp->b_bufsize >> PAGE_SHIFT;
+	int npages = bp->b_bufsize >> PAGE_SHIFT;
 	struct vm_page **pgs;
 	vaddr_t va;
-	int pageout = 0;
+	int i, error;
+	bool write;
+
+	error = bp->b_error;
+	write = BUF_ISWRITE(bp);
 
 	KASSERT(npages > 0);
 	pgs = kmem_alloc(npages * sizeof(*pgs), KM_SLEEP);
@@ -59,27 +88,15 @@ uvm_aio_aiodone(struct buf *bp)
 		if (uobj == NULL) {
 			uobj = pgs[i]->uobject;
 			KASSERT(uobj != NULL);
-			rw_enter(uobj->vmobjlock, RW_WRITER);
 		} else {
 			KASSERT(uobj == pgs[i]->uobject);
 		}
-
-		if (pgs[i]->flags & PG_PAGEOUT) {
-			KASSERT((pgs[i]->flags & PG_FAKE) == 0);
-			pageout++;
-			pgs[i]->flags &= ~PG_PAGEOUT;
-			pgs[i]->flags |= PG_RELEASED;
-		}
 	}
-	KASSERT(rw_write_held(uobj->vmobjlock));
-
-	uvm_page_unbusy(pgs, npages);
-	rw_exit(uobj->vmobjlock);
-
 	uvm_pagermapout((vaddr_t)bp->b_data, npages);
-	uvm_pageout_done(pageout);
 
-	if (BUF_ISWRITE(bp) && (bp->b_cflags & BC_AGE) != 0) {
+	uvm_aio_aiodone_pages(pgs, npages, write, error);
+
+	if (write && (bp->b_cflags & BC_AGE) != 0) {
 		mutex_enter(bp->b_objlock);
 		vwakeup(bp);
 		mutex_exit(bp->b_objlock);

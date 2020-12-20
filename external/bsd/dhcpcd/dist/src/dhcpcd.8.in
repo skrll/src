@@ -24,7 +24,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd March 27, 2020
+.Dd November 25, 2020
 .Dt DHCPCD 8
 .Os
 .Sh NAME
@@ -62,6 +62,8 @@
 .Op Fl Z , Fl Fl denyinterfaces Ar pattern
 .Op Fl z , Fl Fl allowinterfaces Ar pattern
 .Op Fl Fl inactive
+.Op Fl Fl configure
+.Op Fl Fl noconfigure
 .Op interface
 .Op ...
 .Nm
@@ -72,7 +74,7 @@
 .Op interface
 .Nm
 .Fl U , Fl Fl dumplease
-.Ar interface
+.Op Ar interface
 .Nm
 .Fl Fl version
 .Nm
@@ -109,7 +111,7 @@ to renew early.
 .Pp
 If any interface reports a working carrier then
 .Nm
-will try and obtain a lease before forking to the background,
+will try to obtain a lease before forking to the background,
 otherwise it will fork right away.
 This behaviour can be modified with the
 .Fl b , Fl Fl background
@@ -262,18 +264,29 @@ Use this
 .Ar script
 instead of the default
 .Pa @SCRIPT@ .
-.It Fl D , Fl Fl duid
+.It Fl D , Fl Fl duid Op Ar ll | lt | uuid | value
 Use a DHCP Unique Identifier.
 If a system UUID is available, that will be used to create a DUID-UUID,
 otheriwse if persistent storage is available then a DUID-LLT
 (link local address + time) is generated,
 otherwise DUID-LL is generated (link local address).
+The DUID type can be hinted as an optional parameter if the file
+.Pa @DBDIR@/duid
+does not exist.
+If not
+.Va ll ,
+.Va lt
+or
+.Va uuid
+then
+.Va value
+will be converted from 00:11:22:33 format.
 This, plus the IAID will be used as the
 .Fl I , Fl Fl clientid .
 The DUID generated will be held in
 .Pa @DBDIR@/duid
 and should not be copied to other hosts.
-This file also takes precedence over the above rules.
+This file also takes precedence over the above rules except for setting a value.
 .It Fl d , Fl Fl debug
 Echo debug messages to the stderr and syslog.
 .It Fl E , Fl Fl lastlease
@@ -385,8 +398,10 @@ If no interfaces are left running,
 .Nm
 will exit.
 .It Fl l , Fl Fl leasetime Ar seconds
-Request a specific lease time in
+Request a lease time of
 .Ar seconds .
+.Ar -1
+represents an infinite lease time.
 By default
 .Nm
 does not request any lease time and leaves it in the hands of the
@@ -669,7 +684,9 @@ only responds to DHCP servers and not BOOTP servers, you can
 Quiet
 .Nm
 on the command line, only warnings and errors will be displayed.
-The messages are still logged though.
+If this option is used another time then all console output is disabled.
+These messages are still logged via
+.Xr syslog 3 .
 .It Fl T , Fl Fl test
 On receipt of DHCP messages just call
 .Pa @SCRIPT@
@@ -683,15 +700,20 @@ option is not sent in TEST mode so that the server does not lease an address.
 To test INFORM the interface needs to be configured with the desired address
 before starting
 .Nm .
-.It Fl U , Fl Fl dumplease Ar interface
+.It Fl U , Fl Fl dumplease Op Ar interface
 Dumps the current lease for the
 .Ar interface
 to stdout.
+If no
+.Ar interface
+is given then all interfaces are dumped.
 Use the
 .Fl 4
 or
 .Fl 6
 flags to specify an address family.
+If a lease is piped in via standard input then that is dumped.
+In this case, specifying an address family is mandatory.
 .It Fl V , Fl Fl variables
 Display a list of option codes, the associated variable and encoding for use in
 .Xr dhcpcd-run-hooks 8 .
@@ -728,6 +750,25 @@ This allows
 to be started in Master mode and then wait for subsequent
 .Nm
 commands to start each interface as required.
+.It Fl Fl configure
+Allows
+.Nm
+to configure the system.
+This is the default behaviour and sets
+.Ev if_configured=true .
+.It Fl Fl noconfigure
+.Nm
+will not configure the system at all.
+This is only of use if the
+.Fl Fl script
+that
+.Nm
+calls at each network event configures the system instead.
+This is different from
+.Fl T , Fl Fl test
+mode in that it's not one shot and the only change to the environment is the
+addition of
+.Ev if_configured=false .
 .It Fl Fl nodev
 Don't load any
 .Pa /dev
@@ -837,13 +878,5 @@ RFC\ 6603, RFC\ 6704, RFC\ 7217, RFC\ 7550, RFC\ 7844.
 .Sh AUTHORS
 .An Roy Marples Aq Mt roy@marples.name
 .Sh BUGS
-If
-.Nm
-is running in a
-.Xr chroot 2
-then re-opening the
-.Fl Fl logfile
-from SIGUSR2 may not work.
-.Pp
 Please report them to
 .Lk http://roy.marples.name/projects/dhcpcd

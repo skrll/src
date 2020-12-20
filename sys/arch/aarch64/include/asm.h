@@ -1,7 +1,11 @@
-/* $NetBSD: asm.h,v 1.6 2020/01/19 16:12:56 skrll Exp $ */
+/* $NetBSD: asm.h,v 1.9 2020/08/02 06:58:16 maxv Exp $ */
 
 #ifndef _AARCH64_ASM_H_
 #define _AARCH64_ASM_H_
+
+#if defined(_KERNEL_OPT)
+#include "opt_cpuoptions.h"
+#endif
 
 #include <arm/asm.h>
 
@@ -24,6 +28,24 @@
  */
 #define	ERET	\
 	eret; dsb sy; isb
+
+/*
+ * ARMv8 options to be made available for the compiler to use. Should be
+ * inserted at the beginning of the ASM files that need them.
+ *
+ * The options are:
+ *  - PAN, needed for the compiler to recognize the PAN register.
+ *  - PAC, needed for the compiler to recognize the key registers.
+ */
+#ifdef ARMV83_PAC
+#define ARMV8_DEFINE_OPTIONS	\
+	.arch armv8.3-a
+#elif defined(ARMV81_PAN)
+#define ARMV8_DEFINE_OPTIONS	\
+	.arch armv8.1-a
+#else
+#define ARMV8_DEFINE_OPTIONS	/* nothing */
+#endif
 
 #endif
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_fpareg.h,v 1.1 2015/04/29 08:32:01 hikaru Exp $	*/
+/*	$NetBSD: octeon_fpareg.h,v 1.5 2020/06/23 05:14:18 simonb Exp $	*/
 
 /*
  * Copyright (c) 2007 Internet Initiative Japan, Inc.
@@ -159,193 +159,25 @@
 #define	FPA_QUE_ACT_ACT_QUE			UINT64_C(0x000000001c000000)
 #define	FPA_QUE_ACT_ACT_INDX			UINT64_C(0x0000000003ffffff)
 
-/* ---- snprintb(9) */
-
-#define	FPA_INT_SUM_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x1b"		"Q7_PERR\0" \
-	"b\x1a"		"Q7_COFF\0" \
-	"b\x19"		"Q7_UND\0" \
-	"b\x18"		"Q6_PERR\0" \
-	"b\x17"		"Q6_COFF\0" \
-	"b\x16"		"Q6_UND\0" \
-	"b\x15"		"Q5_PERR\0" \
-	"b\x14"		"Q5_COFF\0" \
-	"b\x13"		"Q5_UND\0" \
-	"b\x12"		"Q4_PERR\0" \
-	"b\x11"		"Q4_COFF\0" \
-	"b\x10"		"Q4_UND\0" \
-	"b\x0f"		"Q3_PERR\0" \
-	"b\x0e"		"Q3_COFF\0" \
-	"b\x0d"		"Q3_UND\0" \
-	"b\x0c"		"Q2_PERR\0" \
-	"b\x0b"		"Q2_COFF\0" \
-	"b\x0a"		"Q2_UND\0" \
-	"b\x09"		"Q1_PERR\0" \
-	"b\x08"		"Q1_COFF\0" \
-	"b\x07"		"Q1_UND\0" \
-	"b\x06"		"Q0_PERR\0" \
-	"b\x05"		"Q0_COFF\0" \
-	"b\x04"		"Q0_UND\0" \
-	"b\x03"		"FED1_DBE\0" \
-	"b\x02"		"FED1_SBE\0" \
-	"b\x01"		"FED0_DBE\0" \
-	"b\x00"		"FED0_SBE\0"
-
-#define	FPA_INT_ENB_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x1b"		"Q7_PERR\0" \
-	"b\x1a"		"Q7_COFF\0" \
-	"b\x19"		"Q7_UND\0" \
-	"b\x18"		"Q6_PERR\0" \
-	"b\x17"		"Q6_COFF\0" \
-	"b\x16"		"Q6_UND\0" \
-	"b\x15"		"Q5_PERR\0" \
-	"b\x14"		"Q5_COFF\0" \
-	"b\x13"		"Q5_UND\0" \
-	"b\x12"		"Q4_PERR\0" \
-	"b\x11"		"Q4_COFF\0" \
-	"b\x10"		"Q4_UND\0" \
-	"b\x0f"		"Q3_PERR\0" \
-	"b\x0e"		"Q3_COFF\0" \
-	"b\x0d"		"Q3_UND\0" \
-	"b\x0c"		"Q2_PERR\0" \
-	"b\x0b"		"Q2_COFF\0" \
-	"b\x0a"		"Q2_UND\0" \
-	"b\x09"		"Q1_PERR\0" \
-	"b\x08"		"Q1_COFF\0" \
-	"b\x07"		"Q1_UND\0" \
-	"b\x06"		"Q0_PERR\0" \
-	"b\x05"		"Q0_COFF\0" \
-	"b\x04"		"Q0_UND\0" \
-	"b\x03"		"FED1_DBE\0" \
-	"b\x02"		"FED1_SBE\0" \
-	"b\x01"		"FED0_DBE\0" \
-	"b\x00"		"FED0_SBE\0"
-
-#define	FPA_CTL_STATUS_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x11"		"RESET\0" \
-	"b\x10"		"USE_LDT\0" \
-	"b\x0f"		"USE_STT\0" \
-	"b\x0e"		"ENB\0" \
-	"f\x07\x07"	"MEM1_ERR\0" \
-	"f\x00\x07"	"MEM0_ERR\0"
-
-#define	FPA_QUEX_AVAILABLE_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x1d"	"QUE_SIZ\0"
-#define	FPA_QUE0_AVAILABLE_BITS			FPA_QUEX_AVAILABLE_BITS
-#define	FPA_QUE1_AVAILABLE_BITS			FPA_QUEX_AVAILABLE_BITS
-#define	FPA_QUE2_AVAILABLE_BITS			FPA_QUEX_AVAILABLE_BITS
-#define	FPA_QUE3_AVAILABLE_BITS			FPA_QUEX_AVAILABLE_BITS
-#define	FPA_QUE4_AVAILABLE_BITS			FPA_QUEX_AVAILABLE_BITS
-#define	FPA_QUE5_AVAILABLE_BITS			FPA_QUEX_AVAILABLE_BITS
-#define	FPA_QUE6_AVAILABLE_BITS			FPA_QUEX_AVAILABLE_BITS
-#define	FPA_QUE7_AVAILABLE_BITS			FPA_QUEX_AVAILABLE_BITS
-
-#define	FPA_WART_CTL_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x10"	"CTL\0"
-
-#define	FPA_WART_STATUS_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x20"	"STATUS\0"
-
-#define	FPA_BIST_STATUS_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"b\x04"		"FRD\0" \
-	"b\x03"		"FPF0\0" \
-	"b\x02"		"FPF1\0" \
-	"b\x01"		"FFR\0" \
-	"b\x00"		"FDR\0"
-
-#define	FPA_QUEX_PAGE_INDEX_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x00\x19"	"PG_NUM\0"
-#define	FPA_QUE0_PAGE_INDEX_BITS		FPA_QUEX_PAGE_INDEX_BITS
-#define	FPA_QUE1_PAGE_INDEX_BITS		FPA_QUEX_PAGE_INDEX_BITS
-#define	FPA_QUE2_PAGE_INDEX_BITS		FPA_QUEX_PAGE_INDEX_BITS
-#define	FPA_QUE3_PAGE_INDEX_BITS		FPA_QUEX_PAGE_INDEX_BITS
-#define	FPA_QUE4_PAGE_INDEX_BITS		FPA_QUEX_PAGE_INDEX_BITS
-#define	FPA_QUE5_PAGE_INDEX_BITS		FPA_QUEX_PAGE_INDEX_BITS
-#define	FPA_QUE6_PAGE_INDEX_BITS		FPA_QUEX_PAGE_INDEX_BITS
-#define	FPA_QUE7_PAGE_INDEX_BITS		FPA_QUEX_PAGE_INDEX_BITS
-
-#define	FPA_QUE_EXP_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x1a\x03"	"EXP_QUE\0" \
-	"f\x00\x1a"	"EXP_INDX\0"
-
-#define	FPA_QUE_ACT_BITS \
-	"\177"		/* new format */ \
-	"\020"		/* hex display */ \
-	"\020"		/* %016x format */ \
-	"f\x1a\x03"	"ACT_QUE\0" \
-	"f\x00\x1a"	"ACT_INDX\0"
-
 /* ---- operations */
 
 /*
  * Free Pool Unit Operations
  */
 
-#define	FPA_MAJORDID				0x5			/* 0b00101 */
-
-#define	FPA_OPS_MAJORDID			UINT64_C(0x0000f80000000000)
-#define	 FPA_OPS_MAJORDID_SHIFT			43
-#define	FPA_OPS_SUBDID				UINT64_C(0x0000070000000000)
-#define	 FPA_OPS_SUBDID_SHIFT			40
-#define	FPA_OPS_XXX_39_0			UINT64_C(0x000000ffffffffff)
-
-/* Load Operations */
-
-#define	FPA_OPS_LOAD_1				UINT64_C(0x0001000000000000)
-#define	FPA_OPS_LOAD_MAJORDID			UINT64_C(0x0000f80000000000)
-#define	FPA_OPS_LOAD_SUBDID			UINT64_C(0x0000070000000000)
-#define	FPA_OPS_LOAD_XXX_39_0			UINT64_C(0x000000ffffffffff)
-
-/* IOBDMA Operations */
-
-#define	FPA_OPS_IOBDMA_SRCADDR			UINT64_C(0xff00000000000000)
-#define	FPA_OPS_IOBDMA_LEN			UINT64_C(0x00ff000000000000)
-#define	 FPA_OPS_IOBDMA_LEN_SHIFT		48
-#define	FPA_OPS_IOBDMA_MAJORDID			UINT64_C(0x0000f80000000000)
-#define	FPA_OPS_IOBDMA_SUBDIR			UINT64_C(0x0000070000000000)
-#define	FPA_OPS_IOBDMA_XXX_39_0			UINT64_C(0x000000ffffffffff)
+#define	FPA_MAJOR_DID				0x5
 
 /* Store Operations */
+#define	FPA_OPS_STORE_ADDR			UINT64_C(0x000000ffffffffff)
 
-#define	FPA_OPS_STORE_1				UINT64_C(0x0001000000000000)
-#define	FPA_OPS_STORE_MAJORDID			UINT64_C(0x0000f80000000000)
-#define	FPA_OPS_STORE_SUBDID			UINT64_C(0x0000070000000000)
-#define	FPA_OPS_STORE_XXX_39_0			UINT64_C(0x000000ffffffffff)
-
-#define	FPA_OPS_STORE_DATA_XXX_63_9		UINT64_C(0xfffffffffffffe00)
 #define	FPA_OPS_STORE_DATA_DWBCOUNT		UINT64_C(0x00000000000001ff)
 
 /* ---- bus_space(9) */
 
 #define	FPA_BASE				0x0001180028000000ULL
 #define	FPA_SIZE				0x0200
+
+#define	FPA_NPOOLS				8
 
 #define	FPA_INT_SUM_OFFSET			0x0040
 #define	FPA_INT_ENB_OFFSET			0x0048

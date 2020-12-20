@@ -29,9 +29,9 @@
 #ifndef PRIVSEP_INET_H
 #define PRIVSEP_INET_H
 
+bool ps_inet_canstart(const struct dhcpcd_ctx *);
 pid_t ps_inet_start(struct dhcpcd_ctx *);
 int ps_inet_stop(struct dhcpcd_ctx *);
-ssize_t ps_inet_sendmsg(struct dhcpcd_ctx *, uint8_t, const struct msghdr *);
 ssize_t ps_inet_cmd(struct dhcpcd_ctx *, struct ps_msghdr *, struct msghdr *);
 ssize_t ps_inet_dispatch(void *, struct ps_msghdr *, struct msghdr *);
 
@@ -39,7 +39,7 @@ ssize_t ps_inet_dispatch(void *, struct ps_msghdr *, struct msghdr *);
 struct ipv4_addr;
 ssize_t ps_inet_openbootp(struct ipv4_addr *);
 ssize_t ps_inet_closebootp(struct ipv4_addr *);
-ssize_t ps_inet_sendbootp(struct ipv4_addr *, const struct msghdr *);
+ssize_t ps_inet_sendbootp(struct interface *, const struct msghdr *);
 #endif
 
 #ifdef INET6
@@ -52,7 +52,7 @@ ssize_t ps_inet_sendnd(struct interface *, const struct msghdr *);
 #ifdef DHCP6
 ssize_t ps_inet_opendhcp6(struct ipv6_addr *);
 ssize_t ps_inet_closedhcp6(struct ipv6_addr *);
-ssize_t ps_inet_senddhcp6(struct ipv6_addr *, const struct msghdr *);
+ssize_t ps_inet_senddhcp6(struct interface *, const struct msghdr *);
 #endif /* DHCP6 */
 #endif /* INET6 */
 #endif

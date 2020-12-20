@@ -1,7 +1,7 @@
-/*	$NetBSD: partitions.h,v 1.15 2020/01/27 21:21:22 martin Exp $	*/
+/*	$NetBSD: partitions.h,v 1.21 2020/12/02 14:20:20 wiz Exp $	*/
 
 /*
- * Copyright 2018 The NetBSD Foundation, Inc.
+ * Copyright (c) 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -13,18 +13,17 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY PIERMONT INFORMATION SYSTEMS INC. ``AS IS''
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL PIERMONT INFORMATION SYSTEMS INC. BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
  * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
  * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
  * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- * THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /*
@@ -91,6 +90,8 @@ enum part_type {
 	PT_root,		/* the NetBSD / partition (bootable) */
 	PT_swap,		/* the NetBSD swap partition */
 	PT_FAT,			/* boot partition (e.g. for u-boot) */
+	PT_EXT2,		/* boot partition (for Linux appliances) */
+	PT_SYSVBFS,		/* boot partition (for some SYSV machines) */
 	PT_EFI_SYSTEM,		/* (U)EFI boot partition */
 };
 
@@ -99,7 +100,7 @@ enum part_type {
  * purposes. The internal details may be richer and the *pointer* value
  * is the unique token - that is: the partitioning scheme will hand out
  * pointers to internal data and recognize the exact partition type details
- * by pointer comparision.
+ * by pointer comparison.
  */
 struct part_type_desc {
 	enum part_type generic_ptype;	/* what this maps to in generic terms */
@@ -115,6 +116,12 @@ struct part_type_desc {
 #define	PTI_PSCHEME_INTERNAL	8		/* no user partition, e.g.
 						   MBRs extend partition */
 #define	PTI_RAW_PART		16		/* total disk */
+#define	PTI_INSTALL_TARGET	32		/* marks the target partition
+						 * assumed to become / after
+						 * reboot; may not be
+						 * persistent; may only be
+						 * set for a single partition!
+						 */
 
 /* A single partition */
 struct disk_part_info {
@@ -131,9 +138,13 @@ struct disk_part_info {
 	 * returned. Backends can not rely on them to be valid.
 	 */
 	const char *last_mounted;		/* last mount point or NULL */
-	unsigned int fs_type, fs_sub_type;	/* FS_* type of filesystem
+	unsigned int fs_type, fs_sub_type,	/* FS_* type of filesystem
 						 * and for some FS a sub
 						 * type (e.g. FFSv1 vs. FFSv2)
+						 */
+		fs_opt1, fs_opt2, fs_opt3;	/* FS specific option, used
+						 * for FFS block/fragsize
+						 * and inodes
 						 */
 };
 
@@ -533,6 +544,9 @@ struct disk_partitioning_scheme {
 
 	/* Free all the data */
 	void (*free)(struct disk_partitions*);
+
+	/* Wipe all on-disk state, leave blank disk - and free data */
+	void (*destroy_part_scheme)(struct disk_partitions*);
 
 	/* Scheme global cleanup */
 	void (*cleanup)(void);

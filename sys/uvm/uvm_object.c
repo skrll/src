@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_object.c,v 1.21 2020/02/23 15:46:43 ad Exp $	*/
+/*	$NetBSD: uvm_object.c,v 1.25 2020/08/15 07:24:09 chs Exp $	*/
 
 /*
  * Copyright (c) 2006, 2010, 2019 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_object.c,v 1.21 2020/02/23 15:46:43 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_object.c,v 1.25 2020/08/15 07:24:09 chs Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -146,7 +146,7 @@ uvm_obj_wirepages(struct uvm_object *uobj, off_t start, off_t end,
 		memset(pgs, 0, sizeof(pgs));
 		error = (*uobj->pgops->pgo_get)(uobj, offset, pgs, &npages, 0,
 			VM_PROT_READ | VM_PROT_WRITE, UVM_ADV_SEQUENTIAL,
-			PGO_ALLPAGES | PGO_SYNCIO);
+			PGO_SYNCIO);
 
 		if (error)
 			goto error;
@@ -233,6 +233,103 @@ uvm_obj_unwirepages(struct uvm_object *uobj, off_t start, off_t end)
 	rw_exit(uobj->vmobjlock);
 }
 
+static inline bool
+uvm_obj_notag_p(struct uvm_object *uobj, int tag)
+{
+
+	KASSERT(rw_lock_held(uobj->vmobjlock));
+	return radix_tree_empty_tagged_tree_p(&uobj->uo_pages, tag);
+}
+
+bool
+uvm_obj_clean_p(struct uvm_object *uobj)
+{
+
+	return uvm_obj_notag_p(uobj, UVM_PAGE_DIRTY_TAG);
+}
+
+bool
+uvm_obj_nowriteback_p(struct uvm_object *uobj)
+{
+
+	return uvm_obj_notag_p(uobj, UVM_PAGE_WRITEBACK_TAG);
+}
+
+static inline bool
+uvm_obj_page_tag_p(struct vm_page *pg, int tag)
+{
+	struct uvm_object *uobj = pg->uobject;
+	uint64_t pgidx = pg->offset >> PAGE_SHIFT;
+
+	KASSERT(uobj != NULL);
+	KASSERT(rw_lock_held(uobj->vmobjlock));
+	return radix_tree_get_tag(&uobj->uo_pages, pgidx, tag) != 0;
+}
+
+static inline void
+uvm_obj_page_set_tag(struct vm_page *pg, int tag)
+{
+	struct uvm_object *uobj = pg->uobject;
+	uint64_t pgidx = pg->offset >> PAGE_SHIFT;
+
+	KASSERT(uobj != NULL);
+	KASSERT(rw_write_held(uobj->vmobjlock));
+	radix_tree_set_tag(&uobj->uo_pages, pgidx, tag);
+}
+
+static inline void
+uvm_obj_page_clear_tag(struct vm_page *pg, int tag)
+{
+	struct uvm_object *uobj = pg->uobject;
+	uint64_t pgidx = pg->offset >> PAGE_SHIFT;
+
+	KASSERT(uobj != NULL);
+	KASSERT(rw_write_held(uobj->vmobjlock));
+	radix_tree_clear_tag(&uobj->uo_pages, pgidx, tag);
+}
+
+bool
+uvm_obj_page_dirty_p(struct vm_page *pg)
+{
+
+	return uvm_obj_page_tag_p(pg, UVM_PAGE_DIRTY_TAG);
+}
+
+void
+uvm_obj_page_set_dirty(struct vm_page *pg)
+{
+
+	uvm_obj_page_set_tag(pg, UVM_PAGE_DIRTY_TAG);
+}
+
+void
+uvm_obj_page_clear_dirty(struct vm_page *pg)
+{
+
+	uvm_obj_page_clear_tag(pg, UVM_PAGE_DIRTY_TAG);
+}
+
+bool
+uvm_obj_page_writeback_p(struct vm_page *pg)
+{
+
+	return uvm_obj_page_tag_p(pg, UVM_PAGE_WRITEBACK_TAG);
+}
+
+void
+uvm_obj_page_set_writeback(struct vm_page *pg)
+{
+
+	uvm_obj_page_set_tag(pg, UVM_PAGE_WRITEBACK_TAG);
+}
+
+void
+uvm_obj_page_clear_writeback(struct vm_page *pg)
+{
+
+	uvm_obj_page_clear_tag(pg, UVM_PAGE_WRITEBACK_TAG);
+}
+
 #if defined(DDB) || defined(DEBUGPRINT)
 
 /*
@@ -258,10 +355,9 @@ uvm_object_printit(struct uvm_object *uobj, bool full,
 		return;
 	}
 	(*pr)("  PAGES <pg,offset>:\n  ");
-	uvm_page_array_init(&a);
+	uvm_page_array_init(&a, uobj, 0);
 	off = 0;
-	while ((pg = uvm_page_array_fill_and_peek(&a, uobj, off, 0, 0))
-	    != NULL) {
+	while ((pg = uvm_page_array_fill_and_peek(&a, off, 0)) != NULL) {
 		cnt++;
 		(*pr)("<%p,0x%llx> ", pg, (long long)pg->offset);
 		if ((cnt % 3) == 0) {

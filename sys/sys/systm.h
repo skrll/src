@@ -1,4 +1,4 @@
-/*	$NetBSD: systm.h,v 1.294 2020/04/04 19:50:54 christos Exp $	*/
+/*	$NetBSD: systm.h,v 1.298 2020/08/28 12:43:24 christos Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1988, 1991, 1993
@@ -190,13 +190,45 @@ enum hashtype {
 };
 
 #ifdef _KERNEL
+#define COND_SET_STRUCT(dst, src, allow) \
+	do { \
+		CTASSERT(sizeof(src) < 32); \
+		if (allow) \
+			dst = src; \
+		else \
+			hash_value(&dst, sizeof(dst), &src, sizeof(src)); \
+	} while (/*CONSTCOND*/0)
+
+#define COND_SET_CPTR(dst, src, allow) \
+	do { \
+		if (allow) \
+			dst = src; \
+		else { \
+			void *__v; \
+			hash_value(&__v, sizeof(__v), &src, sizeof(src)); \
+			dst = __v; \
+		} \
+	} while (/*CONSTCOND*/0)
+
+#define COND_SET_PTR(dst, src, allow) \
+	do { \
+		if (allow) \
+			dst = src; \
+		else \
+			hash_value(&dst, sizeof(dst), &src, sizeof(src)); \
+	} while (/*CONSTCOND*/0)
+
 #define COND_SET_VALUE(dst, src, allow)	\
-	do {				\
-		if (allow)		\
-			dst = src;	\
-	} while (/*CONSTCOND*/0);
+	do { \
+		if (allow) \
+			dst = src; \
+		else { \
+			uint64_t __v = src; \
+			hash_value(&dst, sizeof(dst), &__v, sizeof(__v)); \
+		} \
+	} while (/*CONSTCOND*/0)
 
-
+void	hash_value(void *, size_t, const void *, size_t);
 bool	get_expose_address(struct proc *);
 void	*hashinit(u_int, enum hashtype, bool, u_long *);
 void	hashdone(void *, enum hashtype, u_long);
@@ -286,40 +318,34 @@ int	kcopy(const void *, void *, size_t);
 #define bcmp(a, b, len)		memcmp((a), (b), (len))
 #endif /* KERNEL */
 
+int	copystr(const void *, void *, size_t, size_t *);
 #if defined(_KERNEL) && defined(KASAN)
-int	kasan_copystr(const void *, void *, size_t, size_t *);
 int	kasan_copyinstr(const void *, void *, size_t, size_t *);
 int	kasan_copyoutstr(const void *, void *, size_t, size_t *);
 int	kasan_copyin(const void *, void *, size_t);
 int	copyout(const void *, void *, size_t);
-#define copystr		kasan_copystr
 #define copyinstr	kasan_copyinstr
 #define copyoutstr	kasan_copyoutstr
 #define copyin		kasan_copyin
 #elif defined(_KERNEL) && defined(KCSAN)
-int	kcsan_copystr(const void *, void *, size_t, size_t *);
 int	kcsan_copyinstr(const void *, void *, size_t, size_t *);
 int	kcsan_copyoutstr(const void *, void *, size_t, size_t *);
 int	kcsan_copyin(const void *, void *, size_t);
 int	kcsan_copyout(const void *, void *, size_t);
-#define copystr		kcsan_copystr
 #define copyinstr	kcsan_copyinstr
 #define copyoutstr	kcsan_copyoutstr
 #define copyin		kcsan_copyin
 #define copyout		kcsan_copyout
 #elif defined(_KERNEL) && defined(KMSAN)
-int	kmsan_copystr(const void *, void *, size_t, size_t *);
 int	kmsan_copyinstr(const void *, void *, size_t, size_t *);
 int	kmsan_copyoutstr(const void *, void *, size_t, size_t *);
 int	kmsan_copyin(const void *, void *, size_t);
 int	kmsan_copyout(const void *, void *, size_t);
-#define copystr		kmsan_copystr
 #define copyinstr	kmsan_copyinstr
 #define copyoutstr	kmsan_copyoutstr
 #define copyin		kmsan_copyin
 #define copyout		kmsan_copyout
 #else
-int	copystr(const void *, void *, size_t, size_t *);
 int	copyinstr(const void *, void *, size_t, size_t *);
 int	copyoutstr(const void *, void *, size_t, size_t *);
 int	copyin(const void *, void *, size_t);

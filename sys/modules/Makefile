@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.244 2020/04/04 15:43:21 jdolecek Exp $
+#	$NetBSD: Makefile,v 1.248 2020/11/01 18:51:02 pgoyette Exp $
 
 .include <bsd.own.mk>
 
@@ -225,7 +225,7 @@ SUBDIR+=	tprof_x86
 SUBDIR+=	vmt
 .endif
 
-.if ${MACHINE_ARCH} == "x86_64"
+.if ${HAVE_NVMM:Uno} == "yes"
 SUBDIR+=	nvmm
 .endif
 
@@ -235,6 +235,7 @@ SUBDIR+=	nvmm
      ${MACHINE_ARCH} == "i386" || \
      ${MACHINE_ARCH} == "x86_64"
 #SUBDIR+=	hifn
+SUBDIR+=	if_iavf
 SUBDIR+=	if_ixl
 SUBDIR+=	ubsec
 .endif
@@ -297,6 +298,7 @@ SUBDIR+=	compat_netbsd32_40	compat_netbsd32_50
 SUBDIR+=	compat_netbsd32_60	compat_netbsd32_80
 SUBDIR+=	compat_netbsd32_90
 SUBDIR+=	compat_netbsd32_43
+SUBDIR+=	compat_netbsd32_coredump
 SUBDIR+=	compat_netbsd32_mqueue
 SUBDIR+=	compat_netbsd32_nfssrv
 SUBDIR+=	compat_netbsd32_ptrace
@@ -445,6 +447,7 @@ SUBDIR+=	cac_eisa
 SUBDIR+=	cac_pci
 SUBDIR+=	if_aq
 SUBDIR+=	if_vioif
+SUBDIR+=	if_vmx
 SUBDIR+=	ld
 SUBDIR+=	ld_aac
 SUBDIR+=	ld_amr

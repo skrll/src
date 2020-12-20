@@ -1,4 +1,4 @@
-#	$NetBSD: GENERIC32_IP2x,v 1.118 2020/01/19 01:25:07 thorpej Exp $
+#	$NetBSD: GENERIC32_IP2x,v 1.121 2020/09/27 13:48:54 roy Exp $
 #
 # GENERIC32_IP2x machine description file
 # 
@@ -29,7 +29,7 @@ makeoptions	TEXTADDR=0x88069000	# entry point
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC32-IP2x-$Revision: 1.118 $"
+#ident		"GENERIC32-IP2x-$Revision: 1.121 $"
 
 maxusers	32
 
@@ -76,9 +76,6 @@ options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 
 # Compatibility options
 include 	"conf/compat_netbsd15.config"
-
-options 	COMPAT_LINUX	# binary compatibility with Linux
-#options 	COMPAT_ULTRIX	# binary compatibility with Ultrix 
 
 # File systems
 include "conf/filesystems.config"
@@ -277,8 +274,8 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
+pseudo-device	vether			# Virtual Ethernet for bridge
 pseudo-device	agr			# IEEE 802.3ad link aggregation
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 pseudo-device   accf_data		# "dataready" accept filter
 pseudo-device   accf_http		# "httpready" accept filter
 

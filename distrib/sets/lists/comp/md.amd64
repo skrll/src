@@ -1,4 +1,4 @@
-# $NetBSD: md.amd64,v 1.276 2020/02/07 18:48:58 kamil Exp $
+# $NetBSD: md.amd64,v 1.284 2020/09/30 17:11:31 christos Exp $
 ./usr/include/amd64				comp-c-include
 ./usr/include/amd64/ansi.h			comp-c-include
 ./usr/include/amd64/aout_machdep.h		comp-c-include
@@ -411,6 +411,8 @@
 ./usr/include/clang-7.0/xsaveoptintrin.h	comp-obsolete		obsolete
 ./usr/include/clang-7.0/xsavesintrin.h		comp-obsolete		obsolete
 ./usr/include/clang-7.0/xtestintrin.h		comp-obsolete		obsolete
+./usr/include/clang-9.0/__wmmintrin_aes.h	comp-c-include		llvm
+./usr/include/clang-9.0/__wmmintrin_pclmul.h	comp-c-include		llvm
 ./usr/include/clang-9.0/adxintrin.h		comp-c-include		llvm
 ./usr/include/clang-9.0/ammintrin.h		comp-c-include		llvm
 ./usr/include/clang-9.0/avx2intrin.h		comp-c-include		llvm
@@ -462,8 +464,8 @@
 ./usr/include/clang-9.0/lwpintrin.h		comp-c-include		llvm
 ./usr/include/clang-9.0/lzcntintrin.h		comp-c-include		llvm
 ./usr/include/clang-9.0/mm3dnow.h		comp-c-include		llvm
-./usr/include/clang-9.0/mmintrin.h		comp-c-include		llvm
 ./usr/include/clang-9.0/mm_malloc.h		comp-c-include		llvm
+./usr/include/clang-9.0/mmintrin.h		comp-c-include		llvm
 ./usr/include/clang-9.0/movdirintrin.h		comp-c-include		llvm
 ./usr/include/clang-9.0/mwaitxintrin.h		comp-c-include		llvm
 ./usr/include/clang-9.0/nmmintrin.h		comp-c-include		llvm
@@ -484,9 +486,7 @@
 ./usr/include/clang-9.0/vpclmulqdqintrin.h	comp-c-include		llvm
 ./usr/include/clang-9.0/waitpkgintrin.h		comp-c-include		llvm
 ./usr/include/clang-9.0/wbnoinvdintrin.h	comp-c-include		llvm
-./usr/include/clang-9.0/__wmmintrin_aes.h	comp-c-include		llvm
 ./usr/include/clang-9.0/wmmintrin.h		comp-c-include		llvm
-./usr/include/clang-9.0/__wmmintrin_pclmul.h	comp-c-include		llvm
 ./usr/include/clang-9.0/x86intrin.h		comp-c-include		llvm
 ./usr/include/clang-9.0/xmmintrin.h		comp-c-include		llvm
 ./usr/include/clang-9.0/xopintrin.h		comp-c-include		llvm
@@ -495,11 +495,8 @@
 ./usr/include/clang-9.0/xsaveoptintrin.h	comp-c-include		llvm
 ./usr/include/clang-9.0/xsavesintrin.h		comp-c-include		llvm
 ./usr/include/clang-9.0/xtestintrin.h		comp-c-include		llvm
-./usr/include/dev/nvmm				comp-c-include
-./usr/include/dev/nvmm/nvmm.h			comp-c-include
-./usr/include/dev/nvmm/nvmm_ioctl.h		comp-c-include
-./usr/include/dev/nvmm/x86			comp-c-include
-./usr/include/dev/nvmm/x86/nvmm_x86.h		comp-c-include
+./usr/include/dev/nvmm/x86			comp-c-include		nvmm
+./usr/include/dev/nvmm/x86/nvmm_x86.h		comp-c-include		nvmm
 ./usr/include/emmintrin.h			comp-obsolete		obsolete
 ./usr/include/g++/bits/i386			comp-c-include		compat
 ./usr/include/g++/bits/i386/c++config.h		comp-c-include		gcc,compat
@@ -689,69 +686,69 @@
 ./usr/include/gcc-6/xsaveoptintrin.h		comp-c-include		obsolete
 ./usr/include/gcc-6/xsavesintrin.h		comp-c-include		obsolete
 ./usr/include/gcc-6/xtestintrin.h		comp-c-include		obsolete
-./usr/include/gcc-7/adxintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/ammintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/avx2intrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/avx5124fmapsintrin.h	comp-c-include		gcc=7
-./usr/include/gcc-7/avx5124vnniwintrin.h	comp-c-include		gcc=7
-./usr/include/gcc-7/avx512bwintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/avx512cdintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/avx512dqintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/avx512erintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/avx512fintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/avx512ifmaintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/avx512ifmavlintrin.h	comp-c-include		gcc=7
-./usr/include/gcc-7/avx512pfintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/avx512vbmiintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/avx512vbmivlintrin.h	comp-c-include		gcc=7
-./usr/include/gcc-7/avx512vlbwintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/avx512vldqintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/avx512vlintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/avx512vpopcntdqintrin.h	comp-c-include		gcc=7
-./usr/include/gcc-7/avxintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/bmi2intrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/bmiintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/bmmintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/clflushoptintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/clwbintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/clzerointrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/cpuid.h			comp-c-include		gcc=7
-./usr/include/gcc-7/cross-stdarg.h		comp-c-include		gcc=7
-./usr/include/gcc-7/emmintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/f16cintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/fma4intrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/fmaintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/fxsrintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/ia32intrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/immintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/lwpintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/lzcntintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/mm3dnow.h			comp-c-include		gcc=7
-./usr/include/gcc-7/mm_malloc.h			comp-c-include		gcc=7
-./usr/include/gcc-7/mmintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/mwaitxintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/nmmintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/pkuintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/pmmintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/popcntintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/prfchwintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/rdseedintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/rtmintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/sgxintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/shaintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/smmintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/tbmintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/tgmath.h			comp-c-include		gcc=7
-./usr/include/gcc-7/tmmintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/wmmintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/x86intrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/xmmintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/xopintrin.h			comp-c-include		gcc=7
-./usr/include/gcc-7/xsavecintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/xsaveintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/xsaveoptintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/xsavesintrin.h		comp-c-include		gcc=7
-./usr/include/gcc-7/xtestintrin.h		comp-c-include		gcc=7
+./usr/include/gcc-7/adxintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/ammintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/avx2intrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/avx5124fmapsintrin.h	comp-c-include		obsolete
+./usr/include/gcc-7/avx5124vnniwintrin.h	comp-c-include		obsolete
+./usr/include/gcc-7/avx512bwintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/avx512cdintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/avx512dqintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/avx512erintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/avx512fintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/avx512ifmaintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/avx512ifmavlintrin.h	comp-c-include		obsolete
+./usr/include/gcc-7/avx512pfintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/avx512vbmiintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/avx512vbmivlintrin.h	comp-c-include		obsolete
+./usr/include/gcc-7/avx512vlbwintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/avx512vldqintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/avx512vlintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/avx512vpopcntdqintrin.h	comp-c-include		obsolete
+./usr/include/gcc-7/avxintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/bmi2intrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/bmiintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/bmmintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/clflushoptintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/clwbintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/clzerointrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/cpuid.h			comp-c-include		obsolete
+./usr/include/gcc-7/cross-stdarg.h		comp-c-include		obsolete
+./usr/include/gcc-7/emmintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/f16cintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/fma4intrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/fmaintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/fxsrintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/ia32intrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/immintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/lwpintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/lzcntintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/mm3dnow.h			comp-c-include		obsolete
+./usr/include/gcc-7/mm_malloc.h			comp-c-include		obsolete
+./usr/include/gcc-7/mmintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/mwaitxintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/nmmintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/pkuintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/pmmintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/popcntintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/prfchwintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/rdseedintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/rtmintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/sgxintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/shaintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/smmintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/tbmintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/tgmath.h			comp-c-include		obsolete
+./usr/include/gcc-7/tmmintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/wmmintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/x86intrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/xmmintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/xopintrin.h			comp-c-include		obsolete
+./usr/include/gcc-7/xsavecintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/xsaveintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/xsaveoptintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/xsavesintrin.h		comp-c-include		obsolete
+./usr/include/gcc-7/xtestintrin.h		comp-c-include		obsolete
 ./usr/include/gcc-8/adxintrin.h			comp-c-include		gcc=8
 ./usr/include/gcc-8/ammintrin.h			comp-c-include		gcc=8
 ./usr/include/gcc-8/avx2intrin.h		comp-c-include		gcc=8
@@ -830,6 +827,86 @@
 ./usr/include/gcc-8/xsaveoptintrin.h		comp-c-include		gcc=8
 ./usr/include/gcc-8/xsavesintrin.h		comp-c-include		gcc=8
 ./usr/include/gcc-8/xtestintrin.h		comp-c-include		gcc=8
+./usr/include/gcc-9/adxintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/ammintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/avx2intrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx5124fmapsintrin.h	comp-c-include		gcc=9
+./usr/include/gcc-9/avx5124vnniwintrin.h	comp-c-include		gcc=9
+./usr/include/gcc-9/avx512bitalgintrin.h	comp-c-include		gcc=9
+./usr/include/gcc-9/avx512bwintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx512cdintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx512dqintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx512erintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx512fintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx512ifmaintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx512ifmavlintrin.h	comp-c-include		gcc=9
+./usr/include/gcc-9/avx512pfintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx512vbmi2intrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx512vbmi2vlintrin.h	comp-c-include		gcc=9
+./usr/include/gcc-9/avx512vbmiintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx512vbmivlintrin.h	comp-c-include		gcc=9
+./usr/include/gcc-9/avx512vlbwintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx512vldqintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx512vlintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx512vnniintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/avx512vnnivlintrin.h	comp-c-include		gcc=9
+./usr/include/gcc-9/avx512vpopcntdqintrin.h	comp-c-include		gcc=9
+./usr/include/gcc-9/avx512vpopcntdqvlintrin.h	comp-c-include		gcc=9
+./usr/include/gcc-9/avxintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/bmi2intrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/bmiintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/bmmintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/cet.h			comp-c-include		gcc=9
+./usr/include/gcc-9/cetintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/cldemoteintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/clflushoptintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/clwbintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/clzerointrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/cpuid.h			comp-c-include		gcc=9
+./usr/include/gcc-9/cross-stdarg.h		comp-c-include		gcc=9
+./usr/include/gcc-9/emmintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/f16cintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/fma4intrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/fmaintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/fxsrintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/gfniintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/ia32intrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/immintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/lwpintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/lzcntintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/mm3dnow.h			comp-c-include		gcc=9
+./usr/include/gcc-9/mm_malloc.h			comp-c-include		gcc=9
+./usr/include/gcc-9/mmintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/movdirintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/mwaitxintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/nmmintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/pconfigintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/pkuintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/pmmintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/popcntintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/prfchwintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/rdseedintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/rtmintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/sanitizer			comp-c-include		gcc=9
+./usr/include/gcc-9/sgxintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/shaintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/smmintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/tbmintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/tgmath.h			comp-c-include		gcc=9
+./usr/include/gcc-9/tmmintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/vaesintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/vpclmulqdqintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/waitpkgintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/wbnoinvdintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/wmmintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/x86intrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/xmmintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/xopintrin.h			comp-c-include		gcc=9
+./usr/include/gcc-9/xsavecintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/xsaveintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/xsaveoptintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/xsavesintrin.h		comp-c-include		gcc=9
+./usr/include/gcc-9/xtestintrin.h		comp-c-include		gcc=9
 ./usr/include/i386				comp-c-include
 ./usr/include/i386/ansi.h			comp-c-include
 ./usr/include/i386/aout_machdep.h		comp-c-include
@@ -907,7 +984,6 @@
 ./usr/include/ieeefp.h				comp-c-include
 ./usr/include/mm_malloc.h			comp-obsolete		obsolete
 ./usr/include/mmintrin.h			comp-obsolete		obsolete
-./usr/include/nvmm.h				comp-c-include
 ./usr/include/pmmintrin.h			comp-obsolete		obsolete
 ./usr/include/x64_64				comp-obsolete		obsolete
 ./usr/include/x64_64/ansi.h			comp-obsolete		obsolete
@@ -1002,6 +1078,7 @@
 ./usr/include/x86/trap.h			comp-c-include
 ./usr/include/x86/via_padlock.h			comp-c-include
 ./usr/include/xen				comp-c-include
+./usr/include/xen/intrdefs.h			comp-c-include
 ./usr/include/xen/xenio.h			comp-c-include
 ./usr/include/xen/xenio3.h			comp-c-include
 ./usr/include/xmmintrin.h			comp-obsolete		obsolete
@@ -1119,9 +1196,6 @@
 ./usr/lib/i386/libi386.so			comp-sys-shlib		compat,pic
 ./usr/lib/i386/libi386_p.a			comp-c-proflib		compat,profile
 ./usr/lib/i386/libi386_pic.a			comp-c-piclib		compat,pic,picinstall
-./usr/lib/libnvmm.a				comp-c-lib
-./usr/lib/libnvmm_p.a				comp-c-proflib		profile
-./usr/lib/libnvmm_pic.a				comp-c-piclib		pic,picinstall
 ./usr/lib/libx86_64.a				comp-c-lib
 ./usr/lib/libx86_64_p.a				comp-c-proflib		profile
 ./usr/lib/libx86_64_pic.a			comp-c-piclib		pic,picinstall
@@ -1195,7 +1269,6 @@
 ./usr/libdata/ldscripts/i386nbsd.xn		comp-obsolete		obsolete
 ./usr/libdata/ldscripts/i386nbsd.xr		comp-obsolete		obsolete
 ./usr/libdata/ldscripts/i386nbsd.xu		comp-obsolete		obsolete
-./usr/libdata/lint/llib-lnvmm.ln		comp-c-lintlib		lint
 ./usr/libdata/lint/llib-lx86_64.ln		comp-c-lintlib		lint
 ./usr/share/ldscripts/elf_i386.x		comp-obsolete		obsolete
 ./usr/share/ldscripts/elf_i386.xbn		comp-obsolete		obsolete
@@ -1228,6 +1301,3 @@
 ./usr/share/ldscripts/i386nbsd.xn		comp-obsolete		obsolete
 ./usr/share/ldscripts/i386nbsd.xr		comp-obsolete		obsolete
 ./usr/share/ldscripts/i386nbsd.xu		comp-obsolete		obsolete
-./usr/share/man/cat3/libnvmm.0			comp-c-catman		.cat
-./usr/share/man/html3/libnvmm.html		comp-c-htmlman		html
-./usr/share/man/man3/libnvmm.3			comp-c-man		.man

@@ -1,4 +1,4 @@
-/* $NetBSD: efiboot.c,v 1.17 2019/09/26 14:28:14 jmcneill Exp $ */
+/* $NetBSD: efiboot.c,v 1.20 2020/06/26 03:23:04 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -31,6 +31,7 @@
 #include "efiblock.h"
 #include "efifdt.h"
 #include "efiacpi.h"
+#include "efirng.h"
 
 #include <sys/reboot.h>
 
@@ -56,8 +57,6 @@ static EFI_EVENT delay_ev = 0;
 
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE, EFI_SYSTEM_TABLE *);
 
-prop_dictionary_t efibootplist;
-
 EFI_STATUS EFIAPI
 efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 {
@@ -71,7 +70,6 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	uefi_call_wrapper(ST->ConOut->Reset, 2, ST->ConOut, TRUE);
 	uefi_call_wrapper(ST->ConOut->SetMode, 2, ST->ConOut, 0);
 	uefi_call_wrapper(ST->ConOut->EnableCursor, 2, ST->ConOut, TRUE);
-	uefi_call_wrapper(ST->ConOut->ClearScreen, 1, ST->ConOut);
 
 	status = uefi_call_wrapper(BS->AllocatePages, 4, AllocateAnyPages, EfiLoaderData, sz, &heap_start);
 	if (EFI_ERROR(status))
@@ -99,6 +97,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	efi_net_probe();
 	efi_file_system_probe();
 	efi_block_probe();
+	efi_rng_probe();
 
 	boot();
 
@@ -184,10 +183,6 @@ efi_cleanup(void)
 	EFI_MEMORY_DESCRIPTOR *memmap;
 	UINTN nentries, mapkey, descsize;
 	UINT32 descver;
-
-	if (efibootplist) {
-		prop_object_release(efibootplist);
-	}
 
 	memmap = LibMemoryMap(&nentries, &mapkey, &descsize, &descver);
 

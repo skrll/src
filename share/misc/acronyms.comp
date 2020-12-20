@@ -1,4 +1,4 @@
-$NetBSD: acronyms.comp,v 1.300 2020/03/26 18:28:09 leot Exp $
+$NetBSD: acronyms.comp,v 1.316 2020/11/17 19:56:42 maya Exp $
 3WHS	three-way handshake
 8VSB	8-state vestigial side band modulation
 AA	anti-aliasing
@@ -62,6 +62,7 @@ AO	analog output
 AOC	add-on card
 AOL	Alert-on-LAN
 AOS	add or subtract
+AOT	ahead of time
 AP	access point
 AP	application processor
 APFS	Apple file system
@@ -155,6 +156,8 @@ BLE	Bluetooth low energy
 BLOB	binary large object
 BM	bus master
 BMC	baseboard management controller
+BMP	basic multilingual plane
+BMP	bitmap image file
 BMIC	bus master interface controller
 BN	boundary neutral
 BNF	Backus-Naur form
@@ -224,6 +227,7 @@ CD	compact disc
 CDDA	compact disc digital audio
 CDL	compiler description language
 CDMA	code division multiple access
+CDN	content delivery network
 CDP	Cisco Discovery Protocol
 CDRAM	cache dynamic random access memory
 CER	canonical encoding rules
@@ -305,6 +309,7 @@ CRL	carrier recovery loop
 CRLF	carriage return line feed
 CSU	C start up
 CRT	cathode ray tube
+CRTP	curiously recurring template pattern
 CRUD	create, read, update, and delete
 CS	cable select
 CS	chip select
@@ -355,6 +360,7 @@ DBC	design by contract
 DBL	dynamic buffer limiting
 DBMS	database management system
 DBS	database server
+DC	data center
 DC	direct current
 DCC	Direct Client-to-Client
 DCC	direct cable connect
@@ -394,9 +400,11 @@ DFSAN	Data Flow Sanitizer
 DFT	diagnostic function test
 DFT	discrete Fourier transform
 DGL	data generation language
+DGEMM	double precision general matrix multiply
 DH	Diffie-Hellman
 DHCP	Dynamic Host Configuration Protocol
 DIA	dedicated Internet access
+DIB	device independent bitmap
 DIFS	distributed inter-frame space
 DIMM	dual inline memory module
 DIRT	design in real time
@@ -441,6 +449,8 @@ DRM	digital rights management
 DRRS	display refresh rate switching
 DS	debug store
 DS	differentiated services
+DS9000	DeathStation 9000
+DS9K	DeathStation 9000
 DSA	digital signature algorithm
 DSAP	destination service access point
 DSB	double-sideband modulation
@@ -534,6 +544,7 @@ EPIC	explicitly parallel instruction computing
 EPP	enhanced parallel port
 EPRML	extended partial response, maximum likelihood
 EPROM	erasable programmable read only memory
+EPT	extended page tables
 ERC	error recovery control
 ERD	emergency recovery disk
 ERD	entity relationship diagram
@@ -574,6 +585,7 @@ FFS	Fast File System
 FFS	find first set
 FFT	fast Fourier transform
 FG	floating gate
+FHRP	first hop redundancy protocol
 FHSS	frequency hop spread spectrum
 FID	frequency identifier
 FIFO	first in, first out
@@ -602,6 +614,7 @@ FTA	fault tree analysis
 FTL	flash translation layer
 FTP	File Transfer Protocol
 FTPS	File Transfer Protocol Secure
+FTTH	fiber to the home
 FUS	fast user switching
 FWH	firmware hub
 FWS	folding white space
@@ -616,12 +629,14 @@ GDT	global descriptor table
 GECOS	general comprehensive operating supervisor
 GEM	graphics environment manager
 GEM	graphics execution manager
+GEMM	general matrix multiply
 GENA	general event notification architecture
 GHC	Glasgow Haskell compiler
 GHES	generic hardware error source
 GIC	generic interrupt controller
 GID	group identifier
 GIF	graphics interchange format
+GLBP	gateway load balancing protocol
 GMCH	graphics and memory controller hub
 GNU	GNU's Not Unix
 GOP	graphics output protocol
@@ -672,6 +687,7 @@ HPD	hot plug detection
 HPET	high precision event timer
 HSM	hardware security module
 HSM	hierarchical storage management 
+HSRP	hot standby router protocol
 HT	hyper-threading
 HTC	hardware thermal control
 HTCC	high temperature co-fired ceramic
@@ -729,6 +745,7 @@ ILM	internal loopback mode
 ILOM	integrated lights-out management
 ILP	instruction level parallelism
 IM	instant messaging
+IME	input method editor
 IMAP	Internet Message Access Protocol
 IMC	integrated memory controller
 IMCR	interrupt mode configuration register
@@ -881,6 +898,7 @@ LSL	load segment limit
 LSM	log structured merge
 LSN	Large Scale NAT
 LSN	log sequence number
+LSO	large send offload
 LSR	label switch router
 LTCC	low temperature co-fired ceramic
 LTO	linear tape-open
@@ -919,6 +937,7 @@ MCLAG	multi-chassis link aggregation group
 MCM	multi-chip module
 MCQ	memory controlled queue
 MD	machine-dependent
+MD	MiniDisc
 MD-SAL	model-driven service abstraction layer
 MDA	mail delivery agent
 MDA	Monochrome Display Adapter
@@ -1115,6 +1134,7 @@ OTP	one time password
 OTP	open telecom platform
 OU	organizational unit
 OUI	organizationally unique identifier
+OWASP	Open Web Application Security Project
 OWL	Web Ontology Language
 P2P	PCI to PCI
 P2P	peer to peer
@@ -1135,6 +1155,7 @@ PATA	parallel ATA
 PAX	portable archive exchange
 PBE	pending break encoding
 PBE	programming by example
+PBR	partition boot record
 PC	personal computer
 PC	program counter
 PCB	printed circuit board
@@ -1273,6 +1294,8 @@ QBE	query by example
 QC	quality control
 QDI	quasi delay insensitive
 QCIF	quarter common intermediate format
+QOI	quality of implementation
+QOI	quick order interface
 QOS	quality of service
 QVL	qualified vendor list
 R/O	read only
@@ -1402,6 +1425,7 @@ SCCP	skinny call control protocol
 SCCS	Source Code Control System
 SCI	scalable coherent interface
 SCI	system control interrupt
+SCIM	smart common input method
 SCM	software configuration management
 SCM	source code management
 SCM	storage-class memory
@@ -1481,6 +1505,8 @@ SMI	system management interrupt
 SMM	system management mode
 SMP	serial management protocol
 SMP	symmetric multiprocessing
+SMR	shingled magnetic recording
+SMR	state machine replication
 SMT	simultaneous multithreading
 SMTP	Simple Mail Transfer Protocol
 SMU	system management unit
@@ -1601,6 +1627,7 @@ TMG	transmogrifier
 TMDS	transition minimized differential signaling
 TMO	timeout
 TOD	time of day
+TOFU	trust on first use
 TOS	terms of service
 TOS	trusted operating system
 TOS	type of service
@@ -1631,6 +1658,7 @@ TSP	Tunnel Setup Protocol
 TSP	time synchronization protocol
 TSP	traveling salesman problem
 TSS	task state segment
+TSV	tab-separated values
 TTL	time to live
 TTL	transistor-transistor logic
 TTM	translation table maps
@@ -1690,6 +1718,7 @@ VA	virtual address
 VA	volt-ampere
 VAX	virtual address extension
 VB	Visual Basic
+VBR	volume boot record
 VCA	variable-gain amplifier
 VCC	common collector voltage
 VCCP	virtual chassis control protocol
@@ -1732,7 +1761,7 @@ VROC	Virtual RAID On CPU
 VRRP	Virtual Router Redundancy Protocol
 VSTP	VLAN Spanning Tree Protocol
 VTP	VLAN Trunking Protocol
-VXFS	Veritas file sytem
+VXFS	Veritas file system
 VXVM	Veritas volume manager
 W	watt
 W3C	World Wide Web Consortium
@@ -1752,6 +1781,7 @@ WHEA	Windows hardware error architecture
 WIFI	wireless fidelity
 WLAN	wireless local area network
 WM	write miss
+WMF	Windows meta file
 WMI	Windows Management Instrumentation
 WOL	Wake-on-LAN
 WOM	Wake-on-Modem

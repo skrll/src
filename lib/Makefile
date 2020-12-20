@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.282 2020/04/04 17:56:22 christos Exp $
+#	$NetBSD: Makefile,v 1.286 2020/10/29 20:11:17 nia Exp $
 #	from: @(#)Makefile	5.25.1.1 (Berkeley) 5/7/91
 
 .include <bsd.own.mk>
@@ -50,11 +50,9 @@ SUBDIR+=	librumpclient
 SUBDIR+=	libskey
 .endif
 
-.if ${MACHINE_ARCH} == "x86_64" && ${MLIBDIR:Unone} != "i386"
+.if ${HAVE_NVMM:Uno} == "yes" && !defined(MLIBDIR)
 SUBDIR+=	libnvmm
 .endif
-
-SUBDIR+=	../external/public-domain/sqlite/lib
 
 .if (${MKMDNS} != "no")
 SUBDIR+=	../external/apache2/mDNSResponder/lib
@@ -119,9 +117,10 @@ SUBDIR+=        ../external/cddl/osnet/lib/libctf
 SUBDIR+=	../external/public-domain/xz/lib	# depends on libpthread
 SUBDIR+=	../crypto/external/bsd/netpgp/libmj
 SUBDIR+=	../crypto/external/bsd/netpgp/lib/verify # depends on libz
-SUBDIR+=	../external/bsd/blacklist/lib		# depends on libpthread
+SUBDIR+=	../external/bsd/blocklist/lib		# depends on libpthread
 SUBDIR+=	../external/bsd/elftoolchain/lib/libdwarf # depends on libelf
 SUBDIR+=	../external/mit/lua/lib # depends on libm
+SUBDIR+=	../external/public-domain/sqlite/lib # depends on libm
 SUBDIR+=	libcurses	# depends on libterminfo
 SUBDIR+=	libdm		# depends on libprop
 SUBDIR+=	libedit		# depends on libterminfo
@@ -174,6 +173,8 @@ SUBDIR+=	../external/apache2/llvm/include
 .endif
 
 SUBDIR+=	../external/mit/libcbor/lib
+
+SUBDIR+=	../external/mit/libuv/lib
 #==================== 2nd library dependency barrier ====================
 SUBDIR+=	.WAIT
 
@@ -243,6 +244,7 @@ SUBDIR+=	../crypto/external/bsd/openssh/lib # depends on libcrypto, libz,
 						   # libfido2
 SUBDIR+=	../crypto/external/bsd/netpgp/bindings/lua  # depends on netpgp/lib
 SUBDIR+=	../external/mpl/bind/lib	# depends on heimdal, libcrypto
+						# libuv
 .if ${MKUNBOUND} != "no"
 SUBDIR+=	../external/bsd/unbound/lib	# depends on libcrypto
 .endif

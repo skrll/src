@@ -1,4 +1,4 @@
-#	$NetBSD: files.x86,v 1.107 2019/02/15 08:54:01 nonaka Exp $
+#	$NetBSD: files.x86,v 1.120 2020/10/27 08:57:11 ryo Exp $
 
 # options for MP configuration through the MP spec
 defflag opt_mpbios.h MPBIOS MPDEBUG MPBIOS_SCANPCI
@@ -13,6 +13,7 @@ defflag opt_intrdebug.h	INTRDEBUG
 # PCI fixup options
 defflag opt_pcifixup.h	PCI_ADDR_FIXUP PCI_BUS_FIXUP
 			PCI_INTR_FIXUP PCI_INTR_FIXUP_FORCE
+defflag opt_pci.h	NO_PCI_MSI_MSIX
 
 # To be able to test for NetBSD/xen in shared files
 defflag	opt_xen.h		DO_NOT_DEFINE
@@ -21,6 +22,8 @@ defflag	opt_xen.h		DO_NOT_DEFINE
 defflag opt_kaslr.h	NO_X86_ASLR
 
 defflag	SVS
+
+defflag	PCPU_IDT
 
 define  cpubus { [apid = -1] }
 define	cpufeaturebus {}
@@ -35,8 +38,8 @@ file	arch/x86/x86/bios32.c		bios32 needs-flag
 #
 device	cpu: cpufeaturebus
 attach	cpu at cpubus
-file 	arch/x86/x86/cpu.c 		cpu
-file	arch/x86/x86/cpu_rng.c		cpu
+file 	arch/x86/x86/cpu.c 		cpu & !xenpv
+file	arch/x86/x86/cpu_rng.c		cpu | vcpu
 
 device	acpicpu: acpi
 attach	acpicpu at cpufeaturebus
@@ -59,7 +62,7 @@ device	odcm
 attach	odcm at cpufeaturebus
 file	arch/x86/x86/odcm.c		odcm
 
-device	padlock: opencrypto
+device	padlock: opencrypto, aes
 attach	padlock at cpufeaturebus
 file	arch/x86/x86/via_padlock.c	padlock
 
@@ -71,7 +74,6 @@ device	viac7temp: sysmon_envsys
 attach	viac7temp at cpufeaturebus
 file	arch/x86/x86/viac7temp.c	viac7temp
 
-device	vmt: sysmon_power, sysmon_taskq
 attach	vmt at cpufeaturebus
 file	arch/x86/x86/vmt.c		vmt
 
@@ -82,7 +84,7 @@ file	arch/x86/x86/hyperv.c		hyperv needs-flag
 file	arch/x86/x86/apic.c		ioapic | lapic
 file	arch/x86/x86/bus_dma.c		machdep
 file	arch/x86/x86/bus_space.c	machdep
-file	arch/x86/x86/consinit.c		machdep
+file	arch/x86/x86/consinit.c		machdep & !xenpv
 file	arch/x86/x86/core_machdep.c	coredump
 file	arch/x86/x86/cpu_topology.c	machdep
 file	arch/x86/x86/db_memrw.c		ddb | kgdb
@@ -91,14 +93,16 @@ file	arch/x86/x86/efi.c		machdep
 file	arch/x86/x86/errata.c		machdep
 file	arch/x86/x86/genfb_machdep.c	machdep
 file	arch/x86/x86/identcpu.c		machdep
-file	arch/x86/x86/i8259.c		machdep
-file	arch/x86/x86/intr.c		machdep
+file	arch/x86/x86/identcpu_subr.c	machdep
+file	arch/x86/x86/i8259.c		machdep & (!xenpv | dom0ops)
+file	arch/x86/x86/intr.c		machdep & !xenpv
+file	arch/x86/x86/x86_softintr.c	machdep
 file	arch/x86/x86/kgdb_machdep.c	kgdb
 file	arch/x86/x86/nmi.c		machdep
 file	arch/x86/x86/idt.c		machdep
-file	arch/x86/x86/ipi.c		machdep
-file	arch/x86/x86/mtrr_i686.c	mtrr
-file 	arch/x86/x86/patch.c		machdep
+file	arch/x86/x86/ipi.c		machdep & !xenpv
+file	arch/x86/x86/mtrr_i686.c	mtrr & !xenpv
+file 	arch/x86/x86/patch.c		machdep & !xenpv
 file	arch/x86/x86/platform.c		machdep
 file 	arch/x86/x86/pmap.c		machdep
 file 	arch/x86/x86/x86_tlb.c		machdep
@@ -108,7 +112,7 @@ file	arch/x86/x86/sys_machdep.c	machdep
 file	arch/x86/x86/syscall.c		machdep
 file	arch/x86/x86/tsc.c		machdep
 file	arch/x86/x86/vm_machdep.c	machdep
-file	arch/x86/x86/x86_autoconf.c	machdep
+file	arch/x86/x86/x86_autoconf.c	machdep & !xenpv
 file	arch/x86/x86/x86_userconf.c	userconf
 file	arch/x86/x86/x86_machdep.c	machdep
 
@@ -136,14 +140,14 @@ file 	arch/x86/x86/mp.c		acpi | mpbios
 file 	arch/x86/x86/mpacpi.c		acpi
 
 file	arch/x86/acpi/acpi_pdc.c	acpi
-file	arch/x86/acpi/acpi_wakeup.c	acpi
+file	arch/x86/acpi/acpi_wakeup.c	acpi & !xenpv
 file	arch/x86/acpi/acpi_machdep.c	acpi
 
-file	arch/x86/isa/isa_machdep.c
+file	arch/x86/isa/isa_machdep.c	isa
 
 # PC clock
-file 	arch/x86/isa/clock.c
-file	arch/x86/isa/rtc.c
+file 	arch/x86/isa/clock.c	!xenpv
+file	arch/x86/isa/rtc.c  	isa
 
 # Stubs for x86 routines not included in the system
 file	arch/x86/x86/x86_stub.c
@@ -163,3 +167,18 @@ file	arch/x86/pci/pciide_machdep.c	pciide_common
 
 file	arch/x86/pci/pci_bus_fixup.c	pci_bus_fixup
 file	arch/x86/pci/pci_addr_fixup.c	pci_addr_fixup
+
+# AES-NI
+include "crypto/aes/arch/x86/files.aesni"
+
+# VIA ACE
+include "crypto/aes/arch/x86/files.aesvia"
+
+# Bitsliced AES with SSE2
+include "crypto/aes/arch/x86/files.aessse2"
+
+# Permutation-based AES with PSHUFB
+include "crypto/aes/arch/x86/files.aesssse3"
+
+# ChaCha with SSE2
+include "crypto/chacha/arch/x86/files.chacha_x86"

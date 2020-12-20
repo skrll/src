@@ -1,4 +1,4 @@
-/*	$NetBSD: swsensor.c,v 1.16 2020/03/16 21:20:09 pgoyette Exp $ */
+/*	$NetBSD: swsensor.c,v 1.18 2020/06/11 02:39:31 thorpej Exp $ */
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: swsensor.c,v 1.16 2020/03/16 21:20:09 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: swsensor.c,v 1.18 2020/06/11 02:39:31 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -212,11 +212,11 @@ swsensor_init(void *arg)
 			return ENOMEM;
 
 		while ((obj = prop_object_iterator_next(iter)) != NULL) {
-			key = prop_dictionary_keysym_cstring_nocopy(obj);
+			key = prop_dictionary_keysym_value(obj);
 			po  = prop_dictionary_get_keysym(pd, obj);
 			type = prop_object_type(po);
 			if (type == PROP_TYPE_NUMBER)
-				val = prop_number_integer_value(po);
+				val = prop_number_signed_value(po);
 
 			/* Sensor type/units */
 			if (strcmp(key, "type") == 0) {
@@ -230,7 +230,7 @@ swsensor_init(void *arg)
 				}
 				if (type != PROP_TYPE_STRING)
 					return EINVAL;
-				str = prop_string_cstring_nocopy(po);
+				str = prop_string_value(po);
 				descr = sme_find_table_desc(SME_DESC_UNITS,
 							    str);
 				if (descr == NULL)

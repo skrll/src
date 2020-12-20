@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_anon.c,v 1.77 2020/03/22 18:32:42 ad Exp $	*/
+/*	$NetBSD: uvm_anon.c,v 1.80 2020/10/25 00:05:26 chs Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_anon.c,v 1.77 2020/03/22 18:32:42 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_anon.c,v 1.80 2020/10/25 00:05:26 chs Exp $");
 
 #include "opt_uvmhist.h"
 
@@ -106,8 +106,8 @@ uvm_anfree(struct vm_anon *anon)
 {
 	struct vm_page *pg = anon->an_page, *pg2 __diagused;
 
-	UVMHIST_FUNC("uvm_anon_dispose"); UVMHIST_CALLED(maphist);
-	UVMHIST_LOG(maphist,"(anon=%#jx)", (uintptr_t)anon, 0,0,0);
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(maphist,"(anon=%#jx)", (uintptr_t)anon, 0,0,0);
 
 	KASSERT(anon->an_lock == NULL || rw_write_held(anon->an_lock));
 	KASSERT(anon->an_ref == 0);
@@ -235,7 +235,7 @@ uvm_anon_lockloanpg(struct vm_anon *anon)
 				/*
 				 * someone locking the object has a chance to
 				 * lock us right now
-				 * 
+				 *
 				 * XXX Better than yielding but inadequate.
 				 */
 				mutex_exit(&pg->interlock);
@@ -336,7 +336,7 @@ uvm_anon_pagein(struct vm_amap *amap, struct vm_anon *anon)
 void
 uvm_anon_dropswap(struct vm_anon *anon)
 {
-	UVMHIST_FUNC("uvm_anon_dropswap"); UVMHIST_CALLED(maphist);
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(maphist);
 
 	if (anon->an_swslot == 0)
 		return;
@@ -370,6 +370,11 @@ uvm_anon_release(struct vm_anon *anon)
 	KASSERT(pg->uanon == anon);
 	KASSERT(pg->loan_count == 0);
 	KASSERT(anon->an_ref == 0);
+
+	if ((pg->flags & PG_PAGEOUT) != 0) {
+		pg->flags &= ~PG_PAGEOUT;
+		uvm_pageout_done(1);
+	}
 
 	uvm_pagefree(pg);
 	KASSERT(anon->an_page == NULL);

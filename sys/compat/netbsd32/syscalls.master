@@ -1,4 +1,4 @@
-	$NetBSD: syscalls.master,v 1.134 2020/04/04 20:20:12 thorpej Exp $
+	$NetBSD: syscalls.master,v 1.139 2020/10/10 00:00:54 rin Exp $
 
 ;	from: NetBSD: syscalls.master,v 1.81 1998/07/05 08:49:50 jonathan Exp
 ;	@(#)syscalls.master	8.2 (Berkeley) 1/13/94
@@ -235,7 +235,9 @@
 89	COMPAT_43 MODULAR compat_43	\
 			{ int|sys||getdtablesize(void); } ogetdtablesize
 90	STD		{ int|netbsd32||dup2(int from, int to); }
-91	UNIMPL		getdopt
+91	STD		{ netbsd32_ssize_t|netbsd32||getrandom( \
+			    netbsd32_voidp buf, netbsd32_size_t buflen, \
+			    unsigned int flags); }
 92	STD		{ int|netbsd32||fcntl(int fd, int cmd, \
 			    ... netbsd32_voidp arg); }
 93	COMPAT_50 MODULAR compat_netbsd32_50	\
@@ -398,9 +400,13 @@
 164	COMPAT_09 MODULAR compat_netbsd32_09	\
 			{ int|netbsd32||uname(netbsd32_outsnamep_t name); }
 165	STD		{ int|netbsd32||sysarch(int op, netbsd32_voidp parms); }
-166	UNIMPL
-167	UNIMPL
-168	UNIMPL
+166	STD		{ int|netbsd32||__futex(netbsd32_intp uaddr, int op, \
+			    int val, const netbsd32_timespecp_t timeout, \
+			    netbsd32_intp uaddr2, int val2, int val3); }
+167	STD		{ int|netbsd32||__futex_set_robust_list( \
+			    netbsd32_voidp head, netbsd32_size_t len); }
+168	STD		{ int|netbsd32||__futex_get_robust_list(lwpid_t lwpid, \
+			    netbsd32_voidp headp, netbsd32_size_tp lenp); }
 169	COMPAT_10 MODULAR compat_netbsd32_sysvipc_10	\
 			{ int|netbsd32||semsys(int which, int a2, int a3, \
 			    int a4, int a5); } osemsys
@@ -747,7 +753,7 @@
 				netbsd32_charp name, netbsd32_size_t len); }
 325	STD 		{ int|netbsd32||_lwp_ctl(int features, \
 				netbsd32_pointer_t address); }
-326	NOARGS 		{ lwptid_t|sys||_lwp_gettid(void); }
+326	UNIMPL
 327	UNIMPL
 328	UNIMPL
 329	UNIMPL
@@ -1168,3 +1174,37 @@
 486	STD 		{ int|netbsd32|90|fhstatvfs1(netbsd32_voidp fhp, \
 			    netbsd32_size_t fh_size, netbsd32_statvfsp_t buf, \
 			    int flags); }
+487	STD		{ int|netbsd32||__acl_get_link( \
+			    const netbsd32_charp path, \
+			    acl_type_t type, netbsd32_aclp_t aclp); }
+488	STD		{ int|netbsd32||__acl_set_link( \
+			    const netbsd32_charp path, \
+			    acl_type_t type, netbsd32_aclp_t aclp); }
+489	STD		{ int|netbsd32||__acl_delete_link( \
+			    const netbsd32_charp path, \
+			    acl_type_t type); }
+490	STD		{ int|netbsd32||__acl_aclcheck_link( \
+			    const netbsd32_charp path, \
+			    acl_type_t type, netbsd32_aclp_t aclp); }
+491	STD		{ int|netbsd32||__acl_get_file( \
+			    const netbsd32_charp path, \
+			    acl_type_t type, netbsd32_aclp_t aclp); }
+492	STD		{ int|netbsd32||__acl_set_file( \
+			    const netbsd32_charp path, \
+			    acl_type_t type, netbsd32_aclp_t aclp); }
+493	STD		{ int|netbsd32||__acl_get_fd(int filedes, \
+			    acl_type_t type, netbsd32_aclp_t aclp); }
+494	STD		{ int|netbsd32||__acl_set_fd(int filedes, \
+			    acl_type_t type, netbsd32_aclp_t aclp); }
+495	STD		{ int|netbsd32||__acl_delete_file( \
+			    const netbsd32_charp path, \
+			    acl_type_t type); }
+496	STD		{ int|netbsd32||__acl_delete_fd(int filedes, \
+			    acl_type_t type); }
+497	STD		{ int|netbsd32||__acl_aclcheck_file( \
+			    const netbsd32_charp path, \
+			    acl_type_t type, netbsd32_aclp_t aclp); }
+498	STD		{ int|netbsd32||__acl_aclcheck_fd(int filedes, \
+			    acl_type_t type, netbsd32_aclp_t aclp); }
+499	STD		{ long|netbsd32||lpathconf(const netbsd32_charp path, \
+			    int name); }

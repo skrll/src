@@ -1,4 +1,4 @@
-/*	$NetBSD: pic_distopenpic.c,v 1.11 2018/09/03 16:29:26 riastradh Exp $ */
+/*	$NetBSD: pic_distopenpic.c,v 1.13 2020/07/06 11:02:44 rin Exp $ */
 
 /*-
  * Copyright (c) 2008 Tim Rightnour
@@ -30,10 +30,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pic_distopenpic.c,v 1.11 2018/09/03 16:29:26 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pic_distopenpic.c,v 1.13 2020/07/06 11:02:44 rin Exp $");
 
+#ifdef _KERNEL_OPT
 #include "opt_openpic.h"
-#include "opt_interrupt.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/kernel.h>

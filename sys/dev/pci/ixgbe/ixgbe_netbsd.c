@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe_netbsd.c,v 1.13 2020/02/01 02:33:08 riastradh Exp $ */
+/* $NetBSD: ixgbe_netbsd.c,v 1.15 2020/06/25 07:53:02 msaitoh Exp $ */
 /*
  * Copyright (c) 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -79,7 +79,7 @@ ixgbe_dmamap_destroy(ixgbe_dma_tag_t *dt, bus_dmamap_t dmam)
 void
 ixgbe_dmamap_sync(ixgbe_dma_tag_t *dt, bus_dmamap_t dmam, int ops)
 {
-        bus_dmamap_sync(dt->dt_dmat, dmam, 0, dt->dt_maxsize, ops);
+	bus_dmamap_sync(dt->dt_dmat, dmam, 0, dt->dt_maxsize, ops);
 }
 
 void
@@ -304,4 +304,20 @@ u_int
 atomic_load_acq_uint(volatile u_int *p)
 {
 	return atomic_load_acquire(p);
+}
+
+void
+ixgbe_delay(unsigned int us)
+{
+
+	if (__predict_false(cold))
+		delay(us);
+	else if ((us / 1000) >= hztoms(1)) {
+		/*
+		 * Wait at least two clock ticks so we know the time has
+		 * passed.
+		 */
+		kpause("ixgdly", false, mstohz(us / 1000) + 1, NULL);
+	} else
+		delay(us);
 }

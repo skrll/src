@@ -1,4 +1,4 @@
-/*	$NetBSD: frameasm.h,v 1.47 2019/11/17 14:07:00 maxv Exp $	*/
+/*	$NetBSD: frameasm.h,v 1.52 2020/07/19 07:35:08 maxv Exp $	*/
 
 #ifndef _AMD64_MACHINE_FRAMEASM_H
 #define _AMD64_MACHINE_FRAMEASM_H
@@ -31,12 +31,24 @@
  	movq CPUVAR(VCPU),%r ## temp_reg ;			\
 	movb $0,EVTCHN_UPCALL_MASK(%r ## temp_reg);
 
+#define PUSHF(temp_reg) \
+ 	movq CPUVAR(VCPU),%r ## temp_reg ;			\
+	movzbl EVTCHN_UPCALL_MASK(%r ## temp_reg), %e ## temp_reg; \
+	pushq %r ## temp_reg
+
+#define POPF \
+	popq %rdi; \
+	call _C_LABEL(xen_write_psl)
+	
+
 #else /* XENPV */
 #define	XEN_ONLY2(x,y)
 #define	NOT_XEN(x)	x
 #define CLI(temp_reg) cli
 #define STI(temp_reg) sti
-#endif	/* XEN */
+#define PUSHF(temp_reg) pushf
+#define POPL popl
+#endif	/* XENPV */
 
 #define HP_NAME_CLAC		1
 #define HP_NAME_STAC		2
@@ -51,6 +63,8 @@
 #define HP_NAME_SVS_ENTER_NMI	11
 #define HP_NAME_SVS_LEAVE_NMI	12
 #define HP_NAME_MDS_LEAVE	13
+#define HP_NAME_SSE2_LFENCE	14
+#define HP_NAME_SSE2_MFENCE	15
 
 #define HOTPATCH(name, size) \
 123:						; \
@@ -208,6 +222,7 @@
 #endif
 
 #ifdef KMSAN
+/* XXX this belongs somewhere else. */
 #define KMSAN_ENTER	\
 	movq	%rsp,%rdi		; \
 	movq	$TF_REGSIZE+16+40,%rsi	; \
