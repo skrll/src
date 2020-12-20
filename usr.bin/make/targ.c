@@ -1,4 +1,4 @@
-/*	$NetBSD: targ.c,v 1.155 2020/12/12 00:05:05 rillig Exp $	*/
+/*	$NetBSD: targ.c,v 1.159 2020/12/18 15:47:34 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -113,7 +113,7 @@
 #include "dir.h"
 
 /*	"@(#)targ.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: targ.c,v 1.155 2020/12/12 00:05:05 rillig Exp $");
+MAKE_RCSID("$NetBSD: targ.c,v 1.159 2020/12/18 15:47:34 rillig Exp $");
 
 /*
  * All target nodes that appeared on the left-hand side of one of the
@@ -317,7 +317,8 @@ Targ_NewInternalNode(const char *name)
  * Return the .END node, which contains the commands to be run when
  * everything else has been made.
  */
-GNode *Targ_GetEndNode(void)
+GNode *
+Targ_GetEndNode(void)
 {
 	/*
 	 * Save the node locally to avoid having to search for it all
@@ -400,17 +401,15 @@ Targ_PrintCmds(GNode *gn)
 
 /*
  * Format a modification time in some reasonable way and return it.
- * The time is placed in a static area, so it is overwritten with each call.
+ * The formatted time is placed in a static area, so it is overwritten
+ * with each call.
  */
-char *
+const char *
 Targ_FmtTime(time_t tm)
 {
-	struct tm *parts;
 	static char buf[128];
 
-	/* TODO: Add special case for 0, which often means ENOENT, to make it
-	 * independent from time zones. */
-	parts = localtime(&tm);
+	struct tm *parts = localtime(&tm);
 	(void)strftime(buf, sizeof buf, "%k:%M:%S %b %d, %Y", parts);
 	return buf;
 }
@@ -508,7 +507,7 @@ Targ_PrintNode(GNode *gn, int pass)
 				    Targ_FmtTime(gn->mtime),
 				    made_name(gn->made));
 			} else if (gn->made != UNMADE) {
-				debug_printf("# non-existent (maybe): %s\n",
+				debug_printf("# nonexistent (maybe): %s\n",
 				    made_name(gn->made));
 			} else
 				debug_printf("# unmade\n");

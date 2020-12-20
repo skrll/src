@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.248 2020/12/13 05:13:38 sjg Exp $
+# $NetBSD: Makefile,v 1.252 2020/12/19 16:00:17 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -46,6 +46,7 @@ TESTS+=		cmd-interrupt
 TESTS+=		cmdline
 TESTS+=		cmdline-undefined
 TESTS+=		comment
+TESTS+=		compat-error
 TESTS+=		cond-cmp-numeric
 TESTS+=		cond-cmp-numeric-eq
 TESTS+=		cond-cmp-numeric-ge
@@ -55,6 +56,7 @@ TESTS+=		cond-cmp-numeric-lt
 TESTS+=		cond-cmp-numeric-ne
 TESTS+=		cond-cmp-string
 TESTS+=		cond-cmp-unary
+TESTS+=		cond-eof
 TESTS+=		cond-func
 TESTS+=		cond-func-commands
 TESTS+=		cond-func-defined
@@ -157,6 +159,8 @@ TESTS+=		directive-export-gmake
 TESTS+=		directive-export-literal
 TESTS+=		directive-for
 TESTS+=		directive-for-generating-endif
+TESTS+=		directive-for-lines
+TESTS+=		directive-for-null
 TESTS+=		directive-hyphen-include
 TESTS+=		directive-if
 TESTS+=		directive-if-nested

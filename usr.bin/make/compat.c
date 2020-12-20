@@ -1,4 +1,4 @@
-/*	$NetBSD: compat.c,v 1.208 2020/12/12 18:53:53 rillig Exp $	*/
+/*	$NetBSD: compat.c,v 1.215 2020/12/13 19:33:53 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -96,7 +96,7 @@
 #include "pathnames.h"
 
 /*	"@(#)compat.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: compat.c,v 1.208 2020/12/12 18:53:53 rillig Exp $");
+MAKE_RCSID("$NetBSD: compat.c,v 1.215 2020/12/13 19:33:53 rillig Exp $");
 
 static GNode *curTarg = NULL;
 static pid_t compatChild;
@@ -180,6 +180,32 @@ DebugFailedTarget(const char *cmd, GNode *gn)
 	debug_printf("\n");
 }
 
+static Boolean
+UseShell(const char *cmd MAKE_ATTR_UNUSED)
+{
+#if !defined(MAKE_NATIVE)
+	/*
+	 * In a non-native build, the host environment might be weird enough
+	 * that it's necessary to go through a shell to get the correct
+	 * behaviour.  Or perhaps the shell has been replaced with something
+	 * that does extra logging, and that should not be bypassed.
+	 */
+	return TRUE;
+#else
+	/*
+	 * Search for meta characters in the command. If there are no meta
+	 * characters, there's no need to execute a shell to execute the
+	 * command.
+	 *
+	 * Additionally variable assignments and empty commands
+	 * go to the shell. Therefore treat '=' and ':' like shell
+	 * meta characters as documented in make(1).
+	 */
+
+	return needshell(cmd);
+#endif
+}
+
 /* Execute the next command for a target. If the command returns an error,
  * the node's made field is set to ERROR and creation stops.
  *
@@ -232,6 +258,17 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 	if (gn->type & OP_SAVE_CMDS) {
 		GNode *endNode = Targ_GetEndNode();
 		if (gn != endNode) {
+			/*
+			 * Append the expanded command, to prevent the
+			 * local variables from being interpreted in the
+			 * context of the .END node.
+			 *
+			 * A probably unintended side effect of this is that
+			 * the expanded command will be expanded again in the
+			 * .END node.  Therefore, a literal '$' in these
+			 * commands must be written as '$$$$' instead of the
+			 * usual '$$'.
+			 */
 			Lst_Append(&endNode->commands, cmdStart);
 			return 0;
 		}
@@ -264,28 +301,7 @@ Compat_RunCommand(const char *cmdp, GNode *gn)
 	if (cmd[0] == '\0')
 		return 0;
 
-#if !defined(MAKE_NATIVE)
-	/*
-	 * In a non-native build, the host environment might be weird enough
-	 * that it's necessary to go through a shell to get the correct
-	 * behaviour.  Or perhaps the shell has been replaced with something
-	 * that does extra logging, and that should not be bypassed.
-	 */
-	useShell = TRUE;
-#else
-	/*
-	 * Search for meta characters in the command. If there are no meta
-	 * characters, there's no need to execute a shell to execute the
-	 * command.
-	 *
-	 * Additionally variable assignments and empty commands
-	 * go to the shell. Therefore treat '=' and ':' like shell
-	 * meta characters as documented in make(1).
-	 */
-
-	useShell = needshell(cmd);
-#endif
-
+	useShell = UseShell(cmd);
 	/*
 	 * Print the command before echoing if we're not supposed to be quiet
 	 * for this one. We also print the command if -n given.
@@ -527,7 +543,7 @@ MakeUnmade(GNode *gn, GNode *pgn)
 
 	/*
 	 * Alter our type to tell if errors should be ignored or things
-	 * should not be printed so CompatRunCommand knows what to do.
+	 * should not be printed so Compat_RunCommand knows what to do.
 	 */
 	if (opts.ignoreErrors)
 		gn->type |= OP_IGNORE;
@@ -655,20 +671,23 @@ cohorts:
 	MakeNodes(&gn->cohorts, pgn);
 }
 
-/* Initialize this module and start making.
- *
- * Input:
- *	targs		The target nodes to re-create
- */
-void
-Compat_Run(GNodeList *targs)
+static void
+MakeBeginNode(void)
 {
-	GNode *gn = NULL;	/* Current root target */
-	Boolean seenError;
+	GNode *gn = Targ_FindNode(".BEGIN");
+	if (gn == NULL)
+		return;
 
-	if (!shellName)
-		Shell_Init();
+	Compat_Make(gn, gn);
+	if (GNode_IsError(gn)) {
+		PrintOnError(gn, "\nStop.");
+		exit(1);
+	}
+}
 
+static void
+InitSignals(void)
+{
 	if (bmake_signal(SIGINT, SIG_IGN) != SIG_IGN)
 		bmake_signal(SIGINT, CompatInterrupt);
 	if (bmake_signal(SIGTERM, SIG_IGN) != SIG_IGN)
@@ -677,26 +696,30 @@ Compat_Run(GNodeList *targs)
 		bmake_signal(SIGHUP, CompatInterrupt);
 	if (bmake_signal(SIGQUIT, SIG_IGN) != SIG_IGN)
 		bmake_signal(SIGQUIT, CompatInterrupt);
+}
+
+/* Initialize this module and start making.
+ *
+ * Input:
+ *	targs		The target nodes to re-create
+ */
+void
+Compat_Run(GNodeList *targs)
+{
+	GNode *errorNode = NULL;
+
+	if (!shellName)
+		Shell_Init();
+
+	InitSignals();
 
 	/* Create the .END node now, to keep the (debug) output of the
 	 * counter.mk test the same as before 2020-09-23.  This implementation
 	 * detail probably doesn't matter though. */
 	(void)Targ_GetEndNode();
 
-	/*
-	 * If the user has defined a .BEGIN target, execute the commands
-	 * attached to it.
-	 */
-	if (!opts.queryFlag) {
-		gn = Targ_FindNode(".BEGIN");
-		if (gn != NULL) {
-			Compat_Make(gn, gn);
-			if (GNode_IsError(gn)) {
-				PrintOnError(gn, "\nStop.");
-				exit(1);
-			}
-		}
-	}
+	if (!opts.queryFlag)
+		MakeBeginNode();
 
 	/*
 	 * Expand .USE nodes right now, because they can modify the structure
@@ -704,9 +727,8 @@ Compat_Run(GNodeList *targs)
 	 */
 	Make_ExpandUse(targs);
 
-	seenError = FALSE;
 	while (!Lst_IsEmpty(targs)) {
-		gn = Lst_Dequeue(targs);
+		GNode *gn = Lst_Dequeue(targs);
 		Compat_Make(gn, gn);
 
 		if (gn->made == UPTODATE) {
@@ -715,19 +737,20 @@ Compat_Run(GNodeList *targs)
 			printf("`%s' not remade because of errors.\n",
 			       gn->name);
 		}
-		if (GNode_IsError(gn))
-			seenError = TRUE;
+		if (GNode_IsError(gn) && errorNode == NULL)
+			errorNode = gn;
 	}
 
 	/* If the user has defined a .END target, run its commands. */
-	if (!seenError) {
+	if (errorNode == NULL) {
 		GNode *endNode = Targ_GetEndNode();
 		Compat_Make(endNode, endNode);
-		seenError = GNode_IsError(endNode);
+		if (GNode_IsError(endNode))
+			errorNode = endNode;
 	}
 
-	if (seenError) {
-		PrintOnError(gn, "\nStop.");
+	if (errorNode != NULL) {
+		PrintOnError(errorNode, "\nStop.");
 		exit(1);
 	}
 }
