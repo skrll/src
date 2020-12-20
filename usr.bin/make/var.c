@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.732 2020/12/13 02:15:49 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.739 2020/12/20 00:57:29 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -131,7 +131,7 @@
 #include "metachar.h"
 
 /*	"@(#)var.c	8.3 (Berkeley) 3/19/94" */
-MAKE_RCSID("$NetBSD: var.c,v 1.732 2020/12/13 02:15:49 rillig Exp $");
+MAKE_RCSID("$NetBSD: var.c,v 1.739 2020/12/20 00:57:29 rillig Exp $");
 
 /* A string that may need to be freed after use. */
 typedef struct FStr {
@@ -305,14 +305,18 @@ ENUM_FLAGS_RTTI_6(VarFlags,
 
 static VarExportedMode var_exportedVars = VAR_EXPORTED_NONE;
 
-#define FSTR_INIT { NULL, NULL }
-
-static void
-FStr_Assign(FStr *fstr, const char *str, void *freeIt)
+/* Return an FStr that is the sole owner of str. */
+static FStr
+FStr_InitOwn(char *str)
 {
-	free(fstr->freeIt);
-	fstr->str = str;
-	fstr->freeIt = freeIt;
+	return (FStr){ str, str };
+}
+
+/* Return an FStr that refers to the shared str. */
+static FStr
+FStr_InitRefer(const char *str)
+{
+	return (FStr){ str, NULL };
 }
 
 static void
@@ -488,35 +492,82 @@ VarAdd(const char *name, const char *val, GNode *ctxt, VarSetFlags flags)
 		DEBUG3(VAR, "%s:%s = %s\n", ctxt->name, name, val);
 }
 
+/*
+ * Remove a variable from a context, freeing all related memory as well.
+ * The variable name is kept as-is, it is not expanded.
+ */
+void
+Var_DeleteVar(const char *varname, GNode *ctxt)
+{
+	HashEntry *he = HashTable_FindEntry(&ctxt->vars, varname);
+	Var *v;
+
+	if (he == NULL) {
+		DEBUG2(VAR, "%s:delete %s (not found)\n", ctxt->name, varname);
+		return;
+	}
+
+	DEBUG2(VAR, "%s:delete %s\n", ctxt->name, varname);
+	v = HashEntry_Get(he);
+	if (v->flags & VAR_EXPORTED)
+		unsetenv(v->name.str);
+	if (strcmp(v->name.str, MAKE_EXPORTED) == 0)
+		var_exportedVars = VAR_EXPORTED_NONE;
+	assert(v->name.freeIt == NULL);
+	HashTable_DeleteEntry(&ctxt->vars, he);
+	Buf_Destroy(&v->val, TRUE);
+	free(v);
+}
+
 /* Remove a variable from a context, freeing all related memory as well.
  * The variable name is expanded once. */
 void
 Var_Delete(const char *name, GNode *ctxt)
 {
 	char *name_freeIt = NULL;
-	HashEntry *he;
 
 	if (strchr(name, '$') != NULL) {
 		(void)Var_Subst(name, VAR_GLOBAL, VARE_WANTRES, &name_freeIt);
 		/* TODO: handle errors */
 		name = name_freeIt;
 	}
-	he = HashTable_FindEntry(&ctxt->vars, name);
-	DEBUG3(VAR, "%s:delete %s%s\n",
-	    ctxt->name, name, he != NULL ? "" : " (not found)");
-	free(name_freeIt);
 
-	if (he != NULL) {
-		Var *v = HashEntry_Get(he);
-		if (v->flags & VAR_EXPORTED)
-			unsetenv(v->name.str);
-		if (strcmp(v->name.str, MAKE_EXPORTED) == 0)
-			var_exportedVars = VAR_EXPORTED_NONE;
-		assert(v->name.freeIt == NULL);
-		HashTable_DeleteEntry(&ctxt->vars, he);
-		Buf_Destroy(&v->val, TRUE);
-		free(v);
+	Var_DeleteVar(name, ctxt);
+}
+
+/*
+ * Undefine a single variable from the global scope.  The argument is
+ * expanded once.
+ */
+void
+Var_Undef(char *arg)
+{
+	/*
+	 * The argument must consist of exactly 1 word.  Accepting more than
+	 * 1 word would have required to split the argument into several
+	 * words, and such splitting is already done subtly different in many
+	 * other places of make.
+	 *
+	 * Using Str_Words to split the words, followed by Var_Subst to expand
+	 * each variable name once would make it impossible to undefine
+	 * variables whose names contain space characters or unbalanced
+	 * quotes or backslashes in arbitrary positions.
+	 *
+	 * Using Var_Subst on the whole argument and splitting the words
+	 * afterwards using Str_Words would make it impossible to undefine
+	 * variables whose names contain space characters.
+	 */
+	char *cp = arg;
+
+	for (; !ch_isspace(*cp) && *cp != '\0'; cp++)
+		continue;
+	if (cp == arg || *cp != '\0') {
+		Parse_Error(PARSE_FATAL,
+		    "The .undef directive requires exactly 1 argument");
 	}
+	*cp = '\0';
+
+	Var_Delete(arg, VAR_GLOBAL);
 }
 
 static Boolean
@@ -744,7 +795,7 @@ GetVarnamesToUnexport(Boolean isEnv, const char *arg,
 		      FStr *out_varnames, UnexportWhat *out_what)
 {
 	UnexportWhat what;
-	FStr varnames = FSTR_INIT;
+	FStr varnames = FStr_InitRefer("");
 
 	if (isEnv) {
 		if (arg[0] != '\0') {
@@ -757,7 +808,7 @@ GetVarnamesToUnexport(Boolean isEnv, const char *arg,
 	} else {
 		what = arg[0] != '\0' ? UNEXPORT_NAMED : UNEXPORT_ALL;
 		if (what == UNEXPORT_NAMED)
-			FStr_Assign(&varnames, arg, NULL);
+			varnames = FStr_InitRefer(arg);
 	}
 
 	if (what != UNEXPORT_NAMED) {
@@ -766,7 +817,7 @@ GetVarnamesToUnexport(Boolean isEnv, const char *arg,
 		(void)Var_Subst("${" MAKE_EXPORTED ":O:u}", VAR_GLOBAL,
 		    VARE_WANTRES, &expanded);
 		/* TODO: handle errors */
-		FStr_Assign(&varnames, expanded, expanded);
+		varnames = FStr_InitOwn(expanded);
 	}
 
 	*out_varnames = varnames;
@@ -1177,9 +1228,7 @@ ModifyWord_Head(const char *word, SepBuf *buf, void *dummy MAKE_ATTR_UNUSED)
 static void
 ModifyWord_Tail(const char *word, SepBuf *buf, void *dummy MAKE_ATTR_UNUSED)
 {
-	const char *slash = strrchr(word, '/');
-	const char *base = slash != NULL ? slash + 1 : word;
-	SepBuf_AddStr(buf, base);
+	SepBuf_AddStr(buf, str_basename(word));
 }
 
 /* Callback for ModifyWords to implement the :E modifier.
@@ -1469,11 +1518,12 @@ tryagain:
 				rp++;
 
 				if (n >= args->nsub) {
-					Error("No subexpression \\%zu", n);
+					Error("No subexpression \\%u",
+					    (unsigned)n);
 				} else if (m[n].rm_so == -1) {
 					Error(
-					    "No match for subexpression \\%zu",
-					    n);
+					    "No match for subexpression \\%u",
+					    (unsigned)n);
 				} else {
 					SepBuf_AddBytesBetween(buf,
 					    wp + m[n].rm_so, wp + m[n].rm_eo);
@@ -1642,8 +1692,8 @@ ModifyWords(const char *str,
 
 	words = Str_Words(str, FALSE);
 
-	DEBUG2(VAR, "ModifyWords: split \"%s\" into %zu words\n",
-	    str, words.len);
+	DEBUG2(VAR, "ModifyWords: split \"%s\" into %u words\n",
+	    str, (unsigned)words.len);
 
 	for (i = 0; i < words.len; i++) {
 		modifyWord(words.words[i], &result, modifyWord_args);
@@ -2767,6 +2817,34 @@ ok:
 	return AMR_OK;
 }
 
+static char *
+str_toupper(const char *str)
+{
+	char *res;
+	size_t i, len;
+
+	len = strlen(str);
+	res = bmake_malloc(len + 1);
+	for (i = 0; i < len + 1; i++)
+		res[i] = ch_toupper(str[i]);
+
+	return res;
+}
+
+static char *
+str_tolower(const char *str)
+{
+	char *res;
+	size_t i, len;
+
+	len = strlen(str);
+	res = bmake_malloc(len + 1);
+	for (i = 0; i < len + 1; i++)
+		res[i] = ch_tolower(str[i]);
+
+	return res;
+}
+
 /* :tA, :tu, :tl, :ts<separator>, etc. */
 static ApplyModifierResult
 ApplyModifier_To(const char **pp, ApplyModifiersState *st)
@@ -2796,21 +2874,13 @@ ApplyModifier_To(const char **pp, ApplyModifiersState *st)
 	}
 
 	if (mod[1] == 'u') {	/* :tu */
-		size_t i;
-		size_t len = strlen(st->val);
-		st->newVal = bmake_malloc(len + 1);
-		for (i = 0; i < len + 1; i++)
-			st->newVal[i] = ch_toupper(st->val[i]);
+		st->newVal = str_toupper(st->val);
 		*pp = mod + 2;
 		return AMR_OK;
 	}
 
 	if (mod[1] == 'l') {	/* :tl */
-		size_t i;
-		size_t len = strlen(st->val);
-		st->newVal = bmake_malloc(len + 1);
-		for (i = 0; i < len + 1; i++)
-			st->newVal[i] = ch_tolower(st->val[i]);
+		st->newVal = str_tolower(st->val);
 		*pp = mod + 2;
 		return AMR_OK;
 	}

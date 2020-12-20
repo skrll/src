@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.170 2020/12/13 02:15:49 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.175 2020/12/19 20:47:24 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -98,6 +98,13 @@ unsigned int Cond_save_depth(void);
 
 /* dir.c; see also dir.h */
 
+MAKE_INLINE const char *
+str_basename(const char *pathname)
+{
+	const char *lastSlash = strrchr(pathname, '/');
+	return lastSlash != NULL ? lastSlash + 1 : pathname;
+}
+
 MAKE_INLINE SearchPath *
 SearchPath_New(void)
 { return Lst_New(); }
@@ -132,17 +139,17 @@ void Parse_Init(void);
 void Parse_End(void);
 
 typedef enum VarAssignOp {
-    VAR_NORMAL,			/* = */
-    VAR_SUBST,			/* := */
-    VAR_SHELL,			/* != or :sh= */
-    VAR_APPEND,			/* += */
-    VAR_DEFAULT			/* ?= */
+	VAR_NORMAL,		/* = */
+	VAR_SUBST,		/* := */
+	VAR_SHELL,		/* != or :sh= */
+	VAR_APPEND,		/* += */
+	VAR_DEFAULT		/* ?= */
 } VarAssignOp;
 
 typedef struct VarAssign {
-    char *varname;		/* unexpanded */
-    VarAssignOp op;
-    const char *value;		/* unexpanded */
+	char *varname;		/* unexpanded */
+	VarAssignOp op;
+	const char *value;	/* unexpanded */
 } VarAssign;
 
 typedef char *(*ReadMoreProc)(void *, size_t *);
@@ -158,16 +165,17 @@ int Parse_GetFatals(void);
 
 /* str.c */
 typedef struct Words {
-    char **words;
-    size_t len;
-    void *freeIt;
+	char **words;
+	size_t len;
+	void *freeIt;
 } Words;
 
 Words Str_Words(const char *, Boolean);
 MAKE_INLINE void
-Words_Free(Words w) {
-    free(w.words);
-    free(w.freeIt);
+Words_Free(Words w)
+{
+	free(w.words);
+	free(w.freeIt);
 }
 
 char *str_concat2(const char *, const char *);
@@ -210,7 +218,7 @@ void Targ_SetMain(GNode *);
 void Targ_PrintCmds(GNode *);
 void Targ_PrintNode(GNode *, int);
 void Targ_PrintNodes(GNodeList *, int);
-char *Targ_FmtTime(time_t);
+const char *Targ_FmtTime(time_t);
 void Targ_PrintType(int);
 void Targ_PrintGraph(int);
 void Targ_Propagate(void);
@@ -220,40 +228,40 @@ void Var_Init(void);
 void Var_End(void);
 
 typedef enum VarEvalFlags {
-    VARE_NONE		= 0,
+	VARE_NONE		= 0,
 
-    /* Expand and evaluate variables during parsing.
-     *
-     * TODO: Document what Var_Parse and Var_Subst return when this flag
-     * is not set. */
-    VARE_WANTRES	= 1 << 0,
+	/* Expand and evaluate variables during parsing.
+	 *
+	 * TODO: Document what Var_Parse and Var_Subst return when this flag
+	 * is not set. */
+	VARE_WANTRES		= 1 << 0,
 
-    /* Treat undefined variables as errors.
-     * Must only be used in combination with VARE_WANTRES. */
-    VARE_UNDEFERR	= 1 << 1,
+	/* Treat undefined variables as errors.
+	 * Must only be used in combination with VARE_WANTRES. */
+	VARE_UNDEFERR		= 1 << 1,
 
-    /* Keep '$$' as '$$' instead of reducing it to a single '$'.
-     *
-     * Used in variable assignments using the ':=' operator.  It allows
-     * multiple such assignments to be chained without accidentally expanding
-     * '$$file' to '$file' in the first assignment and interpreting it as
-     * '${f}' followed by 'ile' in the next assignment.
-     *
-     * See also preserveUndefined, which preserves subexpressions that are
-     * based on undefined variables; maybe that can be converted to a flag
-     * as well. */
-    VARE_KEEP_DOLLAR	= 1 << 2
+	/* Keep '$$' as '$$' instead of reducing it to a single '$'.
+	 *
+	 * Used in variable assignments using the ':=' operator.  It allows
+	 * multiple such assignments to be chained without accidentally
+	 * expanding '$$file' to '$file' in the first assignment and
+	 * interpreting it as '${f}' followed by 'ile' in the next assignment.
+	 *
+	 * See also preserveUndefined, which preserves subexpressions that are
+	 * based on undefined variables; maybe that can be converted to a flag
+	 * as well. */
+	VARE_KEEP_DOLLAR	= 1 << 2
 } VarEvalFlags;
 
 typedef enum VarSetFlags {
-    VAR_SET_NONE	= 0,
+	VAR_SET_NONE		= 0,
 
-    /* do not export */
-    VAR_SET_NO_EXPORT	= 1 << 0,
+	/* do not export */
+	VAR_SET_NO_EXPORT	= 1 << 0,
 
-    /* Make the variable read-only. No further modification is possible,
-     * except for another call to Var_Set with the same flag. */
-    VAR_SET_READONLY	= 1 << 1
+	/* Make the variable read-only. No further modification is possible,
+	 * except for another call to Var_Set with the same flag. */
+	VAR_SET_READONLY	= 1 << 1
 } VarSetFlags;
 
 /* The state of error handling returned by Var_Parse.
@@ -267,48 +275,62 @@ typedef enum VarSetFlags {
  * and reporting. */
 typedef enum VarParseResult {
 
-    /* Both parsing and evaluation succeeded. */
-    VPR_OK		= 0x0000,
+	/* Both parsing and evaluation succeeded. */
+	VPR_OK		= 0x0000,
 
-    /* See if a message has already been printed for this error. */
-    VPR_ANY_MSG		= 0x0001,
+	/* See if a message has already been printed for this error. */
+	VPR_ANY_MSG		= 0x0001,
 
-    /* Parsing failed.
-     * No error message has been printed yet.
-     * Deprecated, migrate to VPR_PARSE_MSG instead. */
-    VPR_PARSE_SILENT	= 0x0002,
+	/*
+	 * Parsing failed.
+	 * No error message has been printed yet.
+	 * Deprecated, migrate to VPR_PARSE_MSG instead.
+	 */
+	VPR_PARSE_SILENT	= 0x0002,
 
-    /* Parsing failed.
-     * An error message has already been printed. */
-    VPR_PARSE_MSG	= VPR_PARSE_SILENT | VPR_ANY_MSG,
+	/*
+	 * Parsing failed.
+	 * An error message has already been printed.
+	 */
+	VPR_PARSE_MSG	= VPR_PARSE_SILENT | VPR_ANY_MSG,
 
-    /* Parsing succeeded.
-     * During evaluation, VARE_UNDEFERR was set and there was an undefined
-     * variable.
-     * No error message has been printed yet.
-     * Deprecated, migrate to VPR_UNDEF_MSG instead. */
-    VPR_UNDEF_SILENT	= 0x0004,
+	/*
+	 * Parsing succeeded.
+	 * During evaluation, VARE_UNDEFERR was set and there was an undefined
+	 * variable.
+	 * No error message has been printed yet.
+	 * Deprecated, migrate to VPR_UNDEF_MSG instead.
+	 */
+	VPR_UNDEF_SILENT	= 0x0004,
 
-    /* Parsing succeeded.
-     * During evaluation, VARE_UNDEFERR was set and there was an undefined
-     * variable.
-     * An error message has already been printed. */
-    VPR_UNDEF_MSG	= VPR_UNDEF_SILENT | VPR_ANY_MSG,
+	/*
+	 * Parsing succeeded.
+	 * During evaluation, VARE_UNDEFERR was set and there was an undefined
+	 * variable.
+	 * An error message has already been printed.
+	 */
+	VPR_UNDEF_MSG	= VPR_UNDEF_SILENT | VPR_ANY_MSG,
 
-    /* Parsing succeeded.
-     * Evaluation failed.
-     * No error message has been printed yet.
-     * Deprecated, migrate to VPR_EVAL_MSG instead. */
-    VPR_EVAL_SILENT	= 0x0006,
+	/*
+	 * Parsing succeeded.
+	 * Evaluation failed.
+	 * No error message has been printed yet.
+	 * Deprecated, migrate to VPR_EVAL_MSG instead.
+	 */
+	VPR_EVAL_SILENT	= 0x0006,
 
-    /* Parsing succeeded.
-     * Evaluation failed.
-     * An error message has already been printed. */
-    VPR_EVAL_MSG	= VPR_EVAL_SILENT | VPR_ANY_MSG,
+	/*
+	 * Parsing succeeded.
+	 * Evaluation failed.
+	 * An error message has already been printed.
+	 */
+	VPR_EVAL_MSG	= VPR_EVAL_SILENT | VPR_ANY_MSG,
 
-    /* The exact error handling status is not known yet.
-     * Deprecated, migrate to VPR_OK or any VPE_*_MSG instead. */
-    VPR_UNKNOWN		= 0x0008
+	/*
+	 * The exact error handling status is not known yet.
+	 * Deprecated, migrate to VPR_OK or any VPE_*_MSG instead.
+	 */
+	VPR_UNKNOWN		= 0x0008
 } VarParseResult;
 
 typedef enum VarExportMode {
@@ -320,7 +342,9 @@ typedef enum VarExportMode {
 	VEM_LITERAL
 } VarExportMode;
 
+void Var_DeleteVar(const char *, GNode *);
 void Var_Delete(const char *, GNode *);
+void Var_Undef(char *);
 void Var_Set(const char *, const char *, GNode *);
 void Var_SetWithFlags(const char *, const char *, GNode *, VarSetFlags);
 void Var_Append(const char *, const char *, GNode *);
