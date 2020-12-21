@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.503 2020/12/19 22:33:11 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.509 2020/12/21 02:09:34 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -117,7 +117,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.503 2020/12/19 22:33:11 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.509 2020/12/21 02:09:34 rillig Exp $");
 
 /* types and constants */
 
@@ -614,8 +614,7 @@ static void
 PrintLocation(FILE *f, const char *fname, size_t lineno)
 {
 	char dirbuf[MAXPATHLEN + 1];
-	const char *dir, *base;
-	void *dir_freeIt, *base_freeIt;
+	FStr dir, base;
 
 	if (*fname == '/' || strcmp(fname, "(stdin)") == 0) {
 		(void)fprintf(f, "\"%s\" line %u: ", fname, (unsigned)lineno);
@@ -625,19 +624,21 @@ PrintLocation(FILE *f, const char *fname, size_t lineno)
 	/* Find out which makefile is the culprit.
 	 * We try ${.PARSEDIR} and apply realpath(3) if not absolute. */
 
-	dir = Var_Value(".PARSEDIR", VAR_GLOBAL, &dir_freeIt);
-	if (dir == NULL)
-		dir = ".";
-	if (*dir != '/')
-		dir = realpath(dir, dirbuf);
+	dir = Var_Value(".PARSEDIR", VAR_GLOBAL);
+	if (dir.str == NULL)
+		dir.str = ".";
+	if (dir.str[0] != '/')
+		dir.str = realpath(dir.str, dirbuf);
 
-	base = Var_Value(".PARSEFILE", VAR_GLOBAL, &base_freeIt);
-	if (base == NULL)
-		base = str_basename(fname);
+	base = Var_Value(".PARSEFILE", VAR_GLOBAL);
+	if (base.str == NULL)
+		base.str = str_basename(fname);
 
-	(void)fprintf(f, "\"%s/%s\" line %u: ", dir, base, (unsigned)lineno);
-	bmake_free(base_freeIt);
-	bmake_free(dir_freeIt);
+	(void)fprintf(f, "\"%s/%s\" line %u: ",
+	    dir.str, base.str, (unsigned)lineno);
+
+	FStr_Done(&base);
+	FStr_Done(&dir);
 }
 
 static void
@@ -1080,14 +1081,13 @@ ParseDependencyTargetWord(const char **pp, const char *lstart)
 			 * we wouldn't be here.
 			 */
 			const char *nested_p = cp;
-			const char *nested_val;
-			void *freeIt;
+			FStr nested_val;
 
 			/* XXX: Why VARE_WANTRES? */
 			(void)Var_Parse(&nested_p, VAR_CMDLINE,
-			    VARE_WANTRES | VARE_UNDEFERR, &nested_val, &freeIt);
+			    VARE_WANTRES | VARE_UNDEFERR, &nested_val);
 			/* TODO: handle errors */
-			free(freeIt);
+			FStr_Done(&nested_val);
 			cp += nested_p - cp;
 		} else
 			cp++;
@@ -1925,7 +1925,7 @@ VarCheckSyntax(VarAssignOp type, const char *uvalue, GNode *ctxt)
 
 static void
 VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
-		    const char **out_avalue, void **out_avalue_freeIt)
+		    FStr *out_avalue)
 {
 	const char *avalue;
 	char *evalue;
@@ -1955,35 +1955,34 @@ VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
 	avalue = evalue;
 	Var_Set(name, avalue, ctxt);
 
-	*out_avalue = avalue;
-	*out_avalue_freeIt = evalue;
+	*out_avalue = (FStr){ avalue, evalue };
 }
 
 static void
 VarAssign_EvalShell(const char *name, const char *uvalue, GNode *ctxt,
-		    const char **out_avalue, void **out_avalue_freeIt)
+		    FStr *out_avalue)
 {
-	const char *cmd, *errfmt;
+	FStr cmd;
+	const char *errfmt;
 	char *cmdOut;
-	void *cmd_freeIt = NULL;
 
-	cmd = uvalue;
-	if (strchr(cmd, '$') != NULL) {
-		char *ecmd;
-		(void)Var_Subst(cmd, VAR_CMDLINE, VARE_WANTRES | VARE_UNDEFERR,
-		    &ecmd);
+	cmd = FStr_InitRefer(uvalue);
+	if (strchr(cmd.str, '$') != NULL) {
+		char *expanded;
+		(void)Var_Subst(cmd.str, VAR_CMDLINE,
+		    VARE_WANTRES | VARE_UNDEFERR, &expanded);
 		/* TODO: handle errors */
-		cmd = cmd_freeIt = ecmd;
+		cmd = FStr_InitOwn(expanded);
 	}
 
-	cmdOut = Cmd_Exec(cmd, &errfmt);
+	cmdOut = Cmd_Exec(cmd.str, &errfmt);
 	Var_Set(name, cmdOut, ctxt);
-	*out_avalue = *out_avalue_freeIt = cmdOut;
+	*out_avalue = FStr_InitOwn(cmdOut);
 
 	if (errfmt != NULL)
-		Parse_Error(PARSE_WARNING, errfmt, cmd);
+		Parse_Error(PARSE_WARNING, errfmt, cmd.str);
 
-	free(cmd_freeIt);
+	FStr_Done(&cmd);
 }
 
 /* Perform a variable assignment.
@@ -1996,31 +1995,25 @@ VarAssign_EvalShell(const char *name, const char *uvalue, GNode *ctxt,
  * skipped if the operator is '?=' and the variable already exists. */
 static Boolean
 VarAssign_Eval(const char *name, VarAssignOp op, const char *uvalue,
-	       GNode *ctxt, const char **out_avalue, void **out_avalue_freeIt)
+	       GNode *ctxt, FStr *out_TRUE_avalue)
 {
-	const char *avalue = uvalue;
-	void *avalue_freeIt = NULL;
+	FStr avalue = FStr_InitRefer(uvalue);
 
 	if (op == VAR_APPEND)
 		Var_Append(name, uvalue, ctxt);
 	else if (op == VAR_SUBST)
-		VarAssign_EvalSubst(name, uvalue, ctxt, &avalue,
-		    &avalue_freeIt);
+		VarAssign_EvalSubst(name, uvalue, ctxt, &avalue);
 	else if (op == VAR_SHELL)
-		VarAssign_EvalShell(name, uvalue, ctxt, &avalue,
-		    &avalue_freeIt);
+		VarAssign_EvalShell(name, uvalue, ctxt, &avalue);
 	else {
-		if (op == VAR_DEFAULT && Var_Exists(name, ctxt)) {
-			*out_avalue_freeIt = NULL;
+		if (op == VAR_DEFAULT && Var_Exists(name, ctxt))
 			return FALSE;
-		}
 
 		/* Normal assignment -- just do it. */
 		Var_Set(name, uvalue, ctxt);
 	}
 
-	*out_avalue = avalue;
-	*out_avalue_freeIt = avalue_freeIt;
+	*out_TRUE_avalue = avalue;
 	return TRUE;
 }
 
@@ -2047,15 +2040,14 @@ VarAssignSpecial(const char *name, const char *avalue)
 void
 Parse_DoVar(VarAssign *var, GNode *ctxt)
 {
-	const char *avalue;	/* actual value (maybe expanded) */
-	void *avalue_freeIt;
+	FStr avalue;	/* actual value (maybe expanded) */
 
 	VarCheckSyntax(var->op, var->value, ctxt);
-	if (VarAssign_Eval(var->varname, var->op, var->value, ctxt,
-	    &avalue, &avalue_freeIt))
-		VarAssignSpecial(var->varname, avalue);
+	if (VarAssign_Eval(var->varname, var->op, var->value, ctxt, &avalue)) {
+		VarAssignSpecial(var->varname, avalue.str);
+		FStr_Done(&avalue);
+	}
 
-	free(avalue_freeIt);
 	free(var->varname);
 }
 
@@ -2405,10 +2397,9 @@ StrContainsWord(const char *str, const char *word)
 static Boolean
 VarContainsWord(const char *varname, const char *word)
 {
-	void *val_freeIt;
-	const char *val = Var_Value(varname, VAR_GLOBAL, &val_freeIt);
-	Boolean found = val != NULL && StrContainsWord(val, word);
-	bmake_free(val_freeIt);
+	FStr val = Var_Value(varname, VAR_GLOBAL);
+	Boolean found = val.str != NULL && StrContainsWord(val.str, word);
+	FStr_Done(&val);
 	return found;
 }
 
@@ -2733,7 +2724,7 @@ ParseRawLine(IFile *curFile, char **out_line, char **out_line_end,
  * with a single space.
  */
 static void
-UnescapeBackslash(char *const line, char *start)
+UnescapeBackslash(char *line, char *start)
 {
 	char *src = start;
 	char *dst = start;
