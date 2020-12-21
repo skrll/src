@@ -1,4 +1,4 @@
-/*	$NetBSD: cond.c,v 1.226 2020/12/14 22:17:11 rillig Exp $	*/
+/*	$NetBSD: cond.c,v 1.230 2020/12/20 14:32:13 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -94,7 +94,7 @@
 #include "dir.h"
 
 /*	"@(#)cond.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: cond.c,v 1.226 2020/12/14 22:17:11 rillig Exp $");
+MAKE_RCSID("$NetBSD: cond.c,v 1.230 2020/12/20 14:32:13 rillig Exp $");
 
 /*
  * The parsing of conditional expressions is based on this grammar:
@@ -247,16 +247,14 @@ ParseFuncArg(const char **pp, Boolean doEval, const char *func,
 			 * so we don't need to do it. Nor do we return an
 			 * error, though perhaps we should.
 			 */
-			void *nestedVal_freeIt;
 			VarEvalFlags eflags = doEval
 			    ? VARE_WANTRES | VARE_UNDEFERR
 			    : VARE_NONE;
-			const char *nestedVal;
-			(void)Var_Parse(&p, VAR_CMDLINE, eflags,
-					&nestedVal, &nestedVal_freeIt);
+			FStr nestedVal;
+			(void)Var_Parse(&p, VAR_CMDLINE, eflags, &nestedVal);
 			/* TODO: handle errors */
-			Buf_AddStr(&argBuf, nestedVal);
-			free(nestedVal_freeIt);
+			Buf_AddStr(&argBuf, nestedVal.str);
+			FStr_Done(&nestedVal);
 			continue;
 		}
 		if (ch == '(')
@@ -288,9 +286,9 @@ ParseFuncArg(const char **pp, Boolean doEval, const char *func,
 static Boolean
 FuncDefined(size_t argLen MAKE_ATTR_UNUSED, const char *arg)
 {
-	void *freeIt;
-	Boolean result = Var_Value(arg, VAR_CMDLINE, &freeIt) != NULL;
-	bmake_free(freeIt);
+	FStr value = Var_Value(arg, VAR_CMDLINE);
+	Boolean result = value.str != NULL;
+	FStr_Done(&value);
 	return result;
 }
 
@@ -392,12 +390,12 @@ is_separator(char ch)
  *	Sets out_freeIt.
  */
 /* coverity:[+alloc : arg-*4] */
-static const char *
+static void
 CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
-		  Boolean *out_quoted, void **out_freeIt)
+		  FStr *out_str, Boolean *out_quoted)
 {
 	Buffer buf;
-	const char *str;
+	FStr str;
 	Boolean atStart;
 	const char *nested_p;
 	Boolean quoted;
@@ -406,13 +404,13 @@ CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
 	VarParseResult parseResult;
 
 	Buf_Init(&buf);
-	str = NULL;
-	*out_freeIt = NULL;
+	str = FStr_InitRefer(NULL);
 	*out_quoted = quoted = par->p[0] == '"';
 	start = par->p;
 	if (quoted)
 		par->p++;
-	while (par->p[0] != '\0' && str == NULL) {
+
+	while (par->p[0] != '\0' && str.str == NULL) {
 		switch (par->p[0]) {
 		case '\\':
 			par->p++;
@@ -451,27 +449,22 @@ CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
 			nested_p = par->p;
 			atStart = nested_p == start;
 			parseResult = Var_Parse(&nested_p, VAR_CMDLINE, eflags,
-						&str,
-						out_freeIt);
+			    &str);
 			/* TODO: handle errors */
-			if (str == var_Error) {
+			if (str.str == var_Error) {
 				if (parseResult & VPR_ANY_MSG)
 					par->printedError = TRUE;
-				if (*out_freeIt != NULL) {
-					/*
-					 * XXX: Can there be any situation
-					 * in which a returned var_Error
-					 * requires freeIt?
-					 */
-					free(*out_freeIt);
-					*out_freeIt = NULL;
-				}
+				/*
+				 * XXX: Can there be any situation in which
+				 * a returned var_Error requires freeIt?
+				 */
+				FStr_Done(&str);
 				/*
 				 * Even if !doEval, we still report syntax
 				 * errors, which is what getting var_Error
 				 * back with !doEval means.
 				 */
-				str = NULL;
+				str = FStr_InitRefer(NULL);
 				goto cleanup;
 			}
 			par->p = nested_p;
@@ -485,12 +478,9 @@ CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
 			if (atStart && is_separator(par->p[0]))
 				goto cleanup;
 
-			Buf_AddStr(&buf, str);
-			if (*out_freeIt != NULL) {
-				free(*out_freeIt);
-				*out_freeIt = NULL;
-			}
-			str = NULL;	/* not finished yet */
+			Buf_AddStr(&buf, str.str);
+			FStr_Done(&str);
+			str = FStr_InitRefer(NULL); /* not finished yet */
 			continue;
 		default:
 			if (strictLHS && !quoted && *start != '$' &&
@@ -499,7 +489,7 @@ CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
 				 * The left-hand side must be quoted,
 				 * a variable reference or a number.
 				 */
-				str = NULL;
+				str = FStr_InitRefer(NULL);
 				goto cleanup;
 			}
 			Buf_AddByte(&buf, par->p[0]);
@@ -508,11 +498,10 @@ CondParser_String(CondParser *par, Boolean doEval, Boolean strictLHS,
 		}
 	}
 got_str:
-	*out_freeIt = Buf_GetAll(&buf, NULL);
-	str = *out_freeIt;
+	str = FStr_InitOwn(Buf_GetAll(&buf, NULL));
 cleanup:
 	Buf_Destroy(&buf, FALSE);
-	return str;
+	*out_str = str;
 }
 
 struct If {
@@ -638,17 +627,16 @@ static Token
 CondParser_Comparison(CondParser *par, Boolean doEval)
 {
 	Token t = TOK_ERROR;
-	const char *lhs, *op, *rhs;
-	void *lhs_freeIt, *rhs_freeIt;
+	FStr lhs, rhs;
+	const char *op;
 	Boolean lhsQuoted, rhsQuoted;
 
 	/*
 	 * Parse the variable spec and skip over it, saving its
 	 * value in lhs.
 	 */
-	lhs = CondParser_String(par, doEval, lhsStrict, &lhsQuoted,
-				&lhs_freeIt);
-	if (lhs == NULL)
+	CondParser_String(par, doEval, lhsStrict, &lhs, &lhsQuoted);
+	if (lhs.str == NULL)
 		goto done_lhs;
 
 	CondParser_SkipWhitespace(par);
@@ -666,7 +654,7 @@ CondParser_Comparison(CondParser *par, Boolean doEval)
 		break;
 	default:
 		/* Unknown operator, compare against an empty string or 0. */
-		t = ToToken(doEval && EvalNotEmpty(par, lhs, lhsQuoted));
+		t = ToToken(doEval && EvalNotEmpty(par, lhs.str, lhsQuoted));
 		goto done_lhs;
 	}
 
@@ -679,8 +667,8 @@ CondParser_Comparison(CondParser *par, Boolean doEval)
 		goto done_lhs;
 	}
 
-	rhs = CondParser_String(par, doEval, FALSE, &rhsQuoted, &rhs_freeIt);
-	if (rhs == NULL)
+	CondParser_String(par, doEval, FALSE, &rhs, &rhsQuoted);
+	if (rhs.str == NULL)
 		goto done_rhs;
 
 	if (!doEval) {
@@ -688,12 +676,12 @@ CondParser_Comparison(CondParser *par, Boolean doEval)
 		goto done_rhs;
 	}
 
-	t = EvalCompare(lhs, lhsQuoted, op, rhs, rhsQuoted);
+	t = EvalCompare(lhs.str, lhsQuoted, op, rhs.str, rhsQuoted);
 
 done_rhs:
-	free(rhs_freeIt);
+	FStr_Done(&rhs);
 done_lhs:
-	free(lhs_freeIt);
+	FStr_Done(&lhs);
 	return t;
 }
 
@@ -703,8 +691,7 @@ static size_t
 ParseEmptyArg(const char **pp, Boolean doEval,
 	      const char *func MAKE_ATTR_UNUSED, char **out_arg)
 {
-	void *val_freeIt;
-	const char *val;
+	FStr val;
 	size_t magic_res;
 
 	/* We do all the work here and return the result as the length */
@@ -712,12 +699,12 @@ ParseEmptyArg(const char **pp, Boolean doEval,
 
 	(*pp)--;		/* Make (*pp)[1] point to the '('. */
 	(void)Var_Parse(pp, VAR_CMDLINE, doEval ? VARE_WANTRES : VARE_NONE,
-			&val, &val_freeIt);
+	    &val);
 	/* TODO: handle errors */
 	/* If successful, *pp points beyond the closing ')' now. */
 
-	if (val == var_Error) {
-		free(val_freeIt);
+	if (val.str == var_Error) {
+		FStr_Done(&val);
 		return (size_t)-1;
 	}
 
@@ -725,14 +712,14 @@ ParseEmptyArg(const char **pp, Boolean doEval,
 	 * A variable is empty when it just contains spaces...
 	 * 4/15/92, christos
 	 */
-	cpp_skip_whitespace(&val);
+	cpp_skip_whitespace(&val.str);
 
 	/*
 	 * For consistency with the other functions we can't generate the
 	 * true/false here.
 	 */
-	magic_res = *val != '\0' ? 2 : 1;
-	free(val_freeIt);
+	magic_res = val.str[0] != '\0' ? 2 : 1;
+	FStr_Done(&val);
 	return magic_res;
 }
 
