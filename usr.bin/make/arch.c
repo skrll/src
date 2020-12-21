@@ -1,4 +1,4 @@
-/*	$NetBSD: arch.c,v 1.187 2020/12/06 18:13:17 rillig Exp $	*/
+/*	$NetBSD: arch.c,v 1.191 2020/12/20 13:46:27 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -125,7 +125,7 @@
 #include "config.h"
 
 /*	"@(#)arch.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: arch.c,v 1.187 2020/12/06 18:13:17 rillig Exp $");
+MAKE_RCSID("$NetBSD: arch.c,v 1.191 2020/12/20 13:46:27 rillig Exp $");
 
 typedef struct List ArchList;
 typedef struct ListNode ArchListNode;
@@ -186,33 +186,30 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 {
 	char *cp;		/* Pointer into line */
 	GNode *gn;		/* New node */
-	char *libName;		/* Library-part of specification */
-	char *libName_freeIt = NULL;
+	MFStr libName;		/* Library-part of specification */
 	char *memName;		/* Member-part of specification */
 	char saveChar;		/* Ending delimiter of member-name */
 	Boolean expandLibName;	/* Whether the parsed libName contains
 				 * variable expressions that need to be
 				 * expanded */
 
-	libName = *pp;
+	libName = MFStr_InitRefer(*pp);
 	expandLibName = FALSE;
 
-	for (cp = libName; *cp != '(' && *cp != '\0';) {
+	for (cp = libName.str; *cp != '(' && *cp != '\0';) {
 		if (*cp == '$') {
 			/* Expand nested variable expressions. */
 			/* XXX: This code can probably be shortened. */
 			const char *nested_p = cp;
-			void *result_freeIt;
-			const char *result;
+			FStr result;
 			Boolean isError;
 
 			/* XXX: is expanded twice: once here and once below */
 			(void)Var_Parse(&nested_p, ctxt,
-					VARE_WANTRES | VARE_UNDEFERR,
-					&result, &result_freeIt);
+					VARE_WANTRES | VARE_UNDEFERR, &result);
 			/* TODO: handle errors */
-			isError = result == var_Error;
-			free(result_freeIt);
+			isError = result.str == var_Error;
+			FStr_Done(&result);
 			if (isError)
 				return FALSE;
 
@@ -224,10 +221,11 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 
 	*cp++ = '\0';
 	if (expandLibName) {
-		(void)Var_Subst(libName, ctxt, VARE_WANTRES | VARE_UNDEFERR,
-				&libName);
+		char *expanded;
+		(void)Var_Subst(libName.str, ctxt,
+		    VARE_WANTRES | VARE_UNDEFERR, &expanded);
 		/* TODO: handle errors */
-		libName_freeIt = libName;
+		libName = MFStr_InitOwn(expanded);
 	}
 
 
@@ -246,17 +244,16 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 			if (*cp == '$') {
 				/* Expand nested variable expressions. */
 				/* XXX: This code can probably be shortened. */
-				void *freeIt;
-				const char *result;
+				FStr result;
 				Boolean isError;
 				const char *nested_p = cp;
 
 				(void)Var_Parse(&nested_p, ctxt,
 						VARE_WANTRES | VARE_UNDEFERR,
-						&result, &freeIt);
+						&result);
 				/* TODO: handle errors */
-				isError = result == var_Error;
-				free(freeIt);
+				isError = result.str == var_Error;
+				FStr_Done(&result);
 
 				if (isError)
 					return FALSE;
@@ -317,7 +314,7 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 			 * Now form an archive spec and recurse to deal with
 			 * nested variables and multi-word variable values.
 			 */
-			fullName = str_concat4(libName, "(", memName, ")");
+			fullName = str_concat4(libName.str, "(", memName, ")");
 			p = fullName;
 
 			if (strchr(memName, '$') != NULL &&
@@ -347,7 +344,7 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 
 			while (!Lst_IsEmpty(&members)) {
 				char *member = Lst_Dequeue(&members);
-				char *fullname = str_concat4(libName, "(",
+				char *fullname = str_concat4(libName.str, "(",
 							     member, ")");
 				free(member);
 
@@ -360,7 +357,7 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 			Lst_Done(&members);
 
 		} else {
-			char *fullname = str_concat4(libName, "(", memName,
+			char *fullname = str_concat4(libName.str, "(", memName,
 						     ")");
 			gn = Targ_GetNode(fullname);
 			free(fullname);
@@ -381,7 +378,7 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 		*cp = saveChar;
 	}
 
-	free(libName_freeIt);
+	MFStr_Done(&libName);
 
 	cp++;			/* skip the ')' */
 	/* We promised that pp would be set up at the next non-space. */
@@ -420,9 +417,7 @@ ArchStatMember(const char *archive, const char *member, Boolean addToCache)
 	 * Because of space constraints and similar things, files are archived
 	 * using their basename, not the entire path.
 	 */
-	const char *lastSlash = strrchr(member, '/');
-	if (lastSlash != NULL)
-		member = lastSlash + 1;
+	member = str_basename(member);
 
 	for (ln = archives.first; ln != NULL; ln = ln->next) {
 		const Arch *a = ln->datum;
@@ -719,7 +714,6 @@ ArchFindMember(const char *archive, const char *member, struct ar_hdr *out_arh,
 	int size;		/* Size of archive member */
 	char magic[SARMAG];
 	size_t len;
-	const char *lastSlash;
 
 	arch = fopen(archive, mode);
 	if (arch == NULL)
@@ -739,9 +733,7 @@ ArchFindMember(const char *archive, const char *member, struct ar_hdr *out_arh,
 	 * Because of space constraints and similar things, files are archived
 	 * using their basename, not the entire path.
 	 */
-	lastSlash = strrchr(member, '/');
-	if (lastSlash != NULL)
-		member = lastSlash + 1;
+	member = str_basename(member);
 
 	len = strlen(member);
 
@@ -908,7 +900,7 @@ Arch_UpdateMTime(GNode *gn)
 		gn->mtime = 0;
 }
 
-/* Given a non-existent archive member's node, update gn->mtime from its
+/* Given a nonexistent archive member's node, update gn->mtime from its
  * archived form, if it exists. */
 void
 Arch_UpdateMemberMTime(GNode *gn)

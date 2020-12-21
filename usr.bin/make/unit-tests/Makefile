@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.248 2020/12/13 05:13:38 sjg Exp $
+# $NetBSD: Makefile,v 1.253 2020/12/20 19:37:23 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -46,6 +46,7 @@ TESTS+=		cmd-interrupt
 TESTS+=		cmdline
 TESTS+=		cmdline-undefined
 TESTS+=		comment
+TESTS+=		compat-error
 TESTS+=		cond-cmp-numeric
 TESTS+=		cond-cmp-numeric-eq
 TESTS+=		cond-cmp-numeric-ge
@@ -55,6 +56,7 @@ TESTS+=		cond-cmp-numeric-lt
 TESTS+=		cond-cmp-numeric-ne
 TESTS+=		cond-cmp-string
 TESTS+=		cond-cmp-unary
+TESTS+=		cond-eof
 TESTS+=		cond-func
 TESTS+=		cond-func-commands
 TESTS+=		cond-func-defined
@@ -157,6 +159,8 @@ TESTS+=		directive-export-gmake
 TESTS+=		directive-export-literal
 TESTS+=		directive-for
 TESTS+=		directive-for-generating-endif
+TESTS+=		directive-for-lines
+TESTS+=		directive-for-null
 TESTS+=		directive-hyphen-include
 TESTS+=		directive-if
 TESTS+=		directive-if-nested
@@ -498,7 +502,6 @@ SED_CMDS.var-op-shell+=	\
 	-e 's,^${.SHELL:T}: [ 0-9:]*,,' \
 	-e '/command/s,No such.*,not found,'
 SED_CMDS.vardebug+=	-e 's,${.SHELL},</path/to/shell>,'
-SED_CMDS.varmod-edge+=	-e 's, line [0-9]*:, line omitted:,'
 SED_CMDS.varmod-gmtime+=	-e 's,Tue Jan 19 03:14:08 2038,<normalized>,'
 SED_CMDS.varmod-gmtime+=	${:D FreeBSD i386 still has 32-bit time_t. }
 SED_CMDS.varmod-gmtime+=	-e 's,Fri Dec 13 20:45:52 1901,<normalized>,'

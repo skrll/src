@@ -1,4 +1,4 @@
-/*	$NetBSD: suff.c,v 1.329 2020/12/07 01:27:08 rillig Exp $	*/
+/*	$NetBSD: suff.c,v 1.332 2020/12/20 13:38:43 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -114,7 +114,7 @@
 #include "dir.h"
 
 /*	"@(#)suff.c	8.4 (Berkeley) 3/21/94"	*/
-MAKE_RCSID("$NetBSD: suff.c,v 1.329 2020/12/07 01:27:08 rillig Exp $");
+MAKE_RCSID("$NetBSD: suff.c,v 1.332 2020/12/20 13:38:43 rillig Exp $");
 
 typedef List SuffixList;
 typedef ListNode SuffixListNode;
@@ -1171,12 +1171,13 @@ FindCmds(Candidate *targ, CandidateSearcher *cs)
 	size_t prefLen;		/* The length of the defined prefix */
 	Suffix *suff;		/* Suffix on matching beastie */
 	Candidate *ret;		/* Return value */
-	char *cp;
 
 	tgn = targ->node;
 	prefLen = strlen(targ->prefix);
 
 	for (gln = tgn->children.first; gln != NULL; gln = gln->next) {
+		const char *cp;
+
 		sgn = gln->datum;
 
 		if (sgn->type & OP_OPTIONAL && Lst_IsEmpty(&tgn->commands)) {
@@ -1190,12 +1191,7 @@ FindCmds(Candidate *targ, CandidateSearcher *cs)
 			continue;
 		}
 
-		cp = strrchr(sgn->name, '/');
-		if (cp == NULL) {
-			cp = sgn->name;
-		} else {
-			cp++;
-		}
+		cp = str_basename(sgn->name);
 		if (strncmp(cp, targ->prefix, prefLen) != 0)
 			continue;
 		/* The node matches the prefix, see if it has a known suffix. */
@@ -1304,13 +1300,11 @@ ExpandChildrenRegular(char *cp, GNode *pgn, GNodeList *members)
 		} else if (*cp == '$') {
 			/* Skip over the variable expression. */
 			const char *nested_p = cp;
-			const char *junk;
-			void *freeIt;
+			FStr junk;
 
-			(void)Var_Parse(&nested_p, pgn,
-			    VARE_NONE, &junk, &freeIt);
+			(void)Var_Parse(&nested_p, pgn, VARE_NONE, &junk);
 			/* TODO: handle errors */
-			if (junk == var_Error) {
+			if (junk.str == var_Error) {
 				Parse_Error(PARSE_FATAL,
 				    "Malformed variable expression at \"%s\"",
 				    cp);
@@ -1319,7 +1313,7 @@ ExpandChildrenRegular(char *cp, GNode *pgn, GNodeList *members)
 				cp += nested_p - cp;
 			}
 
-			free(freeIt);
+			FStr_Done(&junk);
 		} else if (cp[0] == '\\' && cp[1] != '\0') {
 			/* Escaped something -- skip over it. */
 			/*
@@ -1782,36 +1776,22 @@ FindDepsRegularPath(GNode *gn, Candidate *targ)
 		 */
 		size_t savep = strlen(gn->path) - targ->suff->nameLen;
 		char savec;
-		char *ptr;
 
 		Suffix_Reassign(&gn->suffix, targ->suff);
 
 		savec = gn->path[savep];
 		gn->path[savep] = '\0';
 
-		if ((ptr = strrchr(gn->path, '/')) != NULL)
-			ptr++;
-		else
-			ptr = gn->path;
-
-		Var_Set(PREFIX, ptr, gn);
+		Var_Set(PREFIX, str_basename(gn->path), gn);
 
 		gn->path[savep] = savec;
 	} else {
-		char *ptr;
-
 		/*
 		 * The .PREFIX gets the full path if the target has no
 		 * known suffix.
 		 */
 		Suffix_Unassign(&gn->suffix);
-
-		if ((ptr = strrchr(gn->path, '/')) != NULL)
-			ptr++;
-		else
-			ptr = gn->path;
-
-		Var_Set(PREFIX, ptr, gn);
+		Var_Set(PREFIX, str_basename(gn->path), gn);
 	}
 }
 
@@ -2030,7 +2010,7 @@ CandidateSearcher_CleanUp(CandidateSearcher *cs)
  * is set for the given node and all its implied children.
  *
  * The path found by this target is the shortest path in the transformation
- * graph, which may pass through non-existent targets, to an existing target.
+ * graph, which may pass through nonexistent targets, to an existing target.
  * The search continues on all paths from the root suffix until a file is
  * found. I.e. if there's a path .o -> .c -> .l -> .l,v from the root and the
  * .l,v file exists but the .c and .l files don't, the search will branch out
