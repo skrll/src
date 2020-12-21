@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.175 2020/12/19 20:47:24 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.180 2020/12/20 21:07:32 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -86,7 +86,7 @@ Boolean Arch_LibOODate(GNode *);
 Boolean Arch_IsLib(GNode *);
 
 /* compat.c */
-int Compat_RunCommand(const char *, GNode *);
+int Compat_RunCommand(const char *, GNode *, StringListNode *);
 void Compat_Run(GNodeList *);
 void Compat_Make(GNode *, GNode *);
 
@@ -121,7 +121,6 @@ void JobReapChild(pid_t, int, Boolean);
 
 /* main.c */
 void Main_ParseArgLine(const char *);
-void MakeMode(const char *);
 char *Cmd_Exec(const char *, const char **);
 void Error(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
 void Fatal(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2) MAKE_ATTR_DEAD;
@@ -164,11 +163,64 @@ void Parse_MainName(GNodeList *);
 int Parse_GetFatals(void);
 
 /* str.c */
+
+/* A read-only string that may need to be freed after use. */
+typedef struct FStr {
+	const char *str;
+	void *freeIt;
+} FStr;
+
+/* A modifiable string that may need to be freed after use. */
+typedef struct MFStr {
+	char *str;
+	void *freeIt;
+} MFStr;
+
 typedef struct Words {
 	char **words;
 	size_t len;
 	void *freeIt;
 } Words;
+
+/* Return a string that is the sole owner of str. */
+MAKE_INLINE FStr
+FStr_InitOwn(char *str)
+{
+	return (FStr){ str, str };
+}
+
+/* Return a string that refers to the shared str. */
+MAKE_INLINE FStr
+FStr_InitRefer(const char *str)
+{
+	return (FStr){ str, NULL };
+}
+
+MAKE_INLINE void
+FStr_Done(FStr *fstr)
+{
+	free(fstr->freeIt);
+}
+
+/* Return a string that is the sole owner of str. */
+MAKE_INLINE MFStr
+MFStr_InitOwn(char *str)
+{
+	return (MFStr){ str, str };
+}
+
+/* Return a string that refers to the shared str. */
+MAKE_INLINE MFStr
+MFStr_InitRefer(char *str)
+{
+	return (MFStr){ str, NULL };
+}
+
+MAKE_INLINE void
+MFStr_Done(MFStr *mfstr)
+{
+	free(mfstr->freeIt);
+}
 
 Words Str_Words(const char *, Boolean);
 MAKE_INLINE void
@@ -349,10 +401,9 @@ void Var_Set(const char *, const char *, GNode *);
 void Var_SetWithFlags(const char *, const char *, GNode *, VarSetFlags);
 void Var_Append(const char *, const char *, GNode *);
 Boolean Var_Exists(const char *, GNode *);
-const char *Var_Value(const char *, GNode *, void **);
+FStr Var_Value(const char *, GNode *);
 const char *Var_ValueDirect(const char *, GNode *);
-VarParseResult Var_Parse(const char **, GNode *, VarEvalFlags,
-			 const char **, void **);
+VarParseResult Var_Parse(const char **, GNode *, VarEvalFlags, FStr *);
 VarParseResult Var_Subst(const char *, GNode *, VarEvalFlags, char **);
 void Var_Stats(void);
 void Var_Dump(GNode *);
