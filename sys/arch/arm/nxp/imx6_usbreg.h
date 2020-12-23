@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_usbreg.h,v 1.2 2019/07/24 11:20:55 hkenken Exp $	*/
+/*	$NetBSD: imx6_usbreg.h,v 1.1 2020/12/23 14:42:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 2014 Ryo Shimizu <ryo@nerv.org>

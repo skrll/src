@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_ocotpreg.h,v 1.1 2014/09/25 05:05:28 ryo Exp $	*/
+/*	$NetBSD: imx6_ocotpreg.h,v 1.1 2020/12/23 14:42:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 2014 Ryo Shimizu <ryo@nerv.org>

@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_gpio.c,v 1.5 2020/01/15 01:09:56 jmcneill Exp $	*/
+/*	$NetBSD: imx_gpio.c,v 1.1 2020/12/23 14:42:38 skrll Exp $	*/
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
  * Written by Hashimoto Kenichi for Genetec Corporation.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_gpio.c,v 1.5 2020/01/15 01:09:56 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx_gpio.c,v 1.1 2020/12/23 14:42:38 skrll Exp $");
 
 #include "opt_fdt.h"
 #include "gpio.h"

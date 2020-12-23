@@ -1,4 +1,4 @@
-/*	$NetBSD: imxwdog.c,v 1.3 2014/09/25 05:05:28 ryo Exp $	*/
+/*	$NetBSD: imxwdog.c,v 1.1 2020/12/23 14:42:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 2010  Genetec Corporation.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imxwdog.c,v 1.3 2014/09/25 05:05:28 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imxwdog.c,v 1.1 2020/12/23 14:42:38 skrll Exp $");
 
 #include "opt_imx.h"
 

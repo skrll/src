@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_pcie.c,v 1.8 2020/07/07 03:38:45 thorpej Exp $	*/
+/*	$NetBSD: imx6_pcie.c,v 1.1 2020/12/23 14:42:38 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_pcie.c,v 1.8 2020/07/07 03:38:45 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx6_pcie.c,v 1.1 2020/12/23 14:42:38 skrll Exp $");
 
 #include "opt_pci.h"
 #include "opt_fdt.h"

@@ -1,4 +1,4 @@
-/* $NetBSD: imx8mq_usbphy.c,v 1.1 2020/01/15 01:09:56 jmcneill Exp $ */
+/* $NetBSD: imx8mq_usbphy.c,v 1.1 2020/12/23 14:42:38 skrll Exp $ */
 
 /*-
  * Copyright (c) 2020 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: imx8mq_usbphy.c,v 1.1 2020/01/15 01:09:56 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx8mq_usbphy.c,v 1.1 2020/12/23 14:42:38 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

@@ -1,4 +1,4 @@
-#	$NetBSD: files.generic,v 1.10 2020/05/20 09:18:25 hkenken Exp $
+#	$NetBSD: files.generic,v 1.11 2020/12/23 14:42:38 skrll Exp $
 #
 # A generic (aarch32) kernel configuration info
 #

@@ -1,4 +1,4 @@
-/* $NetBSD: imx_ccm.c,v 1.2 2020/06/10 17:57:50 jmcneill Exp $ */
+/* $NetBSD: imx_ccm.c,v 1.1 2020/12/23 14:42:38 skrll Exp $ */
 
 /*-
  * Copyright (c) 2020 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx_ccm.c,v 1.2 2020/06/10 17:57:50 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx_ccm.c,v 1.1 2020/12/23 14:42:38 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

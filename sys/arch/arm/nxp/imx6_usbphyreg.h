@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_usbphyreg.h,v 1.1 2017/11/09 05:57:23 hkenken Exp $	*/
+/*	$NetBSD: imx6_usbphyreg.h,v 1.1 2020/12/23 14:42:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017  Genetec Corporation.  All rights reserved.

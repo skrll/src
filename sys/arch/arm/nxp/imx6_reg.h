@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_reg.h,v 1.10 2019/07/24 11:58:00 hkenken Exp $	*/
+/*	$NetBSD: imx6_reg.h,v 1.1 2020/12/23 14:42:38 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.

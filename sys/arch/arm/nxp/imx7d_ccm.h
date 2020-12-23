@@ -1,4 +1,4 @@
-/* $NetBSD: imx7d_ccm.h,v 1.1 2020/06/10 17:57:50 jmcneill Exp $ */
+/* $NetBSD: imx7d_ccm.h,v 1.1 2020/12/23 14:42:38 skrll Exp $ */
 
 /*-
  * Copyright (c) 2020 Jared McNeill <jmcneill@invisible.ca>

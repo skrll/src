@@ -1,4 +1,4 @@
-/*	$NetBSD: imx_ahcisata.c,v 1.3 2019/10/04 06:49:40 hkenken Exp $	*/
+/*	$NetBSD: imx_ahcisata.c,v 1.1 2020/12/23 14:42:38 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx_ahcisata.c,v 1.3 2019/10/04 06:49:40 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx_ahcisata.c,v 1.1 2020/12/23 14:42:38 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

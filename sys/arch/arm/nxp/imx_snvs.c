@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_snvs.c,v 1.2 2016/05/17 06:44:45 ryo Exp $	*/
+/*	$NetBSD: imx_snvs.c,v 1.1 2020/12/23 14:42:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 2014 Ryo Shimizu <ryo@nerv.org>
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_snvs.c,v 1.2 2016/05/17 06:44:45 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx_snvs.c,v 1.1 2020/12/23 14:42:38 skrll Exp $");
 
 #include <sys/bus.h>
 #include <sys/device.h>

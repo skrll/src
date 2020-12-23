@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_ocotp.c,v 1.1 2014/09/25 05:05:28 ryo Exp $	*/
+/*	$NetBSD: imx6_ocotp.c,v 1.1 2020/12/23 14:42:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 2014 Ryo Shimizu <ryo@nerv.org>
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_ocotp.c,v 1.1 2014/09/25 05:05:28 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx6_ocotp.c,v 1.1 2020/12/23 14:42:38 skrll Exp $");
 
 #include <sys/bus.h>
 #include <sys/device.h>

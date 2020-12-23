@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_pwm.c,v 1.1 2020/05/20 09:18:25 hkenken Exp $	*/
+/*	$NetBSD: imx6_pwm.c,v 1.1 2020/12/23 14:42:38 skrll Exp $	*/
 /*-
  * Copyright (c) 2019  Genetec Corporation.  All rights reserved.
  * Written by Hashimoto Kenichi for Genetec Corporation.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_pwm.c,v 1.1 2020/05/20 09:18:25 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx6_pwm.c,v 1.1 2020/12/23 14:42:38 skrll Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>

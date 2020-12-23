@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_ccmreg.h,v 1.11 2019/07/24 11:58:00 hkenken Exp $	*/
+/*	$NetBSD: imx6_ccmreg.h,v 1.1 2020/12/23 14:42:38 skrll Exp $	*/
 
 /*
  * Copyright (c) 2014 Ryo Shimizu <ryo@nerv.org>
