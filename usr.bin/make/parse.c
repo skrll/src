@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.509 2020/12/21 02:09:34 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.514 2020/12/22 08:51:30 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -117,7 +117,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.509 2020/12/21 02:09:34 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.514 2020/12/22 08:51:30 rillig Exp $");
 
 /* types and constants */
 
@@ -466,13 +466,14 @@ loadedfile_mmap(struct loadedfile *lf, int fd)
 	if (lf->buf == MAP_FAILED)
 		return FALSE;
 
-	if (lf->len == lf->maplen && lf->buf[lf->len - 1] != '\n') {
-		char *b = bmake_malloc(lf->len + 1);
-		b[lf->len] = '\n';
-		memcpy(b, lf->buf, lf->len++);
-		munmap(lf->buf, lf->maplen);
-		lf->maplen = 0;
-		lf->buf = b;
+	if (lf->len > 0 && lf->buf[lf->len - 1] != '\n') {
+		if (lf->len == lf->maplen) {
+			char *b = bmake_malloc(lf->len + 1);
+			memcpy(b, lf->buf, lf->len);
+			munmap(lf->buf, lf->maplen);
+			lf->maplen = 0;
+		}
+		lf->buf[lf->len++] = '\n';
 	}
 
 	return TRUE;
@@ -2687,10 +2688,18 @@ ParseRawLine(IFile *curFile, char **out_line, char **out_line_end,
 		if (ch == '\\') {
 			if (firstBackslash == NULL)
 				firstBackslash = p;
-			if (p[1] == '\n')
+			if (p[1] == '\n') {
 				curFile->lineno++;
+				if (p + 2 == curFile->buf_end) {
+					line_end = p;
+					*line_end = '\n';
+					p += 2;
+					continue;
+				}
+			}
 			p += 2;
 			line_end = p;
+			assert(p <= curFile->buf_end);
 			continue;
 		}
 
@@ -2831,6 +2840,7 @@ ParseGetLine(GetLineMode mode)
 		}
 
 		/* We now have a line of data */
+		assert(ch_isspace(*line_end));
 		*line_end = '\0';
 
 		if (mode == GLM_FOR_BODY)
@@ -2842,10 +2852,8 @@ ParseGetLine(GetLineMode mode)
 	}
 
 	/* Brutally ignore anything after a non-escaped '#' in non-commands. */
-	if (firstComment != NULL && line[0] != '\t') {
-		line_end = firstComment;
-		*line_end = '\0';
-	}
+	if (firstComment != NULL && line[0] != '\t')
+		*firstComment = '\0';
 
 	/* If we didn't see a '\\' then the in-situ data is fine. */
 	if (firstBackslash == NULL)
