@@ -306,7 +306,7 @@ ata_queue_alloc_slot(struct ata_channel *chp, uint8_t *c_slot,
 	KASSERT(mutex_owned(&chp->ch_lock));
 	KASSERT(chq->queue_active < chq->queue_openings);
 
-	ATADEBUG_PRINT(("%s: channel %d qavail 0x%x qact %d",
+	ATADEBUG_PRINT(("%s: channel %d qavail 0x%x qact %d\n",
 	    __func__, chp->ch_channel,
 	    chq->queue_xfers_avail, chq->queue_active),
 	    DEBUG_XFERS);
