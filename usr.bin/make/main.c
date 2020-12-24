@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.500 2020/12/20 14:39:46 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.502 2020/12/23 14:13:49 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -109,7 +109,7 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.500 2020/12/20 14:39:46 rillig Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.502 2020/12/23 14:13:49 rillig Exp $");
 #if defined(MAKE_NATIVE) && !defined(lint)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
@@ -288,7 +288,7 @@ parse_debug_options(const char *argvalue)
 			debug |= DEBUG_JOB;
 			break;
 		case 'L':
-			opts.lint = TRUE;
+			opts.strict = TRUE;
 			break;
 		case 'l':
 			debug |= DEBUG_LOUD;
@@ -1114,7 +1114,7 @@ CmdOpts_Init(void)
 	opts.compatMake = FALSE;
 	opts.debug = DEBUG_NONE;
 	/* opts.debug_file has been initialized earlier */
-	opts.lint = FALSE;
+	opts.strict = FALSE;
 	opts.debugVflag = FALSE;
 	opts.checkEnvFirst = FALSE;
 	Lst_Init(&opts.makefiles);
@@ -1147,10 +1147,11 @@ InitVarMake(const char *argv0)
 
 	if (argv0[0] != '/' && strchr(argv0, '/') != NULL) {
 		char pathbuf[MAXPATHLEN];
-		const char *abs = cached_realpath(argv0, pathbuf);
+		const char *abspath = cached_realpath(argv0, pathbuf);
 		struct stat st;
-		if (abs != NULL && abs[0] == '/' && stat(make, &st) == 0)
-			make = abs;
+		if (abspath != NULL && abspath[0] == '/' &&
+		    stat(make, &st) == 0)
+			make = abspath;
 	}
 
 	Var_Set("MAKE", make, VAR_GLOBAL);
@@ -1645,7 +1646,7 @@ main_CleanUp(void)
 static int
 main_Exit(Boolean outOfDate)
 {
-	if (opts.lint && (main_errors > 0 || Parse_GetFatals() > 0))
+	if (opts.strict && (main_errors > 0 || Parse_GetFatals() > 0))
 		return 2;	/* Not 1 so -q can distinguish error */
 	return outOfDate ? 1 : 0;
 }
