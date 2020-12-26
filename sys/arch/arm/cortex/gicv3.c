@@ -521,8 +521,10 @@ gicv3_lpi_unblock_irqs(struct pic_softc *pic, size_t irqbase, uint32_t mask)
 
 	while ((bit = ffs(mask)) != 0) {
 		sc->sc_lpiconf.base[irqbase + bit - 1] |= GIC_LPICONF_Enable;
-		if (sc->sc_lpiconf_flush)
+		if (sc->sc_lpiconf_flush) {
 			cpu_dcache_wb_range((vaddr_t)&sc->sc_lpiconf.base[irqbase + bit - 1], 1);
+			dsb(sy);
+		}
 		mask &= ~__BIT(bit - 1);
 	}
 
@@ -538,8 +540,10 @@ gicv3_lpi_block_irqs(struct pic_softc *pic, size_t irqbase, uint32_t mask)
 
 	while ((bit = ffs(mask)) != 0) {
 		sc->sc_lpiconf.base[irqbase + bit - 1] &= ~GIC_LPICONF_Enable;
-		if (sc->sc_lpiconf_flush)
+		if (sc->sc_lpiconf_flush) {
 			cpu_dcache_wb_range((vaddr_t)&sc->sc_lpiconf.base[irqbase + bit - 1], 1);
+			dsb(sy);
+		}
 		mask &= ~__BIT(bit - 1);
 	}
 
@@ -554,9 +558,10 @@ gicv3_lpi_establish_irq(struct pic_softc *pic, struct intrsource *is)
 
 	sc->sc_lpiconf.base[is->is_irq] = IPL_TO_PRIORITY(sc, is->is_ipl) | GIC_LPICONF_Res1;
 
-	if (sc->sc_lpiconf_flush)
+	if (sc->sc_lpiconf_flush) {
 		cpu_dcache_wb_range((vaddr_t)&sc->sc_lpiconf.base[is->is_irq], 1);
-	else
+		dsb(sy);
+	} else
 		dsb(ishst);
 }
 
