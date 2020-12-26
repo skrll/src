@@ -115,7 +115,7 @@ struct ahci_softc {
     (sc)->sc_ahcih, (reg))
 #define AHCI_WRITE(sc, reg, val) bus_space_write_4((sc)->sc_ahcit, \
     (sc)->sc_ahcih, (reg), (val))
-    
+
 #define AHCI_CH2SC(chp)		(struct ahci_softc *)((chp)->ch_atac)
 
 void ahci_attach(struct ahci_softc *);

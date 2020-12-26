@@ -243,7 +243,7 @@ ata_timeout(void *v)
 	/*
 	 * If there is a timeout, means the last enqueued command
 	 * timed out, and thus all commands timed out.
-	 * XXX locking 
+	 * XXX locking
 	 */
 	TAILQ_FOREACH_SAFE(xfer, &chq->active_xfers, c_activechain, nxfer) {
 		ATADEBUG_PRINT(("%s: slot %d\n", __func__, xfer->c_slot),
@@ -346,7 +346,7 @@ ata_queue_hold(struct ata_channel *chp)
 	struct ata_queue *chq = chp->ch_queue;
 
 	KASSERT(mutex_owned(&chp->ch_lock));
-	
+
 	chq->queue_hold |= chq->active_xfers_used;
 	chq->active_xfers_used = 0;
 }

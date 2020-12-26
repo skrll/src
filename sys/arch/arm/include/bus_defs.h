@@ -157,7 +157,7 @@ struct bus_space {
 			    bus_size_t, uint32_t *, bus_size_t);
 	void		(*bs_rm_8)(void *, bus_space_handle_t,
 			    bus_size_t, uint64_t *, bus_size_t);
-					
+
 	/* read region */
 	void		(*bs_rr_1)(void *, bus_space_handle_t,
 			    bus_size_t, uint8_t *, bus_size_t);

@@ -813,7 +813,7 @@ gicv3_quirk_rockchip_rk3399(struct gicv3_softc *sc)
 	/*
 	 * If we see fewer PMR bits than IPRIORITYRn bits here, it means
 	 * we have a secure view of IPRIORITYRn (this is not supposed to
-	 * happen!). 
+	 * happen!).
 	 */
 	if (pmrbits < pribits) {
 		aprint_verbose_dev(sc->sc_dev,

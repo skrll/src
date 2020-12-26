@@ -255,7 +255,7 @@ pci_intr_alloc(const struct pci_attach_args *pa, pci_intr_handle_t **ihps, int *
 	return error;
 }
 
-void 
+void
 pci_intr_release(pci_chipset_tag_t pc, pci_intr_handle_t *pih, int count)
 {
 	struct arm_pci_msi *msi = NULL;
