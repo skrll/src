@@ -82,7 +82,7 @@ options 	EXEC_ELF32
 options 	EFI_RUNTIME
 
 
-options 	PCI_CONFIG_DUMP
+#options 	PCI_CONFIG_DUMP
 
 # Device tree support
 armfdt0		at root
