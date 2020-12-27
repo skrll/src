@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.235 2020/12/18 18:17:45 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.239 2020/12/23 14:05:32 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -581,7 +581,7 @@ typedef enum DebugFlags {
 
 #define CONCAT(a, b) a##b
 
-#define DEBUG(module) (opts.debug & CONCAT(DEBUG_,module))
+#define DEBUG(module) ((opts.debug & CONCAT(DEBUG_, module)) != 0)
 
 void debug_printf(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
 
@@ -589,7 +589,7 @@ void debug_printf(const char *, ...) MAKE_ATTR_PRINTFLIKE(1, 2);
 	do { \
 		if (DEBUG(module)) \
 			debug_printf args; \
-	} while (0)
+	} while (/*CONSTCOND*/ 0)
 
 #define DEBUG0(module, text) \
 	DEBUG_IMPL(module, ("%s", text))
@@ -626,7 +626,7 @@ typedef struct CmdOpts {
 	 *
 	 * Runs make in strict mode, with additional checks and better error
 	 * handling. */
-	Boolean lint;
+	Boolean strict;
 
 	/* -dV: for the -V option, print unexpanded variable values */
 	Boolean debugVflag;
@@ -831,19 +831,17 @@ pp_skip_hspace(char **pp)
 		(*pp)++;
 }
 
-#ifdef MAKE_NATIVE
+#if defined(lint)
+#  define MAKE_RCSID(id) extern void do_not_define_rcsid(void)
+#elif defined(MAKE_NATIVE)
 #  include <sys/cdefs.h>
-#  ifndef lint
-#    define MAKE_RCSID(id) __RCSID(id)
-#  endif
-#elif defined(MAKE_ALL_IN_ONE)
-#  if defined(__COUNTER__)
-#    define MAKE_RCSID_CONCAT(x, y) CONCAT(x, y)
-#    define MAKE_RCSID(id) static volatile char \
+#  define MAKE_RCSID(id) __RCSID(id)
+#elif defined(MAKE_ALL_IN_ONE) && defined(__COUNTER__)
+#  define MAKE_RCSID_CONCAT(x, y) CONCAT(x, y)
+#  define MAKE_RCSID(id) static volatile char \
 	MAKE_RCSID_CONCAT(rcsid_, __COUNTER__)[] = id
-#  else
-#    define MAKE_RCSID(id) extern void do_not_define_rcsid(void)
-#  endif
+#elif defined(MAKE_ALL_IN_ONE)
+#  define MAKE_RCSID(id) extern void do_not_define_rcsid(void)
 #else
 #  define MAKE_RCSID(id) static volatile char rcsid[] = id
 #endif

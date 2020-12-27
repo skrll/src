@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.509 2020/12/21 02:09:34 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.517 2020/12/27 05:06:17 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -117,7 +117,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.509 2020/12/21 02:09:34 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.517 2020/12/27 05:06:17 rillig Exp $");
 
 /* types and constants */
 
@@ -466,13 +466,14 @@ loadedfile_mmap(struct loadedfile *lf, int fd)
 	if (lf->buf == MAP_FAILED)
 		return FALSE;
 
-	if (lf->len == lf->maplen && lf->buf[lf->len - 1] != '\n') {
-		char *b = bmake_malloc(lf->len + 1);
-		b[lf->len] = '\n';
-		memcpy(b, lf->buf, lf->len++);
-		munmap(lf->buf, lf->maplen);
-		lf->maplen = 0;
-		lf->buf = b;
+	if (lf->len > 0 && lf->buf[lf->len - 1] != '\n') {
+		if (lf->len == lf->maplen) {
+			char *b = bmake_malloc(lf->len + 1);
+			memcpy(b, lf->buf, lf->len);
+			munmap(lf->buf, lf->maplen);
+			lf->maplen = 0;
+		}
+		lf->buf[lf->len++] = '\n';
 	}
 
 	return TRUE;
@@ -1911,7 +1912,7 @@ Parse_IsVar(const char *p, VarAssign *out_var)
 static void
 VarCheckSyntax(VarAssignOp type, const char *uvalue, GNode *ctxt)
 {
-	if (opts.lint) {
+	if (opts.strict) {
 		if (type != VAR_SUBST && strchr(uvalue, '$') != NULL) {
 			char *expandedValue;
 
@@ -2203,7 +2204,7 @@ Parse_include_file(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
 			const char *suff;
 			SearchPath *suffPath = NULL;
 
-			if ((suff = strrchr(file, '.'))) {
+			if ((suff = strrchr(file, '.')) != NULL) {
 				suffPath = Suff_GetPath(suff);
 				if (suffPath != NULL)
 					fullname = Dir_FindFile(file, suffPath);
@@ -2687,10 +2688,18 @@ ParseRawLine(IFile *curFile, char **out_line, char **out_line_end,
 		if (ch == '\\') {
 			if (firstBackslash == NULL)
 				firstBackslash = p;
-			if (p[1] == '\n')
+			if (p[1] == '\n') {
 				curFile->lineno++;
+				if (p + 2 == curFile->buf_end) {
+					line_end = p;
+					*line_end = '\n';
+					p += 2;
+					continue;
+				}
+			}
 			p += 2;
 			line_end = p;
+			assert(p <= curFile->buf_end);
 			continue;
 		}
 
@@ -2831,6 +2840,7 @@ ParseGetLine(GetLineMode mode)
 		}
 
 		/* We now have a line of data */
+		assert(ch_isspace(*line_end));
 		*line_end = '\0';
 
 		if (mode == GLM_FOR_BODY)
@@ -2842,10 +2852,8 @@ ParseGetLine(GetLineMode mode)
 	}
 
 	/* Brutally ignore anything after a non-escaped '#' in non-commands. */
-	if (firstComment != NULL && line[0] != '\t') {
-		line_end = firstComment;
-		*line_end = '\0';
-	}
+	if (firstComment != NULL && line[0] != '\t')
+		*firstComment = '\0';
 
 	/* If we didn't see a '\\' then the in-situ data is fine. */
 	if (firstBackslash == NULL)
@@ -3048,10 +3056,10 @@ ParseDirective(char *line)
 		Var_Undef(cp);
 		return TRUE;
 	} else if (IsDirective(dir, dirlen, "export")) {
-		Var_Export(VEM_PARENT, arg);
+		Var_Export(VEM_PLAIN, arg);
 		return TRUE;
 	} else if (IsDirective(dir, dirlen, "export-env")) {
-		Var_Export(VEM_NORMAL, arg);
+		Var_Export(VEM_ENV, arg);
 		return TRUE;
 	} else if (IsDirective(dir, dirlen, "export-literal")) {
 		Var_Export(VEM_LITERAL, arg);
@@ -3163,7 +3171,7 @@ ParseDependency(char *line)
 	 * Var_Parse does not print any parse errors in such a case.
 	 * It simply returns the special empty string var_Error,
 	 * which cannot be detected in the result of Var_Subst. */
-	eflags = opts.lint ? VARE_WANTRES : VARE_WANTRES | VARE_UNDEFERR;
+	eflags = opts.strict ? VARE_WANTRES : VARE_WANTRES | VARE_UNDEFERR;
 	(void)Var_Subst(line, VAR_CMDLINE, eflags, &expanded_line);
 	/* TODO: handle errors */
 

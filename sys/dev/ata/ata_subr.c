@@ -1,4 +1,4 @@
-/*	$NetBSD: ata_subr.c,v 1.12 2020/12/19 18:09:44 jmcneill Exp $	*/
+/*	$NetBSD: ata_subr.c,v 1.13 2020/12/23 08:17:01 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.  All rights reserved.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ata_subr.c,v 1.12 2020/12/19 18:09:44 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ata_subr.c,v 1.13 2020/12/23 08:17:01 skrll Exp $");
 
 #include "opt_ata.h"
 

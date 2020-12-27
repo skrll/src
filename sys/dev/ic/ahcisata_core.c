@@ -1,4 +1,4 @@
-/*	$NetBSD: ahcisata_core.c,v 1.85 2020/12/20 00:14:30 jmcneill Exp $	*/
+/*	$NetBSD: ahcisata_core.c,v 1.89 2020/12/26 15:40:29 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ahcisata_core.c,v 1.85 2020/12/20 00:14:30 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ahcisata_core.c,v 1.89 2020/12/26 15:40:29 jmcneill Exp $");
 
 #include <sys/types.h>
 #include <sys/malloc.h>
@@ -113,16 +113,16 @@ static const struct scsipi_bustype ahci_atapi_bustype = {
 #define AHCI_RST_WAIT (ATA_RESET_DELAY / 10)
 
 const struct ata_bustype ahci_ata_bustype = {
-	SCSIPI_BUSTYPE_ATA,
-	ahci_ata_bio,
-	ahci_reset_drive,
-	ahci_reset_channel,
-	ahci_exec_command,
-	ata_get_params,
-	ahci_ata_addref,
-	ahci_ata_delref,
-	ahci_killpending,
-	ahci_channel_recover,
+	.bustype_type = SCSIPI_BUSTYPE_ATA,
+	.ata_bio = ahci_ata_bio,
+	.ata_reset_drive = ahci_reset_drive,
+	.ata_reset_channel = ahci_reset_channel,
+	.ata_exec_command = ahci_exec_command,
+	.ata_get_params = ata_get_params,
+	.ata_addref = ahci_ata_addref,
+	.ata_delref = ahci_ata_delref,
+	.ata_killpending = ahci_killpending,
+	.ata_recovery = ahci_channel_recover,
 };
 
 static void ahci_setup_port(struct ahci_softc *sc, int i);
@@ -363,6 +363,9 @@ ahci_attach(struct ahci_softc *sc)
 		return;
 	}
 	sc->sc_cmd_hdr = cmdhp;
+	memset(cmdhp, 0, dmasize);
+	bus_dmamap_sync(sc->sc_dmat, sc->sc_cmd_hdrd, 0, dmasize,
+	    BUS_DMASYNC_PREWRITE);
 
 	ahci_enable_intrs(sc);
 
@@ -429,6 +432,9 @@ ahci_attach(struct ahci_softc *sc)
 			    ", error=%d\n", AHCINAME(sc), error);
 			break;
 		}
+		memset(cmdtblp, 0, dmasize);
+		bus_dmamap_sync(sc->sc_dmat, achp->ahcic_cmd_tbld, 0,
+		    dmasize, BUS_DMASYNC_PREWRITE);
 		achp->ahcic_cmdh  = (struct ahci_cmd_header *)
 		    ((char *)cmdhp + AHCI_CMDH_SIZE * port);
 		achp->ahcic_bus_cmdh = sc->sc_cmd_hdrd->dm_segs[0].ds_addr +
@@ -586,17 +592,20 @@ int
 ahci_intr(void *v)
 {
 	struct ahci_softc *sc = v;
-	uint32_t is;
-	int i, r = 0;
+	uint32_t is, ports;
+	int bit, r = 0;
 
 	while ((is = AHCI_READ(sc, AHCI_IS))) {
 		AHCIDEBUG_PRINT(("%s ahci_intr 0x%x\n", AHCINAME(sc), is),
 		    DEBUG_INTR);
 		r = 1;
 		AHCI_WRITE(sc, AHCI_IS, is);
-		for (i = 0; i < AHCI_MAX_PORTS; i++)
-			if (is & (1U << i))
-				ahci_intr_port(&sc->sc_channels[i]);
+		ports = is;
+		while ((bit = ffs(ports)) != 0) {
+			bit--;
+			ahci_intr_port(&sc->sc_channels[bit]);
+			ports &= ~(1U << bit);
+		}
 	}
 
 	return r;
