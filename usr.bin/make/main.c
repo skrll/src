@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.502 2020/12/23 14:13:49 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.504 2020/12/27 05:16:26 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -109,7 +109,7 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.502 2020/12/23 14:13:49 rillig Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.504 2020/12/27 05:16:26 rillig Exp $");
 #if defined(MAKE_NATIVE) && !defined(lint)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
@@ -1532,8 +1532,7 @@ main_PrepareMaking(void)
 {
 	/* In particular suppress .depend for '-r -V .OBJDIR -f /dev/null' */
 	if (!opts.noBuiltins || opts.printVars == PVM_NONE) {
-		/* ignore /dev/null and anything starting with "no" */
-		(void)Var_Subst("${.MAKE.DEPENDFILE:N/dev/null:Nno*:T}",
+		(void)Var_Subst("${.MAKE.DEPENDFILE}",
 		    VAR_CMDLINE, VARE_WANTRES, &makeDependfile);
 		if (makeDependfile[0] != '\0') {
 			/* TODO: handle errors */
@@ -1776,6 +1775,8 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 		goto bad;
 	}
 
+	Var_ReexportVars();
+
 	/*
 	 * Fork
 	 */
@@ -1790,8 +1791,6 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 		 */
 		(void)dup2(pipefds[1], 1);
 		(void)close(pipefds[1]);
-
-		Var_ReexportVars();
 
 		(void)execv(shellPath, UNCONST(args));
 		_exit(1);
