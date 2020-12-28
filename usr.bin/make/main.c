@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.504 2020/12/27 05:16:26 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.506 2020/12/28 00:46:24 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -109,7 +109,7 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.504 2020/12/27 05:16:26 rillig Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.506 2020/12/28 00:46:24 rillig Exp $");
 #if defined(MAKE_NATIVE) && !defined(lint)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
@@ -125,7 +125,6 @@ Boolean deleteOnError;		/* .DELETE_ON_ERROR: set */
 static int maxJobTokens;	/* -j argument */
 Boolean enterFlagObj;		/* -w and objdir != srcdir */
 
-Boolean preserveUndefined;
 static int jp_0 = -1, jp_1 = -1; /* ends of parent job pipe */
 Boolean doing_depend;		/* Set while reading .depend */
 static Boolean jobsRunning;	/* TRUE if the jobs might be running */
@@ -373,7 +372,7 @@ MainParseArgChdir(const char *argvalue)
 	if (chdir(argvalue) == -1) {
 		(void)fprintf(stderr, "%s: chdir %s: %s\n",
 		    progname, argvalue, strerror(errno));
-		exit(1);
+		exit(2);	/* Not 1 so -q can distinguish error */
 	}
 	if (getcwd(curdir, MAXPATHLEN) == NULL) {
 		(void)fprintf(stderr, "%s: %s.\n", progname, strerror(errno));
@@ -426,7 +425,7 @@ MainParseArgJobs(const char *argvalue)
 		(void)fprintf(stderr,
 		    "%s: illegal argument to -j -- must be positive integer!\n",
 		    progname);
-		exit(1);	/* XXX: why not 2? */
+		exit(2);	/* Not 1 so -q can distinguish error */
 	}
 	Var_Append(MAKEFLAGS, "-j", VAR_GLOBAL);
 	Var_Append(MAKEFLAGS, argvalue, VAR_GLOBAL);
@@ -1241,7 +1240,7 @@ InitMaxJobs(void)
 		    "%s: illegal value for .MAKE.JOBS "
 		    "-- must be positive integer!\n",
 		    progname);
-		exit(1);
+		exit(2);	/* Not 1 so -q can distinguish error */
 	}
 
 	if (n != opts.maxJobs) {
@@ -1931,7 +1930,7 @@ DieHorribly(void)
 	if (DEBUG(GRAPH2))
 		Targ_PrintGraph(2);
 	Trace_Log(MAKEERROR, NULL);
-	exit(2);		/* Not 1, so -q can distinguish error */
+	exit(2);		/* Not 1 so -q can distinguish error */
 }
 
 /* Called when aborting due to errors in child shell to signal abnormal exit.
