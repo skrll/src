@@ -32,6 +32,10 @@ __KERNEL_RCSID(0, "$NetBSD: ahcisata_pci.c,v 1.57 2020/01/18 11:26:11 simonb Exp
 #include "opt_ahcisata_pci.h"
 #endif
 
+#ifdef _KERNEL_OPT
+#include "opt_ahcisata_pci.h"
+#endif
+
 #include <sys/types.h>
 #include <sys/kmem.h>
 #include <sys/param.h>
