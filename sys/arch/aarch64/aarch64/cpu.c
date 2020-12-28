@@ -228,8 +228,14 @@ static void
 cpu_identify(device_t self, struct cpu_info *ci)
 {
 	char model[128];
+	const char *m;
 
 	identify_aarch64_model(ci->ci_id.ac_midr, model, sizeof(model));
+	if (ci->ci_index == 0) {
+		m = cpu_getmodel();
+		if (m == NULL || *m == 0)
+			cpu_setmodel("%s", model);
+	}
 
 	aprint_naive("\n");
 	aprint_normal(": %s, id 0x%lx\n", model, ci->ci_cpuid);
