@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.517 2020/12/27 05:06:17 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.521 2020/12/28 00:46:24 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -117,7 +117,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.517 2020/12/27 05:06:17 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.521 2020/12/28 00:46:24 rillig Exp $");
 
 /* types and constants */
 
@@ -527,7 +527,7 @@ loadfile(const char *path, int fd)
 			if (lf->len > SIZE_MAX / 2) {
 				errno = EFBIG;
 				Error("%s: file too large", path);
-				exit(1);
+				exit(2); /* Not 1 so -q can distinguish error */
 			}
 			lf->len *= 2;
 			lf->buf = bmake_realloc(lf->buf, lf->len);
@@ -536,7 +536,7 @@ loadfile(const char *path, int fd)
 		result = read(fd, lf->buf + bufpos, lf->len - bufpos);
 		if (result < 0) {
 			Error("%s: read error: %s", path, strerror(errno));
-			exit(1);
+			exit(2);	/* Not 1 so -q can distinguish error */
 		}
 		if (result == 0)
 			break;
@@ -1084,9 +1084,8 @@ ParseDependencyTargetWord(const char **pp, const char *lstart)
 			const char *nested_p = cp;
 			FStr nested_val;
 
-			/* XXX: Why VARE_WANTRES? */
-			(void)Var_Parse(&nested_p, VAR_CMDLINE,
-			    VARE_WANTRES | VARE_UNDEFERR, &nested_val);
+			(void)Var_Parse(&nested_p, VAR_CMDLINE, VARE_NONE,
+			    &nested_val);
 			/* TODO: handle errors */
 			FStr_Done(&nested_val);
 			cp += nested_p - cp;
@@ -1930,18 +1929,6 @@ VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
 {
 	const char *avalue;
 	char *evalue;
-	Boolean savedPreserveUndefined = preserveUndefined;
-
-	/* TODO: Can this assignment to preserveUndefined be moved further down
-	 * to the actually interesting Var_Subst call, without affecting any
-	 * edge cases?
-	 *
-	 * It might affect the implicit expansion of the variable name in the
-	 * Var_Exists and Var_Set calls, even though it's unlikely that anyone
-	 * cared about this edge case when adding this code.  In addition,
-	 * variable assignments should not refer to any undefined variables in
-	 * the variable name. */
-	preserveUndefined = TRUE;
 
 	/*
 	 * make sure that we set the variable the first time to nothing
@@ -1950,9 +1937,10 @@ VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
 	if (!Var_Exists(name, ctxt))
 		Var_Set(name, "", ctxt);
 
-	(void)Var_Subst(uvalue, ctxt, VARE_WANTRES | VARE_KEEP_DOLLAR, &evalue);
+	(void)Var_Subst(uvalue, ctxt,
+	    VARE_WANTRES | VARE_KEEP_DOLLAR | VARE_KEEP_UNDEF, &evalue);
 	/* TODO: handle errors */
-	preserveUndefined = savedPreserveUndefined;
+
 	avalue = evalue;
 	Var_Set(name, avalue, ctxt);
 
