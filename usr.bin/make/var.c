@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.765 2020/12/27 05:06:17 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.774 2020/12/28 00:46:24 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -131,7 +131,7 @@
 #include "metachar.h"
 
 /*	"@(#)var.c	8.3 (Berkeley) 3/19/94" */
-MAKE_RCSID("$NetBSD: var.c,v 1.765 2020/12/27 05:06:17 rillig Exp $");
+MAKE_RCSID("$NetBSD: var.c,v 1.774 2020/12/28 00:46:24 rillig Exp $");
 
 typedef enum VarFlags {
 	VAR_NONE	= 0,
@@ -243,8 +243,9 @@ typedef struct SepBuf {
 } SepBuf;
 
 
-ENUM_FLAGS_RTTI_3(VarEvalFlags,
-		  VARE_UNDEFERR, VARE_WANTRES, VARE_KEEP_DOLLAR);
+ENUM_FLAGS_RTTI_4(VarEvalFlags,
+		  VARE_UNDEFERR, VARE_WANTRES, VARE_KEEP_DOLLAR,
+		  VARE_KEEP_UNDEF);
 
 /*
  * This lets us tell if we have replaced the original environ
@@ -988,16 +989,6 @@ Var_SetWithFlags(const char *name, const char *val, GNode *ctxt,
  *	name		name of the variable to set, is expanded once
  *	val		value to give to the variable
  *	ctxt		context in which to set it
- *
- * Notes:
- *	The variable is searched for only in its context before being
- *	created in that context. I.e. if the context is VAR_GLOBAL,
- *	only VAR_GLOBAL->context is searched. Likewise if it is VAR_CMDLINE,
- *	only VAR_CMDLINE->context is searched. This is done to avoid the
- *	literally thousands of unnecessary strcmp's that used to be done to
- *	set, say, $(@) or $(<).
- *	If the context is VAR_GLOBAL though, we check if the variable
- *	was set in VAR_CMDLINE from the command line and skip it if so.
  */
 void
 Var_Set(const char *name, const char *val, GNode *ctxt)
@@ -2098,7 +2089,7 @@ ParseModifierPartSubst(
 		Error("Unfinished modifier for %s ('%c' missing)",
 		    st->var->name.str, delim);
 		*out_part = NULL;
-		return VPR_PARSE_MSG;
+		return VPR_ERR;
 	}
 
 	*pp = ++p;
@@ -3483,8 +3474,7 @@ ApplyModifiersIndirect(ApplyModifiersState *st, const char **pp,
 		FStr newVal = ApplyModifiers(&modsp, *inout_value, '\0', '\0',
 		    st->var, &st->exprFlags, st->ctxt, st->eflags);
 		*inout_value = newVal;
-		if (newVal.str == var_Error || newVal.str == varUndefined ||
-		    *modsp != '\0') {
+		if (newVal.str == var_Error || *modsp != '\0') {
 			FStr_Done(&mods);
 			*pp = p;
 			return AMIR_OUT;	/* error already reported */
@@ -3673,7 +3663,7 @@ VarnameIsDynamic(const char *name, size_t len)
 }
 
 static const char *
-UndefinedShortVarValue(char varname, const GNode *ctxt, VarEvalFlags eflags)
+UndefinedShortVarValue(char varname, const GNode *ctxt)
 {
 	if (ctxt == VAR_CMDLINE || ctxt == VAR_GLOBAL) {
 		/*
@@ -3696,7 +3686,7 @@ UndefinedShortVarValue(char varname, const GNode *ctxt, VarEvalFlags eflags)
 			return "$(.ARCHIVE)";
 		}
 	}
-	return eflags & VARE_UNDEFERR ? var_Error : varUndefined;
+	return NULL;
 }
 
 /* Parse a variable name, until the end character or a colon, whichever
@@ -3755,7 +3745,7 @@ ValidShortVarname(char varname, const char *start)
 	}
 
 	if (!opts.strict)
-		return VPR_PARSE_SILENT;
+		return VPR_ERR;	/* XXX: Missing error message */
 
 	if (varname == '$')
 		Parse_Error(PARSE_FATAL,
@@ -3766,7 +3756,7 @@ ValidShortVarname(char varname, const char *start)
 		Parse_Error(PARSE_FATAL,
 		    "Invalid variable name '%c', at \"%s\"", varname, start);
 
-	return VPR_PARSE_MSG;
+	return VPR_ERR;
 }
 
 /* Parse a single-character variable name such as $V or $@.
@@ -3799,17 +3789,33 @@ ParseVarnameShort(char startc, const char **pp, GNode *ctxt,
 	name[1] = '\0';
 	v = VarFind(name, ctxt, TRUE);
 	if (v == NULL) {
+		const char *val;
 		*pp += 2;
 
-		*out_FALSE_val = UndefinedShortVarValue(startc, ctxt, eflags);
-		if (opts.strict && *out_FALSE_val == var_Error) {
+		val = UndefinedShortVarValue(startc, ctxt);
+		if (val == NULL)
+			val = eflags & VARE_UNDEFERR ? var_Error : varUndefined;
+
+		if (opts.strict && val == var_Error) {
 			Parse_Error(PARSE_FATAL,
 			    "Variable \"%s\" is undefined", name);
-			*out_FALSE_res = VPR_UNDEF_MSG;
+			*out_FALSE_res = VPR_ERR;
+			*out_FALSE_val = val;
 			return FALSE;
 		}
-		*out_FALSE_res =
-		    eflags & VARE_UNDEFERR ? VPR_UNDEF_SILENT : VPR_OK;
+
+		/*
+		 * XXX: This looks completely wrong.
+		 *
+		 * If undefined expressions are not allowed, this should
+		 * rather be VPR_ERR instead of VPR_UNDEF, together with an
+		 * error message.
+		 *
+		 * If undefined expressions are allowed, this should rather
+		 * be VPR_UNDEF instead of VPR_OK.
+		 */
+		*out_FALSE_res = eflags & VARE_UNDEFERR ? VPR_UNDEF : VPR_OK;
+		*out_FALSE_val = val;
 		return FALSE;
 	}
 
@@ -3864,13 +3870,13 @@ EvalUndefined(Boolean dynamic, const char *start, const char *p, char *varname,
 		    "Variable \"%s\" is undefined", varname);
 		free(varname);
 		*out_val = FStr_InitRefer(var_Error);
-		return VPR_UNDEF_MSG;
+		return VPR_ERR;
 	}
 
 	if (eflags & VARE_UNDEFERR) {
 		free(varname);
 		*out_val = FStr_InitRefer(var_Error);
-		return VPR_UNDEF_SILENT;
+		return VPR_UNDEF;	/* XXX: Should be VPR_ERR instead. */
 	}
 
 	free(varname);
@@ -3923,7 +3929,7 @@ ParseVarnameLong(
 		free(varname);
 		*out_FALSE_pp = p;
 		*out_FALSE_val = FStr_InitRefer(var_Error);
-		*out_FALSE_res = VPR_PARSE_MSG;
+		*out_FALSE_res = VPR_ERR;
 		return FALSE;
 	}
 
@@ -4161,12 +4167,25 @@ Var_Parse(const char **pp, GNode *ctxt, VarEvalFlags eflags, FStr *out_val)
 		free(v);
 	}
 	*out_val = (FStr){ value.str, value.freeIt };
-	return VPR_UNKNOWN;
+	return VPR_OK;		/* XXX: Is not correct in all cases */
 }
 
 static void
-VarSubstNested(const char **pp, Buffer *buf, GNode *ctxt,
-	       VarEvalFlags eflags, Boolean *inout_errorReported)
+VarSubstDollarDollar(const char **pp, Buffer *res, VarEvalFlags eflags)
+{
+	/*
+	 * A dollar sign may be escaped with another dollar
+	 * sign.
+	 */
+	if (save_dollars && (eflags & VARE_KEEP_DOLLAR))
+		Buf_AddByte(res, '$');
+	Buf_AddByte(res, '$');
+	*pp += 2;
+}
+
+static void
+VarSubstExpr(const char **pp, Buffer *buf, GNode *ctxt,
+	     VarEvalFlags eflags, Boolean *inout_errorReported)
 {
 	const char *p = *pp;
 	const char *nested_p = p;
@@ -4176,7 +4195,7 @@ VarSubstNested(const char **pp, Buffer *buf, GNode *ctxt,
 	/* TODO: handle errors */
 
 	if (val.str == var_Error || val.str == varUndefined) {
-		if (!preserveUndefined) {
+		if (!(eflags & VARE_KEEP_UNDEF)) {
 			p = nested_p;
 		} else if ((eflags & VARE_UNDEFERR) || val.str == var_Error) {
 
@@ -4217,6 +4236,22 @@ VarSubstNested(const char **pp, Buffer *buf, GNode *ctxt,
 	*pp = p;
 }
 
+/*
+ * Skip as many characters as possible -- either to the end of the string
+ * or to the next dollar sign (variable expression).
+ */
+static void
+VarSubstPlain(const char **pp, Buffer *res)
+{
+	const char *p = *pp;
+	const char *start = p;
+
+	for (p++; *p != '$' && *p != '\0'; p++)
+		continue;
+	Buf_AddBytesBetween(res, start, p);
+	*pp = p;
+}
+
 /* Expand all variable expressions like $V, ${VAR}, $(VAR:Modifiers) in the
  * given string.
  *
@@ -4242,31 +4277,12 @@ Var_Subst(const char *str, GNode *ctxt, VarEvalFlags eflags, char **out_res)
 	errorReported = FALSE;
 
 	while (*p != '\0') {
-		if (p[0] == '$' && p[1] == '$') {
-			/*
-			 * A dollar sign may be escaped with another dollar
-			 * sign.
-			 */
-			if (save_dollars && (eflags & VARE_KEEP_DOLLAR))
-				Buf_AddByte(&res, '$');
-			Buf_AddByte(&res, '$');
-			p += 2;
-
-		} else if (p[0] == '$') {
-			VarSubstNested(&p, &res, ctxt, eflags, &errorReported);
-
-		} else {
-			/*
-			 * Skip as many characters as possible -- either to
-			 * the end of the string or to the next dollar sign
-			 * (variable expression).
-			 */
-			const char *plainStart = p;
-
-			for (p++; *p != '$' && *p != '\0'; p++)
-				continue;
-			Buf_AddBytesBetween(&res, plainStart, p);
-		}
+		if (p[0] == '$' && p[1] == '$')
+			VarSubstDollarDollar(&p, &res, eflags);
+		else if (p[0] == '$')
+			VarSubstExpr(&p, &res, ctxt, eflags, &errorReported);
+		else
+			VarSubstPlain(&p, &res);
 	}
 
 	*out_res = Buf_DestroyCompact(&res);
