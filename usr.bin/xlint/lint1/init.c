@@ -1,4 +1,4 @@
-/*	$NetBSD: init.c,v 1.27 2015/07/28 17:55:13 christos Exp $	*/
+/*	$NetBSD: init.c,v 1.32 2020/12/28 22:31:31 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,12 +37,12 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: init.c,v 1.27 2015/07/28 17:55:13 christos Exp $");
+__RCSID("$NetBSD: init.c,v 1.32 2020/12/28 22:31:31 rillig Exp $");
 #endif
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
 #include "lint1.h"
 
@@ -87,7 +87,7 @@ void
 memberpush(sb)
 	sbuf_t *sb;
 {
-	namlist_t *nam = xcalloc(1, sizeof (namlist_t)); 
+	namlist_t *nam = xcalloc(1, sizeof (namlist_t));
 	nam->n_name = sb->sb_name;
 	DPRINTF(("%s: %s %p\n", __func__, nam->n_name, nam));
 	if (namedmem == NULL) {
@@ -160,7 +160,7 @@ popi2(void)
 
 	DPRINTF(("%s+(%s): brace=%d count=%d namedmem %d\n", __func__,
 	    tyname(buf, sizeof(buf),
-	    initstk->i_type ? initstk->i_type : initstk->i_subt),
+		initstk->i_type ? initstk->i_type : initstk->i_subt),
 	    initstk->i_brace, initstk->i_cnt, initstk->i_namedmem));
 	initstk = (istk = initstk)->i_nxt;
 	free(istk);
@@ -171,7 +171,7 @@ popi2(void)
 
 	DPRINTF(("%s-(%s): brace=%d count=%d namedmem %d\n", __func__,
 	    tyname(buf, sizeof(buf),
-	    initstk->i_type ? initstk->i_type : initstk->i_subt),
+		initstk->i_type ? initstk->i_type : initstk->i_subt),
 	    initstk->i_brace, initstk->i_cnt, initstk->i_namedmem));
 
 	istk->i_cnt--;
@@ -263,8 +263,8 @@ pushinit(void)
 
 	/* Extend an incomplete array type by one element */
 	if (istk->i_cnt == 0) {
-		DPRINTF(("%s(extend) %s\n", __func__, tyname(buf, sizeof(buf),
-		    istk->i_type)));
+		DPRINTF(("%s(extend) %s\n", __func__,
+		    tyname(buf, sizeof(buf), istk->i_type)));
 		/*
 		 * Inside of other aggregate types must not be an incomplete
 		 * type.
@@ -275,13 +275,12 @@ pushinit(void)
 		if (istk->i_type->t_tspec != ARRAY)
 			LERROR("pushinit()");
 		istk->i_type->t_dim++;
-		/* from now its an complete type */
-		setcompl(istk->i_type, 0);
+		setcomplete(istk->i_type, 1);
 	}
 
 	if (istk->i_cnt <= 0)
 		LERROR("pushinit()");
-	if (istk->i_type != NULL && issclt(istk->i_type->t_tspec))
+	if (istk->i_type != NULL && tspec_is_scalar(istk->i_type->t_tspec))
 		LERROR("pushinit()");
 
 	initstk = xcalloc(1, sizeof (istk_t));
@@ -356,7 +355,7 @@ again:
 			if (m == NULL) {
 				DPRINTF(("%s(): struct pop\n", __func__));
 				goto pop;
-			} 
+			}
 			istk->i_mem = m;
 			istk->i_subt = m->s_type;
 			istk->i_namedmem = 1;
@@ -368,7 +367,7 @@ again:
 		istk->i_brace = 1;
 		DPRINTF(("%s(): %s brace=%d\n", __func__,
 		    tyname(buf, sizeof(buf),
-		    istk->i_type ? istk->i_type : istk->i_subt),
+			istk->i_type ? istk->i_type : istk->i_subt),
 		    istk->i_brace));
 		if (cnt == 0) {
 			/* cannot init. struct/union with no named member */
@@ -431,7 +430,7 @@ nextinit(int brace)
 	DPRINTF(("%s(%d)\n", __func__, brace));
 	if (!brace) {
 		if (initstk->i_type == NULL &&
-		    !issclt(initstk->i_subt->t_tspec)) {
+		    !tspec_is_scalar(initstk->i_subt->t_tspec)) {
 			/* {}-enclosed initializer required */
 			error(181);
 		}
@@ -442,13 +441,14 @@ nextinit(int brace)
 		if (!initerr)
 			testinit();
 		while (!initerr && (initstk->i_type == NULL ||
-				    !issclt(initstk->i_type->t_tspec))) {
+				    !tspec_is_scalar(
+				        initstk->i_type->t_tspec))) {
 			if (!initerr)
 				pushinit();
 		}
 	} else {
 		if (initstk->i_type != NULL &&
-		    issclt(initstk->i_type->t_tspec)) {
+		    tspec_is_scalar(initstk->i_type->t_tspec)) {
 			/* invalid initializer */
 			error(176, tyname(buf, sizeof(buf), initstk->i_type));
 			initerr = 1;
@@ -460,9 +460,11 @@ nextinit(int brace)
 		if (!initerr) {
 			initstk->i_brace = 1;
 			DPRINTF(("%s(): %p %s brace=%d\n", __func__,
-			    namedmem, tyname(buf, sizeof(buf),
-			    initstk->i_type ? initstk->i_type :
-			    initstk->i_subt), initstk->i_brace));
+			    namedmem,
+			    tyname(buf, sizeof(buf),
+				initstk->i_type ? initstk->i_type
+						: initstk->i_subt),
+			    initstk->i_brace));
 		}
 	}
 }
@@ -477,7 +479,7 @@ initlbr(void)
 
 	if ((initsym->s_scl == AUTO || initsym->s_scl == REG) &&
 	    initstk->i_nxt == NULL) {
-		if (tflag && !issclt(initstk->i_subt->t_tspec))
+		if (tflag && !tspec_is_scalar(initstk->i_subt->t_tspec))
 			/* no automatic aggregate initialization in trad. C*/
 			warning(188);
 	}
@@ -572,7 +574,7 @@ mkinit(tnode_t *tn)
 	lt = ln->tn_type->t_tspec;
 	rt = tn->tn_type->t_tspec;
 
-	if (!issclt(lt))
+	if (!tspec_is_scalar(lt))
 		LERROR("mkinit()");
 
 	if (!typeok(INIT, 0, ln, tn))
@@ -586,7 +588,7 @@ mkinit(tnode_t *tn)
 	expr(tn, 1, 0, 1);
 	trestor(tmem);
 
-	if (isityp(lt) && ln->tn_type->t_isfield && !isityp(rt)) {
+	if (tspec_is_int(lt) && ln->tn_type->t_isfield && !tspec_is_int(rt)) {
 		/*
 		 * Bit-fields can be initialized in trad. C only by integer
 		 * constants.
@@ -668,8 +670,7 @@ strginit(tnode_t *tn)
 	if (istk->i_nolimit) {
 		istk->i_nolimit = 0;
 		istk->i_type->t_dim = len + 1;
-		/* from now complete type */
-		setcompl(istk->i_type, 0);
+		setcomplete(istk->i_type, 1);
 	} else {
 		if (istk->i_type->t_dim < len) {
 			/* non-null byte ignored in string initializer */

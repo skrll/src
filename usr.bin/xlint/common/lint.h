@@ -1,4 +1,4 @@
-/*	$NetBSD: lint.h,v 1.14 2018/09/07 15:16:15 christos Exp $	*/
+/*	$NetBSD: lint.h,v 1.17 2020/12/28 21:24:55 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -46,7 +46,7 @@
 #include "param.h"
 
 /*
- * Type specifiers, used in type structures (type_t) and otherwere.
+ * Type specifiers, used in type structures (type_t) and elsewhere.
  */
 typedef enum {
 	NOTSPEC = 0,
@@ -94,25 +94,25 @@ typedef	struct {
 					   if pflag is set */
 	tspec_t	tt_styp;		/* signed counterpart */
 	tspec_t	tt_utyp;		/* unsigned counterpart */
-	u_int	tt_isityp : 1;		/* 1 if integer type */
-	u_int	tt_isutyp : 1;		/* 1 if unsigned integer type */
-	u_int	tt_isftyp : 1;		/* 1 if floating point type */
-	u_int	tt_isatyp : 1;		/* 1 if arithmetic type */
-	u_int	tt_issclt : 1;		/* 1 if scalar type */
-	u_int	tt_isctyp : 1;		/* 1 if complex type */
-	const char *tt_name;		/* Bezeichnung des Typs */
+	u_int	tt_is_int : 1;		/* 1 if integer type */
+	u_int	tt_is_uint : 1;		/* 1 if unsigned integer type */
+	u_int	tt_is_float : 1;	/* 1 if floating point type */
+	u_int	tt_is_arith : 1;	/* 1 if arithmetic type */
+	u_int	tt_is_scalar : 1;	/* 1 if scalar type */
+	u_int	tt_is_complex : 1;	/* 1 if complex type */
+	const char *tt_name;		/* name of the type */
 } ttab_t;
 
-#define size(t)		(ttab[t].tt_sz)
-#define psize(t)	(ttab[t].tt_psz)
-#define styp(t)		(ttab[t].tt_styp)
-#define utyp(t)		(ttab[t].tt_utyp)
-#define isityp(t)	(ttab[t].tt_isityp)
-#define isutyp(t)	(ttab[t].tt_isutyp)
-#define isftyp(t)	(ttab[t].tt_isftyp)
-#define isatyp(t)	(ttab[t].tt_isatyp)
-#define isctyp(t)	(ttab[t].tt_isctyp)
-#define issclt(t)	(ttab[t].tt_issclt)
+#define size(t)			(ttab[t].tt_sz)
+#define psize(t)		(ttab[t].tt_psz)
+#define styp(t)			(ttab[t].tt_styp)
+#define utyp(t)			(ttab[t].tt_utyp)
+#define tspec_is_int(t)		(ttab[t].tt_is_int)
+#define tspec_is_uint(t)	(ttab[t].tt_is_uint)
+#define tspec_is_float(t)	(ttab[t].tt_is_float)
+#define tspec_is_arith(t)	(ttab[t].tt_is_arith)
+#define tspec_is_complex(t)	(ttab[t].tt_is_complex)
+#define tspec_is_scalar(t)	(ttab[t].tt_is_scalar)
 
 extern	ttab_t	ttab[];
 
