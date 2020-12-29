@@ -1,4 +1,4 @@
-/*	$NetBSD: mem.c,v 1.8 2020/02/10 04:54:01 christos Exp $	*/
+/*	$NetBSD: mem.c,v 1.10 2020/12/28 22:16:42 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: mem.c,v 1.8 2020/02/10 04:54:01 christos Exp $");
+__RCSID("$NetBSD: mem.c,v 1.10 2020/12/28 22:16:42 rillig Exp $");
 #endif
 
 #include <sys/param.h>
