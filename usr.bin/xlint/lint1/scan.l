@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: scan.l,v 1.92 2020/09/18 14:19:08 christos Exp $ */
+/* $NetBSD: scan.l,v 1.95 2020/12/28 19:47:42 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,16 +35,16 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: scan.l,v 1.92 2020/09/18 14:19:08 christos Exp $");
+__RCSID("$NetBSD: scan.l,v 1.95 2020/12/28 19:47:42 rillig Exp $");
 #endif
 
-#include <stdlib.h>
-#include <string.h>
-#include <limits.h>
-#include <float.h>
 #include <ctype.h>
 #include <errno.h>
+#include <float.h>
+#include <limits.h>
 #include <math.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "lint1.h"
 #include "cgram.h"
@@ -355,7 +355,7 @@ addkw(struct kwtab *kw, int deco)
 
 	if (name == NULL)
 		err(1, "Can't init symbol table");
-		
+
 	sym = getblk(sizeof (sym_t));
 	sym->s_name = name;
 	sym->s_keyw = kw;
@@ -392,8 +392,8 @@ initscan(void)
 			continue;
 		if (kw->kw_gcc && !gflag)
 			continue;
-		addkw(kw, 1); 
-		addkw(kw, 2); 
+		addkw(kw, 1);
+		addkw(kw, 2);
 		addkw(kw, 4);
 	}
 
@@ -766,7 +766,7 @@ int
 sign(int64_t q, tspec_t t, int len)
 {
 
-	if (t == PTR || isutyp(t))
+	if (t == PTR || tspec_is_uint(t))
 		return (0);
 	return (msb(q, t, len));
 }
@@ -790,7 +790,7 @@ xsign(int64_t q, tspec_t t, int len)
 	if (len <= 0)
 		len = size(t);
 
-	if (t == PTR || isutyp(t) || !sign(q, t, len)) {
+	if (t == PTR || tspec_is_uint(t) || !sign(q, t, len)) {
 		q &= qlmasks[len];
 	} else {
 		q |= qumasks[len];
@@ -829,7 +829,7 @@ fcon(void)
 		typ = LDOUBLE;
 		len--;
 	} else {
-		if (c == 'd' || c == 'D') 
+		if (c == 'd' || c == 'D')
 			len--;
 		typ = DOUBLE;
 	}
