@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.774 2020/12/28 00:46:24 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.777 2020/12/29 03:21:09 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -131,7 +131,7 @@
 #include "metachar.h"
 
 /*	"@(#)var.c	8.3 (Berkeley) 3/19/94" */
-MAKE_RCSID("$NetBSD: var.c,v 1.774 2020/12/28 00:46:24 rillig Exp $");
+MAKE_RCSID("$NetBSD: var.c,v 1.777 2020/12/29 03:21:09 rillig Exp $");
 
 typedef enum VarFlags {
 	VAR_NONE	= 0,
@@ -576,6 +576,71 @@ MayExport(const char *name)
 	return TRUE;
 }
 
+static Boolean
+ExportVarEnv(Var *v)
+{
+	const char *name = v->name.str;
+	char *val = v->val.data;
+	char *expr;
+
+	if ((v->flags & VAR_EXPORTED) && !(v->flags & VAR_REEXPORT))
+		return FALSE;	/* nothing to do */
+
+	if (strchr(val, '$') == NULL) {
+		if (!(v->flags & VAR_EXPORTED))
+			setenv(name, val, 1);
+		return TRUE;
+	}
+
+	if (v->flags & VAR_IN_USE) {
+		/*
+		 * We recursed while exporting in a child.
+		 * This isn't going to end well, just skip it.
+		 */
+		return FALSE;
+	}
+
+	/* XXX: name is injected without escaping it */
+	expr = str_concat3("${", name, "}");
+	(void)Var_Subst(expr, VAR_GLOBAL, VARE_WANTRES, &val);
+	/* TODO: handle errors */
+	setenv(name, val, 1);
+	free(val);
+	free(expr);
+	return TRUE;
+}
+
+static Boolean
+ExportVarPlain(Var *v)
+{
+	if (strchr(v->val.data, '$') == NULL) {
+		setenv(v->name.str, v->val.data, 1);
+		v->flags |= VAR_EXPORTED;
+		v->flags &= ~(unsigned)VAR_REEXPORT;
+		return TRUE;
+	}
+
+	/*
+	 * Flag the variable as something we need to re-export.
+	 * No point actually exporting it now though,
+	 * the child process can do it at the last minute.
+	 */
+	v->flags |= VAR_EXPORTED | VAR_REEXPORT;
+	return TRUE;
+}
+
+static Boolean
+ExportVarLiteral(Var *v)
+{
+	if ((v->flags & VAR_EXPORTED) && !(v->flags & VAR_REEXPORT))
+		return FALSE;
+
+	if (!(v->flags & VAR_EXPORTED))
+		setenv(v->name.str, v->val.data, 1);
+
+	return TRUE;
+}
+
 /*
  * Export a single variable.
  *
@@ -587,13 +652,7 @@ MayExport(const char *name)
 static Boolean
 ExportVar(const char *name, VarExportMode mode)
 {
-	/*
-	 * XXX: It sounds wrong to handle VEM_PLAIN and VEM_LITERAL
-	 * differently here.
-	 */
-	Boolean plain = mode == VEM_PLAIN;
 	Var *v;
-	char *val;
 
 	if (!MayExport(name))
 		return FALSE;
@@ -602,49 +661,12 @@ ExportVar(const char *name, VarExportMode mode)
 	if (v == NULL)
 		return FALSE;
 
-	if (!plain && (v->flags & VAR_EXPORTED) && !(v->flags & VAR_REEXPORT))
-		return FALSE;	/* nothing to do */
-
-	val = Buf_GetAll(&v->val, NULL);
-	if (mode != VEM_LITERAL && strchr(val, '$') != NULL) {
-		char *expr;
-
-		if (plain) {
-			/*
-			 * Flag the variable as something we need to re-export.
-			 * No point actually exporting it now though,
-			 * the child process can do it at the last minute.
-			 */
-			v->flags |= VAR_EXPORTED | VAR_REEXPORT;
-			return TRUE;
-		}
-		if (v->flags & VAR_IN_USE) {
-			/*
-			 * We recursed while exporting in a child.
-			 * This isn't going to end well, just skip it.
-			 */
-			return FALSE;
-		}
-
-		/* XXX: name is injected without escaping it */
-		expr = str_concat3("${", name, "}");
-		(void)Var_Subst(expr, VAR_GLOBAL, VARE_WANTRES, &val);
-		/* TODO: handle errors */
-		setenv(name, val, 1);
-		free(val);
-		free(expr);
-	} else {
-		if (plain)
-			v->flags &= ~(unsigned)VAR_REEXPORT; /* once will do */
-		if (plain || !(v->flags & VAR_EXPORTED))
-			setenv(name, val, 1);
-	}
-
-	/* This is so Var_Set knows to call Var_Export again. */
-	if (plain)
-		v->flags |= VAR_EXPORTED;
-
-	return TRUE;
+	if (mode == VEM_ENV)
+		return ExportVarEnv(v);
+	else if (mode == VEM_PLAIN)
+		return ExportVarPlain(v);
+	else
+		return ExportVarLiteral(v);
 }
 
 /*
@@ -654,7 +676,7 @@ ExportVar(const char *name, VarExportMode mode)
 void
 Var_ReexportVars(void)
 {
-	char *val;
+	char *xvarnames;
 
 	/*
 	 * Several make implementations support this sort of mechanism for
@@ -682,17 +704,17 @@ Var_ReexportVars(void)
 	}
 
 	(void)Var_Subst("${" MAKE_EXPORTED ":O:u}", VAR_GLOBAL, VARE_WANTRES,
-	    &val);
+	    &xvarnames);
 	/* TODO: handle errors */
-	if (val[0] != '\0') {
-		Words words = Str_Words(val, FALSE);
+	if (xvarnames[0] != '\0') {
+		Words varnames = Str_Words(xvarnames, FALSE);
 		size_t i;
 
-		for (i = 0; i < words.len; i++)
-			ExportVar(words.words[i], VEM_ENV);
-		Words_Free(words);
+		for (i = 0; i < varnames.len; i++)
+			ExportVar(varnames.words[i], VEM_ENV);
+		Words_Free(varnames);
 	}
-	free(val);
+	free(xvarnames);
 }
 
 static void

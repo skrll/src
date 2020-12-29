@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.106 2020/12/04 17:56:04 christos Exp $ */
+/* $NetBSD: cgram.y,v 1.110 2020/12/28 21:24:55 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,12 +35,12 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.106 2020/12/04 17:56:04 christos Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.110 2020/12/28 21:24:55 rillig Exp $");
 #endif
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
 
 #include "lint1.h"
 
@@ -52,7 +52,7 @@ extern char *yytext;
 int	blklev;
 
 /*
- * level for memory allocation. Normaly the same as blklev.
+ * level for memory allocation. Normally the same as blklev.
  * An exception is the declaration of arguments in prototypes. Memory
  * for these can't be freed after the declaration, but symbols must
  * be removed from the symbol table after the declaration.
@@ -534,7 +534,7 @@ type_attribute_bounded_type:
 
 
 type_attribute_spec:
-	  /* empty */	
+	  /* empty */
 	| T_AT_DEPRECATED T_LPARN string T_RPARN
 	| T_AT_DEPRECATED
 	| T_AT_ALIGNED T_LPARN constant T_RPARN
@@ -552,9 +552,9 @@ type_attribute_spec:
 	| T_AT_PCS T_LPARN string T_RPARN
 	| T_AT_SECTION T_LPARN string T_RPARN
 	| T_AT_TLS_MODEL T_LPARN string T_RPARN
-	| T_AT_ALIGNED 
-	| T_AT_CONSTRUCTOR 
-	| T_AT_DESTRUCTOR 
+	| T_AT_ALIGNED
+	| T_AT_CONSTRUCTOR
+	| T_AT_DESTRUCTOR
 	| T_AT_MALLOC
 	| T_AT_MAY_ALIAS
 	| T_AT_NO_INSTRUMENT_FUNCTION
@@ -582,7 +582,7 @@ type_attribute_spec:
 	| T_AT_WEAK
 	| T_AT_VISIBILITY T_LPARN constant T_RPARN
 	| T_QUAL {
-		if ($1 != CONST)	
+		if ($1 != CONST)
 			yyerror("Bad attribute");
 	}
 	;
@@ -611,7 +611,7 @@ type_attribute_list:
 	;
 
 clrtyp:
-	  {
+	  /* empty */ {
 		clrtyp();
 	  }
 	;
@@ -697,8 +697,8 @@ struct_spec:
 		 * STDC requires that "struct a;" always introduces
 		 * a new tag if "a" is not declared at current level
 		 *
-		 * yychar is valid because otherwise the parser would
-		 * not been able to decide if he must shift or reduce
+		 * yychar is valid because otherwise the parser would not
+		 * have been able to decide if it must shift or reduce
 		 */
 		$$ = mktag($2, $1, 0, yychar == T_SEMI);
 	  }
@@ -995,7 +995,7 @@ type_init_decls:
 	;
 
 notype_init_decl:
-	notype_decl opt_asm_or_symbolrename {
+	  notype_decl opt_asm_or_symbolrename {
 		idecl($1, 0, $2);
 		chksz($1);
 	  }
@@ -1007,7 +1007,7 @@ notype_init_decl:
 	;
 
 type_init_decl:
-	type_decl opt_asm_or_symbolrename {
+	  type_decl opt_asm_or_symbolrename {
 		idecl($1, 0, $2);
 		chksz($1);
 	  }
@@ -1336,13 +1336,13 @@ init_expr_list:
 	| init_expr_list T_COMMA init_assign_expr
 	;
 
-lorange: 
+lorange:
 	  constant T_ELLIPSE {
 		$$.lo = toicon($1, 1);
 	  }
 	;
 range:
-	constant {
+	  constant {
 		$$.lo = toicon($1, 1);
 		$$.hi = $$.lo + 1;
 	  }
@@ -1390,7 +1390,7 @@ init_rbrace:
 	;
 
 type_name:
-  	  {
+	  {
 		pushdecl(ABSTRACT);
 	  } abstract_declaration {
 		popdecl();
@@ -1551,7 +1551,7 @@ expr_stmnt:
 	;
 
 /*
- * The following two productions are used to implement 
+ * The following two productions are used to implement
  * ({ [[decl-list] stmt-list] }).
  * XXX: This is not well tested.
  */
@@ -1625,7 +1625,7 @@ switch_expr:
 
 association:
 	  type_name T_COLON expr
-	| T_DEFAULT T_COLON expr 
+	| T_DEFAULT T_COLON expr
 	;
 
 association_list:
@@ -1702,8 +1702,8 @@ for_start:
 	  }
 	;
 for_exprs:
-	    for_start declspecs deftyp notype_init_decls T_SEMI opt_expr
-	    T_SEMI opt_expr T_RPARN {
+	  for_start declspecs deftyp notype_init_decls T_SEMI opt_expr
+	  T_SEMI opt_expr T_RPARN {
 		c99ism(325);
 		for1(NULL, $6, $8);
 		CLRWFLGS(__FILE__, __LINE__);
@@ -1971,7 +1971,7 @@ string:
 	;
 
 string2:
-	 T_STRING {
+	  T_STRING {
 		if (tflag) {
 			/* concatenated strings are illegal in traditional C */
 			warning(219);
@@ -2080,7 +2080,7 @@ toicon(tnode_t *tn, int required)
 		error(55);
 	} else {
 		i = (int)v->v_quad;
-		if (isutyp(t)) {
+		if (tspec_is_uint(t)) {
 			if (uq_gt((uint64_t)v->v_quad,
 				  (uint64_t)TARG_INT_MAX)) {
 				/* integral constant too large */
