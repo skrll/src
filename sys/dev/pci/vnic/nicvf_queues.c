@@ -1,3 +1,5 @@
+/*	$NetBSD$	*/
+
 /*
  * Copyright (C) 2015 Cavium Inc.
  * All rights reserved.
