@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.760 2020/12/21 02:38:57 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.777 2020/12/29 03:21:09 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -131,7 +131,7 @@
 #include "metachar.h"
 
 /*	"@(#)var.c	8.3 (Berkeley) 3/19/94" */
-MAKE_RCSID("$NetBSD: var.c,v 1.760 2020/12/21 02:38:57 rillig Exp $");
+MAKE_RCSID("$NetBSD: var.c,v 1.777 2020/12/29 03:21:09 rillig Exp $");
 
 typedef enum VarFlags {
 	VAR_NONE	= 0,
@@ -243,8 +243,9 @@ typedef struct SepBuf {
 } SepBuf;
 
 
-ENUM_FLAGS_RTTI_3(VarEvalFlags,
-		  VARE_UNDEFERR, VARE_WANTRES, VARE_KEEP_DOLLAR);
+ENUM_FLAGS_RTTI_4(VarEvalFlags,
+		  VARE_UNDEFERR, VARE_WANTRES, VARE_KEEP_DOLLAR,
+		  VARE_KEEP_UNDEF);
 
 /*
  * This lets us tell if we have replaced the original environ
@@ -513,38 +514,41 @@ Var_Delete(const char *name, GNode *ctxt)
 }
 
 /*
- * Undefine a single variable from the global scope.  The argument is
- * expanded once.
+ * Undefine one or more variables from the global scope.
+ * The argument is expanded exactly once and then split into words.
  */
 void
-Var_Undef(char *arg)
+Var_Undef(const char *arg)
 {
-	/*
-	 * The argument must consist of exactly 1 word.  Accepting more than
-	 * 1 word would have required to split the argument into several
-	 * words, and such splitting is already done subtly different in many
-	 * other places of make.
-	 *
-	 * Using Str_Words to split the words, followed by Var_Subst to expand
-	 * each variable name once would make it impossible to undefine
-	 * variables whose names contain space characters or unbalanced
-	 * quotes or backslashes in arbitrary positions.
-	 *
-	 * Using Var_Subst on the whole argument and splitting the words
-	 * afterwards using Str_Words would make it impossible to undefine
-	 * variables whose names contain space characters.
-	 */
-	char *cp = arg;
+	VarParseResult vpr;
+	char *expanded;
+	Words varnames;
+	size_t i;
 
-	for (; !ch_isspace(*cp) && *cp != '\0'; cp++)
-		continue;
-	if (cp == arg || *cp != '\0') {
+	if (arg[0] == '\0') {
 		Parse_Error(PARSE_FATAL,
-		    "The .undef directive requires exactly 1 argument");
+		    "The .undef directive requires an argument");
+		return;
 	}
-	*cp = '\0';
 
-	Var_Delete(arg, VAR_GLOBAL);
+	vpr = Var_Subst(arg, VAR_GLOBAL, VARE_WANTRES, &expanded);
+	if (vpr != VPR_OK) {
+		Parse_Error(PARSE_FATAL,
+		    "Error in variable names to be undefined");
+		return;
+	}
+
+	varnames = Str_Words(expanded, FALSE);
+	if (varnames.len == 1 && varnames.words[0][0] == '\0')
+		varnames.len = 0;
+
+	for (i = 0; i < varnames.len; i++) {
+		const char *varname = varnames.words[i];
+		Var_DeleteVar(varname, VAR_GLOBAL);
+	}
+
+	Words_Free(varnames);
+	free(expanded);
 }
 
 static Boolean
@@ -572,6 +576,71 @@ MayExport(const char *name)
 	return TRUE;
 }
 
+static Boolean
+ExportVarEnv(Var *v)
+{
+	const char *name = v->name.str;
+	char *val = v->val.data;
+	char *expr;
+
+	if ((v->flags & VAR_EXPORTED) && !(v->flags & VAR_REEXPORT))
+		return FALSE;	/* nothing to do */
+
+	if (strchr(val, '$') == NULL) {
+		if (!(v->flags & VAR_EXPORTED))
+			setenv(name, val, 1);
+		return TRUE;
+	}
+
+	if (v->flags & VAR_IN_USE) {
+		/*
+		 * We recursed while exporting in a child.
+		 * This isn't going to end well, just skip it.
+		 */
+		return FALSE;
+	}
+
+	/* XXX: name is injected without escaping it */
+	expr = str_concat3("${", name, "}");
+	(void)Var_Subst(expr, VAR_GLOBAL, VARE_WANTRES, &val);
+	/* TODO: handle errors */
+	setenv(name, val, 1);
+	free(val);
+	free(expr);
+	return TRUE;
+}
+
+static Boolean
+ExportVarPlain(Var *v)
+{
+	if (strchr(v->val.data, '$') == NULL) {
+		setenv(v->name.str, v->val.data, 1);
+		v->flags |= VAR_EXPORTED;
+		v->flags &= ~(unsigned)VAR_REEXPORT;
+		return TRUE;
+	}
+
+	/*
+	 * Flag the variable as something we need to re-export.
+	 * No point actually exporting it now though,
+	 * the child process can do it at the last minute.
+	 */
+	v->flags |= VAR_EXPORTED | VAR_REEXPORT;
+	return TRUE;
+}
+
+static Boolean
+ExportVarLiteral(Var *v)
+{
+	if ((v->flags & VAR_EXPORTED) && !(v->flags & VAR_REEXPORT))
+		return FALSE;
+
+	if (!(v->flags & VAR_EXPORTED))
+		setenv(v->name.str, v->val.data, 1);
+
+	return TRUE;
+}
+
 /*
  * Export a single variable.
  *
@@ -583,9 +652,7 @@ MayExport(const char *name)
 static Boolean
 ExportVar(const char *name, VarExportMode mode)
 {
-	Boolean parent = mode == VEM_PARENT;
 	Var *v;
-	char *val;
 
 	if (!MayExport(name))
 		return FALSE;
@@ -594,58 +661,22 @@ ExportVar(const char *name, VarExportMode mode)
 	if (v == NULL)
 		return FALSE;
 
-	if (!parent && (v->flags & VAR_EXPORTED) && !(v->flags & VAR_REEXPORT))
-		return FALSE;	/* nothing to do */
-
-	val = Buf_GetAll(&v->val, NULL);
-	if (mode != VEM_LITERAL && strchr(val, '$') != NULL) {
-		char *expr;
-
-		if (parent) {
-			/*
-			 * Flag the variable as something we need to re-export.
-			 * No point actually exporting it now though,
-			 * the child process can do it at the last minute.
-			 */
-			v->flags |= VAR_EXPORTED | VAR_REEXPORT;
-			return TRUE;
-		}
-		if (v->flags & VAR_IN_USE) {
-			/*
-			 * We recursed while exporting in a child.
-			 * This isn't going to end well, just skip it.
-			 */
-			return FALSE;
-		}
-
-		/* XXX: name is injected without escaping it */
-		expr = str_concat3("${", name, "}");
-		(void)Var_Subst(expr, VAR_GLOBAL, VARE_WANTRES, &val);
-		/* TODO: handle errors */
-		setenv(name, val, 1);
-		free(val);
-		free(expr);
-	} else {
-		if (parent)
-			v->flags &= ~(unsigned)VAR_REEXPORT; /* once will do */
-		if (parent || !(v->flags & VAR_EXPORTED))
-			setenv(name, val, 1);
-	}
-
-	/* This is so Var_Set knows to call Var_Export again. */
-	if (parent)
-		v->flags |= VAR_EXPORTED;
-
-	return TRUE;
+	if (mode == VEM_ENV)
+		return ExportVarEnv(v);
+	else if (mode == VEM_PLAIN)
+		return ExportVarPlain(v);
+	else
+		return ExportVarLiteral(v);
 }
 
 /*
- * This gets called from our child processes.
+ * Actually export the variables that have been marked as needing to be
+ * re-exported.
  */
 void
 Var_ReexportVars(void)
 {
-	char *val;
+	char *xvarnames;
 
 	/*
 	 * Several make implementations support this sort of mechanism for
@@ -667,23 +698,23 @@ Var_ReexportVars(void)
 		HashIter_Init(&hi, &VAR_GLOBAL->vars);
 		while (HashIter_Next(&hi) != NULL) {
 			Var *var = hi.entry->value;
-			ExportVar(var->name.str, VEM_NORMAL);
+			ExportVar(var->name.str, VEM_ENV);
 		}
 		return;
 	}
 
 	(void)Var_Subst("${" MAKE_EXPORTED ":O:u}", VAR_GLOBAL, VARE_WANTRES,
-	    &val);
+	    &xvarnames);
 	/* TODO: handle errors */
-	if (val[0] != '\0') {
-		Words words = Str_Words(val, FALSE);
+	if (xvarnames[0] != '\0') {
+		Words varnames = Str_Words(xvarnames, FALSE);
 		size_t i;
 
-		for (i = 0; i < words.len; i++)
-			ExportVar(words.words[i], VEM_NORMAL);
-		Words_Free(words);
+		for (i = 0; i < varnames.len; i++)
+			ExportVar(varnames.words[i], VEM_ENV);
+		Words_Free(varnames);
 	}
-	free(val);
+	free(xvarnames);
 }
 
 static void
@@ -703,7 +734,7 @@ ExportVars(const char *varnames, Boolean isExport, VarExportMode mode)
 		if (var_exportedVars == VAR_EXPORTED_NONE)
 			var_exportedVars = VAR_EXPORTED_SOME;
 
-		if (isExport && mode == VEM_PARENT)
+		if (isExport && mode == VEM_PLAIN)
 			Var_Append(MAKE_EXPORTED, varname, VAR_GLOBAL);
 	}
 	Words_Free(words);
@@ -724,7 +755,7 @@ ExportVarsExpand(const char *uvarnames, Boolean isExport, VarExportMode mode)
 void
 Var_Export(VarExportMode mode, const char *varnames)
 {
-	if (mode == VEM_PARENT && varnames[0] == '\0') {
+	if (mode == VEM_PLAIN && varnames[0] == '\0') {
 		var_exportedVars = VAR_EXPORTED_ALL; /* use with caution! */
 		return;
 	}
@@ -735,7 +766,7 @@ Var_Export(VarExportMode mode, const char *varnames)
 void
 Var_ExportVars(const char *varnames)
 {
-	ExportVarsExpand(varnames, FALSE, VEM_PARENT);
+	ExportVarsExpand(varnames, FALSE, VEM_PLAIN);
 }
 
 
@@ -912,7 +943,7 @@ SetVar(const char *name, const char *val, GNode *ctxt, VarSetFlags flags)
 
 		DEBUG3(VAR, "%s:%s = %s\n", ctxt->name, name, val);
 		if (v->flags & VAR_EXPORTED)
-			ExportVar(name, VEM_PARENT);
+			ExportVar(name, VEM_PLAIN);
 	}
 	/*
 	 * Any variables given on the command line are automatically exported
@@ -980,16 +1011,6 @@ Var_SetWithFlags(const char *name, const char *val, GNode *ctxt,
  *	name		name of the variable to set, is expanded once
  *	val		value to give to the variable
  *	ctxt		context in which to set it
- *
- * Notes:
- *	The variable is searched for only in its context before being
- *	created in that context. I.e. if the context is VAR_GLOBAL,
- *	only VAR_GLOBAL->context is searched. Likewise if it is VAR_CMDLINE,
- *	only VAR_CMDLINE->context is searched. This is done to avoid the
- *	literally thousands of unnecessary strcmp's that used to be done to
- *	set, say, $(@) or $(<).
- *	If the context is VAR_GLOBAL though, we check if the variable
- *	was set in VAR_CMDLINE from the command line and skip it if so.
  */
 void
 Var_Set(const char *name, const char *val, GNode *ctxt)
@@ -2090,7 +2111,7 @@ ParseModifierPartSubst(
 		Error("Unfinished modifier for %s ('%c' missing)",
 		    st->var->name.str, delim);
 		*out_part = NULL;
-		return VPR_PARSE_MSG;
+		return VPR_ERR;
 	}
 
 	*pp = ++p;
@@ -2222,7 +2243,7 @@ ApplyModifier_Loop(const char **pp, const char *val, ApplyModifiersState *st)
 	res = ParseModifierPart(pp, '@', VARE_NONE, st, &args.tvar);
 	if (res != VPR_OK)
 		return AMR_CLEANUP;
-	if (opts.lint && strchr(args.tvar, '$') != NULL) {
+	if (opts.strict && strchr(args.tvar, '$') != NULL) {
 		Parse_Error(PARSE_FATAL,
 		    "In the :@ modifier of \"%s\", the variable name \"%s\" "
 		    "must not contain a dollar.",
@@ -2349,7 +2370,7 @@ ApplyModifier_Gmtime(const char **pp, const char *val, ApplyModifiersState *st)
 		const char *arg = mod + 7;
 		if (!TryParseTime(&arg, &utc)) {
 			Parse_Error(PARSE_FATAL,
-			    "Invalid time value: %s\n", mod + 7);
+			    "Invalid time value: %s", mod + 7);
 			return AMR_CLEANUP;
 		}
 		*pp = arg;
@@ -2376,7 +2397,7 @@ ApplyModifier_Localtime(const char **pp, const char *val,
 		const char *arg = mod + 10;
 		if (!TryParseTime(&arg, &utc)) {
 			Parse_Error(PARSE_FATAL,
-			    "Invalid time value: %s\n", mod + 10);
+			    "Invalid time value: %s", mod + 10);
 			return AMR_CLEANUP;
 		}
 		*pp = arg;
@@ -2469,7 +2490,7 @@ ApplyModifier_Range(const char **pp, const char *val, ApplyModifiersState *st)
 		const char *p = mod + 6;
 		if (!TryParseSize(&p, &n)) {
 			Parse_Error(PARSE_FATAL,
-			    "Invalid number: %s\n", mod + 6);
+			    "Invalid number: %s", mod + 6);
 			return AMR_CLEANUP;
 		}
 		*pp = p;
@@ -2786,7 +2807,7 @@ ApplyModifier_ToSep(const char **pp, const char *val, ApplyModifiersState *st)
 
 		if (!TryParseChar(&p, base, &st->sep)) {
 			Parse_Error(PARSE_FATAL,
-			    "Invalid character number: %s\n", p);
+			    "Invalid character number: %s", p);
 			return AMR_CLEANUP;
 		}
 		if (*p != ':' && *p != st->endc) {
@@ -3475,8 +3496,7 @@ ApplyModifiersIndirect(ApplyModifiersState *st, const char **pp,
 		FStr newVal = ApplyModifiers(&modsp, *inout_value, '\0', '\0',
 		    st->var, &st->exprFlags, st->ctxt, st->eflags);
 		*inout_value = newVal;
-		if (newVal.str == var_Error || newVal.str == varUndefined ||
-		    *modsp != '\0') {
+		if (newVal.str == var_Error || *modsp != '\0') {
 			FStr_Done(&mods);
 			*pp = p;
 			return AMIR_OUT;	/* error already reported */
@@ -3549,7 +3569,7 @@ ApplySingleModifier(ApplyModifiersState *st, const char *mod, char endc,
 		    st->endc, st->var->name.str, inout_value->str, *mod);
 	} else if (*p == ':') {
 		p++;
-	} else if (opts.lint && *p != '\0' && *p != endc) {
+	} else if (opts.strict && *p != '\0' && *p != endc) {
 		Parse_Error(PARSE_FATAL,
 		    "Missing delimiter ':' after modifier \"%.*s\"",
 		    (int)(p - mod), mod);
@@ -3665,7 +3685,7 @@ VarnameIsDynamic(const char *name, size_t len)
 }
 
 static const char *
-UndefinedShortVarValue(char varname, const GNode *ctxt, VarEvalFlags eflags)
+UndefinedShortVarValue(char varname, const GNode *ctxt)
 {
 	if (ctxt == VAR_CMDLINE || ctxt == VAR_GLOBAL) {
 		/*
@@ -3688,7 +3708,7 @@ UndefinedShortVarValue(char varname, const GNode *ctxt, VarEvalFlags eflags)
 			return "$(.ARCHIVE)";
 		}
 	}
-	return eflags & VARE_UNDEFERR ? var_Error : varUndefined;
+	return NULL;
 }
 
 /* Parse a variable name, until the end character or a colon, whichever
@@ -3746,8 +3766,8 @@ ValidShortVarname(char varname, const char *start)
 		return VPR_OK;
 	}
 
-	if (!opts.lint)
-		return VPR_PARSE_SILENT;
+	if (!opts.strict)
+		return VPR_ERR;	/* XXX: Missing error message */
 
 	if (varname == '$')
 		Parse_Error(PARSE_FATAL,
@@ -3758,7 +3778,7 @@ ValidShortVarname(char varname, const char *start)
 		Parse_Error(PARSE_FATAL,
 		    "Invalid variable name '%c', at \"%s\"", varname, start);
 
-	return VPR_PARSE_MSG;
+	return VPR_ERR;
 }
 
 /* Parse a single-character variable name such as $V or $@.
@@ -3791,17 +3811,33 @@ ParseVarnameShort(char startc, const char **pp, GNode *ctxt,
 	name[1] = '\0';
 	v = VarFind(name, ctxt, TRUE);
 	if (v == NULL) {
+		const char *val;
 		*pp += 2;
 
-		*out_FALSE_val = UndefinedShortVarValue(startc, ctxt, eflags);
-		if (opts.lint && *out_FALSE_val == var_Error) {
+		val = UndefinedShortVarValue(startc, ctxt);
+		if (val == NULL)
+			val = eflags & VARE_UNDEFERR ? var_Error : varUndefined;
+
+		if (opts.strict && val == var_Error) {
 			Parse_Error(PARSE_FATAL,
 			    "Variable \"%s\" is undefined", name);
-			*out_FALSE_res = VPR_UNDEF_MSG;
+			*out_FALSE_res = VPR_ERR;
+			*out_FALSE_val = val;
 			return FALSE;
 		}
-		*out_FALSE_res =
-		    eflags & VARE_UNDEFERR ? VPR_UNDEF_SILENT : VPR_OK;
+
+		/*
+		 * XXX: This looks completely wrong.
+		 *
+		 * If undefined expressions are not allowed, this should
+		 * rather be VPR_ERR instead of VPR_UNDEF, together with an
+		 * error message.
+		 *
+		 * If undefined expressions are allowed, this should rather
+		 * be VPR_UNDEF instead of VPR_OK.
+		 */
+		*out_FALSE_res = eflags & VARE_UNDEFERR ? VPR_UNDEF : VPR_OK;
+		*out_FALSE_val = val;
 		return FALSE;
 	}
 
@@ -3851,18 +3887,18 @@ EvalUndefined(Boolean dynamic, const char *start, const char *p, char *varname,
 		return VPR_OK;
 	}
 
-	if ((eflags & VARE_UNDEFERR) && opts.lint) {
+	if ((eflags & VARE_UNDEFERR) && opts.strict) {
 		Parse_Error(PARSE_FATAL,
 		    "Variable \"%s\" is undefined", varname);
 		free(varname);
 		*out_val = FStr_InitRefer(var_Error);
-		return VPR_UNDEF_MSG;
+		return VPR_ERR;
 	}
 
 	if (eflags & VARE_UNDEFERR) {
 		free(varname);
 		*out_val = FStr_InitRefer(var_Error);
-		return VPR_UNDEF_SILENT;
+		return VPR_UNDEF;	/* XXX: Should be VPR_ERR instead. */
 	}
 
 	free(varname);
@@ -3915,7 +3951,7 @@ ParseVarnameLong(
 		free(varname);
 		*out_FALSE_pp = p;
 		*out_FALSE_val = FStr_InitRefer(var_Error);
-		*out_FALSE_res = VPR_PARSE_MSG;
+		*out_FALSE_res = VPR_ERR;
 		return FALSE;
 	}
 
@@ -4100,7 +4136,7 @@ Var_Parse(const char **pp, GNode *ctxt, VarEvalFlags eflags, FStr *out_val)
 	if (strchr(value.str, '$') != NULL && (eflags & VARE_WANTRES)) {
 		char *expanded;
 		VarEvalFlags nested_eflags = eflags;
-		if (opts.lint)
+		if (opts.strict)
 			nested_eflags &= ~(unsigned)VARE_UNDEFERR;
 		v->flags |= VAR_IN_USE;
 		(void)Var_Subst(value.str, ctxt, nested_eflags, &expanded);
@@ -4153,12 +4189,25 @@ Var_Parse(const char **pp, GNode *ctxt, VarEvalFlags eflags, FStr *out_val)
 		free(v);
 	}
 	*out_val = (FStr){ value.str, value.freeIt };
-	return VPR_UNKNOWN;
+	return VPR_OK;		/* XXX: Is not correct in all cases */
 }
 
 static void
-VarSubstNested(const char **pp, Buffer *buf, GNode *ctxt,
-	       VarEvalFlags eflags, Boolean *inout_errorReported)
+VarSubstDollarDollar(const char **pp, Buffer *res, VarEvalFlags eflags)
+{
+	/*
+	 * A dollar sign may be escaped with another dollar
+	 * sign.
+	 */
+	if (save_dollars && (eflags & VARE_KEEP_DOLLAR))
+		Buf_AddByte(res, '$');
+	Buf_AddByte(res, '$');
+	*pp += 2;
+}
+
+static void
+VarSubstExpr(const char **pp, Buffer *buf, GNode *ctxt,
+	     VarEvalFlags eflags, Boolean *inout_errorReported)
 {
 	const char *p = *pp;
 	const char *nested_p = p;
@@ -4168,7 +4217,7 @@ VarSubstNested(const char **pp, Buffer *buf, GNode *ctxt,
 	/* TODO: handle errors */
 
 	if (val.str == var_Error || val.str == varUndefined) {
-		if (!preserveUndefined) {
+		if (!(eflags & VARE_KEEP_UNDEF)) {
 			p = nested_p;
 		} else if ((eflags & VARE_UNDEFERR) || val.str == var_Error) {
 
@@ -4209,6 +4258,22 @@ VarSubstNested(const char **pp, Buffer *buf, GNode *ctxt,
 	*pp = p;
 }
 
+/*
+ * Skip as many characters as possible -- either to the end of the string
+ * or to the next dollar sign (variable expression).
+ */
+static void
+VarSubstPlain(const char **pp, Buffer *res)
+{
+	const char *p = *pp;
+	const char *start = p;
+
+	for (p++; *p != '$' && *p != '\0'; p++)
+		continue;
+	Buf_AddBytesBetween(res, start, p);
+	*pp = p;
+}
+
 /* Expand all variable expressions like $V, ${VAR}, $(VAR:Modifiers) in the
  * given string.
  *
@@ -4234,31 +4299,12 @@ Var_Subst(const char *str, GNode *ctxt, VarEvalFlags eflags, char **out_res)
 	errorReported = FALSE;
 
 	while (*p != '\0') {
-		if (p[0] == '$' && p[1] == '$') {
-			/*
-			 * A dollar sign may be escaped with another dollar
-			 * sign.
-			 */
-			if (save_dollars && (eflags & VARE_KEEP_DOLLAR))
-				Buf_AddByte(&res, '$');
-			Buf_AddByte(&res, '$');
-			p += 2;
-
-		} else if (p[0] == '$') {
-			VarSubstNested(&p, &res, ctxt, eflags, &errorReported);
-
-		} else {
-			/*
-			 * Skip as many characters as possible -- either to
-			 * the end of the string or to the next dollar sign
-			 * (variable expression).
-			 */
-			const char *plainStart = p;
-
-			for (p++; *p != '$' && *p != '\0'; p++)
-				continue;
-			Buf_AddBytesBetween(&res, plainStart, p);
-		}
+		if (p[0] == '$' && p[1] == '$')
+			VarSubstDollarDollar(&p, &res, eflags);
+		else if (p[0] == '$')
+			VarSubstExpr(&p, &res, ctxt, eflags, &errorReported);
+		else
+			VarSubstPlain(&p, &res);
 	}
 
 	*out_res = Buf_DestroyCompact(&res);

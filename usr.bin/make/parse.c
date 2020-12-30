@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.509 2020/12/21 02:09:34 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.523 2020/12/28 15:42:53 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -98,18 +98,10 @@
  */
 
 #include <sys/types.h>
-#include <sys/mman.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stdint.h>
-
-#ifndef MAP_FILE
-#define MAP_FILE 0
-#endif
-#ifndef MAP_COPY
-#define MAP_COPY MAP_PRIVATE
-#endif
 
 #include "make.h"
 #include "dir.h"
@@ -117,7 +109,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.509 2020/12/21 02:09:34 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.523 2020/12/28 15:42:53 rillig Exp $");
 
 /* types and constants */
 
@@ -354,21 +346,19 @@ struct loadedfile {
 	const char *path;	/* name, for error reports */
 	char *buf;		/* contents buffer */
 	size_t len;		/* length of contents */
-	size_t maplen;		/* length of mmap area, or 0 */
 	Boolean used;		/* XXX: have we used the data yet */
 };
 
 /* XXX: What is the lifetime of the path? Who manages the memory? */
 static struct loadedfile *
-loadedfile_create(const char *path)
+loadedfile_create(const char *path, char *buf, size_t buflen)
 {
 	struct loadedfile *lf;
 
 	lf = bmake_malloc(sizeof *lf);
 	lf->path = path == NULL ? "(stdin)" : path;
-	lf->buf = NULL;
-	lf->len = 0;
-	lf->maplen = 0;
+	lf->buf = buf;
+	lf->len = buflen;
 	lf->used = FALSE;
 	return lf;
 }
@@ -376,12 +366,7 @@ loadedfile_create(const char *path)
 static void
 loadedfile_destroy(struct loadedfile *lf)
 {
-	if (lf->buf != NULL) {
-		if (lf->maplen > 0)
-			munmap(lf->buf, lf->maplen);
-		else
-			free(lf->buf);
-	}
+	free(lf->buf);
 	free(lf);
 }
 
@@ -420,61 +405,15 @@ load_getsize(int fd, size_t *ret)
 	 * st_size is an off_t, which is 64 bits signed; *ret is
 	 * size_t, which might be 32 bits unsigned or 64 bits
 	 * unsigned. Rather than being elaborate, just punt on
-	 * files that are more than 2^31 bytes. We should never
-	 * see a makefile that size in practice...
+	 * files that are more than 1 GiB. We should never
+	 * see a makefile that size in practice.
 	 *
 	 * While we're at it reject negative sizes too, just in case.
 	 */
-	if (st.st_size < 0 || st.st_size > 0x7fffffff)
+	if (st.st_size < 0 || st.st_size > 0x3fffffff)
 		return FALSE;
 
 	*ret = (size_t)st.st_size;
-	return TRUE;
-}
-
-static Boolean
-loadedfile_mmap(struct loadedfile *lf, int fd)
-{
-	static unsigned long pagesize = 0;
-
-	if (!load_getsize(fd, &lf->len))
-		return FALSE;
-
-	/* found a size, try mmap */
-	if (pagesize == 0)
-		pagesize = (unsigned long)sysconf(_SC_PAGESIZE);
-	if (pagesize == 0 || pagesize == (unsigned long)-1)
-		pagesize = 0x1000;
-
-	/* round size up to a page */
-	lf->maplen = pagesize * ((lf->len + pagesize - 1) / pagesize);
-
-	/*
-	 * XXX hack for dealing with empty files; remove when
-	 * we're no longer limited by interfacing to the old
-	 * logic elsewhere in this file.
-	 */
-	if (lf->maplen == 0)
-		lf->maplen = pagesize;
-
-	/*
-	 * FUTURE: remove PROT_WRITE when the parser no longer
-	 * needs to scribble on the input.
-	 */
-	lf->buf = mmap(NULL, lf->maplen, PROT_READ | PROT_WRITE,
-	    MAP_FILE | MAP_COPY, fd, 0);
-	if (lf->buf == MAP_FAILED)
-		return FALSE;
-
-	if (lf->len == lf->maplen && lf->buf[lf->len - 1] != '\n') {
-		char *b = bmake_malloc(lf->len + 1);
-		b[lf->len] = '\n';
-		memcpy(b, lf->buf, lf->len++);
-		munmap(lf->buf, lf->maplen);
-		lf->maplen = 0;
-		lf->buf = b;
-	}
-
 	return TRUE;
 }
 
@@ -490,75 +429,63 @@ loadedfile_mmap(struct loadedfile *lf, int fd)
 static struct loadedfile *
 loadfile(const char *path, int fd)
 {
-	struct loadedfile *lf;
-	ssize_t result;
-	size_t bufpos;
+	ssize_t n;
+	Buffer buf;
+	size_t filesize;
 
-	lf = loadedfile_create(path);
 
 	if (path == NULL) {
 		assert(fd == -1);
 		fd = STDIN_FILENO;
-	} else {
-#if 0 /* notyet */
-		fd = open(path, O_RDONLY);
-		if (fd < 0) {
-			...
-			Error("%s: %s", path, strerror(errno));
-			exit(1);
-		}
-#endif
 	}
 
-	if (loadedfile_mmap(lf, fd))
-		goto done;
+	if (load_getsize(fd, &filesize)) {
+		/*
+		 * Avoid resizing the buffer later for no reason.
+		 *
+		 * At the same time leave space for adding a final '\n',
+		 * just in case it is missing in the file.
+		 */
+		filesize++;
+	} else
+		filesize = 1024;
+	Buf_InitSize(&buf, filesize);
 
-	/* cannot mmap; load the traditional way */
-
-	lf->maplen = 0;
-	lf->len = 1024;
-	lf->buf = bmake_malloc(lf->len);
-
-	bufpos = 0;
 	for (;;) {
-		assert(bufpos <= lf->len);
-		if (bufpos == lf->len) {
-			if (lf->len > SIZE_MAX / 2) {
+		assert(buf.len <= buf.cap);
+		if (buf.len == buf.cap) {
+			if (buf.cap > 0x1fffffff) {
 				errno = EFBIG;
 				Error("%s: file too large", path);
-				exit(1);
+				exit(2); /* Not 1 so -q can distinguish error */
 			}
-			lf->len *= 2;
-			lf->buf = bmake_realloc(lf->buf, lf->len);
+			Buf_Expand(&buf);
 		}
-		assert(bufpos < lf->len);
-		result = read(fd, lf->buf + bufpos, lf->len - bufpos);
-		if (result < 0) {
+		assert(buf.len < buf.cap);
+		n = read(fd, buf.data + buf.len, buf.cap - buf.len);
+		if (n < 0) {
 			Error("%s: read error: %s", path, strerror(errno));
-			exit(1);
+			exit(2);	/* Not 1 so -q can distinguish error */
 		}
-		if (result == 0)
+		if (n == 0)
 			break;
 
-		bufpos += (size_t)result;
+		buf.len += (size_t)n;
 	}
-	assert(bufpos <= lf->len);
-	lf->len = bufpos;
+	assert(buf.len <= buf.cap);
 
-	/* truncate malloc region to actual length (maybe not useful) */
-	if (lf->len > 0) {
-		/* as for mmap case, ensure trailing \n */
-		if (lf->buf[lf->len - 1] != '\n')
-			lf->len++;
-		lf->buf = bmake_realloc(lf->buf, lf->len);
-		lf->buf[lf->len - 1] = '\n';
-	}
+	if (!Buf_EndsWith(&buf, '\n'))
+		Buf_AddByte(&buf, '\n');
 
-done:
 	if (path != NULL)
 		close(fd);
 
-	return lf;
+	{
+		struct loadedfile *lf = loadedfile_create(path,
+		    buf.data, buf.len);
+		Buf_Destroy(&buf, FALSE);
+		return lf;
+	}
 }
 
 /* old code */
@@ -1083,9 +1010,8 @@ ParseDependencyTargetWord(const char **pp, const char *lstart)
 			const char *nested_p = cp;
 			FStr nested_val;
 
-			/* XXX: Why VARE_WANTRES? */
-			(void)Var_Parse(&nested_p, VAR_CMDLINE,
-			    VARE_WANTRES | VARE_UNDEFERR, &nested_val);
+			(void)Var_Parse(&nested_p, VAR_CMDLINE, VARE_NONE,
+			    &nested_val);
 			/* TODO: handle errors */
 			FStr_Done(&nested_val);
 			cp += nested_p - cp;
@@ -1911,7 +1837,7 @@ Parse_IsVar(const char *p, VarAssign *out_var)
 static void
 VarCheckSyntax(VarAssignOp type, const char *uvalue, GNode *ctxt)
 {
-	if (opts.lint) {
+	if (opts.strict) {
 		if (type != VAR_SUBST && strchr(uvalue, '$') != NULL) {
 			char *expandedValue;
 
@@ -1929,18 +1855,6 @@ VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
 {
 	const char *avalue;
 	char *evalue;
-	Boolean savedPreserveUndefined = preserveUndefined;
-
-	/* TODO: Can this assignment to preserveUndefined be moved further down
-	 * to the actually interesting Var_Subst call, without affecting any
-	 * edge cases?
-	 *
-	 * It might affect the implicit expansion of the variable name in the
-	 * Var_Exists and Var_Set calls, even though it's unlikely that anyone
-	 * cared about this edge case when adding this code.  In addition,
-	 * variable assignments should not refer to any undefined variables in
-	 * the variable name. */
-	preserveUndefined = TRUE;
 
 	/*
 	 * make sure that we set the variable the first time to nothing
@@ -1949,9 +1863,10 @@ VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
 	if (!Var_Exists(name, ctxt))
 		Var_Set(name, "", ctxt);
 
-	(void)Var_Subst(uvalue, ctxt, VARE_WANTRES | VARE_KEEP_DOLLAR, &evalue);
+	(void)Var_Subst(uvalue, ctxt,
+	    VARE_WANTRES | VARE_KEEP_DOLLAR | VARE_KEEP_UNDEF, &evalue);
 	/* TODO: handle errors */
-	preserveUndefined = savedPreserveUndefined;
+
 	avalue = evalue;
 	Var_Set(name, avalue, ctxt);
 
@@ -2203,7 +2118,7 @@ Parse_include_file(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
 			const char *suff;
 			SearchPath *suffPath = NULL;
 
-			if ((suff = strrchr(file, '.'))) {
+			if ((suff = strrchr(file, '.')) != NULL) {
 				suffPath = Suff_GetPath(suff);
 				if (suffPath != NULL)
 					fullname = Dir_FindFile(file, suffPath);
@@ -2687,10 +2602,18 @@ ParseRawLine(IFile *curFile, char **out_line, char **out_line_end,
 		if (ch == '\\') {
 			if (firstBackslash == NULL)
 				firstBackslash = p;
-			if (p[1] == '\n')
+			if (p[1] == '\n') {
 				curFile->lineno++;
+				if (p + 2 == curFile->buf_end) {
+					line_end = p;
+					*line_end = '\n';
+					p += 2;
+					continue;
+				}
+			}
 			p += 2;
 			line_end = p;
+			assert(p <= curFile->buf_end);
 			continue;
 		}
 
@@ -2831,6 +2754,7 @@ ParseGetLine(GetLineMode mode)
 		}
 
 		/* We now have a line of data */
+		assert(ch_isspace(*line_end));
 		*line_end = '\0';
 
 		if (mode == GLM_FOR_BODY)
@@ -2842,10 +2766,8 @@ ParseGetLine(GetLineMode mode)
 	}
 
 	/* Brutally ignore anything after a non-escaped '#' in non-commands. */
-	if (firstComment != NULL && line[0] != '\t') {
-		line_end = firstComment;
-		*line_end = '\0';
-	}
+	if (firstComment != NULL && line[0] != '\t')
+		*firstComment = '\0';
 
 	/* If we didn't see a '\\' then the in-situ data is fine. */
 	if (firstBackslash == NULL)
@@ -3048,10 +2970,10 @@ ParseDirective(char *line)
 		Var_Undef(cp);
 		return TRUE;
 	} else if (IsDirective(dir, dirlen, "export")) {
-		Var_Export(VEM_PARENT, arg);
+		Var_Export(VEM_PLAIN, arg);
 		return TRUE;
 	} else if (IsDirective(dir, dirlen, "export-env")) {
-		Var_Export(VEM_NORMAL, arg);
+		Var_Export(VEM_ENV, arg);
 		return TRUE;
 	} else if (IsDirective(dir, dirlen, "export-literal")) {
 		Var_Export(VEM_LITERAL, arg);
@@ -3163,7 +3085,7 @@ ParseDependency(char *line)
 	 * Var_Parse does not print any parse errors in such a case.
 	 * It simply returns the special empty string var_Error,
 	 * which cannot be detected in the result of Var_Subst. */
-	eflags = opts.lint ? VARE_WANTRES : VARE_WANTRES | VARE_UNDEFERR;
+	eflags = opts.strict ? VARE_WANTRES : VARE_WANTRES | VARE_UNDEFERR;
 	(void)Var_Subst(line, VAR_CMDLINE, eflags, &expanded_line);
 	/* TODO: handle errors */
 

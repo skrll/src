@@ -1,4 +1,4 @@
-/*	$NetBSD: ata_subr.c,v 1.12 2020/12/19 18:09:44 jmcneill Exp $	*/
+/*	$NetBSD: ata_subr.c,v 1.13 2020/12/23 08:17:01 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.  All rights reserved.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ata_subr.c,v 1.12 2020/12/19 18:09:44 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ata_subr.c,v 1.13 2020/12/23 08:17:01 skrll Exp $");
 
 #include "opt_ata.h"
 
@@ -243,7 +243,7 @@ ata_timeout(void *v)
 	/*
 	 * If there is a timeout, means the last enqueued command
 	 * timed out, and thus all commands timed out.
-	 * XXX locking 
+	 * XXX locking
 	 */
 	TAILQ_FOREACH_SAFE(xfer, &chq->active_xfers, c_activechain, nxfer) {
 		ATADEBUG_PRINT(("%s: slot %d\n", __func__, xfer->c_slot),
@@ -306,7 +306,7 @@ ata_queue_alloc_slot(struct ata_channel *chp, uint8_t *c_slot,
 	KASSERT(mutex_owned(&chp->ch_lock));
 	KASSERT(chq->queue_active < chq->queue_openings);
 
-	ATADEBUG_PRINT(("%s: channel %d qavail 0x%x qact %d",
+	ATADEBUG_PRINT(("%s: channel %d qavail 0x%x qact %d\n",
 	    __func__, chp->ch_channel,
 	    chq->queue_xfers_avail, chq->queue_active),
 	    DEBUG_XFERS);
@@ -346,7 +346,7 @@ ata_queue_hold(struct ata_channel *chp)
 	struct ata_queue *chq = chp->ch_queue;
 
 	KASSERT(mutex_owned(&chp->ch_lock));
-	
+
 	chq->queue_hold |= chq->active_xfers_used;
 	chq->active_xfers_used = 0;
 }

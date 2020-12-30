@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.500 2020/12/20 14:39:46 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.506 2020/12/28 00:46:24 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -109,7 +109,7 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.500 2020/12/20 14:39:46 rillig Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.506 2020/12/28 00:46:24 rillig Exp $");
 #if defined(MAKE_NATIVE) && !defined(lint)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
@@ -125,7 +125,6 @@ Boolean deleteOnError;		/* .DELETE_ON_ERROR: set */
 static int maxJobTokens;	/* -j argument */
 Boolean enterFlagObj;		/* -w and objdir != srcdir */
 
-Boolean preserveUndefined;
 static int jp_0 = -1, jp_1 = -1; /* ends of parent job pipe */
 Boolean doing_depend;		/* Set while reading .depend */
 static Boolean jobsRunning;	/* TRUE if the jobs might be running */
@@ -288,7 +287,7 @@ parse_debug_options(const char *argvalue)
 			debug |= DEBUG_JOB;
 			break;
 		case 'L':
-			opts.lint = TRUE;
+			opts.strict = TRUE;
 			break;
 		case 'l':
 			debug |= DEBUG_LOUD;
@@ -373,7 +372,7 @@ MainParseArgChdir(const char *argvalue)
 	if (chdir(argvalue) == -1) {
 		(void)fprintf(stderr, "%s: chdir %s: %s\n",
 		    progname, argvalue, strerror(errno));
-		exit(1);
+		exit(2);	/* Not 1 so -q can distinguish error */
 	}
 	if (getcwd(curdir, MAXPATHLEN) == NULL) {
 		(void)fprintf(stderr, "%s: %s.\n", progname, strerror(errno));
@@ -426,7 +425,7 @@ MainParseArgJobs(const char *argvalue)
 		(void)fprintf(stderr,
 		    "%s: illegal argument to -j -- must be positive integer!\n",
 		    progname);
-		exit(1);	/* XXX: why not 2? */
+		exit(2);	/* Not 1 so -q can distinguish error */
 	}
 	Var_Append(MAKEFLAGS, "-j", VAR_GLOBAL);
 	Var_Append(MAKEFLAGS, argvalue, VAR_GLOBAL);
@@ -1114,7 +1113,7 @@ CmdOpts_Init(void)
 	opts.compatMake = FALSE;
 	opts.debug = DEBUG_NONE;
 	/* opts.debug_file has been initialized earlier */
-	opts.lint = FALSE;
+	opts.strict = FALSE;
 	opts.debugVflag = FALSE;
 	opts.checkEnvFirst = FALSE;
 	Lst_Init(&opts.makefiles);
@@ -1147,10 +1146,11 @@ InitVarMake(const char *argv0)
 
 	if (argv0[0] != '/' && strchr(argv0, '/') != NULL) {
 		char pathbuf[MAXPATHLEN];
-		const char *abs = cached_realpath(argv0, pathbuf);
+		const char *abspath = cached_realpath(argv0, pathbuf);
 		struct stat st;
-		if (abs != NULL && abs[0] == '/' && stat(make, &st) == 0)
-			make = abs;
+		if (abspath != NULL && abspath[0] == '/' &&
+		    stat(make, &st) == 0)
+			make = abspath;
 	}
 
 	Var_Set("MAKE", make, VAR_GLOBAL);
@@ -1240,7 +1240,7 @@ InitMaxJobs(void)
 		    "%s: illegal value for .MAKE.JOBS "
 		    "-- must be positive integer!\n",
 		    progname);
-		exit(1);
+		exit(2);	/* Not 1 so -q can distinguish error */
 	}
 
 	if (n != opts.maxJobs) {
@@ -1531,8 +1531,7 @@ main_PrepareMaking(void)
 {
 	/* In particular suppress .depend for '-r -V .OBJDIR -f /dev/null' */
 	if (!opts.noBuiltins || opts.printVars == PVM_NONE) {
-		/* ignore /dev/null and anything starting with "no" */
-		(void)Var_Subst("${.MAKE.DEPENDFILE:N/dev/null:Nno*:T}",
+		(void)Var_Subst("${.MAKE.DEPENDFILE}",
 		    VAR_CMDLINE, VARE_WANTRES, &makeDependfile);
 		if (makeDependfile[0] != '\0') {
 			/* TODO: handle errors */
@@ -1645,7 +1644,7 @@ main_CleanUp(void)
 static int
 main_Exit(Boolean outOfDate)
 {
-	if (opts.lint && (main_errors > 0 || Parse_GetFatals() > 0))
+	if (opts.strict && (main_errors > 0 || Parse_GetFatals() > 0))
 		return 2;	/* Not 1 so -q can distinguish error */
 	return outOfDate ? 1 : 0;
 }
@@ -1775,6 +1774,8 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 		goto bad;
 	}
 
+	Var_ReexportVars();
+
 	/*
 	 * Fork
 	 */
@@ -1789,8 +1790,6 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 		 */
 		(void)dup2(pipefds[1], 1);
 		(void)close(pipefds[1]);
-
-		Var_ReexportVars();
 
 		(void)execv(shellPath, UNCONST(args));
 		_exit(1);
@@ -1931,7 +1930,7 @@ DieHorribly(void)
 	if (DEBUG(GRAPH2))
 		Targ_PrintGraph(2);
 	Trace_Log(MAKEERROR, NULL);
-	exit(2);		/* Not 1, so -q can distinguish error */
+	exit(2);		/* Not 1 so -q can distinguish error */
 }
 
 /* Called when aborting due to errors in child shell to signal abnormal exit.

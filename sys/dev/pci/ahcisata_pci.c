@@ -1,4 +1,4 @@
-/*	$NetBSD: ahcisata_pci.c,v 1.57 2020/01/18 11:26:11 simonb Exp $	*/
+/*	$NetBSD: ahcisata_pci.c,v 1.58 2020/12/28 20:01:46 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ahcisata_pci.c,v 1.57 2020/01/18 11:26:11 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ahcisata_pci.c,v 1.58 2020/12/28 20:01:46 jmcneill Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ahcisata_pci.h"
@@ -198,8 +198,8 @@ static const struct ahci_pci_quirk ahci_pci_quirks[] = {
 	    AHCI_PCI_QUIRK_FORCE },
 	{ PCI_VENDOR_ASMEDIA, PCI_PRODUCT_ASMEDIA_ASM1061_12,
 	    AHCI_PCI_QUIRK_FORCE },
-	{ PCI_VENDOR_CAVIUM, PCI_PRODUCT_CAVIUM_THUNDERX_AHCI,
-	    AHCI_QUIRK_SKIP_RESET },
+//	{ PCI_VENDOR_CAVIUM, PCI_PRODUCT_CAVIUM_THUNDERX_AHCI,
+//	    AHCI_QUIRK_SKIP_RESET | AHCI_PCI_QUIRK_ONEMSI },
 	{ PCI_VENDOR_AMD, PCI_PRODUCT_AMD_HUDSON_SATA,
 	    AHCI_PCI_QUIRK_FORCE },
 	{ PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_82801JI_SATA_AHCI,
@@ -414,6 +414,9 @@ ahci_pci_attach(device_t parent, device_t self, void *aux)
 		[PCI_INTR_TYPE_MSIX] = -1,
 	};
 
+	sc->sc_ahci_quirks = ahci_pci_has_quirk(PCI_VENDOR(pa->pa_id),
+					    PCI_PRODUCT(pa->pa_id));
+
 	/* Allocate and establish the interrupt. */
 	if (pci_intr_alloc(pa, &psc->sc_pihp, counts, PCI_INTR_TYPE_MSIX)) {
 		aprint_error_dev(self, "can't allocate handler\n");
@@ -425,9 +428,6 @@ ahci_pci_attach(device_t parent, device_t self, void *aux)
 	sc->sc_intr_establish = ahci_pci_intr_establish;
 
 	sc->sc_dmat = pa->pa_dmat;
-
-	sc->sc_ahci_quirks = ahci_pci_has_quirk(PCI_VENDOR(pa->pa_id),
-					    PCI_PRODUCT(pa->pa_id));
 
 	ahci_cap_64bit = (AHCI_READ(sc, AHCI_CAP) & AHCI_CAP_64BIT) != 0;
 	ahci_bad_64bit = ((sc->sc_ahci_quirks & AHCI_PCI_QUIRK_BAD64) != 0);

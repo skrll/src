@@ -31,7 +31,6 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.99 2020/12/20 08:26:32 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
-#include "opt_kasan.h"
 #include "opt_modular.h"
 #include "opt_multiprocessor.h"
 #include "opt_pmap.h"
