@@ -101,9 +101,24 @@ arm_fdt_attach(device_t parent, device_t self, void *aux)
 	plat->ap_init_attach_args(&faa);
 	faa.faa_name = "";
 	faa.faa_phandle = OF_peer(0);
+	faa.faa_quiet = 0;
 
 	config_found(self, &faa, NULL);
 }
+
+void
+arm_fdt_init_attach_args(struct fdt_attach_args *faa)
+{
+	extern struct bus_space arm_generic_bs_tag;
+	extern struct bus_space arm_generic_a4x_bs_tag;
+	extern struct arm32_bus_dma_tag arm_generic_dma_tag;
+
+	memset(faa->faa_shift_bst, 0, sizeof(faa->faa_shift_bst));
+	faa->faa_shift_bst[0] = &arm_generic_bs_tag;
+	faa->faa_shift_bst[2] = &arm_generic_a4x_bs_tag;
+	faa->faa_dmat = &arm_generic_dma_tag;
+}
+
 
 const struct arm_platform *
 arm_fdt_platform(void)

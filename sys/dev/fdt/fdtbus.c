@@ -144,7 +144,6 @@ fdtbus_decode_range(struct fdt_softc *sc, uint64_t *paddr, uint64_t size)
 	return fdtbus_decode_range(psc, paddr, size);
 }
 
-
 static int
 fdt_range(struct fdt_softc *sc, int phandle, const char *name,
     struct fdtbus_range **rangesp, int *nrangesp)

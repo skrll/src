@@ -1247,14 +1247,6 @@ static void
 bcm2835_platform_bootstrap(void)
 {
 
-	bcm2835_bs_tag = arm_generic_bs_tag;
-	bcm2835_a4x_bs_tag = arm_generic_a4x_bs_tag;
-
-	bcm2835_bs_tag.bs_map = bcm2835_bs_map;
-	bcm2835_bs_tag.bs_mmap = bcm2835_bs_mmap;
-	bcm2835_a4x_bs_tag.bs_map = bcm2835_bs_map;
-	bcm2835_a4x_bs_tag.bs_mmap = bcm2835_a4x_bs_mmap;
-
 	bcm2835_uartinit();
 
 	bcm2835_bootparams();
@@ -1265,14 +1257,6 @@ bcm2835_platform_bootstrap(void)
 static void
 bcm2836_platform_bootstrap(void)
 {
-
-	bcm2836_bs_tag = arm_generic_bs_tag;
-	bcm2836_a4x_bs_tag = arm_generic_a4x_bs_tag;
-
-	bcm2836_bs_tag.bs_map = bcm2836_bs_map;
-	bcm2836_bs_tag.bs_mmap = bcm2836_bs_mmap;
-	bcm2836_a4x_bs_tag.bs_map = bcm2836_bs_map;
-	bcm2836_a4x_bs_tag.bs_mmap = bcm2836_a4x_bs_mmap;
 
 	bcm2836_uartinit();
 
