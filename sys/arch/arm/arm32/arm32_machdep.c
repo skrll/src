@@ -55,6 +55,7 @@ __KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.139 2020/12/01 02:43:14 rin Exp 
 
 #include <sys/atomic.h>
 #include <sys/buf.h>
+#include <sys/bus.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
 #include <sys/intr.h>

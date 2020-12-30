@@ -83,6 +83,7 @@ file	arch/arm/arm/arm_generic_dma.c
 file	arch/arm/arm/bootconfig.c
 file	arch/arm/arm/bus_stubs.c
 file	arch/arm/arm/cpu_subr.c
+file	arch/arm/arm/fdtbus_machdep.c
 file	arch/arm/arm32/bus_dma.c
 file	arch/aarch64/aarch64/aarch64_machdep.c
 file	arch/aarch64/aarch64/aarch64_reboot.c

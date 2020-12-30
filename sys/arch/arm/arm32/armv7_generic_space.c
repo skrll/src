@@ -56,6 +56,7 @@ bs_protos(generic_armv4);
 
 __strong_alias(arm_generic_bs_tag,armv7_generic_bs_tag);
 __strong_alias(arm_generic_a4x_bs_tag,armv7_generic_a4x_bs_tag);
+__strong_alias(arm_generic_bs_map,armv7_generic_bs_map);
 
 struct bus_space armv7_generic_bs_tag = {
 	/* cookie */

@@ -78,6 +78,7 @@ struct plfb_softc {
 	bus_space_handle_t	sc_bsh;
 	int			sc_phandle;
 
+	bus_space_tag_t		sc_vram_bst;
 	bus_space_handle_t	sc_vram_bsh;
 	bus_addr_t		sc_vram_addr;
 	bus_size_t		sc_vram_size;
@@ -164,12 +165,14 @@ plfb_attach(device_t parent, device_t self, void *aux)
 		aprint_error(": missing 'reg' property on memory-region\n");
 		return;
 	}
-	if (bus_space_map(sc->sc_bst, sc->sc_vram_addr, sc->sc_vram_size,
+	sc->sc_vram_bst = fdtbus_get_node_bst(vram_phandle, 0);
+	if (bus_space_map(sc->sc_vram_bst, sc->sc_vram_addr, sc->sc_vram_size,
 	    BUS_SPACE_MAP_LINEAR, &sc->sc_vram_bsh)) {
 		aprint_error(": couldn't map vram\n");
 		return;
 	}
-	sc->sc_vram = (uintptr_t)bus_space_vaddr(sc->sc_bst, sc->sc_vram_bsh);
+	sc->sc_vram = (uintptr_t)bus_space_vaddr(sc->sc_vram_bst,
+	    sc->sc_vram_bsh);
 
 	plfb_init(sc);
 

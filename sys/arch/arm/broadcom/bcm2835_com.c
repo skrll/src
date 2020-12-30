@@ -70,7 +70,7 @@ bcm_com_attach(device_t parent, device_t self, void *aux)
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
 
-	bus_space_tag_t bst = faa->faa_bst;
+	bus_space_tag_t bst = faa->faa_shift_bst[2];
 	bus_space_handle_t bsh;
 	bus_addr_t addr;
 	bus_size_t size;
@@ -137,7 +137,7 @@ static void
 bcmaux_com_console_consinit(struct fdt_attach_args *faa, u_int uart_freq)
 {
 	const int phandle = faa->faa_phandle;
-	bus_space_tag_t bst = faa->faa_bst;
+	bus_space_tag_t bst = faa->faa_shift_bst[2];
 	bus_space_handle_t dummy_bsh;
 	struct com_regs regs;
 	bus_addr_t addr;

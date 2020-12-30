@@ -68,12 +68,6 @@ static TAILQ_HEAD(, fdt_node) fdt_nodes =
     TAILQ_HEAD_INITIALIZER(fdt_nodes);
 static bool fdt_need_rescan = false;
 
-struct fdt_softc {
-	device_t	sc_dev;
-	int		sc_phandle;
-	struct fdt_attach_args sc_faa;
-};
-
 static int	fdt_match(device_t, cfdata_t, void *);
 static void	fdt_attach(device_t, device_t, void *);
 static int	fdt_rescan(device_t, const char *, const int *);
@@ -92,6 +86,120 @@ static const char * const fdtbus_compatible[] =
 
 CFATTACH_DECL2_NEW(simplebus, sizeof(struct fdt_softc),
     fdt_match, fdt_attach, NULL, NULL, fdt_rescan, fdt_childdet);
+
+void fdtbus_attach(int phandle, struct fdt_softc *sc);
+
+static bool
+fdtbus_check_range(struct fdtbus_range *range, int nranges, uint64_t *addrp,
+    uint64_t size)
+{
+	KASSERTMSG(nranges >= 0, "%p: ranges %d", range, nranges);
+
+	uint64_t addr = *addrp;
+	/* For each range. */
+	for (size_t i = 0; i < nranges; i++) {
+		uint64_t cba = range[i].fr_caddr;
+		uint64_t pba = range[i].fr_paddr;
+		uint64_t cl = range[i].fr_size;
+
+		aprint_debug("%s: checking range addr %" PRIx64 " / %" PRIx64
+		    "\n", __func__, cba, cba + cl);
+		/* Try next, if we're not in the range. */
+		if (addr < cba || (addr + size) >= (cba + cl))
+			continue;
+
+		addr -= cba;
+		addr += pba;
+
+		aprint_debug("%s: decoded             %" PRIx64 " / %" PRIx64
+		    "\n", __func__, addr, size);
+
+		*addrp = addr;
+		return true;
+	}
+	return false;
+}
+
+struct fdt_softc *
+fdtbus_decode_range(struct fdt_softc *sc, uint64_t *paddr, uint64_t size)
+{
+	struct fdt_softc *psc = sc->sc_parent;
+	if (psc == NULL)
+		return sc;
+
+	struct fdtbus_simplebus *fbus = &sc->sc_fbus;
+
+	if (fbus->fbus_nranges > 0) {
+		bool match = fdtbus_check_range(fbus->fbus_ranges,
+		    fbus->fbus_nranges, paddr, size);
+		if (match)
+			return fdtbus_decode_range(psc, paddr, size);
+	}
+	if (fbus->fbus_ndmaranges > 0) {
+		bool match = fdtbus_check_range(fbus->fbus_dmaranges,
+		    fbus->fbus_ndmaranges, paddr, size);
+		if (match)
+			return fdtbus_decode_range(psc, paddr, size);
+	}
+	return fdtbus_decode_range(psc, paddr, size);
+}
+
+
+static int
+fdt_range(struct fdt_softc *sc, int phandle, const char *name,
+    struct fdtbus_range **rangesp, int *nrangesp)
+{
+	struct fdtbus_range *ranges = NULL;
+	int nranges = 0;
+
+	const size_t elen =
+	    (sc->sc_pcells + sc->sc_acells + sc->sc_scells) * sizeof(uint32_t);
+
+	int len;
+	const uint8_t *buf = fdt_getprop(fdtbus_get_data(),
+	    fdtbus_phandle2offset(phandle), name, &len);
+
+	if (len == -1) {
+		nranges = -1;
+	} else if (len > 0 && len >= elen && (len % elen) == 0) {
+		aprint_debug_dev(sc->sc_dev, "%s:\n", name);
+
+		nranges = len / elen;
+		ranges = kmem_zalloc(nranges * sizeof(*ranges), KM_SLEEP);
+
+		size_t count = 0;
+		while (len > 0) {
+			uint64_t cba = fdtbus_get_cells(buf, sc->sc_acells);
+			buf += sc->sc_acells * sizeof(uint32_t);
+			len -= sc->sc_acells * sizeof(uint32_t);
+
+			uint64_t pba = fdtbus_get_cells(buf, sc->sc_pcells);
+			buf += sc->sc_pcells * sizeof(uint32_t);
+			len -= sc->sc_pcells * sizeof(uint32_t);
+
+			uint64_t cs = fdtbus_get_cells(buf, sc->sc_scells);
+			buf += sc->sc_scells * sizeof(uint32_t);
+			len -= sc->sc_scells * sizeof(uint32_t);
+
+			ranges[count].fr_caddr = cba;
+			ranges[count].fr_paddr = pba;
+			ranges[count].fr_size = cs;
+
+			aprint_debug_dev(sc->sc_dev,
+			    "%zu: %" PRIx64 " - %" PRIx64 " -> %" PRIx64 "\n",
+			    count, cba, cba + cs, pba);
+			count++;
+		}
+		KASSERT(nranges == count);
+	} else {
+		aprint_debug_dev(sc->sc_dev, "%s: len %d entry length %zu\n",
+		    name, len, elen);
+	}
+	*nrangesp = nranges;
+	*rangesp = ranges;
+
+	return 0;
+}
 
 static int
 fdt_match(device_t parent, cfdata_t cf, void *aux)
@@ -126,8 +234,19 @@ fdt_attach(device_t parent, device_t self, void *aux)
 	const char *descr, *model;
 
 	sc->sc_dev = self;
-	sc->sc_phandle = phandle;
-	sc->sc_faa = *faa;
+	sc->sc_fbus.fbus_phandle = phandle;
+	sc->sc_parent = NULL;
+
+	if (phandle != OF_peer(0)) {
+		/* we're attaching to a parent fdtbus */
+		sc->sc_parent = device_private(parent);
+	}
+
+	/* maybe not always */
+	memcpy(sc->sc_fbus.fbus_pshift_bst, faa->faa_shift_bst,
+	     sizeof(sc->sc_fbus.fbus_pshift_bst));
+	sc->sc_fbus.fbus_pdmat = faa->faa_dmat;
+	sc->sc_fbus.fbus_faa = *faa;
 
 	aprint_naive("\n");
 
@@ -137,8 +256,47 @@ fdt_attach(device_t parent, device_t self, void *aux)
 	else
 		aprint_normal("\n");
 
+	sc->sc_pcells = fdtbus_get_addr_cells(OF_parent(phandle));
+	sc->sc_acells = fdtbus_get_addr_cells(phandle);
+	sc->sc_scells = fdtbus_get_size_cells(phandle);
+
+	fdt_range(sc, phandle, "ranges", &sc->sc_fbus.fbus_ranges,
+	    &sc->sc_fbus.fbus_nranges);
+	fdt_range(sc, phandle, "dma-ranges", &sc->sc_fbus.fbus_dmaranges,
+	    &sc->sc_fbus.fbus_ndmaranges);
+
+	aprint_debug_dev(sc->sc_dev, "ranges %d dma_ranges %d\n",
+	    sc->sc_fbus.fbus_nranges, sc->sc_fbus.fbus_ndmaranges);
+
+	/*
+	 * Create bus_space and bus_dma tags appropriate for platform
+	 */
+	fdtbus_create_bus(sc);
+
+	for (int child = OF_child(phandle); child; child = OF_peer(child)) {
+		if (!fdtbus_status_okay(child))
+			continue;
+
+		int len = OF_getproplen(child, "name");
+		if (len <= 0)
+			continue;
+
+		char *name = kmem_zalloc(len, KM_SLEEP);
+		if (OF_getprop(child, "name", name, len) != len)
+			continue;
+
+		/* Add the node to our device list */
+		struct fdt_node *node = kmem_alloc(sizeof(*node), KM_SLEEP);
+		node->n_bus = self;
+		node->n_dev = NULL;
+		node->n_phandle = child;
+		node->n_name = name;
+		node->n_order = fdt_get_order(node->n_phandle);
+		fdt_add_node(node);
+	}
+
 	/* Find all child nodes */
-	fdt_add_bus(self, phandle, &sc->sc_faa);
+	fdt_add_bus(self, phandle, &sc->sc_fbus.fbus_faa);
 
 	/* Only the root bus should scan for devices */
 	if (OF_finddevice("/") != faa->faa_phandle)
@@ -342,7 +500,7 @@ fdt_scan_best(struct fdt_softc *sc, struct fdt_node *node)
 		const int locs[FDTCF_NLOCS] = {
 			[FDTCF_PASS] = pass
 		};
-		fdt_init_attach_args(&sc->sc_faa, node, true, &faa);
+		fdt_init_attach_args(&sc->sc_fbus.fbus_faa, node, true, &faa);
 		cf = config_search_loc(fdt_scan_submatch, node->n_bus, "fdt", locs, &faa);
 		if (cf == NULL)
 			continue;
@@ -372,7 +530,7 @@ fdt_scan(struct fdt_softc *sc, int pass)
 		if (node->n_cfpass != pass || node->n_dev != NULL)
 			continue;
 
-		fdt_init_attach_args(&sc->sc_faa, node, quiet, &faa);
+		fdt_init_attach_args(&sc->sc_fbus.fbus_faa, node, quiet, &faa);
 
 		if (quiet && node->n_cf == NULL) {
 			/*
@@ -547,4 +705,27 @@ fdtbus_print(void *aux, const char *pnp)
 		aprint_debug(" (%s)", name);
 
 	return UNCONF;
+}
+
+bus_space_tag_t
+fdtbus_get_node_bst(int phandle, int shift)
+{
+	struct fdt_node *node;
+
+	aprint_debug("%s: 0x%04x\n", __func__, phandle);
+
+	TAILQ_FOREACH(node, &fdt_nodes, n_nodes) {
+		aprint_debug("%s: 0x%04x %s", __func__, node->n_phandle,
+		    device_xname(node->n_bus));
+		if (node->n_phandle == phandle) {
+			struct fdt_softc *sc = device_private(node->n_bus);
+
+			aprint_debug("... found\n");
+
+			return sc->sc_fbus.fbus_faa.faa_shift_bst[shift];
+		}
+		aprint_debug("... nope\n");
+	}
+	aprint_debug("%s: ... not found\n", __func__);
+	return NULL;
 }

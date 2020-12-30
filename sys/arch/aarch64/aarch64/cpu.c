@@ -36,6 +36,7 @@ __KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.57 2020/12/11 18:03:33 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
+#include <sys/bus.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
 #include <sys/kmem.h>

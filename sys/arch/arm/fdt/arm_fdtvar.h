@@ -35,6 +35,22 @@ struct fdt_attach_args;
  * Platform-specific data
  */
 
+struct fdt_attach_args;
+struct fdtbus_simplebus;
+
+struct fdtbus_cookie {
+	struct fdtbus_simplebus *fc_bus;
+	size_t			fc_shift;
+};
+
+struct fdtbus_staticrange {
+	int	(*fsr_bs_map)(void *, bus_addr_t, bus_size_t, int,
+		    bus_space_handle_t *);
+
+	size_t			fsr_nranges;
+	struct fdtbus_range	*fsr_range;
+};
+
 struct arm_platform {
 	const struct pmap_devmap * (*ap_devmap)(void);
 	void			(*ap_bootstrap)(void);
@@ -65,6 +81,8 @@ static const struct arm_platform_info __CONCAT(_name,_platinfo) = {	\
 _ARM_PLATFORM_REGISTER(_name)
 
 const struct arm_platform *	arm_fdt_platform(void);
+
+void	arm_fdt_init_attach_args(struct fdt_attach_args *);
 
 /*
  * CPU enable methods

@@ -108,9 +108,11 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_platform.c,v 1.40 2020/09/28 11:54:23 jmcneill
 
 extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 extern struct bus_space arm_generic_bs_tag;
+extern struct bus_space arm_generic_a4x_bs_tag;
 
 #define	sunxi_dma_tag		arm_generic_dma_tag
 #define	sunxi_bs_tag		arm_generic_bs_tag
+#define	sunxi_a4x_bs_tag	arm_generic_a4x_bs_tag
 
 static bus_space_handle_t reset_bsh;
 
@@ -175,6 +177,7 @@ static void
 sunxi_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	faa->faa_bst = &sunxi_bs_tag;
+	faa->faa_shift_bst[2] = &sunxi_a4x_bs_tag;
 	faa->faa_dmat = &sunxi_dma_tag;
 }
 

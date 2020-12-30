@@ -197,6 +197,7 @@ file	arch/arm/arm/cpu_exec.c
 file	arch/arm/arm/cpu_in_cksum.S		(inet | inet6) & cpu_in_cksum
 file	arch/arm/arm/cpu_subr.c
 file	arch/arm/arm/fusu.S
+file	arch/arm/arm/fdtbus_machdep.c		fdt
 file	arch/arm/arm/idle_machdep.c
 file	arch/arm/arm/lock_cas.S
 file	arch/arm/arm/process_machdep.c

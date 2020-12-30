@@ -51,12 +51,59 @@ typedef void *audio_dai_tag_t;
 
 #include <dev/ofw/openfirm.h>
 
+#define FDTBUS_NREGSHIFT	3
+
 struct fdt_attach_args {
 	const char *faa_name;
-	bus_space_tag_t faa_bst;
+
+	bus_space_tag_t faa_shift_bst[FDTBUS_NREGSHIFT];
 	bus_dma_tag_t faa_dmat;
+
 	int faa_phandle;
 	int faa_quiet;
+};
+#define faa_bst		faa_shift_bst[0]
+
+/* Upto 64-bit support */
+struct fdtbus_range {
+	uint64_t	fr_caddr;
+	uint64_t	fr_paddr;
+	uint64_t	fr_size;
+};
+
+struct fdtbus_simplebus {
+	int		fbus_phandle;
+
+	bus_space_tag_t	fbus_pshift_bst[FDTBUS_NREGSHIFT];
+#define	sc_pbst sc_pshift_bst[0]
+
+	bus_dma_tag_t	fbus_pdmat;
+
+	struct fdtbus_range *
+			fbus_ranges;
+	int		fbus_nranges;
+
+	struct fdtbus_range *
+			fbus_dmaranges;
+	int		fbus_ndmaranges;
+
+	struct fdt_attach_args
+			fbus_faa;
+};
+
+struct fdt_softc {
+	device_t	sc_dev;
+	int		sc_phandle;
+
+	struct fdt_softc *
+			sc_parent;
+
+	size_t		sc_acells;
+	size_t		sc_scells;
+	size_t		sc_pcells;
+
+	struct fdtbus_simplebus
+			sc_fbus;
 };
 
 /* flags for fdtbus_intr_establish */
@@ -408,6 +455,9 @@ bool		fdtbus_init(const void *);
 const void *	fdtbus_get_data(void);
 int		fdtbus_phandle2offset(int);
 int		fdtbus_offset2phandle(int);
+int		fdtbus_get_addr_cells(int);
+int		fdtbus_get_size_cells(int);
+uint64_t	fdtbus_get_cells(const uint8_t *, int);
 bool		fdtbus_get_path(int, char *, size_t);
 
 const struct fdt_console *fdtbus_get_console(void);
@@ -434,6 +484,10 @@ void		fdt_remove_bycompat(const char *[]);
 int		fdt_find_with_property(const char *, int *);
 int		fdtbus_print(void *, const char *);
 
+void		fdtbus_create_bus(struct fdt_softc *);
+struct fdt_softc *
+		fdtbus_decode_range(struct fdt_softc *, uint64_t *, uint64_t);
+bus_space_tag_t	fdtbus_get_node_bst(int, int);
 bus_dma_tag_t	fdtbus_dma_tag_create(int, const struct fdt_dma_range *,
 		    u_int);
 

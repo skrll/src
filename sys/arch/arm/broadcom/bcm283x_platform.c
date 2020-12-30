@@ -1255,8 +1255,6 @@ bcm2835_platform_bootstrap(void)
 	bcm2835_a4x_bs_tag.bs_map = bcm2835_bs_map;
 	bcm2835_a4x_bs_tag.bs_mmap = bcm2835_a4x_bs_mmap;
 
-	fdtbus_set_decoderegprop(false);
-
 	bcm2835_uartinit();
 
 	bcm2835_bootparams();
@@ -1275,8 +1273,6 @@ bcm2836_platform_bootstrap(void)
 	bcm2836_bs_tag.bs_mmap = bcm2836_bs_mmap;
 	bcm2836_a4x_bs_tag.bs_map = bcm2836_bs_map;
 	bcm2836_a4x_bs_tag.bs_mmap = bcm2836_a4x_bs_mmap;
-
-	fdtbus_set_decoderegprop(false);
 
 	bcm2836_uartinit();
 
@@ -1300,8 +1296,6 @@ bcm2711_platform_bootstrap(void)
 	bcm2711_a4x_bs_tag.bs_map = bcm2711_bs_map;
 	bcm2711_a4x_bs_tag.bs_mmap = bcm2711_a4x_bs_mmap;
 
-	fdtbus_set_decoderegprop(false);
-
 	bcm2711_uartinit();
 
 	bcm2711_bootparams();
@@ -1318,7 +1312,13 @@ static void
 bcm2835_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 
-	faa->faa_bst = &bcm2835_bs_tag;
+	faa->faa_shift_bst[0] = &bcm2835_bs_tag;
+	faa->faa_shift_bst[2] = &bcm2835_a4x_bs_tag;
+	faa->faa_dmat = &bcm2835_bus_dma_tag;
+
+	bcm2835_bus_dma_tag._ranges = bcm2835_dma_ranges;
+	bcm2835_bus_dma_tag._nranges = __arraycount(bcm2835_dma_ranges);
+	bcm2835_dma_ranges[0].dr_len = bcm283x_memorysize;
 }
 #endif
 
@@ -1327,7 +1327,9 @@ static void
 bcm2836_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 
-	faa->faa_bst = &bcm2836_bs_tag;
+	faa->faa_shift_bst[0] = &bcm2836_bs_tag;
+	faa->faa_shift_bst[2] = &bcm2836_a4x_bs_tag;
+	faa->faa_dmat = &bcm2835_bus_dma_tag;
 }
 
 static void

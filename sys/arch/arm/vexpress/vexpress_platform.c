@@ -60,7 +60,7 @@ __KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.19 2020/10/30 18:54:36 skrll
 
 #define	VEXPRESS_REF_FREQ	24000000
 
-extern struct bus_space armv7_generic_bs_tag;
+extern struct bus_space arm_generic_bs_tag;
 extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 
 #define	SYSREG_BASE		0x1c010000
@@ -83,7 +83,7 @@ extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 #define	 SYS_CFGSTAT_ERROR	__BIT(1)
 #define	 SYS_CFGSTAT_COMPLETE	__BIT(0)
 
-static bus_space_tag_t sysreg_bst = &armv7_generic_bs_tag;
+static bus_space_tag_t sysreg_bst = &arm_generic_bs_tag;
 static bus_space_handle_t sysreg_bsh;
 
 #define	SYSREG_WRITE(o, v)	\
@@ -117,7 +117,7 @@ vexpress_a15_smp_init(void)
 {
 	int ret = 0;
 #ifdef MULTIPROCESSOR
-	bus_space_tag_t gicd_bst = &armv7_generic_bs_tag;
+	bus_space_tag_t gicd_bst = &arm_generic_bs_tag;
 	bus_space_handle_t gicd_bsh;
 
 	/* Write init vec to SYS_FLAGS register */
@@ -185,10 +185,71 @@ vexpress_platform_bootstrap(void)
 #endif
 }
 
+static int
+vexpress_bs_map(void *c, bus_addr_t ba, bus_size_t size, int flag,
+    bus_space_handle_t *bshp)
+{
+	struct fdtbus_staticrange *fsr = c;
+	const struct pmap_devmap *pd;
+	bool match = false;
+	u_long pa;
+
+	for (size_t i = 0; i < fsr->fsr_nranges; i++) {
+		if (ba >= fsr->fsr_range[i].fr_caddr &&
+		    ba <  fsr->fsr_range[i].fr_caddr + fsr->fsr_range[i].fr_size) {
+			match = true;
+			pa = ba - fsr->fsr_range[i].fr_caddr +
+			   fsr->fsr_range[i].fr_paddr;
+			break;
+		}
+        }
+
+        if (match && (pd = pmap_devmap_find_pa(pa, size)) != NULL) {
+                /* Device was statically mapped. */
+                *bshp = pd->pd_va + (pa - pd->pd_pa);
+                return 0;
+        }
+
+        return fsr->fsr_bs_map(c, ba, size, flag, bshp);
+}
+
+bs_protos(arm_generic);
+bs_protos(arm_generic_a4x);
+
+extern struct bus_space arm_generic_bs_tag;
+extern struct bus_space arm_generic_a4x_bs_tag;
+
 static void
 vexpress_platform_init_attach_args(struct fdt_attach_args *faa)
 {
-	faa->faa_bst = &armv7_generic_bs_tag;
+	static struct bus_space vexpress_bs_tag;
+	static struct bus_space vexpress_a4x_bs_tag;
+	static struct fdtbus_range fsr[] = {
+		[0] = {
+			.fr_caddr = 0x0,
+			.fr_paddr = 0x1c000000,
+			.fr_size = 0x04000000,
+		}
+	};
+
+	static struct fdtbus_staticrange fsr0 = {
+		.fsr_bs_map = arm_generic_bs_map,
+		.fsr_nranges = __arraycount(fsr),
+		.fsr_range = fsr
+	};
+
+	memcpy(&vexpress_bs_tag, &arm_generic_bs_tag,
+	    sizeof(vexpress_bs_tag));
+	memcpy(&vexpress_a4x_bs_tag, &arm_generic_a4x_bs_tag,
+	    sizeof(vexpress_a4x_bs_tag));
+
+	vexpress_bs_tag.bs_map = vexpress_bs_map;
+	vexpress_bs_tag.bs_cookie = &fsr0;
+	vexpress_a4x_bs_tag.bs_map = vexpress_bs_map;
+	vexpress_a4x_bs_tag.bs_cookie = &fsr0;
+
+	faa->faa_shift_bst[0] = &vexpress_bs_tag;
+	faa->faa_shift_bst[2] = &vexpress_a4x_bs_tag;
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 

@@ -88,14 +88,6 @@ fdtbus_phandle2offset(int phandle)
 	return phandle - dtoff;
 }
 
-static bool fdtbus_decoderegprop = true;
-
-void
-fdtbus_set_decoderegprop(bool decode)
-{
-	fdtbus_decoderegprop = decode;
-}
-
 int
 fdtbus_get_addr_cells(int phandle)
 {
@@ -113,7 +105,7 @@ fdtbus_get_size_cells(int phandle)
 	uint32_t size_cells;
 
 	if (of_getprop_uint32(phandle, "#size-cells", &size_cells))
-		size_cells = 0;
+		size_cells = 1;
 
 	return size_cells;
 }
@@ -205,58 +197,6 @@ fdtbus_get_cells(const uint8_t *buf, int cells)
 	}
 }
 
-static uint64_t
-fdtbus_decode_range(int phandle, uint64_t paddr)
-{
-	const int parent = OF_parent(phandle);
-	if (parent == -1)
-		return paddr;
-
-	if (!fdtbus_decoderegprop)
-		return paddr;
-
-	const uint8_t *buf;
-	int len;
-
-	buf = fdt_getprop(fdtbus_get_data(),
-	    fdtbus_phandle2offset(phandle), "ranges", &len);
-	if (buf == NULL)
-		return paddr;
-
-	if (len == 0) {
-		/* pass through to parent */
-		return fdtbus_decode_range(parent, paddr);
-	}
-
-	const int addr_cells = fdtbus_get_addr_cells(phandle);
-	const int size_cells = fdtbus_get_size_cells(phandle);
-	const int paddr_cells = fdtbus_get_addr_cells(parent);
-	if (addr_cells == -1 || size_cells == -1 || paddr_cells == -1)
-		return paddr;
-
-	while (len > 0) {
-		uint64_t cba, pba, cl;
-		cba = fdtbus_get_cells(buf, addr_cells);
-		buf += addr_cells * 4;
-		pba = fdtbus_get_cells(buf, paddr_cells);
-		buf += paddr_cells * 4;
-		cl = fdtbus_get_cells(buf, size_cells);
-		buf += size_cells * 4;
-
-#ifdef FDTBUS_DEBUG
-		printf("%s: %s: cba=%#" PRIx64 ", pba=%#" PRIx64 ", cl=%#" PRIx64 "\n", __func__, fdt_get_name(fdtbus_get_data(), fdtbus_phandle2offset(phandle), NULL), cba, pba, cl);
-#endif
-
-		if (paddr >= cba && paddr < cba + cl)
-			return fdtbus_decode_range(parent, pba) + (paddr - cba);
-
-		len -= (addr_cells + paddr_cells + size_cells) * 4;
-	}
-
-	/* No mapping found */
-	return paddr;
-}
-
 int
 fdtbus_get_reg_byname(int phandle, const char *name, bus_addr_t *paddr,
     bus_size_t *psize)
@@ -272,7 +212,7 @@ fdtbus_get_reg_byname(int phandle, const char *name, bus_addr_t *paddr,
 }
 
 int
-fdtbus_get_reg(int phandle, u_int index, bus_addr_t *paddr, bus_size_t *psize)
+fdtbus_get_reg(int phandle, u_int index, bus_addr_t *baddr, bus_size_t *bsize)
 {
 	uint64_t addr, size;
 	int error;
@@ -284,16 +224,16 @@ fdtbus_get_reg(int phandle, u_int index, bus_addr_t *paddr, bus_size_t *psize)
 	if (sizeof(bus_addr_t) == 4 && (addr + size) > 0x100000000)
 		return ERANGE;
 
-	if (paddr)
-		*paddr = (bus_addr_t)addr;
-	if (psize)
-		*psize = (bus_size_t)size;
+	if (baddr)
+		*baddr = (bus_addr_t)addr;
+	if (bsize)
+		*bsize = (bus_size_t)size;
 
 	return 0;
 }
 
 int
-fdtbus_get_reg64(int phandle, u_int index, uint64_t *paddr, uint64_t *psize)
+fdtbus_get_reg64(int phandle, u_int index, uint64_t *baddr, uint64_t *bsize)
 {
 	uint64_t addr, size;
 	const uint8_t *buf;
@@ -321,17 +261,10 @@ fdtbus_get_reg64(int phandle, u_int index, uint64_t *paddr, uint64_t *psize)
 	buf += addr_cells * 4;
 	size = fdtbus_get_cells(buf, size_cells);
 
-	if (paddr) {
-		*paddr = fdtbus_decode_range(OF_parent(phandle), addr);
-#ifdef FDTBUS_DEBUG
-		const char *name = fdt_get_name(fdtbus_get_data(),
-		    fdtbus_phandle2offset(phandle), NULL);
-		printf("fdt: [%s] decoded addr #%u: %" PRIx64
-		    " -> %" PRIx64 "\n", name, index, addr, *paddr);
-#endif
-	}
-	if (psize)
-		*psize = size;
+	if (baddr)
+		*baddr = addr;
+	if (bsize)
+		*bsize = size;
 
 	return 0;
 }
