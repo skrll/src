@@ -30,13 +30,8 @@
 #ifndef NIC_H
 #define	NIC_H
 
-/* PCI vendor ID */
-#define PCI_VENDOR_ID_CAVIUM			0x177D
 /* PCI device IDs */
-#define	PCI_DEVICE_ID_THUNDER_NIC_PF		0xA01E
 #define	PCI_DEVICE_ID_THUNDER_PASS1_NIC_VF	0x0011
-#define	PCI_DEVICE_ID_THUNDER_NIC_VF		0xA034
-#define	PCI_DEVICE_ID_THUNDER_BGX		0xA026
 
 /* PCI BAR nos */
 #define	PCI_CFG_REG_BAR_NUM		0
