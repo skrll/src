@@ -1,12 +1,18 @@
+https://www.bsdcan.org/2016/schedule/attachments/336_FreeBSD_on_ThunderX_ext_abst.pdf
+https://www.bsdcan.org/2016/schedule/attachments/349_WMA_ThunderX_SoC_v2.pdf
+
+product CAVIUM THUNDERX_NIC		0xa01e	Network Interface Controller
+product CAVIUM THUNDERX_NICVF		0xa034	Network Interface Controller virtual function
+product CAVIUM THUNDERX_BGX		0xa026	Common Ethernet Interface
+
+
+
 [     1.000003] vendor 177d product a001 (miscellaneous system, revision 0x09) at pci1 dev 0 function 0 not configured
 [     1.000003] vendor 177d product a00e (miscellaneous system, revision 0x09) at pci1 dev 0 function 1 not configured
 [     1.000003] vendor 177d product a018 (processing accelerators, subclass 0x00, revision 0x09) at pci0 dev 9 function 0 not configured
 
-
 [     1.000003] vendor 177d product a01d (RAID mass storage, revision 0x09) at pci2 dev 0 function 0 not configured
 
-
-[     1.000003] vendor 177d product a01e (ethernet network, revision 0x09) at pci5 dev 0 function 0 not configured
 [     1.000003] vendor 177d product a01f (miscellaneous network, revision 0x09) at pci4 dev 3 function 0 not configured
 
 
