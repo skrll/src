@@ -101,25 +101,25 @@ int enet_debug = 0;
 	bus_dmamap_sync(sc->sc_dmat, sc->sc_txdesc_dmamap,	\
 	    sizeof(struct enet_txdesc) * (idx),			\
 	    sizeof(struct enet_txdesc),				\
-	    BUS_DMASYNC_PREWRITE)
+	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE)
 
 #define TXDESC_READIN(idx)					\
 	bus_dmamap_sync(sc->sc_dmat, sc->sc_txdesc_dmamap,	\
 	    sizeof(struct enet_txdesc) * (idx),			\
 	    sizeof(struct enet_txdesc),				\
-	    BUS_DMASYNC_PREREAD)
+	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE)
 
 #define RXDESC_WRITEOUT(idx)					\
 	bus_dmamap_sync(sc->sc_dmat, sc->sc_rxdesc_dmamap,	\
 	    sizeof(struct enet_rxdesc) * (idx),			\
 	    sizeof(struct enet_rxdesc),				\
-	    BUS_DMASYNC_PREWRITE)
+	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE)
 
 #define RXDESC_READIN(idx)					\
 	bus_dmamap_sync(sc->sc_dmat, sc->sc_rxdesc_dmamap,	\
 	    sizeof(struct enet_rxdesc) * (idx),			\
 	    sizeof(struct enet_rxdesc),				\
-	    BUS_DMASYNC_PREREAD)
+	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE)
 
 #define ENET_REG_READ(sc, reg)					\
 	bus_space_read_4((sc)->sc_iot, (sc)->sc_ioh, reg)
@@ -600,7 +600,7 @@ enet_rx_intr(void *arg)
 
 				bus_dmamap_sync(sc->sc_dmat, rxs->rxs_dmamap, 0,
 				    rxs->rxs_dmamap->dm_mapsize,
-				    BUS_DMASYNC_PREREAD);
+				    BUS_DMASYNC_POSTREAD);
 
 				if (ifp->if_csum_flags_rx & (M_CSUM_IPv4 |
 				    M_CSUM_TCPv4 | M_CSUM_UDPv4 |
@@ -617,7 +617,7 @@ enet_rx_intr(void *arg)
 		} else {
 			/* continued from previous buffer */
 			bus_dmamap_sync(sc->sc_dmat, rxs->rxs_dmamap, 0,
-			    rxs->rxs_dmamap->dm_mapsize, BUS_DMASYNC_PREREAD);
+			    rxs->rxs_dmamap->dm_mapsize, BUS_DMASYNC_POSTREAD);
 		}
 
 		bus_dmamap_unload(sc->sc_dmat, rxs->rxs_dmamap);
@@ -639,6 +639,7 @@ enet_rx_csum(struct enet_softc *sc, struct ifnet *ifp, struct mbuf *m, int idx)
 	uint32_t flags2;
 	uint8_t proto;
 
+	// RXREAD...
 	flags2 = sc->sc_rxdesc_ring[idx].rx_flags2;
 
 	if (flags2 & RXFLAGS2_IPV6) {
@@ -1674,6 +1675,7 @@ enet_encap_txring(struct enet_softc *sc, struct mbuf **mp)
 		}
 	}
 
+	// XXXNH too big?
 	bus_dmamap_sync(sc->sc_dmat, map, 0, map->dm_mapsize,
 	    BUS_DMASYNC_PREWRITE);
 
