@@ -1,4 +1,4 @@
-/*	$NetBSD: main1.c,v 1.29 2020/12/28 19:07:43 rillig Exp $	*/
+/*	$NetBSD: main1.c,v 1.31 2020/12/29 11:35:11 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: main1.c,v 1.29 2020/12/28 19:07:43 rillig Exp $");
+__RCSID("$NetBSD: main1.c,v 1.31 2020/12/29 11:35:11 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -269,11 +269,11 @@ main(int argc, char *argv[])
 	printf("%s, %d: lwarn = %d\n", curr_pos.p_file, curr_pos.p_line, lwarn);
 #endif
 
-	chkglsyms();
+	check_global_symbols();
 
 	outclose();
 
-	return (nerr != 0);
+	return nerr != 0;
 }
 
 static void

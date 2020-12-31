@@ -1,4 +1,4 @@
-$NetBSD: pcidevs,v 1.1421 2020/11/20 01:29:12 msaitoh Exp $
+$NetBSD: pcidevs,v 1.1423 2020/12/29 11:05:56 skrll Exp $
 
 /*
  * Copyright (c) 1995, 1996 Christopher G. Demetriou

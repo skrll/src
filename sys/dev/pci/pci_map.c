@@ -1,4 +1,4 @@
-/*	$NetBSD: pci_map.c,v 1.41 2020/12/28 12:38:44 skrll Exp $	*/
+/*	$NetBSD: pci_map.c,v 1.44 2020/12/29 15:49:45 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000, 2020 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci_map.c,v 1.41 2020/12/28 12:38:44 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_map.c,v 1.44 2020/12/29 15:49:45 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

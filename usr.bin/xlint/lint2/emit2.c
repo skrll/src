@@ -1,4 +1,4 @@
-/* $NetBSD: emit2.c,v 1.13 2008/09/26 22:52:24 matt Exp $ */
+/* $NetBSD: emit2.c,v 1.15 2020/12/30 10:26:12 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -34,7 +34,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: emit2.c,v 1.13 2008/09/26 22:52:24 matt Exp $");
+__RCSID("$NetBSD: emit2.c,v 1.15 2020/12/30 10:26:12 rillig Exp $");
 #endif
 
 #include "lint2.h"
@@ -203,7 +203,7 @@ dumpname(hte_t *hte)
 	 * definition is allowed (except with sflag).
 	 */
 	def = NULL;
-	for (sym = hte->h_syms; sym != NULL; sym = sym->s_nxt) {
+	for (sym = hte->h_syms; sym != NULL; sym = sym->s_next) {
 		if (sym->s_def == DEF) {
 			def = sym;
 			break;
@@ -281,7 +281,7 @@ addoutfile(short num)
 		ofl->ofl_num = num;
 		ofl->ofl_next = NULL;
 	}
-	return (i);
+	return i;
 }
 
 static void

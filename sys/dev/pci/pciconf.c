@@ -1,4 +1,4 @@
-/*	$NetBSD: pciconf.c,v 1.50 2020/10/20 23:03:30 jmcneill Exp $	*/
+/*	$NetBSD: pciconf.c,v 1.51 2020/12/29 15:39:59 skrll Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pciconf.c,v 1.50 2020/10/20 23:03:30 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pciconf.c,v 1.51 2020/12/29 15:39:59 skrll Exp $");
 
 #include "opt_pci.h"
 

@@ -209,8 +209,6 @@ MODULE_DEPEND(vnicpf, ether, 1, 1, 1);
 MODULE_DEPEND(vnicpf, thunder_bgx, 1, 1, 1);
 #endif
 
-static int nicpf_alloc_res(struct nicpf *);
-static void nicpf_free_res(struct nicpf *);
 static void nic_set_lmac_vf_mapping(struct nicpf *);
 static void nic_init_hw(struct nicpf *);
 static int nic_sriov_init(device_t, struct nicpf *);
@@ -229,6 +227,8 @@ nicpf_probe(device_t dev, cfdata_t cf, void *aux)
 	if (PCI_VENDOR(pa->pa_id) == PCI_VENDOR_CAVIUM &&
 	    PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_CAVIUM_THUNDERX_NIC)
 	    return 1;
+
+	return 0;
 }
 
 static void
@@ -286,14 +286,6 @@ nicpf_attach(device_t parent, device_t dev, void *aux)
 	/* Enable bus mastering */
 	pci_enable_busmaster(dev);
 
-#if 0
-	/* Allocate PCI resources */
-	err = nicpf_alloc_res(nic);
-	if (err != 0) {
-		device_printf(dev, "Could not allocate PCI resources\n");
-		return;
-	}
-#endif
 	/*
 	 * Map the device.  All devices support memory-mapped acccess,
 	 * and it is really required for normal operation.
@@ -341,7 +333,7 @@ nicpf_attach(device_t parent, device_t dev, void *aux)
 	nic->rss_ind_tbl_size = NIC_MAX_RSS_IDR_TBL_SIZE;
 
 	/* Setup interrupts */
-	err = nic_register_interrupts(nic);
+	err = nic_register_interrupts(nic, pa);
 	if (err != 0)
 		goto err_free_res;
 
@@ -369,7 +361,6 @@ nicpf_attach(device_t parent, device_t dev, void *aux)
 err_free_intr:
 	nic_unregister_interrupts(nic);
 err_free_res:
-	nicpf_free_res(nic);
 	pci_disable_busmaster(dev);
 
 	return;
@@ -1076,35 +1067,38 @@ unlock:
 	nic->mbx_lock[vf] = FALSE;
 }
 
-static void
+static int
 nic_mbx_intr_handler(struct nicpf *nic, int mbx)
 {
 	uint64_t intr;
 	uint8_t  vf, vf_per_mbx_reg = 64;
+	int ret = 0;
 
 	intr = nic_reg_read(nic, NIC_PF_MAILBOX_INT + (mbx << 3));
 	for (vf = 0; vf < vf_per_mbx_reg; vf++) {
 		if (intr & (1UL << vf)) {
 			nic_handle_mbx_intr(nic, vf + (mbx * vf_per_mbx_reg));
 			nic_clear_mbx_intr(nic, vf, mbx);
+			ret++;
 		}
 	}
+	return ret;
 }
 
-static void
+static int
 nic_mbx0_intr_handler (void *arg)
 {
 	struct nicpf *nic = (struct nicpf *)arg;
 
-	nic_mbx_intr_handler(nic, 0);
+	return nic_mbx_intr_handler(nic, 0);
 }
 
-static void
+static int
 nic_mbx1_intr_handler (void *arg)
 {
 	struct nicpf *nic = (struct nicpf *)arg;
 
-	nic_mbx_intr_handler(nic, 1);
+	return nic_mbx_intr_handler(nic, 1);
 }
 
 static int
@@ -1114,9 +1108,7 @@ nic_enable_msix(struct nicpf *nic, const struct pci_attach_args *pa)
 //    	struct nicpf *nic = device_private(dev);
 
 	int counts[PCI_INTR_TYPE_SIZE] = {
-		[PCI_INTR_TYPE_INTX] = 1,
-		[PCI_INTR_TYPE_MSI] = 1,
-		[PCI_INTR_TYPE_MSIX] = -1,
+		[PCI_INTR_TYPE_MSIX] = NIC_PF_MSIX_VECTORS,
 	};
 
 	/* Allocate and establish the interrupt. */
@@ -1126,10 +1118,13 @@ nic_enable_msix(struct nicpf *nic, const struct pci_attach_args *pa)
 		return err;
 	}
 
-	//count = nic->num_vec = NIC_PF_MSIX_VECTORS;
+	nic->num_vec = NIC_PF_MSIX_VECTORS;
 
 	nic->sc_nintr = counts[pci_intr_type(pa->pa_pc, nic->sc_pihp[0])];
 	nic->sc_ih = kmem_zalloc(sizeof(void *) * nic->sc_nintr, KM_SLEEP);
+
+	KASSERTMSG(nic->sc_nintr == nic->num_vec, "nintr (%d) != num_vec (%d)",
+	    nic->sc_nintr, nic->num_vec);
 
 	return (0);
 }
@@ -1159,26 +1154,28 @@ nic_disable_msix(struct nicpf *nic)
 static void
 nic_free_all_interrupts(struct nicpf *nic)
 {
-	int irq;
-
-	for (irq = 0; irq < nic->num_vec; irq++) {
-		if (nic->msix_entries[irq].irq_res == NULL)
-			continue;
-		if (nic->msix_entries[irq].handle != NULL) {
-			bus_teardown_intr(nic->dev,
-			    nic->msix_entries[irq].irq_res,
-			    nic->msix_entries[irq].handle);
+	if (nic->sc_ih != NULL) {
+		for (int intr = 0; intr < nic->sc_nintr; intr++) {
+			if (nic->sc_ih[intr] != NULL) {
+				pci_intr_disestablish(nic->sc_pc,
+				    nic->sc_ih[intr]);
+				nic->sc_ih[intr] = NULL;
+			}
 		}
 
-		bus_release_resource(nic->dev, SYS_RES_IRQ, irq + 1,
-		    nic->msix_entries[irq].irq_res);
+		kmem_free(nic->sc_ih, sizeof(void *) * nic->sc_nintr);
+		nic->sc_ih = NULL;
+	}
+
+	if (nic->sc_pihp != NULL) {
+		pci_intr_release(nic->sc_pc, nic->sc_pihp, nic->sc_nintr);
+		nic->sc_pihp = NULL;
 	}
 }
 
 static int
 nic_register_interrupts(struct nicpf *nic, struct pci_attach_args *pa)
 {
-	int irq, rid;
 	int ret;
 
 	/* Enable MSI-X */
@@ -1187,39 +1184,35 @@ nic_register_interrupts(struct nicpf *nic, struct pci_attach_args *pa)
 		return (ret);
 
 	char intrbuf[PCI_INTRSTR_LEN];
-	char intr_xname[INTRDEVNAMEBUF];
 	int vec;
 
-	KASSERT(NIC_PF_MSIX_VECTORS == xxx);
-
 	vec = NIC_PF_INTR_ID_MBOX0;
-
-	intrstr = pci_intr_string(nic->sc_pc, nic->sc_pihp[vec], intrbuf,
-	    sizeof(intrbuf));
+	const char *intrstr = pci_intr_string(nic->sc_pc, nic->sc_pihp[vec],
+	    intrbuf, sizeof(intrbuf));
 	nic->sc_ih[vec] = pci_intr_establish_xname(nic->sc_pc,
-	    psc->sc_pihp[vec], IPL_VM, nic_mbx0_intr_handler, nic, "mbox0");
+	    nic->sc_pihp[vec], IPL_VM, nic_mbx0_intr_handler, nic, "mbox0");
 	if (nic->sc_ih[vec] == NULL) {
-		aprint_error_dev(self, "couldn't establish interrupt");
+		aprint_error_dev(nic->dev, "couldn't establish interrupt");
 		if (intrstr != NULL)
 			aprint_error(" at %s", intrstr);
 		aprint_error("\n");
 		goto fail;
 	}
-	aprint_normal_dev(self, "mbox0 interrupting at %s\n", `);
+	aprint_normal_dev(nic->dev, "mbox0 interrupting at %s\n", intrstr);
 
 	vec = NIC_PF_INTR_ID_MBOX1;
 	intrstr = pci_intr_string(nic->sc_pc, nic->sc_pihp[vec], intrbuf,
 	    sizeof(intrbuf));
 	nic->sc_ih[vec] = pci_intr_establish_xname(nic->sc_pc,
-	    psc->sc_pihp[vec], IPL_VM, nic_mbx1_intr_handler, nic, "mbox1");
+	    nic->sc_pihp[vec], IPL_VM, nic_mbx1_intr_handler, nic, "mbox1");
 	if (nic->sc_ih[vec] == NULL) {
-		aprint_error_dev(self, "couldn't establish interrupt");
+		aprint_error_dev(nic->dev, "couldn't establish interrupt");
 		if (intrstr != NULL)
 			aprint_error(" at %s", intrstr);
 		aprint_error("\n");
 		goto fail;
 	}
-	aprint_normal_dev(self, "mbox1 interrupting at %s\n", intrstr);
+	aprint_normal_dev(nic->dev, "mbox1 interrupting at %s\n", intrstr);
 
 	/* Enable mailbox interrupt */
 	nic_enable_mbx_intr(nic);
