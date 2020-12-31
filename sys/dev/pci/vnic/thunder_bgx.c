@@ -896,15 +896,15 @@ bgx_lmac_enable(struct bgx *bgx, uint8_t lmacid)
 		}
 		mtx_init(&lmac->check_link_mtx, "BGX link poll", NULL, MTX_DEF);
 		callout_init_mtx(&lmac->check_link, &lmac->check_link_mtx, 0);
-		mtx_lock(&lmac->check_link_mtx);
+		mutex_enter(&lmac->check_link_mtx);
 		bgx_lmac_handler(lmac);
-		mtx_unlock(&lmac->check_link_mtx);
+		mutex_exit(&lmac->check_link_mtx);
 	} else {
 		mtx_init(&lmac->check_link_mtx, "BGX link poll", NULL, MTX_DEF);
 		callout_init_mtx(&lmac->check_link, &lmac->check_link_mtx, 0);
-		mtx_lock(&lmac->check_link_mtx);
+		mutex_enter(&lmac->check_link_mtx);
 		bgx_poll_for_link(lmac);
-		mtx_unlock(&lmac->check_link_mtx);
+		mutex_exit(&lmac->check_link_mtx);
 	}
 
 	return (0);

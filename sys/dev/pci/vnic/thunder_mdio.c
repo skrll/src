@@ -132,17 +132,18 @@ MODULE_DEPEND(thunder_mdio, mrmlbus, 1, 1, 1);
 MALLOC_DEFINE(M_THUNDER_MDIO, "ThunderX MDIO",
     "Cavium ThunderX MDIO dynamic memory");
 
+//XXXNH IPL_NET?
 #define	MDIO_LOCK_INIT(sc, name)			\
-    mtx_init(&(sc)->mtx, name, NULL, MTX_DEF)
+    mutex_init(&(sc)->mtx, MUTEX_DEFAULT, IPL_NET);
 
 #define	MDIO_LOCK_DESTROY(sc)				\
-    mtx_destroy(&(sc)->mtx)
+    mutex_destroy(&(sc)->mtx)
 
-#define	MDIO_LOCK(sc)	mtx_lock(&(sc)->mtx)
-#define	MDIO_UNLOCK(sc)	mtx_unlock(&(sc)->mtx)
+#define	MDIO_LOCK(sc)	mutex_enter(&(sc)->mtx)
+#define	MDIO_UNLOCK(sc)	mutex_exit(&(sc)->mtx)
 
 #define	MDIO_LOCK_ASSERT(sc)				\
-    mtx_assert(&(sc)->mtx, MA_OWNED)
+    mutex_owned(&(sc)->mtx)
 
 #define	mdio_reg_read(sc, reg)				\
     bus_read_8((sc)->reg_base, (reg))

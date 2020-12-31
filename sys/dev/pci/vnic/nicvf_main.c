@@ -90,17 +90,18 @@ __FBSDID("$FreeBSD$");
 
 #define	VNIC_VF_REG_RID		PCIR_BAR(PCI_CFG_REG_BAR_NUM)
 
+//XXXNH IPL_NONE?
 /* Lock for core interface settings */
 #define	NICVF_CORE_LOCK_INIT(nic)				\
-    sx_init(&(nic)->core_sx, device_get_nameunit((nic)->dev))
+    mutex_init(&(nic)->core_mtx, MUTEX_DEFAULT, IPL_NONE)
 
 #define	NICVF_CORE_LOCK_DESTROY(nic)				\
-    sx_destroy(&(nic)->core_sx)
+    mutex_destroy(&(nic)->core_mtx)
 
-#define	NICVF_CORE_LOCK(nic)		sx_xlock(&(nic)->core_sx)
-#define	NICVF_CORE_UNLOCK(nic)		sx_xunlock(&(nic)->core_sx)
+#define	NICVF_CORE_LOCK(nic)		mutex_enter(&(nic)->core_mtx)
+#define	NICVF_CORE_UNLOCK(nic)		mutex_exit(&(nic)->core_mtx)
 
-#define	NICVF_CORE_LOCK_ASSERT(nic)	sx_assert(&(nic)->core_sx, SA_XLOCKED)
+#define	NICVF_CORE_LOCK_ASSERT(nic)	mutex_owned(&(nic)->core_mtx)
 
 #define	SPEED_10	10
 #define	SPEED_100	100

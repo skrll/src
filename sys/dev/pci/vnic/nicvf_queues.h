@@ -293,7 +293,7 @@ struct cmp_queue {
 	int			idx;	/* This queue index */
 
 	struct buf_ring		*rx_br;	/* Reception buf ring */
-	struct mtx		mtx;	/* lock to serialize processing CQEs */
+	kmutex_t		mtx;	/* lock to serialize processing CQEs */
 	char			mtx_name[32];
 
 	struct task		cmp_task;
@@ -329,7 +329,7 @@ struct snd_queue {
 	struct snd_buff		*snd_buff;
 
 	struct buf_ring		*br;	/* Transmission buf ring */
-	struct mtx		mtx;
+	kmutex_t		mtx;
 	char			mtx_name[32];
 
 	struct task		snd_task;
@@ -374,13 +374,13 @@ struct queue_set {
 
 #define	CQ_ERR_MASK	(CQ_WR_FUL | CQ_WR_DISABLE | CQ_WR_FAULT)
 
-#define	NICVF_TX_LOCK(sq)		mtx_lock(&(sq)->mtx)
-#define	NICVF_TX_TRYLOCK(sq)		mtx_trylock(&(sq)->mtx)
-#define	NICVF_TX_UNLOCK(sq)		mtx_unlock(&(sq)->mtx)
+#define	NICVF_TX_LOCK(sq)		mutex_enter(&(sq)->mtx)
+#define	NICVF_TX_TRYLOCK(sq)		mutex_tryenter(&(sq)->mtx)
+#define	NICVF_TX_UNLOCK(sq)		mutex_exit(&(sq)->mtx)
 #define	NICVF_TX_LOCK_ASSERT(sq)	mtx_assert(&(sq)->mtx, MA_OWNED)
 
-#define	NICVF_CMP_LOCK(cq)		mtx_lock(&(cq)->mtx)
-#define	NICVF_CMP_UNLOCK(cq)		mtx_unlock(&(cq)->mtx)
+#define	NICVF_CMP_LOCK(cq)		mutex_enter(&(cq)->mtx)
+#define	NICVF_CMP_UNLOCK(cq)		mutex_exit(&(cq)->mtx)
 
 int nicvf_set_qset_resources(struct nicvf *);
 int nicvf_config_data_transfer(struct nicvf *, boolean_t);

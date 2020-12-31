@@ -29,10 +29,32 @@
  *
  */
 
+#ifdef _KERNEL_OPT
+#include "opt_inet.h"
+#include "opt_inet6.h"
+#include "opt_net_mpsafe.h"
+#endif
+
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
+__KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/param.h>
+
+#include <sys/bus.h>
+#include <sys/callout.h>
+#include <sys/device.h>
+#include <sys/kmem.h>
+#include <sys/mutex.h>
+
+#include <net/if.h>
+//#include <net/if_dl.h>
+#include <net/if_media.h>
+#include <net/if_ether.h>
+
+#include <dev/pci/pcivar.h>
+#include <dev/pci/pcidevs.h>
+
+#if 0
 #include <sys/systm.h>
 #include <sys/bitset.h>
 #include <sys/bitstring.h>
@@ -67,15 +89,25 @@ __FBSDID("$FreeBSD$");
 #include <sys/iov_schema.h>
 #include <dev/pci/pci_iov.h>
 #endif
+#endif
 
 #include "thunder_bgx.h"
 #include "nic_reg.h"
 #include "nic.h"
 #include "q_struct.h"
 
+#ifdef NET_MPSAFE
+#define NICPF_MPSAFE	1
+#define NICPF_CALLOUT_FLAGS	CALLOUT_MPSAFE
+#define NICPF_SOFTINT_FLAGS	SOFTINT_MPSAFE
+#else
+#define NICPF_CALLOUT_FLAGS	0
+#define NICPF_SOFTINT_FLAGS	0
+#endif
+
 #define	VNIC_PF_DEVSTR		"Cavium Thunder NIC Physical Function Driver"
 
-#define	VNIC_PF_REG_RID		PCIR_BAR(PCI_CFG_REG_BAR_NUM)
+#define	VNIC_PF_REG_RID		PCI_BAR(PCI_CFG_REG_BAR_NUM)
 
 #define	NIC_SET_VF_LMAC_MAP(bgx, lmac)		((((bgx) & 0xF) << 4) | ((lmac) & 0xF))
 #define	NIC_GET_BGX_FROM_VF_LMAC_MAP(map)	(((map) >> 4) & 0xF)
@@ -89,17 +121,33 @@ struct nicvf_info {
 
 struct nicpf {
 	device_t		dev;
+
+	bool			sc_pass1_silicon;
+	pci_chipset_tag_t	sc_pc;
+	pcitag_t		sc_pcitag;
+
+	bus_space_tag_t		sc_memt;
+	bus_space_handle_t	sc_memh;
+	bus_addr_t		sc_memb;
+	bus_size_t		sc_mems;
+
+	bus_dma_tag_t sc_dmat;		/* bus DMA tag */
+
+	pci_intr_handle_t *	sc_pihp;
+	int			sc_nintr;
+	void **			sc_ih;
+
 	uint8_t			node;
 	u_int			flags;
 	uint8_t			num_vf_en;      /* No of VF enabled */
 	struct nicvf_info	vf_info[MAX_NUM_VFS_SUPPORTED];
-	struct resource *	reg_base;       /* Register start address */
+//	struct resource *	reg_base;       /* Register start address */
 	struct pkind_cfg	pkind;
 	uint8_t			vf_lmac_map[MAX_LMAC];
 	boolean_t		mbx_lock[MAX_NUM_VFS_SUPPORTED];
 
 	struct callout		check_link;
-	struct mtx		check_link_mtx;
+	kmutex_t		check_link_mtx;
 
 	uint8_t			link[MAX_LMAC];
 	uint8_t			duplex[MAX_LMAC];
@@ -115,9 +163,15 @@ struct nicpf {
 	struct resource *	msix_table_res;
 };
 
-static int nicpf_probe(device_t);
-static int nicpf_attach(device_t);
-static int nicpf_detach(device_t);
+static int	nicpf_probe(device_t dev, cfdata_t cf, void *aux);
+static void	nicpf_attach(device_t, device_t, void *);
+static int	nicpf_detach(device_t, int);
+
+//XXXNH better name than 'nicpf'
+CFATTACH_DECL3_NEW(nicpf, sizeof(struct nicpf),
+    nicpf_probe, nicpf_attach, nicpf_detach, NULL, NULL, NULL,
+    DVF_DETACH_SHUTDOWN);
+
 
 #ifdef PCI_IOV
 static int nicpf_iov_init(device_t, uint16_t, const nvlist_t *);
@@ -125,6 +179,7 @@ static void nicpf_iov_uninit(device_t);
 static int nicpf_iov_add_vf(device_t, uint16_t, const nvlist_t *);
 #endif
 
+#if 0
 static device_method_t nicpf_methods[] = {
 	/* Device interface */
 	DEVMETHOD(device_probe,		nicpf_probe),
@@ -152,6 +207,7 @@ MODULE_VERSION(vnicpf, 1);
 MODULE_DEPEND(vnicpf, pci, 1, 1, 1);
 MODULE_DEPEND(vnicpf, ether, 1, 1, 1);
 MODULE_DEPEND(vnicpf, thunder_bgx, 1, 1, 1);
+#endif
 
 static int nicpf_alloc_res(struct nicpf *);
 static void nicpf_free_res(struct nicpf *);
@@ -159,50 +215,120 @@ static void nic_set_lmac_vf_mapping(struct nicpf *);
 static void nic_init_hw(struct nicpf *);
 static int nic_sriov_init(device_t, struct nicpf *);
 static void nic_poll_for_link(void *);
-static int nic_register_interrupts(struct nicpf *);
+static int nic_register_interrupts(struct nicpf *, struct pci_attach_args *);
 static void nic_unregister_interrupts(struct nicpf *);
 
 /*
  * Device interface
  */
 static int
-nicpf_probe(device_t dev)
+nicpf_probe(device_t dev, cfdata_t cf, void *aux)
 {
-	uint16_t vendor_id;
-	uint16_t device_id;
+	const struct pci_attach_args *pa = aux;
 
-	vendor_id = pci_get_vendor(dev);
-	device_id = pci_get_device(dev);
-
-	if (vendor_id == PCI_VENDOR_ID_CAVIUM &&
-	    device_id == PCI_DEVICE_ID_THUNDER_NIC_PF) {
-		device_set_desc(dev, VNIC_PF_DEVSTR);
-		return (BUS_PROBE_DEFAULT);
-	}
-
-	return (ENXIO);
+	if (PCI_VENDOR(pa->pa_id) == PCI_VENDOR_CAVIUM &&
+	    PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_CAVIUM_THUNDERX_NIC)
+	    return 1;
 }
 
-static int
-nicpf_attach(device_t dev)
+static void
+pci_enable_busmaster(device_t dev)
 {
-	struct nicpf *nic;
+	struct nicpf const *nic = device_private(dev);
+	const pci_chipset_tag_t pc = nic->sc_pc;
+	const pcitag_t tag = nic->sc_pcitag;
+
+	pcireg_t pci_cmd_word;
+
+	pci_cmd_word = pci_conf_read(pc, tag, PCI_COMMAND_STATUS_REG);
+	if (!(pci_cmd_word & PCI_COMMAND_MASTER_ENABLE)) {
+		pci_cmd_word |= PCI_COMMAND_MASTER_ENABLE;
+		pci_conf_write(pc, tag, PCI_COMMAND_STATUS_REG, pci_cmd_word);
+	}
+}
+
+static void
+pci_disable_busmaster(device_t dev)
+{
+	struct nicpf const *nic = device_private(dev);
+	const pci_chipset_tag_t pc = nic->sc_pc;
+	const pcitag_t tag = nic->sc_pcitag;
+	pcireg_t pci_cmd_word, tmp;
+
+	pci_cmd_word = pci_conf_read(pc, tag, PCI_COMMAND_STATUS_REG);
+	tmp = pci_cmd_word & ~PCI_COMMAND_MASTER_ENABLE;
+	if (tmp != pci_cmd_word) {
+		pci_conf_write(pc, tag, PCI_COMMAND_STATUS_REG, tmp);
+	}
+}
+
+static void
+nicpf_attach(device_t parent, device_t dev, void *aux)
+{
+	struct pci_attach_args *pa = aux;
+	struct nicpf *nic = device_private(dev);
 	int err;
 
-	nic = device_get_softc(dev);
 	nic->dev = dev;
+
+	nic->sc_pass1_silicon = PCI_REVISION(pa->pa_class) < PCI_REVID_PASS2;
+	nic->sc_pc = pa->pa_pc;
+	nic->sc_pcitag = pa->pa_tag;
+
+	if (pci_dma64_available(pa))
+		nic->sc_dmat = pa->pa_dmat64;
+	else
+		nic->sc_dmat = pa->pa_dmat;
+
+	pci_aprint_devinfo_fancy(pa, "Ethernet controller", VNIC_PF_DEVSTR,
+	    true);
 
 	/* Enable bus mastering */
 	pci_enable_busmaster(dev);
 
+#if 0
 	/* Allocate PCI resources */
 	err = nicpf_alloc_res(nic);
 	if (err != 0) {
 		device_printf(dev, "Could not allocate PCI resources\n");
-		return (err);
+		return;
+	}
+#endif
+	/*
+	 * Map the device.  All devices support memory-mapped acccess,
+	 * and it is really required for normal operation.
+	 */
+	bool memh_valid;
+	bus_space_tag_t memt;
+	bus_space_handle_t memh;
+	bus_addr_t membase;
+	bus_size_t memsize;
+
+	const pcireg_t memtype = pci_mapreg_type(pa->pa_pc, pa->pa_tag,
+	    VNIC_PF_REG_RID);
+	switch (memtype) {
+	case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_32BIT:
+	case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_64BIT:
+		memh_valid = (pci_mapreg_map(pa, VNIC_PF_REG_RID,
+			memtype, 0, &memt, &memh, &membase, &memsize) == 0);
+		break;
+	default:
+		memh_valid = false;
+		break;
 	}
 
-	nic->node = nic_get_node_id(nic->reg_base);
+	if (memh_valid) {
+		nic->sc_memt = memt;
+		nic->sc_memh = memh;
+		nic->sc_memb = membase;
+		nic->sc_mems = memsize;
+	} else {
+		aprint_error_dev(dev,
+		    "unable to map device registers\n");
+		return;
+	}
+
+	nic->node = nic_get_node_id(nic->sc_memb);
 
 	/* Enable Traffic Network Switch (TNS) bypass mode by default */
 	nic->flags &= ~NIC_TNS_ENABLED;
@@ -225,16 +351,20 @@ nicpf_attach(device_t dev)
 		goto err_free_intr;
 
 	if (nic->flags & NIC_TNS_ENABLED)
-		return (0);
+		return;
 
-	mtx_init(&nic->check_link_mtx, "VNIC PF link poll", NULL, MTX_DEF);
+	//XXXNH IPL_NET?
+	mutex_init(&nic->check_link_mtx, MUTEX_DEFAULT, IPL_NET);
 	/* Register physical link status poll callout */
-	callout_init_mtx(&nic->check_link, &nic->check_link_mtx, 0);
-	mtx_lock(&nic->check_link_mtx);
-	nic_poll_for_link(nic);
-	mtx_unlock(&nic->check_link_mtx);
 
-	return (0);
+	/* Set up the timer callout and workqueue */
+	callout_init(&nic->check_link, NICPF_CALLOUT_FLAGS);
+
+	mutex_enter(&nic->check_link_mtx);
+	nic_poll_for_link(nic);
+	mutex_exit(&nic->check_link_mtx);
+
+	return;
 
 err_free_intr:
 	nic_unregister_interrupts(nic);
@@ -242,23 +372,19 @@ err_free_res:
 	nicpf_free_res(nic);
 	pci_disable_busmaster(dev);
 
-	return (err);
+	return;
 }
 
 static int
-nicpf_detach(device_t dev)
+nicpf_detach(device_t dev, int flags)
 {
-	struct nicpf *nic;
-	int err;
+	struct nicpf *nic = device_private(dev);
+	int err = 0;
 
-	err = 0;
-	nic = device_get_softc(dev);
-
-	callout_drain(&nic->check_link);
-	mtx_destroy(&nic->check_link_mtx);
+	callout_halt(&nic->check_link, &nic->check_link_mtx);
+	mutex_destroy(&nic->check_link_mtx);
 
 	nic_unregister_interrupts(nic);
-	nicpf_free_res(nic);
 	pci_disable_busmaster(dev);
 
 #ifdef PCI_IOV
@@ -321,61 +447,20 @@ nicpf_iov_add_vf(device_t dev, uint16_t vfnum, const nvlist_t *params)
 	return (0);
 }
 #endif
-
-/*
- * Helper routines
- */
-static int
-nicpf_alloc_res(struct nicpf *nic)
-{
-	device_t dev;
-	int rid;
-
-	dev = nic->dev;
-
-	rid = VNIC_PF_REG_RID;
-	nic->reg_base = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
-	    RF_ACTIVE);
-	if (nic->reg_base == NULL) {
-		/* For verbose output print some more details */
-		if (bootverbose) {
-			device_printf(dev,
-			    "Could not allocate registers memory\n");
-		}
-		return (ENXIO);
-	}
-
-	return (0);
-}
-
-static void
-nicpf_free_res(struct nicpf *nic)
-{
-	device_t dev;
-
-	dev = nic->dev;
-
-	if (nic->reg_base != NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(nic->reg_base), nic->reg_base);
-	}
-}
-
 /* Register read/write APIs */
 static __inline void
 nic_reg_write(struct nicpf *nic, bus_space_handle_t offset,
     uint64_t val)
 {
 
-	bus_write_8(nic->reg_base, offset, val);
+	bus_space_write_8(nic->sc_memt, nic->sc_memh, offset, val);
 }
 
 static __inline uint64_t
 nic_reg_read(struct nicpf *nic, uint64_t offset)
 {
-	uint64_t val;
+	uint64_t val = bus_space_read_8(nic->sc_memt, nic->sc_memh, offset);
 
-	val = bus_read_8(nic->reg_base, offset);
 	return (val);
 }
 
@@ -419,7 +504,7 @@ nic_send_msg_to_vf(struct nicpf *nic, int vf, union nic_mbx *mbx)
 	 * when PF writes to MBOX(1), in next revisions when
 	 * PF writes to MBOX(0)
 	 */
-	if (pass1_silicon(nic->dev)) {
+	if (nic->sc_pass1_silicon) {
 		nic_reg_write(nic, mbx_addr + 0, msg[0]);
 		nic_reg_write(nic, mbx_addr + 8, msg[1]);
 	} else {
@@ -732,7 +817,7 @@ nic_config_cpi(struct nicpf *nic, struct cpi_cfg_msg *cfg)
 			padd = cpi % 8; /* 3 bits CS out of 6bits DSCP */
 
 		/* Leave RSS_SIZE as '0' to disable RSS */
-		if (pass1_silicon(nic->dev)) {
+		if (nic->sc_pass1_silicon) {
 			nic_reg_write(nic, NIC_PF_CPI_0_2047_CFG | (cpi << 3),
 			    (vnic << 24) | (padd << 16) | (rssi_base + rssi));
 		} else {
@@ -796,7 +881,7 @@ nic_config_rss(struct nicpf *nic, struct rss_cfg_msg *cfg)
 	}
 
 	cpi_base = nic->cpi_base[cfg->vf_id];
-	if (pass1_silicon(nic->dev))
+	if (nic->sc_pass1_silicon)
 		idx_addr = NIC_PF_CPI_0_2047_CFG;
 	else
 		idx_addr = NIC_PF_MPI_0_2047_CFG;
@@ -1023,47 +1108,52 @@ nic_mbx1_intr_handler (void *arg)
 }
 
 static int
-nic_enable_msix(struct nicpf *nic)
+nic_enable_msix(struct nicpf *nic, const struct pci_attach_args *pa)
 {
-	struct pci_devinfo *dinfo;
-	int rid, count;
-	int ret;
+	device_t self = nic->dev;
+//    	struct nicpf *nic = device_private(dev);
 
-	dinfo = device_get_ivars(nic->dev);
-	rid = dinfo->cfg.msix.msix_table_bar;
-	nic->msix_table_res =
-	    bus_alloc_resource_any(nic->dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
-	if (nic->msix_table_res == NULL) {
-		device_printf(nic->dev,
-		    "Could not allocate memory for MSI-X table\n");
-		return (ENXIO);
+	int counts[PCI_INTR_TYPE_SIZE] = {
+		[PCI_INTR_TYPE_INTX] = 1,
+		[PCI_INTR_TYPE_MSI] = 1,
+		[PCI_INTR_TYPE_MSIX] = -1,
+	};
+
+	/* Allocate and establish the interrupt. */
+	int err = pci_intr_alloc(pa, &nic->sc_pihp, counts, PCI_INTR_TYPE_MSIX);
+	if (err) {
+		aprint_error_dev(self, "can't allocate handler\n");
+		return err;
 	}
 
-	count = nic->num_vec = NIC_PF_MSIX_VECTORS;
+	//count = nic->num_vec = NIC_PF_MSIX_VECTORS;
 
-	ret = pci_alloc_msix(nic->dev, &count);
-	if ((ret != 0) || (count != nic->num_vec)) {
-		device_printf(nic->dev,
-		    "Request for #%d msix vectors failed, error: %d\n",
-		    nic->num_vec, ret);
-		return (ret);
-	}
+	nic->sc_nintr = counts[pci_intr_type(pa->pa_pc, nic->sc_pihp[0])];
+	nic->sc_ih = kmem_zalloc(sizeof(void *) * nic->sc_nintr, KM_SLEEP);
 
-	nic->msix_enabled = 1;
 	return (0);
 }
 
 static void
 nic_disable_msix(struct nicpf *nic)
 {
-	if (nic->msix_enabled) {
-		pci_release_msi(nic->dev);
-		nic->msix_enabled = 0;
-		nic->num_vec = 0;
+	if (nic->sc_ih != NULL) {
+		for (int intr = 0; intr < nic->sc_nintr; intr++) {
+			if (nic->sc_ih[intr] != NULL) {
+				pci_intr_disestablish(nic->sc_pc,
+				    nic->sc_ih[intr]);
+				nic->sc_ih[intr] = NULL;
+			}
+		}
+
+		kmem_free(nic->sc_ih, sizeof(void *) * nic->sc_nintr);
+		nic->sc_ih = NULL;
 	}
 
-	bus_release_resource(nic->dev, SYS_RES_MEMORY,
-	    rman_get_rid(nic->msix_table_res), nic->msix_table_res);
+	if (nic->sc_pihp != NULL) {
+		pci_intr_release(nic->sc_pc, nic->sc_pihp, nic->sc_nintr);
+		nic->sc_pihp = NULL;
+	}
 }
 
 static void
@@ -1086,44 +1176,50 @@ nic_free_all_interrupts(struct nicpf *nic)
 }
 
 static int
-nic_register_interrupts(struct nicpf *nic)
+nic_register_interrupts(struct nicpf *nic, struct pci_attach_args *pa)
 {
 	int irq, rid;
 	int ret;
 
 	/* Enable MSI-X */
-	ret = nic_enable_msix(nic);
+	ret = nic_enable_msix(nic, pa);
 	if (ret != 0)
 		return (ret);
 
-	/* Register mailbox interrupt handlers */
-	irq = NIC_PF_INTR_ID_MBOX0;
-	rid = irq + 1;
-	nic->msix_entries[irq].irq_res = bus_alloc_resource_any(nic->dev,
-	    SYS_RES_IRQ, &rid, (RF_SHAREABLE | RF_ACTIVE));
-	if (nic->msix_entries[irq].irq_res == NULL) {
-		ret = ENXIO;
-		goto fail;
-	}
-	ret = bus_setup_intr(nic->dev, nic->msix_entries[irq].irq_res,
-	    (INTR_MPSAFE | INTR_TYPE_MISC), NULL, nic_mbx0_intr_handler, nic,
-	    &nic->msix_entries[irq].handle);
-	if (ret != 0)
-		goto fail;
+	char intrbuf[PCI_INTRSTR_LEN];
+	char intr_xname[INTRDEVNAMEBUF];
+	int vec;
 
-	irq = NIC_PF_INTR_ID_MBOX1;
-	rid = irq + 1;
-	nic->msix_entries[irq].irq_res = bus_alloc_resource_any(nic->dev,
-	    SYS_RES_IRQ, &rid, (RF_SHAREABLE | RF_ACTIVE));
-	if (nic->msix_entries[irq].irq_res == NULL) {
-		ret = ENXIO;
+	KASSERT(NIC_PF_MSIX_VECTORS == xxx);
+
+	vec = NIC_PF_INTR_ID_MBOX0;
+
+	intrstr = pci_intr_string(nic->sc_pc, nic->sc_pihp[vec], intrbuf,
+	    sizeof(intrbuf));
+	nic->sc_ih[vec] = pci_intr_establish_xname(nic->sc_pc,
+	    psc->sc_pihp[vec], IPL_VM, nic_mbx0_intr_handler, nic, "mbox0");
+	if (nic->sc_ih[vec] == NULL) {
+		aprint_error_dev(self, "couldn't establish interrupt");
+		if (intrstr != NULL)
+			aprint_error(" at %s", intrstr);
+		aprint_error("\n");
 		goto fail;
 	}
-	ret = bus_setup_intr(nic->dev, nic->msix_entries[irq].irq_res,
-	    (INTR_MPSAFE | INTR_TYPE_MISC), NULL, nic_mbx1_intr_handler, nic,
-	    &nic->msix_entries[irq].handle);
-	if (ret != 0)
+	aprint_normal_dev(self, "mbox0 interrupting at %s\n", `);
+
+	vec = NIC_PF_INTR_ID_MBOX1;
+	intrstr = pci_intr_string(nic->sc_pc, nic->sc_pihp[vec], intrbuf,
+	    sizeof(intrbuf));
+	nic->sc_ih[vec] = pci_intr_establish_xname(nic->sc_pc,
+	    psc->sc_pihp[vec], IPL_VM, nic_mbx1_intr_handler, nic, "mbox1");
+	if (nic->sc_ih[vec] == NULL) {
+		aprint_error_dev(self, "couldn't establish interrupt");
+		if (intrstr != NULL)
+			aprint_error(" at %s", intrstr);
+		aprint_error("\n");
 		goto fail;
+	}
+	aprint_normal_dev(self, "mbox1 interrupting at %s\n", intrstr);
 
 	/* Enable mailbox interrupt */
 	nic_enable_mbx_intr(nic);

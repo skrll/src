@@ -48,7 +48,7 @@ struct lmac {
 	unsigned int            last_speed;
 	boolean_t		is_sgmii;
 	struct callout		check_link;
-	struct mtx		check_link_mtx;
+	kmutex_t		check_link_mtx;
 };
 
 struct bgx {

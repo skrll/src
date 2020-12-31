@@ -54,7 +54,7 @@ struct phy_desc {
 
 struct thunder_mdio_softc {
 	device_t		dev;
-	struct mtx		mtx;
+	kmutex_t		mtx;
 	struct resource *	reg_base;
 
 	enum thunder_mdio_mode	mode;

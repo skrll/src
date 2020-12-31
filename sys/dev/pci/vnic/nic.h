@@ -290,7 +290,7 @@ struct nicvf {
 	device_t		dev;
 
 	struct ifnet *		ifp;
-	struct sx		core_sx;
+	kmutex_t		core_mtx;
 	struct ifmedia		if_media;
 	uint32_t		if_flags;
 
@@ -322,7 +322,7 @@ struct nicvf {
 
 	/* Interface statistics */
 	struct callout		stats_callout;
-	struct mtx		stats_mtx;
+	kmutex_t		stats_mtx;
 
 	/* MSI-X  */
 	boolean_t		msix_enabled;
@@ -495,20 +495,10 @@ union nic_mbx {
 #define	NIC_NODE_ID_SHIFT	44
 
 static __inline int
-nic_get_node_id(struct resource *res)
+nic_get_node_id(bus_addr_t addr)
 {
-	pci_addr_t addr;
 
-	addr = rman_get_start(res);
 	return ((addr >> NIC_NODE_ID_SHIFT) & NIC_NODE_ID_MASK);
-}
-
-static __inline boolean_t
-pass1_silicon(device_t dev)
-{
-
-	/* Check if the chip revision is < Pass2 */
-	return (pci_get_revid(dev) < PCI_REVID_PASS2);
 }
 
 int nicvf_send_msg_to_pf(struct nicvf *vf, union nic_mbx *mbx);

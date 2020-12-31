@@ -244,6 +244,7 @@ ena*		at pci? dev ? function ?	# Amazon.com Elastic Network Adapter
 mcx*		at pci? dev ? function ?	# Mellanox 5th generation Ethernet
 mskc*		at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 msk*		at mskc?
+nicpf*		at pci? dev ? function ?	# Cavium ThunderX Network Interface
 re*		at pci? dev ? function ?	# Realtek RTL8111GS
 vmx*		at pci? dev ? function ?	# VMware VMXNET3
 wm*		at pci? dev ? function ?	# Intel Gigabit Ethernet
