@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.110 2020/12/28 21:24:55 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.122 2020/12/30 13:17:42 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.110 2020/12/28 21:24:55 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.122 2020/12/30 13:17:42 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -102,17 +102,19 @@ static inline void RESTORE(const char *file, size_t line)
 	} else
 		CLRWFLGS(file, line);
 }
+#define cgram_debug(fmt, args...) printf("cgram_debug: " fmt "\n", ##args)
 #else
 #define CLRWFLGS(f, l) clrwflgs(), olwarn = LWARN_BAD
 #define SAVE(f, l)	olwarn = lwarn
 #define RESTORE(f, l) (void)(olwarn == LWARN_BAD ? (clrwflgs(), 0) : (lwarn = olwarn))
+#define cgram_debug(fmt, args...) (void)0
 #endif
 
 /* unbind the anonymous struct members from the struct */
 static void
 anonymize(sym_t *s)
 {
-	for ( ; s; s = s->s_nxt)
+	for ( ; s; s = s->s_next)
 		s->s_styp = NULL;
 }
 %}
@@ -131,7 +133,7 @@ anonymize(sym_t *s)
 	type_t	*y_type;
 	tnode_t	*y_tnode;
 	range_t	y_range;
-	strg_t	*y_strg;
+	strg_t	*y_string;
 	pqinf_t	*y_pqinf;
 };
 
@@ -263,7 +265,7 @@ anonymize(sym_t *s)
 %token	<y_sb>		T_NAME
 %token	<y_sb>		T_TYPENAME
 %token	<y_val>		T_CON
-%token	<y_strg>	T_STRING
+%token	<y_string>	T_STRING
 
 %type	<y_sym>		func_decl
 %type	<y_sym>		notype_decl
@@ -321,8 +323,8 @@ anonymize(sym_t *s)
 %type	<y_sym>		abstract_declaration
 %type	<y_tnode>	do_while_expr
 %type	<y_tnode>	opt_expr
-%type	<y_strg>	string
-%type	<y_strg>	string2
+%type	<y_string>	string
+%type	<y_string>	string2
 %type	<y_sb>		opt_asm_or_symbolrename
 %type	<y_range>	range
 %type	<y_range>	lorange
@@ -351,11 +353,11 @@ translation_unit:
 ext_decl:
 	  asm_stmnt
 	| func_def {
-		glclup(0);
+		global_clean_up_decl(0);
 		CLRWFLGS(__FILE__, __LINE__);
 	  }
 	| data_def {
-		glclup(0);
+		global_clean_up_decl(0);
 		CLRWFLGS(__FILE__, __LINE__);
 	  }
 	;
@@ -400,10 +402,10 @@ data_def:
 	  }
 	| declspecs deftyp type_init_decls T_SEMI
 	| error T_SEMI {
-		globclup();
+		global_clean_up();
 	  }
 	| error T_RBRACE {
-		globclup();
+		global_clean_up();
 	  }
 	;
 
@@ -427,7 +429,8 @@ func_def:
 	  } opt_arg_declaration_list {
 		popdecl();
 		blklev--;
-		cluparg();
+		check_func_lint_directives();
+		check_func_old_style_arguments();
 		pushctrl(0);
 	  } comp_stmnt {
 		funcend();
@@ -573,10 +576,10 @@ type_attribute_spec:
 	| T_AT_FORMAT T_LPARN type_attribute_format_type T_COMMA
 	    constant T_COMMA constant T_RPARN
 	| T_AT_USED {
-		addused();
+		add_attr_used();
 	}
 	| T_AT_UNUSED {
-		addused();
+		add_attr_used();
 	}
 	| T_AT_WARN_UNUSED_RESULT
 	| T_AT_WEAK
@@ -624,34 +627,34 @@ deftyp:
 
 declspecs:
 	  clrtyp_typespec {
-		addtype($1);
+		add_type($1);
 	  }
 	| declmods typespec {
-		addtype($2);
+		add_type($2);
 	  }
 	| type_attribute declspecs
 	| declspecs declmod
 	| declspecs notype_typespec {
-		addtype($2);
+		add_type($2);
 	  }
 	;
 
 declmods:
 	  clrtyp T_QUAL {
-		addqual($2);
+		add_qualifier($2);
 	  }
 	| clrtyp T_SCLASS {
-		addscl($2);
+		add_storage_class($2);
 	  }
 	| declmods declmod
 	;
 
 declmod:
 	  T_QUAL {
-		addqual($1);
+		add_qualifier($1);
 	  }
 	| T_SCLASS {
-		addscl($1);
+		add_storage_class($1);
 	  }
 	| type_attribute_list
 	;
@@ -705,12 +708,12 @@ struct_spec:
 	| struct struct_tag {
 		dcs->d_tagtyp = mktag($2, $1, 1, 0);
 	  } struct_declaration {
-		$$ = compltag(dcs->d_tagtyp, $4);
+		$$ = complete_tag_struct_or_union(dcs->d_tagtyp, $4);
 	  }
 	| struct {
 		dcs->d_tagtyp = mktag(NULL, $1, 1, 0);
 	  } struct_declaration {
-		$$ = compltag(dcs->d_tagtyp, $3);
+		$$ = complete_tag_struct_or_union(dcs->d_tagtyp, $3);
 	  }
 	| struct error {
 		symtyp = FVFT;
@@ -783,13 +786,13 @@ member_declaration_list:
 member_declaration:
 	  noclass_declmods deftyp {
 		/* too late, i know, but getsym() compensates it */
-		symtyp = FMOS;
+		symtyp = FMEMBER;
 	  } notype_member_decls opt_type_attribute {
 		symtyp = FVFT;
 		$$ = $4;
 	  }
 	| noclass_declspecs deftyp {
-		symtyp = FMOS;
+		symtyp = FMEMBER;
 	  } type_member_decls opt_type_attribute {
 		symtyp = FVFT;
 		$$ = $4;
@@ -820,49 +823,49 @@ member_declaration:
 
 noclass_declspecs:
 	  clrtyp_typespec {
-		addtype($1);
+		add_type($1);
 	  }
 	| type_attribute noclass_declspecs
 	| noclass_declmods typespec {
-		addtype($2);
+		add_type($2);
 	  }
 	| noclass_declspecs T_QUAL {
-		addqual($2);
+		add_qualifier($2);
 	  }
 	| noclass_declspecs notype_typespec {
-		addtype($2);
+		add_type($2);
 	  }
 	| noclass_declspecs type_attribute
 	;
 
 noclass_declmods:
 	  clrtyp T_QUAL {
-		addqual($2);
+		add_qualifier($2);
 	  }
 	| noclass_declmods T_QUAL {
-		addqual($2);
+		add_qualifier($2);
 	  }
 	;
 
 notype_member_decls:
 	  notype_member_decl {
-		$$ = decl1str($1);
+		$$ = declarator_1_struct_union($1);
 	  }
 	| notype_member_decls {
-		symtyp = FMOS;
+		symtyp = FMEMBER;
 	  } T_COMMA type_member_decl {
-		$$ = lnklst($1, decl1str($4));
+		$$ = lnklst($1, declarator_1_struct_union($4));
 	  }
 	;
 
 type_member_decls:
 	  type_member_decl {
-		$$ = decl1str($1);
+		$$ = declarator_1_struct_union($1);
 	  }
 	| type_member_decls {
-		symtyp = FMOS;
+		symtyp = FMEMBER;
 	  } T_COMMA type_member_decl {
-		$$ = lnklst($1, decl1str($4));
+		$$ = lnklst($1, declarator_1_struct_union($4));
 	  }
 	;
 
@@ -901,12 +904,12 @@ enum_spec:
 	| enum enum_tag {
 		dcs->d_tagtyp = mktag($2, ENUM, 1, 0);
 	  } enum_declaration {
-		$$ = compltag(dcs->d_tagtyp, $4);
+		$$ = complete_tag_enum(dcs->d_tagtyp, $4);
 	  }
 	| enum {
 		dcs->d_tagtyp = mktag(NULL, ENUM, 1, 0);
 	  } enum_declaration {
-		$$ = compltag(dcs->d_tagtyp, $3);
+		$$ = complete_tag_enum(dcs->d_tagtyp, $3);
 	  }
 	| enum error {
 		symtyp = FVFT;
@@ -997,24 +1000,24 @@ type_init_decls:
 notype_init_decl:
 	  notype_decl opt_asm_or_symbolrename {
 		idecl($1, 0, $2);
-		chksz($1);
+		check_size($1);
 	  }
 	| notype_decl opt_asm_or_symbolrename {
 		idecl($1, 1, $2);
 	  } T_ASSIGN initializer {
-		chksz($1);
+		check_size($1);
 	  }
 	;
 
 type_init_decl:
 	  type_decl opt_asm_or_symbolrename {
 		idecl($1, 0, $2);
-		chksz($1);
+		check_size($1);
 	  }
 	| type_decl opt_asm_or_symbolrename {
 		idecl($1, 1, $2);
 	  } T_ASSIGN initializer {
-		chksz($1);
+		check_size($1);
 	  }
 	;
 
@@ -1023,13 +1026,13 @@ notype_decl:
 		$$ = $1;
 	  }
 	| pointer notype_direct_decl {
-		$$ = addptr($2, $1);
+		$$ = add_pointer($2, $1);
 	  }
 	;
 
 notype_direct_decl:
 	  T_NAME {
-		$$ = dname(getsym($1));
+		$$ = declarator_name(getsym($1));
 	  }
 	| T_LPARN type_decl T_RPARN {
 		$$ = $2;
@@ -1038,13 +1041,13 @@ notype_direct_decl:
 		$$ = $2;
 	}
 	| notype_direct_decl T_LBRACK T_RBRACK {
-		$$ = addarray($1, 0, 0);
+		$$ = add_array($1, 0, 0);
 	  }
 	| notype_direct_decl T_LBRACK constant T_RBRACK {
-		$$ = addarray($1, 1, toicon($3, 0));
+		$$ = add_array($1, 1, toicon($3, 0));
 	  }
 	| notype_direct_decl param_list opt_asm_or_symbolrename {
-		$$ = addfunc(symbolrename($1, $3), $2);
+		$$ = add_function(symbolrename($1, $3), $2);
 		popdecl();
 		blklev--;
 	  }
@@ -1056,13 +1059,13 @@ type_decl:
 		$$ = $1;
 	  }
 	| pointer type_direct_decl {
-		$$ = addptr($2, $1);
+		$$ = add_pointer($2, $1);
 	  }
 	;
 
 type_direct_decl:
 	  identifier {
-		$$ = dname(getsym($1));
+		$$ = declarator_name(getsym($1));
 	  }
 	| T_LPARN type_decl T_RPARN {
 		$$ = $2;
@@ -1071,13 +1074,13 @@ type_direct_decl:
 		$$ = $2;
 	}
 	| type_direct_decl T_LBRACK T_RBRACK {
-		$$ = addarray($1, 0, 0);
+		$$ = add_array($1, 0, 0);
 	  }
 	| type_direct_decl T_LBRACK constant T_RBRACK {
-		$$ = addarray($1, 1, toicon($3, 0));
+		$$ = add_array($1, 1, toicon($3, 0));
 	  }
 	| type_direct_decl param_list opt_asm_or_symbolrename {
-		$$ = addfunc(symbolrename($1, $3), $2);
+		$$ = add_function(symbolrename($1, $3), $2);
 		popdecl();
 		blklev--;
 	  }
@@ -1096,28 +1099,28 @@ param_decl:
 		$$ = $1;
 	  }
 	| pointer direct_param_decl {
-		$$ = addptr($2, $1);
+		$$ = add_pointer($2, $1);
 	  }
 	;
 
 direct_param_decl:
 	  identifier type_attribute_list {
-		$$ = dname(getsym($1));
+		$$ = declarator_name(getsym($1));
 	  }
 	| identifier {
-		$$ = dname(getsym($1));
+		$$ = declarator_name(getsym($1));
 	  }
 	| T_LPARN notype_param_decl T_RPARN {
 		$$ = $2;
 	  }
 	| direct_param_decl T_LBRACK T_RBRACK {
-		$$ = addarray($1, 0, 0);
+		$$ = add_array($1, 0, 0);
 	  }
 	| direct_param_decl T_LBRACK constant T_RBRACK {
-		$$ = addarray($1, 1, toicon($3, 0));
+		$$ = add_array($1, 1, toicon($3, 0));
 	  }
 	| direct_param_decl param_list opt_asm_or_symbolrename {
-		$$ = addfunc(symbolrename($1, $3), $2);
+		$$ = add_function(symbolrename($1, $3), $2);
 		popdecl();
 		blklev--;
 	  }
@@ -1128,25 +1131,25 @@ notype_param_decl:
 		$$ = $1;
 	  }
 	| pointer direct_notype_param_decl {
-		$$ = addptr($2, $1);
+		$$ = add_pointer($2, $1);
 	  }
 	;
 
 direct_notype_param_decl:
 	  identifier {
-		$$ = dname(getsym($1));
+		$$ = declarator_name(getsym($1));
 	  }
 	| T_LPARN notype_param_decl T_RPARN {
 		$$ = $2;
 	  }
 	| direct_notype_param_decl T_LBRACK T_RBRACK {
-		$$ = addarray($1, 0, 0);
+		$$ = add_array($1, 0, 0);
 	  }
 	| direct_notype_param_decl T_LBRACK constant T_RBRACK {
-		$$ = addarray($1, 1, toicon($3, 0));
+		$$ = add_array($1, 1, toicon($3, 0));
 	  }
 	| direct_notype_param_decl param_list opt_asm_or_symbolrename {
-		$$ = addfunc(symbolrename($1, $3), $2);
+		$$ = add_function(symbolrename($1, $3), $2);
 		popdecl();
 		blklev--;
 	  }
@@ -1157,13 +1160,14 @@ pointer:
 		$$ = $1;
 	  }
 	| asterisk type_qualifier_list {
-		$$ = mergepq($1, $2);
+		$$ = merge_pointers_and_qualifiers($1, $2);
 	  }
 	| asterisk pointer {
-		$$ = mergepq($1, $2);
+		$$ = merge_pointers_and_qualifiers($1, $2);
 	  }
 	| asterisk type_qualifier_list pointer {
-		$$ = mergepq(mergepq($1, $2), $3);
+		$$ = merge_pointers_and_qualifiers($1, $2);
+		$$ = merge_pointers_and_qualifiers($$, $3);
 	  }
 	;
 
@@ -1179,7 +1183,7 @@ type_qualifier_list:
 		$$ = $1;
 	  }
 	| type_qualifier_list type_qualifier {
-		$$ = mergepq($1, $2);
+		$$ = merge_pointers_and_qualifiers($1, $2);
 	  }
 	;
 
@@ -1212,10 +1216,10 @@ id_list_lparn:
 
 identifier_list:
 	  T_NAME {
-		$$ = iname(getsym($1));
+		$$ = old_style_function_name(getsym($1));
 	  }
 	| identifier_list T_COMMA T_NAME {
-		$$ = lnklst($1, iname(getsym($3)));
+		$$ = lnklst($1, old_style_function_name(getsym($3)));
 	  }
 	| identifier_list error {
 		$$ = $1;
@@ -1274,10 +1278,10 @@ parameter_type_list:
 
 parameter_declaration:
 	  declmods deftyp {
-		$$ = decl1arg(aname(), 0);
+		$$ = decl1arg(abstract_name(), 0);
 	  }
 	| declspecs deftyp {
-		$$ = decl1arg(aname(), 0);
+		$$ = decl1arg(abstract_name(), 0);
 	  }
 	| declmods deftyp notype_param_decl {
 		$$ = decl1arg($3, 0);
@@ -1314,7 +1318,11 @@ opt_asm_or_symbolrename:		/* expect only one */
 	;
 
 initializer:
-	  init_assign_expr
+	  {
+		cgram_debug("begin initializer");
+	  } init_assign_expr {
+		cgram_debug("end initializer");
+	  }
 	;
 
 init_assign_expr:
@@ -1360,7 +1368,7 @@ init_field:
 	| point identifier {
 		if (!Sflag)
 			warning(313);
-		memberpush($2);
+		push_member($2);
 	  }
 	;
 
@@ -1373,19 +1381,19 @@ init_by_name:
 	  init_field_list T_ASSIGN
 	| identifier T_COLON {
 		gnuism(315);
-		memberpush($1);
+		push_member($1);
 	  }
 	;
 
 init_lbrace:
 	  T_LBRACE {
-		initlbr();
+		init_lbrace();
 	  }
 	;
 
 init_rbrace:
 	  T_RBRACE {
-		initrbr();
+		init_rbrace();
 	  }
 	;
 
@@ -1400,28 +1408,28 @@ type_name:
 
 abstract_declaration:
 	  noclass_declmods deftyp {
-		$$ = decl1abs(aname());
+		$$ = declare_1_abstract(abstract_name());
 	  }
 	| noclass_declspecs deftyp {
-		$$ = decl1abs(aname());
+		$$ = declare_1_abstract(abstract_name());
 	  }
 	| noclass_declmods deftyp abs_decl {
-		$$ = decl1abs($3);
+		$$ = declare_1_abstract($3);
 	  }
 	| noclass_declspecs deftyp abs_decl {
-		$$ = decl1abs($3);
+		$$ = declare_1_abstract($3);
 	  }
 	;
 
 abs_decl:
 	  pointer {
-		$$ = addptr(aname(), $1);
+		$$ = add_pointer(abstract_name(), $1);
 	  }
 	| direct_abs_decl {
 		$$ = $1;
 	  }
 	| pointer direct_abs_decl {
-		$$ = addptr($2, $1);
+		$$ = add_pointer($2, $1);
 	  }
 	| T_TYPEOF term {
 		$$ = mktempsym($2->tn_type);
@@ -1433,27 +1441,27 @@ direct_abs_decl:
 		$$ = $2;
 	  }
 	| T_LBRACK T_RBRACK {
-		$$ = addarray(aname(), 0, 0);
+		$$ = add_array(abstract_name(), 0, 0);
 	  }
 	| T_LBRACK constant T_RBRACK {
-		$$ = addarray(aname(), 1, toicon($2, 0));
+		$$ = add_array(abstract_name(), 1, toicon($2, 0));
 	  }
 	| type_attribute direct_abs_decl {
 		$$ = $2;
 	}
 	| direct_abs_decl T_LBRACK T_RBRACK {
-		$$ = addarray($1, 0, 0);
+		$$ = add_array($1, 0, 0);
 	  }
 	| direct_abs_decl T_LBRACK constant T_RBRACK {
-		$$ = addarray($1, 1, toicon($3, 0));
+		$$ = add_array($1, 1, toicon($3, 0));
 	  }
 	| abs_decl_param_list opt_asm_or_symbolrename {
-		$$ = addfunc(symbolrename(aname(), $2), $1);
+		$$ = add_function(symbolrename(abstract_name(), $2), $1);
 		popdecl();
 		blklev--;
 	  }
 	| direct_abs_decl abs_decl_param_list opt_asm_or_symbolrename {
-		$$ = addfunc(symbolrename($1, $3), $2);
+		$$ = add_function(symbolrename($1, $3), $2);
 		popdecl();
 		blklev--;
 	  }
@@ -1481,7 +1489,7 @@ labeled_stmnt:
 
 label:
 	  T_NAME T_COLON {
-		symtyp = FLAB;
+		symtyp = FLABEL;
 		label(T_NAME, getsym($1), NULL);
 	  }
 	| T_CASE constant T_COLON {
@@ -1746,7 +1754,7 @@ jump_stmnt:
 
 goto:
 	  T_GOTO {
-		symtyp = FLAB;
+		symtyp = FLABEL;
 	  }
 	;
 
@@ -1850,7 +1858,7 @@ term:
 	  }
 	| T_LPARN expr T_RPARN {
 		if ($2 != NULL)
-			$2->tn_parn = 1;
+			$2->tn_parenthesized = 1;
 		$$ = $2;
 	  }
 	| T_LPARN comp_stmnt_lbrace declaration_list expr_stmnt_list {
@@ -1907,12 +1915,18 @@ term:
 	| term point_or_arrow T_NAME {
 		if ($1 != NULL) {
 			sym_t	*msym;
-			/* XXX strmemb should be integrated in build() */
+			/*
+			 * XXX struct_or_union_member should be integrated
+			 * in build()
+			 */
 			if ($2 == ARROW) {
-				/* must to this before strmemb is called */
+				/*
+				 * must do this before struct_or_union_member
+				 * is called
+				 */
 				$1 = cconv($1);
 			}
-			msym = strmemb($1, $2, getsym($3));
+			msym = struct_or_union_member($1, $2, getsym($3));
 			$$ = build($2, $1, getnnode(msym, 0));
 		} else {
 			$$ = NULL;
@@ -1935,23 +1949,24 @@ term:
 	  }
 	| T_BUILTIN_OFFSETOF T_LPARN type_name T_COMMA identifier T_RPARN
 						    %prec T_BUILTIN_OFFSETOF {
-		symtyp = FMOS;
-		$$ = bldoffsetof($3, getsym($5));
+		symtyp = FMEMBER;
+		$$ = build_offsetof($3, getsym($5));
 	  }
 	| T_SIZEOF term					%prec T_SIZEOF {
-		if (($$ = $2 == NULL ? NULL : bldszof($2->tn_type)) != NULL)
-			chkmisc($2, 0, 0, 0, 0, 0, 1);
+		$$ = $2 == NULL ? NULL : build_sizeof($2->tn_type);
+		if ($$ != NULL)
+			check_expr_misc($2, 0, 0, 0, 0, 0, 1);
 	  }
 	| T_SIZEOF T_LPARN type_name T_RPARN		%prec T_SIZEOF {
-		$$ = bldszof($3);
+		$$ = build_sizeof($3);
 	  }
 	| T_ALIGNOF T_LPARN type_name T_RPARN		%prec T_ALIGNOF {
-		$$ = bldalof($3);
+		$$ = build_alignof($3);
 	  }
 	| T_LPARN type_name T_RPARN term		%prec T_UNOP {
 		$$ = cast($4, $2);
 	  }
-	| T_LPARN type_name T_RPARN 			%prec T_UNOP {
+	| T_LPARN type_name T_RPARN			%prec T_UNOP {
 		sym_t *tmp = mktempsym($2);
 		idecl(tmp, 1, NULL);
 	  } init_lbrace init_expr_list init_rbrace {
@@ -1966,7 +1981,7 @@ string:
 		$$ = $1;
 	  }
 	| T_STRING string2 {
-		$$ = catstrg($1, $2);
+		$$ = cat_strings($1, $2);
 	  }
 	;
 
@@ -1979,7 +1994,7 @@ string2:
 		$$ = $1;
 	  }
 	| string2 T_STRING {
-		$$ = catstrg($1, $2);
+		$$ = cat_strings($1, $2);
 	  }
 	;
 
@@ -1994,7 +2009,7 @@ func_arg_list:
 
 point_or_arrow:
 	  T_STROP {
-		symtyp = FMOS;
+		symtyp = FMEMBER;
 		$$ = $1;
 	  }
 	;
@@ -2010,9 +2025,11 @@ point:
 identifier:
 	  T_NAME {
 		$$ = $1;
+		cgram_debug("name '%s'", $$->sb_name);
 	  }
 	| T_TYPENAME {
 		$$ = $1;
+		cgram_debug("typename '%s'", $$->sb_name);
 	  }
 	;
 
@@ -2025,7 +2042,7 @@ yyerror(const char *msg)
 	error(249, yytext);
 	if (++sytxerr >= 5)
 		norecover();
-	return (0);
+	return 0;
 }
 
 static __inline int uq_gt(uint64_t, uint64_t);
@@ -2035,14 +2052,14 @@ static __inline int
 uq_gt(uint64_t a, uint64_t b)
 {
 
-	return (a > b);
+	return a > b;
 }
 
 static __inline int
 q_gt(int64_t a, int64_t b)
 {
 
-	return (a > b);
+	return a > b;
 }
 
 #define	q_lt(a, b)	q_gt(b, a)
@@ -2095,7 +2112,7 @@ toicon(tnode_t *tn, int required)
 		}
 	}
 	free(v);
-	return (i);
+	return i;
 }
 
 static void
@@ -2142,7 +2159,7 @@ idecl(sym_t *decl, int initflg, sbuf_t *renaming)
 	}
 
 	if (initflg && !initerr)
-		prepinit();
+		initstack_init();
 }
 
 /*

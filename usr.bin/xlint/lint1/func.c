@@ -1,4 +1,4 @@
-/*	$NetBSD: func.c,v 1.28 2020/12/28 21:24:55 rillig Exp $	*/
+/*	$NetBSD: func.c,v 1.38 2020/12/30 13:17:42 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: func.c,v 1.28 2020/12/28 21:24:55 rillig Exp $");
+__RCSID("$NetBSD: func.c,v 1.38 2020/12/30 13:17:42 rillig Exp $");
 #endif
 
 #include <stdlib.h>
@@ -82,10 +82,10 @@ cstk_t	*cstk;
  * Number of arguments which will be checked for usage in following
  * function definition. -1 stands for all arguments.
  *
- * The position of the last ARGSUSED comment is stored in aupos.
+ * The position of the last ARGSUSED comment is stored in argsused_pos.
  */
 int	nargusg = -1;
-pos_t	aupos;
+pos_t	argsused_pos;
 
 /*
  * Number of arguments of the following function definition whose types
@@ -101,13 +101,13 @@ pos_t	vapos;
  * shall be used to check the types of remaining arguments (for PRINTFLIKE
  * and SCANFLIKE).
  *
- * prflpos and scflpos are the positions of the last PRINTFLIKE or
- * SCANFLIKE comment.
+ * printflike_pos and scanflike_pos are the positions of the last PRINTFLIKE
+ * or SCANFLIKE comment.
  */
 int	prflstrg = -1;
 int	scflstrg = -1;
-pos_t	prflpos;
-pos_t	scflpos;
+pos_t	printflike_pos;
+pos_t	scanflike_pos;
 
 /*
  * If both plibflg and llibflg are set, prototypes are written as function
@@ -119,7 +119,7 @@ int	plibflg;
  * Nonzero means that no warnings about constants in conditional
  * context are printed.
  */
-int	ccflg;
+int	constcond_flag;
 
 /*
  * llibflg is set if a lint library shall be created. The effect of
@@ -131,7 +131,7 @@ int	llibflg;
 /*
  * Nonzero if warnings are suppressed by a LINTED directive
  * LWARN_BAD:	error
- * LWARN_ALL: 	warnings on
+ * LWARN_ALL:	warnings on
  * LWARN_NONE:	all warnings ignored
  * 0..n: warning n ignored
  */
@@ -159,7 +159,7 @@ pushctrl(int env)
 
 	ci = xcalloc(1, sizeof (cstk_t));
 	ci->c_env = env;
-	ci->c_nxt = cstk;
+	ci->c_next = cstk;
 	cstk = ci;
 }
 
@@ -175,10 +175,10 @@ popctrl(int env)
 	if (cstk == NULL || cstk->c_env != env)
 		LERROR("popctrl()");
 
-	cstk = (ci = cstk)->c_nxt;
+	cstk = (ci = cstk)->c_next;
 
 	while ((cl = ci->c_clst) != NULL) {
-		ci->c_clst = cl->cl_nxt;
+		ci->c_clst = cl->cl_next;
 		free(cl);
 	}
 
@@ -192,7 +192,7 @@ popctrl(int env)
  * Prints a warning if a statement cannot be reached.
  */
 void
-chkreach(void)
+check_statement_reachable(void)
 {
 	if (!reached && !rchflg) {
 		/* statement not reached */
@@ -232,17 +232,17 @@ funcdef(sym_t *fsym)
 	}
 
 	/*
-	 * In osfunc() we did not know whether it is an old style function
-	 * definition or only an old style declaration, if there are no
-	 * arguments inside the argument list ("f()").
+	 * In old_style_function() we did not know whether it is an old
+	 * style function definition or only an old style declaration,
+	 * if there are no arguments inside the argument list ("f()").
 	 */
 	if (!fsym->s_type->t_proto && fsym->s_args == NULL)
 		fsym->s_osdef = 1;
 
-	chktyp(fsym);
+	check_type(fsym);
 
 	/*
-	 * chktyp() checks for almost all possible errors, but not for
+	 * check_type() checks for almost all possible errors, but not for
 	 * incomplete return values (these are allowed in declarations)
 	 */
 	if (fsym->s_type->t_subt->t_tspec != VOID &&
@@ -267,7 +267,7 @@ funcdef(sym_t *fsym)
 	 * (void is already removed from the list of arguments)
 	 */
 	n = 1;
-	for (arg = fsym->s_type->t_args; arg != NULL; arg = arg->s_nxt) {
+	for (arg = fsym->s_type->t_args; arg != NULL; arg = arg->s_next) {
 		if (arg->s_scl == ABSTRACT) {
 			if (arg->s_name != unnamed)
 				LERROR("funcdef()");
@@ -281,29 +281,29 @@ funcdef(sym_t *fsym)
 	}
 
 	/*
-	 * We must also remember the position. s_dpos is overwritten
+	 * We must also remember the position. s_def_pos is overwritten
 	 * if this is an old style definition and we had already a
 	 * prototype.
 	 */
-	STRUCT_ASSIGN(dcs->d_fdpos, fsym->s_dpos);
+	dcs->d_fdpos = fsym->s_def_pos;
 
 	if ((rdsym = dcs->d_rdcsym) != NULL) {
 
-		if (!isredec(fsym, (dowarn = 0, &dowarn))) {
+		if (!check_redeclaration(fsym, (dowarn = 0, &dowarn))) {
 
 			/*
 			 * Print nothing if the newly defined function
 			 * is defined in old style. A better warning will
-			 * be printed in cluparg().
+			 * be printed in check_func_lint_directives().
 			 */
 			if (dowarn && !fsym->s_osdef) {
 				/* redeclaration of %s */
 				(*(sflag ? error : warning))(27, fsym->s_name);
-				prevdecl(-1, rdsym);
+				print_previous_declaration(-1, rdsym);
 			}
 
 			/* copy usage information */
-			cpuinfo(fsym, rdsym);
+			copy_usage_info(fsym, rdsym);
 
 			/*
 			 * If the old symbol was a prototype and the new
@@ -311,10 +311,10 @@ funcdef(sym_t *fsym)
 			 * declaration of the prototype.
 			 */
 			if (fsym->s_osdef && rdsym->s_type->t_proto)
-				STRUCT_ASSIGN(fsym->s_dpos, rdsym->s_dpos);
+				fsym->s_def_pos = rdsym->s_def_pos;
 
 			/* complete the type */
-			compltyp(fsym, rdsym);
+			complete_type(fsym, rdsym);
 
 			/* once a function is inline it remains inline */
 			if (rdsym->s_inline)
@@ -371,8 +371,8 @@ funcend(void)
 	arg = dcs->d_fargs;
 	n = 0;
 	while (arg != NULL && (nargusg == -1 || n < nargusg)) {
-		chkusg1(dcs->d_asm, arg);
-		arg = arg->s_nxt;
+		check_usage_sym(dcs->d_asm, arg);
+		arg = arg->s_next;
 		n++;
 	}
 	nargusg = -1;
@@ -394,7 +394,7 @@ funcend(void)
 	 * remove all symbols declared during argument declaration from
 	 * the symbol table
 	 */
-	if (dcs->d_nxt != NULL || dcs->d_ctx != EXTERN)
+	if (dcs->d_next != NULL || dcs->d_ctx != EXTERN)
 		LERROR("funcend()");
 	rmsyms(dcs->d_fpsyms);
 
@@ -425,14 +425,14 @@ label(int typ, sym_t *sym, tnode_t *tn)
 			/* label %s redefined */
 			error(194, sym->s_name);
 		} else {
-			setsflg(sym);
+			mark_as_set(sym);
 		}
 		break;
 
 	case T_CASE:
 
 		/* find the stack entry for the innermost switch statement */
-		for (ci = cstk; ci != NULL && !ci->c_switch; ci = ci->c_nxt)
+		for (ci = cstk; ci != NULL && !ci->c_switch; ci = ci->c_next)
 			continue;
 
 		if (ci == NULL) {
@@ -478,7 +478,7 @@ label(int typ, sym_t *sym, tnode_t *tn)
 			free(v);
 
 			/* look if we had this value already */
-			for (cl = ci->c_clst; cl != NULL; cl = cl->cl_nxt) {
+			for (cl = ci->c_clst; cl != NULL; cl = cl->cl_next) {
 				if (cl->cl_val.v_quad == nv.v_quad)
 					break;
 			}
@@ -494,8 +494,8 @@ label(int typ, sym_t *sym, tnode_t *tn)
 				 * case values
 				 */
 				cl = xcalloc(1, sizeof (clst_t));
-				STRUCT_ASSIGN(cl->cl_val, nv);
-				cl->cl_nxt = ci->c_clst;
+				cl->cl_val = nv;
+				cl->cl_next = ci->c_clst;
 				ci->c_clst = cl;
 			}
 		}
@@ -505,7 +505,7 @@ label(int typ, sym_t *sym, tnode_t *tn)
 	case T_DEFAULT:
 
 		/* find the stack entry for the innermost switch statement */
-		for (ci = cstk; ci != NULL && !ci->c_switch; ci = ci->c_nxt)
+		for (ci = cstk; ci != NULL && !ci->c_switch; ci = ci->c_next)
 			continue;
 
 		if (ci == NULL) {
@@ -597,8 +597,8 @@ switch1(tnode_t *tn)
 	}
 
 	/*
-	 * Remember the type of the expression. Because its possible
-	 * that (*tp) is allocated on tree memory the type must be
+	 * Remember the type of the expression. Because it's possible
+	 * that (*tp) is allocated on tree memory, the type must be
 	 * duplicated. This is not too complicated because it is
 	 * only an integer type.
 	 */
@@ -644,10 +644,10 @@ switch2(void)
 		if (cstk->c_swtype->t_enum == NULL)
 			LERROR("switch2()");
 		for (esym = cstk->c_swtype->t_enum->elem;
-		     esym != NULL; esym = esym->s_nxt) {
+		     esym != NULL; esym = esym->s_next) {
 			nenum++;
 		}
-		for (cl = cstk->c_clst; cl != NULL; cl = cl->cl_nxt)
+		for (cl = cstk->c_clst; cl != NULL; cl = cl->cl_next)
 			nclab++;
 		if (hflag && eflag && nenum != nclab && !cstk->c_default) {
 			/* enumeration value(s) not handled in switch */
@@ -821,8 +821,8 @@ for1(tnode_t *tn1, tnode_t *tn2, tnode_t *tn3)
 	 */
 	cstk->c_fexprm = tsave();
 	cstk->c_f3expr = tn3;
-	STRUCT_ASSIGN(cstk->c_fpos, curr_pos);
-	STRUCT_ASSIGN(cstk->c_cfpos, csrc_pos);
+	cstk->c_fpos = curr_pos;
+	cstk->c_cfpos = csrc_pos;
 
 	if (tn1 != NULL)
 		expr(tn1, 0, 0, 1);
@@ -867,14 +867,14 @@ for2(void)
 	if (cstk->c_cont)
 		reached = 1;
 
-	STRUCT_ASSIGN(cpos, curr_pos);
-	STRUCT_ASSIGN(cspos, csrc_pos);
+	cpos = curr_pos;
+	cspos = csrc_pos;
 
 	/* Restore the tree memory for the reinitialisation expression */
 	trestor(cstk->c_fexprm);
 	tn3 = cstk->c_f3expr;
-	STRUCT_ASSIGN(curr_pos, cstk->c_fpos);
-	STRUCT_ASSIGN(csrc_pos, cstk->c_cfpos);
+	curr_pos = cstk->c_fpos;
+	csrc_pos = cstk->c_cfpos;
 
 	/* simply "statement not reached" would be confusing */
 	if (!reached && !rchflg) {
@@ -889,8 +889,8 @@ for2(void)
 		tfreeblk();
 	}
 
-	STRUCT_ASSIGN(curr_pos, cpos);
-	STRUCT_ASSIGN(csrc_pos, cspos);
+	curr_pos = cpos;
+	csrc_pos = cspos;
 
 	/* An endless loop without break will never terminate */
 	reached = cstk->c_break || !cstk->c_infinite;
@@ -907,9 +907,9 @@ void
 dogoto(sym_t *lab)
 {
 
-	setuflg(lab, 0, 0);
+	mark_as_used(lab, 0, 0);
 
-	chkreach();
+	check_statement_reachable();
 
 	reached = rchflg = 0;
 }
@@ -924,7 +924,7 @@ dobreak(void)
 
 	ci = cstk;
 	while (ci != NULL && !ci->c_loop && !ci->c_switch)
-		ci = ci->c_nxt;
+		ci = ci->c_next;
 
 	if (ci == NULL) {
 		/* break outside loop or switch */
@@ -935,7 +935,7 @@ dobreak(void)
 	}
 
 	if (bflag)
-		chkreach();
+		check_statement_reachable();
 
 	reached = rchflg = 0;
 }
@@ -948,7 +948,7 @@ docont(void)
 {
 	cstk_t	*ci;
 
-	for (ci = cstk; ci != NULL && !ci->c_loop; ci = ci->c_nxt)
+	for (ci = cstk; ci != NULL && !ci->c_loop; ci = ci->c_next)
 		continue;
 
 	if (ci == NULL) {
@@ -958,7 +958,7 @@ docont(void)
 		ci->c_cont = 1;
 	}
 
-	chkreach();
+	check_statement_reachable();
 
 	reached = rchflg = 0;
 }
@@ -974,7 +974,7 @@ doreturn(tnode_t *tn)
 	cstk_t	*ci;
 	op_t	op;
 
-	for (ci = cstk; ci->c_nxt != NULL; ci = ci->c_nxt)
+	for (ci = cstk; ci->c_next != NULL; ci = ci->c_next)
 		continue;
 
 	if (tn != NULL) {
@@ -1025,7 +1025,7 @@ doreturn(tnode_t *tn)
 
 	} else {
 
-		chkreach();
+		check_statement_reachable();
 
 	}
 
@@ -1037,15 +1037,15 @@ doreturn(tnode_t *tn)
  * Especially remove information about unused lint comments.
  */
 void
-glclup(int silent)
+global_clean_up_decl(int silent)
 {
 	pos_t	cpos;
 
-	STRUCT_ASSIGN(cpos, curr_pos);
+	cpos = curr_pos;
 
 	if (nargusg != -1) {
 		if (!silent) {
-			STRUCT_ASSIGN(curr_pos, aupos);
+			curr_pos = argsused_pos;
 			/* must precede function definition: %s */
 			warning(282, "ARGSUSED");
 		}
@@ -1053,7 +1053,7 @@ glclup(int silent)
 	}
 	if (nvararg != -1) {
 		if (!silent) {
-			STRUCT_ASSIGN(curr_pos, vapos);
+			curr_pos = vapos;
 			/* must precede function definition: %s */
 			warning(282, "VARARGS");
 		}
@@ -1061,7 +1061,7 @@ glclup(int silent)
 	}
 	if (prflstrg != -1) {
 		if (!silent) {
-			STRUCT_ASSIGN(curr_pos, prflpos);
+			curr_pos = printflike_pos;
 			/* must precede function definition: %s */
 			warning(282, "PRINTFLIKE");
 		}
@@ -1069,14 +1069,14 @@ glclup(int silent)
 	}
 	if (scflstrg != -1) {
 		if (!silent) {
-			STRUCT_ASSIGN(curr_pos, scflpos);
+			curr_pos = scanflike_pos;
 			/* must precede function definition: %s */
 			warning(282, "SCANFLIKE");
 		}
 		scflstrg = -1;
 	}
 
-	STRUCT_ASSIGN(curr_pos, cpos);
+	curr_pos = cpos;
 
 	dcs->d_asm = 0;
 }
@@ -1104,7 +1104,7 @@ argsused(int n)
 		warning(281, "ARGSUSED");
 	}
 	nargusg = n;
-	STRUCT_ASSIGN(aupos, curr_pos);
+	argsused_pos = curr_pos;
 }
 
 /*
@@ -1130,7 +1130,7 @@ varargs(int n)
 		warning(281, "VARARGS");
 	}
 	nvararg = n;
-	STRUCT_ASSIGN(vapos, curr_pos);
+	vapos = curr_pos;
 }
 
 /*
@@ -1156,7 +1156,7 @@ printflike(int n)
 		warning(281, "PRINTFLIKE");
 	}
 	prflstrg = n;
-	STRUCT_ASSIGN(prflpos, curr_pos);
+	printflike_pos = curr_pos;
 }
 
 /*
@@ -1182,7 +1182,7 @@ scanflike(int n)
 		warning(281, "SCANFLIKE");
 	}
 	scflstrg = n;
-	STRUCT_ASSIGN(scflpos, curr_pos);
+	scanflike_pos = curr_pos;
 }
 
 /*
@@ -1194,7 +1194,7 @@ void
 constcond(int n)
 {
 
-	ccflg = 1;
+	constcond_flag = 1;
 }
 
 /*

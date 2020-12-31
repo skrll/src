@@ -1,4 +1,4 @@
-/* $NetBSD: lint2.h,v 1.8 2017/12/26 17:02:19 christos Exp $ */
+/* $NetBSD: lint2.h,v 1.11 2020/12/30 10:46:11 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -87,7 +87,7 @@ typedef	struct arginf {
 	u_int	a_ncon : 1;	/* msb of argument is set */
 	u_int	a_fmt : 1;	/* a_fstrg points to format string */
 	char	*a_fstrg;	/* format string */
-	struct	arginf *a_nxt;	/* information for next const. argument */
+	struct	arginf *a_next;	/* information for next const. argument */
 } arginf_t;
 
 /*
@@ -126,7 +126,7 @@ typedef	struct sym {
 		u_int	s_prfl : 1;	/* printflike */
 		u_int	s_scfl : 1;	/* scanflike */
 		u_short	s_type;		/* type */
-		struct	sym *s_nxt;	/* next symbol with same name */
+		struct	sym *s_next;	/* next symbol with same name */
 	} s_s;
 	short	s_nva;
 	short	s_nprfl;
@@ -143,10 +143,10 @@ typedef	struct sym {
 #define s_prfl		s_s.s_prfl
 #define s_scfl		s_s.s_scfl
 #define s_type		s_s.s_type
-#define s_nxt		s_s.s_nxt
+#define s_next		s_s.s_next
 
 /*
- * Used to store informations about function calls.
+ * Used to store information about function calls.
  */
 typedef	struct fcall {
 	pos_t	f_pos;		/* position of call */
@@ -154,7 +154,7 @@ typedef	struct fcall {
 	u_int	f_rdisc : 1;	/* return value discarded (casted to void) */
 	u_short	f_type;		/* types of expected return value and args */
 	arginf_t *f_args;	/* information about constant arguments */
-	struct	fcall *f_nxt;	/* next call of same function */
+	struct	fcall *f_next;	/* next call of same function */
 } fcall_t;
 
 /*
@@ -163,7 +163,7 @@ typedef	struct fcall {
  */
 typedef	struct usym {
 	pos_t	u_pos;		/* position */
-	struct	usym *u_nxt;	/* next usage */
+	struct	usym *u_next;	/* next usage */
 } usym_t;
 
 /*
@@ -175,11 +175,11 @@ typedef	struct hte {
 	u_int	h_def : 1;	/* symbol is defined */
 	u_int	h_static : 1;	/* static symbol */
 	sym_t	*h_syms;	/* declarations and definitions */
-	sym_t	**h_lsym;	/* points to s_nxt of last decl./def. */
+	sym_t	**h_lsym;	/* points to s_next of last decl./def. */
 	fcall_t	*h_calls;	/* function calls */
-	fcall_t	**h_lcall;	/* points to f_nxt of last call */
+	fcall_t	**h_lcall;	/* points to f_next of last call */
 	usym_t	*h_usyms;	/* usage info */
-	usym_t	**h_lusym;	/* points to u_nxt of last usage info */
+	usym_t	**h_lusym;	/* points to u_next of last usage info */
 	struct	hte *h_link;	/* next hte with same hash function */
 	struct  hte *h_hte;	/* pointer to other htes (for renames */
 } hte_t;
