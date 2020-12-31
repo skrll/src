@@ -320,7 +320,6 @@ ahci_pci_intr_establish(struct ahci_softc *sc, int port)
 			/* Already established, nothing more to do */
 			goto out;
 		}
-
 	} else {
 		/*
 		 * Theoretically AHCI device can have less MSI/MSI-X vectors
@@ -368,7 +367,7 @@ ahci_pci_intr_establish(struct ahci_softc *sc, int port)
 	    sizeof(intrbuf));
 	psc->sc_ih[vec] = pci_intr_establish_xname(psc->sc_pc,
 	    psc->sc_pihp[vec], IPL_BIO, intr_handler, intr_arg, intr_xname);
-	if (psc->sc_ih == NULL) {
+	if (psc->sc_ih[vec] == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt");
 		if (intrstr != NULL)
 			aprint_error(" at %s", intrstr);
