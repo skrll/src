@@ -1,4 +1,4 @@
-/* $NetBSD: emit1.c,v 1.23 2020/12/28 21:24:55 rillig Exp $ */
+/* $NetBSD: emit1.c,v 1.29 2020/12/30 11:14:03 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: emit1.c,v 1.23 2020/12/28 21:24:55 rillig Exp $");
+__RCSID("$NetBSD: emit1.c,v 1.29 2020/12/30 11:14:03 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -145,12 +145,12 @@ outtype(type_t *tp)
 			outtt(tp->t_str->stag, tp->t_str->stdef);
 		} else if (ts == FUNC && tp->t_proto) {
 			na = 0;
-			for (arg = tp->t_args; arg != NULL; arg = arg->s_nxt)
+			for (arg = tp->t_args; arg != NULL; arg = arg->s_next)
 					na++;
 			if (tp->t_vararg)
 				na++;
 			outint(na);
-			for (arg = tp->t_args; arg != NULL; arg = arg->s_nxt)
+			for (arg = tp->t_args; arg != NULL; arg = arg->s_next)
 				outtype(arg->s_type);
 			if (tp->t_vararg)
 				outchar('E');
@@ -173,19 +173,19 @@ ttos(type_t *tp)
 
 	if (tob.o_buf == NULL) {
 		tob.o_len = 64;
-		tob.o_buf = tob.o_nxt = xmalloc(tob.o_len);
+		tob.o_buf = tob.o_next = xmalloc(tob.o_len);
 		tob.o_end = tob.o_buf + tob.o_len;
 	}
 
 	tmp = ob;
 	ob = tob;
-	ob.o_nxt = ob.o_buf;
+	ob.o_next = ob.o_buf;
 	outtype(tp);
 	outchar('\0');
 	tob = ob;
 	ob = tmp;
 
-	return (tob.o_buf);
+	return tob.o_buf;
 }
 
 /*
@@ -210,11 +210,11 @@ outtt(sym_t *tag, sym_t *tdef)
 		outname(tdef->s_name);
 	} else {
 		outint(3);
-		outint(tag->s_dpos.p_line);
+		outint(tag->s_def_pos.p_line);
 		outchar('.');
-		outint(getfnid(tag->s_dpos.p_file));
+		outint(getfnid(tag->s_def_pos.p_file));
 		outchar('.');
-		outint(tag->s_dpos.p_uniq);
+		outint(tag->s_def_pos.p_uniq);
 	}
 }
 
@@ -248,9 +248,9 @@ outsym(sym_t *sym, scl_t sc, def_t def)
 	 */
 	outint(csrc_pos.p_line);
 	outchar('d');
-	outint(getfnid(sym->s_dpos.p_file));
+	outint(getfnid(sym->s_def_pos.p_file));
 	outchar('.');
-	outint(sym->s_dpos.p_line);
+	outint(sym->s_def_pos.p_line);
 
 	/* flags */
 
@@ -385,11 +385,11 @@ outfdef(sym_t *fsym, pos_t *posp, int rval, int osdef, sym_t *args)
 	/* argument types and return value */
 	if (osdef) {
 		narg = 0;
-		for (arg = args; arg != NULL; arg = arg->s_nxt)
+		for (arg = args; arg != NULL; arg = arg->s_next)
 			narg++;
 		outchar('f');
 		outint(narg);
-		for (arg = args; arg != NULL; arg = arg->s_nxt)
+		for (arg = args; arg != NULL; arg = arg->s_next)
 			outtype(arg->s_type);
 		outtype(fsym->s_type->t_subt);
 	} else {
@@ -435,7 +435,7 @@ outcall(tnode_t *tn, int rvused, int rvdisc)
 	args = tn->tn_right;
 	for (arg = args; arg != NULL; arg = arg->tn_right)
 		narg++;
-	/* informations about arguments */
+	/* information about arguments */
 	for (n = 1; n <= narg; n++) {
 		/* the last argument is the top one in the tree */
 		for (i = narg, arg = args; i > n; i--, arg = arg->tn_right)
@@ -461,11 +461,11 @@ outcall(tnode_t *tn, int rvused, int rvdisc)
 			}
 		} else if (arg->tn_op == AMPER &&
 			   arg->tn_left->tn_op == STRING &&
-			   arg->tn_left->tn_strg->st_tspec == CHAR) {
+			   arg->tn_left->tn_string->st_tspec == CHAR) {
 			/* constant string, write all format specifiers */
 			outchar('s');
 			outint(n);
-			outfstrg(arg->tn_left->tn_strg);
+			outfstrg(arg->tn_left->tn_string);
 		}
 
 	}
