@@ -1,4 +1,4 @@
-/*	$NetBSD: tyname.c,v 1.13 2018/09/07 15:16:15 christos Exp $	*/
+/*	$NetBSD: tyname.c,v 1.16 2020/12/29 13:33:03 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2005 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tyname.c,v 1.13 2018/09/07 15:16:15 christos Exp $");
+__RCSID("$NetBSD: tyname.c,v 1.16 2020/12/29 13:33:03 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -46,14 +46,15 @@ __RCSID("$NetBSD: tyname.c,v 1.13 2018/09/07 15:16:15 christos Exp $");
 #include PASS
 
 #ifndef LERROR
-#define LERROR(fmt, args...) 	do { \
-    (void)warnx("%s, %d: " fmt, __FILE__, __LINE__, ##args); \
-    abort(); \
-} while (/*CONSTCOND*/0)
+#define LERROR(fmt, args...) \
+	do { \
+		(void)warnx("%s, %d: " fmt, __FILE__, __LINE__, ##args); \
+		abort(); \
+	} while (/*CONSTCOND*/0)
 #endif
 
 const char *
-basictyname(tspec_t t)
+basic_type_name(tspec_t t)
 {
 	switch (t) {
 	case BOOL:	return "_Bool";
@@ -87,7 +88,7 @@ basictyname(tspec_t t)
 	case LCOMPLEX:	return "long double _Complex";
 	case COMPLEX:	return "_Complex";
 	default:
-		LERROR("basictyname(%d)", t);
+		LERROR("basic_type_name(%d)", t);
 		return NULL;
 	}
 }
@@ -169,7 +170,7 @@ tyname(char *buf, size_t bufsiz, const type_t *tp)
 	if ((t = tp->t_tspec) == INT && tp->t_isenum)
 		t = ENUM;
 
-	s = basictyname(t);
+	s = basic_type_name(t);
 
 	cv[0] = '\0';
 	if (tp->t_const)
@@ -235,5 +236,5 @@ tyname(char *buf, size_t bufsiz, const type_t *tp)
 	default:
 		LERROR("tyname(%d)", t);
 	}
-	return (buf);
+	return buf;
 }
