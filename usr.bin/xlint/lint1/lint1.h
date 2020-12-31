@@ -1,4 +1,4 @@
-/* $NetBSD: lint1.h,v 1.32 2020/12/28 12:56:33 rillig Exp $ */
+/* $NetBSD: lint1.h,v 1.45 2020/12/30 11:39:55 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -64,13 +64,13 @@ typedef struct {
 } pos_t;
 
 /* Copies curr_pos, keeping things unique. */
-#define UNIQUE_CURR_POS(pos)						\
-    do {								\
-    	STRUCT_ASSIGN((pos), curr_pos);					\
-	curr_pos.p_uniq++;						\
-	if (curr_pos.p_file == csrc_pos.p_file)				\
-	    csrc_pos.p_uniq++;						\
-    } while (0)
+#define	UNIQUE_CURR_POS(pos)						\
+	do {								\
+		(pos) = curr_pos;					\
+		curr_pos.p_uniq++;					\
+		if (curr_pos.p_file == csrc_pos.p_file)			\
+			csrc_pos.p_uniq++;				\
+	} while (0)
 
 /*
  * Strings cannot be referenced to simply by a pointer to its first
@@ -184,9 +184,9 @@ struct type {
  */
 typedef	enum {
 	FVFT,		/* variables, functions, type names, enums */
-	FMOS,		/* members of structs or unions */
+	FMEMBER,	/* members of structs or unions */
 	FTAG,		/* tags */
-	FLAB		/* labels */
+	FLABEL		/* labels */
 } symt_t;
 
 /*
@@ -204,7 +204,7 @@ typedef enum {
 	ENUMTAG,
 	MOS,		/* member of struct */
 	MOU,		/* member of union */
-	ENUMCON,	/* enumerator */
+	ENUMCON,	/* enumerator, enum constant */
 	ABSTRACT,	/* abstract symbol (sizeof, casts, unnamed argument) */
 	ARG,		/* argument */
 	PARG,		/* used in declaration stack during prototype
@@ -216,17 +216,17 @@ typedef enum {
  * symbol table entry
  */
 typedef	struct sym {
-	const	char *s_name;	/* name */
+	const	char *s_name;
 	const	char *s_rename;	/* renamed symbol's given name */
-	pos_t	s_dpos;		/* position of last (prototype)definition,
-				   prototypedeclaration, no-prototype-def.,
+	pos_t	s_def_pos;	/* position of last (prototype) definition,
+				   prototype declaration, no-prototype-def.,
 				   tentative definition or declaration,
 				   in this order */
-	pos_t	s_spos;		/* position of first initialisation */
-	pos_t	s_upos;		/* position of first use */
+	pos_t	s_set_pos;	/* position of first initialisation */
+	pos_t	s_use_pos;	/* position of first use */
 	symt_t	s_kind;		/* type of symbol */
-	void   *s_keyw;		/* keyword */
-	u_int	s_field : 1;	/* bit-field */
+	void   *s_keyword;
+	u_int	s_bitfield : 1;
 	u_int	s_set : 1;	/* variable set, label defined */
 	u_int	s_used : 1;	/* variable/label used */
 	u_int	s_arg : 1;	/* symbol is function argument */
@@ -235,18 +235,18 @@ typedef	struct sym {
 				   definition */
 	u_int	s_rimpl : 1;	/* return value of function implicit decl. */
 	u_int	s_osdef : 1;	/* symbol stems from old style function def. */
-	u_int	s_inline : 1;	/* true if this is a inline function */
-	struct	sym *s_xsym;	/* for local declared external symbols pointer
+	u_int	s_inline : 1;	/* true if this is an inline function */
+	struct	sym *s_ext_sym;	/* for local declared external symbols pointer
 				   to external symbol with same name */
 	def_t	s_def;		/* declared, tentative defined, defined */
 	scl_t	s_scl;		/* storage class */
 	int	s_blklev;	/* level of declaration, -1 if not in symbol
 				   table */
-	type_t	*s_type;	/* type */
-	val_t	s_value;	/* value (if enumcon) */
+	type_t	*s_type;
+	val_t	s_value;	/* value (if enum constant) */
 	union {
 		str_t	*_s_st;	/* tag, if it is a struct/union member */
-		tenum_t	*_s_et;	/* tag, if it is a enumerator */
+		tenum_t	*_s_et;	/* tag, if it is an enumerator */
 		tspec_t	_s_tsp;	/* type (only for keywords) */
 		tqual_t	_s_tqu;	/* qualifier (only for keywords) */
 		struct	sym *_s_args; /* arguments in old style function
@@ -254,9 +254,9 @@ typedef	struct sym {
 	} u;
 	struct	sym *s_link;	/* next symbol with same hash value */
 	struct	sym **s_rlink;	/* pointer to s_link of prev. symbol */
-	struct	sym *s_nxt;	/* next struct/union member, enumerator,
+	struct	sym *s_next;	/* next struct/union member, enumerator,
 				   argument */
-	struct	sym *s_dlnxt; 	/* next symbol declared on same level */
+	struct	sym *s_dlnxt;	/* next symbol declared on same level */
 } sym_t;
 
 #define	s_styp	u._s_st
@@ -266,7 +266,7 @@ typedef	struct sym {
 #define	s_args	u._s_args
 
 /*
- * Used to keep some informations about symbols before they are entered
+ * Used to keep some information about symbols before they are entered
  * into the symbol table.
  */
 typedef	struct sbuf {
@@ -274,7 +274,7 @@ typedef	struct sbuf {
 	size_t	sb_len;			/* length (without '\0') */
 	int	sb_hash;		/* hash value */
 	sym_t	*sb_sym;		/* symbol table entry */
-	struct	sbuf *sb_nxt;		/* for freelist */
+	struct	sbuf *sb_next;		/* for freelist */
 } sbuf_t;
 
 
@@ -285,8 +285,8 @@ typedef	struct tnode {
 	op_t	tn_op;		/* operator */
 	type_t	*tn_type;	/* type */
 	u_int	tn_lvalue : 1;	/* node is lvalue */
-	u_int	tn_cast : 1;	/* if tn_op == CVT its an explicit cast */
-	u_int	tn_parn : 1;	/* node parenthesized */
+	u_int	tn_cast : 1;	/* if tn_op == CVT, it's an explicit cast */
+	u_int	tn_parenthesized : 1; /* node parenthesized */
 	union {
 		struct {
 			struct	tnode *_tn_left;	/* (left) operand */
@@ -294,7 +294,7 @@ typedef	struct tnode {
 		} tn_s;
 		sym_t	*_tn_sym;	/* symbol if op == NAME */
 		val_t	*_tn_val;	/* value if op == CON */
-		strg_t	*_tn_strg;	/* string if op == STRING */
+		strg_t	*_tn_string;	/* string if op == STRING */
 	} tn_u;
 } tnode_t;
 
@@ -302,7 +302,7 @@ typedef	struct tnode {
 #define tn_right tn_u.tn_s._tn_right
 #define tn_sym	tn_u._tn_sym
 #define	tn_val	tn_u._tn_val
-#define	tn_strg	tn_u._tn_strg
+#define	tn_string	tn_u._tn_string
 
 /*
  * For nested declarations a stack exists, which holds all information
@@ -351,7 +351,7 @@ typedef	struct dinfo {
 	sym_t	**d_ldlsym;	/* points to s_dlnxt in last symbol decl.
 				   at this level */
 	sym_t	*d_fpsyms;	/* symbols defined in prototype */
-	struct	dinfo *d_nxt;	/* next level */
+	struct	dinfo *d_next;	/* next level */
 } dinfo_t;
 
 /*
@@ -364,8 +364,8 @@ typedef	struct	istk {
 	u_int	i_nolimit : 1;		/* incomplete array type */
 	u_int	i_namedmem : 1;		/* has c9x named members */
 	sym_t	*i_mem;			/* next structure member */
-	int	i_cnt;			/* # of remaining elements */
-	struct	istk *i_nxt;		/* previous level */
+	int	i_remaining;		/* # of remaining elements */
+	struct	istk *i_next;		/* previous level */
 } istk_t;
 
 /*
@@ -376,7 +376,7 @@ typedef	struct pqinf {
 	int	p_pcnt;			/* number of asterisks */
 	u_int	p_const : 1;
 	u_int	p_volatile : 1;
-	struct	pqinf *p_nxt;
+	struct	pqinf *p_next;
 } pqinf_t;
 
 /*
@@ -384,11 +384,11 @@ typedef	struct pqinf {
  */
 typedef	struct clst {
 	val_t	cl_val;
-	struct	clst *cl_nxt;
+	struct	clst *cl_next;
 } clst_t;
 
 /*
- * Used to keep informations about nested control statements.
+ * Used to keep information about nested control statements.
  */
 typedef struct cstk {
 	int	c_env;			/* type of statement (T_IF, ...) */
@@ -409,7 +409,7 @@ typedef struct cstk {
 	tnode_t	*c_f3expr;		/* end of loop expr in for() */
 	pos_t	c_fpos;			/* position of end of loop expr */
 	pos_t	c_cfpos;	        /* same for csrc_pos */
-	struct	cstk *c_nxt;		/* outer control statement */
+	struct	cstk *c_next;		/* outer control statement */
 } cstk_t;
 
 typedef struct {
@@ -427,14 +427,20 @@ typedef	struct err_set {
 } err_set;
 
 #define	ERR_SET(n, p)	\
-    ((p)->errs_bits[(n)/__NERRBITS] |= (1 << ((n) % __NERRBITS)))
+	((p)->errs_bits[(n)/__NERRBITS] |= (1 << ((n) % __NERRBITS)))
 #define	ERR_CLR(n, p)	\
-    ((p)->errs_bits[(n)/__NERRBITS] &= ~(1 << ((n) % __NERRBITS)))
+	((p)->errs_bits[(n)/__NERRBITS] &= ~(1 << ((n) % __NERRBITS)))
 #define	ERR_ISSET(n, p)	\
-    ((p)->errs_bits[(n)/__NERRBITS] & (1 << ((n) % __NERRBITS)))
+	((p)->errs_bits[(n)/__NERRBITS] & (1 << ((n) % __NERRBITS)))
 #define	ERR_ZERO(p)	(void)memset((p), 0, sizeof(*(p)))
 
 #define LERROR(fmt, args...)	lerror(__FILE__, __LINE__, fmt, ##args)
+
+#define lint_assert(cond)						\
+	do {								\
+		if (!(cond))						\
+			assert_failed(__FILE__, __LINE__, __func__, #cond); \
+	} while (/*CONSTCOND*/0)
 
 #ifdef BLKDEBUG
 #define ZERO	0xa5

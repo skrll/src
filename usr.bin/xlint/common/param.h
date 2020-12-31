@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.6 2020/12/28 21:24:55 rillig Exp $	*/
+/*	$NetBSD: param.h,v 1.8 2020/12/30 11:43:13 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -30,12 +30,6 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
-/*
- * Minimun size of string buffer. If this is not enough, the buffer
- * is enlarged in steps of STRBLEN bytes.
- */
-#define	STRBLEN		256
 
 /*
  * The size of memory blocks which are used to allocate memory in larger
@@ -74,8 +68,3 @@ typedef	long double ldbl_t;
 #else
 typedef	double	ldbl_t;
 #endif
-
-/*
- * Some traditional compilers are not able to assign structures.
- */
-#define STRUCT_ASSIGN(dest, src)	(dest) = (src)
