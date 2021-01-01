@@ -201,6 +201,18 @@ ENTRY_NP(cpu_reset)
 END(cpu_reset)
 #endif	/* OFW */
 
+
+/*
+ * int cpu_set_onfault(struct faultbuf *fb)
+ */
+ENTRY_NP(cpu_set_onfault)
+	GET_CURPCB(r1)
+	str	r0, [r1, #PCB_ONFAULT]
+	stmia	r0, {r4-r14}
+	mov	r0, #0
+	RET
+END(cpu_set_onfault)
+
 /*
  * setjump + longjmp
  */

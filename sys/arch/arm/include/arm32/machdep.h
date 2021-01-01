@@ -110,6 +110,31 @@ void set_spl_masks(void);
 void dump_spl_masks(void);
 #endif
 
+/* cpu_onfault */
+int cpu_set_onfault(struct faultbuf *) __returns_twice;
+void cpu_jump_onfault(struct trapframe *, const struct faultbuf *, int);
+
+static inline void
+cpu_unset_onfault(void)
+{
+	curpcb->pcb_onfault = NULL;
+}
+
+static inline void
+cpu_enable_onfault(struct faultbuf *fb)
+{
+	curpcb->pcb_onfault = fb;
+}
+
+static inline struct faultbuf *
+cpu_disable_onfault(void)
+{
+	struct faultbuf * const fb = curpcb->pcb_onfault;
+	if (fb != NULL)
+		curpcb->pcb_onfault = NULL;
+	return fb;
+}
+
 #endif	/* _KERNEL */
 
 #endif	/* _ARM32_MACHDEP_H_ */

@@ -292,32 +292,33 @@ phys_to_pp(paddr_t pa)
 #define IN_MODULE_VA(va)	false
 #endif
 
-#ifdef DIAGNOSTIC
-#define KASSERT_PM_ADDR(pm,va)						\
-	do {								\
-		int space = aarch64_addressspace(va);			\
-		if ((pm) == pmap_kernel()) {				\
-			KASSERTMSG(space == AARCH64_ADDRSPACE_UPPER,	\
-			    "%s: kernel pm %p: va=%016lx"		\
-			    " is out of upper address space\n",		\
-			    __func__, (pm), (va));			\
-			KASSERTMSG(IN_RANGE((va), VM_MIN_KERNEL_ADDRESS, \
-			    VM_MAX_KERNEL_ADDRESS),			\
-			    "%s: kernel pm %p: va=%016lx"		\
-			    " is not kernel address\n",			\
-			    __func__, (pm), (va));			\
-		} else {						\
-			KASSERTMSG(space == AARCH64_ADDRSPACE_LOWER,	\
-			    "%s: user pm %p: va=%016lx"			\
-			    " is out of lower address space\n",		\
-			    __func__, (pm), (va));			\
-			KASSERTMSG(IN_RANGE((va),			\
-			    VM_MIN_ADDRESS, VM_MAX_ADDRESS),		\
-			    "%s: user pm %p: va=%016lx"			\
-			    " is not user address\n",			\
-			    __func__, (pm), (va));			\
-		}							\
-	} while (0 /* CONSTCOND */)
+#ifdef XXXDIAGNOSTIC
+#define KASSERT_PM_ADDR(pm,va)								\
+    do {										\
+	int space = aarch64_addressspace(va);						\
+	if ((pm) == pmap_kernel()) {							\
+		KASSERTMSG(space == AARCH64_ADDRSPACE_UPPER,				\
+		    "%s: kernel pm %p: va=%016lx"					\
+		    " is out of upper address space\n",					\
+		    __func__, (pm), (va));						\
+		KASSERTMSG(								\
+		    IN_RANGE((va), VM_MIN_KERNEL_ADDRESS, VM_MAX_KERNEL_ADDRESS) ||	\
+		    IN_RANGE((va), EFI_RUNTIME_VA, EFI_RUNTIME_SIZE),			\
+		    "%s: kernel pm %p: va=%016lx"		\
+		    " is not kernel address\n",			\
+		    __func__, (pm), (va));			\
+	} else {						\
+		KASSERTMSG(space == AARCH64_ADDRSPACE_LOWER,	\
+		    "%s: user pm %p: va=%016lx"			\
+		    " is out of lower address space\n",		\
+		    __func__, (pm), (va));			\
+		KASSERTMSG(IN_RANGE((va),			\
+		    VM_MIN_ADDRESS, VM_MAX_ADDRESS),		\
+		    "%s: user pm %p: va=%016lx"			\
+		    " is not user address\n",			\
+		    __func__, (pm), (va));			\
+	}							\
+    } while (0 /* CONSTCOND */)
 #else /* DIAGNOSTIC */
 #define KASSERT_PM_ADDR(pm,va)
 #endif /* DIAGNOSTIC */
@@ -332,10 +333,11 @@ pmap_map_chunk(vaddr_t va, paddr_t pa, vsize_t size,
 	pt_entry_t attr;
 	vsize_t resid = round_page(size);
 
+	//XXXNH Should be VM_PROT_READ|VM_PROT_WRITE
+	//XXXNH as long as the DEV / PROT_EXECUTE combo exists
 	attr = _pmap_pte_adjust_prot(0, prot, VM_PROT_ALL, false);
 	attr = _pmap_pte_adjust_cacheflags(attr, flags);
 	pmapboot_enter_range(va, pa, resid, attr, printf);
-	aarch64_tlbi_all();
 
 	return resid;
 }
@@ -470,8 +472,6 @@ pmap_bootstrap(vaddr_t vstart, vaddr_t vend)
 	virtual_avail = vstart;
 	virtual_end = vend;
 	pmap_maxkvaddr = vstart;
-
-	aarch64_tlbi_all();
 
 	l0pa = reg_ttbr1_el1_read();
 	l0 = (void *)AARCH64_PA_TO_KVA(l0pa);
@@ -752,7 +752,6 @@ pmap_growkernel(vaddr_t maxkvaddr)
 			    __func__, error);
 		}
 	}
-	aarch64_tlbi_by_asid(pm->pm_asid);
 	kasan_shadow_map((void *)pmap_maxkvaddr,
 	    (size_t)(va - pmap_maxkvaddr));
 	pmap_maxkvaddr = va;
@@ -1684,7 +1683,7 @@ _pmap_get_pdp(struct pmap *pm, vaddr_t va, bool kenter, int flags,
 	idx = l0pde_index(va);
 	pde = l0[idx];
 	if (!l0pde_valid(pde)) {
-		KASSERT(!kenter || IN_MODULE_VA(va));
+//		KASSERT(!kenter || IN_MODULE_VA(va));
 		/* no need to increment L0 occupancy. L0 page never freed */
 		pdppa = pmap_alloc_pdp(pm, &pdppg, flags, false);  /* L1 pdp */
 		if (pdppa == POOL_PADDR_INVALID) {
@@ -1702,7 +1701,7 @@ _pmap_get_pdp(struct pmap *pm, vaddr_t va, bool kenter, int flags,
 	idx = l1pde_index(va);
 	pde = l1[idx];
 	if (!l1pde_valid(pde)) {
-		KASSERT(!kenter || IN_MODULE_VA(va));
+//		KASSERT(!kenter || IN_MODULE_VA(va));
 		pdppa0 = pdppa;
 		pdppg0 = pdppg;
 		pdppa = pmap_alloc_pdp(pm, &pdppg, flags, false);  /* L2 pdp */
@@ -1722,7 +1721,7 @@ _pmap_get_pdp(struct pmap *pm, vaddr_t va, bool kenter, int flags,
 	idx = l2pde_index(va);
 	pde = l2[idx];
 	if (!l2pde_valid(pde)) {
-		KASSERT(!kenter || IN_MODULE_VA(va));
+//		KASSERT(!kenter || IN_MODULE_VA(va));
 		pdppa0 = pdppa;
 		pdppg0 = pdppg;
 		pdppa = pmap_alloc_pdp(pm, &pdppg, flags, false);  /* L3 pdp */

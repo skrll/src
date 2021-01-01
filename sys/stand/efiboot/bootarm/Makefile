@@ -13,6 +13,8 @@ COPTS+=		-mfloat-abi=soft -mno-unaligned-access -mlittle-endian
 COPTS+=		-ffreestanding -fno-unwind-tables
 AFLAGS+=	-mlittle-endian
 CFLAGS+=	-DEFIBOOT_ALIGN=0x1000000
+CFLAGS+=	-DEFIBOOT_RUNTIME_ADDRESS=0x88000000U
+CFLAGS+=	-DEFIBOOT_RUNTIME_SIZE=0x08000000U
 CFLAGS+=	-DEFIBOOT_MODULE_MACHINE=\"evbarm\"
 LDFLAGS+=	-N -EL
 

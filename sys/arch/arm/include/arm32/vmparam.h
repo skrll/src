@@ -107,18 +107,21 @@
  * kernel virtual space layout without direct map (common case)
  *
  *   0x8000_0000 -  256MB kernel text/data/bss
+ *  (0x8800_0000 -  128MB EFI run time)
  *   0x9000_0000 - 1536MB Kernel VM Space
  *   0xf000_0000 -  256MB IO
  *
  * kernel virtual space layout with KASAN
  *
  *   0x8000_0000 -  256MB kernel text/data/bss
+ *  (0x8800_0000 -   64MB EFI run time)
  *   0x9000_0000 -  768MB Kernel VM Space
  *   0xc000_0000 -  128MB (KASAN SHADOW MAP)
  *   0xc800_0000 -  640MB (spare)
  *   0xf000_0000 -  256MB IO
  *
  * kernel virtual space layout with direct map (1GB limited)
+ * (EFI run time not supported)
  *   0x8000_0000 - 1024MB kernel text/data/bss and direct map start
  *   0xc000_0000 -  768MB Kernel VM Space
  *   0xf000_0000 -  256MB IO
@@ -143,6 +146,16 @@
 #define VM_KERNEL_VM_BASE	0x90000000
 #endif
 
+/*
+ * Reserved space for EFI runtime services
+ */
+#define	EFI_RUNTIME_VA		0x88000000U
+#define	EFI_RUNTIME_SIZE	0x08000000U
+
+/*
+ * No need to adjust VM_KERNEL_ADDR_SIZE for EFI_RUNTIME.  It is used by
+ * KASAN
+ */
 #define VM_KERNEL_ADDR_SIZE	(VM_KERNEL_VM_END - KERNEL_BASE)
 #define VM_KERNEL_VM_SIZE	(VM_KERNEL_VM_END - VM_KERNEL_VM_BASE)
 

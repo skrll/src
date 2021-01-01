@@ -47,36 +47,35 @@ static struct {
 } arm_efirt_state;
 
 void
-arm_efirt_md_map_range(vaddr_t va, paddr_t pa, size_t sz, enum arm_efirt_mem_type type)
+arm_efirt_md_map_range(vaddr_t va, paddr_t pa, size_t sz,
+    enum arm_efirt_mem_type type)
 {
-	pt_entry_t attr;
+	int flags = 0;
+	int prot = 0;
 
 	switch (type) {
 	case ARM_EFIRT_MEM_CODE:
-		attr = LX_BLKPAG_OS_READ | LX_BLKPAG_OS_WRITE |
-		       LX_BLKPAG_AF | LX_BLKPAG_AP_RW | LX_BLKPAG_UXN |
-		       LX_BLKPAG_ATTR_NORMAL_WB;
+		/* need write permission because fw devs */
+		prot = VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE;
 		break;
 	case ARM_EFIRT_MEM_DATA:
-		attr = LX_BLKPAG_OS_READ | LX_BLKPAG_OS_WRITE |
-		       LX_BLKPAG_AF | LX_BLKPAG_AP_RW | LX_BLKPAG_UXN | LX_BLKPAG_PXN |
-		       LX_BLKPAG_ATTR_NORMAL_WB;
+		prot = VM_PROT_READ | VM_PROT_WRITE;
 		break;
 	case ARM_EFIRT_MEM_MMIO:
-		attr = LX_BLKPAG_OS_READ | LX_BLKPAG_OS_WRITE |
-		       LX_BLKPAG_AF | LX_BLKPAG_AP_RW | LX_BLKPAG_UXN | LX_BLKPAG_PXN |
-		       LX_BLKPAG_ATTR_DEVICE_MEM;
+		prot = VM_PROT_READ | VM_PROT_WRITE;
+		flags = PMAP_DEV;
 		break;
 	default:
-		panic("arm_efirt_md_map_range: unsupported type %d", type);
+		panic("%s: unsupported type %d", __func__, type);
 	}
 
-	pmapboot_enter(va, pa, sz, L3_SIZE, attr, NULL);
-	while (sz >= PAGE_SIZE) {
-		aarch64_tlbi_by_va(va);
+	while (sz != 0) {
+		pmap_kenter_pa(va, pa, prot, flags);
 		va += PAGE_SIZE;
+		pa += PAGE_SIZE;
 		sz -= PAGE_SIZE;
 	}
+	pmap_update(pmap_kernel());
 }
 
 int

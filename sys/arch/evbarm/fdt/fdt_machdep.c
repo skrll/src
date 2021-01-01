@@ -613,12 +613,6 @@ initarm(void *arg)
 	VPRINTF("%s: fdt_build_bootconfig\n", __func__);
 	fdt_build_bootconfig(memory_start, memory_end);
 
-#ifdef EFI_RUNTIME
-	fdt_map_efi_runtime("netbsd,uefi-runtime-code", ARM_EFIRT_MEM_CODE);
-	fdt_map_efi_runtime("netbsd,uefi-runtime-data", ARM_EFIRT_MEM_DATA);
-	fdt_map_efi_runtime("netbsd,uefi-runtime-mmio", ARM_EFIRT_MEM_MMIO);
-#endif
-
 	/* Perform PT build and VM init */
 	cpu_kernel_vm_init(memory_start, memory_size);
 
@@ -633,6 +627,12 @@ initarm(void *arg)
 
 	vaddr_t sp = initarm_common(KERNEL_VM_BASE, KERNEL_VM_SIZE, fdt_physmem,
 	     nfdt_physmem);
+
+#ifdef EFI_RUNTIME
+	fdt_map_efi_runtime("netbsd,uefi-runtime-code", ARM_EFIRT_MEM_CODE);
+	fdt_map_efi_runtime("netbsd,uefi-runtime-data", ARM_EFIRT_MEM_DATA);
+	fdt_map_efi_runtime("netbsd,uefi-runtime-mmio", ARM_EFIRT_MEM_MMIO);
+#endif
 
 	/*
 	 * initarm_common flushes cache if required before AP start
