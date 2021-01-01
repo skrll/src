@@ -47,49 +47,11 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/mutex.h>
 
 #include <net/if.h>
-//#include <net/if_dl.h>
 #include <net/if_media.h>
 #include <net/if_ether.h>
 
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
-
-#if 0
-#include <sys/systm.h>
-#include <sys/bitset.h>
-#include <sys/bitstring.h>
-#include <sys/bus.h>
-#include <sys/endian.h>
-#include <sys/kernel.h>
-#include <sys/malloc.h>
-#include <sys/module.h>
-#include <sys/rman.h>
-#include <sys/pciio.h>
-#include <sys/pcpu.h>
-#include <sys/proc.h>
-#include <sys/socket.h>
-#include <sys/sockio.h>
-#include <sys/cpuset.h>
-#include <sys/lock.h>
-#include <sys/mutex.h>
-
-#include <net/ethernet.h>
-#include <net/if.h>
-#include <net/if_media.h>
-
-#include <machine/bus.h>
-#include <machine/_inttypes.h>
-
-#include <dev/pci/pcireg.h>
-#include <dev/pci/pcivar.h>
-
-#include <sys/dnv.h>
-#include <sys/nv.h>
-#ifdef PCI_IOV
-#include <sys/iov_schema.h>
-#include <dev/pci/pci_iov.h>
-#endif
-#endif
 
 #include "thunder_bgx.h"
 #include "nic_reg.h"
@@ -163,7 +125,7 @@ struct nicpf {
 	struct resource *	msix_table_res;
 };
 
-static int	nicpf_probe(device_t dev, cfdata_t cf, void *aux);
+static int	nicpf_probe(device_t, cfdata_t, void *);
 static void	nicpf_attach(device_t, device_t, void *);
 static int	nicpf_detach(device_t, int);
 
