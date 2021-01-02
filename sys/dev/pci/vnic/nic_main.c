@@ -93,8 +93,6 @@ struct nicpf {
 	bus_addr_t		sc_memb;
 	bus_size_t		sc_mems;
 
-	bus_dma_tag_t sc_dmat;		/* bus DMA tag */
-
 	pci_intr_handle_t *	sc_pihp;
 	int			sc_nintr;
 	void **			sc_ih;
@@ -103,7 +101,6 @@ struct nicpf {
 	u_int			flags;
 	uint8_t			num_vf_en;      /* No of VF enabled */
 	struct nicvf_info	vf_info[MAX_NUM_VFS_SUPPORTED];
-//	struct resource *	reg_base;       /* Register start address */
 	struct pkind_cfg	pkind;
 	uint8_t			vf_lmac_map[MAX_LMAC];
 	boolean_t		mbx_lock[MAX_NUM_VFS_SUPPORTED];
@@ -237,11 +234,6 @@ nicpf_attach(device_t parent, device_t dev, void *aux)
 	nic->sc_pc = pa->pa_pc;
 	nic->sc_pcitag = pa->pa_tag;
 
-	if (pci_dma64_available(pa))
-		nic->sc_dmat = pa->pa_dmat64;
-	else
-		nic->sc_dmat = pa->pa_dmat;
-
 	pci_aprint_devinfo_fancy(pa, "Ethernet controller", VNIC_PF_DEVSTR,
 	    true);
 
@@ -258,13 +250,13 @@ nicpf_attach(device_t parent, device_t dev, void *aux)
 	bus_addr_t membase;
 	bus_size_t memsize;
 
-	const pcireg_t memtype = pci_mapreg_type(pa->pa_pc, pa->pa_tag,
-	    VNIC_PF_REG_RID);
+	const int rid = VNIC_PF_REG_RID;
+	const pcireg_t memtype = pci_mapreg_type(pa->pa_pc, pa->pa_tag, rid);
 	switch (memtype) {
 	case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_32BIT:
 	case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_64BIT:
-		memh_valid = (pci_mapreg_map(pa, VNIC_PF_REG_RID,
-			memtype, 0, &memt, &memh, &membase, &memsize) == 0);
+		memh_valid = (pci_mapreg_map(pa, rid, memtype, 0, &memt, &memh,
+		    &membase, &memsize) == 0);
 		break;
 	default:
 		memh_valid = false;
@@ -412,7 +404,9 @@ nic_reg_write(struct nicpf *nic, bus_space_handle_t offset,
 static __inline uint64_t
 nic_reg_read(struct nicpf *nic, uint64_t offset)
 {
-	uint64_t val = bus_space_read_8(nic->sc_memt, nic->sc_memh, offset);
+	uint64_t val;
+
+	val = bus_space_read_8(nic->sc_memt, nic->sc_memh, offset);
 
 	return (val);
 }
@@ -1067,7 +1061,6 @@ static int
 nic_enable_msix(struct nicpf *nic, const struct pci_attach_args *pa)
 {
 	device_t self = nic->dev;
-//    	struct nicpf *nic = device_private(dev);
 
 	int counts[PCI_INTR_TYPE_SIZE] = {
 		[PCI_INTR_TYPE_MSIX] = NIC_PF_MSIX_VECTORS,
