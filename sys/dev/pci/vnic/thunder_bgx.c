@@ -176,6 +176,10 @@ thunder_bgx_attach(device_t parent, device_t dev, void *aux)
 	bgx->sc_pc = pa->pa_pc;
 	bgx->sc_pcitag = pa->pa_tag;
 
+
+	pci_aprint_devinfo_fancy(pa, "Common Ethernet Interface",
+	    THUNDER_BGX_DEVSTR, true);
+
 	/* Enable bus mastering */
 	pci_enable_busmaster(dev);
 	/* Allocate resources - configuration registers */
