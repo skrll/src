@@ -32,10 +32,9 @@
 #ifndef __THUNDER_BGX_VAR_H__
 #define	__THUNDER_BGX_VAR_H__
 
-MALLOC_DECLARE(M_BGX);
-
 struct lmac {
 	struct bgx		*bgx;
+
 	int			dmac;
 	uint8_t			mac[ETHER_ADDR_LEN];
 	boolean_t		link_up;
@@ -53,7 +52,18 @@ struct lmac {
 
 struct bgx {
 	device_t		dev;
-	struct resource *	reg_base;
+
+	pci_chipset_tag_t	sc_pc;
+	pcitag_t		sc_pcitag;
+
+	bus_space_tag_t		sc_memt;
+	bus_space_handle_t	sc_memh;
+	bus_addr_t		sc_memb;
+	bus_size_t		sc_mems;
+
+	pci_intr_handle_t *	sc_pihp;
+	int			sc_nintr;
+	void **			sc_ih;
 
 	uint8_t			bgx_id;
 	enum qlm_mode		qlm_mode;
