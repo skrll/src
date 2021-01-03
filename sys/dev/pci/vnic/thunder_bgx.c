@@ -28,49 +28,44 @@
  * $FreeBSD$
  *
  */
-#include "opt_platform.h"
-
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
+__KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/bitset.h>
-#include <sys/bitstring.h>
-#include <sys/bus.h>
-#include <sys/endian.h>
-#include <sys/kernel.h>
-#include <sys/malloc.h>
-#include <sys/module.h>
-#include <sys/rman.h>
-#include <sys/pciio.h>
-#include <sys/pcpu.h>
-#include <sys/proc.h>
-#include <sys/socket.h>
-#include <sys/sockio.h>
-#include <sys/cpuset.h>
-#include <sys/lock.h>
-#include <sys/mutex.h>
 
-#include <net/ethernet.h>
+#include <sys/bus.h>
+#include <sys/callout.h>
+#include <sys/device.h>
+#include <sys/mutex.h>
+#include <sys/reboot.h>
+
 #include <net/if.h>
 #include <net/if_media.h>
+#include <net/if_ether.h>
 
-#include <machine/bus.h>
-
-#include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
+#include <dev/pci/pcidevs.h>
 
 #include "thunder_bgx.h"
 #include "thunder_bgx_var.h"
 #include "nic_reg.h"
 #include "nic.h"
 
-#include "lmac_if.h"
+#ifdef NET_MPSAFE
+#define BGX_MPSAFE	1
+#define BGX_CALLOUT_FLAGS	CALLOUT_MPSAFE
+#define LMAC_CALLOUT_FLAGS	CALLOUT_MPSAFE
+#else
+#define BGX_CALLOUT_FLAGS	0
+#define LMAC_CALLOUT_FLAGS	0
+#endif
+
+//XXXNH check the lmac_if.m file
+#define LMAC_PHY_CONNECT(a, b, c)		ENXIO
+#define LMAC_PHY_DISCONNECT(a, b, c)		ENXIO
+#define LMAC_MEDIA_STATUS(a, b, c, d, e)	ENXIO
 
 #define	THUNDER_BGX_DEVSTR	"ThunderX BGX Ethernet I/O Interface"
-
-MALLOC_DEFINE(M_BGX, "thunder_bgx", "ThunderX BGX dynamic memory");
 
 #define BGX_NODE_ID_MASK	0x1
 #define BGX_NODE_ID_SHIFT	24
@@ -89,10 +84,7 @@ static void bgx_init_hw(struct bgx *);
 static int bgx_lmac_enable(struct bgx *, uint8_t);
 static void bgx_lmac_disable(struct bgx *, uint8_t);
 
-static int thunder_bgx_probe(device_t);
-static int thunder_bgx_attach(device_t);
-static int thunder_bgx_detach(device_t);
-
+#if 0
 static device_method_t thunder_bgx_methods[] = {
 	/* Device interface */
 	DEVMETHOD(device_probe,		thunder_bgx_probe),
@@ -115,54 +107,115 @@ MODULE_VERSION(thunder_bgx, 1);
 MODULE_DEPEND(thunder_bgx, pci, 1, 1, 1);
 MODULE_DEPEND(thunder_bgx, ether, 1, 1, 1);
 MODULE_DEPEND(thunder_bgx, thunder_mdio, 1, 1, 1);
+#endif
+
+static int	thunder_bgx_probe(device_t, cfdata_t, void *);
+static void	thunder_bgx_attach(device_t, device_t, void *);
+static int	thunder_bgx_detach(device_t, int);
+
+//XXXNH better name than 'bgx'
+CFATTACH_DECL3_NEW(bgx, sizeof(struct bgx),
+    thunder_bgx_probe, thunder_bgx_attach, thunder_bgx_detach, NULL, NULL, NULL,
+    DVF_DETACH_SHUTDOWN);
+
 
 static int
-thunder_bgx_probe(device_t dev)
+thunder_bgx_probe(device_t dev, cfdata_t cf, void *aux)
 {
-	uint16_t vendor_id;
-	uint16_t device_id;
+	const struct pci_attach_args *pa = aux;
 
-	vendor_id = pci_get_vendor(dev);
-	device_id = pci_get_device(dev);
+	if (PCI_VENDOR(pa->pa_id) == PCI_VENDOR_CAVIUM &&
+	    PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_CAVIUM_THUNDERX_BGX)
+		return 1;
 
-	if (vendor_id == PCI_VENDOR_ID_CAVIUM &&
-	    device_id == PCI_DEVICE_ID_THUNDER_BGX) {
-		device_set_desc(dev, THUNDER_BGX_DEVSTR);
-		return (BUS_PROBE_DEFAULT);
-	}
-
-	return (ENXIO);
+	return 0;
 }
 
-static int
-thunder_bgx_attach(device_t dev)
+static void
+pci_enable_busmaster(device_t dev)
 {
-	struct bgx *bgx;
+	struct bgx const *bgx = device_private(dev);
+	const pci_chipset_tag_t pc = bgx->sc_pc;
+	const pcitag_t tag = bgx->sc_pcitag;
+
+	pcireg_t pci_cmd_word;
+
+	pci_cmd_word = pci_conf_read(pc, tag, PCI_COMMAND_STATUS_REG);
+	if (!(pci_cmd_word & PCI_COMMAND_MASTER_ENABLE)) {
+		pci_cmd_word |= PCI_COMMAND_MASTER_ENABLE;
+		pci_conf_write(pc, tag, PCI_COMMAND_STATUS_REG, pci_cmd_word);
+	}
+}
+
+static void
+pci_disable_busmaster(device_t dev)
+{
+	struct bgx const *bgx = device_private(dev);
+	const pci_chipset_tag_t pc = bgx->sc_pc;
+	const pcitag_t tag = bgx->sc_pcitag;
+	pcireg_t pci_cmd_word, tmp;
+
+	pci_cmd_word = pci_conf_read(pc, tag, PCI_COMMAND_STATUS_REG);
+	tmp = pci_cmd_word & ~PCI_COMMAND_MASTER_ENABLE;
+	if (tmp != pci_cmd_word) {
+		pci_conf_write(pc, tag, PCI_COMMAND_STATUS_REG, tmp);
+	}
+}
+
+static void
+thunder_bgx_attach(device_t parent, device_t dev, void *aux)
+{
+	struct pci_attach_args *pa = aux;
+	struct bgx *bgx = device_private(dev);
 	uint8_t lmacid;
 	int err;
 	int rid;
-	struct lmac *lmac;
 
-	bgx = malloc(sizeof(*bgx), M_BGX, (M_WAITOK | M_ZERO));
 	bgx->dev = dev;
 
-	lmac = device_get_softc(dev);
-	lmac->bgx = bgx;
+	bgx->sc_pc = pa->pa_pc;
+	bgx->sc_pcitag = pa->pa_tag;
+
 	/* Enable bus mastering */
 	pci_enable_busmaster(dev);
 	/* Allocate resources - configuration registers */
-	rid = PCIR_BAR(PCI_CFG_REG_BAR_NUM);
-	bgx->reg_base = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
-	    RF_ACTIVE);
-	if (bgx->reg_base == NULL) {
-		device_printf(dev, "Could not allocate CSR memory space\n");
-		err = ENXIO;
+	rid = PCI_BAR(PCI_CFG_REG_BAR_NUM);
+
+	/*
+	 * Map the device.  All devices support memory-mapped acccess,
+	 * and it is really required for normal operation.
+	 */
+	bool memh_valid;
+	bus_space_tag_t memt;
+	bus_space_handle_t memh;
+	bus_addr_t membase;
+	bus_size_t memsize;
+
+	const pcireg_t memtype = pci_mapreg_type(pa->pa_pc, pa->pa_tag, rid);
+	switch (memtype) {
+	case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_32BIT:
+	case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_64BIT:
+		memh_valid = (pci_mapreg_map(pa, rid, memtype, 0, &memt, &memh,
+		    &membase, &memsize) == 0);
+		break;
+	default:
+		memh_valid = false;
+		break;
+	}
+
+	if (memh_valid) {
+		bgx->sc_memt = memt;
+		bgx->sc_memh = memh;
+		bgx->sc_memb = membase;
+		bgx->sc_mems = memsize;
+	} else {
+		aprint_error_dev(dev,
+		    "unable to map device registers\n");
 		goto err_disable_device;
 	}
 
-	bgx->bgx_id = (rman_get_start(bgx->reg_base) >> BGX_NODE_ID_SHIFT) &
-	    BGX_NODE_ID_MASK;
-	bgx->bgx_id += nic_get_node_id(bgx->reg_base) * MAX_BGX_PER_CN88XX;
+	bgx->bgx_id = (membase >> BGX_NODE_ID_SHIFT) & BGX_NODE_ID_MASK;
+	bgx->bgx_id += nic_get_node_id(membase) * MAX_BGX_PER_CN88XX;
 
 	bgx_vnic[bgx->bgx_id] = bgx;
 	bgx_get_qlm_mode(bgx);
@@ -183,36 +236,31 @@ thunder_bgx_attach(device_t dev)
 		}
 	}
 
-	return (0);
+	return;
 
 err_free_res:
 	bgx_vnic[bgx->bgx_id] = NULL;
-	bus_release_resource(dev, SYS_RES_MEMORY,
-	    rman_get_rid(bgx->reg_base), bgx->reg_base);
+
 err_disable_device:
-	free(bgx, M_BGX);
 	pci_disable_busmaster(dev);
 
-	return (err);
+	return;
 }
 
 static int
-thunder_bgx_detach(device_t dev)
+thunder_bgx_detach(device_t dev, int flags)
 {
 	struct lmac *lmac;
 	struct bgx *bgx;
 	uint8_t lmacid;
 
-	lmac = device_get_softc(dev);
+	lmac = device_private(dev);
 	bgx = lmac->bgx;
 	/* Disable all LMACs */
 	for (lmacid = 0; lmacid < bgx->lmac_count; lmacid++)
 		bgx_lmac_disable(bgx, lmacid);
 
 	bgx_vnic[bgx->bgx_id] = NULL;
-	bus_release_resource(dev, SYS_RES_MEMORY,
-	    rman_get_rid(bgx->reg_base), bgx->reg_base);
-	free(bgx, M_BGX);
 	pci_disable_busmaster(dev);
 
 	return (0);
@@ -222,21 +270,21 @@ thunder_bgx_detach(device_t dev)
 static uint64_t
 bgx_reg_read(struct bgx *bgx, uint8_t lmac, uint64_t offset)
 {
-	bus_space_handle_t addr;
+	bus_size_t addr;
 
 	addr = ((uint32_t)lmac << 20) + offset;
 
-	return (bus_read_8(bgx->reg_base, addr));
+	return bus_space_read_8(bgx->sc_memt, bgx->sc_memh, addr);
 }
 
 static void
 bgx_reg_write(struct bgx *bgx, uint8_t lmac, uint64_t offset, uint64_t val)
 {
-	bus_space_handle_t addr;
+	bus_size_t addr;
 
 	addr = ((uint32_t)lmac << 20) + offset;
 
-	bus_write_8(bgx->reg_base, addr, val);
+	bus_space_write_8(bgx->sc_memt, bgx->sc_memh, addr, val);
 }
 
 static void
@@ -246,7 +294,8 @@ bgx_reg_modify(struct bgx *bgx, uint8_t lmac, uint64_t offset, uint64_t val)
 
 	addr = ((uint32_t)lmac << 20) + offset;
 
-	bus_write_8(bgx->reg_base, addr, val | bus_read_8(bgx->reg_base, addr));
+	bus_space_write_8(bgx->sc_memt, bgx->sc_memh, addr, val |
+	    bus_space_read_8(bgx->sc_memt, bgx->sc_memh, addr));
 }
 
 static int
@@ -894,14 +943,16 @@ bgx_lmac_enable(struct bgx *bgx, uint8_t lmacid)
 			    "LMAC%d could not connect to PHY\n", lmacid);
 			return (ENXIO);
 		}
-		mtx_init(&lmac->check_link_mtx, "BGX link poll", NULL, MTX_DEF);
-		callout_init_mtx(&lmac->check_link, &lmac->check_link_mtx, 0);
+		//XXXNH IPL_NET?
+		mutex_init(&lmac->check_link_mtx, MUTEX_DEFAULT, IPL_NET);
+		callout_init(&lmac->check_link, LMAC_CALLOUT_FLAGS);
 		mutex_enter(&lmac->check_link_mtx);
 		bgx_lmac_handler(lmac);
 		mutex_exit(&lmac->check_link_mtx);
 	} else {
-		mtx_init(&lmac->check_link_mtx, "BGX link poll", NULL, MTX_DEF);
-		callout_init_mtx(&lmac->check_link, &lmac->check_link_mtx, 0);
+		//XXXNH IPL_NET?
+		mutex_init(&lmac->check_link_mtx, MUTEX_DEFAULT, IPL_NET);
+		callout_init(&lmac->check_link, LMAC_CALLOUT_FLAGS);
 		mutex_enter(&lmac->check_link_mtx);
 		bgx_poll_for_link(lmac);
 		mutex_exit(&lmac->check_link_mtx);
@@ -919,8 +970,8 @@ bgx_lmac_disable(struct bgx *bgx, uint8_t lmacid)
 	lmac = &bgx->lmac[lmacid];
 
 	/* Stop callout */
-	callout_drain(&lmac->check_link);
-	mtx_destroy(&lmac->check_link_mtx);
+	callout_halt(&lmac->check_link, &lmac->check_link_mtx);
+	mutex_destroy(&lmac->check_link_mtx);
 
 	cmrx_cfg = bgx_reg_read(bgx, lmacid, BGX_CMRX_CFG);
 	cmrx_cfg &= ~(1 << 15);
@@ -949,7 +1000,7 @@ bgx_lmac_disable(struct bgx *bgx, uint8_t lmacid)
 static void
 bgx_set_num_ports(struct bgx *bgx)
 {
-	uint64_t lmac_count;
+	uint64_t nlmac;
 
 	switch (bgx->qlm_mode) {
 	case QLM_MODE_SGMII:
@@ -999,9 +1050,9 @@ bgx_set_num_ports(struct bgx *bgx)
 	 * based on board type, if yes consider that otherwise
 	 * the default static values
 	 */
-	lmac_count = bgx_reg_read(bgx, 0, BGX_CMR_RX_LMACS) & 0x7;
-	if (lmac_count != 4)
-		bgx->lmac_count = lmac_count;
+	nlmac = bgx_reg_read(bgx, 0, BGX_CMR_RX_LMACS) & 0x7;
+	if (nlmac != 4)
+		bgx->lmac_count = nlmac;
 }
 
 static void
