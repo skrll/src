@@ -1,4 +1,4 @@
-/*	$NetBSD: arch.c,v 1.189 2020/12/18 15:47:34 rillig Exp $	*/
+/*	$NetBSD: arch.c,v 1.192 2020/12/30 10:03:16 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -68,7 +68,8 @@
  * SUCH DAMAGE.
  */
 
-/* Manipulate libraries, archives and their members.
+/*
+ * Manipulate libraries, archives and their members.
  *
  * The first time an archive is referenced, all of its members' headers are
  * read and cached and the archive closed again.  All cached archives are kept
@@ -125,7 +126,7 @@
 #include "config.h"
 
 /*	"@(#)arch.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: arch.c,v 1.189 2020/12/18 15:47:34 rillig Exp $");
+MAKE_RCSID("$NetBSD: arch.c,v 1.192 2020/12/30 10:03:16 rillig Exp $");
 
 typedef struct List ArchList;
 typedef struct ListNode ArchListNode;
@@ -186,33 +187,30 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 {
 	char *cp;		/* Pointer into line */
 	GNode *gn;		/* New node */
-	char *libName;		/* Library-part of specification */
-	char *libName_freeIt = NULL;
+	MFStr libName;		/* Library-part of specification */
 	char *memName;		/* Member-part of specification */
 	char saveChar;		/* Ending delimiter of member-name */
 	Boolean expandLibName;	/* Whether the parsed libName contains
 				 * variable expressions that need to be
 				 * expanded */
 
-	libName = *pp;
+	libName = MFStr_InitRefer(*pp);
 	expandLibName = FALSE;
 
-	for (cp = libName; *cp != '(' && *cp != '\0';) {
+	for (cp = libName.str; *cp != '(' && *cp != '\0';) {
 		if (*cp == '$') {
 			/* Expand nested variable expressions. */
 			/* XXX: This code can probably be shortened. */
 			const char *nested_p = cp;
-			void *result_freeIt;
-			const char *result;
+			FStr result;
 			Boolean isError;
 
 			/* XXX: is expanded twice: once here and once below */
 			(void)Var_Parse(&nested_p, ctxt,
-					VARE_WANTRES | VARE_UNDEFERR,
-					&result, &result_freeIt);
+					VARE_WANTRES | VARE_UNDEFERR, &result);
 			/* TODO: handle errors */
-			isError = result == var_Error;
-			free(result_freeIt);
+			isError = result.str == var_Error;
+			FStr_Done(&result);
 			if (isError)
 				return FALSE;
 
@@ -224,10 +222,11 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 
 	*cp++ = '\0';
 	if (expandLibName) {
-		(void)Var_Subst(libName, ctxt, VARE_WANTRES | VARE_UNDEFERR,
-				&libName);
+		char *expanded;
+		(void)Var_Subst(libName.str, ctxt,
+		    VARE_WANTRES | VARE_UNDEFERR, &expanded);
 		/* TODO: handle errors */
-		libName_freeIt = libName;
+		libName = MFStr_InitOwn(expanded);
 	}
 
 
@@ -246,17 +245,16 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 			if (*cp == '$') {
 				/* Expand nested variable expressions. */
 				/* XXX: This code can probably be shortened. */
-				void *freeIt;
-				const char *result;
+				FStr result;
 				Boolean isError;
 				const char *nested_p = cp;
 
 				(void)Var_Parse(&nested_p, ctxt,
 						VARE_WANTRES | VARE_UNDEFERR,
-						&result, &freeIt);
+						&result);
 				/* TODO: handle errors */
-				isError = result == var_Error;
-				free(freeIt);
+				isError = result.str == var_Error;
+				FStr_Done(&result);
 
 				if (isError)
 					return FALSE;
@@ -317,7 +315,7 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 			 * Now form an archive spec and recurse to deal with
 			 * nested variables and multi-word variable values.
 			 */
-			fullName = str_concat4(libName, "(", memName, ")");
+			fullName = str_concat4(libName.str, "(", memName, ")");
 			p = fullName;
 
 			if (strchr(memName, '$') != NULL &&
@@ -347,7 +345,7 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 
 			while (!Lst_IsEmpty(&members)) {
 				char *member = Lst_Dequeue(&members);
-				char *fullname = str_concat4(libName, "(",
+				char *fullname = str_concat4(libName.str, "(",
 							     member, ")");
 				free(member);
 
@@ -360,7 +358,7 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 			Lst_Done(&members);
 
 		} else {
-			char *fullname = str_concat4(libName, "(", memName,
+			char *fullname = str_concat4(libName.str, "(", memName,
 						     ")");
 			gn = Targ_GetNode(fullname);
 			free(fullname);
@@ -381,7 +379,7 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 		*cp = saveChar;
 	}
 
-	free(libName_freeIt);
+	MFStr_Done(&libName);
 
 	cp++;			/* skip the ')' */
 	/* We promised that pp would be set up at the next non-space. */
@@ -390,7 +388,8 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 	return TRUE;
 }
 
-/* Locate a member of an archive, given the path of the archive and the path
+/*
+ * Locate a member of an archive, given the path of the archive and the path
  * of the desired member.
  *
  * Input:
@@ -691,7 +690,8 @@ ArchiveMember_HasName(const struct ar_hdr *hdr,
 	return FALSE;
 }
 
-/* Locate a member of an archive, given the path of the archive and the path
+/*
+ * Locate a member of an archive, given the path of the archive and the path
  * of the desired member.
  *
  * Input:
@@ -835,7 +835,8 @@ ArchFindMember(const char *archive, const char *member, struct ar_hdr *out_arh,
 	return NULL;
 }
 
-/* Touch a member of an archive, on disk.
+/*
+ * Touch a member of an archive, on disk.
  * The GNode's modification time is left as-is.
  *
  * The st_mtime of the entire archive is also changed.
@@ -863,11 +864,13 @@ Arch_Touch(GNode *gn)
 	fclose(f);		/* TODO: handle errors */
 }
 
-/* Given a node which represents a library, touch the thing, making sure that
+/*
+ * Given a node which represents a library, touch the thing, making sure that
  * the table of contents is also touched.
  *
  * Both the modification time of the library and of the RANLIBMAG member are
- * set to 'now'. */
+ * set to 'now'.
+ */
 void
 Arch_TouchLib(GNode *gn MAKE_ATTR_UNUSED)
 {
@@ -889,8 +892,10 @@ Arch_TouchLib(GNode *gn MAKE_ATTR_UNUSED)
 #endif
 }
 
-/* Update the mtime of the GNode with the mtime from the archive member on
- * disk (or in the cache). */
+/*
+ * Update the mtime of the GNode with the mtime from the archive member on
+ * disk (or in the cache).
+ */
 void
 Arch_UpdateMTime(GNode *gn)
 {
@@ -903,8 +908,10 @@ Arch_UpdateMTime(GNode *gn)
 		gn->mtime = 0;
 }
 
-/* Given a nonexistent archive member's node, update gn->mtime from its
- * archived form, if it exists. */
+/*
+ * Given a nonexistent archive member's node, update gn->mtime from its
+ * archived form, if it exists.
+ */
 void
 Arch_UpdateMemberMTime(GNode *gn)
 {
@@ -942,7 +949,8 @@ Arch_UpdateMemberMTime(GNode *gn)
 	}
 }
 
-/* Search for a library along the given search path.
+/*
+ * Search for a library along the given search path.
  *
  * The node's 'path' field is set to the found path (including the
  * actual file name, not -l...). If the system can handle the -L
@@ -970,7 +978,8 @@ Arch_FindLib(GNode *gn, SearchPath *path)
 #endif
 }
 
-/* Decide if a node with the OP_LIB attribute is out-of-date. Called from
+/*
+ * Decide if a node with the OP_LIB attribute is out-of-date. Called from
  * GNode_IsOODate to make its life easier.
  * The library is cached if it hasn't been already.
  *

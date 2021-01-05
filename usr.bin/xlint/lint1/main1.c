@@ -1,4 +1,4 @@
-/*	$NetBSD: main1.c,v 1.27 2018/12/23 19:09:03 christos Exp $	*/
+/*	$NetBSD: main1.c,v 1.32 2021/01/04 22:26:50 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,17 +37,17 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: main1.c,v 1.27 2018/12/23 19:09:03 christos Exp $");
+__RCSID("$NetBSD: main1.c,v 1.32 2021/01/04 22:26:50 rillig Exp $");
 #endif
 
 #include <sys/types.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <errno.h>
 #include <limits.h>
 #include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "lint1.h"
 
@@ -55,7 +55,7 @@ __RCSID("$NetBSD: main1.c,v 1.27 2018/12/23 19:09:03 christos Exp $");
 int	yflag;
 
 /*
- * Print warnings if an assignment of an integertype to another integertype
+ * Print warnings if an assignment of an integer type to another integer type
  * causes an implicit narrowing conversion. If aflag is 1, these warnings
  * are printed only if the source type is at least as wide as long. If aflag
  * is greater than 1, they are always printed.
@@ -202,7 +202,7 @@ main(int argc, char *argv[])
 			msglist();
 			return(0);
 
-		case 'R':	
+		case 'R':
 			fnaddreplsrcdir(optarg);
 			break;
 
@@ -269,11 +269,11 @@ main(int argc, char *argv[])
 	printf("%s, %d: lwarn = %d\n", curr_pos.p_file, curr_pos.p_line, lwarn);
 #endif
 
-	chkglsyms();
+	check_global_symbols();
 
 	outclose();
 
-	return (nerr != 0);
+	return nerr != 0;
 }
 
 static void

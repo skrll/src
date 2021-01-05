@@ -1,4 +1,4 @@
-/*	$NetBSD: mem2.c,v 1.9 2004/06/20 22:20:17 jmc Exp $	*/
+/*	$NetBSD: mem2.c,v 1.11 2020/12/29 11:35:11 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,13 +37,13 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: mem2.c,v 1.9 2004/06/20 22:20:17 jmc Exp $");
+__RCSID("$NetBSD: mem2.c,v 1.11 2020/12/29 11:35:11 rillig Exp $");
 #endif
 
 #include <sys/param.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "lint2.h"
 
@@ -89,5 +89,5 @@ xalloc(size_t sz)
 	ptr = (char *)mbuf + nxtfree;
 	nxtfree += sz;
 
-	return (ptr);
+	return ptr;
 }
