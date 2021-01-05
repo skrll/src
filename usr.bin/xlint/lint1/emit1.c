@@ -1,4 +1,4 @@
-/* $NetBSD: emit1.c,v 1.29 2020/12/30 11:14:03 rillig Exp $ */
+/* $NetBSD: emit1.c,v 1.34 2021/01/04 22:26:50 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: emit1.c,v 1.29 2020/12/30 11:14:03 rillig Exp $");
+__RCSID("$NetBSD: emit1.c,v 1.34 2021/01/04 22:26:50 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -88,7 +88,7 @@ static	void	outfstrg(strg_t *);
  *				2 n typename		only type name
  *
  * spaces are only for better readability
- * additionaly it is possible to prepend the characters 'c' (for const)
+ * additionally it is possible to prepend the characters 'c' (for const)
  * and 'v' (for volatile)
  */
 void
@@ -128,7 +128,7 @@ outtype(type_t *tp)
 		case DCOMPLEX:	t = 'X';	s = '\0';	break;
 		case LCOMPLEX:	t = 'X';	s = 'l';	break;
 		default:
-			LERROR("outtyp()");
+			lint_assert(/*CONSTCOND*/0);
 		}
 		if (tp->t_const)
 			outchar('c');
@@ -268,7 +268,7 @@ outsym(sym_t *sym, scl_t sc, def_t def)
 		outchar('e');
 		break;
 	default:
-		LERROR("outsym()");
+		lint_assert(/*CONSTCOND*/0);
 	}
 	if (llibflg && def != DECL) {
 		/*
@@ -330,25 +330,25 @@ outfdef(sym_t *fsym, pos_t *posp, int rval, int osdef, sym_t *args)
 	/* flags */
 
 	/* both SCANFLIKE and PRINTFLIKE imply VARARGS */
-	if (prflstrg != -1) {
-		nvararg = prflstrg;
-	} else if (scflstrg != -1) {
-		nvararg = scflstrg;
+	if (printflike_argnum != -1) {
+		nvararg = printflike_argnum;
+	} else if (scanflike_argnum != -1) {
+		nvararg = scanflike_argnum;
 	}
 
 	if (nvararg != -1) {
 		outchar('v');
 		outint(nvararg);
 	}
-	if (scflstrg != -1) {
+	if (scanflike_argnum != -1) {
 		outchar('S');
-		outint(scflstrg);
+		outint(scanflike_argnum);
 	}
-	if (prflstrg != -1) {
+	if (printflike_argnum != -1) {
 		outchar('P');
-		outint(prflstrg);
+		outint(printflike_argnum);
 	}
-	nvararg = prflstrg = scflstrg = -1;
+	nvararg = printflike_argnum = scanflike_argnum = -1;
 
 	outchar('d');
 
@@ -401,7 +401,7 @@ outfdef(sym_t *fsym, pos_t *posp, int rval, int osdef, sym_t *args)
  * write out all information necessary for lint2 to check function
  * calls
  *
- * rvused is set if the return value is used (asigned to a variable)
+ * rvused is set if the return value is used (assigned to a variable)
  * rvdisc is set if the return value is not used and not ignored
  * (casted to void)
  */
@@ -490,7 +490,7 @@ outcall(tnode_t *tn, int rvused, int rvdisc)
 
 /*
  * extracts potential format specifiers for printf() and scanf() and
- * writes them, enclosed in "" and qouted if necessary, to the output buffer
+ * writes them, enclosed in "" and quoted if necessary, to the output buffer
  */
 static void
 outfstrg(strg_t *strg)
@@ -498,8 +498,7 @@ outfstrg(strg_t *strg)
 	int	c, oc, first;
 	u_char	*cp;
 
-	if (strg->st_tspec != CHAR)
-		LERROR("outfstrg()");
+	lint_assert(strg->st_tspec == CHAR);
 
 	cp = strg->st_cp;
 

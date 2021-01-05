@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: scan.l,v 1.105 2020/12/30 11:56:10 rillig Exp $ */
+/* $NetBSD: scan.l,v 1.112 2021/01/04 22:26:50 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: scan.l,v 1.105 2020/12/30 11:56:10 rillig Exp $");
+__RCSID("$NetBSD: scan.l,v 1.112 2021/01/04 22:26:50 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -156,8 +156,8 @@ TL	([fFlL]?[i]?)
 "?"				return T_QUEST;
 "["				return T_LBRACK;
 "]"				return T_RBRACK;
-"("				return T_LPARN;
-")"				return T_RPARN;
+"("				return T_LPAREN;
+")"				return T_RPAREN;
 "..."				return T_ELLIPSE;
 "'"				return ccon();
 "L'"				return wccon();
@@ -199,10 +199,10 @@ static	struct	kwtab {
 	scl_t	kw_scl;		/* storage class if kw_token T_SCLASS */
 	tspec_t	kw_tspec;	/* type spec. if kw_token T_TYPE or T_SOU */
 	tqual_t	kw_tqual;	/* type qual. fi kw_token T_QUAL */
-	u_int	kw_c89 : 1;	/* c89 keyword */
-	u_int	kw_c99 : 1;	/* c99 keyword */
-	u_int	kw_gcc : 1;	/* GCC keyword */
-	u_int	kw_attr : 1;	/* GCC attribute, keyword */
+	bool	kw_c89 : 1;	/* C89 keyword */
+	bool	kw_c99 : 1;	/* C99 keyword */
+	bool	kw_gcc : 1;	/* GCC keyword */
+	bool	kw_attr : 1;	/* GCC attribute, keyword */
 	u_int	kw_deco : 3;	/* 1 = name, 2 = __name, 4 = __name__ */
 } kwtab[] = {
 #ifdef INT128_SIZE
@@ -505,8 +505,7 @@ name(void)
 	sb->sb_sym = sym;
 
 	if (sym != NULL) {
-		if (blklev < sym->s_blklev)
-			LERROR("name()");
+		lint_assert(blklev >= sym->s_blklev);
 		sb->sb_name = sym->s_name;
 		sb->sb_len = strlen(sym->s_name);
 		tok = sym->s_scl == TYPEDEF ? T_TYPENAME : T_NAME;
@@ -621,8 +620,7 @@ icon(int base)
 	errno = 0;
 
 	uq = strtouq(cp, &eptr, base);
-	if (eptr != cp + len)
-		LERROR("icon()");
+	lint_assert(eptr == cp + len);
 	if (errno != 0)
 		/* integer constant out of range */
 		warning(252);
@@ -741,9 +739,6 @@ icon(int base)
 	case DCOMPLEX:
 	case LCOMPLEX:
 	case COMPLEX:
-		break;
-
-	case NTSPEC:	/* this value unused */
 		break;
 	}
 
@@ -1018,7 +1013,7 @@ getescc(int d)
 		switch (c = inpc()) {
 		case '"':
 			if (tflag && d == '\'')
-				/* \" inside character constant undef. ... */
+				/* \" inside character constants undef... */
 				warning(262);
 			return '"';
 		case '\'':
@@ -1067,7 +1062,7 @@ getescc(int d)
 				warning(77, c);
 			pbc = c;
 			if (v > TARG_UCHAR_MAX) {
-				/* character escape does not fit in char. */
+				/* character escape does not fit in character */
 				warning(76);
 				v &= CHAR_MASK;
 			}
@@ -1321,8 +1316,8 @@ slashslashcomment(void)
 	int c;
 
 	if (!Sflag && !gflag)
-		/* // comments only supported in C99 */
-		(void)gnuism(312, tflag ? "traditional" : "ANSI");
+		/* %s C does not support // comments */
+		gnuism(312, tflag ? "traditional" : "ANSI");
 
 	while ((c = inpc()) != EOF && c != '\n')
 		continue;
@@ -1345,7 +1340,7 @@ clrwflgs(void)
 }
 
 /*
- * Strings are stored in a dynamically alloceted buffer and passed
+ * Strings are stored in a dynamically allocated buffer and passed
  * in yylval.y_xstrg to the parser. The parser or the routines called
  * by the parser are responsible for freeing this buffer.
  */
@@ -1473,7 +1468,7 @@ getsym(sbuf_t *sb)
 
 	if (sym != NULL) {
 		if (sym->s_kind != symtyp)
-			LERROR("storesym(%d, %d)", sym->s_kind, symtyp);
+			LERROR("getsym(%d, %d)", sym->s_kind, symtyp);
 		symtyp = FVFT;
 		freesb(sb);
 		return sym;
@@ -1491,8 +1486,7 @@ getsym(sbuf_t *sb)
 		di = dcs;
 		while (di->d_next != NULL && di->d_next->d_next != NULL)
 			di = di->d_next;
-		if (di->d_ctx != AUTO)
-			LERROR("storesym()");
+		lint_assert(di->d_ctx == AUTO);
 	} else {
 		sym = getblk(sizeof (sym_t));
 		sym->s_name = sb->sb_name;
@@ -1600,8 +1594,8 @@ inssym(int bl, sym_t *sym)
 	sym->s_rlink = &symtab[h];
 	symtab[h] = sym;
 	sym->s_blklev = bl;
-	if (sym->s_link != NULL && sym->s_blklev < sym->s_link->s_blklev)
-		LERROR("inssym()");
+	lint_assert(sym->s_link == NULL ||
+	    sym->s_blklev >= sym->s_link->s_blklev);
 }
 
 /*
@@ -1641,8 +1635,7 @@ pushdown(sym_t *sym)
 
 	h = hash(sym->s_name);
 	nsym = getblk(sizeof (sym_t));
-	if (sym->s_blklev > blklev)
-		LERROR("pushdown()");
+	lint_assert(sym->s_blklev <= blklev);
 	nsym->s_name = sym->s_name;
 	UNIQUE_CURR_POS(nsym->s_def_pos);
 	nsym->s_kind = sym->s_kind;
@@ -1677,10 +1670,9 @@ freeyyv(void *sp, int tok)
 		strg_t *strg = *(strg_t **)sp;
 		if (strg->st_tspec == CHAR) {
 			free(strg->st_cp);
-		} else if (strg->st_tspec == WCHAR) {
-			free(strg->st_wcp);
 		} else {
-			LERROR("fryylv()");
+			lint_assert(strg->st_tspec == WCHAR);
+			free(strg->st_wcp);
 		}
 		free(strg);
 	}

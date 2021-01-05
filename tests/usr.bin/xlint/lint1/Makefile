@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.21 2020/12/30 13:15:07 rillig Exp $
+# $NetBSD: Makefile,v 1.25 2021/01/02 10:22:42 rillig Exp $
 
 NOMAN=		# defined
 
@@ -50,6 +50,8 @@ FILES+=		d_cvt_in_ternary.c
 FILES+=		d_decl_old_style_arguments.c
 FILES+=		d_decl_old_style_arguments.exp
 FILES+=		d_ellipsis_in_switch.c
+FILES+=		d_fold_test.c
+FILES+=		d_fold_test.exp
 FILES+=		d_gcc_compound_statements1.c
 FILES+=		d_gcc_compound_statements2.c
 FILES+=		d_gcc_compound_statements3.c
@@ -59,11 +61,15 @@ FILES+=		d_gcc_func.c
 FILES+=		d_gcc_variable_array_init.c
 FILES+=		d_incorrect_array_size.c
 FILES+=		d_incorrect_array_size.exp
+FILES+=		d_init_pop_member.c
+FILES+=		d_init_pop_member.exp
 FILES+=		d_long_double_int.c
 FILES+=		d_long_double_int.exp
 FILES+=		d_nested_structs.c
 FILES+=		d_nolimit_init.c
 FILES+=		d_packed_structs.c
+FILES+=		d_return_type.c
+FILES+=		d_return_type.exp
 FILES+=		d_shift_to_narrower_type.c
 FILES+=		d_struct_init_nested.c
 FILES+=		d_struct_init_nested.exp
@@ -77,6 +83,7 @@ FILES+=		d_type_question_colon.c
 FILES+=		d_typefun.c
 FILES+=		d_typename_as_var.c
 FILES+=		d_zero_sized_arrays.c
+FILES+=		${:U0 ${:U:range=329}:C,^.$,0&,:C,^..$,0&,:@msg@msg_${msg}.c msg_${msg}.exp@}
 
 # Note: only works for adding tests.
 # To remove a test, the $$mi file must be edited manually.
