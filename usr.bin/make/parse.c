@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.521 2020/12/28 00:46:24 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.525 2020/12/31 17:39:36 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -98,18 +98,10 @@
  */
 
 #include <sys/types.h>
-#include <sys/mman.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stdint.h>
-
-#ifndef MAP_FILE
-#define MAP_FILE 0
-#endif
-#ifndef MAP_COPY
-#define MAP_COPY MAP_PRIVATE
-#endif
 
 #include "make.h"
 #include "dir.h"
@@ -117,7 +109,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.521 2020/12/28 00:46:24 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.525 2020/12/31 17:39:36 rillig Exp $");
 
 /* types and constants */
 
@@ -198,18 +190,22 @@ static GNode *mainNode;
 
 /* eval state */
 
-/* During parsing, the targets from the left-hand side of the currently
+/*
+ * During parsing, the targets from the left-hand side of the currently
  * active dependency line, or NULL if the current line does not belong to a
  * dependency line, for example because it is a variable assignment.
  *
- * See unit-tests/deptgt.mk, keyword "parse.c:targets". */
+ * See unit-tests/deptgt.mk, keyword "parse.c:targets".
+ */
 static GNodeList *targets;
 
 #ifdef CLEANUP
-/* All shell commands for all targets, in no particular order and possibly
+/*
+ * All shell commands for all targets, in no particular order and possibly
  * with duplicates.  Kept in a separate list since the commands from .USE or
  * .USEBEFORE nodes are shared with other GNodes, thereby giving up the
- * easily understandable ownership over the allocated strings. */
+ * easily understandable ownership over the allocated strings.
+ */
 static StringList targCmds = LST_INIT;
 #endif
 
@@ -228,7 +224,8 @@ static int fatals = 0;
  * Variables for doing includes
  */
 
-/* The include chain of makefiles.  At the bottom is the top-level makefile
+/*
+ * The include chain of makefiles.  At the bottom is the top-level makefile
  * from the command line, and on top of that, there are the included files or
  * .for loops, up to and including the current file.
  *
@@ -354,21 +351,19 @@ struct loadedfile {
 	const char *path;	/* name, for error reports */
 	char *buf;		/* contents buffer */
 	size_t len;		/* length of contents */
-	size_t maplen;		/* length of mmap area, or 0 */
 	Boolean used;		/* XXX: have we used the data yet */
 };
 
 /* XXX: What is the lifetime of the path? Who manages the memory? */
 static struct loadedfile *
-loadedfile_create(const char *path)
+loadedfile_create(const char *path, char *buf, size_t buflen)
 {
 	struct loadedfile *lf;
 
 	lf = bmake_malloc(sizeof *lf);
 	lf->path = path == NULL ? "(stdin)" : path;
-	lf->buf = NULL;
-	lf->len = 0;
-	lf->maplen = 0;
+	lf->buf = buf;
+	lf->len = buflen;
 	lf->used = FALSE;
 	return lf;
 }
@@ -376,12 +371,7 @@ loadedfile_create(const char *path)
 static void
 loadedfile_destroy(struct loadedfile *lf)
 {
-	if (lf->buf != NULL) {
-		if (lf->maplen > 0)
-			munmap(lf->buf, lf->maplen);
-		else
-			free(lf->buf);
-	}
+	free(lf->buf);
 	free(lf);
 }
 
@@ -420,62 +410,15 @@ load_getsize(int fd, size_t *ret)
 	 * st_size is an off_t, which is 64 bits signed; *ret is
 	 * size_t, which might be 32 bits unsigned or 64 bits
 	 * unsigned. Rather than being elaborate, just punt on
-	 * files that are more than 2^31 bytes. We should never
-	 * see a makefile that size in practice...
+	 * files that are more than 1 GiB. We should never
+	 * see a makefile that size in practice.
 	 *
 	 * While we're at it reject negative sizes too, just in case.
 	 */
-	if (st.st_size < 0 || st.st_size > 0x7fffffff)
+	if (st.st_size < 0 || st.st_size > 0x3fffffff)
 		return FALSE;
 
 	*ret = (size_t)st.st_size;
-	return TRUE;
-}
-
-static Boolean
-loadedfile_mmap(struct loadedfile *lf, int fd)
-{
-	static unsigned long pagesize = 0;
-
-	if (!load_getsize(fd, &lf->len))
-		return FALSE;
-
-	/* found a size, try mmap */
-	if (pagesize == 0)
-		pagesize = (unsigned long)sysconf(_SC_PAGESIZE);
-	if (pagesize == 0 || pagesize == (unsigned long)-1)
-		pagesize = 0x1000;
-
-	/* round size up to a page */
-	lf->maplen = pagesize * ((lf->len + pagesize - 1) / pagesize);
-
-	/*
-	 * XXX hack for dealing with empty files; remove when
-	 * we're no longer limited by interfacing to the old
-	 * logic elsewhere in this file.
-	 */
-	if (lf->maplen == 0)
-		lf->maplen = pagesize;
-
-	/*
-	 * FUTURE: remove PROT_WRITE when the parser no longer
-	 * needs to scribble on the input.
-	 */
-	lf->buf = mmap(NULL, lf->maplen, PROT_READ | PROT_WRITE,
-	    MAP_FILE | MAP_COPY, fd, 0);
-	if (lf->buf == MAP_FAILED)
-		return FALSE;
-
-	if (lf->len > 0 && lf->buf[lf->len - 1] != '\n') {
-		if (lf->len == lf->maplen) {
-			char *b = bmake_malloc(lf->len + 1);
-			memcpy(b, lf->buf, lf->len);
-			munmap(lf->buf, lf->maplen);
-			lf->maplen = 0;
-		}
-		lf->buf[lf->len++] = '\n';
-	}
-
 	return TRUE;
 }
 
@@ -491,75 +434,63 @@ loadedfile_mmap(struct loadedfile *lf, int fd)
 static struct loadedfile *
 loadfile(const char *path, int fd)
 {
-	struct loadedfile *lf;
-	ssize_t result;
-	size_t bufpos;
+	ssize_t n;
+	Buffer buf;
+	size_t filesize;
 
-	lf = loadedfile_create(path);
 
 	if (path == NULL) {
 		assert(fd == -1);
 		fd = STDIN_FILENO;
-	} else {
-#if 0 /* notyet */
-		fd = open(path, O_RDONLY);
-		if (fd < 0) {
-			...
-			Error("%s: %s", path, strerror(errno));
-			exit(1);
-		}
-#endif
 	}
 
-	if (loadedfile_mmap(lf, fd))
-		goto done;
+	if (load_getsize(fd, &filesize)) {
+		/*
+		 * Avoid resizing the buffer later for no reason.
+		 *
+		 * At the same time leave space for adding a final '\n',
+		 * just in case it is missing in the file.
+		 */
+		filesize++;
+	} else
+		filesize = 1024;
+	Buf_InitSize(&buf, filesize);
 
-	/* cannot mmap; load the traditional way */
-
-	lf->maplen = 0;
-	lf->len = 1024;
-	lf->buf = bmake_malloc(lf->len);
-
-	bufpos = 0;
 	for (;;) {
-		assert(bufpos <= lf->len);
-		if (bufpos == lf->len) {
-			if (lf->len > SIZE_MAX / 2) {
+		assert(buf.len <= buf.cap);
+		if (buf.len == buf.cap) {
+			if (buf.cap > 0x1fffffff) {
 				errno = EFBIG;
 				Error("%s: file too large", path);
 				exit(2); /* Not 1 so -q can distinguish error */
 			}
-			lf->len *= 2;
-			lf->buf = bmake_realloc(lf->buf, lf->len);
+			Buf_Expand(&buf);
 		}
-		assert(bufpos < lf->len);
-		result = read(fd, lf->buf + bufpos, lf->len - bufpos);
-		if (result < 0) {
+		assert(buf.len < buf.cap);
+		n = read(fd, buf.data + buf.len, buf.cap - buf.len);
+		if (n < 0) {
 			Error("%s: read error: %s", path, strerror(errno));
 			exit(2);	/* Not 1 so -q can distinguish error */
 		}
-		if (result == 0)
+		if (n == 0)
 			break;
 
-		bufpos += (size_t)result;
+		buf.len += (size_t)n;
 	}
-	assert(bufpos <= lf->len);
-	lf->len = bufpos;
+	assert(buf.len <= buf.cap);
 
-	/* truncate malloc region to actual length (maybe not useful) */
-	if (lf->len > 0) {
-		/* as for mmap case, ensure trailing \n */
-		if (lf->buf[lf->len - 1] != '\n')
-			lf->len++;
-		lf->buf = bmake_realloc(lf->buf, lf->len);
-		lf->buf[lf->len - 1] = '\n';
-	}
+	if (!Buf_EndsWith(&buf, '\n'))
+		Buf_AddByte(&buf, '\n');
 
-done:
 	if (path != NULL)
 		close(fd);
 
-	return lf;
+	{
+		struct loadedfile *lf = loadedfile_create(path,
+		    buf.data, buf.len);
+		Buf_Destroy(&buf, FALSE);
+		return lf;
+	}
 }
 
 /* old code */
@@ -578,8 +509,10 @@ ParseIsEscaped(const char *line, const char *c)
 	}
 }
 
-/* Add the filename and lineno to the GNode so that we remember where it
- * was first defined. */
+/*
+ * Add the filename and lineno to the GNode so that we remember where it
+ * was first defined.
+ */
 static void
 ParseMark(GNode *gn)
 {
@@ -588,8 +521,10 @@ ParseMark(GNode *gn)
 	gn->lineno = curFile->lineno;
 }
 
-/* Look in the table of keywords for one matching the given string.
- * Return the index of the keyword, or -1 if it isn't there. */
+/*
+ * Look in the table of keywords for one matching the given string.
+ * Return the index of the keyword, or -1 if it isn't there.
+ */
 static int
 ParseFindKeyword(const char *str)
 {
@@ -687,12 +622,14 @@ ParseErrorInternal(const char *fname, size_t lineno,
 	}
 }
 
-/* Print a parse error message, including location information.
+/*
+ * Print a parse error message, including location information.
  *
  * If the level is PARSE_FATAL, continue parsing until the end of the
  * current top-level makefile, then exit (see Parse_File).
  *
- * Fmt is given without a trailing newline. */
+ * Fmt is given without a trailing newline.
+ */
 void
 Parse_Error(ParseErrorLevel type, const char *fmt, ...)
 {
@@ -723,8 +660,10 @@ Parse_Error(ParseErrorLevel type, const char *fmt, ...)
 }
 
 
-/* Parse and handle a .info, .warning or .error directive.
- * For an .error directive, immediately exit. */
+/*
+ * Parse and handle a .info, .warning or .error directive.
+ * For an .error directive, immediately exit.
+ */
 static void
 ParseMessage(ParseErrorLevel level, const char *levelName, const char *umsg)
 {
@@ -748,11 +687,13 @@ ParseMessage(ParseErrorLevel level, const char *levelName, const char *umsg)
 	}
 }
 
-/* Add the child to the parent's children.
+/*
+ * Add the child to the parent's children.
  *
  * Additionally, add the parent to the child's parents, but only if the
  * target is not special.  An example for such a special target is .END,
- * which does not need to be informed once the child target has been made. */
+ * which does not need to be informed once the child target has been made.
+ */
 static void
 LinkSource(GNode *pgn, GNode *cgn, Boolean isSpecial)
 {
@@ -1616,7 +1557,8 @@ ParseDoDependencySourcesMundane(char *start, char *end,
 	return TRUE;
 }
 
-/* Parse a dependency line consisting of targets, followed by a dependency
+/*
+ * Parse a dependency line consisting of targets, followed by a dependency
  * operator, optionally followed by sources.
  *
  * The nodes of the sources are linked as children to the nodes of the
@@ -1974,14 +1916,16 @@ VarAssign_EvalShell(const char *name, const char *uvalue, GNode *ctxt,
 	FStr_Done(&cmd);
 }
 
-/* Perform a variable assignment.
+/*
+ * Perform a variable assignment.
  *
  * The actual value of the variable is returned in *out_avalue and
  * *out_avalue_freeIt.  Especially for VAR_SUBST and VAR_SHELL this can differ
  * from the literal value.
  *
  * Return whether the assignment was actually done.  The assignment is only
- * skipped if the operator is '?=' and the variable already exists. */
+ * skipped if the operator is '?=' and the variable already exists.
+ */
 static Boolean
 VarAssign_Eval(const char *name, VarAssignOp op, const char *uvalue,
 	       GNode *ctxt, FStr *out_TRUE_avalue)
@@ -2041,8 +1985,10 @@ Parse_DoVar(VarAssign *var, GNode *ctxt)
 }
 
 
-/* See if the command possibly calls a sub-make by using the variable
- * expressions ${.MAKE}, ${MAKE} or the plain word "make". */
+/*
+ * See if the command possibly calls a sub-make by using the variable
+ * expressions ${.MAKE}, ${MAKE} or the plain word "make".
+ */
 static Boolean
 MaybeSubMake(const char *cmd)
 {
@@ -2080,10 +2026,12 @@ MaybeSubMake(const char *cmd)
 	return FALSE;
 }
 
-/* Append the command to the target node.
+/*
+ * Append the command to the target node.
  *
  * The node may be marked as a submake node if the command is determined to
- * be that. */
+ * be that.
+ */
 static void
 ParseAddCmd(GNode *gn, char *cmd)
 {
@@ -2126,7 +2074,8 @@ Parse_AddIncludeDir(const char *dir)
 	(void)Dir_AddDir(parseIncPath, dir);
 }
 
-/* Handle one of the .[-ds]include directives by remembering the current file
+/*
+ * Handle one of the .[-ds]include directives by remembering the current file
  * and pushing the included file on the stack.  After the included file has
  * finished, parsing continues with the including file; see Parse_SetInput
  * and ParseEOF.
@@ -2291,8 +2240,10 @@ ParseDoInclude(char *line /* XXX: bad name */)
 	free(file);
 }
 
-/* Split filename into dirname + basename, then assign these to the
- * given variables. */
+/*
+ * Split filename into dirname + basename, then assign these to the
+ * given variables.
+ */
 static void
 SetFilenameVars(const char *filename, const char *dirvar, const char *filevar)
 {
@@ -2392,11 +2343,13 @@ VarContainsWord(const char *varname, const char *word)
 	return found;
 }
 
-/* Track the makefiles we read - so makefiles can set dependencies on them.
+/*
+ * Track the makefiles we read - so makefiles can set dependencies on them.
  * Avoid adding anything more than once.
  *
  * Time complexity: O(n) per call, in total O(n^2), where n is the number
- * of makefiles that have been loaded. */
+ * of makefiles that have been loaded.
+ */
 static void
 ParseTrackInput(const char *name)
 {
@@ -2448,7 +2401,7 @@ Parse_SetInput(const char *name, int lineno, int fd,
 	buf = curFile->readMore(curFile->readMoreArg, &len);
 	if (buf == NULL) {
 		/* Was all a waste of time ... */
-		if (curFile->fname)
+		if (curFile->fname != NULL)
 			free(curFile->fname);
 		free(curFile);
 		return;
@@ -3105,8 +3058,10 @@ FindSemicolon(char *p)
 	return p;
 }
 
-/* dependency	-> target... op [source...]
- * op		-> ':' | '::' | '!' */
+/*
+ * dependency	-> target... op [source...]
+ * op		-> ':' | '::' | '!'
+ */
 static void
 ParseDependency(char *line)
 {

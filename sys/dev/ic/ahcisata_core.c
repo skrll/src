@@ -1,4 +1,4 @@
-/*	$NetBSD: ahcisata_core.c,v 1.90 2020/12/27 15:13:07 jmcneill Exp $	*/
+/*	$NetBSD: ahcisata_core.c,v 1.94 2020/12/29 08:00:48 skrll Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ahcisata_core.c,v 1.90 2020/12/27 15:13:07 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ahcisata_core.c,v 1.94 2020/12/29 08:00:48 skrll Exp $");
 
 #include <sys/types.h>
 #include <sys/malloc.h>
@@ -62,19 +62,19 @@ static int  ahci_do_reset_drive(struct ata_channel *, int, int, uint32_t *,
 	uint8_t);
 static void ahci_reset_drive(struct ata_drive_datas *, int, uint32_t *);
 static void ahci_reset_channel(struct ata_channel *, int);
-static void  ahci_exec_command(struct ata_drive_datas *, struct ata_xfer *);
+static void ahci_exec_command(struct ata_drive_datas *, struct ata_xfer *);
 static int  ahci_ata_addref(struct ata_drive_datas *);
 static void ahci_ata_delref(struct ata_drive_datas *);
 static void ahci_killpending(struct ata_drive_datas *);
 
-static int ahci_cmd_start(struct ata_channel *, struct ata_xfer *);
+static int  ahci_cmd_start(struct ata_channel *, struct ata_xfer *);
 static int  ahci_cmd_complete(struct ata_channel *, struct ata_xfer *, int);
 static void ahci_cmd_poll(struct ata_channel *, struct ata_xfer *);
 static void ahci_cmd_abort(struct ata_channel *, struct ata_xfer *);
 static void ahci_cmd_done(struct ata_channel *, struct ata_xfer *);
 static void ahci_cmd_done_end(struct ata_channel *, struct ata_xfer *);
 static void ahci_cmd_kill_xfer(struct ata_channel *, struct ata_xfer *, int);
-static int ahci_bio_start(struct ata_channel *, struct ata_xfer *);
+static int  ahci_bio_start(struct ata_channel *, struct ata_xfer *);
 static void ahci_bio_poll(struct ata_channel *, struct ata_xfer *);
 static void ahci_bio_abort(struct ata_channel *, struct ata_xfer *);
 static int  ahci_bio_complete(struct ata_channel *, struct ata_xfer *, int);
@@ -84,6 +84,7 @@ static void ahci_channel_start(struct ahci_softc *, struct ata_channel *,
 				int, int);
 static void ahci_channel_recover(struct ata_channel *, int, uint32_t);
 static int  ahci_dma_setup(struct ata_channel *, int, void *, size_t, int);
+static int  ahci_intr_port_common(struct ata_channel *);
 
 #if NATAPIBUS > 0
 static void ahci_atapibus_attach(struct atabus_softc *);
@@ -91,7 +92,7 @@ static void ahci_atapi_kill_pending(struct scsipi_periph *);
 static void ahci_atapi_minphys(struct buf *);
 static void ahci_atapi_scsipi_request(struct scsipi_channel *,
     scsipi_adapter_req_t, void *);
-static int ahci_atapi_start(struct ata_channel *, struct ata_xfer *);
+static int  ahci_atapi_start(struct ata_channel *, struct ata_xfer *);
 static void ahci_atapi_poll(struct ata_channel *, struct ata_xfer *);
 static void ahci_atapi_abort(struct ata_channel *, struct ata_xfer *);
 static int  ahci_atapi_complete(struct ata_channel *, struct ata_xfer *, int);
@@ -602,7 +603,7 @@ ahci_intr(void *v)
 		ports = is;
 		while ((bit = ffs(ports)) != 0) {
 			bit--;
-			ahci_intr_port(&sc->sc_channels[bit]);
+			ahci_intr_port_common(&sc->sc_channels[bit].ata_channel);
 			ports &= ~(1U << bit);
 		}
 		AHCI_WRITE(sc, AHCI_IS, is);
@@ -617,6 +618,20 @@ ahci_intr_port(void *v)
 	struct ahci_channel *achp = v;
 	struct ata_channel *chp = &achp->ata_channel;
 	struct ahci_softc *sc = (struct ahci_softc *)chp->ch_atac;
+	int ret;
+
+	ret = ahci_intr_port_common(chp);
+	if (ret) {
+		AHCI_WRITE(sc, AHCI_IS, 1U << chp->ch_channel);
+	}
+
+	return ret;
+}
+
+static int
+ahci_intr_port_common(struct ata_channel *chp)
+{
+	struct ahci_softc *sc = (struct ahci_softc *)chp->ch_atac;
 	uint32_t is, tfd, sact;
 	struct ata_xfer *xfer;
 	int slot = -1;
@@ -626,8 +641,8 @@ ahci_intr_port(void *v)
 	is = AHCI_READ(sc, AHCI_P_IS(chp->ch_channel));
 	AHCI_WRITE(sc, AHCI_P_IS(chp->ch_channel), is);
 
-	AHCIDEBUG_PRINT((
-	    "ahci_intr_port %s port %d is 0x%x CI 0x%x SACT 0x%x TFD 0x%x\n",
+	AHCIDEBUG_PRINT(("ahci_intr_port_common %s port %d "
+	    "is 0x%x CI 0x%x SACT 0x%x TFD 0x%x\n",
 	    AHCINAME(sc),
 	    chp->ch_channel, is,
 	    AHCI_READ(sc, AHCI_P_CI(chp->ch_channel)),
@@ -687,7 +702,6 @@ ahci_intr_port(void *v)
 
 			AHCIDEBUG_PRINT(("%s port %d: transfer aborted 0x%x\n",
 			    AHCINAME(sc), chp->ch_channel, tfd), DEBUG_INTR);
-
 		}
 	} else {
 		tfd = 0;
@@ -857,9 +871,6 @@ again:
 		KASSERT(sc->sc_ahci_cap & AHCI_CAP_SPM);
 	}
 
-	if (sc->sc_ahci_quirks & AHCI_QUIRK_SKIP_RESET)
-		goto skip_reset;
-
 	/* polled command, assume interrupts are disabled */
 
 	cmd_h = &achp->ahcic_cmdh[c_slot];
@@ -931,7 +942,6 @@ again:
 		goto end;
 	}
 
-skip_reset:
 	/*
 	 * wait 31s for BSY to clear
 	 * This should not be needed, but some controllers clear the
@@ -1159,7 +1169,7 @@ ahci_cmd_start(struct ata_channel *chp, struct ata_xfer *xfer)
 
 	cmd_tbl = achp->ahcic_cmd_tbl[slot];
 	AHCIDEBUG_PRINT(("%s port %d tbl %p\n", AHCINAME(sc), chp->ch_channel,
-	      cmd_tbl), DEBUG_XFERS);
+	    cmd_tbl), DEBUG_XFERS);
 
 	satafis_rhd_construct_cmd(ata_c, cmd_tbl->cmdt_cfis);
 	cmd_tbl->cmdt_cfis[rhd_c] |= xfer->c_drive;
@@ -1752,7 +1762,7 @@ ahci_dma_setup(struct ata_channel *chp, int slot, void *data,
 	bus_dmamap_sync(sc->sc_dmat, achp->ahcic_datad[slot], 0,
 	    achp->ahcic_datad[slot]->dm_mapsize,
 	    (op == BUS_DMA_READ) ? BUS_DMASYNC_PREREAD : BUS_DMASYNC_PREWRITE);
-	for (seg = 0; seg <  achp->ahcic_datad[slot]->dm_nsegs; seg++) {
+	for (seg = 0; seg < achp->ahcic_datad[slot]->dm_nsegs; seg++) {
 		cmd_tbl->cmdt_prd[seg].prd_dba = htole64(
 		     achp->ahcic_datad[slot]->dm_segs[seg].ds_addr);
 		cmd_tbl->cmdt_prd[seg].prd_dbc = htole32(

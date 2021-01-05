@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.54 2020/06/02 21:10:07 christos Exp $	*/
+/*	$NetBSD: err.c,v 1.64 2021/01/03 18:48:37 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,12 +37,12 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: err.c,v 1.54 2020/06/02 21:10:07 christos Exp $");
+__RCSID("$NetBSD: err.c,v 1.64 2021/01/03 18:48:37 rillig Exp $");
 #endif
 
 #include <sys/types.h>
-#include <stdlib.h>
 #include <stdarg.h>
+#include <stdlib.h>
 
 #include "lint1.h"
 
@@ -183,7 +183,7 @@ const	char *msgs[] = {
 	"negative shift",					      /* 121 */
 	"shift greater than size of object",			      /* 122 */
 	"illegal combination of %s (%s) and %s (%s), op %s",	      /* 123 */
-	"illegal pointer combination, op %s",			      /* 124 */
+	"illegal pointer combination (%s) and (%s), op %s",	      /* 124 */
 	"ANSI C forbids ordered comparisons of pointers to functions",/* 125 */
 	"incompatible types in conditional",			      /* 126 */
 	"'&' before array or function: ignored",		      /* 127 */
@@ -215,9 +215,9 @@ const	char *msgs[] = {
 	"argument has incompatible pointer type, arg #%d (%s != %s)", /* 153 */
 	"illegal combination of %s (%s) and %s (%s), arg #%d",	      /* 154 */
 	"argument is incompatible with prototype, arg #%d",	      /* 155 */
-	"enum type mismatch, arg #%d",			       	      /* 156 */
+	"enum type mismatch, arg #%d",				      /* 156 */
 	"ANSI C treats constant as unsigned",			      /* 157 */
-	"%s may be used before set",			      	      /* 158 */
+	"%s may be used before set",				      /* 158 */
 	"assignment in conditional context",			      /* 159 */
 	"operator '==' found where '=' was expected",		      /* 160 */
 	"constant in conditional context",			      /* 161 */
@@ -242,7 +242,7 @@ const	char *msgs[] = {
 	"bit-field initializer does not fit",			      /* 180 */
 	"{}-enclosed initializer required",			      /* 181 */
 	"incompatible pointer types (%s != %s)",		      /* 182 */
-	"illegal combination of %s (%s) and %s (%s)",	      	      /* 183 */
+	"illegal combination of %s (%s) and %s (%s)",		      /* 183 */
 	"illegal pointer combination",				      /* 184 */
 	"initialisation type mismatch (%s) and (%s)",		      /* 185 */
 	"bit-field initialisation is illegal in traditional C",	      /* 186 */
@@ -250,7 +250,7 @@ const	char *msgs[] = {
 	"no automatic aggregate initialization in traditional C",     /* 188 */
 	"assignment of struct/union illegal in traditional C",	      /* 189 */
 	"empty array declaration: %s",				      /* 190 */
-	"%s set but not used in function %s",		      	      /* 191 */
+	"%s set but not used in function %s",			      /* 191 */
 	"%s unused in function %s",				      /* 192 */
 	"statement not reached",				      /* 193 */
 	"label %s redefined",					      /* 194 */
@@ -367,7 +367,7 @@ const	char *msgs[] = {
 	"ANSI C forbids conversion of %s to %s, op %s",		      /* 305 */
 	"constant truncated by conversion, op %s",		      /* 306 */
 	"static variable %s set but not used",			      /* 307 */
-	"Invalid type %s for _Complex",				      /* 308 */
+	"invalid type for _Complex",				      /* 308 */
 	"extra bits set to 0 in conversion of '%s' to '%s', op %s",   /* 309 */
 	"symbol renaming can't be used on function arguments",	      /* 310 */
 	"symbol renaming can't be used on automatic variables",	      /* 311 */
@@ -384,7 +384,7 @@ const	char *msgs[] = {
 	"zero sized array is a C99 extension",			      /* 322 */
 	"continue in 'do ... while (0)' loop",			      /* 323 */
 	"suggest cast from '%s' to '%s' on op %s to avoid overflow",  /* 324 */
-	"variable declaration in for loop", 			      /* 325 */
+	"variable declaration in for loop",			      /* 325 */
 	"%s attribute ignored for %s",				      /* 326 */
 	"declarations after statements is a C9X feature",	      /* 327 */
 	"union cast is a C9X feature",				      /* 328 */
@@ -404,7 +404,7 @@ msglist(void)
 }
 
 /*
- * If Fflag is not set lbasename() returns a pointer to the last
+ * If Fflag is not set, lbasename() returns a pointer to the last
  * component of the path, otherwise it returns the argument.
  */
 static const char *
@@ -413,7 +413,7 @@ lbasename(const char *path)
 	const	char *cp, *cp1, *cp2;
 
 	if (Fflag)
-		return (path);
+		return path;
 
 	cp = cp1 = cp2 = path;
 	while (*cp != '\0') {
@@ -422,11 +422,11 @@ lbasename(const char *path)
 			cp1 = cp;
 		}
 	}
-	return (*cp1 == '\0' ? cp2 : cp1);
+	return *cp1 == '\0' ? cp2 : cp1;
 }
 
 static void
-verror( int n, va_list ap)
+verror(int n, va_list ap)
 {
 	const	char *fn;
 
@@ -464,7 +464,7 @@ vwarning(int n, va_list ap)
 }
 
 void
-error(int n, ...)
+(error)(int n, ...)
 {
 	va_list	ap;
 
@@ -490,7 +490,19 @@ lerror(const char *file, int line, const char *msg, ...)
 }
 
 void
-warning(int n, ...)
+assert_failed(const char *file, int line, const char *func, const char *cond)
+{
+	const	char *fn;
+
+	fn = lbasename(curr_pos.p_file);
+	(void)fprintf(stderr,
+	    "lint: assertion \"%s\" failed in %s at %s:%d near %s:%d\n",
+	    cond, func, file, line, fn, curr_pos.p_line);
+	abort();
+}
+
+void
+(warning)(int n, ...)
 {
 	va_list	ap;
 
@@ -500,7 +512,7 @@ warning(int n, ...)
 }
 
 void
-message(int n, ...)
+(message)(int n, ...)
 {
 	va_list	ap;
 	const	char *fn;
@@ -522,44 +534,31 @@ message(int n, ...)
  * forward? We need to answer that and then we can fix this to be
  * "right"... [perry, 2 Nov 2002]
 */
-int
-c99ism(int n, ...)
+void
+(c99ism)(int n, ...)
 {
 	va_list	ap;
-	int	msg;
+	bool extensions_ok = Sflag || gflag;
 
 	va_start(ap, n);
-	if (sflag && !(Sflag || gflag)) {
+	if (sflag && !extensions_ok) {
 		verror(n, ap);
-		msg = 1;
-	} else if (!sflag && (Sflag || gflag)) {
-		msg = 0;
-	} else {
+	} else if (sflag || !extensions_ok) {
 		vwarning(n, ap);
-		msg = 1;
 	}
 	va_end(ap);
-
-	return (msg);
 }
 
-int
-gnuism(int n, ...)
+void
+(gnuism)(int n, ...)
 {
 	va_list	ap;
-	int	msg;
 
 	va_start(ap, n);
 	if (sflag && !gflag) {
 		verror(n, ap);
-		msg = 1;
-	} else if (!sflag && gflag) {
-		msg = 0;
-	} else {
+	} else if (sflag || !gflag) {
 		vwarning(n, ap);
-		msg = 1;
 	}
 	va_end(ap);
-
-	return (msg);
 }
