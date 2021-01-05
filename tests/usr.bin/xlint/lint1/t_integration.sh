@@ -1,4 +1,4 @@
-# $NetBSD: t_integration.sh,v 1.14 2020/12/30 13:42:19 rillig Exp $
+# $NetBSD: t_integration.sh,v 1.20 2021/01/02 19:22:42 rillig Exp $
 #
 # Copyright (c) 2008, 2010 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -74,7 +74,10 @@ test_case c99_union_init4
 test_case cast_fun_array_param
 test_case cast_typeof
 test_case decl_old_style_arguments
+test_case fold_test
 test_case gcc_extension
+test_case init_pop_member
+test_case return_type
 test_case type_question_colon
 test_case typefun
 test_case typename_as_var
@@ -141,6 +144,28 @@ test_case incorrect_array_size
 
 test_case long_double_int	"Checks for confusion of 'long double' with" \
 				"'long int'; PR bin/39639"
+
+test_case all_messages
+all_messages_body() {
+	local srcdir ok msg base flags
+
+	srcdir="$(atf_get_srcdir)"
+	ok="true"
+
+	for msg in $(seq 0 329); do
+		base="$(printf '%s/msg_%03d' "${srcdir}" "${msg}")"
+		flags="$(sed -n 's,^/\* lint1-flags: \(.*\) \*/$,\1,p' "${base}.c")"
+		flags="${flags:--g -S -w}"
+
+		# shellcheck disable=SC2154 disable=SC2086
+		${Atf_Check} -s not-exit:0 -o "file:${base}.exp" -e empty \
+		    ${LINT1} ${flags} "${base}.c" /dev/null \
+		|| ok="false"
+	done
+
+	atf_check "${ok}"
+}
+
 
 atf_init_test_cases()
 {

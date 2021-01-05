@@ -1,4 +1,4 @@
-/*	$NetBSD: ntp_io.c,v 1.27 2020/05/25 20:47:25 christos Exp $	*/
+/*	$NetBSD: ntp_io.c,v 1.29 2021/01/03 15:33:05 roy Exp $	*/
 
 /*
  * ntp_io.c - input/output routines for ntpd.	The socket-opening code
@@ -455,8 +455,13 @@ init_io(void)
 {
 	/* Init buffer free list and stat counters */
 	init_recvbuff(RECV_INIT);
+#ifdef SO_RERROR
+	/* route(4) overflow can be observed */
+	interface_interval = 0;
+#else
 	/* update interface every 5 minutes as default */
 	interface_interval = 300;
+#endif
 
 #ifdef WORK_PIPE
 	addremove_io_fd = &ntpd_addremove_io_fd;
@@ -4727,6 +4732,14 @@ process_routing_msgs(struct asyncio_reader *reader)
 		if (errno == ENOBUFS) {
 			msyslog(LOG_ERR,
 				"routing socket reports: %m");
+			/*
+			 * drain the routing socket as we need to update
+			 * the interfaces anyway
+			 */
+			do {
+				cnt = read(reader->fd, buffer, sizeof(buffer));
+			} while (cnt != -1 || errno == ENOBUFS);
+			timer_interfacetimeout(current_time + UPDATE_GRACE);
 		} else {
 			msyslog(LOG_ERR,
 				"routing socket reports: %m - disabling");
@@ -4837,6 +4850,9 @@ init_async_notifications()
 	struct sockaddr_nl sa;
 #else
 	int fd = socket(PF_ROUTE, SOCK_RAW, 0);
+#ifdef SO_RERROR
+	int on = 1;
+#endif
 #endif
 #ifdef RO_MSGFILTER
 	unsigned char msgfilter[] = {
@@ -4906,6 +4922,10 @@ init_async_notifications()
 	if (setsockopt(fd, PF_ROUTE, RO_MSGFILTER,
 	    &msgfilter, sizeof(msgfilter)) == -1)
 		msyslog(LOG_ERR, "RO_MSGFILTER: %m");
+#endif
+#ifdef SO_RERROR
+	if (setsockopt(fd, SOL_SOCKET, SO_RERROR, &on, sizeof(on)) == -1)
+		msyslog(LOG_ERR, "SO_RERROR: %m");
 #endif
 	make_socket_nonblocking(fd);
 #if defined(HAVE_SIGNALED_IO)

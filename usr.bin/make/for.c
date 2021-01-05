@@ -1,4 +1,4 @@
-/*	$NetBSD: for.c,v 1.129 2020/12/31 04:38:55 rillig Exp $	*/
+/*	$NetBSD: for.c,v 1.132 2020/12/31 14:10:04 rillig Exp $	*/
 
 /*
  * Copyright (c) 1992, The Regents of the University of California.
@@ -58,7 +58,7 @@
 #include "make.h"
 
 /*	"@(#)for.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: for.c,v 1.129 2020/12/31 04:38:55 rillig Exp $");
+MAKE_RCSID("$NetBSD: for.c,v 1.132 2020/12/31 14:10:04 rillig Exp $");
 
 static int forLevel = 0;	/* Nesting level */
 
@@ -352,11 +352,12 @@ Buf_AddEscaped(Buffer *cmds, const char *item, char endc)
 }
 
 /*
- * While expanding the body of a .for loop, replace the inner part of an
+ * While expanding the body of a .for loop, replace the variable name of an
  * expression like ${i} or ${i:...} or $(i) or $(i:...) with ":Uvalue".
  */
 static void
-SubstVarLong(For *f, const char **pp, const char **inout_mark, char endc)
+SubstVarLong(For *f, const char **pp, const char *bodyEnd, char endc,
+	     const char **inout_mark)
 {
 	size_t i;
 	const char *p = *pp;
@@ -366,7 +367,8 @@ SubstVarLong(For *f, const char **pp, const char **inout_mark, char endc)
 		char *varname = forVar->name;
 		size_t varnameLen = forVar->nameLen;
 
-		/* XXX: undefined behavior for p if varname is longer than p? */
+		if (varnameLen >= (size_t)(bodyEnd - p))
+			continue;
 		if (memcmp(p, varname, varnameLen) != 0)
 			continue;
 		/* XXX: why test for backslash here? */
@@ -374,7 +376,10 @@ SubstVarLong(For *f, const char **pp, const char **inout_mark, char endc)
 		    p[varnameLen] != '\\')
 			continue;
 
-		/* Found a variable match. Replace with :U<value> */
+		/*
+		 * Found a variable match.  Skip over the variable name and
+		 * instead add ':U<value>' to the current body.
+		 */
 		Buf_AddBytesBetween(&f->curBody, *inout_mark, p);
 		Buf_AddStr(&f->curBody, ":U");
 		Buf_AddEscaped(&f->curBody,
@@ -382,10 +387,9 @@ SubstVarLong(For *f, const char **pp, const char **inout_mark, char endc)
 
 		p += varnameLen;
 		*inout_mark = p;
-		break;
+		*pp = p;
+		return;
 	}
-
-	*pp = p;
 }
 
 /*
@@ -393,37 +397,30 @@ SubstVarLong(For *f, const char **pp, const char **inout_mark, char endc)
  * variable expressions like $i with their ${:U...} expansion.
  */
 static void
-SubstVarShort(For *f, const char **pp, const char **inout_mark)
+SubstVarShort(For *f, const char *p, const char **inout_mark)
 {
-	const char *p = *pp;
 	const char ch = *p;
+	ForVar *vars;
 	size_t i;
 
-	/* Probably a single character name, ignore $$ and stupid ones. */
-	if (!f->short_var || strchr("}):$", ch) != NULL) {
-		p++;
-		*pp = p;
+	/* Skip $$ and stupid ones. */
+	if (!f->short_var || strchr("}):$", ch) != NULL)
 		return;
-	}
 
+	vars = Vector_Get(&f->vars, 0);
 	for (i = 0; i < f->vars.len; i++) {
-		ForVar *var = Vector_Get(&f->vars, i);
-		const char *varname = var->name;
-		if (varname[0] != ch || varname[1] != '\0')
-			continue;
-
-		/* Found a variable match. Replace with ${:U<value>} */
-		Buf_AddBytesBetween(&f->curBody, *inout_mark, p);
-		Buf_AddStr(&f->curBody, "{:U");
-		Buf_AddEscaped(&f->curBody,
-		    f->items.words[f->sub_next + i], '}');
-		Buf_AddByte(&f->curBody, '}');
-
-		*inout_mark = ++p;
-		break;
+		const char *varname = vars[i].name;
+		if (varname[0] == ch && varname[1] == '\0')
+			goto found;
 	}
+	return;
 
-	*pp = p;
+found:
+	/* Replace $<ch> with ${:U<value>} */
+	Buf_AddBytesBetween(&f->curBody, *inout_mark, p), *inout_mark = p + 1;
+	Buf_AddStr(&f->curBody, "{:U");
+	Buf_AddEscaped(&f->curBody, f->items.words[f->sub_next + i], '}');
+	Buf_AddByte(&f->curBody, '}');
 }
 
 /*
@@ -442,24 +439,26 @@ SubstVarShort(For *f, const char **pp, const char **inout_mark)
 static void
 ForSubstBody(For *f)
 {
-	const char *p;
+	const char *p, *bodyEnd;
 	const char *mark;	/* where the last replacement left off */
 
 	Buf_Empty(&f->curBody);
 
 	mark = f->body.data;
+	bodyEnd = f->body.data + f->body.len;
 	for (p = mark; (p = strchr(p, '$')) != NULL;) {
 		if (p[1] == '{' || p[1] == '(') {
 			p += 2;
-			SubstVarLong(f, &p, &mark, p[-1] == '{' ? '}' : ')');
+			SubstVarLong(f, &p, bodyEnd, p[-1] == '{' ? '}' : ')',
+			    &mark);
 		} else if (p[1] != '\0') {
-			p++;
-			SubstVarShort(f, &p, &mark);
+			SubstVarShort(f, p + 1, &mark);
+			p += 2;
 		} else
 			break;
 	}
 
-	Buf_AddBytesBetween(&f->curBody, mark, f->body.data + f->body.len);
+	Buf_AddBytesBetween(&f->curBody, mark, bodyEnd);
 }
 
 /*
