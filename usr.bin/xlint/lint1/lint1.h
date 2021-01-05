@@ -1,4 +1,4 @@
-/* $NetBSD: lint1.h,v 1.45 2020/12/30 11:39:55 rillig Exp $ */
+/* $NetBSD: lint1.h,v 1.53 2021/01/04 22:26:50 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -33,6 +33,7 @@
  */
 
 #include "lint.h"
+#include "err-msgs.h"
 #include "op.h"
 
 /*
@@ -50,9 +51,9 @@
 #define WORST_ALIGN(x) (((x) + AVAL) & ~AVAL)
 #endif
 
-#define LWARN_BAD	-3
-#define LWARN_ALL	-2
-#define LWARN_NONE	-1
+#define LWARN_BAD	(-3)
+#define LWARN_ALL	(-2)
+#define LWARN_NONE	(-1)
 
 /*
  * Describes the position of a declaration or anything else.
@@ -70,7 +71,7 @@ typedef struct {
 		curr_pos.p_uniq++;					\
 		if (curr_pos.p_file == csrc_pos.p_file)			\
 			csrc_pos.p_uniq++;				\
-	} while (0)
+	} while (/*CONSTCOND*/0)
 
 /*
  * Strings cannot be referenced to simply by a pointer to its first
@@ -115,7 +116,7 @@ typedef struct {
 #define v_ldbl	v_u._v_ldbl
 
 /*
- * Structures of type str_t uniqely identify structures. This can't
+ * Structures of type str_t uniquely identify structures. This can't
  * be done in structures of type type_t, because these are copied
  * if they must be modified. So it would not be possible to check
  * if two structures are identical by comparing the pointers to
@@ -127,7 +128,7 @@ typedef struct {
 typedef	struct {
 	u_int	size;		/* size in bit */
 	u_int	align : 15;	/* alignment in bit */
-	u_int	sincompl : 1;	/* set if incomplete type */
+	bool	sincompl : 1;	/* set if incomplete type */
 	struct	sym *memb;	/* list of members */
 	struct	sym *stag;	/* symbol table entry of tag */
 	struct	sym *stdef;	/* symbol table entry of first typename */
@@ -137,7 +138,7 @@ typedef	struct {
  * same as above for enums
  */
 typedef	struct {
-	u_int	eincompl : 1;	/* incomplete enum type */
+	bool	eincompl : 1;	/* incomplete enum type */
 	struct	sym *elem;	/* list of enumerators */
 	struct	sym *etag;	/* symbol table entry of tag */
 	struct	sym *etdef;	/* symbol table entry of first typename */
@@ -149,15 +150,15 @@ typedef	struct {
  */
 struct type {
 	tspec_t	t_tspec;	/* type specifier */
-	u_int	t_aincompl : 1;	/* incomplete array type */
-	u_int	t_const : 1;	/* const modifier */
-	u_int	t_volatile : 1;	/* volatile modifier */
-	u_int	t_proto : 1;	/* function prototype (t_args valid) */
-	u_int	t_vararg : 1;	/* prototype with ... */
-	u_int	t_typedef : 1;	/* type defined with typedef */
-	u_int	t_isfield : 1;	/* type is bitfield */
-	u_int	t_isenum : 1;	/* type is (or was) enum (t_enum valid) */
-	u_int	t_ispacked : 1;	/* type is packed */
+	bool	t_aincompl : 1;	/* incomplete array type */
+	bool	t_const : 1;	/* const modifier */
+	bool	t_volatile : 1;	/* volatile modifier */
+	bool	t_proto : 1;	/* function prototype (t_args valid) */
+	bool	t_vararg : 1;	/* prototype with ... */
+	bool	t_typedef : 1;	/* type defined with typedef */
+	bool	t_bitfield : 1;
+	bool	t_isenum : 1;	/* type is (or was) enum (t_enum valid) */
+	bool	t_packed : 1;
 	union {
 		int	_t_dim;		/* dimension */
 		str_t	*_t_str;	/* struct/union tag */
@@ -226,16 +227,16 @@ typedef	struct sym {
 	pos_t	s_use_pos;	/* position of first use */
 	symt_t	s_kind;		/* type of symbol */
 	void   *s_keyword;
-	u_int	s_bitfield : 1;
-	u_int	s_set : 1;	/* variable set, label defined */
-	u_int	s_used : 1;	/* variable/label used */
-	u_int	s_arg : 1;	/* symbol is function argument */
-	u_int	s_reg : 1;	/* symbol is register variable */
-	u_int	s_defarg : 1;	/* undefined symbol in old style function
+	bool	s_bitfield : 1;
+	bool	s_set : 1;	/* variable set, label defined */
+	bool	s_used : 1;	/* variable/label used */
+	bool	s_arg : 1;	/* symbol is function argument */
+	bool	s_reg : 1;	/* symbol is register variable */
+	bool	s_defarg : 1;	/* undefined symbol in old style function
 				   definition */
-	u_int	s_rimpl : 1;	/* return value of function implicit decl. */
-	u_int	s_osdef : 1;	/* symbol stems from old style function def. */
-	u_int	s_inline : 1;	/* true if this is an inline function */
+	bool	s_rimpl : 1;	/* return value of function implicit decl. */
+	bool	s_osdef : 1;	/* symbol stems from old style function def. */
+	bool	s_inline : 1;	/* true if this is an inline function */
 	struct	sym *s_ext_sym;	/* for local declared external symbols pointer
 				   to external symbol with same name */
 	def_t	s_def;		/* declared, tentative defined, defined */
@@ -284,9 +285,9 @@ typedef	struct sbuf {
 typedef	struct tnode {
 	op_t	tn_op;		/* operator */
 	type_t	*tn_type;	/* type */
-	u_int	tn_lvalue : 1;	/* node is lvalue */
-	u_int	tn_cast : 1;	/* if tn_op == CVT, it's an explicit cast */
-	u_int	tn_parenthesized : 1; /* node parenthesized */
+	bool	tn_lvalue : 1;	/* node is lvalue */
+	bool	tn_cast : 1;	/* if tn_op == CVT, it's an explicit cast */
+	bool	tn_parenthesized : 1;
 	union {
 		struct {
 			struct	tnode *_tn_left;	/* (left) operand */
@@ -332,18 +333,18 @@ typedef	struct dinfo {
 	int	d_offset;	/* offset of next structure member */
 	int	d_stralign;	/* alignment required for current structure */
 	scl_t	d_ctx;		/* context of declaration */
-	u_int	d_const : 1;	/* const in declaration specifiers */
-	u_int	d_volatile : 1;	/* volatile in declaration specifiers */
-	u_int	d_inline : 1;	/* inline in declaration specifiers */
-	u_int	d_mscl : 1;	/* multiple storage classes */
-	u_int	d_terr : 1;	/* invalid type combination */
-	u_int	d_nedecl : 1;	/* 1 if at least a tag is declared */
-	u_int	d_vararg : 1;	/* ... in in current function decl. */
-	u_int	d_proto : 1;	/* current funct. decl. is prototype */
-	u_int	d_notyp : 1;	/* set if no type specifier was present */
-	u_int	d_asm : 1;	/* set if d_ctx == AUTO and asm() present */
-	u_int	d_ispacked : 1;	/* packed */
-	u_int	d_used : 1;	/* used */
+	bool	d_const : 1;	/* const in declaration specifiers */
+	bool	d_volatile : 1;	/* volatile in declaration specifiers */
+	bool	d_inline : 1;	/* inline in declaration specifiers */
+	bool	d_mscl : 1;	/* multiple storage classes */
+	bool	d_terr : 1;	/* invalid type combination */
+	bool	d_nedecl : 1;	/* if at least one tag is declared */
+	bool	d_vararg : 1;	/* ... in in current function decl. */
+	bool	d_proto : 1;	/* current function decl. is prototype */
+	bool	d_notyp : 1;	/* set if no type specifier was present */
+	bool	d_asm : 1;	/* set if d_ctx == AUTO and asm() present */
+	bool	d_packed : 1;
+	bool	d_used : 1;
 	type_t	*d_tagtyp;	/* tag during member declaration */
 	sym_t	*d_fargs;	/* list of arguments during function def. */
 	pos_t	d_fdpos;	/* position of function definition */
@@ -355,27 +356,13 @@ typedef	struct dinfo {
 } dinfo_t;
 
 /*
- * Type of stack which is used for initialisation of aggregate types.
- */
-typedef	struct	istk {
-	type_t	*i_type;		/* type of initialisation */
-	type_t	*i_subt;		/* type of next level */
-	u_int	i_brace : 1;		/* need } for pop */
-	u_int	i_nolimit : 1;		/* incomplete array type */
-	u_int	i_namedmem : 1;		/* has c9x named members */
-	sym_t	*i_mem;			/* next structure member */
-	int	i_remaining;		/* # of remaining elements */
-	struct	istk *i_next;		/* previous level */
-} istk_t;
-
-/*
  * Used to collect information about pointers and qualifiers in
  * declarators.
  */
 typedef	struct pqinf {
 	int	p_pcnt;			/* number of asterisks */
-	u_int	p_const : 1;
-	u_int	p_volatile : 1;
+	bool	p_const : 1;
+	bool	p_volatile : 1;
 	struct	pqinf *p_next;
 } pqinf_t;
 
@@ -390,18 +377,18 @@ typedef	struct clst {
 /*
  * Used to keep information about nested control statements.
  */
-typedef struct cstk {
+typedef struct control_statement {
 	int	c_env;			/* type of statement (T_IF, ...) */
-	u_int	c_loop : 1;		/* continue && break are valid */
-	u_int	c_switch : 1;		/* case && break are valid */
-	u_int	c_break : 1;		/* loop/switch has break */
-	u_int	c_cont : 1;		/* loop has continue */
-	u_int	c_default : 1;		/* switch has default */
-	u_int	c_infinite : 1;		/* break condition always false
+	bool	c_loop : 1;		/* continue && break are valid */
+	bool	c_switch : 1;		/* case && break are valid */
+	bool	c_break : 1;		/* loop/switch has break */
+	bool	c_cont : 1;		/* loop has continue */
+	bool	c_default : 1;		/* switch has default */
+	bool	c_infinite : 1;		/* break condition always false
 					   (for (;;), while (1)) */
-	u_int	c_rchif : 1;		/* end of if-branch reached */
-	u_int	c_noretval : 1;		/* had "return;" */
-	u_int	c_retval : 1;		/* had "return (e);" */
+	bool	c_rchif : 1;		/* end of if-branch reached */
+	bool	c_noretval : 1;		/* had "return;" */
+	bool	c_retval : 1;		/* had "return (e);" */
 	type_t	*c_swtype;		/* type of switch expression */
 	clst_t	*c_clst;		/* list of case values */
 	struct	mbl *c_fexprm;		/* saved memory for end of loop
@@ -409,7 +396,7 @@ typedef struct cstk {
 	tnode_t	*c_f3expr;		/* end of loop expr in for() */
 	pos_t	c_fpos;			/* position of end of loop expr */
 	pos_t	c_cfpos;	        /* same for csrc_pos */
-	struct	cstk *c_next;		/* outer control statement */
+	struct	control_statement *c_surrounding;
 } cstk_t;
 
 typedef struct {
@@ -449,3 +436,26 @@ typedef	struct err_set {
 #endif
 
 extern err_set	msgset;
+
+
+#ifdef DEBUG
+#  include "err-msgs.h"
+
+/* ARGSUSED */
+static inline void __attribute__((format(printf, 1, 2)))
+check_printf(const char *fmt, ...)
+{
+}
+
+#  define wrap_check_printf(func, id, args...)				\
+	do {								\
+		check_printf(__CONCAT(MSG_, id), ##args);		\
+		(func)(id, ##args);					\
+	} while (/*CONSTCOND*/0)
+
+#  define error(id, args...) wrap_check_printf(error, id, ##args)
+#  define warning(id, args...) wrap_check_printf(warning, id, ##args)
+#  define message(id, args...) wrap_check_printf(message, id, ##args)
+#  define gnuism(id, args...) wrap_check_printf(gnuism, id, ##args)
+#  define c99ism(id, args...) wrap_check_printf(c99ism, id, ##args)
+#endif

@@ -1,4 +1,4 @@
-/*	$NetBSD: lp64.h,v 1.7 2018/11/16 20:49:08 scole Exp $	*/
+/*	$NetBSD: lp64.h,v 1.9 2021/01/04 01:12:20 rillig Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.

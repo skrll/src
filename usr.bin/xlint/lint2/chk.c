@@ -1,4 +1,4 @@
-/* $NetBSD: chk.c,v 1.29 2020/12/30 10:46:11 rillig Exp $ */
+/* $NetBSD: chk.c,v 1.32 2021/01/04 22:26:51 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: chk.c,v 1.29 2020/12/30 10:46:11 rillig Exp $");
+__RCSID("$NetBSD: chk.c,v 1.32 2021/01/04 22:26:51 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -281,7 +281,7 @@ chkvtui(hte_t *hte, sym_t *def, sym_t *decl)
 		}
 		if (!eq || (sflag && dowarn)) {
 			pos1 = xstrdup(mkpos(&def->s_pos));
-			/* %s value used inconsistenty\t%s  ::  %s */
+			/* %s value used inconsistently\t%s  ::  %s */
 			msg(4, hte->h_name, pos1, mkpos(&call->f_pos));
 			free(pos1);
 		}
@@ -320,12 +320,10 @@ chkvtdi(hte_t *hte, sym_t *def, sym_t *decl)
 			eq = eqtype(xt1 = tp1, xt2 = tp2, 0, 0, 0, &dowarn);
 		}
 		if (!eq || (sflag && dowarn)) {
-			char b1[64], b2[64];
 			pos1 = xstrdup(mkpos(&def->s_pos));
 			/* %s value declared inconsistently\t%s  ::  %s */
-			msg(5, hte->h_name, tyname(b1, sizeof(b1), xt1),
-			    tyname(b2, sizeof(b2), xt2), pos1,
-			    mkpos(&sym->s_pos));
+			msg(5, hte->h_name, type_name(xt1), type_name(xt2),
+			    pos1, mkpos(&sym->s_pos));
 			free(pos1);
 		}
 	}
@@ -452,14 +450,13 @@ chkau(hte_t *hte, int n, sym_t *def, sym_t *decl, pos_t *pos1p,
 	tspec_t	t1, t2;
 	arginf_t *ai, *ai1;
 	char	*pos1;
-	char	tyname1[64], tyname2[64];
 
 	/*
-	 * If a function definition is available (def != NULL), we compair the
+	 * If a function definition is available (def != NULL), we compare the
 	 * function call (call) with the definition. Otherwise, if a function
 	 * definition is available and it is not an old style definition
-	 * (decl != NULL && TP(decl->s_type)->t_proto), we compair the call
-	 * with this declaration. Otherwise we compair it with the first
+	 * (decl != NULL && TP(decl->s_type)->t_proto), we compare the call
+	 * with this declaration. Otherwise we compare it with the first
 	 * call we have found (call1).
 	 */
 
@@ -467,7 +464,7 @@ chkau(hte_t *hte, int n, sym_t *def, sym_t *decl, pos_t *pos1p,
 	promote = def != NULL && def->s_osdef;
 
 	/*
-	 * If we compair with a definition or declaration, we must perform
+	 * If we compare with a definition or declaration, we must perform
 	 * the same checks for qualifiers in indirected types as in
 	 * assignments.
 	 */
@@ -482,7 +479,7 @@ chkau(hte_t *hte, int n, sym_t *def, sym_t *decl, pos_t *pos1p,
 	 * of an argument does not match exactly the expected type. The
 	 * result are lots of warnings which are really not necessary.
 	 * We print a warning only if
-	 *   (0) at least one type is not an interger type and types differ
+	 *   (0) at least one type is not an integer type and types differ
 	 *   (1) hflag is set and types differ
 	 *   (2) types differ, except in signedness
 	 * If the argument is an integer constant whose msb is not set,
@@ -490,7 +487,7 @@ chkau(hte_t *hte, int n, sym_t *def, sym_t *decl, pos_t *pos1p,
 	 * int). This is with and without hflag.
 	 * If the argument is an integer constant with value 0 and the
 	 * expected argument is of type pointer and the width of the
-	 * interger constant is the same as the width of the pointer,
+	 * integer constant is the same as the width of the pointer,
 	 * no warning is printed.
 	 */
 	t1 = arg1->t_tspec;
@@ -499,7 +496,7 @@ chkau(hte_t *hte, int n, sym_t *def, sym_t *decl, pos_t *pos1p,
 	    !arg1->t_isenum && !arg2->t_isenum) {
 		if (promote) {
 			/*
-			 * XXX Here is a problem: Althrough it is possible to
+			 * XXX Here is a problem: Although it is possible to
 			 * pass an int where a char/short it expected, there
 			 * may be loss in significant digits. We should first
 			 * check for const arguments if they can be converted
@@ -519,7 +516,7 @@ chkau(hte_t *hte, int n, sym_t *def, sym_t *decl, pos_t *pos1p,
 			}
 		}
 
-		if (styp(t1) == styp(t2)) {
+		if (signed_type(t1) == signed_type(t2)) {
 
 			/*
 			 * types differ only in signedness; get information
@@ -590,10 +587,8 @@ chkau(hte_t *hte, int n, sym_t *def, sym_t *decl, pos_t *pos1p,
 
 	pos1 = xstrdup(mkpos(pos1p));
 	/* %s, arg %d used inconsistently\t%s[%s]  ::  %s[%s] */
-	msg(6, hte->h_name, n, pos1,
-	    tyname(tyname1, sizeof(tyname1), arg1),
-	    mkpos(&call->f_pos),
-	    tyname(tyname2, sizeof(tyname2), arg2));
+	msg(6, hte->h_name, n, pos1, type_name(arg1),
+	    mkpos(&call->f_pos), type_name(arg2));
 	free(pos1);
 }
 
@@ -901,7 +896,7 @@ scanflike(hte_t *hte, fcall_t *call, int n, const char *fmt, type_t **ap)
 			if (!noasgn) {
 				if (t1 != PTR) {
 					inconarg(hte, call, n);
-				} else if (t2 != styp(sz)) {
+				} else if (t2 != signed_type(sz)) {
 					inconarg(hte, call, n);
 				} else if (hflag && t2 != sz) {
 					inconarg(hte, call, n);
@@ -935,7 +930,7 @@ scanflike(hte_t *hte, fcall_t *call, int n, const char *fmt, type_t **ap)
 		} else if (fc == 'X') {
 			/*
 			 * XXX valid in ANSI C, but in NetBSD's libc imple-
-			 * mented as "lx". Thats why it should be avoided.
+			 * mented as "lx". That's why it should be avoided.
 			 */
 			if (sz != NOTSPEC || !tflag)
 				badfmt(hte, call);
@@ -944,7 +939,7 @@ scanflike(hte_t *hte, fcall_t *call, int n, const char *fmt, type_t **ap)
 		} else if (fc == 'E') {
 			/*
 			 * XXX valid in ANSI C, but in NetBSD's libc imple-
-			 * mented as "lf". Thats why it should be avoided.
+			 * mented as "lf". That's why it should be avoided.
 			 */
 			if (sz != NOTSPEC || !tflag)
 				badfmt(hte, call);
@@ -1084,7 +1079,7 @@ chkrvu(hte_t *hte, sym_t *def)
 		/*
 		 * XXX as soon as we are able to disable single warnings
 		 * the following dependencies from hflag should be removed.
-		 * but for now I do'nt want to be botherd by this warnings
+		 * but for now I don't want to be bothered by this warnings
 		 * which are almost always useless.
 		 */
 		if (hflag == 0)
@@ -1157,13 +1152,11 @@ chkadecl(hte_t *hte, sym_t *def, sym_t *decl)
 			dowarn = 0;
 			eq = eqtype(xt1 = *ap1, xt2 = *ap2, 1, osdef, 0, &dowarn);
 			if (!eq || dowarn) {
-				char b1[64], b2[64];
 				pos1 = xstrdup(mkpos(&sym1->s_pos));
 				pos2 = mkpos(&sym->s_pos);
 				/* %s, arg %d declared inconsistently ... */
 				msg(11, hte->h_name, n + 1,
-				    tyname(b1, sizeof(b1), xt1),
-				    tyname(b2, sizeof(b2), xt2), pos1, pos2);
+				    type_name(xt1), type_name(xt2), pos1, pos2);
 				free(pos1);
 			}
 			n++;
@@ -1242,7 +1235,7 @@ eqtype(type_t *tp1, type_t *tp2, int ignqual, int promot, int asgn, int *dowarn)
 			 */
 			if (sflag || hflag || to != PTR)
 				return 0;
-			if (styp(t) != styp(tp2->t_tspec))
+			if (signed_type(t) != signed_type(tp2->t_tspec))
 				return 0;
 		}
 

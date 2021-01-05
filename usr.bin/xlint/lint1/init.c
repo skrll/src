@@ -1,4 +1,4 @@
-/*	$NetBSD: init.c,v 1.48 2020/12/30 11:04:48 rillig Exp $	*/
+/*	$NetBSD: init.c,v 1.60 2021/01/03 20:31:08 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,14 +37,61 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: init.c,v 1.48 2020/12/30 11:04:48 rillig Exp $");
+__RCSID("$NetBSD: init.c,v 1.60 2021/01/03 20:31:08 rillig Exp $");
 #endif
 
-#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "lint1.h"
+
+
+/*
+ * Type of stack which is used for initialisation of aggregate types.
+ *
+ * XXX: Since C99, a stack is an inappropriate data structure for modelling
+ * an initialization, since the designators don't have to be listed in a
+ * particular order and can designate parts of sub-objects.  The member names
+ * of non-leaf structs may thus appear repeatedly, as demonstrated in
+ * d_init_pop_member.c.
+ *
+ * XXX: During initialization, there may be members of the top-level struct
+ * that are partially initialized.  The simple i_remaining cannot model this
+ * appropriately.
+ *
+ * See C99 6.7.8, which spans 6 pages full of tricky details and carefully
+ * selected examples.
+ */
+typedef	struct istk {
+	type_t	*i_type;		/* type of initialisation */
+	type_t	*i_subt;		/* type of next level */
+	bool	i_brace : 1;		/* need } for pop */
+	bool	i_nolimit : 1;		/* incomplete array type */
+	bool	i_namedmem : 1;		/* has c9x named members */
+	sym_t	*i_mem;			/* next structure member */
+	int	i_remaining;		/* # of remaining elements */
+	struct	istk *i_next;		/* previous level */
+} istk_t;
+
+/*
+ * The names for a nested C99 initialization designator, in a circular list.
+ *
+ * Example:
+ *	struct stat st = {
+ *		.st_size = 123,
+ *		.st_mtim.tv_sec = 45,
+ *		.st_mtim.tv_nsec
+ *	};
+ *
+ *	During initialization, this list first contains ["st_size"], then
+ *	["st_mtim", "tv_sec"], then ["st_mtim", "tv_nsec"].
+ */
+typedef struct namlist {
+	const char *n_name;
+	struct namlist *n_prev;
+	struct namlist *n_next;
+} namlist_t;
+
 
 /*
  * initerr is set as soon as a fatal error occurred in an initialisation.
@@ -59,12 +106,6 @@ sym_t	*initsym;
 /* Points to the top element of the initialisation stack. */
 istk_t	*initstk;
 
-typedef struct namlist {
-	const char *n_name;
-	struct namlist *n_prev;
-	struct namlist *n_next;
-} namlist_t;
-
 /* Points to a c9x named member; */
 namlist_t	*namedmem = NULL;
 
@@ -78,13 +119,17 @@ static	int	initstack_string(tnode_t *);
 #endif
 
 void
-push_member(sb)
-	sbuf_t *sb;
+push_member(sbuf_t *sb)
 {
 	namlist_t *nam = xcalloc(1, sizeof (namlist_t));
 	nam->n_name = sb->sb_name;
 	DPRINTF(("%s: %s %p\n", __func__, nam->n_name, nam));
 	if (namedmem == NULL) {
+		/*
+		 * XXX: Why is this a circular list?
+		 * XXX: Why is this a doubly-linked list?
+		 * A simple stack should suffice.
+		 */
 		nam->n_prev = nam->n_next = nam;
 		namedmem = nam;
 	} else {
@@ -105,12 +150,27 @@ pop_member(void)
 	} else {
 		namlist_t *nam = namedmem;
 		namedmem = namedmem->n_next;
-		namedmem->n_next = nam->n_next;
-		namedmem->n_prev = nam->n_prev;
+		nam->n_prev->n_next = nam->n_next;
+		nam->n_next->n_prev = nam->n_prev;
 		free(nam);
 	}
 }
 
+static void
+named_member_dprint(void)
+{
+	namlist_t *name;
+
+	if (namedmem == NULL)
+		return;
+	name = namedmem;
+	DPRINTF(("named member:"));
+	do {
+		DPRINTF((" %s", name->n_name));
+		name = name->n_next;
+	} while (name != namedmem);
+	DPRINTF(("\n"));
+}
 
 /*
  * Initialize the initialisation stack by putting an entry for the variable
@@ -147,15 +207,12 @@ initstack_init(void)
 static void
 initstack_pop_item(void)
 {
-#ifdef DEBUG
-	char	buf[64];
-#endif
 	istk_t	*istk;
 	sym_t	*m;
 
 	istk = initstk;
 	DPRINTF(("%s: pop type=%s, brace=%d remaining=%d named=%d\n", __func__,
-	    tyname(buf, sizeof buf, istk->i_type ? istk->i_type : istk->i_subt),
+	    type_name(istk->i_type ? istk->i_type : istk->i_subt),
 	    istk->i_brace, istk->i_remaining, istk->i_namedmem));
 
 	initstk = istk->i_next;
@@ -164,7 +221,7 @@ initstack_pop_item(void)
 	lint_assert(istk != NULL);
 
 	DPRINTF(("%s: top type=%s, brace=%d remaining=%d named=%d\n", __func__,
-	    tyname(buf, sizeof buf, istk->i_type ? istk->i_type : istk->i_subt),
+	    type_name(istk->i_type ? istk->i_type : istk->i_subt),
 	    istk->i_brace, istk->i_remaining, istk->i_namedmem));
 
 	istk->i_remaining--;
@@ -177,7 +234,7 @@ initstack_pop_item(void)
 
 		DPRINTF(("%s: named remaining=%d type=%s, rhs.name=%s\n",
 		    __func__, istk->i_remaining,
-		    tyname(buf, sizeof(buf), istk->i_type), namedmem->n_name));
+		    type_name(istk->i_type), namedmem->n_name));
 
 		for (m = istk->i_type->t_str->memb; m != NULL; m = m->s_next) {
 			DPRINTF(("%s: pop lhs.name=%s rhs.name=%s\n", __func__,
@@ -191,6 +248,7 @@ initstack_pop_item(void)
 				return;
 			}
 		}
+		/* undefined struct/union member: %s */
 		error(101, namedmem->n_name);
 		DPRINTF(("%s: end rhs.name=%s\n", __func__, namedmem->n_name));
 		pop_member();
@@ -248,9 +306,6 @@ initstack_pop_nobrace(void)
 static void
 initstack_push(void)
 {
-#ifdef DEBUG
-	char	buf[64];
-#endif
 	istk_t	*istk, *inxt;
 	int	cnt;
 	sym_t	*m;
@@ -259,8 +314,7 @@ initstack_push(void)
 
 	/* Extend an incomplete array type by one element */
 	if (istk->i_remaining == 0) {
-		DPRINTF(("%s(extend) %s\n", __func__,
-		    tyname(buf, sizeof(buf), istk->i_type)));
+		DPRINTF(("%s(extend) %s\n", __func__, type_name(istk->i_type)));
 		/*
 		 * Inside of other aggregate types must not be an incomplete
 		 * type.
@@ -284,7 +338,7 @@ initstack_push(void)
 again:
 	istk = initstk;
 
-	DPRINTF(("%s(%s)\n", __func__, tyname(buf, sizeof(buf), istk->i_type)));
+	DPRINTF(("%s(%s)\n", __func__, type_name(istk->i_type)));
 	switch (istk->i_type->t_tspec) {
 	case ARRAY:
 		if (namedmem) {
@@ -307,7 +361,7 @@ again:
 		istk->i_nolimit = incompl(istk->i_type);
 		istk->i_remaining = istk->i_type->t_dim;
 		DPRINTF(("%s: elements array %s[%d] %s\n", __func__,
-		    tyname(buf, sizeof(buf), istk->i_subt), istk->i_remaining,
+		    type_name(istk->i_subt), istk->i_remaining,
 		    namedmem ? namedmem->n_name : "*none*"));
 		break;
 	case UNION:
@@ -324,7 +378,7 @@ again:
 		}
 		cnt = 0;
 		DPRINTF(("%s: lookup type=%s, name=%s named=%d\n", __func__,
-		    tyname(buf, sizeof(buf), istk->i_type),
+		    type_name(istk->i_type),
 		    namedmem ? namedmem->n_name : "*none*", istk->i_namedmem));
 		for (m = istk->i_type->t_str->memb; m != NULL; m = m->s_next) {
 			if (m->s_bitfield && m->s_name == unnamed)
@@ -358,8 +412,7 @@ again:
 		}
 		istk->i_brace = 1;
 		DPRINTF(("%s: unnamed type=%s, brace=%d\n", __func__,
-		    tyname(buf, sizeof(buf),
-			istk->i_type ? istk->i_type : istk->i_subt),
+		    type_name(istk->i_type ? istk->i_type : istk->i_subt),
 		    istk->i_brace));
 		if (cnt == 0) {
 			/* cannot init. struct/union with no named member */
@@ -397,7 +450,7 @@ initstack_check_too_many(void)
 	if (istk->i_remaining == 0 && !istk->i_nolimit && !istk->i_namedmem) {
 		switch (istk->i_type->t_tspec) {
 		case ARRAY:
-			/* too many array initializers */
+			/* too many array initializers, expected %d */
 			error(173, istk->i_type->t_dim);
 			break;
 		case STRUCT:
@@ -417,13 +470,12 @@ initstack_check_too_many(void)
 static void
 initstack_next_brace(void)
 {
-	char buf[64];
 
 	DPRINTF(("%s\n", __func__));
 	if (initstk->i_type != NULL &&
 	    tspec_is_scalar(initstk->i_type->t_tspec)) {
-		/* invalid initializer */
-		error(176, tyname(buf, sizeof(buf), initstk->i_type));
+		/* invalid initializer type %s */
+		error(176, type_name(initstk->i_type));
 		initerr = 1;
 	}
 	if (!initerr)
@@ -432,9 +484,7 @@ initstack_next_brace(void)
 		initstack_push();
 	if (!initerr) {
 		initstk->i_brace = 1;
-		DPRINTF(("%s: %p %s\n", __func__,
-		    namedmem,
-		    tyname(buf, sizeof(buf),
+		DPRINTF(("%s: %p %s\n", __func__, namedmem, type_name(
 			initstk->i_type ? initstk->i_type : initstk->i_subt)));
 	}
 }
@@ -472,7 +522,7 @@ init_lbrace(void)
 	if ((initsym->s_scl == AUTO || initsym->s_scl == REG) &&
 	    initstk->i_next == NULL) {
 		if (tflag && !tspec_is_scalar(initstk->i_subt->t_tspec))
-			/* no automatic aggregate initialization in trad. C*/
+			/* no automatic aggregate initialization in trad. C */
 			warning(188);
 	}
 
@@ -506,12 +556,14 @@ mkinit(tnode_t *tn)
 	struct	mbl *tmem;
 	scl_t	sc;
 #ifdef DEBUG
-	char	buf[64], sbuf[64];
+	char	sbuf[64];
 #endif
 
 	DPRINTF(("%s: type=%s, value=%s\n", __func__,
-	    tyname(buf, sizeof(buf), tn->tn_type),
+	    type_name(tn->tn_type),
 	    print_tnode(sbuf, sizeof(sbuf), tn)));
+	named_member_dprint();
+
 	if (initerr || tn == NULL)
 		return;
 
@@ -530,7 +582,7 @@ mkinit(tnode_t *tn)
 	 */
 	if ((sc == AUTO || sc == REG) &&
 	    initsym->s_type->t_tspec != ARRAY && initstk->i_next == NULL) {
-		ln = getnnode(initsym, 0);
+		ln = new_name_node(initsym, 0);
 		ln->tn_type = tduptyp(ln->tn_type);
 		ln->tn_type->t_const = 0;
 		tn = build(ASSIGN, ln, tn);
@@ -581,7 +633,7 @@ mkinit(tnode_t *tn)
 	expr(tn, 1, 0, 1);
 	trestor(tmem);
 
-	if (tspec_is_int(lt) && ln->tn_type->t_isfield && !tspec_is_int(rt)) {
+	if (tspec_is_int(lt) && ln->tn_type->t_bitfield && !tspec_is_int(rt)) {
 		/*
 		 * Bit-fields can be initialized in trad. C only by integer
 		 * constants.
@@ -591,7 +643,7 @@ mkinit(tnode_t *tn)
 			warning(186);
 	}
 
-	if (lt != rt || (initstk->i_type->t_isfield && tn->tn_op == CON))
+	if (lt != rt || (initstk->i_type->t_bitfield && tn->tn_op == CON))
 		tn = convert(INIT, 0, initstk->i_type, tn);
 
 	if (tn != NULL && tn->tn_op != CON) {
@@ -600,7 +652,7 @@ mkinit(tnode_t *tn)
 		if (conaddr(tn, &sym, &offs) == -1) {
 			if (sc == AUTO || sc == REG) {
 				/* non-constant initializer */
-				(void)c99ism(177);
+				c99ism(177);
 			} else {
 				/* non-constant initializer */
 				error(177);
