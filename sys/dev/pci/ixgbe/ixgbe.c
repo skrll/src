@@ -2481,7 +2481,7 @@ ixgbe_setup_vlan_hw_support(struct adapter *adapter)
 	struct vlanid_list *vlanidp;
 
 	/*
-	 *  This function is called from both if_init and ifflags_cb()
+	 * This function is called from both if_init and ifflags_cb()
 	 * on NetBSD.
 	 */
 
