@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.42 2020/12/30 13:17:42 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.48 2021/01/03 20:38:26 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -123,8 +123,8 @@ extern	void	msglist(void);
 extern	void	error(int, ...);
 extern	void	warning(int, ...);
 extern	void	message(int, ...);
-extern	int	gnuism(int, ...);
-extern	int	c99ism(int, ...);
+extern	void	gnuism(int, ...);
+extern	void	c99ism(int, ...);
 extern	void	lerror(const char *, int, const char *, ...)
      __attribute__((__noreturn__,__format__(__printf__, 3, 4)));
 extern	void	assert_failed(const char *, int, const char *, const char *)
@@ -198,9 +198,9 @@ extern	void	print_previous_declaration(int, sym_t *);
  */
 extern	type_t	*incref(type_t *, tspec_t);
 extern	type_t	*tincref(type_t *, tspec_t);
-extern	tnode_t	*getcnode(type_t *, val_t *);
-extern	tnode_t	*getnnode(sym_t *, int);
-extern	tnode_t	*getsnode(strg_t *);
+extern	tnode_t	*new_constant_node(type_t *, val_t *);
+extern	tnode_t	*new_name_node(sym_t *, int);
+extern	tnode_t	*new_string_node(strg_t *);
 extern	sym_t	*struct_or_union_member(tnode_t *, op_t, sym_t *);
 extern	tnode_t	*build(op_t, tnode_t *, tnode_t *);
 extern	tnode_t	*cconv(tnode_t *);
@@ -212,8 +212,8 @@ extern	tnode_t	*build_sizeof(type_t *);
 extern	tnode_t	*build_offsetof(type_t *, sym_t *);
 extern	tnode_t	*build_alignof(type_t *);
 extern	tnode_t	*cast(tnode_t *, type_t *);
-extern	tnode_t	*funcarg(tnode_t *, tnode_t *);
-extern	tnode_t	*funccall(tnode_t *, tnode_t *);
+extern	tnode_t	*new_function_argument_node(tnode_t *, tnode_t *);
+extern	tnode_t	*new_function_call_node(tnode_t *, tnode_t *);
 extern	val_t	*constant(tnode_t *, int);
 extern	void	expr(tnode_t *, int, int, int);
 extern	void	check_expr_misc(tnode_t *, int, int, int, int, int, int);
@@ -232,14 +232,14 @@ extern	int	nargusg;
 extern	pos_t	argsused_pos;
 extern	int	nvararg;
 extern	pos_t	vapos;
-extern	int	prflstrg;
+extern	int	printflike_argnum;
 extern	pos_t	printflike_pos;
-extern	int	scflstrg;
+extern	int	scanflike_argnum;
 extern	pos_t	scanflike_pos;
 extern	int	constcond_flag;
 extern	int	llibflg;
 extern	int	lwarn;
-extern	int	bitfieldtype_ok;
+extern	bool	bitfieldtype_ok;
 extern	int	plibflg;
 extern	int	quadflg;
 
@@ -248,7 +248,9 @@ extern	void	popctrl(int);
 extern	void	check_statement_reachable(void);
 extern	void	funcdef(sym_t *);
 extern	void	funcend(void);
-extern	void	label(int, sym_t *, tnode_t *);
+extern	void	named_label(sym_t *);
+extern	void	case_label(tnode_t *);
+extern	void	default_label(void);
 extern	void	if1(tnode_t *);
 extern	void	if2(void);
 extern	void	if3(int);
