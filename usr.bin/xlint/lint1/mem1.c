@@ -1,4 +1,4 @@
-/*	$NetBSD: mem1.c,v 1.18 2016/12/24 17:43:45 christos Exp $	*/
+/*	$NetBSD: mem1.c,v 1.22 2021/01/04 22:29:00 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: mem1.c,v 1.18 2016/12/24 17:43:45 christos Exp $");
+__RCSID("$NetBSD: mem1.c,v 1.22 2021/01/04 22:29:00 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -55,7 +55,7 @@ typedef struct fn {
 	char	*fn_name;
 	size_t	fn_len;
 	int	fn_id;
-	struct	fn *fn_nxt;
+	struct	fn *fn_next;
 } fn_t;
 
 static	fn_t	*fnames;
@@ -70,11 +70,11 @@ srchfn(const char *s, size_t len)
 {
 	fn_t	*fn;
 
-	for (fn = fnames; fn != NULL; fn = fn->fn_nxt) {
+	for (fn = fnames; fn != NULL; fn = fn->fn_next) {
 		if (fn->fn_len == len && memcmp(fn->fn_name, s, len) == 0)
 			break;
 	}
-	return (fn);
+	return fn;
 }
 
 /*
@@ -84,7 +84,7 @@ const char *
 fnalloc(const char *s)
 {
 
-	return (s != NULL ? fnnalloc(s, strlen(s)) : NULL);
+	return s != NULL ? fnnalloc(s, strlen(s)) : NULL;
 }
 
 struct repl {
@@ -100,9 +100,9 @@ void
 fnaddreplsrcdir(char *arg)
 {
 	struct repl *r = xmalloc(sizeof(*r));
-	
+
 	r->orig = arg;
-	if ((r->repl = strchr(arg, '=')) == NULL) 
+	if ((r->repl = strchr(arg, '=')) == NULL)
 		err(1, "Bad replacement directory spec `%s'", arg);
 	r->len = r->repl - r->orig;
 	*(r->repl)++ = '\0';
@@ -136,7 +136,7 @@ fnnalloc(const char *s, size_t len)
 	static	int	nxt_id = 0;
 
 	if (s == NULL)
-		return (NULL);
+		return NULL;
 
 	if ((fn = srchfn(s, len)) == NULL) {
 		fn = xmalloc(sizeof (fn_t));
@@ -146,7 +146,7 @@ fnnalloc(const char *s, size_t len)
 		fn->fn_name[len] = '\0';
 		fn->fn_len = len;
 		fn->fn_id = nxt_id++;
-		fn->fn_nxt = fnames;
+		fn->fn_next = fnames;
 		fnames = fn;
 		/* Write id of this filename to the output file. */
 		outclr();
@@ -154,7 +154,7 @@ fnnalloc(const char *s, size_t len)
 		outchar('s');
 		outstrg(fnxform(fn->fn_name, fn->fn_len));
 	}
-	return (fn->fn_name);
+	return fn->fn_name;
 }
 
 /*
@@ -166,8 +166,8 @@ getfnid(const char *s)
 	fn_t	*fn;
 
 	if (s == NULL || (fn = srchfn(s, strlen(s))) == NULL)
-		return (-1);
-	return (fn->fn_id);
+		return -1;
+	return fn->fn_id;
 }
 
 /*
@@ -215,23 +215,26 @@ xnewblk(void)
 	mb->blk = xmapalloc(mblklen);
 	mb->size = mblklen;
 
-	return (mb);
+	return mb;
 }
 
-/*
- * Allocate new memory. If the first block of the list has not enough
- * free space, or there is no first block, get a new block. The new
- * block is taken from the free list or, if there is no block on the
- * free list, is allocated using xnewblk(). If a new block is allocated
- * it is initialized with zero. Blocks taken from the free list are
- * zero'd in xfreeblk().
- */
+/* Allocate new memory, initialized with zero. */
 static void *
 xgetblk(mbl_t **mbp, size_t s)
 {
 	mbl_t	*mb;
 	void	*p;
 	size_t	t = 0;
+
+	/*
+	 * If the first block of the list has not enough free space,
+	 * or there is no first block, get a new block. The new block
+	 * is taken from the free list or, if there is no block on the
+	 * free list, is allocated using xnewblk().
+	 *
+	 * If a new block is allocated it is initialized with zero.
+	 * Blocks taken from the free list are zero'd in xfreeblk().
+	 */
 
 	s = WORST_ALIGN(s);
 	if ((mb = *mbp) == NULL || mb->nfree < s) {
@@ -260,7 +263,7 @@ xgetblk(mbl_t **mbp, size_t s)
 #ifdef BLKDEBUG
 	(void)memset(p, 0, s);
 #endif
-	return (p);
+	return p;
 }
 
 /*
@@ -304,14 +307,14 @@ getlblk(size_t l, size_t s)
 		(void)memset(&mblks[nmblks], 0, ML_INC * sizeof (mbl_t *));
 		nmblks += ML_INC;
 	}
-	return (xgetblk(&mblks[l], s));
+	return xgetblk(&mblks[l], s);
 }
 
 void *
 getblk(size_t s)
 {
 
-	return (getlblk(mblklev, s));
+	return getlblk(mblklev, s);
 }
 
 /*
@@ -341,7 +344,7 @@ void *
 tgetblk(size_t s)
 {
 
-	return (xgetblk(&tmblk, s));
+	return xgetblk(&tmblk, s);
 }
 
 /*
@@ -351,7 +354,7 @@ tnode_t *
 getnode(void)
 {
 
-	return (tgetblk(sizeof (tnode_t)));
+	return tgetblk(sizeof (tnode_t));
 }
 
 /*
@@ -376,7 +379,7 @@ tsave(void)
 
 	tmem = tmblk;
 	tmblk = NULL;
-	return (tmem);
+	return tmem;
 }
 
 /*

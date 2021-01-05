@@ -1,4 +1,4 @@
-/*	$NetBSD: print.c,v 1.4 2008/07/31 15:21:34 christos Exp $	*/
+/*	$NetBSD: print.c,v 1.8 2021/01/03 18:35:51 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -35,13 +35,12 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: print.c,v 1.4 2008/07/31 15:21:34 christos Exp $");
+__RCSID("$NetBSD: print.c,v 1.8 2021/01/03 18:35:51 rillig Exp $");
 #endif
 
 #include <stdio.h>
 
 #include "lint1.h"
-#include "externs1.h"
 
 static const char *str_op_t[] =
 {
@@ -108,7 +107,7 @@ static const char *str_op_t[] =
 };
 
 char *
-prtnode(char *buf, size_t bufsiz, const tnode_t *tn)
+print_tnode(char *buf, size_t bufsiz, const tnode_t *tn)
 {
 	strg_t *st;
 	val_t *v;
@@ -132,9 +131,9 @@ prtnode(char *buf, size_t bufsiz, const tnode_t *tn)
 			break;
 		}
 		break;
-		
+
 	case STRING:
-		st = tn->tn_strg;
+		st = tn->tn_string;
 		switch (st->st_tspec) {
 		case CHAR:
 		case SCHAR:

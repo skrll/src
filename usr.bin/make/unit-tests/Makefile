@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.253 2020/12/20 19:37:23 rillig Exp $
+# $NetBSD: Makefile,v 1.260 2020/12/31 03:05:12 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -31,7 +31,8 @@
 # src/tests/usr.bin/make/t_make.sh.
 #
 
-# we use this below but we might be an older make
+# we use these below but we might be an older make
+.MAKE.OS?= ${uname -s:L:sh}
 .MAKE.UID?= ${id -u:L:sh}
 
 # Each test is in a sub-makefile.
@@ -41,6 +42,7 @@
 TESTS+=		archive
 TESTS+=		archive-suffix
 TESTS+=		cmd-errors
+TESTS+=		cmd-errors-jobs
 TESTS+=		cmd-errors-lint
 TESTS+=		cmd-interrupt
 TESTS+=		cmdline
@@ -151,13 +153,17 @@ TESTS+=		directive-elifmake
 TESTS+=		directive-elifndef
 TESTS+=		directive-elifnmake
 TESTS+=		directive-else
+TESTS+=		directive-endfor
 TESTS+=		directive-endif
 TESTS+=		directive-error
 TESTS+=		directive-export
 TESTS+=		directive-export-env
+TESTS+=		directive-export-impl
 TESTS+=		directive-export-gmake
 TESTS+=		directive-export-literal
 TESTS+=		directive-for
+TESTS+=		directive-for-errors
+TESTS+=		directive-for-escape
 TESTS+=		directive-for-generating-endif
 TESTS+=		directive-for-lines
 TESTS+=		directive-for-null
@@ -502,12 +508,6 @@ SED_CMDS.var-op-shell+=	\
 	-e 's,^${.SHELL:T}: [ 0-9:]*,,' \
 	-e '/command/s,No such.*,not found,'
 SED_CMDS.vardebug+=	-e 's,${.SHELL},</path/to/shell>,'
-SED_CMDS.varmod-gmtime+=	-e 's,Tue Jan 19 03:14:08 2038,<normalized>,'
-SED_CMDS.varmod-gmtime+=	${:D FreeBSD i386 still has 32-bit time_t. }
-SED_CMDS.varmod-gmtime+=	-e 's,Fri Dec 13 20:45:52 1901,<normalized>,'
-SED_CMDS.varmod-localtime+=	-e 's,Tue Jan 19 04:14:08 2038,<normalized>,'
-SED_CMDS.varmod-localtime+=	${:D FreeBSD i386 still has 32-bit time_t. }
-SED_CMDS.varmod-localtime+=	-e 's,Fri Dec 13 21:45:52 1901,<normalized>,'
 SED_CMDS.varmod-subst-regex+= \
 			-e 's,\(Regex compilation error:\).*,\1 (details omitted),'
 SED_CMDS.varname-dot-parsedir=	-e '/in some cases/ s,^make: "[^"]*,make: "<normalized>,'
@@ -587,7 +587,7 @@ LANG=		C
 
 MAKE_TEST_ENV?=	MALLOC_OPTIONS="JA"	# for jemalloc
 
-.if ${.MAKE.OS:U${uname -s:L:sh}} == "NetBSD"
+.if ${.MAKE.OS} == "NetBSD"
 LIMIT_RESOURCES?=	ulimit -v 200000
 .endif
 LIMIT_RESOURCES?=	:

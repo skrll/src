@@ -1,4 +1,4 @@
-/*	$NetBSD: externs.h,v 1.7 2020/02/10 04:54:01 christos Exp $	*/
+/*	$NetBSD: externs.h,v 1.12 2021/01/04 01:12:20 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -44,9 +44,9 @@ extern	void	inittyp(void);
 /*
  * tyname.c
  */
-extern	const	char *tyname(char *, size_t, const type_t *);
+extern	const char *type_name(const type_t *);
 extern	int	sametype(const type_t *, const type_t *);
-extern	const	char *basictyname(tspec_t);
+extern	const	char *tspec_name(tspec_t);
 
 /*
  * mem.c

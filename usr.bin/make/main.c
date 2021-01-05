@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.500 2020/12/20 14:39:46 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.508 2020/12/31 17:39:36 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -68,7 +68,8 @@
  * SUCH DAMAGE.
  */
 
-/* The main file for this entire program. Exit routines etc. reside here.
+/*
+ * The main file for this entire program. Exit routines etc. reside here.
  *
  * Utility functions defined in this file:
  *
@@ -109,7 +110,7 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.500 2020/12/20 14:39:46 rillig Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.508 2020/12/31 17:39:36 rillig Exp $");
 #if defined(MAKE_NATIVE) && !defined(lint)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
@@ -125,7 +126,6 @@ Boolean deleteOnError;		/* .DELETE_ON_ERROR: set */
 static int maxJobTokens;	/* -j argument */
 Boolean enterFlagObj;		/* -w and objdir != srcdir */
 
-Boolean preserveUndefined;
 static int jp_0 = -1, jp_1 = -1; /* ends of parent job pipe */
 Boolean doing_depend;		/* Set while reading .depend */
 static Boolean jobsRunning;	/* TRUE if the jobs might be running */
@@ -288,7 +288,7 @@ parse_debug_options(const char *argvalue)
 			debug |= DEBUG_JOB;
 			break;
 		case 'L':
-			opts.lint = TRUE;
+			opts.strict = TRUE;
 			break;
 		case 'l':
 			debug |= DEBUG_LOUD;
@@ -373,7 +373,7 @@ MainParseArgChdir(const char *argvalue)
 	if (chdir(argvalue) == -1) {
 		(void)fprintf(stderr, "%s: chdir %s: %s\n",
 		    progname, argvalue, strerror(errno));
-		exit(1);
+		exit(2);	/* Not 1 so -q can distinguish error */
 	}
 	if (getcwd(curdir, MAXPATHLEN) == NULL) {
 		(void)fprintf(stderr, "%s: %s.\n", progname, strerror(errno));
@@ -426,7 +426,7 @@ MainParseArgJobs(const char *argvalue)
 		(void)fprintf(stderr,
 		    "%s: illegal argument to -j -- must be positive integer!\n",
 		    progname);
-		exit(1);	/* XXX: why not 2? */
+		exit(2);	/* Not 1 so -q can distinguish error */
 	}
 	Var_Append(MAKEFLAGS, "-j", VAR_GLOBAL);
 	Var_Append(MAKEFLAGS, argvalue, VAR_GLOBAL);
@@ -573,13 +573,15 @@ MainParseArg(char c, const char *argvalue)
 	return TRUE;
 }
 
-/* Parse the given arguments.  Called from main() and from
+/*
+ * Parse the given arguments.  Called from main() and from
  * Main_ParseArgLine() when the .MAKEFLAGS target is used.
  *
  * The arguments must be treated as read-only and will be freed after the
  * call.
  *
- * XXX: Deal with command line overriding .MAKEFLAGS in makefile */
+ * XXX: Deal with command line overriding .MAKEFLAGS in makefile
+ */
 static void
 MainParseArgs(int argc, char **argv)
 {
@@ -671,10 +673,12 @@ noarg:
 	usage();
 }
 
-/* Break a line of arguments into words and parse them.
+/*
+ * Break a line of arguments into words and parse them.
  *
  * Used when a .MFLAGS or .MAKEFLAGS target is encountered during parsing and
- * by main() when reading the MAKEFLAGS environment variable. */
+ * by main() when reading the MAKEFLAGS environment variable.
+ */
 void
 Main_ParseArgLine(const char *line)
 {
@@ -774,8 +778,10 @@ SetVarObjdir(Boolean writable, const char *var, const char *suffix)
 	return TRUE;
 }
 
-/* Splits str into words, adding them to the list.
- * The string must be kept alive as long as the list. */
+/*
+ * Splits str into words, adding them to the list.
+ * The string must be kept alive as long as the list.
+ */
 int
 str2Lst_Append(StringList *lp, char *str)
 {
@@ -822,12 +828,12 @@ MakeMode(void)
 	}
 
 	if (mode.str[0] != '\0') {
-		if (strstr(mode.str, "compat")) {
+		if (strstr(mode.str, "compat") != NULL) {
 			opts.compatMake = TRUE;
 			forceJobs = FALSE;
 		}
 #if USE_META
-		if (strstr(mode.str, "meta"))
+		if (strstr(mode.str, "meta") != NULL)
 			meta_mode_init(mode.str);
 #endif
 	}
@@ -838,7 +844,7 @@ MakeMode(void)
 static void
 PrintVar(const char *varname, Boolean expandVars)
 {
-	if (strchr(varname, '$')) {
+	if (strchr(varname, '$') != NULL) {
 		char *evalue;
 		(void)Var_Subst(varname, VAR_GLOBAL, VARE_WANTRES, &evalue);
 		/* TODO: handle errors */
@@ -1114,7 +1120,7 @@ CmdOpts_Init(void)
 	opts.compatMake = FALSE;
 	opts.debug = DEBUG_NONE;
 	/* opts.debug_file has been initialized earlier */
-	opts.lint = FALSE;
+	opts.strict = FALSE;
 	opts.debugVflag = FALSE;
 	opts.checkEnvFirst = FALSE;
 	Lst_Init(&opts.makefiles);
@@ -1135,11 +1141,13 @@ CmdOpts_Init(void)
 	Lst_Init(&opts.create);
 }
 
-/* Initialize MAKE and .MAKE to the path of the executable, so that it can be
+/*
+ * Initialize MAKE and .MAKE to the path of the executable, so that it can be
  * found by execvp(3) and the shells, even after a chdir.
  *
  * If it's a relative path and contains a '/', resolve it to an absolute path.
- * Otherwise keep it as is, assuming it will be found in the PATH. */
+ * Otherwise keep it as is, assuming it will be found in the PATH.
+ */
 static void
 InitVarMake(const char *argv0)
 {
@@ -1147,18 +1155,21 @@ InitVarMake(const char *argv0)
 
 	if (argv0[0] != '/' && strchr(argv0, '/') != NULL) {
 		char pathbuf[MAXPATHLEN];
-		const char *abs = cached_realpath(argv0, pathbuf);
+		const char *abspath = cached_realpath(argv0, pathbuf);
 		struct stat st;
-		if (abs != NULL && abs[0] == '/' && stat(make, &st) == 0)
-			make = abs;
+		if (abspath != NULL && abspath[0] == '/' &&
+		    stat(make, &st) == 0)
+			make = abspath;
 	}
 
 	Var_Set("MAKE", make, VAR_GLOBAL);
 	Var_Set(".MAKE", make, VAR_GLOBAL);
 }
 
-/* Add the directories from the colon-separated syspath to defSysIncPath.
- * After returning, the contents of syspath is unspecified. */
+/*
+ * Add the directories from the colon-separated syspath to defSysIncPath.
+ * After returning, the contents of syspath is unspecified.
+ */
 static void
 InitDefSysIncPath(char *syspath)
 {
@@ -1240,7 +1251,7 @@ InitMaxJobs(void)
 		    "%s: illegal value for .MAKE.JOBS "
 		    "-- must be positive integer!\n",
 		    progname);
-		exit(1);
+		exit(2);	/* Not 1 so -q can distinguish error */
 	}
 
 	if (n != opts.maxJobs) {
@@ -1321,9 +1332,11 @@ ReadFirstDefaultMakefile(void)
 	free(prefs);
 }
 
-/* Initialize variables such as MAKE, MACHINE, .MAKEFLAGS.
+/*
+ * Initialize variables such as MAKE, MACHINE, .MAKEFLAGS.
  * Initialize a few modules.
- * Parse the arguments from MAKEFLAGS and the command line. */
+ * Parse the arguments from MAKEFLAGS and the command line.
+ */
 static void
 main_Init(int argc, char **argv)
 {
@@ -1510,8 +1523,10 @@ main_Init(int argc, char **argv)
 	InitDefSysIncPath(syspath);
 }
 
-/* Read the system makefile followed by either makefile, Makefile or the
- * files given by the -f option. Exit on parse errors. */
+/*
+ * Read the system makefile followed by either makefile, Makefile or the
+ * files given by the -f option. Exit on parse errors.
+ */
 static void
 main_ReadFiles(void)
 {
@@ -1531,8 +1546,7 @@ main_PrepareMaking(void)
 {
 	/* In particular suppress .depend for '-r -V .OBJDIR -f /dev/null' */
 	if (!opts.noBuiltins || opts.printVars == PVM_NONE) {
-		/* ignore /dev/null and anything starting with "no" */
-		(void)Var_Subst("${.MAKE.DEPENDFILE:N/dev/null:Nno*:T}",
+		(void)Var_Subst("${.MAKE.DEPENDFILE}",
 		    VAR_CMDLINE, VARE_WANTRES, &makeDependfile);
 		if (makeDependfile[0] != '\0') {
 			/* TODO: handle errors */
@@ -1588,9 +1602,11 @@ main_PrepareMaking(void)
 		Targ_PrintGraph(1);
 }
 
-/* Make the targets.
+/*
+ * Make the targets.
  * If the -v or -V options are given, print variables instead.
- * Return whether any of the targets is out-of-date. */
+ * Return whether any of the targets is out-of-date.
+ */
 static Boolean
 main_Run(void)
 {
@@ -1645,7 +1661,7 @@ main_CleanUp(void)
 static int
 main_Exit(Boolean outOfDate)
 {
-	if (opts.lint && (main_errors > 0 || Parse_GetFatals() > 0))
+	if (opts.strict && (main_errors > 0 || Parse_GetFatals() > 0))
 		return 2;	/* Not 1 so -q can distinguish error */
 	return outOfDate ? 1 : 0;
 }
@@ -1663,7 +1679,8 @@ main(int argc, char **argv)
 	return main_Exit(outOfDate);
 }
 
-/* Open and parse the given makefile, with all its side effects.
+/*
+ * Open and parse the given makefile, with all its side effects.
  *
  * Results:
  *	0 if ok. -1 if couldn't open file.
@@ -1775,6 +1792,8 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 		goto bad;
 	}
 
+	Var_ReexportVars();
+
 	/*
 	 * Fork
 	 */
@@ -1789,8 +1808,6 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 		 */
 		(void)dup2(pipefds[1], 1);
 		(void)close(pipefds[1]);
-
-		Var_ReexportVars();
 
 		(void)execv(shellPath, UNCONST(args));
 		_exit(1);
@@ -1846,10 +1863,12 @@ bad:
 	return bmake_strdup("");
 }
 
-/* Print a printf-style error message.
+/*
+ * Print a printf-style error message.
  *
  * In default mode, this error message has no consequences, in particular it
- * does not affect the exit status.  Only in lint mode (-dL) it does. */
+ * does not affect the exit status.  Only in lint mode (-dL) it does.
+ */
 void
 Error(const char *fmt, ...)
 {
@@ -1874,11 +1893,13 @@ Error(const char *fmt, ...)
 	main_errors++;
 }
 
-/* Wait for any running jobs to finish, then produce an error message,
+/*
+ * Wait for any running jobs to finish, then produce an error message,
  * finally exit immediately.
  *
  * Exiting immediately differs from Parse_Error, which exits only after the
- * current top-level makefile has been parsed completely. */
+ * current top-level makefile has been parsed completely.
+ */
 void
 Fatal(const char *fmt, ...)
 {
@@ -1902,8 +1923,10 @@ Fatal(const char *fmt, ...)
 	exit(2);		/* Not 1 so -q can distinguish error */
 }
 
-/* Major exception once jobs are being created.
- * Kills all jobs, prints a message and exits. */
+/*
+ * Major exception once jobs are being created.
+ * Kills all jobs, prints a message and exits.
+ */
 void
 Punt(const char *fmt, ...)
 {
@@ -1931,12 +1954,14 @@ DieHorribly(void)
 	if (DEBUG(GRAPH2))
 		Targ_PrintGraph(2);
 	Trace_Log(MAKEERROR, NULL);
-	exit(2);		/* Not 1, so -q can distinguish error */
+	exit(2);		/* Not 1 so -q can distinguish error */
 }
 
-/* Called when aborting due to errors in child shell to signal abnormal exit.
+/*
+ * Called when aborting due to errors in child shell to signal abnormal exit.
  * The program exits.
- * Errors is the number of errors encountered in Make_Make. */
+ * Errors is the number of errors encountered in Make_Make.
+ */
 void
 Finish(int errs)
 {
@@ -2093,8 +2118,10 @@ SetErrorVars(GNode *gn)
 	}
 }
 
-/* Print some helpful information in case of an error.
- * The caller should exit soon after calling this function. */
+/*
+ * Print some helpful information in case of an error.
+ * The caller should exit soon after calling this function.
+ */
 void
 PrintOnError(GNode *gn, const char *msg)
 {

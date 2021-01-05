@@ -1,4 +1,4 @@
-/*	$NetBSD: lint.h,v 1.14 2018/09/07 15:16:15 christos Exp $	*/
+/*	$NetBSD: lint.h,v 1.23 2021/01/04 01:12:20 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -38,15 +38,16 @@
 #endif
 
 #include <sys/types.h>
-#include <stddef.h>
 #include <err.h>
 #include <inttypes.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 
 #include "param.h"
 
 /*
- * Type specifiers, used in type structures (type_t) and otherwere.
+ * Type specifiers, used in type structures (type_t) and elsewhere.
  */
 typedef enum {
 	NOTSPEC = 0,
@@ -81,9 +82,10 @@ typedef enum {
 	COMPLEX,	/* _Complex */
 	FCOMPLEX,	/* float _Complex */
 	DCOMPLEX,	/* double _Complex */
-	LCOMPLEX,	/* long double _Complex */
-	NTSPEC
+	LCOMPLEX	/* long double _Complex */
+#define NTSPEC (LCOMPLEX + 1)
 } tspec_t;
+
 
 /*
  * size of types, name and classification
@@ -92,46 +94,44 @@ typedef	struct {
 	size_t	tt_sz;			/* size in bits */
 	size_t	tt_psz;			/* size, different from tt_sz
 					   if pflag is set */
-	tspec_t	tt_styp;		/* signed counterpart */
-	tspec_t	tt_utyp;		/* unsigned counterpart */
-	u_int	tt_isityp : 1;		/* 1 if integer type */
-	u_int	tt_isutyp : 1;		/* 1 if unsigned integer type */
-	u_int	tt_isftyp : 1;		/* 1 if floating point type */
-	u_int	tt_isatyp : 1;		/* 1 if arithmetic type */
-	u_int	tt_issclt : 1;		/* 1 if scalar type */
-	u_int	tt_isctyp : 1;		/* 1 if complex type */
-	const char *tt_name;		/* Bezeichnung des Typs */
+	tspec_t	tt_signed_counterpart;
+	tspec_t	tt_unsigned_counterpart;
+	bool	tt_is_int : 1;		/* integer type */
+	bool	tt_is_uint : 1;		/* unsigned integer type */
+	bool	tt_is_float : 1;	/* floating point type */
+	bool	tt_is_arith : 1;	/* arithmetic type */
+	bool	tt_is_scalar : 1;	/* scalar type */
+	bool	tt_is_complex : 1;	/* complex type */
+	const char *tt_name;		/* name of the type */
 } ttab_t;
 
-#define size(t)		(ttab[t].tt_sz)
-#define psize(t)	(ttab[t].tt_psz)
-#define styp(t)		(ttab[t].tt_styp)
-#define utyp(t)		(ttab[t].tt_utyp)
-#define isityp(t)	(ttab[t].tt_isityp)
-#define isutyp(t)	(ttab[t].tt_isutyp)
-#define isftyp(t)	(ttab[t].tt_isftyp)
-#define isatyp(t)	(ttab[t].tt_isatyp)
-#define isctyp(t)	(ttab[t].tt_isctyp)
-#define issclt(t)	(ttab[t].tt_issclt)
+#define size(t)			(ttab[t].tt_sz)
+#define psize(t)		(ttab[t].tt_psz)
+#define signed_type(t)		(ttab[t].tt_signed_counterpart)
+#define unsigned_type(t)	(ttab[t].tt_unsigned_counterpart)
+#define tspec_is_int(t)		(ttab[t].tt_is_int)
+#define tspec_is_uint(t)	(ttab[t].tt_is_uint)
+#define tspec_is_float(t)	(ttab[t].tt_is_float)
+#define tspec_is_arith(t)	(ttab[t].tt_is_arith)
+#define tspec_is_complex(t)	(ttab[t].tt_is_complex)
+#define tspec_is_scalar(t)	(ttab[t].tt_is_scalar)
 
 extern	ttab_t	ttab[];
 
 
 typedef	enum {
-	NODECL,			/* until now not declared */
+	NODECL,			/* not declared until now */
 	DECL,			/* declared */
 	TDEF,			/* tentative defined */
 	DEF			/* defined */
 } def_t;
 
-/*
- * Following structure contains some data used for the output buffer.
- */
+/* Some data used for the output buffer. */
 typedef	struct	ob {
 	char	*o_buf;		/* buffer */
 	char	*o_end;		/* first byte after buffer */
 	size_t	o_len;		/* length of buffer */
-	char	*o_nxt;		/* next free byte in buffer */
+	char	*o_next;	/* next free byte in buffer */
 } ob_t;
 
 typedef struct type type_t;

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.53 2019/11/11 22:45:32 joerg Exp $
+#	$NetBSD: Makefile,v 1.55 2021/01/03 18:48:37 rillig Exp $
 
 .include <bsd.own.mk>
 
@@ -17,7 +17,6 @@ CWARNFLAGS.clang+=	-Wno-error=implicit-int-float-conversion
 
 CPPFLAGS+=	-I${.CURDIR} -I. -DPASS=\"${PROG}.h\"
 
-LINTFLAGS=	-aehpz
 BINDIR=		/usr/libexec
 
 CLEANFILES+=	${MAN}
@@ -39,9 +38,11 @@ LDADD+=		-ll
 DPADD+=		${LIBL}
 .endif
 
+.include "Makefile.err-msgs-h"
 .include "Makefile.ops-h"
 .include "Makefile.ops-c"
 
 .include <bsd.prog.mk>
 
 ${SRCS}: ops.h
+${SRCS:Nerr.c}: err-msgs.h
