@@ -1,4 +1,4 @@
-/*	$NetBSD: lint.h,v 1.18 2020/12/30 10:46:11 rillig Exp $	*/
+/*	$NetBSD: lint.h,v 1.23 2021/01/04 01:12:20 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -38,9 +38,10 @@
 #endif
 
 #include <sys/types.h>
-#include <stddef.h>
 #include <err.h>
 #include <inttypes.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 
 #include "param.h"
@@ -81,9 +82,10 @@ typedef enum {
 	COMPLEX,	/* _Complex */
 	FCOMPLEX,	/* float _Complex */
 	DCOMPLEX,	/* double _Complex */
-	LCOMPLEX,	/* long double _Complex */
-	NTSPEC
+	LCOMPLEX	/* long double _Complex */
+#define NTSPEC (LCOMPLEX + 1)
 } tspec_t;
+
 
 /*
  * size of types, name and classification
@@ -92,21 +94,21 @@ typedef	struct {
 	size_t	tt_sz;			/* size in bits */
 	size_t	tt_psz;			/* size, different from tt_sz
 					   if pflag is set */
-	tspec_t	tt_styp;		/* signed counterpart */
-	tspec_t	tt_utyp;		/* unsigned counterpart */
-	u_int	tt_is_int : 1;		/* 1 if integer type */
-	u_int	tt_is_uint : 1;		/* 1 if unsigned integer type */
-	u_int	tt_is_float : 1;	/* 1 if floating point type */
-	u_int	tt_is_arith : 1;	/* 1 if arithmetic type */
-	u_int	tt_is_scalar : 1;	/* 1 if scalar type */
-	u_int	tt_is_complex : 1;	/* 1 if complex type */
+	tspec_t	tt_signed_counterpart;
+	tspec_t	tt_unsigned_counterpart;
+	bool	tt_is_int : 1;		/* integer type */
+	bool	tt_is_uint : 1;		/* unsigned integer type */
+	bool	tt_is_float : 1;	/* floating point type */
+	bool	tt_is_arith : 1;	/* arithmetic type */
+	bool	tt_is_scalar : 1;	/* scalar type */
+	bool	tt_is_complex : 1;	/* complex type */
 	const char *tt_name;		/* name of the type */
 } ttab_t;
 
 #define size(t)			(ttab[t].tt_sz)
 #define psize(t)		(ttab[t].tt_psz)
-#define styp(t)			(ttab[t].tt_styp)
-#define utyp(t)			(ttab[t].tt_utyp)
+#define signed_type(t)		(ttab[t].tt_signed_counterpart)
+#define unsigned_type(t)	(ttab[t].tt_unsigned_counterpart)
 #define tspec_is_int(t)		(ttab[t].tt_is_int)
 #define tspec_is_uint(t)	(ttab[t].tt_is_uint)
 #define tspec_is_float(t)	(ttab[t].tt_is_float)
@@ -118,15 +120,13 @@ extern	ttab_t	ttab[];
 
 
 typedef	enum {
-	NODECL,			/* until now not declared */
+	NODECL,			/* not declared until now */
 	DECL,			/* declared */
 	TDEF,			/* tentative defined */
 	DEF			/* defined */
 } def_t;
 
-/*
- * Following structure contains some data used for the output buffer.
- */
+/* Some data used for the output buffer. */
 typedef	struct	ob {
 	char	*o_buf;		/* buffer */
 	char	*o_end;		/* first byte after buffer */

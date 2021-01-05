@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.59 2020/12/30 01:33:30 rillig Exp $	*/
+/*	$NetBSD: err.c,v 1.64 2021/01/03 18:48:37 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: err.c,v 1.59 2020/12/30 01:33:30 rillig Exp $");
+__RCSID("$NetBSD: err.c,v 1.64 2021/01/03 18:48:37 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -183,7 +183,7 @@ const	char *msgs[] = {
 	"negative shift",					      /* 121 */
 	"shift greater than size of object",			      /* 122 */
 	"illegal combination of %s (%s) and %s (%s), op %s",	      /* 123 */
-	"illegal pointer combination, op %s",			      /* 124 */
+	"illegal pointer combination (%s) and (%s), op %s",	      /* 124 */
 	"ANSI C forbids ordered comparisons of pointers to functions",/* 125 */
 	"incompatible types in conditional",			      /* 126 */
 	"'&' before array or function: ignored",		      /* 127 */
@@ -367,7 +367,7 @@ const	char *msgs[] = {
 	"ANSI C forbids conversion of %s to %s, op %s",		      /* 305 */
 	"constant truncated by conversion, op %s",		      /* 306 */
 	"static variable %s set but not used",			      /* 307 */
-	"Invalid type %s for _Complex",				      /* 308 */
+	"invalid type for _Complex",				      /* 308 */
 	"extra bits set to 0 in conversion of '%s' to '%s', op %s",   /* 309 */
 	"symbol renaming can't be used on function arguments",	      /* 310 */
 	"symbol renaming can't be used on automatic variables",	      /* 311 */
@@ -464,7 +464,7 @@ vwarning(int n, va_list ap)
 }
 
 void
-error(int n, ...)
+(error)(int n, ...)
 {
 	va_list	ap;
 
@@ -502,7 +502,7 @@ assert_failed(const char *file, int line, const char *func, const char *cond)
 }
 
 void
-warning(int n, ...)
+(warning)(int n, ...)
 {
 	va_list	ap;
 
@@ -512,7 +512,7 @@ warning(int n, ...)
 }
 
 void
-message(int n, ...)
+(message)(int n, ...)
 {
 	va_list	ap;
 	const	char *fn;
@@ -534,44 +534,31 @@ message(int n, ...)
  * forward? We need to answer that and then we can fix this to be
  * "right"... [perry, 2 Nov 2002]
 */
-int
-c99ism(int n, ...)
+void
+(c99ism)(int n, ...)
 {
 	va_list	ap;
-	int	msg;
+	bool extensions_ok = Sflag || gflag;
 
 	va_start(ap, n);
-	if (sflag && !(Sflag || gflag)) {
+	if (sflag && !extensions_ok) {
 		verror(n, ap);
-		msg = 1;
-	} else if (!sflag && (Sflag || gflag)) {
-		msg = 0;
-	} else {
+	} else if (sflag || !extensions_ok) {
 		vwarning(n, ap);
-		msg = 1;
 	}
 	va_end(ap);
-
-	return msg;
 }
 
-int
-gnuism(int n, ...)
+void
+(gnuism)(int n, ...)
 {
 	va_list	ap;
-	int	msg;
 
 	va_start(ap, n);
 	if (sflag && !gflag) {
 		verror(n, ap);
-		msg = 1;
-	} else if (!sflag && gflag) {
-		msg = 0;
-	} else {
+	} else if (sflag || !gflag) {
 		vwarning(n, ap);
-		msg = 1;
 	}
 	va_end(ap);
-
-	return msg;
 }
