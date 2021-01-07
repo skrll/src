@@ -1,4 +1,4 @@
-/*	$NetBSD: ahci.c,v 1.22 2020/04/05 20:59:38 skrll Exp $	*/
+/*	$NetBSD: ahci.c,v 1.23 2021/01/05 16:30:37 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2007 Ruslan Ermilov and Vsevolod Lobko.
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ahci.c,v 1.22 2020/04/05 20:59:38 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ahci.c,v 1.23 2021/01/05 16:30:37 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1240,7 +1240,8 @@ ahci_device_bulk_start(struct usbd_xfer *xfer)
 		tlen = uimin(len,4096);
 		td[i]->buffer = DMAADDR(&xfer->ux_dmabuf, offset) | 0xa0000000;
 		td[i]->buflen = tlen;
-		td[i]->control = (isread ? ADMHCD_TD_IN:ADMHCD_TD_OUT) | toggle | ADMHCD_TD_OWN | short_ok;
+		td[i]->control = (isread ? ADMHCD_TD_IN : ADMHCD_TD_OUT) |
+		    toggle | ADMHCD_TD_OWN | short_ok;
 		td[i]->len = tlen;
 		toggle = ADMHCD_TD_TOGGLE;
 		len -= tlen;

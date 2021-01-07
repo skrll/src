@@ -1,4 +1,4 @@
-/*	$NetBSD: ohci.c,v 1.314 2020/12/22 01:07:23 riastradh Exp $	*/
+/*	$NetBSD: ohci.c,v 1.315 2021/01/05 18:00:21 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2005, 2012, 2016, 2020 The NetBSD Foundation, Inc.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.314 2020/12/22 01:07:23 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ohci.c,v 1.315 2021/01/05 18:00:21 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

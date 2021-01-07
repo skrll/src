@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci.c,v 1.137 2021/01/02 12:39:33 jmcneill Exp $	*/
+/*	$NetBSD: xhci.c,v 1.138 2021/01/05 18:00:21 skrll Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.137 2021/01/02 12:39:33 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.138 2021/01/05 18:00:21 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -3021,19 +3021,19 @@ xhci_init_slot(struct usbd_device *dev, uint32_t slot)
 	xs = &sc->sc_slots[slot];
 
 	/* allocate contexts */
-	int error = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
+	int err = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
 	    USBMALLOC_COHERENT | USBMALLOC_ZERO, &xs->xs_dc_dma);
-	if (error) {
+	if (err) {
 		DPRINTFN(1, "failed to allocmem output device context %jd",
-		    error, 0, 0, 0);
+		    err, 0, 0, 0);
 		return USBD_NOMEM;
 	}
 
-	error = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
+	err = usb_allocmem(&sc->sc_bus, sc->sc_pgsz, sc->sc_pgsz,
 	    USBMALLOC_COHERENT | USBMALLOC_ZERO, &xs->xs_ic_dma);
-	if (error) {
+	if (err) {
 		DPRINTFN(1, "failed to allocmem input device context %jd",
-		    error, 0, 0, 0);
+		    err, 0, 0, 0);
 		return USBD_NOMEM;
 	}
 
