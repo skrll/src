@@ -211,8 +211,7 @@ usb_block_allocmem(bus_dma_tag_t tag, size_t size, size_t align,
 void
 usb_block_real_freemem(usb_dma_block_t *b)
 {
-	KASSERT(!cpu_intr_p());
-	KASSERT(!cpu_softintr_p());
+	ASSERT_SLEEPABLE();
 
 	bus_dmamap_unload(b->tag, b->map);
 	bus_dmamap_destroy(b->tag, b->map);
