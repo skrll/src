@@ -12,10 +12,6 @@ SUBDIR+=	arm
 SUBDIR+=	arm64
 .endif
 
-#.if !empty(MACHINE_ARCH:riscv*)
-#SUBDIR+=	riscv
-#.endif
-
 .include <bsd.subdir.mk>
 
 # Regenerate MD set lists in distrib/sets/lists/dtb. Run this whenever
