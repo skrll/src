@@ -280,9 +280,10 @@ struct rcv_queue {
 	uint8_t		start_qs_rbdr_idx; /* RBDR idx in the above QS */
 	uint8_t		caching;
 	struct		rx_tx_queue_stats stats;
-
+#ifdef LRO
 	boolean_t	lro_enabled;
 	struct lro_ctrl	lro;
+#endif
 } __aligned(CACHE_LINE_SIZE);
 
 struct cmp_queue {

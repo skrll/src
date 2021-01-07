@@ -289,7 +289,25 @@ struct nicvf {
 	struct nicvf		*pnicvf;
 	device_t		dev;
 
+	bool			sc_pass1_silicon;
+	pci_chipset_tag_t	sc_pc;
+	pcitag_t		sc_pcitag;
+
+	bus_space_tag_t		sc_memt;
+	bus_space_handle_t	sc_memh;
+//	bus_addr_t		sc_memb;
+//	bus_size_t		sc_mems;
+
+	struct ethercom    	ec;
+
+	bus_dma_tag_t      	dmat;
+
+	bool			attached;
+	bool			detaching;
+
 	struct ifnet *		ifp;
+	struct if_percpuq	*ipq;	/* softint-based input queues */
+
 	kmutex_t		core_mtx;
 	struct ifmedia		if_media;
 	uint32_t		if_flags;
@@ -306,7 +324,7 @@ struct nicvf {
 	uint8_t			rx_queues;
 	uint8_t			tx_queues;
 	uint8_t			max_queues;
-	struct resource		*reg_base;
+//	struct resource		*reg_base;
 	boolean_t		link_up;
 	boolean_t		hw_tso;
 	uint8_t			duplex;
@@ -325,10 +343,17 @@ struct nicvf {
 	kmutex_t		stats_mtx;
 
 	/* MSI-X  */
+	pci_intr_handle_t *	sc_pihp;
+	int			sc_nintr;
+	void **			sc_ih;
+
+
 	boolean_t		msix_enabled;
 	uint8_t			num_vec;
-	struct msix_entry	msix_entries[NIC_VF_MSIX_VECTORS];
-	struct resource *	msix_table_res;
+
+//	struct msix_entry	msix_entries[NIC_VF_MSIX_VECTORS];
+//	struct resource *	msix_table_res;
+	void *			ih[NIC_VF_MSIX_VECTORS];
 	char			irq_name[NIC_VF_MSIX_VECTORS][20];
 	boolean_t		irq_allocated[NIC_VF_MSIX_VECTORS];
 

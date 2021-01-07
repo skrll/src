@@ -30,8 +30,6 @@
  */
 
 #ifdef _KERNEL_OPT
-#include "opt_inet.h"
-#include "opt_inet6.h"
 #include "opt_net_mpsafe.h"
 #endif
 
@@ -131,7 +129,7 @@ CFATTACH_DECL3_NEW(nicpf, sizeof(struct nicpf),
     nicpf_probe, nicpf_attach, nicpf_detach, NULL, NULL, NULL,
     DVF_DETACH_SHUTDOWN);
 
-
+//XXXNH
 #ifdef PCI_IOV
 static int nicpf_iov_init(device_t, uint16_t, const nvlist_t *);
 static void nicpf_iov_uninit(device_t);
@@ -1153,6 +1151,10 @@ nic_register_interrupts(struct nicpf *nic, struct pci_attach_args *pa)
 		aprint_error("\n");
 		goto fail;
 	}
+
+	pci_intr_setattr(nic->sc_pc, &nic->sc_pihp[irq],
+	    PCI_INTR_MPSAFE, true);
+
 	aprint_normal_dev(nic->dev, "mbox0 interrupting at %s\n", intrstr);
 
 	vec = NIC_PF_INTR_ID_MBOX1;
@@ -1167,6 +1169,10 @@ nic_register_interrupts(struct nicpf *nic, struct pci_attach_args *pa)
 		aprint_error("\n");
 		goto fail;
 	}
+
+	pci_intr_setattr(nic->sc_pc, &nic->sc_pihp[irq],
+	    PCI_INTR_MPSAFE, true);
+
 	aprint_normal_dev(nic->dev, "mbox1 interrupting at %s\n", intrstr);
 
 	/* Enable mailbox interrupt */

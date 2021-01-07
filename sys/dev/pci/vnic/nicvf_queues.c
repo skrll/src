@@ -321,7 +321,7 @@ nicvf_rb_ptr_to_mbuf(struct nicvf *nic, bus_addr_t rb_ptr)
 	mbuf = rinfo->mbuf;
 	if (__predict_false(mbuf == NULL)) {
 		panic("%s: Received packet fragment with NULL mbuf",
-		    device_get_nameunit(nic->dev));
+		    device_xname(nic->dev));
 	}
 	/*
 	 * Clear the mbuf in the descriptor to indicate
@@ -425,7 +425,7 @@ nicvf_init_rbdr(struct nicvf *nic, struct rbdr *rbdr, int ring_len,
 	rbdr->rbdr_taskq = taskqueue_create_fast("nicvf_rbdr_taskq", M_WAITOK,
 	    taskqueue_thread_enqueue, &rbdr->rbdr_taskq);
 	taskqueue_start_threads(&rbdr->rbdr_taskq, 1, PI_NET, "%s: rbdr_taskq",
-	    device_get_nameunit(nic->dev));
+	    device_xname(nic->dev));
 
 	return (0);
 }
@@ -742,7 +742,9 @@ nicvf_cq_intr_handler(struct nicvf *nic, uint8_t cq_idx)
 	struct snd_queue *sq = &qs->sq[cq_idx];
 	struct rcv_queue *rq;
 	struct cqe_rx_t *cq_desc;
+#ifdef LRO
 	struct lro_ctrl	*lro;
+#endif
 	int rq_idx;
 	int cmp_err;
 
@@ -807,9 +809,9 @@ done:
 	nicvf_queue_reg_write(nic, NIC_QSET_CQ_0_7_DOOR, cq_idx, processed_cqe);
 
 	if ((tx_done > 0) &&
-	    ((if_getdrvflags(nic->ifp) & IFF_DRV_RUNNING) != 0)) {
+	    (ifp->if_flags & IFF_RUNNING) != 0)) {
 		/* Reenable TXQ if its stopped earlier due to SQ full */
-		if_setdrvflagbits(nic->ifp, IFF_DRV_RUNNING, IFF_DRV_OACTIVE);
+		ifp->if_flags |= IFF_RUNNING;
 		taskqueue_enqueue(sq->snd_taskq, &sq->snd_task);
 	}
 out:
@@ -852,7 +854,7 @@ nicvf_qs_err_task(void *arg, int pending)
 	qs = nic->qs;
 
 	/* Deactivate network interface */
-	if_setdrvflagbits(nic->ifp, IFF_DRV_OACTIVE, IFF_DRV_RUNNING);
+	ifp->if_flags &= ~IFF_RUNNING;
 
 	/* Check if it is CQ err */
 	for (qidx = 0; qidx < qs->cq_cnt; qidx++) {
@@ -870,7 +872,7 @@ nicvf_qs_err_task(void *arg, int pending)
 		nicvf_enable_intr(nic, NICVF_INTR_CQ, qidx);
 	}
 
-	if_setdrvflagbits(nic->ifp, IFF_DRV_RUNNING, IFF_DRV_OACTIVE);
+	ifp->if_flags |= IFF_RUNNING;
 	/* Re-enable Qset error interrupt */
 	nicvf_enable_intr(nic, NICVF_INTR_QS_ERR, 0);
 }
@@ -910,7 +912,7 @@ nicvf_init_cmp_queue(struct nicvf *nic, struct cmp_queue *cq, int q_len,
 
 	/* Initizalize lock */
 	snprintf(cq->mtx_name, sizeof(cq->mtx_name), "%s: CQ(%d) lock",
-	    device_get_nameunit(nic->dev), qidx);
+	    device_xname(nic->dev), qidx);
 	mtx_init(&cq->mtx, cq->mtx_name, NULL, MTX_DEF);
 
 	err = nicvf_alloc_q_desc_mem(nic, &cq->dmem, q_len, CMP_QUEUE_DESC_SIZE,
@@ -936,7 +938,7 @@ nicvf_init_cmp_queue(struct nicvf *nic, struct cmp_queue *cq, int q_len,
 	cq->cmp_taskq = taskqueue_create_fast("nicvf_cmp_taskq", M_WAITOK,
 	    taskqueue_thread_enqueue, &cq->cmp_taskq);
 	taskqueue_start_threads(&cq->cmp_taskq, 1, PI_NET, "%s: cmp_taskq(%d)",
-	    device_get_nameunit(nic->dev), qidx);
+	    device_xname(nic->dev), qidx);
 
 	return (0);
 }
@@ -1049,7 +1051,7 @@ nicvf_init_snd_queue(struct nicvf *nic, struct snd_queue *sq, int q_len,
 
 	/* Initizalize TX lock for this queue */
 	snprintf(sq->mtx_name, sizeof(sq->mtx_name), "%s: SQ(%d) lock",
-	    device_get_nameunit(nic->dev), qidx);
+	    device_xname(nic->dev), qidx);
 	mtx_init(&sq->mtx, sq->mtx_name, NULL, MTX_DEF);
 
 	NICVF_TX_LOCK(sq);
@@ -1131,7 +1133,7 @@ nicvf_init_snd_queue(struct nicvf *nic, struct snd_queue *sq, int q_len,
 	sq->snd_taskq = taskqueue_create_fast("nicvf_snd_taskq", M_WAITOK,
 	    taskqueue_thread_enqueue, &sq->snd_taskq);
 	taskqueue_start_threads(&sq->snd_taskq, 1, PI_NET, "%s: snd_taskq(%d)",
-	    device_get_nameunit(nic->dev), qidx);
+	    device_xname(nic->dev), qidx);
 
 	return (0);
 error:
@@ -1294,26 +1296,32 @@ nicvf_rcv_queue_config(struct nicvf *nic, struct queue_set *qs,
 	struct rcv_queue *rq;
 	struct rq_cfg rq_cfg;
 	struct ifnet *ifp;
+#ifdef LRO
 	struct lro_ctrl	*lro;
+#endif
 
 	ifp = nic->ifp;
 
 	rq = &qs->rq[qidx];
 	rq->enable = enable;
 
+#ifdef LRO
 	lro = &rq->lro;
-
+#endif
 	/* Disable receive queue */
 	nicvf_queue_reg_write(nic, NIC_QSET_RQ_0_7_CFG, qidx, 0);
 
 	if (!rq->enable) {
 		nicvf_reclaim_rcv_queue(nic, qs, qidx);
+#ifdef LRO
 		/* Free LRO memory */
 		tcp_lro_free(lro);
 		rq->lro_enabled = FALSE;
+#endif
 		return;
 	}
 
+#ifdef LRO
 	/* Configure LRO if enabled */
 	rq->lro_enabled = FALSE;
 	if ((if_getcapenable(ifp) & IFCAP_LRO) != 0) {
@@ -1325,6 +1333,7 @@ nicvf_rcv_queue_config(struct nicvf *nic, struct queue_set *qs,
 			lro->ifp = nic->ifp;
 		}
 	}
+#endif
 
 	rq->cq_qs = qs->vnic_id;
 	rq->cq_idx = qidx;
@@ -1581,7 +1590,7 @@ nicvf_alloc_resources(struct nicvf *nic)
 	qs->qs_err_taskq = taskqueue_create_fast("nicvf_qs_err_taskq", M_WAITOK,
 	    taskqueue_thread_enqueue, &qs->qs_err_taskq);
 	taskqueue_start_threads(&qs->qs_err_taskq, 1, PI_NET, "%s: qs_taskq",
-	    device_get_nameunit(nic->dev));
+	    device_xname(nic->dev));
 
 	return (0);
 alloc_fail:

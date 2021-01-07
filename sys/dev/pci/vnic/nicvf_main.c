@@ -28,67 +28,52 @@
  * $FreeBSD$
  *
  */
-#include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
 
+#ifdef _KERNEL_OPT
 #include "opt_inet.h"
 #include "opt_inet6.h"
+#include "opt_net_mpsafe.h"
+#endif
+
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/bitset.h>
-#include <sys/bitstring.h>
+
+#include <sys/bitops.h>
 #include <sys/bus.h>
-#include <sys/endian.h>
-#include <sys/kernel.h>
-#include <sys/malloc.h>
-#include <sys/mbuf.h>
-#include <sys/module.h>
-#include <sys/rman.h>
-#include <sys/pciio.h>
-#include <sys/pcpu.h>
-#include <sys/proc.h>
-#include <sys/socket.h>
-#include <sys/sockio.h>
-#include <sys/stdatomic.h>
-#include <sys/cpuset.h>
-#include <sys/lock.h>
+#include <sys/callout.h>
+#include <sys/cprng.h>
+#include <sys/cpu.h>
+#include <sys/device.h>
+#include <sys/interrupt.h>
+#include <sys/kmem.h>
 #include <sys/mutex.h>
-#include <sys/smp.h>
-#include <sys/taskqueue.h>
 
-#include <net/bpf.h>
-#include <net/ethernet.h>
 #include <net/if.h>
-#include <net/if_var.h>
-#include <net/if_arp.h>
-#include <net/if_dl.h>
 #include <net/if_media.h>
-#include <net/if_types.h>
-#include <net/if_vlan_var.h>
+#include <net/if_ether.h>
 
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <netinet/if_ether.h>
-#include <netinet/tcp_lro.h>
-
-#include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
-
-#include <sys/dnv.h>
-#include <sys/nv.h>
-#include <sys/iov_schema.h>
-
-#include <machine/bus.h>
+#include <dev/pci/pcidevs.h>
 
 #include "thunder_bgx.h"
 #include "nic_reg.h"
 #include "nic.h"
 #include "nicvf_queues.h"
 
+#ifdef NET_MPSAFE
+#define NICVF_MPSAFE	1
+#define NICVF_CALLOUT_FLAGS	CALLOUT_MPSAFE
+#define NICVF_SOFTINT_FLAGS	SOFTINT_MPSAFE
+#else
+#define NICVF_CALLOUT_FLAGS	0
+#define NICVF_SOFTINT_FLAGS	0
+#endif
+
 #define	VNIC_VF_DEVSTR		"Cavium Thunder NIC Virtual Function Driver"
 
-#define	VNIC_VF_REG_RID		PCIR_BAR(PCI_CFG_REG_BAR_NUM)
+#define	VNIC_VF_REG_RID		PCI_BAR(PCI_CFG_REG_BAR_NUM)
 
 //XXXNH IPL_NONE?
 /* Lock for core interface settings */
@@ -109,12 +94,16 @@ __FBSDID("$FreeBSD$");
 #define	SPEED_10000	10000
 #define	SPEED_40000	40000
 
-MALLOC_DEFINE(M_NICVF, "nicvf", "ThunderX VNIC VF dynamic memory");
+static int	nicvf_probe(device_t, cfdata_t, void *);
+static void	nicvf_attach(device_t, device_t, void *);
+static int	nicvf_detach(device_t, int);
 
-static int nicvf_probe(device_t);
-static int nicvf_attach(device_t);
-static int nicvf_detach(device_t);
+//XXXNH better name than 'nicpf'
+CFATTACH_DECL3_NEW(nicvf, sizeof(struct nicvf),
+    nicvf_probe, nicvf_attach, nicvf_detach, NULL, NULL, NULL,
+    DVF_DETACH_SHUTDOWN);
 
+#if 0
 static device_method_t nicvf_methods[] = {
 	/* Device interface */
 	DEVMETHOD(device_probe,		nicvf_probe),
@@ -137,8 +126,9 @@ MODULE_VERSION(vnicvf, 1);
 MODULE_DEPEND(vnicvf, pci, 1, 1, 1);
 MODULE_DEPEND(vnicvf, ether, 1, 1, 1);
 MODULE_DEPEND(vnicvf, vnicpf, 1, 1, 1);
+#endif
 
-static int nicvf_allocate_misc_interrupt(struct nicvf *);
+static int nicvf_allocate_misc_interrupt(struct nicvf *, struct pci_attach_args *);
 static int nicvf_enable_misc_interrupt(struct nicvf *);
 static int nicvf_allocate_net_interrupts(struct nicvf *);
 static void nicvf_release_all_interrupts(struct nicvf *);
@@ -152,13 +142,15 @@ static int nicvf_setup_ifnet(struct nicvf *);
 static int nicvf_setup_ifmedia(struct nicvf *);
 static void nicvf_hw_addr_random(uint8_t *);
 
-static int nicvf_if_ioctl(struct ifnet *, u_long, caddr_t);
-static void nicvf_if_init(void *);
-static void nicvf_if_init_locked(struct nicvf *);
+static int nicvf_if_ioctl(struct ifnet *, u_long, void *);
+static int nicvf_if_init(struct ifnet *);
+static int nicvf_if_init_locked(struct nicvf *);
 static int nicvf_if_transmit(struct ifnet *, struct mbuf *);
-static void nicvf_if_qflush(struct ifnet *);
-static uint64_t nicvf_if_getcounter(struct ifnet *, ift_counter);
+//static void nicvf_if_qflush(struct ifnet *);
+//static uint64_t nicvf_if_getcounter(struct ifnet *, ift_counter);
 
+
+static void nicvf_if_stop(struct ifnet *, int);
 static int nicvf_stop_locked(struct nicvf *);
 
 static void nicvf_media_status(struct ifnet *, struct ifmediareq *);
@@ -167,50 +159,72 @@ static int nicvf_media_change(struct ifnet *);
 static void nicvf_tick_stats(void *);
 
 static int
-nicvf_probe(device_t dev)
+nicvf_probe(device_t dev, cfdata_t cf, void *aux)
 {
-	uint16_t vendor_id;
-	uint16_t device_id;
+	const struct pci_attach_args *pa = aux;
 
-	vendor_id = pci_get_vendor(dev);
-	device_id = pci_get_device(dev);
+	//XXXNH PCI_DEVICE_ID_THUNDER_PASS1_NIC_VF
+	if (PCI_VENDOR(pa->pa_id) == PCI_VENDOR_CAVIUM &&
+	    PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_CAVIUM_THUNDERX_NICVF)
+	    return 1;
 
-	if (vendor_id != PCI_VENDOR_ID_CAVIUM)
-		return (ENXIO);
-
-	if (device_id == PCI_DEVICE_ID_THUNDER_NIC_VF ||
-	    device_id == PCI_DEVICE_ID_THUNDER_PASS1_NIC_VF) {
-		device_set_desc(dev, VNIC_VF_DEVSTR);
-		return (BUS_PROBE_DEFAULT);
-	}
-
-	return (ENXIO);
+	return 0;
 }
 
-static int
-nicvf_attach(device_t dev)
+static void
+nicvf_attach(device_t parent, device_t dev, void *aux)
 {
-	struct nicvf *nic;
+	struct pci_attach_args *pa = aux;
+	struct nicvf *nic = device_private(dev);
 	int rid, qcount;
 	int err = 0;
 	uint8_t hwaddr[ETHER_ADDR_LEN];
 	uint8_t zeromac[] = {[0 ... (ETHER_ADDR_LEN - 1)] = 0};
 
-	nic = device_get_softc(dev);
 	nic->dev = dev;
 	nic->pnicvf = nic;
 
+	nic->sc_pass1_silicon = PCI_REVISION(pa->pa_class) < PCI_REVID_PASS2;
+	nic->sc_pc = pa->pa_pc;
+	nic->sc_pcitag = pa->pa_tag;
+
+	pci_aprint_devinfo_fancy(pa, "Ethernet controller", VNIC_VF_DEVSTR,
+	    true);
+
 	NICVF_CORE_LOCK_INIT(nic);
 	/* Enable HW TSO on Pass2 */
-	if (!pass1_silicon(dev))
+	if (nic->sc_pass1_silicon)
 		nic->hw_tso = TRUE;
 
 	rid = VNIC_VF_REG_RID;
-	nic->reg_base = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
-	    RF_ACTIVE);
-	if (nic->reg_base == NULL) {
-		device_printf(dev, "Could not allocate registers memory\n");
-		return (ENXIO);
+	/*
+	 * Map the device.  All devices support memory-mapped acccess,
+	 * and it is really required for normal operation.
+	 */
+	bool memh_valid;
+	bus_space_tag_t memt;
+	bus_space_handle_t memh;
+	bus_size_t memsize;
+
+	const pcireg_t memtype = pci_mapreg_type(pa->pa_pc, pa->pa_tag, rid);
+	switch (memtype) {
+	case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_32BIT:
+	case PCI_MAPREG_TYPE_MEM | PCI_MAPREG_MEM_TYPE_64BIT:
+		memh_valid = (pci_mapreg_map(pa, rid, memtype, 0, &memt, &memh,
+		    NULL, &memsize) == 0);
+		break;
+	default:
+		memh_valid = false;
+		break;
+	}
+
+	if (memh_valid) {
+		nic->sc_memt = memt;
+		nic->sc_memh = memh;
+	} else {
+		aprint_error_dev(dev,
+		    "unable to map device registers\n");
+		return;
 	}
 
 	qcount = MAX_CMP_QUEUES_PER_QS;
@@ -221,7 +235,7 @@ nicvf_attach(device_t dev)
 		goto err_free_res;
 
 	/* Check if PF is alive and get MAC address for this VF */
-	err = nicvf_allocate_misc_interrupt(nic);
+	err = nicvf_allocate_misc_interrupt(nic, pa);
 	if (err != 0)
 		goto err_free_res;
 
@@ -268,48 +282,45 @@ nicvf_attach(device_t dev)
 		goto err_free_ifnet;
 	}
 
-	mtx_init(&nic->stats_mtx, "VNIC stats", NULL, MTX_DEF);
-	callout_init_mtx(&nic->stats_callout, &nic->stats_mtx, 0);
+	//XXXNH IPL_NET
+	mutex_init(&nic->stats_mtx, MUTEX_DEFAULT, IPL_NET);
+	callout_init(&nic->stats_callout, NICVF_CALLOUT_FLAGS);
 
 	ether_ifattach(nic->ifp, nic->hwaddr);
+	if_register(nic->ifp);
 
-	return (0);
+	aprint_normal_dev(dev, "Ethernet address %s\n",
+	    ether_sprintf(nic->hwaddr));
+
+	return;
 
 err_free_ifnet:
-	if_free(nic->ifp);
+	//if_free(nic->ifp);
 err_release_intr:
 	nicvf_release_all_interrupts(nic);
 err_free_res:
-	bus_release_resource(dev, SYS_RES_MEMORY, rman_get_rid(nic->reg_base),
-	    nic->reg_base);
 
-	return (err);
+	return;
 }
 
 static int
-nicvf_detach(device_t dev)
+nicvf_detach(device_t dev, int flags)
 {
 	struct nicvf *nic;
 
-	nic = device_get_softc(dev);
+	nic = device_private(dev);
 
 	NICVF_CORE_LOCK(nic);
 	/* Shut down the port and release ring resources */
 	nicvf_stop_locked(nic);
 	/* Release stats lock */
-	mtx_destroy(&nic->stats_mtx);
+	mutex_destroy(&nic->stats_mtx);
 	/* Release interrupts */
 	nicvf_release_all_interrupts(nic);
-	/* Release memory resource */
-	if (nic->reg_base != NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    rman_get_rid(nic->reg_base), nic->reg_base);
-	}
 
 	/* Remove all ifmedia configurations */
 	ifmedia_removeall(&nic->if_media);
-	/* Free this ifnet */
-	if_free(nic->ifp);
+
 	NICVF_CORE_UNLOCK(nic);
 	/* Finally destroy the lock */
 	NICVF_CORE_LOCK_DESTROY(nic);
@@ -327,7 +338,7 @@ nicvf_hw_addr_random(uint8_t *hwaddr)
 	 * Create randomized MAC address.
 	 * Set 'bsd' + random 24 low-order bits.
 	 */
-	rnd = arc4random() & 0x00ffffff;
+	rnd = cprng_fast32() & 0x00ffffff;
 	addr[0] = 'b';
 	addr[1] = 's';
 	addr[2] = 'd';
@@ -341,27 +352,53 @@ nicvf_hw_addr_random(uint8_t *hwaddr)
 static int
 nicvf_setup_ifnet(struct nicvf *nic)
 {
+	struct ethercom *ec = &nic->ec;
 	struct ifnet *ifp;
+	int err;
 
-	ifp = if_alloc(IFT_ETHER);
-	if (ifp == NULL) {
-		device_printf(nic->dev, "Could not allocate ifnet structure\n");
-		return (ENOMEM);
+	ifp = &ec->ec_if;
+	err = if_initialize(ifp);
+	if (err != 0) {
+		aprint_error_dev(nic->dev, "if_initialize failed(%d)\n", err);
+		return err;
 	}
+	nic->ipq = if_percpuq_create(ifp);
 
-	nic->ifp = ifp;
-
+#if 0
 	if_setsoftc(ifp, nic);
 	if_initname(ifp, device_get_name(nic->dev), device_get_unit(nic->dev));
 	if_setflags(ifp, IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST);
-
-	if_settransmitfn(ifp, nicvf_if_transmit);
-	if_setqflushfn(ifp, nicvf_if_qflush);
+	if_settransmitfn(ifp, nicvf_if_transmit);		//XXXNH
+	if_setqflushfn(ifp, nicvf_if_qflush);			//XXXNH
 	if_setioctlfn(ifp, nicvf_if_ioctl);
 	if_setinitfn(ifp, nicvf_if_init);
+#endif
+	nic->ifp = ifp;
+	strlcpy(ifp->if_xname, device_xname(nic->dev), IFNAMSIZ);
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
+
+#ifdef NICVF_MPSAFE
+	ifp->if_extflags = IFEF_MPSAFE;
+#endif
+	ifp->if_ioctl = nicvf_if_ioctl;
+	ifp->if_init = nicvf_if_init;
+	ifp->if_transmit = nicvf_if_transmit;
+	ifo->if_stop = nicvf_if_stop;
+
+
+#if 0
+	adapter->sc_ec.ec_capabilities |= ETHERCAP_JUMBO_MTU;
+
+	IFCAP_CSUM_TCPv4_Rx | IFCAP_CSUM_UDPv4_Rx |
+	IFCAP_CSUM_TCPv6_Rx | IFCAP_CSUM_UDPv6_Rx;
+	ifp->if_capabilities |= IFCAP_LRO;
+
+#endif
+
+#if 0
 	if_setgetcounterfn(ifp, nicvf_if_getcounter);
 
-	if_setmtu(ifp, ETHERMTU);
+	if_setmtu(ifp, ETHERMTU);			//XXXNH done by ether_ifattach
 
 	/* Reset caps */
 	if_setcapabilities(ifp, 0);
@@ -369,14 +406,25 @@ nicvf_setup_ifnet(struct nicvf *nic)
 	/* Set the default values */
 	if_setcapabilitiesbit(ifp, IFCAP_VLAN_MTU | IFCAP_JUMBO_MTU, 0);
 	if_setcapabilitiesbit(ifp, IFCAP_LRO, 0);
+#endif
+
+
 	if (nic->hw_tso) {
 		/* TSO */
+		ifp->if_capabilities |= IFCAP_TSOv4;
+#if 0
 		if_setcapabilitiesbit(ifp, IFCAP_TSO4, 0);
+#endif
 		/* TSO parameters */
+#if 0
+		// XXXNH netbsd doesn't do these.'
 		if_sethwtsomax(ifp, NICVF_TSO_MAXSIZE);
 		if_sethwtsomaxsegcount(ifp, NICVF_TSO_NSEGS);
 		if_sethwtsomaxsegsize(ifp, MCLBYTES);
+#endif
 	}
+
+#if 0
 	/* IP/TCP/UDP HW checksums */
 	if_setcapabilitiesbit(ifp, IFCAP_HWCSUM, 0);
 	if_setcapabilitiesbit(ifp, IFCAP_HWSTATS, 0);
@@ -388,6 +436,7 @@ nicvf_setup_ifnet(struct nicvf *nic)
 	if (nic->hw_tso)
 		if_sethwassistbits(ifp, (CSUM_TSO), 0);
 	if_setcapenable(ifp, if_getcapabilities(ifp));
+#endif
 
 	return (0);
 }
@@ -423,20 +472,18 @@ nicvf_setup_ifmedia(struct nicvf *nic)
 }
 
 static int
-nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
+nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, void * data)
 {
 	struct nicvf *nic;
-	struct rcv_queue *rq;
 	struct ifreq *ifr;
 	uint32_t flags;
 	int mask, err;
-	int rq_idx;
 #if defined(INET) || defined(INET6)
 	struct ifaddr *ifa;
 	boolean_t avoid_reset = FALSE;
 #endif
 
-	nic = if_getsoftc(ifp);
+	nic = ifp->if_softc;
 	ifr = (struct ifreq *)data;
 #if defined(INET) || defined(INET6)
 	ifa = (struct ifaddr *)data;
@@ -456,9 +503,9 @@ nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 #if defined(INET) || defined(INET6)
 		/* Avoid reinitialization unless it's necessary */
 		if (avoid_reset) {
-			if_setflagbits(ifp, IFF_UP, 0);
-			if (!(if_getdrvflags(ifp) & IFF_DRV_RUNNING))
-				nicvf_if_init(nic);
+			ifp->if_flags |= IFF_UP;
+			if (!(ifp->if_flags & IFF_RUNNING))
+				nicvf_if_init(ifp);
 #ifdef INET
 			if (!(if_getflags(ifp) & IFF_NOARP))
 				arp_ifinit(ifp, ifa);
@@ -477,7 +524,7 @@ nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 			NICVF_CORE_LOCK(nic);
 			err = nicvf_update_hw_max_frs(nic, ifr->ifr_mtu);
 			if (err == 0)
-				if_setmtu(ifp, ifr->ifr_mtu);
+				ifp->if_mtu = ifr->ifr_mtu;
 			NICVF_CORE_UNLOCK(nic);
 		}
 		break;
@@ -485,7 +532,7 @@ nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 		NICVF_CORE_LOCK(nic);
 		flags = if_getflags(ifp);
 		if (flags & IFF_UP) {
-			if (if_getdrvflags(ifp) & IFF_DRV_RUNNING) {
+			if (ifp->if_flags & IFF_RUNNING) {
 				if ((flags ^ nic->if_flags) & IFF_PROMISC) {
 					/* Change promiscous mode */
 #if 0
@@ -504,7 +551,7 @@ nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 			} else {
 				nicvf_if_init_locked(nic);
 			}
-		} else if (if_getdrvflags(ifp) & IFF_DRV_RUNNING)
+		} else if (ifp->if_flags & IFF_RUNNING)
 			nicvf_stop_locked(nic);
 
 		nic->if_flags = flags;
@@ -513,7 +560,7 @@ nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 
 	case SIOCADDMULTI:
 	case SIOCDELMULTI:
-		if (if_getdrvflags(ifp) & IFF_DRV_RUNNING) {
+		if (ifp->if_flags & IFF_RUNNING) {
 #if 0
 			NICVF_CORE_LOCK(nic);
 			/* ARM64TODO */
@@ -540,6 +587,7 @@ nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 			if_togglecapenable(ifp, IFCAP_RXCSUM);
 		if ((mask & IFCAP_TSO4) && nic->hw_tso)
 			if_togglecapenable(ifp, IFCAP_TSO4);
+#ifdef LRO
 		if (mask & IFCAP_LRO) {
 			/*
 			 * Lock the driver for a moment to avoid
@@ -547,7 +595,10 @@ nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 			 */
 			NICVF_CORE_LOCK(nic);
 			if_togglecapenable(ifp, IFCAP_LRO);
-			if ((if_getdrvflags(nic->ifp) & IFF_DRV_RUNNING) != 0) {
+			if ((nic->ifp->if_flags & IFF_DRV_RUNNING) != 0) {
+				struct rcv_queue *rq;
+				int rq_idx;
+
 				/*
 				 * Now disable LRO for subsequent packets.
 				 * Atomicity of this change is not necessary
@@ -563,7 +614,7 @@ nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 			}
 			NICVF_CORE_UNLOCK(nic);
 		}
-
+#endif
 		break;
 
 	default:
@@ -574,25 +625,24 @@ nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 	return (err);
 }
 
-static void
+static int
 nicvf_if_init_locked(struct nicvf *nic)
 {
 	struct queue_set *qs = nic->qs;
 	struct ifnet *ifp;
 	int qidx;
 	int err;
-	caddr_t if_addr;
+	void * if_addr;
 
 	NICVF_CORE_LOCK_ASSERT(nic);
 	ifp = nic->ifp;
 
-	if ((if_getdrvflags(ifp) & IFF_DRV_RUNNING) != 0)
+	if ((ifp->if_flags & IFF_RUNNING) != 0)
 		nicvf_stop_locked(nic);
 
 	err = nicvf_enable_misc_interrupt(nic);
 	if (err != 0) {
-		if_printf(ifp, "Could not reenable Mbox interrupt\n");
-		return;
+		return err;
 	}
 
 	/* Get the latest MAC address */
@@ -609,7 +659,8 @@ nicvf_if_init_locked(struct nicvf *nic)
 		goto error;
 
 	/* Make sure queue initialization is written */
-	wmb();
+	//wmb();
+	dsb(st);
 
 	nicvf_reg_write(nic, NIC_VF_INT, ~0UL);
 	/* Enable Qset err interrupt */
@@ -627,54 +678,65 @@ nicvf_if_init_locked(struct nicvf *nic)
 	nic->drv_stats.txq_wake = 0;
 
 	/* Activate network interface */
-	if_setdrvflagbits(ifp, IFF_DRV_RUNNING, IFF_DRV_OACTIVE);
+	ifp->if_flags |= IFF_RUNNING;
 
 	/* Schedule callout to update stats */
 	callout_reset(&nic->stats_callout, hz, nicvf_tick_stats, nic);
 
-	return;
+	return 0;
 
 error:
 	/* Something went very wrong. Disable this ifnet for good */
-	if_setdrvflagbits(ifp, IFF_DRV_OACTIVE, IFF_DRV_RUNNING);
+	ifp->if_flags &= ~IFF_RUNNING;
+
+	return err;
 }
 
-static void
-nicvf_if_init(void *if_softc)
+
+static int
+nicvf_if_init(struct ifnet *ifp)
 {
-	struct nicvf *nic = if_softc;
+	struct nicvf *nic = ifp->if_softc;
 
 	NICVF_CORE_LOCK(nic);
-	nicvf_if_init_locked(nic);
+	int ret = nicvf_if_init_locked(nic);
 	NICVF_CORE_UNLOCK(nic);
+
+	return ret;
 }
 
 static int
 nicvf_if_transmit(struct ifnet *ifp, struct mbuf *mbuf)
 {
-	struct nicvf *nic = if_getsoftc(ifp);
+	struct nicvf *nic = ifp->if_softc;
 	struct queue_set *qs = nic->qs;
 	struct snd_queue *sq;
-	struct mbuf *mtmp;
+//	struct mbuf *mtmp;
 	int qidx;
 	int err = 0;
 
 	if (__predict_false(qs == NULL)) {
 		panic("%s: missing queue set for %s", __func__,
-		    device_get_nameunit(nic->dev));
+		    device_xname(nic->dev));
 	}
-
+#if 1
+	qidx = cpu_index(curcpu()) % qs->sq_cnt;
+#else
 	/* Select queue */
 	if (M_HASHTYPE_GET(mbuf) != M_HASHTYPE_NONE)
 		qidx = mbuf->m_pkthdr.flowid % qs->sq_cnt;
 	else
 		qidx = curcpu % qs->sq_cnt;
+#endif
 
 	sq = &qs->sq[qidx];
 
 	if (mbuf->m_next != NULL &&
 	    (mbuf->m_pkthdr.csum_flags &
 	    (CSUM_IP | CSUM_TCP | CSUM_UDP | CSUM_SCTP)) != 0) {
+		//XXXNH
+		//m_makewritable?
+#if 0
 		if (M_WRITABLE(mbuf) == 0) {
 			mtmp = m_dup(mbuf, M_NOWAIT);
 			m_freem(mbuf);
@@ -682,11 +744,15 @@ nicvf_if_transmit(struct ifnet *ifp, struct mbuf *mbuf)
 				return (ENOBUFS);
 			mbuf = mtmp;
 		}
+#endif
 	}
 
-	err = drbr_enqueue(ifp, sq->br, mbuf);
-	if (((if_getdrvflags(ifp) & (IFF_DRV_RUNNING | IFF_DRV_OACTIVE)) !=
-	    IFF_DRV_RUNNING) || !nic->link_up || (err != 0)) {
+	//XXXNH what to do about the 'br' aka buf_ring
+	err = IFQ_ENQUEUE(&(ifp)->if_snd, mbuf);
+//	err = drbr_enqueue(ifp, sq->br, mbuf);
+	//if_flags check?!? probably not
+	if (((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) !=
+	    IFF_RUNNING) || !nic->link_up || (err != 0)) {
 		/*
 		 * Try to enqueue packet to the ring buffer.
 		 * If the driver is not active, link down or enqueue operation
@@ -705,6 +771,7 @@ nicvf_if_transmit(struct ifnet *ifp, struct mbuf *mbuf)
 	return (0);
 }
 
+#if 0
 static void
 nicvf_if_qflush(struct ifnet *ifp)
 {
@@ -714,7 +781,7 @@ nicvf_if_qflush(struct ifnet *ifp)
 	struct mbuf *mbuf;
 	size_t idx;
 
-	nic = if_getsoftc(ifp);
+	nic = ifp->if_softc;
 	qs = nic->qs;
 
 	for (idx = 0; idx < qs->sq_cnt; idx++) {
@@ -726,7 +793,9 @@ nicvf_if_qflush(struct ifnet *ifp)
 	}
 	if_qflush(ifp);
 }
+#endif
 
+#if 0
 static uint64_t
 nicvf_if_getcounter(struct ifnet *ifp, ift_counter cnt)
 {
@@ -734,7 +803,7 @@ nicvf_if_getcounter(struct ifnet *ifp, ift_counter cnt)
 	struct nicvf_hw_stats *hw_stats;
 	struct nicvf_drv_stats *drv_stats;
 
-	nic = if_getsoftc(ifp);
+	nic = ifp->if_softc;
 	hw_stats = &nic->hw_stats;
 	drv_stats = &nic->drv_stats;
 
@@ -760,11 +829,12 @@ nicvf_if_getcounter(struct ifnet *ifp, ift_counter cnt)
 	}
 
 }
+#endif
 
 static void
 nicvf_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 {
-	struct nicvf *nic = if_getsoftc(ifp);
+	struct nicvf *nic = ifp->if_softc;
 
 	NICVF_CORE_LOCK(nic);
 
@@ -817,14 +887,14 @@ void
 nicvf_reg_write(struct nicvf *nic, bus_space_handle_t offset, uint64_t val)
 {
 
-	bus_write_8(nic->reg_base, offset, val);
+	bus_space_write_8(nic->sc_memt, nic->sc_memh, offset, val);
 }
 
 uint64_t
 nicvf_reg_read(struct nicvf *nic, uint64_t offset)
 {
 
-	return (bus_read_8(nic->reg_base, offset));
+	return (bus_space_read_8(nic->sc_memt, nic->sc_memh, offset));
 }
 
 void
@@ -832,7 +902,8 @@ nicvf_queue_reg_write(struct nicvf *nic, bus_space_handle_t offset,
     uint64_t qidx, uint64_t val)
 {
 
-	bus_write_8(nic->reg_base, offset + (qidx << NIC_Q_NUM_SHIFT), val);
+	bus_space_write_8(nic->sc_memt, nic->sc_memh,
+	    offset + (qidx << NIC_Q_NUM_SHIFT), val);
 }
 
 uint64_t
@@ -840,7 +911,8 @@ nicvf_queue_reg_read(struct nicvf *nic, bus_space_handle_t offset,
     uint64_t qidx)
 {
 
-	return (bus_read_8(nic->reg_base, offset + (qidx << NIC_Q_NUM_SHIFT)));
+	return (bus_space_read_8(nic->sc_memt, nic->sc_memh,
+	    offset + (qidx << NIC_Q_NUM_SHIFT)));
 }
 
 /* VF -> PF mailbox communication */
@@ -871,6 +943,7 @@ nicvf_send_msg_to_pf(struct nicvf *nic, union nic_mbx *mbx)
 		if (nic->pf_nacked)
 			return (EINVAL);
 
+		//XXXNH eek!
 		DELAY(sleep * 1000);
 
 		if (nic->pf_acked)
@@ -965,10 +1038,10 @@ nicvf_handle_mbx_intr(struct nicvf *nic)
 		nic->duplex = mbx.link_status.duplex;
 		nic->speed = mbx.link_status.speed;
 		if (nic->link_up) {
-			if_setbaudrate(nic->ifp, nic->speed * 1000000);
+			nic->ifp->if_baudrate = IF_Mbps(nic->speed);
 			if_link_state_change(nic->ifp, LINK_STATE_UP);
 		} else {
-			if_setbaudrate(nic->ifp, 0);
+			nic->ifp->if_baudrate = 0;
 			if_link_state_change(nic->ifp, LINK_STATE_DOWN);
 		}
 		break;
@@ -1102,7 +1175,7 @@ nicvf_rss_init(struct nicvf *nic)
 	rss->cfg = RSS_IP_HASH_ENA | RSS_TCP_HASH_ENA | RSS_UDP_HASH_ENA;
 	nicvf_reg_write(nic, NIC_VNIC_RSS_CFG, rss->cfg);
 
-	rss->hash_bits = fls(rss->rss_size) - 1;
+	rss->hash_bits = fls32(rss->rss_size) - 1;
 	for (idx = 0; idx < rss->rss_size; idx++)
 		rss->ind_tbl[idx] = idx % nic->rx_queues;
 
@@ -1136,7 +1209,7 @@ nicvf_init_resources(struct nicvf *nic)
 	return (0);
 }
 
-static void
+static int
 nicvf_misc_intr_handler(void *arg)
 {
 	struct nicvf *nic = (struct nicvf *)arg;
@@ -1145,9 +1218,11 @@ nicvf_misc_intr_handler(void *arg)
 	intr = nicvf_reg_read(nic, NIC_VF_INT);
 	/* Check for spurious interrupt */
 	if (!(intr & NICVF_INTR_MBOX_MASK))
-		return;
+		return 0;
 
 	nicvf_handle_mbx_intr(nic);
+
+	return 1;
 }
 
 static int
@@ -1169,10 +1244,10 @@ nicvf_intr_handler(void *arg)
 	/* Clear interrupt */
 	nicvf_clear_intr(nic, NICVF_INTR_CQ, qidx);
 
-	return (FILTER_HANDLED);
+	return 1;
 }
 
-static void
+static int
 nicvf_rbdr_intr_handler(void *arg)
 {
 	struct nicvf *nic;
@@ -1194,9 +1269,10 @@ nicvf_rbdr_intr_handler(void *arg)
 		/* Clear interrupt */
 		nicvf_clear_intr(nic, NICVF_INTR_RBDR, qidx);
 	}
+	return 1;
 }
 
-static void
+static int
 nicvf_qs_err_intr_handler(void *arg)
 {
 	struct nicvf *nic = (struct nicvf *)arg;
@@ -1207,34 +1283,32 @@ nicvf_qs_err_intr_handler(void *arg)
 	taskqueue_enqueue(qs->qs_err_taskq, &qs->qs_err_task);
 	nicvf_clear_intr(nic, NICVF_INTR_QS_ERR, 0);
 
+	return 1;
 }
 
 static int
-nicvf_enable_msix(struct nicvf *nic)
+nicvf_enable_msix(struct nicvf *nic, const struct pci_attach_args *pa)
 {
-	struct pci_devinfo *dinfo;
-	int rid, count;
-	int ret;
+	device_t self = nic->dev;
 
-	dinfo = device_get_ivars(nic->dev);
-	rid = dinfo->cfg.msix.msix_table_bar;
-	nic->msix_table_res =
-	    bus_alloc_resource_any(nic->dev, SYS_RES_MEMORY, &rid, RF_ACTIVE);
-	if (nic->msix_table_res == NULL) {
-		device_printf(nic->dev,
-		    "Could not allocate memory for MSI-X table\n");
-		return (ENXIO);
+	int counts[PCI_INTR_TYPE_SIZE] = {
+		[PCI_INTR_TYPE_MSIX] = NIC_VF_MSIX_VECTORS,
+	};
+
+	/* Allocate and establish the interrupt. */
+	int err = pci_intr_alloc(pa, &nic->sc_pihp, counts, PCI_INTR_TYPE_MSIX);
+	if (err) {
+		aprint_error_dev(self, "can't allocate handler\n");
+		return err;
 	}
 
-	count = nic->num_vec = NIC_VF_MSIX_VECTORS;
+	nic->num_vec = NIC_VF_MSIX_VECTORS;
 
-	ret = pci_alloc_msix(nic->dev, &count);
-	if ((ret != 0) || (count != nic->num_vec)) {
-		device_printf(nic->dev,
-		    "Request for #%d msix vectors failed, error: %d\n",
-		    nic->num_vec, ret);
-		return (ret);
-	}
+	nic->sc_nintr = counts[pci_intr_type(pa->pa_pc, nic->sc_pihp[0])];
+	nic->sc_ih = kmem_zalloc(sizeof(void *) * nic->sc_nintr, KM_SLEEP);
+
+	KASSERTMSG(nic->sc_nintr == nic->num_vec, "nintr (%d) != num_vec (%d)",
+	    nic->sc_nintr, nic->num_vec);
 
 	nic->msix_enabled = 1;
 	return (0);
@@ -1244,16 +1318,35 @@ static void
 nicvf_disable_msix(struct nicvf *nic)
 {
 
-	if (nic->msix_enabled) {
-		pci_release_msi(nic->dev);
-		nic->msix_enabled = 0;
-		nic->num_vec = 0;
+	if (!nic->msix_enabled)
+		return;
+
+	if (nic->sc_pihp != NULL) {
+		pci_intr_release(nic->sc_pc, nic->sc_pihp,
+		    nic->sc_nintr);
+		nic->sc_pihp = NULL;
 	}
+	nic->msix_enabled = 0;
+	nic->num_vec = 0;
 }
 
 static void
 nicvf_release_all_interrupts(struct nicvf *nic)
 {
+	if (nic->sc_ih != NULL) {
+		for (int intr = 0; intr < nic->sc_nintr; intr++) {
+			if (nic->sc_ih[intr] != NULL) {
+				pci_intr_disestablish(nic->sc_pc,
+				    nic->sc_ih[intr]);
+				nic->sc_ih[intr] = NULL;
+			}
+		}
+
+		kmem_free(nic->sc_ih, sizeof(void *) * nic->sc_nintr);
+		nic->sc_ih = NULL;
+	}
+
+#if 0
 	struct resource *res;
 	int irq;
 	int err;
@@ -1277,6 +1370,7 @@ nicvf_release_all_interrupts(struct nicvf *nic)
 			    rman_get_rid(res), nic->msix_entries[irq].irq_res);
 		nic->msix_entries[irq].irq_res = NULL;
 	}
+#endif
 	/* Disable MSI-X */
 	nicvf_disable_msix(nic);
 }
@@ -1286,41 +1380,39 @@ nicvf_release_all_interrupts(struct nicvf *nic)
  * Send READY message to PF to check if its alive
  */
 static int
-nicvf_allocate_misc_interrupt(struct nicvf *nic)
+nicvf_allocate_misc_interrupt(struct nicvf *nic, struct pci_attach_args *pa)
 {
-	struct resource *res;
-	int irq, rid;
-	int ret = 0;
+//	struct resource *res;
+	int irq;
+//	int ret = 0;
 
 	/* Return if mailbox interrupt is already registered */
 	if (nic->msix_enabled)
 		return (0);
 
 	/* Enable MSI-X */
-	if (nicvf_enable_msix(nic) != 0)
+	if (nicvf_enable_msix(nic, pa) != 0)
 		return (ENXIO);
 
 	irq = NICVF_INTR_ID_MISC;
-	rid = irq + 1;
-	nic->msix_entries[irq].irq_res = bus_alloc_resource_any(nic->dev,
-	    SYS_RES_IRQ, &rid, (RF_SHAREABLE | RF_ACTIVE));
-	if (nic->msix_entries[irq].irq_res == NULL) {
-		device_printf(nic->dev,
-		    "Could not allocate Mbox interrupt for VF%d\n",
-		    device_get_unit(nic->dev));
+
+	char intrbuf[PCI_INTRSTR_LEN];
+	const char *intrstr = pci_intr_string(nic->sc_pc, nic->sc_pihp[irq],
+	    intrbuf, sizeof(intrbuf));
+	nic->sc_ih[irq] = pci_intr_establish_xname(nic->sc_pc,
+	    nic->sc_pihp[irq], IPL_VM, nicvf_misc_intr_handler, nic, "nicvf");
+	if (nic->sc_ih[irq] == NULL) {
+		aprint_error_dev(nic->dev, "couldn't establish interrupt");
+		if (intrstr != NULL)
+			aprint_error(" at %s", intrstr);
+		aprint_error("\n");
 		return (ENXIO);
 	}
 
-	ret = bus_setup_intr(nic->dev, nic->msix_entries[irq].irq_res,
-	    (INTR_MPSAFE | INTR_TYPE_MISC), NULL, nicvf_misc_intr_handler, nic,
-	    &nic->msix_entries[irq].handle);
-	if (ret != 0) {
-		res = nic->msix_entries[irq].irq_res;
-		bus_release_resource(nic->dev, SYS_RES_IRQ,
-			    rman_get_rid(res), res);
-		nic->msix_entries[irq].irq_res = NULL;
-		return (ret);
-	}
+	pci_intr_setattr(nic->sc_pc, &nic->sc_pihp[irq],
+	    PCI_INTR_MPSAFE, true);
+
+	aprint_normal_dev(nic->dev, "mbox0 interrupting at %s\n", intrstr);
 
 	return (0);
 }
@@ -1344,73 +1436,31 @@ nicvf_enable_misc_interrupt(struct nicvf *nic)
 static void
 nicvf_release_net_interrupts(struct nicvf *nic)
 {
-	struct resource *res;
 	int irq;
-	int err;
 
 	for_each_cq_irq(irq) {
-		res = nic->msix_entries[irq].irq_res;
-		if (res == NULL)
-			continue;
-		/* Teardown active interrupts first */
-		if (nic->msix_entries[irq].handle != NULL) {
-			err = bus_teardown_intr(nic->dev,
-			    nic->msix_entries[irq].irq_res,
-			    nic->msix_entries[irq].handle);
-			KASSERT(err == 0,
-			    ("ERROR: Unable to teardown CQ interrupt %d",
-			    (irq - NICVF_INTR_ID_CQ)));
-			if (err != 0)
-				continue;
-		}
+		void *ih = nic->sc_ih[irq];
 
-		/* Release resource */
-		bus_release_resource(nic->dev, SYS_RES_IRQ, rman_get_rid(res),
-		    res);
-		nic->msix_entries[irq].irq_res = NULL;
+		if (ih == NULL)
+			continue;
+		pci_intr_disestablish(nic->sc_pc, nic->sc_ih[irq]);
+		nic->sc_ih[irq] = NULL;
 	}
 
 	for_each_rbdr_irq(irq) {
-		res = nic->msix_entries[irq].irq_res;
-		if (res == NULL)
-			continue;
-		/* Teardown active interrupts first */
-		if (nic->msix_entries[irq].handle != NULL) {
-			err = bus_teardown_intr(nic->dev,
-			    nic->msix_entries[irq].irq_res,
-			    nic->msix_entries[irq].handle);
-			KASSERT(err == 0,
-			    ("ERROR: Unable to teardown RDBR interrupt %d",
-			    (irq - NICVF_INTR_ID_RBDR)));
-			if (err != 0)
-				continue;
-		}
+		void *ih = nic->sc_ih[irq];
 
-		/* Release resource */
-		bus_release_resource(nic->dev, SYS_RES_IRQ, rman_get_rid(res),
-		    res);
-		nic->msix_entries[irq].irq_res = NULL;
+		if (ih == NULL)
+			continue;
+		pci_intr_disestablish(nic->sc_pc, nic->sc_ih[irq]);
+		nic->sc_ih[irq] = NULL;
 	}
 
 	irq = NICVF_INTR_ID_QS_ERR;
-	res = nic->msix_entries[irq].irq_res;
-	if (res != NULL) {
-		/* Teardown active interrupts first */
-		if (nic->msix_entries[irq].handle != NULL) {
-			err = bus_teardown_intr(nic->dev,
-			    nic->msix_entries[irq].irq_res,
-			    nic->msix_entries[irq].handle);
-			KASSERT(err == 0,
-			    ("ERROR: Unable to teardown QS Error interrupt %d",
-			    irq));
-			if (err != 0)
-				return;
-		}
-
-		/* Release resource */
-		bus_release_resource(nic->dev, SYS_RES_IRQ, rman_get_rid(res),
-		    res);
-		nic->msix_entries[irq].irq_res = NULL;
+	void *ih = nic->sc_ih[irq];
+	if (ih != NULL) {
+		pci_intr_disestablish(nic->sc_pc, nic->sc_ih[irq]);
+		nic->sc_ih[irq] = NULL;
 	}
 }
 
@@ -1418,16 +1468,21 @@ static int
 nicvf_allocate_net_interrupts(struct nicvf *nic)
 {
 	u_int cpuid;
-	int irq, rid;
+	int irq;
 	int qidx;
 	int ret = 0;
 
 	/* MSI-X must be configured by now */
 	if (!nic->msix_enabled) {
-		device_printf(nic->dev, "Cannot alloacte queue interrups. "
+		device_printf(nic->dev, "Cannot alloacte queue interrupts. "
 		    "MSI-X interrupts disabled.\n");
 		return (ENXIO);
 	}
+
+	kcpuset_t *affinity;
+	char intrbuf[PCI_INTRSTR_LEN];
+
+	kcpuset_create(&affinity, true);
 
 	/* Register CQ interrupts */
 	for_each_cq_irq(irq) {
@@ -1435,96 +1490,108 @@ nicvf_allocate_net_interrupts(struct nicvf *nic)
 			break;
 
 		qidx = irq - NICVF_INTR_ID_CQ;
-		rid = irq + 1;
-		nic->msix_entries[irq].irq_res = bus_alloc_resource_any(nic->dev,
-		    SYS_RES_IRQ, &rid, (RF_SHAREABLE | RF_ACTIVE));
-		if (nic->msix_entries[irq].irq_res == NULL) {
-			device_printf(nic->dev,
-			    "Could not allocate CQ interrupt %d for VF%d\n",
-			    (irq - NICVF_INTR_ID_CQ), device_get_unit(nic->dev));
-			ret = ENXIO;
+
+		//XXXNH CQ#
+		const char *intrstr = pci_intr_string(nic->sc_pc,
+		    nic->sc_pihp[irq], intrbuf, sizeof(intrbuf));
+		nic->sc_ih[irq] = pci_intr_establish_xname(nic->sc_pc,
+		    nic->sc_pihp[irq], IPL_VM, nicvf_intr_handler,
+		    &nic->qs->cq[qidx], "CQ#");
+		if (nic->sc_ih[irq] == NULL) {
+			aprint_error_dev(nic->dev, "couldn't establish "
+			    "interrupt for CQ %d", qidx);
+			if (intrstr != NULL)
+				aprint_error(" at %s", intrstr);
+			aprint_error("\n");
 			goto error;
 		}
-		ret = bus_setup_intr(nic->dev, nic->msix_entries[irq].irq_res,
-		    (INTR_MPSAFE | INTR_TYPE_NET), nicvf_intr_handler,
-		    NULL, &nic->qs->cq[qidx], &nic->msix_entries[irq].handle);
-		if (ret != 0) {
-			device_printf(nic->dev,
-			    "Could not setup CQ interrupt %d for VF%d\n",
-			    (irq - NICVF_INTR_ID_CQ), device_get_unit(nic->dev));
-			goto error;
-		}
-		cpuid = (device_get_unit(nic->dev) * CMP_QUEUE_CNT) + qidx;
-		cpuid %= mp_ncpus;
+
+		pci_intr_setattr(nic->sc_pc, &nic->sc_pihp[irq],
+		    PCI_INTR_MPSAFE, true);
+
+		const cpuid_t affinity_to =
+		    ((device_unit(nic->dev) * CMP_QUEUE_CNT) + qidx) % ncpu;
+
 		/*
 		 * Save CPU ID for later use when system-wide RSS is enabled.
 		 * It will be used to pit the CQ task to the same CPU that got
 		 * interrupted.
 		 */
 		nic->qs->cq[qidx].cmp_cpuid = cpuid;
-		if (bootverbose) {
-			device_printf(nic->dev, "bind CQ%d IRQ to CPU%d\n",
-			    qidx, cpuid);
-		}
-		/* Bind interrupts to the given CPU */
-		bus_bind_intr(nic->dev, nic->msix_entries[irq].irq_res, cpuid);
+
+		kcpuset_zero(affinity);
+		kcpuset_set(affinity, affinity_to);
+
+		int err = interrupt_distribute(nic->sc_ih[irq], affinity, NULL);
+
+		aprint_normal_dev(nic->dev,
+		    "for CQ %d interrupting at %s", qidx, intrstr);
+		if (!err)
+			aprint_verbose_dev(nic->dev, "bound to CPU%d\n",
+			    cpuid);
 	}
+
+	kcpuset_destroy(affinity);
 
 	/* Register RBDR interrupt */
 	for_each_rbdr_irq(irq) {
 		if (irq >= (NICVF_INTR_ID_RBDR + nic->qs->rbdr_cnt))
 			break;
 
-		rid = irq + 1;
-		nic->msix_entries[irq].irq_res = bus_alloc_resource_any(nic->dev,
-		    SYS_RES_IRQ, &rid, (RF_SHAREABLE | RF_ACTIVE));
-		if (nic->msix_entries[irq].irq_res == NULL) {
-			device_printf(nic->dev,
-			    "Could not allocate RBDR interrupt %d for VF%d\n",
-			    (irq - NICVF_INTR_ID_RBDR),
-			    device_get_unit(nic->dev));
-			ret = ENXIO;
+		//XXXNH RBDR#
+		const char *intrstr = pci_intr_string(nic->sc_pc,
+		    nic->sc_pihp[irq], intrbuf, sizeof(intrbuf));
+		nic->sc_ih[irq] = pci_intr_establish_xname(nic->sc_pc,
+		    nic->sc_pihp[irq], IPL_VM, nicvf_rbdr_intr_handler,
+		    &nic->qs->cq[qidx], "RBDR#");
+		if (nic->sc_ih[irq] == NULL) {
+			aprint_error_dev(nic->dev, "couldn't establish "
+			    "interrupt for RBDR %d", qidx);
+			if (intrstr != NULL)
+				aprint_error(" at %s", intrstr);
+			aprint_error("\n");
 			goto error;
 		}
-		ret = bus_setup_intr(nic->dev, nic->msix_entries[irq].irq_res,
-		    (INTR_MPSAFE | INTR_TYPE_NET), NULL,
-		    nicvf_rbdr_intr_handler, nic,
-		    &nic->msix_entries[irq].handle);
-		if (ret != 0) {
-			device_printf(nic->dev,
-			    "Could not setup RBDR interrupt %d for VF%d\n",
-			    (irq - NICVF_INTR_ID_RBDR),
-			    device_get_unit(nic->dev));
-			goto error;
-		}
+
+		pci_intr_setattr(nic->sc_pc, &nic->sc_pihp[irq],
+		    PCI_INTR_MPSAFE, true);
 	}
 
 	/* Register QS error interrupt */
 	irq = NICVF_INTR_ID_QS_ERR;
-	rid = irq + 1;
-	nic->msix_entries[irq].irq_res = bus_alloc_resource_any(nic->dev,
-	    SYS_RES_IRQ, &rid, (RF_SHAREABLE | RF_ACTIVE));
-	if (nic->msix_entries[irq].irq_res == NULL) {
-		device_printf(nic->dev,
-		    "Could not allocate QS Error interrupt for VF%d\n",
-		    device_get_unit(nic->dev));
-		ret = ENXIO;
+	//XXXNH QS
+	const char *intrstr = pci_intr_string(nic->sc_pc,
+	    nic->sc_pihp[irq], intrbuf, sizeof(intrbuf));
+	nic->sc_ih[irq] = pci_intr_establish_xname(nic->sc_pc,
+	    nic->sc_pihp[irq], IPL_VM, nicvf_qs_err_intr_handler,
+	    &nic->qs->cq[qidx], "QS");
+	if (nic->sc_ih[irq] == NULL) {
+		aprint_error_dev(nic->dev, "couldn't establish interrupt for "
+		    "QS Error");
+		if (intrstr != NULL)
+			aprint_error(" at %s", intrstr);
+		aprint_error("\n");
 		goto error;
 	}
-	ret = bus_setup_intr(nic->dev, nic->msix_entries[irq].irq_res,
-	    (INTR_MPSAFE | INTR_TYPE_NET), NULL, nicvf_qs_err_intr_handler,
-	    nic, &nic->msix_entries[irq].handle);
-	if (ret != 0) {
-		device_printf(nic->dev,
-		    "Could not setup QS Error interrupt for VF%d\n",
-		    device_get_unit(nic->dev));
-		goto error;
-	}
+
+	pci_intr_setattr(nic->sc_pc, &nic->sc_pihp[irq],
+	    PCI_INTR_MPSAFE, true);
 
 	return (0);
 error:
 	nicvf_release_net_interrupts(nic);
 	return (ret);
+}
+
+static void
+nicvf_if_stop(struct ifnet *ifp, int disable)
+{
+	struct nicvf *nic = ifp->if_softc;
+
+	NICVF_CORE_LOCK(nic);
+	/* Shut down the port and release ring resources */
+	nicvf_stop_locked(nic);
+	NICVF_CORE_LOCK(nic);
 }
 
 static int
@@ -1536,8 +1603,8 @@ nicvf_stop_locked(struct nicvf *nic)
 	union nic_mbx mbx = {};
 
 	NICVF_CORE_LOCK_ASSERT(nic);
-	/* Stop callout. Can block here since holding SX lock */
-	callout_drain(&nic->stats_callout);
+	/* Stop callout. Can block here since holding core lock */
+	callout_halt(&nic->stats_callout, &nic->stats_mtx);
 
 	ifp = nic->ifp;
 
@@ -1553,7 +1620,7 @@ nicvf_stop_locked(struct nicvf *nic)
 	nicvf_clear_intr(nic, NICVF_INTR_QS_ERR, 0);
 
 	/* Deactivate network interface */
-	if_setdrvflagbits(ifp, IFF_DRV_OACTIVE, IFF_DRV_RUNNING);
+	ifp->if_flags &= ~IFF_RUNNING;
 
 	/* Free resources */
 	nicvf_config_data_transfer(nic, FALSE);
