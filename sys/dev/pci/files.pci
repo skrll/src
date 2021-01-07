@@ -646,22 +646,23 @@ device	stge: ether, ifnet, arp, mii, mii_bitbang
 attach	stge at pci
 file	dev/pci/if_stge.c		stge
 
-# Cavium ThunderX Network Interface Controller
+# Cavium ThunderX Network Interface Controller Physical Function
 device	nicpf: ether, ifnet, arp
 attach	nicpf at pci
 file	dev/pci/vnic/nic_main.c		nicpf
 
 # Cavium ThunderX Network Interface Controller
+#review deps
+device	bgx: ether, ifnet, arp
+attach	bgx at pci
+file	dev/pci/vnic/thunder_bgx.c	bgx
+
+# Cavium ThunderX Network Interface Controller Virtual Function
+#review deps
 device	nicvf: ether, ifnet, arp
 attach	nicvf at pci
 file	dev/pci/vnic/nicvf_main.c	nicvf
-
-# Cavium ThunderX Network Interface Controller
-device	bgx: ether, ifnet, arp
-attach	bgx at pci
-file	dev/pci/vnic/thunderx_bgx.c	bgx
-
-
+#file	dev/pci/vnic/nicvf_queues.c	nicvf
 
 # Intel i82598 & i82599 10-Gigabit Ethernet
 device	ixg: ether, ifnet, arp, mii, mii_phy
