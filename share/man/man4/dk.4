@@ -1,4 +1,4 @@
-.\"	$NetBSD: dk.4,v 1.7 2017/02/26 11:56:49 rin Exp $
+.\"	$NetBSD: dk.4,v 1.13 2021/01/06 18:05:58 wiz Exp $
 .\"
 .\" Copyright (c) 2006 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -29,7 +29,7 @@
 .\"
 .\" Jonathan A. Kollasch used vnd(4) as the template for this man page.
 .\"
-.Dd February 26, 2017
+.Dd January 6, 2021
 .Dt DK 4
 .Os
 .Sh NAME
@@ -43,6 +43,7 @@ driver
 .Cd "options DKWEDGE_METHOD_GPT"
 .Cd "options DKWEDGE_METHOD_MBR"
 .Cd "options DKWEDGE_METHOD_RDB"
+.Cd "options DKWEDGE_METHOD_APPLE"
 .Sh DESCRIPTION
 The
 .Nm
@@ -52,20 +53,67 @@ to an area of a physical disk.
 Wedges may be configured manually with
 .Xr dkctl 8
 or automatically by the kernel upon the attachment of the physical disk.
+.Pp
+Wedges need to have unique names.
+If a duplicate name is detected during
+auto-discovery, that partition is ignored.
 .Sh KERNEL OPTIONS
 .Bl -tag -width DKWEDGE_METHOD_BSDLABEL
 .It Dv DKWEDGE_AUTODISCOVER
 Automatically detect and configure wedges using any available methods.
+.Pp
+Currently only
+.Dv DKWEDGE_METHOD_GPT
+and
+.Dv DKWEDGE_METHOD_APPLE
+are enabled by default.
+.Pp
+For each partition found, a wedge with a corresponding name is created.
 .It Dv DKWEDGE_METHOD_BSDLABEL
 BSD disklabel detection method.
+For each configured partition in the
+.Xr disklabel 5
+that is not of type
+.Dv FS_UNUSED ,
+a wedge is created and named after the
+.Va d_packname
+field followed by
+.Sq \&/
+and the partition letter
+.So a Sc Ns \&.. Ns So p Sc .
+.Pp
+When the
+.Va d_packname
+is empty or has the value
+.Dq fictitious ,
+the regular partition names
+are used as wedge names, i.e. the device name, unit number and
+partition letter, for example
+.Dq wd0a .
 .It Dv DKWEDGE_METHOD_GPT
 Extensible Firmware Interface Globally Unique Identifier Partition Table
 (GPT) detection method.
+.Pp
+For every GPT partition a wedge is created and named after the
+partition label.
+GPT partitions are UTF-16-encoded, this is converted into UTF-8.
+If a partition has no label, its UUID is used instead.
 .It Dv DKWEDGE_METHOD_MBR
 IBM PC-compatible Master Boot Record (MBR) partitioning detection method,
 with support for Extended MBRs.
+.Pp
+For every partition in the MBR a wedge is created and named like a
+regular partition name, i.e. the device name, unit number and a
+partition letter, for example
+.Dq wd0e .
+Primary partitions start with
+.Sq e ,
+extended partitions start with
+.Sq i .
 .It Dv DKWEDGE_METHOD_RDB
 Amiga Rigid Disk Block (RDB) partitioning detection method.
+.It Dv DKWEDGE_METHOD_APPLE
+Apple partition map detection method.
 .El
 .Sh FILES
 .Bl -tag -width /dev/XXrXdkX -compact
