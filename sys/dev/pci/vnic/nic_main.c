@@ -1152,7 +1152,7 @@ nic_register_interrupts(struct nicpf *nic, struct pci_attach_args *pa)
 		goto fail;
 	}
 
-	pci_intr_setattr(nic->sc_pc, &nic->sc_pihp[irq],
+	pci_intr_setattr(nic->sc_pc, &nic->sc_pihp[vec],
 	    PCI_INTR_MPSAFE, true);
 
 	aprint_normal_dev(nic->dev, "mbox0 interrupting at %s\n", intrstr);
@@ -1170,7 +1170,7 @@ nic_register_interrupts(struct nicpf *nic, struct pci_attach_args *pa)
 		goto fail;
 	}
 
-	pci_intr_setattr(nic->sc_pc, &nic->sc_pihp[irq],
+	pci_intr_setattr(nic->sc_pc, &nic->sc_pihp[vec],
 	    PCI_INTR_MPSAFE, true);
 
 	aprint_normal_dev(nic->dev, "mbox1 interrupting at %s\n", intrstr);
