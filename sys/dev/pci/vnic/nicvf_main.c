@@ -57,6 +57,9 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
 
+//XXXNH
+#include "arm/cpufunc.h"
+
 #include "thunder_bgx.h"
 #include "nic_reg.h"
 #include "nic.h"
@@ -383,7 +386,7 @@ nicvf_setup_ifnet(struct nicvf *nic)
 	ifp->if_ioctl = nicvf_if_ioctl;
 	ifp->if_init = nicvf_if_init;
 	ifp->if_transmit = nicvf_if_transmit;
-	ifo->if_stop = nicvf_if_stop;
+	ifp->if_stop = nicvf_if_stop;
 
 
 #if 0
@@ -748,7 +751,7 @@ nicvf_if_transmit(struct ifnet *ifp, struct mbuf *mbuf)
 	}
 
 	//XXXNH what to do about the 'br' aka buf_ring
-	err = IFQ_ENQUEUE(&(ifp)->if_snd, mbuf);
+	IFQ_ENQUEUE(&(ifp)->if_snd, mbuf, err);
 //	err = drbr_enqueue(ifp, sq->br, mbuf);
 	//if_flags check?!? probably not
 	if (((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) !=
