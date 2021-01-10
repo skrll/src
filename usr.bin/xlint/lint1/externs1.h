@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.48 2021/01/03 20:38:26 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.50 2021/01/09 19:13:17 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -170,7 +170,7 @@ extern	type_t	*mktag(sym_t *, tspec_t, int, int);
 extern	const	char *storage_class_name(scl_t);
 extern	type_t	*complete_tag_struct_or_union(type_t *, sym_t *);
 extern	type_t	*complete_tag_enum(type_t *, sym_t *);
-extern	sym_t	*ename(sym_t *, int, int);
+extern	sym_t	*enumeration_constant(sym_t *, int, int);
 extern	void	decl1ext(sym_t *, int);
 extern	void	copy_usage_info(sym_t *, sym_t *);
 extern	int	check_redeclaration(sym_t *, int *);
@@ -204,7 +204,7 @@ extern	tnode_t	*new_string_node(strg_t *);
 extern	sym_t	*struct_or_union_member(tnode_t *, op_t, sym_t *);
 extern	tnode_t	*build(op_t, tnode_t *, tnode_t *);
 extern	tnode_t	*cconv(tnode_t *);
-extern	int	typeok(op_t, int, tnode_t *, tnode_t *);
+extern	bool	typeok(op_t, int, tnode_t *, tnode_t *);
 extern	tnode_t	*promote(op_t, int, tnode_t *);
 extern	tnode_t	*convert(op_t, int, type_t *, tnode_t *);
 extern	void	cvtcon(op_t, int, type_t *, val_t *, val_t *);
