@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: scan.l,v 1.113 2021/01/05 17:13:44 rillig Exp $ */
+/* $NetBSD: scan.l,v 1.116 2021/01/10 00:05:46 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: scan.l,v 1.113 2021/01/05 17:13:44 rillig Exp $");
+__RCSID("$NetBSD: scan.l,v 1.116 2021/01/10 00:05:46 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -49,7 +49,7 @@ __RCSID("$NetBSD: scan.l,v 1.113 2021/01/05 17:13:44 rillig Exp $");
 #include "lint1.h"
 #include "cgram.h"
 
-#define CHAR_MASK	((int)(~(~0U << CHAR_BIT)))
+#define CHAR_MASK	((int)(~(~0U << CHAR_SIZE)))
 
 /* Current position (it's also updated when an included file is parsed) */
 pos_t	curr_pos = { 1, "", 0 };
@@ -141,7 +141,7 @@ TL	([fFlL]?[i]?)
 "."				return operator(T_STROP, POINT);
 "+"				return operator(T_ADDOP, PLUS);
 "-"				return operator(T_ADDOP, MINUS);
-"*"				return operator(T_MULT, MULT);
+"*"				return operator(T_ASTERISK, NOTSPEC);
 "/"				return operator(T_DIVOP, DIV);
 "%"				return operator(T_DIVOP, MOD);
 "!"				return operator(T_UNOP, NOT);
@@ -314,13 +314,13 @@ static	struct	kwtab {
 static	sym_t	*symtab[HSHSIZ1];
 
 /* bit i of the entry with index i is set */
-uint64_t qbmasks[sizeof(uint64_t) * CHAR_BIT];
+uint64_t qbmasks[64];
 
 /* least significant i bits are set in the entry with index i */
-uint64_t qlmasks[sizeof(uint64_t) * CHAR_BIT + 1];
+uint64_t qlmasks[64 + 1];
 
 /* least significant i bits are not set in the entry with index i */
-uint64_t qumasks[sizeof(uint64_t) * CHAR_BIT + 1];
+uint64_t qumasks[64 + 1];
 
 /* free list for sbuf structures */
 static	sbuf_t	 *sbfrlst;
@@ -401,7 +401,7 @@ initscan(void)
 	}
 
 	/* initialize bit-masks for quads */
-	for (i = 0; i < sizeof (uint64_t) * CHAR_BIT; i++) {
+	for (i = 0; i < 64; i++) {
 		qbmasks[i] = (uint64_t)1 << i;
 		uq = ~(uint64_t)0 << i;
 		qumasks[i] = uq;
@@ -764,7 +764,7 @@ int
 sign(int64_t q, tspec_t t, int len)
 {
 
-	if (t == PTR || tspec_is_uint(t))
+	if (t == PTR || is_uinteger(t))
 		return 0;
 	return msb(q, t, len);
 }
@@ -788,7 +788,7 @@ xsign(int64_t q, tspec_t t, int len)
 	if (len <= 0)
 		len = size(t);
 
-	if (t == PTR || tspec_is_uint(t) || !sign(q, t, len)) {
+	if (t == PTR || is_uinteger(t) || !sign(q, t, len)) {
 		q &= qlmasks[len];
 	} else {
 		q |= qumasks[len];
@@ -901,7 +901,7 @@ ccon(void)
 	n = 0;
 	val = 0;
 	while ((c = getescc('\'')) >= 0) {
-		val = (val << CHAR_BIT) + c;
+		val = (val << CHAR_SIZE) + c;
 		n++;
 	}
 	if (c == -2) {
