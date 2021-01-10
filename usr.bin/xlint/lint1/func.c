@@ -1,4 +1,4 @@
-/*	$NetBSD: func.c,v 1.51 2021/01/05 00:22:04 rillig Exp $	*/
+/*	$NetBSD: func.c,v 1.55 2021/01/10 00:05:46 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: func.c,v 1.51 2021/01/05 00:22:04 rillig Exp $");
+__RCSID("$NetBSD: func.c,v 1.55 2021/01/10 00:05:46 rillig Exp $");
 #endif
 
 #include <stdlib.h>
@@ -69,8 +69,8 @@ int	rchflg;
  *
  * Control statements if, for, while and switch do not reset ftflg because
  * this must be done by the controlled statement. At least for if this is
- * important because ** FALLTHROUGH ** after "if (expr) stmnt" is evaluated
- * before the following token, which causes reduction of above.
+ * important because ** FALLTHROUGH ** after "if (expr) statement" is
+ * evaluated before the following token, which causes reduction of above.
  * This means that ** FALLTHROUGH ** after "if ..." would always be ignored.
  */
 int	ftflg;
@@ -437,7 +437,7 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 		return;
 	}
 
-	if (tn != NULL && !tspec_is_int(tn->tn_type->t_tspec)) {
+	if (tn != NULL && !is_integer(tn->tn_type->t_tspec)) {
 		/* non-integral case expression */
 		error(198);
 		return;
@@ -473,7 +473,7 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 		if (cl->cl_val.v_quad == nv.v_quad)
 			break;
 	}
-	if (cl != NULL && tspec_is_uint(nv.v_tspec)) {
+	if (cl != NULL && is_uinteger(nv.v_tspec)) {
 		/* duplicate case in switch: %lu */
 		error(200, (u_long)nv.v_quad);
 	} else if (cl != NULL) {
@@ -537,14 +537,13 @@ default_label(void)
 static tnode_t *
 check_controlling_expression(tnode_t *tn)
 {
-	tspec_t t = tn->tn_type->t_tspec;
 
 	if (tn != NULL)
 		tn = cconv(tn);
 	if (tn != NULL)
 		tn = promote(NOOP, 0, tn);
 
-	if (tn != NULL && !tspec_is_scalar(t)) {
+	if (tn != NULL && !is_scalar(tn->tn_type->t_tspec)) {
 		/* C99 6.5.15p4 for the ?: operator; see typeok:QUEST */
 		/* C99 6.8.4.1p1 for if statements */
 		/* C99 6.8.5p2 for while, do and for loops */
@@ -584,7 +583,7 @@ if2(void)
 
 /*
  * if_without_else
- * if_without_else T_ELSE stmnt
+ * if_without_else T_ELSE statement
  */
 void
 if3(int els)
@@ -611,7 +610,7 @@ switch1(tnode_t *tn)
 		tn = cconv(tn);
 	if (tn != NULL)
 		tn = promote(NOOP, 0, tn);
-	if (tn != NULL && !tspec_is_int(tn->tn_type->t_tspec)) {
+	if (tn != NULL && !is_integer(tn->tn_type->t_tspec)) {
 		/* switch expression must have integral type */
 		error(205);
 		tn = NULL;
@@ -650,7 +649,7 @@ switch1(tnode_t *tn)
 }
 
 /*
- * switch_expr stmnt
+ * switch_expr statement
  */
 void
 switch2(void)
@@ -721,7 +720,7 @@ while1(tnode_t *tn)
 	pushctrl(T_WHILE);
 	cstmt->c_loop = 1;
 	if (tn != NULL && tn->tn_op == CON) {
-		if (tspec_is_int(tn->tn_type->t_tspec)) {
+		if (is_integer(tn->tn_type->t_tspec)) {
 			cstmt->c_infinite = tn->tn_val->v_quad != 0;
 		} else {
 			cstmt->c_infinite = tn->tn_val->v_ldbl != 0.0;
@@ -732,7 +731,7 @@ while1(tnode_t *tn)
 }
 
 /*
- * while_expr stmnt
+ * while_expr statement
  * while_expr error
  */
 void
@@ -767,7 +766,7 @@ do1(void)
 }
 
 /*
- * do stmnt do_while_expr
+ * do statement do_while_expr
  * do error
  */
 void
@@ -785,7 +784,7 @@ do2(tnode_t *tn)
 		tn = check_controlling_expression(tn);
 
 	if (tn != NULL && tn->tn_op == CON) {
-		if (tspec_is_int(tn->tn_type->t_tspec)) {
+		if (is_integer(tn->tn_type->t_tspec)) {
 			cstmt->c_infinite = tn->tn_val->v_quad != 0;
 		} else {
 			cstmt->c_infinite = tn->tn_val->v_ldbl != 0.0;
@@ -848,7 +847,7 @@ for1(tnode_t *tn1, tnode_t *tn2, tnode_t *tn3)
 	if (tn2 == NULL) {
 		cstmt->c_infinite = 1;
 	} else if (tn2->tn_op == CON) {
-		if (tspec_is_int(tn2->tn_type->t_tspec)) {
+		if (is_integer(tn2->tn_type->t_tspec)) {
 			cstmt->c_infinite = tn2->tn_val->v_quad != 0;
 		} else {
 			cstmt->c_infinite = tn2->tn_val->v_ldbl != 0.0;
@@ -861,7 +860,7 @@ for1(tnode_t *tn1, tnode_t *tn2, tnode_t *tn3)
 }
 
 /*
- * for_exprs stmnt
+ * for_exprs statement
  * for_exprs error
  */
 void
