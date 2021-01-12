@@ -180,7 +180,7 @@ pcq_get(pcq_t *pcq)
 
 	/*
 	 * Ensure that update to pcq_items[] becomes globally visible
-	 * before the update to pcq_pc.  If it were reodered to occur
+	 * before the update to pcq_pc.  If it were reordered to occur
 	 * after it, we could in theory wipe out a modification made
 	 * to pcq_items[] by pcq_put().
 	 */
