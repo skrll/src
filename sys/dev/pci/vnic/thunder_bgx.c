@@ -1016,12 +1016,12 @@ bgx_set_num_ports(struct bgx *bgx)
 		bgx->lmac_count = 1;
 		bgx->lmac_type = BGX_MODE_XAUI;
 		bgx->lane_to_sds = 0xE4;
-			break;
+		break;
 	case QLM_MODE_RXAUI_2X2:
 		bgx->lmac_count = 2;
 		bgx->lmac_type = BGX_MODE_RXAUI;
 		bgx->lane_to_sds = 0xE4;
-			break;
+		break;
 	case QLM_MODE_XFI_4X1:
 		bgx->lmac_count = 4;
 		bgx->lmac_type = BGX_MODE_XFI;
