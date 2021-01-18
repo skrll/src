@@ -2514,7 +2514,7 @@ ena_update_hwassist(struct ena_adapter *adapter)
 
 	if ((cap & IFCAP_CSUM_TCPv6_Tx) != 0)
 		flags |= M_CSUM_TCPv6;
-	
+
 	if ((cap & IFCAP_CSUM_UDPv6_Tx) != 0)
 		flags |= M_CSUM_UDPv6;
 
