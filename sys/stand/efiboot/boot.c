@@ -88,6 +88,7 @@ static char rndseed_path[255];
 int	set_bootfile(const char *);
 int	set_bootargs(const char *);
 
+void	command_acpi(char *);
 void	command_boot(char *);
 void	command_dev(char *);
 void	command_dtb(char *);
@@ -106,6 +107,7 @@ void	command_version(char *);
 void	command_quit(char *);
 
 const struct boot_command commands[] = {
+	{ "acpi",	command_acpi,		"acpi [{on|off}]" },
 	{ "boot",	command_boot,		"boot [dev:][filename] [args]\n     (ex. \"hd0a:\\netbsd.old -s\"" },
 	{ "dev",	command_dev,		"dev" },
 	{ "dtb",	command_dtb,		"dtb [dev:][filename]" },
@@ -162,6 +164,23 @@ command_help(char *arg)
 	}
 }
 
+void
+command_acpi(char *arg)
+{
+	if (arg && *arg) {
+		if (strcmp(arg, "on") == 0)
+			efi_acpi_enable(1);
+		else if (strcmp(arg, "off") == 0)
+			efi_acpi_enable(0);
+		else {
+			command_help("");
+			return;
+		}
+	} else {
+		printf("ACPI support is %sabled\n",
+		    efi_acpi_enabled() ? "en" : "dis");
+	}
+}
 void
 command_boot(char *arg)
 {

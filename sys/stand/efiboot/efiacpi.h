@@ -33,3 +33,6 @@ int efi_acpi_probe(void);
 void efi_acpi_show(void);
 int efi_acpi_available(void);
 int efi_acpi_create_fdt(void);
+
+int efi_acpi_enabled(void);
+void efi_acpi_enable(int);

@@ -56,6 +56,8 @@ static EFI_GUID Smbios3TableGuid = SMBIOS3_TABLE_GUID;
 static void *acpi_root = NULL;
 static void *smbios3_table = NULL;
 
+static int acpi_enabled = 1;
+
 int
 efi_acpi_probe(void)
 {
@@ -75,10 +77,22 @@ efi_acpi_probe(void)
 int
 efi_acpi_available(void)
 {
-	return acpi_root != NULL;
+	return acpi_root != NULL && acpi_enabled;
+}
+
+int
+efi_acpi_enabled(void)
+{
+	return acpi_enabled;
 }
 
 static char model_buf[128];
+
+void
+efi_acpi_enable(int val)
+{
+	acpi_enabled = val;
+}
 
 static const char *
 efi_acpi_get_model(void)
