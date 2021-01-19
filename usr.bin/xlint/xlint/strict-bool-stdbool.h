@@ -1,4 +1,4 @@
-/*	$NetBSD: ops.c,v 1.1 2021/01/05 23:50:29 rillig Exp $	*/
+/*	$NetBSD: strict-bool-stdbool.h,v 1.1 2021/01/16 16:03:46 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2021 The NetBSD Foundation, Inc.
@@ -29,36 +29,13 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/types.h>
-#include "op.h"
-#include "param.h"
+#ifndef _LINT_STDBOOL_H
+#define _LINT_STDBOOL_H
 
-mod_t modtab[NOPS];
+#define bool	_Bool
+#define false	__lint_false
+#define true	__lint_true
 
-static const struct {
-	mod_t	m;
-	unsigned char	ok;
-} imods[] =
-#define begin_ops() {
-#define op(name, repr, \
-		bi, lo, in, sc, ar, fo, va, ts, ba, se, \
-		lu, ru, pc, cm, ve, de, ew, ic, active) \
-	{ { bi, lo, in, sc, ar, fo, va, ts, ba, se, \
-	    lu, ru, pc, cm, ve, de, ew, ic, repr }, active },
-#define end_ops(n) };
-#include "ops.def"
+#define __bool_true_false_are_defined 1
 
-const char *
-getopname(op_t op) {
-	return imods[op].m.m_name;
-}
-
-void
-initmtab(void)
-{
-	size_t i;
-
-	for (i = 0; i < sizeof imods / sizeof imods[0]; i++)
-		if (imods[i].ok)
-			modtab[i] = imods[i].m;
-}
+#endif

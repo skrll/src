@@ -1,4 +1,4 @@
-/*	$NetBSD: for.c,v 1.132 2020/12/31 14:10:04 rillig Exp $	*/
+/*	$NetBSD: for.c,v 1.134 2021/01/10 21:20:46 rillig Exp $	*/
 
 /*
  * Copyright (c) 1992, The Regents of the University of California.
@@ -58,7 +58,7 @@
 #include "make.h"
 
 /*	"@(#)for.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: for.c,v 1.132 2020/12/31 14:10:04 rillig Exp $");
+MAKE_RCSID("$NetBSD: for.c,v 1.134 2021/01/10 21:20:46 rillig Exp $");
 
 static int forLevel = 0;	/* Nesting level */
 
@@ -222,7 +222,7 @@ For_Eval(const char *line)
 		size_t nitems, nvars;
 
 		if ((nitems = f->items.len) > 0 &&
-		    nitems % (nvars = f->vars.len)) {
+		    nitems % (nvars = f->vars.len) != 0) {
 			Parse_Error(PARSE_FATAL,
 			    "Wrong number of words (%u) in .for "
 			    "substitution list with %u variables",
@@ -478,7 +478,7 @@ ForReadMore(void *v_arg, size_t *out_len)
 
 	ForSubstBody(f);
 	DEBUG1(FOR, "For: loop body:\n%s", f->curBody.data);
-	f->sub_next += f->vars.len;
+	f->sub_next += (unsigned int)f->vars.len;
 
 	*out_len = f->curBody.len;
 	return f->curBody.data;

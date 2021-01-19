@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: scan.l,v 1.113 2021/01/05 17:13:44 rillig Exp $ */
+/* $NetBSD: scan.l,v 1.129 2021/01/18 20:02:34 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: scan.l,v 1.113 2021/01/05 17:13:44 rillig Exp $");
+__RCSID("$NetBSD: scan.l,v 1.129 2021/01/18 20:02:34 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -49,7 +49,7 @@ __RCSID("$NetBSD: scan.l,v 1.113 2021/01/05 17:13:44 rillig Exp $");
 #include "lint1.h"
 #include "cgram.h"
 
-#define CHAR_MASK	((int)(~(~0U << CHAR_BIT)))
+#define CHAR_MASK	((int)(~(~0U << CHAR_SIZE)))
 
 /* Current position (it's also updated when an included file is parsed) */
 pos_t	curr_pos = { 1, "", 0 };
@@ -61,7 +61,9 @@ pos_t	curr_pos = { 1, "", 0 };
 pos_t	csrc_pos = { 1, "", 0 };
 
 /* Are we parsing a gcc attribute? */
-int attron;
+bool attron;
+
+bool in_system_header = false;
 
 static	void	incline(void);
 static	void	badchar(int);
@@ -106,46 +108,46 @@ TL	([fFlL]?[i]?)
 0{OD}*[lLuU]*			return icon(8);
 {NZD}{D}*[lLuU]*		return icon(10);
 0[xX]{HD}+[lLuU]*		return icon(16);
-{D}+\.{D}*{EX}?{TL}	|
-{D}+{EX}{TL}		|
-0[xX]{HD}+\.{HD}*{HX}{TL} |
-0[xX]{HD}+{HX}{TL}	|
-\.{D}+{EX}?{TL}		return fcon();
-"="				return operator(T_ASSIGN, ASSIGN);
-"*="				return operator(T_OPASS, MULASS);
-"/="				return operator(T_OPASS, DIVASS);
-"%="				return operator(T_OPASS, MODASS);
-"+="				return operator(T_OPASS, ADDASS);
-"-="				return operator(T_OPASS, SUBASS);
-"<<="				return operator(T_OPASS, SHLASS);
-">>="				return operator(T_OPASS, SHRASS);
-"&="				return operator(T_OPASS, ANDASS);
-"^="				return operator(T_OPASS, XORASS);
-"|="				return operator(T_OPASS, ORASS);
-"||"				return operator(T_LOGOR, LOGOR);
-"&&"				return operator(T_LOGAND, LOGAND);
-"|"				return operator(T_OR, OR);
-"&"				return operator(T_AND, AND);
-"^"				return operator(T_XOR, XOR);
-"=="				return operator(T_EQOP, EQ);
-"!="				return operator(T_EQOP, NE);
-"<"				return operator(T_RELOP, LT);
-">"				return operator(T_RELOP, GT);
-"<="				return operator(T_RELOP, LE);
-">="				return operator(T_RELOP, GE);
-"<<"				return operator(T_SHFTOP, SHL);
-">>"				return operator(T_SHFTOP, SHR);
+{D}+\.{D}*{EX}?{TL}		|
+{D}+{EX}{TL}			|
+0[xX]{HD}+\.{HD}*{HX}{TL}	|
+0[xX]{HD}+{HX}{TL}		|
+\.{D}+{EX}?{TL}			return fcon();
+"="				return operator(T_ASSIGN, NOOP);
+"*="				return operator(T_OPASSIGN, MULASS);
+"/="				return operator(T_OPASSIGN, DIVASS);
+"%="				return operator(T_OPASSIGN, MODASS);
+"+="				return operator(T_OPASSIGN, ADDASS);
+"-="				return operator(T_OPASSIGN, SUBASS);
+"<<="				return operator(T_OPASSIGN, SHLASS);
+">>="				return operator(T_OPASSIGN, SHRASS);
+"&="				return operator(T_OPASSIGN, ANDASS);
+"^="				return operator(T_OPASSIGN, XORASS);
+"|="				return operator(T_OPASSIGN, ORASS);
+"||"				return operator(T_LOGOR, NOOP);
+"&&"				return operator(T_LOGAND, NOOP);
+"|"				return operator(T_BITOR, NOOP);
+"&"				return operator(T_AMPER, NOOP);
+"^"				return operator(T_XOR, NOOP);
+"=="				return operator(T_EQUALITY, EQ);
+"!="				return operator(T_EQUALITY, NE);
+"<"				return operator(T_RELATIONAL, LT);
+">"				return operator(T_RELATIONAL, GT);
+"<="				return operator(T_RELATIONAL, LE);
+">="				return operator(T_RELATIONAL, GE);
+"<<"				return operator(T_SHIFT, SHL);
+">>"				return operator(T_SHIFT, SHR);
 "++"				return operator(T_INCDEC, INC);
 "--"				return operator(T_INCDEC, DEC);
-"->"				return operator(T_STROP, ARROW);
-"."				return operator(T_STROP, POINT);
-"+"				return operator(T_ADDOP, PLUS);
-"-"				return operator(T_ADDOP, MINUS);
-"*"				return operator(T_MULT, MULT);
-"/"				return operator(T_DIVOP, DIV);
-"%"				return operator(T_DIVOP, MOD);
-"!"				return operator(T_UNOP, NOT);
-"~"				return operator(T_UNOP, COMPL);
+"->"				return operator(T_MEMBACC, ARROW);
+"."				return operator(T_MEMBACC, POINT);
+"+"				return operator(T_ADDITIVE, PLUS);
+"-"				return operator(T_ADDITIVE, MINUS);
+"*"				return operator(T_ASTERISK, NOOP);
+"/"				return operator(T_MULTIPLICATIVE, DIV);
+"%"				return operator(T_MULTIPLICATIVE, MOD);
+"!"				return operator(T_UNARY, NOT);
+"~"				return operator(T_UNARY, COMPL);
 "\""				return string();
 "L\""				return wcstrg();
 ";"				return T_SEMI;
@@ -158,7 +160,7 @@ TL	([fFlL]?[i]?)
 "]"				return T_RBRACK;
 "("				return T_LPAREN;
 ")"				return T_RPAREN;
-"..."				return T_ELLIPSE;
+"..."				return T_ELLIPSIS;
 "'"				return ccon();
 "L'"				return wccon();
 ^#.*$				directive();
@@ -200,7 +202,8 @@ static	struct	kwtab {
 	const	char *kw_name;	/* keyword */
 	int	kw_token;	/* token returned by yylex() */
 	scl_t	kw_scl;		/* storage class if kw_token T_SCLASS */
-	tspec_t	kw_tspec;	/* type spec. if kw_token T_TYPE or T_SOU */
+	tspec_t	kw_tspec;	/* type spec. if kw_token
+				 * T_TYPE or T_STRUCT_OR_UNION */
 	tqual_t	kw_tqual;	/* type qual. fi kw_token T_QUAL */
 	bool	kw_c89 : 1;	/* C89 keyword */
 	bool	kw_c99 : 1;	/* C99 keyword */
@@ -289,7 +292,7 @@ static	struct	kwtab {
 	{ "strfmon",	T_AT_FORMAT_STRFMON,0,	0,	0,	  0,0,1,1,5 },
 	{ "strftime",	T_AT_FORMAT_STRFTIME,0,	0,	0,	  0,0,1,1,5 },
 	{ "string",	T_AT_STRING,	0,	0,	0,	  0,0,1,1,5 },
-	{ "struct",	T_SOU,		0,	STRUCT,	0,	  0,0,0,0,1 },
+	{ "struct",	T_STRUCT_OR_UNION, 0,	STRUCT,	0,	  0,0,0,0,1 },
 	{ "switch",	T_SWITCH,	0,	0,	0,	  0,0,0,0,1 },
 	{ "symbolrename", T_SYMBOLRENAME,0,	0,	0,	  0,0,0,0,2 },
 	{ "syslog",	T_AT_FORMAT_SYSLOG,0,	0,	0,	  0,0,1,1,5 },
@@ -297,7 +300,7 @@ static	struct	kwtab {
 	{ "tls_model",	T_AT_TLS_MODEL,	0,	0,	0,	  0,0,1,1,5 },
 	{ "typedef",	T_SCLASS,	TYPEDEF, 0,	0,	  0,0,0,0,1 },
 	{ "typeof",	T_TYPEOF,	0,	0,	0,	  0,0,1,0,7 },
-	{ "union",	T_SOU,		0,	UNION,	0,	  0,0,0,0,1 },
+	{ "union",	T_STRUCT_OR_UNION, 0,	UNION,	0,	  0,0,0,0,1 },
 	{ "unsigned",	T_TYPE,		0,	UNSIGN,	0,	  0,0,0,0,1 },
 	{ "unused",	T_AT_UNUSED,	0,	0,	0,	  0,0,1,1,5 },
 	{ "used",	T_AT_USED,	0,	0,	0,	  0,0,1,1,5 },
@@ -314,18 +317,18 @@ static	struct	kwtab {
 static	sym_t	*symtab[HSHSIZ1];
 
 /* bit i of the entry with index i is set */
-uint64_t qbmasks[sizeof(uint64_t) * CHAR_BIT];
+uint64_t qbmasks[64];
 
 /* least significant i bits are set in the entry with index i */
-uint64_t qlmasks[sizeof(uint64_t) * CHAR_BIT + 1];
+uint64_t qlmasks[64 + 1];
 
 /* least significant i bits are not set in the entry with index i */
-uint64_t qumasks[sizeof(uint64_t) * CHAR_BIT + 1];
+uint64_t qumasks[64 + 1];
 
 /* free list for sbuf structures */
 static	sbuf_t	 *sbfrlst;
 
-/* Typ of next expected symbol */
+/* type of next expected symbol */
 symt_t	symtyp;
 
 
@@ -348,12 +351,11 @@ add_keyword(struct kwtab *kw, int deco)
 		snprintf(buf, sizeof(buf), "__%s", kw->kw_name);
 		name = strdup(buf);
 		break;
-	case 4:
+	default:
+		lint_assert(deco == 4);
 		snprintf(buf, sizeof(buf), "__%s__", kw->kw_name);
 		name = strdup(buf);
 		break;
-	default:
-		abort();
 	}
 
 	if (name == NULL)
@@ -363,7 +365,7 @@ add_keyword(struct kwtab *kw, int deco)
 	sym->s_name = name;
 	sym->s_keyword = kw;
 	sym->s_value.v_quad = kw->kw_token;
-	if (kw->kw_token == T_TYPE || kw->kw_token == T_SOU) {
+	if (kw->kw_token == T_TYPE || kw->kw_token == T_STRUCT_OR_UNION) {
 		sym->s_tspec = kw->kw_tspec;
 	} else if (kw->kw_token == T_SCLASS) {
 		sym->s_scl = kw->kw_scl;
@@ -401,7 +403,7 @@ initscan(void)
 	}
 
 	/* initialize bit-masks for quads */
-	for (i = 0; i < sizeof (uint64_t) * CHAR_BIT; i++) {
+	for (i = 0; i < 64; i++) {
 		qbmasks[i] = (uint64_t)1 << i;
 		uq = ~(uint64_t)0 << i;
 		qumasks[i] = uq;
@@ -550,7 +552,7 @@ keyw(sym_t *sym)
 
 	if ((t = (int)sym->s_value.v_quad) == T_SCLASS) {
 		yylval.y_scl = sym->s_scl;
-	} else if (t == T_TYPE || t == T_SOU) {
+	} else if (t == T_TYPE || t == T_STRUCT_OR_UNION) {
 		yylval.y_tspec = sym->s_tspec;
 	} else if (t == T_QUAL) {
 		yylval.y_tqual = sym->s_tqual;
@@ -570,7 +572,7 @@ icon(int base)
 	const	char *cp;
 	char	c, *eptr;
 	tspec_t	typ;
-	int	ansiu;
+	bool	ansiu;
 #ifdef TARG_INT128_MAX
 	__uint128_t uq = 0;
 	static	tspec_t contypes[2][4] = {
@@ -596,7 +598,7 @@ icon(int base)
 
 	/* read suffixes */
 	l_suffix = u_suffix = 0;
-	for ( ; ; ) {
+	for (;;) {
 		if ((c = cp[len - 1]) == 'l' || c == 'L') {
 			l_suffix++;
 		} else if (c == 'u' || c == 'U') {
@@ -632,7 +634,7 @@ icon(int base)
 	 * If the value is too big for the current type, we must choose
 	 * another type.
 	 */
-	ansiu = 0;
+	ansiu = false;
 	switch (typ) {
 	case INT:
 		if (uq <= TARG_INT_MAX) {
@@ -656,7 +658,7 @@ icon(int base)
 				 * Remember that the constant is unsigned
 				 * only in ANSI C
 				 */
-				ansiu = 1;
+				ansiu = true;
 			}
 		}
 		break;
@@ -673,7 +675,7 @@ icon(int base)
 		if (uq > TARG_LONG_MAX && !tflag) {
 			typ = ULONG;
 			if (!sflag)
-				ansiu = 1;
+				ansiu = true;
 			if (uq > TARG_ULONG_MAX) {
 				/* integer constant out of range */
 				warning(252);
@@ -690,7 +692,7 @@ icon(int base)
 		if (uq > TARG_QUAD_MAX && !tflag) {
 			typ = UQUAD;
 			if (!sflag)
-				ansiu = 1;
+				ansiu = true;
 		}
 		break;
 	case UQUAD:
@@ -705,7 +707,7 @@ icon(int base)
 		if (uq > TARG_INT128_MAX && !tflag) {
 			typ = UINT128;
 			if (!sflag)
-				ansiu = 1;
+				ansiu = true;
 		}
 #endif
 		break;
@@ -764,7 +766,7 @@ int
 sign(int64_t q, tspec_t t, int len)
 {
 
-	if (t == PTR || tspec_is_uint(t))
+	if (t == PTR || is_uinteger(t))
 		return 0;
 	return msb(q, t, len);
 }
@@ -788,7 +790,7 @@ xsign(int64_t q, tspec_t t, int len)
 	if (len <= 0)
 		len = size(t);
 
-	if (t == PTR || tspec_is_uint(t) || !sign(q, t, len)) {
+	if (t == PTR || is_uinteger(t) || !sign(q, t, len)) {
 		q &= qlmasks[len];
 	} else {
 		q |= qumasks[len];
@@ -901,7 +903,7 @@ ccon(void)
 	n = 0;
 	val = 0;
 	while ((c = getescc('\'')) >= 0) {
-		val = (val << CHAR_BIT) + c;
+		val = (val << CHAR_SIZE) + c;
 		n++;
 	}
 	if (c == -2) {
@@ -1115,6 +1117,29 @@ getescc(int d)
 	return c;
 }
 
+/* See https://gcc.gnu.org/onlinedocs/cpp/Preprocessor-Output.html */
+static void
+parse_line_directive_flags(const char *p)
+{
+
+	in_system_header = false;
+
+	while (ch_isspace(*p))
+		p++;
+	while (ch_isdigit(*p)) {
+		if (*p == '3' && !ch_isdigit(p[1]))
+			in_system_header = true;
+		p++;
+		while (ch_isspace(*p))
+			p++;
+	}
+
+#if 0
+	if (c != '\0')
+		warning("extra character(s) after directive");
+#endif
+}
+
 /*
  * Called for preprocessor directives. Currently implemented are:
  *	# lineno
@@ -1127,15 +1152,14 @@ directive(void)
 	char	c, *eptr;
 	size_t	fnl;
 	long	ln;
-	static	int first = 1;
+	static	bool first = true;
 
 	/* Go to first non-whitespace after # */
 	for (cp = yytext + 1; (c = *cp) == ' ' || c == '\t'; cp++)
 		continue;
 
-	if (!isdigit((unsigned char)c)) {
-		if (strncmp(cp, "pragma", 6) == 0
-		    && isspace((unsigned char)cp[6]))
+	if (!ch_isdigit(c)) {
+		if (strncmp(cp, "pragma", 6) == 0 && ch_isspace(cp[6]))
 			return;
 	error:
 		/* undefined or invalid # directive */
@@ -1159,12 +1183,7 @@ directive(void)
 			goto error;
 		if ((fnl = cp++ - fn) > PATH_MAX)
 			goto error;
-		while ((c = *cp++) == ' ' || c == '\t')
-			continue;
-#if 0
-		if (c != '\0')
-			warning("extra character(s) after directive");
-#endif
+		parse_line_directive_flags(cp);
 
 		/* empty string means stdin */
 		if (fnl == 0) {
@@ -1181,7 +1200,7 @@ directive(void)
 			csrc_pos.p_file = curr_pos.p_file;
 			outsrc(fnxform(curr_pos.p_file,
 			    strlen(curr_pos.p_file)));
-			first = 0;
+			first = false;
 		}
 	}
 	curr_pos.p_line = (int)ln - 1;
@@ -1206,14 +1225,14 @@ directive(void)
  *	PROTOLIB
  *	SCANFLIKEn
  *	VARARGSn
- * If one of this comments is recognized, the arguments, if any, are
+ * If one of these comments is recognized, the argument, if any, is
  * parsed and a function which handles this comment is called.
  */
 static void
 comment(void)
 {
 	int	c, lc;
-	static struct {
+	static const struct {
 		const	char *keywd;
 		int	arg;
 		void	(*func)(int);
@@ -1239,11 +1258,11 @@ comment(void)
 	char	arg[32];
 	size_t	l, i;
 	int	a;
-	int	eoc;
+	bool	eoc;
 
-	eoc = 0;
+	eoc = false;
 
-	/* Skip white spaces after the start of the comment */
+	/* Skip whitespace after the start of the comment */
 	while ((c = inpc()) != EOF && isspace(c))
 		continue;
 
@@ -1263,7 +1282,7 @@ comment(void)
 	if (i == sizeof (keywtab) / sizeof (keywtab[0]))
 		goto skip_rest;
 
-	/* skip white spaces after the keyword */
+	/* skip whitespace after the keyword */
 	while (c != EOF && isspace(c))
 		c = inpc();
 
@@ -1278,7 +1297,7 @@ comment(void)
 	arg[l] = '\0';
 	a = l != 0 ? atoi(arg) : -1;
 
-	/* skip white spaces after the argument */
+	/* skip whitespace after the argument */
 	while (c != EOF && isspace(c))
 		c = inpc();
 
@@ -1291,7 +1310,7 @@ comment(void)
 		 * remember that we have already found the end of the
 		 * comment
 		 */
-		eoc = 1;
+		eoc = true;
 	}
 
 	if (keywtab[i].func != NULL)
@@ -1306,7 +1325,7 @@ comment(void)
 			break;
 		}
 		if (lc == '*' && c == '/')
-			eoc = 1;
+			eoc = true;
 	}
 }
 
@@ -1328,18 +1347,18 @@ slashslashcomment(void)
 
 /*
  * Clear flags for lint comments LINTED, LONGLONG and CONSTCOND.
- * clrwflgs() is called after function definitions and global and
+ * clear_warn_flags() is called after function definitions and global and
  * local declarations and definitions. It is also called between
  * the controlling expression and the body of control statements
  * (if, switch, for, while).
  */
 void
-clrwflgs(void)
+clear_warn_flags(void)
 {
 
 	lwarn = LWARN_ALL;
-	quadflg = 0;
-	constcond_flag = 0;
+	quadflg = false;
+	constcond_flag = false;
 }
 
 /*
@@ -1443,9 +1462,9 @@ wcstrg(void)
  *
  * getsym() is called as soon as it is probably ok to put the symbol to
  * the symbol table. This does not mean that it is not possible that
- * symbols are put to the symbol table which are than not completely
+ * symbols are put to the symbol table which are not completely
  * declared due to syntax errors. To avoid too many problems in this
- * case symbols get type int in getsym().
+ * case, symbols get type int in getsym().
  *
  * XXX calls to getsym() should be delayed until decl1*() is called
  */
@@ -1479,7 +1498,7 @@ getsym(sbuf_t *sb)
 
 	/* create a new symbol table entry */
 
-	/* labels must always be allocated at level 1 (outhermost block) */
+	/* labels must always be allocated at level 1 (outermost block) */
 	if (symtyp == FLABEL) {
 		sym = getlblk(1, sizeof (sym_t));
 		s = getlblk(1, sb->sb_len + 1);
@@ -1535,8 +1554,8 @@ mktempsym(type_t *t)
 	sym->s_blklev = blklev;
 	sym->s_scl = AUTO;
 	sym->s_kind = FVFT;
-	sym->s_used = 1;
-	sym->s_set = 1;
+	sym->s_used = true;
+	sym->s_set = true;
 
 	if ((sym->s_link = symtab[h]) != NULL)
 		symtab[h]->s_rlink = &sym->s_link;

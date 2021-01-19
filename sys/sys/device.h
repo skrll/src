@@ -1,4 +1,4 @@
-/* $NetBSD: device.h,v 1.159 2020/11/24 16:17:04 christos Exp $ */
+/* $NetBSD: device.h,v 1.161 2021/01/18 15:28:21 thorpej Exp $ */
 
 /*
  * Copyright (c) 1996, 2000 Christopher G. Demetriou
@@ -125,7 +125,10 @@ typedef struct cfattach *cfattach_t;
 #if defined(_KERNEL) || defined(_KMEMUSER)
 struct device_compatible_entry {
 	const char	*compat;
-	uintptr_t	data;
+	union {
+		const void *data;
+		uintptr_t value;
+	};
 };
 
 struct device_lock {
@@ -541,8 +544,10 @@ device_t	device_find_by_xname(const char *);
 device_t	device_find_by_driver_unit(const char *, int);
 
 int		device_compatible_match(const char **, int,
-				const struct device_compatible_entry *,
-				const struct device_compatible_entry **);
+				const struct device_compatible_entry *);
+const struct device_compatible_entry *
+		device_compatible_lookup(const char **, int,
+				const struct device_compatible_entry *);
 
 bool		device_pmf_is_registered(device_t);
 

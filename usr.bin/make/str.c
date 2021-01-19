@@ -1,4 +1,4 @@
-/*	$NetBSD: str.c,v 1.76 2020/12/30 10:03:16 rillig Exp $	*/
+/*	$NetBSD: str.c,v 1.78 2021/01/10 23:59:53 rillig Exp $	*/
 
 /*-
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -71,7 +71,7 @@
 #include "make.h"
 
 /*	"@(#)str.c	5.8 (Berkeley) 6/1/90"	*/
-MAKE_RCSID("$NetBSD: str.c,v 1.76 2020/12/30 10:03:16 rillig Exp $");
+MAKE_RCSID("$NetBSD: str.c,v 1.78 2021/01/10 23:59:53 rillig Exp $");
 
 /* Return the concatenation of s1 and s2, freshly allocated. */
 char *
@@ -161,7 +161,7 @@ Str_Words(const char *str, Boolean expand)
 		switch (ch) {
 		case '"':
 		case '\'':
-			if (inquote) {
+			if (inquote != '\0') {
 				if (inquote == ch)
 					inquote = '\0';
 				else
@@ -189,7 +189,7 @@ Str_Words(const char *str, Boolean expand)
 		case ' ':
 		case '\t':
 		case '\n':
-			if (inquote)
+			if (inquote != '\0')
 				break;
 			if (word_start == NULL)
 				continue;
@@ -212,7 +212,7 @@ Str_Words(const char *str, Boolean expand)
 			words[words_len++] = word_start;
 			word_start = NULL;
 			if (ch == '\n' || ch == '\0') {
-				if (expand && inquote) {
+				if (expand && inquote != '\0') {
 					free(words);
 					free(words_buf);
 					return (Words){ NULL, 0, NULL };

@@ -1,4 +1,4 @@
-/*	$NetBSD: func.c,v 1.51 2021/01/05 00:22:04 rillig Exp $	*/
+/*	$NetBSD: func.c,v 1.64 2021/01/18 20:02:34 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: func.c,v 1.51 2021/01/05 00:22:04 rillig Exp $");
+__RCSID("$NetBSD: func.c,v 1.64 2021/01/18 20:02:34 rillig Exp $");
 #endif
 
 #include <stdlib.h>
@@ -53,27 +53,27 @@ __RCSID("$NetBSD: func.c,v 1.51 2021/01/05 00:22:04 rillig Exp $");
 sym_t	*funcsym;
 
 /* Is set as long as a statement can be reached. Must be set at level 0. */
-int	reached = 1;
+bool	reached = true;
 
 /*
  * Is set as long as NOTREACHED is in effect.
  * Is reset everywhere where reached can become 0.
  */
-int	rchflg;
+bool	rchflg;
 
 /*
- * In conjunction with reached, controls printing of "fallthrough on ..."
+ * In conjunction with 'reached', controls printing of "fallthrough on ..."
  * warnings.
  * Reset by each statement and set by FALLTHROUGH, switch (switch1())
  * and case (label()).
  *
  * Control statements if, for, while and switch do not reset ftflg because
  * this must be done by the controlled statement. At least for if this is
- * important because ** FALLTHROUGH ** after "if (expr) stmnt" is evaluated
- * before the following token, which causes reduction of above.
+ * important because ** FALLTHROUGH ** after "if (expr) statement" is
+ * evaluated before the following token, which causes reduction of above.
  * This means that ** FALLTHROUGH ** after "if ..." would always be ignored.
  */
-int	ftflg;
+bool	ftflg;
 
 /* The innermost control statement */
 cstk_t	*cstmt;
@@ -113,20 +113,20 @@ pos_t	scanflike_pos;
  * If both plibflg and llibflg are set, prototypes are written as function
  * definitions to the output file.
  */
-int	plibflg;
+bool	plibflg;
 
 /*
- * Nonzero means that no warnings about constants in conditional
+ * True means that no warnings about constants in conditional
  * context are printed.
  */
-int	constcond_flag;
+bool	constcond_flag;
 
 /*
  * llibflg is set if a lint library shall be created. The effect of
  * llibflg is that all defined symbols are treated as used.
  * (The LINTLIBRARY comment also resets vflag.)
  */
-int	llibflg;
+bool	llibflg;
 
 /*
  * Nonzero if warnings are suppressed by a LINTED directive
@@ -144,10 +144,10 @@ int	lwarn = LWARN_ALL;
 bool	bitfieldtype_ok;
 
 /*
- * Nonzero if complaints about use of "long long" are suppressed in
+ * Whether complaints about use of "long long" are suppressed in
  * the next statement or declaration.
  */
-int	quadflg;
+bool	quadflg;
 
 /*
  * Puts a new element at the top of the stack used for control statements.
@@ -170,21 +170,20 @@ void
 popctrl(int env)
 {
 	cstk_t	*ci;
-	clst_t	*cl;
+	clst_t	*cl, *next;
 
 	lint_assert(cstmt != NULL);
 	lint_assert(cstmt->c_env == env);
 
-	cstmt = (ci = cstmt)->c_surrounding;
+	ci = cstmt;
+	cstmt = ci->c_surrounding;
 
-	while ((cl = ci->c_clst) != NULL) {
-		ci->c_clst = cl->cl_next;
+	for (cl = ci->c_clst; cl != NULL; cl = next) {
+		next = cl->cl_next;
 		free(cl);
 	}
 
-	if (ci->c_swtype != NULL)
-		free(ci->c_swtype);
-
+	free(ci->c_swtype);
 	free(ci);
 }
 
@@ -197,7 +196,7 @@ check_statement_reachable(void)
 	if (!reached && !rchflg) {
 		/* statement not reached */
 		warning(193);
-		reached = 1;
+		reached = true;
 	}
 }
 
@@ -214,7 +213,8 @@ check_statement_reachable(void)
 void
 funcdef(sym_t *fsym)
 {
-	int	n, dowarn;
+	int	n;
+	bool	dowarn;
 	sym_t	*arg, *sym, *rdsym;
 
 	funcsym = fsym;
@@ -236,7 +236,7 @@ funcdef(sym_t *fsym)
 	 * if there are no arguments inside the argument list ("f()").
 	 */
 	if (!fsym->s_type->t_proto && fsym->s_args == NULL)
-		fsym->s_osdef = 1;
+		fsym->s_osdef = true;
 
 	check_type(fsym);
 
@@ -259,7 +259,7 @@ funcdef(sym_t *fsym)
 	}
 
 	if (dcs->d_inline)
-		fsym->s_inline = 1;
+		fsym->s_inline = true;
 
 	/*
 	 * Arguments in new style function declarations need a name.
@@ -286,7 +286,7 @@ funcdef(sym_t *fsym)
 
 	if ((rdsym = dcs->d_rdcsym) != NULL) {
 
-		if (!check_redeclaration(fsym, (dowarn = 0, &dowarn))) {
+		if (!check_redeclaration(fsym, (dowarn = false, &dowarn))) {
 
 			/*
 			 * Print nothing if the newly defined function
@@ -303,7 +303,6 @@ funcdef(sym_t *fsym)
 				print_previous_declaration(-1, rdsym);
 			}
 
-			/* copy usage information */
 			copy_usage_info(fsym, rdsym);
 
 			/*
@@ -314,12 +313,10 @@ funcdef(sym_t *fsym)
 			if (fsym->s_osdef && rdsym->s_type->t_proto)
 				fsym->s_def_pos = rdsym->s_def_pos;
 
-			/* complete the type */
 			complete_type(fsym, rdsym);
 
-			/* once a function is inline it remains inline */
 			if (rdsym->s_inline)
-				fsym->s_inline = 1;
+				fsym->s_inline = true;
 
 		}
 
@@ -336,9 +333,9 @@ funcdef(sym_t *fsym)
 
 	if (dcs->d_notyp)
 		/* return value is implicitly declared to be int */
-		fsym->s_rimpl = 1;
+		fsym->s_rimpl = true;
 
-	reached = 1;
+	reached = true;
 }
 
 /*
@@ -351,7 +348,7 @@ funcend(void)
 	int	n;
 
 	if (reached) {
-		cstmt->c_noretval = 1;
+		cstmt->c_had_return_noval = true;
 		if (funcsym->s_type->t_subt->t_tspec != VOID &&
 		    !funcsym->s_rimpl) {
 			/* func. %s falls off bottom without returning value */
@@ -364,7 +361,8 @@ funcend(void)
 	 * declared to be int. Otherwise the wrong return statement
 	 * has already printed a warning.
 	 */
-	if (cstmt->c_noretval && cstmt->c_retval && funcsym->s_rimpl)
+	if (cstmt->c_had_return_noval && cstmt->c_had_return_value &&
+	    funcsym->s_rimpl)
 		/* function %s has return (e); and return; */
 		warning(216, funcsym->s_name);
 
@@ -387,7 +385,7 @@ funcend(void)
 	if (dcs->d_scl == EXTERN && funcsym->s_inline) {
 		outsym(funcsym, funcsym->s_scl, DECL);
 	} else {
-		outfdef(funcsym, &dcs->d_fdpos, cstmt->c_retval,
+		outfdef(funcsym, &dcs->d_fdpos, cstmt->c_had_return_value,
 			funcsym->s_osdef, dcs->d_fargs);
 	}
 
@@ -400,7 +398,7 @@ funcend(void)
 	rmsyms(dcs->d_fpsyms);
 
 	/* must be set on level 0 */
-	reached = 1;
+	reached = true;
 }
 
 void
@@ -414,7 +412,7 @@ named_label(sym_t *sym)
 		mark_as_set(sym);
 	}
 
-	reached = 1;
+	reached = true;
 }
 
 static void
@@ -437,7 +435,7 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 		return;
 	}
 
-	if (tn != NULL && !tspec_is_int(tn->tn_type->t_tspec)) {
+	if (tn != NULL && !is_integer(tn->tn_type->t_tspec)) {
 		/* non-integral case expression */
 		error(198);
 		return;
@@ -463,9 +461,9 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 	 * get the value of the expression and convert it
 	 * to the type of the switch expression
 	 */
-	v = constant(tn, 1);
-	(void) memset(&nv, 0, sizeof nv);
-	cvtcon(CASE, 0, ci->c_swtype, &nv, v);
+	v = constant(tn, true);
+	(void)memset(&nv, 0, sizeof nv);
+	convert_constant(CASE, 0, ci->c_swtype, &nv, v);
 	free(v);
 
 	/* look if we had this value already */
@@ -473,7 +471,7 @@ check_case_label(tnode_t *tn, cstk_t *ci)
 		if (cl->cl_val.v_quad == nv.v_quad)
 			break;
 	}
-	if (cl != NULL && tspec_is_uint(nv.v_tspec)) {
+	if (cl != NULL && is_uinteger(nv.v_tspec)) {
 		/* duplicate case in switch: %lu */
 		error(200, (u_long)nv.v_quad);
 	} else if (cl != NULL) {
@@ -504,7 +502,7 @@ case_label(tnode_t *tn)
 
 	tfreeblk();
 
-	reached = 1;
+	reached = true;
 }
 
 void
@@ -528,28 +526,33 @@ default_label(void)
 				/* fallthrough on default statement */
 				warning(284);
 		}
-		ci->c_default = 1;
+		ci->c_default = true;
 	}
 
-	reached = 1;
+	reached = true;
 }
 
 static tnode_t *
 check_controlling_expression(tnode_t *tn)
 {
-	tspec_t t = tn->tn_type->t_tspec;
 
 	if (tn != NULL)
 		tn = cconv(tn);
 	if (tn != NULL)
-		tn = promote(NOOP, 0, tn);
+		tn = promote(NOOP, false, tn);
 
-	if (tn != NULL && !tspec_is_scalar(t)) {
+	if (tn != NULL && !is_scalar(tn->tn_type->t_tspec)) {
 		/* C99 6.5.15p4 for the ?: operator; see typeok:QUEST */
 		/* C99 6.8.4.1p1 for if statements */
 		/* C99 6.8.5p2 for while, do and for loops */
 		/* controlling expressions must have scalar type */
 		error(204);
+		return NULL;
+	}
+
+	if (tn != NULL && Tflag && !is_strict_bool(tn)) {
+		/* controlling expression must be bool, not '%s' */
+		error(333, tspec_name(tn->tn_type->t_tspec));
 		return NULL;
 	}
 
@@ -566,7 +569,7 @@ if1(tnode_t *tn)
 	if (tn != NULL)
 		tn = check_controlling_expression(tn);
 	if (tn != NULL)
-		expr(tn, 0, 1, 0);
+		expr(tn, false, true, false);
 	pushctrl(T_IF);
 }
 
@@ -578,22 +581,22 @@ void
 if2(void)
 {
 
-	cstmt->c_rchif = reached ? 1 : 0;
-	reached = 1;
+	cstmt->c_rchif = reached;
+	reached = true;
 }
 
 /*
  * if_without_else
- * if_without_else T_ELSE stmnt
+ * if_without_else T_ELSE statement
  */
 void
-if3(int els)
+if3(bool els)
 {
 
 	if (els) {
 		reached |= cstmt->c_rchif;
 	} else {
-		reached = 1;
+		reached = true;
 	}
 	popctrl(T_IF);
 }
@@ -610,8 +613,8 @@ switch1(tnode_t *tn)
 	if (tn != NULL)
 		tn = cconv(tn);
 	if (tn != NULL)
-		tn = promote(NOOP, 0, tn);
-	if (tn != NULL && !tspec_is_int(tn->tn_type->t_tspec)) {
+		tn = promote(NOOP, false, tn);
+	if (tn != NULL && !is_integer(tn->tn_type->t_tspec)) {
 		/* switch expression must have integral type */
 		error(205);
 		tn = NULL;
@@ -633,24 +636,24 @@ switch1(tnode_t *tn)
 	tp = xcalloc(1, sizeof (type_t));
 	if (tn != NULL) {
 		tp->t_tspec = tn->tn_type->t_tspec;
-		if ((tp->t_isenum = tn->tn_type->t_isenum) != 0)
+		if ((tp->t_isenum = tn->tn_type->t_isenum) != false)
 			tp->t_enum = tn->tn_type->t_enum;
 	} else {
 		tp->t_tspec = INT;
 	}
 
-	expr(tn, 1, 0, 1);
+	expr(tn, true, false, true);
 
 	pushctrl(T_SWITCH);
-	cstmt->c_switch = 1;
+	cstmt->c_switch = true;
 	cstmt->c_swtype = tp;
 
-	reached = rchflg = 0;
-	ftflg = 1;
+	reached = rchflg = false;
+	ftflg = true;
 }
 
 /*
- * switch_expr stmnt
+ * switch_expr statement
  */
 void
 switch2(void)
@@ -686,14 +689,14 @@ switch2(void)
 		 * end of switch alway reached (c_break is only set if the
 		 * break statement can be reached).
 		 */
-		reached = 1;
+		reached = true;
 	} else if (!cstmt->c_default &&
 		   (!hflag || !cstmt->c_swtype->t_isenum || nenum != nclab)) {
 		/*
 		 * there are possible values which are not handled in
 		 * switch
 		 */
-		reached = 1;
+		reached = true;
 	}	/*
 		 * otherwise the end of the switch expression is reached
 		 * if the end of the last statement inside it is reached.
@@ -712,27 +715,22 @@ while1(tnode_t *tn)
 	if (!reached) {
 		/* loop not entered at top */
 		warning(207);
-		reached = 1;
+		reached = true;
 	}
 
 	if (tn != NULL)
 		tn = check_controlling_expression(tn);
 
 	pushctrl(T_WHILE);
-	cstmt->c_loop = 1;
-	if (tn != NULL && tn->tn_op == CON) {
-		if (tspec_is_int(tn->tn_type->t_tspec)) {
-			cstmt->c_infinite = tn->tn_val->v_quad != 0;
-		} else {
-			cstmt->c_infinite = tn->tn_val->v_ldbl != 0.0;
-		}
-	}
+	cstmt->c_loop = true;
+	if (tn != NULL && tn->tn_op == CON)
+		cstmt->c_infinite = is_nonzero(tn);
 
-	expr(tn, 0, 1, 1);
+	expr(tn, false, true, true);
 }
 
 /*
- * while_expr stmnt
+ * while_expr statement
  * while_expr error
  */
 void
@@ -744,7 +742,7 @@ while2(void)
 	 * or there was a break statement which was reached.
 	 */
 	reached = !cstmt->c_infinite || cstmt->c_break;
-	rchflg = 0;
+	rchflg = false;
 
 	popctrl(T_WHILE);
 }
@@ -759,15 +757,15 @@ do1(void)
 	if (!reached) {
 		/* loop not entered at top */
 		warning(207);
-		reached = 1;
+		reached = true;
 	}
 
 	pushctrl(T_DO);
-	cstmt->c_loop = 1;
+	cstmt->c_loop = true;
 }
 
 /*
- * do stmnt do_while_expr
+ * do statement do_while_expr
  * do error
  */
 void
@@ -779,30 +777,26 @@ do2(tnode_t *tn)
 	 * loop is reached.
 	 */
 	if (cstmt->c_cont)
-		reached = 1;
+		reached = true;
 
 	if (tn != NULL)
 		tn = check_controlling_expression(tn);
 
 	if (tn != NULL && tn->tn_op == CON) {
-		if (tspec_is_int(tn->tn_type->t_tspec)) {
-			cstmt->c_infinite = tn->tn_val->v_quad != 0;
-		} else {
-			cstmt->c_infinite = tn->tn_val->v_ldbl != 0.0;
-		}
+		cstmt->c_infinite = is_nonzero(tn);
 		if (!cstmt->c_infinite && cstmt->c_cont)
 			/* continue in 'do ... while (0)' loop */
 			error(323);
 	}
 
-	expr(tn, 0, 1, 1);
+	expr(tn, false, true, true);
 
 	/*
 	 * The end of the loop is only reached if it is no endless loop
 	 * or there was a break statement which could be reached.
 	 */
 	reached = !cstmt->c_infinite || cstmt->c_break;
-	rchflg = 0;
+	rchflg = false;
 
 	popctrl(T_DO);
 }
@@ -821,11 +815,11 @@ for1(tnode_t *tn1, tnode_t *tn2, tnode_t *tn3)
 	if (tn1 != NULL && !reached) {
 		/* loop not entered at top */
 		warning(207);
-		reached = 1;
+		reached = true;
 	}
 
 	pushctrl(T_FOR);
-	cstmt->c_loop = 1;
+	cstmt->c_loop = true;
 
 	/*
 	 * Store the tree memory for the reinitialisation expression.
@@ -838,30 +832,23 @@ for1(tnode_t *tn1, tnode_t *tn2, tnode_t *tn3)
 	cstmt->c_cfpos = csrc_pos;
 
 	if (tn1 != NULL)
-		expr(tn1, 0, 0, 1);
+		expr(tn1, false, false, true);
 
 	if (tn2 != NULL)
 		tn2 = check_controlling_expression(tn2);
 	if (tn2 != NULL)
-		expr(tn2, 0, 1, 1);
+		expr(tn2, false, true, true);
 
-	if (tn2 == NULL) {
-		cstmt->c_infinite = 1;
-	} else if (tn2->tn_op == CON) {
-		if (tspec_is_int(tn2->tn_type->t_tspec)) {
-			cstmt->c_infinite = tn2->tn_val->v_quad != 0;
-		} else {
-			cstmt->c_infinite = tn2->tn_val->v_ldbl != 0.0;
-		}
-	}
+	cstmt->c_infinite =
+	    tn2 == NULL || (tn2->tn_op == CON && is_nonzero(tn2));
 
 	/* Checking the reinitialisation expression is done in for2() */
 
-	reached = 1;
+	reached = true;
 }
 
 /*
- * for_exprs stmnt
+ * for_exprs statement
  * for_exprs error
  */
 void
@@ -871,7 +858,7 @@ for2(void)
 	tnode_t	*tn3;
 
 	if (cstmt->c_cont)
-		reached = 1;
+		reached = true;
 
 	cpos = curr_pos;
 	cspos = csrc_pos;
@@ -886,11 +873,11 @@ for2(void)
 	if (!reached && !rchflg) {
 		/* end-of-loop code not reached */
 		warning(223);
-		reached = 1;
+		reached = true;
 	}
 
 	if (tn3 != NULL) {
-		expr(tn3, 0, 0, 1);
+		expr(tn3, false, false, true);
 	} else {
 		tfreeblk();
 	}
@@ -900,24 +887,23 @@ for2(void)
 
 	/* An endless loop without break will never terminate */
 	reached = cstmt->c_break || !cstmt->c_infinite;
-	rchflg = 0;
+	rchflg = false;
 
 	popctrl(T_FOR);
 }
 
 /*
  * T_GOTO identifier T_SEMI
- * T_GOTO error T_SEMI
  */
 void
 dogoto(sym_t *lab)
 {
 
-	mark_as_used(lab, 0, 0);
+	mark_as_used(lab, false, false);
 
 	check_statement_reachable();
 
-	reached = rchflg = 0;
+	reached = rchflg = false;
 }
 
 /*
@@ -937,13 +923,13 @@ dobreak(void)
 		error(208);
 	} else {
 		if (reached)
-			ci->c_break = 1;
+			ci->c_break = true;
 	}
 
 	if (bflag)
 		check_statement_reachable();
 
-	reached = rchflg = 0;
+	reached = rchflg = false;
 }
 
 /*
@@ -961,12 +947,12 @@ docont(void)
 		/* continue outside loop */
 		error(209);
 	} else {
-		ci->c_cont = 1;
+		ci->c_cont = true;
 	}
 
 	check_statement_reachable();
 
-	reached = rchflg = 0;
+	reached = rchflg = false;
 }
 
 /*
@@ -984,9 +970,9 @@ doreturn(tnode_t *tn)
 		continue;
 
 	if (tn != NULL) {
-		ci->c_retval = 1;
+		ci->c_had_return_value = true;
 	} else {
-		ci->c_noretval = 1;
+		ci->c_had_return_noval = true;
 	}
 
 	if (tn != NULL && funcsym->s_type->t_subt->t_tspec == VOID) {
@@ -1010,8 +996,8 @@ doreturn(tnode_t *tn)
 		ln = tgetblk(sizeof (tnode_t));
 		ln->tn_op = NAME;
 		ln->tn_type = tduptyp(funcsym->s_type->t_subt);
-		ln->tn_type->t_const = 0;
-		ln->tn_lvalue = 1;
+		ln->tn_type->t_const = false;
+		ln->tn_lvalue = true;
 		ln->tn_sym = funcsym;		/* better than nothing */
 
 		tn = build(RETURN, ln, tn);
@@ -1020,14 +1006,14 @@ doreturn(tnode_t *tn)
 			rn = tn->tn_right;
 			while ((op = rn->tn_op) == CVT || op == PLUS)
 				rn = rn->tn_left;
-			if (rn->tn_op == AMPER && rn->tn_left->tn_op == NAME &&
+			if (rn->tn_op == ADDR && rn->tn_left->tn_op == NAME &&
 			    rn->tn_left->tn_sym->s_scl == AUTO) {
 				/* %s returns pointer to automatic object */
 				warning(302, funcsym->s_name);
 			}
 		}
 
-		expr(tn, 1, 0, 1);
+		expr(tn, true, false, true);
 
 	} else {
 
@@ -1035,7 +1021,7 @@ doreturn(tnode_t *tn)
 
 	}
 
-	reached = rchflg = 0;
+	reached = rchflg = false;
 }
 
 /*
@@ -1043,7 +1029,7 @@ doreturn(tnode_t *tn)
  * Especially remove information about unused lint comments.
  */
 void
-global_clean_up_decl(int silent)
+global_clean_up_decl(bool silent)
 {
 	pos_t	cpos;
 
@@ -1084,7 +1070,7 @@ global_clean_up_decl(int silent)
 
 	curr_pos = cpos;
 
-	dcs->d_asm = 0;
+	dcs->d_asm = false;
 }
 
 /*
@@ -1200,7 +1186,7 @@ void
 constcond(int n)
 {
 
-	constcond_flag = 1;
+	constcond_flag = true;
 }
 
 /*
@@ -1212,7 +1198,7 @@ void
 fallthru(int n)
 {
 
-	ftflg = 1;
+	ftflg = true;
 }
 
 /*
@@ -1224,8 +1210,8 @@ void
 notreach(int n)
 {
 
-	reached = 0;
-	rchflg = 1;
+	reached = false;
+	rchflg = true;
 }
 
 /* ARGSUSED */
@@ -1238,8 +1224,8 @@ lintlib(int n)
 		warning(280, "LINTLIBRARY");
 		return;
 	}
-	llibflg = 1;
-	vflag = 0;
+	llibflg = true;
+	vflag = false;
 }
 
 /*
@@ -1285,17 +1271,14 @@ protolib(int n)
 		warning(280, "PROTOLIB");
 		return;
 	}
-	plibflg = n == 0 ? 0 : 1;
+	plibflg = n != 0;
 }
 
-/*
- * Set quadflg to nonzero which means that the next statement/declaration
- * may use "long long" without an error or warning.
- */
+/* The next statement/declaration may use "long long" without a diagnostic. */
 /* ARGSUSED */
 void
 longlong(int n)
 {
 
-	quadflg = 1;
+	quadflg = true;
 }

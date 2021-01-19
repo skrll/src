@@ -1,4 +1,4 @@
-/*	$NetBSD: psycho.c,v 1.130 2021/01/06 20:04:30 palle Exp $	*/
+/*	$NetBSD: psycho.c,v 1.132 2021/01/17 00:18:28 mrg Exp $	*/
 
 /*
  * Copyright (c) 1999, 2000 Matthew R. Green
@@ -55,7 +55,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: psycho.c,v 1.130 2021/01/06 20:04:30 palle Exp $");
+__KERNEL_RCSID(0, "$NetBSD: psycho.c,v 1.132 2021/01/17 00:18:28 mrg Exp $");
 
 #include "opt_ddb.h"
 
@@ -81,6 +81,7 @@ int psycho_debug = 0x0;
 #include <sys/device.h>
 #include <sys/errno.h>
 #include <sys/extent.h>
+#include <sys/malloc.h>
 #include <sys/kmem.h>
 #include <sys/systm.h>
 #include <sys/time.h>
@@ -769,7 +770,7 @@ psycho_alloc_chipset(struct psycho_pbm *pp, int node, pci_chipset_tag_t pc)
 static struct extent *
 psycho_alloc_extent(struct psycho_pbm *pp, int node, int ss, const char *name)
 {
-	struct psycho_registers *pa = kmem_zalloc(sizeof *pa, KM_SLEEP);
+	struct psycho_registers *pa = NULL;
 	struct psycho_ranges *pr;
 	struct extent *ex;
 	bus_addr_t baddr, addr;
@@ -833,7 +834,7 @@ psycho_alloc_extent(struct psycho_pbm *pp, int node, int ss, const char *name)
 
 ret:
 	/* return extent */
-	kmem_free(pa, sizeof(*pa));
+	free(pa, M_DEVBUF);
 	return ex;
 }
 
@@ -1381,7 +1382,6 @@ psycho_pci_conf_read(pci_chipset_tag_t pc, pcitag_t tag, int reg)
 {
 	struct psycho_pbm *pp = pc->cookie;
 	struct psycho_softc *sc = pp->pp_sc;
-	struct cpu_info *ci = curcpu();
 	pcireg_t val = (pcireg_t)~0;
 	int s;
 
@@ -1396,6 +1396,7 @@ psycho_pci_conf_read(pci_chipset_tag_t pc, pcitag_t tag, int reg)
 			(int)PCITAG_OFFSET(tag) + reg));
 
 		s = splhigh();
+		struct cpu_info *ci = curcpu();
 		ci->ci_pci_probe = true;
 		membar_Sync();
 		val = bus_space_read_4(sc->sc_configtag, sc->sc_configaddr,

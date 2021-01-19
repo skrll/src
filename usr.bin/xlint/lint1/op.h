@@ -1,4 +1,4 @@
-/*	$NetBSD: op.h,v 1.10 2021/01/05 23:50:29 rillig Exp $	*/
+/*	$NetBSD: op.h,v 1.13 2021/01/17 12:23:01 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,32 +37,34 @@
  * Various information about operators
  */
 typedef	struct {
-	bool	m_binary : 1;	/* binary operator */
-	bool	m_logical : 1;	/* logical operator, result is int */
-	bool	m_requires_integer : 1;
-	bool	m_requires_scalar : 1;
-	bool	m_requires_arith : 1;
-	bool	m_fold : 1;	/* operands should be folded */
-	bool	m_vctx : 1;	/* value context for left operand */
-	bool	m_tctx : 1;	/* test context for left operand */
-	bool	m_balance : 1;	/* operator requires balancing */
-	bool	m_sideeff : 1;	/* operator has side effect */
-	bool	m_tlansiu : 1;	/* warn if left op. is unsign. in ANSI C */
-	bool	m_transiu : 1;	/* warn if right op. is unsign. in ANSI C */
-	bool	m_possible_precedence_confusion : 1;
-	bool	m_comp : 1;	/* operator performs comparison */
-	bool	m_valid_on_enum : 1;	/* valid operation on enums */
-	bool	m_bad_on_enum : 1;	/* dubious operation on enums */
-	bool	m_eqwarn : 1;	/* warning if on operand stems from == */
-	bool	m_requires_integer_or_complex : 1;
-	const char *m_name;	/* name of op. */
+	bool	m_binary: 1;
+	bool	m_returns_bool: 1;
+	bool	m_takes_bool: 1;
+	bool	m_requires_bool: 1;
+	bool	m_requires_integer: 1;
+	bool	m_requires_integer_or_complex: 1;
+	bool	m_requires_arith: 1;
+	bool	m_requires_scalar: 1;
+	bool	m_fold_constant_operands: 1;
+	bool	m_left_value_context: 1;
+	bool	m_left_test_context: 1;
+	bool	m_balance_operands: 1;
+	bool	m_has_side_effect: 1;
+	bool	m_warn_if_left_unsigned_in_c90: 1;
+	bool	m_warn_if_right_unsigned_in_c90: 1;
+	bool	m_possible_precedence_confusion: 1;
+	bool	m_comparison: 1;
+	bool	m_valid_on_enum: 1;
+	bool	m_bad_on_enum: 1;
+	bool	m_warn_if_operand_eq: 1;
+	const char *m_name;
 } mod_t;
 
 extern mod_t   modtab[];
 
 #define begin_ops() typedef enum {
 #define op(name, repr, \
-		bi, lo, in, sc, ar, fo, va, ts, ba, se, \
+		bi, lo, tb, to, in, sc, ar, fo, va, ts, ba, se, \
 		lu, ru, pc, cm, ve, de, ew, ic, active) \
 	name,
 #define end_ops() } op_t;

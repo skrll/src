@@ -1,4 +1,4 @@
-/* $NetBSD: meson_thermal.c,v 1.1 2021/01/01 07:21:58 ryo Exp $ */
+/* $NetBSD: meson_thermal.c,v 1.3 2021/01/18 02:35:48 thorpej Exp $ */
 
 /*
  * Copyright (c) 2021 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: meson_thermal.c,v 1.1 2021/01/01 07:21:58 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: meson_thermal.c,v 1.3 2021/01/18 02:35:48 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -87,10 +87,11 @@ static struct meson_thermal_config thermal_ddr_conf = {
 	.aosec_reg = 0xf0
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "amlogic,g12a-cpu-thermal", (uintptr_t)&thermal_cpu_conf },
-	{ "amlogic,g12a-ddr-thermal", (uintptr_t)&thermal_ddr_conf },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "amlogic,g12a-cpu-thermal", .data = &thermal_cpu_conf },
+	{ .compat = "amlogic,g12a-ddr-thermal", .data = &thermal_ddr_conf },
+
+	{ 0 }
 };
 
 struct meson_thermal_softc {
@@ -98,7 +99,7 @@ struct meson_thermal_softc {
 	bus_space_tag_t sc_bst;
 	bus_space_handle_t sc_bsh;
 	bus_space_handle_t sc_bsh_ao;
-	struct meson_thermal_config *sc_conf;
+	const struct meson_thermal_config *sc_conf;
 	int sc_phandle;
 	int sc_ao_calib;
 
@@ -187,7 +188,7 @@ meson_thermal_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	sc->sc_bst = faa->faa_bst;
 	sc->sc_phandle = phandle = faa->faa_phandle;
-	sc->sc_conf = (void *)of_search_compatible(phandle, compat_data)->data;
+	sc->sc_conf = of_search_compatible(phandle, compat_data)->data;
 
 	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
 		aprint_error(": couldn't get registers\n");
@@ -226,7 +227,8 @@ meson_thermal_attach(device_t parent, device_t self, void *aux)
 	sc->sc_sme->sme_refresh = meson_thermal_refresh;
 	sc->sc_sensor_temp.units = ENVSYS_STEMP;
 	sc->sc_sensor_temp.state = ENVSYS_SINVALID;
-	snprintf(sc->sc_sensor_temp.desc, ENVSYS_DESCLEN, sc->sc_conf->name);
+	snprintf(sc->sc_sensor_temp.desc, ENVSYS_DESCLEN,
+	    "%s", sc->sc_conf->name);
 
 	sysmon_envsys_sensor_attach(sc->sc_sme, &sc->sc_sensor_temp);
 	sysmon_envsys_register(sc->sc_sme);

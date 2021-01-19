@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.64 2021/01/03 18:48:37 rillig Exp $	*/
+/*	$NetBSD: err.c,v 1.69 2021/01/17 17:14:34 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: err.c,v 1.64 2021/01/03 18:48:37 rillig Exp $");
+__RCSID("$NetBSD: err.c,v 1.69 2021/01/17 17:14:34 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -167,7 +167,7 @@ const	char *msgs[] = {
 	"non-unique member requires struct/union %s",		      /* 105 */
 	"left operand of '->' must be pointer",			      /* 106 */
 	"operands of '%s' have incompatible types (%s != %s)",	      /* 107 */
-	"operand of '%s' has incompatible type (%s != %s)",	      /* 108 */
+	"operand of '%s' has invalid type (%s)",		      /* 108 */
 	"void type illegal in expression",			      /* 109 */
 	"pointer to function is not allowed here",		      /* 110 */
 	"unacceptable operand of '%s'",				      /* 111 */
@@ -185,7 +185,7 @@ const	char *msgs[] = {
 	"illegal combination of %s (%s) and %s (%s), op %s",	      /* 123 */
 	"illegal pointer combination (%s) and (%s), op %s",	      /* 124 */
 	"ANSI C forbids ordered comparisons of pointers to functions",/* 125 */
-	"incompatible types in conditional",			      /* 126 */
+	"incompatible types '%s' and '%s' in conditional",	      /* 126 */
 	"'&' before array or function: ignored",		      /* 127 */
 	"operands have incompatible pointer types, op %s (%s != %s)", /* 128 */
 	"expression has null effect",				      /* 129 */
@@ -215,7 +215,7 @@ const	char *msgs[] = {
 	"argument has incompatible pointer type, arg #%d (%s != %s)", /* 153 */
 	"illegal combination of %s (%s) and %s (%s), arg #%d",	      /* 154 */
 	"argument is incompatible with prototype, arg #%d",	      /* 155 */
-	"enum type mismatch, arg #%d",				      /* 156 */
+	"enum type mismatch, arg #%d (%s != %s)",		      /* 156 */
 	"ANSI C treats constant as unsigned",			      /* 157 */
 	"%s may be used before set",				      /* 158 */
 	"assignment in conditional context",			      /* 159 */
@@ -389,6 +389,14 @@ const	char *msgs[] = {
 	"declarations after statements is a C9X feature",	      /* 327 */
 	"union cast is a C9X feature",				      /* 328 */
 	"type '%s' is not a member of '%s'",			      /* 329 */
+	"operand of '%s' must be bool, not '%s'",		      /* 330 */
+	"left operand of '%s' must be bool, not '%s'",		      /* 331 */
+	"right operand of '%s' must be bool, not '%s'",		      /* 332 */
+	"controlling expression must be bool, not '%s'",	      /* 333 */
+	"argument #%d expects '%s', gets passed '%s'",		      /* 334 */
+	"operand of '%s' must not be bool",			      /* 335 */
+	"left operand of '%s' must not be bool",		      /* 336 */
+	"right operand of '%s' must not be bool",		      /* 337 */
 };
 
 /*
@@ -410,19 +418,19 @@ msglist(void)
 static const char *
 lbasename(const char *path)
 {
-	const	char *cp, *cp1, *cp2;
+	const char *p, *base, *dir;
 
 	if (Fflag)
 		return path;
 
-	cp = cp1 = cp2 = path;
-	while (*cp != '\0') {
-		if (*cp++ == '/') {
-			cp2 = cp1;
-			cp1 = cp;
+	p = base = dir = path;
+	while (*p != '\0') {
+		if (*p++ == '/') {
+			dir = base;
+			base = p;
 		}
 	}
-	return *cp1 == '\0' ? cp2 : cp1;
+	return *base != '\0' ? base : dir;
 }
 
 static void
