@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.510 2021/01/09 16:06:09 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.513 2021/01/16 20:49:31 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -110,7 +110,7 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.510 2021/01/09 16:06:09 rillig Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.513 2021/01/16 20:49:31 rillig Exp $");
 #if defined(MAKE_NATIVE) && !defined(lint)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
@@ -159,7 +159,7 @@ explode(const char *flags)
 	if (flags == NULL)
 		return NULL;
 
-	for (f = flags; *f; f++)
+	for (f = flags; *f != '\0'; f++)
 		if (!ch_isalpha(*f))
 			break;
 
@@ -243,7 +243,7 @@ parse_debug_options(const char *argvalue)
 	const char *modules;
 	DebugFlags debug = opts.debug;
 
-	for (modules = argvalue; *modules; ++modules) {
+	for (modules = argvalue; *modules != '\0'; ++modules) {
 		switch (*modules) {
 		case '0':	/* undocumented, only intended for tests */
 			debug = DEBUG_NONE;
@@ -790,7 +790,7 @@ str2Lst_Append(StringList *lp, char *str)
 
 	const char *sep = " \t";
 
-	for (n = 0, cp = strtok(str, sep); cp; cp = strtok(NULL, sep)) {
+	for (n = 0, cp = strtok(str, sep); cp != NULL; cp = strtok(NULL, sep)) {
 		Lst_Append(lp, cp);
 		n++;
 	}
@@ -1774,7 +1774,7 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 
 	*errfmt = NULL;
 
-	if (!shellName)
+	if (shellName == NULL)
 		Shell_Init();
 	/*
 	 * Set up arguments for shell
@@ -2093,9 +2093,9 @@ shouldDieQuietly(GNode *gn, int bf)
 		else if (bf >= 0)
 			quietly = bf;
 		else
-			quietly = gn != NULL && (gn->type & OP_MAKE);
+			quietly = (gn != NULL && (gn->type & OP_MAKE)) ? 1 : 0;
 	}
-	return quietly;
+	return quietly != 0;
 }
 
 static void

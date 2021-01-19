@@ -1,4 +1,4 @@
-/*	$NetBSD: wsdisplay_vcons.c,v 1.45 2021/01/02 03:00:56 macallan Exp $ */
+/*	$NetBSD: wsdisplay_vcons.c,v 1.47 2021/01/17 19:03:32 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2005, 2006 Michael Lorenz
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wsdisplay_vcons.c,v 1.45 2021/01/02 03:00:56 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wsdisplay_vcons.c,v 1.47 2021/01/17 19:03:32 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -124,14 +124,15 @@ static void vcons_softintr(void *);
 static void vcons_init_thread(void *);
 #endif
 
-int
-vcons_init(struct vcons_data *vd, void *cookie, struct wsscreen_descr *def,
-    struct wsdisplay_accessops *ao)
+static int
+vcons_init_common(struct vcons_data *vd, void *cookie,
+    struct wsscreen_descr *def, struct wsdisplay_accessops *ao,
+    int enable_intr)
 {
 
 	/* zero out everything so we can rely on untouched fields being 0 */
 	memset(vd, 0, sizeof(struct vcons_data));
-	
+
 	vd->cookie = cookie;
 
 	vd->init_screen = vcons_dummy_init_screen;
@@ -174,19 +175,35 @@ vcons_init(struct vcons_data *vd, void *cookie, struct wsscreen_descr *def,
 	vd->switch_poll_count = 0;
 #endif
 #ifdef VCONS_DRAW_INTR
-	vd->intr_softint = softint_establish(SOFTINT_SERIAL,
-	    vcons_softintr, vd);
-	callout_init(&vd->intr, CALLOUT_MPSAFE);
-	callout_setfunc(&vd->intr, vcons_intr, vd);
-	vd->intr_valid = 1;
+	if (enable_intr) {
+		vd->intr_softint = softint_establish(SOFTINT_SERIAL,
+		    vcons_softintr, vd);
+		callout_init(&vd->intr, CALLOUT_MPSAFE);
+		callout_setfunc(&vd->intr, vcons_intr, vd);
+		vd->intr_valid = 1;
 
-	if (kthread_create(PRI_NONE, 0, NULL, vcons_init_thread, vd, NULL,
-	    "vcons_init") != 0) {
-		printf("%s: unable to create thread.\n", __func__);
-		return -1;
+		if (kthread_create(PRI_NONE, 0, NULL, vcons_init_thread, vd,
+		    NULL, "vcons_init") != 0) {
+			printf("%s: unable to create thread.\n", __func__);
+			return -1;
+		}
 	}
 #endif
 	return 0;
+}
+
+int
+vcons_init(struct vcons_data *vd, void *cookie,
+    struct wsscreen_descr *def, struct wsdisplay_accessops *ao)
+{
+	return vcons_init_common(vd, cookie, def, ao, 1);
+}
+
+int
+vcons_earlyinit(struct vcons_data *vd, void *cookie,
+    struct wsscreen_descr *def, struct wsdisplay_accessops *ao)
+{
+	return vcons_init_common(vd, cookie, def, ao, 0);
 }
 
 static void
