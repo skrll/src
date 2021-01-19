@@ -55,8 +55,6 @@ __KERNEL_RCSID(0, "$NetBSD: pktqueue.c,v 1.12 2020/09/11 14:29:00 riastradh Exp 
 /*
  * WARNING: update this if struct pktqueue changes.
  */
-#define	PKTQ_CLPAD	\
-    MAX(COHERENCY_UNIT, COHERENCY_UNIT - sizeof(kmutex_t) - sizeof(u_int))
 
 struct pktqueue {
 	/*
@@ -64,9 +62,13 @@ struct pktqueue {
 	 * as well as the drop counter, are managed atomically though.
 	 * Ensure this group is in a separate cache line.
 	 */
-	kmutex_t	pq_lock;
-	volatile u_int	pq_barrier;
-	uint8_t		_pad[PKTQ_CLPAD];
+	union {
+		struct {
+			kmutex_t	pq_lock;
+			volatile u_int	pq_barrier;
+		};
+		uint8_t		_pad[COHERENCY_UNIT];
+	};
 
 	/* The size of the queue, counters and the interrupt handler. */
 	u_int		pq_maxlen;
