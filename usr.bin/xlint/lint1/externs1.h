@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.50 2021/01/09 19:13:17 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.59 2021/01/18 16:41:57 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -35,23 +35,23 @@
  * main.c
  */
 extern	int	aflag;
-extern	int	bflag;
-extern	int	cflag;
-extern	int	dflag;
-extern	int	eflag;
-extern	int	Fflag;
-extern	int	gflag;
-extern	int	hflag;
-extern	int	rflag;
-extern	int	sflag;
-extern	int	tflag;
-extern	int	uflag;
-extern	int	vflag;
-extern	int	yflag;
-extern	int	wflag;
-extern	int	zflag;
-extern	int	Sflag;
-extern	int	Pflag;
+extern	bool	bflag;
+extern	bool	cflag;
+extern	bool	dflag;
+extern	bool	eflag;
+extern	bool	Fflag;
+extern	bool	gflag;
+extern	bool	hflag;
+extern	bool	rflag;
+extern	bool	sflag;
+extern	bool	tflag;
+extern	bool	uflag;
+extern	bool	vflag;
+extern	bool	yflag;
+extern	bool	wflag;
+extern	bool	zflag;
+extern	bool	Sflag;
+extern	bool	Pflag;
 
 extern	void	norecover(void);
 
@@ -68,9 +68,10 @@ extern	int	yyparse(void);
 /*
  * scan.l
  */
-extern  int	attron;
+extern  bool	attron;
 extern	pos_t	curr_pos;
 extern	pos_t	csrc_pos;
+extern	bool	in_system_header;
 extern	symt_t	symtyp;
 extern	FILE	*yyin;
 extern	uint64_t qbmasks[], qlmasks[], qumasks[];
@@ -79,7 +80,7 @@ extern	void	initscan(void);
 extern	int	sign(int64_t, tspec_t, int);
 extern	int	msb(int64_t, tspec_t, int);
 extern	int64_t	xsign(int64_t, tspec_t, int);
-extern	void	clrwflgs(void);
+extern	void	clear_warn_flags(void);
 extern	sym_t	*getsym(sbuf_t *);
 extern	void	cleanup(void);
 extern	sym_t	*pushdown(sym_t *);
@@ -141,8 +142,8 @@ extern	void	initdecl(void);
 extern	type_t	*gettyp(tspec_t);
 extern	type_t	*duptyp(const type_t *);
 extern	type_t	*tduptyp(const type_t *);
-extern	int	incompl(type_t *);
-extern	void	setcomplete(type_t *, int);
+extern	bool	incompl(const type_t *);
+extern	void	setcomplete(type_t *, bool);
 extern	void	add_storage_class(scl_t);
 extern	void	add_type(type_t *);
 extern	void	add_qualifier(tqual_t);
@@ -153,45 +154,45 @@ extern	void	popdecl(void);
 extern	void	setasm(void);
 extern	void	clrtyp(void);
 extern	void	deftyp(void);
-extern	int	length(type_t *, const char *);
-extern	int	getbound(type_t *);
+extern	int	length(const type_t *, const char *);
+extern	int	getbound(const type_t *);
 extern	sym_t	*lnklst(sym_t *, sym_t *);
 extern	void	check_type(sym_t *);
 extern	sym_t	*declarator_1_struct_union(sym_t *);
 extern	sym_t	*bitfield(sym_t *, int);
 extern	pqinf_t	*merge_pointers_and_qualifiers(pqinf_t *, pqinf_t *);
 extern	sym_t	*add_pointer(sym_t *, pqinf_t *);
-extern	sym_t	*add_array(sym_t *, int, int);
+extern	sym_t	*add_array(sym_t *, bool, int);
 extern	sym_t	*add_function(sym_t *, sym_t *);
-extern	void	check_function_definition(sym_t *, int);
+extern	void	check_function_definition(sym_t *, bool);
 extern	sym_t	*declarator_name(sym_t *);
 extern	sym_t	*old_style_function_name(sym_t *);
-extern	type_t	*mktag(sym_t *, tspec_t, int, int);
+extern	type_t	*mktag(sym_t *, tspec_t, bool, bool);
 extern	const	char *storage_class_name(scl_t);
 extern	type_t	*complete_tag_struct_or_union(type_t *, sym_t *);
 extern	type_t	*complete_tag_enum(type_t *, sym_t *);
-extern	sym_t	*enumeration_constant(sym_t *, int, int);
-extern	void	decl1ext(sym_t *, int);
+extern	sym_t	*enumeration_constant(sym_t *, int, bool);
+extern	void	decl1ext(sym_t *, bool);
 extern	void	copy_usage_info(sym_t *, sym_t *);
-extern	int	check_redeclaration(sym_t *, int *);
-extern	int	eqptrtype(type_t *, type_t *, int);
-extern	int	eqtype(type_t *, type_t *, int, int, int *);
+extern	bool	check_redeclaration(sym_t *, bool *);
+extern	bool	eqptrtype(const type_t *, const type_t *, bool);
+extern	bool	eqtype(const type_t *, const type_t *, bool, bool, bool *);
 extern	void	complete_type(sym_t *, sym_t *);
-extern	sym_t	*decl1arg(sym_t *, int);
+extern	sym_t	*declare_argument(sym_t *, bool);
 extern	void	check_func_lint_directives(void);
 extern	void	check_func_old_style_arguments(void);
 
-extern	void	decl1loc(sym_t *, int);
+extern	void	declare_local(sym_t *, bool);
 extern	sym_t	*abstract_name(void);
 extern	void	global_clean_up(void);
 extern	sym_t	*declare_1_abstract(sym_t *);
 extern	void	check_size(sym_t *);
 extern	void	mark_as_set(sym_t *);
-extern	void	mark_as_used(sym_t *, int, int);
+extern	void	mark_as_used(sym_t *, bool, bool);
 extern	void	check_usage(dinfo_t *);
-extern	void	check_usage_sym(int, sym_t *);
+extern	void	check_usage_sym(bool, sym_t *);
 extern	void	check_global_symbols(void);
-extern	void	print_previous_declaration(int, sym_t *);
+extern	void	print_previous_declaration(int, const sym_t *);
 
 /*
  * tree.c
@@ -204,20 +205,22 @@ extern	tnode_t	*new_string_node(strg_t *);
 extern	sym_t	*struct_or_union_member(tnode_t *, op_t, sym_t *);
 extern	tnode_t	*build(op_t, tnode_t *, tnode_t *);
 extern	tnode_t	*cconv(tnode_t *);
-extern	bool	typeok(op_t, int, tnode_t *, tnode_t *);
-extern	tnode_t	*promote(op_t, int, tnode_t *);
+extern	bool	is_strict_bool(const tnode_t *);
+extern	bool	typeok(op_t, int, const tnode_t *, const tnode_t *);
+extern	tnode_t	*promote(op_t, bool, tnode_t *);
 extern	tnode_t	*convert(op_t, int, type_t *, tnode_t *);
-extern	void	cvtcon(op_t, int, type_t *, val_t *, val_t *);
+extern	void	convert_constant(op_t, int, type_t *, val_t *, val_t *);
 extern	tnode_t	*build_sizeof(type_t *);
 extern	tnode_t	*build_offsetof(type_t *, sym_t *);
 extern	tnode_t	*build_alignof(type_t *);
 extern	tnode_t	*cast(tnode_t *, type_t *);
 extern	tnode_t	*new_function_argument_node(tnode_t *, tnode_t *);
 extern	tnode_t	*new_function_call_node(tnode_t *, tnode_t *);
-extern	val_t	*constant(tnode_t *, int);
-extern	void	expr(tnode_t *, int, int, int);
-extern	void	check_expr_misc(tnode_t *, int, int, int, int, int, int);
-extern	int	conaddr(tnode_t *, sym_t **, ptrdiff_t *);
+extern	val_t	*constant(tnode_t *, bool);
+extern	void	expr(tnode_t *, bool, bool, bool);
+extern	void	check_expr_misc(const tnode_t *, bool, bool, bool,
+		    bool, bool, bool);
+extern	bool	constant_addr(tnode_t *, sym_t **, ptrdiff_t *);
 extern	strg_t	*cat_strings(strg_t *, strg_t *);
 extern  int64_t tsize(type_t *);
 
@@ -225,9 +228,9 @@ extern  int64_t tsize(type_t *);
  * func.c
  */
 extern	sym_t	*funcsym;
-extern	int	reached;
-extern	int	rchflg;
-extern	int	ftflg;
+extern	bool	reached;
+extern	bool	rchflg;
+extern	bool	ftflg;
 extern	int	nargusg;
 extern	pos_t	argsused_pos;
 extern	int	nvararg;
@@ -236,12 +239,12 @@ extern	int	printflike_argnum;
 extern	pos_t	printflike_pos;
 extern	int	scanflike_argnum;
 extern	pos_t	scanflike_pos;
-extern	int	constcond_flag;
-extern	int	llibflg;
+extern	bool	constcond_flag;
+extern	bool	llibflg;
 extern	int	lwarn;
 extern	bool	bitfieldtype_ok;
-extern	int	plibflg;
-extern	int	quadflg;
+extern	bool	plibflg;
+extern	bool	quadflg;
 
 extern	void	pushctrl(int);
 extern	void	popctrl(int);
@@ -253,7 +256,7 @@ extern	void	case_label(tnode_t *);
 extern	void	default_label(void);
 extern	void	if1(tnode_t *);
 extern	void	if2(void);
-extern	void	if3(int);
+extern	void	if3(bool);
 extern	void	switch1(tnode_t *);
 extern	void	switch2(void);
 extern	void	while1(tnode_t *);
@@ -266,7 +269,7 @@ extern	void	dogoto(sym_t *);
 extern	void	docont(void);
 extern	void	dobreak(void);
 extern	void	doreturn(tnode_t *);
-extern	void	global_clean_up_decl(int);
+extern	void	global_clean_up_decl(bool);
 extern	void	argsused(int);
 extern	void	constcond(int);
 extern	void	fallthru(int);
@@ -283,7 +286,7 @@ extern	void	bitfieldtype(int);
 /*
  * init.c
  */
-extern	int	initerr;
+extern	bool	initerr;
 extern	sym_t	*initsym;
 extern	int	startinit;
 
@@ -296,12 +299,13 @@ extern	void	push_member(sbuf_t *);
 /*
  * emit.c
  */
-extern	void	outtype(type_t *);
-extern	const	char *ttos(type_t *);
-extern	void	outsym(sym_t *, scl_t, def_t);
-extern	void	outfdef(sym_t *, pos_t *, int, int, sym_t *);
-extern	void	outcall(tnode_t *, int, int);
-extern	void	outusg(sym_t *);
+extern	void	outtype(const type_t *);
+extern	const	char *ttos(const type_t *);
+extern	void	outsym(const sym_t *, scl_t, def_t);
+extern	void	outfdef(const sym_t *, const pos_t *, bool, bool,
+		    const sym_t *);
+extern	void	outcall(const tnode_t *, bool, bool);
+extern	void	outusg(const sym_t *);
 
 /*
  * print.c
