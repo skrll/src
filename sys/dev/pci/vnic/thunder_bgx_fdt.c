@@ -30,34 +30,24 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
+__KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/bitset.h>
-#include <sys/bitstring.h>
-#include <sys/bus.h>
-#include <sys/ctype.h>
-#include <sys/endian.h>
-#include <sys/kernel.h>
-#include <sys/malloc.h>
-#include <sys/module.h>
-#include <sys/rman.h>
-#include <sys/pciio.h>
-#include <sys/pcpu.h>
-#include <sys/proc.h>
-#include <sys/socket.h>
-#include <sys/cpuset.h>
-#include <sys/lock.h>
-#include <sys/mutex.h>
 
-#include <net/ethernet.h>
+#include <sys/bus.h>
+//#include <sys/callout.h>
+//#include <sys/device.h>
+//#include <sys/mutex.h>
+//#include <sys/reboot.h>
+
 #include <net/if.h>
 #include <net/if_media.h>
+#include <net/if_ether.h>
 
-#include <dev/ofw/openfirm.h>
-#include <dev/ofw/ofw_bus.h>
-#include <dev/mii/miivar.h>
+#include <dev/fdt/fdtvar.h>
+
+#include <dev/pci/pcivar.h>
+#include <dev/pci/pcidevs.h>
 
 #include "thunder_bgx.h"
 #include "thunder_bgx_var.h"
@@ -73,6 +63,9 @@ __FBSDID("$FreeBSD$");
 #define	FDT_NAME_MAXLEN		31
 
 int bgx_fdt_init_phy(struct bgx *);
+
+
+#define phandle_t int
 
 static void
 bgx_fdt_get_macaddr(phandle_t phy, uint8_t *hwaddr)
@@ -335,8 +328,7 @@ bgx_fdt_find_node(struct bgx *bgx)
 
 	len = sizeof(BGX_NODE_NAME) + 1; /* <bgx_name>+<digit>+<\0> */
 	/* Allocate memory for BGX node name + "/" character */
-	bgx_sel = malloc(sizeof(*bgx_sel) * (len + 1), M_BGX,
-	    M_ZERO | M_WAITOK);
+	bgx_sel = kmem_zalloc(sizeof(*bgx_sel) * (len + 1), KM_SLEEP);
 
 	/* Prepare node's name */
 	snprintf(bgx_sel, len + 1, "/"BGX_NODE_NAME"%d", bgx->bgx_id);

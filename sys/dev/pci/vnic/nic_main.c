@@ -390,6 +390,7 @@ nicpf_iov_add_vf(device_t dev, uint16_t vfnum, const nvlist_t *params)
 	return (0);
 }
 #endif
+
 /* Register read/write APIs */
 static __inline void
 nic_reg_write(struct nicpf *nic, bus_space_handle_t offset,

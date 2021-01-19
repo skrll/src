@@ -239,6 +239,7 @@ struct rx_tx_queue_stats {
 
 struct q_desc_mem {
 	bus_dma_tag_t	dmat;
+	bus_dma_segment_t dseg;
 	bus_dmamap_t	dmap;
 	void		*base;
 	bus_addr_t	phys_base;
@@ -259,9 +260,9 @@ struct rbdr {
 	struct nicvf		*nic;
 	int			idx;
 
-	struct task		rbdr_task;
-	struct task		rbdr_task_nowait;
-	struct taskqueue	*rbdr_taskq;
+//	struct task		rbdr_task;
+//	struct task		rbdr_task_nowait;
+	void			*rbdr_si;
 
 	bus_dma_tag_t		rbdr_buff_dmat;
 	bus_dmamap_t		*rbdr_buff_dmaps;
@@ -293,13 +294,14 @@ struct cmp_queue {
 	struct nicvf		*nic;
 	int			idx;	/* This queue index */
 
-	struct buf_ring		*rx_br;	/* Reception buf ring */
+	//XXXNH do we need a pcq here?
+	pcq_t			*rx_pcq;/* Reception pcq */
 	kmutex_t		mtx;	/* lock to serialize processing CQEs */
-	char			mtx_name[32];
+//	char			mtx_name[32];
 
-	struct task		cmp_task;
-	struct taskqueue	*cmp_taskq;
-	u_int			cmp_cpuid; /* CPU to which bind the CQ task */
+//	struct task		cmp_task;
+	void			*cmp_si;
+	cpuid_t			cmp_cpuid; /* CPU to which bind the CQ task */
 
 	void			*desc;
 	struct q_desc_mem	dmem;
@@ -317,7 +319,7 @@ struct snd_queue {
 	uint8_t			cq_qs;  /* CQ's QS to which this SQ is pointing */
 	uint8_t			cq_idx; /* CQ index (0 to 7) in the above QS */
 	uint16_t		thresh;
-	volatile int		free_cnt;
+	volatile u_int		free_cnt;
 	uint32_t		head;
 	uint32_t		tail;
 	uint64_t		*skbuff;
@@ -329,12 +331,12 @@ struct snd_queue {
 	bus_dma_tag_t		snd_buff_dmat;
 	struct snd_buff		*snd_buff;
 
-	struct buf_ring		*br;	/* Transmission buf ring */
+	pcq_t			*tx_pcq;/* Transmission pcq */
 	kmutex_t		mtx;
-	char			mtx_name[32];
+//	char			mtx_name[32];
 
-	struct task		snd_task;
-	struct taskqueue	*snd_taskq;
+//	struct task		snd_task;
+	void			*snd_si;
 
 	struct q_desc_mem	dmem;
 	struct rx_tx_queue_stats stats;
@@ -356,8 +358,8 @@ struct queue_set {
 	struct	snd_queue	sq[MAX_SND_QUEUES_PER_QS];
 	struct	rbdr		rbdr[MAX_RCV_BUF_DESC_RINGS_PER_QS];
 
-	struct task		qs_err_task;
-	struct taskqueue	*qs_err_taskq;
+	//struct task		qs_err_task;
+	void		*qs_err_si;
 } __aligned(CACHE_LINE_SIZE);
 
 #define	GET_RBDR_DESC(RING, idx)				\
@@ -378,7 +380,7 @@ struct queue_set {
 #define	NICVF_TX_LOCK(sq)		mutex_enter(&(sq)->mtx)
 #define	NICVF_TX_TRYLOCK(sq)		mutex_tryenter(&(sq)->mtx)
 #define	NICVF_TX_UNLOCK(sq)		mutex_exit(&(sq)->mtx)
-#define	NICVF_TX_LOCK_ASSERT(sq)	mtx_assert(&(sq)->mtx, MA_OWNED)
+#define	NICVF_TX_LOCK_ASSERT(sq)	mutex_owned(&(sq)->mtx)
 
 #define	NICVF_CMP_LOCK(cq)		mutex_enter(&(cq)->mtx)
 #define	NICVF_CMP_UNLOCK(cq)		mutex_exit(&(cq)->mtx)

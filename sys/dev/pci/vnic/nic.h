@@ -295,12 +295,10 @@ struct nicvf {
 
 	bus_space_tag_t		sc_memt;
 	bus_space_handle_t	sc_memh;
-//	bus_addr_t		sc_memb;
-//	bus_size_t		sc_mems;
 
-	struct ethercom    	ec;
+	struct ethercom    	sc_ec;
 
-	bus_dma_tag_t      	dmat;
+	bus_dma_tag_t      	sc_dmat;
 
 	bool			attached;
 	bool			detaching;
@@ -324,7 +322,7 @@ struct nicvf {
 	uint8_t			rx_queues;
 	uint8_t			tx_queues;
 	uint8_t			max_queues;
-//	struct resource		*reg_base;
+
 	boolean_t		link_up;
 	boolean_t		hw_tso;
 	uint8_t			duplex;
@@ -351,8 +349,6 @@ struct nicvf {
 	boolean_t		msix_enabled;
 	uint8_t			num_vec;
 
-//	struct msix_entry	msix_entries[NIC_VF_MSIX_VECTORS];
-//	struct resource *	msix_table_res;
 	void *			ih[NIC_VF_MSIX_VECTORS];
 	char			irq_name[NIC_VF_MSIX_VECTORS][20];
 	boolean_t		irq_allocated[NIC_VF_MSIX_VECTORS];

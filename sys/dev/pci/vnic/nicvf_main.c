@@ -49,10 +49,12 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/interrupt.h>
 #include <sys/kmem.h>
 #include <sys/mutex.h>
+#include <sys/pcq.h>
 
 #include <net/if.h>
-#include <net/if_media.h>
+#include <net/if_dl.h>
 #include <net/if_ether.h>
+#include <net/if_media.h>
 
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
@@ -136,7 +138,7 @@ static int nicvf_enable_misc_interrupt(struct nicvf *);
 static int nicvf_allocate_net_interrupts(struct nicvf *);
 static void nicvf_release_all_interrupts(struct nicvf *);
 static int nicvf_update_hw_max_frs(struct nicvf *, int);
-static int nicvf_hw_set_mac_addr(struct nicvf *, uint8_t *);
+static int nicvf_hw_set_mac_addr(struct nicvf *, const uint8_t *);
 static void nicvf_config_cpi(struct nicvf *);
 static int nicvf_rss_init(struct nicvf *);
 static int nicvf_init_resources(struct nicvf *);
@@ -190,13 +192,17 @@ nicvf_attach(device_t parent, device_t dev, void *aux)
 	nic->sc_pass1_silicon = PCI_REVISION(pa->pa_class) < PCI_REVID_PASS2;
 	nic->sc_pc = pa->pa_pc;
 	nic->sc_pcitag = pa->pa_tag;
+	if (pci_dma64_available(pa))
+		nic->sc_dmat = pa->pa_dmat64;
+	else
+		nic->sc_dmat = pa->pa_dmat;
 
 	pci_aprint_devinfo_fancy(pa, "Ethernet controller", VNIC_VF_DEVSTR,
 	    true);
 
 	NICVF_CORE_LOCK_INIT(nic);
 	/* Enable HW TSO on Pass2 */
-	if (nic->sc_pass1_silicon)
+	if (!nic->sc_pass1_silicon)
 		nic->hw_tso = TRUE;
 
 	rid = VNIC_VF_REG_RID;
@@ -355,7 +361,7 @@ nicvf_hw_addr_random(uint8_t *hwaddr)
 static int
 nicvf_setup_ifnet(struct nicvf *nic)
 {
-	struct ethercom *ec = &nic->ec;
+	struct ethercom *ec = &nic->sc_ec;
 	struct ifnet *ifp;
 	int err;
 
@@ -366,16 +372,6 @@ nicvf_setup_ifnet(struct nicvf *nic)
 		return err;
 	}
 	nic->ipq = if_percpuq_create(ifp);
-
-#if 0
-	if_setsoftc(ifp, nic);
-	if_initname(ifp, device_get_name(nic->dev), device_get_unit(nic->dev));
-	if_setflags(ifp, IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST);
-	if_settransmitfn(ifp, nicvf_if_transmit);		//XXXNH
-	if_setqflushfn(ifp, nicvf_if_qflush);			//XXXNH
-	if_setioctlfn(ifp, nicvf_if_ioctl);
-	if_setinitfn(ifp, nicvf_if_init);
-#endif
 	nic->ifp = ifp;
 	strlcpy(ifp->if_xname, device_xname(nic->dev), IFNAMSIZ);
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
@@ -388,58 +384,36 @@ nicvf_setup_ifnet(struct nicvf *nic)
 	ifp->if_transmit = nicvf_if_transmit;
 	ifp->if_stop = nicvf_if_stop;
 
-
 #if 0
 	adapter->sc_ec.ec_capabilities |= ETHERCAP_JUMBO_MTU;
-
-	IFCAP_CSUM_TCPv4_Rx | IFCAP_CSUM_UDPv4_Rx |
-	IFCAP_CSUM_TCPv6_Rx | IFCAP_CSUM_UDPv6_Rx;
-	ifp->if_capabilities |= IFCAP_LRO;
-
 #endif
 
-#if 0
-	if_setgetcounterfn(ifp, nicvf_if_getcounter);
-
-	if_setmtu(ifp, ETHERMTU);			//XXXNH done by ether_ifattach
-
 	/* Reset caps */
+	ifp->if_capabilities = 0;
+#if 0
 	if_setcapabilities(ifp, 0);
 
 	/* Set the default values */
 	if_setcapabilitiesbit(ifp, IFCAP_VLAN_MTU | IFCAP_JUMBO_MTU, 0);
 	if_setcapabilitiesbit(ifp, IFCAP_LRO, 0);
-#endif
 
+#endif
 
 	if (nic->hw_tso) {
 		/* TSO */
 		ifp->if_capabilities |= IFCAP_TSOv4;
-#if 0
-		if_setcapabilitiesbit(ifp, IFCAP_TSO4, 0);
-#endif
 		/* TSO parameters */
-#if 0
-		// XXXNH netbsd doesn't do these.'
-		if_sethwtsomax(ifp, NICVF_TSO_MAXSIZE);
-		if_sethwtsomaxsegcount(ifp, NICVF_TSO_NSEGS);
-		if_sethwtsomaxsegsize(ifp, MCLBYTES);
-#endif
+		/* None for NetBSD */
 	}
-
-#if 0
 	/* IP/TCP/UDP HW checksums */
-	if_setcapabilitiesbit(ifp, IFCAP_HWCSUM, 0);
-	if_setcapabilitiesbit(ifp, IFCAP_HWSTATS, 0);
+	ifp->if_capabilities |= IFCAP_CSUM_IPv4_Rx | IFCAP_CSUM_IPv4_Tx;
+
 	/*
 	 * HW offload enable
 	 */
-	if_clearhwassist(ifp);
-	if_sethwassistbits(ifp, (CSUM_IP | CSUM_TCP | CSUM_UDP | CSUM_SCTP), 0);
-	if (nic->hw_tso)
-		if_sethwassistbits(ifp, (CSUM_TSO), 0);
-	if_setcapenable(ifp, if_getcapabilities(ifp));
-#endif
+	ifp->if_capabilities |= IFCAP_CSUM_TCPv4_Rx | IFCAP_CSUM_TCPv4_Tx;
+	ifp->if_capabilities |= IFCAP_CSUM_UDPv4_Rx | IFCAP_CSUM_UDPv4_Tx;
+	/* XXXNH SCTP */
 
 	return (0);
 }
@@ -481,44 +455,12 @@ nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, void * data)
 	struct ifreq *ifr;
 	uint32_t flags;
 	int mask, err;
-#if defined(INET) || defined(INET6)
-	struct ifaddr *ifa;
-	boolean_t avoid_reset = FALSE;
-#endif
 
 	nic = ifp->if_softc;
 	ifr = (struct ifreq *)data;
-#if defined(INET) || defined(INET6)
-	ifa = (struct ifaddr *)data;
-#endif
+
 	err = 0;
 	switch (cmd) {
-	case SIOCSIFADDR:
-#ifdef INET
-		if (ifa->ifa_addr->sa_family == AF_INET)
-			avoid_reset = TRUE;
-#endif
-#ifdef INET6
-		if (ifa->ifa_addr->sa_family == AF_INET6)
-			avoid_reset = TRUE;
-#endif
-
-#if defined(INET) || defined(INET6)
-		/* Avoid reinitialization unless it's necessary */
-		if (avoid_reset) {
-			ifp->if_flags |= IFF_UP;
-			if (!(ifp->if_flags & IFF_RUNNING))
-				nicvf_if_init(ifp);
-#ifdef INET
-			if (!(if_getflags(ifp) & IFF_NOARP))
-				arp_ifinit(ifp, ifa);
-#endif
-
-			return (0);
-		}
-#endif
-		err = ether_ioctl(ifp, cmd, data);
-		break;
 	case SIOCSIFMTU:
 		if (ifr->ifr_mtu < NIC_HW_MIN_FRS ||
 		    ifr->ifr_mtu > NIC_HW_MAX_FRS) {
@@ -533,7 +475,7 @@ nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, void * data)
 		break;
 	case SIOCSIFFLAGS:
 		NICVF_CORE_LOCK(nic);
-		flags = if_getflags(ifp);
+		flags = ifp->if_flags;
 		if (flags & IFF_UP) {
 			if (ifp->if_flags & IFF_RUNNING) {
 				if ((flags ^ nic->if_flags) & IFF_PROMISC) {
@@ -578,18 +520,15 @@ nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, void * data)
 		err = ifmedia_ioctl(ifp, ifr, &nic->if_media, cmd);
 		break;
 
-	case SIOCSIFCAP:
-		mask = if_getcapenable(ifp) ^ ifr->ifr_reqcap;
-		if (mask & IFCAP_VLAN_MTU) {
-			/* No work to do except acknowledge the change took. */
-			if_togglecapenable(ifp, IFCAP_VLAN_MTU);
-		}
-		if (mask & IFCAP_TXCSUM)
-			if_togglecapenable(ifp, IFCAP_TXCSUM);
-		if (mask & IFCAP_RXCSUM)
-			if_togglecapenable(ifp, IFCAP_RXCSUM);
-		if ((mask & IFCAP_TSO4) && nic->hw_tso)
-			if_togglecapenable(ifp, IFCAP_TSO4);
+	case SIOCSIFCAP: {
+		struct ifcapreq *ifcr = data;
+
+		if ((ifcr->ifcr_capenable & ~ifp->if_capabilities) != 0)
+			return EINVAL;
+
+		mask = ifp->if_capenable ^ ifcr->ifcr_capenable;
+		if (mask == 0)
+			return 0;
 #ifdef LRO
 		if (mask & IFCAP_LRO) {
 			/*
@@ -619,6 +558,7 @@ nicvf_if_ioctl(struct ifnet *ifp, u_long cmd, void * data)
 		}
 #endif
 		break;
+	    }
 
 	default:
 		err = ether_ioctl(ifp, cmd, data);
@@ -635,7 +575,7 @@ nicvf_if_init_locked(struct nicvf *nic)
 	struct ifnet *ifp;
 	int qidx;
 	int err;
-	void * if_addr;
+	const void * if_addr;
 
 	NICVF_CORE_LOCK_ASSERT(nic);
 	ifp = nic->ifp;
@@ -649,7 +589,7 @@ nicvf_if_init_locked(struct nicvf *nic)
 	}
 
 	/* Get the latest MAC address */
-	if_addr = if_getlladdr(ifp);
+	if_addr = CLLADDR(ifp->if_sadl);
 	/* Update MAC address if changed */
 	if (memcmp(nic->hwaddr, if_addr, ETHER_ADDR_LEN) != 0) {
 		memcpy(nic->hwaddr, if_addr, ETHER_ADDR_LEN);
@@ -734,12 +674,12 @@ nicvf_if_transmit(struct ifnet *ifp, struct mbuf *mbuf)
 
 	sq = &qs->sq[qidx];
 
+#if 0
 	if (mbuf->m_next != NULL &&
 	    (mbuf->m_pkthdr.csum_flags &
 	    (CSUM_IP | CSUM_TCP | CSUM_UDP | CSUM_SCTP)) != 0) {
 		//XXXNH
 		//m_makewritable?
-#if 0
 		if (M_WRITABLE(mbuf) == 0) {
 			mtmp = m_dup(mbuf, M_NOWAIT);
 			m_freem(mbuf);
@@ -747,15 +687,15 @@ nicvf_if_transmit(struct ifnet *ifp, struct mbuf *mbuf)
 				return (ENOBUFS);
 			mbuf = mtmp;
 		}
-#endif
 	}
+#endif
 
 	//XXXNH what to do about the 'br' aka buf_ring
 	IFQ_ENQUEUE(&(ifp)->if_snd, mbuf, err);
 //	err = drbr_enqueue(ifp, sq->br, mbuf);
 	//if_flags check?!? probably not
-	if (((ifp->if_flags & (IFF_RUNNING | IFF_OACTIVE)) !=
-	    IFF_RUNNING) || !nic->link_up || (err != 0)) {
+	if ((ifp->if_flags & IFF_RUNNING) != IFF_RUNNING ||
+	    !nic->link_up || err != 0) {
 		/*
 		 * Try to enqueue packet to the ring buffer.
 		 * If the driver is not active, link down or enqueue operation
@@ -769,7 +709,7 @@ nicvf_if_transmit(struct ifnet *ifp, struct mbuf *mbuf)
 		NICVF_TX_UNLOCK(sq);
 		return (err);
 	} else
-		taskqueue_enqueue(sq->snd_taskq, &sq->snd_task);
+		softint_schedule(sq->snd_si);
 
 	return (0);
 }
@@ -1069,7 +1009,7 @@ nicvf_update_hw_max_frs(struct nicvf *nic, int mtu)
 }
 
 static int
-nicvf_hw_set_mac_addr(struct nicvf *nic, uint8_t *hwaddr)
+nicvf_hw_set_mac_addr(struct nicvf *nic, const uint8_t *hwaddr)
 {
 	union nic_mbx mbx = {};
 
@@ -1242,7 +1182,7 @@ nicvf_intr_handler(void *arg)
 	/* Disable interrupts */
 	nicvf_disable_intr(nic, NICVF_INTR_CQ, qidx);
 
-	taskqueue_enqueue(cq->cmp_taskq, &cq->cmp_task);
+	softint_schedule(cq->cmp_si);
 
 	/* Clear interrupt */
 	nicvf_clear_intr(nic, NICVF_INTR_CQ, qidx);
@@ -1268,7 +1208,8 @@ nicvf_rbdr_intr_handler(void *arg)
 
 		qs = nic->qs;
 		rbdr = &qs->rbdr[qidx];
-		taskqueue_enqueue(rbdr->rbdr_taskq, &rbdr->rbdr_task_nowait);
+		//XXXNH no wait
+		softint_schedule(rbdr->rbdr_si);
 		/* Clear interrupt */
 		nicvf_clear_intr(nic, NICVF_INTR_RBDR, qidx);
 	}
@@ -1283,7 +1224,8 @@ nicvf_qs_err_intr_handler(void *arg)
 
 	/* Disable Qset err interrupt and schedule softirq */
 	nicvf_disable_intr(nic, NICVF_INTR_QS_ERR, 0);
-	taskqueue_enqueue(qs->qs_err_taskq, &qs->qs_err_task);
+
+	softint_schedule(qs->qs_err_si);
 	nicvf_clear_intr(nic, NICVF_INTR_QS_ERR, 0);
 
 	return 1;
@@ -1470,7 +1412,6 @@ nicvf_release_net_interrupts(struct nicvf *nic)
 static int
 nicvf_allocate_net_interrupts(struct nicvf *nic)
 {
-	u_int cpuid;
 	int irq;
 	int qidx;
 	int ret = 0;
@@ -1520,7 +1461,7 @@ nicvf_allocate_net_interrupts(struct nicvf *nic)
 		 * It will be used to pit the CQ task to the same CPU that got
 		 * interrupted.
 		 */
-		nic->qs->cq[qidx].cmp_cpuid = cpuid;
+		nic->qs->cq[qidx].cmp_cpuid = affinity_to;
 
 		kcpuset_zero(affinity);
 		kcpuset_set(affinity, affinity_to);
@@ -1530,8 +1471,8 @@ nicvf_allocate_net_interrupts(struct nicvf *nic)
 		aprint_normal_dev(nic->dev,
 		    "for CQ %d interrupting at %s", qidx, intrstr);
 		if (!err)
-			aprint_verbose_dev(nic->dev, "bound to CPU%d\n",
-			    cpuid);
+			aprint_verbose_dev(nic->dev, "bound to CPU%ld\n",
+			    affinity_to);
 	}
 
 	kcpuset_destroy(affinity);
@@ -1546,10 +1487,10 @@ nicvf_allocate_net_interrupts(struct nicvf *nic)
 		    nic->sc_pihp[irq], intrbuf, sizeof(intrbuf));
 		nic->sc_ih[irq] = pci_intr_establish_xname(nic->sc_pc,
 		    nic->sc_pihp[irq], IPL_VM, nicvf_rbdr_intr_handler,
-		    &nic->qs->cq[qidx], "RBDR#");
+		    nic, "RBDR#");
 		if (nic->sc_ih[irq] == NULL) {
 			aprint_error_dev(nic->dev, "couldn't establish "
-			    "interrupt for RBDR %d", qidx);
+			    "interrupt for RBDR");
 			if (intrstr != NULL)
 				aprint_error(" at %s", intrstr);
 			aprint_error("\n");
@@ -1567,7 +1508,7 @@ nicvf_allocate_net_interrupts(struct nicvf *nic)
 	    nic->sc_pihp[irq], intrbuf, sizeof(intrbuf));
 	nic->sc_ih[irq] = pci_intr_establish_xname(nic->sc_pc,
 	    nic->sc_pihp[irq], IPL_VM, nicvf_qs_err_intr_handler,
-	    &nic->qs->cq[qidx], "QS");
+	    nic, "QS");
 	if (nic->sc_ih[irq] == NULL) {
 		aprint_error_dev(nic->dev, "couldn't establish interrupt for "
 		    "QS Error");

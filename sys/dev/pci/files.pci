@@ -652,17 +652,18 @@ attach	nicpf at pci
 file	dev/pci/vnic/nic_main.c		nicpf
 
 # Cavium ThunderX Network Interface Controller
-#review deps
 device	bgx: ether, ifnet, arp
 attach	bgx at pci
 file	dev/pci/vnic/thunder_bgx.c	bgx
+file	dev/pci/vnic/thunder_bgx_fdt.c	bgx
+#file	dev/pci/vnic/thunder_mdio.c
 
 # Cavium ThunderX Network Interface Controller Virtual Function
 #review deps
 device	nicvf: ether, ifnet, arp
 attach	nicvf at pci
 file	dev/pci/vnic/nicvf_main.c	nicvf
-#file	dev/pci/vnic/nicvf_queues.c	nicvf
+file	dev/pci/vnic/nicvf_queues.c	nicvf
 
 # Intel i82598 & i82599 10-Gigabit Ethernet
 device	ixg: ether, ifnet, arp, mii, mii_phy

@@ -28,62 +28,61 @@
  * $FreeBSD$
  *
  */
-#include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
 
+/*
+ * TODO:
+ *
+ * 	- check PHYS_TO_DMAP
+ * 	- drbr vs pcq
+ * 	- tasks
+ * 	- IPL_NET - almost certainly correct
+ */
+
+#ifdef _KERNEL_OPT
 #include "opt_inet.h"
 #include "opt_inet6.h"
+#include "opt_net_mpsafe.h"
+#endif
+
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/bitset.h>
-#include <sys/bitstring.h>
-#include <sys/buf_ring.h>
+
+#include <sys/bitops.h>
 #include <sys/bus.h>
-#include <sys/endian.h>
-#include <sys/kernel.h>
-#include <sys/malloc.h>
-#include <sys/module.h>
-#include <sys/rman.h>
-#include <sys/pciio.h>
-#include <sys/pcpu.h>
-#include <sys/proc.h>
-#include <sys/sockio.h>
-#include <sys/socket.h>
-#include <sys/stdatomic.h>
-#include <sys/cpuset.h>
-#include <sys/lock.h>
+#include <sys/callout.h>
+#include <sys/cprng.h>
+#include <sys/cpu.h>
+#include <sys/device.h>
+#include <sys/interrupt.h>
+#include <sys/intr.h>
+#include <sys/kmem.h>
 #include <sys/mutex.h>
-#include <sys/smp.h>
-#include <sys/taskqueue.h>
-
-#include <vm/vm.h>
-#include <vm/pmap.h>
-
-#include <machine/bus.h>
-#include <machine/vmparam.h>
+#include <sys/pcq.h>
 
 #include <net/if.h>
-#include <net/if_var.h>
+#include <net/if_dl.h>
+#include <net/if_ether.h>
 #include <net/if_media.h>
-#include <net/ifq.h>
-#include <net/bpf.h>
-#include <net/ethernet.h>
+#include <net/if_vlanvar.h>
 
-#include <netinet/in_systm.h>
 #include <netinet/in.h>
-#include <netinet/if_ether.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/sctp.h>
 #include <netinet/tcp.h>
-#include <netinet/tcp_lro.h>
 #include <netinet/udp.h>
 
 #include <netinet6/ip6_var.h>
 
-#include <dev/pci/pcireg.h>
+#include <net/bpf.h>
+
 #include <dev/pci/pcivar.h>
+#include <dev/pci/pcidevs.h>
+
+//XXXNH
+#include "arm/cpufunc.h"
 
 #include "thunder_bgx.h"
 #include "nic_reg.h"
@@ -100,8 +99,6 @@ __FBSDID("$FreeBSD$");
 #define	dprintf(dev, fmt, ...)
 #endif
 
-MALLOC_DECLARE(M_NICVF);
-
 static void nicvf_free_snd_queue(struct nicvf *, struct snd_queue *);
 static struct mbuf * nicvf_get_rcv_mbuf(struct nicvf *, struct cqe_rx_t *);
 static void nicvf_sq_disable(struct nicvf *, int);
@@ -113,8 +110,8 @@ static void nicvf_sq_free_used_descs(struct nicvf *, struct snd_queue *, int);
 
 static int nicvf_tx_mbuf_locked(struct snd_queue *, struct mbuf **);
 
-static void nicvf_rbdr_task(void *, int);
-static void nicvf_rbdr_task_nowait(void *, int);
+static void nicvf_rbdr_task(void *);
+//static void nicvf_rbdr_task_nowait(void *, int);
 
 struct rbuf_info {
 	bus_dma_tag_t	dmat;
@@ -123,6 +120,48 @@ struct rbuf_info {
 };
 
 #define GET_RBUF_INFO(x) ((struct rbuf_info *)((x) - NICVF_RCV_BUF_ALIGN_BYTES))
+
+static inline int
+m_append(struct mbuf *m0, int len, const void *cpv)
+{
+	struct mbuf *m, *n;
+	int remainder, space;
+	const char *cp = cpv;
+
+	KASSERT(len != M_COPYALL);
+	for (m = m0; m->m_next != NULL; m = m->m_next)
+		continue;
+	remainder = len;
+	space = M_TRAILINGSPACE(m);
+	if (space > 0) {
+		/*
+		 * Copy into available space.
+		 */
+		if (space > remainder)
+			space = remainder;
+		memmove(mtod(m, char *) + m->m_len, cp, space);
+		m->m_len += space;
+		cp = cp + space, remainder -= space;
+	}
+	while (remainder > 0) {
+		/*
+		 * Allocate a new mbuf; could check space
+		 * and allocate a cluster instead.
+		 */
+		n = m_get(M_DONTWAIT, m->m_type);
+		if (n == NULL)
+			break;
+		n->m_len = uimin(MLEN, remainder);
+		memmove(mtod(n, void *), cp, n->m_len);
+		cp += n->m_len, remainder -= n->m_len;
+		m->m_next = n;
+		m = n;
+	}
+	if (m0->m_flags & M_PKTHDR)
+		m0->m_pkthdr.len += len - remainder;
+	return (remainder == 0);
+}
+
 
 /* Poll a register for a specific value */
 static int nicvf_poll_reg(struct nicvf *nic, int qidx,
@@ -147,24 +186,15 @@ static int nicvf_poll_reg(struct nicvf *nic, int qidx,
 	return (ETIMEDOUT);
 }
 
-/* Callback for bus_dmamap_load() */
-static void
-nicvf_dmamap_q_cb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
-{
-	bus_addr_t *paddr;
-
-	KASSERT(nseg == 1, ("wrong number of segments, should be 1"));
-	paddr = arg;
-	*paddr = segs->ds_addr;
-}
-
 /* Allocate memory for a queue's descriptors */
 static int
 nicvf_alloc_q_desc_mem(struct nicvf *nic, struct q_desc_mem *dmem,
     int q_len, int desc_size, int align_bytes)
 {
-	int err, err_dmat;
+	int err;
 
+	dmem->dmat = nic->sc_dmat;
+#if 0
 	/* Create DMA tag first */
 	err = bus_dma_tag_create(
 	    bus_get_dma_tag(nic->dev),		/* parent tag */
@@ -185,46 +215,79 @@ nicvf_alloc_q_desc_mem(struct nicvf *nic, struct q_desc_mem *dmem,
 		    "Failed to create busdma tag for descriptors ring\n");
 		return (err);
 	}
-
+#endif
+	const bus_size_t mapsize = (q_len * desc_size);
+	const bus_size_t maxsegs = 1;
+	int nsegs;
 	/* Allocate segment of continuous DMA safe memory */
 	err = bus_dmamem_alloc(
 	    dmem->dmat,				/* DMA tag */
-	    &dmem->base,			/* virtual address */
-	    (BUS_DMA_NOWAIT | BUS_DMA_ZERO),	/* flags */
-	    &dmem->dmap);			/* DMA map */
+	    mapsize,				/* allocation size */
+	    PAGE_SIZE,				/* alignment */
+	    0,					/* boundary */
+	    &dmem->dseg,			/* the segment allocated */
+	    maxsegs,				/* 1 segment required */
+	    &nsegs,				/* # of segments allocated */
+	    BUS_DMA_WAITOK);			/* flags */
 	if (err != 0) {
 		device_printf(nic->dev, "Failed to allocate DMA safe memory for"
 		    "descriptors ring\n");
 		goto dmamem_fail;
 	}
 
+	err = bus_dmamem_map(
+	    dmem->dmat,				/* DMA tag */
+	    &dmem->dseg,			/* the segment */
+	    nsegs,				/* # of segments allocated */
+	    mapsize,				/* allocation size */
+	    &dmem->base,			/* KVA pointer */
+	    BUS_DMA_WAITOK);			/* flags */
+	if (err != 0) {
+		device_printf(nic->dev, "Failed to map DMA safe memory for"
+		    "descriptors ring\n");
+		goto dmamap_fail;
+	}
+
+	err = bus_dmamap_create(
+	    dmem->dmat,				/* DMA tag */
+	    mapsize,				/* allocation size */
+	    maxsegs,				/* 1 segment required */
+	    mapsize,				/* maxseg size */
+	    0,					/* boundary */
+	    BUS_DMA_WAITOK,			/* flags */
+	    &dmem->dmap);
+	if (err != 0) {
+		device_printf(nic->dev, "Failed to create DMA map for"
+		    "descriptors ring\n");
+		goto dmamapcra_fail;
+	}
+
 	err = bus_dmamap_load(
 	    dmem->dmat,
 	    dmem->dmap,
 	    dmem->base,
-	    (q_len * desc_size),		/* allocation size */
-	    nicvf_dmamap_q_cb,			/* map to DMA address cb. */
-	    &dmem->phys_base,			/* physical address */
-	    BUS_DMA_NOWAIT);
+	    mapsize,				/* allocation size */
+	    NULL,				/* process i s kernel */
+	    BUS_DMA_WAITOK);
 	if (err != 0) {
 		device_printf(nic->dev,
 		    "Cannot load DMA map of descriptors ring\n");
 		goto dmamap_fail;
 	}
 
+	dmem->phys_base = dmem->dseg.ds_addr;
 	dmem->q_len = q_len;
 	dmem->size = (desc_size * q_len);
 
 	return (0);
 
+dmamapcra_fail:
+	bus_dmamem_unmap(dmem->dmat, dmem->dmap, mapsize);
 dmamap_fail:
-	bus_dmamem_free(dmem->dmat, dmem->base, dmem->dmap);
+	bus_dmamem_free(dmem->dmat, &dmem->dseg, maxsegs);
 	dmem->phys_base = 0;
 dmamem_fail:
-	err_dmat = bus_dma_tag_destroy(dmem->dmat);
 	dmem->base = NULL;
-	KASSERT(err_dmat == 0,
-	    ("%s: Trying to destroy BUSY DMA tag", __func__));
 
 	return (err);
 }
@@ -233,21 +296,17 @@ dmamem_fail:
 static void
 nicvf_free_q_desc_mem(struct nicvf *nic, struct q_desc_mem *dmem)
 {
-	int err;
 
 	if ((dmem == NULL) || (dmem->base == NULL))
 		return;
 
 	/* Unload a map */
-	bus_dmamap_sync(dmem->dmat, dmem->dmap, BUS_DMASYNC_POSTREAD);
+	bus_dmamap_sync(dmem->dmat, dmem->dmap, 0, dmem->size,
+	    BUS_DMASYNC_POSTREAD);
 	bus_dmamap_unload(dmem->dmat, dmem->dmap);
 	/* Free DMA memory */
-	bus_dmamem_free(dmem->dmat, dmem->base, dmem->dmap);
-	/* Destroy DMA tag */
-	err = bus_dma_tag_destroy(dmem->dmat);
-
-	KASSERT(err == 0,
-	    ("%s: Trying to destroy BUSY DMA tag", __func__));
+	const int maxsegs = 1;
+	bus_dmamem_free(dmem->dmat, &dmem->dseg, maxsegs);
 
 	dmem->phys_base = 0;
 	dmem->base = NULL;
@@ -265,11 +324,9 @@ nicvf_alloc_rcv_buffer(struct nicvf *nic, struct rbdr *rbdr,
 {
 	struct mbuf *mbuf;
 	struct rbuf_info *rinfo;
-	bus_dma_segment_t segs[1];
-	int nsegs;
 	int err;
 
-	mbuf = m_getjcl(mflags, MT_DATA, M_PKTHDR, MCLBYTES);
+	mbuf = m_getcl(mflags, MT_DATA, M_PKTHDR);
 	if (mbuf == NULL)
 		return (ENOMEM);
 
@@ -277,20 +334,23 @@ nicvf_alloc_rcv_buffer(struct nicvf *nic, struct rbdr *rbdr,
 	 * The length is equal to the actual length + one 128b line
 	 * used as a room for rbuf_info structure.
 	 */
+	//XXXNH MCLBYTES;
 	mbuf->m_len = mbuf->m_pkthdr.len = buf_len;
 
-	err = bus_dmamap_load_mbuf_sg(rbdr->rbdr_buff_dmat, dmap, mbuf, segs,
-	    &nsegs, BUS_DMA_NOWAIT);
+	err = bus_dmamap_load_mbuf(rbdr->rbdr_buff_dmat, dmap, mbuf,
+	    BUS_DMA_NOWAIT);
 	if (err != 0) {
 		device_printf(nic->dev,
 		    "Failed to map mbuf into DMA visible memory, err: %d\n",
 		    err);
 		m_freem(mbuf);
+		//XXXNH no?
 		bus_dmamap_destroy(rbdr->rbdr_buff_dmat, dmap);
 		return (err);
 	}
-	if (nsegs != 1)
-		panic("Unexpected number of DMA segments for RB: %d", nsegs);
+	if (dmap->dm_nsegs != 1)
+		panic("Unexpected number of DMA segments for RB: %d",
+		    dmap->dm_nsegs);
 	/*
 	 * Now use the room for rbuf_info structure
 	 * and adjust mbuf data and length.
@@ -298,11 +358,14 @@ nicvf_alloc_rcv_buffer(struct nicvf *nic, struct rbdr *rbdr,
 	rinfo = (struct rbuf_info *)mbuf->m_data;
 	m_adj(mbuf, NICVF_RCV_BUF_ALIGN_BYTES);
 
+//	bus_dmamap_sync(rbdr->rbdr_buff_dmat, dmap, 0, dmap->dm_mapsize,
+//	    BUS_DMASYNC_PREREAD);
+
 	rinfo->dmat = rbdr->rbdr_buff_dmat;
 	rinfo->dmap = dmap;
 	rinfo->mbuf = mbuf;
 
-	*rbuf = segs[0].ds_addr + NICVF_RCV_BUF_ALIGN_BYTES;
+	*rbuf = dmap->dm_segs[0].ds_addr + NICVF_RCV_BUF_ALIGN_BYTES;
 
 	return (0);
 }
@@ -313,6 +376,10 @@ nicvf_rb_ptr_to_mbuf(struct nicvf *nic, bus_addr_t rb_ptr)
 {
 	struct mbuf *mbuf;
 	struct rbuf_info *rinfo;
+
+
+	//XXXNH this might actually work.
+#define PHYS_TO_DMAP(phys) AARCH64_PA_TO_KVA(phys)
 
 	/* Get buffer start address and alignment offset */
 	rinfo = GET_RBUF_INFO(PHYS_TO_DMAP(rb_ptr));
@@ -329,7 +396,8 @@ nicvf_rb_ptr_to_mbuf(struct nicvf *nic, bus_addr_t rb_ptr)
 	 */
 	rinfo->mbuf = NULL;
 
-	bus_dmamap_sync(rinfo->dmat, rinfo->dmap, BUS_DMASYNC_POSTREAD);
+	bus_dmamap_sync(rinfo->dmat, rinfo->dmap, 0, rinfo->dmap->dm_mapsize,
+	    BUS_DMASYNC_POSTREAD);
 	bus_dmamap_unload(rinfo->dmat, rinfo->dmap);
 
 	return (mbuf);
@@ -378,6 +446,8 @@ nicvf_init_rbdr(struct nicvf *nic, struct rbdr *rbdr, int ring_len,
 		    "Buffer size to large for mbuf cluster\n");
 		return (EINVAL);
 	}
+
+#if 0
 	err = bus_dma_tag_create(
 	    bus_get_dma_tag(nic->dev),		/* parent tag */
 	    NICVF_RCV_BUF_ALIGN_BYTES,		/* alignment */
@@ -398,11 +468,25 @@ nicvf_init_rbdr(struct nicvf *nic, struct rbdr *rbdr, int ring_len,
 		return (err);
 	}
 
-	rbdr->rbdr_buff_dmaps = malloc(sizeof(*rbdr->rbdr_buff_dmaps) *
-	    ring_len, M_NICVF, (M_WAITOK | M_ZERO));
+#endif
+
+
+
+	rbdr->rbdr_buff_dmat = nic->sc_dmat;
+
+	rbdr->rbdr_buff_dmaps = kmem_zalloc(sizeof(*rbdr->rbdr_buff_dmaps) *
+	    ring_len, KM_SLEEP);
 
 	for (idx = 0; idx < ring_len; idx++) {
-		err = bus_dmamap_create(rbdr->rbdr_buff_dmat, 0, &dmap);
+		err = bus_dmamap_create(
+		    nic->sc_dmat,			/* DMA tag */
+		    roundup2(buf_size, MCLBYTES),	/* maxsize */
+		    1,					/* nsegments */
+		    roundup2(buf_size, MCLBYTES),	/* maxsegsize */
+		    0,					/* boundary */
+		    BUS_DMA_WAITOK,			/* flags */
+		    &dmap);
+
 		if (err != 0) {
 			device_printf(nic->dev,
 			    "Failed to create DMA map for RB\n");
@@ -419,13 +503,13 @@ nicvf_init_rbdr(struct nicvf *nic, struct rbdr *rbdr, int ring_len,
 		desc->buf_addr = (rbuf >> NICVF_RCV_BUF_ALIGN);
 	}
 
+#if 0
 	/* Allocate taskqueue */
 	TASK_INIT(&rbdr->rbdr_task, 0, nicvf_rbdr_task, rbdr);
 	TASK_INIT(&rbdr->rbdr_task_nowait, 0, nicvf_rbdr_task_nowait, rbdr);
-	rbdr->rbdr_taskq = taskqueue_create_fast("nicvf_rbdr_taskq", M_WAITOK,
-	    taskqueue_thread_enqueue, &rbdr->rbdr_taskq);
-	taskqueue_start_threads(&rbdr->rbdr_taskq, 1, PI_NET, "%s: rbdr_taskq",
-	    device_xname(nic->dev));
+#endif
+	// wait and nowait variants???
+	rbdr->rbdr_si = softint_establish(SOFTINT_MPSAFE|SOFTINT_NET, nicvf_rbdr_task, rbdr);
 
 	return (0);
 }
@@ -440,7 +524,6 @@ nicvf_free_rbdr(struct nicvf *nic, struct rbdr *rbdr)
 	struct rbuf_info *rinfo;
 	bus_addr_t buf_addr;
 	int head, tail, idx;
-	int err;
 
 	qs = nic->qs;
 
@@ -448,22 +531,10 @@ nicvf_free_rbdr(struct nicvf *nic, struct rbdr *rbdr)
 		return;
 
 	rbdr->enable = FALSE;
-	if (rbdr->rbdr_taskq != NULL) {
-		/* Remove tasks */
-		while (taskqueue_cancel(rbdr->rbdr_taskq,
-		    &rbdr->rbdr_task_nowait, NULL) != 0) {
-			/* Finish the nowait task first */
-			taskqueue_drain(rbdr->rbdr_taskq,
-			    &rbdr->rbdr_task_nowait);
-		}
-		taskqueue_free(rbdr->rbdr_taskq);
-		rbdr->rbdr_taskq = NULL;
-
-		while (taskqueue_cancel(taskqueue_thread,
-		    &rbdr->rbdr_task, NULL) != 0) {
-			/* Now finish the sleepable task */
-			taskqueue_drain(taskqueue_thread, &rbdr->rbdr_task);
-		}
+	if (rbdr->rbdr_si != NULL) {
+		//XXXNH condvar here?
+		softint_disestablish(rbdr->rbdr_si);
+		rbdr->rbdr_si = NULL;
 	}
 
 	/*
@@ -503,18 +574,11 @@ nicvf_free_rbdr(struct nicvf *nic, struct rbdr *rbdr)
 		for (idx = 0; idx < qs->rbdr_len; idx++) {
 			if (rbdr->rbdr_buff_dmaps[idx] == NULL)
 				continue;
-			err = bus_dmamap_destroy(rbdr->rbdr_buff_dmat,
+			bus_dmamap_destroy(rbdr->rbdr_buff_dmat,
 			    rbdr->rbdr_buff_dmaps[idx]);
-			KASSERT(err == 0,
-			    ("%s: Could not destroy DMA map for RB, desc: %d",
-			    __func__, idx));
+
 			rbdr->rbdr_buff_dmaps[idx] = NULL;
 		}
-
-		/* Now destroy the tag */
-		err = bus_dma_tag_destroy(rbdr->rbdr_buff_dmat);
-		KASSERT(err == 0,
-		    ("%s: Trying to destroy BUSY DMA tag", __func__));
 
 		rbdr->head = 0;
 		rbdr->tail = 0;
@@ -580,7 +644,8 @@ nicvf_refill_rbdr(struct rbdr *rbdr, int mflags)
 	}
 
 	/* make sure all memory stores are done before ringing doorbell */
-	wmb();
+	dsb(sy);
+//	wmb();
 
 	/* Check if buffer allocation failed */
 	if (refill_rb_cnt == 0)
@@ -605,7 +670,7 @@ out:
 
 /* Refill RBs even if sleep is needed to reclaim memory */
 static void
-nicvf_rbdr_task(void *arg, int pending)
+nicvf_rbdr_task(void *arg)
 {
 	struct rbdr *rbdr;
 	int err;
@@ -619,6 +684,7 @@ nicvf_rbdr_task(void *arg, int pending)
 	}
 }
 
+#if 0
 /* Refill RBs as soon as possible without waiting */
 static void
 nicvf_rbdr_task_nowait(void *arg, int pending)
@@ -634,21 +700,27 @@ nicvf_rbdr_task_nowait(void *arg, int pending)
 		 * Schedule another, sleepable kernel thread
 		 * that will for sure refill the buffers.
 		 */
-		taskqueue_enqueue(taskqueue_thread, &rbdr->rbdr_task);
+		//XXXNH oh!
+		softint_schedule(rbdr->rbdr_si);
 	}
 }
+#endif
 
 static int
 nicvf_rcv_pkt_handler(struct nicvf *nic, struct cmp_queue *cq,
     struct cqe_rx_t *cqe_rx, int cqe_type)
 {
 	struct mbuf *mbuf;
+#ifdef LRO
 	struct rcv_queue *rq;
 	int rq_idx;
+#endif
 	int err = 0;
 
+#ifdef LRO
 	rq_idx = cqe_rx->rq_idx;
 	rq = &nic->qs->rq[rq_idx];
+#endif
 
 	/* Check for errors */
 	err = nicvf_check_cqe_rx_errs(nic, cq, cqe_rx);
@@ -667,6 +739,7 @@ nicvf_rcv_pkt_handler(struct nicvf *nic, struct cmp_queue *cq,
 		return (0);
 	}
 
+#ifdef LRO
 	if (rq->lro_enabled &&
 	    ((cqe_rx->l3_type == L3TYPE_IPV4) && (cqe_rx->l4_type == L4TYPE_TCP)) &&
 	    (mbuf->m_pkthdr.csum_flags & (CSUM_DATA_VALID | CSUM_PSEUDO_HDR)) ==
@@ -680,11 +753,12 @@ nicvf_rcv_pkt_handler(struct nicvf *nic, struct cmp_queue *cq,
 		    (tcp_lro_rx(&rq->lro, mbuf, 0) == 0))
 			return (0);
 	}
+#endif
 	/*
 	 * Push this packet to the stack later to avoid
 	 * unlocking completion task in the middle of work.
 	 */
-	err = buf_ring_enqueue(cq->rx_br, mbuf);
+	err = pcq_put(cq->rx_pcq, mbuf);
 	if (err != 0) {
 		/*
 		 * Failed to enqueue this mbuf.
@@ -740,14 +814,15 @@ nicvf_cq_intr_handler(struct nicvf *nic, uint8_t cq_idx)
 	struct queue_set *qs = nic->qs;
 	struct cmp_queue *cq = &qs->cq[cq_idx];
 	struct snd_queue *sq = &qs->sq[cq_idx];
-	struct rcv_queue *rq;
 	struct cqe_rx_t *cq_desc;
 #ifdef LRO
+	struct rcv_queue *rq;
 	struct lro_ctrl	*lro;
-#endif
 	int rq_idx;
+#endif
 	int cmp_err;
 
+	ifp = nic->ifp;
 	NICVF_CMP_LOCK(cq);
 	cmp_err = 0;
 	processed_cqe = 0;
@@ -759,7 +834,7 @@ nicvf_cq_intr_handler(struct nicvf *nic, uint8_t cq_idx)
 
 	/* Get head of the valid CQ entries */
 	cqe_head = nicvf_queue_reg_read(nic, NIC_QSET_CQ_0_7_HEAD, cq_idx) >> 9;
-	cqe_head &= 0xFFFF;
+	cqe_head &= 0xffff;
 
 	dprintf(nic->dev, "%s CQ%d cqe_count %d cqe_head %d\n",
 	    __func__, cq_idx, cqe_count, cqe_head);
@@ -809,12 +884,16 @@ done:
 	nicvf_queue_reg_write(nic, NIC_QSET_CQ_0_7_DOOR, cq_idx, processed_cqe);
 
 	if ((tx_done > 0) &&
-	    (ifp->if_flags & IFF_RUNNING) != 0)) {
+	    (ifp->if_flags & IFF_RUNNING) != 0) {
 		/* Reenable TXQ if its stopped earlier due to SQ full */
 		ifp->if_flags |= IFF_RUNNING;
-		taskqueue_enqueue(sq->snd_taskq, &sq->snd_task);
+
+
+		//XXXNH restart Tx
+		softint_schedule(sq->snd_si);
 	}
 out:
+#ifdef LRO
 	/*
 	 * Flush any outstanding LRO work
 	 */
@@ -822,15 +901,17 @@ out:
 	rq = &nic->qs->rq[rq_idx];
 	lro = &rq->lro;
 	tcp_lro_flush_all(lro);
+#endif
 
 	NICVF_CMP_UNLOCK(cq);
 
 	ifp = nic->ifp;
 	/* Push received MBUFs to the stack */
-	while (!buf_ring_empty(cq->rx_br)) {
-		mbuf = buf_ring_dequeue_mc(cq->rx_br);
+	while (pcq_peek(cq->rx_pcq) != NULL) {
+		mbuf = pcq_get(cq->rx_pcq);
 		if (__predict_true(mbuf != NULL))
-			(*ifp->if_input)(ifp, mbuf);
+			/* Pass it on. */
+			if_percpuq_enqueue(nic->ipq, mbuf);
 	}
 
 	return (cmp_err);
@@ -842,17 +923,20 @@ out:
  * As of now only CQ errors are handled
  */
 static void
-nicvf_qs_err_task(void *arg, int pending)
+nicvf_qs_err_task(void *arg)
 {
 	struct nicvf *nic;
+	struct ifnet *ifp;
 	struct queue_set *qs;
 	int qidx;
 	uint64_t status;
 	boolean_t enable = TRUE;
 
 	nic = (struct nicvf *)arg;
+	ifp = nic->ifp;
 	qs = nic->qs;
 
+	// XXXNH Locking!
 	/* Deactivate network interface */
 	ifp->if_flags &= ~IFF_RUNNING;
 
@@ -872,13 +956,14 @@ nicvf_qs_err_task(void *arg, int pending)
 		nicvf_enable_intr(nic, NICVF_INTR_CQ, qidx);
 	}
 
+	// XXXNH Locking!
 	ifp->if_flags |= IFF_RUNNING;
 	/* Re-enable Qset error interrupt */
 	nicvf_enable_intr(nic, NICVF_INTR_QS_ERR, 0);
 }
 
 static void
-nicvf_cmp_task(void *arg, int pending)
+nicvf_cmp_task(void *arg)
 {
 	struct cmp_queue *cq;
 	struct nicvf *nic;
@@ -894,7 +979,8 @@ nicvf_cmp_task(void *arg, int pending)
 		 * Schedule another thread here since we did not
 		 * process the entire CQ due to Tx or Rx CQ parse error.
 		 */
-		taskqueue_enqueue(cq->cmp_taskq, &cq->cmp_task);
+		//XXXNH why not just loop?
+		softint_schedule(cq->cmp_si);
 	}
 
 	nicvf_clear_intr(nic, NICVF_INTR_CQ, cq->idx);
@@ -911,9 +997,8 @@ nicvf_init_cmp_queue(struct nicvf *nic, struct cmp_queue *cq, int q_len,
 	int err;
 
 	/* Initizalize lock */
-	snprintf(cq->mtx_name, sizeof(cq->mtx_name), "%s: CQ(%d) lock",
-	    device_xname(nic->dev), qidx);
-	mtx_init(&cq->mtx, cq->mtx_name, NULL, MTX_DEF);
+	//XXXNH IPL_NET
+	mutex_init(&cq->mtx, MUTEX_DEFAULT, IPL_NET);
 
 	err = nicvf_alloc_q_desc_mem(nic, &cq->dmem, q_len, CMP_QUEUE_DESC_SIZE,
 				     NICVF_CQ_BASE_ALIGN_BYTES);
@@ -925,20 +1010,18 @@ nicvf_init_cmp_queue(struct nicvf *nic, struct cmp_queue *cq, int q_len,
 	}
 
 	cq->desc = cq->dmem.base;
-	cq->thresh = pass1_silicon(nic->dev) ? 0 : CMP_QUEUE_CQE_THRESH;
+	cq->thresh = nic->sc_pass1_silicon ? 0 : CMP_QUEUE_CQE_THRESH;
 	cq->nic = nic;
 	cq->idx = qidx;
 	nic->cq_coalesce_usecs = (CMP_QUEUE_TIMER_THRESH * 0.05) - 1;
 
-	cq->rx_br = buf_ring_alloc(CMP_QUEUE_LEN * 8, M_DEVBUF, M_WAITOK,
-	    &cq->mtx);
+	cq->rx_pcq = pcq_create(CMP_QUEUE_LEN * 8, KM_SLEEP);
 
+#if 0
 	/* Allocate taskqueue */
-	NET_TASK_INIT(&cq->cmp_task, 0, nicvf_cmp_task, cq);
-	cq->cmp_taskq = taskqueue_create_fast("nicvf_cmp_taskq", M_WAITOK,
-	    taskqueue_thread_enqueue, &cq->cmp_taskq);
-	taskqueue_start_threads(&cq->cmp_taskq, 1, PI_NET, "%s: cmp_taskq(%d)",
-	    device_xname(nic->dev), qidx);
+	TASK_INIT(&cq->cmp_task, 0, nicvf_cmp_task, cq, TASK_NETWORK);
+#endif
+	cq->cmp_si = softint_establish(SOFTINT_MPSAFE|SOFTINT_NET, nicvf_cmp_task, cq);
 
 	return (0);
 }
@@ -957,13 +1040,11 @@ nicvf_free_cmp_queue(struct nicvf *nic, struct cmp_queue *cq)
 	if (cq->enable)
 		panic("%s: Trying to free working CQ(%d)", __func__, cq->idx);
 
-	if (cq->cmp_taskq != NULL) {
-		/* Remove task */
-		while (taskqueue_cancel(cq->cmp_taskq, &cq->cmp_task, NULL) != 0)
-			taskqueue_drain(cq->cmp_taskq, &cq->cmp_task);
+	if (cq->cmp_si != NULL) {
+		// XXXNH Wait for no softints?
 
-		taskqueue_free(cq->cmp_taskq);
-		cq->cmp_taskq = NULL;
+		softint_disestablish(cq->cmp_si);
+		cq->cmp_si = NULL;
 	}
 	/*
 	 * Completion interrupt will possibly enable interrupts again
@@ -976,10 +1057,10 @@ nicvf_free_cmp_queue(struct nicvf *nic, struct cmp_queue *cq)
 
 	NICVF_CMP_LOCK(cq);
 	nicvf_free_q_desc_mem(nic, &cq->dmem);
-	drbr_free(cq->rx_br, M_DEVBUF);
+	pcq_destroy(cq->rx_pcq);
 	NICVF_CMP_UNLOCK(cq);
-	mtx_destroy(&cq->mtx);
-	memset(cq->mtx_name, 0, sizeof(cq->mtx_name));
+	mutex_destroy(&cq->mtx);
+//	memset(cq->mtx_name, 0, sizeof(cq->mtx_name));
 }
 
 int
@@ -996,26 +1077,27 @@ nicvf_xmit_locked(struct snd_queue *sq)
 	ifp = nic->ifp;
 	err = 0;
 
-	while ((next = drbr_peek(ifp, sq->br)) != NULL) {
+	while ((next = pcq_peek(sq->tx_pcq)) != NULL) {
+#if 0
 		/* Send a copy of the frame to the BPF listener */
 		ETHER_BPF_MTAP(ifp, next);
-
+#endif
 		err = nicvf_tx_mbuf_locked(sq, &next);
 		if (err != 0) {
+			/* Nothing to be done... drop the packet */
 			if (next == NULL)
-				drbr_advance(ifp, sq->br);
-			else
-				drbr_putback(ifp, sq->br, next);
-
+				pcq_get(sq->tx_pcq);
 			break;
 		}
-		drbr_advance(ifp, sq->br);
+		struct mbuf *m0 = pcq_get(sq->tx_pcq);
+		/* Pass the packet to any BPF listeners. */
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 	}
 	return (err);
 }
 
 static void
-nicvf_snd_task(void *arg, int pending)
+nicvf_snd_task(void *arg)
 {
 	struct snd_queue *sq = (struct snd_queue *)arg;
 	struct nicvf *nic;
@@ -1029,8 +1111,7 @@ nicvf_snd_task(void *arg, int pending)
 	 * Skip sending anything if the driver is not running,
 	 * SQ full or link is down.
 	 */
-	if (((if_getdrvflags(ifp) & (IFF_DRV_RUNNING | IFF_DRV_OACTIVE)) !=
-	    IFF_DRV_RUNNING) || !nic->link_up)
+	if ((ifp->if_flags & IFF_RUNNING) != IFF_RUNNING || !nic->link_up)
 		return;
 
 	NICVF_TX_LOCK(sq);
@@ -1038,7 +1119,7 @@ nicvf_snd_task(void *arg, int pending)
 	NICVF_TX_UNLOCK(sq);
 	/* Try again */
 	if (err != 0)
-		taskqueue_enqueue(sq->snd_taskq, &sq->snd_task);
+		softint_schedule(sq->snd_si);
 }
 
 /* Initialize transmit queue */
@@ -1050,15 +1131,15 @@ nicvf_init_snd_queue(struct nicvf *nic, struct snd_queue *sq, int q_len,
 	int err;
 
 	/* Initizalize TX lock for this queue */
-	snprintf(sq->mtx_name, sizeof(sq->mtx_name), "%s: SQ(%d) lock",
-	    device_xname(nic->dev), qidx);
-	mtx_init(&sq->mtx, sq->mtx_name, NULL, MTX_DEF);
+//	snprintf(sq->mtx_name, sizeof(sq->mtx_name), "%s: SQ(%d) lock",
+//	    device_xname(nic->dev), qidx);
+	//XXXNH IPL_NET
+	mutex_init(&sq->mtx, MUTEX_DEFAULT, IPL_NET);
 
 	NICVF_TX_LOCK(sq);
 	/* Allocate buffer ring */
-	sq->br = buf_ring_alloc(q_len / MIN_SQ_DESC_PER_PKT_XMIT, M_DEVBUF,
-	    M_NOWAIT, &sq->mtx);
-	if (sq->br == NULL) {
+	sq->tx_pcq = pcq_create(q_len / MIN_SQ_DESC_PER_PKT_XMIT, KM_SLEEP);
+	if (sq->tx_pcq == NULL) {
 		device_printf(nic->dev,
 		    "ERROR: Could not set up buf ring for SQ(%d)\n", qidx);
 		err = ENOMEM;
@@ -1076,7 +1157,7 @@ nicvf_init_snd_queue(struct nicvf *nic, struct snd_queue *sq, int q_len,
 
 	sq->desc = sq->dmem.base;
 	sq->head = sq->tail = 0;
-	atomic_store_rel_int(&sq->free_cnt, q_len - 1);
+	atomic_store_relaxed(&sq->free_cnt, q_len - 1);
 	sq->thresh = SND_QUEUE_THRESH;
 	sq->idx = qidx;
 	sq->nic = nic;
@@ -1084,7 +1165,7 @@ nicvf_init_snd_queue(struct nicvf *nic, struct snd_queue *sq, int q_len,
 	/*
 	 * Allocate DMA maps for Tx buffers
 	 */
-
+#if 0
 	/* Create DMA tag first */
 	err = bus_dma_tag_create(
 	    bus_get_dma_tag(nic->dev),		/* parent tag */
@@ -1099,16 +1180,16 @@ nicvf_init_snd_queue(struct nicvf *nic, struct snd_queue *sq, int q_len,
 	    0,					/* flags */
 	    NULL, NULL,				/* lockfunc, lockfuncarg */
 	    &sq->snd_buff_dmat);		/* dmat */
-
 	if (err != 0) {
 		device_printf(nic->dev,
 		    "Failed to create busdma tag for Tx buffers\n");
 		goto error;
 	}
+#endif
+	sq->snd_buff_dmat = nic->sc_dmat;
 
 	/* Allocate send buffers array */
-	sq->snd_buff = malloc(sizeof(*sq->snd_buff) * q_len, M_NICVF,
-	    (M_NOWAIT | M_ZERO));
+	sq->snd_buff = kmem_zalloc(sizeof(*sq->snd_buff) * q_len, KM_SLEEP);
 	if (sq->snd_buff == NULL) {
 		device_printf(nic->dev,
 		    "Could not allocate memory for Tx buffers array\n");
@@ -1118,8 +1199,15 @@ nicvf_init_snd_queue(struct nicvf *nic, struct snd_queue *sq, int q_len,
 
 	/* Now populate maps */
 	for (i = 0; i < q_len; i++) {
-		err = bus_dmamap_create(sq->snd_buff_dmat, 0,
+		err = bus_dmamap_create(
+		    nic->sc_dmat,			/* DMA tag */
+		    NICVF_TSO_MAXSIZE,			/* maxsize */
+		    NICVF_TSO_NSEGS,			/* nsegments */
+		    MCLBYTES,				/* maxsegsize */
+		    0,					/* boundary */
+		    BUS_DMA_WAITOK,			/* flags */
 		    &sq->snd_buff[i].dmap);
+
 		if (err != 0) {
 			device_printf(nic->dev,
 			    "Failed to create DMA maps for Tx buffers\n");
@@ -1127,13 +1215,11 @@ nicvf_init_snd_queue(struct nicvf *nic, struct snd_queue *sq, int q_len,
 		}
 	}
 	NICVF_TX_UNLOCK(sq);
-
+#if 0
 	/* Allocate taskqueue */
 	TASK_INIT(&sq->snd_task, 0, nicvf_snd_task, sq);
-	sq->snd_taskq = taskqueue_create_fast("nicvf_snd_taskq", M_WAITOK,
-	    taskqueue_thread_enqueue, &sq->snd_taskq);
-	taskqueue_start_threads(&sq->snd_taskq, 1, PI_NET, "%s: snd_taskq(%d)",
-	    device_xname(nic->dev), qidx);
+#endif
+	sq->snd_si = softint_establish(SOFTINT_MPSAFE|SOFTINT_NET, nicvf_snd_task, sq);
 
 	return (0);
 error:
@@ -1146,18 +1232,15 @@ nicvf_free_snd_queue(struct nicvf *nic, struct snd_queue *sq)
 {
 	struct queue_set *qs = nic->qs;
 	size_t i;
-	int err;
 
 	if (sq == NULL)
 		return;
 
-	if (sq->snd_taskq != NULL) {
-		/* Remove task */
-		while (taskqueue_cancel(sq->snd_taskq, &sq->snd_task, NULL) != 0)
-			taskqueue_drain(sq->snd_taskq, &sq->snd_task);
+	if (sq->snd_si != NULL) {
+		//XXXNH Wait for no softints?
 
-		taskqueue_free(sq->snd_taskq);
-		sq->snd_taskq = NULL;
+		softint_disestablish(sq->snd_si);
+		sq->snd_si = NULL;
 	}
 
 	NICVF_TX_LOCK(sq);
@@ -1169,37 +1252,25 @@ nicvf_free_snd_queue(struct nicvf *nic, struct snd_queue *sq)
 
 				bus_dmamap_unload(sq->snd_buff_dmat,
 				    sq->snd_buff[i].dmap);
-				err = bus_dmamap_destroy(sq->snd_buff_dmat,
+				bus_dmamap_destroy(sq->snd_buff_dmat,
 				    sq->snd_buff[i].dmap);
-				/*
-				 * If bus_dmamap_destroy fails it can cause
-				 * random panic later if the tag is also
-				 * destroyed in the process.
-				 */
-				KASSERT(err == 0,
-				    ("%s: Could not destroy DMA map for SQ",
-				    __func__));
 			}
 		}
 
 		free(sq->snd_buff, M_NICVF);
-
-		err = bus_dma_tag_destroy(sq->snd_buff_dmat);
-		KASSERT(err == 0,
-		    ("%s: Trying to destroy BUSY DMA tag", __func__));
 	}
 
 	/* Free private driver ring for this send queue */
-	if (sq->br != NULL)
-		drbr_free(sq->br, M_DEVBUF);
+	if (sq->tx_pcq != NULL)
+		pcq_destroy(sq->tx_pcq);
 
 	if (sq->dmem.base != NULL)
 		nicvf_free_q_desc_mem(nic, &sq->dmem);
 
 	NICVF_TX_UNLOCK(sq);
 	/* Destroy Tx lock */
-	mtx_destroy(&sq->mtx);
-	memset(sq->mtx_name, 0, sizeof(sq->mtx_name));
+	mutex_destroy(&sq->mtx);
+//	memset(sq->mtx_name, 0, sizeof(sq->mtx_name));
 }
 
 static void
@@ -1295,17 +1366,16 @@ nicvf_rcv_queue_config(struct nicvf *nic, struct queue_set *qs,
 	union nic_mbx mbx = {};
 	struct rcv_queue *rq;
 	struct rq_cfg rq_cfg;
-	struct ifnet *ifp;
 #ifdef LRO
+	struct ifnet *ifp;
 	struct lro_ctrl	*lro;
 #endif
-
-	ifp = nic->ifp;
 
 	rq = &qs->rq[qidx];
 	rq->enable = enable;
 
 #ifdef LRO
+	ifp = nic->ifp;
 	lro = &rq->lro;
 #endif
 	/* Disable receive queue */
@@ -1324,7 +1394,7 @@ nicvf_rcv_queue_config(struct nicvf *nic, struct queue_set *qs,
 #ifdef LRO
 	/* Configure LRO if enabled */
 	rq->lro_enabled = FALSE;
-	if ((if_getcapenable(ifp) & IFCAP_LRO) != 0) {
+	if (((ifp)->if_capenable & IFCAP_LRO) != 0) {
 		if (tcp_lro_init(lro) != 0) {
 			device_printf(nic->dev,
 			    "Failed to initialize LRO for RXQ%d\n", qidx);
@@ -1538,14 +1608,12 @@ nicvf_free_resources(struct nicvf *nic)
 	 * Remove QS error task first since it has to be dead
 	 * to safely free completion queue tasks.
 	 */
-	if (qs->qs_err_taskq != NULL) {
+	if (qs->qs_err_si != NULL) {
+		//XXXNH Wait for no softints
 		/* Shut down QS error tasks */
-		while (taskqueue_cancel(qs->qs_err_taskq,
-		    &qs->qs_err_task,  NULL) != 0) {
-			taskqueue_drain(qs->qs_err_taskq, &qs->qs_err_task);
-		}
-		taskqueue_free(qs->qs_err_taskq);
-		qs->qs_err_taskq = NULL;
+
+		softint_disestablish(qs->qs_err_si);
+		qs->qs_err_si = NULL;
 	}
 	/* Free receive buffer descriptor ring */
 	for (qidx = 0; qidx < qs->rbdr_cnt; qidx++)
@@ -1585,12 +1653,11 @@ nicvf_alloc_resources(struct nicvf *nic)
 			goto alloc_fail;
 	}
 
+#if 0
 	/* Allocate QS error taskqueue */
-	NET_TASK_INIT(&qs->qs_err_task, 0, nicvf_qs_err_task, nic);
-	qs->qs_err_taskq = taskqueue_create_fast("nicvf_qs_err_taskq", M_WAITOK,
-	    taskqueue_thread_enqueue, &qs->qs_err_taskq);
-	taskqueue_start_threads(&qs->qs_err_taskq, 1, PI_NET, "%s: qs_taskq",
-	    device_xname(nic->dev));
+	TASK_INIT(&qs->qs_err_task, 0, nicvf_qs_err_task, nic, TASK_NETWORK);
+#endif
+	qs->qs_err_si = softint_establish(SOFTINT_MPSAFE|SOFTINT_NET, nicvf_qs_err_task, nic);
 
 	return (0);
 alloc_fail:
@@ -1673,7 +1740,7 @@ nicvf_get_sq_desc(struct snd_queue *sq, int desc_cnt)
 	int qentry;
 
 	qentry = sq->tail;
-	atomic_subtract_int(&sq->free_cnt, desc_cnt);
+	atomic_add_int(&sq->free_cnt, -desc_cnt);
 	sq->tail += desc_cnt;
 	sq->tail &= (sq->dmem.q_len - 1);
 
@@ -1810,7 +1877,8 @@ nicvf_sq_add_hdr_subdesc(struct snd_queue *sq, int qentry,
 			if (mbuf == NULL)
 				return (ENOBUFS);
 		}
-		if (mbuf->m_pkthdr.csum_flags & CSUM_IP)
+
+		if (mbuf->m_pkthdr.csum_flags & M_CSUM_IPv4)
 			hdr->csum_l3 = 1; /* Enable IP csum calculation */
 
 		ip = (struct ip *)(mbuf->m_data + ehdrlen);
@@ -1825,7 +1893,7 @@ nicvf_sq_add_hdr_subdesc(struct snd_queue *sq, int qentry,
 	if (poff > 0 && mbuf->m_pkthdr.csum_flags != 0) {
 		switch (proto) {
 		case IPPROTO_TCP:
-			if ((mbuf->m_pkthdr.csum_flags & CSUM_TCP) == 0)
+			if ((mbuf->m_pkthdr.csum_flags & M_CSUM_TCPv4) == 0)
 				break;
 
 			if (mbuf->m_len < (poff + sizeof(struct tcphdr))) {
@@ -1837,7 +1905,7 @@ nicvf_sq_add_hdr_subdesc(struct snd_queue *sq, int qentry,
 			hdr->csum_l4 = SEND_L4_CSUM_TCP;
 			break;
 		case IPPROTO_UDP:
-			if ((mbuf->m_pkthdr.csum_flags & CSUM_UDP) == 0)
+			if ((mbuf->m_pkthdr.csum_flags & M_CSUM_UDPv6) == 0)
 				break;
 
 			if (mbuf->m_len < (poff + sizeof(struct udphdr))) {
@@ -1848,6 +1916,7 @@ nicvf_sq_add_hdr_subdesc(struct snd_queue *sq, int qentry,
 			}
 			hdr->csum_l4 = SEND_L4_CSUM_UDP;
 			break;
+#if 0
 		case IPPROTO_SCTP:
 			if ((mbuf->m_pkthdr.csum_flags & CSUM_SCTP) == 0)
 				break;
@@ -1860,6 +1929,7 @@ nicvf_sq_add_hdr_subdesc(struct snd_queue *sq, int qentry,
 			}
 			hdr->csum_l4 = SEND_L4_CSUM_SCTP;
 			break;
+#endif
 		default:
 			break;
 		}
@@ -1867,12 +1937,13 @@ nicvf_sq_add_hdr_subdesc(struct snd_queue *sq, int qentry,
 		hdr->l4_offset = poff;
 	}
 
-	if ((mbuf->m_pkthdr.tso_segsz != 0) && nic->hw_tso) {
-		th = (struct tcphdr *)((caddr_t)(mbuf->m_data + poff));
+	/* XXX don't have tso_segsz */
+	if ((mbuf->m_pkthdr.len != 0) && nic->hw_tso) {
+		th = (struct tcphdr *)((void *)(mbuf->m_data + poff));
 
 		hdr->tso = 1;
 		hdr->tso_start = poff + (th->th_off * 4);
-		hdr->tso_max_paysize = mbuf->m_pkthdr.tso_segsz;
+		hdr->tso_max_paysize = mbuf->m_pkthdr.len;
 		hdr->inner_l3_offset = ehdrlen - 2;
 		nic->drv_stats.tx_tso++;
 	}
@@ -1904,22 +1975,22 @@ static inline void nicvf_sq_add_gather_subdesc(struct snd_queue *sq, int qentry,
 static int
 nicvf_tx_mbuf_locked(struct snd_queue *sq, struct mbuf **mbufp)
 {
-	bus_dma_segment_t segs[256];
+//	bus_dma_segment_t segs[256];
 	struct snd_buff *snd_buff;
 	size_t seg;
-	int nsegs, qentry;
+	int /*nsegs, */qentry;
 	int subdesc_cnt;
 	int err;
 
 	NICVF_TX_LOCK_ASSERT(sq);
 
-	if (sq->free_cnt == 0)
+	if (atomic_load_relaxed(&sq->free_cnt) == 0)
 		return (ENOBUFS);
 
 	snd_buff = &sq->snd_buff[sq->tail];
 
-	err = bus_dmamap_load_mbuf_sg(sq->snd_buff_dmat, snd_buff->dmap,
-	    *mbufp, segs, &nsegs, BUS_DMA_NOWAIT);
+	err = bus_dmamap_load_mbuf(sq->snd_buff_dmat, snd_buff->dmap,
+	    *mbufp, BUS_DMA_NOWAIT);
 	if (__predict_false(err != 0)) {
 		/* ARM64TODO: Add mbuf defragmenting if we lack maps */
 		m_freem(*mbufp);
@@ -1928,8 +1999,8 @@ nicvf_tx_mbuf_locked(struct snd_queue *sq, struct mbuf **mbufp)
 	}
 
 	/* Set how many subdescriptors is required */
-	subdesc_cnt = MIN_SQ_DESC_PER_PKT_XMIT + nsegs - 1;
-	if (subdesc_cnt > sq->free_cnt) {
+	subdesc_cnt = MIN_SQ_DESC_PER_PKT_XMIT + snd_buff->dmap->dm_nsegs - 1;
+	if (subdesc_cnt > atomic_load_relaxed(&sq->free_cnt)) {
 		/* ARM64TODO: Add mbuf defragmentation if we lack descriptors */
 		bus_dmamap_unload(sq->snd_buff_dmat, snd_buff->dmap);
 		return (ENOBUFS);
@@ -1951,20 +2022,23 @@ nicvf_tx_mbuf_locked(struct snd_queue *sq, struct mbuf **mbufp)
 	}
 
 	/* Add SQ gather subdescs */
-	for (seg = 0; seg < nsegs; seg++) {
+	for (seg = 0; seg < snd_buff->dmap->dm_nsegs; seg++) {
 		qentry = nicvf_get_nxt_sqentry(sq, qentry);
-		nicvf_sq_add_gather_subdesc(sq, qentry, segs[seg].ds_len,
-		    segs[seg].ds_addr);
+		nicvf_sq_add_gather_subdesc(sq, qentry,
+		    snd_buff->dmap->dm_segs[seg].ds_len,
+		    snd_buff->dmap->dm_segs[seg].ds_addr);
 	}
 
 	/* make sure all memory stores are done before ringing doorbell */
-	bus_dmamap_sync(sq->dmem.dmat, sq->dmem.dmap, BUS_DMASYNC_PREWRITE);
+	bus_dmamap_sync(sq->dmem.dmat, sq->dmem.dmap, 0,
+	    sq->dmem.dmap->dm_mapsize, BUS_DMASYNC_PREWRITE);
 
 	dprintf(sq->nic->dev, "%s: sq->idx: %d, subdesc_cnt: %d\n",
 	    __func__, sq->idx, subdesc_cnt);
 	/* Inform HW to xmit new packet */
 	nicvf_queue_reg_write(sq->nic, NIC_QSET_SQ_0_7_DOOR,
 	    sq->idx, subdesc_cnt);
+
 	return (0);
 }
 
@@ -2004,7 +2078,7 @@ nicvf_get_rcv_mbuf(struct nicvf *nic, struct cqe_rx_t *cqe_rx)
 			    (*rb_ptrs - cqe_rx->align_pad));
 			mbuf->m_len = payload_len;
 			mbuf->m_data += cqe_rx->align_pad;
-			if_setrcvif(mbuf, nic->ifp);
+			m_set_rcvif(mbuf, nic->ifp);
 		} else {
 			/* Add fragments */
 			mbuf_frag = nicvf_rb_ptr_to_mbuf(nic, *rb_ptrs);
@@ -2016,28 +2090,36 @@ nicvf_get_rcv_mbuf(struct nicvf *nic, struct cqe_rx_t *cqe_rx)
 	}
 
 	if (__predict_true(mbuf != NULL)) {
-		m_fixhdr(mbuf);
-		mbuf->m_pkthdr.flowid = cqe_rx->rq_idx;
-		M_HASHTYPE_SET(mbuf, M_HASHTYPE_OPAQUE);
-		if (__predict_true((if_getcapenable(nic->ifp) & IFCAP_RXCSUM) != 0)) {
+		u_int len = m_length(mbuf);
+		mbuf->m_pkthdr.len = len;
+//		m_fixhdr(mbuf);
+//		mbuf->m_pkthdr.flowid = cqe_rx->rq_idx;
+//		M_HASHTYPE_SET(mbuf, M_HASHTYPE_OPAQUE);
+		const u_int rxflags =
+		    IFCAP_CSUM_IPv4_Rx |
+		    IFCAP_CSUM_TCPv4_Rx |
+		    IFCAP_CSUM_UDPv4_Rx;
+
+		if (__predict_true((nic->ifp->if_capenable) & rxflags) != 0) {
 			/*
 			 * HW by default verifies IP & TCP/UDP/SCTP checksums
 			 */
 			if (__predict_true(cqe_rx->l3_type == L3TYPE_IPV4)) {
-				mbuf->m_pkthdr.csum_flags =
-				    (CSUM_IP_CHECKED | CSUM_IP_VALID);
+				mbuf->m_pkthdr.csum_flags = M_CSUM_IPv4;
 			}
 
 			switch (cqe_rx->l4_type) {
 			case L4TYPE_UDP:
-			case L4TYPE_TCP: /* fall through */
-				mbuf->m_pkthdr.csum_flags |=
-				    (CSUM_DATA_VALID | CSUM_PSEUDO_HDR);
-				mbuf->m_pkthdr.csum_data = 0xffff;
+				mbuf->m_pkthdr.csum_flags |= M_CSUM_UDPv4;
 				break;
+			case L4TYPE_TCP:
+				mbuf->m_pkthdr.csum_flags |= M_CSUM_TCPv4;
+				break;
+#if 0
 			case L4TYPE_SCTP:
 				mbuf->m_pkthdr.csum_flags |= CSUM_SCTP_VALID;
 				break;
+#endif
 			default:
 				break;
 			}

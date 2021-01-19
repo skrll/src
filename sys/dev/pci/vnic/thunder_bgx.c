@@ -28,6 +28,10 @@
  * $FreeBSD$
  *
  */
+
+#include "opt_acpi.h"
+#include "opt_fdt.h"
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD$");
 
@@ -1193,7 +1197,7 @@ bgx_init_phy(struct bgx *bgx)
 #ifdef FDT
 	err = bgx_fdt_init_phy(bgx);
 #endif
-#ifdef ACPI
+#if NACPICA > 0
 	if (err != 0) {
 		/* ARM64TODO: Add ACPI function here */
 	}
