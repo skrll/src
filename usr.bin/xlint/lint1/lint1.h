@@ -1,4 +1,4 @@
-/* $NetBSD: lint1.h,v 1.53 2021/01/04 22:26:50 rillig Exp $ */
+/* $NetBSD: lint1.h,v 1.59 2021/01/18 19:24:09 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -71,7 +71,7 @@ typedef struct {
 		curr_pos.p_uniq++;					\
 		if (curr_pos.p_file == csrc_pos.p_file)			\
 			csrc_pos.p_uniq++;				\
-	} while (/*CONSTCOND*/0)
+	} while (/*CONSTCOND*/false)
 
 /*
  * Strings cannot be referenced to simply by a pointer to its first
@@ -104,7 +104,7 @@ typedef enum {
  */
 typedef struct {
 	tspec_t	v_tspec;
-	int	v_ansiu;		/* set if an integer constant is
+	bool	v_ansiu;		/* set if an integer constant is
 					   unsigned in ANSI C */
 	union {
 		int64_t	_v_quad;	/* integers */
@@ -154,7 +154,7 @@ struct type {
 	bool	t_const : 1;	/* const modifier */
 	bool	t_volatile : 1;	/* volatile modifier */
 	bool	t_proto : 1;	/* function prototype (t_args valid) */
-	bool	t_vararg : 1;	/* prototype with ... */
+	bool	t_vararg : 1;	/* prototype with '...' */
 	bool	t_typedef : 1;	/* type defined with typedef */
 	bool	t_bitfield : 1;
 	bool	t_isenum : 1;	/* type is (or was) enum (t_enum valid) */
@@ -205,7 +205,7 @@ typedef enum {
 	ENUMTAG,
 	MOS,		/* member of struct */
 	MOU,		/* member of union */
-	ENUMCON,	/* enumerator, enum constant */
+	CTCONST,	/* enumerator, enum constant or bool constant */
 	ABSTRACT,	/* abstract symbol (sizeof, casts, unnamed argument) */
 	ARG,		/* argument */
 	PARG,		/* used in declaration stack during prototype
@@ -244,7 +244,7 @@ typedef	struct sym {
 	int	s_blklev;	/* level of declaration, -1 if not in symbol
 				   table */
 	type_t	*s_type;
-	val_t	s_value;	/* value (if enum constant) */
+	val_t	s_value;	/* value (if enum or bool constant) */
 	union {
 		str_t	*_s_st;	/* tag, if it is a struct/union member */
 		tenum_t	*_s_et;	/* tag, if it is an enumerator */
@@ -314,7 +314,7 @@ typedef	struct tnode {
  * one of
  *	EXTERN	global declarations
  *	MOS oder MOU declarations of struct or union members
- *	ENUMCON	declarations of enums
+ *	CTCONST	declarations of enums
  *	ARG	declaration of arguments in old style function definitions
  *	PARG	declaration of arguments in function prototypes
  *	AUTO	declaration of local symbols
@@ -387,8 +387,8 @@ typedef struct control_statement {
 	bool	c_infinite : 1;		/* break condition always false
 					   (for (;;), while (1)) */
 	bool	c_rchif : 1;		/* end of if-branch reached */
-	bool	c_noretval : 1;		/* had "return;" */
-	bool	c_retval : 1;		/* had "return (e);" */
+	bool	c_had_return_noval : 1;	/* had "return;" */
+	bool	c_had_return_value : 1;	/* had "return (e);" */
 	type_t	*c_swtype;		/* type of switch expression */
 	clst_t	*c_clst;		/* list of case values */
 	struct	mbl *c_fexprm;		/* saved memory for end of loop
@@ -418,7 +418,7 @@ typedef	struct err_set {
 #define	ERR_CLR(n, p)	\
 	((p)->errs_bits[(n)/__NERRBITS] &= ~(1 << ((n) % __NERRBITS)))
 #define	ERR_ISSET(n, p)	\
-	((p)->errs_bits[(n)/__NERRBITS] & (1 << ((n) % __NERRBITS)))
+	(((p)->errs_bits[(n)/__NERRBITS] & (1 << ((n) % __NERRBITS))) != 0)
 #define	ERR_ZERO(p)	(void)memset((p), 0, sizeof(*(p)))
 
 #define LERROR(fmt, args...)	lerror(__FILE__, __LINE__, fmt, ##args)
@@ -427,7 +427,7 @@ typedef	struct err_set {
 	do {								\
 		if (!(cond))						\
 			assert_failed(__FILE__, __LINE__, __func__, #cond); \
-	} while (/*CONSTCOND*/0)
+	} while (/*CONSTCOND*/false)
 
 #ifdef BLKDEBUG
 #define ZERO	0xa5
@@ -451,7 +451,7 @@ check_printf(const char *fmt, ...)
 	do {								\
 		check_printf(__CONCAT(MSG_, id), ##args);		\
 		(func)(id, ##args);					\
-	} while (/*CONSTCOND*/0)
+	} while (/*CONSTCOND*/false)
 
 #  define error(id, args...) wrap_check_printf(error, id, ##args)
 #  define warning(id, args...) wrap_check_printf(warning, id, ##args)
@@ -459,3 +459,20 @@ check_printf(const char *fmt, ...)
 #  define gnuism(id, args...) wrap_check_printf(gnuism, id, ##args)
 #  define c99ism(id, args...) wrap_check_printf(c99ism, id, ##args)
 #endif
+
+static inline bool
+is_nonzero_val(tspec_t t, const val_t *val)
+{
+	return is_floating(t) ? val->v_ldbl != 0.0 : val->v_quad != 0;
+}
+
+static inline bool
+is_nonzero(const tnode_t *tn)
+{
+	/*
+	 * XXX: It's strange that val_t doesn't know itself whether it
+	 * holds a floating-point or an integer value.
+	 */
+	lint_assert(tn->tn_op == CON);
+	return is_nonzero_val(tn->tn_type->t_tspec, tn->tn_val);
+}

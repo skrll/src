@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.137 2021/01/10 00:05:46 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.157 2021/01/18 19:24:09 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.137 2021/01/10 00:05:46 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.157 2021/01/18 19:24:09 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -47,8 +47,8 @@ __RCSID("$NetBSD: cgram.y,v 1.137 2021/01/10 00:05:46 rillig Exp $");
 extern char *yytext;
 
 /*
- * Contains the level of current declaration. 0 is extern.
- * Used for symbol table entries.
+ * Contains the level of current declaration, used for symbol table entries.
+ * 0 is the top-level, > 0 is inside a function body.
  */
 int	blklev;
 
@@ -68,32 +68,31 @@ static int olwarn = LWARN_BAD;
 
 static	int	toicon(tnode_t *, int);
 static	void	idecl(sym_t *, int, sbuf_t *);
-static	void	ignuptorp(void);
+static	void	ignore_up_to_rparen(void);
 static	sym_t	*symbolrename(sym_t *, sbuf_t *);
 
 
 #ifdef DEBUG
-static inline void CLRWFLGS(const char *file, size_t line);
-static inline void CLRWFLGS(const char *file, size_t line)
+static void
+CLEAR_WARN_FLAGS(const char *file, size_t line)
 {
 	printf("%s, %d: clear flags %s %zu\n", curr_pos.p_file,
 	    curr_pos.p_line, file, line);
-	clrwflgs();
+	clear_warn_flags();
 	olwarn = LWARN_BAD;
 }
 
-static inline void SAVE(const char *file, size_t line);
-static inline void SAVE(const char *file, size_t line)
+static void
+SAVE_WARN_FLAGS(const char *file, size_t line)
 {
-	if (olwarn != LWARN_BAD)
-		abort();
+	lint_assert(olwarn == LWARN_BAD);
 	printf("%s, %d: save flags %s %zu = %d\n", curr_pos.p_file,
 	    curr_pos.p_line, file, line, lwarn);
 	olwarn = lwarn;
 }
 
-static inline void RESTORE(const char *file, size_t line);
-static inline void RESTORE(const char *file, size_t line)
+static void
+RESTORE_WARN_FLAGS(const char *file, size_t line)
 {
 	if (olwarn != LWARN_BAD) {
 		lwarn = olwarn;
@@ -101,13 +100,14 @@ static inline void RESTORE(const char *file, size_t line)
 		    curr_pos.p_line, file, line, lwarn);
 		olwarn = LWARN_BAD;
 	} else
-		CLRWFLGS(file, line);
+		CLEAR_WARN_FLAGS(file, line);
 }
 #define cgram_debug(fmt, args...) printf("cgram_debug: " fmt "\n", ##args)
 #else
-#define CLRWFLGS(f, l) clrwflgs(), olwarn = LWARN_BAD
-#define SAVE(f, l)	olwarn = lwarn
-#define RESTORE(f, l) (void)(olwarn == LWARN_BAD ? (clrwflgs(), 0) : (lwarn = olwarn))
+#define CLEAR_WARN_FLAGS(f, l) clear_warn_flags(), olwarn = LWARN_BAD
+#define SAVE_WARN_FLAGS(f, l)	olwarn = lwarn
+#define RESTORE_WARN_FLAGS(f, l) \
+	(void)(olwarn == LWARN_BAD ? (clear_warn_flags(), 0) : (lwarn = olwarn))
 #define cgram_debug(fmt, args...) (void)0
 #endif
 
@@ -139,8 +139,8 @@ anonymize(sym_t *s)
 };
 
 %token			T_LBRACE T_RBRACE T_LBRACK T_RBRACK T_LPAREN T_RPAREN
-%token	<y_op>		T_STROP
-%token	<y_op>		T_UNOP
+%token	<y_op>		T_MEMBACC
+%token	<y_op>		T_UNARY
 %token	<y_op>		T_INCDEC
 %token			T_SIZEOF
 %token			T_BUILTIN_OFFSETOF
@@ -148,23 +148,23 @@ anonymize(sym_t *s)
 %token			T_EXTENSION
 %token			T_ALIGNOF
 %token	<y_op>		T_ASTERISK
-%token	<y_op>		T_DIVOP
-%token	<y_op>		T_ADDOP
-%token	<y_op>		T_SHFTOP
-%token	<y_op>		T_RELOP
-%token	<y_op>		T_EQOP
-%token	<y_op>		T_AND
+%token	<y_op>		T_MULTIPLICATIVE
+%token	<y_op>		T_ADDITIVE
+%token	<y_op>		T_SHIFT
+%token	<y_op>		T_RELATIONAL
+%token	<y_op>		T_EQUALITY
+%token	<y_op>		T_AMPER
 %token	<y_op>		T_XOR
-%token	<y_op>		T_OR
+%token	<y_op>		T_BITOR
 %token	<y_op>		T_LOGAND
 %token	<y_op>		T_LOGOR
 %token			T_QUEST
 %token			T_COLON
 %token	<y_op>		T_ASSIGN
-%token	<y_op>		T_OPASS
+%token	<y_op>		T_OPASSIGN
 %token			T_COMMA
 %token			T_SEMI
-%token			T_ELLIPSE
+%token			T_ELLIPSIS
 %token			T_REAL
 %token			T_IMAG
 %token			T_GENERIC
@@ -173,39 +173,40 @@ anonymize(sym_t *s)
 /* storage classes (extern, static, auto, register and typedef) */
 %token	<y_scl>		T_SCLASS
 
-/* types (char, int, short, long, unsigned, signed, float, double, void) */
+/*
+ * predefined type keywords (char, int, short, long, unsigned, signed,
+ * float, double, void); see T_TYPENAME
+ */
 %token	<y_tspec>	T_TYPE
 
-/* qualifiers (const, volatile) */
+/* qualifiers (const, volatile, restrict, _Thread_local) */
 %token	<y_tqual>	T_QUAL
 
 /* struct or union */
-%token	<y_tspec>	T_SOU
-
-/* enum */
-%token			T_ENUM
+%token	<y_tspec>	T_STRUCT_OR_UNION
 
 /* remaining keywords */
+%token			T_ASM
+%token			T_BREAK
 %token			T_CASE
+%token			T_CONTINUE
 %token			T_DEFAULT
-%token			T_IF
-%token			T_ELSE
-%token			T_SWITCH
 %token			T_DO
-%token			T_WHILE
+%token			T_ELSE
+%token			T_ENUM
 %token			T_FOR
 %token			T_GOTO
-%token			T_CONTINUE
-%token			T_BREAK
-%token			T_RETURN
-%token			T_ASM
-%token			T_SYMBOLRENAME
+%token			T_IF
 %token			T_PACKED
+%token			T_RETURN
+%token			T_SWITCH
+%token			T_SYMBOLRENAME
+%token			T_WHILE
 /* Type Attributes */
 %token <y_type>		T_ATTRIBUTE
 %token <y_type>		T_AT_ALIAS
-%token <y_type>		T_AT_ALLOC_SIZE
 %token <y_type>		T_AT_ALIGNED
+%token <y_type>		T_AT_ALLOC_SIZE
 %token <y_type>		T_AT_ALWAYS_INLINE
 %token <y_type>		T_AT_BOUNDED
 %token <y_type>		T_AT_BUFFER
@@ -248,20 +249,20 @@ anonymize(sym_t *s)
 %token <y_type>		T_AT_WEAK
 
 %left	T_COMMA
-%right	T_ASSIGN T_OPASS
+%right	T_ASSIGN T_OPASSIGN
 %right	T_QUEST T_COLON
 %left	T_LOGOR
 %left	T_LOGAND
-%left	T_OR
+%left	T_BITOR
 %left	T_XOR
-%left	T_AND
-%left	T_EQOP
-%left	T_RELOP
-%left	T_SHFTOP
-%left	T_ADDOP
-%left	T_ASTERISK T_DIVOP
-%right	T_UNOP T_INCDEC T_SIZEOF T_ALIGNOF T_REAL T_IMAG
-%left	T_LPAREN T_LBRACK T_STROP
+%left	T_AMPER
+%left	T_EQUALITY
+%left	T_RELATIONAL
+%left	T_SHIFT
+%left	T_ADDITIVE
+%left	T_ASTERISK T_MULTIPLICATIVE
+%right	T_UNARY T_INCDEC T_SIZEOF T_BUILTIN_OFFSETOF T_ALIGNOF T_REAL T_IMAG
+%left	T_LPAREN T_LBRACK T_MEMBACC
 
 %token	<y_sb>		T_NAME
 %token	<y_sb>		T_TYPENAME
@@ -301,15 +302,15 @@ anonymize(sym_t *s)
 %type	<y_pqinf>	asterisk
 %type	<y_sym>		param_decl
 %type	<y_sym>		param_list
-%type	<y_sym>		abs_decl_param_list
+%type	<y_sym>		abstract_decl_param_list
 %type	<y_sym>		direct_param_decl
 %type	<y_sym>		notype_param_decl
 %type	<y_sym>		direct_notype_param_decl
 %type	<y_pqinf>	type_qualifier_list
 %type	<y_pqinf>	type_qualifier
 %type	<y_sym>		identifier_list
-%type	<y_sym>		abs_decl
-%type	<y_sym>		direct_abs_decl
+%type	<y_sym>		abstract_decl
+%type	<y_sym>		direct_abstract_decl
 %type	<y_sym>		vararg_parameter_type_list
 %type	<y_sym>		parameter_type_list
 %type	<y_sym>		parameter_declaration
@@ -328,7 +329,7 @@ anonymize(sym_t *s)
 %type	<y_string>	string2
 %type	<y_sb>		opt_asm_or_symbolrename
 %type	<y_range>	range
-%type	<y_range>	lorange
+%type	<y_range>	low_range
 
 
 %%
@@ -355,11 +356,11 @@ external_declaration:		/* C99 6.9 */
 	  asm_statement
 	| function_definition {
 		global_clean_up_decl(0);
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 	  }
 	| data_def {
 		global_clean_up_decl(0);
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 	  }
 	;
 
@@ -426,7 +427,7 @@ function_definition:		/* C99 6.9.1 */
 		blklev++;
 		pushdecl(ARG);
 		if (lwarn == LWARN_NONE)
-			$1->s_used = 1;
+			$1->s_used = true;
 	  } arg_declaration_list_opt {
 		popdecl();
 		blklev--;
@@ -598,9 +599,9 @@ type_attribute_spec_list:
 
 type_attribute:
 	  T_ATTRIBUTE T_LPAREN T_LPAREN {
-	    attron = 1;
+	    attron = true;
 	  } type_attribute_spec_list {
-	    attron = 0;
+	    attron = false;
 	  } T_RPAREN T_RPAREN
 	| T_PACKED {
 		addpacked();
@@ -724,7 +725,7 @@ struct_spec:
 
 struct:
 	  struct type_attribute
-	| T_SOU {
+	| T_STRUCT_OR_UNION {
 		symtyp = FTAG;
 		pushdecl($1 == STRUCT ? MOS : MOU);
 		dcs->d_offset = 0;
@@ -923,7 +924,7 @@ enum_spec:
 enum:
 	  T_ENUM {
 		symtyp = FTAG;
-		pushdecl(ENUMCON);
+		pushdecl(CTCONST);
 	  }
 	;
 
@@ -1194,9 +1195,11 @@ type_qualifier:
 	  T_QUAL {
 		$$ = xcalloc(1, sizeof (pqinf_t));
 		if ($1 == CONST) {
-			$$->p_const = 1;
+			$$->p_const = true;
+		} else if ($1 == VOLATILE) {
+			$$->p_volatile = true;
 		} else {
-			$$->p_volatile = 1;
+			lint_assert($1 == RESTRICT || $1 == THREAD);
 		}
 	  }
 	;
@@ -1205,7 +1208,7 @@ param_list:
 	  id_list_lparn identifier_list T_RPAREN {
 		$$ = $2;
 	  }
-	| abs_decl_param_list {
+	| abstract_decl_param_list {
 		$$ = $1;
 	  }
 	;
@@ -1229,20 +1232,20 @@ identifier_list:
 	  }
 	;
 
-abs_decl_param_list:
-	  abs_decl_lparn T_RPAREN {
+abstract_decl_param_list:
+	  abstract_decl_lparn T_RPAREN {
 		$$ = NULL;
 	  }
-	| abs_decl_lparn vararg_parameter_type_list T_RPAREN {
-		dcs->d_proto = 1;
+	| abstract_decl_lparn vararg_parameter_type_list T_RPAREN {
+		dcs->d_proto = true;
 		$$ = $2;
 	  }
-	| abs_decl_lparn error T_RPAREN {
+	| abstract_decl_lparn error T_RPAREN {
 		$$ = NULL;
 	  }
 	;
 
-abs_decl_lparn:
+abstract_decl_lparn:
 	  T_LPAREN {
 		blklev++;
 		pushdecl(PARG);
@@ -1253,11 +1256,11 @@ vararg_parameter_type_list:
 	  parameter_type_list {
 		$$ = $1;
 	  }
-	| parameter_type_list T_COMMA T_ELLIPSE {
-		dcs->d_vararg = 1;
+	| parameter_type_list T_COMMA T_ELLIPSIS {
+		dcs->d_vararg = true;
 		$$ = $1;
 	  }
-	| T_ELLIPSE {
+	| T_ELLIPSIS {
 		if (sflag) {
 			/* ANSI C requires formal parameter before '...' */
 			error(84);
@@ -1265,7 +1268,7 @@ vararg_parameter_type_list:
 			/* ANSI C requires formal parameter before '...' */
 			warning(84);
 		}
-		dcs->d_vararg = 1;
+		dcs->d_vararg = true;
 		$$ = NULL;
 	  }
 	;
@@ -1281,13 +1284,13 @@ parameter_type_list:
 
 parameter_declaration:
 	  declmods deftyp {
-		$$ = decl1arg(abstract_name(), 0);
+		$$ = declare_argument(abstract_name(), 0);
 	  }
 	| declspecs deftyp {
-		$$ = decl1arg(abstract_name(), 0);
+		$$ = declare_argument(abstract_name(), 0);
 	  }
 	| declmods deftyp notype_param_decl {
-		$$ = decl1arg($3, 0);
+		$$ = declare_argument($3, 0);
 	  }
 	/*
 	 * param_decl is needed because of following conflict:
@@ -1297,13 +1300,13 @@ parameter_declaration:
 	 * This grammar realizes the second case.
 	 */
 	| declspecs deftyp param_decl {
-		$$ = decl1arg($3, 0);
+		$$ = declare_argument($3, 0);
 	  }
-	| declmods deftyp abs_decl {
-		$$ = decl1arg($3, 0);
+	| declmods deftyp abstract_decl {
+		$$ = declare_argument($3, 0);
 	  }
-	| declspecs deftyp abs_decl {
-		$$ = decl1arg($3, 0);
+	| declspecs deftyp abstract_decl {
+		$$ = declare_argument($3, 0);
 	  }
 	;
 
@@ -1347,8 +1350,8 @@ init_expr_list:
 	| init_expr_list T_COMMA init_assign_expr
 	;
 
-lorange:
-	  constant T_ELLIPSE {
+low_range:
+	  constant T_ELLIPSIS {
 		$$.lo = toicon($1, 1);
 	  }
 	;
@@ -1357,7 +1360,7 @@ range:
 		$$.lo = toicon($1, 1);
 		$$.hi = $$.lo + 1;
 	  }
-	| lorange constant {
+	| low_range constant {
 		$$.lo = $1.lo;
 		$$.hi = toicon($2, 1);
 	  }
@@ -1419,22 +1422,22 @@ abstract_declaration:
 	| noclass_declspecs deftyp {
 		$$ = declare_1_abstract(abstract_name());
 	  }
-	| noclass_declmods deftyp abs_decl {
+	| noclass_declmods deftyp abstract_decl {
 		$$ = declare_1_abstract($3);
 	  }
-	| noclass_declspecs deftyp abs_decl {
+	| noclass_declspecs deftyp abstract_decl {
 		$$ = declare_1_abstract($3);
 	  }
 	;
 
-abs_decl:
+abstract_decl:
 	  pointer {
 		$$ = add_pointer(abstract_name(), $1);
 	  }
-	| direct_abs_decl {
+	| direct_abstract_decl {
 		$$ = $1;
 	  }
-	| pointer direct_abs_decl {
+	| pointer direct_abstract_decl {
 		$$ = add_pointer($2, $1);
 	  }
 	| T_TYPEOF term {
@@ -1442,8 +1445,8 @@ abs_decl:
 	  }
 	;
 
-direct_abs_decl:
-	  T_LPAREN abs_decl T_RPAREN {
+direct_abstract_decl:
+	  T_LPAREN abstract_decl T_RPAREN {
 		$$ = $2;
 	  }
 	| T_LBRACK T_RBRACK {
@@ -1452,26 +1455,26 @@ direct_abs_decl:
 	| T_LBRACK constant T_RBRACK {
 		$$ = add_array(abstract_name(), 1, toicon($2, 0));
 	  }
-	| type_attribute direct_abs_decl {
+	| type_attribute direct_abstract_decl {
 		$$ = $2;
 	  }
-	| direct_abs_decl T_LBRACK T_RBRACK {
+	| direct_abstract_decl T_LBRACK T_RBRACK {
 		$$ = add_array($1, 0, 0);
 	  }
-	| direct_abs_decl T_LBRACK constant T_RBRACK {
+	| direct_abstract_decl T_LBRACK constant T_RBRACK {
 		$$ = add_array($1, 1, toicon($3, 0));
 	  }
-	| abs_decl_param_list opt_asm_or_symbolrename {
+	| abstract_decl_param_list opt_asm_or_symbolrename {
 		$$ = add_function(symbolrename(abstract_name(), $2), $1);
 		popdecl();
 		blklev--;
 	  }
-	| direct_abs_decl abs_decl_param_list opt_asm_or_symbolrename {
+	| direct_abstract_decl abstract_decl_param_list opt_asm_or_symbolrename {
 		$$ = add_function(symbolrename($1, $3), $2);
 		popdecl();
 		blklev--;
 	  }
-	| direct_abs_decl type_attribute_list
+	| direct_abstract_decl type_attribute_list
 	;
 
 non_expr_statement:
@@ -1480,7 +1483,7 @@ non_expr_statement:
 	| selection_statement
 	| iteration_statement
 	| jump_statement {
-		ftflg = 0;
+		ftflg = false;
 	  }
 	| asm_statement
 
@@ -1500,16 +1503,16 @@ label:
 	  }
 	| T_CASE constant T_COLON {
 		case_label($2);
-		ftflg = 1;
+		ftflg = true;
 	  }
-	| T_CASE constant T_ELLIPSE constant T_COLON {
+	| T_CASE constant T_ELLIPSIS constant T_COLON {
 		/* XXX: We don't fill all cases */
 		case_label($2);
-		ftflg = 1;
+		ftflg = true;
 	  }
 	| T_DEFAULT T_COLON {
 		default_label();
-		ftflg = 1;
+		ftflg = true;
 	  }
 	;
 
@@ -1544,14 +1547,14 @@ compound_statement_rbrace:
 		freeblk();
 		mblklev--;
 		blklev--;
-		ftflg = 0;
+		ftflg = false;
 	  }
 	;
 
 statement_list:
 	  statement
 	| statement_list statement {
-		RESTORE(__FILE__, __LINE__);
+		RESTORE_WARN_FLAGS(__FILE__, __LINE__);
 	  }
 	| statement_list error T_SEMI
 	;
@@ -1559,10 +1562,10 @@ statement_list:
 expr_statement:
 	  expr T_SEMI {
 		expr($1, 0, 0, 0);
-		ftflg = 0;
+		ftflg = false;
 	  }
 	| T_SEMI {
-		ftflg = 0;
+		ftflg = false;
 	  }
 	;
 
@@ -1575,10 +1578,10 @@ expr_statement_val:
 	  expr T_SEMI {
 		/* XXX: We should really do that only on the last name */
 		if ($1->tn_op == NAME)
-			$1->tn_sym->s_used = 1;
+			$1->tn_sym->s_used = true;
 		$$ = $1;
 		expr($1, 0, 0, 0);
-		ftflg = 0;
+		ftflg = false;
 	  }
 	| non_expr_statement {
 		$$ = getnode();
@@ -1595,27 +1598,27 @@ expr_statement_list:
 
 selection_statement:		/* C99 6.8.4 */
 	  if_without_else {
-		SAVE(__FILE__, __LINE__);
+		SAVE_WARN_FLAGS(__FILE__, __LINE__);
 		if2();
 		if3(0);
 	  }
 	| if_without_else T_ELSE {
-		SAVE(__FILE__, __LINE__);
+		SAVE_WARN_FLAGS(__FILE__, __LINE__);
 		if2();
 	  } statement {
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 		if3(1);
 	  }
 	| if_without_else T_ELSE error {
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 		if3(0);
 	  }
 	| switch_expr statement {
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 		switch2();
 	  }
 	| switch_expr error {
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 		switch2();
 	  }
 	;
@@ -1628,14 +1631,14 @@ if_without_else:
 if_expr:
 	  T_IF T_LPAREN expr T_RPAREN {
 		if1($3);
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 	  }
 	;
 
 switch_expr:
 	  T_SWITCH T_LPAREN expr T_RPAREN {
 		switch1($3);
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 	  }
 	;
 
@@ -1657,35 +1660,35 @@ generic_expr:
 
 do_statement:
 	  do statement {
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 	  }
 	;
 
 iteration_statement:		/* C99 6.8.5 */
 	  while_expr statement {
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 		while2();
 	  }
 	| while_expr error {
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 		while2();
 	  }
 	| do_statement do_while_expr {
 		do2($2);
-		ftflg = 0;
+		ftflg = false;
 	  }
 	| do error {
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 		do2(NULL);
 	  }
 	| for_exprs statement {
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 		for2();
 		popdecl();
 		blklev--;
 	  }
 	| for_exprs error {
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 		for2();
 		popdecl();
 		blklev--;
@@ -1695,7 +1698,7 @@ iteration_statement:		/* C99 6.8.5 */
 while_expr:
 	  T_WHILE T_LPAREN expr T_RPAREN {
 		while1($3);
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 	  }
 	;
 
@@ -1723,11 +1726,11 @@ for_exprs:
 		/* variable declaration in for loop */
 		c99ism(325);
 		for1(NULL, $6, $8);
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 	    }
 	  | for_start opt_expr T_SEMI opt_expr T_SEMI opt_expr T_RPAREN {
 		for1($2, $4, $6);
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 	  }
 	;
 
@@ -1779,16 +1782,16 @@ asm_statement:
 
 read_until_rparn:
 	  /* empty */ {
-		ignuptorp();
+		ignore_up_to_rparen();
 	  }
 	;
 
 declaration_list:
 	  declaration {
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 	  }
 	| declaration_list declaration {
-		CLRWFLGS(__FILE__, __LINE__);
+		CLEAR_WARN_FLAGS(__FILE__, __LINE__);
 	  }
 	;
 
@@ -1802,29 +1805,29 @@ expr:
 	  expr T_ASTERISK expr {
 		$$ = build(MULT, $1, $3);
 	  }
-	| expr T_DIVOP expr {
+	| expr T_MULTIPLICATIVE expr {
 		$$ = build($2, $1, $3);
 	  }
-	| expr T_ADDOP expr {
+	| expr T_ADDITIVE expr {
 		$$ = build($2, $1, $3);
 	  }
-	| expr T_SHFTOP expr {
+	| expr T_SHIFT expr {
 		$$ = build($2, $1, $3);
 	  }
-	| expr T_RELOP expr {
+	| expr T_RELATIONAL expr {
 		$$ = build($2, $1, $3);
 	  }
-	| expr T_EQOP expr {
+	| expr T_EQUALITY expr {
 		$$ = build($2, $1, $3);
 	  }
-	| expr T_AND expr {
-		$$ = build(AND, $1, $3);
+	| expr T_AMPER expr {
+		$$ = build(BITAND, $1, $3);
 	  }
 	| expr T_XOR expr {
-		$$ = build(XOR, $1, $3);
+		$$ = build(BITXOR, $1, $3);
 	  }
-	| expr T_OR expr {
-		$$ = build(OR, $1, $3);
+	| expr T_BITOR expr {
+		$$ = build(BITOR, $1, $3);
 	  }
 	| expr T_LOGAND expr {
 		$$ = build(LOGAND, $1, $3);
@@ -1838,7 +1841,7 @@ expr:
 	| expr T_ASSIGN expr {
 		$$ = build(ASSIGN, $1, $3);
 	  }
-	| expr T_OPASS expr {
+	| expr T_OPASSIGN expr {
 		$$ = build($2, $1, $3);
 	  }
 	| expr T_COMMA expr {
@@ -1867,7 +1870,7 @@ term:
 	  }
 	| T_LPAREN expr T_RPAREN {
 		if ($2 != NULL)
-			$2->tn_parenthesized = 1;
+			$2->tn_parenthesized = true;
 		$$ = $2;
 	  }
 	| T_LPAREN compound_statement_lbrace declaration_list
@@ -1900,15 +1903,15 @@ term:
 		$$ = build($1 == INC ? INCBEF : DECBEF, $2, NULL);
 	  }
 	| T_ASTERISK term {
-		$$ = build(STAR, $2, NULL);
+		$$ = build(INDIR, $2, NULL);
 	  }
-	| T_AND term {
-		$$ = build(AMPER, $2, NULL);
+	| T_AMPER term {
+		$$ = build(ADDR, $2, NULL);
 	  }
-	| T_UNOP term {
+	| T_UNARY term {
 		$$ = build($1, $2, NULL);
 	  }
-	| T_ADDOP term {
+	| T_ADDITIVE term {
 		if (tflag && $1 == PLUS) {
 			/* unary + is illegal in traditional C */
 			warning(100);
@@ -1916,7 +1919,7 @@ term:
 		$$ = build($1 == PLUS ? UPLUS : UMINUS, $2, NULL);
 	  }
 	| term T_LBRACK expr T_RBRACK {
-		$$ = build(STAR, build(PLUS, $1, $3), NULL);
+		$$ = build(INDIR, build(PLUS, $1, $3), NULL);
 	  }
 	| term T_LPAREN T_RPAREN {
 		$$ = new_function_call_node($1, NULL);
@@ -1975,10 +1978,10 @@ term:
 	| T_ALIGNOF T_LPAREN type_name T_RPAREN		%prec T_ALIGNOF {
 		$$ = build_alignof($3);
 	  }
-	| T_LPAREN type_name T_RPAREN term		%prec T_UNOP {
+	| T_LPAREN type_name T_RPAREN term		%prec T_UNARY {
 		$$ = cast($4, $2);
 	  }
-	| T_LPAREN type_name T_RPAREN			%prec T_UNOP {
+	| T_LPAREN type_name T_RPAREN			%prec T_UNARY {
 		sym_t *tmp = mktempsym($2);
 		idecl(tmp, 1, NULL);
 	  } init_lbrace init_expr_list init_rbrace {
@@ -2021,14 +2024,14 @@ func_arg_list:
 	;
 
 point_or_arrow:
-	  T_STROP {
+	  T_MEMBACC {
 		symtyp = FMEMBER;
 		$$ = $1;
 	  }
 	;
 
 point:
-	  T_STROP {
+	  T_MEMBACC {
 		if ($1 != POINT) {
 			/* syntax error '%s' */
 			error(249, yytext);
@@ -2082,7 +2085,8 @@ q_gt(int64_t a, int64_t b)
 /*
  * Gets a node for a constant and returns the value of this constant
  * as integer.
- * Is the node not constant or too large for int or of type float,
+ *
+ * If the node is not constant or too large for int or of type float,
  * a warning will be printed.
  *
  * toicon() should be used only inside declarations. If it is used in
@@ -2096,6 +2100,11 @@ toicon(tnode_t *tn, int required)
 	val_t	*v;
 
 	v = constant(tn, required);
+
+	if (tn == NULL) {
+		i = 1;
+		goto done;
+	}
 
 	/*
 	 * Abstract declarations are used inside expression. To free
@@ -2126,6 +2135,8 @@ toicon(tnode_t *tn, int required)
 			}
 		}
 	}
+
+done:
 	free(v);
 	return i;
 }
@@ -2135,7 +2146,7 @@ idecl(sym_t *decl, int initflg, sbuf_t *renaming)
 {
 	char *s;
 
-	initerr = 0;
+	initerr = false;
 	initsym = decl;
 
 	switch (dcs->d_ctx) {
@@ -2157,7 +2168,7 @@ idecl(sym_t *decl, int initflg, sbuf_t *renaming)
 			freeyyv(&renaming, T_NAME);
 			break;
 		}
-		(void)decl1arg(decl, initflg);
+		(void)declare_argument(decl, initflg);
 		break;
 	case AUTO:
 		if (renaming != NULL) {
@@ -2166,7 +2177,7 @@ idecl(sym_t *decl, int initflg, sbuf_t *renaming)
 			freeyyv(&renaming, T_NAME);
 			break;
 		}
-		decl1loc(decl, initflg);
+		declare_local(decl, initflg);
 		break;
 	default:
 		LERROR("idecl(%d)", dcs->d_ctx);
@@ -2181,7 +2192,7 @@ idecl(sym_t *decl, int initflg, sbuf_t *renaming)
  * unmatched right paren
  */
 static void
-ignuptorp(void)
+ignore_up_to_rparen(void)
 {
 	int	level;
 
