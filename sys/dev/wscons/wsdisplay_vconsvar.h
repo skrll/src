@@ -1,4 +1,4 @@
-/*	$NetBSD: wsdisplay_vconsvar.h,v 1.27 2018/11/30 05:20:34 msaitoh Exp $ */
+/*	$NetBSD: wsdisplay_vconsvar.h,v 1.30 2021/01/17 19:03:32 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2005, 2006 Michael Lorenz
@@ -34,6 +34,8 @@
 #include "opt_vcons.h"
 #endif
 
+#include <sys/atomic.h>
+
 struct vcons_data;
 
 struct vcons_screen {
@@ -63,7 +65,8 @@ struct vcons_screen {
  */
 #define VCONS_NO_COPYCOLS	0x10	/* use putchar() based copycols() */
 #define VCONS_NO_COPYROWS	0x20	/* use putchar() based copyrows() */
-#define VCONS_DONT_READ		0x30	/* avoid framebuffer reads */
+#define VCONS_DONT_READ		(VCONS_NO_COPYCOLS|VCONS_NO_COPYROWS)
+					/* avoid framebuffer reads */
 #define VCONS_LOADFONT		0x40	/* driver can load_font() */
 	/* status flags used by vcons */
 	uint32_t scr_status;
@@ -83,10 +86,10 @@ struct vcons_screen {
 };
 
 #define SCREEN_IS_VISIBLE(scr) (((scr)->scr_status & VCONS_IS_VISIBLE) != 0)
-#define SCREEN_IS_BUSY(scr) ((scr)->scr_busy != 0)
+#define SCREEN_IS_BUSY(scr) (membar_consumer(), (scr)->scr_busy != 0)
 #define SCREEN_CAN_DRAW(scr) (((scr)->scr_flags & VCONS_DONT_DRAW) == 0)
-#define SCREEN_BUSY(scr) ((scr)->scr_busy = 1)
-#define SCREEN_IDLE(scr) ((scr)->scr_busy = 0)
+#define SCREEN_BUSY(scr) ((scr)->scr_busy = 1, membar_producer())
+#define SCREEN_IDLE(scr) ((scr)->scr_busy = 0, membar_producer())
 #define SCREEN_VISIBLE(scr) ((scr)->scr_status |= VCONS_IS_VISIBLE)
 #define SCREEN_INVISIBLE(scr) ((scr)->scr_status &= ~VCONS_IS_VISIBLE)
 #define SCREEN_DISABLE_DRAWING(scr) ((scr)->scr_flags |= VCONS_DONT_DRAW)
@@ -140,7 +143,9 @@ struct vcons_data {
 #endif
 };
 
-int	vcons_init(struct vcons_data *, void *cookie, struct wsscreen_descr *,
+int	vcons_init(struct vcons_data *, void *, struct wsscreen_descr *,
+    struct wsdisplay_accessops *);
+int	vcons_earlyinit(struct vcons_data *, void *, struct wsscreen_descr *,
     struct wsdisplay_accessops *);
 
 int	vcons_init_screen(struct vcons_data *, struct vcons_screen *, int,

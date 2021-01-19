@@ -1,4 +1,4 @@
-/*	$NetBSD: imx6_spi.c,v 1.2 2020/12/23 16:52:06 skrll Exp $	*/
+/*	$NetBSD: imx6_spi.c,v 1.4 2021/01/18 02:35:48 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2019 Genetec Corporation.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx6_spi.c,v 1.2 2020/12/23 16:52:06 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx6_spi.c,v 1.4 2021/01/18 02:35:48 thorpej Exp $");
 
 #include "opt_imxspi.h"
 
@@ -60,9 +60,10 @@ static const struct imx_spi_config imx6q_spi_config = {
 	.type = IMX51_ECSPI,
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "fsl,imx6q-ecspi",		(uintptr_t)&imx6q_spi_config },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "fsl,imx6q-ecspi",	.data = &imx6q_spi_config },
+
+	{ 0 }
 };
 
 CFATTACH_DECL_NEW(imxspi_fdt, sizeof(struct imxspi_fdt_softc),
@@ -138,7 +139,8 @@ imxspi_attach(device_t parent, device_t self, void *aux)
 	sc->sc_phandle = phandle;
 	sc->sc_iot = faa->faa_bst;
 
-	struct imx_spi_config *config = (void *)of_search_compatible(phandle, compat_data)->data;
+	const struct imx_spi_config *config =
+	    of_search_compatible(phandle, compat_data)->data;
 	sc->sc_enhanced = config->enhanced;
 	sc->sc_type = config->type;
 
@@ -161,8 +163,8 @@ imxspi_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_ih = fdtbus_intr_establish(phandle, 0, IPL_VM,
-	    0, imxspi_intr, &ifsc->sc_imxspi);
+	sc->sc_ih = fdtbus_intr_establish_xname(phandle, 0, IPL_VM,
+	    0, imxspi_intr, &ifsc->sc_imxspi, device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt on %s\n",
 		    intrstr);

@@ -1,4 +1,4 @@
-/*	$NetBSD: job.c,v 1.395 2021/01/09 16:06:09 rillig Exp $	*/
+/*	$NetBSD: job.c,v 1.397 2021/01/10 23:59:53 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -143,7 +143,7 @@
 #include "trace.h"
 
 /*	"@(#)job.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: job.c,v 1.395 2021/01/09 16:06:09 rillig Exp $");
+MAKE_RCSID("$NetBSD: job.c,v 1.397 2021/01/10 23:59:53 rillig Exp $");
 
 /*
  * A shell defines how the commands are run.  All commands for a target are
@@ -425,7 +425,7 @@ static Job **allJobs = NULL;
 static nfds_t nJobs = 0;
 static void watchfd(Job *);
 static void clearfd(Job *);
-static int readyfd(Job *);
+static Boolean readyfd(Job *);
 
 static char *targPrefix = NULL; /* To identify a job change in the output. */
 static Job tokenWaitJob;	/* token wait pseudo-job */
@@ -441,7 +441,7 @@ enum {
 static sigset_t caught_signals;	/* Set of signals we handle */
 
 static void JobDoOutput(Job *, Boolean);
-static void JobInterrupt(int, int) MAKE_ATTR_DEAD;
+static void JobInterrupt(Boolean, int) MAKE_ATTR_DEAD;
 static void JobRestartJobs(void);
 static void JobSigReset(void);
 
@@ -952,7 +952,7 @@ JobPrintCommand(Job *job, ShellWriter *wr, StringListNode *ln, const char *ucmd)
 		 * set up commands to run through it.
 		 */
 
-		if (!shell->hasErrCtl && shell->runChkTmpl &&
+		if (!shell->hasErrCtl && shell->runChkTmpl != NULL &&
 		    shell->runChkTmpl[0] != '\0') {
 			if (job->echo && cmdFlags.echo) {
 				ShellWriter_EchoOff(wr);
@@ -1539,16 +1539,16 @@ JobMakeArgv(Job *job, char **argv)
 		    (!job->echo ? "" :
 			(shell->echoFlag != NULL ? shell->echoFlag : "")));
 
-		if (args[1]) {
+		if (args[1] != '\0') {
 			argv[argc] = args;
 			argc++;
 		}
 	} else {
-		if (!job->ignerr && shell->errFlag) {
+		if (!job->ignerr && shell->errFlag != NULL) {
 			argv[argc] = UNCONST(shell->errFlag);
 			argc++;
 		}
-		if (job->echo && shell->echoFlag) {
+		if (job->echo && shell->echoFlag != NULL) {
 			argv[argc] = UNCONST(shell->echoFlag);
 			argc++;
 		}
@@ -2090,7 +2090,7 @@ Job_CatchOutput(void)
 		return;
 
 	for (i = npseudojobs * nfds_per_job(); i < nJobs; i++) {
-		if (!fds[i].revents)
+		if (fds[i].revents == 0)
 			continue;
 		job = allJobs[i];
 		if (job->status == JOB_ST_RUNNING)
@@ -2150,7 +2150,7 @@ Shell_Init(void)
 	if (shell->echoFlag == NULL)
 		shell->echoFlag = "";
 	if (shell->hasErrCtl && shell->errFlag[0] != '\0') {
-		if (shellErrFlag &&
+		if (shellErrFlag != NULL &&
 		    strcmp(shell->errFlag, &shellErrFlag[1]) != 0) {
 			free(shellErrFlag);
 			shellErrFlag = NULL;
@@ -2286,7 +2286,7 @@ Job_Init(void)
 static void
 DelSig(int sig)
 {
-	if (sigismember(&caught_signals, sig))
+	if (sigismember(&caught_signals, sig) != 0)
 		(void)bmake_signal(sig, SIG_DFL);
 }
 
@@ -2509,7 +2509,7 @@ Job_ParseShell(char *line)
 		Shell_Init();
 	}
 
-	if (shell->echoOn && shell->echoOff)
+	if (shell->echoOn != NULL && shell->echoOff != NULL)
 		shell->hasEchoCtl = TRUE;
 
 	if (!shell->hasErrCtl) {
@@ -2539,7 +2539,7 @@ Job_ParseShell(char *line)
  *	signo		signal received
  */
 static void
-JobInterrupt(int runINTERRUPT, int signo)
+JobInterrupt(Boolean runINTERRUPT, int signo)
 {
 	Job *job;		/* job descriptor in that element */
 	GNode *interrupt;	/* the node describing the .INTERRUPT target */
@@ -2557,7 +2557,7 @@ JobInterrupt(int runINTERRUPT, int signo)
 		gn = job->node;
 
 		JobDeleteTarget(gn);
-		if (job->pid) {
+		if (job->pid != 0) {
 			DEBUG2(JOB,
 			    "JobInterrupt passing signal %d to child %d.\n",
 			    signo, job->pid);
@@ -2728,7 +2728,7 @@ clearfd(Job *job)
 		 * pollfd number should be even.
 		 */
 		assert(nfds_per_job() == 2);
-		if (i % 2)
+		if (i % 2 != 0)
 			Punt("odd-numbered fd with meta");
 		nJobs--;
 	}
@@ -2750,7 +2750,7 @@ clearfd(Job *job)
 	job->inPollfd = NULL;
 }
 
-static int
+static Boolean
 readyfd(Job *job)
 {
 	if (job->inPollfd == NULL)
@@ -2820,7 +2820,7 @@ Job_TokenReturn(void)
 	jobTokensRunning--;
 	if (jobTokensRunning < 0)
 		Punt("token botch");
-	if (jobTokensRunning || JOB_TOKENS[aborting] != '+')
+	if (jobTokensRunning != 0 || JOB_TOKENS[aborting] != '+')
 		JobTokenAdd();
 }
 

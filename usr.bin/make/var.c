@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.779 2021/01/09 16:06:09 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.782 2021/01/16 20:49:31 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -131,7 +131,7 @@
 #include "metachar.h"
 
 /*	"@(#)var.c	8.3 (Berkeley) 3/19/94" */
-MAKE_RCSID("$NetBSD: var.c,v 1.779 2021/01/09 16:06:09 rillig Exp $");
+MAKE_RCSID("$NetBSD: var.c,v 1.782 2021/01/16 20:49:31 rillig Exp $");
 
 typedef enum VarFlags {
 	VAR_NONE	= 0,
@@ -347,7 +347,7 @@ CanonicalVarname(const char *name)
 			break;
 		case 'S':
 			if (strcmp(name, ".SHELL") == 0) {
-				if (!shellPath)
+				if (shellPath == NULL)
 					Shell_Init();
 			}
 			break;
@@ -805,7 +805,7 @@ ClearEnv(void)
 	environ = savedEnv = newenv;
 	newenv[0] = NULL;
 	newenv[1] = NULL;
-	if (cp && *cp)
+	if (cp != NULL && *cp != '\0')
 		setenv(MAKE_LEVEL_ENV, cp, 1);
 }
 
@@ -1536,7 +1536,7 @@ tryagain:
 		args->matched = TRUE;
 		SepBuf_AddBytes(buf, wp, (size_t)m[0].rm_so);
 
-		for (rp = args->replace; *rp; rp++) {
+		for (rp = args->replace; *rp != '\0'; rp++) {
 			if (*rp == '\\' && (rp[1] == '&' || rp[1] == '\\')) {
 				SepBuf_AddBytes(buf, rp + 1, 1);
 				rp++;
@@ -1840,7 +1840,7 @@ VarHash(const char *str)
 	size_t i;
 
 	size_t len;
-	for (len = len2; len;) {
+	for (len = len2; len != 0;) {
 		uint32_t k = 0;
 		switch (len) {
 		default:
@@ -3650,7 +3650,12 @@ ApplyModifiers(
 {
 	ApplyModifiersState st = {
 	    startc, endc, v, ctxt, eflags,
+#if defined(lint)
+	    /* lint cannot parse C99 struct initializers yet. */
+	    { var_Error, NULL },
+#else
 	    FStr_InitRefer(var_Error), /* .newVal */
+#endif
 	    ' ',		/* .sep */
 	    FALSE,		/* .oneBigWord */
 	    *exprFlags		/* .exprFlags */
