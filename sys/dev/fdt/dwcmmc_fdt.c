@@ -1,4 +1,4 @@
-/* $NetBSD: dwcmmc_fdt.c,v 1.11 2020/01/22 23:19:11 jmcneill Exp $ */
+/* $NetBSD: dwcmmc_fdt.c,v 1.13 2021/01/18 02:35:49 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015-2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dwcmmc_fdt.c,v 1.11 2020/01/22 23:19:11 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dwcmmc_fdt.c,v 1.13 2021/01/18 02:35:49 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -66,9 +66,10 @@ static const struct dwcmmc_fdt_config dwcmmc_rk3288_config = {
 	.intr_cardmask = __BIT(24),
 };
 
-static const struct of_compat_data compat_data[] = {
-	{ "rockchip,rk3288-dw-mshc",	(uintptr_t)&dwcmmc_rk3288_config },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "rockchip,rk3288-dw-mshc",	.data = &dwcmmc_rk3288_config },
+
+	{ 0 }
 };
 
 struct dwcmmc_fdt_softc {
@@ -150,7 +151,7 @@ dwcmmc_fdt_attach(device_t parent, device_t self, void *aux)
 		    (uint64_t)addr, error);
 		return;
 	}
-	esc->sc_conf = (void *)of_search_compatible(phandle, compat_data)->data;
+	esc->sc_conf = of_search_compatible(phandle, compat_data)->data;
 
 	if (of_getprop_uint32(phandle, "max-frequency", &sc->sc_clock_freq) != 0)
 		sc->sc_clock_freq = UINT_MAX;
@@ -182,8 +183,8 @@ dwcmmc_fdt_attach(device_t parent, device_t self, void *aux)
 	if (dwc_mmc_init(sc) != 0)
 		return;
 
-	sc->sc_ih = fdtbus_intr_establish(phandle, 0, IPL_BIO, 0,
-	    dwc_mmc_intr, sc);
+	sc->sc_ih = fdtbus_intr_establish_xname(phandle, 0, IPL_BIO, 0,
+	    dwc_mmc_intr, sc, device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt on %s\n",
 		    intrstr);

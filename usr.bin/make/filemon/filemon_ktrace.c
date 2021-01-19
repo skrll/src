@@ -1,4 +1,4 @@
-/*	$NetBSD: filemon_ktrace.c,v 1.10 2021/01/09 16:06:09 rillig Exp $	*/
+/*	$NetBSD: filemon_ktrace.c,v 1.12 2021/01/10 23:59:53 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -519,12 +519,12 @@ top:	/* If the child has exited, nothing to do.  */
 		return 0;
 
 	/* If we're waiting for input, read some.  */
-	if (F->resid) {
+	if (F->resid > 0) {
 		nread = fread(F->p, 1, F->resid, F->in);
 		if (nread == 0) {
-			if (feof(F->in))
+			if (feof(F->in) != 0)
 				return 0;
-			assert(ferror(F->in));
+			assert(ferror(F->in) != 0);
 			/*
 			 * If interrupted or would block, there may be
 			 * more events.  Otherwise fail.
@@ -539,7 +539,7 @@ top:	/* If the child has exited, nothing to do.  */
 		assert(nread <= F->resid);
 		F->p += nread;
 		F->resid -= nread;
-		if (F->resid)	/* may be more events */
+		if (F->resid > 0)	/* may be more events */
 			return 1;
 	}
 
@@ -619,7 +619,7 @@ show_paths(struct filemon *F, const struct filemon_state *S,
 	 * Ignore it if it failed or yielded EJUSTRETURN (-2), or if
 	 * we're not producing output.
 	 */
-	if (ret->ktr_error && ret->ktr_error != -2)
+	if (ret->ktr_error != 0 && ret->ktr_error != -2)
 		return;
 	if (F->out == NULL)
 		return;
@@ -645,7 +645,7 @@ show_retval(struct filemon *F, const struct filemon_state *S,
 	 * Ignore it if it failed or yielded EJUSTRETURN (-2), or if
 	 * we're not producing output.
 	 */
-	if (ret->ktr_error && ret->ktr_error != -2)
+	if (ret->ktr_error != 0 && ret->ktr_error != -2)
 		return;
 	if (F->out == NULL)
 		return;

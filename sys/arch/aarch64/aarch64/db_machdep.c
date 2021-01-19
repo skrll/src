@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.c,v 1.30 2020/12/11 18:03:33 skrll Exp $ */
+/* $NetBSD: db_machdep.c,v 1.32 2021/01/18 01:38:44 rin Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.30 2020/12/11 18:03:33 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.32 2021/01/18 01:38:44 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd32.h"
@@ -78,6 +78,9 @@ void db_md_sysreg_cmd(db_expr_t, bool, db_expr_t, const char *);
 void db_md_watch_cmd(db_expr_t, bool, db_expr_t, const char *);
 #if defined(_KERNEL) && defined(MULTIPROCESSOR)
 void db_md_switch_cpu_cmd(db_expr_t, bool, db_expr_t, const char *);
+#endif
+#if defined(_KERNEL)
+static void db_md_meminfo_cmd(db_expr_t, bool, db_expr_t, const char *);
 #endif
 
 const struct db_command db_machine_command_table[] = {
@@ -151,6 +154,12 @@ const struct db_command db_machine_command_table[] = {
 		    "\taddress: watchpoint address to set\n"
 		    "\t#: watchpoint number to remove"
 		    "\t/1..8: size of data\n")
+	},
+	{
+		DDB_ADD_CMD(
+		    "meminfo", db_md_meminfo_cmd, 0,
+		    "Dump info about memory ranges",
+		    NULL, NULL)
 	},
 #endif
 	{
@@ -1073,5 +1082,22 @@ kdb_trap(int type, struct trapframe *tf)
 #endif
 
 	return 1;
+}
+#endif
+
+#if defined(_KERNEL)
+static void
+db_md_meminfo_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
+    const char *modif)
+{
+	unsigned blk;
+
+	for (blk = 0; blk < bootconfig.dramblocks; blk++) {
+		db_printf("blk[%u]: start %lx end %lx (pages %x)\n",
+		    blk, bootconfig.dram[blk].address,
+		    bootconfig.dram[blk].address +
+		    (uint64_t)bootconfig.dram[blk].pages * PAGE_SIZE,
+		    bootconfig.dram[blk].pages);
+	}
 }
 #endif
