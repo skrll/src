@@ -1,4 +1,4 @@
-/* $NetBSD: amdccp_fdt.c,v 1.1 2018/10/19 21:09:10 jakllsch Exp $ */
+/* $NetBSD: amdccp_fdt.c,v 1.3 2021/01/18 02:35:49 thorpej Exp $ */
 
 /*
  * Copyright (c) 2018 Jonathan A. Kollasch
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: amdccp_fdt.c,v 1.1 2018/10/19 21:09:10 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: amdccp_fdt.c,v 1.3 2021/01/18 02:35:49 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -49,9 +49,10 @@ static void amdccp_fdt_attach(device_t, device_t, void *);
 CFATTACH_DECL_NEW(amdccp_fdt, sizeof(struct amdccp_fdt_softc),
     amdccp_fdt_match, amdccp_fdt_attach, NULL, NULL);
 
-static const struct of_compat_data compat_data[] = {
-	{ "amd,ccp-seattle-v1a", },
-	{ NULL }
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "amd,ccp-seattle-v1a" },
+
+	{ 0 }
 };
 
 static int
@@ -76,7 +77,7 @@ amdccp_fdt_attach(device_t parent, device_t self, void *aux)
 
 	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
 		aprint_error(": couldn't get registers\n");
-		return;		
+		return;
 	}
 
 	sc->sc_bst = faa->faa_bst;

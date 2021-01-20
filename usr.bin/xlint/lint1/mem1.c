@@ -1,4 +1,4 @@
-/*	$NetBSD: mem1.c,v 1.22 2021/01/04 22:29:00 rillig Exp $	*/
+/*	$NetBSD: mem1.c,v 1.24 2021/01/18 20:02:34 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: mem1.c,v 1.22 2021/01/04 22:29:00 rillig Exp $");
+__RCSID("$NetBSD: mem1.c,v 1.24 2021/01/18 20:02:34 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -119,7 +119,7 @@ fnxform(const char *name, size_t len)
 	static char buf[MAXPATHLEN];
 	struct repl *r;
 
-	for (r = replist; r; r = r->next)
+	for (r = replist; r != NULL; r = r->next)
 		if (r->len < len && memcmp(name, r->orig, r->len) == 0)
 			break;
 	if (r == NULL)
@@ -140,7 +140,7 @@ fnnalloc(const char *s, size_t len)
 
 	if ((fn = srchfn(s, len)) == NULL) {
 		fn = xmalloc(sizeof (fn_t));
-		/* Do not used strdup() because string is not NUL-terminated.*/
+		/* Do not use strdup() because string is not NUL-terminated.*/
 		fn->fn_name = xmalloc(len + 1);
 		(void)memcpy(fn->fn_name, s, len);
 		fn->fn_name[len] = '\0';
@@ -247,7 +247,7 @@ xgetblk(mbl_t **mbp, size_t s)
 #ifndef BLKDEBUG
 			(void)memset(mb->blk, 0, mb->size);
 #endif
-			if (t)
+			if (t > 0)
 				mblklen = t;
 		} else {
 			frmblks = mb->nxt;

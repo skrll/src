@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.25 2021/01/02 10:22:42 rillig Exp $
+# $NetBSD: Makefile,v 1.30 2021/01/17 23:00:41 rillig Exp $
 
 NOMAN=		# defined
 
@@ -11,6 +11,12 @@ TESTS_SH=	t_integration
 FILESDIR=	${TESTSDIR}
 FILES+=		d_alignof.c
 FILES+=		d_bltinoffsetof.c
+FILES+=		d_c99_bool.c
+FILES+=		d_c99_bool.exp
+FILES+=		d_c99_bool_strict.c
+FILES+=		d_c99_bool_strict.exp
+FILES+=		d_c99_bool_strict_syshdr.c
+FILES+=		d_c99_bool_strict_syshdr.exp
 FILES+=		d_c99_anon_struct.c
 FILES+=		d_c99_anon_union.c
 FILES+=		d_c99_complex_num.c
@@ -63,6 +69,8 @@ FILES+=		d_incorrect_array_size.c
 FILES+=		d_incorrect_array_size.exp
 FILES+=		d_init_pop_member.c
 FILES+=		d_init_pop_member.exp
+FILES+=		d_lint_assert.c
+FILES+=		d_lint_assert.exp
 FILES+=		d_long_double_int.c
 FILES+=		d_long_double_int.exp
 FILES+=		d_nested_structs.c
@@ -83,7 +91,7 @@ FILES+=		d_type_question_colon.c
 FILES+=		d_typefun.c
 FILES+=		d_typename_as_var.c
 FILES+=		d_zero_sized_arrays.c
-FILES+=		${:U0 ${:U:range=329}:C,^.$,0&,:C,^..$,0&,:@msg@msg_${msg}.c msg_${msg}.exp@}
+FILES+=		${:U0 ${:U:range=337}:C,^.$,0&,:C,^..$,0&,:@msg@msg_${msg}.c msg_${msg}.exp@}
 
 # Note: only works for adding tests.
 # To remove a test, the $$mi file must be edited manually.

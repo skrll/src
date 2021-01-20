@@ -1,4 +1,4 @@
-/*	$NetBSD: make.c,v 1.233 2020/12/30 10:03:16 rillig Exp $	*/
+/*	$NetBSD: make.c,v 1.235 2021/01/16 20:49:31 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -103,7 +103,7 @@
 #include "job.h"
 
 /*	"@(#)make.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: make.c,v 1.233 2020/12/30 10:03:16 rillig Exp $");
+MAKE_RCSID("$NetBSD: make.c,v 1.235 2021/01/16 20:49:31 rillig Exp $");
 
 /* Sequence # to detect recursion. */
 static unsigned int checked_seqno = 1;
@@ -418,7 +418,7 @@ Make_HandleUse(GNode *cgn, GNode *pgn)
 		}
 		(void)Var_Subst(gn->uname, pgn, VARE_WANTRES, &gn->name);
 		/* TODO: handle errors */
-		if (gn->uname && strcmp(gn->name, gn->uname) != 0) {
+		if (gn->uname != NULL && strcmp(gn->name, gn->uname) != 0) {
 			/* See if we have a target for this node. */
 			GNode *tgn = Targ_FindNode(gn->name);
 			if (tgn != NULL)
@@ -893,7 +893,7 @@ Make_DoAllVar(GNode *gn)
 	gn->flags |= DONE_ALLSRC;
 }
 
-static int
+static Boolean
 MakeBuildChild(GNode *cn, GNodeListNode *toBeMadeNext)
 {
 
@@ -903,13 +903,13 @@ MakeBuildChild(GNode *cn, GNodeListNode *toBeMadeNext)
 		GNode_FprintDetails(opts.debug_file, "", cn, "\n");
 	}
 	if (GNode_IsReady(cn))
-		return 0;
+		return FALSE;
 
 	/* If this node is on the RHS of a .ORDER, check LHSs. */
 	if (IsWaitingForOrder(cn)) {
 		/* Can't build this (or anything else in this child list) yet */
 		cn->made = DEFERRED;
-		return 0;	/* but keep looking */
+		return FALSE;	/* but keep looking */
 	}
 
 	DEBUG2(MAKE, "MakeBuildChild: schedule %s%s\n",
@@ -925,7 +925,7 @@ MakeBuildChild(GNode *cn, GNodeListNode *toBeMadeNext)
 		ListNode *ln;
 
 		for (ln = cn->cohorts.first; ln != NULL; ln = ln->next)
-			if (MakeBuildChild(ln->datum, toBeMadeNext) != 0)
+			if (MakeBuildChild(ln->datum, toBeMadeNext))
 				break;
 	}
 
@@ -943,7 +943,7 @@ MakeBuildParent(GNode *pn, GNodeListNode *toBeMadeNext)
 	if (pn->made != DEFERRED)
 		return 0;
 
-	if (MakeBuildChild(pn, toBeMadeNext) == 0) {
+	if (!MakeBuildChild(pn, toBeMadeNext)) {
 		/* When this node is built, reschedule its parents. */
 		pn->flags |= DONE_ORDER;
 	}
@@ -958,7 +958,7 @@ MakeChildren(GNode *gn)
 	GNodeListNode *ln;
 
 	for (ln = gn->children.first; ln != NULL; ln = ln->next)
-		if (MakeBuildChild(ln->datum, toBeMadeNext) != 0)
+		if (MakeBuildChild(ln->datum, toBeMadeNext))
 			break;
 }
 
