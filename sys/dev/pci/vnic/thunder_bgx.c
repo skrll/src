@@ -29,8 +29,7 @@
  *
  */
 
-#include "opt_acpi.h"
-#include "opt_fdt.h"
+#include "acpica.h"
 
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD$");
@@ -179,7 +178,6 @@ thunder_bgx_attach(device_t parent, device_t dev, void *aux)
 
 	bgx->sc_pc = pa->pa_pc;
 	bgx->sc_pcitag = pa->pa_tag;
-
 
 	pci_aprint_devinfo_fancy(pa, "Common Ethernet Interface",
 	    THUNDER_BGX_DEVSTR, true);
@@ -1194,12 +1192,12 @@ bgx_init_phy(struct bgx *bgx)
 
 	/* By default we fail */
 	err = ENXIO;
-#ifdef FDT
+#ifdef XXXFDT
 	err = bgx_fdt_init_phy(bgx);
 #endif
 #if NACPICA > 0
 	if (err != 0) {
-		/* ARM64TODO: Add ACPI function here */
+		bgx_acpi_init_phy(bgx);
 	}
 #endif
 	return (err);
