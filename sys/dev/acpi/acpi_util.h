@@ -91,6 +91,7 @@ struct cpu_info *acpi_match_cpu_handle(ACPI_HANDLE);
 char		*acpi_pack_compat_list(ACPI_DEVICE_INFO *, size_t *);
 
 ACPI_STATUS	 acpi_dsd_integer(ACPI_HANDLE, const char *, ACPI_INTEGER *);
+ACPI_STATUS	 acpi_dsd_package(ACPI_HANDLE, const char *, ACPI_OBJECT **);
 ACPI_STATUS	 acpi_dsd_string(ACPI_HANDLE, const char *, char **);
 
 ACPI_STATUS	 acpi_dsm(ACPI_HANDLE, uint8_t *, ACPI_INTEGER,

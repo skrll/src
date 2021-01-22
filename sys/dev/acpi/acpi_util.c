@@ -764,6 +764,20 @@ acpi_dsd_integer(ACPI_HANDLE handle, const char *prop, ACPI_INTEGER *val)
 }
 
 ACPI_STATUS
+acpi_dsd_package(ACPI_HANDLE handle, const char *prop, ACPI_OBJECT **val)
+{
+	ACPI_STATUS rv;
+	ACPI_BUFFER buf;
+
+	buf.Pointer = NULL;
+	buf.Length = ACPI_ALLOCATE_BUFFER;
+
+	rv = acpi_dsd_property(handle, prop, &buf, ACPI_TYPE_PACKAGE, val);
+
+	return rv;
+}
+
+ACPI_STATUS
 acpi_dsd_string(ACPI_HANDLE handle, const char *prop, char **val)
 {
 	ACPI_OBJECT *propval;
