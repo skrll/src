@@ -188,8 +188,7 @@ thunder_bgx_attach(device_t parent, device_t dev, void *aux)
 	rid = PCI_BAR(PCI_CFG_REG_BAR_NUM);
 
 	/*
-	 * Map the device.  All devices support memory-mapped acccess,
-	 * and it is really required for normal operation.
+	 * Map the device.  All devices support memory-mapped acccess.
 	 */
 	bool memh_valid;
 	bus_space_tag_t memt;
