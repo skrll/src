@@ -35,10 +35,11 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/param.h>
 
 #include <sys/bus.h>
+#include <sys/kmem.h>
 //#include <sys/callout.h>
 //#include <sys/device.h>
 //#include <sys/mutex.h>
-//#include <sys/reboot.h>
+#include <sys/reboot.h>
 
 #include <net/if.h>
 #include <net/if_media.h>
@@ -46,8 +47,10 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <dev/fdt/fdtvar.h>
 
+#include <dev/mii/miivar.h>
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
+
 
 #include "thunder_bgx.h"
 #include "thunder_bgx_var.h"
@@ -66,6 +69,23 @@ int bgx_fdt_init_phy(struct bgx *);
 
 
 #define phandle_t int
+
+static int
+OF_getencprop(phandle_t node, const char *propname, uint32_t *buf, size_t len)
+{
+	KASSERTMSG(len % 4 == 0, "Need a multiple of 4 bytes");
+
+	int retval = OF_getprop(node, propname, buf, len);
+	if (retval <= 0)
+		return retval;
+
+	for (size_t i = 0; i < len / sizeof(*buf); i++)
+		buf[i] = be32toh(buf[i]);
+
+	return retval;
+}
+
+
 
 static void
 bgx_fdt_get_macaddr(phandle_t phy, uint8_t *hwaddr)
@@ -203,7 +223,7 @@ bgx_fdt_traverse_nodes(uint8_t unit, phandle_t start, char *name,
     size_t len)
 {
 	phandle_t node, ret;
-	uint32_t *reg;
+	uint32_t reg;
 	size_t buf_size;
 	ssize_t proplen;
 	char *node_name;
@@ -222,7 +242,7 @@ bgx_fdt_traverse_nodes(uint8_t unit, phandle_t start, char *name,
 		return (0);
 	}
 
-	node_name = malloc(buf_size, M_BGX, M_WAITOK);
+	node_name = kmem_alloc(buf_size, KM_SLEEP);
 	for (node = OF_child(start); node != 0; node = OF_peer(node)) {
 		/* Clean-up the buffer */
 		memset(node_name, 0, buf_size);
@@ -230,7 +250,7 @@ bgx_fdt_traverse_nodes(uint8_t unit, phandle_t start, char *name,
 		if (OF_child(node) != 0) {
 			ret = bgx_fdt_traverse_nodes(unit, node, name, len);
 			if (ret != 0) {
-				free(node_name, M_BGX);
+				kmem_free(node_name, buf_size);
 				return (ret);
 			}
 		}
@@ -246,7 +266,7 @@ bgx_fdt_traverse_nodes(uint8_t unit, phandle_t start, char *name,
 			continue;
 
 		if (strncmp(node_name, name, len) == 0) {
-			free(node_name, M_BGX);
+			kmem_free(node_name, buf_size);
 			return (node);
 		}
 		/*
@@ -257,22 +277,20 @@ bgx_fdt_traverse_nodes(uint8_t unit, phandle_t start, char *name,
 		    BGX_NODE_NAME, sizeof(BGX_NODE_NAME) - 1) != 0)
 			continue;
 		/* Get reg */
-		err = OF_getencprop_alloc_multi(node, "reg", sizeof(*reg),
-		    (void **)&reg);
+		err = OF_getencprop(node, "reg", &reg, sizeof(reg));
 		if (err == -1) {
-			free(reg, M_OFWPROP);
 			continue;
 		}
 
 		/* Match BGX device function */
-		if ((BGX_DEVFN_0 + unit) == (reg[0] >> 8)) {
-			free(reg, M_OFWPROP);
-			free(node_name, M_BGX);
+		if ((BGX_DEVFN_0 + unit) == (reg >> 8)) {
+//			free(reg, M_OFWPROP);
+			kmem_free(node_name, buf_size);
 			return (node);
 		}
-		free(reg, M_OFWPROP);
+//		free(reg, M_OFWPROP);
 	}
-	free(node_name, M_BGX);
+	kmem_free(node_name, buf_size);
 
 	return (0);
 }
@@ -284,11 +302,12 @@ bgx_fdt_traverse_nodes(uint8_t unit, phandle_t start, char *name,
 static device_t
 bgx_find_root_pcib(device_t dev)
 {
+#if 0
 	devclass_t pci_class;
 	device_t pcib, bus;
 
 	pci_class = devclass_find("pci");
-	KASSERT(device_get_devclass(device_get_parent(dev)) == pci_class,
+	KASSERTMSG(device_get_devclass(device_get_parent(dev)) == pci_class,
 	    ("%s: non-pci device %s", __func__, device_xname(dev)));
 
 	/* Walk the bridge hierarchy until we find a non-PCI device */
@@ -313,6 +332,8 @@ bgx_find_root_pcib(device_t dev)
 
 		dev = pcib;
 	}
+#endif
+	return NULL;
 }
 
 static __inline phandle_t
@@ -323,8 +344,8 @@ bgx_fdt_find_node(struct bgx *bgx)
 	char *bgx_sel;
 	size_t len;
 
-	KASSERT(bgx->bgx_id <= BGX_MAXID,
-	    ("Invalid BGX ID: %d, max: %d", bgx->bgx_id, BGX_MAXID));
+	KASSERTMSG(bgx->bgx_id <= BGX_MAXID,
+	    "Invalid BGX ID: %d, max: %d", bgx->bgx_id, BGX_MAXID);
 
 	len = sizeof(BGX_NODE_NAME) + 1; /* <bgx_name>+<digit>+<\0> */
 	/* Allocate memory for BGX node name + "/" character */
@@ -394,17 +415,16 @@ bgx_fdt_init_phy(struct bgx *bgx)
 				continue;
 			}
 		} else {
-			len = OF_getprop_alloc(child, "name",
-			    (void **)&node_name);
+			char buf[32];
+			len = OF_getprop(child, "name", buf, sizeof(buf));
+			node_name = buf;
 			if (len <= 0) {
 				continue;
 			}
 
 			if (!bgx_fdt_phy_name_match(bgx, node_name, len)) {
-				free(node_name, M_OFWPROP);
 				continue;
 			}
-			free(node_name, M_OFWPROP);
 		}
 
 		/* Acquire PHY address */
@@ -416,7 +436,6 @@ bgx_fdt_init_phy(struct bgx *bgx)
 			}
 			bgx->lmac[lmac].phyaddr = MII_PHY_ANY;
 		}
-
 		if (OF_getencprop(child, "phy-handle", &phy,
 		    sizeof(phy)) <= 0) {
 			if (bootverbose) {
