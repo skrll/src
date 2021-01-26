@@ -78,4 +78,6 @@ struct bgx {
 extern int bgx_fdt_init_phy(struct bgx *);
 #endif
 
+int bgx_acpi_init_phy(struct bgx *);
+
 #endif
