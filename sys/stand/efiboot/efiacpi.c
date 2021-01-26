@@ -91,7 +91,10 @@ static char model_buf[128];
 void
 efi_acpi_enable(int val)
 {
-	acpi_enabled = val;
+	if (acpi_root == NULL) {
+		printf("No ACPI node\n");
+	} else
+		acpi_enabled = val;
 }
 
 static const char *
