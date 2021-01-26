@@ -257,12 +257,19 @@ acpimcfg_find_system_resource(uint64_t address, int bus_start, int *bus_end)
 	mr.found = false;
 
 	for (i = 0; i < __arraycount(system_resource_hid); i++) {
+		aprint_debug_dev(acpi_sc->sc_dev, "MCFG: %s: bus %d-%d, "
+		    "address 0x%016" PRIx64, system_resource_hid[i],
+		    mr.bus_start, mr.bus_end, mr.address);
+
 		mr.hid = system_resource_hid[i];
 		status = AcpiGetDevices(__UNCONST(system_resource_hid[i]),
 		    acpimcfg_check_system_resource, &mr, NULL);
-		if (ACPI_FAILURE(status))
+		if (ACPI_FAILURE(status)) {
+			aprint_debug("not found\n");
 			continue;
+		}
 		if (mr.found) {
+			aprint_debug(" found (%d)\n", mr.bus_end);
 			*bus_end = mr.bus_end;
 			return true;
 		}
@@ -292,6 +299,7 @@ acpimcfg_probe(struct acpi_softc *sc)
 		return;
 	}
 
+	aprint_debug_dev(sc->sc_dev, "Probing...\n");
 	nsegs = 0;
 	offset = sizeof(ACPI_TABLE_MCFG);
 	ama = ACPI_ADD_PTR(ACPI_MCFG_ALLOCATION, mcfg, offset);
@@ -305,6 +313,9 @@ acpimcfg_probe(struct acpi_softc *sc)
 		offset += sizeof(ACPI_MCFG_ALLOCATION);
 		ama = ACPI_ADD_PTR(ACPI_MCFG_ALLOCATION, mcfg, offset);
 	}
+
+	aprint_debug_dev(sc->sc_dev, "Probing done\n");
+
 	if (nsegs == 0) {
 		mcfg = NULL;
 		return;
@@ -331,6 +342,7 @@ acpimcfg_init(bus_space_tag_t memt, const struct acpimcfg_ops *ops)
 	if (ops != NULL)
 		mcfg_ops = ops;
 
+	aprint_debug_dev(acpi_sc->sc_dev, "Initialization...\n");
 	nsegs = 0;
 	offset = sizeof(ACPI_TABLE_MCFG);
 	ama = ACPI_ADD_PTR(ACPI_MCFG_ALLOCATION, mcfg, offset);
@@ -364,7 +376,7 @@ acpimcfg_init(bus_space_tag_t memt, const struct acpimcfg_ops *ops)
 		if (mcfg_ops->ao_validate != NULL &&
 		    !mcfg_ops->ao_validate(ama->Address, ama->StartBusNumber,
 		      &bus_end)) {
-			if (!acpimcfg_find_system_resource( ama->Address,
+			if (!acpimcfg_find_system_resource(ama->Address,
 			    ama->StartBusNumber, &bus_end)) {
 				aprint_debug_dev(acpi_sc->sc_dev,
 				    "MCFG: segment %d, bus %d-%d, "
@@ -407,8 +419,6 @@ acpimcfg_init(bus_space_tag_t memt, const struct acpimcfg_ops *ops)
 		offset += sizeof(ACPI_MCFG_ALLOCATION);
 		ama = ACPI_ADD_PTR(ACPI_MCFG_ALLOCATION, mcfg, offset);
 	}
-	if (nsegs == 0)
-		return ENOENT;
 
 	for (i = 0; i < nsegs; i++) {
 		seg = &mcfg_segs[i];
@@ -417,6 +427,11 @@ acpimcfg_init(bus_space_tag_t memt, const struct acpimcfg_ops *ops)
 		    seg->ms_segment, seg->ms_bus_start, seg->ms_bus_end,
 		    seg->ms_address);
 	}
+
+	aprint_debug_dev(acpi_sc->sc_dev, "Initialization done\n");
+
+	if (nsegs == 0)
+		return ENOENT;
 
 	/* Update # of segment */
 	mcfg_nsegs = nsegs;
@@ -507,7 +522,7 @@ acpimcfg_device_probe(const struct pci_attach_args *pa)
 		force_hasextcnf = true;
 	if (qd != NULL && (qd->quirks & PCI_QUIRK_NOEXTCNF) != 0)
 		force_noextcnf = true;
-	
+
 	/* Probe extended configuration space. */
 	if ((!force_hasextcnf) && ((force_noextcnf) ||
 		((reg = pci_conf_read(pc, tag, PCI_CONF_SIZE)) == (pcireg_t)-1)
