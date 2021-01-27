@@ -1,4 +1,4 @@
-/*	$NetBSD: lm75.c,v 1.37 2021/01/17 21:42:35 thorpej Exp $	*/
+/*	$NetBSD: lm75.c,v 1.39 2021/01/27 02:29:48 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lm75.c,v 1.37 2021/01/17 21:42:35 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lm75.c,v 1.39 2021/01/27 02:29:48 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -102,7 +102,7 @@ static const struct device_compatible_entry compat_data[] = {
 	 * see XXX in _attach() below: add code once non-lm75 matches are
 	 * added here!
 	 */
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 enum {

@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi_util.c,v 1.20 2021/01/14 14:35:53 thorpej Exp $ */
+/*	$NetBSD: acpi_util.c,v 1.22 2021/01/26 00:23:16 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2003, 2007, 2021 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_util.c,v 1.20 2021/01/14 14:35:53 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_util.c,v 1.22 2021/01/26 00:23:16 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/kmem.h>
@@ -895,4 +895,21 @@ acpi_dsm(ACPI_HANDLE handle, uint8_t *uuid, ACPI_INTEGER rev,
 {
 	return acpi_dsm_typed(handle, uuid, rev, func, arg3, ACPI_TYPE_ANY,
 	    return_obj);
+}
+
+ACPI_STATUS
+acpi_claim_childdevs(device_t dev, struct acpi_devnode *devnode)
+{
+	struct acpi_devnode *ad;
+
+	SIMPLEQ_FOREACH(ad, &devnode->ad_child_head, ad_child_list) {
+		if (ad->ad_device != NULL)
+			continue;
+		aprint_debug_dev(dev, "claiming %s\n",
+		    acpi_name(ad->ad_handle));
+		ad->ad_device = dev;
+		acpi_claim_childdevs(dev, ad);
+	}
+
+	return AE_OK;
 }

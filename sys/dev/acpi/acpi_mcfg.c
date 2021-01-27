@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi_mcfg.c,v 1.21 2020/12/06 12:47:12 jmcneill Exp $	*/
+/*	$NetBSD: acpi_mcfg.c,v 1.23 2021/01/26 15:30:05 skrll Exp $	*/
 
 /*-
  * Copyright (C) 2015 NONAKA Kimihiro <nonaka@NetBSD.org>
@@ -28,7 +28,7 @@
 #include "opt_pci.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_mcfg.c,v 1.21 2020/12/06 12:47:12 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_mcfg.c,v 1.23 2021/01/26 15:30:05 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>

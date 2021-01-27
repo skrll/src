@@ -1,4 +1,4 @@
-/* $NetBSD: es8316ac.c,v 1.3 2021/01/17 21:42:35 thorpej Exp $ */
+/* $NetBSD: es8316ac.c,v 1.5 2021/01/27 02:29:48 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2020 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: es8316ac.c,v 1.3 2021/01/17 21:42:35 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: es8316ac.c,v 1.5 2021/01/27 02:29:48 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -104,8 +104,7 @@ __KERNEL_RCSID(0, "$NetBSD: es8316ac.c,v 1.3 2021/01/17 21:42:35 thorpej Exp $")
 
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "everest,es8316" },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 struct escodec_softc {
