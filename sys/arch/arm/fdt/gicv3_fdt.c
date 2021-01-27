@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3_fdt.c,v 1.12 2021/01/19 00:40:17 thorpej Exp $ */
+/* $NetBSD: gicv3_fdt.c,v 1.15 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015-2018 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #define	_INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3_fdt.c,v 1.12 2021/01/19 00:40:17 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3_fdt.c,v 1.15 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -109,7 +109,7 @@ struct gicv3_fdt_softc {
 
 static const struct device_compatible_entry gicv3_fdt_quirks[] = {
 	{ .compat = "rockchip,rk3399",		.value = GICV3_QUIRK_RK3399 },
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(gicv3_fdt, sizeof(struct gicv3_fdt_softc),
@@ -117,7 +117,7 @@ CFATTACH_DECL_NEW(gicv3_fdt, sizeof(struct gicv3_fdt_softc),
 
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "arm,gic-v3" },
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -126,7 +126,7 @@ gicv3_fdt_match(device_t parent, cfdata_t cf, void *aux)
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
 
-	return of_match_compat_data(phandle, compat_data);
+	return of_compatible_match(phandle, compat_data);
 }
 
 static void
@@ -162,7 +162,7 @@ gicv3_fdt_attach(device_t parent, device_t self, void *aux)
 
 	/* Apply quirks */
 	const struct device_compatible_entry *dce =
-	    of_search_compatible(OF_finddevice("/"), gicv3_fdt_quirks);
+	    of_compatible_lookup(OF_finddevice("/"), gicv3_fdt_quirks);
 	if (dce != NULL) {
 		sc->sc_gic.sc_quirks |= dce->value;
 	}
@@ -181,14 +181,14 @@ gicv3_fdt_attach(device_t parent, device_t self, void *aux)
 		/* Interrupt Translation Services */
 		static const struct device_compatible_entry its_compat[] = {
 			{ .compat = "arm,gic-v3-its" },
-			{ 0 }
+			DEVICE_COMPAT_EOL
 		};
 
 		for (int child = OF_child(phandle); child;
 		     child = OF_peer(child)) {
 			if (!fdtbus_status_okay(child))
 				continue;
-			if (of_match_compat_data(child, its_compat))
+			if (of_compatible_match(child, its_compat))
 				gicv3_fdt_attach_its(sc, faa->faa_bst, child);
 		}
 	}

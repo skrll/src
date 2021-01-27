@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.513 2021/01/16 20:49:31 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.517 2021/01/24 20:11:55 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -110,7 +110,7 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.513 2021/01/16 20:49:31 rillig Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.517 2021/01/24 20:11:55 rillig Exp $");
 #if defined(MAKE_NATIVE) && !defined(lint)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
@@ -442,10 +442,10 @@ MainParseArgSysInc(const char *argvalue)
 		char *found_path = Dir_FindHereOrAbove(curdir, argvalue + 4);
 		if (found_path == NULL)
 			return;
-		(void)Dir_AddDir(sysIncPath, found_path);
+		(void)SearchPath_Add(sysIncPath, found_path);
 		free(found_path);
 	} else {
-		(void)Dir_AddDir(sysIncPath, argvalue);
+		(void)SearchPath_Add(sysIncPath, argvalue);
 	}
 	Var_Append(MAKEFLAGS, "-m", VAR_GLOBAL);
 	Var_Append(MAKEFLAGS, argvalue, VAR_GLOBAL);
@@ -1196,11 +1196,11 @@ InitDefSysIncPath(char *syspath)
 		if (strncmp(start, ".../", 4) == 0) {
 			char *dir = Dir_FindHereOrAbove(curdir, start + 4);
 			if (dir != NULL) {
-				(void)Dir_AddDir(defSysIncPath, dir);
+				(void)SearchPath_Add(defSysIncPath, dir);
 				free(dir);
 			}
 		} else {
-			(void)Dir_AddDir(defSysIncPath, start);
+			(void)SearchPath_Add(defSysIncPath, start);
 		}
 	}
 
@@ -1214,8 +1214,9 @@ ReadBuiltinRules(void)
 	StringListNode *ln;
 	StringList sysMkPath = LST_INIT;
 
-	Dir_Expand(_PATH_DEFSYSMK,
-	    Lst_IsEmpty(sysIncPath) ? defSysIncPath : sysIncPath,
+	SearchPath_Expand(
+	    Lst_IsEmpty(&sysIncPath->dirs) ? defSysIncPath : sysIncPath,
+	    _PATH_DEFSYSMK,
 	    &sysMkPath);
 	if (Lst_IsEmpty(&sysMkPath))
 		Fatal("%s: no system rules (%s).", progname, _PATH_DEFSYSMK);
@@ -1290,7 +1291,7 @@ InitVpath(void)
 		savec = *cp;
 		*cp = '\0';
 		/* Add directory to search path */
-		(void)Dir_AddDir(&dirSearchPath, path);
+		(void)SearchPath_Add(&dirSearchPath, path);
 		*cp = savec;
 		path = cp + 1;
 	} while (savec == ':');
@@ -1720,7 +1721,7 @@ ReadMakefile(const char *fname)
 		/* look in -I and system include directories. */
 		name = Dir_FindFile(fname, parseIncPath);
 		if (name == NULL) {
-			SearchPath *sysInc = Lst_IsEmpty(sysIncPath)
+			SearchPath *sysInc = Lst_IsEmpty(&sysIncPath->dirs)
 					     ? defSysIncPath : sysIncPath;
 			name = Dir_FindFile(fname, sysInc);
 		}
@@ -1744,7 +1745,7 @@ found:
 	return 0;
 }
 
-/*-
+/*
  * Cmd_Exec --
  *	Execute the command in cmd, and return the output of that command
  *	in a string.  In the output, newlines are replaced with spaces.

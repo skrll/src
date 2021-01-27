@@ -1,4 +1,4 @@
-/* $NetBSD: meson_thermal.c,v 1.3 2021/01/18 02:35:48 thorpej Exp $ */
+/* $NetBSD: meson_thermal.c,v 1.6 2021/01/27 03:10:18 thorpej Exp $ */
 
 /*
  * Copyright (c) 2021 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: meson_thermal.c,v 1.3 2021/01/18 02:35:48 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: meson_thermal.c,v 1.6 2021/01/27 03:10:18 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -90,8 +90,7 @@ static struct meson_thermal_config thermal_ddr_conf = {
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "amlogic,g12a-cpu-thermal", .data = &thermal_cpu_conf },
 	{ .compat = "amlogic,g12a-ddr-thermal", .data = &thermal_ddr_conf },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 struct meson_thermal_softc {
@@ -173,7 +172,7 @@ meson_thermal_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -188,7 +187,7 @@ meson_thermal_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	sc->sc_bst = faa->faa_bst;
 	sc->sc_phandle = phandle = faa->faa_phandle;
-	sc->sc_conf = of_search_compatible(phandle, compat_data)->data;
+	sc->sc_conf = of_compatible_lookup(phandle, compat_data)->data;
 
 	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
 		aprint_error(": couldn't get registers\n");
