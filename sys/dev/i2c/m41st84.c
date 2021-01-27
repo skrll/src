@@ -1,4 +1,4 @@
-/*	$NetBSD: m41st84.c,v 1.29 2021/01/18 15:28:21 thorpej Exp $	*/
+/*	$NetBSD: m41st84.c,v 1.31 2021/01/27 02:29:48 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: m41st84.c,v 1.29 2021/01/18 15:28:21 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: m41st84.c,v 1.31 2021/01/27 02:29:48 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -84,8 +84,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "st,m41t80",	.data = &m41t80_model },
 	{ .compat = "st,m41t81",	.data = &m41t81_model },
 	{ .compat = "st,m41t84",	.data = &m48t84_model },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 struct strtc_softc {

@@ -1,4 +1,4 @@
-/* $NetBSD: adadc.c,v 1.8 2021/01/17 21:42:35 thorpej Exp $ */
+/* $NetBSD: adadc.c,v 1.10 2021/01/27 02:29:48 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 Michael Lorenz
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: adadc.c,v 1.8 2021/01/17 21:42:35 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: adadc.c,v 1.10 2021/01/27 02:29:48 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -95,8 +95,7 @@ CFATTACH_DECL_NEW(adadc, sizeof(struct adadc_softc),
 
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "ad7417" },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 /* calibaration table from Darwin via Linux */

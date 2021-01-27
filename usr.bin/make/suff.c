@@ -1,4 +1,4 @@
-/*	$NetBSD: suff.c,v 1.335 2021/01/10 21:20:46 rillig Exp $	*/
+/*	$NetBSD: suff.c,v 1.340 2021/01/24 20:11:55 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -114,7 +114,7 @@
 #include "dir.h"
 
 /*	"@(#)suff.c	8.4 (Berkeley) 3/21/94"	*/
-MAKE_RCSID("$NetBSD: suff.c,v 1.335 2021/01/10 21:20:46 rillig Exp $");
+MAKE_RCSID("$NetBSD: suff.c,v 1.340 2021/01/24 20:11:55 rillig Exp $");
 
 typedef List SuffixList;
 typedef ListNode SuffixListNode;
@@ -885,7 +885,7 @@ Suff_DoPaths(void)
 
 	for (ln = sufflist.first; ln != NULL; ln = ln->next) {
 		Suffix *suff = ln->datum;
-		if (!Lst_IsEmpty(suff->searchPath)) {
+		if (!Lst_IsEmpty(&suff->searchPath->dirs)) {
 #ifdef INCLUDES
 			if (suff->flags & SUFF_INCLUDE)
 				SearchPath_AddAll(includesPath,
@@ -902,11 +902,11 @@ Suff_DoPaths(void)
 		}
 	}
 
-	flags = SearchPath_ToFlags("-I", includesPath);
+	flags = SearchPath_ToFlags(includesPath, "-I");
 	Var_Set(".INCLUDES", flags, VAR_GLOBAL);
 	free(flags);
 
-	flags = SearchPath_ToFlags("-L", libsPath);
+	flags = SearchPath_ToFlags(libsPath, "-L");
 	Var_Set(".LIBS", flags, VAR_GLOBAL);
 	free(flags);
 
@@ -1176,14 +1176,14 @@ FindCmds(Candidate *targ, CandidateSearcher *cs)
 	GNode *tgn;		/* Target GNode */
 	GNode *sgn;		/* Source GNode */
 	size_t prefLen;		/* The length of the defined prefix */
-	Suffix *suff;		/* Suffix on matching beastie */
+	Suffix *suff;		/* Suffix of the matching candidate */
 	Candidate *ret;		/* Return value */
 
 	tgn = targ->node;
 	prefLen = strlen(targ->prefix);
 
 	for (gln = tgn->children.first; gln != NULL; gln = gln->next) {
-		const char *cp;
+		const char *base;
 
 		sgn = gln->datum;
 
@@ -1198,11 +1198,11 @@ FindCmds(Candidate *targ, CandidateSearcher *cs)
 			continue;
 		}
 
-		cp = str_basename(sgn->name);
-		if (strncmp(cp, targ->prefix, prefLen) != 0)
+		base = str_basename(sgn->name);
+		if (strncmp(base, targ->prefix, prefLen) != 0)
 			continue;
 		/* The node matches the prefix, see if it has a known suffix. */
-		suff = FindSuffixByName(cp + prefLen);
+		suff = FindSuffixByName(base + prefLen);
 		if (suff == NULL)
 			continue;
 
@@ -1246,7 +1246,7 @@ ExpandWildcards(GNodeListNode *cln, GNode *pgn)
 	 * Expand the word along the chosen path
 	 */
 	Lst_Init(&expansions);
-	Dir_Expand(cgn->name, Suff_FindPath(cgn), &expansions);
+	SearchPath_Expand(Suff_FindPath(cgn), cgn->name, &expansions);
 
 	while (!Lst_IsEmpty(&expansions)) {
 		GNode *gn;
