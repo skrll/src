@@ -94,7 +94,8 @@ options 	SYSVSHM		# System V-like memory sharing
 # Miscellaneous kernel options
 options 	KTRACE			# system call tracing, a la ktrace(1)
 #options 	SCSIVERBOSE		# Verbose SCSI errors
-#options 	MIIVERBOSE		# Verbose MII autoconfuration messages
+options 	MIIVERBOSE		# Verbose MII autoconfuration messages
+options 	PCIVERBOSE		# verbose PCI device autoconfig messages
 #options 	USERCONF		# userconf(4) support
 #options 	PIPE_SOCKETPAIR		# smaller, but slower pipe(2)
 
