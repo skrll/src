@@ -216,9 +216,9 @@ mdionexus_ofw_fill_ranges(phandle_t node, struct simplebus_softc *sc)
 	if (sc->nranges == 0)
 		return (0);
 
-	sc->ranges = malloc(sc->nranges * sizeof(sc->ranges[0]),
-	    M_THUNDER_MDIO, M_WAITOK);
-	base_ranges = malloc(nbase_ranges, M_THUNDER_MDIO, M_WAITOK);
+	sc->ranges = kmem_alloc(sc->nranges * sizeof(sc->ranges[0]),
+	    KM_SLEEP);
+	base_ranges = kmem_alloc(nbase_ranges, KM_SLEEP);
 	OF_getencprop(node, "ranges", base_ranges, nbase_ranges);
 
 	for (i = 0, j = 0; i < sc->nranges; i++) {
@@ -239,7 +239,7 @@ mdionexus_ofw_fill_ranges(phandle_t node, struct simplebus_softc *sc)
 		}
 	}
 
-	free(base_ranges, M_THUNDER_MDIO);
+	kmem_free(base_ranges, nbase_ranges);
 	return (sc->nranges);
 }
 
@@ -263,9 +263,9 @@ mdionexus_ofw_bus_attach(device_t dev)
 	/* Iterate through all bus subordinates */
 	for (node = OF_child(parent); node > 0; node = OF_peer(node)) {
 		/* Allocate and populate devinfo. */
-		di = malloc(sizeof(*di), M_THUNDER_MDIO, M_WAITOK | M_ZERO);
+		di = kmem_zalloc(sizeof(*di), KM_SLEEP);
 		if (ofw_bus_gen_setup_devinfo(&di->di_dinfo, node) != 0) {
-			free(di, M_THUNDER_MDIO);
+			kmem_free(di, sizeof(*di));
 			continue;
 		}
 
@@ -280,7 +280,7 @@ mdionexus_ofw_bus_attach(device_t dev)
 		if (child == NULL) {
 			resource_list_free(&di->di_rl);
 			ofw_bus_gen_destroy_devinfo(&di->di_dinfo);
-			free(di, M_THUNDER_MDIO);
+			kmem_free(di, sizeof(*di));
 			continue;
 		}
 
