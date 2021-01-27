@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_i2s.c,v 1.9 2021/01/18 02:35:49 thorpej Exp $ */
+/* $NetBSD: sunxi_i2s.c,v 1.12 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_i2s.c,v 1.9 2021/01/18 02:35:49 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_i2s.c,v 1.12 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -145,7 +145,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "allwinner,sun8i-h3-i2s",
 	  .data = &sun8i_h3_config },
 
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 struct sunxi_i2s_softc;
@@ -860,7 +860,7 @@ sunxi_i2s_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -888,7 +888,7 @@ sunxi_i2s_attach(device_t parent, device_t self, void *aux)
 	}
 	sc->sc_dmat = faa->faa_dmat;
 	LIST_INIT(&sc->sc_dmalist);
-	sc->sc_cfg = of_search_compatible(phandle, compat_data)->data;
+	sc->sc_cfg = of_compatible_lookup(phandle, compat_data)->data;
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SCHED);
 

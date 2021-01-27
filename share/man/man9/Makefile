@@ -1,4 +1,4 @@
-#       $NetBSD: Makefile,v 1.453 2020/10/31 22:43:01 uwe Exp $
+#       $NetBSD: Makefile,v 1.455 2021/01/24 17:29:11 thorpej Exp $
 
 #	Makefile for section 9 (kernel function and variable) manual pages.
 
@@ -54,6 +54,7 @@ MAN=	accept_filter.9 accf_data.9 accf_http.9 \
 	SET.9 setbit.9 setjmp.9 shutdownhook_establish.9 \
 	signal.9 skpc.9 sockopt.9 softintr.9 spl.9 specificdata.9 \
 	spi.9 splraiseipl.9 \
+	strlist.9 \
 	suspendsched.9 \
 	sysctl.9 sysmon_envsys.9 sysmon_pswitch.9 sysmon_taskq.9 tc.9 \
 	tcp_congctl.9 thmap.9 threadpool.9 timecounter.9 time_second.9 todr.9 \
@@ -455,7 +456,9 @@ MLINKS+=kmem.9 kmem_alloc.9 \
 	kmem.9 kmem_intr_zalloc.9 \
 	kmem.9 kmem_asprintf.9 \
 	kmem.9 kmem_strdupsize.9 \
-	kmem.9 kmem_strfree.9
+	kmem.9 kmem_strfree.9 \
+	kmem.9 kmem_tmpbuf_alloc.9 \
+	kmem.9 kmem_tmpbuf_free.9
 MAN+=	kpreempt.9
 MLINKS+=kpreempt.9 kpreempt_disable.9 \
 	kpreempt.9 kpreempt_disabled.9 \
@@ -885,6 +888,13 @@ MLINKS+=spl.9 spl0.9 spl.9 splbio.9 spl.9 splclock.9 spl.9 splhigh.9 \
 	spl.9 splsoftclock.9 spl.9 splsoftnet.9 spl.9 splsoftserial.9 \
 	spl.9 splstatclock.9 spl.9 spltty.9 spl.9 splvm.9 spl.9 splx.9 \
 	spl.9 splsoftbio.9
+MLINKS+=strlist.9 strlist_append.9 \
+	strlist.9 strlist_count.9 \
+	strlist.9 strlist_index.9 \
+	strlist.9 strlist_match.9 \
+	strlist.9 strlist_next.9 \
+	strlist.9 strlist_pmatch.9 \
+	strlist.9 strlist_string.9
 MLINKS+=sysctl.9 old_sysctl.9 \
 	sysctl.9 sysctl_create.9 \
 	sysctl.9 sysctl_createv.9 \

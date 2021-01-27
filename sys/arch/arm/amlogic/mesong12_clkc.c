@@ -1,4 +1,4 @@
-/* $NetBSD: mesong12_clkc.c,v 1.2 2021/01/18 02:35:48 thorpej Exp $ */
+/* $NetBSD: mesong12_clkc.c,v 1.5 2021/01/27 03:10:18 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mesong12_clkc.c,v 1.2 2021/01/18 02:35:48 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mesong12_clkc.c,v 1.5 2021/01/27 03:10:18 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -1492,8 +1492,7 @@ static const struct mesong12_clkc_config g12b_config = {
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "amlogic,g12a-clkc",	.data = &g12a_config },
 	{ .compat = "amlogic,g12b-clkc",	.data = &g12b_config },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(mesong12_clkc, sizeof(struct meson_clk_softc),
@@ -1504,7 +1503,7 @@ mesong12_clkc_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -1523,7 +1522,7 @@ mesong12_clkc_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	conf = of_search_compatible(phandle, compat_data)->data;
+	conf = of_compatible_lookup(phandle, compat_data)->data;
 	sc->sc_clks = conf->clks;
 	sc->sc_nclks = conf->nclks;
 
