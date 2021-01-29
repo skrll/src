@@ -85,8 +85,6 @@ OF_getencprop(phandle_t node, const char *propname, uint32_t *buf, size_t len)
 	return retval;
 }
 
-
-
 static void
 bgx_fdt_get_macaddr(phandle_t phy, uint8_t *hwaddr)
 {
@@ -436,6 +434,7 @@ bgx_fdt_init_phy(struct bgx *bgx)
 			}
 			bgx->lmac[lmac].phyaddr = MII_PHY_ANY;
 		}
+
 		if (OF_getencprop(child, "phy-handle", &phy,
 		    sizeof(phy)) <= 0) {
 			if (bootverbose) {
