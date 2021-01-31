@@ -250,7 +250,7 @@ aarch64_mmap_flags(paddr_t mdpgno)
 	u_int nflag, pflag;
 
 	/*
-	 * aarch64 arch has 5 memory attribute:
+	 * aarch64 arch has 5 memory attributes defined:
 	 *
 	 *  WriteBack      - write back cache
 	 *  WriteThru      - write through cache
