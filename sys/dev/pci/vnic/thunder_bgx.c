@@ -63,11 +63,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define LMAC_CALLOUT_FLAGS	0
 #endif
 
-//XXXNH check the lmac_if.m file
-#define LMAC_PHY_CONNECT(a, b, c)		ENXIO
-#define LMAC_PHY_DISCONNECT(a, b, c)		ENXIO
-#define LMAC_MEDIA_STATUS(a, b, c, d, e)	ENXIO
-
 #define	THUNDER_BGX_DEVSTR	"ThunderX BGX Ethernet I/O Interface"
 
 #define BGX_NODE_ID_MASK	0x1
@@ -111,6 +106,14 @@ MODULE_DEPEND(thunder_bgx, pci, 1, 1, 1);
 MODULE_DEPEND(thunder_bgx, ether, 1, 1, 1);
 MODULE_DEPEND(thunder_bgx, thunder_mdio, 1, 1, 1);
 #endif
+
+int	LMAC_PHY_CONNECT(device_t, int, int);
+int	LMAC_PHY_DISCONNECT(device_t, int, int);
+int	LMAC_MEDIA_STATUS(device_t, int, int *, int *, int *);
+
+int	bgx_phy_connect(device_t, int, int);
+int	bgx_phy_disconnect(device_t, int, int);
+int	bgx_media_status(device_t, int, int *, int *, int *);
 
 static int	thunder_bgx_probe(device_t, cfdata_t, void *);
 static void	thunder_bgx_attach(device_t, device_t, void *);
@@ -1201,3 +1204,26 @@ bgx_init_phy(struct bgx *bgx)
 #endif
 	return (err);
 }
+
+int
+bgx_phy_connect(device_t dev, int lmacid, int phy)
+{
+	return ENXIO;
+}
+__weak_alias(LMAC_PHY_CONNECT,bgx_phy_connect);
+
+
+int
+bgx_phy_disconnect(device_t dev, int lmacid, int phy)
+{
+	return ENXIO;
+}
+__weak_alias(LMAC_PHY_DISCONNECT,bgx_phy_disconnect);
+
+
+int
+bgx_media_status(device_t dev, int lmacid, int *link, int *duplex, int *speed)
+{
+	return ENXIO;
+}
+__weak_alias(LMAC_MEDIA_STATUS,bgx_media_status);

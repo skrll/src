@@ -36,8 +36,8 @@
 #define	__THUNDER_MDIO_VAR_H__
 
 #define	THUNDER_MDIO_DEVSTR	"Cavium ThunderX SMI/MDIO driver"
-MALLOC_DECLARE(M_THUNDER_MDIO);
-DECLARE_CLASS(thunder_mdio_driver);
+
+#define	REG_BASE_RID	0
 
 enum thunder_mdio_mode {
 	MODE_NONE = 0,
@@ -46,8 +46,9 @@ enum thunder_mdio_mode {
 };
 
 struct phy_desc {
-	device_t		miibus; /* One miibus per LMAC */
-	struct ifnet *		ifp;	/* Fake ifp to satisfy miibus */
+//	struct ethercom		pd_ec;  /* One ethercom per LMAC */
+	struct mii_data		miibus; /* One miibus per LMAC */
+
 	int			lmacid;	/* ID number of LMAC connected */
 	TAILQ_ENTRY(phy_desc)	phy_desc_list;
 };
@@ -55,7 +56,11 @@ struct phy_desc {
 struct thunder_mdio_softc {
 	device_t		dev;
 	kmutex_t		mtx;
-	struct resource *	reg_base;
+
+	bus_space_tag_t		sc_memt;
+	bus_space_handle_t	sc_memh;
+//	bus_addr_t		sc_memb;
+//	bus_size_t		sc_mems;
 
 	enum thunder_mdio_mode	mode;
 
@@ -63,4 +68,5 @@ struct thunder_mdio_softc {
 };
 
 int thunder_mdio_attach(device_t);
+int thunder_mdio_detach(device_t, int);
 #endif

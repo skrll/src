@@ -655,8 +655,13 @@ file	dev/pci/vnic/nic_main.c		nicpf
 device	bgx: ether, ifnet, arp
 attach	bgx at pci
 file	dev/pci/vnic/thunder_bgx.c	bgx
-file	dev/pci/vnic/thunder_bgx_fdt.c	bgx
-#file	dev/pci/vnic/thunder_mdio.c
+file	dev/pci/vnic/thunder_bgx_acpi.c	bgx
+
+# Cavium ThunderX XXX
+device	cnmdio: mii_phy
+attach	cnmdio at pci
+file	dev/pci/vnic/thunder_mdio_pci.c	cnmdio
+file	dev/pci/vnic/thunder_mdio.c	cnmdio
 
 # Cavium ThunderX Network Interface Controller Virtual Function
 #review deps

@@ -30,35 +30,26 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
+__KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/bus.h>
-#include <sys/kernel.h>
-#include <sys/module.h>
-#include <sys/resource.h>
-#include <sys/rman.h>
-#include <sys/socket.h>
-#include <sys/queue.h>
 
-#include <machine/bus.h>
-#include <machine/resource.h>
+#include <sys/bus.h>
+#include <sys/device.h>
+#include <sys/kmem.h>
+#include <sys/mutex.h>
+//#include <sys/reboot.h>
 
 #include <net/if.h>
+#include <net/if_ether.h>
 #include <net/if_media.h>
-#include <net/if_types.h>
-#include <net/if_var.h>
 
-#include <dev/mii/mii.h>
+//#include <dev/mii/mii.h>
+//#include <dev/mii/mdio.h>
 #include <dev/mii/miivar.h>
+//#include <dev/mii/miidevs.h>
 
 #include "thunder_mdio_var.h"
-
-#include "lmac_if.h"
-#include "miibus_if.h"
-
-#define	REG_BASE_RID	0
 
 #define	SMI_CMD				0x00
 #define	 SMI_CMD_PHY_REG_ADR_SHIFT	(0)
@@ -91,19 +82,19 @@ __FBSDID("$FreeBSD$");
 
 #define	SMI_DRV_CTL			0x28
 
-static int thunder_mdio_detach(device_t);
+static int thunder_mdio_read(device_t, int, int, uint16_t *);
+static int thunder_mdio_write(device_t, int, int, uint16_t);
+static void thunder_mdio_statchg(struct ifnet *);
 
-static int thunder_mdio_read(device_t, int, int);
-static int thunder_mdio_write(device_t, int, int, int);
+#if 0
+static int thunder_mdio_media_change(struct ifnet *);
+#endif
 
-static int thunder_ifmedia_change_stub(struct ifnet *);
-static void thunder_ifmedia_status_stub(struct ifnet *, struct ifmediareq *);
+int thunder_mdio_phy_connect(device_t, int, int);
+int thunder_mdio_phy_disconnect(device_t, int, int);
+int thunder_mdio_media_status(device_t, int, int *, int *, int *);
 
-static int thunder_mdio_media_status(device_t, int, int *, int *, int *);
-static int thunder_mdio_media_change(device_t, int, int, int, int);
-static int thunder_mdio_phy_connect(device_t, int, int);
-static int thunder_mdio_phy_disconnect(device_t, int, int);
-
+#if 0
 static device_method_t thunder_mdio_methods[] = {
 	/* Device interface */
 	DEVMETHOD(device_detach,	thunder_mdio_detach),
@@ -131,6 +122,8 @@ MODULE_DEPEND(thunder_mdio, mrmlbus, 1, 1, 1);
 
 MALLOC_DEFINE(M_THUNDER_MDIO, "ThunderX MDIO",
     "Cavium ThunderX MDIO dynamic memory");
+#endif
+
 
 //XXXNH IPL_NET?
 #define	MDIO_LOCK_INIT(sc, name)			\
@@ -146,28 +139,18 @@ MALLOC_DEFINE(M_THUNDER_MDIO, "ThunderX MDIO",
     mutex_owned(&(sc)->mtx)
 
 #define	mdio_reg_read(sc, reg)				\
-    bus_read_8((sc)->reg_base, (reg))
+    bus_space_read_8((sc)->sc_memt, (sc)->sc_memh, (reg))
 
 #define	mdio_reg_write(sc, reg, val)			\
-    bus_write_8((sc)->reg_base, (reg), (val))
+    bus_space_write_8((sc)->sc_memt, (sc)->sc_memh, (reg), (val))
 
 int
 thunder_mdio_attach(device_t dev)
 {
 	struct thunder_mdio_softc *sc;
-	int rid;
 
-	sc = device_get_softc(dev);
+	sc = device_private(dev);
 	sc->dev = dev;
-
-	/* Allocate memory resources */
-	rid = REG_BASE_RID;
-	sc->reg_base = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
-	    RF_ACTIVE);
-	if (sc->reg_base == NULL) {
-		device_printf(dev, "Could not allocate memory\n");
-		return (ENXIO);
-	}
 
 	TAILQ_INIT(&sc->phy_desc_head);
 	MDIO_LOCK_INIT(sc, "ThunderX MDIO lock");
@@ -178,18 +161,19 @@ thunder_mdio_attach(device_t dev)
 	return (0);
 }
 
-static int
-thunder_mdio_detach(device_t dev)
+int
+thunder_mdio_detach(device_t dev, int flags)
 {
+#if 0
 	struct thunder_mdio_softc *sc;
 
-	sc = device_get_softc(dev);
+	sc = device_private(dev);
 
-	if (sc->reg_base != NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY, REG_BASE_RID,
-		    sc->reg_base);
-	}
-
+// 	if (sc->reg_base != NULL) {
+// 		bus_release_resource(dev, SYS_RES_MEMORY, REG_BASE_RID,
+// 		    sc->reg_base);
+// 	}
+#endif
 	return (0);
 }
 
@@ -256,14 +240,14 @@ thunder_mdio_c45_addr(struct thunder_mdio_softc *sc, int phy, int reg)
 }
 
 static int
-thunder_mdio_read(device_t dev, int phy, int reg)
+thunder_mdio_read(device_t dev, int phy, int reg, uint16_t *val)
 {
 	struct thunder_mdio_softc *sc;
 	uint64_t smi_cmd, smi_rd_dat;
 	ssize_t timeout;
 	int err;
 
-	sc = device_get_softc(dev);
+	sc = device_private(dev);
 
 	/* XXX Always C22 - for <= 1Gbps only */
 	thunder_mdio_set_mode(sc, MODE_IEEE_C22);
@@ -299,22 +283,22 @@ thunder_mdio_read(device_t dev, int phy, int reg)
 			break;
 	}
 
-	if (smi_rd_dat & SMI_RD_DAT_VAL)
-		return (smi_rd_dat & SMI_RD_DAT_DAT_MASK);
-	else {
-		/* Return 0 on error */
-		return (0);
+	if (smi_rd_dat & SMI_RD_DAT_VAL) {
+		*val = (smi_rd_dat & SMI_RD_DAT_DAT_MASK);
+		return 0;
+	} else {
+		return ETIMEDOUT;
 	}
 }
 
 static int
-thunder_mdio_write(device_t dev, int phy, int reg, int data)
+thunder_mdio_write(device_t dev, int phy, int reg, uint16_t data)
 {
 	struct thunder_mdio_softc *sc;
 	uint64_t smi_cmd, smi_wr_dat;
 	ssize_t timeout;
 
-	sc = device_get_softc(dev);
+	sc = device_private(dev);
 
 	/* XXX Always C22 - for <= 1Gbps only */
 	thunder_mdio_set_mode(sc, MODE_IEEE_C22);
@@ -347,25 +331,19 @@ thunder_mdio_write(device_t dev, int phy, int reg, int data)
 	}
 
 	if (timeout <= 0)
-		return (EIO);
+		return ETIMEDOUT;
 	else {
 		/* Return 0 on success */
 		return (0);
 	}
 }
 
-static int
-thunder_ifmedia_change_stub(struct ifnet *ifp __unused)
-{
-	/* Will never be called by if_media */
-	return (0);
-}
 
 static void
-thunder_ifmedia_status_stub(struct ifnet *ifp __unused, struct ifmediareq
-    *ifmr __unused)
+thunder_mdio_statchg(struct ifnet *ifp)
 {
 	/* Will never be called by if_media */
+
 }
 
 static __inline struct phy_desc *
@@ -381,7 +359,8 @@ get_phy_desc(struct thunder_mdio_softc *sc, int lmacid)
 
 	return (pd);
 }
-static int
+
+int
 thunder_mdio_media_status(device_t dev, int lmacid, int *link, int *duplex,
     int *speed)
 {
@@ -389,18 +368,18 @@ thunder_mdio_media_status(device_t dev, int lmacid, int *link, int *duplex,
 	struct mii_data *mii_sc;
 	struct phy_desc *pd;
 
-	sc = device_get_softc(dev);
+	sc = device_private(dev);
 
 	MDIO_LOCK(sc);
 	pd = get_phy_desc(sc, lmacid);
 	if (pd == NULL) {
 		/* Panic when invariants are enabled, fail otherwise. */
-		KASSERT(0, ("%s: no PHY descriptor for LMAC%d",
-		    __func__, lmacid));
+		KASSERTMSG(false, "%s: no PHY descriptor for LMAC%d",
+		    __func__, lmacid);
 		MDIO_UNLOCK(sc);
 		return (ENXIO);
 	}
-	mii_sc = device_get_softc(pd->miibus);
+	mii_sc = device_private(pd->miibus);
 
 	mii_tick(mii_sc);
 	if ((mii_sc->mii_media_status & (IFM_ACTIVE | IFM_AVALID)) ==
@@ -435,46 +414,59 @@ thunder_mdio_media_status(device_t dev, int lmacid, int *link, int *duplex,
 	return (0);
 }
 
+#if 0
 static int
-thunder_mdio_media_change(device_t dev, int lmacid, int link, int duplex,
-    int speed)
+thunder_mdio_media_change(struct ifnet *ifp)
 {
-
+	// XXXNH
 	return (EIO);
 }
+#endif
 
-static int
+int
 thunder_mdio_phy_connect(device_t dev, int lmacid, int phy)
 {
+	//XXXNH dev is phy device_t
 	struct thunder_mdio_softc *sc;
 	struct phy_desc *pd;
 	int err;
 
-	sc = device_get_softc(dev);
+	sc = device_private(dev);
 
 	MDIO_LOCK(sc);
 	pd = get_phy_desc(sc, lmacid);
 	MDIO_UNLOCK(sc);
 	if (pd == NULL) {
-		pd = malloc(sizeof(*pd), M_THUNDER_MDIO, (M_NOWAIT | M_ZERO));
-		if (pd == NULL)
-			return (ENOMEM);
-		pd->ifp = if_alloc(IFT_ETHER);
-		if (pd->ifp == NULL) {
-			free(pd, M_THUNDER_MDIO);
-			return (ENOMEM);
-		}
+		pd = kmem_zalloc(sizeof(*pd), KM_SLEEP);
+		struct mii_data *mii = &pd->mii;
+
+		//mii->mii_ifp = ifp;
+		mii->mii_readreg = thunder_mdio_read;
+		mii->mii_writereg = thunder_mdio_write;
+		mii->mii_statchg = thunder_mdio_statchg;
+		//sc->sc_ec.ec_mii = mii;
+
+//		sc->sc_ethercom.ec_mii = &sc->sc_mii;
+//		ifmedia_init_with_lock(&mii->mii_media, IFM_IMASK, wm_gmii_mediachange,
+//		    wm_gmii_mediastatus, sc->sc_core_lock);
+//
+// 		ifmedia_init(&mii->mii_media, IFM_IMASK,
+// 		    thunder_mdio_media_change, thunder_mdio_media_status);
+//
+// 		pd->ifp = if_alloc(IFT_ETHER);
+// 		if (pd->ifp == NULL) {
+// 			kmem_free(pd, sizeof(*pd));
+// 			return (ENOMEM);
+// 		}
 		pd->lmacid = lmacid;
 	}
 
-	err = mii_attach(dev, &pd->miibus, pd->ifp,
-	    thunder_ifmedia_change_stub, thunder_ifmedia_status_stub,
-	    BMSR_DEFCAPMASK, phy, MII_OFFSET_ANY, 0);
+	mii_attach(dev, &pd->miibus, 0xffffffff, phy, MII_OFFSET_ANY, 0);
 
 	if (err != 0) {
 		device_printf(dev, "Could not attach PHY%d\n", phy);
-		if_free(pd->ifp);
-		free(pd, M_THUNDER_MDIO);
+		//if_free(pd->ifp);
+		kmem_free(pd, sizeof(*pd));
 		return (ENXIO);
 	}
 
@@ -485,13 +477,13 @@ thunder_mdio_phy_connect(device_t dev, int lmacid, int phy)
 	return (0);
 }
 
-static int
+int
 thunder_mdio_phy_disconnect(device_t dev, int lmacid, int phy)
 {
 	struct thunder_mdio_softc *sc;
 	struct phy_desc *pd;
 
-	sc = device_get_softc(dev);
+	sc = device_private(dev);
 	MDIO_LOCK(sc);
 
 	pd = get_phy_desc(sc, lmacid);
@@ -504,13 +496,16 @@ thunder_mdio_phy_disconnect(device_t dev, int lmacid, int phy)
 	TAILQ_REMOVE(&sc->phy_desc_head, pd, phy_desc_list);
 
 	/* Detach miibus */
-	bus_generic_detach(dev);
-	device_delete_child(dev, pd->miibus);
-	/* Free fake ifnet */
-	if_free(pd->ifp);
-	/* Free memory under phy descriptor */
-	free(pd, M_THUNDER_MDIO);
+//	bus_generic_detach(dev);
+//	device_delete_child(dev, pd->miibus);
+
 	MDIO_UNLOCK(sc);
+	/* Free memory under phy descriptor */
+	kmem_free(pd, sizeof(*pd));
 
 	return (0);
 }
+
+__strong_alias(LMAC_PHY_CONNECT,thunder_mdio_phy_connect);
+__strong_alias(LMAC_PHY_DISCONNECT,thunder_mdio_phy_disconnect);
+__strong_alias(LMAC_MEDIA_STATUS,thunder_mdio_media_status);

@@ -28,6 +28,9 @@ bgx_acpi_register_phy(ACPI_HANDLE handle, uint32_t level,
 	ACPI_DEVICE_INFO *devinfo;
 	ACPI_STATUS rv;
 
+	if (bgx->lmac_count == MAX_LMAC_PER_BGX)
+		return AE_ERROR;
+
 	rv = AcpiGetObjectInfo(handle, &devinfo);
 	if (ACPI_FAILURE(rv) || devinfo == NULL)
 		return AE_OK;	/* we don't want to stop searching */
@@ -39,6 +42,11 @@ bgx_acpi_register_phy(ACPI_HANDLE handle, uint32_t level,
 		for (size_t i = 0; i < __arraycount(mac); i++)
 			bgx->lmac[bgx->lmac_count].mac[i] = mac[i];
 	}
+
+	// XXXNH need to create phy_if_dev
+// 	bgx->lmac[lmac].phy_if_dev =
+// 	    OF_device_from_xref(OF_xref_from_node(mdio));
+
 
 	/* Assign the LMAC */
 	bgx->lmac[bgx->lmac_count].lmacid = bgx->lmac_count;
