@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_pcie.c,v 1.33 2021/01/19 00:36:09 thorpej Exp $ */
+/* $NetBSD: tegra_pcie.c,v 1.36 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra_pcie.c,v 1.33 2021/01/19 00:36:09 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra_pcie.c,v 1.36 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 
@@ -139,7 +139,7 @@ CFATTACH_DECL_NEW(tegra_pcie, sizeof(struct tegra_pcie_softc),
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "nvidia,tegra210-pcie",	.value = TEGRA_PCIE_210 },
 	{ .compat = "nvidia,tegra124-pcie",	.value = TEGRA_PCIE_124 },
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -147,7 +147,7 @@ tegra_pcie_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -204,7 +204,7 @@ tegra_pcie_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	dce = of_search_compatible(faa->faa_phandle, compat_data);
+	dce = of_compatible_lookup(faa->faa_phandle, compat_data);
 	KASSERT(dce != NULL);
 	sc->sc_type = dce->value;
 

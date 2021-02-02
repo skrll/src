@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.59 2021/01/18 16:41:57 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.65 2021/01/31 12:44:34 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -77,7 +77,6 @@ extern	FILE	*yyin;
 extern	uint64_t qbmasks[], qlmasks[], qumasks[];
 
 extern	void	initscan(void);
-extern	int	sign(int64_t, tspec_t, int);
 extern	int	msb(int64_t, tspec_t, int);
 extern	int64_t	xsign(int64_t, tspec_t, int);
 extern	void	clear_warn_flags(void);
@@ -142,7 +141,7 @@ extern	void	initdecl(void);
 extern	type_t	*gettyp(tspec_t);
 extern	type_t	*duptyp(const type_t *);
 extern	type_t	*tduptyp(const type_t *);
-extern	bool	incompl(const type_t *);
+extern	bool	is_incomplete(const type_t *);
 extern	void	setcomplete(type_t *, bool);
 extern	void	add_storage_class(scl_t);
 extern	void	add_type(type_t *);
@@ -205,7 +204,7 @@ extern	tnode_t	*new_string_node(strg_t *);
 extern	sym_t	*struct_or_union_member(tnode_t *, op_t, sym_t *);
 extern	tnode_t	*build(op_t, tnode_t *, tnode_t *);
 extern	tnode_t	*cconv(tnode_t *);
-extern	bool	is_strict_bool(const tnode_t *);
+extern	bool	is_typeok_bool_operand(const tnode_t *);
 extern	bool	typeok(op_t, int, const tnode_t *, const tnode_t *);
 extern	tnode_t	*promote(op_t, bool, tnode_t *);
 extern	tnode_t	*convert(op_t, int, type_t *, tnode_t *);
@@ -217,7 +216,7 @@ extern	tnode_t	*cast(tnode_t *, type_t *);
 extern	tnode_t	*new_function_argument_node(tnode_t *, tnode_t *);
 extern	tnode_t	*new_function_call_node(tnode_t *, tnode_t *);
 extern	val_t	*constant(tnode_t *, bool);
-extern	void	expr(tnode_t *, bool, bool, bool);
+extern	void	expr(tnode_t *, bool, bool, bool, bool);
 extern	void	check_expr_misc(const tnode_t *, bool, bool, bool,
 		    bool, bool, bool);
 extern	bool	constant_addr(tnode_t *, sym_t **, ptrdiff_t *);
@@ -306,6 +305,24 @@ extern	void	outfdef(const sym_t *, const pos_t *, bool, bool,
 		    const sym_t *);
 extern	void	outcall(const tnode_t *, bool, bool);
 extern	void	outusg(const sym_t *);
+
+/*
+ * lex.c
+ */
+extern	int	lex_name(const char *, size_t);
+extern	int	lex_integer_constant(const char *, size_t, int);
+extern	int	lex_floating_constant(const char *, size_t);
+extern	int	lex_operator(int, op_t);
+extern	int	lex_string(void);
+extern	int	lex_wide_string(void);
+extern	int	lex_character_constant(void);
+extern	int	lex_wide_character_constant(void);
+extern	void	lex_directive(const char *);
+extern	void	lex_next_line(void);
+extern	void	lex_comment(void);
+extern	void	lex_slash_slash_comment(void);
+extern	void	lex_unknown_character(int);
+extern	int	lex_input(void);
 
 /*
  * print.c

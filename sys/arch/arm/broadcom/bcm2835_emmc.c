@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_emmc.c,v 1.40 2021/01/18 02:35:48 thorpej Exp $	*/
+/*	$NetBSD: bcm2835_emmc.c,v 1.43 2021/01/29 14:11:14 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_emmc.c,v 1.40 2021/01/18 02:35:48 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_emmc.c,v 1.43 2021/01/29 14:11:14 skrll Exp $");
 
 #include "bcmdmac.h"
 
@@ -99,7 +99,7 @@ enum bcmemmc_type {
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "brcm,bcm2835-sdhci",	.value = BCM2835_SDHCI },
 	{ .compat = "brcm,bcm2711-emmc2",	.value = BCM2711_EMMC2 },
-	{ NULL }
+	DEVICE_COMPAT_EOL
 };
 
 /* ARGSUSED */
@@ -108,7 +108,7 @@ bcmemmc_match(device_t parent, struct cfdata *match, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 /* ARGSUSED */
@@ -172,8 +172,8 @@ bcmemmc_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_ih = fdtbus_intr_establish(phandle, 0, IPL_SDMMC, 0,
-	    sdhc_intr, &sc->sc);
+	sc->sc_ih = fdtbus_intr_establish_xname(phandle, 0, IPL_SDMMC, 0,
+	    sdhc_intr, &sc->sc, device_xname(self));
 
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "failed to establish interrupt %s\n",
@@ -184,7 +184,7 @@ bcmemmc_attach(device_t parent, device_t self, void *aux)
 
 #if NBCMDMAC > 0
 	enum bcmemmc_type type =
-	    of_search_compatible(phandle, compat_data)->value;
+	    of_compatible_lookup(phandle, compat_data)->value;
 
 	if (type != BCM2835_SDHCI)
 		goto done;

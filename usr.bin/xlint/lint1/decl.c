@@ -1,4 +1,4 @@
-/* $NetBSD: decl.c,v 1.130 2021/01/18 19:24:09 rillig Exp $ */
+/* $NetBSD: decl.c,v 1.133 2021/01/31 11:23:01 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: decl.c,v 1.130 2021/01/18 19:24:09 rillig Exp $");
+__RCSID("$NetBSD: decl.c,v 1.133 2021/01/31 11:23:01 rillig Exp $");
 #endif
 
 #include <sys/param.h>
@@ -168,11 +168,11 @@ tduptyp(const type_t *tp)
 }
 
 /*
- * Returns 1 if the argument is void or an incomplete array,
+ * Returns whether the argument is void or an incomplete array,
  * struct, union or enum type.
  */
 bool
-incompl(const type_t *tp)
+is_incomplete(const type_t *tp)
 {
 	tspec_t	t;
 
@@ -903,14 +903,14 @@ length(const type_t *tp, const char *name)
 		/* NOTREACHED */
 	case STRUCT:
 	case UNION:
-		if (incompl(tp) && name != NULL) {
+		if (is_incomplete(tp) && name != NULL) {
 			/* incomplete structure or union %s: %s */
 			error(31, tp->t_str->stag->s_name, name);
 		}
 		elsz = tp->t_str->size;
 		break;
 	case ENUM:
-		if (incompl(tp) && name != NULL) {
+		if (is_incomplete(tp) && name != NULL) {
 			/* incomplete enum type: %s */
 			warning(13, name);
 		}
@@ -1034,7 +1034,7 @@ check_type(sym_t *sym)
 				error(18);
 				*tpp = gettyp(INT);
 #if 0	/* errors are produced by length() */
-			} else if (incompl(tp)) {
+			} else if (is_incomplete(tp)) {
 				/* array of incomplete type */
 				if (sflag) {
 					/* array of incomplete type */
@@ -1056,7 +1056,7 @@ check_type(sym_t *sym)
 			} else if (dcs->d_ctx == ABSTRACT) {
 				/* ok */
 			} else if (sym->s_scl != TYPEDEF) {
-				/* void type for %s */
+				/* void type for '%s' */
 				error(19, sym->s_name);
 				*tpp = gettyp(INT);
 			}
@@ -1724,7 +1724,7 @@ newtag(sym_t *tag, scl_t scl, bool decl, bool semi)
 			print_previous_declaration(-1, tag);
 			tag = pushdown(tag);
 			dcs->d_next->d_nedecl = true;
-		} else if (decl && !incompl(tag->s_type)) {
+		} else if (decl && !is_incomplete(tag->s_type)) {
 			/* (%s) tag redeclared */
 			error(46, storage_class_name(tag->s_scl));
 			print_previous_declaration(-1, tag);
@@ -2001,8 +2001,8 @@ copy_usage_info(sym_t *sym, sym_t *rdsym)
 }
 
 /*
- * Prints an error and returns 1 if a symbol is redeclared/redefined.
- * Otherwise returns 0 and, in some cases of minor problems, prints
+ * Prints an error and returns true if a symbol is redeclared/redefined.
+ * Otherwise returns false and, in some cases of minor problems, prints
  * a warning.
  */
 bool
@@ -2102,12 +2102,12 @@ eqptrtype(const type_t *tp1, const type_t *tp2, bool ignqual)
 
 
 /*
- * Checks if two types are compatible. Returns 0 if not, otherwise 1.
+ * Checks if two types are compatible.
  *
  * ignqual	ignore qualifiers of type; used for function params
  * promot	promote left type; used for comparison of params of
  *		old style function definitions with params of prototypes.
- * *dowarn	set to 1 if an old style function declaration is not
+ * *dowarn	set to true if an old style function declaration is not
  *		compatible with a prototype
  */
 bool
@@ -2757,7 +2757,7 @@ declare_external_in_block(sym_t *dsym)
 
 /*
  * Print an error or a warning if the symbol cannot be initialized due
- * to type/storage class. Return 1 if an error has been detected.
+ * to type/storage class. Return whether an error has been detected.
  */
 static bool
 check_init(sym_t *sym)
@@ -3071,7 +3071,7 @@ static void
 check_tag_usage(sym_t *sym)
 {
 
-	if (!incompl(sym->s_type))
+	if (!is_incomplete(sym->s_type))
 		return;
 
 	/* always complain about incomplete tags declared inside blocks */

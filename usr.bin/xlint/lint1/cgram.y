@@ -1,5 +1,5 @@
 %{
-/* $NetBSD: cgram.y,v 1.157 2021/01/18 19:24:09 rillig Exp $ */
+/* $NetBSD: cgram.y,v 1.160 2021/01/31 12:44:34 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: cgram.y,v 1.157 2021/01/18 19:24:09 rillig Exp $");
+__RCSID("$NetBSD: cgram.y,v 1.160 2021/01/31 12:44:34 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -376,10 +376,10 @@ data_def:
 	  }
 	| clrtyp deftyp notype_init_decls T_SEMI {
 		if (sflag) {
-			/* old style declaration; add int */
+			/* old style declaration; add 'int' */
 			error(1);
 		} else if (!tflag) {
-			/* old style declaration; add int */
+			/* old style declaration; add 'int' */
 			warning(1);
 		}
 	  }
@@ -480,18 +480,14 @@ arg_declaration:
 			/* empty declaration */
 			warning(2);
 		} else {
-			tspec_t	ts = dcs->d_type->t_tspec;
-			/* %s declared in argument declaration list */
-			warning(3, ts == STRUCT ? "struct" :
-				(ts == UNION ? "union" : "enum"));
+			/* '%s' declared in argument declaration list */
+			warning(3, type_name(dcs->d_type));
 		}
 	  }
 	| declspecs deftyp type_init_decls T_SEMI {
 		if (dcs->d_nedecl) {
-			tspec_t	ts = dcs->d_type->t_tspec;
-			/* %s declared in argument declaration list */
-			warning(3, ts == STRUCT ? "struct" :
-				(ts == UNION ? "union" : "enum"));
+			/* '%s' declared in argument declaration list */
+			warning(3, type_name(dcs->d_type));
 		}
 	  }
 	| declmods error
@@ -1561,7 +1557,7 @@ statement_list:
 
 expr_statement:
 	  expr T_SEMI {
-		expr($1, 0, 0, 0);
+		expr($1, false, false, false, false);
 		ftflg = false;
 	  }
 	| T_SEMI {
@@ -1580,7 +1576,7 @@ expr_statement_val:
 		if ($1->tn_op == NAME)
 			$1->tn_sym->s_used = true;
 		$$ = $1;
-		expr($1, 0, 0, 0);
+		expr($1, false, false, false, false);
 		ftflg = false;
 	  }
 	| non_expr_statement {

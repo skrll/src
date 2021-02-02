@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_gpio.c,v 1.32 2021/01/18 13:29:37 skrll Exp $ */
+/* $NetBSD: sunxi_gpio.c,v 1.35 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #include "opt_soc.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_gpio.c,v 1.32 2021/01/18 13:29:37 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_gpio.c,v 1.35 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -135,8 +135,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "allwinner,sun50i-h6-r-pinctrl",
 	  .data = &sun50i_h6_r_padconf },
 #endif
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 struct sunxi_gpio_eint {
@@ -981,7 +980,7 @@ sunxi_gpio_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -1022,7 +1021,7 @@ sunxi_gpio_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
-	sc->sc_padconf = of_search_compatible(phandle, compat_data)->data;
+	sc->sc_padconf = of_compatible_lookup(phandle, compat_data)->data;
 
 	aprint_naive("\n");
 	aprint_normal(": PIO\n");

@@ -1,4 +1,4 @@
-/*	$NetBSD: connector_fdt.c,v 1.2 2021/01/18 02:35:49 thorpej Exp $	*/
+/*	$NetBSD: connector_fdt.c,v 1.5 2021/01/27 03:10:21 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: connector_fdt.c,v 1.2 2021/01/18 02:35:49 thorpej Exp $");
+__KERNEL_RCSID(1, "$NetBSD: connector_fdt.c,v 1.5 2021/01/27 03:10:21 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -74,8 +74,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "dvi-connector",			.value = CON_DVI},
 	{ .compat = "hdmi-connector",			.value = CON_HDMI},
 	{ .compat = "vga-connector",			.value = CON_VGA},
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -83,7 +82,7 @@ fdt_connector_match(device_t parent, cfdata_t cf, void *aux)
 {
 	const struct fdt_attach_args *faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -95,7 +94,7 @@ fdt_connector_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_dev = self;
 	sc->sc_phandle = phandle;
-	sc->sc_type = of_search_compatible(phandle, compat_data)->value;
+	sc->sc_type = of_compatible_lookup(phandle, compat_data)->value;
 
 	SLIST_INSERT_HEAD(&fdt_connectors, sc, sc_list);
 

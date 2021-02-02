@@ -1,4 +1,4 @@
-/* $NetBSD: exynos_dwcmmc.c,v 1.11 2021/01/19 00:38:52 thorpej Exp $ */
+/* $NetBSD: exynos_dwcmmc.c,v 1.14 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: exynos_dwcmmc.c,v 1.11 2021/01/19 00:38:52 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: exynos_dwcmmc.c,v 1.14 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -74,7 +74,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "samsung,exynos5250-dw-mshc",	.value = 0 },
 	{ .compat = "samsung,exynos5420-dw-mshc-smu",	.value = 1 },
 	{ .compat = "samsung,exynos5420-dw-mshc",	.value = 0 },
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -82,7 +82,7 @@ exynos_dwcmmc_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -130,7 +130,7 @@ exynos_dwcmmc_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	dce = of_search_compatible(faa->faa_phandle, compat_data);
+	dce = of_compatible_lookup(faa->faa_phandle, compat_data);
 	KASSERT(dce != NULL);
 
 	sc->sc_dev = self;

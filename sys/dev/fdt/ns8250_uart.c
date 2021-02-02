@@ -1,4 +1,4 @@
-/* $NetBSD: ns8250_uart.c,v 1.4 2021/01/18 02:35:49 thorpej Exp $ */
+/* $NetBSD: ns8250_uart.c,v 1.7 2021/01/27 03:10:21 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017-2020 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: ns8250_uart.c,v 1.4 2021/01/18 02:35:49 thorpej Exp $");
+__KERNEL_RCSID(1, "$NetBSD: ns8250_uart.c,v 1.7 2021/01/27 03:10:21 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -84,8 +84,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "ns16550a",			.data = &ns8250_config },
 	{ .compat = "ns16550",			.data = &ns8250_config },
 	{ .compat = "ns16750",			.data = &ns16750_config },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(ns8250_uart, sizeof(struct com_softc),
@@ -96,7 +95,7 @@ ns8250_uart_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -116,7 +115,7 @@ ns8250_uart_attach(device_t parent, device_t self, void *aux)
 	void *ih;
 
 	const struct ns8250_config *config =
-	    of_search_compatible(phandle, compat_data)->data;
+	    of_compatible_lookup(phandle, compat_data)->data;
 
 	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
 		aprint_error(": couldn't get registers\n");
@@ -181,7 +180,7 @@ ns8250_uart_attach(device_t parent, device_t self, void *aux)
 static int
 ns8250_uart_console_match(int phandle)
 {
-	return of_match_compat_data(phandle, compat_data);
+	return of_compatible_match(phandle, compat_data);
 }
 
 static void
@@ -197,7 +196,7 @@ ns8250_uart_console_consinit(struct fdt_attach_args *faa, u_int uart_freq)
 	int speed;
 
 	const struct ns8250_config *config =
-	    of_search_compatible(phandle, compat_data)->data;
+	    of_compatible_lookup(phandle, compat_data)->data;
 
 	fdtbus_get_reg(phandle, 0, &addr, NULL);
 	speed = fdtbus_get_stdout_speed();

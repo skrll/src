@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_ts.c,v 1.5 2021/01/18 02:35:49 thorpej Exp $ */
+/* $NetBSD: sunxi_ts.c,v 1.8 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: sunxi_ts.c,v 1.5 2021/01/18 02:35:49 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_ts.c,v 1.8 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -135,8 +135,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "allwinner,sun4i-a10-ts",	.data = &sun4i_a10_ts_config },
 	{ .compat = "allwinner,sun5i-a13-ts",	.data = &sun5i_a13_ts_config },
 	{ .compat = "allwinner,sun6i-a31-ts",	.data = &sun6i_a31_ts_config },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 static struct wsmouse_calibcoords sunxi_ts_default_calib = {
@@ -344,7 +343,7 @@ sunxi_ts_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -376,7 +375,7 @@ sunxi_ts_attach(device_t parent, device_t self, void *aux)
 		aprint_error(": couldn't map registers\n");
 		return;
 	}
-	sc->sc_conf = of_search_compatible(phandle, compat_data)->data;
+	sc->sc_conf = of_compatible_lookup(phandle, compat_data)->data;
 
 	sc->sc_ts_attached = of_getprop_bool(phandle, "allwinner,ts-attached");
 	sc->sc_ts_inverted_x = of_getprop_bool(phandle,

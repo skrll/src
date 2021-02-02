@@ -1,4 +1,4 @@
-/*	$NetBSD: em3027.c,v 1.6 2021/01/17 21:42:35 thorpej Exp $ */
+/*	$NetBSD: em3027.c,v 1.8 2021/01/27 02:29:48 thorpej Exp $ */
 /*
  * Copyright (c) 2018 Valery Ushakov
  * All rights reserved.
@@ -28,7 +28,7 @@
  * EM Microelectronic EM3027 RTC
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: em3027.c,v 1.6 2021/01/17 21:42:35 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: em3027.c,v 1.8 2021/01/27 02:29:48 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -107,8 +107,7 @@ static int em3027rtc_write_byte(struct em3027rtc_softc *, uint8_t, uint8_t);
 
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "emmicro,em3027" },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 static int
