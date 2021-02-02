@@ -1,4 +1,4 @@
-/*	$NetBSD: tree.c,v 1.191 2021/01/24 14:47:43 rillig Exp $	*/
+/*	$NetBSD: tree.c,v 1.204 2021/01/31 14:05:00 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tree.c,v 1.191 2021/01/24 14:47:43 rillig Exp $");
+__RCSID("$NetBSD: tree.c,v 1.204 2021/01/31 14:05:00 rillig Exp $");
 #endif
 
 #include <float.h>
@@ -889,11 +889,11 @@ typeok_shr(const mod_t *mp,
 		 * the operation is (possibly) nonportable.
 		 */
 		if (ln->tn_op != CON) {
-			/* bitop. on signed value possibly nonportable */
-			warning(117);
+			/* bitwise '%s' on signed value possibly nonportable */
+			warning(117, mp->m_name);
 		} else if (ln->tn_val->v_quad < 0) {
-			/* bitop. on signed value nonportable */
-			warning(120);
+			/* bitwise '%s' on signed value nonportable */
+			warning(120, mp->m_name);
 		}
 	} else if (!tflag && !sflag && !is_uinteger(olt) && is_uinteger(ort)) {
 		/*
@@ -1397,8 +1397,8 @@ typeok_op(op_t op, const mod_t *mp, int arg,
 		goto assign;
 	case SHRASS:
 		if (pflag && !is_uinteger(lt) && !(tflag && is_uinteger(rt))) {
-			/* bitop. on signed value possibly nonportable */
-			warning(117);
+			/* bitwise '%s' on signed value possibly nonportable */
+			warning(117, mp->m_name);
 		}
 		goto assign;
 	case ANDASS:
@@ -2101,8 +2101,9 @@ check_prototype_conversion(int arg, tspec_t nt, tspec_t ot, type_t *tp,
 	    psize(nt) != psize(ot)) {
 		/* representation and/or width change */
 		if (!is_integer(ot) || psize(ot) > psize(INT)) {
-			/* conversion to '%s' due to prototype, arg #%d */
-			warning(259, type_name(tp), arg);
+			/* argument #%d is converted from '%s' to '%s' */
+			warning(259,
+			    arg, type_name(tn->tn_type), type_name(tp));
 		}
 	} else if (hflag) {
 		/*
@@ -2117,8 +2118,9 @@ check_prototype_conversion(int arg, tspec_t nt, tspec_t ot, type_t *tp,
 		    msb(ptn->tn_val->v_quad, ot, -1) == 0) {
 			/* ok */
 		} else {
-			/* conversion to '%s' due to prototype, arg #%d */
-			warning(259, type_name(tp), arg);
+			/* argument #%d is converted from '%s' to '%s' */
+			warning(259,
+			    arg, type_name(tn->tn_type), type_name(tp));
 		}
 	}
 }
@@ -2253,8 +2255,8 @@ check_pointer_conversion(op_t op, tnode_t *tn, type_t *tp)
 	     tp->t_subt->t_str != tn->tn_type->t_subt->t_str) ||
 	    psize(nt) != psize(ot)) {
 		if (cflag) {
-			/* pointer casts may be troublesome */
-			warning(247);
+			/* pointer cast from '%s' to '%s' may be troublesome */
+			warning(247, type_name(tn->tn_type), type_name(tp));
 		}
 	}
 }
@@ -2846,7 +2848,7 @@ build_colon(tnode_t *ln, tnode_t *rn)
 		/* Both types must be identical. */
 		lint_assert(rt == STRUCT || rt == UNION);
 		lint_assert(ln->tn_type->t_str == rn->tn_type->t_str);
-		if (incompl(ln->tn_type)) {
+		if (is_incomplete(ln->tn_type)) {
 			/* unknown operand size, op %s */
 			error(138, modtab[COLON].m_name);
 			return NULL;
@@ -2918,7 +2920,7 @@ build_assignment(op_t op, tnode_t *ln, tnode_t *rn)
 	if ((op == ASSIGN || op == RETURN) && (lt == STRUCT || rt == STRUCT)) {
 		lint_assert(lt == rt);
 		lint_assert(ln->tn_type->t_str == rn->tn_type->t_str);
-		if (incompl(ln->tn_type)) {
+		if (is_incomplete(ln->tn_type)) {
 			if (op == RETURN) {
 				/* cannot return incomplete type */
 				error(212);
@@ -2986,7 +2988,7 @@ plength(type_t *tp)
 			error(136);
 		break;
 	case ENUM:
-		if (incompl(tp)) {
+		if (is_incomplete(tp)) {
 			/* cannot do pointer arithmetic on operand of ... */
 			warning(136);
 		}
@@ -3256,22 +3258,22 @@ fold_float(tnode_t *tn)
 		v->v_ldbl = l - r;
 		break;
 	case LT:
-		v->v_quad = (l < r) ? 1 : 0;
+		v->v_quad = l < r ? 1 : 0;
 		break;
 	case LE:
-		v->v_quad = (l <= r) ? 1 : 0;
+		v->v_quad = l <= r ? 1 : 0;
 		break;
 	case GE:
-		v->v_quad = (l >= r) ? 1 : 0;
+		v->v_quad = l >= r ? 1 : 0;
 		break;
 	case GT:
-		v->v_quad = (l > r) ? 1 : 0;
+		v->v_quad = l > r ? 1 : 0;
 		break;
 	case EQ:
-		v->v_quad = (l == r) ? 1 : 0;
+		v->v_quad = l == r ? 1 : 0;
 		break;
 	case NE:
-		v->v_quad = (l != r) ? 1 : 0;
+		v->v_quad = l != r ? 1 : 0;
 		break;
 	default:
 		lint_assert(/*CONSTCOND*/false);
@@ -3351,7 +3353,7 @@ tsize(type_t *tp)
 		break;
 	case STRUCT:
 	case UNION:
-		if (incompl(tp)) {
+		if (is_incomplete(tp)) {
 			/* cannot take size/alignment of incomplete type */
 			error(143);
 			elsz = 1;
@@ -3360,7 +3362,7 @@ tsize(type_t *tp)
 		}
 		break;
 	case ENUM:
-		if (incompl(tp)) {
+		if (is_incomplete(tp)) {
 			/* cannot take size/alignment of incomplete type */
 			warning(143);
 		}
@@ -3381,8 +3383,7 @@ tsize(type_t *tp)
 		break;
 	}
 
-	/* XXX: type conversion is too late */
-	return (int64_t)(elem * elsz);
+	return (int64_t)elem * elsz;
 }
 
 tnode_t *
@@ -3399,7 +3400,7 @@ build_alignof(type_t *tp)
 
 	case STRUCT:
 	case UNION:
-		if (incompl(tp)) {
+		if (is_incomplete(tp)) {
 			/* cannot take size/alignment of incomplete type */
 			error(143);
 			return 0;
@@ -3490,8 +3491,8 @@ cast(tnode_t *tn, type_t *tp)
 	} else if (nt == PTR && ot == PTR) {
 		if (!tp->t_subt->t_const && tn->tn_type->t_subt->t_const) {
 			if (hflag)
-				/* cast discards 'const' from pointer tar... */
-				warning(275);
+				/* cast discards 'const' from type '%s' */
+				warning(275, type_name(tn->tn_type));
 		}
 	} else {
 		/* invalid cast expression */
@@ -3612,13 +3613,13 @@ check_function_arguments(type_t *ftp, tnode_t *args)
 			error(151, n);
 			return NULL;
 		} else if ((at == STRUCT || at == UNION) &&
-			   incompl(arg->tn_left->tn_type)) {
+			   is_incomplete(arg->tn_left->tn_type)) {
 			/* argument cannot have unknown size, arg #%d */
 			error(152, n);
 			return NULL;
 		} else if (is_integer(at) &&
 			   arg->tn_left->tn_type->t_isenum &&
-			   incompl(arg->tn_left->tn_type)) {
+			   is_incomplete(arg->tn_left->tn_type)) {
 			/* argument cannot have unknown size, arg #%d */
 			warning(152, n);
 		}
@@ -3731,7 +3732,7 @@ constant(tnode_t *tn, bool required)
  * for the expression.
  */
 void
-expr(tnode_t *tn, bool vctx, bool tctx, bool dofreeblk)
+expr(tnode_t *tn, bool vctx, bool tctx, bool dofreeblk, bool constcond_zero_ok)
 {
 
 	lint_assert(tn != NULL || nerr != 0);
@@ -3751,7 +3752,9 @@ expr(tnode_t *tn, bool vctx, bool tctx, bool dofreeblk)
 			/* assignment in conditional context */
 			warning(159);
 	} else if (tn->tn_op == CON) {
-		if (hflag && tctx && !constcond_flag)
+		if (hflag && tctx && !constcond_flag &&
+		    !(constcond_zero_ok &&
+		      is_int_constant_zero(tn, tn->tn_type->t_tspec)))
 			/* constant in conditional context */
 			warning(161);
 	}
@@ -3771,47 +3774,41 @@ expr(tnode_t *tn, bool vctx, bool tctx, bool dofreeblk)
 		tfreeblk();
 }
 
+static bool
+has_side_effect(const tnode_t *tn) // NOLINT(misc-no-recursion)
+{
+	op_t op = tn->tn_op;
+
+	if (modtab[op].m_has_side_effect)
+		return true;
+
+	if (op == CVT && tn->tn_type->t_tspec == VOID)
+		return has_side_effect(tn->tn_left);
+
+	/* XXX: Why not has_side_effect(tn->tn_left) as well? */
+	if (op == LOGAND || op == LOGOR)
+		return has_side_effect(tn->tn_right);
+
+	/* XXX: Why not has_side_effect(tn->tn_left) as well? */
+	if (op == QUEST)
+		return has_side_effect(tn->tn_right);
+
+	if (op == COLON || op == COMMA) {
+		return has_side_effect(tn->tn_left) ||
+		       has_side_effect(tn->tn_right);
+	}
+
+	return false;
+}
+
 static void
 check_null_effect(const tnode_t *tn)
 {
 
-	if (!hflag)
-		return;
-
-	while (!modtab[tn->tn_op].m_has_side_effect) {
-		if (tn->tn_op == CVT && tn->tn_type->t_tspec == VOID) {
-			tn = tn->tn_left;
-		} else if (tn->tn_op == LOGAND || tn->tn_op == LOGOR) {
-			/*
-			 * && and || have a side effect if the right operand
-			 * has a side effect.
-			 */
-			tn = tn->tn_right;
-		} else if (tn->tn_op == QUEST) {
-			/*
-			 * ? has a side effect if at least one of its right
-			 * operands has a side effect
-			 */
-			tn = tn->tn_right;
-		} else if (tn->tn_op == COLON || tn->tn_op == COMMA) {
-			/*
-			 * : has a side effect if at least one of its operands
-			 * has a side effect
-			 */
-			if (modtab[tn->tn_left->tn_op].m_has_side_effect) {
-				tn = tn->tn_left;
-			} else if (modtab[tn->tn_right->tn_op].m_has_side_effect) {
-				tn = tn->tn_right;
-			} else {
-				break;
-			}
-		} else {
-			break;
-		}
-	}
-	if (!modtab[tn->tn_op].m_has_side_effect)
+	if (hflag && !has_side_effect(tn)) {
 		/* expression has null effect */
 		warning(129);
+	}
 }
 
 /*
@@ -4013,7 +4010,9 @@ check_expr_misc(const tnode_t *tn, bool vctx, bool tctx,
 
 	bool cvctx = mp->m_left_value_context;
 	bool ctctx = mp->m_left_test_context;
-	bool eq = mp->m_warn_if_operand_eq;
+	bool eq = mp->m_warn_if_operand_eq &&
+		  !ln->tn_parenthesized &&
+		  rn != NULL && !rn->tn_parenthesized;
 
 	/*
 	 * values of operands of ':' are not used if the type of at least
@@ -4084,7 +4083,7 @@ check_array_index(tnode_t *tn, bool amper)
 	 * For incomplete array types, we can print a warning only if
 	 * the index is negative.
 	 */
-	if (incompl(ln->tn_left->tn_type) && rn->tn_val->v_quad >= 0)
+	if (is_incomplete(ln->tn_left->tn_type) && rn->tn_val->v_quad >= 0)
 		return;
 
 	/* Get the size of one array element */
