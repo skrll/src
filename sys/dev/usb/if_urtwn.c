@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urtwn.c,v 1.88 2020/06/27 14:34:45 jdolecek Exp $	*/
+/*	$NetBSD: if_urtwn.c,v 1.92 2021/02/02 00:27:38 yamt Exp $	*/
 /*	$OpenBSD: if_urtwn.c,v 1.42 2015/02/10 23:25:46 mpi Exp $	*/
 
 /*-
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.88 2020/06/27 14:34:45 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.92 2021/02/02 00:27:38 yamt Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -217,7 +217,9 @@ static const struct urtwn_dev {
 	/* URTWN_RTL8192EU */
 	URTWN_RTL8192EU_DEV(DLINK,	DWA131E),
 	URTWN_RTL8192EU_DEV(REALTEK,	RTL8192EU),
-	URTWN_RTL8192EU_DEV(TPLINK,	RTL8192EU),
+	URTWN_RTL8192EU_DEV(TPLINK,	WN821NV5),
+	URTWN_RTL8192EU_DEV(TPLINK,	WN822NV4),
+	URTWN_RTL8192EU_DEV(TPLINK,	WN823NV2),
 };
 #undef URTWN_DEV
 #undef URTWN_RTL8188E_DEV
@@ -852,6 +854,10 @@ urtwn_tx_beacon(struct urtwn_softc *sc, struct mbuf *m,
 {
 	struct urtwn_tx_data *data =
 	    urtwn_get_tx_data(sc, sc->ac2idx[WME_AC_VO]);
+
+	if (data == NULL)
+		return ENOBUFS;
+
 	return urtwn_tx(sc, m, ni, data);
 }
 
@@ -877,7 +883,7 @@ urtwn_task(void *arg)
 		}
 
 		if (urtwn_tx_beacon(sc, m, ic->ic_bss) != 0) {
-			aprint_error_dev(sc->sc_dev, "could not send beacon");
+			aprint_error_dev(sc->sc_dev, "could not send beacon\n");
 		}
 
 		/* beacon is no longer needed */

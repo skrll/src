@@ -1,4 +1,4 @@
-/*	$NetBSD: externs1.h,v 1.63 2021/01/24 09:25:16 rillig Exp $	*/
+/*	$NetBSD: externs1.h,v 1.65 2021/01/31 12:44:34 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -141,7 +141,7 @@ extern	void	initdecl(void);
 extern	type_t	*gettyp(tspec_t);
 extern	type_t	*duptyp(const type_t *);
 extern	type_t	*tduptyp(const type_t *);
-extern	bool	incompl(const type_t *);
+extern	bool	is_incomplete(const type_t *);
 extern	void	setcomplete(type_t *, bool);
 extern	void	add_storage_class(scl_t);
 extern	void	add_type(type_t *);
@@ -216,7 +216,7 @@ extern	tnode_t	*cast(tnode_t *, type_t *);
 extern	tnode_t	*new_function_argument_node(tnode_t *, tnode_t *);
 extern	tnode_t	*new_function_call_node(tnode_t *, tnode_t *);
 extern	val_t	*constant(tnode_t *, bool);
-extern	void	expr(tnode_t *, bool, bool, bool);
+extern	void	expr(tnode_t *, bool, bool, bool, bool);
 extern	void	check_expr_misc(const tnode_t *, bool, bool, bool,
 		    bool, bool, bool);
 extern	bool	constant_addr(tnode_t *, sym_t **, ptrdiff_t *);
