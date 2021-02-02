@@ -90,12 +90,17 @@ __KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.179 2020/12/01 02:46:19 rin Exp $");
 #endif
 
 #if defined(CPU_PJ4B)
-#include "opt_cputypes.h"
 #include "opt_mvsoc.h"
 #include <machine/bus_defs.h>
 #if defined(ARMADAXP)
 #include <arm/marvell/armadaxpreg.h>
 #include <arm/marvell/armadaxpvar.h>
+#endif
+#endif
+
+#if defined(ARM_MMU_EXTENDED)
+#if !defined(__HAVE_GENERIC_START)
+#error ARM_MMU_EXTENDED requires __HAVE_GENERIC_START
 #endif
 #endif
 
@@ -2962,13 +2967,15 @@ armv7_setup(char *args)
 	cpuctrl |= CPU_CONTROL_AFLT_ENABLE;
 #endif
 #ifdef ARM_MMU_EXTENDED
-	cpuctrl |= CPU_CONTROL_XP_ENABLE;
+	cpuctrl |=
+	    CPU_CONTROL_XP_ENABLE |
+	    CPU_CONTROL_TR_ENABLE |
+	    0;
 #endif
 
 	int cpuctrlmask = cpuctrl |
 	    CPU_CONTROL_EX_BEND |
 	    CPU_CONTROL_AFLT_ENABLE |
-	    CPU_CONTROL_TR_ENABLE |
 	    CPU_CONTROL_VECRELOC |
 	    CPU_CONTROL_XP_ENABLE |
 	    0;
@@ -3031,6 +3038,12 @@ armv7_setup(char *args)
 	/* Set the control register - does dsb; isb */
 	cpu_control(cpuctrlmask, cpuctrl);
 
+	/*
+	 * Really for ARM_MMU_EXTENDED, but we #error if it's not
+	 * defined earlier.
+	 */
+	pmap_setmrr();
+
 	/* does tlb and branch predictor flush, and dsb; isb */
 	cpu_tlb_flushID();
 #else
@@ -3063,6 +3076,7 @@ arm11x6_setup(char *args)
 		CPU_CONTROL_UNAL_ENABLE |
 #ifdef ARM_MMU_EXTENDED
 		CPU_CONTROL_XP_ENABLE   |
+//		CPU_CONTROL_TR_ENABLE	|
 #else
 		CPU_CONTROL_SYST_ENABLE |
 #endif

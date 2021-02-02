@@ -685,6 +685,10 @@ void	xscale_setup_minidata(vaddr_t, vaddr_t, paddr_t);
 void	pmap_uarea(vaddr_t);
 #endif /* ARM_MMU_XSCALE == 1 */
 
+extern pt_entry_t		pte_l1_s_device_mode;
+extern pt_entry_t		pte_l2_l_device_mode;
+extern pt_entry_t		pte_l2_s_device_mode;
+
 extern pt_entry_t		pte_l1_s_nocache_mode;
 extern pt_entry_t		pte_l2_l_nocache_mode;
 extern pt_entry_t		pte_l2_s_nocache_mode;
@@ -778,6 +782,15 @@ extern void (*pmap_zero_page_func)(paddr_t);
 #define	L1_S_CACHE_MASK_armv6	(L1_S_B|L1_S_C|L1_S_XS_TEX(TEX_ARMV6_TEX))
 #define	L1_S_CACHE_MASK_armv6n	(L1_S_B|L1_S_C|L1_S_XS_TEX(TEX_ARMV6_TEX)|L1_S_V6_S)
 #define	L1_S_CACHE_MASK_armv7	(L1_S_B|L1_S_C|L1_S_XS_TEX(TEX_ARMV6_TEX)|L1_S_V6_S)
+#ifdef ARM_MMU_EXTENDED
+#define	L1_S_TRE(x)		(__SHIFTIN(__SHIFTOUT((x), __BIT(2)), L1_S_XS_TEX(TEX_ARMV6_TEX0)) | __SHIFTIN(__SHIFTOUT((x), __BITS(1, 0)), L1_S_B|L1_S_C))
+#define	L1_S_NORMAL_NC		L1_S_TRE(TRE_NORMAL_NC)
+#define	L1_S_NORMAL_WB		L1_S_TRE(TRE_NORMAL_WB)
+#define	L1_S_NORMAL_WT		L1_S_TRE(TRE_NORMAL_WT)
+#define	L1_S_DEVICE		L1_S_TRE(TRE_DEVICE)
+#define	L1_S_STRONG		L1_S_TRE(TRE_STRONG)
+#define	L1_S_OSBIT0		L1_S_XS_TEX(TEX_ARMV6_TEX1)
+#define	L1_S_OSBIT1		L1_S_XS_TEX(TEX_ARMV6_TEX2)
 
 #define	L2_L_PROT_U_generic	(L2_AP(AP_U))
 #define	L2_L_PROT_W_generic	(L2_AP(AP_W))
@@ -804,6 +817,16 @@ extern void (*pmap_zero_page_func)(paddr_t);
 #define	L2_L_CACHE_MASK_armv6	(L2_B|L2_C|L2_V6_L_TEX(TEX_ARMV6_TEX))
 #define	L2_L_CACHE_MASK_armv6n	(L2_B|L2_C|L2_V6_L_TEX(TEX_ARMV6_TEX)|L2_XS_S)
 #define	L2_L_CACHE_MASK_armv7	(L2_B|L2_C|L2_V6_L_TEX(TEX_ARMV6_TEX)|L2_XS_S)
+#ifdef ARM_MMU_EXTENDED
+#define	L2_L_TRE(x)		(__SHIFTIN(__SHIFTOUT((x), __BIT(2)), L2_V6_L_TEX(TEX_ARMV6_TEX0)) | __SHIFTIN(__SHIFTOUT((x), __BITS(1, 0)), L2_B|L2_C))
+#define	L2_L_NORMAL_NC		L2_L_TRE(TRE_NORMAL_NC)
+#define	L2_L_NORMAL_WB		L2_L_TRE(TRE_NORMAL_WB)
+#define	L2_L_NORMAL_WT		L2_L_TRE(TRE_NORMAL_WT)
+#define	L2_L_DEVICE		L2_L_TRE(TRE_DEVICE)
+#define	L2_L_STRONG		L2_L_TRE(TRE_STRONG)
+#define	L2_L_OSBIT0		L2_V6_L_TEX(TEX_ARMV6_TEX1)
+#define	L2_L_OSBIT1		L2_V6_L_TEX(TEX_ARMV6_TEX2)
+#endif
 
 #define	L2_S_PROT_U_generic	(L2_AP(AP_U))
 #define	L2_S_PROT_W_generic	(L2_AP(AP_W))
@@ -835,7 +858,16 @@ extern void (*pmap_zero_page_func)(paddr_t);
 #endif
 #define	L2_S_CACHE_MASK_armv6n	(L2_B|L2_C|L2_V6_XS_TEX(TEX_ARMV6_TEX)|L2_XS_S)
 #define	L2_S_CACHE_MASK_armv7	(L2_B|L2_C|L2_V6_XS_TEX(TEX_ARMV6_TEX)|L2_XS_S)
-
+#ifdef ARM_MMU_EXTENDED
+#define	L2_S_TRE(x)		(__SHIFTIN(__SHIFTOUT((x), __BIT(2)), L2_V6_XS_TEX(TEX_ARMV6_TEX0)) | __SHIFTIN(__SHIFTOUT((x), __BITS(1,0)), L2_B|L2_C))
+#define	L2_S_NORMAL_NC		L2_S_TRE(TRE_NORMAL_NC)
+#define	L2_S_NORMAL_WB		L2_S_TRE(TRE_NORMAL_WB)
+#define	L2_S_NORMAL_WT		L2_S_TRE(TRE_NORMAL_WT)
+#define	L2_S_DEVICE		L2_S_TRE(TRE_DEVICE)
+#define	L2_S_STRONG		L2_S_TRE(TRE_STRONG)
+#define	L2_S_OSBIT0		L2_V6_XS_TEX(TEX_ARMV6_TEX1)
+#define	L2_S_OSBIT1		L2_V6_XS_TEX(TEX_ARMV6_TEX2)
+#endif
 
 #define	L1_S_PROTO_generic	(L1_TYPE_S | L1_S_IMP)
 #define	L1_S_PROTO_xscale	(L1_TYPE_S)
@@ -1181,6 +1213,36 @@ do {									\
 	(pg)->mdpage.urw_mappings = 0;					\
 	(pg)->mdpage.k_mappings = 0;					\
 } while (/*CONSTCOND*/0)
+
+static inline void
+pmap_setmrr(void)
+{
+	armreg_prrr_write(
+	    __SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(TRE_NORMAL_NC)) |
+	    __SHIFTIN(PRRR_TR_DEVICE, PRRR_TRn(TRE_DEVICE)) |
+	    __SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(TRE_NORMAL_WB)) |
+	    __SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(TRE_NORMAL_WT)) |
+	    __SHIFTIN(PRRR_TR_STRONG, PRRR_TRn(TRE_STRONG)) |
+	    __SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(5)) |
+	    __SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(6)) |
+	    __SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(7)) |
+	    PRRR_DS1 |
+	    PRRR_NS1 |
+	    0);
+
+	armreg_nmrr_write(
+	    __SHIFTIN(NMRR_NC, NMRR_IRn(TRE_NORMAL_NC)) |
+	    __SHIFTIN(NMRR_NC, NMRR_ORn(TRE_NORMAL_NC)) |
+	    __SHIFTIN(NMRR_WBWA, NMRR_IRn(TRE_NORMAL_WB)) |
+	    __SHIFTIN(NMRR_WBWA, NMRR_ORn(TRE_NORMAL_WB)) |
+	    __SHIFTIN(NMRR_WT, NMRR_IRn(TRE_NORMAL_WT)) |
+	    __SHIFTIN(NMRR_WT, NMRR_ORn(TRE_NORMAL_WT)) |
+	    0);
+
+	isb();
+}
+
+#endif
 
 #ifndef	__BSD_PTENTRY_T__
 #define	__BSD_PTENTRY_T__

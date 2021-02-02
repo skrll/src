@@ -3768,6 +3768,7 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 	} else {
 		switch (flags & (PMAP_CACHE_MASK | PMAP_DEV_MASK)) {
 		case PMAP_DEV ... PMAP_DEV | PMAP_CACHE_MASK:
+			npte |= pte_l2_s_device_mode;
 			break;
 		case PMAP_NOCACHE:
 			npte |= pte_l2_s_nocache_mode;
@@ -6781,7 +6782,7 @@ pmap_map_section(vaddr_t l1pt, vaddr_t va, paddr_t pa, int prot, int cache)
 
 	case PTE_DEV:
 	default:
-		fl = 0;
+		fl = pte_l1_s_device_mode;
 		break;
 	}
 
@@ -6908,6 +6909,11 @@ pmap_map_chunk(vaddr_t l1pt, vaddr_t va, paddr_t pa, vsize_t size,
 		break;
 
 	case PTE_DEV:
+		f1 = pte_l1_s_device_mode;
+		f2l = pte_l2_l_device_mode;
+		f2s = pte_l2_s_device_mode;
+		break;
+
 	default:
 		f1 = 0;
 		f2l = 0;
@@ -7124,18 +7130,21 @@ pmap_devmap_find_va(vaddr_t va, vsize_t size)
  * them (though, they shouldn't).
  */
 
+pt_entry_t	pte_l1_s_device_mode;
 pt_entry_t	pte_l1_s_nocache_mode;
 pt_entry_t	pte_l1_s_cache_mode;
 pt_entry_t	pte_l1_s_wc_mode;
 pt_entry_t	pte_l1_s_cache_mode_pt;
 pt_entry_t	pte_l1_s_cache_mask;
 
+pt_entry_t	pte_l2_l_device_mode;
 pt_entry_t	pte_l2_l_nocache_mode;
 pt_entry_t	pte_l2_l_cache_mode;
 pt_entry_t	pte_l2_l_wc_mode;
 pt_entry_t	pte_l2_l_cache_mode_pt;
 pt_entry_t	pte_l2_l_cache_mask;
 
+pt_entry_t	pte_l2_s_device_mode;
 pt_entry_t	pte_l2_s_nocache_mode;
 pt_entry_t	pte_l2_s_cache_mode;
 pt_entry_t	pte_l2_s_wc_mode;
@@ -7170,16 +7179,19 @@ void
 pmap_pte_init_generic(void)
 {
 
+	pte_l1_s_device_mode = 0;
 	pte_l1_s_nocache_mode = 0;
 	pte_l1_s_cache_mode = L1_S_B|L1_S_C;
 	pte_l1_s_wc_mode = L1_S_B;
 	pte_l1_s_cache_mask = L1_S_CACHE_MASK_generic;
 
+	pte_l2_l_device_mode = 0;
 	pte_l2_l_nocache_mode = 0;
 	pte_l2_l_cache_mode = L2_B|L2_C;
 	pte_l2_l_wc_mode = L2_B;
 	pte_l2_l_cache_mask = L2_L_CACHE_MASK_generic;
 
+	pte_l2_s_device_mode = 0;
 	pte_l2_s_nocache_mode = 0;
 	pte_l2_s_cache_mode = L2_B|L2_C;
 	pte_l2_s_wc_mode = L2_B;
@@ -7659,9 +7671,28 @@ pmap_pte_init_armv6(void)
 	 */
 	pmap_pte_init_generic();
 
+#ifdef ARM_MMU_EXTENDED
+	pte_l1_s_nocache_mode = L1_S_NORMAL_NC;
+	pte_l2_l_nocache_mode = L2_L_NORMAL_NC;
+	pte_l2_s_nocache_mode = L2_S_NORMAL_NC;
+
+	pte_l1_s_device_mode = L1_S_DEVICE;
+	pte_l2_l_device_mode = L2_L_DEVICE;
+	pte_l2_s_device_mode = L2_S_DEVICE;
+
+	pte_l1_s_cache_mode = L1_S_NORMAL_WB;
+	pte_l2_l_cache_mode = L2_L_NORMAL_WB;
+	pte_l2_s_cache_mode = L2_S_NORMAL_WB;
+
+	// XXXNH WTF?
+//	pte_l1_s_wc_mode = L1_S_B;
+//	pte_l2_l_wc_mode = L2_B;
+//	pte_l2_s_wc_mode = L2_B;
+#else
 	pte_l1_s_nocache_mode = L1_S_XS_TEX(1);
 	pte_l2_l_nocache_mode = L2_XS_L_TEX(1);
 	pte_l2_s_nocache_mode = L2_XS_T_TEX(1);
+#endif
 
 #ifdef ARM11_COMPAT_MMU
 	/* with AP[0..3] */
@@ -7709,9 +7740,28 @@ pmap_pte_init_armv7(void)
 
 	pmap_needs_pte_sync = 1;
 
+#ifdef ARM_MMU_EXTENDED
+	pte_l1_s_nocache_mode = L1_S_NORMAL_NC;
+	pte_l2_l_nocache_mode = L2_L_NORMAL_NC;
+	pte_l2_s_nocache_mode = L2_S_NORMAL_NC;
+
+	pte_l1_s_device_mode = L1_S_DEVICE;
+	pte_l2_l_device_mode = L2_L_DEVICE;
+	pte_l2_s_device_mode = L2_S_DEVICE;
+
+	pte_l1_s_cache_mode = L1_S_NORMAL_WB;
+	pte_l2_l_cache_mode = L2_L_NORMAL_WB;
+	pte_l2_s_cache_mode = L2_S_NORMAL_WB;
+
+	// XXXNH WTF?
+//	pte_l1_s_wc_mode = L1_S_B;
+//	pte_l2_l_wc_mode = L2_B;
+//	pte_l2_s_wc_mode = L2_B;
+#else
 	pte_l1_s_nocache_mode = L1_S_XS_TEX(1);
 	pte_l2_l_nocache_mode = L2_XS_L_TEX(1);
 	pte_l2_s_nocache_mode = L2_XS_T_TEX(1);
+#endif
 
 	pte_l1_s_cache_mask = L1_S_CACHE_MASK_armv7;
 	pte_l2_l_cache_mask = L2_L_CACHE_MASK_armv7;

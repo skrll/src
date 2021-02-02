@@ -324,7 +324,7 @@ arm_build_translation_table:
 	mov	R_PA, R_VA
 	mov	R_NSEC, #1
 
-	ldr     R_ATTR, =(L1_S_PROTO | L1_S_AP_KRW)
+	ldr     R_ATTR, =(L1_S_PROTO | L1_S_AP_KRW | L1_S_DEVICE)
 	orr	R_ATTR, R_DEVATTR
 
 	ldr	R_L1TABLE, =TEMP_L1_TABLE
@@ -576,6 +576,14 @@ generic_vstartv6:
 #define CPU_CONTROL_XP_ENABLE_SET	0
 #endif
 
+#ifdef ARM_MMU_EXTENDED
+#define CPU_CONTROL_TRE_ENABLE_CLR	0
+#define CPU_CONTROL_TRE_ENABLE_SET	CPU_CONTROL_TR_ENABLE
+#else
+#define CPU_CONTROL_TRE_ENABLE_CLR	CPU_CONTROL_TR_ENABLE
+#define CPU_CONTROL_TRE_ENABLE_SET	0
+#endif
+
 /* SWP is only usable on uni-processor ARMv7 systems. */
 #ifdef MULTIPROCESSOR
 #define CPU_CONTROL_XP_SWP_ENABLE 0 
@@ -590,6 +598,7 @@ generic_vstartv6:
 	CPU_CONTROL_UNAL_ENABLE		|	\
 	CPU_CONTROL_EX_BEND_SET		|	\
 	CPU_CONTROL_AFLT_ENABLE_SET	|	\
+	CPU_CONTROL_TRE_ENABLE_SET	|	\
 	CPU_CONTROL_XP_ENABLE_SET	|	\
 	0)
 
@@ -597,7 +606,44 @@ generic_vstartv6:
 //
 #define CPU_CONTROL_CLR			(	\
 	CPU_CONTROL_AFLT_ENABLE_CLR	|	\
+	CPU_CONTROL_TRE_ENABLE_CLR	|	\
 	CPU_CONTROL_XP_ENABLE_CLR	|	\
+	0)
+
+
+// bits to set in the PRRR
+//
+#define PRRR_SET			( 		\
+	__SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(0))	|	\
+	__SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(1))	|	\
+	__SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(2))	|	\
+	__SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(3))	|	\
+	__SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(4))	|	\
+	__SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(5))	|	\
+	__SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(6))	|	\
+	__SHIFTIN(PRRR_TR_NORMAL, PRRR_TRn(7))	|	\
+	PRRR_DS1				|	\
+	PRRR_NS1				|	\
+	0)
+
+// bits to set in the NMRR
+#define NMRR_SET			(		\
+	__SHIFTIN(NMRR_NC, NMRR_IRn(0))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_IRn(1))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_IRn(2))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_IRn(3))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_IRn(4))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_IRn(5))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_IRn(6))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_IRn(7))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_ORn(0))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_ORn(1))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_ORn(2))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_ORn(3))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_ORn(4))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_ORn(5))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_ORn(6))		|	\
+	__SHIFTIN(NMRR_NC, NMRR_ORn(7))		|	\
 	0)
 
 /*
@@ -666,10 +712,10 @@ armv7_init:
     CPU_CONTROL_DC_ENABLE |	\
     CPU_CONTROL_MMU_ENABLE |	\
     CPU_CONTROL_BPRD_ENABLE |	\
-    CPU_CONTROL_TR_ENABLE |	\
     0)
 
 #define ARMV7_SCTLR_SET	( 	\
+    CPU_CONTROL_TR_ENABLE |	\
     CPU_CONTROL_UNAL_ENABLE |	\
     CPU_CONTROL_XP_SWP_ENABLE | \
     0)
@@ -765,17 +811,15 @@ armv7_mmuinit:
 	mov	r1, #DOMAIN_DEFAULT
 	mcr	p15, 0, r1, c3, c0, 0	// DACR write
 
-#if 0
+	/*
+	 * Set TEX remap registers
+	 *  - All are set to uncacheable memory
+	 */
 
-/*
- * Set TEX remap registers
- *  - All is set to uncacheable memory
- */
-	ldr	r0, =0xAAAAA
-	mcr	CP15_PRRR(r0)
-	mov	r0, #0
-	mcr	CP15_NMRR(r0)
-#endif
+	ldr	r0, =PRRR_SET
+	mcr	p15, 0, r0, c10, c2, 0	// Primary Region Remap Register (PRRR)
+	ldr	r0, =NMRR_SET
+	mcr	p15, 0, r0, c10, c2, 1	// Normal Memory Remap Register (NMRR)
 
 	XPUTC(#'I')
 	mov	r1, #0
@@ -799,7 +843,6 @@ armv7_mmuinit:
 	bic	r0, r0, r2
 
 	mcr	p15, 0, r0, c1, c0, 0	/* SCTLR write */
-
 	dsb
 	isb
 

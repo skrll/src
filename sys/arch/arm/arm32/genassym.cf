@@ -117,7 +117,13 @@ define	L1_S_FRAME		L1_S_FRAME
 define	L1_S_SHIFT		L1_S_SHIFT
 define	L1_S_SIZE		L1_S_SIZE
 define	L1_S_CACHEABLE		L1_S_C|L1_S_B|L1_S_V6_S
+ifdef ARM_MMU_EXTENDED
+define	L1_S_NOCACHE		L1_S_NORMAL_NC
+define	L1_S_DEVICE		L1_S_DEVICE
+else
 define	L1_S_NOCACHE		L1_S_XS_TEX(1)
+define	L1_S_DEVICE		0
+endif
 define	L1_S_B			L1_S_B
 define	L1_S_C			L1_S_C
 define	L1_S_V6_S		L1_S_V6_S
