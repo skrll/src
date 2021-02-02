@@ -1,4 +1,4 @@
-/* $NetBSD: rk3328_iomux.c,v 1.4 2021/01/18 02:35:49 thorpej Exp $ */
+/* $NetBSD: rk3328_iomux.c,v 1.6 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rk3328_iomux.c,v 1.4 2021/01/18 02:35:49 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rk3328_iomux.c,v 1.6 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -116,8 +116,7 @@ static const struct rk3328_iomux_conf rk3328_iomux_conf = {
 
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "rockchip,rk3328-pinctrl",	.data = &rk3328_iomux_conf },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 struct rk3328_iomux_softc {
@@ -279,7 +278,7 @@ rk3328_iomux_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -296,7 +295,7 @@ rk3328_iomux_attach(device_t parent, device_t self, void *aux)
 		aprint_error(": couldn't acquire grf syscon\n");
 		return;
 	}
-	sc->sc_conf = of_search_compatible(phandle, compat_data)->data;
+	sc->sc_conf = of_compatible_lookup(phandle, compat_data)->data;
 
 	aprint_naive("\n");
 	aprint_normal(": RK3328 IOMUX control\n");

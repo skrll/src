@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_sramc.c,v 1.6 2021/01/19 00:35:10 thorpej Exp $ */
+/* $NetBSD: sunxi_sramc.c,v 1.11 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_sramc.c,v 1.6 2021/01/19 00:35:10 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_sramc.c,v 1.11 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -50,7 +50,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "allwinner,sun50i-a64-system-control" },
 	{ .compat = "allwinner,sun50i-h5-system-control" },
 	{ .compat = "allwinner,sun50i-h6-system-control" },
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 struct sunxi_sramc_area {
@@ -92,7 +92,7 @@ static const struct device_compatible_entry sunxi_sramc_areas[] = {
 	{ .compat = "allwinner,sun50i-a64-sram-c",
 	  .data = &sunxi_sramc_area_c },
 
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 struct sunxi_sramc_node {
@@ -126,7 +126,7 @@ sunxi_sramc_init_mmio(struct sunxi_sramc_softc *sc, int phandle)
 	int child;
 
 	for (child = OF_child(phandle); child; child = OF_peer(child)) {
-		dce = of_search_compatible(child, sunxi_sramc_areas);
+		dce = of_compatible_lookup(child, sunxi_sramc_areas);
 		if (dce != NULL) {
 			node = kmem_alloc(sizeof(*node), KM_SLEEP);
 			node->phandle = child;
@@ -143,12 +143,12 @@ sunxi_sramc_init(struct sunxi_sramc_softc *sc)
 {
 	const struct device_compatible_entry mmio_compat_data[] = {
 		{ .compat = "mmio-sram" },
-		{ 0 }
+		DEVICE_COMPAT_EOL
 	};
 	int child;
 
 	for (child = OF_child(sc->sc_phandle); child; child = OF_peer(child)) {
-		if (!of_match_compat_data(child, mmio_compat_data))
+		if (!of_compatible_match(child, mmio_compat_data))
 			continue;
 		sunxi_sramc_init_mmio(sc, child);
 	}
@@ -195,7 +195,7 @@ sunxi_sramc_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void

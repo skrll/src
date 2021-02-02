@@ -1,4 +1,4 @@
-/*	$NetBSD: at24cxx.c,v 1.38 2021/01/18 15:28:21 thorpej Exp $	*/
+/*	$NetBSD: at24cxx.c,v 1.41 2021/01/28 14:57:43 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at24cxx.c,v 1.38 2021/01/18 15:28:21 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at24cxx.c,v 1.41 2021/01/28 14:57:43 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -126,8 +126,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "atmel,24c02",		.value = 256 },
 	{ .compat = "atmel,24c16",		.value = 2048 },
 	{ .compat = "atmel,24c256",		.value = 32768 },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -181,7 +180,7 @@ seeprom_attach(device_t parent, device_t self, void *aux)
 	if (device_cfdata(self)->cf_flags)
 		sc->sc_size = (device_cfdata(self)->cf_flags << 7);
 
-	if (sc->sc_size <= 0 && ia->ia_ncompat > 0) {
+	if (sc->sc_size <= 0) {
 		if ((dce = iic_compatible_lookup(ia, compat_data)) != NULL)
 			sc->sc_size = dce->value;
 	}

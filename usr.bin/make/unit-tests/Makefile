@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.261 2021/01/19 05:49:33 rillig Exp $
+# $NetBSD: Makefile,v 1.265 2021/02/01 20:31:41 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -46,6 +46,7 @@ TESTS+=		cmd-errors-jobs
 TESTS+=		cmd-errors-lint
 TESTS+=		cmd-interrupt
 TESTS+=		cmdline
+TESTS+=		cmdline-redirect-stdin
 TESTS+=		cmdline-undefined
 TESTS+=		comment
 TESTS+=		compat-error
@@ -201,6 +202,7 @@ TESTS+=		impsrc
 TESTS+=		include-main
 TESTS+=		job-flags
 TESTS+=		job-output-long-lines
+TESTS+=		jobs-empty-commands
 TESTS+=		jobs-error-indirect
 TESTS+=		jobs-error-nested
 TESTS+=		jobs-error-nested-make
@@ -257,6 +259,7 @@ TESTS+=		opt-m-include-dir
 TESTS+=		opt-no-action
 TESTS+=		opt-no-action-at-all
 TESTS+=		opt-no-action-runflags
+TESTS+=		opt-no-action-touch
 TESTS+=		opt-query
 TESTS+=		opt-raw
 TESTS+=		opt-silent
@@ -557,18 +560,26 @@ STD_SED_CMDS.hide-from-output= \
 # $shell -c '...'
 #	NetBSD sh	...: not found
 #	NetBSD ksh	ksh: ...: not found
-#	bash 5		bash: line 1: ...: command not found
+#	bash 5.0.18	bash: ...: command not found
+#	bash 5.1.0	bash: line 1: ...: command not found
 #	dash		dash: 1: ...: not found
 #
 # $shell -c '< /nonexistent'
 #	NetBSD sh	sh: cannot open /nonexistent: no such file
 #	NetBSD ksh	ksh: cannot open /nonexistent: No such file or directory
-#	bash 5		bash: line 1: /nonexistent: No such file or directory
+#	bash 5.0.18	bash: /nonexistent: No such file or directory
+#	bash 5.1.0	bash: line 1: /nonexistent: No such file or directory
 #	dash		dash: 1: cannot open /nonexistent: No such file
 #
+# echo '< /nonexistent' | $shell
+#	NetBSD sh	sh: cannot open /nonexistent: no such file
+#	NetBSD ksh	ksh: <stdin>[1]: cannot open /nonexistent: No such file or directory
+#	bash 5.0.18	bash: line 1: /nonexistent: No such file or directory
+#	bash 5.1.0	bash: line 1: /nonexistent: No such file or directory
+#	dash		dash: 1: cannot open /nonexistent: No such file
 #
-STD_SED_CMDS.shell+=		-e 's,^${.SHELL:T}: line [0-9][0-9]*:,,'
-STD_SED_CMDS.shell+=		-e 's,^${.SHELL:T}: [0-9][0-9]*:,,'
+STD_SED_CMDS.shell+=		-e 's,^${.SHELL:T}: line [0-9][0-9]*: ,,'
+STD_SED_CMDS.shell+=		-e 's,^${.SHELL:T}: [0-9][0-9]*: ,,'
 STD_SED_CMDS.shell+=		-e 's,^${.SHELL:T}: ,,'
 
 # End of the configuration helpers section.

@@ -1,4 +1,4 @@
-/* $NetBSD: mesongx_mmc.c,v 1.10 2021/01/18 02:35:48 thorpej Exp $ */
+/* $NetBSD: mesongx_mmc.c,v 1.14 2021/01/28 11:45:31 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mesongx_mmc.c,v 1.10 2021/01/18 02:35:48 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mesongx_mmc.c,v 1.14 2021/01/28 11:45:31 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -271,8 +271,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "amlogic,meson-gx-mmc",	.value = MESONGX_MMC_V2 },
 	{ .compat = "amlogic,meson-gxbb-mmc",	.value = MESONGX_MMC_V2 },
 	{ .compat = "amlogic,meson-axg-mmc",	.value = MESONGX_MMC_V3 },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -280,7 +279,7 @@ mesongx_mmc_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -293,7 +292,7 @@ mesongx_mmc_attach(device_t parent, device_t self, void *aux)
 	bus_addr_t addr;
 	bus_size_t size;
 
-	sc->sc_hwtype = of_search_compatible(phandle, compat_data)->value;
+	sc->sc_hwtype = of_compatible_lookup(phandle, compat_data)->value;
 
 	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
 		aprint_error(": couldn't get registers\n");
@@ -497,6 +496,17 @@ mesongx_mmc_set_clock(struct mesongx_mmc_softc *sc, u_int freq, bool ddr)
 	if (best_diff == INT_MAX)
 		return ERANGE;
 
+	val = MMC_READ(sc, SD_EMMC_CFG);
+	val |= CFG_STOP_CLK;
+	MMC_WRITE(sc, SD_EMMC_CFG, val);
+
+	val = MMC_READ(sc, SD_EMMC_CFG);
+	if (ddr)
+		val |= CFG_DDR;
+	else
+		val &= ~CFG_DDR;
+	MMC_WRITE(sc, SD_EMMC_CFG, val);
+
 	val = MMC_READ(sc, SD_EMMC_CLOCK);
 	if (sc->sc_hwtype == MESONGX_MMC_V3)
 		val |= CLOCK_CFG_V3_ALWAYS_ON;
@@ -505,14 +515,18 @@ mesongx_mmc_set_clock(struct mesongx_mmc_softc *sc, u_int freq, bool ddr)
 	val &= ~CLOCK_CFG_RX_PHASE;
 	val |= __SHIFTIN(0, CLOCK_CFG_RX_PHASE);
 	val &= ~CLOCK_CFG_TX_PHASE;
-	val |= __SHIFTIN(2, CLOCK_CFG_TX_PHASE);
+	val |= __SHIFTIN(0, CLOCK_CFG_TX_PHASE);
 	val &= ~CLOCK_CFG_CO_PHASE;
-	val |= __SHIFTIN(3, CLOCK_CFG_CO_PHASE);
+	val |= __SHIFTIN(2, CLOCK_CFG_CO_PHASE);
 	val &= ~CLOCK_CFG_SRC;
 	val |= __SHIFTIN(best_sel, CLOCK_CFG_SRC);
 	val &= ~CLOCK_CFG_DIV;
 	val |= __SHIFTIN(best_div, CLOCK_CFG_DIV);
 	MMC_WRITE(sc, SD_EMMC_CLOCK, val);
+
+	val = MMC_READ(sc, SD_EMMC_CFG);
+	val &= ~CFG_STOP_CLK;
+	MMC_WRITE(sc, SD_EMMC_CFG, val);
 
 	return 0;
 }
@@ -734,21 +748,8 @@ static int
 mesongx_mmc_bus_clock(sdmmc_chipset_handle_t sch, int freq, bool ddr)
 {
 	struct mesongx_mmc_softc * const sc = sch;
-	uint32_t val;
-	int error;
 
-	error = mesongx_mmc_set_clock(sc, freq, ddr);
-	if (error != 0)
-		return error;
-
-	val = MMC_READ(sc, SD_EMMC_CFG);
-	if (ddr)
-		val |= CFG_DDR; 
-	else
-		val &= ~CFG_DDR;
-	MMC_WRITE(sc, SD_EMMC_CFG, val);
-
-	return 0;
+	return mesongx_mmc_set_clock(sc, freq, ddr);
 }
 
 static int

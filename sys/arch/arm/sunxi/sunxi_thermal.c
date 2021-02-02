@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_thermal.c,v 1.10 2021/01/18 02:35:49 thorpej Exp $ */
+/* $NetBSD: sunxi_thermal.c,v 1.13 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2016-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_thermal.c,v 1.10 2021/01/18 02:35:49 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_thermal.c,v 1.13 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -310,8 +310,7 @@ static struct device_compatible_entry compat_data[] = {
 	{ .compat = "allwinner,sun8i-h3-ts",	.data = &h3_config },
 	{ .compat = "allwinner,sun50i-a64-ts",	.data = &a64_config },
 	{ .compat = "allwinner,sun50i-h5-ts",	.data = &h5_config },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 struct sunxi_thermal_softc {
@@ -545,7 +544,7 @@ sunxi_thermal_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -568,7 +567,7 @@ sunxi_thermal_attach(device_t parent, device_t self, void *aux)
 	sc->dev = self;
 	sc->phandle = phandle;
 	sc->bst = faa->faa_bst;
-	sc->conf = of_search_compatible(phandle, compat_data)->data;
+	sc->conf = of_compatible_lookup(phandle, compat_data)->data;
 	if (bus_space_map(sc->bst, addr, size, 0, &sc->bsh) != 0) {
 		aprint_error(": couldn't map registers\n");
 		return;

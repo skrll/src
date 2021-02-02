@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_twi.c,v 1.14 2021/01/18 02:35:49 thorpej Exp $ */
+/* $NetBSD: sunxi_twi.c,v 1.17 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: sunxi_twi.c,v 1.14 2021/01/18 02:35:49 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_twi.c,v 1.17 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -75,8 +75,7 @@ static const struct sunxi_twi_config sun6i_a31_i2c_config = {
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "allwinner,sun4i-a10-i2c",	.data = &sun4i_a10_i2c_config },
 	{ .compat = "allwinner,sun6i-a31-i2c",	.data = &sun6i_a31_i2c_config },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 CFATTACH_DECL_NEW(sunxi_twi, sizeof(struct gttwsi_softc),
@@ -117,7 +116,7 @@ sunxi_twi_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -162,7 +161,7 @@ sunxi_twi_attach(device_t parent, device_t self, void *aux)
 			return;
 		}
 
-	conf = of_search_compatible(phandle, compat_data)->data;
+	conf = of_compatible_lookup(phandle, compat_data)->data;
 	prop_dictionary_set_bool(device_properties(self), "iflg-rwc",
 	    conf->iflg_rwc);
 

@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1773 2021/01/09 16:44:35 christos Exp $
+#	$NetBSD: 3RDPARTY,v 1.1775 2021/01/27 15:29:27 wiz Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -498,7 +498,7 @@ When updating GDB, it is imperative to test that:
 
 Package:	binutils
 Version:	2.34
-Current Vers:	2.34
+Current Vers:	2.36
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/binutils/
 Home Page:	http://www.gnu.org/software/binutils/
@@ -1410,8 +1410,8 @@ Notes:
 Added changes from a5 -> a12 manually.
 
 Package:	tz
-Version:	tzcode2020c / tzdata2020f
-Current Vers:	tzcode2020f / tzdata2020f
+Version:	tzcode2020c / tzdata2021a
+Current Vers:	tzcode2021a / tzdata2021a
 Maintainer:	Paul Eggert <eggert@cs.ucla.edu>
 Archive Site:	ftp://ftp.iana.org/tz/releases/
 Archive Site:	ftp://munnari.oz.au/pub/oldtz/

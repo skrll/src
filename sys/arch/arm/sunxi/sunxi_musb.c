@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_musb.c,v 1.7 2021/01/18 02:35:49 thorpej Exp $ */
+/* $NetBSD: sunxi_musb.c,v 1.10 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_musb.c,v 1.7 2021/01/18 02:35:49 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_musb.c,v 1.10 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -65,8 +65,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "allwinner,sun6i-a13-musb",		.value = 5 },
 	{ .compat = "allwinner,sun8i-h3-musb",		.value = 4 },
 	{ .compat = "allwinner,sun8i-a33-musb",		.value = 5 },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 #define	REMAPFLAG	0x8000
@@ -295,7 +294,7 @@ sunxi_musb_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -371,7 +370,7 @@ sunxi_musb_attach(device_t parent, device_t self, void *aux)
 	sc->sc_intr_poll = sunxi_musb_poll;
 	sc->sc_intr_poll_arg = sc;
 	sc->sc_mode = MOTG_MODE_HOST;
-	sc->sc_ep_max = of_search_compatible(phandle, compat_data)->value;
+	sc->sc_ep_max = of_compatible_lookup(phandle, compat_data)->value;
 	sc->sc_ep_fifosize = 512;
 
 	aprint_naive("\n");

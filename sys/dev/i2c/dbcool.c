@@ -1,4 +1,4 @@
-/*	$NetBSD: dbcool.c,v 1.57 2021/01/17 21:42:35 thorpej Exp $ */
+/*	$NetBSD: dbcool.c,v 1.60 2021/01/30 01:22:06 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -50,7 +50,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dbcool.c,v 1.57 2021/01/17 21:42:35 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dbcool.c,v 1.60 2021/01/30 01:22:06 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -736,8 +736,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "adt7467" },
 	{ .compat = "adt7460" },
 	{ .compat = "adm1030" },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 int
@@ -777,6 +776,7 @@ dbcool_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dc.dc_writereg = dbcool_writereg;
 	sc->sc_dev = self;
 	sc->sc_prop = args->ia_prop;
+	prop_object_retain(sc->sc_prop);
 
 	if (dbcool_chip_ident(&sc->sc_dc) < 0 || sc->sc_dc.dc_chip == NULL)
 		panic("could not identify chip at addr %d", args->ia_addr);

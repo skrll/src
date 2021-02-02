@@ -1,4 +1,4 @@
-/*	$NetBSD: err.c,v 1.69 2021/01/17 17:14:34 rillig Exp $	*/
+/*	$NetBSD: err.c,v 1.77 2021/01/31 14:05:00 rillig Exp $	*/
 
 /*
  * Copyright (c) 1994, 1995 Jochen Pohl
@@ -37,7 +37,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: err.c,v 1.69 2021/01/17 17:14:34 rillig Exp $");
+__RCSID("$NetBSD: err.c,v 1.77 2021/01/31 14:05:00 rillig Exp $");
 #endif
 
 #include <sys/types.h>
@@ -60,9 +60,9 @@ static	void	vwarning(int, va_list);
 
 const	char *msgs[] = {
 	"empty declaration",					      /* 0 */
-	"old style declaration; add int",			      /* 1 */
+	"old style declaration; add 'int'",			      /* 1 */
 	"empty declaration",					      /* 2 */
-	"%s declared in argument declaration list",		      /* 3 */
+	"'%s' declared in argument declaration list",		      /* 3 */
 	"illegal type combination",				      /* 4 */
 	"modifying typedef with '%s'; only qualifiers allowed",	      /* 5 */
 	"use 'double' instead of 'long float'",			      /* 6 */
@@ -78,7 +78,7 @@ const	char *msgs[] = {
 	"array of function is illegal",				      /* 16 */
 	"null dimension",					      /* 17 */
 	"illegal use of 'void'",				      /* 18 */
-	"void type for %s",					      /* 19 */
+	"void type for '%s'",					      /* 19 */
 	"negative array dimension (%d)",			      /* 20 */
 	"redeclaration of formal parameter %s",			      /* 21 */
 	"incomplete or misplaced function definition",		      /* 22 */
@@ -176,10 +176,10 @@ const	char *msgs[] = {
 	"%soperand of '%s' must be lvalue",			      /* 114 */
 	"%soperand of '%s' must be modifiable lvalue",		      /* 115 */
 	"illegal pointer subtraction",				      /* 116 */
-	"bitwise operation on signed value possibly nonportable",     /* 117 */
+	"bitwise '%s' on signed value possibly nonportable",	      /* 117 */
 	"semantics of '%s' change in ANSI C; use explicit cast",      /* 118 */
 	"conversion of '%s' to '%s' is out of range",		      /* 119 */
-	"bitwise operation on signed value nonportable",	      /* 120 */
+	"bitwise '%s' on signed value nonportable",		      /* 120 */
 	"negative shift",					      /* 121 */
 	"shift greater than size of object",			      /* 122 */
 	"illegal combination of %s (%s) and %s (%s), op %s",	      /* 123 */
@@ -248,7 +248,7 @@ const	char *msgs[] = {
 	"bit-field initialisation is illegal in traditional C",	      /* 186 */
 	"non-null byte ignored in string initializer",		      /* 187 */
 	"no automatic aggregate initialization in traditional C",     /* 188 */
-	"assignment of struct/union illegal in traditional C",	      /* 189 */
+	"",			/* no longer used */		      /* 189 */
 	"empty array declaration: %s",				      /* 190 */
 	"%s set but not used in function %s",			      /* 191 */
 	"%s unused in function %s",				      /* 192 */
@@ -306,7 +306,7 @@ const	char *msgs[] = {
 	"illegal structure pointer combination",		      /* 244 */
 	"illegal structure pointer combination, op %s",		      /* 245 */
 	"dubious conversion of enum to '%s'",			      /* 246 */
-	"pointer casts may be troublesome",			      /* 247 */
+	"pointer cast from '%s' to '%s' may be troublesome",	      /* 247 */
 	"floating-point constant out of range",			      /* 248 */
 	"syntax error '%s'",					      /* 249 */
 	"unknown character \\%o",				      /* 250 */
@@ -318,7 +318,7 @@ const	char *msgs[] = {
 	"unterminated comment",					      /* 256 */
 	"extra characters in lint comment",			      /* 257 */
 	"unterminated string constant",				      /* 258 */
-	"conversion to '%s' due to prototype, arg #%d",		      /* 259 */
+	"argument #%d is converted from '%s' to '%s'",		      /* 259 */
 	"previous declaration of %s",				      /* 260 */
 	"previous definition of %s",				      /* 261 */
 	"\\\" inside character constants undefined in traditional C", /* 262 */
@@ -334,7 +334,7 @@ const	char *msgs[] = {
 	"empty translation unit",				      /* 272 */
 	"bit-field type '%s' invalid in ANSI C",		      /* 273 */
 	"ANSI C forbids comparison of %s with %s",		      /* 274 */
-	"cast discards 'const' from pointer target type",	      /* 275 */
+	"cast discards 'const' from type '%s'",			      /* 275 */
 	"__%s__ is illegal for type %s",			      /* 276 */
 	"initialisation of '%s' with '%s'",			      /* 277 */
 	"combination of '%s' and '%s', arg #%d",		      /* 278 */
