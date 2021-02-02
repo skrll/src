@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.533 2021/01/27 00:02:38 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.538 2021/02/01 22:21:33 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -84,7 +84,7 @@
  *	Parse_End	Clean up the module
  *
  *	Parse_File	Parse a top-level makefile.  Included files are
- *			handled by Parse_include_file though.
+ *			handled by IncludeFile instead.
  *
  *	Parse_IsVar	Return TRUE if the given line is a variable
  *			assignment. Used by MainParseArgs to determine if
@@ -109,7 +109,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.533 2021/01/27 00:02:38 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.538 2021/02/01 22:21:33 rillig Exp $");
 
 /* types and constants */
 
@@ -455,7 +455,7 @@ loadfile(const char *path, int fd)
 	{
 		struct loadedfile *lf = loadedfile_create(path,
 		    buf.data, buf.len);
-		Buf_Destroy(&buf, FALSE);
+		Buf_DoneData(&buf);
 		return lf;
 	}
 }
@@ -1018,7 +1018,7 @@ ParseErrorNoDependency(const char *lstart)
 		Parse_Error(PARSE_FATAL, "Unknown directive \"%.*s\"",
 		    (int)(dirend - dirstart), dirstart);
 	} else
-		Parse_Error(PARSE_FATAL, "Need an operator");
+		Parse_Error(PARSE_FATAL, "Invalid line type");
 }
 
 static void
@@ -1888,12 +1888,14 @@ static void
 VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
 		    FStr *out_avalue)
 {
-	const char *avalue;
 	char *evalue;
 
 	/*
 	 * make sure that we set the variable the first time to nothing
-	 * so that it gets substituted!
+	 * so that it gets substituted.
+	 *
+	 * TODO: Add a test that demonstrates why this code is needed,
+	 *  apart from making the debug log longer.
 	 */
 	if (!Var_Exists(name, ctxt))
 		Var_Set(name, "", ctxt);
@@ -1902,10 +1904,9 @@ VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
 	    VARE_WANTRES | VARE_KEEP_DOLLAR | VARE_KEEP_UNDEF, &evalue);
 	/* TODO: handle errors */
 
-	avalue = evalue;
-	Var_Set(name, avalue, ctxt);
+	Var_Set(name, evalue, ctxt);
 
-	*out_avalue = (FStr){ avalue, evalue };
+	*out_avalue = FStr_InitOwn(evalue);
 }
 
 static void
@@ -1938,12 +1939,13 @@ VarAssign_EvalShell(const char *name, const char *uvalue, GNode *ctxt,
 /*
  * Perform a variable assignment.
  *
- * The actual value of the variable is returned in *out_avalue and
- * *out_avalue_freeIt.  Especially for VAR_SUBST and VAR_SHELL this can differ
- * from the literal value.
+ * The actual value of the variable is returned in *out_TRUE_avalue.
+ * Especially for VAR_SUBST and VAR_SHELL this can differ from the literal
+ * value.
  *
- * Return whether the assignment was actually done.  The assignment is only
- * skipped if the operator is '?=' and the variable already exists.
+ * Return whether the assignment was actually performed, which is usually
+ * the case.  It is only skipped if the operator is '?=' and the variable
+ * already exists.
  */
 static Boolean
 VarAssign_Eval(const char *name, VarAssignOp op, const char *uvalue,
@@ -2104,7 +2106,7 @@ Parse_AddIncludeDir(const char *dir)
  * line options.
  */
 static void
-Parse_include_file(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
+IncludeFile(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
 {
 	struct loadedfile *lf;
 	char *fullname;		/* full pathname of file */
@@ -2255,7 +2257,7 @@ ParseDoInclude(char *directive)
 	(void)Var_Subst(file, VAR_CMDLINE, VARE_WANTRES, &file);
 	/* TODO: handle errors */
 
-	Parse_include_file(file, endc == '>', directive[0] == 'd', silent);
+	IncludeFile(file, endc == '>', directive[0] == 'd', silent);
 	free(file);
 }
 
@@ -2508,7 +2510,7 @@ ParseTraditionalInclude(char *line)
 		else
 			done = TRUE;
 
-		Parse_include_file(file, FALSE, FALSE, silent);
+		IncludeFile(file, FALSE, FALSE, silent);
 	}
 out:
 	free(all_files);
@@ -2585,7 +2587,7 @@ ParseEOF(void)
 	}
 
 	/* Dispose of curFile info */
-	/* Leak curFile->fname because all the gnodes have pointers to it. */
+	/* Leak curFile->fname because all the GNodes have pointers to it. */
 	free(curFile->buf_freeIt);
 	Vector_Pop(&includes);
 
@@ -2785,7 +2787,6 @@ ParseGetLine(GetLineMode mode)
 	char *firstBackslash;
 	char *firstComment;
 
-	/* Loop through blank lines and comment lines */
 	for (;;) {
 		ParseRawLineResult res = ParseRawLine(curFile,
 		    &line, &line_end, &firstBackslash, &firstComment);
