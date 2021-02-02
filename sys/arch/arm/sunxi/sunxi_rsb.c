@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_rsb.c,v 1.11 2021/01/18 02:35:49 thorpej Exp $ */
+/* $NetBSD: sunxi_rsb.c,v 1.14 2021/01/27 03:10:20 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2014-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_rsb.c,v 1.11 2021/01/18 02:35:49 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_rsb.c,v 1.14 2021/01/27 03:10:20 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -52,8 +52,7 @@ enum sunxi_rsb_type {
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "allwinner,sun6i-a31-p2wi",	.value = SUNXI_P2WI },
 	{ .compat = "allwinner,sun8i-a23-rsb",	.value = SUNXI_RSB },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 #define RSB_ADDR_PMIC_PRIMARY	0x3a3
@@ -120,7 +119,7 @@ sunxi_rsb_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -157,7 +156,7 @@ sunxi_rsb_attach(device_t parent, device_t self, void *aux)
 		}
 
 	sc->sc_dev = self;
-	sc->sc_type = of_search_compatible(phandle, compat_data)->value;
+	sc->sc_type = of_compatible_lookup(phandle, compat_data)->value;
 	sc->sc_bst = faa->faa_bst;
 	if (bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh) != 0) {
 		aprint_error(": couldn't map registers\n");

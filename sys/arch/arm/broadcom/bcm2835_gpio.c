@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_gpio.c,v 1.17 2021/01/15 00:38:22 jmcneill Exp $	*/
+/*	$NetBSD: bcm2835_gpio.c,v 1.19 2021/01/29 14:11:14 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2013, 2014, 2017 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_gpio.c,v 1.17 2021/01/15 00:38:22 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_gpio.c,v 1.19 2021/01/29 14:11:14 skrll Exp $");
 
 /*
  * Driver for BCM2835 GPIO
@@ -238,18 +238,19 @@ bcm283x_pinctrl_set_config(device_t dev, const void *data, size_t len)
 	return 0;
 }
 
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "brcm,bcm2835-gpio" },
+	{ .compat = "brcm,bcm2838-gpio" },
+	{ .compat = "brcm,bcm2711-gpio" },
+	DEVICE_COMPAT_EOL
+};
+
 static int
 bcmgpio_match(device_t parent, cfdata_t cf, void *aux)
 {
-	const char * const compatible[] = {
-		"brcm,bcm2835-gpio",
-		"brcm,bcm2838-gpio",
-		"brcm,bcm2711-gpio",
-		NULL
-	};
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compatible(faa->faa_phandle, compatible);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -336,12 +337,14 @@ bcmgpio_attach(device_t parent, device_t self, void *aux)
 			continue;
 		}
 
+		char xname[16];
+		snprintf(xname, sizeof(xname), "%s #%u", device_xname(self),
+		    bank);
 		sc->sc_banks[bank].sc_bankno = bank;
 		sc->sc_banks[bank].sc_bcm = sc;
-		sc->sc_banks[bank].sc_ih =
-		    fdtbus_intr_establish(phandle, bank, IPL_VM,
-		    			  FDT_INTR_MPSAFE,
-					  bcmgpio_intr, &sc->sc_banks[bank]);
+		sc->sc_banks[bank].sc_ih = fdtbus_intr_establish_xname(phandle,
+		    bank, IPL_VM, FDT_INTR_MPSAFE, bcmgpio_intr,
+		    &sc->sc_banks[bank], xname);
 		if (sc->sc_banks[bank].sc_ih) {
 			aprint_normal_dev(self,
 			    "pins %d..%d interrupting on %s\n",

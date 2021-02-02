@@ -1,4 +1,4 @@
-/* $NetBSD: device.h,v 1.161 2021/01/18 15:28:21 thorpej Exp $ */
+/* $NetBSD: device.h,v 1.164 2021/01/27 04:54:08 thorpej Exp $ */
 
 /*
  * Copyright (c) 1996, 2000 Christopher G. Demetriou
@@ -124,12 +124,17 @@ typedef struct cfattach *cfattach_t;
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 struct device_compatible_entry {
-	const char	*compat;
+	union {
+		const char *compat;
+		uintptr_t id;
+	};
 	union {
 		const void *data;
 		uintptr_t value;
 	};
 };
+
+#define	DEVICE_COMPAT_EOL	{ .compat = NULL }
 
 struct device_lock {
 	int		dvl_nwait;
@@ -545,10 +550,33 @@ device_t	device_find_by_driver_unit(const char *, int);
 
 int		device_compatible_match(const char **, int,
 				const struct device_compatible_entry *);
+int		device_compatible_pmatch(const char **, int,
+				const struct device_compatible_entry *);
 const struct device_compatible_entry *
 		device_compatible_lookup(const char **, int,
 				const struct device_compatible_entry *);
+const struct device_compatible_entry *
+		device_compatible_plookup(const char **, int,
+				const struct device_compatible_entry *);
 
+int		device_compatible_match_strlist(const char *, size_t,
+				const struct device_compatible_entry *);
+int		device_compatible_pmatch_strlist(const char *, size_t,
+				const struct device_compatible_entry *);
+const struct device_compatible_entry *
+		device_compatible_lookup_strlist(const char *, size_t,
+				const struct device_compatible_entry *);
+const struct device_compatible_entry *
+		device_compatible_plookup_strlist(const char *, size_t,
+				const struct device_compatible_entry *);
+
+int		device_compatible_match_id(uintptr_t const, uintptr_t const,
+				const struct device_compatible_entry *);
+const struct device_compatible_entry *
+		device_compatible_lookup_id(uintptr_t const, uintptr_t const,
+				const struct device_compatible_entry *);
+
+bool		device_pmf_is_registered(device_t);
 bool		device_pmf_is_registered(device_t);
 
 bool		device_pmf_driver_suspend(device_t, const pmf_qual_t *);

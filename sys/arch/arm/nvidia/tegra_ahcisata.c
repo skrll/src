@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_ahcisata.c,v 1.15 2021/01/18 02:35:48 thorpej Exp $ */
+/* $NetBSD: tegra_ahcisata.c,v 1.18 2021/01/27 03:10:19 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra_ahcisata.c,v 1.15 2021/01/18 02:35:48 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra_ahcisata.c,v 1.18 2021/01/27 03:10:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -105,8 +105,7 @@ struct tegra_ahcisata_data tegra210_ahcisata_data = {
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "nvidia,tegra124-ahci", .data = &tegra124_ahcisata_data },
 	{ .compat = "nvidia,tegra210-ahci", .data = &tegra210_ahcisata_data },
-
-	{ 0 },
+	DEVICE_COMPAT_EOL,
 };
 
 
@@ -121,7 +120,7 @@ tegra_ahcisata_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -170,7 +169,7 @@ tegra_ahcisata_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_tad = of_search_compatible(faa->faa_phandle, compat_data)->data;
+	sc->sc_tad = of_compatible_lookup(faa->faa_phandle, compat_data)->data;
 	if (sc->sc_tad->tad_type == TEGRA124) {
 		sc->sc_clk_cml1 = fdtbus_clock_get(phandle, "cml1");
 		if (sc->sc_clk_cml1 == NULL) {

@@ -1,4 +1,4 @@
-/* $NetBSD: dstemp.c,v 1.7 2021/01/17 21:42:35 thorpej Exp $ */
+/* $NetBSD: dstemp.c,v 1.11 2021/01/30 17:37:25 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 Michael Lorenz
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dstemp.c,v 1.7 2021/01/17 21:42:35 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dstemp.c,v 1.11 2021/01/30 17:37:25 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -78,9 +78,9 @@ CFATTACH_DECL_NEW(dstemp, sizeof(struct dstemp_softc),
     dstemp_match, dstemp_attach, NULL, NULL);
 
 static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "dallas,ds1631" },
 	{ .compat = "ds1631" },
-
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -110,6 +110,7 @@ dstemp_attach(device_t parent, device_t self, void *aux)
 	sc->sc_i2c = ia->ia_tag;
 	sc->sc_addr = ia->ia_addr;
 	sc->sc_prop = ia->ia_prop;
+	prop_object_retain(sc->sc_prop);
 
 	aprint_naive("\n");
 	aprint_normal(": DS1361\n");
