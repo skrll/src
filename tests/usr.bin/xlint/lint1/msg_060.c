@@ -1,7 +1,8 @@
-/*	$NetBSD: msg_060.c,v 1.1 2021/01/02 10:22:43 rillig Exp $	*/
+/*	$NetBSD: msg_060.c,v 1.3 2021/01/31 11:12:07 rillig Exp $	*/
 # 3 "msg_060.c"
 
 // Test for message: void must be sole parameter [60]
 
-TODO: "Add example code that triggers the above message."
-TODO: "Add example code that almost triggers the above message."
+void example_1(void);
+void example_2(int, void);		/* expect: 60 */
+void example_3(void, void, void);	/* expect: 60, 60, 60 */

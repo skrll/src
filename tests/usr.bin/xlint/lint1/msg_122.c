@@ -1,7 +1,10 @@
-/*	$NetBSD: msg_122.c,v 1.1 2021/01/02 10:22:43 rillig Exp $	*/
+/*	$NetBSD: msg_122.c,v 1.3 2021/01/31 11:12:07 rillig Exp $	*/
 # 3 "msg_122.c"
 
 // Test for message: shift greater than size of object [122]
 
-TODO: "Add example code that triggers the above message."
-TODO: "Add example code that almost triggers the above message."
+int
+example(int x)
+{
+	return x << 129;		/* expect: 122 */
+}

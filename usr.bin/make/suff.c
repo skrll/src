@@ -1,4 +1,4 @@
-/*	$NetBSD: suff.c,v 1.333 2020/12/30 10:03:16 rillig Exp $	*/
+/*	$NetBSD: suff.c,v 1.341 2021/01/30 15:48:42 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -114,7 +114,7 @@
 #include "dir.h"
 
 /*	"@(#)suff.c	8.4 (Berkeley) 3/21/94"	*/
-MAKE_RCSID("$NetBSD: suff.c,v 1.333 2020/12/30 10:03:16 rillig Exp $");
+MAKE_RCSID("$NetBSD: suff.c,v 1.341 2021/01/30 15:48:42 rillig Exp $");
 
 typedef List SuffixList;
 typedef ListNode SuffixListNode;
@@ -288,7 +288,7 @@ Suffix_Unassign(Suffix **var)
 static const char *
 StrTrimPrefix(const char *pref, const char *str)
 {
-	while (*str && *pref == *str) {
+	while (*str != '\0' && *pref == *str) {
 		pref++;
 		str++;
 	}
@@ -615,6 +615,7 @@ Suff_AddTransform(const char *name)
 	gn->type = OP_TRANSFORM;
 
 	{
+		/* TODO: Avoid the redundant parsing here. */
 		Boolean ok = ParseTransform(name, &srcSuff, &targSuff);
 		assert(ok);
 		(void)ok;
@@ -884,7 +885,7 @@ Suff_DoPaths(void)
 
 	for (ln = sufflist.first; ln != NULL; ln = ln->next) {
 		Suffix *suff = ln->datum;
-		if (!Lst_IsEmpty(suff->searchPath)) {
+		if (!Lst_IsEmpty(&suff->searchPath->dirs)) {
 #ifdef INCLUDES
 			if (suff->flags & SUFF_INCLUDE)
 				SearchPath_AddAll(includesPath,
@@ -901,11 +902,11 @@ Suff_DoPaths(void)
 		}
 	}
 
-	flags = SearchPath_ToFlags("-I", includesPath);
+	flags = SearchPath_ToFlags(includesPath, "-I");
 	Var_Set(".INCLUDES", flags, VAR_GLOBAL);
 	free(flags);
 
-	flags = SearchPath_ToFlags("-L", libsPath);
+	flags = SearchPath_ToFlags(libsPath, "-L");
 	Var_Set(".LIBS", flags, VAR_GLOBAL);
 	free(flags);
 
@@ -1012,6 +1013,7 @@ Candidate_New(char *name, char *prefix, Suffix *suff, Candidate *parent,
 }
 
 /* Add a new candidate to the list. */
+/*ARGSUSED*/
 static void
 CandidateList_Add(CandidateList *list, char *srcName, Candidate *targ,
 		  Suffix *suff, const char *debug_tag)
@@ -1174,14 +1176,14 @@ FindCmds(Candidate *targ, CandidateSearcher *cs)
 	GNode *tgn;		/* Target GNode */
 	GNode *sgn;		/* Source GNode */
 	size_t prefLen;		/* The length of the defined prefix */
-	Suffix *suff;		/* Suffix on matching beastie */
+	Suffix *suff;		/* Suffix of the matching candidate */
 	Candidate *ret;		/* Return value */
 
 	tgn = targ->node;
 	prefLen = strlen(targ->prefix);
 
 	for (gln = tgn->children.first; gln != NULL; gln = gln->next) {
-		const char *cp;
+		const char *base;
 
 		sgn = gln->datum;
 
@@ -1196,11 +1198,11 @@ FindCmds(Candidate *targ, CandidateSearcher *cs)
 			continue;
 		}
 
-		cp = str_basename(sgn->name);
-		if (strncmp(cp, targ->prefix, prefLen) != 0)
+		base = str_basename(sgn->name);
+		if (strncmp(base, targ->prefix, prefLen) != 0)
 			continue;
 		/* The node matches the prefix, see if it has a known suffix. */
-		suff = FindSuffixByName(cp + prefLen);
+		suff = FindSuffixByName(base + prefLen);
 		if (suff == NULL)
 			continue;
 
@@ -1244,7 +1246,7 @@ ExpandWildcards(GNodeListNode *cln, GNode *pgn)
 	 * Expand the word along the chosen path
 	 */
 	Lst_Init(&expansions);
-	Dir_Expand(cgn->name, Suff_FindPath(cgn), &expansions);
+	SearchPath_Expand(Suff_FindPath(cgn), cgn->name, &expansions);
 
 	while (!Lst_IsEmpty(&expansions)) {
 		GNode *gn;
@@ -2135,9 +2137,7 @@ Suffix_Print(Suffix *suff)
 		char flags_buf[SuffixFlags_ToStringSize];
 
 		debug_printf(" (%s)",
-		    Enum_FlagsToString(flags_buf, sizeof flags_buf,
-			suff->flags,
-			SuffixFlags_ToStringSpecs));
+		    SuffixFlags_ToString(flags_buf, suff->flags));
 	}
 	debug_printf("\n");
 

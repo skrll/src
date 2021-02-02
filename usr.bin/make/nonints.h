@@ -1,6 +1,6 @@
-/*	$NetBSD: nonints.h,v 1.186 2020/12/28 00:46:24 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.189 2021/02/01 21:38:20 rillig Exp $	*/
 
-/*-
+/*
  * Copyright (c) 1988, 1989, 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
@@ -34,7 +34,7 @@
  *	from: @(#)nonints.h	8.3 (Berkeley) 3/19/94
  */
 
-/*-
+/*
  * Copyright (c) 1989 by Berkeley Softworks
  * All rights reserved.
  *
@@ -107,7 +107,11 @@ str_basename(const char *pathname)
 
 MAKE_INLINE SearchPath *
 SearchPath_New(void)
-{ return Lst_New(); }
+{
+	SearchPath *path = bmake_malloc(sizeof *path);
+	Lst_Init(&path->dirs);
+	return path;
+}
 
 void SearchPath_Free(SearchPath *);
 
@@ -282,26 +286,28 @@ void Var_End(void);
 typedef enum VarEvalFlags {
 	VARE_NONE		= 0,
 
-	/* Expand and evaluate variables during parsing.
+	/*
+	 * Expand and evaluate variables during parsing.
 	 *
 	 * TODO: Document what Var_Parse and Var_Subst return when this flag
-	 * is not set. */
+	 * is not set.
+	 */
 	VARE_WANTRES		= 1 << 0,
 
-	/* Treat undefined variables as errors.
-	 * Must only be used in combination with VARE_WANTRES. */
+	/*
+	 * Treat undefined variables as errors.
+	 * Must only be used in combination with VARE_WANTRES.
+	 */
 	VARE_UNDEFERR		= 1 << 1,
 
-	/* Keep '$$' as '$$' instead of reducing it to a single '$'.
+	/*
+	 * Keep '$$' as '$$' instead of reducing it to a single '$'.
 	 *
 	 * Used in variable assignments using the ':=' operator.  It allows
 	 * multiple such assignments to be chained without accidentally
 	 * expanding '$$file' to '$file' in the first assignment and
 	 * interpreting it as '${f}' followed by 'ile' in the next assignment.
-	 *
-	 * See also preserveUndefined, which preserves subexpressions that are
-	 * based on undefined variables; maybe that can be converted to a flag
-	 * as well. */
+	 */
 	VARE_KEEP_DOLLAR	= 1 << 2,
 
 	/*

@@ -1,7 +1,13 @@
-/*	$NetBSD: msg_127.c,v 1.1 2021/01/02 10:22:43 rillig Exp $	*/
+/*	$NetBSD: msg_127.c,v 1.3 2021/01/31 11:12:07 rillig Exp $	*/
 # 3 "msg_127.c"
 
-// Test for message: '&' before array or function: ignored [127]
+/* Test for message: '&' before array or function: ignored [127] */
 
-TODO: "Add example code that triggers the above message."
-TODO: "Add example code that almost triggers the above message."
+/* lint1-extra-flags: -t */
+
+void
+example()
+{
+	if (&example != (void *)0)	/* expect: 127 */
+		return;
+}

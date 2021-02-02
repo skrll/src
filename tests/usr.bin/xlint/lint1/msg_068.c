@@ -1,7 +1,8 @@
-/*	$NetBSD: msg_068.c,v 1.1 2021/01/02 10:22:43 rillig Exp $	*/
+/*	$NetBSD: msg_068.c,v 1.3 2021/01/31 11:12:07 rillig Exp $	*/
 # 3 "msg_068.c"
 
 // Test for message: typedef already qualified with '%s' [68]
 
-TODO: "Add example code that triggers the above message."
-TODO: "Add example code that almost triggers the above message."
+typedef const char const_char;
+
+const const_char twice_const;	/* expect: 68 */

@@ -1,7 +1,8 @@
-/*	$NetBSD: msg_173.c,v 1.1 2021/01/02 10:22:43 rillig Exp $	*/
+/*	$NetBSD: msg_173.c,v 1.3 2021/01/31 11:12:07 rillig Exp $	*/
 # 3 "msg_173.c"
 
 // Test for message: too many array initializers, expected %d [173]
 
-TODO: "Add example code that triggers the above message."
-TODO: "Add example code that almost triggers the above message."
+int arr_limited[3] = { 1, 2, 3, 4 };	/* expect: 173 */
+int arr_unlimited[] = { 1, 2, 3, 4 };
+int arr_too_few[] = { 1, 2 };

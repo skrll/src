@@ -1,7 +1,13 @@
-/*	$NetBSD: msg_050.c,v 1.1 2021/01/02 10:22:43 rillig Exp $	*/
+/*	$NetBSD: msg_050.c,v 1.3 2021/01/31 11:12:07 rillig Exp $	*/
 # 3 "msg_050.c"
 
-// Test for message: a function is declared as an argument: %s [50]
+/* Test for message: a function is declared as an argument: %s [50] */
 
-TODO: "Add example code that triggers the above message."
-TODO: "Add example code that almost triggers the above message."
+/* lint1-flags: -Stw */
+
+typedef void (function)();
+
+void example(f)			/* expect: 231 */
+    function f;			/* expect: 50 */
+{
+}

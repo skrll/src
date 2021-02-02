@@ -1,4 +1,4 @@
-/*	$NetBSD: tyname.c,v 1.22 2021/01/04 22:26:50 rillig Exp $	*/
+/*	$NetBSD: tyname.c,v 1.26 2021/01/26 18:38:57 rillig Exp $	*/
 
 /*-
  * Copyright (c) 2005 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: tyname.c,v 1.22 2021/01/04 22:26:50 rillig Exp $");
+__RCSID("$NetBSD: tyname.c,v 1.26 2021/01/26 18:38:57 rillig Exp $");
 #endif
 
 #include <limits.h>
@@ -50,7 +50,7 @@ __RCSID("$NetBSD: tyname.c,v 1.22 2021/01/04 22:26:50 rillig Exp $");
 	do { \
 		(void)warnx("%s, %d: " fmt, __FILE__, __LINE__, ##args); \
 		abort(); \
-	} while (/*CONSTCOND*/0)
+	} while (/*CONSTCOND*/false)
 #endif
 
 /* A tree of strings. */
@@ -85,7 +85,7 @@ new_name_tree_node(const char *name)
 static const char *
 intern(const char *name)
 {
-	name_tree_node *n = type_names;
+	name_tree_node *n = type_names, **next;
 	int cmp;
 
 	if (n == NULL) {
@@ -95,19 +95,12 @@ intern(const char *name)
 	}
 
 	while ((cmp = strcmp(name, n->ntn_name)) != 0) {
-		if (cmp < 0) {
-			if (n->ntn_less == NULL) {
-				n->ntn_less = new_name_tree_node(name);
-				return n->ntn_less->ntn_name;
-			}
-			n = n->ntn_less;
-		} else {
-			if (n->ntn_greater == NULL) {
-				n->ntn_greater = new_name_tree_node(name);
-				return n->ntn_greater->ntn_name;
-			}
-			n = n->ntn_greater;
+		next = cmp < 0 ? &n->ntn_less : &n->ntn_greater;
+		if (*next == NULL) {
+			*next = new_name_tree_node(name);
+			return (*next)->ntn_name;
 		}
+		n = *next;
 	}
 	return n->ntn_name;
 }
@@ -192,13 +185,13 @@ tspec_name(tspec_t t)
 	}
 }
 
-int
+bool
 sametype(const type_t *t1, const type_t *t2)
 {
 	tspec_t	t;
 
 	if (t1->t_tspec != t2->t_tspec)
-		return 0;
+		return false;
 
 	/* Ignore const/void */
 
@@ -228,10 +221,10 @@ sametype(const type_t *t1, const type_t *t2)
 	case FCOMPLEX:
 	case DCOMPLEX:
 	case LCOMPLEX:
-		return 1;
+		return true;
 	case ARRAY:
 		if (t1->t_dim != t2->t_dim)
-			return 0;
+			return false;
 		/*FALLTHROUGH*/
 	case PTR:
 		return sametype(t1->t_subt, t2->t_subt);
@@ -240,7 +233,7 @@ sametype(const type_t *t1, const type_t *t2)
 		return strcmp(t1->t_enum->etag->s_name,
 		    t2->t_enum->etag->s_name) == 0;
 #else
-		return 1;
+		return true;
 #endif
 	case STRUCT:
 	case UNION:
@@ -248,11 +241,11 @@ sametype(const type_t *t1, const type_t *t2)
 		return strcmp(t1->t_str->stag->s_name,
 		    t2->t_str->stag->s_name) == 0;
 #else
-		return 1;
+		return true;
 #endif
 	default:
 		LERROR("tyname(%d)", t);
-		return 0;
+		return false;
 	}
 }
 

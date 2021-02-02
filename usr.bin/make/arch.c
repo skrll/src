@@ -1,4 +1,4 @@
-/*	$NetBSD: arch.c,v 1.192 2020/12/30 10:03:16 rillig Exp $	*/
+/*	$NetBSD: arch.c,v 1.194 2021/01/23 10:48:49 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -126,7 +126,7 @@
 #include "config.h"
 
 /*	"@(#)arch.c	8.2 (Berkeley) 1/2/94"	*/
-MAKE_RCSID("$NetBSD: arch.c,v 1.192 2020/12/30 10:03:16 rillig Exp $");
+MAKE_RCSID("$NetBSD: arch.c,v 1.194 2021/01/23 10:48:49 rillig Exp $");
 
 typedef struct List ArchList;
 typedef struct ListNode ArchListNode;
@@ -341,7 +341,7 @@ Arch_ParseArchive(char **pp, GNodeList *gns, GNode *ctxt)
 
 		} else if (Dir_HasWildcards(memName)) {
 			StringList members = LST_INIT;
-			Dir_Expand(memName, &dirSearchPath, &members);
+			SearchPath_Expand(&dirSearchPath, memName, &members);
 
 			while (!Lst_IsEmpty(&members)) {
 				char *member = Lst_Dequeue(&members);
@@ -871,6 +871,7 @@ Arch_Touch(GNode *gn)
  * Both the modification time of the library and of the RANLIBMAG member are
  * set to 'now'.
  */
+/*ARGSUSED*/
 void
 Arch_TouchLib(GNode *gn MAKE_ATTR_UNUSED)
 {

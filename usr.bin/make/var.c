@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.778 2020/12/30 10:03:16 rillig Exp $	*/
+/*	$NetBSD: var.c,v 1.787 2021/02/01 19:46:58 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -131,7 +131,7 @@
 #include "metachar.h"
 
 /*	"@(#)var.c	8.3 (Berkeley) 3/19/94" */
-MAKE_RCSID("$NetBSD: var.c,v 1.778 2020/12/30 10:03:16 rillig Exp $");
+MAKE_RCSID("$NetBSD: var.c,v 1.787 2021/02/01 19:46:58 rillig Exp $");
 
 typedef enum VarFlags {
 	VAR_NONE	= 0,
@@ -347,7 +347,7 @@ CanonicalVarname(const char *name)
 			break;
 		case 'S':
 			if (strcmp(name, ".SHELL") == 0) {
-				if (!shellPath)
+				if (shellPath == NULL)
 					Shell_Init();
 			}
 			break;
@@ -456,7 +456,10 @@ VarFreeEnv(Var *v, Boolean freeValue)
 		return FALSE;
 
 	FStr_Done(&v->name);
-	Buf_Destroy(&v->val, freeValue);
+	if (freeValue)
+		Buf_Done(&v->val);
+	else
+		Buf_DoneData(&v->val);
 	free(v);
 	return TRUE;
 }
@@ -499,7 +502,7 @@ Var_DeleteVar(const char *varname, GNode *ctxt)
 		var_exportedVars = VAR_EXPORTED_NONE;
 	assert(v->name.freeIt == NULL);
 	HashTable_DeleteEntry(&ctxt->vars, he);
-	Buf_Destroy(&v->val, TRUE);
+	Buf_Done(&v->val);
 	free(v);
 }
 
@@ -805,7 +808,7 @@ ClearEnv(void)
 	environ = savedEnv = newenv;
 	newenv[0] = NULL;
 	newenv[1] = NULL;
-	if (cp && *cp)
+	if (cp != NULL && *cp != '\0')
 		setenv(MAKE_LEVEL_ENV, cp, 1);
 }
 
@@ -1083,8 +1086,7 @@ Var_Append(const char *name, const char *val, GNode *ctxt)
 		Buf_AddByte(&v->val, ' ');
 		Buf_AddStr(&v->val, val);
 
-		DEBUG3(VAR, "%s:%s = %s\n",
-		    ctxt->name, name, Buf_GetAll(&v->val, NULL));
+		DEBUG3(VAR, "%s:%s = %s\n", ctxt->name, name, v->val.data);
 
 		if (v->flags & VAR_FROM_ENV) {
 			/*
@@ -1157,7 +1159,7 @@ Var_Value(const char *name, GNode *ctxt)
 	if (v == NULL)
 		return FStr_InitRefer(NULL);
 
-	value = Buf_GetAll(&v->val, NULL);
+	value = v->val.data;
 	return VarFreeEnv(v, FALSE)
 	    ? FStr_InitOwn(value)
 	    : FStr_InitRefer(value);
@@ -1171,7 +1173,7 @@ const char *
 Var_ValueDirect(const char *name, GNode *ctxt)
 {
 	Var *v = VarFind(name, ctxt, FALSE);
-	return v != NULL ? Buf_GetAll(&v->val, NULL) : NULL;
+	return v != NULL ? v->val.data : NULL;
 }
 
 
@@ -1214,9 +1216,9 @@ SepBuf_AddStr(SepBuf *buf, const char *str)
 }
 
 static char *
-SepBuf_Destroy(SepBuf *buf, Boolean free_buf)
+SepBuf_DoneData(SepBuf *buf)
 {
-	return Buf_Destroy(&buf->buf, free_buf);
+	return Buf_DoneData(&buf->buf);
 }
 
 
@@ -1235,6 +1237,7 @@ typedef void (*ModifyWordsCallback)(const char *word, SepBuf *buf, void *data);
  * Callback for ModifyWords to implement the :H modifier.
  * Add the dirname of the given word to the buffer.
  */
+/*ARGSUSED*/
 static void
 ModifyWord_Head(const char *word, SepBuf *buf, void *dummy MAKE_ATTR_UNUSED)
 {
@@ -1249,6 +1252,7 @@ ModifyWord_Head(const char *word, SepBuf *buf, void *dummy MAKE_ATTR_UNUSED)
  * Callback for ModifyWords to implement the :T modifier.
  * Add the basename of the given word to the buffer.
  */
+/*ARGSUSED*/
 static void
 ModifyWord_Tail(const char *word, SepBuf *buf, void *dummy MAKE_ATTR_UNUSED)
 {
@@ -1259,6 +1263,7 @@ ModifyWord_Tail(const char *word, SepBuf *buf, void *dummy MAKE_ATTR_UNUSED)
  * Callback for ModifyWords to implement the :E modifier.
  * Add the filename suffix of the given word to the buffer, if it exists.
  */
+/*ARGSUSED*/
 static void
 ModifyWord_Suffix(const char *word, SepBuf *buf, void *dummy MAKE_ATTR_UNUSED)
 {
@@ -1271,6 +1276,7 @@ ModifyWord_Suffix(const char *word, SepBuf *buf, void *dummy MAKE_ATTR_UNUSED)
  * Callback for ModifyWords to implement the :R modifier.
  * Add the basename of the given word to the buffer.
  */
+/*ARGSUSED*/
 static void
 ModifyWord_Root(const char *word, SepBuf *buf, void *dummy MAKE_ATTR_UNUSED)
 {
@@ -1532,7 +1538,7 @@ tryagain:
 		args->matched = TRUE;
 		SepBuf_AddBytes(buf, wp, (size_t)m[0].rm_so);
 
-		for (rp = args->replace; *rp; rp++) {
+		for (rp = args->replace; *rp != '\0'; rp++) {
 			if (*rp == '\\' && (rp[1] == '&' || rp[1] == '\\')) {
 				SepBuf_AddBytes(buf, rp + 1, 1);
 				rp++;
@@ -1682,7 +1688,7 @@ VarSelectWords(char sep, Boolean oneBigWord, const char *str, int first,
 
 	Words_Free(words);
 
-	return SepBuf_Destroy(&buf, FALSE);
+	return SepBuf_DoneData(&buf);
 }
 
 
@@ -1690,6 +1696,7 @@ VarSelectWords(char sep, Boolean oneBigWord, const char *str, int first,
  * Callback for ModifyWords to implement the :tA modifier.
  * Replace each word with the result of realpath() if successful.
  */
+/*ARGSUSED*/
 static void
 ModifyWord_Realpath(const char *word, SepBuf *buf, void *data MAKE_ATTR_UNUSED)
 {
@@ -1726,7 +1733,7 @@ ModifyWords(const char *str,
 	if (oneBigWord) {
 		SepBuf_Init(&result, sep);
 		modifyWord(str, &result, modifyWord_args);
-		return SepBuf_Destroy(&result, FALSE);
+		return SepBuf_DoneData(&result);
 	}
 
 	SepBuf_Init(&result, sep);
@@ -1738,13 +1745,13 @@ ModifyWords(const char *str,
 
 	for (i = 0; i < words.len; i++) {
 		modifyWord(words.words[i], &result, modifyWord_args);
-		if (Buf_Len(&result.buf) > 0)
+		if (result.buf.len > 0)
 			SepBuf_Sep(&result);
 	}
 
 	Words_Free(words);
 
-	return SepBuf_Destroy(&result, FALSE);
+	return SepBuf_DoneData(&result);
 }
 
 
@@ -1766,7 +1773,7 @@ Words_JoinFree(Words words)
 
 	Words_Free(words);
 
-	return Buf_Destroy(&buf, FALSE);
+	return Buf_DoneData(&buf);
 }
 
 /* Remove adjacent duplicate words. */
@@ -1813,7 +1820,7 @@ VarQuote(const char *str, Boolean quoteDollar)
 			Buf_AddStr(&buf, "\\$");
 	}
 
-	return Buf_Destroy(&buf, FALSE);
+	return Buf_DoneData(&buf);
 }
 
 /*
@@ -1835,7 +1842,7 @@ VarHash(const char *str)
 	size_t i;
 
 	size_t len;
-	for (len = len2; len;) {
+	for (len = len2; len != 0;) {
 		uint32_t k = 0;
 		switch (len) {
 		default:
@@ -2155,11 +2162,11 @@ ParseModifierPartSubst(
 		return VPR_ERR;
 	}
 
-	*pp = ++p;
+	*pp = p + 1;
 	if (out_length != NULL)
-		*out_length = Buf_Len(&buf);
+		*out_length = buf.len;
 
-	*out_part = Buf_Destroy(&buf, FALSE);
+	*out_part = Buf_DoneData(&buf);
 	DEBUG1(VAR, "Modifier part: \"%s\"\n", *out_part);
 	return VPR_OK;
 }
@@ -2360,10 +2367,10 @@ ApplyModifier_Defined(const char **pp, const char *val, ApplyModifiersState *st)
 	ApplyModifiersState_Define(st);
 
 	if (eflags & VARE_WANTRES) {
-		st->newVal = FStr_InitOwn(Buf_Destroy(&buf, FALSE));
+		st->newVal = FStr_InitOwn(Buf_DoneData(&buf));
 	} else {
 		st->newVal = FStr_InitRefer(val);
-		Buf_Destroy(&buf, TRUE);
+		Buf_Done(&buf);
 	}
 	return AMR_OK;
 }
@@ -2558,7 +2565,7 @@ ApplyModifier_Range(const char **pp, const char *val, ApplyModifiersState *st)
 		Buf_AddInt(&buf, 1 + (int)i);
 	}
 
-	st->newVal = FStr_InitOwn(Buf_Destroy(&buf, FALSE));
+	st->newVal = FStr_InitOwn(Buf_DoneData(&buf));
 	return AMR_OK;
 }
 
@@ -2789,6 +2796,7 @@ ApplyModifier_Quote(const char **pp, const char *val, ApplyModifiersState *st)
 		return AMR_UNKNOWN;
 }
 
+/*ARGSUSED*/
 static void
 ModifyWord_Copy(const char *word, SepBuf *buf, void *data MAKE_ATTR_UNUSED)
 {
@@ -2982,7 +2990,7 @@ ApplyModifier_Words(const char **pp, const char *val, ApplyModifiersState *st)
 			/* 3 digits + '\0' is usually enough */
 			Buf_InitSize(&buf, 4);
 			Buf_AddInt(&buf, (int)ac);
-			st->newVal = FStr_InitOwn(Buf_Destroy(&buf, FALSE));
+			st->newVal = FStr_InitOwn(Buf_DoneData(&buf));
 		}
 		goto ok;
 	}
@@ -3105,7 +3113,7 @@ ApplyModifier_Order(const char **pp, const char *val, ApplyModifiersState *st)
 
 /* :? then : else */
 static ApplyModifierResult
-ApplyModifier_IfElse(const char **pp, const char *val, ApplyModifiersState *st)
+ApplyModifier_IfElse(const char **pp, ApplyModifiersState *st)
 {
 	char *then_expr, *else_expr;
 	VarParseResult res;
@@ -3396,13 +3404,9 @@ LogBeforeApply(const ApplyModifiersState *st, const char *mod, char endc,
 	 * be used since the end of the modifier is not yet known. */
 	debug_printf("Applying ${%s:%c%s} to \"%s\" (%s, %s, %s)\n",
 	    st->var->name.str, mod[0], is_single_char ? "" : "...", val,
-	    Enum_FlagsToString(eflags_str, sizeof eflags_str,
-		st->eflags, VarEvalFlags_ToStringSpecs),
-	    Enum_FlagsToString(vflags_str, sizeof vflags_str,
-		st->var->flags, VarFlags_ToStringSpecs),
-	    Enum_FlagsToString(exprflags_str, sizeof exprflags_str,
-		st->exprFlags,
-		VarExprFlags_ToStringSpecs));
+	    VarEvalFlags_ToString(eflags_str, st->eflags),
+	    VarFlags_ToString(vflags_str, st->var->flags),
+	    VarExprFlags_ToString(exprflags_str, st->exprFlags));
 }
 
 static void
@@ -3417,13 +3421,9 @@ LogAfterApply(ApplyModifiersState *st, const char *p, const char *mod)
 
 	debug_printf("Result of ${%s:%.*s} is %s%s%s (%s, %s, %s)\n",
 	    st->var->name.str, (int)(p - mod), mod, quot, newVal, quot,
-	    Enum_FlagsToString(eflags_str, sizeof eflags_str,
-		st->eflags, VarEvalFlags_ToStringSpecs),
-	    Enum_FlagsToString(vflags_str, sizeof vflags_str,
-		st->var->flags, VarFlags_ToStringSpecs),
-	    Enum_FlagsToString(exprflags_str, sizeof exprflags_str,
-		st->exprFlags,
-		VarExprFlags_ToStringSpecs));
+	    VarEvalFlags_ToString(eflags_str, st->eflags),
+	    VarFlags_ToString(vflags_str, st->var->flags),
+	    VarExprFlags_ToString(exprflags_str, st->exprFlags));
 }
 
 static ApplyModifierResult
@@ -3461,7 +3461,7 @@ ApplyModifier(const char **pp, const char *val, ApplyModifiersState *st)
 	case 'S':
 		return ApplyModifier_Subst(pp, val, st);
 	case '?':
-		return ApplyModifier_IfElse(pp, val, st);
+		return ApplyModifier_IfElse(pp, st);
 #ifndef NO_REGEX
 	case 'C':
 		return ApplyModifier_Regex(pp, val, st);
@@ -3644,7 +3644,12 @@ ApplyModifiers(
 {
 	ApplyModifiersState st = {
 	    startc, endc, v, ctxt, eflags,
+#if defined(lint)
+	    /* lint cannot parse C99 struct initializers yet. */
+	    { var_Error, NULL },
+#else
 	    FStr_InitRefer(var_Error), /* .newVal */
+#endif
 	    ' ',		/* .sep */
 	    FALSE,		/* .oneBigWord */
 	    *exprFlags		/* .exprFlags */
@@ -3799,8 +3804,8 @@ ParseVarname(const char **pp, char startc, char endc,
 		}
 	}
 	*pp = p;
-	*out_varname_len = Buf_Len(&buf);
-	return Buf_Destroy(&buf, FALSE);
+	*out_varname_len = buf.len;
+	return Buf_DoneData(&buf);
 }
 
 static VarParseResult
@@ -4067,7 +4072,7 @@ ParseVarnameLong(
 static void
 FreeEnvVar(void **out_val_freeIt, Var *v, const char *value)
 {
-	char *varValue = Buf_Destroy(&v->val, FALSE);
+	char *varValue = Buf_DoneData(&v->val);
 	if (value == varValue)
 		*out_val_freeIt = varValue;
 	else
@@ -4140,8 +4145,7 @@ Var_Parse(const char **pp, GNode *ctxt, VarEvalFlags eflags, FStr *out_val)
 	VarExprFlags exprFlags = VEF_NONE;
 
 	DEBUG2(VAR, "Var_Parse: %s with %s\n", start,
-	    Enum_FlagsToString(eflags_str, sizeof eflags_str, eflags,
-		VarEvalFlags_ToStringSpecs));
+	    VarEvalFlags_ToString(eflags_str, eflags));
 
 	*out_val = FStr_InitRefer(NULL);
 	extramodifiers = NULL;	/* extra modifiers to apply first */
@@ -4182,7 +4186,7 @@ Var_Parse(const char **pp, GNode *ctxt, VarEvalFlags eflags, FStr *out_val)
 	 * the then-current value of the variable.  This might also invoke
 	 * undefined behavior.
 	 */
-	value = FStr_InitRefer(Buf_GetAll(&v->val, NULL));
+	value = FStr_InitRefer(v->val.data);
 
 	/*
 	 * Before applying any modifiers, expand any nested expressions from
@@ -4238,8 +4242,8 @@ Var_Parse(const char **pp, GNode *ctxt, VarEvalFlags eflags, FStr *out_val)
 				    ? var_Error : varUndefined);
 			}
 		}
-		if (value.str != Buf_GetAll(&v->val, NULL))
-			Buf_Destroy(&v->val, TRUE);
+		if (value.str != v->val.data)
+			Buf_Done(&v->val);
 		FStr_Done(&v->name);
 		free(v);
 	}
@@ -4363,7 +4367,7 @@ Var_Subst(const char *str, GNode *ctxt, VarEvalFlags eflags, char **out_res)
 			VarSubstPlain(&p, &res);
 	}
 
-	*out_res = Buf_DestroyCompact(&res);
+	*out_res = Buf_DoneDataCompact(&res);
 	return VPR_OK;
 }
 
@@ -4410,8 +4414,7 @@ Var_Dump(GNode *ctxt)
 	for (i = 0; i < vec.len; i++) {
 		const char *varname = varnames[i];
 		Var *var = HashTable_FindValue(&ctxt->vars, varname);
-		debug_printf("%-16s = %s\n",
-		    varname, Buf_GetAll(&var->val, NULL));
+		debug_printf("%-16s = %s\n", varname, var->val.data);
 	}
 
 	Vector_Done(&vec);

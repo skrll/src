@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.525 2020/12/31 17:39:36 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.538 2021/02/01 22:21:33 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -84,7 +84,7 @@
  *	Parse_End	Clean up the module
  *
  *	Parse_File	Parse a top-level makefile.  Included files are
- *			handled by Parse_include_file though.
+ *			handled by IncludeFile instead.
  *
  *	Parse_IsVar	Return TRUE if the given line is a variable
  *			assignment. Used by MainParseArgs to determine if
@@ -109,7 +109,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.525 2020/12/31 17:39:36 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.538 2021/02/01 22:21:33 rillig Exp $");
 
 /* types and constants */
 
@@ -225,44 +225,11 @@ static int fatals = 0;
  */
 
 /*
- * The include chain of makefiles.  At the bottom is the top-level makefile
- * from the command line, and on top of that, there are the included files or
- * .for loops, up to and including the current file.
+ * The include chain of makefiles.  At index 0 is the top-level makefile from
+ * the command line, followed by the included files or .for loops, up to and
+ * including the current file.
  *
- * This data could be used to print stack traces on parse errors.  As of
- * 2020-09-14, this is not done though.  It seems quite simple to print the
- * tuples (fname:lineno:fromForLoop), from top to bottom.  This simple idea is
- * made complicated by the fact that the .for loops also use this stack for
- * storing information.
- *
- * The lineno fields of the IFiles with fromForLoop == TRUE look confusing,
- * which is demonstrated by the test 'include-main.mk'.  They seem sorted
- * backwards since they tell the number of completely parsed lines, which for
- * a .for loop is right after the terminating .endfor.  To compensate for this
- * confusion, there is another field first_lineno pointing at the start of the
- * .for loop, 1-based for human consumption.
- *
- * To make the stack trace intuitive, the entry below the first .for loop must
- * be ignored completely since neither its lineno nor its first_lineno is
- * useful.  Instead, the topmost of each chain of .for loop needs to be
- * printed twice, once with its first_lineno and once with its lineno.
- *
- * As of 2020-10-28, using the above rules, the stack trace for the .info line
- * in include-subsub.mk would be:
- *
- *	includes[5]:	include-subsub.mk:4
- *			(lineno, from an .include)
- *	includes[4]:	include-sub.mk:32
- *			(lineno, from a .for loop below an .include)
- *	includes[4]:	include-sub.mk:31
- *			(first_lineno, from a .for loop, lineno == 32)
- *	includes[3]:	include-sub.mk:30
- *			(first_lineno, from a .for loop, lineno == 33)
- *	includes[2]:	include-sub.mk:29
- *			(first_lineno, from a .for loop, lineno == 34)
- *	includes[1]:	include-sub.mk:35
- *			(not printed since it is below a .for loop)
- *	includes[0]:	include-main.mk:27
+ * See PrintStackTrace for how to interpret the data.
  */
 static Vector /* of IFile */ includes;
 
@@ -488,12 +455,61 @@ loadfile(const char *path, int fd)
 	{
 		struct loadedfile *lf = loadedfile_create(path,
 		    buf.data, buf.len);
-		Buf_Destroy(&buf, FALSE);
+		Buf_DoneData(&buf);
 		return lf;
 	}
 }
 
-/* old code */
+static void
+PrintStackTrace(void)
+{
+	const IFile *entries;
+	size_t i, n;
+
+	if (!(DEBUG(PARSE)))
+		return;
+
+	entries = GetInclude(0);
+	n = includes.len;
+	if (n == 0)
+		return;
+	n--;			/* This entry is already in the diagnostic. */
+
+	/*
+	 * For the IFiles with fromForLoop, lineno seems to be sorted
+	 * backwards.  This is because lineno is the number of completely
+	 * parsed lines, which for a .for loop is right after the
+	 * corresponding .endfor.  The intuitive line number comes from
+	 * first_lineno instead, which points at the start of the .for loop.
+	 *
+	 * To make the stack trace intuitive, the entry below each chain of
+	 * .for loop entries must be ignored completely since neither its
+	 * lineno nor its first_lineno is useful.  Instead, the topmost of
+	 * each chain of .for loop entries needs to be printed twice, once
+	 * with its first_lineno and once with its lineno.
+	 */
+
+	for (i = n; i-- > 0;) {
+		const IFile *entry = entries + i;
+		const char *fname = entry->fname;
+		Boolean printLineno;
+		char dirbuf[MAXPATHLEN + 1];
+
+		if (fname[0] != '/' && strcmp(fname, "(stdin)") != 0)
+			fname = realpath(fname, dirbuf);
+
+		printLineno = !entry->fromForLoop;
+		if (i + 1 < n && entries[i + 1].fromForLoop == printLineno)
+			printLineno = entry->fromForLoop;
+
+		if (printLineno)
+			debug_printf("\tin .include from %s:%d\n",
+			    fname, entry->lineno);
+		if (entry->fromForLoop)
+			debug_printf("\tin .for loop from %s:%d\n",
+			    fname, entry->first_lineno);
+	}
+}
 
 /* Check if the current character is escaped on the current line. */
 static Boolean
@@ -594,13 +610,17 @@ ParseVErrorInternal(FILE *f, const char *fname, size_t lineno,
 	(void)fflush(f);
 
 	if (type == PARSE_INFO)
-		return;
-	if (type == PARSE_FATAL || opts.parseWarnFatal)
-		fatals++;
-	if (opts.parseWarnFatal && !fatal_warning_error_printed) {
+		goto print_stack_trace;
+	if (type == PARSE_WARNING && !opts.parseWarnFatal)
+		goto print_stack_trace;
+	fatals++;
+	if (type == PARSE_WARNING && !fatal_warning_error_printed) {
 		Error("parsing warnings being treated as errors");
 		fatal_warning_error_printed = TRUE;
 	}
+
+print_stack_trace:
+	PrintStackTrace();
 }
 
 static void
@@ -998,7 +1018,7 @@ ParseErrorNoDependency(const char *lstart)
 		Parse_Error(PARSE_FATAL, "Unknown directive \"%.*s\"",
 		    (int)(dirend - dirstart), dirstart);
 	} else
-		Parse_Error(PARSE_FATAL, "Need an operator");
+		Parse_Error(PARSE_FATAL, "Invalid line type");
 }
 
 static void
@@ -1040,7 +1060,7 @@ ParseDependencyTargetWord(const char **pp, const char *lstart)
 /* Handle special targets like .PATH, .DEFAULT, .BEGIN, .ORDER. */
 static void
 ParseDoDependencyTargetSpecial(ParseSpecial *inout_specType,
-			       const char *line, /* XXX: bad name */
+			       const char *targetName,
 			       SearchPathList **inout_paths)
 {
 	switch (*inout_specType) {
@@ -1062,7 +1082,7 @@ ParseDoDependencyTargetSpecial(ParseSpecial *inout_specType,
 	case SP_STALE:
 	case SP_ERROR:
 	case SP_INTERRUPT: {
-		GNode *gn = Targ_GetNode(line);
+		GNode *gn = Targ_GetNode(targetName);
 		if (doing_depend)
 			ParseMark(gn);
 		gn->type |= OP_NOTMAIN | OP_SPECIAL;
@@ -1105,15 +1125,15 @@ ParseDoDependencyTargetSpecial(ParseSpecial *inout_specType,
  * Call on the suffix module to give us a path to modify.
  */
 static Boolean
-ParseDoDependencyTargetPath(const char *line, /* XXX: bad name */
+ParseDoDependencyTargetPath(const char *suffixName,
 			    SearchPathList **inout_paths)
 {
 	SearchPath *path;
 
-	path = Suff_GetPath(&line[5]);
+	path = Suff_GetPath(suffixName);
 	if (path == NULL) {
 		Parse_Error(PARSE_FATAL,
-		    "Suffix '%s' not defined (yet)", &line[5]);
+		    "Suffix '%s' not defined (yet)", suffixName);
 		return FALSE;
 	}
 
@@ -1128,20 +1148,20 @@ ParseDoDependencyTargetPath(const char *line, /* XXX: bad name */
  * See if it's a special target and if so set specType to match it.
  */
 static Boolean
-ParseDoDependencyTarget(const char *line, /* XXX: bad name */
+ParseDoDependencyTarget(const char *targetName,
 			ParseSpecial *inout_specType,
 			GNodeType *out_tOp, SearchPathList **inout_paths)
 {
 	int keywd;
 
-	if (!(line[0] == '.' && ch_isupper(line[1])))
+	if (!(targetName[0] == '.' && ch_isupper(targetName[1])))
 		return TRUE;
 
 	/*
 	 * See if the target is a special target that must have it
 	 * or its sources handled specially.
 	 */
-	keywd = ParseFindKeyword(line);
+	keywd = ParseFindKeyword(targetName);
 	if (keywd != -1) {
 		if (*inout_specType == SP_PATH &&
 		    parseKeywords[keywd].spec != SP_PATH) {
@@ -1152,22 +1172,21 @@ ParseDoDependencyTarget(const char *line, /* XXX: bad name */
 		*inout_specType = parseKeywords[keywd].spec;
 		*out_tOp = parseKeywords[keywd].op;
 
-		ParseDoDependencyTargetSpecial(inout_specType, line,
+		ParseDoDependencyTargetSpecial(inout_specType, targetName,
 		    inout_paths);
 
-	} else if (strncmp(line, ".PATH", 5) == 0) {
+	} else if (strncmp(targetName, ".PATH", 5) == 0) {
 		*inout_specType = SP_PATH;
-		if (!ParseDoDependencyTargetPath(line, inout_paths))
+		if (!ParseDoDependencyTargetPath(targetName + 5, inout_paths))
 			return FALSE;
 	}
 	return TRUE;
 }
 
 static void
-ParseDoDependencyTargetMundane(char *line, /* XXX: bad name */
-			       StringList *curTargs)
+ParseDoDependencyTargetMundane(char *targetName, StringList *curTargs)
 {
-	if (Dir_HasWildcards(line)) {
+	if (Dir_HasWildcards(targetName)) {
 		/*
 		 * Targets are to be sought only in the current directory,
 		 * so create an empty path for the thing. Note we need to
@@ -1176,7 +1195,7 @@ ParseDoDependencyTargetMundane(char *line, /* XXX: bad name */
 		 */
 		SearchPath *emptyPath = SearchPath_New();
 
-		Dir_Expand(line, emptyPath, curTargs);
+		SearchPath_Expand(emptyPath, targetName, curTargs);
 
 		SearchPath_Free(emptyPath);
 	} else {
@@ -1184,7 +1203,7 @@ ParseDoDependencyTargetMundane(char *line, /* XXX: bad name */
 		 * No wildcards, but we want to avoid code duplication,
 		 * so create a list with the word on it.
 		 */
-		Lst_Append(curTargs, line);
+		Lst_Append(curTargs, targetName);
 	}
 
 	/* Apply the targets. */
@@ -1322,7 +1341,7 @@ AddToPaths(const char *dir, SearchPathList *paths)
 	if (paths != NULL) {
 		SearchPathListNode *ln;
 		for (ln = paths->first; ln != NULL; ln = ln->next)
-			(void)Dir_AddDir(ln->datum, dir);
+			(void)SearchPath_Add(ln->datum, dir);
 	}
 }
 
@@ -1869,12 +1888,14 @@ static void
 VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
 		    FStr *out_avalue)
 {
-	const char *avalue;
 	char *evalue;
 
 	/*
 	 * make sure that we set the variable the first time to nothing
-	 * so that it gets substituted!
+	 * so that it gets substituted.
+	 *
+	 * TODO: Add a test that demonstrates why this code is needed,
+	 *  apart from making the debug log longer.
 	 */
 	if (!Var_Exists(name, ctxt))
 		Var_Set(name, "", ctxt);
@@ -1883,10 +1904,9 @@ VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
 	    VARE_WANTRES | VARE_KEEP_DOLLAR | VARE_KEEP_UNDEF, &evalue);
 	/* TODO: handle errors */
 
-	avalue = evalue;
-	Var_Set(name, avalue, ctxt);
+	Var_Set(name, evalue, ctxt);
 
-	*out_avalue = (FStr){ avalue, evalue };
+	*out_avalue = FStr_InitOwn(evalue);
 }
 
 static void
@@ -1919,12 +1939,13 @@ VarAssign_EvalShell(const char *name, const char *uvalue, GNode *ctxt,
 /*
  * Perform a variable assignment.
  *
- * The actual value of the variable is returned in *out_avalue and
- * *out_avalue_freeIt.  Especially for VAR_SUBST and VAR_SHELL this can differ
- * from the literal value.
+ * The actual value of the variable is returned in *out_TRUE_avalue.
+ * Especially for VAR_SUBST and VAR_SHELL this can differ from the literal
+ * value.
  *
- * Return whether the assignment was actually done.  The assignment is only
- * skipped if the operator is '?=' and the variable already exists.
+ * Return whether the assignment was actually performed, which is usually
+ * the case.  It is only skipped if the operator is '?=' and the variable
+ * already exists.
  */
 static Boolean
 VarAssign_Eval(const char *name, VarAssignOp op, const char *uvalue,
@@ -2071,7 +2092,7 @@ ParseAddCmd(GNode *gn, char *cmd)
 void
 Parse_AddIncludeDir(const char *dir)
 {
-	(void)Dir_AddDir(parseIncPath, dir);
+	(void)SearchPath_Add(parseIncPath, dir);
 }
 
 /*
@@ -2085,7 +2106,7 @@ Parse_AddIncludeDir(const char *dir)
  * line options.
  */
 static void
-Parse_include_file(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
+IncludeFile(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
 {
 	struct loadedfile *lf;
 	char *fullname;		/* full pathname of file */
@@ -2160,8 +2181,8 @@ Parse_include_file(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
 		/*
 		 * Look for it on the system path
 		 */
-		SearchPath *path = Lst_IsEmpty(sysIncPath) ? defSysIncPath
-		    : sysIncPath;
+		SearchPath *path = Lst_IsEmpty(&sysIncPath->dirs)
+		    ? defSysIncPath : sysIncPath;
 		fullname = Dir_FindFile(file, path);
 	}
 
@@ -2191,12 +2212,12 @@ Parse_include_file(char *file, Boolean isSystem, Boolean depinc, Boolean silent)
 }
 
 static void
-ParseDoInclude(char *line /* XXX: bad name */)
+ParseDoInclude(char *directive)
 {
 	char endc;		/* the character which ends the file spec */
 	char *cp;		/* current position in file spec */
-	Boolean silent = line[0] != 'i';
-	char *file = line + (silent ? 8 : 7);
+	Boolean silent = directive[0] != 'i';
+	char *file = directive + (silent ? 8 : 7);
 
 	/* Skip to delimiter character so we know where to look */
 	pp_skip_hspace(&file);
@@ -2218,7 +2239,7 @@ ParseDoInclude(char *line /* XXX: bad name */)
 		endc = '"';
 
 	/* Skip to matching delimiter */
-	for (cp = ++file; *cp && *cp != endc; cp++)
+	for (cp = ++file; *cp != '\0' && *cp != endc; cp++)
 		continue;
 
 	if (*cp != endc) {
@@ -2236,7 +2257,7 @@ ParseDoInclude(char *line /* XXX: bad name */)
 	(void)Var_Subst(file, VAR_CMDLINE, VARE_WANTRES, &file);
 	/* TODO: handle errors */
 
-	Parse_include_file(file, endc == '>', line[0] == 'd', silent);
+	IncludeFile(file, endc == '>', directive[0] == 'd', silent);
 	free(file);
 }
 
@@ -2489,7 +2510,7 @@ ParseTraditionalInclude(char *line)
 		else
 			done = TRUE;
 
-		Parse_include_file(file, FALSE, FALSE, silent);
+		IncludeFile(file, FALSE, FALSE, silent);
 	}
 out:
 	free(all_files);
@@ -2508,7 +2529,7 @@ ParseGmakeExport(char *line)
 
 	pp_skip_whitespace(&variable);
 
-	for (value = variable; *value && *value != '='; value++)
+	for (value = variable; *value != '\0' && *value != '='; value++)
 		continue;
 
 	if (*value != '=') {
@@ -2566,7 +2587,7 @@ ParseEOF(void)
 	}
 
 	/* Dispose of curFile info */
-	/* Leak curFile->fname because all the gnodes have pointers to it. */
+	/* Leak curFile->fname because all the GNodes have pointers to it. */
 	free(curFile->buf_freeIt);
 	Vector_Pop(&includes);
 
@@ -2766,7 +2787,6 @@ ParseGetLine(GetLineMode mode)
 	char *firstBackslash;
 	char *firstComment;
 
-	/* Loop through blank lines and comment lines */
 	for (;;) {
 		ParseRawLineResult res = ParseRawLine(curFile,
 		    &line, &line_end, &firstBackslash, &firstComment);
@@ -3259,11 +3279,9 @@ Parse_MainName(GNodeList *mainList)
 	if (mainNode == NULL)
 		Punt("no target to make.");
 
-	if (mainNode->type & OP_DOUBLEDEP) {
-		Lst_Append(mainList, mainNode);
+	Lst_Append(mainList, mainNode);
+	if (mainNode->type & OP_DOUBLEDEP)
 		Lst_AppendAll(mainList, &mainNode->cohorts);
-	} else
-		Lst_Append(mainList, mainNode);
 
 	Var_Append(".TARGETS", mainNode->name, VAR_GLOBAL);
 }

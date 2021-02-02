@@ -1,10 +1,11 @@
-#	$NetBSD: Makefile,v 1.55 2021/01/03 18:48:37 rillig Exp $
+#	$NetBSD: Makefile,v 1.59 2021/01/23 17:58:03 rillig Exp $
 
 .include <bsd.own.mk>
 
 PROG=		lint1
 SRCS=		cgram.y decl.c emit.c emit1.c err.c func.c init.c inittyp.c \
-		main1.c mem.c mem1.c print.c scan.l tree.c tyname.c
+		lex.c \
+		main1.c mem.c mem1.c oper.c print.c scan.l tree.c tyname.c
 
 MAN=		lint.7
 YHEADER=
@@ -38,11 +39,49 @@ LDADD+=		-ll
 DPADD+=		${LIBL}
 .endif
 
+oper.o: ops.def
+
 .include "Makefile.err-msgs-h"
-.include "Makefile.ops-h"
-.include "Makefile.ops-c"
+${SRCS:Nerr.c}: err-msgs.h
+
+add-test: .PHONY
+	@set -eu; \
+	test=${NAME:Q}; \
+	[ "$$test" ] || { \
+		echo "usage: ${MAKE} add-test NAME=<name>"; \
+		exit; \
+	}; \
+	\
+	cd '../../../tests/usr.bin/xlint/lint1'; \
+	if [ -f "$$test.c" ]; then \
+		echo "error: test $$test already exists in $$PWD."; \
+		exit 1; \
+	fi; \
+	\
+	echo "=> Adding test $$test"; \
+	printf '%s\n' \
+		'/*	$$''NetBSD$$	*/' \
+		"# 3 \"$$test.c\"" \
+		'' \
+		'/*' \
+		' * TODO: Explain the purpose of the test.' \
+		'*/' \
+		'' \
+		'/* lint1-extra-flags: -p */' \
+		'' \
+		'// TODO: Add some code that passes.' \
+		'// TODO: Add some code that fails.' \
+	> "$$test.c"; \
+	> "$$test.exp"; \
+	cvs add "$$test.c" "$$test.exp"; \
+	printf '%s\n' \
+		'/^FILES+=/i' \
+		"FILES+=		$$test.c" \
+		"FILES+=		$$test.exp" \
+		'.' 'w' 'q' \
+	| ed Makefile; \
+	${MAKE} sync-mi; \
+	printf '%s\n' '/^test_case /i' "test_case $$test" '.' 'w' 'q' \
+	| ed t_integration.sh
 
 .include <bsd.prog.mk>
-
-${SRCS}: ops.h
-${SRCS:Nerr.c}: err-msgs.h

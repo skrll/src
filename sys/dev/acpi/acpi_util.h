@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi_util.h,v 1.8 2019/12/29 13:45:11 jmcneill Exp $ */
+/*	$NetBSD: acpi_util.h,v 1.10 2021/01/26 00:19:53 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2003, 2007 The NetBSD Foundation, Inc.
@@ -88,7 +88,20 @@ int		 acpi_match_class(ACPI_HANDLE, uint8_t, uint8_t, uint8_t);
 ACPI_HANDLE	 acpi_match_cpu_info(struct cpu_info *);
 struct cpu_info *acpi_match_cpu_handle(ACPI_HANDLE);
 
+char		*acpi_pack_compat_list(ACPI_DEVICE_INFO *, size_t *);
+
 ACPI_STATUS	 acpi_dsd_integer(ACPI_HANDLE, const char *, ACPI_INTEGER *);
 ACPI_STATUS	 acpi_dsd_string(ACPI_HANDLE, const char *, char **);
+
+ACPI_STATUS	 acpi_dsm(ACPI_HANDLE, uint8_t *, ACPI_INTEGER,
+			ACPI_INTEGER, const ACPI_OBJECT *, ACPI_OBJECT **);
+ACPI_STATUS	 acpi_dsm_typed(ACPI_HANDLE, uint8_t *, ACPI_INTEGER,
+			ACPI_INTEGER, const ACPI_OBJECT *,
+			ACPI_OBJECT_TYPE, ACPI_OBJECT **);
+ACPI_STATUS	 acpi_dsm_integer(ACPI_HANDLE, uint8_t *, ACPI_INTEGER,
+			ACPI_INTEGER, const ACPI_OBJECT *,
+			ACPI_INTEGER *);
+
+ACPI_STATUS	 acpi_claim_childdevs(device_t, struct acpi_devnode *);
 
 #endif	/* !_SYS_DEV_ACPI_ACPI_UTIL_H */

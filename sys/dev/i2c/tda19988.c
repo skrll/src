@@ -1,4 +1,4 @@
-/* $NetBSD: tda19988.c,v 1.4 2019/12/23 15:05:32 thorpej Exp $ */
+/* $NetBSD: tda19988.c,v 1.7 2021/01/27 02:29:48 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2015 Oleksandr Tymoshenko <gonzo@freebsd.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tda19988.c,v 1.4 2019/12/23 15:05:32 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tda19988.c,v 1.7 2021/01/27 02:29:48 thorpej Exp $");
 
 /*
 * NXP TDA19988 HDMI encoder 
@@ -244,8 +244,8 @@ enum {
 #define	TDA19988		0x0301
 
 static const struct device_compatible_entry compat_data[] = {
-	{ "nxp,tda998x",	1 },
-	{ NULL }
+	{ .compat = "nxp,tda998x" },
+	DEVICE_COMPAT_EOL
 };
 
 struct tda19988_softc;

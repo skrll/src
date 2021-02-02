@@ -1,7 +1,22 @@
-/*	$NetBSD: msg_096.c,v 1.1 2021/01/02 10:22:43 rillig Exp $	*/
+/*	$NetBSD: msg_096.c,v 1.3 2021/01/31 11:12:07 rillig Exp $	*/
 # 3 "msg_096.c"
 
 // Test for message: cannot dereference non-pointer type [96]
 
-TODO: "Add example code that triggers the above message."
-TODO: "Add example code that almost triggers the above message."
+int
+unary_plus(int i)
+{
+	return +i;
+}
+
+int
+unary_minus(int i)
+{
+	return -i;
+}
+
+int
+unary_asterisk(int i)		/* expect: 231 */
+{
+	return *i;		/* expect: 96, 214 */
+}

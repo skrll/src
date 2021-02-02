@@ -1,4 +1,4 @@
-# $NetBSD: t_integration.sh,v 1.20 2021/01/02 19:22:42 rillig Exp $
+# $NetBSD: t_integration.sh,v 1.28 2021/01/18 20:02:34 rillig Exp $
 #
 # Copyright (c) 2008, 2010 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -29,17 +29,44 @@ LINT1=/usr/libexec/lint1
 
 Names=
 
+extract_flags()
+{
+	local extract_flags_awk
+
+	# shellcheck disable=SC2016
+	extract_flags_awk='
+		BEGIN {
+			flags = "-g -S -w"
+		}
+		/^\/\* (lint1-flags|lint1-extra-flags): .*\*\/$/ {
+			if ($2 == "lint1-flags:")
+				flags = ""
+			for (i = 3; i < NF; i++)
+				flags = flags " " $i
+		}
+		END {
+			print flags
+		}
+	'
+
+	awk "$extract_flags_awk" "$@"
+}
+
+# shellcheck disable=SC2155
 check_lint1()
 {
 	local src="$(atf_get_srcdir)/$1"
 	local exp="${src%.c}.exp"
+	local flags="$(extract_flags "${src}")"
 
 	if [ -f "${exp}" ]; then
+		# shellcheck disable=SC2086
 		atf_check -s not-exit:0 -o "file:${exp}" -e empty \
-		    ${LINT1} -g -S -w "${src}" /dev/null
+		    ${LINT1} ${flags} "${src}" /dev/null
 	else
+		# shellcheck disable=SC2086
 		atf_check -s exit:0 \
-		    ${LINT1} -g -S -w "${src}" /dev/null
+		    ${LINT1} ${flags} "${src}" /dev/null
 	fi
 }
 
@@ -65,6 +92,9 @@ test_case()
 test_case bltinoffsetof
 test_case c99_anon_struct
 test_case c99_anon_union
+test_case c99_bool
+test_case c99_bool_strict
+test_case c99_bool_strict_syshdr
 test_case c99_compound_literal_comma
 test_case c99_decls_after_stmt2
 test_case c99_flex_array_packed
@@ -77,6 +107,7 @@ test_case decl_old_style_arguments
 test_case fold_test
 test_case gcc_extension
 test_case init_pop_member
+test_case lint_assert
 test_case return_type
 test_case type_question_colon
 test_case typefun
@@ -146,16 +177,16 @@ test_case long_double_int	"Checks for confusion of 'long double' with" \
 				"'long int'; PR bin/39639"
 
 test_case all_messages
-all_messages_body() {
+all_messages_body()
+{
 	local srcdir ok msg base flags
 
 	srcdir="$(atf_get_srcdir)"
 	ok="true"
 
-	for msg in $(seq 0 329); do
+	for msg in $(seq 0 337); do
 		base="$(printf '%s/msg_%03d' "${srcdir}" "${msg}")"
-		flags="$(sed -n 's,^/\* lint1-flags: \(.*\) \*/$,\1,p' "${base}.c")"
-		flags="${flags:--g -S -w}"
+		flags="$(extract_flags "${base}.c")"
 
 		# shellcheck disable=SC2154 disable=SC2086
 		${Atf_Check} -s not-exit:0 -o "file:${base}.exp" -e empty \

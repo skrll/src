@@ -1,4 +1,4 @@
-/*	$NetBSD: openfirm.h,v 1.40 2020/12/31 15:10:46 ryo Exp $	*/
+/*	$NetBSD: openfirm.h,v 1.44 2021/01/27 04:55:42 thorpej Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -65,11 +65,6 @@ struct ofbus_attach_args {
 	int		oba_unit;
 };
 
-struct of_compat_data {
-	const char *compat;
-	uintptr_t data;
-};
-
 /*
  * Functions and variables provided by machine-dependent code.
  */
@@ -108,20 +103,19 @@ int	openfirmware(void *);
 /*
  * Functions and variables provided by machine-independent code.
  */
+struct device_compatible_entry;
+
 int	of_compatible(int, const char * const *);
-int	of_match_compatible(int, const char * const *);
-int	of_match_compat_data(int, const struct of_compat_data *);
-const struct of_compat_data *
-	of_search_compatible(int, const struct of_compat_data *);
+int	of_compatible_match(int, const struct device_compatible_entry *);
+const struct device_compatible_entry *
+	of_compatible_lookup(int, const struct device_compatible_entry *);
 int	of_decode_int(const unsigned char *);
 int	of_packagename(int, char *, int);
 int	of_find_firstchild_byname(int, const char *);
 int	of_find_bycompat(int, const char *);
 int	of_getnode_byname(int, const char *);
-boolean_t	of_to_uint32_prop(prop_dictionary_t, int, const char *,
-    const char *);
-boolean_t	of_to_dataprop(prop_dictionary_t, int, const char *,
-    const char *);
+bool	of_to_uint32_prop(prop_dictionary_t, int, const char *, const char *);
+bool	of_to_dataprop(prop_dictionary_t, int, const char *, const char *);
 
 int	*of_network_decode_media(int, int *, int *);
 char	*of_get_mode_string(char *, int);

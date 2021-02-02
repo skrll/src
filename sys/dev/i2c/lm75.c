@@ -1,4 +1,4 @@
-/*	$NetBSD: lm75.c,v 1.36 2020/08/21 20:41:43 macallan Exp $	*/
+/*	$NetBSD: lm75.c,v 1.40 2021/01/30 01:22:06 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: lm75.c,v 1.36 2020/08/21 20:41:43 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: lm75.c,v 1.40 2021/01/30 01:22:06 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -95,14 +95,14 @@ static void	lmtemp_setup_sysctl(struct lmtemp_softc *);
 static int	sysctl_lm75_temp(SYSCTLFN_ARGS);
 
 static const struct device_compatible_entry compat_data[] = {
-	{ "i2c-lm75",			0 },
-	{ "lm75",			0 },
-	{ "ds1775",			0 },
+	{ .compat = "i2c-lm75" },
+	{ .compat = "lm75" },
+	{ .compat = "ds1775" },
 	/*
 	 * see XXX in _attach() below: add code once non-lm75 matches are
 	 * added here!
 	 */
-	{ NULL,				0 }
+	DEVICE_COMPAT_EOL
 };
 
 enum {
@@ -188,6 +188,7 @@ lmtemp_attach(device_t parent, device_t self, void *aux)
 	sc->sc_tag = ia->ia_tag;
 	sc->sc_address = ia->ia_addr;
 	sc->sc_prop = ia->ia_prop;
+	prop_object_retain(sc->sc_prop);
 
 	aprint_naive(": Temperature Sensor\n");
 	if (ia->ia_name) {

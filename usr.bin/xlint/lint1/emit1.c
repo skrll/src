@@ -1,4 +1,4 @@
-/* $NetBSD: emit1.c,v 1.34 2021/01/04 22:26:50 rillig Exp $ */
+/* $NetBSD: emit1.c,v 1.39 2021/01/17 14:50:11 rillig Exp $ */
 
 /*
  * Copyright (c) 1996 Christopher G. Demetriou.  All Rights Reserved.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #if defined(__RCSID) && !defined(lint)
-__RCSID("$NetBSD: emit1.c,v 1.34 2021/01/04 22:26:50 rillig Exp $");
+__RCSID("$NetBSD: emit1.c,v 1.39 2021/01/17 14:50:11 rillig Exp $");
 #endif
 
 #include <ctype.h>
@@ -92,7 +92,7 @@ static	void	outfstrg(strg_t *);
  * and 'v' (for volatile)
  */
 void
-outtype(type_t *tp)
+outtype(const type_t *tp)
 {
 	int	t, s, na;
 	sym_t	*arg;
@@ -128,7 +128,7 @@ outtype(type_t *tp)
 		case DCOMPLEX:	t = 'X';	s = '\0';	break;
 		case LCOMPLEX:	t = 'X';	s = 'l';	break;
 		default:
-			lint_assert(/*CONSTCOND*/0);
+			lint_assert(/*CONSTCOND*/false);
 		}
 		if (tp->t_const)
 			outchar('c');
@@ -166,7 +166,7 @@ outtype(type_t *tp)
  * it uses its own output buffer for conversion
  */
 const char *
-ttos(type_t *tp)
+ttos(const type_t *tp)
 {
 	static	ob_t	tob;
 	ob_t	tmp;
@@ -226,7 +226,7 @@ outtt(sym_t *tag, sym_t *tdef)
  * not here
  */
 void
-outsym(sym_t *sym, scl_t sc, def_t def)
+outsym(const sym_t *sym, scl_t sc, def_t def)
 {
 
 	/*
@@ -268,7 +268,7 @@ outsym(sym_t *sym, scl_t sc, def_t def)
 		outchar('e');
 		break;
 	default:
-		lint_assert(/*CONSTCOND*/0);
+		lint_assert(/*CONSTCOND*/false);
 	}
 	if (llibflg && def != DECL) {
 		/*
@@ -285,7 +285,7 @@ outsym(sym_t *sym, scl_t sc, def_t def)
 	outname(sym->s_name);
 
 	/* renamed name of symbol, if necessary */
-	if (sym->s_rename) {
+	if (sym->s_rename != NULL) {
 		outchar('r');
 		outname(sym->s_rename);
 	}
@@ -301,10 +301,11 @@ outsym(sym_t *sym, scl_t sc, def_t def)
  * they are called with proper argument types
  */
 void
-outfdef(sym_t *fsym, pos_t *posp, int rval, int osdef, sym_t *args)
+outfdef(const sym_t *fsym, const pos_t *posp, bool rval, bool osdef,
+	const sym_t *args)
 {
-	int	narg;
-	sym_t	*arg;
+	int narg;
+	const sym_t *arg;
 
 	/* reset the buffer */
 	outclr();
@@ -377,7 +378,7 @@ outfdef(sym_t *fsym, pos_t *posp, int rval, int osdef, sym_t *args)
 	outname(fsym->s_name);
 
 	/* renamed name of function, if necessary */
-	if (fsym->s_rename) {
+	if (fsym->s_rename != NULL) {
 		outchar('r');
 		outname(fsym->s_rename);
 	}
@@ -406,7 +407,7 @@ outfdef(sym_t *fsym, pos_t *posp, int rval, int osdef, sym_t *args)
  * (casted to void)
  */
 void
-outcall(tnode_t *tn, int rvused, int rvdisc)
+outcall(const tnode_t *tn, bool rvused, bool rvdisc)
 {
 	tnode_t	*args, *arg;
 	int	narg, n, i;
@@ -442,7 +443,7 @@ outcall(tnode_t *tn, int rvused, int rvdisc)
 			continue;
 		arg = arg->tn_left;
 		if (arg->tn_op == CON) {
-			if (tspec_is_int(t = arg->tn_type->t_tspec)) {
+			if (is_integer(t = arg->tn_type->t_tspec)) {
 				/*
 				 * XXX it would probably be better to
 				 * explicitly test the sign
@@ -459,7 +460,7 @@ outcall(tnode_t *tn, int rvused, int rvdisc)
 				}
 				outint(n);
 			}
-		} else if (arg->tn_op == AMPER &&
+		} else if (arg->tn_op == ADDR &&
 			   arg->tn_left->tn_op == STRING &&
 			   arg->tn_left->tn_string->st_tspec == CHAR) {
 			/* constant string, write all format specifiers */
@@ -495,7 +496,8 @@ outcall(tnode_t *tn, int rvused, int rvdisc)
 static void
 outfstrg(strg_t *strg)
 {
-	int	c, oc, first;
+	int	c, oc;
+	bool	first;
 	u_char	*cp;
 
 	lint_assert(strg->st_tspec == CHAR);
@@ -524,7 +526,7 @@ outfstrg(strg_t *strg)
 		}
 
 		/* numeric field width */
-		while (c != '\0' && isdigit(c)) {
+		while (c != '\0' && ch_isdigit(c)) {
 			outqchar(c);
 			c = *cp++;
 		}
@@ -536,7 +538,7 @@ outfstrg(strg_t *strg)
 				outqchar(c);
 				c = *cp++;
 			} else {
-				while (c != '\0' && isdigit(c)) {
+				while (c != '\0' && ch_isdigit(c)) {
 					outqchar(c);
 					c = *cp++;
 				}
@@ -566,13 +568,13 @@ outfstrg(strg_t *strg)
 					c = *cp++;
 				if (c == ']')
 					c = *cp++;
-				first = 1;
+				first = true;
 				while (c != '\0' && c != ']') {
 					if (c == '-') {
 						if (!first && *cp != ']')
 							outqchar(c);
 					}
-					first = 0;
+					first = false;
 					c = *cp++;
 				}
 				if (c == ']') {
@@ -591,7 +593,7 @@ outfstrg(strg_t *strg)
  * writes a record if sym was used
  */
 void
-outusg(sym_t *sym)
+outusg(const sym_t *sym)
 {
 	/* reset buffer */
 	outclr();

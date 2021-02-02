@@ -1,7 +1,14 @@
-/*	$NetBSD: msg_057.c,v 1.1 2021/01/02 10:22:43 rillig Exp $	*/
+/*	$NetBSD: msg_057.c,v 1.3 2021/01/31 11:12:07 rillig Exp $	*/
 # 3 "msg_057.c"
 
 // Test for message: enumeration constant hides parameter: %s [57]
 
-TODO: "Add example code that triggers the above message."
-TODO: "Add example code that almost triggers the above message."
+long
+rgb(int red, int green, int blue)	/* expect: 231, 231, 231 */
+{
+	enum color {
+		red, green, blue	/* expect: 57, 57 */
+	};				/* expect: 57 */
+
+	return red + green + blue;
+}
