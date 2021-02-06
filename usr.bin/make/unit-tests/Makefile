@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.262 2021/01/23 07:34:00 rillig Exp $
+# $NetBSD: Makefile,v 1.265 2021/02/01 20:31:41 rillig Exp $
 #
 # Unit tests for make(1)
 #
@@ -46,6 +46,7 @@ TESTS+=		cmd-errors-jobs
 TESTS+=		cmd-errors-lint
 TESTS+=		cmd-interrupt
 TESTS+=		cmdline
+TESTS+=		cmdline-redirect-stdin
 TESTS+=		cmdline-undefined
 TESTS+=		comment
 TESTS+=		compat-error
@@ -201,6 +202,7 @@ TESTS+=		impsrc
 TESTS+=		include-main
 TESTS+=		job-flags
 TESTS+=		job-output-long-lines
+TESTS+=		jobs-empty-commands
 TESTS+=		jobs-error-indirect
 TESTS+=		jobs-error-nested
 TESTS+=		jobs-error-nested-make
@@ -257,6 +259,7 @@ TESTS+=		opt-m-include-dir
 TESTS+=		opt-no-action
 TESTS+=		opt-no-action-at-all
 TESTS+=		opt-no-action-runflags
+TESTS+=		opt-no-action-touch
 TESTS+=		opt-query
 TESTS+=		opt-raw
 TESTS+=		opt-silent

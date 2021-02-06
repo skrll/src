@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.517 2021/01/24 20:11:55 rillig Exp $	*/
+/*	$NetBSD: main.c,v 1.526 2021/02/01 21:04:10 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -73,18 +73,19 @@
  *
  * Utility functions defined in this file:
  *
- *	Main_ParseArgLine	Parse and process command line arguments from
- *				a single string.  Used to implement the
- *				special targets .MFLAGS and .MAKEFLAGS.
+ *	Main_ParseArgLine
+ *			Parse and process command line arguments from a
+ *			single string.  Used to implement the special targets
+ *			.MFLAGS and .MAKEFLAGS.
  *
- *	Error			Print a tagged error message.
+ *	Error		Print a tagged error message.
  *
- *	Fatal			Print an error message and exit.
+ *	Fatal		Print an error message and exit.
  *
- *	Punt			Abort all jobs and exit with a message.
+ *	Punt		Abort all jobs and exit with a message.
  *
- *	Finish			Finish things up by printing the number of
- *				errors which occurred, and exit.
+ *	Finish		Finish things up by printing the number of errors
+ *			that occurred, and exit.
  */
 
 #include <sys/types.h>
@@ -110,7 +111,7 @@
 #include "trace.h"
 
 /*	"@(#)main.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: main.c,v 1.517 2021/01/24 20:11:55 rillig Exp $");
+MAKE_RCSID("$NetBSD: main.c,v 1.526 2021/02/01 21:04:10 rillig Exp $");
 #if defined(MAKE_NATIVE) && !defined(lint)
 __COPYRIGHT("@(#) Copyright (c) 1988, 1989, 1990, 1993 "
 	    "The Regents of the University of California.  "
@@ -196,7 +197,7 @@ usage(void)
 }
 
 static void
-parse_debug_option_F(const char *modules)
+MainParseArgDebugFile(const char *arg)
 {
 	const char *mode;
 	size_t len;
@@ -205,24 +206,24 @@ parse_debug_option_F(const char *modules)
 	if (opts.debug_file != stdout && opts.debug_file != stderr)
 		fclose(opts.debug_file);
 
-	if (*modules == '+') {
-		modules++;
+	if (*arg == '+') {
+		arg++;
 		mode = "a";
 	} else
 		mode = "w";
 
-	if (strcmp(modules, "stdout") == 0) {
+	if (strcmp(arg, "stdout") == 0) {
 		opts.debug_file = stdout;
 		return;
 	}
-	if (strcmp(modules, "stderr") == 0) {
+	if (strcmp(arg, "stderr") == 0) {
 		opts.debug_file = stderr;
 		return;
 	}
 
-	len = strlen(modules);
+	len = strlen(arg);
 	fname = bmake_malloc(len + 20);
-	memcpy(fname, modules, len + 1);
+	memcpy(fname, arg, len + 1);
 
 	/* Let the filename be modified by the pid */
 	if (strcmp(fname + len - 3, ".%d") == 0)
@@ -238,12 +239,12 @@ parse_debug_option_F(const char *modules)
 }
 
 static void
-parse_debug_options(const char *argvalue)
+MainParseArgDebug(const char *argvalue)
 {
 	const char *modules;
 	DebugFlags debug = opts.debug;
 
-	for (modules = argvalue; *modules != '\0'; ++modules) {
+	for (modules = argvalue; *modules != '\0'; modules++) {
 		switch (*modules) {
 		case '0':	/* undocumented, only intended for tests */
 			debug = DEBUG_NONE;
@@ -321,7 +322,7 @@ parse_debug_options(const char *argvalue)
 			debug |= DEBUG_SHELL;
 			break;
 		case 'F':
-			parse_debug_option_F(modules + 1);
+			MainParseArgDebugFile(modules + 1);
 			goto debug_setbuf;
 		default:
 			(void)fprintf(stderr,
@@ -344,11 +345,9 @@ debug_setbuf:
 	}
 }
 
-/*
- * does path contain any relative components
- */
+/* Is path relative, or does it contain any relative component "." or ".."? */
 static Boolean
-is_relpath(const char *path)
+IsRelativePath(const char *path)
 {
 	const char *cp;
 
@@ -379,7 +378,7 @@ MainParseArgChdir(const char *argvalue)
 		(void)fprintf(stderr, "%s: %s.\n", progname, strerror(errno));
 		exit(2);
 	}
-	if (!is_relpath(argvalue) &&
+	if (!IsRelativePath(argvalue) &&
 	    stat(argvalue, &sa) != -1 &&
 	    stat(curdir, &sb) != -1 &&
 	    sa.st_ino == sb.st_ino &&
@@ -517,7 +516,7 @@ MainParseArg(char c, const char *argvalue)
 			Var_Append(MAKEFLAGS, "-d", VAR_GLOBAL);
 			Var_Append(MAKEFLAGS, argvalue, VAR_GLOBAL);
 		}
-		parse_debug_options(argvalue);
+		MainParseArgDebug(argvalue);
 		break;
 	case 'e':
 		opts.checkEnvFirst = TRUE;
@@ -653,7 +652,7 @@ rearg:
 	 * perform them if so. Else take them to be targets and stuff them
 	 * on the end of the "create" list.
 	 */
-	for (; argc > 1; ++argv, --argc) {
+	for (; argc > 1; argv++, argc--) {
 		VarAssign var;
 		if (Parse_IsVar(argv[1], &var)) {
 			Parse_DoVar(&var, VAR_CMDLINE);
@@ -688,7 +687,7 @@ Main_ParseArgLine(const char *line)
 	if (line == NULL)
 		return;
 	/* XXX: don't use line as an iterator variable */
-	for (; *line == ' '; ++line)
+	for (; *line == ' '; line++)
 		continue;
 	if (line[0] == '\0')
 		return;
@@ -817,28 +816,23 @@ siginfo(int signo MAKE_ATTR_UNUSED)
 static void
 MakeMode(void)
 {
-	FStr mode = FStr_InitRefer(NULL);
+	char *mode;
 
-	if (mode.str == NULL) {
-		char *expanded;
-		(void)Var_Subst("${" MAKE_MODE ":tl}",
-		    VAR_GLOBAL, VARE_WANTRES, &expanded);
-		/* TODO: handle errors */
-		mode = FStr_InitOwn(expanded);
-	}
+	(void)Var_Subst("${" MAKE_MODE ":tl}", VAR_GLOBAL, VARE_WANTRES, &mode);
+	/* TODO: handle errors */
 
-	if (mode.str[0] != '\0') {
-		if (strstr(mode.str, "compat") != NULL) {
+	if (mode[0] != '\0') {
+		if (strstr(mode, "compat") != NULL) {
 			opts.compatMake = TRUE;
 			forceJobs = FALSE;
 		}
 #if USE_META
-		if (strstr(mode.str, "meta") != NULL)
-			meta_mode_init(mode.str);
+		if (strstr(mode, "meta") != NULL)
+			meta_mode_init(mode);
 #endif
 	}
 
-	FStr_Done(&mode);
+	free(mode);
 }
 
 static void
@@ -948,7 +942,7 @@ runTargets(void)
 		Compat_Run(&targs);
 		outOfDate = FALSE;
 	}
-	Lst_Done(&targs);	/* Don't free the nodes. */
+	Lst_Done(&targs);	/* Don't free the targets themselves. */
 	return outOfDate;
 }
 
@@ -968,7 +962,7 @@ InitVarTargets(void)
 	}
 
 	for (ln = opts.create.first; ln != NULL; ln = ln->next) {
-		char *name = ln->datum;
+		const char *name = ln->datum;
 		Var_Append(".TARGETS", name, VAR_GLOBAL);
 	}
 }
@@ -983,7 +977,7 @@ InitRandom(void)
 }
 
 static const char *
-InitVarMachine(const struct utsname *utsname)
+InitVarMachine(const struct utsname *utsname MAKE_ATTR_UNUSED)
 {
 	const char *machine = getenv("MACHINE");
 	if (machine != NULL)
@@ -1034,6 +1028,9 @@ InitVarMachineArch(void)
 /*
  * All this code is so that we know where we are when we start up
  * on a different machine with pmake.
+ *
+ * XXX: Make no longer has "local" and "remote" mode.  Is this code still
+ * necessary?
  *
  * Overriding getcwd() with $PWD totally breaks MAKEOBJDIRPREFIX
  * since the value of curdir can vary depending on how we got
@@ -1119,7 +1116,7 @@ CmdOpts_Init(void)
 {
 	opts.compatMake = FALSE;
 	opts.debug = DEBUG_NONE;
-	/* opts.debug_file has been initialized earlier */
+	/* opts.debug_file has already been initialized earlier */
 	opts.strict = FALSE;
 	opts.debugVflag = FALSE;
 	opts.checkEnvFirst = FALSE;
@@ -1212,26 +1209,26 @@ static void
 ReadBuiltinRules(void)
 {
 	StringListNode *ln;
-	StringList sysMkPath = LST_INIT;
+	StringList sysMkFiles = LST_INIT;
 
 	SearchPath_Expand(
 	    Lst_IsEmpty(&sysIncPath->dirs) ? defSysIncPath : sysIncPath,
 	    _PATH_DEFSYSMK,
-	    &sysMkPath);
-	if (Lst_IsEmpty(&sysMkPath))
+	    &sysMkFiles);
+	if (Lst_IsEmpty(&sysMkFiles))
 		Fatal("%s: no system rules (%s).", progname, _PATH_DEFSYSMK);
 
-	for (ln = sysMkPath.first; ln != NULL; ln = ln->next)
+	for (ln = sysMkFiles.first; ln != NULL; ln = ln->next)
 		if (ReadMakefile(ln->datum) == 0)
 			break;
 
 	if (ln == NULL)
 		Fatal("%s: cannot open %s.",
-		    progname, (const char *)sysMkPath.first->datum);
+		    progname, (const char *)sysMkFiles.first->datum);
 
-	/* Free the list but not the actual filenames since these may still
-	 * be used in GNodes. */
-	Lst_Done(&sysMkPath);
+	/* Free the list nodes but not the actual filenames since these may
+	 * still be used in GNodes. */
+	Lst_Done(&sysMkFiles);
 }
 
 static void
@@ -1798,7 +1795,7 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 	/*
 	 * Fork
 	 */
-	switch (cpid = vFork()) {
+	switch (cpid = vfork()) {
 	case 0:
 		(void)close(pipefds[0]); /* Close input side of pipe */
 
@@ -1840,8 +1837,8 @@ Cmd_Exec(const char *cmd, const char **errfmt)
 		while ((pid = waitpid(cpid, &status, 0)) != cpid && pid >= 0)
 			JobReapChild(pid, status, FALSE);
 
-		res_len = Buf_Len(&buf);
-		res = Buf_Destroy(&buf, FALSE);
+		res_len = buf.len;
+		res = Buf_DoneData(&buf);
 
 		if (savederr != 0)
 			*errfmt = "Couldn't read shell's output for \"%s\"";
@@ -2025,9 +2022,9 @@ execDie(const char *af, const char *av)
 	Buf_AddStr(&buf, strerror(errno));
 	Buf_AddStr(&buf, ")\n");
 
-	write_all(STDERR_FILENO, Buf_GetAll(&buf, NULL), Buf_Len(&buf));
+	write_all(STDERR_FILENO, buf.data, buf.len);
 
-	Buf_Destroy(&buf, TRUE);
+	Buf_Done(&buf);
 	_exit(1);
 }
 
