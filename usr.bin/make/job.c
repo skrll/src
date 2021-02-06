@@ -1,4 +1,4 @@
-/*	$NetBSD: job.c,v 1.412 2021/02/01 21:09:25 rillig Exp $	*/
+/*	$NetBSD: job.c,v 1.420 2021/02/05 22:15:44 sjg Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990 The Regents of the University of California.
@@ -142,7 +142,7 @@
 #include "trace.h"
 
 /*	"@(#)job.c	8.2 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: job.c,v 1.412 2021/02/01 21:09:25 rillig Exp $");
+MAKE_RCSID("$NetBSD: job.c,v 1.420 2021/02/05 22:15:44 sjg Exp $");
 
 /*
  * A shell defines how the commands are run.  All commands for a target are
@@ -1316,7 +1316,7 @@ Job_CheckCommands(GNode *gn, void (*abortProc)(const char *, ...))
 		 * .DEFAULT itself.
 		 */
 		Make_HandleUse(defaultNode, gn);
-		Var_Set(IMPSRC, GNode_VarTarget(gn), gn);
+		Var_Set(gn, IMPSRC, GNode_VarTarget(gn));
 		return TRUE;
 	}
 
@@ -1569,8 +1569,7 @@ JobWriteShellCommands(Job *job, GNode *gn, Boolean cmdsOK, Boolean *out_run)
 	 * are put. It is removed before the child shell is executed,
 	 * unless DEBUG(SCRIPT) is set.
 	 */
-	char *tfile;
-	sigset_t mask;
+	char tfile[MAXPATHLEN];
 	int tfd;		/* File descriptor to the temp file */
 
 	/*
@@ -1582,11 +1581,7 @@ JobWriteShellCommands(Job *job, GNode *gn, Boolean cmdsOK, Boolean *out_run)
 		DieHorribly();
 	}
 
-	JobSigLock(&mask);
-	tfd = mkTempFile(TMPPAT, &tfile);
-	if (!DEBUG(SCRIPT))
-		(void)eunlink(tfile);
-	JobSigUnlock(&mask);
+	tfd = Job_TempFile(TMPPAT, tfile, sizeof tfile);
 
 	job->cmdFILE = fdopen(tfd, "w+");
 	if (job->cmdFILE == NULL)
@@ -1603,8 +1598,6 @@ JobWriteShellCommands(Job *job, GNode *gn, Boolean cmdsOK, Boolean *out_run)
 #endif
 
 	*out_run = JobPrintCommands(job);
-
-	free(tfile);
 }
 
 /*
@@ -1666,31 +1659,25 @@ JobStart(GNode *gn, Boolean special)
 	    (!opts.noExecute && !opts.touchFlag)) {
 		/*
 		 * The above condition looks very similar to
-		 * GNode_ShouldExecute but is subtly different.
-		 * It prevents that .MAKE targets are touched.
+		 * GNode_ShouldExecute but is subtly different.  It prevents
+		 * that .MAKE targets are touched since these are usually
+		 * virtual targets.
 		 */
 
 		JobWriteShellCommands(job, gn, cmdsOK, &run);
 		(void)fflush(job->cmdFILE);
 	} else if (!GNode_ShouldExecute(gn)) {
 		/*
-		 * Not executing anything -- just print all the commands to
-		 * stdout in one fell swoop. This will still set up
-		 * job->tailCmds correctly.
+		 * Just print all the commands to stdout in one fell swoop.
+		 * This still sets up job->tailCmds correctly.
 		 */
 		SwitchOutputTo(gn);
 		job->cmdFILE = stdout;
 		if (cmdsOK)
 			JobPrintCommands(job);
-		/* Don't execute the shell, thank you. */
 		run = FALSE;
 		(void)fflush(job->cmdFILE);
 	} else {
-		/*
-		 * Just touch the target and note that no shell should be
-		 * executed. Set cmdFILE to stdout to make life easier.
-		 */
-		job->cmdFILE = stdout;
 		Job_Touch(gn, job->echo);
 		run = FALSE;
 	}
@@ -2136,7 +2123,7 @@ Shell_Init(void)
 	if (shellPath == NULL)
 		InitShellNameAndPath();
 
-	Var_SetWithFlags(".SHELL", shellPath, VAR_CMDLINE, VAR_SET_READONLY);
+	Var_SetWithFlags(SCOPE_CMDLINE, ".SHELL", shellPath, VAR_SET_READONLY);
 	if (shell->errFlag == NULL)
 		shell->errFlag = "";
 	if (shell->echoFlag == NULL)
@@ -2176,12 +2163,12 @@ Job_SetPrefix(void)
 {
 	if (targPrefix != NULL) {
 		free(targPrefix);
-	} else if (!Var_Exists(MAKE_JOB_PREFIX, VAR_GLOBAL)) {
-		Var_Set(MAKE_JOB_PREFIX, "---", VAR_GLOBAL);
+	} else if (!Var_Exists(SCOPE_GLOBAL, MAKE_JOB_PREFIX)) {
+		Global_Set(MAKE_JOB_PREFIX, "---");
 	}
 
 	(void)Var_Subst("${" MAKE_JOB_PREFIX "}",
-	    VAR_GLOBAL, VARE_WANTRES, &targPrefix);
+	    SCOPE_GLOBAL, VARE_WANTRES, &targPrefix);
 	/* TODO: handle errors */
 }
 
@@ -2770,6 +2757,22 @@ JobTokenAdd(void)
 		continue;
 }
 
+/* Get a temp file */
+int
+Job_TempFile(const char *pattern, char *tfile, size_t tfile_sz)
+{
+	int fd;
+	sigset_t mask;
+
+	JobSigLock(&mask);
+	fd = mkTempFile(pattern, tfile, tfile_sz);
+	if (tfile != NULL && !DEBUG(SCRIPT))
+	    unlink(tfile);
+	JobSigUnlock(&mask);
+
+	return fd;
+}
+
 /* Prep the job token pipe in the root make process. */
 void
 Job_ServerStart(int max_tokens, int jp_0, int jp_1)
@@ -2791,8 +2794,8 @@ Job_ServerStart(int max_tokens, int jp_0, int jp_1)
 	snprintf(jobarg, sizeof jobarg, "%d,%d",
 	    tokenWaitJob.inPipe, tokenWaitJob.outPipe);
 
-	Var_Append(MAKEFLAGS, "-J", VAR_GLOBAL);
-	Var_Append(MAKEFLAGS, jobarg, VAR_GLOBAL);
+	Global_Append(MAKEFLAGS, "-J");
+	Global_Append(MAKEFLAGS, jobarg);
 
 	/*
 	 * Preload the job pipe with one token per job, save the one
@@ -2891,7 +2894,7 @@ Job_RunTarget(const char *target, const char *fname)
 		return FALSE;
 
 	if (fname != NULL)
-		Var_Set(ALLSRC, fname, gn);
+		Var_Set(gn, ALLSRC, fname);
 
 	JobRun(gn);
 	/* XXX: Replace with GNode_IsError(gn) */

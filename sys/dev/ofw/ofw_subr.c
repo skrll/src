@@ -1,4 +1,30 @@
-/*	$NetBSD: ofw_subr.c,v 1.55 2021/01/27 04:55:42 thorpej Exp $	*/
+/*	$NetBSD: ofw_subr.c,v 1.57 2021/02/05 17:17:59 thorpej Exp $	*/
+
+/*
+ * Copyright (c) 2021 The NetBSD Foundation, Inc.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
 
 /*
  * Copyright 1998
@@ -34,17 +60,78 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofw_subr.c,v 1.55 2021/01/27 04:55:42 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofw_subr.c,v 1.57 2021/02/05 17:17:59 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
 #include <sys/kmem.h>
 #include <sys/systm.h>
 #include <dev/ofw/openfirm.h>
-#include <dev/i2c/i2cvar.h>
 
 #define	OFW_MAX_STACK_BUF_SIZE	256
 #define	OFW_PATH_BUF_SIZE	512
+
+/*
+ * OpenFirmware device handle support.
+ */
+
+static device_call_t
+of_devhandle_lookup_device_call(devhandle_t handle, const char *name,
+    devhandle_t *call_handlep)
+{
+	__link_set_decl(of_device_calls, struct device_call_descriptor);
+	struct device_call_descriptor * const *desc;
+
+	__link_set_foreach(desc, of_device_calls) {
+		if (strcmp((*desc)->name, name) == 0) {
+			return (*desc)->call;
+		}
+	}
+	return NULL;
+}
+
+static const struct devhandle_impl of_devhandle_impl = {
+	.type = DEVHANDLE_TYPE_OF,
+	.lookup_device_call = of_devhandle_lookup_device_call,
+};
+
+devhandle_t
+devhandle_from_of(int phandle)
+{
+	devhandle_t handle = {
+		.impl = &of_devhandle_impl,
+		.integer = phandle,
+	};
+
+	return handle;
+}
+
+int
+devhandle_to_of(devhandle_t const handle)
+{
+	KASSERT(devhandle_type(handle) == DEVHANDLE_TYPE_OF);
+
+	return handle.integer;
+}
+
+static int
+of_device_enumerate_children(device_t dev, devhandle_t call_handle, void *v)
+{
+	struct device_enumerate_children_args *args = v;
+	int phandle = devhandle_to_of(call_handle);
+	int child;
+
+	for (child = OF_child(phandle); child != 0; child = OF_peer(child)) {
+		if (!args->callback(dev, devhandle_from_of(child),
+				    args->callback_arg)) {
+			break;
+		}
+	}
+
+	return 0;
+}
+OF_DEVICE_CALL_REGISTER("device-enumerate-children",
+			of_device_enumerate_children)
 
 /*
  * int of_decode_int(p)
@@ -430,128 +517,44 @@ of_get_mode_string(char *buffer, int len)
 	return buffer;
 }
 
+void
+of_device_register(device_t dev, int phandle)
+{
+
+	/* All we do here is set the devhandle in the device_t. */
+	device_set_handle(dev, devhandle_from_of(phandle));
+}
+
 /*
- * Iterate over the subtree of a i2c controller node.
- * Add all sub-devices into an array as part of the controller's
- * device properties.
- * This is used by the i2c bus attach code to do direct configuration.
+ * of_device_from_phandle --
+ *
+ *	Return a device_t associated with the specified phandle.
+ *
+ *	This is expected to be used rarely, so we don't care if
+ *	it's fast.  Also, it can only find devices that have
+ *	gone through of_device_register() (obviously).
  */
-void
-of_enter_i2c_devs(prop_dictionary_t props, int ofnode, size_t cell_size,
-    int addr_shift)
+device_t
+of_device_from_phandle(int phandle)
 {
-	int node, len;
-	char name[32];
-	uint64_t reg64;
-	uint32_t reg32;
-	uint64_t addr;
-	prop_array_t array = NULL;
-	prop_dictionary_t dev;
+	devhandle_t devhandle;
+	deviter_t di;
+	device_t dev;
 
-	for (node = OF_child(ofnode); node; node = OF_peer(node)) {
-		if (OF_getprop(node, "name", name, sizeof(name)) <= 0)
-			continue;
-		len = OF_getproplen(node, "reg");
-		addr = 0;
-		if (cell_size == 8 && len >= sizeof(reg64)) {
-			if (OF_getprop(node, "reg", &reg64, sizeof(reg64))
-			    < sizeof(reg64))
-				continue;
-			addr = be64toh(reg64);
-			/*
-			 * The i2c bus number (0 or 1) is encoded in bit 33
-			 * of the register, but we encode it in bit 8 of
-			 * i2c_addr_t.
-			 */
-			if (addr & 0x100000000)
-				addr = (addr & 0xff) | 0x100;
-		} else if (cell_size == 4 && len >= sizeof(reg32)) {
-			if (OF_getprop(node, "reg", &reg32, sizeof(reg32))
-			    < sizeof(reg32))
-				continue;
-			addr = be32toh(reg32);
-		} else {
-			continue;
+	for (dev = deviter_first(&di, DEVITER_F_ROOT_FIRST);
+	     dev != NULL;
+	     dev = deviter_next(&di)) {
+		devhandle = device_handle(dev);
+		if (devhandle_type(devhandle) == DEVHANDLE_TYPE_OF) {
+			if (devhandle_to_of(devhandle) == phandle) {
+				/* Found it! */
+				break;
+			}
 		}
-		addr >>= addr_shift;
-		if (addr == 0) continue;
-
-		if (array == NULL)
-			array = prop_array_create();
-
-		dev = prop_dictionary_create();
-		prop_dictionary_set_string(dev, "name", name);
-		prop_dictionary_set_uint32(dev, "addr", addr);
-		prop_dictionary_set_uint64(dev, "cookie", node);
-		prop_dictionary_set_uint32(dev, "cookietype", I2C_COOKIE_OF);
-		of_to_dataprop(dev, node, "compatible", "compatible");
-		prop_array_add(array, dev);
-		prop_object_release(dev);
 	}
-
-	if (array != NULL) {
-		prop_dictionary_set(props, "i2c-child-devices", array);
-		prop_object_release(array);
-	}
+	deviter_release(&di);
+	return dev;
 }
-
-void
-of_enter_spi_devs(prop_dictionary_t props, int ofnode, size_t cell_size)
-{
-	int node, len;
-	char name[32];
-	uint64_t reg64;
-	uint32_t reg32;
-	uint32_t slave;
-	u_int32_t maxfreq;
-	prop_array_t array = NULL;
-	prop_dictionary_t dev;
-	int mode;
-
-	for (node = OF_child(ofnode); node; node = OF_peer(node)) {
-		if (OF_getprop(node, "name", name, sizeof(name)) <= 0)
-			continue;
-		len = OF_getproplen(node, "reg");
-		slave = 0;
-		if (cell_size == 8 && len >= sizeof(reg64)) {
-			if (OF_getprop(node, "reg", &reg64, sizeof(reg64))
-			    < sizeof(reg64))
-				continue;
-			slave = be64toh(reg64);
-		} else if (cell_size == 4 && len >= sizeof(reg32)) {
-			if (OF_getprop(node, "reg", &reg32, sizeof(reg32))
-			    < sizeof(reg32))
-				continue;
-			slave = be32toh(reg32);
-		} else {
-			continue;
-		}
-		if (of_getprop_uint32(node, "spi-max-frequency", &maxfreq)) {
-			maxfreq = 0;
-		}
-		mode = ((int)of_hasprop(node, "cpol") << 1) | (int)of_hasprop(node, "cpha");
-
-		if (array == NULL)
-			array = prop_array_create();
-
-		dev = prop_dictionary_create();
-		prop_dictionary_set_string(dev, "name", name);
-		prop_dictionary_set_uint32(dev, "slave", slave);
-		prop_dictionary_set_uint32(dev, "mode", mode);
-		if (maxfreq > 0)
-			prop_dictionary_set_uint32(dev, "spi-max-frequency", maxfreq);
-		prop_dictionary_set_uint64(dev, "cookie", node);
-		of_to_dataprop(dev, node, "compatible", "compatible");
-		prop_array_add(array, dev);
-		prop_object_release(dev);
-	}
-
-	if (array != NULL) {
-		prop_dictionary_set(props, "spi-child-devices", array);
-		prop_object_release(array);
-	}
-}
-
 
 /*
  * Returns true if the specified property is present.

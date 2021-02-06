@@ -1,4 +1,4 @@
-/*	$NetBSD: nonints.h,v 1.189 2021/02/01 21:38:20 rillig Exp $	*/
+/*	$NetBSD: nonints.h,v 1.202 2021/02/05 05:15:12 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -278,6 +278,7 @@ const char *Targ_FmtTime(time_t);
 void Targ_PrintType(int);
 void Targ_PrintGraph(int);
 void Targ_Propagate(void);
+const char *GNodeMade_Name(GNodeMade);
 
 /* var.c */
 void Var_Init(void);
@@ -367,15 +368,19 @@ typedef enum VarExportMode {
 	VEM_LITERAL
 } VarExportMode;
 
-void Var_DeleteVar(const char *, GNode *);
-void Var_Delete(const char *, GNode *);
+void Var_Delete(GNode *, const char *);
+void Var_DeleteExpand(GNode *, const char *);
 void Var_Undef(const char *);
-void Var_Set(const char *, const char *, GNode *);
-void Var_SetWithFlags(const char *, const char *, GNode *, VarSetFlags);
-void Var_Append(const char *, const char *, GNode *);
-Boolean Var_Exists(const char *, GNode *);
-FStr Var_Value(const char *, GNode *);
-const char *Var_ValueDirect(const char *, GNode *);
+void Var_Set(GNode *, const char *, const char *);
+void Var_SetExpand(GNode *, const char *, const char *);
+void Var_SetWithFlags(GNode *, const char *, const char *, VarSetFlags);
+void Var_SetExpandWithFlags(GNode *, const char *, const char *, VarSetFlags);
+void Var_Append(GNode *, const char *, const char *);
+void Var_AppendExpand(GNode *, const char *, const char *);
+Boolean Var_Exists(GNode *, const char *);
+Boolean Var_ExistsExpand(GNode *, const char *);
+FStr Var_Value(GNode *, const char *);
+const char *GNode_ValueDirect(GNode *, const char *);
 VarParseResult Var_Parse(const char **, GNode *, VarEvalFlags, FStr *);
 VarParseResult Var_Subst(const char *, GNode *, VarEvalFlags, char **);
 void Var_Stats(void);
@@ -384,6 +389,11 @@ void Var_ReexportVars(void);
 void Var_Export(VarExportMode, const char *);
 void Var_ExportVars(const char *);
 void Var_UnExport(Boolean, const char *);
+
+void Global_Set(const char *, const char *);
+void Global_SetExpand(const char *, const char *);
+void Global_Append(const char *, const char *);
+void Global_Delete(const char *);
 
 /* util.c */
 typedef void (*SignalProc)(int);
