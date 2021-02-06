@@ -1,4 +1,4 @@
-/*	$NetBSD: virtio.c,v 1.45 2021/01/28 15:43:12 reinoud Exp $	*/
+/*	$NetBSD: virtio.c,v 1.47 2021/02/05 20:45:38 reinoud Exp $	*/
 
 /*
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: virtio.c,v 1.45 2021/01/28 15:43:12 reinoud Exp $");
+__KERNEL_RCSID(0, "$NetBSD: virtio.c,v 1.47 2021/02/05 20:45:38 reinoud Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -201,32 +201,31 @@ virtio_read_device_config_4(struct virtio_softc *sc, int index) {
 	return val;
 }
 
+/*
+ * The Virtio spec explicitly tells that reading and writing 8 bytes are not
+ * considered atomic and no triggers may be connected to reading or writing
+ * it. We access it using two 32 reads. See virtio spec 4.1.3.1.
+ */
 uint64_t
 virtio_read_device_config_8(struct virtio_softc *sc, int index) {
 	bus_space_tag_t	   iot = sc->sc_devcfg_iot;
 	bus_space_handle_t ioh = sc->sc_devcfg_ioh;
-	uint64_t val, val_0, val_1, val_l, val_h;
+	union {
+		uint64_t u64;
+		uint32_t l[2];
+	} v;
+	uint64_t val;
 
-	val_0 = bus_space_read_4(iot, ioh, index);
-	val_1 = bus_space_read_4(iot, ioh, index + 4);
-	if (BYTE_ORDER != sc->sc_bus_endian) {
-		val_l = bswap32(val_1);
-		val_h = bswap32(val_0);
-	} else {
-		val_l = val_0;
-		val_h = val_1;
+	v.l[0] = bus_space_read_4(iot, ioh, index);
+	v.l[1] = bus_space_read_4(iot, ioh, index + 4);
+	if (sc->sc_bus_endian != sc->sc_struct_endian) {
+		v.l[0] = bswap32(v.l[0]);
+		v.l[1] = bswap32(v.l[1]);
 	}
+	val = v.u64;
 
-#ifdef AARCH64EB_PROBLEM
-	/* XXX see comment at virtio_pci.c */
-	if (sc->sc_aarch64eb_bus_problem) {
-		val_l = val_1;
-		val_h = val_0;
-	}
-#endif
-
-	val = val_h << 32;
-	val |= val_l;
+	if (BYTE_ORDER != sc->sc_struct_endian)
+		val = bswap64(val);
 
 	DPRINTFR("read_8", "%08lx", val, index, 8);
 	DPRINTFR2("read_8 low ", "%08x",
@@ -308,34 +307,39 @@ virtio_write_device_config_4(struct virtio_softc *sc, int index, uint32_t value)
 	bus_space_write_4(iot, ioh, index, value);
 }
 
+/*
+ * The Virtio spec explicitly tells that reading and writing 8 bytes are not
+ * considered atomic and no triggers may be connected to reading or writing
+ * it. We access it using two 32 bit writes. For good measure it is stated to
+ * always write lsb first just in case of a hypervisor bug. See See virtio
+ * spec 4.1.3.1.
+ */
 void
 virtio_write_device_config_8(struct virtio_softc *sc, int index, uint64_t value)
 {
 	bus_space_tag_t	   iot = sc->sc_devcfg_iot;
 	bus_space_handle_t ioh = sc->sc_devcfg_ioh;
-	uint64_t val_0, val_1, val_l, val_h;
+	union {
+		uint64_t u64;
+		uint32_t l[2];
+	} v;
 
-	val_l = BUS_ADDR_LO32(value);
-	val_h = BUS_ADDR_HI32(value);
+	if (BYTE_ORDER != sc->sc_struct_endian)
+		value = bswap64(value);
 
-	if (BYTE_ORDER != sc->sc_bus_endian) {
-		val_0 = bswap32(val_h);
-		val_1 = bswap32(val_l);
+	v.u64 = value;
+	if (sc->sc_bus_endian != sc->sc_struct_endian) {
+		v.l[0] = bswap32(v.l[0]);
+		v.l[1] = bswap32(v.l[1]);
+	}
+
+	if (sc->sc_struct_endian == LITTLE_ENDIAN) {
+		bus_space_write_4(iot, ioh, index,     v.l[0]);
+		bus_space_write_4(iot, ioh, index + 4, v.l[1]);
 	} else {
-		val_0 = val_l;
-		val_1 = val_h;
+		bus_space_write_4(iot, ioh, index + 4, v.l[1]);
+		bus_space_write_4(iot, ioh, index,     v.l[0]);
 	}
-
-#ifdef AARCH64EB_PROBLEM
-	/* XXX see comment at virtio_pci.c */
-	if (sc->sc_aarch64eb_bus_problem) {
-		val_0 = val_h;
-		val_1 = val_l;
-	}
-#endif
-
-	bus_space_write_4(iot, ioh, index, val_0);
-	bus_space_write_4(iot, ioh, index + 4, val_1);
 }
 
 /*

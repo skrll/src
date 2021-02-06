@@ -1,4 +1,4 @@
-/*	$NetBSD: make.h,v 1.250 2021/02/01 21:32:54 rillig Exp $	*/
+/*	$NetBSD: make.h,v 1.256 2021/02/05 19:19:17 sjg Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -350,9 +350,7 @@ typedef enum GNodeFlags {
 	/* Used by MakePrintStatus */
 	CYCLE		= 1 << 12,
 	/* Used by MakePrintStatus */
-	DONECYCLE	= 1 << 13,
-	/* Internal use only */
-	INTERNAL	= 1 << 14
+	DONECYCLE	= 1 << 13
 } GNodeFlags;
 
 typedef struct List StringList;
@@ -431,11 +429,14 @@ typedef struct GNode {
 	/* Last time (sequence number) we tried to make this node */
 	unsigned int checked_seqno;
 
-	/* The "local" variables that are specific to this target and this
+	/*
+	 * The "local" variables that are specific to this target and this
 	 * target only, such as $@, $<, $?.
 	 *
-	 * Also used for the global variable scopes VAR_GLOBAL, VAR_CMDLINE,
-	 * VAR_INTERNAL, which contain variables with arbitrary names. */
+	 * Also used for the global variable scopes SCOPE_GLOBAL,
+	 * SCOPE_CMDLINE, SCOPE_INTERNAL, which contain variables with
+	 * arbitrary names.
+	 */
 	HashTable /* of Var pointer */ vars;
 
 	/* The commands to be given to a shell to create this target. */
@@ -498,11 +499,11 @@ extern GNode *defaultNode;
  * Variables defined internally by make which should not override those set
  * by makefiles.
  */
-extern GNode *VAR_INTERNAL;
-/* Variables defined in a global context, e.g in the Makefile itself. */
-extern GNode *VAR_GLOBAL;
+extern GNode *SCOPE_INTERNAL;
+/* Variables defined in a global scope, e.g in the makefile itself. */
+extern GNode *SCOPE_GLOBAL;
 /* Variables defined on the command line. */
-extern GNode *VAR_CMDLINE;
+extern GNode *SCOPE_CMDLINE;
 
 /*
  * Value returned by Var_Parse when an error is encountered. It actually
@@ -707,7 +708,7 @@ Boolean shouldDieQuietly(GNode *, int);
 void PrintOnError(GNode *, const char *);
 void Main_ExportMAKEFLAGS(Boolean);
 Boolean Main_SetObjdir(Boolean, const char *, ...) MAKE_ATTR_PRINTFLIKE(2, 3);
-int mkTempFile(const char *, char **);
+int mkTempFile(const char *, char *, size_t);
 int str2Lst_Append(StringList *, char *);
 void GNode_FprintDetails(FILE *, const char *, const GNode *, const char *);
 Boolean GNode_ShouldExecute(GNode *gn);
@@ -750,19 +751,19 @@ GNode_IsError(const GNode *gn)
 }
 
 MAKE_INLINE const char *
-GNode_VarTarget(GNode *gn) { return Var_ValueDirect(TARGET, gn); }
+GNode_VarTarget(GNode *gn) { return GNode_ValueDirect(gn, TARGET); }
 MAKE_INLINE const char *
-GNode_VarOodate(GNode *gn) { return Var_ValueDirect(OODATE, gn); }
+GNode_VarOodate(GNode *gn) { return GNode_ValueDirect(gn, OODATE); }
 MAKE_INLINE const char *
-GNode_VarAllsrc(GNode *gn) { return Var_ValueDirect(ALLSRC, gn); }
+GNode_VarAllsrc(GNode *gn) { return GNode_ValueDirect(gn, ALLSRC); }
 MAKE_INLINE const char *
-GNode_VarImpsrc(GNode *gn) { return Var_ValueDirect(IMPSRC, gn); }
+GNode_VarImpsrc(GNode *gn) { return GNode_ValueDirect(gn, IMPSRC); }
 MAKE_INLINE const char *
-GNode_VarPrefix(GNode *gn) { return Var_ValueDirect(PREFIX, gn); }
+GNode_VarPrefix(GNode *gn) { return GNode_ValueDirect(gn, PREFIX); }
 MAKE_INLINE const char *
-GNode_VarArchive(GNode *gn) { return Var_ValueDirect(ARCHIVE, gn); }
+GNode_VarArchive(GNode *gn) { return GNode_ValueDirect(gn, ARCHIVE); }
 MAKE_INLINE const char *
-GNode_VarMember(GNode *gn) { return Var_ValueDirect(MEMBER, gn); }
+GNode_VarMember(GNode *gn) { return GNode_ValueDirect(gn, MEMBER); }
 
 #ifdef __GNUC__
 #define UNCONST(ptr)	({		\
