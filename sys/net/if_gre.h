@@ -1,4 +1,4 @@
-/*	$NetBSD: if_gre.h,v 1.44 2019/02/26 09:43:37 msaitoh Exp $ */
+/*	$NetBSD: if_gre.h,v 1.47 2021/02/03 18:13:13 roy Exp $ */
 
 /*
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -130,7 +130,10 @@ struct gre_h {
 	struct gre_sre[] routing Routing fileds (see below)
 				Present if (rt_pres == 1)
  */
-} __packed;
+};
+#ifdef __CTASSERT
+__CTASSERT(sizeof(struct gre_h) == 4);
+#endif
 
 #define GRE_CP		0x8000  /* Checksum Present */
 #define GRE_RP		0x4000  /* Routing Present */
