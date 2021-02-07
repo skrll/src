@@ -1,4 +1,4 @@
-/*	$NetBSD: parse.c,v 1.538 2021/02/01 22:21:33 rillig Exp $	*/
+/*	$NetBSD: parse.c,v 1.549 2021/02/05 05:46:27 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -109,7 +109,7 @@
 #include "pathnames.h"
 
 /*	"@(#)parse.c	8.3 (Berkeley) 3/19/94"	*/
-MAKE_RCSID("$NetBSD: parse.c,v 1.538 2021/02/01 22:21:33 rillig Exp $");
+MAKE_RCSID("$NetBSD: parse.c,v 1.549 2021/02/05 05:46:27 rillig Exp $");
 
 /* types and constants */
 
@@ -247,8 +247,8 @@ CurFile(void)
 }
 
 /* include paths */
-SearchPath *parseIncPath;	/* dirs for "..." includes */
-SearchPath *sysIncPath;		/* dirs for <...> includes */
+SearchPath *parseIncPath;	/* directories for "..." includes */
+SearchPath *sysIncPath;		/* directories for <...> includes */
 SearchPath *defSysIncPath;	/* default for sysIncPath */
 
 /* parser tables */
@@ -576,13 +576,13 @@ PrintLocation(FILE *f, const char *fname, size_t lineno)
 	/* Find out which makefile is the culprit.
 	 * We try ${.PARSEDIR} and apply realpath(3) if not absolute. */
 
-	dir = Var_Value(".PARSEDIR", VAR_GLOBAL);
+	dir = Var_Value(SCOPE_GLOBAL, ".PARSEDIR");
 	if (dir.str == NULL)
 		dir.str = ".";
 	if (dir.str[0] != '/')
 		dir.str = realpath(dir.str, dirbuf);
 
-	base = Var_Value(".PARSEFILE", VAR_GLOBAL);
+	base = Var_Value(SCOPE_GLOBAL, ".PARSEFILE");
 	if (base.str == NULL)
 		base.str = str_basename(fname);
 
@@ -681,7 +681,7 @@ Parse_Error(ParseErrorLevel type, const char *fmt, ...)
 
 
 /*
- * Parse and handle a .info, .warning or .error directive.
+ * Parse and handle an .info, .warning or .error directive.
  * For an .error directive, immediately exit.
  */
 static void
@@ -695,7 +695,7 @@ ParseMessage(ParseErrorLevel level, const char *levelName, const char *umsg)
 		return;
 	}
 
-	(void)Var_Subst(umsg, VAR_CMDLINE, VARE_WANTRES, &xmsg);
+	(void)Var_Subst(umsg, SCOPE_CMDLINE, VARE_WANTRES, &xmsg);
 	/* TODO: handle errors */
 
 	Parse_Error(level, "%s", xmsg);
@@ -872,11 +872,9 @@ static void
 ParseDependencySourceMain(const char *src)
 {
 	/*
-	 * In a line like ".MAIN: source1 source2", it means we need to add
-	 * the sources of said target to the list of things to create.
-	 *
-	 * Note that this will only be invoked if the user didn't specify a
-	 * target on the command line and the .MAIN occurs for the first time.
+	 * In a line like ".MAIN: source1 source2", add all sources to the
+	 * list of things to create, but only if the user didn't specify a
+	 * target on the command line and .MAIN occurs for the first time.
 	 *
 	 * See ParseDoDependencyTargetSpecial, branch SP_MAIN.
 	 * See unit-tests/cond-func-make-main.mk.
@@ -886,7 +884,7 @@ ParseDependencySourceMain(const char *src)
 	 * Add the name to the .TARGETS variable as well, so the user can
 	 * employ that, if desired.
 	 */
-	Var_Append(".TARGETS", src, VAR_GLOBAL);
+	Global_Append(".TARGETS", src);
 }
 
 static void
@@ -923,12 +921,11 @@ ParseDependencySourceOther(const char *src, GNodeType tOp,
 	GNode *gn;
 
 	/*
-	 * If the source is not an attribute, we need to find/create
-	 * a node for it. After that we can apply any operator to it
-	 * from a special target or link it to its parents, as
-	 * appropriate.
+	 * The source is not an attribute, so find/create a node for it.
+	 * After that, apply any operator to it from a special target or
+	 * link it to its parents, as appropriate.
 	 *
-	 * In the case of a source that was the object of a :: operator,
+	 * In the case of a source that was the object of a '::' operator,
 	 * the attribute is applied to all of its instances (as kept in
 	 * the 'cohorts' list of the node) or all the cohorts are linked
 	 * to all the targets.
@@ -1045,7 +1042,7 @@ ParseDependencyTargetWord(const char **pp, const char *lstart)
 			const char *nested_p = cp;
 			FStr nested_val;
 
-			(void)Var_Parse(&nested_p, VAR_CMDLINE, VARE_NONE,
+			(void)Var_Parse(&nested_p, SCOPE_CMDLINE, VARE_NONE,
 			    &nested_val);
 			/* TODO: handle errors */
 			FStr_Done(&nested_val);
@@ -1327,7 +1324,7 @@ ParseDoDependencySourcesEmpty(ParseSpecial specType, SearchPathList *paths)
 		break;
 #ifdef POSIX
 	case SP_POSIX:
-		Var_Set("%POSIX", "1003.2", VAR_GLOBAL);
+		Global_Set("%POSIX", "1003.2");
 		break;
 #endif
 	default:
@@ -1444,7 +1441,7 @@ ParseDoDependencyTargets(char **inout_cp,
 			 * there was an error in the specification. On error,
 			 * line should remain untouched.
 			 */
-			if (!Arch_ParseArchive(&tgt, targets, VAR_CMDLINE)) {
+			if (!Arch_ParseArchive(&tgt, targets, SCOPE_CMDLINE)) {
 				Parse_Error(PARSE_FATAL,
 				    "Error in archive specification: \"%s\"",
 				    tgt);
@@ -1549,7 +1546,8 @@ ParseDoDependencySourcesMundane(char *start, char *end,
 
 		if (*end == '(') {
 			GNodeList sources = LST_INIT;
-			if (!Arch_ParseArchive(&start, &sources, VAR_CMDLINE)) {
+			if (!Arch_ParseArchive(&start, &sources,
+			    SCOPE_CMDLINE)) {
 				Parse_Error(PARSE_FATAL,
 				    "Error in source archive spec \"%s\"",
 				    start);
@@ -1870,13 +1868,13 @@ Parse_IsVar(const char *p, VarAssign *out_var)
  * Check for syntax errors such as unclosed expressions or unknown modifiers.
  */
 static void
-VarCheckSyntax(VarAssignOp type, const char *uvalue, GNode *ctxt)
+VarCheckSyntax(VarAssignOp type, const char *uvalue, GNode *scope)
 {
 	if (opts.strict) {
 		if (type != VAR_SUBST && strchr(uvalue, '$') != NULL) {
 			char *expandedValue;
 
-			(void)Var_Subst(uvalue, ctxt, VARE_NONE,
+			(void)Var_Subst(uvalue, scope, VARE_NONE,
 			    &expandedValue);
 			/* TODO: handle errors */
 			free(expandedValue);
@@ -1885,7 +1883,7 @@ VarCheckSyntax(VarAssignOp type, const char *uvalue, GNode *ctxt)
 }
 
 static void
-VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
+VarAssign_EvalSubst(GNode *scope, const char *name, const char *uvalue,
 		    FStr *out_avalue)
 {
 	char *evalue;
@@ -1897,20 +1895,20 @@ VarAssign_EvalSubst(const char *name, const char *uvalue, GNode *ctxt,
 	 * TODO: Add a test that demonstrates why this code is needed,
 	 *  apart from making the debug log longer.
 	 */
-	if (!Var_Exists(name, ctxt))
-		Var_Set(name, "", ctxt);
+	if (!Var_ExistsExpand(scope, name))
+		Var_SetExpand(scope, name, "");
 
-	(void)Var_Subst(uvalue, ctxt,
+	(void)Var_Subst(uvalue, scope,
 	    VARE_WANTRES | VARE_KEEP_DOLLAR | VARE_KEEP_UNDEF, &evalue);
 	/* TODO: handle errors */
 
-	Var_Set(name, evalue, ctxt);
+	Var_SetExpand(scope, name, evalue);
 
 	*out_avalue = FStr_InitOwn(evalue);
 }
 
 static void
-VarAssign_EvalShell(const char *name, const char *uvalue, GNode *ctxt,
+VarAssign_EvalShell(const char *name, const char *uvalue, GNode *scope,
 		    FStr *out_avalue)
 {
 	FStr cmd;
@@ -1920,14 +1918,14 @@ VarAssign_EvalShell(const char *name, const char *uvalue, GNode *ctxt,
 	cmd = FStr_InitRefer(uvalue);
 	if (strchr(cmd.str, '$') != NULL) {
 		char *expanded;
-		(void)Var_Subst(cmd.str, VAR_CMDLINE,
+		(void)Var_Subst(cmd.str, SCOPE_CMDLINE,
 		    VARE_WANTRES | VARE_UNDEFERR, &expanded);
 		/* TODO: handle errors */
 		cmd = FStr_InitOwn(expanded);
 	}
 
 	cmdOut = Cmd_Exec(cmd.str, &errfmt);
-	Var_Set(name, cmdOut, ctxt);
+	Var_SetExpand(scope, name, cmdOut);
 	*out_avalue = FStr_InitOwn(cmdOut);
 
 	if (errfmt != NULL)
@@ -1949,22 +1947,22 @@ VarAssign_EvalShell(const char *name, const char *uvalue, GNode *ctxt,
  */
 static Boolean
 VarAssign_Eval(const char *name, VarAssignOp op, const char *uvalue,
-	       GNode *ctxt, FStr *out_TRUE_avalue)
+	       GNode *scope, FStr *out_TRUE_avalue)
 {
 	FStr avalue = FStr_InitRefer(uvalue);
 
 	if (op == VAR_APPEND)
-		Var_Append(name, uvalue, ctxt);
+		Var_AppendExpand(scope, name, uvalue);
 	else if (op == VAR_SUBST)
-		VarAssign_EvalSubst(name, uvalue, ctxt, &avalue);
+		VarAssign_EvalSubst(scope, name, uvalue, &avalue);
 	else if (op == VAR_SHELL)
-		VarAssign_EvalShell(name, uvalue, ctxt, &avalue);
+		VarAssign_EvalShell(name, uvalue, scope, &avalue);
 	else {
-		if (op == VAR_DEFAULT && Var_Exists(name, ctxt))
+		if (op == VAR_DEFAULT && Var_ExistsExpand(scope, name))
 			return FALSE;
 
 		/* Normal assignment -- just do it. */
-		Var_Set(name, uvalue, ctxt);
+		Var_SetExpand(scope, name, uvalue);
 	}
 
 	*out_TRUE_avalue = avalue;
@@ -1990,14 +1988,14 @@ VarAssignSpecial(const char *name, const char *avalue)
 		Var_ExportVars(avalue);
 }
 
-/* Perform the variable variable assignment in the given context. */
+/* Perform the variable variable assignment in the given scope. */
 void
-Parse_DoVar(VarAssign *var, GNode *ctxt)
+Parse_DoVar(VarAssign *var, GNode *scope)
 {
 	FStr avalue;	/* actual value (maybe expanded) */
 
-	VarCheckSyntax(var->op, var->value, ctxt);
-	if (VarAssign_Eval(var->varname, var->op, var->value, ctxt, &avalue)) {
+	VarCheckSyntax(var->op, var->value, scope);
+	if (VarAssign_Eval(var->varname, var->op, var->value, scope, &avalue)) {
 		VarAssignSpecial(var->varname, avalue.str);
 		FStr_Done(&avalue);
 	}
@@ -2254,7 +2252,7 @@ ParseDoInclude(char *directive)
 	 * Substitute for any variables in the filename before trying to
 	 * find the file.
 	 */
-	(void)Var_Subst(file, VAR_CMDLINE, VARE_WANTRES, &file);
+	(void)Var_Subst(file, SCOPE_CMDLINE, VARE_WANTRES, &file);
 	/* TODO: handle errors */
 
 	IncludeFile(file, endc == '>', directive[0] == 'd', silent);
@@ -2281,8 +2279,8 @@ SetFilenameVars(const char *filename, const char *dirvar, const char *filevar)
 		basename = slash + 1;
 	}
 
-	Var_Set(dirvar, dirname, VAR_GLOBAL);
-	Var_Set(filevar, basename, VAR_GLOBAL);
+	Global_SetExpand(dirvar, dirname);
+	Global_SetExpand(filevar, basename);
 
 	DEBUG5(PARSE, "%s: ${%s} = `%s' ${%s} = `%s'\n",
 	    __func__, dirvar, dirname, filevar, basename);
@@ -2320,8 +2318,8 @@ ParseSetParseFile(const char *filename)
 		SetFilenameVars(including,
 		    ".INCLUDEDFROMDIR", ".INCLUDEDFROMFILE");
 	} else {
-		Var_Delete(".INCLUDEDFROMDIR", VAR_GLOBAL);
-		Var_Delete(".INCLUDEDFROMFILE", VAR_GLOBAL);
+		Global_Delete(".INCLUDEDFROMDIR");
+		Global_Delete(".INCLUDEDFROMFILE");
 	}
 }
 
@@ -2358,7 +2356,7 @@ StrContainsWord(const char *str, const char *word)
 static Boolean
 VarContainsWord(const char *varname, const char *word)
 {
-	FStr val = Var_Value(varname, VAR_GLOBAL);
+	FStr val = Var_Value(SCOPE_GLOBAL, varname);
 	Boolean found = val.str != NULL && StrContainsWord(val.str, word);
 	FStr_Done(&val);
 	return found;
@@ -2375,7 +2373,7 @@ static void
 ParseTrackInput(const char *name)
 {
 	if (!VarContainsWord(MAKE_MAKEFILES, name))
-		Var_Append(MAKE_MAKEFILES, name, VAR_GLOBAL);
+		Global_Append(MAKE_MAKEFILES, name);
 }
 
 
@@ -2492,7 +2490,7 @@ ParseTraditionalInclude(char *line)
 	 * Substitute for any variables in the file name before trying to
 	 * find the thing.
 	 */
-	(void)Var_Subst(file, VAR_CMDLINE, VARE_WANTRES, &all_files);
+	(void)Var_Subst(file, SCOPE_CMDLINE, VARE_WANTRES, &all_files);
 	/* TODO: handle errors */
 
 	if (*file == '\0') {
@@ -2542,7 +2540,7 @@ ParseGmakeExport(char *line)
 	/*
 	 * Expand the value before putting it in the environment.
 	 */
-	(void)Var_Subst(value, VAR_CMDLINE, VARE_WANTRES, &value);
+	(void)Var_Subst(value, SCOPE_CMDLINE, VARE_WANTRES, &value);
 	/* TODO: handle errors */
 
 	setenv(variable, value, 1);
@@ -2593,10 +2591,10 @@ ParseEOF(void)
 
 	if (includes.len == 0) {
 		/* We've run out of input */
-		Var_Delete(".PARSEDIR", VAR_GLOBAL);
-		Var_Delete(".PARSEFILE", VAR_GLOBAL);
-		Var_Delete(".INCLUDEDFROMDIR", VAR_GLOBAL);
-		Var_Delete(".INCLUDEDFROMFILE", VAR_GLOBAL);
+		Global_Delete(".PARSEDIR");
+		Global_Delete(".PARSEFILE");
+		Global_Delete(".INCLUDEDFROMDIR");
+		Global_Delete(".INCLUDEDFROMFILE");
 		return FALSE;
 	}
 
@@ -3053,7 +3051,7 @@ ParseVarassign(const char *line)
 		return FALSE;
 
 	FinishDependencyGroup();
-	Parse_DoVar(&var, VAR_GLOBAL);
+	Parse_DoVar(&var, SCOPE_GLOBAL);
 	return TRUE;
 }
 
@@ -3135,7 +3133,7 @@ ParseDependency(char *line)
 	 * It simply returns the special empty string var_Error,
 	 * which cannot be detected in the result of Var_Subst. */
 	eflags = opts.strict ? VARE_WANTRES : VARE_WANTRES | VARE_UNDEFERR;
-	(void)Var_Subst(line, VAR_CMDLINE, eflags, &expanded_line);
+	(void)Var_Subst(line, SCOPE_CMDLINE, eflags, &expanded_line);
 	/* TODO: handle errors */
 
 	/* Need a fresh list for the target nodes */
@@ -3283,7 +3281,7 @@ Parse_MainName(GNodeList *mainList)
 	if (mainNode->type & OP_DOUBLEDEP)
 		Lst_AppendAll(mainList, &mainNode->cohorts);
 
-	Var_Append(".TARGETS", mainNode->name, VAR_GLOBAL);
+	Global_Append(".TARGETS", mainNode->name);
 }
 
 int
