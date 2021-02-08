@@ -1,4 +1,4 @@
-/*	$NetBSD: director.c,v 1.11 2020/10/24 04:46:17 blymn Exp $	*/
+/*	$NetBSD: director.c,v 1.14 2021/02/07 13:56:23 rillig Exp $	*/
 
 /*-
  * Copyright 2009 Brett Lymn <blymn@NetBSD.org>
@@ -70,6 +70,9 @@ void init_parse_variables(int); /* in testlang_parse.y */
 /*
  * Handle the slave exiting unexpectedly, try to recover the exit message
  * and print it out.
+ *
+ * FIXME: Must not use stdio in a signal handler.  This leads to incomplete
+ * output in verbose mode, truncating the useful part of the error message.
  */
 static void
 slave_died(int param)
@@ -108,7 +111,7 @@ usage(void)
 	fprintf(stderr, "    -g enables check file generation if does not exist\n");
 	fprintf(stderr, "    -f forces check file generation if -g flag is set\n");
 	fprintf(stderr, "    -T is a directory containing the terminfo.cdb "
-	    "file, or a file holding the terminfo description n");
+	    "file, or a file holding the terminfo description\n");
 	fprintf(stderr, "    -s is the path to the slave executable\n");
 	fprintf(stderr, "    -t is value to set TERM to for the test\n");
 	fprintf(stderr, "    -I is the directory to include files\n");
@@ -173,7 +176,7 @@ main(int argc, char *argv[])
 
 	argc -= optind;
 	argv += optind;
-	if (argc < 1)
+	if (argc != 1)
 		usage();
 
 	if (termpath == NULL)
