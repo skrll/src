@@ -1,5 +1,5 @@
 %{
-/*	$NetBSD: testlang_conf.l,v 1.9 2020/10/24 04:46:17 blymn Exp $ 	*/
+/*	$NetBSD: testlang_conf.l,v 1.16 2021/02/07 20:40:05 rillig Exp $ 	*/
 
 /*-
  * Copyright 2009 Brett Lymn <blymn@NetBSD.org>
@@ -137,33 +137,34 @@ dequote(const char *s, size_t *len)
 HEX		0[xX][0-9a-zA-Z]+
 STRING		[0-9a-z!#-&(-^ \t%._\\]+
 numeric		[-0-9]+
-PCHAR           (\\.|[^ \t\n])
-ASSIGN		[aA][sS][sS][iI][gG][nN]
-CALL2		[cC][aA][lL][lL]2
-CALL3		[cC][aA][lL][lL]3
-CALL4		[cC][aA][lL][lL]4
-CALL		[cC][aA][lL][lL]
-CHECK		[cC][hH][eE][cC][kK]
-DELAY		[dD][eE][lL][aA][yY]
-INPUT		[iI][nN][pP][uU][tT]
-NOINPUT		[nN][oO][iI][nN][pP][uU][tT]
-OK_RET		[oO][kK]
-ERR_RET		[eE][rR][rR]
-COMPARE		[cC][oO][mM][pP][aA][rR][eE]
-COMPAREND	[cC][oO][mM][pP][aA][rR][eE][Nn][Dd]
+PCHAR           (\\.|[!-~])
+ASSIGN		assign
+CALL2		call2
+CALL3		call3
+CALL4		call4
+CALL		call
+CHECK		check
+DELAY		delay
+INPUT		input
+NOINPUT		noinput
+OK_RET		OK
+ERR_RET		ERR
+COMPARE		compare
+COMPAREND	comparend
 FILENAME	[A-Za-z0-9.][A-Za-z0-9./_-]+
 VARNAME		[A-Za-z][A-Za-z0-9_-]+
 NULL_RET	NULL
 NON_NULL	NON_NULL
-CCHAR		[cC][cC][hH][aA][rR]
-WCHAR		[wW][cC][hH][aA][rR]
+CCHAR		cchar
+WCHAR		wchar
 BYTE		BYTE
 OR		\|
-LHB		\(
-RHB		\)
-LHSB		\[
-RHSB		\]
+LPAREN		\(
+RPAREN		\)
+LBRACK		\[
+RBRACK		\]
 MULTIPLIER	\*
+COMMA		,
 
 %x incl
 %option noinput nounput
@@ -172,8 +173,8 @@ MULTIPLIER	\*
 
 include		BEGIN(incl);
 
-<incl>[ \t]*      /* eat the whitespace */
-<incl>[^ \t\n]+   { /* got the include file name */
+<incl>[ \t]*	/* eat the whitespace */
+<incl>[^ \t\n]+ { /* got the include file name */
 		char inc_file[MAXPATHLEN];
 
 		if (include_ptr > MAX_INCLUDES) {
@@ -218,10 +219,8 @@ include		BEGIN(incl);
 <<EOF>>	{
 		yypop_buffer_state();
 
-		if ( !YY_CURRENT_BUFFER )
-		{
+		if (!YY_CURRENT_BUFFER)
 			yyterminate();
-		}
 
 		if (--include_ptr < 0)
 			err(2, "Include stack underflow");
@@ -231,97 +230,30 @@ include		BEGIN(incl);
 		line = include_stack[include_ptr];
 	}
 
-{ASSIGN}	{
-			return ASSIGN;
-		}
-
-{CALL2}		{
-			return CALL2;
-		}
-
-{CALL3}		{
-			return CALL3;
-		}
-
-{CALL4}		{
-			return CALL4;
-		}
-
-{CALL}		{
-			return CALL;
-		}
-
-{CHECK}		{
-			return CHECK;
-		}
-
-{DELAY}		{
-			return DELAY;
-		}
-
-{INPUT}		{
-			return INPUT;
-		}
-
-{NOINPUT}		{
-			return NOINPUT;
-		}
-
-{COMPARE}	{
-			return COMPARE;
-		}
-
-{COMPAREND}	{
-			return COMPAREND;
-		}
-
-{NON_NULL}	{
-			return NON_NULL;
-		}
-
-{NULL_RET}		{
-			return NULL_RET;
-		}
-
-{OK_RET}		{
-			return OK_RET;
-		}
-
-{ERR_RET}		{
-			return ERR_RET;
-		}
-
-{MULTIPLIER}	{
-			return MULTIPLIER;
-		}
-
-{CCHAR}		{
-			return CCHAR;
-		}
-
-{WCHAR}		{
-			return WCHAR;
-		}
-
-{OR}		{
-			return OR;
-		}
-
-{LHB}		{
-			return LHB;
-		}
-
-{RHB}		{
-			return RHB;
-		}
-
-{LHSB}		{
-			return LHSB;
-		}
-
-{RHSB}		{
-			return RHSB;
-		}
+{ASSIGN}	return ASSIGN;
+{CALL2}		return CALL2;
+{CALL3}		return CALL3;
+{CALL4}		return CALL4;
+{CALL}		return CALL;
+{CHECK}		return CHECK;
+{DELAY}		return DELAY;
+{INPUT}		return INPUT;
+{NOINPUT}	return NOINPUT;
+{COMPARE}	return COMPARE;
+{COMPAREND}	return COMPAREND;
+{NON_NULL}	return NON_NULL;
+{NULL_RET}	return NULL_RET;
+{OK_RET}	return OK_RET;
+{ERR_RET}	return ERR_RET;
+{MULTIPLIER}	return MULTIPLIER;
+{COMMA}		return COMMA;
+{CCHAR}		return CCHAR;
+{WCHAR}		return WCHAR;
+{OR}		return OR;
+{LPAREN}	return LPAREN;
+{RPAREN}	return RPAREN;
+{LBRACK}	return LBRACK;
+{RBRACK}	return RBRACK;
 
 {HEX}		{
 			/* Hex value, convert to decimal and return numeric */
@@ -334,12 +266,11 @@ include		BEGIN(incl);
 			return numeric;
 		}
 
-
-{numeric}		{
+{numeric}	{
 			if ((yylval.string = strdup(yytext)) == NULL)
 				err(1, "Cannot allocate numeric string");
 			return numeric;
-}
+		}
 
 {VARNAME}	{
 			if ((yylval.string = strdup(yytext)) == NULL)
@@ -434,23 +365,29 @@ include		BEGIN(incl);
 				err(1, "Cannot allocate string for varname");
 			return VARIABLE;
 		}
-	
-	/* comments, white-outs */
+
+	/* whitespace, comments */
 [ \t\r]		|
 #.*		;
-^#.*\n		|
-#.*\n		|
+
+^[ \t\r]*#.*\n	|
 \\\n		|
-^\n		{ 
-line++; }
+^\n		line++;
 
 	/* eol on a line with data. need to process, return eol */
+#.*\n		|
 \n		{
 			line++;
 			return EOL;
 		}
 
 .		{
+			if (isprint((unsigned char)yytext[0]))
+				errx(1, "%s:%zu: Invalid character '%c'",
+				    cur_file, line + 1, yytext[0]);
+			else
+				errx(1, "%s:%zu: Invalid character '0x%02x'",
+				    cur_file, line + 1, yytext[0]);
 		}
 
 %%
