@@ -1,0 +1,4 @@
+- fixes for ryo pmap
+- pvscsi driver
+	- freebsd sys/dev/vmware (9600aa31aa633bbb9e8a56d91a781d5a7ce2bff6)
+
