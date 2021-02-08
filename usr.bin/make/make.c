@@ -1,4 +1,4 @@
-/*	$NetBSD: make.c,v 1.238 2021/02/01 20:42:13 rillig Exp $	*/
+/*	$NetBSD: make.c,v 1.242 2021/02/05 05:15:12 rillig Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -78,8 +78,8 @@
  *	Make_Update	After a target is made, update all its parents.
  *			Perform various bookkeeping chores like the updating
  *			of the youngestChild field of the parent, filling
- *			of the IMPSRC context variable, etc. Place the parent
- *			on the toBeMade queue if it should be.
+ *			of the IMPSRC variable, etc. Place the parent on the
+ *			toBeMade queue if it should be.
  *
  *	GNode_UpdateYoungestChild
  *			Update the node's youngestChild field based on the
@@ -103,7 +103,7 @@
 #include "job.h"
 
 /*	"@(#)make.c	8.1 (Berkeley) 6/6/93"	*/
-MAKE_RCSID("$NetBSD: make.c,v 1.238 2021/02/01 20:42:13 rillig Exp $");
+MAKE_RCSID("$NetBSD: make.c,v 1.242 2021/02/05 05:15:12 rillig Exp $");
 
 /* Sequence # to detect recursion. */
 static unsigned int checked_seqno = 1;
@@ -137,10 +137,6 @@ make_abort(GNode *gn, int lineno)
 	abort();
 }
 
-ENUM_VALUE_RTTI_8(GNodeMade,
-    UNMADE, DEFERRED, REQUESTED, BEINGMADE,
-    MADE, UPTODATE, ERROR, ABORTED);
-
 ENUM_FLAGS_RTTI_31(GNodeType,
     OP_DEPENDS, OP_FORCE, OP_DOUBLEDEP,
 /* OP_OPMASK is omitted since it combines other flags */
@@ -152,10 +148,10 @@ ENUM_FLAGS_RTTI_31(GNodeType,
     OP_TRANSFORM, OP_MEMBER, OP_LIB, OP_ARCHV,
     OP_HAS_COMMANDS, OP_SAVE_CMDS, OP_DEPS_FOUND, OP_MARK);
 
-ENUM_FLAGS_RTTI_10(GNodeFlags,
+ENUM_FLAGS_RTTI_9(GNodeFlags,
     REMAKE, CHILDMADE, FORCE, DONE_WAIT,
     DONE_ORDER, FROM_DEPEND, DONE_ALLSRC, CYCLE,
-    DONECYCLE, INTERNAL);
+    DONECYCLE);
 
 void
 GNode_FprintDetails(FILE *f, const char *prefix, const GNode *gn,
@@ -164,9 +160,9 @@ GNode_FprintDetails(FILE *f, const char *prefix, const GNode *gn,
 	char type_buf[GNodeType_ToStringSize];
 	char flags_buf[GNodeFlags_ToStringSize];
 
-	fprintf(f, "%smade %s, type %s, flags %s%s",
+	fprintf(f, "%s%s, type %s, flags %s%s",
 	    prefix,
-	    GNodeMade_ToString(gn->made),
+	    GNodeMade_Name(gn->made),
 	    GNodeType_ToString(type_buf, gn->type),
 	    GNodeFlags_ToString(flags_buf, gn->flags),
 	    suffix);
@@ -572,9 +568,9 @@ UpdateImplicitParentsVars(GNode *cgn, const char *cname)
 	for (ln = cgn->implicitParents.first; ln != NULL; ln = ln->next) {
 		GNode *pgn = ln->datum;
 		if (pgn->flags & REMAKE) {
-			Var_Set(IMPSRC, cname, pgn);
+			Var_Set(pgn, IMPSRC, cname);
 			if (cpref != NULL)
-				Var_Set(PREFIX, cpref, pgn);
+				Var_Set(pgn, PREFIX, cpref);
 		}
 	}
 }
@@ -827,11 +823,11 @@ MakeAddAllSrc(GNode *cgn, GNode *pgn)
 		allsrc = child;
 
 	if (allsrc != NULL)
-		Var_Append(ALLSRC, allsrc, pgn);
+		Var_Append(pgn, ALLSRC, allsrc);
 
 	if (pgn->type & OP_JOIN) {
 		if (cgn->made == MADE)
-			Var_Append(OODATE, child, pgn);
+			Var_Append(pgn, OODATE, child);
 
 	} else if ((pgn->mtime < cgn->mtime) ||
 		   (cgn->mtime >= now && cgn->made == MADE)) {
@@ -853,7 +849,7 @@ MakeAddAllSrc(GNode *cgn, GNode *pgn)
 		 * to now in Make_Update. According to some people,
 		 * this is good...
 		 */
-		Var_Append(OODATE, child, pgn);
+		Var_Append(pgn, OODATE, child);
 	}
 }
 
@@ -883,13 +879,13 @@ Make_DoAllVar(GNode *gn)
 	for (ln = gn->children.first; ln != NULL; ln = ln->next)
 		MakeAddAllSrc(ln->datum, gn);
 
-	if (!Var_Exists(OODATE, gn))
-		Var_Set(OODATE, "", gn);
-	if (!Var_Exists(ALLSRC, gn))
-		Var_Set(ALLSRC, "", gn);
+	if (!Var_Exists(gn, OODATE))
+		Var_Set(gn, OODATE, "");
+	if (!Var_Exists(gn, ALLSRC))
+		Var_Set(gn, ALLSRC, "");
 
 	if (gn->type & OP_JOIN)
-		Var_Set(TARGET, GNode_VarAllsrc(gn), gn);
+		Var_Set(gn, TARGET, GNode_VarAllsrc(gn));
 	gn->flags |= DONE_ALLSRC;
 }
 
@@ -1036,9 +1032,9 @@ MakeStartJobs(void)
 			if (gn->type & OP_JOIN) {
 				/*
 				 * Even for an up-to-date .JOIN node, we
-				 * need it to have its context variables so
+				 * need it to have its local variables so
 				 * references to it get the correct value
-				 * for .TARGET when building up the context
+				 * for .TARGET when building up the local
 				 * variables of its parent(s)...
 				 */
 				Make_DoAllVar(gn);
@@ -1241,14 +1237,14 @@ Make_ExpandUse(GNodeList *targs)
 				continue;
 			*eoa = '\0';
 			*eon = '\0';
-			Var_Set(MEMBER, eoa + 1, gn);
-			Var_Set(ARCHIVE, gn->name, gn);
+			Var_Set(gn, MEMBER, eoa + 1);
+			Var_Set(gn, ARCHIVE, gn->name);
 			*eoa = '(';
 			*eon = ')';
 		}
 
 		Dir_UpdateMTime(gn, FALSE);
-		Var_Set(TARGET, GNode_Path(gn), gn);
+		Var_Set(gn, TARGET, GNode_Path(gn));
 		UnmarkChildren(gn);
 		HandleUseNodes(gn);
 
