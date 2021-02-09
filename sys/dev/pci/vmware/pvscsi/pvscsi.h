@@ -3,16 +3,13 @@
  *
  * SPDX-License-Identifier: (BSD-2-Clause OR GPL-2.0)
  *
- * $FreeBSD$
+ * $NetBSD$
  */
 
 #ifndef _PVSCSI_H_
 #define _PVSCSI_H_
 
 #define	MASK(v)	((1 << (v)) - 1)
-
-#define	PCI_VENDOR_ID_VMWARE		0x15ad
-#define	PCI_DEVICE_ID_VMWARE_PVSCSI	0x07c0
 
 enum pvscsi_reg_offset {
 	PVSCSI_REG_OFFSET_COMMAND		= 0x0000,
