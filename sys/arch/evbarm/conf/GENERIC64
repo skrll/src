@@ -515,6 +515,9 @@ vioif*		at virtio?		# Virtio network device
 viornd*		at virtio?		# Virtio entropy device
 vioscsi*	at virtio?		# Virtio SCSI device
 
+# VMWare devices
+#pvscsi* 	at pci? dev ? function?	# PV SCSI device
+
 # SCSI controllers
 mpt*		at pci? dev ? function ?
 

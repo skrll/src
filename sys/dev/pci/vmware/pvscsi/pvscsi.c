@@ -5,57 +5,68 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
+//__FBSDID("$FreeBSD$");
+__KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/param.h>
+
 #include <sys/bus.h>
-#include <sys/errno.h>
+#include <sys/device.h>
 #include <sys/kernel.h>
-#include <sys/malloc.h>
-#include <sys/module.h>
 #include <sys/queue.h>
-#include <sys/rman.h>
 #include <sys/sysctl.h>
 #include <sys/systm.h>
 
-#include <machine/bus.h>
-#include <machine/resource.h>
-
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
+#include <dev/pci/pcidevs.h>
 
+#if 0
 #include <cam/cam.h>
 #include <cam/cam_ccb.h>
 #include <cam/cam_debug.h>
 #include <cam/cam_sim.h>
 #include <cam/cam_xpt_sim.h>
 #include <cam/scsi/scsi_message.h>
+#endif
+
+#if 0
+#include <scsi/scsi_all.h>
+#include <scsi/scsi_message.h>
+#include <scsi/scsiconf.h>
+#endif
 
 #include "pvscsi.h"
 
 #define	PVSCSI_DEFAULT_NUM_PAGES_REQ_RING	8
 #define	PVSCSI_SENSE_LENGTH			256
 
+#if 0
 MALLOC_DECLARE(M_PVSCSI);
 MALLOC_DEFINE(M_PVSCSI, "pvscsi", "PVSCSI memory");
+#endif
 
 #ifdef PVSCSI_DEBUG_LOGGING
 #define	DEBUG_PRINTF(level, dev, fmt, ...)				\
 	do {								\
 		if (pvscsi_log_level >= (level)) {			\
-			device_printf((dev), (fmt), ##__VA_ARGS__);	\
+			aprint_normal_dev((dev), (fmt), ##__VA_ARGS__);	\
 		}							\
 	} while(0)
 #else
 #define DEBUG_PRINTF(level, dev, fmt, ...)
 #endif /* PVSCSI_DEBUG_LOGGING */
 
+#if 0
 #define	ccb_pvscsi_hcb	spriv_ptr0
 #define	ccb_pvscsi_sc	spriv_ptr1
+#endif
 
 struct pvscsi_softc;
 struct pvscsi_hcb;
 struct pvscsi_dma;
+
+#define VMWARE_PVSCSI_DEVSTR	"VMware Paravirtual SCSI Controller"
 
 static inline uint32_t pvscsi_reg_read(struct pvscsi_softc *sc,
     uint32_t offset);
@@ -121,10 +132,9 @@ static void pvscsi_free_interrupts(struct pvscsi_softc *sc);
 static int pvscsi_setup_interrupts(struct pvscsi_softc *sc);
 static void pvscsi_free_all(struct pvscsi_softc *sc);
 
-static int pvscsi_attach(device_t dev);
-static int pvscsi_detach(device_t dev);
-static int pvscsi_probe(device_t dev);
-static int pvscsi_shutdown(device_t dev);
+static void pvscsi_attach(device_t, device_t, void *);
+static int pvscsi_detach(device_t, int);
+static int pvscsi_probe(device_t, cfdata_t, void *);
 static int pvscsi_get_tunable(struct pvscsi_softc *sc, char *name, int value);
 
 #ifdef PVSCSI_DEBUG_LOGGING
@@ -134,6 +144,9 @@ static SYSCTL_NODE(_hw, OID_AUTO, pvscsi, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
 SYSCTL_INT(_hw_pvscsi, OID_AUTO, log_level, CTLFLAG_RWTUN, &pvscsi_log_level,
     0, "PVSCSI debug log level");
 #endif
+
+//XXXNH define a real one
+#define TUNABLE_INT(__x, __y)
 
 static int pvscsi_request_ring_pages = 0;
 TUNABLE_INT("hw.pvscsi.request_ring_pages", &pvscsi_request_ring_pages);
@@ -166,33 +179,38 @@ struct pvscsi_sg_list {
 #define	PVSCSI_HCB_BUS_RESET	3
 
 struct pvscsi_hcb {
-	union ccb			*ccb;
+//	union ccb			*ccb;
 	struct pvscsi_ring_req_desc	*e;
 	int				 recovery;
 	SLIST_ENTRY(pvscsi_hcb)		 links;
 
 	struct callout			 callout;
-	bus_dmamap_t			 dma_map;
+	bus_addr_t			 dma_map_offset;
+	bus_size_t			 dma_map_size;
 	void				*sense_buffer;
 	bus_addr_t			 sense_buffer_paddr;
 	struct pvscsi_sg_list		*sg_list;
 	bus_addr_t			 sg_list_paddr;
-};
+//	bus_dma_segment_t		 seg[1];
+};};
 
-struct pvscsi_dma
-{
+struct pvscsi_dma {
 	bus_dma_tag_t	 tag;
 	bus_dmamap_t	 map;
 	void		*vaddr;
 	bus_addr_t	 paddr;
 	bus_size_t	 size;
+	bus_dma_segment_t
+			 seg[1];
 };
 
 struct pvscsi_softc {
 	device_t		 dev;
-	struct mtx		 lock;
+	kmutex_t		lock;
+#if 0
 	struct cam_sim		*sim;
 	struct cam_path		*bus_path;
+#endif
 	int			 frozen;
 	struct pvscsi_rings_state	*rings_state;
 	struct pvscsi_ring_req_desc	*req_ring;
@@ -201,15 +219,21 @@ struct pvscsi_softc {
 	uint32_t		 hcb_cnt;
 	struct pvscsi_hcb	*hcbs;
 	SLIST_HEAD(, pvscsi_hcb)	free_list;
-	bus_dma_tag_t		parent_dmat;
-	bus_dma_tag_t		buffer_dmat;
+
+// 	bus_dma_tag_t		parent_dmat;
+// 	bus_dma_tag_t		buffer_dmat;
+
+
+	bus_dma_tag_t		sc_dmat;
+	bus_space_tag_t		sc_memt;
+	bus_space_handle_t	sc_memh;
 
 	bool		 use_msg;
 	uint32_t	 max_targets;
 	int		 mm_rid;
-	struct resource	*mm_res;
+//	struct resource	*mm_res;
 	int		 irq_id;
-	struct resource	*irq_res;
+//	struct resource	*irq_res;
 	void		*irq_handler;
 	int		 use_req_call_threshold;
 	int		 use_msi_or_msix;
@@ -231,6 +255,11 @@ struct pvscsi_softc {
 	struct	pvscsi_dma sense_buffer_dma;
 };
 
+CFATTACH_DECL3_NEW(pvscsi, sizeof(struct pvscsi_softc),
+    pvscsi_probe, pvscsi_attach, pvscsi_detach, NULL, NULL, NULL,
+    DVF_DETACH_SHUTDOWN);
+
+#if 0
 static int pvscsi_get_tunable(struct pvscsi_softc *sc, char *name, int value)
 {
 	char cfg[64];
@@ -241,6 +270,7 @@ static int pvscsi_get_tunable(struct pvscsi_softc *sc, char *name, int value)
 
 	return (value);
 }
+#endif
 
 static void
 pvscsi_freeze(struct pvscsi_softc *sc)
@@ -256,14 +286,14 @@ static inline uint32_t
 pvscsi_reg_read(struct pvscsi_softc *sc, uint32_t offset)
 {
 
-	return (bus_read_4(sc->mm_res, offset));
+	return (bus_space_read_4(sc->sc_memt, sc->sc_memh, offset));
 }
 
 static inline void
 pvscsi_reg_write(struct pvscsi_softc *sc, uint32_t offset, uint32_t val)
 {
 
-	bus_write_4(sc->mm_res, offset, val);
+	bus_space_write_4(sc->sc_memt, sc->sc_memh, offset, val);
 }
 
 static inline uint32_t
@@ -328,8 +358,8 @@ pvscsi_write_cmd(struct pvscsi_softc *sc, uint32_t cmd, void *data,
 	uint32_t *data_ptr;
 	int i;
 
-	KASSERT(len % sizeof(uint32_t) == 0,
-		("command size not a multiple of 4"));
+	KASSERTMSG(len % sizeof(uint32_t) == 0,
+		"command size not a multiple of 4");
 
 	data_ptr = data;
 	len /= sizeof(uint32_t);
@@ -361,7 +391,7 @@ pvscsi_hcb_get(struct pvscsi_softc *sc)
 {
 	struct pvscsi_hcb *hcb;
 
-	mtx_assert(&sc->lock, MA_OWNED);
+	KASSERT(mutex_owned(&sc->lock));
 
 	hcb = SLIST_FIRST(&sc->free_list);
 	if (hcb) {
@@ -375,7 +405,7 @@ static void
 pvscsi_hcb_put(struct pvscsi_softc *sc, struct pvscsi_hcb *hcb)
 {
 
-	mtx_assert(&sc->lock, MA_OWNED);
+	KASSERT(mutex_owned(&sc->lock));
 	hcb->ccb = NULL;
 	hcb->e = NULL;
 	hcb->recovery = PVSCSI_HCB_NONE;
@@ -425,12 +455,14 @@ static int pvscsi_setup_req_call(struct pvscsi_softc *sc, uint32_t enable)
 	}
 }
 
+
+#if 0
 static void
 pvscsi_dma_cb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 {
 	bus_addr_t *dest;
 
-	KASSERT(nseg == 1, ("more than one segment"));
+	KASSERTMSG(nseg == 1, "more than one segment");
 
 	dest = arg;
 
@@ -438,22 +470,16 @@ pvscsi_dma_cb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 		*dest = segs->ds_addr;
 	}
 }
+#endif
 
 static void
 pvscsi_dma_free(struct pvscsi_softc *sc, struct pvscsi_dma *dma)
 {
 
-	if (dma->tag != NULL) {
-		if (dma->paddr != 0) {
-			bus_dmamap_unload(dma->tag, dma->map);
-		}
-
-		if (dma->vaddr != NULL) {
-			bus_dmamem_free(dma->tag, dma->vaddr, dma->map);
-		}
-
-		bus_dma_tag_destroy(dma->tag);
-	}
+	bus_dmamap_unload(sc->sc_dmat, dma->map);
+	bus_dmamem_unmap(sc->sc_dmat, dma->vaddr, dma->size);
+	bus_dmamap_destroy(sc->sc_dmat, dma->map);
+	bus_dmamem_free(sc->sc_dmat, dma->seg, __arraycount(dma->seg));
 
 	bzero(dma, sizeof(*dma));
 }
@@ -463,40 +489,63 @@ pvscsi_dma_alloc(struct pvscsi_softc *sc, struct pvscsi_dma *dma,
     bus_size_t size, bus_size_t alignment)
 {
 	int error;
+	int nsegs;
 
 	bzero(dma, sizeof(*dma));
 
+#if 0
 	error = bus_dma_tag_create(sc->parent_dmat, alignment, 0,
 	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL, NULL, size, 1, size,
 	    BUS_DMA_ALLOCNOW, NULL, NULL, &dma->tag);
 	if (error) {
-		device_printf(sc->dev, "error creating dma tag, error %d\n",
+		aprint_normal_dev(sc->dev, "error creating dma tag, error %d\n",
+		    error);
+		goto fail;
+	}
+#endif
+
+	error = bus_dmamem_alloc(sc->sc_dmat, size, alignment, 0, dma->seg,
+	    __arraycount(dma->seg), &nsegs, BUS_DMA_WAITOK);
+	if (error) {
+		aprint_normal_dev(sc->dev, "error allocating dma mem, error %d\n",
 		    error);
 		goto fail;
 	}
 
-	error = bus_dmamem_alloc(dma->tag, &dma->vaddr,
-	    BUS_DMA_NOWAIT | BUS_DMA_ZERO, &dma->map);
-	if (error) {
-		device_printf(sc->dev, "error allocating dma mem, error %d\n",
-		    error);
-		goto fail;
+	error = bus_dmamem_map(sc->sc_dmat, dma->seg, nsegs, size,
+	    &dma->vaddr, BUS_DMA_WAITOK);
+	if (error != 0) {
+		device_printf(sc->dev, "Failed to map DMA memory\n");
+		goto dmamemmap_fail;
 	}
 
-	error = bus_dmamap_load(dma->tag, dma->map, dma->vaddr, size,
-	    pvscsi_dma_cb, &dma->paddr, BUS_DMA_NOWAIT);
+	error = bus_dmamap_create(sc->sc_dmat, size, 1, size, 0,
+	    BUS_DMA_WAITOK, &dma->map);
+	if (error != 0) {
+		device_printf(sc->dev, "Failed to create DMA map\n");
+		goto dmamapcreate_fail;
+	}
+
+	error = bus_dmamap_load(sc->sc_dmat, dma->map, dma->vaddr, size,
+	    NULL, BUS_DMA_NOWAIT);
 	if (error) {
-		device_printf(sc->dev, "error mapping dma mam, error %d\n",
+		aprint_normal_dev(sc->dev, "error mapping dma mam, error %d\n",
 		    error);
-		goto fail;
+		goto dmamapload_fail;
 	}
 
 	dma->size = size;
 
+	return 0;
+
+dmamapload_fail:
+	bus_dmamap_destroy(sc->sc_dmat, dma->map);
+dmamapcreate_fail:
+	bus_dmamem_unmap(sc->sc_dmat, dma->vaddr, dma->size);
+dmamemmap_fail:
+	bus_dmamem_free(sc->sc_dmat, dma->seg, __arraycount(dma->seg));
 fail:
-	if (error) {
-		pvscsi_dma_free(sc, dma);
-	}
+
 	return (error);
 }
 
@@ -510,7 +559,7 @@ pvscsi_dma_alloc_ppns(struct pvscsi_softc *sc, struct pvscsi_dma *dma,
 
 	error = pvscsi_dma_alloc(sc, dma, num_pages * PAGE_SIZE, PAGE_SIZE);
 	if (error) {
-		device_printf(sc->dev, "Error allocating pages, error %d\n",
+		aprint_normal_dev(sc->dev, "Error allocating pages, error %d\n",
 		    error);
 		return (error);
 	}
@@ -530,24 +579,25 @@ pvscsi_dma_free_per_hcb(struct pvscsi_softc *sc, uint32_t hcbs_allocated)
 	int lock_owned;
 	struct pvscsi_hcb *hcb;
 
-	lock_owned = mtx_owned(&sc->lock);
+	lock_owned = mutex_owned(&sc->lock);
 
 	if (lock_owned) {
-		mtx_unlock(&sc->lock);
+		mutex_exit(&sc->lock);
 	}
 	for (i = 0; i < hcbs_allocated; ++i) {
 		hcb = sc->hcbs + i;
-		callout_drain(&hcb->callout);
+		callout_hal(t&hcb->callout, NULL);
 	};
 	if (lock_owned) {
-		mtx_lock(&sc->lock);
+		mutex_enter(&sc->lock);
 	}
 
+#if 0
 	for (i = 0; i < hcbs_allocated; ++i) {
 		hcb = sc->hcbs + i;
 		bus_dmamap_destroy(sc->buffer_dmat, hcb->dma_map);
 	};
-
+#endif
 	pvscsi_dma_free(sc, &sc->sense_buffer_dma);
 	pvscsi_dma_free(sc, &sc->sg_list_dma);
 }
@@ -564,7 +614,7 @@ pvscsi_dma_alloc_per_hcb(struct pvscsi_softc *sc)
 	error = pvscsi_dma_alloc(sc, &sc->sg_list_dma,
 	    sizeof(struct pvscsi_sg_list) * sc->hcb_cnt, 1);
 	if (error) {
-		device_printf(sc->dev,
+		aprint_normal_dev(sc->dev,
 		    "Error allocation sg list DMA memory, error %d\n", error);
 		goto fail;
 	}
@@ -572,35 +622,37 @@ pvscsi_dma_alloc_per_hcb(struct pvscsi_softc *sc)
 	error = pvscsi_dma_alloc(sc, &sc->sense_buffer_dma,
 				 PVSCSI_SENSE_LENGTH * sc->hcb_cnt, 1);
 	if (error) {
-		device_printf(sc->dev,
-		    "Error allocation sg list DMA memory, error %d\n", error);
+		aprint_normal_dev(sc->dev,
+		    "Error allocation buffer DMA memory, error %d\n", error);
 		goto fail;
 	}
 
 	for (i = 0; i < sc->hcb_cnt; ++i) {
 		hcb = sc->hcbs + i;
-
-		error = bus_dmamap_create(sc->buffer_dmat, 0, &hcb->dma_map);
+#if 0
+		error = bus_dmamap_create(sc->sc_dmat, 0, &hcb->dma_map);
 		if (error) {
-			device_printf(sc->dev,
+			aprint_normal_dev(sc->dev,
 			    "Error creating dma map for hcb %d, error %d\n",
 			    i, error);
 			goto fail;
 		}
-
+#endif
+		hcb->dma_map_offset = PVSCSI_SENSE_LENGTH * i;
+		hcb->dma_map_size = PVSCSI_SENSE_LENGTH;
 		hcb->sense_buffer =
-		    (void *)((caddr_t)sc->sense_buffer_dma.vaddr +
+		    (void *)((char *)sc->sense_buffer_dma.vaddr +
 		    PVSCSI_SENSE_LENGTH * i);
 		hcb->sense_buffer_paddr =
 		    sc->sense_buffer_dma.paddr + PVSCSI_SENSE_LENGTH * i;
 
 		hcb->sg_list =
-		    (struct pvscsi_sg_list *)((caddr_t)sc->sg_list_dma.vaddr +
+		    (struct pvscsi_sg_list *)((char *)sc->sg_list_dma.vaddr +
 		    sizeof(struct pvscsi_sg_list) * i);
 		hcb->sg_list_paddr =
 		    sc->sg_list_dma.paddr + sizeof(struct pvscsi_sg_list) * i;
 
-		callout_init_mtx(&hcb->callout, &sc->lock, 0);
+		callout_init(&hcb->callout, CALLOUT_MPSAFE);
 	}
 
 	SLIST_INIT(&sc->free_list);
@@ -637,7 +689,7 @@ pvscsi_allocate_rings(struct pvscsi_softc *sc)
 	error = pvscsi_dma_alloc_ppns(sc, &sc->rings_state_dma,
 	    &sc->rings_state_ppn, 1);
 	if (error) {
-		device_printf(sc->dev,
+		aprint_normal_dev(sc->dev,
 		    "Error allocating rings state, error = %d\n", error);
 		goto fail;
 	}
@@ -646,7 +698,7 @@ pvscsi_allocate_rings(struct pvscsi_softc *sc)
 	error = pvscsi_dma_alloc_ppns(sc, &sc->req_ring_dma, sc->req_ring_ppn,
 	    sc->req_ring_num_pages);
 	if (error) {
-		device_printf(sc->dev,
+		aprint_normal_dev(sc->dev,
 		    "Error allocating req ring pages, error = %d\n", error);
 		goto fail;
 	}
@@ -655,7 +707,7 @@ pvscsi_allocate_rings(struct pvscsi_softc *sc)
 	error = pvscsi_dma_alloc_ppns(sc, &sc->cmp_ring_dma, sc->cmp_ring_ppn,
 	    sc->cmp_ring_num_pages);
 	if (error) {
-		device_printf(sc->dev,
+		aprint_normal_dev(sc->dev,
 		    "Error allocating cmp ring pages, error = %d\n", error);
 		goto fail;
 	}
@@ -666,7 +718,7 @@ pvscsi_allocate_rings(struct pvscsi_softc *sc)
 		error = pvscsi_dma_alloc_ppns(sc, &sc->msg_ring_dma,
 		    sc->msg_ring_ppn, sc->msg_ring_num_pages);
 		if (error) {
-			device_printf(sc->dev,
+			aprint_normal_dev(sc->dev,
 			    "Error allocating cmp ring pages, error = %d\n",
 			    error);
 			goto fail;
@@ -730,7 +782,7 @@ pvscsi_setup_msg_ring(struct pvscsi_softc *sc)
 	struct pvscsi_cmd_desc_setup_msg_ring cmd;
 	uint32_t i;
 
-	KASSERT(sc->use_msg, ("msg is not being used"));
+	KASSERTMSG(sc->use_msg, "msg is not being used");
 
 	bzero(&cmd, sizeof(cmd));
 
@@ -745,9 +797,9 @@ pvscsi_setup_msg_ring(struct pvscsi_softc *sc)
 static void
 pvscsi_adapter_reset(struct pvscsi_softc *sc)
 {
-	uint32_t val;
+	uint32_t val __debugused;
 
-	device_printf(sc->dev, "Adapter Reset\n");
+	aprint_normal_dev(sc->dev, "Adapter Reset\n");
 
 	pvscsi_write_cmd(sc, PVSCSI_CMD_ADAPTER_RESET, NULL, 0);
 	val = pvscsi_read_intr_status(sc);
@@ -759,7 +811,7 @@ static void
 pvscsi_bus_reset(struct pvscsi_softc *sc)
 {
 
-	device_printf(sc->dev, "Bus Reset\n");
+	aprint_normal_dev(sc->dev, "Bus Reset\n");
 
 	pvscsi_write_cmd(sc, PVSCSI_CMD_RESET_BUS, NULL, 0);
 	pvscsi_process_cmp_ring(sc);
@@ -776,7 +828,7 @@ pvscsi_device_reset(struct pvscsi_softc *sc, uint32_t target)
 
 	cmd.target = target;
 
-	device_printf(sc->dev, "Device reset for target %u\n", target);
+	aprint_normal_dev(sc->dev, "Device reset for target %u\n", target);
 
 	pvscsi_write_cmd(sc, PVSCSI_CMD_RESET_DEVICE, &cmd, sizeof cmd);
 	pvscsi_process_cmp_ring(sc);
@@ -784,6 +836,7 @@ pvscsi_device_reset(struct pvscsi_softc *sc, uint32_t target)
 	DEBUG_PRINTF(2, sc->dev, "device reset done\n");
 }
 
+#if 0
 static void
 pvscsi_abort(struct pvscsi_softc *sc, uint32_t target, union ccb *ccb)
 {
@@ -802,7 +855,7 @@ pvscsi_abort(struct pvscsi_softc *sc, uint32_t target, union ccb *ccb)
 		cmd.target = target;
 		cmd.context = context;
 
-		device_printf(sc->dev, "Abort for target %u context %llx\n",
+		aprint_normal_dev(sc->dev, "Abort for target %u context %llx\n",
 		    target, (unsigned long long)context);
 
 		pvscsi_write_cmd(sc, PVSCSI_CMD_ABORT_CMD, &cmd, sizeof(cmd));
@@ -814,24 +867,18 @@ pvscsi_abort(struct pvscsi_softc *sc, uint32_t target, union ccb *ccb)
 		    "Target %u ccb %p not found for abort\n", target, ccb);
 	}
 }
+#endif
 
 static int
-pvscsi_probe(device_t dev)
+pvscsi_probe(device_t dev, cfdata_t cf, void *aux)
 {
+	const struct pci_attach_args *pa = aux;
 
-	if (pci_get_vendor(dev) == PCI_VENDOR_ID_VMWARE &&
-	    pci_get_device(dev) == PCI_DEVICE_ID_VMWARE_PVSCSI) {
-		device_set_desc(dev, "VMware Paravirtual SCSI Controller");
-		return (BUS_PROBE_DEFAULT);
+	if (PCI_VENDOR(pa->pa_id) == PCI_VENDOR_VMWARE &&
+	    PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_VMWARE_PVSCSI) {
+		return 1;
 	}
-	return (ENXIO);
-}
-
-static int
-pvscsi_shutdown(device_t dev)
-{
-
-	return (0);
+	return 0;
 }
 
 static void
@@ -850,30 +897,30 @@ pvscsi_timeout(void *arg)
 	}
 
 	sc = ccb->ccb_h.ccb_pvscsi_sc;
-	mtx_assert(&sc->lock, MA_OWNED);
+	KASSERT(mutex_owned(&sc->lock));
 
-	device_printf(sc->dev, "Command timed out hcb=%p ccb=%p.\n", hcb, ccb);
+	aprint_normal_dev(sc->dev, "Command timed out hcb=%p ccb=%p.\n", hcb, ccb);
 
 	switch (hcb->recovery) {
 	case PVSCSI_HCB_NONE:
 		hcb->recovery = PVSCSI_HCB_ABORT;
 		pvscsi_abort(sc, ccb->ccb_h.target_id, ccb);
-		callout_reset_sbt(&hcb->callout, PVSCSI_ABORT_TIMEOUT * SBT_1S,
-		    0, pvscsi_timeout, hcb, 0);
+		callout_reset(&hcb->callout, mstohz(PVSCSI_ABORT_TIMEOUT * 1000),
+		    pvscsi_timeout, hcb);
 		break;
 	case PVSCSI_HCB_ABORT:
 		hcb->recovery = PVSCSI_HCB_DEVICE_RESET;
 		pvscsi_freeze(sc);
 		pvscsi_device_reset(sc, ccb->ccb_h.target_id);
-		callout_reset_sbt(&hcb->callout, PVSCSI_RESET_TIMEOUT * SBT_1S,
-		    0, pvscsi_timeout, hcb, 0);
+		callout_reset(&hcb->callout, mstohz(PVSCSI_RESET_TIMEOUT * 1000),
+		    pvscsi_timeout, hcb);
 		break;
 	case PVSCSI_HCB_DEVICE_RESET:
 		hcb->recovery = PVSCSI_HCB_BUS_RESET;
 		pvscsi_freeze(sc);
 		pvscsi_bus_reset(sc);
-		callout_reset_sbt(&hcb->callout, PVSCSI_RESET_TIMEOUT * SBT_1S,
-		    0, pvscsi_timeout, hcb, 0);
+		callout_reset(&hcb->callout, mstohz(PVSCSI_RESET_TIMEOUT * 1000),
+		    pvscsi_timeout, hcb);
 		break;
 	case PVSCSI_HCB_BUS_RESET:
 		pvscsi_freeze(sc);
@@ -891,7 +938,7 @@ pvscsi_process_completion(struct pvscsi_softc *sc,
 	uint32_t status;
 	uint32_t btstat;
 	uint32_t sdstat;
-	bus_dmasync_op_t op;
+	int op;
 
 	hcb = pvscsi_context_to_hcb(sc, e->context);
 
@@ -911,8 +958,9 @@ pvscsi_process_completion(struct pvscsi_softc *sc,
 		} else {
 			op = BUS_DMASYNC_POSTWRITE;
 		}
-		bus_dmamap_sync(sc->buffer_dmat, hcb->dma_map, op);
-		bus_dmamap_unload(sc->buffer_dmat, hcb->dma_map);
+		bus_dmamap_sync(sc->sc_dmat, sc->sense_buffer_dma.map,
+		    hcb->dma_map_offset, hcb->dma_map_size, op);
+		//bus_dmamap_unload(sc->buffer_dmat, hcb->dma_map);
 	}
 
 	if (btstat == BTSTAT_SUCCESS && sdstat == SCSI_STATUS_OK) {
@@ -1001,7 +1049,7 @@ pvscsi_process_completion(struct pvscsi_softc *sc,
 			status = CAM_NO_HBA;
 			break;
 		default:
-			device_printf(sc->dev, "unknown hba status: 0x%x\n",
+			aprint_normal_dev(sc->dev, "unknown hba status: 0x%x\n",
 			    btstat);
 			status = CAM_NO_HBA;
 			break;
@@ -1039,7 +1087,7 @@ pvscsi_process_cmp_ring(struct pvscsi_softc *sc)
 	struct pvscsi_ring_cmp_desc *e;
 	uint32_t mask;
 
-	mtx_assert(&sc->lock, MA_OWNED);
+	KASSERT(mutex_owned(&sc->lock));
 
 	s = sc->rings_state;
 	ring = sc->cmp_ring;
@@ -1066,13 +1114,13 @@ pvscsi_process_msg(struct pvscsi_softc *sc, struct pvscsi_ring_msg_desc *e)
 	case PVSCSI_MSG_DEV_REMOVED: {
 		desc = (struct pvscsi_ring_msg_dev_status_changed *)e;
 
-		device_printf(sc->dev, "MSG: device %s at scsi%u:%u:%u\n",
+		aprint_normal_dev(sc->dev, "MSG: device %s at scsi%u:%u:%u\n",
 		    desc->type == PVSCSI_MSG_DEV_ADDED ? "addition" : "removal",
 		    desc->bus, desc->target, desc->lun[1]);
 
 		ccb = xpt_alloc_ccb_nowait();
 		if (ccb == NULL) {
-			device_printf(sc->dev,
+			aprint_normal_dev(sc->dev,
 			    "Error allocating CCB for dev change.\n");
 			break;
 		}
@@ -1080,7 +1128,7 @@ pvscsi_process_msg(struct pvscsi_softc *sc, struct pvscsi_ring_msg_desc *e)
 		if (xpt_create_path(&ccb->ccb_h.path, NULL,
 		    cam_sim_path(sc->sim), desc->target, desc->lun[1])
 		    != CAM_REQ_CMP) {
-			device_printf(sc->dev,
+			aprint_normal_dev(sc->dev,
 			    "Error creating path for dev change.\n");
 			xpt_free_ccb(ccb);
 			break;
@@ -1089,7 +1137,7 @@ pvscsi_process_msg(struct pvscsi_softc *sc, struct pvscsi_ring_msg_desc *e)
 		xpt_rescan(ccb);
 	} break;
 	default:
-		device_printf(sc->dev, "Unknown msg type 0x%x\n", e->type);
+		aprint_normal_dev(sc->dev, "Unknown msg type 0x%x\n", e->type);
 	};
 }
 
@@ -1101,7 +1149,7 @@ pvscsi_process_msg_ring(struct pvscsi_softc *sc)
 	struct pvscsi_ring_msg_desc *e;
 	uint32_t mask;
 
-	mtx_assert(&sc->lock, MA_OWNED);
+	KASSERT(mutex_owned(&sc->lock));
 
 	s = sc->rings_state;
 	ring = sc->msg_ring;
@@ -1122,7 +1170,7 @@ pvscsi_intr_locked(struct pvscsi_softc *sc)
 {
 	uint32_t val;
 
-	mtx_assert(&sc->lock, MA_OWNED);
+	KASSERT(mutex_owned(&sc->lock));
 
 	val = pvscsi_read_intr_status(sc);
 
@@ -1144,9 +1192,9 @@ pvscsi_intr(void *xsc)
 
 	mtx_assert(&sc->lock, MA_NOTOWNED);
 
-	mtx_lock(&sc->lock);
+	mutex_enter(&sc->lock);
 	pvscsi_intr_locked(xsc);
-	mtx_unlock(&sc->lock);
+	mutex_exit(&sc->lock);
 }
 
 static void
@@ -1156,7 +1204,7 @@ pvscsi_poll(struct cam_sim *sim)
 
 	sc = cam_sim_softc(sim);
 
-	mtx_assert(&sc->lock, MA_OWNED);
+	KASSERT(mutex_owned(&sc->lock));
 	pvscsi_intr_locked(sc);
 }
 
@@ -1169,7 +1217,7 @@ pvscsi_execute_ccb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 	struct pvscsi_softc *sc;
 	struct pvscsi_rings_state *s;
 	uint8_t cdb0;
-	bus_dmasync_op_t op;
+	int op;
 
 	hcb = arg;
 	ccb = hcb->ccb;
@@ -1177,10 +1225,10 @@ pvscsi_execute_ccb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 	sc = ccb->ccb_h.ccb_pvscsi_sc;
 	s = sc->rings_state;
 
-	mtx_assert(&sc->lock, MA_OWNED);
+	KASSERT(mutex_owned(&sc->lock));
 
 	if (error) {
-		device_printf(sc->dev, "pvscsi_execute_ccb error %d\n", error);
+		aprint_normal_dev(sc->dev, "pvscsi_execute_ccb error %d\n", error);
 
 		if (error == EFBIG) {
 			ccb->ccb_h.status = CAM_REQ_TOO_BIG;
@@ -1217,8 +1265,8 @@ pvscsi_execute_ccb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 			int i;
 			struct pvscsi_sg_element *sge;
 
-			KASSERT(nseg <= PVSCSI_MAX_SG_ENTRIES_PER_SEGMENT,
-			    ("too many sg segments"));
+			KASSERTMSG(nseg <= PVSCSI_MAX_SG_ENTRIES_PER_SEGMENT,
+			    "too many sg segments");
 
 			sge = hcb->sg_list->sge;
 			e->flags |= PVSCSI_FLAG_CMD_WITH_SG_LIST;
@@ -1234,7 +1282,7 @@ pvscsi_execute_ccb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 			e->data_addr = segs->ds_addr;
 		}
 
-		bus_dmamap_sync(sc->buffer_dmat, hcb->dma_map, op);
+		bus_dmamap_sync(sc->sc_dmat, hcb->dma_map, op);
 	} else {
 		e->data_addr = 0;
 	}
@@ -1261,7 +1309,7 @@ pvscsi_action(struct cam_sim *sim, union ccb *ccb)
 	sc = cam_sim_softc(sim);
 	ccb_h = &ccb->ccb_h;
 
-	mtx_assert(&sc->lock, MA_OWNED);
+	KASSERT(mutex_owned(&sc->lock));
 
 	switch (ccb_h->func_code) {
 	case XPT_SCSI_IO:
@@ -1292,7 +1340,7 @@ pvscsi_action(struct cam_sim *sim, union ccb *ccb)
 
 		if (s->req_prod_idx - s->cmp_cons_idx >=
 		    (1 << req_num_entries_log2)) {
-			device_printf(sc->dev,
+			aprint_normal_dev(sc->dev,
 			    "Not enough room on completion ring.\n");
 			pvscsi_freeze(sc);
 			ccb_h->status = CAM_REQUEUE_REQ;
@@ -1301,7 +1349,7 @@ pvscsi_action(struct cam_sim *sim, union ccb *ccb)
 
 		hcb = pvscsi_hcb_get(sc);
 		if (hcb == NULL) {
-			device_printf(sc->dev, "No free hcbs.\n");
+			aprint_normal_dev(sc->dev, "No free hcbs.\n");
 			pvscsi_freeze(sc);
 			ccb_h->status = CAM_REQUEUE_REQ;
 			goto finish_ccb;
@@ -1381,7 +1429,7 @@ finish_ccb:
 				ccb_h->status = CAM_UA_ABORT;
 			}
 		} else {
-			device_printf(sc->dev,
+			aprint_normal_dev(sc->dev,
 			    "Could not find hcb for ccb %p (tgt %u)\n",
 			    ccb, ccb_h->target_id);
 			ccb_h->status = CAM_REQ_CMP;
@@ -1488,34 +1536,46 @@ pvscsi_setup_interrupts(struct pvscsi_softc *sc)
 
 	sc->use_msi_or_msix = 0;
 
+	int counts[PCI_INTR_TYPE_SIZE];
+	for (int i = 0; i < PCI_INTR_TYPE_SIZE; i++) {
+		counts[i] = 1;
+	}
+
 	use_msix = pvscsi_get_tunable(sc, "use_msix", pvscsi_use_msix);
 	use_msi = pvscsi_get_tunable(sc, "use_msi", pvscsi_use_msi);
 
-	if (use_msix && pci_msix_count(sc->dev) > 0) {
-		count = 1;
-		if (pci_alloc_msix(sc->dev, &count) == 0 && count == 1) {
-			sc->use_msi_or_msix = 1;
-			device_printf(sc->dev, "Interrupt: MSI-X\n");
-		} else {
-			pci_release_msi(sc->dev);
-		}
+	if (!use_msix) {
+		count[PCI_INTR_TYPE_MSIX] = 0;
+	}
+	if (!use_msi) {
+		count[PCI_INTR_TYPE_MSI] = 0;
 	}
 
-	if (sc->use_msi_or_msix == 0 && use_msi && pci_msi_count(sc->dev) > 0) {
-		count = 1;
-		if (pci_alloc_msi(sc->dev, &count) == 0 && count == 1) {
-			sc->use_msi_or_msix = 1;
-			device_printf(sc->dev, "Interrupt: MSI\n");
-		} else {
-			pci_release_msi(sc->dev);
-		}
+	/* Allocate and establish the interrupt. */
+	if (pci_intr_alloc(pa, &psc->sc_pihp, counts, PCI_INTR_TYPE_MSIX)) {
+		aprint_error_dev(self, "can't allocate handler\n");
+		goto fail;
 	}
+	intrstr = pci_intr_string(pc, psc->sc_pihp[0], intrbuf,
+	    sizeof(intrbuf));
+	psc->sc_ih = pci_intr_establish_xname(pc, psc->sc_pihp[0], IPL_USB,
+	    xhci_intr, sc, device_xname(sc->sc_dev));
+	if (psc->sc_ih == NULL) {
+		pci_intr_release(pc, psc->sc_pihp, 1);
+		psc->sc_pihp = NULL;
+		aprint_error_dev(self, "couldn't establish interrupt");
+		if (intrstr != NULL)
+			aprint_error(" at %s", intrstr);
+		aprint_error("\n");
+		goto fail;
+	}
+	aprint_normal_dev(self, "interrupting at %s\n", intrstr);
 
 	flags = RF_ACTIVE;
 	if (sc->use_msi_or_msix) {
 		sc->irq_id = 1;
 	} else {
-		device_printf(sc->dev, "Interrupt: INT\n");
+		aprint_normal_dev(sc->dev, "Interrupt: INT\n");
 		sc->irq_id = 0;
 		flags |= RF_SHAREABLE;
 	}
@@ -1523,7 +1583,7 @@ pvscsi_setup_interrupts(struct pvscsi_softc *sc)
 	sc->irq_res = bus_alloc_resource_any(sc->dev, SYS_RES_IRQ, &sc->irq_id,
 	    flags);
 	if (sc->irq_res == NULL) {
-		device_printf(sc->dev, "IRQ allocation failed\n");
+		aprint_normal_dev(sc->dev, "IRQ allocation failed\n");
 		if (sc->use_msi_or_msix) {
 			pci_release_msi(sc->dev);
 		}
@@ -1534,7 +1594,7 @@ pvscsi_setup_interrupts(struct pvscsi_softc *sc)
 	    INTR_TYPE_CAM | INTR_MPSAFE, NULL, pvscsi_intr, sc,
 	    &sc->irq_handler);
 	if (error) {
-		device_printf(sc->dev, "IRQ handler setup failed\n");
+		aprint_normal_dev(sc->dev, "IRQ handler setup failed\n");
 		pvscsi_free_interrupts(sc);
 		return (error);
 	}
@@ -1555,7 +1615,7 @@ pvscsi_free_all(struct pvscsi_softc *sc)
 
 		status = xpt_bus_deregister(cam_sim_path(sc->sim));
 		if (status != CAM_REQ_CMP) {
-			device_printf(sc->dev,
+			aprint_normal_dev(sc->dev,
 			    "Error deregistering bus, status=%d\n", status);
 		}
 
@@ -1586,9 +1646,23 @@ pvscsi_free_all(struct pvscsi_softc *sc)
 	}
 }
 
-static int
-pvscsi_attach(device_t dev)
+static inline void
+pci_enable_busmaster(device_t dev, const pci_chipset_tag_t pc,
+    const pcitag_t tag)
 {
+	pcireg_t pci_cmd_word;
+
+	pci_cmd_word = pci_conf_read(pc, tag, PCI_COMMAND_STATUS_REG);
+	if (!(pci_cmd_word & PCI_COMMAND_MASTER_ENABLE)) {
+		pci_cmd_word |= PCI_COMMAND_MASTER_ENABLE;
+		pci_conf_write(pc, tag, PCI_COMMAND_STATUS_REG, pci_cmd_word);
+	}
+}
+
+static void
+pvscsi_attach(device_t parent, device_t dev, void *aux)
+{
+	const struct pci_attach_args *pa = aux;
 	struct pvscsi_softc *sc;
 	int rid;
 	int barid;
@@ -1597,36 +1671,65 @@ pvscsi_attach(device_t dev)
 	int adapter_queue_size;
 	struct cam_devq *devq;
 
-	sc = device_get_softc(dev);
+	sc = device_private(dev);
 	sc->dev = dev;
 
-	mtx_init(&sc->lock, "pvscsi", NULL, MTX_DEF);
+	kmutex_init(&sc->lock, MUTEX_DEFAULT, IPL_BIO);
 
-	pci_enable_busmaster(dev);
+	pci_enable_busmaster(dev, pa->pa_pc, pa->pa_tag);
 
-	sc->mm_rid = -1;
-	for (barid = 0; barid <= PCIR_MAX_BAR_0; ++barid) {
-		rid = PCIR_BAR(barid);
+	pci_aprint_devinfo_fancy(pa, "virtual disk controller",
+	    VMWARE_PVSCSI_DEVSTR, true);
 
-		sc->mm_res = bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
-		    RF_ACTIVE);
-		if (sc->mm_res != NULL) {
-			sc->mm_rid = rid;
+//	sc->mm_rid = -1;
+	pcireg_t memt;
+	for (rid = PCI_MAPREG_START; rid < PCI_MAPREG_END; rid += sizeof(memt)) {
+		rid = PCI_BAR(barid);
+
+		memt = pci_mapreg_type(pa->pa_pc, pa->pa_tag, rid);
+		if (PCI_MAPREG_TYPE(memt) == PCI_MAPREG_TYPE_MEM)
 			break;
-		}
 	}
 
-	if (sc->mm_res == NULL) {
-		device_printf(dev, "could not map device memory\n");
-		return (ENXIO);
+	if (rid >= PCI_MAPREG_END) {
+		aprint_error_dev(dev,
+		    "unable to locate device registers\n");
 	}
 
+	/*
+	 * Map the device.  All devices support memory-mapped acccess.
+	 */
+	bool memh_valid;
+	bus_space_tag_t memt;
+	bus_space_handle_t memh;
+//	bus_addr_t membase;
+//	bus_size_t memsize;
+
+	memh_valid = (pci_mapreg_map(pa, rid, memtype, 0, &memt, &memh,
+	    &membase, &memsize) == 0);
+	if (!memh_valid) {
+		aprint_error_dev(dev,
+		    "unable to map device registers\n");
+		return;
+	}
+	sc->sc_memt = memt;
+	sc->sc_memh = memh;
+
+	if (pci_dma64_available(pa)) {
+		sc->sc_dmat = pa->pa_dmat64;
+		aprint_verbose_dev(self, "64-bit DMA\n");
+	} else {
+		aprint_verbose_dev(self, "32-bit DMA\n");
+		sc->sc_bus.ub_dmatag = pa->pa_dmat;
+	}
+
+#if 0
 	error = bus_dma_tag_create(bus_get_dma_tag(dev), 1, 0,
 	    BUS_SPACE_MAXADDR, BUS_SPACE_MAXADDR, NULL, NULL, BUS_SPACE_MAXSIZE,
 	    BUS_SPACE_UNRESTRICTED, BUS_SPACE_MAXSIZE, 0, NULL, NULL,
 	    &sc->parent_dmat);
 	if (error) {
-		device_printf(dev, "parent dma tag create failure, error %d\n",
+		aprint_normal_dev(dev, "parent dma tag create failure, error %d\n",
 		    error);
 		pvscsi_free_all(sc);
 		return (ENXIO);
@@ -1638,15 +1741,16 @@ pvscsi_attach(device_t dev)
 	    PVSCSI_MAX_SG_ENTRIES_PER_SEGMENT, PAGE_SIZE, BUS_DMA_ALLOCNOW,
 	    NULL, NULL, &sc->buffer_dmat);
 	if (error) {
-		device_printf(dev, "parent dma tag create failure, error %d\n",
+		aprint_normal_dev(dev, "parent dma tag create failure, error %d\n",
 		    error);
 		pvscsi_free_all(sc);
 		return (ENXIO);
 	}
+#endif
 
 	error = pvscsi_setup_interrupts(sc);
 	if (error) {
-		device_printf(dev, "Interrupt setup failed\n");
+		aprint_normal_dev(dev, "Interrupt setup failed\n");
 		pvscsi_free_all(sc);
 		return (error);
 	}
@@ -1682,65 +1786,117 @@ pvscsi_attach(device_t dev)
 	adapter_queue_size = MIN(adapter_queue_size,
 	    PVSCSI_MAX_REQ_QUEUE_DEPTH);
 
-	device_printf(sc->dev, "Use Msg: %d\n", sc->use_msg);
-	device_printf(sc->dev, "REQ num pages: %d\n", sc->req_ring_num_pages);
-	device_printf(sc->dev, "CMP num pages: %d\n", sc->cmp_ring_num_pages);
-	device_printf(sc->dev, "MSG num pages: %d\n", sc->msg_ring_num_pages);
-	device_printf(sc->dev, "Queue size: %d\n", adapter_queue_size);
+	aprint_normal_dev(sc->dev, "Use Msg: %d\n", sc->use_msg);
+	aprint_normal_dev(sc->dev, "REQ num pages: %d\n", sc->req_ring_num_pages);
+	aprint_normal_dev(sc->dev, "CMP num pages: %d\n", sc->cmp_ring_num_pages);
+	aprint_normal_dev(sc->dev, "MSG num pages: %d\n", sc->msg_ring_num_pages);
+	aprint_normal_dev(sc->dev, "Queue size: %d\n", adapter_queue_size);
+
+// 	aprint_normal_dev(sc->sc_dev,
+// 	    "cmd_per_lun %u qsize %d seg_max %u max_target %hu"
+// 	    " max_lun %u\n",
+// 	    cmd_per_lun, qsize, seg_max, max_target, max_lun);
 
 	if (pvscsi_allocate_rings(sc)) {
-		device_printf(dev, "ring allocation failed\n");
+		aprint_normal_dev(dev, "ring allocation failed\n");
 		pvscsi_free_all(sc);
-		return (ENXIO);
+		return;
 	}
 
 	sc->hcb_cnt = adapter_queue_size;
-	sc->hcbs = malloc(sc->hcb_cnt * sizeof(*sc->hcbs), M_PVSCSI,
-	    M_NOWAIT | M_ZERO);
-	if (sc->hcbs == NULL) {
-		device_printf(dev, "error allocating hcb array\n");
-		pvscsi_free_all(sc);
-		return (ENXIO);
-	}
+	sc->hcbs = kmem_zalloc(sc->hcb_cnt * sizeof(*sc->hcbs), KM_SLEEP);
 
 	if (pvscsi_dma_alloc_per_hcb(sc)) {
-		device_printf(dev, "error allocating per hcb dma memory\n");
+		aprint_normal_dev(dev, "error allocating per hcb dma memory\n");
 		pvscsi_free_all(sc);
-		return (ENXIO);
+		return;
 	}
 
 	pvscsi_adapter_reset(sc);
 
 	devq = cam_simq_alloc(adapter_queue_size);
 	if (devq == NULL) {
-		device_printf(dev, "cam devq alloc failed\n");
+		aprint_normal_dev(dev, "cam devq alloc failed\n");
 		pvscsi_free_all(sc);
-		return (ENXIO);
+		return;
 	}
+
+	/*
+	 * Fill in the scsipi_adapter.
+	 */
+	memset(adapt, 0, sizeof(*adapt));
+	adapt->adapt_dev = sc->sc_dev;
+	adapt->adapt_nchannels = 1;
+	adapt->adapt_openings = MIN(qsize, cmd_per_lun);
+	adapt->adapt_max_periph = adapt->adapt_openings;
+	adapt->adapt_request = vioscsi_scsipi_request;
+	adapt->adapt_minphys = minphys;
+
+
+
+	/*
+	 * Fill in the scsipi_channel.
+	 */
+	memset(chan, 0, sizeof(*chan));
+	chan->chan_adapter = adapt;
+	chan->chan_bustype = &scsi_bustype;
+	chan->chan_channel = 0;
+	chan->chan_ntargets = MIN(max_target, 16);	/* cap reasonably */
+	chan->chan_nluns = MIN(max_lun, 1024);		/* cap reasonably */
+	chan->chan_id = max_target;
+	chan->chan_flags = SCSIPI_CHAN_NOSETTLE;
+	/*
+	 * XXX Remove this when scsipi is REPORT LUNS-aware.
+	 * scsipi(4) insists that LUNs must be contiguous starting from 0.
+	 * This is not true on Linode (circa 2020).
+	 *
+	 * Also if explicitly selecting the 'Virtio SCSI Single'
+	 * controller (which is not the default SCSI controller) on
+	 * Proxmox hosts, each disk will be on its own scsi bus at
+	 * target 0 but unexpectedly on a LUN matching the drive number
+	 * on the system (i.e. drive 0 will be bus 0, target 0, lun
+	 * 0; drive 1 will be bus 1, target 0, lun 1, drive 2 will be
+	 * bus 2, target 0, lun 2 -- which is where the gaps start
+	 * happening). https://bugzilla.proxmox.com/show_bug.cgi?id=2985
+	 */
+	chan->chan_defquirks = PQUIRK_FORCELUNS;
+
+	config_found(self, &sc->sc_channel, scsiprint);
+
+
+
+
+
+
+
+
+
+
+
 
 	sc->sim = cam_sim_alloc(pvscsi_action, pvscsi_poll, "pvscsi", sc,
 	    device_get_unit(dev), &sc->lock, 1, adapter_queue_size, devq);
 	if (sc->sim == NULL) {
-		device_printf(dev, "cam sim alloc failed\n");
+		aprint_normal_dev(dev, "cam sim alloc failed\n");
 		cam_simq_free(devq);
 		pvscsi_free_all(sc);
 		return (ENXIO);
 	}
 
-	mtx_lock(&sc->lock);
+	mutex_enter(&sc->lock);
 
 	if (xpt_bus_register(sc->sim, dev, 0) != CAM_SUCCESS) {
-		device_printf(dev, "xpt bus register failed\n");
+		aprint_normal_dev(dev, "xpt bus register failed\n");
 		pvscsi_free_all(sc);
-		mtx_unlock(&sc->lock);
+		mutex_exit(&sc->lock);
 		return (ENXIO);
 	}
 
 	if (xpt_create_path(&sc->bus_path, NULL, cam_sim_path(sc->sim),
 	    CAM_TARGET_WILDCARD, CAM_LUN_WILDCARD) != CAM_REQ_CMP) {
-		device_printf(dev, "xpt create path failed\n");
+		aprint_normal_dev(dev, "xpt create path failed\n");
 		pvscsi_free_all(sc);
-		mtx_unlock(&sc->lock);
+		mutex_exit(&sc->lock);
 		return (ENXIO);
 	}
 
@@ -1753,34 +1909,35 @@ pvscsi_attach(device_t dev)
 
 	pvscsi_intr_enable(sc);
 
-	mtx_unlock(&sc->lock);
+	mutex_exit(&sc->lock);
 
-	return (0);
+	return;
 }
 
 static int
-pvscsi_detach(device_t dev)
+pvscsi_detach(device_t dev, int flags)
 {
 	struct pvscsi_softc *sc;
 
-	sc = device_get_softc(dev);
+	sc = device_private(dev);
 
 	pvscsi_intr_disable(sc);
 	pvscsi_adapter_reset(sc);
 
-	if (sc->irq_handler != NULL) {
-		bus_teardown_intr(dev, sc->irq_res, sc->irq_handler);
-	}
+// 	if (sc->irq_handler != NULL) {
+// 		bus_teardown_intr(dev, sc->irq_res, sc->irq_handler);
+// 	}
 
-	mtx_lock(&sc->lock);
+	mutex_enter(&sc->lock);
 	pvscsi_free_all(sc);
-	mtx_unlock(&sc->lock);
+	mutex_exit(&sc->lock);
 
-	mtx_destroy(&sc->lock);
+	mutex_destroy(&sc->lock);
 
 	return (0);
 }
 
+#if 0
 static device_method_t pvscsi_methods[] = {
 	DEVMETHOD(device_probe, pvscsi_probe),
 	DEVMETHOD(device_shutdown, pvscsi_shutdown),
@@ -1798,3 +1955,4 @@ DRIVER_MODULE(pvscsi, pci, pvscsi_driver, pvscsi_devclass, 0, 0);
 
 MODULE_DEPEND(pvscsi, pci, 1, 1, 1);
 MODULE_DEPEND(pvscsi, cam, 1, 1, 1);
+#endif
