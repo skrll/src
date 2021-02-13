@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ethersubr.c,v 1.289 2020/09/26 18:38:09 roy Exp $	*/
+/*	$NetBSD: if_ethersubr.c,v 1.291 2021/02/13 13:00:16 roy Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.289 2020/09/26 18:38:09 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.291 2021/02/13 13:00:16 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -648,15 +648,20 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 
 	if ((ifp->if_flags & IFF_UP) == 0)
 		goto drop;
-	if (m->m_len < sizeof(*eh)) {
-		m = m_pullup(m, sizeof(*eh));
-		if (m == NULL)
-			goto dropped;
-	}
 
 #ifdef MBUFTRACE
 	m_claimm(m, &ec->ec_rx_mowner);
 #endif
+
+	/* Enforce alignement */
+	if (ETHER_HDR_ALIGNED_P(mtod(m, void *)) == 0) {
+		if ((m = m_copyup(m, sizeof(*eh), 0)) == NULL)
+			goto dropped;
+	} else if (__predict_false(m->m_len < sizeof(*eh))) {
+		if ((m = m_pullup(m, sizeof(*eh))) == NULL)
+			goto dropped;
+	}
+
 	eh = mtod(m, struct ether_header *);
 	etype = ntohs(eh->ether_type);
 	ehlen = sizeof(*eh);

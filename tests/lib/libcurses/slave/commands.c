@@ -1,7 +1,8 @@
-/*	$NetBSD: commands.c,v 1.6 2020/10/24 04:46:17 blymn Exp $	*/
+/*	$NetBSD: commands.c,v 1.12 2021/02/13 08:14:46 rillig Exp $	*/
 
 /*-
  * Copyright 2009 Brett Lymn <blymn@NetBSD.org>
+ * Copyright 2021 Roland Illig <rillig@NetBSD.org>
  *
  * All rights reserved.
  *
@@ -13,7 +14,7 @@
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  * 2. The name of the author may not be used to endorse or promote products
- *    derived from this software withough specific prior written permission
+ *    derived from this software without specific prior written permission
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -25,8 +26,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- *
  */
 
 #include <curses.h>
@@ -36,12 +35,11 @@
 #include <unistd.h>
 #include <err.h>
 #include <sys/types.h>
+
 #include "returns.h"
 #include "slave.h"
 #include "command_table.h"
 
-extern int cmdpipe[2];
-extern int slvpipe[2];
 extern int initdone;
 
 static void report_type(data_enum_t);
@@ -58,15 +56,15 @@ command_execute(char *func, int nargs, char **args)
 
 	i = 0;
 	while (i < ncmds) {
-		if (strcasecmp(func, commands[i].name) == 0) {
+		if (strcmp(func, commands[i].name) == 0) {
 			/* Check only restricted set of functions is called before
 			 * initscr/newterm */
-			if(!initdone){
+			if (!initdone) {
 				j = 0;
-				while(j < nrcmds) {
-					if(strcasecmp(func, restricted_commands[j]) == 0){
-						if(strcasecmp(func, "initscr") == 0  ||
-							strcasecmp(func, "newterm") == 0)
+				while (j < nrcmds) {
+					if (strcmp(func, restricted_commands[j]) == 0) {
+						if (strcmp(func, "initscr") == 0  ||
+							strcmp(func, "newterm") == 0)
 							initdone = 1;
 						/* matched function */
 						commands[i].func(nargs, args);
@@ -141,7 +139,7 @@ report_type(data_enum_t return_type)
 	int type;
 
 	type = return_type;
-	if (write(slvpipe[WRITE_PIPE], &type, sizeof(int)) < 0)
+	if (write(to_director, &type, sizeof(int)) < 0)
 		err(1, "command pipe write for status type failed");
 
 }
@@ -155,10 +153,10 @@ report_count(int count)
 	int type;
 
 	type = data_count;
-	if (write(slvpipe[WRITE_PIPE], &type, sizeof(int)) < 0)
+	if (write(to_director, &type, sizeof(int)) < 0)
 		err(1, "command pipe write for count type failed");
 
-	if (write(slvpipe[WRITE_PIPE], &count, sizeof(int)) < 0)
+	if (write(to_director, &count, sizeof(int)) < 0)
 		err(1, "command pipe write for count");
 }
 
@@ -191,13 +189,13 @@ report_message(int type, const char *status)
 
 	len = strlen(status);
 
-	if (write(slvpipe[WRITE_PIPE], &type, sizeof(int)) < 0)
+	if (write(to_director, &type, sizeof(int)) < 0)
 		err(1, "command pipe write for message type failed");
 
-	if (write(slvpipe[WRITE_PIPE], &len, sizeof(int)) < 0)
+	if (write(to_director, &len, sizeof(int)) < 0)
 		err(1, "command pipe write for message length failed");
 
-	if (write(slvpipe[WRITE_PIPE], status, len) < 0)
+	if (write(to_director, status, len) < 0)
 		err(1, "command pipe write of message data failed");
 }
 
@@ -234,15 +232,15 @@ report_nstr(chtype *string)
 	len *= sizeof(chtype);
 
 	type = data_byte;
-	if (write(slvpipe[WRITE_PIPE], &type, sizeof(int)) < 0)
+	if (write(to_director, &type, sizeof(int)) < 0)
 		err(1, "%s: command pipe write for status type failed",
 		    __func__);
 
-	if (write(slvpipe[WRITE_PIPE], &len, sizeof(int)) < 0)
+	if (write(to_director, &len, sizeof(int)) < 0)
 		err(1, "%s: command pipe write for status length failed",
 		    __func__);
 
-	if (write(slvpipe[WRITE_PIPE], string, len) < 0)
+	if (write(to_director, string, len) < 0)
 		err(1, "%s: command pipe write of status data failed",
 		    __func__);
 }
@@ -257,15 +255,15 @@ report_cchar(cchar_t c)
 	len = sizeof(cchar_t);
 	type = data_cchar;
 
-	if (write(slvpipe[WRITE_PIPE], &type, sizeof(int)) < 0)
+	if (write(to_director, &type, sizeof(int)) < 0)
 		err(1, "%s: command pipe write for status type failed",
 		    __func__);
 
-	if (write(slvpipe[WRITE_PIPE], &len, sizeof(int)) < 0)
+	if (write(to_director, &len, sizeof(int)) < 0)
 		err(1, "%s: command pipe write for status length failed",
 		    __func__);
 
-	if (write(slvpipe[WRITE_PIPE], &c, len) < 0)
+	if (write(to_director, &c, len) < 0)
 		err(1, "%s: command pipe write of status data failed",
 		    __func__);
 }
@@ -303,15 +301,15 @@ report_wstr(wchar_t *wstr)
 	len *= sizeof(wchar_t);
 
 	type = data_wchar;
-	if (write(slvpipe[WRITE_PIPE], &type, sizeof(int)) < 0)
+	if (write(to_director, &type, sizeof(int)) < 0)
 		err(1, "%s: command pipe write for status type failed",
 		    __func__);
 
-	if (write(slvpipe[WRITE_PIPE], &len, sizeof(int)) < 0)
+	if (write(to_director, &len, sizeof(int)) < 0)
 		err(1, "%s: command pipe write for status length failed",
 		    __func__);
 
-	if (write(slvpipe[WRITE_PIPE], wstr, len) < 0)
+	if (write(to_director, wstr, len) < 0)
 		err(1, "%s: command pipe write of status data failed",
 		    __func__);
 }
