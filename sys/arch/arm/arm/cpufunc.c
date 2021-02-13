@@ -3037,6 +3037,18 @@ armv7_setup(char *args)
 
 	/* Set the control register - does dsb; isb */
 	cpu_control(cpuctrlmask, cpuctrl);
+/*
+ * The sequence to ensure the synchronization of changes to the TEX remap registers is:
+ * 1.  Perform a DSB. This ensures any memory accesses using the old mapping have completed.
+ * 2.  Write the TEX remap registers or SCTLR.TRE bit.
+ * 3.  Perform an ISB. This ensures synchronization of the register updates.
+ * 4.  Invalidate the entire TLB.
+ * 5.  Perform a DSB. This ensures completion of the entire TLB operation.
+ * 6.  Clean and invalidate all caches. This removes any cached information associated with the old
+mapping.
+ * 7.  Perform a DSB. This ensures completion of the cache maintenance.
+ * 8.  Perform an ISB. This ensures instruction synchronization.
+ */
 
 	/*
 	 * Really for ARM_MMU_EXTENDED, but we #error if it's not

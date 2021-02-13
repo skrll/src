@@ -149,9 +149,13 @@ imx_com_console_consinit(struct fdt_attach_args *faa, u_int uart_freq)
 
 	fdtbus_get_reg(phandle, 0, &addr, &size);
 	speed = fdtbus_get_stdout_speed();
+printf("%s: addr %" PRIxBUSADDR " size %" PRIxBUSSIZE " speed %d\n", __func__, addr, size, speed);
+
 	if (speed < 0)
 		speed = 115200;	/* default */
 	flags = fdtbus_get_stdout_flags();
+
+printf("%s: flags %#x\n", __func__, flags);
 
 	imxuart_set_frequency(uart_freq, 2);
 	if (imxuart_cnattach(bst, addr, speed, flags) != 0)

@@ -6783,8 +6783,12 @@ pmap_map_section(vaddr_t l1pt, vaddr_t va, paddr_t pa, int prot, int cache)
 		break;
 
 	case PTE_DEV:
-	default:
 		fl = pte_l1_s_device_mode;
+		break;
+
+	// XXX perf problem???
+	default:
+		fl = pte_l1_s_nocache_mode;
 		break;
 	}
 
@@ -6821,7 +6825,7 @@ pmap_map_entry(vaddr_t l1pt, vaddr_t va, paddr_t pa, int prot, int cache)
 	case PTE_PAGETABLE:
 		npte = pte_l2_s_cache_mode_pt;
 		break;
-
+//XXX device?
 	default:
 		npte = 0;
 		break;
@@ -7729,9 +7733,95 @@ pmap_pte_init_armv6(void)
 #endif /* ARM_MMU_V6 */
 
 #if ARM_MMU_V7 == 1
+
+uint32_t l1_s_device_value(void);
+uint32_t
+l1_s_device_value(void)
+{
+	return L1_S_DEVICE;
+}
+uint32_t l2_l_device_value(void);
+uint32_t
+l2_l_device_value(void)
+{
+	return L2_L_DEVICE;
+}
+uint32_t l2_s_device_value(void);
+uint32_t
+l2_s_device_value(void)
+{
+	return L2_S_DEVICE;
+}
+uint32_t l1_s_normal_value(void);
+uint32_t
+l1_s_normal_value(void)
+{
+	return L1_S_NORMAL_WB;
+}
+uint32_t l2_l_normal_value(void);
+uint32_t
+l2_l_normal_value(void)
+{
+	return L2_L_NORMAL_WB;
+}
+uint32_t l2_s_normal_value(void);
+uint32_t
+l2_s_normal_value(void)
+{
+	return L2_S_NORMAL_WB;
+}
+uint32_t l1_s_normal_nc_value(void);
+uint32_t
+l1_s_normal_nc_value(void)
+{
+	return L1_S_NORMAL_NC;
+}
+uint32_t l2_l_normal_nc_value(void);
+uint32_t
+l2_l_normal_nc_value(void)
+{
+	return L2_L_NORMAL_NC;
+}
+uint32_t l2_s_normal_nc_value(void);
+uint32_t
+l2_s_normal_nc_value(void)
+{
+	return L2_S_NORMAL_NC;
+}
+
+
+
+
+uint32_t l1_s_strong_value(void);
+uint32_t
+l1_s_strong_value(void)
+{
+	return L1_S_STRONG;
+}
+uint32_t l2_l_strong_value(void);
+uint32_t
+l2_l_strong_value(void)
+{
+	return L2_L_STRONG;
+}
+uint32_t l2_s_strong_value(void);
+uint32_t
+l2_s_strong_value(void)
+{
+	return L2_S_STRONG;
+}
+
+/*
+ * c2	0	PRRR	b	RW	0x00098AA4	Primary Region Remap Register
+ *	1	NMRR	c	RW	0x44E048E0	Normal Memory Remap Register
+ *
+ * b.   PRRR[13:12] is not implemented, RAZ/WI.
+ * c.   NMRR[29:28] and NMRR[13:12] are not implemented, RAZ/WI
+ */
 void
 pmap_pte_init_armv7(void)
 {
+	// XXXNH update
 	/*
 	 * The ARMv7-A MMU is mostly compatible with generic. If the
 	 * AP field is zero, that now means "no access" rather than
