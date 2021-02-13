@@ -791,6 +791,7 @@ extern void (*pmap_zero_page_func)(paddr_t);
 #define	L1_S_STRONG		L1_S_TRE(TRE_STRONG)
 #define	L1_S_OSBIT0		L1_S_XS_TEX(TEX_ARMV6_TEX1)
 #define	L1_S_OSBIT1		L1_S_XS_TEX(TEX_ARMV6_TEX2)
+#endif
 
 #define	L2_L_PROT_U_generic	(L2_AP(AP_U))
 #define	L2_L_PROT_W_generic	(L2_AP(AP_W))
@@ -1214,6 +1215,8 @@ do {									\
 	(pg)->mdpage.k_mappings = 0;					\
 } while (/*CONSTCOND*/0)
 
+
+#ifdef ARM_MMU_EXTENDED
 static inline void
 pmap_setmrr(void)
 {
@@ -1241,7 +1244,6 @@ pmap_setmrr(void)
 
 	isb();
 }
-
 #endif
 
 #ifndef	__BSD_PTENTRY_T__
